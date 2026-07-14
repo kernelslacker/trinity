@@ -9,13 +9,29 @@
  * On error, the value -1 will be returned and errno will have been set to an appropriate error.
  */
 #include <linux/keyctl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
+
+/*
+ * Bounded expiry for keys the child links into the per-uid USER /
+ * USER_SESSION keyrings.  The OBJ_KEY_SERIAL destructor issues
+ * KEYCTL_INVALIDATE at clean child exit, but a SIGKILL (watchdog,
+ * OOM) skips destructors: keys on the per-uid rings then outlive
+ * the child and burn quota against the fuzzer's uid until add_key
+ * starts returning -EDQUOT fleet-wide.  Arming a short expiry lets
+ * the kernel key GC reap orphans automatically; the value only has
+ * to outlast one child so subsequent keyctl ops still hit a live
+ * key.
+ */
+#define KEYCTL_TIMEOUT_SECS 60
 
 /*
  * Diversify what we hand to add_key().  The kernel routes the payload
@@ -388,6 +404,36 @@ static void sanitise_add_key(struct syscallrecord *rec)
 	avoid_shared_buffer_inout(&rec->a2, 128);
 }
 
+/*
+ * Post-hook: for a5 == KEY_SPEC_USER_KEYRING or
+ * KEY_SPEC_USER_SESSION_KEYRING, arm KEYCTL_SET_TIMEOUT on the
+ * returned serial so the kernel GC reaps the key if the child dies
+ * before OBJ_KEY_SERIAL's KEYCTL_INVALIDATE destructor runs.  Only
+ * the two persistent ringids need this — thread/process/session
+ * keyrings die with the credential that owns them, so their keys
+ * are already cleaned up by the kernel on child exit.  Best-effort:
+ * ignore the return value.  register_key_serial() itself is still
+ * handled by the generic .ret_objtype = OBJ_KEY_SERIAL dispatch.
+ */
+static void post_add_key(struct syscallrecord *rec)
+{
+	long ret = (long) rec->retval;
+
+	if (ret <= 0 || ret > INT32_MAX)
+		return;
+
+	switch ((long) rec->a5) {
+	case KEY_SPEC_USER_KEYRING:
+	case KEY_SPEC_USER_SESSION_KEYRING:
+		syscall(SYS_keyctl, KEYCTL_SET_TIMEOUT,
+			(uint32_t) ret,
+			(unsigned long) KEYCTL_TIMEOUT_SECS);
+		break;
+	default:
+		break;
+	}
+}
+
 static unsigned long addkey_ringids[] = {
 	KEY_SPEC_THREAD_KEYRING,
 	KEY_SPEC_PROCESS_KEYRING,
@@ -408,5 +454,6 @@ struct syscallentry syscall_add_key = {
 	.rettype = RET_KEY_SERIAL_T,
 	.ret_objtype = OBJ_KEY_SERIAL,
 	.sanitise = sanitise_add_key,
+	.post = post_add_key,
 	.group = GROUP_IPC,
 };
