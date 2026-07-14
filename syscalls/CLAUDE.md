@@ -1,7 +1,7 @@
 # syscalls/ — Per-Syscall Descriptor Table
 
-Largest directory in the codebase: 348 top-level `.c` files + 12 arch-specific
-`.c` files under `ppc/`, `s390x/`, `sh/`, `sparc/`, `x86/` (361 total), plus 5
+Largest directory in the codebase: 347 top-level `.c` files + 6 arch-specific
+`.c` files under `x86/` (353 total), plus 5
 headers, ~56,400 LOC in `.c` files alone. One file per Linux syscall Trinity
 fuzzes (`accept.c`, `access.c`, `acct.c`, ... `writev.c`), each defining a
 single `struct syscallentry syscall_<name>` descriptor consumed by
@@ -11,7 +11,7 @@ constraint knowledge, one TU per syscall.
 
 ## Files
 
-Do not enumerate all 361 files individually — they follow one of two shapes:
+Do not enumerate all 353 files individually — they follow one of two shapes:
 
 **Bulk (~330 files, mostly under 200 LOC): pure descriptor pattern.**
 A `struct syscallentry syscall_X = { ... }` initializer with `.name`,
@@ -24,7 +24,7 @@ wired via `.sanitise`. Examples at the simple end:
   arg at a real trinity-testfile inode 50% of the time, `REEXEC_SANITISE_OK`
   flag opting into CMP RedQueen re-exec.
 
-91 of the ~348 top-level files have no `.sanitise` at all (pure table-driven
+91 of the ~347 top-level files have no `.sanitise` at all (pure table-driven
 generic arg generation off `argtype[]`); 257 define at least one
 `static void sanitise_X()`; 189 define a `.post` handler; only 10 define
 `.cleanup`, 9 explicitly call `generic_sanitise`.
@@ -48,9 +48,7 @@ pair managing a heap allocation stashed in `rec->post_state`.
 **Arch-specific subdirectories** (compiled conditionally by `Makefile`'s
 `SYSCALLS_ARCH` variable, keyed off `$(CC) -dumpmachine`):
 `x86/{ioperm,iopl,modify_ldt}.c`, `x86/i386/{vm86,vm86old}.c`,
-`x86/x86_64/arch_prctl.c`; `s390x/{runtime_instr,s390_guarded_storage,
-s390_pci_mmio,s390_sthyi}.c`; `ppc/rtas.c`; `sh/cacheflush.c`;
-`sparc/kern_features.c`. Small (12-365 lines), single-syscall, same
+`x86/x86_64/arch_prctl.c`. Small (12-365 lines), single-syscall, same
 descriptor pattern.
 
 **Headers**: `syscalls.h` (445 lines) — `extern struct syscallentry
@@ -102,11 +100,10 @@ top of each header as private to that pair of TUs).
    a private `-internal.h`, so the per-opcode builder families compile as a
    separate TU without exposing that boundary to the rest of the codebase.
 6. **Arch conditionality is file-selection, not `#ifdef` fan-out.** Arch-only
-   syscalls (`modify_ldt`, `s390_pci_mmio`, `rtas`, `cacheflush`,
-   `kern_features`, `arch_prctl`, `vm86`/`vm86old`) live in arch subdirectories
-   and are only added to the build's `SRCS` via `Makefile`'s `SYSCALLS_ARCH`
-   glob for the matching `$(CC) -dumpmachine` — no dead arch code is compiled
-   or linked on non-matching machines. (`bpf.c` is the one exception using
+   syscalls (`ioperm`, `iopl`, `modify_ldt`, `arch_prctl`, `vm86`/`vm86old`)
+   live in arch subdirectories and are only added to the build's `SRCS` via
+   `Makefile`'s `SYSCALLS_ARCH` glob for the matching `$(CC) -dumpmachine` —
+   no dead arch code is compiled or linked on non-matching machines. (`bpf.c` is the one exception using
    in-file `#ifdef USE_BPF` gating instead, since it's not arch-specific but
    config-specific.)
 7. **`GROUP_*` tagging is coarse and mostly VFS/PROCESS-weighted.** Of ~424
@@ -192,6 +189,6 @@ syscalls with genuinely complex kernel ABIs (`perf_event_open`, `bpf`,
 `prctl`, `setsockopt`, `io_uring_register`, `mount`, `execve`, `ptrace`,
 `keyctl`) carry hundreds to over a thousand lines of dedicated opcode
 tables, dispatch logic, and cross-call state, some split into a second TU
-via a private `-internal.h`. Arch-specific syscalls live in `ppc/`,
-`s390x/`, `sh/`, `sparc/`, `x86/` subdirectories, compiled in only for the
-matching target via `Makefile`'s `SYSCALLS_ARCH` glob.
+via a private `-internal.h`. Arch-specific syscalls live in the `x86/`
+subdirectory, compiled in only for the matching target via `Makefile`'s
+`SYSCALLS_ARCH` glob.
