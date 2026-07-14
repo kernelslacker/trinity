@@ -57,6 +57,7 @@ static void sanitise_pidfd_send_signal(struct syscallrecord *rec)
 	if (!info)
 		return;
 	memset(info, 0, sizeof(*info));
+	info->si_signo = rec->a2;
 	info->si_code = SI_QUEUE;
 	info->si_pid = mypid();
 	info->si_uid = getuid();
