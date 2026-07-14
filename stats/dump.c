@@ -2596,6 +2596,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&blob_mutator_category);
 
+	stat_category_emit_text(&blob_ab_mode_category);
+
 	dump_stats_render_blob_fills_by_group();
 
 	stat_category_emit_text(&msg_zerocopy_churn_category);

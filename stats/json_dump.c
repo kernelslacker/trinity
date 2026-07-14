@@ -2033,6 +2033,9 @@ static void json_emit_net_churn_and_early_storms_section(void)
 	stat_category_emit_json(&blob_mutator_category);
 
 	printf(",");
+	stat_category_emit_json(&blob_ab_mode_category);
+
+	printf(",");
 	stat_category_emit_json(&msg_zerocopy_churn_category);
 
 	printf(",");

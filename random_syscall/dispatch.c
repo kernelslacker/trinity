@@ -24,6 +24,7 @@
 
 #include "arch.h"	// biarch
 #include "arg-decoder.h"
+#include "blob_mutator.h"
 #include "child.h"
 #include "cmp-frontier.h"
 #include "cmp_hints.h"
@@ -391,6 +392,32 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			cmp_hints_feedback_credit_cmp_novelty();
 		} else {
 			cmp_hints_feedback_reset_stash();
+		}
+
+		/* --blob-ab-mode: within-run A/B attribution.  When this
+		 * call had a blob_fill() and the flag is on, blob_fill
+		 * stashed the coin-flipped mode (HAVOC vs CMPDICT) on
+		 * child->blob_ab_mode_last; credit one fill and this
+		 * call's new_edges to that mode's counters here so both
+		 * arms share the same warm state / corpus / kcov context
+		 * at every moment and the per-fill new-edge rate is the
+		 * clean per-mode comparison.  When the flag is absent
+		 * the stamp stays BLOB_AB_MODE_NONE for every call and
+		 * this block is inert. */
+		if (child->blob_ab_mode_last == BLOB_AB_MODE_HAVOC) {
+			__atomic_fetch_add(&shm->stats.blob_ab_havoc_fills,
+					   1UL, __ATOMIC_RELAXED);
+			if (new_edges > 0)
+				__atomic_fetch_add(&shm->stats.blob_ab_havoc_new_edges,
+						   (unsigned long) new_edges,
+						   __ATOMIC_RELAXED);
+		} else if (child->blob_ab_mode_last == BLOB_AB_MODE_CMPDICT) {
+			__atomic_fetch_add(&shm->stats.blob_ab_cmpdict_fills,
+					   1UL, __ATOMIC_RELAXED);
+			if (new_edges > 0)
+				__atomic_fetch_add(&shm->stats.blob_ab_cmpdict_new_edges,
+						   (unsigned long) new_edges,
+						   __ATOMIC_RELAXED);
 		}
 	}
 

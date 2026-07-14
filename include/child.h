@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include "types.h"
+#include "blob_mutator.h"
 #include "breadcrumb_ring.h"
 #include "bug_backtrace.h"
 #include "cmp_hints.h"
@@ -757,6 +758,21 @@ struct childdata {
 	 * the resulting per_syscall_cmp_hint_pc_wins[] counter, never this
 	 * flag directly. */
 	bool cmp_hint_injected_this_call;
+
+	/* --blob-ab-mode within-run A/B stamp: the mode picked by the
+	 * most recent blob_fill() on this call.  Reset to
+	 * BLOB_AB_MODE_NONE at the top of generate_syscall_args()
+	 * alongside cmp_hint_injected_this_call; set from inside
+	 * blob_fill() on the ab-mode branch to the HAVOC or CMPDICT
+	 * coin-flip outcome.  Read at the dispatch-site novelty-gate
+	 * credit block in random_syscall/dispatch.c to attribute this
+	 * call's new_edges to the mode that produced them.  When the
+	 * flag is absent this stamp stays BLOB_AB_MODE_NONE for every
+	 * call and the credit block short-circuits, keeping the flag-
+	 * off arm byte-identical.  Latest-fill wins if a single call
+	 * fires multiple blob_fill() invocations (rare on the
+	 * ARG_BUF_SIZED surface; design accepts the simplification). */
+	enum blob_ab_child_mode blob_ab_mode_last;
 
 	/* A/B-comparison stamp for the cmp-hint baseline injection denom.
 	 * Half the children are stamped Arm A (false: ONE_IN(BASELINE) =

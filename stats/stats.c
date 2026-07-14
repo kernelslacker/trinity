@@ -292,6 +292,28 @@ const struct stat_category blob_mutator_category =
 	              blob_fills,
 	              blob_mutator_fields);
 
+/* --blob-ab-mode within-run A/B harness (default off, opt-in only).
+ * Separate category so a run with --blob-mutator=havoc / cmpdict but
+ * WITHOUT --blob-ab-mode does not render four zero rows for the ab
+ * counters.  Gate on blob_ab_havoc_fills: the harness coin-flips
+ * 50/50, so at any observable run length both counters are non-zero
+ * together; picking one for the gate suppresses the whole block on
+ * every non-ab run.  The verdict metric is
+ * (blob_ab_<mode>_new_edges / blob_ab_<mode>_fills) per mode; the
+ * per-fill rate is the clean comparison because both arms share the
+ * same warm corpus / kcov state at every moment. */
+static const struct stat_field blob_ab_mode_fields[] = {
+	STAT_FIELD(blob_ab, havoc_fills),
+	STAT_FIELD(blob_ab, havoc_new_edges),
+	STAT_FIELD(blob_ab, cmpdict_fills),
+	STAT_FIELD(blob_ab, cmpdict_new_edges),
+};
+
+const struct stat_category blob_ab_mode_category =
+	STAT_CATEGORY("blob_ab_mode",
+	              blob_ab_havoc_fills,
+	              blob_ab_mode_fields);
+
 static const struct stat_field msg_zerocopy_churn_fields[] = {
 	STAT_FIELD(msg_zerocopy_churn, runs),
 	STAT_FIELD(msg_zerocopy_churn, setup_failed),

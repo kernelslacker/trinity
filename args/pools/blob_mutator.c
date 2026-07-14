@@ -35,6 +35,8 @@
 
 #include "blob_corpus.h"
 #include "blob_mutator.h"
+#include "child.h"
+#include "child-api.h"
 #include "cmp_hints.h"
 #include "debug.h"
 #include "random.h"
@@ -46,6 +48,8 @@
 #include "utils.h"
 
 enum blob_mutator_mode blob_mutator_mode = BLOB_MUTATOR_OFF;
+
+bool blob_ab_mode = false;
 
 /*
  * Pick one bounded byte position inside [0, len).  Returns 0 when
@@ -879,13 +883,56 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 {
 	enum blob_mutator_mode mode;
 	unsigned int n;
+	bool ab;
+	uint64_t saved_rnd_state = 0;
 
 	if (buf == NULL || len == 0)
 		return;
 
-	mode = __atomic_load_n(&blob_mutator_mode, __ATOMIC_RELAXED);
-	if (mode == BLOB_MUTATOR_OFF)
-		return;
+	ab = blob_ab_mode;
+	if (ab) {
+		/* Route every blob-mutator draw for this fill -- the
+		 * HAVOC-vs-CMPDICT coin-flip, the havoc arms, the
+		 * cmpdict pulls, the nested generate_rand_bytes and
+		 * cmp_hints_try_get -- through the dedicated blob rng
+		 * stream by swapping rnd_state.  The main syscall-
+		 * selection stream is preserved verbatim across the
+		 * fill so both A/B arms see the same syscall sequence
+		 * and args; only the blob CONTENT differs.  Restored on
+		 * exit; without the restore the main stream would
+		 * absorb the blob's draws and the per-fill new-edges
+		 * comparison would leak. */
+		saved_rnd_state = rnd_state;
+		rnd_state = rnd_blob_state;
+
+		/* Coin-flip mode for THIS fill.  Uses the blob stream so
+		 * the mode-assignment itself does not perturb the main
+		 * selection stream. */
+		mode = (rnd_u32() & 1u) ? BLOB_MUTATOR_HAVOC
+					: BLOB_MUTATOR_CMPDICT;
+
+		/* Stash the picked mode on the current child so the
+		 * dispatch-side novelty-gate credit block can attribute
+		 * this call's new_edges to the mode that produced them.
+		 * Reset at the top of generate_syscall_args() alongside
+		 * cmp_hint_injected_this_call.  Multiple blob_fills in
+		 * one call resolve to latest-wins semantics -- rare on
+		 * the ARG_BUF_SIZED surface and the design accepts
+		 * that. */
+		{
+			struct childdata *child = this_child();
+
+			if (child != NULL)
+				child->blob_ab_mode_last =
+					(mode == BLOB_MUTATOR_HAVOC)
+					? BLOB_AB_MODE_HAVOC
+					: BLOB_AB_MODE_CMPDICT;
+		}
+	} else {
+		mode = __atomic_load_n(&blob_mutator_mode, __ATOMIC_RELAXED);
+		if (mode == BLOB_MUTATOR_OFF)
+			return;
+	}
 
 	/* FILL is the floor for every non-OFF mode.  generate_rand_bytes
 	 * takes unsigned int; cap defensively (ARG_BUF_SIZED sizes are
@@ -968,6 +1015,13 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	 * the next generate_syscall_args() without ever hitting shared
 	 * memory. */
 	blob_corpus_stash_pending(nr, do32, buf, (size_t) n);
+
+	if (ab) {
+		/* Persist blob-stream advance and hand rnd_state back to
+		 * the main syscall-selection stream verbatim. */
+		rnd_blob_state = rnd_state;
+		rnd_state = saved_rnd_state;
+	}
 }
 
 void blob_mutator_self_check(void)

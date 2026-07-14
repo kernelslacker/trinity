@@ -538,6 +538,7 @@ static const struct option_help option_descs[] = {
 	{ "alt-op-children",	 0,  "reserve N children to run dedicated alt ops (mmap_lifecycle, mprotect_split, ...) round-robin instead of mixing them at 1% in every child (default: max(2, --children/8))" },
 	{ "arch",		'a', "selects syscalls for the specified architecture (32 or 64). Both by default." },
 	{ "blob-mutator",	 0,  "content-authoring lane for opaque ARG_BUF_SIZED args (default off): off (the ARG_BUF_SIZED hook skips blob_fill() entirely -- no mode-load past the early return, no RNG draw, no byte write; fixed-seed runs reproduce a pre-row build bit-for-bit and the mode load itself consumes no RNG), fill (generate_rand_bytes() the owned get_writable_struct(size) allocation so parsers reading byte 0 first see non-residue content), havoc (fill plus a bounded byte-mutation pass capped at BLOB_HAVOC_MAX_OPS -- bit-flip / byte-flip / set-interesting byte+word+dword drawn from get_boundary_value() / get_interesting_value()), or cmpdict (havoc plus a bounded buffer-redqueen pass capped at BLOB_CMPDICT_MAX_INSERTS -- pull a learned cmp constant via cmp_hints_try_get(nr, do32, ...) and splat it into the buffer at a random offset with a random width drawn from {1,2,4,8} bytes, little-endian; pool misses are silent and do not bump blob_dict_inserts. Less reproducible under a fixed seed than fill / havoc -- the cmp-hint pool state depends on values the kernel has handed back at run time.). Every write is clamped inside the get_writable_struct(size) allocation; pure byte content, no pointer-like aliasing." },
+	{ "blob-ab-mode",	 0,  "within-run A/B harness for the blob-mutator content-authoring lane (default off, opt-in only): when set, each blob_fill() coin-flips HAVOC vs CMPDICT for that fill so both modes run in one process against the same warm corpus / coverage / kernel state at every moment -- the confound that flattens sequential blob-mode runs (warm-start creep, saturation) cancels.  All blob-side RNG draws for the fill (the coin-flip, havoc arms, cmpdict pulls, and the nested generate_rand_bytes / cmp_hints_try_get) route through a dedicated per-child rnd_blob_state stream via a swap of rnd_state around blob_fill(), keeping the main syscall-selection stream identical to what it would have been without the flag; without this the modes desync the main stream and the comparison leaks (cmpdict pulls more RNG than havoc).  The dispatch-site novelty gate credits blob_ab_<mode>_fills and blob_ab_<mode>_new_edges per call for the stashed mode; the verdict metric is new_edges / fills per mode -- an ~2x separation is a real effect, a null (rates equal) is a solid answer.  When the flag is absent the caller gate and blob_fill() body bypass the ab path entirely and blob mutation is byte-identical to a build without this row." },
 	{ "arg-len-semantics",	 0,  "object-size-relative ARG_LEN draw mode (default off): off (gen_arg_len calls get_len() verbatim, no companion-arg lookup, no extra RNG draw -- byte-identical to a build without this flag), or on (when the slot before an ARG_LEN is an ARG_ADDRESS / ARG_NON_NULL_ADDRESS whose value falls in a tracked writable region, draw the length from a size-relative boundary set capped by the region's remaining extent so a kernel-WRITES-buffer syscall cannot scribble past the writable region; falls back to get_len() on no companion / unresolvable size)." },
 	{ "bdev",		'b', "Add /dev node to list of block devices to use for destructive tests." },
 	{ "canary-seed",	 0,  "comma-separated list of childop names to override the built-in priority canary seed list. Names match alt_op_name (e.g. 'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup." },
@@ -710,6 +711,7 @@ static const struct option longopts[] = {
 	{ "reach-band", required_argument, NULL, 0 },
 	{ "redqueen-pending-pick", required_argument, NULL, 0 },
 	{ "blob-mutator", required_argument, NULL, 0 },
+	{ "blob-ab-mode", no_argument, NULL, 0 },
 	{ "cmp-frontier", required_argument, NULL, 0 },
 	{ "cmsg-richness", required_argument, NULL, 0 },
 	{ "stats", no_argument, NULL, 0 },
@@ -1815,6 +1817,11 @@ static bool parse_long_misc_options(int opt, const char *name, char *arg)
 
 	if (strcmp("dry-run", name) == 0) {
 		dry_run = true;
+		return true;
+	}
+
+	if (strcmp("blob-ab-mode", name) == 0) {
+		blob_ab_mode = true;
 		return true;
 	}
 
