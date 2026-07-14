@@ -28,6 +28,7 @@
 #include "stats_ring.h"
 #include "syscall.h"
 #include "syscall_record.h"
+#include "sysv-msg.h"
 #include "sysv-shm.h"
 #include "tables.h"
 #include "trinity.h"
@@ -388,6 +389,15 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	 * process_zombie_pending() drains the ring once waitpid confirms death. */
 	if (child_dead)
 		reap_child_sysv_shm(child);
+
+	/* Same shape for fuzzed SysV message queues: a SIGKILL'd/OOM'd child
+	 * skips its OBJ_LOCAL RMID destructor and every queue it created
+	 * orphans.  Left unbounded these fill the MSGMNI slot table (~32000)
+	 * and all subsequent msgget calls return ENOSPC -- coverage dies.
+	 * Same child_dead gating as the shm ring above: the deferred D-state
+	 * path passes false and process_zombie_pending() drains after waitpid. */
+	if (child_dead)
+		reap_child_sysv_msg(child);
 }
 
 /* Make sure there's no dead kids lying around.
@@ -1560,6 +1570,7 @@ void process_zombie_pending(void)
 		 * before replace_child() recycles the slot and clean_childdata()
 		 * zeroes the count. */
 		reap_child_sysv_shm(children[i]);
+		reap_child_sysv_msg(children[i]);
 
 		replace_child(i);
 	}
