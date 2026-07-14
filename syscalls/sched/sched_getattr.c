@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE3(sched_getattr, pid_t, pid, struct sched_attr __user *, uattr, unsigned int, size)
  */
+#include <stdint.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
@@ -10,6 +11,7 @@
 #include <sys/types.h>
 #include "arch.h"
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -17,9 +19,22 @@
 #include "struct_catalog.h"
 #include "trinity.h"
 #include "utils.h"
+#include "utils-mem.h"
 
 #include "kernel/sched.h"
 #define SCHED_ATTR_SIZE_VER0	48
+
+/*
+ * Width of the poison prefix stamped into the user buffer at sanitise
+ * time and checked byte-for-byte on a success return.  Sized to the
+ * struct sched_attr v0 layout: the kernel's copy_to_user path on
+ * retval == 0 always fills at least this prefix (the leading __u32
+ * size word plus the v0 fields), so a fully-intact poison pattern
+ * post-syscall proves the kernel returned success without writing.
+ * Kept well under CHECK_OUTPUT_STRUCT_SNAP_MAX (512) so the helper
+ * never truncates the check.
+ */
+#define SCHED_GETATTR_POISON_SZ	SCHED_ATTR_SIZE_VER0
 
 /*
  * Cap used when struct_arg_lookup() returns no catalog entry for
@@ -71,6 +86,7 @@ struct sched_getattr_post_state {
 	unsigned long attr;
 	unsigned long size;
 	size_t attr_alloc_size;
+	uint64_t poison_seed;
 };
 #endif
 
@@ -164,6 +180,33 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	snap->attr            = rec->a2;
 	snap->size            = rec->a3;
 	snap->attr_alloc_size = attr_alloc_size;
+	snap->poison_seed     = 0;
+
+	/*
+	 * Stamp a per-call poison prefix over the v0 window the kernel
+	 * fills on a success return.  The post handler compares the same
+	 * SCHED_GETATTR_POISON_SZ bytes on retval == 0; an untouched
+	 * pattern means the kernel returned 0 without copy_to_user'ing
+	 * into the caller's buffer.  Skip the stamp when rec->a2 is 0
+	 * (nothing to write to), when the buffer alloc is smaller than
+	 * the prefix (would overrun a short catalog struct), when the
+	 * size argument the kernel receives is smaller than the prefix
+	 * (kernel would legitimately leave a tail of the poison in
+	 * place), or when range_readable_user cannot prove the range is
+	 * mapped -- an avoid_shared_buffer_out relocation into a pool
+	 * page that has since been munmapped would otherwise SIGSEGV
+	 * poison_output_struct's byte-walk.  On skip poison_seed stays
+	 * 0 and the post handler no-ops the arm.
+	 */
+	if (rec->a2 != 0 &&
+	    attr_alloc_size >= SCHED_GETATTR_POISON_SZ &&
+	    rec->a3 >= SCHED_GETATTR_POISON_SZ &&
+	    range_readable_user((void *)(unsigned long) rec->a2,
+				SCHED_GETATTR_POISON_SZ))
+		snap->poison_seed =
+			poison_output_struct((void *)(unsigned long) rec->a2,
+					     SCHED_GETATTR_POISON_SZ, 0);
+
 	post_state_install(rec, snap);
 #endif
 }
@@ -248,10 +291,33 @@ static void post_sched_getattr(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
+	/*
+	 * Both oracles below require a success return.  Gate on retval
+	 * first so the poison-writeback arm can run on every successful
+	 * call (a bounded prefix memcmp; cheap enough not to sample) and
+	 * the heavier equality re-issue arm below is 1/100 sampled.
+	 */
+	if ((long) rec->retval != 0)
 		goto out_free;
 
-	if ((long) rec->retval != 0)
+	/*
+	 * Poison-writeback oracle: check_output_struct_user_or_skip
+	 * returns true iff every byte of the v0 prefix still matches the
+	 * pattern poison_output_struct stamped at sanitise time.  A match
+	 * on a retval == 0 return means the kernel reported success but
+	 * skipped copy_to_user across the region it is contractually
+	 * required to fill -- torn copy, early-exit before fill, or
+	 * mis-wired compat wrapper.  Silent when sanitise refused to
+	 * stamp (poison_seed == 0) or snap->attr is NULL.
+	 */
+	if (snap->attr != 0 && snap->poison_seed != 0 &&
+	    check_output_struct_user_or_skip((void *)(unsigned long) snap->attr,
+					     SCHED_GETATTR_POISON_SZ,
+					     snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
 		goto out_free;
 
 	if (snap->attr == 0)
