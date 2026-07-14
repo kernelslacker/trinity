@@ -185,6 +185,21 @@ static size_t pick_shmget_size(void)
 static void sanitise_shmget(struct syscallrecord *rec)
 {
 	rec->a2 = pick_shmget_size();
+
+	/*
+	 * Clear SHM_HUGETLB from the fuzzed shmflg.  ipc_flags[] does not
+	 * offer it, but handle_arg_list()'s shift_flag_bit() mutation lands
+	 * IPC_EXCL << 1 and SHM_NORESERVE >> 1 both on SHM_HUGETLB (0x800),
+	 * so a few percent of fuzzed shmget calls request it.  On a host
+	 * whose default hugepage size is 1G the kernel then rounds the
+	 * size-capped request up to a full 1G hugepage per segment, and a
+	 * handful of those OOM a small fuzz box despite the 4MB size cap.
+	 * Deliberate hugetlb coverage lives in create_sysv_shms(); the
+	 * fuzzed direct-shmget path never intends it.  Clearing SHM_HUGETLB
+	 * alone disables the hugepage path -- the kernel ignores SHM_HUGE_*
+	 * size bits when SHM_HUGETLB is unset.
+	 */
+	rec->a3 &= ~(unsigned long) SHM_HUGETLB;
 }
 
 struct syscallentry syscall_shmget = {
