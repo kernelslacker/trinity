@@ -2,13 +2,16 @@
  * SYSCALL_DEFINE2(msgget, key_t, key, int, msgflg)
  */
 #include <limits.h>
+#include <string.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include "child.h"
 #include "ipc-common.h"
 #include "objects.h"
 #include "prop_ring.h"
 #include "publish_resource.h"
 #include "sanitise.h"
+#include "sysv-msg.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -46,10 +49,48 @@ REG_GLOBAL_OBJ(sysv_msg, init_sysv_msg_pool);
 
 void register_sysv_msg(int msqid)
 {
+	struct childdata *child;
+	unsigned int n;
+
 	if (msqid < 0)
 		return;
 
 	publish_resource(OBJ_SYSV_MSG, (unsigned long)msqid, NULL);
+
+	/* Mirror the id into the (shared) childdata ring so the parent can RMID
+	 * it at reap even if this child is SIGKILL'd before the OBJ_LOCAL
+	 * destructor runs.  Ring full -> RMID the oldest to bound the live
+	 * orphan set (the fleet-wide cap is MSGMNI; once we hit it every
+	 * msgget returns ENOSPC and coverage dies). */
+	child = this_child();
+	if (child == NULL)
+		return;
+	n = child->fuzz_msg_count;
+	if (n >= MAX_FUZZ_MSG_IDS) {
+		msgctl(child->fuzz_msg_ids[0], IPC_RMID, NULL);
+		memmove(&child->fuzz_msg_ids[0], &child->fuzz_msg_ids[1],
+			(MAX_FUZZ_MSG_IDS - 1) * sizeof(child->fuzz_msg_ids[0]));
+		n = MAX_FUZZ_MSG_IDS - 1;
+	}
+	child->fuzz_msg_ids[n] = msqid;
+	/* Release-store the count last so the parent's acquire-load at reap sees
+	 * the id write above. */
+	__atomic_store_n(&child->fuzz_msg_count, n + 1, __ATOMIC_RELEASE);
+}
+
+void reap_child_sysv_msg(struct childdata *child)
+{
+	unsigned int n, i;
+
+	if (child == NULL)
+		return;
+
+	n = __atomic_load_n(&child->fuzz_msg_count, __ATOMIC_ACQUIRE);
+	if (n > MAX_FUZZ_MSG_IDS)	/* guard a torn/garbage count */
+		n = MAX_FUZZ_MSG_IDS;
+	for (i = 0; i < n; i++)
+		(void) msgctl(child->fuzz_msg_ids[i], IPC_RMID, NULL);
+	child->fuzz_msg_count = 0;
 }
 
 int get_random_sysv_msg(void)

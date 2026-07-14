@@ -47,6 +47,11 @@
  * its oldest tracked segment on overflow, bounding the live orphan set. */
 #define MAX_FUZZ_SHM_IDS 128
 
+/* Same cap for fuzzed SysV message queues (see fuzz_msg_ids in struct
+ * childdata) -- msgget-created queues need the same parent-side RMID at
+ * reap because their OBJ_LOCAL destructor is also skipped on SIGKILL. */
+#define MAX_FUZZ_MSG_IDS 128
+
 struct childdata {
 	/* ---- Hot leading cacheline (64 bytes) ---- */
 
@@ -577,6 +582,18 @@ struct childdata {
 	 * (happens-before), so no lock is needed. */
 	int fuzz_shm_ids[MAX_FUZZ_SHM_IDS];
 	unsigned int fuzz_shm_count;
+
+	/* SysV message queues this child created via fuzzed msgget.  Same
+	 * OBJ_LOCAL-destructor-skipped-on-SIGKILL problem as fuzz_shm_ids above:
+	 * an orphaned queue is a kernel-persistent object that survives the
+	 * child, and once the fleet accumulates MSGMNI (~32000) orphans every
+	 * subsequent msgget returns ENOSPC and coverage dies.  Mirror the same
+	 * bounded-ring / release-store / acquire-load-at-reap shape so the
+	 * parent can IPC_RMID the ids no matter how the child died.  Double
+	 * RMID (fuzzed msgctl already freed the id, or two children shared a
+	 * key) returns EINVAL/EIDRM and is ignored. */
+	int fuzz_msg_ids[MAX_FUZZ_MSG_IDS];
+	unsigned int fuzz_msg_count;
 	/* A/B-comparison stamp for the cmp_hints "uninteresting constant"
 	 * substitution-pool drop mask.  Half the children get Arm A (the
 	 * historical ~3UL mask -- drop 0/1/2/3) and half get Arm B (~7UL --
