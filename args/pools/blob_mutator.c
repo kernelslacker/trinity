@@ -41,6 +41,8 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
+#include "tables.h"
 #include "utils.h"
 
 enum blob_mutator_mode blob_mutator_mode = BLOB_MUTATOR_OFF;
@@ -906,6 +908,18 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	 * we resolved to -- this is the gate the stat-category emitter
 	 * suppresses on when zero (render-gap-aware). */
 	__atomic_fetch_add(&shm->stats.blob_fills, 1UL, __ATOMIC_RELAXED);
+
+	/* Per-group shadow of blob_fills.  Looked up via the (nr, do32)
+	 * pair the caller passed in so the attribution stays correct
+	 * regardless of any dispatch-side state.  entry / group defensive
+	 * gate mirrors account_fd_and_group() in strategy-accounting.c. */
+	{
+		struct syscallentry *entry = get_syscall_entry(nr, do32);
+
+		if (entry != NULL && entry->group < NR_GROUPS)
+			__atomic_fetch_add(&shm->stats.blob_fills_by_group[entry->group],
+					   1UL, __ATOMIC_RELAXED);
+	}
 
 	/* HAVOC is the floor for CMPDICT: a missed cmp-hint pull still
 	 * leaves the bounded byte-mutation pass on top of FILL, so the
