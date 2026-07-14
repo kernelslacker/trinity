@@ -13,6 +13,7 @@
 #include "arch.h"
 #include "deferred-free.h"
 #include "maps.h"
+#include "objects.h"
 #include "random.h"
 #include "trinity.h"
 #include "utils.h"

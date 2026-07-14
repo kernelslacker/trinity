@@ -1,5 +1,6 @@
 #include "ioctls.h"
 #include "net.h"
+#include "objects.h"
 #include "shm.h"
 #include "utils.h"
 

@@ -3,6 +3,7 @@
 
 #include <asm/ioctl.h>
 #include "ioctls.h"
+#include "objects.h"
 #include "shm.h"
 #include "utils.h"
 

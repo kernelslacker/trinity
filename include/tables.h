@@ -3,7 +3,7 @@
 #include "compiler.h"
 #include "types.h"
 #include "syscall.h"
-#include "child.h"
+#include "child.h"		/* inline current_entry_is_*() deref this_child()->syscall.entry */
 
 extern const struct syscalltable *syscalls;
 extern const struct syscalltable *syscalls_32bit;

@@ -3,6 +3,7 @@
  */
 #include <sys/shm.h>
 #include "arch.h"
+#include "maps.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

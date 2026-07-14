@@ -2,7 +2,7 @@
 
 #include <sys/resource.h>
 
-#include "child.h"
+#include "child-api.h"
 #include "list.h"
 #include "object-types.h"
 #include "syscall.h"

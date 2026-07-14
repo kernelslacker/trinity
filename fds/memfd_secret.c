@@ -20,6 +20,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "child.h"
 #include "fd.h"
 #include "syscall-gate.h"
 #include "list.h"

@@ -3,7 +3,7 @@
 #include <sys/types.h>
 #include <time.h>
 
-#include "child.h"
+#include "child-api.h"
 
 /*
  * Cross-translation-unit interface for the main.c split: parent-only

@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/inotify.h>
 
+#include "child.h"
 #include "fd.h"
 #include "objects.h"
 #include "random.h"

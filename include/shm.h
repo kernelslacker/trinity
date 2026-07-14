@@ -5,7 +5,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include "arch.h"
-#include "child.h"
+#include "child-api.h"
 #include "efault_cache.h"
 #include "exit.h"
 #include "files.h"

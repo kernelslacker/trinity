@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "child.h"
 #include "deferred-free.h"
 #include "fd.h"
 #include "memfd.h"

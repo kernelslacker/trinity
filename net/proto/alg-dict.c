@@ -6,6 +6,7 @@
 #include "random.h"
 #include "trinity.h"
 #include "rnd.h"
+#include "utils-macros.h"		/* ARRAY_SIZE */
 
 #ifdef USE_IF_ALG
 

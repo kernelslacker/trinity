@@ -11,6 +11,7 @@
 
 #include "proto-netlink-xfrm-internal.h"
 #include "random.h"
+#include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
 
 #include "kernel/netlink.h"
 /*

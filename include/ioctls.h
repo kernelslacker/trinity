@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sys/ioctl.h>		/* _IOC_SIZE for IOCTL_SIZE_ASSERT() */
 #include <sys/stat.h>
 #include "syscall.h"
 
