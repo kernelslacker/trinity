@@ -9,13 +9,11 @@
 #include "utils.h"
 
 #include "kernel/futex.h"
-static unsigned long futex2_flags[] = {
-	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16, FUTEX2_SIZE_U32, FUTEX2_SIZE_U64,
-	FUTEX2_NUMA, FUTEX2_PRIVATE, FUTEX2_MPOL,
-};
 
 static void sanitise_futex_wake(struct syscallrecord *rec)
 {
+	unsigned long flags;
+
 	/* mask: generate a useful comparison mask */
 	switch (rnd_modulo_u32(4)) {
 	case 0: rec->a2 = 0xffffffff; break;	/* all bits (common case) */
@@ -23,6 +21,19 @@ static void sanitise_futex_wake(struct syscallrecord *rec)
 	case 2: rec->a2 = 0xffff; break;	/* U16 futex */
 	default: rec->a2 = rand32(); break;	/* random mask */
 	}
+
+	/* flags: only FUTEX2_SIZE_U32 is valid for normal futexes; OR in
+	 * PRIVATE/NUMA/MPOL modifiers to exercise the composed form
+	 * instead of picking a lone size that yields immediate -EINVAL.
+	 */
+	flags = FUTEX2_SIZE_U32;
+	if (RAND_BOOL())
+		flags |= FUTEX2_PRIVATE;
+	if (ONE_IN(4))
+		flags |= FUTEX2_NUMA;
+	if (ONE_IN(8))
+		flags |= FUTEX2_MPOL;
+	rec->a4 = flags;
 }
 
 /*
@@ -53,11 +64,10 @@ static void post_futex_wake(struct syscallrecord *rec)
 struct syscallentry syscall_futex_wake = {
 	.name = "futex_wake",
 	.num_args = 4,
-	.argtype = { [0] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_LIST },
+	.argtype = { [0] = ARG_ADDRESS, [2] = ARG_RANGE },
 	.argname = { [0] = "uaddr", [1] = "mask", [2] = "nr", [3] = "flags" },
 	.arg_params[2].range.low = 1,
 	.arg_params[2].range.hi = 128,
-	.arg_params[3].list = ARGLIST(futex2_flags),
 	.sanitise = sanitise_futex_wake,
 	.post = post_futex_wake,
 	.group = GROUP_IPC,

@@ -11,10 +11,6 @@
 #include "sanitise.h"
 
 #include "kernel/futex.h"
-static unsigned long futex2_flags[] = {
-	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16, FUTEX2_SIZE_U32, FUTEX2_SIZE_U64,
-	FUTEX2_NUMA, FUTEX2_PRIVATE, FUTEX2_MPOL,
-};
 
 static unsigned long futex_wait_clockids[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC,
@@ -24,6 +20,7 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 {
 	/* val: write a known value to uaddr so the comparison can succeed */
 	static __thread struct timespec timeout_clamp;
+	unsigned long flags;
 	__u32 *futex_word;
 
 	futex_word = (__u32 *) get_writable_struct(sizeof(*futex_word));
@@ -40,6 +37,19 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 	case 2: rec->a3 = 0xffff; break;	/* U16 futex */
 	default: rec->a3 = rand32(); break;	/* random mask */
 	}
+
+	/* flags: only FUTEX2_SIZE_U32 is valid for normal futexes; OR in
+	 * PRIVATE/NUMA/MPOL modifiers to exercise the composed form
+	 * instead of picking a lone size that yields immediate -EINVAL.
+	 */
+	flags = FUTEX2_SIZE_U32;
+	if (RAND_BOOL())
+		flags |= FUTEX2_PRIVATE;
+	if (ONE_IN(4))
+		flags |= FUTEX2_NUMA;
+	if (ONE_IN(8))
+		flags |= FUTEX2_MPOL;
+	rec->a4 = flags;
 
 	/*
 	 * timeout: futex2 treats this as an ABSOLUTE deadline.  Always
@@ -62,9 +72,8 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 struct syscallentry syscall_futex_wait = {
 	.name = "futex_wait",
 	.num_args = 6,
-	.argtype = { [0] = ARG_ADDRESS, [3] = ARG_LIST, [4] = ARG_ADDRESS, [5] = ARG_OP },
+	.argtype = { [0] = ARG_ADDRESS, [4] = ARG_ADDRESS, [5] = ARG_OP },
 	.argname = { [0] = "uaddr", [1] = "val", [2] = "mask", [3] = "flags", [4] = "timeout", [5] = "clockid" },
-	.arg_params[3].list = ARGLIST(futex2_flags),
 	.arg_params[5].list = ARGLIST(futex_wait_clockids),
 	.sanitise = sanitise_futex_wait,
 	.rettype = RET_ZERO_SUCCESS,
