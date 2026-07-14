@@ -75,7 +75,7 @@ trap 'rm -f "$POST_NAMES_FILE" "$RESULTS_FILE" 2>/dev/null' EXIT
 RESULTS_FILE="$(mktemp)"
 
 find "$ROOT/syscalls" \
-	\( -type d \( -name x86 -o -name ppc -o -name sh -o -name sparc -o -name s390x \) -prune \) \
+	\( -type d -name x86 -prune \) \
 	-o -type f -name '*.c' -exec grep -hE '^[[:space:]]*\.post[[:space:]]*=' {} + \
 	| sed -e 's/.*\.post[[:space:]]*=[[:space:]]*//' \
 	      -e 's/[[:space:],].*//' \
