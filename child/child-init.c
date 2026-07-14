@@ -434,6 +434,7 @@ void clean_childdata(struct childdata *child)
 	memset(child->reexec_pending, 0, sizeof(child->reexec_pending));
 	child->reexec_pending_count = 0;
 	child->in_reexec = false;
+	child->fuzz_shm_count = 0;	/* fresh occupant: no tracked shm segments yet */
 	child->redqueen_enabled = false;
 	child->boring_filter_arm_b = false;
 	child->frontier_blend_arm_b = false;

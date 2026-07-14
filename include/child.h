@@ -263,6 +263,12 @@ enum child_op_type {
  * could hand out a struct whose first 8 bytes share a line with the
  * preceding allocation's tail.
  */
+
+/* Cap on fuzzed SysV shm segments tracked per child for parent-side reap
+ * (see fuzz_shm_ids in struct childdata).  A child that creates more RMIDs
+ * its oldest tracked segment on overflow, bounding the live orphan set. */
+#define MAX_FUZZ_SHM_IDS 128
+
 struct childdata {
 	/* ---- Hot leading cacheline (64 bytes) ---- */
 
@@ -779,6 +785,20 @@ struct childdata {
 	 * alongside the other A/B rows and never mutated; owner-only writes,
 	 * no cross-process coherence needed. */
 	bool burst_drain_arm_b;
+
+	/* SysV shm segments this child created via fuzzed shmget.  They are also
+	 * tracked in the OBJ_LOCAL pool, but that lives in child-private heap the
+	 * parent cannot read, and its RMID destructor only runs on a clean child
+	 * exit -- a child SIGKILL'd by the watchdog/OOM leaks every segment it
+	 * made (~10GB of orphaned shmem OOM-killed the whole run, 2026-07-13).
+	 * Mirror the ids directly in the (shared) childdata so reap_child() can
+	 * RMID them parent-side no matter how the child died.  Bounded ring:
+	 * register_sysv_shm() RMIDs the oldest on overflow so one long-lived
+	 * child can't leak unboundedly.  fuzz_shm_count is release-stored by the
+	 * child and acquire-loaded by the parent, which reads only after waitpid
+	 * (happens-before), so no lock is needed. */
+	int fuzz_shm_ids[MAX_FUZZ_SHM_IDS];
+	unsigned int fuzz_shm_count;
 	/* A/B-comparison stamp for the cmp_hints "uninteresting constant"
 	 * substitution-pool drop mask.  Half the children get Arm A (the
 	 * historical ~3UL mask -- drop 0/1/2/3) and half get Arm B (~7UL --
@@ -1322,7 +1342,7 @@ bool canary_op_is_promoted(enum child_op_type op);
 
 void set_dontkillme(struct childdata *child, bool state);
 
-void reap_child(struct childdata *child, int childno);
+void reap_child(struct childdata *child, int childno, bool child_dead);
 
 /* Childops */
 bool random_syscall(struct childdata *child);
