@@ -21,12 +21,32 @@
  */
 #include "output-poison.h"
 #include "rnd.h"
+#include "signals.h"
 #include "utils-mem.h"
 
-uint64_t poison_output_struct(void *buf, size_t sz, uint64_t seed)
+/* seed is volatile: it is written before and read after the sigsetjmp below,
+ * so -Werror=clobbered requires it survive a siglongjmp unclobbered. */
+uint64_t poison_output_struct(void *buf, size_t sz, volatile uint64_t seed)
 {
-	unsigned char *p = buf;
-	size_t i;
+	volatile unsigned char *p = buf;
+	volatile size_t i;
+
+	if (buf == NULL || sz == 0)
+		return 0;
+
+	/*
+	 * Prove the buffer is a tracked RW region before writing into it.
+	 * range_readable_user only approves alloc_shared() and libc-heap
+	 * mappings, both PROT_READ|PROT_WRITE by construction, so a pass here
+	 * means the poison write lands in writable memory; a fuzz-introduced
+	 * read-only or unmapped OUT pointer is rejected (return 0) rather than
+	 * faulting the raw write.  Returning 0 routes through the caller's
+	 * `poison_seed == 0` gate, which skips the .post check.  This raw
+	 * write, gated only on the caller's readability probe, was the
+	 * SEGV_ACCERR storm the writeback-oracle wave caused (2026-07-14).
+	 */
+	if (!range_readable_user(buf, sz))
+		return 0;
 
 	if (seed == 0)
 		seed = rnd_u64();
@@ -39,8 +59,21 @@ uint64_t poison_output_struct(void *buf, size_t sz, uint64_t seed)
 	if (seed == 0)
 		seed = 0xAAAAAAAAAAAAAAAAULL;
 
+	/*
+	 * TOCTOU: a sibling mprotect/munmap between the check above and the
+	 * write can still fault.  Guard the write with the asb_copy sigsetjmp
+	 * slot (the same recovery post_snapshot_or_skip uses) so a fault
+	 * degrades to "not poisoned" (return 0 -> caller skips) rather than a
+	 * child crash.
+	 */
+	if (sigsetjmp(asb_copy_recover, 1) != 0) {
+		asb_copy_active = 0;
+		return 0;
+	}
+	asb_copy_active = 1;
 	for (i = 0; i < sz; i++)
 		p[i] = (unsigned char) (seed >> ((i & 7) * 8));
+	asb_copy_active = 0;
 
 	return seed;
 }
