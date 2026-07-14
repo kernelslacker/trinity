@@ -58,6 +58,7 @@ CHILD_OP_IP6ERSPAN_NETNS_MIGRATE      TODO: review for rotation candidacy
 CHILD_OP_IP6GRE_BOND_LAPB_STACK       TODO: review for rotation candidacy
 CHILD_OP_IPFRAG_SOURCE_CHURN          TODO: review for rotation candidacy
 CHILD_OP_IPMR_CACHE_REPORT            TODO: review for rotation candidacy
+CHILD_OP_IPSET_CHURN                  TODO: review for rotation candidacy
 CHILD_OP_IPV6_NDISC_PROXY             TODO: review for rotation candidacy
 CHILD_OP_IPVS_SYSCTL_WRITER           TODO: review for rotation candidacy
 CHILD_OP_ISCSI_TARGET_PROBE           TODO: review for rotation candidacy

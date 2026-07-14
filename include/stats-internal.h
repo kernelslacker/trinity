@@ -197,6 +197,7 @@ extern const struct stat_category netns_mountns_setup_category;
 extern const struct stat_category netns_teardown_category;
 extern const struct stat_category deep_path_nesting_category;
 extern const struct stat_category nf_conntrack_helper_churn_category;
+extern const struct stat_category ipset_churn_category;
 extern const struct stat_category nfnl_subsys_calls_category;
 extern const struct stat_category nftables_churn_category;
 extern const struct stat_category no_domains_category;
