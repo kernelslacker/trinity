@@ -21,7 +21,7 @@ set -u
 NAME="childop-arrays"
 ROOT="${REPO_ROOT:-$(pwd)}"
 
-CHILD_H="$ROOT/include/child.h"
+CHILD_H="$ROOT/include/child-api.h"
 CHILD_C="$ROOT/child/child-altop.c"
 
 fail() {
