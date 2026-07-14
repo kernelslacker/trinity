@@ -211,8 +211,15 @@ unsigned long gen_arg_buf_sized(struct syscallentry *entry,
 	 * before the length is published.  The OFF mode short-circuits
 	 * inside blob_fill() before any RNG draw, so the OFF arm is
 	 * byte-identical to a build before this row.
+	 *
+	 * --blob-ab-mode also gates in here: when the flag is set the
+	 * per-fill coin-flip inside blob_fill() picks HAVOC or CMPDICT
+	 * regardless of blob_mutator_mode, so the caller must fire the
+	 * hook independent of the OFF check.  When the flag is absent
+	 * (default) the second disjunct collapses and the gate is
+	 * byte-identical to today.
 	 */
-	if (blob_mutator_mode != BLOB_MUTATOR_OFF)
+	if (blob_mutator_mode != BLOB_MUTATOR_OFF || blob_ab_mode)
 		blob_fill((unsigned char *) buf, (size_t) size, rec->nr, false);
 
 	if (rnd_modulo_u32(16) == 0) {

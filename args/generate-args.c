@@ -2,6 +2,8 @@
 #include "args-internal.h"
 #include "argtype-ops.h"
 #include "blob_corpus.h"
+#include "blob_mutator.h"
+#include "child.h"
 #include "cmp_hints.h"
 #include "debug.h"
 #include "deferred-free.h"
@@ -465,6 +467,14 @@ void generate_syscall_args(struct syscallrecord *rec)
 	child = this_child();
 	if (child != NULL) {
 		child->cmp_hint_injected_this_call = false;
+		/* --blob-ab-mode per-call stamp: each call starts with
+		 * no blob-fill mode recorded, so the dispatch-site
+		 * credit block short-circuits when the flag is absent
+		 * or when a call happened not to fire any blob_fill().
+		 * Set by blob_fill()'s ab-mode branch to the HAVOC or
+		 * CMPDICT coin-flip outcome and drained at the credit
+		 * block in random_syscall/dispatch.c. */
+		child->blob_ab_mode_last = BLOB_AB_MODE_NONE;
 		/* SHADOW feedback scoring stash starts each call empty
 		 * ([11-feedback-loop]).  cmp_hints_try_get_ex pushes; the
 		 * dispatch_step tail drains and credits via one of the

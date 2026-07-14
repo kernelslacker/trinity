@@ -459,6 +459,14 @@ void clean_childdata(struct childdata *child)
 	child->reexec_count_window = 0;
 	child->reexec_window_start_op = 0;
 	child->cmp_hint_injected_this_call = false;
+	/* --blob-ab-mode per-call stamp: a fresh slot occupant starts
+	 * with no prior blob_fill mode recorded so the dispatch-site
+	 * credit block cannot attribute the previous occupant's stale
+	 * pick.  Set from blob_fill()'s ab-mode branch on subsequent
+	 * calls, drained at the credit block in
+	 * random_syscall/dispatch.c, and re-cleared at the top of
+	 * generate_syscall_args() every call. */
+	child->blob_ab_mode_last = BLOB_AB_MODE_NONE;
 	/* Cmp-hint baseline inject denom A/B stamp -- (re)decided per-child
 	 * in init_child_runtime_config below; zero here so the fresh occupant
 	 * defaults to Arm A (current 1-in-16 baseline) until the stamp lands. */

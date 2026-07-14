@@ -32,6 +32,25 @@ extern uint64_t rnd_state;
 void rnd_seed(uint64_t seed);
 
 /*
+ * Secondary splitmix64 stream reserved for --blob-ab-mode's within-run
+ * A/B harness.  Kept process-local (fork() gives each child its own
+ * copy) and seeded in set_seed() from the same combined (shm seed,
+ * childno) value that drives rnd_state, XORed with a fixed offset
+ * constant so the two streams do not overlap.  All blob-mutator RNG
+ * draws (the HAVOC-vs-CMPDICT coin-flip, havoc arm ops, cmpdict pulls,
+ * and the nested generate_rand_bytes / cmp_hints_try_get calls) route
+ * through this stream during --blob-ab-mode fills via a swap of
+ * rnd_state around blob_fill(), keeping the main syscall-selection
+ * stream identical regardless of which blob mode fired -- without
+ * this the modes desync the main stream and the per-fill new-edges
+ * comparison leaks.  Only touched under --blob-ab-mode; when the flag
+ * is absent this stream is untouched and the blob path stays
+ * byte-identical to today. */
+extern uint64_t rnd_blob_state;
+
+void rnd_blob_seed(uint64_t seed);
+
+/*
  * splitmix64.  Public-domain mixer by Sebastiano Vigna (see
  * https://prng.di.unimi.it/splitmix64.c).  Picked over xoshiro256**
  * because the state is a single u64 -- no array, no alignment

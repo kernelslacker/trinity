@@ -135,6 +135,7 @@ extern const struct stat_category bareudp_rx_category;
 extern const struct stat_category barrier_racer_category;
 extern const struct stat_category blkdev_lifecycle_race_category;
 extern const struct stat_category blob_mutator_category;
+extern const struct stat_category blob_ab_mode_category;
 extern const struct stat_category bpf_cgroup_attach_category;
 extern const struct stat_category bpf_fd_provider_category;
 extern const struct stat_category bpf_lifecycle_category;

@@ -52,6 +52,21 @@ void rnd_seed(uint64_t s)
 	rnd_state = s ^ 0x9e3779b97f4a7c15ULL;
 }
 
+/*
+ * Secondary splitmix64 stream for --blob-ab-mode.  Process-local like
+ * rnd_state, seeded in set_seed() from the same combined (shm seed,
+ * childno) value XORed with a fixed offset so the streams do not
+ * overlap.  When --blob-ab-mode is absent this variable is never read
+ * and never written past this seeding, so the flag-off arm stays
+ * byte-identical.
+ */
+uint64_t rnd_blob_state;
+
+void rnd_blob_seed(uint64_t s)
+{
+	rnd_blob_state = s ^ 0xd1b54a32d192ed03ULL;
+}
+
 /* The actual seed lives in the shm. This variable is used
  * to store what gets passed in from the command line -s argument */
 unsigned int seed = 0;
@@ -85,6 +100,7 @@ unsigned int init_seed(unsigned int seedparam)
 	 * leaving the parent at the default state when -s was used. */
 	srand(seedparam);
 	rnd_seed(seedparam);
+	rnd_blob_seed((uint64_t) seedparam);
 
 	if (do_syslog == true) {
 		openlog("trinity", LOG_CONS|LOG_PERROR, LOG_USER);
@@ -122,6 +138,12 @@ void set_seed(struct childdata *child)
 
 	srand(mixed);
 	rnd_seed(mixed);
+	/* --blob-ab-mode secondary stream: same combined value, distinct
+	 * offset inside rnd_blob_seed().  Seeded unconditionally so a
+	 * later runtime flip of blob_ab_mode picks up a valid stream
+	 * without re-plumbing; the stream is not read when the flag is
+	 * absent, so this write is inert on the flag-off arm. */
+	rnd_blob_seed((uint64_t) mixed);
 	child->seed = seedval;
 }
 

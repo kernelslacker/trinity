@@ -32,6 +32,32 @@ enum blob_mutator_mode {
 
 extern enum blob_mutator_mode blob_mutator_mode;
 
+/*
+ * --blob-ab-mode: within-run A/B harness (default off, opt-in only).
+ *
+ * When set, each blob_fill() invocation coin-flips between HAVOC and
+ * CMPDICT for that fill (regardless of blob_mutator_mode), routes all
+ * of its RNG draws through the dedicated rnd_blob_state stream (so
+ * the main syscall-selection stream stays identical to what it would
+ * have been without the flag), and stashes the picked mode on
+ * child->blob_ab_mode_last so the dispatch site can credit the
+ * resulting per-call new_edges to the mode that produced them.  A
+ * null result (rates equal across modes) is as valid a finding as a
+ * separation.
+ *
+ * When absent (default): the caller gate in gen_arg_time.c and the
+ * body of blob_fill() bypass the ab path entirely; blob mutation is
+ * byte-identical to today and the main RNG stream is untouched by
+ * this row.
+ */
+extern bool blob_ab_mode;
+
+enum blob_ab_child_mode {
+	BLOB_AB_MODE_NONE = 0,
+	BLOB_AB_MODE_HAVOC,
+	BLOB_AB_MODE_CMPDICT,
+};
+
 /* Cap on havoc ops per blob; keeps worst-case work O(cap),
  * independent of len. */
 #define BLOB_HAVOC_MAX_OPS	64
