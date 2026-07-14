@@ -1798,6 +1798,20 @@ struct stats_s {
 	unsigned long nf_conntrack_helper_churn_zone_swap;	/* SO_MARK-driven zone-swap drive packet emitted */
 	unsigned long nf_conntrack_helper_churn_detach_ok;	/* CT_NEW NLM_F_REPLACE w/o CTA_HELP ack 0 (detach race) */
 
+	/* ipset_churn childop counters */
+	unsigned long ipset_churn_runs;			/* total ipset_churn invocations */
+	unsigned long ipset_churn_setup_failed;		/* nfnl socket open / IPSET_CMD_PROTOCOL probe failed */
+	unsigned long ipset_churn_create_ok;		/* IPSET_CMD_CREATE ack 0 or EEXIST (set tracked) */
+	unsigned long ipset_churn_create_fail;		/* IPSET_CMD_CREATE rejected (parse gate ran) */
+	unsigned long ipset_churn_add_ok;		/* IPSET_CMD_ADD ack 0 (entry inserted) */
+	unsigned long ipset_churn_test_ok;		/* IPSET_CMD_TEST ack 0 (lookup succeeded) */
+	unsigned long ipset_churn_del_ok;		/* IPSET_CMD_DEL ack 0 (entry removed) */
+	unsigned long ipset_churn_header_ok;		/* IPSET_CMD_HEADER ack 0 (header serializer ran) */
+	unsigned long ipset_churn_list_ok;		/* IPSET_CMD_LIST dump completed (element walker ran) */
+	unsigned long ipset_churn_swap_ok;		/* IPSET_CMD_SWAP ack 0 (partner rotation ran) */
+	unsigned long ipset_churn_flush_ok;		/* IPSET_CMD_FLUSH ack 0 (bulk erase ran) */
+	unsigned long ipset_churn_destroy_ok;		/* IPSET_CMD_DESTROY ack 0 or ENOENT (teardown reached kernel) */
+
 	/* af_unix_scm_rights_gc_churn childop counters */
 	unsigned long af_unix_scm_rights_gc_runs;		/* total af_unix_scm_rights_gc_churn invocations */
 	unsigned long af_unix_scm_rights_gc_setup_failed;	/* AF_UNIX socketpair() failed (probe latch) */
