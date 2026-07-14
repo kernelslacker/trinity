@@ -47,6 +47,14 @@ static void sanitise_llseek(struct syscallrecord *rec)
 				rec->a3 = rand64() & 0x7fffffff;
 			else
 				rec->a3 = (unsigned long) rnd_modulo_u64((uint64_t) size);
+			/*
+			 * Exercise the two-word→loff_t combine path that is
+			 * the whole point of _llseek.  Only do this on the
+			 * tracked sparse-file fd, and keep the high word
+			 * small so ((a2 << 32) | a3) stays a positive loff_t.
+			 */
+			if (ONE_IN(5))
+				rec->a2 = rand64() & 0xff;
 			avoid_shared_buffer_out(&rec->a4, sizeof(loff_t));
 			return;
 		}
