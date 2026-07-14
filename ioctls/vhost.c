@@ -51,6 +51,34 @@ IOCTL_SIZE_ASSERT(VHOST_SET_VRING_KICK, struct vhost_vring_file);
 IOCTL_SIZE_ASSERT(VHOST_SET_VRING_CALL, struct vhost_vring_file);
 IOCTL_SIZE_ASSERT(VHOST_SET_VRING_ERR, struct vhost_vring_file);
 IOCTL_SIZE_ASSERT(VHOST_NET_SET_BACKEND, struct vhost_vring_file);
+/*
+ * vDPA fixed-shape commands.  Same rules as above: only asserts on
+ * commands whose _IOC_SIZE encodes a concrete struct (not a scalar,
+ * not _IO, not a flex-tail).  VHOST_VDPA_GET_DEVICE_ID / GET_STATUS /
+ * SET_STATUS / GET_VRING_NUM / SET_CONFIG_CALL / GET_CONFIG_SIZE /
+ * GET_AS_NUM / GET_VQS_COUNT / GET_GROUP_NUM encode a bare scalar;
+ * VHOST_VDPA_SUSPEND / RESUME are _IO() with no arg;
+ * VHOST_VDPA_GET_CONFIG / SET_CONFIG carry struct vhost_vdpa_config
+ * with a trailing flex buf[].
+ */
+#ifdef VHOST_VDPA_SET_VRING_ENABLE
+IOCTL_SIZE_ASSERT(VHOST_VDPA_SET_VRING_ENABLE, struct vhost_vring_state);
+#endif
+#ifdef VHOST_VDPA_GET_IOVA_RANGE
+IOCTL_SIZE_ASSERT(VHOST_VDPA_GET_IOVA_RANGE, struct vhost_vdpa_iova_range);
+#endif
+#ifdef VHOST_VDPA_GET_VRING_GROUP
+IOCTL_SIZE_ASSERT(VHOST_VDPA_GET_VRING_GROUP, struct vhost_vring_state);
+#endif
+#ifdef VHOST_VDPA_SET_GROUP_ASID
+IOCTL_SIZE_ASSERT(VHOST_VDPA_SET_GROUP_ASID, struct vhost_vring_state);
+#endif
+#ifdef VHOST_VDPA_GET_VRING_DESC_GROUP
+IOCTL_SIZE_ASSERT(VHOST_VDPA_GET_VRING_DESC_GROUP, struct vhost_vring_state);
+#endif
+#ifdef VHOST_VDPA_GET_VRING_SIZE
+IOCTL_SIZE_ASSERT(VHOST_VDPA_GET_VRING_SIZE, struct vhost_vring_state);
+#endif
 
 static const struct ioctl vhost_ioctls[] = {
 	IOCTL(VHOST_GET_FEATURES),
@@ -119,6 +147,63 @@ static const struct ioctl vhost_ioctls[] = {
 #ifdef VHOST_SET_FEATURES_ARRAY
 	IOCTL(VHOST_SET_FEATURES_ARRAY),
 	IOCTL(VHOST_GET_FEATURES_ARRAY),
+#endif
+#ifdef VHOST_VDPA_GET_DEVICE_ID
+	IOCTL(VHOST_VDPA_GET_DEVICE_ID),
+#endif
+#ifdef VHOST_VDPA_GET_STATUS
+	IOCTL(VHOST_VDPA_GET_STATUS),
+#endif
+#ifdef VHOST_VDPA_SET_STATUS
+	IOCTL(VHOST_VDPA_SET_STATUS),
+#endif
+#ifdef VHOST_VDPA_GET_CONFIG
+	IOCTL(VHOST_VDPA_GET_CONFIG),
+#endif
+#ifdef VHOST_VDPA_SET_CONFIG
+	IOCTL(VHOST_VDPA_SET_CONFIG),
+#endif
+#ifdef VHOST_VDPA_SET_VRING_ENABLE
+	IOCTL(VHOST_VDPA_SET_VRING_ENABLE),
+#endif
+#ifdef VHOST_VDPA_GET_VRING_NUM
+	IOCTL(VHOST_VDPA_GET_VRING_NUM),
+#endif
+#ifdef VHOST_VDPA_SET_CONFIG_CALL
+	IOCTL(VHOST_VDPA_SET_CONFIG_CALL),
+#endif
+#ifdef VHOST_VDPA_GET_IOVA_RANGE
+	IOCTL(VHOST_VDPA_GET_IOVA_RANGE),
+#endif
+#ifdef VHOST_VDPA_GET_CONFIG_SIZE
+	IOCTL(VHOST_VDPA_GET_CONFIG_SIZE),
+#endif
+#ifdef VHOST_VDPA_GET_AS_NUM
+	IOCTL(VHOST_VDPA_GET_AS_NUM),
+#endif
+#ifdef VHOST_VDPA_GET_VRING_GROUP
+	IOCTL(VHOST_VDPA_GET_VRING_GROUP),
+#endif
+#ifdef VHOST_VDPA_SET_GROUP_ASID
+	IOCTL(VHOST_VDPA_SET_GROUP_ASID),
+#endif
+#ifdef VHOST_VDPA_SUSPEND
+	IOCTL(VHOST_VDPA_SUSPEND),
+#endif
+#ifdef VHOST_VDPA_RESUME
+	IOCTL(VHOST_VDPA_RESUME),
+#endif
+#ifdef VHOST_VDPA_GET_VRING_DESC_GROUP
+	IOCTL(VHOST_VDPA_GET_VRING_DESC_GROUP),
+#endif
+#ifdef VHOST_VDPA_GET_VQS_COUNT
+	IOCTL(VHOST_VDPA_GET_VQS_COUNT),
+#endif
+#ifdef VHOST_VDPA_GET_GROUP_NUM
+	IOCTL(VHOST_VDPA_GET_GROUP_NUM),
+#endif
+#ifdef VHOST_VDPA_GET_VRING_SIZE
+	IOCTL(VHOST_VDPA_GET_VRING_SIZE),
 #endif
 };
 
@@ -269,6 +354,72 @@ static void sanitise_vhost_features(struct syscallrecord *rec)
 		rec->a3 = rand64();
 }
 
+/*
+ * vDPA vring_state carriers.  VHOST_VDPA_SET_VRING_ENABLE uses
+ * .index for the vq and .num as a 0/1 enable flag; the *_ASID and
+ * *_GROUP variants overload the same struct with group/asid/vq
+ * indices.  Bound .num to a small integer so the enable path stays
+ * on the plausible-input side of the fence rather than being
+ * indistinguishable from bulk random data.
+ */
+static void sanitise_vhost_vdpa_vring_state(struct syscallrecord *rec)
+{
+	struct vhost_vring_state *s;
+
+	s = (struct vhost_vring_state *) get_writable_struct(sizeof(*s));
+	if (!s)
+		return;
+	memset(s, 0, sizeof(*s));
+	s->index = vhost_rand_vq_index();
+	s->num = rnd_modulo_u32(4);
+	rec->a3 = (unsigned long) s;
+}
+
+#if defined(VHOST_VDPA_GET_CONFIG) || defined(VHOST_VDPA_SET_CONFIG)
+static void sanitise_vhost_vdpa_config(struct syscallrecord *rec)
+{
+	struct vhost_vdpa_config *c;
+	unsigned int len;
+	size_t sz;
+
+	/*
+	 * The kernel copies .off and .len from userspace, then reads or
+	 * writes buf[len] against the device's config space.  Keep len
+	 * bounded so we exercise a real flex-tail copy without demanding
+	 * an outsized allocation, and keep an occasional len == 0 so the
+	 * zero-length boundary path stays live.  .off is deliberately
+	 * random 32-bit -- the overflow-vs-bounds check is one of the
+	 * more interesting surfaces here.
+	 */
+	if (RAND_BOOL())
+		len = 0;
+	else
+		len = 1 + rnd_modulo_u32(64);
+
+	sz = sizeof(*c) + len;
+	c = (struct vhost_vdpa_config *) get_writable_struct(sz);
+	if (!c)
+		return;
+	memset(c, 0, sz);
+	c->off = rand32();
+	c->len = len;
+	rec->a3 = (unsigned long) c;
+}
+#endif
+
+#ifdef VHOST_VDPA_GET_IOVA_RANGE
+static void sanitise_vhost_vdpa_iova_range(struct syscallrecord *rec)
+{
+	struct vhost_vdpa_iova_range *r;
+
+	r = (struct vhost_vdpa_iova_range *) get_writable_struct(sizeof(*r));
+	if (!r)
+		return;
+	memset(r, 0, sizeof(*r));
+	rec->a3 = (unsigned long) r;
+}
+#endif
+
 #ifdef VHOST_SET_FEATURES_ARRAY
 static void sanitise_vhost_features_array(struct syscallrecord *rec)
 {
@@ -351,6 +502,44 @@ static void vhost_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		sanitise_vhost_features_array(rec);
 		break;
 #endif
+#ifdef VHOST_VDPA_SET_VRING_ENABLE
+	case VHOST_VDPA_SET_VRING_ENABLE:
+#endif
+#ifdef VHOST_VDPA_GET_VRING_GROUP
+	case VHOST_VDPA_GET_VRING_GROUP:
+#endif
+#ifdef VHOST_VDPA_SET_GROUP_ASID
+	case VHOST_VDPA_SET_GROUP_ASID:
+#endif
+#ifdef VHOST_VDPA_GET_VRING_DESC_GROUP
+	case VHOST_VDPA_GET_VRING_DESC_GROUP:
+#endif
+#ifdef VHOST_VDPA_GET_VRING_SIZE
+	case VHOST_VDPA_GET_VRING_SIZE:
+#endif
+#if defined(VHOST_VDPA_SET_VRING_ENABLE) || \
+    defined(VHOST_VDPA_GET_VRING_GROUP) || \
+    defined(VHOST_VDPA_SET_GROUP_ASID) || \
+    defined(VHOST_VDPA_GET_VRING_DESC_GROUP) || \
+    defined(VHOST_VDPA_GET_VRING_SIZE)
+		sanitise_vhost_vdpa_vring_state(rec);
+		break;
+#endif
+#ifdef VHOST_VDPA_GET_CONFIG
+	case VHOST_VDPA_GET_CONFIG:
+#endif
+#ifdef VHOST_VDPA_SET_CONFIG
+	case VHOST_VDPA_SET_CONFIG:
+#endif
+#if defined(VHOST_VDPA_GET_CONFIG) || defined(VHOST_VDPA_SET_CONFIG)
+		sanitise_vhost_vdpa_config(rec);
+		break;
+#endif
+#ifdef VHOST_VDPA_GET_IOVA_RANGE
+	case VHOST_VDPA_GET_IOVA_RANGE:
+		sanitise_vhost_vdpa_iova_range(rec);
+		break;
+#endif
 	default:
 		break;
 	}
@@ -359,6 +548,15 @@ static void vhost_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 static const char *const vhost_devs[] = {
 	"vhost-net",
 	"vhost-vsock",
+	/*
+	 * vhost-vdpa registers via alloc_chrdev_region under the class
+	 * name "vhost-vdpa", so /proc/devices returns that single name
+	 * for every /dev/vhost-vdpaN instance -- one match string covers
+	 * all vDPA parent devices present at runtime.  Absent hardware
+	 * or module leaves this dark; the /dev pool provider skips what
+	 * it can't open.
+	 */
+	"vhost-vdpa",
 };
 
 static const struct ioctl_group vhost_grp = {
