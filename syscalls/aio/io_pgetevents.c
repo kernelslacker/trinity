@@ -8,6 +8,7 @@
  *                 const struct __aio_sigset __user *, usig)
  */
 #include <linux/aio_abi.h>
+#include <signal.h>
 #include <stdint.h>
 #include <string.h>
 #include "objects.h"
@@ -17,6 +18,66 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
+
+/*
+ * The kernel-internal layout of the io_pgetevents usig argument, from
+ * fs/aio.c:
+ *
+ *   struct __aio_sigset {
+ *           const sigset_t __user   *sigmask;
+ *           size_t                   sigsetsize;
+ *   };
+ *
+ * Not exposed to userspace, so declare a matching layout locally so we
+ * can build one to hand the kernel.  sigmask is stored as an
+ * unsigned long because we treat it as an opaque user-VA and never
+ * dereference it here.
+ */
+struct trinity_aio_sigset {
+	unsigned long sigmask;
+	size_t sigsetsize;
+};
+
+/* Kernel sigset_t is a fixed 64-bit mask; sizeof matches on every arch. */
+#define KERNEL_SIGSET_SIZE	8
+
+/*
+ * usig (a6) picker.  ~70% NULL, byte-identical to the pre-existing
+ * a6=0 behaviour and exercising the no-signal-mask arm.  ~30% point
+ * at a valid struct __aio_sigset so set_user_sigmask() actually runs
+ * -- the only kernel-side path distinguishing io_pgetevents from
+ * io_getevents.  Within the sigset arm the size is usually 8 (the
+ * only value the kernel accepts) but occasionally 0 or 999 so the
+ * EINVAL early-reject in set_user_sigmask() also gets exercised.
+ */
+static unsigned long pick_usig(void)
+{
+	struct trinity_aio_sigset *usig;
+	void *mask;
+	size_t sigsetsize;
+
+	if (rnd_modulo_u32(100) >= 30)
+		return 0;
+
+	usig = (struct trinity_aio_sigset *) get_writable_struct(sizeof(*usig));
+	if (usig == NULL)
+		return 0;
+
+	mask = get_writable_struct(KERNEL_SIGSET_SIZE);
+	if (mask == NULL)
+		return 0;
+	memset(mask, 0, KERNEL_SIGSET_SIZE);
+
+	switch (rnd_modulo_u32(10)) {
+	case 0:  sigsetsize = 0;   break;
+	case 1:  sigsetsize = 999; break;
+	default: sigsetsize = KERNEL_SIGSET_SIZE; break;
+	}
+
+	usig->sigmask = (unsigned long) mask;
+	usig->sigsetsize = sigsetsize;
+	return (unsigned long) usig;
+}
 
 /*
  * Snapshot of the io_pgetevents events OUT-buffer pointer, its byte
@@ -86,9 +147,12 @@ static void sanitise_io_pgetevents(struct syscallrecord *rec)
 	rec->a2 = (rnd_modulo_u32(100) < 60) ? 0 : 1;
 	rec->a3 = nr;
 	rec->a4 = (unsigned long) events;
-	rec->a6 = 0;		/* usig=NULL -- no signal mask */
+	rec->a6 = pick_usig();
 
 	avoid_shared_buffer_out(&rec->a4, rec->a3 * sizeof(struct io_event));
+	if (rec->a6 != 0)
+		avoid_shared_buffer_inout(&rec->a6,
+					  sizeof(struct trinity_aio_sigset));
 
 	/*
 	 * a5 (timeout) is typed ARG_TIMESPEC; the generator publishes
