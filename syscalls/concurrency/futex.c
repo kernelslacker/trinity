@@ -329,6 +329,11 @@ static inline int random_futex_wake_op(void)
 	if (RAND_BOOL())
 		op |= FUTEX_OP_OPARG_SHIFT;
 
+	/* Fill oparg (bits 23-12) and cmparg (bits 3-0) with random values
+	 * so the FUTEX_WAKE_OP arithmetic is actually exercised. */
+	op |= (rnd_u32() & 0xfff) << 12;	/* oparg: 12-bit operand */
+	op |= rnd_u32() & 0xf;			/* cmparg: 4-bit compare rhs */
+
 	return op;
 }
 
