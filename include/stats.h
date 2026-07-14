@@ -5772,6 +5772,20 @@ struct stats_s {
 	unsigned long blob_base_from_corpus;
 	unsigned long blob_base_from_random;
 
+	/* Per-group shadow of blob_fills.  Bumped once per non-OFF
+	 * blob_fill() invocation, keyed on the group of the syscall
+	 * whose (nr, do32) the caller passed in (looked up via
+	 * get_syscall_entry(nr, do32)).  Sums to blob_fills by
+	 * construction (modulo the entry == NULL / group >= NR_GROUPS
+	 * defensive gate the bump site keeps).  Purpose: make the per-
+	 * group blob_fill invocation distribution directly visible so
+	 * the group-bias vs blob-starvation relationship is
+	 * quantifiable from a single run without re-deriving the split
+	 * from picker-side counters.  Pure observability: OFF short-
+	 * circuits before the bump so the OFF arm stays byte-identical
+	 * and no live selection logic reads this array. */
+	unsigned long blob_fills_by_group[NR_GROUPS];
+
 	/* Cause-attribution for the epoll wait-family (epoll_wait,
 	 * epoll_pwait, epoll_pwait2) rejects landing in
 	 * validate_arg_coupling() with maxevents > 0 && events == NULL.

@@ -172,6 +172,43 @@ void dump_stats_oracle_anomalies(void)
 	}
 }
 
+/* Per-group shadow of blob_fills.  Sum-suppressed so an OFF /
+ * no-blob-fill run emits nothing (render-gap-aware); per-row zero-
+ * suppressed so a partially-covered run only shows the groups that
+ * actually ran a blob_fill().  Group name table mirrors
+ * check_fd_leaks() in child/child.c. */
+static void dump_stats_render_blob_fills_by_group(void)
+{
+	static const char * const group_names[NR_GROUPS] = {
+		[GROUP_NONE]     = "none",
+		[GROUP_VM]       = "vm",
+		[GROUP_VFS]      = "vfs",
+		[GROUP_NET]      = "net",
+		[GROUP_IPC]      = "ipc",
+		[GROUP_PROCESS]  = "process",
+		[GROUP_SIGNAL]   = "signal",
+		[GROUP_IO_URING] = "io_uring",
+		[GROUP_BPF]      = "bpf",
+		[GROUP_SCHED]    = "sched",
+		[GROUP_TIME]     = "time",
+		[GROUP_XATTR]    = "xattr",
+	};
+	unsigned long total = 0;
+	unsigned int i;
+
+	for (i = 0; i < NR_GROUPS; i++)
+		total += shm->stats.blob_fills_by_group[i];
+	if (total == 0)
+		return;
+
+	for (i = 0; i < NR_GROUPS; i++) {
+		if (shm->stats.blob_fills_by_group[i] == 0)
+			continue;
+		stat_row("blob_fills_by_group", group_names[i],
+			 shm->stats.blob_fills_by_group[i]);
+	}
+}
+
 static void dump_stats_render_vfs_writes(void)
 {
 	if (shm->stats.procfs_writes_open_fail || shm->stats.procfs_writes_write_fail ||
@@ -2556,6 +2593,8 @@ void __cold dump_stats_childop_runs_network(void)
 	stat_category_emit_text(&tcp_ulp_swap_churn_category);
 
 	stat_category_emit_text(&blob_mutator_category);
+
+	dump_stats_render_blob_fills_by_group();
 
 	stat_category_emit_text(&msg_zerocopy_churn_category);
 
