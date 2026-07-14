@@ -150,10 +150,20 @@ unsigned long handle_arg_op(struct syscallentry *entry,
 	 * Bumped to ~1 in 4 inside a SR_PLATEAU_FORCE intervention whose
 	 * dominant rescue class is RRC_CMP_DERIVED, or inside any plateau
 	 * window the parent's hypothesis tick has flagged as
-	 * CMP_RISING_PC_FLAT. */
+	 * CMP_RISING_PC_FLAT.
+	 *
+	 * CMP_HINT_EXACT, not the default BOUNDARY: command codes are
+	 * point-equality slots (ioctl selectors, prctl subops, undocumented
+	 * subcommands) whose kernel gate is a straight `switch (cmd)` or
+	 * `if (cmd == FOO)`.  The historical {C-1, C, C+1} rotation missed
+	 * two out of three draws by construction -- only bare C can satisfy
+	 * an equality check.  allow_hyp_inject stays false because ARG_OP
+	 * is not on the typed-safe consumer set (broad selector, no
+	 * declared range for a derived value to be bounded against). */
 	if (cmp_hint_baseline_should_inject() &&
-	    cmp_hints_try_get(call, rec->do32bit,
-			      CMP_HINT_CALLSITE_ARG_OP, &hint)) {
+	    cmp_hints_try_get_ex(call, rec->do32bit, CMP_HINT_EXACT, 0,
+				 false, NULL, argnum,
+				 CMP_HINT_CALLSITE_ARG_OP, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_OP);
 		return hint;
 	}
@@ -216,14 +226,44 @@ unsigned long handle_arg_list(struct syscallentry *entry,
 	 * Bumped to ~1 in 4 inside a SR_PLATEAU_FORCE intervention whose
 	 * dominant rescue class is RRC_CMP_DERIVED, or inside any plateau
 	 * window the parent's hypothesis tick has flagged as
-	 * CMP_RISING_PC_FLAT. */
+	 * CMP_RISING_PC_FLAT.
+	 *
+	 * Pull CMP_HINT_EXACT to see the raw constant, then decide the mix
+	 * from its bit population:
+	 *
+	 *   popcount(hint) == 1  -- real flag bit.  Build a base mask from
+	 *     the declared flag vocabulary and rotate uniformly over
+	 *     {mask | hint, mask & ~hint, mask ^ hint}, mirroring the
+	 *     CMP_HINT_FLAG_MASK transform in cmp_hints/collect.c so the
+	 *     callsite still probes multi-flag combinations (OR adds an
+	 *     undocumented bit, AND-NOT probes "must-not-be-set" pairs,
+	 *     XOR probes mutual-exclusion pairs).
+	 *
+	 *   popcount(hint) != 1  -- composite constant, not a flag bit.
+	 *     Return it unchanged (CMP_HINT_EXACT semantics): ORing a
+	 *     multi-bit constant into a random mask would smear it across
+	 *     unrelated flag positions and lose the exact-match signal
+	 *     the kernel comparison recorded.
+	 *
+	 * The pre-fix path routed through CMP_HINT_BOUNDARY and then ORed
+	 * the possibly-shifted (C-1 or C+1) value into the mask -- boundary
+	 * arithmetic on a flag constant produces garbage adjacent bits with
+	 * no relation to any real gate, so those draws were self-inflicted
+	 * misses.  allow_hyp_inject stays false: ARG_LIST is a broad
+	 * bitmask consumer, not on the typed-safe set. */
 	if (cmp_hint_baseline_should_inject() &&
-	    cmp_hints_try_get(call, rec->do32bit,
-			      CMP_HINT_CALLSITE_ARG_LIST, &hint)) {
+	    cmp_hints_try_get_ex(call, rec->do32bit, CMP_HINT_EXACT, 0,
+				 false, NULL, argnum,
+				 CMP_HINT_CALLSITE_ARG_LIST, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_LIST);
+		if (__builtin_popcountl(hint) != 1)
+			return hint;
 		mask = set_rand_bitmask(num, values);
-		mask |= hint;
-		return mask;
+		switch (rnd_modulo_u32(3)) {
+		case 0:  return mask | hint;
+		case 1:  return mask & ~hint;
+		default: return mask ^ hint;
+		}
 	}
 
 	if (RAND_BOOL())
