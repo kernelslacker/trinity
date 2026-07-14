@@ -102,12 +102,42 @@
 #define IPSET_LOOPBACK_NET		0x7f010000U	/* 127.1.0.0/16 */
 #define IPSET_BITMAP_RANGE_LEN		256U
 
+/*
+ * Resize-replay knobs.  A small initial htable (HASHSIZE=64) with a
+ * generous MAXELEM plus a mass-add far exceeding the initial capacity
+ * forces mtype_resize() to bump htable_bits.  During and after the
+ * resize window the interleaved add/del churn exercises the entry-
+ * replay path that upstream 'skip ext-destroy on hash-resize replay'
+ * guards -- the extension blob attached to a replayed entry must not
+ * be freed twice.  Two ext variants (timeout-only, counters-only)
+ * widen the extension-lifecycle surface.
+ */
+#define IPSET_RESIZE_HASHSIZE		64U
+#define IPSET_RESIZE_MAXELEM		4096U
+#define IPSET_RESIZE_FILL_ENTRIES	384U
+#define IPSET_RESIZE_REPLAY_CHURN	64U
+#define IPSET_RESIZE_BUDGET		2U
+#define IPSET_RESIZE_ITERS_BASE		1U
+
 enum ipset_kind {
 	IPSET_KIND_HASH_IP,
 	IPSET_KIND_HASH_NET,
 	IPSET_KIND_HASH_IPPORT,
 	IPSET_KIND_BITMAP_IP,
 	IPSET_KIND_NR,
+};
+
+/*
+ * Extension-variant selector for resize-replay creates.  The upstream
+ * fix is about ext blobs being double-destroyed on replay, so exercise
+ * both TIMEOUT-only and COUNTERS-only sets (either extension alone is
+ * enough to hit the double-destroy path; the two shapes have different
+ * per-entry ext data layouts).
+ */
+enum ipset_ext_variant {
+	IPSET_EXT_TIMEOUT,
+	IPSET_EXT_COUNTERS,
+	IPSET_EXT_NR,
 };
 
 struct ipset_type_desc {
@@ -648,6 +678,186 @@ static void teardown_all(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
 }
 
 /*
+ * DATA nest for the resize-driving hash create.  Tiny HASHSIZE forces
+ * an early mtype_resize() once the fill loop crosses the load-factor
+ * threshold; a large MAXELEM keeps the resize path -- not MAXELEM
+ * rejection -- as the observable outcome.  Extension selection is
+ * split: TIMEOUT arms per-entry expiry state, COUNTERS arms the
+ * pkt/byte counter blob.  Only one ext is armed per set so each
+ * variant maps to a distinct ext_type on the kernel side.
+ */
+static size_t put_hash_create_data_resize(unsigned char *buf, size_t off,
+					  size_t cap,
+					  enum ipset_ext_variant ev)
+{
+	size_t nest = off;
+	__u32 cadt = 0;
+
+	off = nla_nest_start(buf, off, cap, IPSET_ATTR_DATA | NLA_F_NESTED);
+	if (!off)
+		return 0;
+	off = put_u32_be(buf, off, cap, IPSET_ATTR_HASHSIZE,
+			 IPSET_RESIZE_HASHSIZE);
+	if (!off)
+		return 0;
+	off = put_u32_be(buf, off, cap, IPSET_ATTR_MAXELEM,
+			 IPSET_RESIZE_MAXELEM);
+	if (!off)
+		return 0;
+	if (ev == IPSET_EXT_TIMEOUT) {
+		off = put_u32_be(buf, off, cap, IPSET_ATTR_TIMEOUT,
+				 IPSET_DEFAULT_TIMEOUT);
+		if (!off)
+			return 0;
+	} else if (ev == IPSET_EXT_COUNTERS) {
+		cadt |= IPSET_FLAG_WITH_COUNTERS;
+	}
+	off = put_u32_be(buf, off, cap, IPSET_ATTR_CADT_FLAGS, cadt);
+	if (!off)
+		return 0;
+	nla_nest_end(buf, nest, off);
+	return off;
+}
+
+/*
+ * IPSET_CMD_CREATE for a resize-target set.  Same envelope as
+ * build_create() but wires the resize-tuned DATA nest.  Only hash
+ * kinds are meaningful here (bitmap sets do not have an htable to
+ * resize); callers pass hash:ip or hash:ip,port.
+ */
+static int build_create_resize(struct nfnl_ctx *ctx, const char *name,
+			       enum ipset_kind kind,
+			       enum ipset_ext_variant ev)
+{
+	unsigned char buf[IPSET_BUF_BYTES];
+	const struct ipset_type_desc *td = &ipset_types[kind];
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	off = ipset_hdr_put(buf, sizeof(buf), ctx, IPSET_CMD_CREATE,
+			    NLM_F_CREATE, name);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf),
+			  IPSET_ATTR_TYPENAME, td->typename);
+	if (!off)
+		return -EIO;
+	off = nla_put_u8(buf, off, sizeof(buf),
+			 IPSET_ATTR_REVISION, td->revision);
+	if (!off)
+		return -EIO;
+	off = nla_put_u8(buf, off, sizeof(buf), IPSET_ATTR_FAMILY, NFPROTO_IPV4);
+	if (!off)
+		return -EIO;
+	off = put_hash_create_data_resize(buf, off, sizeof(buf), ev);
+	if (!off)
+		return -EIO;
+
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
+}
+
+/*
+ * Resize-replay driver.  Builds up to four small hash sets across
+ * {hash:ip, hash:ip,port} x {timeout, counters}, then mass-adds
+ * IPSET_RESIZE_FILL_ENTRIES distinct entries per set to push
+ * htable_bits past the initial value.  Salts are deterministic
+ * (0..N) so entries spread across the /16 rather than colliding
+ * on one bucket -- essential for tripping the load-factor gate.
+ *
+ * Once the fill phase completes, the replay-churn phase interleaves
+ * ADD / DEL pairs on the freshly-resized sets.  Concurrency comes
+ * from sibling trinity children running the same childop in
+ * parallel (-C N): while one child's fill loop is still driving
+ * mtype_resize(), another child's ADD lands on the same set and is
+ * replayed onto the new htable, exercising the ext-destroy path
+ * the upstream fix guards.  Even in a single-child run the
+ * post-resize ADD / DEL churn walks the same shared code, and the
+ * TIMEOUT / COUNTERS extensions ensure real ext blobs are attached
+ * to every entry so any lifecycle regression has data to corrupt.
+ *
+ * All created sets are destroyed by teardown_all() before return.
+ */
+static void iter_resize(struct nfnl_ctx *ctx)
+{
+	static const enum ipset_kind kinds[2] = {
+		IPSET_KIND_HASH_IP,
+		IPSET_KIND_HASH_IPPORT,
+	};
+	static const enum ipset_ext_variant evs[2] = {
+		IPSET_EXT_TIMEOUT,
+		IPSET_EXT_COUNTERS,
+	};
+	struct ipset_tracker tr = { .count = 0 };
+	char name[IPSET_MAXNAMELEN];
+	__u16 base_salt;
+	unsigned int ki, ei, e, r;
+	int rc;
+
+	base_salt = (__u16)(rand32() & 0xffffU);
+	for (ki = 0; ki < 2U && tr.count < IPSET_MAX_TRACKED; ki++) {
+		for (ei = 0; ei < 2U && tr.count < IPSET_MAX_TRACKED; ei++) {
+			unsigned int slot = tr.count;
+
+			make_set_name(name, sizeof(name),
+				      (__u16)(base_salt + slot), slot);
+			rc = build_create_resize(ctx, name, kinds[ki], evs[ei]);
+			if (rc == 0 || rc == -EEXIST) {
+				tracker_add(&tr, name, kinds[ki]);
+				__atomic_add_fetch(&shm->stats.ipset_churn_create_ok,
+						   1, __ATOMIC_RELAXED);
+			} else {
+				__atomic_add_fetch(&shm->stats.ipset_churn_create_fail,
+						   1, __ATOMIC_RELAXED);
+			}
+		}
+	}
+
+	if (tr.count == 0U)
+		return;
+
+	/*
+	 * Fill phase: monotonic salts fan entries across the loopback
+	 * /16 so bucket load grows evenly.  Exceeding HASHSIZE by an
+	 * order of magnitude reliably crosses the load-factor gate
+	 * regardless of the kernel's default AHASH_INIT_SIZE.
+	 */
+	for (r = 0; r < tr.count; r++) {
+		enum ipset_kind k = (enum ipset_kind)tr.kinds[r];
+
+		for (e = 0; e < IPSET_RESIZE_FILL_ENTRIES; e++) {
+			if (build_adt(ctx, tr.names[r], k,
+				      IPSET_CMD_ADD, (__u16)e) == 0)
+				__atomic_add_fetch(&shm->stats.ipset_churn_add_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	/*
+	 * Replay-churn phase: alternate ADD / DEL on the resized sets
+	 * with pseudo-random salts, so entries land on freshly rehashed
+	 * buckets.  Sibling children hitting the same sets in parallel
+	 * turn this into a genuine race against any in-flight resize.
+	 */
+	for (r = 0; r < IPSET_RESIZE_REPLAY_CHURN; r++) {
+		unsigned int s = r % tr.count;
+		enum ipset_kind k = (enum ipset_kind)tr.kinds[s];
+		__u16 salt = (__u16)(rand32() & 0xffffU);
+
+		if (build_adt(ctx, tr.names[s], k,
+			      IPSET_CMD_ADD, salt) == 0)
+			__atomic_add_fetch(&shm->stats.ipset_churn_add_ok,
+					   1, __ATOMIC_RELAXED);
+		if (build_adt(ctx, tr.names[s], k,
+			      IPSET_CMD_DEL, salt) == 0)
+			__atomic_add_fetch(&shm->stats.ipset_churn_del_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+
+	teardown_all(ctx, &tr);
+}
+
+/*
  * One outer iteration: pick a set type, create a same-kind pair, run
  * the ADT burst, query via HEADER + LIST, swap + flush, destroy.  All
  * per-invocation tracker state stays local so the teardown always
@@ -722,6 +932,19 @@ bool ipset_churn(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < outer_iters; i++)
 		iter_one(&nfnl);
+
+	{
+		unsigned int rz_iters;
+
+		rz_iters = BUDGETED(CHILD_OP_IPSET_CHURN,
+				    JITTER_RANGE(IPSET_RESIZE_ITERS_BASE));
+		if (rz_iters > IPSET_RESIZE_BUDGET)
+			rz_iters = IPSET_RESIZE_BUDGET;
+		if (rz_iters == 0U)
+			rz_iters = 1U;
+		for (i = 0; i < rz_iters; i++)
+			iter_resize(&nfnl);
+	}
 
 	nfnl_close(&nfnl);
 	return true;
