@@ -29,6 +29,7 @@
 #include "syscall.h"
 #include "syscall_record.h"
 #include "sysv-msg.h"
+#include "sysv-sem.h"
 #include "sysv-shm.h"
 #include "tables.h"
 #include "trinity.h"
@@ -398,6 +399,16 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	 * path passes false and process_zombie_pending() drains after waitpid. */
 	if (child_dead)
 		reap_child_sysv_msg(child);
+
+	/* Same shape for fuzzed SysV semaphore sets: a SIGKILL'd/OOM'd child
+	 * skips its OBJ_LOCAL RMID destructor and every set it created
+	 * orphans.  Left unbounded these fill the SEMMNI slot table (~32000)
+	 * and all subsequent semget calls return ENOSPC -- coverage dies.
+	 * Same child_dead gating as the shm/msg rings above: the deferred
+	 * D-state path passes false and process_zombie_pending() drains
+	 * after waitpid. */
+	if (child_dead)
+		reap_child_sysv_sem(child);
 }
 
 /* Make sure there's no dead kids lying around.
@@ -1571,6 +1582,7 @@ void process_zombie_pending(void)
 		 * zeroes the count. */
 		reap_child_sysv_shm(children[i]);
 		reap_child_sysv_msg(children[i]);
+		reap_child_sysv_sem(children[i]);
 
 		replace_child(i);
 	}
