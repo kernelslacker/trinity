@@ -3,6 +3,7 @@
 #include <string.h>
 #include <linux/iommufd.h>
 
+#include "fd.h"
 #include "ioctls.h"
 #include "random.h"
 #include "rnd.h"
@@ -64,6 +65,8 @@ static const struct ioctl iommufd_ioctls[] = {
 #define IOMMUFD_FUZZ_MAX_ORDER		6	/* 4K .. 256K */
 #define IOMMUFD_FUZZ_MAX_ID		64
 #define IOMMUFD_FUZZ_MAX_RANGES		16
+#define IOMMUFD_FUZZ_HWPT_DATA_MAX	3	/* NONE/VTD_S1/ARM_SMMUV3 */
+#define IOMMUFD_FUZZ_HWPT_DATA_ORDER	3	/* 4K .. 32K driver blob */
 
 static void sanitise_iommufd_destroy(struct syscallrecord *rec)
 {
@@ -176,6 +179,96 @@ static void sanitise_iommufd_ioas_iova_ranges(struct syscallrecord *rec)
 	rec->a3 = (unsigned long)r;
 }
 
+static void sanitise_iommufd_hwpt_alloc(struct syscallrecord *rec)
+{
+	struct iommu_hwpt_alloc *a;
+
+	a = get_writable_address(sizeof(*a));
+	if (a == NULL)
+		return;
+
+	memset(a, 0, sizeof(*a));
+	a->size = sizeof(*a);
+	a->dev_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
+	a->pt_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
+	if (RAND_BOOL())
+		a->flags |= IOMMU_HWPT_ALLOC_NEST_PARENT;
+	if (RAND_BOOL())
+		a->flags |= IOMMU_HWPT_ALLOC_DIRTY_TRACKING;
+	if (RAND_BOOL())
+		a->flags |= IOMMU_HWPT_ALLOC_PASID;
+	if (RAND_BOOL()) {
+		a->flags |= IOMMU_HWPT_FAULT_ID_VALID;
+		a->fault_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
+	}
+	a->data_type = rnd_modulo_u32(IOMMUFD_FUZZ_HWPT_DATA_MAX);
+	if (a->data_type != IOMMU_HWPT_DATA_NONE) {
+		void *data;
+		__u32 data_len;
+
+		data_len = IOMMUFD_FUZZ_PAGE_SIZE
+			<< rnd_modulo_u32(IOMMUFD_FUZZ_HWPT_DATA_ORDER + 1);
+		data = get_writable_address(data_len);
+		if (data == NULL)
+			return;
+		a->data_len = data_len;
+		a->data_uptr = (__u64)(unsigned long)data;
+	}
+
+	rec->a3 = (unsigned long)a;
+}
+
+#ifdef IOMMU_FAULT_QUEUE_ALLOC
+static void sanitise_iommufd_fault_queue_alloc(struct syscallrecord *rec)
+{
+	struct iommu_fault_alloc *f;
+
+	f = get_writable_address(sizeof(*f));
+	if (f == NULL)
+		return;
+
+	memset(f, 0, sizeof(*f));
+	f->size = sizeof(*f);
+	/*
+	 * flags MUST be 0 per uapi; occasionally trip the reserved-bit
+	 * check to exercise the reject path.
+	 */
+	if (ONE_IN(8))
+		f->flags = rnd_u32();
+
+	rec->a3 = (unsigned long)f;
+}
+#endif
+
+#ifdef IOMMU_IOAS_MAP_FILE
+static void sanitise_iommufd_ioas_map_file(struct syscallrecord *rec)
+{
+	struct iommu_ioas_map_file *m;
+	__u64 length;
+
+	m = get_writable_address(sizeof(*m));
+	if (m == NULL)
+		return;
+
+	length = IOMMUFD_FUZZ_PAGE_SIZE
+	       << rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ORDER + 1);
+
+	memset(m, 0, sizeof(*m));
+	m->size = sizeof(*m);
+	m->flags = IOMMU_IOAS_MAP_READABLE | IOMMU_IOAS_MAP_WRITEABLE;
+	if (ONE_IN(4))
+		m->flags |= IOMMU_IOAS_MAP_FIXED_IOVA;
+	m->ioas_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
+	m->fd = get_random_fd();
+	m->start = rnd_u64() & ~(IOMMUFD_FUZZ_PAGE_SIZE - 1);
+	m->length = length;
+	m->iova = rnd_modulo_u64(IOMMUFD_FUZZ_IOVA_LIMIT)
+		& ~(IOMMUFD_FUZZ_PAGE_SIZE - 1);
+
+	rec->a3 = (unsigned long)m;
+}
+#endif
+
 static void iommufd_sanitise(const struct ioctl_group *grp,
 			     struct syscallrecord *rec)
 {
@@ -197,6 +290,19 @@ static void iommufd_sanitise(const struct ioctl_group *grp,
 	case IOMMU_IOAS_IOVA_RANGES:
 		sanitise_iommufd_ioas_iova_ranges(rec);
 		break;
+	case IOMMU_HWPT_ALLOC:
+		sanitise_iommufd_hwpt_alloc(rec);
+		break;
+#ifdef IOMMU_FAULT_QUEUE_ALLOC
+	case IOMMU_FAULT_QUEUE_ALLOC:
+		sanitise_iommufd_fault_queue_alloc(rec);
+		break;
+#endif
+#ifdef IOMMU_IOAS_MAP_FILE
+	case IOMMU_IOAS_MAP_FILE:
+		sanitise_iommufd_ioas_map_file(rec);
+		break;
+#endif
 	default:
 		break;
 	}
