@@ -52,7 +52,7 @@
 #include "bpf.h"
 #endif
 
-#include "child.h"
+#include "child-api.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"

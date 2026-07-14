@@ -5,7 +5,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include "child.h"
+#include "child-api.h"
 #include "syscall-gate.h"
 #include "fd-event.h"
 #include "fd.h"

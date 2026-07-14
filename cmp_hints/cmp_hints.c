@@ -41,7 +41,7 @@
 #include <unistd.h>
 
 #include "arch.h"
-#include "child.h"
+#include "child-api.h"
 #include "cmp_hints.h"
 #include "cmp_hints-internal.h"
 #include "debug.h"

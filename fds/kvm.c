@@ -12,7 +12,7 @@
 #include <sys/mman.h>
 #include <linux/kvm.h>
 
-#include "child.h"
+#include "child-api.h"
 #include "fd.h"
 #include "objects.h"
 #include "shm.h"

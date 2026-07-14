@@ -2,7 +2,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include "child.h"
+#include "child-api.h"
 #include "fd.h"
 #include "fd-event.h"
 #include "kcov.h"

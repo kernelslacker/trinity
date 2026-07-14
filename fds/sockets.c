@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "child.h"
+#include "child-api.h"
 #include "debug.h"
 #include "deferred-free.h"
 #include "domains.h"

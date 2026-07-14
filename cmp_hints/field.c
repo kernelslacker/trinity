@@ -17,7 +17,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "child.h"
+#include "child-api.h"
 #include "cmp_hints.h"
 #include "cmp_hints-internal.h"
 #include "debug.h"

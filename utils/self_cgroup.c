@@ -18,7 +18,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "child.h"
+#include "child-api.h"
 #include "params.h"
 #include "pids.h"
 #include "self_cgroup.h"
