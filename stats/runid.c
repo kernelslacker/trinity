@@ -32,7 +32,7 @@
 #include "arch.h"
 #include "arg-len-semantics.h"
 #include "breadcrumb_ring.h"
-#include "child.h"
+#include "child-api.h"
 #include "cmp_hints.h"
 #include "cred_throttle.h"
 #include "fd.h"

@@ -14,7 +14,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "breadcrumb_ring.h"
-#include "child.h"
+#include "child-api.h"
 #include "debug.h"
 #include "deferred-free.h"
 #include "locks.h"

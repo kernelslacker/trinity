@@ -11,7 +11,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include "cgroup.h"
-#include "child.h"
+#include "child-api.h"
 #include "csfu.h"
 #include "fd-event.h"
 #include "maps.h"

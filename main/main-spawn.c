@@ -11,7 +11,7 @@
 #include <time.h>
 
 
-#include "child.h"
+#include "child-api.h"
 #include "cmp_hints.h"
 #include "debug.h"
 #include "kcov.h"

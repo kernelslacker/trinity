@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 #include "arch.h"
-#include "child.h"
+#include "child-api.h"
 #include "cmp_hints.h"
 #include "fd.h"
 #include "files.h"

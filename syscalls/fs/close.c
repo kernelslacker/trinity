@@ -4,7 +4,7 @@
  * returns zero on success.
  * On error, -1 is returned, and errno is set appropriately.
  */
-#include "child.h"
+#include "child-api.h"
 #include "fd-event.h"
 #include "objects.h"
 #include "pids.h"

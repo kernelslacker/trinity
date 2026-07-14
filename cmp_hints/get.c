@@ -15,7 +15,7 @@
 
 #include "cmp_hints.h"
 #include "cmp_hints-internal.h"
-#include "child.h"
+#include "child-api.h"
 #include "kcov.h"
 #include "random.h"
 #include "rnd.h"
