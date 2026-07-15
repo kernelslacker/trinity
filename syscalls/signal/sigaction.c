@@ -6,17 +6,45 @@
  */
 #include <signal.h>
 #include <string.h>
+#include "output-poison.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "utils-mem.h"
 
 #include "kernel/prctl.h"
 
 /* Kernel sigset_t is a fixed 64-bit mask; sizeof matches on every arch. */
 #define KERNEL_SIGSET_SIZE	8
+
+/*
+ * Snapshot of the rt_sigaction args the post oracle reads, captured at
+ * sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the oact discriminator at a foreign
+ * user buffer or invalidate the poison_seed the untouched-buffer check
+ * matches against.
+ */
+#define RT_SIGACTION_POST_STATE_MAGIC	0x52545347UL	/* "RTSG" */
+struct rt_sigaction_post_state {
+	unsigned long magic;
+	unsigned long oact;
+	/*
+	 * Seed for the poison pattern stamped over the oact struct at
+	 * sanitise time.  Returned by poison_output_struct() and fed back
+	 * into check_output_struct_user_or_skip() in the post handler so a
+	 * stomp of rec->a3 cannot redirect the check against an unrelated
+	 * heap page that happens to still carry the original (or any) byte
+	 * pattern.  Stays 0 when sanitise refused to stamp (oact == 0 or
+	 * the range is not provably readable), which the post handler
+	 * treats as "skip the arm".
+	 */
+	uint64_t poison_seed;
+};
 
 /*
  * sa_flags shapes.  We assemble subsets out of this pool and (depending
@@ -211,6 +239,15 @@ static unsigned long pick_signal_target(void)
 
 static void sanitise_rt_sigaction(struct syscallrecord *rec)
 {
+	struct rt_sigaction_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+
 	rec->a1 = pick_signal_target();
 	rec->a2 = RAND_BOOL() ? 0 : (unsigned long) alloc_sigaction();
 	avoid_shared_buffer_inout(&rec->a2, sizeof(struct sigaction));
@@ -218,37 +255,119 @@ static void sanitise_rt_sigaction(struct syscallrecord *rec)
 	rec->a4 = KERNEL_SIGSET_SIZE;
 
 	avoid_shared_buffer_out(&rec->a3, sizeof(struct sigaction));
+
+	/*
+	 * Snapshot oact for the post oracle.  Without this the post handler
+	 * reads rec->a3 at post-time, when a sibling syscall may have
+	 * scribbled the slot: looks_like_corrupted_ptr() cannot tell a
+	 * real-but-wrong heap address from the original user buffer pointer,
+	 * so the poison-writeback check would run against a foreign
+	 * allocation.  post_state is private to the post handler.
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the two
+	 * is closed; post_rt_sigaction() will then gate the snap through
+	 * post_state_claim_owned() and prove ownership before dereferencing
+	 * any field.
+	 */
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic       = RT_SIGACTION_POST_STATE_MAGIC;
+	snap->oact        = rec->a3;
+	snap->poison_seed = 0;
+
+	/*
+	 * Stamp a per-call poison pattern into the oact struct the kernel
+	 * is about to fill.  The post handler asks
+	 * check_output_struct_user_or_skip() whether the pattern survived
+	 * intact on a success return; if it did, the kernel reported
+	 * success but skipped copy_to_user across the region it is
+	 * contractually required to fill -- torn copy, early-exit before
+	 * fill, or mis-wired compat wrapper.  Done after
+	 * avoid_shared_buffer_out() so the poison lands on the final
+	 * buffer the kernel will see (the relocation may have swapped
+	 * rec->a3 for a fresh page).  Gate on range_readable_user() so a
+	 * writable-pool draw that avoid_shared_buffer_out relocated to
+	 * an address no longer provably mapped does not SIGSEGV inside
+	 * poison_output_struct's byte-walk; on skip poison_seed stays 0
+	 * and the post handler no-ops the arm.  Seed is drawn from
+	 * rnd_u64() only after all input-selection RNG draws above have
+	 * settled, so --dry-run byte-output stays identical to a build
+	 * without this oracle (poison writes are byte-identical to a
+	 * post-selection scribble on already-uninitialised writable-pool
+	 * memory).
+	 */
+	if (rec->a3 != 0 &&
+	    range_readable_user((void *)(unsigned long) rec->a3,
+				sizeof(struct sigaction)))
+		snap->poison_seed =
+			poison_output_struct((void *)(unsigned long) rec->a3,
+					     sizeof(struct sigaction), 0);
+
+	post_state_install(rec, snap);
 }
 
 /*
  * Oracle: if the caller asked for the old action via a non-NULL oact,
- * sanity-check the discriminator the kernel wrote back.  sa_handler is
- * either SIG_DFL, SIG_IGN, or a function pointer; SA_SIGINFO chooses
- * the sa_sigaction union arm.  An uninitialised-stack write from the
- * kernel would land in neither bucket: zero is SIG_DFL by definition
- * but a non-zero ~kernel pointer that is neither SIG_IGN nor a mapped
- * code address shows up here.  We sample sparingly so a misbehaving
- * kernel does not drown the log.
+ * run two complementary checks on the buffer the kernel wrote back.
+ *
+ * Arm 1 (poison writeback, every call): check_output_struct_user_or_skip
+ * returns true iff every byte of the oact struct still matches the
+ * per-call poison pattern poison_output_struct stamped at sanitise time.
+ * A match on a retval == 0 return means the kernel reported success but
+ * skipped copy_to_user across the region it is contractually required to
+ * fill -- torn copy, early-exit before fill, or mis-wired compat wrapper.
+ * Silent when sanitise refused to stamp (poison_seed == 0) or snap->oact
+ * is NULL.  Not sampled -- cheap enough (a bounded byte-walk with no
+ * re-entry into the kernel) that dilution through ONE_IN would waste
+ * signal on a real bug.
+ *
+ * Arm 2 (sa_handler discriminator, 1/64 sample): sa_handler is either
+ * SIG_DFL, SIG_IGN, or a function pointer; SA_SIGINFO chooses the
+ * sa_sigaction union arm.  An uninitialised-stack write from the kernel
+ * would land in neither bucket: zero is SIG_DFL by definition but a
+ * non-zero ~kernel pointer that is neither SIG_IGN nor a mapped code
+ * address shows up here.  Sampled sparingly so a misbehaving kernel does
+ * not drown the log.  Routes through snap->oact so a sibling that
+ * scribbled rec->a3 between syscall return and post entry cannot retarget
+ * the deref at a foreign heap allocation.
  */
 static void post_rt_sigaction(struct syscallrecord *rec)
 {
+	struct rt_sigaction_post_state *snap;
 	const struct sigaction *oact;
-	unsigned long oact_ptr = rec->a3;
+
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, RT_SIGACTION_POST_STATE_MAGIC,
+				      __func__);
+	if (snap == NULL)
+		return;
 
 	if ((long) rec->retval != 0)
-		return;
-	if (oact_ptr == 0)
-		return;
-	if (!ONE_IN(64))
-		return;
+		goto out_release;
+	if (snap->oact == 0)
+		goto out_release;
 
-	oact = (const struct sigaction *) oact_ptr;
+	if (snap->poison_seed != 0 &&
+	    check_output_struct_user_or_skip((void *)(unsigned long) snap->oact,
+					     sizeof(struct sigaction),
+					     snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(64))
+		goto out_release;
+
+	oact = (const struct sigaction *)(unsigned long) snap->oact;
 	/* SIG_DFL is (void *)0; SIG_IGN is (void *)1.  Anything else
 	 * must look like a code pointer.  We cannot probe mapping
 	 * legitimacy from here, but we can flag obvious garbage like
 	 * a stack-shaped address sitting in kernel-range bits. */
 	if (oact->sa_handler == SIG_DFL || oact->sa_handler == SIG_IGN)
-		return;
+		goto out_release;
 	{
 		unsigned long h = (unsigned long) oact->sa_handler;
 		/* On 64-bit user pointers, bits 48..63 should all be 0
@@ -261,6 +380,9 @@ static void post_rt_sigaction(struct syscallrecord *rec)
 			       h);
 		}
 	}
+
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_rt_sigaction = {
