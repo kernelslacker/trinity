@@ -8,6 +8,16 @@
  * cache code paths the consumer (splice substitution) is trying to
  * exercise.
  *
+ * When the fileindex scan yields zero pagecache-backed regular files
+ * (the default run walks /dev,/proc,/sys and finds none), a small
+ * private RO scratch corpus is self-seeded so consumers biased toward
+ * this pool still hit a real page-cache substrate rather than silently
+ * falling back to a random fd.  Mirrors the sibling write-side pool in
+ * fds/writeable-pagecache.c: create fresh under trinity's tmp dir,
+ * ftruncate to a size ladder, reopen O_RDONLY, unlink in the
+ * destructor.  The "trinity-pcro-" basename prefix is reserved for
+ * this pool's private use.
+ *
  * A parallel small index array of "interesting" objects (currently:
  * setuid binaries) is maintained alongside the per-objhead pool so
  * get_rand_pagecache_fd() can bias picks towards them without scanning
@@ -15,6 +25,8 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/vfs.h>
 #include <linux/magic.h>
 #include <fcntl.h>
@@ -42,6 +54,23 @@
 #define NR_PAGECACHE_FDS	64
 #define NR_PAGECACHE_SETUID	16
 #define SETUID_BIAS_PCT		25
+
+#define NR_PAGECACHE_SELFSEED_FDS	4
+
+/*
+ * Size ladder for the self-seed fallback: single-page, multi-page,
+ * larger multi-extent, and a multi-MB file so a consumer that biases
+ * offset picks by file size sees a spread across the page-cache /
+ * readahead code paths (single-page hit, cross-page span, readahead
+ * window, and past-EOF pick).  Filenames are trinity-owned scratch
+ * under the run's tmp dir; the destructor closes and unlinks them.
+ */
+static const size_t pagecache_selfseed_sizes[NR_PAGECACHE_SELFSEED_FDS] = {
+	4096,
+	65536,
+	524288,
+	4 * 1024 * 1024,
+};
 
 /*
  * Indices into the OBJ_FD_PAGECACHE objhead->array of objects whose
@@ -78,6 +107,97 @@ static void pagecache_dump(struct object *obj, enum obj_scope scope)
 
 	output(2, "pagecache fd:%d filename:%s flags:%x setuid:%d scope:%d\n",
 		fo->fd, fo->filename, fo->flags, fo->is_setuid, scope);
+}
+
+/*
+ * Destructor for the self-seed fallback path.  The fileindex scan
+ * borrows filenames from the global fileindex (const, not owned), but
+ * self-seeded files own their basename via alloc_shared_str and their
+ * on-disk inode via unlink.  The fallback path is all-or-nothing —
+ * either the scan populated the pool (borrowed names, close-only) or
+ * this destructor is installed (owned names, close + unlink + free) —
+ * so the two lifecycles never coexist in a single pool.
+ */
+static void pagecache_selfseed_destructor(struct object *obj)
+{
+	if (obj->fileobj.fd >= 0)
+		close(obj->fileobj.fd);
+	if (obj->fileobj.filename != NULL) {
+		(void)unlink(obj->fileobj.filename);
+		free_shared_str((void *)obj->fileobj.filename, 64);
+		obj->fileobj.filename = NULL;
+	}
+}
+
+static bool pagecache_selfseed_create_one(unsigned int idx)
+{
+	struct object *obj;
+	char *filename;
+	off_t size;
+	int fd;
+
+	filename = alloc_shared_str(64);
+	if (filename == NULL)
+		return false;
+
+	snprintf(filename, 64, "trinity-pcro-%u", idx);
+	(void)unlink(filename);
+
+	fd = open(filename, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+	if (fd < 0) {
+		free_shared_str(filename, 64);
+		return false;
+	}
+
+	size = (off_t)pagecache_selfseed_sizes[idx];
+	if (ftruncate(fd, size) < 0) {
+		close(fd);
+		(void)unlink(filename);
+		free_shared_str(filename, 64);
+		return false;
+	}
+	close(fd);
+
+	fd = open(filename, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+	if (fd < 0) {
+		(void)unlink(filename);
+		free_shared_str(filename, 64);
+		return false;
+	}
+
+	obj = alloc_object();
+	if (obj == NULL) {
+		close(fd);
+		(void)unlink(filename);
+		free_shared_str(filename, 64);
+		return false;
+	}
+
+	obj->fileobj.filename = filename;
+	obj->fileobj.flags = O_RDONLY;
+	obj->fileobj.fd = fd;
+	obj->fileobj.fopened = false;
+	obj->fileobj.fcntl_flags = 0;
+	obj->fileobj.pagecache_backed = true;
+	obj->fileobj.is_setuid = false;
+
+	add_object(obj, OBJ_GLOBAL, OBJ_FD_PAGECACHE);
+	return true;
+}
+
+static unsigned int pagecache_selfseed(struct objhead *head)
+{
+	unsigned int i;
+	unsigned int opened = 0;
+
+	head->destroy = &pagecache_selfseed_destructor;
+
+	for (i = 0; i < NR_PAGECACHE_SELFSEED_FDS; i++) {
+		if (pagecache_selfseed_create_one(i))
+			opened++;
+	}
+
+	return opened;
 }
 
 static int init_pagecache_fds(void)
@@ -157,13 +277,27 @@ static int init_pagecache_fds(void)
 	}
 
 	if (opened == 0) {
-		outputerr("init_pagecache_fds: opened 0 files after %u attempts (no pagecache-backed regular files in fileindex)\n",
+		unsigned int seeded;
+		int seed_errno;
+
+		output(1, "init_pagecache_fds: fileindex scan yielded no pagecache-backed regular files after %u attempts, self-seeding scratch corpus\n",
 			attempts);
-		fd_provider_init_fail(FD_INIT_REASON_RESOURCE, 0,
-				      "no pagecache-backed files in fileindex");
+
+		seeded = pagecache_selfseed(head);
+		if (seeded == 0) {
+			seed_errno = errno;
+			outputerr("init_pagecache_fds: self-seed produced 0/%u scratch files (last errno %d: %s)\n",
+				  NR_PAGECACHE_SELFSEED_FDS, seed_errno,
+				  strerror(seed_errno));
+			fd_provider_init_fail(FD_INIT_REASON_RESOURCE, seed_errno,
+					      "self-seed empty");
+			return false;
+		}
+
+		return true;
 	}
 
-	return opened > 0;
+	return true;
 }
 
 int get_rand_pagecache_fd(void)
