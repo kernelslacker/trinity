@@ -16,6 +16,15 @@
 #include "utils.h"
 
 /*
+ * pselect6(2)'s arg6 sigset_argpack ss_len field: the kernel copies
+ * the two-word struct then validates ss_len == _NSIG/8 (8 bytes) in
+ * set_user_sigmask() before installing the mask.  Anything else short-
+ * circuits to -EINVAL long before the mask copy, matching the sibling
+ * style used by epoll_pwait / ppoll / rt_sigtimedwait / rt_sigaction.
+ */
+#define KERNEL_SIGSET_SIZE	8
+
+/*
  * Pick one bit-position within [0, nfds) for the pselect6(2) fd_set
  * with the same 60 / 30 / 10 bias as the sibling select(2) sanitiser:
  * tracked pollable fd_type, legacy random bit, or deliberately-high
@@ -65,6 +74,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 
 	struct timespec *ts;
 	sigset_t *sigmask;
+	unsigned long *argpack;
 	fd_set *rfds, *wfds, *exfds;
 
 	nfds = rnd_modulo_u32(1023) + 1;
@@ -147,18 +157,29 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Hand the kernel a real (zeroed) sigmask buffer rather than NULL so
-	 * the copy_from_user path on the kernel side still has something to
-	 * read.  An empty mask is semantically equivalent to NULL for the
-	 * purposes of pselect6's signal-blocking dance.
+	 * arg6 is a pointer to a two-word sigset_argpack:
+	 *   struct { const sigset_t *ss; size_t ss_len; }
+	 * fs/select.c::do_pselect() calls get_sigset_argpack() to copy those
+	 * two words, then set_user_sigmask() rejects any ss_len != _NSIG/8
+	 * (== KERNEL_SIGSET_SIZE, 8 bytes) before touching the mask.  Passing
+	 * a bare sigset_t pointer for arg6 makes the kernel misparse the raw
+	 * mask bytes as (ptr, size) and kills the only code path that
+	 * distinguishes pselect6 from pselect.  Build the argpack in the
+	 * writable pool with a zeroed 8-byte mask; a 10% minority uses a
+	 * deliberately-wrong ss_len to keep the EINVAL early-reject warm.
 	 */
-	sigmask = get_writable_address(sizeof(sigset_t));
-	if (sigmask == NULL) {
+	argpack = get_writable_address(sizeof(unsigned long) * 2);
+	sigmask = get_writable_address(KERNEL_SIGSET_SIZE);
+	if (argpack == NULL || sigmask == NULL) {
 		rec->a6 = 0;
 	} else {
-		memset(sigmask, 0, sizeof(sigset_t));
-		rec->a6 = (unsigned long) sigmask;
-		avoid_shared_buffer_inout(&rec->a6, sizeof(sigset_t));
+		memset(sigmask, 0, KERNEL_SIGSET_SIZE);
+		argpack[0] = (unsigned long) sigmask;
+		argpack[1] = (rnd_modulo_u32(10) == 0)
+			? 0
+			: KERNEL_SIGSET_SIZE;
+		rec->a6 = (unsigned long) argpack;
+		avoid_shared_buffer_inout(&rec->a6, sizeof(unsigned long) * 2);
 	}
 
 	/*
