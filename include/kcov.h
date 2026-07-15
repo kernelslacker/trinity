@@ -3526,6 +3526,77 @@ struct kcov_shared {
 	unsigned long reexec_attempts_by_arm[2];
 	unsigned long reexec_new_cmps_by_arm[2];
 	unsigned long reexec_new_edges_by_arm[2];
+
+	/*
+	 * SHADOW counterfactual-attribution outcome census.
+	 *
+	 * The existing cmp_hint_wins / cmp_hint_misses pair counts
+	 * "consumed hint AND per-dispatch coverage delta" as a
+	 * CORRELATION -- the new PC edge that fired might have come from
+	 * the injected hint value, or from the syscall's own logic /
+	 * other args / alloc state, or from coincidence.  At the observed
+	 * 0.0064% win rate the correlational signal cannot distinguish
+	 * these cases, so it cannot gate a shadow-to-live promotion of
+	 * any cmp-hint arm (258/266).
+	 *
+	 * These three counters split the coincidence out via an A/B
+	 * replay: on a captured candidate (a stash entry drained under a
+	 * PC-mode win) the control-replay harness (follow-up unit) re-
+	 * runs S with identical args EXCEPT the hint slot pinned to a
+	 * control value that fails the compare at cmp_ip.  The classifier
+	 * splits the outcome across three lanes:
+	 *
+	 *  cmp_hint_cfactual_win
+	 *      E present with H, ABSENT in control -- the injected hint
+	 *      value causally opened the new edge.  Sum across a run is
+	 *      the true-positive count of the causal claim.
+	 *  cmp_hint_cfactual_coincidence
+	 *      E present in BOTH the hint dispatch and the control replay
+	 *      -- the new edge would have appeared regardless of the
+	 *      injected value.  This is what the 0.0064% correlational
+	 *      counter silently miscredited; a large ratio here vs
+	 *      cmp_hint_cfactual_win says the cmp-hint pool is not
+	 *      steering coverage, just riding along with it.
+	 *  cmp_hint_cfactual_flaky
+	 *      E absent in both, OR the control replay diverged before
+	 *      reaching cmp_ip (a fresh args path can steer the syscall
+	 *      off the compared branch), OR the destructive / sanitise /
+	 *      slot-bounds gates rejected the replay before the
+	 *      classification could complete.  Do NOT count either way --
+	 *      the candidate is discarded, this counter is the accounting
+	 *      denominator lost to replay noise + harness gates.
+	 *
+	 * The go/no-go gate for cmp-hint arm promotion is
+	 *     cmp_hint_cfactual_win /
+	 *         (cmp_hint_cfactual_win + cmp_hint_cfactual_coincidence)
+	 * -- the causal conversion rate, not the correlational
+	 * cmp_hint_wins numerator.  The flaky lane sits OUTSIDE the ratio
+	 * (dropped, not counted) per the spec's "absent in both is
+	 * replay-flaky, never a win" rule.
+	 *
+	 * SHADOW: no injection / eviction / ranking path reads any of
+	 * these counters and no cfactual-derived state routes back into
+	 * the per-entry wins/misses the live pick would weigh by.  The
+	 * bumps happen strictly from cmp_hints_cfactual_capture() under
+	 * cmp_cfactual_mode == CMP_CFACTUAL_MODE_SHADOW; the OFF default
+	 * short-circuits before the first shm access so every counter
+	 * reads as zero on the default build and a fixed-seed --dry-run
+	 * pick + syscall stream is byte-identical either way.
+	 *
+	 * Until the shared arg-perturb / cmp-hint control-replay harness
+	 * lands (256·A tie-in, follow-up unit) the classification code
+	 * cannot run: every captured candidate routes to
+	 * cmp_hint_cfactual_flaky today, and cmp_hint_cfactual_win +
+	 * cmp_hint_cfactual_coincidence stay at zero.  The scaffold shape
+	 * settles here so the harness swap-in is a pure additive edit at
+	 * the classifier site, with no observability plumbing churn.
+	 *
+	 * Append-only at the tail per the existing convention so consumer
+	 * offsets stay stable.
+	 */
+	unsigned long cmp_hint_cfactual_win;
+	unsigned long cmp_hint_cfactual_coincidence;
+	unsigned long cmp_hint_cfactual_flaky;
 };
 
 extern struct kcov_shared *kcov_shm;
