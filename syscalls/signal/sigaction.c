@@ -14,6 +14,10 @@
 #include "utils.h"
 
 #include "kernel/prctl.h"
+
+/* Kernel sigset_t is a fixed 64-bit mask; sizeof matches on every arch. */
+#define KERNEL_SIGSET_SIZE	8
+
 /*
  * sa_flags shapes.  We assemble subsets out of this pool and (depending
  * on the bucket draw) bolt on a random extra bit or fall through to a
@@ -211,7 +215,7 @@ static void sanitise_rt_sigaction(struct syscallrecord *rec)
 	rec->a2 = RAND_BOOL() ? 0 : (unsigned long) alloc_sigaction();
 	avoid_shared_buffer_inout(&rec->a2, sizeof(struct sigaction));
 	rec->a3 = RAND_BOOL() ? 0 : (unsigned long) alloc_sigaction();
-	rec->a4 = sizeof(sigset_t);
+	rec->a4 = KERNEL_SIGSET_SIZE;
 
 	avoid_shared_buffer_out(&rec->a3, sizeof(struct sigaction));
 }
