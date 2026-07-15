@@ -25,6 +25,14 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
 #include "utils.h"
 
 /*
+ * Kernel-side sigset size: _NSIG (64) / 8 = 8 bytes.  Userspace
+ * sizeof(sigset_t) on glibc is 128 bytes; set_user_sigmask() rejects
+ * anything != 8 with -EINVAL, so we must pass 8 as sigsetsize for the
+ * mask-accept path to be exercised at all.
+ */
+#define KERNEL_SIGSET_SIZE 8
+
+/*
  * Snapshot of the events OUT-buffer pointer, its byte size, and the
  * per-call poison seed, captured at sanitise time and consumed by the
  * shared post handler.  See syscalls/poll/epoll_wait.c for the full
@@ -73,12 +81,14 @@ static unsigned long pick_timeout_ms(void)
 }
 
 /*
- * sigmask + sigsetsize buckets.  The kernel checks sigsetsize ==
- * sizeof(sigset_t) before copying the mask in (kernel/signal.c::
- * sigmask_to_save), so wrong-size buckets exercise the early reject
- * path.  NULL sigmask is a common real-world pattern (caller did not
- * want signal-mask swap semantics) and skips the
- * sigprocmask/restore_user_sigmask paths entirely.
+ * sigmask + sigsetsize buckets.  set_user_sigmask() checks sigsetsize
+ * == 8 (KERNEL_SIGSET_SIZE, _NSIG/8) before copying the mask in and
+ * rejects anything else with -EINVAL, so the mask-accept arms must
+ * pass 8 (not glibc's 128-byte sizeof(sigset_t)) or the mask path is
+ * never exercised.  The bad-size buckets (cases 7 and 8) intentionally
+ * pass non-8 values to keep the EINVAL early-reject path covered.
+ * NULL sigmask is a common real-world pattern (caller did not want
+ * signal-mask swap semantics) and skips the entire mask install path.
  */
 static void pick_sigmask(struct syscallrecord *rec)
 {
@@ -101,7 +111,7 @@ static void pick_sigmask(struct syscallrecord *rec)
 		sigemptyset(mask);
 		rec->a5 = (unsigned long) mask;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(sigset_t));
-		rec->a6 = sizeof(sigset_t);
+		rec->a6 = KERNEL_SIGSET_SIZE;
 		return;
 	case 5:
 	case 6:
@@ -114,7 +124,7 @@ static void pick_sigmask(struct syscallrecord *rec)
 		sigaddset(mask, SIGUSR2);
 		rec->a5 = (unsigned long) mask;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(sigset_t));
-		rec->a6 = sizeof(sigset_t);
+		rec->a6 = KERNEL_SIGSET_SIZE;
 		return;
 	case 7:
 		/* Correct buffer, intentionally-wrong size. */
@@ -137,7 +147,7 @@ static void pick_sigmask(struct syscallrecord *rec)
 		return;
 	default:
 		/* Leave whatever ARG_ADDRESS/ARG_LEN produced. */
-		rec->a6 = sizeof(sigset_t);
+		rec->a6 = KERNEL_SIGSET_SIZE;
 		return;
 	}
 }
