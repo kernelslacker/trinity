@@ -13,6 +13,14 @@
 #include "utils.h"
 
 /*
+ * Kernel-side sigset size: _NSIG (64) / 8 = 8 bytes.  Userspace
+ * sizeof(sigset_t) on glibc is 128 bytes; the kernel rejects anything
+ * != 8 with -EINVAL, so we must pass 8 as sigsetsize for the mask-accept
+ * path to be exercised at all.
+ */
+#define KERNEL_SIGSET_SIZE 8
+
+/*
  * Snapshot of the uinfo OUT-pointer captured at sanitise time and consumed
  * by the post handler.  Lives in rec->post_state so a sibling syscall
  * scribbling rec->a2 between the syscall returning and the post handler
@@ -118,12 +126,14 @@ static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
 	 */
 
 	/*
-	 * sigsetsize legality: 90% sizeof(sigset_t) (the only value the
-	 * kernel accepts on this arch), 10% intentionally-malformed so
-	 * the EINVAL gate against signal_size mismatches keeps firing.
+	 * sigsetsize legality: 90% KERNEL_SIGSET_SIZE (8 bytes; _NSIG/8 --
+	 * the only value do_sigtimedwait accepts), 10% intentionally-
+	 * malformed so the EINVAL gate against signal_size mismatches keeps
+	 * firing.  Passing sizeof(sigset_t) (128 on glibc) would always be
+	 * rejected, so the mask-accept path would never run.
 	 */
 	rec->a4 = (rnd_modulo_u32(10) < 9)
-		? sizeof(sigset_t)
+		? KERNEL_SIGSET_SIZE
 		: (unsigned long) rand32();
 
 	/*
