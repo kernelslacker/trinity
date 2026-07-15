@@ -233,6 +233,106 @@ static void sanitise_vfio_irq_info(struct syscallrecord *rec)
 	rec->a3 = (unsigned long)info;
 }
 
+#define VFIO_FUZZ_IRQ_MAX_COUNT	16
+
+static void sanitise_vfio_irq_set(struct syscallrecord *rec)
+{
+	struct vfio_irq_set *s;
+	__u32 count, data_len, data_flag;
+	unsigned long total;
+	__u8 *data;
+
+	count = rnd_modulo_u32(VFIO_FUZZ_IRQ_MAX_COUNT + 1);
+
+	switch (rnd_modulo_u32(3)) {
+	case 0:
+		data_flag = VFIO_IRQ_SET_DATA_NONE;
+		data_len = 0;
+		break;
+	case 1:
+		data_flag = VFIO_IRQ_SET_DATA_BOOL;
+		data_len = count * sizeof(__u8);
+		break;
+	default:
+		data_flag = VFIO_IRQ_SET_DATA_EVENTFD;
+		data_len = count * sizeof(__s32);
+		break;
+	}
+
+	total = sizeof(*s) + data_len;
+	s = get_writable_address(total);
+	if (s == NULL)
+		return;
+
+	memset(s, 0, total);
+	s->argsz = total;
+
+	switch (rnd_modulo_u32(3)) {
+	case 0:
+		s->flags = data_flag | VFIO_IRQ_SET_ACTION_MASK;
+		break;
+	case 1:
+		s->flags = data_flag | VFIO_IRQ_SET_ACTION_UNMASK;
+		break;
+	default:
+		s->flags = data_flag | VFIO_IRQ_SET_ACTION_TRIGGER;
+		break;
+	}
+
+	s->index = rnd_modulo_u32(VFIO_FUZZ_MAX_INDEX);
+	s->start = rnd_modulo_u32(VFIO_FUZZ_IRQ_MAX_COUNT);
+	s->count = count;
+
+	if (data_flag == VFIO_IRQ_SET_DATA_EVENTFD && count > 0) {
+		__s32 *fds = (__s32 *)s->data;
+		__u32 i;
+
+		for (i = 0; i < count; i++)
+			fds[i] = -1;
+	} else if (data_len > 0) {
+		data = s->data;
+		memset(data, 0, data_len);
+	}
+
+	rec->a3 = (unsigned long)s;
+}
+
+#ifdef VFIO_DEVICE_FEATURE
+#define VFIO_FUZZ_FEATURE_MAX_DATA	256
+
+static void sanitise_vfio_device_feature(struct syscallrecord *rec)
+{
+	struct vfio_device_feature *f;
+	__u32 data_len, op_flag;
+	unsigned long total;
+
+	data_len = rnd_modulo_u32(VFIO_FUZZ_FEATURE_MAX_DATA + 1);
+	total = sizeof(*f) + data_len;
+
+	f = get_writable_address(total);
+	if (f == NULL)
+		return;
+
+	switch (rnd_modulo_u32(3)) {
+	case 0:
+		op_flag = VFIO_DEVICE_FEATURE_GET;
+		break;
+	case 1:
+		op_flag = VFIO_DEVICE_FEATURE_SET;
+		break;
+	default:
+		op_flag = VFIO_DEVICE_FEATURE_PROBE;
+		break;
+	}
+
+	memset(f, 0, total);
+	f->argsz = total;
+	f->flags = op_flag | (rnd_modulo_u32(0x10000) & VFIO_DEVICE_FEATURE_MASK);
+
+	rec->a3 = (unsigned long)f;
+}
+#endif
+
 static void vfio_sanitise(const struct ioctl_group *grp,
 			  struct syscallrecord *rec)
 {
@@ -260,6 +360,14 @@ static void vfio_sanitise(const struct ioctl_group *grp,
 	case VFIO_DEVICE_GET_IRQ_INFO:
 		sanitise_vfio_irq_info(rec);
 		break;
+	case VFIO_DEVICE_SET_IRQS:
+		sanitise_vfio_irq_set(rec);
+		break;
+#ifdef VFIO_DEVICE_FEATURE
+	case VFIO_DEVICE_FEATURE:
+		sanitise_vfio_device_feature(rec);
+		break;
+#endif
 	default:
 		break;
 	}
