@@ -431,6 +431,7 @@ extern struct syscallentry syscall_file_getattr;
 extern struct syscallentry syscall_file_setattr;
 extern struct syscallentry syscall_listns;
 extern struct syscallentry syscall_rseq_slice_yield;
+extern struct syscallentry syscall_uprobe;
 
 
 unsigned int random_fcntl_setfl_flags(void);
