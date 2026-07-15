@@ -317,8 +317,15 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 			elapsed_us = (unsigned long long)(sec * 1000000LL +
 							  nsec / 1000LL);
 		}
-		__atomic_add_fetch(&shm->stats.syscall_wedge_total_us[child->wedge_nr],
-				   elapsed_us, __ATOMIC_RELAXED);
+		/* Gate the per-syscall total_us close-out on
+		 * CHILD_OP_SYSCALL for the same reason as the count bump
+		 * above: wedge_nr is only meaningful for syscall childops.
+		 * The per-childop total_us close-out stays unconditional
+		 * (range-checked wop is the authoritative axis). */
+		if (child->wedge_op_type == CHILD_OP_SYSCALL) {
+			__atomic_add_fetch(&shm->stats.syscall_wedge_total_us[child->wedge_nr],
+					   elapsed_us, __ATOMIC_RELAXED);
+		}
 
 		wop = (unsigned int)child->wedge_op_type;
 		if (wop < NR_CHILD_OP_TYPES) {
@@ -1768,8 +1775,15 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 			child->wedge_op_type = wop;
 			child->wedge_start_tp = child->tp;
 			child->wedge_accounted = true;
-			__atomic_add_fetch(&shm->stats.syscall_wedge_count[wnr],
-					   1UL, __ATOMIC_RELAXED);
+			/* Gate the per-syscall axis on CHILD_OP_SYSCALL: for
+			 * non-syscall childops child->syscall.nr is stale
+			 * (childops issue syscalls directly without updating
+			 * child->syscall), so wnr would poison the per-syscall
+			 * counter with childop-wedge noise.  The per-childop
+			 * axis is authoritative for those. */
+			if (wop == CHILD_OP_SYSCALL)
+				__atomic_add_fetch(&shm->stats.syscall_wedge_count[wnr],
+						   1UL, __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.childop_wedge_count[wop],
 					   1UL, __ATOMIC_RELAXED);
 		}
