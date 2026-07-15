@@ -433,6 +433,30 @@ static void sanitise_vfio_detach_iommufd_pt(struct syscallrecord *rec)
 }
 #endif
 
+#ifdef VFIO_DEVICE_GET_PCI_HOT_RESET_INFO
+#define VFIO_FUZZ_HOT_RESET_MAX_COUNT	4
+
+static void sanitise_vfio_hot_reset_info(struct syscallrecord *rec)
+{
+	struct vfio_pci_hot_reset_info *info;
+	unsigned long total;
+	__u32 count;
+
+	count = rnd_modulo_u32(VFIO_FUZZ_HOT_RESET_MAX_COUNT) + 1;
+	total = sizeof(*info) + count * sizeof(struct vfio_pci_dependent_device);
+
+	info = get_writable_address(total);
+	if (info == NULL)
+		return;
+
+	memset(info, 0, total);
+	info->argsz = total;
+	info->count = count;
+
+	rec->a3 = (unsigned long)info;
+}
+#endif
+
 #ifdef VFIO_DEVICE_FEATURE
 #define VFIO_FUZZ_FEATURE_MAX_DATA	256
 
@@ -487,7 +511,18 @@ static void vfio_sanitise(const struct ioctl_group *grp,
 			sanitise_vfio_dma_unmap(rec);
 		break;
 	case VFIO_IOMMU_GET_INFO:
-		sanitise_vfio_iommu_info(rec);
+		/*
+		 * VFIO_DEVICE_GET_PCI_HOT_RESET_INFO shares the same _IO()
+		 * command number as VFIO_IOMMU_GET_INFO; the kernel
+		 * disambiguates by which fd type the caller holds.  Toss a
+		 * coin so both struct shapes get exercised.
+		 */
+#ifdef VFIO_DEVICE_GET_PCI_HOT_RESET_INFO
+		if (RAND_BOOL())
+			sanitise_vfio_hot_reset_info(rec);
+		else
+#endif
+			sanitise_vfio_iommu_info(rec);
 		break;
 	case VFIO_GROUP_GET_STATUS:
 		sanitise_vfio_group_status(rec);
