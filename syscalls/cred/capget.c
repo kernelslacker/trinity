@@ -5,15 +5,18 @@
  * On error, -1 is returned, and errno is set appropriately.
  */
 #include <linux/capability.h>
+#include <stdint.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "utils-mem.h"
 
 /*
  * Pick a header.version with a distribution biased toward the kernel's
@@ -49,10 +52,20 @@ static unsigned int pick_cap_version(void)
  * and forge a clean compare against poisoned memory.
  */
 #define CAPGET_POST_STATE_MAGIC	0x43415047UL	/* "CAPG" */
+/*
+ * Fixed poison sentinel stamped across the dataptr OUT buffer at
+ * sanitise time and matched byte-for-byte in the post handler.  Fixed
+ * rather than rnd_u64() so the sanitise pass draws no RNG bytes on
+ * this leg: --dry-run output with a fixed seed stays byte-identical
+ * to a build without this oracle.
+ */
+#define CAPGET_POISON_PATTERN	0xC4C4C4C4C4C4C4C4ULL
+
 struct capget_post_state {
 	unsigned long magic;
 	unsigned long header;
 	unsigned long data;
+	uint64_t poison_seed;
 };
 
 /* Fill a __user_cap_header_struct with a valid version and pid. */
@@ -89,6 +102,32 @@ static void sanitise_capget(struct syscallrecord *rec)
 	snap->magic  = CAPGET_POST_STATE_MAGIC;
 	snap->header = rec->a1;
 	snap->data   = rec->a2;
+	snap->poison_seed = 0;
+
+	/*
+	 * Stamp a fixed poison pattern across the dataptr OUT buffer.  On a
+	 * retval==0 return the kernel is contractually obliged to have
+	 * written the effective/permitted/inheritable cap masks; a
+	 * byte-for-byte match against the poison pattern in the post handler
+	 * means the kernel returned success without copying any output --
+	 * the caller would then read stale poison bytes as capability masks.
+	 * The recall/divergence oracle below can only probabilistically
+	 * detect this (both reads would see poison and compare equal), so
+	 * this arm is a genuine additive check.  Gate on range_readable_user
+	 * so a writable-pool draw that avoid_shared_buffer_out moved to an
+	 * address no longer provably mapped does not SIGSEGV the sanitiser
+	 * inside poison_output_struct's byte-walk; on skip poison_seed
+	 * stays 0 and the post handler no-ops the arm.
+	 */
+	if (rec->a2 != 0) {
+		void *buf = (void *)(unsigned long) rec->a2;
+		size_t sz = 2 * sizeof(struct __user_cap_data_struct);
+
+		if (range_readable_user(buf, sz))
+			snap->poison_seed =
+				poison_output_struct(buf, sz,
+						     CAPGET_POISON_PATTERN);
+	}
 	/*
 	 * post_state_install pairs the rec->post_state assign with the
 	 * ownership-table register so the observable window between the
@@ -161,6 +200,26 @@ static void post_capget(struct syscallrecord *rec)
 	snap = post_state_claim_owned(rec, CAPGET_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Poison writeback oracle: fires on every retval==0 call.  Cheap
+	 * byte-compare with no kernel re-entry; catches a kernel
+	 * success-without-write that the recall/divergence oracle below
+	 * can only probabilistically detect (both reads would see the
+	 * untouched poison and compare equal).  Placed BEFORE the
+	 * ONE_IN(100) sampling gate so it runs at full rate; the gate
+	 * itself is left in place for the expensive recall arm.  Guarded
+	 * by snap->poison_seed != 0 so a sanitise-time skip (buffer no
+	 * longer provably readable) silently no-ops here.
+	 */
+	if ((long) rec->retval == 0 && snap->data != 0 &&
+	    snap->poison_seed != 0 &&
+	    check_output_struct_user_or_skip(
+			(void *)(unsigned long) snap->data,
+			2 * sizeof(struct __user_cap_data_struct),
+			snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	if (!ONE_IN(100))
 		goto out_free;
