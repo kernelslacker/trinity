@@ -2,6 +2,7 @@
  * sys_poll(struct pollfd __user *ufds, unsigned int nfds, int timeout);
  */
 #include <signal.h>
+#include <string.h>
 #include <asm/poll.h>
 #include "fd.h"
 #include "random.h"
@@ -13,6 +14,9 @@
 #include "utils.h"
 
 #include "kernel/poll.h"
+
+/* Kernel sigset_t is a fixed 64-bit mask; sizeof matches on every arch. */
+#define KERNEL_SIGSET_SIZE	8
 static const unsigned long poll_events[] = {
 	POLLIN, POLLPRI, POLLOUT, POLLERR,
 	POLLHUP, POLLNVAL, POLLRDNORM, POLLRDBAND,
@@ -215,6 +219,7 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 	struct ppoll_post_state *snap;
 	struct pollfd *fds;
 	struct timespec *ts;
+	sigset_t *mask;
 
 	/* Clear post_state up front so the early-return path below cannot
 	 * leave stale data from a previous syscall in the slot. */
@@ -229,7 +234,27 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 	ts->tv_sec = 1;
 	ts->tv_nsec = 0;
 
-	rec->a5 = sizeof(sigset_t);
+	/*
+	 * ppoll's set_user_sigmask requires sigsetsize == KERNEL_SIGSET_SIZE
+	 * (8 bytes; _NSIG/8) and rejects anything else with -EINVAL.
+	 * Userspace sizeof(sigset_t) is 128 on glibc, so passing that as a5
+	 * always short-circuited the mask arm before the kernel touched a4 --
+	 * the mask-install path was dead coverage.  Point a4 at a zeroed
+	 * 8-byte pool buffer (a raw ARG_ADDRESS would EFAULT the small
+	 * copy_from_user) and pass KERNEL_SIGSET_SIZE as sigsetsize.  A 10%
+	 * NULL-mask arm keeps the "no mask install" leg warm; a 10% bad-size
+	 * arm keeps the -EINVAL gate exercised.
+	 */
+	mask = (sigset_t *) get_writable_struct(KERNEL_SIGSET_SIZE);
+	if (mask != NULL)
+		memset(mask, 0, KERNEL_SIGSET_SIZE);
+	rec->a4 = (unsigned long) mask;
+	rec->a5 = KERNEL_SIGSET_SIZE;
+
+	if (rnd_modulo_u32(10) == 0)
+		rec->a4 = 0;
+	else if (rnd_modulo_u32(10) == 0)
+		rec->a5 = sizeof(sigset_t);
 
 	/*
 	 * ppoll(2) reads pollfd[i].fd/events and writes pollfd[i].revents
