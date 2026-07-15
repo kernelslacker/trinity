@@ -14,6 +14,9 @@
 #include "trinity.h"
 #include "utils.h"
 
+/* Kernel sigset_t is a fixed 64-bit mask; sizeof matches on every arch. */
+#define KERNEL_SIGSET_SIZE	8
+
 /*
  * Snapshot of the four rt_sigprocmask input args plus the oset poison
  * seed read by the post oracle, captured at sanitise time and consumed
@@ -42,7 +45,7 @@ static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 {
 	struct rt_sigprocmask_post_state *snap;
 
-	rec->a4 = sizeof(sigset_t);
+	rec->a4 = KERNEL_SIGSET_SIZE;
 
 	/*
 	 * oset (a3) is the kernel's writeback target for the previous mask
@@ -161,7 +164,7 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 		goto out_free;
 	if (snap->oset == 0)
 		goto out_free;
-	if (snap->sigsetsize != sizeof(sigset_t))
+	if (snap->sigsetsize != KERNEL_SIGSET_SIZE)
 		goto out_free;
 
 	/*
