@@ -397,13 +397,16 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		/* --blob-ab-mode: within-run A/B attribution.  When this
 		 * call had a blob_fill() and the flag is on, blob_fill
 		 * stashed the coin-flipped mode (HAVOC vs CMPDICT) on
-		 * child->blob_ab_mode_last; credit one fill and this
-		 * call's new_edges to that mode's counters here so both
-		 * arms share the same warm state / corpus / kcov context
-		 * at every moment and the per-fill new-edge rate is the
-		 * clean per-mode comparison.  When the flag is absent
-		 * the stamp stays BLOB_AB_MODE_NONE for every call and
-		 * this block is inert. */
+		 * child->blob_ab_mode_last; credit one fill plus this
+		 * call's novelty to that mode here: new_edges (PC),
+		 * hit_cmp (per-call new_cmp>0 -- the verdict numerator on
+		 * warm/PC-plateau runs where new_edges is ~0), and sum_cmp
+		 * (CMP magnitude, non-gating shadow only).  Both arms
+		 * share the same warm state / corpus / kcov context at
+		 * every moment, so the per-fill rates are the clean
+		 * per-mode comparison.  When the flag is absent the stamp
+		 * stays BLOB_AB_MODE_NONE for every call and this block
+		 * is inert. */
 		if (child->blob_ab_mode_last == BLOB_AB_MODE_HAVOC) {
 			__atomic_fetch_add(&shm->stats.blob_ab_havoc_fills,
 					   1UL, __ATOMIC_RELAXED);
@@ -411,6 +414,11 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				__atomic_fetch_add(&shm->stats.blob_ab_havoc_new_edges,
 						   (unsigned long) new_edges,
 						   __ATOMIC_RELAXED);
+			if (new_cmp > 0)
+				__atomic_fetch_add(&shm->stats.blob_ab_havoc_hit_cmp,
+						   1UL, __ATOMIC_RELAXED);
+			__atomic_fetch_add(&shm->stats.blob_ab_havoc_sum_cmp,
+					   new_cmp, __ATOMIC_RELAXED);
 		} else if (child->blob_ab_mode_last == BLOB_AB_MODE_CMPDICT) {
 			__atomic_fetch_add(&shm->stats.blob_ab_cmpdict_fills,
 					   1UL, __ATOMIC_RELAXED);
@@ -418,6 +426,11 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				__atomic_fetch_add(&shm->stats.blob_ab_cmpdict_new_edges,
 						   (unsigned long) new_edges,
 						   __ATOMIC_RELAXED);
+			if (new_cmp > 0)
+				__atomic_fetch_add(&shm->stats.blob_ab_cmpdict_hit_cmp,
+						   1UL, __ATOMIC_RELAXED);
+			__atomic_fetch_add(&shm->stats.blob_ab_cmpdict_sum_cmp,
+					   new_cmp, __ATOMIC_RELAXED);
 		}
 	}
 
