@@ -158,7 +158,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	 * mmap() call.  On a large MAP_ANONYMOUS|MAP_SHARED mapping that is
 	 * an instant multi-MB of resident tmpfs-backed shmem, and nothing
 	 * prunes these VMAs during the child's life, so a run accumulates
-	 * hundreds of MB of shmem per child and can OOM a small fuzz box.
+	 * hundreds of MB of shmem per child and can OOM a small box.
 	 * Keep the eager-fault coverage on small mappings; drop it above
 	 * 2 MB so the large size tiers stay lazy -- their pages become
 	 * resident only via the size-capped dirty walk, not all at once.

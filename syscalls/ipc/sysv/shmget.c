@@ -193,7 +193,7 @@ static void sanitise_shmget(struct syscallrecord *rec)
 	 * so a few percent of fuzzed shmget calls request it.  On a host
 	 * whose default hugepage size is 1G the kernel then rounds the
 	 * size-capped request up to a full 1G hugepage per segment, and a
-	 * handful of those OOM a small fuzz box despite the 4MB size cap.
+	 * handful of those OOM a small box despite the 4MB size cap.
 	 * Deliberate hugetlb coverage lives in create_sysv_shms(); the
 	 * fuzzed direct-shmget path never intends it.  Clearing SHM_HUGETLB
 	 * alone disables the hugepage path -- the kernel ignores SHM_HUGE_*
