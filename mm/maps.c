@@ -915,6 +915,19 @@ static void clone_global_mmap_pool(enum objecttype type)
 }
 
 /*
+ * Cap each child's LOCAL mmap pools so the otherwise-dormant prune path
+ * (prune_objects -> __prune_objects -> map_destructor -> munmap) runs.
+ * With max_entries left at 0 the pool never prunes: every successful
+ * fuzzed mmap()/memfd map adds an OBJ_LOCAL entry that is not reclaimed
+ * until the child exits, so a long-lived child (canary / D-state-wedged)
+ * pins gigabytes of resident shmem and OOMs a small box.  64 matches the
+ * self-limit mmap_lifecycle already enforces (MAX_LIFECYCLE_MAPS) and
+ * keeps plenty of pool diversity for mm coverage.  GLOBAL pools are
+ * separately hard-capped at OBJ_GLOBAL_MAX; this is the missing LOCAL cap.
+ */
+#define MMAP_LOCAL_MAX_ENTRIES 64U
+
+/*
  * Set up a childs local mapping list.
  * A child inherits the initial mappings, and will add to them
  * when it successfully completes mmap() calls.
@@ -950,17 +963,20 @@ void init_child_mappings(void)
 		return;
 	head->destroy = &map_destructor;
 	head->dump = &map_dump;
+	head->max_entries = MMAP_LOCAL_MAX_ENTRIES;
 
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_FILE);
 	if (head != NULL) {
 		head->destroy = &map_destructor;
 		head->dump = &map_dump;
+		head->max_entries = MMAP_LOCAL_MAX_ENTRIES;
 	}
 
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_TESTFILE);
 	if (head != NULL) {
 		head->destroy = &map_destructor;
 		head->dump = &map_dump;
+		head->max_entries = MMAP_LOCAL_MAX_ENTRIES;
 	}
 
 	globalhead = get_objhead(OBJ_GLOBAL, OBJ_MMAP_ANON);
