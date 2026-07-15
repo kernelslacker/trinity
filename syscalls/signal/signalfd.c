@@ -7,6 +7,8 @@
 #include "rnd.h"
 #include "sanitise.h"
 
+#define KERNEL_SIGSET_SIZE	8
+
 /*
  * Populate the user_mask the four signalfd shapes care about:
  *   - empty mask: drives the accept-no-signals path
@@ -54,10 +56,10 @@ static void sanitise_signalfd(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) set;
 	avoid_shared_buffer_inout(&rec->a2, sizeof(sigset_t));
-	rec->a3 = sizeof(sigset_t);
+	rec->a3 = KERNEL_SIGSET_SIZE;
 
-	/* Occasionally pass an undersized sizemask to hit the EINVAL gate
-	 * the kernel uses to reject mismatched sigset_t sizes. */
+	/* Occasionally pass a mismatched sizemask to hit the EINVAL gate
+	 * the kernel uses to reject anything other than KERNEL_SIGSET_SIZE. */
 	if (rnd_modulo_u32(10) == 0)
 		rec->a3 = sizeof(sigset_t) - 8;
 }
@@ -126,7 +128,7 @@ static void sanitise_signalfd4(struct syscallrecord *rec)
 
 	rec->a2 = (unsigned long) set;
 	avoid_shared_buffer_inout(&rec->a2, sizeof(sigset_t));
-	rec->a3 = sizeof(sigset_t);
+	rec->a3 = KERNEL_SIGSET_SIZE;
 
 	if (rnd_modulo_u32(10) == 0)
 		rec->a3 = sizeof(sigset_t) - 8;
