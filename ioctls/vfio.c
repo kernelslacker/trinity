@@ -297,6 +297,45 @@ static void sanitise_vfio_irq_set(struct syscallrecord *rec)
 	rec->a3 = (unsigned long)s;
 }
 
+#ifdef VFIO_DEVICE_IOEVENTFD
+static void sanitise_vfio_device_ioeventfd(struct syscallrecord *rec)
+{
+	struct vfio_device_ioeventfd *e;
+	static const __u32 widths[] = {
+		VFIO_DEVICE_IOEVENTFD_8,
+		VFIO_DEVICE_IOEVENTFD_16,
+		VFIO_DEVICE_IOEVENTFD_32,
+		VFIO_DEVICE_IOEVENTFD_64,
+	};
+
+	e = get_writable_address(sizeof(*e));
+	if (e == NULL)
+		return;
+
+	memset(e, 0, sizeof(*e));
+	e->argsz = sizeof(*e);
+	e->flags = widths[rnd_modulo_u32(ARRAY_SIZE(widths))];
+	e->fd = -1;
+
+	rec->a3 = (unsigned long)e;
+}
+#endif
+
+#ifdef VFIO_DEVICE_GET_GFX_DMABUF
+static void sanitise_vfio_get_gfx_dmabuf(struct syscallrecord *rec)
+{
+	__u32 *id;
+
+	id = get_writable_address(sizeof(*id));
+	if (id == NULL)
+		return;
+
+	*id = 0;
+
+	rec->a3 = (unsigned long)id;
+}
+#endif
+
 #ifdef VFIO_MIG_GET_PRECOPY_INFO
 static void sanitise_vfio_precopy_info(struct syscallrecord *rec)
 {
@@ -460,6 +499,16 @@ static void vfio_sanitise(const struct ioctl_group *grp,
 #ifdef VFIO_MIG_GET_PRECOPY_INFO
 	case VFIO_MIG_GET_PRECOPY_INFO:
 		sanitise_vfio_precopy_info(rec);
+		break;
+#endif
+#ifdef VFIO_DEVICE_IOEVENTFD
+	case VFIO_DEVICE_IOEVENTFD:
+		sanitise_vfio_device_ioeventfd(rec);
+		break;
+#endif
+#ifdef VFIO_DEVICE_GET_GFX_DMABUF
+	case VFIO_DEVICE_GET_GFX_DMABUF:
+		sanitise_vfio_get_gfx_dmabuf(rec);
 		break;
 #endif
 	default:
