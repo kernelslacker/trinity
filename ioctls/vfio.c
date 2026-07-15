@@ -297,6 +297,64 @@ static void sanitise_vfio_irq_set(struct syscallrecord *rec)
 	rec->a3 = (unsigned long)s;
 }
 
+#ifdef VFIO_DEVICE_BIND_IOMMUFD
+static void sanitise_vfio_bind_iommufd(struct syscallrecord *rec)
+{
+	struct vfio_device_bind_iommufd *b;
+
+	b = get_writable_address(sizeof(*b));
+	if (b == NULL)
+		return;
+
+	memset(b, 0, sizeof(*b));
+	b->argsz = sizeof(*b);
+	b->iommufd = -1;
+
+	rec->a3 = (unsigned long)b;
+}
+#endif
+
+#ifdef VFIO_DEVICE_ATTACH_IOMMUFD_PT
+static void sanitise_vfio_attach_iommufd_pt(struct syscallrecord *rec)
+{
+	struct vfio_device_attach_iommufd_pt *a;
+
+	a = get_writable_address(sizeof(*a));
+	if (a == NULL)
+		return;
+
+	memset(a, 0, sizeof(*a));
+	a->argsz = sizeof(*a);
+	a->pt_id = rnd_modulo_u32(VFIO_FUZZ_MAX_INDEX);
+	if (RAND_BOOL()) {
+		a->flags |= VFIO_DEVICE_ATTACH_PASID;
+		a->pasid = rnd_modulo_u32(VFIO_FUZZ_MAX_INDEX);
+	}
+
+	rec->a3 = (unsigned long)a;
+}
+#endif
+
+#ifdef VFIO_DEVICE_DETACH_IOMMUFD_PT
+static void sanitise_vfio_detach_iommufd_pt(struct syscallrecord *rec)
+{
+	struct vfio_device_detach_iommufd_pt *d;
+
+	d = get_writable_address(sizeof(*d));
+	if (d == NULL)
+		return;
+
+	memset(d, 0, sizeof(*d));
+	d->argsz = sizeof(*d);
+	if (RAND_BOOL()) {
+		d->flags |= VFIO_DEVICE_DETACH_PASID;
+		d->pasid = rnd_modulo_u32(VFIO_FUZZ_MAX_INDEX);
+	}
+
+	rec->a3 = (unsigned long)d;
+}
+#endif
+
 #ifdef VFIO_DEVICE_FEATURE
 #define VFIO_FUZZ_FEATURE_MAX_DATA	256
 
@@ -366,6 +424,21 @@ static void vfio_sanitise(const struct ioctl_group *grp,
 #ifdef VFIO_DEVICE_FEATURE
 	case VFIO_DEVICE_FEATURE:
 		sanitise_vfio_device_feature(rec);
+		break;
+#endif
+#ifdef VFIO_DEVICE_BIND_IOMMUFD
+	case VFIO_DEVICE_BIND_IOMMUFD:
+		sanitise_vfio_bind_iommufd(rec);
+		break;
+#endif
+#ifdef VFIO_DEVICE_ATTACH_IOMMUFD_PT
+	case VFIO_DEVICE_ATTACH_IOMMUFD_PT:
+		sanitise_vfio_attach_iommufd_pt(rec);
+		break;
+#endif
+#ifdef VFIO_DEVICE_DETACH_IOMMUFD_PT
+	case VFIO_DEVICE_DETACH_IOMMUFD_PT:
+		sanitise_vfio_detach_iommufd_pt(rec);
 		break;
 #endif
 	default:
