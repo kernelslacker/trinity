@@ -297,6 +297,22 @@ static void sanitise_vfio_irq_set(struct syscallrecord *rec)
 	rec->a3 = (unsigned long)s;
 }
 
+#ifdef VFIO_MIG_GET_PRECOPY_INFO
+static void sanitise_vfio_precopy_info(struct syscallrecord *rec)
+{
+	struct vfio_precopy_info *p;
+
+	p = get_writable_address(sizeof(*p));
+	if (p == NULL)
+		return;
+
+	memset(p, 0, sizeof(*p));
+	p->argsz = sizeof(*p);
+
+	rec->a3 = (unsigned long)p;
+}
+#endif
+
 #ifdef VFIO_DEVICE_BIND_IOMMUFD
 static void sanitise_vfio_bind_iommufd(struct syscallrecord *rec)
 {
@@ -439,6 +455,11 @@ static void vfio_sanitise(const struct ioctl_group *grp,
 #ifdef VFIO_DEVICE_DETACH_IOMMUFD_PT
 	case VFIO_DEVICE_DETACH_IOMMUFD_PT:
 		sanitise_vfio_detach_iommufd_pt(rec);
+		break;
+#endif
+#ifdef VFIO_MIG_GET_PRECOPY_INFO
+	case VFIO_MIG_GET_PRECOPY_INFO:
+		sanitise_vfio_precopy_info(rec);
 		break;
 #endif
 	default:
