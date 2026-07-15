@@ -1340,6 +1340,32 @@ struct childdata;
  */
 void cmp_hints_cfactual_capture(struct childdata *child);
 
+/*
+ * SHADOW cfactual control-replay harness (256·A tie-in -- the shared
+ * reexec-with-pin infrastructure the arg-perturbation lane will fold
+ * onto in a follow-up unit; today only cmp_hints_cfactual_capture()
+ * consumes it).  Re-dispatches child->syscall with fresh args EXCEPT
+ * the caller-named 1-based slot pinned to control_value; returns true
+ * iff the inner dispatch actually ran, and stamps *found_new_edges_out
+ * with the inner call's PC-edge novelty signal (the classifier
+ * signal).  A false return means one of the destructive / validate-
+ * silent / slot-bounds / per-window-cap gates fired -- the caller
+ * routes those candidates into the cfactual_flaky lane.
+ *
+ * PC-mode / !in_reexec is a hard invariant: cfactual capture only
+ * fires on credit_pc(win), which by construction runs on PC-mode
+ * children outside the reexec bracket.  The helper re-checks both
+ * so a stray future caller in a wrong context bails cleanly instead
+ * of driving a recursive dispatch.  Bumps and gates use the same
+ * REDQUEEN_REEXEC_WINDOW_CAP the redqueen replay lane runs on --
+ * one shared budget so the two consumers cannot each burn their own
+ * cap and pin the child on replay work.
+ */
+bool cmp_hints_cfactual_replay_with_pin(struct childdata *child,
+					unsigned int slot,
+					unsigned long control_value,
+					bool *found_new_edges_out);
+
 /* Advance the chaos-mode window counter.  Called once per bandit window
  * rotation from maybe_rotate_strategy().  Every CHAOS_WINDOW_MODULO'th
  * window flips cmp_hints_chaos_active to true for the duration of that

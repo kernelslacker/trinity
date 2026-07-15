@@ -3597,6 +3597,27 @@ struct kcov_shared {
 	unsigned long cmp_hint_cfactual_win;
 	unsigned long cmp_hint_cfactual_coincidence;
 	unsigned long cmp_hint_cfactual_flaky;
+
+	/*
+	 * SHADOW cfactual-attribution shared-tier quarantine lane.  A
+	 * candidate whose stash entry was stamped served_from_shared=1
+	 * (from cmp_shared_tier_try_serve_cold_miss under
+	 * cmp_shared_tier_mode == COMBINED) has never been locally re-
+	 * observed; its cmp_ip belongs to a cross-syscall observation and
+	 * the pool-side arg_idx that would let the control-replay target
+	 * the right slot is not carried on the shared-serve stash.  Rather
+	 * than pollute the native-pool cfactual_win / _coincidence / _flaky
+	 * tallies (which the arm-promotion gate consumes as
+	 *   win / (win + coincidence)),
+	 * shared-served candidates route here so they are AT MOST a
+	 * denominator lost to the quarantine boundary -- symmetric with
+	 * the cmp_hint_tier_shared_wins / _misses quarantine the credit
+	 * drain already applies to shared-served PC-outcome accounting
+	 * (see cmp_hints/credit.c around the served_from_shared branch).
+	 * Bumped once per shared-served candidate the cfactual capture
+	 * walks; the replay itself is deliberately NOT run.
+	 */
+	unsigned long cmp_hint_cfactual_shared_quarantined;
 };
 
 extern struct kcov_shared *kcov_shm;
