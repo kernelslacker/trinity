@@ -16,16 +16,54 @@ static unsigned long kcmp_types[] = {
 	KCMP_EPOLL_TFD,
 };
 
-/* For KCMP_FILE, idx1/idx2 are fd numbers to compare. */
+/*
+ * Operand semantics per kcmp(2):
+ *   - KCMP_FILE:      idx1 and idx2 are fds to compare
+ *   - KCMP_EPOLL_TFD: idx1 is an epoll fd, idx2 is a userspace pointer
+ *                     to struct kcmp_epoll_slot { efd, tfd, toff }
+ *   - all other types: idx1/idx2 are ignored by the kernel
+ *
+ * Without the KCMP_EPOLL_TFD arm the epoll-target comparison path
+ * bails out on -EBADF / -EFAULT before reaching epoll_find_tfd().
+ */
 static void sanitise_kcmp(struct syscallrecord *rec)
 {
-	if (rec->a3 == KCMP_FILE) {
+	struct kcmp_epoll_slot *slot;
+
+	switch (rec->a3) {
+	case KCMP_FILE:
 		rec->a4 = get_random_fd();
 		rec->a5 = get_random_fd();
-	} else {
-		rec->a4 = 0;
-		rec->a5 = 0;
+		return;
+
+	case KCMP_EPOLL_TFD:
+		/* Preserve a minority path through the kernel's early
+		 * -EBADF / -EFAULT rejects. */
+		if (ONE_IN(10))
+			break;
+
+		slot = (struct kcmp_epoll_slot *)
+			get_writable_struct(sizeof(*slot));
+		if (slot == NULL)
+			break;
+
+		slot->efd = get_random_fd();
+		slot->tfd = get_random_fd();
+		slot->toff = RAND_BOOL() ? 0 : rnd_modulo_u32(16);
+
+		/* Prefer a tracked epoll fd so the comparison reaches
+		 * epoll_find_tfd(); get_typed_fd() falls back to a
+		 * random fd when the pool is empty. */
+		rec->a4 = (unsigned long) get_typed_fd(ARG_FD_EPOLL);
+		rec->a5 = (unsigned long) slot;
+		return;
+
+	default:
+		break;
 	}
+
+	rec->a4 = 0;
+	rec->a5 = 0;
 }
 
 static void post_kcmp(struct syscallrecord *rec)
