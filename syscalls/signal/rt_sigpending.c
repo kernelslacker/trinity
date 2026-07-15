@@ -14,6 +14,9 @@
 #include "trinity.h"
 #include "utils.h"
 
+/* Kernel sigset_t is a fixed 64-bit mask; sizeof matches on every arch. */
+#define KERNEL_SIGSET_SIZE	8
+
 /*
  * Snapshot of the two rt_sigpending input args plus the output-buffer
  * poison seed read by the post oracle, captured at sanitise time and
@@ -45,6 +48,17 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
+	/*
+	 * Bias sigsetsize to the kernel-ABI value (8 bytes = _NSIG/8);
+	 * keep a small wrong-size arm to hit the EINVAL branch.  glibc's
+	 * sizeof(sigset_t) is 128, and the kernel unconditionally rejects
+	 * any sigsetsize != 8 before touching the buffer -- so leaving a2
+	 * to ARG_LEN wastes nearly every call on an EINVAL that never
+	 * reaches the copy_to_user() the oracle is meant to police.
+	 */
+	if (!ONE_IN(8))
+		rec->a2 = KERNEL_SIGSET_SIZE;
+
 	avoid_shared_buffer_out(&rec->a1, rec->a2);
 
 	/*
@@ -65,12 +79,12 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
 	snap->poison_seed = 0;
 
 	/*
-	 * Stamp a per-call poison pattern across the sizeof(sigset_t)
+	 * Stamp a per-call poison pattern across the KERNEL_SIGSET_SIZE
 	 * window when the caller asked for exactly that length AND the
 	 * buffer is provably writable.  The kernel only performs a FULL
-	 * write when sigsetsize == sizeof(sigset_t) -- a short request
-	 * copies only sigsetsize bytes and would leave the tail of any
-	 * larger poison window legitimately intact (a guaranteed false
+	 * write when sigsetsize == KERNEL_SIGSET_SIZE (8 bytes) -- a short
+	 * request copies only sigsetsize bytes and would leave the tail of
+	 * any larger poison window legitimately intact (a guaranteed false
 	 * positive); a mismatched request returns -EINVAL before any copy
 	 * so the buffer stays byte-for-byte poison and would also false-
 	 * positive if we armed the check.  range_readable_user() filters
@@ -83,10 +97,10 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
 	 * check_output_struct() from the post handler.
 	 */
 	buf = (void *)(unsigned long) rec->a1;
-	if (rec->a2 == sizeof(sigset_t) &&
-	    range_readable_user(buf, sizeof(sigset_t)))
+	if (rec->a2 == KERNEL_SIGSET_SIZE &&
+	    range_readable_user(buf, KERNEL_SIGSET_SIZE))
 		snap->poison_seed = poison_output_struct(buf,
-							 sizeof(sigset_t),
+							 KERNEL_SIGSET_SIZE,
 							 0);
 
 	/*
@@ -106,14 +120,14 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
  * success return:
  *
  *   1. Untouched-buffer poison check.  Sanitise stamped a per-call
- *      poison pattern across the sizeof(sigset_t) window; a byte-
+ *      poison pattern across the KERNEL_SIGSET_SIZE window; a byte-
  *      identical pattern after a 0-retval means the kernel skipped
  *      copy_to_user() entirely or short-copied and left an
  *      uninitialised tail readable in user memory (a kernel->user
  *      infoleak).  Runs on every success sample -- the check is a
- *      sizeof(sigset_t) byte-walk with no re-issue -- and bumps the
+ *      KERNEL_SIGSET_SIZE byte-walk with no re-issue -- and bumps the
  *      shared post_handler_untouched_out_buf slot.  Gated on
- *      sigsetsize == sizeof(sigset_t) because a short user request
+ *      sigsetsize == KERNEL_SIGSET_SIZE because a short user request
  *      only guarantees the kernel copies sigsetsize bytes and the
  *      tail of the poison window would legitimately still carry
  *      poison; a mismatched request returns -EINVAL and never reaches
@@ -167,7 +181,7 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 		goto out_free;
 	if (snap->set == 0)
 		goto out_free;
-	if (snap->sigsetsize != sizeof(sigset_t))
+	if (snap->sigsetsize != KERNEL_SIGSET_SIZE)
 		goto out_free;
 
 	if (!post_snapshot_or_skip(&sset,
