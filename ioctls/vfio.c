@@ -321,6 +321,29 @@ static void sanitise_vfio_device_ioeventfd(struct syscallrecord *rec)
 }
 #endif
 
+#ifdef VFIO_DEVICE_QUERY_GFX_PLANE
+static void sanitise_vfio_gfx_plane(struct syscallrecord *rec)
+{
+	struct vfio_device_gfx_plane_info *p;
+	static const __u32 types[] = {
+		VFIO_GFX_PLANE_TYPE_PROBE,
+		VFIO_GFX_PLANE_TYPE_DMABUF,
+		VFIO_GFX_PLANE_TYPE_REGION,
+	};
+
+	p = get_writable_address(sizeof(*p));
+	if (p == NULL)
+		return;
+
+	memset(p, 0, sizeof(*p));
+	p->argsz = sizeof(*p);
+	p->flags = types[rnd_modulo_u32(ARRAY_SIZE(types))];
+	p->drm_plane_type = rnd_modulo_u32(VFIO_FUZZ_MAX_INDEX);
+
+	rec->a3 = (unsigned long)p;
+}
+#endif
+
 #ifdef VFIO_DEVICE_GET_GFX_DMABUF
 static void sanitise_vfio_get_gfx_dmabuf(struct syscallrecord *rec)
 {
@@ -456,7 +479,12 @@ static void vfio_sanitise(const struct ioctl_group *grp,
 		sanitise_vfio_dma_map(rec);
 		break;
 	case VFIO_IOMMU_UNMAP_DMA:
-		sanitise_vfio_dma_unmap(rec);
+#ifdef VFIO_DEVICE_QUERY_GFX_PLANE
+		if (RAND_BOOL())
+			sanitise_vfio_gfx_plane(rec);
+		else
+#endif
+			sanitise_vfio_dma_unmap(rec);
 		break;
 	case VFIO_IOMMU_GET_INFO:
 		sanitise_vfio_iommu_info(rec);
