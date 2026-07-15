@@ -389,10 +389,18 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 			}
 		}
 
+		/* Stash arg_idx (1-based) so the SHADOW cfactual-attribution
+		 * classifier can pin the control-replay's slot to this arg;
+		 * arg_idx is otherwise unread by the per-syscall pool credit
+		 * path (that lane keys on cmp_ip/value/size, not the arg
+		 * slot the value landed in).  A caller-side arg_idx of 0
+		 * (unknown / non-argtype-handler pull) is carried through
+		 * unchanged and lands the cfactual classifier in the flaky
+		 * lane -- no target slot to pin means no replay. */
 		cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_PER_SYSCALL,
 					 callsite,
 					 picked_cmp_ip, stash_value, picked_size, use,
-					 0, 0, NULL,
+					 arg_idx, 0, NULL,
 					 false, bucket, hyp_injected, false);
 	}
 	cmp_hyp_would_pick(nr, do32, picked_cmp_ip, picked_size, picked_value);
@@ -408,7 +416,7 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 						    unsigned long old,
 						    bool allow_hyp_inject,
 						    const struct cmp_accept_range *accept,
-						    unsigned int arg_idx __attribute__((unused)),
+						    unsigned int arg_idx,
 						    enum cmp_hint_callsite callsite,
 						    unsigned long *out,
 						    unsigned int *out_size)
@@ -505,7 +513,7 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 							 callsite,
 							 re_cmp_ip, re_value,
 							 re_size, use,
-							 0, 0, NULL,
+							 arg_idx, 0, NULL,
 							 true, 0, false, false);
 				cmp_hyp_would_pick(nr, do32, re_cmp_ip,
 						   re_size, re_value);
