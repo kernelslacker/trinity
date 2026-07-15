@@ -13,6 +13,9 @@
 #include "utils.h"
 #include "kernel/ptrace.h"
 
+/* Kernel sigset_t is a fixed 64-bit mask; sizeof matches on every arch. */
+#define KERNEL_SIGSET_SIZE	8
+
 /*
  * Snapshot of the heap allocation sanitise hands to the kernel via
  * rec->a4, captured at sanitise time and consumed by the post handler.
@@ -188,23 +191,31 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 
 	case PTRACE_SETSIGMASK: {
 		/*
-		 * data points to a sigset_t; addr (arg3) is sizeof(sigset_t).
-		 * Set a random signal mask.
+		 * data points to a sigset_t; addr (arg3) is the kernel ABI
+		 * sigsetsize == 8 bytes.  ptrace_regset() (kernel/ptrace.c)
+		 * rejects addr != sizeof(sigset_t) where sizeof is the kernel's
+		 * 8-byte type, not glibc's 128.  Passing 128 always -EINVALs
+		 * before the mask copy.  Allocate the full glibc-sized buffer
+		 * (harmless — kernel copies only 8 bytes) and hand it in.
 		 */
 		sigset_t *set = zmalloc_tracked(sizeof(sigset_t));
 
 		generate_rand_bytes((unsigned char *) set, sizeof(sigset_t));
-		rec->a3 = sizeof(sigset_t);
+		rec->a3 = KERNEL_SIGSET_SIZE;
 		rec->a4 = (unsigned long) set;
 		data = set;
 		break;
 	}
 
 	case PTRACE_GETSIGMASK: {
-		/* data points to writable sigset_t; addr is sizeof(sigset_t) */
+		/*
+		 * Mirror of SETSIGMASK: addr must be the kernel ABI
+		 * sigsetsize == 8, not glibc's sizeof(sigset_t) == 128,
+		 * or ptrace_regset() short-circuits to -EINVAL.
+		 */
 		sigset_t *set = zmalloc_tracked(sizeof(sigset_t));
 
-		rec->a3 = sizeof(sigset_t);
+		rec->a3 = KERNEL_SIGSET_SIZE;
 		rec->a4 = (unsigned long) set;
 		avoid_shared_buffer_out(&rec->a4, sizeof(sigset_t));
 		data = set;
