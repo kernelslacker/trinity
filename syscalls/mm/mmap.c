@@ -154,6 +154,19 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	}
 
 	/*
+	 * MAP_POPULATE / MAP_LOCKED eager-fault the whole VMA inside the
+	 * mmap() call.  On a large MAP_ANONYMOUS|MAP_SHARED mapping that is
+	 * an instant multi-MB of resident tmpfs-backed shmem, and nothing
+	 * prunes these VMAs during the child's life, so a run accumulates
+	 * hundreds of MB of shmem per child and can OOM a small fuzz box.
+	 * Keep the eager-fault coverage on small mappings; drop it above
+	 * 2 MB so the large size tiers stay lazy -- their pages become
+	 * resident only via the size-capped dirty walk, not all at once.
+	 */
+	if (rec->a2 > 2UL * 1024 * 1024)
+		rec->a4 &= ~(unsigned long)(MAP_POPULATE | MAP_LOCKED);
+
+	/*
 	 * rec->a3 is filled from mmap_prots[] via ARG_OP and never lands at
 	 * zero, so the !readable VM_LOCKED branches in apply_vma_lock_flags()
 	 * (and the analogous reads in apply_mlockall_flags, mprotect_pkey,
