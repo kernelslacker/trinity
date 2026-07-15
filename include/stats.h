@@ -5812,13 +5812,17 @@ struct stats_s {
 	 * every moment so the per-fill rate is the clean per-mode
 	 * comparison.  Multiple blob_fills per call resolve to
 	 * latest-fill wins (rare on the ARG_BUF_SIZED surface).  When
-	 * --blob-ab-mode is absent all four stay at zero and the
+	 * --blob-ab-mode is absent all eight stay at zero and the
 	 * dedicated blob_ab_mode stat_category is suppressed by its
 	 * gate. */
 	unsigned long blob_ab_havoc_fills;
 	unsigned long blob_ab_havoc_new_edges;
+	unsigned long blob_ab_havoc_hit_cmp;
+	unsigned long blob_ab_havoc_sum_cmp;
 	unsigned long blob_ab_cmpdict_fills;
 	unsigned long blob_ab_cmpdict_new_edges;
+	unsigned long blob_ab_cmpdict_hit_cmp;
+	unsigned long blob_ab_cmpdict_sum_cmp;
 
 	/* Cause-attribution for the epoll wait-family (epoll_wait,
 	 * epoll_pwait, epoll_pwait2) rejects landing in
