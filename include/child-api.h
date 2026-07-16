@@ -232,6 +232,7 @@ enum child_op_type {
 	CHILD_OP_BRIDGE_IP6FRAG_REFRAG,
 	CHILD_OP_BRIDGE_IP6_REFRAG_FRAGGAP,
 	CHILD_OP_IPSET_CHURN,
+	CHILD_OP_IP4_UDP_CORK_SPLICE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -673,3 +674,4 @@ bool tc_live_traffic(struct childdata *child);
 bool hfs_mount_fuzz(struct childdata *child);
 bool rds_zcopy_crafted_send(struct childdata *child);
 bool bridge_ip6frag_refrag(struct childdata *child);
+bool ip4_udp_cork_splice(struct childdata *child);
