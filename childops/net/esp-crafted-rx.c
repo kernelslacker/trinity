@@ -44,7 +44,13 @@
  *      scatter-gather crypto request, and the SG teardown runs
  *      esp_ssg_unref() over managed frag pages.  Same SA / SPI mix, so
  *      the fragmented path shares SPI-lookup and replay-window
- *      coverage with the linear path.  Non-fragmented frames still
+ *      coverage with the linear path.  On v6 invocations, roughly
+ *      one-in-six iterations instead emits a max-depth stacked-ESP
+ *      IPv6 frame -- six nested cipher_null/digest_null transport-mode
+ *      SAs whose sequential decap drives sp->len up to XFRM_MAX_DEPTH,
+ *      with an inner destination-options HAO or type-2 routing header
+ *      as the innermost payload so mip6's handlers call xfrm6_input_addr()
+ *      at the depth boundary.  Non-fragmented, non-stacked frames still
  *      dominate the burst and each such frame picks:
  *        - SPI: matches the installed SA most of the time, occasional
  *          random miss to exercise the SPI-lookup miss path,
@@ -139,6 +145,14 @@
 
 #ifndef IPPROTO_ESP
 #define IPPROTO_ESP		50
+#endif
+
+#ifndef IPPROTO_ROUTING
+#define IPPROTO_ROUTING		43
+#endif
+
+#ifndef IPPROTO_DSTOPTS
+#define IPPROTO_DSTOPTS		60
 #endif
 
 #if !__has_include(<linux/xfrm.h>)
@@ -265,6 +279,22 @@ struct xfrm_usersa_id {
 #define ESPRX_FRAG_ESP_LEN	(8U + ESPRX_FRAG_INNER + 2U)
 #define ESPRX_FRAG_SLICE1	520U
 #define ESPRX_FRAG_FRAME_MAX	(40U + 8U + ESPRX_FRAG_SLICE1)
+
+/*
+ * Stacked-ESP-inner path knobs.  Kernel's XFRM_MAX_DEPTH is 6 (see
+ * include/net/xfrm.h in linux-linus).  A max-depth stacked-ESP IPv6
+ * frame nests six cipher_null/digest_null transport-mode ESP layers
+ * ahead of a mip6-shaped inner extension header (destination-options
+ * HAO or type-2 routing).  Each successful decap adds a secpath entry,
+ * so after the innermost layer strips, sp->len == XFRM_MAX_DEPTH and
+ * mip6_destopt_input() / mip6_rthdr_input() call xfrm6_input_addr()
+ * against a full secpath -- covers the depth-boundary reinject slot
+ * that single-frame and fragmented-inner emitters never reach.
+ * Buffer size: 40 (IPv6) + 6*8 (ESP hdrs) + 24 (dstopts/rthdr)
+ * + 8 (fake inner UDP) + 6*2 (ESP trailers) = 132; 256 leaves
+ * headroom for header-stamping variance. */
+#define ESPRX_STACK_DEPTH	6U
+#define ESPRX_STACK_PKT_MAX	256U
 
 /* Nominal inner header sizes.  Kernel's post-decap parse reads at
  * least this many bytes for each proto; truncating the emitted payload
@@ -732,6 +762,13 @@ struct esp_crafted_rx_iter_ctx {
 	bool sa_added;
 	bool v6;
 	struct childdata *child;
+	/* v6-only: SPIs of stacked cipher_null/digest_null SAs installed
+	 * for the XFRM_MAX_DEPTH secpath path.  stack_depth is the number
+	 * successfully installed (0 when v4, or when the base install
+	 * loop bailed on the first rejection).  Torn down alongside the
+	 * primary SA on teardown. */
+	__be32 stack_spi[ESPRX_STACK_DEPTH];
+	unsigned int stack_depth;
 };
 
 /*
@@ -922,6 +959,157 @@ static void esp_crafted_rx_send_frag_pair(struct esp_crafted_rx_iter_ctx *ctx,
 }
 
 /*
+ * Stamp the innermost mip6-shaped extension header at `buf`.  Both
+ * variants are exactly 24 bytes (hdr_ext_len=2 in 8-octet units past
+ * the first 8) and set next_header=UDP so the header walker resumes
+ * on a fixed-size ULP after the extension.  Destination-options form
+ * carries a HAO (opt type 0xC9) followed by PadN(2) to reach the
+ * 8-octet boundary; routing form carries a type-2 (Mobile IPv6) header
+ * with segments_left=1 and the home address set to ::1.  Both are the
+ * shapes mip6's destopt/rthdr input handlers dispatch on the way to
+ * xfrm6_input_addr().
+ */
+static size_t emit_inner_mip6_ext(uint8_t *buf, bool use_rthdr2)
+{
+	memset(buf, 0, 24);
+	buf[0] = IPPROTO_UDP;		/* next_header */
+	buf[1] = 2;			/* hdr_ext_len: 24 = 8 * (2 + 1) */
+	if (use_rthdr2) {
+		buf[2]      = 2;	/* routing_type: Type 2 (Mobile IPv6) */
+		buf[3]      = 1;	/* segments_left */
+		buf[8 + 15] = 1;	/* home address = ::1 */
+	} else {
+		buf[2]      = 0xC9;	/* HAO option type */
+		buf[3]      = 16;	/* HAO opt data len */
+		buf[4 + 15] = 1;	/* home address = ::1 */
+		buf[20]     = 1;	/* PadN option type */
+		buf[21]     = 2;	/* PadN option data len */
+	}
+	return 24;
+}
+
+/*
+ * Build an IPv6 frame that stacks `depth` ESP headers ahead of an
+ * inner mip6-shaped extension header (destination-options HAO when
+ * !use_rthdr2, type-2 routing otherwise) plus a stub UDP header, then
+ * emits `depth` ESP trailers in reverse order so each layer's trailer
+ * lands after its own payload on the wire.  Innermost trailer's
+ * next_header selects DSTOPTS / ROUTING; outer trailers chain ESP.
+ * Returns 0 if depth is out of range; total wire length otherwise.
+ */
+static size_t build_v6_stacked_esp_frame(uint8_t *buf, const __be32 *spis,
+					 unsigned int depth, __u32 seq,
+					 bool use_rthdr2)
+{
+	size_t off;
+	uint16_t payload_len;
+	unsigned int i;
+	uint8_t inner_nh;
+
+	if (depth == 0 || depth > ESPRX_STACK_DEPTH)
+		return 0;
+
+	memset(buf, 0, ESPRX_STACK_PKT_MAX);
+
+	buf[0]       = 0x60;
+	buf[6]       = IPPROTO_ESP;
+	buf[7]       = 64;
+	buf[8 + 15]  = 1;		/* saddr = ::1 */
+	buf[24 + 15] = 1;		/* daddr = ::1 */
+	off = 40;
+
+	for (i = 0; i < depth; i++) {
+		*(__be32 *)(buf + off + 0) = spis[i];
+		*(__be32 *)(buf + off + 4) = htonl(seq + i);
+		off += 8;
+	}
+
+	off += emit_inner_mip6_ext(buf + off, use_rthdr2);
+
+	/* Stub inner UDP header (dport/sport 0, len=8, csum 0).  Kernel
+	 * walks the extension chain to a ULP; the UDP header just gives
+	 * that walk a valid-shaped terminator. */
+	buf[off + 5] = 8;
+	off += 8;
+
+	inner_nh = use_rthdr2 ? IPPROTO_ROUTING : IPPROTO_DSTOPTS;
+	for (i = depth; i > 0; i--) {
+		buf[off + 0] = 0;
+		buf[off + 1] = (i == depth) ? inner_nh : IPPROTO_ESP;
+		off += 2;
+	}
+
+	payload_len = (uint16_t)(off - 40);
+	buf[4] = (uint8_t)(payload_len >> 8);
+	buf[5] = (uint8_t)payload_len;
+	return off;
+}
+
+/*
+ * Install up to ESPRX_STACK_DEPTH additional v6 inbound null-cipher /
+ * null-auth ESP SAs, all keyed on ::1 with sequential SPIs.  Runs only
+ * on v6 invocations (v4 has no HAO / type-2 routing equivalent driving
+ * xfrm6_input_addr()).  Best-effort: any per-SA install rejection stops
+ * the loop early, so the emitter picks up whatever depth succeeded and
+ * ctx->stack_depth remains an accurate count for the teardown loop.
+ */
+static void install_stacked_null_esp_sas(struct esp_crafted_rx_iter_ctx *ctx)
+{
+	unsigned int i;
+	__u32 base_spi;
+
+	if (!ctx->v6)
+		return;
+	base_spi = (rand32() % ESPRX_SPI_RANGE) + ESPRX_SPI_MIN;
+	/* Skip a SPI hole around the primary SA so the sequential rotate
+	 * does not collide with ctx->spi's kernel-side hash bucket. */
+	base_spi = ESPRX_SPI_MIN + ((base_spi + ESPRX_STACK_DEPTH + 1U) %
+				    (ESPRX_SPI_RANGE - ESPRX_STACK_DEPTH));
+	for (i = 0; i < ESPRX_STACK_DEPTH; i++) {
+		__be32 spi = htonl(base_spi + i);
+		__u32 reqid = ctx->reqid + i + 1U;
+
+		if (install_null_esp_sa(&ctx->nl, spi, reqid, true) != 0)
+			return;
+		ctx->stack_spi[ctx->stack_depth++] = spi;
+		__atomic_add_fetch(&shm->stats.esp_crafted_rx_stacked_sa_install_ok,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
+/*
+ * Emit one stacked-ESP v6 frame at ::1 through the v6 raw socket.
+ * SPIs are the stacked SAs' SPIs so every layer decapsulates; the
+ * inner extension form (HAO destopts vs type-2 routing) flips 50/50
+ * so mip6's two entry points into xfrm6_input_addr() are both walked.
+ * MSG_DONTWAIT keeps the send inside the SIGALRM(1s) safety net.
+ */
+static void esp_crafted_rx_send_stacked_v6(struct esp_crafted_rx_iter_ctx *ctx,
+					   int fd)
+{
+	uint8_t pkt[ESPRX_STACK_PKT_MAX];
+	struct sockaddr_in6 dst;
+	size_t len;
+
+	if (ctx->stack_depth == 0)
+		return;
+
+	memset(&dst, 0, sizeof(dst));
+	dst.sin6_family           = AF_INET6;
+	dst.sin6_addr.s6_addr[15] = 1;
+
+	len = build_v6_stacked_esp_frame(pkt, ctx->stack_spi, ctx->stack_depth,
+					 pick_esp_seq(), ONE_IN(2));
+	if (len == 0)
+		return;
+
+	if (sendto(fd, pkt, len, MSG_DONTWAIT,
+		   (struct sockaddr *)&dst, sizeof(dst)) > 0)
+		__atomic_add_fetch(&shm->stats.esp_crafted_rx_stacked_sent_ok,
+				   1, __ATOMIC_RELAXED);
+}
+
+/*
  * BUDGETED+JITTER burst of hand-rolled ESP frames at 127.0.0.2 (v4)
  * or ::1 (v6).  Each iteration rerolls seq, inner proto, and inner
  * truncation; SPI is the installed SA's SPI ~7/8 of the time and a
@@ -929,7 +1117,10 @@ static void esp_crafted_rx_send_frag_pair(struct esp_crafted_rx_iter_ctx *ctx,
  * too.  Roughly 1-in-3 iterations emit a two-fragment large-inner
  * datagram instead, driving IP defrag reassembly into a non-linear skb
  * so ESP decrypt exercises the scatter-gather teardown (esp_ssg_unref)
- * over managed frag pages.  MSG_DONTWAIT so a backed-up loopback queue
+ * over managed frag pages.  On v6 with stacked SAs successfully
+ * installed, roughly 1-in-6 iterations instead emits a max-depth
+ * stacked-ESP frame driving xfrm6_input_addr() at the XFRM_MAX_DEPTH
+ * secpath boundary.  MSG_DONTWAIT so a backed-up loopback queue
  * cannot stall the iteration past the SIGALRM(1s) cap.
  */
 static void esp_crafted_rx_iter_send_burst(struct esp_crafted_rx_iter_ctx *ctx)
@@ -951,6 +1142,11 @@ static void esp_crafted_rx_iter_send_burst(struct esp_crafted_rx_iter_ctx *ctx)
 		__u32 seq;
 		uint8_t inner_proto;
 		uint8_t trunc_len;
+
+		if (ctx->v6 && ctx->stack_depth > 0 && ONE_IN(6)) {
+			esp_crafted_rx_send_stacked_v6(ctx, fd);
+			continue;
+		}
 
 		if (ONE_IN(3)) {
 			esp_crafted_rx_send_frag_pair(ctx, fd);
@@ -999,12 +1195,19 @@ static void esp_crafted_rx_iter_send_burst(struct esp_crafted_rx_iter_ctx *ctx)
  */
 static void esp_crafted_rx_iter_teardown(struct esp_crafted_rx_iter_ctx *ctx)
 {
+	unsigned int i;
+
 	if (ctx->raw_v4 >= 0)
 		close(ctx->raw_v4);
 	if (ctx->raw_v6 >= 0)
 		close(ctx->raw_v6);
 	if (ctx->sa_added) {
 		if (delete_esp_sa(&ctx->nl, ctx->spi, ctx->v6) == 0)
+			__atomic_add_fetch(&shm->stats.esp_crafted_rx_sa_delete_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+	for (i = 0; i < ctx->stack_depth; i++) {
+		if (delete_esp_sa(&ctx->nl, ctx->stack_spi[i], true) == 0)
 			__atomic_add_fetch(&shm->stats.esp_crafted_rx_sa_delete_ok,
 					   1, __ATOMIC_RELAXED);
 	}
@@ -1048,6 +1251,8 @@ static int esp_crafted_rx_in_ns(void *arg)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
+	install_stacked_null_esp_sas(&ctx);
+
 	esp_crafted_rx_iter_open_raw(&ctx);
 
 	if (valid_op)
@@ -1084,6 +1289,9 @@ bool esp_crafted_rx(struct childdata *child)
 		modprobe_attempted = true;
 		try_modprobe("esp4");
 		try_modprobe("esp6");
+		/* mip6 registers the destopt/rthdr handlers whose
+		 * xfrm6_input_addr() call is the depth-boundary target. */
+		try_modprobe("mip6");
 	}
 
 	rc = userns_run_in_ns(CLONE_NEWNET, esp_crafted_rx_in_ns, &cctx);
