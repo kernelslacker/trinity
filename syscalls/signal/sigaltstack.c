@@ -4,6 +4,7 @@
 #include <signal.h>
 #include <sys/syscall.h>
 #include <string.h>
+#include <unistd.h>
 #include "arch.h"
 #include "deferred-free.h"
 #include "maps.h"
@@ -58,15 +59,35 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 {
 	stack_t *ss;
 	unsigned int draw;
+	static long min_ss;
 #ifdef HAVE_SYS_SIGALTSTACK
 	struct sigaltstack_post_state *snap;
 #endif
 
 	/*
+	 * Static MINSIGSTKSZ (a build-time macro, 2KB on x86_64 glibc)
+	 * undersizes the "valid" altstack bucket on CPUs with large xstate
+	 * (AMX etc.), so signal delivery on those hosts overflows the stack
+	 * instead of exercising the successful-delivery path.  Cache the
+	 * dynamic floor from sysconf(_SC_MINSIGSTKSZ) on first use, clamped
+	 * up by the static macro in case sysconf returns something absurd.
+	 * On old glibc where the sysconf key is unavailable, fall back to a
+	 * generous static floor comfortably above any current xstate size.
+	 */
+	if (min_ss == 0) {
+#ifdef _SC_MINSIGSTKSZ
+		long v = sysconf(_SC_MINSIGSTKSZ);
+		min_ss = (v > (long) MINSIGSTKSZ) ? v : (long) MINSIGSTKSZ;
+#else
+		min_ss = 16 * 1024;
+#endif
+	}
+
+	/*
 	 * Shape distribution (approximate):
-	 *   30% enabled  (ss_flags=0, valid sp, size MINSIGSTKSZ*(1..4))
+	 *   30% enabled  (ss_flags=0, valid sp, size min_ss*(1..4))
 	 *   20% disabled (SS_DISABLE, NULL sp, size 0)
-	 *   15% too-small (size < MINSIGSTKSZ -- kernel EINVAL gate)
+	 *   15% too-small (size < min_ss -- kernel EINVAL gate)
 	 *   10% misaligned sp (kernel behaviour varies, validation stays warm)
 	 *   15% SS_AUTODISARM (explicit bucket so disarm-on-handler-entry
 	 *                      and re-arm-on-handler-exit paths actually fire)
@@ -96,9 +117,9 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 	memset(ss, 0, sizeof(*ss));
 
 	if (draw < 40) {
-		/* enabled: MINSIGSTKSZ * (1..4) */
+		/* enabled: min_ss * (1..4) */
 		unsigned int mult = 1 + rnd_modulo_u32(4);
-		size_t sz = (size_t) MINSIGSTKSZ * mult;
+		size_t sz = (size_t) min_ss * mult;
 		ss->ss_sp = (void *) get_writable_address(sz);
 		ss->ss_flags = 0;
 		ss->ss_size = sz;
@@ -111,16 +132,16 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 		/* too-small: kernel must reject with EINVAL */
 		ss->ss_sp = (void *) get_writable_address(page_size);
 		ss->ss_flags = RAND_BOOL() ? SS_AUTODISARM : 0;
-		ss->ss_size = rnd_modulo_u32(MINSIGSTKSZ);
+		ss->ss_size = rnd_modulo_u32((unsigned int) min_ss);
 	} else if (draw < 85) {
 		/* misaligned ss_sp: nudge a valid allocation by an odd
 		 * byte offset.  The base allocation is sized to absorb the
 		 * nudge so we are still pointing inside writable memory. */
-		unsigned char *base = (unsigned char *) get_writable_address(MINSIGSTKSZ + 16);
+		unsigned char *base = (unsigned char *) get_writable_address((size_t) min_ss + 16);
 		unsigned int nudge = 1 + rnd_modulo_u32(7);
 		ss->ss_sp = base ? (void *) (base + nudge) : NULL;
 		ss->ss_flags = 0;
-		ss->ss_size = MINSIGSTKSZ;
+		ss->ss_size = min_ss;
 	} else {
 		/* SS_AUTODISARM (kernel >= 4.7) */
 		ss->ss_sp = (void *) get_writable_address(SIGSTKSZ);
