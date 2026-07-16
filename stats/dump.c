@@ -2504,6 +2504,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&ip6_udp_cork_splice_category);
 
+	stat_category_emit_text(&ip4_udp_cork_splice_category);
+
 	stat_category_emit_text(&mpls_route_churn_category);
 
 	stat_category_emit_text(&netlink_monitor_race_category);
