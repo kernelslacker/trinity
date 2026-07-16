@@ -1709,6 +1709,8 @@ struct stats_s {
 	unsigned long esp_crafted_rx_sa_install_failed;		/* XFRM_MSG_NEWSA rejected (any errno) */
 	unsigned long esp_crafted_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW (v4 or v6) returned >0 */
 	unsigned long esp_crafted_rx_sa_delete_ok;		/* XFRM_MSG_DELSA on teardown accepted */
+	unsigned long esp_crafted_rx_stacked_sa_install_ok;	/* one of the XFRM_MAX_DEPTH v6 stacked null-ESP SAs installed */
+	unsigned long esp_crafted_rx_stacked_sent_ok;		/* sendto on IPPROTO_RAW v6 for a max-depth stacked-ESP frame returned >0 */
 
 	/* fou_gue_mcast_rx childop counters */
 	unsigned long fou_gue_mcast_rx_runs;			/* total fou_gue_mcast_rx invocations */
