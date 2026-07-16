@@ -177,6 +177,25 @@ static void memfd_secret_try_replenish(unsigned int budget)
 {
 	struct childdata *child = this_child();
 	unsigned int i;
+	/*
+	 * Bound the secretmem fds this provider mints.  child_fd_ring_push()
+	 * is a hint cache that does NOT own the fds it evicts -- it is
+	 * shared, so other providers push fds tracked elsewhere and it cannot
+	 * close on evict.  Every secretmem fd we mint past live_fds's window
+	 * would then stay open forever in a long-lived child (canary /
+	 * D-state-wedged); worse than memfd, secretmem pages are unswappable
+	 * and removed from the kernel direct map, so the pinned pages are
+	 * unreclaimable.  Keep a per-child ring of the secretmem fds WE
+	 * created and close the one that ages out before reusing its slot.
+	 * 32 > live_fds's 16 slots, so the fd we close is already long gone
+	 * from live_fds and no consumer still holds it.  Per-child via
+	 * fork-COW (replenish runs child-side only; the parent never
+	 * populates this, so created_head starts 0 in every child and the
+	 * head >= size guard never closes an unwritten slot -- avoiding a
+	 * close(0) on the zero-initialised array).
+	 */
+	static int created_fds[32];
+	static unsigned int created_head;
 
 	if (child == NULL)
 		return;
@@ -189,6 +208,11 @@ static void memfd_secret_try_replenish(unsigned int budget)
 
 		if (fd < 0)
 			return;
+
+		if (created_head >= ARRAY_SIZE(created_fds))
+			close(created_fds[created_head % ARRAY_SIZE(created_fds)]);
+		created_fds[created_head % ARRAY_SIZE(created_fds)] = fd;
+		created_head++;
 
 		child_fd_ring_push(&child->live_fds, fd);
 	}
