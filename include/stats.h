@@ -26,6 +26,7 @@
 #include "stats/subsys/fork_storm.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
+#include "stats/subsys/keyring_spam.h"
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/pipe_thrash.h"
@@ -1100,10 +1101,8 @@ struct stats_s {
 	/* madvise_cycler childop counters.  See stats/subsys/madvise_cycler.h. */
 	struct madvise_cycler_stats madvise_cycler __attribute__((aligned(64)));
 
-	/* keyring_spam childop counters */
-	unsigned long keyring_spam_runs;	/* total keyring_spam invocations */
-	unsigned long keyring_spam_calls;	/* total add_key/keyctl ops attempted */
-	unsigned long keyring_spam_failed;	/* add_key/keyctl returned -1 */
+	/* keyring_spam childop counters.  See stats/subsys/keyring_spam.h. */
+	struct keyring_spam_stats keyring_spam __attribute__((aligned(64)));
 
 	/* vdso_mremap_race childop counters */
 	unsigned long vdso_race_runs;		/* total vdso_mremap_race invocations */

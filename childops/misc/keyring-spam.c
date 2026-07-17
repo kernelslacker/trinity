@@ -208,7 +208,7 @@ static void keyring_spam_iter_add_key(int32_t *live,
 		     payload, (size_t) KEYRING_PAYLOAD_BYTES,
 		     (unsigned long) anchor);
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+		__atomic_add_fetch(&shm->stats.keyring_spam.failed,
 				   1, __ATOMIC_RELAXED);
 	} else {
 		ring_insert(live, (int32_t) rc);
@@ -235,7 +235,7 @@ static void keyring_spam_iter_read(int32_t *live)
 		     (unsigned long) buf,
 		     (unsigned long) sizeof(buf), 0UL);
 	if (rc < 0)
-		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+		__atomic_add_fetch(&shm->stats.keyring_spam.failed,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -256,7 +256,7 @@ static void keyring_spam_iter_describe(int32_t *live)
 		     (unsigned long) buf,
 		     (unsigned long) sizeof(buf), 0UL);
 	if (rc < 0)
-		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+		__atomic_add_fetch(&shm->stats.keyring_spam.failed,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -275,7 +275,7 @@ static void keyring_spam_iter_revoke(int32_t *live)
 	rc = trinity_raw_syscall(__NR_keyctl, (unsigned long) KEYCTL_REVOKE,
 		     (unsigned long) serial, 0UL, 0UL, 0UL);
 	if (rc < 0)
-		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+		__atomic_add_fetch(&shm->stats.keyring_spam.failed,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -295,7 +295,7 @@ static void keyring_spam_iter_invalidate(int32_t *live)
 		     (unsigned long) KEYCTL_INVALIDATE,
 		     (unsigned long) serial, 0UL, 0UL, 0UL);
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+		__atomic_add_fetch(&shm->stats.keyring_spam.failed,
 				   1, __ATOMIC_RELAXED);
 	} else {
 		ring_drop(live, serial);
@@ -319,7 +319,7 @@ static void keyring_spam_iter_unlink(int32_t *live, int anchor)
 		     (unsigned long) serial,
 		     (unsigned long) anchor, 0UL, 0UL);
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
+		__atomic_add_fetch(&shm->stats.keyring_spam.failed,
 				   1, __ATOMIC_RELAXED);
 	} else {
 		ring_drop(live, serial);
@@ -334,7 +334,7 @@ bool keyring_spam(struct childdata *child)
 	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned char payload[KEYRING_PAYLOAD_BYTES];
 
-	__atomic_add_fetch(&shm->stats.keyring_spam_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.keyring_spam.runs, 1, __ATOMIC_RELAXED);
 
 	memset(live, 0, sizeof(live));
 	memset(payload, 0xa5, sizeof(payload));
@@ -364,7 +364,7 @@ bool keyring_spam(struct childdata *child)
 		op = (enum keyring_op) rnd_modulo_u32(NR_KEYRING_OPS);
 		anchor = anchor_keyrings[rnd_modulo_u32(ARRAY_SIZE(anchor_keyrings))];
 
-		__atomic_add_fetch(&shm->stats.keyring_spam_calls,
+		__atomic_add_fetch(&shm->stats.keyring_spam.calls,
 				   1, __ATOMIC_RELAXED);
 
 		switch (op) {

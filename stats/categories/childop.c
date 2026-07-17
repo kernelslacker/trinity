@@ -109,17 +109,6 @@ const struct stat_category pidfd_storm_category =
 	              pidfd_storm_runs,
 	              pidfd_storm_fields);
 
-static const struct stat_field keyring_spam_fields[] = {
-	STAT_FIELD(keyring_spam, runs),
-	STAT_FIELD(keyring_spam, calls),
-	STAT_FIELD(keyring_spam, failed),
-};
-
-const struct stat_category keyring_spam_category =
-	STAT_CATEGORY("keyring_spam",
-	              keyring_spam_runs,
-	              keyring_spam_fields);
-
 static const struct stat_field vdso_mremap_race_fields[] = {
 	STAT_FIELD(vdso_race, runs),
 	STAT_FIELD(vdso_race, mutations),
