@@ -239,13 +239,13 @@ static void epoll_volatility_iter_drive(struct epoll_volatility_iter_ctx *ctx)
 			ev.data.fd = ctx->target_fds[fd_idx];
 			rc = epoll_ctl(ctx->epfds[epfd_idx], EPOLL_CTL_ADD,
 				       ctx->target_fds[fd_idx], &ev);
-			__atomic_add_fetch(&shm->stats.epoll_volatility_ctl_calls,
+			__atomic_add_fetch(&shm->stats.epoll_volatility.ctl_calls,
 					   1, __ATOMIC_RELAXED);
 			if (rc == 0) {
 				if (fd_idx < NR_TARGET_FDS)
 					ctx->registered[epfd_idx][fd_idx] = true;
 			} else {
-				__atomic_add_fetch(&shm->stats.epoll_volatility_failed,
+				__atomic_add_fetch(&shm->stats.epoll_volatility.failed,
 						   1, __ATOMIC_RELAXED);
 			}
 		} else if (op < 10) {
@@ -259,10 +259,10 @@ static void epoll_volatility_iter_drive(struct epoll_volatility_iter_ctx *ctx)
 			ev.data.fd = ctx->target_fds[fd_idx];
 			rc = epoll_ctl(ctx->epfds[epfd_idx], EPOLL_CTL_MOD,
 				       ctx->target_fds[fd_idx], &ev);
-			__atomic_add_fetch(&shm->stats.epoll_volatility_ctl_calls,
+			__atomic_add_fetch(&shm->stats.epoll_volatility.ctl_calls,
 					   1, __ATOMIC_RELAXED);
 			if (rc != 0)
-				__atomic_add_fetch(&shm->stats.epoll_volatility_failed,
+				__atomic_add_fetch(&shm->stats.epoll_volatility.failed,
 						   1, __ATOMIC_RELAXED);
 		} else if (op < 14) {
 			/* EPOLL_CTL_DEL: prefer a registered slot so the
@@ -271,13 +271,13 @@ static void epoll_volatility_iter_drive(struct epoll_volatility_iter_ctx *ctx)
 			fd_idx = pick_fd_idx(ctx->registered, epfd_idx, ctx->n_target_fds, true);
 			rc = epoll_ctl(ctx->epfds[epfd_idx], EPOLL_CTL_DEL,
 				       ctx->target_fds[fd_idx], NULL);
-			__atomic_add_fetch(&shm->stats.epoll_volatility_ctl_calls,
+			__atomic_add_fetch(&shm->stats.epoll_volatility.ctl_calls,
 					   1, __ATOMIC_RELAXED);
 			if (rc == 0) {
 				if (fd_idx < NR_TARGET_FDS)
 					ctx->registered[epfd_idx][fd_idx] = false;
 			} else {
-				__atomic_add_fetch(&shm->stats.epoll_volatility_failed,
+				__atomic_add_fetch(&shm->stats.epoll_volatility.failed,
 						   1, __ATOMIC_RELAXED);
 			}
 		} else {
@@ -332,7 +332,7 @@ bool epoll_volatility(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.epoll_volatility_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.epoll_volatility.runs, 1, __ATOMIC_RELAXED);
 
 	if (epoll_volatility_iter_setup(&ctx) == 0) {
 		if (valid_op) {

@@ -21,6 +21,7 @@
 #include "kernel/mount.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/blob.h"
+#include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/flock_thrash.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
@@ -1058,10 +1059,8 @@ struct stats_s {
 	/* xattr_thrash childop counters.  See stats/subsys/xattr_thrash.h. */
 	struct xattr_thrash_stats xattr_thrash __attribute__((aligned(64)));
 
-	/* epoll_volatility childop counters */
-	unsigned long epoll_volatility_runs;		/* total epoll_volatility invocations */
-	unsigned long epoll_volatility_ctl_calls;	/* total epoll_ctl ADD/MOD/DEL calls (success + fail) */
-	unsigned long epoll_volatility_failed;		/* epoll_ctl returned -1 (EEXIST/ENOENT/EINVAL/...) */
+	/* epoll_volatility childop counters.  See stats/subsys/epoll_volatility.h. */
+	struct epoll_volatility_stats epoll_volatility __attribute__((aligned(64)));
 
 	/* cgroup_churn childop counters */
 	unsigned long cgroup_churn_runs;	/* total cgroup_churn invocations */

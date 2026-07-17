@@ -155,17 +155,6 @@ const struct stat_category vdso_mremap_race_category =
 	              vdso_race_runs,
 	              vdso_mremap_race_fields);
 
-static const struct stat_field epoll_volatility_fields[] = {
-	STAT_FIELD(epoll_volatility, runs),
-	STAT_FIELD(epoll_volatility, ctl_calls),
-	STAT_FIELD(epoll_volatility, failed),
-};
-
-const struct stat_category epoll_volatility_category =
-	STAT_CATEGORY("epoll_volatility",
-	              epoll_volatility_runs,
-	              epoll_volatility_fields);
-
 static const struct stat_field cgroup_churn_fields[] = {
 	STAT_FIELD(cgroup_churn, runs),
 	STAT_FIELD(cgroup, mkdirs),
