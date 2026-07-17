@@ -19,6 +19,7 @@
 #include "kernel/udp.h"
 #include "kernel/if_packet.h"
 #include "kernel/mount.h"
+#include "stats/subsys/aio.h"
 #include "stats/subsys/blob.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
@@ -1014,12 +1015,8 @@ struct stats_s {
 	unsigned long iouring_eventfd_recursive_runs;	/* recipe ran past register */
 	unsigned long iouring_eventfd_recursive_cqes;	/* CQEs reaped within the recipe */
 
-	/* post_io_submit positive-attribution: iocbs the kernel accepted on
-	 * the success branch (retval > 0 and within the [0, nr] bound).
-	 * Distinguishes "io_submit doing useful work" from "io_submit mostly
-	 * returning -EINVAL"; without it canary work cannot tell a quiet
-	 * success window from a quiet rejection window. */
-	unsigned long aio_submitted;
+	/* aio submission counter.  See stats/subsys/aio.h. */
+	struct aio_stats aio __attribute__((aligned(64)));
 
 	/* refcount_auditor childop counters */
 	unsigned long refcount_audit_runs;
