@@ -32,6 +32,7 @@
 #include "stats/subsys/keyring_spam.h"
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/mount_churn.h"
+#include "stats/subsys/no_domains.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/signal_storm.h"
 #include "stats/subsys/xattr_thrash.h"
@@ -1244,14 +1245,8 @@ struct stats_s {
 	 * function-tracer slots. */
 	unsigned long tracefs_ftrace_subset_skipped;
 
-	/* Number of socket families auto-marked in no_domains[] at startup
-	 * because socket() probes returned EAFNOSUPPORT/EPROTONOSUPPORT for
-	 * both SOCK_STREAM and SOCK_DGRAM.  Bumped once per latched PF from
-	 * open_sockets().  A non-zero value tells the operator how many
-	 * random-syscall socket() picks per cycle the kernel build can
-	 * never reach -- and confirms the auto-skip ran (vs. the user
-	 * supplying --exclude-domains by hand). */
-	unsigned long no_domains_runtime_skipped;
+	/* Auto-skipped socket families.  See stats/subsys/no_domains.h. */
+	struct no_domains_stats no_domains __attribute__((aligned(64)));
 
 	/* tls_rotate childop counters */
 	unsigned long tls_rotate_runs;			/* total tls_rotate invocations */

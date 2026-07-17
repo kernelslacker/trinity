@@ -547,7 +547,7 @@ static void probe_unsupported_pf_families(void)
 			continue;
 
 		no_domains[pf] = true;
-		__atomic_add_fetch(&shm->stats.no_domains_runtime_skipped,
+		__atomic_add_fetch(&shm->stats.no_domains.runtime_skipped,
 				   1, __ATOMIC_RELAXED);
 		output(1, "auto-disabled socket family %u (%s): probe returned "
 			  "%s/%s\n",
@@ -586,7 +586,7 @@ static void auto_disable_empty_pf_pools(void)
 			continue;
 
 		no_domains[pf] = true;
-		__atomic_add_fetch(&shm->stats.no_domains_runtime_skipped,
+		__atomic_add_fetch(&shm->stats.no_domains.runtime_skipped,
 				   1, __ATOMIC_RELAXED);
 
 		name = get_domain_name(pf);
