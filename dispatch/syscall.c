@@ -403,23 +403,17 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * grounds. */
 	if (needalarm) {
 		/*
-		 * SHADOW probe before arming: see if a fuzzed rt_sigaction
-		 * call has overwritten the inner-watchdog SIGALRM/SIGXCPU
-		 * dispositions.  Both signals appear in settable_signals[],
-		 * so a child can disarm the 1-second timeout by installing
-		 * SIG_IGN/SIG_DFL/an arbitrary stub; subsequent blocking
-		 * NEED_ALARM syscalls then ride only the ~30-second outer
-		 * watchdog.  Read-only -- the handler is NOT reinstalled.
+		 * Restore the inner-watchdog handler before arming.  Both
+		 * SIGALRM and SIGXCPU appear in settable_signals[], so a
+		 * fuzzed rt_sigaction call in this child can overwrite the
+		 * 1-second-timeout disposition; without a reinstall the
+		 * blocking NEED_ALARM syscall then rides only the ~30-second
+		 * outer watchdog.  The helper is restricted to the two
+		 * watchdog signals and bumps the paired clobbered/reinstalled
+		 * counters so both the incidence and the repair rate stay
+		 * measurable.
 		 */
-		struct sigaction cur;
-		if (sigaction(SIGALRM, NULL, &cur) == 0 &&
-		    cur.sa_handler != sigalrm_handler)
-			__atomic_add_fetch(&shm->stats.watchdog_sigalrm_clobbered,
-					   1, __ATOMIC_RELAXED);
-		if (sigaction(SIGXCPU, NULL, &cur) == 0 &&
-		    cur.sa_handler != sigxcpu_handler)
-			__atomic_add_fetch(&shm->stats.watchdog_sigxcpu_clobbered,
-					   1, __ATOMIC_RELAXED);
+		watchdog_reinstall_if_clobbered();
 		(void)alarm(1);
 	}
 
