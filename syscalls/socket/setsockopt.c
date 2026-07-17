@@ -717,16 +717,13 @@ void release_sockopt_optval(struct sockopt *so)
  * Snapshot of the optname alongside the heap optval the post handler
  * frees.  rec->a3 (optname) and rec->a4 (optval) are both ABI-exposed
  * and a sibling syscall can scribble either between syscall return and
- * post entry; the old post handler treated post_state as a bare optval
- * and dispatched freeing through a single path, so a scribble of a4
- * had to be defended against by the snapshot and a scribble of a3 was
- * irrelevant because no per-optname dispatch existed.  The classic-BPF
- * SO_ATTACH_FILTER path needs that dispatch: its optval is a
- * two-tier sock_fprog wrapper (outer + inner filter) and a plain
- * deferred_freeptr() on the wrapper leaks the inner buffer.  Store
- * optname here so the post handler picks the right cleanup independent
- * of a3 corruption, and keep a magic cookie to reject foreign
- * allocations that pose as a snap via post_state stomp.
+ * post entry, so the snapshot stores both together and the post handler
+ * dispatches cleanup by optname independent of ABI-slot corruption.
+ * The classic-BPF SO_ATTACH_FILTER path is the reason per-optname
+ * dispatch exists: its optval is a two-tier sock_fprog wrapper (outer
+ * + inner filter) and a plain deferred_freeptr() on the wrapper leaks
+ * the inner buffer.  Keep a magic cookie to reject foreign allocations
+ * that pose as a snap via post_state stomp.
  */
 #define SETSOCKOPT_POST_STATE_MAGIC	0x534F505453544154UL	/* "SOPTSTAT" */
 struct setsockopt_post_state {
