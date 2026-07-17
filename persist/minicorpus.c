@@ -842,8 +842,8 @@ static void minicorpus_mut_attrib_perop_accounting(bool found_new)
 	 *
 	 * Per-op granularity: bump trials/wins by ONE per call per op that
 	 * participated (mut_attrib[op] > 0), not by the raw pick count.
-	 * The old per-pick crediting inflated every call's win signal by
-	 * its stack depth, masking real op-quality differences under the
+	 * Crediting per pick would inflate each call's win signal by its
+	 * stack depth, masking real op-quality differences under the
 	 * common per-call novelty rate (the uniform ~0.07% pathology).
 	 *
 	 * Per-entry baseline gate: even on a tracked-source call,
