@@ -691,11 +691,10 @@ bool chain_corpus_pick(struct chain_entry *out)
 	/*
 	 * Lockless reader.  Atomic-load a snapshot of count and head, then
 	 * struct-copy the chosen slot without holding ring->lock.  The
-	 * picker used to take ring->lock for the full chain_entry memcpy
-	 * (~MAX_SEQ_LEN * sizeof(struct chain_step)), and CHAIN_REPLAY_RATIO
-	 * routes ~25% of fuzzer iterations through here, so the lock used
-	 * to be a non-trivial contention point with both child producers
-	 * (chain_corpus_save) and child consumers fighting for it.
+	 * chain_entry copy is large (~MAX_SEQ_LEN * sizeof(struct chain_step)),
+	 * and CHAIN_REPLAY_RATIO routes ~25% of fuzzer iterations through
+	 * here, so keeping this path lockless avoids serialising producers
+	 * (chain_corpus_save) and consumers on ring->lock.
 	 *
 	 * Race tolerance: a concurrent chain_corpus_save can overwrite the
 	 * slot we are mid-copy on, leaving @out with fields mixed from the
