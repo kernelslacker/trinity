@@ -69,6 +69,17 @@
  * long fuzz session, so a fix that lands mid-run does get re-evaluated. */
 #define CANARY_SETUP_BROKEN_BACKOFF_TIME	(4 * 3600)
 
+/* Consecutive 100%-setup-failure windows before an op is auto-transitioned
+ * out of the retry-with-backoff loop and into terminal CONFIG_BLOCKED.
+ * Three windows means ~12 h of retry (three CANARY_SETUP_BROKEN_BACKOFF_
+ * TIME waits) before the queue gives up: generous enough that a transient
+ * module load / mount race does not eat the slot, short enough that a
+ * genuinely absent host prereq stops burning canary budget within a
+ * working day.  Consecutive count is reset by any non-setup-broken window
+ * outcome (promote, crash_threshold, zero_edges, ineligible), so an op
+ * that transiently misbehaves but later recovers never reaches the cap. */
+#define CANARY_SETUP_BROKEN_AUTOBLOCK_N	3U
+
 /* Wall-clock ceiling on a canary window with zero invocations.  op_fn
  * bumps childop_invocations[op] only on return; if every dispatch of
  * the canaried op wedges inside a kernel syscall long enough to trip
@@ -384,6 +395,72 @@ static bool fork_pressure_should_suppress(enum child_op_type op)
 	return false;
 }
 
+/* --------------------------------------------------------------------
+ * Setup-failure reason table.  Maps each op known to require a specific
+ * host feature to the reason bucket its setup path would fail under.
+ * The table is deliberately conservative: only ops for which the failure
+ * mode is clear from the op's dispatch shape (missing module for a
+ * protocol-family op, missing FS for a mount fuzzer, etc.) are listed.
+ * Ops not in the table get SETUP_FAIL_REASON_UNKNOWN and still auto-
+ * block after CANARY_SETUP_BROKEN_AUTOBLOCK_N windows -- the reason
+ * label is observability, not gating.
+ * -------------------------------------------------------------------- */
+
+struct canary_setup_reason_hint {
+	enum child_op_type op;
+	enum canary_setup_fail_reason reason;
+};
+
+static const struct canary_setup_reason_hint canary_setup_reason_hints[] = {
+	/* Ops in the startup CONFIG_BLOCKED set: each entry mirrors the
+	 * feature its setup path probes for. */
+	{ CHILD_OP_NUMA_MIGRATION,		SETUP_FAIL_REASON_NS_UNSUPPORTED },
+	{ CHILD_OP_TIPC_LINK_CHURN,		SETUP_FAIL_REASON_MODULE_MISSING },
+	{ CHILD_OP_SCTP_ASSOC_CHURN,		SETUP_FAIL_REASON_MODULE_MISSING },
+	{ CHILD_OP_NL80211_CHURN,		SETUP_FAIL_REASON_MODULE_MISSING },
+	{ CHILD_OP_UBLK_LIFECYCLE,		SETUP_FAIL_REASON_MODULE_MISSING },
+	{ CHILD_OP_IP6ERSPAN_NETNS_MIGRATE,	SETUP_FAIL_REASON_MODULE_MISSING },
+	{ CHILD_OP_ATM_VCC_CHURN,		SETUP_FAIL_REASON_MODULE_MISSING },
+	{ CHILD_OP_IP6GRE_BOND_LAPB_STACK,	SETUP_FAIL_REASON_MODULE_MISSING },
+	{ CHILD_OP_FLOCK_THRASH,		SETUP_FAIL_REASON_FS_UNSUPPORTED },
+	{ CHILD_OP_FUTEX_STORM,			SETUP_FAIL_REASON_SYSCTL_DISABLED },
+	/* Ops observed in the 11/11-run 100%-setup-fail tally.  The queue
+	 * will now auto-transition these into CONFIG_BLOCKED after
+	 * CANARY_SETUP_BROKEN_AUTOBLOCK_N windows; the reason label lets
+	 * the operator triage without cross-referencing sources. */
+	{ CHILD_OP_BPF_CGROUP_ATTACH,		SETUP_FAIL_REASON_CAP_MISSING },
+	{ CHILD_OP_AFXDP_CHURN,			SETUP_FAIL_REASON_DEVICE_MISSING },
+	{ CHILD_OP_HFS_MOUNT_FUZZ,		SETUP_FAIL_REASON_FS_UNSUPPORTED },
+};
+
+static const char *canary_setup_fail_reason_name(enum canary_setup_fail_reason r)
+{
+	switch (r) {
+	case SETUP_FAIL_REASON_UNKNOWN:			return "unknown";
+	case SETUP_FAIL_REASON_CAP_MISSING:		return "cap-missing";
+	case SETUP_FAIL_REASON_MODULE_MISSING:		return "module-missing";
+	case SETUP_FAIL_REASON_SYSCTL_DISABLED:		return "sysctl-disabled";
+	case SETUP_FAIL_REASON_MOUNT_UNAVAILABLE:	return "mount-unavailable";
+	case SETUP_FAIL_REASON_NS_UNSUPPORTED:		return "ns-unsupported";
+	case SETUP_FAIL_REASON_DEVICE_MISSING:		return "device-missing";
+	case SETUP_FAIL_REASON_SCRATCH_UNAVAILABLE:	return "scratch-unavailable";
+	case SETUP_FAIL_REASON_FS_UNSUPPORTED:		return "fs-unsupported";
+	case SETUP_FAIL_REASON_QUOTA_HIT:		return "quota-hit";
+	}
+	return "unknown";
+}
+
+static enum canary_setup_fail_reason
+canary_setup_fail_reason_for_op(enum child_op_type op)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(canary_setup_reason_hints); i++)
+		if (canary_setup_reason_hints[i].op == op)
+			return canary_setup_reason_hints[i].reason;
+	return SETUP_FAIL_REASON_UNKNOWN;
+}
+
 static void push_promotion(enum child_op_type op)
 {
 	canary_promotion_ring[canary_promotion_ring_head] = op;
@@ -618,6 +695,10 @@ static void leave_canarying_promote(enum child_op_type op,
 	s->state = CANARY_STATE_PROMOTED;
 	s->last_state_transition = monotonic_seconds();
 	s->total_promotions++;
+	/* Non-setup-broken outcome resets the consecutive counter so a
+	 * recovered op does not carry old setup-failure credit into a
+	 * later re-canary. */
+	s->consecutive_setup_broken = 0;
 	push_promotion(op);
 
 	/* Gate stays at 0 (active).  The random picker keeps the op. */
@@ -659,6 +740,10 @@ static void leave_canarying_demote(enum child_op_type op,
 	s->state = CANARY_STATE_DEMOTED;
 	s->last_state_transition = monotonic_seconds();
 	s->total_demotions++;
+	/* Non-setup-broken outcome: reset the consecutive setup-broken
+	 * counter.  An op that hit crash_threshold or zero_edges is not
+	 * on the auto-block track. */
+	s->consecutive_setup_broken = 0;
 
 	/* Flip the gate back to dormant so the random picker stops
 	 * including this op. */
@@ -690,21 +775,45 @@ static void leave_canarying_demote_setup_broken(enum child_op_type op,
 						unsigned long setup_failures)
 {
 	struct canary_op_state *s = &canary_ops[op];
+	enum canary_setup_fail_reason reason = canary_setup_fail_reason_for_op(op);
 
-	s->state = CANARY_STATE_DEMOTED;
+	s->consecutive_setup_broken++;
+	s->setup_fail_reason = reason;
 	s->last_state_transition = monotonic_seconds();
 	s->total_demotions++;
-	canary_op_setup_broken[op] = true;
 
 	/* Flip the gate back to dormant so the random picker stops
 	 * including this op. */
 	dormant_op_set(op, true);
 
+	/* Auto-block: after N consecutive 100%-setup-failure windows the
+	 * op is treated as structurally unrunnable on this host and
+	 * transitioned into the existing CONFIG_BLOCKED state.  The picker
+	 * skips CONFIG_BLOCKED ops (see pick_next_canary), so this ends
+	 * the retry loop -- no more slot budget is spent on the op for
+	 * the remainder of the run.  The setup_broken latch is dropped
+	 * here because the DEMOTED-backoff path is no longer used. */
+	if (s->consecutive_setup_broken >= CANARY_SETUP_BROKEN_AUTOBLOCK_N) {
+		s->state = CANARY_STATE_CONFIG_BLOCKED;
+		canary_op_setup_broken[op] = false;
+		output(0, "canary: %s AUTO-BLOCKED after %u consecutive 100%% setup-failure windows (reason: %s, last setup_failures=%lu in %lu iters); terminal, no further re-canary; effective for new children at next respawn\n",
+			s->name, s->consecutive_setup_broken,
+			canary_setup_fail_reason_name(reason),
+			setup_failures, window_iters);
+		return;
+	}
+
+	s->state = CANARY_STATE_DEMOTED;
+	canary_op_setup_broken[op] = true;
+
 	/* Loud log: operator-facing call to action, distinct from the
 	 * routine "demoted (reason: zero_edges ...)" line so a grep for
 	 * BROKEN-SETUP surfaces only the structural-failure cases. */
-	output(0, "canary: %s BROKEN-SETUP: 100%% setup failure (setup_failures=%lu, setup_ok=0 in %lu iters) -- fix this op; backoff=%us before re-test; effective for new children at next respawn\n",
-		s->name, setup_failures, window_iters,
+	output(0, "canary: %s BROKEN-SETUP: 100%% setup failure (reason: %s, setup_failures=%lu, setup_ok=0 in %lu iters; consecutive_setup_broken=%u/%u) -- fix this op; backoff=%us before re-test; effective for new children at next respawn\n",
+		s->name, canary_setup_fail_reason_name(reason),
+		setup_failures, window_iters,
+		s->consecutive_setup_broken,
+		CANARY_SETUP_BROKEN_AUTOBLOCK_N,
 		(unsigned int)CANARY_SETUP_BROKEN_BACKOFF_TIME);
 }
 
@@ -728,6 +837,9 @@ static void leave_canarying_demote_wedged(enum child_op_type op,
 	s->last_state_transition = monotonic_seconds();
 	s->total_demotions++;
 	canary_op_setup_broken[op] = true;
+	/* Wedge is a distinct failure mode from setup-broken, so a
+	 * wedged close breaks any "consecutive setup-broken" streak. */
+	s->consecutive_setup_broken = 0;
 
 	/* Flip the gate back to dormant so the random picker stops
 	 * including this op. */
@@ -761,6 +873,7 @@ static void leave_canarying_ineligible(enum child_op_type op,
 
 	s->state = CANARY_STATE_CONFIG_BLOCKED;
 	s->last_state_transition = monotonic_seconds();
+	s->consecutive_setup_broken = 0;
 
 	dormant_op_set(op, true);
 
@@ -1068,11 +1181,17 @@ void canary_queue_init(void)
 		canary_ops[i].state = CANARY_STATE_DORMANT;
 	}
 
-	/* CONFIG_BLOCKED set: terminal, never picked. */
+	/* CONFIG_BLOCKED set: terminal, never picked.  Also stamp the
+	 * static reason hint so the startup enumeration and any later
+	 * canary_queue_summary() consumer can report a label instead of
+	 * a bare "config-blocked" state. */
 	for (i = 0; i < ARRAY_SIZE(canary_config_blocked); i++) {
 		enum child_op_type op = canary_config_blocked[i];
-		if (op < NR_CHILD_OP_TYPES)
+		if (op < NR_CHILD_OP_TYPES) {
 			canary_ops[op].state = CANARY_STATE_CONFIG_BLOCKED;
+			canary_ops[op].setup_fail_reason =
+				canary_setup_fail_reason_for_op(op);
+		}
 	}
 
 	/* Risky-defer set: stay DORMANT but the picker skips them via
@@ -1170,6 +1289,21 @@ void canary_queue_init(void)
 	output(0, "canary queue: enabled, slots=%u, window=%u iters, priority_seeds=%u, dormant_eligible=%u, config_blocked=%u\n",
 		canary_slots, window_iters_resolved(),
 		canary_priority_list_count, dormant_eligible, config_blocked);
+
+	/* Startup CONFIG_BLOCKED table: enumerate each blocked op with the
+	 * missing host-feature reason so an operator reading the boot log
+	 * can tell which host features are absent without cross-
+	 * referencing the hint table in source.  Emitted only in enabled
+	 * mode -- the disabled bailout above already says the static gate
+	 * is in use, and per-op detail is not actionable there. */
+	for (i = (unsigned int)CHILD_OP_SYSCALL + 1; i < NR_CHILD_OP_TYPES; i++) {
+		if (canary_ops[i].state != CANARY_STATE_CONFIG_BLOCKED)
+			continue;
+		output(0, "canary queue: config-blocked op %s (reason: %s)\n",
+			canary_ops[i].name,
+			canary_setup_fail_reason_name(
+				canary_ops[i].setup_fail_reason));
+	}
 
 	/* Pick the first op and enter CANARYING immediately so the
 	 * fleet starts working it as soon as fork_children() runs. */
