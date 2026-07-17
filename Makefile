@@ -143,6 +143,11 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard rand/*.c) \
 		   $(wildcard random_syscall/*.c) \
 		   $(wildcard stats/*.c) \
+		   $(wildcard stats/categories/*.c) \
+		   $(wildcard stats/dump/*.c) \
+		   $(wildcard stats/childop/*.c) \
+		   $(wildcard stats/network/*.c) \
+		   $(wildcard stats/kcov/*.c) \
 		   $(wildcard strategy/*.c) \
 		   $(wildcard struct_catalog/*.c) \
 		   $(wildcard syscalls/*.c) \
@@ -222,6 +227,11 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard rand/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard random_syscall/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard stats/categories/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard stats/dump/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard stats/childop/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard stats/network/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard stats/kcov/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard strategy/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard struct_catalog/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
@@ -341,4 +351,3 @@ coverity:
 # across fork while the cap that raised it does not.
 setcap:
 	setcap cap_sys_admin,cap_sys_resource,cap_dac_read_search,cap_sys_ptrace+ep ./trinity
-
