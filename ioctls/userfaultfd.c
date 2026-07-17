@@ -52,11 +52,12 @@ static void sanitise_uffdio_api(struct syscallrecord *rec)
 {
 	struct uffdio_api *ua;
 	static const unsigned long api_features[] = {
+		/*
+		 * EVENT_* features omitted on purpose: they block the triggering
+		 * mm op until a monitor read()s the event, and trinity runs no
+		 * uffd monitor (see fds/userfaultfd.c arm_userfaultfd()).
+		 */
 		UFFD_FEATURE_PAGEFAULT_FLAG_WP,
-		UFFD_FEATURE_EVENT_FORK,
-		UFFD_FEATURE_EVENT_REMAP,
-		UFFD_FEATURE_EVENT_REMOVE,
-		UFFD_FEATURE_EVENT_UNMAP,
 		UFFD_FEATURE_MISSING_HUGETLBFS,
 		UFFD_FEATURE_MISSING_SHMEM,
 		UFFD_FEATURE_SIGBUS,
