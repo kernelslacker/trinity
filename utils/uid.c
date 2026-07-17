@@ -135,5 +135,5 @@ void check_uid(void)
 	 * can fire frequently. */
 	output(1, "uid changed (continuing): was %u, now %u (overflowuid=%u)\n",
 		expected_uid, myuid, overflowuid);
-	__atomic_fetch_add(&shm->stats.uid_change_logged, 1, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->stats.uid_change.logged, 1, __ATOMIC_RELAXED);
 }

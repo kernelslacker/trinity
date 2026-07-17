@@ -35,6 +35,7 @@
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/signal_storm.h"
+#include "stats/subsys/uid_change.h"
 #include "stats/subsys/xattr_thrash.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
@@ -362,16 +363,8 @@ struct stats_s {
 	 * coupling rejects (DOA (buf,count) shapes the kernel would
 	 * EFAULT on). */
 
-	/* Bumped each time check_uid sees the child's uid drift away from
-	 * orig_uid + overflowuid.  Non-root drifts are logged and the run
-	 * keeps going; a drift to uid==0 (root) hard-bails via
-	 * EXIT_UID_CHANGED.  The drift is almost always a fuzzed
-	 * setresuid/setreuid/setfsuid succeeding inside an unshared user
-	 * namespace -- interesting coverage, not a danger -- so non-root
-	 * drift is not fatal.  A drift to root is fatal because
-	 * subsequent fuzz syscalls at elevated privilege could damage
-	 * the host. */
-	unsigned long uid_change_logged;
+	/* uid-change accounting.  See stats/subsys/uid_change.h. */
+	struct uid_change_stats uid_change __attribute__((aligned(64)));
 
 	/* Monotonic counter feeding the value-sampling rate-limiter inside
 	 * looks_like_corrupted_ptr.  Distinct from post_handler_corrupt_ptr

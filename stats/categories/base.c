@@ -257,21 +257,6 @@ const struct stat_category parent_category =
 	              parent_inherited_fds_closed,
 	              parent_fields);
 
-/* uid_change_logged: check_uid saw the child's uid drift away from
- * orig_uid + overflowuid.  Non-root drifts log-and-continue rather than
- * hard-bailing, so the drift count is the only positive signal that a
- * fuzzed setresuid/setreuid/setfsuid landed inside an unshared user
- * namespace.  A single-field category surfaces the count in both dumps;
- * text self-gates so a stable-uid run emits nothing. */
-static const struct stat_field uid_change_fields[] = {
-	STAT_FIELD(uid_change, logged),
-};
-
-const struct stat_category uid_change_category =
-	STAT_CATEGORY("uid_change",
-	              uid_change_logged,
-	              uid_change_fields);
-
 /* zombie_slots mixes two struct prefixes (zombie_slots_ for the gauge,
  * zombies_ for the counters); each STAT_FIELD picks its own prefix so the
  * JSON keys stay flat ("pending", "reaped", "timed_out"). */
