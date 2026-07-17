@@ -773,8 +773,9 @@ static bool producer_observer_lookup(unsigned int nr,
  * Windowed-edges first: a syscall whose K-window ring is nonzero is
  * recently productive regardless of every other signal, so the
  * predicate stops there and the caller never reads cmp / errno
- * baselines on the windowed-nonzero path -- matches the early-return
- * shape the silent satcool wrapper used to have inline.
+ * baselines on the windowed-nonzero path -- the recent-count check
+ * returns FRONTIER_SPARE_WINDOWED_EDGES directly, skipping the four
+ * RELAXED atomic loads that follow.
  *
  * All loads RELAXED: a mixed snapshot taken across non-atomic
  * instants at most causes one rotation of mis-classification, the
