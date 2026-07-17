@@ -1555,26 +1555,26 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 				errno_gradient_class(rec->retval,
 				                     rec->errno_post);
 			unsigned long last = __atomic_load_n(
-				&shm->stats.errno_gradient_last_class[call],
+				&shm->stats.errno_gradient.last_class[call],
 				__ATOMIC_RELAXED);
 
 			while ((unsigned long)cls > last) {
 				if (__atomic_compare_exchange_n(
-					&shm->stats.errno_gradient_last_class[call],
+					&shm->stats.errno_gradient.last_class[call],
 					&last, (unsigned long)cls,
 					false,
 					__ATOMIC_RELAXED,
 					__ATOMIC_RELAXED)) {
 					__atomic_fetch_add(
-						&shm->stats.errno_gradient_crossings,
+						&shm->stats.errno_gradient.crossings,
 						1UL, __ATOMIC_RELAXED);
 					if (cls == 1)
 						__atomic_fetch_add(
-							&shm->stats.errno_gradient_to_permstate,
+							&shm->stats.errno_gradient.to_permstate,
 							1UL, __ATOMIC_RELAXED);
 					else /* cls == 2 (success) */
 						__atomic_fetch_add(
-							&shm->stats.errno_gradient_to_success,
+							&shm->stats.errno_gradient.to_success,
 							1UL, __ATOMIC_RELAXED);
 					break;
 				}
