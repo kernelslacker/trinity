@@ -19,7 +19,7 @@ childops/net/mpls-route-churn.c:maybe_modprobe_once
 childops/net/xfrm/nat-t-churn.c:nat_t_churn_v6
 childops/net/xfrm/nat-t-churn.c:open_encap_udp6
 childops/net/xfrm/nat-t-churn.c:warn_once_unsupported
-childops/net/netfilter/nftables-churn.c:warn_once_unsupported_nftables
+childops/net/netfilter/nftables/churn.c:warn_once_unsupported_nftables
 childops/mm/numa-migration-churn.c:parse_online_nodes
 childops/mm/pagecache-canary-check.c:log_corruption
 childops/net/psp-key-rotate.c:warn_once_unsupported_psp_key_rotate

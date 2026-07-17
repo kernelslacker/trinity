@@ -1,14 +1,14 @@
 /*
- * nftables-churn-exprs-set.c
+ * exprs-set.c
  *
  * The set / map binding expression builders: lookup, objref, dynset.
  *
- * Carved out of nftables-churn-exprs.c so the per-family builders
- * compile in parallel; see nftables-churn-internal.h for the
+ * Carved out of exprs.c so the per-family builders
+ * compile in parallel; see internal.h for the
  * cross-TU symbol boundary.
  */
 
-#include "nftables-churn-internal.h"
+#include "internal.h"
 
 /*
  * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_lookup
@@ -16,7 +16,7 @@
  * overflow).  Reaches the per-expression validator in
  * net/netfilter/nft_lookup.c (nft_lookup_init) — set-binding,
  * sreg/dreg validation, and the map-vs-plain set type check.  Refers
- * to the in-transaction anonymous set already created by build_newset
+ * to the in-transaction anonymous set already created by nft_build_newset
  * via NFTA_LOOKUP_SET (name) + NFTA_LOOKUP_SET_ID (cookie); the kernel
  * resolves the binding inside the same commit.
  *
@@ -200,7 +200,7 @@ size_t build_nft_objref_expr(unsigned char *buf, size_t off,
  *   NFTA_LIST_ELEM (nested)
  *     NFTA_EXPR_NAME = "dynset"
  *     NFTA_EXPR_DATA (nested)
- *       NFTA_DYNSET_SET_NAME = anon set built by build_newset
+ *       NFTA_DYNSET_SET_NAME = anon set built by nft_build_newset
  *       NFTA_DYNSET_SET_ID   = matching cookie (in-batch resolution)
  *       NFTA_DYNSET_OP       = ADD | UPDATE | DELETE
  *       NFTA_DYNSET_SREG_KEY = NFT_REG_1..NFT_REG_4

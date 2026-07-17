@@ -1,15 +1,15 @@
 /*
- * nftables-churn-exprs-nat.c
+ * exprs-nat.c
  *
  * The NAT / netdev redirect / dup / fwd expression builders: masq,
  * redir, tproxy, dup_netdev, dup_ipv4, dup_ipv6, fwd_netdev.
  *
- * Carved out of nftables-churn-exprs.c so the per-family builders
- * compile in parallel; see nftables-churn-internal.h for the
+ * Carved out of exprs.c so the per-family builders
+ * compile in parallel; see internal.h for the
  * cross-TU symbol boundary.
  */
 
-#include "nftables-churn-internal.h"
+#include "internal.h"
 
 /*
  * Emit one NFTA_LIST_ELEM containing a structurally-valid nft_masq

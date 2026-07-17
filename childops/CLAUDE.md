@@ -9,7 +9,7 @@ childops/ is where those scripted sequences live: each file implements one
 syscall for the current fork'd child, that drives a fixed or semi-fixed
 sequence against one kernel subsystem/feature/race window.
 
-138 `.c` files + 7 internal `.h` files, ~81,300 LOC total.
+169 `.c` files + 7 `.h` files, ~93,500 LOC total.
 
 ## Files
 
@@ -46,14 +46,17 @@ A typical childop file is one self-contained translation unit:
 
 ### Naming families (by filename, not by enum)
 
-- `*-churn.c` (largest cluster, ~35 files: `nftables-churn.c`,
+- `*-churn.c` (largest cluster, ~35 files: `nftables/churn.c`,
   `bridge-vlan-churn.c`, `tc-qdisc-churn.c`, `xfrm-churn.c`,
   `mount-churn.c`, `cgroup-churn.c`, …) — repeated create/modify/destroy
   cycles against a kernel object family, racing teardown against live
-  traffic/lookups. Several have split-out `-builders`/`-internal.h`
-  companions (`tc-qdisc-churn-builders.c` + `-internal.h`,
-  `xfrm-churn-builders.c` + `-internal.h`, `nftables-churn-exprs-{conn,
-  data,hash,nat,set,stateful}.c` + `-internal.h`) — these are non-dispatched
+  traffic/lookups. Several have split-out builder/internal companions
+  (`tc-qdisc-churn-builders.c` + `-internal.h`,
+  `xfrm-churn-builders.c` + `-internal.h`,
+  `nftables/{builders,compat,dormant,fwd,l4frag,xt}.c`,
+  `nftables/exprs-{conn,data,hash,nat,set,stateful}.c` +
+  `nftables/internal.h`)
+  — these are non-dispatched
   helper units compiled into the same op, not separate childops.
 - `*-race.c` (~20 files: `af-unix-peek-race.c`, `blkdev-lifecycle-race.c`,
   `close-racer.c`, `umount-race.c`, `vdso-mremap-race.c`) — two threads/
@@ -103,18 +106,18 @@ by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
 
 | File | Lines | Role |
 |---|---|---|
-| `nftables-churn.c` | 2498 | Full table/chain/set/rule lifecycle churn in a private netns, racing live loopback traffic through the commit path (targets CVE-2024-1086, CVE-2023-32233, CVE-2024-26642/26581, CVE-2023-3390 lineage) |
-| `nftables-churn-internal.h` | 1541 | Shared nftables-churn message-builder declarations/state used by the `-exprs-*.c` split files |
-| `nl80211-churn.c` | 1378 | cfg80211/nl80211 interface + BSS churn |
-| `xfrm-churn.c` | 1298 | IPsec policy/state (XFRM) churn |
-| `psp-key-rotate.c` | 1229 | PSP (TLS offload) key rotation races |
-| `nat-t-churn.c` | 1217 | NAT-T/ESP encapsulation churn |
-| `afxdp-churn.c` | 1202 | AF_XDP ring/umem lifecycle churn |
-| `bridge-fdb-stp.c` | 1122 | Bridge FDB entry churn interleaved with STP state transitions |
-| `recipe-runner-supervisor.c` | 1048 | Forks/deadlines/reaps the recipe-executing grandchildren for the recipe-runner sub-framework |
-| `tc-qdisc-churn.c` | 1031 | Traffic-control qdisc/class/filter churn |
-| `af-unix-scm-rights-gc.c` | 1024 | AF_UNIX SCM_RIGHTS garbage-collection race (in-flight fd refcounting) |
-| `recipe-runner-simple.c` | 1023 | Straight-line (non-racing) recipe DAGs |
+| `netfilter/nftables/internal.h` | 1619 | Shared nftables_churn declarations/state used by the split builders, sub-modes, and `exprs-*.c` files |
+| `xfrm-churn.c` | 1457 | IPsec policy/state (XFRM) churn |
+| `nl80211-churn.c` | 1315 | cfg80211/nl80211 interface + BSS churn |
+| `esp-crafted-rx.c` | 1315 | Hand-crafted ESP receive-path traffic |
+| `nat-t-churn.c` | 1292 | NAT-T/ESP encapsulation churn |
+| `psp-key-rotate.c` | 1251 | PSP (TLS offload) key rotation races |
+| `afxdp-churn.c` | 1145 | AF_XDP ring/umem lifecycle churn |
+| `bridge-fdb-stp.c` | 1075 | Bridge FDB entry churn interleaved with STP state transitions |
+| `pkt-builder.c` | 1068 | Shared packet construction helpers for crafted network childops |
+| `recipe/simple.c` | 1026 | Straight-line (non-racing) recipe DAGs |
+| `tc/qdisc-churn.c` | 966 | Traffic-control qdisc/class/filter churn |
+| `netfilter/ipset-churn.c` | 964 | ipset set/member lifecycle churn |
 
 ## Key design decisions
 
@@ -130,11 +133,12 @@ by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
    `.c` file, but a new *dispatched op* still requires manually adding the
    enum value, the `case … return "name"` in the name-lookup switch, and the
    `op_dispatch[]` slot, all in `child-altop.c`.
-2. **File count > enum count.** 138 `.c` files but ~118 dispatch slots:
+2. **File count > enum count.** 169 `.c` files but ~118 dispatch slots:
    several ops are split across multiple files for size/cohesion
-   (`nftables-churn-exprs-*.c`, `tc-qdisc-churn-builders.c`,
+   (`nftables/{builders,compat,dormant,fwd,l4frag,xt}.c`,
+   `nftables/exprs-*.c`, `tc-qdisc-churn-builders.c`,
    `xfrm-churn-builders.c`, `iouring-recipes-*.c`,
-   `recipe-runner-*.c`), sharing state through a private `*-internal.h`.
+   `recipe-runner-*.c`), sharing state through a private internal header.
    Only one file per group exports the dispatched entry point.
 3. **Bounded-everything discipline.** Every storm/churn op caps rounds and
    per-round work with small compile-time constants, and long-running ops
@@ -221,14 +225,15 @@ by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
    plus often a `dormant_op`/outer-bracket table entry) — nothing in
    childops/ itself enforces this; a `.c` file with no matching enum/table
    entry silently compiles but is never dispatched.
-2. **`nftables-churn.c` (2498 lines) plus its 1541-line internal header
-   and six `-exprs-*.c` companions** form the single largest logical unit
-   in the directory (~5000+ LOC across ~8 files for one dispatched op).
+2. **The `netfilter/nftables/` cluster** forms the single largest logical unit
+   in the directory (~7700 LOC across the dispatched orchestrator, core
+   builders, sub-mode files, six `-exprs-*.c` companions, and the internal
+   header for one dispatched op).
    Understanding any one piece requires the internal header's shared
    struct/state declarations.
 3. **Latching correctness is per-file, unenforced by any shared state
    machine.** Each childop hand-writes its own `CHILDOP_LATCH_*` decision
-   tree from raw errno values (see `nftables-churn.c`'s dozen distinct
+   tree from raw errno values (see the `netfilter/nftables/` cluster's distinct
    `ns_unsupported_*` latches); there's no shared errno-classification
    table specific to childops (though `errno-classify.h` exists generically),
    so latch logic correctness/completeness varies file to file.

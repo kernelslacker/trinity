@@ -1,22 +1,21 @@
 /*
- * nftables-churn-internal.h
+ * internal.h
  *
- * Shared declarations split out of childops/net/netfilter/nftables-churn.c to allow
- * the per-nft-expression builders (build_nft_*_expr family) to live in
- * their own translation unit and compile in parallel with the rest of
- * the module.  This header is private to the two TUs that make up
- * nftables-churn — do not include it from anywhere else.
+ * Shared declarations split out of childops/net/netfilter/nftables/churn.c to allow
+ * the nftables_churn helper families to live in their own translation
+ * units and compile in parallel with the dispatched entry point.  This
+ * header is private to the nftables/ TUs — do not include it from
+ * anywhere else.
  *
  * Contents:
- *   - the UAPI conditional #includes and their fallback macros, so
- *     both TUs see exactly the same nf_tables symbol values;
+ *   - the UAPI conditional #includes and their fallback macros, so the
+ *     cluster sees exactly the same nf_tables symbol values;
  *   - static-inline nla_put_be{32,16,64} netlink helpers, kept inline
  *     so the linker does not see them as external (no real linkage
  *     change);
- *   - forward declarations for every build_nft_*_expr function,
- *     deliberately widened from file-static to external linkage so
- *     the nft_expr_table dispatch in nftables-churn.c can reference
- *     them across the TU boundary.
+ *   - forward declarations for helpers deliberately widened from
+ *     file-static to external linkage so the orchestration and sub-mode
+ *     TUs can share builders without changing behaviour.
  */
 
 #ifndef CHILDOPS_NFTABLES_CHURN_INTERNAL_H
@@ -59,6 +58,8 @@
 #include "shm.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
+
+#define NFNL_BUF_BYTES			2048
 
 /*
  * UAPI fallbacks.  The header on stripped sysroots may not have
@@ -1459,9 +1460,9 @@
 
 /*
  * Small netlink-attribute helpers.  Originally file-static in
- * nftables-churn.c; promoted to static-inline so every TU in the
- * split (nftables-churn.c plus the nftables-churn-exprs-*.c
- * per-family builders) can call them without changing observable
+ * churn.c; promoted to static-inline so every TU in the
+ * split (churn.c plus the exprs-*.c per-family builders) can
+ * call them without changing observable
  * linkage.
  */
 static inline size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
@@ -1490,11 +1491,89 @@ static inline size_t nla_put_be64(unsigned char *buf, size_t off, size_t cap,
 }
 
 /*
+ * Plan describing which optional expressions a NEWRULE message should
+ * carry.  Named fields keep designated-initialiser call sites and
+ * debugger inspection legible.
+ */
+struct nft_expr_plan {
+	bool with_payload;
+	bool with_meta;
+	bool with_lookup;
+	bool with_log;
+	bool with_bitwise;
+	bool with_cmp;
+	bool with_range;
+	bool with_byteorder;
+	bool with_socket;
+	bool with_quota;
+	bool with_limit;
+	bool with_numgen;
+	bool with_hash;
+	bool with_synproxy;
+	bool with_counter;
+	bool with_connlimit;
+	bool with_masq;
+	bool with_redir;
+	bool with_tproxy;
+	bool with_xfrm;
+	bool with_dup_netdev;
+	bool with_dup_ipv4;
+	bool with_dup_ipv6;
+	bool with_fwd_netdev;
+	bool with_last;
+	bool with_rt;
+	bool with_fib;
+	bool with_exthdr;
+	bool with_osf;
+	bool with_queue;
+	bool with_immediate;
+	bool with_dynset;
+	bool with_ct;
+	bool with_objref;
+};
+
+int nft_build_newtable(struct nfnl_ctx *ctx, __u8 family, const char *table_name);
+int nft_build_deltable(struct nfnl_ctx *ctx, __u8 family, const char *table_name);
+int nft_build_newset(struct nfnl_ctx *ctx, __u8 family,
+		 const char *table_name, const char *set_name, __u32 set_id);
+int nft_build_delset(struct nfnl_ctx *ctx, __u8 family,
+		 const char *table_name, const char *set_name);
+int nft_build_newchain(struct nfnl_ctx *ctx, __u8 family,
+		       const char *table_name, const char *chain_name,
+		       bool hook_present);
+int nft_build_newrule(struct nfnl_ctx *ctx, __u8 family,
+		      const char *table_name, const char *chain_name,
+		      const char *target_chain, __u32 verdict_code,
+		      __u64 position, const struct nft_expr_plan *plan,
+		      const char *set_name, __u32 set_id);
+int nft_build_delrule(struct nfnl_ctx *ctx, __u8 family,
+		      const char *table_name, const char *chain_name);
+__u8 nft_pick_family(void);
+void nft_fill_table_name(char *out, size_t cap, const char *prefix);
+void nft_expr_plan_randomize(struct nft_expr_plan *plan);
+void nft_expr_plan_record_stats(const struct nft_expr_plan *plan);
+
+void nft_dormant_abort_sweep(struct nfnl_ctx *ctx);
+
+void nft_xt_ct_usersize_sweep(void);
+bool nft_xt_ct_usersize_unsupported(void);
+void nft_xt_idletimer_sweep(void);
+bool nft_xt_idletimer_unsupported(void);
+
+void nft_compat_validate_sweep(struct nfnl_ctx *ctx);
+bool nft_compat_validate_unsupported(void);
+
+void nft_fwd_netdev_loop_sweep(struct nfnl_ctx *nfnl, struct nl_ctx *rtnl);
+bool nft_fwd_netdev_loop_unsupported(void);
+
+void nft_l4_aware_frag_sweep(struct nfnl_ctx *nfnl);
+
+/*
  * build_nft_*_expr family.  Definitions live in the per-family
- * nftables-churn-exprs-{data,set,stateful,hash,nat,conn}.c TUs.
+ * exprs-{data,set,stateful,hash,nat,conn}.c TUs.
  * Linkage widened from static to extern so the nft_expr_table
- * dispatch array in nftables-churn.c can reference them across
- * the TU split.  None of these helpers touch nftables-churn.c
+ * dispatch array in builders.c can reference them across
+ * the TU split.  None of these helpers touch churn.c
  * file-scope state; they only consume caller-provided buffers
  * and netlink helpers.
  */
