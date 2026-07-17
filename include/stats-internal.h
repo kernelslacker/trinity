@@ -77,7 +77,7 @@ enum kcov_diag_counter {
 	KCOV_DIAG_TRACE_TRUNCATED,
 };
 
-/* Shared render helpers (defined in stats.c). */
+/* Shared render helpers. */
 void stat_row(const char *category, const char *metric, unsigned long value);
 void stat_category_emit_text(const struct stat_category *cat);
 void topn_push(unsigned long *vals, unsigned int *nrs,
@@ -93,9 +93,7 @@ void dump_live_cool_per_syscall_top(const unsigned long *arr,
 				    const char *label);
 void dump_context_regular_suppressed_per_syscall_top(void);
 
-/* Cross-cluster surface for the stats.c file split.  These symbols
- * are defined in stats.c and referenced from the render cluster
- * files under stats/. */
+/* Cross-cluster surface for the stats file split. */
 extern const char * const op_names[];
 bool pc_in_text(void *pc);
 unsigned long stat_field_load(const struct stat_field *f);

@@ -35,26 +35,6 @@
 #include "version.h"
 
 /*
- * Linker-provided bounds of the running binary's executable text.  Used
- * to filter PC samples whose storage was itself stomped by the wild
- * writes we are trying to attribute -- an entry whose pc lands outside
- * [__executable_start, _etext) cannot be a real call site and would
- * otherwise dump as garbage.
- */
-extern char __executable_start[];
-extern char _etext[];
-
-bool pc_in_text(void *pc)
-{
-	return pc >= (void *)__executable_start && pc < (void *)_etext;
-}
-
-const char * const op_names[MUT_NUM_OPS] = {
-	"bit-flip", "add", "sub", "boundary", "byte-shuf", "keep",
-	"bswap-add", "bswap-sub", "fd-swap"
-};
-
-/*
  * Aggregate-stats table column widths. Header + every row uses the same
  * format string so output is greppable (grep '^fd_lifecycle ') and
  * human-scannable (columns line up).
@@ -67,11 +47,6 @@ static void stats_emit_header(void)
 	       "----------------------",
 	       "--------------------------------",
 	       "-----");
-}
-
-void stat_row(const char *category, const char *metric, unsigned long value)
-{
-	output(0, STATS_ROW_FMT, category, metric, value);
 }
 
 /*
@@ -178,73 +153,6 @@ static void dump_entry(const struct syscalltable *table, unsigned int i)
 			output(0, "    %s: %d\n", strerror(j), entry->errnos[j]);
 		}
 	}
-}
-
-/* Insertion-sort push for a top-N table held as parallel arrays
- * (vals[], nrs[], descending by value, capped at cap).  Shared by the
- * kcov dump paths that track leading edge-producing, recent-growth, and
- * CMP-insert syscalls. */
-void topn_push(unsigned long *vals, unsigned int *nrs,
-		      unsigned int *count, unsigned int cap,
-		      unsigned long value, unsigned int nr)
-{
-	unsigned int j;
-
-	for (j = *count; j > 0 && value > vals[j - 1]; j--) {
-		if (j < cap) {
-			vals[j] = vals[j - 1];
-			nrs[j] = nrs[j - 1];
-		}
-	}
-	if (j < cap) {
-		vals[j] = value;
-		nrs[j] = nr;
-		if (*count < cap)
-			(*count)++;
-	}
-}
-
-
-/*
- * Descriptor-table form for stat categories whose JSON / text emit shape
- * is "object name + N (field, value) scalar pairs".  Each category lists
- * its fields once; the JSON walker and the text walker iterate the same
- * descriptor so a new counter is added by declaring the struct member and
- * appending one STAT_FIELD() row -- the JSON key is derived from the
- * field-name suffix so the schema cannot drift from the struct.
- *
- * Generalises the in-tree pattern already used by defense_counters[] for
- * the periodic-window dump; here it replaces correlated edits in
- * struct stats_s + dump_stats_json() + dump_stats() with a single edit
- * site per counter.
- */
-unsigned long stat_field_load(const struct stat_field *f)
-{
-	unsigned long *p = (unsigned long *)((char *)&shm->stats + f->offset);
-	return __atomic_load_n(p, __ATOMIC_RELAXED);
-}
-
-static unsigned long stat_gate_load(const struct stat_category *cat)
-{
-	unsigned long *p = (unsigned long *)((char *)&shm->stats + cat->gate_offset);
-	return __atomic_load_n(p, __ATOMIC_RELAXED);
-}
-
-
-/*
- * Emit one category as text rows.  Mirrors the existing
- * "if (shm->stats.<gate>) { stat_row(...); ... }" idiom: when the gate
- * counter is zero the whole block is suppressed so quiet runs stay terse.
- */
-void stat_category_emit_text(const struct stat_category *cat)
-{
-	size_t i;
-
-	if (stat_gate_load(cat) == 0)
-		return;
-	for (i = 0; i < cat->n_fields; i++)
-		stat_row(cat->name, cat->fields[i].name,
-		         stat_field_load(&cat->fields[i]));
 }
 
 /* --blob-mutator (default off): A/B observability for the ARG_BUF_SIZED
