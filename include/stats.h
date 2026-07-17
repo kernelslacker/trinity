@@ -21,6 +21,7 @@
 #include "kernel/mount.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/blob.h"
+#include "stats/subsys/flock_thrash.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/pipe_thrash.h"
@@ -1050,10 +1051,8 @@ struct stats_s {
 	/* pipe_thrash childop counters.  See stats/subsys/pipe_thrash.h. */
 	struct pipe_thrash_stats pipe_thrash __attribute__((aligned(64)));
 
-	/* flock_thrash childop counters */
-	unsigned long flock_thrash_runs;	/* total flock_thrash invocations */
-	unsigned long flock_thrash_locks;	/* successful flock() calls */
-	unsigned long flock_thrash_failed;	/* flock() returned -1 (EWOULDBLOCK/EINTR/...) */
+	/* flock_thrash childop counters.  See stats/subsys/flock_thrash.h. */
+	struct flock_thrash_stats flock_thrash __attribute__((aligned(64)));
 
 	/* xattr_thrash childop counters */
 	unsigned long xattr_thrash_runs;	/* total xattr_thrash invocations */

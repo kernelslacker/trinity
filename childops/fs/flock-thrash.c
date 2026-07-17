@@ -245,13 +245,13 @@ static void flock_thrash_iter_apply(struct flock_slot *s, int op_used)
 	if (rc == 0) {
 		int op_base = op_used & ~LOCK_NB;
 
-		__atomic_add_fetch(&shm->stats.flock_thrash_locks,
+		__atomic_add_fetch(&shm->stats.flock_thrash.locks,
 				   1, __ATOMIC_RELAXED);
 		if (op_base == LOCK_SH || op_base == LOCK_EX ||
 		    op_base == LOCK_UN)
 			s->held = (op_base != LOCK_UN);
 	} else {
-		__atomic_add_fetch(&shm->stats.flock_thrash_failed,
+		__atomic_add_fetch(&shm->stats.flock_thrash.failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -283,7 +283,7 @@ bool flock_thrash(struct childdata *child)
 	unsigned int iter, iter_cap, phase_split;
 	enum thrash_order order;
 
-	__atomic_add_fetch(&shm->stats.flock_thrash_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.flock_thrash.runs, 1, __ATOMIC_RELAXED);
 
 	opened = flock_thrash_iter_open_slots(slots);
 	if (opened == 0)
