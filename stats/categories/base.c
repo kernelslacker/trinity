@@ -210,19 +210,6 @@ const struct stat_category iouring_eventfd_category =
 	              iouring_eventfd_register_ok,
 	              iouring_eventfd_fields);
 
-/* aio_submitted: iocbs the kernel accepted on io_submit's success branch
- * (retval > 0 and within [0, nr]).  A single-field category sits next to
- * its iouring siblings so a quiet success window is distinguishable from
- * a quiet rejection window in both JSON and text dumps. */
-static const struct stat_field aio_fields[] = {
-	STAT_FIELD(aio, submitted),
-};
-
-const struct stat_category aio_category =
-	STAT_CATEGORY("aio",
-	              aio_submitted,
-	              aio_fields);
-
 /* errno_gradient: SHADOW measurement of upward errno-class crossings (no
  * fuzzer-behaviour change -- see the errno_gradient_* block in
  * include/stats.h for the class axis and the SHADOW contract).  Aggregate

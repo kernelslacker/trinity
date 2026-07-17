@@ -251,7 +251,7 @@ static void post_io_submit(struct syscallrecord *rec)
 	if (ret == 0)
 		return;
 
-	__atomic_add_fetch(&shm->stats.aio_submitted, (unsigned long) ret,
+	__atomic_add_fetch(&shm->stats.aio.submitted, (unsigned long) ret,
 			   __ATOMIC_RELAXED);
 
 	iocbpp = (struct iocb **) rec->post_state;
