@@ -74,14 +74,12 @@ unsigned int load_active_syscall_count(const unsigned int *shm_count,
  * to steer on instead of degenerating to plain uniform draw -- see the
  * fallback gate for the full rationale.
  *
- * Sized at 256 to give the integer-divide inverse-productivity transform
- * (SCALE - floor(SCALE * edges / calls)) sub-percent discrimination: at
- * the previous SCALE=16, any syscall productive at < 6.25% (= 1/16) of
- * its calls floored the divide to 0 and collapsed to MAX, indistinguishable
- * from a never-tried slot.  At SCALE=256 the same divide resolves down
- * to ~0.4%/step, so syscalls with even a handful of productive calls in
- * the high-thousands range no longer pin at the cold ceiling.  256 is
- * also the Q8.8 unit used by adapt_budget's mult table -- staying on a
+ * Sized at 256 so the integer-divide inverse-productivity transform
+ * (SCALE - floor(SCALE * edges / calls)) resolves at ~0.4%/step: even
+ * a syscall with a handful of productive calls in the high-thousands
+ * range stays distinguishable from a never-tried slot instead of
+ * flooring the divide to 0 and collapsing to MAX.  256 is also the
+ * Q8.8 unit used by adapt_budget's mult table -- staying on a
  * power-of-two keeps the rnd_modulo_u32(SCALE + 1) draw in the same
  * Lemire fast-path the soft-max path already uses.
  */
@@ -186,13 +184,12 @@ retry:
 	syscallnr = val - 1;
 
 	/*
-	 * EXPENSIVE early-out: bitmap test before validate + entry fetch,
-	 * so the reject path skips the cache miss on the syscallentry
-	 * that the EXPENSIVE block below used to require.  Helper
-	 * consolidates the policy; under the default --expensive-adaptive=
-	 * off it is byte-identical to the prior `syscall_is_expensive(...)
-	 * && !ONE_IN(1000)` expression (same control flow and same RNG
-	 * draw order).
+	 * EXPENSIVE early-out: expensive_accept() bitmap-tests before
+	 * validate + entry fetch, so the reject path skips the
+	 * syscallentry cache miss.  Helper consolidates the policy;
+	 * under the default --expensive-adaptive=off it applies the
+	 * `syscall_is_expensive(...) && !ONE_IN(1000)` predicate with
+	 * the same control flow and RNG draw order.
 	 */
 	if (!expensive_accept(syscallnr, do32))
 		goto retry;
@@ -577,12 +574,11 @@ retry:
 
 	syscallnr = val - 1;
 
-	/* EXPENSIVE early-out: bitmap test before validate + entry fetch,
-	 * so the reject path skips the cache miss on the syscallentry
-	 * that the EXPENSIVE block below used to require.  Helper
-	 * consolidates the policy; default --expensive-adaptive=off is
-	 * byte-identical to the prior `syscall_is_expensive(...) &&
-	 * !ONE_IN(1000)` expression. */
+	/* EXPENSIVE early-out: expensive_accept() bitmap-tests before
+	 * validate + entry fetch, so the reject path skips the
+	 * syscallentry cache miss.  Helper consolidates the policy;
+	 * default --expensive-adaptive=off applies the
+	 * `syscall_is_expensive(...) && !ONE_IN(1000)` predicate. */
 	if (!expensive_accept(syscallnr, do32))
 		goto retry;
 
@@ -769,7 +765,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 		old_weight = FRONTIER_COLD_SCALE -
 			     (edges * FRONTIER_COLD_SCALE) / calls;
 
-	/* BLENDED weight (formerly SHADOW-ONLY, now mode-gated): treat
+	/* BLENDED weight (mode-gated): treat
 	 * per_syscall_edges (call-count of productive calls) as the stable
 	 * backbone and ADD logarithmic credit for three disjoint per-call
 	 * yield signals:
@@ -1145,23 +1141,22 @@ static unsigned long cmp_frontier_weight(unsigned int nr)
  * shm->frontier_max_weight_cached so the bias mass stays stable across
  * the inner retry loop, and so concurrent kcov_collect-driven bumps to
  * frontier_history during the pick don't perturb the acceptance
- * probability mid-call.  The cache is recomputed authoritatively on
- * each window rotation by frontier_window_advance() and ratcheted
- * upward on new-edge bumps by frontier_record_new_edge(), turning what
- * used to be an O(MAX_NR_SYSCALL) walk per pick into a single RELAXED
- * load.
+ * probability mid-call.  The cache is a single RELAXED load,
+ * recomputed authoritatively on each window rotation by
+ * frontier_window_advance() and ratcheted upward on new-edge bumps
+ * by frontier_record_new_edge().
  *
  * Plateau fallback (max_weight <= 2): the frontier ring decays to zero
  * everywhere at the plateau (a window with no new edges ages every slot
  * to 0 within FRONTIER_DECAY_WINDOWS rotations), which is exactly the
  * regime PIM_COVERAGE_FRONTIER pins ~25% of intervention windows on
- * FRONTIER for.  The original code fell through to plain uniform draw
- * in this branch, leaving FRONTIER strictly worse than RANDOM (no
- * anti-prior bias, no explorer-pool backing, no near-coverage signal --
- * nothing to steer on).  The fallback path replaces the bypass with a
- * cold/untried-syscall bias keyed on per_syscall_edges/per_syscall_calls
- * so the picker still steers toward under-explored syscalls when the
- * recent-frontier signal is gone.
+ * FRONTIER for.  In that branch the fallback applies a cold/untried-
+ * syscall bias keyed on per_syscall_edges/per_syscall_calls so the
+ * picker still steers toward under-explored syscalls when the
+ * recent-frontier signal is gone; a plain uniform draw here would
+ * leave FRONTIER strictly worse than RANDOM (no anti-prior bias, no
+ * explorer-pool backing, no near-coverage signal -- nothing to steer
+ * on).
  *
  * The validate / EXPENSIVE / AVOID_SYSCALL retry budget mirrors the
  * other set_syscall_nr_* variants because those are correctness gates,
@@ -1221,12 +1216,11 @@ retry:
 
 	syscallnr = val - 1;
 
-	/* EXPENSIVE early-out: bitmap test before validate + entry fetch,
-	 * so the reject path skips the cache miss on the syscallentry
-	 * that the EXPENSIVE block below used to require.  Helper
-	 * consolidates the policy; default --expensive-adaptive=off is
-	 * byte-identical to the prior `syscall_is_expensive(...) &&
-	 * !ONE_IN(1000)` expression. */
+	/* EXPENSIVE early-out: expensive_accept() bitmap-tests before
+	 * validate + entry fetch, so the reject path skips the
+	 * syscallentry cache miss.  Helper consolidates the policy;
+	 * default --expensive-adaptive=off applies the
+	 * `syscall_is_expensive(...) && !ONE_IN(1000)` predicate. */
 	if (!expensive_accept(syscallnr, do32))
 		goto retry;
 
