@@ -143,8 +143,10 @@ enum stats_field {
 	 * set, drained into parent_stats.remote_calls via the stats_ring
 	 * on the found-new-edge piggyback or the syscalls-since-flush
 	 * cadence cap.  Dump-only reader, no per-call branch reads it,
-	 * so the batched delta is the source of truth for the dump path
-	 * and the kcov_shm field is no longer bumped. */
+	 * so the batched delta is the authoritative dump-path value;
+	 * kcov_shm->remote_calls has no stamp-role consumer, which is
+	 * why keeping it in sync with a per-call atomic would buy
+	 * nothing and cost a shared-cacheline write per syscall. */
 	STATS_FIELD_REMOTE_CALLS,
 	/* kcov_collect()'s per-call PC-count bump.  Already a batched
 	 * "+count" delta at the bump site (count = PCs returned by the
@@ -161,8 +163,10 @@ enum stats_field {
 	 * parent_stats.total_warm_known_hits via the stats_ring on the
 	 * found-new-edge piggyback or the syscalls-since-flush cadence
 	 * cap.  Dump-only reader, no per-call branch reads it, so the
-	 * batched delta is the source of truth for the dump path and the
-	 * kcov_shm field is no longer bumped. */
+	 * batched delta is the authoritative dump-path value; the
+	 * kcov_shm->total_warm_known_hits slot has no stamp-role
+	 * consumer, which is why re-bumping it on every call would
+	 * only cost a shared-cacheline write with no reader to serve. */
 	STATS_FIELD_WARM_KNOWN_HITS,
 	/* cmp_hints_try_get_ex() bumps these on every consumer call that
 	 * passed the cmp_hints_shm / nr guard and reached the pool-snapshot
@@ -321,8 +325,10 @@ struct stats_aggregate {
 	/* Drained from STATS_FIELD_REMOTE_CALLS.  Subset of total_calls
 	 * that took the kc->remote_mode branch (KCOV_REMOTE_ENABLE-backed
 	 * collection).  Reported by the same dump readers as total_calls;
-	 * the kcov_shm->remote_calls atomic is no longer bumped, no
-	 * stamp-role consumer references it. */
+	 * staging on childdata->local_stats keeps the hot kcov_shm
+	 * cacheline out of the per-call path, and because no stamp-role
+	 * consumer references kcov_shm->remote_calls the staged delta is
+	 * the authoritative value for this counter. */
 	unsigned long remote_calls;
 
 	/* Drained from STATS_FIELD_TOTAL_PCS.  Sum of PC counts pulled
@@ -336,11 +342,14 @@ struct stats_aggregate {
 	/* Drained from STATS_FIELD_WARM_KNOWN_HITS.  Run-wide count of
 	 * kcov_collect() calls that returned coverage where every PC was
 	 * already in bucket_seen[] (warm-loaded or seen earlier this run).
-	 * Reported by the periodic stats dump as a liveness signal; the
-	 * kcov_shm->total_warm_known_hits atomic is no longer bumped, no
-	 * stamp-role consumer references it.  The per-syscall split lives
-	 * in kcov_shm->per_syscall_warm_known_hits[] and is left untouched
-	 * here -- only the cross-child run-wide counter migrates. */
+	 * Reported by the periodic stats dump as a liveness signal;
+	 * staging on childdata->local_stats keeps the hot kcov_shm
+	 * cacheline out of the per-call path, and because no stamp-role
+	 * consumer references kcov_shm->total_warm_known_hits the staged
+	 * delta is the authoritative value for this counter.  The
+	 * per-syscall split lives in kcov_shm->per_syscall_warm_known_hits[]
+	 * and is left untouched here -- only the cross-child run-wide
+	 * counter migrates. */
 	unsigned long total_warm_known_hits;
 
 	/* Drained from STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS /
