@@ -135,16 +135,14 @@ static unsigned long pick_io_uring_register_opcode(void)
  * rec->a2 or rec->a3 between the syscall returning and the post
  * handler running.
  *
- * Every IORING_REGISTER_* opcode this generator emits now feeds rec->a3
+ * Every IORING_REGISTER_* opcode this generator emits feeds rec->a3
  * with a non-heap value -- get_writable_struct() / get_writable_address()
- * pool pointers, or zero.  IORING_REGISTER_BUFFERS / BUFFERS2 /
- * BUFFERS_UPDATE used to hand back a libc-heap alloc_iovec result that
- * the post handler had to release; alloc_iovec now returns a writable-
- * pool slot (see rand/random-address.c), so trinity never owns the
- * memory backing rec->a3 and the post handler has no free to perform.
- * The post handler still dispatches off the snapshot's opcode (not
- * rec->a2) for the per-op STRONG-VAL retval check below, so a sibling
- * scribble of rec->a2 cannot misroute that validation either.
+ * pool pointers, alloc_iovec()'s writable-pool slot (see
+ * rand/random-address.c), or zero.  Trinity never owns the memory
+ * backing rec->a3, so the post handler has no free to perform.  The
+ * post handler dispatches off the snapshot's opcode (not rec->a2) for
+ * the per-op STRONG-VAL retval check below, so a sibling scribble of
+ * rec->a2 cannot misroute that validation either.
  *
  * The magic cookie hardens the post handler against rec->post_state
  * being scribbled with a heap-shaped pointer to a foreign allocation --
@@ -157,9 +155,9 @@ struct io_uring_register_post_state {
 	/*
 	 * Per-opcode length of the user buffer at rec->a3.  Set in the
 	 * dispatch switch alongside the buffer allocation, then handed to
-	 * avoid_shared_buffer_inout() in place of the old page_size constant.
-	 * arg_len = 0 means the opcode takes no arg and the relocation call
-	 * is skipped entirely.
+	 * avoid_shared_buffer_inout() as the relocation length.
+	 * arg_len == 0 means the opcode takes no arg and the relocation
+	 * call is skipped entirely.
 	 */
 	unsigned long arg_len;
 };
@@ -365,12 +363,12 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * pick_random_ioctl() runs after ioctl_arg_for_request() — same
 	 * reasoning, same shape, same negligible cost.
 	 *
-	 * Use the per-opcode arg_len rather than the old page_size constant.
-	 * For IORING_REGISTER_BUFFERS the source allocation is
-	 * nr * sizeof(struct iovec) (16..128 bytes); a page_size memcpy
-	 * read past the end of that buffer.  arg_len == 0 marks the no-arg
-	 * opcodes (UNREGISTER_*, ENABLE_RINGS, PERSONALITY, etc.); skip
-	 * the relocation entirely on those rather than relocate a NULL.
+	 * Use the per-opcode arg_len for the relocation length.  For
+	 * IORING_REGISTER_BUFFERS the source allocation is
+	 * nr * sizeof(struct iovec) (16..128 bytes), so a page_size memcpy
+	 * would read past its end.  arg_len == 0 marks the no-arg opcodes
+	 * (UNREGISTER_*, ENABLE_RINGS, PERSONALITY, etc.); skip the
+	 * relocation entirely on those rather than relocate a NULL.
 	 */
 	if (snap->arg_len > 0)
 		avoid_shared_buffer_inout(&rec->a3, snap->arg_len);
