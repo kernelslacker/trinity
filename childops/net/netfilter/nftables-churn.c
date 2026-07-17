@@ -338,10 +338,9 @@ typedef size_t (*nft_expr_set_builder_fn)(unsigned char *buf, size_t off,
  * Per-expression descriptor.  Exactly one of build / build_set is
  * non-NULL; build_set is for expressions that need the (set_name,
  * set_id) pair (lookup, dynset).  odds_one_in is the ONE_IN(N) value
- * used by nft_expr_plan_randomize() — must match the historical odds
- * of the if-chain this table replaces (log/bitwise are 1/4, the rest
- * are 1/3).  Table order is the wire-emission order: nf_tables
- * validates the expression sequence at commit time.
+ * used by nft_expr_plan_randomize(): log/bitwise are picked with 1/4
+ * odds, the rest with 1/3.  Table order is the wire-emission order:
+ * nf_tables validates the expression sequence at commit time.
  */
 struct nft_expr_desc {
 	const char			*name;
