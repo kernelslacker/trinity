@@ -87,9 +87,11 @@ struct cmp_hints_bloom {
  *
  * field_kind selects how the consumer applies the pin for the
  * field-scoped pool.
- * REEXEC_FIELD_NONE is the historical scalar-slot pin: rec->a<slot> is
- * overwritten with `value` outright.  The field kinds instead treat
- * rec->a<slot> as a pointer to a fixed-size struct and pin ONE field
+ * REEXEC_FIELD_NONE is the scalar-slot pin: the consumer splices `value`
+ * into rec->a<slot>'s low `size` bytes and preserves its high bits (a
+ * full or unknown width overwrites the whole slot outright).  The field
+ * kinds instead treat rec->a<slot> as a pointer to a fixed-size struct
+ * and pin ONE field
  * inside the freshly regenerated buffer, leaving the rest of the
  * generated struct intact -- so a kernel comparison that fired on a
  * single struct field is satisfied without spraying the constant across
