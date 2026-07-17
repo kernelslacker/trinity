@@ -35,6 +35,16 @@ struct stat_category {
 	{ .name = #suffix, \
 	  .offset = offsetof(struct stats_s, cat##_##suffix) }
 
+/* Dotted variant for members that live inside a per-subsystem sub-struct
+ * (struct stats_s { struct blob_stats blob; ...}).  Callers migrated to
+ * stats/subsys/<sub>.c use STAT_FIELD_SUB(sub, field); unmigrated flat
+ * subsystems keep STAT_FIELD(cat, suffix).  Both coexist during the
+ * per-subsystem split; the flat form is retired in the macro-cleanup
+ * commit once every array has moved. */
+#define STAT_FIELD_SUB(sub, field) \
+	{ .name = #field, \
+	  .offset = offsetof(struct stats_s, sub.field) }
+
 #define STAT_FIELD_JSON(cat, suffix, jkey) \
 	{ .name = #suffix, \
 	  .json_key = (jkey), \

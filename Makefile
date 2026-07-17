@@ -146,6 +146,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard stats/*.c) \
 		   $(wildcard stats/categories/*.c) \
 		   $(wildcard stats/dump/*.c) \
+		   $(wildcard stats/subsys/*.c) \
 		   $(wildcard stats/childop/*.c) \
 		   $(wildcard stats/network/*.c) \
 		   $(wildcard stats/kcov/*.c) \
@@ -231,6 +232,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/categories/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/dump/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard stats/subsys/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/childop/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/network/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/kcov/*.c))) \
