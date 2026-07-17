@@ -81,11 +81,11 @@ static void register_socketpair_fd(int fd, struct syscallrecord *rec)
  * sibling scribble of rec->a4 between dispatch and post bumps the
  * generic arg_shadow_stomp tripwire from inside the accessor; the
  * returned value is the kernel-visible address, so the fd-pair deref
- * still hits the buffer the kernel actually wrote.  The previous
- * snap->usockvec vs rec->a4 identity check was a false-positive source:
- * a4 is ARG_ADDRESS, so the dispatcher's blanket_address_scrub
- * benignly relocates the pointer between sanitise and dispatch and
- * the divergence is expected, not a corruption signal.
+ * still hits the buffer the kernel actually wrote.  No snap->usockvec
+ * vs rec->a4 identity check is needed: a4 is ARG_ADDRESS, so the
+ * dispatcher's blanket_address_scrub benignly relocates the pointer
+ * between sanitise and dispatch and the divergence is expected, not
+ * a corruption signal.
  */
 #define SOCKETPAIR_POST_STATE_MAGIC	0x534F434B5F4D4147UL	/* "SOCK_MAG" */
 struct socketpair_post_state {
