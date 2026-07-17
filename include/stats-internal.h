@@ -103,6 +103,17 @@ unsigned long stat_field_load(const struct stat_field *f);
  * childop_split_dump() lives in stats/periodic.c. */
 void dump_stats_json(void);
 void childop_split_dump(void);
+void dump_stats_runtime_header(void);
+void dump_stats_per_syscall_tables(void);
+void dump_stats_top_wedging_syscalls(void);
+void dump_stats_top_wedging_childops(void);
+void dump_stats_fd_tracking(void);
+void dump_stats_shared_buffer_misc(void);
+void dump_syscall_category_histogram(void);
+void dump_stats_childop_runs_local(void);
+void dump_stats_childop_fd_delta(void) __cold;
+void dump_stats_topo_pair_shadow(void) __cold;
+void dump_stats_corpus_and_taint_tail(void);
 
 /* corrupt_ptr cluster in stats/corrupt_ptr.c.  Called from the
  * stats.c core (dump_range_overlaps_shared_top_offenders via
