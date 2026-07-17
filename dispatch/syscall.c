@@ -321,15 +321,10 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * get_arg_snapshot() see exactly what the kernel saw.  Captured
 	 * here -- after the second blanket_address_scrub above and from
 	 * the locals (immune to a sibling stomp between BEFORE and AFTER)
-	 * -- rather than at the tail of generate_syscall_args(): a sibling
-	 * stomp between sanitise-time and dispatch-time used to leave the
-	 * shadow holding a stale pre-stomp value while the kernel saw the
-	 * stomped one, and get_arg_snapshot()'s tripwire bump for the
-	 * mismatch was the only signal; the post handler still consumed
-	 * the stale shadow.  Capturing from the locals collapses the
-	 * window: the only stomp the shadow can now miss is one that
-	 * lands after dispatch began, which IS the bug class
-	 * arg_shadow_stomp is meant to surface. */
+	 * -- so the shadow holds precisely what the kernel saw.  The only
+	 * stomp the shadow can miss is one that lands after dispatch
+	 * began, which IS the bug class arg_shadow_stomp is meant to
+	 * surface. */
 	{
 		/* arg_snapshot_mask only carries six valid bits (one per
 		 * syscall arg).  Mask the byte to 0x3f before iterating: a
@@ -394,13 +389,11 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		return;
 	}
 
-	/* Arm the alarm after the publish-end above.  alarm(1) used to
-	 * sit above the rec->lock region, opening a window where
-	 * SIGALRM could fire while the lock was held; the siglongjmp
-	 * in the handler would then orphan it.  The publish brackets
-	 * now stand in for the lock as the ordering anchor, but the
-	 * alarm-after-publish ordering is preserved on the same
-	 * grounds. */
+	/* Arm the alarm after the publish-end above: the publish
+	 * brackets are the ordering anchor.  SIGALRM firing inside the
+	 * bracketed region would be caught by the handler whose
+	 * siglongjmp then orphans the alarm, so arming stays outside
+	 * the brackets. */
 	if (needalarm) {
 		/*
 		 * Restore the inner-watchdog handler before arming.  Both
@@ -1264,11 +1257,9 @@ static void syscall_ret_validate_phase(struct syscallrecord *rec,
 	 * sanitise-published rec.  rzs_blanket_reject is the headline counter
 	 * for this class: a dispatcher-level rettype-contract violation
 	 * (a sibling scribbled rec->retval after the syscall returned),
-	 * distinct from a .post handler rejecting a pid-shaped pointer in
-	 * rec->aN.  The two bug classes used to share
-	 * post_handler_corrupt_ptr, which inflated the headline counter and
-	 * smeared the per-handler attribution; they are accounted separately
-	 * now.
+	 * counted separately from a .post handler rejecting a pid-shaped
+	 * pointer in rec->aN under post_handler_corrupt_ptr, so the headline
+	 * counter is accurate and per-handler attribution stays clean.
 	 *
 	 * Coerce the impossible retval to -1UL / EINVAL and set
 	 * rzs_rejected so downstream handlers cannot act on the
@@ -1687,8 +1678,7 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 	 * (which runs the per-argtype cleanup for ARG_PATHNAME /
 	 * ARG_IOVEC / ARG_SOCKADDR slots).  This lets .post stay a
 	 * pure successful-result inspector while .cleanup owns the
-	 * syscall-level teardown that used to be conflated into
-	 * pre-dispatch deferred_free_enqueue_or_leak() and into .post. */
+	 * syscall-level teardown. */
 	if (entry->cleanup != NULL)
 		entry->cleanup(rec);
 
