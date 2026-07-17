@@ -96,9 +96,8 @@ struct shm_s {
 	 * child's not-yet-frozen region (childdata is alloc_shared and so
 	 * occupies a discrete 4 KiB-aligned mmap slot per child — random
 	 * pointer args from the busy sibling can fall there).  The window
-	 * was previously open forever; now it shrinks to "until each
-	 * existing sibling reaches its next loop top check", typically one
-	 * syscall worth of latency.
+	 * closes once each existing sibling reaches its next loop top
+	 * check — typically one syscall worth of latency.
 	 *
 	 * Lives next to start_time deliberately: that slot was padding
 	 * before the 64-byte-aligned fd_hash cacheline, so adding the
@@ -328,9 +327,10 @@ struct shm_s {
 		 * came from the kernel's own LOOP_CTL_GET_FREE allocation
 		 * and the parent retains the loop fd for the run's lifetime
 		 * (children inherit it via fork; a child close drops only
-		 * that child's ref).  Childops that previously open()ed
-		 * /dev/loopN by host-allocated number migrate to draw from
-		 * here instead of reaching for arbitrary host block devices.
+		 * that child's ref).  Childops needing /dev/loopN draw
+		 * their loop number from this pool rather than reaching
+		 * for arbitrary host block devices, so the node is always
+		 * a fuzz-safe parent-owned entry, never a host disk node.
 		 *
 		 * Children consult scratch_block_ready before reading any
 		 * other field; when false (non-root, mnt_ready degraded, or
@@ -599,10 +599,9 @@ struct shm_s {
 	 *   flipped at least one never-seen bucket bit.  Bumped by +1 per
 	 *   such call, NOT by the number of distinct edges that call
 	 *   uncovered: a syscall that exposes 50 fresh edges in one shot
-	 *   still bumps the call-count series by 1.  This is the historical
-	 *   "edges_by_strategy[]" signal renamed to match its actual shape
-	 *   (calls-with-≥1-edge, not edges).  It is the signal the UCB1
-	 *   learner reads via bandit_reward_calls[] below.
+	 *   still bumps the call-count series by 1.  This series counts
+	 *   calls-with-≥1-new-edge (not the edge count itself) and feeds
+	 *   the UCB1 learner via bandit_reward_calls[] below.
 	 *
 	 * pc_edge_count_by_strategy[]: cumulative count of REAL bucket-edge
 	 *   bits flipped by syscalls attributed to each strategy — the
@@ -654,13 +653,11 @@ struct shm_s {
 	 *
 	 * bandit_reward_calls[]: cumulative reward attributed to each arm,
 	 *   in CALL-COUNT units — sum of per-window
-	 *   (pc_edge_calls_by_strategy delta + cmp_term).  Despite the
-	 *   historical "reward" name, the PC component here counts CALLS
-	 *   that produced at least one new edge, not real bucket edges (see
-	 *   the pc_edge_calls_by_strategy comment above).  This is the
-	 *   signal the UCB1 picker scores against; renamed from
-	 *   bandit_reward[] to make the call-count shape explicit.  The
-	 *   learner may later switch to consuming
+	 *   (pc_edge_calls_by_strategy delta + cmp_term).  The PC
+	 *   component counts CALLS that produced at least one new edge,
+	 *   not real bucket edges (see the pc_edge_calls_by_strategy
+	 *   comment above).  This is the signal the UCB1 picker scores
+	 *   against.  The learner may later switch to consuming
 	 *   bandit_reward_pc_edge_count[] below (real bucket count) or a
 	 *   transform of it; both signals are exposed so that choice can
 	 *   be made later.
