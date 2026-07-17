@@ -287,12 +287,10 @@ struct childdata {
 	 * bit 1 = OBJ_MMAP_FILE, bit 2 = OBJ_MMAP_TESTFILE, matching the
 	 * map_pool_types[] order used by the handle picker.
 	 *
-	 * The picker preserves the prior equal-pool bias: it picks one of
-	 * the set bits uniformly (1/popcount) rather than weighting by
-	 * num_entries.  This deliberately matches the pre-mask uniform
-	 * pick over {ANON, FILE, TESTFILE} restricted to the nonempty
-	 * subset; the only behavior change is that previously-burnt
-	 * iterations on empty pools no longer happen.
+	 * The picker chooses one of the set bits uniformly (1/popcount)
+	 * rather than weighting by num_entries: an equal-pool pick over
+	 * {ANON, FILE, TESTFILE} restricted to the nonempty subset, with
+	 * no iterations wasted on empty pools.
 	 *
 	 * Maintained at the 0<->1 transitions of head->num_entries in
 	 * add_object_publish (set bit on first insert) and
