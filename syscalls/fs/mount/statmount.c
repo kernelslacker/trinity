@@ -63,10 +63,11 @@ static unsigned long statmount_params[] = {
  * belongs to a foreign allocation -- a mismatched cookie rejects the
  * snap before any inner-field deref.  original_buf is the zmalloc()'d
  * pointer handed to deferred_free_enqueue() at post-time: rec->a2 is
- * relocated by avoid_shared_buffer_out() into the writable-address pool
- * and free()ing the relocated address would trip the allocator's
- * heap-bounds gate, so the post handler used to leak the 64 KiB tracked
- * buffer on every call.  Mirrors the PIPE_POST_STATE_MAGIC pattern at
+ * relocated by avoid_shared_buffer_out() into the writable-address pool,
+ * so freeing the relocated address would trip the allocator's
+ * heap-bounds gate; original_buf captures the zmalloc ptr for
+ * the post handler to release via deferred_free_enqueue().
+ * Mirrors the PIPE_POST_STATE_MAGIC pattern at
  * syscalls/pipe.c:57.
  */
 #define STATMOUNT_POST_STATE_MAGIC	0x53544D4E545F4D47UL	/* "STMNT_MG" */
