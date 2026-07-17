@@ -250,12 +250,11 @@ struct cmp_hint_pool {
 	 * actually changes -- a fresh insert or an evict-replace, never on a
 	 * dedup-refresh hit.  Summed across all MAX_NR_SYSCALL pools by
 	 * cmp_hints_total_generation() to gate the snapshot dirty-bit in
-	 * cmp_hints_save_file; bumping it on dedup-refresh used to defeat
-	 * that gate by advancing the sum every time a hot tuple re-touched
-	 * its last_used field, even though the bytes serialised to disk
-	 * (modulo the last_used timestamps themselves) were identical.
-	 * last_used_stamp below carries the LRU-clock role generation used
-	 * to play. */
+	 * cmp_hints_save_file: a dedup-refresh only updates last_used and
+	 * leaves the set of tuples in the pool unchanged, so it must not
+	 * advance the sum and must not force a snapshot save (the bytes
+	 * serialised to disk, modulo last_used timestamps, are identical).
+	 * last_used_stamp below carries the LRU-clock role. */
 	unsigned int generation;
 	/* Per-pool monotonic LRU clock, bumped under pool->lock on every
 	 * pool_add_locked call (including dedup-refresh hits).  The current
@@ -996,11 +995,10 @@ enum cmp_hint_callsite {
 	CMP_HINT_CALLSITE_ARG_STRUCT_SIZE,
 	CMP_HINT_CALLSITE_STRUCT_FIELD,
 	CMP_HINT_CALLSITE_OTHER,
-	/* Appended -- the ARG_RANGE accept-path in handle_arg.c previously
-	 * folded into OTHER; broken out into its own bucket so the typed-
-	 * eligible baseline (ARG_STRUCT_SIZE + ARG_RANGE) can be read
-	 * cleanly out of the callsite split without OTHER also carrying
-	 * any future non-classified sites. */
+	/* The ARG_RANGE accept-path in handle_arg.c buckets here rather
+	 * than in OTHER so the typed-eligible baseline (ARG_STRUCT_SIZE +
+	 * ARG_RANGE) can be read cleanly out of the callsite split without
+	 * OTHER also carrying any future non-classified sites. */
 	CMP_HINT_CALLSITE_ARG_RANGE,
 	CMP_HINT_CALLSITE_NR,
 };
