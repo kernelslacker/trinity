@@ -155,20 +155,6 @@ const struct stat_category vdso_mremap_race_category =
 	              vdso_race_runs,
 	              vdso_mremap_race_fields);
 
-static const struct stat_field xattr_thrash_fields[] = {
-	STAT_FIELD(xattr_thrash, runs),
-	STAT_FIELD(xattr_thrash, set),
-	STAT_FIELD(xattr_thrash, get),
-	STAT_FIELD(xattr_thrash, remove),
-	STAT_FIELD(xattr_thrash, list),
-	STAT_FIELD(xattr_thrash, failed),
-};
-
-const struct stat_category xattr_thrash_category =
-	STAT_CATEGORY("xattr_thrash",
-	              xattr_thrash_runs,
-	              xattr_thrash_fields);
-
 static const struct stat_field epoll_volatility_fields[] = {
 	STAT_FIELD(epoll_volatility, runs),
 	STAT_FIELD(epoll_volatility, ctl_calls),

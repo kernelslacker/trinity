@@ -26,6 +26,7 @@
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/signal_storm.h"
+#include "stats/subsys/xattr_thrash.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
  * Q8.8 fixed point: 256 == 1.0x.  Floor and ceiling cap how far the
@@ -1054,13 +1055,8 @@ struct stats_s {
 	/* flock_thrash childop counters.  See stats/subsys/flock_thrash.h. */
 	struct flock_thrash_stats flock_thrash __attribute__((aligned(64)));
 
-	/* xattr_thrash childop counters */
-	unsigned long xattr_thrash_runs;	/* total xattr_thrash invocations */
-	unsigned long xattr_thrash_set;		/* successful set/fsetxattr calls */
-	unsigned long xattr_thrash_get;		/* successful get/fgetxattr calls */
-	unsigned long xattr_thrash_remove;	/* successful remove/fremovexattr calls */
-	unsigned long xattr_thrash_list;	/* successful list/flistxattr calls */
-	unsigned long xattr_thrash_failed;	/* any xattr syscall returned -1 */
+	/* xattr_thrash childop counters.  See stats/subsys/xattr_thrash.h. */
+	struct xattr_thrash_stats xattr_thrash __attribute__((aligned(64)));
 
 	/* epoll_volatility childop counters */
 	unsigned long epoll_volatility_runs;		/* total epoll_volatility invocations */
