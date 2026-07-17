@@ -467,16 +467,17 @@ struct syscallentry syscall_sendmsg = {
 /*
  * Snapshot for the post handler.  rec->a2 (the msgs pointer) and rec->a3
  * (vlen) are both exposed to a sibling syscall scribbling an ABI slot
- * between sanitise returning and post_sendmmsg() running.  The pointer
- * scribble was caught by 914fbc6f1ff6 (msgs guard via post_state); vlen
- * was missed.  A sibling fuzzed value-result syscall scribbling rec->a3
- * to any value in [2, SENDMMSG_MAX_VLEN] above the original vlen makes
- * the cleanup loop walk past the vlen * sizeof(struct mmsghdr) zmalloc
- * — heap-buffer-overflow on the msgs[i].msg_hdr.msg_iov read.  ASAN
- * caught exactly that: original vlen=1 (64-byte allocation), rec->a3
- * scribbled to vlen>=2, post handler read msgs[1] = 16 bytes OOB.
- * Capture both into a post_state-private heap struct that no syscall
- * ABI slot points at.  Mirrors capset_post_state.
+ * between sanitise returning and post_sendmmsg() running.  Both the
+ * msgs pointer (rec->a2) and vlen (rec->a3) must be captured into a
+ * post_state-private heap struct; a sibling fuzzed value-result
+ * syscall scribbling rec->a3 to any value in [2, SENDMMSG_MAX_VLEN]
+ * above the original vlen makes the cleanup loop walk past the
+ * vlen * sizeof(struct mmsghdr) zmalloc — heap-buffer-overflow on
+ * the msgs[i].msg_hdr.msg_iov read.  ASAN caught exactly that:
+ * original vlen=1 (64-byte allocation), rec->a3 scribbled to
+ * vlen>=2, post handler read msgs[1] = 16 bytes OOB.  Capture both
+ * into a post_state-private heap struct that no syscall ABI slot
+ * points at.  Mirrors capset_post_state.
  *
  * Leading magic cookie because the heap-shape check on rec->post_state
  * is value-based only -- a sibling scribbling rec->post_state with any
