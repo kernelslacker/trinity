@@ -210,26 +210,6 @@ const struct stat_category iouring_eventfd_category =
 	              iouring_eventfd_register_ok,
 	              iouring_eventfd_fields);
 
-/* errno_gradient: SHADOW measurement of upward errno-class crossings (no
- * fuzzer-behaviour change -- see the errno_gradient_* block in
- * include/stats.h for the class axis and the SHADOW contract).  Aggregate
- * scalars only; the per-syscall last-class array is deliberately
- * unrendered (internal to the predicate, matching the other per-syscall
- * shadow arrays).  Text render gates on errno_gradient_crossings so a
- * run that never observed an upward transition emits nothing in the
- * text dump; JSON renders unconditionally for schema stability,
- * matching the aio sibling above. */
-static const struct stat_field errno_gradient_fields[] = {
-	STAT_FIELD(errno_gradient, crossings),
-	STAT_FIELD(errno_gradient, to_permstate),
-	STAT_FIELD(errno_gradient, to_success),
-};
-
-const struct stat_category errno_gradient_category =
-	STAT_CATEGORY("errno_gradient",
-	              errno_gradient_crossings,
-	              errno_gradient_fields);
-
 /* cold_overflow: SHADOW measurement of would-save events that fall on the
  * cold-or-corpus-absent tail under a CMP_RISING_PC_FLAT plateau (no
  * fuzzer-behaviour change -- see the cold_overflow_would_save_* block

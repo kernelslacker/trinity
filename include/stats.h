@@ -22,6 +22,7 @@
 #include "stats/subsys/aio.h"
 #include "stats/subsys/blob.h"
 #include "stats/subsys/epoll_volatility.h"
+#include "stats/subsys/errno_gradient.h"
 #include "stats/subsys/flock_thrash.h"
 #include "stats/subsys/fork_storm.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
@@ -5535,70 +5536,9 @@ struct stats_s {
 	unsigned long userns_bootstrap_signalled;
 
 	/* Shadow errno-class gradient (measurement only -- no fuzzer
-	 * behaviour change).  Hypothesis: arg-gen crossing kernel
-	 * validators (errno class moving toward success on a given
-	 * syscall) precedes hitting new PC edges.  This block instruments
-	 * that hypothesis as a SHADOW so a future live phase can be gated
-	 * on its signal.  No selection / admission / scoring / corpus path
-	 * consumes any field here -- the only effect of these writes is
-	 * the counter values rendered by the shutdown stats dump.
-	 *
-	 * Gradient classes (3 ordered slots; low -> high "progress into
-	 * the kernel"):
-	 *   0  hard reject / other -- EINVAL, ENOSYS, EBADF, EFAULT,
-	 *      ENOTTY, AND any errno not listed below.  The catchall lives
-	 *      in class 0 so a previously-unseen errno cannot synthesise a
-	 *      spurious crossing into class 1.
-	 *   1  permission/state reject -- EPERM, EACCES, EAGAIN, EBUSY,
-	 *      EOPNOTSUPP.
-	 *   2  success -- rec->retval != -1UL (errno is don't-care).
-	 *
-	 * Bumped from syscall_ret_post_phase() under the existing per-
-	 * syscall errno-bucket histogram gate (state == AFTER, kcov_shm
-	 * != NULL, call < MAX_NR_SYSCALL), so the same filter that keeps
-	 * grandchild-killed and pre-validation paths out of the bucket
-	 * histogram keeps them out of this gradient too.  RELAXED load +
-	 * compare-exchange on the per-syscall last-class slot; on a
-	 * strictly-greater observation the aggregate scalars below are
-	 * bumped under RELAXED add-fetch.  Equal / downward transitions
-	 * leave the slot untouched and bump no counter.  Racing producer
-	 * bumps are tolerated -- worst case is a one-pick over/under-count
-	 * of the aggregates, never a perturbation of live selection.
-	 *
-	 *  errno_gradient_last_class[nr]
-	 *      Last observed class for syscall nr (values in {0,1,2};
-	 *      slot is zero-initialised so the first observation of any
-	 *      class > 0 produces a crossing, matching the "first deeper
-	 *      bucket per syscall" intent).  Per-syscall stash -- NOT
-	 *      rendered, INTERNAL to the gradient predicate.  Updated via
-	 *      compare-exchange so two children racing the same nr can
-	 *      both publish but only the strictly-greater observation wins
-	 *      and bumps.
-	 *
-	 *  errno_gradient_crossings
-	 *      Aggregate scalar -- total upward gradient crossings across
-	 *      all syscalls.  Equals errno_gradient_to_permstate +
-	 *      errno_gradient_to_success modulo the brief race between the
-	 *      total bump and the per-target-class bump.  Doubles as the
-	 *      STAT_CATEGORY gate so a run with zero crossings emits
-	 *      nothing in the text dump.
-	 *
-	 *  errno_gradient_to_permstate
-	 *      Subset of errno_gradient_crossings: crossings that landed
-	 *      in class 1 (the permission/state-reject tier).
-	 *
-	 *  errno_gradient_to_success
-	 *      Subset of errno_gradient_crossings: crossings that landed
-	 *      in class 2 (success).  The headline "actually reached the
-	 *      kernel's success path on a syscall that previously only
-	 *      rejected" signal.
-	 *
-	 * All four start at zero on parent boot; warm-start does not
-	 * persist stats counters. */
-	unsigned long errno_gradient_last_class[MAX_NR_SYSCALL];
-	unsigned long errno_gradient_crossings;
-	unsigned long errno_gradient_to_permstate;
-	unsigned long errno_gradient_to_success;
+	 * behaviour change).  See stats/subsys/errno_gradient.h for the
+	 * predicate contract and per-field semantics. */
+	struct errno_gradient_stats errno_gradient __attribute__((aligned(64)));
 
 	/* Shadow cold-overflow would-save accounting (measurement only --
 	 * no fuzzer behaviour change).  Hypothesis: under a CMP_RISING_
