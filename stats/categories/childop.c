@@ -78,17 +78,6 @@ const struct stat_category bpf_lifecycle_category =
 	              bpf_lifecycle_runs,
 	              bpf_lifecycle_fields);
 
-static const struct stat_field pipe_thrash_fields[] = {
-	STAT_FIELD(pipe_thrash, runs),
-	STAT_FIELD(pipe_thrash, pipes),
-	STAT_FIELD(pipe_thrash, socketpairs),
-	STAT_FIELD(pipe_thrash, alloc_failed),
-};
-
-const struct stat_category pipe_thrash_category =
-	STAT_CATEGORY("pipe_thrash",
-	              pipe_thrash_runs,
-	              pipe_thrash_fields);
 
 static const struct stat_field fork_storm_fields[] = {
 	STAT_FIELD(fork_storm, runs),

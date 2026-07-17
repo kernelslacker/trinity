@@ -129,7 +129,7 @@ bool pipe_thrash(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.pipe_thrash_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.pipe_thrash.runs, 1, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
@@ -148,14 +148,14 @@ bool pipe_thrash(struct childdata *child)
 		case 0:
 			rc = pipe(pair);
 			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.pipe_thrash_pipes,
+				__atomic_add_fetch(&shm->stats.pipe_thrash.pipes,
 						   1, __ATOMIC_RELAXED);
 			break;
 		case 1:
 			rc = pipe2(pair,
 				   (int)RAND_NEGATIVE_OR(pipe2_flags[rnd_modulo_u32(ARRAY_SIZE(pipe2_flags))]));
 			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.pipe_thrash_pipes,
+				__atomic_add_fetch(&shm->stats.pipe_thrash.pipes,
 						   1, __ATOMIC_RELAXED);
 			break;
 		default:
@@ -163,13 +163,13 @@ bool pipe_thrash(struct childdata *child)
 					(int)socketpair_types[rnd_modulo_u32(ARRAY_SIZE(socketpair_types))],
 					0, pair);
 			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.pipe_thrash_socketpairs,
+				__atomic_add_fetch(&shm->stats.pipe_thrash.socketpairs,
 						   1, __ATOMIC_RELAXED);
 			break;
 		}
 
 		if (rc != 0) {
-			__atomic_add_fetch(&shm->stats.pipe_thrash_alloc_failed,
+			__atomic_add_fetch(&shm->stats.pipe_thrash.alloc_failed,
 					   1, __ATOMIC_RELAXED);
 			/* Don't busy-loop on a saturated alloc path: an
 			 * EMFILE/ENFILE storm here would just spin until the

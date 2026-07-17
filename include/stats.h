@@ -23,6 +23,7 @@
 #include "stats/subsys/blob.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
+#include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/signal_storm.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
@@ -1046,11 +1047,8 @@ struct stats_s {
 	 * See stats/subsys/futex_pi_requeue_rollback.h. */
 	struct futex_pi_requeue_rollback_stats futex_pi_requeue_rollback __attribute__((aligned(64)));
 
-	/* pipe_thrash childop counters */
-	unsigned long pipe_thrash_runs;		/* total pipe_thrash invocations */
-	unsigned long pipe_thrash_pipes;	/* successful pipe()/pipe2() calls */
-	unsigned long pipe_thrash_socketpairs;	/* successful socketpair() calls */
-	unsigned long pipe_thrash_alloc_failed;	/* create syscall returned -1 */
+	/* pipe_thrash childop counters.  See stats/subsys/pipe_thrash.h. */
+	struct pipe_thrash_stats pipe_thrash __attribute__((aligned(64)));
 
 	/* flock_thrash childop counters */
 	unsigned long flock_thrash_runs;	/* total flock_thrash invocations */
