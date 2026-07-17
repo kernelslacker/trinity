@@ -339,19 +339,21 @@ struct stats_s {
 	 * (parent-private) and are bumped via the per-child stats_ring.
 	 * Their per-handler / per-callsite shards live in each child's
 	 * struct childdata.  See include/stats_ring.h and include/child.h.
-	 * validator_rejected split from post_handler_corrupt_ptr so the
-	 * scribble-catch headline no longer aggregates the pre-dispatch
-	 * structural coupling reject stream. */
+	 * validator_rejected has its own counter separate from
+	 * post_handler_corrupt_ptr so the scribble-catch headline counts
+	 * only post-dispatch scribbles, not pre-dispatch structural
+	 * coupling rejects (DOA (buf,count) shapes the kernel would
+	 * EFAULT on). */
 
 	/* Bumped each time check_uid sees the child's uid drift away from
-	 * orig_uid + overflowuid; was previously a hard bail
-	 * (EXIT_UID_CHANGED) but logged + continued for non-root drifts
-	 * since 2026-05-09.  The drift is almost always a fuzzed
+	 * orig_uid + overflowuid.  Non-root drifts are logged and the run
+	 * keeps going; a drift to uid==0 (root) hard-bails via
+	 * EXIT_UID_CHANGED.  The drift is almost always a fuzzed
 	 * setresuid/setreuid/setfsuid succeeding inside an unshared user
-	 * namespace -- interesting coverage, not a danger -- so the run
-	 * keeps going.  A drift to uid==0 (root) is still a hard bail
-	 * via EXIT_UID_CHANGED, since subsequent fuzz syscalls at elevated
-	 * privilege could damage the host. */
+	 * namespace -- interesting coverage, not a danger -- so non-root
+	 * drift is not fatal.  A drift to root is fatal because
+	 * subsequent fuzz syscalls at elevated privilege could damage
+	 * the host. */
 	unsigned long uid_change_logged;
 
 	/* Monotonic counter feeding the value-sampling rate-limiter inside
@@ -420,8 +422,9 @@ struct stats_s {
 	 * an isolated rec->retval scribble).  Distinct bug class from
 	 * post_handler_corrupt_ptr (which counts .post handlers rejecting a
 	 * pid-shaped pointer in rec->aN): this is a dispatcher-level
-	 * rettype-contract violation, no .post pointer is examined.  The
-	 * two counters used to share storage, which inflated the
+	 * rettype-contract violation, no .post pointer is examined.
+	 * rzs_blanket_reject has its own storage, separate from
+	 * post_handler_corrupt_ptr, because sharing would inflate the
 	 * post_handler_corrupt_ptr headline ~9x at ~2/s steady-state. */
 	unsigned long rzs_blanket_reject;
 
@@ -941,16 +944,14 @@ struct stats_s {
 	unsigned long perf_chains_groups_created;	/* group leader fd opened successfully */
 	unsigned long perf_chains_ioctl_ops;	/* PERF_EVENT_IOC_* calls made */
 
-	/* tracefs_fuzzer childop counters, per-ARM, split by outcome.
-	 * The single per-ARM counter only recorded which ARM was selected;
-	 * it could not distinguish open-fail (tracefs not mounted, EACCES,
-	 * ENOENT on a per-event enable that was unloaded mid-run) from
-	 * write-fail (EINVAL on a malformed probe spec, EBUSY, ...) from
-	 * write-OK (the bytes actually reached the kernel parser).  Split
-	 * into open-fail / write-fail / write-OK so the dump shows real
-	 * reach into each tracefs surface.
-	 * write_fail + write_ok == old per-ARM counter; open_fail is
-	 * information that was previously dropped. */
+	/* tracefs_fuzzer childop counters, per-ARM, split by outcome into
+	 * open-fail (tracefs not mounted, EACCES, ENOENT on a per-event
+	 * enable that was unloaded mid-run), write-fail (EINVAL on a
+	 * malformed probe spec, EBUSY, ...) and write-OK (the bytes
+	 * actually reached the kernel parser), so the dump shows real
+	 * reach into each tracefs surface.  write_fail + write_ok sum
+	 * to the per-ARM total; open_fail additionally distinguishes
+	 * open failures. */
 	unsigned long tracefs_kprobe_writes_open_fail;		/* writes to kprobe_events */
 	unsigned long tracefs_kprobe_writes_write_fail;
 	unsigned long tracefs_kprobe_writes_write_ok;
@@ -2762,11 +2763,12 @@ struct stats_s {
 	 * routed it through the ring-as-sole-owner path: alloc_track
 	 * drained, free() skipped, inflight membership left intact so
 	 * the TTL/evict path frees the chunk exactly once.  Non-zero
-	 * empirically proves the residual ring-internal double-free
-	 * window is being closed -- previously tracked_free_now() would
-	 * inflight_hash_remove() + free(), and address reuse re-arming
-	 * the value-keyed membership bit let ring_evict_oldest_safe()
-	 * run a second free() on the same address.  Rate-of-change is
+	 * empirically proves the ring-as-sole-owner path is engaged and
+	 * the reuse-mediated double-free is closed off: an
+	 * inflight_hash_remove() + free() here would let address reuse
+	 * re-arm the value-keyed membership bit and
+	 * ring_evict_oldest_safe() free the same address a second time.
+	 * Rate-of-change is
 	 * the headline metric: a count proportional to ring throughput
 	 * is normal (any pointer admitted to the ring whose post-handler
 	 * cleanup also routes through tracked_free_now() lands here);
