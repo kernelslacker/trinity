@@ -26,6 +26,7 @@
 #include "stats/subsys/fork_storm.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
+#include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/signal_storm.h"
@@ -1096,10 +1097,8 @@ struct stats_s {
 	unsigned long pidfd_storm_reap_slow;	/* teardown poll(pidfd) exceeded PER_PIDFD_REAP_TIMEOUT_MS -- SIGKILL not observed within the budget */
 	unsigned long pidfd_storm_reap_zombies;	/* teardown reap escaped (WNOHANG waitpid did not collect) after the poll timeout; a zombie was left behind for the parent's SIGCHLD path to catch */
 
-	/* madvise_cycler childop counters */
-	unsigned long madvise_cycler_runs;	/* total madvise_cycler invocations */
-	unsigned long madvise_cycler_calls;	/* total madvise() calls issued */
-	unsigned long madvise_cycler_failed;	/* madvise() returned -1 */
+	/* madvise_cycler childop counters.  See stats/subsys/madvise_cycler.h. */
+	struct madvise_cycler_stats madvise_cycler __attribute__((aligned(64)));
 
 	/* keyring_spam childop counters */
 	unsigned long keyring_spam_runs;	/* total keyring_spam invocations */
