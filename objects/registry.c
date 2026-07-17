@@ -972,8 +972,8 @@ void close_fd_destructor(struct object *obj)
 /*
  * Generic objhead->dump shared by every fd-bearing pool whose dump
  * carries no fields beyond the per-pool label, fd, and scope.  The
- * label is dispatched off obj->obj_type so the output text matches
- * what each pool's bespoke dumper used to emit.
+ * label is dispatched off obj->obj_type so the generic dumper's
+ * output matches each pool's expected label and format.
  */
 void generic_fd_dump(struct object *obj, enum obj_scope scope)
 {
@@ -1043,11 +1043,9 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 	if (array == NULL)
 		return;
 
-	/* Direct random-victim sampling.  The old form walked all N slots
-	 * and rolled ONE_IN(10) per slot -- ~N rnd_modulo_u32 calls and N
-	 * branches to perform ~N/10 destroys.  Pick expected_kills victims
-	 * directly: ~N/10 rnd_modulo_u32 calls and N/10 branches for the
-	 * same eviction rate.
+	/* Direct random-victim sampling.  Pick expected_kills victims
+	 * directly: ~N/10 rnd_modulo_u32 calls and N/10 branches for a
+	 * ~10% eviction rate.
 	 *
 	 * Take n once: destroy_object() decrements num_entries via swap-
 	 * with-last, but we sample over the original index space.  Slots
