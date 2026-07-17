@@ -251,10 +251,10 @@ void post_handler_corrupt_ptr_bump_full(struct syscallrecord *rec,
  * kcov_local_stats_plausible() gates in kcov/collect.c, the
  * objpool_check() sites in mm/maps.c, and the dispatch-boundary
  * check in random_syscall/dispatch.c all short-circuit the bad
- * deref when they fire but were previously silent past a stats
- * counter bump -- there was no record of which syscall ran
- * immediately before the wild write.  This helper emits that
- * record to stderr (child-side: memfd → bug-log on the SIGSEGV
+ * deref when they fire, but the stats-counter bump on its own
+ * records nothing about which syscall ran immediately before
+ * the wild write.  This helper emits that attribution record to
+ * stderr (child-side: memfd → bug-log on the SIGSEGV
  * that a scribbled pointer typically produces a few calls later)
  * so triage can attribute the scribble to the culprit syscall
  * arg-gen instead of the innocent kcov reader that trips.
@@ -354,11 +354,12 @@ void post_handler_corrupt_ptr_bump_at(struct syscallrecord *rec,
 
 /*
  * Bump the standalone validator_rejected counter used by the
- * pre-dispatch structural check in validate_arg_coupling().  Split
- * from post_handler_corrupt_ptr_bump_at() so the arg-coupling reject
- * stream (perfectly-fine-but-DOA (buf, count) shapes the kernel would
- * EFAULT at ep_send_events()) no longer inflates the scribble-detector
- * headline.  Still records the per-site slot under TRINITY_CORRUPT_ATTRIB
+ * pre-dispatch structural check in validate_arg_coupling().  Kept
+ * separate from post_handler_corrupt_ptr_bump_at() so the arg-
+ * coupling reject stream (perfectly-fine-but-DOA (buf, count)
+ * shapes the kernel would EFAULT at ep_send_events()) does not
+ * count toward the scribble-detector headline.  Still records the
+ * per-site slot under TRINITY_CORRUPT_ATTRIB
  * so the attribution dump continues to show the class; skips the
  * per-handler PC / attr / breadcrumb rings because a structural
  * coupling reject carries no scribbled pointer to attribute.
