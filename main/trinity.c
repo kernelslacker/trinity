@@ -200,20 +200,16 @@ static int set_exit_code(enum exit_reasons reason)
  * bitmap, cmp_hints, minicorpus) lives in MAP_SHARED memory
  * and accumulates across epochs.
  *
- * This used to run main_loop() in a forked epoch-child process, with
- * the outer parent reaping the child between epochs.  That gave the
- * appearance of crash isolation but provided none in practice: the
- * outer parent doesn't run any fuzzed syscalls itself (real wild-write
- * exposure lives in the per-iteration child fork, which is unchanged),
- * and every piece of state the old fork "reset" lived in MAP_SHARED
- * shm pages that were already shared with the outer parent anyway.
- * The one thing the fork did reset -- parent_stats, which is a
- * process-private global in stats-ring.c -- was actually a bug: the
- * aggregating process was the epoch child, so when it exited at epoch
- * end the running totals went with it and the outer parent never saw
- * the aggregated stats.  Running main_loop() in-process keeps
- * parent_stats alive across epochs, and reset_epoch_state() zeroes
- * what we want zeroed.
+ * main_loop() runs in-process rather than in an epoch-child so that
+ * parent_stats -- a process-private global in stats-ring.c that
+ * aggregates running totals -- survives across epochs.  If the epoch
+ * body ran in a child, parent_stats would die with the child at epoch
+ * end and the outer parent would never see the aggregated numbers.
+ * reset_epoch_state() zeroes the per-epoch state that does need
+ * clearing between epochs; everything else worth preserving already
+ * lives in MAP_SHARED shm pages.  Real wild-write exposure lives in
+ * the per-iteration child fork, not here, so running the epoch body
+ * in the parent costs no crash isolation.
  */
 static void epoch_loop(void)
 {
