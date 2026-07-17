@@ -50,11 +50,12 @@ static void sanitise_recv(struct syscallrecord *rec)
  * sockaddr_storage capacity.  The kernel reads *lenp as max_addrlen
  * before writing back the actual count.
  *
- * The lenp slot was previously a leaky zmalloc(sizeof(*lenp)) with no
- * post handler -- valresult_free() in post_recvfrom now closes that
- * leak.  The valresult_alloc() also returns a buf the caller does not
- * use here (a5 has its own get_writable_address() backing); buf and
- * len_io are both released via the snap-owned vrb in the post handler.
+ * The lenp slot is an a6 value-result slot routed through
+ * valresult_alloc() and freed by valresult_free() in post_recvfrom
+ * (via snap-owned vrb).  valresult_alloc() also returns a buf the
+ * caller does not use here (a5 has its own get_writable_address()
+ * backing); buf and len_io are both released via the snap-owned vrb
+ * in the post handler.
  *
  * Mirrors getsockopt.c (38e1b000092d).
  */
@@ -516,9 +517,9 @@ struct syscallentry syscall_recvmsg = {
  * Snapshot for the post handler.  Sister bug to sendmmsg: rec->a2 (msgs
  * pointer) and rec->a3 (vlen) are both exposed to a sibling syscall
  * scribbling an ABI slot between sanitise returning and post_recvmmsg()
- * running.  The pointer scribble was caught by 914fbc6f1ff6 (msgs guard
- * via post_state); vlen was missed.  A sibling scribble of rec->a3 to a
- * value above the original vlen makes the cleanup loop walk past the
+ * running.  Both rec->a2 (msgs ptr) and rec->a3 (vlen) must be captured
+ * into post_state.  A sibling scribble of rec->a3 above the original
+ * vlen makes the cleanup loop walk past the
  * vlen * sizeof(struct mmsghdr) zmalloc — heap-buffer-overflow.  Capture
  * both into a post_state-private heap struct that no syscall ABI slot
  * points at.  Mirrors capset_post_state.
@@ -760,9 +761,9 @@ static void post_recvmmsg(struct syscallrecord *rec)
 	 * the inner shape-only check but free() of an interior offset
 	 * aborts in libasan.  The snap fields are wrapped in the magic-
 	 * cookie struct above, so they still hold the sanitise-time
-	 * allocations.  msg_iov and msg_control are no longer freed --
-	 * both live in the writable-pool now (see sanitise_recvmmsg) and
-	 * pool allocations are never released by trinity.  The msgs[]
+	 * allocations.  msg_iov and msg_control are not freed here --
+	 * both live in the writable-pool (see sanitise_recvmmsg); pool
+	 * allocations are never released by trinity.  The msgs[]
 	 * array itself is owned by the rec carrier (rec_own at sanitise
 	 * time) and gets reclaimed unconditionally by rec_owned_drain
 	 * after .post runs -- no explicit free here.
