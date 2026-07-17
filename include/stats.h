@@ -25,6 +25,7 @@
 #include "stats/subsys/flock_thrash.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
+#include "stats/subsys/mount_churn.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/signal_storm.h"
 #include "stats/subsys/xattr_thrash.h"
@@ -1071,11 +1072,8 @@ struct stats_s {
 	unsigned long cgroup_psi_race_writes;	/* successful pressure-file write() inside race */
 	unsigned long cgroup_psi_race_failed;	/* pressure-file open() failed for the whole sub-mode */
 
-	/* mount_churn childop counters */
-	unsigned long mount_churn_runs;		/* total mount_churn invocations */
-	unsigned long mount_churn_mounts;	/* successful mount() in private ns */
-	unsigned long mount_churn_umounts;	/* successful umount2() */
-	unsigned long mount_churn_failed;	/* mkdir/mount/umount returned -1 */
+	/* mount_churn childop counters.  See stats/subsys/mount_churn.h. */
+	struct mount_churn_stats mount_churn __attribute__((aligned(64)));
 
 	/* umount_race childop counters */
 	unsigned long umount_race_runs;		/* total umount_race invocations */

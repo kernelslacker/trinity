@@ -242,7 +242,7 @@ static void fsopen_mount_cycle(void)
 
 	fs_fd = (int)trinity_raw_syscall(__NR_fsopen, type, fsopen_flags);
 	if (fs_fd < 0) {
-		__atomic_add_fetch(&shm->stats.mount_churn_failed,
+		__atomic_add_fetch(&shm->stats.mount_churn.failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -261,7 +261,7 @@ static void fsopen_mount_cycle(void)
 
 	if (trinity_raw_syscall(__NR_fsconfig, fs_fd,
 				FSCONFIG_CMD_CREATE, NULL, NULL, 0) != 0) {
-		__atomic_add_fetch(&shm->stats.mount_churn_failed,
+		__atomic_add_fetch(&shm->stats.mount_churn.failed,
 				   1, __ATOMIC_RELAXED);
 		close(fs_fd);
 		return;
@@ -281,12 +281,12 @@ static void fsopen_mount_cycle(void)
 					  fsmount_flags, attr_flags);
 	close(fs_fd);
 	if (mnt_fd < 0) {
-		__atomic_add_fetch(&shm->stats.mount_churn_failed,
+		__atomic_add_fetch(&shm->stats.mount_churn.failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
-	__atomic_add_fetch(&shm->stats.mount_churn_mounts,
+	__atomic_add_fetch(&shm->stats.mount_churn.mounts,
 			   1, __ATOMIC_RELAXED);
 
 	seq = ++mount_churn_seq;
@@ -313,7 +313,7 @@ static void fsopen_mount_cycle(void)
 
 	if (moved) {
 		if (umount2(path, MNT_DETACH) == 0)
-			__atomic_add_fetch(&shm->stats.mount_churn_umounts,
+			__atomic_add_fetch(&shm->stats.mount_churn.umounts,
 					   1, __ATOMIC_RELAXED);
 		(void)rmdir(path);
 	}
@@ -408,7 +408,7 @@ static int mount_churn_iter(void *arg)
 			 trinity_tmpdir_abs(), (int)pid, seq);
 
 		if (mkdir(path, 0755) != 0) {
-			__atomic_add_fetch(&shm->stats.mount_churn_failed,
+			__atomic_add_fetch(&shm->stats.mount_churn.failed,
 					   1, __ATOMIC_RELAXED);
 			/* EEXIST is extremely unlikely with pid+seq
 			 * names; ENOSPC/EROFS/EACCES on the cwd mean
@@ -425,7 +425,7 @@ static int mount_churn_iter(void *arg)
 		 * rejection) which the safe subset above never reaches. */
 		if (mount(source, path, fstype,
 			  (unsigned long)RAND_NEGATIVE_OR(flags), NULL) != 0) {
-			__atomic_add_fetch(&shm->stats.mount_churn_failed,
+			__atomic_add_fetch(&shm->stats.mount_churn.failed,
 					   1, __ATOMIC_RELAXED);
 			/* EPERM here is the expected post-drop_privs cap-
 			 * block on both paths: on the inherited path the
@@ -444,14 +444,14 @@ static int mount_churn_iter(void *arg)
 			continue;
 		}
 
-		__atomic_add_fetch(&shm->stats.mount_churn_mounts,
+		__atomic_add_fetch(&shm->stats.mount_churn.mounts,
 				   1, __ATOMIC_RELAXED);
 
 		if (umount2(path, MNT_DETACH) == 0) {
-			__atomic_add_fetch(&shm->stats.mount_churn_umounts,
+			__atomic_add_fetch(&shm->stats.mount_churn.umounts,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			__atomic_add_fetch(&shm->stats.mount_churn_failed,
+			__atomic_add_fetch(&shm->stats.mount_churn.failed,
 					   1, __ATOMIC_RELAXED);
 			/* MNT_DETACH almost never fails for a freshly-
 			 * created mount with no users, but if it does
@@ -478,7 +478,7 @@ bool mount_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.mount_churn_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.mount_churn.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
 		return true;
@@ -525,7 +525,7 @@ bool mount_churn(struct childdata *child)
 		 * id-map write, secondary CLONE_NEWNS unshare).  Skip
 		 * this invocation without latching -- the failure is
 		 * not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.mount_churn_failed,
+		__atomic_add_fetch(&shm->stats.mount_churn.failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
