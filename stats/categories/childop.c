@@ -155,17 +155,6 @@ const struct stat_category vdso_mremap_race_category =
 	              vdso_race_runs,
 	              vdso_mremap_race_fields);
 
-static const struct stat_field flock_thrash_fields[] = {
-	STAT_FIELD(flock_thrash, runs),
-	STAT_FIELD(flock_thrash, locks),
-	STAT_FIELD(flock_thrash, failed),
-};
-
-const struct stat_category flock_thrash_category =
-	STAT_CATEGORY("flock_thrash",
-	              flock_thrash_runs,
-	              flock_thrash_fields);
-
 static const struct stat_field xattr_thrash_fields[] = {
 	STAT_FIELD(xattr_thrash, runs),
 	STAT_FIELD(xattr_thrash, set),
