@@ -299,27 +299,27 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	if (!kc->active)
 		return false;
 
-	/* kcov_shm->total_calls is now bumped ONLY for its stamp role:
+	/* kcov_shm->total_calls is bumped solely for its stamp role:
 	 * the returned call_nr is stored into kcov_shm->last_edge_at[nr]
 	 * on the found-new-edge branch below and read by the cold-skip
 	 * gap denominator in kcov_syscall_cold_skip_pct() / by the
 	 * last_efault_at[] stamp in syscall.c.  The dump-side accounting
 	 * (post-mortem, stats.c JSON + Scuba rows, strategy snapshots)
-	 * now reads parent_stats.total_calls instead, drained from the
-	 * per-child kcov_child_local_stats staging counter bumped below. */
+	 * reads parent_stats.total_calls, drained from the per-child
+	 * kcov_child_local_stats staging counter bumped below. */
 	call_nr = __atomic_fetch_add(&kcov_shm->total_calls,
 		1, __ATOMIC_RELAXED);
 
 	/* Per-child staging bumps for the dump-side total_calls /
 	 * remote_calls accounting.  Lives on childdata->local_stats so
-	 * the hot kcov_shm cacheline does not also take a relaxed
-	 * atomic bump per call for the (formerly) duplicate dump
-	 * accounting.  this_child() is NULL only in parent context,
-	 * which kcov_collect()'s callers do not reach -- guard anyway
-	 * so a future caller cannot crash the parent on a stray
-	 * invocation.  kcov_shm->remote_calls is no longer bumped: no
-	 * stamp-role consumer references the shm field, so the staged
-	 * delta is the source of truth for the dump path. */
+	 * the hot kcov_shm cacheline does not take a relaxed atomic
+	 * bump per call for dump accounting -- the per-child staging
+	 * is authoritative for that path.  this_child() is NULL only
+	 * in parent context, which kcov_collect()'s callers do not
+	 * reach -- guard anyway so a future caller cannot crash the
+	 * parent on a stray invocation.  kcov_shm->remote_calls is
+	 * not bumped: no stamp-role consumer references the shm
+	 * field, so the staged delta is authoritative. */
 	{
 		struct childdata *cc = this_child();
 
@@ -516,9 +516,9 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	 * batched-flush model as total_calls / remote_calls above; the
 	 * delta here is +count (PCs returned by the kernel for this
 	 * syscall), already a batched value at this site.  No
-	 * stamp-role consumer reads kcov_shm->total_pcs, so the shm
-	 * atomic is no longer bumped and the staged delta is the
-	 * source of truth for the dump path. */
+	 * stamp-role consumer reads kcov_shm->total_pcs, so the
+	 * staged per-child delta is the source of truth for the dump
+	 * path -- the shm atomic is not bumped. */
 	{
 		struct childdata *cc = this_child();
 
@@ -636,12 +636,12 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * warm-known-hits counter.  Same batched-flush model
 			 * as total_calls / remote_calls / total_pcs above;
 			 * no stamp-role consumer reads
-			 * kcov_shm->total_warm_known_hits, so the shm atomic
-			 * is no longer bumped and the staged delta is the
-			 * source of truth for the dump path.  The per-syscall
+			 * kcov_shm->total_warm_known_hits, so the staged
+			 * per-child delta is authoritative for the dump path
+			 * -- the shm atomic is not bumped.  The per-syscall
 			 * split above stays on the shm atomic -- it's an nr-
-			 * indexed array, not the cross-child cacheline-bounce
-			 * scalar this migration targets. */
+			 * indexed array, not a cross-child cacheline-bounce
+			 * scalar. */
 			{
 				struct childdata *cc = this_child();
 
@@ -1003,10 +1003,10 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 		return 0;
 
 	/* Graduated skip: the further past the threshold, the more we skip.
-	 * Each additional KCOV_COLD_THRESHOLD-sized step adds 10 percentage
-	 * points on top of the 50% baseline that the old flat heuristic used,
-	 * capped at 90% so even the deadest syscall still gets called once
-	 * every ~10 attempts in case kernel state changes underneath us. */
+	 * Formula is a 50% base plus 10 percentage points per additional
+	 * KCOV_COLD_THRESHOLD-sized step, capped at 90% so even the deadest
+	 * syscall still gets called once every ~10 attempts in case kernel
+	 * state changes underneath us. */
 	pct = 50 + (unsigned int)((gap / KCOV_COLD_THRESHOLD) * 10);
 	if (pct > 90)
 		pct = 90;
