@@ -123,17 +123,17 @@ static void emit_signal(pid_t pid, int sig, bool use_kill)
 		 * reflects actual signal delivery rate.
 		 */
 		if (sig_used == 0)
-			__atomic_add_fetch(&shm->stats.signal_storm_probe,
+			__atomic_add_fetch(&shm->stats.signal_storm.probe,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.signal_storm_kill,
+			__atomic_add_fetch(&shm->stats.signal_storm.kill,
 					   1, __ATOMIC_RELAXED);
 	} else {
 		union sigval sv;
 
 		sv.sival_int = (int)rand32();
 		(void)sigqueue(pid, sig, sv);
-		__atomic_add_fetch(&shm->stats.signal_storm_sigqueue,
+		__atomic_add_fetch(&shm->stats.signal_storm.sigqueue,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -310,12 +310,12 @@ bool signal_storm(struct childdata *child)
 {
 	struct signal_storm_iter_ctx ictx = { 0 };
 
-	__atomic_add_fetch(&shm->stats.signal_storm_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.signal_storm.runs, 1, __ATOMIC_RELAXED);
 
 	signal_storm_iter_collect_targets(&ictx);
 
 	if (ictx.ntargets == 0) {
-		__atomic_add_fetch(&shm->stats.signal_storm_no_targets,
+		__atomic_add_fetch(&shm->stats.signal_storm.no_targets,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
