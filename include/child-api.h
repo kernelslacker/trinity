@@ -408,6 +408,26 @@ enum childop_recommended_state {
  * pointer to a static string with run lifetime; never NULL. */
 const char *childop_recommended_state_name(enum childop_recommended_state s);
 
+/* Why a childop's setup path returned failure on every dispatch of a
+ * canary window.  Populated from a static per-op hint table when the
+ * queue closes a window with setup_ok=0 setup_failures>=threshold;
+ * hint-less ops record SETUP_FAIL_REASON_UNKNOWN.  Surfaced in the
+ * BROKEN-SETUP / AUTO-BLOCKED log lines and in the startup CONFIG_
+ * BLOCKED enumeration so an operator can tell at a glance which host
+ * feature is missing without cross-referencing source. */
+enum canary_setup_fail_reason {
+	SETUP_FAIL_REASON_UNKNOWN = 0,
+	SETUP_FAIL_REASON_CAP_MISSING,
+	SETUP_FAIL_REASON_MODULE_MISSING,
+	SETUP_FAIL_REASON_SYSCTL_DISABLED,
+	SETUP_FAIL_REASON_MOUNT_UNAVAILABLE,
+	SETUP_FAIL_REASON_NS_UNSUPPORTED,
+	SETUP_FAIL_REASON_DEVICE_MISSING,
+	SETUP_FAIL_REASON_SCRATCH_UNAVAILABLE,
+	SETUP_FAIL_REASON_FS_UNSUPPORTED,
+	SETUP_FAIL_REASON_QUOTA_HIT,
+};
+
 struct canary_op_state {
 	/* identity */
 	enum child_op_type op;		/* keyed by op enum */
@@ -466,6 +486,23 @@ struct canary_op_state {
 	 * gate is left untouched so the op behaves identically to before
 	 * the queue existed. */
 	bool          phase1_ineligible;
+
+	/* Consecutive count of window closes into leave_canarying_demote_
+	 * setup_broken() (100%-setup-failure shape) without any
+	 * intervening non-setup-broken outcome.  Reset by promote / crash-
+	 * threshold demote / zero-edges demote / canary-ineligible close.
+	 * When the count reaches CANARY_SETUP_BROKEN_AUTOBLOCK_N the op
+	 * auto-transitions to CANARY_STATE_CONFIG_BLOCKED so the canary
+	 * slot is not re-spent every CANARY_SETUP_BROKEN_BACKOFF_TIME on
+	 * an op whose setup path is structurally missing a host prereq. */
+	unsigned int  consecutive_setup_broken;
+
+	/* Last-observed setup-failure reason for this op.  Written by
+	 * leave_canarying_demote_setup_broken() (per-window) and by
+	 * canary_queue_init() when populating the startup CONFIG_BLOCKED
+	 * table; read by the log-line emitters and by the startup
+	 * enumeration.  UNKNOWN when the op is not in the hint table. */
+	enum canary_setup_fail_reason setup_fail_reason;
 };
 
 void canary_queue_init(void);
