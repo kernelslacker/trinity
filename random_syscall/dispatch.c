@@ -993,23 +993,41 @@ bool replay_syscall_step(struct childdata *child,
 
 /*
  * Pin a single arg slot to a learned-constant value.  Slot is 1-based
- * (matches the rec->aN naming and reexec_pending::slot encoding).  Out-
- * of-range slots are dropped silently -- the caller validated against
- * the entry's num_args at attribution emit time, but defensive against
- * a corrupted pending entry that survived the slot bound check.
+ * (matches the rec->aN naming and reexec_pending::slot encoding); size is
+ * the kernel comparison width in bytes and drives the width-preserving
+ * splice below.  Out-of-range slots are dropped silently -- the caller
+ * validated against the entry's num_args at attribution emit time, but
+ * defensive against a corrupted pending entry that survived the slot
+ * bound check.
  */
 static void redqueen_pin_slot(struct syscallrecord *rec, unsigned int slot,
-			      unsigned long value)
+			      unsigned long value, unsigned int size)
 {
+	unsigned long *aN;
+	unsigned long m;
+
 	switch (slot) {
-	case 1: rec->a1 = value; break;
-	case 2: rec->a2 = value; break;
-	case 3: rec->a3 = value; break;
-	case 4: rec->a4 = value; break;
-	case 5: rec->a5 = value; break;
-	case 6: rec->a6 = value; break;
-	default: break;
+	case 1: aN = &rec->a1; break;
+	case 2: aN = &rec->a2; break;
+	case 3: aN = &rec->a3; break;
+	case 4: aN = &rec->a4; break;
+	case 5: aN = &rec->a5; break;
+	case 6: aN = &rec->a6; break;
+	default: return;
 	}
+
+	/*
+	 * A narrow compare (0 < size < sizeof(long)) examined only the low
+	 * size*8 bits, so keep the freshly regenerated arg's high bits and
+	 * splice in just the constant's low bytes -- overwriting the whole
+	 * slot with a narrow constant zeroes load-bearing high bits (pointer
+	 * / packed field / flags) and the arg goes invalid before the kernel
+	 * reaches the compare.  Full / unknown width (>= sizeof(long) or 0)
+	 * masks to ~0 == plain overwrite.
+	 */
+	m = (size > 0 && size < sizeof(unsigned long))
+		? ((1UL << (size * 8U)) - 1UL) : ~0UL;
+	*aN = (*aN & ~m) | (value & m);
 }
 
 /*
@@ -1187,7 +1205,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 
 	srec_publish_begin(rec);
 	if (p->field_kind == REEXEC_FIELD_NONE)
-		redqueen_pin_slot(rec, p->slot, p->value);
+		redqueen_pin_slot(rec, p->slot, p->value, p->size);
 	else
 		redqueen_pin_field(rec, p);
 	srec_publish_end(rec);
@@ -1460,7 +1478,7 @@ bool cmp_hints_cfactual_replay_with_pin(struct childdata *child,
 	generate_syscall_args(rec);
 
 	srec_publish_begin(rec);
-	redqueen_pin_slot(rec, slot, control_value);
+	redqueen_pin_slot(rec, slot, control_value, sizeof(unsigned long));
 	srec_publish_end(rec);
 
 	{
