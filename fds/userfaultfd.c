@@ -68,13 +68,20 @@ static void userfaultfd_dump(struct object *obj, enum obj_scope scope)
 static void arm_userfaultfd(int fd)
 {
 	static const __u64 feature_flags[] = {
+		/*
+		 * EVENT_* notification features (FORK/REMAP/REMOVE/UNMAP) are
+		 * deliberately omitted.  Each makes its triggering mm operation
+		 * (fork / mremap / madvise / munmap) block in
+		 * userfaultfd_event_wait_completion until a monitor read()s the
+		 * event -- and trinity runs no uffd monitor.  With EVENT_FORK set
+		 * on these parent-owned pool fds, the parent's respawn fork()
+		 * wedges forever with no reader (and can then neither reap
+		 * children nor honour --max-runtime).  Only enable these
+		 * alongside a thread that drains the uffd.
+		 */
 		UFFD_FEATURE_PAGEFAULT_FLAG_WP,
-		UFFD_FEATURE_EVENT_FORK,
-		UFFD_FEATURE_EVENT_REMAP,
-		UFFD_FEATURE_EVENT_REMOVE,
 		UFFD_FEATURE_MISSING_HUGETLBFS,
 		UFFD_FEATURE_MISSING_SHMEM,
-		UFFD_FEATURE_EVENT_UNMAP,
 		UFFD_FEATURE_SIGBUS,
 		UFFD_FEATURE_THREAD_ID,
 		UFFD_FEATURE_MINOR_HUGETLBFS,
