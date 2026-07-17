@@ -46,16 +46,14 @@
  * 60000 sits inside the RLIMIT_NOFILE=65536 lifted by
  * scripts/run-trinity.sh, leaving ~5500 fds of headroom above for
  * the rest of trinity's working set (well above current usage).
- * The wider gap matters: at the old 900, a fuzzer-picker that
- * happens to allocate fds densely (epoll/eventfd churn,
- * slab-cache-thrash op, etc.) could land siblings in the same
- * numeric range as KCOV's relocated slots, reintroducing the
- * collision the relocation was meant to prevent.  Parking KCOV
- * at 60000 keeps it clear of any plausible picker fd range and
- * is defence-in-depth against a stale-close race producing the
- * EBADF cascade.  If the dup fails for any reason the original
- * low fd is kept and the registry catches subsequent attempts
- * on it.
+ * Parking KCOV at 60000 keeps it clear of any plausible picker
+ * fd range -- fuzzer-pickers that allocate fds densely
+ * (epoll/eventfd churn, slab-cache-thrash op, etc.) cannot land
+ * siblings in the same numeric range as KCOV's relocated slots
+ * -- and is defence-in-depth against a stale-close race
+ * producing the EBADF cascade.  If the dup fails for any reason
+ * the original low fd is kept and the registry catches
+ * subsequent attempts on it.
  */
 #define KCOV_FD_HIGH_BASE 60000U
 
@@ -287,16 +285,13 @@ static void kcov_init_child_remote_probe(struct kcov_child *kc,
 }
 
 /*
- * Second KCOV fd dedicated to KCOV_TRACE_CMP.  Trinity used to
- * mode-toggle the single PC fd into CMP for 1-in-CMP_MODE_RATIO
- * syscalls, which traded a sliver of every-syscall PC coverage for
- * occasional comparison-operand hints.  We now open a dedicated cmp
- * fd here but each child still runs in a single mode for its
- * lifetime -- KCOV_MODE_PC or KCOV_MODE_CMP, picked once below from
- * the cmp_capable + random-draw block -- so the cmp fd is only
- * actually enabled for CMP-mode children.  This per-child split (vs
- * per-syscall toggling) keeps each child's collection loop simple
- * and avoids interleaving PC and CMP reads on the same fd.  Probe
+ * Second KCOV fd dedicated to KCOV_TRACE_CMP.  Each child runs
+ * in a single fixed mode for its lifetime -- KCOV_MODE_PC or
+ * KCOV_MODE_CMP, picked once below from the cmp_capable +
+ * random-draw block -- so the cmp fd is only actually enabled
+ * for CMP-mode children.  Per-child mode selection keeps each
+ * child's collection loop simple and avoids interleaving PC and
+ * CMP reads on the same fd.  Probe
  * enable/disable here so a kernel without KCOV_TRACE_CMP support
  * degrades cleanly to PC-only without disabling the rest of KCOV.
  * Per-CMP-child cost: one extra fd plus KCOV_CMP_BUFFER_SIZE *
