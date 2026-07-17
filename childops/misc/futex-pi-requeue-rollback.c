@@ -330,7 +330,7 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback_runs,
+	__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback.runs,
 			   1, __ATOMIC_RELAXED);
 
 	s = fpr_shared_alloc();
@@ -343,7 +343,7 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 	if (owner_pid < 0)
 		goto out;
 	if (!wait_for_state(s, FPR_STATE_OWNER_READY)) {
-		__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback_setup_failed,
+		__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -363,7 +363,7 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 	}
 
 	if (!wait_for_state(s, FPR_STATE_WAITER_READY)) {
-		__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback_setup_failed,
+		__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -377,10 +377,10 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 	wait_val = __atomic_load_n(&s->futex_wait, __ATOMIC_RELAXED);
 	if (raw_futex(&s->futex_wait, FUTEX_CMP_REQUEUE_PI, flag,
 		      s->requeue_nr_wake, NULL, &s->futex_target_pi, wait_val) >= 0)
-		__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback_requeue_ok,
+		__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback.requeue_ok,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback_requeue_failed,
+		__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback.requeue_failed,
 				   1, __ATOMIC_RELAXED);
 
 	/*
