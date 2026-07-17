@@ -147,7 +147,7 @@ static inline bool topo_pair_unpack(uint64_t e,
 
 /* Coarse syscall categories used by the dispatch-time histogram.  Order
  * is also the dump order; SYSCAT_OTHER is the catch-all for anything not
- * matched by the prefix table in stats.c. */
+ * matched by the prefix table in stats/dump/syscall.c. */
 enum syscall_category {
 	SYSCAT_READ = 0,
 	SYSCAT_WRITE,
@@ -164,7 +164,7 @@ enum syscall_category {
 /*
  * Divergence-sentinel per-field identifiers.  Lives in stats.h (rather
  * than private to child-sentinel.c) so the per-field anomaly array in
- * struct stats_s can be sized and indexed by SF__MAX, and so stats.c
+ * struct stats_s can be sized and indexed by SF__MAX, and so the stats dump
  * can name individual shards via offsetof for periodic / end-of-run
  * reporting.
  *
@@ -990,7 +990,7 @@ struct stats_s {
 
 	/* Per-recipe completion counts, indexed by the recipe's slot in the
 	 * static catalog inside recipe-runner.c.  Dumped via
-	 * recipe_runner_dump_stats() so stats.c stays decoupled from the
+	 * recipe_runner_dump_stats() so the stats dump stays decoupled from the
 	 * catalog layout. */
 	unsigned long recipe_completed_per[MAX_RECIPES];
 
@@ -1002,7 +1002,7 @@ struct stats_s {
 
 	/* Per-iouring-recipe completion counts, indexed by the recipe's slot in
 	 * the static catalog inside iouring-recipes.c.  Dumped via
-	 * iouring_recipes_dump_stats() so stats.c stays decoupled from the
+	 * iouring_recipes_dump_stats() so the stats dump stays decoupled from the
 	 * catalog layout. */
 	unsigned long iouring_recipe_completed_per[MAX_IOURING_RECIPES];
 
@@ -5029,7 +5029,7 @@ struct stats_s {
 	 * --chain-resource-typing=off|shadow|live).  All arrays are
 	 * indexed by enum chain_resource_kind (CHAIN_RESTYPE_NR wide);
 	 * ordering is defined by that enum and MUST NOT change without
-	 * updating the register table in stats.c.
+	 * updating the resource table in sequence.c.
 	 *
 	 * chain_restype_produced[k]     : a chain step matched the (nr, args)
 	 *                                 pattern for a kind-k producer with a
@@ -5361,10 +5361,11 @@ struct stats_s {
 	 * matches frontier_window_advance()'s clear-then-publish discipline.
 	 *
 	 * SHADOW: no scheduler / picker / canary code reads either array;
-	 * the only reader is stats.c's dump_stats_childop_decay_recency()
-	 * at shutdown.  RELAXED add-fetch on the per-slot bumps and the
-	 * cached counter -- multi-producer (one writer per child), lost-
-	 * update races are tolerated and bounded by per-window child counts.
+	 * the only reader is stats/childop/local.c's
+	 * dump_stats_childop_decay_recency() at shutdown.  RELAXED add-fetch
+	 * on the per-slot bumps and cached counter -- multi-producer (one
+	 * writer per child), lost-update races are tolerated and bounded by
+	 * per-window child counts.
 	 * Sum across the ring is the op's "recent" edge or wall total over
 	 * the last CHILDOP_DECAY_WINDOWS rotations -- the input the future
 	 * util-table reader (spec row C2's recent-ratio extension) will
@@ -5412,9 +5413,10 @@ struct stats_s {
 	 *   [47..63]  reserved (must be zero on write)
 	 *
 	 * SHADOW: no scheduler / picker / scoring code reads either the
-	 * ring or any of the companion scalars; the only reader is stats.c's
-	 * dump_stats_topo_pair_shadow() at shutdown, which aggregates the
-	 * surviving ring entries into per-setup_op (count, mean-age, reason
+	 * ring or any of the companion scalars; the only reader is
+	 * stats/childop/local.c's dump_stats_topo_pair_shadow() at shutdown.
+	 * It aggregates the surviving ring entries into per-setup_op (count,
+	 * mean-age, reason
 	 * split) summaries.  This render enables the 103·B go/no-go on a
 	 * LIVE topology-pair experiment that would actually save seeds /
 	 * replay pairs -- it is not a cosmetic surface. */
@@ -5559,7 +5561,7 @@ struct stats_s {
 	 * that hypothesis as a SHADOW so a future live phase can be gated
 	 * on its signal.  No selection / admission / scoring / corpus path
 	 * consumes any field here -- the only effect of these writes is
-	 * the counter values rendered by stats.c.
+	 * the counter values rendered by the shutdown stats dump.
 	 *
 	 * Gradient classes (3 ordered slots; low -> high "progress into
 	 * the kernel"):
@@ -5629,9 +5631,9 @@ struct stats_s {
 	 * CMP signal) BEFORE any second save target is wired up.  No
 	 * selection / admission / scoring / corpus path consumes any
 	 * field here -- the only effect of these writes is the counter
-	 * values rendered by stats.c.  The existing live save call at
-	 * the producer site (minicorpus_save_with_reason in random-
-	 * syscall.c) is untouched: its arguments and branch shape are
+	 * values rendered by the shutdown stats dump.  The existing live save
+	 * call at the producer site (minicorpus_save_with_reason in
+	 * random-syscall.c) is untouched: its arguments and branch shape are
 	 * byte-identical to the pre-row baseline, and the shadow block
 	 * fires strictly AFTER it on the same gated arm.
 	 *

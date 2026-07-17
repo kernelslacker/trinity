@@ -56,7 +56,7 @@ their own.
 | [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (7 files, ~3,700 LOC) |
 | [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (7 files, ~5,004 LOC) |
 | [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) (8 files, ~5,951 LOC) |
-| [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (10 files, ~15,946 LOC) |
+| [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (27 files, ~18,766 LOC) |
 | [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (7 files, ~1,457 LOC) |
 | [utils/](utils/CLAUDE.md) | General-purpose runtime support (23 files, ~9,181 LOC) |
 | [tools/](tools/CLAUDE.md) | Standalone offline socket-cache dump analyzer, not linked into trinity (2 files, ~225 LOC) |
