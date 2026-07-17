@@ -366,11 +366,11 @@ static void madvise_cycler_iter_run_cycle(struct madvise_cycler_iter_ctx *ctx,
 			      (size_t)RAND_NEGATIVE_OR(len),
 			      advice);
 		__atomic_add_fetch(
-			&shm->stats.madvise_cycler_calls,
+			&shm->stats.madvise_cycler.calls,
 			1, __ATOMIC_RELAXED);
 		if (mrc < 0) {
 			__atomic_add_fetch(
-				&shm->stats.madvise_cycler_failed,
+				&shm->stats.madvise_cycler.failed,
 				1, __ATOMIC_RELAXED);
 			/* -EINVAL from MADV_COLLAPSE on
 			 * non-THP-eligible ranges, -EAGAIN
@@ -440,7 +440,7 @@ bool madvise_cycler(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.madvise_cycler_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.madvise_cycler.runs, 1, __ATOMIC_RELAXED);
 
 	rc = madvise_cycler_iter_pick_region(&ictx);
 	if (rc < 0)

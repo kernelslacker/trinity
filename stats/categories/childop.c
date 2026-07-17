@@ -109,17 +109,6 @@ const struct stat_category pidfd_storm_category =
 	              pidfd_storm_runs,
 	              pidfd_storm_fields);
 
-static const struct stat_field madvise_cycler_fields[] = {
-	STAT_FIELD(madvise_cycler, runs),
-	STAT_FIELD(madvise_cycler, calls),
-	STAT_FIELD(madvise_cycler, failed),
-};
-
-const struct stat_category madvise_cycler_category =
-	STAT_CATEGORY("madvise_cycler",
-	              madvise_cycler_runs,
-	              madvise_cycler_fields);
-
 static const struct stat_field keyring_spam_fields[] = {
 	STAT_FIELD(keyring_spam, runs),
 	STAT_FIELD(keyring_spam, calls),
