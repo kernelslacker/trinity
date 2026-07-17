@@ -129,12 +129,11 @@ void dump_range_overlaps_shared_top_offenders(void)
  * during a steady drip and re-arms after each report so a sustained
  * spike emits one line per minute, not a flood.
  *
- * Scoped to genuine .post-handler pointer rejections only.  The
- * dispatcher-level RZS rettype-contract check has its own counter
- * (rzs_blanket_reject) and does not feed this detector; previously the
- * two signals shared post_handler_corrupt_ptr and the RZS background
- * (~2/s steady-state across the fleet) drowned the burst-detection
- * window in ~85-90% noise.
+ * Scoped to genuine .post-handler pointer rejections only; the
+ * dispatcher-level RZS rettype-contract check uses its own counter
+ * (rzs_blanket_reject) and does not feed this detector.  Sharing
+ * storage would drown the burst-detection window in ~85-90% noise
+ * from the RZS background (~2/s steady-state across the fleet).
  */
 #define CORRUPT_PTR_SPIKE_THRESHOLD	100UL
 #define CORRUPT_PTR_SPIKE_WINDOW_SEC	60
