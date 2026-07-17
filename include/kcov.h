@@ -1971,15 +1971,11 @@ struct kcov_shared {
 	unsigned long typed_inject_fill_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_pending_dropped;
 	/*
-	 * Obsolete wastage counter.  Originally bumped at the gate-pass
-	 * site by (reexec_pending_count - 1) under the prior single-drain
-	 * rule (consumer drained exactly ONE entry, the rest were
-	 * discarded with the per-call scratch reset).  The dispatch_step
-	 * tail now drains every staged reexec_pending[] entry per parent
-	 * dispatch, so no entries are wasted per gate-pass and the
-	 * counter is no longer incremented.  Field kept so the shm
-	 * layout and existing stats consumers do not need to regenerate;
-	 * current value is always zero in live runs.
+	 * Vestigial wastage counter.  Always zero: the dispatch_step tail
+	 * drains every staged reexec_pending[] entry per parent dispatch,
+	 * so no gate-pass entry is ever left behind.  Field retained only
+	 * for shm-ABI stability so existing stats consumers keep parsing
+	 * the layout unchanged.
 	 */
 	unsigned long reexec_pending_drain_unused;
 	unsigned long reexec_pending_pick_success[REEXEC_PENDING_PICK_HIST_NR];
@@ -2781,10 +2777,10 @@ struct kcov_shared {
 	/* Per-kind flat census of typed CMP hypothesis insert rejections
 	 * caused by the per-syscall total cap (CMP_HYP_PER_SYSCALL).  Bumped
 	 * in lock-step with the scalar cmp_hyp_pool_full from cmp_hyp_alloc()'s
-	 * per-syscall-exhausted branch, which is now the sole bumper of the
-	 * scalar, so the sum across kinds equals cmp_hyp_pool_full modulo
-	 * concurrent sampling (the cmp_hyp_observe() corruption bail moved
-	 * to the sibling cmp_hyp_pool_overflow counter).  Paired with
+	 * per-syscall-exhausted branch -- the sole bumper of cmp_hyp_pool_full.
+	 * The cmp_hyp_observe() corruption bail bumps the sibling
+	 * cmp_hyp_pool_overflow counter, so the sum across kinds equals
+	 * cmp_hyp_pool_full modulo concurrent sampling.  Paired with
 	 * cmp_hyp_inserted_by_kind this shows, per kind, which kind is
 	 * consuming the per-syscall budget when cmp_hyp_pool_full dominates.
 	 * SHADOW telemetry only -- no consumer reads it. */
@@ -3720,8 +3716,7 @@ void kcov_disable(struct kcov_child *kc);
 
 /* EXTRA_FORK bypass hook.  Called from do_extrafork() after the
  * grandchild ran the real syscall outside the parent worker's kcov
- * bracket, replacing the plain kcov_reset_trace_header() this used to
- * call.  Two responsibilities:
+ * bracket.  Two responsibilities:
  *
  *   1. Zero the trace count header at trace_buf[0] (or cmp_trace_buf[0]
  *      for CMP-mode children) without touching the kcov ioctls so the
