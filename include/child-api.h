@@ -401,6 +401,20 @@ enum childop_recommended_state {
 	CHILDOP_REC_THROTTLED,
 	CHILDOP_REC_QUARANTINED,
 	CHILDOP_REC_CONFIG_BLOCKED,
+	/* childop_edges_clean[op] == 0 during the window but
+	 * childop_edges_discovered[op] grew, AND at least one
+	 * kcov_shm->childop_kcov_op_skipped_*[op] counter is non-zero.
+	 * The outer PC bracket rejected this op (KCOV_MODE_CMP child,
+	 * nested bracket, inactive/failed enable) so the clean/noisy split
+	 * that PROMOTED_INTERFERENCE keys off is a MODE ARTIFACT, not a
+	 * true "sibling interference only" signal.  Neither promote nor
+	 * demote: the ratchet cannot see this op's real yield, so we
+	 * explicitly opt it out of both would_promote and would_demote
+	 * shadow tallies to keep the decision surface honest.  Named
+	 * (rather than folded into CANARY_CLEAN or CONFIG_BLOCKED) so an
+	 * operator triaging the shadow log can grep for the confound
+	 * without also catching the two adjacent cases. */
+	CHILDOP_REC_UNATTRIBUTED_EDGES,
 };
 
 /* Render the recommended-state enum as its uppercase name (e.g.
