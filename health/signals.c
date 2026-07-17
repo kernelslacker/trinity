@@ -1054,6 +1054,45 @@ void sigxcpu_handler(__unused__ int sig)
 	 * time of the signal. */
 }
 
+void watchdog_reinstall_if_clobbered(void)
+{
+	struct sigaction cur;
+
+	/* SIGALRM: reinstall the flag-setter if a fuzzed rt_sigaction
+	 * has swapped it out.  Match the mask_signals_child() install:
+	 * empty mask, no SA_RESTART, so the arriving signal interrupts
+	 * the blocking syscall (EINTR) and control returns to the child
+	 * main loop where sigalrm_pending is checked. */
+	if (sigaction(SIGALRM, NULL, &cur) == 0 &&
+	    cur.sa_handler != sigalrm_handler) {
+		struct sigaction sa;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = 0;
+		sa.sa_handler = sigalrm_handler;
+		(void)sigaction(SIGALRM, &sa, NULL);
+		__atomic_add_fetch(&shm->stats.watchdog_sigalrm_clobbered,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.watchdog_sigalrm_reinstalled,
+				   1, __ATOMIC_RELAXED);
+	}
+
+	/* SIGXCPU: same reinstall, same install parameters -- see
+	 * mask_signals_child() for the sa_flags=0 rationale (interrupt
+	 * the syscall, let the child main loop see xcpu_pending). */
+	if (sigaction(SIGXCPU, NULL, &cur) == 0 &&
+	    cur.sa_handler != sigxcpu_handler) {
+		struct sigaction sa;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = 0;
+		sa.sa_handler = sigxcpu_handler;
+		(void)sigaction(SIGXCPU, &sa, NULL);
+		__atomic_add_fetch(&shm->stats.watchdog_sigxcpu_clobbered,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.watchdog_sigxcpu_reinstalled,
+				   1, __ATOMIC_RELAXED);
+	}
+}
+
 /*
  * Handler for signals that should only be fatal if they come from the
  * kernel (real fault), not from a child process sending us garbage via

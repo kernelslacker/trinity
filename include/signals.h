@@ -160,10 +160,25 @@ void init_stderr_memfd(void);
  * tail-latency in the late-run childop wedge.
  *
  * No caller should ever invoke these handlers directly or take their
- * address for anything other than the sa_handler equality check.
+ * address for anything other than the sa_handler equality check
+ * performed by watchdog_reinstall_if_clobbered().
  */
 void sigalrm_handler(int sig);
 void sigxcpu_handler(int sig);
+
+/*
+ * Called from every alarm(1) arm site immediately before arming --
+ * the syscall dispatcher's NEED_ALARM branch and the childop alt-op
+ * path.  Probes the live SIGALRM and SIGXCPU dispositions and, on a
+ * mismatch against sigalrm_handler / sigxcpu_handler, restores the
+ * expected handler in place (matching the sa_flags=0, empty mask
+ * install in mask_signals_child()) so the child cannot ride only the
+ * ~30-second outer watchdog after a fuzzed rt_sigaction.  Restricted
+ * to the two watchdog signals; nothing else is touched.  Every
+ * repair bumps both the watchdog_sig*_clobbered incidence counter
+ * and the paired watchdog_sig*_reinstalled repair counter.
+ */
+void watchdog_reinstall_if_clobbered(void);
 
 /*
  * The numeric fd returned by memfd_create() inside init_stderr_memfd().
