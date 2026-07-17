@@ -131,14 +131,11 @@ static bool reap_entry_is_fast_die(const struct reap_record *r)
 	 *     is gone, this is a clean shutdown not corruption.
 	 *   - EXIT_NO_SYSCALLS_ENABLED: pickers.c saw no_syscalls_enabled()
 	 *     == true (active set self-disabled via ENOSYS depletion or
-	 *     VALIDATE_FAIL_THRESHOLD).  Was previously only exempt in
-	 *     targeted mode on the theory that a zero active set in
-	 *     default fuzz mode was itself corruption -- but a legit
-	 *     depletion in default mode cascades 16 lock-spin-bailout
-	 *     children through the ring inside the corruption window,
-	 *     which falsely trips EXIT_SHM_CORRUPTION.  One clean bail is
-	 *     enough; exempt unconditionally and let the deeper trigger
-	 *     (why depletion fired) be diagnosed separately.
+	 *     VALIDATE_FAIL_THRESHOLD).  Exempt unconditionally: a legit
+	 *     depletion cascades 16 lock-spin-bailout children through the
+	 *     ring inside the corruption window, which would falsely trip
+	 *     EXIT_SHM_CORRUPTION.  One clean bail is enough; let the
+	 *     deeper trigger (why depletion fired) be diagnosed separately.
 	 */
 	if (r->exit_status == EXIT_MAIN_DISAPPEARED ||
 	    r->exit_status == EXIT_NO_SYSCALLS_ENABLED)
