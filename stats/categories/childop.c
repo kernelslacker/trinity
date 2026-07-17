@@ -170,18 +170,6 @@ const struct stat_category cgroup_churn_category =
 	              cgroup_churn_runs,
 	              cgroup_churn_fields);
 
-static const struct stat_field mount_churn_fields[] = {
-	STAT_FIELD(mount_churn, runs),
-	STAT_FIELD(mount_churn, mounts),
-	STAT_FIELD(mount_churn, umounts),
-	STAT_FIELD(mount_churn, failed),
-};
-
-const struct stat_category mount_churn_category =
-	STAT_CATEGORY("mount_churn",
-	              mount_churn_runs,
-	              mount_churn_fields);
-
 static const struct stat_field umount_race_fields[] = {
 	STAT_FIELD(umount_race, runs),
 	STAT_FIELD(umount_race, picks),
