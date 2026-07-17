@@ -64,12 +64,13 @@ static const uint32_t seccomp_ret_actions[] = {
  * handler.  Lives in rec->post_state, a slot the syscall ABI does not
  * expose, so the post path is immune to a sibling syscall scribbling
  * rec->a1 (op) or rec->a3 (heap pointer) between the syscall returning
- * and the post handler running.  The old post handler dispatched off
- * rec->a1 directly: a flip from SECCOMP_GET_ACTION_AVAIL or
- * SECCOMP_GET_NOTIF_SIZES into SECCOMP_SET_MODE_FILTER would deref the
- * smaller allocation as a sock_fprog and reach a wild fprog->filter
- * free; a flip away from SECCOMP_SET_MODE_FILTER would leak the
- * sock_fprog and its filter.
+ * and the post handler running.  The post handler dispatches off the
+ * op snapshotted into rec->post_state, so a sibling flip of rec->a1
+ * from SECCOMP_GET_ACTION_AVAIL or SECCOMP_GET_NOTIF_SIZES into
+ * SECCOMP_SET_MODE_FILTER can't coerce the smaller allocation into
+ * being derefed as a sock_fprog (wild fprog->filter free), and a flip
+ * away from SECCOMP_SET_MODE_FILTER can't leak the sock_fprog and its
+ * filter.
  *
  * Per-op allocation matrix.  Of the four SECCOMP_* ops, three allocate
  * a heap buffer that the post handler has to free:
@@ -182,9 +183,9 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 
 	/*
 	 * Snapshot the op alongside the heap pointer (magic-cookie /
-	 * private post_state: see post_state_register()).  Specific
-	 * seccomp failure: the old post handler dispatched off rec->a1
-	 * directly, so a sibling scribble would either leak the sock_fprog
+	 * private post_state: see post_state_register()) so the post
+	 * handler dispatches off snap->op rather than rec->a1: a sibling
+	 * scribble of rec->a1 would otherwise either leak the sock_fprog
 	 * or coerce the smaller GET_* allocation into being treated as one.
 	 */
 	if (heap != NULL) {
