@@ -2,16 +2,12 @@
 #define _TRINITY_STATS_INTERNAL_H
 
 /*
- * Internal interface shared by stats.c and the render clusters under
- * stats/ (dump.c, json_dump.c, corrupt_ptr.c, log.c, periodic.c,
- * kcov_cmp.c, kcov_diag.c, runid.c).
+ * Internal interface shared by stats/ implementation files.
  *
- * The cluster TUs contain emitters carved out of stats.c.  Anything
- * those emitters need from the larger stats world -- the
- * stat_category descriptor types and macros, the named category
- * tables, the per-syscall KCOV diag counter enum, and the rendering
- * helpers -- is exposed here.  Not a public header: only stats.c and
- * files under stats/ are expected to include it.
+ * Section TUs under stats/dump/, stats/childop/, stats/network/, and
+ * stats/kcov/ share descriptor types, named category tables, KCOV diag
+ * selectors, and rendering helpers through this header.  Not a public
+ * header: only stats.c and files under stats/ are expected to include it.
  */
 
 #include <stdbool.h>
@@ -55,8 +51,7 @@ struct stat_category {
 #define STATS_ROW_FMT "%-22s  %-32s  %lu\n"
 #define STATS_HDR_FMT "%-22s  %-32s  %s\n"
 
-/* Cap on rows in the per-syscall top-N tables emitted from the carved
- * dump_stats_strategy_summary() block.  Read in stats.c too. */
+/* Cap on rows in per-syscall top-N tables emitted from the text dump leaves. */
 #define TOP_SYSCALLS_DUMP_TOPN	5
 
 /* Periodic dump cadence shared by the defense-counter, cost-pool,
@@ -98,9 +93,8 @@ extern const char * const op_names[];
 bool pc_in_text(void *pc);
 unsigned long stat_field_load(const struct stat_field *f);
 
-/* Cluster entry points called back from dump_stats() in the stats.c
- * core.  dump_stats_json() lives in stats/json_dump.c;
- * childop_split_dump() lives in stats/periodic.c. */
+/* Cluster entry points called by dump_stats().  dump_stats_json() lives in
+ * stats/json_dump.c; childop_split_dump() lives in stats/periodic.c. */
 void dump_stats_json(void);
 void childop_split_dump(void);
 void dump_stats_runtime_header(void);
@@ -115,16 +109,13 @@ void dump_stats_childop_fd_delta(void) __cold;
 void dump_stats_topo_pair_shadow(void) __cold;
 void dump_stats_corpus_and_taint_tail(void);
 
-/* corrupt_ptr cluster in stats/corrupt_ptr.c.  Called from the
- * stats.c core (dump_range_overlaps_shared_top_offenders via
- * dump_stats_shared_buffer_misc) and from defense_counters_periodic_
- * dump() in stats/periodic.c (corrupt_ptr_attr_dump and
- * deferred_free_reject_pc_dump). */
+/* corrupt_ptr cluster in stats/corrupt_ptr.c.  Called from shutdown and
+ * periodic stats dump leaves. */
 void dump_range_overlaps_shared_top_offenders(void);
 void corrupt_ptr_attr_dump(void);
 void deferred_free_reject_pc_dump(void);
 
-/* Pure-render dump_stats_* emitters carved into stats/dump.c. */
+/* Pure-render dump_stats_* emitters under stats/dump/ and sibling subdirs. */
 void dump_stats_oracle_anomalies(void);
 void dump_stats_fuzzer_subsystems(void);
 void dump_stats_corruption_and_pool(void);
@@ -133,7 +124,7 @@ void dump_stats_strategy_summary(void);
 void dump_stats_childop_runs_network(void);
 void dump_stats_kcov_block(void);
 
-/* Named stat_category tables defined in stats.c. */
+/* Named stat_category tables defined under stats/categories/ and json_dump.c. */
 extern const struct stat_category af_alg_weak_cipher_probe_category;
 extern const struct stat_category af_unix_peek_race_category;
 extern const struct stat_category af_unix_scm_rights_gc_category;
