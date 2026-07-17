@@ -21,6 +21,7 @@
 #include "kernel/mount.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/blob.h"
+#include "stats/subsys/signal_storm.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
  * Q8.8 fixed point: 256 == 1.0x.  Floor and ceiling cap how far the
@@ -1033,12 +1034,8 @@ struct stats_s {
 	unsigned long fs_lifecycle_bind;	/* bind-mount teardown variant */
 	unsigned long fs_lifecycle_unsupported;	/* CLONE_NEWUSER refused (helper -EPERM) */
 
-	/* signal_storm childop counters */
-	unsigned long signal_storm_runs;	/* total signal_storm invocations */
-	unsigned long signal_storm_kill;	/* kill() calls issued (sig != 0) */
-	unsigned long signal_storm_probe;	/* kill(pid, 0) existence probes */
-	unsigned long signal_storm_sigqueue;	/* sigqueue() calls issued */
-	unsigned long signal_storm_no_targets;	/* no live siblings to signal */
+	/* signal_storm childop counters.  See stats/subsys/signal_storm.h. */
+	struct signal_storm_stats signal_storm __attribute__((aligned(64)));
 
 	/* futex_storm childop counters */
 	unsigned long futex_storm_runs;		/* total futex_storm invocations */

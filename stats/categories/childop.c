@@ -78,20 +78,6 @@ const struct stat_category bpf_lifecycle_category =
 	              bpf_lifecycle_runs,
 	              bpf_lifecycle_fields);
 
-static const struct stat_field signal_storm_fields[] = {
-	STAT_FIELD(signal_storm, runs),
-	STAT_FIELD(signal_storm, kill),
-	STAT_FIELD(signal_storm, probe),
-	STAT_FIELD(signal_storm, sigqueue),
-	STAT_FIELD(signal_storm, no_targets),
-};
-
-const struct stat_category signal_storm_category =
-	STAT_CATEGORY("signal_storm",
-	              signal_storm_runs,
-	              signal_storm_fields);
-
-
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
