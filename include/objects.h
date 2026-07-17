@@ -654,9 +654,9 @@ struct object *find_local_object_by_fd(enum objecttype type, int fd);
  * fd_lookup_provider reach fds that live only in per-child OBJ_LOCAL
  * pools (kvm-vcpu, kvm-vm, io_uring, userfaultfd, pidfd,
  * seccomp-notif, ...) — those never enter the fork-time global
- * fd_hash snapshot, so the epoll/poll/select sanitisers used to see
- * them as untracked and let their blocking ->poll handlers into watch
- * sets.
+ * fd_hash snapshot, so the epoll/poll/select sanitisers rely on this
+ * lookup to register them in watch sets (blocking ->poll handlers need
+ * the fd visible).
  */
 struct object *local_fd_find_by_fd(int fd);
 
