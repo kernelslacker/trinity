@@ -53,11 +53,11 @@ void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&signal_storm_category);
 
-	if (shm->stats.futex_storm_runs)
+	if (shm->stats.futex_storm.runs)
 		output(0, "\nfutex storm: runs:%lu inner_crashed:%lu iters:%lu\n",
-			shm->stats.futex_storm_runs,
-			shm->stats.futex_storm_inner_crashed,
-			shm->stats.futex_storm_iters);
+			shm->stats.futex_storm.runs,
+			shm->stats.futex_storm.inner_crashed,
+			shm->stats.futex_storm.iters);
 
 	stat_category_emit_text(&pipe_thrash_category);
 

@@ -21,6 +21,7 @@
 #include "kernel/mount.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/blob.h"
+#include "stats/subsys/futex_storm.h"
 #include "stats/subsys/signal_storm.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
@@ -1037,10 +1038,8 @@ struct stats_s {
 	/* signal_storm childop counters.  See stats/subsys/signal_storm.h. */
 	struct signal_storm_stats signal_storm __attribute__((aligned(64)));
 
-	/* futex_storm childop counters */
-	unsigned long futex_storm_runs;		/* total futex_storm invocations */
-	unsigned long futex_storm_inner_crashed; /* inner worker died by signal */
-	unsigned long futex_storm_iters;	/* cumulative inner-worker futex syscalls */
+	/* futex_storm childop counters.  See stats/subsys/futex_storm.h. */
+	struct futex_storm_stats futex_storm __attribute__((aligned(64)));
 
 	/* futex_pi_requeue_rollback childop counters */
 	unsigned long futex_pi_requeue_rollback_runs;		/* total invocations */
