@@ -84,7 +84,7 @@ struct futex_storm_shared {
 	int done;
 
 	/* Cumulative iteration counter, updated by every worker after
-	 * each futex syscall.  Drained into shm->stats.futex_storm_iters
+	 * each futex syscall.  Drained into shm->stats.futex_storm.iters
 	 * by the parent before teardown. */
 	unsigned long iters;
 
@@ -481,12 +481,12 @@ static void futex_storm_iter_reap(struct futex_storm_iter_ctx *ctx)
 			continue;
 		}
 		if (r == ctx->worker_pids[i] && WIFSIGNALED(status))
-			__atomic_add_fetch(&shm->stats.futex_storm_inner_crashed,
+			__atomic_add_fetch(&shm->stats.futex_storm.inner_crashed,
 					   1, __ATOMIC_RELAXED);
 	}
 	ctx->alive = 0;
 
-	__atomic_add_fetch(&shm->stats.futex_storm_iters,
+	__atomic_add_fetch(&shm->stats.futex_storm.iters,
 			   __atomic_load_n(&ctx->s->iters, __ATOMIC_RELAXED),
 			   __ATOMIC_RELAXED);
 }
@@ -511,7 +511,7 @@ bool futex_storm(struct childdata *child)
 {
 	struct futex_storm_iter_ctx ctx = { .s = NULL };
 
-	__atomic_add_fetch(&shm->stats.futex_storm_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.futex_storm.runs, 1, __ATOMIC_RELAXED);
 
 	if (futex_storm_iter_setup_region(&ctx) != 0)
 		return true;

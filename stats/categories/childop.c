@@ -348,17 +348,6 @@ const struct stat_category fs_lifecycle_category =
 	              fs_lifecycle_tmpfs,
 	              fs_lifecycle_fields);
 
-static const struct stat_field futex_storm_fields[] = {
-	STAT_FIELD(futex_storm, runs),
-	STAT_FIELD(futex_storm, inner_crashed),
-	STAT_FIELD(futex_storm, iters),
-};
-
-const struct stat_category futex_storm_category =
-	STAT_CATEGORY("futex_storm",
-	              futex_storm_runs,
-	              futex_storm_fields);
-
 static const struct stat_field futex_pi_requeue_rollback_fields[] = {
 	STAT_FIELD(futex_pi_requeue_rollback, runs),
 	STAT_FIELD(futex_pi_requeue_rollback, setup_failed),
