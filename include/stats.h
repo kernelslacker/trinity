@@ -23,6 +23,7 @@
 #include "stats/subsys/blob.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/flock_thrash.h"
+#include "stats/subsys/fork_storm.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/mount_churn.h"
@@ -1083,12 +1084,8 @@ struct stats_s {
 	unsigned long umount_race_umount_failed;/* umount2() returned -1 (incl. expected EPERM) */
 	unsigned long umount_race_setup_failed;	/* fork() returned -1 */
 
-	/* fork_storm childop counters */
-	unsigned long fork_storm_runs;		/* total fork_storm invocations */
-	unsigned long fork_storm_forks;		/* grandchildren successfully forked */
-	unsigned long fork_storm_failed;	/* fork() returned -1 (e.g. EAGAIN) */
-	unsigned long fork_storm_nested;	/* depth-1 nested forks completed */
-	unsigned long fork_storm_reaped_signal;	/* grandchildren reaped that died by signal */
+	/* fork_storm childop counters.  See stats/subsys/fork_storm.h. */
+	struct fork_storm_stats fork_storm __attribute__((aligned(64)));
 
 	/* pidfd_storm childop counters */
 	unsigned long pidfd_storm_runs;		/* total pidfd_storm invocations */

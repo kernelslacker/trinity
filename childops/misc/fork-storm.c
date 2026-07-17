@@ -160,7 +160,7 @@ static void __attribute__((noreturn)) grandchild(void)
 
 		if (pid > 0) {
 			(void)waitpid_eintr(pid, &status, 0);
-			__atomic_add_fetch(&shm->stats.fork_storm_nested,
+			__atomic_add_fetch(&shm->stats.fork_storm.nested,
 					   1, __ATOMIC_RELAXED);
 		}
 		/* fork() failure: just exit; nothing to drain. */
@@ -193,7 +193,7 @@ static unsigned int run_round(void)
 		if (pid < 0) {
 			/* fork() failed (likely EAGAIN from RLIMIT_NPROC).
 			 * Stop spawning; drain what we already have. */
-			__atomic_add_fetch(&shm->stats.fork_storm_failed,
+			__atomic_add_fetch(&shm->stats.fork_storm.failed,
 					   1, __ATOMIC_RELAXED);
 			break;
 		}
@@ -201,7 +201,7 @@ static unsigned int run_round(void)
 		pids[spawned++] = pid;
 	}
 
-	__atomic_add_fetch(&shm->stats.fork_storm_forks, spawned,
+	__atomic_add_fetch(&shm->stats.fork_storm.forks, spawned,
 			   __ATOMIC_RELAXED);
 
 	/*
@@ -226,7 +226,7 @@ static unsigned int run_round(void)
 
 		reaped++;
 		if (WIFSIGNALED(status))
-			__atomic_add_fetch(&shm->stats.fork_storm_reaped_signal,
+			__atomic_add_fetch(&shm->stats.fork_storm.reaped_signal,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -238,7 +238,7 @@ bool fork_storm(struct childdata *child)
 	unsigned int rounds;
 	unsigned int i;
 
-	__atomic_add_fetch(&shm->stats.fork_storm_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fork_storm.runs, 1, __ATOMIC_RELAXED);
 
 	rounds = 1 + rnd_modulo_u32(MAX_ROUNDS);
 
