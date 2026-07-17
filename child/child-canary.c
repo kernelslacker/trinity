@@ -326,6 +326,34 @@ static unsigned long edges_for_op(enum child_op_type op)
 			       __ATOMIC_RELAXED);
 }
 
+/* Returns a short static string naming the kcov_bracket_begin() reject
+ * arm this op has hit at least once, or NULL if no skip reason applies.
+ *
+ * Priority order mirrors the decision tree in kcov_bracket_begin()
+ * (kcov/enable.c): inactive > cmp-mode > nested.  The check is
+ * intentionally "any skip > 0" rather than "all attempts skipped"
+ * because the confound the caller is guarding against is "the outer
+ * bracket cannot see this op's clean edges at all" -- for a
+ * KCOV_MODE_CMP child that is true for every single dispatch, and one
+ * observation is enough to explain a childop_edges_clean[op] == 0
+ * window.  Consumers gate on this AFTER already confirming clean==0
+ * so the combined test remains conservative. */
+static const char *op_kcov_skip_reason(enum child_op_type op)
+{
+	if (kcov_shm == NULL || (unsigned int)op >= KCOV_CHILDOP_NR_MAX)
+		return NULL;
+	if (__atomic_load_n(&kcov_shm->childop_kcov_op_skipped_inactive[op],
+			    __ATOMIC_RELAXED) > 0)
+		return "kcov_bracket_inactive";
+	if (__atomic_load_n(&kcov_shm->childop_kcov_op_skipped_cmp[op],
+			    __ATOMIC_RELAXED) > 0)
+		return "kcov_mode_cmp";
+	if (__atomic_load_n(&kcov_shm->childop_kcov_op_skipped_nested[op],
+			    __ATOMIC_RELAXED) > 0)
+		return "kcov_bracket_nested";
+	return NULL;
+}
+
 /* Per-op invocation count, sourced from the shm-resident counter
  * bumped by every alt-op child in child_process()'s post-call block.
  * This is the canary window's clock: with one canary slot in a 16-
@@ -1029,8 +1057,22 @@ canary_recommend_state(enum child_op_type op,
 	}
 	if (clean_edges_delta >= CANARY_EDGE_THRESHOLD)
 		return CHILDOP_REC_PROMOTED_CLEAN;
-	if (clean_edges_delta == 0 && noisy_edges_delta > 0)
+	if (clean_edges_delta == 0 && noisy_edges_delta > 0) {
+		/* Discovered grew without clean growing.  If a
+		 * kcov_bracket_begin() skip reason for THIS op is on
+		 * record, the clean/noisy split is a MODE ARTIFACT of the
+		 * PC-bracket rejection (KCOV_MODE_CMP children never open
+		 * an outer PC bracket, so every clean=0 window on them is
+		 * confounded) -- not a "sibling interference only" signal
+		 * the operator can promote on.  Route to the explicit
+		 * unattributed_edges state so neither would_promote nor
+		 * would_demote is bumped for this window.  Without a skip
+		 * reason the original PROMOTED_INTERFERENCE recommendation
+		 * still stands. */
+		if (op_kcov_skip_reason(op) != NULL)
+			return CHILDOP_REC_UNATTRIBUTED_EDGES;
 		return CHILDOP_REC_PROMOTED_INTERFERENCE;
+	}
 	if (clean_edges_delta == 0 && noisy_edges_delta == 0 &&
 	    wedges_delta > 0)
 		return CHILDOP_REC_THROTTLED;
@@ -1047,18 +1089,31 @@ const char *childop_recommended_state_name(enum childop_recommended_state s)
 	case CHILDOP_REC_THROTTLED:		return "THROTTLED";
 	case CHILDOP_REC_QUARANTINED:		return "QUARANTINED";
 	case CHILDOP_REC_CONFIG_BLOCKED:	return "CONFIG_BLOCKED";
+	case CHILDOP_REC_UNATTRIBUTED_EDGES:	return "UNATTRIBUTED_EDGES";
 	}
 	return "UNKNOWN";
 }
 
 static bool recommended_state_is_promote(enum childop_recommended_state s)
 {
+	/* CHILDOP_REC_UNATTRIBUTED_EDGES is intentionally NOT in this
+	 * set: the clean/noisy split it keys off is a MODE ARTIFACT of
+	 * the outer PC bracket getting rejected (see canary_recommend_
+	 * state()), so promoting on that signal would be promoting on
+	 * confounded data.  Left explicit to make the exclusion visible. */
 	return s == CHILDOP_REC_PROMOTED_CLEAN ||
 	       s == CHILDOP_REC_PROMOTED_INTERFERENCE;
 }
 
 static bool recommended_state_is_demote(enum childop_recommended_state s)
 {
+	/* CHILDOP_REC_UNATTRIBUTED_EDGES is intentionally NOT in this
+	 * set either: without a bracketed clean signal we cannot tell
+	 * whether the op is productive or not, so we neither reward nor
+	 * penalise it in the shadow tallies.  The live path still
+	 * demotes for backoff (leave_canarying_demote with the specific
+	 * skip-reason string), which is a separate decision made in
+	 * close_window_and_decide(). */
 	return s == CHILDOP_REC_THROTTLED ||
 	       s == CHILDOP_REC_QUARANTINED ||
 	       s == CHILDOP_REC_CONFIG_BLOCKED;
@@ -1159,7 +1214,26 @@ static void close_window_and_decide(enum child_op_type op)
 		return;
 	}
 
-	leave_canarying_demote(op, "zero_edges", iters, edges, noisy_delta);
+	{
+		/* Route the "zero clean edges" demote through the specific
+		 * kcov_bracket_begin() skip reason when one applies.  Same
+		 * confound the shadow's CHILDOP_REC_UNATTRIBUTED_EDGES
+		 * recommendation guards against: an op that never opens a
+		 * PC bracket (e.g. KCOV_MODE_CMP child) cannot possibly
+		 * accrue childop_edges_clean[], so the generic "zero_edges"
+		 * label mis-attributes the confound to the op itself.  The
+		 * noisy_delta > 0 gate mirrors canary_recommend_state();
+		 * with clean_delta == 0 && noisy_delta == 0 the window is
+		 * genuinely dry and the legacy label is correct. */
+		const char *demote_reason = "zero_edges";
+		if (noisy_delta > 0) {
+			const char *skip = op_kcov_skip_reason(op);
+			if (skip != NULL)
+				demote_reason = skip;
+		}
+		leave_canarying_demote(op, demote_reason, iters, edges,
+				       noisy_delta);
+	}
 }
 
 /* --------------------------------------------------------------------

@@ -684,6 +684,19 @@ static void stats_ts_emit_by_childop(FILE *fp)
 		unsigned long invocations_delta;
 		unsigned long would_promote_delta;
 		unsigned long would_demote_delta;
+		/* Per-op KCOV bracket attribution.  Cumulative only -- these
+		 * are diagnostic per-op mirrors of the aggregate childop_kcov_*
+		 * counters and let a JSONL reader distinguish
+		 * "childop_edges_clean == 0 because the op is genuinely
+		 * zero-yield" from "childop_edges_clean == 0 because
+		 * kcov_bracket_begin() declined for reason X" (MODE ARTIFACT).
+		 * Sourced from kcov_shm, not shm->stats, matching where the
+		 * bumps in child_process() write. */
+		unsigned long kcov_op_attempts = 0;
+		unsigned long kcov_op_bracketed = 0;
+		unsigned long kcov_op_skipped_cmp = 0;
+		unsigned long kcov_op_skipped_nested = 0;
+		unsigned long kcov_op_skipped_inactive = 0;
 		bool canary_active = (op == (int)active_canary);
 		bool canary_promoted = canary_op_is_promoted(op);
 
@@ -705,6 +718,23 @@ static void stats_ts_emit_by_childop(FILE *fp)
 				__ATOMIC_RELAXED);
 			would_demote = __atomic_load_n(
 				&shm->stats.childop_would_demote[op],
+				__ATOMIC_RELAXED);
+		}
+		if (kcov_shm != NULL && op < KCOV_CHILDOP_NR_MAX) {
+			kcov_op_attempts = __atomic_load_n(
+				&kcov_shm->childop_kcov_op_attempts[op],
+				__ATOMIC_RELAXED);
+			kcov_op_bracketed = __atomic_load_n(
+				&kcov_shm->childop_kcov_op_bracketed[op],
+				__ATOMIC_RELAXED);
+			kcov_op_skipped_cmp = __atomic_load_n(
+				&kcov_shm->childop_kcov_op_skipped_cmp[op],
+				__ATOMIC_RELAXED);
+			kcov_op_skipped_nested = __atomic_load_n(
+				&kcov_shm->childop_kcov_op_skipped_nested[op],
+				__ATOMIC_RELAXED);
+			kcov_op_skipped_inactive = __atomic_load_n(
+				&kcov_shm->childop_kcov_op_skipped_inactive[op],
 				__ATOMIC_RELAXED);
 		}
 
@@ -730,6 +760,7 @@ static void stats_ts_emit_by_childop(FILE *fp)
 		if (edges_discovered == 0 && edges_clean == 0 &&
 		    calls_with_edges == 0 && invocations == 0 &&
 		    would_promote == 0 && would_demote == 0 &&
+		    kcov_op_attempts == 0 &&
 		    !canary_active && !canary_promoted)
 			continue;
 
@@ -741,6 +772,11 @@ static void stats_ts_emit_by_childop(FILE *fp)
 			",\"invocations\":%lu,\"invocations_delta\":%lu"
 			",\"would_promote\":%lu,\"would_promote_delta\":%lu"
 			",\"would_demote\":%lu,\"would_demote_delta\":%lu"
+			",\"kcov_op_attempts\":%lu"
+			",\"kcov_op_bracketed\":%lu"
+			",\"kcov_op_skipped_cmp\":%lu"
+			",\"kcov_op_skipped_nested\":%lu"
+			",\"kcov_op_skipped_inactive\":%lu"
 			",\"canary_active\":%d,\"canary_promoted\":%d}",
 			first_op ? "" : ",", op, alt_op_name(op),
 			edges_discovered, edges_discovered_delta,
@@ -749,6 +785,11 @@ static void stats_ts_emit_by_childop(FILE *fp)
 			invocations, invocations_delta,
 			would_promote, would_promote_delta,
 			would_demote, would_demote_delta,
+			kcov_op_attempts,
+			kcov_op_bracketed,
+			kcov_op_skipped_cmp,
+			kcov_op_skipped_nested,
+			kcov_op_skipped_inactive,
 			canary_active ? 1 : 0,
 			canary_promoted ? 1 : 0);
 		first_op = false;

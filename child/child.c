@@ -795,7 +795,52 @@ void child_process(struct childdata *child, int childno)
 			 * this counter -- the smoke-test invariant for this row. */
 			__atomic_fetch_add(&kcov_shm->childop_kcov_attempts,
 				1, __ATOMIC_RELAXED);
+			/* Per-op mirror.  Sized to KCOV_CHILDOP_NR_MAX;
+			 * NR_CHILD_OP_TYPES is asserted to fit inside that
+			 * bound in kcov.c, so op is always in range here. */
+			__atomic_fetch_add(
+				&kcov_shm->childop_kcov_op_attempts[op],
+				1, __ATOMIC_RELAXED);
+			/* Snapshot the fields kcov_bracket_begin() consults
+			 * BEFORE the call so a declined begin can be
+			 * classified into the same reject arm the aggregate
+			 * skip counter got bumped for.  Order matches the
+			 * decision tree in kcov_bracket_begin(); kept in
+			 * sync with that function. */
+			const bool was_inactive =
+				(!child->kcov.active || kcov_shm == NULL);
+			const bool was_cmp =
+				child->kcov.mode == KCOV_MODE_CMP;
+			const bool was_nested = child->kcov.bracket_owned;
+
 			bracketed = kcov_bracket_begin(&child->kcov);
+
+			if (bracketed) {
+				__atomic_fetch_add(
+					&kcov_shm->childop_kcov_op_bracketed[op],
+					1, __ATOMIC_RELAXED);
+			} else if (was_inactive) {
+				__atomic_fetch_add(
+					&kcov_shm->childop_kcov_op_skipped_inactive[op],
+					1, __ATOMIC_RELAXED);
+			} else if (was_cmp) {
+				__atomic_fetch_add(
+					&kcov_shm->childop_kcov_op_skipped_cmp[op],
+					1, __ATOMIC_RELAXED);
+			} else if (was_nested) {
+				__atomic_fetch_add(
+					&kcov_shm->childop_kcov_op_skipped_nested[op],
+					1, __ATOMIC_RELAXED);
+			} else {
+				/* Fell past every pre-check but begin still
+				 * declined -- kcov_enable_trace() flipped
+				 * active to false on ioctl failure, matching
+				 * the second skipped_inactive arm inside
+				 * kcov_bracket_begin(). */
+				__atomic_fetch_add(
+					&kcov_shm->childop_kcov_op_skipped_inactive[op],
+					1, __ATOMIC_RELAXED);
+			}
 		}
 
 		/* Mode-selected CMP-harvest bracket.  kcov_bracket_begin
