@@ -906,15 +906,15 @@ void account_cold_overflow_would_save(struct syscallentry *entry,
 
 	if (cold || absent) {
 		__atomic_fetch_add(
-			&shm->stats.cold_overflow_would_save,
+			&shm->stats.cold_overflow.would_save,
 			1UL, __ATOMIC_RELAXED);
 		if (cold)
 			__atomic_fetch_add(
-				&shm->stats.cold_overflow_would_save_cold,
+				&shm->stats.cold_overflow.would_save_cold,
 				1UL, __ATOMIC_RELAXED);
 		if (absent)
 			__atomic_fetch_add(
-				&shm->stats.cold_overflow_would_save_absent,
+				&shm->stats.cold_overflow.would_save_absent,
 				1UL, __ATOMIC_RELAXED);
 	}
 }
