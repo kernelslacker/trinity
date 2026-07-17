@@ -157,10 +157,10 @@ static void xattr_thrash_iter_op_set(struct xattr_slot *s, const char *name,
 	}
 
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.xattr_thrash_set,
+		__atomic_add_fetch(&shm->stats.xattr_thrash.set,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
+		__atomic_add_fetch(&shm->stats.xattr_thrash.failed,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -182,10 +182,10 @@ static void xattr_thrash_iter_op_get(struct xattr_slot *s, const char *name,
 		rc = (int) fgetxattr(s->fd, name, buf, sizeof(buf));
 
 	if (rc >= 0)
-		__atomic_add_fetch(&shm->stats.xattr_thrash_get,
+		__atomic_add_fetch(&shm->stats.xattr_thrash.get,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
+		__atomic_add_fetch(&shm->stats.xattr_thrash.failed,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -206,10 +206,10 @@ static void xattr_thrash_iter_op_remove(struct xattr_slot *s, const char *name,
 		rc = fremovexattr(s->fd, name);
 
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.xattr_thrash_remove,
+		__atomic_add_fetch(&shm->stats.xattr_thrash.remove,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
+		__atomic_add_fetch(&shm->stats.xattr_thrash.failed,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -232,10 +232,10 @@ static void xattr_thrash_iter_op_list(struct xattr_slot *s, bool use_path)
 		rc = (int) flistxattr(s->fd, buf, sizeof(buf));
 
 	if (rc >= 0)
-		__atomic_add_fetch(&shm->stats.xattr_thrash_list,
+		__atomic_add_fetch(&shm->stats.xattr_thrash.list,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.xattr_thrash_failed,
+		__atomic_add_fetch(&shm->stats.xattr_thrash.failed,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -305,7 +305,7 @@ bool xattr_thrash(struct childdata *child)
 	unsigned int iters = BUDGETED(CHILD_OP_XATTR_THRASH,
 				      JITTER_RANGE(MAX_ITERATIONS));
 
-	__atomic_add_fetch(&shm->stats.xattr_thrash_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.xattr_thrash.runs, 1, __ATOMIC_RELAXED);
 
 	opened = xattr_thrash_iter_setup_fds(slots);
 	if (opened == 0)
