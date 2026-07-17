@@ -954,7 +954,7 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	/* Attribute one fill invocation regardless of which non-OFF mode
 	 * we resolved to -- this is the gate the stat-category emitter
 	 * suppresses on when zero (render-gap-aware). */
-	__atomic_fetch_add(&shm->stats.blob_fills, 1UL, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->stats.blob.fills, 1UL, __ATOMIC_RELAXED);
 
 	/* Per-group shadow of blob_fills.  Looked up via the (nr, do32)
 	 * pair the caller passed in so the attribution stays correct
@@ -978,11 +978,11 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 		unsigned int ops = blob_havoc(buf, len, &prefix_len_ops);
 
 		if (ops > 0)
-			__atomic_fetch_add(&shm->stats.blob_havoc_ops,
+			__atomic_fetch_add(&shm->stats.blob.havoc_ops,
 					   (unsigned long) ops,
 					   __ATOMIC_RELAXED);
 		if (prefix_len_ops > 0)
-			__atomic_fetch_add(&shm->stats.blob_havoc_prefix_len_ops,
+			__atomic_fetch_add(&shm->stats.blob.havoc_prefix_len_ops,
 					   (unsigned long) prefix_len_ops,
 					   __ATOMIC_RELAXED);
 	}
@@ -995,15 +995,15 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 						    &transform_inserts);
 
 		if (inserts > 0)
-			__atomic_fetch_add(&shm->stats.blob_dict_inserts,
+			__atomic_fetch_add(&shm->stats.blob.dict_inserts,
 					   (unsigned long) inserts,
 					   __ATOMIC_RELAXED);
 		if (static_inserts > 0)
-			__atomic_fetch_add(&shm->stats.blob_static_magic_inserts,
+			__atomic_fetch_add(&shm->stats.blob.static_magic_inserts,
 					   (unsigned long) static_inserts,
 					   __ATOMIC_RELAXED);
 		if (transform_inserts > 0)
-			__atomic_fetch_add(&shm->stats.blob_dict_transform_inserts,
+			__atomic_fetch_add(&shm->stats.blob.dict_transform_inserts,
 					   (unsigned long) transform_inserts,
 					   __ATOMIC_RELAXED);
 	}

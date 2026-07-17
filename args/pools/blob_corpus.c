@@ -120,10 +120,10 @@ bool blob_corpus_try_get_base(unsigned int nr, bool do32,
 	unlock(&blob_corpus_shm->lock);
 
 	if (hit)
-		__atomic_fetch_add(&shm->stats.blob_base_from_corpus, 1UL,
+		__atomic_fetch_add(&shm->stats.blob.base_from_corpus, 1UL,
 				   __ATOMIC_RELAXED);
 	else
-		__atomic_fetch_add(&shm->stats.blob_base_from_random, 1UL,
+		__atomic_fetch_add(&shm->stats.blob.base_from_random, 1UL,
 				   __ATOMIC_RELAXED);
 	return hit;
 }
