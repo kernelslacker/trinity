@@ -58,11 +58,11 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 						 __ATOMIC_RELAXED);
 		snap->cmp_unique = __atomic_load_n(
 			&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
-		/* total_calls / remote_calls now drained from per-child
-		 * stats_ring into parent_stats; kcov_shm->total_calls is
-		 * reserved for the last_edge_at[] / last_efault_at[]
+		/* total_calls / remote_calls are read from parent_stats
+		 * (drained from per-child stats_ring); kcov_shm->total_calls
+		 * is reserved for the last_edge_at[] / last_efault_at[]
 		 * stamp source and the cold-skip gap denominator only,
-		 * kcov_shm->remote_calls is no longer bumped.  See
+		 * kcov_shm->remote_calls is not bumped here.  See
 		 * stats_ring.h. */
 		snap->remote_calls = parent_stats.remote_calls;
 		snap->total_calls = parent_stats.total_calls;
@@ -592,8 +592,7 @@ void plateau_anti_prior_refresh_baseline(void)
 
 	/* Pre-compute the per-syscall acceptance weights so the hot-path
 	 * picker only does one load + modulo + compare per candidate.  The
-	 * formula mirrors what plateau_anti_prior_accept used to do per
-	 * call, exactly:
+	 * acceptance weight for each syscall slot is:
 	 *
 	 *   floor   = max(1, baseline / MAX_BOOST)
 	 *   ceil    = baseline * MAX_BOOST
@@ -601,19 +600,17 @@ void plateau_anti_prior_refresh_baseline(void)
 	 *   weight  = min((MAX_BOOST * baseline) / clamped,
 	 *                 ANTI_PRIOR_THRESHOLD_SCALE)
 	 *
-	 * For the same baseline and the same per-syscall calls reading,
-	 * the resulting weight is bit-identical to what the per-call path
-	 * computed.  The only behavioural delta is that calls[nr] is
-	 * snapshotted here at rotation time rather than re-read on every
-	 * candidate; an intervention window is short relative to the rate
-	 * any single syscall's lifetime count can shift, and the
-	 * statistical bias the gate imposes is keyed off the baseline-
-	 * relative ratio, not the absolute call count.  The per-slot
-	 * reads themselves are also taken from calls_snapshot[] (filled
-	 * in pass 1 above), so each slot's published weight is derived
-	 * from the exact same observation that fed into the baseline -
-	 * a concurrent mid-rotation increment can no longer skew one
-	 * pass relative to the other.
+	 * calls[nr] is snapshotted here at rotation time rather than
+	 * re-read on every candidate; an intervention window is short
+	 * relative to the rate any single syscall's lifetime count can
+	 * shift, and the statistical bias the gate imposes is keyed off
+	 * the baseline-relative ratio, not the absolute call count.  The
+	 * per-slot reads themselves are taken from calls_snapshot[]
+	 * (filled in pass 1 above), so each slot's published weight is
+	 * derived from the exact same observation that fed into the
+	 * baseline - both passes see the same numbers and a concurrent
+	 * mid-rotation increment can't skew one pass relative to the
+	 * other.
 	 *
 	 * weight is bounded by ANTI_PRIOR_THRESHOLD_SCALE (= 64 today, =
 	 * MAX_BOOST^2) and never zero, so the uint8_t slot is sufficient.
