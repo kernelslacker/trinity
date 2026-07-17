@@ -1,15 +1,15 @@
 /*
- * nftables-churn-exprs-conn.c
+ * exprs-conn.c
  *
  * The connection / routing / xfrm / socket expression builders: ct,
  * fib, rt, xfrm, socket.
  *
- * Carved out of nftables-churn-exprs.c so the per-family builders
- * compile in parallel; see nftables-churn-internal.h for the
+ * Carved out of exprs.c so the per-family builders
+ * compile in parallel; see internal.h for the
  * cross-TU symbol boundary.
  */
 
-#include "nftables-churn-internal.h"
+#include "internal.h"
 
 /*
  * Structurally-valid nft_ct expression element.  Net layout:

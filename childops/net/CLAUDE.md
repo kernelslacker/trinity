@@ -3,7 +3,7 @@
 The largest childops cluster: scripted stress workloads for socket families and networking subsystems. 49 per-protocol workloads at the top level, plus four control-plane sub-clusters. Dispatched by symbol via `op_dispatch[]` in `child/child-altop.c` — registration is by extern symbol, no path coupling.
 
 ## Sub-directories
-- [netfilter/](netfilter/CLAUDE.md) (10) — nftables expr families, conntrack, flowtable, nfnetlink util.
+- [netfilter/](netfilter/CLAUDE.md) (17) — nftables expr families, conntrack, flowtable, nfnetlink util.
 - [netlink/](netlink/CLAUDE.md) (9) — genl/rtnetlink control-plane fuzzers + helpers.
 - [xfrm/](xfrm/CLAUDE.md) (4) — IPsec/xfrm SA/policy, PF_KEY, NAT-T.
 - [tc/](tc/CLAUDE.md) (3) — traffic-control qdisc/mirred (`tc-` prefix dropped).

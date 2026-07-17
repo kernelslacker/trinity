@@ -3,7 +3,7 @@
  * declared in include/childops-nfnl.h.
  *
  * Behavioural choices preserved from the per-file copies this file
- * replaces (nftables-churn.c, flowtable-encap-vlan.c,
+ * replaces (nftables/churn.c, flowtable-encap-vlan.c,
  * bridge-conntrack-churn.c):
  *
  *   - The socket is a NETLINK_NETFILTER SOCK_RAW | SOCK_CLOEXEC opened
