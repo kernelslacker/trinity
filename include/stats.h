@@ -21,6 +21,7 @@
 #include "kernel/mount.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/blob.h"
+#include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/signal_storm.h"
 /*
@@ -1041,11 +1042,9 @@ struct stats_s {
 	/* futex_storm childop counters.  See stats/subsys/futex_storm.h. */
 	struct futex_storm_stats futex_storm __attribute__((aligned(64)));
 
-	/* futex_pi_requeue_rollback childop counters */
-	unsigned long futex_pi_requeue_rollback_runs;		/* total invocations */
-	unsigned long futex_pi_requeue_rollback_setup_failed;	/* handshake / spawn shortfall */
-	unsigned long futex_pi_requeue_rollback_requeue_ok;	/* CMP_REQUEUE_PI returned >= 0 */
-	unsigned long futex_pi_requeue_rollback_requeue_failed;	/* CMP_REQUEUE_PI returned < 0 */
+	/* futex_pi_requeue_rollback childop counters.
+	 * See stats/subsys/futex_pi_requeue_rollback.h. */
+	struct futex_pi_requeue_rollback_stats futex_pi_requeue_rollback __attribute__((aligned(64)));
 
 	/* pipe_thrash childop counters */
 	unsigned long pipe_thrash_runs;		/* total pipe_thrash invocations */
