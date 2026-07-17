@@ -210,9 +210,9 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	 * the forced window into bandit_pulls[] / bandit_reward_calls[] /
 	 * the recent_*_x1000 EMA contaminates the learner so the bandit
 	 * can't tell policy-chosen RANDOM windows from forced RANDOM
-	 * windows once the plateau clears.  The caller-side guard that
-	 * used to gate this call moved in here so the by-reason bucketing
-	 * above stays unconditional. */
+	 * windows once the plateau clears.  The SR_PLATEAU_FORCE guard
+	 * lives here, after the by-reason bucketing, keeping bucketing
+	 * unconditional regardless of plateau state. */
 	if (reason == SR_PLATEAU_FORCE)
 		return;
 
@@ -424,11 +424,9 @@ static unsigned long bandit_total_picks(int arm)
  * Round-robin mode bypasses the bandit entirely and just steps to
  * the next arm — same behaviour as Phase 1.
  *
- * Plateau-driven interventions used to live inside this function as
- * an early-return override; they now sit one level up in
- * select_next_strategy() so forced-intervention windows can be kept
- * out of the UCB learner's pull/reward history.  This picker is pure
- * policy — no intervention awareness.
+ * Plateau interventions live in select_next_strategy(); this picker
+ * is pure policy (keeps forced-intervention windows out of the UCB
+ * learner's pull/reward history).
  */
 int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 {
