@@ -54,6 +54,7 @@
 #include "stats/subsys/uffd.h"
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/vdso_race.h"
+#include "stats/subsys/wgdf.h"
 #include "stats/subsys/xattr_thrash.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
@@ -2080,11 +2081,8 @@ struct stats_s {
 	/* ip6gre_bond_lapb_stack accounting.  See stats/subsys/ip6gre_lapb.h. */
 	struct ip6gre_lapb_stats ip6gre_lapb __attribute__((aligned(64)));
 
-	/* wireguard_decrypt_flood childop counters */
-	unsigned long wgdf_runs;				/* total wireguard_decrypt_flood invocations */
-	unsigned long wgdf_setup_failed;			/* setup couldn't complete (transient: bind race etc.) */
-	unsigned long wgdf_packets_sent;			/* MESSAGE_DATA frames pushed at wg0 listen port */
-	unsigned long wgdf_unsupported_latched;			/* WIREGUARD module / family absent — op latched off */
+	/* wireguard_decrypt_flood accounting.  See stats/subsys/wgdf.h. */
+	struct wgdf_stats wgdf __attribute__((aligned(64)));
 
 	/* blkdev_lifecycle_race childop counters */
 	unsigned long blkdev_lifecycle_runs;			/* total blkdev_lifecycle_race invocations */
