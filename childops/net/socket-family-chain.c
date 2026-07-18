@@ -80,14 +80,14 @@ bool socket_family_chain(struct childdata *child)
 	unsigned int gram_err_burst = 0;
 	bool any_completed = false;
 
-	__atomic_add_fetch(&shm->stats.socket_family_chain_runs, 1,
+	__atomic_add_fetch(&shm->stats.socket_family_chain.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	sfg = sfg_pick_random_active();
 	if (sfg == NULL) {
 		/* Empty registry or every entry latched off.  Nothing to
 		 * drive -- book as a failed invocation. */
-		__atomic_add_fetch(&shm->stats.socket_family_chain_failed, 1,
+		__atomic_add_fetch(&shm->stats.socket_family_chain.failed, 1,
 				   __ATOMIC_RELAXED);
 		return true;
 	}
@@ -114,10 +114,10 @@ bool socket_family_chain(struct childdata *child)
 	}
 
 	if (any_completed)
-		__atomic_add_fetch(&shm->stats.socket_family_chain_completed,
+		__atomic_add_fetch(&shm->stats.socket_family_chain.completed,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.socket_family_chain_failed, 1,
+		__atomic_add_fetch(&shm->stats.socket_family_chain.failed, 1,
 				   __ATOMIC_RELAXED);
 
 	return true;
