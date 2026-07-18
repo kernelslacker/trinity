@@ -601,7 +601,7 @@ static int nfct_helper_iter_pick(struct nfct_helper_iter_ctx *ictx)
 {
 	ictx->helper_idx = pick_helper();
 	if (ictx->helper_idx < 0) {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_no_helper,
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.no_helper,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -635,10 +635,10 @@ static void nfct_helper_iter_attach(struct nfct_helper_iter_ctx *ictx)
 			  ictx->sport, ictx->dport, ictx->helper_name, 0);
 	update_helper_mask(ictx->helper_idx, rc);
 	if (rc == 0 || rc == -EEXIST) {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_attach_ok,
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.attach_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_attach_fail,
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.attach_fail,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -659,7 +659,7 @@ static void nfct_helper_iter_expect(struct nfct_helper_iter_ctx *ictx)
 			   ictx->child_sport, ictx->child_dport,
 			   ictx->helper_name);
 	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_exp_ok,
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.exp_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -677,7 +677,7 @@ static void nfct_helper_iter_drive(struct nfct_helper_iter_ctx *ictx)
 	drive_fd = loopback_drive(ictx->l4proto, ictx->dport,
 				  0xc0de0000U | (__u32)ictx->zone);
 	if (drive_fd >= 0) {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_packet_sent,
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.packet_sent,
 				   1, __ATOMIC_RELAXED);
 		close(drive_fd);
 	}
@@ -710,7 +710,7 @@ static void nfct_helper_iter_race(struct nfct_helper_iter_ctx *ictx)
 		rc = build_ct_delete(ictx->ctx, ictx->zone, ictx->l4proto,
 				     ictx->sport, ictx->dport);
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_delete_ok,
+			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.delete_ok,
 					   1, __ATOMIC_RELAXED);
 
 		/* b) Zone-swap drive: re-send into a different zone via
@@ -720,7 +720,7 @@ static void nfct_helper_iter_race(struct nfct_helper_iter_ctx *ictx)
 		drive_fd = loopback_drive(ictx->l4proto, ictx->dport,
 					  0xc0de0000U | (__u32)ictx->alt_zone);
 		if (drive_fd >= 0) {
-			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_zone_swap,
+			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.zone_swap,
 					   1, __ATOMIC_RELAXED);
 			close(drive_fd);
 		}
@@ -732,7 +732,7 @@ static void nfct_helper_iter_race(struct nfct_helper_iter_ctx *ictx)
 				  ictx->sport, ictx->dport,
 				  NULL, NLM_F_REPLACE);
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_detach_ok,
+			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.detach_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -773,17 +773,17 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_runs,
+	__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_nf_conntrack_helper) {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
 	if (nfnl_open(&nfnl, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -795,7 +795,7 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 				__atomic_store_n(&shm->stats.childop_latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_setup_failed,
+			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			nfnl_close(&nfnl);
 			return true;
@@ -827,9 +827,9 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 bool nf_conntrack_helper_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_runs,
+	__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn_setup_failed,
+	__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
