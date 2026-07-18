@@ -197,20 +197,6 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 					   __ATOMIC_RELAXED);
 	}
 
-	/*
-	 * SHADOW counterfactual-attribution capture site.  Fires ONLY on
-	 * the outcome_win arm -- the exact "hint consumed AND new PC edge"
-	 * precondition the design spec keys off -- and before the per-
-	 * child stash is reset at the tail of this function, so the hook
-	 * sees the same n entries the credit drain is about to walk.  The
-	 * OFF-mode short-circuit inside cmp_hints_cfactual_capture keeps
-	 * the default build byte-for-byte identical to a pre-row build
-	 * under a fixed-seed --dry-run.  Live pool selection is unchanged
-	 * either way -- see cmp_hint_cfactual_win in include/kcov.h.
-	 */
-	if (outcome_win)
-		cmp_hints_cfactual_capture(child);
-
 	for (i = 0; i < n; i++) {
 		const struct cmp_hint_consumed_entry *e =
 			&child->cmp_hints_consumed_stash[i];
