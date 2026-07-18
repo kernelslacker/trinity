@@ -182,7 +182,7 @@ static void pci_bind_probe(struct childdata *child)
 		found++;
 	}
 
-	__atomic_store_n(&shm->stats.pci_bind_drivers_available,
+	__atomic_store_n(&shm->stats.pci_bind.drivers_available,
 			 found, __ATOMIC_RELAXED);
 
 	if (pci_bind_avail_mask == 0U) {
@@ -319,7 +319,7 @@ bool pci_bind(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.pci_bind_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.pci_bind.runs, 1, __ATOMIC_RELAXED);
 
 	if (!pci_bind_probed)
 		pci_bind_probe(child);
@@ -331,7 +331,7 @@ bool pci_bind(struct childdata *child)
 
 	n_devs = pci_bind_collect_devs(drv, devs);
 	if (n_devs == 0U) {
-		__atomic_add_fetch(&shm->stats.pci_bind_no_devices, 1,
+		__atomic_add_fetch(&shm->stats.pci_bind.no_devices, 1,
 				   __ATOMIC_RELAXED);
 		return true;
 	}
@@ -351,23 +351,23 @@ bool pci_bind(struct childdata *child)
 	ran_bind  = pci_bind_write_bdf(drv, "bind",   bdf, &err_bind);
 
 	if (ran_unbind && err_unbind == 0)
-		__atomic_add_fetch(&shm->stats.pci_bind_unbind_ok, 1,
+		__atomic_add_fetch(&shm->stats.pci_bind.unbind_ok, 1,
 				   __ATOMIC_RELAXED);
 	else if (ran_unbind)
-		__atomic_add_fetch(&shm->stats.pci_bind_unbind_enodev, 1,
+		__atomic_add_fetch(&shm->stats.pci_bind.unbind_enodev, 1,
 				   __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.pci_bind_unbind_failed, 1,
+		__atomic_add_fetch(&shm->stats.pci_bind.unbind_failed, 1,
 				   __ATOMIC_RELAXED);
 
 	if (ran_bind && err_bind == 0)
-		__atomic_add_fetch(&shm->stats.pci_bind_bind_ok, 1,
+		__atomic_add_fetch(&shm->stats.pci_bind.bind_ok, 1,
 				   __ATOMIC_RELAXED);
 	else if (ran_bind)
-		__atomic_add_fetch(&shm->stats.pci_bind_bind_enodev, 1,
+		__atomic_add_fetch(&shm->stats.pci_bind.bind_enodev, 1,
 				   __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.pci_bind_bind_failed, 1,
+		__atomic_add_fetch(&shm->stats.pci_bind.bind_failed, 1,
 				   __ATOMIC_RELAXED);
 
 	return true;
