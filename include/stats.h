@@ -41,6 +41,7 @@
 #include "stats/subsys/espintcp_coalesce.h"
 #include "stats/subsys/fd_runtime_skipped.h"
 #include "stats/subsys/flock_thrash.h"
+#include "stats/subsys/flowtable_vlan.h"
 #include "stats/subsys/fork_storm.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
@@ -2050,14 +2051,8 @@ struct stats_s {
 	unsigned long ipvs_sysctl_writer_unsupported_latched;	/* unshare/open ENOENT latched op off */
 	unsigned long ipvs_sysctl_writer_burn_iters;		/* short-lived TCP connect/close iters into the in-test virtual service */
 
-	/* flowtable_encap_vlan childop counters */
-	unsigned long flowtable_vlan_runs;			/* total flowtable_encap_vlan invocations */
-	unsigned long flowtable_vlan_setup_ok;			/* table+flowtable+chain+rule install all accepted */
-	unsigned long flowtable_vlan_setup_failed;		/* nl_open / veth / vlan / table / chain / rule rejected */
-	unsigned long flowtable_vlan_offloaded_pkts;		/* UDP send through forward chain returned >0 (offload-eligible) */
-	unsigned long flowtable_vlan_gso_sends;			/* TCP_NODELAY=0 + 64KB write returned >0 (GSO re-checksum path) */
-	unsigned long flowtable_vlan_vlan_teardown_races;	/* RTM_DELLINK on vlan child mid-burst returned 0 */
-	unsigned long flowtable_vlan_unsupported_latched;	/* NFT_MSG_NEWFLOWTABLE EOPNOTSUPP latched op off */
+	/* flowtable_vlan accounting.  See stats/subsys/flowtable_vlan.h. */
+	struct flowtable_vlan_stats flowtable_vlan __attribute__((aligned(64)));
 
 	/* slab_cache_thrash childop: per-target burst invocation count,
 	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept

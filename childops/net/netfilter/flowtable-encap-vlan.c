@@ -513,7 +513,7 @@ static int flowtable_vlan_iter_setup(struct nl_ctx *rtnl,
 	snprintf(c->ft,   sizeof(c->ft),   "ft%u",  rng);
 
 	if (build_veth_pair(rtnl, c->vp_a, c->vp_b) != 0) {
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+		__atomic_add_fetch(&shm->stats.flowtable_vlan.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -570,7 +570,7 @@ static int flowtable_vlan_iter_install(struct nfnl_ctx *nf,
 	int rc;
 
 	if (build_nft_table(nf, c->tab) != 0) {
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+		__atomic_add_fetch(&shm->stats.flowtable_vlan.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -581,7 +581,7 @@ static int flowtable_vlan_iter_install(struct nfnl_ctx *nf,
 		if (rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT ||
 		    rc == -EPROTONOSUPPORT)
 			ns_unsupported_flowtable_vlan = true;
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+		__atomic_add_fetch(&shm->stats.flowtable_vlan.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -594,7 +594,7 @@ static int flowtable_vlan_iter_install(struct nfnl_ctx *nf,
 	if (build_nft_rule_flow_offload(nf, c->tab, c->chain, c->ft) != 0)
 		return -1;
 
-	__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_ok, 1,
+	__atomic_add_fetch(&shm->stats.flowtable_vlan.setup_ok, 1,
 			   __ATOMIC_RELAXED);
 	return 0;
 }
@@ -639,7 +639,7 @@ static void flowtable_vlan_iter_churn(const struct flowtable_vlan_iter_ctx *c)
 				   sizeof(dst_b));
 			if (n > 0)
 				__atomic_add_fetch(
-					&shm->stats.flowtable_vlan_offloaded_pkts,
+					&shm->stats.flowtable_vlan.offloaded_pkts,
 					1, __ATOMIC_RELAXED);
 		}
 		close(udp_fd);
@@ -677,7 +677,7 @@ static void flowtable_vlan_iter_churn(const struct flowtable_vlan_iter_ctx *c)
 			 MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (n > 0)
 			__atomic_add_fetch(
-				&shm->stats.flowtable_vlan_gso_sends,
+				&shm->stats.flowtable_vlan.gso_sends,
 				1, __ATOMIC_RELAXED);
 		close(gso_fd);
 	}
@@ -698,7 +698,7 @@ static void flowtable_vlan_iter_churn(const struct flowtable_vlan_iter_ctx *c)
 			   sizeof(dst_b));
 		if (n > 0)
 			__atomic_add_fetch(
-				&shm->stats.flowtable_vlan_offloaded_pkts,
+				&shm->stats.flowtable_vlan.offloaded_pkts,
 				1, __ATOMIC_RELAXED);
 		close(udp_fd);
 	}
@@ -716,7 +716,7 @@ static void flowtable_vlan_iter_race(unsigned int iter_idx,
 {
 	if ((iter_idx & 1U) && c->vla_added && c->vla_idx > 0) {
 		if (rtnl_dellink(rtnl, c->vla_idx) == 0) {
-			__atomic_add_fetch(&shm->stats.flowtable_vlan_vlan_teardown_races,
+			__atomic_add_fetch(&shm->stats.flowtable_vlan.vlan_teardown_races,
 					   1, __ATOMIC_RELAXED);
 			c->vla_added = false;
 		}
@@ -779,7 +779,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 
 	if (nl_open(&rtnl, &rtnl_opts) < 0 ||
 	    nfnl_open(&nf, &nf_opts) < 0) {
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+		__atomic_add_fetch(&shm->stats.flowtable_vlan.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -884,11 +884,11 @@ bool flowtable_encap_vlan(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.flowtable_vlan_runs, 1,
+	__atomic_add_fetch(&shm->stats.flowtable_vlan.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_flowtable_vlan) {
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_unsupported_latched,
+		__atomic_add_fetch(&shm->stats.flowtable_vlan.unsupported_latched,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -900,7 +900,7 @@ bool flowtable_encap_vlan(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+		__atomic_add_fetch(&shm->stats.flowtable_vlan.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -908,7 +908,7 @@ bool flowtable_encap_vlan(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+		__atomic_add_fetch(&shm->stats.flowtable_vlan.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -928,9 +928,9 @@ bool flowtable_encap_vlan(struct childdata *child)
 {
 	(void)child;
 
-	__atomic_add_fetch(&shm->stats.flowtable_vlan_runs, 1,
+	__atomic_add_fetch(&shm->stats.flowtable_vlan.runs, 1,
 			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed, 1,
+	__atomic_add_fetch(&shm->stats.flowtable_vlan.setup_failed, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
