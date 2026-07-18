@@ -92,6 +92,7 @@
 #include "stats/subsys/ublk_lifecycle.h"
 #include "stats/subsys/uffd.h"
 #include "stats/subsys/uid_change.h"
+#include "stats/subsys/umount_race.h"
 #include "stats/subsys/vdso_race.h"
 #include "stats/subsys/vlan_filter_churn.h"
 #include "stats/subsys/wgdf.h"
@@ -1106,13 +1107,8 @@ struct stats_s {
 	/* mount_churn childop counters.  See stats/subsys/mount_churn.h. */
 	struct mount_churn_stats mount_churn __attribute__((aligned(64)));
 
-	/* umount_race childop counters */
-	unsigned long umount_race_runs;		/* total umount_race invocations */
-	unsigned long umount_race_picks;	/* cycles with an eligible pool entry */
-	unsigned long umount_race_forks;	/* accessor helpers successfully forked */
-	unsigned long umount_race_umounts;	/* umount2() returned 0 */
-	unsigned long umount_race_umount_failed;/* umount2() returned -1 (incl. expected EPERM) */
-	unsigned long umount_race_setup_failed;	/* fork() returned -1 */
+	/* umount_race accounting.  See stats/subsys/umount_race.h. */
+	struct umount_race_stats umount_race __attribute__((aligned(64)));
 
 	/* fork_storm childop counters.  See stats/subsys/fork_storm.h. */
 	struct fork_storm_stats fork_storm __attribute__((aligned(64)));
