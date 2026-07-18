@@ -373,7 +373,7 @@ static int build_carrier_userns(void)
 
 	if (pipe2(ready_pipe, O_CLOEXEC) < 0) {
 		__atomic_add_fetch(
-			&shm->stats.statmount_idmap_carrier_fail,
+			&shm->stats.statmount_idmap.carrier_fail,
 			1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -383,7 +383,7 @@ static int build_carrier_userns(void)
 		close(ready_pipe[0]);
 		close(ready_pipe[1]);
 		__atomic_add_fetch(
-			&shm->stats.statmount_idmap_fork_failed,
+			&shm->stats.statmount_idmap.fork_failed,
 			1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -431,7 +431,7 @@ static int build_carrier_userns(void)
 	(void)kill(pid, SIGTERM);
 	(void)waitpid_eintr(pid, &status, 0);
 	__atomic_add_fetch(
-		&shm->stats.statmount_idmap_carrier_ok,
+		&shm->stats.statmount_idmap.carrier_ok,
 		1, __ATOMIC_RELAXED);
 	return ns_fd;
 
@@ -441,7 +441,7 @@ fail:
 	(void)kill(pid, SIGKILL);
 	(void)waitpid_eintr(pid, &status, 0);
 	__atomic_add_fetch(
-		&shm->stats.statmount_idmap_carrier_fail,
+		&shm->stats.statmount_idmap.carrier_fail,
 		1, __ATOMIC_RELAXED);
 	return -1;
 }
@@ -518,18 +518,18 @@ static void issue_one_statmount(int mnt_fd, void *buf,
 		    STATMOUNT_MNT_GIDMAP | STATMOUNT_SUPPORTED_MASK;
 
 	__atomic_add_fetch(
-		&shm->stats.statmount_idmap_statmount_call,
+		&shm->stats.statmount_idmap.statmount_call,
 		1, __ATOMIC_RELAXED);
 
 	rc = sys_statmount(&req, (struct statmount *)buf, bufsize,
 			   STATMOUNT_BY_FD);
 	if (rc == 0) {
 		__atomic_add_fetch(
-			&shm->stats.statmount_idmap_statmount_ok,
+			&shm->stats.statmount_idmap.statmount_ok,
 			1, __ATOMIC_RELAXED);
 	} else if (errno == EOVERFLOW) {
 		__atomic_add_fetch(
-			&shm->stats.statmount_idmap_statmount_overflow,
+			&shm->stats.statmount_idmap.statmount_overflow,
 			1, __ATOMIC_RELAXED);
 	}
 }
@@ -549,7 +549,7 @@ static void iter_one(int op_type, void *scratch_buf, unsigned long scratch_cap)
 	const bool valid_op = ((int) op_type >= 0 &&
 			       op_type < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.statmount_idmap_iter,
+	__atomic_add_fetch(&shm->stats.statmount_idmap.iter,
 			   1, __ATOMIC_RELAXED);
 
 	userns_fd = build_carrier_userns();
@@ -564,13 +564,13 @@ static void iter_one(int op_type, void *scratch_buf, unsigned long scratch_cap)
 
 	if (install_idmap(mnt_fd, userns_fd) < 0) {
 		__atomic_add_fetch(
-			&shm->stats.statmount_idmap_setattr_fail,
+			&shm->stats.statmount_idmap.setattr_fail,
 			1, __ATOMIC_RELAXED);
 		close(mnt_fd);
 		close(userns_fd);
 		return;
 	}
-	__atomic_add_fetch(&shm->stats.statmount_idmap_setattr_ok,
+	__atomic_add_fetch(&shm->stats.statmount_idmap.setattr_ok,
 			   1, __ATOMIC_RELAXED);
 
 	/* Per-iter setup gate passed: carrier built, detached tmpfs built,
@@ -659,7 +659,7 @@ bool statmount_idmap_overflow(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.statmount_idmap_runs,
+	__atomic_add_fetch(&shm->stats.statmount_idmap.runs,
 			   1, __ATOMIC_RELAXED);
 
 #ifndef HAVE_STATMOUNT_IDMAP_SYSCALLS
@@ -668,7 +668,7 @@ bool statmount_idmap_overflow(struct childdata *child)
 		__atomic_store_n(&shm->stats.childop_latch_reason[op],
 				 CHILDOP_LATCH_UNSUPPORTED,
 				 __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.statmount_idmap_setup_failed,
+	__atomic_add_fetch(&shm->stats.statmount_idmap.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 #else
@@ -682,7 +682,7 @@ bool statmount_idmap_overflow(struct childdata *child)
 	if (statmount_idmap_unsupported ||
 	    ns_unshare_failed_statmount_idmap) {
 		__atomic_add_fetch(
-			&shm->stats.statmount_idmap_setup_failed,
+			&shm->stats.statmount_idmap.setup_failed,
 			1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -696,7 +696,7 @@ bool statmount_idmap_overflow(struct childdata *child)
 					CHILDOP_LATCH_UNSUPPORTED,
 					__ATOMIC_RELAXED);
 			__atomic_add_fetch(
-				&shm->stats.statmount_idmap_setup_failed,
+				&shm->stats.statmount_idmap.setup_failed,
 				1, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -705,7 +705,7 @@ bool statmount_idmap_overflow(struct childdata *child)
 	scratch_buf = malloc(scratch_cap);
 	if (scratch_buf == NULL) {
 		__atomic_add_fetch(
-			&shm->stats.statmount_idmap_setup_failed,
+			&shm->stats.statmount_idmap.setup_failed,
 			1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -733,7 +733,7 @@ bool statmount_idmap_overflow(struct childdata *child)
 				CHILDOP_LATCH_NS_UNSUPPORTED,
 				__ATOMIC_RELAXED);
 		__atomic_add_fetch(
-			&shm->stats.statmount_idmap_setup_failed,
+			&shm->stats.statmount_idmap.setup_failed,
 			1, __ATOMIC_RELAXED);
 	} else if (rc < 0) {
 		/* Transient grandchild setup failure (fork, id-map
@@ -741,7 +741,7 @@ bool statmount_idmap_overflow(struct childdata *child)
 		 * invocation without latching -- the failure is not
 		 * policy and may not recur on the next call. */
 		__atomic_add_fetch(
-			&shm->stats.statmount_idmap_setup_failed,
+			&shm->stats.statmount_idmap.setup_failed,
 			1, __ATOMIC_RELAXED);
 	}
 
