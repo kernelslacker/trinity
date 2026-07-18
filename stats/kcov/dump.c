@@ -1345,53 +1345,6 @@ static void dump_stats_render_kcov_shadow_measurements(void)
 		stat_row("kcov_coverage", "cmp_hyp_bitmask_andnot_toggle_would_win_per_mille", ratio_milli);
 	}
 
-	/*
-	 * SHADOW counterfactual-attribution census.  Three shm scalars
-	 * bumped from cmp_hints_cfactual_capture() under
-	 * --cmp-cfactual=shadow; the OFF default short-circuits before
-	 * the first shm access so all three read zero on a default build.
-	 * The intended go/no-go metric is the causal conversion rate
-	 *     cfactual_win / (cfactual_win + cfactual_coincidence)
-	 * over the run; the flaky lane sits OUTSIDE the ratio (dropped,
-	 * not counted) per the spec's "absent in both is replay-flaky,
-	 * never a win" rule.  See the header comment on
-	 * cmp_hint_cfactual_win in include/kcov.h for the full contract
-	 * and the follow-up control-replay harness scope; until that
-	 * lands every candidate today routes to cfactual_flaky so the
-	 * ratio's numerator + denominator stay zero and the render
-	 * emits only the flaky row.
-	 */
-	{
-		unsigned long kc_cmp_hint_cfactual_win =
-			__atomic_load_n(&kcov_shm->cmp_hint_cfactual_win,
-					__ATOMIC_RELAXED);
-		unsigned long kc_cmp_hint_cfactual_coincidence =
-			__atomic_load_n(&kcov_shm->cmp_hint_cfactual_coincidence,
-					__ATOMIC_RELAXED);
-		unsigned long kc_cmp_hint_cfactual_flaky =
-			__atomic_load_n(&kcov_shm->cmp_hint_cfactual_flaky,
-					__ATOMIC_RELAXED);
-		unsigned long denom = kc_cmp_hint_cfactual_win +
-				      kc_cmp_hint_cfactual_coincidence;
-
-		if (kc_cmp_hint_cfactual_win > 0)
-			stat_row("kcov_coverage", "cmp_hint_cfactual_win",
-				 kc_cmp_hint_cfactual_win);
-		if (kc_cmp_hint_cfactual_coincidence > 0)
-			stat_row("kcov_coverage", "cmp_hint_cfactual_coincidence",
-				 kc_cmp_hint_cfactual_coincidence);
-		if (kc_cmp_hint_cfactual_flaky > 0)
-			stat_row("kcov_coverage", "cmp_hint_cfactual_flaky",
-				 kc_cmp_hint_cfactual_flaky);
-		if (denom > 0) {
-			unsigned long ratio_milli =
-				(kc_cmp_hint_cfactual_win * 1000UL) / denom;
-			stat_row("kcov_coverage",
-				 "cmp_hint_cfactual_win_per_mille_causal",
-				 ratio_milli);
-		}
-	}
-
 	/* Walk the shadow-arm promotion registry after the counter
 	 * rows have been rendered.  Measure-only: for each registered
 	 * arm whose baseline / would-win pair meets the promotion

@@ -1274,45 +1274,6 @@ void cmp_hints_feedback_credit_cmp_novelty(void);
 void cmp_hints_feedback_credit_transition(void);
 void cmp_hints_feedback_credit_corpus_save(void);
 
-/*
- * SHADOW counterfactual-attribution rollout mode.  Default OFF is byte-
- * for-byte identical to a build before the row landed: every hook site
- * short-circuits before touching the candidate-capture / control-replay
- * path, no per-child state advances, no counter bumps, no RNG draws.
- * A fixed-seed --dry-run under OFF produces the same syscall + selection
- * stream as a pre-row build.
- *
- *   OFF          - default; cfactual hook is inert.
- *   SHADOW       - candidate capture fires at the credit-drain site when
- *                  a PC-mode dispatch consumed >=1 cmp-hints AND produced
- *                  new PC edges.  Each captured candidate is a
- *                  {S, args, slot, v, width, cmp_ip} tuple stashed
- *                  alongside the reexec-pending infra; the control-replay
- *                  harness (re-run S with the hint slot pinned to a
- *                  control value that fails the compare at cmp_ip) and
- *                  the three cfactual outcome counters
- *                  (cmp_hint_cfactual_win / _coincidence / _flaky)
- *                  measure whether the injected hint value caused the
- *                  observed PC-edge lift or the edge would have appeared
- *                  regardless.  Live pool selection stays byte-identical:
- *                  no injection path consults cfactual state, no cfactual
- *                  outcome routes back into the per-entry wins/misses the
- *                  live pick would weigh by.  The shared arg-perturb /
- *                  cmp-hint control-replay harness (256·A tie-in) is a
- *                  follow-up unit; this scaffold lands the mode gate,
- *                  candidate-capture site, and counter shells so
- *                  observability plumbing settles before the harness
- *                  side lands.
- *
- * Param-settable from --cmp-cfactual=off|shadow.
- */
-enum cmp_cfactual_mode {
-	CMP_CFACTUAL_MODE_OFF = 0,
-	CMP_CFACTUAL_MODE_SHADOW = 1,
-};
-
-extern enum cmp_cfactual_mode cmp_cfactual_mode;
-
 struct childdata;
 
 /* Advance the chaos-mode window counter.  Called once per bandit window

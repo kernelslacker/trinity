@@ -78,18 +78,6 @@ enum cmp_shared_tier_mode cmp_shared_tier_mode =
 	CMP_SHARED_TIER_MODE_OFF;
 
 /*
- * Rollout mode for the SHADOW counterfactual-attribution scaffold.
- * Default OFF is bit-for-bit identical to a build before the row landed:
- * cmp_hints_cfactual_capture() short-circuits at the first line so no
- * per-child state advances, no shm counter bumps, no RNG is consumed,
- * and no extra syscall runs.  See the enum cmp_cfactual_mode comment
- * in include/cmp_hints.h for the SHADOW contract and the follow-up
- * control-replay harness scope.  Param-settable via
- * --cmp-cfactual=off|shadow.
- */
-enum cmp_cfactual_mode cmp_cfactual_mode = CMP_CFACTUAL_MODE_OFF;
-
-/*
  * Per-syscall CMP-collection strip flags.  When cmp_hints_strip[do32][nr]
  * is true, cmp_hints_collect() returns immediately after the nr range
  * check, bypassing the bloom + pool_add_locked path entirely for that
