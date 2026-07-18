@@ -19,3 +19,6 @@ void stat_category_emit_json(const struct stat_category *cat);
 
 /* stats/json/syscalls.c */
 void json_emit_syscalls_array(void);
+
+/* stats/json/kcov.c */
+void json_emit_kcov_section(void);
