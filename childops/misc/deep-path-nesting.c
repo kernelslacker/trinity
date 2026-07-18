@@ -206,7 +206,7 @@ static void dp_read_proc_file(const char *path)
 
 	fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (fd < 0) {
-		__atomic_add_fetch(&shm->stats.deep_path_reader_failed,
+		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -215,10 +215,10 @@ static void dp_read_proc_file(const char *path)
 	} while (sz > 0);
 	(void)close(fd);
 	if (sz < 0)
-		__atomic_add_fetch(&shm->stats.deep_path_reader_failed,
+		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.deep_path_reader_ok,
+		__atomic_add_fetch(&shm->stats.deep_path.reader_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -235,16 +235,16 @@ static void dp_reader_unlink_leaf(unsigned int reader_seq)
 	(void)snprintf(leaf, sizeof(leaf), "leaf-%u", reader_seq);
 	fd = open(leaf, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 	if (fd < 0) {
-		__atomic_add_fetch(&shm->stats.deep_path_reader_failed,
+		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 	(void)close(fd);
 	if (unlink(leaf) == 0)
-		__atomic_add_fetch(&shm->stats.deep_path_reader_ok,
+		__atomic_add_fetch(&shm->stats.deep_path.reader_ok,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.deep_path_reader_failed,
+		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -262,18 +262,18 @@ static void dp_reader_rename_leaf(unsigned int reader_seq)
 	(void)snprintf(dst, sizeof(dst), "leafB-%u", reader_seq);
 	fd = open(src, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 	if (fd < 0) {
-		__atomic_add_fetch(&shm->stats.deep_path_reader_failed,
+		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 	(void)close(fd);
 	if (rename(src, dst) == 0) {
 		(void)unlink(dst);
-		__atomic_add_fetch(&shm->stats.deep_path_reader_ok,
+		__atomic_add_fetch(&shm->stats.deep_path.reader_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
 		(void)unlink(src);
-		__atomic_add_fetch(&shm->stats.deep_path_reader_failed,
+		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -300,20 +300,20 @@ static void dp_reader_pass(unsigned int reader_seq)
 
 	case DP_RD_GETCWD:
 		if (getcwd(dp_buf, sizeof(dp_buf)) == NULL)
-			__atomic_add_fetch(&shm->stats.deep_path_reader_failed,
+			__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.deep_path_reader_ok,
+			__atomic_add_fetch(&shm->stats.deep_path.reader_ok,
 					   1, __ATOMIC_RELAXED);
 		return;
 
 	case DP_RD_READLINK_CWD:
 		sz = readlink("/proc/self/cwd", dp_buf, sizeof(dp_buf));
 		if (sz < 0)
-			__atomic_add_fetch(&shm->stats.deep_path_reader_failed,
+			__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.deep_path_reader_ok,
+			__atomic_add_fetch(&shm->stats.deep_path.reader_ok,
 					   1, __ATOMIC_RELAXED);
 		return;
 
@@ -325,10 +325,10 @@ static void dp_reader_pass(unsigned int reader_seq)
 					AT_FDCWD, ".", 0U,
 					(unsigned int)STATX_BASIC_STATS, &stx);
 			if (r < 0)
-				__atomic_add_fetch(&shm->stats.deep_path_reader_failed,
+				__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 						   1, __ATOMIC_RELAXED);
 			else
-				__atomic_add_fetch(&shm->stats.deep_path_reader_ok,
+				__atomic_add_fetch(&shm->stats.deep_path.reader_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 #else
@@ -338,10 +338,10 @@ static void dp_reader_pass(unsigned int reader_seq)
 		{
 			struct stat st;
 			if (stat(".", &st) < 0)
-				__atomic_add_fetch(&shm->stats.deep_path_reader_failed,
+				__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 						   1, __ATOMIC_RELAXED);
 			else
-				__atomic_add_fetch(&shm->stats.deep_path_reader_ok,
+				__atomic_add_fetch(&shm->stats.deep_path.reader_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 #endif
@@ -401,7 +401,7 @@ static void dp_iter_one(void)
 
 	depth = dp_build_tree(target_depth, complen);
 	if (depth == target_depth)
-		__atomic_add_fetch(&shm->stats.deep_path_max_depth_reached,
+		__atomic_add_fetch(&shm->stats.deep_path.max_depth_reached,
 				   1, __ATOMIC_RELAXED);
 
 	/* Skip hammering when depth==0: the tree could not be built
@@ -439,10 +439,10 @@ bool deep_path_nesting(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.deep_path_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.deep_path.runs, 1, __ATOMIC_RELAXED);
 
 	if (dp_unsupported) {
-		__atomic_add_fetch(&shm->stats.deep_path_setup_failed,
+		__atomic_add_fetch(&shm->stats.deep_path.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

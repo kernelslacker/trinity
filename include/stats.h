@@ -26,6 +26,7 @@
 #include "stats/subsys/bridge_ip6frag.h"
 #include "stats/subsys/close_racer.h"
 #include "stats/subsys/cold_overflow.h"
+#include "stats/subsys/deep_path.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/errno_gradient.h"
 #include "stats/subsys/fd_runtime_skipped.h"
@@ -1917,12 +1918,8 @@ struct stats_s {
 	unsigned long netns_teardown_kill_ok;			/* SIGKILL delivered to in-ns child (race vs cleanup_net) */
 	unsigned long netns_teardown_completed_ok;		/* full cycle reached waitpid + close anchor cleanly */
 
-	/* deep_path_nesting childop counters */
-	unsigned long deep_path_runs;				/* total deep_path_nesting invocations */
-	unsigned long deep_path_setup_failed;			/* scratch base create/enter failed; unsupported latch fired */
-	unsigned long deep_path_max_depth_reached;		/* iterations that hit the requested target depth */
-	unsigned long deep_path_reader_ok;			/* reader pass returned successfully */
-	unsigned long deep_path_reader_failed;			/* reader pass returned an error */
+	/* deep_path_nesting accounting.  See stats/subsys/deep_path.h. */
+	struct deep_path_stats deep_path __attribute__((aligned(64)));
 
 	/* espintcp_coalesce_churn childop counters */
 	unsigned long espintcp_coalesce_runs;			/* total espintcp_coalesce_churn invocations */
