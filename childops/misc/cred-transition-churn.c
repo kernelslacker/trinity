@@ -185,10 +185,10 @@ static void cred_transition_iter_capset(struct cred_xn_ctx *it)
 	data[1].inheritable = 0;
 
 	if (syscall(SYS_capset, &hdr, data) == 0) {
-		__atomic_add_fetch(&shm->stats.cred_transition_capset_ok,
+		__atomic_add_fetch(&shm->stats.cred_transition.capset_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.cred_transition_capset_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.capset_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -205,11 +205,11 @@ static void cred_transition_op_raw_socket(void)
 	int fd = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_ICMP);
 
 	if (fd >= 0) {
-		__atomic_add_fetch(&shm->stats.cred_transition_op_ok,
+		__atomic_add_fetch(&shm->stats.cred_transition.op_ok,
 				   1, __ATOMIC_RELAXED);
 		(void)close(fd);
 	} else {
-		__atomic_add_fetch(&shm->stats.cred_transition_op_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.op_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -226,10 +226,10 @@ static void cred_transition_op_unshare_ns(void)
 	int flag = RAND_BOOL() ? CLONE_NEWUTS : CLONE_NEWIPC;
 
 	if (unshare(flag) == 0) {
-		__atomic_add_fetch(&shm->stats.cred_transition_op_ok,
+		__atomic_add_fetch(&shm->stats.cred_transition.op_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.cred_transition_op_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.op_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -263,10 +263,10 @@ static void cred_transition_op_keyctl_read(struct cred_xn_ctx *it)
 				 (unsigned long)buf,
 				 (unsigned long)sizeof(buf), 0UL);
 	if (rc >= 0) {
-		__atomic_add_fetch(&shm->stats.cred_transition_op_ok,
+		__atomic_add_fetch(&shm->stats.cred_transition.op_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.cred_transition_op_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.op_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -310,10 +310,10 @@ static void cred_transition_keyctl_join(struct cred_xn_ctx *it)
 
 	if (rc >= 0) {
 		memset(it->live_keys, 0, sizeof(it->live_keys));
-		__atomic_add_fetch(&shm->stats.cred_transition_keyctl_ok,
+		__atomic_add_fetch(&shm->stats.cred_transition.keyctl_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.cred_transition_keyctl_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.keyctl_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -347,10 +347,10 @@ static void cred_transition_keyctl_add(struct cred_xn_ctx *it,
 			}
 		}
 		it->live_keys[slot] = (int32_t)rc;
-		__atomic_add_fetch(&shm->stats.cred_transition_keyctl_ok,
+		__atomic_add_fetch(&shm->stats.cred_transition.keyctl_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.cred_transition_keyctl_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.keyctl_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -382,10 +382,10 @@ static void cred_transition_keyctl_revoke(struct cred_xn_ctx *it)
 				 (unsigned long)KEYCTL_REVOKE,
 				 (unsigned long)serial, 0UL, 0UL, 0UL);
 	if (rc >= 0) {
-		__atomic_add_fetch(&shm->stats.cred_transition_keyctl_ok,
+		__atomic_add_fetch(&shm->stats.cred_transition.keyctl_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.cred_transition_keyctl_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.keyctl_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -423,7 +423,7 @@ static void iter_one(struct cred_xn_ctx *it, unsigned int iter,
 		     const unsigned char *payload)
 {
 	if (cred_transition_capget_snapshot(it) != 0) {
-		__atomic_add_fetch(&shm->stats.cred_transition_setup_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -486,11 +486,11 @@ bool cred_transition_churn(struct childdata *child)
 	struct cred_transition_ns_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.cred_transition_runs,
+	__atomic_add_fetch(&shm->stats.cred_transition.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_cred_transition) {
-		__atomic_add_fetch(&shm->stats.cred_transition_setup_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -505,12 +505,12 @@ bool cred_transition_churn(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.cred_transition_setup_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.cred_transition_setup_failed,
+		__atomic_add_fetch(&shm->stats.cred_transition.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -523,9 +523,9 @@ bool cred_transition_churn(struct childdata *child)
 bool cred_transition_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.cred_transition_runs,
+	__atomic_add_fetch(&shm->stats.cred_transition.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.cred_transition_setup_failed,
+	__atomic_add_fetch(&shm->stats.cred_transition.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }

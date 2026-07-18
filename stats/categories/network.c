@@ -52,22 +52,6 @@ const struct stat_category tls_rotate_category =
 	              tls_rotate_runs,
 	              tls_rotate_fields);
 
-static const struct stat_field cred_transition_fields[] = {
-	STAT_FIELD(cred_transition, runs),
-	STAT_FIELD(cred_transition, setup_failed),
-	STAT_FIELD(cred_transition, capset_ok),
-	STAT_FIELD(cred_transition, capset_failed),
-	STAT_FIELD(cred_transition, op_ok),
-	STAT_FIELD(cred_transition, op_failed),
-	STAT_FIELD(cred_transition, keyctl_ok),
-	STAT_FIELD(cred_transition, keyctl_failed),
-};
-
-const struct stat_category cred_transition_category =
-	STAT_CATEGORY("cred_transition",
-		      cred_transition_runs,
-		      cred_transition_fields);
-
 static const struct stat_field netns_teardown_fields[] = {
 	STAT_FIELD(netns_teardown, runs),
 	STAT_FIELD(netns_teardown, setup_failed),
