@@ -572,7 +572,7 @@ bool recipe_eventfd_recursive(struct iour_recipe_state *s, bool *unsupported)
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd, reg_op,
 			 &s->evfd, 1);
 	if (r < 0) {
-		__atomic_add_fetch(&shm->stats.iouring_eventfd_register_fail,
+		__atomic_add_fetch(&shm->stats.iouring_eventfd.register_fail,
 				   1, __ATOMIC_RELAXED);
 		if (errno == EINVAL || errno == ENOTTY) {
 			*unsupported = true;
@@ -582,9 +582,9 @@ bool recipe_eventfd_recursive(struct iour_recipe_state *s, bool *unsupported)
 		goto out;
 	}
 	registered = true;
-	__atomic_add_fetch(&shm->stats.iouring_eventfd_register_ok, 1,
+	__atomic_add_fetch(&shm->stats.iouring_eventfd.register_ok, 1,
 			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.iouring_eventfd_recursive_runs, 1,
+	__atomic_add_fetch(&shm->stats.iouring_eventfd.recursive_runs, 1,
 			   __ATOMIC_RELAXED);
 
 	nreads = 4 + rnd_modulo_u32(5);
@@ -636,7 +636,7 @@ bool recipe_eventfd_recursive(struct iour_recipe_state *s, bool *unsupported)
 	}
 
 	if (reaped)
-		__atomic_add_fetch(&shm->stats.iouring_eventfd_recursive_cqes,
+		__atomic_add_fetch(&shm->stats.iouring_eventfd.recursive_cqes,
 				   reaped, __ATOMIC_RELAXED);
 
 	ok = true;

@@ -198,18 +198,6 @@ const struct stat_category iouring_recipes_category =
 	              iouring_recipes_runs,
 	              iouring_recipes_fields);
 
-static const struct stat_field iouring_eventfd_fields[] = {
-	STAT_FIELD(iouring_eventfd, register_ok),
-	STAT_FIELD(iouring_eventfd, register_fail),
-	STAT_FIELD(iouring_eventfd, recursive_runs),
-	STAT_FIELD(iouring_eventfd, recursive_cqes),
-};
-
-const struct stat_category iouring_eventfd_category =
-	STAT_CATEGORY("iouring_eventfd",
-	              iouring_eventfd_register_ok,
-	              iouring_eventfd_fields);
-
 /* child_dead_parent_observed: init_child()'s pid-handshake loop saw
  * pid_alive(mainpid) == false -- the parent died before publishing this
  * child's slot in pids[].  The original outputerr("BUG!: parent went
