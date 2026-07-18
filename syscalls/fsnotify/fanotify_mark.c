@@ -70,8 +70,11 @@ static void sanitise_fanotify_mark(struct syscallrecord *rec)
 		    (init_flags & FAN_REPORT_FID) && RAND_BOOL())
 			rec->a3 |= FAN_FS_ERROR;
 
-		if (class_bits == FAN_CLASS_PRE_CONTENT && RAND_BOOL())
-			rec->a3 |= FAN_PRE_ACCESS;
+		/*
+		 * FAN_PRE_ACCESS omitted for the same reason as the *_PERM mask
+		 * bits: it is a pre-content permission event that blocks the access
+		 * until a responder answers, and trinity has none.
+		 */
 	}
 }
 
@@ -83,7 +86,14 @@ static unsigned long fanotify_mark_mask[] = {
 	FAN_ACCESS, FAN_MODIFY, FAN_ATTRIB,
 	FAN_CLOSE, FAN_CLOSE_WRITE, FAN_CLOSE_NOWRITE,
 	FAN_OPEN, FAN_OPEN_EXEC,
-	FAN_OPEN_PERM, FAN_ACCESS_PERM, FAN_OPEN_EXEC_PERM,
+	/*
+	 * Permission events (FAN_OPEN_PERM / FAN_ACCESS_PERM /
+	 * FAN_OPEN_EXEC_PERM) are deliberately omitted: each blocks the
+	 * marked open/access/exec until a userspace responder writes an
+	 * ALLOW/DENY back on the fanotify fd, and trinity runs no responder
+	 * loop -- so any op on the marked object wedges (killably) forever.
+	 * Re-arm only alongside a thread that answers them.
+	 */
 	FAN_EVENT_ON_CHILD, FAN_ONDIR,
 	FAN_CREATE, FAN_DELETE, FAN_DELETE_SELF,
 	FAN_MOVED_FROM, FAN_MOVED_TO, FAN_MOVE_SELF,
