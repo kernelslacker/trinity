@@ -197,7 +197,7 @@ void frontier_record_new_edge(unsigned int nr)
 	 * are observability-only: no live selection or scoring code reads
 	 * them, so the reset cannot perturb the picker distribution. */
 	__atomic_store_n(
-		&shm->stats.frontier_silent_streak_per_syscall[nr],
+		&shm->stats.frontier.silent_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
 	/* SHADOW-ONLY LIVE-regime miss-streak reset, paired with the
@@ -214,7 +214,7 @@ void frontier_record_new_edge(unsigned int nr)
 	 * above; no live-path code reads either counter or its companion
 	 * scalars. */
 	__atomic_store_n(
-		&shm->stats.frontier_live_miss_streak_per_syscall[nr],
+		&shm->stats.frontier.live_miss_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
 	/* SHADOW-ONLY no-novelty baseline snapshot, paired with the streak
@@ -244,10 +244,10 @@ void frontier_record_new_edge(unsigned int nr)
 			&kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
 			__ATOMIC_RELAXED);
 		__atomic_store_n(
-			&shm->stats.frontier_silent_cmp_baseline[nr],
+			&shm->stats.frontier.silent_cmp_baseline[nr],
 			cmp_snap, __ATOMIC_RELAXED);
 		__atomic_store_n(
-			&shm->stats.frontier_silent_errno_success_baseline[nr],
+			&shm->stats.frontier.silent_errno_success_baseline[nr],
 			errno_snap, __ATOMIC_RELAXED);
 	}
 
@@ -316,7 +316,7 @@ void frontier_record_transition_edge(unsigned int nr)
 			   __ATOMIC_RELAXED);
 
 	__atomic_store_n(
-		&shm->stats.frontier_silent_streak_per_syscall[nr],
+		&shm->stats.frontier.silent_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
 	/* SHADOW-ONLY LIVE-regime miss-streak reset.  Sibling of the reset
@@ -328,7 +328,7 @@ void frontier_record_transition_edge(unsigned int nr)
 	 * fresh PC bucket bits, inflating the cooldown projections on
 	 * exactly the syscalls a live variant should NOT cool down. */
 	__atomic_store_n(
-		&shm->stats.frontier_live_miss_streak_per_syscall[nr],
+		&shm->stats.frontier.live_miss_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
 	/* SHADOW-ONLY no-novelty baseline snapshot.  Mirror of the snapshot
@@ -347,10 +347,10 @@ void frontier_record_transition_edge(unsigned int nr)
 			&kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
 			__ATOMIC_RELAXED);
 		__atomic_store_n(
-			&shm->stats.frontier_silent_cmp_baseline[nr],
+			&shm->stats.frontier.silent_cmp_baseline[nr],
 			cmp_snap, __ATOMIC_RELAXED);
 		__atomic_store_n(
-			&shm->stats.frontier_silent_errno_success_baseline[nr],
+			&shm->stats.frontier.silent_errno_success_baseline[nr],
 			errno_snap, __ATOMIC_RELAXED);
 	}
 
@@ -545,7 +545,7 @@ void frontier_window_advance(void)
 			unsigned long streak;
 
 			streak = __atomic_load_n(
-				&shm->stats.frontier_live_miss_streak_per_syscall[nr],
+				&shm->stats.frontier.live_miss_streak_per_syscall[nr],
 				__ATOMIC_RELAXED);
 			if (streak >= FRONTIER_LIVE_MISS_COOLDOWN)
 				cool_this_nr = true;
@@ -597,11 +597,11 @@ void frontier_window_advance(void)
 		}
 		if (old_cached < old_slot)
 			__atomic_add_fetch(
-				&shm->stats.frontier_underflow_prevented,
+				&shm->stats.frontier.underflow_prevented,
 				1UL, __ATOMIC_RELAXED);
 		if (decayed_this_nr)
 			__atomic_add_fetch(
-				&shm->stats.frontier_live_cooldown_decays,
+				&shm->stats.frontier.live_cooldown_decays,
 				1UL, __ATOMIC_RELAXED);
 		if (new_sum > max_weight)
 			max_weight = new_sum;
@@ -807,13 +807,13 @@ frontier_spare_lane_decide(unsigned int syscallnr, bool do32)
 		&kcov_shm->per_syscall_cmp_inserts[syscallnr],
 		__ATOMIC_RELAXED);
 	cmp_base = __atomic_load_n(
-		&shm->stats.frontier_silent_cmp_baseline[syscallnr],
+		&shm->stats.frontier.silent_cmp_baseline[syscallnr],
 		__ATOMIC_RELAXED);
 	errno_now = __atomic_load_n(
 		&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
 		__ATOMIC_RELAXED);
 	errno_base = __atomic_load_n(
-		&shm->stats.frontier_silent_errno_success_baseline[syscallnr],
+		&shm->stats.frontier.silent_errno_success_baseline[syscallnr],
 		__ATOMIC_RELAXED);
 
 	/*
@@ -937,21 +937,21 @@ void frontier_satcool_spare(unsigned int syscallnr, bool do32)
 	if (reason == FRONTIER_SPARE_WINDOWED_EDGES)
 		return;
 
-	__atomic_fetch_add(&shm->stats.frontier_satcool_candidates,
+	__atomic_fetch_add(&shm->stats.frontier.satcool_candidates,
 			   1UL, __ATOMIC_RELAXED);
 
 	if (reason == FRONTIER_SPARE_ARGGEN) {
-		__atomic_fetch_add(&shm->stats.frontier_satcool_spared_arggen,
+		__atomic_fetch_add(&shm->stats.frontier.satcool_spared_arggen,
 				   1UL, __ATOMIC_RELAXED);
 	} else if (reason == FRONTIER_SPARE_OBJPRODUCER) {
 		__atomic_fetch_add(
-			&shm->stats.frontier_satcool_spared_objproducer,
+			&shm->stats.frontier.satcool_spared_objproducer,
 			1UL, __ATOMIC_RELAXED);
 	} else {
-		__atomic_fetch_add(&shm->stats.frontier_satcool_would_skip,
+		__atomic_fetch_add(&shm->stats.frontier.satcool_would_skip,
 				   1UL, __ATOMIC_RELAXED);
 		__atomic_fetch_add(
-			&shm->stats.frontier_satcool_would_skip_per_syscall[syscallnr],
+			&shm->stats.frontier.satcool_would_skip_per_syscall[syscallnr],
 			1UL, __ATOMIC_RELAXED);
 		/*
 		 * COMBINED live-reject would sit here gated on satcool_mode
@@ -1072,7 +1072,7 @@ void frontier_barren_demote(unsigned int syscallnr, bool do32)
 	if (calls <= FRONTIER_BARREN_C_MIN)
 		return;
 
-	__atomic_fetch_add(&shm->stats.frontier_barren_candidates,
+	__atomic_fetch_add(&shm->stats.frontier.barren_candidates,
 			   1UL, __ATOMIC_RELAXED);
 
 	if (edges != 0)
@@ -1080,10 +1080,10 @@ void frontier_barren_demote(unsigned int syscallnr, bool do32)
 	if (frontier_recent_count(syscallnr) != 0)
 		return;
 
-	__atomic_fetch_add(&shm->stats.frontier_barren_would_skip,
+	__atomic_fetch_add(&shm->stats.frontier.barren_would_skip,
 			   1UL, __ATOMIC_RELAXED);
 	__atomic_fetch_add(
-		&shm->stats.frontier_barren_would_skip_per_syscall[syscallnr],
+		&shm->stats.frontier.barren_would_skip_per_syscall[syscallnr],
 		1UL, __ATOMIC_RELAXED);
 
 	/*
@@ -1181,40 +1181,40 @@ void frontier_live_cool_spare(unsigned int syscallnr, bool do32)
 
 	reason = frontier_spare_lane_decide(syscallnr, do32);
 
-	__atomic_fetch_add(&shm->stats.frontier_live_cool_candidates,
+	__atomic_fetch_add(&shm->stats.frontier.live_cool_candidates,
 			   1UL, __ATOMIC_RELAXED);
 
 	switch (reason) {
 	case FRONTIER_SPARE_WINDOWED_EDGES:
 		__atomic_fetch_add(
-			&shm->stats.frontier_live_cool_spared_windowed,
+			&shm->stats.frontier.live_cool_spared_windowed,
 			1UL, __ATOMIC_RELAXED);
 		__atomic_fetch_add(
-			&shm->stats.frontier_live_cool_would_spare_per_syscall[syscallnr],
+			&shm->stats.frontier.live_cool_would_spare_per_syscall[syscallnr],
 			1UL, __ATOMIC_RELAXED);
 		break;
 	case FRONTIER_SPARE_ARGGEN:
 		__atomic_fetch_add(
-			&shm->stats.frontier_live_cool_spared_arggen,
+			&shm->stats.frontier.live_cool_spared_arggen,
 			1UL, __ATOMIC_RELAXED);
 		__atomic_fetch_add(
-			&shm->stats.frontier_live_cool_would_spare_per_syscall[syscallnr],
+			&shm->stats.frontier.live_cool_would_spare_per_syscall[syscallnr],
 			1UL, __ATOMIC_RELAXED);
 		break;
 	case FRONTIER_SPARE_OBJPRODUCER:
 		__atomic_fetch_add(
-			&shm->stats.frontier_live_cool_spared_objproducer,
+			&shm->stats.frontier.live_cool_spared_objproducer,
 			1UL, __ATOMIC_RELAXED);
 		__atomic_fetch_add(
-			&shm->stats.frontier_live_cool_would_spare_per_syscall[syscallnr],
+			&shm->stats.frontier.live_cool_would_spare_per_syscall[syscallnr],
 			1UL, __ATOMIC_RELAXED);
 		break;
 	case FRONTIER_SPARE_NONE:
 	default:
-		__atomic_fetch_add(&shm->stats.frontier_live_cool_would_skip,
+		__atomic_fetch_add(&shm->stats.frontier.live_cool_would_skip,
 				   1UL, __ATOMIC_RELAXED);
 		__atomic_fetch_add(
-			&shm->stats.frontier_live_cool_would_skip_per_syscall[syscallnr],
+			&shm->stats.frontier.live_cool_would_skip_per_syscall[syscallnr],
 			1UL, __ATOMIC_RELAXED);
 		/*
 		 * COMBINED live cooldown divergence would sit here gated on

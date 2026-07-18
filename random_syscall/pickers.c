@@ -308,12 +308,12 @@ retry:
 				bool pin_barren = pin_stale && !pin_warm;
 
 				__atomic_fetch_add(
-					&shm->stats.frontier_frseq_candidates,
+					&shm->stats.frontier.frseq_candidates,
 					1UL, __ATOMIC_RELAXED);
 
 				if (pin_barren) {
 					__atomic_fetch_add(
-						&shm->stats.frontier_frseq_would_skip,
+						&shm->stats.frontier.frseq_would_skip,
 						1UL, __ATOMIC_RELAXED);
 					/* Per-syscall bucket keys on the
 					 * candidate syscallnr being evaluated
@@ -330,7 +330,7 @@ retry:
 					 * that pass every gate cheaply). */
 					if (syscallnr < MAX_NR_SYSCALL) {
 						__atomic_fetch_add(
-							&shm->stats.frontier_frseq_would_skip_per_syscall[syscallnr],
+							&shm->stats.frontier.frseq_would_skip_per_syscall[syscallnr],
 							1UL, __ATOMIC_RELAXED);
 					}
 					/* Per-group bucket keys on
@@ -348,7 +348,7 @@ retry:
 					 * 11 < NR_GROUPS = 12. */
 					if (child->last_group < NR_GROUPS) {
 						__atomic_fetch_add(
-							&shm->stats.frontier_frseq_would_skip_per_group[child->last_group],
+							&shm->stats.frontier.frseq_would_skip_per_group[child->last_group],
 							1UL, __ATOMIC_RELAXED);
 					}
 					/* COMBINED live pin release would
@@ -874,20 +874,20 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 	 * the LIVE behaviour delta from Arm B's blend_weight promotion
 	 * shows up downstream in frontier_silent_picks / per-syscall
 	 * pick rates rather than in these sums. */
-	__atomic_fetch_add(&shm->stats.frontier_blend_samples, 1UL,
+	__atomic_fetch_add(&shm->stats.frontier.blend_samples, 1UL,
 			   __ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->stats.frontier_blend_old_weight_sum,
+	__atomic_fetch_add(&shm->stats.frontier.blend_old_weight_sum,
 			   old_weight, __ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->stats.frontier_blend_new_weight_sum,
+	__atomic_fetch_add(&shm->stats.frontier.blend_new_weight_sum,
 			   blend_weight, __ATOMIC_RELAXED);
 	if (blend_weight < old_weight)
-		__atomic_fetch_add(&shm->stats.frontier_blend_new_lower,
+		__atomic_fetch_add(&shm->stats.frontier.blend_new_lower,
 				   1UL, __ATOMIC_RELAXED);
 	else if (blend_weight > old_weight)
-		__atomic_fetch_add(&shm->stats.frontier_blend_new_higher,
+		__atomic_fetch_add(&shm->stats.frontier.blend_new_higher,
 				   1UL, __ATOMIC_RELAXED);
 	else
-		__atomic_fetch_add(&shm->stats.frontier_blend_new_equal,
+		__atomic_fetch_add(&shm->stats.frontier.blend_new_equal,
 				   1UL, __ATOMIC_RELAXED);
 
 	/* Per-child A/B arm promotes the blend (now including the
@@ -1305,12 +1305,12 @@ retry:
 		 * behaviour change that produces the desired reclaim. */
 		if (rnd_modulo_u32(FRONTIER_LIVE_DECAY_REJECT_DENOM) == 0) {
 			__atomic_fetch_add(
-				&shm->stats.frontier_live_decay_live_rejects,
+				&shm->stats.frontier.live_decay_live_rejects,
 				1UL, __ATOMIC_RELAXED);
 			goto retry;
 		}
 
-		__atomic_fetch_add(&shm->stats.frontier_live_picks, 1UL,
+		__atomic_fetch_add(&shm->stats.frontier.live_picks, 1UL,
 				   __ATOMIC_RELAXED);
 
 		/* Per-syscall split of the scalar bump above + per-call
@@ -1322,7 +1322,7 @@ retry:
 		 * bound the sibling frontier_picks_per_syscall[] uses. */
 		if (syscallnr < MAX_NR_SYSCALL)
 			__atomic_fetch_add(
-				&shm->stats.frontier_live_picks_per_syscall[syscallnr],
+				&shm->stats.frontier.live_picks_per_syscall[syscallnr],
 				1UL, __ATOMIC_RELAXED);
 		child->frontier_pick_regime = FRONTIER_PICK_LIVE;
 	} else {
@@ -1384,7 +1384,7 @@ retry:
 		if (roll >= w + 1UL)
 			goto retry;
 
-		__atomic_fetch_add(&shm->stats.frontier_silent_picks, 1UL,
+		__atomic_fetch_add(&shm->stats.frontier.silent_picks, 1UL,
 				   __ATOMIC_RELAXED);
 
 		/* Per-syscall split of the scalar bump above + per-call
@@ -1396,7 +1396,7 @@ retry:
 		 * bound the sibling frontier_picks_per_syscall[] uses. */
 		if (syscallnr < MAX_NR_SYSCALL)
 			__atomic_fetch_add(
-				&shm->stats.frontier_silent_picks_per_syscall[syscallnr],
+				&shm->stats.frontier.silent_picks_per_syscall[syscallnr],
 				1UL, __ATOMIC_RELAXED);
 		child->frontier_pick_regime = FRONTIER_PICK_SILENT;
 
@@ -1424,11 +1424,11 @@ retry:
 		 * distribution stays byte-identical to today. */
 		if (syscallnr < MAX_NR_SYSCALL) {
 			unsigned long streak = __atomic_add_fetch(
-				&shm->stats.frontier_silent_streak_per_syscall[syscallnr],
+				&shm->stats.frontier.silent_streak_per_syscall[syscallnr],
 				1UL, __ATOMIC_RELAXED);
 			if (streak == FRONTIER_SHADOW_DECAY_STREAK)
 				__atomic_fetch_add(
-					&shm->stats.frontier_shadow_decay_candidates,
+					&shm->stats.frontier.shadow_decay_candidates,
 					1UL, __ATOMIC_RELAXED);
 
 			/* SHADOW-ONLY tightened decay predicate.  Pairs with
@@ -1477,23 +1477,23 @@ retry:
 					&kcov_shm->per_syscall_cmp_inserts[syscallnr],
 					__ATOMIC_RELAXED);
 				cmp_base = __atomic_load_n(
-					&shm->stats.frontier_silent_cmp_baseline[syscallnr],
+					&shm->stats.frontier.silent_cmp_baseline[syscallnr],
 					__ATOMIC_RELAXED);
 				errno_now = __atomic_load_n(
 					&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
 					__ATOMIC_RELAXED);
 				errno_base = __atomic_load_n(
-					&shm->stats.frontier_silent_errno_success_baseline[syscallnr],
+					&shm->stats.frontier.silent_errno_success_baseline[syscallnr],
 					__ATOMIC_RELAXED);
 
 				if (cmp_now == cmp_base &&
 				    errno_now == errno_base) {
 					__atomic_fetch_add(
-						&shm->stats.frontier_decay_would_skip,
+						&shm->stats.frontier.decay_would_skip,
 						1UL, __ATOMIC_RELAXED);
 					if (streak == FRONTIER_SHADOW_DECAY_STREAK)
 						__atomic_fetch_add(
-							&shm->stats.frontier_decay_candidates,
+							&shm->stats.frontier.decay_candidates,
 							1UL, __ATOMIC_RELAXED);
 
 					/* Arm B live reject for the silent-streak
@@ -1535,7 +1535,7 @@ retry:
 					    child->frontier_silent_decay_arm_b &&
 					    rnd_modulo_u32(FRONTIER_SILENT_DECAY_REJECT_DENOM) != 0) {
 						__atomic_fetch_add(
-							&shm->stats.frontier_silent_decay_live_rejects,
+							&shm->stats.frontier.silent_decay_live_rejects,
 							1UL, __ATOMIC_RELAXED);
 						goto retry;
 					}
@@ -1596,15 +1596,15 @@ retry:
 		 * never decayed by both gates. */
 		if (frontier_errno_plateau_should_decay(syscallnr, do32)) {
 			__atomic_fetch_add(
-				&shm->stats.frontier_errno_decay_would_skip,
+				&shm->stats.frontier.errno_decay_would_skip,
 				1UL, __ATOMIC_RELAXED);
 			if (syscallnr < MAX_NR_SYSCALL) {
 				unsigned long s = __atomic_load_n(
-					&shm->stats.frontier_silent_streak_per_syscall[syscallnr],
+					&shm->stats.frontier.silent_streak_per_syscall[syscallnr],
 					__ATOMIC_RELAXED);
 				if (s >= FRONTIER_SHADOW_DECAY_STREAK)
 					__atomic_fetch_add(
-						&shm->stats.frontier_errno_decay_overlap_silent,
+						&shm->stats.frontier.errno_decay_overlap_silent,
 						1UL, __ATOMIC_RELAXED);
 			}
 			/* Arm B live reject: REJECT_DENOM-1 / REJECT_DENOM
@@ -1621,7 +1621,7 @@ retry:
 			if (child != NULL && child->frontier_errno_decay_arm_b &&
 			    rnd_modulo_u32(FRONTIER_ERRNO_PLATEAU_REJECT_DENOM) != 0) {
 				__atomic_fetch_add(
-					&shm->stats.frontier_errno_decay_live_rejects,
+					&shm->stats.frontier.errno_decay_live_rejects,
 					1UL, __ATOMIC_RELAXED);
 				goto retry;
 			}
@@ -1639,10 +1639,10 @@ retry:
 	 * MAX_NR_SYSCALL bound the other per-syscall arrays use. */
 	if (syscallnr < MAX_NR_SYSCALL)
 		__atomic_fetch_add(
-			&shm->stats.frontier_picks_per_syscall[syscallnr],
+			&shm->stats.frontier.picks_per_syscall[syscallnr],
 			1UL, __ATOMIC_RELAXED);
 
-	__atomic_fetch_add(&shm->stats.frontier_strategy_picks, 1UL,
+	__atomic_fetch_add(&shm->stats.frontier.strategy_picks, 1UL,
 			   __ATOMIC_RELAXED);
 
 	return true;

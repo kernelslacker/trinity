@@ -101,7 +101,7 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 	snap->explorer_edges = __atomic_load_n(
 		&shm->stats.explorer_pool_edges_discovered, __ATOMIC_RELAXED);
 	snap->frontier_picks = __atomic_load_n(
-		&shm->stats.frontier_strategy_picks, __ATOMIC_RELAXED);
+		&shm->stats.frontier.strategy_picks, __ATOMIC_RELAXED);
 	/* Bandit-side pulls + intervention-forced picks.  The bandit
 	 * counter advances only on policy-chosen windows; the
 	 * intervention counter advances only on SR_PLATEAU_FORCE
@@ -119,12 +119,12 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 		&shm->bandit_pulls[STRATEGY_COVERAGE_FRONTIER],
 		__ATOMIC_RELAXED) +
 		__atomic_load_n(
-			&shm->stats.frontier_intervention_pulls,
+			&shm->stats.frontier.intervention_pulls,
 			__ATOMIC_RELAXED);
 	snap->frontier_live_picks = __atomic_load_n(
-		&shm->stats.frontier_live_picks, __ATOMIC_RELAXED);
+		&shm->stats.frontier.live_picks, __ATOMIC_RELAXED);
 	snap->frontier_silent_picks = __atomic_load_n(
-		&shm->stats.frontier_silent_picks, __ATOMIC_RELAXED);
+		&shm->stats.frontier.silent_picks, __ATOMIC_RELAXED);
 
 	for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
 		snap->childop_edges_total += __atomic_load_n(

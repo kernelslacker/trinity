@@ -113,7 +113,7 @@ void dump_satcool_would_skip_per_syscall_top(void)
 
 	for (i = 0; i < nr_to_scan; i++) {
 		unsigned long c =
-			shm->stats.frontier_satcool_would_skip_per_syscall[i];
+			shm->stats.frontier.satcool_would_skip_per_syscall[i];
 
 		if (c == 0)
 			continue;
@@ -191,7 +191,7 @@ void dump_barren_would_skip_per_syscall_top(void)
 
 	for (i = 0; i < nr_to_scan; i++) {
 		unsigned long c =
-			shm->stats.frontier_barren_would_skip_per_syscall[i];
+			shm->stats.frontier.barren_would_skip_per_syscall[i];
 
 		if (c == 0)
 			continue;
@@ -268,7 +268,7 @@ void dump_live_cooldown_would_skip_per_syscall_top(void)
 
 	for (i = 0; i < nr_to_scan; i++) {
 		unsigned long c =
-			shm->stats.frontier_live_would_skip_per_syscall[i];
+			shm->stats.frontier.live_would_skip_per_syscall[i];
 
 		if (c == 0)
 			continue;
@@ -943,26 +943,26 @@ static const struct {
 	 * roulette wheel.  Rate-of-change tracks the arm's actual share of
 	 * the fleet's syscall throughput when the bandit picker selects it. */
 	{ "frontier_strategy_picks",
-	  offsetof(struct stats_s, frontier_strategy_picks) },
+	  offsetof(struct stats_s, frontier.strategy_picks) },
 	/* Saturating-subtract clamps fired during frontier ring rotation --
 	 * see comment on struct field.  Non-zero is a correctness flag, not
 	 * tuning data. */
 	{ "frontier_underflow_prevented",
-	  offsetof(struct stats_s, frontier_underflow_prevented) },
+	  offsetof(struct stats_s, frontier.underflow_prevented) },
 	/* Plateau-intervention rotations that selected the frontier arm.
 	 * Held side-channel so the learner-facing bandit_pulls[] stays
 	 * clean; the snapshot path folds this back in for the plateau
 	 * classifier's frontier_cold rule. */
 	{ "frontier_intervention_pulls",
-	  offsetof(struct stats_s, frontier_intervention_pulls) },
+	  offsetof(struct stats_s, frontier.intervention_pulls) },
 	/* Accept-regime split of frontier_strategy_picks.  Sum equals
 	 * frontier_strategy_picks; the periodic ratio surfaces whether the
 	 * picker is steering on the K-window ring (live) or has collapsed
 	 * to the lifetime cold-weight fallback (silent). */
 	{ "frontier_live_picks",
-	  offsetof(struct stats_s, frontier_live_picks) },
+	  offsetof(struct stats_s, frontier.live_picks) },
 	{ "frontier_silent_picks",
-	  offsetof(struct stats_s, frontier_silent_picks) },
+	  offsetof(struct stats_s, frontier.silent_picks) },
 	/* SHADOW-ONLY decay accounting under the tightened no-novelty
 	 * predicate (consecutive silent picks past threshold AND no CMP
 	 * insert AND no SUCCESS-bucket errno shift since the streak's
@@ -970,11 +970,11 @@ static const struct {
 	 * see the struct-field comment in include/stats.h for the per-
 	 * counter semantics. */
 	{ "frontier_decay_candidates",
-	  offsetof(struct stats_s, frontier_decay_candidates) },
+	  offsetof(struct stats_s, frontier.decay_candidates) },
 	{ "frontier_decay_would_skip",
-	  offsetof(struct stats_s, frontier_decay_would_skip) },
+	  offsetof(struct stats_s, frontier.decay_would_skip) },
 	{ "frontier_silent_decay_live_rejects",
-	  offsetof(struct stats_s, frontier_silent_decay_live_rejects) },
+	  offsetof(struct stats_s, frontier.silent_decay_live_rejects) },
 	/* SHADOW-ONLY saturation-cooldown predicate accounting (gated by
 	 * --frontier-saturation-cooldown != off).  Sibling block of the
 	 * silent-streak decay scalars above; this one targets the same
@@ -983,13 +983,13 @@ static const struct {
 	 * spare lanes for the struct-arg backlog.  See the struct-field
 	 * comment in include/stats.h for per-counter semantics. */
 	{ "frontier_satcool_candidates",
-	  offsetof(struct stats_s, frontier_satcool_candidates) },
+	  offsetof(struct stats_s, frontier.satcool_candidates) },
 	{ "frontier_satcool_would_skip",
-	  offsetof(struct stats_s, frontier_satcool_would_skip) },
+	  offsetof(struct stats_s, frontier.satcool_would_skip) },
 	{ "frontier_satcool_spared_arggen",
-	  offsetof(struct stats_s, frontier_satcool_spared_arggen) },
+	  offsetof(struct stats_s, frontier.satcool_spared_arggen) },
 	{ "frontier_satcool_spared_objproducer",
-	  offsetof(struct stats_s, frontier_satcool_spared_objproducer) },
+	  offsetof(struct stats_s, frontier.satcool_spared_objproducer) },
 	/* SHADOW-ONLY floored-barren sub-floor demote scalars (gated by
 	 * --frontier-barren-demote != off).  Sibling of the frontier_
 	 * satcool_* scalars above; targets the pure zero-arg getter set
@@ -997,9 +997,9 @@ static const struct {
 	 * See the struct-field comment in include/stats.h for the
 	 * per-counter contract. */
 	{ "frontier_barren_candidates",
-	  offsetof(struct stats_s, frontier_barren_candidates) },
+	  offsetof(struct stats_s, frontier.barren_candidates) },
 	{ "frontier_barren_would_skip",
-	  offsetof(struct stats_s, frontier_barren_would_skip) },
+	  offsetof(struct stats_s, frontier.barren_would_skip) },
 	/* SHADOW-ONLY LIVE-regime cooldown discriminator scalars (gated
 	 * by --frontier-live-cooldown-mode != off).  Sibling of the
 	 * frontier_satcool_* scalars above; this row projects the
@@ -1009,15 +1009,15 @@ static const struct {
 	 * the over-cool the discriminator removes -- the SHADOW_ONLY
 	 * ramp gate. */
 	{ "frontier_live_cool_candidates",
-	  offsetof(struct stats_s, frontier_live_cool_candidates) },
+	  offsetof(struct stats_s, frontier.live_cool_candidates) },
 	{ "frontier_live_cool_would_skip",
-	  offsetof(struct stats_s, frontier_live_cool_would_skip) },
+	  offsetof(struct stats_s, frontier.live_cool_would_skip) },
 	{ "frontier_live_cool_spared_windowed",
-	  offsetof(struct stats_s, frontier_live_cool_spared_windowed) },
+	  offsetof(struct stats_s, frontier.live_cool_spared_windowed) },
 	{ "frontier_live_cool_spared_arggen",
-	  offsetof(struct stats_s, frontier_live_cool_spared_arggen) },
+	  offsetof(struct stats_s, frontier.live_cool_spared_arggen) },
 	{ "frontier_live_cool_spared_objproducer",
-	  offsetof(struct stats_s, frontier_live_cool_spared_objproducer) },
+	  offsetof(struct stats_s, frontier.live_cool_spared_objproducer) },
 	/* SHADOW-ONLY Path-A "regular_suppressed" context-axis projection
 	 * (gated by --context-pool != off).  See the struct-field comment
 	 * in include/stats.h for the per-counter semantics and the enum
@@ -1043,20 +1043,20 @@ static const struct {
 	 * FRONTIER_LIVE_MISS_COOLDOWN comment in include/strategy.h for the
 	 * predicate contract. */
 	{ "frontier_live_cooldown_candidates",
-	  offsetof(struct stats_s, frontier_live_cooldown_candidates) },
+	  offsetof(struct stats_s, frontier.live_cooldown_candidates) },
 	{ "frontier_live_would_skip",
-	  offsetof(struct stats_s, frontier_live_would_skip) },
+	  offsetof(struct stats_s, frontier.live_would_skip) },
 	/* Did-decay counter for the LIVE-regime early ring-decay path.
 	 * Bumped per (nr, rotation) where the early ring-decay in
 	 * frontier_window_advance actually halved a non-zero cached sum. */
 	{ "frontier_live_cooldown_decays",
-	  offsetof(struct stats_s, frontier_live_cooldown_decays) },
+	  offsetof(struct stats_s, frontier.live_cooldown_decays) },
 	/* Live reject count for the blanket LIVE-regime probabilistic
 	 * pick-reject gate.  See the struct-field comment in
 	 * include/stats.h and the FRONTIER_LIVE_DECAY_REJECT_DENOM comment
 	 * in include/strategy.h for the probabilistic-reject contract. */
 	{ "frontier_live_decay_live_rejects",
-	  offsetof(struct stats_s, frontier_live_decay_live_rejects) },
+	  offsetof(struct stats_s, frontier.live_decay_live_rejects) },
 	/* SHADOW-ONLY wall-lever accounting.  Eligible_total is
 	 * the denominator (every plateau-active pick the lever saw); would_
 	 * suppress_total is the projected reclaim count a live variant would
@@ -1073,28 +1073,28 @@ static const struct {
 	 * semantics and the would_skip vs live_rejects vs overlap_silent
 	 * triple. */
 	{ "frontier_errno_decay_would_skip",
-	  offsetof(struct stats_s, frontier_errno_decay_would_skip) },
+	  offsetof(struct stats_s, frontier.errno_decay_would_skip) },
 	{ "frontier_errno_decay_live_rejects",
-	  offsetof(struct stats_s, frontier_errno_decay_live_rejects) },
+	  offsetof(struct stats_s, frontier.errno_decay_live_rejects) },
 	{ "frontier_errno_decay_overlap_silent",
-	  offsetof(struct stats_s, frontier_errno_decay_overlap_silent) },
+	  offsetof(struct stats_s, frontier.errno_decay_overlap_silent) },
 	/* SHADOW-ONLY A/B scoring for the frontier-blend cold-weight
 	 * blend.  The picker still consumes the OLD weight; these counters
 	 * expose how often the blended formula would have steered
 	 * differently and by how much.  See the struct-field comment in
 	 * include/stats.h for the per-counter semantics. */
 	{ "frontier_blend_samples",
-	  offsetof(struct stats_s, frontier_blend_samples) },
+	  offsetof(struct stats_s, frontier.blend_samples) },
 	{ "frontier_blend_new_lower",
-	  offsetof(struct stats_s, frontier_blend_new_lower) },
+	  offsetof(struct stats_s, frontier.blend_new_lower) },
 	{ "frontier_blend_new_higher",
-	  offsetof(struct stats_s, frontier_blend_new_higher) },
+	  offsetof(struct stats_s, frontier.blend_new_higher) },
 	{ "frontier_blend_new_equal",
-	  offsetof(struct stats_s, frontier_blend_new_equal) },
+	  offsetof(struct stats_s, frontier.blend_new_equal) },
 	{ "frontier_blend_old_weight_sum",
-	  offsetof(struct stats_s, frontier_blend_old_weight_sum) },
+	  offsetof(struct stats_s, frontier.blend_old_weight_sum) },
 	{ "frontier_blend_new_weight_sum",
-	  offsetof(struct stats_s, frontier_blend_new_weight_sum) },
+	  offsetof(struct stats_s, frontier.blend_new_weight_sum) },
 	/* Shadow per-band counters for --reach-band.  All zero on default
 	 * (OFF) runs -- the gate in frontier_cold_weight() early-outs
 	 * before the bumps.  See the reach_band_* field-comment block in
@@ -1913,19 +1913,19 @@ void __cold top_syscalls_periodic_dump(void)
 				&shm->stats.edges_per_syscall_explorer[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_picks[i] = __atomic_load_n(
-				&shm->stats.frontier_picks_per_syscall[i],
+				&shm->stats.frontier.picks_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_live_picks[i] = __atomic_load_n(
-				&shm->stats.frontier_live_picks_per_syscall[i],
+				&shm->stats.frontier.live_picks_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_silent_picks[i] = __atomic_load_n(
-				&shm->stats.frontier_silent_picks_per_syscall[i],
+				&shm->stats.frontier.silent_picks_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_wins[i] = __atomic_load_n(
-				&shm->stats.frontier_productive_wins_per_syscall[i],
+				&shm->stats.frontier.productive_wins_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_live_misses[i] = __atomic_load_n(
-				&shm->stats.frontier_live_misses_per_syscall[i],
+				&shm->stats.frontier.live_misses_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_rq_saves[i] = __atomic_load_n(
 				&shm->stats.rq_sourced_saves_per_syscall[i],
@@ -1955,22 +1955,22 @@ void __cold top_syscalls_periodic_dump(void)
 			&shm->stats.edges_per_syscall_explorer[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_picks[i] = __atomic_load_n(
-			&shm->stats.frontier_picks_per_syscall[i],
+			&shm->stats.frontier.picks_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_live_picks[i] = __atomic_load_n(
-			&shm->stats.frontier_live_picks_per_syscall[i],
+			&shm->stats.frontier.live_picks_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_silent_picks[i] = __atomic_load_n(
-			&shm->stats.frontier_silent_picks_per_syscall[i],
+			&shm->stats.frontier.silent_picks_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_wins[i] = __atomic_load_n(
-			&shm->stats.frontier_productive_wins_per_syscall[i],
+			&shm->stats.frontier.productive_wins_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_live_misses[i] = __atomic_load_n(
-			&shm->stats.frontier_live_misses_per_syscall[i],
+			&shm->stats.frontier.live_misses_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_last_productive[i] = __atomic_load_n(
-			&shm->stats.frontier_last_productive_window_per_syscall[i],
+			&shm->stats.frontier.last_productive_window_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_recent_weight[i] = __atomic_load_n(
 			&shm->frontier_recent_count_cached[i],
