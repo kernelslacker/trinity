@@ -152,6 +152,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard stats/childop/*.c) \
 		   $(wildcard stats/network/*.c) \
 		   $(wildcard stats/kcov/*.c) \
+		   $(wildcard stats/periodic/*.c) \
 		   $(wildcard strategy/*.c) \
 		   $(wildcard struct_catalog/*.c) \
 		   $(wildcard struct_catalog/registry/*.c) \
@@ -241,6 +242,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/childop/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/network/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/kcov/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard stats/periodic/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard strategy/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard struct_catalog/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard struct_catalog/registry/*.c))) \
@@ -303,7 +305,7 @@ trinity: test $(OBJS) $(HEADERS)
 
 clean:
 	@rm -f $(OBJS)
-	@rm -f *.o args/*.o lib/*.o main/*.o main/params/*.o net/*.o objects/*.o stats/*.o stats/json/*.o tables/*.o utils/*.o
+	@rm -f *.o args/*.o lib/*.o main/*.o main/params/*.o net/*.o objects/*.o stats/*.o stats/json/*.o stats/periodic/*.o tables/*.o utils/*.o
 	@rm -f core.*
 	@rm -f trinity
 	@rm -f tags tags.json

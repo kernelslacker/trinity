@@ -38,7 +38,12 @@ timeseries, and periodic operator-facing dumps.
 | json/network.c | Network / netfilter / xfrm / socket-family / long-chain JSON section emitters + descriptor tables. |
 | json/tail.c | iouring-zc / KVM / nl80211 / NAT-T / AF_ALG / probes-misuse hand-written tail. |
 | kcov_cmp.c | Stateful periodic cmp_hints/redqueen diagnostics and previous-window deltas. |
-| periodic.c | Parent tick dumps: defense counters, cost pool, top syscalls, VMA count, childop split. |
+| periodic/strategy-topn.c | Shadow strategy per-syscall top-N helpers called at shutdown from `dump/strategy.c`. |
+| periodic/counter-rates.c | `defense_counters[]` rate table + `defense_counters_periodic_dump()` parent-tick emitter. |
+| periodic/childop-split.c | Childop-vs-random-syscall walltime/syscalls/iterations split emitter. |
+| periodic/cost-pool.c | Cost-pool active-count + shadow/live selector-fraction snapshot. |
+| periodic/top-syscalls.c | Per-syscall bandit/explorer/frontier/RQ/warm-reserve top-N deltas. |
+| periodic/vma.c | Parent + child `/proc/*/maps` line-count snapshot for VMA-leak triage. |
 | log.c | `--stats-log-file` and `--stats-timeseries` file lifecycle. |
 | runid.c | Run identity, boot/cache provenance, and shutdown delta manifest. |
 | corrupt_ptr.c | Corrupt-pointer attribution and deferred-free reject reporting. |
