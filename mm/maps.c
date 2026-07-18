@@ -963,75 +963,93 @@ void init_child_mappings(void)
 		return;
 	head->destroy = &map_destructor;
 	head->dump = &map_dump;
-	head->max_entries = MMAP_LOCAL_MAX_ENTRIES;
 
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_FILE);
 	if (head != NULL) {
 		head->destroy = &map_destructor;
 		head->dump = &map_dump;
-		head->max_entries = MMAP_LOCAL_MAX_ENTRIES;
 	}
 
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_TESTFILE);
 	if (head != NULL) {
 		head->destroy = &map_destructor;
 		head->dump = &map_dump;
-		head->max_entries = MMAP_LOCAL_MAX_ENTRIES;
 	}
 
 	globalhead = get_objhead(OBJ_GLOBAL, OBJ_MMAP_ANON);
-	if (globalhead == NULL || globalhead->array == NULL)
-		return;
-
-	/* Copy the initial mapping list to the child.
-	 * Note we're only copying pointers here, the actual mmaps
-	 * will be faulted into the child when they get accessed.
-	 *
-	 * Skip entries whose name pointer is bogus.  See child #9 spawn
-	 * crash where m->name had been overwritten with 0x610000.  The
-	 * iteration bound is provided by for_each_obj (array_capacity);
-	 * no additional cap is needed.
-	 */
-	for_each_obj(globalhead, globalobj, idx) {
-		struct map *m = &globalobj->map;
-		struct object *newobj;
-
-		if (m->name == NULL) {
-			outputerr("init_child_mappings: skipping global map with NULL name\n");
-			continue;
-		}
-
-		newobj = alloc_object();
-		newobj->map.ptr = m->ptr;
-		newobj->map.name = strdup(m->name);
-		if (!newobj->map.name) {
-			tracked_free_now(newobj);
-			continue;
-		}
-		newobj->map.size = m->size;
-		newobj->map.tracked_size = m->tracked_size;
-		newobj->map.prot = m->prot;
-		newobj->map.flags = m->flags;
-		newobj->map.fd = m->fd;
-		/* We leave type as 'INITIAL' until we change the mapping
-		 * by mprotect/mremap/munmap etc..
+	if (globalhead != NULL && globalhead->array != NULL) {
+		/* Copy the initial mapping list to the child.
+		 * Note we're only copying pointers here, the actual mmaps
+		 * will be faulted into the child when they get accessed.
+		 *
+		 * Skip entries whose name pointer is bogus.  See child #9 spawn
+		 * crash where m->name had been overwritten with 0x610000.  The
+		 * iteration bound is provided by for_each_obj (array_capacity);
+		 * no additional cap is needed.
 		 */
-		newobj->map.type = INITIAL_ANON;
-		add_object(newobj, OBJ_LOCAL, OBJ_MMAP_ANON);
+		for_each_obj(globalhead, globalobj, idx) {
+			struct map *m = &globalobj->map;
+			struct object *newobj;
+
+			if (m->name == NULL) {
+				outputerr("init_child_mappings: skipping global map with NULL name\n");
+				continue;
+			}
+
+			newobj = alloc_object();
+			newobj->map.ptr = m->ptr;
+			newobj->map.name = strdup(m->name);
+			if (!newobj->map.name) {
+				tracked_free_now(newobj);
+				continue;
+			}
+			newobj->map.size = m->size;
+			newobj->map.tracked_size = m->tracked_size;
+			newobj->map.prot = m->prot;
+			newobj->map.flags = m->flags;
+			newobj->map.fd = m->fd;
+			/* We leave type as 'INITIAL' until we change the mapping
+			 * by mprotect/mremap/munmap etc..
+			 */
+			newobj->map.type = INITIAL_ANON;
+			add_object(newobj, OBJ_LOCAL, OBJ_MMAP_ANON);
+		}
+
+		/*
+		 * Seed the OBJ_LOCAL FILE and TESTFILE pools from their
+		 * OBJ_GLOBAL snapshots too.  get_map_handle() picks the sub-pool
+		 * uniformly from {ANON, FILE, TESTFILE}; without these clones
+		 * two thirds of OBJ_LOCAL draws return NULL until lazy mmap
+		 * shapes happen to add entries, which only the 1/8 file-fd path
+		 * does for FILE and nothing does for TESTFILE.  Propagate the
+		 * source m->type (MMAPED_FILE for both pools today) rather than
+		 * forcing INITIAL_ANON so consumers can tell file mappings apart.
+		 */
+		clone_global_mmap_pool(OBJ_MMAP_FILE);
+		clone_global_mmap_pool(OBJ_MMAP_TESTFILE);
 	}
 
 	/*
-	 * Seed the OBJ_LOCAL FILE and TESTFILE pools from their
-	 * OBJ_GLOBAL snapshots too.  get_map_handle() picks the sub-pool
-	 * uniformly from {ANON, FILE, TESTFILE}; without these clones
-	 * two thirds of OBJ_LOCAL draws return NULL until lazy mmap
-	 * shapes happen to add entries, which only the 1/8 file-fd path
-	 * does for FILE and nothing does for TESTFILE.  Propagate the
-	 * source m->type (MMAPED_FILE for both pools today) rather than
-	 * forcing INITIAL_ANON so consumers can tell file mappings apart.
+	 * Install the LOCAL prune cap AFTER seeding.  Setting max_entries
+	 * before the clones would let add_object()'s per-insert
+	 * prune_objects() hook fire once num_entries crossed the cap: the
+	 * OBJ_GLOBAL OBJ_MMAP_ANON seed alone is 11 prot/flags variants x
+	 * 9 mapping_sizes[] entries = 99 objects (plus optional hugetlb)
+	 * versus a 64-entry cap, so the ONE_IN(10) prune gate would fire
+	 * several times during init and evict a fraction of the initial
+	 * diversity we just copied in.  Deferring the cap install lets the
+	 * full seed land untouched; the cap still bounds fuzz-created
+	 * post_mmap() growth thereafter, which is what it was added for.
 	 */
-	clone_global_mmap_pool(OBJ_MMAP_FILE);
-	clone_global_mmap_pool(OBJ_MMAP_TESTFILE);
+	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_ANON);
+	if (head != NULL)
+		head->max_entries = MMAP_LOCAL_MAX_ENTRIES;
+	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_FILE);
+	if (head != NULL)
+		head->max_entries = MMAP_LOCAL_MAX_ENTRIES;
+	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_TESTFILE);
+	if (head != NULL)
+		head->max_entries = MMAP_LOCAL_MAX_ENTRIES;
 }
 
 /* used in several sanitise_* functions. */
