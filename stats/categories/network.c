@@ -334,19 +334,6 @@ const struct stat_category pkt_builder_category =
 	              pkt_builder_runs,
 	              pkt_builder_fields);
 
-static const struct stat_field vlan_filter_churn_fields[] = {
-	STAT_FIELD(vlan_filter_churn, runs),
-	STAT_FIELD(vlan_filter_churn, setup_failed),
-	STAT_FIELD(vlan_filter_churn, veth_create_ok),
-	STAT_FIELD(vlan_filter_churn, vlan_add_ok),
-	STAT_FIELD(vlan_filter_churn, vlan_del_ok),
-};
-
-const struct stat_category vlan_filter_churn_category =
-	STAT_CATEGORY("vlan_filter_churn",
-	              vlan_filter_churn_runs,
-	              vlan_filter_churn_fields);
-
 static const struct stat_field iscsi_target_probe_fields[] = {
 	STAT_FIELD(iscsi_target_probe, runs),
 	STAT_FIELD(iscsi_target_probe, setup_failed),
