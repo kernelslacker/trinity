@@ -257,7 +257,7 @@ static void send_burst(int s, unsigned int n)
 		ssize_t r = send(s, payload, sizeof(payload), MSG_DONTWAIT);
 
 		if (r > 0)
-			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_send_ok,
+			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.send_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -297,7 +297,7 @@ static int igmp_source_iter_v4_setup_send(struct igmp_source_iter_v4_ctx *it)
 
 	it->send_s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
 	if (it->send_s < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -308,7 +308,7 @@ static int igmp_source_iter_v4_setup_send(struct igmp_source_iter_v4_ctx *it)
 	addr.sin_port        = htons(IMC_PORT);
 	addr.sin_addr.s_addr = it->grp_be;
 	if (connect(it->send_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -328,7 +328,7 @@ static int igmp_source_iter_v4_setup_recv(struct igmp_source_iter_v4_ctx *it)
 
 	it->recv_s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
 	if (it->recv_s < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -342,7 +342,7 @@ static int igmp_source_iter_v4_setup_recv(struct igmp_source_iter_v4_ctx *it)
 	addr.sin_port        = htons(IMC_PORT);
 	addr.sin_addr.s_addr = it->grp_be;
 	if (bind(it->recv_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -379,17 +379,17 @@ static int igmp_source_iter_v4_join(struct igmp_source_iter_v4_ctx *it)
 							 __ATOMIC_RELAXED);
 			}
 		}
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
+	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.join_ok,
 			   1, __ATOMIC_RELAXED);
 
 	fill_gsr_v4(&it->gsr_b, 0U, it->grp_be, it->src_b_be);
 	if (setsockopt(it->recv_s, IPPROTO_IP, MCAST_JOIN_SOURCE_GROUP,
 		       &it->gsr_b, sizeof(it->gsr_b)) == 0)
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.join_ok,
 				   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -413,14 +413,14 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 		/* RACE A: filter shrink mid-stream. */
 		if (setsockopt(it->recv_s, IPPROTO_IP, MCAST_LEAVE_SOURCE_GROUP,
 			       &it->gsr_a, sizeof(it->gsr_a)) == 0)
-			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_leave_ok,
+			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.leave_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 1:
 		/* RACE B: INCLUDE -> EXCLUDE flip via BLOCK_SOURCE. */
 		if (setsockopt(it->recv_s, IPPROTO_IP, MCAST_BLOCK_SOURCE,
 			       &it->gsr_b, sizeof(it->gsr_b)) == 0)
-			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_block_ok,
+			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.block_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
@@ -432,7 +432,7 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 			rc = setsockopt(it->recv_s, IPPROTO_IP, MCAST_MSFILTER,
 					it->gf, GROUP_FILTER_SIZE(nsrc));
 			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_msfilter_ok,
+				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		break;
@@ -445,7 +445,7 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 			mreq.imr_multiaddr.s_addr = it->grp_be;
 			if (setsockopt(it->recv_s, IPPROTO_IP, IP_DROP_MEMBERSHIP,
 				       &mreq, sizeof(mreq)) == 0)
-				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_drop_ok,
+				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.drop_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		break;
@@ -571,7 +571,7 @@ static int mld_source_iter_v6_setup_send(struct mld_source_iter_v6_ctx *it)
 
 	it->send_s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
 	if (it->send_s < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -582,7 +582,7 @@ static int mld_source_iter_v6_setup_send(struct mld_source_iter_v6_ctx *it)
 	addr.sin6_port   = htons(IMC_PORT);
 	memcpy(&addr.sin6_addr, &it->grp_v6, sizeof(it->grp_v6));
 	if (connect(it->send_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -602,7 +602,7 @@ static int mld_source_iter_v6_setup_recv(struct mld_source_iter_v6_ctx *it)
 
 	it->recv_s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
 	if (it->recv_s < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -615,7 +615,7 @@ static int mld_source_iter_v6_setup_recv(struct mld_source_iter_v6_ctx *it)
 	addr.sin6_family = AF_INET6;
 	addr.sin6_port   = htons(IMC_PORT);
 	if (bind(it->recv_s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -652,17 +652,17 @@ static int mld_source_iter_v6_join(struct mld_source_iter_v6_ctx *it)
 							 __ATOMIC_RELAXED);
 			}
 		}
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
+	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.join_ok,
 			   1, __ATOMIC_RELAXED);
 
 	fill_gsr_v6(&it->gsr_b, 0U, &it->grp_v6, &it->src_b_v6);
 	if (setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,
 		       &it->gsr_b, sizeof(it->gsr_b)) == 0)
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_join_ok,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.join_ok,
 				   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -686,13 +686,13 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 	case 0:
 		if (setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_LEAVE_SOURCE_GROUP,
 			       &it->gsr_a, sizeof(it->gsr_a)) == 0)
-			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_leave_ok,
+			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.leave_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 1:
 		if (setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_BLOCK_SOURCE,
 			       &it->gsr_b, sizeof(it->gsr_b)) == 0)
-			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_block_ok,
+			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.block_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
@@ -702,7 +702,7 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 			rc = setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_MSFILTER,
 					it->gf, GROUP_FILTER_SIZE(nsrc));
 			if (rc == 0)
-				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_msfilter_ok,
+				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		break;
@@ -715,7 +715,7 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 			if (setsockopt(it->recv_s, IPPROTO_IPV6,
 				       IPV6_DROP_MEMBERSHIP,
 				       &mreq, sizeof(mreq)) == 0)
-				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_drop_ok,
+				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.drop_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		break;
@@ -840,11 +840,11 @@ bool igmp_mld_source_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_runs,
+	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_igmp_mld_source_churn) {
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -889,9 +889,9 @@ bool igmp_mld_source_churn(struct childdata *child)
 {
 	(void)child;
 
-	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_runs,
+	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
+	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
