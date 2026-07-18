@@ -265,7 +265,7 @@ static int iscsi_read_bhs(int fd, unsigned char *bhs)
 			return -1;
 		}
 		got += (size_t)n;
-		__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_in,
+		__atomic_add_fetch(&shm->stats.iscsi_walker.bytes_in,
 				   (unsigned long)n, __ATOMIC_RELAXED);
 	}
 	return 0;
@@ -290,7 +290,7 @@ static void iscsi_drain_after_bhs(int fd)
 		return;
 	n = recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_in,
+		__atomic_add_fetch(&shm->stats.iscsi_walker.bytes_in,
 				   (unsigned long)n, __ATOMIC_RELAXED);
 }
 
@@ -501,9 +501,9 @@ static void iscsi_send_chaos_burst(int fd, unsigned char *pdu)
 		n = send(fd, pdu, pdu_len,
 			 MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (n > 0) {
-			__atomic_add_fetch(&shm->stats.iscsi_walker_chaos_pdus,
+			__atomic_add_fetch(&shm->stats.iscsi_walker.chaos_pdus,
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+			__atomic_add_fetch(&shm->stats.iscsi_walker.bytes_out,
 					   (unsigned long)n,
 					   __ATOMIC_RELAXED);
 		}
@@ -532,19 +532,19 @@ static bool iscsi_login_walk(int fd, unsigned char *pdu,
 	n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (n <= 0)
 		return false;
-	__atomic_add_fetch(&shm->stats.iscsi_walker_state_security_sent,
+	__atomic_add_fetch(&shm->stats.iscsi_walker.state_security_sent,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+	__atomic_add_fetch(&shm->stats.iscsi_walker.bytes_out,
 			   (unsigned long)n, __ATOMIC_RELAXED);
 
 	if (iscsi_read_bhs(fd, resp) < 0)
 		return false;
 	if (resp[0] != ISCSI_OP_LOGIN_RSP)
 		return false;
-	__atomic_add_fetch(&shm->stats.iscsi_walker_login_response_ok,
+	__atomic_add_fetch(&shm->stats.iscsi_walker.login_response_ok,
 			   1, __ATOMIC_RELAXED);
 	if (resp[36] != 0) {
-		__atomic_add_fetch(&shm->stats.iscsi_walker_login_rejected,
+		__atomic_add_fetch(&shm->stats.iscsi_walker.login_rejected,
 				   1, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -556,19 +556,19 @@ static bool iscsi_login_walk(int fd, unsigned char *pdu,
 	n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (n <= 0)
 		return false;
-	__atomic_add_fetch(&shm->stats.iscsi_walker_state_op_neg_sent,
+	__atomic_add_fetch(&shm->stats.iscsi_walker.state_op_neg_sent,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+	__atomic_add_fetch(&shm->stats.iscsi_walker.bytes_out,
 			   (unsigned long)n, __ATOMIC_RELAXED);
 
 	if (iscsi_read_bhs(fd, resp) < 0)
 		return false;
 	if (resp[0] != ISCSI_OP_LOGIN_RSP)
 		return false;
-	__atomic_add_fetch(&shm->stats.iscsi_walker_login_response_ok,
+	__atomic_add_fetch(&shm->stats.iscsi_walker.login_response_ok,
 			   1, __ATOMIC_RELAXED);
 	if (resp[36] != 0) {
-		__atomic_add_fetch(&shm->stats.iscsi_walker_login_rejected,
+		__atomic_add_fetch(&shm->stats.iscsi_walker.login_rejected,
 				   1, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -578,7 +578,7 @@ static bool iscsi_login_walk(int fd, unsigned char *pdu,
 		return false;
 	iscsi_drain_after_bhs(fd);
 
-	__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_reached, 1,
+	__atomic_add_fetch(&shm->stats.iscsi_walker.ffp_reached, 1,
 			   __ATOMIC_RELAXED);
 	*tsih_out = tsih;
 	return true;
@@ -595,16 +595,16 @@ static void iscsi_send_ffp_burst(int fd, unsigned char *pdu,
 	size_t pdu_len;
 	ssize_t n;
 
-	__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_iters, 1,
+	__atomic_add_fetch(&shm->stats.iscsi_walker.ffp_iters, 1,
 			   __ATOMIC_RELAXED);
 	for (j = 0; j < ffp_pdus; j++) {
 		pdu_len = build_ffp_fuzz(pdu, isid, tsih);
 		n = send(fd, pdu, pdu_len,
 			 MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (n > 0) {
-			__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_pdus,
+			__atomic_add_fetch(&shm->stats.iscsi_walker.ffp_pdus,
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+			__atomic_add_fetch(&shm->stats.iscsi_walker.bytes_out,
 					   (unsigned long)n,
 					   __ATOMIC_RELAXED);
 		}
@@ -632,7 +632,7 @@ bool iscsi_login_walker(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.iscsi_walker_runs, 1,
+	__atomic_add_fetch(&shm->stats.iscsi_walker.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
@@ -640,7 +640,7 @@ bool iscsi_login_walker(struct childdata *child)
 
 	chaos = ((invocation_counter++ % ISCSI_WALKER_CHAOS_MODULO) == 0);
 	if (chaos)
-		__atomic_add_fetch(&shm->stats.iscsi_walker_chaos_runs, 1,
+		__atomic_add_fetch(&shm->stats.iscsi_walker.chaos_runs, 1,
 				   __ATOMIC_RELAXED);
 
 	iters = BUDGETED(CHILD_OP_ISCSI_LOGIN_WALKER,
@@ -660,15 +660,15 @@ bool iscsi_login_walker(struct childdata *child)
 					__atomic_store_n(&shm->stats.childop_latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.iscsi_walker_no_target,
+				__atomic_add_fetch(&shm->stats.iscsi_walker.no_target,
 						   1, __ATOMIC_RELAXED);
 				return true;
 			}
-			__atomic_add_fetch(&shm->stats.iscsi_walker_setup_failed,
+			__atomic_add_fetch(&shm->stats.iscsi_walker.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			continue;
 		}
-		__atomic_add_fetch(&shm->stats.iscsi_walker_connected, 1,
+		__atomic_add_fetch(&shm->stats.iscsi_walker.connected, 1,
 				   __ATOMIC_RELAXED);
 		if (valid_op) {
 			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
