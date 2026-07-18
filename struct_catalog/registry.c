@@ -1,10 +1,11 @@
 /*
- * Struct-catalog registration + (nr, arg) lookup.
+ * Struct-catalog registration composition root + (nr, arg) lookup.
  *
- * Carved out of struct_catalog/catalog.c: this TU owns the mapping
- * from a fuzzed syscall dispatch to the struct_desc that describes
- * the argument's payload, plus the fast nr-indexed lookup built at
- * init time.
+ * Owns the mapping from a fuzzed syscall dispatch to the struct_desc
+ * that describes the argument's payload, plus the fast nr-indexed
+ * lookup built at init time.  The registration data itself lives in
+ * per-domain arrays under struct_catalog/registry/, composed into
+ * syscall_struct_arg_groups[] below.
  *
  * The slot_binding pool + desc_by_nr_64/32[] sizing bounds
  * (SLOT_POOL_MAX, DISCRIM_VARIANTS_PER_SLOT_MAX) BUG on overflow
@@ -16,137 +17,19 @@
  *   - struct_arg_lookup_by_name: discriminator-blind default.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
-#include <signal.h>
-#include <sys/time.h>
-#include <sys/timex.h>
-#include <sys/resource.h>
-#include <sys/epoll.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <sys/uio.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <sys/sem.h>
-#include <sys/shm.h>
-#include <sched.h>
-#include <utime.h>
-#include <netinet/in.h>
-#include <sys/prctl.h>
-#include <linux/filter.h>
-#include <linux/netlink.h>
-#include <linux/if_arp.h>
-#include <linux/if_ether.h>
-#include <linux/if_packet.h>
-#include <linux/tipc.h>
-#include <linux/capability.h>
-#include <linux/netfilter.h>
-#include <linux/futex.h>
-#include <linux/rseq.h>
-#include <linux/sched.h>
-#include <linux/sched/types.h>
-#include <linux/io_uring.h>
-#include <linux/kexec.h>
-#include <linux/landlock.h>
-#include <linux/mman.h>
-#include <linux/mount.h>
-#include <linux/fs.h>
-#include <linux/quota.h>
-#include <linux/dqblk_xfs.h>
-#include <mqueue.h>
-#include <fcntl.h>
 #include <string.h>
-#include <time.h>
 
 #include "config.h"
-/*
- * linux/if_pppox.h pulls in linux/l2tp.h, whose enum declares
- * L2TP_ATTR_IP6_SADDR / RX_COOKIE_DISCARDS / ... as identifiers.
- * include/kernel headers define those same names as fallback numeric macros for
- * older kernel-headers packages, so the include must precede the kernel fallback header;
- * otherwise the macro expansion turns the enum members into integer
- * literals and -Werror trips.
- */
-#ifdef USE_PPPOX
-#include <linux/if_pppox.h>
-#endif
-#ifdef USE_BPF
-#include <linux/bpf.h>
-#endif
-#ifdef USE_VSOCK
-#include <linux/vm_sockets.h>
-#endif
-#ifdef USE_CAN
-#include <linux/can.h>
-#endif
-#ifdef USE_RXRPC
-#include <linux/rxrpc.h>
-#endif
-#ifdef USE_X25
-#include <linux/x25.h>
-#endif
-#ifdef USE_PHONET
-#include <linux/phonet.h>
-#endif
-#ifdef USE_ATALK
-#include <linux/atalk.h>
-#endif
-#ifdef USE_ATM
-#include <linux/atm.h>
-#endif
-#ifdef USE_LLC
-#include <linux/llc.h>
-#endif
-#ifdef USE_MCTP
-#include <linux/mctp.h>
-#endif
-#ifdef USE_IF_ALG
-#include <linux/if_alg.h>
-#endif
-#ifdef USE_XDP
-#include <linux/if_xdp.h>
-/*
- * XDP_USE_NEED_WAKEUP landed in 5.4 (commit 77cd0d7b3f25); older
- * toolchain headers won't carry it even when the rest of the
- * sockaddr_xdp definitions are present.  Fall back to the upstream
- * bit value so the FT_FLAGS mask stays the same on either side.
- */
-#ifndef XDP_USE_NEED_WAKEUP
-#define XDP_USE_NEED_WAKEUP	(1 << 3)
-#endif
-#endif
-#ifdef USE_XATTR_ARGS
-#include <linux/xattr.h>
-#endif
-#ifdef USE_SCTP
-#include <linux/sctp.h>
-#endif
-#ifdef USE_TCP_REPAIR_OPT
-#include <linux/tcp.h>
-#endif
 
-#include "argtype-ops.h"
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
-#include "arch.h"
-#ifdef X86
-#include <asm/ldt.h>		/* struct user_desc -- modify_ldt arg2 */
-#endif
 #include "debug.h"
-#include "perf.h"		/* random_tracepoint_config -- FT_PICKER for TRACEPOINT.config */
-#include "perf_event.h"
-#include "random.h"
+#include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
-#include "utils.h"
 
-
-#include "kernel/fcntl.h"
-#include "kernel/l2tp.h"
-#include "kernel/seccomp.h"
-#include "kernel/in.h"
-#include "kernel/sctp.h"
 /* ------------------------------------------------------------------ */
 /* Syscall -> struct arg mapping -- composition root                    */
 /* ------------------------------------------------------------------ */
