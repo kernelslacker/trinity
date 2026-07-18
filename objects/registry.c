@@ -559,7 +559,7 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 		 * with the decrement in fd_event_drain()'s CLOSE arm,
 		 * which looks the type back up via fd_hash_lookup() on
 		 * the consumer side. */
-		__atomic_fetch_add(&shm->stats.fd_provider_outstanding[type],
+		__atomic_fetch_add(&shm->stats.fd.provider_outstanding[type],
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -883,7 +883,7 @@ void __destroy_object(struct object *obj, enum obj_scope scope,
 		 * handlers, perf/kvm peer pre-closes, and bulk shutdown
 		 * drain all flow through __destroy_object().
 		 */
-		__atomic_fetch_sub(&shm->stats.fd_provider_outstanding[type],
+		__atomic_fetch_sub(&shm->stats.fd.provider_outstanding[type],
 				   1, __ATOMIC_RELAXED);
 	} else if (scope == OBJ_LOCAL && is_fd_type(type))
 		local_fd_hash_remove(head, fd_from_object(obj, type));
