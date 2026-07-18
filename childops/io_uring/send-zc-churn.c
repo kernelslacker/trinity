@@ -376,7 +376,7 @@ static int iouring_send_zc_iter_setup(struct iouring_send_zc_iter_ctx *it)
 								 __ATOMIC_RELAXED);
 				}
 			}
-			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
+			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return -1;
 		}
@@ -388,7 +388,7 @@ static int iouring_send_zc_iter_setup(struct iouring_send_zc_iter_ctx *it)
 				    MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE,
 				    -1, 0);
 		if (it->pages[i] == MAP_FAILED) {
-			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
+			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return -1;
 		}
@@ -399,12 +399,12 @@ static int iouring_send_zc_iter_setup(struct iouring_send_zc_iter_ctx *it)
 
 	if (do_register(it->ring.fd, IORING_REGISTER_BUFFERS,
 			it->bufs, ZC_BUF_COUNT) < 0) {
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	it->bufs_registered = true;
-	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_register_bufs_ok,
+	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.register_bufs_ok,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -421,7 +421,7 @@ static int iouring_send_zc_iter_socket(struct iouring_send_zc_iter_ctx *it)
 
 	it->sock_fd = open_loopback_pair(&it->acceptor);
 	if (it->sock_fd < 0) {
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -447,7 +447,7 @@ static int iouring_send_zc_iter_socket(struct iouring_send_zc_iter_ctx *it)
 							 __ATOMIC_RELAXED);
 			}
 		}
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -474,7 +474,7 @@ static void iouring_send_zc_iter_submit(struct iouring_send_zc_iter_ctx *it)
 		fill_send_zc(&sqe, it->sock_fd, it->pages[idx], send_len, idx);
 		if (submit_one(&it->ring, &sqe) == 1) {
 			it->submitted++;
-			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_send_zc_ok,
+			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.send_zc_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -504,7 +504,7 @@ static void iouring_send_zc_iter_submit(struct iouring_send_zc_iter_ctx *it)
 		fill_sendmsg_zc(&sqe, it->sock_fd, &it->sendmsg_msg, buf_index);
 		if (submit_one(&it->ring, &sqe) == 1) {
 			it->submitted++;
-			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_sendmsg_zc_ok,
+			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.sendmsg_zc_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -539,7 +539,7 @@ static void iouring_send_zc_iter_race(struct iouring_send_zc_iter_ctx *it)
 
 	if (do_register(it->ring.fd, IORING_REGISTER_BUFFERS_UPDATE,
 			&upd, sizeof(upd)) >= 0)
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_update_race_ok,
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.update_race_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -561,7 +561,7 @@ static void iouring_send_zc_iter_drive(struct iouring_send_zc_iter_ctx *it,
 		     IORING_ENTER_GETEVENTS);
 	if (r >= 0) {
 		reaped = drain_cqes(&it->ring);
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_cqe_drained,
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.cqe_drained,
 				   (unsigned long)reaped, __ATOMIC_RELAXED);
 	}
 
@@ -569,13 +569,13 @@ static void iouring_send_zc_iter_drive(struct iouring_send_zc_iter_ctx *it,
 		return;
 
 	if (do_register(it->ring.fd, IORING_UNREGISTER_BUFFERS, NULL, 0) >= 0) {
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_unregister_race_ok,
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.unregister_race_ok,
 				   1, __ATOMIC_RELAXED);
 		it->bufs_registered = false;
 	}
 
 	reaped = drain_cqes(&it->ring);
-	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_cqe_drained,
+	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.cqe_drained,
 			   (unsigned long)reaped, __ATOMIC_RELAXED);
 }
 
@@ -649,11 +649,11 @@ bool iouring_send_zc_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_runs,
+	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_iouring_send_zc_churn) {
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -693,9 +693,9 @@ bool iouring_send_zc_churn(struct childdata *child)
 bool iouring_send_zc_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_runs,
+	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
+	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }

@@ -53,6 +53,7 @@
 #include "stats/subsys/iouring.h"
 #include "stats/subsys/iouring_eventfd.h"
 #include "stats/subsys/iouring_recipes.h"
+#include "stats/subsys/iouring_send_zc_churn.h"
 #include "stats/subsys/ip6gre_lapb.h"
 #include "stats/subsys/ipv6_ndisc_proxy.h"
 #include "stats/subsys/ipv6_pmtu_race.h"
@@ -1877,15 +1878,8 @@ struct stats_s {
 	unsigned long rds_zcopy_crafted_send_sends_failed;		/* sendmsg(MSG_ZEROCOPY) returned a non-EFAULT error (any errno) */
 	unsigned long rds_zcopy_crafted_send_errqueue_drained;		/* recvmsg(MSG_ERRQUEUE) drained at least one zcopy completion cookie */
 
-	/* iouring_send_zc_churn childop counters */
-	unsigned long iouring_send_zc_churn_runs;			/* total iouring_send_zc_churn invocations */
-	unsigned long iouring_send_zc_churn_setup_failed;		/* io_uring_setup / mmap / loopback / SO_ZEROCOPY / unsupported latch fired */
-	unsigned long iouring_send_zc_churn_register_bufs_ok;		/* io_uring_register(IORING_REGISTER_BUFFERS) accepted */
-	unsigned long iouring_send_zc_churn_send_zc_ok;			/* IORING_OP_SEND_ZC SQE submitted (io_uring_enter returned >=0) */
-	unsigned long iouring_send_zc_churn_sendmsg_zc_ok;		/* IORING_OP_SENDMSG_ZC SQE submitted (io_uring_enter returned >=0) */
-	unsigned long iouring_send_zc_churn_unregister_race_ok;		/* IORING_UNREGISTER_BUFFERS accepted mid-flight (rsrc-node race window opened) */
-	unsigned long iouring_send_zc_churn_update_race_ok;		/* IORING_REGISTER_BUFFERS_UPDATE replaced slot 0 mid-flight (imu_index race window opened) */
-	unsigned long iouring_send_zc_churn_cqe_drained;		/* CQE reaped from the completion ring (ZC notif or send completion) */
+	/* iouring_send_zc_churn accounting.  See stats/subsys/iouring_send_zc_churn.h. */
+	struct iouring_send_zc_churn_stats iouring_send_zc_churn __attribute__((aligned(64)));
 
 	/* vsock_transport_churn childop counters */
 	unsigned long vsock_transport_churn_runs;			/* total vsock_transport_churn invocations */
