@@ -1025,7 +1025,9 @@ static bool pick_next_canary(enum child_op_type *out)
  * picker is rewired.
  *
  * Recommendation precedence:
- *   CONFIG_BLOCKED   dispatch shape has no outer KCOV bracket.
+ *   NO_OUTER_BRACKET dispatch shape has no outer KCOV bracket.
+ *                    NOT a host-config failure: the op still runs, it
+ *                    just cannot populate clean-edge attribution.
  *   QUARANTINED      crash threshold tripped AND the op has been
  *                    demoted at least once already (repeated bad
  *                    windows).
@@ -1049,7 +1051,7 @@ canary_recommend_state(enum child_op_type op,
 		       unsigned int prior_demotions)
 {
 	if (!op_uses_outer_bracket(op))
-		return CHILDOP_REC_CONFIG_BLOCKED;
+		return CHILDOP_REC_NO_OUTER_BRACKET;
 	if (window_crashes >= CANARY_CRASH_THRESHOLD) {
 		if (prior_demotions > 0)
 			return CHILDOP_REC_QUARANTINED;
@@ -1088,7 +1090,7 @@ const char *childop_recommended_state_name(enum childop_recommended_state s)
 	case CHILDOP_REC_PROMOTED_INTERFERENCE:	return "PROMOTED_INTERFERENCE";
 	case CHILDOP_REC_THROTTLED:		return "THROTTLED";
 	case CHILDOP_REC_QUARANTINED:		return "QUARANTINED";
-	case CHILDOP_REC_CONFIG_BLOCKED:	return "CONFIG_BLOCKED";
+	case CHILDOP_REC_NO_OUTER_BRACKET:	return "NO_OUTER_BRACKET";
 	case CHILDOP_REC_UNATTRIBUTED_EDGES:	return "UNATTRIBUTED_EDGES";
 	}
 	return "UNKNOWN";
@@ -1116,7 +1118,7 @@ static bool recommended_state_is_demote(enum childop_recommended_state s)
 	 * close_window_and_decide(). */
 	return s == CHILDOP_REC_THROTTLED ||
 	       s == CHILDOP_REC_QUARANTINED ||
-	       s == CHILDOP_REC_CONFIG_BLOCKED;
+	       s == CHILDOP_REC_NO_OUTER_BRACKET;
 }
 
 /* --------------------------------------------------------------------
