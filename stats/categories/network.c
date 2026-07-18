@@ -407,20 +407,6 @@ const struct stat_category af_alg_weak_cipher_probe_category =
 	              af_alg_weak_cipher_probe_runs,
 	              af_alg_weak_cipher_probe_fields);
 
-static const struct stat_field blkdev_lifecycle_race_fields[] = {
-	STAT_FIELD(blkdev_lifecycle, runs),
-	STAT_FIELD(blkdev_lifecycle, setup_failed),
-	STAT_FIELD(blkdev_lifecycle, set_fd_ok),
-	STAT_FIELD(blkdev_lifecycle, clr_fd),
-	STAT_FIELD(blkdev_lifecycle, ebusy),
-	STAT_FIELD(blkdev_lifecycle, rescans),
-};
-
-const struct stat_category blkdev_lifecycle_race_category =
-	STAT_CATEGORY("blkdev_lifecycle_race",
-	              blkdev_lifecycle_runs,
-	              blkdev_lifecycle_race_fields);
-
 static const struct stat_field hfs_mount_fuzz_fields[] = {
 	STAT_FIELD(hfs_mount_fuzz, runs),
 	STAT_FIELD(hfs_mount_fuzz, setup_failed),
