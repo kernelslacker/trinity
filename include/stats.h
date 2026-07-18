@@ -20,6 +20,7 @@
 #include "kernel/if_packet.h"
 #include "kernel/mount.h"
 #include "stats/subsys/af_alg_weak_cipher_probe.h"
+#include "stats/subsys/af_unix_peek_race.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/barrier_racer.h"
 #include "stats/subsys/blkdev_lifecycle.h"
@@ -1768,19 +1769,8 @@ struct stats_s {
 	unsigned long af_unix_scm_rights_gc_sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
 	unsigned long af_unix_scm_rights_gc_sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
 
-	/* af_unix_peek_race childop counters */
-	unsigned long af_unix_peek_race_runs;			/* total af_unix_peek_race invocations */
-	unsigned long af_unix_peek_race_setup_failed;		/* AF_UNIX SOCK_STREAM socketpair / probe latch fired */
-	unsigned long af_unix_peek_race_pair_open_ok;		/* fresh SOCK_STREAM socketpair + prefill landed */
-	unsigned long af_unix_peek_race_peek_off_armed;		/* setsockopt SO_PEEK_OFF accepted on the reader half */
-	unsigned long af_unix_peek_race_peek_off_rejected;	/* setsockopt SO_PEEK_OFF rejected (old kernel; coverage still proceeds) */
-	unsigned long af_unix_peek_race_send_ok;		/* parent send() landed bytes on the writer half */
-	unsigned long af_unix_peek_race_shutdown_ok;		/* parent shutdown(SHUT_WR) flipped peer state */
-	unsigned long af_unix_peek_race_pair_rebuilds;		/* post-EPIPE socketpair() rebuilds (bounded per burst) */
-	unsigned long af_unix_peek_race_sibling_spawn_ok;	/* clone(CLONE_FILES|SIGCHLD) sibling race-producer spawned */
-	unsigned long af_unix_peek_race_sibling_spawn_failed;	/* clone()/clone3() failed; fell back to single-task race burst */
-	unsigned long af_unix_peek_race_sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
-	unsigned long af_unix_peek_race_sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
+	/* af_unix_peek_race accounting.  See stats/subsys/af_unix_peek_race.h. */
+	struct af_unix_peek_race_stats af_unix_peek_race __attribute__((aligned(64)));
 
 	/* sysv_shm_orphan_race childop counters */
 	unsigned long sysv_shm_orphan_race_runs;		/* total sysv_shm_orphan_race invocations */

@@ -558,26 +558,6 @@ const struct stat_category af_unix_scm_rights_gc_category =
 	              af_unix_scm_rights_gc_runs,
 	              af_unix_scm_rights_gc_fields);
 
-static const struct stat_field af_unix_peek_race_fields[] = {
-	STAT_FIELD(af_unix_peek_race, runs),
-	STAT_FIELD(af_unix_peek_race, setup_failed),
-	STAT_FIELD(af_unix_peek_race, pair_open_ok),
-	STAT_FIELD(af_unix_peek_race, peek_off_armed),
-	STAT_FIELD(af_unix_peek_race, peek_off_rejected),
-	STAT_FIELD(af_unix_peek_race, send_ok),
-	STAT_FIELD(af_unix_peek_race, shutdown_ok),
-	STAT_FIELD(af_unix_peek_race, pair_rebuilds),
-	STAT_FIELD(af_unix_peek_race, sibling_spawn_ok),
-	STAT_FIELD(af_unix_peek_race, sibling_spawn_failed),
-	STAT_FIELD(af_unix_peek_race, sibling_reaped_ok),
-	STAT_FIELD(af_unix_peek_race, sibling_crashed),
-};
-
-const struct stat_category af_unix_peek_race_category =
-	STAT_CATEGORY("af_unix_peek_race",
-		af_unix_peek_race_runs,
-		af_unix_peek_race_fields);
-
 static const struct stat_field sysv_shm_orphan_race_fields[] = {
 	STAT_FIELD(sysv_shm_orphan_race, runs),
 	STAT_FIELD(sysv_shm_orphan_race, setup_failed),
