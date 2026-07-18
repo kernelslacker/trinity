@@ -215,11 +215,11 @@ static void one_cycle(void)
 	memcpy(path, shm->isolation.scratch_block[idx].mount_path, n);
 	path[n] = '\0';
 
-	__atomic_add_fetch(&shm->stats.umount_race_picks, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.umount_race.picks, 1, __ATOMIC_RELAXED);
 
 	pid = fork();
 	if (pid < 0) {
-		__atomic_add_fetch(&shm->stats.umount_race_setup_failed, 1,
+		__atomic_add_fetch(&shm->stats.umount_race.setup_failed, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
@@ -229,15 +229,15 @@ static void one_cycle(void)
 		_exit(0);
 	}
 
-	__atomic_add_fetch(&shm->stats.umount_race_forks, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.umount_race.forks, 1, __ATOMIC_RELAXED);
 
 	(void)usleep(rnd_modulo_u32(PARENT_USLEEP_MAX));
 
 	if (umount2(path, MNT_DETACH) == 0)
-		__atomic_add_fetch(&shm->stats.umount_race_umounts, 1,
+		__atomic_add_fetch(&shm->stats.umount_race.umounts, 1,
 				   __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.umount_race_umount_failed, 1,
+		__atomic_add_fetch(&shm->stats.umount_race.umount_failed, 1,
 				   __ATOMIC_RELAXED);
 
 	reap_acceptor(pid);
@@ -248,7 +248,7 @@ bool umount_race(struct childdata *child)
 	unsigned int cycles;
 	unsigned int i;
 
-	__atomic_add_fetch(&shm->stats.umount_race_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.umount_race.runs, 1, __ATOMIC_RELAXED);
 
 	/* Box-safety + degrade gate, mirroring mount-churn.c's
 	 * mnt_ready check (childops/fs/mount-churn.c:177).  When the

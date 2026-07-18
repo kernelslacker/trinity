@@ -47,17 +47,3 @@ const struct stat_category cgroup_churn_category =
 	              cgroup_churn_runs,
 	              cgroup_churn_fields);
 
-static const struct stat_field umount_race_fields[] = {
-	STAT_FIELD(umount_race, runs),
-	STAT_FIELD(umount_race, picks),
-	STAT_FIELD(umount_race, forks),
-	STAT_FIELD(umount_race, umounts),
-	STAT_FIELD(umount_race, umount_failed),
-	STAT_FIELD(umount_race, setup_failed),
-};
-
-const struct stat_category umount_race_category =
-	STAT_CATEGORY("umount_race",
-	              umount_race_runs,
-	              umount_race_fields);
-
