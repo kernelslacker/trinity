@@ -62,6 +62,7 @@
 #include "stats/subsys/ipv6_ndisc_proxy.h"
 #include "stats/subsys/ipv6_pmtu_race.h"
 #include "stats/subsys/iscsi_target_probe.h"
+#include "stats/subsys/iscsi_walker.h"
 #include "stats/subsys/keyring_spam.h"
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/map_shared_stress.h"
@@ -1888,27 +1889,8 @@ struct stats_s {
 	/* iscsi_target_probe accounting.  See stats/subsys/iscsi_target_probe.h. */
 	struct iscsi_target_probe_stats iscsi_target_probe __attribute__((aligned(64)));
 
-	/* iscsi_login_walker childop counters.  Companion to
-	 * iscsi_target_probe: instead of single one-shot PDUs, this walker
-	 * drives the LIO Login state machine through its real-protocol
-	 * transitions to land coverage past the BHS / parser-level
-	 * rejection gates.  Latches off (no_target) on first ECONNREFUSED
-	 * exactly like iscsi_target_probe. */
-	unsigned long iscsi_walker_runs;			/* total iscsi_login_walker invocations */
-	unsigned long iscsi_walker_setup_failed;		/* socket() / non-ECONNREFUSED connect failure */
-	unsigned long iscsi_walker_no_target;			/* ECONNREFUSED on connect — latched per-child */
-	unsigned long iscsi_walker_connected;			/* TCP connect to 3260 returned 0 / completed */
-	unsigned long iscsi_walker_state_security_sent;		/* PDU1 (T=1 CSG=0 NSG=1) send returned >0 */
-	unsigned long iscsi_walker_state_op_neg_sent;		/* PDU2 (T=1 CSG=1 NSG=3) send returned >0 */
-	unsigned long iscsi_walker_login_response_ok;		/* full 48-byte Login Response BHS with opcode 0x23 received */
-	unsigned long iscsi_walker_login_rejected;		/* Login Response Status-Class != 0 */
-	unsigned long iscsi_walker_ffp_reached;			/* Login walk completed with T=1 and NSG=FFP -- the KPI */
-	unsigned long iscsi_walker_ffp_iters;			/* iterations that entered the FFP-fuzz phase */
-	unsigned long iscsi_walker_ffp_pdus;			/* FFP fuzz PDUs send() returned >0 */
-	unsigned long iscsi_walker_chaos_runs;			/* invocations that took the chaos path (1-in-N) */
-	unsigned long iscsi_walker_chaos_pdus;			/* random-BHS PDUs send() returned >0 in chaos mode */
-	unsigned long iscsi_walker_bytes_out;			/* total bytes successfully send()'d */
-	unsigned long iscsi_walker_bytes_in;			/* total bytes successfully recv()'d */
+	/* iscsi_walker accounting.  See stats/subsys/iscsi_walker.h. */
+	struct iscsi_walker_stats iscsi_walker __attribute__((aligned(64)));
 
 	/* ip6erspan_netns_migrate childop counters */
 	unsigned long inm_iters;				/* total ip6erspan_netns_migrate invocations */

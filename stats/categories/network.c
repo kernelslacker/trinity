@@ -131,29 +131,6 @@ const struct stat_category pkt_builder_category =
 	              pkt_builder_runs,
 	              pkt_builder_fields);
 
-static const struct stat_field iscsi_login_walker_fields[] = {
-	STAT_FIELD(iscsi_walker, runs),
-	STAT_FIELD(iscsi_walker, setup_failed),
-	STAT_FIELD(iscsi_walker, no_target),
-	STAT_FIELD(iscsi_walker, connected),
-	STAT_FIELD(iscsi_walker, state_security_sent),
-	STAT_FIELD(iscsi_walker, state_op_neg_sent),
-	STAT_FIELD(iscsi_walker, login_response_ok),
-	STAT_FIELD(iscsi_walker, login_rejected),
-	STAT_FIELD(iscsi_walker, ffp_reached),
-	STAT_FIELD(iscsi_walker, ffp_iters),
-	STAT_FIELD(iscsi_walker, ffp_pdus),
-	STAT_FIELD(iscsi_walker, chaos_runs),
-	STAT_FIELD(iscsi_walker, chaos_pdus),
-	STAT_FIELD(iscsi_walker, bytes_out),
-	STAT_FIELD(iscsi_walker, bytes_in),
-};
-
-const struct stat_category iscsi_login_walker_category =
-	STAT_CATEGORY("iscsi_login_walker",
-	              iscsi_walker_runs,
-	              iscsi_login_walker_fields);
-
 static const struct stat_field veth_asymmetric_xdp_fields[] = {
 	STAT_FIELD(veth_asym, iters),
 	STAT_FIELD(veth_asym, eperm),
