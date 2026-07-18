@@ -47,6 +47,7 @@
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/handshake_req_abort.h"
+#include "stats/subsys/hfs_mount_fuzz.h"
 #include "stats/subsys/inplace_crypto.h"
 #include "stats/subsys/iouring.h"
 #include "stats/subsys/iouring_eventfd.h"
@@ -1974,22 +1975,8 @@ struct stats_s {
 	/* blkdev_lifecycle_race accounting.  See stats/subsys/blkdev_lifecycle.h. */
 	struct blkdev_lifecycle_stats blkdev_lifecycle __attribute__((aligned(64)));
 
-	/* hfs_mount_fuzz childop counters.  Crafted-image mount fuzzer for
-	 * a legacy on-disk filesystem: writes a churned MDB into a memfd,
-	 * swaps it onto a scratch_block loop inside a userns_run_in_ns
-	 * grandchild, and attempts mount("hfs") with a fuzzed option
-	 * string.  Latches CHILDOP_LATCH_UNSUPPORTED on ENODEV
-	 * (CONFIG_HFS_FS absent) and CHILDOP_LATCH_NS_UNSUPPORTED on
-	 * helper -EPERM, so an operator can spot "kernel can't do it"
-	 * runs cheaply. */
-	unsigned long hfs_mount_fuzz_runs;			/* total hfs_mount_fuzz invocations */
-	unsigned long hfs_mount_fuzz_setup_failed;		/* scratch_block pool empty or memfd build failed */
-	unsigned long hfs_mount_fuzz_set_fd_ok;			/* LOOP_SET_FD swapped the loop backing to our memfd */
-	unsigned long hfs_mount_fuzz_set_fd_busy;		/* LOOP_SET_FD raced parent-held binding: EBUSY/ENXIO/EPERM */
-	unsigned long hfs_mount_fuzz_mount_ok;			/* mount("hfs") returned 0 */
-	unsigned long hfs_mount_fuzz_mount_failed;		/* mount("hfs") returned non-zero (usually EINVAL/EIO on garbage) */
-	unsigned long hfs_mount_fuzz_ns_unsupported;		/* userns_run_in_ns returned -EPERM — op latched off */
-	unsigned long hfs_mount_fuzz_hfs_unsupported;		/* mount() returned ENODEV — CONFIG_HFS_FS absent, op latched off */
+	/* hfs_mount_fuzz accounting.  See stats/subsys/hfs_mount_fuzz.h. */
+	struct hfs_mount_fuzz_stats hfs_mount_fuzz __attribute__((aligned(64)));
 
 	/* iscsi_target_probe accounting.  See stats/subsys/iscsi_target_probe.h. */
 	struct iscsi_target_probe_stats iscsi_target_probe __attribute__((aligned(64)));
