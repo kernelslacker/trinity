@@ -43,6 +43,7 @@
 #include "stats/subsys/ip6gre_lapb.h"
 #include "stats/subsys/ipv6_ndisc_proxy.h"
 #include "stats/subsys/ipv6_pmtu_race.h"
+#include "stats/subsys/iscsi_target_probe.h"
 #include "stats/subsys/keyring_spam.h"
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/map_shared_stress.h"
@@ -2064,22 +2065,8 @@ struct stats_s {
 	unsigned long hfs_mount_fuzz_ns_unsupported;		/* userns_run_in_ns returned -EPERM — op latched off */
 	unsigned long hfs_mount_fuzz_hfs_unsupported;		/* mount() returned ENODEV — CONFIG_HFS_FS absent, op latched off */
 
-	/* iscsi_target_probe childop counters.  Tracks reach into the
-	 * in-kernel LIO target login + post-login SCSI Command path via a
-	 * real TCP connection to 127.0.0.1:3260.  Latches off
-	 * (no_target) when the very first connect() returns
-	 * ECONNREFUSED, so an operator can spot "target absent" runs
-	 * cheaply by reading no_target vs connected. */
-	unsigned long iscsi_target_probe_runs;			/* total iscsi_target_probe invocations */
-	unsigned long iscsi_target_probe_setup_failed;		/* socket() / non-ECONNREFUSED connect failure */
-	unsigned long iscsi_target_probe_no_target;		/* ECONNREFUSED on connect — latched per-child */
-	unsigned long iscsi_target_probe_connected;		/* TCP connect to 3260 returned 0 / completed */
-	unsigned long iscsi_target_probe_login_sent;		/* Login PDU send() returned >0 */
-	unsigned long iscsi_target_probe_login_replies;		/* drain() executed after a login send */
-	unsigned long iscsi_target_probe_scsi_cmd_sent;		/* post-login SCSI Command PDU sent (arm c) */
-	unsigned long iscsi_target_probe_bytes_out;		/* total bytes successfully send()'d */
-	unsigned long iscsi_target_probe_bytes_in;		/* total bytes successfully recv()'d */
-	unsigned long iscsi_target_probe_length_decoupled;	/* arm (d): BHS DataSegmentLength != actual payload */
+	/* iscsi_target_probe accounting.  See stats/subsys/iscsi_target_probe.h. */
+	struct iscsi_target_probe_stats iscsi_target_probe __attribute__((aligned(64)));
 
 	/* iscsi_login_walker childop counters.  Companion to
 	 * iscsi_target_probe: instead of single one-shot PDUs, this walker

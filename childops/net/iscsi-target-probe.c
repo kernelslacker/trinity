@@ -215,7 +215,7 @@ static void iscsi_drain(int fd)
 
 	n = recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.iscsi_target_probe_bytes_in,
+		__atomic_add_fetch(&shm->stats.iscsi_target_probe.bytes_in,
 				   (unsigned long)n, __ATOMIC_RELAXED);
 }
 
@@ -603,7 +603,7 @@ bool iscsi_target_probe(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.iscsi_target_probe_runs, 1,
+	__atomic_add_fetch(&shm->stats.iscsi_target_probe.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
@@ -631,15 +631,15 @@ bool iscsi_target_probe(struct childdata *child)
 					__atomic_store_n(&shm->stats.childop_latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.iscsi_target_probe_no_target,
+				__atomic_add_fetch(&shm->stats.iscsi_target_probe.no_target,
 						   1, __ATOMIC_RELAXED);
 				return true;
 			}
-			__atomic_add_fetch(&shm->stats.iscsi_target_probe_setup_failed,
+			__atomic_add_fetch(&shm->stats.iscsi_target_probe.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			continue;
 		}
-		__atomic_add_fetch(&shm->stats.iscsi_target_probe_connected,
+		__atomic_add_fetch(&shm->stats.iscsi_target_probe.connected,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op) {
 			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
@@ -661,21 +661,21 @@ bool iscsi_target_probe(struct childdata *child)
 			break;
 		default:
 			pdu_len = build_login_decoupled_length(pdu);
-			__atomic_add_fetch(&shm->stats.iscsi_target_probe_length_decoupled,
+			__atomic_add_fetch(&shm->stats.iscsi_target_probe.length_decoupled,
 					   1, __ATOMIC_RELAXED);
 			break;
 		}
 
 		n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (n > 0) {
-			__atomic_add_fetch(&shm->stats.iscsi_target_probe_login_sent,
+			__atomic_add_fetch(&shm->stats.iscsi_target_probe.login_sent,
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.iscsi_target_probe_bytes_out,
+			__atomic_add_fetch(&shm->stats.iscsi_target_probe.bytes_out,
 					   (unsigned long)n, __ATOMIC_RELAXED);
 		}
 
 		iscsi_drain(fd);
-		__atomic_add_fetch(&shm->stats.iscsi_target_probe_login_replies,
+		__atomic_add_fetch(&shm->stats.iscsi_target_probe.login_replies,
 				   1, __ATOMIC_RELAXED);
 
 		/* Arm (c): after the well-formed Login, send one fuzzed
@@ -689,9 +689,9 @@ bool iscsi_target_probe(struct childdata *child)
 			n = send(fd, pdu, pdu_len,
 				 MSG_DONTWAIT | MSG_NOSIGNAL);
 			if (n > 0) {
-				__atomic_add_fetch(&shm->stats.iscsi_target_probe_scsi_cmd_sent,
+				__atomic_add_fetch(&shm->stats.iscsi_target_probe.scsi_cmd_sent,
 						   1, __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.iscsi_target_probe_bytes_out,
+				__atomic_add_fetch(&shm->stats.iscsi_target_probe.bytes_out,
 						   (unsigned long)n,
 						   __ATOMIC_RELAXED);
 			}
