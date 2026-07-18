@@ -375,10 +375,6 @@ static const unsigned long futex_timeout_ops[] = {
  * a custom sanitise callback.  Terminated by .syscall_name == NULL.
  */
 static const struct syscall_struct_arg syscall_struct_args_all[] = {
-	/* adjtimex(struct timex *) */
-	{ "adjtimex",		1, &struct_catalog[SC_TIMEX] },
-	/* clock_adjtime(clockid_t, struct timex *) */
-	{ "clock_adjtime",	2, &struct_catalog[SC_TIMEX] },
 	/* sched_setattr(pid_t, struct sched_attr *, unsigned int) */
 	{ "sched_setattr",	2, &struct_catalog[SC_SCHED_ATTR] },
 	/* sched_getattr(pid_t, struct sched_attr *, unsigned int, unsigned int) */
@@ -394,10 +390,6 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	/* prlimit64(pid_t, unsigned int, struct rlimit *, struct rlimit *) */
 	{ "prlimit64",		3, &struct_catalog[SC_RLIMIT] },
 	{ "prlimit64",		4, &struct_catalog[SC_RLIMIT] },
-	/* timer_settime(timer_t, int, struct itimerspec *, struct itimerspec *) */
-	{ "timer_settime",	3, &struct_catalog[SC_ITIMERSPEC] },
-	/* timerfd_settime(int, int, struct itimerspec *, struct itimerspec *) */
-	{ "timerfd_settime",	3, &struct_catalog[SC_ITIMERSPEC] },
 	/* epoll_ctl(int, int, int, struct epoll_event *) */
 	{ "epoll_ctl",		4, &struct_catalog[SC_EPOLL_EVENT] },
 	/* perf_event_open(struct perf_event_attr *, pid_t, int, int, ulong) */
@@ -525,10 +517,6 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	 * shape bpf_attr uses for its per-cmd tagged union).
 	 */
 	{ "keyctl",		2, &struct_catalog[SC_KEYCTL_PAYLOAD] },
-	/* clock_nanosleep(clockid_t, int, struct timespec *, struct timespec *) */
-	{ "clock_nanosleep",	3, &struct_catalog[SC_TIMESPEC] },
-	/* nanosleep(struct timespec *, struct timespec *) */
-	{ "nanosleep",		1, &struct_catalog[SC_TIMESPEC] },
 	/*
 	 * utimensat(int, const char *, struct timespec[2], int)
 	 * utimensat's `utimes` arg is a 2-element timespec array -- the
@@ -578,14 +566,6 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	 * sembuf array) is mapped to SC_SEMBUF below and is unaffected.
 	 */
 	{ "semtimedop",		4, &struct_catalog[SC_TIMESPEC] },
-	/*
-	 * clock_settime(clockid_t which_clock, const struct timespec *tp)
-	 * a2 is the INPUT timespec.  Attribution-only: the bespoke
-	 * sanitise_clock_settime (stamps the slot via get_writable_address)
-	 * continues to own the live fill; this row only lets schema-aware
-	 * CMP attribution name the tv_sec / tv_nsec fields.
-	 */
-	{ "clock_settime",	2, &struct_catalog[SC_TIMESPEC] },
 	/*
 	 * mq_timedsend(mqd_t mqdes, const char *msg_ptr, size_t msg_len,
 	 *              unsigned int msg_prio, const struct timespec *abs_timeout)
@@ -731,17 +711,6 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	 */
 	{ "open_by_handle_at",	2, &struct_catalog[SC_FILE_HANDLE] },
 	/*
-	 * timer_create(clockid_t, struct sigevent *, timer_t *)
-	 * a2 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
-	 * timer_create_sanitise() keeps owning the live (sigev_value,
-	 * sigev_signo, sigev_notify, _sigev_un._tid) layout and the
-	 * SIGEV_* notify-mode distribution.  Attribution-only
-	 * registration lets struct_field_for_cmp steer CMP-learned
-	 * constants at sigev_notify / sigev_signo rather than at a
-	 * coincidentally-same-width slot.
-	 */
-	{ "timer_create",	2, &struct_catalog[SC_SIGEVENT] },
-	/*
 	 * mq_notify(mqd_t, const struct sigevent *)
 	 * a2 carries the same struct sigevent that timer_create's a2
 	 * carries; the bespoke sanitise_mq_notify() keeps owning the
@@ -774,21 +743,6 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	 */
 	{ "rseq",		1, &struct_catalog[SC_RSEQ] },
 	/*
-	 * setitimer(int which, const struct itimerval __user *value,
-	 *           struct itimerval __user *ovalue)
-	 * a2 is the INPUT struct itimerval pointer; the bespoke
-	 * sanitise_setitimer() keeps owning the live fill (writable
-	 * allocation, per-timeval bucket distribution via fill_timeval(),
-	 * half-the-time disarm of it_value, a3 routed through
-	 * avoid_shared_buffer_out()).  a3 (ovalue) is a kernel-written
-	 * output and is intentionally not mapped; getitimer's a2 is
-	 * likewise an output and is not mapped either.  Attribution-only
-	 * registration lets struct_field_for_cmp steer CMP-learned
-	 * constants at the named tv_sec / tv_usec slots rather than at a
-	 * coincidentally-same-width slot.
-	 */
-	{ "setitimer",		2, &struct_catalog[SC_ITIMERVAL] },
-	/*
 	 * utime(const char *filename, const struct utimbuf __user *times)
 	 * a2 is the INPUT struct utimbuf pointer.  utime has no bespoke
 	 * .sanitise -- the slot previously fell through ARG_ADDRESS with no
@@ -819,24 +773,16 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 		.num_discrim_values	= ARRAY_SIZE(fcntl_f_owner_ex_cmds),
 	},
 	/*
-	 * timeval slots on settimeofday a1 (INPUT), select a5 (INOUT
-	 * remaining-time), futimesat a3 (INPUT timeval[2], first-elem
-	 * only), utimes a2 (INPUT timeval[2], first-elem only).  All
-	 * attribution-only; bespoke sanitisers own the live fill.
-	 * gettimeofday's a1 not mapped: kernel-written OUTPUT with no
-	 * input to attribute.  See Documentation/struct_catalog.md.
+	 * timeval slots on select a5 (INOUT remaining-time), futimesat a3
+	 * (INPUT timeval[2], first-elem only), utimes a2 (INPUT
+	 * timeval[2], first-elem only).  All attribution-only; bespoke
+	 * sanitisers own the live fill.  gettimeofday's a1 not mapped:
+	 * kernel-written OUTPUT with no input to attribute.  See
+	 * Documentation/struct_catalog.md.
 	 */
-	{ "settimeofday",	1, &struct_catalog[SC_TIMEVAL] },
 	{ "select",		5, &struct_catalog[SC_TIMEVAL] },
 	{ "futimesat",		3, &struct_catalog[SC_TIMEVAL] },
 	{ "utimes",		2, &struct_catalog[SC_TIMEVAL] },
-	/*
-	 * settimeofday a2: INPUT struct timezone.  Attribution-only;
-	 * bespoke sanitise_settimeofday() owns the live fill.
-	 * gettimeofday's a2 not mapped: kernel-written OUTPUT.
-	 * See Documentation/struct_catalog.md.
-	 */
-	{ "settimeofday",	2, &struct_catalog[SC_TIMEZONE] },
 	/*
 	 * listns(const struct ns_id_req __user *req, u64 __user *ns_ids,
 	 *        size_t nr_ns_ids, unsigned int flags)
@@ -1436,7 +1382,10 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
  * matched entries stay byte-identical to the pre-split table for any
  * (name, arg_idx) tuple.
  */
+extern const struct syscall_struct_arg struct_catalog_registry_time[];
+
 const struct syscall_struct_arg_group syscall_struct_arg_groups[] = {
+	{ struct_catalog_registry_time },
 	{ syscall_struct_args_all },
 	{ NULL },
 };
