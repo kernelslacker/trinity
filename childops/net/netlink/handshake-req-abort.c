@@ -189,11 +189,11 @@ bool handshake_req_abort(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.handshake_req_abort_runs,
+	__atomic_add_fetch(&shm->stats.handshake_req_abort.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_handshake) {
-		__atomic_add_fetch(&shm->stats.handshake_req_abort_setup_failed,
+		__atomic_add_fetch(&shm->stats.handshake_req_abort.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -212,7 +212,7 @@ bool handshake_req_abort(struct childdata *child)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.handshake_req_abort_setup_failed,
+		__atomic_add_fetch(&shm->stats.handshake_req_abort.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -220,7 +220,7 @@ bool handshake_req_abort(struct childdata *child)
 
 	sock = open_loopback_sock();
 	if (sock < 0) {
-		__atomic_add_fetch(&shm->stats.handshake_req_abort_setup_failed,
+		__atomic_add_fetch(&shm->stats.handshake_req_abort.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -235,7 +235,7 @@ bool handshake_req_abort(struct childdata *child)
 	 *    table walk under hs_lock.  Counted regardless of ack errno
 	 *    (EAGAIN is the ordinary outcome). */
 	(void)handshake_accept(&ctx);
-	__atomic_add_fetch(&shm->stats.handshake_req_abort_accept_ok,
+	__atomic_add_fetch(&shm->stats.handshake_req_abort.accept_ok,
 			   1, __ATOMIC_RELAXED);
 
 	iters = BUDGETED(CHILD_OP_HANDSHAKE_REQ_ABORT,
@@ -250,7 +250,7 @@ bool handshake_req_abort(struct childdata *child)
 		 *    Kernel walks the request table; ENOENT without a
 		 *    live submitter, which is the bulk case. */
 		(void)handshake_done(&ctx, sock, 0);
-		__atomic_add_fetch(&shm->stats.handshake_req_abort_done_ok,
+		__atomic_add_fetch(&shm->stats.handshake_req_abort.done_ok,
 				   1, __ATOMIC_RELAXED);
 
 		/* b) DONE with non-zero status — abort shape.  Targets
@@ -258,7 +258,7 @@ bool handshake_req_abort(struct childdata *child)
 		 *    against the prior DONE. */
 		(void)handshake_done(&ctx, sock,
 				     -(__s32)(1U + (rand32() & 0x7fU)));
-		__atomic_add_fetch(&shm->stats.handshake_req_abort_abort_ok,
+		__atomic_add_fetch(&shm->stats.handshake_req_abort.abort_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -268,7 +268,7 @@ bool handshake_req_abort(struct childdata *child)
 	 *    bump the counter so productivity is observable. */
 	close(sock);
 	sock = -1;
-	__atomic_add_fetch(&shm->stats.handshake_req_abort_orphan_close,
+	__atomic_add_fetch(&shm->stats.handshake_req_abort.orphan_close,
 			   1, __ATOMIC_RELAXED);
 
 out:
@@ -284,9 +284,9 @@ out:
 bool handshake_req_abort(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.handshake_req_abort_runs,
+	__atomic_add_fetch(&shm->stats.handshake_req_abort.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.handshake_req_abort_setup_failed,
+	__atomic_add_fetch(&shm->stats.handshake_req_abort.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }

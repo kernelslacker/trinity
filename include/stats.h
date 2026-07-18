@@ -46,6 +46,7 @@
 #include "stats/subsys/fs_lifecycle.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
+#include "stats/subsys/handshake_req_abort.h"
 #include "stats/subsys/inplace_crypto.h"
 #include "stats/subsys/iouring.h"
 #include "stats/subsys/iouring_eventfd.h"
@@ -1696,13 +1697,8 @@ struct stats_s {
 	unsigned long devlink_port_churn_reload_fail;		/* DEVLINK_CMD_RELOAD non-zero ack */
 	unsigned long devlink_port_churn_create_skipped;	/* netdevsim absent / sysfs unwritable */
 
-	/* handshake_req_abort childop counters */
-	unsigned long handshake_req_abort_runs;			/* total handshake_req_abort invocations */
-	unsigned long handshake_req_abort_setup_failed;		/* genl resolve / socket setup failed (incl. !CONFIG_NET_HANDSHAKE) */
-	unsigned long handshake_req_abort_accept_ok;		/* HANDSHAKE_CMD_ACCEPT issued (lookup-by-class path ran) */
-	unsigned long handshake_req_abort_done_ok;		/* HANDSHAKE_CMD_DONE status=0 issued (lookup-by-sockfd ran) */
-	unsigned long handshake_req_abort_abort_ok;		/* HANDSHAKE_CMD_DONE status!=0 issued (abort-shape race) */
-	unsigned long handshake_req_abort_orphan_close;		/* close() while requests outstanding (sk_destruct path) */
+	/* handshake_req_abort accounting.  See stats/subsys/handshake_req_abort.h. */
+	struct handshake_req_abort_stats handshake_req_abort __attribute__((aligned(64)));
 
 	/* nf_conntrack_helper_churn childop counters */
 	unsigned long nf_conntrack_helper_churn_runs;		/* total nf_conntrack_helper_churn invocations */
