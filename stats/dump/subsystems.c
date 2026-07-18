@@ -227,11 +227,11 @@ static void dump_stats_render_recipe_runner(void)
 
 static void dump_stats_render_iouring(void)
 {
-	if (shm->stats.iouring_recipes_runs) {
-		stat_row("iouring_recipes", "runs",      shm->stats.iouring_recipes_runs);
-		stat_row("iouring_recipes", "completed", shm->stats.iouring_recipes_completed);
-		stat_row("iouring_recipes", "partial",   shm->stats.iouring_recipes_partial);
-		stat_row("iouring_recipes", "enosys",    shm->stats.iouring_recipes_enosys);
+	if (shm->stats.iouring_recipes.runs) {
+		stat_row("iouring_recipes", "runs",      shm->stats.iouring_recipes.runs);
+		stat_row("iouring_recipes", "completed", shm->stats.iouring_recipes.completed);
+		stat_row("iouring_recipes", "partial",   shm->stats.iouring_recipes.partial);
+		stat_row("iouring_recipes", "enosys",    shm->stats.iouring_recipes.enosys);
 		iouring_recipes_dump_stats();
 	}
 

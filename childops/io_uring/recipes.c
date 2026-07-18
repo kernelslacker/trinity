@@ -536,7 +536,7 @@ bool iouring_recipes(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.iouring_recipes_runs, 1,
+	__atomic_add_fetch(&shm->stats.iouring_recipes.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	/* Latch: once we know io_uring_setup returns ENOSYS, stop trying. */
@@ -645,13 +645,13 @@ bool iouring_recipes(struct childdata *child)
 				 __ATOMIC_RELAXED);
 
 	if (ok) {
-		__atomic_add_fetch(&shm->stats.iouring_recipes_completed, 1,
+		__atomic_add_fetch(&shm->stats.iouring_recipes.completed, 1,
 				   __ATOMIC_RELAXED);
 		__atomic_add_fetch(
 			&shm->stats.iouring_recipe_completed_per[idx], 1,
 			__ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.iouring_recipes_partial, 1,
+		__atomic_add_fetch(&shm->stats.iouring_recipes.partial, 1,
 				   __ATOMIC_RELAXED);
 	}
 

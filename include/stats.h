@@ -36,6 +36,7 @@
 #include "stats/subsys/inplace_crypto.h"
 #include "stats/subsys/iouring.h"
 #include "stats/subsys/iouring_eventfd.h"
+#include "stats/subsys/iouring_recipes.h"
 #include "stats/subsys/ip6gre_lapb.h"
 #include "stats/subsys/keyring_spam.h"
 #include "stats/subsys/madvise_cycler.h"
@@ -1013,11 +1014,8 @@ struct stats_s {
 	 * catalog layout. */
 	unsigned long recipe_completed_per[MAX_RECIPES];
 
-	/* iouring_recipes childop counters */
-	unsigned long iouring_recipes_runs;		/* total invocations */
-	unsigned long iouring_recipes_completed;	/* recipe completed successfully */
-	unsigned long iouring_recipes_partial;		/* at least one step failed */
-	unsigned long iouring_recipes_enosys;		/* io_uring_setup returned ENOSYS */
+	/* iouring_recipes accounting.  See stats/subsys/iouring_recipes.h. */
+	struct iouring_recipes_stats iouring_recipes __attribute__((aligned(64)));
 
 	/* Per-iouring-recipe completion counts, indexed by the recipe's slot in
 	 * the static catalog inside iouring-recipes.c.  Dumped via
