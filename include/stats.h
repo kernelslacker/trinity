@@ -88,6 +88,7 @@
 #include "stats/subsys/statmount_idmap.h"
 #include "stats/subsys/tcp_ao_rotate.h"
 #include "stats/subsys/tls_rotate.h"
+#include "stats/subsys/tls_ulp_churn.h"
 #include "stats/subsys/uffd.h"
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/vdso_race.h"
@@ -1346,15 +1347,8 @@ struct stats_s {
 	unsigned long tipc_link_churn_publish_ok;	/* bind() with TIPC_CLUSTER_SCOPE for publish accepted */
 	unsigned long tipc_link_churn_bearer_disable_ok; /* TIPC_NL_BEARER_DISABLE genl ack==0 */
 
-	/* tls_ulp_churn childop counters */
-	unsigned long tls_ulp_churn_runs;		/* total tls_ulp_churn invocations */
-	unsigned long tls_ulp_churn_setup_failed;	/* loopback connect / latch gate failed */
-	unsigned long tls_ulp_churn_ulp_install_ok;	/* setsockopt(TCP_ULP, "tls") accepted */
-	unsigned long tls_ulp_churn_tx_install_ok;	/* first TLS_TX setsockopt accepted */
-	unsigned long tls_ulp_churn_send_ok;		/* send() through tls_sw_sendmsg returned >0 */
-	unsigned long tls_ulp_churn_splice_ok;		/* splice() into TLS-armed socket returned >0 */
-	unsigned long tls_ulp_churn_rekey_ok;		/* mid-stream TLS_TX re-install accepted */
-	unsigned long tls_ulp_churn_recv_ok;		/* recv() through tls_sw_recvmsg returned >0 */
+	/* tls_ulp_churn accounting.  See stats/subsys/tls_ulp_churn.h. */
+	struct tls_ulp_churn_stats tls_ulp_churn __attribute__((aligned(64)));
 
 	/* vxlan_encap_churn childop counters */
 	unsigned long vxlan_encap_churn_runs;		/* total vxlan_encap_churn invocations */

@@ -284,11 +284,11 @@ static int tls_ulp_churn_iter_install_tls_ulp(int s, struct childdata *child)
 							 __ATOMIC_RELAXED);
 			}
 		}
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.tls_ulp_churn_ulp_install_ok,
+	__atomic_add_fetch(&shm->stats.tls_ulp_churn.ulp_install_ok,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -336,11 +336,11 @@ static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out,
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.tls_ulp_churn_tx_install_ok,
+	__atomic_add_fetch(&shm->stats.tls_ulp_churn.tx_install_ok,
 			   1, __ATOMIC_RELAXED);
 
 	fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
@@ -365,7 +365,7 @@ static void tls_ulp_churn_iter_initial_traffic(int s)
 	generate_rand_bytes(payload, sizeof(payload));
 	if (send(s, payload, 1 + rnd_modulo_u32(sizeof(payload)),
 		 MSG_DONTWAIT | MSG_NOSIGNAL) > 0)
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_send_ok,
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn.send_ok,
 				   1, __ATOMIC_RELAXED);
 
 	splice_src = open(SPLICE_SRC_PATH, O_RDONLY | O_CLOEXEC);
@@ -377,7 +377,7 @@ static void tls_ulp_churn_iter_initial_traffic(int s)
 			   SPLICE_MAX_BYTES,
 			   SPLICE_F_NONBLOCK | SPLICE_F_MORE);
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.tls_ulp_churn_splice_ok,
+			__atomic_add_fetch(&shm->stats.tls_ulp_churn.splice_ok,
 					   1, __ATOMIC_RELAXED);
 		close(splice_src);
 	}
@@ -418,7 +418,7 @@ static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
 		fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
 		rc = setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo));
 		if (rc == 0) {
-			__atomic_add_fetch(&shm->stats.tls_ulp_churn_rekey_ok,
+			__atomic_add_fetch(&shm->stats.tls_ulp_churn.rekey_ok,
 					   1, __ATOMIC_RELAXED);
 
 			generate_rand_bytes(payload, sizeof(payload));
@@ -457,7 +457,7 @@ static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
 				   SPLICE_MAX_BYTES,
 				   SPLICE_F_NONBLOCK | SPLICE_F_MORE);
 			if (n > 0)
-				__atomic_add_fetch(&shm->stats.tls_ulp_churn_splice_ok,
+				__atomic_add_fetch(&shm->stats.tls_ulp_churn.splice_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -478,7 +478,7 @@ static void tls_ulp_churn_iter_recv_and_shutdown(int s)
 
 	n = recv(s, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_recv_ok,
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn.recv_ok,
 				   1, __ATOMIC_RELAXED);
 
 	(void)shutdown(s, SHUT_RDWR);
@@ -492,11 +492,11 @@ bool tls_ulp_churn(struct childdata *child)
 	int urandom_fd = -1;
 	unsigned short version;
 
-	__atomic_add_fetch(&shm->stats.tls_ulp_churn_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.tls_ulp_churn.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_tls_ulp || ns_unsupported_tls_tx ||
 	    ns_unsupported_aes_gcm_128) {
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -508,7 +508,7 @@ bool tls_ulp_churn(struct childdata *child)
 
 	s = open_loopback_pair(&acceptor);
 	if (s < 0) {
-		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tls_ulp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

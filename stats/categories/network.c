@@ -71,22 +71,6 @@ const struct stat_category vrf_fib_churn_category =
 	              vrf_fib_churn_runs,
 	              vrf_fib_churn_fields);
 
-static const struct stat_field tls_ulp_churn_fields[] = {
-	STAT_FIELD(tls_ulp_churn, runs),
-	STAT_FIELD(tls_ulp_churn, setup_failed),
-	STAT_FIELD(tls_ulp_churn, ulp_install_ok),
-	STAT_FIELD(tls_ulp_churn, tx_install_ok),
-	STAT_FIELD(tls_ulp_churn, send_ok),
-	STAT_FIELD(tls_ulp_churn, splice_ok),
-	STAT_FIELD(tls_ulp_churn, rekey_ok),
-	STAT_FIELD(tls_ulp_churn, recv_ok),
-};
-
-const struct stat_category tls_ulp_churn_category =
-	STAT_CATEGORY("tls_ulp_churn",
-	              tls_ulp_churn_runs,
-	              tls_ulp_churn_fields);
-
 static const struct stat_field vxlan_encap_churn_fields[] = {
 	STAT_FIELD(vxlan_encap_churn, runs),
 	STAT_FIELD(vxlan_encap_churn, setup_failed),
