@@ -52,22 +52,6 @@ const struct stat_category tls_rotate_category =
 	              tls_rotate_runs,
 	              tls_rotate_fields);
 
-static const struct stat_field netns_teardown_fields[] = {
-	STAT_FIELD(netns_teardown, runs),
-	STAT_FIELD(netns_teardown, setup_failed),
-	STAT_FIELD(netns_teardown, unshare_ok),
-	STAT_FIELD(netns_teardown, socket_pair_ok),
-	STAT_FIELD(netns_teardown, fork_ok),
-	STAT_FIELD(netns_teardown, setns_ok),
-	STAT_FIELD(netns_teardown, kill_ok),
-	STAT_FIELD(netns_teardown, completed_ok),
-};
-
-const struct stat_category netns_teardown_category =
-	STAT_CATEGORY("netns_teardown",
-	              netns_teardown_runs,
-	              netns_teardown_fields);
-
 static const struct stat_field tcp_ao_rotate_fields[] = {
 	STAT_FIELD(tcp_ao_rotate, runs),
 	STAT_FIELD(tcp_ao_rotate, setup_failed),

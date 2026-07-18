@@ -319,19 +319,19 @@ static int netns_teardown_iter_setup_ns(struct netns_teardown_iter_ctx *it)
 {
 	it->nsfd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
 	if (it->nsfd < 0) {
-		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+		__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
 	if (unshare(CLONE_NEWNET) < 0) {
-		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+		__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		close(it->nsfd);
 		it->nsfd = -1;
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.netns_teardown_unshare_ok,
+	__atomic_add_fetch(&shm->stats.netns_teardown.unshare_ok,
 			   1, __ATOMIC_RELAXED);
 
 	(void)bring_up_loopback();
@@ -380,7 +380,7 @@ static int netns_teardown_iter_sock_pair(struct netns_teardown_iter_ctx *it)
 	if (it->s_accept < 0)
 		return -1;
 
-	__atomic_add_fetch(&shm->stats.netns_teardown_socket_pair_ok,
+	__atomic_add_fetch(&shm->stats.netns_teardown.socket_pair_ok,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -412,7 +412,7 @@ static int netns_teardown_iter_fork_child(struct netns_teardown_iter_ctx *it)
 		_exit(0);
 	}
 
-	__atomic_add_fetch(&shm->stats.netns_teardown_fork_ok,
+	__atomic_add_fetch(&shm->stats.netns_teardown.fork_ok,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -452,7 +452,7 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
 					 __ATOMIC_RELAXED);
 		(void)kill(it->pid, SIGKILL);
 		reap_inflight_child(it->pid);
-		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+		__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		(void)close(it->s_listen); it->s_listen = -1;
 		(void)close(it->s_conn);   it->s_conn = -1;
@@ -460,7 +460,7 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
 		(void)close(it->nsfd);     it->nsfd = -1;
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.netns_teardown_setns_ok,
+	__atomic_add_fetch(&shm->stats.netns_teardown.setns_ok,
 			   1, __ATOMIC_RELAXED);
 
 	/* Drop parent's doomed-ns socket refs so only the in-ns child
@@ -484,14 +484,14 @@ static void netns_teardown_iter_drive_teardown(struct netns_teardown_iter_ctx *i
 	(void)usleep(rnd_modulo_u32(NETNS_TD_PARENT_USLEEP_MAX));
 
 	if (kill(it->pid, SIGKILL) == 0) {
-		__atomic_add_fetch(&shm->stats.netns_teardown_kill_ok,
+		__atomic_add_fetch(&shm->stats.netns_teardown.kill_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 	reap_inflight_child(it->pid);
 
 	(void)close(it->nsfd);
 	it->nsfd = -1;
-	__atomic_add_fetch(&shm->stats.netns_teardown_completed_ok,
+	__atomic_add_fetch(&shm->stats.netns_teardown.completed_ok,
 			   1, __ATOMIC_RELAXED);
 }
 
@@ -511,7 +511,7 @@ static void netns_teardown_iter_recover(struct netns_teardown_iter_ctx *it)
 	const enum child_op_type op = it->child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+	__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	if (it->s_accept >= 0) (void)close(it->s_accept);
 	if (it->s_conn   >= 0) (void)close(it->s_conn);
@@ -611,11 +611,11 @@ bool netns_teardown_churn(struct childdata *child)
 	struct netns_teardown_churn_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.netns_teardown_runs,
+	__atomic_add_fetch(&shm->stats.netns_teardown.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_netns_teardown) {
-		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+		__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -634,7 +634,7 @@ bool netns_teardown_churn(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+		__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -643,7 +643,7 @@ bool netns_teardown_churn(struct childdata *child)
 		 * secondary CLONE_NEWNET unshare).  Skip this iteration
 		 * without latching -- the failure is not policy and may not
 		 * recur. */
-		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+		__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -656,9 +656,9 @@ bool netns_teardown_churn(struct childdata *child)
 bool netns_teardown_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.netns_teardown_runs,
+	__atomic_add_fetch(&shm->stats.netns_teardown.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+	__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }

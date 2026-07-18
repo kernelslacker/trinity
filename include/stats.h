@@ -67,6 +67,7 @@
 #include "stats/subsys/mpls_route_churn.h"
 #include "stats/subsys/netlink_monitor_race.h"
 #include "stats/subsys/netns_mountns_setup.h"
+#include "stats/subsys/netns_teardown.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/perf_chains.h"
@@ -1805,15 +1806,8 @@ struct stats_s {
 	/* cred_transition accounting.  See stats/subsys/cred_transition.h. */
 	struct cred_transition_stats cred_transition __attribute__((aligned(64)));
 
-	/* netns_teardown_churn childop counters */
-	unsigned long netns_teardown_runs;			/* total netns_teardown_churn invocations */
-	unsigned long netns_teardown_setup_failed;		/* anchor open / fork / unsupported latch fired */
-	unsigned long netns_teardown_unshare_ok;		/* unshare(CLONE_NEWNET) entered fresh net ns */
-	unsigned long netns_teardown_socket_pair_ok;		/* in-ns listen+connect TCP pair established on lo */
-	unsigned long netns_teardown_fork_ok;			/* fork() spawned the in-ns child holding sockets */
-	unsigned long netns_teardown_setns_ok;			/* parent setns() back to anchor net ns */
-	unsigned long netns_teardown_kill_ok;			/* SIGKILL delivered to in-ns child (race vs cleanup_net) */
-	unsigned long netns_teardown_completed_ok;		/* full cycle reached waitpid + close anchor cleanly */
+	/* netns_teardown accounting.  See stats/subsys/netns_teardown.h. */
+	struct netns_teardown_stats netns_teardown __attribute__((aligned(64)));
 
 	/* deep_path_nesting accounting.  See stats/subsys/deep_path.h. */
 	struct deep_path_stats deep_path __attribute__((aligned(64)));
