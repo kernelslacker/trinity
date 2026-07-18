@@ -374,7 +374,7 @@ static const unsigned long futex_timeout_ops[] = {
  * that argument.  Only covers args that are struct pointers filled by
  * a custom sanitise callback.  Terminated by .syscall_name == NULL.
  */
-const struct syscall_struct_arg syscall_struct_args[] = {
+static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	/* adjtimex(struct timex *) */
 	{ "adjtimex",		1, &struct_catalog[SC_TIMEX] },
 	/* clock_adjtime(clockid_t, struct timex *) */
@@ -1427,6 +1427,20 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ NULL, 0, NULL },
 };
 
+/*
+ * Composition root: the single unified table above is exposed as one
+ * group.  As per-domain files carve entries out of it, each landing
+ * domain adds its own extern-declared array as an additional group
+ * here; the flat table shrinks in lockstep.  Consumers iterate the
+ * groups via FOR_EACH_SYSCALL_STRUCT_ARG(), so the walk order and the
+ * matched entries stay byte-identical to the pre-split table for any
+ * (name, arg_idx) tuple.
+ */
+const struct syscall_struct_arg_group syscall_struct_arg_groups[] = {
+	{ syscall_struct_args_all },
+	{ NULL },
+};
+
 /* ------------------------------------------------------------------ */
 /* Fast nr -> desc lookup table                                         */
 /* ------------------------------------------------------------------ */
@@ -1535,6 +1549,7 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
 						    unsigned long k1,
 						    unsigned long k2)
 {
+	const struct syscall_struct_arg_group *g;
 	const struct syscall_struct_arg *sa;
 
 	if (name == NULL || arg_idx < 1 || arg_idx > 6)
@@ -1543,7 +1558,7 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
 	/*
 	 * Linear scan keeps the cost identical to struct_arg_lookup_by_name
 	 * and avoids a second nr-indexed table just for explicit-key
-	 * callers.  syscall_struct_args[] is small (~70 entries today); the
+	 * callers.  The registration table is small (~70 entries today); the
 	 * scan runs once per apply_sockopt_entry call which already does
 	 * O(table) work picking a random row.
 	 *
@@ -1553,7 +1568,7 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
 	 * use struct_arg_lookup() (rec-path) or struct_arg_lookup_by_name
 	 * (discriminator-blind) instead.
 	 */
-	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
+	FOR_EACH_SYSCALL_STRUCT_ARG(g, sa) {
 		if (sa->arg_idx != arg_idx)
 			continue;
 		if (sa->discrim_arg_idx == 0 || sa->discrim2_arg_idx == 0)
@@ -1578,6 +1593,7 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
 const struct struct_desc *struct_arg_lookup_by_name(const char *name,
 						    unsigned int arg_idx)
 {
+	const struct syscall_struct_arg_group *g;
 	const struct syscall_struct_arg *sa;
 	const struct struct_desc *first = NULL;
 
@@ -1590,7 +1606,7 @@ const struct struct_desc *struct_arg_lookup_by_name(const char *name,
 	 * nested-address-scrub mask) use struct_arg_any_has_address_field()
 	 * below -- single-desc returns can't represent that question.
 	 */
-	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
+	FOR_EACH_SYSCALL_STRUCT_ARG(g, sa) {
 		if (sa->arg_idx != arg_idx)
 			continue;
 		if (strcmp(sa->syscall_name, name) != 0)
@@ -1671,6 +1687,7 @@ static void slot_binding_attach(const struct slot_binding *table[MAX_NR_SYSCALL]
 
 void struct_catalog_init(void)
 {
+	const struct syscall_struct_arg_group *g;
 	const struct syscall_struct_arg *sa;
 	unsigned int i;
 	int nr;
@@ -1696,7 +1713,7 @@ void struct_catalog_init(void)
 	memset(desc_by_nr_32, 0, sizeof(desc_by_nr_32));
 	slot_pool_used = 0;
 
-	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
+	FOR_EACH_SYSCALL_STRUCT_ARG(g, sa) {
 		if (sa->arg_idx < 1 || sa->arg_idx > 6)
 			continue;
 

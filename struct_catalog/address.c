@@ -34,11 +34,12 @@
 
 bool struct_arg_any_has_address_field(const char *name, unsigned int arg_idx)
 {
+	const struct syscall_struct_arg_group *g;
 	const struct syscall_struct_arg *sa;
 
 	if (name == NULL || arg_idx < 1 || arg_idx > 6)
 		return false;
-	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
+	FOR_EACH_SYSCALL_STRUCT_ARG(g, sa) {
 		if (sa->arg_idx != arg_idx)
 			continue;
 		if (strcmp(sa->syscall_name, name) != 0)

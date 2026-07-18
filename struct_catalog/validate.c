@@ -158,10 +158,11 @@ static void validate_one_against_table(const struct syscalltable *table,
 
 void validate_syscall_struct_args(void)
 {
+	const struct syscall_struct_arg_group *g;
 	const struct syscall_struct_arg *sa;
 	unsigned int violations = 0;
 
-	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
+	FOR_EACH_SYSCALL_STRUCT_ARG(g, sa) {
 		if (biarch) {
 			validate_one_against_table(syscalls_64bit,
 						   max_nr_64bit_syscalls,

@@ -453,8 +453,28 @@ _Static_assert(SC_NR_ENTRIES <= 256,
 /* All cataloged struct types. */
 extern const struct struct_desc struct_catalog[];
 
-/* Syscall -> struct arg mapping table. */
-extern const struct syscall_struct_arg syscall_struct_args[];
+/*
+ * Syscall -> struct arg mapping table, split by domain.
+ *
+ * Registration entries live in the per-domain arrays under
+ * struct_catalog/registry/; struct_catalog/registry.c composes them
+ * into syscall_struct_arg_groups[], a NULL-terminated table of
+ * per-domain arrays.  Each per-domain array is itself NULL-terminated
+ * on syscall_name, so the two-level walk is:
+ *
+ *   FOR_EACH_SYSCALL_STRUCT_ARG(g, sa) { ... use sa ... }
+ *
+ * or the equivalent explicit form used by legacy call sites.
+ */
+struct syscall_struct_arg_group {
+	const struct syscall_struct_arg *entries;
+};
+
+extern const struct syscall_struct_arg_group syscall_struct_arg_groups[];
+
+#define FOR_EACH_SYSCALL_STRUCT_ARG(_g, _sa)					\
+	for ((_g) = syscall_struct_arg_groups; (_g)->entries != NULL; (_g)++)	\
+		for ((_sa) = (_g)->entries; (_sa)->syscall_name != NULL; (_sa)++)
 
 /*
  * Find the struct_desc for a given struct name.
