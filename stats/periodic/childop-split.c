@@ -57,7 +57,7 @@
  * Emitted as one human stat_row line and a single childop_split JSON
  * object so a grep-and-jq reader can audit raw numerators + denominators
  * alongside the rendered percentages.  Cumulative since the run started
- * -- the surrounding defense_counters_periodic_dump already supplies a
+ * -- the surrounding periodic_counter_rates_dump already supplies a
  * windowed view via per-dump deltas if the operator wants rate-of-rate
  * trends later.
  *

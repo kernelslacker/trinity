@@ -377,7 +377,7 @@ void __cold top_syscalls_periodic_dump(void)
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
-	 * first window, mirroring defense_counters_periodic_dump. */
+	 * first window, mirroring periodic_counter_rates_dump. */
 	if (last_dump.tv_sec == 0) {
 		last_dump = now;
 		for (i = 0; i < MAX_NR_SYSCALL; i++) {

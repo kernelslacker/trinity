@@ -2559,7 +2559,7 @@ static void kcov_cmp_render_structure_aware_picker_cohort(long elapsed,
 
 /*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
- * dump as defense_counters_periodic_dump.  Without this the cmp counters
+ * dump as periodic_counter_rates_dump.  Without this the cmp counters
  * are only visible from dump_stats() (run shutdown) and the JSON dump
  * (on enable), so a long overnight run produces no time-series — just a
  * single end-snapshot — making it impossible to correlate cmp_hints
@@ -2568,7 +2568,7 @@ static void kcov_cmp_render_structure_aware_picker_cohort(long elapsed,
  * Three sub-blocks, each gated independently so a healthy run that has
  * no DIAG errnos doesn't carry an empty "DIAG:" line into the log:
  *  - per-window deltas + rates + cumulative totals for the three cmp
- *    counters, formatted to match defense_counters_periodic_dump;
+ *    counters, formatted to match periodic_counter_rates_dump;
  *  - per-mode child population (cumulative) so the realised PC/CMP
  *    mode mix is visible in the time series, not just at shutdown;
  *  - first-failure-wins errno/count per cmp-init/runtime site.
@@ -2895,7 +2895,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
-	 * first window, mirroring defense_counters_periodic_dump. */
+	 * first window, mirroring periodic_counter_rates_dump. */
 	if (last_dump.tv_sec == 0) {
 		last_dump = now;
 		prev_records       = cur_records;

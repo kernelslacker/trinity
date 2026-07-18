@@ -79,7 +79,7 @@ static void dump_stats_render_corrupt_ptr_attrib(void)
 /* Per-field divergence-sentinel rows: one stat_row per
  * non-zero field shard so the operator sees which
  * monitored field actually drifted rather than a lumped
- * headline number.  Names match the defense_counters[]
+ * headline number.  Names match the periodic_counter_rates[]
  * registration above so periodic and end-of-run views
  * align. */
 static void dump_stats_render_divergence_sentinel(void)
@@ -381,7 +381,7 @@ static void dump_stats_render_arena_ptr_stale_and_sentinel(void)
 	/*
 	 * Standalone grep-friendly cumulative lines for the arena_ptr_stale
 	 * pair.  The stat_rows above are gated on non-zero, and the JSON +
-	 * defense_counters[] registrations repeat the bare counter tokens as
+	 * periodic_counter_rates[] registrations repeat the bare counter tokens as
 	 * narrative, so `grep -c arena_ptr_stale_caught_arg out.log` counts
 	 * occurrences rather than the counter itself -- the same triage trap
 	 * post_handler_corrupt_ptr_cumulative was added to close.  Emit one

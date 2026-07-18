@@ -2909,7 +2909,7 @@ struct stats_s {
 	 * ioctl group so a zero count here while the flat KVM group stat ticks
 	 * means the per-vCPU fd_test path is dropping the fd and the dispatch
 	 * is still bouncing off /dev/kvm with ENOTTY -- the very state Phase 3
-	 * exists to fix.  Surfaced via defense_counters_periodic_dump() so an
+	 * exists to fix.  Surfaced via periodic_counter_rates_dump() so an
 	 * operator sees the per-window dispatch rate without waiting for the
 	 * end-of-run summary. */
 	unsigned long kvm_vcpu_ioctls_dispatched;
@@ -3628,7 +3628,7 @@ void corrupt_ptr_spike_check(void);
  * counters surfaced once-per-run by dump_stats(), so an operator watching
  * a long fuzz run can tell which guards are catching real wild writes vs
  * sitting at noise without waiting for the run to finish. */
-void defense_counters_periodic_dump(void) __cold;
+void periodic_counter_rates_dump(void) __cold;
 
 /* Per-tick snapshot of the cost-partitioned active-syscall pools maintained
  * beside the flat shm->active_syscalls*[] arrays.  Surfaces cheap / expensive
@@ -3637,7 +3637,7 @@ void defense_counters_periodic_dump(void) __cold;
  * run_periodic_surfaces() every tick and from dump_stats() at shutdown. */
 void cost_pool_periodic_dump(void) __cold;
 
-/* Per-tick scan paired with defense_counters_periodic_dump: every dump
+/* Per-tick scan paired with periodic_counter_rates_dump: every dump
  * window, emits the top-5 syscalls by new-edge attribution for each
  * strategy pool (bandit vs explorer) so the operator can see which
  * single syscalls are currently driving coverage growth in each pool.
@@ -3647,7 +3647,7 @@ void cost_pool_periodic_dump(void) __cold;
  * something. */
 void top_syscalls_periodic_dump(void) __cold;
 
-/* Per-tick scan paired with defense_counters_periodic_dump: every dump
+/* Per-tick scan paired with periodic_counter_rates_dump: every dump
  * window, snapshot the parent's /proc/self/maps line count and walk the
  * live child pid slots to sum/max/min the children's per-process VMA
  * counts.  Surfaces VMA-count growth (e.g. a thaw/freeze path that
@@ -3655,7 +3655,7 @@ void top_syscalls_periodic_dump(void) __cold;
  * post-mortem evidence; children_max specifically is the leak-finder. */
 void vma_count_periodic_dump(void) __cold;
 
-/* Per-tick scan paired with defense_counters_periodic_dump: every dump
+/* Per-tick scan paired with periodic_counter_rates_dump: every dump
  * window, emit the KCOV CMP counter block (per-window deltas + rates for
  * cmp_records_collected / cmp_trace_truncated /
  * cmp_hints_bloom_skipped / cmp_hints_strip_skipped,
