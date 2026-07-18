@@ -3380,8 +3380,8 @@ struct kcov_shared {
 	/* Shadow measurement of a high-bit-preserving replacement for the
 	 * width-masked CMP RedQueen pin.  On a unique width match the live
 	 * consumer overwrites the WHOLE 64-bit arg slot with arg1 (the
-	 * kernel constant), clobbering the slot's high bits; syzkaller
-	 * instead splices -- replacement = (orig & ~width_mask) |
+	 * kernel constant), clobbering the slot's high bits; an
+	 * alternative splice -- replacement = (orig & ~width_mask) |
 	 * (arg1 & width_mask) -- which matters when the high bits feed a
 	 * separate validation path.  These two counters size how often
 	 * that splice would produce a byte-different pin from today's
