@@ -374,7 +374,7 @@ static void worker_ptb(void)
 		r = sendto(sfd, &hdr, sizeof(hdr), MSG_DONTWAIT | MSG_NOSIGNAL,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (r >= 0)
-			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_ptb_sent_ok,
+			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.ptb_sent_ok,
 					   1, __ATOMIC_RELAXED);
 
 		if ((i & 0x1fU) == 0U &&
@@ -420,7 +420,7 @@ static void worker_dellink(char names[V6PMTU_NUM_PAIRS][8])
 
 		(void)snprintf(peer, sizeof(peer), "tr6p%u", n);
 		if (build_dellink_byname(&ctx, names[n]) == 0)
-			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_dellink_ok,
+			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.dellink_ok,
 					   1, __ATOMIC_RELAXED);
 
 		(void)build_veth_create(&ctx, names[n], peer);
@@ -484,7 +484,7 @@ static int v6pmtu_iter_setup_network(char names[V6PMTU_NUM_PAIRS][8])
 	};
 
 	if (nl_open(&ctx, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -507,7 +507,7 @@ static int v6pmtu_iter_spawn_workers(char names[V6PMTU_NUM_PAIRS][8],
 {
 	*a = fork();
 	if (*a < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -518,7 +518,7 @@ static int v6pmtu_iter_spawn_workers(char names[V6PMTU_NUM_PAIRS][8],
 	if (*b < 0) {
 		(void)kill(*a, SIGKILL);
 		(void)waitpid_eintr(*a, NULL, 0);
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -597,7 +597,7 @@ static int iter_one_in_ns(void *arg)
 
 	v6pmtu_iter_reap_workers(a, b);
 
-	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_completed_ok,
+	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.completed_ok,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -607,11 +607,11 @@ bool ipv6_pmtu_teardown_race(struct childdata *child)
 	struct ipv6_pmtu_race_ctx ctx = { .op_type = child->op_type };
 	unsigned int outer, i;
 
-	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_runs,
+	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_ipv6_pmtu_race) {
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -638,7 +638,7 @@ bool ipv6_pmtu_teardown_race(struct childdata *child)
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
-			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -647,7 +647,7 @@ bool ipv6_pmtu_teardown_race(struct childdata *child)
 			 * write, secondary CLONE_NEWNET unshare).  Skip this
 			 * iteration without latching -- the failure is not
 			 * policy and may not recur on the next iteration. */
-			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			continue;
 		}
@@ -661,9 +661,9 @@ bool ipv6_pmtu_teardown_race(struct childdata *child)
 bool ipv6_pmtu_teardown_race(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_runs,
+	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }

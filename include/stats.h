@@ -40,6 +40,7 @@
 #include "stats/subsys/iouring_recipes.h"
 #include "stats/subsys/ip6gre_lapb.h"
 #include "stats/subsys/ipv6_ndisc_proxy.h"
+#include "stats/subsys/ipv6_pmtu_race.h"
 #include "stats/subsys/keyring_spam.h"
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/mount_churn.h"
@@ -1351,12 +1352,8 @@ struct stats_s {
 	unsigned long obscure_af_churn_pattern_kernel_rejected[8];
 	unsigned long obscure_af_churn_pattern_unexpected_success[8];
 
-	/* ipv6_pmtu_teardown_race childop counters */
-	unsigned long ipv6_pmtu_race_runs;			/* total ipv6_pmtu_teardown_race invocations */
-	unsigned long ipv6_pmtu_race_setup_failed;		/* probe / anchor / unshare / worker fork failed */
-	unsigned long ipv6_pmtu_race_ptb_sent_ok;		/* sendto(ICMPV6_PKT_TOOBIG) returned >=0 */
-	unsigned long ipv6_pmtu_race_dellink_ok;		/* RTM_DELLINK ack 0 from worker B */
-	unsigned long ipv6_pmtu_race_completed_ok;		/* iter_one reached setns-back + close cleanly */
+	/* ipv6_pmtu_race accounting.  See stats/subsys/ipv6_pmtu_race.h. */
+	struct ipv6_pmtu_race_stats ipv6_pmtu_race __attribute__((aligned(64)));
 
 	/* vrf_fib_churn childop counters */
 	unsigned long vrf_fib_churn_runs;		/* total vrf_fib_churn invocations */
