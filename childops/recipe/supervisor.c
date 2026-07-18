@@ -100,7 +100,7 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
 				(void)kill(pid, SIGKILL);
 				(void)waitpid_eintr(pid, &status, 0);
 				*unsupported = true;
-				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+				__atomic_add_fetch(&shm->stats.recipe.unsupported,
 						   1, __ATOMIC_RELAXED);
 				return false;
 			}
@@ -293,7 +293,7 @@ bool recipe_mount_userns_dance(bool *unsupported)
 		 * certainly EPERM from a hardened policy.  Latch so the
 		 * dispatcher stops picking this recipe. */
 		*unsupported = true;
-		__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+		__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 				   __ATOMIC_RELAXED);
 		return false;
 	}
@@ -503,7 +503,7 @@ bool recipe_seccomp_listener_exec(bool *unsupported)
 
 	if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
 		*unsupported = true;
-		__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+		__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 				   __ATOMIC_RELAXED);
 		return false;
 	}
@@ -770,7 +770,7 @@ bool recipe_cgroup_kill_events(bool *unsupported)
 
 	if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
 		*unsupported = true;
-		__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+		__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 				   __ATOMIC_RELAXED);
 		return false;
 	}

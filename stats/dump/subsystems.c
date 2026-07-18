@@ -216,11 +216,11 @@ static void dump_stats_render_ebpf_gen(void)
 
 static void dump_stats_render_recipe_runner(void)
 {
-	if (shm->stats.recipe_runs) {
-		stat_row("recipe_runner", "runs",        shm->stats.recipe_runs);
-		stat_row("recipe_runner", "completed",   shm->stats.recipe_completed);
-		stat_row("recipe_runner", "partial",     shm->stats.recipe_partial);
-		stat_row("recipe_runner", "unsupported", shm->stats.recipe_unsupported);
+	if (shm->stats.recipe.runs) {
+		stat_row("recipe_runner", "runs",        shm->stats.recipe.runs);
+		stat_row("recipe_runner", "completed",   shm->stats.recipe.completed);
+		stat_row("recipe_runner", "partial",     shm->stats.recipe.partial);
+		stat_row("recipe_runner", "unsupported", shm->stats.recipe.unsupported);
 		recipe_runner_dump_stats();
 	}
 }

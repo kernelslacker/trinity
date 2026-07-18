@@ -111,7 +111,7 @@ bool recipe_runner(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.recipe_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.recipe.runs, 1, __ATOMIC_RELAXED);
 
 	/* Pick a recipe that hasn't been latched off.  A few retries are
 	 * enough — even if every discovery-probe recipe is disabled, at
@@ -151,12 +151,12 @@ bool recipe_runner(struct childdata *child)
 				 __ATOMIC_RELAXED);
 
 	if (ok) {
-		__atomic_add_fetch(&shm->stats.recipe_completed, 1,
+		__atomic_add_fetch(&shm->stats.recipe.completed, 1,
 				   __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.recipe_completed_per[idx], 1,
 				   __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.recipe_partial, 1,
+		__atomic_add_fetch(&shm->stats.recipe.partial, 1,
 				   __ATOMIC_RELAXED);
 	}
 

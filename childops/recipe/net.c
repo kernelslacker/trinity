@@ -373,7 +373,7 @@ bool recipe_uffd_wp(bool *unsupported)
 			if (errno == EPERM || errno == EACCES ||
 			    errno == ENOSYS || open_errno == ENOENT) {
 				*unsupported = true;
-				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+				__atomic_add_fetch(&shm->stats.recipe.unsupported,
 						   1, __ATOMIC_RELAXED);
 			}
 			goto out;
@@ -402,7 +402,7 @@ bool recipe_uffd_wp(bool *unsupported)
 	if (ioctl(fd, UFFDIO_REGISTER, &reg) < 0) {
 		if (errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -419,7 +419,7 @@ bool recipe_uffd_wp(bool *unsupported)
 	if (ioctl(fd, UFFDIO_WRITEPROTECT, &wp) < 0) {
 		if (errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -508,7 +508,7 @@ bool recipe_fsnotify_xwatch(bool *unsupported)
 	if (wfd < 0) {
 		if (errno == ENOSYS) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -609,7 +609,7 @@ bool recipe_net_raw(bool *unsupported)
 			if (i == 0 && (errno == EPERM || errno == EACCES ||
 				       errno == ENOSYS)) {
 				*unsupported = true;
-				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+				__atomic_add_fetch(&shm->stats.recipe.unsupported,
 						   1, __ATOMIC_RELAXED);
 				return false;
 			}
@@ -687,7 +687,7 @@ bool recipe_net_unix_oob(bool *unsupported)
 	if (send(sv[0], "U", 1, MSG_OOB) != 1) {
 		if (errno == EOPNOTSUPP || errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;

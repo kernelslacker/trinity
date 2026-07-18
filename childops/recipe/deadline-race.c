@@ -169,7 +169,7 @@ bool recipe_bpf_htab_iter_del(bool *unsupported)
 			if (i == 0 && (errno == ENOSYS || errno == EPERM ||
 				       errno == EINVAL)) {
 				*unsupported = true;
-				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+				__atomic_add_fetch(&shm->stats.recipe.unsupported,
 						   1, __ATOMIC_RELAXED);
 				return false;
 			}
@@ -408,7 +408,7 @@ bool recipe_perf_mmap_close(bool *unsupported)
 				       errno == EOPNOTSUPP ||
 				       errno == EINVAL)) {
 				*unsupported = true;
-				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+				__atomic_add_fetch(&shm->stats.recipe.unsupported,
 						   1, __ATOMIC_RELAXED);
 				return false;
 			}
@@ -421,7 +421,7 @@ bool recipe_perf_mmap_close(bool *unsupported)
 			if (i == 0 && (errno == EPERM || errno == EACCES)) {
 				close(perf_fd);
 				*unsupported = true;
-				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+				__atomic_add_fetch(&shm->stats.recipe.unsupported,
 						   1, __ATOMIC_RELAXED);
 				return false;
 			}
@@ -613,7 +613,7 @@ bool recipe_keys_revoke_race(bool *unsupported)
 		if (errno == ENOSYS || errno == EPERM ||
 		    errno == EOPNOTSUPP || errno == EACCES) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		return false;
@@ -665,7 +665,7 @@ bool recipe_keys_revoke_race(bool *unsupported)
 				       errno == EOPNOTSUPP ||
 				       errno == EDQUOT)) {
 				*unsupported = true;
-				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+				__atomic_add_fetch(&shm->stats.recipe.unsupported,
 						   1, __ATOMIC_RELAXED);
 				return false;
 			}
