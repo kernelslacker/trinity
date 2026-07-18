@@ -247,23 +247,6 @@ static const unsigned long quotactl_fs_disk_quota_subcmds[] = {
 };
 
 /*
- * seccomp(op, flags, args) op-discriminator pool.  Sibling arg a1 (op)
- * selects which struct backs the a3 pointer; the discriminator-aware
- * lookup resolves this list against rec->a1 to pick the right descriptor.
- *
- * seccomp_set_mode_filter_ops: just SECCOMP_SET_MODE_FILTER (a3 is a
- * struct sock_fprog pointer the kernel reads for cBPF install).  The
- * other three ops (SECCOMP_SET_MODE_STRICT, SECCOMP_GET_ACTION_AVAIL,
- * SECCOMP_GET_NOTIF_SIZES) point a3 at a different shape (or NULL) and
- * are not registered -- attributing CMP-learned constants against
- * sock_fprog fields on those dispatches would steer them at bytes the
- * kernel never reads as filter program.
- */
-static const unsigned long seccomp_set_mode_filter_ops[] = {
-	SECCOMP_SET_MODE_FILTER,
-};
-
-/*
  * setsockopt (level, optname) discriminator vocab -- proof batch for
  * the two-key extension.  Each list enumerates the optnames inside a
  * single level that share an optval struct shape, so one
@@ -483,10 +466,6 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	{ "msgctl",		3, &struct_catalog[SC_MSQID_DS] },
 	/* shmctl(int shmid, int cmd, struct shmid_ds *buf) — IPC_SET path */
 	{ "shmctl",		3, &struct_catalog[SC_SHMID_DS] },
-#ifdef USE_BPF
-	/* bpf(int, union bpf_attr *, unsigned int) */
-	{ "bpf",		2, &struct_catalog[SC_BPF_ATTR] },
-#endif
 	/*
 	 * keyctl(int cmd, unsigned long a2, unsigned long a3,
 	 *        unsigned long a4, unsigned long a5)
@@ -941,34 +920,6 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	},
 #endif
 	/*
-	 * seccomp a3: struct sock_fprog under SECCOMP_SET_MODE_FILTER
-	 * (the cBPF install arm).  Attribution-only; bespoke
-	 * sanitise_seccomp() owns the live fill via bpf_gen_seccomp().
-	 * Prctl PR_SET_SECCOMP shares the shape (two-key row below);
-	 * setsockopt SO_ATTACH_FILTER stays bespoke (BPF arm REPLACES
-	 * optval wholesale).  See Documentation/struct_catalog.md.
-	 */
-	{
-		"seccomp", 3, &struct_catalog[SC_SOCK_FPROG],
-		.discrim_arg_idx	= 1,
-		.discrim_values		= seccomp_set_mode_filter_ops,
-		.num_discrim_values	= ARRAY_SIZE(seccomp_set_mode_filter_ops),
-	},
-	/*
-	 * prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, sock_fprog *) cBPF
-	 * install arm.  Two-key row (option at a1, mode at a2).
-	 * Attribution-only; bespoke sanitise_prctl() PR_SET_SECCOMP arm
-	 * owns the live fill via bpf_gen_seccomp().
-	 * See Documentation/struct_catalog.md.
-	 */
-	{
-		"prctl", 3, &struct_catalog[SC_SOCK_FPROG],
-		.discrim_arg_idx	= 1,
-		.discrim_value		= PR_SET_SECCOMP,
-		.discrim2_arg_idx	= 2,
-		.discrim2_value		= SECCOMP_MODE_FILTER,
-	},
-	/*
 	 * setsockopt a4 (optval): two-key (level, optname) rows resolved
 	 * via struct_arg_lookup_two_key() from apply_sockopt_entry().
 	 * Attribution-only; bespoke build_*() in syscalls/setsockopt.c
@@ -1373,11 +1324,13 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 extern const struct syscall_struct_arg struct_catalog_registry_time[];
 extern const struct syscall_struct_arg struct_catalog_registry_io_uring[];
 extern const struct syscall_struct_arg struct_catalog_registry_sched[];
+extern const struct syscall_struct_arg struct_catalog_registry_bpf[];
 
 const struct syscall_struct_arg_group syscall_struct_arg_groups[] = {
 	{ struct_catalog_registry_time },
 	{ struct_catalog_registry_io_uring },
 	{ struct_catalog_registry_sched },
+	{ struct_catalog_registry_bpf },
 	{ syscall_struct_args_all },
 	{ NULL },
 };
