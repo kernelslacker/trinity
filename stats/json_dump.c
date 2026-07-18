@@ -40,6 +40,7 @@
 #include "shm.h"
 #include "stats.h"
 #include "stats-internal.h"
+#include "stats/json/internal.h"
 #include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
@@ -48,37 +49,6 @@
 #include "utils-proc.h"
 #include "utils.h"
 #include "version.h"
-
-/*
- * JSON helpers for --stats-json. Emit straight to stdout (no [main] prefix
- * from output()), so post-run scripts can redirect stdout and parse the
- * result with jq / json.loads / serde_json without stripping anything.
- */
-static void json_emit_string(const char *s)
-{
-	putchar('"');
-	if (s != NULL) {
-		for (; *s != '\0'; s++) {
-			unsigned char c = (unsigned char)*s;
-
-			switch (c) {
-			case '"':  fputs("\\\"", stdout); break;
-			case '\\': fputs("\\\\", stdout); break;
-			case '\b': fputs("\\b", stdout);  break;
-			case '\f': fputs("\\f", stdout);  break;
-			case '\n': fputs("\\n", stdout);  break;
-			case '\r': fputs("\\r", stdout);  break;
-			case '\t': fputs("\\t", stdout);  break;
-			default:
-				if (c < 0x20)
-					printf("\\u%04x", c);
-				else
-					putchar(c);
-			}
-		}
-	}
-	putchar('"');
-}
 
 /* Emit one syscall entry. Returns true if anything was printed. Caller is
  * responsible for emitting a leading comma between successive entries. */
@@ -683,26 +653,6 @@ static void json_emit_cmp_hints_section(void)
 	}
 	printf(",\"cmp_hints\":{\"values_total\":%u,\"syscalls_with_hints\":%u}",
 		total_hints, syscalls_with_hints);
-}
-/*
- * Emit one category as a JSON object: "name":{"field":N,"field":N,...}.
- * Caller is responsible for the surrounding comma separator.
- */
-static void stat_category_emit_json(const struct stat_category *cat)
-{
-	size_t i;
-
-	printf("\"%s\":{", cat->name);
-	for (i = 0; i < cat->n_fields; i++) {
-		const struct stat_field *f = &cat->fields[i];
-		const char *key = f->json_key ? f->json_key : f->name;
-
-		printf("%s\"%s\":%lu",
-		       i ? "," : "",
-		       key,
-		       stat_field_load(f));
-	}
-	putchar('}');
 }
 /*
  * Emit every counter from struct stats_s as a single JSON object.
