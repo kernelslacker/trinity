@@ -521,17 +521,6 @@ const struct stat_category af_alg_weak_cipher_probe_category =
 	              af_alg_weak_cipher_probe_runs,
 	              af_alg_weak_cipher_probe_fields);
 
-static const struct stat_field bridge_conntrack_churn_fields[] = {
-	STAT_FIELD(bridge_ct, runs),
-	STAT_FIELD(bridge_ct, flushes),
-	STAT_FIELD(bridge_ct, pkts_sent),
-};
-
-const struct stat_category bridge_conntrack_churn_category =
-	STAT_CATEGORY("bridge_conntrack_churn",
-	              bridge_ct_runs,
-	              bridge_conntrack_churn_fields);
-
 static const struct stat_field bridge_ip6frag_refrag_fields[] = {
 	STAT_FIELD(bridge_ip6frag, runs),
 	STAT_FIELD(bridge_ip6frag, pairs_sent),

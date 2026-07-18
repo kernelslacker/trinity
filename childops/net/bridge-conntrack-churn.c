@@ -502,7 +502,7 @@ static void *brct_packet_sender(void *arg)
 
 		if (sendto(a->raw_fd, frame, sizeof(frame), MSG_DONTWAIT,
 			   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-			__atomic_add_fetch(&shm->stats.bridge_ct_pkts_sent,
+			__atomic_add_fetch(&shm->stats.bridge_ct.pkts_sent,
 					   1, __ATOMIC_RELAXED);
 	}
 	return NULL;
@@ -738,7 +738,7 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 							 __ATOMIC_RELAXED);
 				break;
 			}
-			__atomic_add_fetch(&shm->stats.bridge_ct_flushes,
+			__atomic_add_fetch(&shm->stats.bridge_ct.flushes,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -846,7 +846,7 @@ bool bridge_conntrack_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.bridge_ct_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.bridge_ct.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported || ns_unsupported_bridge ||
 	    ns_unsupported_nf_tables || ns_unsupported_ctnetlink)
