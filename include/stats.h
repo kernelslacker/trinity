@@ -43,6 +43,7 @@
 #include "stats/subsys/ipv6_pmtu_race.h"
 #include "stats/subsys/keyring_spam.h"
 #include "stats/subsys/madvise_cycler.h"
+#include "stats/subsys/map_shared_stress.h"
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/perf_chains.h"
@@ -1825,12 +1826,8 @@ struct stats_s {
 	unsigned long sysv_shm_orphan_race_sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
 	unsigned long sysv_shm_orphan_race_sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
 
-	/* map_shared_stress childop counters */
-	unsigned long map_shared_stress_runs;			/* total map_shared_stress invocations (pre-latch) */
-	unsigned long map_shared_stress_setup_failed;		/* backing file create/ftruncate/mmap probe failed */
-	unsigned long map_shared_stress_writeback_ok;		/* concurrent-writeback sub-op completed a burst */
-	unsigned long map_shared_stress_dontfork_ok;		/* MADV_DONTFORK + fork COW-vs-shared sub-op completed a burst */
-	unsigned long map_shared_stress_append_ok;		/* MAP_SHARED vs O_APPEND ordering sub-op completed a burst */
+	/* map_shared_stress accounting.  See stats/subsys/map_shared_stress.h. */
+	struct map_shared_stress_stats map_shared_stress __attribute__((aligned(64)));
 
 	/* qrtr_bind_race childop counters */
 	unsigned long qrtr_bind_race_runs;			/* total qrtr_bind_race invocations */

@@ -302,7 +302,7 @@ bool map_shared_stress(struct childdata *child)
 	if (map_shared_stress_unsupported)
 		return true;
 
-	__atomic_add_fetch(&shm->stats.map_shared_stress_runs, 1,
+	__atomic_add_fetch(&shm->stats.map_shared_stress.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	fd = open_backing_file();
@@ -315,7 +315,7 @@ bool map_shared_stress(struct childdata *child)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.map_shared_stress_setup_failed,
+		__atomic_add_fetch(&shm->stats.map_shared_stress.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -324,7 +324,7 @@ bool map_shared_stress(struct childdata *child)
 	map = mmap(NULL, region_bytes, PROT_READ | PROT_WRITE,
 		   MAP_SHARED, fd, 0);
 	if (map == MAP_FAILED) {
-		__atomic_add_fetch(&shm->stats.map_shared_stress_setup_failed,
+		__atomic_add_fetch(&shm->stats.map_shared_stress.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		(void)close(fd);
 		return true;
@@ -347,19 +347,19 @@ bool map_shared_stress(struct childdata *child)
 		case 0:
 			run_concurrent_writeback(fd, map, region_bytes);
 			__atomic_add_fetch(
-				&shm->stats.map_shared_stress_writeback_ok,
+				&shm->stats.map_shared_stress.writeback_ok,
 				1, __ATOMIC_RELAXED);
 			break;
 		case 1:
 			run_dontfork_split(fd, region_bytes);
 			__atomic_add_fetch(
-				&shm->stats.map_shared_stress_dontfork_ok,
+				&shm->stats.map_shared_stress.dontfork_ok,
 				1, __ATOMIC_RELAXED);
 			break;
 		default:
 			run_append_vs_mmap(fd, map, region_bytes);
 			__atomic_add_fetch(
-				&shm->stats.map_shared_stress_append_ok,
+				&shm->stats.map_shared_stress.append_ok,
 				1, __ATOMIC_RELAXED);
 			break;
 		}
