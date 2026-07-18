@@ -37,21 +37,6 @@ const struct stat_category tcp_ulp_swap_churn_category =
 	              tcp_ulp_swap_churn_runs,
 	              tcp_ulp_swap_churn_fields);
 
-static const struct stat_field tls_rotate_fields[] = {
-	STAT_FIELD(tls_rotate, runs),
-	STAT_FIELD(tls_rotate, setup_failed),
-	STAT_FIELD(tls_rotate, ulp_failed),
-	STAT_FIELD(tls_rotate, ulp_asymmetric),
-	STAT_FIELD(tls_rotate, installs),
-	STAT_FIELD(tls_rotate, rekeys_ok),
-	STAT_FIELD(tls_rotate, rekeys_rejected),
-};
-
-const struct stat_category tls_rotate_category =
-	STAT_CATEGORY("tls_rotate",
-	              tls_rotate_runs,
-	              tls_rotate_fields);
-
 static const struct stat_field tcp_md5_listener_race_fields[] = {
 	STAT_FIELD(tcp_md5_listener_race, runs),
 	STAT_FIELD(tcp_md5_listener_race, setup_failed),
