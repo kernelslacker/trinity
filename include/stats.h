@@ -34,6 +34,7 @@
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/inplace_crypto.h"
+#include "stats/subsys/iouring_eventfd.h"
 #include "stats/subsys/ip6gre_lapb.h"
 #include "stats/subsys/keyring_spam.h"
 #include "stats/subsys/madvise_cycler.h"
@@ -1023,11 +1024,8 @@ struct stats_s {
 	 * catalog layout. */
 	unsigned long iouring_recipe_completed_per[MAX_IOURING_RECIPES];
 
-	/* iouring eventfd recursive completion recipe counters */
-	unsigned long iouring_eventfd_register_ok;	/* IORING_REGISTER_EVENTFD[_ASYNC] succeeded */
-	unsigned long iouring_eventfd_register_fail;	/* register call returned an error */
-	unsigned long iouring_eventfd_recursive_runs;	/* recipe ran past register */
-	unsigned long iouring_eventfd_recursive_cqes;	/* CQEs reaped within the recipe */
+	/* iouring_eventfd accounting.  See stats/subsys/iouring_eventfd.h. */
+	struct iouring_eventfd_stats iouring_eventfd __attribute__((aligned(64)));
 
 	/* aio submission counter.  See stats/subsys/aio.h. */
 	struct aio_stats aio __attribute__((aligned(64)));

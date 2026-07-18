@@ -235,16 +235,16 @@ static void dump_stats_render_iouring(void)
 		iouring_recipes_dump_stats();
 	}
 
-	if (shm->stats.iouring_eventfd_register_ok ||
-	    shm->stats.iouring_eventfd_register_fail) {
+	if (shm->stats.iouring_eventfd.register_ok ||
+	    shm->stats.iouring_eventfd.register_fail) {
 		stat_row("iouring_eventfd", "register_ok",
-			 shm->stats.iouring_eventfd_register_ok);
+			 shm->stats.iouring_eventfd.register_ok);
 		stat_row("iouring_eventfd", "register_fail",
-			 shm->stats.iouring_eventfd_register_fail);
+			 shm->stats.iouring_eventfd.register_fail);
 		stat_row("iouring_eventfd", "recursive_runs",
-			 shm->stats.iouring_eventfd_recursive_runs);
+			 shm->stats.iouring_eventfd.recursive_runs);
 		stat_row("iouring_eventfd", "recursive_cqes",
-			 shm->stats.iouring_eventfd_recursive_cqes);
+			 shm->stats.iouring_eventfd.recursive_cqes);
 	}
 }
 
