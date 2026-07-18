@@ -89,6 +89,7 @@
 #include "stats/subsys/tcp_ao_rotate.h"
 #include "stats/subsys/tls_rotate.h"
 #include "stats/subsys/tls_ulp_churn.h"
+#include "stats/subsys/ublk_lifecycle.h"
 #include "stats/subsys/uffd.h"
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/vdso_race.h"
@@ -4252,13 +4253,8 @@ struct stats_s {
 	unsigned long ipmr_cache_report_eperm;		/* MRT_INIT returned -EPERM (CAP_NET_ADMIN gate) */
 	unsigned long ipmr_cache_report_emit_ok;	/* sendto a NOCACHE multicast group succeeded */
 
-	/* ublk_lifecycle childop counters */
-	unsigned long ublk_lifecycle_iters;		/* per-iteration loop body entries */
-	unsigned long ublk_lifecycle_eperm;		/* /dev/ublk-control open returned EPERM/ENOENT/ENXIO/EACCES (latched) */
-	unsigned long ublk_lifecycle_add_ok;		/* UBLK_U_CMD_ADD_DEV via uring_cmd accepted; dev_id assigned */
-	unsigned long ublk_lifecycle_fetch_ok;		/* UBLK_U_IO_FETCH_REQ submitted on the queue chrdev (parked, non-blocking) */
-	unsigned long ublk_lifecycle_del_ok;		/* UBLK_U_CMD_DEL_DEV via uring_cmd accepted */
-	unsigned long ublk_lifecycle_race_observed;	/* FETCH_REQ in flight when DEL_DEV fired (the f7700a4415af window) */
+	/* ublk_lifecycle accounting.  See stats/subsys/ublk_lifecycle.h. */
+	struct ublk_lifecycle_stats ublk_lifecycle __attribute__((aligned(64)));
 
 	/*
 	 * Wall-clock high-water-mark for the periodic minicorpus snapshot.

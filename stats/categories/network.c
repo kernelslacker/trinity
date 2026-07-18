@@ -217,20 +217,6 @@ const struct stat_category netdev_netns_migrate_category =
 		      nnm_iters,
 		      netdev_netns_migrate_fields);
 
-static const struct stat_field ublk_lifecycle_fields[] = {
-	STAT_FIELD(ublk_lifecycle, iters),
-	STAT_FIELD(ublk_lifecycle, eperm),
-	STAT_FIELD(ublk_lifecycle, add_ok),
-	STAT_FIELD(ublk_lifecycle, fetch_ok),
-	STAT_FIELD(ublk_lifecycle, del_ok),
-	STAT_FIELD(ublk_lifecycle, race_observed),
-};
-
-const struct stat_category ublk_lifecycle_category =
-	STAT_CATEGORY("ublk_lifecycle",
-	              ublk_lifecycle_iters,
-	              ublk_lifecycle_fields);
-
 static const struct stat_field ipset_churn_fields[] = {
 	STAT_FIELD(ipset_churn, runs),
 	STAT_FIELD(ipset_churn, setup_failed),
