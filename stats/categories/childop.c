@@ -61,22 +61,3 @@ const struct stat_category umount_race_category =
 	              umount_race_runs,
 	              umount_race_fields);
 
-static const struct stat_field statmount_idmap_fields[] = {
-	STAT_FIELD(statmount_idmap, runs),
-	STAT_FIELD(statmount_idmap, setup_failed),
-	STAT_FIELD(statmount_idmap, iter),
-	STAT_FIELD(statmount_idmap, fork_failed),
-	STAT_FIELD(statmount_idmap, carrier_ok),
-	STAT_FIELD(statmount_idmap, carrier_fail),
-	STAT_FIELD(statmount_idmap, setattr_ok),
-	STAT_FIELD(statmount_idmap, setattr_fail),
-	STAT_FIELD(statmount_idmap, statmount_call),
-	STAT_FIELD(statmount_idmap, statmount_ok),
-	STAT_FIELD(statmount_idmap, statmount_overflow),
-};
-
-const struct stat_category statmount_idmap_category =
-	STAT_CATEGORY("statmount_idmap",
-	              statmount_idmap_runs,
-	              statmount_idmap_fields);
-
