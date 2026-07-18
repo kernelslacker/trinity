@@ -45,6 +45,7 @@
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/map_shared_stress.h"
 #include "stats/subsys/mount_churn.h"
+#include "stats/subsys/mpls_route_churn.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/perf_chains.h"
 #include "stats/subsys/pipe_thrash.h"
@@ -1385,12 +1386,8 @@ struct stats_s {
 	unsigned long ip4_udp_cork_splice_p1_rejected;		/* corked sendmsg returned short / -1 (splice path refused) */
 	unsigned long ip4_udp_cork_splice_p2_ok;		/* flushing tail sendmsg returned >=0 (trigger burst emitted) */
 
-	/* mpls_route_churn childop counters */
-	unsigned long mpls_route_churn_runs;		/* total mpls_route_churn invocations */
-	unsigned long mpls_route_churn_label_install_ok; /* RTM_NEWROUTE family=AF_MPLS accepted (arm A) */
-	unsigned long mpls_route_churn_iptunnel_install_ok; /* RTM_NEWROUTE family=AF_INET + RTA_ENCAP MPLS accepted (arm B) */
-	unsigned long mpls_route_churn_delete_ok;	/* matching RTM_DELROUTE accepted (either arm) */
-	unsigned long mpls_route_churn_ns_unsupported;	/* mpls / lwtunnel latch fired (no-op for the rest of this child) */
+	/* mpls_route_churn accounting.  See stats/subsys/mpls_route_churn.h. */
+	struct mpls_route_churn_stats mpls_route_churn __attribute__((aligned(64)));
 
 	/* netlink_monitor_race childop counters */
 	unsigned long netlink_monitor_race_runs;	/* total netlink_monitor_race invocations */

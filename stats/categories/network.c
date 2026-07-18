@@ -221,19 +221,6 @@ const struct stat_category ip4_udp_cork_splice_category =
 		      ip4_udp_cork_splice_runs,
 		      ip4_udp_cork_splice_fields);
 
-static const struct stat_field mpls_route_churn_fields[] = {
-	STAT_FIELD(mpls_route_churn, runs),
-	STAT_FIELD(mpls_route_churn, label_install_ok),
-	STAT_FIELD(mpls_route_churn, iptunnel_install_ok),
-	STAT_FIELD(mpls_route_churn, delete_ok),
-	STAT_FIELD(mpls_route_churn, ns_unsupported),
-};
-
-const struct stat_category mpls_route_churn_category =
-	STAT_CATEGORY("mpls_route_churn",
-	              mpls_route_churn_runs,
-	              mpls_route_churn_fields);
-
 static const struct stat_field tls_ulp_churn_fields[] = {
 	STAT_FIELD(tls_ulp_churn, runs),
 	STAT_FIELD(tls_ulp_churn, setup_failed),

@@ -152,7 +152,7 @@ static void latch_ns_unsupported_mpls(int rc)
 	if (ns_unsupported_mpls)
 		return;
 	ns_unsupported_mpls = true;
-	__atomic_add_fetch(&shm->stats.mpls_route_churn_ns_unsupported,
+	__atomic_add_fetch(&shm->stats.mpls_route_churn.ns_unsupported,
 			   1, __ATOMIC_RELAXED);
 	if (verbosity > 2)
 		outputerr("[mpls_route_churn] latched ns_unsupported_mpls (rc=%d)\n",
@@ -164,7 +164,7 @@ static void latch_ns_unsupported_lwtunnel(int rc)
 	if (ns_unsupported_lwtunnel)
 		return;
 	ns_unsupported_lwtunnel = true;
-	__atomic_add_fetch(&shm->stats.mpls_route_churn_ns_unsupported,
+	__atomic_add_fetch(&shm->stats.mpls_route_churn.ns_unsupported,
 			   1, __ATOMIC_RELAXED);
 	if (verbosity > 2)
 		outputerr("[mpls_route_churn] latched ns_unsupported_lwtunnel (rc=%d)\n",
@@ -624,12 +624,12 @@ static int mpls_route_churn_in_ns(void *arg)
 
 			if (rc == 0) {
 				__atomic_add_fetch(
-					&shm->stats.mpls_route_churn_label_install_ok,
+					&shm->stats.mpls_route_churn.label_install_ok,
 					1, __ATOMIC_RELAXED);
 				if (build_mpls_label_delete(&ctx,
 							    in_label) == 0)
 					__atomic_add_fetch(
-						&shm->stats.mpls_route_churn_delete_ok,
+						&shm->stats.mpls_route_churn.delete_ok,
 						1, __ATOMIC_RELAXED);
 			} else {
 				map_rc_to_latch(op, rc, 'A');
@@ -641,12 +641,12 @@ static int mpls_route_churn_in_ns(void *arg)
 
 			if (rc == 0) {
 				__atomic_add_fetch(
-					&shm->stats.mpls_route_churn_iptunnel_install_ok,
+					&shm->stats.mpls_route_churn.iptunnel_install_ok,
 					1, __ATOMIC_RELAXED);
 				if (build_iptunnel_delete(&ctx, dst,
 							  lo_ifindex) == 0)
 					__atomic_add_fetch(
-						&shm->stats.mpls_route_churn_delete_ok,
+						&shm->stats.mpls_route_churn.delete_ok,
 						1, __ATOMIC_RELAXED);
 			} else {
 				map_rc_to_latch(op, rc, 'B');
@@ -673,7 +673,7 @@ bool mpls_route_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.mpls_route_churn_runs,
+	__atomic_add_fetch(&shm->stats.mpls_route_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_userns_mpls_route_churn)
@@ -713,9 +713,9 @@ bool mpls_route_churn(struct childdata *child)
 {
 	(void)child;
 
-	__atomic_add_fetch(&shm->stats.mpls_route_churn_runs,
+	__atomic_add_fetch(&shm->stats.mpls_route_churn.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.mpls_route_churn_ns_unsupported,
+	__atomic_add_fetch(&shm->stats.mpls_route_churn.ns_unsupported,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
