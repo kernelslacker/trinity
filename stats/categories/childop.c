@@ -77,17 +77,6 @@ const struct stat_category pidfd_storm_category =
 	              pidfd_storm_runs,
 	              pidfd_storm_fields);
 
-static const struct stat_field vdso_mremap_race_fields[] = {
-	STAT_FIELD(vdso_race, runs),
-	STAT_FIELD(vdso_race, mutations),
-	STAT_FIELD(vdso_race, helper_segvs),
-};
-
-const struct stat_category vdso_mremap_race_category =
-	STAT_CATEGORY("vdso_mremap_race",
-	              vdso_race_runs,
-	              vdso_mremap_race_fields);
-
 static const struct stat_field cgroup_churn_fields[] = {
 	STAT_FIELD(cgroup_churn, runs),
 	STAT_FIELD(cgroup, mkdirs),
