@@ -164,15 +164,15 @@ static void bump_weak_bucket(enum probe_kind kind)
 {
 	switch (kind) {
 	case KIND_SKCIPHER:
-		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_skcipher_weak_accepted,
+		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.skcipher_weak_accepted,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case KIND_AEAD:
-		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_aead_weak_accepted,
+		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.aead_weak_accepted,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case KIND_HASH:
-		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_hash_weak_accepted,
+		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.hash_weak_accepted,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case KIND_COMPRESSION:
@@ -207,7 +207,7 @@ static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
 
 	fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
 	if (fd < 0) {
-		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_socket_failed,
+		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.socket_failed,
 				   1, __ATOMIC_RELAXED);
 		if (errno == EAFNOSUPPORT) {
 			if (valid_op)
@@ -228,7 +228,7 @@ static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
 	strncpy((char *)sa.salg_type, e->salg_type, sizeof(sa.salg_type) - 1);
 	strncpy((char *)sa.salg_name, e->salg_name, sizeof(sa.salg_name) - 1);
 
-	__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_total_bind_attempts,
+	__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.total_bind_attempts,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
@@ -246,12 +246,12 @@ retry:
 	}
 
 	if (bind_rc == 0) {
-		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_total_bind_accepted,
+		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.total_bind_accepted,
 				   1, __ATOMIC_RELAXED);
 		e->accepted++;
 
 		if (e->klass == PROBE_WEAK) {
-			__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_weak_accepted_total,
+			__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.weak_accepted_total,
 					   1, __ATOMIC_RELAXED);
 			bump_weak_bucket(e->kind);
 		}
@@ -263,7 +263,7 @@ retry:
 					    key, sizeof(key));
 			if (set_rc == 0) {
 				e->setkey_accepted++;
-				__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_setkey_accepted_total,
+				__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.setkey_accepted_total,
 						   1, __ATOMIC_RELAXED);
 				outcome = OUTCOME_ACCEPTED_SETKEY;
 			}
@@ -275,7 +275,7 @@ retry:
 		outcome = bind_errno;	/* >0 */
 
 		if (e->klass == PROBE_STRONG)
-			__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_strong_rejected,
+			__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.strong_rejected,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -288,7 +288,7 @@ bool af_alg_weak_cipher_probe(struct childdata *child)
 {
 	unsigned int i;
 
-	__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_runs,
+	__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (unsupported_af_alg_top_level)
