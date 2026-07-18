@@ -38,6 +38,7 @@
 #include "stats/subsys/deep_path.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/errno_gradient.h"
+#include "stats/subsys/espintcp_coalesce.h"
 #include "stats/subsys/fd_runtime_skipped.h"
 #include "stats/subsys/flock_thrash.h"
 #include "stats/subsys/fork_storm.h"
@@ -1835,13 +1836,8 @@ struct stats_s {
 	/* deep_path_nesting accounting.  See stats/subsys/deep_path.h. */
 	struct deep_path_stats deep_path __attribute__((aligned(64)));
 
-	/* espintcp_coalesce_churn childop counters */
-	unsigned long espintcp_coalesce_runs;			/* total espintcp_coalesce_churn invocations */
-	unsigned long espintcp_coalesce_setup_failed;		/* userns_run_in_ns / loopback pair setup failed (incl. kind-latched or !CONFIG_INET_ESPINTCP) */
-	unsigned long espintcp_coalesce_ulp_install_ok;		/* setsockopt(TCP_ULP, "espintcp") accepted on connected sock */
-	unsigned long espintcp_coalesce_ulp_install_failed;	/* setsockopt(TCP_ULP, "espintcp") rejected (any errno) */
-	unsigned long espintcp_coalesce_send_ok;		/* crafted length-prefixed frame send >0 */
-	unsigned long espintcp_coalesce_keepalive_ok;		/* zero-length non-ESP marker keepalive frame emitted */
+	/* espintcp_coalesce accounting.  See stats/subsys/espintcp_coalesce.h. */
+	struct espintcp_coalesce_stats espintcp_coalesce __attribute__((aligned(64)));
 
 	/* netns_mountns_setup_probe childop counters */
 	unsigned long netns_mountns_setup_runs;			/* total netns_mountns_setup_probe invocations */

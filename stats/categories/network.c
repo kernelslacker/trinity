@@ -68,20 +68,6 @@ const struct stat_category netns_teardown_category =
 	              netns_teardown_runs,
 	              netns_teardown_fields);
 
-static const struct stat_field espintcp_coalesce_fields[] = {
-	STAT_FIELD(espintcp_coalesce, runs),
-	STAT_FIELD(espintcp_coalesce, setup_failed),
-	STAT_FIELD(espintcp_coalesce, ulp_install_ok),
-	STAT_FIELD(espintcp_coalesce, ulp_install_failed),
-	STAT_FIELD(espintcp_coalesce, send_ok),
-	STAT_FIELD(espintcp_coalesce, keepalive_ok),
-};
-
-const struct stat_category espintcp_coalesce_category =
-	STAT_CATEGORY("espintcp_coalesce_churn",
-	              espintcp_coalesce_runs,
-	              espintcp_coalesce_fields);
-
 static const struct stat_field netns_mountns_setup_fields[] = {
 	STAT_FIELD(netns_mountns_setup, runs),
 	STAT_FIELD(netns_mountns_setup, setup_failed),
