@@ -38,6 +38,7 @@
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/no_domains.h"
+#include "stats/subsys/perf_chains.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/sched_cycler.h"
 #include "stats/subsys/setsockopt_pairing.h"
@@ -954,10 +955,8 @@ struct stats_s {
 	unsigned long nfnl_subsys_calls_nftables;
 	unsigned long nfnl_subsys_calls_ipset;
 
-	/* perf_event_chains childop counters */
-	unsigned long perf_chains_runs;		/* total invocations */
-	unsigned long perf_chains_groups_created;	/* group leader fd opened successfully */
-	unsigned long perf_chains_ioctl_ops;	/* PERF_EVENT_IOC_* calls made */
+	/* perf_event_chains accounting.  See stats/subsys/perf_chains.h. */
+	struct perf_chains_stats perf_chains __attribute__((aligned(64)));
 
 	/* tracefs_fuzzer childop counters, per-ARM, split by outcome into
 	 * open-fail (tracefs not mounted, EACCES, ENOENT on a per-event

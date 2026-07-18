@@ -32,17 +32,6 @@ const struct stat_category userns_bootstrap_category =
 	              userns_bootstrap_runs,
 	              userns_bootstrap_fields);
 
-static const struct stat_field perf_event_chains_fields[] = {
-	STAT_FIELD(perf_chains, runs),
-	STAT_FIELD(perf_chains, groups_created),
-	STAT_FIELD(perf_chains, ioctl_ops),
-};
-
-const struct stat_category perf_event_chains_category =
-	STAT_CATEGORY("perf_event_chains",
-	              perf_chains_runs,
-	              perf_event_chains_fields);
-
 static const struct stat_field bpf_lifecycle_fields[] = {
 	STAT_FIELD(bpf_lifecycle, runs),
 	STAT_FIELD(bpf_lifecycle, progs_loaded),
