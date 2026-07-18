@@ -43,6 +43,7 @@
 #include "stats/subsys/flock_thrash.h"
 #include "stats/subsys/flowtable_vlan.h"
 #include "stats/subsys/fork_storm.h"
+#include "stats/subsys/fs_lifecycle.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/inplace_crypto.h"
@@ -1049,14 +1050,8 @@ struct stats_s {
 	/* refcount_audit accounting.  See stats/subsys/refcount_audit.h. */
 	struct refcount_audit_stats refcount_audit __attribute__((aligned(64)));
 
-	/* fs_lifecycle childop counters */
-	unsigned long fs_lifecycle_tmpfs;	/* plain tmpfs variant */
-	unsigned long fs_lifecycle_ramfs;	/* ramfs variant */
-	unsigned long fs_lifecycle_rdonly;	/* read-only proc/sysfs traversal */
-	unsigned long fs_lifecycle_overlay;	/* overlayfs variant */
-	unsigned long fs_lifecycle_quota;	/* tmpfs size= / ENOSPC variant */
-	unsigned long fs_lifecycle_bind;	/* bind-mount teardown variant */
-	unsigned long fs_lifecycle_unsupported;	/* CLONE_NEWUSER refused (helper -EPERM) */
+	/* fs_lifecycle accounting.  See stats/subsys/fs_lifecycle.h. */
+	struct fs_lifecycle_stats fs_lifecycle __attribute__((aligned(64)));
 
 	/* signal_storm childop counters.  See stats/subsys/signal_storm.h. */
 	struct signal_storm_stats signal_storm __attribute__((aligned(64)));
