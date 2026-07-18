@@ -374,7 +374,7 @@ static int igmp_source_iter_v4_join(struct igmp_source_iter_v4_ctx *it)
 			{
 				const enum child_op_type op = it->op_type;
 				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
@@ -512,9 +512,9 @@ static void iter_one_v4(int op_type, unsigned int iter_idx,
 	const bool valid_op = ((int) op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op_type],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op_type],
 				   1, __ATOMIC_RELAXED);
 	}
 	send_burst(it.send_s, 2);
@@ -647,7 +647,7 @@ static int mld_source_iter_v6_join(struct mld_source_iter_v6_ctx *it)
 			{
 				const enum child_op_type op = it->op_type;
 				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
@@ -809,9 +809,9 @@ static void iter_one_v6(int op_type, unsigned int iter_idx,
 	const bool valid_op = ((int) op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op_type],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op_type],
 				   1, __ATOMIC_RELAXED);
 	}
 	send_burst(it.send_s, 2);

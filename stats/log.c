@@ -702,22 +702,22 @@ static void stats_ts_emit_by_childop(FILE *fp)
 
 		if (shm != NULL) {
 			edges_discovered = __atomic_load_n(
-				&shm->stats.childop_edges_discovered[op],
+				&shm->stats.childop.edges_discovered[op],
 				__ATOMIC_RELAXED);
 			edges_clean = __atomic_load_n(
-				&shm->stats.childop_edges_clean[op],
+				&shm->stats.childop.edges_clean[op],
 				__ATOMIC_RELAXED);
 			calls_with_edges = __atomic_load_n(
-				&shm->stats.childop_calls_with_edges[op],
+				&shm->stats.childop.calls_with_edges[op],
 				__ATOMIC_RELAXED);
 			invocations = __atomic_load_n(
-				&shm->stats.childop_invocations[op],
+				&shm->stats.childop.invocations[op],
 				__ATOMIC_RELAXED);
 			would_promote = __atomic_load_n(
-				&shm->stats.childop_would_promote[op],
+				&shm->stats.childop.would_promote[op],
 				__ATOMIC_RELAXED);
 			would_demote = __atomic_load_n(
-				&shm->stats.childop_would_demote[op],
+				&shm->stats.childop.would_demote[op],
 				__ATOMIC_RELAXED);
 		}
 		if (kcov_shm != NULL && op < KCOV_CHILDOP_NR_MAX) {

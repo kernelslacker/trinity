@@ -434,7 +434,7 @@ static int genetlink_fuzzer_in_ns(void *arg)
 	if (nl_open(&ctx, &opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -449,7 +449,7 @@ static int genetlink_fuzzer_in_ns(void *arg)
 	fam = &cat->entries[rnd_modulo_u32(cat->count)];
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	send_fuzzed_msg(&ctx, fam);
 
@@ -539,7 +539,7 @@ bool genetlink_fuzzer(struct childdata *child)
 	 * families_discovered diagnostic follows the same logic: it counts
 	 * successful discovery cycles, which happen in this frame. */
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.genetlink_families_discovered,
 			   cat.count, __ATOMIC_RELAXED);
@@ -549,7 +549,7 @@ bool genetlink_fuzzer(struct childdata *child)
 	rc = userns_run_in_ns(CLONE_NEWNET, genetlink_fuzzer_in_ns, &cctx);
 	if (rc == -EPERM) {
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.genetlink_userns_run_fail,

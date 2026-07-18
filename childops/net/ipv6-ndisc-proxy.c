@@ -420,7 +420,7 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	iters = BUDGETED(CHILD_OP_IPV6_NDISC_PROXY,
@@ -429,7 +429,7 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 		iters = NDP_OUTER_CAP;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -467,7 +467,7 @@ bool ipv6_ndisc_proxy(struct childdata *child)
 		{
 			const enum child_op_type op = child->op_type;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}

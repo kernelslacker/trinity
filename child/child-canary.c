@@ -322,7 +322,7 @@ static unsigned long edges_for_op(enum child_op_type op)
 {
 	if (op >= NR_CHILD_OP_TYPES)
 		return 0UL;
-	return __atomic_load_n(&shm->stats.childop_edges_clean[op],
+	return __atomic_load_n(&shm->stats.childop.edges_clean[op],
 			       __ATOMIC_RELAXED);
 }
 
@@ -367,7 +367,7 @@ static unsigned long invocations_for_op(enum child_op_type op)
 {
 	if (op >= NR_CHILD_OP_TYPES)
 		return 0UL;
-	return __atomic_load_n(&shm->stats.childop_invocations[op],
+	return __atomic_load_n(&shm->stats.childop.invocations[op],
 			       __ATOMIC_RELAXED);
 }
 
@@ -604,28 +604,28 @@ static void enter_canarying(enum child_op_type op)
 	 * reads these. */
 	{
 		unsigned long discovered = __atomic_load_n(
-			&shm->stats.childop_edges_discovered[op],
+			&shm->stats.childop.edges_discovered[op],
 			__ATOMIC_RELAXED);
 		unsigned long clean = __atomic_load_n(
-			&shm->stats.childop_edges_clean[op],
+			&shm->stats.childop.edges_clean[op],
 			__ATOMIC_RELAXED);
 		unsigned long setup_accepted = __atomic_load_n(
-			&shm->stats.childop_setup_accepted[op],
+			&shm->stats.childop.setup_accepted[op],
 			__ATOMIC_RELAXED);
 		unsigned long invocations_now = __atomic_load_n(
-			&shm->stats.childop_invocations[op],
+			&shm->stats.childop.invocations[op],
 			__ATOMIC_RELAXED);
 
 		s->window_start_noisy_edges = (discovered > clean)
 			? (discovered - clean) : 0;
 		s->window_start_wedges = __atomic_load_n(
-			&shm->stats.childop_wedge_count[op],
+			&shm->stats.childop.wedge_count[op],
 			__ATOMIC_RELAXED);
 		s->window_start_setup_accepted = setup_accepted;
 		s->window_start_setup_failures = (invocations_now > setup_accepted)
 			? (invocations_now - setup_accepted) : 0;
 		s->window_start_wall_ns = __atomic_load_n(
-			&shm->stats.childop_wall_ns[op],
+			&shm->stats.childop.wall_ns[op],
 			__ATOMIC_RELAXED);
 	}
 
@@ -1018,7 +1018,7 @@ static bool pick_next_canary(enum child_op_type *out)
 /* --------------------------------------------------------------------
  * Shadow recommendation: telemetry-only score-driven verdict on the
  * just-closed canary window.  Computed alongside the live decision
- * below; never replaces it.  Bumps shm->stats.childop_would_demote /
+ * below; never replaces it.  Bumps shm->stats.childop.would_demote /
  * childop_would_promote and emits one canary_shadow log line so the
  * operator (and the 75.2.B enforcement work) can see how often the
  * score-driven verdict would diverge from the live one before the
@@ -1141,18 +1141,18 @@ static void close_window_and_decide(enum child_op_type op)
 	 * logged ALONGSIDE the live decision below; the live branches stay
 	 * byte-identical to the pre-shadow baseline. */
 	unsigned long now_discovered = __atomic_load_n(
-		&shm->stats.childop_edges_discovered[op], __ATOMIC_RELAXED);
+		&shm->stats.childop.edges_discovered[op], __ATOMIC_RELAXED);
 	unsigned long now_clean = now_edges;
 	unsigned long now_noisy = (now_discovered > now_clean)
 		? (now_discovered - now_clean) : 0;
 	unsigned long noisy_delta = (now_noisy > s->window_start_noisy_edges)
 		? (now_noisy - s->window_start_noisy_edges) : 0;
 	unsigned long now_wedges = __atomic_load_n(
-		&shm->stats.childop_wedge_count[op], __ATOMIC_RELAXED);
+		&shm->stats.childop.wedge_count[op], __ATOMIC_RELAXED);
 	unsigned long wedges_delta = (now_wedges > s->window_start_wedges)
 		? (now_wedges - s->window_start_wedges) : 0;
 	unsigned long now_setup_accepted = __atomic_load_n(
-		&shm->stats.childop_setup_accepted[op], __ATOMIC_RELAXED);
+		&shm->stats.childop.setup_accepted[op], __ATOMIC_RELAXED);
 	unsigned long setup_ok_delta =
 		(now_setup_accepted > s->window_start_setup_accepted)
 		? (now_setup_accepted - s->window_start_setup_accepted) : 0;
@@ -1163,7 +1163,7 @@ static void close_window_and_decide(enum child_op_type op)
 		(now_setup_failures > s->window_start_setup_failures)
 		? (now_setup_failures - s->window_start_setup_failures) : 0;
 	unsigned long now_wall_ns = __atomic_load_n(
-		&shm->stats.childop_wall_ns[op], __ATOMIC_RELAXED);
+		&shm->stats.childop.wall_ns[op], __ATOMIC_RELAXED);
 	unsigned long wall_ns_delta = (now_wall_ns > s->window_start_wall_ns)
 		? (now_wall_ns - s->window_start_wall_ns) : 0;
 	enum childop_recommended_state rec = canary_recommend_state(
@@ -1173,16 +1173,16 @@ static void close_window_and_decide(enum child_op_type op)
 	if (op > CHILD_OP_SYSCALL && op < NR_CHILD_OP_TYPES) {
 		if (recommended_state_is_promote(rec))
 			__atomic_add_fetch(
-				&shm->stats.childop_would_promote[op],
+				&shm->stats.childop.would_promote[op],
 				1, __ATOMIC_RELAXED);
 		else if (recommended_state_is_demote(rec))
 			__atomic_add_fetch(
-				&shm->stats.childop_would_demote[op],
+				&shm->stats.childop.would_demote[op],
 				1, __ATOMIC_RELAXED);
 	}
 
 	/* SHADOW telemetry: extended per-window summary.  wall_ns is the
-	 * (close - open) delta of shm->stats.childop_wall_ns[op] for this
+	 * (close - open) delta of shm->stats.childop.wall_ns[op] for this
 	 * window; producer is the child measured-syscall path that bumps
 	 * the cumulative slot. */
 	output(0, "canary_shadow: %s window-close clean_edges=%lu noisy_edges_seen=%lu wall_ns=%lu wedges=%lu setup_ok=%lu setup_failures=%lu crashes=%u recommended_state=%s\n",
@@ -1545,7 +1545,7 @@ void canary_queue_tick(void)
 	 * sites stay consistent on the broken-vs-barren distinction. */
 	{
 		unsigned long now_setup_accepted = __atomic_load_n(
-			&shm->stats.childop_setup_accepted[op], __ATOMIC_RELAXED);
+			&shm->stats.childop.setup_accepted[op], __ATOMIC_RELAXED);
 		unsigned long setup_ok_delta =
 			(now_setup_accepted > canary_ops[op].window_start_setup_accepted)
 			? (now_setup_accepted - canary_ops[op].window_start_setup_accepted) : 0;

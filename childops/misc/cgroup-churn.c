@@ -234,7 +234,7 @@ bool cgroup_churn(struct childdata *child)
 	 * enters.  Bump setup_accepted here so the per-childop yield
 	 * dump attributes the invocation to cgroup_churn. */
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
@@ -245,7 +245,7 @@ bool cgroup_churn(struct childdata *child)
 	 * between them) so the invariant data_path <= setup_accepted holds
 	 * with equality as the healthy baseline. */
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < cycles; i++) {

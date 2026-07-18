@@ -519,7 +519,7 @@ static void map_rc_to_latch(int op_type, int rc, char arm)
 
 	if (rc == -EAFNOSUPPORT || rc == -ENOPROTOOPT) {
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op_type],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		if (arm == 'A')
@@ -532,7 +532,7 @@ static void map_rc_to_latch(int op_type, int rc, char arm)
 	if (rc == -EOPNOTSUPP) {
 		if (arm == 'B') {
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op_type],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			latch_ns_unsupported_lwtunnel(rc);
@@ -587,7 +587,7 @@ static int mpls_route_churn_in_ns(void *arg)
 		return 0;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	lo_ifindex = (int)if_nametoindex("lo");
@@ -605,7 +605,7 @@ static int mpls_route_churn_in_ns(void *arg)
 		outer_iters = MPLS_RC_OUTER_CAP;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < outer_iters; i++) {
@@ -685,7 +685,7 @@ bool mpls_route_churn(struct childdata *child)
 	rc = userns_run_in_ns(CLONE_NEWNET, mpls_route_churn_in_ns, &cctx);
 	if (rc == -EPERM) {
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		warn_once_unsupported_userns("userns_run_in_ns(CLONE_NEWNET)",

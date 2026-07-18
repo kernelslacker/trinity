@@ -112,7 +112,7 @@ bool mlock_pressure(struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	/*
@@ -139,7 +139,7 @@ bool mlock_pressure(struct childdata *child)
 			flags |= MCL_ONFAULT;
 
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 
 		if (mlockall(flags) == 0 && (flags & MCL_FUTURE)) {
@@ -193,7 +193,7 @@ bool mlock_pressure(struct childdata *child)
 		return true;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	/*

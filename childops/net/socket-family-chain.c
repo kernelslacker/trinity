@@ -99,10 +99,10 @@ bool socket_family_chain(struct childdata *child)
 			any_completed = true;
 			if (valid_op) {
 				__atomic_add_fetch(
-					&shm->stats.childop_setup_accepted[op],
+					&shm->stats.childop.setup_accepted[op],
 					1, __ATOMIC_RELAXED);
 				__atomic_add_fetch(
-					&shm->stats.childop_data_path[op],
+					&shm->stats.childop.data_path[op],
 					1, __ATOMIC_RELAXED);
 			}
 		}

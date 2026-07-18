@@ -1159,7 +1159,7 @@ static int nat_t_churn_in_ns(void *arg)
 		lo_brought_up = true;
 	}
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	/* Sibling branch: half of invocations drive the AF_INET6 /
@@ -1168,7 +1168,7 @@ static int nat_t_churn_in_ns(void *arg)
 	 * so we don't burn syscalls on an unsupported config. */
 	if (!ns_unsupported_xfrm6 && ONE_IN(2)) {
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		nat_t_churn_v6();
 		return 0;
@@ -1178,7 +1178,7 @@ static int nat_t_churn_in_ns(void *arg)
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT ||
 		    errno == EPERM) {
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			warn_once_unsupported("NETLINK_XFRM open", errno);
@@ -1188,7 +1188,7 @@ static int nat_t_churn_in_ns(void *arg)
 		return 0;
 	}
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	/* nat_keepalive error-path sub-branch: ~1 in 4 iterations swap
@@ -1273,7 +1273,7 @@ bool nat_t_churn(struct childdata *child)
 	rc = userns_run_in_ns(CLONE_NEWNET, nat_t_churn_in_ns, &cctx);
 	if (rc == -EPERM) {
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		warn_once_unsupported("userns_run_in_ns(CLONE_NEWNET)", EPERM);

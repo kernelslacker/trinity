@@ -729,7 +729,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 			ns_unsupported_bridge = true;
 			if (valid_op)
 				__atomic_store_n(
-					&shm->stats.childop_latch_reason[op],
+					&shm->stats.childop.latch_reason[op],
 					CHILDOP_LATCH_NS_UNSUPPORTED,
 					__ATOMIC_RELAXED);
 		}
@@ -769,7 +769,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 	if (bif_enable_bridge_nf() != 0) {
 		ns_unsupported_brnf = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		goto out;
@@ -784,7 +784,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 		ns_unsupported_nf_tables = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		goto out;
@@ -805,9 +805,9 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 	}
 
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -887,7 +887,7 @@ bool bridge_ip6_refrag_fraggap(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		return true;

@@ -167,7 +167,7 @@ static void pci_bind_probe(struct childdata *child)
 	if (stat(PCI_BIND_BUS_DIR, &st) < 0 || !S_ISDIR(st.st_mode)) {
 		pci_bind_unsupported = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		return;
@@ -188,7 +188,7 @@ static void pci_bind_probe(struct childdata *child)
 	if (pci_bind_avail_mask == 0U) {
 		pci_bind_unsupported = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 	}
@@ -337,14 +337,14 @@ bool pci_bind(struct childdata *child)
 	}
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	pick = rnd_modulo_u32(n_devs);
 	bdf = devs[pick];
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	ran_unbind = pci_bind_write_bdf(drv, "unbind", bdf, &err_unbind);

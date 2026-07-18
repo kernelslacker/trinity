@@ -449,7 +449,7 @@ struct canary_op_state {
 	enum canary_state state;
 
 	/* per-window counters (reset on CANARYING entry) */
-	unsigned long window_start_invocations;	/* shm->stats.childop_invocations[op] snapshot at window open;
+	unsigned long window_start_invocations;	/* shm->stats.childop.invocations[op] snapshot at window open;
 						 * window size is measured in invocations of the
 						 * canary op itself, not fleet-wide ops */
 	unsigned long window_start_edges;	/* childop_edges_discovered[op] snapshot */
@@ -480,7 +480,7 @@ struct canary_op_state {
 	unsigned long window_start_wedges;
 	unsigned long window_start_setup_accepted;
 	unsigned long window_start_setup_failures;
-	unsigned long window_start_wall_ns;	/* shm->stats.childop_wall_ns[op] snapshot at window
+	unsigned long window_start_wall_ns;	/* shm->stats.childop.wall_ns[op] snapshot at window
 						 * open; close - open is the per-window wall delta
 						 * reported in the canary_shadow line.  Telemetry
 						 * only, no live decision reads it. */

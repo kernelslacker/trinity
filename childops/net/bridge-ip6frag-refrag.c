@@ -617,7 +617,7 @@ static int b6r_iter_bridge_and_veth(struct b6r_iter_ctx *ctx)
 		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT) {
 			ns_unsupported_bridge = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -668,7 +668,7 @@ static int b6r_iter_nft_setup(struct b6r_iter_ctx *ctx)
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 		ns_unsupported_nf_tables = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		return -1;
@@ -700,7 +700,7 @@ static void b6r_iter_packet_burst(struct b6r_iter_ctx *ctx)
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			ns_unsupported_af_packet = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -717,9 +717,9 @@ static void b6r_iter_packet_burst(struct b6r_iter_ctx *ctx)
 	src_mac[0] = (unsigned char)((src_mac[0] & 0xfc) | 0x02);
 
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -831,7 +831,7 @@ bool bridge_ip6frag_refrag(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		return true;

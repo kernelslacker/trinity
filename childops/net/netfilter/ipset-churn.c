@@ -907,7 +907,7 @@ bool ipset_churn(struct childdata *child)
 		probe_ipset(&nfnl);
 		if (ns_unsupported_ipset) {
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.ipset_churn.setup_failed,
@@ -917,7 +917,7 @@ bool ipset_churn(struct childdata *child)
 		}
 	}
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	outer_iters = BUDGETED(CHILD_OP_IPSET_CHURN,
@@ -928,7 +928,7 @@ bool ipset_churn(struct childdata *child)
 		outer_iters = 1U;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < outer_iters; i++)
 		iter_one(&nfnl);

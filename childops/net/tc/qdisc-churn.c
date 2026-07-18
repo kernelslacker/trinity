@@ -876,14 +876,14 @@ static int tc_qdisc_churn_in_ns(void *arg)
 	}
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	if (tc_qdisc_add_link(it) != 0)
 		goto out;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	/*
@@ -948,7 +948,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	rc = userns_run_in_ns(CLONE_NEWNET, tc_qdisc_churn_in_ns, &it);
 	if (rc == -EPERM) {
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		warn_once_unsupported_tc_qdisc("userns_run_in_ns(CLONE_NEWNET)",

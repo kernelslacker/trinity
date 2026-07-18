@@ -351,9 +351,9 @@ bool keyring_spam(struct childdata *child)
 	const bool valid_op = ((int) op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op_type],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op_type],
 				   1, __ATOMIC_RELAXED);
 	}
 

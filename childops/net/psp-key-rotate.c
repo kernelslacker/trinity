@@ -1115,19 +1115,19 @@ static int iter_one_in_ns(void *arg)
 		goto out;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	if (!ns_unsupported_psp_key_rotate) {
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		psp_key_rotate_iter_traffic(sockfd, &psp_ctx, dev_id, t_outer);
 	}
 
 	psp_key_rotate_iter_teardown(iter_idx, sockfd, &psp_ctx, &rtnl);
 	if (ns_unsupported_psp_key_rotate && valid_op)
-		__atomic_store_n(&shm->stats.childop_latch_reason[op],
+		__atomic_store_n(&shm->stats.childop.latch_reason[op],
 				 CHILDOP_LATCH_NS_UNSUPPORTED,
 				 __ATOMIC_RELAXED);
 	return 0;
@@ -1140,7 +1140,7 @@ out:
 	if (rtnl.fd >= 0)
 		nl_close(&rtnl);
 	if (ns_unsupported_psp_key_rotate && valid_op)
-		__atomic_store_n(&shm->stats.childop_latch_reason[op],
+		__atomic_store_n(&shm->stats.childop.latch_reason[op],
 				 CHILDOP_LATCH_NS_UNSUPPORTED,
 				 __ATOMIC_RELAXED);
 	return 0;
@@ -1164,7 +1164,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
 	rc = userns_run_in_ns(CLONE_NEWNET, iter_one_in_ns, &ictx);
 	if (rc == -EPERM) {
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		warn_once_unsupported_psp_key_rotate(

@@ -135,7 +135,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
@@ -200,7 +200,7 @@ bool packet_fanout_thrash(struct childdata *child)
 
 	fanout1 = make_fanout_arg(group1, type1, flags1);
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	rc = setsockopt(fd, SOL_PACKET, PACKET_FANOUT,
 			&fanout1, sizeof(fanout1));

@@ -678,7 +678,7 @@ static void run_iter(struct childdata *child, unsigned int iter)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	maybe_vmsplice_header(pfd[1]);
@@ -688,7 +688,7 @@ static void run_iter(struct childdata *child, unsigned int iter)
 	flags_out = pick_flags();
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	in_n = splice(src_fd, NULL, pfd[1], NULL, len, flags_in);
 	if (in_n > 0) {
@@ -764,7 +764,7 @@ bool splice_protocols(struct childdata *child)
 		 * unguarded write that motivated this guard. */
 		const enum child_op_type op = child->op_type;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.splice_protocols.setup_failed,

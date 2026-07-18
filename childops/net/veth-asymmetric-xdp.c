@@ -543,7 +543,7 @@ static int veth_xdp_iter_create_pair(struct veth_xdp_iter_ctx *ictx)
 		if (rc == -ENOENT || rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT) {
 			*kind_latch[ictx->pk] = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
@@ -608,7 +608,7 @@ static void veth_xdp_iter_load_xdp(struct veth_xdp_iter_ctx *ictx)
 		    errno == EINVAL || errno == EOPNOTSUPP) {
 			ns_unsupported_xdp = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
@@ -723,13 +723,13 @@ static int veth_asymmetric_xdp_in_ns(void *arg)
 	if (veth_xdp_iter_create_pair(ictx) != 0)
 		goto out;
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	veth_xdp_iter_load_xdp(ictx);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	veth_xdp_iter_drive_burst(ictx);
 
@@ -775,7 +775,7 @@ bool veth_asymmetric_xdp(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.veth_asym_eperm, 1,

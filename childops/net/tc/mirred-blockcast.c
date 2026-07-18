@@ -498,7 +498,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	/* Random suffix per iteration so concurrent children (and our
@@ -614,7 +614,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 			iters = MIRRED_PACKET_CAP;
 
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 
 		for (i = 0; i < iters; i++) {
@@ -672,7 +672,7 @@ bool tc_mirred_blockcast(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_setup_failed = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_setup_failed,

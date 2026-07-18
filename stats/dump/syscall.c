@@ -333,10 +333,10 @@ void dump_stats_top_wedging_childops(void)
 
 	for (i = 0; i < NR_CHILD_OP_TYPES; i++) {
 		unsigned long c = __atomic_load_n(
-			&shm->stats.childop_wedge_count[i],
+			&shm->stats.childop.wedge_count[i],
 			__ATOMIC_RELAXED);
 		unsigned long long u = __atomic_load_n(
-			&shm->stats.childop_wedge_total_us[i],
+			&shm->stats.childop.wedge_total_us[i],
 			__ATOMIC_RELAXED);
 
 		if (c == 0 && u == 0)

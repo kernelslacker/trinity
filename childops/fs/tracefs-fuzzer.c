@@ -874,7 +874,7 @@ void tracefs_fuzzer_init(void)
 	}
 
 	if (tracefs_root == NULL) {
-		__atomic_store_n(&shm->stats.childop_latch_reason[CHILD_OP_TRACEFS_FUZZER],
+		__atomic_store_n(&shm->stats.childop.latch_reason[CHILD_OP_TRACEFS_FUZZER],
 				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		return;
 	}
@@ -890,7 +890,7 @@ void tracefs_fuzzer_init(void)
 		  events_subset_present ? "yes" : "no");
 
 	if (!ftrace_subset_present && !events_subset_present) {
-		__atomic_store_n(&shm->stats.childop_latch_reason[CHILD_OP_TRACEFS_FUZZER],
+		__atomic_store_n(&shm->stats.childop.latch_reason[CHILD_OP_TRACEFS_FUZZER],
 				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		return;
 	}
@@ -930,9 +930,9 @@ bool tracefs_fuzzer(struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 	pick_table[rnd_modulo_u32(nr_picks)]->fn();

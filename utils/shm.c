@@ -121,7 +121,7 @@ static void init_shm_debug_start(void)
 	 * delta.  The zero_streak counters intentionally stay at 0 — that's
 	 * the correct starting state for the hysteresis. */
 	for (i = 0; i < NR_CHILD_OP_TYPES; i++)
-		shm->stats.childop_budget_mult[i] = ADAPT_BUDGET_UNITY;
+		shm->stats.childop.budget_mult[i] = ADAPT_BUDGET_UNITY;
 
 	shm->start_time = time(NULL);
 	shm->start_mono_ns = mono_ns();

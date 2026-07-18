@@ -113,7 +113,7 @@ void __cold dump_stats_childop_decay_recency(void)
 	unsigned int slot;
 	bool any = false;
 
-	slot = __atomic_load_n(&shm->stats.childop_decay_slot,
+	slot = __atomic_load_n(&shm->stats.childop.decay_slot,
 			       __ATOMIC_RELAXED);
 
 	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
@@ -121,22 +121,22 @@ void __cold dump_stats_childop_decay_recency(void)
 		unsigned long cum_edges, cum_wall;
 
 		invocations = __atomic_load_n(
-				&shm->stats.childop_invocations[op],
+				&shm->stats.childop.invocations[op],
 				__ATOMIC_RELAXED);
 		if (invocations == 0)
 			continue;
 
 		recent_edges = __atomic_load_n(
-				&shm->stats.childop_edge_recent_cached[op],
+				&shm->stats.childop.edge_recent_cached[op],
 				__ATOMIC_RELAXED);
 		recent_wall = __atomic_load_n(
-				&shm->stats.childop_wall_recent_cached[op],
+				&shm->stats.childop.wall_recent_cached[op],
 				__ATOMIC_RELAXED);
 		cum_edges = __atomic_load_n(
-				&shm->stats.childop_edges_clean[op],
+				&shm->stats.childop.edges_clean[op],
 				__ATOMIC_RELAXED);
 		cum_wall = __atomic_load_n(
-				&shm->stats.childop_wall_ns[op],
+				&shm->stats.childop.wall_ns[op],
 				__ATOMIC_RELAXED);
 
 		if (!any) {
@@ -177,12 +177,12 @@ void __cold dump_stats_childop_fd_delta(void)
 		unsigned long sum, ops;
 
 		sum = __atomic_load_n(
-				&shm->stats.childop_fd_delta_positive_sum[op],
+				&shm->stats.childop.fd_delta_positive_sum[op],
 				__ATOMIC_RELAXED);
 		if (sum == 0)
 			continue;
 		ops = __atomic_load_n(
-				&shm->stats.childop_fd_delta_positive_ops[op],
+				&shm->stats.childop.fd_delta_positive_ops[op],
 				__ATOMIC_RELAXED);
 
 		if (!any) {

@@ -792,7 +792,7 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 		probe_ctnetlink(&nfnl);
 		if (ns_unsupported_nf_conntrack_helper) {
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.setup_failed,
@@ -802,7 +802,7 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 		}
 	}
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	outer_iters = BUDGETED(CHILD_OP_NF_CONNTRACK_HELPER,
@@ -813,7 +813,7 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 		outer_iters = 1U;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < outer_iters; i++)
 		iter_one(&nfnl);

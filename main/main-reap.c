@@ -326,7 +326,7 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 
 		wop = (unsigned int)child->wedge_op_type;
 		if (wop < NR_CHILD_OP_TYPES) {
-			__atomic_add_fetch(&shm->stats.childop_wedge_total_us[wop],
+			__atomic_add_fetch(&shm->stats.childop.wedge_total_us[wop],
 					   elapsed_us, __ATOMIC_RELAXED);
 		}
 		child->wedge_accounted = false;
@@ -1781,7 +1781,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 			if (wop == CHILD_OP_SYSCALL)
 				__atomic_add_fetch(&shm->stats.syscall_wedge_count[wnr],
 						   1UL, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop_wedge_count[wop],
+			__atomic_add_fetch(&shm->stats.childop.wedge_count[wop],
 					   1UL, __ATOMIC_RELAXED);
 		}
 	}

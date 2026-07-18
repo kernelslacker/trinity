@@ -297,7 +297,7 @@ static int tcp_ulp_swap_iter_install_tls(int s, struct childdata *child,
 
 			ns_unsupported_tcp_ulp_swap = true;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -416,7 +416,7 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child,
 	if (tcp_ulp_swap_iter_install_tls(s, child, urandom_fd) != 0)
 		goto out;
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	if ((unsigned long long)ns_since(t_outer) >= ULP_SWAP_WALL_CAP_NS)
@@ -424,7 +424,7 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child,
 
 	/* Step 5: drive live tls_sw send + recv on the ULP. */
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	tcp_ulp_swap_iter_traffic_burst(s);
 

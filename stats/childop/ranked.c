@@ -50,7 +50,7 @@ static void dump_stats_render_childop_edges_discovered(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long v =
-			shm->stats.childop_edges_discovered[op];
+			shm->stats.childop.edges_discovered[op];
 		if (v == 0)
 			continue;
 		ranked[nranked].op = op;
@@ -94,7 +94,7 @@ static void dump_stats_render_childop_calls_with_edges(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long v =
-			shm->stats.childop_calls_with_edges[op];
+			shm->stats.childop.calls_with_edges[op];
 		if (v == 0)
 			continue;
 		ranked[nranked].op = op;
@@ -144,7 +144,7 @@ static void dump_stats_render_childop_last_success_ts(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long v =
-			shm->stats.childop_last_success_ts[op];
+			shm->stats.childop.last_success_ts[op];
 		if (v == 0)
 			continue;
 		ranked[nranked].op = op;
@@ -188,7 +188,7 @@ static void dump_stats_render_childop_setup_accepted(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long v =
-			shm->stats.childop_setup_accepted[op];
+			shm->stats.childop.setup_accepted[op];
 		if (v == 0)
 			continue;
 		ranked[nranked].op = op;
@@ -230,7 +230,7 @@ static void dump_stats_render_childop_data_path(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long v =
-			shm->stats.childop_data_path[op];
+			shm->stats.childop.data_path[op];
 		if (v == 0)
 			continue;
 		ranked[nranked].op = op;
@@ -276,12 +276,12 @@ static void dump_stats_render_childop_setup_bound_permille(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long inv =
-			shm->stats.childop_invocations[op];
+			shm->stats.childop.invocations[op];
 		unsigned long acc;
 
 		if (inv == 0)
 			continue;
-		acc = shm->stats.childop_setup_accepted[op];
+		acc = shm->stats.childop.setup_accepted[op];
 		ranked[nranked].op = op;
 		ranked[nranked].ratio = acc * 1000UL / inv;
 		nranked++;
@@ -336,12 +336,12 @@ static void dump_stats_render_childop_data_path_cold_permille(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long dp =
-			shm->stats.childop_data_path[op];
+			shm->stats.childop.data_path[op];
 		unsigned long ce;
 
 		if (dp == 0)
 			continue;
-		ce = shm->stats.childop_calls_with_edges[op];
+		ce = shm->stats.childop.calls_with_edges[op];
 		ranked[nranked].op = op;
 		ranked[nranked].ratio = ce * 1000UL / dp;
 		nranked++;
@@ -428,10 +428,10 @@ static void dump_stats_render_childop_missing_producer(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long inv =
-			shm->stats.childop_invocations[op];
+			shm->stats.childop.invocations[op];
 		if (inv == 0)
 			continue;
-		if (shm->stats.childop_setup_accepted[op] != 0)
+		if (shm->stats.childop.setup_accepted[op] != 0)
 			continue;
 		snprintf(metric, sizeof(metric), "%s",
 			 alt_op_name((enum child_op_type)op));
@@ -454,7 +454,7 @@ static void dump_stats_render_childop_latch_reason(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long v =
-			shm->stats.childop_latch_reason[op];
+			shm->stats.childop.latch_reason[op];
 		if (v == 0)
 			continue;
 		snprintf(metric, sizeof(metric), "%s",
@@ -480,7 +480,7 @@ static void dump_stats_render_childop_would_demote(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long v =
-			shm->stats.childop_would_demote[op];
+			shm->stats.childop.would_demote[op];
 		if (v == 0)
 			continue;
 		snprintf(metric, sizeof(metric), "%s",
@@ -497,7 +497,7 @@ static void dump_stats_render_childop_would_promote(void)
 	for (op = CHILD_OP_SYSCALL + 1;
 	     op < NR_CHILD_OP_TYPES; op++) {
 		unsigned long v =
-			shm->stats.childop_would_promote[op];
+			shm->stats.childop.would_promote[op];
 		if (v == 0)
 			continue;
 		snprintf(metric, sizeof(metric), "%s",

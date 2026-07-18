@@ -785,7 +785,7 @@ enum child_op_type pick_op_type(void)
 	    (int)PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT) {
 		threshold = 75;
 		__atomic_fetch_add(
-			&shm->stats.childop_burst_alt_picks_window,
+			&shm->stats.childop.burst_alt_picks_window,
 			1UL, __ATOMIC_RELAXED);
 	}
 
@@ -841,7 +841,7 @@ void adapt_budget(enum child_op_type op_type,
 	if (op_type == CHILD_OP_SYSCALL || op_type >= NR_CHILD_OP_TYPES)
 		return;
 
-	mult = __atomic_load_n(&shm->stats.childop_budget_mult[op_type],
+	mult = __atomic_load_n(&shm->stats.childop.budget_mult[op_type],
 			       __ATOMIC_RELAXED);
 	if (mult == 0)
 		mult = ADAPT_BUDGET_UNITY;
@@ -853,26 +853,26 @@ void adapt_budget(enum child_op_type op_type,
 		new_mult = (uint16_t)((unsigned int)mult * 5U / 4U);
 		if (new_mult > ADAPT_BUDGET_MAX)
 			new_mult = ADAPT_BUDGET_MAX;
-		__atomic_store_n(&shm->stats.childop_zero_streak[op_type],
+		__atomic_store_n(&shm->stats.childop.zero_streak[op_type],
 				 0, __ATOMIC_RELAXED);
 	} else {
 		/* Hysteresis: only shrink after ADAPT_BUDGET_ZERO_STREAK
 		 * consecutive sub-threshold invocations, so a single noise
 		 * dip doesn't immediately cut the budget. */
 		streak = (uint16_t)__atomic_add_fetch(
-			&shm->stats.childop_zero_streak[op_type],
+			&shm->stats.childop.zero_streak[op_type],
 			1, __ATOMIC_RELAXED);
 		if (streak < ADAPT_BUDGET_ZERO_STREAK)
 			return;
 		new_mult = (uint16_t)((unsigned int)mult * 4U / 5U);
 		if (new_mult < ADAPT_BUDGET_MIN)
 			new_mult = ADAPT_BUDGET_MIN;
-		__atomic_store_n(&shm->stats.childop_zero_streak[op_type],
+		__atomic_store_n(&shm->stats.childop.zero_streak[op_type],
 				 0, __ATOMIC_RELAXED);
 	}
 
 	if (new_mult != mult)
-		__atomic_store_n(&shm->stats.childop_budget_mult[op_type],
+		__atomic_store_n(&shm->stats.childop.budget_mult[op_type],
 				 new_mult, __ATOMIC_RELAXED);
 }
 
@@ -899,12 +899,12 @@ void childop_decay_record_edges(enum child_op_type op, unsigned long edges)
 	if (op >= NR_CHILD_OP_TYPES || edges == 0)
 		return;
 
-	slot = __atomic_load_n(&shm->stats.childop_decay_slot,
+	slot = __atomic_load_n(&shm->stats.childop.decay_slot,
 			       __ATOMIC_RELAXED) &
 	       (CHILDOP_DECAY_WINDOWS - 1);
-	__atomic_fetch_add(&shm->stats.childop_edge_history[op][slot],
+	__atomic_fetch_add(&shm->stats.childop.edge_history[op][slot],
 			   edges, __ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->stats.childop_edge_recent_cached[op],
+	__atomic_fetch_add(&shm->stats.childop.edge_recent_cached[op],
 			   edges, __ATOMIC_RELAXED);
 }
 
@@ -924,12 +924,12 @@ void childop_decay_record_wall(enum child_op_type op, unsigned long ns)
 	if (op >= NR_CHILD_OP_TYPES || ns == 0)
 		return;
 
-	slot = __atomic_load_n(&shm->stats.childop_decay_slot,
+	slot = __atomic_load_n(&shm->stats.childop.decay_slot,
 			       __ATOMIC_RELAXED) &
 	       (CHILDOP_DECAY_WINDOWS - 1);
-	__atomic_fetch_add(&shm->stats.childop_wall_history[op][slot],
+	__atomic_fetch_add(&shm->stats.childop.wall_history[op][slot],
 			   ns, __ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->stats.childop_wall_recent_cached[op],
+	__atomic_fetch_add(&shm->stats.childop.wall_recent_cached[op],
 			   ns, __ATOMIC_RELAXED);
 }
 
@@ -959,7 +959,7 @@ void childop_window_advance(void)
 	unsigned int cur, next;
 	enum child_op_type op;
 
-	cur = __atomic_load_n(&shm->stats.childop_decay_slot,
+	cur = __atomic_load_n(&shm->stats.childop.decay_slot,
 			      __ATOMIC_RELAXED);
 	next = (cur + 1U) & (CHILDOP_DECAY_WINDOWS - 1);
 
@@ -968,10 +968,10 @@ void childop_window_advance(void)
 		unsigned long old_cached;
 
 		old_edge_slot = __atomic_exchange_n(
-				&shm->stats.childop_edge_history[op][next],
+				&shm->stats.childop.edge_history[op][next],
 				0UL, __ATOMIC_RELAXED);
 		old_wall_slot = __atomic_exchange_n(
-				&shm->stats.childop_wall_history[op][next],
+				&shm->stats.childop.wall_history[op][next],
 				0UL, __ATOMIC_RELAXED);
 
 		/* Edge cached: CAS-clamped subtract.  Producers should not be
@@ -982,7 +982,7 @@ void childop_window_advance(void)
 		 * because a producer that landed in the freshly-cleared slot
 		 * before our exchange landed its cached add too. */
 		old_cached = __atomic_load_n(
-				&shm->stats.childop_edge_recent_cached[op],
+				&shm->stats.childop.edge_recent_cached[op],
 				__ATOMIC_RELAXED);
 		for (;;) {
 			unsigned long new_sum;
@@ -990,14 +990,14 @@ void childop_window_advance(void)
 			new_sum = (old_cached >= old_edge_slot)
 				? (old_cached - old_edge_slot) : 0UL;
 			if (__atomic_compare_exchange_n(
-				    &shm->stats.childop_edge_recent_cached[op],
+				    &shm->stats.childop.edge_recent_cached[op],
 				    &old_cached, new_sum, false,
 				    __ATOMIC_RELAXED, __ATOMIC_RELAXED))
 				break;
 		}
 
 		old_cached = __atomic_load_n(
-				&shm->stats.childop_wall_recent_cached[op],
+				&shm->stats.childop.wall_recent_cached[op],
 				__ATOMIC_RELAXED);
 		for (;;) {
 			unsigned long new_sum;
@@ -1005,7 +1005,7 @@ void childop_window_advance(void)
 			new_sum = (old_cached >= old_wall_slot)
 				? (old_cached - old_wall_slot) : 0UL;
 			if (__atomic_compare_exchange_n(
-				    &shm->stats.childop_wall_recent_cached[op],
+				    &shm->stats.childop.wall_recent_cached[op],
 				    &old_cached, new_sum, false,
 				    __ATOMIC_RELAXED, __ATOMIC_RELAXED))
 				break;
@@ -1014,7 +1014,7 @@ void childop_window_advance(void)
 
 	/* Publish the new slot only after every per-op clear has landed.
 	 * From this point producers see the freshly-zeroed slot. */
-	__atomic_store_n(&shm->stats.childop_decay_slot, cur + 1U,
+	__atomic_store_n(&shm->stats.childop.decay_slot, cur + 1U,
 			 __ATOMIC_RELAXED);
 }
 
@@ -1043,25 +1043,25 @@ void childop_outcome_snapshot(enum child_op_type op,
 	if (op >= NR_CHILD_OP_TYPES)
 		return;
 
-	invocations = __atomic_load_n(&shm->stats.childop_invocations[op],
+	invocations = __atomic_load_n(&shm->stats.childop.invocations[op],
 				      __ATOMIC_RELAXED);
-	setup_accepted = __atomic_load_n(&shm->stats.childop_setup_accepted[op],
+	setup_accepted = __atomic_load_n(&shm->stats.childop.setup_accepted[op],
 					 __ATOMIC_RELAXED);
-	discovered = __atomic_load_n(&shm->stats.childop_edges_discovered[op],
+	discovered = __atomic_load_n(&shm->stats.childop.edges_discovered[op],
 				     __ATOMIC_RELAXED);
-	clean = __atomic_load_n(&shm->stats.childop_edges_clean[op],
+	clean = __atomic_load_n(&shm->stats.childop.edges_clean[op],
 				__ATOMIC_RELAXED);
 
 	out->clean_edges = clean;
 	out->noisy_edges = sat_sub_ul(discovered, clean);
-	out->wall_ns = __atomic_load_n(&shm->stats.childop_wall_ns[op],
+	out->wall_ns = __atomic_load_n(&shm->stats.childop.wall_ns[op],
 				       __ATOMIC_RELAXED);
 	out->wedges = (uint32_t)__atomic_load_n(
-			&shm->stats.childop_wedge_count[op], __ATOMIC_RELAXED);
+			&shm->stats.childop.wedge_count[op], __ATOMIC_RELAXED);
 	out->timeout_observed = (uint32_t)__atomic_load_n(
-			&shm->stats.childop_timeout_observed[op], __ATOMIC_RELAXED);
+			&shm->stats.childop.timeout_observed[op], __ATOMIC_RELAXED);
 	out->timeout_missed = (uint32_t)__atomic_load_n(
-			&shm->stats.childop_timeout_missed[op], __ATOMIC_RELAXED);
+			&shm->stats.childop.timeout_missed[op], __ATOMIC_RELAXED);
 	out->setup_failures = (invocations > setup_accepted)
 		? (uint32_t)(invocations - setup_accepted) : 0;
 	out->taint_transition = __atomic_load_n(
@@ -1077,14 +1077,14 @@ void childop_outcome_window_dump(void)
 		unsigned long invocations, latch;
 
 		invocations = __atomic_load_n(
-				&shm->stats.childop_invocations[op],
+				&shm->stats.childop.invocations[op],
 				__ATOMIC_RELAXED);
 		if (invocations == 0)
 			continue;
 
 		childop_outcome_snapshot(op, &rec);
 		latch = __atomic_load_n(
-				&shm->stats.childop_latch_reason[op],
+				&shm->stats.childop.latch_reason[op],
 				__ATOMIC_RELAXED);
 
 		output(1,
@@ -1265,7 +1265,7 @@ static bool score_row_compute(enum child_op_type op, struct score_row *r)
 	unsigned long invocations;
 
 	invocations = __atomic_load_n(
-			&shm->stats.childop_invocations[op],
+			&shm->stats.childop.invocations[op],
 			__ATOMIC_RELAXED);
 	if (invocations == 0)
 		return false;
@@ -1297,7 +1297,7 @@ static bool score_row_compute(enum child_op_type op, struct score_row *r)
 	r->wall_per_clean_edge = rec.clean_edges ?
 		(rec.wall_ns / rec.clean_edges) : rec.wall_ns;
 	r->wedge_wall_us = __atomic_load_n(
-			&shm->stats.childop_wedge_total_us[op],
+			&shm->stats.childop.wedge_total_us[op],
 			__ATOMIC_RELAXED);
 	r->would_demote_utility =
 		(r->clean_score < CHILDOP_UTIL_FLOOR) &&

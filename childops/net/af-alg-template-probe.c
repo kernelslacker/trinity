@@ -197,7 +197,7 @@ bool af_alg_template_probe(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.af_alg_probe_unsupported,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		outputerr("[af_alg_probe] AF_ALG unavailable (errno=%d), "
@@ -207,9 +207,9 @@ bool af_alg_template_probe(struct childdata *child)
 	}
 	close(sk);
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 	for (i = 0; i < NR_AF_ALG_PROBE_TEMPLATES; i++)
@@ -219,7 +219,7 @@ bool af_alg_template_probe(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.af_alg_probe_unsupported,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op)
-		__atomic_store_n(&shm->stats.childop_latch_reason[op],
+		__atomic_store_n(&shm->stats.childop.latch_reason[op],
 				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 	outputerr("[af_alg_probe] built without linux/if_alg.h, "
 	          "template enumeration disabled\n");

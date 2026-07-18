@@ -448,7 +448,7 @@ bool numa_migration_churn(struct childdata *child)
 	if (!numa_inited) {
 		init_numa_state();
 		if (ns_unsupported_numa && valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 	}
@@ -474,7 +474,7 @@ bool numa_migration_churn(struct childdata *child)
 		return true;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
@@ -482,7 +482,7 @@ bool numa_migration_churn(struct childdata *child)
 	op_idx = (enum migration_op) rnd_modulo_u32(NR_MIGRATION_OPS);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	for (iter = 0; iter < iters; iter++) {

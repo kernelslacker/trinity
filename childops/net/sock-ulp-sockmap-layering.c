@@ -225,7 +225,7 @@ static int install_tls_rx(int fd, struct childdata *child)
 			{
 				const enum child_op_type op = child->op_type;
 				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
@@ -279,7 +279,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 			__atomic_store_n(&sock_ulp_layering_bpf_off, 1,
 					 __ATOMIC_RELAXED);
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -294,7 +294,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 			__atomic_store_n(&sock_ulp_layering_bpf_off, 1,
 					 __ATOMIC_RELAXED);
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -311,7 +311,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		 * orderings probe of the install-side state machines. */
 	}
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	/* Pair A: ulp-then-sockmap.  Install TLS RX FIRST on the cli
@@ -342,7 +342,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	 * loopback enqueue path.  Every send/recv may return -1 with
 	 * EAGAIN/EPIPE/EINVAL; all are coverage, none are failure. */
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	generate_rand_bytes(payload, sizeof(payload));
 	for (i = 0; i < 4; i++) {

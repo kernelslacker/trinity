@@ -269,7 +269,7 @@ static int ip4_udp_cork_splice_in_ns(void *arg)
 		goto out;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	/* Touched page-aligned anonymous mmap so the pages are pinnable
@@ -337,7 +337,7 @@ static int ip4_udp_cork_splice_in_ns(void *arg)
 		mh.msg_iovlen = 1;
 
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 
 		n = sendmsg(tx, &mh, MSG_SPLICE_PAGES | MSG_DONTWAIT);
@@ -386,7 +386,7 @@ bool ip4_udp_cork_splice(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.ip4_udp_cork_splice.setup_failed,

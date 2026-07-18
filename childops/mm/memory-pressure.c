@@ -165,7 +165,7 @@ bool memory_pressure(struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	/* Setup is outside the wrap.  region/len/p/stride are derived from
@@ -217,7 +217,7 @@ bool memory_pressure(struct childdata *child)
 
 			if (valid_op)
 				__atomic_add_fetch(
-					&shm->stats.childop_data_path[op],
+					&shm->stats.childop.data_path[op],
 					1, __ATOMIC_RELAXED);
 
 			/*

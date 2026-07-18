@@ -145,7 +145,7 @@ static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
 			ns_unsupported_nfnetlink = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -304,7 +304,7 @@ static int nftables_churn_iter_build_table(struct nftables_churn_iter_ctx *ctx)
 			{
 				const enum child_op_type op = ctx->child->op_type;
 				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
@@ -504,9 +504,9 @@ static int nftables_churn_in_ns(void *arg)
 		goto out;
 
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 	if (nftables_churn_iter_submode_dispatch(ctx) != 0)
@@ -552,7 +552,7 @@ bool nftables_churn(struct childdata *child)
 	rc = userns_run_in_ns(CLONE_NEWNET, nftables_churn_in_ns, &ctx);
 	if (rc == -EPERM) {
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		warn_once_unsupported_nftables("userns_run_in_ns(CLONE_NEWNET)",

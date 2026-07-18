@@ -837,7 +837,7 @@ static int flowtable_encap_vlan_in_ns(void *arg)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
@@ -853,7 +853,7 @@ static int flowtable_encap_vlan_in_ns(void *arg)
 		outer_iters = FEV_OUTER_CAP;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t_outer) >= FEV_WALL_CAP_NS)
@@ -861,7 +861,7 @@ static int flowtable_encap_vlan_in_ns(void *arg)
 		iter_one(i, &t_outer);
 		if (ns_unsupported_flowtable_vlan) {
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			break;
@@ -897,7 +897,7 @@ bool flowtable_encap_vlan(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported_flowtable_vlan = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.flowtable_vlan.setup_failed,
