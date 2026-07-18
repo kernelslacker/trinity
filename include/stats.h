@@ -86,6 +86,7 @@
 #include "stats/subsys/socket_family_grammar.h"
 #include "stats/subsys/splice_protocols.h"
 #include "stats/subsys/statmount_idmap.h"
+#include "stats/subsys/tcp_ao_rotate.h"
 #include "stats/subsys/uffd.h"
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/vdso_race.h"
@@ -1278,19 +1279,8 @@ struct stats_s {
 	unsigned long iouring_napi_unregister_ok;	/* IORING_UNREGISTER_NAPI accepted */
 	unsigned long iouring_napi_unregister_fail;	/* IORING_UNREGISTER_NAPI rejected */
 
-	/* tcp_ao_rotate childop counters */
-	unsigned long tcp_ao_rotate_runs;		/* total tcp_ao_rotate invocations */
-	unsigned long tcp_ao_rotate_setup_failed;	/* loopback listen/socket/bind setup failed */
-	unsigned long tcp_ao_rotate_addkey_rejected;	/* TCP_AO_ADD_KEY rejected (ENOPROTOOPT/EPERM/EINVAL/EEXIST) */
-	unsigned long tcp_ao_rotate_keys_added;		/* TCP_AO_ADD_KEY accepted (initial install + per-rotate add) */
-	unsigned long tcp_ao_rotate_connect_failed;	/* connect/accept failed after keys installed */
-	unsigned long tcp_ao_rotate_connected;		/* AO-protected pair reached ESTABLISHED */
-	unsigned long tcp_ao_rotate_packets_sent;	/* send() through AO sign path returned >0 */
-	unsigned long tcp_ao_rotate_key_rotations;	/* TCP_AO_INFO current_key flip accepted */
-	unsigned long tcp_ao_rotate_info_rejected;	/* TCP_AO_INFO rotate rejected (EINVAL etc) */
-	unsigned long tcp_ao_rotate_key_dels;		/* TCP_AO_DEL_KEY accepted (race window vs verify path) */
-	unsigned long tcp_ao_rotate_delkey_rejected;	/* TCP_AO_DEL_KEY rejected */
-	unsigned long tcp_ao_rotate_cycles;		/* full cycles reaching teardown */
+	/* tcp_ao_rotate accounting.  See stats/subsys/tcp_ao_rotate.h. */
+	struct tcp_ao_rotate_stats tcp_ao_rotate __attribute__((aligned(64)));
 
 	/* tcp_md5_listener_race childop counters */
 	unsigned long tcp_md5_listener_race_runs;		/* total tcp_md5_listener_race invocations */

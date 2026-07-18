@@ -274,7 +274,7 @@ static void rotate_send(int fd)
 	n = send(fd, buf, 1 + rnd_modulo_u32(sizeof(buf)),
 		 MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_packets_sent,
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.packets_sent,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -294,14 +294,14 @@ static int tcp_ao_rotate_iter_setup_sockets(struct tcp_ao_rotate_iter_ctx *ctx)
 	socklen_t slen;
 
 	if (open_loopback_listener(&ctx->listener, &ctx->srv_addr) < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
 	ctx->cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (ctx->cli < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -312,13 +312,13 @@ static int tcp_ao_rotate_iter_setup_sockets(struct tcp_ao_rotate_iter_ctx *ctx)
 	ctx->cli_addr.sin_port = 0;
 	if (bind(ctx->cli, (struct sockaddr *)&ctx->cli_addr,
 		 sizeof(ctx->cli_addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	slen = sizeof(ctx->cli_addr);
 	if (getsockname(ctx->cli, (struct sockaddr *)&ctx->cli_addr, &slen) < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_setup_failed,
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -360,22 +360,22 @@ static int tcp_ao_rotate_iter_install_keys(struct tcp_ao_rotate_iter_ctx *ctx)
 							 __ATOMIC_RELAXED);
 			}
 		}
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.addkey_rejected,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.keys_added,
 			   1, __ATOMIC_RELAXED);
 
 	fill_ao_add(&ao_add, &ctx->srv_addr, 1, 1, true, ctx->alg);
 	rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
 			&ao_add, sizeof(ao_add));
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.addkey_rejected,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.keys_added,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -396,19 +396,19 @@ static int tcp_ao_rotate_iter_connect(struct tcp_ao_rotate_iter_ctx *ctx)
 	(void)fcntl(ctx->cli, F_SETFL, O_NONBLOCK);
 	if (connect(ctx->cli, (struct sockaddr *)&ctx->srv_addr,
 		    sizeof(ctx->srv_addr)) < 0 && errno != EINPROGRESS) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connect_failed,
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.connect_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
 	ctx->srv_acc = accept(ctx->listener, NULL, NULL);
 	if (ctx->srv_acc < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connect_failed,
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.connect_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	(void)fcntl(ctx->srv_acc, F_SETFL, O_NONBLOCK);
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_connected,
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.connected,
 			   1, __ATOMIC_RELAXED);
 
 	rotate_send(ctx->cli);
@@ -459,20 +459,20 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 		rc = setsockopt(ctx->srv_acc, IPPROTO_TCP, TCP_AO_ADD_KEY,
 				&ao_add, sizeof(ao_add));
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
+			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.keys_added,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
+			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.addkey_rejected,
 					   1, __ATOMIC_RELAXED);
 
 		fill_ao_add(&ao_add, &ctx->srv_addr, next_id, next_id, false, ctx->alg);
 		rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
 				&ao_add, sizeof(ao_add));
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_keys_added,
+			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.keys_added,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
+			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.addkey_rejected,
 					   1, __ATOMIC_RELAXED);
 
 		/* b) INFO rotate current_key cur_id -> next_id mid-flow. */
@@ -482,10 +482,10 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 		rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_INFO,
 				&ao_info, sizeof(ao_info));
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_key_rotations,
+			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.key_rotations,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_info_rejected,
+			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.info_rejected,
 					   1, __ATOMIC_RELAXED);
 		(void)setsockopt(ctx->srv_acc, IPPROTO_TCP, TCP_AO_INFO,
 				 &ao_info, sizeof(ao_info));
@@ -504,20 +504,20 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 		rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_DEL_KEY,
 				&ao_del, sizeof(ao_del));
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_key_dels,
+			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.key_dels,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_delkey_rejected,
+			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.delkey_rejected,
 					   1, __ATOMIC_RELAXED);
 
 		fill_ao_del(&ao_del, &ctx->cli_addr, cur_id, cur_id);
 		rc = setsockopt(ctx->srv_acc, IPPROTO_TCP, TCP_AO_DEL_KEY,
 				&ao_del, sizeof(ao_del));
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_key_dels,
+			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.key_dels,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.tcp_ao_rotate_delkey_rejected,
+			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.delkey_rejected,
 					   1, __ATOMIC_RELAXED);
 
 		cur_id = next_id;
@@ -555,7 +555,7 @@ bool tcp_ao_rotate(struct childdata *child)
 		.child    = child,
 	};
 
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
 		return true;
@@ -589,6 +589,6 @@ bool tcp_ao_rotate(struct childdata *child)
 
 out:
 	tcp_ao_rotate_iter_teardown(&ctx);
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_cycles, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.cycles, 1, __ATOMIC_RELAXED);
 	return true;
 }
