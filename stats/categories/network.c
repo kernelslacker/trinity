@@ -272,23 +272,6 @@ const struct stat_category igmp_mld_source_churn_category =
 	              igmp_mld_source_churn_runs,
 	              igmp_mld_source_churn_fields);
 
-static const struct stat_field bridge_vlan_churn_fields[] = {
-	STAT_FIELD(bridge_vlan_churn, runs),
-	STAT_FIELD(bridge_vlan_churn, setup_failed),
-	STAT_FIELD(bridge_vlan_churn, bridge_create_ok),
-	STAT_FIELD(bridge_vlan_churn, veth_create_ok),
-	STAT_FIELD(bridge_vlan_churn, vlan_add_ok),
-	STAT_FIELD(bridge_vlan_churn, vlan_del_ok),
-	STAT_FIELD(bridge_vlan_churn, tunnel_add_ok),
-	STAT_FIELD(bridge_vlan_churn, mst_set_ok),
-	STAT_FIELD(bridge_vlan_churn, raw_send_ok),
-};
-
-const struct stat_category bridge_vlan_churn_category =
-	STAT_CATEGORY("bridge_vlan_churn",
-	              bridge_vlan_churn_runs,
-	              bridge_vlan_churn_fields);
-
 static const struct stat_field pkt_builder_fields[] = {
 	STAT_FIELD(pkt_builder, runs),
 	STAT_FIELD(pkt_builder, setup_failed),

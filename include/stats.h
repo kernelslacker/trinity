@@ -30,6 +30,7 @@
 #include "stats/subsys/bpf_lifecycle.h"
 #include "stats/subsys/bridge_ct.h"
 #include "stats/subsys/bridge_ip6frag.h"
+#include "stats/subsys/bridge_vlan_churn.h"
 #include "stats/subsys/close_racer.h"
 #include "stats/subsys/cold_overflow.h"
 #include "stats/subsys/cred_transition.h"
@@ -1934,16 +1935,8 @@ struct stats_s {
 	unsigned long vsock_seq_eom_sends_failed;		/* sendmsg(MSG_EOR, iov_len=0) returned < 0 */
 	unsigned long vsock_seq_eom_skipped;			/* sub-mode gated out: no socket / unsupported / wall-cap */
 
-	/* bridge_vlan_churn childop counters */
-	unsigned long bridge_vlan_churn_runs;			/* total bridge_vlan_churn invocations */
-	unsigned long bridge_vlan_churn_setup_failed;		/* unshare / rtnl_open / bridge probe latched */
-	unsigned long bridge_vlan_churn_bridge_create_ok;	/* RTM_NEWLINK type=bridge IFLA_BR_VLAN_FILTERING=1 accepted */
-	unsigned long bridge_vlan_churn_veth_create_ok;		/* RTM_NEWLINK type=veth accepted (per pair) */
-	unsigned long bridge_vlan_churn_vlan_add_ok;		/* RTM_SETLINK IFLA_BRIDGE_VLAN_INFO add accepted on a port */
-	unsigned long bridge_vlan_churn_vlan_del_ok;		/* RTM_DELLINK IFLA_BRIDGE_VLAN_INFO del accepted mid-traffic */
-	unsigned long bridge_vlan_churn_tunnel_add_ok;		/* RTM_SETLINK IFLA_BRIDGE_VLAN_TUNNEL_INFO add accepted */
-	unsigned long bridge_vlan_churn_mst_set_ok;		/* RTM_SETLINK IFLA_PROTINFO IFLA_BRPORT_MST_ENTRY set accepted */
-	unsigned long bridge_vlan_churn_raw_send_ok;		/* AF_PACKET sendto with 802.1Q tag returned >0 */
+	/* bridge_vlan_churn accounting.  See stats/subsys/bridge_vlan_churn.h. */
+	struct bridge_vlan_churn_stats bridge_vlan_churn __attribute__((aligned(64)));
 
 	/* vlan_filter_churn accounting.  See stats/subsys/vlan_filter_churn.h. */
 	struct vlan_filter_churn_stats vlan_filter_churn __attribute__((aligned(64)));
