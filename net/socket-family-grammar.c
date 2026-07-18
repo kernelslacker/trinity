@@ -480,7 +480,7 @@ sfg_pick_phase_order(const struct socket_family_grammar *sfg,
 	}
 
 	if (have) {
-		__atomic_add_fetch(&shm->stats.socket_family_grammar_feedback_picks,
+		__atomic_add_fetch(&shm->stats.socket_family_grammar.feedback_picks,
 				   1, __ATOMIC_RELAXED);
 		return &sfg->phase_orders[best_idx];
 	}
@@ -963,7 +963,7 @@ static unsigned int sfg_seq_record(uint32_t h)
 			__atomic_store_n(&shm->sfg_seq_hashes[slot], h,
 					 __ATOMIC_RELEASE);
 			__atomic_add_fetch(
-				&shm->stats.socket_family_grammar_distinct_seq,
+				&shm->stats.socket_family_grammar.distinct_seq,
 				1, __ATOMIC_RELAXED);
 			return slot;
 		}
@@ -996,7 +996,7 @@ static void sfg_seq_credit(unsigned int slot, uint32_t arm_id,
 
 	__atomic_add_fetch(&shm->sfg_seq_reward[slot], reward,
 			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.socket_family_grammar_reward, reward,
+	__atomic_add_fetch(&shm->stats.socket_family_grammar.reward, reward,
 			   __ATOMIC_RELAXED);
 
 	if (__atomic_add_fetch(&shm->sfg_seq_attempts[slot], 1,
@@ -1376,7 +1376,7 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	unsigned int seq_len = 0;
 	bool (*needs_la)(struct socket_triplet *);
 
-	__atomic_add_fetch(&shm->stats.socket_family_grammar_runs, 1,
+	__atomic_add_fetch(&shm->stats.socket_family_grammar.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (sfg->can_run != NULL && !sfg->can_run()) {
@@ -1592,7 +1592,7 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		p4_edges = kcov_sample_new_edges(&child->kcov, &kcov_cursor);
 
 	if (ok) {
-		__atomic_add_fetch(&shm->stats.socket_family_grammar_completed,
+		__atomic_add_fetch(&shm->stats.socket_family_grammar.completed,
 				   1, __ATOMIC_RELAXED);
 		*err_burst = 0;
 	}
