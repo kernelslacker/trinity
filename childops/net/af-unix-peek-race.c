@@ -123,10 +123,10 @@ static int unix_stream_pair_open(int sv[2], int peek_off)
 	set_recv_timeo(sv[1]);
 
 	if (setsockopt(sv[0], SOL_SOCKET, SO_PEEK_OFF, &off, sizeof(off)) < 0) {
-		__atomic_add_fetch(&shm->stats.af_unix_peek_race_peek_off_rejected,
+		__atomic_add_fetch(&shm->stats.af_unix_peek_race.peek_off_rejected,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.af_unix_peek_race_peek_off_armed,
+		__atomic_add_fetch(&shm->stats.af_unix_peek_race.peek_off_armed,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -334,10 +334,10 @@ static void reap_race_sibling(pid_t sibling, struct af_unix_peek_race_shared *rs
 		return;
 
 	if (WIFEXITED(status)) {
-		__atomic_add_fetch(&shm->stats.af_unix_peek_race_sibling_reaped_ok,
+		__atomic_add_fetch(&shm->stats.af_unix_peek_race.sibling_reaped_ok,
 				   1, __ATOMIC_RELAXED);
 	} else if (WIFSIGNALED(status)) {
-		__atomic_add_fetch(&shm->stats.af_unix_peek_race_sibling_crashed,
+		__atomic_add_fetch(&shm->stats.af_unix_peek_race.sibling_crashed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -382,7 +382,7 @@ static void run_race_burst_solo(int sv[2], unsigned int races, int peek_off)
 			(void)shutdown(sv[1], SHUT_WR);
 	}
 
-	__atomic_add_fetch(&shm->stats.af_unix_peek_race_pair_rebuilds,
+	__atomic_add_fetch(&shm->stats.af_unix_peek_race.pair_rebuilds,
 			   rebuilds, __ATOMIC_RELAXED);
 }
 
@@ -410,7 +410,7 @@ static void run_race_burst_parent_half(int sv[2],
 
 		s = send(sv[1], tx, sizeof(tx), MSG_DONTWAIT);
 		if (s >= 0) {
-			__atomic_add_fetch(&shm->stats.af_unix_peek_race_send_ok,
+			__atomic_add_fetch(&shm->stats.af_unix_peek_race.send_ok,
 					   1, __ATOMIC_RELAXED);
 		} else if (errno == EPIPE) {
 			if (rebuilds >= UNIX_PEEK_REBUILD_BUDGET)
@@ -429,13 +429,13 @@ static void run_race_burst_parent_half(int sv[2],
 
 		if (ONE_IN(4)) {
 			if (shutdown(sv[1], SHUT_WR) == 0) {
-				__atomic_add_fetch(&shm->stats.af_unix_peek_race_shutdown_ok,
+				__atomic_add_fetch(&shm->stats.af_unix_peek_race.shutdown_ok,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
 	}
 
-	__atomic_add_fetch(&shm->stats.af_unix_peek_race_pair_rebuilds,
+	__atomic_add_fetch(&shm->stats.af_unix_peek_race.pair_rebuilds,
 			   rebuilds, __ATOMIC_RELAXED);
 }
 
@@ -459,11 +459,11 @@ static void iter_one(struct childdata *child)
 	peek_off = (int)rnd_modulo_u32(UNIX_PEEK_OFF_MAX);
 
 	if (unix_stream_pair_open(sv, peek_off) < 0) {
-		__atomic_add_fetch(&shm->stats.af_unix_peek_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.af_unix_peek_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.af_unix_peek_race_pair_open_ok,
+	__atomic_add_fetch(&shm->stats.af_unix_peek_race.pair_open_ok,
 			   1, __ATOMIC_RELAXED);
 
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -498,11 +498,11 @@ static void iter_one(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 
 	if (sibling < 0) {
-		__atomic_add_fetch(&shm->stats.af_unix_peek_race_sibling_spawn_failed,
+		__atomic_add_fetch(&shm->stats.af_unix_peek_race.sibling_spawn_failed,
 				   1, __ATOMIC_RELAXED);
 		run_race_burst_solo(sv, races, peek_off);
 	} else {
-		__atomic_add_fetch(&shm->stats.af_unix_peek_race_sibling_spawn_ok,
+		__atomic_add_fetch(&shm->stats.af_unix_peek_race.sibling_spawn_ok,
 				   1, __ATOMIC_RELAXED);
 		__atomic_store_n(&rs->go, 1U, __ATOMIC_RELEASE);
 		(void)raw_futex_wake(&rs->go, 1);
@@ -544,11 +544,11 @@ bool af_unix_peek_race(struct childdata *child)
 {
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.af_unix_peek_race_runs,
+	__atomic_add_fetch(&shm->stats.af_unix_peek_race.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_af_unix_peek_race) {
-		__atomic_add_fetch(&shm->stats.af_unix_peek_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.af_unix_peek_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -567,7 +567,7 @@ bool af_unix_peek_race(struct childdata *child)
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
-			__atomic_add_fetch(&shm->stats.af_unix_peek_race_setup_failed,
+			__atomic_add_fetch(&shm->stats.af_unix_peek_race.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -591,9 +591,9 @@ bool af_unix_peek_race(struct childdata *child)
 bool af_unix_peek_race(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.af_unix_peek_race_runs,
+	__atomic_add_fetch(&shm->stats.af_unix_peek_race.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.af_unix_peek_race_setup_failed,
+	__atomic_add_fetch(&shm->stats.af_unix_peek_race.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
