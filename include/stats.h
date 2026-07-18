@@ -87,6 +87,7 @@
 #include "stats/subsys/splice_protocols.h"
 #include "stats/subsys/statmount_idmap.h"
 #include "stats/subsys/tcp_ao_rotate.h"
+#include "stats/subsys/tls_rotate.h"
 #include "stats/subsys/uffd.h"
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/vdso_race.h"
@@ -1207,14 +1208,8 @@ struct stats_s {
 	/* Auto-skipped socket families.  See stats/subsys/no_domains.h. */
 	struct no_domains_stats no_domains __attribute__((aligned(64)));
 
-	/* tls_rotate childop counters */
-	unsigned long tls_rotate_runs;			/* total tls_rotate invocations */
-	unsigned long tls_rotate_setup_failed;		/* loopback TCP pair setup failed */
-	unsigned long tls_rotate_ulp_failed;		/* setsockopt(TCP_ULP, "tls") failed (no CONFIG_TLS) */
-	unsigned long tls_rotate_ulp_asymmetric;	/* server-side TCP_ULP install failed; RX path skipped */
-	unsigned long tls_rotate_installs;		/* successful initial TLS_TX install */
-	unsigned long tls_rotate_rekeys_ok;		/* rekey TLS_TX install accepted */
-	unsigned long tls_rotate_rekeys_rejected;	/* rekey TLS_TX install rejected (EBUSY etc) */
+	/* tls_rotate accounting.  See stats/subsys/tls_rotate.h. */
+	struct tls_rotate_stats tls_rotate __attribute__((aligned(64)));
 
 	/* sock_ulp_sockmap_layering childop counters */
 	unsigned long sock_ulp_sockmap_layering_runs;		/* total invocations */

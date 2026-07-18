@@ -183,10 +183,10 @@ bool tls_rotate(struct childdata *child)
 	int rc;
 	bool srv_ulp = false;
 
-	__atomic_add_fetch(&shm->stats.tls_rotate_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.tls_rotate.runs, 1, __ATOMIC_RELAXED);
 
 	if (make_loopback_pair(&cli, &srv) < 0) {
-		__atomic_add_fetch(&shm->stats.tls_rotate_setup_failed,
+		__atomic_add_fetch(&shm->stats.tls_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -194,7 +194,7 @@ bool tls_rotate(struct childdata *child)
 	/* Install TCP_ULP="tls" on both ends.  Both sides must be ULP'd
 	 * for the rekey-while-RX-is-also-armed bug class to be reachable. */
 	if (setsockopt(cli, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
-		__atomic_add_fetch(&shm->stats.tls_rotate_ulp_failed,
+		__atomic_add_fetch(&shm->stats.tls_rotate.ulp_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -205,7 +205,7 @@ bool tls_rotate(struct childdata *child)
 	if (setsockopt(srv, IPPROTO_TCP, TCP_ULP, "tls", 3) == 0)
 		srv_ulp = true;
 	else
-		__atomic_add_fetch(&shm->stats.tls_rotate_ulp_asymmetric,
+		__atomic_add_fetch(&shm->stats.tls_rotate.ulp_asymmetric,
 				   1, __ATOMIC_RELAXED);
 
 	c1 = (enum tls_cipher_choice)rnd_modulo_u32(NR_TLS_CHOICES);
@@ -224,7 +224,7 @@ bool tls_rotate(struct childdata *child)
 	clen = fill_cinfo(c1, cinfo, v1);
 	rc = setsockopt(cli, SOL_TLS, TLS_TX, cinfo, clen);
 	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.tls_rotate_installs,
+		__atomic_add_fetch(&shm->stats.tls_rotate.installs,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
 			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
@@ -259,13 +259,13 @@ bool tls_rotate(struct childdata *child)
 	clen = fill_cinfo(c2, cinfo, v2);
 	rc = setsockopt(cli, SOL_TLS, TLS_TX, cinfo, clen);
 	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.tls_rotate_rekeys_ok,
+		__atomic_add_fetch(&shm->stats.tls_rotate.rekeys_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
 		/* EBUSY is the canonical "kTLS is already installed,
 		 * can't re-init in place" rejection — exercising the
 		 * reject-after-validate path that flat fuzzing skips. */
-		__atomic_add_fetch(&shm->stats.tls_rotate_rekeys_rejected,
+		__atomic_add_fetch(&shm->stats.tls_rotate.rekeys_rejected,
 				   1, __ATOMIC_RELAXED);
 	}
 
