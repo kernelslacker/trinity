@@ -276,17 +276,6 @@ const struct stat_category tls_ulp_churn_category =
 	              tls_ulp_churn_runs,
 	              tls_ulp_churn_fields);
 
-static const struct stat_field ip6gre_bond_lapb_stack_fields[] = {
-	STAT_FIELD(ip6gre_lapb, runs),
-	STAT_FIELD(ip6gre_lapb, setup_failed),
-	STAT_FIELD(ip6gre_lapb, flag_toggles),
-};
-
-const struct stat_category ip6gre_bond_lapb_stack_category =
-	STAT_CATEGORY("ip6gre_bond_lapb_stack",
-	              ip6gre_lapb_runs,
-	              ip6gre_bond_lapb_stack_fields);
-
 static const struct stat_field vxlan_encap_churn_fields[] = {
 	STAT_FIELD(vxlan_encap_churn, runs),
 	STAT_FIELD(vxlan_encap_churn, setup_failed),
