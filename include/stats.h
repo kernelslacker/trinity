@@ -47,6 +47,7 @@
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/mpls_route_churn.h"
 #include "stats/subsys/no_domains.h"
+#include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/perf_chains.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/recipe.h"
@@ -1436,12 +1437,8 @@ struct stats_s {
 	unsigned long ip_gre_churn_packet_sent_ok;	/* sendto on IPPROTO_RAW returned >0 */
 	unsigned long ip_gre_churn_link_del_ok;		/* RTM_DELLINK accepted */
 
-	/* ovs_tunnel_vport_churn childop counters */
-	unsigned long ovs_tunnel_vport_churn_runs;		/* total ovs_tunnel_vport_churn invocations */
-	unsigned long ovs_tunnel_vport_churn_setup_failed;	/* genl open / family resolve / dp create latched */
-	unsigned long ovs_tunnel_vport_churn_create_ok;		/* OVS_VPORT_CMD_NEW accepted */
-	unsigned long ovs_tunnel_vport_churn_delete_ok;		/* OVS_VPORT_CMD_DEL accepted */
-	unsigned long ovs_tunnel_vport_churn_race_dellink_attempted;	/* RTM_DELLINK racer fired at helper netdev */
+	/* ovs_tunnel_vport_churn accounting.  See stats/subsys/ovs_tunnel_vport_churn.h. */
+	struct ovs_tunnel_vport_churn_stats ovs_tunnel_vport_churn __attribute__((aligned(64)));
 
 	/* bridge_fdb_stp childop counters */
 	unsigned long bridge_fdb_stp_runs;		/* total bridge_fdb_stp invocations */

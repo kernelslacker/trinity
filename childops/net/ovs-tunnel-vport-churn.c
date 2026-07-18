@@ -608,14 +608,14 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 	pid_t racer_pid = 0;
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_runs, 1,
+	__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ovs_setup_failed)
 		return true;
 
 	if (!ovs_one_time_setup(child)) {
-		__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -663,7 +663,7 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 			if (racer_pid < 0)
 				racer_pid = 0;
 			else
-				__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_race_dellink_attempted,
+				__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.race_dellink_attempted,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -692,7 +692,7 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		}
 		return true;
 	}
-	__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_create_ok, 1,
+	__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.create_ok, 1,
 			   __ATOMIC_RELAXED);
 
 	/* Short jitter spin between CMD_NEW and the trailing CMD_DEL.
@@ -704,7 +704,7 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 	}
 
 	if (ovs_delete_vport(&ovs_vport_ctx, 0, vname) == 0)
-		__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn_delete_ok,
+		__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.delete_ok,
 				   1, __ATOMIC_RELAXED);
 
 	if (racer_pid > 0) {
