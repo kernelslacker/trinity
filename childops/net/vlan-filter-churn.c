@@ -279,7 +279,7 @@ static int vlan_filter_iter_setup(struct vlan_filter_iter_ctx *it,
 	int rc;
 
 	if (nl_open(&it->nl, &nl_opts) < 0) {
-		__atomic_add_fetch(&shm->stats.vlan_filter_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vlan_filter_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -294,12 +294,12 @@ static int vlan_filter_iter_setup(struct vlan_filter_iter_ctx *it,
 		    rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -EPROTONOSUPPORT)
 			ns_unsupported_vlan_filter_churn = true;
-		__atomic_add_fetch(&shm->stats.vlan_filter_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vlan_filter_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	it->veth_added = true;
-	__atomic_add_fetch(&shm->stats.vlan_filter_churn_veth_create_ok,
+	__atomic_add_fetch(&shm->stats.vlan_filter_churn.veth_create_ok,
 			   1, __ATOMIC_RELAXED);
 
 	it->base_idx = (int)if_nametoindex(it->base);
@@ -346,7 +346,7 @@ static int vlan_child_add(struct vlan_filter_iter_ctx *it,
 			ns_unsupported_vlan_filter_churn = true;
 		return rc;
 	}
-	__atomic_add_fetch(&shm->stats.vlan_filter_churn_vlan_add_ok,
+	__atomic_add_fetch(&shm->stats.vlan_filter_churn.vlan_add_ok,
 			   1, __ATOMIC_RELAXED);
 	if (slot < VFC_RANGE_LEN)
 		it->vlan_idx[slot] = (int)if_nametoindex(name);
@@ -360,7 +360,7 @@ static void vlan_child_del(struct vlan_filter_iter_ctx *it, unsigned int slot)
 	if (it->vlan_idx[slot] <= 0)
 		return;
 	if (rtnl_dellink(&it->nl, it->vlan_idx[slot]) == 0)
-		__atomic_add_fetch(&shm->stats.vlan_filter_churn_vlan_del_ok,
+		__atomic_add_fetch(&shm->stats.vlan_filter_churn.vlan_del_ok,
 				   1, __ATOMIC_RELAXED);
 	it->vlan_idx[slot] = 0;
 }
@@ -531,11 +531,11 @@ bool vlan_filter_churn(struct childdata *child)
 	struct vlan_filter_churn_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.vlan_filter_churn_runs,
+	__atomic_add_fetch(&shm->stats.vlan_filter_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_vlan_filter_churn) {
-		__atomic_add_fetch(&shm->stats.vlan_filter_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vlan_filter_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -550,12 +550,12 @@ bool vlan_filter_churn(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.vlan_filter_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vlan_filter_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.vlan_filter_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vlan_filter_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -573,9 +573,9 @@ bool vlan_filter_churn(struct childdata *child)
 {
 	(void)child;
 
-	__atomic_add_fetch(&shm->stats.vlan_filter_churn_runs,
+	__atomic_add_fetch(&shm->stats.vlan_filter_churn.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.vlan_filter_churn_setup_failed,
+	__atomic_add_fetch(&shm->stats.vlan_filter_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
