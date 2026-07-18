@@ -28,3 +28,11 @@ void json_emit_minicorpus_section(void);
 
 /* stats/json/cmp-hints.c */
 void json_emit_cmp_hints_section(void);
+
+/* stats/json/core.c */
+void dump_stats_json_fault_and_fd_lifecycle(void);
+void dump_stats_json_oracle(void);
+void dump_stats_json_basic_subsystems(void);
+void dump_stats_json_iouring_and_zombies(void);
+void dump_stats_json_corruption_and_audit(void);
+void dump_stats_json_lifecycle_and_storms(void);
