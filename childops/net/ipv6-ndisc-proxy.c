@@ -338,7 +338,7 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 	unsigned int iters, i;
 
 	if (nl_open(&ctx, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -348,7 +348,7 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 		(void)link_up(&ctx, lo_idx);
 
 	if (veth_create(&ctx, "vp0", "vp1") != 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		nl_close(&ctx);
 		return 0;
@@ -356,7 +356,7 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 	vp0_idx = (int)if_nametoindex("vp0");
 	vp1_idx = (int)if_nametoindex("vp1");
 	if (vp0_idx <= 0 || vp1_idx <= 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		nl_close(&ctx);
 		return 0;
@@ -387,7 +387,7 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 	 * for the proxy check, so flip both. */
 	if (sysfs_write_one("/proc/sys/net/ipv6/conf/vp0/proxy_ndp", "1") ||
 	    sysfs_write_one("/proc/sys/net/ipv6/conf/all/proxy_ndp", "1"))
-		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_proxy_enable_ok,
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.proxy_enable_ok,
 				   1, __ATOMIC_RELAXED);
 
 	(void)proxy_neigh_add(&ctx, vp0_idx, &target);
@@ -396,7 +396,7 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 
 	raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IPV6));
 	if (raw < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -437,7 +437,7 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 		if (ns_since(&t0) >= NDP_STORM_BUDGET_NS)
 			break;
 		if (send_one_ns(raw, vp1_idx, rand32()))
-			__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_ns_sent_ok,
+			__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.ns_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -450,7 +450,7 @@ bool ipv6_ndisc_proxy(struct childdata *child)
 	struct ipv6_ndisc_proxy_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_runs, 1,
+	__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_userns_unsupported_ipv6_ndisc_proxy)
@@ -471,7 +471,7 @@ bool ipv6_ndisc_proxy(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -479,7 +479,7 @@ bool ipv6_ndisc_proxy(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
