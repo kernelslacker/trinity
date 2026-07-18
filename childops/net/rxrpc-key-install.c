@@ -147,7 +147,7 @@ static void probe_rxrpc_key_supported(void)
 		     (unsigned long) KEY_SPEC_THREAD_KEYRING);
 	if (rc < 0 && errno_is_unsupported(errno)) {
 		unsupported_rxrpc_key_install = true;
-		__atomic_add_fetch(&shm->stats.rxrpc_key_install_unsupported,
+		__atomic_add_fetch(&shm->stats.rxrpc_key_install.unsupported,
 				   1, __ATOMIC_RELAXED);
 		outputerr("rxrpc_key_install: add_key(rxrpc) probe failed: %s -- latching unsupported_rxrpc_key_install\n",
 			  strerror(errno));
@@ -283,17 +283,17 @@ static int32_t do_add_rxrpc(const char *desc,
 {
 	long rc;
 
-	__atomic_add_fetch(&shm->stats.rxrpc_key_install_calls,
+	__atomic_add_fetch(&shm->stats.rxrpc_key_install.calls,
 			   1, __ATOMIC_RELAXED);
 	rc = trinity_cmp_syscall(__NR_add_key, "rxrpc", desc, payload, paylen,
 		     (unsigned long) KEY_SPEC_THREAD_KEYRING);
 	if (rc < 0) {
 		if (errno == EDQUOT)
-			__atomic_add_fetch(&shm->stats.rxrpc_key_install_quota_hits,
+			__atomic_add_fetch(&shm->stats.rxrpc_key_install.quota_hits,
 					   1, __ATOMIC_RELAXED);
 		else if (errno_is_unsupported(errno) && !unsupported_rxrpc_key_install) {
 			unsupported_rxrpc_key_install = true;
-			__atomic_add_fetch(&shm->stats.rxrpc_key_install_unsupported,
+			__atomic_add_fetch(&shm->stats.rxrpc_key_install.unsupported,
 					   1, __ATOMIC_RELAXED);
 			outputerr("rxrpc_key_install: add_key(rxrpc) latched unsupported_rxrpc_key_install: %s\n",
 				  strerror(errno));
@@ -314,13 +314,13 @@ static int32_t do_add_rxrpc_s(const char *desc,
 {
 	long rc;
 
-	__atomic_add_fetch(&shm->stats.rxrpc_key_install_calls,
+	__atomic_add_fetch(&shm->stats.rxrpc_key_install.calls,
 			   1, __ATOMIC_RELAXED);
 	rc = trinity_cmp_syscall(__NR_add_key, "rxrpc_s", desc, payload, paylen,
 		     (unsigned long) KEY_SPEC_THREAD_KEYRING);
 	if (rc < 0) {
 		if (errno == EDQUOT)
-			__atomic_add_fetch(&shm->stats.rxrpc_key_install_quota_hits,
+			__atomic_add_fetch(&shm->stats.rxrpc_key_install.quota_hits,
 					   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -692,7 +692,7 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 		 * install.  Without this we can't tell whether the arm is
 		 * just rattling the early length gates or actually fuzzing
 		 * the deep parser. */
-		__atomic_add_fetch(&shm->stats.rxrpc_key_install_xrxgk_accepted,
+		__atomic_add_fetch(&shm->stats.rxrpc_key_install.xrxgk_accepted,
 				   1, __ATOMIC_RELAXED);
 		ring_insert(ring, serial);
 	}
@@ -755,7 +755,7 @@ static void teardown_one(int32_t *ring)
 		rc = trinity_cmp_syscall(__NR_keyctl, (unsigned long) KEYCTL_REVOKE,
 			     (unsigned long) serial, 0UL, 0UL, 0UL);
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.rxrpc_key_install_revokes,
+			__atomic_add_fetch(&shm->stats.rxrpc_key_install.revokes,
 					   1, __ATOMIC_RELAXED);
 		/* Revoked keys still occupy the serial; let it age out
 		 * naturally so subsequent picks land on a -EKEYREVOKED
@@ -766,7 +766,7 @@ static void teardown_one(int32_t *ring)
 			     (unsigned long) KEY_SPEC_THREAD_KEYRING,
 			     0UL, 0UL);
 		if (rc == 0) {
-			__atomic_add_fetch(&shm->stats.rxrpc_key_install_revokes,
+			__atomic_add_fetch(&shm->stats.rxrpc_key_install.revokes,
 					   1, __ATOMIC_RELAXED);
 			ring_drop(ring, serial);
 		}
@@ -780,7 +780,7 @@ bool rxrpc_key_install(struct childdata *child)
 	unsigned int iter;
 	unsigned int iters;
 
-	__atomic_add_fetch(&shm->stats.rxrpc_key_install_runs,
+	__atomic_add_fetch(&shm->stats.rxrpc_key_install.runs,
 			   1, __ATOMIC_RELAXED);
 
 	/* Snapshot child->op_type once and bounds-check before indexing

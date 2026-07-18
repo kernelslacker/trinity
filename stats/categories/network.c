@@ -219,20 +219,6 @@ const struct stat_category iscsi_login_walker_category =
 	              iscsi_walker_runs,
 	              iscsi_login_walker_fields);
 
-static const struct stat_field rxrpc_key_install_fields[] = {
-	STAT_FIELD(rxrpc_key_install, runs),
-	STAT_FIELD(rxrpc_key_install, calls),
-	STAT_FIELD(rxrpc_key_install, revokes),
-	STAT_FIELD(rxrpc_key_install, quota_hits),
-	STAT_FIELD(rxrpc_key_install, unsupported),
-	STAT_FIELD(rxrpc_key_install, xrxgk_accepted),
-};
-
-const struct stat_category rxrpc_key_install_category =
-	STAT_CATEGORY("rxrpc_key_install",
-	              rxrpc_key_install_runs,
-	              rxrpc_key_install_fields);
-
 static const struct stat_field veth_asymmetric_xdp_fields[] = {
 	STAT_FIELD(veth_asym, iters),
 	STAT_FIELD(veth_asym, eperm),

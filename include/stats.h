@@ -78,6 +78,7 @@
 #include "stats/subsys/recipe.h"
 #include "stats/subsys/refcount_audit.h"
 #include "stats/subsys/rtnl_vf_broadcast.h"
+#include "stats/subsys/rxrpc_key_install.h"
 #include "stats/subsys/sched_cycler.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
@@ -4231,17 +4232,8 @@ struct stats_s {
 	unsigned long splice_protocols_msg_splice_pages_attempted;	/* splice()/sendmsg() calls where the kernel is expected to plant pages via MSG_SPLICE_PAGES */
 	unsigned long splice_protocols_msg_splice_pages_path_taken_inferred;	/* of those, how many returned len matching input with no errno (zero-copy plant inferred). Operator: ratio < 90% means many calls fell back to copy and aren't reproducing the intended bug shape. */
 
-	/* rxrpc_key_install childop counters.  Coverage of the
-	 * net/rxrpc/key.c token parsers reached via add_key("rxrpc", ...)
-	 * and add_key("rxrpc_s", ...): null-security fast path, v1 binary
-	 * RXKAD, XDR envelope (with XDR-RXKAD / XDR-RXGK inners), and
-	 * rxkad/rxgk preparse_server_key. */
-	unsigned long rxrpc_key_install_runs;		/* total rxrpc_key_install invocations */
-	unsigned long rxrpc_key_install_calls;		/* total add_key/keyctl ops attempted */
-	unsigned long rxrpc_key_install_revokes;	/* KEYCTL_REVOKE / KEYCTL_UNLINK accepted */
-	unsigned long rxrpc_key_install_quota_hits;	/* add_key returned -EDQUOT */
-	unsigned long rxrpc_key_install_unsupported;	/* per-process latch fired (no rxrpc key type) */
-	unsigned long rxrpc_key_install_xrxgk_accepted;	/* XDR-RXGK arm add_key returned a serial -- penetration into rxrpc_preparse_xdr_yfs_rxgk past the length/level/enctype/expiry gates and through the alloc + key install */
+	/* rxrpc_key_install accounting.  See stats/subsys/rxrpc_key_install.h. */
+	struct rxrpc_key_install_stats rxrpc_key_install __attribute__((aligned(64)));
 
 	/* af_alg_weak_cipher_probe accounting.  See stats/subsys/af_alg_weak_cipher_probe.h. */
 	struct af_alg_weak_cipher_probe_stats af_alg_weak_cipher_probe __attribute__((aligned(64)));
