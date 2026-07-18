@@ -325,10 +325,10 @@ static void send_burst(int fd, const struct timespec *t_outer)
 
 		n = send(fd, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (n > 0) {
-			__atomic_add_fetch(&shm->stats.espintcp_coalesce_send_ok,
+			__atomic_add_fetch(&shm->stats.espintcp_coalesce.send_ok,
 					   1, __ATOMIC_RELAXED);
 			if (len == 0)
-				__atomic_add_fetch(&shm->stats.espintcp_coalesce_keepalive_ok,
+				__atomic_add_fetch(&shm->stats.espintcp_coalesce.keepalive_ok,
 						   1, __ATOMIC_RELAXED);
 		} else if (n < 0 &&
 			   (errno == EAGAIN || errno == EPIPE ||
@@ -405,13 +405,13 @@ static int espintcp_coalesce_in_ns(void *arg)
 
 		cli = open_loopback_pair(&acceptor);
 		if (cli < 0) {
-			__atomic_add_fetch(&shm->stats.espintcp_coalesce_setup_failed,
+			__atomic_add_fetch(&shm->stats.espintcp_coalesce.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			continue;
 		}
 
 		if (install_espintcp_ulp(cli, child) != 0) {
-			__atomic_add_fetch(&shm->stats.espintcp_coalesce_ulp_install_failed,
+			__atomic_add_fetch(&shm->stats.espintcp_coalesce.ulp_install_failed,
 					   1, __ATOMIC_RELAXED);
 			close(cli);
 			reap_acceptor(acceptor);
@@ -419,7 +419,7 @@ static int espintcp_coalesce_in_ns(void *arg)
 				break;
 			continue;
 		}
-		__atomic_add_fetch(&shm->stats.espintcp_coalesce_ulp_install_ok,
+		__atomic_add_fetch(&shm->stats.espintcp_coalesce.ulp_install_ok,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
 			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
@@ -445,14 +445,14 @@ bool espintcp_coalesce_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.espintcp_coalesce_runs, 1,
+	__atomic_add_fetch(&shm->stats.espintcp_coalesce.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_espintcp_coalesce)
 		return true;
 
 	if (kind_unsupported()) {
-		__atomic_add_fetch(&shm->stats.espintcp_coalesce_setup_failed,
+		__atomic_add_fetch(&shm->stats.espintcp_coalesce.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -464,12 +464,12 @@ bool espintcp_coalesce_churn(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.espintcp_coalesce_setup_failed,
+		__atomic_add_fetch(&shm->stats.espintcp_coalesce.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.espintcp_coalesce_setup_failed,
+		__atomic_add_fetch(&shm->stats.espintcp_coalesce.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
