@@ -248,7 +248,7 @@ unsigned long gen_arg_len(struct syscallentry *entry,
 	if (mode == ARG_LEN_SEMANTICS_OFF)
 		return (unsigned long) get_len();
 
-	__atomic_add_fetch(&shm->stats.arg_len_semantics_draws, 1,
+	__atomic_add_fetch(&shm->stats.arg.len_semantics_draws, 1,
 			   __ATOMIC_RELAXED);
 
 	if (entry == NULL || rec == NULL || argnum < 2 || argnum > 6)
@@ -269,7 +269,7 @@ unsigned long gen_arg_len(struct syscallentry *entry,
 	return get_len_relative(objsize);
 
 fallback:
-	__atomic_add_fetch(&shm->stats.arg_len_objrelative_nosize, 1,
+	__atomic_add_fetch(&shm->stats.arg.len_objrelative_nosize, 1,
 			   __ATOMIC_RELAXED);
 	return (unsigned long) get_len();
 }

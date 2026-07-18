@@ -103,49 +103,49 @@ unsigned long get_len_relative(unsigned long objsize)
 	if (RAND_BOOL()) {
 		unsigned long v = get_len();
 
-		__atomic_add_fetch(&shm->stats.arg_len_objrel_blend_getlen, 1,
+		__atomic_add_fetch(&shm->stats.arg.len_objrel_blend_getlen, 1,
 				   __ATOMIC_RELAXED);
 		return v > objsize ? objsize : v;
 	}
 
-	__atomic_add_fetch(&shm->stats.arg_len_objrelative_used, 1,
+	__atomic_add_fetch(&shm->stats.arg.len_objrelative_used, 1,
 			   __ATOMIC_RELAXED);
 
 	switch (rnd_modulo_u32(8)) {
 	case 0:
-		__atomic_add_fetch(&shm->stats.arg_len_objrel_zero, 1,
+		__atomic_add_fetch(&shm->stats.arg.len_objrel_zero, 1,
 				   __ATOMIC_RELAXED);
 		return 0;
 	case 1:
-		__atomic_add_fetch(&shm->stats.arg_len_objrel_one, 1,
+		__atomic_add_fetch(&shm->stats.arg.len_objrel_one, 1,
 				   __ATOMIC_RELAXED);
 		return 1;
 	case 2:
-		__atomic_add_fetch(&shm->stats.arg_len_objrel_objsize, 1,
+		__atomic_add_fetch(&shm->stats.arg.len_objrel_objsize, 1,
 				   __ATOMIC_RELAXED);
 		return objsize;
 	case 3:
-		__atomic_add_fetch(&shm->stats.arg_len_objrel_objsize_minus_1, 1,
+		__atomic_add_fetch(&shm->stats.arg.len_objrel_objsize_minus_1, 1,
 				   __ATOMIC_RELAXED);
 		return objsize - 1;
 	case 4:
-		__atomic_add_fetch(&shm->stats.arg_len_objrel_objsize_half, 1,
+		__atomic_add_fetch(&shm->stats.arg.len_objrel_objsize_half, 1,
 				   __ATOMIC_RELAXED);
 		return objsize / 2;
 	case 5:
-		__atomic_add_fetch(&shm->stats.arg_len_objrel_pagesize, 1,
+		__atomic_add_fetch(&shm->stats.arg.len_objrel_pagesize, 1,
 				   __ATOMIC_RELAXED);
 		if (page_size > 0 && objsize >= page_size)
 			return page_size;
 		return objsize;
 	case 6:
-		__atomic_add_fetch(&shm->stats.arg_len_objrel_pagesize_plus_1, 1,
+		__atomic_add_fetch(&shm->stats.arg.len_objrel_pagesize_plus_1, 1,
 				   __ATOMIC_RELAXED);
 		if (page_size > 0 && objsize >= page_size + 1)
 			return page_size + 1;
 		return objsize;
 	case 7:
-		__atomic_add_fetch(&shm->stats.arg_len_objrel_pagesize_minus_1, 1,
+		__atomic_add_fetch(&shm->stats.arg.len_objrel_pagesize_minus_1, 1,
 				   __ATOMIC_RELAXED);
 		if (page_size > 1 && objsize >= page_size - 1)
 			return page_size - 1;

@@ -2869,11 +2869,11 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_remote_adaptive_agree           = __atomic_load_n(&shm->stats.remote_adaptive_agree,          __ATOMIC_RELAXED);
 	cur_remote_adaptive_arm_a_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_a_children,  __ATOMIC_RELAXED);
 	cur_remote_adaptive_arm_b_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_b_children,  __ATOMIC_RELAXED);
-	cur_arg_meta_addr_with_meta            = __atomic_load_n(&shm->stats.arg_meta_addr_with_meta,            __ATOMIC_RELAXED);
-	cur_arg_meta_addr_without_meta         = __atomic_load_n(&shm->stats.arg_meta_addr_without_meta,         __ATOMIC_RELAXED);
-	cur_arg_meta_argtype_stale             = __atomic_load_n(&shm->stats.arg_meta_argtype_stale,             __ATOMIC_RELAXED);
-	cur_arg_meta_scrub_would_destroy_in    = __atomic_load_n(&shm->stats.arg_meta_scrub_would_destroy_in,    __ATOMIC_RELAXED);
-	cur_arg_meta_scrub_would_preserve_out  = __atomic_load_n(&shm->stats.arg_meta_scrub_would_preserve_out,  __ATOMIC_RELAXED);
+	cur_arg_meta_addr_with_meta            = __atomic_load_n(&shm->stats.arg.meta_addr_with_meta,            __ATOMIC_RELAXED);
+	cur_arg_meta_addr_without_meta         = __atomic_load_n(&shm->stats.arg.meta_addr_without_meta,         __ATOMIC_RELAXED);
+	cur_arg_meta_argtype_stale             = __atomic_load_n(&shm->stats.arg.meta_argtype_stale,             __ATOMIC_RELAXED);
+	cur_arg_meta_scrub_would_destroy_in    = __atomic_load_n(&shm->stats.arg.meta_scrub_would_destroy_in,    __ATOMIC_RELAXED);
+	cur_arg_meta_scrub_would_preserve_out  = __atomic_load_n(&shm->stats.arg.meta_scrub_would_preserve_out,  __ATOMIC_RELAXED);
 	cur_blanket_address_scrub_slots_walked = __atomic_load_n(&shm->stats.blanket_address_scrub_slots_walked, __ATOMIC_RELAXED);
 	/* SHADOW structure-aware picker A/B cohort + divergence counters live
 	 * in minicorpus_shm rather than kcov_shm because the picker is a

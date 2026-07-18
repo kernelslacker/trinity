@@ -99,7 +99,7 @@ void arg_meta_init(struct syscallentry *entry, struct syscallrecord *rec)
 		 * wholesale-stomped. */
 		if (stored_gen != 0 && stored_gen != prev_generation &&
 		    !prestamped)
-			__atomic_add_fetch(&shm->stats.arg_meta_argtype_stale,
+			__atomic_add_fetch(&shm->stats.arg.meta_argtype_stale,
 					   1, __ATOMIC_RELAXED);
 
 		argtype_default_meta(t, &dir, &owner, &flags);
@@ -129,10 +129,10 @@ void arg_meta_init(struct syscallentry *entry, struct syscallrecord *rec)
 		    t == ARG_RANGE) {
 			if (dir != ARG_DIR_NONE || owner != ARG_OWNER_NONE ||
 			    flags != 0)
-				__atomic_add_fetch(&shm->stats.arg_meta_addr_with_meta,
+				__atomic_add_fetch(&shm->stats.arg.meta_addr_with_meta,
 						   1, __ATOMIC_RELAXED);
 			else
-				__atomic_add_fetch(&shm->stats.arg_meta_addr_without_meta,
+				__atomic_add_fetch(&shm->stats.arg.meta_addr_without_meta,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -173,10 +173,10 @@ void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec
 
 		if (entry->address_scrub_mask & (uint8_t)(1u << s)) {
 			if (dir == ARG_DIR_IN || dir == ARG_DIR_INOUT)
-				__atomic_add_fetch(&shm->stats.arg_meta_scrub_would_destroy_in,
+				__atomic_add_fetch(&shm->stats.arg.meta_scrub_would_destroy_in,
 						   1, __ATOMIC_RELAXED);
 		} else if (dir == ARG_DIR_OUT) {
-			__atomic_add_fetch(&shm->stats.arg_meta_scrub_would_preserve_out,
+			__atomic_add_fetch(&shm->stats.arg.meta_scrub_would_preserve_out,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
