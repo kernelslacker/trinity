@@ -386,7 +386,7 @@ static bool try_paired_setsockopt(struct sockopt *so, int fd)
 	so->optname = pair->optname;
 	so->optlen = exact;
 
-	__atomic_add_fetch(&shm->stats.setsockopt_pairing_paired_emitted, 1,
+	__atomic_add_fetch(&shm->stats.setsockopt_pairing.paired_emitted, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
