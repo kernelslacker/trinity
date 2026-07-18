@@ -210,7 +210,7 @@ bool bpf_cgroup_attach(struct childdata *child)
 	uint32_t attach_flags;
 	unsigned int sent;
 
-	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_runs, 1,
+	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (latched_off)
@@ -234,7 +234,7 @@ bool bpf_cgroup_attach(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_setup_failed,
+		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -250,11 +250,11 @@ bool bpf_cgroup_attach(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_setup_failed,
+		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_prog_loaded, 1,
+	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.prog_loaded, 1,
 			   __ATOMIC_RELAXED);
 
 	attach_flags = RAND_BOOL() ? BPF_F_ALLOW_MULTI : 0;
@@ -272,12 +272,12 @@ bool bpf_cgroup_attach(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_attach_rejected,
+		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.attach_rejected,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 	attached = true;
-	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_attached, 1,
+	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.attached, 1,
 			   __ATOMIC_RELAXED);
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
@@ -290,7 +290,7 @@ bool bpf_cgroup_attach(struct childdata *child)
 	 * cgroup at the same time supply the cross-process concurrency
 	 * the dispatch-vs-detach race window needs. */
 	sent = udp_burst(c->attach_type);
-	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_packets_sent,
+	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.packets_sent,
 			   sent, __ATOMIC_RELAXED);
 
 	/* Detach mid-stream — the bug window is "hook fires while
@@ -301,14 +301,14 @@ bool bpf_cgroup_attach(struct childdata *child)
 	attr.attach_type = c->attach_type;
 	if (sys_bpf(BPF_PROG_DETACH, &attr, sizeof(attr)) == 0) {
 		attached = false;
-		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_detached,
+		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.detached,
 				   1, __ATOMIC_RELAXED);
 	}
 
 	/* Post-detach burst — exercises the immediately-after-detach
 	 * dispatch path; this is where stale-array UAFs surface. */
 	sent = udp_burst(c->attach_type);
-	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_post_detach_sent,
+	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.post_detach_sent,
 			   sent, __ATOMIC_RELAXED);
 
 out:

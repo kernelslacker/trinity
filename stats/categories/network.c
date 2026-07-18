@@ -666,19 +666,3 @@ const struct stat_category l2tp_ifname_race_category =
 		l2tp_ifname_race_runs,
 		l2tp_ifname_race_fields);
 
-static const struct stat_field bpf_cgroup_attach_fields[] = {
-	STAT_FIELD(bpf_cgroup_attach, runs),
-	STAT_FIELD(bpf_cgroup_attach, setup_failed),
-	STAT_FIELD(bpf_cgroup_attach, prog_loaded),
-	STAT_FIELD(bpf_cgroup_attach, attached),
-	STAT_FIELD(bpf_cgroup_attach, attach_rejected),
-	STAT_FIELD(bpf_cgroup_attach, packets_sent),
-	STAT_FIELD(bpf_cgroup_attach, detached),
-	STAT_FIELD(bpf_cgroup_attach, post_detach_sent),
-};
-
-const struct stat_category bpf_cgroup_attach_category =
-	STAT_CATEGORY("bpf_cgroup_attach",
-	              bpf_cgroup_attach_runs,
-	              bpf_cgroup_attach_fields);
-

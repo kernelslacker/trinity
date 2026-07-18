@@ -23,6 +23,7 @@
 #include "stats/subsys/barrier_racer.h"
 #include "stats/subsys/blkdev_lifecycle.h"
 #include "stats/subsys/blob.h"
+#include "stats/subsys/bpf_cgroup_attach.h"
 #include "stats/subsys/bpf_lifecycle.h"
 #include "stats/subsys/bridge_ct.h"
 #include "stats/subsys/bridge_ip6frag.h"
@@ -1617,15 +1618,8 @@ struct stats_s {
 	unsigned long nat_t_xfrm6_sendto_runs;		/* sendto() to unreachable v6 dest issued */
 	unsigned long nat_t_xfrm6_delsa_races;		/* DELSA accepted while sendto burst inflight */
 
-	/* bpf_cgroup_attach childop counters */
-	unsigned long bpf_cgroup_attach_runs;			/* total bpf_cgroup_attach invocations */
-	unsigned long bpf_cgroup_attach_setup_failed;		/* cgroup open / PROG_LOAD failed */
-	unsigned long bpf_cgroup_attach_prog_loaded;		/* PROG_LOAD accepted */
-	unsigned long bpf_cgroup_attach_attached;		/* PROG_ATTACH accepted */
-	unsigned long bpf_cgroup_attach_attach_rejected;	/* PROG_ATTACH rejected */
-	unsigned long bpf_cgroup_attach_packets_sent;		/* sendto/connect ops returned >=0 */
-	unsigned long bpf_cgroup_attach_detached;		/* PROG_DETACH accepted (mid-flow) */
-	unsigned long bpf_cgroup_attach_post_detach_sent;	/* sendto/connect after detach returned >=0 */
+	/* bpf_cgroup_attach accounting.  See stats/subsys/bpf_cgroup_attach.h. */
+	struct bpf_cgroup_attach_stats bpf_cgroup_attach __attribute__((aligned(64)));
 
 	/* sctp_assoc_churn childop counters */
 	unsigned long sctp_assoc_churn_runs;			/* total sctp_assoc_churn invocations */
