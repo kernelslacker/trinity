@@ -408,28 +408,28 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		 * stays BLOB_AB_MODE_NONE for every call and this block
 		 * is inert. */
 		if (child->blob_ab_mode_last == BLOB_AB_MODE_HAVOC) {
-			__atomic_fetch_add(&shm->stats.blob_ab_havoc_fills,
+			__atomic_fetch_add(&shm->stats.blob_ab.havoc_fills,
 					   1UL, __ATOMIC_RELAXED);
 			if (new_edges > 0)
-				__atomic_fetch_add(&shm->stats.blob_ab_havoc_new_edges,
+				__atomic_fetch_add(&shm->stats.blob_ab.havoc_new_edges,
 						   (unsigned long) new_edges,
 						   __ATOMIC_RELAXED);
 			if (new_cmp > 0)
-				__atomic_fetch_add(&shm->stats.blob_ab_havoc_hit_cmp,
+				__atomic_fetch_add(&shm->stats.blob_ab.havoc_hit_cmp,
 						   1UL, __ATOMIC_RELAXED);
-			__atomic_fetch_add(&shm->stats.blob_ab_havoc_sum_cmp,
+			__atomic_fetch_add(&shm->stats.blob_ab.havoc_sum_cmp,
 					   new_cmp, __ATOMIC_RELAXED);
 		} else if (child->blob_ab_mode_last == BLOB_AB_MODE_CMPDICT) {
-			__atomic_fetch_add(&shm->stats.blob_ab_cmpdict_fills,
+			__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_fills,
 					   1UL, __ATOMIC_RELAXED);
 			if (new_edges > 0)
-				__atomic_fetch_add(&shm->stats.blob_ab_cmpdict_new_edges,
+				__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_new_edges,
 						   (unsigned long) new_edges,
 						   __ATOMIC_RELAXED);
 			if (new_cmp > 0)
-				__atomic_fetch_add(&shm->stats.blob_ab_cmpdict_hit_cmp,
+				__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_hit_cmp,
 						   1UL, __ATOMIC_RELAXED);
-			__atomic_fetch_add(&shm->stats.blob_ab_cmpdict_sum_cmp,
+			__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_sum_cmp,
 					   new_cmp, __ATOMIC_RELAXED);
 		}
 	}
