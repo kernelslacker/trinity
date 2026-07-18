@@ -46,3 +46,8 @@ void json_emit_pidfd_fs_and_container_section(void);
 void json_emit_tcp_ipv6_and_tunnels_section(void);
 void json_emit_bridge_pci_unix_and_iouring_section(void);
 void json_emit_iouring_iscsi_and_net_tail_section(void);
+
+/* stats/json/tail.c */
+void dump_stats_json_iouring_zc_and_kvm(void);
+void dump_stats_json_rxrpc_alg_ublk_block(void);
+void dump_stats_json_probes_misuse_and_tail(void);
