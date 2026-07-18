@@ -48,6 +48,7 @@
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/handshake_req_abort.h"
 #include "stats/subsys/hfs_mount_fuzz.h"
+#include "stats/subsys/igmp_mld_source_churn.h"
 #include "stats/subsys/inplace_crypto.h"
 #include "stats/subsys/iouring.h"
 #include "stats/subsys/iouring_eventfd.h"
@@ -1906,15 +1907,8 @@ struct stats_s {
 	/* vlan_filter_churn accounting.  See stats/subsys/vlan_filter_churn.h. */
 	struct vlan_filter_churn_stats vlan_filter_churn __attribute__((aligned(64)));
 
-	/* igmp_mld_source_churn childop counters */
-	unsigned long igmp_mld_source_churn_runs;		/* total igmp_mld_source_churn invocations */
-	unsigned long igmp_mld_source_churn_setup_failed;	/* socket / bind / probe latched */
-	unsigned long igmp_mld_source_churn_join_ok;		/* MCAST_JOIN_SOURCE_GROUP accepted */
-	unsigned long igmp_mld_source_churn_leave_ok;		/* MCAST_LEAVE_SOURCE_GROUP accepted mid-stream */
-	unsigned long igmp_mld_source_churn_block_ok;		/* MCAST_BLOCK_SOURCE accepted (INCLUDE->EXCLUDE flip) */
-	unsigned long igmp_mld_source_churn_msfilter_ok;	/* MCAST_MSFILTER bulk replace accepted */
-	unsigned long igmp_mld_source_churn_drop_ok;		/* IP_DROP_MEMBERSHIP / IPV6_DROP_MEMBERSHIP accepted */
-	unsigned long igmp_mld_source_churn_send_ok;		/* sender datagram returned >0 */
+	/* igmp_mld_source_churn accounting.  See stats/subsys/igmp_mld_source_churn.h. */
+	struct igmp_mld_source_churn_stats igmp_mld_source_churn __attribute__((aligned(64)));
 
 	/* psp_key_rotate childop counters */
 	unsigned long psp_key_rotate_runs;			/* total psp_key_rotate invocations */

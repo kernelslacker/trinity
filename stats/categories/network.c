@@ -242,22 +242,6 @@ const struct stat_category tipc_link_churn_category =
 	              tipc_link_churn_runs,
 	              tipc_link_churn_fields);
 
-static const struct stat_field igmp_mld_source_churn_fields[] = {
-	STAT_FIELD(igmp_mld_source_churn, runs),
-	STAT_FIELD(igmp_mld_source_churn, setup_failed),
-	STAT_FIELD(igmp_mld_source_churn, join_ok),
-	STAT_FIELD(igmp_mld_source_churn, leave_ok),
-	STAT_FIELD(igmp_mld_source_churn, block_ok),
-	STAT_FIELD(igmp_mld_source_churn, msfilter_ok),
-	STAT_FIELD(igmp_mld_source_churn, drop_ok),
-	STAT_FIELD(igmp_mld_source_churn, send_ok),
-};
-
-const struct stat_category igmp_mld_source_churn_category =
-	STAT_CATEGORY("igmp_mld_source_churn",
-	              igmp_mld_source_churn_runs,
-	              igmp_mld_source_churn_fields);
-
 static const struct stat_field pkt_builder_fields[] = {
 	STAT_FIELD(pkt_builder, runs),
 	STAT_FIELD(pkt_builder, setup_failed),
