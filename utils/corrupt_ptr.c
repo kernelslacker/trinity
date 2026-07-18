@@ -358,7 +358,7 @@ void log_self_corrupt_culprit(const char *site, unsigned long wild,
  * about real corruption; if a residual "post_generic" bucket remains
  * non-trivial, that's the next call-site sweep target.
  */
-_Static_assert(sizeof(((struct stats_s *)0)->corrupt_ptr_site_count) ==
+_Static_assert(sizeof(((struct stats_s *)0)->corrupt_ptr.site_count) ==
 	       sizeof(unsigned long) * CORRUPT_PTR_SITE__COUNT,
 	       "corrupt_ptr_site_count array size out of sync with enum");
 
@@ -396,7 +396,7 @@ void corrupt_ptr_site_record(enum corrupt_ptr_site site)
 		return;
 	if ((unsigned int) site >= CORRUPT_PTR_SITE__COUNT)
 		return;
-	__atomic_add_fetch(&shm->stats.corrupt_ptr_site_count[site], 1,
+	__atomic_add_fetch(&shm->stats.corrupt_ptr.site_count[site], 1,
 			   __ATOMIC_RELAXED);
 }
 
@@ -612,7 +612,7 @@ bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
 	 * sample volume.  RELAXED ordering: the sample is opportunistic;
 	 * losing one to a torn read between siblings does not matter.
 	 */
-	n = __atomic_add_fetch(&shm->stats.corrupt_ptr_sample_seq, 1,
+	n = __atomic_add_fetch(&shm->stats.corrupt_ptr.sample_seq, 1,
 			       __ATOMIC_RELAXED);
 	if ((n % CORRUPT_PTR_SAMPLE_INTERVAL) == 1) {
 		const char *name;

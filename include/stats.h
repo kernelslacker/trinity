@@ -33,6 +33,7 @@
 #include "stats/subsys/bridge_vlan_churn.h"
 #include "stats/subsys/close_racer.h"
 #include "stats/subsys/cold_overflow.h"
+#include "stats/subsys/corrupt_ptr.h"
 #include "stats/subsys/cpu_hotplug.h"
 #include "stats/subsys/cred_transition.h"
 #include "stats/subsys/deep_path.h"
@@ -432,15 +433,8 @@ struct stats_s {
 	/* uid-change accounting.  See stats/subsys/uid_change.h. */
 	struct uid_change_stats uid_change __attribute__((aligned(64)));
 
-	/* Monotonic counter feeding the value-sampling rate-limiter inside
-	 * looks_like_corrupted_ptr.  Distinct from post_handler_corrupt_ptr
-	 * (which is also bumped from the rec==NULL path through
-	 * post_handler_corrupt_ptr_bump and so cannot be used as the sample
-	 * cadence source -- a sample log line printed from the bump helper
-	 * has no value to print).  RELAXED bumps; the sample cadence does
-	 * not need to be exactly every Nth rejection across a contended
-	 * fleet, only roughly so. */
-	unsigned long corrupt_ptr_sample_seq;
+	/* corrupt-pointer instrumentation.  See stats/subsys/corrupt_ptr.h. */
+	struct corrupt_ptr_stats corrupt_ptr __attribute__((aligned(64)));
 
 	/* snapshot_non_heap_reject / ring_eviction_corrupt /
 	 * deferred_free_corrupt_ptr live in struct stats_aggregate
@@ -4404,20 +4398,6 @@ struct stats_s {
 	unsigned long pipe_waker_bytes_written;			/* successful 1-byte write() to a writer-end pipe fd */
 	unsigned long pipe_waker_no_target;			/* fired but the pool walk returned no writer-end fd */
 	unsigned long pipe_waker_write_failed;			/* write() returned <0 (EAGAIN on full pipe, EBADF on closed fd, etc.) */
-
-	/* Per-call-site attribution buckets for the post_handler_corrupt_ptr
-	 * headline counter.  Inert by default; the producer side (the
-	 * post_handler_corrupt_ptr_bump_at / corrupt_ptr_site_record path
-	 * in utils.c) only writes when TRINITY_CORRUPT_ATTRIB=1 is in the
-	 * env, and the dump path renders the breakdown under the same gate.
-	 * Indexed by enum corrupt_ptr_site (include/utils.h); kept here as a
-	 * bare unsigned long array rather than declared in terms of the
-	 * enum to avoid pulling utils.h into the stats header.  The slot
-	 * count tracks CORRUPT_PTR_SITE__COUNT -- bumped in lockstep with
-	 * the enum.  Multi-producer (any child can fire from any named
-	 * site) so the writers use __atomic_add_fetch RELAXED; this lives
-	 * in shm->stats rather than parent_stats for that reason. */
-	unsigned long corrupt_ptr_site_count[10];	/* CORRUPT_PTR_SITE__COUNT */
 
 	/* Per-pool-type sub-attributions of [[maps_reject_alloc_track_miss]].
 	 * The aggregate above is bumped per false-reject regardless of which
