@@ -47,6 +47,7 @@
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/recipe.h"
 #include "stats/subsys/refcount_audit.h"
+#include "stats/subsys/rtnl_vf_broadcast.h"
 #include "stats/subsys/sched_cycler.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
@@ -1337,11 +1338,8 @@ struct stats_s {
 	unsigned long ipfrag_send_failed;		/* sendto returned <=0 (queue full / EPERM / etc.) */
 	unsigned long ipfrag_unique_srcs;		/* fragment pairs emitted with a fresh source IP */
 
-	/* rtnl_vf_broadcast_getlink childop counters */
-	unsigned long rtnl_vf_broadcast_runs;		/* total rtnl_vf_broadcast_getlink invocations */
-	unsigned long rtnl_vf_broadcast_setup_ok;	/* netdevsim+sriov_numvfs+rtnl setup completed */
-	unsigned long rtnl_vf_broadcast_setup_failed;	/* netdevsim absent / unshare / sriov write failed */
-	unsigned long rtnl_vf_broadcast_getlink_ok;	/* RTM_GETLINK with RTEXT_FILTER_VF drained a response */
+	/* rtnl_vf_broadcast_getlink accounting.  See stats/subsys/rtnl_vf_broadcast.h. */
+	struct rtnl_vf_broadcast_stats rtnl_vf_broadcast __attribute__((aligned(64)));
 
 	/* obscure_af_churn childop counters.  Per-pattern arrays are
 	 * indexed by enum abuse_pattern (childops/net/obscure-af-churn.c);
