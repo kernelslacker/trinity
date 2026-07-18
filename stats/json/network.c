@@ -10,8 +10,8 @@
  * bridge + PCI + unix + iouring, and iouring + iSCSI + net
  * tail).  Descriptor tables that already carry extern
  * declarations in include/stats-internal.h retain their
- * external linkage; the tables that were file-static in the
- * pre-split json_dump.c stay static here.
+ * external linkage; tables used only by this file stay
+ * file-static.
  */
 
 #include <stddef.h>
