@@ -125,7 +125,7 @@ bool uffd_churn(struct childdata *child)
 	unsigned int cycles;
 	unsigned int i;
 
-	__atomic_add_fetch(&shm->stats.uffd_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.uffd.runs, 1, __ATOMIC_RELAXED);
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -170,7 +170,7 @@ bool uffd_churn(struct childdata *child)
 						__ATOMIC_RELAXED);
 				return true;
 			}
-			__atomic_add_fetch(&shm->stats.uffd_failed,
+			__atomic_add_fetch(&shm->stats.uffd.failed,
 					   1, __ATOMIC_RELAXED);
 			continue;
 		}
@@ -179,7 +179,7 @@ bool uffd_churn(struct childdata *child)
 		api.api = UFFD_API;
 		api.features = 0;
 		if (ioctl(fd, UFFDIO_API, &api) < 0) {
-			__atomic_add_fetch(&shm->stats.uffd_failed,
+			__atomic_add_fetch(&shm->stats.uffd.failed,
 					   1, __ATOMIC_RELAXED);
 			close(fd);
 			continue;
@@ -191,7 +191,7 @@ bool uffd_churn(struct childdata *child)
 		region = mmap(NULL, len, PROT_READ | PROT_WRITE,
 			      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (region == MAP_FAILED) {
-			__atomic_add_fetch(&shm->stats.uffd_failed,
+			__atomic_add_fetch(&shm->stats.uffd.failed,
 					   1, __ATOMIC_RELAXED);
 			close(fd);
 			continue;
@@ -213,16 +213,16 @@ bool uffd_churn(struct childdata *child)
 				1, __ATOMIC_RELAXED);
 
 		if (ioctl(fd, UFFDIO_REGISTER, &reg) == 0) {
-			__atomic_add_fetch(&shm->stats.uffd_registers,
+			__atomic_add_fetch(&shm->stats.uffd.registers,
 					   1, __ATOMIC_RELAXED);
 
 			range.start = (uintptr_t)region;
 			range.len = len;
 			if (ioctl(fd, UFFDIO_UNREGISTER, &range) == 0) {
-				__atomic_add_fetch(&shm->stats.uffd_unregisters,
+				__atomic_add_fetch(&shm->stats.uffd.unregisters,
 						   1, __ATOMIC_RELAXED);
 			} else {
-				__atomic_add_fetch(&shm->stats.uffd_failed,
+				__atomic_add_fetch(&shm->stats.uffd.failed,
 						   1, __ATOMIC_RELAXED);
 				/* Region still registered; munmap below
 				 * will tear down the mapping and the
@@ -230,7 +230,7 @@ bool uffd_churn(struct childdata *child)
 				 * a side effect. */
 			}
 		} else {
-			__atomic_add_fetch(&shm->stats.uffd_failed,
+			__atomic_add_fetch(&shm->stats.uffd.failed,
 					   1, __ATOMIC_RELAXED);
 			/* EINVAL: mode bits we picked aren't supported on
 			 * this kernel/mm combo (e.g. WP without
