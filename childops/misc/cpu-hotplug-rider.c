@@ -300,7 +300,7 @@ bool cpu_hotplug_rider(struct childdata *child)
 		return false;
 	}
 
-	__atomic_add_fetch(&shm->stats.cpu_hotplug_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.cpu_hotplug.runs, 1, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
@@ -388,22 +388,22 @@ bool cpu_hotplug_rider(struct childdata *child)
 	(void) sched_setaffinity(0, sizeof(set), &set);
 
 	if (affinity_calls)
-		__atomic_add_fetch(&shm->stats.cpu_hotplug_affinity_calls,
+		__atomic_add_fetch(&shm->stats.cpu_hotplug.affinity_calls,
 				   affinity_calls, __ATOMIC_RELAXED);
 	if (sysfs_writes)
-		__atomic_add_fetch(&shm->stats.cpu_hotplug_sysfs_writes,
+		__atomic_add_fetch(&shm->stats.cpu_hotplug.sysfs_writes,
 				   sysfs_writes, __ATOMIC_RELAXED);
 	if (open_eperm)
-		__atomic_add_fetch(&shm->stats.cpu_hotplug_open_eperm,
+		__atomic_add_fetch(&shm->stats.cpu_hotplug.open_eperm,
 				   open_eperm, __ATOMIC_RELAXED);
 	if (write_eperm)
-		__atomic_add_fetch(&shm->stats.cpu_hotplug_write_eperm,
+		__atomic_add_fetch(&shm->stats.cpu_hotplug.write_eperm,
 				   write_eperm, __ATOMIC_RELAXED);
 	if (write_ok)
-		__atomic_add_fetch(&shm->stats.cpu_hotplug_write_ok,
+		__atomic_add_fetch(&shm->stats.cpu_hotplug.write_ok,
 				   write_ok, __ATOMIC_RELAXED);
 	if (real_offlines)
-		__atomic_add_fetch(&shm->stats.cpu_hotplug_actual_offlines,
+		__atomic_add_fetch(&shm->stats.cpu_hotplug.actual_offlines,
 				   real_offlines, __ATOMIC_RELAXED);
 
 	return true;

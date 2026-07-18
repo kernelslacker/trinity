@@ -32,21 +32,6 @@ const struct stat_category userns_bootstrap_category =
 	              userns_bootstrap_runs,
 	              userns_bootstrap_fields);
 
-static const struct stat_field cpu_hotplug_rider_fields[] = {
-	STAT_FIELD(cpu_hotplug, runs),
-	STAT_FIELD(cpu_hotplug, affinity_calls),
-	STAT_FIELD(cpu_hotplug, sysfs_writes),
-	STAT_FIELD(cpu_hotplug, open_eperm),
-	STAT_FIELD(cpu_hotplug, write_eperm),
-	STAT_FIELD(cpu_hotplug, write_ok),
-	STAT_FIELD(cpu_hotplug, actual_offlines),
-};
-
-const struct stat_category cpu_hotplug_rider_category =
-	STAT_CATEGORY("cpu_hotplug_rider",
-	              cpu_hotplug_runs,
-	              cpu_hotplug_rider_fields);
-
 static const struct stat_field pidfd_storm_fields[] = {
 	STAT_FIELD(pidfd_storm, runs),
 	STAT_FIELD(pidfd_storm, signals),
