@@ -153,18 +153,6 @@ const struct stat_category iouring_send_zc_churn_category =
 	              iouring_send_zc_churn_runs,
 	              iouring_send_zc_churn_fields);
 
-static const struct stat_field refcount_audit_fields[] = {
-	STAT_FIELD(refcount_audit, runs),
-	STAT_FIELD(refcount_audit, fd_anomalies),
-	STAT_FIELD(refcount_audit, mmap_anomalies),
-	STAT_FIELD(refcount_audit, sock_anomalies),
-};
-
-const struct stat_category refcount_audit_category =
-	STAT_CATEGORY("refcount_audit",
-	              refcount_audit_runs,
-	              refcount_audit_fields);
-
 /*
  * Descriptors for dump_stats_json_lifecycle_and_storms().  The JSON walker
  * ignores gate_offset (it emits every category unconditionally) so the gate
