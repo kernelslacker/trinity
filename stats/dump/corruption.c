@@ -54,7 +54,7 @@ static void dump_stats_render_corrupt_ptr_attrib(void)
 		unsigned long v;
 		char metric[64];
 
-		v = __atomic_load_n(&shm->stats.corrupt_ptr_site_count[i],
+		v = __atomic_load_n(&shm->stats.corrupt_ptr.site_count[i],
 				    __ATOMIC_RELAXED);
 		named_sum += v;
 		snprintf(metric, sizeof(metric),
