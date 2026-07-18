@@ -165,18 +165,6 @@ const struct stat_category iouring_send_zc_churn_category =
 	              iouring_send_zc_churn_runs,
 	              iouring_send_zc_churn_fields);
 
-static const struct stat_field close_racer_fields[] = {
-	STAT_FIELD(close_racer, runs),
-	STAT_FIELD(close_racer, pairs),
-	STAT_FIELD(close_racer, failed),
-	STAT_FIELD(close_racer, thread_spawn_fail),
-};
-
-const struct stat_category close_racer_category =
-	STAT_CATEGORY("close_racer",
-	              close_racer_runs,
-	              close_racer_fields);
-
 static const struct stat_field refcount_audit_fields[] = {
 	STAT_FIELD(refcount_audit, runs),
 	STAT_FIELD(refcount_audit, fd_anomalies),
