@@ -22,6 +22,7 @@
 #include "stats/subsys/aio.h"
 #include "stats/subsys/barrier_racer.h"
 #include "stats/subsys/blob.h"
+#include "stats/subsys/bridge_ct.h"
 #include "stats/subsys/cold_overflow.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/errno_gradient.h"
@@ -1476,10 +1477,8 @@ struct stats_s {
 	unsigned long bridge_vlan_mass_max_n;		/* largest IFLA_BRIDGE_VLAN_INFO entry count attempted in one msg */
 	unsigned long bridge_vlan_mass_enotbufs;	/* sendmsg -ENOBUFS / -EMSGSIZE on the oversize bulk message */
 
-	/* bridge_conntrack_churn childop counters */
-	unsigned long bridge_ct_runs;			/* total bridge_conntrack_churn invocations */
-	unsigned long bridge_ct_flushes;		/* IPCTNL_MSG_CT_FLUSH messages emitted */
-	unsigned long bridge_ct_pkts_sent;		/* UDP packets pushed via veth peer end */
+	/* bridge_conntrack_churn accounting.  See stats/subsys/bridge_ct.h. */
+	struct bridge_ct_stats bridge_ct __attribute__((aligned(64)));
 
 	/* bridge_ip6frag_refrag childop counters */
 	unsigned long bridge_ip6frag_runs;		/* total bridge_ip6frag_refrag invocations */
