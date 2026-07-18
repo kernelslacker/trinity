@@ -145,7 +145,7 @@ static void wgdf_latch_unsupported(struct childdata *child,
 	if (ns_unsupported_wireguard_decrypt_flood)
 		return;
 	ns_unsupported_wireguard_decrypt_flood = true;
-	__atomic_add_fetch(&shm->stats.wgdf_unsupported_latched, 1,
+	__atomic_add_fetch(&shm->stats.wgdf.unsupported_latched, 1,
 			   __ATOMIC_RELAXED);
 	/* child->op_type lives in shared memory and can be scribbled by a
 	 * poisoned-arena write from a sibling; bounds-check the snapshot
@@ -486,7 +486,7 @@ static int wireguard_decrypt_flood_in_ns(void *arg)
 
 	if (!g_wgdf_setup_done) {
 		if (!wgdf_setup(child)) {
-			__atomic_add_fetch(&shm->stats.wgdf_setup_failed, 1,
+			__atomic_add_fetch(&shm->stats.wgdf.setup_failed, 1,
 					   __ATOMIC_RELAXED);
 			return 0;
 		}
@@ -531,7 +531,7 @@ static int wireguard_decrypt_flood_in_ns(void *arg)
 
 		if (sendto(g_wgdf_udp_fd, pkt, len, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst)) > 0)
-			__atomic_add_fetch(&shm->stats.wgdf_packets_sent, 1,
+			__atomic_add_fetch(&shm->stats.wgdf.packets_sent, 1,
 					   __ATOMIC_RELAXED);
 		(void)nanosleep(&gap, NULL);
 	}
@@ -543,7 +543,7 @@ bool wireguard_decrypt_flood(struct childdata *child)
 	struct wgdf_iter_ctx ictx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.wgdf_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.wgdf.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_wireguard_decrypt_flood)
 		return true;
@@ -559,7 +559,7 @@ bool wireguard_decrypt_flood(struct childdata *child)
 		 * secondary unshare).  Skip this iteration without
 		 * latching -- the failure is not policy and may not
 		 * recur. */
-		__atomic_add_fetch(&shm->stats.wgdf_setup_failed, 1,
+		__atomic_add_fetch(&shm->stats.wgdf.setup_failed, 1,
 				   __ATOMIC_RELAXED);
 		return true;
 	}
@@ -572,8 +572,8 @@ bool wireguard_decrypt_flood(struct childdata *child)
 bool wireguard_decrypt_flood(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.wgdf_runs, 1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.wgdf_unsupported_latched, 1,
+	__atomic_add_fetch(&shm->stats.wgdf.runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.wgdf.unsupported_latched, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }

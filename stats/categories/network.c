@@ -612,18 +612,6 @@ const struct stat_category splice_protocols_category =
 	              splice_protocols_runs,
 	              splice_protocols_fields);
 
-static const struct stat_field wireguard_decrypt_flood_fields[] = {
-	STAT_FIELD(wgdf, runs),
-	STAT_FIELD(wgdf, setup_failed),
-	STAT_FIELD(wgdf, packets_sent),
-	STAT_FIELD(wgdf, unsupported_latched),
-};
-
-const struct stat_category wireguard_decrypt_flood_category =
-	STAT_CATEGORY("wireguard_decrypt_flood",
-	              wgdf_runs,
-	              wireguard_decrypt_flood_fields);
-
 static const struct stat_field pci_bind_fields[] = {
 	STAT_FIELD(pci_bind, runs),
 	STAT_FIELD(pci_bind, drivers_available),
