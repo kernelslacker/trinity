@@ -21,6 +21,7 @@
 #include "kernel/mount.h"
 #include "stats/subsys/af_alg_weak_cipher_probe.h"
 #include "stats/subsys/af_unix_peek_race.h"
+#include "stats/subsys/af_unix_scm_rights_gc.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/barrier_racer.h"
 #include "stats/subsys/blkdev_lifecycle.h"
@@ -1755,19 +1756,8 @@ struct stats_s {
 	unsigned long ipset_churn_flush_ok;		/* IPSET_CMD_FLUSH ack 0 (bulk erase ran) */
 	unsigned long ipset_churn_destroy_ok;		/* IPSET_CMD_DESTROY ack 0 or ENOENT (teardown reached kernel) */
 
-	/* af_unix_scm_rights_gc_churn childop counters */
-	unsigned long af_unix_scm_rights_gc_runs;		/* total af_unix_scm_rights_gc_churn invocations */
-	unsigned long af_unix_scm_rights_gc_setup_failed;	/* AF_UNIX socketpair() failed (probe latch) */
-	unsigned long af_unix_scm_rights_gc_cycle_built_ok;	/* full 3-pair SCM_RIGHTS cycle constructed end-to-end */
-	unsigned long af_unix_scm_rights_gc_close_ok;		/* userspace dropped its refs to cycle members (gc fodder) */
-	unsigned long af_unix_scm_rights_gc_trigger_ok;		/* gc-trigger sendmsg / drain landed (unix_inflight or workqueue) */
-	unsigned long af_unix_scm_rights_gc_recv_ok;		/* recvmsg drained queued SCM_RIGHTS msg (race vs unix_gc walk) */
-	unsigned long af_unix_scm_rights_gc_peek_ok;		/* recvmsg(MSG_PEEK) walked unix_peek_fpl on queued SCM_RIGHTS */
-	unsigned long af_unix_scm_rights_gc_iouring_variant_ok;	/* io_uring fd inserted into the unix-scm reference graph */
-	unsigned long af_unix_scm_rights_gc_sibling_spawn_ok;	/* clone(CLONE_FILES|SIGCHLD) sibling race-producer spawned */
-	unsigned long af_unix_scm_rights_gc_sibling_spawn_failed;/* clone()/clone3() failed; fell back to single-task race burst */
-	unsigned long af_unix_scm_rights_gc_sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
-	unsigned long af_unix_scm_rights_gc_sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
+	/* af_unix_scm_rights_gc accounting.  See stats/subsys/af_unix_scm_rights_gc.h. */
+	struct af_unix_scm_rights_gc_stats af_unix_scm_rights_gc __attribute__((aligned(64)));
 
 	/* af_unix_peek_race accounting.  See stats/subsys/af_unix_peek_race.h. */
 	struct af_unix_peek_race_stats af_unix_peek_race __attribute__((aligned(64)));

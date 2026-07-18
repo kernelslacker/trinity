@@ -547,10 +547,10 @@ static void reap_race_sibling(pid_t sibling)
 		return;
 
 	if (WIFEXITED(status)) {
-		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_sibling_reaped_ok,
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.sibling_reaped_ok,
 				   1, __ATOMIC_RELAXED);
 	} else if (WIFSIGNALED(status)) {
-		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_sibling_crashed,
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.sibling_crashed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -578,11 +578,11 @@ static void run_race_burst_solo(int sv2_recv, int sv4_recv, unsigned int races)
 	for (r = 0; r < races; r++) {
 		if (sv2_recv >= 0) {
 			if (recv_peek_scm(sv2_recv) == 0) {
-				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_peek_ok,
+				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.peek_ok,
 						   1, __ATOMIC_RELAXED);
 			}
 			if (recv_drain_scm(sv2_recv) == 0) {
-				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_recv_ok,
+				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.recv_ok,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
@@ -625,7 +625,7 @@ static void run_race_burst_parent_half(int sv2_recv, int sv4_recv,
 	for (r = 0; r < races; r++) {
 		if (sv2_recv >= 0) {
 			if (recv_drain_scm(sv2_recv) == 0) {
-				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_recv_ok,
+				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.recv_ok,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
@@ -712,10 +712,10 @@ static void af_unix_scm_rights_gc_build_cycle(struct af_unix_scm_rights_gc_iter_
 	s3 = send_scm_fd(it->sv1[1], it->sv3[0]);
 	if (s1 >= 0 && s2 >= 0 && s3 >= 0) {
 		it->cycle_ok = true;
-		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_cycle_built_ok,
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.cycle_built_ok,
 				   1, __ATOMIC_RELAXED);
 		if (it->use_iouring) {
-			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_iouring_variant_ok,
+			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.iouring_variant_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -740,7 +740,7 @@ static void af_unix_scm_rights_gc_drop_refs(struct af_unix_scm_rights_gc_iter_ct
 		(void)close(it->iouring_fd);
 		it->iouring_fd = -1;
 	}
-	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_close_ok,
+	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.close_ok,
 			   1, __ATOMIC_RELAXED);
 }
 
@@ -762,14 +762,14 @@ static void af_unix_scm_rights_gc_trigger_gc(struct af_unix_scm_rights_gc_iter_c
 			ssize_t s = send_scm_fd(it->sv4[1], extra_fd);
 
 			if (s >= 0) {
-				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_trigger_ok,
+				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.trigger_ok,
 						   1, __ATOMIC_RELAXED);
 			}
 			(void)close(extra_fd);
 		}
 	} else {
 		(void)usleep(0);
-		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_trigger_ok,
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.trigger_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -811,11 +811,11 @@ static void af_unix_scm_rights_gc_race_burst(struct af_unix_scm_rights_gc_iter_c
 	}
 
 	if (sibling < 0) {
-		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_sibling_spawn_failed,
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.sibling_spawn_failed,
 				   1, __ATOMIC_RELAXED);
 		run_race_burst_solo(it->sv2[1], it->sv4[1], races);
 	} else {
-		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_sibling_spawn_ok,
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.sibling_spawn_ok,
 				   1, __ATOMIC_RELAXED);
 		__atomic_store_n(&rs->go, 1U, __ATOMIC_RELEASE);
 		(void)raw_futex_wake(&rs->go, 1);
@@ -905,11 +905,11 @@ bool af_unix_scm_rights_gc_churn(struct childdata *child)
 {
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_runs,
+	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_af_unix_scm_rights_gc) {
-		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_setup_failed,
+		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -928,7 +928,7 @@ bool af_unix_scm_rights_gc_churn(struct childdata *child)
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
-			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_setup_failed,
+			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -952,9 +952,9 @@ bool af_unix_scm_rights_gc_churn(struct childdata *child)
 bool af_unix_scm_rights_gc_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_runs,
+	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_setup_failed,
+	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
