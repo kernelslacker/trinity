@@ -33,6 +33,7 @@
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/inplace_crypto.h"
+#include "stats/subsys/ip6gre_lapb.h"
 #include "stats/subsys/keyring_spam.h"
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/mount_churn.h"
@@ -2096,10 +2097,8 @@ struct stats_s {
 	unsigned long veth_asym_xdp_attach_ok;			/* RTM_NEWLINK + IFLA_XDP attached the prog (SKB mode) */
 	unsigned long veth_asym_send_ok;
 
-	/* ip6gre_bond_lapb_stack childop counters */
-	unsigned long ip6gre_lapb_runs;				/* total ip6gre_bond_lapb_stack invocations */
-	unsigned long ip6gre_lapb_setup_failed;			/* unshare/NEWLINK/SETLINK/lapb-resolve rejected */
-	unsigned long ip6gre_lapb_flag_toggles;			/* RTM_SETLINK IFF_UP/IFF_DOWN messages issued on the lapb dev */
+	/* ip6gre_bond_lapb_stack accounting.  See stats/subsys/ip6gre_lapb.h. */
+	struct ip6gre_lapb_stats ip6gre_lapb __attribute__((aligned(64)));
 
 	/* wireguard_decrypt_flood childop counters */
 	unsigned long wgdf_runs;				/* total wireguard_decrypt_flood invocations */
