@@ -235,9 +235,9 @@ static int ipvs_sysctl_writer_in_ns(void *arg)
 					  O_WRONLY | O_NONBLOCK | O_CLOEXEC);
 
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -316,7 +316,7 @@ bool ipvs_sysctl_writer(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported_ipvs_sysctl = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		warn_once_unsupported_ipvs_sysctl(EPERM);

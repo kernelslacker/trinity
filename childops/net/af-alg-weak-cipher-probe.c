@@ -211,7 +211,7 @@ static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		if (errno == EAFNOSUPPORT) {
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			outputerr("af_alg_weak_cipher_probe: socket(AF_ALG) returned EAFNOSUPPORT, latching unsupported_af_alg_top_level\n");
@@ -220,7 +220,7 @@ static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
 		return false;
 	}
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	memset(&sa, 0, sizeof(sa));
@@ -231,7 +231,7 @@ static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
 	__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.total_bind_attempts,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 retry:
@@ -317,7 +317,7 @@ bool af_alg_weak_cipher_probe(struct childdata *child)
 	{
 		const enum child_op_type op = child->op_type;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_OTHER, __ATOMIC_RELAXED);
 	}
 	return true;

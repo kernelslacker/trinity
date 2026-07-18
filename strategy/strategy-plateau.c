@@ -128,10 +128,10 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 
 	for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
 		snap->childop_edges_total += __atomic_load_n(
-			&shm->stats.childop_edges_discovered[op],
+			&shm->stats.childop.edges_discovered[op],
 			__ATOMIC_RELAXED);
 		snap->childop_calls_total += __atomic_load_n(
-			&shm->stats.childop_calls_with_edges[op],
+			&shm->stats.childop.calls_with_edges[op],
 			__ATOMIC_RELAXED);
 	}
 }

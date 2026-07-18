@@ -208,7 +208,7 @@ bool handshake_req_abort(struct childdata *child)
 		if (rc == -ENOENT) {
 			ns_unsupported_handshake = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -225,9 +225,9 @@ bool handshake_req_abort(struct childdata *child)
 		goto out;
 	}
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 

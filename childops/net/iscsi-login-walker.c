@@ -657,7 +657,7 @@ bool iscsi_login_walker(struct childdata *child)
 			if (errno == ECONNREFUSED) {
 				ns_unsupported = true;
 				if (valid_op)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.iscsi_walker.no_target,
@@ -671,9 +671,9 @@ bool iscsi_login_walker(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.iscsi_walker.connected, 1,
 				   __ATOMIC_RELAXED);
 		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		}
 

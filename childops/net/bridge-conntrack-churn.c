@@ -570,7 +570,7 @@ static int bridge_conntrack_iter_bridge_create(struct bridge_conntrack_iter_ctx 
 		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT) {
 			ns_unsupported_bridge = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -655,7 +655,7 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 		ns_unsupported_nf_tables = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 	}
@@ -733,7 +733,7 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 			    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 				ns_unsupported_ctnetlink = true;
 				if (valid_op)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 				break;
@@ -820,9 +820,9 @@ static int bridge_conntrack_churn_in_ns(void *arg)
 	if (bridge_conntrack_iter_nft_setup(&ctx) != 0)
 		goto out;
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 	bridge_conntrack_iter_traffic_burst(&ctx);
@@ -859,7 +859,7 @@ bool bridge_conntrack_churn(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		return true;

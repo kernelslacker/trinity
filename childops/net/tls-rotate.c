@@ -227,7 +227,7 @@ bool tls_rotate(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.tls_rotate.installs,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -242,7 +242,7 @@ bool tls_rotate(struct childdata *child)
 
 	/* Step 5: drive tls_sw_sendmsg through the just-installed TX. */
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	generate_rand_bytes(payload, sizeof(payload));
 	(void)send(cli, payload, 1 + rnd_modulo_u32(sizeof(payload)),

@@ -165,7 +165,7 @@ static enum iour_setup_status iouring_flood_iter_setup_ring(struct iour_ring *ct
 		{
 			const enum child_op_type op = child->op_type;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -404,7 +404,7 @@ bool iouring_flood(struct childdata *child)
 			continue;
 		}
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
 
 		n_subs = iouring_flood_iter_submit_burst(&ctx, dev_null_rd,
@@ -415,7 +415,7 @@ bool iouring_flood(struct childdata *child)
 		}
 
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		iouring_flood_iter_reap_cqes(&ctx, n_subs);
 

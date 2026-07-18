@@ -169,7 +169,7 @@ static void ring_drain(struct iour_ring *r)
  * (ublksrv_ctrl_cmd payload, io_cmd payload, SQE, qpath, ublk_lc_ctrl_dev_info)
  * stays local to its phase.  @child is the caller's struct childdata so
  * the setup helper can record the per-op latch reason in
- * shm->stats.childop_latch_reason[op_type] at the same site that latches
+ * shm->stats.childop.latch_reason[op_type] at the same site that latches
  * the static ns_unsupported_ublk bool. */
 struct ublk_lifecycle_iter_ctx {
 	struct iour_ring	ctrl_ring;
@@ -204,7 +204,7 @@ static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
 			 * as 825305aed33d. */
 			const enum child_op_type op = ctx->child->op_type;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			ns_unsupported_ublk = true;
@@ -409,9 +409,9 @@ bool ublk_lifecycle(struct childdata *child)
 		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		}
 	}

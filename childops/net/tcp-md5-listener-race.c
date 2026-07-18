@@ -167,7 +167,7 @@ bool tcp_md5_listener_race(struct childdata *child)
 		if (errno == EOPNOTSUPP || errno == EINVAL || errno == EPERM) {
 			ns_unsupported_tcp_md5 = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -179,13 +179,13 @@ bool tcp_md5_listener_race(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_ok, 1,
 			   __ATOMIC_RELAXED);
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	iters = BUDGETED(CHILD_OP_TCP_MD5_LISTENER_RACE,
 			 JITTER_RANGE(MD5_OUTER_BASE));
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++) {
 		/* Burst N zero-linger clients into the listener.  Each

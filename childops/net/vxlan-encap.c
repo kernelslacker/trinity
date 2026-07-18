@@ -495,7 +495,7 @@ static int vxlan_encap_iter_build_link(struct vxlan_encap_iter_ctx *ctx)
 			{
 				const enum child_op_type op = ctx->child->op_type;
 				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
@@ -663,9 +663,9 @@ static int vxlan_encap_in_ns(void *arg)
 	if (vxlan_encap_iter_open_ctx(&ctx) == 0 &&
 	    vxlan_encap_iter_build_link(&ctx) == 0) {
 		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		}
 		vxlan_encap_iter_send_burst(&ctx);
@@ -703,7 +703,7 @@ bool vxlan_encap_churn(struct childdata *child)
 		 * unguarded write that motivated this guard. */
 		const enum child_op_type op = child->op_type;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,

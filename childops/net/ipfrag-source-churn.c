@@ -302,7 +302,7 @@ static int ipfrag_source_churn_in_ns(void *arg)
 	}
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
@@ -311,7 +311,7 @@ static int ipfrag_source_churn_in_ns(void *arg)
 	}
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < cctx->outer_iters; i++) {
@@ -371,7 +371,7 @@ bool ipfrag_source_churn(struct childdata *child)
 	rc = userns_run_in_ns(CLONE_NEWNET, ipfrag_source_churn_in_ns, &cctx);
 	if (rc == -EPERM) {
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		warn_once_unsupported_ipfrag("userns_run_in_ns(CLONE_NEWNET)",

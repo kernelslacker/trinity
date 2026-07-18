@@ -581,9 +581,9 @@ bool iouring_recipes(struct childdata *child)
 	 * Bump setup_accepted before data_path so the invariant
 	 * data_path <= setup_accepted holds at every observation point. */
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 

@@ -585,14 +585,14 @@ static int iter_one_in_ns(void *arg)
 		return 0;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op_type],
 				   1, __ATOMIC_RELAXED);
 
 	if (v6pmtu_iter_spawn_workers(names, &a, &b) != 0)
 		return 0;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op_type],
 				   1, __ATOMIC_RELAXED);
 
 	v6pmtu_iter_reap_workers(a, b);
@@ -634,7 +634,7 @@ bool ipv6_pmtu_teardown_race(struct childdata *child)
 			{
 				const int op = child->op_type;
 				if (op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}

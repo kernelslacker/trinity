@@ -529,7 +529,7 @@ static int afxdp_iter_setup_umem(struct childdata *child,
 			{
 				const enum child_op_type op = child->op_type;
 				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
@@ -1066,14 +1066,14 @@ static void iter_one(struct childdata *child, unsigned int idx,
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (st.bound && valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 	}
 
 	afxdp_iter_attach_prog(&st, target_ifindex);
 
 	if (st.bound && valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 	afxdp_iter_tx_burst(&st, want_sg, want_tx_md);

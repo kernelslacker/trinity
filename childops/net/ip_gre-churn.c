@@ -434,7 +434,7 @@ static int ip_gre_iter_build_link(struct ip_gre_iter_ctx *ctx)
 			mark_kind_unsupported();
 			const enum child_op_type op = ctx->child->op_type;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -570,9 +570,9 @@ static int ip_gre_in_ns(void *arg)
 	if (ip_gre_iter_open_ctx(&ctx) == 0 &&
 	    ip_gre_iter_build_link(&ctx) == 0) {
 		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		}
 		ip_gre_iter_send_burst(&ctx);
@@ -609,7 +609,7 @@ bool ip_gre_churn(struct childdata *child)
 		ns_unsupported_ip_gre = true;
 		const enum child_op_type op = child->op_type;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.ip_gre_churn.setup_failed,

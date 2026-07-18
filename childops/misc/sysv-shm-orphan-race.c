@@ -528,7 +528,7 @@ static void iter_one(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_shmget_ok,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	attacher = spawn_sysv_shm_sibling(rs, sysv_shm_attacher_main);
@@ -544,7 +544,7 @@ static void iter_one(struct childdata *child)
 	(void)raw_futex_wake(&rs->go, 2);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	run_burst_parent_half(shmid, races);
 
@@ -617,7 +617,7 @@ bool sysv_shm_orphan_race(struct childdata *child)
 			{
 				const enum child_op_type op = child->op_type;
 				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
@@ -656,7 +656,7 @@ bool sysv_shm_orphan_race(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_runs,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op)
-		__atomic_store_n(&shm->stats.childop_latch_reason[op],
+		__atomic_store_n(&shm->stats.childop.latch_reason[op],
 				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_setup_failed,
 			   1, __ATOMIC_RELAXED);

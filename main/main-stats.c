@@ -342,7 +342,7 @@ static void print_stats_plateau_hypothesis(bool plateau)
 			strategy_plateau_hypothesis_fires(
 				PLATEAU_HYPOTHESIS_SINGLE_GROUP_DOMINANT),
 			__atomic_load_n(
-				&shm->stats.childop_burst_alt_picks_window,
+				&shm->stats.childop.burst_alt_picks_window,
 				__ATOMIC_RELAXED),
 			__atomic_load_n(
 				&minicorpus_shm->cmp_rising_replay_picks,

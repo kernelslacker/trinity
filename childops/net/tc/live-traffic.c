@@ -685,7 +685,7 @@ static int tc_live_in_ns(void *arg)
 	}
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	/* Random per-iter names so concurrent grandchildren (or our own
@@ -795,7 +795,7 @@ static int tc_live_in_ns(void *arg)
 			iters = TCLIVE_PACKET_CAP;
 
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 
 		/* Mid-burst REPLACE cadence: swap the filter chain at
@@ -895,7 +895,7 @@ bool tc_live_traffic(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_setup_failed = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.tc_live_traffic_setup_failed,

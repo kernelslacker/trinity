@@ -426,7 +426,7 @@ bool hfs_mount_fuzz(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_RESOURCE_EXHAUSTED,
 					 __ATOMIC_RELAXED);
 		return true;
@@ -440,7 +440,7 @@ bool hfs_mount_fuzz(struct childdata *child)
 	}
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	rc = userns_run_in_ns(CLONE_NEWNS, hfs_mount_in_ns, &ctx);
@@ -451,7 +451,7 @@ bool hfs_mount_fuzz(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.ns_unsupported,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		return true;
@@ -464,14 +464,14 @@ bool hfs_mount_fuzz(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.hfs_unsupported,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		return true;
 	}
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	return true;
 }

@@ -204,9 +204,9 @@ static void iter_one(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.netns_mountns_setup.unshare_ok,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -287,7 +287,7 @@ bool netns_mountns_setup_probe(struct childdata *child)
 		{
 			const enum child_op_type op = child->op_type;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}

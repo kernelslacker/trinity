@@ -145,13 +145,13 @@ bool mprotect_split(struct childdata *child)
 		return true;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	mode = (enum prot_mode)rnd_modulo_u32(NR_PROT_MODES);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	for (iter = 0; iter < PROT_MODE_ITERS; iter++) {

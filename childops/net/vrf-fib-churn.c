@@ -334,7 +334,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 	__atomic_add_fetch(&shm->stats.vrf_fib_churn_link_ok,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	ifindex = (int)if_nametoindex(vrf_name);
@@ -386,7 +386,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 					    (rand32() & 0x0fffffffu));
 		dst.sin_port = htons(53);
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		n = sendto(udp, "x", 1, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
@@ -451,7 +451,7 @@ bool vrf_fib_churn(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,

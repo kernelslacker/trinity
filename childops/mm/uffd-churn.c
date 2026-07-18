@@ -165,7 +165,7 @@ bool uffd_churn(struct childdata *child)
 				ns_unsupported = true;
 				if (valid_op)
 					__atomic_store_n(
-						&shm->stats.childop_latch_reason[op],
+						&shm->stats.childop.latch_reason[op],
 						CHILDOP_LATCH_NS_UNSUPPORTED,
 						__ATOMIC_RELAXED);
 				return true;
@@ -199,7 +199,7 @@ bool uffd_churn(struct childdata *child)
 
 		if (valid_op)
 			__atomic_add_fetch(
-				&shm->stats.childop_setup_accepted[op],
+				&shm->stats.childop.setup_accepted[op],
 				1, __ATOMIC_RELAXED);
 
 		memset(&reg, 0, sizeof(reg));
@@ -209,7 +209,7 @@ bool uffd_churn(struct childdata *child)
 
 		if (valid_op)
 			__atomic_add_fetch(
-				&shm->stats.childop_data_path[op],
+				&shm->stats.childop.data_path[op],
 				1, __ATOMIC_RELAXED);
 
 		if (ioctl(fd, UFFDIO_REGISTER, &reg) == 0) {

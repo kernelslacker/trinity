@@ -314,7 +314,7 @@ static int msg_zerocopy_iter_setup(int s, void **pages_out,
 			{
 				const enum child_op_type op = child->op_type;
 				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
@@ -481,9 +481,9 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 	sent_count = msg_zerocopy_iter_send(s, pages, t_outer);

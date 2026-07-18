@@ -483,7 +483,7 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 		if (rc == -EOPNOTSUPP || rc == -ENOPROTOOPT || rc == -ENOENT) {
 			ns_unsupported_xfrm_ah_esn = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -580,7 +580,7 @@ static void pfkey_flush_burst(struct childdata *child)
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			ns_unsupported_pfkey = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -792,7 +792,7 @@ static void xfrm_sk_policy_churn(struct childdata *child)
 			   errno == ENOPROTOOPT) {
 			ns_unsupported_sk_xfrm_policy = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			break;
@@ -1029,7 +1029,7 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
 			ns_unsupported_xfrm = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -1113,7 +1113,7 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 			 * tunnel AEAD installs keep working. */
 			ns_unsupported_iptfs = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			return -1;
@@ -1170,7 +1170,7 @@ static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			ns_unsupported_inet = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -1390,13 +1390,13 @@ static int xfrm_churn_in_ns(void *arg)
 		goto out;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	xfrm_churn_iter_setup_udp(ctx);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	xfrm_churn_iter_drive_burst(ctx);
 	xfrm_churn_iter_rekey(ctx);
@@ -1436,7 +1436,7 @@ bool xfrm_churn(struct childdata *child)
 	rc = userns_run_in_ns(CLONE_NEWNET, xfrm_churn_in_ns, &ctx);
 	if (rc == -EPERM) {
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		warn_once_unsupported_xfrm_churn("userns_run_in_ns(CLONE_NEWNET)",

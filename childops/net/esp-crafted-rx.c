@@ -804,7 +804,7 @@ static int esp_crafted_rx_iter_open_ctx(struct esp_crafted_rx_iter_ctx *ctx)
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
 			mark_kind_unsupported();
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -842,7 +842,7 @@ static int esp_crafted_rx_iter_install_sa(struct esp_crafted_rx_iter_ctx *ctx)
 		    rc == -ENOENT) {
 			mark_kind_unsupported();
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -1248,7 +1248,7 @@ static int esp_crafted_rx_in_ns(void *arg)
 		goto out;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	install_stacked_null_esp_sas(&ctx);
@@ -1256,7 +1256,7 @@ static int esp_crafted_rx_in_ns(void *arg)
 	esp_crafted_rx_iter_open_raw(&ctx);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	esp_crafted_rx_iter_send_burst(&ctx);
@@ -1298,7 +1298,7 @@ bool esp_crafted_rx(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported_esp_crafted_rx = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.esp_crafted_rx_setup_failed,

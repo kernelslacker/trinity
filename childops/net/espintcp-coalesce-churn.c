@@ -285,7 +285,7 @@ static int install_espintcp_ulp(int fd, struct childdata *child)
 
 		mark_kind_unsupported();
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 	}
@@ -422,11 +422,11 @@ static int espintcp_coalesce_in_ns(void *arg)
 		__atomic_add_fetch(&shm->stats.espintcp_coalesce.ulp_install_ok,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
 
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		send_burst(cli, &t_outer);
 
@@ -461,7 +461,7 @@ bool espintcp_coalesce_churn(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported_espintcp_coalesce = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.espintcp_coalesce.setup_failed,

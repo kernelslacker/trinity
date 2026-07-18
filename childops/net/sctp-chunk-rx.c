@@ -642,7 +642,7 @@ static int sctp_chunk_rx_iter_setup_listener(struct sctp_chunk_rx_iter_ctx *ctx)
 			mark_kind_unsupported();
 			const enum child_op_type op = ctx->child->op_type;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -777,14 +777,14 @@ static int sctp_chunk_rx_in_ns(void *arg)
 		goto out;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	if (sctp_chunk_rx_iter_setup_raw(&ctx) != 0)
 		goto out;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	__atomic_add_fetch(&shm->stats.sctp_chunk_rx_listener_ok,
@@ -824,7 +824,7 @@ bool sctp_chunk_rx(struct childdata *child)
 		ns_unsupported_sctp_chunk_rx = true;
 		const enum child_op_type op = child->op_type;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.sctp_chunk_rx_setup_failed,

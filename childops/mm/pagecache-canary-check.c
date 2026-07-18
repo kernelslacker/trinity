@@ -543,7 +543,7 @@ bool pagecache_canary_check(struct childdata *child)
 		return true;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	if (rnd_modulo_u32(100) < FADVISE_DONTNEED_PCT) {
@@ -563,7 +563,7 @@ bool pagecache_canary_check(struct childdata *child)
 	}
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	switch (mode) {

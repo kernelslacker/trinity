@@ -174,7 +174,7 @@ bool pkt_builder_probe(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.pkt_builder_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_INIT_FAILED,
 					 __ATOMIC_RELAXED);
 		return true;
@@ -188,9 +188,9 @@ bool pkt_builder_probe(struct childdata *child)
 
 	pktb_ctx_init(&ctx);
 	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 	if (clock_gettime(CLOCK_MONOTONIC, &t0) < 0) {
@@ -218,7 +218,7 @@ bool pkt_builder_probe(struct childdata *child)
 					  errno);
 			}
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			break;

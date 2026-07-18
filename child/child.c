@@ -568,7 +568,7 @@ void child_process(struct childdata *child, int childno)
 			if ((int)armed >= 0 && armed < NR_CHILD_OP_TYPES &&
 			    armed != CHILD_OP_SYSCALL)
 				__atomic_add_fetch(
-					&shm->stats.childop_timeout_observed[armed],
+					&shm->stats.childop.timeout_observed[armed],
 					1, __ATOMIC_RELAXED);
 			sigalrm_pending = 0;
 			alarm(0);
@@ -912,10 +912,10 @@ void child_process(struct childdata *child, int childno)
 					(unsigned int)(fd_probe_after - fd_probe_before);
 
 				__atomic_add_fetch(
-					&shm->stats.childop_fd_delta_positive_sum[op],
+					&shm->stats.childop.fd_delta_positive_sum[op],
 					delta, __ATOMIC_RELAXED);
 				__atomic_add_fetch(
-					&shm->stats.childop_fd_delta_positive_ops[op],
+					&shm->stats.childop.fd_delta_positive_ops[op],
 					1UL, __ATOMIC_RELAXED);
 			}
 		}
@@ -934,9 +934,9 @@ void child_process(struct childdata *child, int childno)
 			if (ns < 0)
 				ns = 0;
 			if (is_alt_op) {
-				__atomic_add_fetch(&shm->stats.childop_walltime_ns,
+				__atomic_add_fetch(&shm->stats.childop.walltime_ns,
 						   (unsigned long)ns, __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.childop_wall_ns[op],
+				__atomic_add_fetch(&shm->stats.childop.wall_ns[op],
 						   (unsigned long)ns, __ATOMIC_RELAXED);
 				/* SHADOW: feed the decaying-recency ring with
 				 * the same delta.  No reader on the picker path;
@@ -981,7 +981,7 @@ void child_process(struct childdata *child, int childno)
 			 * top instead. */
 			if (sigalrm_pending == 0)
 				__atomic_add_fetch(
-					&shm->stats.childop_timeout_missed[op],
+					&shm->stats.childop.timeout_missed[op],
 					1, __ATOMIC_RELAXED);
 			alarm(0);
 			stats_ring_enqueue(child->stats_ring,
@@ -1012,7 +1012,7 @@ void child_process(struct childdata *child, int childno)
 				unsigned long delta = (edges_after >= edges_before)
 					? (edges_after - edges_before) : 0;
 				__atomic_fetch_add(
-					&shm->stats.childop_edges_discovered[op],
+					&shm->stats.childop.edges_discovered[op],
 					delta, __ATOMIC_RELAXED);
 				/* Parallel call-count bump for any invocation
 				 * that surfaced at least one new edge.  Mirrors
@@ -1022,7 +1022,7 @@ void child_process(struct childdata *child, int childno)
 				 * call-count. */
 				if (delta > 0)
 					__atomic_fetch_add(
-						&shm->stats.childop_calls_with_edges[op],
+						&shm->stats.childop.calls_with_edges[op],
 						1, __ATOMIC_RELAXED);
 			}
 			/* dual / on modes only: publish the bracketed per-
@@ -1033,7 +1033,7 @@ void child_process(struct childdata *child, int childno)
 			 * build without KCOV. */
 			if (bracketed) {
 				__atomic_fetch_add(
-					&shm->stats.childop_edges_clean[op],
+					&shm->stats.childop.edges_clean[op],
 					edges_this_call, __ATOMIC_RELAXED);
 				/* SHADOW: feed the decaying-recency ring with
 				 * the bracketed clean-edge delta.  Sibling of
@@ -1051,7 +1051,7 @@ void child_process(struct childdata *child, int childno)
 		 * aggregates that path. */
 		if (is_alt_op) {
 			__atomic_fetch_add(
-				&shm->stats.childop_invocations[op],
+				&shm->stats.childop.invocations[op],
 				1UL, __ATOMIC_RELAXED);
 
 			/* Per-op "last successful dispatch" timestamp, sampled
@@ -1071,7 +1071,7 @@ void child_process(struct childdata *child, int childno)
 			 * (the create_shm() memset already zeroed the array). */
 			if (ret != FAIL && shm_published != NULL) {
 				__atomic_store_n(
-					&shm->stats.childop_last_success_ts[op],
+					&shm->stats.childop.last_success_ts[op],
 					__atomic_load_n(
 						&shm_published->fleet_op_count,
 						__ATOMIC_RELAXED),

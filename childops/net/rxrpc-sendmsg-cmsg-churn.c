@@ -324,7 +324,7 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 		    errno == ENOPROTOOPT) {
 			ns_rxrpc_unsupported = true;
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -359,7 +359,7 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	}
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	have_peer = RAND_BOOL();
@@ -379,7 +379,7 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 			   1, __ATOMIC_RELAXED);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	rc = send_one_cmsg(fd, &peer, have_peer, slot);

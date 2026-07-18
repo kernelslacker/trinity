@@ -155,7 +155,7 @@ static void wgdf_latch_unsupported(struct childdata *child,
 	{
 		const enum child_op_type op = child->op_type;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 reason, __ATOMIC_RELAXED);
 	}
 }
@@ -500,7 +500,7 @@ static int wireguard_decrypt_flood_in_ns(void *arg)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	memset(&dst, 0, sizeof(dst));
@@ -509,7 +509,7 @@ static int wireguard_decrypt_flood_in_ns(void *arg)
 	dst.sin_addr.s_addr = WGDF_LO_ADDR;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < WGDF_BURST_MAX; i++) {
 		size_t len;

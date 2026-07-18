@@ -149,7 +149,7 @@ static unsigned int alt_ring_count;	/* min(written, ALT_RING_SZ) */
  * Secondary CONFIG-absent latches (NETLINK_ROUTE EPROTONOSUPPORT /
  * EAFNOSUPPORT and dummy-create EOPNOTSUPP / ENOPKG) fire inside the
  * grandchild and would be lost across _exit() if held in a static
- * bool, so they are recorded into shm->stats.childop_latch_reason[]
+ * bool, so they are recorded into shm->stats.childop.latch_reason[]
  * (shared across fork) and re-read at the top of altname_thrash()
  * before the next userns_run_in_ns() spend. */
 static bool ns_unsupported_altname_thrash;
@@ -360,7 +360,7 @@ struct altname_iter_ctx {
  * here.  Returns 0 if the burst phase should run, -1 on any failure.
  * CONFIG-absent errors (EPROTONOSUPPORT / EAFNOSUPPORT on the NL
  * socket, EOPNOTSUPP / ENOPKG on the dummy create) record a latch
- * reason in shm->stats.childop_latch_reason[] — that slot is shared
+ * reason in shm->stats.childop.latch_reason[] — that slot is shared
  * across fork, so the parent reads it on the next invocation and skips
  * the userns_run_in_ns() spend.  On -1 the teardown helper is still
  * safe to call: it gates on ctx->nl_opened / ctx->dummy_added.
@@ -386,7 +386,7 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 	if (nl_open(&ctx->nl, &opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -401,7 +401,7 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -532,9 +532,9 @@ static int altname_thrash_in_ns(void *arg)
 
 	if (altname_thrash_iter_setup(ctx) == 0) {
 		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		}
 		altname_thrash_iter_burst(ctx);
@@ -568,12 +568,12 @@ bool altname_thrash(struct childdata *child)
 		return true;
 
 	/* Secondary CONFIG-absent latches (NL proto / dummy create) are
-	 * set inside the grandchild via shm->stats.childop_latch_reason[];
+	 * set inside the grandchild via shm->stats.childop.latch_reason[];
 	 * a file-local bool would be lost across the transient fork.  Read
 	 * the shared slot here to honour those latches on subsequent
 	 * invocations without re-spending a userns_run_in_ns() round-trip. */
 	if (valid_op &&
-	    __atomic_load_n(&shm->stats.childop_latch_reason[op],
+	    __atomic_load_n(&shm->stats.childop.latch_reason[op],
 			    __ATOMIC_RELAXED) != CHILDOP_LATCH_NONE)
 		return true;
 
@@ -581,7 +581,7 @@ bool altname_thrash(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported_altname_thrash = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.altname_thrash_unshare_failed,

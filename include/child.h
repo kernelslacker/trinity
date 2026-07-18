@@ -162,10 +162,10 @@ struct childdata {
 	 * is_child_making_progress() on the first detection of diff>=30s for
 	 * this child, alongside an increment of
 	 * shm->stats.syscall_wedge_count[wedge_nr] and
-	 * shm->stats.childop_wedge_count[wedge_op_type].  reap_child() then
+	 * shm->stats.childop.wedge_count[wedge_op_type].  reap_child() then
 	 * adds the CLOCK_MONOTONIC elapsed (now - wedge_start_tp) into
 	 * shm->stats.syscall_wedge_total_us[wedge_nr] and
-	 * shm->stats.childop_wedge_total_us[wedge_op_type] before the slot
+	 * shm->stats.childop.wedge_total_us[wedge_op_type] before the slot
 	 * is recycled.  wedge_start_tp is seeded from child->tp (the child's
 	 * last-progress timestamp) rather than from the detection moment so
 	 * the accumulated duration covers the FULL window the slot was
@@ -892,7 +892,7 @@ struct childdata {
 /*
  * Compute the adaptive iteration count for an opt-in childop.  Reads
  * the per-op multiplier (Q8.8 fixed point) maintained by adapt_budget()
- * out of shm->stats.childop_budget_mult[op] and scales `base` by it.
+ * out of shm->stats.childop.budget_mult[op] and scales `base` by it.
  *
  * If the slot is zero (uninitialised, or wild-write zeroed), fall back
  * to `base` so the loop never collapses to zero iterations — this is
@@ -906,7 +906,7 @@ struct childdata {
  * future-proof).
  */
 #define BUDGETED(op, base) ({						\
-	uint16_t _m = __atomic_load_n(&shm->stats.childop_budget_mult[(op)], \
+	uint16_t _m = __atomic_load_n(&shm->stats.childop.budget_mult[(op)], \
 				      __ATOMIC_RELAXED);		\
 	unsigned int _b = (unsigned int)(base);				\
 	_m ? ((_b * (unsigned int)_m) >> 8) : _b;			\

@@ -126,7 +126,7 @@ static void probe_l2tp_family(struct childdata *child)
 	if (genl_open(&gctx, &opts) != 0) {
 		ns_unsupported_l2tp_ifname_race = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		return;
@@ -640,7 +640,7 @@ static int l2tp_ifname_race_in_ns(void *arg)
 		return 0;
 	}
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
@@ -655,7 +655,7 @@ static int l2tp_ifname_race_in_ns(void *arg)
 		outer_iters = L2TP_OUTER_CAP;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < outer_iters; i++) {
 		if (budget_elapsed_ns(&t_outer, L2TP_WALL_CAP_NS))
@@ -702,7 +702,7 @@ bool l2tp_ifname_race(struct childdata *child)
 		{
 			const enum child_op_type op = child->op_type;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}

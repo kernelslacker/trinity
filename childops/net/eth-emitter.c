@@ -241,7 +241,7 @@ disable:
 	{
 		const enum child_op_type op = child->op_type;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 (errno == EPERM || errno == EACCES) ?
 						 CHILDOP_LATCH_NS_UNSUPPORTED :
 						 CHILDOP_LATCH_INIT_FAILED,
@@ -280,7 +280,7 @@ bool eth_emitter(struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	pick = rnd_modulo_u32(NR_TEMPLATES);
@@ -298,7 +298,7 @@ bool eth_emitter(struct childdata *child)
 	memcpy(sll.sll_addr, frame, 6);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	rc = sendto(eth_fd, frame, len, 0,

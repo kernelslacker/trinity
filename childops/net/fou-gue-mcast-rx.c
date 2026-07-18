@@ -564,7 +564,7 @@ static int fou_gue_iter_open_ctx(struct fou_gue_iter_ctx *ctx)
 		    rc == -EAFNOSUPPORT) {
 			mark_kind_unsupported();
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -605,7 +605,7 @@ static int fou_gue_iter_install_port(struct fou_gue_iter_ctx *ctx)
 		    rc == -EPERM || rc == -ENOENT) {
 			mark_kind_unsupported();
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
@@ -756,13 +756,13 @@ static int fou_gue_mcast_rx_in_ns(void *arg)
 		goto out;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	fou_gue_iter_open_raw(&ctx);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	fou_gue_iter_send_burst(&ctx);
@@ -801,7 +801,7 @@ bool fou_gue_mcast_rx(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported_fou_gue_mcast_rx = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx_setup_failed,

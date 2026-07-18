@@ -113,7 +113,7 @@ static void covjump_seed_snapshot(unsigned long call_nr, unsigned long edges_now
 		unsigned long v = 0;
 
 		if (op < (unsigned int)NR_CHILD_OP_TYPES)
-			v = __atomic_load_n(&shm->stats.childop_invocations[op],
+			v = __atomic_load_n(&shm->stats.childop.invocations[op],
 					    __ATOMIC_RELAXED);
 		__atomic_store_n(&kcov_shm->covjump_snap_childop_invocations[op],
 				 v, __ATOMIC_RELAXED);
@@ -223,7 +223,7 @@ void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 		now_childop[op] = 0;
 		if (op < (unsigned int)NR_CHILD_OP_TYPES)
 			now_childop[op] = __atomic_load_n(
-				&shm->stats.childop_invocations[op],
+				&shm->stats.childop.invocations[op],
 				__ATOMIC_RELAXED);
 		snap_childop[op] = __atomic_load_n(
 			&kcov_shm->covjump_snap_childop_invocations[op],

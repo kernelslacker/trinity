@@ -336,9 +336,9 @@ bool epoll_volatility(struct childdata *child)
 
 	if (epoll_volatility_iter_setup(&ctx) == 0) {
 		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		}
 		epoll_volatility_iter_drive(&ctx);

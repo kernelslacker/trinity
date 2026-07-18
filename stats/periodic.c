@@ -1297,7 +1297,7 @@ static unsigned long pct_thousandths(unsigned long num, unsigned long denom)
 void childop_split_dump(void)
 {
 	unsigned long wt_childop = __atomic_load_n(
-		&shm->stats.childop_walltime_ns, __ATOMIC_RELAXED);
+		&shm->stats.childop.walltime_ns, __ATOMIC_RELAXED);
 	unsigned long wt_syscall = __atomic_load_n(
 		&shm->stats.syscall_walltime_ns, __ATOMIC_RELAXED);
 	unsigned long sc_childop = __atomic_load_n(
@@ -1318,7 +1318,7 @@ void childop_split_dump(void)
 	 * parallel denominator. */
 	for (op = 1; op < NR_CHILD_OP_TYPES; op++) {
 		it_childop += __atomic_load_n(
-			&shm->stats.childop_invocations[op],
+			&shm->stats.childop.invocations[op],
 			__ATOMIC_RELAXED);
 	}
 

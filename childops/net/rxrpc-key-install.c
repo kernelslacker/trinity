@@ -795,21 +795,21 @@ bool rxrpc_key_install(struct childdata *child)
 	probe_rxrpc_key_supported();
 	if (unsupported_rxrpc_key_install) {
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		return true;
 	}
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	memset(live, 0, sizeof(live));
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	iters = JITTER_RANGE(MAX_ITERATIONS);
@@ -851,7 +851,7 @@ bool rxrpc_key_install(struct childdata *child)
 
 		if (unsupported_rxrpc_key_install) {
 			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			return true;

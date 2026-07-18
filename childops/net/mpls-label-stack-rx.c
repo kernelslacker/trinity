@@ -463,7 +463,7 @@ static int mpls_label_stack_rx_iter_build_link(struct mpls_label_stack_rx_iter_c
 		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_config_failed,
 				   1, __ATOMIC_RELAXED);
 		if (kind_unsupported() && valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		return -1;
@@ -585,9 +585,9 @@ static int mpls_label_stack_rx_in_ns(void *arg)
 	if (mpls_label_stack_rx_iter_open_ctx(&ctx) == 0 &&
 	    mpls_label_stack_rx_iter_build_link(&ctx) == 0) {
 		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		}
 		mpls_label_stack_rx_iter_send_burst(&ctx);
@@ -626,7 +626,7 @@ bool mpls_label_stack_rx(struct childdata *child)
 	if (rc == -EPERM) {
 		ns_unsupported_mpls_label_stack_rx = true;
 		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_setup_failed,

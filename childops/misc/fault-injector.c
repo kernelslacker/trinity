@@ -157,7 +157,7 @@ bool fault_injector(struct childdata *child)
 		return true;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	/* N=0 disables fail-nth; pick from [1, 32]. */
@@ -168,7 +168,7 @@ bool fault_injector(struct childdata *child)
 	stats_ring_enqueue(child->stats_ring, STATS_FIELD_FAULT_INJECTED, 0, 1);
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
 	ret = do_alloc_syscall();

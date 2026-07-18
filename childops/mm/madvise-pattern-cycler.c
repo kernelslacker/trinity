@@ -449,7 +449,7 @@ bool madvise_cycler(struct childdata *child)
 		return true;
 
 	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
 	madvise_cycler_iter_setup_budget(&ictx);
@@ -464,7 +464,7 @@ bool madvise_cycler(struct childdata *child)
 		madvise_cycler_iter_arm_guard(&ictx, &old_segv, &old_bus);
 
 		if (valid_op)
-			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 
 		if (sigsetjmp(madvise_cycler_pool_race_jmp, 1) == 0)

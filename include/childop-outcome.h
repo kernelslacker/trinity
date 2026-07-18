@@ -8,7 +8,7 @@
  */
 
 /* Per-childop one-shot latch reason codes published to
- * shm->stats.childop_latch_reason[op] when a childop disables itself for
+ * shm->stats.childop.latch_reason[op] when a childop disables itself for
  * the remainder of the run.  Compact enum (rendered as the integer code
  * in stats; no string table is materialised at this layer -- decoding is
  * the operator's job).  CHILDOP_LATCH_NONE = 0 matches the create_shm()
@@ -64,7 +64,7 @@ enum frontier_pick_regime {
 /* Unified per-childop outcome record (AGGREGATED across the run, NOT a
  * per-invocation event).  One coherent snapshot for consumers that want
  * a single record per op instead of scraping a dozen parallel
- * shm->stats.childop_* arrays.
+ * shm->stats.childop.* arrays.
  *
  * Telemetry-only.  No policy decision reads this record; no field has
  * back-pressure on the picker, canary queue, or promote / demote
@@ -75,14 +75,14 @@ enum frontier_pick_regime {
  * use.
  *
  * Counter mapping for the populated fields (see include/stats.h):
- *   clean_edges       shm->stats.childop_edges_clean[op]
- *   noisy_edges       shm->stats.childop_edges_discovered[op] - clean_edges
- *   wall_ns           shm->stats.childop_wall_ns[op]
- *   wedges            shm->stats.childop_wedge_count[op]
- *   timeout_observed  shm->stats.childop_timeout_observed[op]
- *   timeout_missed    shm->stats.childop_timeout_missed[op]
- *   setup_failures    shm->stats.childop_invocations[op]
- *                     - shm->stats.childop_setup_accepted[op]
+ *   clean_edges       shm->stats.childop.edges_clean[op]
+ *   noisy_edges       shm->stats.childop.edges_discovered[op] - clean_edges
+ *   wall_ns           shm->stats.childop.wall_ns[op]
+ *   wedges            shm->stats.childop.wedge_count[op]
+ *   timeout_observed  shm->stats.childop.timeout_observed[op]
+ *   timeout_missed    shm->stats.childop.timeout_missed[op]
+ *   setup_failures    shm->stats.childop.invocations[op]
+ *                     - shm->stats.childop.setup_accepted[op]
  *   taint_transition  shm->stats.taint_transitions[op] > 0
  *
  * Subtractions are clamped at zero: the source counters race under
