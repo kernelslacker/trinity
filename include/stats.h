@@ -58,6 +58,7 @@
 #include "stats/subsys/ip6_udp_cork_splice.h"
 #include "stats/subsys/ip6gre_lapb.h"
 #include "stats/subsys/ip_gre_churn.h"
+#include "stats/subsys/ipset_churn.h"
 #include "stats/subsys/ipv6_ndisc_proxy.h"
 #include "stats/subsys/ipv6_pmtu_race.h"
 #include "stats/subsys/iscsi_target_probe.h"
@@ -1667,19 +1668,8 @@ struct stats_s {
 	/* nf_conntrack_helper_churn accounting.  See stats/subsys/nf_conntrack_helper_churn.h. */
 	struct nf_conntrack_helper_churn_stats nf_conntrack_helper_churn __attribute__((aligned(64)));
 
-	/* ipset_churn childop counters */
-	unsigned long ipset_churn_runs;			/* total ipset_churn invocations */
-	unsigned long ipset_churn_setup_failed;		/* nfnl socket open / IPSET_CMD_PROTOCOL probe failed */
-	unsigned long ipset_churn_create_ok;		/* IPSET_CMD_CREATE ack 0 or EEXIST (set tracked) */
-	unsigned long ipset_churn_create_fail;		/* IPSET_CMD_CREATE rejected (parse gate ran) */
-	unsigned long ipset_churn_add_ok;		/* IPSET_CMD_ADD ack 0 (entry inserted) */
-	unsigned long ipset_churn_test_ok;		/* IPSET_CMD_TEST ack 0 (lookup succeeded) */
-	unsigned long ipset_churn_del_ok;		/* IPSET_CMD_DEL ack 0 (entry removed) */
-	unsigned long ipset_churn_header_ok;		/* IPSET_CMD_HEADER ack 0 (header serializer ran) */
-	unsigned long ipset_churn_list_ok;		/* IPSET_CMD_LIST dump completed (element walker ran) */
-	unsigned long ipset_churn_swap_ok;		/* IPSET_CMD_SWAP ack 0 (partner rotation ran) */
-	unsigned long ipset_churn_flush_ok;		/* IPSET_CMD_FLUSH ack 0 (bulk erase ran) */
-	unsigned long ipset_churn_destroy_ok;		/* IPSET_CMD_DESTROY ack 0 or ENOENT (teardown reached kernel) */
+	/* ipset_churn accounting.  See stats/subsys/ipset_churn.h. */
+	struct ipset_churn_stats ipset_churn __attribute__((aligned(64)));
 
 	/* af_unix_scm_rights_gc accounting.  See stats/subsys/af_unix_scm_rights_gc.h. */
 	struct af_unix_scm_rights_gc_stats af_unix_scm_rights_gc __attribute__((aligned(64)));

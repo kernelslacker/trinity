@@ -570,10 +570,10 @@ static void iter_create_pair(struct nfnl_ctx *ctx, struct ipset_tracker *tr,
 		rc = build_create(ctx, name, kind);
 		if (rc == 0 || rc == -EEXIST) {
 			tracker_add(tr, name, kind);
-			__atomic_add_fetch(&shm->stats.ipset_churn_create_ok,
+			__atomic_add_fetch(&shm->stats.ipset_churn.create_ok,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			__atomic_add_fetch(&shm->stats.ipset_churn_create_fail,
+			__atomic_add_fetch(&shm->stats.ipset_churn.create_fail,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -601,15 +601,15 @@ static void iter_adt_burst(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
 
 			if (build_adt(ctx, tr->names[s], k,
 				      IPSET_CMD_ADD, salt) == 0)
-				__atomic_add_fetch(&shm->stats.ipset_churn_add_ok,
+				__atomic_add_fetch(&shm->stats.ipset_churn.add_ok,
 						   1, __ATOMIC_RELAXED);
 			if (build_adt(ctx, tr->names[s], k,
 				      IPSET_CMD_TEST, salt) == 0)
-				__atomic_add_fetch(&shm->stats.ipset_churn_test_ok,
+				__atomic_add_fetch(&shm->stats.ipset_churn.test_ok,
 						   1, __ATOMIC_RELAXED);
 			if (build_adt(ctx, tr->names[s], k,
 				      IPSET_CMD_DEL, salt) == 0)
-				__atomic_add_fetch(&shm->stats.ipset_churn_del_ok,
+				__atomic_add_fetch(&shm->stats.ipset_churn.del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -630,11 +630,11 @@ static void iter_query(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
 	for (s = 0; s < tr->count; s++) {
 		if (build_setname_only(ctx, IPSET_CMD_HEADER,
 				       tr->names[s]) == 0)
-			__atomic_add_fetch(&shm->stats.ipset_churn_header_ok,
+			__atomic_add_fetch(&shm->stats.ipset_churn.header_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 	if (build_list_dump(ctx, tr->names[0]) == 0)
-		__atomic_add_fetch(&shm->stats.ipset_churn_list_ok,
+		__atomic_add_fetch(&shm->stats.ipset_churn.list_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -648,12 +648,12 @@ static void iter_swap_flush(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
 {
 	if (tr->count >= 2U &&
 	    build_swap(ctx, tr->names[0], tr->names[1]) == 0)
-		__atomic_add_fetch(&shm->stats.ipset_churn_swap_ok,
+		__atomic_add_fetch(&shm->stats.ipset_churn.swap_ok,
 				   1, __ATOMIC_RELAXED);
 
 	if (tr->count >= 1U &&
 	    build_setname_only(ctx, IPSET_CMD_FLUSH, tr->names[0]) == 0)
-		__atomic_add_fetch(&shm->stats.ipset_churn_flush_ok,
+		__atomic_add_fetch(&shm->stats.ipset_churn.flush_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -671,7 +671,7 @@ static void teardown_all(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
 	for (s = 0; s < tr->count; s++) {
 		rc = build_setname_only(ctx, IPSET_CMD_DESTROY, tr->names[s]);
 		if (rc == 0 || rc == -ENOENT)
-			__atomic_add_fetch(&shm->stats.ipset_churn_destroy_ok,
+			__atomic_add_fetch(&shm->stats.ipset_churn.destroy_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 	tr->count = 0;
@@ -804,10 +804,10 @@ static void iter_resize(struct nfnl_ctx *ctx)
 			rc = build_create_resize(ctx, name, kinds[ki], evs[ei]);
 			if (rc == 0 || rc == -EEXIST) {
 				tracker_add(&tr, name, kinds[ki]);
-				__atomic_add_fetch(&shm->stats.ipset_churn_create_ok,
+				__atomic_add_fetch(&shm->stats.ipset_churn.create_ok,
 						   1, __ATOMIC_RELAXED);
 			} else {
-				__atomic_add_fetch(&shm->stats.ipset_churn_create_fail,
+				__atomic_add_fetch(&shm->stats.ipset_churn.create_fail,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
@@ -828,7 +828,7 @@ static void iter_resize(struct nfnl_ctx *ctx)
 		for (e = 0; e < IPSET_RESIZE_FILL_ENTRIES; e++) {
 			if (build_adt(ctx, tr.names[r], k,
 				      IPSET_CMD_ADD, (__u16)e) == 0)
-				__atomic_add_fetch(&shm->stats.ipset_churn_add_ok,
+				__atomic_add_fetch(&shm->stats.ipset_churn.add_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -846,11 +846,11 @@ static void iter_resize(struct nfnl_ctx *ctx)
 
 		if (build_adt(ctx, tr.names[s], k,
 			      IPSET_CMD_ADD, salt) == 0)
-			__atomic_add_fetch(&shm->stats.ipset_churn_add_ok,
+			__atomic_add_fetch(&shm->stats.ipset_churn.add_ok,
 					   1, __ATOMIC_RELAXED);
 		if (build_adt(ctx, tr.names[s], k,
 			      IPSET_CMD_DEL, salt) == 0)
-			__atomic_add_fetch(&shm->stats.ipset_churn_del_ok,
+			__atomic_add_fetch(&shm->stats.ipset_churn.del_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -889,16 +889,16 @@ bool ipset_churn(struct childdata *child)
 	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.ipset_churn_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.ipset_churn.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_ipset) {
-		__atomic_add_fetch(&shm->stats.ipset_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipset_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
 	if (nfnl_open(&nfnl, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.ipset_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.ipset_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -910,7 +910,7 @@ bool ipset_churn(struct childdata *child)
 				__atomic_store_n(&shm->stats.childop_latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.ipset_churn_setup_failed,
+			__atomic_add_fetch(&shm->stats.ipset_churn.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			nfnl_close(&nfnl);
 			return true;
@@ -955,8 +955,8 @@ bool ipset_churn(struct childdata *child)
 bool ipset_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.ipset_churn_runs, 1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.ipset_churn_setup_failed,
+	__atomic_add_fetch(&shm->stats.ipset_churn.runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.ipset_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
