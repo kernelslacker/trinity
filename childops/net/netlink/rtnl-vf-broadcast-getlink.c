@@ -186,7 +186,7 @@ static bool do_setup(struct rtnl_vf_iter_ctx *ctx)
 	if (nl_open(&ctx->nl, &opts) < 0)
 		return false;
 
-	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_ok, 1,
+	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast.setup_ok, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
@@ -265,7 +265,7 @@ static int rtnl_vf_broadcast_in_ns(void *arg)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (!do_setup(ctx)) {
-		__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_failed,
+		__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		do_teardown(ctx);
 		return 0;
@@ -290,7 +290,7 @@ static int rtnl_vf_broadcast_in_ns(void *arg)
 		if (!ONE_IN(8))
 			continue;
 		if (issue_getlink_with_vf_filter(ctx))
-			__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_getlink_ok,
+			__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast.getlink_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -318,7 +318,7 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_runs, 1,
+	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_rtnl_vf_broadcast)
@@ -335,7 +335,7 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 	 * op's coverage for the rest of the child's lifetime. */
 	if (stat(NETDEVSIM_NEW_DEVICE, &st) < 0 ||
 	    access(NETDEVSIM_NEW_DEVICE, W_OK) < 0) {
-		__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_failed,
+		__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -355,7 +355,7 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 		 * secondary unshare).  Skip this iteration without
 		 * latching -- the failure is not policy and may not
 		 * recur. */
-		__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_failed,
+		__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
