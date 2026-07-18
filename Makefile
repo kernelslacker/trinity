@@ -132,6 +132,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard kcov/*.c) \
 		   $(wildcard lib/*.c) \
 		   $(wildcard main/*.c) \
+		   $(wildcard main/params/*.c) \
 		   $(wildcard mm/*.c) \
 		   $(wildcard net/*.c) \
 		   $(wildcard net/bpf/*.c) \
@@ -218,6 +219,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard kcov/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard lib/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard main/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard main/params/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard mm/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard net/bpf/*.c))) \
@@ -297,7 +299,7 @@ trinity: test $(OBJS) $(HEADERS)
 
 clean:
 	@rm -f $(OBJS)
-	@rm -f *.o args/*.o lib/*.o main/*.o net/*.o objects/*.o stats/*.o tables/*.o utils/*.o
+	@rm -f *.o args/*.o lib/*.o main/*.o main/params/*.o net/*.o objects/*.o stats/*.o tables/*.o utils/*.o
 	@rm -f core.*
 	@rm -f trinity
 	@rm -f tags tags.json

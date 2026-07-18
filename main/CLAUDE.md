@@ -1,21 +1,44 @@
 # main/ — Parent Process Orchestration Layer
 
 The Trinity parent process: the entry point (`trinity.c`) and CLI/tunable
-parsing (`params.c`), then the control plane that forks and tracks the fuzzer
+parsing (`params/`), then the control plane that forks and tracks the fuzzer
 child fleet, reaps exits, runs the D-state/stuck watchdog, and drives the
 periodic stats/health dump. `trinity.c`'s `main()`/`epoch_loop()` sets up and
 repeatedly calls `main_loop()`; none of this fuzzes anything itself.
 
-## Files (6 files, ~6,411 LOC)
+## Files
 
-| File | Lines | Role |
-|---|---|---|
-| trinity.c | 1,016 | Process entry: `main()`, option/table setup, `warm_start_all()`, and the epoch loop that repeatedly calls `main_loop()`. Does not fuzz. |
-| params.c | 1,769 | CLI option parsing and the global tunables/flags the rest of the codebase reads (targeting, `--childop`, richness levers). |
-| main.c | 615 | `main_loop()` driver: per-tick phase sequencing (drain → stop-checks → periodic surfaces → fork-replace), epoch reset (`reset_epoch_state`), `panic()` |
-| main-reap.c | 1,803 | Reap + watchdog: `waitpid(-1)` drain, zombie/D-state slot deferral, stuck-child SIGKILL escalation, fork-die-respawn loop detector, shm corruption sanity checks |
-| main-spawn.c | 723 | `fork_children()`/`spawn_child()`: slot allocation, fork-failure backoff/bail, fork-pressure drain, forensic snapshots, final cross-run state save |
-| main-stats.c | 485 | `print_stats()`: KCOV/CMP diagnostic lines, picker/plateau/pool-ratio dumps, per-op-count-delta throttling |
+| File | Role |
+|---|---|
+| trinity.c | Process entry: `main()`, option/table setup, `warm_start_all()`, and the epoch loop that repeatedly calls `main_loop()`. Does not fuzz. |
+| params/ | CLI option parsing and the global tunables/flags the rest of the codebase reads (targeting, `--childop`, richness levers). Split by concern -- see the subdirectory breakdown below. |
+| main.c | `main_loop()` driver: per-tick phase sequencing (drain → stop-checks → periodic surfaces → fork-replace), epoch reset (`reset_epoch_state`), `panic()` |
+| main-reap.c | Reap + watchdog: `waitpid(-1)` drain, zombie/D-state slot deferral, stuck-child SIGKILL escalation, fork-die-respawn loop detector, shm corruption sanity checks |
+| main-spawn.c | `fork_children()`/`spawn_child()`: slot allocation, fork-failure backoff/bail, fork-pressure drain, forensic snapshots, final cross-run state save |
+| main-stats.c | `print_stats()`: KCOV/CMP diagnostic lines, picker/plateau/pool-ratio dumps, per-op-count-delta throttling |
+
+### `main/params/` subdirectory
+
+CLI parsing was split out of the single `main/params.c` translation unit so
+adding a knob only touches the file that owns that knob's concern.  All
+externally-visible parser symbols still live in `include/params.h`; anything
+inside `main/params/` is params-cluster private and declared in
+`main/params/internal.h`.
+
+| File | Role |
+|---|---|
+| `internal.h` | Params-private helper + option-family declarations shared across `main/params/*.c`. Not exported outside this cluster. |
+| `state.c` | Definitions of the global tunable storage (booleans, strings, mode enums) the rest of the codebase reads. |
+| `defaults.c` | `derive_max_children_cap()` + `clamp_default_*()` helpers `main()` calls after `parse_args()` finalises operator input. |
+| `help.c` | `option_descs[]`, `shortonly_descs[]` and `usage()` -- the `--help` output. |
+| `options.c` | `paramstr` and `longopts[]` -- the `getopt_long()` metadata. |
+| `parse.c` | `parse_args()` orchestrator, `parse_duration()`/`parse_unsigned()` scalar helpers shared by every family. |
+| `selection.c` | Arch/syscall/domain/group/-r/-N/-s/-V selection knobs plus the comma-list csv helper. |
+| `runtime.c` | Epoch/max-runtime, stats, memory-cgroup, warm-start cache options. |
+| `coverage.c` | KCOV/CMP/frontier/reach/blob/cmsg strategy knobs (also currently owns the canary + fork-pressure rows the phase-2 spec will move into `childop.c`). |
+| `childop.c` | Child-slot sizing: `-C`, `--alt-op-children`, `--explorer-children`. |
+| `debug.c` | writer-pin canary, `--guard-shared`, verbosity/diagnostics, `-h`/`-L`/`-I`/`-b` info commands, misc long-only flags. |
+| `compat.c` | Backwards-compat parser helpers: `--redqueen-pending-pick` name/parser pair and the `enable_disable_fd_usage()` hook `usage()` calls. |
 
 Roles match the guessed split exactly: main.c is the loop, main-spawn.c
 forks, main-reap.c reaps/watches, main-stats.c prints. All four share
