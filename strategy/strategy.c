@@ -355,7 +355,7 @@ static int select_plateau_intervention_strategy(
 			    __ATOMIC_RELAXED) == 0) {
 		pim = PIM_UNIFORM_RANDOM;
 		__atomic_fetch_add(
-			&shm->stats.frontier_intervention_cold_skipped,
+			&shm->stats.frontier.intervention_cold_skipped,
 			1UL, __ATOMIC_RELAXED);
 	}
 
@@ -441,7 +441,7 @@ static int select_plateau_intervention_strategy(
 	 * run. */
 	if (arm == STRATEGY_COVERAGE_FRONTIER)
 		__atomic_fetch_add(
-			&shm->stats.frontier_intervention_pulls,
+			&shm->stats.frontier.intervention_pulls,
 			1UL, __ATOMIC_RELAXED);
 	*reason_out = SR_PLATEAU_FORCE;
 	return arm;

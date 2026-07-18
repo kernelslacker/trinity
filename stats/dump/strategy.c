@@ -46,18 +46,18 @@
  * reject. */
 static void dump_stats_render_frontier_satcool(void)
 {
-	if (shm->stats.frontier_satcool_candidates)
+	if (shm->stats.frontier.satcool_candidates)
 		stat_row("strategy", "frontier_satcool_candidates",
-			 shm->stats.frontier_satcool_candidates);
-	if (shm->stats.frontier_satcool_would_skip)
+			 shm->stats.frontier.satcool_candidates);
+	if (shm->stats.frontier.satcool_would_skip)
 		stat_row("strategy", "frontier_satcool_would_skip",
-			 shm->stats.frontier_satcool_would_skip);
-	if (shm->stats.frontier_satcool_spared_arggen)
+			 shm->stats.frontier.satcool_would_skip);
+	if (shm->stats.frontier.satcool_spared_arggen)
 		stat_row("strategy", "frontier_satcool_spared_arggen",
-			 shm->stats.frontier_satcool_spared_arggen);
-	if (shm->stats.frontier_satcool_spared_objproducer)
+			 shm->stats.frontier.satcool_spared_arggen);
+	if (shm->stats.frontier.satcool_spared_objproducer)
 		stat_row("strategy", "frontier_satcool_spared_objproducer",
-			 shm->stats.frontier_satcool_spared_objproducer);
+			 shm->stats.frontier.satcool_spared_objproducer);
 	dump_satcool_would_skip_per_syscall_top();
 }
 
@@ -73,12 +73,12 @@ static void dump_stats_render_frontier_satcool(void)
  * before considering the combined sub-floor ramp. */
 static void dump_stats_render_frontier_barren(void)
 {
-	if (shm->stats.frontier_barren_candidates)
+	if (shm->stats.frontier.barren_candidates)
 		stat_row("strategy", "frontier_barren_candidates",
-			 shm->stats.frontier_barren_candidates);
-	if (shm->stats.frontier_barren_would_skip)
+			 shm->stats.frontier.barren_candidates);
+	if (shm->stats.frontier.barren_would_skip)
 		stat_row("strategy", "frontier_barren_would_skip",
-			 shm->stats.frontier_barren_would_skip);
+			 shm->stats.frontier.barren_would_skip);
 	dump_barren_would_skip_per_syscall_top();
 }
 
@@ -115,21 +115,21 @@ static void dump_stats_render_frontier_cmp(void)
  * frontier_live_miss_cooldown_threshold row above. */
 static void dump_stats_render_frontier_live_cool(void)
 {
-	if (shm->stats.frontier_live_cool_candidates)
+	if (shm->stats.frontier.live_cool_candidates)
 		stat_row("strategy", "frontier_live_cool_candidates",
-			 shm->stats.frontier_live_cool_candidates);
-	if (shm->stats.frontier_live_cool_would_skip)
+			 shm->stats.frontier.live_cool_candidates);
+	if (shm->stats.frontier.live_cool_would_skip)
 		stat_row("strategy", "frontier_live_cool_would_skip",
-			 shm->stats.frontier_live_cool_would_skip);
-	if (shm->stats.frontier_live_cool_spared_windowed)
+			 shm->stats.frontier.live_cool_would_skip);
+	if (shm->stats.frontier.live_cool_spared_windowed)
 		stat_row("strategy", "frontier_live_cool_spared_windowed",
-			 shm->stats.frontier_live_cool_spared_windowed);
-	if (shm->stats.frontier_live_cool_spared_arggen)
+			 shm->stats.frontier.live_cool_spared_windowed);
+	if (shm->stats.frontier.live_cool_spared_arggen)
 		stat_row("strategy", "frontier_live_cool_spared_arggen",
-			 shm->stats.frontier_live_cool_spared_arggen);
-	if (shm->stats.frontier_live_cool_spared_objproducer)
+			 shm->stats.frontier.live_cool_spared_arggen);
+	if (shm->stats.frontier.live_cool_spared_objproducer)
 		stat_row("strategy", "frontier_live_cool_spared_objproducer",
-			 shm->stats.frontier_live_cool_spared_objproducer);
+			 shm->stats.frontier.live_cool_spared_objproducer);
 	/* Threshold companion to the scalar rows above.  Gated on the
 	 * discriminator mode rather than emitted unconditionally so a
 	 * default-off run does not grow a new stats row (the cmin
@@ -145,10 +145,10 @@ static void dump_stats_render_frontier_live_cool(void)
 		stat_row("strategy", "frontier_live_cool_cmin",
 			 FRONTIER_LIVE_COOL_CMIN);
 	dump_live_cool_per_syscall_top(
-		shm->stats.frontier_live_cool_would_skip_per_syscall,
+		shm->stats.frontier.live_cool_would_skip_per_syscall,
 		"frontier_live_cool_would_skip");
 	dump_live_cool_per_syscall_top(
-		shm->stats.frontier_live_cool_would_spare_per_syscall,
+		shm->stats.frontier.live_cool_would_spare_per_syscall,
 		"frontier_live_cool_would_spare");
 }
 
@@ -207,19 +207,19 @@ static void dump_stats_render_context_regular_suppressed(void)
  * struct-field comments in include/stats.h for semantics. */
 static void dump_stats_render_frontier_blend(void)
 {
-	if (shm->stats.frontier_blend_samples) {
+	if (shm->stats.frontier.blend_samples) {
 		stat_row("strategy", "frontier_blend_samples",
-			 shm->stats.frontier_blend_samples);
+			 shm->stats.frontier.blend_samples);
 		stat_row("strategy", "frontier_blend_new_lower",
-			 shm->stats.frontier_blend_new_lower);
+			 shm->stats.frontier.blend_new_lower);
 		stat_row("strategy", "frontier_blend_new_higher",
-			 shm->stats.frontier_blend_new_higher);
+			 shm->stats.frontier.blend_new_higher);
 		stat_row("strategy", "frontier_blend_new_equal",
-			 shm->stats.frontier_blend_new_equal);
+			 shm->stats.frontier.blend_new_equal);
 		stat_row("strategy", "frontier_blend_old_weight_sum",
-			 shm->stats.frontier_blend_old_weight_sum);
+			 shm->stats.frontier.blend_old_weight_sum);
 		stat_row("strategy", "frontier_blend_new_weight_sum",
-			 shm->stats.frontier_blend_new_weight_sum);
+			 shm->stats.frontier.blend_new_weight_sum);
 	}
 }
 
@@ -427,23 +427,23 @@ void dump_stats_strategy_summary(void)
 	if (shm->stats.bandit_edge_count_reward_added)
 		stat_row("strategy", "bandit_edge_count_reward_added",
 			 shm->stats.bandit_edge_count_reward_added);
-	if (shm->stats.frontier_strategy_picks)
+	if (shm->stats.frontier.strategy_picks)
 		stat_row("strategy", "frontier_strategy_picks",
-			 shm->stats.frontier_strategy_picks);
-	if (shm->stats.frontier_live_picks)
+			 shm->stats.frontier.strategy_picks);
+	if (shm->stats.frontier.live_picks)
 		stat_row("strategy", "frontier_live_picks",
-			 shm->stats.frontier_live_picks);
-	if (shm->stats.frontier_silent_picks)
+			 shm->stats.frontier.live_picks);
+	if (shm->stats.frontier.silent_picks)
 		stat_row("strategy", "frontier_silent_picks",
-			 shm->stats.frontier_silent_picks);
+			 shm->stats.frontier.silent_picks);
 	/* SHADOW-ONLY observability companions to frontier_silent_picks:
 	 * the candidate count (how many threshold-crossings the silent
 	 * regime has produced) and the threshold itself, emitted side by
 	 * side so the operator can interpret the count without consulting
 	 * the source.  Neither value is read by the live picker math. */
-	if (shm->stats.frontier_shadow_decay_candidates)
+	if (shm->stats.frontier.shadow_decay_candidates)
 		stat_row("strategy", "frontier_shadow_decay_candidates",
-			 shm->stats.frontier_shadow_decay_candidates);
+			 shm->stats.frontier.shadow_decay_candidates);
 	stat_row("strategy", "frontier_shadow_decay_streak_threshold",
 		 FRONTIER_SHADOW_DECAY_STREAK);
 	/* Tightened decay predicate (sibling of the looser counter above):
@@ -454,20 +454,20 @@ void dump_stats_strategy_summary(void)
 	 * of N-silent crossings the CMP/errno tightening would have spared;
 	 * the would_skip / silent_picks ratio is the projected pick share a
 	 * live silent-decay variant would demote. */
-	if (shm->stats.frontier_decay_candidates)
+	if (shm->stats.frontier.decay_candidates)
 		stat_row("strategy", "frontier_decay_candidates",
-			 shm->stats.frontier_decay_candidates);
-	if (shm->stats.frontier_decay_would_skip)
+			 shm->stats.frontier.decay_candidates);
+	if (shm->stats.frontier.decay_would_skip)
 		stat_row("strategy", "frontier_decay_would_skip",
-			 shm->stats.frontier_decay_would_skip);
+			 shm->stats.frontier.decay_would_skip);
 	/* Arm-B-only live reject count for the silent-streak decay above.
 	 * Pairs with frontier_decay_would_skip (both arms) as the headline
 	 * arm-B behaviour delta; normalise against the Arm-B silent-pick
 	 * throughput recoverable from frontier_silent_picks and the
 	 * frontier_silent_decay_arm_{a,b}_children cohort split in kcov_shm. */
-	if (shm->stats.frontier_silent_decay_live_rejects)
+	if (shm->stats.frontier.silent_decay_live_rejects)
 		stat_row("strategy", "frontier_silent_decay_live_rejects",
-			 shm->stats.frontier_silent_decay_live_rejects);
+			 shm->stats.frontier.silent_decay_live_rejects);
 	dump_stats_render_frontier_satcool();
 	dump_stats_render_frontier_barren();
 	dump_stats_render_frontier_cmp();
@@ -480,12 +480,12 @@ void dump_stats_strategy_summary(void)
 	 * The threshold is emitted alongside so the operator can interpret
 	 * the candidate count without consulting the source, matching the
 	 * frontier_shadow_decay_streak_threshold row above. */
-	if (shm->stats.frontier_live_cooldown_candidates)
+	if (shm->stats.frontier.live_cooldown_candidates)
 		stat_row("strategy", "frontier_live_cooldown_candidates",
-			 shm->stats.frontier_live_cooldown_candidates);
-	if (shm->stats.frontier_live_would_skip)
+			 shm->stats.frontier.live_cooldown_candidates);
+	if (shm->stats.frontier.live_would_skip)
 		stat_row("strategy", "frontier_live_would_skip",
-			 shm->stats.frontier_live_would_skip);
+			 shm->stats.frontier.live_would_skip);
 	stat_row("strategy", "frontier_live_miss_cooldown_threshold",
 		 FRONTIER_LIVE_MISS_COOLDOWN);
 	dump_live_cooldown_would_skip_per_syscall_top();
@@ -498,9 +498,9 @@ void dump_stats_strategy_summary(void)
 	 * vs the actually-applied cooldown volume; the ratio reflects how
 	 * often the rotation-time decay catches a syscall the per-pick F3
 	 * projection had already counted as a candidate. */
-	if (shm->stats.frontier_live_cooldown_decays)
+	if (shm->stats.frontier.live_cooldown_decays)
 		stat_row("strategy", "frontier_live_cooldown_decays",
-			 shm->stats.frontier_live_cooldown_decays);
+			 shm->stats.frontier.live_cooldown_decays);
 	/* Blanket LIVE-regime probabilistic pick-reject (safe down-
 	 * payment).  Reclaims ~1 / FRONTIER_LIVE_DECAY_REJECT_DENOM of
 	 * LIVE-ring picks unconditionally; the reject rate against
@@ -508,9 +508,9 @@ void dump_stats_strategy_summary(void)
 	 * and should converge to 1 / REJECT_DENOM.  Read alongside
 	 * frontier_live_would_skip (the F3 SHADOW projection) to gauge
 	 * the headroom a targeted variant of this reject would unlock. */
-	if (shm->stats.frontier_live_decay_live_rejects)
+	if (shm->stats.frontier.live_decay_live_rejects)
 		stat_row("strategy", "frontier_live_decay_live_rejects",
-			 shm->stats.frontier_live_decay_live_rejects);
+			 shm->stats.frontier.live_decay_live_rejects);
 	/* SHADOW + per-child A/B errno-plateau decay (silent-regime accept
 	 * site): would_skip is the both-arms shadow demote count, live_
 	 * rejects is the arm-B-only actual demote count, overlap_silent is
@@ -518,15 +518,15 @@ void dump_stats_strategy_summary(void)
 	 * shadow predicate ALSO fires.  Emitted side by side with the
 	 * silent-streak shadow rows above so the operator can read the
 	 * orthogonal coverage (would_skip - overlap_silent) at a glance. */
-	if (shm->stats.frontier_errno_decay_would_skip)
+	if (shm->stats.frontier.errno_decay_would_skip)
 		stat_row("strategy", "frontier_errno_decay_would_skip",
-			 shm->stats.frontier_errno_decay_would_skip);
-	if (shm->stats.frontier_errno_decay_live_rejects)
+			 shm->stats.frontier.errno_decay_would_skip);
+	if (shm->stats.frontier.errno_decay_live_rejects)
 		stat_row("strategy", "frontier_errno_decay_live_rejects",
-			 shm->stats.frontier_errno_decay_live_rejects);
-	if (shm->stats.frontier_errno_decay_overlap_silent)
+			 shm->stats.frontier.errno_decay_live_rejects);
+	if (shm->stats.frontier.errno_decay_overlap_silent)
 		stat_row("strategy", "frontier_errno_decay_overlap_silent",
-			 shm->stats.frontier_errno_decay_overlap_silent);
+			 shm->stats.frontier.errno_decay_overlap_silent);
 	dump_stats_render_frontier_blend();
 	dump_stats_render_reach_band();
 	/* Adaptive expensive-syscall accept gate.  All zero while the
@@ -542,15 +542,15 @@ void dump_stats_strategy_summary(void)
 			 shm->stats.expensive_adaptive_demotes);
 	}
 	dump_stats_render_arg_len_semantics();
-	if (shm->stats.frontier_underflow_prevented)
+	if (shm->stats.frontier.underflow_prevented)
 		stat_row("strategy", "frontier_underflow_prevented",
-			 shm->stats.frontier_underflow_prevented);
-	if (shm->stats.frontier_intervention_pulls)
+			 shm->stats.frontier.underflow_prevented);
+	if (shm->stats.frontier.intervention_pulls)
 		stat_row("strategy", "frontier_intervention_pulls",
-			 shm->stats.frontier_intervention_pulls);
-	if (shm->stats.frontier_intervention_cold_skipped)
+			 shm->stats.frontier.intervention_pulls);
+	if (shm->stats.frontier.intervention_cold_skipped)
 		stat_row("strategy", "frontier_intervention_cold_skipped",
-			 shm->stats.frontier_intervention_cold_skipped);
+			 shm->stats.frontier.intervention_cold_skipped);
 	if (shm->stats.plateau_forced_windows)
 		stat_row("strategy", "plateau_forced_windows",
 			 shm->stats.plateau_forced_windows);
