@@ -137,18 +137,6 @@ const struct stat_category uffd_churn_category =
 	              uffd_runs,
 	              uffd_churn_fields);
 
-static const struct stat_field iouring_flood_fields[] = {
-	STAT_FIELD(iouring, runs),
-	STAT_FIELD(iouring, submits),
-	STAT_FIELD(iouring, reaped),
-	STAT_FIELD(iouring, failed),
-};
-
-const struct stat_category iouring_flood_category =
-	STAT_CATEGORY("iouring_flood",
-	              iouring_runs,
-	              iouring_flood_fields);
-
 static const struct stat_field iouring_send_zc_churn_fields[] = {
 	STAT_FIELD(iouring_send_zc_churn, runs),
 	STAT_FIELD(iouring_send_zc_churn, setup_failed),

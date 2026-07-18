@@ -34,6 +34,7 @@
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/inplace_crypto.h"
+#include "stats/subsys/iouring.h"
 #include "stats/subsys/iouring_eventfd.h"
 #include "stats/subsys/ip6gre_lapb.h"
 #include "stats/subsys/keyring_spam.h"
@@ -1149,11 +1150,8 @@ struct stats_s {
 	unsigned long uffd_unregisters;		/* successful UFFDIO_UNREGISTER */
 	unsigned long uffd_failed;		/* userfaultfd/UFFDIO_API/mmap/REGISTER/UNREGISTER returned -1 */
 
-	/* iouring_flood childop counters */
-	unsigned long iouring_runs;		/* total iouring_flood invocations */
-	unsigned long iouring_submits;		/* SQEs successfully submitted via io_uring_enter */
-	unsigned long iouring_reaped;		/* CQEs drained from the completion ring */
-	unsigned long iouring_failed;		/* setup/mmap/submit_burst/io_uring_enter returned -1 */
+	/* iouring_flood accounting.  See stats/subsys/iouring.h. */
+	struct iouring_stats iouring __attribute__((aligned(64)));
 
 	/* sanitise_io_uring_enter bailed out because the kernel-shared SQ ring
 	 * mask read back larger than ring->sq_entries -- a sibling op had
