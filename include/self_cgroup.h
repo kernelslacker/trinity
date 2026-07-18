@@ -50,7 +50,7 @@ void self_cgroup_drop_fds_in_child(void);
  * parent, 0 in child, -1 on error.  Falls back to plain fork() (single-
  * cgroup mode or no cgroup at all) or to fork()+post-migrate (older
  * kernel with no clone3) when CLONE_INTO_CGROUP isn't available.  Called
- * by spawn_child() in main.c as a drop-in replacement for fork().
+ * by spawn_child() in main/loop.c as a drop-in replacement for fork().
  */
 pid_t self_cgroup_fork_into_workload(void);
 

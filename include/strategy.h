@@ -958,7 +958,7 @@ void strategy_plateau_hypothesis_enter(void);
  * one-line block.  When plateau_active is false, drops the stashed
  * state so the print_stats block suppresses cleanly.
  *
- * Called from main.c print_stats() once per stats tick -- the
+ * Called from main/loop.c print_stats() once per stats tick -- the
  * cadence matches the cadence the operator reads the periodic
  * dump at, so the hypothesis-transition log lines and the per-tick
  * visibility line stay in sync.
@@ -966,7 +966,7 @@ void strategy_plateau_hypothesis_enter(void);
 void strategy_plateau_hypothesis_tick(void);
 
 /*
- * Read-side accessors used by main.c print_stats() to format the
+ * Read-side accessors used by main/loop.c print_stats() to format the
  * one-line plateau hypothesis block.  The deltas + last hypothesis +
  * fire-count array live as parent-private state in strategy.c (the
  * tick driver only runs on the parent path).

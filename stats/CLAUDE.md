@@ -91,7 +91,7 @@ Two parallel counter stores, by design:
 
 ## Integration Points
 
-- `main/main.c` `run_periodic_surfaces()` calls the rate-limited periodic
+- `main/loop.c` `run_periodic_surfaces()` calls the rate-limited periodic
   surfaces: corrupt-pointer spike check, defense counters, cost pool, top
   syscalls, VMA count, and cmp_hints periodic diagnostics.
 - `main/trinity.c` calls `dump_stats()` once at shutdown; this is the sole entry

@@ -12,10 +12,10 @@ repeatedly calls `main_loop()`; none of this fuzzes anything itself.
 |---|---|
 | trinity.c | Process entry: `main()`, option/table setup, `warm_start_all()`, and the epoch loop that repeatedly calls `main_loop()`. Does not fuzz. |
 | params/ | CLI option parsing and the global tunables/flags the rest of the codebase reads (targeting, `--childop`, richness levers). Split by concern -- see the subdirectory breakdown below. |
-| main.c | `main_loop()` driver: per-tick phase sequencing (drain → stop-checks → periodic surfaces → fork-replace), epoch reset (`reset_epoch_state`), `panic()` |
-| main-reap.c | Reap + watchdog: `waitpid(-1)` drain, zombie/D-state slot deferral, stuck-child SIGKILL escalation, fork-die-respawn loop detector, shm corruption sanity checks |
-| main-spawn.c | `fork_children()`/`spawn_child()`: slot allocation, fork-failure backoff/bail, fork-pressure drain, forensic snapshots, final cross-run state save |
-| main-stats.c | `print_stats()`: KCOV/CMP diagnostic lines, picker/plateau/pool-ratio dumps, per-op-count-delta throttling |
+| main/loop.c | `main_loop()` driver: per-tick phase sequencing (drain → stop-checks → periodic surfaces → fork-replace), epoch reset (`reset_epoch_state`), `panic()` |
+| main/reap.c | Reap + watchdog: `waitpid(-1)` drain, zombie/D-state slot deferral, stuck-child SIGKILL escalation, fork-die-respawn loop detector, shm corruption sanity checks |
+| main/spawn.c | `fork_children()`/`spawn_child()`: slot allocation, fork-failure backoff/bail, fork-pressure drain, forensic snapshots, final cross-run state save |
+| main/stats.c | `print_stats()`: KCOV/CMP diagnostic lines, picker/plateau/pool-ratio dumps, per-op-count-delta throttling |
 
 ### `main/params/` subdirectory
 
@@ -40,11 +40,11 @@ inside `main/params/` is params-cluster private and declared in
 | `debug.c` | writer-pin canary, `--guard-shared`, verbosity/diagnostics, `-h`/`-L`/`-I`/`-b` info commands, misc long-only flags. |
 | `compat.c` | Backwards-compat parser helpers: `--redqueen-pending-pick` name/parser pair and the `enable_disable_fd_usage()` hook `usage()` calls. |
 
-Roles match the guessed split exactly: main.c is the loop, main-spawn.c
-forks, main-reap.c reaps/watches, main-stats.c prints. All four share
+Roles match the guessed split exactly: main/loop.c is the loop, main/spawn.c
+forks, main/reap.c reaps/watches, main/stats.c prints. All four share
 parent-private state declared in `include/main-internal.h` (`pidstatfiles`,
 `zombie_pids`, `zombie_since`, `spawn_times`, `hiscore`, `stall_count`) —
-this header is the internal seam for the main.c 4-way split, not a public
+this header is the internal seam for the main/loop.c 4-way split, not a public
 API surface.
 
 ## Process lifecycle
@@ -157,7 +157,7 @@ API surface.
   `run_periodic_surfaces()`, run-identity snapshot at loop entry.
 - `kcov.h`, `kcov/plateau.c`, `kcov/persist.c` — `kcov_plateau_check()`,
   `kcov_bitmap_maybe_snapshot()`/`kcov_bitmap_canary_check()`,
-  KCOV CMP/PC diagnostic formatting consumed by main-stats.c.
+  KCOV CMP/PC diagnostic formatting consumed by main/stats.c.
 - `cmp_hints.c`, `cmp_hints/persist.c` — `cmp_hints_maybe_snapshot()`
   each tick; `final_state_save()` calls `cmp_hints_save_file()` on the
   fork-failure bail path.
@@ -184,7 +184,7 @@ API surface.
 
 ## Areas of attention
 
-1. **main-reap.c size and responsibility span** (1,803 LOC) — covers shm
+1. **main/reap.c size and responsibility span** (1,803 LOC) — covers shm
    corruption sanity, normal reap, zombie/D-state deferral, watchdog
    escalation, D-state forensic dumping (5 separate bounded `/proc` readers),
    fast-die-loop ring detection, and signal-status dispatch. A change to
@@ -218,13 +218,13 @@ API surface.
 
 ## Summary
 
-main/ is the parent's control plane: `main_loop()` in main.c sequences a
+main/ is the parent's control plane: `main_loop()` in main/loop.c sequences a
 fixed per-tick pipeline (drain child-published state → check stop
-conditions → run periodic surfaces → top up the fleet), main-spawn.c owns
+conditions → run periodic surfaces → top up the fleet), main/spawn.c owns
 fork/slot-allocation with layered backoff and forensic capture on failure,
-main-reap.c owns poll-based reaping with a D-state-aware two-phase slot
+main/reap.c owns poll-based reaping with a D-state-aware two-phase slot
 lifecycle (live → zombie-pending → free) plus a stuck-child watchdog and
-fork-die-respawn loop breaker, and main-stats.c renders the operator-facing
+fork-die-respawn loop breaker, and main/stats.c renders the operator-facing
 health/coverage summary at a throttled, change-gated cadence. The layer
 touches nearly every other subsystem's periodic hook (kcov, cmp_hints,
 minicorpus, stats, self_cgroup, canary queue) but owns none of their

@@ -93,7 +93,7 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
 - `kcov/collect.c` — calls `frontier_record_new_edge()` / `frontier_record_transition_edge()` on
   the new-edge/new-transition branches, and `bandit_cmp_observe()` on the CMP-trace ingestion
   path (feeds the novelty bloom and bandit CMP reward term).
-- `main/main-stats.c` — ticks `strategy_plateau_hypothesis_tick()` once per stats interval
+- `main/stats.c` — ticks `strategy_plateau_hypothesis_tick()` once per stats interval
   (parent-only, no locking needed) and renders the current hypothesis / per-hypothesis fire
   counts.
 - `stats/dump.c` — calls `dump_strategy_stats()` at end-of-run.
