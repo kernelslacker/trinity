@@ -375,10 +375,6 @@ static const unsigned long futex_timeout_ops[] = {
  * a custom sanitise callback.  Terminated by .syscall_name == NULL.
  */
 static const struct syscall_struct_arg syscall_struct_args_all[] = {
-	/* sched_setattr(pid_t, struct sched_attr *, unsigned int) */
-	{ "sched_setattr",	2, &struct_catalog[SC_SCHED_ATTR] },
-	/* sched_getattr(pid_t, struct sched_attr *, unsigned int, unsigned int) */
-	{ "sched_getattr",	2, &struct_catalog[SC_SCHED_ATTR] },
 	/* clone3(struct clone_args *, size_t) */
 	{ "clone3",		1, &struct_catalog[SC_CLONE_ARGS] },
 	/* setrlimit(unsigned int, struct rlimit *) */
@@ -487,10 +483,6 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	{ "msgctl",		3, &struct_catalog[SC_MSQID_DS] },
 	/* shmctl(int shmid, int cmd, struct shmid_ds *buf) — IPC_SET path */
 	{ "shmctl",		3, &struct_catalog[SC_SHMID_DS] },
-	/* sched_setparam(pid_t, struct sched_param *) */
-	{ "sched_setparam",	2, &struct_catalog[SC_SCHED_PARAM] },
-	/* sched_setscheduler(pid_t, int, struct sched_param *) */
-	{ "sched_setscheduler",	3, &struct_catalog[SC_SCHED_PARAM] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
 	{ "bpf",		2, &struct_catalog[SC_BPF_ATTR] },
@@ -1380,10 +1372,12 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
  */
 extern const struct syscall_struct_arg struct_catalog_registry_time[];
 extern const struct syscall_struct_arg struct_catalog_registry_io_uring[];
+extern const struct syscall_struct_arg struct_catalog_registry_sched[];
 
 const struct syscall_struct_arg_group syscall_struct_arg_groups[] = {
 	{ struct_catalog_registry_time },
 	{ struct_catalog_registry_io_uring },
+	{ struct_catalog_registry_sched },
 	{ syscall_struct_args_all },
 	{ NULL },
 };
