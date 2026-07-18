@@ -46,6 +46,7 @@
 #include "stats/subsys/perf_chains.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/recipe.h"
+#include "stats/subsys/refcount_audit.h"
 #include "stats/subsys/sched_cycler.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
@@ -1028,11 +1029,8 @@ struct stats_s {
 	/* aio submission counter.  See stats/subsys/aio.h. */
 	struct aio_stats aio __attribute__((aligned(64)));
 
-	/* refcount_auditor childop counters */
-	unsigned long refcount_audit_runs;
-	unsigned long refcount_audit_fd_anomalies;
-	unsigned long refcount_audit_mmap_anomalies;
-	unsigned long refcount_audit_sock_anomalies;
+	/* refcount_audit accounting.  See stats/subsys/refcount_audit.h. */
+	struct refcount_audit_stats refcount_audit __attribute__((aligned(64)));
 
 	/* fs_lifecycle childop counters */
 	unsigned long fs_lifecycle_tmpfs;	/* plain tmpfs variant */

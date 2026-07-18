@@ -147,7 +147,7 @@ static void audit_fd_bucket(void)
 		if (stat(path, &st) != 0 && errno == ENOENT) {
 			output(0, "refcount audit: fd %d tracked in pool but /proc/self/fdinfo/%d missing\n",
 			       fd, newfd);
-			__atomic_add_fetch(&shm->stats.refcount_audit_fd_anomalies,
+			__atomic_add_fetch(&shm->stats.refcount_audit.fd_anomalies,
 					   1, __ATOMIC_RELAXED);
 		}
 		close(newfd);
@@ -195,7 +195,7 @@ static void audit_mmap_bucket(void)
 			if (!proc_maps_check(addr, m->size, m->prot, true)) {
 				output(0, "refcount audit: mapping %p size=%lu prot=0x%x missing from /proc/self/maps\n",
 				       m->ptr, m->size, m->prot);
-				__atomic_add_fetch(&shm->stats.refcount_audit_mmap_anomalies,
+				__atomic_add_fetch(&shm->stats.refcount_audit.mmap_anomalies,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
@@ -477,7 +477,7 @@ static void audit_socket_pool_against_net_inodes(struct objhead *head,
 		if (!found) {
 			output(0, "refcount audit: socket fd %d inode %lu missing from /proc/net\n",
 			       si->fd, (unsigned long)st.st_ino);
-			__atomic_add_fetch(&shm->stats.refcount_audit_sock_anomalies,
+			__atomic_add_fetch(&shm->stats.refcount_audit.sock_anomalies,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -554,7 +554,7 @@ static void audit_socket_bucket(void)
 			if (!found) {
 				output(0, "refcount audit: held socket inode %lu (via /proc/self/fd) missing from all /proc/net tables\n",
 				       (unsigned long)held[j]);
-				__atomic_add_fetch(&shm->stats.refcount_audit_sock_anomalies,
+				__atomic_add_fetch(&shm->stats.refcount_audit.sock_anomalies,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
@@ -570,7 +570,7 @@ bool refcount_auditor(struct childdata *child __unused__)
 	if (!ONE_IN(50))
 		return true;
 
-	__atomic_add_fetch(&shm->stats.refcount_audit_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.refcount_audit.runs, 1, __ATOMIC_RELAXED);
 
 	switch (bucket_cursor % 3) {
 	case 0: audit_fd_bucket();     break;
