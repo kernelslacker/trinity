@@ -23,6 +23,7 @@
 #include "stats/subsys/barrier_racer.h"
 #include "stats/subsys/blob.h"
 #include "stats/subsys/bridge_ct.h"
+#include "stats/subsys/bridge_ip6frag.h"
 #include "stats/subsys/cold_overflow.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/errno_gradient.h"
@@ -1480,10 +1481,8 @@ struct stats_s {
 	/* bridge_conntrack_churn accounting.  See stats/subsys/bridge_ct.h. */
 	struct bridge_ct_stats bridge_ct __attribute__((aligned(64)));
 
-	/* bridge_ip6frag_refrag childop counters */
-	unsigned long bridge_ip6frag_runs;		/* total bridge_ip6frag_refrag invocations */
-	unsigned long bridge_ip6frag_pairs_sent;	/* two-fragment IPv6 datagram pairs attempted */
-	unsigned long bridge_ip6frag_frames_sent;	/* individual IPv6 fragment frames sendto() >0 */
+	/* bridge_ip6frag_refrag accounting.  See stats/subsys/bridge_ip6frag.h. */
+	struct bridge_ip6frag_stats bridge_ip6frag __attribute__((aligned(64)));
 
 	/* atm_vcc_churn childop counters */
 	unsigned long atm_vcc_churn_runs;		/* total atm_vcc_churn invocations */

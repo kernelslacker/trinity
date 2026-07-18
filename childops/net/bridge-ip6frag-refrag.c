@@ -536,7 +536,7 @@ static void b6r_send_frag_pair(int raw_fd, int ifindex,
 	if (frame_len &&
 	    sendto(raw_fd, frame, frame_len, MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-		__atomic_add_fetch(&shm->stats.bridge_ip6frag_frames_sent,
+		__atomic_add_fetch(&shm->stats.bridge_ip6frag.frames_sent,
 				   1, __ATOMIC_RELAXED);
 
 	frame_len = b6r_build_frag_frame(frame, sizeof(frame),
@@ -547,7 +547,7 @@ static void b6r_send_frag_pair(int raw_fd, int ifindex,
 	if (frame_len &&
 	    sendto(raw_fd, frame, frame_len, MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-		__atomic_add_fetch(&shm->stats.bridge_ip6frag_frames_sent,
+		__atomic_add_fetch(&shm->stats.bridge_ip6frag.frames_sent,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -745,7 +745,7 @@ static void b6r_iter_packet_burst(struct b6r_iter_ctx *ctx)
 				   dst_mac, src_mac,
 				   b6r_ident_counter, rnd_hi);
 		b6r_ident_counter++;
-		__atomic_add_fetch(&shm->stats.bridge_ip6frag_pairs_sent,
+		__atomic_add_fetch(&shm->stats.bridge_ip6frag.pairs_sent,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -817,7 +817,7 @@ bool bridge_ip6frag_refrag(struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.bridge_ip6frag_runs, 1,
+	__atomic_add_fetch(&shm->stats.bridge_ip6frag.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported || ns_unsupported_bridge ||
