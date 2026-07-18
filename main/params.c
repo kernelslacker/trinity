@@ -564,6 +564,7 @@ static const struct option_help option_descs[] = {
 	{ "dangerous",		'd', "enable dangerous mode" },
 	{ "debug",		'D', "enable debug" },
 	{ "disable-fds",	 0,  NULL },	/* handled separately */
+	{ "guard-shared",	 0,  "guard shared mmap regions with PROT_NONE guard pages to catch out-of-bounds writes (needs a GUARD_SHARED=1 build; otherwise accepted but warns to rebuild): off, pools (focused scope -- kcov_shm, shared str/obj heap, childdata; default when given bare), or all (every alloc_shared region -- may need a vm.max_map_count bump to avoid mprotect-split ENOMEM)." },
 	{ "domain",		'P', "specify specific network domain for sockets" },
 	{ "dry-run",		 0,  "run arg-gen + sanitise but skip the syscall (safe ASAN/repro mode)" },
 	{ "enable-fds",		 0,  NULL },	/* handled separately */
@@ -1908,9 +1909,12 @@ void parse_args(int argc, char *argv[])
 				outputstd("opt:%c\n", opt);
 			return;
 
-		/* Long-only opt not claimed by any helper -- silent no-op. */
+		/* Long-only opt claimed by no parser helper -- table/parser drift.
+		 * Fatal rather than silently ignoring operator input. */
 		case 0:
-			break;
+			outputerr("internal error: unhandled long option --%s\n",
+				  long_name);
+			exit(EXIT_FAILURE);
 
 		case 'd':
 			dangerous = true;
