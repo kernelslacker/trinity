@@ -2948,8 +2948,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		prev_save_reject_cap           = cur_save_reject_cap;
 		{
 			unsigned int cs;
-			for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
+			for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
 				prev_cmp_hint_callsite[cs] = cur_cmp_hint_callsite[cs];
+				prev_cmp_hint_callsite_pc_wins[cs] =
+					cur_cmp_hint_callsite_pc_wins[cs];
+				prev_cmp_hint_callsite_misses[cs] =
+					cur_cmp_hint_callsite_misses[cs];
+			}
 		}
 		{
 			unsigned int cs;
@@ -3535,6 +3540,18 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	prev_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous;
 	prev_reexec_attribution_width_match = cur_reexec_attribution_width_match;
 	prev_reexec_new_cmps_total          = cur_reexec_new_cmps_total;
+	prev_reexec_new_edges_total         = cur_reexec_new_edges_total;
+	prev_reexec_attempts_by_arm[0]      = cur_reexec_attempts_by_arm[0];
+	prev_reexec_attempts_by_arm[1]      = cur_reexec_attempts_by_arm[1];
+	prev_reexec_new_cmps_by_arm[0]      = cur_reexec_new_cmps_by_arm[0];
+	prev_reexec_new_cmps_by_arm[1]      = cur_reexec_new_cmps_by_arm[1];
+	prev_reexec_new_edges_by_arm[0]     = cur_reexec_new_edges_by_arm[0];
+	prev_reexec_new_edges_by_arm[1]     = cur_reexec_new_edges_by_arm[1];
+	{
+		unsigned int cs;
+		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++)
+			prev_prop_injected_callsite[cs] = cur_prop_injected_callsite[cs];
+	}
 	prev_reexec_skipped_destructive     = cur_reexec_skipped_destructive;
 	prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
 	prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
