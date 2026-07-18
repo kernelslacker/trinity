@@ -621,7 +621,7 @@ static void post_statx(struct syscallrecord *rec)
 				       "(dfd=%ld flags=0x%lx)\n",
 				       req_mask, got_mask,
 				       (long) snap->dfd, snap->flags);
-				__atomic_add_fetch(&shm->stats.statx_oracle_anomalies,
+				__atomic_add_fetch(&shm->stats.oracle.statx_oracle_anomalies,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
@@ -725,7 +725,7 @@ static void post_statx(struct syscallrecord *rec)
 	       (unsigned int) recheck.stx_dev_major, (unsigned int) recheck.stx_dev_minor,
 	       (unsigned int) recheck.stx_rdev_major, (unsigned int) recheck.stx_rdev_minor);
 
-	__atomic_add_fetch(&shm->stats.statx_oracle_anomalies, 1,
+	__atomic_add_fetch(&shm->stats.oracle.statx_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
 out_release:

@@ -130,7 +130,7 @@ static void post_setpriority(struct syscallrecord *rec)
 		output(0, "sched oracle: setpriority(PRIO_PROCESS, %d, %d) "
 		       "succeeded but /proc/self/status Nice=%d\n",
 		       (int) who, expected, got);
-		__atomic_add_fetch(&shm->stats.sched_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sched_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

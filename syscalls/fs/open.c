@@ -137,7 +137,7 @@ static void post_open(struct syscallrecord *rec)
 	if (fstat(fd, &st) != 0) {
 		output(0, "fd oracle: open/openat returned fd %d but "
 		       "fstat failed (errno %d)\n", fd, errno);
-		__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 
@@ -180,7 +180,7 @@ static void post_openat(struct syscallrecord *rec)
 	if (fstat(fd, &st_fd) != 0) {
 		output(0, "fd oracle: openat returned fd %d but "
 		       "fstat failed (errno %d)\n", fd, errno);
-		__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 		close(fd);
 		return;
@@ -198,7 +198,7 @@ static void post_openat(struct syscallrecord *rec)
 			       (unsigned long) st_fd.st_ino,
 			       (unsigned long) st_path.st_dev,
 			       (unsigned long) st_path.st_ino);
-			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+			__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}

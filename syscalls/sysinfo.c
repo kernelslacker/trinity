@@ -196,26 +196,26 @@ static void post_sysinfo(struct syscallrecord *rec)
 	if (user_view.totalram != kernel_view.totalram) {
 		output(0, "sysinfo oracle: totalram user=%lu kernel=%lu\n",
 		       user_view.totalram, kernel_view.totalram);
-		__atomic_add_fetch(&shm->stats.sysinfo_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sysinfo_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 	if (user_view.totalswap != kernel_view.totalswap) {
 		output(0, "sysinfo oracle: totalswap user=%lu kernel=%lu\n",
 		       user_view.totalswap, kernel_view.totalswap);
-		__atomic_add_fetch(&shm->stats.sysinfo_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sysinfo_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 	if (user_view.totalhigh != kernel_view.totalhigh) {
 		output(0, "sysinfo oracle: totalhigh user=%lu kernel=%lu\n",
 		       user_view.totalhigh, kernel_view.totalhigh);
-		__atomic_add_fetch(&shm->stats.sysinfo_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sysinfo_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 	if (user_view.mem_unit != kernel_view.mem_unit) {
 		output(0, "sysinfo oracle: mem_unit user=%lu kernel=%lu\n",
 		       (unsigned long) user_view.mem_unit,
 		       (unsigned long) kernel_view.mem_unit);
-		__atomic_add_fetch(&shm->stats.sysinfo_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sysinfo_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

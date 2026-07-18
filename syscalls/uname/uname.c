@@ -227,7 +227,7 @@ static void post_uname(struct syscallrecord *rec)
 		       first_hex[3], recheck_hex[3],
 		       first_hex[4], recheck_hex[4],
 		       first_hex[5], recheck_hex[5]);
-		__atomic_add_fetch(&shm->stats.uname_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.uname_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

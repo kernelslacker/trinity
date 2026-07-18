@@ -190,7 +190,7 @@ static void post_sched_getparam(struct syscallrecord *rec)
 	if (local.sched_priority != syscall_buf.sched_priority) {
 		output(0, "sched_getparam oracle: syscall=%d but recheck=%d\n",
 		       syscall_buf.sched_priority, local.sched_priority);
-		__atomic_add_fetch(&shm->stats.sched_getparam_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sched_getparam_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

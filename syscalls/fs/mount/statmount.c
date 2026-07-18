@@ -444,7 +444,7 @@ static void post_statmount(struct syscallrecord *rec)
 		       "[oracle:statmount] mnt_id=%llx prefix [%s] vs [%s]\n",
 		       (unsigned long long) first_req.mnt_id,
 		       first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.statmount_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.statmount_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

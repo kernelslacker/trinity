@@ -65,7 +65,7 @@ static void post_getsid(struct syscallrecord *rec)
 	if (recheck != got) {
 		output(0, "getsid oracle: getsid(0)=%d on syscall return but "
 		       "re-read=%d\n", got, recheck);
-		__atomic_add_fetch(&shm->stats.getsid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getsid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

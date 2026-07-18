@@ -210,7 +210,7 @@ static void post_fstatfs(struct syscallrecord *rec)
 	       (unsigned int) recheck.f_fsid.__val[0],
 	       (unsigned int) recheck.f_fsid.__val[1]);
 
-	__atomic_add_fetch(&shm->stats.fstatfs_oracle_anomalies, 1,
+	__atomic_add_fetch(&shm->stats.oracle.fstatfs_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
 out_release:
@@ -424,7 +424,7 @@ static void post_fstatfs64(struct syscallrecord *rec)
 	       (unsigned int) recheck.f_fsid.__val[0],
 	       (unsigned int) recheck.f_fsid.__val[1]);
 
-	__atomic_add_fetch(&shm->stats.fstatfs64_oracle_anomalies, 1,
+	__atomic_add_fetch(&shm->stats.oracle.fstatfs64_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
 out_release:

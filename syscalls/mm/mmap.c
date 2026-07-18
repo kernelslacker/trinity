@@ -233,7 +233,7 @@ static bool post_mmap_oracle_aligned(char *p)
 	if ((unsigned long) p & (page_size - 1)) {
 		output(0, "mmap oracle: returned addr %p is not page-aligned (page_size=%u)\n",
 		       p, page_size);
-		__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.mmap_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 		return false;
 	}
@@ -388,7 +388,7 @@ static void post_mmap_oracle_proc_maps(char *p, struct syscallrecord *rec)
 			output(0, "mmap oracle: mapping at %p size %lu prot 0x%lx "
 			       "not visible in /proc/self/maps with expected prot\n",
 			       p, rec->a2, rec->a3);
-			__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+			__atomic_add_fetch(&shm->stats.oracle.mmap_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}

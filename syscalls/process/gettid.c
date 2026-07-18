@@ -47,7 +47,7 @@ static void post_gettid(struct syscallrecord *rec)
 		output(0, "gettid oracle: gettid()=%d but "
 		       "/proc/self/status Pid=%d\n",
 		       got, proc_pid);
-		__atomic_add_fetch(&shm->stats.gettid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.gettid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

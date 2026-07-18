@@ -259,7 +259,7 @@ static void post_olduname(struct syscallrecord *rec)
 		       first_hex[2], recheck_hex[2],
 		       first_hex[3], recheck_hex[3],
 		       first_hex[4], recheck_hex[4]);
-		__atomic_add_fetch(&shm->stats.olduname_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.olduname_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

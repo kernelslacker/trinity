@@ -64,7 +64,7 @@ static void post_setsid(struct syscallrecord *rec)
 	if (recheck != got) {
 		output(0, "setsid oracle: setsid()=%d but "
 		       "subsequent getsid(0)=%d\n", got, recheck);
-		__atomic_add_fetch(&shm->stats.setsid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.setsid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

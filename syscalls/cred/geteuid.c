@@ -53,7 +53,7 @@ static void post_geteuid(struct syscallrecord *rec)
 		output(0, "geteuid oracle: geteuid()=%u but "
 		       "/proc/self/status Uid euid=%u\n",
 		       got, proc_euid);
-		__atomic_add_fetch(&shm->stats.geteuid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.geteuid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

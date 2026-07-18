@@ -240,7 +240,7 @@ static void post_gettimeofday(struct syscallrecord *rec)
 	if (diff < -5 || diff > 5) {
 		output(0, "gettimeofday oracle: tv.tv_sec=%ld but clock_gettime=%ld (diff=%ld)\n",
 		       (long) local_tv.tv_sec, (long) ts.tv_sec, diff);
-		__atomic_add_fetch(&shm->stats.gettimeofday_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.gettimeofday_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

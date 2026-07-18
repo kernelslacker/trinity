@@ -38,7 +38,7 @@ static void post_setuid(struct syscallrecord *rec)
 		if (got != want) {
 			output(0, "cred oracle: setuid(%u) succeeded but geteuid()=%u\n",
 			       want, got);
-			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+			__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}
@@ -54,7 +54,7 @@ static void post_setuid(struct syscallrecord *rec)
 		output(0, "uid oracle: setuid(%u) succeeded but "
 		       "/proc/self/status Uid euid=%u\n",
 		       want, proc_euid);
-		__atomic_add_fetch(&shm->stats.uid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.uid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

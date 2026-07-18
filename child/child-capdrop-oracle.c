@@ -30,7 +30,7 @@
  * --exclude=<syscall> CLI knob can't silently skip the oracle.
  *
  * SAFETY: every probe expects failure.  On the (alarming) success
- * branch the oracle bumps shm->stats.capdrop_oracle_anomalies, emits
+ * branch the oracle bumps shm->stats.oracle.capdrop_oracle_anomalies, emits
  * an output(0, ...) anomaly line, and does NOT retry the privileged
  * action.  The bpf success branch closes the unexpectedly-loaded
  * prog fd.
@@ -135,7 +135,7 @@ static bool capdrop_still_in_init_ns(const struct capdrop_ns_anchor *a,
 
 static void capdrop_bump_anomaly(void)
 {
-	__atomic_add_fetch(&shm->stats.capdrop_oracle_anomalies, 1,
+	__atomic_add_fetch(&shm->stats.oracle.capdrop_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 }
 

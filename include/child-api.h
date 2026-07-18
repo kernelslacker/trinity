@@ -282,7 +282,7 @@ void divergence_sentinel_tick(struct childdata *child);
  * asserting that the capset()-to-empty in init_child_setup_sandbox
  * actually held: bpf(PROG_LOAD) / mount() / setsockopt(SO_RCVBUFFORCE)
  * each expect EPERM, and capget(self) expects empty masks across both
- * v3 data slots.  Any deviation bumps shm->stats.capdrop_oracle_anomalies
+ * v3 data slots.  Any deviation bumps shm->stats.oracle.capdrop_oracle_anomalies
  * and emits an output(0, ...) line.  See child-capdrop-oracle.c.
  *
  * capdrop_oracle_capture_init_ns_anchors() stamps the (st_dev, st_ino)

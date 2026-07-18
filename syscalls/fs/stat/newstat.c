@@ -263,7 +263,7 @@ static void post_newstat(struct syscallrecord *rec)
 	       (unsigned long) recheck.st_rdev, (long long) recheck.st_size,
 	       (long) recheck.st_blksize, (long long) recheck.st_blocks);
 
-	__atomic_add_fetch(&shm->stats.newstat_oracle_anomalies, 1,
+	__atomic_add_fetch(&shm->stats.oracle.newstat_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
 out_release:

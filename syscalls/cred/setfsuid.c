@@ -36,7 +36,7 @@ static void post_setfsuid(struct syscallrecord *rec)
 		output(0, "cred oracle: setfsuid(%u) returned prev=%u but "
 		       "no-op probe shows current=%u\n",
 		       want, prev, probe);
-		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

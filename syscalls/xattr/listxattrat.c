@@ -423,7 +423,7 @@ static void post_listxattrat(struct syscallrecord *rec)
 		       "[oracle:listxattrat] dfd=%d path=%s at_flags=0x%x len=%zu first %s vs recheck %s\n",
 		       snap_dfd, snap_path, snap_at_flags, snap_len,
 		       first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.listxattrat_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.listxattrat_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

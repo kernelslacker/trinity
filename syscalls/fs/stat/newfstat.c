@@ -194,7 +194,7 @@ static void post_newfstat(struct syscallrecord *rec)
 	       (unsigned long) recheck.st_rdev, (long long) recheck.st_size,
 	       (long) recheck.st_blksize, (long long) recheck.st_blocks);
 
-	__atomic_add_fetch(&shm->stats.newfstat_oracle_anomalies, 1,
+	__atomic_add_fetch(&shm->stats.oracle.newfstat_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
 out_release:
@@ -445,7 +445,7 @@ static void post_newfstatat(struct syscallrecord *rec)
 	       (unsigned long) recheck.st_rdev, (long long) recheck.st_size,
 	       (long) recheck.st_blksize, (long long) recheck.st_blocks);
 
-	__atomic_add_fetch(&shm->stats.newfstatat_oracle_anomalies, 1,
+	__atomic_add_fetch(&shm->stats.oracle.newfstatat_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
 out_release:

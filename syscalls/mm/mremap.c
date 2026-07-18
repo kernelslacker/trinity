@@ -236,7 +236,7 @@ static void post_mremap(struct syscallrecord *rec)
 	if ((unsigned long) ptr & (page_size - 1)) {
 		output(0, "mremap oracle: returned addr %p is not page-aligned (page_size=%u)\n",
 		       ptr, page_size);
-		__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.mmap_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 		goto out_free;
 	}

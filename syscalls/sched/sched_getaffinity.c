@@ -227,7 +227,7 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 		       s[0], s[1], s[2], s[3],
 		       q[0], q[1], q[2], q[3],
 		       cmp_len);
-		__atomic_add_fetch(&shm->stats.sched_getaffinity_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sched_getaffinity_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

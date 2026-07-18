@@ -224,7 +224,7 @@ static void post_newuname(struct syscallrecord *rec)
 			output(0, "newuname oracle: field %s syscall=\"%s\" but %s=\"%s\"\n",
 			       fields[i].name, syscall_field,
 			       fields[i].path, proc_buf);
-			__atomic_add_fetch(&shm->stats.newuname_oracle_anomalies,
+			__atomic_add_fetch(&shm->stats.oracle.newuname_oracle_anomalies,
 					   1, __ATOMIC_RELAXED);
 		}
 	}

@@ -366,7 +366,7 @@ static void post_fgetxattr(struct syscallrecord *rec)
 		       "[oracle:fgetxattr] fd=%d name=%s len=%zu first %s vs recheck %s\n",
 		       snap_fd, snap->name, snap_len,
 		       first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.fgetxattr_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.fgetxattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

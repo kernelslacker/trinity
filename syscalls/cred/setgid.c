@@ -36,7 +36,7 @@ static void post_setgid(struct syscallrecord *rec)
 		if (got != want) {
 			output(0, "cred oracle: setgid(%u) succeeded but getegid()=%u\n",
 			       want, got);
-			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+			__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}
@@ -52,7 +52,7 @@ static void post_setgid(struct syscallrecord *rec)
 		output(0, "gid oracle: setgid(%u) succeeded but "
 		       "/proc/self/status Gid egid=%u\n",
 		       want, proc_egid);
-		__atomic_add_fetch(&shm->stats.gid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.gid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

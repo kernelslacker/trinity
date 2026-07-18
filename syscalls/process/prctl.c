@@ -563,7 +563,7 @@ static void post_set_no_new_privs(unsigned long retval)
 	if (got != 1) {
 		output(0, "cred oracle: prctl(PR_SET_NO_NEW_PRIVS) "
 		       "succeeded but PR_GET_NO_NEW_PRIVS=%ld\n", got);
-		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }
@@ -589,7 +589,7 @@ static void post_set_name(const struct prctl_post_state *snap,
 	if (strncmp(readback, (const char *) snap->set_name, 16) != 0) {
 		output(0, "cred oracle: prctl(PR_SET_NAME) succeeded "
 		       "but PR_GET_NAME readback differs from snapshot\n");
-		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }
@@ -613,7 +613,7 @@ static void post_set_dumpable(const struct prctl_post_state *snap,
 		output(0, "cred oracle: prctl(PR_SET_DUMPABLE %lu) "
 		       "succeeded but PR_GET_DUMPABLE=%ld\n",
 		       snap->set_arg, got);
-		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }
@@ -637,7 +637,7 @@ static void post_set_keepcaps(const struct prctl_post_state *snap,
 		output(0, "cred oracle: prctl(PR_SET_KEEPCAPS %lu) "
 		       "succeeded but PR_GET_KEEPCAPS=%ld\n",
 		       snap->set_arg, got);
-		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }
@@ -662,7 +662,7 @@ static void post_set_pdeathsig(const struct prctl_post_state *snap,
 		output(0, "cred oracle: prctl(PR_SET_PDEATHSIG %lu) "
 		       "succeeded but PR_GET_PDEATHSIG=%d\n",
 		       snap->set_arg, sig);
-		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

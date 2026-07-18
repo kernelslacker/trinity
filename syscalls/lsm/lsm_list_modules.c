@@ -297,7 +297,7 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 		       "[oracle:lsm_list_modules] size %u vs %u ids [%s] vs [%s] (cmp_count=%zu)\n",
 		       first_size, recheck_size, first_hex, recheck_hex,
 		       cmp_count);
-		__atomic_add_fetch(&shm->stats.lsm_list_modules_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.lsm_list_modules_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

@@ -286,7 +286,7 @@ static void getpeername_report_divergence(socklen_t first_len,
 	       "[oracle:getpeername] family=%u len=%u [%s] vs [%s]\n",
 	       (unsigned int) first_addr->ss_family, (unsigned int) first_len,
 	       first_hex, recheck_hex);
-	__atomic_add_fetch(&shm->stats.getpeername_oracle_anomalies,
+	__atomic_add_fetch(&shm->stats.oracle.getpeername_oracle_anomalies,
 			   1, __ATOMIC_RELAXED);
 }
 

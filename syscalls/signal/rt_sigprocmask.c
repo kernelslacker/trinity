@@ -212,7 +212,7 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 		       "/proc/self/status SigBlk=0x%016lx\n",
 		       (unsigned long)syscall_blocked,
 		       (unsigned long)proc_blocked);
-		__atomic_add_fetch(&shm->stats.rt_sigprocmask_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.rt_sigprocmask_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

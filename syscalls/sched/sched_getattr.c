@@ -387,7 +387,7 @@ static void post_sched_getattr(struct syscallrecord *rec)
 		       "[oracle:sched_getattr] size %u vs %u cmp_len %zu memcmp_diff %d\n",
 		       user_size_returned, kernel_size_returned,
 		       cmp_len, memcmp_result);
-		__atomic_add_fetch(&shm->stats.sched_getattr_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.sched_getattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

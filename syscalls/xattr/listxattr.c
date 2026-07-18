@@ -254,7 +254,7 @@ static void post_flistxattr(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:flistxattr] fd=%d len=%zu first %s vs recheck %s\n",
 		       snap_fd, snap_len, first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.flistxattr_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.flistxattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -470,7 +470,7 @@ static void post_listxattr(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:listxattr] path=%s len=%zu first %s vs recheck %s\n",
 		       snap_path, snap_len, first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.listxattr_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.listxattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -763,7 +763,7 @@ static void post_llistxattr(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:llistxattr] path=%s len=%zu first %s vs recheck %s\n",
 		       snap_path, snap_len, first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.llistxattr_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.llistxattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

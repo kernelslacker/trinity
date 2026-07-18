@@ -406,7 +406,7 @@ static void post_prlimit64(struct syscallrecord *rec)
 		       (unsigned long long) first_rlim.rlim_cur,
 		       (unsigned long long) recheck_rlim.rlim_cur,
 		       (unsigned int) snap->resource);
-		__atomic_add_fetch(&shm->stats.prlimit64_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.prlimit64_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 
@@ -416,7 +416,7 @@ static void post_prlimit64(struct syscallrecord *rec)
 		       (unsigned long long) first_rlim.rlim_max,
 		       (unsigned long long) recheck_rlim.rlim_max,
 		       (unsigned int) snap->resource);
-		__atomic_add_fetch(&shm->stats.prlimit64_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.prlimit64_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

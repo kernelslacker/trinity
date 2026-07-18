@@ -227,7 +227,7 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 		       (unsigned long)syscall_pending,
 		       (unsigned long)proc_pending,
 		       (unsigned long)sigpnd, (unsigned long)shdpnd);
-		__atomic_add_fetch(&shm->stats.rt_sigpending_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.rt_sigpending_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

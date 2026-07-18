@@ -55,7 +55,7 @@ static void post_getpgrp(struct syscallrecord *rec)
 		output(0, "getpgrp oracle: getpgrp()=%d but "
 		       "/proc/self/status NSpgid=%d\n",
 		       got, proc_pgid);
-		__atomic_add_fetch(&shm->stats.getpgrp_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getpgrp_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

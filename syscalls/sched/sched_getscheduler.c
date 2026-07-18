@@ -63,7 +63,7 @@ static void post_sched_getscheduler(struct syscallrecord *rec)
 	if (current_policy != (int) ret) {
 		output(0, "sched oracle: sched_getscheduler(0) returned %d but rec->retval was %ld\n",
 		       current_policy, ret);
-		__atomic_add_fetch(&shm->stats.sched_getscheduler_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sched_getscheduler_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

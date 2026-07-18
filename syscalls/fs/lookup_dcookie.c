@@ -220,7 +220,7 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 		       "[oracle:lookup_dcookie] cookie=0x%llx len=%zu first %s vs recheck %s\n",
 		       (unsigned long long) snap_cookie, snap_len,
 		       first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.lookup_dcookie_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.lookup_dcookie_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

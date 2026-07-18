@@ -225,7 +225,7 @@ static void post_setgroups(struct syscallrecord *rec)
 		if (n_get != n_set) {
 			output(0, "cred oracle: setgroups(%d, ...) succeeded but "
 			       "getgroups()=%d\n", n_set, n_get);
-			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+			__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 			goto procfs;
 		}
@@ -252,7 +252,7 @@ static void post_setgroups(struct syscallrecord *rec)
 				output(0, "cred oracle: setgroups(%d, ...) succeeded but "
 				       "getgroups() readback differs from sorted input\n",
 				       n_set);
-				__atomic_add_fetch(&shm->stats.cred_oracle_anomalies,
+				__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
@@ -273,7 +273,7 @@ procfs:
 		output(0, "setgroups oracle: setgroups(%d, ...) succeeded but "
 		       "/proc/self/status Groups has %d entries\n",
 		       n_set, n_proc);
-		__atomic_add_fetch(&shm->stats.setgroups_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.setgroups_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 		free(proc_list);
 		goto out_free;
@@ -297,7 +297,7 @@ procfs:
 		output(0, "setgroups oracle: setgroups(%d, ...) succeeded but "
 		       "/proc/self/status Groups list differs from sorted input\n",
 		       n_set);
-		__atomic_add_fetch(&shm->stats.setgroups_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.setgroups_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

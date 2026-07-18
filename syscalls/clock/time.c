@@ -170,7 +170,7 @@ static void post_time(struct syscallrecord *rec)
 	if (syscall_t <= 0) {
 		output(0, "time oracle: non-positive successful return %ld\n",
 		       syscall_t);
-		__atomic_add_fetch(&shm->stats.time_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.time_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 		goto out_release;
 	}
@@ -184,7 +184,7 @@ static void post_time(struct syscallrecord *rec)
 	if (diff < -5 || diff > 5) {
 		output(0, "time oracle: returned %ld but clock_gettime=%ld (diff=%ld)\n",
 		       syscall_t, real_t, diff);
-		__atomic_add_fetch(&shm->stats.time_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.time_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

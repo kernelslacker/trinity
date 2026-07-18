@@ -651,7 +651,7 @@ static void post_fcntl_setfl(unsigned long a1, unsigned long a3)
 		       "but F_GETFL=0x%lx (missing bits: 0x%lx)\n",
 		       a1, a3, (unsigned long) got,
 		       a3 & ~(unsigned long) got);
-		__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

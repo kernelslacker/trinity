@@ -242,7 +242,7 @@ static void post_get_robust_list(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:get_robust_list] head %p vs %p len %zu vs %zu\n",
 		       user_head, kernel_head, user_len, kernel_len);
-		__atomic_add_fetch(&shm->stats.get_robust_list_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.get_robust_list_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

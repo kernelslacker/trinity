@@ -407,7 +407,7 @@ static void post_listmount(struct syscallrecord *rec)
 		       "[oracle:listmount] mnt_id=%llx retval=%ld ids [%s] vs [%s]\n",
 		       (unsigned long long) first_req.mnt_id,
 		       ret, first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.listmount_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.listmount_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

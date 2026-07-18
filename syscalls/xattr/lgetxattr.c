@@ -372,7 +372,7 @@ static void post_lgetxattr(struct syscallrecord *rec)
 		       "[oracle:lgetxattr] path=%s name=%s len=%zu first %s vs recheck %s\n",
 		       snap->pathname, snap->name, snap_len,
 		       first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.lgetxattr_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.lgetxattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

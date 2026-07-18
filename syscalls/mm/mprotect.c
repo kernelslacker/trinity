@@ -210,7 +210,7 @@ static void post_mprotect(struct syscallrecord *rec)
 			output(0, "mmap oracle: mprotect(%lx, %lu, 0x%lx) "
 			       "succeeded but prot not in /proc/self/maps\n",
 			       snap->addr, snap->len, snap->prot);
-			__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+			__atomic_add_fetch(&shm->stats.oracle.mmap_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}

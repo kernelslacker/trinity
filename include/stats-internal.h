@@ -50,6 +50,15 @@ struct stat_category {
 	  .json_key = (jkey), \
 	  .offset = offsetof(struct stats_s, cat##_##suffix) }
 
+/* Dotted variant of STAT_FIELD_JSON for members that live inside a per-
+ * subsystem sub-struct.  The pinned JSON key survives the move; .name
+ * carries the full member identifier so any future text emission via
+ * stat_category_emit_text() still yields a grep-friendly column. */
+#define STAT_FIELD_JSON_SUB(sub, field, jkey) \
+	{ .name = #field, \
+	  .json_key = (jkey), \
+	  .offset = offsetof(struct stats_s, sub.field) }
+
 #define STAT_CATEGORY(cat_name, gate_field, fields_array) \
 	{ (cat_name), \
 	  offsetof(struct stats_s, gate_field), \
