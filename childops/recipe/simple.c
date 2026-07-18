@@ -614,7 +614,7 @@ bool recipe_mq_open(bool *unsupported)
 	if (q == (mqd_t)-1) {
 		if (errno == ENOSYS || errno == ENOENT) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -726,7 +726,7 @@ bool recipe_fanotify(bool *unsupported)
 	if (fd < 0) {
 		if (errno == EPERM || errno == ENOSYS) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -782,7 +782,7 @@ bool recipe_userfaultfd(bool *unsupported)
 	if (fd < 0) {
 		if (errno == EPERM || errno == ENOSYS) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -867,7 +867,7 @@ bool recipe_vfs_leases(bool *unsupported)
 	if (fcntl(fd, F_SETLEASE, F_RDLCK) < 0) {
 		if (errno == EACCES || errno == ENOLCK || errno == EAGAIN) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -990,7 +990,7 @@ bool recipe_mm_memfd(bool *unsupported)
 	if (fd < 0) {
 		if (errno == ENOSYS) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;

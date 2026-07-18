@@ -130,7 +130,7 @@ bool recipe_timerfd_xclose(bool *unsupported)
 			if (i == 0 && (errno == ENOSYS || errno == EINVAL ||
 				       errno == EPERM)) {
 				*unsupported = true;
-				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+				__atomic_add_fetch(&shm->stats.recipe.unsupported,
 						   1, __ATOMIC_RELAXED);
 				return false;
 			}
@@ -259,7 +259,7 @@ bool recipe_signalfd_delivery(bool *unsupported)
 	if (sfd < 0) {
 		if (errno == ENOSYS) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -293,7 +293,7 @@ bool recipe_signalfd_delivery(bool *unsupported)
 	if (signalfd(sfd, &reduced, SFD_NONBLOCK | SFD_CLOEXEC) < 0) {
 		if (errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -386,7 +386,7 @@ bool recipe_epoll_xclose(bool *unsupported)
 	if (epfd < 0) {
 		if (errno == ENOSYS) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -403,7 +403,7 @@ bool recipe_epoll_xclose(bool *unsupported)
 		if (epoll_ctl(epfd, EPOLL_CTL_ADD, evfds[i], &ev) < 0) {
 			if (i == 0 && errno == EINVAL) {
 				*unsupported = true;
-				__atomic_add_fetch(&shm->stats.recipe_unsupported,
+				__atomic_add_fetch(&shm->stats.recipe.unsupported,
 						   1, __ATOMIC_RELAXED);
 			}
 			goto out;
@@ -541,7 +541,7 @@ bool recipe_iouring_fixed_uaf(bool *unsupported)
 	if (st != IOUR_SUPPORTED) {
 		if (st == IOUR_UNSUPPORTED) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -557,7 +557,7 @@ bool recipe_iouring_fixed_uaf(bool *unsupported)
 	if (r < 0) {
 		if (errno == ENOSYS || errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
+			__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;

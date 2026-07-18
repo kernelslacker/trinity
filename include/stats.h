@@ -45,6 +45,7 @@
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/perf_chains.h"
 #include "stats/subsys/pipe_thrash.h"
+#include "stats/subsys/recipe.h"
 #include "stats/subsys/sched_cycler.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
@@ -997,11 +998,8 @@ struct stats_s {
 	unsigned long bpf_lifecycle_triggered;		/* trigger phase reached */
 	unsigned long bpf_lifecycle_eperm;		/* PROG_LOAD/ATTACH denied */
 
-	/* recipe_runner childop counters */
-	unsigned long recipe_runs;		/* total recipe_runner invocations */
-	unsigned long recipe_completed;		/* full sequence ran without failure */
-	unsigned long recipe_partial;		/* at least one step failed */
-	unsigned long recipe_unsupported;	/* discovery probe latched recipe off */
+	/* recipe_runner accounting.  See stats/subsys/recipe.h. */
+	struct recipe_stats recipe __attribute__((aligned(64)));
 
 	/* fd_stress childop counters, one per stress mode */
 	unsigned long fdstress_close_reopen;

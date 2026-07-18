@@ -167,18 +167,6 @@ static const struct stat_category packet_fanout_thrash_category
 	              packet_fanout_runs,
 	              packet_fanout_thrash_fields);
 
-static const struct stat_field recipe_runner_fields[] = {
-	STAT_FIELD(recipe, runs),
-	STAT_FIELD(recipe, completed),
-	STAT_FIELD(recipe, partial),
-	STAT_FIELD(recipe, unsupported),
-};
-
-const struct stat_category recipe_runner_category =
-	STAT_CATEGORY("recipe_runner",
-	              recipe_runs,
-	              recipe_runner_fields);
-
 /* child_dead_parent_observed: init_child()'s pid-handshake loop saw
  * pid_alive(mainpid) == false -- the parent died before publishing this
  * child's slot in pids[].  The original outputerr("BUG!: parent went
