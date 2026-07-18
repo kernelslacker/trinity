@@ -16,3 +16,6 @@
 /* stats/json/common.c */
 void json_emit_string(const char *s);
 void stat_category_emit_json(const struct stat_category *cat);
+
+/* stats/json/syscalls.c */
+void json_emit_syscalls_array(void);
