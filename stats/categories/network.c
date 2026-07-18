@@ -233,20 +233,3 @@ const struct stat_category pfkey_spd_walk_category =
 		pfkey_spd_walk_runs,
 		pfkey_spd_walk_fields);
 
-static const struct stat_field l2tp_ifname_race_fields[] = {
-	STAT_FIELD(l2tp_ifname_race, runs),
-	STAT_FIELD(l2tp_ifname_race, setup_failed),
-	STAT_FIELD(l2tp_ifname_race, iter),
-	STAT_FIELD(l2tp_ifname_race, tunnel_ok),
-	STAT_FIELD(l2tp_ifname_race, tunnel_fail),
-	STAT_FIELD(l2tp_ifname_race, fork_failed),
-	STAT_FIELD(l2tp_ifname_race, spawn_pair_ok),
-	STAT_FIELD(l2tp_ifname_race, sibling_reaped_ok),
-	STAT_FIELD(l2tp_ifname_race, sibling_crashed),
-};
-
-const struct stat_category l2tp_ifname_race_category =
-	STAT_CATEGORY("l2tp_ifname_race",
-		l2tp_ifname_race_runs,
-		l2tp_ifname_race_fields);
-

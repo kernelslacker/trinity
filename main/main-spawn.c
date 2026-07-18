@@ -483,7 +483,7 @@ static void dump_fork_failure_subworker_counters(void)
 				  __ATOMIC_RELAXED),
 		  __atomic_load_n(&shm->stats.pfkey_spd_walk_fork_failed,
 				  __ATOMIC_RELAXED),
-		  __atomic_load_n(&shm->stats.l2tp_ifname_race_fork_failed,
+		  __atomic_load_n(&shm->stats.l2tp_ifname_race.fork_failed,
 				  __ATOMIC_RELAXED),
 		  __atomic_load_n(&shm->stats.statmount_idmap.fork_failed,
 				  __ATOMIC_RELAXED));
