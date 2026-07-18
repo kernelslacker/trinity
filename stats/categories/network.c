@@ -729,19 +729,6 @@ const struct stat_category sysv_shm_orphan_race_category =
 		sysv_shm_orphan_race_runs,
 		sysv_shm_orphan_race_fields);
 
-static const struct stat_field map_shared_stress_fields[] = {
-	STAT_FIELD(map_shared_stress, runs),
-	STAT_FIELD(map_shared_stress, setup_failed),
-	STAT_FIELD(map_shared_stress, writeback_ok),
-	STAT_FIELD(map_shared_stress, dontfork_ok),
-	STAT_FIELD(map_shared_stress, append_ok),
-};
-
-const struct stat_category map_shared_stress_category =
-	STAT_CATEGORY("map_shared_stress",
-		map_shared_stress_runs,
-		map_shared_stress_fields);
-
 static const struct stat_field qrtr_bind_race_fields[] = {
 	STAT_FIELD(qrtr_bind_race, runs),
 	STAT_FIELD(qrtr_bind_race, setup_failed),
