@@ -355,24 +355,6 @@ const struct stat_category rxrpc_key_install_category =
 	              rxrpc_key_install_runs,
 	              rxrpc_key_install_fields);
 
-static const struct stat_field af_alg_weak_cipher_probe_fields[] = {
-	STAT_FIELD(af_alg_weak_cipher_probe, runs),
-	STAT_FIELD(af_alg_weak_cipher_probe, socket_failed),
-	STAT_FIELD(af_alg_weak_cipher_probe, total_bind_attempts),
-	STAT_FIELD(af_alg_weak_cipher_probe, total_bind_accepted),
-	STAT_FIELD(af_alg_weak_cipher_probe, weak_accepted_total),
-	STAT_FIELD(af_alg_weak_cipher_probe, setkey_accepted_total),
-	STAT_FIELD(af_alg_weak_cipher_probe, skcipher_weak_accepted),
-	STAT_FIELD(af_alg_weak_cipher_probe, aead_weak_accepted),
-	STAT_FIELD(af_alg_weak_cipher_probe, hash_weak_accepted),
-	STAT_FIELD(af_alg_weak_cipher_probe, strong_rejected),
-};
-
-const struct stat_category af_alg_weak_cipher_probe_category =
-	STAT_CATEGORY("af_alg_weak_cipher_probe",
-	              af_alg_weak_cipher_probe_runs,
-	              af_alg_weak_cipher_probe_fields);
-
 static const struct stat_field hfs_mount_fuzz_fields[] = {
 	STAT_FIELD(hfs_mount_fuzz, runs),
 	STAT_FIELD(hfs_mount_fuzz, setup_failed),
