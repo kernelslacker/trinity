@@ -627,7 +627,7 @@ static void run_iter(struct childdata *child, unsigned int iter)
 
 	sock_fd = build_socket(setup);
 	if (sock_fd < 0) {
-		__atomic_add_fetch(&shm->stats.splice_protocols_setup_failed,
+		__atomic_add_fetch(&shm->stats.splice_protocols.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		first_skip = true;
 	}
@@ -635,23 +635,23 @@ static void run_iter(struct childdata *child, unsigned int iter)
 	switch (setup) {
 	case SPS_UDP_ESPINUDP:
 	case SPS_UDP_L2TPINUDP:
-		__atomic_add_fetch(&shm->stats.splice_protocols_udp_encap_attempted,
+		__atomic_add_fetch(&shm->stats.splice_protocols.udp_encap_attempted,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case SPS_TCP_REPAIR:
-		__atomic_add_fetch(&shm->stats.splice_protocols_tcp_repair_attempted,
+		__atomic_add_fetch(&shm->stats.splice_protocols.tcp_repair_attempted,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case SPS_PACKET_RX_RING:
-		__atomic_add_fetch(&shm->stats.splice_protocols_packet_ring_attempted,
+		__atomic_add_fetch(&shm->stats.splice_protocols.packet_ring_attempted,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case SPS_AF_ALG:
-		__atomic_add_fetch(&shm->stats.splice_protocols_alg_attempted,
+		__atomic_add_fetch(&shm->stats.splice_protocols.alg_attempted,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case SPS_AF_RXRPC:
-		__atomic_add_fetch(&shm->stats.splice_protocols_rxrpc_attempted,
+		__atomic_add_fetch(&shm->stats.splice_protocols.rxrpc_attempted,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case SPS_NR:
@@ -692,7 +692,7 @@ static void run_iter(struct childdata *child, unsigned int iter)
 				   1, __ATOMIC_RELAXED);
 	in_n = splice(src_fd, NULL, pfd[1], NULL, len, flags_in);
 	if (in_n > 0) {
-		__atomic_add_fetch(&shm->stats.splice_protocols_in_bytes,
+		__atomic_add_fetch(&shm->stats.splice_protocols.in_bytes,
 				   (unsigned long) in_n, __ATOMIC_RELAXED);
 		/*
 		 * The splice_to_socket() kernel path sets MSG_SPLICE_PAGES
@@ -704,17 +704,17 @@ static void run_iter(struct childdata *child, unsigned int iter)
 		 * many splices fell back to copy and aren't reproducing the
 		 * intended bug shape.
 		 */
-		__atomic_add_fetch(&shm->stats.splice_protocols_msg_splice_pages_attempted,
+		__atomic_add_fetch(&shm->stats.splice_protocols.msg_splice_pages_attempted,
 				   1, __ATOMIC_RELAXED);
 		out_n = splice(pfd[0], NULL, sock_fd, NULL,
 			       (size_t) in_n, flags_out);
 		if (out_n > 0) {
-			__atomic_add_fetch(&shm->stats.splice_protocols_out_bytes,
+			__atomic_add_fetch(&shm->stats.splice_protocols.out_bytes,
 					   (unsigned long) out_n, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.splice_protocols_chain_ok,
+			__atomic_add_fetch(&shm->stats.splice_protocols.chain_ok,
 					   1, __ATOMIC_RELAXED);
 			if (out_n == in_n)
-				__atomic_add_fetch(&shm->stats.splice_protocols_msg_splice_pages_path_taken_inferred,
+				__atomic_add_fetch(&shm->stats.splice_protocols.msg_splice_pages_path_taken_inferred,
 						   1, __ATOMIC_RELAXED);
 
 			if (RAND_BOOL()) {
@@ -742,7 +742,7 @@ bool splice_protocols(struct childdata *child)
 	unsigned int iters, i, start;
 	bool any_supported = false;
 
-	__atomic_add_fetch(&shm->stats.splice_protocols_runs,
+	__atomic_add_fetch(&shm->stats.splice_protocols.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (!selftest_done) {
@@ -767,7 +767,7 @@ bool splice_protocols(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.splice_protocols_setup_failed,
+		__atomic_add_fetch(&shm->stats.splice_protocols.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
