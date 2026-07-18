@@ -95,6 +95,7 @@
 #include "stats/subsys/tcp_ao_rotate.h"
 #include "stats/subsys/tls_rotate.h"
 #include "stats/subsys/tls_ulp_churn.h"
+#include "stats/subsys/topo_pair.h"
 #include "stats/subsys/ublk_lifecycle.h"
 #include "stats/subsys/uffd.h"
 #include "stats/subsys/uid_change.h"
@@ -127,11 +128,9 @@
 #define CHILDOP_DECAY_WINDOWS	8
 
 /*
- * SHADOW-ONLY topology-pair sample ring sizing + packed-entry helpers.
- * See the comment on
- * stats_s::topo_pair_ring[] for the field semantics.  Size must be a
- * power of two; the producer masks the fetch-added head with
- * TOPO_PAIR_RING_MASK to derive the destination slot.
+ * SHADOW-ONLY topology-pair packed-entry helpers.  Ring sizing +
+ * layout live in stats/subsys/topo_pair.h; the packed-entry field
+ * semantics are documented on struct topo_pair_stats::ring[].
  *
  * TOPO_PAIR_REASON_PC / _TRANSITION are the two values written by the
  * frontier_record_new_edge() / _transition_edge() producers; 0 is
@@ -144,8 +143,6 @@
  * caps the visible age window at ~17 minutes per child, which is well
  * past the point where a setup's effect is interesting.
  */
-#define TOPO_PAIR_RING_SIZE	256u
-#define TOPO_PAIR_RING_MASK	(TOPO_PAIR_RING_SIZE - 1u)
 
 #define TOPO_PAIR_REASON_PC		1u
 #define TOPO_PAIR_REASON_TRANSITION	2u
@@ -4955,53 +4952,9 @@ struct stats_s {
 	unsigned long childop_wall_recent_cached[NR_CHILD_OP_TYPES];
 	unsigned int childop_decay_slot;
 
-	/* SHADOW-ONLY topology-pair sample ring.
-	 * When a syscall flips a new PC bucket bit or a new transition slot,
-	 * frontier_record_new_edge() (PC lane, strategy-frontier.c) or the
-	 * ungated kcov_collect() transition block in kcov.c (transition lane,
-	 * co-located with the per_syscall_transition_edges_real bump)
-	 * looks at the firing child's latched last_setup_op + last_setup_op_nr
-	 * (stamped in child_process() at the top of every alt-op dispatch)
-	 * and packs a {setup_op, reason, syscall_nr, age_in_syscalls} tuple
-	 * into the slot at (topo_pair_ring_head & TOPO_PAIR_RING_MASK).  The
-	 * head is bumped with atomic_fetch_add so concurrent children claim
-	 * disjoint slots; the slot itself is written with a single 64-bit
-	 * RELAXED store so a reader observes either the prior entry or the
-	 * fresh entry but never a torn mix of the two.  Overwrite-oldest
-	 * once the ring wraps -- the aggregator does not depend on which
-	 * specific events survived, only on the distribution across setup
-	 * ops, and the cumulative topo_pair_records counter records how many
-	 * total events landed so an operator can tell whether the visible
-	 * sample fills the ring (records >= TOPO_PAIR_RING_SIZE) or not.
-	 *
-	 * Packed entry layout (bit positions, LSB first):
-	 *   [ 0.. 7]  setup_op       (uint8_t cast of enum child_op_type;
-	 *                              NR_CHILD_OP_TYPES sentinel never
-	 *                              recorded -- those events bump
-	 *                              topo_pair_no_setup_observed instead)
-	 *   [ 8.. 9]  reason         (1=PC-edge new bucket bit,
-	 *                              2=new transition; 0 reserved for
-	 *                              the uninitialised slot state)
-	 *   [10..25]  syscall_nr     (16 bits; MAX_NR_SYSCALL=1024 fits)
-	 *   [26..45]  age_in_syscalls (20 bits, saturated at (1<<20)-1)
-	 *   [46]      valid          (1 = written entry; 0 in unwritten
-	 *                              slots so the aggregator can skip
-	 *                              the uninitialised tail before the
-	 *                              ring has wrapped)
-	 *   [47..63]  reserved (must be zero on write)
-	 *
-	 * SHADOW: no scheduler / picker / scoring code reads either the
-	 * ring or any of the companion scalars; the only reader is
-	 * stats/childop/local.c's dump_stats_topo_pair_shadow() at shutdown.
-	 * It aggregates the surviving ring entries into per-setup_op (count,
-	 * mean-age, reason
-	 * split) summaries.  This render enables the 103·B go/no-go on a
-	 * LIVE topology-pair experiment that would actually save seeds /
-	 * replay pairs -- it is not a cosmetic surface. */
-	uint64_t topo_pair_ring[TOPO_PAIR_RING_SIZE];
-	unsigned int topo_pair_ring_head;
-	unsigned long topo_pair_records;
-	unsigned long topo_pair_no_setup_observed;
+	/* SHADOW-ONLY topology-pair sample ring + companion counters.
+	 * See stats/subsys/topo_pair.h. */
+	struct topo_pair_stats topo_pair __attribute__((aligned(64)));
 
 	/* SHADOW-ONLY census of scrub-eligible address-family arg slots
 	 * walked by blanket_address_scrub() -- one bump per set bit in
@@ -5230,11 +5183,11 @@ void dump_stats_childop_decay_recency(void) __cold;
  * Producers call this from a productive-coverage event site -- a new PC
  * bucket bit or a new transition slot -- to record one packed
  * {setup_op, reason, syscall_nr, age_in_syscalls} tuple into
- * shm->stats.topo_pair_ring[].  Reads the firing child's last_setup_op /
+ * shm->stats.topo_pair.ring[].  Reads the firing child's last_setup_op /
  * last_setup_op_nr latch (stamped from child_process() at every is_alt_op
- * dispatch), bumps topo_pair_no_setup_observed instead when no setup has
+ * dispatch), bumps topo_pair.no_setup_observed instead when no setup has
  * been observed yet on this child, and otherwise claims a slot via
- * __atomic_fetch_add on topo_pair_ring_head + writes the packed entry
+ * __atomic_fetch_add on topo_pair.ring_head + writes the packed entry
  * with a single __atomic_store_n.  Skips silently when called from
  * parent context (this_child() == NULL).  No live decision consumes the
  * resulting ring -- the only reader is dump_stats_topo_pair_shadow()
@@ -5244,7 +5197,7 @@ void dump_stats_childop_decay_recency(void) __cold;
 void topo_pair_record_shadow(unsigned int nr, unsigned int reason);
 
 /* SHADOW-ONLY topology-pair aggregator.
- * Walks shm->stats.topo_pair_ring[] (capacity TOPO_PAIR_RING_SIZE; each
+ * Walks shm->stats.topo_pair.ring[] (capacity TOPO_PAIR_RING_SIZE; each
  * slot a single packed 64-bit entry produced via topo_pair_record_
  * shadow() from frontier_record_new_edge() in strategy-frontier.c (PC
  * lane) and from the ungated kcov_collect() transition block in kcov.c

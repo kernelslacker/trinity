@@ -210,9 +210,9 @@ void __cold dump_stats_topo_pair_shadow(void)
 	unsigned long total_records, no_setup, head, total_valid = 0;
 	unsigned int i;
 
-	total_records = __atomic_load_n(&shm->stats.topo_pair_records,
+	total_records = __atomic_load_n(&shm->stats.topo_pair.records,
 					__ATOMIC_RELAXED);
-	no_setup = __atomic_load_n(&shm->stats.topo_pair_no_setup_observed,
+	no_setup = __atomic_load_n(&shm->stats.topo_pair.no_setup_observed,
 				   __ATOMIC_RELAXED);
 
 	/* Self-skip when no productive event has fired through the ring
@@ -224,14 +224,14 @@ void __cold dump_stats_topo_pair_shadow(void)
 	if (total_records == 0 && no_setup == 0)
 		return;
 
-	head = __atomic_load_n(&shm->stats.topo_pair_ring_head,
+	head = __atomic_load_n(&shm->stats.topo_pair.ring_head,
 			       __ATOMIC_RELAXED);
 
 	for (i = 0; i < TOPO_PAIR_RING_SIZE; i++) {
 		uint64_t packed;
 		unsigned int setup_op, reason, syscall_nr, age;
 
-		packed = __atomic_load_n(&shm->stats.topo_pair_ring[i],
+		packed = __atomic_load_n(&shm->stats.topo_pair.ring[i],
 					 __ATOMIC_RELAXED);
 		if (!topo_pair_unpack(packed, &setup_op, &reason,
 				      &syscall_nr, &age))

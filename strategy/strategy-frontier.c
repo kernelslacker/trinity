@@ -105,7 +105,7 @@ void topo_pair_record_shadow(unsigned int nr, unsigned int reason)
 
 	setup_op = cc->last_setup_op;
 	if ((unsigned int)setup_op >= NR_CHILD_OP_TYPES) {
-		__atomic_fetch_add(&shm->stats.topo_pair_no_setup_observed,
+		__atomic_fetch_add(&shm->stats.topo_pair.no_setup_observed,
 				   1UL, __ATOMIC_RELAXED);
 		return;
 	}
@@ -128,11 +128,11 @@ void topo_pair_record_shadow(unsigned int nr, unsigned int reason)
 	packed = topo_pair_pack((unsigned int)setup_op, reason, nr,
 				(unsigned int)age);
 
-	slot = __atomic_fetch_add(&shm->stats.topo_pair_ring_head, 1u,
+	slot = __atomic_fetch_add(&shm->stats.topo_pair.ring_head, 1u,
 				  __ATOMIC_RELAXED) & TOPO_PAIR_RING_MASK;
-	__atomic_store_n(&shm->stats.topo_pair_ring[slot], packed,
+	__atomic_store_n(&shm->stats.topo_pair.ring[slot], packed,
 			 __ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->stats.topo_pair_records, 1UL,
+	__atomic_fetch_add(&shm->stats.topo_pair.records, 1UL,
 			   __ATOMIC_RELAXED);
 }
 
