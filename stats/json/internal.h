@@ -22,3 +22,6 @@ void json_emit_syscalls_array(void);
 
 /* stats/json/kcov.c */
 void json_emit_kcov_section(void);
+
+/* stats/json/minicorpus.c */
+void json_emit_minicorpus_section(void);
