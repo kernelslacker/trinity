@@ -423,7 +423,7 @@ bool barrier_racer(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.barrier_racer_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.barrier_racer.runs, 1, __ATOMIC_RELAXED);
 
 	nworkers = 2 + rnd_modulo_u32(3);	/* 2, 3, or 4 workers */
 	target = &targets[rnd_modulo_u32(ARRAY_SIZE(targets))];
@@ -499,7 +499,7 @@ bool barrier_racer(struct childdata *child)
 		if (waitpid_eintr(pids[i], &status, 0) < 0)
 			continue;
 		if (WIFSIGNALED(status))
-			__atomic_add_fetch(&shm->stats.barrier_racer_inner_crashed,
+			__atomic_add_fetch(&shm->stats.barrier_racer.inner_crashed,
 					   1, __ATOMIC_RELAXED);
 	}
 

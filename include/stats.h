@@ -20,6 +20,7 @@
 #include "kernel/if_packet.h"
 #include "kernel/mount.h"
 #include "stats/subsys/aio.h"
+#include "stats/subsys/barrier_racer.h"
 #include "stats/subsys/blob.h"
 #include "stats/subsys/cold_overflow.h"
 #include "stats/subsys/epoll_volatility.h"
@@ -814,9 +815,8 @@ struct stats_s {
 	unsigned long userns_inner_crashed;	/* inner child died by signal */
 	unsigned long userns_unsupported;	/* CLONE_NEWUSER refused, noop path */
 
-	/* barrier_racer childop counters */
-	unsigned long barrier_racer_runs;	/* total barrier_racer invocations */
-	unsigned long barrier_racer_inner_crashed; /* inner worker died by signal */
+	/* barrier_racer accounting.  See stats/subsys/barrier_racer.h. */
+	struct barrier_racer_stats barrier_racer __attribute__((aligned(64)));
 
 	/* genetlink_fuzzer childop counters */
 	unsigned long genetlink_families_discovered;	/* cumulative across children */

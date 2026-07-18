@@ -42,16 +42,6 @@ const struct stat_category userns_bootstrap_category =
 	              userns_bootstrap_runs,
 	              userns_bootstrap_fields);
 
-static const struct stat_field barrier_racer_fields[] = {
-	STAT_FIELD(barrier_racer, runs),
-	STAT_FIELD(barrier_racer, inner_crashed),
-};
-
-const struct stat_category barrier_racer_category =
-	STAT_CATEGORY("barrier_racer",
-	              barrier_racer_runs,
-	              barrier_racer_fields);
-
 static const struct stat_field perf_event_chains_fields[] = {
 	STAT_FIELD(perf_chains, runs),
 	STAT_FIELD(perf_chains, groups_created),
