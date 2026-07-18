@@ -228,7 +228,7 @@ static void drain_errqueue(int s)
 			break;
 
 		any = true;
-		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_errqueue_drained,
+		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.errqueue_drained,
 				   1, __ATOMIC_RELAXED);
 
 		/* Walk the cmsg chain and validate any IP_RECVERR /
@@ -259,7 +259,7 @@ static void drain_errqueue(int s)
 	}
 
 	if (!any)
-		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_errqueue_empty,
+		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.errqueue_empty,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -319,7 +319,7 @@ static int msg_zerocopy_iter_setup(int s, void **pages_out,
 							 __ATOMIC_RELAXED);
 			}
 		}
-		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -327,7 +327,7 @@ static int msg_zerocopy_iter_setup(int s, void **pages_out,
 	pages = mmap(NULL, ZC_PAGE_BYTES, PROT_READ | PROT_WRITE,
 		     MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
 	if (pages == MAP_FAILED) {
-		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -365,15 +365,15 @@ static unsigned int msg_zerocopy_iter_send(int s, const void *pages,
 		if (r >= 0) {
 			sent_count++;
 			__atomic_add_fetch(
-				&shm->stats.msg_zerocopy_churn_sends_ok,
+				&shm->stats.msg_zerocopy_churn.sends_ok,
 				1, __ATOMIC_RELAXED);
 		} else if (errno == EFAULT) {
 			__atomic_add_fetch(
-				&shm->stats.msg_zerocopy_churn_sends_efault,
+				&shm->stats.msg_zerocopy_churn.sends_efault,
 				1, __ATOMIC_RELAXED);
 		} else if (errno == EAGAIN) {
 			__atomic_add_fetch(
-				&shm->stats.msg_zerocopy_churn_sends_eagain,
+				&shm->stats.msg_zerocopy_churn.sends_eagain,
 				1, __ATOMIC_RELAXED);
 			break;
 		} else {
@@ -410,7 +410,7 @@ static void msg_zerocopy_iter_unmap_resend(int s, void **pages_inout,
 		if (munmap(*pages_inout, ZC_PAGE_BYTES) == 0) {
 			munmapped = true;
 			*pages_inout = MAP_FAILED;
-			__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_munmap_ok,
+			__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.munmap_ok,
 					   1, __ATOMIC_RELAXED);
 		} else {
 			saved_pages = NULL;
@@ -422,7 +422,7 @@ static void msg_zerocopy_iter_unmap_resend(int s, void **pages_inout,
 			       MSG_ZEROCOPY | MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (rc < 0 && errno == EFAULT)
 			__atomic_add_fetch(
-				&shm->stats.msg_zerocopy_churn_send_after_munmap_caught,
+				&shm->stats.msg_zerocopy_churn.send_after_munmap_caught,
 				1, __ATOMIC_RELAXED);
 	}
 }
@@ -443,7 +443,7 @@ static void msg_zerocopy_iter_teardown(int s)
 	int zero = 0;
 
 	if (setsockopt(s, SOL_SOCKET, SO_ZEROCOPY, &zero, sizeof(zero)) == 0)
-		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_sndzc_disable_ok,
+		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.sndzc_disable_ok,
 				   1, __ATOMIC_RELAXED);
 
 	drain_errqueue(s);
@@ -464,7 +464,7 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child)
 
 	s = open_loopback_pair(&acceptor);
 	if (s < 0) {
-		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -517,11 +517,11 @@ bool msg_zerocopy_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_runs,
+	__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_msg_zerocopy) {
-		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
