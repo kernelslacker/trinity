@@ -272,7 +272,7 @@ static unsigned int pidfd_storm_iter_spawn(struct pidfd_slot *slots,
 		slots[active].pid = pid;
 		slots[active].pidfd = sys_pidfd_open(pid, 0);
 		if (slots[active].pidfd < 0) {
-			__atomic_add_fetch(&shm->stats.pidfd_storm_failed,
+			__atomic_add_fetch(&shm->stats.pidfd_storm.failed,
 					   1, __ATOMIC_RELAXED);
 			/* pidfd_open failed (ENOSYS on ancient kernels, or
 			 * the child raced and exited).  We still need to
@@ -298,7 +298,7 @@ static unsigned int pidfd_storm_iter_spawn(struct pidfd_slot *slots,
  * out_iters accumulates one bump per issued pidfd syscall (either
  * pidfd_send_signal or pidfd_getfd).  The dead-slot continue and the
  * post-getfd close(2) do not count -- only syscalls that hit the
- * pidfd path.  Caller drains into shm->stats.pidfd_storm_iters after
+ * pidfd path.  Caller drains into shm->stats.pidfd_storm.iters after
  * the drive returns.
  */
 static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
@@ -331,10 +331,10 @@ static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
 						   NULL, 0);
 			local_iters++;
 			if (rc == 0) {
-				__atomic_add_fetch(&shm->stats.pidfd_storm_signals,
+				__atomic_add_fetch(&shm->stats.pidfd_storm.signals,
 						   1, __ATOMIC_RELAXED);
 			} else {
-				__atomic_add_fetch(&shm->stats.pidfd_storm_failed,
+				__atomic_add_fetch(&shm->stats.pidfd_storm.failed,
 						   1, __ATOMIC_RELAXED);
 			}
 		} else {
@@ -343,13 +343,13 @@ static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
 			rc = sys_pidfd_getfd(s->pidfd, target, 0);
 			local_iters++;
 			if (rc >= 0) {
-				__atomic_add_fetch(&shm->stats.pidfd_storm_getfds,
+				__atomic_add_fetch(&shm->stats.pidfd_storm.getfds,
 						   1, __ATOMIC_RELAXED);
 				/* Drop the duplicated fd immediately so
 				 * the storm doesn't accumulate fd debt. */
 				close(rc);
 			} else {
-				__atomic_add_fetch(&shm->stats.pidfd_storm_failed,
+				__atomic_add_fetch(&shm->stats.pidfd_storm.failed,
 						   1, __ATOMIC_RELAXED);
 				/* EPERM (Yama / ptrace policy), EBADF
 				 * (target_fd not present in target),
@@ -455,11 +455,11 @@ static void pidfd_storm_iter_reap(struct pidfd_slot *slots,
 						PER_PIDFD_REAP_TIMEOUT_MS)) {
 				(void) waitpid_eintr(slots[i].pid, &status, 0);
 			} else {
-				__atomic_add_fetch(&shm->stats.pidfd_storm_reap_slow,
+				__atomic_add_fetch(&shm->stats.pidfd_storm.reap_slow,
 						   1, __ATOMIC_RELAXED);
 				if (waitpid_eintr(slots[i].pid, &status,
 						  WNOHANG) != slots[i].pid)
-					__atomic_add_fetch(&shm->stats.pidfd_storm_reap_zombies,
+					__atomic_add_fetch(&shm->stats.pidfd_storm.reap_zombies,
 							   1, __ATOMIC_RELAXED);
 			}
 			close(slots[i].pidfd);
@@ -475,7 +475,7 @@ bool pidfd_storm(struct childdata *child)
 	unsigned int active;
 	unsigned long iters = 0;
 
-	__atomic_add_fetch(&shm->stats.pidfd_storm_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.pidfd_storm.runs, 1, __ATOMIC_RELAXED);
 
 	active = pidfd_storm_iter_spawn(slots, NR_CHILDREN);
 	if (active == 0)
@@ -497,7 +497,7 @@ bool pidfd_storm(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 	pidfd_storm_iter_drive(slots, active, JITTER_RANGE(MAX_ITERATIONS), &iters);
-	__atomic_add_fetch(&shm->stats.pidfd_storm_iters, iters, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.pidfd_storm.iters, iters, __ATOMIC_RELAXED);
 	pidfd_storm_iter_reap(slots, active);
 
 	return true;

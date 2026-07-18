@@ -32,21 +32,6 @@ const struct stat_category userns_bootstrap_category =
 	              userns_bootstrap_runs,
 	              userns_bootstrap_fields);
 
-static const struct stat_field pidfd_storm_fields[] = {
-	STAT_FIELD(pidfd_storm, runs),
-	STAT_FIELD(pidfd_storm, signals),
-	STAT_FIELD(pidfd_storm, getfds),
-	STAT_FIELD(pidfd_storm, failed),
-	STAT_FIELD(pidfd_storm, iters),
-	STAT_FIELD(pidfd_storm, reap_slow),
-	STAT_FIELD(pidfd_storm, reap_zombies),
-};
-
-const struct stat_category pidfd_storm_category =
-	STAT_CATEGORY("pidfd_storm",
-	              pidfd_storm_runs,
-	              pidfd_storm_fields);
-
 static const struct stat_field cgroup_churn_fields[] = {
 	STAT_FIELD(cgroup_churn, runs),
 	STAT_FIELD(cgroup, mkdirs),
