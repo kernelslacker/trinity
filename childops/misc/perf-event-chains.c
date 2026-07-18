@@ -205,7 +205,7 @@ static void fuzz_group_ioctls(int leader_fd, const int *member_fds,
 	/* Enable with and without the group flag. */
 	flag = RAND_BOOL() ? PERF_IOC_FLAG_GROUP : 0;
 	ioctl(leader_fd, PERF_EVENT_IOC_ENABLE, flag);
-	__atomic_add_fetch(&shm->stats.perf_chains_ioctl_ops, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.perf_chains.ioctl_ops, 1, __ATOMIC_RELAXED);
 
 	/* Read from leader; catches PERF_FORMAT_GROUP layout bugs. */
 	{
@@ -217,36 +217,36 @@ static void fuzz_group_ioctls(int leader_fd, const int *member_fds,
 	/* Reset counters. */
 	flag = RAND_BOOL() ? PERF_IOC_FLAG_GROUP : 0;
 	ioctl(leader_fd, PERF_EVENT_IOC_RESET, flag);
-	__atomic_add_fetch(&shm->stats.perf_chains_ioctl_ops, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.perf_chains.ioctl_ops, 1, __ATOMIC_RELAXED);
 
 	/* Fetch the kernel-assigned unique IDs. */
 	ioctl(leader_fd, PERF_EVENT_IOC_ID, &id);
-	__atomic_add_fetch(&shm->stats.perf_chains_ioctl_ops, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.perf_chains.ioctl_ops, 1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < (int)nr_members; i++) {
 		ioctl(member_fds[i], PERF_EVENT_IOC_ID, &id);
-		__atomic_add_fetch(&shm->stats.perf_chains_ioctl_ops, 1,
+		__atomic_add_fetch(&shm->stats.perf_chains.ioctl_ops, 1,
 				   __ATOMIC_RELAXED);
 	}
 
 	/* Redirect overflow output from a member to the leader. */
 	if (nr_members > 0 && RAND_BOOL()) {
 		ioctl(member_fds[0], PERF_EVENT_IOC_SET_OUTPUT, leader_fd);
-		__atomic_add_fetch(&shm->stats.perf_chains_ioctl_ops, 1,
+		__atomic_add_fetch(&shm->stats.perf_chains.ioctl_ops, 1,
 				   __ATOMIC_RELAXED);
 	}
 
 	/* REFRESH with a small count — used by sampling, rarely tested. */
 	if (RAND_BOOL()) {
 		ioctl(leader_fd, PERF_EVENT_IOC_REFRESH, (unsigned long)(rnd_modulo_u32(8) + 1));
-		__atomic_add_fetch(&shm->stats.perf_chains_ioctl_ops, 1,
+		__atomic_add_fetch(&shm->stats.perf_chains.ioctl_ops, 1,
 				   __ATOMIC_RELAXED);
 	}
 
 	/* Disable the group. */
 	flag = RAND_BOOL() ? PERF_IOC_FLAG_GROUP : 0;
 	ioctl(leader_fd, PERF_EVENT_IOC_DISABLE, flag);
-	__atomic_add_fetch(&shm->stats.perf_chains_ioctl_ops, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.perf_chains.ioctl_ops, 1, __ATOMIC_RELAXED);
 }
 
 bool perf_event_chains(struct childdata *child)
@@ -274,7 +274,7 @@ bool perf_event_chains(struct childdata *child)
 		return true;
 	}
 
-	__atomic_add_fetch(&shm->stats.perf_chains_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.perf_chains.runs, 1, __ATOMIC_RELAXED);
 
 	pmu = &pmu_catalog[rnd_modulo_u32(pmu_count)];
 
@@ -285,7 +285,7 @@ bool perf_event_chains(struct childdata *child)
 	if (leader_fd < 0)
 		return true;
 
-	__atomic_add_fetch(&shm->stats.perf_chains_groups_created, 1,
+	__atomic_add_fetch(&shm->stats.perf_chains.groups_created, 1,
 			   __ATOMIC_RELAXED);
 
 	if (valid_op)
