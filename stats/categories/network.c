@@ -203,26 +203,6 @@ const struct stat_category netdev_netns_migrate_category =
 		      nnm_iters,
 		      netdev_netns_migrate_fields);
 
-static const struct stat_field ipset_churn_fields[] = {
-	STAT_FIELD(ipset_churn, runs),
-	STAT_FIELD(ipset_churn, setup_failed),
-	STAT_FIELD(ipset_churn, create_ok),
-	STAT_FIELD(ipset_churn, create_fail),
-	STAT_FIELD(ipset_churn, add_ok),
-	STAT_FIELD(ipset_churn, test_ok),
-	STAT_FIELD(ipset_churn, del_ok),
-	STAT_FIELD(ipset_churn, header_ok),
-	STAT_FIELD(ipset_churn, list_ok),
-	STAT_FIELD(ipset_churn, swap_ok),
-	STAT_FIELD(ipset_churn, flush_ok),
-	STAT_FIELD(ipset_churn, destroy_ok),
-};
-
-const struct stat_category ipset_churn_category =
-	STAT_CATEGORY("ipset_churn",
-	              ipset_churn_runs,
-	              ipset_churn_fields);
-
 static const struct stat_field sysv_shm_orphan_race_fields[] = {
 	STAT_FIELD(sysv_shm_orphan_race, runs),
 	STAT_FIELD(sysv_shm_orphan_race, setup_failed),
