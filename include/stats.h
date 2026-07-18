@@ -21,6 +21,7 @@
 #include "kernel/mount.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/barrier_racer.h"
+#include "stats/subsys/blkdev_lifecycle.h"
 #include "stats/subsys/blob.h"
 #include "stats/subsys/bridge_ct.h"
 #include "stats/subsys/bridge_ip6frag.h"
@@ -2048,13 +2049,8 @@ struct stats_s {
 	/* wireguard_decrypt_flood accounting.  See stats/subsys/wgdf.h. */
 	struct wgdf_stats wgdf __attribute__((aligned(64)));
 
-	/* blkdev_lifecycle_race childop counters */
-	unsigned long blkdev_lifecycle_runs;			/* total blkdev_lifecycle_race invocations */
-	unsigned long blkdev_lifecycle_setup_failed;		/* /dev/loop0 probe failed (latched if persistent) */
-	unsigned long blkdev_lifecycle_set_fd_ok;		/* LOOP_SET_FD bound a backing file */
-	unsigned long blkdev_lifecycle_clr_fd;			/* LOOP_CLR_FD ran (post-cycle teardown) */
-	unsigned long blkdev_lifecycle_ebusy;			/* LOOP_SET_FD raced sibling: EBUSY/ENXIO/EPERM */
-	unsigned long blkdev_lifecycle_rescans;			/* BLKRRPART issued from rescan thread */
+	/* blkdev_lifecycle_race accounting.  See stats/subsys/blkdev_lifecycle.h. */
+	struct blkdev_lifecycle_stats blkdev_lifecycle __attribute__((aligned(64)));
 
 	/* hfs_mount_fuzz childop counters.  Crafted-image mount fuzzer for
 	 * a legacy on-disk filesystem: writes a churned MDB into a memfd,

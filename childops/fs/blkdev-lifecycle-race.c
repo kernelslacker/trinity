@@ -172,7 +172,7 @@ static void *blkdev_rescan_thread(void *arg)
 		 * lock the close path needs.  Either ordering exercises the
 		 * race window. */
 		(void)ioctl(fd, BLKRRPART);
-		__atomic_add_fetch(&shm->stats.blkdev_lifecycle_rescans,
+		__atomic_add_fetch(&shm->stats.blkdev_lifecycle.rescans,
 				   1, __ATOMIC_RELAXED);
 		(void)ioctl(fd, BLKFLSBUF);
 		close(fd);
@@ -210,13 +210,13 @@ static void blkdev_lifecycle_cycle(int loop_n)
 	rc = ioctl(loop_fd, LOOP_SET_FD, (unsigned long)backing_fd);
 	if (rc < 0) {
 		if (errno == EBUSY || errno == ENXIO || errno == EPERM)
-			__atomic_add_fetch(&shm->stats.blkdev_lifecycle_ebusy,
+			__atomic_add_fetch(&shm->stats.blkdev_lifecycle.ebusy,
 					   1, __ATOMIC_RELAXED);
 		close(loop_fd);
 		close(backing_fd);
 		return;
 	}
-	__atomic_add_fetch(&shm->stats.blkdev_lifecycle_set_fd_ok,
+	__atomic_add_fetch(&shm->stats.blkdev_lifecycle.set_fd_ok,
 			   1, __ATOMIC_RELAXED);
 
 	/* Mix of teardown-adjacent IO ops.  Order is randomised per cycle
@@ -242,7 +242,7 @@ static void blkdev_lifecycle_cycle(int loop_n)
 	}
 
 	(void)ioctl(loop_fd, LOOP_CLR_FD);
-	__atomic_add_fetch(&shm->stats.blkdev_lifecycle_clr_fd, 1,
+	__atomic_add_fetch(&shm->stats.blkdev_lifecycle.clr_fd, 1,
 			   __ATOMIC_RELAXED);
 	close(loop_fd);
 	close(backing_fd);
@@ -256,7 +256,7 @@ bool blkdev_lifecycle_race(struct childdata *child)
 	unsigned int iters, i;
 	struct timespec gap = { .tv_sec = 0, .tv_nsec = BLKDEV_RESCAN_NS };
 
-	__atomic_add_fetch(&shm->stats.blkdev_lifecycle_runs, 1,
+	__atomic_add_fetch(&shm->stats.blkdev_lifecycle.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_blkdev_lifecycle)
@@ -264,7 +264,7 @@ bool blkdev_lifecycle_race(struct childdata *child)
 
 	ra.loop_n = blkdev_pick_loop_num(child);
 	if (ra.loop_n < 0) {
-		__atomic_add_fetch(&shm->stats.blkdev_lifecycle_setup_failed,
+		__atomic_add_fetch(&shm->stats.blkdev_lifecycle.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -311,9 +311,9 @@ bool blkdev_lifecycle_race(struct childdata *child)
 bool blkdev_lifecycle_race(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.blkdev_lifecycle_runs, 1,
+	__atomic_add_fetch(&shm->stats.blkdev_lifecycle.runs, 1,
 			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.blkdev_lifecycle_setup_failed, 1,
+	__atomic_add_fetch(&shm->stats.blkdev_lifecycle.setup_failed, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
