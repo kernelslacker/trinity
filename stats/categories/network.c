@@ -334,24 +334,6 @@ const struct stat_category pkt_builder_category =
 	              pkt_builder_runs,
 	              pkt_builder_fields);
 
-static const struct stat_field iscsi_target_probe_fields[] = {
-	STAT_FIELD(iscsi_target_probe, runs),
-	STAT_FIELD(iscsi_target_probe, setup_failed),
-	STAT_FIELD(iscsi_target_probe, no_target),
-	STAT_FIELD(iscsi_target_probe, connected),
-	STAT_FIELD(iscsi_target_probe, login_sent),
-	STAT_FIELD(iscsi_target_probe, login_replies),
-	STAT_FIELD(iscsi_target_probe, scsi_cmd_sent),
-	STAT_FIELD(iscsi_target_probe, bytes_out),
-	STAT_FIELD(iscsi_target_probe, bytes_in),
-	STAT_FIELD(iscsi_target_probe, length_decoupled),
-};
-
-const struct stat_category iscsi_target_probe_category =
-	STAT_CATEGORY("iscsi_target_probe",
-	              iscsi_target_probe_runs,
-	              iscsi_target_probe_fields);
-
 static const struct stat_field iscsi_login_walker_fields[] = {
 	STAT_FIELD(iscsi_walker, runs),
 	STAT_FIELD(iscsi_walker, setup_failed),
