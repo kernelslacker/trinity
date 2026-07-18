@@ -25,3 +25,6 @@ void json_emit_kcov_section(void);
 
 /* stats/json/minicorpus.c */
 void json_emit_minicorpus_section(void);
+
+/* stats/json/cmp-hints.c */
+void json_emit_cmp_hints_section(void);
