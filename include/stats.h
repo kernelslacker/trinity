@@ -73,6 +73,7 @@
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/pci_bind.h"
 #include "stats/subsys/perf_chains.h"
+#include "stats/subsys/pidfd_storm.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/recipe.h"
 #include "stats/subsys/refcount_audit.h"
@@ -1109,14 +1110,8 @@ struct stats_s {
 	/* fork_storm childop counters.  See stats/subsys/fork_storm.h. */
 	struct fork_storm_stats fork_storm __attribute__((aligned(64)));
 
-	/* pidfd_storm childop counters */
-	unsigned long pidfd_storm_runs;		/* total pidfd_storm invocations */
-	unsigned long pidfd_storm_signals;	/* successful pidfd_send_signal calls */
-	unsigned long pidfd_storm_getfds;	/* successful pidfd_getfd calls */
-	unsigned long pidfd_storm_failed;	/* pidfd_open/send_signal/getfd returned -1 */
-	unsigned long pidfd_storm_iters;	/* cumulative inner-loop pidfd syscalls */
-	unsigned long pidfd_storm_reap_slow;	/* teardown poll(pidfd) exceeded PER_PIDFD_REAP_TIMEOUT_MS -- SIGKILL not observed within the budget */
-	unsigned long pidfd_storm_reap_zombies;	/* teardown reap escaped (WNOHANG waitpid did not collect) after the poll timeout; a zombie was left behind for the parent's SIGCHLD path to catch */
+	/* pidfd_storm accounting.  See stats/subsys/pidfd_storm.h. */
+	struct pidfd_storm_stats pidfd_storm __attribute__((aligned(64)));
 
 	/* madvise_cycler childop counters.  See stats/subsys/madvise_cycler.h. */
 	struct madvise_cycler_stats madvise_cycler __attribute__((aligned(64)));
