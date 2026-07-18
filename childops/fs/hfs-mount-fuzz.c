@@ -357,10 +357,10 @@ static int hfs_mount_in_ns(void *arg)
 		set_ok = (ioctl(loop_fd, LOOP_SET_FD,
 				(unsigned long)ctx->image_fd) == 0);
 		if (set_ok)
-			__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_set_fd_ok,
+			__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.set_fd_ok,
 					   1, __ATOMIC_RELAXED);
 		else if (errno == EBUSY || errno == ENXIO || errno == EPERM)
-			__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_set_fd_busy,
+			__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.set_fd_busy,
 					   1, __ATOMIC_RELAXED);
 		close(loop_fd);
 	}
@@ -382,14 +382,14 @@ static int hfs_mount_in_ns(void *arg)
 
 	if (mount(loop_path, target, "hfs", flags,
 		  options[0] ? options : NULL) == 0) {
-		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_mount_ok,
+		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.mount_ok,
 				   1, __ATOMIC_RELAXED);
 		hfs_churn_ops(target);
 		(void)umount2(target, MNT_DETACH);
 	} else {
 		if (errno == ENODEV)
 			ctx->hit_enodev = true;
-		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_mount_failed,
+		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.mount_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -412,7 +412,7 @@ bool hfs_mount_fuzz(struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_runs, 1,
+	__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported || hfs_unsupported || loop_unsupported)
@@ -423,7 +423,7 @@ bool hfs_mount_fuzz(struct childdata *child)
 	ctx.hit_enodev = false;
 	if (ctx.loop_num < 0) {
 		loop_unsupported = true;
-		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_setup_failed,
+		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
@@ -434,7 +434,7 @@ bool hfs_mount_fuzz(struct childdata *child)
 
 	ctx.image_fd = hfs_build_image_memfd();
 	if (ctx.image_fd < 0) {
-		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_setup_failed,
+		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -448,7 +448,7 @@ bool hfs_mount_fuzz(struct childdata *child)
 
 	if (rc == -EPERM) {
 		ns_unsupported = true;
-		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_ns_unsupported,
+		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.ns_unsupported,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
@@ -461,7 +461,7 @@ bool hfs_mount_fuzz(struct childdata *child)
 
 	if (ctx.hit_enodev) {
 		hfs_unsupported = true;
-		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_hfs_unsupported,
+		__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.hfs_unsupported,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
@@ -481,9 +481,9 @@ bool hfs_mount_fuzz(struct childdata *child)
 bool hfs_mount_fuzz(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_runs, 1,
+	__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.runs, 1,
 			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_setup_failed, 1,
+	__atomic_add_fetch(&shm->stats.hfs_mount_fuzz.setup_failed, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
