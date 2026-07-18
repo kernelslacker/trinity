@@ -82,7 +82,7 @@ static void dump_fd_provider_outstanding(void)
 
 	for (t = 0; t < MAX_OBJECT_TYPES; t++) {
 		unsigned long outstanding =
-			shm->stats.fd_provider_outstanding[t];
+			shm->stats.fd.provider_outstanding[t];
 		const char *name;
 
 		if (outstanding == 0)

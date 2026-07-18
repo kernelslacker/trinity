@@ -157,7 +157,7 @@ const char *fd_init_reason_name(enum fd_init_reason r);
  * Return the name of the registered fd_provider whose objtype matches
  * the supplied enum value, or NULL when no provider claims that type.
  * Used by dump_stats() to label the per-provider outstanding-fd gauge
- * (shm->stats.fd_provider_outstanding[]) without exposing the provider
+ * (shm->stats.fd.provider_outstanding[]) without exposing the provider
  * list itself.
  */
 const char *fd_provider_name(enum objecttype type);

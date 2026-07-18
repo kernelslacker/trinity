@@ -82,7 +82,7 @@ static void fd_live_remove(int fd)
 	unsigned int count = parent_fd_live_count;
 	unsigned int i;
 
-	__atomic_add_fetch(&shm->stats.fd_live_remove_calls, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fd.live_remove_calls, 1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < count; i++) {
 		unsigned int depth;
@@ -106,15 +106,15 @@ static void fd_live_remove(int fd)
 			unsigned int hi_bit = 31u - lz;
 
 			bucket = hi_bit + 1u;
-			if (bucket >= ARRAY_SIZE(shm->stats.fd_live_remove_scan_histogram))
-				bucket = ARRAY_SIZE(shm->stats.fd_live_remove_scan_histogram) - 1u;
+			if (bucket >= ARRAY_SIZE(shm->stats.fd.live_remove_scan_histogram))
+				bucket = ARRAY_SIZE(shm->stats.fd.live_remove_scan_histogram) - 1u;
 		}
-		__atomic_add_fetch(&shm->stats.fd_live_remove_scan_histogram[bucket],
+		__atomic_add_fetch(&shm->stats.fd.live_remove_scan_histogram[bucket],
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
-	__atomic_add_fetch(&shm->stats.fd_live_remove_miss, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fd.live_remove_miss, 1, __ATOMIC_RELAXED);
 }
 
 static unsigned int fd_hash_slot(int fd)

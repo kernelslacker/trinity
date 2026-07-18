@@ -60,11 +60,11 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 		 * follows the same shape). */
 		switch (type) {
 		case FD_EVENT_CLOSE:
-			__atomic_add_fetch(&shm->stats.fd_event_full_close,
+			__atomic_add_fetch(&shm->stats.fd.event_full_close,
 					   1, __ATOMIC_RELAXED);
 			break;
 		case FD_EVENT_EVICT:
-			__atomic_add_fetch(&shm->stats.fd_event_full_evict,
+			__atomic_add_fetch(&shm->stats.fd.event_full_evict,
 					   1, __ATOMIC_RELAXED);
 			break;
 		default:
@@ -107,13 +107,13 @@ bool fd_event_enqueue_range(struct fd_event_ring *ring, int lo, int hi)
 		 * FD_EVENT_CLOSE_RANGE event, the compression ratio
 		 * the range opcode buys over the per-fd
 		 * FD_EVENT_CLOSE path. */
-		__atomic_add_fetch(&shm->stats.fd_event_close_range_enqueued,
+		__atomic_add_fetch(&shm->stats.fd.event_close_range_enqueued,
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.fd_event_close_range_length_sum,
+		__atomic_add_fetch(&shm->stats.fd.event_close_range_length_sum,
 				   (unsigned long)(hi - lo + 1),
 				   __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.fd_event_full_close_range,
+		__atomic_add_fetch(&shm->stats.fd.event_full_close_range,
 				   1, __ATOMIC_RELAXED);
 	}
 	return ok;
@@ -275,7 +275,7 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	if (corrupt) {
 		output(0, "fd_event: dropping corrupt event (type=%u fd1=%d)\n",
 		       (unsigned int)ev.type, ev.fd1);
-		__atomic_add_fetch(&shm->stats.fd_event_payload_corrupt,
+		__atomic_add_fetch(&shm->stats.fd.event_payload_corrupt,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -347,7 +347,7 @@ void fd_event_drain_all(void)
 			    (top != 0 && top != 0x1ffff)) {
 				output(0, "fd_event: child[%u] ring pointer %p is non-canonical, skipping\n",
 				       i, ring);
-				__atomic_add_fetch(&shm->stats.fd_event_ring_corrupted, 1,
+				__atomic_add_fetch(&shm->stats.fd.event_ring_corrupted, 1,
 						   __ATOMIC_RELAXED);
 				continue;
 			}
@@ -369,7 +369,7 @@ void fd_event_drain_all(void)
 
 			output(0, "fd_event: child[%u] ring pointer %p overwritten (expected %p)\n",
 			       i, ring, expected);
-			__atomic_add_fetch(&shm->stats.fd_event_ring_overwritten, 1,
+			__atomic_add_fetch(&shm->stats.fd.event_ring_overwritten, 1,
 					   __ATOMIC_RELAXED);
 
 			if (eaddr < 0x10000 ||

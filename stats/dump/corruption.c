@@ -237,16 +237,16 @@ static void dump_stats_render_ring_health(void)
 
 static void dump_stats_render_ring_corruption(void)
 {
-	if (shm->stats.fd_event_ring_corrupted)
-		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd_event_ring_corrupted);
-	if (shm->stats.fd_event_ring_overwritten)
-		stat_row("corruption", "fd_event_ring_canary",   shm->stats.fd_event_ring_overwritten);
+	if (shm->stats.fd.event_ring_corrupted)
+		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd.event_ring_corrupted);
+	if (shm->stats.fd.event_ring_overwritten)
+		stat_row("corruption", "fd_event_ring_canary",   shm->stats.fd.event_ring_overwritten);
 	if (shm->stats.stats_ring_corrupted)
 		stat_row("corruption", "stats_ring_noncanon",    shm->stats.stats_ring_corrupted);
 	if (shm->stats.stats_ring_overwritten)
 		stat_row("corruption", "stats_ring_canary",      shm->stats.stats_ring_overwritten);
-	if (shm->stats.fd_event_payload_corrupt)
-		stat_row("corruption", "fd_event_payload",       shm->stats.fd_event_payload_corrupt);
+	if (shm->stats.fd.event_payload_corrupt)
+		stat_row("corruption", "fd_event_payload",       shm->stats.fd.event_payload_corrupt);
 	dump_stats_render_ring_health();
 }
 
