@@ -3,10 +3,8 @@
  * the per-child KCOV buffer + attribution + transition rows;
  * parse_cmp_options() the redqueen/errno-gradient compatibility
  * rows; parse_strategy_options() the picker-mode + frontier + reach
- * + blob/cmsg policy rows plus the canary and fork-pressure childop
- * knobs that the phase-2 spec will split into childop.c.  Grouped
- * here for phase-1 pure code motion so the split can happen without
- * touching parse_args() dispatch order.
+ * + blob/cmsg + arg-length policy rows.  The canary and fork-pressure
+ * childop knobs live in childop.c.
  */
 
 #include <ctype.h>
@@ -462,84 +460,6 @@ bool parse_strategy_options(int opt, const char *name, char *arg)
 				arg);
 			exit(EXIT_FAILURE);
 		}
-		return true;
-	}
-
-	if (strcmp("canary-slots", name) == 0) {
-		unsigned long val;
-
-		if (!parse_unsigned(arg, "canary-slots", true, &val))
-			exit(EXIT_FAILURE);
-		if (val > UINT_MAX) {
-			outputerr("--canary-slots value %lu exceeds UINT_MAX\n", val);
-			exit(EXIT_FAILURE);
-		}
-		canary_slots = (unsigned int)val;
-		user_specified_canary_slots = true;
-		return true;
-	}
-
-	if (strcmp("canary-window", name) == 0) {
-		unsigned long val;
-
-		if (!parse_unsigned(arg, "canary-window", false, &val))
-			exit(EXIT_FAILURE);
-		if (val < 1000 || val > 1000000) {
-			outputerr("--canary-window=%lu out of range (1000..1000000)\n", val);
-			exit(EXIT_FAILURE);
-		}
-		canary_window_iters = (unsigned int)val;
-		return true;
-	}
-
-	if (strcmp("no-canary-queue", name) == 0) {
-		canary_queue_disabled = true;
-		return true;
-	}
-
-	if (strcmp("fork-pressure-drain", name) == 0) {
-		fork_pressure_drain = true;
-		return true;
-	}
-
-	if (strcmp("canary-seed", name) == 0) {
-		/* Parse a comma-separated list of childop names
-		 * into canary_seed_override[].  Names match
-		 * alt_op_name() output (e.g.
-		 * "genetlink_fuzzer,bpf_lifecycle").  Unknown
-		 * names are fatal -- the operator typed something
-		 * and we owe them a clean error, not a silent
-		 * skip that runs the wrong seed list. */
-		char *dup = strdup(arg);
-		char *tok, *save = NULL;
-
-		if (dup == NULL) {
-			outputerr("strdup failed\n");
-			exit(EXIT_FAILURE);
-		}
-		canary_seed_override_count = 0;
-		for (tok = strtok_r(dup, ",", &save);
-		     tok != NULL;
-		     tok = strtok_r(NULL, ",", &save)) {
-			enum child_op_type op;
-
-			if (canary_seed_override_count >=
-			    CANARY_SEED_OVERRIDE_MAX) {
-				outputerr("--canary-seed: too many entries (max %d)\n",
-					CANARY_SEED_OVERRIDE_MAX);
-				exit(EXIT_FAILURE);
-			}
-			op = alt_op_lookup_by_name(tok);
-			if (op == NR_CHILD_OP_TYPES ||
-			    op == CHILD_OP_SYSCALL) {
-				outputerr("--canary-seed: unknown childop name '%s'\n",
-					tok);
-				exit(EXIT_FAILURE);
-			}
-			canary_seed_override[canary_seed_override_count++] =
-				(unsigned char)op;
-		}
-		free(dup);
 		return true;
 	}
 
