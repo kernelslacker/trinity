@@ -254,31 +254,31 @@ static void dump_stats_render_reach_band(void)
  * runs.  See the struct-field comment in include/stats.h. */
 static void dump_stats_render_arg_len_semantics(void)
 {
-	if (shm->stats.arg_len_semantics_draws) {
+	if (shm->stats.arg.len_semantics_draws) {
 		stat_row("strategy", "arg_len_semantics_draws",
-			 shm->stats.arg_len_semantics_draws);
+			 shm->stats.arg.len_semantics_draws);
 		stat_row("strategy", "arg_len_objrelative_used",
-			 shm->stats.arg_len_objrelative_used);
+			 shm->stats.arg.len_objrelative_used);
 		stat_row("strategy", "arg_len_objrelative_nosize",
-			 shm->stats.arg_len_objrelative_nosize);
+			 shm->stats.arg.len_objrelative_nosize);
 		stat_row("strategy", "arg_len_objrel_blend_getlen",
-			 shm->stats.arg_len_objrel_blend_getlen);
+			 shm->stats.arg.len_objrel_blend_getlen);
 		stat_row("strategy", "arg_len_objrel_zero",
-			 shm->stats.arg_len_objrel_zero);
+			 shm->stats.arg.len_objrel_zero);
 		stat_row("strategy", "arg_len_objrel_one",
-			 shm->stats.arg_len_objrel_one);
+			 shm->stats.arg.len_objrel_one);
 		stat_row("strategy", "arg_len_objrel_objsize",
-			 shm->stats.arg_len_objrel_objsize);
+			 shm->stats.arg.len_objrel_objsize);
 		stat_row("strategy", "arg_len_objrel_objsize_minus_1",
-			 shm->stats.arg_len_objrel_objsize_minus_1);
+			 shm->stats.arg.len_objrel_objsize_minus_1);
 		stat_row("strategy", "arg_len_objrel_objsize_half",
-			 shm->stats.arg_len_objrel_objsize_half);
+			 shm->stats.arg.len_objrel_objsize_half);
 		stat_row("strategy", "arg_len_objrel_pagesize",
-			 shm->stats.arg_len_objrel_pagesize);
+			 shm->stats.arg.len_objrel_pagesize);
 		stat_row("strategy", "arg_len_objrel_pagesize_plus_1",
-			 shm->stats.arg_len_objrel_pagesize_plus_1);
+			 shm->stats.arg.len_objrel_pagesize_plus_1);
 		stat_row("strategy", "arg_len_objrel_pagesize_minus_1",
-			 shm->stats.arg_len_objrel_pagesize_minus_1);
+			 shm->stats.arg.len_objrel_pagesize_minus_1);
 	}
 }
 

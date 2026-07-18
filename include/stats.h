@@ -23,6 +23,7 @@
 #include "stats/subsys/af_unix_peek_race.h"
 #include "stats/subsys/af_unix_scm_rights_gc.h"
 #include "stats/subsys/aio.h"
+#include "stats/subsys/arg.h"
 #include "stats/subsys/barrier_racer.h"
 #include "stats/subsys/blkdev_lifecycle.h"
 #include "stats/subsys/blob.h"
@@ -4791,61 +4792,9 @@ struct stats_s {
 	 * RELAXED add-fetch -- diagnostic, not an event log. */
 	unsigned long blanket_address_scrub_slots_walked;
 
-	/* SHADOW per-arg ownership-metadata sidecar census, bumped from
-	 * arg_meta_init() once per dispatch over the address-family slots
-	 * (ARG_ADDRESS / ARG_NON_NULL_ADDRESS / ARG_RANGE) the seed pass
-	 * touches.  Telemetry only: the sidecar is written + counted here
-	 * but no live decision (inject, schedule, sanitise, scrub) reads
-	 * dir/owner/flags.
-	 *
-	 *  arg_meta_addr_with_meta
-	 *      Address-family slot whose seeded sidecar carries a non-default
-	 *      classification after the per-argtype seed pass (dir != NONE,
-	 *      owner != NONE, or any flag bit set).  Seeded purely from
-	 *      argtype today, so the baseline for bare ARG_ADDRESS is zero
-	 *      until per-generator coverage starts populating dir/owner.
-	 *  arg_meta_addr_without_meta
-	 *      Address-family slot still at the zero-init sidecar state
-	 *      after the seed pass.  The shadow proof for this row: an
-	 *      ARG_ADDRESS slot has no per-slot ownership metadata today.
-	 *  arg_meta_argtype_stale
-	 *      Bumped when arg_meta_init() observes a slot's stored
-	 *      generation that does not match the dispatch sequence the
-	 *      previous init stamped (a stale sidecar from a missed reset
-	 *      path, or a wholesale stomp of the rec).  Foundation for the
-	 *      future recorded-vs-actual mismatch counter once a real
-	 *      consumer compares the sidecar to live state.
-	 *
-	 * RELAXED add-fetch -- diagnostic, not an event log. */
-	unsigned long arg_meta_addr_with_meta;
-	unsigned long arg_meta_addr_without_meta;
-	unsigned long arg_meta_argtype_stale;
-
-	/* SHADOW contradiction census between blanket_address_scrub()'s
-	 * coverage (entry->address_scrub_mask) and the per-slot sidecar
-	 * direction seeded by arg_meta_init().  Walked once per dispatch
-	 * from the tail of blanket_address_scrub() over the
-	 * entry->num_args slots; the live scrub walk above is byte-
-	 * unchanged.
-	 *
-	 *  arg_meta_scrub_would_destroy_in
-	 *      Slot bit set in entry->address_scrub_mask (the blanket
-	 *      walked and overwrote it via avoid_shared_buffer_out) AND
-	 *      sidecar dir is ARG_DIR_IN or ARG_DIR_INOUT.  Each bump is
-	 *      one curated input slot a metadata-aware scrub would have
-	 *      to skip to avoid clobbering it.  Zero today because the
-	 *      address-family argtypes in the scrub mask all seed dir =
-	 *      NONE; bumps appear as per-generator coverage starts
-	 *      classifying those slots.
-	 *  arg_meta_scrub_would_preserve_out
-	 *      Slot bit clear in entry->address_scrub_mask (the blanket
-	 *      skipped it) AND sidecar dir is ARG_DIR_OUT.  Each bump is
-	 *      one OUT slot the blanket leaves untouched today because
-	 *      the argtype sits outside the default_address_scrub domain.
-	 *
-	 * RELAXED add-fetch -- diagnostic, not an event log. */
-	unsigned long arg_meta_scrub_would_destroy_in;
-	unsigned long arg_meta_scrub_would_preserve_out;
+	/* arg-generation observability (meta sidecar + object-size-relative
+	 * ARG_LEN draws).  See stats/subsys/arg.h. */
+	struct arg_stats arg __attribute__((aligned(64)));
 
 	/* userns_bootstrap accounting.  See stats/subsys/userns_bootstrap.h. */
 	struct userns_bootstrap_stats userns_bootstrap __attribute__((aligned(64)));
@@ -4859,59 +4808,6 @@ struct stats_s {
 	 * no fuzzer behaviour change).  See stats/subsys/cold_overflow.h
 	 * for the predicate composition and per-field semantics. */
 	struct cold_overflow_stats cold_overflow __attribute__((aligned(64)));
-
-	/* Object-size-relative ARG_LEN draw observability.  All counters
-	 * stay at zero while --arg-len-semantics is off (the default): the
-	 * OFF arm in gen_arg_len() exits before any bump runs.  Under ON the
-	 * counters expose how often the new arm fires vs falls back, and
-	 * which boundary class the relative draw picks.
-	 *
-	 * Aggregates:
-	 *
-	 *  arg_len_semantics_draws
-	 *      Total ARG_LEN draws that entered the semantics path
-	 *      (mode != OFF).  Denominator for the other rates.
-	 *
-	 *  arg_len_objrelative_used
-	 *      Subset of _draws where get_len_relative() returned an
-	 *      object-relative boundary value (one of the per-class
-	 *      arms below fired).
-	 *
-	 *  arg_len_objrelative_nosize
-	 *      Subset of _draws where gen_arg_len() fell back to the
-	 *      legacy size-blind get_len() path -- no immediately
-	 *      preceding ARG_ADDRESS / ARG_NON_NULL_ADDRESS slot, the
-	 *      address was NULL, or the address resolved to no tracked
-	 *      writable region.  High share here means the adjacency rule
-	 *      is rejecting most candidate sites for this workload.
-	 *
-	 *  arg_len_objrel_blend_getlen
-	 *      Subset of get_len_relative() calls that took the half-
-	 *      time RAND_BOOL blend arm and deferred to get_len() (clamped
-	 *      to objsize).  Identity:
-	 *        arg_len_objrelative_used + arg_len_objrel_blend_getlen
-	 *        == calls to get_len_relative()
-	 *        == arg_len_semantics_draws - arg_len_objrelative_nosize
-	 *
-	 * Per-class breakdown of the eight object-relative arms drawn by
-	 * get_len_relative().  Sum equals arg_len_objrelative_used.  The
-	 * pagesize_* arms collapse to objsize when the writable region is
-	 * smaller than the page-size-derived value; the collapsed draws
-	 * still bump the pagesize_* counter for the arm that was rolled
-	 * (the per-class counters track the RNG arm, not the final value
-	 * after clamping). */
-	unsigned long arg_len_semantics_draws;
-	unsigned long arg_len_objrelative_used;
-	unsigned long arg_len_objrelative_nosize;
-	unsigned long arg_len_objrel_blend_getlen;
-	unsigned long arg_len_objrel_zero;
-	unsigned long arg_len_objrel_one;
-	unsigned long arg_len_objrel_objsize;
-	unsigned long arg_len_objrel_objsize_minus_1;
-	unsigned long arg_len_objrel_objsize_half;
-	unsigned long arg_len_objrel_pagesize;
-	unsigned long arg_len_objrel_pagesize_plus_1;
-	unsigned long arg_len_objrel_pagesize_minus_1;
 
 	/* --blob-mutator content-authoring lane counters.  See
 	 * stats/subsys/blob.h for the per-field commentary. */
