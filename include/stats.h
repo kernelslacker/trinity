@@ -66,6 +66,7 @@
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/mpls_route_churn.h"
 #include "stats/subsys/netlink_monitor_race.h"
+#include "stats/subsys/netns_mountns_setup.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/perf_chains.h"
@@ -1820,14 +1821,8 @@ struct stats_s {
 	/* espintcp_coalesce accounting.  See stats/subsys/espintcp_coalesce.h. */
 	struct espintcp_coalesce_stats espintcp_coalesce __attribute__((aligned(64)));
 
-	/* netns_mountns_setup_probe childop counters */
-	unsigned long netns_mountns_setup_runs;			/* total netns_mountns_setup_probe invocations */
-	unsigned long netns_mountns_setup_setup_failed;		/* userns_run_in_ns fork/EPERM latch / per-iter unshare failure */
-	unsigned long netns_mountns_setup_unshare_ok;		/* per-iter unshare(CLONE_NEWNET|CLONE_NEWNS) into fresh nested ns */
-	unsigned long netns_mountns_setup_mount_private_ok;	/* MS_REC|MS_PRIVATE remount of '/' inside fresh mount ns */
-	unsigned long netns_mountns_setup_loopback_ok;		/* rtnl bring-up of loopback inside fresh net ns */
-	unsigned long netns_mountns_setup_socket_ok;		/* first AF_INET socket alloc inside fresh net ns */
-	unsigned long netns_mountns_setup_completed_ok;		/* full iter reached end of setup sequence */
+	/* netns_mountns_setup accounting.  See stats/subsys/netns_mountns_setup.h. */
+	struct netns_mountns_setup_stats netns_mountns_setup __attribute__((aligned(64)));
 
 	/* tcp_ulp_swap_churn childop counters */
 	unsigned long tcp_ulp_swap_churn_runs;			/* total tcp_ulp_swap_churn invocations */

@@ -197,11 +197,11 @@ static void iter_one(struct childdata *child)
 	int fd;
 
 	if (unshare(CLONE_NEWNET | CLONE_NEWNS) < 0) {
-		__atomic_add_fetch(&shm->stats.netns_mountns_setup_setup_failed,
+		__atomic_add_fetch(&shm->stats.netns_mountns_setup.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
-	__atomic_add_fetch(&shm->stats.netns_mountns_setup_unshare_ok,
+	__atomic_add_fetch(&shm->stats.netns_mountns_setup.unshare_ok,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
@@ -211,23 +211,23 @@ static void iter_one(struct childdata *child)
 	}
 
 	if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) == 0) {
-		__atomic_add_fetch(&shm->stats.netns_mountns_setup_mount_private_ok,
+		__atomic_add_fetch(&shm->stats.netns_mountns_setup.mount_private_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 
 	if (bring_up_loopback() == 0) {
-		__atomic_add_fetch(&shm->stats.netns_mountns_setup_loopback_ok,
+		__atomic_add_fetch(&shm->stats.netns_mountns_setup.loopback_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 
 	fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (fd >= 0) {
-		__atomic_add_fetch(&shm->stats.netns_mountns_setup_socket_ok,
+		__atomic_add_fetch(&shm->stats.netns_mountns_setup.socket_ok,
 				   1, __ATOMIC_RELAXED);
 		(void)close(fd);
 	}
 
-	__atomic_add_fetch(&shm->stats.netns_mountns_setup_completed_ok,
+	__atomic_add_fetch(&shm->stats.netns_mountns_setup.completed_ok,
 			   1, __ATOMIC_RELAXED);
 }
 
@@ -267,11 +267,11 @@ bool netns_mountns_setup_probe(struct childdata *child)
 	struct netns_mountns_setup_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.netns_mountns_setup_runs,
+	__atomic_add_fetch(&shm->stats.netns_mountns_setup.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_netns_mountns_setup) {
-		__atomic_add_fetch(&shm->stats.netns_mountns_setup_setup_failed,
+		__atomic_add_fetch(&shm->stats.netns_mountns_setup.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -291,7 +291,7 @@ bool netns_mountns_setup_probe(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.netns_mountns_setup_setup_failed,
+		__atomic_add_fetch(&shm->stats.netns_mountns_setup.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -300,7 +300,7 @@ bool netns_mountns_setup_probe(struct childdata *child)
 		 * secondary CLONE_NEWNET|CLONE_NEWNS unshare).  Skip this
 		 * iteration without latching -- the failure is not policy
 		 * and may not recur. */
-		__atomic_add_fetch(&shm->stats.netns_mountns_setup_setup_failed,
+		__atomic_add_fetch(&shm->stats.netns_mountns_setup.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -313,9 +313,9 @@ bool netns_mountns_setup_probe(struct childdata *child)
 bool netns_mountns_setup_probe(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.netns_mountns_setup_runs,
+	__atomic_add_fetch(&shm->stats.netns_mountns_setup.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.netns_mountns_setup_setup_failed,
+	__atomic_add_fetch(&shm->stats.netns_mountns_setup.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
