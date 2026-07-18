@@ -170,7 +170,7 @@ static enum iour_setup_status iouring_flood_iter_setup_ring(struct iour_ring *ct
 						 __ATOMIC_RELAXED);
 		}
 	} else {
-		__atomic_add_fetch(&shm->stats.iouring_failed, 1,
+		__atomic_add_fetch(&shm->stats.iouring.failed, 1,
 				   __ATOMIC_RELAXED);
 	}
 	return st;
@@ -252,7 +252,7 @@ static unsigned int iouring_flood_iter_submit_burst(
 	if (n_subs > avail)
 		n_subs = avail;
 	if (n_subs == 0) {
-		__atomic_add_fetch(&shm->stats.iouring_failed, 1,
+		__atomic_add_fetch(&shm->stats.iouring.failed, 1,
 				   __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -298,12 +298,12 @@ static void iouring_flood_iter_reap_cqes(
 	r = (int)trinity_raw_syscall(__NR_io_uring_enter, ctx->fd, n_subs,
 			 n_subs, IORING_ENTER_GETEVENTS, NULL, 0);
 	if (r < 0) {
-		__atomic_add_fetch(&shm->stats.iouring_failed, 1,
+		__atomic_add_fetch(&shm->stats.iouring.failed, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
 
-	__atomic_add_fetch(&shm->stats.iouring_submits,
+	__atomic_add_fetch(&shm->stats.iouring.submits,
 			   (unsigned long)n_subs, __ATOMIC_RELAXED);
 
 	head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
@@ -318,7 +318,7 @@ static void iouring_flood_iter_reap_cqes(
 	__sync_synchronize();
 	ring_store_u32(ctx->cq_ring, ctx->cq_off_head, head);
 
-	__atomic_add_fetch(&shm->stats.iouring_reaped,
+	__atomic_add_fetch(&shm->stats.iouring.reaped,
 			   (unsigned long)reaped, __ATOMIC_RELAXED);
 }
 
@@ -330,7 +330,7 @@ bool iouring_flood(struct childdata *child)
 	int dev_null_rd = -1;
 	int dev_null_wr = -1;
 
-	__atomic_add_fetch(&shm->stats.iouring_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.iouring.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
 		return true;
@@ -360,7 +360,7 @@ bool iouring_flood(struct childdata *child)
 		struct map *m = get_map_with_prot(PROT_READ | PROT_WRITE);
 
 		if (m == NULL) {
-			__atomic_add_fetch(&shm->stats.iouring_failed,
+			__atomic_add_fetch(&shm->stats.iouring.failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -373,7 +373,7 @@ bool iouring_flood(struct childdata *child)
 	if (dev_null_rd < 0 || dev_null_wr < 0) {
 		if (dev_null_rd >= 0) close(dev_null_rd);
 		if (dev_null_wr >= 0) close(dev_null_wr);
-		__atomic_add_fetch(&shm->stats.iouring_failed,
+		__atomic_add_fetch(&shm->stats.iouring.failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
