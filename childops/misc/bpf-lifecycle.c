@@ -293,16 +293,16 @@ static bool combo_socket_filter(struct childdata *child)
 	prog_fd = load_template_prog(BPF_PROG_TYPE_SOCKET_FILTER, map_fd);
 	if (prog_fd < 0) {
 		if (errno == EPERM || errno == EACCES) {
-			__atomic_add_fetch(&shm->stats.bpf_lifecycle_eperm,
+			__atomic_add_fetch(&shm->stats.bpf_lifecycle.eperm,
 					   1, __ATOMIC_RELAXED);
 			socket_filter_disabled = true;
 		} else {
-			__atomic_add_fetch(&shm->stats.bpf_lifecycle_verifier_rejects,
+			__atomic_add_fetch(&shm->stats.bpf_lifecycle.verifier_rejects,
 					   1, __ATOMIC_RELAXED);
 		}
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.bpf_lifecycle_progs_loaded, 1,
+	__atomic_add_fetch(&shm->stats.bpf_lifecycle.progs_loaded, 1,
 			   __ATOMIC_RELAXED);
 	prog_obj = publish_prog_fd(prog_fd, BPF_PROG_TYPE_SOCKET_FILTER);
 
@@ -317,11 +317,11 @@ static bool combo_socket_filter(struct childdata *child)
 
 	if (setsockopt(sv[0], SOL_SOCKET, SO_ATTACH_BPF,
 		       &prog_fd, sizeof(prog_fd)) < 0) {
-		__atomic_add_fetch(&shm->stats.bpf_lifecycle_attach_failed,
+		__atomic_add_fetch(&shm->stats.bpf_lifecycle.attach_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.bpf_lifecycle_attached, 1,
+	__atomic_add_fetch(&shm->stats.bpf_lifecycle.attached, 1,
 			   __ATOMIC_RELAXED);
 
 	if (valid_op)
@@ -345,7 +345,7 @@ static bool combo_socket_filter(struct childdata *child)
 		(void)r;
 		test_run(prog_fd);
 	}
-	__atomic_add_fetch(&shm->stats.bpf_lifecycle_triggered, 1,
+	__atomic_add_fetch(&shm->stats.bpf_lifecycle.triggered, 1,
 			   __ATOMIC_RELAXED);
 
 	(void)setsockopt(sv[0], SOL_SOCKET, SO_DETACH_BPF, NULL, 0);
@@ -455,16 +455,16 @@ static bool combo_cgroup_skb(struct childdata *child)
 	prog_fd = load_template_prog(BPF_PROG_TYPE_CGROUP_SKB, map_fd);
 	if (prog_fd < 0) {
 		if (errno == EPERM || errno == EACCES) {
-			__atomic_add_fetch(&shm->stats.bpf_lifecycle_eperm,
+			__atomic_add_fetch(&shm->stats.bpf_lifecycle.eperm,
 					   1, __ATOMIC_RELAXED);
 			cgroup_disabled = true;
 		} else {
-			__atomic_add_fetch(&shm->stats.bpf_lifecycle_verifier_rejects,
+			__atomic_add_fetch(&shm->stats.bpf_lifecycle.verifier_rejects,
 					   1, __ATOMIC_RELAXED);
 		}
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.bpf_lifecycle_progs_loaded, 1,
+	__atomic_add_fetch(&shm->stats.bpf_lifecycle.progs_loaded, 1,
 			   __ATOMIC_RELAXED);
 	prog_obj = publish_prog_fd(prog_fd, BPF_PROG_TYPE_CGROUP_SKB);
 
@@ -478,17 +478,17 @@ static bool combo_cgroup_skb(struct childdata *child)
 	attr.attach_flags = (uint32_t)RAND_NEGATIVE_OR(BPF_F_ALLOW_MULTI);
 	if (sys_bpf(BPF_PROG_ATTACH, &attr, sizeof(attr)) < 0) {
 		if (errno == EPERM || errno == EACCES) {
-			__atomic_add_fetch(&shm->stats.bpf_lifecycle_eperm,
+			__atomic_add_fetch(&shm->stats.bpf_lifecycle.eperm,
 					   1, __ATOMIC_RELAXED);
 			cgroup_disabled = true;
 		} else {
-			__atomic_add_fetch(&shm->stats.bpf_lifecycle_attach_failed,
+			__atomic_add_fetch(&shm->stats.bpf_lifecycle.attach_failed,
 					   1, __ATOMIC_RELAXED);
 		}
 		goto out;
 	}
 	attached = true;
-	__atomic_add_fetch(&shm->stats.bpf_lifecycle_attached, 1,
+	__atomic_add_fetch(&shm->stats.bpf_lifecycle.attached, 1,
 			   __ATOMIC_RELAXED);
 
 	if (valid_op)
@@ -499,7 +499,7 @@ static bool combo_cgroup_skb(struct childdata *child)
 		update_elem(map_fd, key, rand32());
 		cgroup_trigger();
 	}
-	__atomic_add_fetch(&shm->stats.bpf_lifecycle_triggered, 1,
+	__atomic_add_fetch(&shm->stats.bpf_lifecycle.triggered, 1,
 			   __ATOMIC_RELAXED);
 
 	for (key = 0; key < MAP_ENTRIES; key++)
@@ -604,7 +604,7 @@ static bool combo_arena_fork(struct childdata *child)
 	map_fd = sys_bpf(BPF_MAP_CREATE, &attr, sizeof(attr));
 	if (map_fd < 0) {
 		arena_unsupported = true;
-		__atomic_add_fetch(&shm->stats.bpf_lifecycle_eperm,
+		__atomic_add_fetch(&shm->stats.bpf_lifecycle.eperm,
 				   1, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -669,14 +669,14 @@ static bool combo_arena_fork(struct childdata *child)
 	 * userspace error path, not the kernel teardown we care about.
 	 */
 	if (rc == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0)
-		__atomic_add_fetch(&shm->stats.bpf_lifecycle_triggered, 1,
+		__atomic_add_fetch(&shm->stats.bpf_lifecycle.triggered, 1,
 				   __ATOMIC_RELAXED);
 	return true;
 }
 
 bool bpf_lifecycle(struct childdata *child)
 {
-	__atomic_add_fetch(&shm->stats.bpf_lifecycle_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.bpf_lifecycle.runs, 1, __ATOMIC_RELAXED);
 
 	/*
 	 * 20% arena+fork combo when arena is supported.  Falls through to

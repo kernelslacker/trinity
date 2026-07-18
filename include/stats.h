@@ -23,6 +23,7 @@
 #include "stats/subsys/barrier_racer.h"
 #include "stats/subsys/blkdev_lifecycle.h"
 #include "stats/subsys/blob.h"
+#include "stats/subsys/bpf_lifecycle.h"
 #include "stats/subsys/bridge_ct.h"
 #include "stats/subsys/bridge_ip6frag.h"
 #include "stats/subsys/close_racer.h"
@@ -1002,14 +1003,8 @@ struct stats_s {
 	unsigned long tracefs_misc_writes_write_fail;
 	unsigned long tracefs_misc_writes_write_ok;
 
-	/* bpf_lifecycle childop counters */
-	unsigned long bpf_lifecycle_runs;		/* total bpf_lifecycle invocations */
-	unsigned long bpf_lifecycle_progs_loaded;	/* successful BPF_PROG_LOAD */
-	unsigned long bpf_lifecycle_verifier_rejects;	/* PROG_LOAD rejected (non-EPERM) */
-	unsigned long bpf_lifecycle_attached;		/* successful attach (either combo) */
-	unsigned long bpf_lifecycle_attach_failed;	/* attach syscall failed */
-	unsigned long bpf_lifecycle_triggered;		/* trigger phase reached */
-	unsigned long bpf_lifecycle_eperm;		/* PROG_LOAD/ATTACH denied */
+	/* bpf_lifecycle accounting.  See stats/subsys/bpf_lifecycle.h. */
+	struct bpf_lifecycle_stats bpf_lifecycle __attribute__((aligned(64)));
 
 	/* recipe_runner accounting.  See stats/subsys/recipe.h. */
 	struct recipe_stats recipe __attribute__((aligned(64)));

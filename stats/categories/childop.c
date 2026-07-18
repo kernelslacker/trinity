@@ -32,21 +32,6 @@ const struct stat_category userns_bootstrap_category =
 	              userns_bootstrap_runs,
 	              userns_bootstrap_fields);
 
-static const struct stat_field bpf_lifecycle_fields[] = {
-	STAT_FIELD(bpf_lifecycle, runs),
-	STAT_FIELD(bpf_lifecycle, progs_loaded),
-	STAT_FIELD(bpf_lifecycle, attached),
-	STAT_FIELD(bpf_lifecycle, triggered),
-	STAT_FIELD(bpf_lifecycle, verifier_rejects),
-	STAT_FIELD(bpf_lifecycle, attach_failed),
-	STAT_FIELD(bpf_lifecycle, eperm),
-};
-
-const struct stat_category bpf_lifecycle_category =
-	STAT_CATEGORY("bpf_lifecycle",
-	              bpf_lifecycle_runs,
-	              bpf_lifecycle_fields);
-
 static const struct stat_field cpu_hotplug_rider_fields[] = {
 	STAT_FIELD(cpu_hotplug, runs),
 	STAT_FIELD(cpu_hotplug, affinity_calls),
