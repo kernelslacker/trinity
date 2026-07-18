@@ -252,7 +252,7 @@ static void close_racer_iter_open_pairs(struct close_racer_iter_ctx *ctx)
 
 	for (j = 0; j < ctx->k; j++) {
 		if (!make_fd_pair(ctx->sv[j])) {
-			__atomic_add_fetch(&shm->stats.close_racer_failed,
+			__atomic_add_fetch(&shm->stats.close_racer.failed,
 					   1, __ATOMIC_RELAXED);
 			continue;
 		}
@@ -263,7 +263,7 @@ static void close_racer_iter_open_pairs(struct close_racer_iter_ctx *ctx)
 			 ctx->ra[j].op == RACER_RECV);
 		if (pthread_create(&ctx->tid[j], NULL,
 				   racer_thread, &ctx->ra[j]) != 0) {
-			__atomic_add_fetch(&shm->stats.close_racer_thread_spawn_fail,
+			__atomic_add_fetch(&shm->stats.close_racer.thread_spawn_fail,
 					   1, __ATOMIC_RELAXED);
 			close(ctx->sv[j][0]);
 			close(ctx->sv[j][1]);
@@ -378,7 +378,7 @@ static void close_racer_iter_join_racers(struct close_racer_iter_ctx *ctx)
 			(void)pthread_join(ctx->tid[j], NULL);
 	}
 
-	__atomic_add_fetch(&shm->stats.close_racer_pairs,
+	__atomic_add_fetch(&shm->stats.close_racer.pairs,
 			   ctx->n_spawned, __ATOMIC_RELAXED);
 }
 
@@ -411,7 +411,7 @@ bool close_racer(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.close_racer_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.close_racer.runs, 1, __ATOMIC_RELAXED);
 
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 

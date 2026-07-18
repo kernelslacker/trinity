@@ -24,6 +24,7 @@
 #include "stats/subsys/blob.h"
 #include "stats/subsys/bridge_ct.h"
 #include "stats/subsys/bridge_ip6frag.h"
+#include "stats/subsys/close_racer.h"
 #include "stats/subsys/cold_overflow.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/errno_gradient.h"
@@ -1200,11 +1201,8 @@ struct stats_s {
 	unsigned long watchdog_sigalrm_reinstalled;
 	unsigned long watchdog_sigxcpu_reinstalled;
 
-	/* close_racer childop counters */
-	unsigned long close_racer_runs;			/* total close_racer invocations */
-	unsigned long close_racer_pairs;		/* cycles where close+join completed */
-	unsigned long close_racer_failed;		/* socketpair/pipe2 returned -1 */
-	unsigned long close_racer_thread_spawn_fail;	/* pthread_create returned non-zero */
+	/* close_racer accounting.  See stats/subsys/close_racer.h. */
+	struct close_racer_stats close_racer __attribute__((aligned(64)));
 
 	/* socket_family_chain childop counters */
 	unsigned long socket_family_chain_runs;			/* total invocations */
