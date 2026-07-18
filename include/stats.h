@@ -55,6 +55,7 @@
 #include "stats/subsys/iouring_recipes.h"
 #include "stats/subsys/iouring_send_zc_churn.h"
 #include "stats/subsys/ip4_udp_cork_splice.h"
+#include "stats/subsys/ip6_udp_cork_splice.h"
 #include "stats/subsys/ip6gre_lapb.h"
 #include "stats/subsys/ipv6_ndisc_proxy.h"
 #include "stats/subsys/ipv6_pmtu_race.h"
@@ -1335,13 +1336,8 @@ struct stats_s {
 	unsigned long vrf_fib_churn_rule_removed;	/* RTM_DELRULE for the bound rule accepted */
 	unsigned long vrf_fib_churn_link_removed;	/* RTM_DELLINK vrf accepted (full cycle reached teardown) */
 
-	/* ip6_udp_cork_splice childop counters */
-	unsigned long ip6_udp_cork_splice_runs;			/* total ip6_udp_cork_splice invocations */
-	unsigned long ip6_udp_cork_splice_setup_failed;		/* userns_run_in_ns / rtnl / lo setup failed */
-	unsigned long ip6_udp_cork_splice_mtu_set;		/* lo MTU=1280 netlink accepted */
-	unsigned long ip6_udp_cork_splice_p1_ok;		/* corked MTU-filling sendmsg returned P1 bytes */
-	unsigned long ip6_udp_cork_splice_p1_rejected;		/* corked sendmsg returned short / -1 (splice path refused) */
-	unsigned long ip6_udp_cork_splice_p2_ok;		/* flushing tail sendmsg returned >=0 (trigger burst emitted) */
+	/* ip6_udp_cork_splice accounting.  See stats/subsys/ip6_udp_cork_splice.h. */
+	struct ip6_udp_cork_splice_stats ip6_udp_cork_splice __attribute__((aligned(64)));
 
 	/* ip4_udp_cork_splice accounting.  See stats/subsys/ip4_udp_cork_splice.h. */
 	struct ip4_udp_cork_splice_stats ip4_udp_cork_splice __attribute__((aligned(64)));

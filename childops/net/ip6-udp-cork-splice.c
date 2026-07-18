@@ -217,7 +217,7 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (nl_open(&ctx, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_setup_failed,
+		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -226,7 +226,7 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 
 	lo_idx = (int)if_nametoindex("lo");
 	if (lo_idx <= 0) {
-		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_setup_failed,
+		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -236,11 +236,11 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 		 * fragment, continuation gap = 0, and the continuation
 		 * branch isn't taken.  Bail out rather than emit useless
 		 * traffic. */
-		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_setup_failed,
+		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_mtu_set,
+	__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.mtu_set,
 			   1, __ATOMIC_RELAXED);
 
 	/* Best-effort -- lo in a fresh netns usually already has ::1
@@ -315,11 +315,11 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 			 * in exotic builds, or MSG_SPLICE_PAGES rejected).
 			 * Benign coverage -- the trigger requires both
 			 * sends to land. */
-			__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_p1_rejected,
+			__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.p1_rejected,
 					   1, __ATOMIC_RELAXED);
 			goto drain;
 		}
-		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_p1_ok,
+		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.p1_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -345,7 +345,7 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 
 		n = sendmsg(tx, &mh, MSG_SPLICE_PAGES | MSG_DONTWAIT);
 		if (n >= 0)
-			__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_p2_ok,
+			__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.p2_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -379,7 +379,7 @@ bool ip6_udp_cork_splice(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_runs,
+	__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
@@ -392,7 +392,7 @@ bool ip6_udp_cork_splice(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_setup_failed,
+		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -401,7 +401,7 @@ bool ip6_udp_cork_splice(struct childdata *child)
 		 * write, secondary unshare).  Skip this iteration
 		 * without latching -- the failure is not policy and may
 		 * not recur. */
-		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_setup_failed,
+		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
