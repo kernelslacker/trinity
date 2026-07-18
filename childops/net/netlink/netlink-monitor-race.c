@@ -285,11 +285,11 @@ static int netlink_monitor_race_iter_open_monitor(struct netlink_monitor_race_it
 	mon_opts.groups = random_group_mask();
 
 	if (nl_open(&ctx->mon, &mon_opts) < 0) {
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mon_open,
+	__atomic_add_fetch(&shm->stats.netlink_monitor_race.mon_open,
 			   1, __ATOMIC_RELAXED);
 
 	/* Attach the peernet path -- CVE-2024-26688 lineage.  ENOPROTOOPT
@@ -322,11 +322,11 @@ static int netlink_monitor_race_iter_open_mutator(struct netlink_monitor_race_it
 	char dev_name[IFNAMSIZ];
 
 	if (nl_open(&ctx->mut, &mut_opts) < 0) {
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_open,
+	__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_open,
 			   1, __ATOMIC_RELAXED);
 
 	snprintf(dev_name, sizeof(dev_name), "trnlmon%u",
@@ -335,7 +335,7 @@ static int netlink_monitor_race_iter_open_mutator(struct netlink_monitor_race_it
 	if (build_dummy_link(&ctx->mut, dev_name) != 0)
 		return -1;
 	ctx->link_added = true;
-	__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
+	__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 			   1, __ATOMIC_RELAXED);
 
 	ctx->ifindex = (int)if_nametoindex(dev_name);
@@ -368,26 +368,26 @@ static void netlink_monitor_race_iter_address_burst(struct netlink_monitor_race_
 	for (i = 0; i < NETLINK_MUT_BURST; i++) {
 		if (build_addr(&ctx->mut, RTM_NEWADDR, ctx->ifindex, ctx->addr) == 0) {
 			ctx->addr_added = true;
-			__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
+			__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 
 		drained = drain_monitor(&ctx->mon);
 		if (drained)
-			__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
+			__atomic_add_fetch(&shm->stats.netlink_monitor_race.recv_drained,
 					   drained, __ATOMIC_RELAXED);
 
 		if (ctx->addr_added) {
 			if (build_addr(&ctx->mut, RTM_DELADDR, ctx->ifindex, ctx->addr) == 0) {
 				ctx->addr_added = false;
-				__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
+				__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
 
 		drained = drain_monitor(&ctx->mon);
 		if (drained)
-			__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
+			__atomic_add_fetch(&shm->stats.netlink_monitor_race.recv_drained,
 					   drained, __ATOMIC_RELAXED);
 	}
 }
@@ -408,12 +408,12 @@ static void netlink_monitor_race_iter_membership_churn(struct netlink_monitor_ra
 
 	if (setsockopt(ctx->mon.fd, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
 		       &drop_grp, sizeof(drop_grp)) == 0)
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_group_drop,
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race.group_drop,
 				   1, __ATOMIC_RELAXED);
 
 	if (setsockopt(ctx->mon.fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
 		       &add_grp, sizeof(add_grp)) == 0)
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_group_add,
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race.group_add,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -429,13 +429,13 @@ static void netlink_monitor_race_iter_final_burst(struct netlink_monitor_race_it
 
 	if (build_addr(&ctx->mut, RTM_NEWADDR, ctx->ifindex, ctx->addr) == 0) {
 		ctx->addr_added = true;
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_mut_op_ok,
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 
 	drained = drain_monitor(&ctx->mon);
 	if (drained)
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_recv_drained,
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race.recv_drained,
 				   drained, __ATOMIC_RELAXED);
 }
 
@@ -505,7 +505,7 @@ bool netlink_monitor_race(struct childdata *child)
 	struct netlink_monitor_race_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.netlink_monitor_race_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.netlink_monitor_race.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
 		return true;
@@ -525,7 +525,7 @@ bool netlink_monitor_race(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -533,7 +533,7 @@ bool netlink_monitor_race(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

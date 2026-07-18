@@ -65,6 +65,7 @@
 #include "stats/subsys/map_shared_stress.h"
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/mpls_route_churn.h"
+#include "stats/subsys/netlink_monitor_race.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/perf_chains.h"
@@ -1345,15 +1346,8 @@ struct stats_s {
 	/* mpls_route_churn accounting.  See stats/subsys/mpls_route_churn.h. */
 	struct mpls_route_churn_stats mpls_route_churn __attribute__((aligned(64)));
 
-	/* netlink_monitor_race childop counters */
-	unsigned long netlink_monitor_race_runs;	/* total netlink_monitor_race invocations */
-	unsigned long netlink_monitor_race_setup_failed; /* unshare(CLONE_NEWNET) or socket open/bind failed */
-	unsigned long netlink_monitor_race_mon_open;	/* monitor NETLINK_ROUTE socket bound with groups */
-	unsigned long netlink_monitor_race_mut_open;	/* mutator NETLINK_ROUTE socket opened */
-	unsigned long netlink_monitor_race_mut_op_ok;	/* RTM_NEW/DEL LINK/ADDR ack==0 from mutator */
-	unsigned long netlink_monitor_race_recv_drained; /* recvmsg(MSG_DONTWAIT) returned >0 on monitor */
-	unsigned long netlink_monitor_race_group_drop;	/* NETLINK_DROP_MEMBERSHIP setsockopt accepted */
-	unsigned long netlink_monitor_race_group_add;	/* NETLINK_ADD_MEMBERSHIP setsockopt accepted */
+	/* netlink_monitor_race accounting.  See stats/subsys/netlink_monitor_race.h. */
+	struct netlink_monitor_race_stats netlink_monitor_race __attribute__((aligned(64)));
 
 	/* tipc_link_churn childop counters */
 	unsigned long tipc_link_churn_runs;		/* total tipc_link_churn invocations */
