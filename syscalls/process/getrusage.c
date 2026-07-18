@@ -284,7 +284,7 @@ static void post_getrusage(struct syscallrecord *rec)
 		       first.ru_isrss,    recall.ru_isrss,
 		       first.ru_msgsnd,   recall.ru_msgsnd,
 		       first.ru_msgrcv,   recall.ru_msgrcv);
-		__atomic_add_fetch(&shm->stats.getrusage_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getrusage_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

@@ -260,7 +260,7 @@ static void post_munmap(struct syscallrecord *rec)
 			output(0, "mmap oracle: munmap(%lx, %lu) succeeded "
 			       "but range still in /proc/self/maps\n",
 			       snap->addr, snap->len);
-			__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+			__atomic_add_fetch(&shm->stats.oracle.mmap_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}

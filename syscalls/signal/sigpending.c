@@ -220,7 +220,7 @@ static void post_sigpending(struct syscallrecord *rec)
 		       "/proc/self/status SigPnd=0x%016lx\n",
 		       (unsigned long)syscall_pending,
 		       (unsigned long)proc_pending);
-		__atomic_add_fetch(&shm->stats.sigpending_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sigpending_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

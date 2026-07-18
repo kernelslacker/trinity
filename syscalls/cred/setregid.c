@@ -29,7 +29,7 @@ static void post_setregid(struct syscallrecord *rec)
 		output(0, "cred oracle: setregid(%u, %u) succeeded but "
 		       "getresgid()={r=%u, e=%u, s=%u}\n",
 		       want_r, want_e, r, e, s);
-		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

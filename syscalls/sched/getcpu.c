@@ -347,7 +347,7 @@ static void post_getcpu(struct syscallrecord *rec)
 	    cpu_user >= (unsigned int)nproc_configured) {
 		output(0, "getcpu oracle: cpu=%u >= _SC_NPROCESSORS_CONF=%ld\n",
 		       cpu_user, nproc_configured);
-		__atomic_add_fetch(&shm->stats.getcpu_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getcpu_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 
@@ -357,7 +357,7 @@ static void post_getcpu(struct syscallrecord *rec)
 	if (max_node >= 0 && node_user > (unsigned int)max_node) {
 		output(0, "getcpu oracle: node=%u > sysfs max node=%ld\n",
 		       node_user, max_node);
-		__atomic_add_fetch(&shm->stats.getcpu_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getcpu_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

@@ -208,14 +208,14 @@ static void post_clock_gettime(struct syscallrecord *rec)
 	if (ts_user.tv_nsec < 0 || ts_user.tv_nsec >= 1000000000) {
 		output(0, "clock_gettime oracle: tv_nsec=%ld out of [0..999999999]\n",
 		       (long)ts_user.tv_nsec);
-		__atomic_add_fetch(&shm->stats.clock_gettime_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.clock_gettime_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 
 	if (ts_user.tv_sec < 0) {
 		output(0, "clock_gettime oracle: tv_sec=%lld negative\n",
 		       (long long)ts_user.tv_sec);
-		__atomic_add_fetch(&shm->stats.clock_gettime_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.clock_gettime_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

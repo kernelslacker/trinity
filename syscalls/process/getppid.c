@@ -51,7 +51,7 @@ static void post_getppid(struct syscallrecord *rec)
 		output(0, "getppid oracle: getppid()=%d but "
 		       "/proc/self/status PPid=%d\n",
 		       got, proc_ppid);
-		__atomic_add_fetch(&shm->stats.getppid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getppid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

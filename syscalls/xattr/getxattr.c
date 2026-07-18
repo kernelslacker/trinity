@@ -381,7 +381,7 @@ static void post_getxattr(struct syscallrecord *rec)
 		       "[oracle:getxattr] path=%s name=%s len=%zu first %s vs recheck %s\n",
 		       snap->pathname, snap->name, snap_len,
 		       first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.getxattr_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.getxattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

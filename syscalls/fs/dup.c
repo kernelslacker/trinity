@@ -42,7 +42,7 @@ static void post_dup(struct syscallrecord *rec)
 	    fstat((int) retval, &st_new) == 0) {
 		if (st_old.st_dev != st_new.st_dev ||
 		    st_old.st_ino != st_new.st_ino) {
-			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+			__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}
@@ -191,7 +191,7 @@ static void post_dup2(struct syscallrecord *rec)
 	    fstat((int) retval, &st_new) == 0) {
 		if (st_old.st_dev != st_new.st_dev ||
 		    st_old.st_ino != st_new.st_ino) {
-			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+			__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}

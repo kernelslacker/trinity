@@ -290,7 +290,7 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:lsm_get_self_attr] size %u vs %u (attr=%lu flags=0x%lx)\n",
 		       size_first, size_recall, snap->attr, snap->flags);
-		__atomic_add_fetch(&shm->stats.lsm_get_self_attr_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.lsm_get_self_attr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -300,7 +300,7 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 		       "[oracle:lsm_get_self_attr] ctx diverged over %u bytes (attr=%lu flags=0x%lx)\n",
 		       size_first < size_recall ? size_first : size_recall,
 		       snap->attr, snap->flags);
-		__atomic_add_fetch(&shm->stats.lsm_get_self_attr_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.lsm_get_self_attr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

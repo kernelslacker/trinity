@@ -34,7 +34,7 @@ static void post_sched_yield(struct syscallrecord *rec)
 	if (retval != 0) {
 		output(0, "sched_yield oracle: returned %ld but expected 0\n",
 		       (long) retval);
-		__atomic_add_fetch(&shm->stats.sched_yield_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sched_yield_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

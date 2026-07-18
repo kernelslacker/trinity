@@ -233,7 +233,7 @@ static void post_getresgid(struct syscallrecord *rec)
 		       (unsigned long) kegid,
 		       (unsigned long) ksgid,
 		       ids[0], ids[1], ids[2]);
-		__atomic_add_fetch(&shm->stats.getresgid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getresgid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

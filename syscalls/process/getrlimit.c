@@ -237,7 +237,7 @@ static void post_getrlimit(struct syscallrecord *rec)
 		       (unsigned long) syscall_buf.rlim_max,
 		       (unsigned long) local.rlim_cur,
 		       (unsigned long) local.rlim_max);
-		__atomic_add_fetch(&shm->stats.getrlimit_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getrlimit_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

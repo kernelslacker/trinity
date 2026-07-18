@@ -285,7 +285,7 @@ static void post_capget(struct syscallrecord *rec)
 		       data_recall[0].inheritable);
 	}
 
-	__atomic_add_fetch(&shm->stats.capget_oracle_anomalies, 1,
+	__atomic_add_fetch(&shm->stats.oracle.capget_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
 out_free:

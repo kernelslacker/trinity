@@ -44,7 +44,7 @@ static void post_map_shadow_stack(struct syscallrecord *rec)
 	if ((unsigned long) p & (page_size - 1)) {
 		output(0, "map_shadow_stack oracle: returned addr %p is not page-aligned (page_size=%u)\n",
 		       p, page_size);
-		__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.mmap_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}

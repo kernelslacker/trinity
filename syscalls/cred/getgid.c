@@ -52,7 +52,7 @@ static void post_getgid(struct syscallrecord *rec)
 		output(0, "getgid oracle: getgid()=%u but "
 		       "/proc/self/status Gid rgid=%u\n",
 		       got, proc_rgid);
-		__atomic_add_fetch(&shm->stats.getgid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getgid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

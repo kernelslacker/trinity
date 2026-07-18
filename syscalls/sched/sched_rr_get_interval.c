@@ -202,7 +202,7 @@ static void post_sched_rr_get_interval(struct syscallrecord *rec)
 		       "[oracle:sched_rr_get_interval] tv_sec %ld vs %ld tv_nsec %ld vs %ld\n",
 		       (long) user_ts.tv_sec, (long) kernel_ts.tv_sec,
 		       (long) user_ts.tv_nsec, (long) kernel_ts.tv_nsec);
-		__atomic_add_fetch(&shm->stats.sched_rr_get_interval_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.sched_rr_get_interval_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

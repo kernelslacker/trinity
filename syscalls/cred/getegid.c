@@ -47,7 +47,7 @@ static void post_getegid(struct syscallrecord *rec)
 		output(0, "getegid oracle: getegid()=%u but "
 		       "/proc/self/status Gid egid=%u\n",
 		       got, proc_egid);
-		__atomic_add_fetch(&shm->stats.getegid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getegid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

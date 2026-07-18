@@ -233,7 +233,7 @@ static void post_getresuid(struct syscallrecord *rec)
 		       (unsigned long) keuid,
 		       (unsigned long) ksuid,
 		       ids[0], ids[1], ids[2]);
-		__atomic_add_fetch(&shm->stats.getresuid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getresuid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

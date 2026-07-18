@@ -219,7 +219,7 @@ static void post_times(struct syscallrecord *rec)
 		       (long) first.tms_stime,  (long) recall.tms_stime,
 		       (long) first.tms_cutime, (long) recall.tms_cutime,
 		       (long) first.tms_cstime, (long) recall.tms_cstime);
-		__atomic_add_fetch(&shm->stats.times_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.times_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

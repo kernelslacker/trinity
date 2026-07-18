@@ -445,7 +445,7 @@ static void post_file_getattr(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:file_getattr] dfd=%d path=%s usize=%zu [%s] vs [%s]\n",
 		       dfd, snap->pathname, usize, first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.file_getattr_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.file_getattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

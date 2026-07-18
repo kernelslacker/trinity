@@ -71,7 +71,7 @@ static void post_umask(struct syscallrecord *rec)
 		       "mask=%04o (from a1=%#lx) but "
 		       "/proc/self/status Umask: %04o\n",
 		       expected, a1, kumask);
-		__atomic_add_fetch(&shm->stats.umask_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.umask_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

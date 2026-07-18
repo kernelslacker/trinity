@@ -341,7 +341,7 @@ static void post_sigaltstack(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:sigaltstack] ss_sp %p vs %p\n",
 		       first_ss.ss_sp, recheck_ss.ss_sp);
-		__atomic_add_fetch(&shm->stats.sigaltstack_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sigaltstack_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 
@@ -351,7 +351,7 @@ static void post_sigaltstack(struct syscallrecord *rec)
 		       "[oracle:sigaltstack] ss_flags 0x%x vs 0x%x\n",
 		       (unsigned int) first_ss.ss_flags,
 		       (unsigned int) recheck_ss.ss_flags);
-		__atomic_add_fetch(&shm->stats.sigaltstack_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sigaltstack_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 
@@ -360,7 +360,7 @@ static void post_sigaltstack(struct syscallrecord *rec)
 		       "[oracle:sigaltstack] ss_size %zu vs %zu\n",
 		       (size_t) first_ss.ss_size,
 		       (size_t) recheck_ss.ss_size);
-		__atomic_add_fetch(&shm->stats.sigaltstack_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sigaltstack_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

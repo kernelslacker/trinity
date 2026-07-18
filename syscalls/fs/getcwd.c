@@ -149,7 +149,7 @@ static void post_getcwd(struct syscallrecord *rec)
 	if (strcmp(user_cwd, proc_cwd) != 0) {
 		output(0, "getcwd oracle: getcwd buf=\"%s\" but "
 		       "/proc/self/cwd=\"%s\"\n", user_cwd, proc_cwd);
-		__atomic_add_fetch(&shm->stats.getcwd_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.getcwd_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

@@ -193,7 +193,7 @@ static void post_clock_getres(struct syscallrecord *rec)
 		       (int) clockid,
 		       (long) first.tv_sec, (long) recall.tv_sec,
 		       (long) first.tv_nsec, (long) recall.tv_nsec);
-		__atomic_add_fetch(&shm->stats.clock_getres_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.clock_getres_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 

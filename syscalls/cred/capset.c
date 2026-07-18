@@ -245,7 +245,7 @@ static void post_capset(struct syscallrecord *rec)
 	if (syscall(SYS_settimeofday, NULL, NULL) == 0) {
 		output(0, "cred oracle: capset cleared CAP_SYS_TIME from effective "
 		       "set but settimeofday(NULL, NULL) succeeded\n");
-		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 	/* EPERM (or any other failure) means the kernel agrees with itself. */

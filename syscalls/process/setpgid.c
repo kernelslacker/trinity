@@ -76,7 +76,7 @@ static void post_setpgid(struct syscallrecord *rec)
 		output(0, "setpgid oracle: setpgid(0,%d) succeeded but "
 		       "subsequent getpgrp()=%d (expected %d)\n",
 		       (pid_t) a2, got, expected);
-		__atomic_add_fetch(&shm->stats.setpgid_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.setpgid_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

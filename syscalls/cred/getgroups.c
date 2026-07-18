@@ -225,7 +225,7 @@ static void post_getgroups(struct syscallrecord *rec)
 		if (seen != (int) ret) {
 			output(0, "groups oracle: /proc/self/status Groups: count %d but rec->retval was %ld\n",
 			       seen, ret);
-			__atomic_add_fetch(&shm->stats.getgroups_oracle_anomalies, 1,
+			__atomic_add_fetch(&shm->stats.oracle.getgroups_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}

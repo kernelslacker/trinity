@@ -301,7 +301,7 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:get_mempolicy] policy %d vs %d (maxnode=%lu flags=0x%lx)\n",
 		       policy_first, policy_recall, snap->maxnode, snap->flags);
-		__atomic_add_fetch(&shm->stats.get_mempolicy_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.get_mempolicy_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -309,7 +309,7 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:get_mempolicy] nmask diverged over %zu bytes (maxnode=%lu flags=0x%lx)\n",
 		       nmask_bytes, snap->maxnode, snap->flags);
-		__atomic_add_fetch(&shm->stats.get_mempolicy_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.get_mempolicy_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

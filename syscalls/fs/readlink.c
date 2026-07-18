@@ -229,7 +229,7 @@ static void post_readlink(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:readlink] path=%s len=%zu first %s vs recheck %s\n",
 		       snap->path, snap_len, first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.readlink_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.readlink_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -412,7 +412,7 @@ static void post_readlinkat(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:readlinkat] retval=%ld exceeds bufsiz=%ld\n",
 		       (long) retval, (long) snap->bufsiz);
-		__atomic_add_fetch(&shm->stats.readlinkat_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.readlinkat_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 		goto out_free;
 	}
@@ -458,7 +458,7 @@ static void post_readlinkat(struct syscallrecord *rec)
 		output(0,
 		       "[oracle:readlinkat] dfd=%d path=%s len=%zu first %s vs recheck %s\n",
 		       dfd, snap->pathname, snap_len, first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.readlinkat_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.readlinkat_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 

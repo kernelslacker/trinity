@@ -77,7 +77,7 @@ static void post_sched_get_priority_min(struct syscallrecord *rec)
 	if (got != expected) {
 		output(0, "sched_get_priority_min oracle: policy=%d returned %d but expected %d\n",
 		       policy, got, expected);
-		__atomic_add_fetch(&shm->stats.sched_get_priority_min_oracle_anomalies, 1,
+		__atomic_add_fetch(&shm->stats.oracle.sched_get_priority_min_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }

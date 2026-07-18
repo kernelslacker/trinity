@@ -192,7 +192,7 @@ static void post_sysfs(struct syscallrecord *rec)
 		       "[oracle:sysfs] idx=%lu first_len=%zu recheck_len=%zu first %s vs recheck %s\n",
 		       snap->idx, first_len, recheck_len,
 		       first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.sysfs_oracle_anomalies,
+		__atomic_add_fetch(&shm->stats.oracle.sysfs_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
 
