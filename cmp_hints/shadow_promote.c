@@ -54,7 +54,6 @@ enum shadow_arm_id {
 	SHADOW_ARM_CMP_HYP_POW2_DERIVE,
 	SHADOW_ARM_CMP_HYP_BITMASK_FULL_OR,
 	SHADOW_ARM_CMP_HYP_BITMASK_ANDNOT_TOGGLE,
-	SHADOW_ARM_CMP_NONCONST_RELATIONAL,
 	SHADOW_ARM_CMP_FIELD_SCOPED_INJECT,
 	SHADOW_ARM_CMP_SHARED_TIER_COLDSERVE,
 	SHADOW_ARM_NR,
@@ -154,37 +153,6 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.live_flag = 0,
 		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
 		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,
-	},
-	/*
-	 * Non-const relational counterfactual proxy layered on the CMP
-	 * RedQueen pin.  baseline (cmp_nonconst_would_attribute) bumps
-	 * on every non-const record where exactly one operand appears
-	 * uniquely in the argument stream and the other is absent --
-	 * the addressable subset where a relational pin could be
-	 * attributed to a single arg slot; would-win
-	 * (cmp_nonconst_cfactual_win) bumps on the counterfactual
-	 * subset where a bloom-fresh check confirms the pin value has
-	 * not been observed on this call site before, i.e. attributing
-	 * the record would produce a novel pin the live lane did not.
-	 * Stricter per-arm criterion than the pilot band: baseline
-	 * floor of 100 samples and 100/1000 win threshold, reflecting
-	 * the noisier relational baseline (attribution ambiguity is
-	 * higher than the width-masked equality case).  No live
-	 * counterpart yet -- the relational inject is a separate
-	 * follow-up; this arm onboards the MEASURE half only.
-	 */
-	[SHADOW_ARM_CMP_NONCONST_RELATIONAL] = {
-		.name = "cmp_nonconst_relational",
-		.would_win_offset =
-			offsetof(struct kcov_shared,
-				 cmp_nonconst_cfactual_win),
-		.live_win_offset = 0,
-		.baseline_offset =
-			offsetof(struct kcov_shared,
-				 cmp_nonconst_would_attribute),
-		.live_flag = 0,
-		.min_baseline_samples = 100,
-		.win_ratio_per_mille = 100,
 	},
 	/*
 	 * Field-scoped CMP inject shadow.  baseline

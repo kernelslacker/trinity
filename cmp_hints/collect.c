@@ -85,11 +85,6 @@
  * accumulators in cmp_hints_collect() and the kcov_shm shadow
  * counters they in turn drain into.
  *
- * Split out of the collector's hot loop so the classification lives in
- * one cohesive function -- easier to read on its own and gives the
- * counterfactual replay probe below a scoped home instead of growing
- * another inline branch inside cmp_hints_collect().
- *
  * Gated by rec_num_args > 0 at the caller (dispatch-time snapshot
  * available); a zero-arg call returns the zero-init struct which
  * bumps nothing.  The population meaning of each field:
@@ -102,15 +97,6 @@
  *   would_attribute -- clean case: one side uniquely ours, the other
  *                      not ours at all; a relational lane could act
  *                      on this record without ambiguity.
- *   cfactual_win    -- subset of would_attribute where the value a
- *                      relational replay would inject (the operand
- *                      NOT matching any snapshot slot) has not been
- *                      observed at this (cmp_ip, width) in the
- *                      current bloom window.  See the counterfactual
- *                      note further down for why the bloom probe is
- *                      the honest proxy for "replay would produce
- *                      new edge / cmp progress" that we can compute
- *                      at collect time without live injection.
  */
 struct cmp_nonconst_shadow_result {
 	bool measured;
@@ -118,52 +104,12 @@ struct cmp_nonconst_shadow_result {
 	bool arg2_unique;
 	bool both_match;
 	bool would_attribute;
-	bool cfactual_win;
 };
 
-/*
- * Counterfactual replay proxy.
- *
- * The value-match "would_attribute" predicate over-counts: any coincident
- * arg-slot equality registers, even when injecting the relational value
- * on replay would land on a (cmp_ip, value, width) pairing the natural
- * fuzz path has already exercised in this bloom window -- in which case
- * the replay produces no new edge / cmp progress and the opportunity
- * carries no honest signal.
- *
- * We cannot perform the replay from the collect path (that would be a
- * live behaviour change, out of scope for this shadow lane), so the
- * proxy is: was the value a relational lane would inject observed at
- * this cmp_ip in the current bloom window?  If yes, the natural
- * const-arg1 ingress has already stamped the (cmp_ip, target, width)
- * bit pair -- replay would revisit an already-witnessed tuple and the
- * opportunity is coincidental rather than causal.  If no, the tuple
- * is bloom-fresh and a replay could plausibly step the child into a
- * branch outcome not yet reached.  Bloom-window scoping matches the
- * timescale a relational-injection lane would care about: within a
- * few thousand records back, has this exact pairing been seen?
- *
- * The read is a probe -- no bloom bits are stamped -- so the live
- * (cmp_ip, arg1, size) tracking on the natural KCOV_CMP_CONST ingress
- * is unaffected.
- *
- * The per-record measurement is keyed by (nr, arg_slot, cmp_ip,
- * width): nr + width scope the bloom the probe walks, arg_slot is the
- * unique matching snapshot slot the would_attribute predicate
- * identified, and cmp_ip identifies the kernel comparison site.  A
- * downstream operator asking "for opportunities with >=100 samples
- * and low ambiguity, does relational replay actually yield new
- * coverage?" reads the aggregate win / would_attribute ratio: sample
- * density accumulates as the same key sees more records and the
- * expected 10-15% signal band shows through the aggregate once the
- * denominator is large enough to smooth out per-key sampling noise.
- */
 static struct cmp_nonconst_shadow_result
 cmp_nonconst_shadow_classify(unsigned int rec_num_args,
 			     const unsigned long *rec_args,
-			     unsigned long arg1, unsigned long arg2,
-			     unsigned long ip, unsigned int size,
-			     const struct cmp_hints_bloom *bloom)
+			     unsigned long arg1, unsigned long arg2)
 {
 	struct cmp_nonconst_shadow_result r = { 0 };
 	unsigned int k;
@@ -185,23 +131,6 @@ cmp_nonconst_shadow_classify(unsigned int rec_num_args,
 	r.both_match      = (n1 >= 1 && n2 >= 1);
 	r.would_attribute = (n1 == 1 && n2 == 0) || (n2 == 1 && n1 == 0);
 
-	/*
-	 * On a clean would_attribute, the operand NOT matching any
-	 * snapshot slot is what a relational replay would inject to
-	 * flip the comparison outcome.  Bloom-probe the injected value
-	 * against the (cmp_ip, width) key of the current window; a
-	 * miss (bloom-fresh) is the counterfactual "win" -- replay
-	 * would visit a tuple the natural ingress has not.  bloom ==
-	 * NULL (parent-context caller) leaves cfactual_win false, so
-	 * the ratio denominator naturally excludes uninstrumented
-	 * calls.
-	 */
-	if (r.would_attribute && bloom != NULL) {
-		unsigned long target = (n1 == 1 && n2 == 0) ? arg2 : arg1;
-
-		r.cfactual_win =
-			!cmp_hints_bloom_probe(bloom, ip, target, size);
-	}
 	return r;
 }
 
@@ -263,16 +192,6 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	unsigned long nonconst_both_match = 0;
 	unsigned long nonconst_would_attribute = 0;
 	unsigned long nonconst_measured = 0;
-	/*
-	 * Counterfactual replay proxy over the would_attribute stream.
-	 * Bumped only when a would_attribute record's relational-inject
-	 * target is bloom-fresh at this (cmp_ip, width); the honest
-	 * subset the ratio win / would_attribute measures.  Same per-
-	 * record accumulator + function-exit flush pattern as the
-	 * nonconst_* counters above.  See the classifier's counterfactual
-	 * note for the proxy's derivation.
-	 */
-	unsigned long nonconst_cfactual_win = 0;
 	/*
 	 * Shadow measurement at the width-masked RedQueen pin site.  Live
 	 * consumer overwrites the whole 64-bit slot with arg1; a high-bit-
@@ -540,8 +459,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			 */
 			cls = cmp_nonconst_shadow_classify(rec_num_args,
 							   rec_args,
-							   arg1, arg2,
-							   ip, size, bloom);
+							   arg1, arg2);
 			if (cls.measured)
 				nonconst_measured++;
 			if (cls.arg1_unique)
@@ -552,8 +470,6 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				nonconst_both_match++;
 			if (cls.would_attribute)
 				nonconst_would_attribute++;
-			if (cls.cfactual_win)
-				nonconst_cfactual_win++;
 			continue;
 		}
 
@@ -1085,9 +1001,6 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		if (nonconst_measured != 0)
 			__atomic_fetch_add(&kcov_shm->cmp_nonconst_measured,
 					   nonconst_measured, __ATOMIC_RELAXED);
-		if (nonconst_cfactual_win != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_nonconst_cfactual_win,
-					   nonconst_cfactual_win, __ATOMIC_RELAXED);
 		if (width_pin_total != 0)
 			__atomic_fetch_add(&kcov_shm->cmp_width_pin_total,
 					   width_pin_total, __ATOMIC_RELAXED);
