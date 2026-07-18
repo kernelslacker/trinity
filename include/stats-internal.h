@@ -113,7 +113,7 @@ bool pc_in_text(void *pc);
 unsigned long stat_field_load(const struct stat_field *f);
 
 /* Cluster entry points called by dump_stats().  dump_stats_json() lives in
- * stats/json/; childop_split_dump() lives in stats/periodic.c. */
+ * stats/json/; childop_split_dump() lives in stats/periodic/childop-split.c. */
 void dump_stats_json(void);
 void childop_split_dump(void);
 void dump_stats_runtime_header(void);
