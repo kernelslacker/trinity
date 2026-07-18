@@ -57,6 +57,7 @@
 #include "stats/subsys/ip4_udp_cork_splice.h"
 #include "stats/subsys/ip6_udp_cork_splice.h"
 #include "stats/subsys/ip6gre_lapb.h"
+#include "stats/subsys/ip_gre_churn.h"
 #include "stats/subsys/ipv6_ndisc_proxy.h"
 #include "stats/subsys/ipv6_pmtu_race.h"
 #include "stats/subsys/iscsi_target_probe.h"
@@ -1357,13 +1358,8 @@ struct stats_s {
 	unsigned long vxlan_encap_churn_packet_sent_ok;	/* sendto on AF_PACKET raw bound to tunnel returned >0 */
 	unsigned long vxlan_encap_churn_link_del_ok;	/* RTM_DELLINK accepted */
 
-	/* ip_gre_churn childop counters */
-	unsigned long ip_gre_churn_runs;		/* total ip_gre_churn invocations */
-	unsigned long ip_gre_churn_setup_failed;	/* unshare(CLONE_NEWNET) / rtnl_open / kind latched */
-	unsigned long ip_gre_churn_link_create_ok;	/* RTM_NEWLINK type=gretap accepted */
-	unsigned long ip_gre_churn_link_up_ok;		/* RTM_NEWLINK setlink IFF_UP accepted */
-	unsigned long ip_gre_churn_packet_sent_ok;	/* sendto on IPPROTO_RAW returned >0 */
-	unsigned long ip_gre_churn_link_del_ok;		/* RTM_DELLINK accepted */
+	/* ip_gre_churn accounting.  See stats/subsys/ip_gre_churn.h. */
+	struct ip_gre_churn_stats ip_gre_churn __attribute__((aligned(64)));
 
 	/* ovs_tunnel_vport_churn accounting.  See stats/subsys/ovs_tunnel_vport_churn.h. */
 	struct ovs_tunnel_vport_churn_stats ovs_tunnel_vport_churn __attribute__((aligned(64)));

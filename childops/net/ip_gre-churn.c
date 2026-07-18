@@ -366,7 +366,7 @@ static int ip_gre_iter_open_ctx(struct ip_gre_iter_ctx *ctx)
 	};
 
 	if (nl_open(&ctx->nl, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.ip_gre_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.ip_gre_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -441,7 +441,7 @@ static int ip_gre_iter_build_link(struct ip_gre_iter_ctx *ctx)
 		return -1;
 	}
 	ctx->link_added = true;
-	__atomic_add_fetch(&shm->stats.ip_gre_churn_link_create_ok,
+	__atomic_add_fetch(&shm->stats.ip_gre_churn.link_create_ok,
 			   1, __ATOMIC_RELAXED);
 
 	ctx->ifindex = (int)if_nametoindex(ctx->ifname);
@@ -451,7 +451,7 @@ static int ip_gre_iter_build_link(struct ip_gre_iter_ctx *ctx)
 	name_pool_record(NAME_KIND_NETDEV, ctx->ifname, strlen(ctx->ifname));
 
 	if (rtnl_setlink_up(&ctx->nl, ctx->ifindex) == 0)
-		__atomic_add_fetch(&shm->stats.ip_gre_churn_link_up_ok,
+		__atomic_add_fetch(&shm->stats.ip_gre_churn.link_up_ok,
 				   1, __ATOMIC_RELAXED);
 
 	return 0;
@@ -512,7 +512,7 @@ static void ip_gre_iter_send_burst(struct ip_gre_iter_ctx *ctx)
 		n = sendto(ctx->raw, pkt, off, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.ip_gre_churn_packet_sent_ok,
+			__atomic_add_fetch(&shm->stats.ip_gre_churn.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -535,7 +535,7 @@ static void ip_gre_iter_teardown(struct ip_gre_iter_ctx *ctx)
 
 	if (ctx->link_added && ctx->ifindex > 0) {
 		if (rtnl_dellink(&ctx->nl, ctx->ifindex) == 0)
-			__atomic_add_fetch(&shm->stats.ip_gre_churn_link_del_ok,
+			__atomic_add_fetch(&shm->stats.ip_gre_churn.link_del_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 	nl_close(&ctx->nl);
@@ -587,14 +587,14 @@ bool ip_gre_churn(struct childdata *child)
 	struct ip_gre_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.ip_gre_churn_runs, 1,
+	__atomic_add_fetch(&shm->stats.ip_gre_churn.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_ip_gre)
 		return true;
 
 	if (kind_unsupported()) {
-		__atomic_add_fetch(&shm->stats.ip_gre_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.ip_gre_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -612,12 +612,12 @@ bool ip_gre_churn(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.ip_gre_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.ip_gre_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.ip_gre_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.ip_gre_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
