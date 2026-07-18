@@ -111,25 +111,3 @@ const struct stat_category iouring_send_zc_churn_category =
 	              iouring_send_zc_churn_runs,
 	              iouring_send_zc_churn_fields);
 
-/*
- * Descriptors for dump_stats_json_lifecycle_and_storms().  The JSON walker
- * ignores gate_offset (it emits every category unconditionally) so the gate
- * field here only matters if a future change wires stat_category_emit_text()
- * onto these tables; the current text dump for these two categories stays
- * hand-coded in dump_stats_childop_runs_local().
- */
-static const struct stat_field fs_lifecycle_fields[] = {
-	STAT_FIELD(fs_lifecycle, tmpfs),
-	STAT_FIELD(fs_lifecycle, ramfs),
-	STAT_FIELD(fs_lifecycle, rdonly),
-	STAT_FIELD(fs_lifecycle, overlay),
-	STAT_FIELD(fs_lifecycle, quota),
-	STAT_FIELD(fs_lifecycle, bind),
-	STAT_FIELD(fs_lifecycle, unsupported),
-};
-
-const struct stat_category fs_lifecycle_category =
-	STAT_CATEGORY("fs_lifecycle",
-	              fs_lifecycle_tmpfs,
-	              fs_lifecycle_fields);
-

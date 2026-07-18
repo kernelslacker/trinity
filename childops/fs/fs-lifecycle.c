@@ -228,7 +228,7 @@ cleanup:
 out_rmdir:
 	(void)rmdir(base);
 
-	__atomic_add_fetch(&shm->stats.fs_lifecycle_tmpfs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fs_lifecycle.tmpfs, 1, __ATOMIC_RELAXED);
 }
 
 /*
@@ -295,7 +295,7 @@ cleanup:
 out_rmdir:
 	(void)rmdir(base);
 
-	__atomic_add_fetch(&shm->stats.fs_lifecycle_ramfs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fs_lifecycle.ramfs, 1, __ATOMIC_RELAXED);
 }
 
 /*
@@ -351,7 +351,7 @@ static void do_rdonly_lifecycle(void)
 out_rmdir:
 	(void)rmdir(base);
 
-	__atomic_add_fetch(&shm->stats.fs_lifecycle_rdonly, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fs_lifecycle.rdonly, 1, __ATOMIC_RELAXED);
 }
 
 /*
@@ -430,7 +430,7 @@ cleanup_base:
 out_rmdir:
 	(void)rmdir(base);
 
-	__atomic_add_fetch(&shm->stats.fs_lifecycle_overlay, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fs_lifecycle.overlay, 1, __ATOMIC_RELAXED);
 }
 
 /*
@@ -481,7 +481,7 @@ cleanup:
 out_rmdir:
 	(void)rmdir(base);
 
-	__atomic_add_fetch(&shm->stats.fs_lifecycle_quota, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fs_lifecycle.quota, 1, __ATOMIC_RELAXED);
 }
 
 /*
@@ -540,7 +540,7 @@ out_rmdir:
 	(void)rmdir(dst);
 	(void)rmdir(src);
 
-	__atomic_add_fetch(&shm->stats.fs_lifecycle_bind, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fs_lifecycle.bind, 1, __ATOMIC_RELAXED);
 }
 
 /* ------------------------------------------------------------------ */
@@ -608,7 +608,7 @@ bool fs_lifecycle(struct childdata *child)
 		 * kernel.unprivileged_userns_clone=0).  Latch and stop
 		 * retrying for the lifetime of this trinity child. */
 		ns_unsupported = true;
-		__atomic_add_fetch(&shm->stats.fs_lifecycle_unsupported,
+		__atomic_add_fetch(&shm->stats.fs_lifecycle.unsupported,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],

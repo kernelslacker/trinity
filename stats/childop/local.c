@@ -38,17 +38,17 @@ void dump_stats_childop_runs_local(void)
 {
 	stat_category_emit_text(&refcount_audit_category);
 
-	if (shm->stats.fs_lifecycle_tmpfs   || shm->stats.fs_lifecycle_ramfs   ||
-	    shm->stats.fs_lifecycle_rdonly  || shm->stats.fs_lifecycle_overlay ||
-	    shm->stats.fs_lifecycle_quota   || shm->stats.fs_lifecycle_bind    ||
-	    shm->stats.fs_lifecycle_unsupported) {
-		stat_row("fs_lifecycle", "tmpfs",       shm->stats.fs_lifecycle_tmpfs);
-		stat_row("fs_lifecycle", "ramfs",       shm->stats.fs_lifecycle_ramfs);
-		stat_row("fs_lifecycle", "rdonly",      shm->stats.fs_lifecycle_rdonly);
-		stat_row("fs_lifecycle", "overlay",     shm->stats.fs_lifecycle_overlay);
-		stat_row("fs_lifecycle", "quota",       shm->stats.fs_lifecycle_quota);
-		stat_row("fs_lifecycle", "bind",        shm->stats.fs_lifecycle_bind);
-		stat_row("fs_lifecycle", "unsupported", shm->stats.fs_lifecycle_unsupported);
+	if (shm->stats.fs_lifecycle.tmpfs   || shm->stats.fs_lifecycle.ramfs   ||
+	    shm->stats.fs_lifecycle.rdonly  || shm->stats.fs_lifecycle.overlay ||
+	    shm->stats.fs_lifecycle.quota   || shm->stats.fs_lifecycle.bind    ||
+	    shm->stats.fs_lifecycle.unsupported) {
+		stat_row("fs_lifecycle", "tmpfs",       shm->stats.fs_lifecycle.tmpfs);
+		stat_row("fs_lifecycle", "ramfs",       shm->stats.fs_lifecycle.ramfs);
+		stat_row("fs_lifecycle", "rdonly",      shm->stats.fs_lifecycle.rdonly);
+		stat_row("fs_lifecycle", "overlay",     shm->stats.fs_lifecycle.overlay);
+		stat_row("fs_lifecycle", "quota",       shm->stats.fs_lifecycle.quota);
+		stat_row("fs_lifecycle", "bind",        shm->stats.fs_lifecycle.bind);
+		stat_row("fs_lifecycle", "unsupported", shm->stats.fs_lifecycle.unsupported);
 	}
 
 	stat_category_emit_text(&signal_storm_category);
