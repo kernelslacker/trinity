@@ -111,7 +111,7 @@ bool recipe_socket_shutdown_linked(struct iour_recipe_state *s, bool *unsupporte
 	if (r < 0) {
 		if (errno == ENOSYS) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		return false;
@@ -313,7 +313,7 @@ bool recipe_bind(struct iour_recipe_state *s, bool *unsupported)
 	if (r < 0) {
 		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		return false;
@@ -356,7 +356,7 @@ bool recipe_listen(struct iour_recipe_state *s, bool *unsupported)
 	if (r < 0) {
 		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		return false;

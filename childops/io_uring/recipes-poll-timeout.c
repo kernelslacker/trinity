@@ -218,7 +218,7 @@ bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupported)
 		 * word — without it the recipe can't even reach SQE
 		 * submission.  Latch off rather than re-pick forever. */
 		*unsupported = true;
-		__atomic_add_fetch(&shm->stats.iouring_recipes_enosys, 1,
+		__atomic_add_fetch(&shm->stats.iouring_recipes.enosys, 1,
 				   __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -257,7 +257,7 @@ bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupported)
 	if (r < 0) {
 		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -317,7 +317,7 @@ bool recipe_epoll_wait(struct iour_recipe_state *s, bool *unsupported)
 	if (r < 0) {
 		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -475,7 +475,7 @@ bool recipe_waitid(struct iour_recipe_state *s, bool *unsupported)
 	if (r < 0) {
 		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		return false;

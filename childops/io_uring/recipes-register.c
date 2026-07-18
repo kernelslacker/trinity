@@ -95,7 +95,7 @@ bool recipe_fixed_buffer_read(struct iour_recipe_state *s, bool *unsupported)
 		 * attempted, so latch the recipe off — leaving it live just
 		 * has the dispatcher re-pick us forever on partial. */
 		*unsupported = true;
-		__atomic_add_fetch(&shm->stats.iouring_recipes_enosys, 1,
+		__atomic_add_fetch(&shm->stats.iouring_recipes.enosys, 1,
 				   __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -122,7 +122,7 @@ bool recipe_fixed_buffer_read(struct iour_recipe_state *s, bool *unsupported)
 		 * this host. */
 		if (errno == EPERM || errno == ENOMEM) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -197,7 +197,7 @@ bool recipe_write_read_fixed(struct iour_recipe_state *s, bool *unsupported)
 		 * suitable backing buffer the recipe can't make progress
 		 * on this host, so latch it off instead of looping. */
 		*unsupported = true;
-		__atomic_add_fetch(&shm->stats.iouring_recipes_enosys, 1,
+		__atomic_add_fetch(&shm->stats.iouring_recipes.enosys, 1,
 				   __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -219,7 +219,7 @@ bool recipe_write_read_fixed(struct iour_recipe_state *s, bool *unsupported)
 		 * memlock policy / pressure won't resolve mid-run. */
 		if (errno == EPERM || errno == ENOMEM) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -390,7 +390,7 @@ bool recipe_msg_ring(struct iour_recipe_state *s, bool *unsupported)
 			 * live for the next dispatch. */
 			if (st == IOUR_UNSUPPORTED) {
 				*unsupported = true;
-				__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+				__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 						   1, __ATOMIC_RELAXED);
 			}
 			goto out;
@@ -412,7 +412,7 @@ bool recipe_msg_ring(struct iour_recipe_state *s, bool *unsupported)
 	if (r < 0) {
 		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		goto out;
@@ -576,7 +576,7 @@ bool recipe_eventfd_recursive(struct iour_recipe_state *s, bool *unsupported)
 				   1, __ATOMIC_RELAXED);
 		if (errno == EINVAL || errno == ENOTTY) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		goto out;

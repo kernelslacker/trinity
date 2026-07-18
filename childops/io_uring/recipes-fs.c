@@ -279,7 +279,7 @@ bool recipe_ftruncate(struct iour_recipe_state *s, bool *unsupported)
 	if (r < 0) {
 		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		return false;
@@ -373,7 +373,7 @@ bool recipe_read_multishot(struct iour_recipe_state *s, bool *unsupported)
 	if (r < 0) {
 		if (is_syscall_unsupported(errno) || errno == EINVAL) {
 			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+			__atomic_add_fetch(&shm->stats.iouring_recipes.enosys,
 					   1, __ATOMIC_RELAXED);
 		}
 		return false;
