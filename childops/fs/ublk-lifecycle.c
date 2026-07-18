@@ -208,7 +208,7 @@ static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 			ns_unsupported_ublk = true;
-			__atomic_add_fetch(&shm->stats.ublk_lifecycle_eperm,
+			__atomic_add_fetch(&shm->stats.ublk_lifecycle.eperm,
 					   1, __ATOMIC_RELAXED);
 		}
 		return false;
@@ -282,7 +282,7 @@ static bool ublk_lifecycle_iter_add_dev(struct ublk_lifecycle_iter_ctx *ctx)
 	ctx->dev_id = (int)info.dev_id;
 	if (ctx->dev_id < 0)
 		return false;
-	__atomic_add_fetch(&shm->stats.ublk_lifecycle_add_ok, 1,
+	__atomic_add_fetch(&shm->stats.ublk_lifecycle.add_ok, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
@@ -321,7 +321,7 @@ static void ublk_lifecycle_iter_arm_fetch(struct ublk_lifecycle_iter_ctx *ctx)
 
 	if (ring_submit(&ctx->io_ring, &sqe, 0)) {
 		ctx->fetch_in_flight = true;
-		__atomic_add_fetch(&shm->stats.ublk_lifecycle_fetch_ok, 1,
+		__atomic_add_fetch(&shm->stats.ublk_lifecycle.fetch_ok, 1,
 				   __ATOMIC_RELAXED);
 	}
 }
@@ -352,10 +352,10 @@ static void ublk_lifecycle_iter_del_dev(struct ublk_lifecycle_iter_ctx *ctx)
 
 	if (ring_submit(&ctx->ctrl_ring, &sqe, 1)) {
 		ring_drain(&ctx->ctrl_ring);
-		__atomic_add_fetch(&shm->stats.ublk_lifecycle_del_ok, 1,
+		__atomic_add_fetch(&shm->stats.ublk_lifecycle.del_ok, 1,
 				   __ATOMIC_RELAXED);
 		if (ctx->fetch_in_flight)
-			__atomic_add_fetch(&shm->stats.ublk_lifecycle_race_observed,
+			__atomic_add_fetch(&shm->stats.ublk_lifecycle.race_observed,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -388,7 +388,7 @@ bool ublk_lifecycle(struct childdata *child)
 		.child   = child,
 	};
 
-	__atomic_add_fetch(&shm->stats.ublk_lifecycle_iters, 1,
+	__atomic_add_fetch(&shm->stats.ublk_lifecycle.iters, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_ublk)
