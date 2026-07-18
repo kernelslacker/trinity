@@ -126,15 +126,6 @@ const struct stat_category netns_mountns_setup_category =
 	              netns_mountns_setup_runs,
 	              netns_mountns_setup_fields);
 
-static const struct stat_field setsockopt_pairing_fields[] = {
-	STAT_FIELD(setsockopt_pairing, paired_emitted),
-};
-
-const struct stat_category setsockopt_pairing_category =
-	STAT_CATEGORY("setsockopt_pairing",
-	              setsockopt_pairing_paired_emitted,
-	              setsockopt_pairing_fields);
-
 static const struct stat_field socket_family_chain_fields[] = {
 	STAT_FIELD(socket_family_chain, runs),
 	STAT_FIELD(socket_family_chain, completed),

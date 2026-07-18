@@ -34,6 +34,7 @@
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/pipe_thrash.h"
+#include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/xattr_thrash.h"
@@ -890,8 +891,8 @@ struct stats_s {
 	/* netlink message generator: NLA_F_NESTED containers emitted */
 	unsigned long netlink_nested_attrs_emitted;
 
-	/* setsockopt pairing: dependent-option pairs fired on same fd */
-	unsigned long setsockopt_pairing_paired_emitted;
+	/* setsockopt pairing accounting.  See stats/subsys/setsockopt_pairing.h. */
+	struct setsockopt_pairing_stats setsockopt_pairing __attribute__((aligned(64)));
 
 	/* genetlink registry per-family dispatch counters.  Bumped from
 	 * gen_genl_body() each time the spec-driven dispatcher routes a
