@@ -5,7 +5,7 @@ subsystems (kcov, cmp_hints, childops, random_syscall, corruption defenses)
 bump counters here; this directory turns those counters into text, JSON, CSV
 timeseries, and periodic operator-facing dumps.
 
-## Layout (27 implementation files, ~18.8k LOC)
+## Layout (35 implementation files)
 
 | Path | Role |
 |---|---|
@@ -28,7 +28,15 @@ timeseries, and periodic operator-facing dumps.
 | childop/ranked.c | Ranked childop tables: wall time, edges, util, skips, wedges. |
 | network/childops.c | Network childop aggregate sections. |
 | kcov/dump.c | Shutdown KCOV coverage and comparison diagnostics block. |
-| json_dump.c | `--stats-json` mirror: category JSON plus hand-written JSON sections. |
+| json/dump.c | `--stats-json` top-level orchestrator: root object, `"stats"` wrapper, and section order. |
+| json/common.c | JSON mechanics: string escape and `stat_category_emit_json()` descriptor renderer. |
+| json/syscalls.c | Per-syscall JSON array. |
+| json/kcov.c | KCOV JSON block (counters, transition globals, top-Ns, cold syscalls, previous-window snapshots). |
+| json/minicorpus.c | Minicorpus JSON block (mutators, xprop, stack-depth, saves/evicts, replay-wins, sequence chains). |
+| json/cmp-hints.c | cmp_hints JSON summary (total hints, syscalls-with-hints). |
+| json/core.c | Non-network JSON section emitters + basic-subsystem descriptor tables. |
+| json/network.c | Network / netfilter / xfrm / socket-family / long-chain JSON section emitters + descriptor tables. |
+| json/tail.c | iouring-zc / KVM / nl80211 / NAT-T / AF_ALG / probes-misuse hand-written tail. |
 | kcov_cmp.c | Stateful periodic cmp_hints/redqueen diagnostics and previous-window deltas. |
 | periodic.c | Parent tick dumps: defense counters, cost pool, top syscalls, VMA count, childop split. |
 | log.c | `--stats-log-file` and `--stats-timeseries` file lifecycle. |
@@ -86,7 +94,7 @@ Two parallel counter stores, by design:
 - `stats/stats-ring.c` `stats_ring_drain_all()` drains each live child's SPSC
   ring into `parent_stats` once per parent main-loop iteration.
 - `kcov/` feeds KCOV counters rendered by `stats/kcov/dump.c` and JSON KCOV
-  sections in `json_dump.c`; `kcov/lifecycle.c` also enqueues ring deltas.
+  sections in `stats/json/kcov.c`; `kcov/lifecycle.c` also enqueues ring deltas.
 - `cmp_hints/` feeds the periodic front-end in `stats/kcov_cmp.c`; top
   per-syscall CMP insert rows in the shutdown report are rendered from
   `stats/dump/strategy.c` and `stats/kcov/dump.c`.
@@ -110,9 +118,12 @@ Two parallel counter stores, by design:
 2. **`stats/kcov/dump.c` is the largest pure-render file** - it is mechanically
    grouped around the shutdown KCOV block, but future KCOV-only edits should
    consider another domain split before it grows further.
-3. **`json_dump.c` has not been split like the text dump** - it still contains
-   JSON-owned descriptor tables and hand-written JSON sections. If JSON changes
-   get substantial, mirror the text layout under a JSON-specific subdirectory.
+3. **JSON descriptor ownership is still mixed** - `stats/json/` now mirrors
+   the text-dump layout (common, syscalls, kcov, minicorpus, cmp-hints,
+   core, network, tail, dump), but `stats/json/network.c`, `stats/json/core.c`,
+   and `stats/json/tail.c` still own JSON-local descriptor tables that would
+   more naturally live under `stats/subsys/` or `stats/categories/`.  Follow-up
+   work should migrate one domain at a time, keeping schema order unchanged.
 4. **Counter-store choice is still manual** - direct `shm->stats` fields remain
    writable by a wild kernel store; only the ring-fed `parent_stats` aggregate is
    hardened. Review new counters for whether they are telemetry or authoritative

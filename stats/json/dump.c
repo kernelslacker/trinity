@@ -1,60 +1,16 @@
 /*
- * --stats-json emitters.
- *
- * Carved verbatim out of stats.c.  Contains the JSON string / syscall
- * / kcov / minicorpus / cmp_hints emitters, the descriptor-driven
- * stat_category_emit_json helper, the interleaved stat_field /
- * stat_category tables the JSON walker owns, and the top-level
- * dump_stats_json() that stitches them together for --stats-json.
- *
- * The category tables here are already declared extern in
- * stats-internal.h so the text-side dump in stats.c and stats/dump.c
- * still sees them; the definition site is what moves.
+ * Top-level orchestration for --stats-json.  dump_stats_json()
+ * stitches together the section-emitter helpers under stats/json/
+ * into a single JSON document on stdout.  This file owns the
+ * root object braces, the "stats":{...} wrapper, and the section
+ * order; individual sections live in their own files (common,
+ * syscalls, kcov, minicorpus, cmp-hints, core, network, tail).
  */
 
-#include <errno.h>
-#include <inttypes.h>
-#include <stdarg.h>
-#include <stddef.h>
-#include <sys/utsname.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include "arch.h"
-#include "arg-len-semantics.h"
-#include "breadcrumb_ring.h"
-#include "child-api.h"
-#include "cmp_hints.h"
-#include "cred_throttle.h"
-#include "fd.h"
-#include "kcov.h"
-#include "minicorpus.h"
-#include "params.h"
-#include "pc_format.h"
-#include "pids.h"
-#include "reach-band.h"
-#include "sequence.h"
-#include "shm.h"
-#include "stats.h"
 #include "stats-internal.h"
 #include "stats/json/internal.h"
-#include "stats_ring.h"
-#include "syscall.h"
-#include "tables.h"
-#include "taint.h"
 #include "trinity.h"
-#include "utils-proc.h"
-#include "utils.h"
-#include "version.h"
-
-
-
-
-
-
 
 void __cold dump_stats_json(void)
 {

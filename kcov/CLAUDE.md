@@ -52,7 +52,7 @@ Persistence is entirely separate: kcov/persist.c persists the PC-edge bitmap (`k
 - `cmp_hints/collect.c`, `cmp_hints/persist.c`, `cmp_hints/cmp_hints.c` — consumers of `kcov_canon_cmp_ip()` and `kcov_kaslr_base_value()`; see Boundary section above
 - `strategy.c`, `strategy/strategy-plateau.c`, `strategy/strategy-frontier.c` — `strategy_plateau_response()` invoked from `kcov_plateau_check`; frontier scoring reads `frontier_record_new_edge()`/transition deltas that kcov/collect.c feeds
 - `trinity.c`, `main/main.c`, `main/main-spawn.c` — warm-start `kcov_bitmap_load_file`/`save_file` at boot/shutdown, `kcov_bitmap_enable_snapshots` setup
-- `stats/dump.c`, `stats/log.c`, `stats/json_dump.c` — periodic stats dump splices in `kcov_pc_diag_format`/`kcov_cmp_diag_format` output and per-syscall call/edge counters
+- `stats/dump.c`, `stats/log.c`, `stats/json/kcov.c` — periodic stats dump splices in `kcov_pc_diag_format`/`kcov_cmp_diag_format` output and per-syscall call/edge counters
 - `args/generate-args.c`, `args/cmp_hint_inject.c` — the `cmp_hint_injected_this_call` latch that `kcov_collect()`'s found-new-edge branch reads to credit a PC-edge win back to the cmp-hint pipeline
 - `random_syscall/strategy-accounting.c` — reads kcov_shm per-syscall/per-strategy counters for bandit/frontier bookkeeping; also a caller of the bitmap snapshot path
 
