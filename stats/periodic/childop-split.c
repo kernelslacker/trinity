@@ -14,6 +14,7 @@
 #include "arg-len-semantics.h"
 #include "breadcrumb_ring.h"
 #include "child-api.h"
+#include "childop-outcome.h"
 #include "cmp_hints.h"
 #include "cred_throttle.h"
 #include "fd.h"
@@ -57,7 +58,7 @@
  * Emitted as one human stat_row line and a single childop_split JSON
  * object so a grep-and-jq reader can audit raw numerators + denominators
  * alongside the rendered percentages.  Cumulative since the run started
- * -- the surrounding periodic_counter_rates_dump already supplies a
+ * -- the sibling periodic_counter_rates_dump already supplies a
  * windowed view via per-dump deltas if the operator wants rate-of-rate
  * trends later.
  *
@@ -142,4 +143,42 @@ void childop_split_dump(void)
 		wt_childop, wt_syscall, wt_pct / 100,
 		sc_childop, sc_random, sc_pct / 100,
 		it_childop, it_random, it_pct / 100);
+}
+
+/*
+ * Parent-tick entry point: emit the childop-vs-random split line and
+ * advance the per-childop decaying recency ring on the same cadence as
+ * the sibling periodic surfaces.  Self-rate-limited on
+ * DEFENSE_DUMP_INTERVAL_SEC and fire-every-tick from
+ * run_periodic_surfaces(), matching the "fire every tick, callee decides
+ * if it actually runs" contract the rest of that helper follows.
+ *
+ * Previously the split emit + window advance rode inside
+ * periodic_counter_rates_dump() -- a childop aging side effect hidden
+ * under a counter-rate function.  Split out so the parent tick order is
+ * explicit and the recency-window rotation is not disguised as a dump.
+ * SHADOW: no picker / canary code reads the ring; rotation cadence only
+ * affects which window the shutdown dump labels "recent".
+ */
+void __cold childop_periodic_dump_and_advance(void)
+{
+	static struct timespec last_dump;
+	struct timespec now;
+	long elapsed;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	if (last_dump.tv_sec == 0) {
+		last_dump = now;
+		return;
+	}
+
+	elapsed = now.tv_sec - last_dump.tv_sec;
+	if (elapsed < DEFENSE_DUMP_INTERVAL_SEC)
+		return;
+
+	childop_split_dump();
+	childop_window_advance();
+
+	last_dump = now;
 }

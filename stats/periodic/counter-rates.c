@@ -866,15 +866,5 @@ void __cold periodic_counter_rates_dump(void)
 	 * surrounding dump. */
 	corrupt_ptr_breadcrumb_dump(10);
 
-	childop_split_dump();
-
-	/* Advance the per-childop decaying recency ring on the same tick
-	 * that drives the other operator-visibility dumps so the recent-
-	 * edge / recent-wall view ages out over a wall-clock horizon of
-	 * roughly CHILDOP_DECAY_WINDOWS * DEFENSE_DUMP_INTERVAL_SEC.
-	 * SHADOW: no picker / canary code reads the ring; rotation cadence
-	 * only affects what the shutdown dump labels "recent". */
-	childop_window_advance();
-
 	last_dump = now;
 }

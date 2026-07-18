@@ -234,7 +234,7 @@ struct childop_stats {
 	 * where the child loop actually spends effort: wall-clock time,
 	 * dispatched syscalls, and outer-loop iterations.  Rendered as one
 	 * childop_split block (raw numerators+denominators + percentages)
-	 * by periodic_counter_rates_dump().
+	 * by childop_periodic_dump_and_advance().
 	 *
 	 * Wall-time and the random-syscall dispatch denominator are written
 	 * from child_process()'s per-op bracket in child.c.  The per-syscall

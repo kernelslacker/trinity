@@ -3630,6 +3630,14 @@ void corrupt_ptr_spike_check(void);
  * sitting at noise without waiting for the run to finish. */
 void periodic_counter_rates_dump(void) __cold;
 
+/* Per-tick childop reporting entry point: emits the childop-vs-random
+ * split summary line and advances the per-childop decaying recency ring
+ * used by dump_stats_childop_decay_recency() at shutdown.  Self-rate-
+ * limited on the same DEFENSE_DUMP_INTERVAL_SEC cadence as the sibling
+ * periodic surfaces; split out from periodic_counter_rates_dump() so the
+ * recency-window rotation is not hidden inside a counter-rate function. */
+void childop_periodic_dump_and_advance(void) __cold;
+
 /* Per-tick snapshot of the cost-partitioned active-syscall pools maintained
  * beside the flat shm->active_syscalls*[] arrays.  Surfaces cheap / expensive
  * pool counts alongside the flat count so an operator can confirm the
