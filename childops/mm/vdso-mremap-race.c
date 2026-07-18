@@ -309,7 +309,7 @@ static void __attribute__((noreturn)) mutator_helper(void)
 		break;
 	}
 
-	__atomic_add_fetch(&shm->stats.vdso_race_mutations, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.vdso_race.mutations, 1, __ATOMIC_RELAXED);
 
 	_exit(0);
 }
@@ -341,7 +341,7 @@ bool vdso_mremap_race(struct childdata *child)
 	if (!vdso_present)
 		return true;
 
-	__atomic_add_fetch(&shm->stats.vdso_race_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.vdso_race.runs, 1, __ATOMIC_RELAXED);
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
@@ -376,7 +376,7 @@ bool vdso_mremap_race(struct childdata *child)
 				int sig = WTERMSIG(status);
 
 				if (sig == SIGSEGV || sig == SIGBUS)
-					__atomic_add_fetch(&shm->stats.vdso_race_helper_segvs,
+					__atomic_add_fetch(&shm->stats.vdso_race.helper_segvs,
 							   1, __ATOMIC_RELAXED);
 			}
 		}

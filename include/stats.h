@@ -44,6 +44,7 @@
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
 #include "stats/subsys/uid_change.h"
+#include "stats/subsys/vdso_race.h"
 #include "stats/subsys/xattr_thrash.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
@@ -1105,10 +1106,8 @@ struct stats_s {
 	/* keyring_spam childop counters.  See stats/subsys/keyring_spam.h. */
 	struct keyring_spam_stats keyring_spam __attribute__((aligned(64)));
 
-	/* vdso_mremap_race childop counters */
-	unsigned long vdso_race_runs;		/* total vdso_mremap_race invocations */
-	unsigned long vdso_race_mutations;	/* mutator-side mremap/mprotect/madvise/munmap issued */
-	unsigned long vdso_race_helper_segvs;	/* spinner helper killed by SIGSEGV/SIGBUS */
+	/* vdso_mremap_race accounting.  See stats/subsys/vdso_race.h. */
+	struct vdso_race_stats vdso_race __attribute__((aligned(64)));
 
 	/* numa_migration_churn childop counters */
 	unsigned long numa_migration_runs;	/* total numa_migration_churn invocations */
