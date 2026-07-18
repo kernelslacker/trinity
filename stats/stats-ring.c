@@ -366,7 +366,7 @@ void stats_published_init(void)
  * in random-syscall.c and the syscalls_todo termination check in
  * child_process()), and the parent's stats_publish_locked() inside
  * stats_ring_drain_all() is the sole writer.  The mirror-integrity
- * sample in shm_is_corrupt() (main.c) already documents the
+ * sample in shm_is_corrupt() (main/loop.c) already documents the
  * PROT_READ contract -- "republish-time we wrote ... and then
  * mprotected the page PROT_READ" -- but the matching mprotect()
  * call was missing, leaving the contract as comment only.  A wild

@@ -54,7 +54,7 @@ cmp_hints/.
 - `deferred-free.c` — the deferred-free ring uses `looks_like_corrupted_ptr()` before freeing a stashed pointer, and recovers real allocation length via `shared_region_size_for()`; `range_overlaps_shared()` protects the ring's own mprotect'd region.
 - `cmp_hints/*.c`, `minicorpus.c`, `kcov-bitmap` writers — call `persist_sweep_stale_tmp()` at the top of their warm-start load paths, and use `lock_t`/`trylock`/`unlock` for their pool/ring locking; `check_all_locks()` in locks.c walks their lock families by name (cmp_hints pools, minicorpus rings, chain_corpus ring).
 - `trinity.c` — `create_shm()`/`init_shm()` run at startup before fork; `init_rlimits()`, `log_load_bases()`, and (as root) `setup_startup_isolation()` all run from the same pre-fork init sequence in trinity.c.
-- `child.c`, `child-init.c`, `main/main.c`, `main/main-spawn.c`, `fds/scratch_block.c` — drive `self_cgroup_setup()`/`self_cgroup_fork_into_workload()`/`self_cgroup_cleanup()` around the fork boundary.
+- `child.c`, `child-init.c`, `main/loop.c`, `main/spawn.c`, `fds/scratch_block.c` — drive `self_cgroup_setup()`/`self_cgroup_fork_into_workload()`/`self_cgroup_cleanup()` around the fork boundary.
 - `signals.c` — `child_fault_handler()` calls `guard_pages_classify()` (async-signal-safe, plain array reads only) to identify a guard-page trap, and consults `range_readable_user()` in the post_snapshot.c recovery path for field-scoped struct dereferences.
 - `objects/` — `sysv-shm.c` implements the SysV shm object type (`create_sysv_shms`, dump, destructor) plugged into the generic object-lifecycle framework.
 

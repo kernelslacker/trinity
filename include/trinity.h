@@ -17,7 +17,7 @@ void pidstatfiles_drop_in_child(void);
 
 /* Returns the CLOCK_MONOTONIC second past which the fork-pressure
  * drain stops suppressing pid-heavy canary picks, or 0 when the drain
- * has never armed.  Defined in main.c, consumed from child-canary.c.
+ * has never armed.  Defined in main/loop.c, consumed from child-canary.c.
  * Always returns 0 when --fork-pressure-drain is off; callers may
  * still short-circuit on the flag for cache locality. */
 unsigned long fork_pressure_drain_active(void);

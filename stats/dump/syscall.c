@@ -311,7 +311,7 @@ void dump_stats_top_wedging_syscalls(void)
  *
  * Shares the same duration definition as the per-syscall block --
  * full unreusable-slot time (watchdog grace included), CLOCK_MONOTONIC,
- * clamped >= 0 at the accumulator site (see reap_child() in main.c) --
+ * clamped >= 0 at the accumulator site (see reap_child() in main/loop.c) --
  * so the per-syscall total and the per-childop total over the run are
  * the same number; the two top-N rows just slice it differently.
  *

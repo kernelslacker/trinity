@@ -6,10 +6,10 @@
 #include "child-api.h"
 
 /*
- * Cross-translation-unit interface for the main.c split: parent-only
- * symbols shared between main.c (epoch driver), main-reap.c (reap +
- * watchdog), main-spawn.c (spawn/fork + fork-failure forensic), and
- * main-stats.c (per-tick stats printing).  Not part of the public
+ * Cross-translation-unit interface for the main/loop.c split: parent-only
+ * symbols shared between main/loop.c (epoch driver), main/reap.c (reap +
+ * watchdog), main/spawn.c (spawn/fork + fork-failure forensic), and
+ * main/stats.c (per-tick stats printing).  Not part of the public
  * trinity API -- callers outside the main.* family must keep going
  * through trinity.h / child.h / etc.
  */
@@ -27,7 +27,7 @@ extern time_t *spawn_times;
 extern unsigned long hiscore;
 extern unsigned int stall_count;
 
-/* main-reap.c -- exposed entry points. */
+/* main/reap.c -- exposed entry points. */
 int shm_is_corrupt(void);
 int open_child_pidstat(pid_t target);
 char get_pid_state(int childno);
@@ -40,11 +40,11 @@ void process_zombie_pending(void);
 void dstate_diag_get_counts(unsigned int *printed, unsigned int *omitted,
 			    unsigned int *sigs);
 
-/* main-spawn.c -- exposed entry points. */
+/* main/spawn.c -- exposed entry points. */
 void replace_child(int childno);
 void fork_children(void);
 void dump_proc_self_status(void);
 void final_state_save(void);
 
-/* main-stats.c -- exposed entry points. */
+/* main/stats.c -- exposed entry points. */
 void print_stats(void);

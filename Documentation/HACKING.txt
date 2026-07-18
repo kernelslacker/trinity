@@ -44,7 +44,7 @@
 
 * Process model.
   On startup, the first process sets up the shm etc, and then enters
-  the 'main' loop (see main.c), which is responsible for..
+  the 'main' loop (see main/loop.c), which is responsible for..
 
   - initial opening of sockets/fd's.  See sockets.c/fds.c/files.c
   - forking new children See fork_children()

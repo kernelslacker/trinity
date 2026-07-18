@@ -156,10 +156,10 @@ static const enum child_op_type canary_config_blocked[] = {
 
 /* Pid-heavy ops the picker temporarily evicts while the parent fork
  * loop is in the drain window (see fork_pressure_drain_active() in
- * main.c).  Membership criteria: the op either fork()s short-lived
+ * main/loop.c).  Membership criteria: the op either fork()s short-lived
  * helper workers internally (and bumps a *_fork_failed counter when
  * that inner fork fails -- those five are the same set surfaced in
- * main.c's bail-time subworker fork-fail dump) or its primary purpose
+ * main/loop.c's bail-time subworker fork-fail dump) or its primary purpose
  * is hammering the pid/pidfd allocator (pidfd_storm).  fork_storm
  * is double-gated: it is already in canary_risky_defer below, but is
  * listed here for completeness so a future risky-defer reshuffle
@@ -391,7 +391,7 @@ static bool op_is_in_table(enum child_op_type op,
 
 /* Drain-mode predicate: skip pid-heavy ops in the canary picker while
  * the parent fork loop is in its post-threshold recovery window.  The
- * arming side lives in main.c (fork_children); here we just consult
+ * arming side lives in main/loop.c (fork_children); here we just consult
  * the published deadline.  Three short-circuits keep the hot path
  * cheap on the default (--fork-pressure-drain off) run: the flag
  * check, the deadline-is-zero check, and the small-array membership

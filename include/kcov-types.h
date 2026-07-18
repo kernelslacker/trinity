@@ -618,7 +618,7 @@ struct kcov_cmp_diag {
  * per-slot recovery budget is exhausted (or kcov_recover_fd() itself
  * fails) and the child has to bail so the reaper can hand it a fresh
  * init_child slot.  Must be non-zero so reap_entry_is_fast_die() in
- * main.c treats the reap as a fast-die candidate — a fork→exit(0)→
+ * main/loop.c treats the reap as a fast-die candidate — a fork→exit(0)→
  * respawn loop would otherwise slip past the circuit breaker, because
  * the breaker only counts exit_status > 0.  Must also be >=
  * NUM_EXIT_REASONS so decode_exit() in bail_fast_die_loop() does not
@@ -666,7 +666,7 @@ struct kcov_ebadf_chronicle_slot {
 /* Bound for the /proc/self/fd snapshot captured into struct
  * kcov_pc_diag::first_ebadf_proc_fds[].  Sized small enough that the
  * snapshot fits comfortably inside the 256-byte buffer the periodic
- * stats.c and main.c summary callers hand to kcov_pc_diag_format(),
+ * stats.c and main/loop.c summary callers hand to kcov_pc_diag_format(),
  * even with the rest of the diag line in front of it -- a snapshot of
  * the immediate fd neighbourhood of the protected slot is what the
  * operator needs to root-cause the closer; an exhaustive dump is the
@@ -829,7 +829,7 @@ struct kcov_pc_diag {
 };
 
 /* Selector for kcov_cmp_diag_format() — keeps stats.c's two-line split
- * (init vs runtime sites) while still allowing main.c to fold all six
+ * (init vs runtime sites) while still allowing main/loop.c to fold all six
  * sites into a single one-line summary. */
 enum kcov_cmp_diag_part {
 	KCOV_CMP_DIAG_INIT,	/* init_open, init_init_trace, init_mmap */
@@ -850,7 +850,7 @@ int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part);
  * token; each non-zero retry/success counter contributes a
  * `" name=count"` token; absent counters contribute nothing.
  * Same shape as kcov_cmp_diag_format so the two callsites in
- * stats.c periodic dump and main.c summary stay in lockstep.
+ * stats.c periodic dump and main/loop.c summary stay in lockstep.
  * Returns the number of bytes written (excluding the trailing
  * NUL); zero if every counter is zero or kcov_shm is NULL. */
 int kcov_pc_diag_format(char *buf, size_t bufsz);

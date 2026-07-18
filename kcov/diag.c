@@ -73,7 +73,7 @@ static const char *errno_name_or(const char *fallback, int err)
 
 /* Shared formatter for the per-site KCOV CMP DIAG segments.  Both the
  * dump_stats periodic dump (stats.c) and the print_kcov_cmp_diag main
- * loop summary (main.c) walked the same six fields with copy-pasted
+ * loop summary (main/loop.c) walked the same six fields with copy-pasted
  * snprintf chains; centralising the format here keeps the two
  * callsites in lockstep and is the natural home alongside the
  * cmp_diag struct definition.  Fields are read once via __atomic

@@ -45,7 +45,7 @@ this directory rather than calling libc rand() directly.
 - `net/proto-*.c`, `childops/*-churn.c` (30+ files) — `generate_random_page()`/`generate_rand_bytes()` for wire-format payload fuzzing
 - `childops/*` name-consuming set (afxdp-churn, altname-thrash, bridge-*, flowtable-encap-vlan, ip6erspan/ip6gre, ipv6-ndisc-proxy, keyring-spam, l2tp-ifname-race, netlink-monitor-race, nftables-churn, nl80211-churn, psp-key-rotate, tc-*, veth-asymmetric-xdp, vrf-fib-churn, vxlan-encap), plus `syscalls/{add_key,bpf,keyctl,mq_open,request_key,setsockopt-optval-builders}.c`, `xattr.c`, `net/proto/pppox.c` — record/reuse names via name-pool.c's per-kind ring
 - `childops/{ipvs-sysctl-writer,procfs-writer,tracefs-fuzzer}.c` — direct consumers of `gen_text_payload()` for sysfs/procfs/tracefs string-parser fuzzing
-- `child-init.c`, `child.c`, `main/main.c`, `main/main-spawn.c`, `trinity.c`, `utils/shm.c` — seed lifecycle: `init_seed()` at startup, `set_seed()` per fork, `reseed()` on crash detection
+- `child-init.c`, `child.c`, `main/loop.c`, `main/spawn.c`, `trinity.c`, `utils/shm.c` — seed lifecycle: `init_seed()` at startup, `set_seed()` per fork, `reseed()` on crash detection
 - `syscalls/{fchmodat2,file_getattr,file_setattr,getxattrat,listxattrat,removexattrat,setxattrat}.c` — direct `mutate_value()`/`shift_flag_bit()` callers for xattr/attr flag fuzzing
 
 ### Relationship to cmp_hints/
