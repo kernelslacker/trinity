@@ -81,7 +81,6 @@ const struct option longopts[] = {
 	{ "cost-pool-selector", required_argument, NULL, 0 },
 	{ "context-pool", required_argument, NULL, 0 },
 	{ "cmp-shared-tier", required_argument, NULL, 0 },
-	{ "cmp-cfactual", required_argument, NULL, 0 },
 	{ "guard-shared", optional_argument, NULL, 0 },
 	{ "kernel_taint", required_argument, NULL, 'T' },
 	{ "help", no_argument, NULL, 'h' },

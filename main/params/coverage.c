@@ -326,19 +326,6 @@ bool parse_strategy_options(int opt, const char *name, char *arg)
 		return true;
 	}
 
-	if (strcmp("cmp-cfactual", name) == 0) {
-		if (strcmp(arg, "off") == 0) {
-			cmp_cfactual_mode = CMP_CFACTUAL_MODE_OFF;
-		} else if (strcmp(arg, "shadow") == 0) {
-			cmp_cfactual_mode = CMP_CFACTUAL_MODE_SHADOW;
-		} else {
-			outputerr("--cmp-cfactual: unknown mode '%s' (expected off or shadow)\n",
-				arg);
-			exit(EXIT_FAILURE);
-		}
-		return true;
-	}
-
 	if (strcmp("arg-len-semantics", name) == 0) {
 		enum arg_len_semantics_mode mode;
 
