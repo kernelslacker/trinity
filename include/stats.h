@@ -68,6 +68,7 @@
 #include "stats/subsys/netlink_monitor_race.h"
 #include "stats/subsys/netns_mountns_setup.h"
 #include "stats/subsys/netns_teardown.h"
+#include "stats/subsys/nf_conntrack_helper_churn.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/perf_chains.h"
@@ -1691,17 +1692,8 @@ struct stats_s {
 	/* handshake_req_abort accounting.  See stats/subsys/handshake_req_abort.h. */
 	struct handshake_req_abort_stats handshake_req_abort __attribute__((aligned(64)));
 
-	/* nf_conntrack_helper_churn childop counters */
-	unsigned long nf_conntrack_helper_churn_runs;		/* total nf_conntrack_helper_churn invocations */
-	unsigned long nf_conntrack_helper_churn_setup_failed;	/* nfnl socket open / CTNETLINK probe failed */
-	unsigned long nf_conntrack_helper_churn_no_helper;	/* runtime helper-mask empty (no helpers loaded) */
-	unsigned long nf_conntrack_helper_churn_attach_ok;	/* CT_NEW + CTA_HELP ack 0 or EEXIST (attach path ran) */
-	unsigned long nf_conntrack_helper_churn_attach_fail;	/* CT_NEW + CTA_HELP rejected (validation ran) */
-	unsigned long nf_conntrack_helper_churn_exp_ok;		/* EXP_NEW ack 0 (expectation registered) */
-	unsigned long nf_conntrack_helper_churn_packet_sent;	/* loopback drive packet emitted (helper ->help() path) */
-	unsigned long nf_conntrack_helper_churn_delete_ok;	/* CT_DELETE ack 0 (race vs helper expectation walk) */
-	unsigned long nf_conntrack_helper_churn_zone_swap;	/* SO_MARK-driven zone-swap drive packet emitted */
-	unsigned long nf_conntrack_helper_churn_detach_ok;	/* CT_NEW NLM_F_REPLACE w/o CTA_HELP ack 0 (detach race) */
+	/* nf_conntrack_helper_churn accounting.  See stats/subsys/nf_conntrack_helper_churn.h. */
+	struct nf_conntrack_helper_churn_stats nf_conntrack_helper_churn __attribute__((aligned(64)));
 
 	/* ipset_churn childop counters */
 	unsigned long ipset_churn_runs;			/* total ipset_churn invocations */

@@ -333,24 +333,6 @@ const struct stat_category ublk_lifecycle_category =
 	              ublk_lifecycle_iters,
 	              ublk_lifecycle_fields);
 
-static const struct stat_field nf_conntrack_helper_churn_fields[] = {
-	STAT_FIELD(nf_conntrack_helper_churn, runs),
-	STAT_FIELD(nf_conntrack_helper_churn, setup_failed),
-	STAT_FIELD(nf_conntrack_helper_churn, no_helper),
-	STAT_FIELD(nf_conntrack_helper_churn, attach_ok),
-	STAT_FIELD(nf_conntrack_helper_churn, attach_fail),
-	STAT_FIELD(nf_conntrack_helper_churn, exp_ok),
-	STAT_FIELD(nf_conntrack_helper_churn, packet_sent),
-	STAT_FIELD(nf_conntrack_helper_churn, delete_ok),
-	STAT_FIELD(nf_conntrack_helper_churn, zone_swap),
-	STAT_FIELD(nf_conntrack_helper_churn, detach_ok),
-};
-
-const struct stat_category nf_conntrack_helper_churn_category =
-	STAT_CATEGORY("nf_conntrack_helper_churn",
-	              nf_conntrack_helper_churn_runs,
-	              nf_conntrack_helper_churn_fields);
-
 static const struct stat_field ipset_churn_fields[] = {
 	STAT_FIELD(ipset_churn, runs),
 	STAT_FIELD(ipset_churn, setup_failed),
