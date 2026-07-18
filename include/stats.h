@@ -64,6 +64,7 @@
 #include "stats/subsys/iscsi_target_probe.h"
 #include "stats/subsys/iscsi_walker.h"
 #include "stats/subsys/keyring_spam.h"
+#include "stats/subsys/l2tp_ifname_race.h"
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/map_shared_stress.h"
 #include "stats/subsys/mount_churn.h"
@@ -1734,16 +1735,8 @@ struct stats_s {
 	unsigned long pfkey_spdget_resolved;
 	unsigned long pfkey_spdget_missed;
 
-	/* l2tp_ifname_race childop counters */
-	unsigned long l2tp_ifname_race_runs;			/* total l2tp_ifname_race invocations */
-	unsigned long l2tp_ifname_race_setup_failed;		/* genl family probe / netns unshare / parent ctx latch fired */
-	unsigned long l2tp_ifname_race_iter;			/* outer-loop iterations entered */
-	unsigned long l2tp_ifname_race_tunnel_ok;		/* L2TP_CMD_TUNNEL_CREATE accepted by kernel */
-	unsigned long l2tp_ifname_race_tunnel_fail;		/* L2TP_CMD_TUNNEL_CREATE rejected */
-	unsigned long l2tp_ifname_race_fork_failed;		/* fork() of a creator/racer worker failed */
-	unsigned long l2tp_ifname_race_spawn_pair_ok;		/* both creator + racer spawned for this round */
-	unsigned long l2tp_ifname_race_sibling_reaped_ok;	/* worker exited normally and was reaped */
-	unsigned long l2tp_ifname_race_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
+	/* l2tp_ifname_race accounting.  See stats/subsys/l2tp_ifname_race.h. */
+	struct l2tp_ifname_race_stats l2tp_ifname_race __attribute__((aligned(64)));
 
 	/* statmount_idmap accounting.  See stats/subsys/statmount_idmap.h. */
 	struct statmount_idmap_stats statmount_idmap __attribute__((aligned(64)));

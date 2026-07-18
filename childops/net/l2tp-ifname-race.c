@@ -508,10 +508,10 @@ static void reap_sibling(pid_t pid)
 	if (waitpid_eintr(pid, &status, 0) != pid)
 		return;
 	if (WIFSIGNALED(status))
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_sibling_crashed,
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.sibling_crashed,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_sibling_reaped_ok,
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.sibling_reaped_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -534,12 +534,12 @@ static void iter_one(struct genl_ctx *parent_gctx)
 
 	pick_variant(&v);
 
-	__atomic_add_fetch(&shm->stats.l2tp_ifname_race_iter,
+	__atomic_add_fetch(&shm->stats.l2tp_ifname_race.iter,
 			   1, __ATOMIC_RELAXED);
 
 	udp = open_tunnel_udp(&udp_port);
 	if (udp < 0) {
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -552,17 +552,17 @@ static void iter_one(struct genl_ctx *parent_gctx)
 	}
 	rc = genl_send_recv(parent_gctx, buf, len);
 	if (rc != 0) {
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_tunnel_fail,
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.tunnel_fail,
 				   1, __ATOMIC_RELAXED);
 		close(udp);
 		return;
 	}
-	__atomic_add_fetch(&shm->stats.l2tp_ifname_race_tunnel_ok,
+	__atomic_add_fetch(&shm->stats.l2tp_ifname_race.tunnel_ok,
 			   1, __ATOMIC_RELAXED);
 
 	creator = fork();
 	if (creator < 0) {
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_fork_failed,
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.fork_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out_delete;
 	}
@@ -573,7 +573,7 @@ static void iter_one(struct genl_ctx *parent_gctx)
 
 	racer = fork();
 	if (racer < 0) {
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_fork_failed,
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.fork_failed,
 				   1, __ATOMIC_RELAXED);
 		reap_sibling(creator);
 		goto out_delete;
@@ -583,7 +583,7 @@ static void iter_one(struct genl_ctx *parent_gctx)
 		l2tp_racer_child(v);
 	}
 
-	__atomic_add_fetch(&shm->stats.l2tp_ifname_race_spawn_pair_ok,
+	__atomic_add_fetch(&shm->stats.l2tp_ifname_race.spawn_pair_ok,
 			   1, __ATOMIC_RELAXED);
 
 	reap_sibling(creator);
@@ -635,7 +635,7 @@ static int l2tp_ifname_race_in_ns(void *arg)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (genl_open(&parent_gctx, &opts) != 0) {
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -672,12 +672,12 @@ bool l2tp_ifname_race(struct childdata *child)
 	struct l2tp_ifname_race_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.l2tp_ifname_race_runs,
+	__atomic_add_fetch(&shm->stats.l2tp_ifname_race.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_l2tp_ifname_race ||
 	    ns_userns_unsupported_l2tp_ifname_race) {
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -685,7 +685,7 @@ bool l2tp_ifname_race(struct childdata *child)
 	if (!l2tp_family_probed) {
 		probe_l2tp_family(child);
 		if (ns_unsupported_l2tp_ifname_race) {
-			__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
+			__atomic_add_fetch(&shm->stats.l2tp_ifname_race.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -706,7 +706,7 @@ bool l2tp_ifname_race(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -714,7 +714,7 @@ bool l2tp_ifname_race(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
