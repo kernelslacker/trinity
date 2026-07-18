@@ -534,7 +534,7 @@ static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (nl_open(&it->nl, &nl_opts) < 0) {
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -557,12 +557,12 @@ static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	it->bridge_added = true;
-	__atomic_add_fetch(&shm->stats.bridge_vlan_churn_bridge_create_ok,
+	__atomic_add_fetch(&shm->stats.bridge_vlan_churn.bridge_create_ok,
 			   1, __ATOMIC_RELAXED);
 
 	it->br_idx = (int)if_nametoindex(it->br_name);
@@ -579,14 +579,14 @@ static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
 
 	if (build_veth_create(&it->nl, it->v0a, it->v0b) == 0) {
 		it->veth0_added = true;
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_veth_create_ok,
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.veth_create_ok,
 				   1, __ATOMIC_RELAXED);
 		it->v0a_idx = (int)if_nametoindex(it->v0a);
 		it->v0b_idx = (int)if_nametoindex(it->v0b);
 	}
 	if (build_veth_create(&it->nl, it->v1a, it->v1b) == 0) {
 		it->veth1_added = true;
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_veth_create_ok,
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.veth_create_ok,
 				   1, __ATOMIC_RELAXED);
 		it->v1a_idx = (int)if_nametoindex(it->v1a);
 		it->v1b_idx = (int)if_nametoindex(it->v1b);
@@ -620,12 +620,12 @@ static void bridge_vlan_iter_add_vlan(struct bridge_vlan_iter_ctx *it)
 		if (build_vlan_info(&it->nl, RTM_SETLINK, it->v0a_idx,
 				    it->vid_base, it->range_end,
 				    true, false) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn.vlan_add_ok,
 					   1, __ATOMIC_RELAXED);
 		/* Single PVID add at pvid. */
 		if (build_vlan_info(&it->nl, RTM_SETLINK, it->v0a_idx,
 				    it->pvid, 0, false, true) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn.vlan_add_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -677,7 +677,7 @@ static void bridge_vlan_iter_open_raw(struct bridge_vlan_iter_ctx *it)
 	n = sendto(it->raw, frame, sizeof(frame), MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll));
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_raw_send_ok,
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.raw_send_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -709,7 +709,7 @@ static void bridge_vlan_iter_race(struct bridge_vlan_iter_ctx *it,
 		if (it->v0a_idx > 0 &&
 		    build_vlan_info(&it->nl, RTM_DELLINK, it->v0a_idx,
 				    it->pvid, 0, false, false) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_del_ok,
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn.vlan_del_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 1:
@@ -717,7 +717,7 @@ static void bridge_vlan_iter_race(struct bridge_vlan_iter_ctx *it,
 		if (it->v0a_idx > 0 &&
 		    build_vlan_tunnel_add(&it->nl, it->v0a_idx,
 					  it->pvid, 42U) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_tunnel_add_ok,
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn.tunnel_add_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
@@ -725,7 +725,7 @@ static void bridge_vlan_iter_race(struct bridge_vlan_iter_ctx *it,
 		if (it->v0a_idx > 0 &&
 		    build_mst_set(&it->nl, it->v0a_idx, 1U,
 				  (__u8)BR_STATE_FORWARDING) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_mst_set_ok,
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn.mst_set_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 3:
@@ -735,7 +735,7 @@ static void bridge_vlan_iter_race(struct bridge_vlan_iter_ctx *it,
 				    (__u16)(it->vid_base + 3U),
 				    (__u16)(it->vid_base + 7U),
 				    true, false) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_churn_vlan_add_ok,
+			__atomic_add_fetch(&shm->stats.bridge_vlan_churn.vlan_add_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	}
@@ -755,7 +755,7 @@ static void bridge_vlan_iter_race(struct bridge_vlan_iter_ctx *it,
 	n = sendto(it->raw, frame, sizeof(frame), MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll));
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_raw_send_ok,
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.raw_send_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -888,11 +888,11 @@ bool bridge_vlan_churn(struct childdata *child)
 	struct bridge_vlan_churn_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.bridge_vlan_churn_runs,
+	__atomic_add_fetch(&shm->stats.bridge_vlan_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_bridge_vlan_churn) {
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -911,7 +911,7 @@ bool bridge_vlan_churn(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -919,7 +919,7 @@ bool bridge_vlan_churn(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -938,9 +938,9 @@ bool bridge_vlan_churn(struct childdata *child)
 {
 	(void)child;
 
-	__atomic_add_fetch(&shm->stats.bridge_vlan_churn_runs,
+	__atomic_add_fetch(&shm->stats.bridge_vlan_churn.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
+	__atomic_add_fetch(&shm->stats.bridge_vlan_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
