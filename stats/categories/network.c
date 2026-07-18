@@ -389,21 +389,6 @@ const struct stat_category netdev_netns_migrate_category =
 		      nnm_iters,
 		      netdev_netns_migrate_fields);
 
-static const struct stat_field flowtable_encap_vlan_fields[] = {
-	STAT_FIELD(flowtable_vlan, runs),
-	STAT_FIELD(flowtable_vlan, setup_ok),
-	STAT_FIELD(flowtable_vlan, setup_failed),
-	STAT_FIELD(flowtable_vlan, offloaded_pkts),
-	STAT_FIELD(flowtable_vlan, gso_sends),
-	STAT_FIELD(flowtable_vlan, vlan_teardown_races),
-	STAT_FIELD(flowtable_vlan, unsupported_latched),
-};
-
-const struct stat_category flowtable_encap_vlan_category =
-	STAT_CATEGORY("flowtable_encap_vlan",
-	              flowtable_vlan_runs,
-	              flowtable_encap_vlan_fields);
-
 static const struct stat_field splice_protocols_fields[] = {
 	STAT_FIELD(splice_protocols, runs),
 	STAT_FIELD(splice_protocols, setup_failed),
