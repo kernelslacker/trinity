@@ -125,18 +125,6 @@ const struct stat_category statmount_idmap_category =
 	              statmount_idmap_runs,
 	              statmount_idmap_fields);
 
-static const struct stat_field uffd_churn_fields[] = {
-	STAT_FIELD(uffd, runs),
-	STAT_FIELD(uffd, registers),
-	STAT_FIELD(uffd, unregisters),
-	STAT_FIELD(uffd, failed),
-};
-
-const struct stat_category uffd_churn_category =
-	STAT_CATEGORY("uffd_churn",
-	              uffd_runs,
-	              uffd_churn_fields);
-
 static const struct stat_field iouring_send_zc_churn_fields[] = {
 	STAT_FIELD(iouring_send_zc_churn, runs),
 	STAT_FIELD(iouring_send_zc_churn, setup_failed),

@@ -51,6 +51,7 @@
 #include "stats/subsys/sched_cycler.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
+#include "stats/subsys/uffd.h"
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/vdso_race.h"
 #include "stats/subsys/xattr_thrash.h"
@@ -1140,11 +1141,8 @@ struct stats_s {
 	unsigned long cpu_hotplug_write_ok;		/* write() to cpuN/online succeeded */
 	unsigned long cpu_hotplug_actual_offlines;	/* real offline+online cycles (root only) */
 
-	/* uffd_churn childop counters */
-	unsigned long uffd_runs;		/* total uffd_churn invocations */
-	unsigned long uffd_registers;		/* successful UFFDIO_REGISTER */
-	unsigned long uffd_unregisters;		/* successful UFFDIO_UNREGISTER */
-	unsigned long uffd_failed;		/* userfaultfd/UFFDIO_API/mmap/REGISTER/UNREGISTER returned -1 */
+	/* uffd_churn accounting.  See stats/subsys/uffd.h. */
+	struct uffd_stats uffd __attribute__((aligned(64)));
 
 	/* iouring_flood accounting.  See stats/subsys/iouring.h. */
 	struct iouring_stats iouring __attribute__((aligned(64)));
