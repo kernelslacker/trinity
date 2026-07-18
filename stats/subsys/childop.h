@@ -181,7 +181,7 @@ struct childop_stats {
 	/* SHADOW recommendation counters, indexed by enum child_op_type.
 	 * Bumped from close_window_and_decide() in child-canary.c whenever
 	 * the score-driven recommended-state computation would respectively
-	 * demote (THROTTLED / QUARANTINED / CONFIG_BLOCKED) or promote
+	 * demote (THROTTLED / QUARANTINED / NO_OUTER_BRACKET) or promote
 	 * (PROMOTED_CLEAN / PROMOTED_INTERFERENCE) the just-closed canary
 	 * window.  The live promote/demote decision is byte-identical to the
 	 * pre-shadow baseline: these counters only record what the new

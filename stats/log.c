@@ -655,7 +655,7 @@ static void stats_ts_emit_by_strategy(FILE *fp)
  * its disposition: a nonzero would_promote_delta this window means
  * the shadow policy would PROMOTED_CLEAN / PROMOTED_INTERFERENCE
  * the op, a nonzero would_demote_delta means THROTTLED /
- * QUARANTINED / CONFIG_BLOCKED.  canary_active / canary_promoted
+ * QUARANTINED / NO_OUTER_BRACKET.  canary_active / canary_promoted
  * expose the live queue state directly via the public accessors,
  * so an op that is currently the canary pick or currently promoted
  * is emitted even with all-zero counters -- the operator can see

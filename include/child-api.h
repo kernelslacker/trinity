@@ -390,8 +390,11 @@ enum canary_state {
  *   THROTTLED               one expensive wedge / crash window; cool off.
  *   QUARANTINED             repeated bad windows with no wins; exponential
  *                           backoff before re-canary.
- *   CONFIG_BLOCKED          dispatch shape has no outer KCOV bracket
+ *   NO_OUTER_BRACKET        dispatch shape has no outer KCOV bracket
  *                           (matches the live canary-ineligible exit).
+ *                           NOT a host-config failure: the op still
+ *                           runs, it just cannot populate the clean
+ *                           outer-bracket attribution signal.
  */
 enum childop_recommended_state {
 	CHILDOP_REC_DORMANT = 0,
@@ -400,7 +403,7 @@ enum childop_recommended_state {
 	CHILDOP_REC_PROMOTED_INTERFERENCE,
 	CHILDOP_REC_THROTTLED,
 	CHILDOP_REC_QUARANTINED,
-	CHILDOP_REC_CONFIG_BLOCKED,
+	CHILDOP_REC_NO_OUTER_BRACKET,
 	/* childop_edges_clean[op] == 0 during the window but
 	 * childop_edges_discovered[op] grew, AND at least one
 	 * kcov_shm->childop_kcov_op_skipped_*[op] counter is non-zero.
@@ -411,7 +414,7 @@ enum childop_recommended_state {
 	 * demote: the ratchet cannot see this op's real yield, so we
 	 * explicitly opt it out of both would_promote and would_demote
 	 * shadow tallies to keep the decision surface honest.  Named
-	 * (rather than folded into CANARY_CLEAN or CONFIG_BLOCKED) so an
+	 * (rather than folded into CANARY_CLEAN or NO_OUTER_BRACKET) so an
 	 * operator triaging the shadow log can grep for the confound
 	 * without also catching the two adjacent cases. */
 	CHILDOP_REC_UNATTRIBUTED_EDGES,
