@@ -36,6 +36,7 @@
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/pipe_thrash.h"
+#include "stats/subsys/sched_cycler.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
 #include "stats/subsys/uid_change.h"
@@ -807,9 +808,8 @@ struct stats_s {
 	/* memory_pressure childop: MADV_PAGEOUT + refault cycles */
 	unsigned long memory_pressure_runs;
 
-	/* sched_cycler childop counters */
-	unsigned long sched_cycler_runs;	/* total sched_cycler invocations */
-	unsigned long sched_cycler_eperm;	/* sched_setattr denied (no CAP_SYS_NICE) */
+	/* sched_cycler accounting.  See stats/subsys/sched_cycler.h. */
+	struct sched_cycler_stats sched_cycler __attribute__((aligned(64)));
 
 	/* userns_fuzzer childop counters */
 	unsigned long userns_runs;		/* total userns_fuzzer invocations */

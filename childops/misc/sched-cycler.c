@@ -62,7 +62,7 @@ bool sched_cycler(struct childdata *child)
 	cpu_set_t set;
 	int cls, i;
 
-	__atomic_add_fetch(&shm->stats.sched_cycler_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.sched_cycler.runs, 1, __ATOMIC_RELAXED);
 
 	cls = classes[rnd_modulo_u32(ARRAY_SIZE(classes))];
 
@@ -92,7 +92,7 @@ bool sched_cycler(struct childdata *child)
 
 	if (do_sched_setattr(0, &attr) != 0) {
 		if (errno == EPERM)
-			__atomic_add_fetch(&shm->stats.sched_cycler_eperm,
+			__atomic_add_fetch(&shm->stats.sched_cycler.eperm,
 					   1, __ATOMIC_RELAXED);
 		goto restore_other;
 	}

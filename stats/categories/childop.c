@@ -1,16 +1,6 @@
 #include <stddef.h>
 #include "stats-internal.h"
 
-static const struct stat_field sched_cycler_fields[] = {
-	STAT_FIELD(sched_cycler, runs),
-	STAT_FIELD(sched_cycler, eperm),
-};
-
-const struct stat_category sched_cycler_category =
-	STAT_CATEGORY("sched_cycler",
-	              sched_cycler_runs,
-	              sched_cycler_fields);
-
 static const struct stat_field userns_fuzzer_fields[] = {
 	STAT_FIELD(userns, runs),
 	STAT_FIELD(userns, inner_crashed),
@@ -67,7 +57,6 @@ const struct stat_category bpf_lifecycle_category =
 	STAT_CATEGORY("bpf_lifecycle",
 	              bpf_lifecycle_runs,
 	              bpf_lifecycle_fields);
-
 
 static const struct stat_field cpu_hotplug_rider_fields[] = {
 	STAT_FIELD(cpu_hotplug, runs),
