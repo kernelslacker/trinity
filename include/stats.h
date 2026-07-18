@@ -56,6 +56,7 @@
 #include "stats/subsys/sched_cycler.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
+#include "stats/subsys/socket_family_chain.h"
 #include "stats/subsys/uffd.h"
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/vdso_race.h"
@@ -1200,12 +1201,8 @@ struct stats_s {
 	/* close_racer accounting.  See stats/subsys/close_racer.h. */
 	struct close_racer_stats close_racer __attribute__((aligned(64)));
 
-	/* socket_family_chain childop counters */
-	unsigned long socket_family_chain_runs;			/* total invocations */
-	unsigned long socket_family_chain_completed;		/* >=1 inner cycle reached recv */
-	unsigned long socket_family_chain_failed;		/* every inner cycle bailed early */
-	unsigned long socket_family_chain_authencesn_attempts;	/* authencesn name forced */
-	unsigned long socket_family_chain_splice_attempts;	/* splice path replaced sendmsg data leg */
+	/* socket_family_chain accounting.  See stats/subsys/socket_family_chain.h. */
+	struct socket_family_chain_stats socket_family_chain __attribute__((aligned(64)));
 
 	/* socket-family-grammar dispatcher counters
 	 * (net/socket-family-grammar.c).  Bumped per call into

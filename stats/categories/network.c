@@ -113,19 +113,6 @@ const struct stat_category netns_mountns_setup_category =
 	              netns_mountns_setup_runs,
 	              netns_mountns_setup_fields);
 
-static const struct stat_field socket_family_chain_fields[] = {
-	STAT_FIELD(socket_family_chain, runs),
-	STAT_FIELD(socket_family_chain, completed),
-	STAT_FIELD(socket_family_chain, failed),
-	STAT_FIELD(socket_family_chain, authencesn_attempts),
-	STAT_FIELD(socket_family_chain, splice_attempts),
-};
-
-const struct stat_category socket_family_chain_category =
-	STAT_CATEGORY("socket_family_chain",
-	              socket_family_chain_runs,
-	              socket_family_chain_fields);
-
 static const struct stat_field socket_family_grammar_fields[] = {
 	STAT_FIELD(socket_family_grammar, runs),
 	STAT_FIELD(socket_family_grammar, completed),

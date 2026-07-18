@@ -1060,7 +1060,7 @@ static bool sfg_alg_do_bind(struct socket_ctx *ctx, unsigned int *err_burst)
 			sizeof(sa->salg_name) - 1);
 		ctx->fam.alg.type = SFG_ALG_TYPE_AEAD;
 		__atomic_add_fetch(
-			&shm->stats.socket_family_chain_authencesn_attempts,
+			&shm->stats.socket_family_chain.authencesn_attempts,
 			1, __ATOMIC_RELAXED);
 	} else {
 		idx = rnd_modulo_u32(ARRAY_SIZE(sfg_alg_types));
@@ -1239,7 +1239,7 @@ static bool sfg_alg_try_splice_send(struct socket_ctx *ctx)
 	if (pipe2(ctx->fam.alg.splice_pfd, O_CLOEXEC) < 0)
 		return false;
 
-	__atomic_add_fetch(&shm->stats.socket_family_chain_splice_attempts, 1,
+	__atomic_add_fetch(&shm->stats.socket_family_chain.splice_attempts, 1,
 			   __ATOMIC_RELAXED);
 
 	sndlen = 16 + rnd_modulo_u32(256 - 16 + 1);
