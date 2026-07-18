@@ -38,6 +38,7 @@
 #include "stats/subsys/iouring_eventfd.h"
 #include "stats/subsys/iouring_recipes.h"
 #include "stats/subsys/ip6gre_lapb.h"
+#include "stats/subsys/ipv6_ndisc_proxy.h"
 #include "stats/subsys/keyring_spam.h"
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/mount_churn.h"
@@ -1331,11 +1332,8 @@ struct stats_s {
 	unsigned long tcp_md5_listener_race_rst_sent_ok;	/* zero-linger close() drove RST toward listener */
 	unsigned long tcp_md5_listener_race_completed_ok;	/* full cycles reaching teardown */
 
-	/* ipv6_ndisc_proxy childop counters */
-	unsigned long ipv6_ndisc_proxy_runs;		/* total ipv6_ndisc_proxy invocations */
-	unsigned long ipv6_ndisc_proxy_ns_sent_ok;	/* AF_PACKET NS frame sendto returned >0 */
-	unsigned long ipv6_ndisc_proxy_setup_failed;	/* unshare/veth/addr/proxy setup failed */
-	unsigned long ipv6_ndisc_proxy_proxy_enable_ok;	/* proxy_ndp sysctl flip accepted */
+	/* ipv6_ndisc_proxy accounting.  See stats/subsys/ipv6_ndisc_proxy.h. */
+	struct ipv6_ndisc_proxy_stats ipv6_ndisc_proxy __attribute__((aligned(64)));
 
 	/* ipfrag_source_churn childop counters */
 	unsigned long ipfrag_source_runs;		/* total ipfrag_source_churn invocations */
