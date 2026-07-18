@@ -85,7 +85,7 @@ struct maps_stats {
 	 *
 	 * The planned side-index rows (O(1) map-region resolution, a
 	 * per-prot map index) should only be built once the rate-of-
-	 * change these counters surface in defense_counters_periodic_dump
+	 * change these counters surface in periodic_counter_rates_dump
 	 * proves the cost is real -- do NOT build the side indexes until
 	 * the map-type-resolution scan-length / get_map_with_prot
 	 * prot-reject rates here prove the linear scan actually costs. */

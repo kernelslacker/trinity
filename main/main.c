@@ -234,7 +234,7 @@ static void run_periodic_surfaces(void)
 
 	corrupt_ptr_spike_check();
 
-	defense_counters_periodic_dump();
+	periodic_counter_rates_dump();
 
 	cost_pool_periodic_dump();
 

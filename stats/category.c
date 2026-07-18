@@ -9,7 +9,7 @@
  * appending one STAT_FIELD() row -- the JSON key is derived from the
  * field-name suffix so the schema cannot drift from the struct.
  *
- * Generalises the in-tree pattern already used by defense_counters[] for
+ * Generalises the in-tree pattern already used by periodic_counter_rates[] for
  * the periodic-window dump; here it replaces correlated edits in
  * struct stats_s + dump_stats_json() + dump_stats() with a single edit
  * site per counter.

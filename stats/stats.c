@@ -89,7 +89,7 @@ void __cold dump_stats(void)
 	dump_stats_corpus_and_taint_tail();
 
 	/* Cumulative childop vs random-syscall effort split.  Also emitted
-	 * mid-run from defense_counters_periodic_dump on the 600 s cadence
+	 * mid-run from periodic_counter_rates_dump on the 600 s cadence
 	 * for long-fuzz visibility, but a short --dry-run (or any run that
 	 * exits before the first periodic dump fires) still needs to see
 	 * the block, so emit it unconditionally from the shutdown dump too.

@@ -46,7 +46,7 @@
  * sitting at noise without waiting for the run to end.  Counters with a
  * zero delta are skipped so the per-window line stays short on a quiet
  * fleet; the whole block is suppressed entirely on a window where every
- * counter held flat.  Listed once in defense_counters[] so adding a new
+ * counter held flat.  Listed once in periodic_counter_rates[] so adding a new
  * defense counter only needs one edit to get periodic visibility.
  *
  * DEFENSE_DUMP_INTERVAL_SEC lives in stats-internal.h so the sibling
@@ -58,7 +58,7 @@ static const struct {
 	const char *name;
 	size_t off;
 	bool    from_aggregate;	/* true: read from parent_stats; false: shm->stats */
-} defense_counters[] = {
+} periodic_counter_rates[] = {
 	{ "shared_buffer_redirected",
 	  offsetof(struct stats_aggregate, shared_buffer_redirected), true },
 	{ "range_overlaps_shared_rejects",
@@ -798,19 +798,19 @@ static const struct {
 	  offsetof(struct stats_s, warm_reserve_during_plateau_total) },
 };
 
-static unsigned long defense_counter_load(unsigned int i)
+static unsigned long periodic_counter_load(unsigned int i)
 {
-	const char *base = defense_counters[i].from_aggregate
+	const char *base = periodic_counter_rates[i].from_aggregate
 			   ? (const char *)&parent_stats
 			   : (const char *)&shm->stats;
-	unsigned long *p = (unsigned long *)(base + defense_counters[i].off);
+	unsigned long *p = (unsigned long *)(base + periodic_counter_rates[i].off);
 
 	return __atomic_load_n(p, __ATOMIC_RELAXED);
 }
 
-void __cold defense_counters_periodic_dump(void)
+void __cold periodic_counter_rates_dump(void)
 {
-	static unsigned long prev[ARRAY_SIZE(defense_counters)];
+	static unsigned long prev[ARRAY_SIZE(periodic_counter_rates)];
 	static struct timespec last_dump;
 	struct timespec now;
 	unsigned int i;
@@ -824,8 +824,8 @@ void __cold defense_counters_periodic_dump(void)
 	 * first window, mirroring corrupt_ptr_spike_check(). */
 	if (last_dump.tv_sec == 0) {
 		last_dump = now;
-		for (i = 0; i < ARRAY_SIZE(defense_counters); i++)
-			prev[i] = defense_counter_load(i);
+		for (i = 0; i < ARRAY_SIZE(periodic_counter_rates); i++)
+			prev[i] = periodic_counter_load(i);
 		return;
 	}
 
@@ -833,8 +833,8 @@ void __cold defense_counters_periodic_dump(void)
 	if (elapsed < DEFENSE_DUMP_INTERVAL_SEC)
 		return;
 
-	for (i = 0; i < ARRAY_SIZE(defense_counters); i++) {
-		unsigned long cur = defense_counter_load(i);
+	for (i = 0; i < ARRAY_SIZE(periodic_counter_rates); i++) {
+		unsigned long cur = periodic_counter_load(i);
 		unsigned long delta = sat_sub_ul(cur, prev[i]);
 		unsigned long rate_milli;
 
@@ -843,7 +843,7 @@ void __cold defense_counters_periodic_dump(void)
 			continue;
 
 		if (header_emitted == 0) {
-			stats_log_write("Defense counter rates over last %lds:\n",
+			stats_log_write("Periodic counter rates over last %lds:\n",
 					elapsed);
 			header_emitted = 1;
 		}
@@ -852,7 +852,7 @@ void __cold defense_counters_periodic_dump(void)
 		 * without dragging in floating point on the parent path. */
 		rate_milli = (delta * 1000UL) / (unsigned long)elapsed;
 		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-				defense_counters[i].name, delta,
+				periodic_counter_rates[i].name, delta,
 				rate_milli / 1000, rate_milli % 1000, cur);
 	}
 

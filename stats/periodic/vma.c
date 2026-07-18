@@ -65,7 +65,7 @@ static long count_proc_maps_lines(const char *path)
 }
 
 /*
- * Per-tick scan paired with defense_counters_periodic_dump: every dump
+ * Per-tick scan paired with periodic_counter_rates_dump: every dump
  * window, snapshot the parent's VMA count and walk the live child pid
  * slots to sum, max, and min the children's VMA counts.  The point is
  * post-mortem visibility for the cgroup-OOM class where one of trinity's

@@ -950,7 +950,7 @@ void childop_decay_record_wall(enum child_op_type op, unsigned long ns)
  * SHADOW: nothing in the picker / canary path reads the ring; the only
  * reader is dump_stats_childop_decay_recency() at shutdown, so the
  * rotation cadence only affects which window appears as "recent" in the
- * dump.  Driven from defense_counters_periodic_dump()
+ * dump.  Driven from periodic_counter_rates_dump()
  * (stats/periodic/counter-rates.c) at the
  * same 600 s tick as the other operator-visibility dumps so the recency
  * horizon is on the order of one dump interval x CHILDOP_DECAY_WINDOWS.
