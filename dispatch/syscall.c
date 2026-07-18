@@ -943,14 +943,14 @@ static void register_returned_fd(const struct syscallentry *entry,
 
 	fd = (int)rec->retval;
 	if (fd <= 2) {
-		__atomic_add_fetch(&shm->stats.fd_runtime_skipped_stdio, 1,
+		__atomic_add_fetch(&shm->stats.fd_runtime_skipped.stdio, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
 
 	if (find_local_object_by_fd(type, fd) != NULL) {
 		__atomic_add_fetch(
-			&shm->stats.fd_runtime_skipped_already_registered, 1,
+			&shm->stats.fd_runtime_skipped.already_registered, 1,
 			__ATOMIC_RELAXED);
 		return;
 	}

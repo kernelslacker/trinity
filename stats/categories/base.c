@@ -210,23 +210,6 @@ const struct stat_category iouring_eventfd_category =
 	              iouring_eventfd_register_ok,
 	              iouring_eventfd_fields);
 
-/* fd_runtime_skipped: handle_retval_obj_fd's post-success classify of an
- * fd retval against the per-child local-object table.  The two paths are
- * mutually exclusive per call and both increment from the same site, so a
- * run where neither bumped means no syscall ever produced a registerable
- * fd; gating on _stdio (the dominant arm — retvals 0/1/2 from any
- * fd-returning syscall) keeps a quiet window terse in the text dump.
- * JSON renders unconditionally alongside aio for schema stability. */
-static const struct stat_field fd_runtime_skipped_fields[] = {
-	STAT_FIELD(fd_runtime_skipped, stdio),
-	STAT_FIELD(fd_runtime_skipped, already_registered),
-};
-
-const struct stat_category fd_runtime_skipped_category =
-	STAT_CATEGORY("fd_runtime_skipped",
-	              fd_runtime_skipped_stdio,
-	              fd_runtime_skipped_fields);
-
 /* child_dead_parent_observed: init_child()'s pid-handshake loop saw
  * pid_alive(mainpid) == false -- the parent died before publishing this
  * child's slot in pids[].  The original outputerr("BUG!: parent went
@@ -339,11 +322,4 @@ static const struct stat_category fd_lifecycle_category
 	STAT_CATEGORY("fd_lifecycle",
 	              fd_stale_detected,
 	              fd_lifecycle_fields);
-
-
-
-
-
-
-
 

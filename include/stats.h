@@ -25,6 +25,7 @@
 #include "stats/subsys/cold_overflow.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/errno_gradient.h"
+#include "stats/subsys/fd_runtime_skipped.h"
 #include "stats/subsys/flock_thrash.h"
 #include "stats/subsys/fork_storm.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
@@ -2312,27 +2313,8 @@ struct stats_s {
 	 * had already done so. */
 	unsigned long fd_runtime_registered;
 
-	/*
-	 * register_returned_fd() reject attribution -- bumped on every
-	 * skipped registration so a flat fd_runtime_registered alongside
-	 * non-zero ret_objtype activity has a non-guess explanation.
-	 *
-	 * fd_runtime_skipped_stdio:  fd <= 2.  Either a kernel/test bug
-	 *   surfaced a stdio fd as a fresh syscall return (genuinely
-	 *   noteworthy) or stderr was closed and the next open(2) got
-	 *   re-allocated into slot 2; both warrant a look.
-	 *
-	 * fd_runtime_skipped_already_registered:  find_local_object_by_fd()
-	 *   matched.  Dominant reason is a per-syscall .post that already
-	 *   registered the fd with richer metadata (socket triplet, eventfd
-	 *   count, perf_event_attr, ...); the generic post-hook correctly
-	 *   defers to it.  A spike with no .post-side counter movement
-	 *   means a syscall is dup'ing an fd we already own and the dup
-	 *   path isn't routing through set_object_fd() with a fresh slot,
-	 *   i.e. a coverage-equivalent obj is being silently dropped.
-	 */
-	unsigned long fd_runtime_skipped_stdio;
-	unsigned long fd_runtime_skipped_already_registered;
+	/* fd_runtime_skipped accounting.  See stats/subsys/fd_runtime_skipped.h. */
+	struct fd_runtime_skipped_stats fd_runtime_skipped __attribute__((aligned(64)));
 
 	/* Bumped by prop_ring_push_scalar() each time a typed scalar return
 	 * (currently OBJ_KEY_SERIAL from register_returned_fd's add_key /
