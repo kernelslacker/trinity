@@ -83,10 +83,10 @@ static void maps_pick_bump_scan_histogram(unsigned int i)
 		unsigned int hi_bit = 31u - lz;
 
 		bucket = hi_bit + 1u;
-		if (bucket >= ARRAY_SIZE(shm->stats.maps_pick_scan_histogram))
-			bucket = ARRAY_SIZE(shm->stats.maps_pick_scan_histogram) - 1u;
+		if (bucket >= ARRAY_SIZE(shm->stats.maps.pick_scan_histogram))
+			bucket = ARRAY_SIZE(shm->stats.maps.pick_scan_histogram) - 1u;
 	}
-	__atomic_add_fetch(&shm->stats.maps_pick_scan_histogram[bucket],
+	__atomic_add_fetch(&shm->stats.maps.pick_scan_histogram[bucket],
 			   1, __ATOMIC_RELAXED);
 }
 
@@ -156,7 +156,7 @@ static enum objecttype pick_mmap_pool_type(struct childdata *child,
 
 static void account_pool_empty_reject(enum objecttype type)
 {
-	__atomic_add_fetch(&shm->stats.maps_reject_pool_empty, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.maps.reject_pool_empty, 1, __ATOMIC_RELAXED);
 	/* Per-type sub-attribution.  The aggregate
 	 * above is bumped per NULL-pool iteration without
 	 * recording which OBJ_MMAP_* pool returned NULL; the
@@ -164,15 +164,15 @@ static void account_pool_empty_reject(enum objecttype type)
 	 * of interest post-fork is directly visible. */
 	switch (type) {
 	case OBJ_MMAP_ANON:
-		__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_anon,
+		__atomic_add_fetch(&shm->stats.maps.reject_pool_empty_anon,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case OBJ_MMAP_FILE:
-		__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_file,
+		__atomic_add_fetch(&shm->stats.maps.reject_pool_empty_file,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case OBJ_MMAP_TESTFILE:
-		__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_testfile,
+		__atomic_add_fetch(&shm->stats.maps.reject_pool_empty_testfile,
 				   1, __ATOMIC_RELAXED);
 		break;
 	default:
@@ -197,7 +197,7 @@ static bool obj_ptr_in_user_va_band(struct object *obj,
 {
 	if ((uintptr_t)obj < 0x10000UL ||
 	    (uintptr_t)obj >= 0x800000000000UL) {
-		__atomic_add_fetch(&shm->stats.maps_reject_bogus_obj_ptr, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.maps.reject_bogus_obj_ptr, 1, __ATOMIC_RELAXED);
 		outputerr("get_map_handle: bogus obj %p in OBJ_MMAP "
 			  "pool (type %u, scope %d)\n",
 			  obj, type, scope);
@@ -228,7 +228,7 @@ static bool obj_alloc_track_check(struct object *obj,
 				  enum obj_scope scope)
 {
 	if (scope == OBJ_LOCAL && !alloc_track_lookup(obj)) {
-		__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss, 1, __ATOMIC_RELAXED);
 		/*
 		 * Per-type sub-attribution of the alloc-track-miss
 		 * reject.  Aggregate above stays bumped for historical
@@ -243,15 +243,15 @@ static bool obj_alloc_track_check(struct object *obj,
 		 */
 		switch (type) {
 		case OBJ_MMAP_ANON:
-			__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_anon,
+			__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss_anon,
 					   1, __ATOMIC_RELAXED);
 			break;
 		case OBJ_MMAP_FILE:
-			__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_file,
+			__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss_file,
 					   1, __ATOMIC_RELAXED);
 			break;
 		case OBJ_MMAP_TESTFILE:
-			__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_testfile,
+			__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss_testfile,
 					   1, __ATOMIC_RELAXED);
 			break;
 		default:
@@ -292,11 +292,11 @@ static bool map_size_in_range(struct object *obj,
 		 * pre-clamp pool entry from an earlier startup
 		 * may still surface here.  Skip silently.
 		 */
-		__atomic_add_fetch(&shm->stats.maps_reject_size_zero, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.maps.reject_size_zero, 1, __ATOMIC_RELAXED);
 		return false;
 	}
 	if (obj->map.size > GB(4UL)) {
-		__atomic_add_fetch(&shm->stats.maps_reject_size_too_large, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.maps.reject_size_too_large, 1, __ATOMIC_RELAXED);
 		outputerr("get_map_handle: bogus map->size %lu for "
 			  "obj %p (type %u, scope %d)\n",
 			  obj->map.size, obj, type, scope);
@@ -314,21 +314,21 @@ static bool map_size_in_range(struct object *obj,
  * cross-checked against pool occupancy. */
 static void account_pool_pick_success(enum objecttype type, int retry_index)
 {
-	__atomic_add_fetch(&shm->stats.maps_pick_attempts_sum,
+	__atomic_add_fetch(&shm->stats.maps.pick_attempts_sum,
 			   (unsigned long)(retry_index + 1), __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.maps_pick_successes,
+	__atomic_add_fetch(&shm->stats.maps.pick_successes,
 			   1, __ATOMIC_RELAXED);
 	switch (type) {
 	case OBJ_MMAP_ANON:
-		__atomic_add_fetch(&shm->stats.maps_pool_chosen_anon,
+		__atomic_add_fetch(&shm->stats.maps.pool_chosen_anon,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case OBJ_MMAP_FILE:
-		__atomic_add_fetch(&shm->stats.maps_pool_chosen_file,
+		__atomic_add_fetch(&shm->stats.maps.pool_chosen_file,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case OBJ_MMAP_TESTFILE:
-		__atomic_add_fetch(&shm->stats.maps_pool_chosen_testfile,
+		__atomic_add_fetch(&shm->stats.maps.pool_chosen_testfile,
 				   1, __ATOMIC_RELAXED);
 		break;
 	default:
@@ -437,9 +437,9 @@ bool get_map_handle(struct map_handle *h)
 
 		if (sampled) {
 			t1 = maps_pick_read_cycles();
-			__atomic_add_fetch(&shm->stats.maps_pick_cycles_sampled_sum,
+			__atomic_add_fetch(&shm->stats.maps.pick_cycles_sampled_sum,
 					   t1 - t0, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.maps_pick_cycles_sampled_count,
+			__atomic_add_fetch(&shm->stats.maps.pick_cycles_sampled_count,
 					   1, __ATOMIC_RELAXED);
 		}
 		maps_pick_bump_scan_histogram((unsigned int)i);
@@ -449,16 +449,16 @@ bool get_map_handle(struct map_handle *h)
 
 	if (sampled) {
 		t1 = maps_pick_read_cycles();
-		__atomic_add_fetch(&shm->stats.maps_pick_cycles_sampled_sum,
+		__atomic_add_fetch(&shm->stats.maps.pick_cycles_sampled_sum,
 				   t1 - t0, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.maps_pick_cycles_sampled_count,
+		__atomic_add_fetch(&shm->stats.maps.pick_cycles_sampled_count,
 				   1, __ATOMIC_RELAXED);
 	}
 	maps_pick_bump_scan_histogram((unsigned int)i);
 
 	maybe_refill_local_anon_pool(child, scope);
 
-	__atomic_add_fetch(&shm->stats.maps_pool_draw_exhausted, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.maps.pool_draw_exhausted, 1, __ATOMIC_RELAXED);
 	return false;
 }
 
@@ -624,15 +624,15 @@ struct map * get_map_with_prot(int required_prot)
 			 * which side of the loop dominates the
 			 * cost a per-prot map index
 			 * would amortise. */
-			__atomic_add_fetch(&shm->stats.maps_pick_with_prot_attempts_sum,
+			__atomic_add_fetch(&shm->stats.maps.pick_with_prot_attempts_sum,
 					   (unsigned long)(i + 1), __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.maps_pick_with_prot_successes,
+			__atomic_add_fetch(&shm->stats.maps.pick_with_prot_successes,
 					   1, __ATOMIC_RELAXED);
 			return m;
 		}
 
 		/* Per-required-mask reject attribution. */
-		__atomic_add_fetch(&shm->stats.maps_prot_reject_by_mask[mask_idx],
+		__atomic_add_fetch(&shm->stats.maps.prot_reject_by_mask[mask_idx],
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -1129,12 +1129,12 @@ type_resolved:
 		 * objects it visited, and the miss-rate (1 - hits /
 		 * calls) is itself a signal that the slot was
 		 * scribbled / pre-clamped / from a non-MMAP pool. */
-		__atomic_add_fetch(&shm->stats.maps_type_resolution_calls,
+		__atomic_add_fetch(&shm->stats.maps.type_resolution_calls,
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.maps_type_resolution_scan_length_sum,
+		__atomic_add_fetch(&shm->stats.maps.type_resolution_scan_length_sum,
 				   scanned, __ATOMIC_RELAXED);
 		if (*out_type != OBJ_NONE)
-			__atomic_add_fetch(&shm->stats.maps_type_resolution_hits,
+			__atomic_add_fetch(&shm->stats.maps.type_resolution_hits,
 					   1, __ATOMIC_RELAXED);
 	}
 

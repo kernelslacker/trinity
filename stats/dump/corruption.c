@@ -122,10 +122,10 @@ static void dump_stats_render_divergence_sentinel(void)
  * denominator is zero. */
 static void dump_stats_render_maps_pick_ratios(void)
 {
-	unsigned long s  = shm->stats.maps_pick_successes;
-	unsigned long a  = shm->stats.maps_pick_attempts_sum;
-	unsigned long ps = shm->stats.maps_pick_with_prot_successes;
-	unsigned long pa = shm->stats.maps_pick_with_prot_attempts_sum;
+	unsigned long s  = shm->stats.maps.pick_successes;
+	unsigned long a  = shm->stats.maps.pick_attempts_sum;
+	unsigned long ps = shm->stats.maps.pick_with_prot_successes;
+	unsigned long pa = shm->stats.maps.pick_with_prot_attempts_sum;
 	char val[32];
 
 	if (s > 0) {
@@ -171,12 +171,12 @@ static void dump_stats_render_maps_pick_shadow(void)
 		"maps_pick_scan_hist_32_63",
 		"maps_pick_scan_hist_ge64",
 	};
-	unsigned long cyc_sum   = shm->stats.maps_pick_cycles_sampled_sum;
-	unsigned long cyc_count = shm->stats.maps_pick_cycles_sampled_count;
+	unsigned long cyc_sum   = shm->stats.maps.pick_cycles_sampled_sum;
+	unsigned long cyc_count = shm->stats.maps.pick_cycles_sampled_count;
 	unsigned int b;
 
 	for (b = 0; b < ARRAY_SIZE(bucket_names); b++) {
-		unsigned long v = shm->stats.maps_pick_scan_histogram[b];
+		unsigned long v = shm->stats.maps.pick_scan_histogram[b];
 
 		if (v == 0)
 			continue;
@@ -408,27 +408,27 @@ static void dump_stats_render_arena_ptr_stale_and_sentinel(void)
 
 static void dump_stats_render_maps_pool_rejects(void)
 {
-	if (shm->stats.maps_pool_draw_exhausted)
-		stat_row("pool", "maps_pool_draw_exhausted",   shm->stats.maps_pool_draw_exhausted);
-	if (shm->stats.maps_reject_pool_empty)
-		stat_row("pool", "maps_reject_pool_empty",     shm->stats.maps_reject_pool_empty);
-	if (shm->stats.maps_reject_bogus_obj_ptr)
-		stat_row("pool", "maps_reject_bogus_obj_ptr",  shm->stats.maps_reject_bogus_obj_ptr);
-	if (shm->stats.maps_reject_alloc_track_miss)
-		stat_row("pool", "maps_reject_alloc_track_miss", shm->stats.maps_reject_alloc_track_miss);
-	if (shm->stats.maps_reject_alloc_track_miss_anon)
+	if (shm->stats.maps.pool_draw_exhausted)
+		stat_row("pool", "maps_pool_draw_exhausted",   shm->stats.maps.pool_draw_exhausted);
+	if (shm->stats.maps.reject_pool_empty)
+		stat_row("pool", "maps_reject_pool_empty",     shm->stats.maps.reject_pool_empty);
+	if (shm->stats.maps.reject_bogus_obj_ptr)
+		stat_row("pool", "maps_reject_bogus_obj_ptr",  shm->stats.maps.reject_bogus_obj_ptr);
+	if (shm->stats.maps.reject_alloc_track_miss)
+		stat_row("pool", "maps_reject_alloc_track_miss", shm->stats.maps.reject_alloc_track_miss);
+	if (shm->stats.maps.reject_alloc_track_miss_anon)
 		stat_row("pool", "maps_reject_alloc_track_miss_anon",
-			 shm->stats.maps_reject_alloc_track_miss_anon);
-	if (shm->stats.maps_reject_alloc_track_miss_file)
+			 shm->stats.maps.reject_alloc_track_miss_anon);
+	if (shm->stats.maps.reject_alloc_track_miss_file)
 		stat_row("pool", "maps_reject_alloc_track_miss_file",
-			 shm->stats.maps_reject_alloc_track_miss_file);
-	if (shm->stats.maps_reject_alloc_track_miss_testfile)
+			 shm->stats.maps.reject_alloc_track_miss_file);
+	if (shm->stats.maps.reject_alloc_track_miss_testfile)
 		stat_row("pool", "maps_reject_alloc_track_miss_testfile",
-			 shm->stats.maps_reject_alloc_track_miss_testfile);
-	if (shm->stats.maps_reject_size_zero)
-		stat_row("pool", "maps_reject_size_zero",      shm->stats.maps_reject_size_zero);
-	if (shm->stats.maps_reject_size_too_large)
-		stat_row("pool", "maps_reject_size_too_large", shm->stats.maps_reject_size_too_large);
+			 shm->stats.maps.reject_alloc_track_miss_testfile);
+	if (shm->stats.maps.reject_size_zero)
+		stat_row("pool", "maps_reject_size_zero",      shm->stats.maps.reject_size_zero);
+	if (shm->stats.maps.reject_size_too_large)
+		stat_row("pool", "maps_reject_size_too_large", shm->stats.maps.reject_size_too_large);
 }
 
 static void dump_stats_render_late_corruption_oracle(void)
