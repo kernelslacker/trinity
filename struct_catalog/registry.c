@@ -381,8 +381,6 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	{ "sched_getattr",	2, &struct_catalog[SC_SCHED_ATTR] },
 	/* clone3(struct clone_args *, size_t) */
 	{ "clone3",		1, &struct_catalog[SC_CLONE_ARGS] },
-	/* io_uring_setup(u32, struct io_uring_params *) */
-	{ "io_uring_setup",	2, &struct_catalog[SC_IO_URING_PARAMS] },
 	/* setrlimit(unsigned int, struct rlimit *) */
 	{ "setrlimit",		2, &struct_catalog[SC_RLIMIT] },
 	/* getrlimit(unsigned int, struct rlimit *) */
@@ -493,8 +491,6 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
 	{ "sched_setparam",	2, &struct_catalog[SC_SCHED_PARAM] },
 	/* sched_setscheduler(pid_t, int, struct sched_param *) */
 	{ "sched_setscheduler",	3, &struct_catalog[SC_SCHED_PARAM] },
-	/* io_uring_register(int fd, unsigned op, void *arg, unsigned nr_args) */
-	{ "io_uring_register",	3, &struct_catalog[SC_IO_URING_REGISTER_ARGS] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
 	{ "bpf",		2, &struct_catalog[SC_BPF_ATTR] },
@@ -1383,9 +1379,11 @@ static const struct syscall_struct_arg syscall_struct_args_all[] = {
  * (name, arg_idx) tuple.
  */
 extern const struct syscall_struct_arg struct_catalog_registry_time[];
+extern const struct syscall_struct_arg struct_catalog_registry_io_uring[];
 
 const struct syscall_struct_arg_group syscall_struct_arg_groups[] = {
 	{ struct_catalog_registry_time },
+	{ struct_catalog_registry_io_uring },
 	{ syscall_struct_args_all },
 	{ NULL },
 };
