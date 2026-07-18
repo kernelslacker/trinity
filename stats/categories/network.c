@@ -182,22 +182,6 @@ const struct stat_category ip_gre_churn_category =
 	              ip_gre_churn_runs,
 	              ip_gre_churn_fields);
 
-static const struct stat_field netlink_monitor_race_fields[] = {
-	STAT_FIELD(netlink_monitor_race, runs),
-	STAT_FIELD(netlink_monitor_race, setup_failed),
-	STAT_FIELD(netlink_monitor_race, mon_open),
-	STAT_FIELD(netlink_monitor_race, mut_open),
-	STAT_FIELD(netlink_monitor_race, mut_op_ok),
-	STAT_FIELD(netlink_monitor_race, recv_drained),
-	STAT_FIELD(netlink_monitor_race, group_drop),
-	STAT_FIELD(netlink_monitor_race, group_add),
-};
-
-const struct stat_category netlink_monitor_race_category =
-	STAT_CATEGORY("netlink_monitor_race",
-	              netlink_monitor_race_runs,
-	              netlink_monitor_race_fields);
-
 static const struct stat_field tipc_link_churn_fields[] = {
 	STAT_FIELD(tipc_link_churn, runs),
 	STAT_FIELD(tipc_link_churn, setup_failed),
