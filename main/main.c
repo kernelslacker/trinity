@@ -236,6 +236,8 @@ static void run_periodic_surfaces(void)
 
 	periodic_counter_rates_dump();
 
+	childop_periodic_dump_and_advance();
+
 	cost_pool_periodic_dump();
 
 	top_syscalls_periodic_dump();
