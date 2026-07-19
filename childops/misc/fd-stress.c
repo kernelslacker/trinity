@@ -165,7 +165,7 @@ static bool fd_stress_close_reopen(struct childdata *child)
 	 */
 	notify_close(child, fd);
 	if (close(fd) == 0)
-		__atomic_add_fetch(&shm->stats.fdstress_close_reopen, 1,
+		__atomic_add_fetch(&shm->stats.fdstress.close_reopen, 1,
 				   __ATOMIC_RELAXED);
 	return true;
 }
@@ -189,7 +189,7 @@ static bool fd_stress_dup2_replace(struct childdata *child)
 	 * pool can hand fd_dst back to a typed consumer mid-replace. */
 	notify_close(child, fd_dst);
 	if (dup2(fd_src, fd_dst) >= 0)
-		__atomic_add_fetch(&shm->stats.fdstress_dup2_replace, 1,
+		__atomic_add_fetch(&shm->stats.fdstress.dup2_replace, 1,
 				   __ATOMIC_RELAXED);
 	return true;
 }
@@ -215,7 +215,7 @@ static bool fd_stress_type_confusion(struct childdata *child)
 	 */
 	notify_close(child, fd_b);
 	if (dup2(fd_a, fd_b) >= 0)
-		__atomic_add_fetch(&shm->stats.fdstress_type_confusion, 1,
+		__atomic_add_fetch(&shm->stats.fdstress.type_confusion, 1,
 				   __ATOMIC_RELAXED);
 	return true;
 }
@@ -239,7 +239,7 @@ static bool fd_stress_cloexec_toggle(struct childdata *child __unused__)
 		(void)fcntl(fd, F_SETFD, flags ^ FD_CLOEXEC);
 	}
 
-	__atomic_add_fetch(&shm->stats.fdstress_cloexec_toggle, 1,
+	__atomic_add_fetch(&shm->stats.fdstress.cloexec_toggle, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
