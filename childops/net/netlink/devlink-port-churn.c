@@ -419,10 +419,10 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx,
 	rc = devlink_port_split(ctx, dev_name, 0U,
 				DEVLINK_PORT_SPLIT_COUNT);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.devlink_port_churn_split_ok,
+		__atomic_add_fetch(&shm->stats.devlink_port_churn.split_ok,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.devlink_port_churn_split_fail,
+		__atomic_add_fetch(&shm->stats.devlink_port_churn.split_fail,
 				   1, __ATOMIC_RELAXED);
 
 	/* Drive more skbs into the queue between SPLIT and RELOAD. */
@@ -433,10 +433,10 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx,
 	 * Bus name is HARDCODED to netdevsim — see file header. */
 	rc = devlink_reload_driver_reinit(ctx, dev_name);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.devlink_port_churn_reload_ok,
+		__atomic_add_fetch(&shm->stats.devlink_port_churn.reload_ok,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.devlink_port_churn_reload_fail,
+		__atomic_add_fetch(&shm->stats.devlink_port_churn.reload_fail,
 				   1, __ATOMIC_RELAXED);
 
 	/* i) Undo the split so del_device sees a clean port topology. */
@@ -463,7 +463,7 @@ bool devlink_port_churn(struct childdata *child)
 	int rc;
 
 	if (!netdevsim_available(child)) {
-		__atomic_add_fetch(&shm->stats.devlink_port_churn_create_skipped,
+		__atomic_add_fetch(&shm->stats.devlink_port_churn.create_skipped,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -521,7 +521,7 @@ bool devlink_port_churn(struct childdata *child)
 		__u32 bus_id = alloc_bus_id();
 
 		if (devlink_port_churn_one(&ctx, child, bus_id))
-			__atomic_add_fetch(&shm->stats.devlink_port_churn_iterations,
+			__atomic_add_fetch(&shm->stats.devlink_port_churn.iterations,
 					   1, __ATOMIC_RELAXED);
 		else if (ns_unsupported_netdevsim)
 			break;
@@ -536,7 +536,7 @@ bool devlink_port_churn(struct childdata *child)
 bool devlink_port_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.devlink_port_churn_create_skipped,
+	__atomic_add_fetch(&shm->stats.devlink_port_churn.create_skipped,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
