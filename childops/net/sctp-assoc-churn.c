@@ -206,7 +206,7 @@ static void churn_send(int fd)
 	n = send(fd, buf, 1U + rnd_modulo_u32(sizeof(buf)),
 		 MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_packets_sent,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.packets_sent,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -252,7 +252,7 @@ static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *
 							 __ATOMIC_RELAXED);
 			}
 		}
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -260,13 +260,13 @@ static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *
 	fill_sin(&srv_primary, loopback_pool[0], 0);
 	if (bind(ctx->srv, (struct sockaddr *)&srv_primary,
 		 sizeof(srv_primary)) < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	slen = sizeof(srv_primary);
 	if (getsockname(ctx->srv, (struct sockaddr *)&srv_primary, &slen) < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -276,14 +276,14 @@ static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *
 	rc = setsockopt(ctx->srv, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_ADD,
 			addrs, (socklen_t)addr_len);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_bindx_added,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.bindx_added,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_bindx_rejected,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.bindx_rejected,
 				   1, __ATOMIC_RELAXED);
 
 	if (listen(ctx->srv, 4) < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -308,20 +308,20 @@ static int sctp_assoc_churn_iter_setup_client(struct sctp_assoc_churn_iter_ctx *
 
 	ctx->cli = socket(AF_INET, ctx->sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
 	if (ctx->cli < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	fill_sin(&cli_primary, loopback_pool[3], 0);
 	if (bind(ctx->cli, (struct sockaddr *)&cli_primary,
 		 sizeof(cli_primary)) < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	slen = sizeof(cli_primary);
 	if (getsockname(ctx->cli, (struct sockaddr *)&cli_primary, &slen) < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -360,13 +360,13 @@ static int sctp_assoc_churn_iter_connect(struct sctp_assoc_churn_iter_ctx *ctx)
 	rc = setsockopt(ctx->cli, IPPROTO_SCTP, SCTP_SOCKOPT_CONNECTX,
 			addrs, (socklen_t)addr_len);
 	if (rc < 0 && errno != EINPROGRESS) {
-		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_connect_failed,
+		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.connect_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	if (rc > 0)
 		ctx->assoc_id = (sctp_assoc_t_compat)rc;
-	__atomic_add_fetch(&shm->stats.sctp_assoc_churn_connected,
+	__atomic_add_fetch(&shm->stats.sctp_assoc_churn.connected,
 			   1, __ATOMIC_RELAXED);
 
 	if (ctx->sock_type == SOCK_STREAM) {
@@ -374,7 +374,7 @@ static int sctp_assoc_churn_iter_connect(struct sctp_assoc_churn_iter_ctx *ctx)
 		if (ctx->srv_acc >= 0) {
 			(void)fcntl(ctx->srv_acc, F_SETFL, O_NONBLOCK);
 			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_accepted,
+				&shm->stats.sctp_assoc_churn.accepted,
 				1, __ATOMIC_RELAXED);
 		}
 	}
@@ -421,11 +421,11 @@ static void sctp_assoc_churn_iter_churn_loop(struct sctp_assoc_churn_iter_ctx *c
 				addrs, (socklen_t)addr_len);
 		if (rc == 0)
 			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_bindx_added,
+				&shm->stats.sctp_assoc_churn.bindx_added,
 				1, __ATOMIC_RELAXED);
 		else
 			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_bindx_rejected,
+				&shm->stats.sctp_assoc_churn.bindx_rejected,
 				1, __ATOMIC_RELAXED);
 
 		/* b) Send during the ASCONF reply window — race window
@@ -442,11 +442,11 @@ static void sctp_assoc_churn_iter_churn_loop(struct sctp_assoc_churn_iter_ctx *c
 				addrs, (socklen_t)addr_len);
 		if (rc == 0)
 			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_bindx_removed,
+				&shm->stats.sctp_assoc_churn.bindx_removed,
 				1, __ATOMIC_RELAXED);
 		else
 			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_bindx_rejected,
+				&shm->stats.sctp_assoc_churn.bindx_rejected,
 				1, __ATOMIC_RELAXED);
 
 		/* d) Walk the rotation forward — wraps inside the
@@ -483,11 +483,11 @@ static void sctp_assoc_churn_iter_peeloff(struct sctp_assoc_churn_iter_ctx *ctx)
 		if (rc == 0 && parg.sd >= 0) {
 			ctx->peeled = parg.sd;
 			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_peeled_off,
+				&shm->stats.sctp_assoc_churn.peeled_off,
 				1, __ATOMIC_RELAXED);
 		} else {
 			__atomic_add_fetch(
-				&shm->stats.sctp_assoc_churn_peeloff_rejected,
+				&shm->stats.sctp_assoc_churn.peeloff_rejected,
 				1, __ATOMIC_RELAXED);
 		}
 	}
@@ -530,7 +530,7 @@ bool sctp_assoc_churn(struct childdata *child)
 		.child = child,
 	};
 
-	__atomic_add_fetch(&shm->stats.sctp_assoc_churn_runs,
+	__atomic_add_fetch(&shm->stats.sctp_assoc_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
@@ -565,7 +565,7 @@ bool sctp_assoc_churn(struct childdata *child)
 
 out:
 	sctp_assoc_churn_iter_teardown(&ctx);
-	__atomic_add_fetch(&shm->stats.sctp_assoc_churn_cycles,
+	__atomic_add_fetch(&shm->stats.sctp_assoc_churn.cycles,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
