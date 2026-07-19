@@ -36,21 +36,6 @@ const struct stat_category pkt_builder_category =
 	              pkt_builder_fields);
 
 
-static const struct stat_field ip6erspan_netns_migrate_fields[] = {
-	STAT_FIELD(inm, iters),
-	STAT_FIELD(inm, eperm),
-	STAT_FIELD(inm, unsupported),
-	STAT_FIELD(inm, link_create_ok),
-	STAT_FIELD(inm, netns_migrate_ok),
-	STAT_FIELD(inm, changelink_ok),
-	STAT_FIELD(inm, ip6erspan_unsupported_observed),
-	STAT_FIELD(inm, changelink_unsupported_observed),
-};
-
-const struct stat_category ip6erspan_netns_migrate_category =
-	STAT_CATEGORY("ip6erspan_netns_migrate",
-	              inm_iters,
-	              ip6erspan_netns_migrate_fields);
 
 static const struct stat_field netdev_netns_migrate_fields[] = {
 	STAT_FIELD(nnm, iters),

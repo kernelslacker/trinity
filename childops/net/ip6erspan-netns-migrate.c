@@ -245,7 +245,7 @@ static void warn_once_unsupported(struct childdata *child)
 	/* init_child redirected stderr to /dev/null, so an outputerr
 	 * here would be lost.  Bump a shm counter under the same
 	 * one-shot gate so the unsupported-observation survives. */
-	__atomic_add_fetch(&shm->stats.inm_ip6erspan_unsupported_observed,
+	__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.ip6erspan_unsupported_observed,
 			   1, __ATOMIC_RELAXED);
 }
 
@@ -475,7 +475,7 @@ static int ip6erspan_migrate_iter_create_link(struct ip6erspan_migrate_iter_ctx 
 	rc = inm_create_or_replace(&ctx->nl, ctx->ifname, ctx->k, false);
 	if (rc != 0) {
 		if (rc == -EPERM) {
-			__atomic_add_fetch(&shm->stats.inm_eperm,
+			__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.eperm,
 					   1, __ATOMIC_RELAXED);
 			ns_unsupported_ip6erspan = true;
 			/* ctx->child->op_type lives in shared memory and can
@@ -491,12 +491,12 @@ static int ip6erspan_migrate_iter_create_link(struct ip6erspan_migrate_iter_ctx 
 			}
 		} else if (rc == -ENOENT || rc == -EAFNOSUPPORT ||
 			   rc == -EPROTONOSUPPORT || rc == -EOPNOTSUPP) {
-			__atomic_add_fetch(&shm->stats.inm_unsupported,
+			__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.unsupported,
 					   1, __ATOMIC_RELAXED);
 		}
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.inm_link_create_ok, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.link_create_ok, 1, __ATOMIC_RELAXED);
 
 	ctx->ifindex = (int)if_nametoindex(ctx->ifname);
 	if (ctx->ifindex <= 0)
@@ -558,7 +558,7 @@ static int ip6erspan_migrate_iter_migrate(struct ip6erspan_migrate_iter_ctx *ctx
 	rc = inm_setlink_netns(&ctx->nl, ctx->ifindex, ctx->target_ns_fd);
 	if (rc != 0)
 		return -1;
-	__atomic_add_fetch(&shm->stats.inm_netns_migrate_ok,
+	__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.netns_migrate_ok,
 			   1, __ATOMIC_RELAXED);
 	ctx->migrated = true;
 	return 0;
@@ -595,7 +595,7 @@ static void ip6erspan_migrate_iter_changelink(struct ip6erspan_migrate_iter_ctx 
 
 	rc = inm_create_or_replace(&ctx->target_nl, ctx->ifname, ctx->k, true);
 	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.inm_changelink_ok,
+		__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.changelink_ok,
 				   1, __ATOMIC_RELAXED);
 	} else if (rc == -EOPNOTSUPP && !ns_unsupported_changelink) {
 		ns_unsupported_changelink = true;
@@ -603,7 +603,7 @@ static void ip6erspan_migrate_iter_changelink(struct ip6erspan_migrate_iter_ctx 
 		 * outputerr here would be lost.  Bump a shm counter
 		 * under the same one-shot gate so the unsupported-
 		 * changelink observation survives. */
-		__atomic_add_fetch(&shm->stats.inm_changelink_unsupported_observed,
+		__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.changelink_unsupported_observed,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -713,7 +713,7 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 {
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.inm_iters, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.iters, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_ip6erspan)
 		return true;
@@ -723,7 +723,7 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 			      child);
 	if (rc == -EPERM) {
 		warn_once_unsupported(child);
-		__atomic_add_fetch(&shm->stats.inm_eperm, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.eperm, 1, __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
