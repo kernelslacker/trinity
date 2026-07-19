@@ -7,8 +7,6 @@
 
 #include <stdio.h>
 #include "cmp_hints.h"
-#include "kcov.h"
-#include "stats-internal.h"
 #include "stats/json/internal.h"
 
 void json_emit_cmp_hints_section(void)
