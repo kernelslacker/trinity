@@ -65,24 +65,6 @@ const struct stat_category zombie_slots_category =
 	              zombies_reaped,
 	              zombie_slots_fields);
 
-static const struct stat_field nat_t_churn_fields[] = {
-	STAT_FIELD(nat_t_churn, runs),
-	STAT_FIELD(nat_t_churn, setup_failed),
-	STAT_FIELD(nat_t_churn, sa_added),
-	STAT_FIELD(nat_t_churn, sa_deleted),
-	STAT_FIELD(nat_t_churn, frames_sent),
-	STAT_FIELD(nat_t, xfrm6_setup_ok),
-	STAT_FIELD(nat_t, xfrm6_setup_fail),
-	STAT_FIELD(nat_t, xfrm6_sendto_runs),
-	STAT_FIELD(nat_t, xfrm6_delsa_races),
-};
-
-static const struct stat_category nat_t_churn_category
-	__attribute__((unused)) =
-	STAT_CATEGORY("nat_t_churn",
-	              nat_t_churn_runs,
-	              nat_t_churn_fields);
-
 static const struct stat_field kvm_run_churn_fields[] = {
 	STAT_FIELD(kvm_run, invocations),
 	STAT_FIELD(kvm_run, exit_io),

@@ -161,7 +161,7 @@ static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 
 	fd = socket(AF_QRTR, SOCK_DGRAM, 0);
 	if (fd < 0) {
-		__atomic_add_fetch(&shm->stats.qrtr_bind_setup_fail,
+		__atomic_add_fetch(&shm->stats.qrtr_bind_race.setup_fail,
 				   1, __ATOMIC_RELAXED);
 		_exit(0);
 	}
@@ -174,7 +174,7 @@ static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 	 * via getsockname() rather than hardcoding. */
 	memset(&local, 0, sizeof(local));
 	if (getsockname(fd, (struct sockaddr *)&local, &slen) < 0) {
-		__atomic_add_fetch(&shm->stats.qrtr_bind_setup_fail,
+		__atomic_add_fetch(&shm->stats.qrtr_bind_race.setup_fail,
 				   1, __ATOMIC_RELAXED);
 		_exit(0);
 	}
@@ -206,10 +206,10 @@ static void reap_bind_child(pid_t pid)
 	if (waitpid_eintr(pid, &status, 0) != pid)
 		return;
 	if (WIFSIGNALED(status))
-		__atomic_add_fetch(&shm->stats.qrtr_bind_race_sibling_crashed,
+		__atomic_add_fetch(&shm->stats.qrtr_bind_race.sibling_crashed,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.qrtr_bind_race_sibling_reaped_ok,
+		__atomic_add_fetch(&shm->stats.qrtr_bind_race.sibling_reaped_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -224,12 +224,12 @@ static void iter_one(void)
 
 	port = pick_port();
 
-	__atomic_add_fetch(&shm->stats.qrtr_bind_race_iter,
+	__atomic_add_fetch(&shm->stats.qrtr_bind_race.iter,
 			   1, __ATOMIC_RELAXED);
 
 	p1 = fork();
 	if (p1 < 0) {
-		__atomic_add_fetch(&shm->stats.qrtr_bind_race_fork_failed,
+		__atomic_add_fetch(&shm->stats.qrtr_bind_race.fork_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -238,7 +238,7 @@ static void iter_one(void)
 
 	p2 = fork();
 	if (p2 < 0) {
-		__atomic_add_fetch(&shm->stats.qrtr_bind_race_fork_failed,
+		__atomic_add_fetch(&shm->stats.qrtr_bind_race.fork_failed,
 				   1, __ATOMIC_RELAXED);
 		/* p1 already in flight; reap it so we don't leave a
 		 * zombie behind when the outer loop continues. */
@@ -248,7 +248,7 @@ static void iter_one(void)
 	if (p2 == 0)
 		qrtr_bind_child(port);
 
-	__atomic_add_fetch(&shm->stats.qrtr_bind_race_spawn_pair_ok,
+	__atomic_add_fetch(&shm->stats.qrtr_bind_race.spawn_pair_ok,
 			   1, __ATOMIC_RELAXED);
 
 	reap_bind_child(p1);
@@ -260,11 +260,11 @@ bool qrtr_bind_race(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.qrtr_bind_race_runs,
+	__atomic_add_fetch(&shm->stats.qrtr_bind_race.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_qrtr_bind_race) {
-		__atomic_add_fetch(&shm->stats.qrtr_bind_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.qrtr_bind_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -272,7 +272,7 @@ bool qrtr_bind_race(struct childdata *child)
 	if (!qrtr_probed) {
 		probe_qrtr(child);
 		if (ns_unsupported_qrtr_bind_race) {
-			__atomic_add_fetch(&shm->stats.qrtr_bind_race_setup_failed,
+			__atomic_add_fetch(&shm->stats.qrtr_bind_race.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -322,9 +322,9 @@ bool qrtr_bind_race(struct childdata *child)
 bool qrtr_bind_race(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.qrtr_bind_race_runs,
+	__atomic_add_fetch(&shm->stats.qrtr_bind_race.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.qrtr_bind_race_setup_failed,
+	__atomic_add_fetch(&shm->stats.qrtr_bind_race.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }

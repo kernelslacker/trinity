@@ -147,7 +147,7 @@ static int vsock_transport_iter_setup(struct childdata *child,
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -169,29 +169,29 @@ static int vsock_transport_iter_setup(struct childdata *child,
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
 	if (getsockname(listener, (struct sockaddr *)&addr, &slen) < 0) {
-		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
 	if (listen(listener, 8) < 0) {
-		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
-	__atomic_add_fetch(&shm->stats.vsock_transport_churn_bind_ok,
+	__atomic_add_fetch(&shm->stats.vsock_transport_churn.bind_ok,
 			   1, __ATOMIC_RELAXED);
 
 	cli = socket(AF_VSOCK, SOCK_STREAM, 0);
 	if (cli < 0) {
-		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -199,11 +199,11 @@ static int vsock_transport_iter_setup(struct childdata *child,
 	apply_timeouts(cli);
 
 	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.vsock_transport_churn_connect_ok,
+	__atomic_add_fetch(&shm->stats.vsock_transport_churn.connect_ok,
 			   1, __ATOMIC_RELAXED);
 
 	/* Drain the listener accept queue so the loopback transport has a
@@ -248,7 +248,7 @@ static void vsock_transport_iter_send_burst(int cli, int srv,
 		if (r >= 0) {
 			sent_count++;
 			__atomic_add_fetch(
-				&shm->stats.vsock_transport_churn_send_ok,
+				&shm->stats.vsock_transport_churn.send_ok,
 				1, __ATOMIC_RELAXED);
 		} else if (errno == EAGAIN) {
 			break;
@@ -307,7 +307,7 @@ static void vsock_transport_iter_race(int cli)
 	if (setsockopt(cli, AF_VSOCK, SO_VM_SOCKETS_BUFFER_SIZE,
 		       &sz, sizeof(sz)) == 0)
 		__atomic_add_fetch(
-			&shm->stats.vsock_transport_churn_buffer_size_ok,
+			&shm->stats.vsock_transport_churn.buffer_size_ok,
 			1, __ATOMIC_RELAXED);
 
 	/* RACE B. */
@@ -316,13 +316,13 @@ static void vsock_transport_iter_race(int cli)
 	if (setsockopt(cli, AF_VSOCK, SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW,
 		       &ts, sizeof(ts)) == 0)
 		__atomic_add_fetch(
-			&shm->stats.vsock_transport_churn_timeout_ok,
+			&shm->stats.vsock_transport_churn.timeout_ok,
 			1, __ATOMIC_RELAXED);
 
 	/* RACE C. */
 	if (ioctl(cli, IOCTL_VM_SOCKETS_GET_LOCAL_CID, &cid) == 0)
 		__atomic_add_fetch(
-			&shm->stats.vsock_transport_churn_get_cid_ok,
+			&shm->stats.vsock_transport_churn.get_cid_ok,
 			1, __ATOMIC_RELAXED);
 }
 
@@ -451,10 +451,10 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 	socklen_t slen = sizeof(addr);
 	unsigned int burst, i;
 
-	__atomic_add_fetch(&shm->stats.vsock_seq_eom_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_runs, 1, __ATOMIC_RELAXED);
 
 	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS) {
-		__atomic_add_fetch(&shm->stats.vsock_seq_eom_skipped, 1,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_skipped, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
@@ -463,7 +463,7 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 	if (listener < 0)
 		listener = socket(AF_VSOCK, SOCK_STREAM, 0);
 	if (listener < 0) {
-		__atomic_add_fetch(&shm->stats.vsock_seq_eom_skipped, 1,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_skipped, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
@@ -476,7 +476,7 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0 ||
 	    getsockname(listener, (struct sockaddr *)&addr, &slen) < 0 ||
 	    listen(listener, 4) < 0) {
-		__atomic_add_fetch(&shm->stats.vsock_seq_eom_skipped, 1,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_skipped, 1,
 				   __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -485,14 +485,14 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 	if (cli < 0)
 		cli = socket(AF_VSOCK, SOCK_STREAM, 0);
 	if (cli < 0) {
-		__atomic_add_fetch(&shm->stats.vsock_seq_eom_skipped, 1,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_skipped, 1,
 				   __ATOMIC_RELAXED);
 		goto out;
 	}
 	apply_timeouts(cli);
 
 	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.vsock_seq_eom_skipped, 1,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_skipped, 1,
 				   __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -518,10 +518,10 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 
 		r = sendmsg(cli, &mh, MSG_EOR | MSG_NOSIGNAL | MSG_DONTWAIT);
 		if (r >= 0) {
-			__atomic_add_fetch(&shm->stats.vsock_seq_eom_sends_ok,
+			__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_sends_ok,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			__atomic_add_fetch(&shm->stats.vsock_seq_eom_sends_failed,
+			__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_sends_failed,
 					   1, __ATOMIC_RELAXED);
 			if (errno == EBADF || errno == EINVAL ||
 			    errno == ENOTCONN || errno == EPIPE)
@@ -551,11 +551,11 @@ bool vsock_transport_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.vsock_transport_churn_runs,
+	__atomic_add_fetch(&shm->stats.vsock_transport_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_vsock_transport_churn) {
-		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -606,9 +606,9 @@ bool vsock_transport_churn(struct childdata *child)
 {
 	(void)child;
 
-	__atomic_add_fetch(&shm->stats.vsock_transport_churn_runs,
+	__atomic_add_fetch(&shm->stats.vsock_transport_churn.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
+	__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }

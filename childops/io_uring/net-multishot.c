@@ -402,13 +402,13 @@ static int iouring_multishot_iter_setup_pbufs(struct iouring_multishot_iter_ctx 
 {
 	if (register_pbuf_ring(&it->ms, &it->pbuf_ring, &it->pbuf_data)) {
 		it->used_pbuf_ring = true;
-		__atomic_add_fetch(&shm->stats.iouring_multishot_pbuf_ring_ok,
+		__atomic_add_fetch(&shm->stats.iouring_net_multishot.pbuf_ring_ok,
 				   1, __ATOMIC_RELAXED);
 	} else if (provide_buffers_legacy(&it->ms, &it->legacy_bufs)) {
-		__atomic_add_fetch(&shm->stats.iouring_multishot_pbuf_legacy_ok,
+		__atomic_add_fetch(&shm->stats.iouring_net_multishot.pbuf_legacy_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
+		__atomic_add_fetch(&shm->stats.iouring_net_multishot.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -426,14 +426,14 @@ static int iouring_multishot_iter_setup_sockets(struct iouring_multishot_iter_ct
 {
 	it->rxfd = open_udp_loopback(&it->port);
 	if (it->rxfd < 0) {
-		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
+		__atomic_add_fetch(&shm->stats.iouring_net_multishot.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
 	it->txfd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (it->txfd < 0) {
-		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
+		__atomic_add_fetch(&shm->stats.iouring_net_multishot.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -464,10 +464,10 @@ static void iouring_multishot_iter_arm_napi(struct iouring_multishot_iter_ctx *i
 			 IORING_REGISTER_NAPI, &napi_in, 1);
 	if (r == 0) {
 		it->napi_armed = true;
-		__atomic_add_fetch(&shm->stats.iouring_napi_register_ok,
+		__atomic_add_fetch(&shm->stats.iouring_net_multishot.napi_register_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.iouring_napi_register_fail,
+		__atomic_add_fetch(&shm->stats.iouring_net_multishot.napi_register_fail,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -501,7 +501,7 @@ static int iouring_multishot_iter_arm_recv(struct iouring_multishot_iter_ctx *it
 	r = ms_enter(&it->ms, 1, 0);
 	if (r < 0)
 		return -1;
-	__atomic_add_fetch(&shm->stats.iouring_multishot_armed,
+	__atomic_add_fetch(&shm->stats.iouring_net_multishot.armed,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -531,7 +531,7 @@ static void iouring_multishot_iter_traffic(struct iouring_multishot_iter_ctx *it
 		ssize_t n = sendto(it->txfd, payload, sizeof(payload), 0,
 				   (struct sockaddr *)&dst, sizeof(dst));
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.iouring_multishot_packets_sent,
+			__atomic_add_fetch(&shm->stats.iouring_net_multishot.packets_sent,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -539,7 +539,7 @@ static void iouring_multishot_iter_traffic(struct iouring_multishot_iter_ctx *it
 	if (r >= 0) {
 		unsigned int reaped = ms_drain(&it->ms);
 
-		__atomic_add_fetch(&shm->stats.iouring_multishot_completions,
+		__atomic_add_fetch(&shm->stats.iouring_net_multishot.completions,
 				   (unsigned long)reaped, __ATOMIC_RELAXED);
 	}
 }
@@ -571,7 +571,7 @@ static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it)
 	if (ms_submit(&it->ms, &sqe, 1)) {
 		r = ms_enter(&it->ms, 1, 0);
 		if (r >= 0) {
-			__atomic_add_fetch(&shm->stats.iouring_multishot_cancel_submitted,
+			__atomic_add_fetch(&shm->stats.iouring_net_multishot.cancel_submitted,
 					   1, __ATOMIC_RELAXED);
 			(void)ms_drain(&it->ms);
 		}
@@ -584,10 +584,10 @@ static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it)
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, it->ms.fd,
 			 IORING_UNREGISTER_NAPI, &napi_out, 1);
 	if (r == 0)
-		__atomic_add_fetch(&shm->stats.iouring_napi_unregister_ok,
+		__atomic_add_fetch(&shm->stats.iouring_net_multishot.napi_unregister_ok,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.iouring_napi_unregister_fail,
+		__atomic_add_fetch(&shm->stats.iouring_net_multishot.napi_unregister_fail,
 				   1, __ATOMIC_RELAXED);
 
 	memset(&sqe, 0, sizeof(sqe));
@@ -619,7 +619,7 @@ bool iouring_net_multishot(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.iouring_multishot_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.iouring_net_multishot.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
 		return true;
@@ -642,7 +642,7 @@ bool iouring_net_multishot(struct childdata *child)
 							 CHILDOP_LATCH_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
-			__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
+			__atomic_add_fetch(&shm->stats.iouring_net_multishot.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}

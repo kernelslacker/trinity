@@ -708,11 +708,11 @@ static void nat_keepalive_err_cycle(struct nl_ctx *ctx)
 	rc = build_newsa_keepalive(ctx, spi, mode, encap_choice, sa_dir,
 				   interval, auth, crypt);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.nat_t_churn_sa_added,
+		__atomic_add_fetch(&shm->stats.nat_t_churn.sa_added,
 				   1, __ATOMIC_RELAXED);
 
 	if (build_delsa(ctx, spi) == 0)
-		__atomic_add_fetch(&shm->stats.nat_t_churn_sa_deleted,
+		__atomic_add_fetch(&shm->stats.nat_t_churn.sa_deleted,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -996,7 +996,7 @@ static void nat_t_churn_v6(void)
 	struct timespec t0;
 
 	if (nl_open(&ctx, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.nat_t_xfrm6_setup_fail,
+		__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_setup_fail,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -1029,7 +1029,7 @@ static void nat_t_churn_v6(void)
 				outputerr("nat_t_churn: xfrm6 NEWSA rejected (rc=%d), latching unsupported_xfrm6\n",
 					  rc);
 			}
-			__atomic_add_fetch(&shm->stats.nat_t_xfrm6_setup_fail,
+			__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_setup_fail,
 					   1, __ATOMIC_RELAXED);
 			goto out;
 		}
@@ -1038,19 +1038,19 @@ static void nat_t_churn_v6(void)
 	}
 
 	if (!sa_installed) {
-		__atomic_add_fetch(&shm->stats.nat_t_xfrm6_setup_fail,
+		__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_setup_fail,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
 	udp = open_encap_udp6();
 	if (udp < 0) {
-		__atomic_add_fetch(&shm->stats.nat_t_xfrm6_setup_fail,
+		__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_setup_fail,
 				   1, __ATOMIC_RELAXED);
 		goto delsa;
 	}
 
-	__atomic_add_fetch(&shm->stats.nat_t_xfrm6_setup_ok,
+	__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_setup_ok,
 			   1, __ATOMIC_RELAXED);
 
 	{
@@ -1087,7 +1087,7 @@ static void nat_t_churn_v6(void)
 			hdr[1] = htonl(++g_iter);
 			(void)sendto(udp, frame, sizeof(frame), MSG_DONTWAIT,
 				     (struct sockaddr *)&dst, sizeof(dst));
-			__atomic_add_fetch(&shm->stats.nat_t_xfrm6_sendto_runs,
+			__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_sendto_runs,
 					   1, __ATOMIC_RELAXED);
 
 			/* Mid-flight DELSA: fire roughly halfway so the
@@ -1095,7 +1095,7 @@ static void nat_t_churn_v6(void)
 			 * error-return path. */
 			if (!delsa_fired && s == sends / 2U) {
 				if (build_delsa6(&ctx, spi) == 0)
-					__atomic_add_fetch(&shm->stats.nat_t_xfrm6_delsa_races,
+					__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_delsa_races,
 							   1, __ATOMIC_RELAXED);
 				delsa_fired = true;
 			}
@@ -1183,7 +1183,7 @@ static int nat_t_churn_in_ns(void *arg)
 						 __ATOMIC_RELAXED);
 			warn_once_unsupported("NETLINK_XFRM open", errno);
 		}
-		__atomic_add_fetch(&shm->stats.nat_t_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.nat_t_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -1227,7 +1227,7 @@ static int nat_t_churn_in_ns(void *arg)
 			 replay_window, auth, crypt);
 	if (rc != 0)
 		goto out;
-	__atomic_add_fetch(&shm->stats.nat_t_churn_sa_added,
+	__atomic_add_fetch(&shm->stats.nat_t_churn.sa_added,
 			   1, __ATOMIC_RELAXED);
 
 	udp = open_encap_udp();
@@ -1235,13 +1235,13 @@ static int nat_t_churn_in_ns(void *arg)
 		__u32 seq = ++g_iter;
 
 		if (send_esp_in_udp(udp, spi, seq))
-			__atomic_add_fetch(&shm->stats.nat_t_churn_frames_sent,
+			__atomic_add_fetch(&shm->stats.nat_t_churn.frames_sent,
 					   1, __ATOMIC_RELAXED);
 		maybe_drain_recv(udp);
 	}
 
 	if (build_delsa(&ctx, spi) == 0)
-		__atomic_add_fetch(&shm->stats.nat_t_churn_sa_deleted,
+		__atomic_add_fetch(&shm->stats.nat_t_churn.sa_deleted,
 				   1, __ATOMIC_RELAXED);
 
 out:
@@ -1265,7 +1265,7 @@ bool nat_t_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.nat_t_churn_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.nat_t_churn.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_nat_t)
 		return true;
@@ -1283,7 +1283,7 @@ bool nat_t_churn(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.nat_t_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.nat_t_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

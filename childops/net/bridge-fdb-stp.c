@@ -591,7 +591,7 @@ static void bridge_vlan_mass_add(struct nl_ctx *ctx)
 	unsigned int iters, i;
 	unsigned int vid_seed = 0;
 
-	__atomic_add_fetch(&shm->stats.bridge_vlan_mass_runs, 1,
+	__atomic_add_fetch(&shm->stats.bridge_fdb_stp.bridge_vlan_mass_runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_bridge || ns_unsupported_veth)
@@ -641,14 +641,14 @@ static void bridge_vlan_mass_add(struct nl_ctx *ctx)
 
 		rc = build_setlink_vlan_mass(ctx, va_idx, n, &vid_seed);
 		if (rc == -ENOBUFS || rc == -EMSGSIZE)
-			__atomic_add_fetch(&shm->stats.bridge_vlan_mass_enotbufs,
+			__atomic_add_fetch(&shm->stats.bridge_fdb_stp.bridge_vlan_mass_enotbufs,
 					   1, __ATOMIC_RELAXED);
 
 		want = n;
-		cur = __atomic_load_n(&shm->stats.bridge_vlan_mass_max_n,
+		cur = __atomic_load_n(&shm->stats.bridge_fdb_stp.bridge_vlan_mass_max_n,
 				      __ATOMIC_RELAXED);
 		while (want > cur &&
-		       !__atomic_compare_exchange_n(&shm->stats.bridge_vlan_mass_max_n,
+		       !__atomic_compare_exchange_n(&shm->stats.bridge_fdb_stp.bridge_vlan_mass_max_n,
 						    &cur, want, false,
 						    __ATOMIC_RELAXED,
 						    __ATOMIC_RELAXED))
@@ -703,7 +703,7 @@ static int bridge_fdb_stp_iter_bridge_create(struct bridge_fdb_stp_iter_ctx *ctx
 		return -1;
 	}
 	ctx->bridge_added = true;
-	__atomic_add_fetch(&shm->stats.bridge_fdb_stp_bridge_create_ok,
+	__atomic_add_fetch(&shm->stats.bridge_fdb_stp.bridge_create_ok,
 			   1, __ATOMIC_RELAXED);
 
 	ctx->br_idx = (int)if_nametoindex(ctx->br_name);
@@ -750,7 +750,7 @@ static void bridge_fdb_stp_iter_veth_attach(struct bridge_fdb_stp_iter_ctx *ctx)
 				ns_unsupported_veth = true;
 		} else {
 			ctx->veth0_added = true;
-			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_veth_create_ok,
+			__atomic_add_fetch(&shm->stats.bridge_fdb_stp.veth_create_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -759,7 +759,7 @@ static void bridge_fdb_stp_iter_veth_attach(struct bridge_fdb_stp_iter_ctx *ctx)
 		rc = build_veth_create(&ctx->ctx, ctx->veth1a, ctx->veth1b);
 		if (rc == 0) {
 			ctx->veth1_added = true;
-			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_veth_create_ok,
+			__atomic_add_fetch(&shm->stats.bridge_fdb_stp.veth_create_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -878,7 +878,7 @@ static void bridge_fdb_stp_iter_traffic_burst(struct bridge_fdb_stp_iter_ctx *ct
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&sll, sizeof(sll));
 			if (n > 0) {
-				__atomic_add_fetch(&shm->stats.bridge_fdb_stp_raw_send_ok,
+				__atomic_add_fetch(&shm->stats.bridge_fdb_stp.raw_send_ok,
 						   1, __ATOMIC_RELAXED);
 				memcpy(last_src_mac, src_mac,
 				       sizeof(last_src_mac));
@@ -892,7 +892,7 @@ static void bridge_fdb_stp_iter_traffic_burst(struct bridge_fdb_stp_iter_ctx *ct
 	 * same port we sent on. */
 	if (have_last_mac) {
 		if (build_fdb_del(&ctx->ctx, tx_port_idx, last_src_mac) == 0)
-			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_fdb_del_ok,
+			__atomic_add_fetch(&shm->stats.bridge_fdb_stp.fdb_del_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -912,10 +912,10 @@ static void bridge_fdb_stp_iter_stp_toggle(struct bridge_fdb_stp_iter_ctx *ctx)
 		return;
 
 	if (sysfs_stp_write(ctx->br_name, '1'))
-		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_stp_toggle_ok,
+		__atomic_add_fetch(&shm->stats.bridge_fdb_stp.stp_toggle_ok,
 				   1, __ATOMIC_RELAXED);
 	if (sysfs_stp_write(ctx->br_name, '0'))
-		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_stp_toggle_ok,
+		__atomic_add_fetch(&shm->stats.bridge_fdb_stp.stp_toggle_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -942,7 +942,7 @@ static void bridge_fdb_stp_iter_teardown(struct bridge_fdb_stp_iter_ctx *ctx)
 	if (ctx->ctx.fd >= 0) {
 		if (ctx->bridge_added && ctx->br_idx > 0) {
 			if (rtnl_dellink(&ctx->ctx, ctx->br_idx) == 0)
-				__atomic_add_fetch(&shm->stats.bridge_fdb_stp_link_del_ok,
+				__atomic_add_fetch(&shm->stats.bridge_fdb_stp.link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		if (ctx->veth0_added && ctx->port_idx[0] > 0)
@@ -983,7 +983,7 @@ static int bridge_fdb_stp_in_ns(void *arg)
 	};
 
 	if (nl_open(&ictx.ctx, &nl_opts) < 0) {
-		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_setup_failed,
+		__atomic_add_fetch(&shm->stats.bridge_fdb_stp.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -1037,7 +1037,7 @@ bool bridge_fdb_stp(struct childdata *child)
 	struct bridge_fdb_stp_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.bridge_fdb_stp_runs, 1,
+	__atomic_add_fetch(&shm->stats.bridge_fdb_stp.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported || ns_unsupported_bridge)
@@ -1058,7 +1058,7 @@ bool bridge_fdb_stp(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_setup_failed,
+		__atomic_add_fetch(&shm->stats.bridge_fdb_stp.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -1066,7 +1066,7 @@ bool bridge_fdb_stp(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_setup_failed,
+		__atomic_add_fetch(&shm->stats.bridge_fdb_stp.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

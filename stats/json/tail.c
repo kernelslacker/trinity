@@ -20,77 +20,8 @@
 #include "stats/json/internal.h"
 #include "trinity.h"
 
-static const struct stat_field vsock_transport_churn_fields[] = {
-	STAT_FIELD(vsock_transport_churn, runs),
-	STAT_FIELD(vsock_transport_churn, setup_failed),
-	STAT_FIELD(vsock_transport_churn, bind_ok),
-	STAT_FIELD(vsock_transport_churn, connect_ok),
-	STAT_FIELD(vsock_transport_churn, send_ok),
-	STAT_FIELD(vsock_transport_churn, buffer_size_ok),
-	STAT_FIELD(vsock_transport_churn, timeout_ok),
-	STAT_FIELD(vsock_transport_churn, get_cid_ok),
-	STAT_FIELD(vsock, seq_eom_runs),
-	STAT_FIELD(vsock, seq_eom_sends_ok),
-	STAT_FIELD(vsock, seq_eom_sends_failed),
-	STAT_FIELD(vsock, seq_eom_skipped),
-};
 
-static const struct stat_category vsock_transport_churn_category =
-	STAT_CATEGORY("vsock_transport_churn",
-	              vsock_transport_churn_runs,
-	              vsock_transport_churn_fields);
 
-static const struct stat_field psp_key_rotate_fields[] = {
-	STAT_FIELD(psp_key_rotate, runs),
-	STAT_FIELD(psp_key_rotate, setup_failed),
-	STAT_FIELD(psp_key_rotate, netdev_create_ok),
-	STAT_FIELD(psp_key_rotate, family_resolve_ok),
-	STAT_FIELD(psp_key_rotate, dev_get_ok),
-	STAT_FIELD(psp_key_rotate, key_install_ok),
-	STAT_FIELD(psp_key_rotate, spi_set_ok),
-	STAT_FIELD(psp_key_rotate, send_ok),
-	STAT_FIELD(psp_key_rotate, rotate_ok),
-	STAT_FIELD(psp_key_rotate, spi_switch_ok),
-	STAT_FIELD(psp_key_rotate, shutdown_ok),
-	STAT_FIELD(psp, devlink_port_churn_runs),
-	STAT_FIELD(psp, devlink_port_churn_port_add_ok),
-	STAT_FIELD(psp, devlink_port_churn_port_del_ok),
-	STAT_FIELD(psp, devlink_port_churn_vf_spawn_ok),
-	STAT_FIELD(psp, devlink_port_churn_unsupported_latched),
-};
-
-static const struct stat_category psp_key_rotate_category =
-	STAT_CATEGORY("psp_key_rotate",
-	              psp_key_rotate_runs,
-	              psp_key_rotate_fields);
-
-static const struct stat_field afxdp_churn_fields[] = {
-	STAT_FIELD(afxdp_churn, runs),
-	STAT_FIELD(afxdp_churn, setup_failed),
-	STAT_FIELD(afxdp_churn, umem_reg_ok),
-	STAT_FIELD(afxdp_churn, rings_setup_ok),
-	STAT_FIELD(afxdp_churn, prog_load_ok),
-	STAT_FIELD(afxdp_churn, map_create_ok),
-	STAT_FIELD(afxdp_churn, map_update_ok),
-	STAT_FIELD(afxdp_churn, bind_ok),
-	STAT_FIELD(afxdp_churn, link_attach_ok),
-	STAT_FIELD(afxdp_churn, netlink_attach_ok),
-	STAT_FIELD(afxdp_churn, attach_failed),
-	STAT_FIELD(afxdp_churn, send_ok),
-	STAT_FIELD(afxdp_churn, recv_ok),
-	STAT_FIELD(afxdp_churn, map_delete_ok),
-	STAT_FIELD(afxdp_churn, munmap_race_ok),
-	STAT_FIELD(afxdp, xsg_iters),
-	STAT_FIELD(afxdp, tx_metadata_iters),
-	STAT_FIELD(afxdp, tun_bind_iters),
-	STAT_FIELD(afxdp, xsg_bind_failed),
-	STAT_FIELD(afxdp, tx_md_bind_failed),
-};
-
-static const struct stat_category afxdp_churn_category =
-	STAT_CATEGORY("afxdp_churn",
-	              afxdp_churn_runs,
-	              afxdp_churn_fields);
 
 static const struct stat_field kvm_fields[] = {
 	STAT_FIELD(kvm, vcpu_ioctls_dispatched),
@@ -145,23 +76,6 @@ static const struct stat_category nl80211_category =
 	STAT_CATEGORY("nl80211",
 	              nl80211_runs,
 	              nl80211_fields);
-
-static const struct stat_field nat_t_churn_fields[] = {
-	STAT_FIELD(nat_t_churn, runs),
-	STAT_FIELD(nat_t_churn, setup_failed),
-	STAT_FIELD(nat_t_churn, sa_added),
-	STAT_FIELD(nat_t_churn, sa_deleted),
-	STAT_FIELD(nat_t_churn, frames_sent),
-	STAT_FIELD(nat_t, xfrm6_setup_ok),
-	STAT_FIELD(nat_t, xfrm6_setup_fail),
-	STAT_FIELD(nat_t, xfrm6_sendto_runs),
-	STAT_FIELD(nat_t, xfrm6_delsa_races),
-};
-
-static const struct stat_category nat_t_churn_category =
-	STAT_CATEGORY("nat_t_churn",
-	              nat_t_churn_runs,
-	              nat_t_churn_fields);
 
 void dump_stats_json_iouring_zc_and_kvm(void)
 {
