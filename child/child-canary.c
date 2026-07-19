@@ -27,7 +27,7 @@
  * Concrete thresholds.  Kept as #defines rather than CLI flags so the
  * operator-facing surface stays small.
  * The two operator-tunable knobs (slot count, window iters) come in
- * through --canary-slots / --canary-window in params.c.
+ * through --canary-slots / --canary-window in main/params/.
  * -------------------------------------------------------------------- */
 
 /* Lower / upper clamps on --canary-window; the parser enforces both,
