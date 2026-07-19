@@ -568,7 +568,7 @@ static int fou_gue_iter_open_ctx(struct fou_gue_iter_ctx *ctx)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -598,7 +598,7 @@ static int fou_gue_iter_install_port(struct fou_gue_iter_ctx *ctx)
 			  ctx->v6 ? AF_INET6 : AF_INET,
 			  IPPROTO_IPIP, ctx->encap_type);
 	if (rc != 0) {
-		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx_port_install_failed,
+		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.port_install_failed,
 				   1, __ATOMIC_RELAXED);
 		if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
 		    rc == -EAFNOSUPPORT || rc == -ENOPROTOOPT ||
@@ -612,7 +612,7 @@ static int fou_gue_iter_install_port(struct fou_gue_iter_ctx *ctx)
 		return -1;
 	}
 	ctx->port_added = true;
-	__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx_port_install_ok,
+	__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.port_install_ok,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -697,7 +697,7 @@ static void fou_gue_iter_send_burst(struct fou_gue_iter_ctx *ctx)
 				   (struct sockaddr *)&dst, sizeof(dst));
 		}
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx_packet_sent_ok,
+			__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -716,7 +716,7 @@ static void fou_gue_iter_teardown(struct fou_gue_iter_ctx *ctx)
 		if (fou_cmd_port(&ctx->genl, FOU_CMD_DEL, ctx->port,
 				 ctx->v6 ? AF_INET6 : AF_INET,
 				 IPPROTO_IPIP, ctx->encap_type) == 0)
-			__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx_port_delete_ok,
+			__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.port_delete_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 	if (ctx->ctx_open)
@@ -779,14 +779,14 @@ bool fou_gue_mcast_rx(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx_runs, 1,
+	__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_fou_gue_mcast_rx)
 		return true;
 
 	if (kind_unsupported()) {
-		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -804,12 +804,12 @@ bool fou_gue_mcast_rx(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
