@@ -131,11 +131,11 @@ enum stats_field {
 	STATS_FIELD_CALL_COMPLETE,
 	/* kcov_collect()'s per-call total_calls bump.  Children stage the
 	 * count in kcov_child_local_stats and flush in batches (on a
-	 * found-new-edge piggyback, or once per N syscalls) so the
-	 * kcov_shm->total_calls shared cacheline no longer takes a hot
-	 * atomic bump for the dump-side accounting; the shm field is kept
-	 * for the last_edge_at[] / last_efault_at[] stamp value and the
-	 * cold-skip gap denominator only. */
+	 * found-new-edge piggyback, or once per N syscalls), which keeps
+	 * the kcov_shm->total_calls shared cacheline off the per-call
+	 * atomic-bump path for dump-side accounting; that shm field is
+	 * the stamp source for last_edge_at[] / last_efault_at[] and the
+	 * cold-skip gap denominator, so it stays. */
 	STATS_FIELD_TOTAL_CALLS,
 	/* kcov_collect()'s remote_mode call counter.  Same staging /
 	 * batched-flush model as STATS_FIELD_TOTAL_CALLS: bumped on the
