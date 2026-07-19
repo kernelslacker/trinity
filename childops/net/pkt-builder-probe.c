@@ -121,32 +121,32 @@ static int probe_one_recipe(struct pktb_ctx *ctx,
 	pktb_frame_init(&frame);
 	for (li = 0; li < r->n; li++) {
 		if (!pktb_push(&frame, r->layers[li])) {
-			__atomic_add_fetch(&shm->stats.pkt_builder_build_failed,
+			__atomic_add_fetch(&shm->stats.pkt_builder.build_failed,
 					   1, __ATOMIC_RELAXED);
 			return -2;
 		}
 	}
-	__atomic_add_fetch(&shm->stats.pkt_builder_built_ok, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.pkt_builder.built_ok, 1, __ATOMIC_RELAXED);
 
 	truncate_this = ONE_IN(4);
 	pktb_mutate_and_repair(&frame, truncate_this);
 	if (truncate_this)
-		__atomic_add_fetch(&shm->stats.pkt_builder_truncated,
+		__atomic_add_fetch(&shm->stats.pkt_builder.truncated,
 				   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.pkt_builder_mutated, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.pkt_builder.mutated, 1, __ATOMIC_RELAXED);
 
 	rc = pktb_deliver(ctx, &frame);
 	if (rc > 0) {
-		__atomic_add_fetch(&shm->stats.pkt_builder_delivered_ok,
+		__atomic_add_fetch(&shm->stats.pkt_builder.delivered_ok,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
 	if (rc == -3) {
-		__atomic_add_fetch(&shm->stats.pkt_builder_delivery_disabled,
+		__atomic_add_fetch(&shm->stats.pkt_builder.delivery_disabled,
 				   1, __ATOMIC_RELAXED);
 		return -3;
 	}
-	__atomic_add_fetch(&shm->stats.pkt_builder_delivery_failed,
+	__atomic_add_fetch(&shm->stats.pkt_builder.delivery_failed,
 			   1, __ATOMIC_RELAXED);
 	return -1;
 }
@@ -164,14 +164,14 @@ bool pkt_builder_probe(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.pkt_builder_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.pkt_builder.runs, 1, __ATOMIC_RELAXED);
 
 	if (!pktb_probe_self_check_ran) {
 		pktb_probe_self_check_ok = pktb_self_check();
 		pktb_probe_self_check_ran = true;
 	}
 	if (!pktb_probe_self_check_ok) {
-		__atomic_add_fetch(&shm->stats.pkt_builder_setup_failed,
+		__atomic_add_fetch(&shm->stats.pkt_builder.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
@@ -181,7 +181,7 @@ bool pkt_builder_probe(struct childdata *child)
 	}
 
 	if (pktb_probe_disabled) {
-		__atomic_add_fetch(&shm->stats.pkt_builder_setup_failed,
+		__atomic_add_fetch(&shm->stats.pkt_builder.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -207,7 +207,7 @@ bool pkt_builder_probe(struct childdata *child)
 
 		rc = probe_one_recipe(&ctx, &probe_recipes[pick]);
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.pkt_builder_per_recipe[pick],
+			__atomic_add_fetch(&shm->stats.pkt_builder.per_recipe[pick],
 					   1, __ATOMIC_RELAXED);
 		if (rc == -3) {
 			pktb_probe_disabled = true;
