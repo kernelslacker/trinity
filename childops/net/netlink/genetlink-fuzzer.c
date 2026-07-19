@@ -308,7 +308,7 @@ static void genl_on_err(int err, void *arg)
 	(void)arg;
 
 	if (err == -EPERM || err == -EACCES)
-		__atomic_add_fetch(&shm->stats.genetlink_eperm, 1,
+		__atomic_add_fetch(&shm->stats.genetlink_fuzzer.eperm, 1,
 				   __ATOMIC_RELAXED);
 }
 
@@ -372,12 +372,12 @@ static void send_fuzzed_msg(struct nl_ctx *ctx, const struct genl_family_entry *
 	nlh->nlmsg_len = off;
 
 	if (nl_send_drain_errors(ctx, buf, off, seq, genl_on_err, NULL) < 0) {
-		__atomic_add_fetch(&shm->stats.genetlink_send_drain_fail,
+		__atomic_add_fetch(&shm->stats.genetlink_fuzzer.send_drain_fail,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
-	__atomic_add_fetch(&shm->stats.genetlink_msgs_sent, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.genetlink_fuzzer.msgs_sent, 1, __ATOMIC_RELAXED);
 }
 
 /*
@@ -438,7 +438,7 @@ static int genetlink_fuzzer_in_ns(void *arg)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.genetlink_in_ns_open_fail,
+		__atomic_add_fetch(&shm->stats.genetlink_fuzzer.in_ns_open_fail,
 				   1, __ATOMIC_RELAXED);
 		/* check-static: child-output-ok */
 		outputerr("genetlink_fuzzer: nl_open(NETLINK_GENERIC) failed in fresh netns (errno=%d)\n",
@@ -490,13 +490,13 @@ static bool build_catalog(struct genl_catalog *cat)
 		return true;
 
 	if (rc == -EIO)
-		__atomic_add_fetch(&shm->stats.genetlink_discovery_io_err,
+		__atomic_add_fetch(&shm->stats.genetlink_fuzzer.discovery_io_err,
 				   1, __ATOMIC_RELAXED);
 	else if (rc < 0)
-		__atomic_add_fetch(&shm->stats.genetlink_discovery_nlerr,
+		__atomic_add_fetch(&shm->stats.genetlink_fuzzer.discovery_nlerr,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.genetlink_missing_producer,
+		__atomic_add_fetch(&shm->stats.genetlink_fuzzer.missing_producer,
 				   1, __ATOMIC_RELAXED);
 	return false;
 }
@@ -541,9 +541,9 @@ bool genetlink_fuzzer(struct childdata *child)
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.genetlink_families_discovered,
+	__atomic_add_fetch(&shm->stats.genetlink_fuzzer.families_discovered,
 			   cat.count, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.genetlink_discovery_cycles,
+	__atomic_add_fetch(&shm->stats.genetlink_fuzzer.discovery_cycles,
 			   1, __ATOMIC_RELAXED);
 
 	rc = userns_run_in_ns(CLONE_NEWNET, genetlink_fuzzer_in_ns, &cctx);
@@ -552,7 +552,7 @@ bool genetlink_fuzzer(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.genetlink_userns_run_fail,
+		__atomic_add_fetch(&shm->stats.genetlink_fuzzer.userns_run_fail,
 				   1, __ATOMIC_RELAXED);
 		warn_once_unsupported_userns("userns_run_in_ns(CLONE_NEWNET)", EPERM);
 		return true;
@@ -561,7 +561,7 @@ bool genetlink_fuzzer(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.genetlink_userns_run_fail,
+		__atomic_add_fetch(&shm->stats.genetlink_fuzzer.userns_run_fail,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
