@@ -68,3 +68,42 @@ void kcov_cmp_render_hyp_score_bucket_block(long elapsed);
 void kcov_cmp_render_hyp_probe_class_hist_block(long elapsed);
 
 void kcov_cmp_render_childop_cmp_consume_shadow_block(long elapsed);
+
+void kcov_cmp_render_ab_baseline_inject_denom(long elapsed,
+					      unsigned long delta_cmp_inject_arm_a_baseline_fires, unsigned long cur_cmp_inject_arm_a_baseline_fires,
+					      unsigned long delta_cmp_inject_arm_b_baseline_fires, unsigned long cur_cmp_inject_arm_b_baseline_fires,
+					      unsigned long delta_cmp_inject_denom_diverged, unsigned long cur_cmp_inject_denom_diverged,
+					      unsigned int cur_cmp_inject_arm_a_children,
+					      unsigned int cur_cmp_inject_arm_b_children);
+void kcov_cmp_render_handle_arg_op_prop_ring_cohort(long elapsed,
+						    unsigned long delta_prop_ring_argop_arm_b_fires,
+						    unsigned long cur_prop_ring_argop_arm_b_fires,
+						    unsigned int cur_prop_ring_argop_arm_a_children,
+						    unsigned int cur_prop_ring_argop_arm_b_children);
+void kcov_cmp_render_frontier_cold_weight_blend_cohort(long elapsed,
+						       unsigned long delta_frontier_blend_samples,
+						       unsigned long cur_frontier_blend_samples,
+						       unsigned int cur_frontier_blend_arm_a_children,
+						       unsigned int cur_frontier_blend_arm_b_children);
+void kcov_cmp_render_adaptive_remote_kcov_cohort(long elapsed,
+						 unsigned long delta_remote_adaptive_samples,
+						 unsigned long cur_remote_adaptive_samples,
+						 unsigned int cur_remote_adaptive_arm_a_children,
+						 unsigned int cur_remote_adaptive_arm_b_children,
+						 unsigned long cur_remote_adaptive_would_demote,
+						 unsigned long cur_remote_adaptive_would_promote,
+						 unsigned long cur_remote_adaptive_would_force,
+						 unsigned long cur_remote_adaptive_would_gate_promote,
+						 unsigned long cur_remote_adaptive_agree);
+void kcov_cmp_render_per_arg_ownership_sidecar(unsigned long cur_blanket_address_scrub_slots_walked,
+					       unsigned long cur_arg_meta_addr_with_meta,
+					       unsigned long cur_arg_meta_addr_without_meta,
+					       unsigned long cur_arg_meta_argtype_stale,
+					       unsigned long cur_arg_meta_scrub_would_destroy_in,
+					       unsigned long cur_arg_meta_scrub_would_preserve_out);
+void kcov_cmp_render_structure_aware_picker_cohort(long elapsed,
+						   unsigned long delta_mut_structured_shadow_divergences,
+						   unsigned long cur_mut_structured_shadow_divergences,
+						   unsigned long cur_mut_structured_shadow_samples,
+						   unsigned int cur_mut_structured_arm_a_children,
+						   unsigned int cur_mut_structured_arm_b_children);
