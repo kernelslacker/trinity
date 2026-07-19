@@ -118,7 +118,7 @@ static unsigned int linearise_child(const struct corrupt_ptr_breadcrumb_ring *ri
 	return n;
 }
 
-/* Matches stats.c's DEFENSE_DUMP_INTERVAL_SEC.  The two periodic
+/* Matches stats/periodic/counter-rates.c's DEFENSE_DUMP_INTERVAL_SEC.  The two periodic
  * surfaces share a cadence so a triage pass sees the breadcrumb log
  * line directly above the matching attribution-counter rate row. */
 #define BREADCRUMB_DUMP_INTERVAL_SEC	600
