@@ -635,7 +635,7 @@ static void bif_emit_frag_pair(int raw, int ifindex,
 	if (frame_len &&
 	    sendto(raw, frame, frame_len, MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-		__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap_frags_sent,
+		__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap.frags_sent,
 				   1, __ATOMIC_RELAXED);
 
 	/* Second fragment: MF=0, offset = payload1 rounded to 8-byte units. */
@@ -649,7 +649,7 @@ static void bif_emit_frag_pair(int raw, int ifindex,
 	if (frame_len &&
 	    sendto(raw, frame, frame_len, MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-		__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap_frags_sent,
+		__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap.frags_sent,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -774,7 +774,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 					 __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap_brnf_enabled,
+	__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap.brnf_enabled,
 			   1, __ATOMIC_RELAXED);
 
 	if (nfnl_open(&nfnl_nft, &nfnl_opts) < 0)
@@ -839,7 +839,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 		bif_emit_frag_pair(raw, vb_idx, dst_mac, src_mac,
 				   &src_addr, &dst_addr, i,
 				   frag_id_base + i);
-		__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap_bursts,
+		__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap.bursts,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -872,7 +872,7 @@ bool bridge_ip6_refrag_fraggap(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap_runs,
+	__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported || ns_unsupported_bridge ||
