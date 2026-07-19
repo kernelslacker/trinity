@@ -7,13 +7,9 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include "kcov.h"
-#include "shm.h"
-#include "stats.h"
-#include "stats-internal.h"
 #include "stats/json/internal.h"
 #include "syscall.h"
 #include "tables.h"
-#include "trinity.h"
 
 /* Emit one syscall entry. Returns true if anything was printed. Caller is
  * responsible for emitting a leading comma between successive entries. */
