@@ -16,7 +16,6 @@
 
 #include <stddef.h>
 #include <stdio.h>
-#include "stats.h"
 #include "stats-internal.h"
 #include "stats/json/internal.h"
 
