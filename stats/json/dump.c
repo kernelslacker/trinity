@@ -10,7 +10,6 @@
 #include <stdio.h>
 #include "stats-internal.h"
 #include "stats/json/internal.h"
-#include "trinity.h"
 
 void __cold dump_stats_json(void)
 {
