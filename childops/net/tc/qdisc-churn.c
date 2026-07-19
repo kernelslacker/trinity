@@ -343,7 +343,7 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 	__u32 p_major, p_handle, c_major, c_handle, c_parent;
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_runs, 1,
+	__atomic_add_fetch(&shm->stats.tc_qdisc_churn.peek_stack_runs, 1,
 			   __ATOMIC_RELAXED);
 
 	p_idx = rnd_modulo_u32(NR_PEEK_PARENTS);
@@ -379,7 +379,7 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[p_kind_idx] = true;
-		__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_install_fail,
+		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.peek_stack_install_fail,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -389,13 +389,13 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[c_kind_idx] = true;
-		__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_install_fail,
+		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.peek_stack_install_fail,
 				   1, __ATOMIC_RELAXED);
 		(void)build_delqdisc(ctx, ifindex, p_handle, TC_H_ROOT);
 		return;
 	}
 
-	__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_install_ok,
+	__atomic_add_fetch(&shm->stats.tc_qdisc_churn.peek_stack_install_ok,
 			   1, __ATOMIC_RELAXED);
 
 	/*
@@ -453,7 +453,7 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
 			if (n > 0)
-				__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_burst_ok,
+				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.peek_stack_burst_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 
@@ -532,9 +532,9 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 				if (it->dummy_idx > 0)
 					(void)rtnl_setlink_up(&it->nl, it->dummy_idx);
 				it->dummy_added = true;
-				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
+				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.link_create_ok,
 						   1, __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_parent_runs,
+				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.bridge_parent_runs,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
@@ -551,7 +551,7 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 			return -1;
 		}
 		it->dummy_added = true;
-		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
+		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.link_create_ok,
 				   1, __ATOMIC_RELAXED);
 
 		it->dummy_idx = (int)if_nametoindex(it->dummy_name);
@@ -609,7 +609,7 @@ static int tc_qdisc_add_qdisc(struct tc_qdisc_iter_ctx *it)
 			ns_unsupported_qdisc_kind[it->qidx] = true;
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_create_ok,
+	__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qdisc_create_ok,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -629,11 +629,11 @@ static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
 	if (qdisc_kinds[it->qidx].classful) {
 		if (build_newtclass(&it->nl, it->dummy_idx, it->class1, TC_H_ROOT,
 				    qdisc_kinds[it->qidx].name) == 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tclass_create_ok,
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tclass_create_ok,
 					   1, __ATOMIC_RELAXED);
 		if (build_newtclass(&it->nl, it->dummy_idx, it->class2, TC_H_ROOT,
 				    qdisc_kinds[it->qidx].name) == 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tclass_create_ok,
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tclass_create_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -643,7 +643,7 @@ static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
 		rc = build_newtfilter(&it->nl, it->dummy_idx, it->handle,
 				      cls_kinds[cidx]);
 		if (rc == 0) {
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_create_ok,
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tfilter_create_ok,
 					   1, __ATOMIC_RELAXED);
 		} else if (is_unsupported_err(rc)) {
 			ns_unsupported_cls_kind[cidx] = true;
@@ -683,7 +683,7 @@ static void send_udp_gso_burst(int udp, const struct sockaddr_in *dst,
 		n = sendto(udp, payload, sizeof(payload), MSG_DONTWAIT,
 			   (const struct sockaddr *)dst, sizeof(*dst));
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_gso_burst_ok,
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.gso_burst_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -758,7 +758,7 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
 			if (n > 0)
-				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_packet_sent_ok,
+				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.packet_sent_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 
@@ -779,7 +779,7 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 				    qdisc_kinds[qidx2].name,
 				    NLM_F_CREATE | NLM_F_REPLACE);
 		if (rc == 0) {
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_replace_ok,
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qdisc_replace_ok,
 					   1, __ATOMIC_RELAXED);
 		} else if (is_unsupported_err(rc)) {
 			ns_unsupported_qdisc_kind[qidx2] = true;
@@ -788,11 +788,11 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 
 	if (!it->bridge_mode) {
 		if (build_deltfilter(&it->nl, it->dummy_idx, it->handle) == 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_tfilter_del_ok,
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tfilter_del_ok,
 					   1, __ATOMIC_RELAXED);
 
 		if (build_delqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT) == 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_qdisc_del_ok,
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qdisc_del_ok,
 					   1, __ATOMIC_RELAXED);
 	} else if (it->udp >= 0 && it->dummy_idx > 0) {
 		struct sockaddr_in dst;
@@ -811,9 +811,9 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 				     (struct sockaddr *)&dst, sizeof(dst));
 		}
 		if (rtnl_dellink(&it->nl, it->dummy_idx) == 0) {
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.link_del_ok,
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_dellink_race_ok,
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.bridge_dellink_race_ok,
 					   1, __ATOMIC_RELAXED);
 			it->slave_dellinked = true;
 		}
@@ -865,7 +865,7 @@ static int tc_qdisc_churn_in_ns(void *arg)
 	if (nl_open(&it->nl, &nl_opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
 			ns_unsupported_rtnl = true;
-		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -911,7 +911,7 @@ out:
 	if (it->nl.fd >= 0) {
 		if (it->dummy_added && it->dummy_idx > 0 && !it->slave_dellinked) {
 			if (rtnl_dellink(&it->nl, it->dummy_idx) == 0)
-				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
+				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		if (it->bridge_idx > 0)
@@ -939,7 +939,7 @@ bool tc_qdisc_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.tc_qdisc_churn_runs, 1,
+	__atomic_add_fetch(&shm->stats.tc_qdisc_churn.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_tc_qdisc)

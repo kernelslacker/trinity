@@ -179,24 +179,24 @@ static void dump_stats_render_nftables_churn(void)
 
 static void dump_stats_render_tc_qdisc_churn(void)
 {
-	if (shm->stats.tc_qdisc_churn_runs) {
-		stat_row("tc_qdisc_churn", "runs",              shm->stats.tc_qdisc_churn_runs);
-		stat_row("tc_qdisc_churn", "setup_failed",      shm->stats.tc_qdisc_churn_setup_failed);
-		stat_row("tc_qdisc_churn", "link_create_ok",    shm->stats.tc_qdisc_churn_link_create_ok);
-		stat_row("tc_qdisc_churn", "qdisc_create_ok",   shm->stats.tc_qdisc_churn_qdisc_create_ok);
-		stat_row("tc_qdisc_churn", "tclass_create_ok",  shm->stats.tc_qdisc_churn_tclass_create_ok);
-		stat_row("tc_qdisc_churn", "tfilter_create_ok", shm->stats.tc_qdisc_churn_tfilter_create_ok);
-		stat_row("tc_qdisc_churn", "packet_sent_ok",    shm->stats.tc_qdisc_churn_packet_sent_ok);
-		stat_row("tc_qdisc_churn", "qdisc_replace_ok",  shm->stats.tc_qdisc_churn_qdisc_replace_ok);
-		stat_row("tc_qdisc_churn", "tfilter_del_ok",    shm->stats.tc_qdisc_churn_tfilter_del_ok);
-		stat_row("tc_qdisc_churn", "qdisc_del_ok",      shm->stats.tc_qdisc_churn_qdisc_del_ok);
-		stat_row("tc_qdisc_churn", "link_del_ok",       shm->stats.tc_qdisc_churn_link_del_ok);
-		stat_row("tc_qdisc_churn", "peek_stack_runs",         shm->stats.tc_qdisc_peek_stack_runs);
-		stat_row("tc_qdisc_churn", "peek_stack_install_ok",   shm->stats.tc_qdisc_peek_stack_install_ok);
-		stat_row("tc_qdisc_churn", "peek_stack_install_fail", shm->stats.tc_qdisc_peek_stack_install_fail);
-		stat_row("tc_qdisc_churn", "peek_stack_burst_ok",     shm->stats.tc_qdisc_peek_stack_burst_ok);
-		stat_row("tc_qdisc_churn", "bridge_parent_runs",      shm->stats.tc_qdisc_churn_bridge_parent_runs);
-		stat_row("tc_qdisc_churn", "bridge_dellink_race_ok",  shm->stats.tc_qdisc_churn_bridge_dellink_race_ok);
+	if (shm->stats.tc_qdisc_churn.runs) {
+		stat_row("tc_qdisc_churn", "runs",              shm->stats.tc_qdisc_churn.runs);
+		stat_row("tc_qdisc_churn", "setup_failed",      shm->stats.tc_qdisc_churn.setup_failed);
+		stat_row("tc_qdisc_churn", "link_create_ok",    shm->stats.tc_qdisc_churn.link_create_ok);
+		stat_row("tc_qdisc_churn", "qdisc_create_ok",   shm->stats.tc_qdisc_churn.qdisc_create_ok);
+		stat_row("tc_qdisc_churn", "tclass_create_ok",  shm->stats.tc_qdisc_churn.tclass_create_ok);
+		stat_row("tc_qdisc_churn", "tfilter_create_ok", shm->stats.tc_qdisc_churn.tfilter_create_ok);
+		stat_row("tc_qdisc_churn", "packet_sent_ok",    shm->stats.tc_qdisc_churn.packet_sent_ok);
+		stat_row("tc_qdisc_churn", "qdisc_replace_ok",  shm->stats.tc_qdisc_churn.qdisc_replace_ok);
+		stat_row("tc_qdisc_churn", "tfilter_del_ok",    shm->stats.tc_qdisc_churn.tfilter_del_ok);
+		stat_row("tc_qdisc_churn", "qdisc_del_ok",      shm->stats.tc_qdisc_churn.qdisc_del_ok);
+		stat_row("tc_qdisc_churn", "link_del_ok",       shm->stats.tc_qdisc_churn.link_del_ok);
+		stat_row("tc_qdisc_churn", "peek_stack_runs",         shm->stats.tc_qdisc_churn.peek_stack_runs);
+		stat_row("tc_qdisc_churn", "peek_stack_install_ok",   shm->stats.tc_qdisc_churn.peek_stack_install_ok);
+		stat_row("tc_qdisc_churn", "peek_stack_install_fail", shm->stats.tc_qdisc_churn.peek_stack_install_fail);
+		stat_row("tc_qdisc_churn", "peek_stack_burst_ok",     shm->stats.tc_qdisc_churn.peek_stack_burst_ok);
+		stat_row("tc_qdisc_churn", "bridge_parent_runs",      shm->stats.tc_qdisc_churn.bridge_parent_runs);
+		stat_row("tc_qdisc_churn", "bridge_dellink_race_ok",  shm->stats.tc_qdisc_churn.bridge_dellink_race_ok);
 	}
 }
 
