@@ -10,12 +10,10 @@
  */
 
 #include <stddef.h>
-#include <linux/io_uring.h>
 
 #include "config.h"
 
 #include "struct_catalog.h"
-#include "trinity.h"
 
 const struct syscall_struct_arg struct_catalog_registry_io_uring[] = {
 	/* io_uring_setup(u32, struct io_uring_params *) */
