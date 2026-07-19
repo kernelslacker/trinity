@@ -261,7 +261,7 @@ retry:
 		 * Outer mode load is RELAXED -- the mode is parse-time
 		 * configured and never mutated at runtime, so a one-pick
 		 * tear is impossible.  Matches the satcool mode-load
-		 * shape exactly (random-syscall.c silent-regime
+		 * shape exactly (pickers.c silent-regime
 		 * accept block). */
 		{
 			enum frontier_group_antilock_mode antilock_mode =
