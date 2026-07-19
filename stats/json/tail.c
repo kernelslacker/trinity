@@ -12,13 +12,10 @@
  * cluster.
  */
 
-#include <stddef.h>
 #include <stdio.h>
 #include "shm.h"
-#include "stats.h"
 #include "stats-internal.h"
 #include "stats/json/internal.h"
-#include "trinity.h"
 
 
 
