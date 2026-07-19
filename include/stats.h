@@ -90,6 +90,7 @@
 #include "stats/subsys/mpls_label_stack_rx.h"
 #include "stats/subsys/mpls_route_churn.h"
 #include "stats/subsys/msg_zerocopy_churn.h"
+#include "stats/subsys/netdev_netns_migrate.h"
 #include "stats/subsys/netlink_monitor_race.h"
 #include "stats/subsys/netns_mountns_setup.h"
 #include "stats/subsys/netns_teardown.h"
@@ -1375,16 +1376,8 @@ struct stats_s {
 	/* ip6erspan_netns_migrate accounting.  See stats/subsys/ip6erspan_netns_migrate.h. */
 	struct ip6erspan_netns_migrate_stats ip6erspan_netns_migrate __attribute__((aligned(64)));
 
-	/* netdev_netns_migrate childop counters */
-	unsigned long nnm_iters;				/* total netdev_netns_migrate invocations */
-	unsigned long nnm_eperm;				/* helper -EPERM or RTM_NEWLINK EPERM */
-	unsigned long nnm_unsupported;				/* per-kind ENOENT/EAFNOSUPPORT/EPROTONOSUPPORT/EOPNOTSUPP at create */
-	unsigned long nnm_pin_sock_ok;				/* AF_INET SOCK_DGRAM pinned in source ns */
-	unsigned long nnm_link_create_ok;			/* RTM_NEWLINK created the netdev in the source ns */
-	unsigned long nnm_migrate_ok;				/* RTM_SETLINK IFLA_NET_NS_FD moved the netdev to the sibling ns */
-	unsigned long nnm_migrate_rejected;			/* setlink IFLA_NET_NS_FD returned EOPNOTSUPP/EINVAL */
-	unsigned long nnm_up_ok;				/* RTM_SETLINK IFF_UP in target ns succeeded */
-	unsigned long nnm_addr_ok;				/* RTM_NEWADDR IPv4 in target ns succeeded */
+	/* netdev_netns_migrate accounting.  See stats/subsys/netdev_netns_migrate.h. */
+	struct netdev_netns_migrate_stats netdev_netns_migrate __attribute__((aligned(64)));
 
 	/* ipvs_sysctl_writer accounting.  See stats/subsys/ipvs_sysctl_writer.h. */
 	struct ipvs_sysctl_writer_stats ipvs_sysctl_writer __attribute__((aligned(64)));
@@ -2863,29 +2856,6 @@ struct stats_s {
 	 * with a growable registry.
 	 */
 	unsigned long heap_extra_regions_overflow;
-
-	/*
-	 * netdev_netns_migrate latched itself off after helper -EPERM
-	 * or a setup-side EPERM/setns/unshare failure.  One-shot per
-	 * child first-observation, mirroring the ip6erspan_netns_migrate
-	 * counter above -- a non-zero value fingerprints a host where
-	 * the unprivileged userns + private-netns setup this childop
-	 * relies on is unavailable (user.max_user_namespaces=0 /
-	 * kernel.unprivileged_userns_clone=0 / capability restriction).
-	 */
-	unsigned long nnm_unsupported_observed;
-
-	/*
-	 * netdev_netns_migrate observed -EOPNOTSUPP from the post-
-	 * migration RTM_SETLINK IFF_UP: the kernel refused to bring
-	 * the migrated device up in the target ns for the rolled
-	 * kind, so create + migrate + teardown still walk but the
-	 * post-migration drive step cannot fire.  One-shot per child
-	 * first-observation; a non-zero value is the fingerprint of
-	 * a kernel build where one of the rolled kinds cannot be
-	 * brought up in an unprivileged userns-owned netns.
-	 */
-	unsigned long nnm_drive_unsupported_observed;
 
 	/* sysfs_string_race childop counters */
 	unsigned long sysfs_string_race_runs;		/* total sysfs_string_race invocations */

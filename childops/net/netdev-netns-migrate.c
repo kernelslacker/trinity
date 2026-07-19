@@ -168,7 +168,7 @@ static void latch_master(struct childdata *child)
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 	}
-	__atomic_add_fetch(&shm->stats.nnm_unsupported_observed,
+	__atomic_add_fetch(&shm->stats.netdev_netns_migrate.unsupported_observed,
 			   1, __ATOMIC_RELAXED);
 }
 
@@ -399,7 +399,7 @@ static int nnm_iter_setup(struct nnm_iter_ctx *ctx,
 
 	ctx->pin_sock = nnm_pin_source_socket();
 	if (ctx->pin_sock >= 0)
-		__atomic_add_fetch(&shm->stats.nnm_pin_sock_ok,
+		__atomic_add_fetch(&shm->stats.netdev_netns_migrate.pin_sock_ok,
 				   1, __ATOMIC_RELAXED);
 
 	if (nl_open(&ctx->src_nl, opts) < 0)
@@ -413,17 +413,17 @@ static int nnm_iter_create(struct nnm_iter_ctx *ctx)
 
 	if (rc != 0) {
 		if (rc == -EPERM) {
-			__atomic_add_fetch(&shm->stats.nnm_eperm,
+			__atomic_add_fetch(&shm->stats.netdev_netns_migrate.eperm,
 					   1, __ATOMIC_RELAXED);
 			latch_master(ctx->child);
 		} else if (rc == -ENOENT || rc == -EAFNOSUPPORT ||
 			   rc == -EPROTONOSUPPORT || rc == -EOPNOTSUPP) {
-			__atomic_add_fetch(&shm->stats.nnm_unsupported,
+			__atomic_add_fetch(&shm->stats.netdev_netns_migrate.unsupported,
 					   1, __ATOMIC_RELAXED);
 		}
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.nnm_link_create_ok, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.netdev_netns_migrate.link_create_ok, 1, __ATOMIC_RELAXED);
 
 	ctx->ifindex = (int)if_nametoindex(ctx->ifname);
 	if (ctx->ifindex <= 0)
@@ -461,11 +461,11 @@ static int nnm_iter_migrate(struct nnm_iter_ctx *ctx)
 	rc = nnm_setlink_netns(&ctx->src_nl, ctx->ifindex, ctx->tgt_ns_fd);
 	if (rc != 0) {
 		if (rc == -EOPNOTSUPP || rc == -EINVAL)
-			__atomic_add_fetch(&shm->stats.nnm_migrate_rejected,
+			__atomic_add_fetch(&shm->stats.netdev_netns_migrate.migrate_rejected,
 					   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.nnm_migrate_ok, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.netdev_netns_migrate.migrate_ok, 1, __ATOMIC_RELAXED);
 	ctx->migrated = true;
 
 	/* Best-effort read on the pinned source-ns socket.  Nothing
@@ -497,18 +497,18 @@ static void nnm_iter_drive_target(struct nnm_iter_ctx *ctx,
 
 	rc = nnm_setlink_up(&ctx->tgt_nl, ctx->ifindex);
 	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.nnm_up_ok,
+		__atomic_add_fetch(&shm->stats.netdev_netns_migrate.up_ok,
 				   1, __ATOMIC_RELAXED);
 	} else if (rc == -EOPNOTSUPP && !ns_unsupported_drive) {
 		ns_unsupported_drive = true;
-		__atomic_add_fetch(&shm->stats.nnm_drive_unsupported_observed,
+		__atomic_add_fetch(&shm->stats.netdev_netns_migrate.drive_unsupported_observed,
 				   1, __ATOMIC_RELAXED);
 	}
 
 	rc = nnm_newaddr_v4(&ctx->tgt_nl, ctx->ifindex,
 			    (__u8)(1U + (g_iter & 0x3fU)));
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.nnm_addr_ok,
+		__atomic_add_fetch(&shm->stats.netdev_netns_migrate.addr_ok,
 				   1, __ATOMIC_RELAXED);
 
 	(void)nnm_dellink(&ctx->tgt_nl, ctx->ifindex);
@@ -581,7 +581,7 @@ bool netdev_netns_migrate(struct childdata *child)
 {
 	unsigned int iters, i;
 
-	__atomic_add_fetch(&shm->stats.nnm_iters, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.netdev_netns_migrate.iters, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_netdev_migrate)
 		return true;
@@ -598,7 +598,7 @@ bool netdev_netns_migrate(struct childdata *child)
 				      netdev_netns_migrate_in_ns, child);
 		if (rc == -EPERM) {
 			latch_master(child);
-			__atomic_add_fetch(&shm->stats.nnm_eperm,
+			__atomic_add_fetch(&shm->stats.netdev_netns_migrate.eperm,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
