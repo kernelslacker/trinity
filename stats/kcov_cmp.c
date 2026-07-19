@@ -53,25 +53,8 @@
 #include "version.h"
 
 
-/*
- * kcov_cmp_rate_line: emit the periodic scalar "name +delta (rate/s, total)"
- * row that this TU repeats for every window-delta counter.  Gate on delta
- * matches the previous inline pattern -- zero-delta counters remain silent
- * and unarmed rows never show.  Keep the format string identical: this is
- * an output-contract row consumed by grep-safe scans over stats.log.
- */
-static inline void kcov_cmp_rate_line(long elapsed, const char *name,
-				      unsigned long delta, unsigned long total)
-{
-	unsigned long rate_milli;
+#include "stats/kcov/cmp/internal.h"
 
-	if (delta == 0)
-		return;
-	rate_milli = (delta * 1000UL) / (unsigned long)elapsed;
-	stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-			name, delta,
-			rate_milli / 1000, rate_milli % 1000, total);
-}
 /*
  * observability table: top syscalls by per-window
  * cmp-insert delta, with the matching injected / hint_pc_wins / edge

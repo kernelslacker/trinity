@@ -152,6 +152,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard stats/childop/*.c) \
 		   $(wildcard stats/network/*.c) \
 		   $(wildcard stats/kcov/*.c) \
+		   $(wildcard stats/kcov/cmp/*.c) \
 		   $(wildcard stats/periodic/*.c) \
 		   $(wildcard strategy/*.c) \
 		   $(wildcard struct_catalog/*.c) \
@@ -242,6 +243,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/childop/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/network/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/kcov/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard stats/kcov/cmp/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/periodic/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard strategy/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard struct_catalog/*.c))) \
