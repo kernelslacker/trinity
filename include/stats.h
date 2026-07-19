@@ -118,6 +118,7 @@
 #include "stats/subsys/sysv_shm_orphan_race.h"
 #include "stats/subsys/tc_live_traffic.h"
 #include "stats/subsys/tc_mirred_blockcast.h"
+#include "stats/subsys/tc_qdisc_churn.h"
 #include "stats/subsys/tcp_ao_rotate.h"
 #include "stats/subsys/tcp_ulp_swap_churn.h"
 #include "stats/subsys/tipc_link_churn.h"
@@ -1120,25 +1121,8 @@ struct stats_s {
 	unsigned long nft_l4frag_send_ok;		/* raw IPv4 fragment sendto returned >0 */
 	unsigned long nft_l4frag_send_failed;		/* raw IPv4 fragment sendto returned <=0 (incl. EPERM on raw open) */
 
-	/* tc_qdisc_churn childop counters */
-	unsigned long tc_qdisc_churn_runs;		/* total tc_qdisc_churn invocations */
-	unsigned long tc_qdisc_churn_setup_failed;	/* unshare / rtnl_open / dummy latched */
-	unsigned long tc_qdisc_churn_link_create_ok;	/* RTM_NEWLINK type=dummy accepted */
-	unsigned long tc_qdisc_churn_qdisc_create_ok;	/* RTM_NEWQDISC root accepted */
-	unsigned long tc_qdisc_churn_tclass_create_ok;	/* RTM_NEWTCLASS accepted (per class) */
-	unsigned long tc_qdisc_churn_tfilter_create_ok;	/* RTM_NEWTFILTER accepted */
-	unsigned long tc_qdisc_churn_packet_sent_ok;	/* loopback UDP sendto on dummy returned >0 */
-	unsigned long tc_qdisc_churn_qdisc_replace_ok;	/* RTM_NEWQDISC NLM_F_REPLACE accepted (mid-flow swap) */
-	unsigned long tc_qdisc_churn_tfilter_del_ok;	/* RTM_DELTFILTER bulk-del accepted */
-	unsigned long tc_qdisc_churn_qdisc_del_ok;	/* RTM_DELQDISC root accepted */
-	unsigned long tc_qdisc_churn_link_del_ok;	/* RTM_DELLINK on dummy accepted */
-	unsigned long tc_qdisc_peek_stack_runs;		/* deliberate peek-x-peek stack sub-mode fired */
-	unsigned long tc_qdisc_peek_stack_install_ok;	/* parent + child grafted successfully */
-	unsigned long tc_qdisc_peek_stack_install_fail;	/* parent or child install rejected */
-	unsigned long tc_qdisc_peek_stack_burst_ok;	/* loopback UDP sendto on stacked tree returned >0 */
-	unsigned long tc_qdisc_churn_bridge_parent_runs;	/* iter used a bridge slave veth as qdisc parent */
-	unsigned long tc_qdisc_churn_bridge_dellink_race_ok;	/* RTM_DELLINK on bridge slave port accepted (raced flush burst) */
-	unsigned long tc_qdisc_churn_gso_burst_ok;	/* UDP_SEGMENT sendto produced a GSO skb (reaches qdisc_pkt_len_segs_init) */
+	/* tc_qdisc_churn accounting.  See stats/subsys/tc_qdisc_churn.h. */
+	struct tc_qdisc_churn_stats tc_qdisc_churn __attribute__((aligned(64)));
 
 	/* tc_mirred_blockcast accounting.  See stats/subsys/tc_mirred_blockcast.h. */
 	struct tc_mirred_blockcast_stats tc_mirred_blockcast __attribute__((aligned(64)));
