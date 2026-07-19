@@ -7,39 +7,10 @@
  * --enable-fds / --disable-fds rows.
  */
 
-#include <ctype.h>
-#include <errno.h>
-#include <getopt.h>
-#include <limits.h>
-#include <sys/resource.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
-#include "arg-len-semantics.h"
-#include "bdevs.h"
-#include "child.h"
-#include "blob_mutator.h"
-#include "cmp-frontier.h"
-#include "cmp_hints.h"
-#include "cmsg-richness.h"
 #include "fd.h"
-#include "kcov.h"
-#include "net.h"
 #include "params.h"
-#include "domains.h"
-#include "random.h"
-#include "reach-band.h"
-#include "self_cgroup.h"
-#include "strategy.h"
-#include "syscall.h"
-#include "tables.h"
-#include "taint.h"
-#include "trinity.h"	// progname, max_files_rlimit
-#include "utils.h"
-
-#include "kernel/hw_breakpoint.h"
-#include "kernel/socket.h"
 
 #include "internal.h"
 
