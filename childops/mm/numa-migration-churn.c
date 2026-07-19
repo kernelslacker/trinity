@@ -173,7 +173,7 @@ static void parse_online_nodes(void)
 	if (f == NULL) {
 		outputerr("numa_migration_churn: fopen(/sys/devices/system/node/online) failed: %s\n",
 			  strerror(errno));
-		__atomic_add_fetch(&shm->stats.numa_migration_sysfs_unreadable,
+		__atomic_add_fetch(&shm->stats.numa_migration.sysfs_unreadable,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -181,7 +181,7 @@ static void parse_online_nodes(void)
 	if (fgets(buf, sizeof(buf), f) == NULL) {
 		outputerr("numa_migration_churn: fgets(/sys/devices/system/node/online) failed: %s\n",
 			  strerror(errno));
-		__atomic_add_fetch(&shm->stats.numa_migration_sysfs_unreadable,
+		__atomic_add_fetch(&shm->stats.numa_migration.sysfs_unreadable,
 				   1, __ATOMIC_RELAXED);
 		fclose(f);
 		return;
@@ -454,12 +454,12 @@ bool numa_migration_churn(struct childdata *child)
 	}
 
 	if (ns_unsupported_numa) {
-		__atomic_add_fetch(&shm->stats.numa_migration_no_numa,
+		__atomic_add_fetch(&shm->stats.numa_migration.no_numa,
 				   1, __ATOMIC_RELAXED);
 		return false;
 	}
 
-	__atomic_add_fetch(&shm->stats.numa_migration_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.numa_migration.runs, 1, __ATOMIC_RELAXED);
 
 	m = get_map_with_prot(PROT_READ | PROT_WRITE);
 	if (m == NULL)
@@ -497,10 +497,10 @@ bool numa_migration_churn(struct childdata *child)
 	}
 
 	if (calls)
-		__atomic_add_fetch(&shm->stats.numa_migration_calls,
+		__atomic_add_fetch(&shm->stats.numa_migration.calls,
 				   calls, __ATOMIC_RELAXED);
 	if (failed)
-		__atomic_add_fetch(&shm->stats.numa_migration_failed,
+		__atomic_add_fetch(&shm->stats.numa_migration.failed,
 				   failed, __ATOMIC_RELAXED);
 
 	/* Reset the process-wide policy so a subsequent op (in this
