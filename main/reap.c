@@ -1824,6 +1824,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
  */
 static void stall_genocide(void)
 {
+	unsigned int want = max(1U, max_children / 4);
 	unsigned int killed = 0;
 	unsigned int i;
 
@@ -1838,7 +1839,7 @@ static void stall_genocide(void)
 				killed++;
 			}
 		}
-		if (killed == (max_children / 4))
+		if (killed == want)
 			break;
 	}
 }
