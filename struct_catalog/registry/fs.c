@@ -18,20 +18,13 @@
 
 #include <stddef.h>
 #include <fcntl.h>
-#include <linux/fs.h>
-#include <linux/mount.h>
 #include <linux/quota.h>
 #include <linux/dqblk_xfs.h>
 #include <linux/landlock.h>
 
 #include "config.h"
 
-#ifdef USE_XATTR_ARGS
-#include <linux/xattr.h>
-#endif
-
 #include "struct_catalog.h"
-#include "trinity.h"
 
 #include "kernel/fcntl.h"
 
