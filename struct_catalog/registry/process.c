@@ -13,18 +13,13 @@
  */
 
 #include <stddef.h>
-#include <signal.h>
 #include <linux/futex.h>
 
 #include "config.h"
 
 #include "arch.h"
-#ifdef X86
-#include <asm/ldt.h>		/* struct user_desc -- modify_ldt arg2 */
-#endif
 
 #include "struct_catalog.h"
-#include "trinity.h"
 
 /*
  * futex_timeout_ops: the op subset where a4 (utime) is a struct
