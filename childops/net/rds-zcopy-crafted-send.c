@@ -128,11 +128,11 @@ static int rds_zcopy_iter_enable_zc(struct rds_zcopy_iter_ctx *it)
 	int one = 1;
 
 	if (setsockopt(it->sfd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) < 0) {
-		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_setup_failed,
+		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_zc_enable_ok,
+	__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.zc_enable_ok,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -158,7 +158,7 @@ static int rds_zcopy_iter_open_sock(struct rds_zcopy_iter_ctx *it)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_setup_failed,
+		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -168,13 +168,13 @@ static int rds_zcopy_iter_open_sock(struct rds_zcopy_iter_ctx *it)
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	addr.sin_port        = 0;
 	if (bind(it->sfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_setup_failed,
+		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		close(it->sfd);
 		it->sfd = -1;
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_bind_ok,
+	__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.bind_ok,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -192,7 +192,7 @@ static int rds_zcopy_iter_map_pages(struct rds_zcopy_iter_ctx *it)
 	if (it->region == MAP_FAILED) {
 		it->region = NULL;
 		it->region_len = 0;
-		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_setup_failed,
+		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -231,7 +231,7 @@ static void rds_zcopy_iter_punch_hole(struct rds_zcopy_iter_ctx *it)
 		return;
 	it->hole_addr = hole;
 	it->hole_idx = idx;
-	__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_hole_ok,
+	__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.hole_ok,
 			   1, __ATOMIC_RELAXED);
 }
 
@@ -306,19 +306,19 @@ static void rds_zcopy_iter_send_faulting(struct rds_zcopy_iter_ctx *it)
 
 	r = sendmsg(it->sfd, &msg, MSG_ZEROCOPY | MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (r >= 0) {
-		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_sends_ok,
+		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.sends_ok,
 				   1, __ATOMIC_RELAXED);
 	} else if (errno == EFAULT) {
 		/* The intended path: GUP hit the hole and unwound via
 		 * put_page + rds_message_put page-list free. */
-		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_sends_efault,
+		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.sends_efault,
 				   1, __ATOMIC_RELAXED);
 	} else {
 		/* Any other errno (EAGAIN / EDESTADDRREQ / EHOSTUNREACH /
 		 * EINVAL / EOPNOTSUPP) is coverage of a rejection edge -- the
 		 * pin walk may or may not have run before the reject, but the
 		 * counter bump keeps the outcome visible in post-mortem. */
-		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_sends_failed,
+		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.sends_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -350,7 +350,7 @@ static void rds_zcopy_iter_drain_errqueue(struct rds_zcopy_iter_ctx *it)
 		r = recvmsg(it->sfd, &msg, MSG_ERRQUEUE | MSG_DONTWAIT);
 		if (r < 0)
 			break;
-		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_errqueue_drained,
+		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.errqueue_drained,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -435,11 +435,11 @@ bool rds_zcopy_crafted_send(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_runs,
+	__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (rds_unsupported) {
-		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send_setup_failed,
+		__atomic_add_fetch(&shm->stats.rds_zcopy_crafted_send.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

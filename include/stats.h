@@ -99,6 +99,7 @@
 #include "stats/subsys/pidfd_storm.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/procfs_writer.h"
+#include "stats/subsys/rds_zcopy_crafted_send.h"
 #include "stats/subsys/recipe.h"
 #include "stats/subsys/refcount_audit.h"
 #include "stats/subsys/rtnl_vf_broadcast.h"
@@ -1358,16 +1359,8 @@ struct stats_s {
 	/* msg_zerocopy_churn accounting.  See stats/subsys/msg_zerocopy_churn.h. */
 	struct msg_zerocopy_churn_stats msg_zerocopy_churn __attribute__((aligned(64)));
 
-	/* rds_zcopy_crafted_send childop counters */
-	unsigned long rds_zcopy_crafted_send_runs;			/* total rds_zcopy_crafted_send invocations */
-	unsigned long rds_zcopy_crafted_send_setup_failed;		/* socket(AF_RDS) / bind / SO_ZEROCOPY / mmap / unsupported latch fired */
-	unsigned long rds_zcopy_crafted_send_bind_ok;			/* bind(AF_RDS, 127.0.0.1:0) accepted */
-	unsigned long rds_zcopy_crafted_send_zc_enable_ok;		/* setsockopt(SO_ZEROCOPY, 1) accepted on the AF_RDS sock */
-	unsigned long rds_zcopy_crafted_send_hole_ok;			/* munmap punched a hole in the backing region (pin walk will fault) */
-	unsigned long rds_zcopy_crafted_send_sends_ok;			/* sendmsg(MSG_ZEROCOPY) returned >=0 (full pin walk completed) */
-	unsigned long rds_zcopy_crafted_send_sends_efault;		/* sendmsg(MSG_ZEROCOPY) returned EFAULT (partial-pin unwind reached) */
-	unsigned long rds_zcopy_crafted_send_sends_failed;		/* sendmsg(MSG_ZEROCOPY) returned a non-EFAULT error (any errno) */
-	unsigned long rds_zcopy_crafted_send_errqueue_drained;		/* recvmsg(MSG_ERRQUEUE) drained at least one zcopy completion cookie */
+	/* rds_zcopy_crafted_send accounting.  See stats/subsys/rds_zcopy_crafted_send.h. */
+	struct rds_zcopy_crafted_send_stats rds_zcopy_crafted_send __attribute__((aligned(64)));
 
 	/* iouring_send_zc_churn accounting.  See stats/subsys/iouring_send_zc_churn.h. */
 	struct iouring_send_zc_churn_stats iouring_send_zc_churn __attribute__((aligned(64)));
