@@ -128,27 +128,27 @@ const struct stat_category nftables_churn_category =
 
 
 static const struct stat_field xfrm_ah_esn_fields[] = {
-	STAT_FIELD(xfrm_ah_esn, setup_ok),
-	STAT_FIELD(xfrm_ah_esn, setup_fail),
-	STAT_FIELD(xfrm_ah_esn, async_runs),
-	STAT_FIELD(xfrm_ah_esn, delsa_races),
+	STAT_FIELD_SUB(xfrm_ah_esn, setup_ok),
+	STAT_FIELD_SUB(xfrm_ah_esn, setup_fail),
+	STAT_FIELD_SUB(xfrm_ah_esn, async_runs),
+	STAT_FIELD_SUB(xfrm_ah_esn, delsa_races),
 };
 
 const struct stat_category xfrm_ah_esn_category =
 	STAT_CATEGORY("xfrm_ah_esn",
-	              xfrm_ah_esn_async_runs,
+	              xfrm_ah_esn.async_runs,
 	              xfrm_ah_esn_fields);
 
 static const struct stat_field xfrm_compat_fields[] = {
-	STAT_FIELD(xfrm_compat, sweep_runs),
-	STAT_FIELD(xfrm_compat, sends_ok),
-	STAT_FIELD(xfrm_compat, sends_failed),
-	STAT_FIELD(xfrm_compat, replies_seen),
+	STAT_FIELD_SUB(xfrm_compat, sweep_runs),
+	STAT_FIELD_SUB(xfrm_compat, sends_ok),
+	STAT_FIELD_SUB(xfrm_compat, sends_failed),
+	STAT_FIELD_SUB(xfrm_compat, replies_seen),
 };
 
 const struct stat_category xfrm_compat_category =
 	STAT_CATEGORY("xfrm_compat",
-	              xfrm_compat_sweep_runs,
+	              xfrm_compat.sweep_runs,
 	              xfrm_compat_fields);
 
 static const struct stat_field sysfs_string_race_fields[] = {
