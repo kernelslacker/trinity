@@ -302,18 +302,6 @@ const struct stat_category sysfs_string_race_category =
 	              sysfs_string_race_runs,
 	              sysfs_string_race_fields);
 
-static const struct stat_field atm_vcc_churn_fields[] = {
-	STAT_FIELD(atm_vcc_churn, runs),
-	STAT_FIELD(atm_vcc_churn, unsupported),
-	STAT_FIELD(atm_vcc_churn, socket_ok),
-	STAT_FIELD(atm_vcc_churn, ioctls_sent),
-	STAT_FIELD(atm_vcc_churn, kernel_rejected),
-};
-
-const struct stat_category atm_vcc_churn_category =
-	STAT_CATEGORY("atm_vcc_churn",
-	              atm_vcc_churn_runs,
-	              atm_vcc_churn_fields);
 
 static const struct stat_field sock_ulp_sockmap_layering_fields[] = {
 	STAT_FIELD(sock_ulp_sockmap_layering, runs),
