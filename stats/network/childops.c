@@ -87,17 +87,17 @@ static void dump_stats_render_packet_fanout_thrash(void)
 
 static void dump_stats_render_eth_emitter(void)
 {
-	if (shm->stats.eth_emitter_runs) {
-		stat_row("eth_emitter", "runs",               shm->stats.eth_emitter_runs);
-		stat_row("eth_emitter", "setup_failed",       shm->stats.eth_emitter_setup_failed);
-		stat_row("eth_emitter", "short",              shm->stats.eth_emitter_short);
-		stat_row("eth_emitter", "sends_ok",           shm->stats.eth_emitter_sends_ok);
-		stat_row("eth_emitter", "sends_failed",       shm->stats.eth_emitter_sends_failed);
-		stat_row("eth_emitter", "tmpl_arp",           shm->stats.eth_emitter_per_tmpl[0]);
-		stat_row("eth_emitter", "tmpl_ipv4_frag_zero", shm->stats.eth_emitter_per_tmpl[1]);
-		stat_row("eth_emitter", "tmpl_ipv6_na",       shm->stats.eth_emitter_per_tmpl[2]);
-		stat_row("eth_emitter", "tmpl_vlan_qinq",     shm->stats.eth_emitter_per_tmpl[3]);
-		stat_row("eth_emitter", "tmpl_bad_ethertype", shm->stats.eth_emitter_per_tmpl[4]);
+	if (shm->stats.eth_emitter.runs) {
+		stat_row("eth_emitter", "runs",               shm->stats.eth_emitter.runs);
+		stat_row("eth_emitter", "setup_failed",       shm->stats.eth_emitter.setup_failed);
+		stat_row("eth_emitter", "short",              shm->stats.eth_emitter.short_frame);
+		stat_row("eth_emitter", "sends_ok",           shm->stats.eth_emitter.sends_ok);
+		stat_row("eth_emitter", "sends_failed",       shm->stats.eth_emitter.sends_failed);
+		stat_row("eth_emitter", "tmpl_arp",           shm->stats.eth_emitter.per_tmpl[0]);
+		stat_row("eth_emitter", "tmpl_ipv4_frag_zero", shm->stats.eth_emitter.per_tmpl[1]);
+		stat_row("eth_emitter", "tmpl_ipv6_na",       shm->stats.eth_emitter.per_tmpl[2]);
+		stat_row("eth_emitter", "tmpl_vlan_qinq",     shm->stats.eth_emitter.per_tmpl[3]);
+		stat_row("eth_emitter", "tmpl_bad_ethertype", shm->stats.eth_emitter.per_tmpl[4]);
 	}
 }
 
