@@ -102,20 +102,20 @@ void dump_stats_json_oracle(void)
  * text-side wiring onto these tables will need to revisit .name.
  */
 static const struct stat_field vfs_writes_fields[] = {
-	STAT_FIELD_JSON(procfs_writes, open_fail,  "procfs_open_fail"),
-	STAT_FIELD_JSON(procfs_writes, write_fail, "procfs_write_fail"),
-	STAT_FIELD_JSON(procfs_writes, write_ok,   "procfs_write_ok"),
-	STAT_FIELD_JSON(sysfs_writes, open_fail,   "sysfs_open_fail"),
-	STAT_FIELD_JSON(sysfs_writes, write_fail,  "sysfs_write_fail"),
-	STAT_FIELD_JSON(sysfs_writes, write_ok,    "sysfs_write_ok"),
-	STAT_FIELD_JSON(debugfs_writes, open_fail, "debugfs_open_fail"),
-	STAT_FIELD_JSON(debugfs_writes, write_fail,"debugfs_write_fail"),
-	STAT_FIELD_JSON(debugfs_writes, write_ok,  "debugfs_write_ok"),
+	STAT_FIELD_JSON_SUB(procfs_writer, procfs_open_fail,   "procfs_open_fail"),
+	STAT_FIELD_JSON_SUB(procfs_writer, procfs_write_fail,  "procfs_write_fail"),
+	STAT_FIELD_JSON_SUB(procfs_writer, procfs_write_ok,    "procfs_write_ok"),
+	STAT_FIELD_JSON_SUB(procfs_writer, sysfs_open_fail,    "sysfs_open_fail"),
+	STAT_FIELD_JSON_SUB(procfs_writer, sysfs_write_fail,   "sysfs_write_fail"),
+	STAT_FIELD_JSON_SUB(procfs_writer, sysfs_write_ok,     "sysfs_write_ok"),
+	STAT_FIELD_JSON_SUB(procfs_writer, debugfs_open_fail,  "debugfs_open_fail"),
+	STAT_FIELD_JSON_SUB(procfs_writer, debugfs_write_fail, "debugfs_write_fail"),
+	STAT_FIELD_JSON_SUB(procfs_writer, debugfs_write_ok,   "debugfs_write_ok"),
 };
 
 const struct stat_category vfs_writes_category =
 	STAT_CATEGORY("vfs_writes",
-	              procfs_writes_open_fail,
+	              procfs_writer.procfs_open_fail,
 	              vfs_writes_fields);
 
 static const struct stat_field memory_pressure_fields[] = {

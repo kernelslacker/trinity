@@ -36,21 +36,21 @@
 
 static void dump_stats_render_vfs_writes(void)
 {
-	if (shm->stats.procfs_writes_open_fail || shm->stats.procfs_writes_write_fail ||
-	    shm->stats.procfs_writes_write_ok ||
-	    shm->stats.sysfs_writes_open_fail || shm->stats.sysfs_writes_write_fail ||
-	    shm->stats.sysfs_writes_write_ok ||
-	    shm->stats.debugfs_writes_open_fail || shm->stats.debugfs_writes_write_fail ||
-	    shm->stats.debugfs_writes_write_ok) {
-		stat_row("vfs_writes", "procfs_open_fail",   shm->stats.procfs_writes_open_fail);
-		stat_row("vfs_writes", "procfs_write_fail",  shm->stats.procfs_writes_write_fail);
-		stat_row("vfs_writes", "procfs_write_ok",    shm->stats.procfs_writes_write_ok);
-		stat_row("vfs_writes", "sysfs_open_fail",    shm->stats.sysfs_writes_open_fail);
-		stat_row("vfs_writes", "sysfs_write_fail",   shm->stats.sysfs_writes_write_fail);
-		stat_row("vfs_writes", "sysfs_write_ok",     shm->stats.sysfs_writes_write_ok);
-		stat_row("vfs_writes", "debugfs_open_fail",  shm->stats.debugfs_writes_open_fail);
-		stat_row("vfs_writes", "debugfs_write_fail", shm->stats.debugfs_writes_write_fail);
-		stat_row("vfs_writes", "debugfs_write_ok",   shm->stats.debugfs_writes_write_ok);
+	if (shm->stats.procfs_writer.procfs_open_fail || shm->stats.procfs_writer.procfs_write_fail ||
+	    shm->stats.procfs_writer.procfs_write_ok ||
+	    shm->stats.procfs_writer.sysfs_open_fail || shm->stats.procfs_writer.sysfs_write_fail ||
+	    shm->stats.procfs_writer.sysfs_write_ok ||
+	    shm->stats.procfs_writer.debugfs_open_fail || shm->stats.procfs_writer.debugfs_write_fail ||
+	    shm->stats.procfs_writer.debugfs_write_ok) {
+		stat_row("vfs_writes", "procfs_open_fail",   shm->stats.procfs_writer.procfs_open_fail);
+		stat_row("vfs_writes", "procfs_write_fail",  shm->stats.procfs_writer.procfs_write_fail);
+		stat_row("vfs_writes", "procfs_write_ok",    shm->stats.procfs_writer.procfs_write_ok);
+		stat_row("vfs_writes", "sysfs_open_fail",    shm->stats.procfs_writer.sysfs_open_fail);
+		stat_row("vfs_writes", "sysfs_write_fail",   shm->stats.procfs_writer.sysfs_write_fail);
+		stat_row("vfs_writes", "sysfs_write_ok",     shm->stats.procfs_writer.sysfs_write_ok);
+		stat_row("vfs_writes", "debugfs_open_fail",  shm->stats.procfs_writer.debugfs_open_fail);
+		stat_row("vfs_writes", "debugfs_write_fail", shm->stats.procfs_writer.debugfs_write_fail);
+		stat_row("vfs_writes", "debugfs_write_ok",   shm->stats.procfs_writer.debugfs_write_ok);
 	}
 }
 

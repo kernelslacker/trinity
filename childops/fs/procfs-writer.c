@@ -284,19 +284,19 @@ static void bump_tree_counter(enum tree_kind tree, enum write_outcome outcome)
 {
 	static const size_t offsets[3][3] = {
 		[TREE_PROC] = {
-			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, procfs_writes_open_fail),
-			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, procfs_writes_write_fail),
-			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, procfs_writes_write_ok),
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, procfs_writer.procfs_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, procfs_writer.procfs_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, procfs_writer.procfs_write_ok),
 		},
 		[TREE_SYS] = {
-			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, sysfs_writes_open_fail),
-			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, sysfs_writes_write_fail),
-			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, sysfs_writes_write_ok),
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, procfs_writer.sysfs_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, procfs_writer.sysfs_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, procfs_writer.sysfs_write_ok),
 		},
 		[TREE_DEBUGFS] = {
-			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, debugfs_writes_open_fail),
-			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, debugfs_writes_write_fail),
-			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, debugfs_writes_write_ok),
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, procfs_writer.debugfs_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, procfs_writer.debugfs_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, procfs_writer.debugfs_write_ok),
 		},
 	};
 	unsigned long *p = (unsigned long *)((char *)&shm->stats + offsets[tree][outcome]);
