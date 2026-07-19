@@ -11,3 +11,10 @@
 
 void kcov_cmp_rate_line(long elapsed, const char *name,
 			unsigned long delta, unsigned long total);
+
+void kcov_cmp_observability_block_render(long elapsed);
+void kcov_cmp_render_wild_write_delta(long elapsed,
+				      unsigned long delta_count_oob, unsigned long cur_count_oob,
+				      unsigned long delta_canary_lock_post, unsigned long cur_canary_lock_post,
+				      unsigned long delta_canary_pre, unsigned long cur_canary_pre,
+				      unsigned long delta_canary_post, unsigned long cur_canary_post);
