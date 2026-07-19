@@ -8,10 +8,8 @@
 #include "minicorpus.h"
 #include "sequence.h"
 #include "shm.h"
-#include "stats.h"
 #include "stats-internal.h"
 #include "stats/json/internal.h"
-#include "trinity.h"
 #include "utils.h"
 
 static void json_emit_minicorpus_mutators(void)
