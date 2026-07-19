@@ -45,6 +45,7 @@
 #include "stats/subsys/espintcp_coalesce.h"
 #include "stats/subsys/fd.h"
 #include "stats/subsys/fd_runtime_skipped.h"
+#include "stats/subsys/fdstress.h"
 #include "stats/subsys/flock_thrash.h"
 #include "stats/subsys/flowtable_vlan.h"
 #include "stats/subsys/fork_storm.h"
@@ -707,11 +708,8 @@ struct stats_s {
 	/* recipe_runner accounting.  See stats/subsys/recipe.h. */
 	struct recipe_stats recipe __attribute__((aligned(64)));
 
-	/* fd_stress childop counters, one per stress mode */
-	unsigned long fdstress_close_reopen;
-	unsigned long fdstress_dup2_replace;
-	unsigned long fdstress_type_confusion;
-	unsigned long fdstress_cloexec_toggle;
+	/* fdstress accounting.  See stats/subsys/fdstress.h. */
+	struct fdstress_stats fdstress __attribute__((aligned(64)));
 
 	/* Per-recipe completion counts, indexed by the recipe's slot in the
 	 * static catalog inside recipe-runner.c.  Dumped via

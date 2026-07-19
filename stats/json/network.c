@@ -543,18 +543,6 @@ const struct stat_category ipmr_cache_report_category =
 	              ipmr_cache_report_iters,
 	              ipmr_cache_report_fields);
 
-static const struct stat_field fdstress_fields[] = {
-	STAT_FIELD(fdstress, close_reopen),
-	STAT_FIELD(fdstress, dup2_replace),
-	STAT_FIELD(fdstress, type_confusion),
-	STAT_FIELD(fdstress, cloexec_toggle),
-};
-
-const struct stat_category fdstress_category =
-	STAT_CATEGORY("fdstress",
-	              fdstress_close_reopen,
-	              fdstress_fields);
-
 void dump_stats_json_netfilter_and_xfrm(void)
 {
 	stat_category_emit_json(&nftables_churn_category);
