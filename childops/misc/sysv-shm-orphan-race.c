@@ -349,10 +349,10 @@ static void reap_sysv_shm_sibling(pid_t sibling, struct sysv_shm_race_shared *rs
 		return;
 
 	if (WIFEXITED(status)) {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_sibling_reaped_ok,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.sibling_reaped_ok,
 				   1, __ATOMIC_RELAXED);
 	} else if (WIFSIGNALED(status)) {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_sibling_crashed,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.sibling_crashed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -403,21 +403,21 @@ static void run_burst_solo(unsigned int races)
 
 	shmid = shmget(IPC_PRIVATE, SYSV_SHM_SEG_BYTES, IPC_CREAT | 0600);
 	if (shmid < 0) {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_shmget_failed,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.shmget_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
-	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_shmget_ok,
+	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.shmget_ok,
 			   1, __ATOMIC_RELAXED);
 
 	for (r = 0; r < races; r++) {
 		addr = shmat(shmid, NULL, 0);
 		if (addr == (void *)-1) {
-			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_attach_failed,
+			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.attach_failed,
 					   1, __ATOMIC_RELAXED);
 			break;
 		}
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_attach_ok,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.attach_ok,
 				   1, __ATOMIC_RELAXED);
 		(void)shmdt(addr);
 
@@ -426,10 +426,10 @@ static void run_burst_solo(unsigned int races)
 	}
 
 	if (shmctl(shmid, IPC_RMID, NULL) == 0) {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_rmid_ok,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.rmid_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_rmid_failed,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.rmid_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -450,11 +450,11 @@ static void run_burst_parent_half(int shmid, unsigned int races)
 
 		addr = shmat(shmid, NULL, 0);
 		if (addr == (void *)-1) {
-			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_attach_failed,
+			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.attach_failed,
 					   1, __ATOMIC_RELAXED);
 			break;
 		}
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_attach_ok,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.attach_ok,
 				   1, __ATOMIC_RELAXED);
 		(void)shmdt(addr);
 	}
@@ -498,7 +498,7 @@ static void iter_one(struct childdata *child)
 
 	rs = race_shared_alloc();
 	if (rs == NULL) {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		run_burst_solo(races);
 		return;
@@ -507,17 +507,17 @@ static void iter_one(struct childdata *child)
 
 	originator = spawn_sysv_shm_sibling(rs, sysv_shm_originator_main);
 	if (originator < 0) {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_sibling_spawn_failed,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.sibling_spawn_failed,
 				   1, __ATOMIC_RELAXED);
 		run_burst_solo(races);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_sibling_spawn_ok,
+	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.sibling_spawn_ok,
 			   1, __ATOMIC_RELAXED);
 
 	shmid = wait_for_shmid_publish(rs);
 	if (shmid < 0) {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_shmget_failed,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.shmget_failed,
 				   1, __ATOMIC_RELAXED);
 		/* Reap originator (it either exited or will exit shortly
 		 * once its PDEATHSIG/alarm fires); no segment to RMID. */
@@ -525,7 +525,7 @@ static void iter_one(struct childdata *child)
 		originator = -1;
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_shmget_ok,
+	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.shmget_ok,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -533,10 +533,10 @@ static void iter_one(struct childdata *child)
 
 	attacher = spawn_sysv_shm_sibling(rs, sysv_shm_attacher_main);
 	if (attacher < 0) {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_sibling_spawn_failed,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.sibling_spawn_failed,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_sibling_spawn_ok,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.sibling_spawn_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -559,10 +559,10 @@ out:
 	 * already won the destroy race. */
 	if (shmid >= 0) {
 		if (shmctl(shmid, IPC_RMID, NULL) == 0) {
-			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_rmid_ok,
+			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.rmid_ok,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_rmid_failed,
+			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.rmid_failed,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -596,11 +596,11 @@ bool sysv_shm_orphan_race(struct childdata *child)
 {
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_runs,
+	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_sysv_shm_orphan_race) {
-		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -621,7 +621,7 @@ bool sysv_shm_orphan_race(struct childdata *child)
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
 			}
-			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_setup_failed,
+			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -653,12 +653,12 @@ bool sysv_shm_orphan_race(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_runs,
+	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.runs,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op)
 		__atomic_store_n(&shm->stats.childop.latch_reason[op],
 				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_setup_failed,
+	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
