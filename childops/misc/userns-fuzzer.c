@@ -153,7 +153,7 @@ static bool make_root_private(void)
 		 * output() here would be lost.  Bump a shm counter so
 		 * a post-mortem reader can tell the tmpfs mount path
 		 * was running unprotected. */
-		__atomic_add_fetch(&shm->stats.userns_root_private_failed,
+		__atomic_add_fetch(&shm->stats.userns_fuzzer.root_private_failed,
 				   1, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -424,7 +424,7 @@ bool userns_fuzzer(struct childdata *child)
 	if (userns_disabled)
 		return true;
 
-	__atomic_add_fetch(&shm->stats.userns_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.userns_fuzzer.runs, 1, __ATOMIC_RELAXED);
 
 	pid = fork();
 	if (pid < 0)
@@ -459,13 +459,13 @@ bool userns_fuzzer(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.userns_unsupported,
+		__atomic_add_fetch(&shm->stats.userns_fuzzer.unsupported,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
 	if (WIFSIGNALED(status))
-		__atomic_add_fetch(&shm->stats.userns_inner_crashed,
+		__atomic_add_fetch(&shm->stats.userns_fuzzer.inner_crashed,
 				   1, __ATOMIC_RELAXED);
 
 	return true;
