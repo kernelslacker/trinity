@@ -1,19 +1,17 @@
 /*
- * KCOV CMP observability blocks.
+ * KCOV CMP periodic dump orchestrator.
  *
- * Carved verbatim out of stats.c.  Contains the four static
- * per-window render helpers -- kcov_cmp_observability_block_render,
- * kcov_redqueen_observability_block_render,
- * kcov_cmp_oldpool_vs_shadow_block_render,
- * kcov_cmp_hyp_saturation_block_render -- and the top-level
- * kcov_cmp_stats_periodic_dump that fans out to them from the
- * parent's periodic tick.
+ * Owns the single public entry point kcov_cmp_stats_periodic_dump(),
+ * called from main/loop.c's run_periodic_surfaces() tick.  Loads the
+ * current shm/parent_stats snapshot, arms the first-window state,
+ * checks the elapsed-time gate, computes per-window deltas, gates the
+ * emit on any-delta, then fans out to the render helpers in the
+ * sibling stats/kcov/cmp/ TUs (base, redqueen, pool, hyp, childop,
+ * cohort, diag) and commits the previous-window snapshot.
  *
- * The four block_render helpers are called only from
- * kcov_cmp_stats_periodic_dump in this same TU so they keep their
- * file-static tag.  kcov_cmp_stats_periodic_dump itself is already
- * declared in include/stats.h; nothing new is added to
- * stats-internal.h for this cluster.
+ * All static previous-window state and per-counter locals stay local
+ * to this TU; the render helpers live in their per-domain siblings and
+ * are declared in stats/kcov/cmp/internal.h.
  */
 
 #include <errno.h>
@@ -52,26 +50,14 @@
 #include "utils.h"
 #include "version.h"
 
-
 #include "stats/kcov/cmp/internal.h"
 
-/*
- * SHADOW typed-CMP-hypothesis store render block.
- *
- * Self-contained mini-section so the skeleton's all-zero counters do
- * not need to be folded into the giant delta-gate above.  All eleven
- * counters read zero in this commit: the observation hook is a no-op
- * and no inference / consumer / feedback path bumps any of them yet.
- * The renders fire once the follow-up units land and the deltas
- * become non-zero; the section header itself is gated on any-delta
- * so the log stays quiet in the meantime.
- */
 /*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
  * dump as periodic_counter_rates_dump.  Without this the cmp counters
  * are only visible from dump_stats() (run shutdown) and the JSON dump
- * (on enable), so a long overnight run produces no time-series — just a
- * single end-snapshot — making it impossible to correlate cmp_hints
+ * (on enable), so a long run produces one shutdown snapshot with
+ * nothing in between, making it impossible to correlate cmp_hints
  * effectiveness with edge-discovery cadence over the run.
  *
  * Three sub-blocks, each gated independently so a healthy run that has
@@ -79,7 +65,7 @@
  *  - per-window deltas + rates + cumulative totals for the three cmp
  *    counters, formatted to match periodic_counter_rates_dump;
  *  - per-mode child population (cumulative) so the realised PC/CMP
- *    mode mix is visible in the time series, not just at shutdown;
+ *    mode mix is visible in the time series, not only at shutdown;
  *  - first-failure-wins errno/count per cmp-init/runtime site.
  */
 void __cold kcov_cmp_stats_periodic_dump(void)
