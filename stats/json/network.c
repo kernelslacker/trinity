@@ -22,31 +22,31 @@
 
 /*
  * eth_emitter's five per-template counters live in an array
- * (eth_emitter_per_tmpl[NR_TEMPLATES]); the JSON schema emits one
+ * (eth_emitter.per_tmpl[NR_TEMPLATES]); the JSON schema emits one
  * flat key per slot ("tmpl_arp" .. "tmpl_bad_ethertype"), so raw
  * offsetof() entries pin each key to its array index.
  */
 static const struct stat_field eth_emitter_fields[] = {
-	STAT_FIELD(eth_emitter, runs),
-	STAT_FIELD(eth_emitter, setup_failed),
-	STAT_FIELD(eth_emitter, short),
-	STAT_FIELD(eth_emitter, sends_ok),
-	STAT_FIELD(eth_emitter, sends_failed),
+	STAT_FIELD_SUB(eth_emitter, runs),
+	STAT_FIELD_SUB(eth_emitter, setup_failed),
+	STAT_FIELD_JSON_SUB(eth_emitter, short_frame, "short"),
+	STAT_FIELD_SUB(eth_emitter, sends_ok),
+	STAT_FIELD_SUB(eth_emitter, sends_failed),
 	{ .name = "tmpl_arp",
-	  .offset = offsetof(struct stats_s, eth_emitter_per_tmpl[0]) },
+	  .offset = offsetof(struct stats_s, eth_emitter.per_tmpl[0]) },
 	{ .name = "tmpl_ipv4_frag_zero",
-	  .offset = offsetof(struct stats_s, eth_emitter_per_tmpl[1]) },
+	  .offset = offsetof(struct stats_s, eth_emitter.per_tmpl[1]) },
 	{ .name = "tmpl_ipv6_na",
-	  .offset = offsetof(struct stats_s, eth_emitter_per_tmpl[2]) },
+	  .offset = offsetof(struct stats_s, eth_emitter.per_tmpl[2]) },
 	{ .name = "tmpl_vlan_qinq",
-	  .offset = offsetof(struct stats_s, eth_emitter_per_tmpl[3]) },
+	  .offset = offsetof(struct stats_s, eth_emitter.per_tmpl[3]) },
 	{ .name = "tmpl_bad_ethertype",
-	  .offset = offsetof(struct stats_s, eth_emitter_per_tmpl[4]) },
+	  .offset = offsetof(struct stats_s, eth_emitter.per_tmpl[4]) },
 };
 
 static const struct stat_category eth_emitter_category =
 	STAT_CATEGORY("eth_emitter",
-	              eth_emitter_runs,
+	              eth_emitter.runs,
 	              eth_emitter_fields);
 
 

@@ -51,6 +51,7 @@
 #include "stats/subsys/errno_gradient.h"
 #include "stats/subsys/esp_crafted_rx.h"
 #include "stats/subsys/espintcp_coalesce.h"
+#include "stats/subsys/eth_emitter.h"
 #include "stats/subsys/fd.h"
 #include "stats/subsys/fd_runtime_skipped.h"
 #include "stats/subsys/fdstress.h"
@@ -891,18 +892,8 @@ struct stats_s {
 	/* packet_fanout_thrash accounting.  See stats/subsys/packet_fanout_thrash.h. */
 	struct packet_fanout_thrash_stats packet_fanout_thrash __attribute__((aligned(64)));
 
-	/* eth_emitter childop counters: AF_PACKET/SOCK_RAW L2 emitter that
-	 * crafts one frame per call from one of NR_TEMPLATES template
-	 * families (ARP, IPv4 frag-zero, IPv6 NA, VLAN Q-in-Q, malformed
-	 * EtherType) and sendto()s it to loopback.  per_tmpl[] indexes
-	 * template successes so the operator can confirm coverage stays
-	 * spread across all five families rather than collapsing on one. */
-	unsigned long eth_emitter_runs;			/* total eth_emitter invocations */
-	unsigned long eth_emitter_setup_failed;		/* socket(AF_PACKET) or bind() failed (EPERM/CAP_NET_RAW absent) */
-	unsigned long eth_emitter_short;		/* template returned a length out of range; frame skipped */
-	unsigned long eth_emitter_sends_ok;		/* sendto returned >0 */
-	unsigned long eth_emitter_sends_failed;		/* sendto returned <=0 (queue full / EPERM / etc.) */
-	unsigned long eth_emitter_per_tmpl[5];		/* per-template successful sends (NR_TEMPLATES in childops/net/eth-emitter.c) */
+	/* eth_emitter accounting.  See stats/subsys/eth_emitter.h. */
+	struct eth_emitter_stats eth_emitter __attribute__((aligned(64)));
 
 	/* pkt_builder_probe childop counters: prover for the composable
 	 * layered structured-packet builder (include/pkt-builder.h + childops/

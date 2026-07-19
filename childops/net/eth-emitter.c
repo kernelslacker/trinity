@@ -263,10 +263,10 @@ bool eth_emitter(struct childdata *child)
 	size_t len;
 	ssize_t rc;
 
-	__atomic_add_fetch(&shm->stats.eth_emitter_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.eth_emitter.runs, 1, __ATOMIC_RELAXED);
 
 	if (!ensure_socket(child)) {
-		__atomic_add_fetch(&shm->stats.eth_emitter_setup_failed,
+		__atomic_add_fetch(&shm->stats.eth_emitter.setup_failed,
 		                   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -286,7 +286,7 @@ bool eth_emitter(struct childdata *child)
 	pick = rnd_modulo_u32(NR_TEMPLATES);
 	len = templates[pick](frame);
 	if (len < 14 || len > sizeof(frame)) {
-		__atomic_add_fetch(&shm->stats.eth_emitter_short,
+		__atomic_add_fetch(&shm->stats.eth_emitter.short_frame,
 		                   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -304,12 +304,12 @@ bool eth_emitter(struct childdata *child)
 	rc = sendto(eth_fd, frame, len, 0,
 	            (struct sockaddr *)&sll, sizeof(sll));
 	if (rc > 0) {
-		__atomic_add_fetch(&shm->stats.eth_emitter_sends_ok,
+		__atomic_add_fetch(&shm->stats.eth_emitter.sends_ok,
 		                   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.eth_emitter_per_tmpl[pick],
+		__atomic_add_fetch(&shm->stats.eth_emitter.per_tmpl[pick],
 		                   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.eth_emitter_sends_failed,
+		__atomic_add_fetch(&shm->stats.eth_emitter.sends_failed,
 		                   1, __ATOMIC_RELAXED);
 	}
 	return true;
