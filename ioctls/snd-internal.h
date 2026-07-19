@@ -26,6 +26,13 @@ void fill_snd_timer_id(struct snd_timer_id *tid);
 void sanitise_snd_seq(struct syscallrecord *rec);
 int  dispatch_snd_seq(struct syscallrecord *rec);
 
+void sanitise_snd_hdspm(struct syscallrecord *rec);
+void sanitise_oss_copr(struct syscallrecord *rec);
+void sanitise_oss_dsp(struct syscallrecord *rec);
+void sanitise_oss_mixer(struct syscallrecord *rec);
+int  dispatch_oss_dsp(struct syscallrecord *rec);
+int  dispatch_oss_mixer(struct syscallrecord *rec);
+
 /*
  * pcm_rates[] is shared between the PCM class (snd-pcm.c) and the OSS
  * DSP / compressed-offload paths still in snd.c.  Definition lives in
