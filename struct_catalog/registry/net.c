@@ -28,7 +28,6 @@
 #endif
 
 #include "struct_catalog.h"
-#include "trinity.h"
 
 #include "kernel/in.h"
 
