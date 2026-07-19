@@ -8,6 +8,7 @@
  */
 
 struct syscallrecord;
+struct snd_timer_id;
 
 void sanitise_snd_ctl(struct syscallrecord *rec);
 int  dispatch_snd_ctl(struct syscallrecord *rec);
@@ -17,6 +18,10 @@ int  dispatch_snd_pcm(struct syscallrecord *rec);
 
 void sanitise_snd_rawmidi(struct syscallrecord *rec);
 int  dispatch_snd_rawmidi(struct syscallrecord *rec);
+
+void sanitise_snd_timer(struct syscallrecord *rec);
+int  dispatch_snd_timer(struct syscallrecord *rec);
+void fill_snd_timer_id(struct snd_timer_id *tid);
 
 /*
  * pcm_rates[] is shared between the PCM class (snd-pcm.c) and the OSS
