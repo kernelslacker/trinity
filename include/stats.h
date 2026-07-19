@@ -108,6 +108,7 @@
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/umount_race.h"
 #include "stats/subsys/userns_bootstrap.h"
+#include "stats/subsys/userns_fuzzer.h"
 #include "stats/subsys/vdso_race.h"
 #include "stats/subsys/vlan_filter_churn.h"
 #include "stats/subsys/wgdf.h"
@@ -613,10 +614,8 @@ struct stats_s {
 	/* sched_cycler accounting.  See stats/subsys/sched_cycler.h. */
 	struct sched_cycler_stats sched_cycler __attribute__((aligned(64)));
 
-	/* userns_fuzzer childop counters */
-	unsigned long userns_runs;		/* total userns_fuzzer invocations */
-	unsigned long userns_inner_crashed;	/* inner child died by signal */
-	unsigned long userns_unsupported;	/* CLONE_NEWUSER refused, noop path */
+	/* userns_fuzzer accounting.  See stats/subsys/userns_fuzzer.h. */
+	struct userns_fuzzer_stats userns_fuzzer __attribute__((aligned(64)));
 
 	/* barrier_racer accounting.  See stats/subsys/barrier_racer.h. */
 	struct barrier_racer_stats barrier_racer __attribute__((aligned(64)));
@@ -3172,22 +3171,6 @@ struct stats_s {
 	 * brought up in an unprivileged userns-owned netns.
 	 */
 	unsigned long nnm_drive_unsupported_observed;
-
-	/*
-	 * userns_fuzzer's make_root_private() observed a failing
-	 * mount("none", "/", MS_REC|MS_PRIVATE) before the per-op
-	 * tmpfs mount.  The original shape called output(0, ...) so
-	 * an operator watching the run could see that the inner mount
-	 * ns wasn't isolated from the host's mount tree before the
-	 * tmpfs attempt -- but make_root_private() runs from child
-	 * context, where init_child has redirected stderr to /dev/null,
-	 * so the diagnostic was lost.  Bump a shm counter on every
-	 * failure (no one-shot: this fires per-iteration and the
-	 * accumulating count is the survivor signal that mount-ns
-	 * isolation is broken on the host).  A non-zero value across a
-	 * run says the tmpfs mount path was being run unprotected.
-	 */
-	unsigned long userns_root_private_failed;
 
 	/* sysfs_string_race childop counters */
 	unsigned long sysfs_string_race_runs;		/* total sysfs_string_race invocations */
