@@ -236,11 +236,11 @@ void dump_stats_json_probes_misuse_and_tail(void)
 			"\"write_ok\":%lu,\"read_ok\":%lu,"
 			"\"per_disc\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]}"
 		"}",
-		shm->stats.ipvs_sysctl_writer_runs,
-		shm->stats.ipvs_sysctl_writer_writes_ok,
-		shm->stats.ipvs_sysctl_writer_writes_failed,
-		shm->stats.ipvs_sysctl_writer_unsupported_latched,
-		shm->stats.ipvs_sysctl_writer_burn_iters,
+		shm->stats.ipvs_sysctl_writer.runs,
+		shm->stats.ipvs_sysctl_writer.writes_ok,
+		shm->stats.ipvs_sysctl_writer.writes_failed,
+		shm->stats.ipvs_sysctl_writer.unsupported_latched,
+		shm->stats.ipvs_sysctl_writer.burn_iters,
 		shm->stats.ipfrag_source_runs,
 		shm->stats.ipfrag_packets_sent_ok,
 		shm->stats.ipfrag_send_failed,
