@@ -33,6 +33,11 @@ void sanitise_oss_mixer(struct syscallrecord *rec);
 int  dispatch_oss_dsp(struct syscallrecord *rec);
 int  dispatch_oss_mixer(struct syscallrecord *rec);
 
+#ifdef USE_SNDDRV_COMPRESS_OFFLOAD
+void sanitise_snd_compress(struct syscallrecord *rec);
+int  dispatch_snd_compress(struct syscallrecord *rec);
+#endif
+
 /*
  * pcm_rates[] is shared between the PCM class (snd-pcm.c) and the OSS
  * DSP / compressed-offload paths still in snd.c.  Definition lives in
