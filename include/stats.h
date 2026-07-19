@@ -111,6 +111,7 @@
 #include "stats/subsys/sctp_chunk_rx.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
+#include "stats/subsys/sock_ulp_sockmap_layering.h"
 #include "stats/subsys/socket_family_chain.h"
 #include "stats/subsys/socket_family_grammar.h"
 #include "stats/subsys/splice_protocols.h"
@@ -886,13 +887,8 @@ struct stats_s {
 	/* tls_rotate accounting.  See stats/subsys/tls_rotate.h. */
 	struct tls_rotate_stats tls_rotate __attribute__((aligned(64)));
 
-	/* sock_ulp_sockmap_layering childop counters */
-	unsigned long sock_ulp_sockmap_layering_runs;		/* total invocations */
-	unsigned long sock_ulp_sockmap_layering_setup_failed;	/* loopback TCP pair setup failed */
-	unsigned long sock_ulp_sockmap_layering_map_failed;	/* BPF_MAP_CREATE(SOCKMAP) failed (no CONFIG_BPF_SYSCALL etc) */
-	unsigned long sock_ulp_sockmap_layering_prog_failed;	/* BPF_PROG_LOAD(SK_SKB) failed (no CONFIG_BPF_STREAM_PARSER etc) */
-	unsigned long sock_ulp_sockmap_layering_attach_failed;	/* BPF_PROG_ATTACH(STREAM_VERDICT) failed */
-	unsigned long sock_ulp_sockmap_layering_layered_ok;	/* at least one fd ended up with both ULP+sockmap layered */
+	/* sock_ulp_sockmap_layering accounting.  See stats/subsys/sock_ulp_sockmap_layering.h. */
+	struct sock_ulp_sockmap_layering_stats sock_ulp_sockmap_layering __attribute__((aligned(64)));
 
 	/* packet_fanout_thrash childop counters */
 	unsigned long packet_fanout_runs;		/* total packet_fanout_thrash invocations */

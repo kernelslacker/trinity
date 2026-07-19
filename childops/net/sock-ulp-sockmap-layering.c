@@ -251,7 +251,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	int i;
 	bool layered_a = false, layered_b = false;
 
-	__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_runs, 1,
+	__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (__atomic_load_n(&sock_ulp_layering_bpf_off, __ATOMIC_RELAXED))
@@ -268,7 +268,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 
 	if (make_loopback_pair(&cli_a, &srv_a) < 0 ||
 	    make_loopback_pair(&cli_b, &srv_b) < 0) {
-		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_setup_failed,
+		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -283,7 +283,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_map_failed,
+		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.map_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -298,13 +298,13 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_prog_failed,
+		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.prog_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
 	if (attach_verdict(map_fd, prog_fd) < 0) {
-		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_attach_failed,
+		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.attach_failed,
 				   1, __ATOMIC_RELAXED);
 		/* Keep going — verdict-attach can fail per-build (e.g.
 		 * BPF_STREAM_PARSER off) without invalidating the BOTH-
@@ -334,7 +334,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		layered_b = true;
 
 	if (layered_a || layered_b)
-		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_layered_ok,
+		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.layered_ok,
 				   1, __ATOMIC_RELAXED);
 
 	/* Drive traffic — short, non-blocking, interleaved across both
