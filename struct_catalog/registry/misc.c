@@ -20,7 +20,6 @@
 #include "config.h"
 
 #include "struct_catalog.h"
-#include "trinity.h"
 
 const struct syscall_struct_arg struct_catalog_registry_misc[] = {
 	/* mq_open(const char *, int, mode_t, struct mq_attr *) */
