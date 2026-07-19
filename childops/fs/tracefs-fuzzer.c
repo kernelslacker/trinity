@@ -388,29 +388,29 @@ static void bump_arm_counter(enum tracefs_arm arm, enum write_outcome outcome)
 {
 	static const size_t offsets[NR_TRACEFS_ARMS][3] = {
 		[ARM_KPROBE] = {
-			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_kprobe_writes_open_fail),
-			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_kprobe_writes_write_fail),
-			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_kprobe_writes_write_ok),
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_fuzzer.kprobe_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_fuzzer.kprobe_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_fuzzer.kprobe_write_ok),
 		},
 		[ARM_UPROBE] = {
-			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_uprobe_writes_open_fail),
-			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_uprobe_writes_write_fail),
-			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_uprobe_writes_write_ok),
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_fuzzer.uprobe_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_fuzzer.uprobe_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_fuzzer.uprobe_write_ok),
 		},
 		[ARM_FILTER] = {
-			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_filter_writes_open_fail),
-			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_filter_writes_write_fail),
-			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_filter_writes_write_ok),
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_fuzzer.filter_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_fuzzer.filter_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_fuzzer.filter_write_ok),
 		},
 		[ARM_EVENT_ENABLE] = {
-			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_event_enable_writes_open_fail),
-			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_event_enable_writes_write_fail),
-			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_event_enable_writes_write_ok),
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_fuzzer.event_enable_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_fuzzer.event_enable_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_fuzzer.event_enable_write_ok),
 		},
 		[ARM_MISC] = {
-			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_misc_writes_open_fail),
-			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_misc_writes_write_fail),
-			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_misc_writes_write_ok),
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_fuzzer.misc_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_fuzzer.misc_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_fuzzer.misc_write_ok),
 		},
 	};
 	unsigned long *p = (unsigned long *)((char *)&shm->stats + offsets[arm][outcome]);
