@@ -24,6 +24,7 @@
 #include "stats/subsys/af_unix_scm_rights_gc.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/arg.h"
+#include "stats/subsys/atm_vcc_churn.h"
 #include "stats/subsys/barrier_racer.h"
 #include "stats/subsys/blkdev_lifecycle.h"
 #include "stats/subsys/blob.h"
@@ -1018,12 +1019,8 @@ struct stats_s {
 	/* bridge_ip6frag_refrag accounting.  See stats/subsys/bridge_ip6frag.h. */
 	struct bridge_ip6frag_stats bridge_ip6frag __attribute__((aligned(64)));
 
-	/* atm_vcc_churn childop counters */
-	unsigned long atm_vcc_churn_runs;		/* total atm_vcc_churn invocations */
-	unsigned long atm_vcc_churn_unsupported;	/* socket(AF_ATM*) returned EAFNOSUPPORT (CONFIG_ATM=n) */
-	unsigned long atm_vcc_churn_socket_ok;		/* AF_ATMPVC/AF_ATMSVC vcc opened */
-	unsigned long atm_vcc_churn_ioctls_sent;	/* ioctls dispatched against the vcc */
-	unsigned long atm_vcc_churn_kernel_rejected;	/* ioctl returned <0 (expected without backend) */
+	/* atm_vcc_churn accounting.  See stats/subsys/atm_vcc_churn.h. */
+	struct atm_vcc_churn_stats atm_vcc_churn __attribute__((aligned(64)));
 
 	/* tty_ldisc_churn childop counters.  Targets the n_tty_receive_buf_standard
 	 * KMSAN, n_tty_lookahead_flow_ctrl uninit, do_con_write slab-OOB cluster

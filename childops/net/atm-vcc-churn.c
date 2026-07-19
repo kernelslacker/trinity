@@ -113,7 +113,7 @@ static int atm_open_one(struct childdata *child, int proto)
 	if (fd < 0) {
 		if (errno == EAFNOSUPPORT) {
 			ns_atm_unsupported = true;
-			__atomic_add_fetch(&shm->stats.atm_vcc_churn_unsupported,
+			__atomic_add_fetch(&shm->stats.atm_vcc_churn.unsupported,
 					   1, __ATOMIC_RELAXED);
 			/* child->op_type lives in shared memory and can be
 			 * scribbled by a poisoned-arena write from a sibling;
@@ -147,7 +147,7 @@ static void atm_fire_one(int fd, const struct atm_ioctl_spec *spec)
 	unsigned char ivec[64];
 	int rawval;
 
-	__atomic_add_fetch(&shm->stats.atm_vcc_churn_ioctls_sent, 1,
+	__atomic_add_fetch(&shm->stats.atm_vcc_churn.ioctls_sent, 1,
 			   __ATOMIC_RELAXED);
 
 	if (spec->needs_atmif_sioc) {
@@ -157,14 +157,14 @@ static void atm_fire_one(int fd, const struct atm_ioctl_spec *spec)
 		sioc.length = (int)sizeof(ivec);
 		sioc.arg = ivec;
 		if (ioctl(fd, spec->req, &sioc) < 0)
-			__atomic_add_fetch(&shm->stats.atm_vcc_churn_kernel_rejected,
+			__atomic_add_fetch(&shm->stats.atm_vcc_churn.kernel_rejected,
 					   1, __ATOMIC_RELAXED);
 		return;
 	}
 
 	rawval = (int)(rand32() & 0xff);
 	if (ioctl(fd, spec->req, (unsigned long)rawval) < 0)
-		__atomic_add_fetch(&shm->stats.atm_vcc_churn_kernel_rejected,
+		__atomic_add_fetch(&shm->stats.atm_vcc_churn.kernel_rejected,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -181,7 +181,7 @@ static void atm_churn_cycle(struct childdata *child)
 	fd = atm_open_one(child, ATMPROTO_AAL5);
 	if (fd < 0)
 		return;
-	__atomic_add_fetch(&shm->stats.atm_vcc_churn_socket_ok, 1,
+	__atomic_add_fetch(&shm->stats.atm_vcc_churn.socket_ok, 1,
 			   __ATOMIC_RELAXED);
 
 	batch = 1U + rnd_modulo_u32(4U);
@@ -197,7 +197,7 @@ bool atm_vcc_churn(struct childdata *child)
 {
 	unsigned int iters, i;
 
-	__atomic_add_fetch(&shm->stats.atm_vcc_churn_runs, 1,
+	__atomic_add_fetch(&shm->stats.atm_vcc_churn.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_atm_unsupported)
@@ -233,9 +233,9 @@ bool atm_vcc_churn(struct childdata *child)
 bool atm_vcc_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.atm_vcc_churn_runs, 1,
+	__atomic_add_fetch(&shm->stats.atm_vcc_churn.runs, 1,
 			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.atm_vcc_churn_unsupported, 1,
+	__atomic_add_fetch(&shm->stats.atm_vcc_churn.unsupported, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
