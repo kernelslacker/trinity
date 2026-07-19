@@ -107,3 +107,7 @@ void kcov_cmp_render_structure_aware_picker_cohort(long elapsed,
 						   unsigned long cur_mut_structured_shadow_samples,
 						   unsigned int cur_mut_structured_arm_a_children,
 						   unsigned int cur_mut_structured_arm_b_children);
+
+void kcov_cmp_render_modes_block(void);
+void kcov_cmp_render_diag_errnos_block(void);
+void kcov_cmp_render_pc_diag_block(void);
