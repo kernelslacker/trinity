@@ -9,13 +9,10 @@
  */
 
 #include <stdio.h>
-#include <stddef.h>
 #include "shm.h"
-#include "stats.h"
 #include "stats-internal.h"
 #include "stats/json/internal.h"
 #include "stats_ring.h"
-#include "trinity.h"
 
 /*
  * Emit every counter from struct stats_s as a single JSON object.
