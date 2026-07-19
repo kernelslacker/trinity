@@ -155,19 +155,19 @@ void nft_compat_validate_sweep(struct nfnl_ctx *ctx)
 			rc = nft_compat_pair_install(ctx, NFPROTO_IPV4,
 						     table_name, chain_name,
 						     hooks[hi], targets[ti]);
-			__atomic_add_fetch(&shm->stats.nft_compat_validate_per_hook_pairs,
+			__atomic_add_fetch(&shm->stats.nftables_churn.nft_compat_validate_per_hook_pairs,
 					   1, __ATOMIC_RELAXED);
 			if (rc == 0) {
-				__atomic_add_fetch(&shm->stats.nft_compat_validate_install_ok,
+				__atomic_add_fetch(&shm->stats.nftables_churn.nft_compat_validate_install_ok,
 						   1, __ATOMIC_RELAXED);
 			} else if (rc == -EOPNOTSUPP ||
 				   rc == -EPROTONOSUPPORT) {
-				__atomic_add_fetch(&shm->stats.nft_compat_validate_unsupported,
+				__atomic_add_fetch(&shm->stats.nftables_churn.nft_compat_validate_unsupported,
 						   1, __ATOMIC_RELAXED);
 				ns_unsupported_nft_compat_validate = true;
 				goto done;
 			} else {
-				__atomic_add_fetch(&shm->stats.nft_compat_validate_install_fail,
+				__atomic_add_fetch(&shm->stats.nftables_churn.nft_compat_validate_install_fail,
 						   1, __ATOMIC_RELAXED);
 			}
 		}

@@ -244,7 +244,7 @@ static void xt_ct_probe_one(bool ipv6, __u8 revision)
 	unsigned int off, t_data_off;
 	int fd, level, sockopt_set, sockopt_get_info, sockopt_get_entries;
 
-	__atomic_add_fetch(&shm->stats.xt_ct_iters, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.nftables_churn.xt_ct_iters, 1, __ATOMIC_RELAXED);
 
 	if (ipv6) {
 		level                = IPPROTO_IPV6;
@@ -265,12 +265,12 @@ static void xt_ct_probe_one(bool ipv6, __u8 revision)
 	if (fd < 0) {
 		if (errno == EPERM) {
 			ns_unsupported_xt_ct = true;
-			__atomic_add_fetch(&shm->stats.xt_ct_eperm,
+			__atomic_add_fetch(&shm->stats.nftables_churn.xt_ct_eperm,
 					   1, __ATOMIC_RELAXED);
 		} else if (errno == EAFNOSUPPORT ||
 			   errno == EPROTONOSUPPORT) {
 			ns_unsupported_xt_ct = true;
-			__atomic_add_fetch(&shm->stats.xt_ct_unsupported,
+			__atomic_add_fetch(&shm->stats.nftables_churn.xt_ct_unsupported,
 					   1, __ATOMIC_RELAXED);
 		}
 		return;
@@ -352,19 +352,19 @@ static void xt_ct_probe_one(bool ipv6, __u8 revision)
 		       (socklen_t)(hdr_sz + total_sz)) < 0) {
 		if (errno == EPERM) {
 			ns_unsupported_xt_ct = true;
-			__atomic_add_fetch(&shm->stats.xt_ct_eperm,
+			__atomic_add_fetch(&shm->stats.nftables_churn.xt_ct_eperm,
 					   1, __ATOMIC_RELAXED);
 		} else if (errno == ENOENT || errno == EOPNOTSUPP ||
 			   errno == ENOPROTOOPT) {
 			ns_unsupported_xt_ct = true;
-			__atomic_add_fetch(&shm->stats.xt_ct_unsupported,
+			__atomic_add_fetch(&shm->stats.nftables_churn.xt_ct_unsupported,
 					   1, __ATOMIC_RELAXED);
 		}
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.xt_ct_set_ok, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.nftables_churn.xt_ct_set_ok, 1, __ATOMIC_RELAXED);
 	if (revision == 2)
-		__atomic_add_fetch(&shm->stats.xt_ct_v2_seen,
+		__atomic_add_fetch(&shm->stats.nftables_churn.xt_ct_v2_seen,
 				   1, __ATOMIC_RELAXED);
 
 	/* GET_INFO -> GET_ENTRIES.  The historical leak window is the
@@ -388,7 +388,7 @@ static void xt_ct_probe_one(bool ipv6, __u8 revision)
 			((struct xt_lc_get_entries_hdr *)get_buf)->size = gi.size;
 			if (getsockopt(fd, level, sockopt_get_entries,
 				       get_buf, &ge_len) == 0)
-				__atomic_add_fetch(&shm->stats.xt_ct_get_ok,
+				__atomic_add_fetch(&shm->stats.nftables_churn.xt_ct_get_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 	}

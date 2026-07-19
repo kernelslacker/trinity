@@ -97,7 +97,7 @@ static void l4frag_send_pair(__u8 protocol)
 	int i;
 
 	if (s < 0) {
-		__atomic_add_fetch(&shm->stats.nft_l4frag_send_failed, 1,
+		__atomic_add_fetch(&shm->stats.nftables_churn.nft_l4frag_send_failed, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
@@ -129,17 +129,17 @@ static void l4frag_send_pair(__u8 protocol)
 
 	if (sendto(s, pkt1, sizeof(pkt1), MSG_DONTWAIT,
 		   (struct sockaddr *)&dst, sizeof(dst)) > 0)
-		__atomic_add_fetch(&shm->stats.nft_l4frag_send_ok, 1,
+		__atomic_add_fetch(&shm->stats.nftables_churn.nft_l4frag_send_ok, 1,
 				   __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.nft_l4frag_send_failed, 1,
+		__atomic_add_fetch(&shm->stats.nftables_churn.nft_l4frag_send_failed, 1,
 				   __ATOMIC_RELAXED);
 	if (sendto(s, pkt2, sizeof(pkt2), MSG_DONTWAIT,
 		   (struct sockaddr *)&dst, sizeof(dst)) > 0)
-		__atomic_add_fetch(&shm->stats.nft_l4frag_send_ok, 1,
+		__atomic_add_fetch(&shm->stats.nftables_churn.nft_l4frag_send_ok, 1,
 				   __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.nft_l4frag_send_failed, 1,
+		__atomic_add_fetch(&shm->stats.nftables_churn.nft_l4frag_send_failed, 1,
 				   __ATOMIC_RELAXED);
 	close(s);
 }
@@ -153,7 +153,7 @@ void nft_l4_aware_frag_sweep(struct nfnl_ctx *nfnl)
 	__u8 proto = (rand32() & 1) ? IPPROTO_UDP : IPPROTO_SCTP;
 	bool table_created = false;
 
-	__atomic_add_fetch(&shm->stats.nft_l4frag_iters, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.nftables_churn.nft_l4frag_iters, 1, __ATOMIC_RELAXED);
 
 	snprintf(table, sizeof(table), "trl4f%u",
 		 (unsigned int)(rand32() & 0xffffu));
@@ -169,7 +169,7 @@ void nft_l4_aware_frag_sweep(struct nfnl_ctx *nfnl)
 
 	if (build_l4frag_chain(nfnl, table, base) != 0)
 		goto out;
-	__atomic_add_fetch(&shm->stats.nft_l4frag_install_ok, 1,
+	__atomic_add_fetch(&shm->stats.nftables_churn.nft_l4frag_install_ok, 1,
 			   __ATOMIC_RELAXED);
 
 	/* with_socket, with_tproxy, with_exthdr (SCTP path), with_osf — every
@@ -187,7 +187,7 @@ void nft_l4_aware_frag_sweep(struct nfnl_ctx *nfnl)
 
 		if (nft_build_newrule(nfnl, NFPROTO_IPV4, table, base, aux,
 				  NFT_JUMP, 0, &plan, anon_set, set_id) == 0)
-			__atomic_add_fetch(&shm->stats.nft_l4frag_rule_ok, 1,
+			__atomic_add_fetch(&shm->stats.nftables_churn.nft_l4frag_rule_ok, 1,
 					   __ATOMIC_RELAXED);
 	}
 

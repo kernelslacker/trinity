@@ -102,6 +102,7 @@
 #include "stats/subsys/netns_mountns_setup.h"
 #include "stats/subsys/netns_teardown.h"
 #include "stats/subsys/nf_conntrack_helper_churn.h"
+#include "stats/subsys/nftables_churn.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/numa_migration.h"
 #include "stats/subsys/obscure_af_churn.h"
@@ -970,74 +971,8 @@ struct stats_s {
 	/* tty_ldisc_churn accounting.  See stats/subsys/tty_ldisc_churn.h. */
 	struct tty_ldisc_churn_stats tty_ldisc_churn __attribute__((aligned(64)));
 
-	/* nftables_churn childop counters */
-	unsigned long nftables_churn_runs;		/* total nftables_churn invocations */
-	unsigned long nftables_churn_setup_failed;	/* unshare / nfnl_open / nf_tables latched */
-	unsigned long nftables_churn_table_create_ok;	/* NFT_MSG_NEWTABLE accepted */
-	unsigned long nftables_churn_set_create_ok;	/* NFT_MSG_NEWSET (anonymous) accepted */
-	unsigned long nftables_churn_chain_create_ok;	/* NFT_MSG_NEWCHAIN (base or aux) accepted */
-	unsigned long nftables_churn_rule_create_ok;	/* NFT_MSG_NEWRULE (append) accepted */
-	unsigned long nftables_churn_packet_sent_ok;	/* loopback UDP sendto returned >0 (drives input hook) */
-	unsigned long nftables_churn_rule_insert_ok;	/* NFT_MSG_NEWRULE at NFTA_RULE_POSITION accepted */
-	unsigned long nftables_churn_rule_del_ok;	/* NFT_MSG_DELRULE bulk-del accepted */
-	unsigned long nftables_churn_table_del_ok;	/* NFT_MSG_DELTABLE accepted */
-	unsigned long nftables_churn_payload_expr_emit;	/* NEWRULE carried a structured nft_payload expression */
-	unsigned long nftables_churn_meta_expr_emit;	/* NEWRULE carried a structured nft_meta expression */
-	unsigned long nftables_churn_lookup_expr_emit;	/* NEWRULE carried a structured nft_lookup expression */
-	unsigned long nftables_churn_log_expr_emit;	/* NEWRULE carried a structured nft_log expression */
-	unsigned long nftables_churn_bitwise_expr_emit;	/* NEWRULE carried a structured nft_bitwise expression */
-	unsigned long nftables_churn_cmp_expr_emit;	/* NEWRULE carried a structured nft_cmp expression */
-	unsigned long nftables_churn_range_expr_emit;	/* NEWRULE carried a structured nft_range expression */
-	unsigned long nftables_churn_byteorder_expr_emit;	/* NEWRULE carried a structured nft_byteorder expression */
-	unsigned long nftables_churn_socket_expr_emit;	/* NEWRULE carried a structured nft_socket expression */
-	unsigned long nftables_churn_quota_expr_emit;	/* NEWRULE carried a structured nft_quota expression */
-	unsigned long nftables_churn_limit_expr_emit;	/* NEWRULE carried a structured nft_limit expression */
-	unsigned long nftables_churn_numgen_expr_emit;	/* NEWRULE carried a structured nft_numgen expression */
-	unsigned long nftables_churn_hash_expr_emit;	/* NEWRULE carried a structured nft_hash expression */
-	unsigned long nftables_churn_synproxy_expr_emit;	/* NEWRULE carried a structured nft_synproxy expression */
-	unsigned long nftables_churn_counter_expr_emit;	/* NEWRULE carried a structured nft_counter expression */
-	unsigned long nftables_churn_connlimit_expr_emit;	/* NEWRULE carried a structured nft_connlimit expression */
-	unsigned long nftables_churn_masq_expr_emit;	/* NEWRULE carried a structured nft_masq expression */
-	unsigned long nftables_churn_redir_expr_emit;	/* NEWRULE carried a structured nft_redir expression */
-	unsigned long nftables_churn_tproxy_expr_emit;	/* NEWRULE carried a structured nft_tproxy expression */
-	unsigned long nftables_churn_xfrm_expr_emit;	/* NEWRULE carried a structured nft_xfrm expression */
-	unsigned long nftables_churn_dup_netdev_expr_emit;	/* NEWRULE carried a structured nft_dup_netdev expression */
-	unsigned long nftables_churn_dup_ipv4_expr_emit;	/* NEWRULE carried a structured nft_dup_ipv4 expression */
-	unsigned long nftables_churn_dup_ipv6_expr_emit;	/* NEWRULE carried a structured nft_dup_ipv6 expression */
-	unsigned long nftables_churn_fwd_netdev_expr_emit;	/* NEWRULE carried a structured nft_fwd_netdev expression */
-	unsigned long nftables_churn_last_expr_emit;	/* NEWRULE carried a structured nft_last expression */
-	unsigned long nftables_churn_rt_expr_emit;	/* NEWRULE carried a structured nft_rt expression */
-	unsigned long nftables_churn_fib_expr_emit;	/* NEWRULE carried a structured nft_fib expression */
-	unsigned long nftables_churn_exthdr_expr_emit;	/* NEWRULE carried a structured nft_exthdr expression */
-	unsigned long nftables_churn_osf_expr_emit;	/* NEWRULE carried a structured nft_osf expression */
-	unsigned long nftables_churn_queue_expr_emit;	/* NEWRULE carried a structured nft_queue expression */
-	unsigned long nftables_churn_immediate_expr_emit;	/* NEWRULE carried a structured nft_immediate expression */
-	unsigned long nftables_churn_dynset_expr_emit;	/* NEWRULE carried a structured nft_dynset expression */
-	unsigned long nftables_churn_ct_expr_emit;	/* NEWRULE carried a structured nft_ct expression */
-	unsigned long nftables_churn_objref_expr_emit;	/* NEWRULE carried a structured nft_objref expression */
-	unsigned long nft_compat_validate_install_ok;		/* (target, hook) chain+rule accepted */
-	unsigned long nft_compat_validate_install_fail;		/* (target, hook) chain+rule rejected (non-unsupported) */
-	unsigned long nft_compat_validate_unsupported;		/* EOPNOTSUPP/EPROTONOSUPPORT (compat target absent) */
-	unsigned long nft_compat_validate_per_hook_pairs;	/* (target, hook) pair install attempts */
-	unsigned long nft_dormant_abort_iters;		/* dormant-table abort sub-mode invocations */
-	unsigned long nft_dormant_abort_eperm;		/* sendmsg EPERM (CAP_NET_ADMIN gate) -- latches */
-	unsigned long nft_dormant_abort_emsg;		/* sendmsg failures other than EPERM */
-	unsigned long nft_dormant_abort_ok;		/* batch sent + drain completed */
-	unsigned long xt_ct_iters;		/* xt_CT usersize sub-mode invocations */
-	unsigned long xt_ct_eperm;		/* setsockopt EPERM (CAP_NET_ADMIN gate) -- latches */
-	unsigned long xt_ct_unsupported;	/* xt_CT module absent (ENOENT/EOPNOTSUPP/ENOPROTOOPT) -- latches */
-	unsigned long xt_ct_set_ok;		/* IPT/IP6T_SO_SET_REPLACE accepted */
-	unsigned long xt_ct_get_ok;		/* IPT/IP6T_SO_GET_ENTRIES accepted (xt_target_to_user reply path) */
-	unsigned long xt_ct_v2_seen;		/* revision 2 path actually accepted on this kernel */
-	unsigned long nft_fwd_loop_runs;		/* nft_fwd_netdev loop sub-mode invocations */
-	unsigned long nft_fwd_loop_ns_setup_failed;	/* veth/addr/netdev-table install failed -- latches */
-	unsigned long nft_fwd_loop_probe_sent_ok;	/* ICMP probe via raw socket sendto returned >0 */
-	unsigned long nft_fwd_loop_completed_ok;	/* full setup + chains + rules + probe completed */
-	unsigned long nft_l4frag_iters;			/* L4-aware-on-fragment sub-mode invocations */
-	unsigned long nft_l4frag_install_ok;		/* table + pre-defrag chain install accepted */
-	unsigned long nft_l4frag_rule_ok;		/* NEWRULE carrying socket/tproxy/exthdr/osf accepted */
-	unsigned long nft_l4frag_send_ok;		/* raw IPv4 fragment sendto returned >0 */
-	unsigned long nft_l4frag_send_failed;		/* raw IPv4 fragment sendto returned <=0 (incl. EPERM on raw open) */
+	/* nftables_churn accounting.  See stats/subsys/nftables_churn.h. */
+	struct nftables_churn_stats nftables_churn __attribute__((aligned(64)));
 
 	/* tc_qdisc_churn accounting.  See stats/subsys/tc_qdisc_churn.h. */
 	struct tc_qdisc_churn_stats tc_qdisc_churn __attribute__((aligned(64)));

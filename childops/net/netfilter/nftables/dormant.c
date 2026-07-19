@@ -41,7 +41,7 @@ void nft_dormant_abort_sweep(struct nfnl_ctx *ctx)
 	__u32 chain_hook[]  = { hk_a, hk_b == hk_a ? (hk_a + 1) % 5 : hk_b };
 	int i, rc;
 
-	__atomic_add_fetch(&shm->stats.nft_dormant_abort_iters,
+	__atomic_add_fetch(&shm->stats.nftables_churn.nft_dormant_abort_iters,
 			   1, __ATOMIC_RELAXED);
 
 	nft_fill_table_name(table_name, sizeof(table_name), "trdorm");
@@ -147,17 +147,17 @@ void nft_dormant_abort_sweep(struct nfnl_ctx *ctx)
 	 * abort-path rejection. */
 	rc = nfnl_send_recv_batched(ctx, buf, off);
 	if (rc == -EIO) {
-		__atomic_add_fetch(&shm->stats.nft_dormant_abort_emsg,
+		__atomic_add_fetch(&shm->stats.nftables_churn.nft_dormant_abort_emsg,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 	if (rc == -EPERM) {
-		__atomic_add_fetch(&shm->stats.nft_dormant_abort_eperm,
+		__atomic_add_fetch(&shm->stats.nftables_churn.nft_dormant_abort_eperm,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
-	__atomic_add_fetch(&shm->stats.nft_dormant_abort_ok,
+	__atomic_add_fetch(&shm->stats.nftables_churn.nft_dormant_abort_ok,
 			   1, __ATOMIC_RELAXED);
 
 	(void)nft_build_deltable(ctx, family, table_name);

@@ -215,7 +215,7 @@ struct nft_expr_desc {
 
 #define NFT_EXPR_PLAN_OFF(field)	offsetof(struct nft_expr_plan, with_##field)
 #define NFT_EXPR_STAT_OFF(field) \
-	offsetof(struct stats_s, nftables_churn_##field##_expr_emit)
+	offsetof(struct stats_s, nftables_churn.field##_expr_emit)
 
 static const struct nft_expr_desc nft_expr_table[] = {
 	{ "payload",    NFT_EXPR_PLAN_OFF(payload),    NFT_EXPR_STAT_OFF(payload),    3, build_nft_payload_expr,    NULL },

@@ -283,7 +283,7 @@ void nft_fwd_netdev_loop_sweep(struct nfnl_ctx *nfnl,
 	unsigned int rng = (unsigned int)(rand32() & 0xffffu);
 	int rc = 0;
 
-	__atomic_add_fetch(&shm->stats.nft_fwd_loop_runs, 1,
+	__atomic_add_fetch(&shm->stats.nftables_churn.nft_fwd_loop_runs, 1,
 			   __ATOMIC_RELAXED);
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 
@@ -346,11 +346,11 @@ void nft_fwd_netdev_loop_sweep(struct nfnl_ctx *nfnl,
 		icmp[0] = 8;	/* ICMP_ECHO */
 		if (sendto(sk, icmp, sizeof(icmp), MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst)) > 0)
-			__atomic_add_fetch(&shm->stats.nft_fwd_loop_probe_sent_ok,
+			__atomic_add_fetch(&shm->stats.nftables_churn.nft_fwd_loop_probe_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
-	__atomic_add_fetch(&shm->stats.nft_fwd_loop_completed_ok, 1,
+	__atomic_add_fetch(&shm->stats.nftables_churn.nft_fwd_loop_completed_ok, 1,
 			   __ATOMIC_RELAXED);
 	goto out;
 
@@ -364,7 +364,7 @@ fail:
 	if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
 	    rc == -EAFNOSUPPORT)
 		ns_unsupported_nft_fwd_netdev_loop = true;
-	__atomic_add_fetch(&shm->stats.nft_fwd_loop_ns_setup_failed, 1,
+	__atomic_add_fetch(&shm->stats.nftables_churn.nft_fwd_loop_ns_setup_failed, 1,
 			   __ATOMIC_RELAXED);
 out:
 	if (sk >= 0)
