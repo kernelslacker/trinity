@@ -120,6 +120,7 @@
 #include "stats/subsys/tc_mirred_blockcast.h"
 #include "stats/subsys/tc_qdisc_churn.h"
 #include "stats/subsys/tcp_ao_rotate.h"
+#include "stats/subsys/tcp_md5_listener_race.h"
 #include "stats/subsys/tcp_ulp_swap_churn.h"
 #include "stats/subsys/tipc_link_churn.h"
 #include "stats/subsys/tls_rotate.h"
@@ -951,14 +952,8 @@ struct stats_s {
 	/* tcp_ao_rotate accounting.  See stats/subsys/tcp_ao_rotate.h. */
 	struct tcp_ao_rotate_stats tcp_ao_rotate __attribute__((aligned(64)));
 
-	/* tcp_md5_listener_race childop counters */
-	unsigned long tcp_md5_listener_race_runs;		/* total tcp_md5_listener_race invocations */
-	unsigned long tcp_md5_listener_race_setup_failed;	/* loopback listen/socket/bind setup failed */
-	unsigned long tcp_md5_listener_race_md5_set_ok;		/* TCP_MD5SIG install/rotate/delete accepted */
-	unsigned long tcp_md5_listener_race_md5_set_failed;	/* TCP_MD5SIG rejected (EOPNOTSUPP/EINVAL/EPERM) */
-	unsigned long tcp_md5_listener_race_connect_ok;		/* zero-linger client connect() egress observed */
-	unsigned long tcp_md5_listener_race_rst_sent_ok;	/* zero-linger close() drove RST toward listener */
-	unsigned long tcp_md5_listener_race_completed_ok;	/* full cycles reaching teardown */
+	/* tcp_md5_listener_race accounting.  See stats/subsys/tcp_md5_listener_race.h. */
+	struct tcp_md5_listener_race_stats tcp_md5_listener_race __attribute__((aligned(64)));
 
 	/* ipv6_ndisc_proxy accounting.  See stats/subsys/ipv6_ndisc_proxy.h. */
 	struct ipv6_ndisc_proxy_stats ipv6_ndisc_proxy __attribute__((aligned(64)));

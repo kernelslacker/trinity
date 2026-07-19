@@ -146,7 +146,7 @@ bool tcp_md5_listener_race(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_runs, 1,
+	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_tcp_md5)
@@ -154,7 +154,7 @@ bool tcp_md5_listener_race(struct childdata *child)
 
 	listener = open_loopback_listener(&srv_addr);
 	if (listener < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_setup_failed,
+		__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -171,12 +171,12 @@ bool tcp_md5_listener_race(struct childdata *child)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_failed,
+		__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.md5_set_failed,
 				   1, __ATOMIC_RELAXED);
 		close(listener);
 		return true;
 	}
-	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_ok, 1,
+	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.md5_set_ok, 1,
 			   __ATOMIC_RELAXED);
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -193,9 +193,9 @@ bool tcp_md5_listener_race(struct childdata *child)
 		 * exit path against the listener's MD5 verify state. */
 		for (j = 0; j < MD5_BURST_CLIENTS; j++) {
 			if (burst_one_client(&srv_addr)) {
-				__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_connect_ok,
+				__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.connect_ok,
 						   1, __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_rst_sent_ok,
+				__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.rst_sent_ok,
 						   1, __ATOMIC_RELAXED);
 			}
 		}
@@ -207,10 +207,10 @@ bool tcp_md5_listener_race(struct childdata *child)
 		rc = setsockopt(listener, IPPROTO_TCP, TCP_MD5SIG,
 				&md5, sizeof(md5));
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_ok,
+			__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.md5_set_ok,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_failed,
+			__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.md5_set_failed,
 					   1, __ATOMIC_RELAXED);
 
 		/* Drain the accept queue so the state machine advances
@@ -231,10 +231,10 @@ bool tcp_md5_listener_race(struct childdata *child)
 		rc = setsockopt(listener, IPPROTO_TCP, TCP_MD5SIG,
 				&md5, sizeof(md5));
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_ok,
+			__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.md5_set_ok,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_failed,
+			__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.md5_set_failed,
 					   1, __ATOMIC_RELAXED);
 
 		/* Reinstall for the next outer iteration so the rotate
@@ -245,7 +245,7 @@ bool tcp_md5_listener_race(struct childdata *child)
 	}
 
 	close(listener);
-	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_completed_ok, 1,
+	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.completed_ok, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
