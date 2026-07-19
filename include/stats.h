@@ -33,6 +33,7 @@
 #include "stats/subsys/bpf_cgroup_attach.h"
 #include "stats/subsys/bpf_lifecycle.h"
 #include "stats/subsys/bridge_ct.h"
+#include "stats/subsys/bridge_ip6_refrag_fraggap.h"
 #include "stats/subsys/bridge_ip6frag.h"
 #include "stats/subsys/bridge_vlan_churn.h"
 #include "stats/subsys/cgroup_churn.h"
@@ -1187,11 +1188,8 @@ struct stats_s {
 	/* mpls_label_stack_rx accounting.  See stats/subsys/mpls_label_stack_rx.h. */
 	struct mpls_label_stack_rx_stats mpls_label_stack_rx __attribute__((aligned(64)));
 
-	/* bridge_ip6_refrag_fraggap childop counters */
-	unsigned long bridge_ip6_refrag_fraggap_runs;		/* total bridge_ip6_refrag_fraggap invocations */
-	unsigned long bridge_ip6_refrag_fraggap_brnf_enabled;	/* bridge-nf-call-ip6tables sysctl write accepted */
-	unsigned long bridge_ip6_refrag_fraggap_bursts;		/* per-iter frag-pair emission bursts inside the netns */
-	unsigned long bridge_ip6_refrag_fraggap_frags_sent;	/* individual fragment frames sendto returned >0 */
+	/* bridge_ip6_refrag_fraggap accounting.  See stats/subsys/bridge_ip6_refrag_fraggap.h. */
+	struct bridge_ip6_refrag_fraggap_stats bridge_ip6_refrag_fraggap __attribute__((aligned(64)));
 
 	/* mptcp_pm_churn childop counters */
 	unsigned long mptcp_pm_churn_runs;			/* total mptcp_pm_churn invocations */

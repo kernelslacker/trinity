@@ -281,17 +281,6 @@ const struct stat_category altname_thrash_category =
 
 
 
-static const struct stat_field bridge_ip6_refrag_fraggap_fields[] = {
-	STAT_FIELD(bridge_ip6_refrag_fraggap, runs),
-	STAT_FIELD(bridge_ip6_refrag_fraggap, brnf_enabled),
-	STAT_FIELD(bridge_ip6_refrag_fraggap, bursts),
-	STAT_FIELD(bridge_ip6_refrag_fraggap, frags_sent),
-};
-
-const struct stat_category bridge_ip6_refrag_fraggap_category =
-	STAT_CATEGORY("bridge_ip6_refrag_fraggap",
-		      bridge_ip6_refrag_fraggap_runs,
-		      bridge_ip6_refrag_fraggap_fields);
 
 static const struct stat_field mptcp_pm_churn_fields[] = {
 	STAT_FIELD(mptcp_pm_churn, runs),
