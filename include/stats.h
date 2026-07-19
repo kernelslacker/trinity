@@ -116,6 +116,7 @@
 #include "stats/subsys/splice_protocols.h"
 #include "stats/subsys/statmount_idmap.h"
 #include "stats/subsys/sysv_shm_orphan_race.h"
+#include "stats/subsys/tc_mirred_blockcast.h"
 #include "stats/subsys/tcp_ao_rotate.h"
 #include "stats/subsys/tcp_ulp_swap_churn.h"
 #include "stats/subsys/tipc_link_churn.h"
@@ -1138,14 +1139,8 @@ struct stats_s {
 	unsigned long tc_qdisc_churn_bridge_dellink_race_ok;	/* RTM_DELLINK on bridge slave port accepted (raced flush burst) */
 	unsigned long tc_qdisc_churn_gso_burst_ok;	/* UDP_SEGMENT sendto produced a GSO skb (reaches qdisc_pkt_len_segs_init) */
 
-	/* tc_mirred_blockcast childop counters */
-	unsigned long tc_mirred_blockcast_runs;		/* total tc_mirred_blockcast invocations */
-	unsigned long tc_mirred_blockcast_setup_failed;	/* unshare / NETLINK_ROUTE open latched */
-	unsigned long tc_mirred_blockcast_qdisc_ok;	/* clsact + TCA_EGRESS_BLOCK install accepted (per device) */
-	unsigned long tc_mirred_blockcast_qdisc_fail;	/* clsact + TCA_EGRESS_BLOCK install rejected */
-	unsigned long tc_mirred_blockcast_filter_ok;	/* matchall+mirred(blockid) on shared block accepted */
-	unsigned long tc_mirred_blockcast_filter_fail;	/* matchall+mirred(blockid) on shared block rejected */
-	unsigned long tc_mirred_blockcast_packet_sent_ok;	/* loopback UDP sendto on A bound dummy returned >0 */
+	/* tc_mirred_blockcast accounting.  See stats/subsys/tc_mirred_blockcast.h. */
+	struct tc_mirred_blockcast_stats tc_mirred_blockcast __attribute__((aligned(64)));
 
 	/* tc_live_traffic childop counters */
 	unsigned long tc_live_traffic_runs;		/* total tc_live_traffic invocations */

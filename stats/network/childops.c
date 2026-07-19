@@ -202,14 +202,14 @@ static void dump_stats_render_tc_qdisc_churn(void)
 
 static void dump_stats_render_tc_mirred_blockcast(void)
 {
-	if (shm->stats.tc_mirred_blockcast_runs) {
-		stat_row("tc_mirred_blockcast", "runs",            shm->stats.tc_mirred_blockcast_runs);
-		stat_row("tc_mirred_blockcast", "setup_failed",    shm->stats.tc_mirred_blockcast_setup_failed);
-		stat_row("tc_mirred_blockcast", "qdisc_ok",        shm->stats.tc_mirred_blockcast_qdisc_ok);
-		stat_row("tc_mirred_blockcast", "qdisc_fail",      shm->stats.tc_mirred_blockcast_qdisc_fail);
-		stat_row("tc_mirred_blockcast", "filter_ok",       shm->stats.tc_mirred_blockcast_filter_ok);
-		stat_row("tc_mirred_blockcast", "filter_fail",     shm->stats.tc_mirred_blockcast_filter_fail);
-		stat_row("tc_mirred_blockcast", "packet_sent_ok",  shm->stats.tc_mirred_blockcast_packet_sent_ok);
+	if (shm->stats.tc_mirred_blockcast.runs) {
+		stat_row("tc_mirred_blockcast", "runs",            shm->stats.tc_mirred_blockcast.runs);
+		stat_row("tc_mirred_blockcast", "setup_failed",    shm->stats.tc_mirred_blockcast.setup_failed);
+		stat_row("tc_mirred_blockcast", "qdisc_ok",        shm->stats.tc_mirred_blockcast.qdisc_ok);
+		stat_row("tc_mirred_blockcast", "qdisc_fail",      shm->stats.tc_mirred_blockcast.qdisc_fail);
+		stat_row("tc_mirred_blockcast", "filter_ok",       shm->stats.tc_mirred_blockcast.filter_ok);
+		stat_row("tc_mirred_blockcast", "filter_fail",     shm->stats.tc_mirred_blockcast.filter_fail);
+		stat_row("tc_mirred_blockcast", "packet_sent_ok",  shm->stats.tc_mirred_blockcast.packet_sent_ok);
 	}
 }
 

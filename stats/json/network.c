@@ -203,20 +203,6 @@ const struct stat_category tc_qdisc_churn_category =
 	              tc_qdisc_churn_runs,
 	              tc_qdisc_churn_fields);
 
-static const struct stat_field tc_mirred_blockcast_fields[] = {
-	STAT_FIELD(tc_mirred_blockcast, runs),
-	STAT_FIELD(tc_mirred_blockcast, setup_failed),
-	STAT_FIELD(tc_mirred_blockcast, qdisc_ok),
-	STAT_FIELD(tc_mirred_blockcast, qdisc_fail),
-	STAT_FIELD(tc_mirred_blockcast, filter_ok),
-	STAT_FIELD(tc_mirred_blockcast, filter_fail),
-	STAT_FIELD(tc_mirred_blockcast, packet_sent_ok),
-};
-
-const struct stat_category tc_mirred_blockcast_category =
-	STAT_CATEGORY("tc_mirred_blockcast",
-		tc_mirred_blockcast_runs,
-		tc_mirred_blockcast_fields);
 
 static const struct stat_field tc_live_traffic_fields[] = {
 	STAT_FIELD(tc_live_traffic, runs),
