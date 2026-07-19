@@ -159,7 +159,9 @@
 #include "stats/subsys/vxlan_encap_churn.h"
 #include "stats/subsys/wgdf.h"
 #include "stats/subsys/xattr_thrash.h"
+#include "stats/subsys/xfrm_ah_esn.h"
 #include "stats/subsys/xfrm_churn.h"
+#include "stats/subsys/xfrm_compat.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
  * Q8.8 fixed point: 256 == 1.0x.  Floor and ceiling cap how far the
@@ -1048,14 +1050,12 @@ struct stats_s {
 
 	/* xfrm_churn accounting.  See stats/subsys/xfrm_churn.h. */
 	struct xfrm_churn_stats xfrm_churn __attribute__((aligned(64)));
-	unsigned long xfrm_ah_esn_setup_ok;		/* AH+ESN+async-algo NEWSA accepted */
-	unsigned long xfrm_ah_esn_setup_fail;		/* AH+ESN+async-algo NEWSA rejected */
-	unsigned long xfrm_ah_esn_async_runs;		/* AH+ESN+async-algo sub-mode invocations */
-	unsigned long xfrm_ah_esn_delsa_races;		/* AH+ESN+async-algo DELSA accepted (race window) */
-	unsigned long xfrm_compat_sweep_runs;		/* xfrm_compat_msg_sweep sub-mode invocations */
-	unsigned long xfrm_compat_sends_ok;		/* sweep sendto returned >= 0 */
-	unsigned long xfrm_compat_sends_failed;		/* sweep sendto returned < 0 */
-	unsigned long xfrm_compat_replies_seen;		/* sweep recv returned > 0 */
+
+	/* xfrm_ah_esn accounting.  See stats/subsys/xfrm_ah_esn.h. */
+	struct xfrm_ah_esn_stats xfrm_ah_esn __attribute__((aligned(64)));
+
+	/* xfrm_compat accounting.  See stats/subsys/xfrm_compat.h. */
+	struct xfrm_compat_stats xfrm_compat __attribute__((aligned(64)));
 
 	/* nat_t_churn accounting.  See stats/subsys/nat_t_churn.h. */
 	struct nat_t_churn_stats nat_t_churn __attribute__((aligned(64)));

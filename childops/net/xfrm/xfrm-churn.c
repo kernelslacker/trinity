@@ -414,7 +414,7 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 	if (ns_unsupported_xfrm_ah_esn)
 		return;
 
-	__atomic_add_fetch(&shm->stats.xfrm_ah_esn_async_runs, 1,
+	__atomic_add_fetch(&shm->stats.xfrm_ah_esn.async_runs, 1,
 			   __ATOMIC_RELAXED);
 
 	alg   = &RAND_ARRAY(ah_esn_async_algos);
@@ -478,7 +478,7 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 	nlh->nlmsg_len = (__u32)off;
 	rc = nl_send_recv_retry(ctx, buf, off);
 	if (rc != 0) {
-		__atomic_add_fetch(&shm->stats.xfrm_ah_esn_setup_fail, 1,
+		__atomic_add_fetch(&shm->stats.xfrm_ah_esn.setup_fail, 1,
 				   __ATOMIC_RELAXED);
 		if (rc == -EOPNOTSUPP || rc == -ENOPROTOOPT || rc == -ENOENT) {
 			ns_unsupported_xfrm_ah_esn = true;
@@ -489,7 +489,7 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 		}
 		return;
 	}
-	__atomic_add_fetch(&shm->stats.xfrm_ah_esn_setup_ok, 1,
+	__atomic_add_fetch(&shm->stats.xfrm_ah_esn.setup_ok, 1,
 			   __ATOMIC_RELAXED);
 
 	/* Drive the inner UDP through the AH SA so the async-hash
@@ -527,7 +527,7 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uid));
 	nlh->nlmsg_len = (__u32)off;
 	if (nl_send_recv(ctx, dbuf, off) == 0)
-		__atomic_add_fetch(&shm->stats.xfrm_ah_esn_delsa_races, 1,
+		__atomic_add_fetch(&shm->stats.xfrm_ah_esn.delsa_races, 1,
 				   __ATOMIC_RELAXED);
 }
 
@@ -836,7 +836,7 @@ static void xfrm_compat_msg_sweep(struct nl_ctx *ctx)
 	if (ns_unsupported_xfrm)
 		return;
 
-	__atomic_add_fetch(&shm->stats.xfrm_compat_sweep_runs,
+	__atomic_add_fetch(&shm->stats.xfrm_compat.sweep_runs,
 			   1, __ATOMIC_RELAXED);
 
 	memset(&dst, 0, sizeof(dst));
@@ -853,16 +853,16 @@ static void xfrm_compat_msg_sweep(struct nl_ctx *ctx)
 
 		if (sendto(ctx->fd, buf, off, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst)) < 0) {
-			__atomic_add_fetch(&shm->stats.xfrm_compat_sends_failed,
+			__atomic_add_fetch(&shm->stats.xfrm_compat.sends_failed,
 					   1, __ATOMIC_RELAXED);
 			continue;
 		}
-		__atomic_add_fetch(&shm->stats.xfrm_compat_sends_ok,
+		__atomic_add_fetch(&shm->stats.xfrm_compat.sends_ok,
 				   1, __ATOMIC_RELAXED);
 
 		n = recv(ctx->fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.xfrm_compat_replies_seen,
+			__atomic_add_fetch(&shm->stats.xfrm_compat.replies_seen,
 					   1, __ATOMIC_RELAXED);
 	}
 }
