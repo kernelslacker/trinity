@@ -29,3 +29,24 @@ void kcov_cmp_render_reexec_skip_reason_breakdown(long elapsed,
 						  unsigned long delta_reexec_gate_skip_no_pending, unsigned long cur_reexec_gate_skip_no_pending,
 						  unsigned long delta_reexec_gate_skip_rate, unsigned long cur_reexec_gate_skip_rate,
 						  unsigned long delta_reexec_gate_pass, unsigned long cur_reexec_gate_pass);
+
+void kcov_cmp_sum_hyp_counters_per_syscall(unsigned int nr,
+					   uint64_t *pc_wins,
+					   uint64_t *consumed,
+					   uint64_t *misses);
+void kcov_cmp_render_oldpool_per_syscall_topn(void);
+void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed);
+void kcov_cmp_render_pc_win_conversion_split_block(long elapsed);
+void kcov_cmp_render_per_entry_feedback_scoring(long elapsed,
+						unsigned long delta_cmp_hints_consumed, unsigned long cur_cmp_hints_consumed,
+						unsigned long delta_cmp_hint_wins, unsigned long cur_cmp_hint_wins,
+						unsigned long delta_cmp_hint_misses, unsigned long cur_cmp_hint_misses,
+						unsigned long delta_cmp_hint_cmp_novelty_wins, unsigned long cur_cmp_hint_cmp_novelty_wins,
+						unsigned long delta_cmp_hint_stash_overflow, unsigned long cur_cmp_hint_stash_overflow,
+						unsigned long delta_cmp_hint_credit_entry_evicted, unsigned long cur_cmp_hint_credit_entry_evicted);
+void kcov_cmp_render_recent_cmp_pool_tier(long elapsed,
+					  unsigned long delta_cmp_recent_inserts, unsigned long cur_cmp_recent_inserts,
+					  unsigned long delta_cmp_recent_evicts, unsigned long cur_cmp_recent_evicts,
+					  unsigned long delta_cmp_recent_would_pick, unsigned long cur_cmp_recent_would_pick,
+					  unsigned long delta_cmp_recent_would_miss, unsigned long cur_cmp_recent_would_miss,
+					  unsigned long delta_cmp_recent_live_picks, unsigned long cur_cmp_recent_live_picks);
