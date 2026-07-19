@@ -187,7 +187,7 @@ static void ipvs_conn_burn(struct ipvs_sysctl_iter_ctx *ctx)
 			continue;
 		(void)connect(fd, (struct sockaddr *)&dst, sizeof(dst));
 		close(fd);
-		__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_burn_iters,
+		__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer.burn_iters,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -224,7 +224,7 @@ static int ipvs_sysctl_writer_in_ns(void *arg)
 	 * which registers the per-net sysctl table. */
 	probe = open(IPVS_CANONICAL_PATH, O_RDONLY);
 	if (probe < 0) {
-		__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_unsupported_latched,
+		__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer.unsupported_latched,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -253,7 +253,7 @@ static int ipvs_sysctl_writer_in_ns(void *arg)
 		ssize_t n;
 
 		if (fd < 0) {
-			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_writes_failed,
+			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer.writes_failed,
 					   1, __ATOMIC_RELAXED);
 			continue;
 		}
@@ -271,10 +271,10 @@ static int ipvs_sysctl_writer_in_ns(void *arg)
 		n = write(fd, buf, len);
 
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_writes_ok,
+			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer.writes_ok,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_writes_failed,
+			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer.writes_failed,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -304,7 +304,7 @@ bool ipvs_sysctl_writer(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_runs, 1,
+	__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_ipvs_sysctl)
@@ -320,7 +320,7 @@ bool ipvs_sysctl_writer(struct childdata *child)
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		warn_once_unsupported_ipvs_sysctl(EPERM);
-		__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_unsupported_latched,
+		__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer.unsupported_latched,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

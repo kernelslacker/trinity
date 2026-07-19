@@ -364,11 +364,11 @@ static void dump_stats_render_psp_devlink_port_churn(void)
 
 static void dump_stats_render_ipvs_sysctl_writer(void)
 {
-	if (shm->stats.ipvs_sysctl_writer_runs) {
-		stat_row("ipvs_sysctl_writer", "runs",                shm->stats.ipvs_sysctl_writer_runs);
-		stat_row("ipvs_sysctl_writer", "writes_ok",           shm->stats.ipvs_sysctl_writer_writes_ok);
-		stat_row("ipvs_sysctl_writer", "writes_failed",       shm->stats.ipvs_sysctl_writer_writes_failed);
-		stat_row("ipvs_sysctl_writer", "unsupported_latched", shm->stats.ipvs_sysctl_writer_unsupported_latched);
+	if (shm->stats.ipvs_sysctl_writer.runs) {
+		stat_row("ipvs_sysctl_writer", "runs",                shm->stats.ipvs_sysctl_writer.runs);
+		stat_row("ipvs_sysctl_writer", "writes_ok",           shm->stats.ipvs_sysctl_writer.writes_ok);
+		stat_row("ipvs_sysctl_writer", "writes_failed",       shm->stats.ipvs_sysctl_writer.writes_failed);
+		stat_row("ipvs_sysctl_writer", "unsupported_latched", shm->stats.ipvs_sysctl_writer.unsupported_latched);
 	}
 }
 

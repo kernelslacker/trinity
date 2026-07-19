@@ -75,6 +75,7 @@
 #include "stats/subsys/ipset_churn.h"
 #include "stats/subsys/ipv6_ndisc_proxy.h"
 #include "stats/subsys/ipv6_pmtu_race.h"
+#include "stats/subsys/ipvs_sysctl_writer.h"
 #include "stats/subsys/iscsi_target_probe.h"
 #include "stats/subsys/iscsi_walker.h"
 #include "stats/subsys/keyring_spam.h"
@@ -1475,12 +1476,8 @@ struct stats_s {
 	unsigned long nnm_up_ok;				/* RTM_SETLINK IFF_UP in target ns succeeded */
 	unsigned long nnm_addr_ok;				/* RTM_NEWADDR IPv4 in target ns succeeded */
 
-	/* ipvs_sysctl_writer childop counters */
-	unsigned long ipvs_sysctl_writer_runs;			/* total ipvs_sysctl_writer invocations */
-	unsigned long ipvs_sysctl_writer_writes_ok;		/* sysctl write returned >0 */
-	unsigned long ipvs_sysctl_writer_writes_failed;		/* open or write failed (kernel rejected payload) */
-	unsigned long ipvs_sysctl_writer_unsupported_latched;	/* unshare/open ENOENT latched op off */
-	unsigned long ipvs_sysctl_writer_burn_iters;		/* short-lived TCP connect/close iters into the in-test virtual service */
+	/* ipvs_sysctl_writer accounting.  See stats/subsys/ipvs_sysctl_writer.h. */
+	struct ipvs_sysctl_writer_stats ipvs_sysctl_writer __attribute__((aligned(64)));
 
 	/* flowtable_vlan accounting.  See stats/subsys/flowtable_vlan.h. */
 	struct flowtable_vlan_stats flowtable_vlan __attribute__((aligned(64)));
