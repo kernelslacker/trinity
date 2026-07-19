@@ -287,7 +287,7 @@ static unsigned int drive_inner_traffic_zc(int udp, unsigned int iters,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (n > 0) {
 			ok++;
-			__atomic_add_fetch(&shm->stats.xfrm_churn_zc_sent,
+			__atomic_add_fetch(&shm->stats.xfrm_churn.zc_sent,
 					   1, __ATOMIC_RELAXED);
 		}
 		/* Errors are benign here: EAGAIN means the socket
@@ -297,7 +297,7 @@ static unsigned int drive_inner_traffic_zc(int udp, unsigned int iters,
 		 * SO_ZEROCOPY (extremely rare; falls through). */
 	}
 
-	__atomic_add_fetch(&shm->stats.xfrm_churn_zc_errq_drained,
+	__atomic_add_fetch(&shm->stats.xfrm_churn.zc_errq_drained,
 			   drain_errqueue_bounded(udp, XFRM_ZC_DRAIN_CAP),
 			   __ATOMIC_RELAXED);
 	return ok;
@@ -501,7 +501,7 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 		sent = drive_inner_traffic(udp, XFRM_PACKET_FLOOR, &t0);
 		if (sent)
-			__atomic_add_fetch(&shm->stats.xfrm_churn_esp_sent,
+			__atomic_add_fetch(&shm->stats.xfrm_churn.esp_sent,
 					   sent, __ATOMIC_RELAXED);
 	}
 
@@ -549,7 +549,7 @@ static void pfkey_flush_one(int s, __u8 satype)
 	msg.sadb_msg_seq      = ++g_pfkey_seq;
 	msg.sadb_msg_pid      = (__u32)mypid();
 	if (send(s, &msg, sizeof(msg), MSG_DONTWAIT) > 0)
-		__atomic_add_fetch(&shm->stats.xfrm_churn_pfkey_send_ok,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.pfkey_send_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -786,7 +786,7 @@ static void xfrm_sk_policy_churn(struct childdata *child)
 			 * counter with the netlink NEWPOLICY path: both are
 			 * an SPD-visible policy install by the time the
 			 * kernel returns success. */
-			__atomic_add_fetch(&shm->stats.xfrm_churn_pol_added,
+			__atomic_add_fetch(&shm->stats.xfrm_churn.pol_added,
 					   1, __ATOMIC_RELAXED);
 		} else if (errno == EOPNOTSUPP || errno == EPROTONOSUPPORT ||
 			   errno == ENOPROTOOPT) {
@@ -912,7 +912,7 @@ static bool xfrm_burn_netns(void)
 	__be32 spi;
 	bool ticketed = false;
 
-	__atomic_add_fetch(&shm->stats.xfrm_churn_burn_runs, 1,
+	__atomic_add_fetch(&shm->stats.xfrm_churn.burn_runs, 1,
 			   __ATOMIC_RELAXED);
 
 	aidx = pick_algo_idx();
@@ -925,7 +925,7 @@ static bool xfrm_burn_netns(void)
 		return false;
 
 	if (!try_admit_newnet()) {
-		__atomic_add_fetch(&shm->stats.xfrm_churn_burn_throttled, 1,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.burn_throttled, 1,
 				   __ATOMIC_RELAXED);
 		close(anchor);
 		return false;
@@ -952,7 +952,7 @@ static bool xfrm_burn_netns(void)
 	(void)build_sa_id_msg(&burn_ctx, XFRM_MSG_GETSA, def->proto, spi);
 	(void)build_allocspi(&burn_ctx, def, reqid, XFRM_MODE_TRANSPORT, seq);
 
-	__atomic_add_fetch(&shm->stats.xfrm_churn_burn_completed, 1,
+	__atomic_add_fetch(&shm->stats.xfrm_churn.burn_completed, 1,
 			   __ATOMIC_RELAXED);
 
 out:
@@ -1033,7 +1033,7 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -1122,19 +1122,19 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 			ns_unsupported_algo[ctx->aidx] = true;
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.xfrm_churn_sa_added,
+	__atomic_add_fetch(&shm->stats.xfrm_churn.sa_added,
 			   1, __ATOMIC_RELAXED);
 	if (ctx->mode == XFRM_MODE_TUNNEL)
-		__atomic_add_fetch(&shm->stats.xfrm_churn_tunnel_sa_added,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.tunnel_sa_added,
 				   1, __ATOMIC_RELAXED);
 	else if (ctx->mode == XFRM_MODE_IPTFS)
-		__atomic_add_fetch(&shm->stats.xfrm_churn_iptfs_sa_added,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.iptfs_sa_added,
 				   1, __ATOMIC_RELAXED);
 
 	rc = build_newpolicy(&ctx->nl, ctx->def, ctx->reqid, ctx->spi,
 			     ctx->mode);
 	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.xfrm_churn_pol_added,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.pol_added,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -1235,7 +1235,7 @@ static void xfrm_churn_iter_drive_burst(struct xfrm_churn_iter_ctx *ctx)
 	else
 		sent = drive_inner_traffic(ctx->udp, iters, &t0);
 	if (sent)
-		__atomic_add_fetch(&shm->stats.xfrm_churn_esp_sent,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.esp_sent,
 				   sent, __ATOMIC_RELAXED);
 }
 
@@ -1275,7 +1275,7 @@ static void xfrm_churn_iter_rekey(struct xfrm_churn_iter_ctx *ctx)
 	rc = build_sa_msg(&ctx->nl, XFRM_MSG_UPDSA, ctx->def, ctx->reqid,
 			  ctx->spi, ctx->mode, ctx->seq);
 	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_updated,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.sa_updated,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -1298,11 +1298,11 @@ static void xfrm_churn_iter_teardown_sa(struct xfrm_churn_iter_ctx *ctx)
 	 */
 	if (build_sa_id_msg(&ctx->nl, XFRM_MSG_DELSA,
 			    ctx->def->proto, ctx->spi) == 0)
-		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_deleted,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.sa_deleted,
 				   1, __ATOMIC_RELAXED);
 
 	if (build_delpolicy(&ctx->nl) == 0)
-		__atomic_add_fetch(&shm->stats.xfrm_churn_pol_deleted,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.pol_deleted,
 				   1, __ATOMIC_RELAXED);
 
 	/* AH+ESN+async-hash sub-mode: ~1 in 4 invocations installs an
@@ -1428,7 +1428,7 @@ bool xfrm_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.xfrm_churn_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.xfrm_churn.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_xfrm_churn)
 		return true;
@@ -1448,7 +1448,7 @@ bool xfrm_churn(struct childdata *child)
 		 * secondary unshare).  Skip this iteration without
 		 * latching -- the failure is not policy and may not
 		 * recur. */
-		__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.xfrm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

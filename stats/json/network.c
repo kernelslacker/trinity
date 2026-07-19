@@ -49,44 +49,7 @@ static const struct stat_category eth_emitter_category =
 	              eth_emitter_runs,
 	              eth_emitter_fields);
 
-static const struct stat_field iouring_net_multishot_fields[] = {
-	STAT_FIELD(iouring_multishot, runs),
-	STAT_FIELD(iouring_multishot, setup_failed),
-	STAT_FIELD(iouring_multishot, pbuf_ring_ok),
-	STAT_FIELD(iouring_multishot, pbuf_legacy_ok),
-	STAT_FIELD(iouring_multishot, armed),
-	STAT_FIELD(iouring_multishot, packets_sent),
-	STAT_FIELD(iouring_multishot, completions),
-	STAT_FIELD(iouring_multishot, cancel_submitted),
-	STAT_FIELD_JSON(iouring_napi, register_ok, "napi_register_ok"),
-	STAT_FIELD_JSON(iouring_napi, register_fail, "napi_register_fail"),
-	STAT_FIELD_JSON(iouring_napi, unregister_ok, "napi_unregister_ok"),
-	STAT_FIELD_JSON(iouring_napi, unregister_fail, "napi_unregister_fail"),
-};
 
-static const struct stat_category iouring_net_multishot_category =
-	STAT_CATEGORY("iouring_net_multishot",
-	              iouring_multishot_runs,
-	              iouring_net_multishot_fields);
-
-static const struct stat_field bridge_fdb_stp_fields[] = {
-	STAT_FIELD(bridge_fdb_stp, runs),
-	STAT_FIELD(bridge_fdb_stp, setup_failed),
-	STAT_FIELD(bridge_fdb_stp, bridge_create_ok),
-	STAT_FIELD(bridge_fdb_stp, veth_create_ok),
-	STAT_FIELD(bridge_fdb_stp, raw_send_ok),
-	STAT_FIELD(bridge_fdb_stp, stp_toggle_ok),
-	STAT_FIELD(bridge_fdb_stp, fdb_del_ok),
-	STAT_FIELD(bridge_fdb_stp, link_del_ok),
-	STAT_FIELD_JSON(bridge_vlan_mass, runs, "vlan_mass_runs"),
-	STAT_FIELD_JSON(bridge_vlan_mass, max_n, "vlan_mass_max_n"),
-	STAT_FIELD_JSON(bridge_vlan_mass, enotbufs, "vlan_mass_enotbufs"),
-};
-
-static const struct stat_category bridge_fdb_stp_category =
-	STAT_CATEGORY("bridge_fdb_stp",
-	              bridge_fdb_stp_runs,
-	              bridge_fdb_stp_fields);
 
 void dump_stats_json_socket_family_and_tls(void)
 {
@@ -164,29 +127,6 @@ const struct stat_category nftables_churn_category =
 
 
 
-static const struct stat_field xfrm_churn_fields[] = {
-	STAT_FIELD(xfrm_churn, runs),
-	STAT_FIELD(xfrm_churn, setup_failed),
-	STAT_FIELD(xfrm_churn, sa_added),
-	STAT_FIELD(xfrm_churn, tunnel_sa_added),
-	STAT_FIELD(xfrm_churn, iptfs_sa_added),
-	STAT_FIELD(xfrm_churn, sa_updated),
-	STAT_FIELD(xfrm_churn, sa_deleted),
-	STAT_FIELD(xfrm_churn, pol_added),
-	STAT_FIELD(xfrm_churn, pol_deleted),
-	STAT_FIELD(xfrm_churn, esp_sent),
-	STAT_FIELD(xfrm_churn, zc_sent),
-	STAT_FIELD(xfrm_churn, zc_errq_drained),
-	STAT_FIELD(xfrm_churn, pfkey_send_ok),
-	STAT_FIELD(xfrm_churn, burn_runs),
-	STAT_FIELD(xfrm_churn, burn_throttled),
-	STAT_FIELD(xfrm_churn, burn_completed),
-};
-
-const struct stat_category xfrm_churn_category =
-	STAT_CATEGORY("xfrm_churn",
-	              xfrm_churn_runs,
-	              xfrm_churn_fields);
 
 static const struct stat_field xfrm_ah_esn_fields[] = {
 	STAT_FIELD(xfrm_ah_esn, setup_ok),
@@ -266,31 +206,6 @@ const struct stat_category altname_thrash_category =
 
 
 
-static const struct stat_field mptcp_pm_churn_fields[] = {
-	STAT_FIELD(mptcp_pm_churn, runs),
-	STAT_FIELD(mptcp_pm_churn, setup_failed),
-	STAT_FIELD(mptcp_pm_churn, sock_mptcp_ok),
-	STAT_FIELD(mptcp_pm_churn, addr_added_ok),
-	STAT_FIELD(mptcp_pm_churn, addr_removed_ok),
-	STAT_FIELD(mptcp_pm_churn, send_ok),
-	STAT_FIELD(mptcp, setsockopt_unsupported),
-	STAT_FIELD(mptcp, setsockopt_master_set),
-	STAT_FIELD(mptcp, setsockopt_master_fail),
-	STAT_FIELD(mptcp, getsockopt_verify_ok),
-	STAT_FIELD(mptcp, getsockopt_verify_drift),
-	STAT_FIELD(mptcp, sockopt_sweep_runs),
-	STAT_FIELD(mptcp, sockopt_set_ok),
-	STAT_FIELD(mptcp, sockopt_set_failed),
-	STAT_FIELD(mptcp, sockopt_subflow_added),
-	STAT_FIELD(mptcp, sockopt_readback_ok),
-	STAT_FIELD(mptcp, sockopt_inherit_mismatch),
-	STAT_FIELD(mptcp, sockopt_unsupported_latched),
-};
-
-const struct stat_category mptcp_pm_churn_category =
-	STAT_CATEGORY("mptcp_pm_churn",
-	              mptcp_pm_churn_runs,
-	              mptcp_pm_churn_fields);
 
 
 static const struct stat_field ipmr_cache_report_fields[] = {

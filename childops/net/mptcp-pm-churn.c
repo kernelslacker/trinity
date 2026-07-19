@@ -232,7 +232,7 @@ static void churn_send(int fd)
 	n = send(fd, buf, 1U + rnd_modulo_u32(sizeof(buf)),
 		 MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_send_ok,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.send_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -393,7 +393,7 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 	const unsigned int all_mask = (n_opts >= 32U) ? ~0U
 					: ((1U << n_opts) - 1U);
 
-	__atomic_add_fetch(&shm->stats.mptcp_sockopt_sweep_runs,
+	__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_sweep_runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (sweep_unsupported_mask == all_mask)
@@ -416,14 +416,14 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 		       &set_val, sizeof(set_val)) < 0) {
 		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT) {
 			sweep_unsupported_mask |= (1U << idx);
-			__atomic_add_fetch(&shm->stats.mptcp_sockopt_unsupported_latched,
+			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_unsupported_latched,
 					   1, __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.mptcp_sockopt_set_failed,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_set_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
-	__atomic_add_fetch(&shm->stats.mptcp_sockopt_set_ok,
+	__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_set_ok,
 			   1, __ATOMIC_RELAXED);
 
 	loc_id = 1U + (__u8)(rand32() % MPTCP_PM_LOC_ID_MAX);
@@ -439,16 +439,16 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 		sched_yield();
 	}
 	if (n_after > n_before)
-		__atomic_add_fetch(&shm->stats.mptcp_sockopt_subflow_added,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_subflow_added,
 				   1, __ATOMIC_RELAXED);
 
 	glen = sizeof(get_val);
 	if (getsockopt(cli, IPPROTO_TCP, spec->optname,
 		       &get_val, &glen) == 0 && glen == sizeof(get_val)) {
-		__atomic_add_fetch(&shm->stats.mptcp_sockopt_readback_ok,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_readback_ok,
 				   1, __ATOMIC_RELAXED);
 		if (get_val != set_val)
-			__atomic_add_fetch(&shm->stats.mptcp_sockopt_inherit_mismatch,
+			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_inherit_mismatch,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -488,7 +488,7 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 	if (sk < 0) {
 		if (is_proto_family_unsupported(errno)) {
 			ns_unsupported_mptcp = true;
-			__atomic_add_fetch(&shm->stats.mptcp_setsockopt_unsupported,
+			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setsockopt_unsupported,
 					   1, __ATOMIC_RELAXED);
 		}
 		return;
@@ -499,10 +499,10 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 
 	if (setsockopt(sk, IPPROTO_TCP, spec->optname,
 		       &set_val, sizeof(set_val)) < 0) {
-		__atomic_add_fetch(&shm->stats.mptcp_setsockopt_master_fail,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setsockopt_master_fail,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.mptcp_setsockopt_master_set,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setsockopt_master_set,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -523,10 +523,10 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 	if (getsockopt(sk, IPPROTO_TCP, spec->optname,
 		       &get_val, &glen) == 0 && glen == sizeof(get_val)) {
 		if (get_val == set_val)
-			__atomic_add_fetch(&shm->stats.mptcp_getsockopt_verify_ok,
+			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.getsockopt_verify_ok,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.mptcp_getsockopt_verify_drift,
+			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.getsockopt_verify_drift,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -566,11 +566,11 @@ static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_sock_mptcp_ok,
+	__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sock_mptcp_ok,
 			   1, __ATOMIC_RELAXED);
 
 	mptcp_enable_tfo_ts(ctx->srv);
@@ -581,27 +581,27 @@ static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx
 	ctx->srv_addr.sin_port = 0;
 	if (bind(ctx->srv, (struct sockaddr *)&ctx->srv_addr,
 		 sizeof(ctx->srv_addr)) < 0) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	slen = sizeof(ctx->srv_addr);
 	if (getsockname(ctx->srv, (struct sockaddr *)&ctx->srv_addr, &slen) < 0) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 	ctx->srv_port_n = ctx->srv_addr.sin_port;
 
 	if (listen(ctx->srv, 4) < 0) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
 	ctx->cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
 	if (ctx->cli < 0) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -636,7 +636,7 @@ static int mptcp_pm_churn_iter_connect_pair(struct mptcp_pm_churn_iter_ctx *ctx)
 	cli_addr.sin_port = ctx->srv_port_n;
 	if (connect(ctx->cli, (struct sockaddr *)&cli_addr,
 		    sizeof(cli_addr)) < 0 && errno != EINPROGRESS) {
-		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -689,7 +689,7 @@ static int mptcp_pm_churn_iter_genl_attach(struct mptcp_pm_churn_iter_ctx *ctx)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		} else {
-			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 					   1, __ATOMIC_RELAXED);
 		}
 		return -1;
@@ -739,7 +739,7 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 		rc = mptcp_pm_addr_cmd(&ctx->ctx, MPTCP_PM_CMD_ADD_ADDR,
 				       loc_id, addr_h);
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_addr_added_ok,
+			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.addr_added_ok,
 					   1, __ATOMIC_RELAXED);
 
 		/* b) GET_ADDR with the same nested ADDR — exercises
@@ -760,7 +760,7 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 		rc = mptcp_pm_addr_cmd(&ctx->ctx, MPTCP_PM_CMD_DEL_ADDR,
 				       loc_id, addr_h);
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_addr_removed_ok,
+			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.addr_removed_ok,
 					   1, __ATOMIC_RELAXED);
 
 		/* e) Targeted race window: data path running
@@ -848,7 +848,7 @@ bool mptcp_pm_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_runs,
+	__atomic_add_fetch(&shm->stats.mptcp_pm_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_mptcp || ns_unsupported_genetlink_mptcp)
@@ -880,9 +880,9 @@ out:
 bool mptcp_pm_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_runs,
+	__atomic_add_fetch(&shm->stats.mptcp_pm_churn.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
+	__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }

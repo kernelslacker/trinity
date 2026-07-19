@@ -39,36 +39,5 @@ const struct stat_category pkt_builder_category =
 
 
 
-static const struct stat_field qrtr_bind_race_fields[] = {
-	STAT_FIELD(qrtr_bind_race, runs),
-	STAT_FIELD(qrtr_bind_race, setup_failed),
-	STAT_FIELD(qrtr_bind_race, iter),
-	STAT_FIELD(qrtr_bind_race, fork_failed),
-	STAT_FIELD(qrtr_bind_race, spawn_pair_ok),
-	STAT_FIELD(qrtr_bind_race, sibling_reaped_ok),
-	STAT_FIELD(qrtr_bind_race, sibling_crashed),
-	STAT_FIELD(qrtr_bind, setup_fail),
-};
 
-const struct stat_category qrtr_bind_race_category =
-	STAT_CATEGORY("qrtr_bind_race",
-		qrtr_bind_race_runs,
-		qrtr_bind_race_fields);
-
-static const struct stat_field pfkey_spd_walk_fields[] = {
-	STAT_FIELD(pfkey_spd_walk, runs),
-	STAT_FIELD(pfkey_spd_walk, setup_failed),
-	STAT_FIELD(pfkey_spd_walk, iter),
-	STAT_FIELD(pfkey_spd_walk, fork_failed),
-	STAT_FIELD(pfkey_spd_walk, spawn_pair_ok),
-	STAT_FIELD(pfkey_spd_walk, sibling_reaped_ok),
-	STAT_FIELD(pfkey_spd_walk, sibling_crashed),
-	STAT_FIELD(pfkey, spdget_resolved),
-	STAT_FIELD(pfkey, spdget_missed),
-};
-
-const struct stat_category pfkey_spd_walk_category =
-	STAT_CATEGORY("pfkey_spd_walk",
-		pfkey_spd_walk_runs,
-		pfkey_spd_walk_fields);
 

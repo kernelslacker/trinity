@@ -103,36 +103,36 @@ static void dump_stats_render_eth_emitter(void)
 
 static void dump_stats_render_iouring_multishot(void)
 {
-	if (shm->stats.iouring_multishot_runs) {
-		stat_row("iouring_net_multishot", "runs",             shm->stats.iouring_multishot_runs);
-		stat_row("iouring_net_multishot", "setup_failed",     shm->stats.iouring_multishot_setup_failed);
-		stat_row("iouring_net_multishot", "pbuf_ring_ok",     shm->stats.iouring_multishot_pbuf_ring_ok);
-		stat_row("iouring_net_multishot", "pbuf_legacy_ok",   shm->stats.iouring_multishot_pbuf_legacy_ok);
-		stat_row("iouring_net_multishot", "armed",            shm->stats.iouring_multishot_armed);
-		stat_row("iouring_net_multishot", "packets_sent",     shm->stats.iouring_multishot_packets_sent);
-		stat_row("iouring_net_multishot", "completions",      shm->stats.iouring_multishot_completions);
-		stat_row("iouring_net_multishot", "cancel_submitted", shm->stats.iouring_multishot_cancel_submitted);
-		stat_row("iouring_net_multishot", "napi_register_ok",   shm->stats.iouring_napi_register_ok);
-		stat_row("iouring_net_multishot", "napi_register_fail", shm->stats.iouring_napi_register_fail);
-		stat_row("iouring_net_multishot", "napi_unregister_ok", shm->stats.iouring_napi_unregister_ok);
-		stat_row("iouring_net_multishot", "napi_unregister_fail", shm->stats.iouring_napi_unregister_fail);
+	if (shm->stats.iouring_net_multishot.runs) {
+		stat_row("iouring_net_multishot", "runs",             shm->stats.iouring_net_multishot.runs);
+		stat_row("iouring_net_multishot", "setup_failed",     shm->stats.iouring_net_multishot.setup_failed);
+		stat_row("iouring_net_multishot", "pbuf_ring_ok",     shm->stats.iouring_net_multishot.pbuf_ring_ok);
+		stat_row("iouring_net_multishot", "pbuf_legacy_ok",   shm->stats.iouring_net_multishot.pbuf_legacy_ok);
+		stat_row("iouring_net_multishot", "armed",            shm->stats.iouring_net_multishot.armed);
+		stat_row("iouring_net_multishot", "packets_sent",     shm->stats.iouring_net_multishot.packets_sent);
+		stat_row("iouring_net_multishot", "completions",      shm->stats.iouring_net_multishot.completions);
+		stat_row("iouring_net_multishot", "cancel_submitted", shm->stats.iouring_net_multishot.cancel_submitted);
+		stat_row("iouring_net_multishot", "napi_register_ok",   shm->stats.iouring_net_multishot.napi_register_ok);
+		stat_row("iouring_net_multishot", "napi_register_fail", shm->stats.iouring_net_multishot.napi_register_fail);
+		stat_row("iouring_net_multishot", "napi_unregister_ok", shm->stats.iouring_net_multishot.napi_unregister_ok);
+		stat_row("iouring_net_multishot", "napi_unregister_fail", shm->stats.iouring_net_multishot.napi_unregister_fail);
 	}
 }
 
 static void dump_stats_render_bridge_fdb_stp(void)
 {
-	if (shm->stats.bridge_fdb_stp_runs) {
-		stat_row("bridge_fdb_stp", "runs",            shm->stats.bridge_fdb_stp_runs);
-		stat_row("bridge_fdb_stp", "setup_failed",    shm->stats.bridge_fdb_stp_setup_failed);
-		stat_row("bridge_fdb_stp", "bridge_create_ok", shm->stats.bridge_fdb_stp_bridge_create_ok);
-		stat_row("bridge_fdb_stp", "veth_create_ok",  shm->stats.bridge_fdb_stp_veth_create_ok);
-		stat_row("bridge_fdb_stp", "raw_send_ok",     shm->stats.bridge_fdb_stp_raw_send_ok);
-		stat_row("bridge_fdb_stp", "stp_toggle_ok",   shm->stats.bridge_fdb_stp_stp_toggle_ok);
-		stat_row("bridge_fdb_stp", "fdb_del_ok",      shm->stats.bridge_fdb_stp_fdb_del_ok);
-		stat_row("bridge_fdb_stp", "link_del_ok",     shm->stats.bridge_fdb_stp_link_del_ok);
-		stat_row("bridge_fdb_stp", "vlan_mass_runs",  shm->stats.bridge_vlan_mass_runs);
-		stat_row("bridge_fdb_stp", "vlan_mass_max_n", shm->stats.bridge_vlan_mass_max_n);
-		stat_row("bridge_fdb_stp", "vlan_mass_enotbufs", shm->stats.bridge_vlan_mass_enotbufs);
+	if (shm->stats.bridge_fdb_stp.runs) {
+		stat_row("bridge_fdb_stp", "runs",            shm->stats.bridge_fdb_stp.runs);
+		stat_row("bridge_fdb_stp", "setup_failed",    shm->stats.bridge_fdb_stp.setup_failed);
+		stat_row("bridge_fdb_stp", "bridge_create_ok", shm->stats.bridge_fdb_stp.bridge_create_ok);
+		stat_row("bridge_fdb_stp", "veth_create_ok",  shm->stats.bridge_fdb_stp.veth_create_ok);
+		stat_row("bridge_fdb_stp", "raw_send_ok",     shm->stats.bridge_fdb_stp.raw_send_ok);
+		stat_row("bridge_fdb_stp", "stp_toggle_ok",   shm->stats.bridge_fdb_stp.stp_toggle_ok);
+		stat_row("bridge_fdb_stp", "fdb_del_ok",      shm->stats.bridge_fdb_stp.fdb_del_ok);
+		stat_row("bridge_fdb_stp", "link_del_ok",     shm->stats.bridge_fdb_stp.link_del_ok);
+		stat_row("bridge_fdb_stp", "vlan_mass_runs",  shm->stats.bridge_fdb_stp.bridge_vlan_mass_runs);
+		stat_row("bridge_fdb_stp", "vlan_mass_max_n", shm->stats.bridge_fdb_stp.bridge_vlan_mass_max_n);
+		stat_row("bridge_fdb_stp", "vlan_mass_enotbufs", shm->stats.bridge_fdb_stp.bridge_vlan_mass_enotbufs);
 	}
 }
 
@@ -215,16 +215,16 @@ static void dump_stats_render_tc_mirred_blockcast(void)
 
 static void dump_stats_render_xfrm_churn(void)
 {
-	if (shm->stats.xfrm_churn_runs) {
-		stat_row("xfrm_churn", "runs",          shm->stats.xfrm_churn_runs);
-		stat_row("xfrm_churn", "setup_failed",  shm->stats.xfrm_churn_setup_failed);
-		stat_row("xfrm_churn", "sa_added",      shm->stats.xfrm_churn_sa_added);
-		stat_row("xfrm_churn", "sa_updated",    shm->stats.xfrm_churn_sa_updated);
-		stat_row("xfrm_churn", "sa_deleted",    shm->stats.xfrm_churn_sa_deleted);
-		stat_row("xfrm_churn", "pol_added",     shm->stats.xfrm_churn_pol_added);
-		stat_row("xfrm_churn", "pol_deleted",   shm->stats.xfrm_churn_pol_deleted);
-		stat_row("xfrm_churn", "esp_sent",      shm->stats.xfrm_churn_esp_sent);
-		stat_row("xfrm_churn", "pfkey_send_ok", shm->stats.xfrm_churn_pfkey_send_ok);
+	if (shm->stats.xfrm_churn.runs) {
+		stat_row("xfrm_churn", "runs",          shm->stats.xfrm_churn.runs);
+		stat_row("xfrm_churn", "setup_failed",  shm->stats.xfrm_churn.setup_failed);
+		stat_row("xfrm_churn", "sa_added",      shm->stats.xfrm_churn.sa_added);
+		stat_row("xfrm_churn", "sa_updated",    shm->stats.xfrm_churn.sa_updated);
+		stat_row("xfrm_churn", "sa_deleted",    shm->stats.xfrm_churn.sa_deleted);
+		stat_row("xfrm_churn", "pol_added",     shm->stats.xfrm_churn.pol_added);
+		stat_row("xfrm_churn", "pol_deleted",   shm->stats.xfrm_churn.pol_deleted);
+		stat_row("xfrm_churn", "esp_sent",      shm->stats.xfrm_churn.esp_sent);
+		stat_row("xfrm_churn", "pfkey_send_ok", shm->stats.xfrm_churn.pfkey_send_ok);
 		stat_row("xfrm_churn", "ah_esn_setup_ok",    shm->stats.xfrm_ah_esn_setup_ok);
 		stat_row("xfrm_churn", "ah_esn_setup_fail",  shm->stats.xfrm_ah_esn_setup_fail);
 		stat_row("xfrm_churn", "ah_esn_async_runs",  shm->stats.xfrm_ah_esn_async_runs);
@@ -266,40 +266,40 @@ static void dump_stats_render_pipe_waker(void)
 
 static void dump_stats_render_nat_t_churn(void)
 {
-	if (shm->stats.nat_t_churn_runs) {
-		stat_row("nat_t_churn", "runs",              shm->stats.nat_t_churn_runs);
-		stat_row("nat_t_churn", "setup_failed",      shm->stats.nat_t_churn_setup_failed);
-		stat_row("nat_t_churn", "sa_added",          shm->stats.nat_t_churn_sa_added);
-		stat_row("nat_t_churn", "sa_deleted",        shm->stats.nat_t_churn_sa_deleted);
-		stat_row("nat_t_churn", "frames_sent",       shm->stats.nat_t_churn_frames_sent);
-		stat_row("nat_t_churn", "xfrm6_setup_ok",    shm->stats.nat_t_xfrm6_setup_ok);
-		stat_row("nat_t_churn", "xfrm6_setup_fail",  shm->stats.nat_t_xfrm6_setup_fail);
-		stat_row("nat_t_churn", "xfrm6_sendto_runs", shm->stats.nat_t_xfrm6_sendto_runs);
-		stat_row("nat_t_churn", "xfrm6_delsa_races", shm->stats.nat_t_xfrm6_delsa_races);
+	if (shm->stats.nat_t_churn.runs) {
+		stat_row("nat_t_churn", "runs",              shm->stats.nat_t_churn.runs);
+		stat_row("nat_t_churn", "setup_failed",      shm->stats.nat_t_churn.setup_failed);
+		stat_row("nat_t_churn", "sa_added",          shm->stats.nat_t_churn.sa_added);
+		stat_row("nat_t_churn", "sa_deleted",        shm->stats.nat_t_churn.sa_deleted);
+		stat_row("nat_t_churn", "frames_sent",       shm->stats.nat_t_churn.frames_sent);
+		stat_row("nat_t_churn", "xfrm6_setup_ok",    shm->stats.nat_t_churn.xfrm6_setup_ok);
+		stat_row("nat_t_churn", "xfrm6_setup_fail",  shm->stats.nat_t_churn.xfrm6_setup_fail);
+		stat_row("nat_t_churn", "xfrm6_sendto_runs", shm->stats.nat_t_churn.xfrm6_sendto_runs);
+		stat_row("nat_t_churn", "xfrm6_delsa_races", shm->stats.nat_t_churn.xfrm6_delsa_races);
 	}
 }
 
 static void dump_stats_render_mptcp_pm_churn(void)
 {
-	if (shm->stats.mptcp_pm_churn_runs) {
-		stat_row("mptcp_pm_churn", "runs",            shm->stats.mptcp_pm_churn_runs);
-		stat_row("mptcp_pm_churn", "setup_failed",    shm->stats.mptcp_pm_churn_setup_failed);
-		stat_row("mptcp_pm_churn", "sock_mptcp_ok",   shm->stats.mptcp_pm_churn_sock_mptcp_ok);
-		stat_row("mptcp_pm_churn", "addr_added_ok",   shm->stats.mptcp_pm_churn_addr_added_ok);
-		stat_row("mptcp_pm_churn", "addr_removed_ok", shm->stats.mptcp_pm_churn_addr_removed_ok);
-		stat_row("mptcp_pm_churn", "send_ok",         shm->stats.mptcp_pm_churn_send_ok);
-		stat_row("mptcp_pm_churn", "setsockopt_unsupported",   shm->stats.mptcp_setsockopt_unsupported);
-		stat_row("mptcp_pm_churn", "setsockopt_master_set",    shm->stats.mptcp_setsockopt_master_set);
-		stat_row("mptcp_pm_churn", "setsockopt_master_fail",   shm->stats.mptcp_setsockopt_master_fail);
-		stat_row("mptcp_pm_churn", "getsockopt_verify_ok",     shm->stats.mptcp_getsockopt_verify_ok);
-		stat_row("mptcp_pm_churn", "getsockopt_verify_drift",  shm->stats.mptcp_getsockopt_verify_drift);
-		stat_row("mptcp_pm_churn", "sockopt_sweep_runs",       shm->stats.mptcp_sockopt_sweep_runs);
-		stat_row("mptcp_pm_churn", "sockopt_set_ok",           shm->stats.mptcp_sockopt_set_ok);
-		stat_row("mptcp_pm_churn", "sockopt_set_failed",       shm->stats.mptcp_sockopt_set_failed);
-		stat_row("mptcp_pm_churn", "sockopt_subflow_added",    shm->stats.mptcp_sockopt_subflow_added);
-		stat_row("mptcp_pm_churn", "sockopt_readback_ok",      shm->stats.mptcp_sockopt_readback_ok);
-		stat_row("mptcp_pm_churn", "sockopt_inherit_mismatch", shm->stats.mptcp_sockopt_inherit_mismatch);
-		stat_row("mptcp_pm_churn", "sockopt_unsupported_latched", shm->stats.mptcp_sockopt_unsupported_latched);
+	if (shm->stats.mptcp_pm_churn.runs) {
+		stat_row("mptcp_pm_churn", "runs",            shm->stats.mptcp_pm_churn.runs);
+		stat_row("mptcp_pm_churn", "setup_failed",    shm->stats.mptcp_pm_churn.setup_failed);
+		stat_row("mptcp_pm_churn", "sock_mptcp_ok",   shm->stats.mptcp_pm_churn.sock_mptcp_ok);
+		stat_row("mptcp_pm_churn", "addr_added_ok",   shm->stats.mptcp_pm_churn.addr_added_ok);
+		stat_row("mptcp_pm_churn", "addr_removed_ok", shm->stats.mptcp_pm_churn.addr_removed_ok);
+		stat_row("mptcp_pm_churn", "send_ok",         shm->stats.mptcp_pm_churn.send_ok);
+		stat_row("mptcp_pm_churn", "setsockopt_unsupported",   shm->stats.mptcp_pm_churn.setsockopt_unsupported);
+		stat_row("mptcp_pm_churn", "setsockopt_master_set",    shm->stats.mptcp_pm_churn.setsockopt_master_set);
+		stat_row("mptcp_pm_churn", "setsockopt_master_fail",   shm->stats.mptcp_pm_churn.setsockopt_master_fail);
+		stat_row("mptcp_pm_churn", "getsockopt_verify_ok",     shm->stats.mptcp_pm_churn.getsockopt_verify_ok);
+		stat_row("mptcp_pm_churn", "getsockopt_verify_drift",  shm->stats.mptcp_pm_churn.getsockopt_verify_drift);
+		stat_row("mptcp_pm_churn", "sockopt_sweep_runs",       shm->stats.mptcp_pm_churn.sockopt_sweep_runs);
+		stat_row("mptcp_pm_churn", "sockopt_set_ok",           shm->stats.mptcp_pm_churn.sockopt_set_ok);
+		stat_row("mptcp_pm_churn", "sockopt_set_failed",       shm->stats.mptcp_pm_churn.sockopt_set_failed);
+		stat_row("mptcp_pm_churn", "sockopt_subflow_added",    shm->stats.mptcp_pm_churn.sockopt_subflow_added);
+		stat_row("mptcp_pm_churn", "sockopt_readback_ok",      shm->stats.mptcp_pm_churn.sockopt_readback_ok);
+		stat_row("mptcp_pm_churn", "sockopt_inherit_mismatch", shm->stats.mptcp_pm_churn.sockopt_inherit_mismatch);
+		stat_row("mptcp_pm_churn", "sockopt_unsupported_latched", shm->stats.mptcp_pm_churn.sockopt_unsupported_latched);
 	}
 }
 
@@ -318,47 +318,47 @@ static void dump_stats_render_devlink_port_churn(void)
 
 static void dump_stats_render_vsock_transport_churn(void)
 {
-	if (shm->stats.vsock_transport_churn_runs) {
-		stat_row("vsock_transport_churn", "runs",           shm->stats.vsock_transport_churn_runs);
-		stat_row("vsock_transport_churn", "setup_failed",   shm->stats.vsock_transport_churn_setup_failed);
-		stat_row("vsock_transport_churn", "bind_ok",        shm->stats.vsock_transport_churn_bind_ok);
-		stat_row("vsock_transport_churn", "connect_ok",     shm->stats.vsock_transport_churn_connect_ok);
-		stat_row("vsock_transport_churn", "send_ok",        shm->stats.vsock_transport_churn_send_ok);
-		stat_row("vsock_transport_churn", "buffer_size_ok", shm->stats.vsock_transport_churn_buffer_size_ok);
-		stat_row("vsock_transport_churn", "timeout_ok",     shm->stats.vsock_transport_churn_timeout_ok);
-		stat_row("vsock_transport_churn", "get_cid_ok",     shm->stats.vsock_transport_churn_get_cid_ok);
-		stat_row("vsock_transport_churn", "seq_eom_runs",         shm->stats.vsock_seq_eom_runs);
-		stat_row("vsock_transport_churn", "seq_eom_sends_ok",     shm->stats.vsock_seq_eom_sends_ok);
-		stat_row("vsock_transport_churn", "seq_eom_sends_failed", shm->stats.vsock_seq_eom_sends_failed);
-		stat_row("vsock_transport_churn", "seq_eom_skipped",      shm->stats.vsock_seq_eom_skipped);
+	if (shm->stats.vsock_transport_churn.runs) {
+		stat_row("vsock_transport_churn", "runs",           shm->stats.vsock_transport_churn.runs);
+		stat_row("vsock_transport_churn", "setup_failed",   shm->stats.vsock_transport_churn.setup_failed);
+		stat_row("vsock_transport_churn", "bind_ok",        shm->stats.vsock_transport_churn.bind_ok);
+		stat_row("vsock_transport_churn", "connect_ok",     shm->stats.vsock_transport_churn.connect_ok);
+		stat_row("vsock_transport_churn", "send_ok",        shm->stats.vsock_transport_churn.send_ok);
+		stat_row("vsock_transport_churn", "buffer_size_ok", shm->stats.vsock_transport_churn.buffer_size_ok);
+		stat_row("vsock_transport_churn", "timeout_ok",     shm->stats.vsock_transport_churn.timeout_ok);
+		stat_row("vsock_transport_churn", "get_cid_ok",     shm->stats.vsock_transport_churn.get_cid_ok);
+		stat_row("vsock_transport_churn", "seq_eom_runs",         shm->stats.vsock_transport_churn.seq_eom_runs);
+		stat_row("vsock_transport_churn", "seq_eom_sends_ok",     shm->stats.vsock_transport_churn.seq_eom_sends_ok);
+		stat_row("vsock_transport_churn", "seq_eom_sends_failed", shm->stats.vsock_transport_churn.seq_eom_sends_failed);
+		stat_row("vsock_transport_churn", "seq_eom_skipped",      shm->stats.vsock_transport_churn.seq_eom_skipped);
 	}
 }
 
 static void dump_stats_render_psp_key_rotate(void)
 {
-	if (shm->stats.psp_key_rotate_runs) {
-		stat_row("psp_key_rotate", "runs",              shm->stats.psp_key_rotate_runs);
-		stat_row("psp_key_rotate", "setup_failed",      shm->stats.psp_key_rotate_setup_failed);
-		stat_row("psp_key_rotate", "netdev_create_ok",  shm->stats.psp_key_rotate_netdev_create_ok);
-		stat_row("psp_key_rotate", "family_resolve_ok", shm->stats.psp_key_rotate_family_resolve_ok);
-		stat_row("psp_key_rotate", "dev_get_ok",        shm->stats.psp_key_rotate_dev_get_ok);
-		stat_row("psp_key_rotate", "key_install_ok",    shm->stats.psp_key_rotate_key_install_ok);
-		stat_row("psp_key_rotate", "spi_set_ok",        shm->stats.psp_key_rotate_spi_set_ok);
-		stat_row("psp_key_rotate", "send_ok",           shm->stats.psp_key_rotate_send_ok);
-		stat_row("psp_key_rotate", "rotate_ok",         shm->stats.psp_key_rotate_rotate_ok);
-		stat_row("psp_key_rotate", "spi_switch_ok",     shm->stats.psp_key_rotate_spi_switch_ok);
-		stat_row("psp_key_rotate", "shutdown_ok",       shm->stats.psp_key_rotate_shutdown_ok);
+	if (shm->stats.psp_key_rotate.runs) {
+		stat_row("psp_key_rotate", "runs",              shm->stats.psp_key_rotate.runs);
+		stat_row("psp_key_rotate", "setup_failed",      shm->stats.psp_key_rotate.setup_failed);
+		stat_row("psp_key_rotate", "netdev_create_ok",  shm->stats.psp_key_rotate.netdev_create_ok);
+		stat_row("psp_key_rotate", "family_resolve_ok", shm->stats.psp_key_rotate.family_resolve_ok);
+		stat_row("psp_key_rotate", "dev_get_ok",        shm->stats.psp_key_rotate.dev_get_ok);
+		stat_row("psp_key_rotate", "key_install_ok",    shm->stats.psp_key_rotate.key_install_ok);
+		stat_row("psp_key_rotate", "spi_set_ok",        shm->stats.psp_key_rotate.spi_set_ok);
+		stat_row("psp_key_rotate", "send_ok",           shm->stats.psp_key_rotate.send_ok);
+		stat_row("psp_key_rotate", "rotate_ok",         shm->stats.psp_key_rotate.rotate_ok);
+		stat_row("psp_key_rotate", "spi_switch_ok",     shm->stats.psp_key_rotate.spi_switch_ok);
+		stat_row("psp_key_rotate", "shutdown_ok",       shm->stats.psp_key_rotate.shutdown_ok);
 	}
 }
 
 static void dump_stats_render_psp_devlink_port_churn(void)
 {
-	if (shm->stats.psp_devlink_port_churn_runs) {
-		stat_row("psp_devlink_port_churn", "runs",                 shm->stats.psp_devlink_port_churn_runs);
-		stat_row("psp_devlink_port_churn", "port_add_ok",          shm->stats.psp_devlink_port_churn_port_add_ok);
-		stat_row("psp_devlink_port_churn", "port_del_ok",          shm->stats.psp_devlink_port_churn_port_del_ok);
-		stat_row("psp_devlink_port_churn", "vf_spawn_ok",          shm->stats.psp_devlink_port_churn_vf_spawn_ok);
-		stat_row("psp_devlink_port_churn", "unsupported_latched",  shm->stats.psp_devlink_port_churn_unsupported_latched);
+	if (shm->stats.psp_key_rotate.devlink_port_churn_runs) {
+		stat_row("psp_devlink_port_churn", "runs",                 shm->stats.psp_key_rotate.devlink_port_churn_runs);
+		stat_row("psp_devlink_port_churn", "port_add_ok",          shm->stats.psp_key_rotate.devlink_port_churn_port_add_ok);
+		stat_row("psp_devlink_port_churn", "port_del_ok",          shm->stats.psp_key_rotate.devlink_port_churn_port_del_ok);
+		stat_row("psp_devlink_port_churn", "vf_spawn_ok",          shm->stats.psp_key_rotate.devlink_port_churn_vf_spawn_ok);
+		stat_row("psp_devlink_port_churn", "unsupported_latched",  shm->stats.psp_key_rotate.devlink_port_churn_unsupported_latched);
 	}
 }
 
@@ -466,27 +466,27 @@ static void dump_stats_render_tty_ldisc_churn(void)
 
 static void dump_stats_render_afxdp_churn(void)
 {
-	if (shm->stats.afxdp_churn_runs) {
-		stat_row("afxdp_churn", "runs",            shm->stats.afxdp_churn_runs);
-		stat_row("afxdp_churn", "setup_failed",    shm->stats.afxdp_churn_setup_failed);
-		stat_row("afxdp_churn", "umem_reg_ok",     shm->stats.afxdp_churn_umem_reg_ok);
-		stat_row("afxdp_churn", "rings_setup_ok",  shm->stats.afxdp_churn_rings_setup_ok);
-		stat_row("afxdp_churn", "prog_load_ok",    shm->stats.afxdp_churn_prog_load_ok);
-		stat_row("afxdp_churn", "map_create_ok",   shm->stats.afxdp_churn_map_create_ok);
-		stat_row("afxdp_churn", "map_update_ok",   shm->stats.afxdp_churn_map_update_ok);
-		stat_row("afxdp_churn", "bind_ok",         shm->stats.afxdp_churn_bind_ok);
-		stat_row("afxdp_churn", "link_attach_ok",  shm->stats.afxdp_churn_link_attach_ok);
-		stat_row("afxdp_churn", "netlink_attach_ok", shm->stats.afxdp_churn_netlink_attach_ok);
-		stat_row("afxdp_churn", "attach_failed",   shm->stats.afxdp_churn_attach_failed);
-		stat_row("afxdp_churn", "send_ok",         shm->stats.afxdp_churn_send_ok);
-		stat_row("afxdp_churn", "recv_ok",         shm->stats.afxdp_churn_recv_ok);
-		stat_row("afxdp_churn", "map_delete_ok",   shm->stats.afxdp_churn_map_delete_ok);
-		stat_row("afxdp_churn", "munmap_race_ok",  shm->stats.afxdp_churn_munmap_race_ok);
-		stat_row("afxdp_churn", "xsg_iters",         shm->stats.afxdp_xsg_iters);
-		stat_row("afxdp_churn", "tx_metadata_iters", shm->stats.afxdp_tx_metadata_iters);
-		stat_row("afxdp_churn", "tun_bind_iters",    shm->stats.afxdp_tun_bind_iters);
-		stat_row("afxdp_churn", "xsg_bind_failed",   shm->stats.afxdp_xsg_bind_failed);
-		stat_row("afxdp_churn", "tx_md_bind_failed", shm->stats.afxdp_tx_md_bind_failed);
+	if (shm->stats.afxdp_churn.runs) {
+		stat_row("afxdp_churn", "runs",            shm->stats.afxdp_churn.runs);
+		stat_row("afxdp_churn", "setup_failed",    shm->stats.afxdp_churn.setup_failed);
+		stat_row("afxdp_churn", "umem_reg_ok",     shm->stats.afxdp_churn.umem_reg_ok);
+		stat_row("afxdp_churn", "rings_setup_ok",  shm->stats.afxdp_churn.rings_setup_ok);
+		stat_row("afxdp_churn", "prog_load_ok",    shm->stats.afxdp_churn.prog_load_ok);
+		stat_row("afxdp_churn", "map_create_ok",   shm->stats.afxdp_churn.map_create_ok);
+		stat_row("afxdp_churn", "map_update_ok",   shm->stats.afxdp_churn.map_update_ok);
+		stat_row("afxdp_churn", "bind_ok",         shm->stats.afxdp_churn.bind_ok);
+		stat_row("afxdp_churn", "link_attach_ok",  shm->stats.afxdp_churn.link_attach_ok);
+		stat_row("afxdp_churn", "netlink_attach_ok", shm->stats.afxdp_churn.netlink_attach_ok);
+		stat_row("afxdp_churn", "attach_failed",   shm->stats.afxdp_churn.attach_failed);
+		stat_row("afxdp_churn", "send_ok",         shm->stats.afxdp_churn.send_ok);
+		stat_row("afxdp_churn", "recv_ok",         shm->stats.afxdp_churn.recv_ok);
+		stat_row("afxdp_churn", "map_delete_ok",   shm->stats.afxdp_churn.map_delete_ok);
+		stat_row("afxdp_churn", "munmap_race_ok",  shm->stats.afxdp_churn.munmap_race_ok);
+		stat_row("afxdp_churn", "xsg_iters",         shm->stats.afxdp_churn.xsg_iters);
+		stat_row("afxdp_churn", "tx_metadata_iters", shm->stats.afxdp_churn.tx_metadata_iters);
+		stat_row("afxdp_churn", "tun_bind_iters",    shm->stats.afxdp_churn.tun_bind_iters);
+		stat_row("afxdp_churn", "xsg_bind_failed",   shm->stats.afxdp_churn.xsg_bind_failed);
+		stat_row("afxdp_churn", "tx_md_bind_failed", shm->stats.afxdp_churn.tx_md_bind_failed);
 	}
 }
 

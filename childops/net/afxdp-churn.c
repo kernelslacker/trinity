@@ -534,7 +534,7 @@ static int afxdp_iter_setup_umem(struct childdata *child,
 							 __ATOMIC_RELAXED);
 			}
 		}
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -542,7 +542,7 @@ static int afxdp_iter_setup_umem(struct childdata *child,
 	st->umem = mmap(NULL, AFXDP_UMEM_BYTES, PROT_READ | PROT_WRITE,
 			MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
 	if (st->umem == MAP_FAILED) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -570,12 +570,12 @@ static int afxdp_iter_setup_umem(struct childdata *child,
 		 * the iteration is still useful coverage. */
 		if (want_sg) {
 			ns_unsupported_xdp_sg = true;
-			__atomic_add_fetch(&shm->stats.afxdp_xsg_bind_failed,
+			__atomic_add_fetch(&shm->stats.afxdp_churn.xsg_bind_failed,
 					   1, __ATOMIC_RELAXED);
 		}
 		if (want_tx_md) {
 			ns_unsupported_tx_metadata = true;
-			__atomic_add_fetch(&shm->stats.afxdp_tx_md_bind_failed,
+			__atomic_add_fetch(&shm->stats.afxdp_churn.tx_md_bind_failed,
 					   1, __ATOMIC_RELAXED);
 		}
 		want_sg = want_tx_md = false;
@@ -587,17 +587,17 @@ static int afxdp_iter_setup_umem(struct childdata *child,
 				      &umem_reg, sizeof(umem_reg));
 	}
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.afxdp_churn_umem_reg_ok,
+	__atomic_add_fetch(&shm->stats.afxdp_churn.umem_reg_ok,
 			   1, __ATOMIC_RELAXED);
 	if (want_sg)
-		__atomic_add_fetch(&shm->stats.afxdp_xsg_iters,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.xsg_iters,
 				   1, __ATOMIC_RELAXED);
 	if (want_tx_md)
-		__atomic_add_fetch(&shm->stats.afxdp_tx_metadata_iters,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.tx_metadata_iters,
 				   1, __ATOMIC_RELAXED);
 
 	*want_sg_out    = want_sg;
@@ -629,11 +629,11 @@ static int afxdp_iter_setup_rings(struct xsk_state *st)
 			     &ring_entries, sizeof(ring_entries)) < 0 ||
 	    setsockopt_retry(st->xsk_fd, SOL_XDP, XDP_UMEM_COMPLETION_RING,
 			     &ring_entries, sizeof(ring_entries)) < 0) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.afxdp_churn_rings_setup_ok,
+	__atomic_add_fetch(&shm->stats.afxdp_churn.rings_setup_ok,
 			   1, __ATOMIC_RELAXED);
 
 	/* Zero before the getsockopt so a short reply leaves known state,
@@ -643,7 +643,7 @@ static int afxdp_iter_setup_rings(struct xsk_state *st)
 	if (getsockopt(st->xsk_fd, SOL_XDP, XDP_MMAP_OFFSETS,
 		       &st->off, &off_len) < 0 ||
 	    off_len < sizeof(st->off)) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -656,7 +656,7 @@ static int afxdp_iter_setup_rings(struct xsk_state *st)
 				sizeof(uint64_t), &st->fr_ring_sz) ||
 	    !xdp_ring_mmap_size(st->off.cr.desc, AFXDP_RING_ENTRIES,
 				sizeof(uint64_t), &st->cr_ring_sz)) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -675,7 +675,7 @@ static int afxdp_iter_setup_rings(struct xsk_state *st)
 			   XDP_UMEM_PGOFF_COMPLETION_RING);
 	if (st->rx_ring == MAP_FAILED || st->tx_ring == MAP_FAILED ||
 	    st->fr_ring == MAP_FAILED || st->cr_ring == MAP_FAILED) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -695,11 +695,11 @@ static int afxdp_iter_setup_bpf(struct xsk_state *st)
 	if (st->map_fd < 0) {
 		if (errno == EPERM || errno == EACCES)
 			ns_unsupported_bpf_xdp = true;
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.afxdp_churn_map_create_ok,
+	__atomic_add_fetch(&shm->stats.afxdp_churn.map_create_ok,
 			   1, __ATOMIC_RELAXED);
 
 	if (!ns_unsupported_bpf_xdp) {
@@ -712,13 +712,13 @@ static int afxdp_iter_setup_bpf(struct xsk_state *st)
 			 * UMEM/ring/bind path exercises xsk_buff_pool by
 			 * itself.  Don't fail the iteration. */
 		} else {
-			__atomic_add_fetch(&shm->stats.afxdp_churn_prog_load_ok,
+			__atomic_add_fetch(&shm->stats.afxdp_churn.prog_load_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
 
 	if (xskmap_install(st->map_fd, 0, st->xsk_fd) == 0)
-		__atomic_add_fetch(&shm->stats.afxdp_churn_map_update_ok,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.map_update_ok,
 				   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -759,7 +759,7 @@ static int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	if (target_ifindex == 0)
 		target_ifindex = if_nametoindex("lo");
 	if (target_ifindex == 0) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -780,16 +780,16 @@ static int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	}
 	if (rc == 0) {
 		st->bound = true;
-		__atomic_add_fetch(&shm->stats.afxdp_churn_bind_ok,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.bind_ok,
 				   1, __ATOMIC_RELAXED);
 		if (*want_tun)
-			__atomic_add_fetch(&shm->stats.afxdp_tun_bind_iters,
+			__atomic_add_fetch(&shm->stats.afxdp_churn.tun_bind_iters,
 					   1, __ATOMIC_RELAXED);
 	} else if (want_sg && errno == EINVAL) {
 		/* Bind-time rejection of XDP_USE_SG (e.g. driver path).
 		 * Latch so subsequent iters don't ask for it again. */
 		ns_unsupported_xdp_sg = true;
-		__atomic_add_fetch(&shm->stats.afxdp_xsg_bind_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.xsg_bind_failed,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -813,7 +813,7 @@ static void afxdp_iter_attach_prog(struct xsk_state *st,
 
 	st->xdp_link_fd = xdp_link_attach(st->prog_fd, target_ifindex);
 	if (st->xdp_link_fd >= 0) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_link_attach_ok,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.link_attach_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
 		int rc_open = xdp_netlink_open(&st->rtnl);
@@ -822,10 +822,10 @@ static void afxdp_iter_attach_prog(struct xsk_state *st,
 		    xdp_netlink_set_fd(&st->rtnl, target_ifindex,
 				       st->prog_fd) == 0) {
 			st->nl_attached_ifindex = target_ifindex;
-			__atomic_add_fetch(&shm->stats.afxdp_churn_netlink_attach_ok,
+			__atomic_add_fetch(&shm->stats.afxdp_churn.netlink_attach_ok,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			__atomic_add_fetch(&shm->stats.afxdp_churn_attach_failed,
+			__atomic_add_fetch(&shm->stats.afxdp_churn.attach_failed,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -966,7 +966,7 @@ static void afxdp_iter_tx_burst(struct xsk_state *st,
 
 	if (sendto(st->xsk_fd, NULL, 0, MSG_DONTWAIT, NULL, 0) >= 0 ||
 	    errno == EAGAIN || errno == ENOBUFS || errno == EBUSY)
-		__atomic_add_fetch(&shm->stats.afxdp_churn_send_ok,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.send_ok,
 				   1, __ATOMIC_RELAXED);
 
 	/* HARD REQUIREMENT: stop + join the scribbler before returning.
@@ -998,14 +998,14 @@ static void afxdp_iter_run_races(struct xsk_state *st)
 	 * the bound rings are concurrently producing into. */
 	if (getsockopt(st->xsk_fd, SOL_XDP, XDP_STATISTICS,
 		       &xstats, &xstats_len) == 0)
-		__atomic_add_fetch(&shm->stats.afxdp_churn_recv_ok,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.recv_ok,
 				   1, __ATOMIC_RELAXED);
 
 	/* RACE A: delete the bound XSKMAP entry.  CVE-2024-50115 surface --
 	 * xdp_do_redirect()'s map walker holds an RCU-protected pointer
 	 * that this delete frees from under it. */
 	if (st->bound && xskmap_delete(st->map_fd, 0) == 0)
-		__atomic_add_fetch(&shm->stats.afxdp_churn_map_delete_ok,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.map_delete_ok,
 				   1, __ATOMIC_RELAXED);
 
 	/* RACE B: munmap the FILL ring while still bound.  CVE-2023-39197
@@ -1014,7 +1014,7 @@ static void afxdp_iter_run_races(struct xsk_state *st)
 	 * own ring view. */
 	if (st->bound && st->fr_ring != MAP_FAILED && st->fr_ring_sz) {
 		if (munmap(st->fr_ring, st->fr_ring_sz) == 0)
-			__atomic_add_fetch(&shm->stats.afxdp_churn_munmap_race_ok,
+			__atomic_add_fetch(&shm->stats.afxdp_churn.munmap_race_ok,
 					   1, __ATOMIC_RELAXED);
 		st->fr_ring = MAP_FAILED;
 		st->fr_ring_sz = 0;
@@ -1089,11 +1089,11 @@ bool afxdp_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.afxdp_churn_runs,
+	__atomic_add_fetch(&shm->stats.afxdp_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_afxdp) {
-		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -1135,9 +1135,9 @@ bool afxdp_churn(struct childdata *child)
 {
 	(void)child;
 
-	__atomic_add_fetch(&shm->stats.afxdp_churn_runs,
+	__atomic_add_fetch(&shm->stats.afxdp_churn.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+	__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }

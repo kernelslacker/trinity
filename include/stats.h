@@ -22,6 +22,7 @@
 #include "stats/subsys/af_alg_weak_cipher_probe.h"
 #include "stats/subsys/af_unix_peek_race.h"
 #include "stats/subsys/af_unix_scm_rights_gc.h"
+#include "stats/subsys/afxdp_churn.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/arg.h"
 #include "stats/subsys/atm_vcc_churn.h"
@@ -33,6 +34,7 @@
 #include "stats/subsys/bpf_cgroup_attach.h"
 #include "stats/subsys/bpf_lifecycle.h"
 #include "stats/subsys/bridge_ct.h"
+#include "stats/subsys/bridge_fdb_stp.h"
 #include "stats/subsys/bridge_ip6_refrag_fraggap.h"
 #include "stats/subsys/bridge_ip6frag.h"
 #include "stats/subsys/bridge_vlan_churn.h"
@@ -68,6 +70,7 @@
 #include "stats/subsys/inplace_crypto.h"
 #include "stats/subsys/iouring.h"
 #include "stats/subsys/iouring_eventfd.h"
+#include "stats/subsys/iouring_net_multishot.h"
 #include "stats/subsys/iouring_recipes.h"
 #include "stats/subsys/iouring_send_zc_churn.h"
 #include "stats/subsys/ipfrag_source_churn.h"
@@ -88,8 +91,10 @@
 #include "stats/subsys/map_shared_stress.h"
 #include "stats/subsys/maps.h"
 #include "stats/subsys/mount_churn.h"
+#include "stats/subsys/nat_t_churn.h"
 #include "stats/subsys/mpls_label_stack_rx.h"
 #include "stats/subsys/mpls_route_churn.h"
+#include "stats/subsys/mptcp_pm_churn.h"
 #include "stats/subsys/msg_zerocopy_churn.h"
 #include "stats/subsys/netdev_netns_migrate.h"
 #include "stats/subsys/netlink_monitor_race.h"
@@ -104,9 +109,12 @@
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/pci_bind.h"
 #include "stats/subsys/perf_chains.h"
+#include "stats/subsys/pfkey_spd_walk.h"
 #include "stats/subsys/pidfd_storm.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/procfs_writer.h"
+#include "stats/subsys/psp_key_rotate.h"
+#include "stats/subsys/qrtr_bind_race.h"
 #include "stats/subsys/rds_zcopy_crafted_send.h"
 #include "stats/subsys/recipe.h"
 #include "stats/subsys/refcount_audit.h"
@@ -144,9 +152,11 @@
 #include "stats/subsys/veth_asymmetric_xdp.h"
 #include "stats/subsys/vlan_filter_churn.h"
 #include "stats/subsys/vrf_fib_churn.h"
+#include "stats/subsys/vsock_transport_churn.h"
 #include "stats/subsys/vxlan_encap_churn.h"
 #include "stats/subsys/wgdf.h"
 #include "stats/subsys/xattr_thrash.h"
+#include "stats/subsys/xfrm_churn.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
  * Q8.8 fixed point: 256 == 1.0x.  Floor and ceiling cap how far the
@@ -932,19 +942,8 @@ struct stats_s {
 	unsigned long pkt_builder_delivery_disabled;	/* CAP_NET_RAW absent — permanent per-child latch */
 	unsigned long pkt_builder_per_recipe[6];	/* per-recipe successful deliveries */
 
-	/* iouring_net_multishot childop counters */
-	unsigned long iouring_multishot_runs;		/* total iouring_net_multishot invocations */
-	unsigned long iouring_multishot_setup_failed;	/* ring/socket/buffer-pool setup failed */
-	unsigned long iouring_multishot_pbuf_ring_ok;	/* IORING_REGISTER_PBUF_RING accepted */
-	unsigned long iouring_multishot_pbuf_legacy_ok;	/* fell back to PROVIDE_BUFFERS */
-	unsigned long iouring_multishot_armed;		/* multishot RECV submitted+entered */
-	unsigned long iouring_multishot_packets_sent;	/* peer UDP packets sendto()'d */
-	unsigned long iouring_multishot_completions;	/* CQEs drained for the multishot */
-	unsigned long iouring_multishot_cancel_submitted; /* ASYNC_CANCEL submitted+entered */
-	unsigned long iouring_napi_register_ok;		/* IORING_REGISTER_NAPI accepted */
-	unsigned long iouring_napi_register_fail;	/* IORING_REGISTER_NAPI rejected */
-	unsigned long iouring_napi_unregister_ok;	/* IORING_UNREGISTER_NAPI accepted */
-	unsigned long iouring_napi_unregister_fail;	/* IORING_UNREGISTER_NAPI rejected */
+	/* iouring_net_multishot accounting.  See stats/subsys/iouring_net_multishot.h. */
+	struct iouring_net_multishot_stats iouring_net_multishot __attribute__((aligned(64)));
 
 	/* tcp_ao_rotate accounting.  See stats/subsys/tcp_ao_rotate.h. */
 	struct tcp_ao_rotate_stats tcp_ao_rotate __attribute__((aligned(64)));
@@ -997,18 +996,8 @@ struct stats_s {
 	/* ovs_tunnel_vport_churn accounting.  See stats/subsys/ovs_tunnel_vport_churn.h. */
 	struct ovs_tunnel_vport_churn_stats ovs_tunnel_vport_churn __attribute__((aligned(64)));
 
-	/* bridge_fdb_stp childop counters */
-	unsigned long bridge_fdb_stp_runs;		/* total bridge_fdb_stp invocations */
-	unsigned long bridge_fdb_stp_setup_failed;	/* unshare(CLONE_NEWNET) / rtnl_open / bridge latched */
-	unsigned long bridge_fdb_stp_bridge_create_ok;	/* RTM_NEWLINK type=bridge accepted */
-	unsigned long bridge_fdb_stp_veth_create_ok;	/* RTM_NEWLINK type=veth accepted (per pair) */
-	unsigned long bridge_fdb_stp_raw_send_ok;	/* AF_PACKET sendto on enslaved port returned >0 */
-	unsigned long bridge_fdb_stp_stp_toggle_ok;	/* /sys/.../bridge/stp_state write succeeded */
-	unsigned long bridge_fdb_stp_fdb_del_ok;	/* RTM_DELNEIGH on a learned fdb entry accepted */
-	unsigned long bridge_fdb_stp_link_del_ok;	/* RTM_DELLINK on bridge accepted */
-	unsigned long bridge_vlan_mass_runs;		/* mass-VLAN-add sub-mode invocations */
-	unsigned long bridge_vlan_mass_max_n;		/* largest IFLA_BRIDGE_VLAN_INFO entry count attempted in one msg */
-	unsigned long bridge_vlan_mass_enotbufs;	/* sendmsg -ENOBUFS / -EMSGSIZE on the oversize bulk message */
+	/* bridge_fdb_stp accounting.  See stats/subsys/bridge_fdb_stp.h. */
+	struct bridge_fdb_stp_stats bridge_fdb_stp __attribute__((aligned(64)));
 
 	/* bridge_conntrack_churn accounting.  See stats/subsys/bridge_ct.h. */
 	struct bridge_ct_stats bridge_ct __attribute__((aligned(64)));
@@ -1100,47 +1089,19 @@ struct stats_s {
 	/* tc_live_traffic accounting.  See stats/subsys/tc_live_traffic.h. */
 	struct tc_live_traffic_stats tc_live_traffic __attribute__((aligned(64)));
 
-	/* xfrm_churn childop counters */
-	unsigned long xfrm_churn_runs;			/* total xfrm_churn invocations */
-	unsigned long xfrm_churn_setup_failed;		/* unshare / NETLINK_XFRM open latched */
-	unsigned long xfrm_churn_sa_added;		/* XFRM_MSG_NEWSA accepted */
-	unsigned long xfrm_churn_tunnel_sa_added;	/* XFRM_MSG_NEWSA accepted with mode=XFRM_MODE_TUNNEL */
-	unsigned long xfrm_churn_iptfs_sa_added;	/* XFRM_MSG_NEWSA accepted with mode=XFRM_MODE_IPTFS */
-	unsigned long xfrm_churn_sa_updated;		/* XFRM_MSG_UPDSA accepted (mid-flow rekey) */
-	unsigned long xfrm_churn_sa_deleted;		/* XFRM_MSG_DELSA accepted */
-	unsigned long xfrm_churn_pol_added;		/* XFRM_MSG_NEWPOLICY accepted */
-	unsigned long xfrm_churn_pol_deleted;		/* XFRM_MSG_DELPOLICY accepted */
-	unsigned long xfrm_churn_esp_sent;		/* loopback UDP send through SP/SA bundle returned >0 */
-	unsigned long xfrm_churn_zc_sent;		/* MSG_ZEROCOPY sendto returned >0 (SKBFL_SHARED_FRAG reached) */
-	unsigned long xfrm_churn_zc_errq_drained;	/* SO_EE_ORIGIN_ZEROCOPY completions drained per burst */
-	unsigned long xfrm_churn_pfkey_send_ok;		/* PF_KEYv2 SADB_FLUSH send returned >0 */
+	/* xfrm_churn accounting.  See stats/subsys/xfrm_churn.h. */
+	struct xfrm_churn_stats xfrm_churn __attribute__((aligned(64)));
 	unsigned long xfrm_ah_esn_setup_ok;		/* AH+ESN+async-algo NEWSA accepted */
 	unsigned long xfrm_ah_esn_setup_fail;		/* AH+ESN+async-algo NEWSA rejected */
 	unsigned long xfrm_ah_esn_async_runs;		/* AH+ESN+async-algo sub-mode invocations */
 	unsigned long xfrm_ah_esn_delsa_races;		/* AH+ESN+async-algo DELSA accepted (race window) */
-	unsigned long xfrm_churn_burn_runs;		/* burn-this-netns branch attempted */
-	unsigned long xfrm_churn_burn_throttled;	/* burn-this-netns skipped: MAX_CONCURRENT_NEWNET cap reached */
-	unsigned long xfrm_churn_burn_completed;	/* burn-this-netns reached the readers + larval insert */
 	unsigned long xfrm_compat_sweep_runs;		/* xfrm_compat_msg_sweep sub-mode invocations */
 	unsigned long xfrm_compat_sends_ok;		/* sweep sendto returned >= 0 */
 	unsigned long xfrm_compat_sends_failed;		/* sweep sendto returned < 0 */
 	unsigned long xfrm_compat_replies_seen;		/* sweep recv returned > 0 */
 
-	/* nat_t_churn childop counters */
-	unsigned long nat_t_churn_runs;			/* total nat_t_churn invocations */
-	unsigned long nat_t_churn_setup_failed;		/* unshare / NETLINK_XFRM open latched */
-	unsigned long nat_t_churn_sa_added;		/* XFRM_MSG_NEWSA with XFRMA_ENCAP accepted */
-	unsigned long nat_t_churn_sa_deleted;		/* XFRM_MSG_DELSA accepted */
-	unsigned long nat_t_churn_frames_sent;		/* ESP-in-UDP sendto returned >0 */
-	/* nat_t_churn IPv6 / UDPv6-encap-ESP error-path branch counters.
-	 * Drives the xfrm6 dst error path on UDPv6-encapsulated ESP SAs:
-	 * AF_INET6 socket + UDP_ENCAP_ESPINUDP[_NON_IKE] + xfrm v6 SA +
-	 * sendto an unreachable 2001:db8::/32 destination so the kernel
-	 * walks xfrm_lookup -> esp6_output -> error-return path. */
-	unsigned long nat_t_xfrm6_setup_ok;		/* AF_INET6 NEWSA + UDPv6 socket primed */
-	unsigned long nat_t_xfrm6_setup_fail;		/* NEWSA / sock / setsockopt rejected */
-	unsigned long nat_t_xfrm6_sendto_runs;		/* sendto() to unreachable v6 dest issued */
-	unsigned long nat_t_xfrm6_delsa_races;		/* DELSA accepted while sendto burst inflight */
+	/* nat_t_churn accounting.  See stats/subsys/nat_t_churn.h. */
+	struct nat_t_churn_stats nat_t_churn __attribute__((aligned(64)));
 
 	/* bpf_cgroup_attach accounting.  See stats/subsys/bpf_cgroup_attach.h. */
 	struct bpf_cgroup_attach_stats bpf_cgroup_attach __attribute__((aligned(64)));
@@ -1169,25 +1130,8 @@ struct stats_s {
 	/* bridge_ip6_refrag_fraggap accounting.  See stats/subsys/bridge_ip6_refrag_fraggap.h. */
 	struct bridge_ip6_refrag_fraggap_stats bridge_ip6_refrag_fraggap __attribute__((aligned(64)));
 
-	/* mptcp_pm_churn childop counters */
-	unsigned long mptcp_pm_churn_runs;			/* total mptcp_pm_churn invocations */
-	unsigned long mptcp_pm_churn_setup_failed;		/* socket/bind/listen/connect setup failed */
-	unsigned long mptcp_pm_churn_sock_mptcp_ok;		/* IPPROTO_MPTCP server socket created (CONFIG_MPTCP=y) */
-	unsigned long mptcp_pm_churn_addr_added_ok;		/* MPTCP_PM_CMD_ADD_ADDR ack 0 (endpoint installed) */
-	unsigned long mptcp_pm_churn_addr_removed_ok;		/* MPTCP_PM_CMD_DEL_ADDR ack 0 (subflow teardown raced data) */
-	unsigned long mptcp_pm_churn_send_ok;			/* send() through the live MPTCP socket returned >0 */
-	unsigned long mptcp_setsockopt_unsupported;		/* IPPROTO_MPTCP socket() rejected during setsockopt_all_sf recipe */
-	unsigned long mptcp_setsockopt_master_set;		/* setsockopt() on master mptcp socket succeeded */
-	unsigned long mptcp_setsockopt_master_fail;		/* setsockopt() on master mptcp socket failed */
-	unsigned long mptcp_getsockopt_verify_ok;		/* getsockopt() readback matched the value just set */
-	unsigned long mptcp_getsockopt_verify_drift;		/* getsockopt() readback diverged from set value */
-	unsigned long mptcp_sockopt_sweep_runs;			/* sockopt-inheritance sweep sub-mode invocations */
-	unsigned long mptcp_sockopt_set_ok;			/* sweep: setsockopt() on master mptcp socket succeeded */
-	unsigned long mptcp_sockopt_set_failed;			/* sweep: setsockopt() on master mptcp socket failed */
-	unsigned long mptcp_sockopt_subflow_added;		/* sweep: MPTCP_INFO num_subflows bumped after ADD_ADDR */
-	unsigned long mptcp_sockopt_readback_ok;		/* sweep: post-subflow getsockopt() returned the option */
-	unsigned long mptcp_sockopt_inherit_mismatch;		/* sweep: master readback != value set (70ece9d7021c bug-signal) */
-	unsigned long mptcp_sockopt_unsupported_latched;	/* sweep: opt latched out after EOPNOTSUPP/ENOPROTOOPT */
+	/* mptcp_pm_churn accounting.  See stats/subsys/mptcp_pm_churn.h. */
+	struct mptcp_pm_churn_stats mptcp_pm_churn __attribute__((aligned(64)));
 
 	/* devlink_port_churn accounting.  See stats/subsys/devlink_port_churn.h. */
 	struct devlink_port_churn_stats devlink_port_churn __attribute__((aligned(64)));
@@ -1213,44 +1157,11 @@ struct stats_s {
 	/* map_shared_stress accounting.  See stats/subsys/map_shared_stress.h. */
 	struct map_shared_stress_stats map_shared_stress __attribute__((aligned(64)));
 
-	/* qrtr_bind_race childop counters */
-	unsigned long qrtr_bind_race_runs;			/* total qrtr_bind_race invocations */
-	unsigned long qrtr_bind_race_setup_failed;		/* AF_QRTR socket() probe latch fired */
-	unsigned long qrtr_bind_race_iter;			/* outer-loop iterations entered */
-	unsigned long qrtr_bind_race_fork_failed;		/* fork() of a bind worker failed */
-	unsigned long qrtr_bind_race_spawn_pair_ok;		/* both bind workers spawned for this round */
-	unsigned long qrtr_bind_race_sibling_reaped_ok;		/* worker exited normally and was reaped */
-	unsigned long qrtr_bind_race_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
-	/* In-worker setup-fail: bumped from the forked bind-child when its
-	 * own socket(AF_QRTR) or getsockname() returns -1 before the bind
-	 * attempt.  Distinct from qrtr_bind_race_setup_failed, which only
-	 * fires from the parent-side probe latch and is invisible to a worker
-	 * that crashes during its own per-iter setup phase.  Without this
-	 * counter an op whose workers all fail setup looks identical to one
-	 * that succeeded silently. */
-	unsigned long qrtr_bind_setup_fail;
+	/* qrtr_bind_race accounting.  See stats/subsys/qrtr_bind_race.h. */
+	struct qrtr_bind_race_stats qrtr_bind_race __attribute__((aligned(64)));
 
-	/* pfkey_spd_walk childop counters */
-	unsigned long pfkey_spd_walk_runs;			/* total pfkey_spd_walk invocations */
-	unsigned long pfkey_spd_walk_setup_failed;		/* AF_KEY probe or netns unshare latch fired */
-	unsigned long pfkey_spd_walk_iter;			/* outer-loop iterations entered */
-	unsigned long pfkey_spd_walk_fork_failed;		/* fork() of a walker/racer worker failed */
-	unsigned long pfkey_spd_walk_spawn_pair_ok;		/* both walker + racer spawned for this round */
-	unsigned long pfkey_spd_walk_sibling_reaped_ok;		/* worker exited normally and was reaped */
-	unsigned long pfkey_spd_walk_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
-	/* SPDGET resolution counters.  The racer alternates SADB_X_SPDDUMP
-	 * with SADB_X_SPDGET against a small set of policy ids; the SPDDUMP
-	 * arm always finds something to walk, but kernel-assigned policy
-	 * ids are sparse and the SPDGET arm typically never lands on a live
-	 * id.  pfkey_spdget_resolved bumps when an inbound SPDGET reply
-	 * carries sadb_msg_errno == 0 (the kernel resolved the id);
-	 * pfkey_spdget_missed bumps when the reply carries a nonzero errno
-	 * (typically -ESRCH).  A 0% resolved rate over a long run flags
-	 * that the SPDGET arm is contributing no real coverage and the id
-	 * pool needs to be steered toward live ids -- counter-only here;
-	 * the sparse-id root cause is tracked separately. */
-	unsigned long pfkey_spdget_resolved;
-	unsigned long pfkey_spdget_missed;
+	/* pfkey_spd_walk accounting.  See stats/subsys/pfkey_spd_walk.h. */
+	struct pfkey_spd_walk_stats pfkey_spd_walk __attribute__((aligned(64)));
 
 	/* l2tp_ifname_race accounting.  See stats/subsys/l2tp_ifname_race.h. */
 	struct l2tp_ifname_race_stats l2tp_ifname_race __attribute__((aligned(64)));
@@ -1285,19 +1196,8 @@ struct stats_s {
 	/* iouring_send_zc_churn accounting.  See stats/subsys/iouring_send_zc_churn.h. */
 	struct iouring_send_zc_churn_stats iouring_send_zc_churn __attribute__((aligned(64)));
 
-	/* vsock_transport_churn childop counters */
-	unsigned long vsock_transport_churn_runs;			/* total vsock_transport_churn invocations */
-	unsigned long vsock_transport_churn_setup_failed;		/* socket / bind / listen / connect / unsupported latch fired */
-	unsigned long vsock_transport_churn_bind_ok;			/* bind(VMADDR_CID_LOCAL) + listen accepted */
-	unsigned long vsock_transport_churn_connect_ok;		/* loopback connect to listener accepted */
-	unsigned long vsock_transport_churn_send_ok;			/* send(MSG_DONTWAIT) returned >=0 on the loopback transport */
-	unsigned long vsock_transport_churn_buffer_size_ok;	/* setsockopt(SO_VM_SOCKETS_BUFFER_SIZE) accepted mid-flow */
-	unsigned long vsock_transport_churn_timeout_ok;		/* setsockopt(SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW) accepted mid-flow */
-	unsigned long vsock_transport_churn_get_cid_ok;		/* ioctl(IOCTL_VM_SOCKETS_GET_LOCAL_CID) returned the local cid */
-	unsigned long vsock_seq_eom_runs;			/* SEQ_EOM 0-length burst sub-mode invocations */
-	unsigned long vsock_seq_eom_sends_ok;			/* sendmsg(MSG_EOR, iov_len=0) returned >= 0 */
-	unsigned long vsock_seq_eom_sends_failed;		/* sendmsg(MSG_EOR, iov_len=0) returned < 0 */
-	unsigned long vsock_seq_eom_skipped;			/* sub-mode gated out: no socket / unsupported / wall-cap */
+	/* vsock_transport_churn accounting.  See stats/subsys/vsock_transport_churn.h. */
+	struct vsock_transport_churn_stats vsock_transport_churn __attribute__((aligned(64)));
 
 	/* bridge_vlan_churn accounting.  See stats/subsys/bridge_vlan_churn.h. */
 	struct bridge_vlan_churn_stats bridge_vlan_churn __attribute__((aligned(64)));
@@ -1308,47 +1208,12 @@ struct stats_s {
 	/* igmp_mld_source_churn accounting.  See stats/subsys/igmp_mld_source_churn.h. */
 	struct igmp_mld_source_churn_stats igmp_mld_source_churn __attribute__((aligned(64)));
 
-	/* psp_key_rotate childop counters */
-	unsigned long psp_key_rotate_runs;			/* total psp_key_rotate invocations */
-	unsigned long psp_key_rotate_setup_failed;		/* unshare / netlink open / family probe latched */
-	unsigned long psp_key_rotate_netdev_create_ok;		/* rtnl RTM_NEWLINK netdevsim accepted */
-	unsigned long psp_key_rotate_family_resolve_ok;		/* CTRL_CMD_GETFAMILY resolved PSP family id */
-	unsigned long psp_key_rotate_dev_get_ok;		/* PSP_CMD_DEV_GET dump returned without error */
-	unsigned long psp_key_rotate_key_install_ok;		/* initial PSP_CMD_KEY_ROTATE accepted */
-	unsigned long psp_key_rotate_spi_set_ok;		/* PSP_CMD_TX_ASSOC bound socket fd to dev (spec: spi_set_ok) */
-	unsigned long psp_key_rotate_send_ok;			/* send() over PSP-bound socket returned >0 */
-	unsigned long psp_key_rotate_rotate_ok;			/* mid-flow PSP_CMD_KEY_ROTATE accepted (race target) */
-	unsigned long psp_key_rotate_spi_switch_ok;		/* mid-flow PSP_CMD_TX_ASSOC re-bind accepted */
-	unsigned long psp_key_rotate_shutdown_ok;		/* shutdown(SHUT_RDWR) on PSP-bound socket returned 0 */
+	/* psp_key_rotate accounting.  See stats/subsys/psp_key_rotate.h. */
+	struct psp_key_rotate_stats psp_key_rotate __attribute__((aligned(64)));
 
-	/* psp_key_rotate sub-mode: psp_devlink_port_churn counters */
-	unsigned long psp_devlink_port_churn_runs;		/* sub-mode invocations */
-	unsigned long psp_devlink_port_churn_port_add_ok;	/* DEVLINK_CMD_PORT_NEW accepted */
-	unsigned long psp_devlink_port_churn_port_del_ok;	/* DEVLINK_CMD_PORT_DEL accepted */
-	unsigned long psp_devlink_port_churn_vf_spawn_ok;	/* sriov_numvfs write accepted */
-	unsigned long psp_devlink_port_churn_unsupported_latched; /* family resolve / netdevsim spawn latched */
 
-	/* afxdp_churn childop counters */
-	unsigned long afxdp_churn_runs;				/* total afxdp_churn invocations */
-	unsigned long afxdp_churn_setup_failed;			/* socket / mmap / setsockopt / cap-gate latched */
-	unsigned long afxdp_churn_umem_reg_ok;			/* setsockopt(XDP_UMEM_REG) accepted */
-	unsigned long afxdp_churn_rings_setup_ok;		/* all four XDP_*_RING setsockopts accepted */
-	unsigned long afxdp_churn_prog_load_ok;			/* bpf(BPF_PROG_LOAD, BPF_PROG_TYPE_XDP) accepted */
-	unsigned long afxdp_churn_map_create_ok;		/* bpf(BPF_MAP_CREATE, BPF_MAP_TYPE_XSKMAP) accepted */
-	unsigned long afxdp_churn_map_update_ok;		/* bpf(BPF_MAP_UPDATE_ELEM) installed xsk_fd at xskmap key */
-	unsigned long afxdp_churn_bind_ok;			/* bind(XDP_USE_NEED_WAKEUP, lo, qid=0) accepted */
-	unsigned long afxdp_churn_link_attach_ok;		/* bpf(BPF_LINK_CREATE, BPF_XDP) attached prog to lo */
-	unsigned long afxdp_churn_netlink_attach_ok;		/* RTM_NEWLINK + IFLA_XDP_FD fallback attached prog to lo */
-	unsigned long afxdp_churn_attach_failed;		/* both attach paths failed -- RACE A window stays cold */
-	unsigned long afxdp_churn_send_ok;			/* sendto() kick on bound xsk returned >=0 (or EAGAIN/ENOBUFS/EBUSY) */
-	unsigned long afxdp_churn_recv_ok;			/* getsockopt(XDP_STATISTICS) on bound xsk succeeded */
-	unsigned long afxdp_churn_map_delete_ok;		/* bpf(BPF_MAP_DELETE_ELEM) on bound xskmap key (race target) */
-	unsigned long afxdp_churn_munmap_race_ok;		/* munmap of FILL ring while bound (race target) */
-	unsigned long afxdp_xsg_iters;				/* per-iter knob enable_sg=1: USE_SG umem + XDP_USE_SG bind + chained TX desc */
-	unsigned long afxdp_tx_metadata_iters;			/* per-iter knob enable_tx_md=1: tx_metadata_len umem + XDP_TX_METADATA stamp */
-	unsigned long afxdp_tun_bind_iters;			/* per-iter knob: bound to tun (IFF_NAPI|IFF_NAPI_FRAGS) instead of lo */
-	unsigned long afxdp_xsg_bind_failed;			/* UMEM_REG with XDP_UMEM_FLAGS_USE_SG rejected; latched off, retried without */
-	unsigned long afxdp_tx_md_bind_failed;			/* UMEM_REG with tx_metadata_len rejected; latched off, retried without */
+	/* afxdp_churn accounting.  See stats/subsys/afxdp_churn.h. */
+	struct afxdp_churn_stats afxdp_churn __attribute__((aligned(64)));
 
 	/* veth_asymmetric_xdp accounting.  See stats/subsys/veth_asymmetric_xdp.h. */
 	struct veth_asymmetric_xdp_stats veth_asymmetric_xdp __attribute__((aligned(64)));

@@ -316,10 +316,10 @@ static void drain_replies(int fd)
 		if (m->sadb_msg_type != SADB_X_SPDGET)
 			continue;
 		if (m->sadb_msg_errno == 0)
-			__atomic_add_fetch(&shm->stats.pfkey_spdget_resolved,
+			__atomic_add_fetch(&shm->stats.pfkey_spd_walk.spdget_resolved,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.pfkey_spdget_missed,
+			__atomic_add_fetch(&shm->stats.pfkey_spd_walk.spdget_missed,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -446,10 +446,10 @@ static void reap_sibling(pid_t pid)
 	if (waitpid_eintr(pid, &status, 0) != pid)
 		return;
 	if (WIFSIGNALED(status))
-		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_sibling_crashed,
+		__atomic_add_fetch(&shm->stats.pfkey_spd_walk.sibling_crashed,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_sibling_reaped_ok,
+		__atomic_add_fetch(&shm->stats.pfkey_spd_walk.sibling_reaped_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -490,12 +490,12 @@ static void iter_one(void)
 
 	pick_variant(&v);
 
-	__atomic_add_fetch(&shm->stats.pfkey_spd_walk_iter,
+	__atomic_add_fetch(&shm->stats.pfkey_spd_walk.iter,
 			   1, __ATOMIC_RELAXED);
 
 	walker = fork();
 	if (walker < 0) {
-		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_fork_failed,
+		__atomic_add_fetch(&shm->stats.pfkey_spd_walk.fork_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -504,7 +504,7 @@ static void iter_one(void)
 
 	racer = fork();
 	if (racer < 0) {
-		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_fork_failed,
+		__atomic_add_fetch(&shm->stats.pfkey_spd_walk.fork_failed,
 				   1, __ATOMIC_RELAXED);
 		/* walker already in flight; reap it so we don't leave
 		 * a zombie behind when the outer loop continues. */
@@ -514,7 +514,7 @@ static void iter_one(void)
 	if (racer == 0)
 		spd_racer_child(v.dir);
 
-	__atomic_add_fetch(&shm->stats.pfkey_spd_walk_spawn_pair_ok,
+	__atomic_add_fetch(&shm->stats.pfkey_spd_walk.spawn_pair_ok,
 			   1, __ATOMIC_RELAXED);
 
 	reap_sibling(walker);
@@ -595,11 +595,11 @@ bool pfkey_spd_walk(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.pfkey_spd_walk_runs,
+	__atomic_add_fetch(&shm->stats.pfkey_spd_walk.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_pfkey_spd_walk || ns_unsupported_userns) {
-		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
+		__atomic_add_fetch(&shm->stats.pfkey_spd_walk.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -611,7 +611,7 @@ bool pfkey_spd_walk(struct childdata *child)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
+			__atomic_add_fetch(&shm->stats.pfkey_spd_walk.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -624,7 +624,7 @@ bool pfkey_spd_walk(struct childdata *child)
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
 		warn_once_unsupported_userns("userns_run_in_ns(CLONE_NEWNET)", EPERM);
-		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
+		__atomic_add_fetch(&shm->stats.pfkey_spd_walk.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -632,7 +632,7 @@ bool pfkey_spd_walk(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
+		__atomic_add_fetch(&shm->stats.pfkey_spd_walk.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

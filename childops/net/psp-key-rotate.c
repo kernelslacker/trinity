@@ -286,7 +286,7 @@ static void inner_traffic_burst(int sockfd)
 
 	r = send(sockfd, payload, sizeof(payload), MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (r > 0)
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_send_ok,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.send_ok,
 				   1, __ATOMIC_RELAXED);
 
 	(void)recv(sockfd, rx, sizeof(rx), MSG_DONTWAIT);
@@ -660,7 +660,7 @@ static void pdpc_try_sriov_crossfire(__u32 bus_id, struct nl_ctx *rtnl)
 			ns_unsupported_psp_sriov = true;
 		return;
 	}
-	__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_vf_spawn_ok,
+	__atomic_add_fetch(&shm->stats.psp_key_rotate.devlink_port_churn_vf_spawn_ok,
 			   1, __ATOMIC_RELAXED);
 
 	(void)snprintf(ifname, sizeof(ifname), "eni%unp0",
@@ -698,7 +698,7 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 	if ((unsigned long long)ns_since(t_outer) >= PKR_WALL_CAP_NS)
 		return;
 
-	__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_runs,
+	__atomic_add_fetch(&shm->stats.psp_key_rotate.devlink_port_churn_runs,
 			   1, __ATOMIC_RELAXED);
 
 	/* Capture the worker's original netns before any switch so out:
@@ -707,14 +707,14 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 	 * in an unshared netns. */
 	if (!pdpc_save_worker_netns_once()) {
 		ns_unsupported_psp_devlink_port = true;
-		__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_unsupported_latched,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.devlink_port_churn_unsupported_latched,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
 	if (!pdpc_setup_done) {
 		if (!pdpc_setup_once()) {
-			__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_unsupported_latched,
+			__atomic_add_fetch(&shm->stats.psp_key_rotate.devlink_port_churn_unsupported_latched,
 					   1, __ATOMIC_RELAXED);
 			/* pdpc_setup_once() may have unshared before
 			 * failing -- fall through to out: so the netns
@@ -724,7 +724,7 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 	} else if (pdpc_latched_netns_fd >= 0 &&
 		   setns(pdpc_latched_netns_fd, CLONE_NEWNET) < 0) {
 		ns_unsupported_psp_devlink_port = true;
-		__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_unsupported_latched,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.devlink_port_churn_unsupported_latched,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -741,7 +741,7 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 	rc = genl_open(&devlink_ctx, &gopts);
 	if (rc != 0) {
 		ns_unsupported_psp_devlink_port = true;
-		__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_unsupported_latched,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.devlink_port_churn_unsupported_latched,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -801,14 +801,14 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 		if (rc == 0) {
 			pdpc_last_port[idx_a] = pdpc_next_port[idx_a];
 			pdpc_next_port[idx_a]++;
-			__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_port_add_ok,
+			__atomic_add_fetch(&shm->stats.psp_key_rotate.devlink_port_churn_port_add_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 
 		rc = pdpc_devlink_port_del(&devlink_ctx, dev_b,
 					   pdpc_last_port[idx_b]);
 		if (rc == 0) {
-			__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_port_del_ok,
+			__atomic_add_fetch(&shm->stats.psp_key_rotate.devlink_port_churn_port_del_ok,
 					   1, __ATOMIC_RELAXED);
 			if (pdpc_last_port[idx_b] > 0U)
 				pdpc_last_port[idx_b]--;
@@ -885,7 +885,7 @@ static int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
 	nlopts.proto         = NETLINK_ROUTE;
 	nlopts.recv_timeo_s  = 1;
 	if (nl_open(rtnl, &nlopts) < 0) {
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -894,7 +894,7 @@ static int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
 		       (unsigned int)(rand32() & 0xffff));
 	rc = rtnl_make_netdevsim(rtnl, ifname);
 	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_netdev_create_ok,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.netdev_create_ok,
 				   1, __ATOMIC_RELAXED);
 		name_pool_record(NAME_KIND_NETDEV, ifname, strlen(ifname));
 	}
@@ -918,11 +918,11 @@ static int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
 	rc = genl_open(psp_ctx, &gopts);
 	if (rc != 0) {
 		ns_unsupported_psp_key_rotate = true;
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.psp_key_rotate_family_resolve_ok,
+	__atomic_add_fetch(&shm->stats.psp_key_rotate.family_resolve_ok,
 			   1, __ATOMIC_RELAXED);
 
 	/* PSP_CMD_DEV_GET dump.  Best-effort dev_id pick: a valid PSP
@@ -930,7 +930,7 @@ static int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
 	 * netdevsim spawned above lands here. */
 	rc2 = psp_dev_get_probe(psp_ctx);
 	if (rc2 == 0)
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_dev_get_ok,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.dev_get_ok,
 				   1, __ATOMIC_RELAXED);
 	else if (rc2 < 0 && errno_is_unsupported(-rc2))
 		ns_unsupported_psp_key_rotate = true;
@@ -956,7 +956,7 @@ static int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
 
 	sockfd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
 	if (sockfd < 0) {
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -970,7 +970,7 @@ static int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
 	/* Initial key install. */
 	rc = psp_key_rotate_cmd(psp_ctx, dev_id);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_key_install_ok,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.key_install_ok,
 				   1, __ATOMIC_RELAXED);
 	else if (rc < 0 && errno_is_unsupported(-rc))
 		ns_unsupported_psp_key_rotate = true;
@@ -979,7 +979,7 @@ static int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
 	 * spi_set_ok -- see spec-deviation note in the file header). */
 	rc = psp_tx_assoc_cmd(psp_ctx, dev_id, sockfd);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_spi_set_ok,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.spi_set_ok,
 				   1, __ATOMIC_RELAXED);
 
 	return sockfd;
@@ -1013,21 +1013,21 @@ static void psp_key_rotate_iter_traffic(int sockfd,
 		/* RACE TARGET: rotate keys mid-flow. */
 		rc = psp_key_rotate_cmd(psp_ctx, dev_id);
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.psp_key_rotate_rotate_ok,
+			__atomic_add_fetch(&shm->stats.psp_key_rotate.rotate_ok,
 					   1, __ATOMIC_RELAXED);
 
 		/* Re-bind the assoc to the rotated generation mid-flow --
 		 * "spi switch" per spec naming. */
 		rc = psp_tx_assoc_cmd(psp_ctx, dev_id, sockfd);
 		if (rc == 0)
-			__atomic_add_fetch(&shm->stats.psp_key_rotate_spi_switch_ok,
+			__atomic_add_fetch(&shm->stats.psp_key_rotate.spi_switch_ok,
 					   1, __ATOMIC_RELAXED);
 
 		inner_traffic_burst(sockfd);
 	}
 
 	(void)shutdown(sockfd, SHUT_RDWR);
-	__atomic_add_fetch(&shm->stats.psp_key_rotate_shutdown_ok,
+	__atomic_add_fetch(&shm->stats.psp_key_rotate.shutdown_ok,
 			   1, __ATOMIC_RELAXED);
 }
 
@@ -1176,7 +1176,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
 		 * secondary unshare).  Skip this iteration without
 		 * latching -- the failure is not policy and may not
 		 * recur. */
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -1187,11 +1187,11 @@ bool psp_key_rotate(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.psp_key_rotate_runs,
+	__atomic_add_fetch(&shm->stats.psp_key_rotate.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_psp_key_rotate_master) {
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
+		__atomic_add_fetch(&shm->stats.psp_key_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -1237,9 +1237,9 @@ bool psp_key_rotate(struct childdata *child)
 {
 	(void)child;
 
-	__atomic_add_fetch(&shm->stats.psp_key_rotate_runs,
+	__atomic_add_fetch(&shm->stats.psp_key_rotate.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
+	__atomic_add_fetch(&shm->stats.psp_key_rotate.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
