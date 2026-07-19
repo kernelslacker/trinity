@@ -518,7 +518,7 @@ static int geneve_rx_iter_open_ctx(struct geneve_rx_iter_ctx *ctx)
 	};
 
 	if (nl_open(&ctx->nl, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.geneve_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.geneve_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -564,7 +564,7 @@ static int geneve_rx_iter_build_link(struct geneve_rx_iter_ctx *ctx)
 
 	rc = build_geneve_link(&ctx->nl, ctx->ifname, ctx->vni);
 	if (rc != 0) {
-		__atomic_add_fetch(&shm->stats.geneve_rx_link_create_failed,
+		__atomic_add_fetch(&shm->stats.geneve_rx.link_create_failed,
 				   1, __ATOMIC_RELAXED);
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -ENOENT ||
@@ -578,7 +578,7 @@ static int geneve_rx_iter_build_link(struct geneve_rx_iter_ctx *ctx)
 		return -1;
 	}
 	ctx->link_added = true;
-	__atomic_add_fetch(&shm->stats.geneve_rx_link_create_ok,
+	__atomic_add_fetch(&shm->stats.geneve_rx.link_create_ok,
 			   1, __ATOMIC_RELAXED);
 
 	ctx->ifindex = (int)if_nametoindex(ctx->ifname);
@@ -588,7 +588,7 @@ static int geneve_rx_iter_build_link(struct geneve_rx_iter_ctx *ctx)
 	name_pool_record(NAME_KIND_NETDEV, ctx->ifname, strlen(ctx->ifname));
 
 	if (rtnl_setlink_up(&ctx->nl, ctx->ifindex) == 0)
-		__atomic_add_fetch(&shm->stats.geneve_rx_link_up_ok,
+		__atomic_add_fetch(&shm->stats.geneve_rx.link_up_ok,
 				   1, __ATOMIC_RELAXED);
 
 	return 0;
@@ -657,7 +657,7 @@ static void geneve_rx_iter_send_burst(struct geneve_rx_iter_ctx *ctx)
 		n = sendto(ctx->raw, pkt, len, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.geneve_rx_packet_sent_ok,
+			__atomic_add_fetch(&shm->stats.geneve_rx.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -680,7 +680,7 @@ static void geneve_rx_iter_teardown(struct geneve_rx_iter_ctx *ctx)
 
 	if (ctx->link_added && ctx->ifindex > 0) {
 		if (rtnl_dellink(&ctx->nl, ctx->ifindex) == 0)
-			__atomic_add_fetch(&shm->stats.geneve_rx_link_del_ok,
+			__atomic_add_fetch(&shm->stats.geneve_rx.link_del_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 	nl_close(&ctx->nl);
@@ -734,14 +734,14 @@ bool geneve_rx(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.geneve_rx_runs, 1,
+	__atomic_add_fetch(&shm->stats.geneve_rx.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_geneve_rx)
 		return true;
 
 	if (kind_unsupported()) {
-		__atomic_add_fetch(&shm->stats.geneve_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.geneve_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -758,12 +758,12 @@ bool geneve_rx(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.geneve_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.geneve_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.geneve_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.geneve_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
