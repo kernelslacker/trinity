@@ -3,7 +3,7 @@
 /* struct kcov_shared, its extern pointer, and per-nr accessors.
  * Split out of include/kcov.h.  Storage layout of struct kcov_shared
  * is offset-sensitive: consumers snapshot fields via __atomic_load_n
- * and stats/kcov_cmp.c indexes into fixed-length arrays here.  Do not
+ * and stats/kcov/cmp/ indexes into fixed-length arrays here.  Do not
  * add alignment attributes, reorder fields, or insert nested structs
  * without matching updates in every consumer. */
 
