@@ -43,6 +43,7 @@
 #include "stats/subsys/cpu_hotplug.h"
 #include "stats/subsys/cred_transition.h"
 #include "stats/subsys/deep_path.h"
+#include "stats/subsys/devlink_port_churn.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/errno_gradient.h"
 #include "stats/subsys/esp_crafted_rx.h"
@@ -1265,13 +1266,8 @@ struct stats_s {
 	unsigned long mptcp_sockopt_inherit_mismatch;		/* sweep: master readback != value set (70ece9d7021c bug-signal) */
 	unsigned long mptcp_sockopt_unsupported_latched;	/* sweep: opt latched out after EOPNOTSUPP/ENOPROTOOPT */
 
-	/* devlink_port_churn childop counters */
-	unsigned long devlink_port_churn_iterations;		/* per-loop iteration completed */
-	unsigned long devlink_port_churn_split_ok;		/* DEVLINK_CMD_PORT_SPLIT ack 0 */
-	unsigned long devlink_port_churn_split_fail;		/* DEVLINK_CMD_PORT_SPLIT non-zero ack (expected sometimes) */
-	unsigned long devlink_port_churn_reload_ok;		/* DEVLINK_CMD_RELOAD action=DRIVER_REINIT ack 0 */
-	unsigned long devlink_port_churn_reload_fail;		/* DEVLINK_CMD_RELOAD non-zero ack */
-	unsigned long devlink_port_churn_create_skipped;	/* netdevsim absent / sysfs unwritable */
+	/* devlink_port_churn accounting.  See stats/subsys/devlink_port_churn.h. */
+	struct devlink_port_churn_stats devlink_port_churn __attribute__((aligned(64)));
 
 	/* handshake_req_abort accounting.  See stats/subsys/handshake_req_abort.h. */
 	struct handshake_req_abort_stats handshake_req_abort __attribute__((aligned(64)));

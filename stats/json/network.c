@@ -421,19 +421,6 @@ const struct stat_category mptcp_pm_churn_category =
 	              mptcp_pm_churn_runs,
 	              mptcp_pm_churn_fields);
 
-static const struct stat_field devlink_port_churn_fields[] = {
-	STAT_FIELD(devlink_port_churn, iterations),
-	STAT_FIELD(devlink_port_churn, split_ok),
-	STAT_FIELD(devlink_port_churn, split_fail),
-	STAT_FIELD(devlink_port_churn, reload_ok),
-	STAT_FIELD(devlink_port_churn, reload_fail),
-	STAT_FIELD(devlink_port_churn, create_skipped),
-};
-
-const struct stat_category devlink_port_churn_category =
-	STAT_CATEGORY("devlink_port_churn",
-	              devlink_port_churn_iterations,
-	              devlink_port_churn_fields);
 
 static const struct stat_field ipmr_cache_report_fields[] = {
 	STAT_FIELD(ipmr_cache_report, iters),

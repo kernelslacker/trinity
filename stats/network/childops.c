@@ -305,14 +305,14 @@ static void dump_stats_render_mptcp_pm_churn(void)
 
 static void dump_stats_render_devlink_port_churn(void)
 {
-	if (shm->stats.devlink_port_churn_iterations ||
-	    shm->stats.devlink_port_churn_create_skipped) {
-		stat_row("devlink_port_churn", "iterations",     shm->stats.devlink_port_churn_iterations);
-		stat_row("devlink_port_churn", "split_ok",       shm->stats.devlink_port_churn_split_ok);
-		stat_row("devlink_port_churn", "split_fail",     shm->stats.devlink_port_churn_split_fail);
-		stat_row("devlink_port_churn", "reload_ok",      shm->stats.devlink_port_churn_reload_ok);
-		stat_row("devlink_port_churn", "reload_fail",    shm->stats.devlink_port_churn_reload_fail);
-		stat_row("devlink_port_churn", "create_skipped", shm->stats.devlink_port_churn_create_skipped);
+	if (shm->stats.devlink_port_churn.iterations ||
+	    shm->stats.devlink_port_churn.create_skipped) {
+		stat_row("devlink_port_churn", "iterations",     shm->stats.devlink_port_churn.iterations);
+		stat_row("devlink_port_churn", "split_ok",       shm->stats.devlink_port_churn.split_ok);
+		stat_row("devlink_port_churn", "split_fail",     shm->stats.devlink_port_churn.split_fail);
+		stat_row("devlink_port_churn", "reload_ok",      shm->stats.devlink_port_churn.reload_ok);
+		stat_row("devlink_port_churn", "reload_fail",    shm->stats.devlink_port_churn.reload_fail);
+		stat_row("devlink_port_churn", "create_skipped", shm->stats.devlink_port_churn.create_skipped);
 	}
 }
 
