@@ -444,22 +444,22 @@ static void dump_stats_render_rxrpc_sendmsg_cmsg(void)
 
 static void dump_stats_render_tty_ldisc_churn(void)
 {
-	if (shm->stats.tty_ldisc_churn_runs) {
+	if (shm->stats.tty_ldisc_churn.runs) {
 		char key[64];
 		unsigned int slot;
 
-		stat_row("tty_ldisc_churn", "runs",             shm->stats.tty_ldisc_churn_runs);
-		stat_row("tty_ldisc_churn", "setup_failed",     shm->stats.tty_ldisc_churn_setup_failed);
-		stat_row("tty_ldisc_churn", "ldisc_set_ok",     shm->stats.tty_ldisc_churn_ldisc_set_ok);
-		stat_row("tty_ldisc_churn", "ldisc_set_failed", shm->stats.tty_ldisc_churn_ldisc_set_failed);
-		stat_row("tty_ldisc_churn", "write_ok",         shm->stats.tty_ldisc_churn_write_ok);
-		stat_row("tty_ldisc_churn", "read_ok",          shm->stats.tty_ldisc_churn_read_ok);
+		stat_row("tty_ldisc_churn", "runs",             shm->stats.tty_ldisc_churn.runs);
+		stat_row("tty_ldisc_churn", "setup_failed",     shm->stats.tty_ldisc_churn.setup_failed);
+		stat_row("tty_ldisc_churn", "ldisc_set_ok",     shm->stats.tty_ldisc_churn.ldisc_set_ok);
+		stat_row("tty_ldisc_churn", "ldisc_set_failed", shm->stats.tty_ldisc_churn.ldisc_set_failed);
+		stat_row("tty_ldisc_churn", "write_ok",         shm->stats.tty_ldisc_churn.write_ok);
+		stat_row("tty_ldisc_churn", "read_ok",          shm->stats.tty_ldisc_churn.read_ok);
 		for (slot = 0; slot < 25U; slot++) {
-			if (shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[slot] == 0)
+			if (shm->stats.tty_ldisc_churn.ldisc_set_ok_per_disc[slot] == 0)
 				continue;
 			snprintf(key, sizeof(key), "ldisc_set_ok_n%u", slot);
 			stat_row("tty_ldisc_churn", key,
-				 shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[slot]);
+				 shm->stats.tty_ldisc_churn.ldisc_set_ok_per_disc[slot]);
 		}
 	}
 }

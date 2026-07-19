@@ -39,7 +39,7 @@
  *   4. ioctl(slave, TIOCSETD, &ldisc) with ldisc randomly picked from
  *      the 24-entry table (0..24 minus N_GSM=21, which the test kernel
  *      kernel is built without -- '# CONFIG_N_GSM is not set').  Per-disc
- *      success counter feeds shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc
+ *      success counter feeds shm->stats.tty_ldisc_churn.ldisc_set_ok_per_disc
  *      so the operator can see which line disciplines are landing the
  *      most ldisc_set_ok hits.
  *   5. write() of <=256 random bytes at the master end so the slave's
@@ -172,13 +172,13 @@ static unsigned int tty_set_random_ldisc(int slave)
 	ldisc_int = (int)ldisc;
 
 	if (ioctl(slave, TIOCSETD, &ldisc_int) < 0) {
-		__atomic_add_fetch(&shm->stats.tty_ldisc_churn_ldisc_set_failed,
+		__atomic_add_fetch(&shm->stats.tty_ldisc_churn.ldisc_set_failed,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.tty_ldisc_churn_ldisc_set_ok,
+		__atomic_add_fetch(&shm->stats.tty_ldisc_churn.ldisc_set_ok,
 				   1, __ATOMIC_RELAXED);
 		if (ldisc < LDISC_TABLE_SLOTS)
-			__atomic_add_fetch(&shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[ldisc],
+			__atomic_add_fetch(&shm->stats.tty_ldisc_churn.ldisc_set_ok_per_disc[ldisc],
 					   1, __ATOMIC_RELAXED);
 	}
 	return ldisc;
@@ -200,7 +200,7 @@ static void tty_churn_cycle(void)
 	ssize_t n;
 
 	if (tty_open_pty_pair(&master, &slave) < 0) {
-		__atomic_add_fetch(&shm->stats.tty_ldisc_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tty_ldisc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -215,14 +215,14 @@ static void tty_churn_cycle(void)
 	 * rebind itself is the bug surface, not the byte count delivered. */
 	n = write(master, buf, io_len);
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.tty_ldisc_churn_write_ok, 1,
+		__atomic_add_fetch(&shm->stats.tty_ldisc_churn.write_ok, 1,
 				   __ATOMIC_RELAXED);
 
 	/* Drain at the slave with O_NONBLOCK so a flow-stalled ldisc
 	 * doesn't pin the iter past the SIGALRM cap. */
 	n = read(slave, buf, sizeof(buf));
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.tty_ldisc_churn_read_ok, 1,
+		__atomic_add_fetch(&shm->stats.tty_ldisc_churn.read_ok, 1,
 				   __ATOMIC_RELAXED);
 
 	close(slave);
@@ -233,7 +233,7 @@ bool tty_ldisc_churn(struct childdata *child)
 {
 	unsigned int iters, i;
 
-	__atomic_add_fetch(&shm->stats.tty_ldisc_churn_runs, 1,
+	__atomic_add_fetch(&shm->stats.tty_ldisc_churn.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -264,9 +264,9 @@ bool tty_ldisc_churn(struct childdata *child)
 bool tty_ldisc_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.tty_ldisc_churn_runs, 1,
+	__atomic_add_fetch(&shm->stats.tty_ldisc_churn.runs, 1,
 			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.tty_ldisc_churn_setup_failed, 1,
+	__atomic_add_fetch(&shm->stats.tty_ldisc_churn.setup_failed, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
