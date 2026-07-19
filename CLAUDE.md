@@ -67,7 +67,7 @@ These live at the repository root and are compiled directly into the trinity
 binary. Grouped by concern:
 
 ### Startup & parent orchestration
-- [main/](main/CLAUDE.md) — process entry (`main/trinity.c`: `main()`, warm-start, the epoch loop) and CLI/tunable parsing (`main/params.c`), alongside the parent control plane (fork/reap/watchdog/stats).
+- [main/](main/CLAUDE.md) — process entry (`main/trinity.c`: `main()`, warm-start, the epoch loop) and CLI/tunable parsing (`main/params/`), alongside the parent control plane (fork/reap/watchdog/stats).
 
 ### Child runtime
 - [child/](child/CLAUDE.md) — per-child loop, bring-up/sandbox, alt-op picker, canary/sentinel/capdrop oracles, cred throttle (7 files).
