@@ -408,20 +408,6 @@ const struct stat_category fou_gue_mcast_rx_category =
 	              fou_gue_mcast_rx_fields);
 
 
-static const struct stat_field bareudp_rx_fields[] = {
-	STAT_FIELD(bareudp_rx, runs),
-	STAT_FIELD(bareudp_rx, setup_failed),
-	STAT_FIELD(bareudp_rx, link_create_ok),
-	STAT_FIELD(bareudp_rx, link_create_failed),
-	STAT_FIELD(bareudp_rx, link_up_ok),
-	STAT_FIELD(bareudp_rx, packet_sent_ok),
-	STAT_FIELD(bareudp_rx, link_del_ok),
-};
-
-const struct stat_category bareudp_rx_category =
-	STAT_CATEGORY("bareudp_rx",
-	              bareudp_rx_runs,
-	              bareudp_rx_fields);
 
 static const struct stat_field mpls_label_stack_rx_fields[] = {
 	STAT_FIELD(mpls_label_stack_rx, runs),

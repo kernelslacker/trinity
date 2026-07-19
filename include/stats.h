@@ -25,6 +25,7 @@
 #include "stats/subsys/aio.h"
 #include "stats/subsys/arg.h"
 #include "stats/subsys/atm_vcc_churn.h"
+#include "stats/subsys/bareudp_rx.h"
 #include "stats/subsys/barrier_racer.h"
 #include "stats/subsys/blkdev_lifecycle.h"
 #include "stats/subsys/blob.h"
@@ -1237,14 +1238,8 @@ struct stats_s {
 	/* geneve_rx accounting.  See stats/subsys/geneve_rx.h. */
 	struct geneve_rx_stats geneve_rx __attribute__((aligned(64)));
 
-	/* bareudp_rx childop counters */
-	unsigned long bareudp_rx_runs;			/* total bareudp_rx invocations */
-	unsigned long bareudp_rx_setup_failed;		/* userns_run_in_ns / rtnl_open failed (incl. kind-latched or !CONFIG_BAREUDP) */
-	unsigned long bareudp_rx_link_create_ok;	/* RTM_NEWLINK kind="bareudp" accepted */
-	unsigned long bareudp_rx_link_create_failed;	/* RTM_NEWLINK rejected (any errno) */
-	unsigned long bareudp_rx_link_up_ok;		/* RTM_SETLINK IFF_UP on the bareudp dev accepted */
-	unsigned long bareudp_rx_packet_sent_ok;	/* sendto on IPPROTO_RAW with UDP/inner-L3 frame returned >0 */
-	unsigned long bareudp_rx_link_del_ok;		/* RTM_DELLINK on teardown accepted */
+	/* bareudp_rx accounting.  See stats/subsys/bareudp_rx.h. */
+	struct bareudp_rx_stats bareudp_rx __attribute__((aligned(64)));
 
 	/* mpls_label_stack_rx childop counters */
 	unsigned long mpls_label_stack_rx_runs;			/* total mpls_label_stack_rx invocations */
