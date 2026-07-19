@@ -6,14 +6,8 @@
  * Adding an option means touching both tables (plus a parser helper).
  */
 
-#include <ctype.h>
-#include <errno.h>
-#include <getopt.h>
-#include <limits.h>
-#include <sys/resource.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "arg-len-semantics.h"
 #include "bdevs.h"
