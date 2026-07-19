@@ -427,7 +427,7 @@ static int tc_mirred_setup_netns(struct nl_ctx *ctx)
 	if (nl_open(ctx, &nl_opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
 			ns_unsupported_rtnl = true;
-		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_setup_failed,
+		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -552,22 +552,22 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_clsact = true;
-		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_qdisc_fail,
+		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.qdisc_fail,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_qdisc_ok,
+	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.qdisc_ok,
 			   1, __ATOMIC_RELAXED);
 
 	rc = build_clsact_with_egress_block(&nl, b_idx, block_idx);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_clsact = true;
-		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_qdisc_fail,
+		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.qdisc_fail,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_qdisc_ok,
+	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.qdisc_ok,
 			   1, __ATOMIC_RELAXED);
 
 	eaction = ONE_IN(2) ? TCA_EGRESS_REDIR : TCA_EGRESS_MIRROR;
@@ -578,11 +578,11 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 			ns_unsupported_matchall = true;
 			ns_unsupported_mirred = true;
 		}
-		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_filter_fail,
+		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.filter_fail,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_filter_ok,
+	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.filter_ok,
 			   1, __ATOMIC_RELAXED);
 
 	if (!ns_unsupported_inet) {
@@ -629,7 +629,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
 			if (n > 0)
-				__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_packet_sent_ok,
+				__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.packet_sent_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -662,7 +662,7 @@ bool tc_mirred_blockcast(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_runs, 1,
+	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_setup_failed)
@@ -675,7 +675,7 @@ bool tc_mirred_blockcast(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_setup_failed,
+		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		warn_once_setup_failed(EPERM);
 		return true;
@@ -685,7 +685,7 @@ bool tc_mirred_blockcast(struct childdata *child)
 		 * secondary unshare).  Skip this iteration without
 		 * latching -- the failure is not policy and may not
 		 * recur. */
-		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_setup_failed,
+		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
