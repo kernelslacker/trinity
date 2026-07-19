@@ -50,21 +50,6 @@ const struct stat_category vxlan_encap_churn_category =
 	              vxlan_encap_churn_runs,
 	              vxlan_encap_churn_fields);
 
-static const struct stat_field tipc_link_churn_fields[] = {
-	STAT_FIELD(tipc_link_churn, runs),
-	STAT_FIELD(tipc_link_churn, setup_failed),
-	STAT_FIELD(tipc_link_churn, bearer_enable_ok),
-	STAT_FIELD(tipc_link_churn, sock_rdm_ok),
-	STAT_FIELD(tipc_link_churn, topsrv_connect_ok),
-	STAT_FIELD(tipc_link_churn, sub_ports_sent),
-	STAT_FIELD(tipc_link_churn, publish_ok),
-	STAT_FIELD(tipc_link_churn, bearer_disable_ok),
-};
-
-const struct stat_category tipc_link_churn_category =
-	STAT_CATEGORY("tipc_link_churn",
-	              tipc_link_churn_runs,
-	              tipc_link_churn_fields);
 
 static const struct stat_field pkt_builder_fields[] = {
 	STAT_FIELD(pkt_builder, runs),
