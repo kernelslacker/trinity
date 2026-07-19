@@ -53,11 +53,6 @@ IOCTL_SIZE_ASSERT(SNDRV_HWDEP_IOCTL_INFO, struct snd_hwdep_info);
 IOCTL_SIZE_ASSERT(SNDRV_HWDEP_IOCTL_DSP_STATUS, struct snd_hwdep_dsp_status);
 IOCTL_SIZE_ASSERT(SNDRV_HWDEP_IOCTL_DSP_LOAD, struct snd_hwdep_dsp_image);
 
-/* rawmidi */
-IOCTL_SIZE_ASSERT(SNDRV_RAWMIDI_IOCTL_INFO, struct snd_rawmidi_info);
-IOCTL_SIZE_ASSERT(SNDRV_RAWMIDI_IOCTL_PARAMS, struct snd_rawmidi_params);
-IOCTL_SIZE_ASSERT(SNDRV_RAWMIDI_IOCTL_STATUS, struct snd_rawmidi_status);
-
 /* timer */
 IOCTL_SIZE_ASSERT(SNDRV_TIMER_IOCTL_NEXT_DEVICE, struct snd_timer_id);
 IOCTL_SIZE_ASSERT(SNDRV_TIMER_IOCTL_GINFO, struct snd_timer_ginfo);
@@ -209,11 +204,6 @@ static void sanitise_snd_hda_verb(struct syscallrecord *rec)
 	}
 }
 
-static const int snd_rawmidi_stream_vals[] = {
-	SNDRV_RAWMIDI_STREAM_OUTPUT,
-	SNDRV_RAWMIDI_STREAM_INPUT,
-};
-
 static const int snd_timer_class_vals[] = {
 	SNDRV_TIMER_CLASS_NONE,
 	SNDRV_TIMER_CLASS_SLAVE,
@@ -226,54 +216,6 @@ const unsigned int pcm_rates[] = {
 	8000, 11025, 16000, 22050, 32000, 44100, 48000, 64000, 88200, 96000, 192000,
 };
 const unsigned int pcm_rates_count = ARRAY_SIZE(pcm_rates);
-
-static void sanitise_snd_rawmidi(struct syscallrecord *rec)
-{
-	switch (rec->a2) {
-	case SNDRV_RAWMIDI_IOCTL_INFO: {
-		struct snd_rawmidi_info *info = get_writable_struct(sizeof(*info));
-		if (info) {
-			memset(info, 0, sizeof(*info));
-			info->device = rnd_modulo_u32(8);
-			info->subdevice = rnd_modulo_u32(8);
-			info->stream = RAND_ARRAY(snd_rawmidi_stream_vals);
-			rec->a3 = (unsigned long) info;
-		}
-		break;
-	}
-	case SNDRV_RAWMIDI_IOCTL_PARAMS: {
-		struct snd_rawmidi_params *p = get_writable_struct(sizeof(*p));
-		if (p) {
-			memset(p, 0, sizeof(*p));
-			p->stream = RAND_ARRAY(snd_rawmidi_stream_vals);
-			p->buffer_size = (rnd_modulo_u32(16) + 1) * 4096;
-			p->avail_min = rnd_modulo_u32(256) + 1;
-			rec->a3 = (unsigned long) p;
-		}
-		break;
-	}
-	case SNDRV_RAWMIDI_IOCTL_STATUS: {
-		struct snd_rawmidi_status *st = get_writable_struct(sizeof(*st));
-		if (st) {
-			memset(st, 0, sizeof(*st));
-			st->stream = RAND_ARRAY(snd_rawmidi_stream_vals);
-			rec->a3 = (unsigned long) st;
-		}
-		break;
-	}
-	case SNDRV_RAWMIDI_IOCTL_DROP:
-	case SNDRV_RAWMIDI_IOCTL_DRAIN: {
-		int *stream = get_writable_struct(sizeof(int));
-		if (stream) {
-			*stream = RAND_ARRAY(snd_rawmidi_stream_vals);
-			rec->a3 = (unsigned long) stream;
-		}
-		break;
-	}
-	default:
-		break;
-	}
-}
 
 static void fill_snd_timer_id(struct snd_timer_id *tid)
 {
@@ -1002,21 +944,6 @@ static int dispatch_snd_hda_verb(struct syscallrecord *rec)
 	case HDA_IOCTL_VERB_WRITE:
 	case HDA_IOCTL_GET_WCAP:
 		sanitise_snd_hda_verb(rec);
-		return 1;
-	}
-	return 0;
-}
-
-/* snd-rawmidi */
-static int dispatch_snd_rawmidi(struct syscallrecord *rec)
-{
-	switch (rec->a2) {
-	case SNDRV_RAWMIDI_IOCTL_INFO:
-	case SNDRV_RAWMIDI_IOCTL_PARAMS:
-	case SNDRV_RAWMIDI_IOCTL_STATUS:
-	case SNDRV_RAWMIDI_IOCTL_DROP:
-	case SNDRV_RAWMIDI_IOCTL_DRAIN:
-		sanitise_snd_rawmidi(rec);
 		return 1;
 	}
 	return 0;

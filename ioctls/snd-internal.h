@@ -15,6 +15,9 @@ int  dispatch_snd_ctl(struct syscallrecord *rec);
 void sanitise_snd_pcm(struct syscallrecord *rec);
 int  dispatch_snd_pcm(struct syscallrecord *rec);
 
+void sanitise_snd_rawmidi(struct syscallrecord *rec);
+int  dispatch_snd_rawmidi(struct syscallrecord *rec);
+
 /*
  * pcm_rates[] is shared between the PCM class (snd-pcm.c) and the OSS
  * DSP / compressed-offload paths still in snd.c.  Definition lives in
