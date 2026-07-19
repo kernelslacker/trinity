@@ -52,16 +52,43 @@
  * Kind latch lives in shm because the rejection is observed inside
  * the grandchild -- a process-local static would die on _exit() and
  * every subsequent grandchild would re-attempt the missing kind.
+ *
+ * Second arm (no-ingress-device RX coverage).  The primary coalesce
+ * arm above drives traffic over loopback, so every frame the RX
+ * side reassembles carries skb_iif = lo's ifindex.  Loopback is
+ * pinned for the lifetime of the netns, so the espintcp RX
+ * handler's dev_get_by_index_rcu(sock_net(sk), skb->skb_iif) at
+ * net/xfrm/espintcp.c:39 always resolves -- the NULL branch is
+ * never entered under loopback-only flow.  The no_ingress arm
+ * closes that coverage hole by pairing the RX socket to a veth
+ * v0/v1 that spans the private netns and a forked helper's
+ * unshare(CLONE_NEWNET) sibling netns; frames sent by the helper
+ * arrive on v0 with skb_iif = v0's ifindex.  Mid-drain, the parent
+ * RTM_DELLINK's v0 -- any skbs still queued on the RX socket carry
+ * the now-stale skb_iif, and the espintcp reader that walks them
+ * afterwards drives dev_get_by_index_rcu() into the NULL branch
+ * the in-flight kernel fix ("xfrm: drop ESP-in-TCP packets with no
+ * ingress device", unmerged at linus HEAD 1229e2e57a5c) is meant
+ * to guard.  Containment: the veth pair, both IPs, and both
+ * endpoints live entirely inside private (parent + helper)
+ * netnses; helper _exit() reaps its netns and grandchild _exit()
+ * reaps parent's, so anything left behind is torn down with the
+ * namespaces.  Failure to bring up the peer / assign addresses /
+ * establish the TCP pair increments no_ingress_setup_failed but
+ * never latches -- the primary coalesce arm keeps running.
  */
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -69,6 +96,10 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+
+#include <linux/if_addr.h>
+#include <linux/if_link.h>
+#include <linux/rtnetlink.h>
 
 #include "child.h"
 #include "childops-netlink.h"
@@ -81,6 +112,14 @@
 #include "userns-bootstrap.h"
 
 #include "kernel/socket.h"
+#include "kernel/veth.h"
+
+/* UAPI fallback -- IFLA_NET_NS_PID is enum-defined in linux/if_link.h and
+ * present since 2.6.24; the numeric value is stable.  Matches the
+ * netdev-netns-migrate fallback for IFLA_NET_NS_FD one slot below. */
+#ifndef IFLA_NET_NS_PID
+#define IFLA_NET_NS_PID		19
+#endif
 
 #ifndef TCP_ULP
 #define TCP_ULP			31
@@ -350,6 +389,387 @@ static void send_burst(int fd, const struct timespec *t_outer)
 	(void)setsockopt(fd, SOL_TCP, TCP_CORK, &cork_off, sizeof(cork_off));
 }
 
+/* ---------- no-ingress-device RX arm ---------- *
+ *
+ * Sibling coverage that pairs the RX socket with a veth v0/v1 whose
+ * peer end lives in a forked helper's unshare(CLONE_NEWNET) sibling
+ * netns.  See file header ("Second arm") for the coverage rationale
+ * and the in-flight kernel fix reference.  Frames sent by the helper
+ * arrive on v0 carrying skb_iif = v0's ifindex; RTM_DELLINK on v0
+ * mid-drain leaves the still-queued skbs referencing an unregistered
+ * ifindex, which is what the espintcp RX handler's
+ * dev_get_by_index_rcu(sock_net(sk), skb->skb_iif) resolves to NULL
+ * against.  Setup is best-effort -- helper spawn, veth creation,
+ * addressing or the connect-accept handshake failing all increment
+ * no_ingress_setup_failed and skip the arm without touching the main
+ * coalesce arm's latches. */
+
+#define ESPINTCP_NOING_IFA		"espina"	/* parent-side */
+#define ESPINTCP_NOING_IFB		"espinb"	/* helper-side */
+#define ESPINTCP_NOING_ADDR_A		0x0a630001U	/* 10.99.0.1 */
+#define ESPINTCP_NOING_ADDR_B		0x0a630002U	/* 10.99.0.2 */
+#define ESPINTCP_NOING_PREFIX		24U
+#define ESPINTCP_NOING_HANDSHAKE_MS	200
+#define ESPINTCP_NOING_DRAIN_LOOPS	32U
+
+/* RTM_NEWADDR ipv4 on ifindex.  AF_INET, NLM_F_CREATE|NLM_F_EXCL;
+ * addr is big-endian.  Return convention is nl_send_recv(). */
+static int noing_addr_add_v4(struct nl_ctx *rtnl, int ifindex,
+			     __u32 addr_be, __u8 prefix)
+{
+	unsigned char buf[128];
+	struct nlmsghdr *nlh;
+	struct ifaddrmsg *ifa;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWADDR;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
+
+	ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
+	ifa->ifa_family    = AF_INET;
+	ifa->ifa_prefixlen = prefix;
+	ifa->ifa_flags     = 0;
+	ifa->ifa_scope     = RT_SCOPE_UNIVERSE;
+	ifa->ifa_index     = (unsigned int)ifindex;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifa));
+	off = nla_put(buf, off, sizeof(buf), IFA_LOCAL,
+		      &addr_be, sizeof(addr_be));
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFA_ADDRESS,
+		      &addr_be, sizeof(addr_be));
+	if (!off)
+		return -EIO;
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(rtnl, buf, off);
+}
+
+/* RTM_NEWLINK creating a veth pair; local end named @self stays in
+ * the current netns, peer end named @peer is placed into the netns
+ * whose owning task is @target_pid (IFLA_NET_NS_PID).  Kernel
+ * resolves target_pid via its task-struct nsproxy->net_ns, so the
+ * target task must still be alive and in its intended netns at the
+ * moment the request is processed. */
+static int noing_create_veth_peer_pid(struct nl_ctx *rtnl,
+				      const char *self, const char *peer,
+				      pid_t target_pid)
+{
+	unsigned char buf[512];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi, *peer_ifi;
+	size_t off, li_off, id_off, peer_off;
+	__u32 pid_val = (__u32)target_pid;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, self);
+	if (!off)
+		return -EIO;
+	li_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "veth");
+	if (!off)
+		return -EIO;
+	id_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+	if (!off)
+		return -EIO;
+	peer_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), VETH_INFO_PEER);
+	if (!off)
+		return -EIO;
+	if (off + NLMSG_ALIGN(sizeof(*peer_ifi)) > sizeof(buf))
+		return -EIO;
+	peer_ifi = (struct ifinfomsg *)(buf + off);
+	memset(peer_ifi, 0, sizeof(*peer_ifi));
+	peer_ifi->ifi_family = AF_UNSPEC;
+	off += NLMSG_ALIGN(sizeof(*peer_ifi));
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, peer);
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFLA_NET_NS_PID,
+		      &pid_val, sizeof(pid_val));
+	if (!off)
+		return -EIO;
+	nla_nest_end(buf, peer_off, off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(rtnl, buf, off);
+}
+
+/* Helper-process body.  Runs in a fresh CLONE_NEWNET netns.  Reads
+ * the parent's assigned port on @ctrl_fd, finds the peer veth end
+ * (placed by the parent via IFLA_NET_NS_PID and always named
+ * ESPINTCP_NOING_IFB), brings it up + addressed, connects to
+ * 10.99.0.1:port, and pumps length-prefixed espintcp-shape frames
+ * until the shared wall-clock cap trips.  ULP is not installed on
+ * this end -- the goal is to deliver crafted bytes into the parent
+ * socket's RX queue via a non-lo ingress, which needs no reader-side
+ * ULP.  _exit() reaps the helper's netns; any leftover fd, veth end
+ * or route dies with it. */
+static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
+{
+	struct nl_ctx rtnl = NL_CTX_INIT;
+	struct nl_open_opts opts = {
+		.proto        = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
+	struct sockaddr_in server;
+	unsigned char buf[ESPINTCP_FRAME_MAX + 2];
+	unsigned char sync;
+	__u16 port_be = 0;
+	int cli = -1;
+	int v1_idx;
+
+	sync = 'R';
+	if (write(ctrl_fd, &sync, 1) != 1)
+		goto out;
+
+	if (read(ctrl_fd, &sync, 1) != 1 || sync != 'P')
+		goto out;
+	if (read(ctrl_fd, &port_be, sizeof(port_be)) != (ssize_t)sizeof(port_be))
+		goto out;
+
+	if (nl_open(&rtnl, &opts) != 0)
+		goto out;
+
+	v1_idx = (int)if_nametoindex(ESPINTCP_NOING_IFB);
+	if (v1_idx <= 0)
+		goto out;
+	if (rtnl_setlink_up(&rtnl, v1_idx) != 0)
+		goto out;
+	if (noing_addr_add_v4(&rtnl, v1_idx,
+			      htonl(ESPINTCP_NOING_ADDR_B),
+			      (__u8)ESPINTCP_NOING_PREFIX) < 0)
+		goto out;
+
+	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (cli < 0)
+		goto out;
+	set_sock_timeouts(cli);
+
+	memset(&server, 0, sizeof(server));
+	server.sin_family      = AF_INET;
+	server.sin_addr.s_addr = htonl(ESPINTCP_NOING_ADDR_A);
+	server.sin_port        = port_be;
+	if (connect(cli, (struct sockaddr *)&server, sizeof(server)) < 0 &&
+	    errno != EINPROGRESS)
+		goto out;
+
+	while ((unsigned long long)ns_since(t_outer) < ESPINTCP_WALL_CAP_NS) {
+		uint16_t len = pick_frame_len();
+		size_t total = 2U + (size_t)len;
+		ssize_t n;
+
+		buf[0] = (unsigned char)(len >> 8);
+		buf[1] = (unsigned char)(len & 0xffU);
+		if (len > 0)
+			generate_rand_bytes(buf + 2, len);
+		n = send(cli, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
+		if (n < 0 &&
+		    (errno == EPIPE || errno == ECONNRESET ||
+		     errno == ENETDOWN || errno == ENETUNREACH))
+			break;
+	}
+
+out:
+	if (cli >= 0)
+		close(cli);
+	nl_close(&rtnl);
+	close(ctrl_fd);
+	_exit(0);
+}
+
+/* Parent-side orchestrator for the no-ingress-device RX arm.  Forks
+ * a helper into a sibling CLONE_NEWNET netns, creates a veth pair
+ * with the peer end placed in the helper's netns, brings its own
+ * end up + addressed, accepts the helper's TCP connect, installs
+ * espintcp ULP on the accepted fd, drains a few reads, then
+ * RTM_DELLINK's v0 mid-drain and reads a bit more so any skb still
+ * queued walks the reader with a stale skb_iif.  Best-effort
+ * throughout: transient failure increments no_ingress_setup_failed
+ * and returns.  ULP-install rejection flows through the shared
+ * install_espintcp_ulp() latch, matching the main coalesce arm. */
+static void run_no_ingress_dev_arm(struct childdata *child,
+				   const struct timespec *t_outer)
+{
+	struct nl_ctx rtnl = NL_CTX_INIT;
+	struct nl_open_opts opts = {
+		.proto        = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
+	struct sockaddr_in addr;
+	struct timeval tv;
+	socklen_t slen;
+	unsigned char sync;
+	__u16 port_be;
+	unsigned int drain;
+	int sv[2] = { -1, -1 };
+	pid_t helper = -1;
+	int listener = -1, srv = -1;
+	int v0_idx = -1;
+	int one = 1;
+	bool v0_deleted = false;
+	bool arm_reached = false;
+
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0)
+		goto out_setup_fail;
+
+	helper = fork();
+	if (helper < 0) {
+		close(sv[0]);
+		close(sv[1]);
+		sv[0] = sv[1] = -1;
+		goto out_setup_fail;
+	}
+	if (helper == 0) {
+		close(sv[0]);
+		if (unshare(CLONE_NEWNET) != 0) {
+			close(sv[1]);
+			_exit(0);
+		}
+		noing_helper(sv[1], t_outer);
+		/* unreachable */
+	}
+	close(sv[1]);
+	sv[1] = -1;
+
+	tv.tv_sec  = 0;
+	tv.tv_usec = ESPINTCP_NOING_HANDSHAKE_MS * 1000;
+	(void)setsockopt(sv[0], SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	(void)setsockopt(sv[0], SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+	if (read(sv[0], &sync, 1) != 1 || sync != 'R')
+		goto out_cleanup;
+
+	if (nl_open(&rtnl, &opts) != 0)
+		goto out_cleanup;
+
+	if (noing_create_veth_peer_pid(&rtnl, ESPINTCP_NOING_IFA,
+				       ESPINTCP_NOING_IFB, helper) < 0)
+		goto out_cleanup;
+	v0_idx = (int)if_nametoindex(ESPINTCP_NOING_IFA);
+	if (v0_idx <= 0)
+		goto out_cleanup;
+	if (rtnl_setlink_up(&rtnl, v0_idx) != 0)
+		goto out_cleanup;
+	if (noing_addr_add_v4(&rtnl, v0_idx,
+			      htonl(ESPINTCP_NOING_ADDR_A),
+			      (__u8)ESPINTCP_NOING_PREFIX) < 0)
+		goto out_cleanup;
+
+	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (listener < 0)
+		goto out_cleanup;
+	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR,
+			 &one, sizeof(one));
+	set_sock_timeouts(listener);
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family      = AF_INET;
+	addr.sin_addr.s_addr = htonl(ESPINTCP_NOING_ADDR_A);
+	addr.sin_port        = 0;
+	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+		goto out_cleanup;
+	if (listen(listener, 1) < 0)
+		goto out_cleanup;
+
+	slen = sizeof(addr);
+	if (getsockname(listener, (struct sockaddr *)&addr, &slen) < 0)
+		goto out_cleanup;
+	port_be = addr.sin_port;
+
+	sync = 'P';
+	if (write(sv[0], &sync, 1) != 1 ||
+	    write(sv[0], &port_be, sizeof(port_be)) != (ssize_t)sizeof(port_be))
+		goto out_cleanup;
+
+	/* Linux honours SO_RCVTIMEO on accept(); combined with the
+	 * shared wall-clock cap that keeps a stalled handshake bounded. */
+	srv = accept(listener, NULL, NULL);
+	if (srv < 0)
+		goto out_cleanup;
+	set_sock_timeouts(srv);
+
+	if (install_espintcp_ulp(srv, child) != 0) {
+		__atomic_add_fetch(&shm->stats.espintcp_coalesce.ulp_install_failed,
+				   1, __ATOMIC_RELAXED);
+		goto out_cleanup;
+	}
+	__atomic_add_fetch(&shm->stats.espintcp_coalesce.ulp_install_ok,
+			   1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.espintcp_coalesce.no_ingress_arm_ok,
+			   1, __ATOMIC_RELAXED);
+	arm_reached = true;
+
+	for (drain = 0; drain < ESPINTCP_NOING_DRAIN_LOOPS; drain++) {
+		unsigned char sink[2048];
+		ssize_t n;
+
+		if ((unsigned long long)ns_since(t_outer) >=
+		    ESPINTCP_WALL_CAP_NS)
+			break;
+
+		n = recv(srv, sink, sizeof(sink), MSG_DONTWAIT);
+		if (n < 0 && errno != EAGAIN && errno != EINTR &&
+		    errno != EWOULDBLOCK)
+			break;
+
+		if (!v0_deleted && drain == ESPINTCP_NOING_DRAIN_LOOPS / 4) {
+			if (rtnl_dellink(&rtnl, v0_idx) == 0) {
+				__atomic_add_fetch(&shm->stats.espintcp_coalesce.no_ingress_dellink_ok,
+						   1, __ATOMIC_RELAXED);
+				v0_idx = -1;
+			}
+			v0_deleted = true;
+		}
+	}
+
+out_cleanup:
+	if (!arm_reached)
+		goto out_setup_fail_close;
+	goto out_close;
+
+out_setup_fail:
+	__atomic_add_fetch(&shm->stats.espintcp_coalesce.no_ingress_setup_failed,
+			   1, __ATOMIC_RELAXED);
+	return;
+
+out_setup_fail_close:
+	__atomic_add_fetch(&shm->stats.espintcp_coalesce.no_ingress_setup_failed,
+			   1, __ATOMIC_RELAXED);
+out_close:
+	if (srv >= 0)
+		close(srv);
+	if (listener >= 0)
+		close(listener);
+	if (!v0_deleted && v0_idx > 0 && rtnl.fd >= 0)
+		(void)rtnl_dellink(&rtnl, v0_idx);
+	nl_close(&rtnl);
+	if (sv[0] >= 0)
+		close(sv[0]);
+	if (helper > 0) {
+		(void)kill(helper, SIGTERM);
+		reap_acceptor(helper);
+	}
+}
+
 struct espintcp_ns_ctx {
 	struct childdata *child;
 };
@@ -402,6 +822,20 @@ static int espintcp_coalesce_in_ns(void *arg)
 		if ((unsigned long long)ns_since(&t_outer) >=
 		    ESPINTCP_WALL_CAP_NS)
 			break;
+
+		/* Rotate arms: ~1/3 iterations drive the no-ingress-device
+		 * RX coverage arm (veth peer in a forked helper's sibling
+		 * netns, RTM_DELLINK mid-drain), the rest exercise the
+		 * original loopback coalesce path.  The lower probability
+		 * keeps outer wall-clock budget in reach even when the
+		 * no-ingress setup is comparatively heavy. */
+		if (!kind_unsupported() && ONE_IN(3)) {
+			run_no_ingress_dev_arm(child, &t_outer);
+			if (valid_op)
+				__atomic_add_fetch(&shm->stats.childop.data_path[op],
+						   1, __ATOMIC_RELAXED);
+			continue;
+		}
 
 		cli = open_loopback_pair(&acceptor);
 		if (cli < 0) {
