@@ -138,6 +138,7 @@
 #include "stats/subsys/userns_bootstrap.h"
 #include "stats/subsys/userns_fuzzer.h"
 #include "stats/subsys/vdso_race.h"
+#include "stats/subsys/veth_asymmetric_xdp.h"
 #include "stats/subsys/vlan_filter_churn.h"
 #include "stats/subsys/vrf_fib_churn.h"
 #include "stats/subsys/vxlan_encap_churn.h"
@@ -1349,13 +1350,8 @@ struct stats_s {
 	unsigned long afxdp_xsg_bind_failed;			/* UMEM_REG with XDP_UMEM_FLAGS_USE_SG rejected; latched off, retried without */
 	unsigned long afxdp_tx_md_bind_failed;			/* UMEM_REG with tx_metadata_len rejected; latched off, retried without */
 
-	/* veth_asymmetric_xdp childop counters */
-	unsigned long veth_asym_iters;				/* total veth_asymmetric_xdp invocations */
-	unsigned long veth_asym_eperm;				/* unshare/NEWLINK rejected with EPERM */
-	unsigned long veth_asym_unsupported;			/* veth or XDP latched off (separate latches inside the op) */
-	unsigned long veth_asym_pair_ok;			/* RTM_NEWLINK created an asymmetric-queue veth pair */
-	unsigned long veth_asym_xdp_attach_ok;			/* RTM_NEWLINK + IFLA_XDP attached the prog (SKB mode) */
-	unsigned long veth_asym_send_ok;
+	/* veth_asymmetric_xdp accounting.  See stats/subsys/veth_asymmetric_xdp.h. */
+	struct veth_asymmetric_xdp_stats veth_asymmetric_xdp __attribute__((aligned(64)));
 
 	/* ip6gre_bond_lapb_stack accounting.  See stats/subsys/ip6gre_lapb.h. */
 	struct ip6gre_lapb_stats ip6gre_lapb __attribute__((aligned(64)));
