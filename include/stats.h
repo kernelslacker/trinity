@@ -96,6 +96,7 @@
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/numa_migration.h"
 #include "stats/subsys/oracle.h"
+#include "stats/subsys/packet_fanout_thrash.h"
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/pci_bind.h"
 #include "stats/subsys/perf_chains.h"
@@ -891,15 +892,8 @@ struct stats_s {
 	/* sock_ulp_sockmap_layering accounting.  See stats/subsys/sock_ulp_sockmap_layering.h. */
 	struct sock_ulp_sockmap_layering_stats sock_ulp_sockmap_layering __attribute__((aligned(64)));
 
-	/* packet_fanout_thrash childop counters */
-	unsigned long packet_fanout_runs;		/* total packet_fanout_thrash invocations */
-	unsigned long packet_fanout_setup_failed;	/* socket(AF_PACKET) failed (EPERM/no CONFIG_PACKET) */
-	unsigned long packet_fanout_ring_failed;	/* PACKET_RX_RING setsockopt failed */
-	unsigned long packet_fanout_rings_installed;	/* successful PACKET_RX_RING install */
-	unsigned long packet_fanout_mmap_failed;	/* mmap of the RX ring failed */
-	unsigned long packet_fanout_joins;		/* successful PACKET_FANOUT join */
-	unsigned long packet_fanout_rejoins_ok;		/* second PACKET_FANOUT setsockopt accepted */
-	unsigned long packet_fanout_rejoins_rejected;	/* second PACKET_FANOUT rejected (EALREADY etc) */
+	/* packet_fanout_thrash accounting.  See stats/subsys/packet_fanout_thrash.h. */
+	struct packet_fanout_thrash_stats packet_fanout_thrash __attribute__((aligned(64)));
 
 	/* eth_emitter childop counters: AF_PACKET/SOCK_RAW L2 emitter that
 	 * crafts one frame per call from one of NR_TEMPLATES template

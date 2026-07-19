@@ -225,6 +225,7 @@ extern const struct stat_category numa_migration_category;
 extern const struct stat_category oracle_category;
 extern const struct stat_category ovs_tunnel_vport_churn_category;
 extern const struct stat_category parent_category;
+extern const struct stat_category packet_fanout_thrash_category;
 extern const struct stat_category pci_bind_category;
 extern const struct stat_category perf_event_chains_category;
 extern const struct stat_category pfkey_spd_walk_category;
