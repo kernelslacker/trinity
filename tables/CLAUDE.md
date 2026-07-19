@@ -39,7 +39,7 @@ Central registry that turns the 353 per-syscall descriptors under `syscalls/` (a
 - `include/cmp_hints.h`, `include/kcov.h`, `include/minicorpus.h` — size their own per-syscall pools/rings to `MAX_NR_SYSCALL` (not `max_nr_syscalls`), the shared sizing constant this module's `activate_syscall_in_table()` guards against overflowing
 - `syscall-gate.h` / `trinity_raw_syscall()` — consults `syscall_nr_is_excluded()` (tables.c) to turn a raw `syscall(__NR_x,...)` in a childop into an ENOSYS instead of an actual call when `-x` named it
 - `include/syscalls-*.h` (one per arch) — the compile-time `struct syscalltable` literal arrays this module copies into shm; selected via `include/arch-syscalls.h`'s `#ifdef __<arch>__` chain and named via each `include/arch-<arch>.h`'s `SYSCALLS`/`SYSCALLS32`/`SYSCALLS64` macro
-- `params.c` — `-c`/`-x`/`-r`/`-g` command-line flags drive `toggle_syscall()`, `enable_random_syscalls()`, `setup_syscall_group()`, all dispatched from `munge_tables()` (tables.c:884), called once after arg parsing
+- `main/params/options.c` — `-c`/`-x`/`-r`/`-g` command-line flags drive `toggle_syscall()`, `enable_random_syscalls()`, `setup_syscall_group()`, all dispatched from `munge_tables()` (tables.c:884), called once after arg parsing
 
 ## Areas of attention
 
