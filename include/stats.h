@@ -118,6 +118,7 @@
 #include "stats/subsys/vdso_race.h"
 #include "stats/subsys/vlan_filter_churn.h"
 #include "stats/subsys/vrf_fib_churn.h"
+#include "stats/subsys/vxlan_encap_churn.h"
 #include "stats/subsys/wgdf.h"
 #include "stats/subsys/xattr_thrash.h"
 /*
@@ -989,14 +990,8 @@ struct stats_s {
 	/* tls_ulp_churn accounting.  See stats/subsys/tls_ulp_churn.h. */
 	struct tls_ulp_churn_stats tls_ulp_churn __attribute__((aligned(64)));
 
-	/* vxlan_encap_churn childop counters */
-	unsigned long vxlan_encap_churn_runs;		/* total vxlan_encap_churn invocations */
-	unsigned long vxlan_encap_churn_setup_failed;	/* unshare(CLONE_NEWNET) / rtnl_open / all-kinds latched */
-	unsigned long vxlan_encap_churn_link_create_ok;	/* RTM_NEWLINK type=vxlan/gre/geneve accepted */
-	unsigned long vxlan_encap_churn_fdb_add_ok;	/* RTM_NEWNEIGH NTF_SELF accepted (vxlan only) */
-	unsigned long vxlan_encap_churn_link_up_ok;	/* RTM_NEWLINK setlink IFF_UP accepted */
-	unsigned long vxlan_encap_churn_packet_sent_ok;	/* sendto on AF_PACKET raw bound to tunnel returned >0 */
-	unsigned long vxlan_encap_churn_link_del_ok;	/* RTM_DELLINK accepted */
+	/* vxlan_encap_churn accounting.  See stats/subsys/vxlan_encap_churn.h. */
+	struct vxlan_encap_churn_stats vxlan_encap_churn __attribute__((aligned(64)));
 
 	/* ip_gre_churn accounting.  See stats/subsys/ip_gre_churn.h. */
 	struct ip_gre_churn_stats ip_gre_churn __attribute__((aligned(64)));

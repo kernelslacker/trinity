@@ -425,7 +425,7 @@ static int vxlan_encap_iter_open_ctx(struct vxlan_encap_iter_ctx *ctx)
 	};
 
 	if (nl_open(&ctx->nl, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vxlan_encap_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -503,7 +503,7 @@ static int vxlan_encap_iter_build_link(struct vxlan_encap_iter_ctx *ctx)
 		return -1;
 	}
 	ctx->link_added = true;
-	__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_create_ok,
+	__atomic_add_fetch(&shm->stats.vxlan_encap_churn.link_create_ok,
 			   1, __ATOMIC_RELAXED);
 
 	ctx->ifindex = (int)if_nametoindex(ctx->ifname);
@@ -519,12 +519,12 @@ static int vxlan_encap_iter_build_link(struct vxlan_encap_iter_ctx *ctx)
 
 	if (ctx->kind == TUN_VXLAN) {
 		if (build_fdb_add(&ctx->nl, ctx->ifindex) == 0)
-			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_fdb_add_ok,
+			__atomic_add_fetch(&shm->stats.vxlan_encap_churn.fdb_add_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
 	if (build_setlink_up(&ctx->nl, ctx->ifindex) == 0)
-		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_up_ok,
+		__atomic_add_fetch(&shm->stats.vxlan_encap_churn.link_up_ok,
 				   1, __ATOMIC_RELAXED);
 
 	return 0;
@@ -592,7 +592,7 @@ static void vxlan_encap_iter_send_burst(struct vxlan_encap_iter_ctx *ctx)
 		n = sendto(ctx->raw, pkt, pkt_len, MSG_DONTWAIT,
 			   (struct sockaddr *)&sll, sizeof(sll));
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_packet_sent_ok,
+			__atomic_add_fetch(&shm->stats.vxlan_encap_churn.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -617,7 +617,7 @@ static void vxlan_encap_iter_teardown(struct vxlan_encap_iter_ctx *ctx)
 
 	if (ctx->link_added && ctx->ifindex > 0) {
 		if (rtnl_dellink(&ctx->nl, ctx->ifindex) == 0)
-			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_del_ok,
+			__atomic_add_fetch(&shm->stats.vxlan_encap_churn.link_del_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 	nl_close(&ctx->nl);
@@ -680,7 +680,7 @@ bool vxlan_encap_churn(struct childdata *child)
 	struct vxlan_encap_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.vxlan_encap_churn_runs, 1,
+	__atomic_add_fetch(&shm->stats.vxlan_encap_churn.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_vxlan_encap)
@@ -706,7 +706,7 @@ bool vxlan_encap_churn(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vxlan_encap_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -714,7 +714,7 @@ bool vxlan_encap_churn(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vxlan_encap_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
