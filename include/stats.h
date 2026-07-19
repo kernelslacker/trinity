@@ -116,6 +116,7 @@
 #include "stats/subsys/splice_protocols.h"
 #include "stats/subsys/statmount_idmap.h"
 #include "stats/subsys/sysv_shm_orphan_race.h"
+#include "stats/subsys/tc_live_traffic.h"
 #include "stats/subsys/tc_mirred_blockcast.h"
 #include "stats/subsys/tcp_ao_rotate.h"
 #include "stats/subsys/tcp_ulp_swap_churn.h"
@@ -1142,20 +1143,8 @@ struct stats_s {
 	/* tc_mirred_blockcast accounting.  See stats/subsys/tc_mirred_blockcast.h. */
 	struct tc_mirred_blockcast_stats tc_mirred_blockcast __attribute__((aligned(64)));
 
-	/* tc_live_traffic childop counters */
-	unsigned long tc_live_traffic_runs;		/* total tc_live_traffic invocations */
-	unsigned long tc_live_traffic_setup_failed;	/* userns / rtnl open / grandchild fork latched */
-	unsigned long tc_live_traffic_qdisc_ok;		/* clsact install on the A veth end accepted */
-	unsigned long tc_live_traffic_qdisc_fail;	/* clsact install on the A veth end rejected */
-	unsigned long tc_live_traffic_filter_ok;	/* initial matchall+gact/mirred filter install accepted */
-	unsigned long tc_live_traffic_filter_fail;	/* initial matchall+gact/mirred filter install rejected */
-	unsigned long tc_live_traffic_filter_del_ok;	/* mid-burst RTM_DELTFILTER on the running slot accepted */
-	unsigned long tc_live_traffic_filter_replace_ok;	/* mid-burst RTM_NEWTFILTER at a new prio slot accepted (races tcf_classify) */
-	unsigned long tc_live_traffic_packet_sent_ok;	/* live UDP sendto through the classified ingress path returned >0 */
-	unsigned long tc_live_traffic_link_del_ok;	/* RTM_DELLINK on the A veth end at teardown accepted */
-	unsigned long tc_live_traffic_bpf_load_ok;	/* cls_bpf BPF_PROG_LOAD (SCHED_CLS) accepted */
-	unsigned long tc_live_traffic_xdp_load_ok;	/* BPF_PROG_LOAD (BPF_PROG_TYPE_XDP) for the XDP-pass sub-chain accepted */
-	unsigned long tc_live_traffic_xdp_attach_ok;	/* RTM_NEWLINK IFLA_XDP attach on the A veth end accepted */
+	/* tc_live_traffic accounting.  See stats/subsys/tc_live_traffic.h. */
+	struct tc_live_traffic_stats tc_live_traffic __attribute__((aligned(64)));
 
 	/* xfrm_churn childop counters */
 	unsigned long xfrm_churn_runs;			/* total xfrm_churn invocations */

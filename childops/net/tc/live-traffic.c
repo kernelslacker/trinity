@@ -653,7 +653,7 @@ static int tc_live_in_ns(void *arg)
 	if (nl_open(&nl, &nl_opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
 			ns_unsupported_rtnl = true;
-		__atomic_add_fetch(&shm->stats.tc_live_traffic_setup_failed,
+		__atomic_add_fetch(&shm->stats.tc_live_traffic.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -699,7 +699,7 @@ static int tc_live_in_ns(void *arg)
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_veth = true;
-		__atomic_add_fetch(&shm->stats.tc_live_traffic_setup_failed,
+		__atomic_add_fetch(&shm->stats.tc_live_traffic.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -719,12 +719,12 @@ static int tc_live_in_ns(void *arg)
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_clsact = true;
-		__atomic_add_fetch(&shm->stats.tc_live_traffic_qdisc_fail,
+		__atomic_add_fetch(&shm->stats.tc_live_traffic.qdisc_fail,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 	clsact_added = true;
-	__atomic_add_fetch(&shm->stats.tc_live_traffic_qdisc_ok,
+	__atomic_add_fetch(&shm->stats.tc_live_traffic.qdisc_ok,
 			   1, __ATOMIC_RELAXED);
 
 	prio = (rand32() & 0x1fU) + 1U;
@@ -734,11 +734,11 @@ static int tc_live_in_ns(void *arg)
 		if (is_unsupported_err(rc)) {
 			ns_unsupported_matchall = true;
 		}
-		__atomic_add_fetch(&shm->stats.tc_live_traffic_filter_fail,
+		__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_fail,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.tc_live_traffic_filter_ok,
+	__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_ok,
 			   1, __ATOMIC_RELAXED);
 
 	/* Opportunistic XDP attach.  Both the load and the attach can be
@@ -753,13 +753,13 @@ static int tc_live_in_ns(void *arg)
 		if (xdp_fd < 0) {
 			ns_unsupported_xdp = true;
 		} else {
-			__atomic_add_fetch(&shm->stats.tc_live_traffic_xdp_load_ok,
+			__atomic_add_fetch(&shm->stats.tc_live_traffic.xdp_load_ok,
 					   1, __ATOMIC_RELAXED);
 			rc = xdp_netlink_attach(&nl, (unsigned int)a_idx,
 						xdp_fd);
 			if (rc == 0) {
 				xdp_attached = true;
-				__atomic_add_fetch(&shm->stats.tc_live_traffic_xdp_attach_ok,
+				__atomic_add_fetch(&shm->stats.tc_live_traffic.xdp_attach_ok,
 						   1, __ATOMIC_RELAXED);
 			} else {
 				ns_unsupported_xdp = true;
@@ -819,7 +819,7 @@ static int tc_live_in_ns(void *arg)
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
 			if (n > 0)
-				__atomic_add_fetch(&shm->stats.tc_live_traffic_packet_sent_ok,
+				__atomic_add_fetch(&shm->stats.tc_live_traffic.packet_sent_ok,
 						   1, __ATOMIC_RELAXED);
 
 			if (i == replace_at_a || i == replace_at_b) {
@@ -827,14 +827,14 @@ static int tc_live_in_ns(void *arg)
 
 				if (build_delfilter(&nl, a_idx, prio,
 						    false) == 0)
-					__atomic_add_fetch(&shm->stats.tc_live_traffic_filter_del_ok,
+					__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_del_ok,
 							   1, __ATOMIC_RELAXED);
 
 				if (build_matchall_mirred(&nl, a_idx, b_idx,
 							  new_prio,
 							  false) == 0) {
 					prio = new_prio;
-					__atomic_add_fetch(&shm->stats.tc_live_traffic_filter_replace_ok,
+					__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_replace_ok,
 							   1, __ATOMIC_RELAXED);
 				}
 			}
@@ -851,7 +851,7 @@ static int tc_live_in_ns(void *arg)
 		if (cls_bpf_fd < 0) {
 			ns_unsupported_bpf_cls = true;
 		} else {
-			__atomic_add_fetch(&shm->stats.tc_live_traffic_bpf_load_ok,
+			__atomic_add_fetch(&shm->stats.tc_live_traffic.bpf_load_ok,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -870,7 +870,7 @@ out:
 		(void)clsact_added;	/* dellink cascades the clsact down */
 		if (pair_added && a_idx > 0) {
 			if (rtnl_dellink(&nl, a_idx) == 0)
-				__atomic_add_fetch(&shm->stats.tc_live_traffic_link_del_ok,
+				__atomic_add_fetch(&shm->stats.tc_live_traffic.link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		nl_close(&nl);
@@ -885,7 +885,7 @@ bool tc_live_traffic(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.tc_live_traffic_runs, 1,
+	__atomic_add_fetch(&shm->stats.tc_live_traffic.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_setup_failed)
@@ -898,7 +898,7 @@ bool tc_live_traffic(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.tc_live_traffic_setup_failed,
+		__atomic_add_fetch(&shm->stats.tc_live_traffic.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		warn_once_setup_failed(EPERM);
 		return true;
@@ -907,7 +907,7 @@ bool tc_live_traffic(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip without latching -- may not
 		 * recur on the next iteration. */
-		__atomic_add_fetch(&shm->stats.tc_live_traffic_setup_failed,
+		__atomic_add_fetch(&shm->stats.tc_live_traffic.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
