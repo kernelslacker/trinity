@@ -112,6 +112,7 @@
 #include "stats/subsys/statmount_idmap.h"
 #include "stats/subsys/sysv_shm_orphan_race.h"
 #include "stats/subsys/tcp_ao_rotate.h"
+#include "stats/subsys/tcp_ulp_swap_churn.h"
 #include "stats/subsys/tipc_link_churn.h"
 #include "stats/subsys/tls_rotate.h"
 #include "stats/subsys/tls_ulp_churn.h"
@@ -1351,17 +1352,8 @@ struct stats_s {
 	/* netns_mountns_setup accounting.  See stats/subsys/netns_mountns_setup.h. */
 	struct netns_mountns_setup_stats netns_mountns_setup __attribute__((aligned(64)));
 
-	/* tcp_ulp_swap_churn childop counters */
-	unsigned long tcp_ulp_swap_churn_runs;			/* total tcp_ulp_swap_churn invocations */
-	unsigned long tcp_ulp_swap_churn_setup_failed;		/* loopback pair / connect / unsupported latch fired */
-	unsigned long tcp_ulp_swap_churn_install_tls_ok;	/* setsockopt(TCP_ULP, "tls") accepted on connected sock */
-	unsigned long tcp_ulp_swap_churn_tx_install_ok;		/* setsockopt(SOL_TLS, TLS_TX, &cinfo) accepted */
-	unsigned long tcp_ulp_swap_churn_send_ok;		/* tls_sw_sendmsg drove a record onto the wire */
-	unsigned long tcp_ulp_swap_churn_swap_rejected_ok;	/* setsockopt(TCP_ULP, "espintcp"|"smc") rejected post-connect (the bug surface) */
-	unsigned long tcp_ulp_swap_churn_ifname_probe_ok;	/* SIOCGIFNAME / SIOCSIFNAME probe completed without disturbing lo */
-	unsigned long tcp_ulp_swap_churn_uninstall_ok;		/* setsockopt(TCP_ULP, "") uninstall accepted */
-	unsigned long tcp_ulp_swap_churn_reinstall_ok;		/* second setsockopt(TCP_ULP, "tls") accepted (re-init path) */
-	unsigned long tcp_ulp_swap_churn_install_failed;	/* TCP_ULP install non-latch failure (runtime errno bump) */
+	/* tcp_ulp_swap_churn accounting.  See stats/subsys/tcp_ulp_swap_churn.h. */
+	struct tcp_ulp_swap_churn_stats tcp_ulp_swap_churn __attribute__((aligned(64)));
 
 	/* msg_zerocopy_churn accounting.  See stats/subsys/msg_zerocopy_churn.h. */
 	struct msg_zerocopy_churn_stats msg_zerocopy_churn __attribute__((aligned(64)));

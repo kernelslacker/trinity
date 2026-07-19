@@ -266,7 +266,7 @@ static void ifname_probe(int sock)
 			ns_unsupported_ifname_probe = true;
 	}
 
-	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_ifname_probe_ok,
+	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.ifname_probe_ok,
 			   1, __ATOMIC_RELAXED);
 }
 
@@ -301,19 +301,19 @@ static int tcp_ulp_swap_iter_install_tls(int s, struct childdata *child,
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_install_failed,
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.install_failed,
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_install_tls_ok,
+	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.install_tls_ok,
 			   1, __ATOMIC_RELAXED);
 
 	version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
 	fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
 	if (setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo)) == 0)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_tx_install_ok,
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.tx_install_ok,
 				   1, __ATOMIC_RELAXED);
 
 	fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
@@ -335,7 +335,7 @@ static void tcp_ulp_swap_iter_traffic_burst(int s)
 	generate_rand_bytes(payload, sizeof(payload));
 	if (send(s, payload, sizeof(payload),
 		 MSG_DONTWAIT | MSG_NOSIGNAL) > 0)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_send_ok,
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.send_ok,
 				   1, __ATOMIC_RELAXED);
 	(void)recv(s, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
 }
@@ -353,12 +353,12 @@ static void tcp_ulp_swap_iter_swap_attempts(int s)
 
 	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "espintcp", 8);
 	if (rc < 0 && errno != ENOPROTOOPT)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_swap_rejected_ok,
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.swap_rejected_ok,
 				   1, __ATOMIC_RELAXED);
 
 	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "smc", 3);
 	if (rc < 0 && errno != ENOPROTOOPT)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_swap_rejected_ok,
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.swap_rejected_ok,
 				   1, __ATOMIC_RELAXED);
 
 	ifname_probe(s);
@@ -376,12 +376,12 @@ static void tcp_ulp_swap_iter_cycle_uninstall_reinstall(int s)
 
 	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "", 0);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_uninstall_ok,
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.uninstall_ok,
 				   1, __ATOMIC_RELAXED);
 
 	rc = setsockopt(s, IPPROTO_TCP, TCP_ULP, "tls", 3);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_reinstall_ok,
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.reinstall_ok,
 				   1, __ATOMIC_RELAXED);
 
 	(void)shutdown(s, SHUT_RDWR);
@@ -399,7 +399,7 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child,
 
 	s = open_loopback_pair(&acceptor);
 	if (s < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -449,11 +449,11 @@ bool tcp_ulp_swap_churn(struct childdata *child)
 	unsigned int outer_iters, i;
 	int urandom_fd;
 
-	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_runs,
+	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_tcp_ulp_swap) {
-		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
