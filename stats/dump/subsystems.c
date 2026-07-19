@@ -62,26 +62,26 @@ static void dump_stats_render_memory_pressure(void)
 
 static void dump_stats_render_genetlink(void)
 {
-	if (shm->stats.genetlink_families_discovered ||
-	    shm->stats.genetlink_discovery_cycles       ||
-	    shm->stats.genetlink_msgs_sent              ||
-	    shm->stats.genetlink_missing_producer       ||
-	    shm->stats.genetlink_discovery_io_err       ||
-	    shm->stats.genetlink_discovery_nlerr        ||
-	    shm->stats.genetlink_userns_run_fail        ||
-	    shm->stats.genetlink_in_ns_open_fail        ||
-	    shm->stats.genetlink_send_drain_fail) {
-		stat_row("genetlink_fuzzer", "families_discovered", shm->stats.genetlink_families_discovered);
-		stat_row("genetlink_fuzzer", "discovery_cycles",    shm->stats.genetlink_discovery_cycles);
-		stat_row("genetlink_fuzzer", "msgs_sent",           shm->stats.genetlink_msgs_sent);
-		stat_row("genetlink_fuzzer", "eperm",               shm->stats.genetlink_eperm);
-		stat_row("genetlink_fuzzer", "stale_seq_drops",     shm->stats.genetlink_stale_seq_drops);
-		stat_row("genetlink_fuzzer", "missing_producer",    shm->stats.genetlink_missing_producer);
-		stat_row("genetlink_fuzzer", "discovery_io_err",    shm->stats.genetlink_discovery_io_err);
-		stat_row("genetlink_fuzzer", "discovery_nlerr",     shm->stats.genetlink_discovery_nlerr);
-		stat_row("genetlink_fuzzer", "userns_run_fail",     shm->stats.genetlink_userns_run_fail);
-		stat_row("genetlink_fuzzer", "in_ns_open_fail",     shm->stats.genetlink_in_ns_open_fail);
-		stat_row("genetlink_fuzzer", "send_drain_fail",     shm->stats.genetlink_send_drain_fail);
+	if (shm->stats.genetlink_fuzzer.families_discovered ||
+	    shm->stats.genetlink_fuzzer.discovery_cycles       ||
+	    shm->stats.genetlink_fuzzer.msgs_sent              ||
+	    shm->stats.genetlink_fuzzer.missing_producer       ||
+	    shm->stats.genetlink_fuzzer.discovery_io_err       ||
+	    shm->stats.genetlink_fuzzer.discovery_nlerr        ||
+	    shm->stats.genetlink_fuzzer.userns_run_fail        ||
+	    shm->stats.genetlink_fuzzer.in_ns_open_fail        ||
+	    shm->stats.genetlink_fuzzer.send_drain_fail) {
+		stat_row("genetlink_fuzzer", "families_discovered", shm->stats.genetlink_fuzzer.families_discovered);
+		stat_row("genetlink_fuzzer", "discovery_cycles",    shm->stats.genetlink_fuzzer.discovery_cycles);
+		stat_row("genetlink_fuzzer", "msgs_sent",           shm->stats.genetlink_fuzzer.msgs_sent);
+		stat_row("genetlink_fuzzer", "eperm",               shm->stats.genetlink_fuzzer.eperm);
+		stat_row("genetlink_fuzzer", "stale_seq_drops",     shm->stats.genetlink_fuzzer.stale_seq_drops);
+		stat_row("genetlink_fuzzer", "missing_producer",    shm->stats.genetlink_fuzzer.missing_producer);
+		stat_row("genetlink_fuzzer", "discovery_io_err",    shm->stats.genetlink_fuzzer.discovery_io_err);
+		stat_row("genetlink_fuzzer", "discovery_nlerr",     shm->stats.genetlink_fuzzer.discovery_nlerr);
+		stat_row("genetlink_fuzzer", "userns_run_fail",     shm->stats.genetlink_fuzzer.userns_run_fail);
+		stat_row("genetlink_fuzzer", "in_ns_open_fail",     shm->stats.genetlink_fuzzer.in_ns_open_fail);
+		stat_row("genetlink_fuzzer", "send_drain_fail",     shm->stats.genetlink_fuzzer.send_drain_fail);
 	}
 }
 

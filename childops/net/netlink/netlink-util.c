@@ -326,7 +326,7 @@ int nl_send_drain_errors(struct nl_ctx *ctx, void *msg, size_t len,
 					if (on_err)
 						on_err(err->error, arg);
 				} else {
-					__atomic_add_fetch(&shm->stats.genetlink_stale_seq_drops,
+					__atomic_add_fetch(&shm->stats.genetlink_fuzzer.stale_seq_drops,
 							   1, __ATOMIC_RELAXED);
 				}
 			}
