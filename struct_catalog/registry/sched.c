@@ -9,14 +9,10 @@
  */
 
 #include <stddef.h>
-#include <sched.h>
-#include <linux/sched.h>
-#include <linux/sched/types.h>
 
 #include "config.h"
 
 #include "struct_catalog.h"
-#include "trinity.h"
 
 const struct syscall_struct_arg struct_catalog_registry_sched[] = {
 	/* sched_setattr(pid_t, struct sched_attr *, unsigned int) */
