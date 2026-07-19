@@ -20,22 +20,6 @@
 #include "stats-internal.h"
 #include "stats/json/internal.h"
 
-static const struct stat_field packet_fanout_thrash_fields[] = {
-	STAT_FIELD(packet_fanout, runs),
-	STAT_FIELD(packet_fanout, setup_failed),
-	STAT_FIELD(packet_fanout, ring_failed),
-	STAT_FIELD(packet_fanout, rings_installed),
-	STAT_FIELD(packet_fanout, mmap_failed),
-	STAT_FIELD(packet_fanout, joins),
-	STAT_FIELD(packet_fanout, rejoins_ok),
-	STAT_FIELD(packet_fanout, rejoins_rejected),
-};
-
-static const struct stat_category packet_fanout_thrash_category =
-	STAT_CATEGORY("packet_fanout_thrash",
-	              packet_fanout_runs,
-	              packet_fanout_thrash_fields);
-
 /*
  * eth_emitter's five per-template counters live in an array
  * (eth_emitter_per_tmpl[NR_TEMPLATES]); the JSON schema emits one

@@ -123,7 +123,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	unsigned int flags1;
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.packet_fanout_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.packet_fanout_thrash.runs, 1, __ATOMIC_RELAXED);
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -142,7 +142,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	if (fd < 0) {
 		/* EPERM (no CAP_NET_RAW), EAFNOSUPPORT (no CONFIG_PACKET),
 		 * EPROTONOSUPPORT — all valid no-coverage early-outs. */
-		__atomic_add_fetch(&shm->stats.packet_fanout_setup_failed,
+		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -160,17 +160,17 @@ bool packet_fanout_thrash(struct childdata *child)
 
 	if (setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
 		       &req, sizeof(req)) < 0) {
-		__atomic_add_fetch(&shm->stats.packet_fanout_ring_failed,
+		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.ring_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.packet_fanout_rings_installed,
+	__atomic_add_fetch(&shm->stats.packet_fanout_thrash.rings_installed,
 			   1, __ATOMIC_RELAXED);
 
 	ring = mmap(NULL, RING_BYTES, PROT_READ | PROT_WRITE,
 		    MAP_SHARED, fd, 0);
 	if (ring == MAP_FAILED) {
-		__atomic_add_fetch(&shm->stats.packet_fanout_mmap_failed,
+		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.mmap_failed,
 				   1, __ATOMIC_RELAXED);
 		/* Setsockopt sequence still partially ran -- keep going
 		 * to exercise the post-ring fanout path even without a
@@ -205,7 +205,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	rc = setsockopt(fd, SOL_PACKET, PACKET_FANOUT,
 			&fanout1, sizeof(fanout1));
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.packet_fanout_joins,
+		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.joins,
 				   1, __ATOMIC_RELAXED);
 
 	/* Step 7: TX ring after fanout join.  This exercises the
@@ -228,10 +228,10 @@ bool packet_fanout_thrash(struct childdata *child)
 	rc = setsockopt(fd, SOL_PACKET, PACKET_FANOUT,
 			&fanout2, sizeof(fanout2));
 	if (rc == 0) {
-		__atomic_add_fetch(&shm->stats.packet_fanout_rejoins_ok,
+		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.rejoins_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.packet_fanout_rejoins_rejected,
+		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.rejoins_rejected,
 				   1, __ATOMIC_RELAXED);
 	}
 

@@ -73,15 +73,15 @@ static void dump_stats_render_blob_fills_by_group(void)
 
 static void dump_stats_render_packet_fanout_thrash(void)
 {
-	if (shm->stats.packet_fanout_runs) {
-		stat_row("packet_fanout_thrash", "runs",             shm->stats.packet_fanout_runs);
-		stat_row("packet_fanout_thrash", "setup_failed",     shm->stats.packet_fanout_setup_failed);
-		stat_row("packet_fanout_thrash", "ring_failed",      shm->stats.packet_fanout_ring_failed);
-		stat_row("packet_fanout_thrash", "rings_installed",  shm->stats.packet_fanout_rings_installed);
-		stat_row("packet_fanout_thrash", "mmap_failed",      shm->stats.packet_fanout_mmap_failed);
-		stat_row("packet_fanout_thrash", "joins",            shm->stats.packet_fanout_joins);
-		stat_row("packet_fanout_thrash", "rejoins_ok",       shm->stats.packet_fanout_rejoins_ok);
-		stat_row("packet_fanout_thrash", "rejoins_rejected", shm->stats.packet_fanout_rejoins_rejected);
+	if (shm->stats.packet_fanout_thrash.runs) {
+		stat_row("packet_fanout_thrash", "runs",             shm->stats.packet_fanout_thrash.runs);
+		stat_row("packet_fanout_thrash", "setup_failed",     shm->stats.packet_fanout_thrash.setup_failed);
+		stat_row("packet_fanout_thrash", "ring_failed",      shm->stats.packet_fanout_thrash.ring_failed);
+		stat_row("packet_fanout_thrash", "rings_installed",  shm->stats.packet_fanout_thrash.rings_installed);
+		stat_row("packet_fanout_thrash", "mmap_failed",      shm->stats.packet_fanout_thrash.mmap_failed);
+		stat_row("packet_fanout_thrash", "joins",            shm->stats.packet_fanout_thrash.joins);
+		stat_row("packet_fanout_thrash", "rejoins_ok",       shm->stats.packet_fanout_thrash.rejoins_ok);
+		stat_row("packet_fanout_thrash", "rejoins_rejected", shm->stats.packet_fanout_thrash.rejoins_rejected);
 	}
 }
 
