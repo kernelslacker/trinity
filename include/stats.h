@@ -84,6 +84,7 @@
 #include "stats/subsys/netns_teardown.h"
 #include "stats/subsys/nf_conntrack_helper_churn.h"
 #include "stats/subsys/no_domains.h"
+#include "stats/subsys/numa_migration.h"
 #include "stats/subsys/oracle.h"
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/pci_bind.h"
@@ -790,12 +791,8 @@ struct stats_s {
 	/* vdso_mremap_race accounting.  See stats/subsys/vdso_race.h. */
 	struct vdso_race_stats vdso_race __attribute__((aligned(64)));
 
-	/* numa_migration_churn childop counters */
-	unsigned long numa_migration_runs;	/* total numa_migration_churn invocations */
-	unsigned long numa_migration_calls;	/* total mbind/migrate/move/set_mempolicy calls issued */
-	unsigned long numa_migration_failed;	/* migration syscall returned -1 */
-	unsigned long numa_migration_no_numa;	/* attempted invocations skipped (single-node host) */
-	unsigned long numa_migration_sysfs_unreadable;	/* /sys/devices/system/node/online open/read failed */
+	/* numa_migration accounting.  See stats/subsys/numa_migration.h. */
+	struct numa_migration_stats numa_migration __attribute__((aligned(64)));
 
 	/* cpu_hotplug accounting.  See stats/subsys/cpu_hotplug.h. */
 	struct cpu_hotplug_stats cpu_hotplug __attribute__((aligned(64)));

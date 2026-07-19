@@ -127,19 +127,6 @@ const struct stat_category memory_pressure_category =
 	              memory_pressure_runs,
 	              memory_pressure_fields);
 
-static const struct stat_field numa_migration_fields[] = {
-	STAT_FIELD(numa_migration, runs),
-	STAT_FIELD(numa_migration, calls),
-	STAT_FIELD(numa_migration, failed),
-	STAT_FIELD(numa_migration, no_numa),
-	STAT_FIELD(numa_migration, sysfs_unreadable),
-};
-
-const struct stat_category numa_migration_category =
-	STAT_CATEGORY("numa_migration",
-	              numa_migration_runs,
-	              numa_migration_fields);
-
 static const struct stat_field genl_family_calls_fields[] = {
 	STAT_FIELD(genl_family_calls, devlink),
 	STAT_FIELD(genl_family_calls, nl80211),
