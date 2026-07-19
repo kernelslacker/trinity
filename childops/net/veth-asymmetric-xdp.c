@@ -546,10 +546,10 @@ static int veth_xdp_iter_create_pair(struct veth_xdp_iter_ctx *ictx)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
+			__atomic_add_fetch(&shm->stats.veth_asymmetric_xdp.unsupported,
 					   1, __ATOMIC_RELAXED);
 		} else if (rc == -EPERM) {
-			__atomic_add_fetch(&shm->stats.veth_asym_eperm,
+			__atomic_add_fetch(&shm->stats.veth_asymmetric_xdp.eperm,
 					   1, __ATOMIC_RELAXED);
 		}
 		return -1;
@@ -557,7 +557,7 @@ static int veth_xdp_iter_create_pair(struct veth_xdp_iter_ctx *ictx)
 	if (ictx->a_idx <= 0 || ictx->b_idx <= 0)
 		return -1;
 
-	__atomic_add_fetch(&shm->stats.veth_asym_pair_ok, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.veth_asymmetric_xdp.pair_ok, 1, __ATOMIC_RELAXED);
 
 	/* Kernel confirmed ictx->a_name now names a real device (NEWLINK
 	 * ACK + if_nametoindex > 0); publish it via the NETDEV name pool
@@ -611,14 +611,14 @@ static void veth_xdp_iter_load_xdp(struct veth_xdp_iter_ctx *ictx)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
+			__atomic_add_fetch(&shm->stats.veth_asymmetric_xdp.unsupported,
 					   1, __ATOMIC_RELAXED);
 		}
 		return;
 	}
 
 	if (vax_xdp_attach(&ictx->ctx, ictx->a_idx, ictx->prog_fd) == 0)
-		__atomic_add_fetch(&shm->stats.veth_asym_xdp_attach_ok,
+		__atomic_add_fetch(&shm->stats.veth_asymmetric_xdp.xdp_attach_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -660,7 +660,7 @@ static void veth_xdp_iter_drive_burst(struct veth_xdp_iter_ctx *ictx)
 		frame[12] = 0x08; frame[13] = 0x00;	/* ethertype IP */
 		if (sendto(ictx->raw, frame, sizeof(frame), MSG_DONTWAIT,
 			   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-			__atomic_add_fetch(&shm->stats.veth_asym_send_ok,
+			__atomic_add_fetch(&shm->stats.veth_asymmetric_xdp.send_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -756,7 +756,7 @@ bool veth_asymmetric_xdp(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.veth_asym_iters, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.veth_asymmetric_xdp.iters, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
 		return true;
@@ -778,7 +778,7 @@ bool veth_asymmetric_xdp(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.veth_asym_eperm, 1,
+		__atomic_add_fetch(&shm->stats.veth_asymmetric_xdp.eperm, 1,
 				   __ATOMIC_RELAXED);
 		return true;
 	}
@@ -802,8 +802,8 @@ bool veth_asymmetric_xdp(struct childdata *child)
 bool veth_asymmetric_xdp(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.veth_asym_iters, 1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.veth_asym_unsupported, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.veth_asymmetric_xdp.iters, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.veth_asymmetric_xdp.unsupported, 1, __ATOMIC_RELAXED);
 	return true;
 }
 

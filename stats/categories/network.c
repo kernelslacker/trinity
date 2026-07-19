@@ -35,19 +35,6 @@ const struct stat_category pkt_builder_category =
 	              pkt_builder_runs,
 	              pkt_builder_fields);
 
-static const struct stat_field veth_asymmetric_xdp_fields[] = {
-	STAT_FIELD(veth_asym, iters),
-	STAT_FIELD(veth_asym, eperm),
-	STAT_FIELD(veth_asym, unsupported),
-	STAT_FIELD(veth_asym, pair_ok),
-	STAT_FIELD(veth_asym, xdp_attach_ok),
-	STAT_FIELD(veth_asym, send_ok),
-};
-
-const struct stat_category veth_asymmetric_xdp_category =
-	STAT_CATEGORY("veth_asymmetric_xdp",
-	              veth_asym_iters,
-	              veth_asymmetric_xdp_fields);
 
 static const struct stat_field ip6erspan_netns_migrate_fields[] = {
 	STAT_FIELD(inm, iters),
