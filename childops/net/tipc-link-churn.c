@@ -371,7 +371,7 @@ static bool open_topsrv_and_subscribe(int *out_fd)
 		close(fd);
 		return false;
 	}
-	__atomic_add_fetch(&shm->stats.tipc_link_churn_topsrv_connect_ok,
+	__atomic_add_fetch(&shm->stats.tipc_link_churn.topsrv_connect_ok,
 			   1, __ATOMIC_RELAXED);
 
 	memset(&sub, 0, sizeof(sub));
@@ -386,7 +386,7 @@ static bool open_topsrv_and_subscribe(int *out_fd)
 		close(fd);
 		return false;
 	}
-	__atomic_add_fetch(&shm->stats.tipc_link_churn_sub_ports_sent,
+	__atomic_add_fetch(&shm->stats.tipc_link_churn.sub_ports_sent,
 			   1, __ATOMIC_RELAXED);
 
 	*out_fd = fd;
@@ -405,10 +405,10 @@ bool tipc_link_churn(struct childdata *child)
 	__u32 cluster;
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.tipc_link_churn_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.tipc_link_churn.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_tipc || ns_unsupported_genetlink_tipc) {
-		__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tipc_link_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -437,17 +437,17 @@ bool tipc_link_churn(struct childdata *child)
 					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
+				__atomic_add_fetch(&shm->stats.tipc_link_churn.setup_failed,
 						   1, __ATOMIC_RELAXED);
 				return true;
 			}
 		} else {
-			__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
+			__atomic_add_fetch(&shm->stats.tipc_link_churn.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
 	}
-	__atomic_add_fetch(&shm->stats.tipc_link_churn_sock_rdm_ok,
+	__atomic_add_fetch(&shm->stats.tipc_link_churn.sock_rdm_ok,
 			   1, __ATOMIC_RELAXED);
 
 	memset(&opts, 0, sizeof(opts));
@@ -464,7 +464,7 @@ bool tipc_link_churn(struct childdata *child)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.tipc_link_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
@@ -486,12 +486,12 @@ bool tipc_link_churn(struct childdata *child)
 	rc = build_bearer_enable(&ctx, bearer_name);
 	if (rc == 0) {
 		bearer_enabled = true;
-		__atomic_add_fetch(&shm->stats.tipc_link_churn_bearer_enable_ok,
+		__atomic_add_fetch(&shm->stats.tipc_link_churn.bearer_enable_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 
 	if (build_publish(rdm) == 0)
-		__atomic_add_fetch(&shm->stats.tipc_link_churn_publish_ok,
+		__atomic_add_fetch(&shm->stats.tipc_link_churn.publish_ok,
 				   1, __ATOMIC_RELAXED);
 
 	(void)open_topsrv_and_subscribe(&topsrv);
@@ -499,7 +499,7 @@ bool tipc_link_churn(struct childdata *child)
 out:
 	if (bearer_enabled && ctx_open) {
 		if (build_bearer_disable(&ctx, bearer_name) == 0)
-			__atomic_add_fetch(&shm->stats.tipc_link_churn_bearer_disable_ok,
+			__atomic_add_fetch(&shm->stats.tipc_link_churn.bearer_disable_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -518,8 +518,8 @@ out:
 bool tipc_link_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.tipc_link_churn_runs, 1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
+	__atomic_add_fetch(&shm->stats.tipc_link_churn.runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.tipc_link_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }

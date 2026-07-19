@@ -105,6 +105,7 @@
 #include "stats/subsys/splice_protocols.h"
 #include "stats/subsys/statmount_idmap.h"
 #include "stats/subsys/tcp_ao_rotate.h"
+#include "stats/subsys/tipc_link_churn.h"
 #include "stats/subsys/tls_rotate.h"
 #include "stats/subsys/tls_ulp_churn.h"
 #include "stats/subsys/topo_pair.h"
@@ -982,15 +983,8 @@ struct stats_s {
 	/* netlink_monitor_race accounting.  See stats/subsys/netlink_monitor_race.h. */
 	struct netlink_monitor_race_stats netlink_monitor_race __attribute__((aligned(64)));
 
-	/* tipc_link_churn childop counters */
-	unsigned long tipc_link_churn_runs;		/* total tipc_link_churn invocations */
-	unsigned long tipc_link_churn_setup_failed;	/* modprobe / AF_TIPC / family-resolve gate failed */
-	unsigned long tipc_link_churn_bearer_enable_ok;	/* TIPC_NL_BEARER_ENABLE genl ack==0 */
-	unsigned long tipc_link_churn_sock_rdm_ok;	/* socket(AF_TIPC, SOCK_RDM) returned >=0 */
-	unsigned long tipc_link_churn_topsrv_connect_ok; /* SEQPACKET socket connected to TIPC_TOP_SRV */
-	unsigned long tipc_link_churn_sub_ports_sent;	/* TIPC_SUB_PORTS subscription sent on topsrv socket */
-	unsigned long tipc_link_churn_publish_ok;	/* bind() with TIPC_CLUSTER_SCOPE for publish accepted */
-	unsigned long tipc_link_churn_bearer_disable_ok; /* TIPC_NL_BEARER_DISABLE genl ack==0 */
+	/* tipc_link_churn accounting.  See stats/subsys/tipc_link_churn.h. */
+	struct tipc_link_churn_stats tipc_link_churn __attribute__((aligned(64)));
 
 	/* tls_ulp_churn accounting.  See stats/subsys/tls_ulp_churn.h. */
 	struct tls_ulp_churn_stats tls_ulp_churn __attribute__((aligned(64)));
