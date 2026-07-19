@@ -713,7 +713,7 @@ static void sctp_chunk_rx_iter_send_burst(struct sctp_chunk_rx_iter_ctx *ctx)
 		n = sendto(ctx->raw, pkt, len, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.sctp_chunk_rx_packet_sent_ok,
+			__atomic_add_fetch(&shm->stats.sctp_chunk_rx.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -787,7 +787,7 @@ static int sctp_chunk_rx_in_ns(void *arg)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.sctp_chunk_rx_listener_ok,
+	__atomic_add_fetch(&shm->stats.sctp_chunk_rx.listener_ok,
 			   1, __ATOMIC_RELAXED);
 
 	sctp_chunk_rx_iter_send_burst(&ctx);
@@ -802,14 +802,14 @@ bool sctp_chunk_rx(struct childdata *child)
 	struct sctp_chunk_rx_ctx cctx = { .child = child };
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.sctp_chunk_rx_runs, 1,
+	__atomic_add_fetch(&shm->stats.sctp_chunk_rx.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_sctp_chunk_rx)
 		return true;
 
 	if (kind_unsupported()) {
-		__atomic_add_fetch(&shm->stats.sctp_chunk_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.sctp_chunk_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -827,12 +827,12 @@ bool sctp_chunk_rx(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.sctp_chunk_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.sctp_chunk_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.sctp_chunk_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.sctp_chunk_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
