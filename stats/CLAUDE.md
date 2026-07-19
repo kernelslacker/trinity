@@ -5,7 +5,7 @@ subsystems (kcov, cmp_hints, childops, random_syscall, corruption defenses)
 bump counters here; this directory turns those counters into text, JSON, CSV
 timeseries, and periodic operator-facing dumps.
 
-## Layout (35 implementation files)
+## Layout (42 implementation files)
 
 | Path | Role |
 |---|---|
@@ -28,6 +28,15 @@ timeseries, and periodic operator-facing dumps.
 | childop/ranked.c | Ranked childop tables: wall time, edges, util, skips, wedges. |
 | network/childops.c | Network childop aggregate sections. |
 | kcov/dump.c | Shutdown KCOV coverage and comparison diagnostics block. |
+| kcov/cmp/periodic.c | Public entry `kcov_cmp_stats_periodic_dump()`: previous-window state, elapsed gate, delta computation, render-block fan-out. |
+| kcov/cmp/base.c | Shared `kcov_cmp_rate_line()` emitter; scalar CMP-rich per-syscall top-N table; wild-write rate rows. |
+| kcov/cmp/redqueen.c | RedQueen reexec per-syscall top-N, per-slot histograms, and reexec skip-reason breakdown. |
+| kcov/cmp/pool.c | Raw cmp-hint pool + tier: oldpool per-syscall top-N, oldpool-vs-shadow, PC-win conversion split, per-entry feedback scoring, recent-CMP-pool tier. |
+| kcov/cmp/hyp.c | Typed hypothesis rendering: saturation gauge, per-kind / consume / picker census, state transitions, outcome partition, SHADOW stats, would-pick / would-promote-demote, live-inject and reasons, boundary scorecard, per-hypothesis aggregates, score-bucket / probe-class histograms. |
+| kcov/cmp/childop.c | Childop CMP consume shadow block (childop-specific index bounds). |
+| kcov/cmp/cohort.c | Cross-subsystem A/B and sidecar rows: baseline inject denom, handle_arg_op prop_ring, frontier cold-weight blend, adaptive remote-KCOV, per-arg ownership sidecar, structure-aware picker cohort. |
+| kcov/cmp/diag.c | Steady periodic diagnostics: KCOV mode mix, KCOV CMP DIAG errnos, KCOV PC DIAG errnos + retry counters. |
+| kcov/cmp/internal.h | Private renderer prototypes shared across `stats/kcov/cmp/` TUs. |
 | json/dump.c | `--stats-json` top-level orchestrator: root object, `"stats"` wrapper, and section order. |
 | json/common.c | JSON mechanics: string escape and `stat_category_emit_json()` descriptor renderer. |
 | json/syscalls.c | Per-syscall JSON array. |
@@ -37,7 +46,6 @@ timeseries, and periodic operator-facing dumps.
 | json/core.c | Non-network JSON section emitters + basic-subsystem descriptor tables. |
 | json/network.c | Network / netfilter / xfrm / socket-family / long-chain JSON section emitters + descriptor tables. |
 | json/tail.c | iouring-zc / KVM / nl80211 / NAT-T / AF_ALG / probes-misuse hand-written tail. |
-| kcov_cmp.c | Stateful periodic cmp_hints/redqueen diagnostics and previous-window deltas. |
 | periodic/strategy-topn.c | Shadow strategy per-syscall top-N helpers called at shutdown from `dump/strategy.c`. |
 | periodic/counter-rates.c | `periodic_counter_rates[]` rate table + `periodic_counter_rates_dump()` parent-tick emitter. |
 | periodic/childop-split.c | Childop-vs-random-syscall walltime/syscalls/iterations split emitter. |
@@ -82,9 +90,11 @@ Two parallel counter stores, by design:
    shutdown report order. Leaf renderers live under `stats/dump/`,
    `stats/childop/`, `stats/network/`, and `stats/kcov/`, so a new section has
    a natural smaller home.
-4. **Stateful periodic logic stays separate** - `kcov_cmp.c` keeps elapsed-time
-   gates and previous-window snapshots for cmp_hints/redqueen diagnostics; it is
-   intentionally not a pure shutdown-render file.
+4. **Stateful periodic logic stays separate** - `stats/kcov/cmp/periodic.c`
+   keeps the elapsed-time gate and previous-window snapshots for
+   cmp_hints/redqueen diagnostics; the fan-out render helpers live in the
+   per-domain siblings under `stats/kcov/cmp/`.  This subtree is intentionally
+   not a pure shutdown-render tree.
 5. **Ring pointer hardening in `stats_ring_drain_all()`** - before dereferencing
    a child's ring pointer, the drainer checks for non-canonical x86-64 addresses
    and compares against an `expected_stats_rings[]` snapshot captured at init.
@@ -100,7 +110,7 @@ Two parallel counter stores, by design:
   ring into `parent_stats` once per parent main-loop iteration.
 - `kcov/` feeds KCOV counters rendered by `stats/kcov/dump.c` and JSON KCOV
   sections in `stats/json/kcov.c`; `kcov/lifecycle.c` also enqueues ring deltas.
-- `cmp_hints/` feeds the periodic front-end in `stats/kcov_cmp.c`; top
+- `cmp_hints/` feeds the periodic front-end in `stats/kcov/cmp/`; top
   per-syscall CMP insert rows in the shutdown report are rendered from
   `stats/dump/strategy.c` and `stats/kcov/dump.c`.
 - `strategy/strategy-stats-dump.c` provides a separate operator summary called
@@ -117,9 +127,12 @@ Two parallel counter stores, by design:
 
 ## Areas of Attention
 
-1. **`kcov_cmp.c` is still the largest stateful file** - it mixes time-gated
-   periodic state with many render blocks for the hypothesis engine. Bugs here
-   are harder to localize than in the pure shutdown render leaves.
+1. **`stats/kcov/cmp/periodic.c` still owns the time-gated periodic dump
+   orchestrator** - previous-window snapshots and any-delta gates live here.
+   The render blocks are now per-domain siblings, but the top-level function
+   is still the widest hunk in the subtree and any new top-level periodic
+   counter has to add its declaration, load, arm, delta, render, and commit
+   here.
 2. **`stats/kcov/dump.c` is the largest pure-render file** - it is mechanically
    grouped around the shutdown KCOV block, but future KCOV-only edits should
    consider another domain split before it grows further.
