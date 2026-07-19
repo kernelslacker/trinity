@@ -50,3 +50,19 @@ void kcov_cmp_render_recent_cmp_pool_tier(long elapsed,
 					  unsigned long delta_cmp_recent_would_pick, unsigned long cur_cmp_recent_would_pick,
 					  unsigned long delta_cmp_recent_would_miss, unsigned long cur_cmp_recent_would_miss,
 					  unsigned long delta_cmp_recent_live_picks, unsigned long cur_cmp_recent_live_picks);
+
+void kcov_cmp_hyp_saturation_block_render(long elapsed);
+void kcov_cmp_render_hyp_shadow_per_kind_census(void);
+void kcov_cmp_render_hyp_shadow_consumes_census(void);
+void kcov_cmp_render_hyp_shadow_picker_census(void);
+void kcov_cmp_render_hyp_shadow_state_transitions(void);
+void kcov_cmp_render_hyp_shadow_outcome_partition(void);
+void kcov_cmp_render_hyp_shadow_stats_block(long elapsed);
+void kcov_cmp_render_hyp_would_pick_block(long elapsed);
+void kcov_cmp_render_hyp_would_promote_demote_block(long elapsed);
+void kcov_cmp_render_hyp_live_inject_block(long elapsed);
+void kcov_cmp_render_hyp_live_inject_reasons_block(long elapsed);
+void kcov_cmp_render_hyp_boundary_scorecard_block(long elapsed);
+void kcov_cmp_render_hyp_per_hypothesis_aggregates_block(long elapsed);
+void kcov_cmp_render_hyp_score_bucket_block(long elapsed);
+void kcov_cmp_render_hyp_probe_class_hist_block(long elapsed);
