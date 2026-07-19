@@ -67,60 +67,57 @@ void dump_stats_json_socket_family_and_tls(void)
  *
  * Six categories that the previous hand-written printf emitted with one
  * %lu slot per field and a parallel shm->stats.<field> va-list; adding a
- * counter required three correlated edits.  STAT_FIELD picks whichever
- * struct prefix matches the actual member (nftables_churn_/nft_,
- * tc_qdisc_churn_/tc_qdisc_, xfrm_churn_/xfrm_ah_esn_,
- * mptcp_pm_churn_/mptcp_setsockopt_/mptcp_getsockopt_/mptcp_sockopt_);
- * .name doubles as the (currently unused) text-side key.  STAT_FIELD_JSON
- * pins the JSON key for the xt_ct_* members pulled into nftables_churn,
- * whose struct suffix (e.g. "ct_iters") doesn't carry the "xt_ct_"
- * qualifier the schema emits.
+ * counter required three correlated edits.  STAT_FIELD_SUB names the
+ * per-subsystem struct member and the field within it; .name doubles as
+ * the (currently unused) text-side key.  For the xt_ct_* / nft_*
+ * sub-groups nested inside struct nftables_churn_stats, .name preserves
+ * the full member identifier so the JSON key stays "xt_ct_iters" etc.
  *
  * The text emitter for these subsystems stays hand-coded for now, so the
  * gate_offset choices below only matter if a future change wires
  * stat_category_emit_text() onto these tables.
  */
 static const struct stat_field nftables_churn_fields[] = {
-	STAT_FIELD(nftables_churn, runs),
-	STAT_FIELD(nftables_churn, setup_failed),
-	STAT_FIELD(nftables_churn, table_create_ok),
-	STAT_FIELD(nftables_churn, set_create_ok),
-	STAT_FIELD(nftables_churn, chain_create_ok),
-	STAT_FIELD(nftables_churn, rule_create_ok),
-	STAT_FIELD(nftables_churn, packet_sent_ok),
-	STAT_FIELD(nftables_churn, rule_insert_ok),
-	STAT_FIELD(nftables_churn, rule_del_ok),
-	STAT_FIELD(nftables_churn, table_del_ok),
-	STAT_FIELD(nftables_churn, payload_expr_emit),
-	STAT_FIELD(nftables_churn, objref_expr_emit),
-	STAT_FIELD(nft, compat_validate_install_ok),
-	STAT_FIELD(nft, compat_validate_install_fail),
-	STAT_FIELD(nft, compat_validate_unsupported),
-	STAT_FIELD(nft, compat_validate_per_hook_pairs),
-	STAT_FIELD(nft, dormant_abort_iters),
-	STAT_FIELD(nft, dormant_abort_eperm),
-	STAT_FIELD(nft, dormant_abort_emsg),
-	STAT_FIELD(nft, dormant_abort_ok),
-	STAT_FIELD_JSON(xt, ct_iters, "xt_ct_iters"),
-	STAT_FIELD_JSON(xt, ct_eperm, "xt_ct_eperm"),
-	STAT_FIELD_JSON(xt, ct_unsupported, "xt_ct_unsupported"),
-	STAT_FIELD_JSON(xt, ct_set_ok, "xt_ct_set_ok"),
-	STAT_FIELD_JSON(xt, ct_get_ok, "xt_ct_get_ok"),
-	STAT_FIELD_JSON(xt, ct_v2_seen, "xt_ct_v2_seen"),
-	STAT_FIELD(nft, fwd_loop_runs),
-	STAT_FIELD(nft, fwd_loop_ns_setup_failed),
-	STAT_FIELD(nft, fwd_loop_probe_sent_ok),
-	STAT_FIELD(nft, fwd_loop_completed_ok),
-	STAT_FIELD(nft, l4frag_iters),
-	STAT_FIELD(nft, l4frag_install_ok),
-	STAT_FIELD(nft, l4frag_rule_ok),
-	STAT_FIELD(nft, l4frag_send_ok),
-	STAT_FIELD(nft, l4frag_send_failed),
+	STAT_FIELD_SUB(nftables_churn, runs),
+	STAT_FIELD_SUB(nftables_churn, setup_failed),
+	STAT_FIELD_SUB(nftables_churn, table_create_ok),
+	STAT_FIELD_SUB(nftables_churn, set_create_ok),
+	STAT_FIELD_SUB(nftables_churn, chain_create_ok),
+	STAT_FIELD_SUB(nftables_churn, rule_create_ok),
+	STAT_FIELD_SUB(nftables_churn, packet_sent_ok),
+	STAT_FIELD_SUB(nftables_churn, rule_insert_ok),
+	STAT_FIELD_SUB(nftables_churn, rule_del_ok),
+	STAT_FIELD_SUB(nftables_churn, table_del_ok),
+	STAT_FIELD_SUB(nftables_churn, payload_expr_emit),
+	STAT_FIELD_SUB(nftables_churn, objref_expr_emit),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_compat_validate_install_ok,   "compat_validate_install_ok"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_compat_validate_install_fail, "compat_validate_install_fail"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_compat_validate_unsupported,  "compat_validate_unsupported"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_compat_validate_per_hook_pairs, "compat_validate_per_hook_pairs"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_dormant_abort_iters, "dormant_abort_iters"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_dormant_abort_eperm, "dormant_abort_eperm"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_dormant_abort_emsg,  "dormant_abort_emsg"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_dormant_abort_ok,    "dormant_abort_ok"),
+	STAT_FIELD_SUB(nftables_churn, xt_ct_iters),
+	STAT_FIELD_SUB(nftables_churn, xt_ct_eperm),
+	STAT_FIELD_SUB(nftables_churn, xt_ct_unsupported),
+	STAT_FIELD_SUB(nftables_churn, xt_ct_set_ok),
+	STAT_FIELD_SUB(nftables_churn, xt_ct_get_ok),
+	STAT_FIELD_SUB(nftables_churn, xt_ct_v2_seen),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_fwd_loop_runs,             "fwd_loop_runs"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_fwd_loop_ns_setup_failed,  "fwd_loop_ns_setup_failed"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_fwd_loop_probe_sent_ok,    "fwd_loop_probe_sent_ok"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_fwd_loop_completed_ok,     "fwd_loop_completed_ok"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_iters,       "l4frag_iters"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_install_ok,  "l4frag_install_ok"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_rule_ok,     "l4frag_rule_ok"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_send_ok,     "l4frag_send_ok"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_send_failed, "l4frag_send_failed"),
 };
 
 const struct stat_category nftables_churn_category =
 	STAT_CATEGORY("nftables_churn",
-	              nftables_churn_runs,
+	              nftables_churn.runs,
 	              nftables_churn_fields);
 
 

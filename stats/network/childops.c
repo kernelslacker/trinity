@@ -138,42 +138,42 @@ static void dump_stats_render_bridge_fdb_stp(void)
 
 static void dump_stats_render_nftables_churn(void)
 {
-	if (shm->stats.nftables_churn_runs) {
-		stat_row("nftables_churn", "runs",             shm->stats.nftables_churn_runs);
-		stat_row("nftables_churn", "setup_failed",     shm->stats.nftables_churn_setup_failed);
-		stat_row("nftables_churn", "table_create_ok",  shm->stats.nftables_churn_table_create_ok);
-		stat_row("nftables_churn", "set_create_ok",    shm->stats.nftables_churn_set_create_ok);
-		stat_row("nftables_churn", "chain_create_ok",  shm->stats.nftables_churn_chain_create_ok);
-		stat_row("nftables_churn", "rule_create_ok",   shm->stats.nftables_churn_rule_create_ok);
-		stat_row("nftables_churn", "packet_sent_ok",   shm->stats.nftables_churn_packet_sent_ok);
-		stat_row("nftables_churn", "rule_insert_ok",   shm->stats.nftables_churn_rule_insert_ok);
-		stat_row("nftables_churn", "rule_del_ok",      shm->stats.nftables_churn_rule_del_ok);
-		stat_row("nftables_churn", "table_del_ok",     shm->stats.nftables_churn_table_del_ok);
-		stat_row("nftables_churn", "payload_expr_emit",shm->stats.nftables_churn_payload_expr_emit);
-		stat_row("nftables_churn", "objref_expr_emit", shm->stats.nftables_churn_objref_expr_emit);
-		stat_row("nftables_churn", "compat_validate_install_ok",     shm->stats.nft_compat_validate_install_ok);
-		stat_row("nftables_churn", "compat_validate_install_fail",   shm->stats.nft_compat_validate_install_fail);
-		stat_row("nftables_churn", "compat_validate_unsupported",    shm->stats.nft_compat_validate_unsupported);
-		stat_row("nftables_churn", "compat_validate_per_hook_pairs", shm->stats.nft_compat_validate_per_hook_pairs);
-		stat_row("nftables_churn", "dormant_abort_iters", shm->stats.nft_dormant_abort_iters);
-		stat_row("nftables_churn", "dormant_abort_eperm", shm->stats.nft_dormant_abort_eperm);
-		stat_row("nftables_churn", "dormant_abort_emsg",  shm->stats.nft_dormant_abort_emsg);
-		stat_row("nftables_churn", "dormant_abort_ok",    shm->stats.nft_dormant_abort_ok);
-		stat_row("nftables_churn", "xt_ct_iters",         shm->stats.xt_ct_iters);
-		stat_row("nftables_churn", "xt_ct_eperm",         shm->stats.xt_ct_eperm);
-		stat_row("nftables_churn", "xt_ct_unsupported",   shm->stats.xt_ct_unsupported);
-		stat_row("nftables_churn", "xt_ct_set_ok",        shm->stats.xt_ct_set_ok);
-		stat_row("nftables_churn", "xt_ct_get_ok",        shm->stats.xt_ct_get_ok);
-		stat_row("nftables_churn", "xt_ct_v2_seen",       shm->stats.xt_ct_v2_seen);
-		stat_row("nftables_churn", "fwd_loop_runs",             shm->stats.nft_fwd_loop_runs);
-		stat_row("nftables_churn", "fwd_loop_ns_setup_failed",  shm->stats.nft_fwd_loop_ns_setup_failed);
-		stat_row("nftables_churn", "fwd_loop_probe_sent_ok",    shm->stats.nft_fwd_loop_probe_sent_ok);
-		stat_row("nftables_churn", "fwd_loop_completed_ok",     shm->stats.nft_fwd_loop_completed_ok);
-		stat_row("nftables_churn", "l4frag_iters",              shm->stats.nft_l4frag_iters);
-		stat_row("nftables_churn", "l4frag_install_ok",         shm->stats.nft_l4frag_install_ok);
-		stat_row("nftables_churn", "l4frag_rule_ok",            shm->stats.nft_l4frag_rule_ok);
-		stat_row("nftables_churn", "l4frag_send_ok",            shm->stats.nft_l4frag_send_ok);
-		stat_row("nftables_churn", "l4frag_send_failed",        shm->stats.nft_l4frag_send_failed);
+	if (shm->stats.nftables_churn.runs) {
+		stat_row("nftables_churn", "runs",             shm->stats.nftables_churn.runs);
+		stat_row("nftables_churn", "setup_failed",     shm->stats.nftables_churn.setup_failed);
+		stat_row("nftables_churn", "table_create_ok",  shm->stats.nftables_churn.table_create_ok);
+		stat_row("nftables_churn", "set_create_ok",    shm->stats.nftables_churn.set_create_ok);
+		stat_row("nftables_churn", "chain_create_ok",  shm->stats.nftables_churn.chain_create_ok);
+		stat_row("nftables_churn", "rule_create_ok",   shm->stats.nftables_churn.rule_create_ok);
+		stat_row("nftables_churn", "packet_sent_ok",   shm->stats.nftables_churn.packet_sent_ok);
+		stat_row("nftables_churn", "rule_insert_ok",   shm->stats.nftables_churn.rule_insert_ok);
+		stat_row("nftables_churn", "rule_del_ok",      shm->stats.nftables_churn.rule_del_ok);
+		stat_row("nftables_churn", "table_del_ok",     shm->stats.nftables_churn.table_del_ok);
+		stat_row("nftables_churn", "payload_expr_emit",shm->stats.nftables_churn.payload_expr_emit);
+		stat_row("nftables_churn", "objref_expr_emit", shm->stats.nftables_churn.objref_expr_emit);
+		stat_row("nftables_churn", "compat_validate_install_ok",     shm->stats.nftables_churn.nft_compat_validate_install_ok);
+		stat_row("nftables_churn", "compat_validate_install_fail",   shm->stats.nftables_churn.nft_compat_validate_install_fail);
+		stat_row("nftables_churn", "compat_validate_unsupported",    shm->stats.nftables_churn.nft_compat_validate_unsupported);
+		stat_row("nftables_churn", "compat_validate_per_hook_pairs", shm->stats.nftables_churn.nft_compat_validate_per_hook_pairs);
+		stat_row("nftables_churn", "dormant_abort_iters", shm->stats.nftables_churn.nft_dormant_abort_iters);
+		stat_row("nftables_churn", "dormant_abort_eperm", shm->stats.nftables_churn.nft_dormant_abort_eperm);
+		stat_row("nftables_churn", "dormant_abort_emsg",  shm->stats.nftables_churn.nft_dormant_abort_emsg);
+		stat_row("nftables_churn", "dormant_abort_ok",    shm->stats.nftables_churn.nft_dormant_abort_ok);
+		stat_row("nftables_churn", "xt_ct_iters",         shm->stats.nftables_churn.xt_ct_iters);
+		stat_row("nftables_churn", "xt_ct_eperm",         shm->stats.nftables_churn.xt_ct_eperm);
+		stat_row("nftables_churn", "xt_ct_unsupported",   shm->stats.nftables_churn.xt_ct_unsupported);
+		stat_row("nftables_churn", "xt_ct_set_ok",        shm->stats.nftables_churn.xt_ct_set_ok);
+		stat_row("nftables_churn", "xt_ct_get_ok",        shm->stats.nftables_churn.xt_ct_get_ok);
+		stat_row("nftables_churn", "xt_ct_v2_seen",       shm->stats.nftables_churn.xt_ct_v2_seen);
+		stat_row("nftables_churn", "fwd_loop_runs",             shm->stats.nftables_churn.nft_fwd_loop_runs);
+		stat_row("nftables_churn", "fwd_loop_ns_setup_failed",  shm->stats.nftables_churn.nft_fwd_loop_ns_setup_failed);
+		stat_row("nftables_churn", "fwd_loop_probe_sent_ok",    shm->stats.nftables_churn.nft_fwd_loop_probe_sent_ok);
+		stat_row("nftables_churn", "fwd_loop_completed_ok",     shm->stats.nftables_churn.nft_fwd_loop_completed_ok);
+		stat_row("nftables_churn", "l4frag_iters",              shm->stats.nftables_churn.nft_l4frag_iters);
+		stat_row("nftables_churn", "l4frag_install_ok",         shm->stats.nftables_churn.nft_l4frag_install_ok);
+		stat_row("nftables_churn", "l4frag_rule_ok",            shm->stats.nftables_churn.nft_l4frag_rule_ok);
+		stat_row("nftables_churn", "l4frag_send_ok",            shm->stats.nftables_churn.nft_l4frag_send_ok);
+		stat_row("nftables_churn", "l4frag_send_failed",        shm->stats.nftables_churn.nft_l4frag_send_failed);
 	}
 }
 

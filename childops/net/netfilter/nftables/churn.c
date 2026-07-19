@@ -149,7 +149,7 @@ static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.nftables_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -175,7 +175,7 @@ static int nftables_churn_iter_open_rtnl(struct nftables_churn_iter_ctx *ctx)
 	};
 
 	if (nl_open(&ctx->rtnl, &rtnl_opts) < 0) {
-		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.nftables_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -312,31 +312,31 @@ static int nftables_churn_iter_build_table(struct nftables_churn_iter_ctx *ctx)
 		return -1;
 	}
 	ctx->table_created = true;
-	__atomic_add_fetch(&shm->stats.nftables_churn_table_create_ok,
+	__atomic_add_fetch(&shm->stats.nftables_churn.table_create_ok,
 			   1, __ATOMIC_RELAXED);
 
 	if (nft_build_newset(&ctx->nfnl, ctx->family, ctx->table_name,
 			 ctx->anon_set, ctx->set_id) == 0)
-		__atomic_add_fetch(&shm->stats.nftables_churn_set_create_ok,
+		__atomic_add_fetch(&shm->stats.nftables_churn.set_create_ok,
 				   1, __ATOMIC_RELAXED);
 
 	/* aux first so the base-chain rule's NFT_JUMP/NFT_GOTO has a
 	 * resolvable target on first commit. */
 	if (nft_build_newchain(&ctx->nfnl, ctx->family, ctx->table_name,
 			   ctx->aux_chain, false) == 0)
-		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
+		__atomic_add_fetch(&shm->stats.nftables_churn.chain_create_ok,
 				   1, __ATOMIC_RELAXED);
 
 	if (nft_build_newchain(&ctx->nfnl, ctx->family, ctx->table_name,
 			   ctx->base_chain, true) == 0)
-		__atomic_add_fetch(&shm->stats.nftables_churn_chain_create_ok,
+		__atomic_add_fetch(&shm->stats.nftables_churn.chain_create_ok,
 				   1, __ATOMIC_RELAXED);
 
 	nft_expr_plan_randomize(&plan);
 	if (nft_build_newrule(&ctx->nfnl, ctx->family, ctx->table_name,
 			  ctx->base_chain, ctx->aux_chain, ctx->verdict,
 			  0, &plan, ctx->anon_set, ctx->set_id) == 0) {
-		__atomic_add_fetch(&shm->stats.nftables_churn_rule_create_ok,
+		__atomic_add_fetch(&shm->stats.nftables_churn.rule_create_ok,
 				   1, __ATOMIC_RELAXED);
 		nft_expr_plan_record_stats(&plan);
 	}
@@ -398,7 +398,7 @@ static void nftables_churn_iter_drive_traffic(struct nftables_churn_iter_ctx *ct
 			   MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.nftables_churn_packet_sent_ok,
+			__atomic_add_fetch(&shm->stats.nftables_churn.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -422,14 +422,14 @@ static void nftables_churn_iter_mid_churn(struct nftables_churn_iter_ctx *ctx)
 	if (nft_build_newrule(&ctx->nfnl, ctx->family, ctx->table_name,
 			  ctx->base_chain, ctx->aux_chain, ctx->verdict,
 			  1, &plan, ctx->anon_set, ctx->set_id) == 0) {
-		__atomic_add_fetch(&shm->stats.nftables_churn_rule_insert_ok,
+		__atomic_add_fetch(&shm->stats.nftables_churn.rule_insert_ok,
 				   1, __ATOMIC_RELAXED);
 		nft_expr_plan_record_stats(&plan);
 	}
 
 	if (nft_build_delrule(&ctx->nfnl, ctx->family, ctx->table_name,
 			  ctx->base_chain) == 0)
-		__atomic_add_fetch(&shm->stats.nftables_churn_rule_del_ok,
+		__atomic_add_fetch(&shm->stats.nftables_churn.rule_del_ok,
 				   1, __ATOMIC_RELAXED);
 
 	(void)nft_build_delset(&ctx->nfnl, ctx->family, ctx->table_name,
@@ -459,7 +459,7 @@ static void nftables_churn_iter_teardown(struct nftables_churn_iter_ctx *ctx)
 		if (ctx->table_created) {
 			if (nft_build_deltable(&ctx->nfnl, ctx->family,
 					   ctx->table_name) == 0)
-				__atomic_add_fetch(&shm->stats.nftables_churn_table_del_ok,
+				__atomic_add_fetch(&shm->stats.nftables_churn.table_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		nfnl_close(&ctx->nfnl);
@@ -543,7 +543,7 @@ bool nftables_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.nftables_churn_runs, 1,
+	__atomic_add_fetch(&shm->stats.nftables_churn.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_nftables)
@@ -564,7 +564,7 @@ bool nftables_churn(struct childdata *child)
 		 * secondary unshare).  Skip this iteration without
 		 * latching -- the failure is not policy and may not
 		 * recur. */
-		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.nftables_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
