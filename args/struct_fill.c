@@ -553,6 +553,16 @@ void struct_fill_passes(unsigned char *buf, unsigned int size,
 				count = chosen_len[i];
 			else
 				count = 1 + rnd_modulo_u32(cap);
+			/*
+			 * Clamp count so count * elem_size cannot wrap
+			 * size_t: an overflow would size the allocation
+			 * from the wrapped result while the fill loop
+			 * below still iterated the unwrapped count, writing
+			 * past the end of sub and corrupting Trinity's own
+			 * heap -- masking or fabricating kernel bugs.
+			 */
+			if (count > SIZE_MAX / elem_size)
+				count = SIZE_MAX / elem_size;
 			nbytes = count * elem_size;
 			sub = zmalloc_tracked(nbytes);
 			deferred_free_enqueue_or_leak(sub);
