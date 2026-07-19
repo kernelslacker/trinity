@@ -175,12 +175,12 @@ static void cgroup_psi_race(const char *cgroup_path)
 		n_open++;
 	}
 	if (n_open == 0) {
-		__atomic_add_fetch(&shm->stats.cgroup_psi_race_failed,
+		__atomic_add_fetch(&shm->stats.cgroup_churn.psi_race_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
-	__atomic_add_fetch(&shm->stats.cgroup_psi_race_runs,
+	__atomic_add_fetch(&shm->stats.cgroup_churn.psi_race_runs,
 			   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < n_open; i++) {
@@ -208,7 +208,7 @@ static void cgroup_psi_race(const char *cgroup_path)
 	 * up if the in-race attempt above hit EBUSY. */
 	(void)rmdir(cgroup_path);
 
-	__atomic_add_fetch(&shm->stats.cgroup_psi_race_writes,
+	__atomic_add_fetch(&shm->stats.cgroup_churn.psi_race_writes,
 			   writes, __ATOMIC_RELAXED);
 }
 
@@ -218,7 +218,7 @@ bool cgroup_churn(struct childdata *child)
 	unsigned int i;
 	pid_t pid = mypid();
 
-	__atomic_add_fetch(&shm->stats.cgroup_churn_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.cgroup_churn.runs, 1, __ATOMIC_RELAXED);
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -256,7 +256,7 @@ bool cgroup_churn(struct childdata *child)
 			 "/sys/fs/cgroup/trinity-%d-%lu", (int)pid, seq);
 
 		if (mkdir(path, 0755) != 0) {
-			__atomic_add_fetch(&shm->stats.cgroup_failed,
+			__atomic_add_fetch(&shm->stats.cgroup_churn.failed,
 					   1, __ATOMIC_RELAXED);
 			/* EACCES: unprivileged.  EROFS: cgroup v1 root mounted
 			 * read-only at /sys/fs/cgroup.  ENOENT: no cgroupfs at
@@ -270,7 +270,7 @@ bool cgroup_churn(struct childdata *child)
 			continue;
 		}
 
-		__atomic_add_fetch(&shm->stats.cgroup_mkdirs,
+		__atomic_add_fetch(&shm->stats.cgroup_churn.mkdirs,
 				   1, __ATOMIC_RELAXED);
 
 		/* One in PSI_RACE_GATE cycles takes the PSI race sub-mode
@@ -283,10 +283,10 @@ bool cgroup_churn(struct childdata *child)
 		}
 
 		if (rmdir(path) == 0) {
-			__atomic_add_fetch(&shm->stats.cgroup_rmdirs,
+			__atomic_add_fetch(&shm->stats.cgroup_churn.rmdirs,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			__atomic_add_fetch(&shm->stats.cgroup_failed,
+			__atomic_add_fetch(&shm->stats.cgroup_churn.failed,
 					   1, __ATOMIC_RELAXED);
 			/* EBUSY here means a task entered the cgroup between
 			 * mkdir and rmdir (some other churner, or the kernel's
