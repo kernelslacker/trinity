@@ -41,13 +41,13 @@
 /*
  * Set by parse_args() before init_shm() runs, then propagated into
  * shm->picker_mode where every child reads it on the rotation path.
- * Not declared in a header — only params.c writes it and only
+ * Not declared in a header — only main/params/ writes it and only
  * init_shm() reads it.
  *
  * Default is PICKER_BANDIT_UCB1: the plateau-intervention layer in
  * select_next_strategy() is bandit-gated, and the mode-aware default
  * for explorer_children (see clamp_default_explorer_children() in
- * params.c) only allocates the strategy-independent explorer pool
+ * main/params/) only allocates the strategy-independent explorer pool
  * under bandit mode.  Defaulting to round-robin made both of those
  * adaptive paths silently inert -- a plateau under the round-robin
  * default would flip kcov_shm->plateau_active with nothing on the
