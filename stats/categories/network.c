@@ -37,24 +37,6 @@ const struct stat_category pkt_builder_category =
 
 
 
-static const struct stat_field netdev_netns_migrate_fields[] = {
-	STAT_FIELD(nnm, iters),
-	STAT_FIELD(nnm, eperm),
-	STAT_FIELD(nnm, unsupported),
-	STAT_FIELD(nnm, pin_sock_ok),
-	STAT_FIELD(nnm, link_create_ok),
-	STAT_FIELD(nnm, migrate_ok),
-	STAT_FIELD(nnm, migrate_rejected),
-	STAT_FIELD(nnm, up_ok),
-	STAT_FIELD(nnm, addr_ok),
-	STAT_FIELD(nnm, unsupported_observed),
-	STAT_FIELD(nnm, drive_unsupported_observed),
-};
-
-const struct stat_category netdev_netns_migrate_category =
-	STAT_CATEGORY("netdev_netns_migrate",
-		      nnm_iters,
-		      netdev_netns_migrate_fields);
 
 
 static const struct stat_field qrtr_bind_race_fields[] = {
