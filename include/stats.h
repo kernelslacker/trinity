@@ -45,6 +45,7 @@
 #include "stats/subsys/deep_path.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/errno_gradient.h"
+#include "stats/subsys/esp_crafted_rx.h"
 #include "stats/subsys/espintcp_coalesce.h"
 #include "stats/subsys/fd.h"
 #include "stats/subsys/fd_runtime_skipped.h"
@@ -1219,15 +1220,8 @@ struct stats_s {
 	unsigned long sctp_chunk_rx_listener_ok;		/* SCTP listener created + bound + listen() accepted */
 	unsigned long sctp_chunk_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW returned >0 */
 
-	/* esp_crafted_rx childop counters */
-	unsigned long esp_crafted_rx_runs;			/* total esp_crafted_rx invocations */
-	unsigned long esp_crafted_rx_setup_failed;		/* userns_run_in_ns / NETLINK_XFRM open failed (incl. kind-latched or !CONFIG_XFRM) */
-	unsigned long esp_crafted_rx_sa_install_ok;		/* XFRM_MSG_NEWSA installing an inbound null-cipher/null-auth ESP SA accepted */
-	unsigned long esp_crafted_rx_sa_install_failed;		/* XFRM_MSG_NEWSA rejected (any errno) */
-	unsigned long esp_crafted_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW (v4 or v6) returned >0 */
-	unsigned long esp_crafted_rx_sa_delete_ok;		/* XFRM_MSG_DELSA on teardown accepted */
-	unsigned long esp_crafted_rx_stacked_sa_install_ok;	/* one of the XFRM_MAX_DEPTH v6 stacked null-ESP SAs installed */
-	unsigned long esp_crafted_rx_stacked_sent_ok;		/* sendto on IPPROTO_RAW v6 for a max-depth stacked-ESP frame returned >0 */
+	/* esp_crafted_rx accounting.  See stats/subsys/esp_crafted_rx.h. */
+	struct esp_crafted_rx_stats esp_crafted_rx __attribute__((aligned(64)));
 
 	/* fou_gue_mcast_rx accounting.  See stats/subsys/fou_gue_mcast_rx.h. */
 	struct fou_gue_mcast_rx_stats fou_gue_mcast_rx __attribute__((aligned(64)));
