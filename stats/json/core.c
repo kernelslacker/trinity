@@ -177,26 +177,26 @@ const struct stat_category netlink_generator_category =
 	              netlink_generator_fields);
 
 static const struct stat_field tracefs_fuzzer_fields[] = {
-	STAT_FIELD_JSON(tracefs_kprobe_writes, open_fail,        "kprobe_open_fail"),
-	STAT_FIELD_JSON(tracefs_kprobe_writes, write_fail,       "kprobe_write_fail"),
-	STAT_FIELD_JSON(tracefs_kprobe_writes, write_ok,         "kprobe_write_ok"),
-	STAT_FIELD_JSON(tracefs_uprobe_writes, open_fail,        "uprobe_open_fail"),
-	STAT_FIELD_JSON(tracefs_uprobe_writes, write_fail,       "uprobe_write_fail"),
-	STAT_FIELD_JSON(tracefs_uprobe_writes, write_ok,         "uprobe_write_ok"),
-	STAT_FIELD_JSON(tracefs_filter_writes, open_fail,        "filter_open_fail"),
-	STAT_FIELD_JSON(tracefs_filter_writes, write_fail,       "filter_write_fail"),
-	STAT_FIELD_JSON(tracefs_filter_writes, write_ok,         "filter_write_ok"),
-	STAT_FIELD_JSON(tracefs_event_enable_writes, open_fail,  "event_enable_open_fail"),
-	STAT_FIELD_JSON(tracefs_event_enable_writes, write_fail, "event_enable_write_fail"),
-	STAT_FIELD_JSON(tracefs_event_enable_writes, write_ok,   "event_enable_write_ok"),
-	STAT_FIELD_JSON(tracefs_misc_writes, open_fail,          "misc_open_fail"),
-	STAT_FIELD_JSON(tracefs_misc_writes, write_fail,         "misc_write_fail"),
-	STAT_FIELD_JSON(tracefs_misc_writes, write_ok,           "misc_write_ok"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, kprobe_open_fail,        "kprobe_open_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, kprobe_write_fail,       "kprobe_write_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, kprobe_write_ok,         "kprobe_write_ok"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, uprobe_open_fail,        "uprobe_open_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, uprobe_write_fail,       "uprobe_write_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, uprobe_write_ok,         "uprobe_write_ok"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, filter_open_fail,        "filter_open_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, filter_write_fail,       "filter_write_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, filter_write_ok,         "filter_write_ok"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, event_enable_open_fail,  "event_enable_open_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, event_enable_write_fail, "event_enable_write_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, event_enable_write_ok,   "event_enable_write_ok"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, misc_open_fail,          "misc_open_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, misc_write_fail,         "misc_write_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, misc_write_ok,           "misc_write_ok"),
 };
 
 const struct stat_category tracefs_fuzzer_category =
 	STAT_CATEGORY("tracefs_fuzzer",
-	              tracefs_kprobe_writes_open_fail,
+	              tracefs_fuzzer.kprobe_open_fail,
 	              tracefs_fuzzer_fields);
 
 static const struct stat_field bpf_fd_provider_fields[] = {

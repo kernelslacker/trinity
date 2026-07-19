@@ -156,31 +156,31 @@ static void dump_stats_render_kvm(void)
 
 static void dump_stats_render_tracefs(void)
 {
-	if (shm->stats.tracefs_kprobe_writes_open_fail || shm->stats.tracefs_kprobe_writes_write_fail ||
-	    shm->stats.tracefs_kprobe_writes_write_ok ||
-	    shm->stats.tracefs_uprobe_writes_open_fail || shm->stats.tracefs_uprobe_writes_write_fail ||
-	    shm->stats.tracefs_uprobe_writes_write_ok ||
-	    shm->stats.tracefs_filter_writes_open_fail || shm->stats.tracefs_filter_writes_write_fail ||
-	    shm->stats.tracefs_filter_writes_write_ok ||
-	    shm->stats.tracefs_event_enable_writes_open_fail || shm->stats.tracefs_event_enable_writes_write_fail ||
-	    shm->stats.tracefs_event_enable_writes_write_ok ||
-	    shm->stats.tracefs_misc_writes_open_fail || shm->stats.tracefs_misc_writes_write_fail ||
-	    shm->stats.tracefs_misc_writes_write_ok) {
-		stat_row("tracefs_fuzzer", "kprobe_open_fail",         shm->stats.tracefs_kprobe_writes_open_fail);
-		stat_row("tracefs_fuzzer", "kprobe_write_fail",        shm->stats.tracefs_kprobe_writes_write_fail);
-		stat_row("tracefs_fuzzer", "kprobe_write_ok",          shm->stats.tracefs_kprobe_writes_write_ok);
-		stat_row("tracefs_fuzzer", "uprobe_open_fail",         shm->stats.tracefs_uprobe_writes_open_fail);
-		stat_row("tracefs_fuzzer", "uprobe_write_fail",        shm->stats.tracefs_uprobe_writes_write_fail);
-		stat_row("tracefs_fuzzer", "uprobe_write_ok",          shm->stats.tracefs_uprobe_writes_write_ok);
-		stat_row("tracefs_fuzzer", "filter_open_fail",         shm->stats.tracefs_filter_writes_open_fail);
-		stat_row("tracefs_fuzzer", "filter_write_fail",        shm->stats.tracefs_filter_writes_write_fail);
-		stat_row("tracefs_fuzzer", "filter_write_ok",          shm->stats.tracefs_filter_writes_write_ok);
-		stat_row("tracefs_fuzzer", "event_enable_open_fail",   shm->stats.tracefs_event_enable_writes_open_fail);
-		stat_row("tracefs_fuzzer", "event_enable_write_fail",  shm->stats.tracefs_event_enable_writes_write_fail);
-		stat_row("tracefs_fuzzer", "event_enable_write_ok",    shm->stats.tracefs_event_enable_writes_write_ok);
-		stat_row("tracefs_fuzzer", "misc_open_fail",           shm->stats.tracefs_misc_writes_open_fail);
-		stat_row("tracefs_fuzzer", "misc_write_fail",          shm->stats.tracefs_misc_writes_write_fail);
-		stat_row("tracefs_fuzzer", "misc_write_ok",            shm->stats.tracefs_misc_writes_write_ok);
+	if (shm->stats.tracefs_fuzzer.kprobe_open_fail || shm->stats.tracefs_fuzzer.kprobe_write_fail ||
+	    shm->stats.tracefs_fuzzer.kprobe_write_ok ||
+	    shm->stats.tracefs_fuzzer.uprobe_open_fail || shm->stats.tracefs_fuzzer.uprobe_write_fail ||
+	    shm->stats.tracefs_fuzzer.uprobe_write_ok ||
+	    shm->stats.tracefs_fuzzer.filter_open_fail || shm->stats.tracefs_fuzzer.filter_write_fail ||
+	    shm->stats.tracefs_fuzzer.filter_write_ok ||
+	    shm->stats.tracefs_fuzzer.event_enable_open_fail || shm->stats.tracefs_fuzzer.event_enable_write_fail ||
+	    shm->stats.tracefs_fuzzer.event_enable_write_ok ||
+	    shm->stats.tracefs_fuzzer.misc_open_fail || shm->stats.tracefs_fuzzer.misc_write_fail ||
+	    shm->stats.tracefs_fuzzer.misc_write_ok) {
+		stat_row("tracefs_fuzzer", "kprobe_open_fail",         shm->stats.tracefs_fuzzer.kprobe_open_fail);
+		stat_row("tracefs_fuzzer", "kprobe_write_fail",        shm->stats.tracefs_fuzzer.kprobe_write_fail);
+		stat_row("tracefs_fuzzer", "kprobe_write_ok",          shm->stats.tracefs_fuzzer.kprobe_write_ok);
+		stat_row("tracefs_fuzzer", "uprobe_open_fail",         shm->stats.tracefs_fuzzer.uprobe_open_fail);
+		stat_row("tracefs_fuzzer", "uprobe_write_fail",        shm->stats.tracefs_fuzzer.uprobe_write_fail);
+		stat_row("tracefs_fuzzer", "uprobe_write_ok",          shm->stats.tracefs_fuzzer.uprobe_write_ok);
+		stat_row("tracefs_fuzzer", "filter_open_fail",         shm->stats.tracefs_fuzzer.filter_open_fail);
+		stat_row("tracefs_fuzzer", "filter_write_fail",        shm->stats.tracefs_fuzzer.filter_write_fail);
+		stat_row("tracefs_fuzzer", "filter_write_ok",          shm->stats.tracefs_fuzzer.filter_write_ok);
+		stat_row("tracefs_fuzzer", "event_enable_open_fail",   shm->stats.tracefs_fuzzer.event_enable_open_fail);
+		stat_row("tracefs_fuzzer", "event_enable_write_fail",  shm->stats.tracefs_fuzzer.event_enable_write_fail);
+		stat_row("tracefs_fuzzer", "event_enable_write_ok",    shm->stats.tracefs_fuzzer.event_enable_write_ok);
+		stat_row("tracefs_fuzzer", "misc_open_fail",           shm->stats.tracefs_fuzzer.misc_open_fail);
+		stat_row("tracefs_fuzzer", "misc_write_fail",          shm->stats.tracefs_fuzzer.misc_write_fail);
+		stat_row("tracefs_fuzzer", "misc_write_ok",            shm->stats.tracefs_fuzzer.misc_write_ok);
 	}
 }
 

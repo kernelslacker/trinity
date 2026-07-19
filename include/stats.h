@@ -141,6 +141,7 @@
 #include "stats/subsys/tls_rotate.h"
 #include "stats/subsys/tls_ulp_churn.h"
 #include "stats/subsys/topo_pair.h"
+#include "stats/subsys/tracefs_fuzzer.h"
 #include "stats/subsys/tty_ldisc_churn.h"
 #include "stats/subsys/ublk_lifecycle.h"
 #include "stats/subsys/uffd.h"
@@ -719,29 +720,8 @@ struct stats_s {
 	/* perf_event_chains accounting.  See stats/subsys/perf_chains.h. */
 	struct perf_chains_stats perf_chains __attribute__((aligned(64)));
 
-	/* tracefs_fuzzer childop counters, per-ARM, split by outcome into
-	 * open-fail (tracefs not mounted, EACCES, ENOENT on a per-event
-	 * enable that was unloaded mid-run), write-fail (EINVAL on a
-	 * malformed probe spec, EBUSY, ...) and write-OK (the bytes
-	 * actually reached the kernel parser), so the dump shows real
-	 * reach into each tracefs surface.  write_fail + write_ok sum
-	 * to the per-ARM total; open_fail additionally distinguishes
-	 * open failures. */
-	unsigned long tracefs_kprobe_writes_open_fail;		/* writes to kprobe_events */
-	unsigned long tracefs_kprobe_writes_write_fail;
-	unsigned long tracefs_kprobe_writes_write_ok;
-	unsigned long tracefs_uprobe_writes_open_fail;		/* writes to uprobe_events */
-	unsigned long tracefs_uprobe_writes_write_fail;
-	unsigned long tracefs_uprobe_writes_write_ok;
-	unsigned long tracefs_filter_writes_open_fail;		/* writes to set_ftrace_filter/notrace/graph */
-	unsigned long tracefs_filter_writes_write_fail;
-	unsigned long tracefs_filter_writes_write_ok;
-	unsigned long tracefs_event_enable_writes_open_fail;	/* writes to events subsystem enable files */
-	unsigned long tracefs_event_enable_writes_write_fail;
-	unsigned long tracefs_event_enable_writes_write_ok;
-	unsigned long tracefs_misc_writes_open_fail;		/* trace_options, current_tracer, etc. */
-	unsigned long tracefs_misc_writes_write_fail;
-	unsigned long tracefs_misc_writes_write_ok;
+	/* tracefs_fuzzer accounting.  See stats/subsys/tracefs_fuzzer.h. */
+	struct tracefs_fuzzer_stats tracefs_fuzzer __attribute__((aligned(64)));
 
 	/* bpf_lifecycle accounting.  See stats/subsys/bpf_lifecycle.h. */
 	struct bpf_lifecycle_stats bpf_lifecycle __attribute__((aligned(64)));
