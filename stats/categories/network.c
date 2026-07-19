@@ -34,24 +34,6 @@ const struct stat_category tcp_md5_listener_race_category =
 	              tcp_md5_listener_race_runs,
 	              tcp_md5_listener_race_fields);
 
-static const struct stat_field vrf_fib_churn_fields[] = {
-	STAT_FIELD(vrf_fib_churn, runs),
-	STAT_FIELD(vrf_fib_churn, setup_failed),
-	STAT_FIELD(vrf_fib_churn, link_ok),
-	STAT_FIELD(vrf_fib_churn, addr_ok),
-	STAT_FIELD(vrf_fib_churn, up_ok),
-	STAT_FIELD(vrf_fib_churn, rule_added),
-	STAT_FIELD(vrf_fib_churn, bound),
-	STAT_FIELD(vrf_fib_churn, sendto_ok),
-	STAT_FIELD(vrf_fib_churn, rule2_added),
-	STAT_FIELD(vrf_fib_churn, rule_removed),
-	STAT_FIELD(vrf_fib_churn, link_removed),
-};
-
-const struct stat_category vrf_fib_churn_category =
-	STAT_CATEGORY("vrf_fib_churn",
-	              vrf_fib_churn_runs,
-	              vrf_fib_churn_fields);
 
 static const struct stat_field vxlan_encap_churn_fields[] = {
 	STAT_FIELD(vxlan_encap_churn, runs),

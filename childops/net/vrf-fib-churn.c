@@ -317,7 +317,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (nl_open(&ctx, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vrf_fib_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -331,7 +331,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 	if (rc != 0)
 		goto out;
 	link_added = true;
-	__atomic_add_fetch(&shm->stats.vrf_fib_churn_link_ok,
+	__atomic_add_fetch(&shm->stats.vrf_fib_churn.link_ok,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -349,16 +349,16 @@ static int vrf_fib_churn_in_ns(void *arg)
 	name_pool_record(NAME_KIND_NETDEV, vrf_name, strlen(vrf_name));
 
 	if (build_addaddr(&ctx, ifindex) == 0)
-		__atomic_add_fetch(&shm->stats.vrf_fib_churn_addr_ok,
+		__atomic_add_fetch(&shm->stats.vrf_fib_churn.addr_ok,
 				   1, __ATOMIC_RELAXED);
 
 	if (build_setlink_up(&ctx, ifindex) == 0)
-		__atomic_add_fetch(&shm->stats.vrf_fib_churn_up_ok,
+		__atomic_add_fetch(&shm->stats.vrf_fib_churn.up_ok,
 				   1, __ATOMIC_RELAXED);
 
 	if (build_rule(&ctx, RTM_NEWRULE, table, prio) == 0) {
 		rule_added = true;
-		__atomic_add_fetch(&shm->stats.vrf_fib_churn_rule_added,
+		__atomic_add_fetch(&shm->stats.vrf_fib_churn.rule_added,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -368,7 +368,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 
 	if (setsockopt(udp, SOL_SOCKET, SO_BINDTODEVICE,
 		       vrf_name, (socklen_t)strlen(vrf_name)) == 0)
-		__atomic_add_fetch(&shm->stats.vrf_fib_churn_bound,
+		__atomic_add_fetch(&shm->stats.vrf_fib_churn.bound,
 				   1, __ATOMIC_RELAXED);
 
 	/* Drive the bound-socket FIB lookup through l3mdev_fib_table.
@@ -391,7 +391,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 		n = sendto(udp, "x", 1, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (n >= 0)
-			__atomic_add_fetch(&shm->stats.vrf_fib_churn_sendto_ok,
+			__atomic_add_fetch(&shm->stats.vrf_fib_churn.sendto_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
@@ -401,7 +401,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 	if (prio > 0) {
 		if (build_rule(&ctx, RTM_NEWRULE, table, prio - 1) == 0) {
 			rule2_added = true;
-			__atomic_add_fetch(&shm->stats.vrf_fib_churn_rule2_added,
+			__atomic_add_fetch(&shm->stats.vrf_fib_churn.rule2_added,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -415,12 +415,12 @@ out:
 			(void)build_rule(&ctx, RTM_DELRULE, table, prio - 1);
 		if (rule_added) {
 			if (build_rule(&ctx, RTM_DELRULE, table, prio) == 0)
-				__atomic_add_fetch(&shm->stats.vrf_fib_churn_rule_removed,
+				__atomic_add_fetch(&shm->stats.vrf_fib_churn.rule_removed,
 						   1, __ATOMIC_RELAXED);
 		}
 		if (link_added && ifindex > 0) {
 			if (rtnl_dellink(&ctx, ifindex) == 0)
-				__atomic_add_fetch(&shm->stats.vrf_fib_churn_link_removed,
+				__atomic_add_fetch(&shm->stats.vrf_fib_churn.link_removed,
 						   1, __ATOMIC_RELAXED);
 		}
 		nl_close(&ctx);
@@ -442,7 +442,7 @@ bool vrf_fib_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.vrf_fib_churn_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.vrf_fib_churn.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
 		return true;
@@ -454,7 +454,7 @@ bool vrf_fib_churn(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vrf_fib_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -462,7 +462,7 @@ bool vrf_fib_churn(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * — the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,
+		__atomic_add_fetch(&shm->stats.vrf_fib_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
