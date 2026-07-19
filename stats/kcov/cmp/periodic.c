@@ -353,7 +353,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	 * kcov_shm (bumped once per child).  Read both here so the cohort
 	 * dump row can be delta-gated on the fire counter, matching the
 	 * prop_ring_argop template. */
-	cur_frontier_blend_samples          = __atomic_load_n(&shm->stats.frontier.blend_samples,         __ATOMIC_RELAXED);
+	cur_frontier_blend_samples          = __atomic_load_n(&shm->stats.frontier.plateau.blend_samples,         __ATOMIC_RELAXED);
 	cur_frontier_blend_arm_a_children   = __atomic_load_n(&kcov_shm->frontier_blend_arm_a_children,   __ATOMIC_RELAXED);
 	cur_frontier_blend_arm_b_children   = __atomic_load_n(&kcov_shm->frontier_blend_arm_b_children,   __ATOMIC_RELAXED);
 	cur_remote_adaptive_samples         = __atomic_load_n(&shm->stats.remote_adaptive_samples,        __ATOMIC_RELAXED);

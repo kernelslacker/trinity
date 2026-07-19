@@ -17,8 +17,16 @@
  * predicates are strictly observability-only (no live-path code reads
  * any of these counters).  The surrounding struct stats_s composes an
  * instance of struct frontier_stats as its "frontier" member.
+ *
+ * struct frontier_stats groups its fields into six named sub-structs by
+ * picker subdomain, preserving the shared-memory field order within each
+ * group: core (pick-regime scalars), per_syscall (MAX_NR_SYSCALL arrays),
+ * cooldown (LIVE-regime / silent-streak decay), saturation (satcool +
+ * floored-barren demote), discriminator (LIVE-cool discriminator +
+ * frseq group-antilock), plateau (errno-plateau decay + cold-weight
+ * blend A/B).
  */
-struct frontier_stats {
+struct frontier_core_stats {
 	/* Number of syscall picks completed under STRATEGY_COVERAGE_FRONTIER.
 	 * Bumped on the success path of set_syscall_nr_coverage_frontier --
 	 * surfaces how many calls the frontier-weighted picker actually
@@ -115,7 +123,9 @@ struct frontier_stats {
 	 * demoted by now?" -- the shadow signal needed before any change to
 	 * the live picker. */
 	unsigned long shadow_decay_candidates;
+};
 
+struct frontier_per_syscall_stats {
 	/* Per-syscall pick distribution under STRATEGY_COVERAGE_FRONTIER.
 	 * Bumped once per accepted pick inside set_syscall_nr_coverage_frontier
 	 * (same site as the frontier_strategy_picks bump), indexed by the
@@ -311,7 +321,9 @@ struct frontier_stats {
 	 * only, surfaced via the periodic stats dump's top-N attribution
 	 * for the floored-barren demote. */
 	unsigned long barren_would_skip_per_syscall[MAX_NR_SYSCALL];
+};
 
+struct frontier_cooldown_stats {
 	/* SHADOW-ONLY LIVE-regime cooldown accounting, paired with the
 	 * frontier_live_miss_streak_per_syscall[] counter above.  Mirrors
 	 * the SHADOW silent-streak decay scalars (frontier_decay_candidates
@@ -463,7 +475,9 @@ struct frontier_stats {
 	 * split (kcov_shm).  Mirrors the frontier_errno_decay_live_rejects
 	 * shape below so the two live-decay deltas read side by side. */
 	unsigned long silent_decay_live_rejects;
+};
 
+struct frontier_saturation_stats {
 	/* SHADOW-ONLY saturation-cooldown predicate accounting (gated by
 	 * frontier_saturation_cooldown_mode != OFF).  Sibling of the
 	 * frontier_decay_* / frontier_errno_decay_* shadow predicates above;
@@ -570,7 +584,9 @@ struct frontier_stats {
 	 * discipline the sibling frontier_satcool_* counters use. */
 	unsigned long barren_candidates;
 	unsigned long barren_would_skip;
+};
 
+struct frontier_discriminator_stats {
 	/* SHADOW-ONLY LIVE-regime cooldown discriminator accounting
 	 * (gated by --frontier-live-cooldown-mode != off).  Sibling of
 	 * the frontier_satcool_* counters above; this row ports the
@@ -759,7 +775,9 @@ struct frontier_stats {
 	unsigned long frseq_would_skip;
 	unsigned long frseq_would_skip_per_syscall[MAX_NR_SYSCALL];
 	unsigned long frseq_would_skip_per_group[NR_GROUPS];
+};
 
+struct frontier_plateau_stats {
 	/* SHADOW + per-child A/B accounting for the errno-plateau decay at the
 	 * coverage-frontier picker's silent-regime accept site.  Predicate is
 	 * frontier_errno_plateau_should_decay() in strategy.c -- see the
@@ -849,6 +867,15 @@ struct frontier_stats {
 	unsigned long blend_new_equal;
 	unsigned long blend_old_weight_sum;
 	unsigned long blend_new_weight_sum;
+};
+
+struct frontier_stats {
+	struct frontier_core_stats core;
+	struct frontier_per_syscall_stats per_syscall;
+	struct frontier_cooldown_stats cooldown;
+	struct frontier_saturation_stats saturation;
+	struct frontier_discriminator_stats discriminator;
+	struct frontier_plateau_stats plateau;
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_FRONTIER_H */
