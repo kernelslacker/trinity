@@ -14,15 +14,10 @@
  */
 
 #include <stddef.h>
-#include <sys/time.h>
-#include <sys/timex.h>
-#include <time.h>
-#include <signal.h>
 
 #include "config.h"
 
 #include "struct_catalog.h"
-#include "trinity.h"
 
 const struct syscall_struct_arg struct_catalog_registry_time[] = {
 	/* adjtimex(struct timex *) */
