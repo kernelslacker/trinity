@@ -13,16 +13,10 @@
 
 #include <stddef.h>
 #include <sys/prctl.h>
-#include <linux/filter.h>
 
 #include "config.h"
 
-#ifdef USE_BPF
-#include <linux/bpf.h>
-#endif
-
 #include "struct_catalog.h"
-#include "trinity.h"
 
 #include "kernel/seccomp.h"
 
