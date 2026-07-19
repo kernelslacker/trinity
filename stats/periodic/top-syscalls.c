@@ -388,19 +388,19 @@ void __cold top_syscalls_periodic_dump(void)
 				&shm->stats.edges_per_syscall_explorer[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_picks[i] = __atomic_load_n(
-				&shm->stats.frontier.picks_per_syscall[i],
+				&shm->stats.frontier.per_syscall.picks_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_live_picks[i] = __atomic_load_n(
-				&shm->stats.frontier.live_picks_per_syscall[i],
+				&shm->stats.frontier.per_syscall.live_picks_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_silent_picks[i] = __atomic_load_n(
-				&shm->stats.frontier.silent_picks_per_syscall[i],
+				&shm->stats.frontier.per_syscall.silent_picks_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_wins[i] = __atomic_load_n(
-				&shm->stats.frontier.productive_wins_per_syscall[i],
+				&shm->stats.frontier.per_syscall.productive_wins_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_live_misses[i] = __atomic_load_n(
-				&shm->stats.frontier.live_misses_per_syscall[i],
+				&shm->stats.frontier.per_syscall.live_misses_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_rq_saves[i] = __atomic_load_n(
 				&shm->stats.rq_sourced_saves_per_syscall[i],
@@ -430,22 +430,22 @@ void __cold top_syscalls_periodic_dump(void)
 			&shm->stats.edges_per_syscall_explorer[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_picks[i] = __atomic_load_n(
-			&shm->stats.frontier.picks_per_syscall[i],
+			&shm->stats.frontier.per_syscall.picks_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_live_picks[i] = __atomic_load_n(
-			&shm->stats.frontier.live_picks_per_syscall[i],
+			&shm->stats.frontier.per_syscall.live_picks_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_silent_picks[i] = __atomic_load_n(
-			&shm->stats.frontier.silent_picks_per_syscall[i],
+			&shm->stats.frontier.per_syscall.silent_picks_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_wins[i] = __atomic_load_n(
-			&shm->stats.frontier.productive_wins_per_syscall[i],
+			&shm->stats.frontier.per_syscall.productive_wins_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_live_misses[i] = __atomic_load_n(
-			&shm->stats.frontier.live_misses_per_syscall[i],
+			&shm->stats.frontier.per_syscall.live_misses_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_last_productive[i] = __atomic_load_n(
-			&shm->stats.frontier.last_productive_window_per_syscall[i],
+			&shm->stats.frontier.per_syscall.last_productive_window_per_syscall[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_recent_weight[i] = __atomic_load_n(
 			&shm->frontier_recent_count_cached[i],

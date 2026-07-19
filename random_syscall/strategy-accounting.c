@@ -639,10 +639,10 @@ void account_per_syscall_new_edges(struct childdata *child,
 	    rec->nr < MAX_NR_SYSCALL) {
 		if (new_edge_count > 0) {
 			__atomic_fetch_add(
-				&shm->stats.frontier.productive_wins_per_syscall[rec->nr],
+				&shm->stats.frontier.per_syscall.productive_wins_per_syscall[rec->nr],
 				1UL, __ATOMIC_RELAXED);
 			__atomic_store_n(
-				&shm->stats.frontier.last_productive_window_per_syscall[rec->nr],
+				&shm->stats.frontier.per_syscall.last_productive_window_per_syscall[rec->nr],
 				__atomic_load_n(&shm->bandit_window_count,
 						__ATOMIC_RELAXED),
 				__ATOMIC_RELAXED);
@@ -651,7 +651,7 @@ void account_per_syscall_new_edges(struct childdata *child,
 			unsigned long streak;
 
 			__atomic_fetch_add(
-				&shm->stats.frontier.live_misses_per_syscall[rec->nr],
+				&shm->stats.frontier.per_syscall.live_misses_per_syscall[rec->nr],
 				1UL, __ATOMIC_RELAXED);
 
 			/* SHADOW-ONLY per-syscall LIVE-regime miss-streak
@@ -687,14 +687,14 @@ void account_per_syscall_new_edges(struct childdata *child,
 			 * MAX_NR_SYSCALL bound the surrounding per-syscall
 			 * arrays use. */
 			streak = __atomic_add_fetch(
-				&shm->stats.frontier.live_miss_streak_per_syscall[rec->nr],
+				&shm->stats.frontier.per_syscall.live_miss_streak_per_syscall[rec->nr],
 				1UL, __ATOMIC_RELAXED);
 			if (streak >= FRONTIER_LIVE_MISS_COOLDOWN) {
 				__atomic_fetch_add(
-					&shm->stats.frontier.live_would_skip,
+					&shm->stats.frontier.cooldown.live_would_skip,
 					1UL, __ATOMIC_RELAXED);
 				__atomic_fetch_add(
-					&shm->stats.frontier.live_would_skip_per_syscall[rec->nr],
+					&shm->stats.frontier.cooldown.live_would_skip_per_syscall[rec->nr],
 					1UL, __ATOMIC_RELAXED);
 
 				/* SHADOW-ONLY LIVE-regime cooldown discriminator
@@ -720,7 +720,7 @@ void account_per_syscall_new_edges(struct childdata *child,
 			}
 			if (streak == FRONTIER_LIVE_MISS_COOLDOWN)
 				__atomic_fetch_add(
-					&shm->stats.frontier.live_cooldown_candidates,
+					&shm->stats.frontier.cooldown.live_cooldown_candidates,
 					1UL, __ATOMIC_RELAXED);
 		}
 	}

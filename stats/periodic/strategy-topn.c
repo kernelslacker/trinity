@@ -89,7 +89,7 @@ void dump_satcool_would_skip_per_syscall_top(void)
 
 	for (i = 0; i < nr_to_scan; i++) {
 		unsigned long c =
-			shm->stats.frontier.satcool_would_skip_per_syscall[i];
+			shm->stats.frontier.per_syscall.satcool_would_skip_per_syscall[i];
 
 		if (c == 0)
 			continue;
@@ -167,7 +167,7 @@ void dump_barren_would_skip_per_syscall_top(void)
 
 	for (i = 0; i < nr_to_scan; i++) {
 		unsigned long c =
-			shm->stats.frontier.barren_would_skip_per_syscall[i];
+			shm->stats.frontier.per_syscall.barren_would_skip_per_syscall[i];
 
 		if (c == 0)
 			continue;
@@ -244,7 +244,7 @@ void dump_live_cooldown_would_skip_per_syscall_top(void)
 
 	for (i = 0; i < nr_to_scan; i++) {
 		unsigned long c =
-			shm->stats.frontier.live_would_skip_per_syscall[i];
+			shm->stats.frontier.cooldown.live_would_skip_per_syscall[i];
 
 		if (c == 0)
 			continue;
