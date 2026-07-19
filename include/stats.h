@@ -82,6 +82,7 @@
 #include "stats/subsys/map_shared_stress.h"
 #include "stats/subsys/maps.h"
 #include "stats/subsys/mount_churn.h"
+#include "stats/subsys/mpls_label_stack_rx.h"
 #include "stats/subsys/mpls_route_churn.h"
 #include "stats/subsys/msg_zerocopy_churn.h"
 #include "stats/subsys/netlink_monitor_race.h"
@@ -1237,13 +1238,8 @@ struct stats_s {
 	/* bareudp_rx accounting.  See stats/subsys/bareudp_rx.h. */
 	struct bareudp_rx_stats bareudp_rx __attribute__((aligned(64)));
 
-	/* mpls_label_stack_rx childop counters */
-	unsigned long mpls_label_stack_rx_runs;			/* total mpls_label_stack_rx invocations */
-	unsigned long mpls_label_stack_rx_setup_failed;		/* userns_run_in_ns / rtnl_open / lo lookup failed (incl. kind-latched or !CONFIG_MPLS_ROUTING) */
-	unsigned long mpls_label_stack_rx_config_ok;		/* net.mpls.platform_labels + conf.lo.input writes accepted */
-	unsigned long mpls_label_stack_rx_config_failed;	/* sysctl open/write rejected (any errno) */
-	unsigned long mpls_label_stack_rx_link_up_ok;		/* RTM_SETLINK IFF_UP on lo accepted */
-	unsigned long mpls_label_stack_rx_packet_sent_ok;	/* sendto on AF_PACKET with ETH_P_MPLS_UC frame returned >0 */
+	/* mpls_label_stack_rx accounting.  See stats/subsys/mpls_label_stack_rx.h. */
+	struct mpls_label_stack_rx_stats mpls_label_stack_rx __attribute__((aligned(64)));
 
 	/* bridge_ip6_refrag_fraggap childop counters */
 	unsigned long bridge_ip6_refrag_fraggap_runs;		/* total bridge_ip6_refrag_fraggap invocations */

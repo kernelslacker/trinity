@@ -396,19 +396,6 @@ const struct stat_category esp_crafted_rx_category =
 
 
 
-static const struct stat_field mpls_label_stack_rx_fields[] = {
-	STAT_FIELD(mpls_label_stack_rx, runs),
-	STAT_FIELD(mpls_label_stack_rx, setup_failed),
-	STAT_FIELD(mpls_label_stack_rx, config_ok),
-	STAT_FIELD(mpls_label_stack_rx, config_failed),
-	STAT_FIELD(mpls_label_stack_rx, link_up_ok),
-	STAT_FIELD(mpls_label_stack_rx, packet_sent_ok),
-};
-
-const struct stat_category mpls_label_stack_rx_category =
-	STAT_CATEGORY("mpls_label_stack_rx",
-	              mpls_label_stack_rx_runs,
-	              mpls_label_stack_rx_fields);
 
 static const struct stat_field rds_zcopy_crafted_send_fields[] = {
 	STAT_FIELD(rds_zcopy_crafted_send, runs),

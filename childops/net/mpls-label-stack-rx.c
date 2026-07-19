@@ -428,7 +428,7 @@ static int mpls_label_stack_rx_iter_open_ctx(struct mpls_label_stack_rx_iter_ctx
 	};
 
 	if (nl_open(&ctx->nl, &opts) < 0) {
-		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -454,13 +454,13 @@ static int mpls_label_stack_rx_iter_build_link(struct mpls_label_stack_rx_iter_c
 
 	ctx->lo_ifindex = (int)if_nametoindex("lo");
 	if (ctx->lo_ifindex <= 0) {
-		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
 	if (mlr_enable_mpls_on_lo() < 0) {
-		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_config_failed,
+		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.config_failed,
 				   1, __ATOMIC_RELAXED);
 		if (kind_unsupported() && valid_op)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
@@ -469,11 +469,11 @@ static int mpls_label_stack_rx_iter_build_link(struct mpls_label_stack_rx_iter_c
 		return -1;
 	}
 	ctx->mpls_enabled = true;
-	__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_config_ok,
+	__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.config_ok,
 			   1, __ATOMIC_RELAXED);
 
 	if (rtnl_setlink_up(&ctx->nl, ctx->lo_ifindex) == 0)
-		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_link_up_ok,
+		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.link_up_ok,
 				   1, __ATOMIC_RELAXED);
 
 	return 0;
@@ -533,7 +533,7 @@ static void mpls_label_stack_rx_iter_send_burst(struct mpls_label_stack_rx_iter_
 		n = sendto(ctx->raw, pkt, len, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_packet_sent_ok,
+			__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -604,14 +604,14 @@ bool mpls_label_stack_rx(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_runs, 1,
+	__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_mpls_label_stack_rx)
 		return true;
 
 	if (kind_unsupported()) {
-		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -629,12 +629,12 @@ bool mpls_label_stack_rx(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
