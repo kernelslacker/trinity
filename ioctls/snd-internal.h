@@ -11,3 +11,15 @@ struct syscallrecord;
 
 void sanitise_snd_ctl(struct syscallrecord *rec);
 int  dispatch_snd_ctl(struct syscallrecord *rec);
+
+void sanitise_snd_pcm(struct syscallrecord *rec);
+int  dispatch_snd_pcm(struct syscallrecord *rec);
+
+/*
+ * pcm_rates[] is shared between the PCM class (snd-pcm.c) and the OSS
+ * DSP / compressed-offload paths still in snd.c.  Definition lives in
+ * snd.c; pcm_rates_count carries the element count so callers do not
+ * need the array's storage size visible.
+ */
+extern const unsigned int pcm_rates[];
+extern const unsigned int pcm_rates_count;
