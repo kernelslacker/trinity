@@ -33,6 +33,7 @@
 #include "stats/subsys/bridge_ct.h"
 #include "stats/subsys/bridge_ip6frag.h"
 #include "stats/subsys/bridge_vlan_churn.h"
+#include "stats/subsys/cgroup_churn.h"
 #include "stats/subsys/childop.h"
 #include "stats/subsys/close_racer.h"
 #include "stats/subsys/cold_overflow.h"
@@ -761,14 +762,8 @@ struct stats_s {
 	/* epoll_volatility childop counters.  See stats/subsys/epoll_volatility.h. */
 	struct epoll_volatility_stats epoll_volatility __attribute__((aligned(64)));
 
-	/* cgroup_churn childop counters */
-	unsigned long cgroup_churn_runs;	/* total cgroup_churn invocations */
-	unsigned long cgroup_mkdirs;		/* successful mkdir() under /sys/fs/cgroup/ */
-	unsigned long cgroup_rmdirs;		/* successful rmdir() under /sys/fs/cgroup/ */
-	unsigned long cgroup_failed;		/* mkdir or rmdir returned -1 */
-	unsigned long cgroup_psi_race_runs;	/* PSI pressure_write race sub-mode entries */
-	unsigned long cgroup_psi_race_writes;	/* successful pressure-file write() inside race */
-	unsigned long cgroup_psi_race_failed;	/* pressure-file open() failed for the whole sub-mode */
+	/* cgroup_churn accounting.  See stats/subsys/cgroup_churn.h. */
+	struct cgroup_churn_stats cgroup_churn __attribute__((aligned(64)));
 
 	/* mount_churn childop counters.  See stats/subsys/mount_churn.h. */
 	struct mount_churn_stats mount_churn __attribute__((aligned(64)));
