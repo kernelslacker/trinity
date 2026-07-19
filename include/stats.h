@@ -108,6 +108,7 @@
 #include "stats/subsys/rxrpc_key_install.h"
 #include "stats/subsys/sched_cycler.h"
 #include "stats/subsys/sctp_assoc_churn.h"
+#include "stats/subsys/sctp_chunk_rx.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
 #include "stats/subsys/socket_family_chain.h"
@@ -1209,11 +1210,8 @@ struct stats_s {
 	/* sctp_assoc_churn accounting.  See stats/subsys/sctp_assoc_churn.h. */
 	struct sctp_assoc_churn_stats sctp_assoc_churn __attribute__((aligned(64)));
 
-	/* sctp_chunk_rx childop counters */
-	unsigned long sctp_chunk_rx_runs;			/* total sctp_chunk_rx invocations */
-	unsigned long sctp_chunk_rx_setup_failed;		/* userns_run_in_ns / listener / raw setup failed (incl. !CONFIG_IP_SCTP) */
-	unsigned long sctp_chunk_rx_listener_ok;		/* SCTP listener created + bound + listen() accepted */
-	unsigned long sctp_chunk_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW returned >0 */
+	/* sctp_chunk_rx accounting.  See stats/subsys/sctp_chunk_rx.h. */
+	struct sctp_chunk_rx_stats sctp_chunk_rx __attribute__((aligned(64)));
 
 	/* esp_crafted_rx accounting.  See stats/subsys/esp_crafted_rx.h. */
 	struct esp_crafted_rx_stats esp_crafted_rx __attribute__((aligned(64)));
