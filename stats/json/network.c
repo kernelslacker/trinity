@@ -393,19 +393,6 @@ const struct stat_category esp_crafted_rx_category =
 	              esp_crafted_rx_runs,
 	              esp_crafted_rx_fields);
 
-static const struct stat_field fou_gue_mcast_rx_fields[] = {
-	STAT_FIELD(fou_gue_mcast_rx, runs),
-	STAT_FIELD(fou_gue_mcast_rx, setup_failed),
-	STAT_FIELD(fou_gue_mcast_rx, port_install_ok),
-	STAT_FIELD(fou_gue_mcast_rx, port_install_failed),
-	STAT_FIELD(fou_gue_mcast_rx, packet_sent_ok),
-	STAT_FIELD(fou_gue_mcast_rx, port_delete_ok),
-};
-
-const struct stat_category fou_gue_mcast_rx_category =
-	STAT_CATEGORY("fou_gue_mcast_rx",
-	              fou_gue_mcast_rx_runs,
-	              fou_gue_mcast_rx_fields);
 
 
 
