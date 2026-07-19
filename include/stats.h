@@ -107,6 +107,7 @@
 #include "stats/subsys/rtnl_vf_broadcast.h"
 #include "stats/subsys/rxrpc_key_install.h"
 #include "stats/subsys/sched_cycler.h"
+#include "stats/subsys/sctp_assoc_churn.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
 #include "stats/subsys/socket_family_chain.h"
@@ -1205,19 +1206,8 @@ struct stats_s {
 	/* bpf_cgroup_attach accounting.  See stats/subsys/bpf_cgroup_attach.h. */
 	struct bpf_cgroup_attach_stats bpf_cgroup_attach __attribute__((aligned(64)));
 
-	/* sctp_assoc_churn childop counters */
-	unsigned long sctp_assoc_churn_runs;			/* total sctp_assoc_churn invocations */
-	unsigned long sctp_assoc_churn_setup_failed;		/* socket/bind/listen setup failed (incl. !CONFIG_IP_SCTP) */
-	unsigned long sctp_assoc_churn_bindx_added;		/* SCTP_SOCKOPT_BINDX_ADD accepted (incl. ASCONF emit) */
-	unsigned long sctp_assoc_churn_bindx_removed;		/* SCTP_SOCKOPT_BINDX_REM accepted (incl. ASCONF emit) */
-	unsigned long sctp_assoc_churn_bindx_rejected;		/* bindx ADD/REM rejected (EOPNOTSUPP/EADDRINUSE/EINVAL) */
-	unsigned long sctp_assoc_churn_connect_failed;		/* SCTP_SOCKOPT_CONNECTX failed (non-EINPROGRESS) */
-	unsigned long sctp_assoc_churn_connected;		/* connectx accepted/in-progress */
-	unsigned long sctp_assoc_churn_accepted;		/* server-side accept() returned an assoc fd */
-	unsigned long sctp_assoc_churn_packets_sent;		/* send() through ASCONF / data path returned >0 */
-	unsigned long sctp_assoc_churn_peeled_off;		/* SCTP_SOCKOPT_PEELOFF accepted (assoc detach race) */
-	unsigned long sctp_assoc_churn_peeloff_rejected;	/* peeloff rejected (EINVAL/ENOENT) */
-	unsigned long sctp_assoc_churn_cycles;			/* full cycles reaching teardown */
+	/* sctp_assoc_churn accounting.  See stats/subsys/sctp_assoc_churn.h. */
+	struct sctp_assoc_churn_stats sctp_assoc_churn __attribute__((aligned(64)));
 
 	/* sctp_chunk_rx childop counters */
 	unsigned long sctp_chunk_rx_runs;			/* total sctp_chunk_rx invocations */
