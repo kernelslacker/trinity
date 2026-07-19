@@ -66,3 +66,5 @@ void kcov_cmp_render_hyp_boundary_scorecard_block(long elapsed);
 void kcov_cmp_render_hyp_per_hypothesis_aggregates_block(long elapsed);
 void kcov_cmp_render_hyp_score_bucket_block(long elapsed);
 void kcov_cmp_render_hyp_probe_class_hist_block(long elapsed);
+
+void kcov_cmp_render_childop_cmp_consume_shadow_block(long elapsed);
