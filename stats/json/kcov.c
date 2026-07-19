@@ -11,14 +11,11 @@
 #include <string.h>
 #include "cmp_hints.h"
 #include "kcov.h"
-#include "shm.h"
-#include "stats.h"
 #include "stats-internal.h"
 #include "stats/json/internal.h"
 #include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
-#include "trinity.h"
 
 static void json_emit_kcov_counters(void)
 {
