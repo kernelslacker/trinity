@@ -808,7 +808,7 @@ static int esp_crafted_rx_iter_open_ctx(struct esp_crafted_rx_iter_ctx *ctx)
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.esp_crafted_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.esp_crafted_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
@@ -835,7 +835,7 @@ static int esp_crafted_rx_iter_install_sa(struct esp_crafted_rx_iter_ctx *ctx)
 
 	rc = install_null_esp_sa(&ctx->nl, ctx->spi, ctx->reqid, ctx->v6);
 	if (rc != 0) {
-		__atomic_add_fetch(&shm->stats.esp_crafted_rx_sa_install_failed,
+		__atomic_add_fetch(&shm->stats.esp_crafted_rx.sa_install_failed,
 				   1, __ATOMIC_RELAXED);
 		if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
 		    rc == -EAFNOSUPPORT || rc == -ENOPROTOOPT ||
@@ -849,7 +849,7 @@ static int esp_crafted_rx_iter_install_sa(struct esp_crafted_rx_iter_ctx *ctx)
 		return -1;
 	}
 	ctx->sa_added = true;
-	__atomic_add_fetch(&shm->stats.esp_crafted_rx_sa_install_ok,
+	__atomic_add_fetch(&shm->stats.esp_crafted_rx.sa_install_ok,
 			   1, __ATOMIC_RELAXED);
 	return 0;
 }
@@ -934,7 +934,7 @@ static void esp_crafted_rx_send_frag_pair(struct esp_crafted_rx_iter_ctx *ctx,
 
 			if (sendto(fd, frame, frame_len, MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst)) > 0)
-				__atomic_add_fetch(&shm->stats.esp_crafted_rx_packet_sent_ok,
+				__atomic_add_fetch(&shm->stats.esp_crafted_rx.packet_sent_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 	} else {
@@ -952,7 +952,7 @@ static void esp_crafted_rx_send_frag_pair(struct esp_crafted_rx_iter_ctx *ctx,
 
 			if (sendto(fd, frame, frame_len, MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst)) > 0)
-				__atomic_add_fetch(&shm->stats.esp_crafted_rx_packet_sent_ok,
+				__atomic_add_fetch(&shm->stats.esp_crafted_rx.packet_sent_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -1072,7 +1072,7 @@ static void install_stacked_null_esp_sas(struct esp_crafted_rx_iter_ctx *ctx)
 		if (install_null_esp_sa(&ctx->nl, spi, reqid, true) != 0)
 			return;
 		ctx->stack_spi[ctx->stack_depth++] = spi;
-		__atomic_add_fetch(&shm->stats.esp_crafted_rx_stacked_sa_install_ok,
+		__atomic_add_fetch(&shm->stats.esp_crafted_rx.stacked_sa_install_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 }
@@ -1105,7 +1105,7 @@ static void esp_crafted_rx_send_stacked_v6(struct esp_crafted_rx_iter_ctx *ctx,
 
 	if (sendto(fd, pkt, len, MSG_DONTWAIT,
 		   (struct sockaddr *)&dst, sizeof(dst)) > 0)
-		__atomic_add_fetch(&shm->stats.esp_crafted_rx_stacked_sent_ok,
+		__atomic_add_fetch(&shm->stats.esp_crafted_rx.stacked_sent_ok,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -1182,7 +1182,7 @@ static void esp_crafted_rx_iter_send_burst(struct esp_crafted_rx_iter_ctx *ctx)
 				   (struct sockaddr *)&dst, sizeof(dst));
 		}
 		if (n > 0)
-			__atomic_add_fetch(&shm->stats.esp_crafted_rx_packet_sent_ok,
+			__atomic_add_fetch(&shm->stats.esp_crafted_rx.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 }
@@ -1203,12 +1203,12 @@ static void esp_crafted_rx_iter_teardown(struct esp_crafted_rx_iter_ctx *ctx)
 		close(ctx->raw_v6);
 	if (ctx->sa_added) {
 		if (delete_esp_sa(&ctx->nl, ctx->spi, ctx->v6) == 0)
-			__atomic_add_fetch(&shm->stats.esp_crafted_rx_sa_delete_ok,
+			__atomic_add_fetch(&shm->stats.esp_crafted_rx.sa_delete_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 	for (i = 0; i < ctx->stack_depth; i++) {
 		if (delete_esp_sa(&ctx->nl, ctx->stack_spi[i], true) == 0)
-			__atomic_add_fetch(&shm->stats.esp_crafted_rx_sa_delete_ok,
+			__atomic_add_fetch(&shm->stats.esp_crafted_rx.sa_delete_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 	nl_close(&ctx->nl);
@@ -1273,14 +1273,14 @@ bool esp_crafted_rx(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.esp_crafted_rx_runs, 1,
+	__atomic_add_fetch(&shm->stats.esp_crafted_rx.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_esp_crafted_rx)
 		return true;
 
 	if (kind_unsupported()) {
-		__atomic_add_fetch(&shm->stats.esp_crafted_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.esp_crafted_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -1301,12 +1301,12 @@ bool esp_crafted_rx(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.esp_crafted_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.esp_crafted_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
-		__atomic_add_fetch(&shm->stats.esp_crafted_rx_setup_failed,
+		__atomic_add_fetch(&shm->stats.esp_crafted_rx.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
