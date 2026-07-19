@@ -56,6 +56,7 @@
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
 #include "stats/subsys/genetlink_fuzzer.h"
+#include "stats/subsys/geneve_rx.h"
 #include "stats/subsys/handshake_req_abort.h"
 #include "stats/subsys/hfs_mount_fuzz.h"
 #include "stats/subsys/igmp_mld_source_churn.h"
@@ -1233,14 +1234,8 @@ struct stats_s {
 	unsigned long fou_gue_mcast_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW (v4 or v6) with UDP-encap frame returned >0 */
 	unsigned long fou_gue_mcast_rx_port_delete_ok;		/* FOU_CMD_DEL on teardown accepted */
 
-	/* geneve_rx childop counters */
-	unsigned long geneve_rx_runs;			/* total geneve_rx invocations */
-	unsigned long geneve_rx_setup_failed;		/* userns_run_in_ns / rtnl_open failed (incl. kind-latched or !CONFIG_GENEVE) */
-	unsigned long geneve_rx_link_create_ok;		/* RTM_NEWLINK kind="geneve" accepted */
-	unsigned long geneve_rx_link_create_failed;	/* RTM_NEWLINK rejected (any errno) */
-	unsigned long geneve_rx_link_up_ok;		/* RTM_SETLINK IFF_UP on the geneve dev accepted */
-	unsigned long geneve_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW with UDP/GENEVE frame returned >0 */
-	unsigned long geneve_rx_link_del_ok;		/* RTM_DELLINK on teardown accepted */
+	/* geneve_rx accounting.  See stats/subsys/geneve_rx.h. */
+	struct geneve_rx_stats geneve_rx __attribute__((aligned(64)));
 
 	/* bareudp_rx childop counters */
 	unsigned long bareudp_rx_runs;			/* total bareudp_rx invocations */
