@@ -116,6 +116,7 @@
 #include "stats/subsys/userns_fuzzer.h"
 #include "stats/subsys/vdso_race.h"
 #include "stats/subsys/vlan_filter_churn.h"
+#include "stats/subsys/vrf_fib_churn.h"
 #include "stats/subsys/wgdf.h"
 #include "stats/subsys/xattr_thrash.h"
 /*
@@ -966,18 +967,8 @@ struct stats_s {
 	/* ipv6_pmtu_race accounting.  See stats/subsys/ipv6_pmtu_race.h. */
 	struct ipv6_pmtu_race_stats ipv6_pmtu_race __attribute__((aligned(64)));
 
-	/* vrf_fib_churn childop counters */
-	unsigned long vrf_fib_churn_runs;		/* total vrf_fib_churn invocations */
-	unsigned long vrf_fib_churn_setup_failed;	/* unshare(CLONE_NEWNET) or rtnl socket failed */
-	unsigned long vrf_fib_churn_link_ok;		/* RTM_NEWLINK kind=vrf accepted */
-	unsigned long vrf_fib_churn_addr_ok;		/* RTM_NEWADDR on the vrf dev accepted */
-	unsigned long vrf_fib_churn_up_ok;		/* RTM_NEWLINK setlink IFF_UP accepted */
-	unsigned long vrf_fib_churn_rule_added;		/* RTM_NEWRULE FRA_TABLE accepted */
-	unsigned long vrf_fib_churn_bound;		/* SO_BINDTODEVICE on the vrf accepted */
-	unsigned long vrf_fib_churn_sendto_ok;		/* sendto() through bound vrf returned >=0 */
-	unsigned long vrf_fib_churn_rule2_added;	/* mid-traffic higher-prio RTM_NEWRULE accepted */
-	unsigned long vrf_fib_churn_rule_removed;	/* RTM_DELRULE for the bound rule accepted */
-	unsigned long vrf_fib_churn_link_removed;	/* RTM_DELLINK vrf accepted (full cycle reached teardown) */
+	/* vrf_fib_churn accounting.  See stats/subsys/vrf_fib_churn.h. */
+	struct vrf_fib_churn_stats vrf_fib_churn __attribute__((aligned(64)));
 
 	/* ip6_udp_cork_splice accounting.  See stats/subsys/ip6_udp_cork_splice.h. */
 	struct ip6_udp_cork_splice_stats ip6_udp_cork_splice __attribute__((aligned(64)));
