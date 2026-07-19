@@ -374,11 +374,11 @@ static void dump_stats_render_ipvs_sysctl_writer(void)
 
 static void dump_stats_render_ipfrag_source(void)
 {
-	if (shm->stats.ipfrag_source_runs) {
-		stat_row("ipfrag_source_churn", "runs",            shm->stats.ipfrag_source_runs);
-		stat_row("ipfrag_source_churn", "packets_sent_ok", shm->stats.ipfrag_packets_sent_ok);
-		stat_row("ipfrag_source_churn", "send_failed",     shm->stats.ipfrag_send_failed);
-		stat_row("ipfrag_source_churn", "unique_srcs",     shm->stats.ipfrag_unique_srcs);
+	if (shm->stats.ipfrag_source_churn.runs) {
+		stat_row("ipfrag_source_churn", "runs",            shm->stats.ipfrag_source_churn.runs);
+		stat_row("ipfrag_source_churn", "packets_sent_ok", shm->stats.ipfrag_source_churn.packets_sent_ok);
+		stat_row("ipfrag_source_churn", "send_failed",     shm->stats.ipfrag_source_churn.send_failed);
+		stat_row("ipfrag_source_churn", "unique_srcs",     shm->stats.ipfrag_source_churn.unique_srcs);
 	}
 }
 

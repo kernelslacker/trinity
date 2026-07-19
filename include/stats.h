@@ -70,6 +70,7 @@
 #include "stats/subsys/iouring_eventfd.h"
 #include "stats/subsys/iouring_recipes.h"
 #include "stats/subsys/iouring_send_zc_churn.h"
+#include "stats/subsys/ipfrag_source_churn.h"
 #include "stats/subsys/ip4_udp_cork_splice.h"
 #include "stats/subsys/ip6_udp_cork_splice.h"
 #include "stats/subsys/ip6erspan_netns_migrate.h"
@@ -954,11 +955,8 @@ struct stats_s {
 	/* ipv6_ndisc_proxy accounting.  See stats/subsys/ipv6_ndisc_proxy.h. */
 	struct ipv6_ndisc_proxy_stats ipv6_ndisc_proxy __attribute__((aligned(64)));
 
-	/* ipfrag_source_churn childop counters */
-	unsigned long ipfrag_source_runs;		/* total ipfrag_source_churn invocations */
-	unsigned long ipfrag_packets_sent_ok;		/* raw IPv4 fragment sendto returned >0 */
-	unsigned long ipfrag_send_failed;		/* sendto returned <=0 (queue full / EPERM / etc.) */
-	unsigned long ipfrag_unique_srcs;		/* fragment pairs emitted with a fresh source IP */
+	/* ipfrag_source_churn accounting.  See stats/subsys/ipfrag_source_churn.h. */
+	struct ipfrag_source_churn_stats ipfrag_source_churn __attribute__((aligned(64)));
 
 	/* rtnl_vf_broadcast_getlink accounting.  See stats/subsys/rtnl_vf_broadcast.h. */
 	struct rtnl_vf_broadcast_stats rtnl_vf_broadcast __attribute__((aligned(64)));

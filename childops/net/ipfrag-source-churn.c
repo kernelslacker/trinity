@@ -240,19 +240,19 @@ static void send_frag_pair(int send_fd, uint16_t listen_port_be,
 	n = sendto(send_fd, pkt1, sizeof(pkt1), MSG_DONTWAIT,
 		   (struct sockaddr *)&dst, sizeof(dst));
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.ipfrag_packets_sent_ok, 1,
+		__atomic_add_fetch(&shm->stats.ipfrag_source_churn.packets_sent_ok, 1,
 				   __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.ipfrag_send_failed, 1,
+		__atomic_add_fetch(&shm->stats.ipfrag_source_churn.send_failed, 1,
 				   __ATOMIC_RELAXED);
 
 	n = sendto(send_fd, pkt2, sizeof(pkt2), MSG_DONTWAIT,
 		   (struct sockaddr *)&dst, sizeof(dst));
 	if (n > 0)
-		__atomic_add_fetch(&shm->stats.ipfrag_packets_sent_ok, 1,
+		__atomic_add_fetch(&shm->stats.ipfrag_source_churn.packets_sent_ok, 1,
 				   __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.ipfrag_send_failed, 1,
+		__atomic_add_fetch(&shm->stats.ipfrag_source_churn.send_failed, 1,
 				   __ATOMIC_RELAXED);
 }
 
@@ -327,7 +327,7 @@ static int ipfrag_source_churn_in_ns(void *arg)
 		id_he  = (uint16_t)(cctx->id_counter_start + i);
 
 		send_frag_pair(send_fd, listen_port_be, src_be, id_he);
-		__atomic_add_fetch(&shm->stats.ipfrag_unique_srcs, 1,
+		__atomic_add_fetch(&shm->stats.ipfrag_source_churn.unique_srcs, 1,
 				   __ATOMIC_RELAXED);
 	}
 
@@ -344,7 +344,7 @@ bool ipfrag_source_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.ipfrag_source_runs, 1,
+	__atomic_add_fetch(&shm->stats.ipfrag_source_churn.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_ipfrag)
