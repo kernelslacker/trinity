@@ -95,6 +95,7 @@
 #include "stats/subsys/nf_conntrack_helper_churn.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/numa_migration.h"
+#include "stats/subsys/obscure_af_churn.h"
 #include "stats/subsys/oracle.h"
 #include "stats/subsys/packet_fanout_thrash.h"
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
@@ -958,15 +959,8 @@ struct stats_s {
 	/* rtnl_vf_broadcast_getlink accounting.  See stats/subsys/rtnl_vf_broadcast.h. */
 	struct rtnl_vf_broadcast_stats rtnl_vf_broadcast __attribute__((aligned(64)));
 
-	/* obscure_af_churn childop counters.  Per-pattern arrays are
-	 * indexed by enum abuse_pattern (childops/net/obscure-af-churn.c);
-	 * NR_AP is currently 6.  Sized at 8 to leave headroom for a
-	 * couple more patterns without re-cutting the shm layout. */
-	unsigned long obscure_af_churn_runs;
-	unsigned long obscure_af_churn_no_viable_pf;	/* every pf attempt was no_domains[] / proto NULL */
-	unsigned long obscure_af_churn_pattern_runs[8];
-	unsigned long obscure_af_churn_pattern_kernel_rejected[8];
-	unsigned long obscure_af_churn_pattern_unexpected_success[8];
+	/* obscure_af_churn accounting.  See stats/subsys/obscure_af_churn.h. */
+	struct obscure_af_churn_stats obscure_af_churn __attribute__((aligned(64)));
 
 	/* ipv6_pmtu_race accounting.  See stats/subsys/ipv6_pmtu_race.h. */
 	struct ipv6_pmtu_race_stats ipv6_pmtu_race __attribute__((aligned(64)));

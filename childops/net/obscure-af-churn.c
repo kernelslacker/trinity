@@ -150,21 +150,21 @@ static int pick_viable_family(struct socket_triplet *out)
 
 static void bump_run(enum abuse_pattern ap)
 {
-	__atomic_add_fetch(&shm->stats.obscure_af_churn_pattern_runs[ap], 1,
+	__atomic_add_fetch(&shm->stats.obscure_af_churn.pattern_runs[ap], 1,
 			   __ATOMIC_RELAXED);
 }
 
 static void bump_rejected(enum abuse_pattern ap)
 {
 	__atomic_add_fetch(
-		&shm->stats.obscure_af_churn_pattern_kernel_rejected[ap], 1,
+		&shm->stats.obscure_af_churn.pattern_kernel_rejected[ap], 1,
 		__ATOMIC_RELAXED);
 }
 
 static void bump_unexpected_success(enum abuse_pattern ap)
 {
 	__atomic_add_fetch(
-		&shm->stats.obscure_af_churn_pattern_unexpected_success[ap], 1,
+		&shm->stats.obscure_af_churn.pattern_unexpected_success[ap], 1,
 		__ATOMIC_RELAXED);
 }
 
@@ -386,12 +386,12 @@ bool obscure_af_churn(struct childdata *child)
 	struct socket_triplet triplet = { 0, 0, 0 };
 	int pf;
 
-	__atomic_add_fetch(&shm->stats.obscure_af_churn_runs, 1,
+	__atomic_add_fetch(&shm->stats.obscure_af_churn.runs, 1,
 			   __ATOMIC_RELAXED);
 
 	pf = pick_viable_family(&triplet);
 	if (pf < 0) {
-		__atomic_add_fetch(&shm->stats.obscure_af_churn_no_viable_pf,
+		__atomic_add_fetch(&shm->stats.obscure_af_churn.no_viable_pf,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

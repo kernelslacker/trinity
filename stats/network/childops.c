@@ -384,7 +384,7 @@ static void dump_stats_render_ipfrag_source(void)
 
 static void dump_stats_render_obscure_af_churn(void)
 {
-	if (shm->stats.obscure_af_churn_runs) {
+	if (shm->stats.obscure_af_churn.runs) {
 		static const char * const ap_names[] = {
 			"sendmsg_no_bind",
 			"bind_then_sendmsg",
@@ -396,19 +396,19 @@ static void dump_stats_render_obscure_af_churn(void)
 		char key[64];
 		unsigned int ap;
 
-		stat_row("obscure_af_churn", "runs",         shm->stats.obscure_af_churn_runs);
-		stat_row("obscure_af_churn", "no_viable_pf", shm->stats.obscure_af_churn_no_viable_pf);
+		stat_row("obscure_af_churn", "runs",         shm->stats.obscure_af_churn.runs);
+		stat_row("obscure_af_churn", "no_viable_pf", shm->stats.obscure_af_churn.no_viable_pf);
 
 		for (ap = 0; ap < ARRAY_SIZE(ap_names); ap++) {
 			snprintf(key, sizeof(key), "%s_runs", ap_names[ap]);
 			stat_row("obscure_af_churn", key,
-				 shm->stats.obscure_af_churn_pattern_runs[ap]);
+				 shm->stats.obscure_af_churn.pattern_runs[ap]);
 			snprintf(key, sizeof(key), "%s_kernel_rejected", ap_names[ap]);
 			stat_row("obscure_af_churn", key,
-				 shm->stats.obscure_af_churn_pattern_kernel_rejected[ap]);
+				 shm->stats.obscure_af_churn.pattern_kernel_rejected[ap]);
 			snprintf(key, sizeof(key), "%s_unexpected_success", ap_names[ap]);
 			stat_row("obscure_af_churn", key,
-				 shm->stats.obscure_af_churn_pattern_unexpected_success[ap]);
+				 shm->stats.obscure_af_churn.pattern_unexpected_success[ap]);
 		}
 	}
 }
