@@ -307,8 +307,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 	}
 
 	case MCAST_MSFILTER:
-		so->optlen = rnd_modulo_u32(page_size);
-		so->optlen |= GROUP_FILTER_SIZE(0);
+		so->optlen = rnd_modulo_u32(page_size - GROUP_FILTER_SIZE(0)) + GROUP_FILTER_SIZE(0);
 		break;
 
 	default:
