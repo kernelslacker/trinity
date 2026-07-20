@@ -403,10 +403,10 @@ void __cold top_syscalls_periodic_dump(void)
 				&shm->stats.frontier.per_syscall.live_misses_per_syscall[i],
 				__ATOMIC_RELAXED);
 			prev_rq_saves[i] = __atomic_load_n(
-				&shm->stats.rq_sourced_saves_per_syscall[i],
+				&shm->stats.pc_edge_source.rq_saves[i],
 				__ATOMIC_RELAXED);
 			prev_rq_wins[i] = __atomic_load_n(
-				&shm->stats.rq_sourced_pcedge_wins_per_syscall[i],
+				&shm->stats.pc_edge_source.rq_pcedge_wins[i],
 				__ATOMIC_RELAXED);
 			prev_warm_reserve[i] = __atomic_load_n(
 				&shm->stats.warm_reserve_candidates[i],
@@ -451,10 +451,10 @@ void __cold top_syscalls_periodic_dump(void)
 			&shm->frontier_recent_count_cached[i],
 			__ATOMIC_RELAXED);
 		cur_rq_saves[i] = __atomic_load_n(
-			&shm->stats.rq_sourced_saves_per_syscall[i],
+			&shm->stats.pc_edge_source.rq_saves[i],
 			__ATOMIC_RELAXED);
 		cur_rq_wins[i] = __atomic_load_n(
-			&shm->stats.rq_sourced_pcedge_wins_per_syscall[i],
+			&shm->stats.pc_edge_source.rq_pcedge_wins[i],
 			__ATOMIC_RELAXED);
 		cur_warm_reserve[i] = __atomic_load_n(
 			&shm->stats.warm_reserve_candidates[i],
