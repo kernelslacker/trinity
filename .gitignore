@@ -18,3 +18,4 @@ cscope.*
 ncscope.*
 cov-int
 trinity-coverity.tar.xz
+stats-timeseries-*.jsonl
