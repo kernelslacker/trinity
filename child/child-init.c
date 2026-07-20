@@ -949,9 +949,19 @@ static void init_child_rendezvous_parent(struct childdata *child, int childno)
  */
 static void init_child_setup_sandbox(struct childdata *child, int childno)
 {
-	/* Wait for all the children to start up. */
-	while (!__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE))
+	/* Wait for all the children to start up.  Mirror the parent-death
+	 * guard from the pids[childno] rendezvous loop above: if the parent
+	 * dies before publishing shm->ready we would otherwise sleep here
+	 * indefinitely, and the mainpid slot risks pid reuse. */
+	while (!__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE)) {
+		if (pid_alive(mainpid) == false) {
+			__atomic_add_fetch(&shm->stats.child_dead_parent_observed,
+					   1, __ATOMIC_RELAXED);
+			panic(EXIT_SHM_CORRUPTION);
+			_exit(EXIT_SHM_CORRUPTION);
+		}
 		sleep(1);
+	}
 
 	set_make_it_fail();
 
