@@ -219,16 +219,24 @@ static void post_socketcall(struct syscallrecord *rec)
 	case SYS_SOCKETPAIR: {
 		int *fds = (int *) args[3];
 
-		if (fds != NULL) {
-			if (retval >= 0) {
-				register_sock_fd(fds[0], args[0], args[1], args[2]);
-				register_sock_fd(fds[1], args[0], args[1], args[2]);
-			}
-			/* fds points into the trinity writable pool (see
-			 * socketcall_socketpair); the pool owns the memory,
-			 * so no free here. */
-			args[3] = 0;
+		if (fds == NULL)
+			break;
+
+		if (looks_like_corrupted_ptr(rec, fds)) {
+			outputerr("post_socketcall: rejected suspicious fds=%p (pid-scribbled?)\n", fds);
+			rec->a2 = 0;
+			rec->post_state = 0;
+			return;
 		}
+
+		if (retval >= 0) {
+			register_sock_fd(fds[0], args[0], args[1], args[2]);
+			register_sock_fd(fds[1], args[0], args[1], args[2]);
+		}
+		/* fds points into the trinity writable pool (see
+		 * socketcall_socketpair); the pool owns the memory,
+		 * so no free here. */
+		args[3] = 0;
 		break;
 	}
 
