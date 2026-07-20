@@ -164,6 +164,7 @@
 #include "stats/subsys/xfrm_ah_esn.h"
 #include "stats/subsys/xfrm_churn.h"
 #include "stats/subsys/xfrm_compat.h"
+#include "stats/subsys/zombie_reaper.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
  * Q8.8 fixed point: 256 == 1.0x.  Floor and ceiling cap how far the
@@ -1198,13 +1199,8 @@ struct stats_s {
 	unsigned long ebpf_gen_map_value_deref_read;
 	unsigned long ebpf_gen_map_value_deref_write;
 
-	/* Slots held in zombie-pending state because the kernel still has
-	 * the unkillable D-state task around and may yet wake it to write
-	 * into childdata.  Reusing a slot before the kernel tears the task
-	 * down lets the post-wake writes corrupt the replacement child. */
-	unsigned long zombie_slots_pending;	/* current count (gauge) */
-	unsigned long zombies_reaped;		/* total successfully reaped */
-	unsigned long zombies_timed_out;	/* force-reused after timeout */
+	/* zombie-reaper accounting.  See stats/subsys/zombie_reaper.h. */
+	struct zombie_reaper_stats zombie_reaper;
 
 	/* sanitize_inherited_fds() closed an fd that the parent inherited
 	 * from its launcher (or the launcher's parent) at startup.  We

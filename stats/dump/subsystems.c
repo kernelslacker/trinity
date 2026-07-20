@@ -250,11 +250,11 @@ static void dump_stats_render_iouring(void)
 
 static void dump_stats_render_zombie_slots(void)
 {
-	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
-	    shm->stats.zombie_slots_pending) {
-		stat_row("zombie_slots", "pending",   shm->stats.zombie_slots_pending);
-		stat_row("zombie_slots", "reaped",    shm->stats.zombies_reaped);
-		stat_row("zombie_slots", "timed_out", shm->stats.zombies_timed_out);
+	if (shm->stats.zombie_reaper.reaped || shm->stats.zombie_reaper.timed_out ||
+	    shm->stats.zombie_reaper.slots_pending) {
+		stat_row("zombie_slots", "pending",   shm->stats.zombie_reaper.slots_pending);
+		stat_row("zombie_slots", "reaped",    shm->stats.zombie_reaper.reaped);
+		stat_row("zombie_slots", "timed_out", shm->stats.zombie_reaper.timed_out);
 	}
 }
 

@@ -1434,7 +1434,7 @@ static void register_zombie_slot(int childno, pid_t pid)
 		}
 		reap_child(children[childno], childno, true);
 		replace_child(childno);
-		__atomic_add_fetch(&shm->stats.zombies_reaped, 1,
+		__atomic_add_fetch(&shm->stats.zombie_reaper.reaped, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
@@ -1480,7 +1480,7 @@ static void register_zombie_slot(int childno, pid_t pid)
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	zombie_pids[childno] = pid;
 	zombie_since[childno] = now.tv_sec;
-	__atomic_add_fetch(&shm->stats.zombie_slots_pending, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.zombie_reaper.slots_pending, 1, __ATOMIC_RELAXED);
 }
 
 /*
@@ -1499,7 +1499,7 @@ void process_zombie_pending(void)
 	if (zombie_pids == NULL)
 		return;
 
-	if (__atomic_load_n(&shm->stats.zombie_slots_pending,
+	if (__atomic_load_n(&shm->stats.zombie_reaper.slots_pending,
 			    __ATOMIC_RELAXED) == 0)
 		return;
 
@@ -1555,7 +1555,7 @@ void process_zombie_pending(void)
 					"entry.\n",
 					i, pid, ZOMBIE_REAP_TIMEOUT_SEC);
 			}
-			__atomic_add_fetch(&shm->stats.zombies_timed_out, 1,
+			__atomic_add_fetch(&shm->stats.zombie_reaper.timed_out, 1,
 					   __ATOMIC_RELAXED);
 		} else {
 			long elapsed = (long)(now.tv_sec - zombie_since[i]);
@@ -1570,13 +1570,13 @@ void process_zombie_pending(void)
 				output(0, "child %d zombie (pid %u) finally "
 					"released by kernel after %ld seconds; "
 					"reusing slot.\n", i, pid, elapsed);
-			__atomic_add_fetch(&shm->stats.zombies_reaped, 1,
+			__atomic_add_fetch(&shm->stats.zombie_reaper.reaped, 1,
 					   __ATOMIC_RELAXED);
 		}
 
 		zombie_pids[i] = EMPTY_PIDSLOT;
 		zombie_since[i] = 0;
-		__atomic_sub_fetch(&shm->stats.zombie_slots_pending, 1,
+		__atomic_sub_fetch(&shm->stats.zombie_reaper.slots_pending, 1,
 				   __ATOMIC_RELAXED);
 
 		/* Deferred child is now confirmed gone (waitpid above, or the

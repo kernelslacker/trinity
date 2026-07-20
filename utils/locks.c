@@ -149,7 +149,7 @@ bool check_all_locks(void)
 	 * rebuild held_count from the observed LOCK_STATE of every lock.
 	 * After the recalibrate tick, held_count matches ground truth and
 	 * the gate resumes firing normally. */
-	reaps = __atomic_load_n(&shm->stats.zombies_reaped, __ATOMIC_RELAXED);
+	reaps = __atomic_load_n(&shm->stats.zombie_reaper.reaped, __ATOMIC_RELAXED);
 	recalibrate = (reaps != last_seen_reaps);
 	last_seen_reaps = reaps;
 

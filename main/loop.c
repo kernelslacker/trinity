@@ -610,7 +610,7 @@ void reset_epoch_state(void)
 	 * fast-path actually sees zero and short-circuits.  Sibling counters
 	 * zombies_reaped / zombies_timed_out are cumulative-by-design and
 	 * correctly persist; only the live gauge needs the re-zero. */
-	__atomic_store_n(&shm->stats.zombie_slots_pending, 0, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->stats.zombie_reaper.slots_pending, 0, __ATOMIC_RELAXED);
 
 	reseed();
 }
