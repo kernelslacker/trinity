@@ -114,6 +114,7 @@
 #include "stats/subsys/packet_fanout_thrash.h"
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/pci_bind.h"
+#include "stats/subsys/pc_edge_source.h"
 #include "stats/subsys/perf_chains.h"
 #include "stats/subsys/pfkey_spd_walk.h"
 #include "stats/subsys/pidfd_storm.h"
@@ -2465,58 +2466,10 @@ struct stats_s {
 	unsigned long cred_class_einval[CRED_CLASS_NR];
 	unsigned long cred_class_throttled[CRED_CLASS_NR];
 
-	/* RedQueen -> PC-edge conversion attribution, per-syscall.
-	 *
-	 * rq_sourced_saves_per_syscall[nr]
-	 *     Bumped from minicorpus_save_with_reason() each time a corpus
-	 *     entry is admitted to syscall nr's ring with the rq_sourced
-	 *     provenance tag set (i.e. the saving child's in_reexec was true
-	 *     -- the args came from a redqueen_reexec_step harvest).
-	 *
-	 * rq_sourced_pcedge_wins_per_syscall[nr]
-	 *     Bumped from frontier_record_new_edge() (strategy.c) when the
-	 *     call that produced the new PC bucket-edge for nr was a replay
-	 *     of a corpus entry whose rq_sourced flag was set -- i.e. a
-	 *     downstream PC win from a RedQueen-sourced save.
-	 *
-	 * The pair answers the harvest->edge bottleneck question: do the
-	 * args RedQueen re-exec harvests actually convert to new PC edges
-	 * once they're replayed?  Surfaced only via top_syscalls_periodic_
-	 * dump() (alongside the existing per-pool per-syscall arrays) so
-	 * the operator gets a per-window view of which syscalls have the
-	 * highest RedQueen-sourced save rate vs which produce the highest
-	 * downstream PC-edge wins.  Observability only -- no selection /
-	 * reward / injection path consumes either array.  RELAXED add-fetch:
-	 * cumulative diagnostic, window deltas come from the dump's
-	 * snapshot+diff against the previous tick. */
-	unsigned long rq_sourced_saves_per_syscall[MAX_NR_SYSCALL];
-	unsigned long rq_sourced_pcedge_wins_per_syscall[MAX_NR_SYSCALL];
-
-	/* Per-syscall errno-sourced provenance attribution.  The
-	 * errno-gradient-save SHADOW/LIVE trigger scalars live in
-	 * struct errno_gradient_stats (stats/subsys/errno_gradient.h) as
-	 * save_would_save / save_did_save; the two per-syscall arrays
-	 * below carry the same errno-source provenance one level down.
-	 *
-	 * errno_sourced_saves_per_syscall[nr]
-	 *     Bumped from minicorpus_save_with_reason() each time an entry
-	 *     is admitted to syscall nr's ring with the errno_sourced
-	 *     provenance tag set (CORPUS_SAVE_REASON_ERRNO).  Mirror of
-	 *     rq_sourced_saves_per_syscall[].
-	 *
-	 * errno_sourced_pcedge_wins_per_syscall[nr]
-	 *     Bumped from frontier_record_new_edge() (strategy.c) when the
-	 *     call that produced the new PC bucket-edge for nr was a replay
-	 *     of a corpus entry whose errno_sourced flag was set -- the
-	 *     errno-source conversion-rate counter.  Mirror of
-	 *     rq_sourced_pcedge_wins_per_syscall[].
-	 *
-	 * Observability only -- no selection / reward / injection path
-	 * consumes either.  RELAXED add-fetch matches the surrounding
-	 * accounting.  Both start at zero on parent boot; warm-start does
-	 * not persist stats counters. */
-	unsigned long errno_sourced_saves_per_syscall[MAX_NR_SYSCALL];
-	unsigned long errno_sourced_pcedge_wins_per_syscall[MAX_NR_SYSCALL];
+	/* Per-syscall provenance attribution for RedQueen-sourced and
+	 * errno-sourced corpus saves and their downstream PC-edge wins.
+	 * See stats/subsys/pc_edge_source.h. */
+	struct pc_edge_source_stats pc_edge_source __attribute__((aligned(64)));
 
 	/* Per-strategy transition-reward attribution (calls/count arrays +
 	 * window-start snapshots).  Gated on !child->kcov.remote_mode and
