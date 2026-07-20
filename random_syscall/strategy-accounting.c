@@ -502,12 +502,12 @@ void maybe_rotate_strategy(void)
 	 * per-arm reward total).  Reseeded unconditionally so OFF/SHADOW_
 	 * ONLY runs keep the snapshot fresh; COMBINED can be flipped on
 	 * mid-run without the bandit reading a stale window-start. */
-	__atomic_store_n(&shm->stats.transition_edge_count_at_window_start,
-			 __atomic_load_n(&shm->stats.transition_edge_count_by_strategy[next],
+	__atomic_store_n(&shm->stats.transition_edge.count_at_window_start,
+			 __atomic_load_n(&shm->stats.transition_edge.count_by_strategy[next],
 					 __ATOMIC_RELAXED),
 			 __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->stats.transition_edge_calls_at_window_start,
-			 __atomic_load_n(&shm->stats.transition_edge_calls_by_strategy[next],
+	__atomic_store_n(&shm->stats.transition_edge.calls_at_window_start,
+			 __atomic_load_n(&shm->stats.transition_edge.calls_by_strategy[next],
 					 __ATOMIC_RELAXED),
 			 __ATOMIC_RELAXED);
 	/* Reseed the kmsg_warn_fires snapshot from the live counter (not a
@@ -1062,10 +1062,10 @@ void account_transition_reward(struct childdata *child,
 	if (capped > TRANSITION_PER_CALL_REWARD_CAP)
 		capped = TRANSITION_PER_CALL_REWARD_CAP;
 	__atomic_fetch_add(
-		&shm->stats.transition_edge_calls_by_strategy[strat],
+		&shm->stats.transition_edge.calls_by_strategy[strat],
 		1UL, __ATOMIC_RELAXED);
 	__atomic_fetch_add(
-		&shm->stats.transition_edge_count_by_strategy[strat],
+		&shm->stats.transition_edge.count_by_strategy[strat],
 		capped, __ATOMIC_RELAXED);
 }
 

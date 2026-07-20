@@ -147,10 +147,10 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			    __ATOMIC_RELAXED) ==
 	    KCOV_TRANSITION_REWARD_COMBINED) {
 		unsigned long trans_now = __atomic_load_n(
-			&shm->stats.transition_edge_count_by_strategy[arm],
+			&shm->stats.transition_edge.count_by_strategy[arm],
 			__ATOMIC_RELAXED);
 		unsigned long trans_start = __atomic_load_n(
-			&shm->stats.transition_edge_count_at_window_start,
+			&shm->stats.transition_edge.count_at_window_start,
 			__ATOMIC_RELAXED);
 		unsigned long trans_delta = (trans_now >= trans_start) ?
 					     (trans_now - trans_start) : 0UL;
