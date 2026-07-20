@@ -648,7 +648,7 @@ bool iouring_recipes(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.iouring_recipes.completed, 1,
 				   __ATOMIC_RELAXED);
 		__atomic_add_fetch(
-			&shm->stats.iouring_recipe_completed_per[idx], 1,
+			&shm->stats.iouring_recipes.completed_per[idx], 1,
 			__ATOMIC_RELAXED);
 	} else {
 		__atomic_add_fetch(&shm->stats.iouring_recipes.partial, 1,
@@ -664,7 +664,7 @@ void __cold iouring_recipes_dump_stats(void)
 
 	for (i = 0; i < ARRAY_SIZE(catalog); i++) {
 		unsigned long n = __atomic_load_n(
-			&shm->stats.iouring_recipe_completed_per[i],
+			&shm->stats.iouring_recipes.completed_per[i],
 			__ATOMIC_RELAXED);
 		bool disabled = __atomic_load_n(
 			&shm->iouring_recipe_disabled[i],
