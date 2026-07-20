@@ -25,6 +25,17 @@ struct tracefs_fuzzer_stats {
 	unsigned long misc_open_fail;		/* trace_options, current_tracer, etc. */
 	unsigned long misc_write_fail;
 	unsigned long misc_write_ok;
+
+	/* Number of dispatches inside tracefs_fuzzer that landed on a
+	 * function-tracer-subset op (set_ftrace_filter / set_ftrace_notrace /
+	 * set_graph_function / current_tracer) but were short-circuited
+	 * because the running kernel was built without CONFIG_FTRACE
+	 * (current_tracer absent at init probe).  Static-event-tree paths
+	 * keep running on the same kernel; this counts only the wasted
+	 * function-tracer slots.  No live producer today; the counter is
+	 * carved forward so a future ftrace-subset dispatcher landing has a
+	 * pre-approved home. */
+	unsigned long ftrace_subset_skipped;
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_TRACEFS_FUZZER_H */
