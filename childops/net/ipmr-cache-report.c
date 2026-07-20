@@ -284,7 +284,7 @@ static int ipmr_cache_report_in_ns(void *arg)
 
 	if (setsockopt(raw, IPPROTO_IP, MRT_INIT, &one, sizeof(one)) < 0) {
 		if (errno == EPERM) {
-			__atomic_add_fetch(&shm->stats.ipmr_cache_report_eperm,
+			__atomic_add_fetch(&shm->stats.ipmr_cache_report.eperm,
 					   1, __ATOMIC_RELAXED);
 			ns_eperm_ipmr_cache_report = true;
 		} else if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
@@ -329,7 +329,7 @@ static int ipmr_cache_report_in_ns(void *arg)
 		if (ns_since(&t0) >= STORM_BUDGET_NS)
 			break;
 
-		__atomic_add_fetch(&shm->stats.ipmr_cache_report_iters, 1,
+		__atomic_add_fetch(&shm->stats.ipmr_cache_report.iters, 1,
 				   __ATOMIC_RELAXED);
 
 		memset(&dst, 0, sizeof(dst));
@@ -340,7 +340,7 @@ static int ipmr_cache_report_in_ns(void *arg)
 		r = sendto(udp, payload, sizeof(payload), MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (r >= 0)
-			__atomic_add_fetch(&shm->stats.ipmr_cache_report_emit_ok,
+			__atomic_add_fetch(&shm->stats.ipmr_cache_report.emit_ok,
 					   1, __ATOMIC_RELAXED);
 
 		if (nl.fd >= 0) {

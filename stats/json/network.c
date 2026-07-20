@@ -205,14 +205,14 @@ const struct stat_category altname_thrash_category =
 
 
 static const struct stat_field ipmr_cache_report_fields[] = {
-	STAT_FIELD(ipmr_cache_report, iters),
-	STAT_FIELD(ipmr_cache_report, eperm),
-	STAT_FIELD(ipmr_cache_report, emit_ok),
+	STAT_FIELD_SUB(ipmr_cache_report, iters),
+	STAT_FIELD_SUB(ipmr_cache_report, eperm),
+	STAT_FIELD_SUB(ipmr_cache_report, emit_ok),
 };
 
 const struct stat_category ipmr_cache_report_category =
 	STAT_CATEGORY("ipmr_cache_report",
-	              ipmr_cache_report_iters,
+	              ipmr_cache_report.iters,
 	              ipmr_cache_report_fields);
 
 void dump_stats_json_netfilter_and_xfrm(void)
