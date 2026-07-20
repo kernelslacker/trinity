@@ -1066,7 +1066,7 @@ void childop_outcome_snapshot(enum child_op_type op,
 	out->setup_failures = (invocations > setup_accepted)
 		? (uint32_t)(invocations - setup_accepted) : 0;
 	out->taint_transition = __atomic_load_n(
-			&shm->stats.taint_transitions[op], __ATOMIC_RELAXED) > 0;
+			&shm->stats.childop.taint_transitions[op], __ATOMIC_RELAXED) > 0;
 }
 
 void childop_outcome_window_dump(void)

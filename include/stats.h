@@ -610,29 +610,10 @@ struct stats_s {
 	 * the meaning of this counter. */
 	unsigned long divergence_sentinel_expected_drift;
 
-	/* Childop taint-watcher: count of times a /proc/sys/kernel/tainted
-	 * bit transition was observed across a non-syscall childop dispatch,
-	 * indexed by enum child_op_type.  Surfaces soft taints (lockdep WARN,
-	 * RCU stall, reckless module load, etc.) tied to a specific childop
-	 * even when no oops is raised.  RELAXED add-fetch: the counter is a
-	 * coarse anomaly indicator, not a precise event log — the matching
-	 * pre_crash_ring entry holds the full per-event context. */
-	unsigned long taint_transitions[NR_CHILD_OP_TYPES];
-
-	/* Pool-race aborted counter, indexed by enum child_op_type.
-	 * Bumped from inside each pool-consuming childop's SIGSEGV/SIGBUS
-	 * sigsetjmp wrap when a sibling unmapped the pool entry between
-	 * the get_map_with_prot() draw and the actual user-mode dereference
-	 * inside the body.  Closes the race-window residual that the
-	 * munmap post-hook pool invalidation cannot catch (live mapping at
-	 * draw, gone at use).  Wrapped childops: memory_pressure,
-	 * iouring_flood, iouring_recipes, madvise_cycler.  RELAXED add-
-	 * fetch: a coarse anomaly indicator, not an event log. */
-	unsigned long pool_race_aborted[NR_CHILD_OP_TYPES];
-
 	/* Per-childop accounting -- edge / call / setup / data-path /
 	 * latch / demote-promote / budget / wedge / wall-time /
-	 * fd-delta / decay-recency arrays plus scattered scalars.
+	 * fd-delta / decay-recency arrays plus scattered scalars and the
+	 * taint-transition / pool-race-abort per-op counters.
 	 * See stats/subsys/childop.h. */
 	struct childop_stats childop __attribute__((aligned(64)));
 

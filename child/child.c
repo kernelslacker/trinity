@@ -985,7 +985,7 @@ void child_process(struct childdata *child, int childno)
 							    (unsigned int) op,
 							    child->op_nr);
 				__atomic_add_fetch(
-					&shm->stats.taint_transitions[op],
+					&shm->stats.childop.taint_transitions[op],
 					1, __ATOMIC_RELAXED);
 			}
 			child->last_tainted = tainted_after;

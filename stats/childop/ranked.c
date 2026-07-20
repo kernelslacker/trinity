@@ -371,12 +371,12 @@ static void dump_stats_render_childop_taint_transitions(void)
 	char metric[40];
 
 	for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
-		if (shm->stats.taint_transitions[op] == 0)
+		if (shm->stats.childop.taint_transitions[op] == 0)
 			continue;
 		snprintf(metric, sizeof(metric), "%s",
 			 alt_op_name((enum child_op_type)op));
 		stat_row("taint_transitions", metric,
-			 shm->stats.taint_transitions[op]);
+			 shm->stats.childop.taint_transitions[op]);
 	}
 }
 
@@ -398,12 +398,12 @@ static void dump_stats_render_childop_pool_race_aborted(void)
 	char metric[40];
 
 	for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
-		if (shm->stats.pool_race_aborted[op] == 0)
+		if (shm->stats.childop.pool_race_aborted[op] == 0)
 			continue;
 		snprintf(metric, sizeof(metric), "%s",
 			 alt_op_name((enum child_op_type)op));
 		stat_row("pool_race_aborted", metric,
-			 shm->stats.pool_race_aborted[op]);
+			 shm->stats.childop.pool_race_aborted[op]);
 	}
 }
 
