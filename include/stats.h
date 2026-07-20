@@ -55,7 +55,7 @@
 #include "stats/subsys/espintcp_coalesce.h"
 #include "stats/subsys/eth_emitter.h"
 #include "stats/subsys/fd.h"
-#include "stats/subsys/fd_runtime_skipped.h"
+#include "stats/subsys/fd_runtime.h"
 #include "stats/subsys/fdstress.h"
 #include "stats/subsys/flock_thrash.h"
 #include "stats/subsys/flowtable_vlan.h"
@@ -1059,13 +1059,9 @@ struct stats_s {
 
 	/* ---- Group D: diagnostic / parent-side / one-shot ---- */
 
-	/* Number of fds the generic ret_objtype post-hook auto-registered
-	 * into a per-type OBJ_LOCAL pool because no syscall-specific .post
-	 * had already done so. */
-	unsigned long fd_runtime_registered;
-
-	/* fd_runtime_skipped accounting.  See stats/subsys/fd_runtime_skipped.h. */
-	struct fd_runtime_skipped_stats fd_runtime_skipped __attribute__((aligned(64)));
+	/* fd_runtime bookkeeping (registered + skipped reject arms).
+	 * See stats/subsys/fd_runtime.h. */
+	struct fd_runtime_stats fd_runtime __attribute__((aligned(64)));
 
 	/* Bumped by prop_ring_push_scalar() each time a typed scalar return
 	 * (currently OBJ_KEY_SERIAL from register_returned_fd's add_key /

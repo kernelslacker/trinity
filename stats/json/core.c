@@ -48,7 +48,7 @@ void dump_stats_json_fault_and_fd_lifecycle(void)
 		shm->stats.fd.event_close_count, shm->stats.fd.event_evict_count,
 		shm->stats.fd.hash_reinsert_dropped,
 		shm->stats.fd.local_hash_insert_dropped,
-		shm->stats.fd_runtime_registered,
+		shm->stats.fd_runtime.registered,
 		shm->stats.epoll_volatility.lazy_armed,
 		shm->stats.epoll_volatility.blocking_poll_skipped,
 		shm->stats.fd.random_exhausted,
