@@ -59,15 +59,15 @@ static void dump_stats_render_blob_fills_by_group(void)
 	unsigned int i;
 
 	for (i = 0; i < NR_GROUPS; i++)
-		total += shm->stats.blob_fills_by_group[i];
+		total += shm->stats.blob.fills_by_group[i];
 	if (total == 0)
 		return;
 
 	for (i = 0; i < NR_GROUPS; i++) {
-		if (shm->stats.blob_fills_by_group[i] == 0)
+		if (shm->stats.blob.fills_by_group[i] == 0)
 			continue;
 		stat_row("blob_fills_by_group", group_names[i],
-			 shm->stats.blob_fills_by_group[i]);
+			 shm->stats.blob.fills_by_group[i]);
 	}
 }
 

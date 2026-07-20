@@ -2894,20 +2894,6 @@ struct stats_s {
 	 * stats/subsys/blob.h for the per-field commentary. */
 	struct blob_stats blob __attribute__((aligned(64)));
 
-	/* Per-group shadow of blob_fills.  Bumped once per non-OFF
-	 * blob_fill() invocation, keyed on the group of the syscall
-	 * whose (nr, do32) the caller passed in (looked up via
-	 * get_syscall_entry(nr, do32)).  Sums to blob_fills by
-	 * construction (modulo the entry == NULL / group >= NR_GROUPS
-	 * defensive gate the bump site keeps).  Purpose: make the per-
-	 * group blob_fill invocation distribution directly visible so
-	 * the group-bias vs blob-starvation relationship is
-	 * quantifiable from a single run without re-deriving the split
-	 * from picker-side counters.  Pure observability: OFF short-
-	 * circuits before the bump so the OFF arm stays byte-identical
-	 * and no live selection logic reads this array. */
-	unsigned long blob_fills_by_group[NR_GROUPS];
-
 	/* --blob-ab-mode within-run A/B harness counters.  See
 	 * stats/subsys/blob_ab.h for the per-field commentary. */
 	struct blob_ab_stats blob_ab;
