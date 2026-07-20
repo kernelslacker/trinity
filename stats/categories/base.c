@@ -55,14 +55,14 @@ const struct stat_category parent_category =
  * zombies_ for the counters); each STAT_FIELD picks its own prefix so the
  * JSON keys stay flat ("pending", "reaped", "timed_out"). */
 static const struct stat_field zombie_slots_fields[] = {
-	STAT_FIELD(zombie_slots, pending),
-	STAT_FIELD(zombies, reaped),
-	STAT_FIELD(zombies, timed_out),
+	STAT_FIELD_JSON_SUB(zombie_reaper, slots_pending, "pending"),
+	STAT_FIELD_JSON_SUB(zombie_reaper, reaped, "reaped"),
+	STAT_FIELD_JSON_SUB(zombie_reaper, timed_out, "timed_out"),
 };
 
 const struct stat_category zombie_slots_category =
 	STAT_CATEGORY("zombie_slots",
-	              zombies_reaped,
+	              zombie_reaper.reaped,
 	              zombie_slots_fields);
 
 static const struct stat_field kvm_run_churn_fields[] = {
