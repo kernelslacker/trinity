@@ -125,7 +125,7 @@ static void sanitise_vfio_dma_map(struct syscallrecord *rec)
 	m->iova = rnd_modulo_u64(VFIO_FUZZ_IOVA_LIMIT)
 		& ~(VFIO_FUZZ_PAGE_SIZE - 1);
 	m->size = size;
-	m->vaddr = (__u64)(unsigned long)ua;
+	m->vaddr = (__u64)(unsigned long)ua & ~(VFIO_FUZZ_PAGE_SIZE - 1);
 
 	rec->a3 = (unsigned long)m;
 }
