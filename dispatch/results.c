@@ -27,6 +27,14 @@ unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
 	unreachable();
 }
 
+/* The mask walks in handle_success/handle_failure clamp to 0x3f so
+ * __builtin_ctz can only return 0..5 and this indexes results[0..5].  If
+ * the results[] array ever grows past six slots, that clamp needs to grow
+ * with it (or the callers need to widen their arg masks).  Anchor the
+ * invariant here so a stale clamp fires a compile error. */
+_Static_assert(ARRAY_SIZE(((struct syscallentry *)0)->results) == 6,
+	       "results[] must have six slots to match the 0x3f arg-mask clamp");
+
 static struct results * get_results_ptr(struct syscallentry *entry, unsigned int argnum)
 {
 	return &entry->results[argnum - 1];
@@ -266,6 +274,12 @@ void handle_failure(struct syscallrecord *rec)
 	 * entirely when no slot is an fd.  Same snapshot gate as
 	 * handle_success: shadow-when-opted, live-when-not. */
 	mask = entry->fd_arg_mask;
+	/* Clamp to the six valid arg slots for the same reason as
+	 * handle_success above: a stray bit 6/7 would let __builtin_ctz
+	 * return 6/7 and the get_results_ptr() lookup below would index
+	 * past the per-entry six-result array.  compute_fd_arg_mask() only
+	 * sets bits 0..5 today so this is defensive parity, not a live OOB. */
+	mask &= 0x3f;
 	while (mask != 0) {
 		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;
 		struct results *results = get_results_ptr(entry, i);
