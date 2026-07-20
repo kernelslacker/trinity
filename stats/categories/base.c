@@ -43,12 +43,13 @@ const struct stat_category child_category =
  * A single-field category surfaces the cleanup count in both dumps;
  * text self-gates so a clean launch environment emits nothing. */
 static const struct stat_field parent_fields[] = {
-	STAT_FIELD(parent, inherited_fds_closed),
+	STAT_FIELD_JSON_SUB(fd, parent_inherited_fds_closed,
+	                    "inherited_fds_closed"),
 };
 
 const struct stat_category parent_category =
 	STAT_CATEGORY("parent",
-	              parent_inherited_fds_closed,
+	              fd.parent_inherited_fds_closed,
 	              parent_fields);
 
 /* zombie_slots mixes two struct prefixes (zombie_slots_ for the gauge,
@@ -88,31 +89,30 @@ static const struct stat_category kvm_run_churn_category
 	              kvm_run_churn_fields);
 
 static const struct stat_field fd_lifecycle_fields[] = {
-	STAT_FIELD(fd, stale_detected),
-	STAT_FIELD(fd, stale_by_generation),
-	STAT_FIELD(fd, closed_tracked),
-	STAT_FIELD(fd, duped),
-	STAT_FIELD(fd, events_processed),
-	STAT_FIELD(fd, events_dropped),
-	STAT_FIELD(fd, event_close_count),
-	STAT_FIELD(fd, event_evict_count),
-	STAT_FIELD(fd, hash_reinsert_dropped),
-	STAT_FIELD_JSON(local_fd, hash_insert_dropped,
-	                "local_hash_insert_dropped"),
+	STAT_FIELD_SUB(fd, stale_detected),
+	STAT_FIELD_SUB(fd, stale_by_generation),
+	STAT_FIELD_SUB(fd, closed_tracked),
+	STAT_FIELD_SUB(fd, duped),
+	STAT_FIELD_SUB(fd, events_processed),
+	STAT_FIELD_SUB(fd, events_dropped),
+	STAT_FIELD_SUB(fd, event_close_count),
+	STAT_FIELD_SUB(fd, event_evict_count),
+	STAT_FIELD_SUB(fd, hash_reinsert_dropped),
+	STAT_FIELD_SUB(fd, local_hash_insert_dropped),
 	STAT_FIELD(fd, runtime_registered),
 	STAT_FIELD_JSON_SUB(epoll_volatility, lazy_armed, "epoll_lazy_armed"),
 	STAT_FIELD_JSON_SUB(epoll_volatility, blocking_poll_skipped,
 	                "epoll_blocking_poll_skipped"),
-	STAT_FIELD(fd, random_exhausted),
-	STAT_FIELD(fd, provider_invalid),
+	STAT_FIELD_SUB(fd, random_exhausted),
+	STAT_FIELD_SUB(fd, provider_invalid),
 };
 
 /* fd_lifecycle has no single gate counter -- the text emitter ORs many
- * fields.  Use fd_stale_detected as a placeholder for the JSON walker
+ * fields.  Use fd.stale_detected as a placeholder for the JSON walker
  * (which ignores gate_offset); any text-side wiring will need to revisit. */
 static const struct stat_category fd_lifecycle_category
 	__attribute__((unused)) =
 	STAT_CATEGORY("fd_lifecycle",
-	              fd_stale_detected,
+	              fd.stale_detected,
 	              fd_lifecycle_fields);
 

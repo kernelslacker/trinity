@@ -1059,55 +1059,6 @@ struct stats_s {
 
 	/* ---- Group D: diagnostic / parent-side / one-shot ---- */
 
-	/* fd lifecycle tracking */
-	unsigned long fd_stale_detected __attribute__((aligned(64)));
-	unsigned long fd_stale_by_generation;
-	unsigned long fd_closed_tracked;
-	unsigned long fd_duped;
-	unsigned long fd_events_processed;
-	unsigned long fd_events_dropped;
-	/* Per-event-type counters bumped from apply_slot().  CLOSE means a
-	 * child genuinely closed the fd; EVICT means the parent watchdog
-	 * is expiring a stale pool slot whose fd may still be valid in a
-	 * sibling.  Split so the two paths stay observable. */
-	unsigned long fd_event_close_count;
-	unsigned long fd_event_evict_count;
-
-	/* get_random_fd() hit GET_RANDOM_FD_BUDGET outer iterations and
-	 * returned -1 to its caller.  Non-zero means a child was about
-	 * to tight-loop in argument generation (PREP-state record, so
-	 * is_child_making_progress() can't see it) and we bailed instead.
-	 * Persistent non-zero indicates fd providers exhausted, broken,
-	 * or persistently returning untracked/<=2 fds. */
-	unsigned long fd_random_exhausted;
-
-	/* get_new_random_fd() drew a NULL entry from active_providers[] (or a
-	 * provider with a NULL ->get).  Every registered provider has a
-	 * non-NULL compile-time ->get and the pool is filled once at init, so
-	 * a NULL here means the zmalloc'd active_providers array (or
-	 * num_active_providers) was scribbled by an out-of-bounds write
-	 * elsewhere -- a heap-corruption canary, not a normal condition.  The
-	 * draw is retried within the existing inner budget; persistent
-	 * non-zero is a strong corruption signal. */
-	unsigned long fd_provider_invalid;
-
-	/* fd_hash_reinsert() exhausted the linear-probe chain without
-	 * finding a free slot and silently dropped the displaced entry.
-	 * Only reachable when fd_hash_count == FD_HASH_SIZE; non-zero
-	 * means we lost an fd registration during a removal-driven
-	 * re-seat and the per-iter outputerr names which fd. */
-	unsigned long fd_hash_reinsert_dropped;
-
-	/* local_fd_hash_insert() exhausted the linear-probe chain in a
-	 * per-child objhead's fd_hash[] (LOCAL_FD_HASH_SIZE slots) and
-	 * silently returned without inserting.  Subsequent
-	 * find_local_object_by_fd() lookups for that fd will return NULL
-	 * and the operation drops the object metadata.  Non-zero means
-	 * a child has more concurrent fds of one type than the per-child
-	 * hash can index; the existing behaviour is preserved (still a
-	 * silent return) — this counter just makes the loss visible. */
-	unsigned long local_fd_hash_insert_dropped;
-
 	/* Number of fds the generic ret_objtype post-hook auto-registered
 	 * into a per-type OBJ_LOCAL pool because no syscall-specific .post
 	 * had already done so. */
@@ -1171,15 +1122,6 @@ struct stats_s {
 
 	/* zombie-reaper accounting.  See stats/subsys/zombie_reaper.h. */
 	struct zombie_reaper_stats zombie_reaper;
-
-	/* sanitize_inherited_fds() closed an fd that the parent inherited
-	 * from its launcher (or the launcher's parent) at startup.  We
-	 * keep only {0,1,2} across the parent's fork boundary into the
-	 * fuzz children; anything else came in from outside trinity and
-	 * could end up being polled, watched, or otherwise wedged on by
-	 * the reap path (e.g. a stuck-fs fd surfacing in the child-monitor
-	 * watch set and blocking the parent's epoll/poll loop). */
-	unsigned long parent_inherited_fds_closed;
 
 	/* alloc_shared() / track_shared_region() ran with
 	 * nr_shared_regions == MAX_SHARED_ALLOCS and parked the new region

@@ -36,31 +36,31 @@
 
 static void dump_fd_lifecycle(void)
 {
-	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
-	    shm->stats.fd_stale_by_generation ||
-	    shm->stats.fd_duped || shm->stats.fd_events_processed ||
-	    shm->stats.fd_hash_reinsert_dropped ||
-	    shm->stats.local_fd_hash_insert_dropped ||
+	if (shm->stats.fd.stale_detected || shm->stats.fd.closed_tracked ||
+	    shm->stats.fd.stale_by_generation ||
+	    shm->stats.fd.duped || shm->stats.fd.events_processed ||
+	    shm->stats.fd.hash_reinsert_dropped ||
+	    shm->stats.fd.local_hash_insert_dropped ||
 	    shm->stats.epoll_volatility.lazy_armed ||
 	    shm->stats.epoll_volatility.blocking_poll_skipped ||
-	    shm->stats.fd_random_exhausted ||
-	    shm->stats.fd_provider_invalid) {
-		stat_row("fd_lifecycle", "stale_detected",      shm->stats.fd_stale_detected);
-		stat_row("fd_lifecycle", "stale_by_generation", shm->stats.fd_stale_by_generation);
-		stat_row("fd_lifecycle", "closed_tracked",      shm->stats.fd_closed_tracked);
-		stat_row("fd_lifecycle", "duped",               shm->stats.fd_duped);
-		stat_row("fd_lifecycle", "events_processed",    shm->stats.fd_events_processed);
-		stat_row("fd_lifecycle", "events_dropped",      shm->stats.fd_events_dropped);
-		stat_row("fd_lifecycle", "event_close_count",   shm->stats.fd_event_close_count);
-		stat_row("fd_lifecycle", "event_evict_count",   shm->stats.fd_event_evict_count);
-		stat_row("fd_lifecycle", "hash_reinsert_dropped", shm->stats.fd_hash_reinsert_dropped);
+	    shm->stats.fd.random_exhausted ||
+	    shm->stats.fd.provider_invalid) {
+		stat_row("fd_lifecycle", "stale_detected",      shm->stats.fd.stale_detected);
+		stat_row("fd_lifecycle", "stale_by_generation", shm->stats.fd.stale_by_generation);
+		stat_row("fd_lifecycle", "closed_tracked",      shm->stats.fd.closed_tracked);
+		stat_row("fd_lifecycle", "duped",               shm->stats.fd.duped);
+		stat_row("fd_lifecycle", "events_processed",    shm->stats.fd.events_processed);
+		stat_row("fd_lifecycle", "events_dropped",      shm->stats.fd.events_dropped);
+		stat_row("fd_lifecycle", "event_close_count",   shm->stats.fd.event_close_count);
+		stat_row("fd_lifecycle", "event_evict_count",   shm->stats.fd.event_evict_count);
+		stat_row("fd_lifecycle", "hash_reinsert_dropped", shm->stats.fd.hash_reinsert_dropped);
 		stat_row("fd_lifecycle", "local_hash_insert_dropped",
-			 shm->stats.local_fd_hash_insert_dropped);
+			 shm->stats.fd.local_hash_insert_dropped);
 		stat_row("fd_lifecycle", "epoll_lazy_armed",    shm->stats.epoll_volatility.lazy_armed);
 		stat_row("fd_lifecycle", "epoll_blocking_poll_skipped",
 			 shm->stats.epoll_volatility.blocking_poll_skipped);
-		stat_row("fd_lifecycle", "random_exhausted",    shm->stats.fd_random_exhausted);
-		stat_row("fd_lifecycle", "provider_invalid",    shm->stats.fd_provider_invalid);
+		stat_row("fd_lifecycle", "random_exhausted",    shm->stats.fd.random_exhausted);
+		stat_row("fd_lifecycle", "provider_invalid",    shm->stats.fd.provider_invalid);
 	}
 }
 

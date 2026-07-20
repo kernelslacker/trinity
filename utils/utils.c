@@ -179,7 +179,7 @@ void sanitize_inherited_fds(void)
 
 		close(fd);
 		if (shm != NULL)
-			__atomic_add_fetch(&shm->stats.parent_inherited_fds_closed,
+			__atomic_add_fetch(&shm->stats.fd.parent_inherited_fds_closed,
 					   1, __ATOMIC_RELAXED);
 	}
 	closedir(dir);

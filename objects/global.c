@@ -176,6 +176,6 @@ void remove_object_by_fd(int fd)
 	obj = entry->obj;
 	type = entry->type;
 
-	__atomic_add_fetch(&shm->stats.fd_closed_tracked, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fd.closed_tracked, 1, __ATOMIC_RELAXED);
 	__destroy_object(obj, OBJ_GLOBAL, type, false);
 }
