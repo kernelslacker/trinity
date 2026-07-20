@@ -132,6 +132,7 @@
 #include "stats/subsys/sctp_chunk_rx.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
+#include "stats/subsys/slab_cache_thrash.h"
 #include "stats/subsys/sock_ulp_sockmap_layering.h"
 #include "stats/subsys/socket_family_chain.h"
 #include "stats/subsys/socket_family_grammar.h"
@@ -268,13 +269,6 @@ static inline bool topo_pair_unpack(uint64_t e,
  * recipe_stats::completed_per[]).
  * MAX_IOURING_RECIPES lives in stats/subsys/iouring_recipes.h (used by
  * struct iouring_recipes_stats::completed_per[]). */
-
-/* Number of distinct slab classes the slab_cache_thrash childop targets,
- * one entry per enum slab_target in childops/misc/slab-cache-thrash.c.  Sized
- * here (rather than in the childop) so the per-target run counter array
- * can live inside struct stats_s.  A static_assert in slab-cache-thrash.c
- * fails the build if the two ever drift. */
-#define NR_SLAB_TARGETS 7
 
 /* Coarse syscall categories used by the dispatch-time histogram.  Order
  * is also the dump order; SYSCAT_OTHER is the catch-all for anything not
@@ -1049,13 +1043,8 @@ struct stats_s {
 	/* flowtable_vlan accounting.  See stats/subsys/flowtable_vlan.h. */
 	struct flowtable_vlan_stats flowtable_vlan __attribute__((aligned(64)));
 
-	/* slab_cache_thrash childop: per-target burst invocation count,
-	 * indexed by enum slab_target (defined in slab-cache-thrash.c, kept
-	 * private to the childop since nothing else needs the symbolic
-	 * names).  NR_SLAB_TARGETS is asserted equal to the enum tail at
-	 * build time inside the childop, so a future target added there
-	 * without resizing this array is caught by the assert. */
-	unsigned long slab_cache_thrash_runs[NR_SLAB_TARGETS];
+	/* slab_cache_thrash accounting.  See stats/subsys/slab_cache_thrash.h. */
+	struct slab_cache_thrash_stats slab_cache_thrash __attribute__((aligned(64)));
 
 	/* ---- Group D: diagnostic / parent-side / one-shot ---- */
 

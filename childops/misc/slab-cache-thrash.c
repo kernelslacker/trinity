@@ -342,7 +342,7 @@ bool slab_cache_thrash(struct childdata *child)
 	t = (enum slab_target)rnd_modulo_u32(NR_SLAB_TARGETS);
 	n = pick_burst();
 
-	__atomic_add_fetch(&shm->stats.slab_cache_thrash_runs[t],
+	__atomic_add_fetch(&shm->stats.slab_cache_thrash.runs[t],
 			   1, __ATOMIC_RELAXED);
 
 	/* Snapshot child->op_type once and bounds-check before indexing

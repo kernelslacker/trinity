@@ -385,10 +385,10 @@ static void dump_stats_render_slab_cache_thrash_runs(void)
 	unsigned int t;
 
 	for (t = 0; t < NR_SLAB_TARGETS; t++) {
-		if (shm->stats.slab_cache_thrash_runs[t] == 0)
+		if (shm->stats.slab_cache_thrash.runs[t] == 0)
 			continue;
 		stat_row("slab_cache_thrash", slab_target_name(t),
-			 shm->stats.slab_cache_thrash_runs[t]);
+			 shm->stats.slab_cache_thrash.runs[t]);
 	}
 }
 
