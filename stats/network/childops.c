@@ -238,15 +238,15 @@ static void dump_stats_render_xfrm_churn(void)
 
 static void dump_stats_render_accept_unblocker(void)
 {
-	if (shm->stats.accept_unblocker_connects_fired ||
-	    shm->stats.accept_unblocker_loopback_only_skipped ||
-	    shm->stats.accept_unblocker_probe_failed) {
+	if (shm->stats.accept_unblocker.connects_fired ||
+	    shm->stats.accept_unblocker.loopback_only_skipped ||
+	    shm->stats.accept_unblocker.probe_failed) {
 		stat_row("accept_unblocker", "connects_fired",
-			 shm->stats.accept_unblocker_connects_fired);
+			 shm->stats.accept_unblocker.connects_fired);
 		stat_row("accept_unblocker", "loopback_only_skipped",
-			 shm->stats.accept_unblocker_loopback_only_skipped);
+			 shm->stats.accept_unblocker.loopback_only_skipped);
 		stat_row("accept_unblocker", "probe_failed",
-			 shm->stats.accept_unblocker_probe_failed);
+			 shm->stats.accept_unblocker.probe_failed);
 	}
 }
 

@@ -180,7 +180,7 @@ void accept_unblocker_fire(int fd, const struct socketinfo *si)
 		 * pool fds are not listeners.  Bump only on the genuine
 		 * error case (probe returned an unexpected errno). */
 		if (errno != 0 && errno != EINVAL && errno != ENOTSOCK)
-			__atomic_add_fetch(&shm->stats.accept_unblocker_probe_failed,
+			__atomic_add_fetch(&shm->stats.accept_unblocker.probe_failed,
 					   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -197,7 +197,7 @@ void accept_unblocker_fire(int fd, const struct socketinfo *si)
 	if (!addr_is_loopback(sa, slen)) {
 		if (!rewrite_to_loopback(sa, slen) ||
 		    !addr_is_loopback(sa, slen)) {
-			__atomic_add_fetch(&shm->stats.accept_unblocker_loopback_only_skipped,
+			__atomic_add_fetch(&shm->stats.accept_unblocker.loopback_only_skipped,
 					   1, __ATOMIC_RELAXED);
 			return;
 		}
@@ -205,7 +205,7 @@ void accept_unblocker_fire(int fd, const struct socketinfo *si)
 
 	family = family_for_addr(sa);
 	if (family < 0) {
-		__atomic_add_fetch(&shm->stats.accept_unblocker_loopback_only_skipped,
+		__atomic_add_fetch(&shm->stats.accept_unblocker.loopback_only_skipped,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -219,14 +219,14 @@ void accept_unblocker_fire(int fd, const struct socketinfo *si)
 	 */
 	cfd = socket(family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
 	if (cfd < 0) {
-		__atomic_add_fetch(&shm->stats.accept_unblocker_probe_failed,
+		__atomic_add_fetch(&shm->stats.accept_unblocker.probe_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
 	r = connect(cfd, sa, slen);
 	if (r == 0 || (r < 0 && errno == EINPROGRESS)) {
-		__atomic_add_fetch(&shm->stats.accept_unblocker_connects_fired,
+		__atomic_add_fetch(&shm->stats.accept_unblocker.connects_fired,
 				   1, __ATOMIC_RELAXED);
 	} else {
 		/* ECONNREFUSED / ENOENT / EADDRNOTAVAIL on a stale or
@@ -235,7 +235,7 @@ void accept_unblocker_fire(int fd, const struct socketinfo *si)
 		 * Other errnos are unexpected and worth counting. */
 		if (errno != ECONNREFUSED && errno != ENOENT &&
 		    errno != EADDRNOTAVAIL && errno != ECONNRESET)
-			__atomic_add_fetch(&shm->stats.accept_unblocker_probe_failed,
+			__atomic_add_fetch(&shm->stats.accept_unblocker.probe_failed,
 					   1, __ATOMIC_RELAXED);
 	}
 
