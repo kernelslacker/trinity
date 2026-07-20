@@ -99,7 +99,7 @@ static const struct stat_field fd_lifecycle_fields[] = {
 	STAT_FIELD_SUB(fd, event_evict_count),
 	STAT_FIELD_SUB(fd, hash_reinsert_dropped),
 	STAT_FIELD_SUB(fd, local_hash_insert_dropped),
-	STAT_FIELD(fd, runtime_registered),
+	STAT_FIELD_JSON_SUB(fd_runtime, registered, "runtime_registered"),
 	STAT_FIELD_JSON_SUB(epoll_volatility, lazy_armed, "epoll_lazy_armed"),
 	STAT_FIELD_JSON_SUB(epoll_volatility, blocking_poll_skipped,
 	                "epoll_blocking_poll_skipped"),
