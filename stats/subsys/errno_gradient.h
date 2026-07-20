@@ -67,6 +67,33 @@ struct errno_gradient_stats {
 	 *      success path on a syscall that previously only rejected"
 	 *      signal. */
 	unsigned long to_success;
+
+	/* errno-gradient-save SHADOW + LIVE counters.  The trigger fires
+	 * in handle_syscall_ret() on the first non-EFAULT errno bucket per
+	 * syscall per run window (cheap-first version of the broader
+	 * gradient predicate).
+	 *
+	 * save_would_save
+	 *     Bumped on EVERY trigger event regardless of the
+	 *     --corpus-save-errno-grad-live A/B flag.  Establishes the
+	 *     would-be-save volume before the live distribution change is
+	 *     enabled, so the operator can size the impact of flipping the
+	 *     flag without touching the corpus admission distribution.
+	 *
+	 * save_did_save
+	 *     Bumped only when the trigger event ACTUALLY admitted to the
+	 *     ring (--corpus-save-errno-grad-live=true AND entry->sanitise
+	 *     == NULL AND minicorpus_save_with_reason() passed its filters).
+	 *     Stays at zero in the default-off behavior-neutral build.  The
+	 *     would_save - did_save delta is the count of trigger events
+	 *     the A/B gate or the sanitise filter suppressed.
+	 *
+	 * Observability only -- no selection / reward / injection path
+	 * consumes either.  RELAXED add-fetch matches the surrounding
+	 * accounting.  Both start at zero on parent boot; warm-start does
+	 * not persist stats counters. */
+	unsigned long save_would_save;
+	unsigned long save_did_save;
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_ERRNO_GRADIENT_H */
