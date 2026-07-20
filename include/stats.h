@@ -505,25 +505,6 @@ struct stats_s {
 	unsigned long arena_ptr_stale_caught_arg;
 	unsigned long arena_ptr_stale_caught_post_state;
 
-	/* fill_arg() fired the ONE_IN(WRONG_FD_TYPE_FREQ) branch on a
-	 * typed-fd argument and substituted either a different typed-fd
-	 * subtype or a generic-pool fd in its place.  Headline counter for
-	 * the wrong-fd-type substitution: divided by op_count this is the
-	 * realised substitution rate, which should track 1 / WRONG_FD_TYPE_FREQ
-	 * weighted by the typed-fd-arg fraction of the syscall mix.  Targets
-	 * the wrong-fd-type bug class -- without these substitutions the
-	 * typed-fd consumer always hands the kernel the correct subtype and
-	 * any type-check guard sitting only on the mismatched-subtype path
-	 * is never reached. */
-	unsigned long wrong_fd_type_substitutions;
-
-	/* Subset of wrong_fd_type_substitutions where the substitution fell
-	 * through to get_random_fd() instead of picking another typed-fd
-	 * argtype.  Surfaces the typed-vs-generic split so the ONE_IN(4)
-	 * generic branch is observable separately from the dominant
-	 * other-typed-fd path. */
-	unsigned long wrong_fd_type_subst_generic;
-
 	/* sanitise_execve() refused to let an execve / execveat fire because
 	 * the resolved target inode matched trinity's own binary -- the path
 	 * argument was rewritten to a known-bad value so the kernel returns
@@ -2797,20 +2778,9 @@ struct stats_s {
 	 * See stats/subsys/topo_pair.h. */
 	struct topo_pair_stats topo_pair __attribute__((aligned(64)));
 
-	/* SHADOW-ONLY census of scrub-eligible address-family arg slots
-	 * walked by blanket_address_scrub() -- one bump per set bit in
-	 * entry->address_scrub_mask consumed by the ctz loop, i.e. once per
-	 * ARG_ADDRESS / ARG_NON_NULL_ADDRESS / ARG_RANGE slot the relocator
-	 * actually visits.  Telemetry only: the live inject/scrub path is
-	 * unchanged and avoid_shared_buffer_out() still fires for every
-	 * visited slot.  Denominator for a future per-slot "relocated vs
-	 * not" split, which needs a signature change on
-	 * avoid_shared_buffer_out and so is intentionally not landed here.
-	 * RELAXED add-fetch -- diagnostic, not an event log. */
-	unsigned long blanket_address_scrub_slots_walked;
-
 	/* arg-generation observability (meta sidecar + object-size-relative
-	 * ARG_LEN draws).  See stats/subsys/arg.h. */
+	 * ARG_LEN draws + wrong-fd-type substitution + blanket-scrub census).
+	 * See stats/subsys/arg.h. */
 	struct arg_stats arg __attribute__((aligned(64)));
 
 	/* userns_bootstrap accounting.  See stats/subsys/userns_bootstrap.h. */
