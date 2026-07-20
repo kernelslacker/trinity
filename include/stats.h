@@ -2724,25 +2724,11 @@ struct stats_s {
 	unsigned long rq_sourced_saves_per_syscall[MAX_NR_SYSCALL];
 	unsigned long rq_sourced_pcedge_wins_per_syscall[MAX_NR_SYSCALL];
 
-	/* errno-gradient-save SHADOW + LIVE counters and per-syscall
-	 * attribution.  The trigger fires in handle_syscall_ret() on the
-	 * first non-EFAULT errno bucket per syscall per run window (cheap-
-	 * first version of the broader gradient predicate).
-	 *
-	 * errno_grad_save_would_save
-	 *     Bumped on EVERY trigger event regardless of the
-	 *     --corpus-save-errno-grad-live A/B flag.  Establishes the
-	 *     would-be-save volume before the live distribution change is
-	 *     enabled, so the operator can size the impact of flipping the
-	 *     flag without touching the corpus admission distribution.
-	 *
-	 * errno_grad_save_did_save
-	 *     Bumped only when the trigger event ACTUALLY admitted to the
-	 *     ring (--corpus-save-errno-grad-live=true AND entry->sanitise
-	 *     == NULL AND minicorpus_save_with_reason() passed its filters).
-	 *     Stays at zero in the default-off behavior-neutral build.  The
-	 *     would_save - did_save delta is the count of trigger events
-	 *     the A/B gate or the sanitise filter suppressed.
+	/* Per-syscall errno-sourced provenance attribution.  The
+	 * errno-gradient-save SHADOW/LIVE trigger scalars live in
+	 * struct errno_gradient_stats (stats/subsys/errno_gradient.h) as
+	 * save_would_save / save_did_save; the two per-syscall arrays
+	 * below carry the same errno-source provenance one level down.
 	 *
 	 * errno_sourced_saves_per_syscall[nr]
 	 *     Bumped from minicorpus_save_with_reason() each time an entry
@@ -2758,11 +2744,9 @@ struct stats_s {
 	 *     rq_sourced_pcedge_wins_per_syscall[].
 	 *
 	 * Observability only -- no selection / reward / injection path
-	 * consumes any of these.  RELAXED add-fetch matches the surrounding
-	 * accounting.  All four start at zero on parent boot; warm-start
-	 * does not persist stats counters. */
-	unsigned long errno_grad_save_would_save;
-	unsigned long errno_grad_save_did_save;
+	 * consumes either.  RELAXED add-fetch matches the surrounding
+	 * accounting.  Both start at zero on parent boot; warm-start does
+	 * not persist stats counters. */
 	unsigned long errno_sourced_saves_per_syscall[MAX_NR_SYSCALL];
 	unsigned long errno_sourced_pcedge_wins_per_syscall[MAX_NR_SYSCALL];
 

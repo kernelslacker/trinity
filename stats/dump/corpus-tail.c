@@ -136,10 +136,10 @@ static void dump_corpus_saves(void)
 		&minicorpus_shm->mut_attrib_cmp_wins,
 		__ATOMIC_RELAXED);
 	unsigned long errno_would = __atomic_load_n(
-		&shm->stats.errno_grad_save_would_save,
+		&shm->stats.errno_gradient.save_would_save,
 		__ATOMIC_RELAXED);
 	unsigned long errno_did = __atomic_load_n(
-		&shm->stats.errno_grad_save_did_save,
+		&shm->stats.errno_gradient.save_did_save,
 		__ATOMIC_RELAXED);
 
 	output(0, "Corpus saves: pc=%lu cmp=%lu errno=%lu  mut wins (cmp-source): %lu\n",
