@@ -509,7 +509,7 @@ static void post_fcntl_dupfd(unsigned long retval)
 {
 	if ((long) retval < 0 || (long) retval >= (1 << 20))
 		return;
-	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fd.duped, 1, __ATOMIC_RELAXED);
 }
 
 static void post_fcntl_getfd(struct syscallrecord *rec, unsigned long retval)
