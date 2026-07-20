@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <malloc.h>
 #include <signal.h>
 #include <stdatomic.h>
@@ -411,9 +412,17 @@ static void check_fd_leaks(struct childdata *child)
  * and forgets to close some on an error path bumps the returned
  * number, and the delta is non-zero on the leaking invocation.
  *
- * Returns -1 on any failure so the caller's delta computation short-
- * circuits (the caller treats a -1 as "no observation" and skips the
- * per-op bump); the probe is diagnostic only, never load-bearing.
+ * Returns -1 on non-EMFILE failures so the caller's delta computation
+ * short-circuits (the caller treats a -1 as "no observation" and skips
+ * the per-op bump); the probe is diagnostic only, never load-bearing.
+ * EMFILE is special-cased: the fd table is at RLIMIT_NOFILE, which is
+ * exactly the leak signature we want to catch, so return the ceiling
+ * (rlim_cur) as a sentinel.  That way a before-probe at fd N followed
+ * by an after-probe that hits EMFILE registers a positive delta of
+ * (ceiling - N) instead of vanishing into the short-circuit -- the
+ * leak IS accounted for at the moment fd exhaustion bites.  If
+ * getrlimit itself fails or reports a ceiling that would not fit in
+ * int, fall back to -1.
  * Two syscalls per alt-op dispatch is well inside the syscall-per-op
  * budget the alarm(1) watchdog and the childop_wall_ns bracket already
  * pay.
@@ -422,8 +431,16 @@ static int probe_lowest_free_fd(void)
 {
 	int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
 
-	if (fd < 0)
+	if (fd < 0) {
+		if (errno == EMFILE) {
+			struct rlimit rl;
+
+			if (getrlimit(RLIMIT_NOFILE, &rl) == 0 &&
+			    rl.rlim_cur > 0 && rl.rlim_cur <= INT_MAX)
+				return (int)rl.rlim_cur;
+		}
 		return -1;
+	}
 	close(fd);
 	return fd;
 }
@@ -892,10 +909,13 @@ void child_process(struct childdata *child, int childno)
 		 * CHILD_OP_SYSCALL hot 95% path can't afford two extra
 		 * syscalls per iter, and random_syscall's own fd bookkeeping
 		 * covers pool-managed fds separately (see check_fd_leaks).
-		 * A probe failure returns -1 and the delta computation
-		 * below treats that as "no observation" so a transient
-		 * open(/dev/null) EMFILE at fd-exhaustion time doesn't
-		 * scribble negative-cast values into the sum. */
+		 * A non-EMFILE probe failure returns -1 and the delta
+		 * computation below treats that as "no observation" so
+		 * a transient open(/dev/null) error doesn't scribble
+		 * negative-cast values into the sum.  EMFILE returns
+		 * the RLIMIT_NOFILE ceiling as a sentinel so the leak
+		 * IS accounted for at fd-exhaustion time -- see
+		 * probe_lowest_free_fd(). */
 		int fd_probe_before = is_alt_op ? probe_lowest_free_fd() : -1;
 		clock_gettime(CLOCK_MONOTONIC, &split_t0);
 		child->in_childop = is_alt_op;
