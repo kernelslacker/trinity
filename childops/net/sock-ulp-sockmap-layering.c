@@ -71,6 +71,14 @@
 # define BPF_SK_SKB_STREAM_VERDICT 9
 #endif
 
+#ifndef BPF_FUNC_sk_redirect_map
+# define BPF_FUNC_sk_redirect_map 52
+#endif
+
+#ifndef BPF_MAP_TYPE_SOCKMAP
+# define BPF_MAP_TYPE_SOCKMAP 15
+#endif
+
 static const char sock_ulp_layering_license[] = "GPL";
 
 /* Latches: once the kernel proves these features are absent, stop
@@ -169,6 +177,38 @@ static int load_sk_skb_verdict_prog(void)
 	return sys_bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
 }
 
+/* Second verdict prog: calls bpf_sk_redirect_map(skb, redir_map, 1, 0)
+ * and returns whatever the helper returns.  Semantics: the helper stamps
+ * the redirect target (map[1]) into TCP_SKB_CB(skb)->bpf.sk_redir and
+ * returns SK_PASS on success / SK_DROP on error; the sockmap dispatcher
+ * then translates SK_PASS-with-target into __SK_REDIRECT and enqueues
+ * the skb onto the target sk's receive queue.  Exercising this path
+ * churns the sk_psock_verdict_apply -> sk_psock_skb_redirect edge
+ * concurrently with the ULP-layering interaction on the first map. */
+static int load_sk_skb_redirect_prog(int redir_map_fd)
+{
+	struct bpf_insn insns[] = {
+		/* r1 already holds ctx (skb) on entry. */
+		/* r2 = &redir_map (LD_MAP_FD occupies two insn slots). */
+		EBPF_LD_MAP_FD(BPF_REG_2, redir_map_fd),
+		/* r3 = 1 -- redirect target lives at slot 1. */
+		EBPF_MOV64_IMM(BPF_REG_3, 1),
+		/* r4 = 0 -- flags (0 = egress, no BPF_F_INGRESS). */
+		EBPF_MOV64_IMM(BPF_REG_4, 0),
+		EBPF_CALL(BPF_FUNC_sk_redirect_map),
+		EBPF_EXIT(),
+	};
+	union bpf_attr attr;
+
+	memset(&attr, 0, sizeof(attr));
+	attr.prog_type = BPF_PROG_TYPE_SK_SKB;
+	attr.insn_cnt = ARRAY_SIZE(insns);
+	attr.insns = (__u64)(uintptr_t)insns;
+	attr.license = (__u64)(uintptr_t)sock_ulp_layering_license;
+
+	return sys_bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
+}
+
 static int attach_verdict(int map_fd, int prog_fd)
 {
 	union bpf_attr attr;
@@ -247,9 +287,12 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	unsigned char drain[256];
 	int cli_a = -1, srv_a = -1;
 	int cli_b = -1, srv_b = -1;
+	int cli_r = -1, srv_r = -1;
 	int map_fd = -1, prog_fd = -1;
+	int redir_map_fd = -1, redir_prog_fd = -1;
 	int i;
 	bool layered_a = false, layered_b = false;
+	bool redir_armed = false;
 
 	__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.runs, 1,
 			   __ATOMIC_RELAXED);
@@ -337,6 +380,45 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.layered_ok,
 				   1, __ATOMIC_RELAXED);
 
+	/* SK_REDIRECT churn: a SECOND sockmap + a SECOND SK_SKB verdict
+	 * prog that calls bpf_sk_redirect_map(skb, redir_map, 1, 0), so
+	 * skbs arriving on slot-0 get enqueued onto the slot-1 sk's rx
+	 * queue via sk_psock_skb_redirect().  Runs concurrently with the
+	 * SK_PASS/ULP-layering pairs above so the redirect enqueue path
+	 * races the tls_strp / sk_psock_strp interaction on loopback.
+	 * Every step is coverage: a failure here neither invalidates the
+	 * BOTH-orderings probe nor is treated as a childop failure.  The
+	 * whole block is gated by the runtime sock_ulp_layering_bpf_off
+	 * latch checked at function entry, matching the existing pattern
+	 * -- no separate compile-time guard is needed. */
+	redir_map_fd = create_sockmap();
+	if (redir_map_fd >= 0) {
+		redir_prog_fd = load_sk_skb_redirect_prog(redir_map_fd);
+		if (redir_prog_fd < 0) {
+			__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.prog_failed,
+					   1, __ATOMIC_RELAXED);
+		} else {
+			if (attach_verdict(redir_map_fd, redir_prog_fd) < 0)
+				__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.attach_failed,
+						   1, __ATOMIC_RELAXED);
+			if (make_loopback_pair(&cli_r, &srv_r) == 0) {
+				/* srv_r at slot 0 -- its incoming skbs fire
+				 * the verdict.  cli_r at slot 1 -- redirect
+				 * target: sk_psock_skb_redirect() enqueues
+				 * the skb onto cli_r's rx queue. */
+				(void)sockmap_add(redir_map_fd, 0, srv_r);
+				(void)sockmap_add(redir_map_fd, 1, cli_r);
+				redir_armed = true;
+			} else {
+				__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.setup_failed,
+						   1, __ATOMIC_RELAXED);
+			}
+		}
+	} else {
+		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.map_failed,
+				   1, __ATOMIC_RELAXED);
+	}
+
 	/* Drive traffic — short, non-blocking, interleaved across both
 	 * pairs so tls_strp_read and sk_psock_strp_read race on the
 	 * loopback enqueue path.  Every send/recv may return -1 with
@@ -358,6 +440,20 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		(void)send(srv_b, payload, n, MSG_DONTWAIT | MSG_NOSIGNAL);
 		(void)recv(cli_a, drain, sizeof(drain), MSG_DONTWAIT);
 		(void)recv(cli_b, drain, sizeof(drain), MSG_DONTWAIT);
+
+		/* Redirect churn: cli_r -> srv_r delivers skbs into
+		 * srv_r's rx queue (slot 0), the verdict prog fires and
+		 * redirects them to cli_r (slot 1), so cli_r drains what
+		 * it just sent -- exercising sk_psock_skb_redirect()
+		 * enqueue interleaved with the ULP-layered pairs above. */
+		if (redir_armed) {
+			(void)send(cli_r, payload, n,
+				   MSG_DONTWAIT | MSG_NOSIGNAL);
+			(void)recv(srv_r, drain, sizeof(drain),
+				   MSG_DONTWAIT);
+			(void)recv(cli_r, drain, sizeof(drain),
+				   MSG_DONTWAIT);
+		}
 	}
 
 	/* Best-effort detach of the map entries before fd close —
@@ -366,6 +462,10 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	(void)sockmap_del(map_fd, 1);
 	(void)sockmap_del(map_fd, 2);
 	(void)sockmap_del(map_fd, 3);
+	if (redir_map_fd >= 0) {
+		(void)sockmap_del(redir_map_fd, 0);
+		(void)sockmap_del(redir_map_fd, 1);
+	}
 
 out:
 	/* Close ALL fds — sockmap + prog + sockets — every path. */
@@ -385,6 +485,18 @@ out:
 		(void)shutdown(srv_b, SHUT_RDWR);
 		close(srv_b);
 	}
+	if (cli_r >= 0) {
+		(void)shutdown(cli_r, SHUT_RDWR);
+		close(cli_r);
+	}
+	if (srv_r >= 0) {
+		(void)shutdown(srv_r, SHUT_RDWR);
+		close(srv_r);
+	}
+	if (redir_prog_fd >= 0)
+		close(redir_prog_fd);
+	if (redir_map_fd >= 0)
+		close(redir_map_fd);
 	if (prog_fd >= 0)
 		close(prog_fd);
 	if (map_fd >= 0)
