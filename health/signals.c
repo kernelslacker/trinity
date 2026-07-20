@@ -1139,9 +1139,9 @@ void watchdog_reinstall_if_clobbered(void)
 		sa.sa_flags = 0;
 		sa.sa_handler = sigalrm_handler;
 		(void)sigaction(SIGALRM, &sa, NULL);
-		__atomic_add_fetch(&shm->stats.watchdog_sigalrm_clobbered,
+		__atomic_add_fetch(&shm->stats.watchdog_signal.sigalrm_clobbered,
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.watchdog_sigalrm_reinstalled,
+		__atomic_add_fetch(&shm->stats.watchdog_signal.sigalrm_reinstalled,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -1155,9 +1155,9 @@ void watchdog_reinstall_if_clobbered(void)
 		sa.sa_flags = 0;
 		sa.sa_handler = sigxcpu_handler;
 		(void)sigaction(SIGXCPU, &sa, NULL);
-		__atomic_add_fetch(&shm->stats.watchdog_sigxcpu_clobbered,
+		__atomic_add_fetch(&shm->stats.watchdog_signal.sigxcpu_clobbered,
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.watchdog_sigxcpu_reinstalled,
+		__atomic_add_fetch(&shm->stats.watchdog_signal.sigxcpu_reinstalled,
 				   1, __ATOMIC_RELAXED);
 	}
 }
