@@ -500,7 +500,7 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 	 * consumed only at periodic dump time. */
 	if (tmp.rq_sourced)
 		__atomic_fetch_add(
-			&shm->stats.rq_sourced_saves_per_syscall[nr],
+			&shm->stats.pc_edge_source.rq_saves[nr],
 			1UL, __ATOMIC_RELAXED);
 
 	/* Per-syscall errno-source save counter.  Mirror of the rq_sourced
@@ -509,7 +509,7 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 	 * traced back to an errno-source save. */
 	if (tmp.errno_sourced)
 		__atomic_fetch_add(
-			&shm->stats.errno_sourced_saves_per_syscall[nr],
+			&shm->stats.pc_edge_source.errno_saves[nr],
 			1UL, __ATOMIC_RELAXED);
 
 	/* Blob-content sibling: promote any pending blob stash from this

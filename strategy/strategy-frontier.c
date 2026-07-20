@@ -166,7 +166,7 @@ void frontier_record_new_edge(unsigned int nr)
 
 		if (cc != NULL && cc->replay_rq_sourced)
 			__atomic_fetch_add(
-				&shm->stats.rq_sourced_pcedge_wins_per_syscall[nr],
+				&shm->stats.pc_edge_source.rq_pcedge_wins[nr],
 				1UL, __ATOMIC_RELAXED);
 
 		/* errno-gradient-save conversion counter.  Sibling of the
@@ -178,7 +178,7 @@ void frontier_record_new_edge(unsigned int nr)
 		 * the rest of the strategy.c accounting. */
 		if (cc != NULL && cc->replay_errno_sourced)
 			__atomic_fetch_add(
-				&shm->stats.errno_sourced_pcedge_wins_per_syscall[nr],
+				&shm->stats.pc_edge_source.errno_pcedge_wins[nr],
 				1UL, __ATOMIC_RELAXED);
 	}
 
