@@ -101,7 +101,7 @@ static void dump_stats_render_divergence_sentinel(void)
 
 	for (s = 0; s < ARRAY_SIZE(divergence_sentinel_rows); s++) {
 		enum sentinel_field f = divergence_sentinel_rows[s].field;
-		unsigned long v = shm->stats.divergence_sentinel_anomalies[f];
+		unsigned long v = shm->stats.divergence_sentinel.anomalies[f];
 
 		if (v == 0)
 			continue;
@@ -397,9 +397,9 @@ static void dump_stats_render_arena_ptr_stale_and_sentinel(void)
 	if (shm->stats.sibling_mprotect_failed)
 		stat_row("corruption", "sibling_mprotect_failed", shm->stats.sibling_mprotect_failed);
 	dump_stats_render_divergence_sentinel();
-	if (shm->stats.divergence_sentinel_expected_drift)
+	if (shm->stats.divergence_sentinel.expected_drift)
 		stat_row("corruption", "divergence_sentinel_expected_drift",
-			 shm->stats.divergence_sentinel_expected_drift);
+			 shm->stats.divergence_sentinel.expected_drift);
 	if (shm->stats.destroy_object_idx_corrupt)
 		stat_row("corruption", "destroy_object_idx",     shm->stats.destroy_object_idx_corrupt);
 	if (shm->stats.global_obj_uaf_caught)

@@ -188,7 +188,7 @@ static void sentinel_report(struct childdata *child,
 	 * decoder can replay the divergence, only the live histogram is
 	 * carved out.  Mirror of the 2026-05-09 uid_change_logged split. */
 	if (field == SF_UNAME_RELEASE || field == SF_UNAME_MACHINE) {
-		__atomic_add_fetch(&shm->stats.divergence_sentinel_expected_drift,
+		__atomic_add_fetch(&shm->stats.divergence_sentinel.expected_drift,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -197,7 +197,7 @@ static void sentinel_report(struct childdata *child,
 	 * above; a corrupt `field` value (out-of-range) is dropped from the
 	 * histogram rather than scribbling past the array. */
 	if ((unsigned int) field < (unsigned int) SF__MAX) {
-		__atomic_add_fetch(&shm->stats.divergence_sentinel_anomalies[field],
+		__atomic_add_fetch(&shm->stats.divergence_sentinel.anomalies[field],
 				   1, __ATOMIC_RELAXED);
 	}
 }
