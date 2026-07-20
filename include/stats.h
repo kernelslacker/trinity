@@ -19,6 +19,7 @@
 #include "kernel/udp.h"
 #include "kernel/if_packet.h"
 #include "kernel/mount.h"
+#include "stats/subsys/accept_unblocker.h"
 #include "stats/subsys/af_alg_weak_cipher_probe.h"
 #include "stats/subsys/af_unix_peek_race.h"
 #include "stats/subsys/af_unix_scm_rights_gc.h"
@@ -2522,13 +2523,8 @@ struct stats_s {
 	/* pci_bind accounting.  See stats/subsys/pci_bind.h. */
 	struct pci_bind_stats pci_bind __attribute__((aligned(64)));
 
-	/* accept-unblocker counters.  Fires a loopback connect() at a
-	 * pooled listening socket so a concurrent accept() sees a non-empty
-	 * backlog and never parks in inet_csk_accept's wait loop.  See
-	 * net/unblocker.c for the loopback-only safety check. */
-	unsigned long accept_unblocker_connects_fired;		/* fire-and-forget connect() issued at a listener (SYN sent or EINPROGRESS) */
-	unsigned long accept_unblocker_loopback_only_skipped;	/* listener bound to non-loopback addr; refused to connect */
-	unsigned long accept_unblocker_probe_failed;		/* getsockopt(SO_ACCEPTCONN) / getsockname / socket() / connect() returned an unexpected error */
+	/* accept-unblocker accounting.  See stats/subsys/accept_unblocker.h. */
+	struct accept_unblocker_stats accept_unblocker;
 
 	/* pipe-waker accounting.  See stats/subsys/pipe_waker.h. */
 	struct pipe_waker_stats pipe_waker;
