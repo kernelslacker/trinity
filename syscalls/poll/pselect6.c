@@ -118,21 +118,21 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 			if (!fd_poll_can_block(rfd))
 				FD_SET(rfd, rfds);
 			else
-				__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+				__atomic_add_fetch(&shm->stats.epoll_volatility.blocking_poll_skipped, 1,
 						   __ATOMIC_RELAXED);
 		}
 		if (wfd >= 0) {
 			if (!fd_poll_can_block(wfd))
 				FD_SET(wfd, wfds);
 			else
-				__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+				__atomic_add_fetch(&shm->stats.epoll_volatility.blocking_poll_skipped, 1,
 						   __ATOMIC_RELAXED);
 		}
 		if (efd >= 0) {
 			if (!fd_poll_can_block(efd))
 				FD_SET(efd, exfds);
 			else
-				__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+				__atomic_add_fetch(&shm->stats.epoll_volatility.blocking_poll_skipped, 1,
 						   __ATOMIC_RELAXED);
 		}
 	}

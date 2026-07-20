@@ -89,7 +89,7 @@ static struct pollfd *alloc_pollfds(struct syscallrecord *rec)
 				break;
 			if (!fd_poll_can_block(fd))
 				break;
-			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+			__atomic_add_fetch(&shm->stats.epoll_volatility.blocking_poll_skipped, 1,
 					   __ATOMIC_RELAXED);
 			fd = -1;
 		}

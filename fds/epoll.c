@@ -70,7 +70,7 @@ static void arm_epoll(int epfd)
 		 * ep_loop_check_proc+0x76).
 		 */
 		if (fd_poll_can_block(target_fd)) {
-			__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+			__atomic_add_fetch(&shm->stats.epoll_volatility.blocking_poll_skipped, 1,
 					   __ATOMIC_RELAXED);
 			continue;
 		}
@@ -121,7 +121,7 @@ void arm_epoll_if_needed(struct epollobj *eo)
 	child_armed_epfds[idx] = true;
 
 	arm_epoll(eo->fd);
-	__atomic_add_fetch(&shm->stats.epoll_lazy_armed, 1,
+	__atomic_add_fetch(&shm->stats.epoll_volatility.lazy_armed, 1,
 			   __ATOMIC_RELAXED);
 }
 

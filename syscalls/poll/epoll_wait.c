@@ -96,10 +96,10 @@ static void record_null_events_cause(unsigned long initial_a2,
 	if ((long) rec->a3 <= 0 || rec->a2 != 0)
 		return;
 	if (initial_a2 == 0)
-		__atomic_add_fetch(&shm->stats.epoll_wait_null_events_alloc_fail,
+		__atomic_add_fetch(&shm->stats.epoll_volatility.wait_null_events_alloc_fail,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.epoll_wait_null_events_shared_reject,
+		__atomic_add_fetch(&shm->stats.epoll_volatility.wait_null_events_shared_reject,
 				   1, __ATOMIC_RELAXED);
 }
 
