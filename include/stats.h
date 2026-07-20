@@ -152,6 +152,7 @@
 #include "stats/subsys/tls_ulp_churn.h"
 #include "stats/subsys/topo_pair.h"
 #include "stats/subsys/tracefs_fuzzer.h"
+#include "stats/subsys/transition_edge.h"
 #include "stats/subsys/tty_ldisc_churn.h"
 #include "stats/subsys/ublk_lifecycle.h"
 #include "stats/subsys/uffd.h"
@@ -2517,69 +2518,13 @@ struct stats_s {
 	unsigned long errno_sourced_saves_per_syscall[MAX_NR_SYSCALL];
 	unsigned long errno_sourced_pcedge_wins_per_syscall[MAX_NR_SYSCALL];
 
-	/* Per-strategy transition-reward attribution.  Parallel in shape to
-	 * shm->pc_edge_calls_by_strategy[] / shm->pc_edge_count_by_strategy[]
-	 * (which live in shm_s, not here -- the strategy-indexed pair was
-	 * the established home before stats.h gained transition fields) but
-	 * carrying the transition-coverage signal instead of the PC-edge
-	 * signal.  Bumped from random-syscall.c at the kcov_collect call
-	 * site using child->strategy_at_pick when transitions_this_call > 0,
-	 * gated on:
-	 *
-	 *   !child->kcov.remote_mode
-	 *       Remote-mode traces merge coverage copied from remote
-	 *       contexts into the same buffer; the ordering of the merged
-	 *       PCs is not verified to preserve transition adjacency, so
-	 *       remote-mode transitions are excluded from any live reward
-	 *       input even under COMBINED.  See the kcov_transition_reward_
-	 *       mode enum in include/kcov.h for the contract.
-	 *
-	 *   kcov_transition_reward_mode != KCOV_TRANSITION_REWARD_OFF
-	 *       OFF disables the reward path entirely (zero compute, zero
-	 *       accounting).  COMBINED (default) and SHADOW_ONLY both bump
-	 *       these counters so the operator can read the per-strategy
-	 *       transition divergence regardless of whether live selection
-	 *       is consuming the signal.
-	 *
-	 * transition_edge_calls_by_strategy[strat]
-	 *     Bumps by 1 per kcov_collect() call that flipped >=1 new
-	 *     transition slot (matching the per_syscall_transition_edges
-	 *     call-count semantics).  Window delta against transition_edge_
-	 *     calls_at_window_start gives the per-strategy "how many calls
-	 *     under this arm produced a transition this window" — symmetric
-	 *     to the PC-edge call-count rotation reads.
-	 *
-	 * transition_edge_count_by_strategy[strat]
-	 *     Bumps by min(transitions_this_call, TRANSITION_PER_CALL_
-	 *     REWARD_CAP) per kcov_collect() call (raw real-flip count,
-	 *     capped per-call to keep one pathological trace from
-	 *     monopolizing the per-strategy delta).  See the
-	 *     TRANSITION_PER_CALL_REWARD_CAP comment in include/kcov.h for
-	 *     the cap rationale; the uncapped per_syscall_transition_edges_
-	 *     real array stays the stats-dump observability signal.  The
-	 *     per-strategy window delta is what bandit_record_pull() reads
-	 *     and folds into the bandit reward total under COMBINED.
-	 *
-	 * transition_edge_count_at_window_start
-	 *     Single-slot snapshot of transition_edge_count_by_strategy[next]
-	 *     reseeded at every rotation in maybe_rotate_strategy(), matching
-	 *     the existing pc_edge_count_at_window_start / bandit_cmp_at_
-	 *     window_start cadence.  Read at the top of bandit_record_pull
-	 *     to compute the per-window transition delta the COMBINED-mode
-	 *     reward folds in.  Lives here (not in shm_s) — semantically
-	 *     equivalent to the shm-side window-start snapshots since the
-	 *     rotation handler is the single writer.
-	 *
-	 * transition_edge_calls_at_window_start
-	 *     Companion snapshot for the calls-by-strategy counter.  Same
-	 *     reseed cadence; consumers that want a "productive call rate"
-	 *     numerator (per-strategy calls-with-transitions / total calls)
-	 *     read this snapshot the same way the bandit reads the count
-	 *     snapshot. */
-	unsigned long transition_edge_calls_by_strategy[NR_STRATEGIES];
-	unsigned long transition_edge_count_by_strategy[NR_STRATEGIES];
-	unsigned long transition_edge_count_at_window_start;
-	unsigned long transition_edge_calls_at_window_start;
+	/* Per-strategy transition-reward attribution (calls/count arrays +
+	 * window-start snapshots).  Gated on !child->kcov.remote_mode and
+	 * kcov_transition_reward_mode != KCOV_TRANSITION_REWARD_OFF at the
+	 * bump sites; see the kcov_transition_reward_mode enum in
+	 * include/kcov.h for the contract.  Members and doc block live in
+	 * stats/subsys/transition_edge.h. */
+	struct transition_edge_stats transition_edge __attribute__((aligned(64)));
 
 	/* SHADOW-ONLY per-syscall stuck-child accounting (count + total_us
 	 * arrays).  See stats/subsys/syscall_wedge.h. */
