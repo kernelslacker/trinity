@@ -412,6 +412,72 @@ static void write_siginfo_safely(int sig, const siginfo_t *info, const char *who
 }
 
 /*
+ * Signal-safe backtrace dump.  Replaces backtrace_symbols_fd(), which
+ * is emphatically NOT on the POSIX 2024 §2.4.3 async-safe list: it
+ * calls dladdr() (link_map walk under glibc's dl_load_lock and, on
+ * newer glibcs, a private dl_addr lock), fopen()/fread() on
+ * /proc/self/maps for PIE offsets, and malloc() for the returned
+ * string table.  If the fault we're handling was raised by glibc's
+ * own abort() (heap-corruption assertion, stack-smash detected) the
+ * arena lock is already held by this very thread; the first
+ * backtrace_symbols_fd inside the handler recursively takes malloc()
+ * and deadlocks forever in lll_lock_wait_private, silencing the
+ * beacon we depend on to notice the crash.  Same class as the
+ * psiginfo() -> fmemopen -> calloc deadlock removed in
+ * 81143aaeaba6.
+ *
+ * We emit RAW PCs only; the bugs.txt post-processor resolves them
+ * offline against the load bases recorded in the beacon.
+ * backtrace() itself is pre-warmed at parent_init_signals() so
+ * libgcc_s.so.1 is COW-inherited and the unwinder needs no dlopen at
+ * signal time.  Single write() -- on the POSIX safe list -- for the
+ * whole block so per-frame text cannot interleave with a sibling
+ * worker's write onto the shared stderr memfd.
+ *
+ * USE_BACKTRACE_UNSAFE is an off-by-default developer knob that
+ * additionally emits the pretty symbolised form via
+ * backtrace_symbols_fd.  Enable only for targeted debugging where
+ * the deadlock risk is understood.
+ */
+#if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
+static void write_backtrace_raw_pcs(const char *who)
+{
+	void *frames[64];
+	int nframes, i;
+	/* header + up to 64 * "0xdeadbeefdeadbeef " (19 bytes) + trailer */
+	char buf[64 * 20 + 128];
+	struct sigsafe_buf b = { buf, sizeof(buf) };
+	size_t used;
+	ssize_t w;
+
+	nframes = backtrace(frames, 64);
+
+	sigsafe_puts(&b, who);
+	sigsafe_puts(&b, " backtrace-raw: nframes=");
+	sigsafe_puti(&b, (long)nframes);
+	sigsafe_puts(&b, " pcs=");
+	for (i = 0; i < nframes; i++) {
+		if (i > 0)
+			sigsafe_putc(&b, ' ');
+		sigsafe_putp(&b, frames[i]);
+	}
+	sigsafe_puts(&b, " (RAW, resolve offline against [load-bases])\n");
+
+	used = sizeof(buf) - b.left;
+	w = write(STDERR_FILENO, buf, used);
+	(void)w;	/* dying anyway; short write irrelevant */
+
+#ifdef USE_BACKTRACE_UNSAFE
+	/*
+	 * NOT async-signal-safe -- dladdr/malloc/fopen inside.  Off by
+	 * default; the raw-PC line above is the reliable beacon.
+	 */
+	backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
+#endif
+}
+#endif
+
+/*
  * Async-signal-safe extraction of the faulting PC / SP from the
  * ucontext_t the kernel hands to a SA_SIGINFO handler.  Pure inline
  * reads from caller-owned memory -- no libc, no allocator, no lock.
@@ -802,8 +868,8 @@ void escalate_fault(int sig)
  *     stack-smash from libc):
  *       * stamp child->fault_beacon BEFORE any libc-touching call so
  *         the parent can surface the death class even when the
- *         backtrace_symbols_fd / open / dup2 chain below re-faults
- *         walking a corrupted ld.so writable segment (see
+ *         open / dup2 / backtrace() chain below re-faults walking a
+ *         corrupted ld.so writable segment (see
  *         include/bug_backtrace.h::child_fault_beacon)
  *       * dump backtrace + signal info to stderr so we have ANY signal
  *         in the log even when the core is unwindable (fault from
@@ -928,7 +994,7 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 		/*
 		 * Redirect this grandchild's STDERR_FILENO to /dev/null
 		 * before the shared post-skip_buglog diagnostics
-		 * (backtrace_symbols_fd + write_siginfo_safely) run.
+		 * (write_backtrace_raw_pcs + write_siginfo_safely) run.
 		 * Without this, a fault in a throwaway extra-fork
 		 * grandchild skips the per-pid buglog block above but
 		 * still appends backtrace + siginfo text to the
@@ -947,12 +1013,15 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	}
 	/*
 	 * Stamp the fault beacon FIRST -- before umask, open, dup2,
-	 * backtrace_symbols_fd, write_siginfo_safely, or anything else
-	 * libc-touchy.  When the underlying root cause is a corrupted
-	 * ld.so writable segment (NULL'd link_map slot, stomped GOT), the
-	 * very next backtrace_symbols_fd call re-faults inside dladdr's
-	 * link_map walk and the process dies before any forensic line
-	 * lands on disk.  The beacon captures the death class into shared
+	 * backtrace(), write_siginfo_safely, or anything else libc-
+	 * touchy.  When the underlying root cause is a corrupted ld.so
+	 * writable segment (NULL'd link_map slot, stomped GOT), a
+	 * subsequent unwinder call can re-fault walking that state and
+	 * the process dies before any forensic line lands on disk.  (The
+	 * historical worst offender here was backtrace_symbols_fd's
+	 * dladdr link_map walk -- now removed; backtrace_symbols_fd is
+	 * only reachable under the off-by-default USE_BACKTRACE_UNSAFE
+	 * knob.)  The beacon captures the death class into shared
 	 * memory using only kernel-supplied siginfo + ucontext fields and
 	 * a local-then-publish struct copy -- no allocator, no stdio, no
 	 * lock -- so the parent's dump_child_fault_beacon() can surface
@@ -978,7 +1047,7 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 * Open the per-pid bug log and drain the buffered pre-crash
 	 * stderr text into it BEFORE redirecting STDERR_FILENO --
 	 * otherwise the in-handler write_siginfo_safely() /
-	 * backtrace_symbols_fd() output below would land before the
+	 * write_backtrace_raw_pcs() output below would land before the
 	 * glibc malloc_printerr text that explains why we're here.
 	 * See Documentation/signals.md.
 	 *
@@ -991,12 +1060,12 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	open_buglog_and_drain_stderr(sig);
 skip_buglog:
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
-	{
-		void *frames[64];
-		int nframes = backtrace(frames, 64);
-
-		backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
-	}
+	/*
+	 * RAW PCs only -- backtrace_symbols_fd() is async-unsafe and
+	 * deadlocks against the arena lock on a malloc-raised abort.
+	 * See write_backtrace_raw_pcs() for the full rationale.
+	 */
+	write_backtrace_raw_pcs("trinity child");
 #endif
 #ifdef CONFIG_GUARD_SHARED
 	/*
@@ -1112,9 +1181,8 @@ void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 		 * on the crash even when no coredump lands (ulimit -c 0 or a
 		 * restrictive core_pattern), then die properly. */
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
-		void *frames[64];
-		int nframes = backtrace(frames, 64);
-		backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
+		/* RAW PCs only; see write_backtrace_raw_pcs(). */
+		write_backtrace_raw_pcs("trinity main");
 #endif
 		write_siginfo_safely(sig, info, "trinity main");
 		signal(sig, SIG_DFL);
