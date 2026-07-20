@@ -49,6 +49,7 @@
 #include "stats/subsys/cred_transition.h"
 #include "stats/subsys/deep_path.h"
 #include "stats/subsys/devlink_port_churn.h"
+#include "stats/subsys/divergence_sentinel.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/errno_gradient.h"
 #include "stats/subsys/esp_crafted_rx.h"
@@ -284,34 +285,6 @@ enum syscall_category {
 	SYSCAT_IPC,
 	SYSCAT_OTHER,
 	NR_SYSCAT,
-};
-
-/*
- * Divergence-sentinel per-field identifiers.  Lives in stats.h (rather
- * than private to child-sentinel.c) so the per-field anomaly array in
- * struct stats_s can be sized and indexed by SF__MAX, and so the stats dump
- * can name individual shards via offsetof for periodic / end-of-run
- * reporting.
- *
- * Grouped by source syscall so a post-mortem reader can decode
- * "which syscall, which field" from the single id without a side
- * table.  The gaps in the numbering (5..9 and 14..) are intentional --
- * the post-mortem decoder reads these as raw numeric ids, so leaving
- * the original group bases in place keeps old sentinel entries in
- * already-collected logs unambiguous.
- */
-enum sentinel_field {
-	SF_UNAME_SYSNAME	= 0,
-	SF_UNAME_RELEASE	= 2,
-	SF_UNAME_VERSION	= 3,
-	SF_UNAME_MACHINE	= 4,
-
-	SF_SYSINFO_TOTALRAM	= 10,
-	SF_SYSINFO_TOTALSWAP	= 11,
-	SF_SYSINFO_TOTALHIGH	= 12,
-	SF_SYSINFO_MEM_UNIT	= 13,
-
-	SF__MAX			= 14,	/* array size for shards; keep > max above */
 };
 
 /* Various statistics.
@@ -568,14 +541,12 @@ struct stats_s {
 	 * logs.
 	 *
 	 * SF_UNAME_RELEASE and SF_UNAME_MACHINE are routed to
-	 * divergence_sentinel_expected_drift below instead of bumping their
-	 * shard here — personality(PER_LINUX32|UNAME26) legitimately
-	 * rewrites those strings every time the fuzzer hits it, so leaving
-	 * them on the anomaly histogram would drown out the real wild-write
-	 * signal. */
-	unsigned long divergence_sentinel_anomalies[SF__MAX];
-
-	/* Counter for divergences in fields that are known to be mutated by
+	 * divergence_sentinel.expected_drift below instead of bumping their
+	 * shard — personality(PER_LINUX32|UNAME26) legitimately rewrites
+	 * those strings every time the fuzzer hits it, so leaving them on
+	 * the anomaly histogram would drown out the real wild-write signal.
+	 *
+	 * Counter for divergences in fields that are known to be mutated by
 	 * operator-driven syscalls trinity itself fuzzes — specifically
 	 * SF_UNAME_RELEASE and SF_UNAME_MACHINE, which personality()
 	 * rewrites every time the bandit fixates on PER_LINUX32 / UNAME26.
@@ -588,8 +559,10 @@ struct stats_s {
 	 * SF_SYSINFO_TOTALSWAP intentionally stays on the anomaly array —
 	 * swapon/swapoff bumps it at a far lower rate than personality()
 	 * bumps RELEASE/MACHINE, and calling that "expected" would muddy
-	 * the meaning of this counter. */
-	unsigned long divergence_sentinel_expected_drift;
+	 * the meaning of this counter.
+	 *
+	 * See stats/subsys/divergence_sentinel.h. */
+	struct divergence_sentinel_stats divergence_sentinel __attribute__((aligned(64)));
 
 	/* Per-childop accounting -- edge / call / setup / data-path /
 	 * latch / demote-promote / budget / wedge / wall-time /

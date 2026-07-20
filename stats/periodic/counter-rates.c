@@ -134,27 +134,27 @@ static const struct {
 	 * not listed here — their array slots stay zero.
 	 */
 	{ "divergence_sentinel_anomalies_sysname",
-	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_UNAME_SYSNAME]) },
+	  offsetof(struct stats_s, divergence_sentinel.anomalies[SF_UNAME_SYSNAME]) },
 	{ "divergence_sentinel_anomalies_release",
-	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_UNAME_RELEASE]) },
+	  offsetof(struct stats_s, divergence_sentinel.anomalies[SF_UNAME_RELEASE]) },
 	{ "divergence_sentinel_anomalies_version",
-	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_UNAME_VERSION]) },
+	  offsetof(struct stats_s, divergence_sentinel.anomalies[SF_UNAME_VERSION]) },
 	{ "divergence_sentinel_anomalies_machine",
-	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_UNAME_MACHINE]) },
+	  offsetof(struct stats_s, divergence_sentinel.anomalies[SF_UNAME_MACHINE]) },
 	{ "divergence_sentinel_anomalies_totalram",
-	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_SYSINFO_TOTALRAM]) },
+	  offsetof(struct stats_s, divergence_sentinel.anomalies[SF_SYSINFO_TOTALRAM]) },
 	{ "divergence_sentinel_anomalies_totalswap",
-	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_SYSINFO_TOTALSWAP]) },
+	  offsetof(struct stats_s, divergence_sentinel.anomalies[SF_SYSINFO_TOTALSWAP]) },
 	{ "divergence_sentinel_anomalies_totalhigh",
-	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_SYSINFO_TOTALHIGH]) },
+	  offsetof(struct stats_s, divergence_sentinel.anomalies[SF_SYSINFO_TOTALHIGH]) },
 	{ "divergence_sentinel_anomalies_mem_unit",
-	  offsetof(struct stats_s, divergence_sentinel_anomalies[SF_SYSINFO_MEM_UNIT]) },
+	  offsetof(struct stats_s, divergence_sentinel.anomalies[SF_SYSINFO_MEM_UNIT]) },
 	/* SF_UNAME_RELEASE / SF_UNAME_MACHINE bumps land here instead of
 	 * on the per-field anomaly shards above — personality()-driven
 	 * legitimate drift, kept separate so the corruption histogram
 	 * stays a real signal. */
 	{ "divergence_sentinel_expected_drift",
-	  offsetof(struct stats_s, divergence_sentinel_expected_drift) },
+	  offsetof(struct stats_s, divergence_sentinel.expected_drift) },
 	{ "iouring_enter_mask_corrupt",
 	  offsetof(struct stats_s, iouring_enter_mask_corrupt) },
 	{ "watchdog_sigalrm_clobbered",
