@@ -456,6 +456,27 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		}
 	}
 
+	/* Corked MSG_MORE burst on pair A: two partial sends with MSG_MORE
+	 * hold data in the sockmap psock->cork buffer (tcp_bpf_sendmsg
+	 * :443 alloc), then a final flush send without MSG_MORE drains
+	 * and frees it (:479-481 free / NULL).  Without this phase the
+	 * cork alloc→drain→free transition is dark — the SK_PASS /
+	 * SK_REDIRECT bursts above never set MSG_MORE.  Coverage-only,
+	 * so every send/recv error is silently ignored. */
+	{
+		size_t m = 1 + rnd_modulo_u32(sizeof(payload));
+		size_t k = 1 + rnd_modulo_u32(sizeof(payload));
+		size_t f = 1 + rnd_modulo_u32(sizeof(payload));
+
+		(void)send(cli_a, payload, m,
+			   MSG_MORE | MSG_NOSIGNAL | MSG_DONTWAIT);
+		(void)send(cli_a, payload, k,
+			   MSG_MORE | MSG_NOSIGNAL | MSG_DONTWAIT);
+		(void)send(cli_a, payload, f,
+			   MSG_NOSIGNAL | MSG_DONTWAIT);
+		(void)recv(srv_a, drain, sizeof(drain), MSG_DONTWAIT);
+	}
+
 	/* Best-effort detach of the map entries before fd close —
 	 * exercises the sockmap unlink path against ULP-armed sockets. */
 	(void)sockmap_del(map_fd, 0);
