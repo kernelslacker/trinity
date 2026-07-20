@@ -192,11 +192,11 @@ unsigned long gen_arg_typed_fd(struct syscallentry *entry,
 	 * across rerolls so the failed-fd filter still has a chance to drop
 	 * known-bad (slot, fd) pairs for whatever fd source we ended up with. */
 	if (ONE_IN(WRONG_FD_TYPE_FREQ)) {
-		__atomic_fetch_add(&shm->stats.wrong_fd_type_substitutions,
+		__atomic_fetch_add(&shm->stats.arg.wrong_fd_type_substitutions,
 				   1UL, __ATOMIC_RELAXED);
 		if (ONE_IN(4)) {
 			use_generic = true;
-			__atomic_fetch_add(&shm->stats.wrong_fd_type_subst_generic,
+			__atomic_fetch_add(&shm->stats.arg.wrong_fd_type_subst_generic,
 					   1UL, __ATOMIC_RELAXED);
 		} else {
 			unsigned int range = ARG_FD_TIMERFD - ARG_FD_BPF_BTF;

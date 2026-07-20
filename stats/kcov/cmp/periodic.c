@@ -369,7 +369,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_arg_meta_argtype_stale             = __atomic_load_n(&shm->stats.arg.meta_argtype_stale,             __ATOMIC_RELAXED);
 	cur_arg_meta_scrub_would_destroy_in    = __atomic_load_n(&shm->stats.arg.meta_scrub_would_destroy_in,    __ATOMIC_RELAXED);
 	cur_arg_meta_scrub_would_preserve_out  = __atomic_load_n(&shm->stats.arg.meta_scrub_would_preserve_out,  __ATOMIC_RELAXED);
-	cur_blanket_address_scrub_slots_walked = __atomic_load_n(&shm->stats.blanket_address_scrub_slots_walked, __ATOMIC_RELAXED);
+	cur_blanket_address_scrub_slots_walked = __atomic_load_n(&shm->stats.arg.blanket_address_scrub_slots_walked, __ATOMIC_RELAXED);
 	/* SHADOW structure-aware picker A/B cohort + divergence counters live
 	 * in minicorpus_shm rather than kcov_shm because the picker is a
 	 * mutate_arg concern, not a kcov-cmp concern.  Guard the load so a
