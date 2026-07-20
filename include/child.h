@@ -161,10 +161,10 @@ struct childdata {
 	/* SHADOW-ONLY stuck-child accounting latch.  Set true by
 	 * is_child_making_progress() on the first detection of diff>=30s for
 	 * this child, alongside an increment of
-	 * shm->stats.syscall_wedge_count[wedge_nr] and
+	 * shm->stats.syscall_wedge.count[wedge_nr] and
 	 * shm->stats.childop.wedge_count[wedge_op_type].  reap_child() then
 	 * adds the CLOCK_MONOTONIC elapsed (now - wedge_start_tp) into
-	 * shm->stats.syscall_wedge_total_us[wedge_nr] and
+	 * shm->stats.syscall_wedge.total_us[wedge_nr] and
 	 * shm->stats.childop.wedge_total_us[wedge_op_type] before the slot
 	 * is recycled.  wedge_start_tp is seeded from child->tp (the child's
 	 * last-progress timestamp) rather than from the detection moment so
@@ -176,7 +176,7 @@ struct childdata {
 	 * per tick with zero duration.  Cleared in clean_childdata so the
 	 * next occupant of the slot starts fresh.  Diagnostic-only -- no
 	 * live-path decision reads either array yet.  See the comments on
-	 * shm->stats.syscall_wedge_count[] / childop_wedge_count[] in
+	 * shm->stats.syscall_wedge.count[] / childop_wedge_count[] in
 	 * include/stats.h for the exit_reason=19 motivation. */
 	bool wedge_accounted;
 	bool wedge_do32;

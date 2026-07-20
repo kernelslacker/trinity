@@ -294,13 +294,13 @@ struct childop_stats {
 	 *
 	 *  childop_wedge_count[op]
 	 *      Bumped once per stuck-child detection event, alongside
-	 *      syscall_wedge_count[] in is_child_making_progress().  RELAXED
+	 *      syscall_wedge.count[] in is_child_making_progress().  RELAXED
 	 *      add-fetch -- diagnostic, not an event log.
 	 *  childop_wedge_total_us[op]
 	 *      Cumulative microseconds of unreusable-slot time across all
 	 *      wedge events for this childop, added in reap_child() using
 	 *      the same (now - wedge_start_tp) interval that feeds
-	 *      syscall_wedge_total_us[] -- the two arrays share ONE duration
+	 *      syscall_wedge.total_us[] -- the two arrays share ONE duration
 	 *      definition (full unreusable-slot time, watchdog grace
 	 *      included; CLOCK_MONOTONIC; clamped >= 0 at the read site so a
 	 *      reordered start-timestamp read cannot underflow).  RELAXED

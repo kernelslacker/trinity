@@ -139,6 +139,7 @@
 #include "stats/subsys/socket_family_grammar.h"
 #include "stats/subsys/splice_protocols.h"
 #include "stats/subsys/statmount_idmap.h"
+#include "stats/subsys/syscall_wedge.h"
 #include "stats/subsys/sysv_shm_orphan_race.h"
 #include "stats/subsys/tc_live_traffic.h"
 #include "stats/subsys/tc_mirred_blockcast.h"
@@ -2580,48 +2581,9 @@ struct stats_s {
 	unsigned long transition_edge_count_at_window_start;
 	unsigned long transition_edge_calls_at_window_start;
 
-	/* SHADOW-ONLY per-syscall stuck-child accounting.  The exit_reason=19
-	 * (EXIT_EPOCH_DONE) shutdown survey shows the fleet repeatedly tailing
-	 * out with most slots wedged in D-state (io_getevents, futex,
-	 * memfd_secret, pwritev2, shmdt, ...): edge discovery stalls because
-	 * the slots cannot be recycled.  These two arrays attribute that loss
-	 * to the syscall the wedged child was running, so the next iteration
-	 * has data to throttle / isolate the worst offenders on.  Accounting
-	 * and a top-N shutdown row only -- no throttle/isolation decision
-	 * is taken from either array yet, so the picker, the bandit, the
-	 * canary queue, the fleet sizing and every other live-path decision
-	 * stay byte-identical to the baseline.
-	 *
-	 * Indexed by raw syscall nr conflated across the do32 dimension, the
-	 * same shape edges_per_syscall_bandit[] / frontier_picks_per_syscall[]
-	 * use.  The existing per-syscall top-N dump path
-	 * (top_syscalls_periodic_dump) already scans only the 64-bit table
-	 * under biarch to avoid the 32/64 collision in nr; the wedge top-N row
-	 * follows the same convention.
-	 *
-	 *  syscall_wedge_count[nr]
-	 *      Bumped once per stuck-child detection event, at the first
-	 *      is_child_making_progress() pass that finds diff >= 30 s for
-	 *      this child.  Latched per-child via childdata.wedge_accounted so
-	 *      a child that stays wedged across many watchdog ticks counts as
-	 *      one event, not one per tick.  RELAXED add-fetch -- diagnostic,
-	 *      not an event log.
-	 *  syscall_wedge_total_us[nr]
-	 *      Cumulative microseconds across all wedge events for this
-	 *      syscall.  Added in reap_child() once the kernel has finally
-	 *      released the slot (or the unkillable-D-state path forces slot
-	 *      reuse via register_zombie_slot), so the duration reflects the
-	 *      full time the slot was unreusable.  CLOCK_MONOTONIC so an NTP
-	 *      step cannot regress the elapsed; clamped at the read site so a
-	 *      reordered read of the start tp cannot underflow to ~ULLONG_MAX.
-	 *      RELAXED add-fetch.
-	 *
-	 * Surfaced via dump_stats_top_wedging_syscalls() at shutdown only --
-	 * not on the JSON path (the array is 2 * MAX_NR_SYSCALL * 8 = 16 KiB,
-	 * same rationale as edges_per_syscall_bandit / frontier_picks_per_
-	 * syscall which also stay text-only). */
-	unsigned long syscall_wedge_count[MAX_NR_SYSCALL];
-	unsigned long long syscall_wedge_total_us[MAX_NR_SYSCALL];
+	/* SHADOW-ONLY per-syscall stuck-child accounting (count + total_us
+	 * arrays).  See stats/subsys/syscall_wedge.h. */
+	struct syscall_wedge_stats syscall_wedge __attribute__((aligned(64)));
 
 	/* SHADOW-ONLY topology-pair sample ring + companion counters.
 	 * See stats/subsys/topo_pair.h. */
