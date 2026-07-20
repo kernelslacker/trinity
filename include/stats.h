@@ -25,6 +25,7 @@
 #include "stats/subsys/af_unix_scm_rights_gc.h"
 #include "stats/subsys/afxdp_churn.h"
 #include "stats/subsys/aio.h"
+#include "stats/subsys/altname_thrash.h"
 #include "stats/subsys/arg.h"
 #include "stats/subsys/atm_vcc_churn.h"
 #include "stats/subsys/bareudp_rx.h"
@@ -2396,12 +2397,8 @@ struct stats_s {
 	unsigned long sock_diag_walker_packet;		/* packet_diag_req variant dispatched */
 	unsigned long sock_diag_walker_vsock;		/* vsock_diag_req variant dispatched */
 
-	/* altname_thrash childop counters */
-	unsigned long altname_thrash_invocations;	/* total altname_thrash invocations */
-	unsigned long altname_thrash_unshare_failed;	/* unshare(CLONE_NEWNET) failed (latched) */
-	unsigned long altname_thrash_addprop_done;	/* RTM_NEWLINKPROP IFLA_PROP_LIST accepted */
-	unsigned long altname_thrash_delprop_done;	/* RTM_DELLINKPROP IFLA_PROP_LIST accepted */
-	unsigned long altname_thrash_getlink_done;	/* RTM_GETLINK targeted with RTEXT_FILTER_VF accepted */
+	/* altname_thrash accounting.  See stats/subsys/altname_thrash.h. */
+	struct altname_thrash_stats altname_thrash;
 
 	/* ipmr_cache_report accounting.  See stats/subsys/ipmr_cache_report.h. */
 	struct ipmr_cache_report_stats ipmr_cache_report;

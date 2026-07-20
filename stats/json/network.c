@@ -181,16 +181,16 @@ const struct stat_category sock_diag_walker_category =
 	              sock_diag_walker_fields);
 
 static const struct stat_field altname_thrash_fields[] = {
-	STAT_FIELD(altname_thrash, invocations),
-	STAT_FIELD(altname_thrash, unshare_failed),
-	STAT_FIELD(altname_thrash, addprop_done),
-	STAT_FIELD(altname_thrash, delprop_done),
-	STAT_FIELD(altname_thrash, getlink_done),
+	STAT_FIELD_SUB(altname_thrash, invocations),
+	STAT_FIELD_SUB(altname_thrash, unshare_failed),
+	STAT_FIELD_SUB(altname_thrash, addprop_done),
+	STAT_FIELD_SUB(altname_thrash, delprop_done),
+	STAT_FIELD_SUB(altname_thrash, getlink_done),
 };
 
 const struct stat_category altname_thrash_category =
 	STAT_CATEGORY("altname_thrash",
-	              altname_thrash_invocations,
+	              altname_thrash.invocations,
 	              altname_thrash_fields);
 
 
