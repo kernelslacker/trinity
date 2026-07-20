@@ -83,7 +83,7 @@ enum frontier_pick_regime {
  *   timeout_missed    shm->stats.childop.timeout_missed[op]
  *   setup_failures    shm->stats.childop.invocations[op]
  *                     - shm->stats.childop.setup_accepted[op]
- *   taint_transition  shm->stats.taint_transitions[op] > 0
+ *   taint_transition  shm->stats.childop.taint_transitions[op] > 0
  *
  * Subtractions are clamped at zero: the source counters race under
  * RELAXED add-fetch from multiple producers, and a few childops bump

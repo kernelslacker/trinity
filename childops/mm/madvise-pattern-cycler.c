@@ -415,7 +415,7 @@ static void madvise_cycler_iter_disarm_guard(const struct sigaction *old_segv,
 
 	if (aborted)
 		__atomic_add_fetch(
-			&shm->stats.pool_race_aborted[CHILD_OP_MADVISE_CYCLER],
+			&shm->stats.childop.pool_race_aborted[CHILD_OP_MADVISE_CYCLER],
 			1, __ATOMIC_RELAXED);
 }
 

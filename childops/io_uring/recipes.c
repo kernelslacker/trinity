@@ -632,7 +632,7 @@ bool iouring_recipes(struct childdata *child)
 			 * iouring_recipe_disabled[idx] — faults are not
 			 * ENOSYS. */
 			__atomic_add_fetch(
-				&shm->stats.pool_race_aborted[CHILD_OP_IOURING_RECIPES],
+				&shm->stats.childop.pool_race_aborted[CHILD_OP_IOURING_RECIPES],
 				1, __ATOMIC_RELAXED);
 		}
 	}

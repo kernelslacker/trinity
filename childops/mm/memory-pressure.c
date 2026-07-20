@@ -266,7 +266,7 @@ bool memory_pressure(struct childdata *child)
 			 * the in-flight allocation leak is accepted
 			 * per the dispatch tradeoff. */
 			__atomic_add_fetch(
-				&shm->stats.pool_race_aborted[CHILD_OP_MEMORY_PRESSURE],
+				&shm->stats.childop.pool_race_aborted[CHILD_OP_MEMORY_PRESSURE],
 				1, __ATOMIC_RELAXED);
 			return false;
 		}
