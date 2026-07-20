@@ -248,7 +248,7 @@ void pipe_waker_poke_one(void)
 	unsigned int i;
 
 	if (objects_empty(OBJ_FD_PIPE) == true) {
-		__atomic_add_fetch(&shm->stats.pipe_waker_no_target,
+		__atomic_add_fetch(&shm->stats.pipe_waker.no_target,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -294,10 +294,10 @@ void pipe_waker_poke_one(void)
 
 		w = write(fd, &one, 1);
 		if (w == 1)
-			__atomic_add_fetch(&shm->stats.pipe_waker_bytes_written,
+			__atomic_add_fetch(&shm->stats.pipe_waker.bytes_written,
 					   1, __ATOMIC_RELAXED);
 		else
-			__atomic_add_fetch(&shm->stats.pipe_waker_write_failed,
+			__atomic_add_fetch(&shm->stats.pipe_waker.write_failed,
 					   1, __ATOMIC_RELAXED);
 
 		if (restored != -1)
@@ -305,6 +305,6 @@ void pipe_waker_poke_one(void)
 		return;
 	}
 
-	__atomic_add_fetch(&shm->stats.pipe_waker_no_target,
+	__atomic_add_fetch(&shm->stats.pipe_waker.no_target,
 			   1, __ATOMIC_RELAXED);
 }

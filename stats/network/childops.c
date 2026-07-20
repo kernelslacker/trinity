@@ -252,15 +252,15 @@ static void dump_stats_render_accept_unblocker(void)
 
 static void dump_stats_render_pipe_waker(void)
 {
-	if (shm->stats.pipe_waker_bytes_written ||
-	    shm->stats.pipe_waker_no_target ||
-	    shm->stats.pipe_waker_write_failed) {
+	if (shm->stats.pipe_waker.bytes_written ||
+	    shm->stats.pipe_waker.no_target ||
+	    shm->stats.pipe_waker.write_failed) {
 		stat_row("pipe_waker", "bytes_written",
-			 shm->stats.pipe_waker_bytes_written);
+			 shm->stats.pipe_waker.bytes_written);
 		stat_row("pipe_waker", "no_target",
-			 shm->stats.pipe_waker_no_target);
+			 shm->stats.pipe_waker.no_target);
 		stat_row("pipe_waker", "write_failed",
-			 shm->stats.pipe_waker_write_failed);
+			 shm->stats.pipe_waker.write_failed);
 	}
 }
 
