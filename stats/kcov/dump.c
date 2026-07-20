@@ -338,10 +338,10 @@ static void dump_stats_render_kcov_exit_edge_delta(void)
 
 static void dump_stats_render_kcov_exit_edge_totals(void)
 {
-		unsigned long plateau_entered_v = __atomic_load_n(&shm->stats.plateau_entered, __ATOMIC_RELAXED);
-		unsigned long plateau_exited_v = __atomic_load_n(&shm->stats.plateau_exited, __ATOMIC_RELAXED);
-		unsigned long bucket_canary_checks_v = __atomic_load_n(&shm->stats.bucket_canary_checks, __ATOMIC_RELAXED);
-		unsigned long bucket_canary_deficits_v = __atomic_load_n(&shm->stats.bucket_canary_deficits, __ATOMIC_RELAXED);
+		unsigned long plateau_entered_v = __atomic_load_n(&shm->stats.plateau.entered, __ATOMIC_RELAXED);
+		unsigned long plateau_exited_v = __atomic_load_n(&shm->stats.plateau.exited, __ATOMIC_RELAXED);
+		unsigned long bucket_canary_checks_v = __atomic_load_n(&shm->stats.plateau.bucket_canary_checks, __ATOMIC_RELAXED);
+		unsigned long bucket_canary_deficits_v = __atomic_load_n(&shm->stats.plateau.bucket_canary_deficits, __ATOMIC_RELAXED);
 
 		if (plateau_entered_v > 0)
 			stat_row("kcov_coverage", "plateau_entered", plateau_entered_v);

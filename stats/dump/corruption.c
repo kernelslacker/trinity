@@ -361,9 +361,9 @@ static void dump_stats_render_scribble_canary_blanket(void)
 		stat_row("corruption", "lock_held_scribble",    shm->stats.lock_held_scribble);
 	if (shm->stats.rec_canary_stomped)
 		stat_row("corruption", "rec_canary_stomped",     shm->stats.rec_canary_stomped);
-	if (shm->stats.mut_attrib_inversion_caught)
+	if (shm->stats.plateau.mut_attrib_inversion_caught)
 		stat_row("corruption", "mut_attrib_inversion_caught",
-			 shm->stats.mut_attrib_inversion_caught);
+			 shm->stats.plateau.mut_attrib_inversion_caught);
 	if (shm->stats.rzs_blanket_reject)
 		stat_row("corruption", "rzs_blanket_reject",     shm->stats.rzs_blanket_reject);
 	if (shm->stats.retfd_blanket_reject)

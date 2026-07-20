@@ -427,7 +427,7 @@ static int select_plateau_intervention_strategy(
 	__atomic_fetch_add(
 		&shm->plateau_intervention_mode_windows[pim], 1UL,
 		__ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->stats.plateau_forced_windows, 1UL,
+	__atomic_fetch_add(&shm->stats.plateau.forced_windows, 1UL,
 			   __ATOMIC_RELAXED);
 	/* Side-channel count of intervention-forced frontier picks.
 	 * Bumped here so both the unconditional PIM_COVERAGE_FRONTIER
