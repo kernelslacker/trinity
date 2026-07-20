@@ -39,7 +39,13 @@
  *      HBH pad option length is rotated each iteration so the IPv6
  *      payload_len varies across the linear/non-linear pull boundary,
  *      forcing pskb_may_pull to actually realloc skb->head on the
- *      receiver side rather than no-op out.
+ *      receiver side rather than no-op out.  A secondary rotation
+ *      picks one of five option layouts per frame (base single-PadN
+ *      HBH, stacked HBH PadN pair, zero-length HBH PadN, base HBH
+ *      plus a truncated trailing ND option header, or base HBH plus
+ *      two source-lladdr ND options) so ndisc_parse_options() and
+ *      the HBH TLV walker see wider coverage than the base pad churn
+ *      alone.
  *
  * Self-bounding: rtnl recv has SO_RCVTIMEO=1s, AF_PACKET sends are
  * MSG_DONTWAIT, the inner loop wall-caps via clock_gettime on
@@ -232,6 +238,22 @@ static bool sysfs_write_one(const char *path, const char *val)
  * The HBH pad length is rotated so the receiver-side pskb_may_pull
  * span varies across iterations — the realloc-inducing pull is what
  * the bug needs.
+ *
+ * A secondary rotation drawn from the high bits of `rot` picks one of
+ * five option layouts per frame so ndisc_parse_options() and the HBH
+ * TLV walker see a wider variety than the base PadN churn alone:
+ *
+ *   variant 0: base single-PadN HBH, no ND options.
+ *   variant 1: stacked HBH PadN pair (two PadN options back-to-back
+ *              inside a 16-byte HBH).
+ *   variant 2: zero-length HBH PadN (type=1, dlen=0) plus Pad1 fill.
+ *   variant 3: base HBH plus a truncated trailing ND option header
+ *              whose declared length runs past the frame end.
+ *   variant 4: base HBH plus two source-lladdr ND options carrying
+ *              distinct L2 addresses.
+ *
+ * Frames stay well under a 1500 byte MTU and inside the 256 byte
+ * scratch buffer even in the widest variant.
  */
 static bool send_one_ns(int raw, int ifindex, unsigned int rot)
 {
@@ -243,16 +265,41 @@ static bool send_one_ns(int raw, int ifindex, unsigned int rot)
 	unsigned int hbh_pad;	/* PadN data length, multiples of 6 keep HBH 8-aligned */
 	unsigned int hbh_len;	/* total HBH ext-hdr length in bytes */
 	unsigned int icmp_off, payload_len;
+	unsigned int variant;	/* selects ND / HBH option layout */
+	unsigned int nd_opt_len;
 	ssize_t n;
 
 	memset(frame, 0, sizeof(frame));
 
 	hbh_pad = (rot % 8) * 6;	/* 0..42 bytes of PadN payload */
-	hbh_len = 8 + (hbh_pad ? ((hbh_pad + 5) & ~7U) : 0);
-	icmp_off = 14 + sizeof(*ip6) + hbh_len;
-	payload_len = hbh_len + sizeof(*ns);
+	variant = (rot >> 3) % 5;
 
-	if (icmp_off + sizeof(*ns) > sizeof(frame))
+	/* Variants 1 and 2 rebuild HBH from scratch with an alternate
+	 * option layout at a fixed length.  Other variants keep the base
+	 * single-PadN HBH so the rot%8 pad rotation still varies the
+	 * linear / non-linear pull boundary the base bug needs. */
+	if (variant == 1)
+		hbh_len = 16;
+	else if (variant == 2)
+		hbh_len = 8;
+	else
+		hbh_len = 8 + (hbh_pad ? ((hbh_pad + 5) & ~7U) : 0);
+
+	icmp_off = 14 + sizeof(*ip6) + hbh_len;
+
+	/* Variants 3 and 4 append ND options after the NS target to
+	 * exercise ndisc_parse_options()'s short-option guard and its
+	 * duplicate source-lladdr accounting. */
+	if (variant == 3)
+		nd_opt_len = 2;		/* truncated header, no payload */
+	else if (variant == 4)
+		nd_opt_len = 16;	/* two 8-byte source-lladdr options */
+	else
+		nd_opt_len = 0;
+
+	payload_len = hbh_len + sizeof(*ns) + nd_opt_len;
+
+	if (icmp_off + sizeof(*ns) + nd_opt_len > sizeof(frame))
 		return false;
 
 	/* Ethernet: dst all-nodes multicast (33:33:00:...:01), src locally-
@@ -271,20 +318,38 @@ static bool send_one_ns(int raw, int ifindex, unsigned int rot)
 	ip6->ip6_dst.s6_addr[0]  = 0xff; ip6->ip6_dst.s6_addr[1]  = 0x02;
 	ip6->ip6_dst.s6_addr[15] = 0x01;
 
-	/* HBH: next=ICMPv6(58), hdrlen in 8-byte units minus 1, then a
-	 * single PadN option to inflate the linear-pull span. */
+	/* HBH: next=ICMPv6(58), hdrlen in 8-byte units minus 1, then the
+	 * variant-specific option payload. */
 	p = frame + 14 + sizeof(*ip6);
 	p[0] = IPPROTO_ICMPV6;
 	p[1] = (unsigned char)((hbh_len / 8) - 1);
-	if (hbh_pad) {
-		p[2] = 1;	/* PadN */
-		p[3] = (unsigned char)hbh_pad;
-		/* remainder already zero from memset */
-	} else {
-		p[2] = 0;	/* Pad1 */
-		p[3] = 0;
-		p[4] = 0;
-		p[5] = 0;
+
+	switch (variant) {
+	case 1:
+		/* Stacked PadN inside a 16-byte HBH.  Layout occupies
+		 * bytes 2..13 (PadN dlen=2 then PadN dlen=6); bytes 14
+		 * and 15 stay zero as trailing Pad1 fill. */
+		p[2] = 1; p[3] = 2;
+		p[6] = 1; p[7] = 6;
+		break;
+	case 2:
+		/* Zero-length PadN (type=1, dlen=0).  Parser must advance
+		 * exactly 2 bytes and walk the trailing Pad1 fill without
+		 * looping or short-circuiting. */
+		p[2] = 1; p[3] = 0;
+		break;
+	default:
+		if (hbh_pad) {
+			p[2] = 1;	/* PadN */
+			p[3] = (unsigned char)hbh_pad;
+			/* remainder already zero from memset */
+		} else {
+			p[2] = 0;	/* Pad1 */
+			p[3] = 0;
+			p[4] = 0;
+			p[5] = 0;
+		}
+		break;
 	}
 
 	ns = (struct nd_neighbor_solicit *)(frame + icmp_off);
@@ -294,6 +359,29 @@ static bool send_one_ns(int raw, int ifindex, unsigned int rot)
 	ns->nd_ns_target.s6_addr[0]  = 0xfc;
 	ns->nd_ns_target.s6_addr[15] = 0x03;
 
+	if (variant == 3) {
+		/* Truncated trailing ND option: source-lladdr header
+		 * claims len=4 (32 bytes total) but only the 2-byte
+		 * header sits in the frame, tripping the short-option
+		 * guard inside ndisc_parse_options(). */
+		unsigned char *o = frame + icmp_off + sizeof(*ns);
+
+		o[0] = 1;
+		o[1] = 4;
+	} else if (variant == 4) {
+		/* Duplicate source-lladdr: two type=1 options carrying
+		 * distinct L2 addresses, exercising ndisc_parse_options()'s
+		 * duplicate-option accounting for source_lladdr. */
+		unsigned char *o = frame + icmp_off + sizeof(*ns);
+
+		o[0] = 1; o[1] = 1;
+		o[2] = 0x02; o[3] = 0x00; o[4] = 0x00;
+		o[5] = 0x00; o[6] = 0x00; o[7] = 0x01;
+		o[8] = 1; o[9] = 1;
+		o[10] = 0x02; o[11] = 0x00; o[12] = 0x00;
+		o[13] = 0x00; o[14] = 0x00; o[15] = 0x02;
+	}
+
 	memset(&sll, 0, sizeof(sll));
 	sll.sll_family   = AF_PACKET;
 	sll.sll_protocol = htons(ETH_P_IPV6);
@@ -301,7 +389,8 @@ static bool send_one_ns(int raw, int ifindex, unsigned int rot)
 	sll.sll_halen    = 6;
 	memcpy(sll.sll_addr, frame, 6);
 
-	n = sendto(raw, frame, icmp_off + sizeof(*ns), MSG_DONTWAIT,
+	n = sendto(raw, frame, icmp_off + sizeof(*ns) + nd_opt_len,
+		   MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll));
 	return n > 0;
 }
