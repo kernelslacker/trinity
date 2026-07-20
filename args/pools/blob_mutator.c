@@ -964,7 +964,7 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 		struct syscallentry *entry = get_syscall_entry(nr, do32);
 
 		if (entry != NULL && entry->group < NR_GROUPS)
-			__atomic_fetch_add(&shm->stats.blob_fills_by_group[entry->group],
+			__atomic_fetch_add(&shm->stats.blob.fills_by_group[entry->group],
 					   1UL, __ATOMIC_RELAXED);
 	}
 
