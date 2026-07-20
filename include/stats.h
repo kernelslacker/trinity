@@ -76,6 +76,7 @@
 #include "stats/subsys/iouring_recipes.h"
 #include "stats/subsys/iouring_send_zc_churn.h"
 #include "stats/subsys/ipfrag_source_churn.h"
+#include "stats/subsys/ipmr_cache_report.h"
 #include "stats/subsys/ip4_udp_cork_splice.h"
 #include "stats/subsys/ip6_udp_cork_splice.h"
 #include "stats/subsys/ip6erspan_netns_migrate.h"
@@ -2402,10 +2403,8 @@ struct stats_s {
 	unsigned long altname_thrash_delprop_done;	/* RTM_DELLINKPROP IFLA_PROP_LIST accepted */
 	unsigned long altname_thrash_getlink_done;	/* RTM_GETLINK targeted with RTEXT_FILTER_VF accepted */
 
-	/* ipmr_cache_report childop counters */
-	unsigned long ipmr_cache_report_iters;		/* per-iteration loop body entries */
-	unsigned long ipmr_cache_report_eperm;		/* MRT_INIT returned -EPERM (CAP_NET_ADMIN gate) */
-	unsigned long ipmr_cache_report_emit_ok;	/* sendto a NOCACHE multicast group succeeded */
+	/* ipmr_cache_report accounting.  See stats/subsys/ipmr_cache_report.h. */
+	struct ipmr_cache_report_stats ipmr_cache_report;
 
 	/* ublk_lifecycle accounting.  See stats/subsys/ublk_lifecycle.h. */
 	struct ublk_lifecycle_stats ublk_lifecycle __attribute__((aligned(64)));
