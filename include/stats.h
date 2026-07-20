@@ -258,10 +258,8 @@ static inline bool topo_pair_unpack(uint64_t e,
  */
 #define ADAPT_BUDGET_ZERO_STREAK	4
 
-/* Upper bound on the recipe_runner catalog size.  recipe-runner.c
- * asserts at startup that its table fits.  Sized large enough to
- * accommodate future recipes without reshuffling shared memory. */
-#define MAX_RECIPES 36
+/* MAX_RECIPES lives in stats/subsys/recipe.h (used by struct
+ * recipe_stats::completed_per[]). */
 
 /* Upper bound on the iouring_recipes catalog.  iouring-recipes.c asserts
  * at build time that its table fits. */
@@ -736,12 +734,6 @@ struct stats_s {
 
 	/* fdstress accounting.  See stats/subsys/fdstress.h. */
 	struct fdstress_stats fdstress __attribute__((aligned(64)));
-
-	/* Per-recipe completion counts, indexed by the recipe's slot in the
-	 * static catalog inside recipe-runner.c.  Dumped via
-	 * recipe_runner_dump_stats() so the stats dump stays decoupled from the
-	 * catalog layout. */
-	unsigned long recipe_completed_per[MAX_RECIPES];
 
 	/* iouring_recipes accounting.  See stats/subsys/iouring_recipes.h. */
 	struct iouring_recipes_stats iouring_recipes __attribute__((aligned(64)));
