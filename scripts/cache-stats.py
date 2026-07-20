@@ -137,7 +137,7 @@ def load_syscall_names(arch: str) -> dict[int, str]:
 
 
 def arch_from_dirname(name: str) -> Optional[str]:
-    """Cache subdir names look like 'x86_64-7.1.0-rc7-gen10+'; arch is the
+    """Cache subdir names look like 'x86_64-7.1.0-rc7-config+'; arch is the
     leading component up to the first '-' (or the whole name if no dash).
     """
     if not name:
@@ -602,7 +602,7 @@ def find_artifact(
     Layouts handled:
       root/<top>                 -- file (flat single-kernel layout).
       root/<top>/<file>          -- per-kernel files named like
-                                    'x86_64-7.1.0-rc7-gen10+'.
+                                    'x86_64-7.1.0-rc7-config+'.
     When the directory holds several per-kernel files, pick the one whose
     name contains <kernel> (a substring such as '7.1.0-rc7'); with no
     kernel hint, pick the newest by mtime.  Returns (path, arch_hint);
