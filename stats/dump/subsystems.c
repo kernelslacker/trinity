@@ -316,12 +316,12 @@ void dump_stats_fuzzer_subsystems(void)
 
 	dump_stats_render_zombie_slots();
 
-	if (shm->stats.wrong_fd_type_substitutions)
+	if (shm->stats.arg.wrong_fd_type_substitutions)
 		stat_row("arggen", "wrong_fd_type_substitutions",
-			 shm->stats.wrong_fd_type_substitutions);
-	if (shm->stats.wrong_fd_type_subst_generic)
+			 shm->stats.arg.wrong_fd_type_substitutions);
+	if (shm->stats.arg.wrong_fd_type_subst_generic)
 		stat_row("arggen", "wrong_fd_type_subst_generic",
-			 shm->stats.wrong_fd_type_subst_generic);
+			 shm->stats.arg.wrong_fd_type_subst_generic);
 
 	if (shm->stats.btrfs_ioctls_dispatched)
 		stat_row("ioctl", "btrfs_ioctls_dispatched",
