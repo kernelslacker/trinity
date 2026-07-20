@@ -1,6 +1,8 @@
 #ifndef _TRINITY_STATS_SUBSYS_BLOB_H
 #define _TRINITY_STATS_SUBSYS_BLOB_H
 
+#include "syscall.h"	/* NR_GROUPS */
+
 /*
  * blob-mutator content-authoring lane counters.
  *
@@ -68,6 +70,20 @@ struct blob_stats {
 	 * stays byte-identical. */
 	unsigned long base_from_corpus;
 	unsigned long base_from_random;
+
+	/* Per-group shadow of blob_fills.  Bumped once per non-OFF
+	 * blob_fill() invocation, keyed on the group of the syscall
+	 * whose (nr, do32) the caller passed in (looked up via
+	 * get_syscall_entry(nr, do32)).  Sums to blob_fills by
+	 * construction (modulo the entry == NULL / group >= NR_GROUPS
+	 * defensive gate the bump site keeps).  Purpose: make the per-
+	 * group blob_fill invocation distribution directly visible so
+	 * the group-bias vs blob-starvation relationship is
+	 * quantifiable from a single run without re-deriving the split
+	 * from picker-side counters.  Pure observability: OFF short-
+	 * circuits before the bump so the OFF arm stays byte-identical
+	 * and no live selection logic reads this array. */
+	unsigned long fills_by_group[NR_GROUPS];
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_BLOB_H */
