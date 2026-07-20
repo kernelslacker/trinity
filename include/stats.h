@@ -259,11 +259,9 @@ static inline bool topo_pair_unpack(uint64_t e,
 #define ADAPT_BUDGET_ZERO_STREAK	4
 
 /* MAX_RECIPES lives in stats/subsys/recipe.h (used by struct
- * recipe_stats::completed_per[]). */
-
-/* Upper bound on the iouring_recipes catalog.  iouring-recipes.c asserts
- * at build time that its table fits. */
-#define MAX_IOURING_RECIPES 64
+ * recipe_stats::completed_per[]).
+ * MAX_IOURING_RECIPES lives in stats/subsys/iouring_recipes.h (used by
+ * struct iouring_recipes_stats::completed_per[]). */
 
 /* Number of distinct slab classes the slab_cache_thrash childop targets,
  * one entry per enum slab_target in childops/misc/slab-cache-thrash.c.  Sized
@@ -737,12 +735,6 @@ struct stats_s {
 
 	/* iouring_recipes accounting.  See stats/subsys/iouring_recipes.h. */
 	struct iouring_recipes_stats iouring_recipes __attribute__((aligned(64)));
-
-	/* Per-iouring-recipe completion counts, indexed by the recipe's slot in
-	 * the static catalog inside iouring-recipes.c.  Dumped via
-	 * iouring_recipes_dump_stats() so the stats dump stays decoupled from the
-	 * catalog layout. */
-	unsigned long iouring_recipe_completed_per[MAX_IOURING_RECIPES];
 
 	/* iouring_eventfd accounting.  See stats/subsys/iouring_eventfd.h. */
 	struct iouring_eventfd_stats iouring_eventfd __attribute__((aligned(64)));
