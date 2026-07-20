@@ -29,7 +29,7 @@ static void post_dup(struct syscallrecord *rec)
 	if ((long) retval < 0 || (long) retval >= (1 << 20))
 		return;
 
-	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fd.duped, 1, __ATOMIC_RELAXED);
 
 	/*
 	 * Oracle: dup(oldfd) must produce a new fd pointing at the same inode.
@@ -177,7 +177,7 @@ static void post_dup2(struct syscallrecord *rec)
 			notify_child_fd_closed(child, (int) a2);
 	}
 
-	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.fd.duped, 1, __ATOMIC_RELAXED);
 
 	/*
 	 * Oracle: dup2(oldfd, newfd) must produce two fds pointing at the same

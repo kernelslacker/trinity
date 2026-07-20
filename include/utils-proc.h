@@ -56,7 +56,7 @@ unsigned int cached_online_cpus(void);
  * for the lifetime of the run — stalling the parent's reap path and
  * letting zombie children pile up indefinitely.
  *
- * Bumps shm->stats.parent_inherited_fds_closed for each fd closed,
+ * Bumps shm->stats.fd.parent_inherited_fds_closed for each fd closed,
  * and logs the fd number plus its readlink target so the operator
  * can see what the launcher left behind.
  */

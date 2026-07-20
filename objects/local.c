@@ -97,7 +97,7 @@ void local_fd_hash_insert(struct objhead *head, int fd,
 	 * as the pre-hash linear walk missing the entry.  Bump a stat so
 	 * the silent drop is observable in the end-of-run summary.
 	 */
-	__atomic_add_fetch(&shm->stats.local_fd_hash_insert_dropped, 1,
+	__atomic_add_fetch(&shm->stats.fd.local_hash_insert_dropped, 1,
 			   __ATOMIC_RELAXED);
 }
 

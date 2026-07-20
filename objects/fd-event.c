@@ -226,10 +226,10 @@ static void apply_slot(const void *p, void *ctx __unused__)
 			 */
 			remove_object_by_fd(ev.fd1);
 			if (ev.type == FD_EVENT_EVICT)
-				__atomic_add_fetch(&shm->stats.fd_event_evict_count,
+				__atomic_add_fetch(&shm->stats.fd.event_evict_count,
 						   1, __ATOMIC_RELAXED);
 			else
-				__atomic_add_fetch(&shm->stats.fd_event_close_count,
+				__atomic_add_fetch(&shm->stats.fd.event_close_count,
 						   1, __ATOMIC_RELAXED);
 			break;
 		case FD_EVENT_CLOSE_RANGE: {
@@ -257,7 +257,7 @@ static void apply_slot(const void *p, void *ctx __unused__)
 			for (fd = lo; fd <= hi; fd++)
 				remove_object_by_fd(fd);
 
-			__atomic_add_fetch(&shm->stats.fd_event_close_count,
+			__atomic_add_fetch(&shm->stats.fd.event_close_count,
 					   1, __ATOMIC_RELAXED);
 			break;
 		}
@@ -298,7 +298,7 @@ unsigned int fd_event_drain(struct fd_event_ring *ring)
 	if (overflow > 0) {
 		output(1, "fd_event: ring overflow, %" PRIu64 " events dropped\n",
 		       overflow);
-		__atomic_add_fetch(&shm->stats.fd_events_dropped, overflow,
+		__atomic_add_fetch(&shm->stats.fd.events_dropped, overflow,
 				   __ATOMIC_RELAXED);
 	}
 	return processed;
@@ -385,6 +385,6 @@ void fd_event_drain_all(void)
 	}
 
 	if (total > 0)
-		__atomic_add_fetch(&shm->stats.fd_events_processed, total,
+		__atomic_add_fetch(&shm->stats.fd.events_processed, total,
 				   __ATOMIC_RELAXED);
 }

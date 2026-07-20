@@ -296,7 +296,7 @@ int get_new_random_fd(void)
 	for (i = 0; i < num_active_providers; i++) {
 		provider = active_providers[i];
 		if (provider == NULL || provider->get == NULL) {
-			__atomic_add_fetch(&shm->stats.fd_provider_invalid, 1,
+			__atomic_add_fetch(&shm->stats.fd.provider_invalid, 1,
 					   __ATOMIC_RELAXED);
 			continue;
 		}
@@ -378,7 +378,7 @@ int get_random_fd(void)
 		if (e == NULL ||
 		    __atomic_load_n(&e->gen, __ATOMIC_ACQUIRE) !=
 		    child->cached_fd_generation) {
-			__atomic_add_fetch(&shm->stats.fd_stale_by_generation, 1,
+			__atomic_add_fetch(&shm->stats.fd.stale_by_generation, 1,
 					   __ATOMIC_RELAXED);
 			child->fd_lifetime = 0;
 		}
@@ -402,7 +402,7 @@ regen:
 			effective_budget = GET_RANDOM_FD_BUDGET / 4;
 
 		if (outer_retries++ >= effective_budget) {
-			__atomic_add_fetch(&shm->stats.fd_random_exhausted, 1,
+			__atomic_add_fetch(&shm->stats.fd.random_exhausted, 1,
 					   __ATOMIC_RELAXED);
 			outputerr("get_random_fd: outer retry budget (%u) exhausted, "
 				  "returning -1\n", GET_RANDOM_FD_BUDGET);
@@ -441,7 +441,7 @@ regen:
 		 * from a single run's log.
 		 */
 		if (child->current_fd < 0) {
-			__atomic_add_fetch(&shm->stats.fd_random_exhausted, 1,
+			__atomic_add_fetch(&shm->stats.fd.random_exhausted, 1,
 					   __ATOMIC_RELAXED);
 			child->fd_lifetime = 0;
 			return -1;
@@ -457,7 +457,7 @@ regen:
 		 */
 		e = fd_hash_lookup(child->current_fd);
 		if (e == NULL && child->current_fd >= 0 && retries++ < 10) {
-			__atomic_add_fetch(&shm->stats.fd_stale_detected, 1,
+			__atomic_add_fetch(&shm->stats.fd.stale_detected, 1,
 					   __ATOMIC_RELAXED);
 			goto regen;
 		}
@@ -560,7 +560,7 @@ retry:
 	 * the snapshot is stale; fall through to another pick.
 	 */
 	if (fd_hash_lookup(fd) == NULL) {
-		__atomic_add_fetch(&shm->stats.fd_stale_detected, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.fd.stale_detected, 1, __ATOMIC_RELAXED);
 		retries++;
 		goto retry;
 	}
