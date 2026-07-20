@@ -457,12 +457,12 @@ static void altname_thrash_iter_burst(struct altname_iter_ctx *ctx)
 		if (build_linkprop(&ctx->nl, RTM_NEWLINKPROP, ctx->dummy_idx,
 				   (const char (*)[ALT_NAME_MAX + 1])added,
 				   batch) == 0) {
-			__atomic_add_fetch(&shm->stats.altname_thrash_addprop_done,
+			__atomic_add_fetch(&shm->stats.altname_thrash.addprop_done,
 					   1, __ATOMIC_RELAXED);
 		}
 
 		if (build_getlink(&ctx->nl, ctx->dummy_idx) == 0) {
-			__atomic_add_fetch(&shm->stats.altname_thrash_getlink_done,
+			__atomic_add_fetch(&shm->stats.altname_thrash.getlink_done,
 					   1, __ATOMIC_RELAXED);
 		}
 
@@ -484,7 +484,7 @@ static void altname_thrash_iter_burst(struct altname_iter_ctx *ctx)
 		if (build_linkprop(&ctx->nl, RTM_DELLINKPROP, ctx->dummy_idx,
 				   (const char (*)[ALT_NAME_MAX + 1])victims,
 				   vbatch) == 0) {
-			__atomic_add_fetch(&shm->stats.altname_thrash_delprop_done,
+			__atomic_add_fetch(&shm->stats.altname_thrash.delprop_done,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -561,7 +561,7 @@ bool altname_thrash(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.altname_thrash_invocations, 1,
+	__atomic_add_fetch(&shm->stats.altname_thrash.invocations, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_altname_thrash)
@@ -584,7 +584,7 @@ bool altname_thrash(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.altname_thrash_unshare_failed,
+		__atomic_add_fetch(&shm->stats.altname_thrash.unshare_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -592,7 +592,7 @@ bool altname_thrash(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * — the failure is not policy and may not recur. */
-		__atomic_add_fetch(&shm->stats.altname_thrash_unshare_failed,
+		__atomic_add_fetch(&shm->stats.altname_thrash.unshare_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
