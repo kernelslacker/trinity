@@ -102,7 +102,7 @@ void __cold minicorpus_mut_attrib_canary_check(void)
 			__ATOMIC_RELAXED);
 
 		if (w > t + MUT_ATTRIB_INVERSION_TOL) {
-			__atomic_fetch_add(&shm->stats.mut_attrib_inversion_caught,
+			__atomic_fetch_add(&shm->stats.plateau.mut_attrib_inversion_caught,
 					   1UL, __ATOMIC_RELAXED);
 			if (!first_witness_emitted) {
 				stats_log_write("CANARY: minicorpus mut_wins[%u]=%lu > mut_trials[%u]=%lu (tol=%lu, op=%s) -- counter word scribbled\n",
@@ -114,7 +114,7 @@ void __cold minicorpus_mut_attrib_canary_check(void)
 		}
 
 		if (sw > st + MUT_ATTRIB_INVERSION_TOL) {
-			__atomic_fetch_add(&shm->stats.mut_attrib_inversion_caught,
+			__atomic_fetch_add(&shm->stats.plateau.mut_attrib_inversion_caught,
 					   1UL, __ATOMIC_RELAXED);
 			if (!first_witness_emitted) {
 				stats_log_write("CANARY: minicorpus mut_structured_wins[%u]=%lu > mut_structured_trials[%u]=%lu (tol=%lu, op=%s) -- counter word scribbled\n",

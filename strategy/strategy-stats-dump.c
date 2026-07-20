@@ -43,7 +43,7 @@ static void dump_strategy_stats_plateau_forced_cohort(void)
 {
 	unsigned long plateau_forced;
 
-	plateau_forced = __atomic_load_n(&shm->stats.plateau_forced_windows,
+	plateau_forced = __atomic_load_n(&shm->stats.plateau.forced_windows,
 					 __ATOMIC_RELAXED);
 	if (plateau_forced > 0)
 		output(0, "  plateau-forced windows: %lu (forced over picker via SR_PLATEAU_FORCE, excluded from UCB learner)\n",
@@ -65,7 +65,7 @@ static void dump_strategy_stats_intervention_modes(void)
 {
 	unsigned long plateau_forced;
 
-	plateau_forced = __atomic_load_n(&shm->stats.plateau_forced_windows,
+	plateau_forced = __atomic_load_n(&shm->stats.plateau.forced_windows,
 					 __ATOMIC_RELAXED);
 
 	if (plateau_forced > 0) {

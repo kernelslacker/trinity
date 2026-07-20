@@ -551,9 +551,9 @@ void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier.core.intervention_cold_skipped)
 		stat_row("strategy", "frontier_intervention_cold_skipped",
 			 shm->stats.frontier.core.intervention_cold_skipped);
-	if (shm->stats.plateau_forced_windows)
+	if (shm->stats.plateau.forced_windows)
 		stat_row("strategy", "plateau_forced_windows",
-			 shm->stats.plateau_forced_windows);
+			 shm->stats.plateau.forced_windows);
 	dump_stats_render_wall_lever_eligible();
 	dump_stats_render_wall_lever_running();
 	if (shm->stats.strategy_explorer_picks)

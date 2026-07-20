@@ -1355,7 +1355,7 @@ void kcov_bitmap_canary_check(void)
 			    &popcount, &ignored_distinct);
 	(void)ignored_distinct;
 
-	__atomic_fetch_add(&shm->stats.bucket_canary_checks, 1,
+	__atomic_fetch_add(&shm->stats.plateau.bucket_canary_checks, 1,
 			   __ATOMIC_RELAXED);
 
 	if (popcount >= edges_before)
@@ -1365,7 +1365,7 @@ void kcov_bitmap_canary_check(void)
 	if (deficit <= KCOV_BITMAP_CANARY_DEFICIT)
 		return;
 
-	__atomic_fetch_add(&shm->stats.bucket_canary_deficits, 1,
+	__atomic_fetch_add(&shm->stats.plateau.bucket_canary_deficits, 1,
 			   __ATOMIC_RELAXED);
 	stats_log_write("CANARY: kcov bucket_seen deficit=%lu (popcount=%lu, edges_before=%lu, threshold=%lu) -- bits cleared since last check, wild writer in shm\n",
 			deficit, popcount, edges_before,

@@ -464,7 +464,7 @@ void kcov_plateau_check(void)
 					 __ATOMIC_RELAXED);
 			__atomic_store_n(&kcov_shm->plateau_active, true,
 					 __ATOMIC_RELEASE);
-			__atomic_fetch_add(&shm->stats.plateau_entered, 1,
+			__atomic_fetch_add(&shm->stats.plateau.entered, 1,
 					   __ATOMIC_RELAXED);
 			stats_log_write("PLATEAU: edge-discovery rate %lu edges/%ds < enter-threshold (%d) sustained for >=%d minutes (bandit may be in local minimum, consider intervention)\n",
 					delta, KCOV_PLATEAU_WINDOW_SEC,
@@ -495,7 +495,7 @@ void kcov_plateau_check(void)
 				 __ATOMIC_RELAXED);
 		__atomic_store_n(&kcov_shm->plateau_active, false,
 				 __ATOMIC_RELEASE);
-		__atomic_fetch_add(&shm->stats.plateau_exited, 1,
+		__atomic_fetch_add(&shm->stats.plateau.exited, 1,
 				   __ATOMIC_RELAXED);
 		stats_log_write("PLATEAU CLEARED: edge-discovery rate %lu edges/%ds >= exit-threshold (%d) (plateau lasted %ld minutes)\n",
 				delta, KCOV_PLATEAU_WINDOW_SEC,
