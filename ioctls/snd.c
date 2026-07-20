@@ -224,33 +224,6 @@ static int dispatch_snd_ump(struct syscallrecord *rec)
 	return 0;
 }
 
-/* snd-hdspm (RME HDSPe MADI/AES/RayDAT/AIO) — newer ioctls only */
-static int dispatch_snd_hdspm(struct syscallrecord *rec)
-{
-	switch (rec->a2) {
-#ifdef SNDRV_HDSPM_IOCTL_GET_PEAK_RMS
-	case SNDRV_HDSPM_IOCTL_GET_PEAK_RMS:
-#endif
-#ifdef SNDRV_HDSPM_IOCTL_GET_CONFIG
-	case SNDRV_HDSPM_IOCTL_GET_CONFIG:
-#endif
-#ifdef SNDRV_HDSPM_IOCTL_GET_LTC
-	case SNDRV_HDSPM_IOCTL_GET_LTC:
-#endif
-#ifdef SNDRV_HDSPM_IOCTL_GET_STATUS
-	case SNDRV_HDSPM_IOCTL_GET_STATUS:
-#endif
-#if defined(SNDRV_HDSPM_IOCTL_GET_PEAK_RMS) || \
-    defined(SNDRV_HDSPM_IOCTL_GET_CONFIG)  || \
-    defined(SNDRV_HDSPM_IOCTL_GET_LTC)     || \
-    defined(SNDRV_HDSPM_IOCTL_GET_STATUS)
-		sanitise_snd_hdspm(rec);
-		return 1;
-#endif
-	}
-	return 0;
-}
-
 #ifdef SNDCTL_COPR_LOAD
 /* OSS DSP coprocessor (legacy SoundBlaster) */
 static int dispatch_oss_copr(struct syscallrecord *rec)
