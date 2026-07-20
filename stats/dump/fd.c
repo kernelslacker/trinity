@@ -41,8 +41,8 @@ static void dump_fd_lifecycle(void)
 	    shm->stats.fd_duped || shm->stats.fd_events_processed ||
 	    shm->stats.fd_hash_reinsert_dropped ||
 	    shm->stats.local_fd_hash_insert_dropped ||
-	    shm->stats.epoll_lazy_armed ||
-	    shm->stats.epoll_blocking_poll_skipped ||
+	    shm->stats.epoll_volatility.lazy_armed ||
+	    shm->stats.epoll_volatility.blocking_poll_skipped ||
 	    shm->stats.fd_random_exhausted ||
 	    shm->stats.fd_provider_invalid) {
 		stat_row("fd_lifecycle", "stale_detected",      shm->stats.fd_stale_detected);
@@ -56,9 +56,9 @@ static void dump_fd_lifecycle(void)
 		stat_row("fd_lifecycle", "hash_reinsert_dropped", shm->stats.fd_hash_reinsert_dropped);
 		stat_row("fd_lifecycle", "local_hash_insert_dropped",
 			 shm->stats.local_fd_hash_insert_dropped);
-		stat_row("fd_lifecycle", "epoll_lazy_armed",    shm->stats.epoll_lazy_armed);
+		stat_row("fd_lifecycle", "epoll_lazy_armed",    shm->stats.epoll_volatility.lazy_armed);
 		stat_row("fd_lifecycle", "epoll_blocking_poll_skipped",
-			 shm->stats.epoll_blocking_poll_skipped);
+			 shm->stats.epoll_volatility.blocking_poll_skipped);
 		stat_row("fd_lifecycle", "random_exhausted",    shm->stats.fd_random_exhausted);
 		stat_row("fd_lifecycle", "provider_invalid",    shm->stats.fd_provider_invalid);
 	}

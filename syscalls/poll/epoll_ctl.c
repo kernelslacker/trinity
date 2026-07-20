@@ -85,7 +85,7 @@ static void sanitise_epoll_ctl(struct syscallrecord *rec)
 			target_fd = candidate;
 			break;
 		}
-		__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
+		__atomic_add_fetch(&shm->stats.epoll_volatility.blocking_poll_skipped, 1,
 				   __ATOMIC_RELAXED);
 	}
 
