@@ -109,10 +109,10 @@ static void json_emit_minicorpus_saves_and_evicts(void)
 		&minicorpus_shm->evicts_by_reason[CORPUS_SAVE_REASON_CMP],
 		__ATOMIC_RELAXED);
 	unsigned long errno_would = __atomic_load_n(
-		&shm->stats.errno_grad_save_would_save,
+		&shm->stats.errno_gradient.save_would_save,
 		__ATOMIC_RELAXED);
 	unsigned long errno_did = __atomic_load_n(
-		&shm->stats.errno_grad_save_did_save,
+		&shm->stats.errno_gradient.save_did_save,
 		__ATOMIC_RELAXED);
 
 	printf(",\"saves_by_reason\":{\"pc\":%lu,\"cmp\":%lu,\"errno\":%lu}"

@@ -1515,13 +1515,13 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 
 			if ((prev & bit) == 0) {
 				__atomic_fetch_add(
-					&shm->stats.errno_grad_save_would_save,
+					&shm->stats.errno_gradient.save_would_save,
 					1UL, __ATOMIC_RELAXED);
 
 				if (corpus_save_errno_grad_live &&
 				    entry->sanitise == NULL) {
 					__atomic_fetch_add(
-						&shm->stats.errno_grad_save_did_save,
+						&shm->stats.errno_gradient.save_did_save,
 						1UL, __ATOMIC_RELAXED);
 					minicorpus_save_with_reason(rec,
 						CORPUS_SAVE_REASON_ERRNO);
