@@ -4,6 +4,7 @@
 #include <linux/ioctl.h>
 #include <linux/soundcard.h>
 #include <sound/asound.h>
+#include <sound/hdspm.h>
 
 #include "ioctls.h"
 #include "random.h"
@@ -37,6 +38,33 @@ void sanitise_snd_hdspm(struct syscallrecord *rec)
 	void *buf = get_writable_struct(8192);
 	if (buf)
 		rec->a3 = (unsigned long) buf;
+}
+
+/* snd-hdspm (RME HDSPe MADI/AES/RayDAT/AIO) — newer ioctls only */
+int dispatch_snd_hdspm(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
+#ifdef SNDRV_HDSPM_IOCTL_GET_PEAK_RMS
+	case SNDRV_HDSPM_IOCTL_GET_PEAK_RMS:
+#endif
+#ifdef SNDRV_HDSPM_IOCTL_GET_CONFIG
+	case SNDRV_HDSPM_IOCTL_GET_CONFIG:
+#endif
+#ifdef SNDRV_HDSPM_IOCTL_GET_LTC
+	case SNDRV_HDSPM_IOCTL_GET_LTC:
+#endif
+#ifdef SNDRV_HDSPM_IOCTL_GET_STATUS
+	case SNDRV_HDSPM_IOCTL_GET_STATUS:
+#endif
+#if defined(SNDRV_HDSPM_IOCTL_GET_PEAK_RMS) || \
+    defined(SNDRV_HDSPM_IOCTL_GET_CONFIG)  || \
+    defined(SNDRV_HDSPM_IOCTL_GET_LTC)     || \
+    defined(SNDRV_HDSPM_IOCTL_GET_STATUS)
+		sanitise_snd_hdspm(rec);
+		return 1;
+#endif
+	}
+	return 0;
 }
 
 static const int copr_codes[] = {

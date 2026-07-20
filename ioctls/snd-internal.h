@@ -27,6 +27,7 @@ void sanitise_snd_seq(struct syscallrecord *rec);
 int  dispatch_snd_seq(struct syscallrecord *rec);
 
 void sanitise_snd_hdspm(struct syscallrecord *rec);
+int  dispatch_snd_hdspm(struct syscallrecord *rec);
 void sanitise_oss_copr(struct syscallrecord *rec);
 void sanitise_oss_dsp(struct syscallrecord *rec);
 void sanitise_oss_mixer(struct syscallrecord *rec);
