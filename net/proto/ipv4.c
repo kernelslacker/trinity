@@ -261,8 +261,7 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 		break;
 
 	case IP_MSFILTER:
-		so->optlen = rnd_modulo_u32(page_size);
-		so->optlen |= IP_MSFILTER_SIZE(0);
+		so->optlen = rnd_modulo_u32(page_size - IP_MSFILTER_SIZE(0)) + IP_MSFILTER_SIZE(0);
 		break;
 
 	case IP_BLOCK_SOURCE:
