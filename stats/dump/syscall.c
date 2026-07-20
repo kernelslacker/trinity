@@ -199,7 +199,7 @@ void dump_stats_per_syscall_tables(void)
 
 /*
  * SHADOW-ONLY shutdown attribution for the per-syscall stuck-child
- * accounting (see the comment on shm->stats.syscall_wedge_count[]
+ * accounting (see the comment on shm->stats.syscall_wedge.count[]
  * in include/stats.h).  Renders a
  * top-N row sorted by cumulative wedged microseconds, with the per-
  * syscall event count rendered alongside so the operator can
@@ -244,10 +244,10 @@ void dump_stats_top_wedging_syscalls(void)
 
 	for (i = 0; i < nr_to_scan; i++) {
 		unsigned long c = __atomic_load_n(
-			&shm->stats.syscall_wedge_count[i],
+			&shm->stats.syscall_wedge.count[i],
 			__ATOMIC_RELAXED);
 		unsigned long long u = __atomic_load_n(
-			&shm->stats.syscall_wedge_total_us[i],
+			&shm->stats.syscall_wedge.total_us[i],
 			__ATOMIC_RELAXED);
 
 		if (c == 0 && u == 0)

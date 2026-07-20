@@ -278,7 +278,7 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	/* SHADOW-ONLY wedge accounting close-out.  If this child was
 	 * latched as wedged by is_child_making_progress(), add the
 	 * wall-clock interval the slot was unreusable into BOTH
-	 * syscall_wedge_total_us[wedge_nr] and
+	 * syscall_wedge.total_us[wedge_nr] and
 	 * childop_wedge_total_us[wedge_op_type] before the slot is
 	 * recycled.  ONE duration definition feeds both arrays: the
 	 * elapsed from child->tp (last child-side progress, captured into
@@ -320,7 +320,7 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 		 * The per-childop total_us close-out stays unconditional
 		 * (range-checked wop is the authoritative axis). */
 		if (child->wedge_op_type == CHILD_OP_SYSCALL) {
-			__atomic_add_fetch(&shm->stats.syscall_wedge_total_us[child->wedge_nr],
+			__atomic_add_fetch(&shm->stats.syscall_wedge.total_us[child->wedge_nr],
 					   elapsed_us, __ATOMIC_RELAXED);
 		}
 
@@ -1710,7 +1710,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	}
 
 	/* SHADOW-ONLY wedge accounting -- both the per-syscall pair (see
-	 * comment on shm->stats.syscall_wedge_count[] in include/stats.h)
+	 * comment on shm->stats.syscall_wedge.count[] in include/stats.h)
 	 * and the per-childop pair (see childop_wedge_count[] in the same
 	 * header).  Latched via wedge_accounted so a child that stays
 	 * wedged across many watchdog ticks counts as one event on both
@@ -1746,7 +1746,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	 * latch and the post-fork clean_childdata() are sequenced on the
 	 * parent.  Pairs with the reap_child() close-out that adds
 	 * (now - wedge_start_tp) to BOTH
-	 * syscall_wedge_total_us[wedge_nr] and
+	 * syscall_wedge.total_us[wedge_nr] and
 	 * childop_wedge_total_us[wedge_op_type]. */
 	if (!child->wedge_accounted) {
 		struct syscallrecord *wrec = &child->syscall;
@@ -1779,7 +1779,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 			 * counter with childop-wedge noise.  The per-childop
 			 * axis is authoritative for those. */
 			if (wop == CHILD_OP_SYSCALL)
-				__atomic_add_fetch(&shm->stats.syscall_wedge_count[wnr],
+				__atomic_add_fetch(&shm->stats.syscall_wedge.count[wnr],
 						   1UL, __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.childop.wedge_count[wop],
 					   1UL, __ATOMIC_RELAXED);
