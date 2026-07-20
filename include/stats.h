@@ -840,15 +840,6 @@ struct stats_s {
 	/* socket_family_grammar accounting.  See stats/subsys/socket_family_grammar.h. */
 	struct socket_family_grammar_stats socket_family_grammar __attribute__((aligned(64)));
 
-	/* Number of dispatches inside tracefs_fuzzer that landed on a
-	 * function-tracer-subset op (set_ftrace_filter / set_ftrace_notrace /
-	 * set_graph_function / current_tracer) but were short-circuited
-	 * because the running kernel was built without CONFIG_FTRACE
-	 * (current_tracer absent at init probe).  Static-event-tree paths
-	 * keep running on the same kernel; this counts only the wasted
-	 * function-tracer slots. */
-	unsigned long tracefs_ftrace_subset_skipped;
-
 	/* Auto-skipped socket families.  See stats/subsys/no_domains.h. */
 	struct no_domains_stats no_domains __attribute__((aligned(64)));
 
