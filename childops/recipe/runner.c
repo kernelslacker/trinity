@@ -91,7 +91,7 @@ static const struct recipe recipes[] = {
  * Build-time guarantee that the catalog fits in the shm bookkeeping
  * arrays sized via MAX_RECIPES in stats.h.  Bumping the catalog past
  * MAX_RECIPES without growing the arrays would silently overflow
- * shm->recipe_disabled and shm->stats.recipe_completed_per.
+ * shm->recipe_disabled and shm->stats.recipe.completed_per.
  */
 _Static_assert(ARRAY_SIZE(recipes) <= MAX_RECIPES,
 	       "recipe catalog outgrew MAX_RECIPES; bump it in stats.h");
@@ -153,7 +153,7 @@ bool recipe_runner(struct childdata *child)
 	if (ok) {
 		__atomic_add_fetch(&shm->stats.recipe.completed, 1,
 				   __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.recipe_completed_per[idx], 1,
+		__atomic_add_fetch(&shm->stats.recipe.completed_per[idx], 1,
 				   __ATOMIC_RELAXED);
 	} else {
 		__atomic_add_fetch(&shm->stats.recipe.partial, 1,
@@ -174,7 +174,7 @@ void __cold recipe_runner_dump_stats(void)
 
 	for (i = 0; i < ARRAY_SIZE(recipes); i++) {
 		unsigned long n = __atomic_load_n(
-			&shm->stats.recipe_completed_per[i],
+			&shm->stats.recipe.completed_per[i],
 			__ATOMIC_RELAXED);
 		bool disabled = __atomic_load_n(
 			&shm->recipe_disabled[i],
