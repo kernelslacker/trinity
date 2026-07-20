@@ -109,6 +109,15 @@ static bool spawn_child(int childno)
 	assign_dedicated_alt_op(child, childno);
 
 	nr_fds = get_num_fds();
+	if (nr_fds < 0) {
+		/* Counting /proc/self/fd failed -- can't verify headroom.
+		 * Treat conservatively and panic rather than let a negative
+		 * value wrap through the unsigned compare below and silently
+		 * pass the fd-exhaustion ceiling check. */
+		outputerr("get_num_fds() failed (%d); cannot verify fd headroom\n", nr_fds);
+		panic(EXIT_NO_FDS);
+		return false;
+	}
 	if ((unsigned long)nr_fds + 3 > max_files_rlimit.rlim_cur) {
 		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
 		panic(EXIT_NO_FDS);
