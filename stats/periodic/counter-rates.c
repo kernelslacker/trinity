@@ -86,9 +86,9 @@ static const struct {
 	{ "arg_constraint_kept_incoherent",
 	  offsetof(struct stats_aggregate, arg_constraint_kept_incoherent), true },
 	{ "epoll_wait_null_events_alloc_fail",
-	  offsetof(struct stats_s, epoll_wait_null_events_alloc_fail) },
+	  offsetof(struct stats_s, epoll_volatility.wait_null_events_alloc_fail) },
 	{ "epoll_wait_null_events_shared_reject",
-	  offsetof(struct stats_s, epoll_wait_null_events_shared_reject) },
+	  offsetof(struct stats_s, epoll_volatility.wait_null_events_shared_reject) },
 	{ "deferred_free_reject",
 	  offsetof(struct stats_aggregate, deferred_free_reject), true },
 	{ "deferred_free_reject_pathname",
@@ -753,14 +753,14 @@ static const struct {
 	 * children are issuing epoll_wait suggests the consumer wireup
 	 * regressed. */
 	{ "epoll_lazy_armed",
-	  offsetof(struct stats_s, epoll_lazy_armed) },
+	  offsetof(struct stats_s, epoll_volatility.lazy_armed) },
 	/* Watch-set populations refused because the candidate fd belonged
 	 * to a poll_can_block-tagged fd_provider (FUSE / userfaultfd / KVM
 	 * vCPU / io_uring / pidfd).  Sustained growth confirms the filter
 	 * is intercepting the fds that would otherwise wedge children in
 	 * ep_item_poll → fops->poll on the per-fd waitqueue. */
 	{ "epoll_blocking_poll_skipped",
-	  offsetof(struct stats_s, epoll_blocking_poll_skipped) },
+	  offsetof(struct stats_s, epoll_volatility.blocking_poll_skipped) },
 	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Rate-of-change at the
 	 * 10-minute window granularity confirms the OBJ_FD_KVM_VCPU fd_test
 	 * path is keeping up with vCPU pool churn -- a flat counter while the

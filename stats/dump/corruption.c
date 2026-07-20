@@ -258,12 +258,12 @@ static void dump_stats_render_corrupt_ptr_family(void)
 		stat_row("corruption", "post_handler_corrupt_ptr", parent_stats.post_handler_corrupt_ptr);
 	if (parent_stats.validator_rejected)
 		stat_row("corruption", "validator_rejected", parent_stats.validator_rejected);
-	if (shm->stats.epoll_wait_null_events_alloc_fail)
+	if (shm->stats.epoll_volatility.wait_null_events_alloc_fail)
 		stat_row("corruption", "epoll_wait_null_events_alloc_fail",
-			 shm->stats.epoll_wait_null_events_alloc_fail);
-	if (shm->stats.epoll_wait_null_events_shared_reject)
+			 shm->stats.epoll_volatility.wait_null_events_alloc_fail);
+	if (shm->stats.epoll_volatility.wait_null_events_shared_reject)
 		stat_row("corruption", "epoll_wait_null_events_shared_reject",
-			 shm->stats.epoll_wait_null_events_shared_reject);
+			 shm->stats.epoll_volatility.wait_null_events_shared_reject);
 	/*
 	 * Standalone grep-friendly cumulative line.  The stat_row above
 	 * is gated on non-zero and the per-handler attribution block
