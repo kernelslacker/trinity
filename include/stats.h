@@ -21,6 +21,7 @@
 #include "kernel/mount.h"
 #include "stats/subsys/accept_unblocker.h"
 #include "stats/subsys/af_alg_probe.h"
+#include "stats/subsys/af_alg_recvmsg.h"
 #include "stats/subsys/af_alg_weak_cipher_probe.h"
 #include "stats/subsys/af_unix_peek_race.h"
 #include "stats/subsys/af_unix_scm_rights_gc.h"
@@ -1868,20 +1869,8 @@ struct stats_s {
 	/* af_alg_template_probe accounting.  See stats/subsys/af_alg_probe.h. */
 	struct af_alg_probe_stats af_alg_probe;
 
-	/* af_alg_recvmsg_churn childop counters.  Drives the AF_ALG
-	 * setkey -> sendmsg(cmsg) -> recvmsg(rotating-iov) data-plane
-	 * path that the upstream aead_recvmsg memcpy_sglist GPF and
-	 * af_alg_pull_tsgl slab-OOB upstream CI reproducers hit; the
-	 * existing af_alg_template/af_alg_weak_cipher probes only walk
-	 * bind+accept and so don't reach the sg/tsgl rotation logic. */
-	unsigned long af_alg_recvmsg_runs;		/* total invocations */
-	unsigned long af_alg_recvmsg_setkey_sent;	/* CMSG_ALG_SET_KEY emitted (alg_setkey_cmsg) */
-	unsigned long af_alg_recvmsg_iv_sent;		/* CMSG_ALG_SET_IV emitted (alg_setiv_cmsg) */
-	unsigned long af_alg_recvmsg_oob_iov;		/* slab-OOB-shaped sendmsg iov layout used */
-	unsigned long af_alg_recvmsg_zerolen;		/* recvmsg() with a 0-length output iov */
-	unsigned long af_alg_recvmsg_oversize;		/* recvmsg() with an oversize (64KB) output iov */
-	unsigned long af_alg_recvmsg_empty_cmsg_no_more; /* sendmsg() cmsg-only, empty payload, no MSG_MORE */
-	unsigned long af_alg_recvmsg_unsupported;	/* socket(AF_ALG)/proc-crypto latched off */
+	/* af_alg_recvmsg_churn childop counters.  See stats/subsys/af_alg_recvmsg.h. */
+	struct af_alg_recvmsg_stats af_alg_recvmsg;
 
 	/* inplace_crypto_oracle childop counters.
 	 * See stats/subsys/inplace_crypto.h. */

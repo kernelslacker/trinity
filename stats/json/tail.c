@@ -106,19 +106,19 @@ static const struct stat_category af_alg_probe_category =
 	              af_alg_probe_fields);
 
 static const struct stat_field af_alg_recvmsg_fields[] = {
-	STAT_FIELD(af_alg_recvmsg, runs),
-	STAT_FIELD(af_alg_recvmsg, setkey_sent),
-	STAT_FIELD(af_alg_recvmsg, iv_sent),
-	STAT_FIELD(af_alg_recvmsg, oob_iov),
-	STAT_FIELD(af_alg_recvmsg, zerolen),
-	STAT_FIELD(af_alg_recvmsg, oversize),
-	STAT_FIELD(af_alg_recvmsg, empty_cmsg_no_more),
-	STAT_FIELD(af_alg_recvmsg, unsupported),
+	STAT_FIELD_SUB(af_alg_recvmsg, runs),
+	STAT_FIELD_SUB(af_alg_recvmsg, setkey_sent),
+	STAT_FIELD_SUB(af_alg_recvmsg, iv_sent),
+	STAT_FIELD_SUB(af_alg_recvmsg, oob_iov),
+	STAT_FIELD_SUB(af_alg_recvmsg, zerolen),
+	STAT_FIELD_SUB(af_alg_recvmsg, oversize),
+	STAT_FIELD_SUB(af_alg_recvmsg, empty_cmsg_no_more),
+	STAT_FIELD_SUB(af_alg_recvmsg, unsupported),
 };
 
 static const struct stat_category af_alg_recvmsg_category =
 	STAT_CATEGORY("af_alg_recvmsg",
-	              af_alg_recvmsg_runs,
+	              af_alg_recvmsg.runs,
 	              af_alg_recvmsg_fields);
 
 void dump_stats_json_rxrpc_alg_ublk_block(void)
