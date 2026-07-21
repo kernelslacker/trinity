@@ -61,9 +61,9 @@ void dump_stats_shared_buffer_misc(void)
 		if (verbosity > 1)
 			dump_range_overlaps_shared_top_offenders();
 	}
-	if (shm->stats.shared_region_overflow)
+	if (shm->stats.diag.shared_region_overflow)
 		stat_row("shared_buffer", "shared_region_overflow",
-			 shm->stats.shared_region_overflow);
+			 shm->stats.diag.shared_region_overflow);
 	if (parent_stats.mm_gate_post_slip)
 		stat_row("shared_buffer", "mm_gate_post_slip",
 			 parent_stats.mm_gate_post_slip);

@@ -330,6 +330,6 @@ void random_map_readfn(struct map *map)
 	(void)sigaction(SIGBUS,  &old_bus,  NULL);
 
 	if (aborted)
-		__atomic_add_fetch(&shm->stats.read_walk_aborted, 1,
+		__atomic_add_fetch(&shm->stats.diag.read_walk_aborted, 1,
 				   __ATOMIC_RELAXED);
 }

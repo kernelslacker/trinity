@@ -669,7 +669,7 @@ void freeze_sibling_childdata(int my_childno)
 	 */
 	if (len == 0) {
 		outputerr("freeze_sibling_childdata: childdata_mapping_len uninitialised\n");
-		__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
+		__atomic_add_fetch(&shm->stats.diag.sibling_mprotect_failed, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
@@ -710,7 +710,7 @@ void freeze_sibling_childdata(int my_childno)
 					     saved_errno);
 			outputerr("freeze_sibling_childdata: mprotect(sibling %u childdata, %zu) failed: %s\n",
 				  i, len, strerror(saved_errno));
-			__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
+			__atomic_add_fetch(&shm->stats.diag.sibling_mprotect_failed, 1,
 					   __ATOMIC_RELAXED);
 		}
 	}
@@ -842,7 +842,7 @@ static void init_child_freeze_shared(struct childdata *child, int childno)
 		log_mprotect_failure(pids, max_children * sizeof(*pids), PROT_READ,
 				     __builtin_return_address(0), saved_errno);
 		outputerr("init_child: mprotect(pids[]) failed: %s\n", strerror(saved_errno));
-		__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
+		__atomic_add_fetch(&shm->stats.diag.sibling_mprotect_failed, 1,
 				   __ATOMIC_RELAXED);
 	}
 
@@ -892,7 +892,7 @@ static void init_child_rendezvous_parent(struct childdata *child, int childno)
 		 * survivor counter in shm instead so a post-mortem reader
 		 * can tell this path actually fired. */
 		if (pid_alive(mainpid) == false) {
-			__atomic_add_fetch(&shm->stats.child_dead_parent_observed,
+			__atomic_add_fetch(&shm->stats.diag.child_dead_parent_observed,
 					   1, __ATOMIC_RELAXED);
 			panic(EXIT_SHM_CORRUPTION);
 			_exit(EXIT_SHM_CORRUPTION);
@@ -955,7 +955,7 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 	 * indefinitely, and the mainpid slot risks pid reuse. */
 	while (!__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE)) {
 		if (pid_alive(mainpid) == false) {
-			__atomic_add_fetch(&shm->stats.child_dead_parent_observed,
+			__atomic_add_fetch(&shm->stats.diag.child_dead_parent_observed,
 					   1, __ATOMIC_RELAXED);
 			panic(EXIT_SHM_CORRUPTION);
 			_exit(EXIT_SHM_CORRUPTION);

@@ -282,7 +282,7 @@ static void post_mremap(struct syscallrecord *rec)
 					map->size = (unsigned long) st.st_size & PAGE_MASK;
 
 				if (map->size != snap->new_len)
-					__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+					__atomic_add_fetch(&shm->stats.diag.mmap_size_clamped,
 							   1, __ATOMIC_RELAXED);
 			}
 		} else {
@@ -294,7 +294,7 @@ static void post_mremap(struct syscallrecord *rec)
 			 * EOF.  Mirrors the post_mmap fstat-failure stance.
 			 */
 			map->size = 0;
-			__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+			__atomic_add_fetch(&shm->stats.diag.mmap_size_clamped,
 					   1, __ATOMIC_RELAXED);
 		}
 	}

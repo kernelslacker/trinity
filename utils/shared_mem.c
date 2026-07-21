@@ -365,7 +365,7 @@ static void tracked_size_unmark(unsigned long len)
  *   - In release, register the region in the bounded overflow tail so
  *     the bitmap stays correct (shared_bitmap_mark already covers the
  *     range) and range_in_tracked_shared() can still match precisely.
- *     Bump shm->stats.shared_region_overflow so the over-budget state
+ *     Bump shm->stats.diag.shared_region_overflow so the over-budget state
  *     is visible in the periodic stats dump.
  *
  *   - If the overflow tail itself fills, BUG() in both debug and
@@ -417,7 +417,7 @@ static void register_shared_overflow(const char *who, unsigned long addr,
 	nr_shared_regions_overflow++;
 
 	if (shm != NULL)
-		__atomic_add_fetch(&shm->stats.shared_region_overflow, 1,
+		__atomic_add_fetch(&shm->stats.diag.shared_region_overflow, 1,
 				   __ATOMIC_RELAXED);
 #endif
 }

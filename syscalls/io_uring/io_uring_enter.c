@@ -227,7 +227,7 @@ static void sanitise_io_uring_enter(struct syscallrecord *rec)
 		 * the rest of the batch is unreliable too.
 		 */
 		if (sqe_idx >= ring->sq_entries) {
-			__atomic_add_fetch(&shm->stats.iouring_enter_mask_corrupt,
+			__atomic_add_fetch(&shm->stats.diag.iouring_enter_mask_corrupt,
 					   1, __ATOMIC_RELAXED);
 			return;
 		}

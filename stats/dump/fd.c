@@ -114,9 +114,9 @@ void dump_stats_fd_tracking(void)
 	 * register_returned_fd dispatch -- the OBJ_KEY_SERIAL branch
 	 * mirrors the value into prop_ring after handing it to the typed
 	 * registrar. */
-	if (shm->stats.propagation_injected_key_scalar) {
+	if (shm->stats.diag.propagation_injected_key_scalar) {
 		stat_row("propagation", "injected_key_scalar",
-			 shm->stats.propagation_injected_key_scalar);
+			 shm->stats.diag.propagation_injected_key_scalar);
 	}
 }
 

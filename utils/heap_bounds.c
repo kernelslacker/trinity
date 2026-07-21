@@ -293,7 +293,7 @@ void heap_bounds_init(void)
 			 * than just "deficit existed".
 			 */
 			__atomic_add_fetch(
-				&shm->stats.heap_extra_regions_overflow, 1,
+				&shm->stats.diag.heap_extra_regions_overflow, 1,
 				__ATOMIC_RELAXED);
 
 			if (!warned) {
