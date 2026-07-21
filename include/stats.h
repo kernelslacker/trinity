@@ -145,6 +145,7 @@
 #include "stats/subsys/splice_protocols.h"
 #include "stats/subsys/statmount_idmap.h"
 #include "stats/subsys/syscall_wedge.h"
+#include "stats/subsys/sysfs_string_race.h"
 #include "stats/subsys/sysv_shm_orphan_race.h"
 #include "stats/subsys/tc_live_traffic.h"
 #include "stats/subsys/tc_mirred_blockcast.h"
@@ -2292,14 +2293,8 @@ struct stats_s {
 	 */
 	unsigned long heap_extra_regions_overflow;
 
-	/* sysfs_string_race childop counters */
-	unsigned long sysfs_string_race_runs;		/* total sysfs_string_race invocations */
-	unsigned long sysfs_string_race_setup_failed;	/* no curated target was writable on this host (probe latched unsupported) */
-	unsigned long sysfs_string_race_target_missing;	/* per-iteration open of a previously-writable target failed (raced removal / perms) */
-	unsigned long sysfs_string_race_target_used;	/* both writer children spawned against a target */
-	unsigned long sysfs_string_race_fork_failed;	/* fork() of a writer child failed (EAGAIN / RLIMIT) */
-	unsigned long sysfs_string_race_writes_ok;	/* child pwrite() returned >0 (.store() accepted) */
-	unsigned long sysfs_string_race_writes_failed;	/* child pwrite() returned <=0 (EINVAL / EBUSY / etc.) */
+	/* sysfs_string_race accounting.  See stats/subsys/sysfs_string_race.h. */
+	struct sysfs_string_race_stats sysfs_string_race;
 
 	/* pci_bind accounting.  See stats/subsys/pci_bind.h. */
 	struct pci_bind_stats pci_bind __attribute__((aligned(64)));

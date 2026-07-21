@@ -486,7 +486,7 @@ static void dump_fork_failure_subworker_counters(void)
 		  " sysfs_string_race:%lu qrtr_bind_race:%lu"
 		  " pfkey_spd_walk:%lu l2tp_ifname_race:%lu"
 		  " statmount_idmap:%lu\n",
-		  __atomic_load_n(&shm->stats.sysfs_string_race_fork_failed,
+		  __atomic_load_n(&shm->stats.sysfs_string_race.fork_failed,
 				  __ATOMIC_RELAXED),
 		  __atomic_load_n(&shm->stats.qrtr_bind_race.fork_failed,
 				  __ATOMIC_RELAXED),
