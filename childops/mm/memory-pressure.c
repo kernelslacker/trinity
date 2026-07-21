@@ -153,7 +153,7 @@ bool memory_pressure(struct childdata *child)
 	if (m == NULL)
 		return false;
 
-	__atomic_add_fetch(&shm->stats.memory_pressure_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.memory_pressure.runs, 1, __ATOMIC_RELAXED);
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and

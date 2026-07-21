@@ -95,6 +95,7 @@
 #include "stats/subsys/madvise_cycler.h"
 #include "stats/subsys/map_shared_stress.h"
 #include "stats/subsys/maps.h"
+#include "stats/subsys/memory_pressure.h"
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/nat_t_churn.h"
 #include "stats/subsys/mpls_label_stack_rx.h"
@@ -580,8 +581,8 @@ struct stats_s {
 	/* procfs_writer accounting.  See stats/subsys/procfs_writer.h. */
 	struct procfs_writer_stats procfs_writer __attribute__((aligned(64)));
 
-	/* memory_pressure childop: MADV_PAGEOUT + refault cycles */
-	unsigned long memory_pressure_runs;
+	/* memory_pressure accounting.  See stats/subsys/memory_pressure.h. */
+	struct memory_pressure_stats memory_pressure;
 
 	/* sched_cycler accounting.  See stats/subsys/sched_cycler.h. */
 	struct sched_cycler_stats sched_cycler __attribute__((aligned(64)));

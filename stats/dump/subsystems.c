@@ -56,8 +56,8 @@ static void dump_stats_render_vfs_writes(void)
 
 static void dump_stats_render_memory_pressure(void)
 {
-	if (shm->stats.memory_pressure_runs)
-		stat_row("memory_pressure", "runs_madv_pageout", shm->stats.memory_pressure_runs);
+	if (shm->stats.memory_pressure.runs)
+		stat_row("memory_pressure", "runs_madv_pageout", shm->stats.memory_pressure.runs);
 }
 
 static void dump_stats_render_genetlink(void)
