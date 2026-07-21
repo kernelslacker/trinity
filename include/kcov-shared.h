@@ -191,6 +191,10 @@ struct kcov_shared {
 		 * any signal exists to slice. */
 		unsigned long kmsg_warn_fires;
 	} kmsg;
+	/* Wild-write / SHM-pool corruption detectors for the cmp_hints pool.
+	 * count_oob is the primary gate (bumped when pool->count exceeds the
+	 * hard cap); the three canary counters narrow the stomp direction. */
+	struct kcov_hints_canary {
 	/* Wild-write detection in the cmp_hints SHM pool.  Bumped when a
 	 * read path (cmp_hints_try_get / pool_add_locked) observes a
 	 * pool->count value above the CMP_HINTS_PER_SYSCALL hard cap --
@@ -218,6 +222,7 @@ struct kcov_shared {
 	unsigned long cmp_hints_canary_lock_post_corrupt;
 	unsigned long cmp_hints_canary_pre_corrupt;
 	unsigned long cmp_hints_canary_post_corrupt;
+	} hints_canary;
 	/* A/B cohort split + per-arm baseline-injection fire counts +
 	 * per-call divergence counter for the cmp-hint baseline inject denom
 	 * A/B (Arm A = 1-in-16, Arm B = 1-in-12).  cmp_inject_arm_{a,b}_

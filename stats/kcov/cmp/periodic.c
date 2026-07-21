@@ -266,10 +266,10 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_injected         = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_injected,         __ATOMIC_RELAXED);
 	cur_prop_injected    = __atomic_load_n(&kcov_shm->hints_flat.propagation_injected,       __ATOMIC_RELAXED);
 	cur_chaos_suppressed = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_chaos_suppressed, __ATOMIC_RELAXED);
-	cur_count_oob        = __atomic_load_n(&kcov_shm->cmp_hints_count_oob,               __ATOMIC_RELAXED);
-	cur_canary_lock_post = __atomic_load_n(&kcov_shm->cmp_hints_canary_lock_post_corrupt, __ATOMIC_RELAXED);
-	cur_canary_pre       = __atomic_load_n(&kcov_shm->cmp_hints_canary_pre_corrupt,      __ATOMIC_RELAXED);
-	cur_canary_post      = __atomic_load_n(&kcov_shm->cmp_hints_canary_post_corrupt,     __ATOMIC_RELAXED);
+	cur_count_oob        = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_count_oob,               __ATOMIC_RELAXED);
+	cur_canary_lock_post = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_canary_lock_post_corrupt, __ATOMIC_RELAXED);
+	cur_canary_pre       = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_canary_pre_corrupt,      __ATOMIC_RELAXED);
+	cur_canary_post      = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_canary_post_corrupt,     __ATOMIC_RELAXED);
 	cur_reexec_attempts                = __atomic_load_n(&kcov_shm->reexec_attempts,                __ATOMIC_RELAXED);
 	cur_reexec_attempts_with_new_cmp   = __atomic_load_n(&kcov_shm->reexec_attempts_with_new_cmp,   __ATOMIC_RELAXED);
 	cur_reexec_attribution_found       = __atomic_load_n(&kcov_shm->reexec_attribution_found,       __ATOMIC_RELAXED);
