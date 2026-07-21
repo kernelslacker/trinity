@@ -48,6 +48,7 @@
 #include "stats/subsys/cold_overflow.h"
 #include "stats/subsys/corrupt_ptr.h"
 #include "stats/subsys/cpu_hotplug.h"
+#include "stats/subsys/cred_class.h"
 #include "stats/subsys/cred_transition.h"
 #include "stats/subsys/deep_path.h"
 #include "stats/subsys/deferred_free.h"
@@ -1960,20 +1961,9 @@ struct stats_s {
 	unsigned long syscalls_random;
 	unsigned long random_syscall_dispatches;
 
-	/* Credential-syscall observability oracle (always on) + flag-gated
-	 * throttle counters.  See include/cred_throttle.h for the contract.
-	 * cred_class_calls counts EVERY completed credential syscall in the
-	 * class (the denominator).  cred_class_success / cred_class_eperm /
-	 * cred_class_einval are the bucket splits the throttle predicate
-	 * reads to decide "provably impossible".  cred_class_throttled is
-	 * bumped each time the --cred-throttle gate rejected a pick for
-	 * this class -- always zero when the flag is off, so the dump
-	 * column doubles as a "flag was active" indicator. */
-	unsigned long cred_class_calls[CRED_CLASS_NR];
-	unsigned long cred_class_success[CRED_CLASS_NR];
-	unsigned long cred_class_eperm[CRED_CLASS_NR];
-	unsigned long cred_class_einval[CRED_CLASS_NR];
-	unsigned long cred_class_throttled[CRED_CLASS_NR];
+	/* Credential-syscall observability oracle + throttle counters.
+	 * See stats/subsys/cred_class.h. */
+	struct cred_class_stats cred_class;
 
 	/* Per-syscall provenance attribution for RedQueen-sourced and
 	 * errno-sourced corpus saves and their downstream PC-edge wins.
