@@ -96,7 +96,7 @@ bool cmp_hint_baseline_should_inject(void)
 	if (child == NULL || !child->cmp_hint_inject_arm_b) {
 		fires = ONE_IN(denom);
 		if (fires && kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_inject_arm_a_baseline_fires,
+			__atomic_fetch_add(&kcov_shm->cohorts.cmp_inject_arm_a_baseline_fires,
 					   1UL, __ATOMIC_RELAXED);
 		return fires;
 	}
@@ -107,10 +107,10 @@ bool cmp_hint_baseline_should_inject(void)
 		bool arm_b_fires = (sample % CMP_HINT_INJECT_DENOM_BASELINE_ARM_B) == 0;
 
 		if (kcov_shm != NULL && arm_a_fires != arm_b_fires)
-			__atomic_fetch_add(&kcov_shm->cmp_inject_denom_diverged,
+			__atomic_fetch_add(&kcov_shm->cohorts.cmp_inject_denom_diverged,
 					   1UL, __ATOMIC_RELAXED);
 		if (kcov_shm != NULL && arm_b_fires)
-			__atomic_fetch_add(&kcov_shm->cmp_inject_arm_b_baseline_fires,
+			__atomic_fetch_add(&kcov_shm->cohorts.cmp_inject_arm_b_baseline_fires,
 					   1UL, __ATOMIC_RELAXED);
 		return arm_b_fires;
 	}

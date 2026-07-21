@@ -340,30 +340,30 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_cmp_recent_would_pick          = __atomic_load_n(&kcov_shm->cmp_recent_would_pick,          __ATOMIC_RELAXED);
 	cur_cmp_recent_would_miss          = __atomic_load_n(&kcov_shm->cmp_recent_would_miss,          __ATOMIC_RELAXED);
 	cur_cmp_recent_live_picks          = __atomic_load_n(&kcov_shm->cmp_recent_live_picks,          __ATOMIC_RELAXED);
-	cur_cmp_inject_arm_a_baseline_fires = __atomic_load_n(&kcov_shm->cmp_inject_arm_a_baseline_fires, __ATOMIC_RELAXED);
-	cur_cmp_inject_arm_b_baseline_fires = __atomic_load_n(&kcov_shm->cmp_inject_arm_b_baseline_fires, __ATOMIC_RELAXED);
-	cur_cmp_inject_denom_diverged       = __atomic_load_n(&kcov_shm->cmp_inject_denom_diverged,       __ATOMIC_RELAXED);
-	cur_cmp_inject_arm_a_children       = __atomic_load_n(&kcov_shm->cmp_inject_arm_a_children,       __ATOMIC_RELAXED);
-	cur_cmp_inject_arm_b_children       = __atomic_load_n(&kcov_shm->cmp_inject_arm_b_children,       __ATOMIC_RELAXED);
-	cur_prop_ring_argop_arm_b_fires     = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_b_fires,     __ATOMIC_RELAXED);
-	cur_prop_ring_argop_arm_a_children  = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_a_children,  __ATOMIC_RELAXED);
-	cur_prop_ring_argop_arm_b_children  = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_b_children,  __ATOMIC_RELAXED);
+	cur_cmp_inject_arm_a_baseline_fires = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_a_baseline_fires, __ATOMIC_RELAXED);
+	cur_cmp_inject_arm_b_baseline_fires = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_b_baseline_fires, __ATOMIC_RELAXED);
+	cur_cmp_inject_denom_diverged       = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_denom_diverged,       __ATOMIC_RELAXED);
+	cur_cmp_inject_arm_a_children       = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_a_children,       __ATOMIC_RELAXED);
+	cur_cmp_inject_arm_b_children       = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_b_children,       __ATOMIC_RELAXED);
+	cur_prop_ring_argop_arm_b_fires     = __atomic_load_n(&kcov_shm->cohorts.prop_ring_argop_arm_b_fires,     __ATOMIC_RELAXED);
+	cur_prop_ring_argop_arm_a_children  = __atomic_load_n(&kcov_shm->cohorts.prop_ring_argop_arm_a_children,  __ATOMIC_RELAXED);
+	cur_prop_ring_argop_arm_b_children  = __atomic_load_n(&kcov_shm->cohorts.prop_ring_argop_arm_b_children,  __ATOMIC_RELAXED);
 	/* frontier_blend_samples lives in shm->stats (bumped per fire from
 	 * both arms in lock-step), the cohort children counters live in
 	 * kcov_shm (bumped once per child).  Read both here so the cohort
 	 * dump row can be delta-gated on the fire counter, matching the
 	 * prop_ring_argop template. */
 	cur_frontier_blend_samples          = __atomic_load_n(&shm->stats.frontier.plateau.blend_samples,         __ATOMIC_RELAXED);
-	cur_frontier_blend_arm_a_children   = __atomic_load_n(&kcov_shm->frontier_blend_arm_a_children,   __ATOMIC_RELAXED);
-	cur_frontier_blend_arm_b_children   = __atomic_load_n(&kcov_shm->frontier_blend_arm_b_children,   __ATOMIC_RELAXED);
+	cur_frontier_blend_arm_a_children   = __atomic_load_n(&kcov_shm->cohorts.frontier_blend_arm_a_children,   __ATOMIC_RELAXED);
+	cur_frontier_blend_arm_b_children   = __atomic_load_n(&kcov_shm->cohorts.frontier_blend_arm_b_children,   __ATOMIC_RELAXED);
 	cur_remote_adaptive_samples         = __atomic_load_n(&shm->stats.remote_adaptive.samples,        __ATOMIC_RELAXED);
 	cur_remote_adaptive_would_demote    = __atomic_load_n(&shm->stats.remote_adaptive.would_demote,   __ATOMIC_RELAXED);
 	cur_remote_adaptive_would_promote   = __atomic_load_n(&shm->stats.remote_adaptive.would_promote,  __ATOMIC_RELAXED);
 	cur_remote_adaptive_would_force     = __atomic_load_n(&shm->stats.remote_adaptive.would_force,    __ATOMIC_RELAXED);
 	cur_remote_adaptive_would_gate_promote = __atomic_load_n(&shm->stats.remote_adaptive.would_gate_promote, __ATOMIC_RELAXED);
 	cur_remote_adaptive_agree           = __atomic_load_n(&shm->stats.remote_adaptive.agree,          __ATOMIC_RELAXED);
-	cur_remote_adaptive_arm_a_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_a_children,  __ATOMIC_RELAXED);
-	cur_remote_adaptive_arm_b_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_b_children,  __ATOMIC_RELAXED);
+	cur_remote_adaptive_arm_a_children  = __atomic_load_n(&kcov_shm->cohorts.remote_adaptive_arm_a_children,  __ATOMIC_RELAXED);
+	cur_remote_adaptive_arm_b_children  = __atomic_load_n(&kcov_shm->cohorts.remote_adaptive_arm_b_children,  __ATOMIC_RELAXED);
 	cur_arg_meta_addr_with_meta            = __atomic_load_n(&shm->stats.arg.meta_addr_with_meta,            __ATOMIC_RELAXED);
 	cur_arg_meta_addr_without_meta         = __atomic_load_n(&shm->stats.arg.meta_addr_without_meta,         __ATOMIC_RELAXED);
 	cur_arg_meta_argtype_stale             = __atomic_load_n(&shm->stats.arg.meta_argtype_stale,             __ATOMIC_RELAXED);

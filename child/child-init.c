@@ -1169,10 +1169,10 @@ static void init_child_ab_stamps(struct childdata *child)
 	child->cmp_hint_inject_arm_b = ONE_IN(2);
 	if (kcov_shm != NULL) {
 		if (child->cmp_hint_inject_arm_b)
-			__atomic_fetch_add(&kcov_shm->cmp_inject_arm_b_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.cmp_inject_arm_b_children,
 					   1U, __ATOMIC_RELAXED);
 		else
-			__atomic_fetch_add(&kcov_shm->cmp_inject_arm_a_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.cmp_inject_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 	/* A/B-comparison stamp for the cmp_hints substitution-pool
@@ -1197,10 +1197,10 @@ static void init_child_ab_stamps(struct childdata *child)
 	child->frontier_blend_arm_b = ONE_IN(2);
 	if (kcov_shm != NULL) {
 		if (child->frontier_blend_arm_b)
-			__atomic_fetch_add(&kcov_shm->frontier_blend_arm_b_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.frontier_blend_arm_b_children,
 					   1U, __ATOMIC_RELAXED);
 		else
-			__atomic_fetch_add(&kcov_shm->frontier_blend_arm_a_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.frontier_blend_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 
@@ -1213,10 +1213,10 @@ static void init_child_ab_stamps(struct childdata *child)
 	child->frontier_errno_decay_arm_b = ONE_IN(2);
 	if (kcov_shm != NULL) {
 		if (child->frontier_errno_decay_arm_b)
-			__atomic_fetch_add(&kcov_shm->frontier_errno_decay_arm_b_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.frontier_errno_decay_arm_b_children,
 					   1U, __ATOMIC_RELAXED);
 		else
-			__atomic_fetch_add(&kcov_shm->frontier_errno_decay_arm_a_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.frontier_errno_decay_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 
@@ -1230,10 +1230,10 @@ static void init_child_ab_stamps(struct childdata *child)
 	child->frontier_silent_decay_arm_b = ONE_IN(2);
 	if (kcov_shm != NULL) {
 		if (child->frontier_silent_decay_arm_b)
-			__atomic_fetch_add(&kcov_shm->frontier_silent_decay_arm_b_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.frontier_silent_decay_arm_b_children,
 					   1U, __ATOMIC_RELAXED);
 		else
-			__atomic_fetch_add(&kcov_shm->frontier_silent_decay_arm_a_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.frontier_silent_decay_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 
@@ -1249,10 +1249,10 @@ static void init_child_ab_stamps(struct childdata *child)
 	child->remote_adaptive_arm_b = ONE_IN(2);
 	if (kcov_shm != NULL) {
 		if (child->remote_adaptive_arm_b)
-			__atomic_fetch_add(&kcov_shm->remote_adaptive_arm_b_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.remote_adaptive_arm_b_children,
 					   1U, __ATOMIC_RELAXED);
 		else
-			__atomic_fetch_add(&kcov_shm->remote_adaptive_arm_a_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.remote_adaptive_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 
@@ -1267,10 +1267,10 @@ static void init_child_ab_stamps(struct childdata *child)
 	child->prop_ring_argop_arm_b = ONE_IN(2);
 	if (kcov_shm != NULL) {
 		if (child->prop_ring_argop_arm_b)
-			__atomic_fetch_add(&kcov_shm->prop_ring_argop_arm_b_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.prop_ring_argop_arm_b_children,
 					   1U, __ATOMIC_RELAXED);
 		else
-			__atomic_fetch_add(&kcov_shm->prop_ring_argop_arm_a_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.prop_ring_argop_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 
@@ -1304,10 +1304,10 @@ static void init_child_ab_stamps(struct childdata *child)
 	child->prop_ring_typed_arm_b = ONE_IN(2);
 	if (kcov_shm != NULL) {
 		if (child->prop_ring_typed_arm_b)
-			__atomic_fetch_add(&kcov_shm->prop_ring_typed_arm_b_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.prop_ring_typed_arm_b_children,
 					   1U, __ATOMIC_RELAXED);
 		else
-			__atomic_fetch_add(&kcov_shm->prop_ring_typed_arm_a_children,
+			__atomic_fetch_add(&kcov_shm->cohorts.prop_ring_typed_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 }
