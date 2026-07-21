@@ -398,7 +398,7 @@ static void __attribute__((noreturn)) kmsg_helper_main(void)
 			 * lands in the same memory the parent and fuzz children
 			 * read. */
 			if (kind != KMSG_EVENT_UNKNOWN && kcov_shm != NULL)
-				__atomic_fetch_add(&kcov_shm->kmsg_warn_fires,
+				__atomic_fetch_add(&kcov_shm->kmsg.kmsg_warn_fires,
 						   1UL, __ATOMIC_RELAXED);
 
 			kmsg_emit("KMSG: {event:%d, banner:\"%s\"}\n",

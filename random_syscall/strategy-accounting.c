@@ -420,7 +420,7 @@ void maybe_rotate_strategy(void)
 	 * unavailable, no kmsg counter to read): the delta is zero and the
 	 * cohort sample becomes a no-op for that window. */
 	if (kcov_shm != NULL) {
-		warn_now = __atomic_load_n(&kcov_shm->kmsg_warn_fires,
+		warn_now = __atomic_load_n(&kcov_shm->kmsg.kmsg_warn_fires,
 					   __ATOMIC_RELAXED);
 		warn_in_window = warn_now -
 			__atomic_load_n(&shm->kmsg_warn_fires_at_window_start,
@@ -521,7 +521,7 @@ void maybe_rotate_strategy(void)
 	 * per-call attribution. */
 	__atomic_store_n(&shm->kmsg_warn_fires_at_window_start,
 			 kcov_shm != NULL ?
-				 __atomic_load_n(&kcov_shm->kmsg_warn_fires,
+				 __atomic_load_n(&kcov_shm->kmsg.kmsg_warn_fires,
 						 __ATOMIC_RELAXED) :
 				 0UL,
 			 __ATOMIC_RELAXED);
