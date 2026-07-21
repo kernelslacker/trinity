@@ -309,7 +309,7 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_runs,
+	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_rxrpc_unsupported)
@@ -328,7 +328,7 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_socket_failed,
+		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg.socket_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -352,7 +352,7 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	}
 
 	if (bind(fd, (struct sockaddr *)&local, sizeof(local)) < 0) {
-		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_socket_failed,
+		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg.socket_failed,
 				   1, __ATOMIC_RELAXED);
 		close(fd);
 		return true;
@@ -375,7 +375,7 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	}
 
 	slot = (enum rxrpc_cmsg_slot)rnd_modulo_u32((unsigned int)NR_CMSG_SLOTS);
-	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_sent[slot],
+	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg.sent[slot],
 			   1, __ATOMIC_RELAXED);
 
 	if (valid_op)
@@ -384,10 +384,10 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 
 	rc = send_one_cmsg(fd, &peer, have_peer, slot);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_sendmsg_ok,
+		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg.sendmsg_ok,
 				   1, __ATOMIC_RELAXED);
 	else
-		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_sendmsg_fail,
+		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg.sendmsg_fail,
 				   1, __ATOMIC_RELAXED);
 
 	close(fd);
@@ -399,9 +399,9 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_runs,
+	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg.runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_socket_failed,
+	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg.socket_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
