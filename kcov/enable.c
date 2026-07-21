@@ -418,17 +418,17 @@ bool kcov_bracket_begin(struct kcov_child *kc)
 		 * attempts == bracketed + sum(skipped) invariant intact. */
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->childop_kcov_skipped_inactive,
+				&kcov_shm->childop_kcov.childop_kcov_skipped_inactive,
 				1, __ATOMIC_RELAXED);
 		return false;
 	}
 	if (kc->mode == KCOV_MODE_CMP) {
-		__atomic_fetch_add(&kcov_shm->childop_kcov_skipped_cmp,
+		__atomic_fetch_add(&kcov_shm->childop_kcov.childop_kcov_skipped_cmp,
 			1, __ATOMIC_RELAXED);
 		return false;
 	}
 	if (kc->bracket_owned) {
-		__atomic_fetch_add(&kcov_shm->childop_kcov_skipped_nested,
+		__atomic_fetch_add(&kcov_shm->childop_kcov.childop_kcov_skipped_nested,
 			1, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -439,12 +439,12 @@ bool kcov_bracket_begin(struct kcov_child *kc)
 		 * no enable is live, so don't claim ownership.  Counted as
 		 * skipped_inactive so the attempt still balances out against
 		 * the begin-side counter. */
-		__atomic_fetch_add(&kcov_shm->childop_kcov_skipped_inactive,
+		__atomic_fetch_add(&kcov_shm->childop_kcov.childop_kcov_skipped_inactive,
 			1, __ATOMIC_RELAXED);
 		return false;
 	}
 	kc->bracket_owned = true;
-	__atomic_fetch_add(&kcov_shm->childop_kcov_bracketed,
+	__atomic_fetch_add(&kcov_shm->childop_kcov.childop_kcov_bracketed,
 		1, __ATOMIC_RELAXED);
 	return true;
 }

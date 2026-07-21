@@ -342,13 +342,13 @@ static const char *op_kcov_skip_reason(enum child_op_type op)
 {
 	if (kcov_shm == NULL || (unsigned int)op >= KCOV_CHILDOP_NR_MAX)
 		return NULL;
-	if (__atomic_load_n(&kcov_shm->childop_kcov_op_skipped_inactive[op],
+	if (__atomic_load_n(&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
 			    __ATOMIC_RELAXED) > 0)
 		return "kcov_bracket_inactive";
-	if (__atomic_load_n(&kcov_shm->childop_kcov_op_skipped_cmp[op],
+	if (__atomic_load_n(&kcov_shm->childop_kcov.childop_kcov_op_skipped_cmp[op],
 			    __ATOMIC_RELAXED) > 0)
 		return "kcov_mode_cmp";
-	if (__atomic_load_n(&kcov_shm->childop_kcov_op_skipped_nested[op],
+	if (__atomic_load_n(&kcov_shm->childop_kcov.childop_kcov_op_skipped_nested[op],
 			    __ATOMIC_RELAXED) > 0)
 		return "kcov_bracket_nested";
 	return NULL;

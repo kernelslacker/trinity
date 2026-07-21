@@ -354,7 +354,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			unsigned long op = nr - CHILDOP_KCOV_NR_BASE;
 			if (op < KCOV_CHILDOP_NR_MAX)
 				__atomic_fetch_add(
-					&kcov_shm->childop_kcov_trace_truncated[op],
+					&kcov_shm->childop_kcov.childop_kcov_trace_truncated[op],
 					1, __ATOMIC_RELAXED);
 		}
 		count = (unsigned long)kcov_trace_size - 1;
