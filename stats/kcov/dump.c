@@ -391,13 +391,13 @@ static void dump_stats_render_kcov_per_syscall_edges_topn(unsigned int nr_syscal
 		 * slots are snapshotted so the [nr][arch] delta stays a pure
 		 * subtraction on the next window. */
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
-			kcov_shm->per_syscall_edges_previous[i][0] =
+			kcov_shm->per_syscall.per_syscall_edges_previous[i][0] =
 				__atomic_load_n(
-					&kcov_shm->per_syscall_edges[i][0],
+					&kcov_shm->per_syscall.per_syscall_edges[i][0],
 					__ATOMIC_RELAXED);
-			kcov_shm->per_syscall_edges_previous[i][1] =
+			kcov_shm->per_syscall.per_syscall_edges_previous[i][1] =
 				__atomic_load_n(
-					&kcov_shm->per_syscall_edges[i][1],
+					&kcov_shm->per_syscall.per_syscall_edges[i][1],
 					__ATOMIC_RELAXED);
 		}
 }
@@ -435,7 +435,7 @@ static void dump_stats_render_kcov_per_syscall_noisy_topn(unsigned int nr_syscal
 	memset(top_samples, 0, sizeof(top_samples));
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
 		unsigned long samples = __atomic_load_n(
-			&kcov_shm->per_syscall_noisy_samples[i],
+			&kcov_shm->per_syscall.per_syscall_noisy_samples[i],
 			__ATOMIC_RELAXED);
 
 		if (samples == 0)
@@ -459,10 +459,10 @@ static void dump_stats_render_kcov_per_syscall_noisy_topn(unsigned int nr_syscal
 		unsigned long samples = top_samples[j];
 		unsigned long clean = per_syscall_edges_total(nr);
 		unsigned long clean_remote = __atomic_load_n(
-			&kcov_shm->per_syscall_edges_clean_remote[nr],
+			&kcov_shm->per_syscall.per_syscall_edges_clean_remote[nr],
 			__ATOMIC_RELAXED);
 		unsigned long noisy_raw = __atomic_load_n(
-			&kcov_shm->per_syscall_edges_noisy[nr],
+			&kcov_shm->per_syscall.per_syscall_edges_noisy[nr],
 			__ATOMIC_RELAXED);
 		unsigned long est_noisy;
 		unsigned long clean_local;
@@ -1490,7 +1490,7 @@ static void dump_stats_render_kcov_top_edges_and_cold(unsigned int nr_syscalls_t
 					continue;
 
 				slot_edges = __atomic_load_n(
-					&kcov_shm->per_syscall_edges[i][arch],
+					&kcov_shm->per_syscall.per_syscall_edges[i][arch],
 					__ATOMIC_RELAXED);
 				if (slot_edges == 0)
 					continue;
@@ -1500,7 +1500,7 @@ static void dump_stats_render_kcov_top_edges_and_cold(unsigned int nr_syscalls_t
 					entry ? entry->name : "???",
 					do32 ? "32" : "64",
 					slot_edges,
-					kcov_shm->last_edge_at[i]);
+					kcov_shm->per_syscall.last_edge_at[i]);
 			}
 		}
 	}

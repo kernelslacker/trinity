@@ -210,9 +210,9 @@ static inline void syscall_noisy_sample_end(unsigned int nr,
 	 * on the pathological ordering. */
 	delta = (after >= before) ? (after - before) : 0UL;
 
-	__atomic_fetch_add(&kcov_shm->per_syscall_edges_noisy[nr], delta,
+	__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_edges_noisy[nr], delta,
 			   __ATOMIC_RELAXED);
-	__atomic_fetch_add(&kcov_shm->per_syscall_noisy_samples[nr], 1UL,
+	__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_noisy_samples[nr], 1UL,
 			   __ATOMIC_RELAXED);
 }
 

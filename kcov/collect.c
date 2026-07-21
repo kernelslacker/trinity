@@ -300,7 +300,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		return false;
 
 	/* kcov_shm->coverage.total_calls is bumped solely for its stamp role:
-	 * the returned call_nr is stored into kcov_shm->last_edge_at[nr]
+	 * the returned call_nr is stored into kcov_shm->per_syscall.last_edge_at[nr]
 	 * on the found-new-edge branch below and read by the cold-skip
 	 * gap denominator in kcov_syscall_cold_skip_pct() / by the
 	 * last_efault_at[] stamp in syscall.c.  The dump-side accounting
@@ -534,7 +534,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	}
 
 	if (nr < MAX_NR_SYSCALL) {
-		__atomic_fetch_add(&kcov_shm->per_syscall_calls[nr][do32 ? 1 : 0],
+		__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_calls[nr][do32 ? 1 : 0],
 			1, __ATOMIC_RELAXED);
 		/* per-syscall split of
 		 * kcov_collect() activity by collection mode.  See the field
@@ -574,7 +574,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * see the comment on the field in include/kcov.h).  The
 			 * real bucket-edge count is surfaced via the
 			 * new_edge_count out-param below. */
-			__atomic_fetch_add(&kcov_shm->per_syscall_edges[nr][do32 ? 1 : 0],
+			__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_edges[nr][do32 ? 1 : 0],
 				1, __ATOMIC_RELAXED);
 			/* SHADOW-only Phase-1 remote-context split of the clean
 			 * per-thread signal above.  kcov_enable_remote()'s
@@ -590,9 +590,9 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * without changing any live selection or scoring code. */
 			if (kc->remote_mode)
 				__atomic_fetch_add(
-					&kcov_shm->per_syscall_edges_clean_remote[nr],
+					&kcov_shm->per_syscall.per_syscall_edges_clean_remote[nr],
 					1, __ATOMIC_RELAXED);
-			__atomic_store_n(&kcov_shm->last_edge_at[nr],
+			__atomic_store_n(&kcov_shm->per_syscall.last_edge_at[nr],
 				call_nr, __ATOMIC_RELAXED);
 			/* if this call had a cmp_hint
 			 * injected into its arg surface (latched in
@@ -630,13 +630,13 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * consumers can tell a quietly-exercised syscall from
 			 * one that has never fired this run. */
 			__atomic_fetch_add(
-				&kcov_shm->per_syscall_warm_known_hits[nr], 1,
+				&kcov_shm->per_syscall.per_syscall_warm_known_hits[nr], 1,
 				__ATOMIC_RELAXED);
 			/* Per-child staging bump for the dump-side run-wide
 			 * warm-known-hits counter.  Same batched-flush model
 			 * as total_calls / remote_calls / total_pcs above;
 			 * no stamp-role consumer reads
-			 * kcov_shm->total_warm_known_hits, so the staged
+			 * kcov_shm->per_syscall.total_warm_known_hits, so the staged
 			 * per-child delta is authoritative for the dump path
 			 * -- the shm atomic is not bumped.  The per-syscall
 			 * split above stays on the shm atomic -- it's an nr-
@@ -666,9 +666,9 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * if zero.  Races between concurrent first-warm-hits
 			 * resolve harmlessly to whichever store wins -- both
 			 * carry the same semantic "this syscall is alive". */
-			if (__atomic_load_n(&kcov_shm->last_edge_at[nr],
+			if (__atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr],
 					    __ATOMIC_RELAXED) == 0)
-				__atomic_store_n(&kcov_shm->last_edge_at[nr],
+				__atomic_store_n(&kcov_shm->per_syscall.last_edge_at[nr],
 						 call_nr, __ATOMIC_RELAXED);
 		}
 		/* Per-call totals into the (nr, do32)-indexed diag slot:
@@ -992,7 +992,7 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 
 		total = __atomic_load_n(&kcov_shm->coverage.total_calls,
 			__ATOMIC_RELAXED);
-		last = __atomic_load_n(&kcov_shm->last_edge_at[nr],
+		last = __atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr],
 			__ATOMIC_RELAXED);
 		if (total <= last)
 			return 0;

@@ -284,7 +284,7 @@ static void json_emit_kcov_cold_syscalls(const struct syscalltable *table,
 		fputs("{\"name\":", stdout);
 		json_emit_string(entry ? entry->name : "???");
 		printf(",\"edges\":%lu,\"last_edge_at\":%lu}",
-			slot_edges, kcov_shm->last_edge_at[i]);
+			slot_edges, kcov_shm->per_syscall.last_edge_at[i]);
 		first_cold = false;
 	}
 	putchar(']');
@@ -296,11 +296,11 @@ static void json_emit_kcov_snapshot_previous(unsigned int nr_syscalls_to_scan)
 	unsigned int i;
 
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
-		kcov_shm->per_syscall_edges_previous[i][0] =
-			__atomic_load_n(&kcov_shm->per_syscall_edges[i][0],
+		kcov_shm->per_syscall.per_syscall_edges_previous[i][0] =
+			__atomic_load_n(&kcov_shm->per_syscall.per_syscall_edges[i][0],
 					__ATOMIC_RELAXED);
-		kcov_shm->per_syscall_edges_previous[i][1] =
-			__atomic_load_n(&kcov_shm->per_syscall_edges[i][1],
+		kcov_shm->per_syscall.per_syscall_edges_previous[i][1] =
+			__atomic_load_n(&kcov_shm->per_syscall.per_syscall_edges[i][1],
 					__ATOMIC_RELAXED);
 	}
 }

@@ -790,7 +790,7 @@ bool plateau_anti_prior_accept(unsigned int nr);
 
 /*
  * Recompute and publish the anti-prior baseline -- the mean of
- * kcov_shm->per_syscall_calls across the currently-active syscall
+ * kcov_shm->per_syscall.per_syscall_calls across the currently-active syscall
  * set (biarch: nr_active_32bit_syscalls + nr_active_64bit_syscalls;
  * uniarch: nr_active_syscalls) -- and the matching per-syscall
  * acceptance weight table plateau_anti_prior_accept consumes.
