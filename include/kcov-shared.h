@@ -91,6 +91,11 @@ struct kcov_shared {
 		 * fattest single-call edge load actually seen. */
 		unsigned long dedup_max_probe_seen;
 	} dedup;
+	/* Flat CMP-hint pipeline funnel: bloom/strip skips, unique inserts,
+	 * try_get injections, propagation-ring injections (flat + per-
+	 * callsite), and chaos-mode gate state.  Everything the operator
+	 * needs to see the record-drop path through hint generation. */
+	struct kcov_hints_flat {
 	/* Per-record CMP hints skipped because the calling child's seen-bloom
 	 * indicated the (cmp_ip, value, size) tuple had already been pushed
 	 * to the per-syscall pool within the recent window.  Each skip avoids
@@ -170,6 +175,7 @@ struct kcov_shared {
 	 * stayed at 0 across long multi-child runs. */
 	unsigned long cmp_hints_chaos_window_count;
 	unsigned int  cmp_hints_chaos_active;
+	} hints_flat;
 	/* Flat per-event WARN-fires counter, bumped from kmsg_monitor_thread
 	 * each time classify_kmsg_event() returns a non-UNKNOWN kind --
 	 * every classified WARN / BUG / OOPS / RCU / lockdep splat counts
@@ -2591,8 +2597,8 @@ _Static_assert(offsetof(struct kcov_shared, bucket_seen) == 0UL,
 	"kcov_shared.bucket_seen must remain the first field");
 _Static_assert(offsetof(struct kcov_shared, cmp_records.cmp_records_collected) == 8388672UL,
 	"kcov_shared.cmp_records.cmp_records_collected offset drifted");
-_Static_assert(offsetof(struct kcov_shared, cmp_hints_injected) == 8388728UL,
-	"kcov_shared.cmp_hints_injected offset drifted");
+_Static_assert(offsetof(struct kcov_shared, hints_flat.cmp_hints_injected) == 8388728UL,
+	"kcov_shared.hints_flat.cmp_hints_injected offset drifted");
 _Static_assert(offsetof(struct kcov_shared, per_syscall_edges) == 8397720UL,
 	"kcov_shared.per_syscall_edges offset drifted");
 _Static_assert(offsetof(struct kcov_shared, reexec_new_edges_by_arm) == 25845000UL,

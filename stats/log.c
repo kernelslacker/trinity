@@ -518,7 +518,7 @@ static void stats_ts_emit_cmp_hints(FILE *fp)
 
 	if (kcov_shm != NULL) {
 		cmp_hints_injected = __atomic_load_n(
-			&kcov_shm->cmp_hints_injected, __ATOMIC_RELAXED);
+			&kcov_shm->hints_flat.cmp_hints_injected, __ATOMIC_RELAXED);
 		cmp_hints_consumed = __atomic_load_n(
 			&kcov_shm->cmp_hints_consumed, __ATOMIC_RELAXED);
 		cmp_hint_wins = __atomic_load_n(&kcov_shm->cmp_hint_wins,

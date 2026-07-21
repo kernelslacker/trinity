@@ -583,9 +583,9 @@ static bool cmp_hints_try_get_ex_common(unsigned int nr, bool do32,
 	 * accounting for the difference.  Before the pool snapshot so the
 	 * suppressed path skips the lockless load entirely. */
 	if (kcov_shm != NULL &&
-	    __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
+	    __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_chaos_active,
 			    __ATOMIC_RELAXED)) {
-		__atomic_fetch_add(&kcov_shm->cmp_hints_chaos_suppressed,
+		__atomic_fetch_add(&kcov_shm->hints_flat.cmp_hints_chaos_suppressed,
 				   1UL, __ATOMIC_RELAXED);
 		return false;
 	}

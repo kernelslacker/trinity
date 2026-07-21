@@ -108,7 +108,7 @@ void dump_stats_fd_tracking(void)
 	dump_fd_provider_outstanding();
 
 	/* Producer-side capture count for the typed-scalar bypass push.
-	 * Sibling to kcov_shm->propagation_injected (consumer-side); see
+	 * Sibling to kcov_shm->hints_flat.propagation_injected (consumer-side); see
 	 * the field comment in include/stats.h.  Lives next to the
 	 * fd_runtime_* family because its capture site is the same
 	 * register_returned_fd dispatch -- the OBJ_KEY_SERIAL branch

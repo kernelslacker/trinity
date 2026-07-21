@@ -207,7 +207,7 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 		 */
 		__atomic_store_n(&pool->count, count + 1, __ATOMIC_RELEASE);
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_unique_inserts,
+			__atomic_fetch_add(&kcov_shm->hints_flat.cmp_hints_unique_inserts,
 					   1UL, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -231,7 +231,7 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 	pool->entries[victim].last_used = stamp;
 	__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
 	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->cmp_hints_unique_inserts, 1UL,
+		__atomic_fetch_add(&kcov_shm->hints_flat.cmp_hints_unique_inserts, 1UL,
 				   __ATOMIC_RELAXED);
 		/* Evict-replace pressure: a tuple displaced an older one
 		 * because the per-syscall cap was full.  The new entry won

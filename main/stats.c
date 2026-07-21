@@ -124,7 +124,7 @@ static void print_stats_iteration_line(unsigned long op_count, unsigned long rat
 			&kcov_shm->cmp_records.cmp_trace_truncated,
 			__ATOMIC_RELAXED);
 		unsigned long cmp_unique = __atomic_load_n(
-			&kcov_shm->cmp_hints_unique_inserts,
+			&kcov_shm->hints_flat.cmp_hints_unique_inserts,
 			__ATOMIC_RELAXED);
 		unsigned int pc_kids = __atomic_load_n(
 			&kcov_shm->pc_mode_children, __ATOMIC_RELAXED);
