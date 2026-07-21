@@ -495,7 +495,7 @@ static const struct {
 	 * weight.  Surfaces whether the CMP feedback is meaningfully
 	 * contributing to arm selection. */
 	{ "bandit_cmp_reward_added",
-	  offsetof(struct stats_s, bandit_cmp_reward_added) },
+	  offsetof(struct stats_s, picker_bandit.cmp_reward_added) },
 	/* Sibling of bandit_cmp_reward_added for the edge-count secondary
 	 * reward.  Fires on windows where pc_edge_count /
 	 * EDGE_COUNT_BANDIT_REWARD_WEIGHT_RECIPROCAL was non-zero under
@@ -503,7 +503,7 @@ static const struct {
 	 * Periodic firing rate is the gate the operator watches before
 	 * promoting the mode to COMBINED. */
 	{ "bandit_edge_count_reward_added",
-	  offsetof(struct stats_s, bandit_edge_count_reward_added) },
+	  offsetof(struct stats_s, picker_bandit.edge_count_reward_added) },
 	/* Picks accepted by STRATEGY_COVERAGE_FRONTIER's frontier-weighted
 	 * roulette wheel.  Rate-of-change tracks the arm's actual share of
 	 * the fleet's syscall throughput when the bandit picker selects it. */
@@ -628,9 +628,9 @@ static const struct {
 	 * produce.  See the struct-field comment in include/stats.h for the
 	 * predicate contract. */
 	{ "wall_lever_eligible_total",
-	  offsetof(struct stats_s, wall_lever_eligible_total) },
+	  offsetof(struct stats_s, picker_bandit.wall_lever_eligible_total) },
 	{ "wall_lever_would_suppress_total",
-	  offsetof(struct stats_s, wall_lever_would_suppress_total) },
+	  offsetof(struct stats_s, picker_bandit.wall_lever_would_suppress_total) },
 	/* SHADOW + per-child A/B accounting for the errno-plateau decay at
 	 * the coverage-frontier picker's silent-regime accept site.  See the
 	 * struct-field comments in include/stats.h and the FRONTIER_ERRNO_
@@ -667,17 +667,17 @@ static const struct {
 	 * REACH_BAND_IDX_LOW/_MID/_HIGH band semantics. */
 	{ "reach_band_picks_low",
 	  offsetof(struct stats_s,
-		   reach_band_picks_per_band[REACH_BAND_IDX_LOW]) },
+		   picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_LOW]) },
 	{ "reach_band_picks_mid",
 	  offsetof(struct stats_s,
-		   reach_band_picks_per_band[REACH_BAND_IDX_MID]) },
+		   picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_MID]) },
 	{ "reach_band_picks_high",
 	  offsetof(struct stats_s,
-		   reach_band_picks_per_band[REACH_BAND_IDX_HIGH]) },
+		   picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_HIGH]) },
 	{ "reach_band_would_demote_mid",
-	  offsetof(struct stats_s, reach_band_would_demote_mid) },
+	  offsetof(struct stats_s, picker_bandit.reach_band_would_demote_mid) },
 	{ "reach_band_would_boost_high",
-	  offsetof(struct stats_s, reach_band_would_boost_high) },
+	  offsetof(struct stats_s, picker_bandit.reach_band_would_boost_high) },
 	/* Observability for the adaptive expensive-syscall accept gate.
 	 * See the expensive_adaptive_* field-comment block in include/
 	 * stats.h and the expensive_accept() helper in random-syscall.c
@@ -736,7 +736,7 @@ static const struct {
 	 * picker throughput; deviation from the bandit-pool throughput
 	 * highlights either picker overhead or per-strategy work skew. */
 	{ "strategy_explorer_picks",
-	  offsetof(struct stats_s, strategy_explorer_picks) },
+	  offsetof(struct stats_s, picker_bandit.strategy_explorer_picks) },
 	/* Per-pool new-edge counters: ratio
 	 *   explorer_pool_edges_discovered / bandit_pool_edges_discovered
 	 * compared against
@@ -745,9 +745,9 @@ static const struct {
 	 * disproportionately to its fleet share -- the trigger condition
 	 * for considering per-child bandit (Option C). */
 	{ "explorer_pool_edges_discovered",
-	  offsetof(struct stats_s, explorer_pool_edges_discovered) },
+	  offsetof(struct stats_s, picker_bandit.explorer_pool_edges_discovered) },
 	{ "bandit_pool_edges_discovered",
-	  offsetof(struct stats_s, bandit_pool_edges_discovered) },
+	  offsetof(struct stats_s, picker_bandit.bandit_pool_edges_discovered) },
 	/* Epoll lazy-arm wins: rate-of-change tracks fresh epfds reaching
 	 * children after the deferred-arm refactor.  A flat counter while
 	 * children are issuing epoll_wait suggests the consumer wireup
@@ -786,7 +786,7 @@ static const struct {
 	 * dump only; the per-syscall warm_reserve_candidates[] breakdown
 	 * surfaces via top_syscalls_periodic_dump()'s warm-reserve row. */
 	{ "warm_reserve_candidates_total",
-	  offsetof(struct stats_s, warm_reserve_candidates_total) },
+	  offsetof(struct stats_s, picker_bandit.warm_reserve_candidates_total) },
 	/* SHADOW-ONLY intersection of the deep-but-warm predicate above
 	 * with the CMP_RISING_PC_FLAT plateau hypothesis -- the would-
 	 * replay-demand signal a STAGE B capped-reserve experiment would
@@ -795,7 +795,7 @@ static const struct {
 	 * surfaces via top_syscalls_periodic_dump()'s warm-reserve-plateau
 	 * row. */
 	{ "warm_reserve_during_plateau_total",
-	  offsetof(struct stats_s, warm_reserve_during_plateau_total) },
+	  offsetof(struct stats_s, picker_bandit.warm_reserve_during_plateau_total) },
 };
 
 static unsigned long periodic_counter_load(unsigned int i)

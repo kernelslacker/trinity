@@ -359,14 +359,14 @@ static void print_stats_pool_ratio(void)
 	 * isn't lost. */
 	static unsigned long last_bandit_edges = 0;
 	unsigned long b_cur = __atomic_load_n(
-		&shm->stats.bandit_pool_edges_discovered,
+		&shm->stats.picker_bandit.bandit_pool_edges_discovered,
 		__ATOMIC_RELAXED);
 	unsigned long b_delta = b_cur - last_bandit_edges;
 
 	if (explorer_children > 0) {
 		static unsigned long last_explorer_edges = 0;
 		unsigned long e_cur = __atomic_load_n(
-			&shm->stats.explorer_pool_edges_discovered,
+			&shm->stats.picker_bandit.explorer_pool_edges_discovered,
 			__ATOMIC_RELAXED);
 		unsigned long total = e_cur + b_cur;
 		unsigned long e_delta = e_cur - last_explorer_edges;

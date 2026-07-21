@@ -382,10 +382,10 @@ void __cold top_syscalls_periodic_dump(void)
 		last_dump = now;
 		for (i = 0; i < MAX_NR_SYSCALL; i++) {
 			prev_bandit[i]   = __atomic_load_n(
-				&shm->stats.edges_per_syscall_bandit[i],
+				&shm->stats.picker_bandit.edges_per_syscall_bandit[i],
 				__ATOMIC_RELAXED);
 			prev_explorer[i] = __atomic_load_n(
-				&shm->stats.edges_per_syscall_explorer[i],
+				&shm->stats.picker_bandit.edges_per_syscall_explorer[i],
 				__ATOMIC_RELAXED);
 			prev_frontier_picks[i] = __atomic_load_n(
 				&shm->stats.frontier.per_syscall.picks_per_syscall[i],
@@ -409,10 +409,10 @@ void __cold top_syscalls_periodic_dump(void)
 				&shm->stats.pc_edge_source.rq_pcedge_wins[i],
 				__ATOMIC_RELAXED);
 			prev_warm_reserve[i] = __atomic_load_n(
-				&shm->stats.warm_reserve_candidates[i],
+				&shm->stats.picker_bandit.warm_reserve_candidates[i],
 				__ATOMIC_RELAXED);
 			prev_warm_reserve_plateau[i] = __atomic_load_n(
-				&shm->stats.warm_reserve_during_plateau[i],
+				&shm->stats.picker_bandit.warm_reserve_during_plateau[i],
 				__ATOMIC_RELAXED);
 		}
 		return;
@@ -424,10 +424,10 @@ void __cold top_syscalls_periodic_dump(void)
 
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
 		cur_bandit[i]   = __atomic_load_n(
-			&shm->stats.edges_per_syscall_bandit[i],
+			&shm->stats.picker_bandit.edges_per_syscall_bandit[i],
 			__ATOMIC_RELAXED);
 		cur_explorer[i] = __atomic_load_n(
-			&shm->stats.edges_per_syscall_explorer[i],
+			&shm->stats.picker_bandit.edges_per_syscall_explorer[i],
 			__ATOMIC_RELAXED);
 		cur_frontier_picks[i] = __atomic_load_n(
 			&shm->stats.frontier.per_syscall.picks_per_syscall[i],
@@ -457,10 +457,10 @@ void __cold top_syscalls_periodic_dump(void)
 			&shm->stats.pc_edge_source.rq_pcedge_wins[i],
 			__ATOMIC_RELAXED);
 		cur_warm_reserve[i] = __atomic_load_n(
-			&shm->stats.warm_reserve_candidates[i],
+			&shm->stats.picker_bandit.warm_reserve_candidates[i],
 			__ATOMIC_RELAXED);
 		cur_warm_reserve_plateau[i] = __atomic_load_n(
-			&shm->stats.warm_reserve_during_plateau[i],
+			&shm->stats.picker_bandit.warm_reserve_during_plateau[i],
 			__ATOMIC_RELAXED);
 	}
 

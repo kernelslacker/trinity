@@ -201,10 +201,10 @@ static void dump_strategy_stats_edge_race(void)
 		const char *verdict;
 
 		explorer_edges = __atomic_load_n(
-			&shm->stats.explorer_pool_edges_discovered,
+			&shm->stats.picker_bandit.explorer_pool_edges_discovered,
 			__ATOMIC_RELAXED);
 		bandit_edges = __atomic_load_n(
-			&shm->stats.bandit_pool_edges_discovered,
+			&shm->stats.picker_bandit.bandit_pool_edges_discovered,
 			__ATOMIC_RELAXED);
 		bandit_children = max_children > explorer_children ?
 			max_children - explorer_children : 0;

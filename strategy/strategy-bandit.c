@@ -257,7 +257,7 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	 * Sibling of bandit_cmp_reward_added below -- see the field
 	 * comment in include/stats.h for the ramp semantics. */
 	if (edge_count_term > 0)
-		__atomic_fetch_add(&shm->stats.bandit_edge_count_reward_added,
+		__atomic_fetch_add(&shm->stats.picker_bandit.edge_count_reward_added,
 				   1UL, __ATOMIC_RELAXED);
 
 	/* Discounted "recent" series update.  Decay every arm's counters
@@ -296,7 +296,7 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	if (cmp_term == 0)
 		return;
 
-	__atomic_fetch_add(&shm->stats.bandit_cmp_reward_added, 1UL,
+	__atomic_fetch_add(&shm->stats.picker_bandit.cmp_reward_added, 1UL,
 			   __ATOMIC_RELAXED);
 
 	/* Per-arm running sum of cmp_term's share of the combined reward,
