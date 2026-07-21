@@ -171,24 +171,24 @@ static void dump_stats_render_frontier_live_cool(void)
  * matching the frontier_live_cool_cmin row above. */
 static void dump_stats_render_context_regular_suppressed(void)
 {
-	if (shm->stats.context_regular_suppressed_candidates)
+	if (shm->stats.context_suppress.candidates)
 		stat_row("strategy", "context_regular_suppressed_candidates",
-			 shm->stats.context_regular_suppressed_candidates);
-	if (shm->stats.context_regular_suppressed_would_skip)
+			 shm->stats.context_suppress.candidates);
+	if (shm->stats.context_suppress.would_skip)
 		stat_row("strategy", "context_regular_suppressed_would_skip",
-			 shm->stats.context_regular_suppressed_would_skip);
-	if (shm->stats.context_regular_suppressed_spared_windowed)
+			 shm->stats.context_suppress.would_skip);
+	if (shm->stats.context_suppress.spared_windowed)
 		stat_row("strategy",
 			 "context_regular_suppressed_spared_windowed",
-			 shm->stats.context_regular_suppressed_spared_windowed);
-	if (shm->stats.context_regular_suppressed_spared_arggen)
+			 shm->stats.context_suppress.spared_windowed);
+	if (shm->stats.context_suppress.spared_arggen)
 		stat_row("strategy",
 			 "context_regular_suppressed_spared_arggen",
-			 shm->stats.context_regular_suppressed_spared_arggen);
-	if (shm->stats.context_regular_suppressed_spared_objproducer)
+			 shm->stats.context_suppress.spared_arggen);
+	if (shm->stats.context_suppress.spared_objproducer)
 		stat_row("strategy",
 			 "context_regular_suppressed_spared_objproducer",
-			 shm->stats.context_regular_suppressed_spared_objproducer);
+			 shm->stats.context_suppress.spared_objproducer);
 	if (__atomic_load_n(&context_pool_mode, __ATOMIC_RELAXED) !=
 	    CONTEXT_POOL_MODE_OFF) {
 		stat_row("strategy", "context_regular_suppressed_cmin",

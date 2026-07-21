@@ -47,6 +47,7 @@
 #include "stats/subsys/chain_restype.h"
 #include "stats/subsys/childop.h"
 #include "stats/subsys/close_racer.h"
+#include "stats/subsys/context_suppress.h"
 #include "stats/subsys/cold_overflow.h"
 #include "stats/subsys/corrupt_ptr.h"
 #include "stats/subsys/cpu_hotplug.h"
@@ -1608,99 +1609,9 @@ struct stats_s {
 	unsigned long cost_pool_selector_predraw_cheap_picks;
 	unsigned long cost_pool_selector_predraw_expensive_picks;
 
-	/* SHADOW-ONLY Path-A "regular_suppressed" context-axis projection
-	 * (gated by --context-pool != off).  Sibling of the cost_pool_
-	 * selector_* row above; the two rows share the same OFF /
-	 * SHADOW_ONLY / COMBINED ramp and the same pick-finalise cadence,
-	 * but partition the picker on different axes -- cost on the static
-	 * EXPENSIVE bit, context on empirical per-syscall EPERM behaviour.
-	 * See the enum context_pool_mode comment in include/strategy.h for
-	 * the mode contract, CONTEXT_REGULAR_SUPPRESSED_CMIN /
-	 * CONTEXT_REGULAR_SUPPRESSED_EPERM_PCT for the classifier
-	 * thresholds, and the implementation in
-	 * strategy-frontier.c::context_regular_suppressed_shadow for the
-	 * classifier + spare-lane composition.
-	 *
-	 * The classifier is data-gated (per_syscall_calls / per_syscall_
-	 * errno[EPERM] / per_syscall_errno[SUCCESS] / per_syscall_edges),
-	 * NOT a curated exception list -- a newly-productive syscall stops
-	 * being regular_suppressed on its own without any manual map
-	 * edit.  Shared spare-lane predicate (frontier_spare_lane_decide,
-	 * strategy-frontier.c) is consumed at the site: a syscall whose
-	 * K-window ring is nonzero (or which recently transitioned to a
-	 * first CMP-insert / first SUCCESS) is spared from the would_skip
-	 * attribution even when its lifetime EPERM rate clears the
-	 * threshold, so the shadow projection tracks transient recovery
-	 * honestly rather than latching on stale lifetime evidence.
-	 *
-	 *  context_regular_suppressed_candidates
-	 *      Cumulative: one bump per finalised pick (matched to the
-	 *      cost_pool_selector_live_note cadence so the ratio against
-	 *      would_skip reads directly off the same denominator the
-	 *      cost row uses).  The candidate set the classifier gets to
-	 *      peel from.
-	 *  context_regular_suppressed_would_skip
-	 *      Cumulative: subset of candidates where the data-gated
-	 *      classifier (calls >= CMIN AND success == 0 AND edges == 0
-	 *      AND EPERM/calls >= CONTEXT_REGULAR_SUPPRESSED_EPERM_PCT
-	 *      AND no spare lane fires) says a live Path-A suppression
-	 *      would remove the pick from the regular cost pools.  Ratio
-	 *      against candidates is the projected regular-pool pick
-	 *      share a live Path-A deactivation would reclaim.
-	 *  context_regular_suppressed_spared_windowed
-	 *      Cumulative: subset of candidates spared because the shared
-	 *      spare-lane decide function returned FRONTIER_SPARE_WINDOWED_
-	 *      EDGES -- the K-window frontier-edge ring is nonzero, so
-	 *      the syscall is recently productive regardless of the
-	 *      lifetime EPERM signal.  The bpf-class backstop analogue for
-	 *      Path-A: a syscall that is EPERM-heavy in aggregate but
-	 *      producing edges in the current window MUST NOT be classified
-	 *      regular_suppressed.
-	 *  context_regular_suppressed_spared_arggen
-	 *      Cumulative: subset of candidates spared because the shared
-	 *      spare-lane decide function returned FRONTIER_SPARE_ARGGEN --
-	 *      a distinct CMP-insert landed since the last silent-baseline
-	 *      reset OR a first-success TRANSITION fired (errno_base == 0
-	 *      AND errno_now > 0).  Catches a syscall mid-penetration of
-	 *      its struct args: it is EPERM-heavy in aggregate but the
-	 *      arg-gen is progressing on it and a live suppression would
-	 *      stall the breakthrough.  Same first-success-TRANSITION key
-	 *      the satcool / live_cool siblings use.
-	 *  context_regular_suppressed_spared_objproducer
-	 *      Cumulative: subset of candidates spared because the shared
-	 *      spare-lane decide function returned FRONTIER_SPARE_OBJPRODUCER
-	 *      -- the syscall entry's ret_objtype is != OBJ_NONE and its
-	 *      coverage credit is delayed and paid to a downstream consumer
-	 *      of the produced object.  Same producer-observer bitmap the
-	 *      satcool / live_cool siblings use.
-	 *  context_regular_suppressed_would_skip_per_syscall[MAX_NR_SYSCALL]
-	 *      Cumulative per-nr: bumped at the classifier gate keyed on
-	 *      the candidate syscallnr whenever the would_skip event
-	 *      fires.  The headline SHADOW_ONLY diagnostic: top entries
-	 *      SHOULD be the measured EPERM hogs (fchown / chown / lchown
-	 *      / fchownat + the cred family AS SEEN AT uid 1026 -- the
-	 *      non-NEEDS_ROOT-flagged set the tables.c blanket
-	 *      deactivation does not catch); a productive syscall showing
-	 *      meaningful would_skip mass indicates the classifier is
-	 *      mis-classifying it and the COMBINED ramp must wait.
-	 *
-	 * Observability only in this commit: the classifier-evaluation
-	 * block is added inside the pick-finalise path with NO live
-	 * suppression wired, so set_syscall_nr_heuristic() and
-	 * set_syscall_nr_random() selection stays byte-identical to today
-	 * regardless of which mode is selected.  COMBINED is reserved in
-	 * the enum for a follow-up that wires the live regular-pool
-	 * removal (deactivate_syscall_locked on the regular_suppressed
-	 * subset) after SHADOW_ONLY validates the classifier distribution
-	 * against a real run.  Mirrors the off-by-construction discipline
-	 * the sibling cost_pool_selector_* / frontier_satcool_* /
-	 * frontier_live_cool_* rows above use. */
-	unsigned long context_regular_suppressed_candidates;
-	unsigned long context_regular_suppressed_would_skip;
-	unsigned long context_regular_suppressed_spared_windowed;
-	unsigned long context_regular_suppressed_spared_arggen;
-	unsigned long context_regular_suppressed_spared_objproducer;
-	unsigned long context_regular_suppressed_would_skip_per_syscall[MAX_NR_SYSCALL];
+	/* Context-regular suppression classifier telemetry (SHADOW_ONLY).
+	 * See stats/subsys/context_suppress.h. */
+	struct context_suppress_stats context_suppress;
 
 	/* Adaptive remote-KCOV mode A/B disposition counters, bumped from
 	 * dispatch_step in random-syscall.c on every productive-signal call
