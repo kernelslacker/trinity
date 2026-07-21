@@ -553,15 +553,15 @@ static void dump_stats_render_af_alg_probe(void)
 
 static void dump_stats_render_af_alg_recvmsg_churn(void)
 {
-	if (shm->stats.af_alg_recvmsg_runs) {
-		stat_row("af_alg_recvmsg_churn", "runs",               shm->stats.af_alg_recvmsg_runs);
-		stat_row("af_alg_recvmsg_churn", "setkey_sent",        shm->stats.af_alg_recvmsg_setkey_sent);
-		stat_row("af_alg_recvmsg_churn", "iv_sent",            shm->stats.af_alg_recvmsg_iv_sent);
-		stat_row("af_alg_recvmsg_churn", "oob_iov",            shm->stats.af_alg_recvmsg_oob_iov);
-		stat_row("af_alg_recvmsg_churn", "zerolen",            shm->stats.af_alg_recvmsg_zerolen);
-		stat_row("af_alg_recvmsg_churn", "oversize",           shm->stats.af_alg_recvmsg_oversize);
-		stat_row("af_alg_recvmsg_churn", "empty_cmsg_no_more", shm->stats.af_alg_recvmsg_empty_cmsg_no_more);
-		stat_row("af_alg_recvmsg_churn", "unsupported",        shm->stats.af_alg_recvmsg_unsupported);
+	if (shm->stats.af_alg_recvmsg.runs) {
+		stat_row("af_alg_recvmsg_churn", "runs",               shm->stats.af_alg_recvmsg.runs);
+		stat_row("af_alg_recvmsg_churn", "setkey_sent",        shm->stats.af_alg_recvmsg.setkey_sent);
+		stat_row("af_alg_recvmsg_churn", "iv_sent",            shm->stats.af_alg_recvmsg.iv_sent);
+		stat_row("af_alg_recvmsg_churn", "oob_iov",            shm->stats.af_alg_recvmsg.oob_iov);
+		stat_row("af_alg_recvmsg_churn", "zerolen",            shm->stats.af_alg_recvmsg.zerolen);
+		stat_row("af_alg_recvmsg_churn", "oversize",           shm->stats.af_alg_recvmsg.oversize);
+		stat_row("af_alg_recvmsg_churn", "empty_cmsg_no_more", shm->stats.af_alg_recvmsg.empty_cmsg_no_more);
+		stat_row("af_alg_recvmsg_churn", "unsupported",        shm->stats.af_alg_recvmsg.unsupported);
 	}
 }
 void __cold dump_stats_childop_runs_network(void)
