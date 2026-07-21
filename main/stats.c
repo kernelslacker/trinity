@@ -29,8 +29,8 @@ static void print_kcov_cmp_diag(void)
 	if (kcov_shm == NULL)
 		return;
 
-	pc_kids  = __atomic_load_n(&kcov_shm->pc_mode_children,  __ATOMIC_RELAXED);
-	cmp_kids = __atomic_load_n(&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
+	pc_kids  = __atomic_load_n(&kcov_shm->child_mode.pc_mode_children,  __ATOMIC_RELAXED);
+	cmp_kids = __atomic_load_n(&kcov_shm->child_mode.cmp_mode_children, __ATOMIC_RELAXED);
 
 	/* MODES has been folded into the KCOV bracket on the main
 	 * iterations line — no separate emission here. */
@@ -127,9 +127,9 @@ static void print_stats_iteration_line(unsigned long op_count, unsigned long rat
 			&kcov_shm->hints_flat.cmp_hints_unique_inserts,
 			__ATOMIC_RELAXED);
 		unsigned int pc_kids = __atomic_load_n(
-			&kcov_shm->pc_mode_children, __ATOMIC_RELAXED);
+			&kcov_shm->child_mode.pc_mode_children, __ATOMIC_RELAXED);
 		unsigned int cmp_kids = __atomic_load_n(
-			&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
+			&kcov_shm->child_mode.cmp_mode_children, __ATOMIC_RELAXED);
 		long delta = edges - last_edges;
 		long distinct_delta = distinct - last_distinct;
 		long cmp_trunc_delta = cmp_trunc - last_cmp_trunc;

@@ -393,10 +393,10 @@ static void kcov_init_child_select_mode(struct kcov_child *kc)
 		kc->mode = KCOV_MODE_PC;
 
 	if (kc->mode == KCOV_MODE_CMP)
-		__atomic_fetch_add(&kcov_shm->cmp_mode_children, 1,
+		__atomic_fetch_add(&kcov_shm->child_mode.cmp_mode_children, 1,
 			__ATOMIC_RELAXED);
 	else
-		__atomic_fetch_add(&kcov_shm->pc_mode_children, 1,
+		__atomic_fetch_add(&kcov_shm->child_mode.pc_mode_children, 1,
 			__ATOMIC_RELAXED);
 }
 
