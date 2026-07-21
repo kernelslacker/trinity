@@ -768,9 +768,9 @@ static const struct {
 	 * find_ioctl_group() arbitration, or the sanitiser is being bypassed
 	 * by a fd that doesn't satisfy kvm_vcpu_fd_test. */
 	{ "kvm_vcpu_ioctls_dispatched",
-	  offsetof(struct stats_s, kvm_vcpu_ioctls_dispatched) },
+	  offsetof(struct stats_s, kvm.vcpu_ioctls_dispatched) },
 	{ "kvm_vm_ioctls_dispatched",
-	  offsetof(struct stats_s, kvm_vm_ioctls_dispatched) },
+	  offsetof(struct stats_s, kvm.vm_ioctls_dispatched) },
 	/* nl80211_churn invocation rate.  Periodic visibility lets an operator
 	 * confirm the cfg80211 state-machine fuzzer is making progress under the
 	 * mac80211_hwsim radio without waiting for the end-of-run summary; a

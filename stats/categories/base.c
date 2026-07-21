@@ -67,25 +67,25 @@ const struct stat_category zombie_slots_category =
 	              zombie_slots_fields);
 
 static const struct stat_field kvm_run_churn_fields[] = {
-	STAT_FIELD(kvm_run, invocations),
-	STAT_FIELD(kvm_run, exit_io),
-	STAT_FIELD(kvm_run, exit_mmio),
-	STAT_FIELD(kvm_run, exit_hlt),
-	STAT_FIELD(kvm_run, exit_shutdown),
-	STAT_FIELD(kvm_run, exit_fail_entry),
-	STAT_FIELD(kvm_run, exit_internal_error),
-	STAT_FIELD(kvm_run, exit_intr),
-	STAT_FIELD(kvm_run, exit_other),
-	STAT_FIELD(kvm_run, errors),
-	STAT_FIELD(kvm, gpc_memslot_race_runs),
-	STAT_FIELD(kvm, gpc_memslot_race_deletes),
-	STAT_FIELD(kvm, gpc_memslot_race_unsupported),
+	STAT_FIELD_SUB(kvm, invocations),
+	STAT_FIELD_SUB(kvm, exit_io),
+	STAT_FIELD_SUB(kvm, exit_mmio),
+	STAT_FIELD_SUB(kvm, exit_hlt),
+	STAT_FIELD_SUB(kvm, exit_shutdown),
+	STAT_FIELD_SUB(kvm, exit_fail_entry),
+	STAT_FIELD_SUB(kvm, exit_internal_error),
+	STAT_FIELD_SUB(kvm, exit_intr),
+	STAT_FIELD_SUB(kvm, exit_other),
+	STAT_FIELD_SUB(kvm, errors),
+	STAT_FIELD_SUB(kvm, gpc_memslot_race_runs),
+	STAT_FIELD_SUB(kvm, gpc_memslot_race_deletes),
+	STAT_FIELD_SUB(kvm, gpc_memslot_race_unsupported),
 };
 
 static const struct stat_category kvm_run_churn_category
 	__attribute__((unused)) =
 	STAT_CATEGORY("kvm_run_churn",
-	              kvm_run_invocations,
+	              kvm.invocations,
 	              kvm_run_churn_fields);
 
 static const struct stat_field fd_lifecycle_fields[] = {

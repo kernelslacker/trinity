@@ -209,7 +209,7 @@ static void kvm_vcpu_sanitise(const struct ioctl_group *grp,
 		break;
 	}
 
-	__atomic_add_fetch(&shm->stats.kvm_vcpu_ioctls_dispatched, 1,
+	__atomic_add_fetch(&shm->stats.kvm.vcpu_ioctls_dispatched, 1,
 			   __ATOMIC_RELAXED);
 }
 

@@ -295,7 +295,7 @@ static void kvm_vm_sanitise(const struct ioctl_group *grp,
 		break;
 	}
 
-	__atomic_add_fetch(&shm->stats.kvm_vm_ioctls_dispatched, 1,
+	__atomic_add_fetch(&shm->stats.kvm.vm_ioctls_dispatched, 1,
 			   __ATOMIC_RELAXED);
 }
 
