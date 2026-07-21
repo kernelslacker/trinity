@@ -433,8 +433,8 @@ static void dump_stats_render_maps_pool_rejects(void)
 
 static void dump_stats_render_late_corruption_oracle(void)
 {
-	if (shm->stats.chain_replay_len_corrupt)
-		stat_row("corruption", "chain_replay_len_corrupt", shm->stats.chain_replay_len_corrupt);
+	if (shm->stats.chain_restype.replay_len_corrupt)
+		stat_row("corruption", "chain_replay_len_corrupt", shm->stats.chain_restype.replay_len_corrupt);
 	if (shm->stats.pagecache_canary_corrupt_caught)
 		stat_row("oracle", "pagecache_canary_corrupt_caught",
 			 shm->stats.pagecache_canary_corrupt_caught);

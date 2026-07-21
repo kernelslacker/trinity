@@ -673,10 +673,10 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len,
 	__atomic_fetch_add(&ring->chain_save_by_reason[reason], 1UL,
 			   __ATOMIC_RELAXED);
 	if (dup_seen)
-		__atomic_fetch_add(&shm->stats.chain_corpus_save_dup_shape,
+		__atomic_fetch_add(&shm->stats.chain_corpus.save_dup_shape,
 				   1UL, __ATOMIC_RELAXED);
 	else
-		__atomic_fetch_add(&shm->stats.chain_corpus_save_unique_shape,
+		__atomic_fetch_add(&shm->stats.chain_corpus.save_unique_shape,
 				   1UL, __ATOMIC_RELAXED);
 }
 
@@ -845,7 +845,7 @@ static bool chain_restype_apply_bias(const struct chain_run_state *s,
 
 		for (i = 0; i < navailable; i++)
 			__atomic_fetch_add(
-				&shm->stats.chain_restype_would_bias[available[i]],
+				&shm->stats.chain_restype.would_bias[available[i]],
 				1UL, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -875,7 +875,7 @@ static bool chain_restype_apply_bias(const struct chain_run_state *s,
 		*bias_do32_out = do32bit_hint;
 
 		__atomic_fetch_add(
-			&shm->stats.chain_restype_biased[chosen_kind],
+			&shm->stats.chain_restype.biased[chosen_kind],
 			1UL, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -899,7 +899,7 @@ static void select_chain_source(struct chain_run_state *s)
 		 * Reject the picked entry and fall back to a fresh chain
 		 * if len escapes the [1, MAX_SEQ_LEN] range. */
 		if (s->replay.len == 0 || s->replay.len > MAX_SEQ_LEN) {
-			__atomic_fetch_add(&shm->stats.chain_replay_len_corrupt,
+			__atomic_fetch_add(&shm->stats.chain_restype.replay_len_corrupt,
 					   1UL, __ATOMIC_RELAXED);
 			s->len = pick_chain_length();
 		} else if (s->replay.save_reason != CHAIN_SAVE_PC &&
@@ -1078,7 +1078,7 @@ static bool execute_chain_steps(struct childdata *child,
 
 			if (pkind >= 0) {
 				__atomic_fetch_add(
-					&shm->stats.chain_restype_produced[pkind],
+					&shm->stats.chain_restype.produced[pkind],
 					1UL, __ATOMIC_RELAXED);
 				s->producer_kinds_seen |= (1u << pkind);
 			}
@@ -1205,7 +1205,7 @@ static void record_chain_outcome(const struct chain_run_state *s)
 				if ((s->pair_kinds_seen & (1u << k)) == 0)
 					continue;
 				__atomic_fetch_add(
-					&shm->stats.chain_restype_save[k],
+					&shm->stats.chain_restype.save[k],
 					1UL, __ATOMIC_RELAXED);
 			}
 		}
@@ -1217,7 +1217,7 @@ static void record_chain_outcome(const struct chain_run_state *s)
 				if ((s->pair_kinds_seen & (1u << k)) == 0)
 					continue;
 				__atomic_fetch_add(
-					&shm->stats.chain_restype_replay_win[k],
+					&shm->stats.chain_restype.replay_win[k],
 					1UL, __ATOMIC_RELAXED);
 			}
 		}

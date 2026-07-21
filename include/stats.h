@@ -43,6 +43,8 @@
 #include "stats/subsys/bridge_ip6frag.h"
 #include "stats/subsys/bridge_vlan_churn.h"
 #include "stats/subsys/cgroup_churn.h"
+#include "stats/subsys/chain_corpus.h"
+#include "stats/subsys/chain_restype.h"
 #include "stats/subsys/childop.h"
 #include "stats/subsys/close_racer.h"
 #include "stats/subsys/cold_overflow.h"
@@ -1144,17 +1146,6 @@ struct stats_s {
 	struct deferred_free_stats deferred_free;
 
 
-	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
-	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
-	 * The chain corpus is shared memory and tolerates lockless reads
-	 * plus wild-write corruption; an out-of-range len would otherwise
-	 * cause the replay loop to index past the stack-local replay.steps
-	 * array before per-step safety checks ran.  Non-zero values mean
-	 * the corpus saw either a torn lockless read or a real wild write
-	 * into ring->slots[].len -- both are defended (fall back to a
-	 * fresh chain) but worth tracking so spikes are visible. */
-	unsigned long chain_replay_len_corrupt;
-
 	/* Per-call abort counter for random_map_readfn().  Bumped each time
 	 * the per-page memcpy in one of the read walks (read_one_page,
 	 * read_whole_mapping, read_every_other_page, read_mapping_reverse,
@@ -1906,56 +1897,12 @@ struct stats_s {
 	/* pipe-waker accounting.  See stats/subsys/pipe_waker.h. */
 	struct pipe_waker_stats pipe_waker;
 
-	/* Chain-corpus duplicate-shape rate
-	 * (sequence.c).  Bumped from chain_corpus_save() under the
-	 * ring lock: dup means the incoming chain's
-	 * (nr, do32bit) tuple shape matched at least one of the
-	 * CHAIN_CORPUS_DUP_LOOKBACK most-recent saved slots;
-	 * unique means no match.  Rate dup / (dup + unique) is the
-	 * realised duplicate-shape rate a per-shape chain quota
-	 * is gated on. */
-	unsigned long chain_corpus_save_dup_shape;
-	unsigned long chain_corpus_save_unique_shape;
+	/* Chain-corpus duplicate-shape rate.  See stats/subsys/chain_corpus.h. */
+	struct chain_corpus_stats chain_corpus;
 
-	/* Resource-type chain-generation telemetry (Phase 3;
-	 * --chain-resource-typing=off|shadow|live).  All arrays are
-	 * indexed by enum chain_resource_kind (CHAIN_RESTYPE_NR wide);
-	 * ordering is defined by that enum and MUST NOT change without
-	 * updating the resource table in sequence.c.
-	 *
-	 * chain_restype_produced[k]     : a chain step matched the (nr, args)
-	 *                                 pattern for a kind-k producer with a
-	 *                                 non-negative retval.  Bumped in every
-	 *                                 non-OFF mode -- the classifier itself
-	 *                                 is the always-on observability.
-	 * chain_restype_would_bias[k]   : SHADOW mode only.  Bumped when the
-	 *                                 next chain link EXISTS and a consumer
-	 *                                 NR for kind k WOULD have been picked
-	 *                                 as the LIVE arm's override.
-	 * chain_restype_biased[k]       : LIVE mode only.  Bumped when the next
-	 *                                 chain link was actually overridden to
-	 *                                 a consumer of kind k (the accept-
-	 *                                 probability roll landed inside the
-	 *                                 bias budget AND the biased dispatch
-	 *                                 did not FAIL fall-back to fresh).
-	 * chain_restype_save[k]         : chain got admitted to the corpus and
-	 *                                 carried at least one producer of kind
-	 *                                 k in its steps.
-	 * chain_restype_replay_win[k]   : a replayed chain that carried a
-	 *                                 kind-k producer earned any novelty
-	 *                                 signal on at least one step.  Ratio
-	 *                                 chain_restype_replay_win[k] /
-	 *                                 chain_restype_save[k] answers "does
-	 *                                 this resource family pay for its bias
-	 *                                 budget" -- the whole point of the row.
-	 *
-	 * All RELAXED atomics; dashboards read once per stats tick and there
-	 * is no cross-counter ordering invariant. */
-	unsigned long chain_restype_produced[CHAIN_RESTYPE_NR];
-	unsigned long chain_restype_would_bias[CHAIN_RESTYPE_NR];
-	unsigned long chain_restype_biased[CHAIN_RESTYPE_NR];
-	unsigned long chain_restype_save[CHAIN_RESTYPE_NR];
-	unsigned long chain_restype_replay_win[CHAIN_RESTYPE_NR];
+	/* Resource-type chain-generation telemetry + replay-len corruption
+	 * canary.  See stats/subsys/chain_restype.h. */
+	struct chain_restype_stats chain_restype;
 
 	/* Aggregate syscall-dispatch accounting -- walltime and per-source
 	 * counters.  See stats/subsys/syscall_dispatch.h. */
