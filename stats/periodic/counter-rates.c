@@ -122,7 +122,7 @@ static const struct {
 	{ "execve_self_exec_blocked",
 	  offsetof(struct stats_s, execve_self_exec_blocked) },
 	{ "corpus_count_overcap_caught",
-	  offsetof(struct stats_s, corpus_count_overcap_caught) },
+	  offsetof(struct stats_s, minicorpus.count_overcap_caught) },
 	{ "sibling_mprotect_failed",
 	  offsetof(struct stats_s, sibling_mprotect_failed) },
 	{ "sibling_refreeze_count",
