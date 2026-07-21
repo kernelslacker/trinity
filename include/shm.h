@@ -852,7 +852,7 @@ struct shm_s {
 	 *     non-intervention rotation so a stale mode cannot keep the
 	 *     anti-prior gate latched on after the plateau lifts.
 	 *   plateau_anti_prior_baseline_calls: cached mean of
-	 *     kcov_shm->per_syscall_calls across the active syscall set,
+	 *     kcov_shm->per_syscall.per_syscall_calls across the active syscall set,
 	 *     refreshed at every PIM_ANTI_PRIOR rotation.  Zero == "no
 	 *     baseline yet"; the accept gate short-circuits to "pass" in
 	 *     that state so cold-start picks degenerate to uniform.

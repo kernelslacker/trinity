@@ -29,7 +29,7 @@ static bool json_emit_syscall(const struct syscalltable *table, unsigned int i)
 	nr = entry->number;
 	if (kcov_shm != NULL && nr < MAX_NR_SYSCALL) {
 		extrafork_calls = __atomic_load_n(
-			&kcov_shm->per_syscall_extrafork_calls[nr],
+			&kcov_shm->per_syscall.per_syscall_extrafork_calls[nr],
 			__ATOMIC_RELAXED);
 		kcov_calls = per_syscall_calls_total(nr);
 	}

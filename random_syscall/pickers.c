@@ -924,7 +924,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 	 * mode-load shape kcov_transition_reward_mode and frontier_group_
 	 * antilock_mode use at their own hook sites.
 	 *
-	 * RELAXED-load guard: edges, kcov_shm->per_syscall_edges_prior,
+	 * RELAXED-load guard: edges, kcov_shm->per_syscall.per_syscall_edges_prior,
 	 * total_calls, and last_edge_at[nr] are separate atomic loads
 	 * that can sample inconsistent snapshots; the (total > last) +
 	 * (total - last) > KCOV_COLD_THRESHOLD pair is the same shape
@@ -944,7 +944,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 
 		total = __atomic_load_n(&kcov_shm->coverage.total_calls,
 					__ATOMIC_RELAXED);
-		last = __atomic_load_n(&kcov_shm->last_edge_at[nr],
+		last = __atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr],
 				       __ATOMIC_RELAXED);
 		if (total > last && (total - last) > KCOV_COLD_THRESHOLD)
 			stale = true;

@@ -591,7 +591,7 @@ void account_reexec_ab_cohort(struct childdata *child, unsigned long new_cmp)
  *   Skipped when the call produced no new edges (the dump only
  *   consumes the positive delta side) and when rec->nr falls outside
  *   the table.  Biarch attribution follows the same raw-rec->nr
- *   indexing the existing kcov_shm->per_syscall_edges array uses; the
+ *   indexing the existing kcov_shm->per_syscall.per_syscall_edges array uses; the
  *   dump iterates only the active 64-bit table when biarch, so 32-bit
  *   calls are effectively ignored there as they are everywhere else.
  *

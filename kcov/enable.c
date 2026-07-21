@@ -373,7 +373,7 @@ void kcov_note_extrafork(struct kcov_child *kc, unsigned int nr)
 	 * builds only.  MAX_NR_SYSCALL upper-bound matches every other
 	 * per_syscall_*[] writer in this file. */
 	if (kcov_shm != NULL && nr < MAX_NR_SYSCALL)
-		__atomic_fetch_add(&kcov_shm->per_syscall_extrafork_calls[nr],
+		__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_extrafork_calls[nr],
 				   1, __ATOMIC_RELAXED);
 
 	if (kc == NULL || !kc->active)
