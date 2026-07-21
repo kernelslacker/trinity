@@ -265,7 +265,7 @@ static void recv_rotating(int fd, struct alg_recvmsg_child_ctx *cctx)
 		iov[0].iov_len = 0;
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 1;
-		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_zerolen,
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg.zerolen,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case 1:		/* oversize single iov */
@@ -273,7 +273,7 @@ static void recv_rotating(int fd, struct alg_recvmsg_child_ctx *cctx)
 		iov[0].iov_len = ARC_BIG_IOV_BYTES;
 		mh.msg_iov = iov;
 		mh.msg_iovlen = 1;
-		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_oversize,
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg.oversize,
 				   1, __ATOMIC_RELAXED);
 		break;
 	case 2:		/* many small iovs */
@@ -411,7 +411,7 @@ static void alg_recvmsg_iter_drive(struct alg_recvmsg_iter_ctx *ictx,
 		if (klen > 0)
 			generate_rand_bytes(keybuf, klen);
 		send_cmsg_only(ictx->child_fd, ALG_SET_KEY, keybuf, klen);
-		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_setkey_sent,
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg.setkey_sent,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -422,19 +422,19 @@ static void alg_recvmsg_iter_drive(struct alg_recvmsg_iter_ctx *ictx,
 		if (ilen > 0)
 			generate_rand_bytes(ivbuf, ilen);
 		send_cmsg_only(ictx->child_fd, ALG_SET_IV, ivbuf, ilen);
-		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_iv_sent,
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg.iv_sent,
 				   1, __ATOMIC_RELAXED);
 	}
 
 	if (send_rotating_payload(ictx->child_fd, cctx))
-		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_oob_iov,
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg.oob_iov,
 				   1, __ATOMIC_RELAXED);
 
 	/* Always emit the af_alg_pull_tsgl trigger shape (cmsg-only,
 	 * empty payload, no MSG_MORE) before recvmsg() so the slab-OOB
 	 * window is exercised on every iter, not just statistically. */
 	send_empty_cmsg_no_more(ictx->child_fd);
-	__atomic_add_fetch(&shm->stats.af_alg_recvmsg_empty_cmsg_no_more,
+	__atomic_add_fetch(&shm->stats.af_alg_recvmsg.empty_cmsg_no_more,
 			   1, __ATOMIC_RELAXED);
 }
 
@@ -505,10 +505,10 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 	struct timespec t0;
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.af_alg_recvmsg_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.af_alg_recvmsg.runs, 1, __ATOMIC_RELAXED);
 
 	if (alg_unsupported) {
-		__atomic_add_fetch(&shm->stats.af_alg_recvmsg_unsupported,
+		__atomic_add_fetch(&shm->stats.af_alg_recvmsg.unsupported,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -548,8 +548,8 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 bool af_alg_recvmsg_churn(struct childdata *child)
 {
 	(void)child;
-	__atomic_add_fetch(&shm->stats.af_alg_recvmsg_runs, 1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.af_alg_recvmsg_unsupported,
+	__atomic_add_fetch(&shm->stats.af_alg_recvmsg.runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.af_alg_recvmsg.unsupported,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
