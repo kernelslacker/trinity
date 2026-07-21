@@ -629,8 +629,8 @@ void account_per_syscall_new_edges(struct childdata *child,
 {
 	if (new_edge_count > 0 && rec->nr < MAX_NR_SYSCALL) {
 		unsigned long *bucket = child->is_explorer
-			? shm->stats.edges_per_syscall_explorer
-			: shm->stats.edges_per_syscall_bandit;
+			? shm->stats.picker_bandit.edges_per_syscall_explorer
+			: shm->stats.picker_bandit.edges_per_syscall_bandit;
 		__atomic_fetch_add(&bucket[rec->nr], new_edge_count,
 				   __ATOMIC_RELAXED);
 	}
@@ -810,9 +810,9 @@ void account_warm_reserve(struct childdata *child,
 		near_truncation = true;
 
 	if (deep_pcs || near_truncation) {
-		__atomic_fetch_add(&shm->stats.warm_reserve_candidates_total,
+		__atomic_fetch_add(&shm->stats.picker_bandit.warm_reserve_candidates_total,
 				   1UL, __ATOMIC_RELAXED);
-		__atomic_fetch_add(&shm->stats.warm_reserve_candidates[rec->nr],
+		__atomic_fetch_add(&shm->stats.picker_bandit.warm_reserve_candidates[rec->nr],
 				   1UL, __ATOMIC_RELAXED);
 
 		/* SHADOW would-replay-demand intersection: the
@@ -833,9 +833,9 @@ void account_warm_reserve(struct childdata *child,
 		if (__atomic_load_n(&shm->plateau_current_hypothesis,
 				    __ATOMIC_RELAXED) ==
 		    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
-			__atomic_fetch_add(&shm->stats.warm_reserve_during_plateau_total,
+			__atomic_fetch_add(&shm->stats.picker_bandit.warm_reserve_during_plateau_total,
 					   1UL, __ATOMIC_RELAXED);
-			__atomic_fetch_add(&shm->stats.warm_reserve_during_plateau[rec->nr],
+			__atomic_fetch_add(&shm->stats.picker_bandit.warm_reserve_during_plateau[rec->nr],
 					   1UL, __ATOMIC_RELAXED);
 		}
 	}
@@ -956,7 +956,7 @@ void account_pc_edge_only(struct childdata *child,
 		 * non-RANDOM arm's reward (when the bandit picked
 		 * something else) or double-count when the bandit
 		 * also picked RANDOM. */
-		__atomic_fetch_add(&shm->stats.explorer_pool_edges_discovered,
+		__atomic_fetch_add(&shm->stats.picker_bandit.explorer_pool_edges_discovered,
 				   1, __ATOMIC_RELAXED);
 	} else {
 		/* Attribute this new-edge call to the strategy that
@@ -986,7 +986,7 @@ void account_pc_edge_only(struct childdata *child,
 					   new_edge_count,
 					   __ATOMIC_RELAXED);
 		}
-		__atomic_fetch_add(&shm->stats.bandit_pool_edges_discovered,
+		__atomic_fetch_add(&shm->stats.picker_bandit.bandit_pool_edges_discovered,
 				   1, __ATOMIC_RELAXED);
 
 		/* Random-rescue classification.  Only meaningful when

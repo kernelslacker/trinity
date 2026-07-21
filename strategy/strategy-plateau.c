@@ -97,9 +97,9 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 	}
 
 	snap->bandit_edges = __atomic_load_n(
-		&shm->stats.bandit_pool_edges_discovered, __ATOMIC_RELAXED);
+		&shm->stats.picker_bandit.bandit_pool_edges_discovered, __ATOMIC_RELAXED);
 	snap->explorer_edges = __atomic_load_n(
-		&shm->stats.explorer_pool_edges_discovered, __ATOMIC_RELAXED);
+		&shm->stats.picker_bandit.explorer_pool_edges_discovered, __ATOMIC_RELAXED);
 	snap->frontier_picks = __atomic_load_n(
 		&shm->stats.frontier.core.strategy_picks, __ATOMIC_RELAXED);
 	/* Bandit-side pulls + intervention-forced picks.  The bandit

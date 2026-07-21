@@ -420,14 +420,14 @@ retry:
 	 * Live picker is byte-identical -- the lever does NOT reject here. */
 	if (kcov_shm != NULL &&
 	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE)) {
-		__atomic_fetch_add(&shm->stats.wall_lever_eligible_total, 1UL,
+		__atomic_fetch_add(&shm->stats.picker_bandit.wall_lever_eligible_total, 1UL,
 				   __ATOMIC_RELAXED);
 		if (wall_lever_should_suppress_shadow(syscallnr)) {
 			__atomic_fetch_add(
-				&shm->stats.wall_lever_would_suppress_total,
+				&shm->stats.picker_bandit.wall_lever_would_suppress_total,
 				1UL, __ATOMIC_RELAXED);
 			__atomic_fetch_add(
-				&shm->stats.wall_lever_would_suppress[syscallnr],
+				&shm->stats.picker_bandit.wall_lever_would_suppress[syscallnr],
 				1UL, __ATOMIC_RELAXED);
 		}
 	}
@@ -628,14 +628,14 @@ retry:
 	 * byte-identical -- the lever does NOT reject here. */
 	if (kcov_shm != NULL &&
 	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE)) {
-		__atomic_fetch_add(&shm->stats.wall_lever_eligible_total, 1UL,
+		__atomic_fetch_add(&shm->stats.picker_bandit.wall_lever_eligible_total, 1UL,
 				   __ATOMIC_RELAXED);
 		if (wall_lever_should_suppress_shadow(syscallnr)) {
 			__atomic_fetch_add(
-				&shm->stats.wall_lever_would_suppress_total,
+				&shm->stats.picker_bandit.wall_lever_would_suppress_total,
 				1UL, __ATOMIC_RELAXED);
 			__atomic_fetch_add(
-				&shm->stats.wall_lever_would_suppress[syscallnr],
+				&shm->stats.picker_bandit.wall_lever_would_suppress[syscallnr],
 				1UL, __ATOMIC_RELAXED);
 		}
 	}
@@ -959,7 +959,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 			 * the right place to handle staleness on a slot
 			 * that has already earned its productivity. */
 			__atomic_fetch_add(
-				&shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_HIGH],
+				&shm->stats.picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_HIGH],
 				1UL, __ATOMIC_RELAXED);
 			if (!stale) {
 				unsigned long headroom =
@@ -967,7 +967,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 					picked_weight;
 
 				__atomic_fetch_add(
-					&shm->stats.reach_band_would_boost_high,
+					&shm->stats.picker_bandit.reach_band_would_boost_high,
 					1UL, __ATOMIC_RELAXED);
 				band_weight = picked_weight +
 					      headroom /
@@ -987,11 +987,11 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 			 * the (w + 1)/(SCALE + 1) accept floor so the
 			 * slot is reachable, not unreachable. */
 			__atomic_fetch_add(
-				&shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_MID],
+				&shm->stats.picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_MID],
 				1UL, __ATOMIC_RELAXED);
 			if (stale) {
 				__atomic_fetch_add(
-					&shm->stats.reach_band_would_demote_mid,
+					&shm->stats.picker_bandit.reach_band_would_demote_mid,
 					1UL, __ATOMIC_RELAXED);
 				band_weight = picked_weight /
 					      REACH_BAND_MID_STALE_DEMOTE_DEN;
@@ -1006,7 +1006,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 			 * tallied so the per-band split sums to the gate's
 			 * non-OFF entry count. */
 			__atomic_fetch_add(
-				&shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_LOW],
+				&shm->stats.picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_LOW],
 				1UL, __ATOMIC_RELAXED);
 		}
 
@@ -1683,7 +1683,7 @@ bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 	 * alone, and leaving the -1 sentinel here makes that intent explicit
 	 * if a future reader forgets the is_explorer gate. */
 	if (child->is_explorer) {
-		__atomic_fetch_add(&shm->stats.strategy_explorer_picks, 1UL,
+		__atomic_fetch_add(&shm->stats.picker_bandit.strategy_explorer_picks, 1UL,
 				   __ATOMIC_RELAXED);
 		/* Explorer-pool exposure: explorers always run STRATEGY_RANDOM
 		 * regardless of the bandit's pick.  Bump strategy_picks for
