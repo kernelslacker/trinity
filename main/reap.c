@@ -1643,7 +1643,13 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	if (__atomic_load_n(&rec->state, __ATOMIC_RELAXED) < BEFORE)
 		return true;
 
-	old = child->tp.tv_sec;
+	/* The child writes child->tp every ~16 syscall iterations with a
+	 * non-atomic clock_gettime() store; an unqualified load here races
+	 * with that store and (per the C memory model) can observe a torn
+	 * value even when the underlying 8-byte access is atomic on the
+	 * hardware.  Use an explicit relaxed atomic load of tv_sec so the
+	 * compiler cannot reorder or split the read. */
+	old = __atomic_load_n(&child->tp.tv_sec, __ATOMIC_RELAXED);
 
 	/* haven't done anything yet. */
 	if (old == 0)
@@ -1652,8 +1658,15 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	clock_gettime(CLOCK_MONOTONIC, &tp);
 	now = tp.tv_sec;
 
+	/* A timestamp in the future is impossible on CLOCK_MONOTONIC: the
+	 * child stamped tp before we sampled now, so old <= now must hold.
+	 * If we ever observe old > now it means the load raced with the
+	 * child's store and returned a bogus value, not that the child is
+	 * stalled.  Treat it as zero elapsed rather than taking abs(old-now)
+	 * — the latter turns a transient race into a huge diff and SIGKILLs
+	 * a healthy child. */
 	if (old > now)
-		diff = old - now;
+		diff = 0;
 	else
 		diff = now - old;
 
