@@ -371,7 +371,7 @@ void post_state_release(struct syscallrecord *rec, void *snap)
 		outputerr("post_state_release: rejected untracked snap=%p "
 			  "(caller nr=%u do32bit=%d) -- leaking, not freeing\n",
 			  snap, rec->nr, rec->do32bit);
-		__atomic_add_fetch(&shm->stats.post_state_release_reject_untracked,
+		__atomic_add_fetch(&shm->stats.deferred_free.post_state_release_reject_untracked,
 				   1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
@@ -381,7 +381,7 @@ void post_state_release(struct syscallrecord *rec, void *snap)
 		outputerr("post_state_release: rejected already-released snap=%p "
 			  "(prior owner nr=%u do32bit=%d, caller nr=%u do32bit=%d)\n",
 			  snap, e->syscall_nr, e->do32bit, rec->nr, rec->do32bit);
-		__atomic_add_fetch(&shm->stats.post_state_release_reject_released,
+		__atomic_add_fetch(&shm->stats.deferred_free.post_state_release_reject_released,
 				   1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
@@ -394,7 +394,7 @@ void post_state_release(struct syscallrecord *rec, void *snap)
 			  "size=%zu) -- leaking, not freeing\n",
 			  snap, e->syscall_nr, e->do32bit, rec->nr, rec->do32bit,
 			  e->size);
-		__atomic_add_fetch(&shm->stats.post_state_release_reject_wrong_owner,
+		__atomic_add_fetch(&shm->stats.deferred_free.post_state_release_reject_wrong_owner,
 				   1, __ATOMIC_RELAXED);
 		rec->post_state = 0;
 		return;
@@ -407,7 +407,7 @@ void post_state_release(struct syscallrecord *rec, void *snap)
 				  "(found 0x%lx, expected 0x%lx, owner nr=%u) -- "
 				  "leaking, not freeing\n",
 				  snap, magic_found, e->magic, e->syscall_nr);
-			__atomic_add_fetch(&shm->stats.post_state_release_reject_bad_magic,
+			__atomic_add_fetch(&shm->stats.deferred_free.post_state_release_reject_bad_magic,
 					   1, __ATOMIC_RELAXED);
 			rec->post_state = 0;
 			return;

@@ -297,58 +297,58 @@ static void dump_stats_render_deferred_free_rejects(void)
 		stat_row("corruption", "deferred_free_reject_sockaddr", parent_stats.deferred_free_reject_sockaddr);
 	if (parent_stats.deferred_free_reject_other)
 		stat_row("corruption", "deferred_free_reject_other", parent_stats.deferred_free_reject_other);
-	if (shm->stats.deferred_free_reject_misaligned)
-		stat_row("corruption", "deferred_free_reject_misaligned",     shm->stats.deferred_free_reject_misaligned);
-	if (shm->stats.deferred_free_reject_corrupt_shape)
-		stat_row("corruption", "deferred_free_reject_corrupt_shape",  shm->stats.deferred_free_reject_corrupt_shape);
-	if (shm->stats.deferred_free_reject_non_heap)
-		stat_row("corruption", "deferred_free_reject_non_heap",       shm->stats.deferred_free_reject_non_heap);
-	if (shm->stats.deferred_free_reject_untracked)
-		stat_row("corruption", "deferred_free_reject_untracked",      shm->stats.deferred_free_reject_untracked);
-	if (shm->stats.nested_scrub_reject_untracked)
-		stat_row("corruption", "nested_scrub_reject_untracked",       shm->stats.nested_scrub_reject_untracked);
-	if (shm->stats.deferred_free_reject_shared_region)
-		stat_row("corruption", "deferred_free_reject_shared_region",  shm->stats.deferred_free_reject_shared_region);
-	if (shm->stats.deferred_free_outstanding_vmas)
-		stat_row("corruption", "deferred_free_outstanding_vmas",      shm->stats.deferred_free_outstanding_vmas);
-	if (shm->stats.deferred_free_vma_fallback_immediate)
-		stat_row("corruption", "deferred_free_vma_fallback_immediate", shm->stats.deferred_free_vma_fallback_immediate);
-	if (shm->stats.deferred_free_enomem_drain)
-		stat_row("corruption", "deferred_free_enomem_drain",          shm->stats.deferred_free_enomem_drain);
-	if (shm->stats.deferred_free_rw_restore_enomem)
-		stat_row("corruption", "deferred_free_rw_restore_enomem",     shm->stats.deferred_free_rw_restore_enomem);
-	if (shm->stats.deferred_free_pre_dispatch_leaked)
-		stat_row("corruption", "deferred_free_pre_dispatch_leaked",   shm->stats.deferred_free_pre_dispatch_leaked);
-	if (shm->stats.ring_evict_leaked)
-		stat_row("corruption", "ring_evict_leaked",                   shm->stats.ring_evict_leaked);
-	if (shm->stats.deferred_free_ring_owned_skip)
-		stat_row("corruption", "deferred_free_ring_owned_skip",       shm->stats.deferred_free_ring_owned_skip);
-	if (shm->stats.deferred_free_double_admit_skip)
-		stat_row("corruption", "deferred_free_double_admit_skip",     shm->stats.deferred_free_double_admit_skip);
-	if (shm->stats.alloc_track_refresh_ring_owned_skip)
-		stat_row("corruption", "alloc_track_refresh_ring_owned_skip", shm->stats.alloc_track_refresh_ring_owned_skip);
-	if (shm->stats.alloc_track_refresh_unverified_skip)
-		stat_row("corruption", "alloc_track_refresh_unverified_skip", shm->stats.alloc_track_refresh_unverified_skip);
-	if (shm->stats.alloc_track_refresh_consume_miss)
-		stat_row("corruption", "alloc_track_refresh_consume_miss",    shm->stats.alloc_track_refresh_consume_miss);
-	if (shm->stats.rec_owned_overflow_to_ring)
-		stat_row("corruption", "rec_owned_overflow_to_ring",          shm->stats.rec_owned_overflow_to_ring);
+	if (shm->stats.deferred_free.reject_misaligned)
+		stat_row("corruption", "deferred_free_reject_misaligned",     shm->stats.deferred_free.reject_misaligned);
+	if (shm->stats.deferred_free.reject_corrupt_shape)
+		stat_row("corruption", "deferred_free_reject_corrupt_shape",  shm->stats.deferred_free.reject_corrupt_shape);
+	if (shm->stats.deferred_free.reject_non_heap)
+		stat_row("corruption", "deferred_free_reject_non_heap",       shm->stats.deferred_free.reject_non_heap);
+	if (shm->stats.deferred_free.reject_untracked)
+		stat_row("corruption", "deferred_free_reject_untracked",      shm->stats.deferred_free.reject_untracked);
+	if (shm->stats.deferred_free.nested_scrub_reject_untracked)
+		stat_row("corruption", "nested_scrub_reject_untracked",       shm->stats.deferred_free.nested_scrub_reject_untracked);
+	if (shm->stats.deferred_free.reject_shared_region)
+		stat_row("corruption", "deferred_free_reject_shared_region",  shm->stats.deferred_free.reject_shared_region);
+	if (shm->stats.deferred_free.outstanding_vmas)
+		stat_row("corruption", "deferred_free_outstanding_vmas",      shm->stats.deferred_free.outstanding_vmas);
+	if (shm->stats.deferred_free.vma_fallback_immediate)
+		stat_row("corruption", "deferred_free_vma_fallback_immediate", shm->stats.deferred_free.vma_fallback_immediate);
+	if (shm->stats.deferred_free.enomem_drain)
+		stat_row("corruption", "deferred_free_enomem_drain",          shm->stats.deferred_free.enomem_drain);
+	if (shm->stats.deferred_free.rw_restore_enomem)
+		stat_row("corruption", "deferred_free_rw_restore_enomem",     shm->stats.deferred_free.rw_restore_enomem);
+	if (shm->stats.deferred_free.pre_dispatch_leaked)
+		stat_row("corruption", "deferred_free_pre_dispatch_leaked",   shm->stats.deferred_free.pre_dispatch_leaked);
+	if (shm->stats.deferred_free.ring_evict_leaked)
+		stat_row("corruption", "ring_evict_leaked",                   shm->stats.deferred_free.ring_evict_leaked);
+	if (shm->stats.deferred_free.ring_owned_skip)
+		stat_row("corruption", "deferred_free_ring_owned_skip",       shm->stats.deferred_free.ring_owned_skip);
+	if (shm->stats.deferred_free.double_admit_skip)
+		stat_row("corruption", "deferred_free_double_admit_skip",     shm->stats.deferred_free.double_admit_skip);
+	if (shm->stats.deferred_free.alloc_track_refresh_ring_owned_skip)
+		stat_row("corruption", "alloc_track_refresh_ring_owned_skip", shm->stats.deferred_free.alloc_track_refresh_ring_owned_skip);
+	if (shm->stats.deferred_free.alloc_track_refresh_unverified_skip)
+		stat_row("corruption", "alloc_track_refresh_unverified_skip", shm->stats.deferred_free.alloc_track_refresh_unverified_skip);
+	if (shm->stats.deferred_free.alloc_track_refresh_consume_miss)
+		stat_row("corruption", "alloc_track_refresh_consume_miss",    shm->stats.deferred_free.alloc_track_refresh_consume_miss);
+	if (shm->stats.deferred_free.rec_owned_overflow_to_ring)
+		stat_row("corruption", "rec_owned_overflow_to_ring",          shm->stats.deferred_free.rec_owned_overflow_to_ring);
 }
 
 static void dump_stats_render_post_state_release_rejects(void)
 {
-	if (shm->stats.post_state_release_reject_untracked)
+	if (shm->stats.deferred_free.post_state_release_reject_untracked)
 		stat_row("corruption", "post_state_release_reject_untracked",
-			 shm->stats.post_state_release_reject_untracked);
-	if (shm->stats.post_state_release_reject_released)
+			 shm->stats.deferred_free.post_state_release_reject_untracked);
+	if (shm->stats.deferred_free.post_state_release_reject_released)
 		stat_row("corruption", "post_state_release_reject_released",
-			 shm->stats.post_state_release_reject_released);
-	if (shm->stats.post_state_release_reject_wrong_owner)
+			 shm->stats.deferred_free.post_state_release_reject_released);
+	if (shm->stats.deferred_free.post_state_release_reject_wrong_owner)
 		stat_row("corruption", "post_state_release_reject_wrong_owner",
-			 shm->stats.post_state_release_reject_wrong_owner);
-	if (shm->stats.post_state_release_reject_bad_magic)
+			 shm->stats.deferred_free.post_state_release_reject_wrong_owner);
+	if (shm->stats.deferred_free.post_state_release_reject_bad_magic)
 		stat_row("corruption", "post_state_release_reject_bad_magic",
-			 shm->stats.post_state_release_reject_bad_magic);
+			 shm->stats.deferred_free.post_state_release_reject_bad_magic);
 }
 
 static void dump_stats_render_scribble_canary_blanket(void)
