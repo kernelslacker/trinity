@@ -722,19 +722,19 @@ static void stats_ts_emit_by_childop(FILE *fp)
 		}
 		if (kcov_shm != NULL && op < KCOV_CHILDOP_NR_MAX) {
 			kcov_op_attempts = __atomic_load_n(
-				&kcov_shm->childop_kcov_op_attempts[op],
+				&kcov_shm->childop_kcov.childop_kcov_op_attempts[op],
 				__ATOMIC_RELAXED);
 			kcov_op_bracketed = __atomic_load_n(
-				&kcov_shm->childop_kcov_op_bracketed[op],
+				&kcov_shm->childop_kcov.childop_kcov_op_bracketed[op],
 				__ATOMIC_RELAXED);
 			kcov_op_skipped_cmp = __atomic_load_n(
-				&kcov_shm->childop_kcov_op_skipped_cmp[op],
+				&kcov_shm->childop_kcov.childop_kcov_op_skipped_cmp[op],
 				__ATOMIC_RELAXED);
 			kcov_op_skipped_nested = __atomic_load_n(
-				&kcov_shm->childop_kcov_op_skipped_nested[op],
+				&kcov_shm->childop_kcov.childop_kcov_op_skipped_nested[op],
 				__ATOMIC_RELAXED);
 			kcov_op_skipped_inactive = __atomic_load_n(
-				&kcov_shm->childop_kcov_op_skipped_inactive[op],
+				&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
 				__ATOMIC_RELAXED);
 		}
 
