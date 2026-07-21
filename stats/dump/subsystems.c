@@ -186,31 +186,31 @@ static void dump_stats_render_tracefs(void)
 
 static void dump_stats_render_bpf_fd_provider(void)
 {
-	if (shm->stats.bpf_maps_provided || shm->stats.bpf_progs_provided) {
-		stat_row("bpf_fd_provider", "maps_provided",  shm->stats.bpf_maps_provided);
-		stat_row("bpf_fd_provider", "progs_provided", shm->stats.bpf_progs_provided);
+	if (shm->stats.ebpf_gen.maps_provided || shm->stats.ebpf_gen.progs_provided) {
+		stat_row("bpf_fd_provider", "maps_provided",  shm->stats.ebpf_gen.maps_provided);
+		stat_row("bpf_fd_provider", "progs_provided", shm->stats.ebpf_gen.progs_provided);
 	}
 }
 
 static void dump_stats_render_ebpf_gen(void)
 {
-	if (shm->stats.ebpf_gen_map_fd_substituted) {
+	if (shm->stats.ebpf_gen.map_fd_substituted) {
 		stat_row("ebpf_gen", "map_fd_substituted",
-			 shm->stats.ebpf_gen_map_fd_substituted);
+			 shm->stats.ebpf_gen.map_fd_substituted);
 	}
 
-	if (shm->stats.ebpf_gen_helper_call_emitted) {
+	if (shm->stats.ebpf_gen.helper_call_emitted) {
 		stat_row("ebpf_gen", "helper_call_emitted",
-			 shm->stats.ebpf_gen_helper_call_emitted);
+			 shm->stats.ebpf_gen.helper_call_emitted);
 	}
 
-	if (shm->stats.ebpf_gen_map_value_deref_emitted) {
+	if (shm->stats.ebpf_gen.map_value_deref_emitted) {
 		stat_row("ebpf_gen", "map_value_deref_emitted",
-			 shm->stats.ebpf_gen_map_value_deref_emitted);
+			 shm->stats.ebpf_gen.map_value_deref_emitted);
 		stat_row("ebpf_gen", "map_value_deref_read",
-			 shm->stats.ebpf_gen_map_value_deref_read);
+			 shm->stats.ebpf_gen.map_value_deref_read);
 		stat_row("ebpf_gen", "map_value_deref_write",
-			 shm->stats.ebpf_gen_map_value_deref_write);
+			 shm->stats.ebpf_gen.map_value_deref_write);
 	}
 }
 
