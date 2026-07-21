@@ -392,7 +392,7 @@ void kcov_diag_emit_truncation_topn(void)
 		}
 	}
 
-	dedup_global = __atomic_load_n(&kcov_shm->dedup_probe_overflow,
+	dedup_global = __atomic_load_n(&kcov_shm->dedup.dedup_probe_overflow,
 				       __ATOMIC_RELAXED);
 	if (dedup_global > 0 || dedup_per_syscall_sum > 0) {
 		output(0, "kcov dedup probe overflow: global=%" PRIu64

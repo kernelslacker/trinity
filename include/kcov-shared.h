@@ -78,16 +78,19 @@ struct kcov_shared {
 		 * up.  Mirror of trace_truncated, sized off KCOV_CMP_BUFFER_SIZE. */
 		unsigned long cmp_trace_truncated;
 	} cmp_records;
-	/* Total number of dedup_inc() calls that walked the full probe chain
-	 * without finding either an empty slot or the matching edge.  When
-	 * this happens, the call's bucket fidelity collapses to old any-hit
-	 * semantics (count forced to 1).  Non-zero suggests KCOV_DEDUP_SIZE
-	 * may need to grow. */
-	unsigned long dedup_probe_overflow;
-	/* Largest probe distance observed by dedup_inc() so far.  Monotonic
-	 * across the run; useful for sizing KCOV_DEDUP_SIZE relative to the
-	 * fattest single-call edge load actually seen. */
-	unsigned long dedup_max_probe_seen;
+	/* Dedup-table health counters -- probe-chain overflow and hi-water. */
+	struct kcov_dedup {
+		/* Total number of dedup_inc() calls that walked the full probe chain
+		 * without finding either an empty slot or the matching edge.  When
+		 * this happens, the call's bucket fidelity collapses to old any-hit
+		 * semantics (count forced to 1).  Non-zero suggests KCOV_DEDUP_SIZE
+		 * may need to grow. */
+		unsigned long dedup_probe_overflow;
+		/* Largest probe distance observed by dedup_inc() so far.  Monotonic
+		 * across the run; useful for sizing KCOV_DEDUP_SIZE relative to the
+		 * fattest single-call edge load actually seen. */
+		unsigned long dedup_max_probe_seen;
+	} dedup;
 	/* Per-record CMP hints skipped because the calling child's seen-bloom
 	 * indicated the (cmp_ip, value, size) tuple had already been pushed
 	 * to the per-syscall pool within the recent window.  Each skip avoids

@@ -1346,8 +1346,8 @@ static void dump_stats_render_kcov_base_stats(void)
 	unsigned long kc_remote      = parent_stats.remote_calls;
 	unsigned long kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records.cmp_records_collected,  __ATOMIC_RELAXED);
 	unsigned long kc_cmp_trunc   = __atomic_load_n(&kcov_shm->cmp_records.cmp_trace_truncated,    __ATOMIC_RELAXED);
-	unsigned long kc_dedup_overflow    = __atomic_load_n(&kcov_shm->dedup_probe_overflow,   __ATOMIC_RELAXED);
-	unsigned long kc_dedup_max_probe   = __atomic_load_n(&kcov_shm->dedup_max_probe_seen,   __ATOMIC_RELAXED);
+	unsigned long kc_dedup_overflow    = __atomic_load_n(&kcov_shm->dedup.dedup_probe_overflow,   __ATOMIC_RELAXED);
+	unsigned long kc_dedup_max_probe   = __atomic_load_n(&kcov_shm->dedup.dedup_max_probe_seen,   __ATOMIC_RELAXED);
 	unsigned long kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
 	unsigned long kc_cmp_strip_skipped = __atomic_load_n(&kcov_shm->cmp_hints_strip_skipped, __ATOMIC_RELAXED);
 	unsigned long kc_cmp_unique  = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
