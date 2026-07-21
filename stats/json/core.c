@@ -116,12 +116,12 @@ const struct stat_category vfs_writes_category =
 	              vfs_writes_fields);
 
 static const struct stat_field memory_pressure_fields[] = {
-	STAT_FIELD_JSON(memory_pressure, runs, "runs_madv_pageout"),
+	STAT_FIELD_JSON_SUB(memory_pressure, runs, "runs_madv_pageout"),
 };
 
 const struct stat_category memory_pressure_category =
 	STAT_CATEGORY("memory_pressure",
-	              memory_pressure_runs,
+	              memory_pressure.runs,
 	              memory_pressure_fields);
 
 static const struct stat_field genl_family_calls_fields[] = {
