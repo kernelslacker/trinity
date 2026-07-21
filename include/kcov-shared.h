@@ -359,8 +359,10 @@ struct kcov_shared {
 	 * print_kcov_cmp_diag so the operator can confirm the realised
 	 * mode mix matches KCOV_CMP_CHILD_RECIPROCAL.  Diagnostic only —
 	 * nothing depends on these for control flow. */
-	unsigned int pc_mode_children;
-	unsigned int cmp_mode_children;
+	struct kcov_child_mode_pop {
+		unsigned int pc_mode_children;
+		unsigned int cmp_mode_children;
+	} child_mode;
 	/* Childop bracket attempt + skip-reason counters.  Every gated
 	 * kcov_bracket_begin() call from child.c bumps childop_kcov_attempts
 	 * once; the begin then either fires (childop_kcov_bracketed) or

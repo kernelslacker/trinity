@@ -34,8 +34,8 @@ void kcov_cmp_render_modes_block(void)
 {
 	unsigned int pc_kids, cmp_kids;
 
-	pc_kids  = __atomic_load_n(&kcov_shm->pc_mode_children,  __ATOMIC_RELAXED);
-	cmp_kids = __atomic_load_n(&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
+	pc_kids  = __atomic_load_n(&kcov_shm->child_mode.pc_mode_children,  __ATOMIC_RELAXED);
+	cmp_kids = __atomic_load_n(&kcov_shm->child_mode.cmp_mode_children, __ATOMIC_RELAXED);
 
 	if ((pc_kids | cmp_kids) != 0) {
 		stats_log_write("KCOV CMP modes (cumulative):\n");
