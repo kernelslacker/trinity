@@ -158,7 +158,7 @@ static void tally_exit(struct kvm_run *kr, size_t kvm_run_size)
 		uint64_t len = (uint64_t)kr->io.size *
 			       (uint64_t)kr->io.count;
 
-		__atomic_add_fetch(&shm->stats.kvm_run_exit_io, 1,
+		__atomic_add_fetch(&shm->stats.kvm.exit_io, 1,
 				   __ATOMIC_RELAXED);
 		if (off == 0 || off >= kvm_run_size || len == 0 ||
 		    len > 4096)
@@ -170,32 +170,32 @@ static void tally_exit(struct kvm_run *kr, size_t kvm_run_size)
 		return;
 	}
 	case KVM_EXIT_MMIO:
-		__atomic_add_fetch(&shm->stats.kvm_run_exit_mmio, 1,
+		__atomic_add_fetch(&shm->stats.kvm.exit_mmio, 1,
 				   __ATOMIC_RELAXED);
 		generate_rand_bytes(kr->mmio.data, sizeof(kr->mmio.data));
 		return;
 	case KVM_EXIT_HLT:
-		__atomic_add_fetch(&shm->stats.kvm_run_exit_hlt, 1,
+		__atomic_add_fetch(&shm->stats.kvm.exit_hlt, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	case KVM_EXIT_SHUTDOWN:
-		__atomic_add_fetch(&shm->stats.kvm_run_exit_shutdown, 1,
+		__atomic_add_fetch(&shm->stats.kvm.exit_shutdown, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	case KVM_EXIT_FAIL_ENTRY:
-		__atomic_add_fetch(&shm->stats.kvm_run_exit_fail_entry, 1,
+		__atomic_add_fetch(&shm->stats.kvm.exit_fail_entry, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	case KVM_EXIT_INTERNAL_ERROR:
-		__atomic_add_fetch(&shm->stats.kvm_run_exit_internal_error,
+		__atomic_add_fetch(&shm->stats.kvm.exit_internal_error,
 				   1, __ATOMIC_RELAXED);
 		return;
 	case KVM_EXIT_INTR:
-		__atomic_add_fetch(&shm->stats.kvm_run_exit_intr, 1,
+		__atomic_add_fetch(&shm->stats.kvm.exit_intr, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	default:
-		__atomic_add_fetch(&shm->stats.kvm_run_exit_other, 1,
+		__atomic_add_fetch(&shm->stats.kvm.exit_other, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}
@@ -205,7 +205,7 @@ static void run_one(int vcpufd, struct kvm_run *kr, size_t kvm_run_size)
 {
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.kvm_run_invocations, 1,
+	__atomic_add_fetch(&shm->stats.kvm.invocations, 1,
 			   __ATOMIC_RELAXED);
 
 	scribble_pre_run(kr);
@@ -215,7 +215,7 @@ static void run_one(int vcpufd, struct kvm_run *kr, size_t kvm_run_size)
 	if (rc < 0) {
 		int saved_errno = errno;
 
-		__atomic_add_fetch(&shm->stats.kvm_run_errors, 1,
+		__atomic_add_fetch(&shm->stats.kvm.errors, 1,
 				   __ATOMIC_RELAXED);
 		/*
 		 * Under -D, emit the first KVM_RUN_ERRNO_LOG_CAP failing
@@ -263,7 +263,7 @@ static void probe_user_memory2_cap(void)
 		if (rc == 0) {
 			memslot_race_unsupported = true;
 			__atomic_add_fetch(
-				&shm->stats.kvm_gpc_memslot_race_unsupported,
+				&shm->stats.kvm.gpc_memslot_race_unsupported,
 				1, __ATOMIC_RELAXED);
 		}
 		return;
@@ -301,13 +301,13 @@ static void *memslot_race_writer(void *p)
 			};
 			rc = ioctl(a->vmfd, KVM_SET_USER_MEMORY_REGION, &r);
 		}
-		__atomic_add_fetch(&shm->stats.kvm_gpc_memslot_race_deletes,
+		__atomic_add_fetch(&shm->stats.kvm.gpc_memslot_race_deletes,
 				   1, __ATOMIC_RELAXED);
 		if (rc < 0 && (errno == ENODEV || errno == EOPNOTSUPP)) {
 			__atomic_store_n(&memslot_race_unsupported, true,
 					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(
-				&shm->stats.kvm_gpc_memslot_race_unsupported,
+				&shm->stats.kvm.gpc_memslot_race_unsupported,
 				1, __ATOMIC_RELAXED);
 			break;
 		}
@@ -330,7 +330,7 @@ static void run_memslot_race(int vmfd, int vcpufd,
 	args.slot = (uint32_t)(rnd_u32() & 0x7);
 	args.use_v2 = memslot_race_user_memory2_supported;
 
-	__atomic_add_fetch(&shm->stats.kvm_gpc_memslot_race_runs, 1,
+	__atomic_add_fetch(&shm->stats.kvm.gpc_memslot_race_runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (pthread_create(&tid, NULL, memslot_race_writer, &args) == 0)
