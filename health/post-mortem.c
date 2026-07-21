@@ -475,8 +475,8 @@ static void __cold dump_kcov_state(FILE *fp)
 	calls         = parent_stats.total_calls;
 	remote        = parent_stats.remote_calls;
 	truncated     = __atomic_load_n(&kcov_shm->coverage.trace_truncated,       __ATOMIC_RELAXED);
-	cmp_records   = __atomic_load_n(&kcov_shm->cmp_records_collected, __ATOMIC_RELAXED);
-	cmp_truncated = __atomic_load_n(&kcov_shm->cmp_trace_truncated,   __ATOMIC_RELAXED);
+	cmp_records   = __atomic_load_n(&kcov_shm->cmp_records.cmp_records_collected, __ATOMIC_RELAXED);
+	cmp_truncated = __atomic_load_n(&kcov_shm->cmp_records.cmp_trace_truncated,   __ATOMIC_RELAXED);
 
 	fprintf(fp, "KCOV: %lu unique edges, %lu total PCs, %lu calls (%lu remote)\n",
 		edges, pcs, calls, remote);

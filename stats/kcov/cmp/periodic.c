@@ -253,8 +253,8 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 
-	cur_records       = __atomic_load_n(&kcov_shm->cmp_records_collected,   __ATOMIC_RELAXED);
-	cur_truncated     = __atomic_load_n(&kcov_shm->cmp_trace_truncated,     __ATOMIC_RELAXED);
+	cur_records       = __atomic_load_n(&kcov_shm->cmp_records.cmp_records_collected,   __ATOMIC_RELAXED);
+	cur_truncated     = __atomic_load_n(&kcov_shm->cmp_records.cmp_trace_truncated,     __ATOMIC_RELAXED);
 	cur_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
 	cur_strip_skipped = __atomic_load_n(&kcov_shm->cmp_hints_strip_skipped, __ATOMIC_RELAXED);
 	cur_unique        = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);

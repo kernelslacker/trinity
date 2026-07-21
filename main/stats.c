@@ -121,7 +121,7 @@ static void print_stats_iteration_line(unsigned long op_count, unsigned long rat
 			&kcov_shm->coverage.distinct_edges,
 			__ATOMIC_RELAXED);
 		unsigned long cmp_trunc = __atomic_load_n(
-			&kcov_shm->cmp_trace_truncated,
+			&kcov_shm->cmp_records.cmp_trace_truncated,
 			__ATOMIC_RELAXED);
 		unsigned long cmp_unique = __atomic_load_n(
 			&kcov_shm->cmp_hints_unique_inserts,
