@@ -412,7 +412,7 @@ static unsigned long stats_ts_emit_record_head(FILE *fp, unsigned long op_count)
 	unsigned long edges_gained_this_window;
 
 	if (kcov_shm != NULL)
-		edges_total = __atomic_load_n(&kcov_shm->distinct_edges,
+		edges_total = __atomic_load_n(&kcov_shm->coverage.distinct_edges,
 					      __ATOMIC_RELAXED);
 
 	edges_gained_this_window = stats_ts_window_delta(edges_total,
@@ -431,7 +431,7 @@ static unsigned long stats_ts_emit_record_head(FILE *fp, unsigned long op_count)
  * started" instead of the whole warm-loaded corpus. */
 static void stats_ts_emit_baselines(FILE *fp, unsigned long edges_total)
 {
-	/* Bucket-bit sibling of prev_edges_total; kcov_shm->edges_found
+	/* Bucket-bit sibling of prev_edges_total; kcov_shm->coverage.edges_found
 	 * grows with bucket churn on already-known edges so its delta
 	 * stays live even when distinct edges have plateaued -- this is
 	 * the "cmp is still rising while pc is flat" signal the plateau
@@ -443,12 +443,12 @@ static void stats_ts_emit_baselines(FILE *fp, unsigned long edges_total)
 	unsigned long distinct_edges_warm_loaded = 0;
 
 	if (kcov_shm != NULL) {
-		edges_found_total = __atomic_load_n(&kcov_shm->edges_found,
+		edges_found_total = __atomic_load_n(&kcov_shm->coverage.edges_found,
 						    __ATOMIC_RELAXED);
 		edges_warm_loaded = __atomic_load_n(
-			&kcov_shm->edges_warm_loaded, __ATOMIC_RELAXED);
+			&kcov_shm->coverage.edges_warm_loaded, __ATOMIC_RELAXED);
 		distinct_edges_warm_loaded = __atomic_load_n(
-			&kcov_shm->distinct_edges_warm_loaded,
+			&kcov_shm->coverage.distinct_edges_warm_loaded,
 			__ATOMIC_RELAXED);
 	}
 
@@ -479,7 +479,7 @@ static void stats_ts_emit_truncation(FILE *fp)
 	unsigned long cmp_trace_truncated = 0;
 
 	if (kcov_shm != NULL) {
-		trace_truncated = __atomic_load_n(&kcov_shm->trace_truncated,
+		trace_truncated = __atomic_load_n(&kcov_shm->coverage.trace_truncated,
 						  __ATOMIC_RELAXED);
 		cmp_trace_truncated = __atomic_load_n(
 			&kcov_shm->cmp_trace_truncated, __ATOMIC_RELAXED);

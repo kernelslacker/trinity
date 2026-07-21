@@ -400,7 +400,7 @@ bool expensive_accept(unsigned int nr, bool do32)
 		 * concurrent kcov_collect update.  Treat that case as zero
 		 * gap (skip the decay) instead of underflowing the
 		 * subtract. */
-		total = __atomic_load_n(&kcov_shm->total_calls,
+		total = __atomic_load_n(&kcov_shm->coverage.total_calls,
 					__ATOMIC_RELAXED);
 		last = __atomic_load_n(&kcov_shm->last_edge_at[nr],
 				       __ATOMIC_RELAXED);

@@ -1334,10 +1334,10 @@ static void dump_stats_render_kcov_shadow_measurements(void)
 
 static void dump_stats_render_kcov_base_stats(void)
 {
-	unsigned long kc_edges       = __atomic_load_n(&kcov_shm->edges_found,            __ATOMIC_RELAXED);
+	unsigned long kc_edges       = __atomic_load_n(&kcov_shm->coverage.edges_found,            __ATOMIC_RELAXED);
 	/* See per-child kcov stats migration in stats_ring.h:
 	 * total_pcs / total_calls / remote_calls read from
-	 * parent_stats.  kcov_shm->total_calls is retained solely
+	 * parent_stats.  kcov_shm->coverage.total_calls is retained solely
 	 * as the stamp source for last_edge_at[] / last_efault_at[];
 	 * the kcov_shm total_pcs and remote_calls slots have no
 	 * stamp-role consumer and are not bumped. */

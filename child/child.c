@@ -764,7 +764,7 @@ void child_process(struct childdata *child, int childno)
 		 * during the bracket-coverage soak.  Cheap (single relaxed
 		 * atomic load) and only meaningful if KCOV is active. */
 		unsigned long edges_before = have_kcov
-			? __atomic_load_n(&kcov_shm->edges_found,
+			? __atomic_load_n(&kcov_shm->coverage.edges_found,
 					  __ATOMIC_RELAXED)
 			: 0UL;
 
@@ -1025,7 +1025,7 @@ void child_process(struct childdata *child, int childno)
 		 * kcov_shm to be meaningful. */
 		if (have_kcov) {
 			unsigned long edges_after = __atomic_load_n(
-				&kcov_shm->edges_found, __ATOMIC_RELAXED);
+				&kcov_shm->coverage.edges_found, __ATOMIC_RELAXED);
 			if (bracketed && valid_op)
 				adapt_budget(op, edges_this_call);
 			if (is_alt_op) {

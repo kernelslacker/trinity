@@ -42,9 +42,9 @@ static void json_emit_kcov_counters(void)
 	unsigned long kc_cmp_hyp_live_injected_by_kind[CMP_HYP_KIND_NR];
 	unsigned int i;
 
-	kc_edges  = __atomic_load_n(&kcov_shm->edges_found,  __ATOMIC_RELAXED);
+	kc_edges  = __atomic_load_n(&kcov_shm->coverage.edges_found,  __ATOMIC_RELAXED);
 	/* Dump path reads total_pcs / total_calls / remote_calls from
-	 * parent_stats (per-child stats_ring feeds it). kcov_shm->total_calls
+	 * parent_stats (per-child stats_ring feeds it). kcov_shm->coverage.total_calls
 	 * is retained solely as the stamp source for last_edge_at[] /
 	 * last_efault_at[]; the kcov_shm total_pcs and remote_calls slots
 	 * have no stamp-role consumer and are not bumped. */

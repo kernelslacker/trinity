@@ -274,7 +274,7 @@ static inline bool topo_pair_unpack(uint64_t e,
 
 /*
  * Edge-delta floor that classifies an invocation as productive.  Reads
- * the GLOBAL kcov_shm->edges_found counter, so a fleet running with N
+ * the GLOBAL kcov_shm->coverage.edges_found counter, so a fleet running with N
  * children adds baseline noise on every dispatch — the threshold has to
  * sit clear of the noise floor or every op gets boosted just by being
  * invoked while siblings are productive.  16 is calibrated for the

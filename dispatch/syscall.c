@@ -192,7 +192,7 @@ static inline bool syscall_noisy_sample_begin(unsigned long *before_out)
 	if (++noisy_sample_ctr < n)
 		return false;
 	noisy_sample_ctr = 0;
-	*before_out = __atomic_load_n(&kcov_shm->edges_found,
+	*before_out = __atomic_load_n(&kcov_shm->coverage.edges_found,
 				      __ATOMIC_RELAXED);
 	return true;
 }
@@ -203,7 +203,7 @@ static inline void syscall_noisy_sample_end(unsigned int nr,
 	unsigned long after;
 	unsigned long delta;
 
-	after = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
+	after = __atomic_load_n(&kcov_shm->coverage.edges_found, __ATOMIC_RELAXED);
 	/* Guard the unsigned subtraction: RELAXED loads of a concurrently-
 	 * incremented atomic can invert in principle, and a wrap-underflow
 	 * would attribute a colossal delta to this syscall.  Clamp to zero
@@ -1499,7 +1499,7 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 		 * comparable. */
 		if (bucket == ERRNO_BUCKET_EFAULT) {
 			unsigned long now_call =
-				__atomic_load_n(&kcov_shm->total_calls,
+				__atomic_load_n(&kcov_shm->coverage.total_calls,
 						__ATOMIC_RELAXED);
 			__atomic_store_n(&kcov_shm->last_efault_at[call],
 					 now_call, __ATOMIC_RELAXED);
