@@ -1361,18 +1361,18 @@ retry:
 			unsigned long cmp_w = cmp_frontier_weight(syscallnr);
 			int plateau;
 
-			__atomic_fetch_add(&shm->stats.cmp_frontier_samples,
+			__atomic_fetch_add(&shm->stats.cmp_frontier.samples,
 					   1UL, __ATOMIC_RELAXED);
 			plateau = __atomic_load_n(
 					&shm->plateau_current_hypothesis,
 					__ATOMIC_RELAXED);
 			if (plateau == (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
 				__atomic_fetch_add(
-					&shm->stats.cmp_frontier_would_route,
+					&shm->stats.cmp_frontier.would_route,
 					1UL, __ATOMIC_RELAXED);
 				if (cmpf_mode == CMP_FRONTIER_COMBINED) {
 					__atomic_fetch_add(
-						&shm->stats.cmp_frontier_live_routes,
+						&shm->stats.cmp_frontier.live_routes,
 						1UL, __ATOMIC_RELAXED);
 					w = cmp_w;
 				}

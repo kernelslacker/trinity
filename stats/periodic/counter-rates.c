@@ -683,11 +683,11 @@ static const struct {
 	 * stats.h and the expensive_accept() helper in random-syscall.c
 	 * for the OFF / SHADOW_ONLY / COMBINED mode contract. */
 	{ "expensive_adaptive_samples",
-	  offsetof(struct stats_s, expensive_adaptive_samples) },
+	  offsetof(struct stats_s, expensive_adaptive.samples) },
 	{ "expensive_adaptive_extra_accepts",
-	  offsetof(struct stats_s, expensive_adaptive_extra_accepts) },
+	  offsetof(struct stats_s, expensive_adaptive.extra_accepts) },
 	{ "expensive_adaptive_demotes",
-	  offsetof(struct stats_s, expensive_adaptive_demotes) },
+	  offsetof(struct stats_s, expensive_adaptive.demotes) },
 	/* Object-size-relative ARG_LEN draw observability.  All zero while
 	 * --arg-len-semantics is off (the default).  See the struct-field
 	 * comment block in include/stats.h for per-counter semantics. */
@@ -720,17 +720,17 @@ static const struct {
 	 * remote_mode diverges only on Arm B.  See the struct-field
 	 * comments in include/stats.h for per-counter semantics. */
 	{ "remote_adaptive_samples",
-	  offsetof(struct stats_s, remote_adaptive_samples) },
+	  offsetof(struct stats_s, remote_adaptive.samples) },
 	{ "remote_adaptive_would_demote",
-	  offsetof(struct stats_s, remote_adaptive_would_demote) },
+	  offsetof(struct stats_s, remote_adaptive.would_demote) },
 	{ "remote_adaptive_would_promote",
-	  offsetof(struct stats_s, remote_adaptive_would_promote) },
+	  offsetof(struct stats_s, remote_adaptive.would_promote) },
 	{ "remote_adaptive_would_force",
-	  offsetof(struct stats_s, remote_adaptive_would_force) },
+	  offsetof(struct stats_s, remote_adaptive.would_force) },
 	{ "remote_adaptive_would_gate_promote",
-	  offsetof(struct stats_s, remote_adaptive_would_gate_promote) },
+	  offsetof(struct stats_s, remote_adaptive.would_gate_promote) },
 	{ "remote_adaptive_agree",
-	  offsetof(struct stats_s, remote_adaptive_agree) },
+	  offsetof(struct stats_s, remote_adaptive.agree) },
 	/* Picks the explorer pool forced to STRATEGY_RANDOM.  Rate-of-change
 	 * over the run divided by explorer_children gives the per-explorer
 	 * picker throughput; deviation from the bandit-pool throughput

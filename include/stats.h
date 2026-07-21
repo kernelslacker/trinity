@@ -47,7 +47,9 @@
 #include "stats/subsys/chain_restype.h"
 #include "stats/subsys/childop.h"
 #include "stats/subsys/close_racer.h"
+#include "stats/subsys/cmp_frontier.h"
 #include "stats/subsys/context_suppress.h"
+#include "stats/subsys/cost_pool_selector.h"
 #include "stats/subsys/cold_overflow.h"
 #include "stats/subsys/corrupt_ptr.h"
 #include "stats/subsys/cpu_hotplug.h"
@@ -63,6 +65,7 @@
 #include "stats/subsys/espintcp_coalesce.h"
 #include "stats/subsys/eth_emitter.h"
 #include "stats/subsys/ebpf_gen.h"
+#include "stats/subsys/expensive_adaptive.h"
 #include "stats/subsys/fd.h"
 #include "stats/subsys/fd_runtime.h"
 #include "stats/subsys/fdstress.h"
@@ -139,6 +142,7 @@
 #include "stats/subsys/qrtr_bind_race.h"
 #include "stats/subsys/rds_zcopy_crafted_send.h"
 #include "stats/subsys/recipe.h"
+#include "stats/subsys/remote_adaptive.h"
 #include "stats/subsys/refcount_audit.h"
 #include "stats/subsys/rtnl_vf_broadcast.h"
 #include "stats/subsys/rxrpc_key_install.h"
@@ -1427,282 +1431,26 @@ struct stats_s {
 	unsigned long reach_band_would_demote_mid;
 	unsigned long reach_band_would_boost_high;
 
-	/* Observability for the CMP-weighted frontier picker arm
-	 * (--cmp-frontier=off|shadow-only|combined).  Bumped from the
-	 * silent-regime accept gate in set_syscall_nr_coverage_frontier()
-	 * on the non-OFF compute path; the OFF early-return MUST NOT
-	 * bump any of these -- it is the byte-identity contract
-	 * documented in include/cmp-frontier.h.
-	 *
-	 *  cmp_frontier_samples
-	 *      Per-call samples denominator: one bump per silent-regime
-	 *      entry past the cmp_frontier_mode OFF gate.  Sums to the
-	 *      total non-OFF entries to the gate (denominator for the
-	 *      plateau-hit and live-route rates below).
-	 *  cmp_frontier_would_route
-	 *      Subset of cmp_frontier_samples: the picks where the
-	 *      plateau classifier currently reads CMP_RISING_PC_FLAT --
-	 *      the would-be population the COMBINED switch would route
-	 *      to the CMP-weighted weight.  Under SHADOW_ONLY this is
-	 *      the projected route volume; under COMBINED it equals
-	 *      cmp_frontier_live_routes below (mode-gated, not
-	 *      condition-gated, so the two move in lock-step under
-	 *      COMBINED).
-	 *  cmp_frontier_live_routes
-	 *      Subset of cmp_frontier_would_route: the picks where mode
-	 *      is COMBINED AND the plateau gate fired, the population
-	 *      where w was actually replaced with cmp_frontier_weight()
-	 *      for the live accept roll.  Stays at zero under
-	 *      SHADOW_ONLY by construction.
-	 *
-	 * Each addend is 1UL; overflow needs ~2^64 samples -- comfortable
-	 * for any fuzz horizon. */
-	unsigned long cmp_frontier_samples;
-	unsigned long cmp_frontier_would_route;
-	unsigned long cmp_frontier_live_routes;
+	/* CMP-weighted frontier picker arm observability.
+	 * See stats/subsys/cmp_frontier.h. */
+	struct cmp_frontier_stats cmp_frontier;
 
-	/* Observability for the adaptive expensive-syscall accept gate.
-	 * Bumped from expensive_accept() in random-syscall.c on the
-	 * adaptive compute path (mode != OFF, kcov_shm != NULL, nr in
-	 * range).  The OFF / NULL-kcov / out-of-range early-return path
-	 * MUST NOT bump any of these -- it is the byte-identity contract
-	 * documented on expensive_accept().  See the helper comment in
-	 * random-syscall.c for the SHADOW_ONLY / COMBINED mode contract
-	 * and the EXPENSIVE_ADAPTIVE_FLOOR / CEILING / WARMUP / DECAY_
-	 * STEPS constant block above the helper for the policy knobs.
-	 * The shape mirrors the sibling frontier_blend_* counter family
-	 * just above: per-call samples denominator + per-event dispositions.
-	 *
-	 *  expensive_adaptive_samples
-	 *      Total computations -- one bump per expensive_accept() entry
-	 *      past the OFF/NULL/out-of-range early-return, i.e. every
-	 *      call into the adaptive compute path under SHADOW_ONLY or
-	 *      COMBINED.  Denominator for the disposition counters below.
-	 *  expensive_adaptive_extra_accepts
-	 *      Mass of accepts the sub-floor n_adaptive rate is
-	 *      contributing over the static 1/FLOOR baseline:
-	 *
-	 *        COMBINED.  Per-call bump when n_adaptive < FLOOR AND the
-	 *        live ONE_IN(n_live=n_adaptive) draw returned true.  An
-	 *        accept granted on the sub-floor path; the baseline 1/FLOOR
-	 *        would have rejected on the corresponding draw with
-	 *        probability (FLOOR-n_adaptive)/FLOOR, so this counter
-	 *        upper-bounds the true "extra accept" count and converges
-	 *        to it as n_adaptive shrinks toward the ceiling.
-	 *
-	 *        SHADOW_ONLY.  Per-call bump when n_adaptive < FLOOR (the
-	 *        live accept stays at the floor and consumes no extra RNG,
-	 *        so a per-draw observation is not available).  Counts the
-	 *        opportunities -- multiplied by the average accept-rate
-	 *        delta (1/n_adaptive - 1/FLOOR) this gives the would-be
-	 *        extra-accept mass the COMBINED mode would unlock on the
-	 *        same workload.  The unit-of-measure difference vs the
-	 *        COMBINED bump is deliberate: SHADOW_ONLY's accept stream
-	 *        is identical to OFF for a given seed, so a true per-event
-	 *        shadow count is unavailable without additional RNG draws
-	 *        (which would break the SHADOW_ONLY pick-parity invariant).
-	 *  expensive_adaptive_demotes
-	 *      Per-call bump from the stale-decay branch when the
-	 *      total_calls -- last_edge_at[nr] gap pushed n_adaptive back
-	 *      up toward the floor (the productive->stale re-cap).
-	 *      Headline signal that the cheaper rate is being clawed back
-	 *      once productivity stops; pair against extra_accepts to read
-	 *      the net mass the lever is granting after decay. */
-	unsigned long expensive_adaptive_samples;
-	unsigned long expensive_adaptive_extra_accepts;
-	unsigned long expensive_adaptive_demotes;
+	/* Adaptive expensive-syscall accept gate observability.
+	 * See stats/subsys/expensive_adaptive.h. */
+	struct expensive_adaptive_stats expensive_adaptive;
 
-	/*
-	 * Cost-pool one-shot selector observer counters (gated by
-	 * cost_pool_selector_mode != OFF for the shadow_ pair; the live_
-	 * pair bumps unconditionally so the analytical vs actual
-	 * comparison is available on every run).  See the enum
-	 * cost_pool_selector_mode comment in include/strategy.h for the
-	 * shadow / live contract and the cost-pool-oneshot-selector
-	 * spec section 4.1 for the closed-form identity the shadow rows
-	 * accumulate.
-	 *
-	 *  cost_pool_selector_shadow_picks
-	 *      Cumulative: one bump per HEURISTIC / RANDOM arm entry into
-	 *      set_syscall_nr_* while cost_pool_selector_mode is SHADOW_
-	 *      ONLY or COMBINED, after the arch table has been chosen and
-	 *      before the retry loop's live rnd_modulo_u32 draw.
-	 *      Denominator for the analytical fraction below.  Bumps
-	 *      exactly once per pick call regardless of how many retries
-	 *      the flat picker's expensive_accept early-out consumes; the
-	 *      identity being validated is a per-pick property, not a
-	 *      per-retry one.
-	 *  cost_pool_selector_shadow_expensive_ppm_sum
-	 *      Cumulative sum of the per-pick analytical expected
-	 *      expensive-pool fraction, scaled to parts-per-million
-	 *      (integer accumulation so the shadow bump path stays
-	 *      allocation-free and lock-free).  Per-pick summand is
-	 *      1_000_000 * n_exp / (n_cheap * R + n_exp) with R =
-	 *      EXPENSIVE_ADAPTIVE_FLOOR = 1000 and n_cheap / n_exp read
-	 *      RELAXED from the arch-specific nr_active_cheap /
-	 *      nr_active_exp counters the Phase 0 pool bookkeeping
-	 *      maintains.  Analytical expensive fraction over any window
-	 *      = shadow_expensive_ppm_sum / (shadow_picks * 1_000_000);
-	 *      by the section 4.1 identity this equals the flat draw-then-
-	 *      reject expensive fraction in expectation, so it should
-	 *      match the live_expensive_picks / (live_expensive_picks +
-	 *      live_cheap_picks) actual fraction below on a real run.
-	 *      Divide-by-zero guard: skipped entirely when the arch table
-	 *      has n_cheap == 0 AND n_exp == 0 (no active syscalls on
-	 *      this arch -- the flat picker will bail on nr_syscalls == 0
-	 *      anyway).
-	 *  cost_pool_selector_live_cheap_picks
-	 *      Cumulative: one bump per successful set_syscall_nr_*
-	 *      accepted pick whose finalised syscall is CHEAP under the
-	 *      read-only EXPENSIVE bitmap (syscall_is_expensive() ==
-	 *      false).  Gated on cost_pool_selector_mode != OFF alongside
-	 *      the shadow_ pair so an OFF-mode build is bit-for-bit
-	 *      identical to a pre-row build (no per-pick atomic add).
-	 *      Placed at the pick-finalise site (immediately before
-	 *      srec_publish_begin) so downstream picker gates that reject
-	 *      (validate / cred-throttle) do not double-count -- the
-	 *      accept-fraction being compared is the ACTUAL syscall the
-	 *      child will execute.
-	 *  cost_pool_selector_live_expensive_picks
-	 *      Cumulative: sibling of live_cheap_picks above for the
-	 *      EXPENSIVE half of the finalised-pick stream.
-	 *  cost_pool_selector_predraw_cheap_picks
-	 *      Cumulative: one bump per HEURISTIC / RANDOM arm draw whose
-	 *      candidate syscall PASSED the expensive_accept gate but has
-	 *      not yet been run past the downstream validate / anti_prior /
-	 *      cred-throttle gates (i.e. bumped immediately after the
-	 *      `if (!expensive_accept(...)) goto retry;` line and before
-	 *      validate_specific_syscall_silent).  Cheap half of that pair
-	 *      under the read-only EXPENSIVE bitmap (syscall_is_expensive()
-	 *      == false).  Gated on cost_pool_selector_mode != OFF alongside
-	 *      the shadow_ pair -- OFF-mode remains bit-for-bit identical
-	 *      to a pre-row build (short-circuit before any shm access, no
-	 *      per-draw atomic add).
-	 *  cost_pool_selector_predraw_expensive_picks
-	 *      Cumulative: EXPENSIVE sibling of predraw_cheap_picks above.
-	 *
-	 *      The predraw_ pair is the exact population the shadow closed-
-	 *      form models: post-expensive_accept uniform-draw survivors,
-	 *      before ANY downstream picker gate (validate / anti_prior /
-	 *      cred-throttle) enriches the finalised stream in rare/
-	 *      expensive syscalls.  Section 4.1 identity check:
-	 *          shadow_expensive_ppm_sum / (shadow_picks * 1e6)
-	 *        should match
-	 *          predraw_expensive / (predraw_expensive + predraw_cheap)
-	 *      to within Monte-Carlo noise.  The live_ pair remains the
-	 *      "what actually executes" signal (post all gates, at
-	 *      pick-finalise); it can and typically will diverge from the
-	 *      shadow analytical fraction because anti_prior selectively
-	 *      enriches rare/expensive syscalls in the accepted stream.
-	 *
-	 * Observability only in this commit: the shadow observer never
-	 * returns a value, never gates any accept, never consumes any
-	 * RNG.  cost_pool_selector_mode == COMBINED in this build behaves
-	 * identically to SHADOW_ONLY (observer accumulates, live pick
-	 * stays flat draw-then-reject); the COMBINED coin-then-draw wire-
-	 * up lands in a follow-up commit.
-	 */
-	unsigned long cost_pool_selector_shadow_picks;
-	unsigned long cost_pool_selector_shadow_expensive_ppm_sum;
-	unsigned long cost_pool_selector_live_cheap_picks;
-	unsigned long cost_pool_selector_live_expensive_picks;
-	unsigned long cost_pool_selector_predraw_cheap_picks;
-	unsigned long cost_pool_selector_predraw_expensive_picks;
+	/* Cost-pool one-shot selector observer counters.
+	 * See stats/subsys/cost_pool_selector.h. */
+	struct cost_pool_selector_stats cost_pool_selector;
 
 	/* Context-regular suppression classifier telemetry (SHADOW_ONLY).
 	 * See stats/subsys/context_suppress.h. */
 	struct context_suppress_stats context_suppress;
 
-	/* Adaptive remote-KCOV mode A/B disposition counters, bumped from
-	 * dispatch_step in random-syscall.c on every productive-signal call
-	 * into the PC-mode + remote_capable path so the operator can A/B
-	 * compare the static remote-mode policy (per-syscall KCOV_REMOTE_
-	 * HEAVY flag + ONE_IN(remote_reciprocal)) against the adaptive
-	 * policy (per-syscall remote_pc_edge_calls / local_pc_edge_calls
-	 * ratio against the REMOTE_ADAPTIVE_PROMOTE_MARGIN_* threshold,
-	 * gated by REMOTE_ADAPTIVE_MIN_REMOTE_CALLS / MIN_LOCAL_CALLS sample
-	 * floors).  All four counters bump in lock-step from BOTH the Arm A
-	 * cohort (control: static policy is what dispatch_step uses for the
-	 * live remote_mode flip on this call) and the Arm B cohort
-	 * (treatment: the adaptive disposition is what dispatch_step uses
-	 * for the live remote_mode flip on this call), so the would-be
-	 * divergence between the two policies stays observable across the
-	 * fleet regardless of the realised cohort split.  The live mode
-	 * flip itself diverges only on Arm B; the cohort split lives in
-	 * kcov_shm->remote_adaptive_arm_{a,b}_children and is the
-	 * denominator the Arm-B-only live divergence is normalised against.
-	 *
-	 *  remote_adaptive_samples
-	 *      Total computations -- one bump per dispatch_step entry into
-	 *      the PC-mode + remote_capable path.  Denominator for the
-	 *      disposition ratios below; the static-mode and non-capable
-	 *      fast paths bypass the adaptive helper entirely (no shadow
-	 *      bump there) so the counter measures only the surface that
-	 *      could meaningfully disagree.
-	 *  remote_adaptive_would_demote
-	 *      Per-call disposition: adaptive policy would flip remote_mode
-	 *      from true (the static decision said remote) to false because
-	 *      the syscall is KCOV_REMOTE_HEAVY-flagged AND its lifetime
-	 *      remote sample has crossed REMOTE_ADAPTIVE_MIN_REMOTE_CALLS
-	 *      without producing a single edge.  Headline signal that the
-	 *      HEAVY flag is mis-calibrated for that syscall in this
-	 *      kernel.
-	 *  remote_adaptive_would_promote
-	 *      Per-call disposition: adaptive policy would flip remote_mode
-	 *      from false to true because the syscall is NOT HEAVY-flagged,
-	 *      its lifetime remote and local samples have BOTH crossed the
-	 *      MIN_*_CALLS sample floors, the remote sample is non-empty,
-	 *      AND the remote edge rate beats the local edge rate by the
-	 *      configured PROMOTE_MARGIN_* relative margin (cross-multiplied,
-	 *      no division).  Headline signal that the syscall has deferred-
-	 *      work coverage the static unflagged trickle is under-sampling.
-	 *  remote_adaptive_agree
-	 *      Per-call disposition: adaptive policy matches the static
-	 *      decision (neither demote nor promote fires).  Sum of
-	 *      {_would_demote, _would_promote, _agree} equals _samples by
-	 *      construction (the three dispositions are mutually exclusive
-	 *      and exhaustive on the adaptive-helper entry path).
-	 *  remote_adaptive_would_gate_promote
-	 *      Shadow disposition for the proposed plateau gate on the
-	 *      promote branch: bumped from BOTH arms in lock-step whenever
-	 *      the cross-multiplied edge-rate margin fires (i.e. the
-	 *      _would_promote condition holds) AND the parent-published
-	 *      plateau hypothesis is NOT PLATEAU_HYPOTHESIS_REMOTE_DOMINANT
-	 *      at the time of the decision.  Strict subset of
-	 *      _would_promote -- it counts the would-be divergence between
-	 *      today's always-promote behaviour and a future
-	 *      "promote only under a remote-dominant plateau" rule, before
-	 *      that rule is flipped on by default.  Live disposition is
-	 *      not touched (adaptive_remote still flips to true); the
-	 *      counter answers "how often would a plateau gate suppress
-	 *      a live promote?" so the gate-on-by-default decision can
-	 *      be made against measured impact rather than hypothesis.
-	 *      Demote branch is intentionally unconditional and is NOT
-	 *      covered by this counter.
-	 *  remote_adaptive_would_force
-	 *      Per-call disposition: adaptive policy widens the promote
-	 *      branch under PLATEAU_HYPOTHESIS_REMOTE_DOMINANT and flips
-	 *      remote_mode from false to true on an unflagged syscall
-	 *      whose static decision was local, whose lifetime remote
-	 *      sample has crossed REMOTE_ADAPTIVE_PLATEAU_FORCE_MIN_REMOTE
-	 *      _CALLS (the looser plateau-emergency floor, 128 vs the
-	 *      regular 512), and whose lifetime remote_pc_edge_calls has
-	 *      crossed REMOTE_ADAPTIVE_PLATEAU_FORCE_MIN_EDGES (1 -- ever
-	 *      yielded once).  Mutually exclusive with _would_promote on
-	 *      the same call: the regular promote rule (rate beats local
-	 *      by PROMOTE_MARGIN_NUM/DEN) is evaluated first, the force
-	 *      rule only runs if that didn't fire.  Bumped from BOTH arms
-	 *      in lock-step; the live remote_mode diverges only on Arm B,
-	 *      same contract as the existing _would_promote/_would_demote
-	 *      counters.  Adds a fourth slot to the disposition ladder so
-	 *      the sum _would_demote + _would_promote + _would_force +
-	 *      _agree continues to equal _samples by construction. */
-	unsigned long remote_adaptive_samples;
-	unsigned long remote_adaptive_would_demote;
-	unsigned long remote_adaptive_would_promote;
-	unsigned long remote_adaptive_agree;
-	unsigned long remote_adaptive_would_gate_promote;
-	unsigned long remote_adaptive_would_force;
+	/* Adaptive remote-KCOV mode A/B disposition counters.
+	 * See stats/subsys/remote_adaptive.h. */
+	struct remote_adaptive_stats remote_adaptive;
+
 
 	/* Coverage-plateau detector counters (transitions, bucket-canary
 	 * integrity, mut-attrib inversion catches, forced_windows).

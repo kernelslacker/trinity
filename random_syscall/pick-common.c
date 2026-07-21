@@ -345,7 +345,7 @@ bool expensive_accept(unsigned int nr, bool do32)
 	 * return -- i.e. once per call into the adaptive compute path
 	 * under SHADOW_ONLY or COMBINED.  See the expensive_adaptive_*
 	 * field-comment block in include/stats.h. */
-	__atomic_fetch_add(&shm->stats.expensive_adaptive_samples, 1UL,
+	__atomic_fetch_add(&shm->stats.expensive_adaptive.samples, 1UL,
 			   __ATOMIC_RELAXED);
 
 	/* Sum current-run counters with the warm-loaded priors so the
@@ -436,7 +436,7 @@ bool expensive_accept(unsigned int nr, bool do32)
 				 * stats.h. */
 				if (n_adaptive != n_pre)
 					__atomic_fetch_add(
-						&shm->stats.expensive_adaptive_demotes,
+						&shm->stats.expensive_adaptive.demotes,
 						1UL, __ATOMIC_RELAXED);
 			}
 		}
@@ -458,7 +458,7 @@ bool expensive_accept(unsigned int nr, bool do32)
 	 * measure asymmetry vs the COMBINED bump below. */
 	if (mode == EXPENSIVE_ADAPTIVE_MODE_SHADOW_ONLY &&
 	    n_adaptive < EXPENSIVE_ADAPTIVE_FLOOR)
-		__atomic_fetch_add(&shm->stats.expensive_adaptive_extra_accepts,
+		__atomic_fetch_add(&shm->stats.expensive_adaptive.extra_accepts,
 				   1UL, __ATOMIC_RELAXED);
 
 	accept = ONE_IN(n_live);
@@ -468,7 +468,7 @@ bool expensive_accept(unsigned int nr, bool do32)
 	 * stats.h for the convergence-to-true-extras semantics. */
 	if (accept && mode == EXPENSIVE_ADAPTIVE_MODE_COMBINED &&
 	    n_adaptive < EXPENSIVE_ADAPTIVE_FLOOR)
-		__atomic_fetch_add(&shm->stats.expensive_adaptive_extra_accepts,
+		__atomic_fetch_add(&shm->stats.expensive_adaptive.extra_accepts,
 				   1UL, __ATOMIC_RELAXED);
 
 	return accept;
@@ -549,10 +549,10 @@ void cost_pool_selector_shadow_note(bool do32)
 	 * most 1_000_000 (when n_cheap == 0). */
 	ppm = (1000000UL * (unsigned long)n_exp) / denom;
 
-	__atomic_fetch_add(&shm->stats.cost_pool_selector_shadow_picks,
+	__atomic_fetch_add(&shm->stats.cost_pool_selector.shadow_picks,
 			   1UL, __ATOMIC_RELAXED);
 	__atomic_fetch_add(
-		&shm->stats.cost_pool_selector_shadow_expensive_ppm_sum,
+		&shm->stats.cost_pool_selector.shadow_expensive_ppm_sum,
 		ppm, __ATOMIC_RELAXED);
 }
 
@@ -583,11 +583,11 @@ void cost_pool_selector_live_note(unsigned int nr, bool do32)
 
 	if (syscall_is_expensive(nr, do32))
 		__atomic_fetch_add(
-			&shm->stats.cost_pool_selector_live_expensive_picks,
+			&shm->stats.cost_pool_selector.live_expensive_picks,
 			1UL, __ATOMIC_RELAXED);
 	else
 		__atomic_fetch_add(
-			&shm->stats.cost_pool_selector_live_cheap_picks,
+			&shm->stats.cost_pool_selector.live_cheap_picks,
 			1UL, __ATOMIC_RELAXED);
 }
 
@@ -625,11 +625,11 @@ void cost_pool_selector_predraw_note(unsigned int nr, bool do32)
 
 	if (syscall_is_expensive(nr, do32))
 		__atomic_fetch_add(
-			&shm->stats.cost_pool_selector_predraw_expensive_picks,
+			&shm->stats.cost_pool_selector.predraw_expensive_picks,
 			1UL, __ATOMIC_RELAXED);
 	else
 		__atomic_fetch_add(
-			&shm->stats.cost_pool_selector_predraw_cheap_picks,
+			&shm->stats.cost_pool_selector.predraw_cheap_picks,
 			1UL, __ATOMIC_RELAXED);
 }
 

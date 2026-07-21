@@ -91,15 +91,15 @@ static void dump_stats_render_frontier_barren(void)
  * before flipping shadow-only -> combined. */
 static void dump_stats_render_frontier_cmp(void)
 {
-	if (shm->stats.cmp_frontier_samples)
+	if (shm->stats.cmp_frontier.samples)
 		stat_row("strategy", "cmp_frontier_samples",
-			 shm->stats.cmp_frontier_samples);
-	if (shm->stats.cmp_frontier_would_route)
+			 shm->stats.cmp_frontier.samples);
+	if (shm->stats.cmp_frontier.would_route)
 		stat_row("strategy", "cmp_frontier_would_route",
-			 shm->stats.cmp_frontier_would_route);
-	if (shm->stats.cmp_frontier_live_routes)
+			 shm->stats.cmp_frontier.would_route);
+	if (shm->stats.cmp_frontier.live_routes)
 		stat_row("strategy", "cmp_frontier_live_routes",
-			 shm->stats.cmp_frontier_live_routes);
+			 shm->stats.cmp_frontier.live_routes);
 }
 
 /* SHADOW-ONLY LIVE-regime cooldown discriminator (gated by
@@ -533,13 +533,13 @@ void dump_stats_strategy_summary(void)
 	 * gate is in its default OFF mode (the early-return path skips
 	 * the bumps).  See the expensive_adaptive_* field-comment block
 	 * in include/stats.h for per-counter semantics. */
-	if (shm->stats.expensive_adaptive_samples) {
+	if (shm->stats.expensive_adaptive.samples) {
 		stat_row("strategy", "expensive_adaptive_samples",
-			 shm->stats.expensive_adaptive_samples);
+			 shm->stats.expensive_adaptive.samples);
 		stat_row("strategy", "expensive_adaptive_extra_accepts",
-			 shm->stats.expensive_adaptive_extra_accepts);
+			 shm->stats.expensive_adaptive.extra_accepts);
 		stat_row("strategy", "expensive_adaptive_demotes",
-			 shm->stats.expensive_adaptive_demotes);
+			 shm->stats.expensive_adaptive.demotes);
 	}
 	dump_stats_render_arg_len_semantics();
 	if (shm->stats.frontier.core.underflow_prevented)
@@ -569,28 +569,28 @@ void dump_stats_strategy_summary(void)
 	 * cost_pool_periodic_dump cadence) still sees the section 4.1
 	 * identity numbers.  The if-non-zero guard keeps default-OFF
 	 * runs' summary tail suppressed. */
-	if (shm->stats.cost_pool_selector_shadow_picks)
+	if (shm->stats.cost_pool_selector.shadow_picks)
 		stat_row("strategy", "cost_pool_selector_shadow_picks",
-			 shm->stats.cost_pool_selector_shadow_picks);
-	if (shm->stats.cost_pool_selector_shadow_expensive_ppm_sum)
+			 shm->stats.cost_pool_selector.shadow_picks);
+	if (shm->stats.cost_pool_selector.shadow_expensive_ppm_sum)
 		stat_row("strategy",
 			 "cost_pool_selector_shadow_expensive_ppm_sum",
-			 shm->stats.cost_pool_selector_shadow_expensive_ppm_sum);
-	if (shm->stats.cost_pool_selector_live_cheap_picks)
+			 shm->stats.cost_pool_selector.shadow_expensive_ppm_sum);
+	if (shm->stats.cost_pool_selector.live_cheap_picks)
 		stat_row("strategy", "cost_pool_selector_live_cheap_picks",
-			 shm->stats.cost_pool_selector_live_cheap_picks);
-	if (shm->stats.cost_pool_selector_live_expensive_picks)
+			 shm->stats.cost_pool_selector.live_cheap_picks);
+	if (shm->stats.cost_pool_selector.live_expensive_picks)
 		stat_row("strategy",
 			 "cost_pool_selector_live_expensive_picks",
-			 shm->stats.cost_pool_selector_live_expensive_picks);
-	if (shm->stats.cost_pool_selector_predraw_cheap_picks)
+			 shm->stats.cost_pool_selector.live_expensive_picks);
+	if (shm->stats.cost_pool_selector.predraw_cheap_picks)
 		stat_row("strategy",
 			 "cost_pool_selector_predraw_cheap_picks",
-			 shm->stats.cost_pool_selector_predraw_cheap_picks);
-	if (shm->stats.cost_pool_selector_predraw_expensive_picks)
+			 shm->stats.cost_pool_selector.predraw_cheap_picks);
+	if (shm->stats.cost_pool_selector.predraw_expensive_picks)
 		stat_row("strategy",
 			 "cost_pool_selector_predraw_expensive_picks",
-			 shm->stats.cost_pool_selector_predraw_expensive_picks);
+			 shm->stats.cost_pool_selector.predraw_expensive_picks);
 
 	dump_strategy_stats();
 }
