@@ -90,13 +90,13 @@ void childop_split_dump(void)
 	unsigned long wt_childop = __atomic_load_n(
 		&shm->stats.childop.walltime_ns, __ATOMIC_RELAXED);
 	unsigned long wt_syscall = __atomic_load_n(
-		&shm->stats.syscall_walltime_ns, __ATOMIC_RELAXED);
+		&shm->stats.syscall_dispatch.walltime_ns, __ATOMIC_RELAXED);
 	unsigned long sc_childop = __atomic_load_n(
-		&shm->stats.syscalls_in_childops, __ATOMIC_RELAXED);
+		&shm->stats.syscall_dispatch.in_childops, __ATOMIC_RELAXED);
 	unsigned long sc_random = __atomic_load_n(
-		&shm->stats.syscalls_random, __ATOMIC_RELAXED);
+		&shm->stats.syscall_dispatch.random, __ATOMIC_RELAXED);
 	unsigned long it_random = __atomic_load_n(
-		&shm->stats.random_syscall_dispatches, __ATOMIC_RELAXED);
+		&shm->stats.syscall_dispatch.random_dispatches, __ATOMIC_RELAXED);
 	unsigned long it_childop = 0;
 	unsigned long wt_total, sc_total, it_total;
 	unsigned long wt_pct, sc_pct, it_pct;

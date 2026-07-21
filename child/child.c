@@ -964,13 +964,13 @@ void child_process(struct childdata *child, int childno)
 				 * from the periodic-surface tick. */
 				childop_decay_record_wall(op, (unsigned long)ns);
 			} else if (op == CHILD_OP_SYSCALL) {
-				__atomic_add_fetch(&shm->stats.syscall_walltime_ns,
+				__atomic_add_fetch(&shm->stats.syscall_dispatch.walltime_ns,
 						   (unsigned long)ns, __ATOMIC_RELAXED);
 				/* Iteration denominator for childop_split.
 				 * childop_invocations[] is gated on is_alt_op
 				 * upstream, so CHILD_OP_SYSCALL is never counted
 				 * there; this is its parallel counter. */
-				__atomic_add_fetch(&shm->stats.random_syscall_dispatches,
+				__atomic_add_fetch(&shm->stats.syscall_dispatch.random_dispatches,
 						   1UL, __ATOMIC_RELAXED);
 			}
 		}
