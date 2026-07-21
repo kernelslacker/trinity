@@ -1010,7 +1010,7 @@ struct shm_s {
 	unsigned long bandit_cmp_at_window_start;
 
 	/*
-	 * Snapshot of kcov_shm->kmsg_warn_fires at the start of the current
+	 * Snapshot of kcov_shm->kmsg.kmsg_warn_fires at the start of the current
 	 * bandit window.  Single global field (mirrors bandit_cmp_at_window_
 	 * start) because kmsg_warn_fires is global rather than per-arm --
 	 * the chaos-cohort attribution that consumes the delta needs only
