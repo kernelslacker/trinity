@@ -72,16 +72,16 @@ bool cmp_field_pool_corrupted(struct cmp_field_pool *pool,
 	if (observed_count <= CMP_HINTS_PER_SYSCALL)
 		return false;
 	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->cmp_hints_count_oob, 1UL,
+		__atomic_fetch_add(&kcov_shm->hints_canary.cmp_hints_count_oob, 1UL,
 				   __ATOMIC_RELAXED);
 		if (pool->canary_lock_post != CMP_HINTS_POOL_CANARY)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_canary_lock_post_corrupt,
+			__atomic_fetch_add(&kcov_shm->hints_canary.cmp_hints_canary_lock_post_corrupt,
 					   1UL, __ATOMIC_RELAXED);
 		if (pool->canary_pre != CMP_HINTS_POOL_CANARY)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_canary_pre_corrupt,
+			__atomic_fetch_add(&kcov_shm->hints_canary.cmp_hints_canary_pre_corrupt,
 					   1UL, __ATOMIC_RELAXED);
 		if (pool->canary_post != CMP_HINTS_POOL_CANARY)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_canary_post_corrupt,
+			__atomic_fetch_add(&kcov_shm->hints_canary.cmp_hints_canary_post_corrupt,
 					   1UL, __ATOMIC_RELAXED);
 	}
 	__atomic_store_n(&pool->corrupted, true, __ATOMIC_RELAXED);
