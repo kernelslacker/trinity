@@ -28,7 +28,7 @@
  * unsupported counter is bumped, and the probe exits without spamming
  * 12 useless per-template attempts.
  *
- * One-shot semantics: a CAS on shm->stats.af_alg_probe_done elects a
+ * One-shot semantics: a CAS on shm->stats.af_alg_probe.done elects a
  * single child to run the probe across the whole fleet.  Subsequent
  * calls (from the same child or any sibling) early-return.  A
  * per-process bool short-circuits the shm load on the hot path.
@@ -124,9 +124,9 @@ static void run_one_template(unsigned int idx)
 		/* Front-door already checked by caller — getting here means
 		 * a transient socket() failure (ENFILE/EMFILE).  Count as
 		 * reject so the operator sees something happened. */
-		__atomic_add_fetch(&shm->stats.af_alg_probe_reject[idx],
+		__atomic_add_fetch(&shm->stats.af_alg_probe.reject[idx],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.af_alg_probe_reject_total,
+		__atomic_add_fetch(&shm->stats.af_alg_probe.reject_total,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -137,14 +137,14 @@ static void run_one_template(unsigned int idx)
 	strncpy((char *)sa.salg_name, e->name, sizeof(sa.salg_name) - 1);
 
 	if (bind(sk, (struct sockaddr *)&sa, sizeof(sa)) == 0) {
-		__atomic_add_fetch(&shm->stats.af_alg_probe_accept[idx],
+		__atomic_add_fetch(&shm->stats.af_alg_probe.accept[idx],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.af_alg_probe_accept_total,
+		__atomic_add_fetch(&shm->stats.af_alg_probe.accept_total,
 				   1, __ATOMIC_RELAXED);
 	} else {
-		__atomic_add_fetch(&shm->stats.af_alg_probe_reject[idx],
+		__atomic_add_fetch(&shm->stats.af_alg_probe.reject[idx],
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.af_alg_probe_reject_total,
+		__atomic_add_fetch(&shm->stats.af_alg_probe.reject_total,
 				   1, __ATOMIC_RELAXED);
 	}
 
@@ -177,7 +177,7 @@ bool af_alg_template_probe(struct childdata *child)
 	 * local short-circuit so they don't re-race next time.  The CAS
 	 * itself is fleet self-election, not a kernel-feature latch, so
 	 * the CAS loser doesn't store a childop_latch_reason. */
-	if (!__atomic_compare_exchange_n(&shm->stats.af_alg_probe_done,
+	if (!__atomic_compare_exchange_n(&shm->stats.af_alg_probe.done,
 					 &expected, 1U, false,
 					 __ATOMIC_ACQ_REL,
 					 __ATOMIC_ACQUIRE)) {
@@ -185,7 +185,7 @@ bool af_alg_template_probe(struct childdata *child)
 		return true;
 	}
 
-	__atomic_add_fetch(&shm->stats.af_alg_probe_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.af_alg_probe.runs, 1, __ATOMIC_RELAXED);
 
 #ifdef USE_IF_ALG
 	/* Front-door check: open one AF_ALG socket up front.  If the
@@ -194,7 +194,7 @@ bool af_alg_template_probe(struct childdata *child)
 	 * generating 12 identical per-template rejections. */
 	sk = socket(AF_ALG, SOCK_SEQPACKET, 0);
 	if (sk < 0) {
-		__atomic_add_fetch(&shm->stats.af_alg_probe_unsupported,
+		__atomic_add_fetch(&shm->stats.af_alg_probe.unsupported,
 				   1, __ATOMIC_RELAXED);
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
@@ -216,7 +216,7 @@ bool af_alg_template_probe(struct childdata *child)
 		run_one_template(i);
 #else
 	(void)i;
-	__atomic_add_fetch(&shm->stats.af_alg_probe_unsupported,
+	__atomic_add_fetch(&shm->stats.af_alg_probe.unsupported,
 			   1, __ATOMIC_RELAXED);
 	if (valid_op)
 		__atomic_store_n(&shm->stats.childop.latch_reason[op],

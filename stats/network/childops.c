@@ -532,21 +532,21 @@ static void dump_stats_render_nl80211_churn(void)
 
 static void dump_stats_render_af_alg_probe(void)
 {
-	if (shm->stats.af_alg_probe_runs || shm->stats.af_alg_probe_unsupported) {
+	if (shm->stats.af_alg_probe.runs || shm->stats.af_alg_probe.unsupported) {
 		unsigned int tmpl;
 
-		stat_row("af_alg_probe", "runs",         shm->stats.af_alg_probe_runs);
-		stat_row("af_alg_probe", "unsupported",  shm->stats.af_alg_probe_unsupported);
-		stat_row("af_alg_probe", "accept_total", shm->stats.af_alg_probe_accept_total);
-		stat_row("af_alg_probe", "reject_total", shm->stats.af_alg_probe_reject_total);
+		stat_row("af_alg_probe", "runs",         shm->stats.af_alg_probe.runs);
+		stat_row("af_alg_probe", "unsupported",  shm->stats.af_alg_probe.unsupported);
+		stat_row("af_alg_probe", "accept_total", shm->stats.af_alg_probe.accept_total);
+		stat_row("af_alg_probe", "reject_total", shm->stats.af_alg_probe.reject_total);
 		for (tmpl = 0; tmpl < NR_AF_ALG_PROBE_TEMPLATES; tmpl++) {
 			char metric[64];
 			const char *label = af_alg_probe_template_label(tmpl);
 
 			snprintf(metric, sizeof(metric), "%s.accept", label);
-			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe_accept[tmpl]);
+			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe.accept[tmpl]);
 			snprintf(metric, sizeof(metric), "%s.reject", label);
-			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe_reject[tmpl]);
+			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe.reject[tmpl]);
 		}
 	}
 }

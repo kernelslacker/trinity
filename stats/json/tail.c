@@ -94,15 +94,15 @@ void dump_stats_json_iouring_zc_and_kvm(void)
 }
 
 static const struct stat_field af_alg_probe_fields[] = {
-	STAT_FIELD(af_alg_probe, runs),
-	STAT_FIELD(af_alg_probe, unsupported),
-	STAT_FIELD(af_alg_probe, accept_total),
-	STAT_FIELD(af_alg_probe, reject_total),
+	STAT_FIELD_SUB(af_alg_probe, runs),
+	STAT_FIELD_SUB(af_alg_probe, unsupported),
+	STAT_FIELD_SUB(af_alg_probe, accept_total),
+	STAT_FIELD_SUB(af_alg_probe, reject_total),
 };
 
 static const struct stat_category af_alg_probe_category =
 	STAT_CATEGORY("af_alg_probe",
-	              af_alg_probe_runs,
+	              af_alg_probe.runs,
 	              af_alg_probe_fields);
 
 static const struct stat_field af_alg_recvmsg_fields[] = {
