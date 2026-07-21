@@ -517,10 +517,10 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		 * no read race -- this child either is or isn't inside its
 		 * own op_fn at this point. */
 		if (child->in_childop) {
-			__atomic_add_fetch(&shm->stats.syscalls_in_childops,
+			__atomic_add_fetch(&shm->stats.syscall_dispatch.in_childops,
 					   1UL, __ATOMIC_RELAXED);
 		} else {
-			__atomic_add_fetch(&shm->stats.syscalls_random,
+			__atomic_add_fetch(&shm->stats.syscall_dispatch.random,
 					   1UL, __ATOMIC_RELAXED);
 		}
 	}

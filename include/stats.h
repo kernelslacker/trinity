@@ -154,6 +154,7 @@
 #include "stats/subsys/statmount_idmap.h"
 #include "stats/subsys/syscall_wedge.h"
 #include "stats/subsys/sysfs_string_race.h"
+#include "stats/subsys/syscall_dispatch.h"
 #include "stats/subsys/sysv_shm_orphan_race.h"
 #include "stats/subsys/tc_live_traffic.h"
 #include "stats/subsys/tc_mirred_blockcast.h"
@@ -1956,10 +1957,9 @@ struct stats_s {
 	unsigned long chain_restype_save[CHAIN_RESTYPE_NR];
 	unsigned long chain_restype_replay_win[CHAIN_RESTYPE_NR];
 
-	unsigned long syscall_walltime_ns;
-	unsigned long syscalls_in_childops;
-	unsigned long syscalls_random;
-	unsigned long random_syscall_dispatches;
+	/* Aggregate syscall-dispatch accounting -- walltime and per-source
+	 * counters.  See stats/subsys/syscall_dispatch.h. */
+	struct syscall_dispatch_stats syscall_dispatch;
 
 	/* Credential-syscall observability oracle + throttle counters.
 	 * See stats/subsys/cred_class.h. */
