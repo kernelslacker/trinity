@@ -232,19 +232,19 @@ static void dump_stats_render_frontier_blend(void)
  * of would_demote_mid / would_boost_high. */
 static void dump_stats_render_reach_band(void)
 {
-	if (shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_LOW] ||
-	    shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_MID] ||
-	    shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_HIGH]) {
+	if (shm->stats.picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_LOW] ||
+	    shm->stats.picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_MID] ||
+	    shm->stats.picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_HIGH]) {
 		stat_row("strategy", "reach_band_picks_low",
-			 shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_LOW]);
+			 shm->stats.picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_LOW]);
 		stat_row("strategy", "reach_band_picks_mid",
-			 shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_MID]);
+			 shm->stats.picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_MID]);
 		stat_row("strategy", "reach_band_picks_high",
-			 shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_HIGH]);
+			 shm->stats.picker_bandit.reach_band_picks_per_band[REACH_BAND_IDX_HIGH]);
 		stat_row("strategy", "reach_band_would_demote_mid",
-			 shm->stats.reach_band_would_demote_mid);
+			 shm->stats.picker_bandit.reach_band_would_demote_mid);
 		stat_row("strategy", "reach_band_would_boost_high",
-			 shm->stats.reach_band_would_boost_high);
+			 shm->stats.picker_bandit.reach_band_would_boost_high);
 	}
 }
 
@@ -289,11 +289,11 @@ static void dump_stats_render_arg_len_semantics(void)
  * struct-field comment in include/stats.h. */
 static void dump_stats_render_wall_lever_eligible(void)
 {
-	if (shm->stats.wall_lever_eligible_total) {
+	if (shm->stats.picker_bandit.wall_lever_eligible_total) {
 		stat_row("strategy", "wall_lever_eligible_total",
-			 shm->stats.wall_lever_eligible_total);
+			 shm->stats.picker_bandit.wall_lever_eligible_total);
 		stat_row("strategy", "wall_lever_would_suppress_total",
-			 shm->stats.wall_lever_would_suppress_total);
+			 shm->stats.picker_bandit.wall_lever_would_suppress_total);
 		stat_row("strategy", "wall_lever_baseline_calls",
 			 __atomic_load_n(&shm->wall_lever_baseline_calls,
 					 __ATOMIC_RELAXED));
@@ -331,7 +331,7 @@ static void dump_stats_render_wall_lever_eligible(void)
 			memset(top_vals, 0, sizeof(top_vals));
 			for (i = 0; i < nr_to_scan; i++) {
 				unsigned long v = __atomic_load_n(
-					&shm->stats.wall_lever_would_suppress[i],
+					&shm->stats.picker_bandit.wall_lever_would_suppress[i],
 					__ATOMIC_RELAXED);
 
 				if (v == 0)
@@ -371,7 +371,7 @@ static void dump_stats_render_wall_lever_eligible(void)
 static void dump_stats_render_wall_lever_running(void)
 {
 	stat_row("strategy", "wall_lever_would_suppress_total",
-		 shm->stats.wall_lever_would_suppress_total);
+		 shm->stats.picker_bandit.wall_lever_would_suppress_total);
 	{
 		unsigned int top_nr[TOP_SYSCALLS_DUMP_TOPN];
 		unsigned long top_vals[TOP_SYSCALLS_DUMP_TOPN];
@@ -394,7 +394,7 @@ static void dump_stats_render_wall_lever_running(void)
 		memset(top_vals, 0, sizeof(top_vals));
 		for (i = 0; i < nr_to_scan; i++) {
 			unsigned long v = __atomic_load_n(
-				&shm->stats.wall_lever_would_suppress[i],
+				&shm->stats.picker_bandit.wall_lever_would_suppress[i],
 				__ATOMIC_RELAXED);
 
 			if (v == 0)
@@ -421,12 +421,12 @@ static void dump_stats_render_wall_lever_running(void)
 
 void dump_stats_strategy_summary(void)
 {
-	if (shm->stats.bandit_cmp_reward_added)
+	if (shm->stats.picker_bandit.cmp_reward_added)
 		stat_row("strategy", "bandit_cmp_reward_added",
-			 shm->stats.bandit_cmp_reward_added);
-	if (shm->stats.bandit_edge_count_reward_added)
+			 shm->stats.picker_bandit.cmp_reward_added);
+	if (shm->stats.picker_bandit.edge_count_reward_added)
 		stat_row("strategy", "bandit_edge_count_reward_added",
-			 shm->stats.bandit_edge_count_reward_added);
+			 shm->stats.picker_bandit.edge_count_reward_added);
 	if (shm->stats.frontier.core.strategy_picks)
 		stat_row("strategy", "frontier_strategy_picks",
 			 shm->stats.frontier.core.strategy_picks);
@@ -556,9 +556,9 @@ void dump_stats_strategy_summary(void)
 			 shm->stats.plateau.forced_windows);
 	dump_stats_render_wall_lever_eligible();
 	dump_stats_render_wall_lever_running();
-	if (shm->stats.strategy_explorer_picks)
+	if (shm->stats.picker_bandit.strategy_explorer_picks)
 		stat_row("strategy", "strategy_explorer_picks",
-			 shm->stats.strategy_explorer_picks);
+			 shm->stats.picker_bandit.strategy_explorer_picks);
 
 	/* Cost-pool one-shot selector observer -- shutdown surface for
 	 * the shadow / live accepted-pick counters bumped from the
