@@ -270,7 +270,7 @@ bool prop_ring_try_get_kind(struct childdata *child,
 			*out = slot->value;
 			if (kcov_shm != NULL)
 				__atomic_fetch_add(
-				    &kcov_shm->prop_ring_kind_consumed[kind],
+				    &kcov_shm->cohorts.prop_ring_kind_consumed[kind],
 				    1UL, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -283,7 +283,7 @@ bool prop_ring_try_get_kind(struct childdata *child,
 			*out = slot->value;
 			if (kcov_shm != NULL)
 				__atomic_fetch_add(
-				    &kcov_shm->prop_ring_kind_escape_fires,
+				    &kcov_shm->cohorts.prop_ring_kind_escape_fires,
 				    1UL, __ATOMIC_RELAXED);
 			return true;
 		}
