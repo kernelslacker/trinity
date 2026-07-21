@@ -223,6 +223,13 @@ struct kcov_shared {
 	unsigned long cmp_hints_canary_pre_corrupt;
 	unsigned long cmp_hints_canary_post_corrupt;
 	} hints_canary;
+	/* A/B cohort child-stamp population counters + per-arm fire counts
+	 * for every ONE_IN(2) stamp taken at init_child_runtime_config time
+	 * (cmp-hint baseline inject, prop_ring argop, prop_ring typed,
+	 * frontier blend, frontier errno_decay, frontier silent_decay,
+	 * remote_adaptive).  All the fields the operator needs to normalise
+	 * per-arm live rates against the realised population split. */
+	struct kcov_ab_cohorts {
 	/* A/B cohort split + per-arm baseline-injection fire counts +
 	 * per-call divergence counter for the cmp-hint baseline inject denom
 	 * A/B (Arm A = 1-in-16, Arm B = 1-in-12).  cmp_inject_arm_{a,b}_
@@ -341,6 +348,7 @@ struct kcov_shared {
 	 * uniform across the A/B rows. */
 	unsigned int  remote_adaptive_arm_a_children;
 	unsigned int  remote_adaptive_arm_b_children;
+	} cohorts;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */

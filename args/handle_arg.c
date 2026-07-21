@@ -186,7 +186,7 @@ unsigned long handle_arg_op(struct syscallentry *entry,
 		if (child != NULL && child->prop_ring_argop_arm_b &&
 		    prop_ring_try_get(child, rec, &val)) {
 			if (kcov_shm != NULL) {
-				__atomic_fetch_add(&kcov_shm->prop_ring_argop_arm_b_fires,
+				__atomic_fetch_add(&kcov_shm->cohorts.prop_ring_argop_arm_b_fires,
 						   1UL, __ATOMIC_RELAXED);
 				__atomic_fetch_add(&kcov_shm->hints_flat.propagation_injected,
 						   1UL, __ATOMIC_RELAXED);
