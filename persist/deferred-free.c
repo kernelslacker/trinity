@@ -643,7 +643,7 @@ void alloc_track_refresh(void *ptr)
 
 	if (ring != NULL) {
 		if (ring_unlock() != RING_UNLOCK_OK) {
-			__atomic_add_fetch(&shm->stats.alloc_track_refresh_unverified_skip,
+			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_refresh_unverified_skip,
 					   1, __ATOMIC_RELAXED);
 			return;
 		}
@@ -652,7 +652,7 @@ void alloc_track_refresh(void *ptr)
 	}
 
 	if (ring_owned) {
-		__atomic_add_fetch(&shm->stats.alloc_track_refresh_ring_owned_skip,
+		__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_refresh_ring_owned_skip,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -667,7 +667,7 @@ void alloc_track_refresh(void *ptr)
 	 */
 	size = alloc_track_lookup_size(ptr);
 	if (!alloc_track_consume(ptr)) {
-		__atomic_add_fetch(&shm->stats.alloc_track_refresh_consume_miss,
+		__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_refresh_consume_miss,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -718,7 +718,7 @@ static void tracked_free_checked(void *ptr, enum tracked_free_site site)
 			parent_stats.deferred_free_corrupt_ptr++;
 		break;
 	case TRACKED_FREE_SITE_IMMEDIATE:
-		__atomic_add_fetch(&shm->stats.deferred_free_reject_untracked,
+		__atomic_add_fetch(&shm->stats.deferred_free.reject_untracked,
 				   1, __ATOMIC_RELAXED);
 		break;
 	}
@@ -763,7 +763,7 @@ void tracked_free_now(void *ptr)
 	 */
 	if (ring != NULL) {
 		if (ring_unlock() != RING_UNLOCK_OK) {
-			__atomic_add_fetch(&shm->stats.deferred_free_tracked_free_unverified_leak,
+			__atomic_add_fetch(&shm->stats.deferred_free.tracked_free_unverified_leak,
 					   1, __ATOMIC_RELAXED);
 			return;
 		}
@@ -772,7 +772,7 @@ void tracked_free_now(void *ptr)
 	}
 
 	if (ring_owned) {
-		__atomic_add_fetch(&shm->stats.deferred_free_ring_owned_skip,
+		__atomic_add_fetch(&shm->stats.deferred_free.ring_owned_skip,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -810,7 +810,7 @@ void cleanup_release_post_state(struct syscallrecord *rec)
 	 * comparable with the matching enqueue-side reject.
 	 */
 	if (!is_in_glibc_heap(ptr)) {
-		__atomic_add_fetch(&shm->stats.deferred_free_reject_non_heap,
+		__atomic_add_fetch(&shm->stats.deferred_free.reject_non_heap,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -825,7 +825,7 @@ void cleanup_release_post_state(struct syscallrecord *rec)
 	 * reject.
 	 */
 	if (range_overlaps_shared((unsigned long) ptr, 1)) {
-		__atomic_add_fetch(&shm->stats.deferred_free_reject_shared_region,
+		__atomic_add_fetch(&shm->stats.deferred_free.reject_shared_region,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -862,7 +862,7 @@ void rec_own(struct syscallrecord *rec, void *ptr)
 	 * is unreachable.
 	 */
 	if (rec->owned_count >= REC_OWNED_MAX) {
-		__atomic_add_fetch(&shm->stats.rec_owned_overflow_to_ring, 1,
+		__atomic_add_fetch(&shm->stats.deferred_free.rec_owned_overflow_to_ring, 1,
 				   __ATOMIC_RELAXED);
 		outputerr("rec_own: rec->owned[] saturated at %u entries for %s; falling back to deferred_free_enqueue_or_leak\n",
 			  REC_OWNED_MAX,
@@ -1019,12 +1019,12 @@ static void deferred_free_read_max_map_count(void)
  */
 static void deferred_free_record_outstanding(unsigned int v)
 {
-	unsigned long cur = __atomic_load_n(&shm->stats.deferred_free_outstanding_vmas,
+	unsigned long cur = __atomic_load_n(&shm->stats.deferred_free.outstanding_vmas,
 					    __ATOMIC_RELAXED);
 
 	while (v > cur) {
 		if (__atomic_compare_exchange_n(
-				&shm->stats.deferred_free_outstanding_vmas,
+				&shm->stats.deferred_free.outstanding_vmas,
 				&cur, (unsigned long)v, false,
 				__ATOMIC_RELAXED, __ATOMIC_RELAXED))
 			return;
@@ -1167,7 +1167,7 @@ static bool deferred_free_reject_misaligned(void *ptr, void *caller_pc)
 			  "ptr=%p caller=%s [%lu cumulative]\n", ptr,
 			  pc_to_string(caller_pc, pcbuf, sizeof(pcbuf)), n);
 	}
-	__atomic_add_fetch(&shm->stats.deferred_free_reject_misaligned, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.deferred_free.reject_misaligned, 1, __ATOMIC_RELAXED);
 	return true;
 }
 
@@ -1190,7 +1190,7 @@ static bool deferred_free_reject_corrupt_shape(void *ptr, void *caller_pc)
 	outputerr("deferred_free_enqueue: rejected suspicious ptr=%p "
 		  "(pid-scribbled?)\n", ptr);
 	deferred_free_reject_bump(caller_pc);
-	__atomic_add_fetch(&shm->stats.deferred_free_reject_corrupt_shape, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.deferred_free.reject_corrupt_shape, 1, __ATOMIC_RELAXED);
 	return true;
 }
 
@@ -1230,7 +1230,7 @@ static bool deferred_free_reject_outside_heap(void *ptr, void *caller_pc)
 				   0, 1);
 	else
 		parent_stats.snapshot_non_heap_reject++;
-	__atomic_add_fetch(&shm->stats.deferred_free_reject_non_heap, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.deferred_free.reject_non_heap, 1, __ATOMIC_RELAXED);
 	return true;
 }
 
@@ -1280,7 +1280,7 @@ static void ring_evict_oldest_safe(void)
 			parent_stats.ring_eviction_corrupt++;
 	} else {
 		inflight_hash_remove(evict_ptr);
-		__atomic_add_fetch(&shm->stats.ring_evict_leaked,
+		__atomic_add_fetch(&shm->stats.deferred_free.ring_evict_leaked,
 				   1, __ATOMIC_RELAXED);
 	}
 	ring[oldest].ptr = NULL;
@@ -1356,7 +1356,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 				  pc_to_string(caller_pc, pcbuf, sizeof(pcbuf)), n);
 		}
 		deferred_free_reject_bump(caller_pc);
-		__atomic_add_fetch(&shm->stats.deferred_free_reject_untracked, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.deferred_free.reject_untracked, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -1387,7 +1387,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 				  "[%lu cumulative]\n", ptr,
 				  pc_to_string(caller_pc, pcbuf, sizeof(pcbuf)), n);
 		}
-		__atomic_add_fetch(&shm->stats.deferred_free_reject_shared_region, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.deferred_free.reject_shared_region, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -1417,10 +1417,10 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * untracked instead of being silently freed.
 	 */
 	if (ring_count > g_max_vmas / 2) {
-		__atomic_add_fetch(&shm->stats.deferred_free_vma_fallback_immediate,
+		__atomic_add_fetch(&shm->stats.deferred_free.vma_fallback_immediate,
 				   1, __ATOMIC_RELAXED);
 		if (leak_on_pressure) {
-			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
+			__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
 		} else {
 			tracked_free_checked(ptr,
@@ -1439,7 +1439,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 */
 	if (ring == NULL) {
 		if (leak_on_pressure) {
-			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
+			__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
 		} else {
 			tracked_free_checked(ptr,
@@ -1477,11 +1477,11 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 		enum ring_unlock_result r = ring_unlock();
 
 		if (r == RING_UNLOCK_ENOMEM) {
-			__atomic_add_fetch(&shm->stats.deferred_free_enomem_drain,
+			__atomic_add_fetch(&shm->stats.deferred_free.enomem_drain,
 					   1, __ATOMIC_RELAXED);
 			ring_dispose_after_enomem();
 			if (leak_on_pressure) {
-				__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
+				__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 						   1, __ATOMIC_RELAXED);
 			} else {
 				tracked_free_checked(ptr,
@@ -1491,7 +1491,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 		}
 		if (r != RING_UNLOCK_OK) {
 			if (leak_on_pressure) {
-				__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
+				__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 						   1, __ATOMIC_RELAXED);
 			} else {
 				tracked_free_checked(ptr,
@@ -1517,7 +1517,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 */
 	if (ring_contains(ptr)) {
 		ring_lock();
-		__atomic_add_fetch(&shm->stats.deferred_free_double_admit_skip,
+		__atomic_add_fetch(&shm->stats.deferred_free.double_admit_skip,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -1537,7 +1537,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	if (occupied_mask == ~0ULL) {
 		ring_lock();
 		if (leak_on_pressure) {
-			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
+			__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
 		} else {
 			tracked_free_checked(ptr,
@@ -1742,7 +1742,7 @@ void deferred_free_tick(void)
 	 */
 	r = ring_unlock();
 	if (r == RING_UNLOCK_ENOMEM) {
-		__atomic_add_fetch(&shm->stats.deferred_free_rw_restore_enomem,
+		__atomic_add_fetch(&shm->stats.deferred_free.rw_restore_enomem,
 				   1, __ATOMIC_RELAXED);
 		ring_dispose_after_enomem();
 		return;
@@ -1830,7 +1830,7 @@ void deferred_free_flush(void)
 	 */
 	r = ring_unlock();
 	if (r == RING_UNLOCK_ENOMEM) {
-		__atomic_add_fetch(&shm->stats.deferred_free_rw_restore_enomem,
+		__atomic_add_fetch(&shm->stats.deferred_free.rw_restore_enomem,
 				   1, __ATOMIC_RELAXED);
 		ring_dispose_after_enomem();
 		return;

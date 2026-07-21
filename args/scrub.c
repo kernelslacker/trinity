@@ -50,7 +50,7 @@ static bool nested_scrub_base_unsafe(unsigned long base)
 	const void *p = (const void *) base;
 
 	if (is_corrupt_ptr_shape(p) || !is_in_glibc_heap(p)) {
-		__atomic_add_fetch(&shm->stats.nested_scrub_reject_untracked,
+		__atomic_add_fetch(&shm->stats.deferred_free.nested_scrub_reject_untracked,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}

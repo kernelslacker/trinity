@@ -142,7 +142,7 @@ void cleanup_release_post_state(struct syscallrecord *rec);
  *
  * Overflow handling: rec->owned[] is bounded at REC_OWNED_MAX.  On
  * saturation we fall back to deferred_free_enqueue(ptr) and bump
- * shm->stats.rec_owned_overflow_to_ring so the rate is observable.
+ * shm->stats.deferred_free.rec_owned_overflow_to_ring so the rate is observable.
  * This intentionally trades the owned-list's no-UAF guarantee for a
  * (still bounded) leak / sync-free under the ring's pressure rails:
  * REC_OWNED_MAX is sized so the fallback is a safety net, not a
