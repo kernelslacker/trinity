@@ -205,13 +205,13 @@ void __cold stats_runid_snapshot_start(void)
 	run_start.monotonic_at_start = runid_monotonic_seconds();
 	if (kcov_shm != NULL) {
 		run_start.edges_found = __atomic_load_n(
-			&kcov_shm->edges_found, __ATOMIC_RELAXED);
+			&kcov_shm->coverage.edges_found, __ATOMIC_RELAXED);
 		run_start.distinct_edges = __atomic_load_n(
-			&kcov_shm->distinct_edges, __ATOMIC_RELAXED);
+			&kcov_shm->coverage.distinct_edges, __ATOMIC_RELAXED);
 		run_start.edges_warm_loaded = __atomic_load_n(
-			&kcov_shm->edges_warm_loaded, __ATOMIC_RELAXED);
+			&kcov_shm->coverage.edges_warm_loaded, __ATOMIC_RELAXED);
 		run_start.distinct_edges_warm_loaded = __atomic_load_n(
-			&kcov_shm->distinct_edges_warm_loaded,
+			&kcov_shm->coverage.distinct_edges_warm_loaded,
 			__ATOMIC_RELAXED);
 	}
 	run_start.corpus_entries = runid_corpus_entries_total();
@@ -525,9 +525,9 @@ void __cold stats_runid_render(void)
 	(void)runid_read_boot_id(boot_id, sizeof(boot_id));
 
 	if (kcov_shm != NULL) {
-		end_edges = __atomic_load_n(&kcov_shm->edges_found,
+		end_edges = __atomic_load_n(&kcov_shm->coverage.edges_found,
 					    __ATOMIC_RELAXED);
-		end_distinct = __atomic_load_n(&kcov_shm->distinct_edges,
+		end_distinct = __atomic_load_n(&kcov_shm->coverage.distinct_edges,
 					       __ATOMIC_RELAXED);
 	}
 	end_corpus = runid_corpus_entries_total();

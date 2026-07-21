@@ -464,17 +464,17 @@ static void __cold dump_kcov_state(FILE *fp)
 		return;
 	}
 
-	edges         = __atomic_load_n(&kcov_shm->edges_found,           __ATOMIC_RELAXED);
+	edges         = __atomic_load_n(&kcov_shm->coverage.edges_found,           __ATOMIC_RELAXED);
 	/* total_pcs / total_calls / remote_calls migrated off the kcov_shm
 	 * atomics onto per-child staged counters drained into parent_stats;
-	 * the kcov_shm->total_calls field is retained as the stamp source
+	 * the kcov_shm->coverage.total_calls field is retained as the stamp source
 	 * for last_edge_at[] / last_efault_at[] and the cold-skip gap
 	 * denominator only, the other two shm fields are no longer bumped.
 	 * See stats_ring.h. */
 	pcs           = parent_stats.total_pcs;
 	calls         = parent_stats.total_calls;
 	remote        = parent_stats.remote_calls;
-	truncated     = __atomic_load_n(&kcov_shm->trace_truncated,       __ATOMIC_RELAXED);
+	truncated     = __atomic_load_n(&kcov_shm->coverage.trace_truncated,       __ATOMIC_RELAXED);
 	cmp_records   = __atomic_load_n(&kcov_shm->cmp_records_collected, __ATOMIC_RELAXED);
 	cmp_truncated = __atomic_load_n(&kcov_shm->cmp_trace_truncated,   __ATOMIC_RELAXED);
 

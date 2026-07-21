@@ -434,7 +434,7 @@ void main_loop(void)
 	/* Capture the run-identity baseline (edges_found / distinct_edges
 	 * / corpus_entries) on the very first entry into main_loop, which
 	 * is the post-warm-load point: trinity.c's warm_start_all() has
-	 * already populated kcov_shm->edges_warm_loaded and the per-
+	 * already populated kcov_shm->coverage.edges_warm_loaded and the per-
 	 * syscall corpus rings, so this snapshot is the "where this run
 	 * picked up from" baseline that the shutdown render computes
 	 * own-start deltas against.  Idempotent inside the function so

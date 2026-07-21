@@ -235,7 +235,7 @@ struct minicorpus_shared {
 	unsigned long chain_substitution_count;
 
 	/* Edge-count high-water-mark for the last periodic mid-run snapshot.
-	 * minicorpus_maybe_snapshot() compares kcov_shm->edges_found against
+	 * minicorpus_maybe_snapshot() compares kcov_shm->coverage.edges_found against
 	 * this value and, when the gap reaches MINICORPUS_SNAPSHOT_EDGES, races
 	 * to advance the field via compare-exchange.  The single CAS winner
 	 * triggers the save; losers see the new high-water-mark on their next
@@ -571,7 +571,7 @@ void minicorpus_enable_snapshots(const char *path);
  * the next snapshot via compare-exchange.  The single winning caller
  * runs minicorpus_save_file() to the configured path; everyone else
  * early-returns.  Cheap fast path on the no-trigger case (one atomic
- * load each from kcov_shm->edges_found and the high-water-mark, plus
+ * load each from kcov_shm->coverage.edges_found and the high-water-mark, plus
  * a comparison).  Safe to call from any child after every kcov edge
  * event. */
 void minicorpus_maybe_snapshot(void);

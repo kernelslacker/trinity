@@ -2310,7 +2310,7 @@ void minicorpus_maybe_snapshot(void)
 	    kcov_shm == NULL || shm == NULL)
 		return;
 
-	edges_now = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
+	edges_now = __atomic_load_n(&kcov_shm->coverage.edges_found, __ATOMIC_RELAXED);
 	old = __atomic_load_n(&minicorpus_shm->edges_at_last_snapshot,
 			      __ATOMIC_RELAXED);
 	old_time = __atomic_load_n(&shm->stats.minicorpus.last_snapshot_time,

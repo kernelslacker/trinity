@@ -160,7 +160,7 @@ void kcov_init_global(void)
 	output(0, "KCOV: coverage collection enabled (%lu MB bucket-seen table, %u edges, %u buckets; counters: distinct_edges=%lu, edges_found=%lu bucket-transitions)\n",
 		(unsigned long)KCOV_NUM_EDGES / (1024 * 1024),
 		KCOV_NUM_EDGES, KCOV_NUM_BUCKETS,
-		kcov_shm->distinct_edges, kcov_shm->edges_found);
+		kcov_shm->coverage.distinct_edges, kcov_shm->coverage.edges_found);
 	output(0, "KCOV: shadow transition coverage mode=%s (%lu MB transition map, %lu slots)\n",
 		kcov_transition_coverage_mode == KCOV_TRANSITION_COVERAGE_SHADOW
 			? "shadow" : "off",
@@ -518,7 +518,7 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
  * and bumps parent_stats.ring_overflow_total -- the staged delta is
  * still zeroed here so the next flush does not double-publish.  The
  * dump path's "total_calls" is best-effort by construction (the
- * pre-existing kcov_shm->total_calls atomic was a relaxed bump
+ * pre-existing kcov_shm->coverage.total_calls atomic was a relaxed bump
  * anyway), so a dropped batch surfaces as a small undercount with
  * the overflow counter as the diagnostic.
  */
