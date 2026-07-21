@@ -1171,14 +1171,14 @@ static void arena_liveness_probe(struct syscallentry *entry,
 		if (arena_ptr_liveness(slot, need) != ARENA_PTR_STALE)
 			continue;
 
-		__atomic_add_fetch(&shm->stats.arena_ptr_stale_caught_arg,
+		__atomic_add_fetch(&shm->stats.diag.arena_ptr_stale_caught_arg,
 				   1, __ATOMIC_RELAXED);
 		arena_stale_warn_ratelimited(entry, "arg", slot);
 	}
 
 	if (rec->post_state != 0 &&
 	    arena_ptr_liveness(rec->post_state, need) == ARENA_PTR_STALE) {
-		__atomic_add_fetch(&shm->stats.arena_ptr_stale_caught_post_state,
+		__atomic_add_fetch(&shm->stats.diag.arena_ptr_stale_caught_post_state,
 				   1, __ATOMIC_RELAXED);
 		arena_stale_warn_ratelimited(entry, "post_state",
 					     rec->post_state);
@@ -1208,7 +1208,7 @@ static void syscall_ret_validate_phase(struct syscallrecord *rec,
 		uint64_t observed = rec->_canary;
 
 		if (unlikely(observed != REC_CANARY_MAGIC)) {
-			__atomic_add_fetch(&shm->stats.rec_canary_stomped, 1,
+			__atomic_add_fetch(&shm->stats.diag.rec_canary_stomped, 1,
 					   __ATOMIC_RELAXED);
 			pre_crash_ring_record_canary(this_child(), rec, observed);
 			canary_stomp_warn_ratelimited(entry, observed);
@@ -1297,7 +1297,7 @@ static void syscall_ret_validate_phase(struct syscallrecord *rec,
 	 * site). */
 	if (unlikely(effective_rettype(entry, rec) == RET_ZERO_SUCCESS &&
 		     rec->retval != 0 && rec->retval != -1UL)) {
-		__atomic_add_fetch(&shm->stats.rzs_blanket_reject, 1,
+		__atomic_add_fetch(&shm->stats.diag.rzs_blanket_reject, 1,
 				   __ATOMIC_RELAXED);
 		outputerr("rzs: rejecting out-of-bound retval=0x%lx for %s\n",
 			  rec->retval, entry->name);
@@ -1330,7 +1330,7 @@ static void syscall_ret_validate_phase(struct syscallrecord *rec,
 	 * per-syscall breakdown. */
 	*retfd_rejected = reject_corrupt_retfd(entry, rec);
 	if (*retfd_rejected)
-		__atomic_add_fetch(&shm->stats.retfd_blanket_reject, 1,
+		__atomic_add_fetch(&shm->stats.diag.retfd_blanket_reject, 1,
 				   __ATOMIC_RELAXED);
 }
 

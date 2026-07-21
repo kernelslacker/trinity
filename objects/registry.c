@@ -705,7 +705,7 @@ static struct object *objhead_indexed_read(struct objhead *head, unsigned int id
 	if ((uintptr_t)arr < 0x10000UL ||
 	    (uintptr_t)arr >= 0x800000000000UL ||
 	    !is_in_glibc_heap(arr)) {
-		__atomic_add_fetch(&shm->stats.objpool_array_stale_caught, 1,
+		__atomic_add_fetch(&shm->stats.diag.objpool_array_stale_caught, 1,
 				   __ATOMIC_RELAXED);
 		return NULL;
 	}
@@ -717,7 +717,7 @@ static struct object *objhead_indexed_read(struct objhead *head, unsigned int id
 	 * already have handed back to glibc.  Bail before the read fires.
 	 */
 	if (head->array_generation != gen0) {
-		__atomic_add_fetch(&shm->stats.objpool_array_stale_caught, 1,
+		__atomic_add_fetch(&shm->stats.diag.objpool_array_stale_caught, 1,
 				   __ATOMIC_RELAXED);
 		return NULL;
 	}
@@ -725,7 +725,7 @@ static struct object *objhead_indexed_read(struct objhead *head, unsigned int id
 	obj = arr[idx];
 
 	if (head->array_generation != gen0) {
-		__atomic_add_fetch(&shm->stats.objpool_array_stale_caught, 1,
+		__atomic_add_fetch(&shm->stats.diag.objpool_array_stale_caught, 1,
 				   __ATOMIC_RELAXED);
 		return NULL;
 	}
@@ -766,13 +766,13 @@ bool objpool_check(const struct object *obj, enum objecttype expected)
 
 	if ((uintptr_t)obj < 0x10000UL ||
 	    (uintptr_t)obj >= 0x800000000000UL) {
-		__atomic_add_fetch(&shm->stats.global_obj_uaf_caught, 1,
+		__atomic_add_fetch(&shm->stats.diag.global_obj_uaf_caught, 1,
 				   __ATOMIC_RELAXED);
 		return false;
 	}
 
 	if (obj->obj_type != expected) {
-		__atomic_add_fetch(&shm->stats.global_obj_uaf_caught, 1,
+		__atomic_add_fetch(&shm->stats.diag.global_obj_uaf_caught, 1,
 				   __ATOMIC_RELAXED);
 		return false;
 	}
@@ -834,7 +834,7 @@ void __destroy_object(struct object *obj, enum obj_scope scope,
 	 */
 	idx = obj->array_idx;
 	if (idx >= n || head->array[idx] != obj) {
-		__atomic_add_fetch(&shm->stats.destroy_object_idx_corrupt, 1,
+		__atomic_add_fetch(&shm->stats.diag.destroy_object_idx_corrupt, 1,
 				   __ATOMIC_RELAXED);
 		return;
 	}

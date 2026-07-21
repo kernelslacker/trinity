@@ -241,10 +241,10 @@ static void dump_stats_render_ring_corruption(void)
 		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd.event_ring_corrupted);
 	if (shm->stats.fd.event_ring_overwritten)
 		stat_row("corruption", "fd_event_ring_canary",   shm->stats.fd.event_ring_overwritten);
-	if (shm->stats.stats_ring_corrupted)
-		stat_row("corruption", "stats_ring_noncanon",    shm->stats.stats_ring_corrupted);
-	if (shm->stats.stats_ring_overwritten)
-		stat_row("corruption", "stats_ring_canary",      shm->stats.stats_ring_overwritten);
+	if (shm->stats.diag.stats_ring_corrupted)
+		stat_row("corruption", "stats_ring_noncanon",    shm->stats.diag.stats_ring_corrupted);
+	if (shm->stats.diag.stats_ring_overwritten)
+		stat_row("corruption", "stats_ring_canary",      shm->stats.diag.stats_ring_overwritten);
 	if (shm->stats.fd.event_payload_corrupt)
 		stat_row("corruption", "fd_event_payload",       shm->stats.fd.event_payload_corrupt);
 	dump_stats_render_ring_health();
@@ -357,27 +357,27 @@ static void dump_stats_render_scribble_canary_blanket(void)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (parent_stats.lock_word_scribbled)
 		stat_row("corruption", "lock_word_scribbled",   parent_stats.lock_word_scribbled);
-	if (shm->stats.lock_held_scribble)
-		stat_row("corruption", "lock_held_scribble",    shm->stats.lock_held_scribble);
-	if (shm->stats.rec_canary_stomped)
-		stat_row("corruption", "rec_canary_stomped",     shm->stats.rec_canary_stomped);
+	if (shm->stats.diag.lock_held_scribble)
+		stat_row("corruption", "lock_held_scribble",    shm->stats.diag.lock_held_scribble);
+	if (shm->stats.diag.rec_canary_stomped)
+		stat_row("corruption", "rec_canary_stomped",     shm->stats.diag.rec_canary_stomped);
 	if (shm->stats.plateau.mut_attrib_inversion_caught)
 		stat_row("corruption", "mut_attrib_inversion_caught",
 			 shm->stats.plateau.mut_attrib_inversion_caught);
-	if (shm->stats.rzs_blanket_reject)
-		stat_row("corruption", "rzs_blanket_reject",     shm->stats.rzs_blanket_reject);
-	if (shm->stats.retfd_blanket_reject)
-		stat_row("corruption", "retfd_blanket_reject",   shm->stats.retfd_blanket_reject);
+	if (shm->stats.diag.rzs_blanket_reject)
+		stat_row("corruption", "rzs_blanket_reject",     shm->stats.diag.rzs_blanket_reject);
+	if (shm->stats.diag.retfd_blanket_reject)
+		stat_row("corruption", "retfd_blanket_reject",   shm->stats.diag.retfd_blanket_reject);
 }
 
 static void dump_stats_render_arena_ptr_stale_and_sentinel(void)
 {
-	if (shm->stats.arena_ptr_stale_caught_arg)
+	if (shm->stats.diag.arena_ptr_stale_caught_arg)
 		stat_row("corruption", "arena_ptr_stale_caught_arg",
-			 shm->stats.arena_ptr_stale_caught_arg);
-	if (shm->stats.arena_ptr_stale_caught_post_state)
+			 shm->stats.diag.arena_ptr_stale_caught_arg);
+	if (shm->stats.diag.arena_ptr_stale_caught_post_state)
 		stat_row("corruption", "arena_ptr_stale_caught_post_state",
-			 shm->stats.arena_ptr_stale_caught_post_state);
+			 shm->stats.diag.arena_ptr_stale_caught_post_state);
 	/*
 	 * Standalone grep-friendly cumulative lines for the arena_ptr_stale
 	 * pair.  The stat_rows above are gated on non-zero, and the JSON +
@@ -391,19 +391,19 @@ static void dump_stats_render_arena_ptr_stale_and_sentinel(void)
 	 * total or grep -c the suffix to count windows.
 	 */
 	output(0, "[main] arena_ptr_stale_caught_arg_cumulative=%lu\n",
-	       shm->stats.arena_ptr_stale_caught_arg);
+	       shm->stats.diag.arena_ptr_stale_caught_arg);
 	output(0, "[main] arena_ptr_stale_caught_post_state_cumulative=%lu\n",
-	       shm->stats.arena_ptr_stale_caught_post_state);
-	if (shm->stats.sibling_mprotect_failed)
-		stat_row("corruption", "sibling_mprotect_failed", shm->stats.sibling_mprotect_failed);
+	       shm->stats.diag.arena_ptr_stale_caught_post_state);
+	if (shm->stats.diag.sibling_mprotect_failed)
+		stat_row("corruption", "sibling_mprotect_failed", shm->stats.diag.sibling_mprotect_failed);
 	dump_stats_render_divergence_sentinel();
 	if (shm->stats.divergence_sentinel.expected_drift)
 		stat_row("corruption", "divergence_sentinel_expected_drift",
 			 shm->stats.divergence_sentinel.expected_drift);
-	if (shm->stats.destroy_object_idx_corrupt)
-		stat_row("corruption", "destroy_object_idx",     shm->stats.destroy_object_idx_corrupt);
-	if (shm->stats.global_obj_uaf_caught)
-		stat_row("corruption", "global_obj_uaf_caught",  shm->stats.global_obj_uaf_caught);
+	if (shm->stats.diag.destroy_object_idx_corrupt)
+		stat_row("corruption", "destroy_object_idx",     shm->stats.diag.destroy_object_idx_corrupt);
+	if (shm->stats.diag.global_obj_uaf_caught)
+		stat_row("corruption", "global_obj_uaf_caught",  shm->stats.diag.global_obj_uaf_caught);
 }
 
 static void dump_stats_render_maps_pool_rejects(void)
@@ -435,12 +435,12 @@ static void dump_stats_render_late_corruption_oracle(void)
 {
 	if (shm->stats.chain_restype.replay_len_corrupt)
 		stat_row("corruption", "chain_replay_len_corrupt", shm->stats.chain_restype.replay_len_corrupt);
-	if (shm->stats.pagecache_canary_corrupt_caught)
+	if (shm->stats.diag.pagecache_canary_corrupt_caught)
 		stat_row("oracle", "pagecache_canary_corrupt_caught",
-			 shm->stats.pagecache_canary_corrupt_caught);
-	if (shm->stats.objpool_array_stale_caught)
+			 shm->stats.diag.pagecache_canary_corrupt_caught);
+	if (shm->stats.diag.objpool_array_stale_caught)
 		stat_row("corruption", "objpool_array_stale_caught",
-			 shm->stats.objpool_array_stale_caught);
+			 shm->stats.diag.objpool_array_stale_caught);
 }
 
 void dump_stats_corruption_and_pool(void)

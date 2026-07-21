@@ -57,6 +57,7 @@
 #include "stats/subsys/cred_transition.h"
 #include "stats/subsys/deep_path.h"
 #include "stats/subsys/deferred_free.h"
+#include "stats/subsys/diag.h"
 #include "stats/subsys/devlink_port_churn.h"
 #include "stats/subsys/divergence_sentinel.h"
 #include "stats/subsys/epoll_volatility.h"
@@ -352,7 +353,6 @@ struct stats_s {
 	 * Without the clamp dirty_mapping (and later get_map() consumers) walk
 	 * pages past EOF and SIGBUS with BUS_ADRERR — a trinity self-bug that
 	 * burns the child before it can contribute to coverage. */
-	unsigned long mmap_size_clamped;
 
 	/* sanitise_statmount() bailed before assigning rec->aN because the
 	 * csfu mnt_id_req allocation came back NULL.  Without this counter
@@ -360,7 +360,6 @@ struct stats_s {
 	 * silently-zero op in the dispatch histogram -- the syscall path
 	 * has no other place to record a pre-syscall abort.  Bumped from
 	 * sanitise_statmount; the post handler stays untouched. */
-	unsigned long statmount_setup_fail;
 
 	/* check_output_struct() in a post handler saw the ARG_STRUCT_PTR_OUT
 	 * buffer still byte-for-byte equal to the poison pattern that
@@ -405,7 +404,6 @@ struct stats_s {
 	 * have been an OOB head->array[] read into a NULL return; the write-
 	 * side bumper converted what would have been a doubling loop to
 	 * satisfy a stomped target into an early release_obj. */
-	unsigned long local_obj_num_entries_corrupted;
 
 	/* handle_syscall_ret() found rec->_canary != REC_CANARY_MAGIC on
 	 * entry — the entire syscallrecord was rewritten between BEFORE
@@ -418,7 +416,6 @@ struct stats_s {
 	 * already returned and the mismatched data is past being trusted
 	 * anyway.  See pre_crash_ring entry kind PRE_CRASH_KIND_CANARY for
 	 * the matching context capture. */
-	unsigned long rec_canary_stomped;
 
 	/* unlock() sampled the lock word pre-release and saw
 	 * LOCK_RESERVED_DIRTY(state) non-zero -- the reserved bits 1..31
@@ -433,7 +430,6 @@ struct stats_s {
 	 * refuse the release on a dirty word -- refusing would leave the
 	 * lock permanently held and deadlock every waiter; the headline
 	 * counter is enough to surface the event. */
-	unsigned long lock_held_scribble;
 
 	/* handle_syscall_ret() observed rec->retval outside the {0, -1UL}
 	 * contract on a syscall whose per-call rettype was RET_ZERO_SUCCESS.
@@ -451,7 +447,6 @@ struct stats_s {
 	 * rzs_blanket_reject has its own storage, separate from
 	 * post_handler_corrupt_ptr, because sharing would inflate the
 	 * post_handler_corrupt_ptr headline ~9x at ~2/s steady-state. */
-	unsigned long rzs_blanket_reject;
 
 	/* handle_syscall_ret() saw reject_corrupt_retfd() flag a structurally
 	 * out-of-bound rec->retval on a RET_FD-class syscall (negative,
@@ -468,7 +463,6 @@ struct stats_s {
 	 * per-handler ring (already invoked from inside
 	 * reject_corrupt_retfd()), so this counter is the headline tally and
 	 * the per-handler ring carries the breakdown. */
-	unsigned long retfd_blanket_reject;
 
 	/* handle_syscall_ret() observed a page-aligned, arena-band-shaped
 	 * pointer in either an ARG_ADDRESS / ARG_NON_NULL_ADDRESS slot of
@@ -500,8 +494,6 @@ struct stats_s {
 	 * of the slot would just scribble shared rec state without changing
 	 * the syscall outcome.  Downstream consumers must take their own
 	 * explicit skip path on a stale slot. */
-	unsigned long arena_ptr_stale_caught_arg;
-	unsigned long arena_ptr_stale_caught_post_state;
 
 	/* sanitise_execve() refused to let an execve / execveat fire because
 	 * the resolved target inode matched trinity's own binary -- the path
@@ -515,7 +507,6 @@ struct stats_s {
 	 * fleets eat the process table fast enough to trip the parent's
 	 * fork-retry budget and wedge the main loop.  Always-on; no CLI
 	 * knob.  See sanitise_execve() for the (dev, ino) compare site. */
-	unsigned long execve_self_exec_blocked;
 
 	/* init_child()'s sibling-freeze step issues mprotect(PROT_READ) on
 	 * every other child's childdata (and on the shared pids[] array) so
@@ -529,7 +520,6 @@ struct stats_s {
 	 * for that sibling pair.  We don't abort the child on a single
 	 * failure (best-effort hardening), but the counter lets us tell
 	 * whether the failure is rare or a real runtime vector. */
-	unsigned long sibling_mprotect_failed;
 
 	/* init_child() bumps shm->sibling_freeze_gen after its for_each_child
 	 * mprotect loop completes; each child re-checks the gen at the top of
@@ -541,7 +531,6 @@ struct stats_s {
 	 * runaway count (e.g. tens of refreezes per second long after
 	 * startup) would indicate constant child churn — useful signal when
 	 * paired with reaper / SEGV stats. */
-	unsigned long sibling_refreeze_count;
 
 	/* periodic_work re-issues a curated set of "should be deterministic
 	 * across short windows" syscalls (uname, sysinfo, getrlimit/prlimit64
@@ -770,7 +759,6 @@ struct stats_s {
 	 * mask read back larger than ring->sq_entries -- a sibling op had
 	 * stomped the mask, which would have steered fill_sqe past the SQE
 	 * array and faulted on an unmapped page. */
-	unsigned long iouring_enter_mask_corrupt;
 
 	/* watchdog signal-handler clobber + reinstall accounting.  See
 	 * stats/subsys/watchdog_signal.h. */
@@ -1061,7 +1049,6 @@ struct stats_s {
 	 * push variant.  Skipped pushes (dedup against most recent slot,
 	 * pointer-shape or fd-alias rejections, out-of-range) do NOT bump
 	 * this -- the counter tracks publications, not call-attempts. */
-	unsigned long propagation_injected_key_scalar;
 
 	/* eBPF program-generator counters (fds/bpf provisioning + net/bpf/
 	 * ebpf.c generator side-effects).  See stats/subsys/ebpf_gen.h. */
@@ -1079,7 +1066,6 @@ struct stats_s {
 	 * range_overlaps_shared() relies on the bitmap, which the overflow
 	 * path still sets, but a tail-exhaust BUG()s rather than under-
 	 * protect. */
-	unsigned long shared_region_overflow;
 
 	/* fd-pool RAW observability -- ring-pointer canary rejections,
 	 * event ring-full drop attribution, per-provider outstanding
@@ -1090,12 +1076,10 @@ struct stats_s {
 	/* stats_ring_drain_all() found a child->stats_ring pointer that
 	 * failed the canonical-address / minimum-address sanity check.
 	 * Same defense-in-depth role as fd_event_ring_corrupted. */
-	unsigned long stats_ring_corrupted;
 
 	/* stats_ring_drain_all() found a live child->stats_ring that
 	 * differed from the canary copy taken at init time.  Indicates
 	 * the pointer was overwritten after init. */
-	unsigned long stats_ring_overwritten;
 
 	/* __destroy_object() rejected an obj whose array_idx didn't pass
 	 * the head->array[array_idx] == obj invariant — either the index
@@ -1105,7 +1089,6 @@ struct stats_s {
 	 * past head->array[num_entries) or destroy the unrelated object
 	 * occupying that slot.  The destroy is dropped (no free, no
 	 * destructor) and counted here. */
-	unsigned long destroy_object_idx_corrupt;
 
 	/* Bumped by objpool_check() on the bad-VA and wrong-type-tag
 	 * rejection paths — i.e. the picker resolved a slot to an
@@ -1116,7 +1099,6 @@ struct stats_s {
 	 * deferred-free allocator can hand it back under the lockless
 	 * reader) before dereferencing it.  The NULL/empty-pool path
 	 * is not counted here. */
-	unsigned long global_obj_uaf_caught;
 
 	/* Bumped by childops/mm/pagecache-canary-check.c when a verifier
 	 * read returned a byte that did not match the deterministic
@@ -1128,7 +1110,6 @@ struct stats_s {
 	 * a divergence (the verifier logs offset+expected/actual
 	 * windows and continues, so multiple invocations against the
 	 * same corrupted file each contribute one bump). */
-	unsigned long pagecache_canary_corrupt_caught;
 
 	/* objhead_indexed_read() rejected a pick whose array snapshot
 	 * either failed the cheap stateless provenance check on the
@@ -1141,7 +1122,6 @@ struct stats_s {
 	 * Non-zero here means the array-generation gate caught the same
 	 * UAF class the 0117 ASAN run flagged at get_random_object()'s
 	 * head->array[idx] load. */
-	unsigned long objpool_array_stale_caught;
 
 	/* mmap-pool pick/reject accounting.  See stats/subsys/maps.h. */
 	struct maps_stats maps __attribute__((aligned(64)));
@@ -1150,6 +1130,10 @@ struct stats_s {
 	 * trio, ring-owned/double-admit guards, alloc_track refresh guards.  See
 	 * stats/subsys/deferred_free.h. */
 	struct deferred_free_stats deferred_free;
+
+	/* Diagnostic / canary / corruption-guard residue counters
+	 * (single-signal defense-in-depth signals).  See stats/subsys/diag.h. */
+	struct diag_stats diag;
 
 
 	/* Per-call abort counter for random_map_readfn().  Bumped each time
@@ -1162,7 +1146,6 @@ struct stats_s {
 	 * file-backed mmaps and the sibling-munmap rate against anon
 	 * mappings — both are TOCTOU windows the local-snapshot+fstat clamp
 	 * narrows but cannot fully close. */
-	unsigned long read_walk_aborted;
 
 	/* Per-call abort counter for random_map_writefn().  Bumped each time
 	 * the per-page user store in one of the write walks (dirty_one_page,
@@ -1176,7 +1159,6 @@ struct stats_s {
 	 * madvise(MADV_REMOVE) and ftruncate-shrink race rate that the
 	 * pre-dispatch fstat cannot catch (st_size unchanged for hole punch,
 	 * shrunk between clamp and store for ftruncate). */
-	unsigned long write_walk_aborted;
 
 	/* STRATEGY_COVERAGE_FRONTIER picker observability -- pick regimes,
 	 * per-syscall distributions, silent-streak decay shadow predicates,
@@ -1284,7 +1266,6 @@ struct stats_s {
 	 * other reason.  Cumulative across the run; expected zero on a
 	 * healthy fleet.
 	 */
-	unsigned long child_dead_parent_observed;
 
 	/*
 	 * heap_bounds_init() encountered an [anon:NAME] allocator region
@@ -1302,7 +1283,6 @@ struct stats_s {
 	 * to raise MAX_EXTRA_HEAP_REGIONS or replace the static array
 	 * with a growable registry.
 	 */
-	unsigned long heap_extra_regions_overflow;
 
 	/* sysfs_string_race accounting.  See stats/subsys/sysfs_string_race.h. */
 	struct sysfs_string_race_stats sysfs_string_race;

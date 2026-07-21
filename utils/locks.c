@@ -399,7 +399,7 @@ void unlock(lock_t *lk)
 	 * waiter on a lock that legitimately needs to be freed. */
 	unsigned long s = __atomic_load_n(&lk->state, __ATOMIC_RELAXED);
 	if (LOCK_RESERVED_DIRTY(s))
-		__atomic_fetch_add(&shm->stats.lock_held_scribble, 1,
+		__atomic_fetch_add(&shm->stats.diag.lock_held_scribble, 1,
 				   __ATOMIC_RELAXED);
 
 	/* Single store clears both lock state and owner atomically.

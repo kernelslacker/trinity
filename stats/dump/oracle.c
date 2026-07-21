@@ -114,7 +114,7 @@ static const struct oracle_anomaly_row oracle_anomaly_rows[] = {
 	ORACLE_ANOMALY_ROW("oracle",  oracle.lsm_list_modules_oracle_anomalies,       "lsm_list_modules_anomalies"),
 	ORACLE_ANOMALY_ROW("oracle",  oracle.listmount_oracle_anomalies,              "listmount_anomalies"),
 	ORACLE_ANOMALY_ROW("oracle",  oracle.statmount_oracle_anomalies,              "statmount_anomalies"),
-	ORACLE_ANOMALY_ROW("syscall", statmount_setup_fail,                           "statmount_setup_fail"),
+	ORACLE_ANOMALY_ROW("syscall", diag.statmount_setup_fail,                           "statmount_setup_fail"),
 	ORACLE_ANOMALY_ROW("oracle",  oracle.getsockname_oracle_anomalies,            "getsockname_anomalies"),
 	ORACLE_ANOMALY_ROW("oracle",  oracle.getpeername_oracle_anomalies,            "getpeername_anomalies"),
 	ORACLE_ANOMALY_ROW("oracle",  oracle.file_getattr_oracle_anomalies,           "file_getattr_anomalies"),

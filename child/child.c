@@ -559,7 +559,7 @@ void child_process(struct childdata *child, int childno)
 		if (gen != child->last_seen_freeze_gen) {
 			freeze_sibling_childdata(childno);
 			child->last_seen_freeze_gen = gen;
-			__atomic_add_fetch(&shm->stats.sibling_refreeze_count, 1,
+			__atomic_add_fetch(&shm->stats.diag.sibling_refreeze_count, 1,
 					   __ATOMIC_RELAXED);
 		}
 

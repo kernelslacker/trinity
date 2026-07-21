@@ -254,7 +254,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	csfu = build_csfu_struct(&desc_statmount);
 	req = csfu.ptr;
 	if (req == NULL) {
-		__atomic_add_fetch(&shm->stats.statmount_setup_fail,
+		__atomic_add_fetch(&shm->stats.diag.statmount_setup_fail,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}

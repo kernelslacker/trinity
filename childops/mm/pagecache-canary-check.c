@@ -23,7 +23,7 @@
  * canary_expected_byte() pattern.  On the first mismatch we log
  * the file, the read mode, the offset, the diverged byte plus the
  * next 8 bytes (expected and actual), and bump
- * shm->stats.pagecache_canary_corrupt_caught.  We do NOT bail the
+ * shm->stats.diag.pagecache_canary_corrupt_caught.  We do NOT bail the
  * run on a single mismatch — log loudly, count, continue.  The bug
  * class this oracle exists to catch is data corruption, not state
  * corruption; multiple data points per run are valuable.
@@ -185,7 +185,7 @@ static void log_corruption(unsigned int file_idx, const char *path,
 	       expected_byte, actual_byte,
 	       hex_expected, hex_actual);
 
-	__atomic_add_fetch(&shm->stats.pagecache_canary_corrupt_caught, 1,
+	__atomic_add_fetch(&shm->stats.diag.pagecache_canary_corrupt_caught, 1,
 			   __ATOMIC_RELAXED);
 }
 
