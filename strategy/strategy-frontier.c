@@ -5,6 +5,7 @@
  */
 
 #include <limits.h>
+#include <sched.h>		/* sched_yield */
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -731,7 +732,7 @@ static void ensure_producer_observer_built(void)
 	 */
 	while (__atomic_load_n(&producer_observer_ready,
 			       __ATOMIC_ACQUIRE) != 2)
-		;
+		sched_yield();
 }
 
 static bool producer_observer_lookup(unsigned int nr,
