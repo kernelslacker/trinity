@@ -221,10 +221,10 @@ static void writer_child(int fd, const char *cand, unsigned int iters)
 		ssize_t n = pwrite(fd, cand, len, 0);
 
 		if (n > 0) {
-			__atomic_add_fetch(&shm->stats.sysfs_string_race_writes_ok,
+			__atomic_add_fetch(&shm->stats.sysfs_string_race.writes_ok,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			__atomic_add_fetch(&shm->stats.sysfs_string_race_writes_failed,
+			__atomic_add_fetch(&shm->stats.sysfs_string_race.writes_failed,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -241,7 +241,7 @@ bool sysfs_string_race(struct childdata *child)
 	int fd;
 	pid_t pa, pb;
 
-	__atomic_add_fetch(&shm->stats.sysfs_string_race_runs,
+	__atomic_add_fetch(&shm->stats.sysfs_string_race.runs,
 			   1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_sysfs_string_race)
@@ -250,7 +250,7 @@ bool sysfs_string_race(struct childdata *child)
 	if (!targets_probed) {
 		probe_targets(child);
 		if (ns_unsupported_sysfs_string_race) {
-			__atomic_add_fetch(&shm->stats.sysfs_string_race_setup_failed,
+			__atomic_add_fetch(&shm->stats.sysfs_string_race.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
@@ -264,7 +264,7 @@ bool sysfs_string_race(struct childdata *child)
 		/* Permission may have been dropped or the attr file may
 		 * have been removed between probe and now -- treat as
 		 * silent skip. */
-		__atomic_add_fetch(&shm->stats.sysfs_string_race_target_missing,
+		__atomic_add_fetch(&shm->stats.sysfs_string_race.target_missing,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -314,7 +314,7 @@ bool sysfs_string_race(struct childdata *child)
 		writer_child(fd, cand_a, per_child);	/* noreturn */
 	}
 	if (pa < 0) {
-		__atomic_add_fetch(&shm->stats.sysfs_string_race_fork_failed,
+		__atomic_add_fetch(&shm->stats.sysfs_string_race.fork_failed,
 				   1, __ATOMIC_RELAXED);
 		(void)close(fd);
 		return true;
@@ -325,7 +325,7 @@ bool sysfs_string_race(struct childdata *child)
 		writer_child(fd, cand_b, per_child);	/* noreturn */
 	}
 	if (pb < 0) {
-		__atomic_add_fetch(&shm->stats.sysfs_string_race_fork_failed,
+		__atomic_add_fetch(&shm->stats.sysfs_string_race.fork_failed,
 				   1, __ATOMIC_RELAXED);
 		(void)kill(pa, SIGKILL);
 		(void)waitpid_eintr(pa, NULL, 0);
@@ -333,7 +333,7 @@ bool sysfs_string_race(struct childdata *child)
 		return true;
 	}
 
-	__atomic_add_fetch(&shm->stats.sysfs_string_race_target_used,
+	__atomic_add_fetch(&shm->stats.sysfs_string_race.target_used,
 			   1, __ATOMIC_RELAXED);
 
 	{

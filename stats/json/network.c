@@ -149,18 +149,18 @@ const struct stat_category xfrm_compat_category =
 	              xfrm_compat_fields);
 
 static const struct stat_field sysfs_string_race_fields[] = {
-	STAT_FIELD(sysfs_string_race, runs),
-	STAT_FIELD(sysfs_string_race, setup_failed),
-	STAT_FIELD(sysfs_string_race, target_missing),
-	STAT_FIELD(sysfs_string_race, target_used),
-	STAT_FIELD(sysfs_string_race, fork_failed),
-	STAT_FIELD(sysfs_string_race, writes_ok),
-	STAT_FIELD(sysfs_string_race, writes_failed),
+	STAT_FIELD_SUB(sysfs_string_race, runs),
+	STAT_FIELD_SUB(sysfs_string_race, setup_failed),
+	STAT_FIELD_SUB(sysfs_string_race, target_missing),
+	STAT_FIELD_SUB(sysfs_string_race, target_used),
+	STAT_FIELD_SUB(sysfs_string_race, fork_failed),
+	STAT_FIELD_SUB(sysfs_string_race, writes_ok),
+	STAT_FIELD_SUB(sysfs_string_race, writes_failed),
 };
 
 const struct stat_category sysfs_string_race_category =
 	STAT_CATEGORY("sysfs_string_race",
-	              sysfs_string_race_runs,
+	              sysfs_string_race.runs,
 	              sysfs_string_race_fields);
 
 
