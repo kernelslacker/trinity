@@ -921,7 +921,7 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 		/* Kernel wanted to record more comparisons than the cmp
 		 * buffer holds; the tail was dropped.  Mirrors the PC-side
 		 * trace_truncated counter. */
-		__atomic_fetch_add(&kcov_shm->cmp_trace_truncated, 1,
+		__atomic_fetch_add(&kcov_shm->cmp_records.cmp_trace_truncated, 1,
 			__ATOMIC_RELAXED);
 		if (nr < MAX_NR_SYSCALL)
 			__atomic_fetch_add(&kcov_shm->per_syscall_diag[nr][do32].cmp_trace_truncated,
@@ -945,7 +945,7 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 	novel = bandit_cmp_observe(kc->cmp_trace_buf, nr, do32,
 				   is_explorer, strategy_at_pick);
 
-	__atomic_fetch_add(&kcov_shm->cmp_records_collected, count,
+	__atomic_fetch_add(&kcov_shm->cmp_records.cmp_records_collected, count,
 		__ATOMIC_RELAXED);
 
 	return novel;

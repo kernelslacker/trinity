@@ -65,14 +65,19 @@ struct kcov_shared {
 		 * are losing tail coverage and KCOV_TRACE_SIZE should be raised. */
 		unsigned long trace_truncated;
 	} coverage;
-	/* Total CMP records pulled out of per-child KCOV_TRACE_CMP buffers
-	 * across all syscalls.  Diagnostic — confirms the second-fd CMP
-	 * collection plumbing is producing records, and gauges how much
-	 * raw signal reaches the future mutator consumer. */
-	unsigned long cmp_records_collected;
-	/* Number of kcov_collect_cmp() calls where the cmp buffer filled
-	 * up.  Mirror of trace_truncated, sized off KCOV_CMP_BUFFER_SIZE. */
-	unsigned long cmp_trace_truncated;
+	/* CMP-trace collection totals: records pulled out of the second-fd
+	 * KCOV_TRACE_CMP buffers, and truncation events where the buffer
+	 * filled. */
+	struct kcov_cmp_records {
+		/* Total CMP records pulled out of per-child KCOV_TRACE_CMP buffers
+		 * across all syscalls.  Diagnostic — confirms the second-fd CMP
+		 * collection plumbing is producing records, and gauges how much
+		 * raw signal reaches the future mutator consumer. */
+		unsigned long cmp_records_collected;
+		/* Number of kcov_collect_cmp() calls where the cmp buffer filled
+		 * up.  Mirror of trace_truncated, sized off KCOV_CMP_BUFFER_SIZE. */
+		unsigned long cmp_trace_truncated;
+	} cmp_records;
 	/* Total number of dedup_inc() calls that walked the full probe chain
 	 * without finding either an empty slot or the matching edge.  When
 	 * this happens, the call's bucket fidelity collapses to old any-hit
@@ -2581,8 +2586,8 @@ _Static_assert(sizeof(struct kcov_shared) == 25845016UL,
 	"struct kcov_shared sizeof drifted -- audit layout before updating this");
 _Static_assert(offsetof(struct kcov_shared, bucket_seen) == 0UL,
 	"kcov_shared.bucket_seen must remain the first field");
-_Static_assert(offsetof(struct kcov_shared, cmp_records_collected) == 8388672UL,
-	"kcov_shared.cmp_records_collected offset drifted");
+_Static_assert(offsetof(struct kcov_shared, cmp_records.cmp_records_collected) == 8388672UL,
+	"kcov_shared.cmp_records.cmp_records_collected offset drifted");
 _Static_assert(offsetof(struct kcov_shared, cmp_hints_injected) == 8388728UL,
 	"kcov_shared.cmp_hints_injected offset drifted");
 _Static_assert(offsetof(struct kcov_shared, per_syscall_edges) == 8397720UL,

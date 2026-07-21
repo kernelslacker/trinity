@@ -51,9 +51,9 @@ static void json_emit_kcov_counters(void)
 	kc_pcs    = parent_stats.total_pcs;
 	kc_calls  = parent_stats.total_calls;
 	kc_remote = parent_stats.remote_calls;
-	kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,
+	kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records.cmp_records_collected,
 		__ATOMIC_RELAXED);
-	kc_cmp_trunc = __atomic_load_n(&kcov_shm->cmp_trace_truncated,
+	kc_cmp_trunc = __atomic_load_n(&kcov_shm->cmp_records.cmp_trace_truncated,
 		__ATOMIC_RELAXED);
 	kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped,
 		__ATOMIC_RELAXED);

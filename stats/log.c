@@ -482,7 +482,7 @@ static void stats_ts_emit_truncation(FILE *fp)
 		trace_truncated = __atomic_load_n(&kcov_shm->coverage.trace_truncated,
 						  __ATOMIC_RELAXED);
 		cmp_trace_truncated = __atomic_load_n(
-			&kcov_shm->cmp_trace_truncated, __ATOMIC_RELAXED);
+			&kcov_shm->cmp_records.cmp_trace_truncated, __ATOMIC_RELAXED);
 	}
 
 	fprintf(fp,
