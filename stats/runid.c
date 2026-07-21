@@ -130,7 +130,7 @@ static unsigned long runid_corpus_entries_total(void)
 
 		if (unlikely(count > CORPUS_RING_SIZE)) {
 			__atomic_add_fetch(
-				&shm->stats.corpus_count_overcap_caught,
+				&shm->stats.minicorpus.count_overcap_caught,
 				1UL, __ATOMIC_RELAXED);
 			if (!overcap_warned) {
 				overcap_warned = true;
