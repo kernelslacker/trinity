@@ -734,7 +734,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_prove_eligible,
 				   1UL, __ATOMIC_RELAXED);
 		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_prove_edges_at_pick,
-				   __atomic_load_n(&kcov_shm->distinct_edges,
+				   __atomic_load_n(&kcov_shm->coverage.distinct_edges,
 						   __ATOMIC_RELAXED),
 				   __ATOMIC_RELAXED);
 		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_prove_cmp_records_at_pick,

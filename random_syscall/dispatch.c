@@ -230,7 +230,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	/* kcov_collect() returns the real per-call bucket-edge count via the
 	 * out-param alongside its bool found_new return.  Diff-ing the global
-	 * kcov_shm->edges_found around the call would race other children's
+	 * kcov_shm->coverage.edges_found around the call would race other children's
 	 * concurrent increments and over-attribute their edges to this
 	 * syscall; the per-call count is the authoritative number.
 	 *

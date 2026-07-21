@@ -132,7 +132,7 @@ enum stats_field {
 	/* kcov_collect()'s per-call total_calls bump.  Children stage the
 	 * count in kcov_child_local_stats and flush in batches (on a
 	 * found-new-edge piggyback, or once per N syscalls), which keeps
-	 * the kcov_shm->total_calls shared cacheline off the per-call
+	 * the kcov_shm->coverage.total_calls shared cacheline off the per-call
 	 * atomic-bump path for dump-side accounting; that shm field is
 	 * the stamp source for last_edge_at[] / last_efault_at[] and the
 	 * cold-skip gap denominator, so it stays. */
@@ -144,7 +144,7 @@ enum stats_field {
 	 * on the found-new-edge piggyback or the syscalls-since-flush
 	 * cadence cap.  Dump-only reader, no per-call branch reads it,
 	 * so the batched delta is the authoritative dump-path value;
-	 * kcov_shm->remote_calls has no stamp-role consumer, which is
+	 * kcov_shm->coverage.remote_calls has no stamp-role consumer, which is
 	 * why keeping it in sync with a per-call atomic would buy
 	 * nothing and cost a shared-cacheline write per syscall. */
 	STATS_FIELD_REMOTE_CALLS,
@@ -317,7 +317,7 @@ struct stats_aggregate {
 	/* Drained from STATS_FIELD_TOTAL_CALLS.  Aggregate of every child's
 	 * kcov_collect() invocations.  Reported by the dump path (stats.c
 	 * JSON + Scuba rows, post-mortem, strategy plateau snapshots) in
-	 * place of the kcov_shm->total_calls atomic; the shm field stays as
+	 * place of the kcov_shm->coverage.total_calls atomic; the shm field stays as
 	 * the stamp source for last_edge_at[] / last_efault_at[] and the
 	 * cold-skip gap denominator only. */
 	unsigned long total_calls;
@@ -327,13 +327,13 @@ struct stats_aggregate {
 	 * collection).  Reported by the same dump readers as total_calls;
 	 * staging on childdata->local_stats keeps the hot kcov_shm
 	 * cacheline out of the per-call path, and because no stamp-role
-	 * consumer references kcov_shm->remote_calls the staged delta is
+	 * consumer references kcov_shm->coverage.remote_calls the staged delta is
 	 * the authoritative value for this counter. */
 	unsigned long remote_calls;
 
 	/* Drained from STATS_FIELD_TOTAL_PCS.  Sum of PC counts pulled
 	 * out of per-call KCOV trace buffers across every child; the
-	 * pre-existing kcov_shm->total_pcs atomic was a relaxed +count
+	 * pre-existing kcov_shm->coverage.total_pcs atomic was a relaxed +count
 	 * (not +1) batched delta at the same site, so the staging slot
 	 * folds the per-syscall accumulation into one ring enqueue per
 	 * flush. */

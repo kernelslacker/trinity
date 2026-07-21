@@ -942,7 +942,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 
 		reach = edges + per_syscall_edges_prior_total(nr);
 
-		total = __atomic_load_n(&kcov_shm->total_calls,
+		total = __atomic_load_n(&kcov_shm->coverage.total_calls,
 					__ATOMIC_RELAXED);
 		last = __atomic_load_n(&kcov_shm->last_edge_at[nr],
 				       __ATOMIC_RELAXED);

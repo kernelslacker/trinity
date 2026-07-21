@@ -200,7 +200,7 @@ struct childop_stats {
 
 	/* Per-childop adaptive-budget multiplier, indexed by enum
 	 * child_op_type.  Q8.8 fixed point: 256 == 1.0x.  Updated post-
-	 * invocation by adapt_budget() based on the kcov_shm->edges_found
+	 * invocation by adapt_budget() based on the kcov_shm->coverage.edges_found
 	 * delta observed during dispatch.  Read by the BUDGETED() macro
 	 * inside opt-in childops so productive ops get more inner-loop
 	 * iterations and dud ops shrink toward the floor.  Values clamp to

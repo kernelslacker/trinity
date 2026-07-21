@@ -299,7 +299,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	if (!kc->active)
 		return false;
 
-	/* kcov_shm->total_calls is bumped solely for its stamp role:
+	/* kcov_shm->coverage.total_calls is bumped solely for its stamp role:
 	 * the returned call_nr is stored into kcov_shm->last_edge_at[nr]
 	 * on the found-new-edge branch below and read by the cold-skip
 	 * gap denominator in kcov_syscall_cold_skip_pct() / by the
@@ -307,7 +307,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	 * (post-mortem, stats.c JSON + Scuba rows, strategy snapshots)
 	 * reads parent_stats.total_calls, drained from the per-child
 	 * kcov_child_local_stats staging counter bumped below. */
-	call_nr = __atomic_fetch_add(&kcov_shm->total_calls,
+	call_nr = __atomic_fetch_add(&kcov_shm->coverage.total_calls,
 		1, __ATOMIC_RELAXED);
 
 	/* Per-child staging bumps for the dump-side total_calls /
@@ -317,7 +317,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	 * is authoritative for that path.  this_child() is NULL only
 	 * in parent context, which kcov_collect()'s callers do not
 	 * reach -- guard anyway so a future caller cannot crash the
-	 * parent on a stray invocation.  kcov_shm->remote_calls is
+	 * parent on a stray invocation.  kcov_shm->coverage.remote_calls is
 	 * not bumped: no stamp-role consumer references the shm
 	 * field, so the staged delta is authoritative. */
 	{
@@ -345,7 +345,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		 * the post-mortem can show whether kcov_trace_size needs to
 		 * grow again (raise it via --kcov-trace-size; the compile-time
 		 * KCOV_TRACE_SIZE is just the default). */
-		__atomic_fetch_add(&kcov_shm->trace_truncated, 1,
+		__atomic_fetch_add(&kcov_shm->coverage.trace_truncated, 1,
 			__ATOMIC_RELAXED);
 		if (nr < MAX_NR_SYSCALL) {
 			__atomic_fetch_add(&kcov_shm->per_syscall_diag[nr][do32].trace_truncated,
@@ -490,7 +490,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			mask, __ATOMIC_RELAXED);
 
 		if (!(old & mask)) {
-			__atomic_fetch_add(&kcov_shm->edges_found,
+			__atomic_fetch_add(&kcov_shm->coverage.edges_found,
 				1, __ATOMIC_RELAXED);
 			edges_this_call++;
 			found_new = true;
@@ -502,7 +502,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * the plateau detector can sample a delta that
 			 * actually falls to zero on flat runs. */
 			if (old == 0) {
-				__atomic_fetch_add(&kcov_shm->distinct_edges,
+				__atomic_fetch_add(&kcov_shm->coverage.distinct_edges,
 					1, __ATOMIC_RELAXED);
 				distinct_edges_this_call++;
 			}
@@ -516,7 +516,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	 * batched-flush model as total_calls / remote_calls above; the
 	 * delta here is +count (PCs returned by the kernel for this
 	 * syscall), already a batched value at this site.  No
-	 * stamp-role consumer reads kcov_shm->total_pcs, so the
+	 * stamp-role consumer reads kcov_shm->coverage.total_pcs, so the
 	 * staged per-child delta is the source of truth for the dump
 	 * path -- the shm atomic is not bumped. */
 	{
@@ -839,7 +839,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 
 	/* Diagnostic coverage-jump breadcrumb -- pure observability, no
 	 * behaviour gate.  See kcov_covjump_breadcrumb_maybe() for the
-	 * contract; call_nr is the kcov_shm->total_calls stamp this
+	 * contract; call_nr is the kcov_shm->coverage.total_calls stamp this
 	 * call took at the top of kcov_collect(). */
 	kcov_covjump_breadcrumb_maybe(call_nr);
 
@@ -874,7 +874,7 @@ unsigned long kcov_trace_pos(struct kcov_child *kc)
  * Intended for per-walk reward gates that live inside an outer
  * childop-attribution bracket: the outer kcov_bracket_end stays the
  * SOLE authoritative writer of bucket_seen, kc->dedup,
- * kc->current_generation, and kcov_shm->edges_found, so this probe
+ * kc->current_generation, and kcov_shm->coverage.edges_found, so this probe
  * does not affect childop_edges_clean (the child canary signal) or
  * any dedup / generation state.  A brand-new edge that appears N
  * times in the sampled window contributes N to the returned count;
@@ -990,7 +990,7 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 	} else {
 		unsigned long total, last;
 
-		total = __atomic_load_n(&kcov_shm->total_calls,
+		total = __atomic_load_n(&kcov_shm->coverage.total_calls,
 			__ATOMIC_RELAXED);
 		last = __atomic_load_n(&kcov_shm->last_edge_at[nr],
 			__ATOMIC_RELAXED);

@@ -237,7 +237,7 @@ extern enum childop_cmp_consume_mode childop_cmp_consume_mode;
  *       bucket_seen[edge] == 0 (no bucket bit ever set) to non-zero.
  *       Filters out the bucket-churn component of bucket_bits, leaving
  *       only "new code reached" events.  Mirrors at the per-call
- *       granularity what kcov_shm->distinct_edges tracks globally.
+ *       granularity what kcov_shm->coverage.distinct_edges tracks globally.
  *   local_distinct_pcs
  *       Count of dedup_inc() first-sight events: distinct PCs walked
  *       in this call's trace buffer regardless of whether the global
@@ -287,7 +287,7 @@ struct kcov_pc_result {
  * If new_edge_count is non-NULL it is written with the actual number of
  * bucket bits this call flipped — the real edge-count signal, distinct
  * from the bool return.  Callers needing only the boolean signal pass
- * NULL.  Computed during the same pass that updates kcov_shm->edges_found,
+ * NULL.  Computed during the same pass that updates kcov_shm->coverage.edges_found,
  * so it costs no extra atomics: the caller would otherwise have to read
  * the global counter before/after and diff it, which is racy under
  * concurrent children that also bump the global.

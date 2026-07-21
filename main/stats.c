@@ -115,10 +115,10 @@ static void print_stats_iteration_line(unsigned long op_count, unsigned long rat
 		static unsigned long last_cmp_trunc = 0;
 		static unsigned long last_cmp_unique = 0;
 		unsigned long edges = __atomic_load_n(
-			&kcov_shm->edges_found,
+			&kcov_shm->coverage.edges_found,
 			__ATOMIC_RELAXED);
 		unsigned long distinct = __atomic_load_n(
-			&kcov_shm->distinct_edges,
+			&kcov_shm->coverage.distinct_edges,
 			__ATOMIC_RELAXED);
 		unsigned long cmp_trunc = __atomic_load_n(
 			&kcov_shm->cmp_trace_truncated,
@@ -180,7 +180,7 @@ static void print_stats_iteration_line(unsigned long op_count, unsigned long rat
 		 * printing a negative cold count. */
 		{
 			unsigned long warm = __atomic_load_n(
-				&kcov_shm->edges_warm_loaded,
+				&kcov_shm->coverage.edges_warm_loaded,
 				__ATOMIC_RELAXED);
 			if (warm > 0) {
 				unsigned long cold = edges > warm ?

@@ -467,7 +467,7 @@ static unsigned long kcov_bitmap_edges_at_last_save = ULONG_MAX;
 
 /*
  * Persist-side scribble guard.  bucket_seen[] bits are set-once and the
- * monotonic atomic kcov_shm->edges_found is bumped exactly once per
+ * monotonic atomic kcov_shm->coverage.edges_found is bumped exactly once per
  * (edge, bucket) bit-flip after the OR has landed, so by construction
  *
  *     popcount(bucket_seen) >= edges_found       (at the OR-then-bump moment)
@@ -550,7 +550,7 @@ bool kcov_bitmap_save_file(const char *path)
 	if (path == NULL || kcov_shm == NULL)
 		return false;
 
-	edges_now = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
+	edges_now = __atomic_load_n(&kcov_shm->coverage.edges_found, __ATOMIC_RELAXED);
 	if (edges_now == kcov_bitmap_edges_at_last_save) {
 		output(0, "kcov-bitmap: snapshot skipped, no new edges since last save\n");
 		return true;
@@ -694,9 +694,9 @@ bool kcov_bitmap_save_file(const char *path)
 	 * it happens, not just at exit. */
 	{
 		unsigned long floor = __atomic_load_n(
-			&kcov_shm->edges_warm_loaded, __ATOMIC_RELAXED);
+			&kcov_shm->coverage.edges_warm_loaded, __ATOMIC_RELAXED);
 		unsigned long distinct_floor = __atomic_load_n(
-			&kcov_shm->distinct_edges_warm_loaded,
+			&kcov_shm->coverage.distinct_edges_warm_loaded,
 			__ATOMIC_RELAXED);
 		bool below_floor = recount_edges < floor;
 		bool below_atomic = (edges_now > recount_edges) &&
@@ -1144,9 +1144,9 @@ bool kcov_bitmap_load_file(const char *path)
 		       (unsigned long)hdr.distinct_edges,
 		       recount_edges, recount_distinct, path);
 	}
-	__atomic_store_n(&kcov_shm->edges_found, recount_edges,
+	__atomic_store_n(&kcov_shm->coverage.edges_found, recount_edges,
 			 __ATOMIC_RELAXED);
-	__atomic_store_n(&kcov_shm->distinct_edges, recount_distinct,
+	__atomic_store_n(&kcov_shm->coverage.distinct_edges, recount_distinct,
 			 __ATOMIC_RELAXED);
 	/* Snapshot the warm-loaded count so print_stats() can split
 	 * displayed coverage into the warm-vs-cold contribution.  Set
@@ -1154,9 +1154,9 @@ bool kcov_bitmap_load_file(const char *path)
 	 * child has had a chance to discover new coverage -- so a later
 	 * (edges_found - edges_warm_loaded) subtraction is the count of
 	 * edges this run actually discovered itself. */
-	__atomic_store_n(&kcov_shm->edges_warm_loaded, recount_edges,
+	__atomic_store_n(&kcov_shm->coverage.edges_warm_loaded, recount_edges,
 			 __ATOMIC_RELAXED);
-	__atomic_store_n(&kcov_shm->distinct_edges_warm_loaded,
+	__atomic_store_n(&kcov_shm->coverage.distinct_edges_warm_loaded,
 			 recount_distinct, __ATOMIC_RELAXED);
 	/* Seed the dirty-bit baseline so a load-then-immediate-exit cycle
 	 * skips the redundant end-of-run save. */
@@ -1280,7 +1280,7 @@ void kcov_bitmap_maybe_snapshot(void)
 	if (!kcov_bitmap_snapshot_enabled || kcov_shm == NULL)
 		return;
 
-	edges_now = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
+	edges_now = __atomic_load_n(&kcov_shm->coverage.edges_found, __ATOMIC_RELAXED);
 	now = (time_t)(mono_ns() / 1000000000ULL);
 
 	if (edges_now < kcov_bitmap_edges_at_last_snapshot
@@ -1348,7 +1348,7 @@ void kcov_bitmap_canary_check(void)
 	 * (new bits set during the scan show up in the count); the
 	 * canary only treats the deficit direction as an alarm.
 	 */
-	edges_before = __atomic_load_n(&kcov_shm->edges_found,
+	edges_before = __atomic_load_n(&kcov_shm->coverage.edges_found,
 				       __ATOMIC_RELAXED);
 
 	kcov_bitmap_recount(kcov_shm->bucket_seen, KCOV_NUM_EDGES,

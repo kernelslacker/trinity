@@ -153,7 +153,7 @@ void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 			     __ATOMIC_ACQUIRE)) {
 		bool expected = false;
 
-		edges_now = __atomic_load_n(&kcov_shm->distinct_edges,
+		edges_now = __atomic_load_n(&kcov_shm->coverage.distinct_edges,
 					    __ATOMIC_RELAXED);
 		covjump_seed_snapshot(call_nr, edges_now);
 		__atomic_compare_exchange_n(&kcov_shm->covjump_window_armed,
@@ -178,7 +178,7 @@ void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 		return;
 
 	sample_calls = call_nr - expected_start;
-	edges_now = __atomic_load_n(&kcov_shm->distinct_edges, __ATOMIC_RELAXED);
+	edges_now = __atomic_load_n(&kcov_shm->coverage.distinct_edges, __ATOMIC_RELAXED);
 	edges_prev = __atomic_load_n(&kcov_shm->covjump_window_start_distinct_edges,
 				     __ATOMIC_RELAXED);
 	delta = sat_sub_ul(edges_now, edges_prev);
@@ -406,7 +406,7 @@ void kcov_plateau_check(void)
 	 * increments once per edge (on bucket_seen[edge] == 0 -> first-bit)
 	 * so its delta reflects true new-code discovery and falls to zero
 	 * when the fuzzer is wedged. */
-	edges_now = __atomic_load_n(&kcov_shm->distinct_edges, __ATOMIC_RELAXED);
+	edges_now = __atomic_load_n(&kcov_shm->coverage.distinct_edges, __ATOMIC_RELAXED);
 
 	/* Arm the window on the first call so any pre-existing edge count
 	 * (e.g. from the warm-up phase before main_loop entry) is not

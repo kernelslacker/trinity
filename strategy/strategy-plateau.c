@@ -54,15 +54,15 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 	memset(snap, 0, sizeof(*snap));
 
 	if (kcov_shm != NULL) {
-		snap->pc_edges = __atomic_load_n(&kcov_shm->distinct_edges,
+		snap->pc_edges = __atomic_load_n(&kcov_shm->coverage.distinct_edges,
 						 __ATOMIC_RELAXED);
 		snap->cmp_unique = __atomic_load_n(
 			&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
 		/* total_calls / remote_calls are read from parent_stats
-		 * (drained from per-child stats_ring); kcov_shm->total_calls
+		 * (drained from per-child stats_ring); kcov_shm->coverage.total_calls
 		 * is reserved for the last_edge_at[] / last_efault_at[]
 		 * stamp source and the cold-skip gap denominator only,
-		 * kcov_shm->remote_calls is not bumped here.  See
+		 * kcov_shm->coverage.remote_calls is not bumped here.  See
 		 * stats_ring.h. */
 		snap->remote_calls = parent_stats.remote_calls;
 		snap->total_calls = parent_stats.total_calls;
