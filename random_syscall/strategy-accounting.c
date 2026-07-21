@@ -268,24 +268,24 @@ bool remote_adaptive_decide(unsigned int nr,
 		}
 	}
 
-	__atomic_fetch_add(&shm->stats.remote_adaptive_samples, 1UL,
+	__atomic_fetch_add(&shm->stats.remote_adaptive.samples, 1UL,
 			   __ATOMIC_RELAXED);
 	if (would_demote)
-		__atomic_fetch_add(&shm->stats.remote_adaptive_would_demote,
+		__atomic_fetch_add(&shm->stats.remote_adaptive.would_demote,
 				   1UL, __ATOMIC_RELAXED);
 	else if (would_promote)
-		__atomic_fetch_add(&shm->stats.remote_adaptive_would_promote,
+		__atomic_fetch_add(&shm->stats.remote_adaptive.would_promote,
 				   1UL, __ATOMIC_RELAXED);
 	else if (would_force)
-		__atomic_fetch_add(&shm->stats.remote_adaptive_would_force,
+		__atomic_fetch_add(&shm->stats.remote_adaptive.would_force,
 				   1UL, __ATOMIC_RELAXED);
 	else
-		__atomic_fetch_add(&shm->stats.remote_adaptive_agree, 1UL,
+		__atomic_fetch_add(&shm->stats.remote_adaptive.agree, 1UL,
 				   __ATOMIC_RELAXED);
 
 	if (would_gate_promote)
 		__atomic_fetch_add(
-			&shm->stats.remote_adaptive_would_gate_promote,
+			&shm->stats.remote_adaptive.would_gate_promote,
 			1UL, __ATOMIC_RELAXED);
 
 	return adaptive_remote;

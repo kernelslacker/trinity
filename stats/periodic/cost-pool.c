@@ -117,22 +117,22 @@ void __cold cost_pool_periodic_dump(void)
 	 * baseline reference. */
 	{
 		unsigned long shadow_picks = __atomic_load_n(
-			&shm->stats.cost_pool_selector_shadow_picks,
+			&shm->stats.cost_pool_selector.shadow_picks,
 			__ATOMIC_RELAXED);
 		unsigned long shadow_ppm_sum = __atomic_load_n(
-			&shm->stats.cost_pool_selector_shadow_expensive_ppm_sum,
+			&shm->stats.cost_pool_selector.shadow_expensive_ppm_sum,
 			__ATOMIC_RELAXED);
 		unsigned long live_cheap = __atomic_load_n(
-			&shm->stats.cost_pool_selector_live_cheap_picks,
+			&shm->stats.cost_pool_selector.live_cheap_picks,
 			__ATOMIC_RELAXED);
 		unsigned long live_exp = __atomic_load_n(
-			&shm->stats.cost_pool_selector_live_expensive_picks,
+			&shm->stats.cost_pool_selector.live_expensive_picks,
 			__ATOMIC_RELAXED);
 		unsigned long predraw_cheap = __atomic_load_n(
-			&shm->stats.cost_pool_selector_predraw_cheap_picks,
+			&shm->stats.cost_pool_selector.predraw_cheap_picks,
 			__ATOMIC_RELAXED);
 		unsigned long predraw_exp = __atomic_load_n(
-			&shm->stats.cost_pool_selector_predraw_expensive_picks,
+			&shm->stats.cost_pool_selector.predraw_expensive_picks,
 			__ATOMIC_RELAXED);
 		unsigned long live_total = live_cheap + live_exp;
 		unsigned long predraw_total = predraw_cheap + predraw_exp;
