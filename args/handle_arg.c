@@ -188,9 +188,9 @@ unsigned long handle_arg_op(struct syscallentry *entry,
 			if (kcov_shm != NULL) {
 				__atomic_fetch_add(&kcov_shm->prop_ring_argop_arm_b_fires,
 						   1UL, __ATOMIC_RELAXED);
-				__atomic_fetch_add(&kcov_shm->propagation_injected,
+				__atomic_fetch_add(&kcov_shm->hints_flat.propagation_injected,
 						   1UL, __ATOMIC_RELAXED);
-				__atomic_fetch_add(&kcov_shm->propagation_injected_callsite[PROP_INJECTED_CALLSITE_ARG_OP],
+				__atomic_fetch_add(&kcov_shm->hints_flat.propagation_injected_callsite[PROP_INJECTED_CALLSITE_ARG_OP],
 						   1UL, __ATOMIC_RELAXED);
 			}
 			return val;

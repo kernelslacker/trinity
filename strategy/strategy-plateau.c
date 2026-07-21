@@ -57,7 +57,7 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 		snap->pc_edges = __atomic_load_n(&kcov_shm->coverage.distinct_edges,
 						 __ATOMIC_RELAXED);
 		snap->cmp_unique = __atomic_load_n(
-			&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
+			&kcov_shm->hints_flat.cmp_hints_unique_inserts, __ATOMIC_RELAXED);
 		/* total_calls / remote_calls are read from parent_stats
 		 * (drained from per-child stats_ring); kcov_shm->coverage.total_calls
 		 * is reserved for the last_edge_at[] / last_efault_at[]

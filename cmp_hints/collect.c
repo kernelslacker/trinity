@@ -266,7 +266,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			if (n > KCOV_CMP_RECORDS_MAX)
 				n = KCOV_CMP_RECORDS_MAX;
 			if (n != 0)
-				__atomic_fetch_add(&kcov_shm->cmp_hints_strip_skipped,
+				__atomic_fetch_add(&kcov_shm->hints_flat.cmp_hints_strip_skipped,
 						   n, __ATOMIC_RELAXED);
 		}
 		return;
@@ -966,7 +966,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	inserted += cmp_hints_flush_pending(pool, nr, do32, batch, n_batch);
 
 	if (skipped != 0 && kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->cmp_hints_bloom_skipped, skipped,
+		__atomic_fetch_add(&kcov_shm->hints_flat.cmp_hints_bloom_skipped, skipped,
 				   __ATOMIC_RELAXED);
 
 	if (inserted != 0 && kcov_shm != NULL)

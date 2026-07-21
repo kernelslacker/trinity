@@ -67,9 +67,9 @@ unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
 
 		if (child != NULL && prop_ring_try_get(child, rec, &val)) {
 			if (kcov_shm != NULL) {
-				__atomic_fetch_add(&kcov_shm->propagation_injected,
+				__atomic_fetch_add(&kcov_shm->hints_flat.propagation_injected,
 						   1UL, __ATOMIC_RELAXED);
-				__atomic_fetch_add(&kcov_shm->propagation_injected_callsite[PROP_INJECTED_CALLSITE_ARG_UNDEFINED],
+				__atomic_fetch_add(&kcov_shm->hints_flat.propagation_injected_callsite[PROP_INJECTED_CALLSITE_ARG_UNDEFINED],
 						   1UL, __ATOMIC_RELAXED);
 			}
 			return val;

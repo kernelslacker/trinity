@@ -135,9 +135,9 @@ void cmp_hints_chaos_tick(void)
 	if (kcov_shm == NULL)
 		return;
 
-	n = __atomic_add_fetch(&kcov_shm->cmp_hints_chaos_window_count, 1UL,
+	n = __atomic_add_fetch(&kcov_shm->hints_flat.cmp_hints_chaos_window_count, 1UL,
 			       __ATOMIC_RELAXED);
-	__atomic_store_n(&kcov_shm->cmp_hints_chaos_active,
+	__atomic_store_n(&kcov_shm->hints_flat.cmp_hints_chaos_active,
 			 (n % CHAOS_WINDOW_MODULO) == 0 ? 1u : 0u,
 			 __ATOMIC_RELAXED);
 }
@@ -146,7 +146,7 @@ bool cmp_hints_chaos_query(void)
 {
 	if (kcov_shm == NULL)
 		return false;
-	return __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
+	return __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_chaos_active,
 			       __ATOMIC_RELAXED) != 0;
 }
 

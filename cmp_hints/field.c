@@ -644,7 +644,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 	 * scalar one -- a chaos window that only suppresses one consumer
 	 * arm would bias the kernel-validated mix on the other. */
 	if (kcov_shm != NULL &&
-	    __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
+	    __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_chaos_active,
 			    __ATOMIC_RELAXED))
 		return false;
 

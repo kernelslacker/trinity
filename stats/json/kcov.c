@@ -55,11 +55,11 @@ static void json_emit_kcov_counters(void)
 		__ATOMIC_RELAXED);
 	kc_cmp_trunc = __atomic_load_n(&kcov_shm->cmp_records.cmp_trace_truncated,
 		__ATOMIC_RELAXED);
-	kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped,
+	kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_bloom_skipped,
 		__ATOMIC_RELAXED);
-	kc_cmp_strip_skipped = __atomic_load_n(&kcov_shm->cmp_hints_strip_skipped,
+	kc_cmp_strip_skipped = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_strip_skipped,
 		__ATOMIC_RELAXED);
-	kc_cmp_unique = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts,
+	kc_cmp_unique = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_unique_inserts,
 		__ATOMIC_RELAXED);
 	kc_cmp_save_reject_nonconst = __atomic_load_n(
 		&kcov_shm->cmp_hints_save_reject_nonconst, __ATOMIC_RELAXED);
@@ -73,7 +73,7 @@ static void json_emit_kcov_counters(void)
 		&kcov_shm->cmp_hints_save_reject_cap, __ATOMIC_RELAXED);
 	kc_cmp_hint_wins = __atomic_load_n(&kcov_shm->cmp_hint_wins,
 					   __ATOMIC_RELAXED);
-	kc_cmp_hints_injected = __atomic_load_n(&kcov_shm->cmp_hints_injected,
+	kc_cmp_hints_injected = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_injected,
 						__ATOMIC_RELAXED);
 	kc_cmp_hyp_pc_wins = __atomic_load_n(&kcov_shm->cmp_hyp_pc_wins,
 					     __ATOMIC_RELAXED);

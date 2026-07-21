@@ -1043,7 +1043,7 @@ struct stats_s {
 	 * keyctl path) was successfully mirrored into the per-child
 	 * propagation ring after its own typed registrar accepted it.
 	 * Reads as "key serials made available to untyped consumers via
-	 * the prop_ring path" — distinct from kcov_shm->propagation_injected,
+	 * the prop_ring path" — distinct from kcov_shm->hints_flat.propagation_injected,
 	 * which counts the consumer-side draws from the ring; this is the
 	 * producer-side capture count for the bypass-the-OBJ_NONE-firewall
 	 * push variant.  Skipped pushes (dedup against most recent slot,

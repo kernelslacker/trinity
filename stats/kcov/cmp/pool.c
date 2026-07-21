@@ -424,7 +424,7 @@ void kcov_cmp_render_pc_win_conversion_split_block(long elapsed __unused__)
 	if (kcov_shm == NULL)
 		return;
 
-	cur_hints_injected = __atomic_load_n(&kcov_shm->cmp_hints_injected,
+	cur_hints_injected = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_injected,
 					     __ATOMIC_RELAXED);
 	cur_hyp_live_injected = __atomic_load_n(&kcov_shm->cmp_hyp_live_injected,
 						__ATOMIC_RELAXED);
