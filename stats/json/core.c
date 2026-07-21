@@ -197,13 +197,13 @@ const struct stat_category tracefs_fuzzer_category =
 	              tracefs_fuzzer_fields);
 
 static const struct stat_field bpf_fd_provider_fields[] = {
-	STAT_FIELD(bpf, maps_provided),
-	STAT_FIELD(bpf, progs_provided),
+	STAT_FIELD_SUB(ebpf_gen, maps_provided),
+	STAT_FIELD_SUB(ebpf_gen, progs_provided),
 };
 
 const struct stat_category bpf_fd_provider_category =
 	STAT_CATEGORY("bpf_fd_provider",
-	              bpf_maps_provided,
+	              ebpf_gen.maps_provided,
 	              bpf_fd_provider_fields);
 
 void dump_stats_json_basic_subsystems(void)

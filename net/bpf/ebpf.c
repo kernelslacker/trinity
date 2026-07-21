@@ -656,7 +656,7 @@ static int emit_tier1_helper_call(struct bpf_insn *insns, int pos,
 	default:
 		break;
 	}
-	__atomic_add_fetch(&shm->stats.ebpf_gen_helper_call_emitted, 1,
+	__atomic_add_fetch(&shm->stats.ebpf_gen.helper_call_emitted, 1,
 			   __ATOMIC_RELAXED);
 	return pos;
 }
@@ -687,20 +687,20 @@ static int emit_tier1_map_val_deref(struct bpf_insn *insns, int pos,
 		int src = reg_pick_live(rs);
 
 		insns[pos++] = EBPF_STX_MEM(BPF_W, BPF_REG_0, src, 0);
-		__atomic_add_fetch(&shm->stats.ebpf_gen_map_value_deref_write,
+		__atomic_add_fetch(&shm->stats.ebpf_gen.map_value_deref_write,
 				   1, __ATOMIC_RELAXED);
 	} else {
 		int dst = reg_pick_dst();
 
 		insns[pos++] = EBPF_LDX_MEM(BPF_W, dst, BPF_REG_0, 0);
 		reg_set(rs, dst);
-		__atomic_add_fetch(&shm->stats.ebpf_gen_map_value_deref_read,
+		__atomic_add_fetch(&shm->stats.ebpf_gen.map_value_deref_read,
 				   1, __ATOMIC_RELAXED);
 	}
 
 	rs->r0_or_null = false;
 	rs->r0_writable = false;
-	__atomic_add_fetch(&shm->stats.ebpf_gen_map_value_deref_emitted,
+	__atomic_add_fetch(&shm->stats.ebpf_gen.map_value_deref_emitted,
 			   1, __ATOMIC_RELAXED);
 	return pos;
 }
@@ -1268,7 +1268,7 @@ void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
 		prepend_map_reg = emit_ld_map_fd_prologue(insns, map_fd);
 		prepend = 2;
 		tier_max -= 2;
-		__atomic_add_fetch(&shm->stats.ebpf_gen_map_fd_substituted, 1,
+		__atomic_add_fetch(&shm->stats.ebpf_gen.map_fd_substituted, 1,
 				   __ATOMIC_RELAXED);
 	}
 
