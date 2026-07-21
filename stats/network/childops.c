@@ -415,7 +415,7 @@ static void dump_stats_render_obscure_af_churn(void)
 
 static void dump_stats_render_rxrpc_sendmsg_cmsg(void)
 {
-	if (shm->stats.rxrpc_sendmsg_cmsg_runs) {
+	if (shm->stats.rxrpc_sendmsg_cmsg.runs) {
 		static const char * const rxrpc_cmsg_slot_names[8] = {
 			"user_call_id",
 			"abort",
@@ -429,15 +429,15 @@ static void dump_stats_render_rxrpc_sendmsg_cmsg(void)
 		char key[64];
 		unsigned int slot;
 
-		stat_row("rxrpc_sendmsg_cmsg_churn", "runs",          shm->stats.rxrpc_sendmsg_cmsg_runs);
-		stat_row("rxrpc_sendmsg_cmsg_churn", "socket_failed", shm->stats.rxrpc_sendmsg_cmsg_socket_failed);
-		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_ok",    shm->stats.rxrpc_sendmsg_cmsg_sendmsg_ok);
-		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_fail",  shm->stats.rxrpc_sendmsg_cmsg_sendmsg_fail);
+		stat_row("rxrpc_sendmsg_cmsg_churn", "runs",          shm->stats.rxrpc_sendmsg_cmsg.runs);
+		stat_row("rxrpc_sendmsg_cmsg_churn", "socket_failed", shm->stats.rxrpc_sendmsg_cmsg.socket_failed);
+		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_ok",    shm->stats.rxrpc_sendmsg_cmsg.sendmsg_ok);
+		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_fail",  shm->stats.rxrpc_sendmsg_cmsg.sendmsg_fail);
 		for (slot = 0; slot < 8U; slot++) {
 			snprintf(key, sizeof(key), "cmsg_sent_%s",
 				 rxrpc_cmsg_slot_names[slot]);
 			stat_row("rxrpc_sendmsg_cmsg_churn", key,
-				 shm->stats.rxrpc_sendmsg_cmsg_sent[slot]);
+				 shm->stats.rxrpc_sendmsg_cmsg.sent[slot]);
 		}
 	}
 }

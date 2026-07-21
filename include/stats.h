@@ -132,6 +132,7 @@
 #include "stats/subsys/refcount_audit.h"
 #include "stats/subsys/rtnl_vf_broadcast.h"
 #include "stats/subsys/rxrpc_key_install.h"
+#include "stats/subsys/rxrpc_sendmsg_cmsg.h"
 #include "stats/subsys/sched_cycler.h"
 #include "stats/subsys/sctp_assoc_churn.h"
 #include "stats/subsys/sctp_chunk_rx.h"
@@ -2253,12 +2254,8 @@ struct stats_s {
 	/* minicorpus snapshot/ring accounting.  See stats/subsys/minicorpus.h. */
 	struct minicorpus_stats minicorpus;
 
-	/* rxrpc_sendmsg_cmsg_churn childop counters */
-	unsigned long rxrpc_sendmsg_cmsg_runs;			/* total rxrpc_sendmsg_cmsg_churn invocations */
-	unsigned long rxrpc_sendmsg_cmsg_socket_failed;		/* socket()/bind() rejected (incl EPROTONOSUPPORT-latch trip) */
-	unsigned long rxrpc_sendmsg_cmsg_sent[8];		/* per-cmsg-slot histogram (USER_CALL_ID..CHARGE_ACCEPT) */
-	unsigned long rxrpc_sendmsg_cmsg_sendmsg_ok;		/* sendmsg() returned >=0 */
-	unsigned long rxrpc_sendmsg_cmsg_sendmsg_fail;		/* sendmsg() returned -1 (kernel rejected the cmsg shape) */
+	/* rxrpc_sendmsg_cmsg accounting.  See stats/subsys/rxrpc_sendmsg_cmsg.h. */
+	struct rxrpc_sendmsg_cmsg_stats rxrpc_sendmsg_cmsg;
 
 	/*
 	 * init_child()'s pid-handshake loop observed pid_alive(mainpid)
