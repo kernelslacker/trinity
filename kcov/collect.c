@@ -206,10 +206,10 @@ static void kcov_note_max_probe(unsigned long probe)
 
 	if (probe == 0)
 		return;
-	cur = __atomic_load_n(&kcov_shm->dedup_max_probe_seen,
+	cur = __atomic_load_n(&kcov_shm->dedup.dedup_max_probe_seen,
 		__ATOMIC_RELAXED);
 	while (probe > cur) {
-		if (__atomic_compare_exchange_n(&kcov_shm->dedup_max_probe_seen,
+		if (__atomic_compare_exchange_n(&kcov_shm->dedup.dedup_max_probe_seen,
 				&cur, probe,
 				false,
 				__ATOMIC_RELAXED,
@@ -252,7 +252,7 @@ static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
 		}
 		slot = (slot + 1) & KCOV_DEDUP_MASK;
 	}
-	__atomic_fetch_add(&kcov_shm->dedup_probe_overflow,
+	__atomic_fetch_add(&kcov_shm->dedup.dedup_probe_overflow,
 		1, __ATOMIC_RELAXED);
 	if (nr < MAX_NR_SYSCALL)
 		__atomic_fetch_add(&kcov_shm->per_syscall_diag[nr][do32].dedup_probe_overflow,
