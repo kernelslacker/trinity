@@ -810,13 +810,13 @@ void child_process(struct childdata *child, int childno)
 			 * (skipped_cmp / skipped_nested / skipped_inactive) and
 			 * the success arm (childop_kcov_bracketed) sum back to
 			 * this counter -- the smoke-test invariant for this row. */
-			__atomic_fetch_add(&kcov_shm->childop_kcov_attempts,
+			__atomic_fetch_add(&kcov_shm->childop_kcov.childop_kcov_attempts,
 				1, __ATOMIC_RELAXED);
 			/* Per-op mirror.  Sized to KCOV_CHILDOP_NR_MAX;
 			 * NR_CHILD_OP_TYPES is asserted to fit inside that
 			 * bound in kcov.c, so op is always in range here. */
 			__atomic_fetch_add(
-				&kcov_shm->childop_kcov_op_attempts[op],
+				&kcov_shm->childop_kcov.childop_kcov_op_attempts[op],
 				1, __ATOMIC_RELAXED);
 			/* Snapshot the fields kcov_bracket_begin() consults
 			 * BEFORE the call so a declined begin can be
@@ -834,19 +834,19 @@ void child_process(struct childdata *child, int childno)
 
 			if (bracketed) {
 				__atomic_fetch_add(
-					&kcov_shm->childop_kcov_op_bracketed[op],
+					&kcov_shm->childop_kcov.childop_kcov_op_bracketed[op],
 					1, __ATOMIC_RELAXED);
 			} else if (was_inactive) {
 				__atomic_fetch_add(
-					&kcov_shm->childop_kcov_op_skipped_inactive[op],
+					&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
 					1, __ATOMIC_RELAXED);
 			} else if (was_cmp) {
 				__atomic_fetch_add(
-					&kcov_shm->childop_kcov_op_skipped_cmp[op],
+					&kcov_shm->childop_kcov.childop_kcov_op_skipped_cmp[op],
 					1, __ATOMIC_RELAXED);
 			} else if (was_nested) {
 				__atomic_fetch_add(
-					&kcov_shm->childop_kcov_op_skipped_nested[op],
+					&kcov_shm->childop_kcov.childop_kcov_op_skipped_nested[op],
 					1, __ATOMIC_RELAXED);
 			} else {
 				/* Fell past every pre-check but begin still
@@ -855,7 +855,7 @@ void child_process(struct childdata *child, int childno)
 				 * the second skipped_inactive arm inside
 				 * kcov_bracket_begin(). */
 				__atomic_fetch_add(
-					&kcov_shm->childop_kcov_op_skipped_inactive[op],
+					&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
 					1, __ATOMIC_RELAXED);
 			}
 		}

@@ -363,6 +363,14 @@ struct kcov_shared {
 		unsigned int pc_mode_children;
 		unsigned int cmp_mode_children;
 	} child_mode;
+	/* Aggregate + per-op childop KCOV bracket attempt / reject-arm /
+	 * trace-truncation counters.  All bumped through child.c mirroring
+	 * kcov_bracket_begin()'s decision tree; the invariant
+	 *   attempts == bracketed + skipped_cmp + skipped_nested
+	 *             + skipped_inactive
+	 * holds both for the flat aggregates and per-op indexed by
+	 * enum child_op_type. */
+	struct kcov_childop_kcov {
 	/* Childop bracket attempt + skip-reason counters.  Every gated
 	 * kcov_bracket_begin() call from child.c bumps childop_kcov_attempts
 	 * once; the begin then either fires (childop_kcov_bracketed) or
@@ -422,6 +430,7 @@ struct kcov_shared {
 	 * Sized to KCOV_CHILDOP_NR_MAX; a build-time assertion in kcov.c
 	 * pins NR_CHILD_OP_TYPES below the bound. */
 	unsigned long childop_kcov_trace_truncated[KCOV_CHILDOP_NR_MAX];
+	} childop_kcov;
 	/* Per-syscall count of CALLS that produced at least one new edge.
 	 * NOT a real edge bucket count — a syscall that uncovers 50 distinct
 	 * new edges in one call bumps this by 1, not by 50.  The real
