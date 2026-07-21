@@ -166,18 +166,21 @@ const struct stat_category sysfs_string_race_category =
 
 
 static const struct stat_field sock_diag_walker_fields[] = {
-	STAT_FIELD(sock_diag_walker, runs),
-	STAT_FIELD(sock_diag_walker, setup_failed),
-	STAT_FIELD(sock_diag_walker, inet),
-	STAT_FIELD(sock_diag_walker, unix),
-	STAT_FIELD(sock_diag_walker, netlink),
-	STAT_FIELD(sock_diag_walker, packet),
-	STAT_FIELD(sock_diag_walker, vsock),
+	STAT_FIELD_SUB(sock_diag_walker, runs),
+	STAT_FIELD_SUB(sock_diag_walker, setup_failed),
+	STAT_FIELD_SUB(sock_diag_walker, inet),
+	/* .unix_ underscored because the GCC predefines "unix" as a
+	 * macro on Linux targets; JSON key pinned to "unix" so the
+	 * emitted schema is unchanged across the carve. */
+	STAT_FIELD_JSON_SUB(sock_diag_walker, unix_, "unix"),
+	STAT_FIELD_SUB(sock_diag_walker, netlink),
+	STAT_FIELD_SUB(sock_diag_walker, packet),
+	STAT_FIELD_SUB(sock_diag_walker, vsock),
 };
 
 const struct stat_category sock_diag_walker_category =
 	STAT_CATEGORY("sock_diag_walker",
-	              sock_diag_walker_runs,
+	              sock_diag_walker.runs,
 	              sock_diag_walker_fields);
 
 static const struct stat_field altname_thrash_fields[] = {

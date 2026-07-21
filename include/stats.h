@@ -138,6 +138,7 @@
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/signal_storm.h"
 #include "stats/subsys/slab_cache_thrash.h"
+#include "stats/subsys/sock_diag_walker.h"
 #include "stats/subsys/sock_ulp_sockmap_layering.h"
 #include "stats/subsys/socket_family_chain.h"
 #include "stats/subsys/socket_family_grammar.h"
@@ -2236,14 +2237,8 @@ struct stats_s {
 	 * See stats/subsys/inplace_crypto.h. */
 	struct inplace_crypto_stats inplace_crypto __attribute__((aligned(64)));
 
-	/* sock_diag_walker childop counters */
-	unsigned long sock_diag_walker_runs;		/* total invocations */
-	unsigned long sock_diag_walker_setup_failed;	/* socket(NETLINK_SOCK_DIAG) failed */
-	unsigned long sock_diag_walker_inet;		/* inet_diag_req_v2 variant dispatched */
-	unsigned long sock_diag_walker_unix;		/* unix_diag_req variant dispatched */
-	unsigned long sock_diag_walker_netlink;		/* netlink_diag_req variant dispatched */
-	unsigned long sock_diag_walker_packet;		/* packet_diag_req variant dispatched */
-	unsigned long sock_diag_walker_vsock;		/* vsock_diag_req variant dispatched */
+	/* sock_diag_walker accounting.  See stats/subsys/sock_diag_walker.h. */
+	struct sock_diag_walker_stats sock_diag_walker;
 
 	/* altname_thrash accounting.  See stats/subsys/altname_thrash.h. */
 	struct altname_thrash_stats altname_thrash;
