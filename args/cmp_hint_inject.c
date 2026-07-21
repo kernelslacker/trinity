@@ -142,7 +142,7 @@ void credit_cmp_hint_injection(struct syscallrecord *rec,
 	struct childdata *child;
 
 	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
+		__atomic_fetch_add(&kcov_shm->hints_flat.cmp_hints_injected,
 				   1UL, __ATOMIC_RELAXED);
 		if (rec->nr < MAX_NR_SYSCALL)
 			__atomic_fetch_add(

@@ -255,17 +255,17 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 
 	cur_records       = __atomic_load_n(&kcov_shm->cmp_records.cmp_records_collected,   __ATOMIC_RELAXED);
 	cur_truncated     = __atomic_load_n(&kcov_shm->cmp_records.cmp_trace_truncated,     __ATOMIC_RELAXED);
-	cur_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
-	cur_strip_skipped = __atomic_load_n(&kcov_shm->cmp_hints_strip_skipped, __ATOMIC_RELAXED);
-	cur_unique        = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
+	cur_bloom_skipped = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
+	cur_strip_skipped = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_strip_skipped, __ATOMIC_RELAXED);
+	cur_unique        = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_unique_inserts, __ATOMIC_RELAXED);
 	/* Source from parent_stats: cmp_hints_try_get_ex() now enqueues
 	 * +1 per attempt/return via the per-child stats_ring; the kcov_shm
 	 * scalars are gone, removing a fuzzer-visible wild-write target. */
 	cur_try_get_attempts = parent_stats.cmp_hints_try_get_attempts;
 	cur_try_get_returned = parent_stats.cmp_hints_try_get_returned;
-	cur_injected         = __atomic_load_n(&kcov_shm->cmp_hints_injected,         __ATOMIC_RELAXED);
-	cur_prop_injected    = __atomic_load_n(&kcov_shm->propagation_injected,       __ATOMIC_RELAXED);
-	cur_chaos_suppressed = __atomic_load_n(&kcov_shm->cmp_hints_chaos_suppressed, __ATOMIC_RELAXED);
+	cur_injected         = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_injected,         __ATOMIC_RELAXED);
+	cur_prop_injected    = __atomic_load_n(&kcov_shm->hints_flat.propagation_injected,       __ATOMIC_RELAXED);
+	cur_chaos_suppressed = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_chaos_suppressed, __ATOMIC_RELAXED);
 	cur_count_oob        = __atomic_load_n(&kcov_shm->cmp_hints_count_oob,               __ATOMIC_RELAXED);
 	cur_canary_lock_post = __atomic_load_n(&kcov_shm->cmp_hints_canary_lock_post_corrupt, __ATOMIC_RELAXED);
 	cur_canary_pre       = __atomic_load_n(&kcov_shm->cmp_hints_canary_pre_corrupt,      __ATOMIC_RELAXED);
@@ -326,7 +326,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		unsigned int cs;
 		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++)
 			cur_prop_injected_callsite[cs] = __atomic_load_n(
-				&kcov_shm->propagation_injected_callsite[cs],
+				&kcov_shm->hints_flat.propagation_injected_callsite[cs],
 				__ATOMIC_RELAXED);
 	}
 	cur_cmp_hints_consumed             = __atomic_load_n(&kcov_shm->cmp_hints_consumed,             __ATOMIC_RELAXED);
