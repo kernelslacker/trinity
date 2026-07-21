@@ -2295,7 +2295,7 @@ void minicorpus_enable_snapshots(const char *path)
 	 * and a forward step would fire a burst of snapshots.  Defensive
 	 * shm guard mirrors minicorpus_maybe_snapshot(). */
 	if (shm != NULL)
-		__atomic_store_n(&shm->stats.minicorpus_last_snapshot_time,
+		__atomic_store_n(&shm->stats.minicorpus.last_snapshot_time,
 				 (unsigned long)(mono_ns() / 1000000000ULL),
 				 __ATOMIC_RELAXED);
 }
@@ -2313,7 +2313,7 @@ void minicorpus_maybe_snapshot(void)
 	edges_now = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
 	old = __atomic_load_n(&minicorpus_shm->edges_at_last_snapshot,
 			      __ATOMIC_RELAXED);
-	old_time = __atomic_load_n(&shm->stats.minicorpus_last_snapshot_time,
+	old_time = __atomic_load_n(&shm->stats.minicorpus.last_snapshot_time,
 				   __ATOMIC_RELAXED);
 	now_sec = (unsigned long)(mono_ns() / 1000000000ULL);
 
@@ -2349,6 +2349,6 @@ void minicorpus_maybe_snapshot(void)
 	 * starts cleanly regardless of which trigger fired this time.  No
 	 * CAS needed: the window-CAS above already elected us as the sole
 	 * writer for this snapshot boundary. */
-	__atomic_store_n(&shm->stats.minicorpus_last_snapshot_time, now_sec,
+	__atomic_store_n(&shm->stats.minicorpus.last_snapshot_time, now_sec,
 			 __ATOMIC_RELAXED);
 }

@@ -96,6 +96,7 @@
 #include "stats/subsys/map_shared_stress.h"
 #include "stats/subsys/maps.h"
 #include "stats/subsys/memory_pressure.h"
+#include "stats/subsys/minicorpus.h"
 #include "stats/subsys/mount_churn.h"
 #include "stats/subsys/nat_t_churn.h"
 #include "stats/subsys/mpls_label_stack_rx.h"
@@ -2253,33 +2254,8 @@ struct stats_s {
 	/* ublk_lifecycle accounting.  See stats/subsys/ublk_lifecycle.h. */
 	struct ublk_lifecycle_stats ublk_lifecycle __attribute__((aligned(64)));
 
-	/*
-	 * Wall-clock high-water-mark for the periodic minicorpus snapshot.
-	 * Companion to minicorpus_shm->edges_at_last_snapshot but lives in
-	 * shm->stats so the field is allocated alongside the rest of the
-	 * snapshot trigger state and the operator's stats dump can surface
-	 * it without crossing into the corpus-only shared region.  Short
-	 * runs that die before the edge-delta threshold trips would
-	 * otherwise lose the entire mid-run corpus.  Initialised at
-	 * minicorpus_enable_snapshots() time and advanced by the single
-	 * CAS-elected saver after minicorpus_save_file() returns.
-	 */
-	unsigned long minicorpus_last_snapshot_time;
-
-	/*
-	 * Bumped from runid_corpus_entries_total() each time a per-syscall
-	 * minicorpus ring is observed with count > CORPUS_RING_SIZE.  Every
-	 * save path (in-run minicorpus_save_with_reason() and the on-disk
-	 * loader) caps count at CORPUS_RING_SIZE before publishing, and the
-	 * picker / snapshot readers also clamp before indexing entries[];
-	 * a value above the cap is therefore not reachable through the
-	 * documented writer flow and is a zero-false-positive signal that
-	 * a sibling wild write has scribbled the ring's count word.  The
-	 * sum reader silently clamped before this counter existed, which
-	 * surfaced as a wildly inflated corpus_entries headline at run-end
-	 * (e.g. 5,178,716 vs the real 1,565) with no other breadcrumb.
-	 */
-	unsigned long corpus_count_overcap_caught;
+	/* minicorpus snapshot/ring accounting.  See stats/subsys/minicorpus.h. */
+	struct minicorpus_stats minicorpus;
 
 	/* rxrpc_sendmsg_cmsg_churn childop counters */
 	unsigned long rxrpc_sendmsg_cmsg_runs;			/* total rxrpc_sendmsg_cmsg_churn invocations */
