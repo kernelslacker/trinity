@@ -95,20 +95,20 @@ void cred_oracle_record(const struct syscallentry *entry,
 	if (cls >= CRED_CLASS_NR)
 		return;
 
-	__atomic_add_fetch(&shm->stats.cred_class_calls[cls], 1UL,
+	__atomic_add_fetch(&shm->stats.cred_class.calls[cls], 1UL,
 			   __ATOMIC_RELAXED);
 
 	switch (errno_bucket) {
 	case ERRNO_BUCKET_SUCCESS:
-		__atomic_add_fetch(&shm->stats.cred_class_success[cls], 1UL,
+		__atomic_add_fetch(&shm->stats.cred_class.success[cls], 1UL,
 				   __ATOMIC_RELAXED);
 		break;
 	case ERRNO_BUCKET_EPERM:
-		__atomic_add_fetch(&shm->stats.cred_class_eperm[cls], 1UL,
+		__atomic_add_fetch(&shm->stats.cred_class.eperm[cls], 1UL,
 				   __ATOMIC_RELAXED);
 		break;
 	case ERRNO_BUCKET_EINVAL:
-		__atomic_add_fetch(&shm->stats.cred_class_einval[cls], 1UL,
+		__atomic_add_fetch(&shm->stats.cred_class.einval[cls], 1UL,
 				   __ATOMIC_RELAXED);
 		break;
 	default:
@@ -132,7 +132,7 @@ bool cred_throttle_should_reject(unsigned int nr, bool do32)
 	if (cls >= CRED_CLASS_NR)
 		return false;
 
-	calls = __atomic_load_n(&shm->stats.cred_class_calls[cls],
+	calls = __atomic_load_n(&shm->stats.cred_class.calls[cls],
 				__ATOMIC_RELAXED);
 	if (calls < CRED_THROTTLE_MIN_CALLS)
 		return false;
@@ -140,7 +140,7 @@ bool cred_throttle_should_reject(unsigned int nr, bool do32)
 	/* Any observed success retires the throttle until the run restarts:
 	 * if the class CAN succeed in this environment we want full sampling
 	 * to drive its coverage. */
-	success = __atomic_load_n(&shm->stats.cred_class_success[cls],
+	success = __atomic_load_n(&shm->stats.cred_class.success[cls],
 				  __ATOMIC_RELAXED);
 	if (success > 0)
 		return false;
@@ -150,9 +150,9 @@ bool cred_throttle_should_reject(unsigned int nr, bool do32)
 	 * shape of bug or kernel rejection that the picker should keep
 	 * sampling.  100 * hard_fails >= CRED_THROTTLE_HARD_FAIL_PCT * calls
 	 * is the percent check rearranged to integer-safe form. */
-	eperm = __atomic_load_n(&shm->stats.cred_class_eperm[cls],
+	eperm = __atomic_load_n(&shm->stats.cred_class.eperm[cls],
 				__ATOMIC_RELAXED);
-	einval = __atomic_load_n(&shm->stats.cred_class_einval[cls],
+	einval = __atomic_load_n(&shm->stats.cred_class.einval[cls],
 				 __ATOMIC_RELAXED);
 	hard_fails = eperm + einval;
 	if (hard_fails * 100UL < (unsigned long)CRED_THROTTLE_HARD_FAIL_PCT *
@@ -165,7 +165,7 @@ bool cred_throttle_should_reject(unsigned int nr, bool do32)
 	 * still produce a success that retires the throttle on its next
 	 * oracle re-check. */
 	if (rnd_modulo_u32(CRED_THROTTLE_REJECT_DENOM) != 0) {
-		__atomic_add_fetch(&shm->stats.cred_class_throttled[cls], 1UL,
+		__atomic_add_fetch(&shm->stats.cred_class.throttled[cls], 1UL,
 				   __ATOMIC_RELAXED);
 		return true;
 	}

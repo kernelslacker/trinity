@@ -702,7 +702,7 @@ static void dump_stats_render_kcov_kcov_dispatch_stats(void)
 		unsigned int c;
 
 		for (c = 0; c < CRED_CLASS_NR; c++) {
-			if (__atomic_load_n(&shm->stats.cred_class_calls[c],
+			if (__atomic_load_n(&shm->stats.cred_class.calls[c],
 					    __ATOMIC_RELAXED) != 0) {
 				any = true;
 				break;
@@ -716,19 +716,19 @@ static void dump_stats_render_kcov_kcov_dispatch_stats(void)
 			       "EPERM", "EINVAL", "throttled");
 			for (c = 0; c < CRED_CLASS_NR; c++) {
 				unsigned long calls = __atomic_load_n(
-					&shm->stats.cred_class_calls[c],
+					&shm->stats.cred_class.calls[c],
 					__ATOMIC_RELAXED);
 				unsigned long succ = __atomic_load_n(
-					&shm->stats.cred_class_success[c],
+					&shm->stats.cred_class.success[c],
 					__ATOMIC_RELAXED);
 				unsigned long eperm = __atomic_load_n(
-					&shm->stats.cred_class_eperm[c],
+					&shm->stats.cred_class.eperm[c],
 					__ATOMIC_RELAXED);
 				unsigned long einval = __atomic_load_n(
-					&shm->stats.cred_class_einval[c],
+					&shm->stats.cred_class.einval[c],
 					__ATOMIC_RELAXED);
 				unsigned long thr = __atomic_load_n(
-					&shm->stats.cred_class_throttled[c],
+					&shm->stats.cred_class.throttled[c],
 					__ATOMIC_RELAXED);
 
 				if (calls == 0 && thr == 0)
