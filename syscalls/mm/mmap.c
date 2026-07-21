@@ -303,7 +303,7 @@ static void post_mmap_clamp_filebacked(struct object *new, struct syscallrecord 
 
 				if (pgoff_overflows) {
 					new->map.size = 0;
-					__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+					__atomic_add_fetch(&shm->stats.diag.mmap_size_clamped,
 							   1, __ATOMIC_RELAXED);
 				} else {
 					off_t backed = (off_t) st.st_size - off_bytes;
@@ -314,17 +314,17 @@ static void post_mmap_clamp_filebacked(struct object *new, struct syscallrecord 
 						new->map.size = (unsigned long) backed & PAGE_MASK;
 
 					if (new->map.size != rec->a2)
-						__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+						__atomic_add_fetch(&shm->stats.diag.mmap_size_clamped,
 								   1, __ATOMIC_RELAXED);
 				}
 			} else if (S_ISREG(st.st_mode)) {
 				new->map.size = 0;
-				__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+				__atomic_add_fetch(&shm->stats.diag.mmap_size_clamped,
 						   1, __ATOMIC_RELAXED);
 			}
 		} else {
 			new->map.size = 0;
-			__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+			__atomic_add_fetch(&shm->stats.diag.mmap_size_clamped,
 					   1, __ATOMIC_RELAXED);
 		}
 	}

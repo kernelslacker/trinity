@@ -321,6 +321,6 @@ void random_map_writefn(struct map *map)
 	(void)sigaction(SIGBUS,  &old_bus,  NULL);
 
 	if (aborted)
-		__atomic_add_fetch(&shm->stats.write_walk_aborted, 1,
+		__atomic_add_fetch(&shm->stats.diag.write_walk_aborted, 1,
 				   __ATOMIC_RELAXED);
 }

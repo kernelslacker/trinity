@@ -28,12 +28,12 @@
  * category surfaces the survivor signal in both dumps.  Text self-gates
  * so a healthy run emits nothing. */
 static const struct stat_field child_fields[] = {
-	STAT_FIELD(child, dead_parent_observed),
+	STAT_FIELD_JSON_SUB(diag, child_dead_parent_observed, "dead_parent_observed"),
 };
 
 const struct stat_category child_category =
 	STAT_CATEGORY("child",
-	              child_dead_parent_observed,
+	              diag.child_dead_parent_observed,
 	              child_fields);
 
 /* parent_inherited_fds_closed: sanitize_inherited_fds() closed an fd

@@ -588,7 +588,7 @@ struct object * get_random_object(enum objecttype type, enum obj_scope scope) __
  *      cannot, and reads OBJ_NONE (== 0) for a free/zero'd chunk
  *      after release_obj()'s memset.
  *
- * Layers 2 and 3 bump shm->stats.global_obj_uaf_caught so the rate of
+ * Layers 2 and 3 bump shm->stats.diag.global_obj_uaf_caught so the rate of
  * caught wild/recycled obj resolutions is observable in the stats
  * surface.  Returns true if obj is safe to dereference as the
  * expected type.

@@ -181,7 +181,7 @@ static void block_self_exec(struct syscallrecord *rec)
 		rec->a5 &= ~(unsigned long) AT_EMPTY_PATH;
 	}
 
-	__atomic_add_fetch(&shm->stats.execve_self_exec_blocked, 1,
+	__atomic_add_fetch(&shm->stats.diag.execve_self_exec_blocked, 1,
 			   __ATOMIC_RELAXED);
 }
 

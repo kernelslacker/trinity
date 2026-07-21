@@ -19,7 +19,7 @@
  * (file_idx, offset).  A separate verifier childop re-reads the
  * pool periodically and asserts byte-for-byte equality with the
  * expected pattern.  Any divergence is logged loudly and counted
- * via shm->stats.pagecache_canary_corrupt_caught.
+ * via shm->stats.diag.pagecache_canary_corrupt_caught.
  *
  * The pool is registered as an fd_provider so trinity's existing
  * splice/mmap/sendfile dispatch can pick canary fds at random as

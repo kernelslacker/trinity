@@ -313,7 +313,7 @@ void stats_ring_drain_all(void)
 			    (top != 0 && top != 0x1ffff)) {
 				output(0, "stats_ring: child[%u] ring pointer %p is non-canonical, skipping\n",
 				       i, ring);
-				__atomic_add_fetch(&shm->stats.stats_ring_corrupted, 1,
+				__atomic_add_fetch(&shm->stats.diag.stats_ring_corrupted, 1,
 						   __ATOMIC_RELAXED);
 				continue;
 			}
@@ -335,7 +335,7 @@ void stats_ring_drain_all(void)
 
 			output(0, "stats_ring: child[%u] ring pointer %p overwritten (expected %p)\n",
 			       i, ring, expected);
-			__atomic_add_fetch(&shm->stats.stats_ring_overwritten, 1,
+			__atomic_add_fetch(&shm->stats.diag.stats_ring_overwritten, 1,
 					   __ATOMIC_RELAXED);
 
 			if (eaddr < 0x10000 ||

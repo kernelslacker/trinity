@@ -176,7 +176,7 @@ void prop_ring_push_scalar(unsigned int nr, long scalar_val,
 
 	if (prop_ring_push_filtered(child, nr, false,
 				    (unsigned long) scalar_val, kind))
-		__atomic_add_fetch(&shm->stats.propagation_injected_key_scalar,
+		__atomic_add_fetch(&shm->stats.diag.propagation_injected_key_scalar,
 				   1, __ATOMIC_RELAXED);
 }
 
