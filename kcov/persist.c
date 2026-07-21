@@ -579,10 +579,10 @@ bool kcov_bitmap_save_file(const char *path)
 		unsigned int i;
 
 		for (i = 0; i < MAX_NR_SYSCALL; i++) {
-			p_edges[i] = kcov_shm->per_syscall_edges[i][0] +
-				     kcov_shm->per_syscall_edges[i][1];
-			p_calls[i] = kcov_shm->per_syscall_calls[i][0] +
-				     kcov_shm->per_syscall_calls[i][1];
+			p_edges[i] = kcov_shm->per_syscall.per_syscall_edges[i][0] +
+				     kcov_shm->per_syscall.per_syscall_edges[i][1];
+			p_calls[i] = kcov_shm->per_syscall.per_syscall_calls[i][0] +
+				     kcov_shm->per_syscall.per_syscall_calls[i][1];
 		}
 	}
 
@@ -1016,9 +1016,9 @@ bool kcov_bitmap_load_file(const char *path)
 					unsigned int i;
 
 					for (i = 0; i < MAX_NR_SYSCALL; i++) {
-						kcov_shm->per_syscall_edges_prior[i][0] =
+						kcov_shm->per_syscall.per_syscall_edges_prior[i][0] =
 							p_edges[i];
-						kcov_shm->per_syscall_calls_prior[i][0] =
+						kcov_shm->per_syscall.per_syscall_calls_prior[i][0] =
 							p_calls[i];
 					}
 				}

@@ -164,7 +164,7 @@ enum stats_field {
 	 * found-new-edge piggyback or the syscalls-since-flush cadence
 	 * cap.  Dump-only reader, no per-call branch reads it, so the
 	 * batched delta is the authoritative dump-path value; the
-	 * kcov_shm->total_warm_known_hits slot has no stamp-role
+	 * kcov_shm->per_syscall.total_warm_known_hits slot has no stamp-role
 	 * consumer, which is why re-bumping it on every call would
 	 * only cost a shared-cacheline write with no reader to serve. */
 	STATS_FIELD_WARM_KNOWN_HITS,
@@ -345,9 +345,9 @@ struct stats_aggregate {
 	 * Reported by the periodic stats dump as a liveness signal;
 	 * staging on childdata->local_stats keeps the hot kcov_shm
 	 * cacheline out of the per-call path, and because no stamp-role
-	 * consumer references kcov_shm->total_warm_known_hits the staged
+	 * consumer references kcov_shm->per_syscall.total_warm_known_hits the staged
 	 * delta is the authoritative value for this counter.  The
-	 * per-syscall split lives in kcov_shm->per_syscall_warm_known_hits[]
+	 * per-syscall split lives in kcov_shm->per_syscall.per_syscall_warm_known_hits[]
 	 * and is left untouched here -- only the cross-child run-wide
 	 * counter migrates. */
 	unsigned long total_warm_known_hits;

@@ -259,7 +259,7 @@ extern unsigned int kcov_trace_size;
  * attribution sampler.  When N > 0, every Nth per-syscall enable/disable
  * bracket in dispatch/syscall.c snapshots the shared edges_found counter
  * before enable and after disable, records the delta into
- * kcov_shm->per_syscall_edges_noisy[nr], and bumps
+ * kcov_shm->per_syscall.per_syscall_edges_noisy[nr], and bumps
  * per_syscall_noisy_samples[nr] so a reader can scale the sampled sum
  * back up by N to estimate the full-population global-delta denominator.
  * Paired with the pre-existing per_syscall_edges[] clean numerator and

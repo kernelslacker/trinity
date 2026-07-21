@@ -402,7 +402,7 @@ bool expensive_accept(unsigned int nr, bool do32)
 		 * subtract. */
 		total = __atomic_load_n(&kcov_shm->coverage.total_calls,
 					__ATOMIC_RELAXED);
-		last = __atomic_load_n(&kcov_shm->last_edge_at[nr],
+		last = __atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr],
 				       __ATOMIC_RELAXED);
 		if (total > last) {
 			gap = total - last;

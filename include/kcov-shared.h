@@ -431,6 +431,12 @@ struct kcov_shared {
 	 * pins NR_CHILD_OP_TYPES below the bound. */
 	unsigned long childop_kcov_trace_truncated[KCOV_CHILDOP_NR_MAX];
 	} childop_kcov;
+	/* Per-syscall coverage / call / warm-known / extrafork / prior /
+	 * SHADOW-noisy accounting arrays, all sized to MAX_NR_SYSCALL (with
+	 * a leading [do32 ? 1 : 0] second dim on the edges/calls arrays so
+	 * IA32 compat entries do not merge with the 64-bit total).  The
+	 * "how did each syscall behave" family. */
+	struct kcov_per_syscall {
 	/* Per-syscall count of CALLS that produced at least one new edge.
 	 * NOT a real edge bucket count — a syscall that uncovers 50 distinct
 	 * new edges in one call bumps this by 1, not by 50.  The real
@@ -538,6 +544,7 @@ struct kcov_shared {
 	unsigned long per_syscall_edges_noisy[MAX_NR_SYSCALL];
 	unsigned long per_syscall_noisy_samples[MAX_NR_SYSCALL];
 	unsigned long per_syscall_edges_clean_remote[MAX_NR_SYSCALL];
+	} per_syscall;
 	/* Per-syscall split of kcov_collect() activity by collection mode.
 	 * A remote-sampled syscall lands in a DIFFERENT mode (the kernel
 	 * puts the task in KCOV_MODE_REMOTE and drops synchronous local
@@ -2585,32 +2592,32 @@ extern struct kcov_shared *kcov_shm;
  * MAX_NR_SYSCALL themselves; these helpers do not re-check. */
 static inline unsigned long per_syscall_edges_total(unsigned int nr)
 {
-	return __atomic_load_n(&kcov_shm->per_syscall_edges[nr][0],
+	return __atomic_load_n(&kcov_shm->per_syscall.per_syscall_edges[nr][0],
 			       __ATOMIC_RELAXED) +
-	       __atomic_load_n(&kcov_shm->per_syscall_edges[nr][1],
+	       __atomic_load_n(&kcov_shm->per_syscall.per_syscall_edges[nr][1],
 			       __ATOMIC_RELAXED);
 }
 static inline unsigned long per_syscall_calls_total(unsigned int nr)
 {
-	return __atomic_load_n(&kcov_shm->per_syscall_calls[nr][0],
+	return __atomic_load_n(&kcov_shm->per_syscall.per_syscall_calls[nr][0],
 			       __ATOMIC_RELAXED) +
-	       __atomic_load_n(&kcov_shm->per_syscall_calls[nr][1],
+	       __atomic_load_n(&kcov_shm->per_syscall.per_syscall_calls[nr][1],
 			       __ATOMIC_RELAXED);
 }
 static inline unsigned long per_syscall_edges_previous_total(unsigned int nr)
 {
-	return kcov_shm->per_syscall_edges_previous[nr][0] +
-	       kcov_shm->per_syscall_edges_previous[nr][1];
+	return kcov_shm->per_syscall.per_syscall_edges_previous[nr][0] +
+	       kcov_shm->per_syscall.per_syscall_edges_previous[nr][1];
 }
 static inline unsigned long per_syscall_edges_prior_total(unsigned int nr)
 {
-	return kcov_shm->per_syscall_edges_prior[nr][0] +
-	       kcov_shm->per_syscall_edges_prior[nr][1];
+	return kcov_shm->per_syscall.per_syscall_edges_prior[nr][0] +
+	       kcov_shm->per_syscall.per_syscall_edges_prior[nr][1];
 }
 static inline unsigned long per_syscall_calls_prior_total(unsigned int nr)
 {
-	return kcov_shm->per_syscall_calls_prior[nr][0] +
-	       kcov_shm->per_syscall_calls_prior[nr][1];
+	return kcov_shm->per_syscall.per_syscall_calls_prior[nr][0] +
+	       kcov_shm->per_syscall.per_syscall_calls_prior[nr][1];
 }
 
 
@@ -2626,7 +2633,7 @@ _Static_assert(offsetof(struct kcov_shared, cmp_records.cmp_records_collected) =
 	"kcov_shared.cmp_records.cmp_records_collected offset drifted");
 _Static_assert(offsetof(struct kcov_shared, hints_flat.cmp_hints_injected) == 8388728UL,
 	"kcov_shared.hints_flat.cmp_hints_injected offset drifted");
-_Static_assert(offsetof(struct kcov_shared, per_syscall_edges) == 8397720UL,
-	"kcov_shared.per_syscall_edges offset drifted");
+_Static_assert(offsetof(struct kcov_shared, per_syscall.per_syscall_edges) == 8397720UL,
+	"kcov_shared.per_syscall.per_syscall_edges offset drifted");
 _Static_assert(offsetof(struct kcov_shared, reexec_new_edges_by_arm) == 25845000UL,
 	"kcov_shared last-field offset drifted -- append-only tail broken");
