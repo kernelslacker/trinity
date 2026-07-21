@@ -114,7 +114,7 @@ static int open_bpf_fd(void)
 	obj->bpfobj.map_fd = fd;
 	obj->bpfobj.map_type = bpf_fds[idx].map_type;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	__atomic_add_fetch(&shm->stats.bpf_maps_provided, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.ebpf_gen.maps_provided, 1, __ATOMIC_RELAXED);
 	return true;
 }
 
@@ -339,7 +339,7 @@ static int init_bpf_prog_fds(void)
 		obj->bpfprogobj.fd = fd;
 		obj->bpfprogobj.prog_type = bpf_prog_templates[i].prog_type;
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);
-		__atomic_add_fetch(&shm->stats.bpf_progs_provided, 1,
+		__atomic_add_fetch(&shm->stats.ebpf_gen.progs_provided, 1,
 				   __ATOMIC_RELAXED);
 		loaded++;
 
