@@ -79,6 +79,7 @@
 #include "stats/subsys/iouring_net_multishot.h"
 #include "stats/subsys/iouring_recipes.h"
 #include "stats/subsys/iouring_send_zc_churn.h"
+#include "stats/subsys/kvm.h"
 #include "stats/subsys/ipfrag_source_churn.h"
 #include "stats/subsys/ipmr_cache_report.h"
 #include "stats/subsys/ip4_udp_cork_splice.h"
@@ -1837,25 +1838,9 @@ struct stats_s {
 	 * See stats/subsys/plateau.h. */
 	struct plateau_stats plateau __attribute__((aligned(64)));
 
-	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Bumped from
-	 * kvm_vcpu_sanitise() each time pick_random_ioctl() lands on an ioctl
-	 * destined for an OBJ_FD_KVM_VCPU fd.  Distinct from the flat KVM
-	 * ioctl group so a zero count here while the flat KVM group stat ticks
-	 * means the per-vCPU fd_test path is dropping the fd and the dispatch
-	 * is still bouncing off /dev/kvm with ENOTTY -- the very state Phase 3
-	 * exists to fix.  Surfaced via periodic_counter_rates_dump() so an
-	 * operator sees the per-window dispatch rate without waiting for the
-	 * end-of-run summary. */
-	unsigned long kvm_vcpu_ioctls_dispatched;
-
-	/* Per-VM ioctl dispatches into kvm_vm_grp.  Bumped from
-	 * kvm_vm_sanitise() each time pick_random_ioctl() lands on an ioctl
-	 * destined for an OBJ_FD_KVM_VM fd.  Same diagnostic role as
-	 * kvm_vcpu_ioctls_dispatched for the per-vCPU group: a flat counter
-	 * while VM fds exist in the pool means kvm_vm_fd_test isn't winning
-	 * arbitration and the dispatch is still bouncing off /dev/kvm with
-	 * ENOTTY. */
-	unsigned long kvm_vm_ioctls_dispatched;
+	/* KVM ioctl fuzzing: per-vCPU / per-VM dispatches, KVM_RUN churn,
+	 * gpc-memslot-race sub-mode.  See stats/subsys/kvm.h. */
+	struct kvm_stats kvm;
 
 	/* btrfs ioctl dispatches into btrfs_grp.  Bumped from btrfs_sanitise()
 	 * each time pick_random_ioctl() lands on an ioctl destined for an
@@ -1865,21 +1850,6 @@ struct stats_s {
 	 * EFAULTing on a random arg pointer; flat counter with active testfile
 	 * fds means find_ioctl_group() arbitration isn't picking btrfs_grp. */
 	unsigned long btrfs_ioctls_dispatched;
-
-	/* kvm_run_churn childop counters */
-	unsigned long kvm_run_invocations;		/* total KVM_RUN ioctls issued */
-	unsigned long kvm_run_exit_io;			/* exit_reason == KVM_EXIT_IO */
-	unsigned long kvm_run_exit_mmio;		/* exit_reason == KVM_EXIT_MMIO */
-	unsigned long kvm_run_exit_hlt;			/* exit_reason == KVM_EXIT_HLT */
-	unsigned long kvm_run_exit_shutdown;		/* exit_reason == KVM_EXIT_SHUTDOWN */
-	unsigned long kvm_run_exit_fail_entry;		/* exit_reason == KVM_EXIT_FAIL_ENTRY */
-	unsigned long kvm_run_exit_internal_error;	/* exit_reason == KVM_EXIT_INTERNAL_ERROR */
-	unsigned long kvm_run_exit_intr;		/* exit_reason == KVM_EXIT_INTR (alarm-induced) */
-	unsigned long kvm_run_exit_other;		/* every other exit_reason value */
-	unsigned long kvm_run_errors;			/* KVM_RUN ioctl returned -1 */
-	unsigned long kvm_gpc_memslot_race_runs;	/* memslot-race sub-mode invocations */
-	unsigned long kvm_gpc_memslot_race_deletes;	/* KVM_SET_USER_MEMORY_REGION{,2} delete ioctls issued by writer */
-	unsigned long kvm_gpc_memslot_race_unsupported;	/* sub-mode latched off (cap absent or ENODEV/EOPNOTSUPP) */
 
 	/* nl80211_churn childop counters.  Drives cfg80211 state-machine
 	 * fuzz under a mac80211_hwsim test radio inside CLONE_NEWNET.
