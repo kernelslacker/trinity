@@ -300,7 +300,7 @@ static void variant_inet(struct nl_ctx *ctx)
 	nlh->nlmsg_len = (__u32)off;
 
 	sd_send_drain(ctx, buf, off);
-	__atomic_add_fetch(&shm->stats.sock_diag_walker_inet, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.sock_diag_walker.inet, 1, __ATOMIC_RELAXED);
 }
 
 static void variant_unix(struct nl_ctx *ctx)
@@ -336,7 +336,7 @@ static void variant_unix(struct nl_ctx *ctx)
 	nlh->nlmsg_len = (__u32)off;
 
 	sd_send_drain(ctx, buf, off);
-	__atomic_add_fetch(&shm->stats.sock_diag_walker_unix, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.sock_diag_walker.unix_, 1, __ATOMIC_RELAXED);
 }
 
 static void variant_netlink(struct nl_ctx *ctx)
@@ -376,7 +376,7 @@ static void variant_netlink(struct nl_ctx *ctx)
 	nlh->nlmsg_len = (__u32)off;
 
 	sd_send_drain(ctx, buf, off);
-	__atomic_add_fetch(&shm->stats.sock_diag_walker_netlink, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.sock_diag_walker.netlink, 1, __ATOMIC_RELAXED);
 }
 
 static void variant_packet(struct nl_ctx *ctx)
@@ -412,7 +412,7 @@ static void variant_packet(struct nl_ctx *ctx)
 	nlh->nlmsg_len = (__u32)off;
 
 	sd_send_drain(ctx, buf, off);
-	__atomic_add_fetch(&shm->stats.sock_diag_walker_packet, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.sock_diag_walker.packet, 1, __ATOMIC_RELAXED);
 }
 
 static void variant_vsock(struct nl_ctx *ctx)
@@ -440,7 +440,7 @@ static void variant_vsock(struct nl_ctx *ctx)
 	nlh->nlmsg_len = (__u32)off;
 
 	sd_send_drain(ctx, buf, off);
-	__atomic_add_fetch(&shm->stats.sock_diag_walker_vsock, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.sock_diag_walker.vsock, 1, __ATOMIC_RELAXED);
 }
 
 bool sock_diag_walker(struct childdata *child)
@@ -452,7 +452,7 @@ bool sock_diag_walker(struct childdata *child)
 	};
 	enum sd_variant v;
 
-	__atomic_add_fetch(&shm->stats.sock_diag_walker_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.sock_diag_walker.runs, 1, __ATOMIC_RELAXED);
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -473,7 +473,7 @@ bool sock_diag_walker(struct childdata *child)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
-		__atomic_add_fetch(&shm->stats.sock_diag_walker_setup_failed,
+		__atomic_add_fetch(&shm->stats.sock_diag_walker.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
