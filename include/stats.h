@@ -111,6 +111,7 @@
 #include "stats/subsys/netns_mountns_setup.h"
 #include "stats/subsys/netns_teardown.h"
 #include "stats/subsys/nf_conntrack_helper_churn.h"
+#include "stats/subsys/nl80211.h"
 #include "stats/subsys/nftables_churn.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/numa_migration.h"
@@ -1851,26 +1852,9 @@ struct stats_s {
 	 * fds means find_ioctl_group() arbitration isn't picking btrfs_grp. */
 	unsigned long btrfs_ioctls_dispatched;
 
-	/* nl80211_churn childop counters.  Drives cfg80211 state-machine
-	 * fuzz under a mac80211_hwsim test radio inside CLONE_NEWNET.
-	 * Race surface targeted by CVE-2022-41674 (cfg80211_update_notlisted_
-	 * nontrans OOB), CVE-2023-3090 (nl80211 wiphy index race), and
-	 * CVE-2025-21672 (cfg80211_scan_done UAF). */
-	unsigned long nl80211_runs;			/* total nl80211_churn invocations */
-	unsigned long nl80211_setup_failed;		/* unshare / netlink open / family resolve / hwsim absent */
-	unsigned long nl80211_scan_triggered;		/* NL80211_CMD_TRIGGER_SCAN accepted */
-	unsigned long nl80211_connect_attempted;	/* NL80211_CMD_CONNECT issued */
-	unsigned long nl80211_connect_succeeded;	/* NL80211_CMD_CONNECT accepted (no kernel rejection) */
-	unsigned long nl80211_disconnect_attempted;	/* NL80211_CMD_DISCONNECT issued */
-	unsigned long nl80211_regdom_changed;		/* NL80211_CMD_SET_REG accepted */
-	unsigned long nl80211_iface_created;		/* NL80211_CMD_NEW_INTERFACE accepted */
-	unsigned long nl80211_iface_destroyed;		/* NL80211_CMD_DEL_INTERFACE accepted */
-	unsigned long nl80211_bursts_sent;		/* loopback UDP sendto on wlan iface returned >0 */
-	unsigned long nl80211_pmsr_runs;		/* NL80211_CMD_PEER_MEASUREMENT_START FTM request issued */
-	unsigned long nl80211_pmsr_ok;			/* NL80211_CMD_PEER_MEASUREMENT_START accepted (no kernel rejection) */
-	unsigned long nl80211_admin_gate_runs;		/* admin-gate probe forked + ran (per upstream 381cd547bc6e audit) */
-	unsigned long nl80211_admin_gate_eperm_ok;	/* probed cmd correctly returned -EPERM under dropped caps */
-	unsigned long nl80211_admin_gate_unexpected;	/* probed cmd returned non-EPERM (regression or unreachable) */
+	/* nl80211_churn childop counters (cfg80211 state-machine fuzz).
+	 * See stats/subsys/nl80211.h. */
+	struct nl80211_stats nl80211;
 
 	/* splice_protocols accounting.  See stats/subsys/splice_protocols.h. */
 	struct splice_protocols_stats splice_protocols __attribute__((aligned(64)));

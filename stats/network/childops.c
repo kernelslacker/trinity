@@ -511,22 +511,22 @@ static void dump_stats_render_kvm_run_churn(void)
 
 static void dump_stats_render_nl80211_churn(void)
 {
-	if (shm->stats.nl80211_runs) {
-		stat_row("nl80211_churn", "runs",                  shm->stats.nl80211_runs);
-		stat_row("nl80211_churn", "setup_failed",          shm->stats.nl80211_setup_failed);
-		stat_row("nl80211_churn", "scan_triggered",        shm->stats.nl80211_scan_triggered);
-		stat_row("nl80211_churn", "connect_attempted",     shm->stats.nl80211_connect_attempted);
-		stat_row("nl80211_churn", "connect_succeeded",     shm->stats.nl80211_connect_succeeded);
-		stat_row("nl80211_churn", "disconnect_attempted",  shm->stats.nl80211_disconnect_attempted);
-		stat_row("nl80211_churn", "regdom_changed",        shm->stats.nl80211_regdom_changed);
-		stat_row("nl80211_churn", "iface_created",         shm->stats.nl80211_iface_created);
-		stat_row("nl80211_churn", "iface_destroyed",       shm->stats.nl80211_iface_destroyed);
-		stat_row("nl80211_churn", "bursts_sent",           shm->stats.nl80211_bursts_sent);
-		stat_row("nl80211_churn", "pmsr_runs",             shm->stats.nl80211_pmsr_runs);
-		stat_row("nl80211_churn", "pmsr_ok",               shm->stats.nl80211_pmsr_ok);
-		stat_row("nl80211_churn", "admin_gate_runs",       shm->stats.nl80211_admin_gate_runs);
-		stat_row("nl80211_churn", "admin_gate_eperm_ok",   shm->stats.nl80211_admin_gate_eperm_ok);
-		stat_row("nl80211_churn", "admin_gate_unexpected", shm->stats.nl80211_admin_gate_unexpected);
+	if (shm->stats.nl80211.runs) {
+		stat_row("nl80211_churn", "runs",                  shm->stats.nl80211.runs);
+		stat_row("nl80211_churn", "setup_failed",          shm->stats.nl80211.setup_failed);
+		stat_row("nl80211_churn", "scan_triggered",        shm->stats.nl80211.scan_triggered);
+		stat_row("nl80211_churn", "connect_attempted",     shm->stats.nl80211.connect_attempted);
+		stat_row("nl80211_churn", "connect_succeeded",     shm->stats.nl80211.connect_succeeded);
+		stat_row("nl80211_churn", "disconnect_attempted",  shm->stats.nl80211.disconnect_attempted);
+		stat_row("nl80211_churn", "regdom_changed",        shm->stats.nl80211.regdom_changed);
+		stat_row("nl80211_churn", "iface_created",         shm->stats.nl80211.iface_created);
+		stat_row("nl80211_churn", "iface_destroyed",       shm->stats.nl80211.iface_destroyed);
+		stat_row("nl80211_churn", "bursts_sent",           shm->stats.nl80211.bursts_sent);
+		stat_row("nl80211_churn", "pmsr_runs",             shm->stats.nl80211.pmsr_runs);
+		stat_row("nl80211_churn", "pmsr_ok",               shm->stats.nl80211.pmsr_ok);
+		stat_row("nl80211_churn", "admin_gate_runs",       shm->stats.nl80211.admin_gate_runs);
+		stat_row("nl80211_churn", "admin_gate_eperm_ok",   shm->stats.nl80211.admin_gate_eperm_ok);
+		stat_row("nl80211_churn", "admin_gate_unexpected", shm->stats.nl80211.admin_gate_unexpected);
 	}
 }
 

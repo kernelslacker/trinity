@@ -52,26 +52,26 @@ static const struct stat_category kvm_run_churn_category =
 	              kvm_run_churn_fields);
 
 static const struct stat_field nl80211_fields[] = {
-	STAT_FIELD(nl80211, runs),
-	STAT_FIELD(nl80211, setup_failed),
-	STAT_FIELD(nl80211, scan_triggered),
-	STAT_FIELD(nl80211, connect_attempted),
-	STAT_FIELD(nl80211, connect_succeeded),
-	STAT_FIELD(nl80211, disconnect_attempted),
-	STAT_FIELD(nl80211, regdom_changed),
-	STAT_FIELD(nl80211, iface_created),
-	STAT_FIELD(nl80211, iface_destroyed),
-	STAT_FIELD(nl80211, bursts_sent),
-	STAT_FIELD(nl80211, pmsr_runs),
-	STAT_FIELD(nl80211, pmsr_ok),
-	STAT_FIELD(nl80211, admin_gate_runs),
-	STAT_FIELD(nl80211, admin_gate_eperm_ok),
-	STAT_FIELD(nl80211, admin_gate_unexpected),
+	STAT_FIELD_SUB(nl80211, runs),
+	STAT_FIELD_SUB(nl80211, setup_failed),
+	STAT_FIELD_SUB(nl80211, scan_triggered),
+	STAT_FIELD_SUB(nl80211, connect_attempted),
+	STAT_FIELD_SUB(nl80211, connect_succeeded),
+	STAT_FIELD_SUB(nl80211, disconnect_attempted),
+	STAT_FIELD_SUB(nl80211, regdom_changed),
+	STAT_FIELD_SUB(nl80211, iface_created),
+	STAT_FIELD_SUB(nl80211, iface_destroyed),
+	STAT_FIELD_SUB(nl80211, bursts_sent),
+	STAT_FIELD_SUB(nl80211, pmsr_runs),
+	STAT_FIELD_SUB(nl80211, pmsr_ok),
+	STAT_FIELD_SUB(nl80211, admin_gate_runs),
+	STAT_FIELD_SUB(nl80211, admin_gate_eperm_ok),
+	STAT_FIELD_SUB(nl80211, admin_gate_unexpected),
 };
 
 static const struct stat_category nl80211_category =
 	STAT_CATEGORY("nl80211",
-	              nl80211_runs,
+	              nl80211.runs,
 	              nl80211_fields);
 
 void dump_stats_json_iouring_zc_and_kvm(void)

@@ -778,7 +778,7 @@ static const struct {
 	 * the hwsim probe latched ns_unsupported_nl80211 and the op went
 	 * noop_forever for the rest of the run. */
 	{ "nl80211_runs",
-	  offsetof(struct stats_s, nl80211_runs) },
+	  offsetof(struct stats_s, nl80211.runs) },
 	/* SHADOW-ONLY cumulative count of "deep but warm" calls -- no PC-edge
 	 * novelty and no CMP-bloom novelty, yet either a per-call PC walk
 	 * meaningfully deeper than the syscall's lifetime mean or a trace

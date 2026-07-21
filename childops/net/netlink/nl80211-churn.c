@@ -797,7 +797,7 @@ static void send_inner_burst(const char *ifname, const struct timespec *t_outer)
 		r = sendto(s, payload, sizeof(payload), MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (r > 0)
-			__atomic_add_fetch(&shm->stats.nl80211_bursts_sent,
+			__atomic_add_fetch(&shm->stats.nl80211.bursts_sent,
 					   1, __ATOMIC_RELAXED);
 	}
 	close(s);
@@ -819,7 +819,7 @@ static void cleanup_ifaces(struct genl_ctx *ctx)
 		if (ifx <= 0)
 			continue;
 		if (del_iface_by_index(ctx, ifx) == 0)
-			__atomic_add_fetch(&shm->stats.nl80211_iface_destroyed,
+			__atomic_add_fetch(&shm->stats.nl80211.iface_destroyed,
 					   1, __ATOMIC_RELAXED);
 		created_ifindex[i] = 0;
 	}
@@ -867,7 +867,7 @@ static void nl80211_admin_gate_probe(uint32_t wiphy_idx)
 {
 	pid_t pid;
 
-	__atomic_add_fetch(&shm->stats.nl80211_admin_gate_runs,
+	__atomic_add_fetch(&shm->stats.nl80211.admin_gate_runs,
 			   1, __ATOMIC_RELAXED);
 
 	pid = fork();
@@ -945,10 +945,10 @@ static void nl80211_admin_gate_probe(uint32_t wiphy_idx)
 				close(netns_fd);
 
 			if (rc == -EPERM)
-				__atomic_add_fetch(&shm->stats.nl80211_admin_gate_eperm_ok,
+				__atomic_add_fetch(&shm->stats.nl80211.admin_gate_eperm_ok,
 						   1, __ATOMIC_RELAXED);
 			else
-				__atomic_add_fetch(&shm->stats.nl80211_admin_gate_unexpected,
+				__atomic_add_fetch(&shm->stats.nl80211.admin_gate_unexpected,
 						   1, __ATOMIC_RELAXED);
 		}
 		genl_close(&cctx);
@@ -992,7 +992,7 @@ static int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
 	 * space. */
 	name_pool_record(NAME_KIND_NETDEV, ifname, strlen(ifname));
 
-	__atomic_add_fetch(&shm->stats.nl80211_iface_created,
+	__atomic_add_fetch(&shm->stats.nl80211.iface_created,
 			   1, __ATOMIC_RELAXED);
 	if (created_count < NL80211_IFACE_RING_CAP)
 		created_ifindex[created_count++] = *ifindex;
@@ -1013,7 +1013,7 @@ static void nl80211_iter_scan_connect(struct genl_ctx *ctx, int ifindex,
 
 	rc = trigger_scan(ctx, ifindex);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.nl80211_scan_triggered,
+		__atomic_add_fetch(&shm->stats.nl80211.scan_triggered,
 				   1, __ATOMIC_RELAXED);
 	else if (errno_is_unsupported(-rc))
 		ns_unsupported_nl80211 = true;
@@ -1021,10 +1021,10 @@ static void nl80211_iter_scan_connect(struct genl_ctx *ctx, int ifindex,
 	(void)wait_scan_results(ctx);
 
 	rc = connect_iface(ctx, ifindex);
-	__atomic_add_fetch(&shm->stats.nl80211_connect_attempted,
+	__atomic_add_fetch(&shm->stats.nl80211.connect_attempted,
 			   1, __ATOMIC_RELAXED);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.nl80211_connect_succeeded,
+		__atomic_add_fetch(&shm->stats.nl80211.connect_succeeded,
 				   1, __ATOMIC_RELAXED);
 	else if (errno_is_unsupported(-rc))
 		ns_unsupported_nl80211 = true;
@@ -1045,12 +1045,12 @@ static void nl80211_iter_races(struct genl_ctx *ctx, int ifindex)
 
 	rc = trigger_scan(ctx, ifindex);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.nl80211_scan_triggered,
+		__atomic_add_fetch(&shm->stats.nl80211.scan_triggered,
 				   1, __ATOMIC_RELAXED);
 
 	rc = set_reg_zz(ctx);
 	if (rc == 0)
-		__atomic_add_fetch(&shm->stats.nl80211_regdom_changed,
+		__atomic_add_fetch(&shm->stats.nl80211.regdom_changed,
 				   1, __ATOMIC_RELAXED);
 }
 
@@ -1067,7 +1067,7 @@ static void nl80211_iter_submodes(struct genl_ctx *ctx, int ifindex)
 	int rc;
 
 	rc = disconnect_iface(ctx, ifindex);
-	__atomic_add_fetch(&shm->stats.nl80211_disconnect_attempted,
+	__atomic_add_fetch(&shm->stats.nl80211.disconnect_attempted,
 			   1, __ATOMIC_RELAXED);
 	(void)rc;
 
@@ -1077,11 +1077,11 @@ static void nl80211_iter_submodes(struct genl_ctx *ctx, int ifindex)
 		int target = created_ifindex[slot];
 
 		if (target > 0) {
-			__atomic_add_fetch(&shm->stats.nl80211_pmsr_runs,
+			__atomic_add_fetch(&shm->stats.nl80211.pmsr_runs,
 					   1, __ATOMIC_RELAXED);
 			if (build_pmsr_ftm_req(ctx, (uint32_t)target,
 					       as_u32) == 0)
-				__atomic_add_fetch(&shm->stats.nl80211_pmsr_ok,
+				__atomic_add_fetch(&shm->stats.nl80211.pmsr_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 	}
@@ -1105,7 +1105,7 @@ static void nl80211_iter_teardown(struct genl_ctx *ctx, int ifindex)
 	if (rc == 0) {
 		unsigned int j;
 
-		__atomic_add_fetch(&shm->stats.nl80211_iface_destroyed,
+		__atomic_add_fetch(&shm->stats.nl80211.iface_destroyed,
 				   1, __ATOMIC_RELAXED);
 		for (j = 0; j < created_count; j++) {
 			if (created_ifindex[j] == ifindex) {
@@ -1200,7 +1200,7 @@ static int nl80211_churn_in_ns(void *arg)
 	if (rc != 0) {
 		if (rc == -ENOENT || errno_is_unsupported(-rc))
 			ns_unsupported_nl80211 = true;
-		__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
+		__atomic_add_fetch(&shm->stats.nl80211.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
@@ -1209,7 +1209,7 @@ static int nl80211_churn_in_ns(void *arg)
 	if (!nl80211_phy0_cached) {
 		if (!hwsim_present(&ctx)) {
 			ns_unsupported_nl80211 = true;
-			__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
+			__atomic_add_fetch(&shm->stats.nl80211.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			goto out;
 		}
@@ -1262,7 +1262,7 @@ bool nl80211_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.nl80211_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.nl80211.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_nl80211_userns)
 		return true;
@@ -1286,7 +1286,7 @@ bool nl80211_churn(struct childdata *child)
 		 * secondary unshare).  Skip this iteration without
 		 * latching -- the failure is not policy and may not
 		 * recur. */
-		__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
+		__atomic_add_fetch(&shm->stats.nl80211.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -1306,8 +1306,8 @@ bool nl80211_churn(struct childdata *child)
 {
 	(void)child;
 
-	__atomic_add_fetch(&shm->stats.nl80211_runs, 1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
+	__atomic_add_fetch(&shm->stats.nl80211.runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.nl80211.setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
 }
