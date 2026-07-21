@@ -591,15 +591,15 @@ static const struct {
 	 * regular-pool pick share a live Path-A deactivation would
 	 * reclaim; the spared_* triple partitions the spare cascade. */
 	{ "context_regular_suppressed_candidates",
-	  offsetof(struct stats_s, context_regular_suppressed_candidates) },
+	  offsetof(struct stats_s, context_suppress.candidates) },
 	{ "context_regular_suppressed_would_skip",
-	  offsetof(struct stats_s, context_regular_suppressed_would_skip) },
+	  offsetof(struct stats_s, context_suppress.would_skip) },
 	{ "context_regular_suppressed_spared_windowed",
-	  offsetof(struct stats_s, context_regular_suppressed_spared_windowed) },
+	  offsetof(struct stats_s, context_suppress.spared_windowed) },
 	{ "context_regular_suppressed_spared_arggen",
-	  offsetof(struct stats_s, context_regular_suppressed_spared_arggen) },
+	  offsetof(struct stats_s, context_suppress.spared_arggen) },
 	{ "context_regular_suppressed_spared_objproducer",
-	  offsetof(struct stats_s, context_regular_suppressed_spared_objproducer) },
+	  offsetof(struct stats_s, context_suppress.spared_objproducer) },
 	/* SHADOW-ONLY LIVE-regime cooldown projections, paired with
 	 * frontier_live_miss_streak_per_syscall[].  Candidates is edge-
 	 * triggered at FRONTIER_LIVE_MISS_COOLDOWN crossings; would_skip is

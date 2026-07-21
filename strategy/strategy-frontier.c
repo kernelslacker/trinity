@@ -1329,7 +1329,7 @@ void context_regular_suppressed_shadow(unsigned int syscallnr, bool do32)
 	    (calls_total * CONTEXT_REGULAR_SUPPRESSED_EPERM_PCT))
 		return;
 
-	__atomic_fetch_add(&shm->stats.context_regular_suppressed_candidates,
+	__atomic_fetch_add(&shm->stats.context_suppress.candidates,
 			   1UL, __ATOMIC_RELAXED);
 
 	reason = frontier_spare_lane_decide(syscallnr, do32);
@@ -1337,26 +1337,26 @@ void context_regular_suppressed_shadow(unsigned int syscallnr, bool do32)
 	switch (reason) {
 	case FRONTIER_SPARE_WINDOWED_EDGES:
 		__atomic_fetch_add(
-			&shm->stats.context_regular_suppressed_spared_windowed,
+			&shm->stats.context_suppress.spared_windowed,
 			1UL, __ATOMIC_RELAXED);
 		break;
 	case FRONTIER_SPARE_ARGGEN:
 		__atomic_fetch_add(
-			&shm->stats.context_regular_suppressed_spared_arggen,
+			&shm->stats.context_suppress.spared_arggen,
 			1UL, __ATOMIC_RELAXED);
 		break;
 	case FRONTIER_SPARE_OBJPRODUCER:
 		__atomic_fetch_add(
-			&shm->stats.context_regular_suppressed_spared_objproducer,
+			&shm->stats.context_suppress.spared_objproducer,
 			1UL, __ATOMIC_RELAXED);
 		break;
 	case FRONTIER_SPARE_NONE:
 	default:
 		__atomic_fetch_add(
-			&shm->stats.context_regular_suppressed_would_skip,
+			&shm->stats.context_suppress.would_skip,
 			1UL, __ATOMIC_RELAXED);
 		__atomic_fetch_add(
-			&shm->stats.context_regular_suppressed_would_skip_per_syscall[syscallnr],
+			&shm->stats.context_suppress.would_skip_per_syscall[syscallnr],
 			1UL, __ATOMIC_RELAXED);
 		/*
 		 * COMBINED live suppression would sit here gated on mode ==

@@ -414,7 +414,7 @@ void dump_context_regular_suppressed_per_syscall_top(void)
 
 	for (i = 0; i < nr_to_scan; i++) {
 		unsigned long c =
-			shm->stats.context_regular_suppressed_would_skip_per_syscall[i];
+			shm->stats.context_suppress.would_skip_per_syscall[i];
 
 		if (c == 0)
 			continue;
