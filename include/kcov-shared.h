@@ -17,6 +17,7 @@
 #include "kcov-groups/kmsg.h"
 #include "kcov-groups/hints_canary.h"
 #include "kcov-groups/cohorts.h"
+#include "kcov-groups/child_mode.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -64,10 +65,7 @@ struct kcov_shared {
 	 * print_kcov_cmp_diag so the operator can confirm the realised
 	 * mode mix matches KCOV_CMP_CHILD_RECIPROCAL.  Diagnostic only —
 	 * nothing depends on these for control flow. */
-	struct kcov_child_mode_pop {
-		unsigned int pc_mode_children;
-		unsigned int cmp_mode_children;
-	} child_mode;
+	struct kcov_child_mode_pop child_mode;
 	/* Aggregate + per-op childop KCOV bracket attempt / reject-arm /
 	 * trace-truncation counters.  All bumped through child.c mirroring
 	 * kcov_bracket_begin()'s decision tree; the invariant
