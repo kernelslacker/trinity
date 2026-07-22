@@ -110,14 +110,17 @@ static bool prop_ring_push_filtered(struct childdata *child,
 	 * with one value.  Kind is part of the dedup key so a value
 	 * pushed first untyped and then typed (or vice-versa) is not
 	 * folded into one slot -- the typed consumer needs to find a
-	 * tagged copy. */
-	prev = &ring->slots[ring_prev(ring->head)];
-	if (prev->valid &&
-	    prev->value == value &&
-	    prev->src_nr == src_nr &&
-	    prev->do32bit == do32bit &&
-	    prev->kind == kind)
-		return false;
+	 * tagged copy.  Gate on head > 0: at head == 0, ring_prev()
+	 * wraps to SIZE-1, whose contents are not a real prior push. */
+	if (ring->head > 0) {
+		prev = &ring->slots[ring_prev(ring->head)];
+		if (prev->valid &&
+		    prev->value == value &&
+		    prev->src_nr == src_nr &&
+		    prev->do32bit == do32bit &&
+		    prev->kind == kind)
+			return false;
+	}
 
 	slot = &ring->slots[ring->head & (CHILD_PROP_RING_SIZE - 1)];
 	slot->value = value;
