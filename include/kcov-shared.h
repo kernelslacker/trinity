@@ -54,6 +54,7 @@
 #include "kcov-groups/cmp_width_pin.h"
 #include "kcov-groups/cmp_hyp_shadow.h"
 #include "kcov-groups/field_consumer_shadow.h"
+#include "kcov-groups/cmp_shared_tier_shadow.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -1397,9 +1398,7 @@ struct kcov_shared {
 	 * Append-only at the tail per the existing convention so
 	 * consumer offsets stay stable.
 	 */
-	struct kcov_cmp_shared_tier_shadow {
-	unsigned long cmp_shared_tier_shadow_would_confirm;
-	} cmp_shared_tier_shadow;
+	struct kcov_cmp_shared_tier_shadow cmp_shared_tier_shadow;
 
 	/*
 	 * RedQueen plateau_burst per-call drain-cap A/B measure arm counters.
