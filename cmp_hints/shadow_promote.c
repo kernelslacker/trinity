@@ -99,11 +99,11 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.name = "cmp_hyp_pow2_derive",
 		.would_win_offset =
 			offsetof(struct kcov_shared,
-				 cmp_hyp_pow2_derive_would_win),
+				 cmp_hyp_shadow.cmp_hyp_pow2_derive_would_win),
 		.live_win_offset = 0,
 		.baseline_offset =
 			offsetof(struct kcov_shared,
-				 cmp_hyp_pow2_derive_would_fire),
+				 cmp_hyp_shadow.cmp_hyp_pow2_derive_would_fire),
 		.live_flag = 0,
 		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
 		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,
@@ -122,11 +122,11 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.name = "cmp_hyp_bitmask_full_or",
 		.would_win_offset =
 			offsetof(struct kcov_shared,
-				 cmp_hyp_bitmask_full_or_would_win),
+				 cmp_hyp_shadow.cmp_hyp_bitmask_full_or_would_win),
 		.live_win_offset = 0,
 		.baseline_offset =
 			offsetof(struct kcov_shared,
-				 cmp_hyp_bitmask_full_or_would_fire),
+				 cmp_hyp_shadow.cmp_hyp_bitmask_full_or_would_fire),
 		.live_flag = 0,
 		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
 		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,
@@ -145,11 +145,11 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.name = "cmp_hyp_bitmask_andnot_toggle",
 		.would_win_offset =
 			offsetof(struct kcov_shared,
-				 cmp_hyp_bitmask_andnot_toggle_would_win),
+				 cmp_hyp_shadow.cmp_hyp_bitmask_andnot_toggle_would_win),
 		.live_win_offset = 0,
 		.baseline_offset =
 			offsetof(struct kcov_shared,
-				 cmp_hyp_bitmask_andnot_toggle_would_fire),
+				 cmp_hyp_shadow.cmp_hyp_bitmask_andnot_toggle_would_fire),
 		.live_flag = 0,
 		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
 		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,
