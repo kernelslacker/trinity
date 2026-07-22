@@ -597,7 +597,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						(unsigned int)child->op_type;
 
 					__atomic_fetch_add(
-						&kcov_shm->reexec_attribution_found,
+						&kcov_shm->reexec_flat.reexec_attribution_found,
 						1UL, __ATOMIC_RELAXED);
 					/* per-nr HEAD of the attribution
 					 * funnel.  Sibling of the existing
@@ -635,7 +635,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 							1UL, __ATOMIC_RELAXED);
 					if (match_count > 1) {
 						__atomic_fetch_add(
-							&kcov_shm->reexec_attribution_ambiguous,
+							&kcov_shm->reexec_flat.reexec_attribution_ambiguous,
 							1UL, __ATOMIC_RELAXED);
 						/* per-nr
 						 * partition of the ambiguity
@@ -758,7 +758,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 
 					if (kcov_shm != NULL)
 						__atomic_fetch_add(
-							&kcov_shm->reexec_attribution_width_match,
+							&kcov_shm->reexec_flat.reexec_attribution_width_match,
 							1UL, __ATOMIC_RELAXED);
 
 					/* Same buffer-fill backstop as the
@@ -897,7 +897,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						 * with the field-scoped CMP pool
 						 * follow-up. */
 						__atomic_fetch_add(
-							&kcov_shm->reexec_attribution_found,
+							&kcov_shm->reexec_flat.reexec_attribution_found,
 							1UL, __ATOMIC_RELAXED);
 						__atomic_fetch_add(
 							&kcov_shm->reexec_attribution_found_by_syscall[nr],

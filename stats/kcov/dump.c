@@ -162,14 +162,14 @@ static void dump_stats_render_kcov_warm_known_hits(void)
 
 static void dump_stats_render_kcov_reexec(void)
 {
-		unsigned long rx_attempts = __atomic_load_n(&kcov_shm->reexec_attempts, __ATOMIC_RELAXED);
-		unsigned long rx_attribution_found = __atomic_load_n(&kcov_shm->reexec_attribution_found, __ATOMIC_RELAXED);
-		unsigned long rx_attribution_ambiguous = __atomic_load_n(&kcov_shm->reexec_attribution_ambiguous, __ATOMIC_RELAXED);
-		unsigned long rx_attribution_width_match = __atomic_load_n(&kcov_shm->reexec_attribution_width_match, __ATOMIC_RELAXED);
-		unsigned long rx_new_cmps_total = __atomic_load_n(&kcov_shm->reexec_new_cmps_total, __ATOMIC_RELAXED);
-		unsigned long rx_skipped_destructive = __atomic_load_n(&kcov_shm->reexec_skipped_destructive, __ATOMIC_RELAXED);
-		unsigned long rx_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
-		unsigned long rx_window_cap_hit = __atomic_load_n(&kcov_shm->reexec_window_cap_hit, __ATOMIC_RELAXED);
+		unsigned long rx_attempts = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attempts, __ATOMIC_RELAXED);
+		unsigned long rx_attribution_found = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attribution_found, __ATOMIC_RELAXED);
+		unsigned long rx_attribution_ambiguous = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attribution_ambiguous, __ATOMIC_RELAXED);
+		unsigned long rx_attribution_width_match = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attribution_width_match, __ATOMIC_RELAXED);
+		unsigned long rx_new_cmps_total = __atomic_load_n(&kcov_shm->reexec_flat.reexec_new_cmps_total, __ATOMIC_RELAXED);
+		unsigned long rx_skipped_destructive = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_destructive, __ATOMIC_RELAXED);
+		unsigned long rx_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_validate_silent, __ATOMIC_RELAXED);
+		unsigned long rx_window_cap_hit = __atomic_load_n(&kcov_shm->reexec_flat.reexec_window_cap_hit, __ATOMIC_RELAXED);
 		unsigned long rx_parent_calls_enabled = __atomic_load_n(&kcov_shm->cmp_parent_calls_enabled, __ATOMIC_RELAXED);
 		unsigned long rx_parent_calls_control = __atomic_load_n(&kcov_shm->cmp_parent_calls_control, __ATOMIC_RELAXED);
 		unsigned long rx_parent_new_cmps_enabled = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_enabled, __ATOMIC_RELAXED);
