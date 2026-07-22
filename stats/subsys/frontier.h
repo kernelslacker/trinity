@@ -175,7 +175,7 @@ struct frontier_per_syscall_stats {
 	 * test -- no new collection path is added, only the snapshot.
 	 *
 	 *  frontier_silent_cmp_baseline[nr]
-	 *      Mirror of kcov_shm->per_syscall_cmp_inserts[nr] at the most
+	 *      Mirror of kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr] at the most
 	 *      recent streak reset.  Current > baseline means at least one
 	 *      distinct CMP insert/evict-replace event landed for this
 	 *      syscall during the silent streak -- CMP novelty the PC-edge

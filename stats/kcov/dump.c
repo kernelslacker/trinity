@@ -593,8 +593,8 @@ static void dump_stats_render_kcov_per_syscall_cold_topn(unsigned int nr_syscall
 
 		memset(cmp_delta_inserts, 0, sizeof(cmp_delta_inserts));
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
-			unsigned long prev = kcov_shm->per_syscall_cmp_inserts_previous[i];
-			unsigned long curr = __atomic_load_n(&kcov_shm->per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
+			unsigned long prev = kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts_previous[i];
+			unsigned long curr = __atomic_load_n(&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
 			unsigned long delta = sat_sub_ul(curr, prev);
 
 			if (delta > 0)
@@ -617,8 +617,8 @@ static void dump_stats_render_kcov_per_syscall_cold_topn(unsigned int nr_syscall
 		}
 
 		for (i = 0; i < nr_syscalls_to_scan; i++)
-			kcov_shm->per_syscall_cmp_inserts_previous[i] =
-				__atomic_load_n(&kcov_shm->per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
+			kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts_previous[i] =
+				__atomic_load_n(&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
 }
 
 static void dump_stats_render_kcov_per_syscall_yield_topn(unsigned int nr_syscalls_to_scan, const struct syscalltable *table)
