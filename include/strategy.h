@@ -25,7 +25,7 @@ enum strategy_t {
  * a typical run. */
 #define STRATEGY_WINDOW (1UL << 17)	/* 131,072 ops */
 
-/* Tightened rotation boundary used only while kcov_shm->plateau_active
+/* Tightened rotation boundary used only while kcov_shm->plateau.plateau_active
  * is set.  ~8x more rotations than STRATEGY_WINDOW so the plateau-
  * intervention layer (SR_PLATEAU_FORCE, RRC-biased replay, anti-prior
  * accept gating) gets re-applied many times inside one 600s detector

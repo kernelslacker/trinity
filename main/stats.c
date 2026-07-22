@@ -462,7 +462,7 @@ void print_stats(void)
 				enum picker_mode_t pmode = (enum picker_mode_t)__atomic_load_n(
 					&shm->picker_mode, __ATOMIC_RELAXED);
 				bool plateau = __atomic_load_n(
-					&kcov_shm->plateau_active,
+					&kcov_shm->plateau.plateau_active,
 					__ATOMIC_ACQUIRE);
 
 				print_stats_picker_state(pmode, plateau);

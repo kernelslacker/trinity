@@ -416,17 +416,17 @@ void kcov_plateau_check(void)
 	 * written before the RELEASE-store of plateau_armed so a child
 	 * reader that observes plateau_armed=true via the ACQUIRE pair is
 	 * guaranteed to also see the seeded companion state. */
-	if (!__atomic_load_n(&kcov_shm->plateau_armed, __ATOMIC_ACQUIRE)) {
-		__atomic_store_n(&kcov_shm->plateau_window_start, now,
+	if (!__atomic_load_n(&kcov_shm->plateau.plateau_armed, __ATOMIC_ACQUIRE)) {
+		__atomic_store_n(&kcov_shm->plateau.plateau_window_start, now,
 				 __ATOMIC_RELAXED);
-		__atomic_store_n(&kcov_shm->plateau_prev_edges, edges_now,
+		__atomic_store_n(&kcov_shm->plateau.plateau_prev_edges, edges_now,
 				 __ATOMIC_RELAXED);
-		__atomic_store_n(&kcov_shm->plateau_armed, true,
+		__atomic_store_n(&kcov_shm->plateau.plateau_armed, true,
 				 __ATOMIC_RELEASE);
 		return;
 	}
 
-	elapsed = (long)(now - __atomic_load_n(&kcov_shm->plateau_window_start,
+	elapsed = (long)(now - __atomic_load_n(&kcov_shm->plateau.plateau_window_start,
 					       __ATOMIC_RELAXED));
 	if (elapsed < 0)
 		elapsed = 0;
@@ -435,15 +435,15 @@ void kcov_plateau_check(void)
 
 	{
 		unsigned long prev_edges =
-			__atomic_load_n(&kcov_shm->plateau_prev_edges,
+			__atomic_load_n(&kcov_shm->plateau.plateau_prev_edges,
 					__ATOMIC_RELAXED);
 		delta = sat_sub_ul(edges_now, prev_edges);
 	}
-	__atomic_store_n(&kcov_shm->plateau_last_window_delta, delta,
+	__atomic_store_n(&kcov_shm->plateau.plateau_last_window_delta, delta,
 			 __ATOMIC_RELAXED);
-	__atomic_store_n(&kcov_shm->plateau_prev_edges, edges_now,
+	__atomic_store_n(&kcov_shm->plateau.plateau_prev_edges, edges_now,
 			 __ATOMIC_RELAXED);
-	__atomic_store_n(&kcov_shm->plateau_window_start, now,
+	__atomic_store_n(&kcov_shm->plateau.plateau_window_start, now,
 			 __ATOMIC_RELAXED);
 
 	if (delta < KCOV_PLATEAU_ENTER_THRESHOLD) {
@@ -452,7 +452,7 @@ void kcov_plateau_check(void)
 		 * from healthy into PLATEAU.  Subsequent ticks while still in
 		 * plateau stay silent so the operator's stats.log gets one
 		 * line per episode rather than one per 600s window. */
-		if (!__atomic_load_n(&kcov_shm->plateau_active,
+		if (!__atomic_load_n(&kcov_shm->plateau.plateau_active,
 				     __ATOMIC_ACQUIRE)) {
 			/* Set entered_at BEFORE the RELEASE-store of
 			 * plateau_active so a child reader pairing an
@@ -460,9 +460,9 @@ void kcov_plateau_check(void)
 			 * read of plateau_entered_at sees the freshly
 			 * stamped entry time, not a stale 0 from a prior
 			 * clearance. */
-			__atomic_store_n(&kcov_shm->plateau_entered_at, now,
+			__atomic_store_n(&kcov_shm->plateau.plateau_entered_at, now,
 					 __ATOMIC_RELAXED);
-			__atomic_store_n(&kcov_shm->plateau_active, true,
+			__atomic_store_n(&kcov_shm->plateau.plateau_active, true,
 					 __ATOMIC_RELEASE);
 			__atomic_fetch_add(&shm->stats.plateau.entered, 1,
 					   __ATOMIC_RELAXED);
@@ -479,10 +479,10 @@ void kcov_plateau_check(void)
 			kcov_bitmap_maybe_snapshot();
 		}
 	} else if (delta >= KCOV_PLATEAU_EXIT_THRESHOLD &&
-		   __atomic_load_n(&kcov_shm->plateau_active,
+		   __atomic_load_n(&kcov_shm->plateau.plateau_active,
 				   __ATOMIC_ACQUIRE)) {
 		long elapsed_secs = (long)(now - __atomic_load_n(
-				&kcov_shm->plateau_entered_at,
+				&kcov_shm->plateau.plateau_entered_at,
 				__ATOMIC_RELAXED));
 		long minutes = elapsed_secs > 0 ? elapsed_secs / 60 : 0;
 
@@ -491,9 +491,9 @@ void kcov_plateau_check(void)
 		 * Only a recovery past the higher EXIT bar clears the flag,
 		 * preventing the edge-rate oscillation around ENTER from
 		 * flapping plateau_active window-by-window. */
-		__atomic_store_n(&kcov_shm->plateau_entered_at, 0,
+		__atomic_store_n(&kcov_shm->plateau.plateau_entered_at, 0,
 				 __ATOMIC_RELAXED);
-		__atomic_store_n(&kcov_shm->plateau_active, false,
+		__atomic_store_n(&kcov_shm->plateau.plateau_active, false,
 				 __ATOMIC_RELEASE);
 		__atomic_fetch_add(&shm->stats.plateau.exited, 1,
 				   __ATOMIC_RELAXED);
