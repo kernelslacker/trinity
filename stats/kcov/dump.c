@@ -73,10 +73,10 @@ static void remote_edge_format_yield(char *buf, size_t bufsz,
 static void dump_stats_render_kcov_transition_edges(void)
 {
 		unsigned long kc_tedges = __atomic_load_n(
-			&kcov_shm->transition_edges_found,
+			&kcov_shm->transitions.transition_edges_found,
 			__ATOMIC_RELAXED);
 		unsigned long kc_tdistinct = __atomic_load_n(
-			&kcov_shm->transition_distinct_edges,
+			&kcov_shm->transitions.transition_distinct_edges,
 			__ATOMIC_RELAXED);
 
 		if (kc_tedges > 0)
@@ -516,7 +516,7 @@ static void dump_stats_render_kcov_per_syscall_calls_topn(unsigned int nr_syscal
 		memset(tr_top_edges, 0, sizeof(tr_top_edges));
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
 			unsigned long tedges = __atomic_load_n(
-				&kcov_shm->per_syscall_transition_edges_real[i],
+				&kcov_shm->transitions.per_syscall_transition_edges_real[i],
 				__ATOMIC_RELAXED);
 
 			if (tedges == 0)
@@ -549,9 +549,9 @@ static void dump_stats_render_kcov_per_syscall_edge_calls_topn(unsigned int nr_s
 
 		memset(tr_delta_edges, 0, sizeof(tr_delta_edges));
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
-			unsigned long prev = kcov_shm->per_syscall_transition_edges_previous[i];
+			unsigned long prev = kcov_shm->transitions.per_syscall_transition_edges_previous[i];
 			unsigned long curr = __atomic_load_n(
-				&kcov_shm->per_syscall_transition_edges[i],
+				&kcov_shm->transitions.per_syscall_transition_edges[i],
 				__ATOMIC_RELAXED);
 			unsigned long delta = sat_sub_ul(curr, prev);
 
@@ -576,9 +576,9 @@ static void dump_stats_render_kcov_per_syscall_edge_calls_topn(unsigned int nr_s
 		}
 
 		for (i = 0; i < nr_syscalls_to_scan; i++)
-			kcov_shm->per_syscall_transition_edges_previous[i] =
+			kcov_shm->transitions.per_syscall_transition_edges_previous[i] =
 				__atomic_load_n(
-					&kcov_shm->per_syscall_transition_edges[i],
+					&kcov_shm->transitions.per_syscall_transition_edges[i],
 					__ATOMIC_RELAXED);
 }
 

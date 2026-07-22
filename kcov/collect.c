@@ -440,20 +440,20 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 								canon_pc);
 			unsigned char tseen;
 
-			tseen = __atomic_load_n(&kcov_shm->transition_seen[tslot],
+			tseen = __atomic_load_n(&kcov_shm->transitions.transition_seen[tslot],
 				__ATOMIC_RELAXED);
 			if (!(tseen & 0x1U)) {
 				unsigned char told;
 
 				told = __atomic_fetch_or(
-					&kcov_shm->transition_seen[tslot],
+					&kcov_shm->transitions.transition_seen[tslot],
 					0x1U, __ATOMIC_RELAXED);
 				if (!(told & 0x1U)) {
 					__atomic_fetch_add(
-						&kcov_shm->transition_edges_found,
+						&kcov_shm->transitions.transition_edges_found,
 						1, __ATOMIC_RELAXED);
 					__atomic_fetch_add(
-						&kcov_shm->transition_distinct_edges,
+						&kcov_shm->transitions.transition_distinct_edges,
 						1, __ATOMIC_RELAXED);
 					transitions_this_call++;
 				}
@@ -712,15 +712,15 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 						__ATOMIC_RELAXED);
 
 			__atomic_fetch_add(
-				&kcov_shm->per_syscall_transition_edges[nr],
+				&kcov_shm->transitions.per_syscall_transition_edges[nr],
 				1, __ATOMIC_RELAXED);
 			__atomic_fetch_add(
-				&kcov_shm->per_syscall_transition_edges_real[nr],
+				&kcov_shm->transitions.per_syscall_transition_edges_real[nr],
 				transitions_this_call, __ATOMIC_RELAXED);
 			if (!kc->remote_mode &&
 			    trew_mode != KCOV_TRANSITION_REWARD_OFF)
 				__atomic_fetch_add(
-					&kcov_shm->per_syscall_transition_edges_real_local[nr],
+					&kcov_shm->transitions.per_syscall_transition_edges_real_local[nr],
 					transitions_this_call,
 					__ATOMIC_RELAXED);
 
