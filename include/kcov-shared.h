@@ -1362,7 +1362,9 @@ struct kcov_shared {
 	 * the only band where the two arms diverge.  Append-only at the
 	 * struct tail per the existing convention so consumer offsets stay
 	 * stable. */
+	struct kcov_cmp_boring {
 	unsigned long cmp_hints_boring_arm_b_drops;
+	} cmp_boring;
 
 	/*
 	 * Observability counters for the run-local CMP "recent" pool
