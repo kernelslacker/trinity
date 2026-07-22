@@ -173,7 +173,7 @@ static struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 
 	if (pool->count >= CMP_HYP_PER_SYSCALL) {
 		if (kcov_shm != NULL) {
-			__atomic_fetch_add(&kcov_shm->cmp_hyp_pool_full, 1UL,
+			__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_pool_full, 1UL,
 					   __ATOMIC_RELAXED);
 			__atomic_fetch_add(&kcov_shm->cmp_hyp_pool_full_by_kind[kind],
 					   1UL, __ATOMIC_RELAXED);
@@ -182,7 +182,7 @@ static struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 	}
 	if (pool->per_kind_count[kind] >= CMP_HYP_PER_KIND) {
 		if (kcov_shm != NULL) {
-			__atomic_fetch_add(&kcov_shm->cmp_hyp_kind_full, 1UL,
+			__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_kind_full, 1UL,
 					   __ATOMIC_RELAXED);
 			__atomic_fetch_add(&kcov_shm->cmp_hyp_kind_full_by_kind[kind],
 					   1UL, __ATOMIC_RELAXED);
@@ -201,7 +201,7 @@ static struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 	pool->per_kind_count[kind]++;
 	pool->count++;
 	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_inserted, 1UL,
+		__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_inserted, 1UL,
 				   __ATOMIC_RELAXED);
 		__atomic_fetch_add(&kcov_shm->cmp_hyp_inserted_by_kind[kind],
 				   1UL, __ATOMIC_RELAXED);
@@ -228,7 +228,7 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 	pool = &cmp_hints_shm->hyp_pools[nr][do32 ? 1 : 0];
 
 	if (kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_observations, 1UL,
+		__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_observations, 1UL,
 				   __ATOMIC_RELAXED);
 
 	/* Wild-write defence: a stomp past the per-syscall cap would let
@@ -558,14 +558,14 @@ static unsigned long *cmp_hyp_outcome_flat(enum cmp_hyp_outcome outcome)
 	if (kcov_shm == NULL)
 		return NULL;
 	switch (outcome) {
-	case CMP_HYP_OUTCOME_PC_WIN:		return &kcov_shm->cmp_hyp_pc_wins;
-	case CMP_HYP_OUTCOME_TRANSITION_WIN:	return &kcov_shm->cmp_hyp_transition_wins;
-	case CMP_HYP_OUTCOME_CMP_NOVELTY:	return &kcov_shm->cmp_hyp_cmp_novelty_wins;
-	case CMP_HYP_OUTCOME_CORPUS_SAVE:	return &kcov_shm->cmp_hyp_corpus_save;
-	case CMP_HYP_OUTCOME_MISS:		return &kcov_shm->cmp_hyp_misses;
-	case CMP_HYP_OUTCOME_DISABLED:		return &kcov_shm->cmp_hyp_disabled_skips;
-	case CMP_HYP_OUTCOME_DESTRUCTIVE_SKIP:	return &kcov_shm->cmp_hyp_destructive;
-	case CMP_HYP_OUTCOME_CONTEXT_SKIP:	return &kcov_shm->cmp_hyp_context_skip;
+	case CMP_HYP_OUTCOME_PC_WIN:		return &kcov_shm->hyp_flat.cmp_hyp_pc_wins;
+	case CMP_HYP_OUTCOME_TRANSITION_WIN:	return &kcov_shm->hyp_flat.cmp_hyp_transition_wins;
+	case CMP_HYP_OUTCOME_CMP_NOVELTY:	return &kcov_shm->hyp_flat.cmp_hyp_cmp_novelty_wins;
+	case CMP_HYP_OUTCOME_CORPUS_SAVE:	return &kcov_shm->hyp_flat.cmp_hyp_corpus_save;
+	case CMP_HYP_OUTCOME_MISS:		return &kcov_shm->hyp_flat.cmp_hyp_misses;
+	case CMP_HYP_OUTCOME_DISABLED:		return &kcov_shm->hyp_flat.cmp_hyp_disabled_skips;
+	case CMP_HYP_OUTCOME_DESTRUCTIVE_SKIP:	return &kcov_shm->hyp_flat.cmp_hyp_destructive;
+	case CMP_HYP_OUTCOME_CONTEXT_SKIP:	return &kcov_shm->hyp_flat.cmp_hyp_context_skip;
 	default:
 		return NULL;
 	}
@@ -850,7 +850,7 @@ void cmp_hyp_credit_consume(unsigned int nr, bool do32,
 
 	__atomic_fetch_add(&h->consumed_count, 1UL, __ATOMIC_RELAXED);
 	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_consumed, 1UL,
+		__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_consumed, 1UL,
 				   __ATOMIC_RELAXED);
 		__atomic_fetch_add(&kcov_shm->cmp_hyp_consumed_by_kind[h->kind],
 				   1UL, __ATOMIC_RELAXED);

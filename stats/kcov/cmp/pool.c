@@ -428,7 +428,7 @@ void kcov_cmp_render_pc_win_conversion_split_block(long elapsed __unused__)
 					     __ATOMIC_RELAXED);
 	cur_hyp_live_injected = __atomic_load_n(&kcov_shm->cmp_hyp_live_injected,
 						__ATOMIC_RELAXED);
-	cur_hyp_pc_wins = __atomic_load_n(&kcov_shm->cmp_hyp_pc_wins,
+	cur_hyp_pc_wins = __atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_pc_wins,
 					  __ATOMIC_RELAXED);
 	for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
 		cur_hint_pc_wins_by_pool[k] = __atomic_load_n(
