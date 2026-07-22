@@ -34,6 +34,7 @@
 #include "kcov-groups/reexec_pending_hist.h"
 #include "kcov-groups/cmp_parent.h"
 #include "kcov-groups/hint_reject.h"
+#include "kcov-groups/reexec_gate.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -625,24 +626,7 @@ struct kcov_shared {
 	 *      shouldn't).  Attribution correctly skips the call; the
 	 *      counter exposes the rate so the snapshot-feed health is
 	 *      not silently zeroed-out into the eligible cohort. */
-	struct kcov_reexec_gate {
-	unsigned long reexec_attribution_found_by_syscall[MAX_NR_SYSCALL];
-	unsigned long reexec_attribution_dropped_pending_by_syscall[MAX_NR_SYSCALL];
-	unsigned long reexec_attribution_found_by_childop[KCOV_CHILDOP_NR_MAX];
-	unsigned long reexec_attribution_ambiguous_by_childop[KCOV_CHILDOP_NR_MAX];
-	unsigned long reexec_attempts_by_childop[KCOV_CHILDOP_NR_MAX];
-	unsigned long per_childop_cmp_novelty_reexec[KCOV_CHILDOP_NR_MAX];
-	unsigned long reexec_gate_skip_in_reexec;
-	unsigned long reexec_gate_skip_disabled;
-	unsigned long reexec_gate_skip_mode;
-	unsigned long reexec_gate_skip_chain_mid;
-	unsigned long reexec_gate_skip_no_new_cmp;
-	unsigned long reexec_gate_skip_no_pending;
-	unsigned long reexec_gate_skip_rate;
-	unsigned long reexec_gate_pass;
-	unsigned long cmp_attribution_calls_eligible;
-	unsigned long cmp_attribution_snapshot_unavailable;
-	} reexec_gate;
+	struct kcov_reexec_gate reexec_gate;
 
 	/*
 	 * Field-scoped CMP attribution counters (PHASE 3 narrow MVP).
