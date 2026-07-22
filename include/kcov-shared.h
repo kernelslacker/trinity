@@ -1715,6 +1715,7 @@ struct kcov_shared {
 	 *                             already records.  Zero until the
 	 *                             feedback unit lands.
 	 */
+	struct kcov_hyp_flat {
 	unsigned long cmp_hyp_observations;
 	unsigned long cmp_hyp_inserted;
 	unsigned long cmp_hyp_pool_full;
@@ -1728,6 +1729,7 @@ struct kcov_shared {
 	unsigned long cmp_hyp_corpus_save;
 	unsigned long cmp_hyp_destructive;
 	unsigned long cmp_hyp_context_skip;
+	} hyp_flat;
 
 	/* Per-entry early-FAIL skip counters inside redqueen_reexec_step.
 	 * Sibling family to the per-call reexec_gate_skip_* buckets, but

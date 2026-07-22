@@ -75,7 +75,7 @@ static void json_emit_kcov_counters(void)
 					   __ATOMIC_RELAXED);
 	kc_cmp_hints_injected = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_injected,
 						__ATOMIC_RELAXED);
-	kc_cmp_hyp_pc_wins = __atomic_load_n(&kcov_shm->cmp_hyp_pc_wins,
+	kc_cmp_hyp_pc_wins = __atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_pc_wins,
 					     __ATOMIC_RELAXED);
 	kc_cmp_hyp_live_injected = __atomic_load_n(
 		&kcov_shm->cmp_hyp_live_injected, __ATOMIC_RELAXED);
