@@ -15,9 +15,14 @@
  */
 
 /*
- * Open path for writing.  O_WRONLY | O_CREAT | O_TRUNC, mode 0644.
- * Returns the new fd on success, -1 on failure with errno set.  The
- * caller must check the return before calling jsonl_write().
+ * Open path for writing.  O_WRONLY | O_CREAT | O_TRUNC | O_APPEND,
+ * mode 0644.  Returns the new fd on success, -1 on failure with errno
+ * set.  The caller must check the return before calling jsonl_write().
+ *
+ * O_APPEND is load-bearing: the sink is opened in the parent before
+ * fork(), so every child inherits the same open file description and
+ * shares one write offset.  Without O_APPEND concurrent children race
+ * the cursor and interleave or overwrite each other's records.
  */
 int jsonl_open(const char *path);
 
