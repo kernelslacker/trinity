@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 #include "args-internal.h"
+#include "deferred-free.h"	// alloc_track_lookup_size
 #include "sanitise.h"		// avoid_shared_buffer_out
 #include "shm.h"
 #include "struct_catalog.h"
@@ -170,6 +171,34 @@ static void scrub_field_array(unsigned char *buf, unsigned int size,
 				cap = PTR_ARRAY_DEFAULT_MAX;
 			if (count > cap)
 				count = cap;
+
+			/*
+			 * Belt-and-suspenders on top of the max_count cap:
+			 * if @ptr is still in the alloc-track ring, tighten
+			 * @count against the real byte-extent of the
+			 * underlying allocation.  A sibling scribble that
+			 * inflated the paired LEN slot past the originally-
+			 * rolled count would otherwise walk ptr + count *
+			 * struct_size past the alloc's tail and corrupt
+			 * Trinity's own heap.  The tracker has typically
+			 * consumed the entry by scrub time (see comment on
+			 * nested_scrub_base_unsafe()) -- in that case the
+			 * lookup returns 0 and the max_count cap alone
+			 * remains in force.
+			 */
+			{
+				size_t real_bytes =
+					alloc_track_lookup_size((void *) ptr);
+
+				if (real_bytes > 0 && target->struct_size > 0) {
+					unsigned long real_count =
+						(unsigned long) real_bytes /
+						target->struct_size;
+
+					if (count > real_count)
+						count = real_count;
+				}
+			}
 
 			for (j = 0; j < count; j++) {
 				unsigned char *elem = (unsigned char *) ptr
