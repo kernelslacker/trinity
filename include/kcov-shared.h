@@ -867,6 +867,7 @@ struct kcov_shared {
 	 *      per_syscall_cmp_injected to read per-syscall hint-edge yield;
 	 *      a syscall with high injected and zero pc-wins is the
 	 *      diagnostic signature for an unproductive cmp-hint regime. */
+	struct kcov_cmp_hint_ps {
 	unsigned long per_syscall_cmp_injected[MAX_NR_SYSCALL];
 	unsigned long per_syscall_cmp_hint_pc_wins[MAX_NR_SYSCALL];
 
@@ -882,6 +883,7 @@ struct kcov_shared {
 	unsigned long per_syscall_cmp_hint_corpus_saves[MAX_NR_SYSCALL];
 	unsigned long per_syscall_cmp_hint_destructive_skips[MAX_NR_SYSCALL];
 	unsigned long per_syscall_cmp_hint_cmp_novelty_wins[MAX_NR_SYSCALL];
+	} cmp_hint_ps;
 
 	/* Per-callsite total cmp-hint injections, indexed by enum
 	 * cmp_hint_callsite.  Aggregated across all syscalls; the "which

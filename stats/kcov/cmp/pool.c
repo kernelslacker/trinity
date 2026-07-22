@@ -127,10 +127,10 @@ void kcov_cmp_render_oldpool_per_syscall_topn(void)
 
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
 		unsigned long cur_injected = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp_injected[i],
+			&kcov_shm->cmp_hint_ps.per_syscall_cmp_injected[i],
 			__ATOMIC_RELAXED);
 		unsigned long cur_pc_wins = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp_hint_pc_wins[i],
+			&kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_pc_wins[i],
 			__ATOMIC_RELAXED);
 		uint64_t cur_hyp_pc_wins_nr = 0;
 		uint64_t cur_hyp_consumed_nr = 0;

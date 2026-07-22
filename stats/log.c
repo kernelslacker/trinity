@@ -334,10 +334,10 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 				&kcov_shm->pc_ctx.remote_pc_edge_count[nr],
 				__ATOMIC_RELAXED);
 			cmp_injected = __atomic_load_n(
-				&kcov_shm->per_syscall_cmp_injected[nr],
+				&kcov_shm->cmp_hint_ps.per_syscall_cmp_injected[nr],
 				__ATOMIC_RELAXED);
 			cmp_hint_pc_wins = __atomic_load_n(
-				&kcov_shm->per_syscall_cmp_hint_pc_wins[nr],
+				&kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_pc_wins[nr],
 				__ATOMIC_RELAXED);
 		}
 

@@ -626,19 +626,19 @@ void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
 
 		switch (outcome) {
 		case CMP_HYP_OUTCOME_TRANSITION_WIN:
-			per_nr_field = &kcov_shm->per_syscall_cmp_hint_transition_wins[nr];
+			per_nr_field = &kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_transition_wins[nr];
 			break;
 		case CMP_HYP_OUTCOME_MISS:
-			per_nr_field = &kcov_shm->per_syscall_cmp_hint_misses[nr];
+			per_nr_field = &kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_misses[nr];
 			break;
 		case CMP_HYP_OUTCOME_CORPUS_SAVE:
-			per_nr_field = &kcov_shm->per_syscall_cmp_hint_corpus_saves[nr];
+			per_nr_field = &kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_corpus_saves[nr];
 			break;
 		case CMP_HYP_OUTCOME_DESTRUCTIVE_SKIP:
-			per_nr_field = &kcov_shm->per_syscall_cmp_hint_destructive_skips[nr];
+			per_nr_field = &kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_destructive_skips[nr];
 			break;
 		case CMP_HYP_OUTCOME_CMP_NOVELTY:
-			per_nr_field = &kcov_shm->per_syscall_cmp_hint_cmp_novelty_wins[nr];
+			per_nr_field = &kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_cmp_novelty_wins[nr];
 			break;
 		default:
 			break;
