@@ -388,7 +388,14 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 	pc_eintr    = __atomic_load_n(&d->pc_enable_eintr_retries,            __ATOMIC_RELAXED);
 	rem_eintr   = __atomic_load_n(&d->remote_enable_eintr_retries,        __ATOMIC_RELAXED);
 	fb_pc_eintr = __atomic_load_n(&d->remote_fallback_pc_enable_eintr_retries, __ATOMIC_RELAXED);
-	first_op_nr = __atomic_load_n(&d->first_ebadf_op_nr,                  __ATOMIC_RELAXED);
+	/* ACQUIRE pairs with the RELEASE publish in kcov_latch_first_ebadf():
+	 * if valid=1 is visible, every payload store below is too.  Load
+	 * first_ebadf_op_nr only after the beacon so the winner value is
+	 * from the same latched snapshot. */
+	if (__atomic_load_n(&d->first_ebadf_valid, __ATOMIC_ACQUIRE))
+		first_op_nr = __atomic_load_n(&d->first_ebadf_op_nr, __ATOMIC_RELAXED);
+	else
+		first_op_nr = 0;
 
 	/* See kcov_cmp_diag_format() for why each emission is gated on
 	 * (size_t)n < bufsz: once n catches up to bufsz, the next
@@ -559,6 +566,11 @@ bool kcov_first_ebadf_trap_drain(void)
 		return false;
 
 	d = &kcov_shm->pc_diag;
+	/* ACQUIRE pairs with the RELEASE publish in kcov_latch_first_ebadf():
+	 * without it the CAS-elected op_nr can be visible before the payload
+	 * stores below settle, and the trap dump prints stale zero fields. */
+	if (!__atomic_load_n(&d->first_ebadf_valid, __ATOMIC_ACQUIRE))
+		return false;
 	op_nr = __atomic_load_n(&d->first_ebadf_op_nr, __ATOMIC_RELAXED);
 	if (op_nr == 0)
 		return false;
@@ -739,11 +751,24 @@ void kcov_latch_first_ebadf(struct kcov_child *kc, struct childdata *c)
 		 * that observes a non-zero count is
 		 * guaranteed the corresponding fd entries
 		 * are visible (relaxed matches the rest of
-		 * the latch -- the dump reader runs long
-		 * after the CAS winner has retired). */
+		 * the latch -- the payload beacon
+		 * first_ebadf_valid below carries the
+		 * inter-thread ordering). */
 		__atomic_store_n(
 			&kcov_shm->pc_diag.first_ebadf_proc_fd_count,
 			(unsigned char) snap_count,
 			__ATOMIC_RELAXED);
+		/* Payload publish beacon.  RELEASE pairs with the
+		 * ACQUIRE load in kcov_diag_record() and
+		 * kcov_first_ebadf_trap_drain(): a reader that
+		 * observes valid=1 is guaranteed to see every
+		 * relaxed payload store above.  Without this the
+		 * CAS on first_ebadf_op_nr publishes the winner
+		 * mark BEFORE the payload stores, so a naive
+		 * reader could latch a non-zero op_nr and then
+		 * copy out stale zeroed payload fields. */
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_valid,
+			1, __ATOMIC_RELEASE);
 	}
 }

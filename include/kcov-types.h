@@ -701,7 +701,7 @@ struct kcov_pc_diag {
 	 * substitution hypothesis holds; anything else points at an
 	 * unaudited closer.  fd_value preserves the slot number at
 	 * failure for cross-reference with KCOV_FD_HIGH_BASE. */
-	unsigned long first_ebadf_op_nr;	/* CAS gate, 0 == empty */
+	unsigned long first_ebadf_op_nr;	/* CAS-elected winner, 0 == empty */
 	unsigned long first_ebadf_pid;
 	unsigned int  first_ebadf_syscall_nr;
 	int           first_ebadf_fd_value;
@@ -709,8 +709,7 @@ struct kcov_pc_diag {
 	 * fields below are written by the CAS winner after the four
 	 * fields above land, so they share the same one-shot gate and
 	 * stay consistent w.r.t. the winning child.  Readers must still
-	 * load first_ebadf_op_nr first and only consult these if it is
-	 * non-zero.
+	 * gate on first_ebadf_valid (ACQUIRE) before consulting these.
 	 *
 	 *   generation              -- kcov_child::current_generation at
 	 *                              latch time, so a winner's slot
@@ -768,6 +767,21 @@ struct kcov_pc_diag {
 	unsigned int  first_ebadf_last_fd_mut_syscall_nr;
 	unsigned char first_ebadf_protected_touched;
 	unsigned char first_ebadf_proc_fd_count;
+	/* Release/acquire beacon paired with the CAS on first_ebadf_op_nr
+	 * above.  The CAS elects the winner but does NOT order the payload
+	 * stores that follow it, so a naive reader that only checks
+	 * first_ebadf_op_nr can observe the winner mark with the payload
+	 * fields still stale.  The winner therefore performs every payload
+	 * store above with RELAXED ordering and finally publishes
+	 * first_ebadf_valid = 1 with __ATOMIC_RELEASE.  Payload consumers
+	 * (kcov_diag_record / kcov_first_ebadf_trap_drain) must gate on an
+	 * __ATOMIC_ACQUIRE load of this field before reading any payload
+	 * field.  Slotted here (next to proc_fd_count) so the byte lands
+	 * inside the existing 4-align padding before first_ebadf_proc_fds[]
+	 * -- keeps sizeof(struct kcov_pc_diag) unchanged and preserves the
+	 * shm-layout _Static_asserts in include/kcov-shared.h.  Mirrors the
+	 * breadcrumb_ring.c and include/bug_backtrace.h valid-flag idiom. */
+	unsigned char first_ebadf_valid;
 	int           first_ebadf_proc_fds[KCOV_FIRST_EBADF_PROC_FD_MAX];
 	unsigned int  first_ebadf_last_closer_syscall_nr;
 	unsigned char first_ebadf_closer_protected_touched;
@@ -789,8 +803,8 @@ struct kcov_pc_diag {
 	 * ring summarized by first_ebadf_last_closer_syscall_nr above.
 	 * All four fields share the same one-shot CAS gate
 	 * (first_ebadf_op_nr) as the existing latch fields -- readers
-	 * must load first_ebadf_op_nr first and only consult these if
-	 * it is non-zero.
+	 * must gate on first_ebadf_valid (ACQUIRE) before consulting
+	 * these so the payload writes are visible.
 	 *
 	 *   recovery_attempts        -- kcov_child::recovery_attempts at
 	 *                               latch time (capped at
