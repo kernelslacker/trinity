@@ -1050,7 +1050,7 @@ static void dump_stats_render_kcov_per_syscall_last_efault_topn(unsigned int nr_
 
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
 			unsigned long req = __atomic_load_n(
-				&kcov_shm->remote_enable_requested[i],
+				&kcov_shm->remote_enable.remote_enable_requested[i],
 				__ATOMIC_RELAXED);
 			unsigned long succ;
 			unsigned long gap;
@@ -1058,7 +1058,7 @@ static void dump_stats_render_kcov_per_syscall_last_efault_topn(unsigned int nr_
 			if (req == 0)
 				continue;
 			succ = __atomic_load_n(
-				&kcov_shm->remote_enable_succeeded[i],
+				&kcov_shm->remote_enable.remote_enable_succeeded[i],
 				__ATOMIC_RELAXED);
 			/* req and succ are bumped on separate
 			 * RELAXED stores in kcov_enable_remote();
@@ -1082,16 +1082,16 @@ static void dump_stats_render_kcov_per_syscall_last_efault_topn(unsigned int nr_
 				const char *name = entry ? entry->name : "???";
 				unsigned int nr = re_top_nr[j];
 				unsigned long req = __atomic_load_n(
-					&kcov_shm->remote_enable_requested[nr],
+					&kcov_shm->remote_enable.remote_enable_requested[nr],
 					__ATOMIC_RELAXED);
 				unsigned long succ = __atomic_load_n(
-					&kcov_shm->remote_enable_succeeded[nr],
+					&kcov_shm->remote_enable.remote_enable_succeeded[nr],
 					__ATOMIC_RELAXED);
 				unsigned long fail = __atomic_load_n(
-					&kcov_shm->remote_enable_failed[nr],
+					&kcov_shm->remote_enable.remote_enable_failed[nr],
 					__ATOMIC_RELAXED);
 				unsigned long fbl = __atomic_load_n(
-					&kcov_shm->remote_fallback_to_local[nr],
+					&kcov_shm->remote_enable.remote_fallback_to_local[nr],
 					__ATOMIC_RELAXED);
 				unsigned long gap = succ >= req ? 0 : req - succ;
 				unsigned long milli = (gap * 1000UL) / req;
@@ -1115,7 +1115,7 @@ static void dump_stats_render_kcov_per_syscall_local_pc_topn(unsigned int nr_sys
 
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
 			unsigned long req = __atomic_load_n(
-				&kcov_shm->remote_enable_requested[i],
+				&kcov_shm->remote_enable.remote_enable_requested[i],
 				__ATOMIC_RELAXED);
 			unsigned long rec;
 
@@ -1144,13 +1144,13 @@ static void dump_stats_render_kcov_per_syscall_local_pc_topn(unsigned int nr_sys
 				unsigned int nr = w_top_nr[j];
 				unsigned long req = w_top_req[j];
 				unsigned long succ = __atomic_load_n(
-					&kcov_shm->remote_enable_succeeded[nr],
+					&kcov_shm->remote_enable.remote_enable_succeeded[nr],
 					__ATOMIC_RELAXED);
 				unsigned long fail = __atomic_load_n(
-					&kcov_shm->remote_enable_failed[nr],
+					&kcov_shm->remote_enable.remote_enable_failed[nr],
 					__ATOMIC_RELAXED);
 				unsigned long fbl = __atomic_load_n(
-					&kcov_shm->remote_fallback_to_local[nr],
+					&kcov_shm->remote_enable.remote_fallback_to_local[nr],
 					__ATOMIC_RELAXED);
 				unsigned long rc = __atomic_load_n(
 					&kcov_shm->pc_ctx.remote_pc_calls[nr],
