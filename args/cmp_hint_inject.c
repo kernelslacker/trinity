@@ -150,7 +150,7 @@ void credit_cmp_hint_injection(struct syscallrecord *rec,
 				1UL, __ATOMIC_RELAXED);
 		if ((unsigned int)callsite < (unsigned int)CMP_HINT_CALLSITE_NR)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hint_callsite_injected[callsite],
+				&kcov_shm->hint_callsite.cmp_hint_callsite_injected[callsite],
 				1UL, __ATOMIC_RELAXED);
 	}
 

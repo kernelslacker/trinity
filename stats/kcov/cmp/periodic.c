@@ -308,17 +308,17 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		unsigned int cs;
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
 			cur_cmp_hint_callsite[cs] = __atomic_load_n(
-				&kcov_shm->cmp_hint_callsite_injected[cs],
+				&kcov_shm->hint_callsite.cmp_hint_callsite_injected[cs],
 				__ATOMIC_RELAXED);
 	}
 	{
 		unsigned int cs;
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
 			cur_cmp_hint_callsite_pc_wins[cs] = __atomic_load_n(
-				&kcov_shm->cmp_hint_callsite_pc_wins[cs],
+				&kcov_shm->hint_callsite.cmp_hint_callsite_pc_wins[cs],
 				__ATOMIC_RELAXED);
 			cur_cmp_hint_callsite_misses[cs] = __atomic_load_n(
-				&kcov_shm->cmp_hint_callsite_misses[cs],
+				&kcov_shm->hint_callsite.cmp_hint_callsite_misses[cs],
 				__ATOMIC_RELAXED);
 		}
 	}

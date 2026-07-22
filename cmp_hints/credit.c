@@ -268,8 +268,8 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 		if (kcov_shm != NULL &&
 		    e->callsite < CMP_HINT_CALLSITE_NR)
 			__atomic_fetch_add(outcome_win ?
-				&kcov_shm->cmp_hint_callsite_pc_wins[e->callsite] :
-				&kcov_shm->cmp_hint_callsite_misses[e->callsite],
+				&kcov_shm->hint_callsite.cmp_hint_callsite_pc_wins[e->callsite] :
+				&kcov_shm->hint_callsite.cmp_hint_callsite_misses[e->callsite],
 				1UL, __ATOMIC_RELAXED);
 
 		/* SHADOW zero-PC-win hard-cool budget census -- see

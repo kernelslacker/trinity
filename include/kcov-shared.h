@@ -892,6 +892,7 @@ struct kcov_shared {
 	 * in per_syscall_cmp_injected above and this array stays flat.  7
 	 * buckets: ARG_OP, ARG_LIST, ARG_UNDEFINED, ARG_STRUCT_SIZE,
 	 * STRUCT_FIELD (reserved -- no call site today), OTHER, ARG_RANGE. */
+	struct kcov_hint_callsite {
 	unsigned long cmp_hint_callsite_injected[CMP_HINT_CALLSITE_NR];
 
 	/* PC-mode outcome partition by callsite -- WIN numerator per
@@ -912,6 +913,7 @@ struct kcov_shared {
 	 * less than the flat cmp_hint_wins / cmp_hint_misses. */
 	unsigned long cmp_hint_callsite_pc_wins[CMP_HINT_CALLSITE_NR];
 	unsigned long cmp_hint_callsite_misses[CMP_HINT_CALLSITE_NR];
+	} hint_callsite;
 
 	/* SHADOW feedback scoring counters ([11-feedback-loop] PHASE 4).
 	 *
