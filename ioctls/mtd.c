@@ -97,6 +97,7 @@ static void sanitise_mtd_oob_buf(struct syscallrecord *rec)
 	ptr = get_writable_struct(length + 1);
 	if (!ptr)
 		return;
+	generate_rand_bytes(ptr, length + 1);
 	oob->start = rand32();
 	oob->length = length;
 	oob->ptr = ptr;
@@ -117,6 +118,7 @@ static void sanitise_mtd_oob_buf64(struct syscallrecord *rec)
 	usr_ptr = get_writable_struct(length + 1);
 	if (!usr_ptr)
 		return;
+	generate_rand_bytes(usr_ptr, length + 1);
 	oob->start = rand64();
 	oob->length = length;
 	oob->usr_ptr = (unsigned long) usr_ptr;
