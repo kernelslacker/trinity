@@ -375,12 +375,31 @@ void __cold top_syscalls_periodic_dump(void)
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 
+	/* Match the same biarch table-scan choice the existing per-syscall
+	 * top-N path in dump_stats uses: under biarch only the 64-bit table
+	 * is iterated (32-bit nrs collide with 64-bit ones in the same
+	 * index space and would shadow them in the display).  Hoisted above
+	 * the read loops so the shm sweep is clamped to the populated slot
+	 * range -- MAX_NR_SYSCALL is 1024, but any given arch fills only a
+	 * few hundred entries; the rest are permanently zero and their
+	 * RELAXED loads plus prev[] memcpy tails were wasted work every
+	 * dump. */
+	if (biarch) {
+		nr_to_scan = max_nr_64bit_syscalls;
+		table = syscalls_64bit;
+	} else {
+		nr_to_scan = max_nr_syscalls;
+		table = syscalls;
+	}
+	if (nr_to_scan > MAX_NR_SYSCALL)
+		nr_to_scan = MAX_NR_SYSCALL;
+
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
 	 * first window, mirroring periodic_counter_rates_dump. */
 	if (last_dump.tv_sec == 0) {
 		last_dump = now;
-		for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		for (i = 0; i < nr_to_scan; i++) {
 			prev_bandit[i]   = __atomic_load_n(
 				&shm->stats.picker_bandit.edges_per_syscall_bandit[i],
 				__ATOMIC_RELAXED);
@@ -422,7 +441,7 @@ void __cold top_syscalls_periodic_dump(void)
 	if (elapsed < DEFENSE_DUMP_INTERVAL_SEC)
 		return;
 
-	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+	for (i = 0; i < nr_to_scan; i++) {
 		cur_bandit[i]   = __atomic_load_n(
 			&shm->stats.picker_bandit.edges_per_syscall_bandit[i],
 			__ATOMIC_RELAXED);
@@ -464,20 +483,6 @@ void __cold top_syscalls_periodic_dump(void)
 			__ATOMIC_RELAXED);
 	}
 
-	/* Match the same biarch table-scan choice the existing per-syscall
-	 * top-N path in dump_stats uses: under biarch only the 64-bit table
-	 * is iterated (32-bit nrs collide with 64-bit ones in the same
-	 * index space and would shadow them in the display). */
-	if (biarch) {
-		nr_to_scan = max_nr_64bit_syscalls;
-		table = syscalls_64bit;
-	} else {
-		nr_to_scan = max_nr_syscalls;
-		table = syscalls;
-	}
-	if (nr_to_scan > MAX_NR_SYSCALL)
-		nr_to_scan = MAX_NR_SYSCALL;
-
 	stats_log_write("Top %u syscalls by new edges in last %lds:\n",
 			TOP_SYSCALLS_DUMP_TOPN, elapsed);
 	top_syscalls_emit_pool("bandit", cur_bandit, prev_bandit,
@@ -509,24 +514,30 @@ void __cold top_syscalls_periodic_dump(void)
 						 prev_warm_reserve_plateau,
 						 elapsed, nr_to_scan, table);
 
-	memcpy(prev_bandit,   cur_bandit,   sizeof(prev_bandit));
-	memcpy(prev_explorer, cur_explorer, sizeof(prev_explorer));
+	/* Copy only the populated head of each array; the tail past
+	 * nr_to_scan was never touched by the read loop above and stays
+	 * at its prior value (zero, since neither producers nor readers
+	 * ever address those slots). */
+	memcpy(prev_bandit,   cur_bandit,   nr_to_scan * sizeof(prev_bandit[0]));
+	memcpy(prev_explorer, cur_explorer, nr_to_scan * sizeof(prev_explorer[0]));
 	memcpy(prev_frontier_picks, cur_frontier_picks,
-	       sizeof(prev_frontier_picks));
+	       nr_to_scan * sizeof(prev_frontier_picks[0]));
 	memcpy(prev_frontier_live_picks, cur_frontier_live_picks,
-	       sizeof(prev_frontier_live_picks));
+	       nr_to_scan * sizeof(prev_frontier_live_picks[0]));
 	memcpy(prev_frontier_silent_picks, cur_frontier_silent_picks,
-	       sizeof(prev_frontier_silent_picks));
+	       nr_to_scan * sizeof(prev_frontier_silent_picks[0]));
 	memcpy(prev_frontier_wins, cur_frontier_wins,
-	       sizeof(prev_frontier_wins));
+	       nr_to_scan * sizeof(prev_frontier_wins[0]));
 	memcpy(prev_frontier_live_misses, cur_frontier_live_misses,
-	       sizeof(prev_frontier_live_misses));
-	memcpy(prev_rq_saves, cur_rq_saves, sizeof(prev_rq_saves));
-	memcpy(prev_rq_wins,  cur_rq_wins,  sizeof(prev_rq_wins));
+	       nr_to_scan * sizeof(prev_frontier_live_misses[0]));
+	memcpy(prev_rq_saves, cur_rq_saves,
+	       nr_to_scan * sizeof(prev_rq_saves[0]));
+	memcpy(prev_rq_wins,  cur_rq_wins,
+	       nr_to_scan * sizeof(prev_rq_wins[0]));
 	memcpy(prev_warm_reserve, cur_warm_reserve,
-	       sizeof(prev_warm_reserve));
+	       nr_to_scan * sizeof(prev_warm_reserve[0]));
 	memcpy(prev_warm_reserve_plateau, cur_warm_reserve_plateau,
-	       sizeof(prev_warm_reserve_plateau));
+	       nr_to_scan * sizeof(prev_warm_reserve_plateau[0]));
 
 	last_dump = now;
 }
