@@ -1144,7 +1144,7 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 
 	if (child->cmp_hints_consumed_count >= CMP_HINT_CONSUMED_STASH_MAX) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hint_stash_overflow,
+			__atomic_fetch_add(&kcov_shm->hint_flat.cmp_hint_stash_overflow,
 					   1UL, __ATOMIC_RELAXED);
 		return;
 	}
@@ -1181,7 +1181,7 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	e->served_from_shared = served_from_shared ? 1 : 0;
 
 	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->cmp_hints_consumed, 1UL,
+		__atomic_fetch_add(&kcov_shm->hint_flat.cmp_hints_consumed, 1UL,
 				   __ATOMIC_RELAXED);
 		/* SHADOW old-flat-pool by-kind partition.  Bumped here next
 		 * to the flat consumed counter so the per-pool denominator is

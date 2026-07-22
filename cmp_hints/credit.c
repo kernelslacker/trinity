@@ -89,7 +89,7 @@ static void cmp_hint_credit_entry_per_syscall(unsigned int nr, bool do32,
 	}
 
 	if (kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->cmp_hint_credit_entry_evicted,
+		__atomic_fetch_add(&kcov_shm->hint_flat.cmp_hint_credit_entry_evicted,
 				   1UL, __ATOMIC_RELAXED);
 }
 
@@ -162,7 +162,7 @@ static void cmp_hint_credit_entry_field(unsigned int nr, bool do32,
 		}
 
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hint_credit_entry_evicted,
+			__atomic_fetch_add(&kcov_shm->hint_flat.cmp_hint_credit_entry_evicted,
 					   1UL, __ATOMIC_RELAXED);
 		return;
 	}
@@ -190,10 +190,10 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 
 	if (kcov_shm != NULL) {
 		if (outcome_win)
-			__atomic_fetch_add(&kcov_shm->cmp_hint_wins, 1UL,
+			__atomic_fetch_add(&kcov_shm->hint_flat.cmp_hint_wins, 1UL,
 					   __ATOMIC_RELAXED);
 		else
-			__atomic_fetch_add(&kcov_shm->cmp_hint_misses, 1UL,
+			__atomic_fetch_add(&kcov_shm->hint_flat.cmp_hint_misses, 1UL,
 					   __ATOMIC_RELAXED);
 	}
 
@@ -403,7 +403,7 @@ void cmp_hints_feedback_credit_cmp_novelty(void)
 		return;
 
 	if (kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->cmp_hint_cmp_novelty_wins, 1UL,
+		__atomic_fetch_add(&kcov_shm->hint_flat.cmp_hint_cmp_novelty_wins, 1UL,
 				   __ATOMIC_RELAXED);
 
 	/* Per spec: CMP-mode novelty is kept SEPARATE from PC-edge win
