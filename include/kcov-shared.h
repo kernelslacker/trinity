@@ -560,6 +560,7 @@ struct kcov_shared {
 	 * carry the raw fresh-edge tally so a single big call is not
 	 * flattened to the same weight as a tiny one.  All bumped in
 	 * kcov_collect() keyed on kc->remote_mode. */
+	struct kcov_pc_ctx {
 	unsigned long local_pc_calls[MAX_NR_SYSCALL];
 	unsigned long remote_pc_calls[MAX_NR_SYSCALL];
 	unsigned long local_pc_edge_calls[MAX_NR_SYSCALL];
@@ -576,6 +577,7 @@ struct kcov_shared {
 	unsigned long childop_remote_pc_edge_calls[KCOV_CHILDOP_NR_MAX];
 	unsigned long childop_local_pc_edge_count[KCOV_CHILDOP_NR_MAX];
 	unsigned long childop_remote_pc_edge_count[KCOV_CHILDOP_NR_MAX];
+	} pc_ctx;
 	/* Per-syscall accounting of the KCOV_REMOTE_ENABLE attempt path.
 	 * The local_pc_calls / remote_pc_calls split above attributes calls
 	 * by the mode the kernel ultimately produced coverage in, which

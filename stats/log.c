@@ -328,10 +328,10 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 				__ATOMIC_RELAXED);
 			kcov_calls = per_syscall_calls_total(nr);
 			local_edges = __atomic_load_n(
-				&kcov_shm->local_pc_edge_count[nr],
+				&kcov_shm->pc_ctx.local_pc_edge_count[nr],
 				__ATOMIC_RELAXED);
 			remote_edges = __atomic_load_n(
-				&kcov_shm->remote_pc_edge_count[nr],
+				&kcov_shm->pc_ctx.remote_pc_edge_count[nr],
 				__ATOMIC_RELAXED);
 			cmp_injected = __atomic_load_n(
 				&kcov_shm->per_syscall_cmp_injected[nr],

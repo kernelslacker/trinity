@@ -545,10 +545,10 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		 * call into the mode-keyed slot so per-mode yield is
 		 * measurable per syscall. */
 		if (kc->remote_mode)
-			__atomic_fetch_add(&kcov_shm->remote_pc_calls[nr],
+			__atomic_fetch_add(&kcov_shm->pc_ctx.remote_pc_calls[nr],
 				1, __ATOMIC_RELAXED);
 		else
-			__atomic_fetch_add(&kcov_shm->local_pc_calls[nr],
+			__atomic_fetch_add(&kcov_shm->pc_ctx.local_pc_calls[nr],
 				1, __ATOMIC_RELAXED);
 		if (found_new) {
 			/* Mirror the per_syscall_edges call-count + raw-edge
@@ -557,17 +557,17 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * edge_count / pc_calls) is directly readable. */
 			if (kc->remote_mode) {
 				__atomic_fetch_add(
-					&kcov_shm->remote_pc_edge_calls[nr],
+					&kcov_shm->pc_ctx.remote_pc_edge_calls[nr],
 					1, __ATOMIC_RELAXED);
 				__atomic_fetch_add(
-					&kcov_shm->remote_pc_edge_count[nr],
+					&kcov_shm->pc_ctx.remote_pc_edge_count[nr],
 					edges_this_call, __ATOMIC_RELAXED);
 			} else {
 				__atomic_fetch_add(
-					&kcov_shm->local_pc_edge_calls[nr],
+					&kcov_shm->pc_ctx.local_pc_edge_calls[nr],
 					1, __ATOMIC_RELAXED);
 				__atomic_fetch_add(
-					&kcov_shm->local_pc_edge_count[nr],
+					&kcov_shm->pc_ctx.local_pc_edge_count[nr],
 					edges_this_call, __ATOMIC_RELAXED);
 			}
 			/* per_syscall_edges bumps by 1 (call-count semantics --
@@ -753,26 +753,26 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		if (op < KCOV_CHILDOP_NR_MAX) {
 			if (kc->remote_mode)
 				__atomic_fetch_add(
-					&kcov_shm->childop_remote_pc_calls[op],
+					&kcov_shm->pc_ctx.childop_remote_pc_calls[op],
 					1, __ATOMIC_RELAXED);
 			else
 				__atomic_fetch_add(
-					&kcov_shm->childop_local_pc_calls[op],
+					&kcov_shm->pc_ctx.childop_local_pc_calls[op],
 					1, __ATOMIC_RELAXED);
 			if (found_new) {
 				if (kc->remote_mode) {
 					__atomic_fetch_add(
-						&kcov_shm->childop_remote_pc_edge_calls[op],
+						&kcov_shm->pc_ctx.childop_remote_pc_edge_calls[op],
 						1, __ATOMIC_RELAXED);
 					__atomic_fetch_add(
-						&kcov_shm->childop_remote_pc_edge_count[op],
+						&kcov_shm->pc_ctx.childop_remote_pc_edge_count[op],
 						edges_this_call, __ATOMIC_RELAXED);
 				} else {
 					__atomic_fetch_add(
-						&kcov_shm->childop_local_pc_edge_calls[op],
+						&kcov_shm->pc_ctx.childop_local_pc_edge_calls[op],
 						1, __ATOMIC_RELAXED);
 					__atomic_fetch_add(
-						&kcov_shm->childop_local_pc_edge_count[op],
+						&kcov_shm->pc_ctx.childop_local_pc_edge_count[op],
 						edges_this_call, __ATOMIC_RELAXED);
 				}
 			}
