@@ -454,7 +454,7 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 
 		if (rcount > 0 && rcount <= CMP_RECENT_PER_SYSCALL) {
 			if (kcov_shm != NULL)
-				__atomic_fetch_add(&kcov_shm->cmp_recent_would_pick,
+				__atomic_fetch_add(&kcov_shm->cmp_recent.cmp_recent_would_pick,
 						   1UL, __ATOMIC_RELAXED);
 			/* Typed-inject callsites must reach the inject arm on
 			 * the durable path, not be shadowed by the recent-first
@@ -484,7 +484,7 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 					return CMP_TIER_REJECTED;
 
 				if (kcov_shm != NULL)
-					__atomic_fetch_add(&kcov_shm->cmp_recent_live_picks,
+					__atomic_fetch_add(&kcov_shm->cmp_recent.cmp_recent_live_picks,
 							   1UL, __ATOMIC_RELAXED);
 
 				/* Stash the recent-served pull under the
@@ -518,7 +518,7 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 				return CMP_TIER_SERVED;
 			}
 		} else if (kcov_shm != NULL) {
-			__atomic_fetch_add(&kcov_shm->cmp_recent_would_miss,
+			__atomic_fetch_add(&kcov_shm->cmp_recent.cmp_recent_would_miss,
 					   1UL, __ATOMIC_RELAXED);
 		}
 	}
