@@ -1933,6 +1933,7 @@ struct kcov_shared {
 	 *      cmp_hint_cmp_novelty_wins counter and the typed
 	 *      cmp_hyp_cmp_novelty_wins counter).
 	 */
+	struct kcov_cmp_hint_pool {
 	unsigned long cmp_hint_consumed_by_pool[CMP_HINT_POOL_KIND_NR];
 	unsigned long cmp_hint_pc_wins_by_pool[CMP_HINT_POOL_KIND_NR];
 	unsigned long cmp_hint_misses_by_pool[CMP_HINT_POOL_KIND_NR];
@@ -1981,6 +1982,7 @@ struct kcov_shared {
 	 */
 	unsigned long cmp_hint_pool_zero_win_would_retire;
 	unsigned long cmp_hint_pool_zero_win_would_save;
+	} cmp_hint_pool;
 
 	/* Corruption-channel sibling of cmp_hyp_pool_full, split out so the
 	 * legitimate per-syscall saturation lane and the wild-write bail
