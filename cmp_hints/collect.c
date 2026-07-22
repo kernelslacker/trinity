@@ -1002,10 +1002,10 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			__atomic_fetch_add(&kcov_shm->cmp_nonconst.cmp_nonconst_measured,
 					   nonconst_measured, __ATOMIC_RELAXED);
 		if (width_pin_total != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_width_pin_total,
+			__atomic_fetch_add(&kcov_shm->cmp_width_pin.cmp_width_pin_total,
 					   width_pin_total, __ATOMIC_RELAXED);
 		if (width_pin_would_differ != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_width_pin_would_differ,
+			__atomic_fetch_add(&kcov_shm->cmp_width_pin.cmp_width_pin_would_differ,
 					   width_pin_would_differ, __ATOMIC_RELAXED);
 	}
 }

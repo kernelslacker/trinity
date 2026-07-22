@@ -74,11 +74,11 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.name = "cmp_width_pin_preserve",
 		.would_win_offset =
 			offsetof(struct kcov_shared,
-				 cmp_width_pin_would_differ),
+				 cmp_width_pin.cmp_width_pin_would_differ),
 		.live_win_offset = 0,
 		.baseline_offset =
 			offsetof(struct kcov_shared,
-				 cmp_width_pin_total),
+				 cmp_width_pin.cmp_width_pin_total),
 		.live_flag = 0,
 		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
 		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,
