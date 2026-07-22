@@ -19,9 +19,13 @@
  * XDP attach in XDP_FLAGS_SKB_MODE only, so no native driver dependency.
  *
  * Latches: userns -EPERM latches the op off for the child's life.  Per-kind
- * ns_unsupported_{veth,vxcan,ipvlan,macvlan} and a separate
- * ns_unsupported_xdp keep the axes independent -- a missing kind doesn't
- * disable XDP, and no XDP doesn't disable the asymmetric-queue exercise.
+ * shm->veth_xdp_kind_unsupported[] (indexed by enum pair_kind) and a separate
+ * shm->veth_xdp_xdp_unsupported keep the axes independent -- a missing kind
+ * doesn't disable XDP, and no XDP doesn't disable the asymmetric-queue
+ * exercise.  Both live in shm because the rejection is observed inside the
+ * userns_run_in_ns grandchild that _exit()s after the body returns -- a
+ * process-local static would die with the grandchild and every subsequent
+ * invocation would re-attempt the same unsupported kind / XDP load forever.
  *
  * Header-gated by __has_include() on linux/if_link.h + linux/bpf.h.
  */
@@ -116,20 +120,48 @@ static const char * const kind_to_str[PK_NR] = {
 	[PK_MACVLAN] = "macvlan",
 };
 
+/* The shm latch array is sized and indexed by enum pair_kind, so the
+ * enum values above must agree with VETH_XDP_NR_KINDS in shm.h.  If a
+ * future kind is added, both sides must move together. */
+_Static_assert(PK_NR == VETH_XDP_NR_KINDS,
+	       "enum pair_kind must match shm->veth_xdp_kind_unsupported[] size");
+
 static bool ns_unsupported;
-static bool ns_unsupported_veth;
-static bool ns_unsupported_vxcan;
-static bool ns_unsupported_ipvlan;
-static bool ns_unsupported_macvlan;
-static bool ns_unsupported_xdp;
 static __u32 g_iter;
 
-static bool *const kind_latch[PK_NR] = {
-	[PK_VETH]    = &ns_unsupported_veth,
-	[PK_VXCAN]   = &ns_unsupported_vxcan,
-	[PK_IPVLAN]  = &ns_unsupported_ipvlan,
-	[PK_MACVLAN] = &ns_unsupported_macvlan,
-};
+/* Per-kind and XDP-facility feature-absent gates live in shm
+ * (shm->veth_xdp_kind_unsupported[], indexed by enum pair_kind, and
+ * shm->veth_xdp_xdp_unsupported).  The write site is inside the
+ * userns_run_in_ns() grandchild -- a process-local static would die
+ * with the grandchild on _exit() and the next invocation would
+ * re-attempt the same unsupported kind / XDP load every call.  Set
+ * when RTM_NEWLINK / BPF_PROG_LOAD reject with the CONFIG-absent
+ * errno set; persists fleet-wide via shm so the unsupported attempt
+ * is paid once per fleet rather than once per grandchild. */
+
+static bool kind_unsupported(enum pair_kind pk)
+{
+	return __atomic_load_n(&shm->veth_xdp_kind_unsupported[pk],
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_kind_unsupported(enum pair_kind pk)
+{
+	__atomic_store_n(&shm->veth_xdp_kind_unsupported[pk], true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool xdp_unsupported(void)
+{
+	return __atomic_load_n(&shm->veth_xdp_xdp_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_xdp_unsupported(void)
+{
+	__atomic_store_n(&shm->veth_xdp_xdp_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Per-invocation state shared across the extracted phase helpers.
  * prog_fd / raw / ctx.fd default to -1 via the orchestrator's
@@ -474,7 +506,7 @@ static enum pair_kind pick_kind(void)
 
 	for (i = 0; i < PK_NR; i++) {
 		enum pair_kind pk = (enum pair_kind)((start + i) % PK_NR);
-		if (!*kind_latch[pk])
+		if (!kind_unsupported(pk))
 			return pk;
 	}
 	return PK_NR;
@@ -541,7 +573,7 @@ static int veth_xdp_iter_create_pair(struct veth_xdp_iter_ctx *ictx)
 				 &ictx->a_idx, &ictx->b_idx);
 	if (rc != 0) {
 		if (rc == -ENOENT || rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT) {
-			*kind_latch[ictx->pk] = true;
+			mark_kind_unsupported(ictx->pk);
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
@@ -576,7 +608,7 @@ static int veth_xdp_iter_create_pair(struct veth_xdp_iter_ctx *ictx)
 /*
  * Phase 3: BPF_PROG_LOAD an opaque "r0 = XDP_REDIRECT; exit" program
  * and attach it to the a-side via RTM_NEWLINK + IFLA_XDP nest in
- * SKB_MODE.  Latches ns_unsupported_xdp on the EPERM / EACCES /
+ * SKB_MODE.  Latches shm->veth_xdp_xdp_unsupported on the EPERM / EACCES /
  * EINVAL / EOPNOTSUPP set BPF_PROG_LOAD returns when XDP load is
  * unavailable (unprivileged-bpf disabled, CONFIG_BPF_SYSCALL absent,
  * BPF_PROG_TYPE_XDP not enabled).  Kept separate from the per-kind
@@ -599,14 +631,14 @@ static void veth_xdp_iter_load_xdp(struct veth_xdp_iter_ctx *ictx)
 	const enum child_op_type op = ictx->child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (ns_unsupported_xdp)
+	if (xdp_unsupported())
 		return;
 
 	ictx->prog_fd = vax_load_xdp_prog();
 	if (ictx->prog_fd < 0) {
 		if (errno == EPERM || errno == EACCES ||
 		    errno == EINVAL || errno == EOPNOTSUPP) {
-			ns_unsupported_xdp = true;
+			mark_xdp_unsupported();
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,

@@ -529,6 +529,45 @@ struct shm_s {
 	 * is safe -- only false -> true, and the write is idempotent. */
 	bool espintcp_coalesce_kind_unsupported;
 
+	/* Per-kind feature-absent latches for the veth_asymmetric_xdp
+	 * childop (childops/net/veth-asymmetric-xdp.c).  Indexed by the
+	 * file-local enum pair_kind (0 = veth, 1 = vxcan, 2 = ipvlan,
+	 * 3 = macvlan); the indices are stable and pinned by a
+	 * _Static_assert in veth-asymmetric-xdp.c.  Set when
+	 * RTM_NEWLINK rejects the pair/slave kind with the rtnl_link_ops-
+	 * not-registered errno set (absent module / CONFIG); subsequent
+	 * picks skip the kind so the unsupported attempt is paid once per
+	 * fleet rather than once per grandchild invocation.
+	 *
+	 * Must live in shm: the rejection is observed inside the transient
+	 * grandchild forked by userns_run_in_ns(), which _exit()s after
+	 * the body returns.  A process-local static would die with the
+	 * grandchild and the next invocation would re-attempt the same
+	 * unsupported kind every single time (latch-in-grandchild bug).
+	 * No auto-clear; an absent kernel CONFIG does not appear mid-run,
+	 * same recovery story as the sibling latches above.  RELAXED
+	 * atomic load/store from multiple grandchildren is safe -- only
+	 * false -> true, and the write is idempotent. */
+#define VETH_XDP_NR_KINDS 4
+	bool veth_xdp_kind_unsupported[VETH_XDP_NR_KINDS];
+
+	/* Feature-absent latch for BPF_PROG_LOAD of the XDP program used
+	 * by the veth_asymmetric_xdp childop.  Set when BPF_PROG_LOAD
+	 * rejects with the CONFIG_BPF_SYSCALL / BPF_PROG_TYPE_XDP absent
+	 * or unprivileged-bpf-disabled errno set (EPERM / EACCES / EINVAL
+	 * / EOPNOTSUPP) inside the transient userns_run_in_ns grandchild.
+	 * Kept separate from veth_xdp_kind_unsupported[] so a missing XDP
+	 * facility doesn't disable the per-kind asymmetric-queue exercise
+	 * and a missing kind doesn't disable XDP for the others.  Same
+	 * shm-vs-static rationale as the sibling latches above: the
+	 * rejection is observed inside a transient grandchild that
+	 * _exit()s after the body returns, so a process-local static
+	 * would die with the grandchild and every subsequent invocation
+	 * would re-attempt the missing facility forever.  RELAXED atomic
+	 * load/store from multiple grandchildren is safe -- only
+	 * false -> true, and the write is idempotent. */
+	bool veth_xdp_xdp_unsupported;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the
