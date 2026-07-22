@@ -2210,6 +2210,7 @@ struct kcov_shared {
 	 *     observability -- the cap arms below are the actual
 	 *     domination defence.
 	 */
+	struct kcov_childop_cmp {
 	unsigned long childop_cmp_brackets_opened;
 	unsigned long childop_cmp_brackets_skipped_pc_mode;
 	unsigned long childop_cmp_brackets_skipped_incapable;
@@ -2228,6 +2229,7 @@ struct kcov_shared {
 	 * the §3.2 noisy-syscall skip-list would need tuning.  Same
 	 * KCOV_CHILDOP_NR_MAX bound the PC-side childop_kcov_* arrays use. */
 	unsigned long childop_cmp_syscalls_sampled_per_op[KCOV_CHILDOP_NR_MAX];
+	} childop_cmp;
 
 	/*
 	 * SHADOW counters for the fleet-wide shared cmp_ip tier

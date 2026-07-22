@@ -437,10 +437,10 @@ void cmp_hints_childop_insert(unsigned int nr, bool do32,
 	count = rp->count;
 
 	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->childop_cmp_pool_inserts[nr],
+		__atomic_fetch_add(&kcov_shm->childop_cmp.childop_cmp_pool_inserts[nr],
 				   1UL, __ATOMIC_RELAXED);
 		if (count >= CMP_RECENT_PER_SYSCALL)
-			__atomic_fetch_add(&kcov_shm->childop_cmp_pool_evicts[nr],
+			__atomic_fetch_add(&kcov_shm->childop_cmp.childop_cmp_pool_evicts[nr],
 					   1UL, __ATOMIC_RELAXED);
 	}
 
