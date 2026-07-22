@@ -324,7 +324,7 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 		attempted_calls = entry->attempted;
 		if (nr < MAX_NR_SYSCALL && kcov_shm != NULL) {
 			edges = __atomic_load_n(
-				&kcov_shm->per_syscall_diag[nr][arch_ix].bucket_bits_real,
+				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][arch_ix].bucket_bits_real,
 				__ATOMIC_RELAXED);
 			kcov_calls = per_syscall_calls_total(nr);
 			local_edges = __atomic_load_n(

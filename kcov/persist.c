@@ -608,7 +608,7 @@ bool kcov_bitmap_save_file(const char *path)
 
 		for (dim = 0; dim < 2; dim++) {
 			struct kcov_per_syscall_diag *d =
-				&kcov_shm->per_syscall_diag[nr][dim];
+				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][dim];
 			struct kcov_per_syscall_diag_ondisk *o =
 				&diag_blob[nr * 2 + dim];
 
@@ -1065,7 +1065,7 @@ bool kcov_bitmap_load_file(const char *path)
 							struct kcov_per_syscall_diag_ondisk *o =
 								&diag_blob[nr * 2 + dim];
 							struct kcov_per_syscall_diag *d =
-								&kcov_shm->per_syscall_diag[nr][dim];
+								&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][dim];
 
 							__atomic_store_n(&d->bucket_bits_real,
 									 o->bucket_bits_real,

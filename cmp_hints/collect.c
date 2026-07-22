@@ -970,7 +970,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				   __ATOMIC_RELAXED);
 
 	if (inserted != 0 && kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->per_syscall_cmp_inserts[nr],
+		__atomic_fetch_add(&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr],
 				   inserted, __ATOMIC_RELAXED);
 
 	if (kcov_shm != NULL) {

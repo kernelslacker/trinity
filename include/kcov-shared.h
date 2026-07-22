@@ -659,6 +659,7 @@ struct kcov_shared {
 	 * rate is flat is generating CMP signal that is not translating into
 	 * coverage, the diagnostic signature of the CMP-rising-PC-flat
 	 * plateau pattern. */
+	struct kcov_per_syscall_cmp {
 	unsigned long per_syscall_cmp_inserts[MAX_NR_SYSCALL];
 	/* Snapshot of per_syscall_cmp_inserts at the previous dump_stats()
 	 * call, matching the per_syscall_edges_previous pattern above so the
@@ -668,6 +669,7 @@ struct kcov_shared {
 	 * so the 32-bit-record vs 64-bit-record arch dimension is preserved
 	 * alongside the syscall slot.  ~96 KiB of shm. */
 	struct kcov_per_syscall_diag per_syscall_diag[MAX_NR_SYSCALL][2];
+	} per_syscall_cmp;
 	/* Sliding-window edge-rate plateau detector state.  Sampled at the
 	 * 600s parent stats tick: each tick, delta = edges_found -
 	 * plateau_prev_edges is the count of new edges discovered in the

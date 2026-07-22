@@ -255,7 +255,7 @@ static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
 	__atomic_fetch_add(&kcov_shm->dedup.dedup_probe_overflow,
 		1, __ATOMIC_RELAXED);
 	if (nr < MAX_NR_SYSCALL)
-		__atomic_fetch_add(&kcov_shm->per_syscall_diag[nr][do32].dedup_probe_overflow,
+		__atomic_fetch_add(&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].dedup_probe_overflow,
 			1, __ATOMIC_RELAXED);
 	return 1;
 }
@@ -348,7 +348,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		__atomic_fetch_add(&kcov_shm->coverage.trace_truncated, 1,
 			__ATOMIC_RELAXED);
 		if (nr < MAX_NR_SYSCALL) {
-			__atomic_fetch_add(&kcov_shm->per_syscall_diag[nr][do32].trace_truncated,
+			__atomic_fetch_add(&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].trace_truncated,
 				1, __ATOMIC_RELAXED);
 		} else if (nr >= CHILDOP_KCOV_NR_BASE) {
 			unsigned long op = nr - CHILDOP_KCOV_NR_BASE;
@@ -366,11 +366,11 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	if (nr < MAX_NR_SYSCALL) {
 		uint32_t observed = (uint32_t)count;
 		uint32_t cur = __atomic_load_n(
-			&kcov_shm->per_syscall_diag[nr][do32].max_trace_size,
+			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].max_trace_size,
 			__ATOMIC_RELAXED);
 		while (observed > cur) {
 			if (__atomic_compare_exchange_n(
-					&kcov_shm->per_syscall_diag[nr][do32].max_trace_size,
+					&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].max_trace_size,
 					&cur, observed,
 					false,
 					__ATOMIC_RELAXED,
@@ -679,11 +679,11 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		 * contribution that the post-mortem wants visible. */
 		if (edges_this_call > 0)
 			__atomic_fetch_add(
-				&kcov_shm->per_syscall_diag[nr][do32].bucket_bits_real,
+				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].bucket_bits_real,
 				edges_this_call, __ATOMIC_RELAXED);
 		if (local_distinct_pcs > 0)
 			__atomic_fetch_add(
-				&kcov_shm->per_syscall_diag[nr][do32].distinct_pcs,
+				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].distinct_pcs,
 				local_distinct_pcs, __ATOMIC_RELAXED);
 		/* Shadow transition coverage per-syscall accounting.  The
 		 * call-count counter (per_syscall_transition_edges) bumps by
@@ -924,7 +924,7 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 		__atomic_fetch_add(&kcov_shm->cmp_records.cmp_trace_truncated, 1,
 			__ATOMIC_RELAXED);
 		if (nr < MAX_NR_SYSCALL)
-			__atomic_fetch_add(&kcov_shm->per_syscall_diag[nr][do32].cmp_trace_truncated,
+			__atomic_fetch_add(&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].cmp_trace_truncated,
 				1, __ATOMIC_RELAXED);
 		count = KCOV_CMP_RECORDS_MAX;
 	}
