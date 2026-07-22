@@ -442,7 +442,7 @@ void kcov_cmp_render_pc_win_conversion_split_block(long elapsed __unused__)
 			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected_by_kind[k],
 			__ATOMIC_RELAXED);
 		cur_hyp_pc_wins_by_kind[k] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_pc_wins_by_kind[k],
+			&kcov_shm->cmp_hyp_results.cmp_hyp_pc_wins_by_kind[k],
 			__ATOMIC_RELAXED);
 	}
 

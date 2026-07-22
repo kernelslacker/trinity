@@ -238,7 +238,7 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 	 * hide inside legitimate back-pressure. */
 	if (pool->count > CMP_HYP_PER_SYSCALL) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hyp_pool_overflow, 1UL,
+			__atomic_fetch_add(&kcov_shm->cmp_hyp_results.cmp_hyp_pool_overflow, 1UL,
 					   __ATOMIC_RELAXED);
 		return;
 	}
@@ -431,7 +431,7 @@ boundary:
 			h->last_used_generation = generation;
 			if (fresh_boundary && kcov_shm != NULL)
 				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_boundary_inserted,
+					&kcov_shm->cmp_hyp_results.cmp_hyp_boundary_inserted,
 					1UL, __ATOMIC_RELAXED);
 		}
 	}
@@ -519,7 +519,7 @@ static struct cmp_hypothesis *cmp_hyp_find_for_credit(struct cmp_hyp_pool *pool,
 	if (range_match != NULL)
 		return range_match;
 	if (boundary_match != NULL && kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_boundary_credit_window_hits,
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_results.cmp_hyp_boundary_credit_window_hits,
 				   1UL, __ATOMIC_RELAXED);
 	return boundary_match;
 }
@@ -651,25 +651,25 @@ void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
 
 			switch (outcome) {
 			case CMP_HYP_OUTCOME_PC_WIN:
-				per_kind_field = &kcov_shm->cmp_hyp_pc_wins_by_kind[h->kind];
+				per_kind_field = &kcov_shm->cmp_hyp_results.cmp_hyp_pc_wins_by_kind[h->kind];
 				break;
 			case CMP_HYP_OUTCOME_TRANSITION_WIN:
-				per_kind_field = &kcov_shm->cmp_hyp_transition_wins_by_kind[h->kind];
+				per_kind_field = &kcov_shm->cmp_hyp_results.cmp_hyp_transition_wins_by_kind[h->kind];
 				break;
 			case CMP_HYP_OUTCOME_MISS:
-				per_kind_field = &kcov_shm->cmp_hyp_misses_by_kind[h->kind];
+				per_kind_field = &kcov_shm->cmp_hyp_results.cmp_hyp_misses_by_kind[h->kind];
 				break;
 			case CMP_HYP_OUTCOME_CORPUS_SAVE:
-				per_kind_field = &kcov_shm->cmp_hyp_corpus_save_by_kind[h->kind];
+				per_kind_field = &kcov_shm->cmp_hyp_results.cmp_hyp_corpus_save_by_kind[h->kind];
 				break;
 			case CMP_HYP_OUTCOME_DESTRUCTIVE_SKIP:
-				per_kind_field = &kcov_shm->cmp_hyp_destructive_by_kind[h->kind];
+				per_kind_field = &kcov_shm->cmp_hyp_results.cmp_hyp_destructive_by_kind[h->kind];
 				break;
 			case CMP_HYP_OUTCOME_CONTEXT_SKIP:
-				per_kind_field = &kcov_shm->cmp_hyp_context_skip_by_kind[h->kind];
+				per_kind_field = &kcov_shm->cmp_hyp_results.cmp_hyp_context_skip_by_kind[h->kind];
 				break;
 			case CMP_HYP_OUTCOME_CMP_NOVELTY:
-				per_kind_field = &kcov_shm->cmp_hyp_cmp_novelty_wins_by_kind[h->kind];
+				per_kind_field = &kcov_shm->cmp_hyp_results.cmp_hyp_cmp_novelty_wins_by_kind[h->kind];
 				break;
 			default:
 				break;
@@ -751,17 +751,17 @@ void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
 
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_score_bucket_census[bucket],
+				&kcov_shm->cmp_hyp_results.cmp_hyp_score_bucket_census[bucket],
 				1UL, __ATOMIC_RELAXED);
 
 		if (kcov_shm != NULL && h->kind < CMP_HYP_KIND_NR) {
 			if (would_promote)
 				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_would_promote_by_kind[h->kind],
+					&kcov_shm->cmp_hyp_results.cmp_hyp_would_promote_by_kind[h->kind],
 					1UL, __ATOMIC_RELAXED);
 			else if (would_demote)
 				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_would_demote_by_kind[h->kind],
+					&kcov_shm->cmp_hyp_results.cmp_hyp_would_demote_by_kind[h->kind],
 					1UL, __ATOMIC_RELAXED);
 		}
 
@@ -813,7 +813,7 @@ void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
 				    old_state < CMP_HYP_STATE_NR &&
 				    new_state < CMP_HYP_STATE_NR)
 					__atomic_fetch_add(
-						&kcov_shm->cmp_hyp_state_transitions[old_state][new_state],
+						&kcov_shm->cmp_hyp_results.cmp_hyp_state_transitions[old_state][new_state],
 						1UL, __ATOMIC_RELAXED);
 			}
 		}
@@ -986,7 +986,7 @@ cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
 		case CMP_HYP_STATE_RETIRED:
 			if (kcov_shm != NULL)
 				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_skipped_retired_by_kind[h->kind],
+					&kcov_shm->cmp_hyp_results.cmp_hyp_skipped_retired_by_kind[h->kind],
 					1UL, __ATOMIC_RELAXED);
 			break;
 		default:
@@ -998,24 +998,24 @@ cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
 		if ((p) != NULL) {					\
 			if (kcov_shm != NULL)				\
 				__atomic_fetch_add(			\
-					&kcov_shm->cmp_hyp_picked_by_state[CMP_HYP_STATE_PROMOTED], \
+					&kcov_shm->cmp_hyp_results.cmp_hyp_picked_by_state[CMP_HYP_STATE_PROMOTED], \
 					1UL, __ATOMIC_RELAXED);		\
 			return (p);					\
 		}							\
 		if ((o) != NULL) {					\
 			if (kcov_shm != NULL)				\
 				__atomic_fetch_add(			\
-					&kcov_shm->cmp_hyp_picked_by_state[CMP_HYP_STATE_OBSERVED], \
+					&kcov_shm->cmp_hyp_results.cmp_hyp_picked_by_state[CMP_HYP_STATE_OBSERVED], \
 					1UL, __ATOMIC_RELAXED);		\
 			return (o);					\
 		}							\
 		if ((d) != NULL && ONE_IN(CMP_HYP_DEMOTED_RETRY_DENOM)) { \
 			if (kcov_shm != NULL) {				\
 				__atomic_fetch_add(			\
-					&kcov_shm->cmp_hyp_picked_by_state[CMP_HYP_STATE_DEMOTED], \
+					&kcov_shm->cmp_hyp_results.cmp_hyp_picked_by_state[CMP_HYP_STATE_DEMOTED], \
 					1UL, __ATOMIC_RELAXED);		\
 				__atomic_fetch_add(			\
-					&kcov_shm->cmp_hyp_demoted_reroll_picked_by_kind[(d)->kind], \
+					&kcov_shm->cmp_hyp_results.cmp_hyp_demoted_reroll_picked_by_kind[(d)->kind], \
 					1UL, __ATOMIC_RELAXED);		\
 			}						\
 			return (d);					\
@@ -1097,7 +1097,7 @@ void cmp_hyp_would_pick(unsigned int nr, bool do32,
 	 * precedence let it through).
 	 */
 	if (present[CMP_HYP_BOUNDARY])
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_boundary_candidate_available,
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_results.cmp_hyp_boundary_candidate_available,
 				   1UL, __ATOMIC_RELAXED);
 }
 
@@ -1699,7 +1699,7 @@ out_bump:
 	 * Pure observation -- *out is unchanged from the pre-census ladder,
 	 * the live inject arm receives the same byte-identical value. */
 	if (kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_probe_class_hist[cls],
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_results.cmp_hyp_probe_class_hist[cls],
 				   1UL, __ATOMIC_RELAXED);
 
 	/* SHADOW: pow2 / alignment probe-class would-fire / would-win

@@ -1993,6 +1993,7 @@ struct kcov_shared {
 	 * pool out of bounds.  cmp_hyp_pool_full now bumps ONLY from the
 	 * cmp_hyp_alloc() per-syscall-exhausted branch (legit saturation).
 	 * SHADOW telemetry only -- no consumer reads it. */
+	struct kcov_cmp_hyp_results {
 	unsigned long cmp_hyp_pool_overflow;
 
 	/*
@@ -2179,6 +2180,7 @@ struct kcov_shared {
 	unsigned long cmp_hyp_boundary_inserted;
 	unsigned long cmp_hyp_boundary_candidate_available;
 	unsigned long cmp_hyp_boundary_credit_window_hits;
+	} cmp_hyp_results;
 
 	/*
 	 * Childop CMP harvest shadow counters.  Populated only when
