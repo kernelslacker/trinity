@@ -35,6 +35,7 @@
 #include "kcov-groups/cmp_parent.h"
 #include "kcov-groups/hint_reject.h"
 #include "kcov-groups/reexec_gate.h"
+#include "kcov-groups/cmp_field_attr.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -694,14 +695,7 @@ struct kcov_shared {
 	 *      hands the kernel a non-shared-region timespec the
 	 *      harvest can't safely deref.
 	 */
-	struct kcov_cmp_field_attr {
-	unsigned long cmp_field_attribution_scanned;
-	unsigned long cmp_field_attribution_found;
-	unsigned long cmp_field_attribution_pool_full;
-	unsigned long cmp_field_attribution_arg_skipped_bad_ptr;
-	unsigned long cmp_field_attribution_arg_skipped_short_alloc;
-	unsigned long cmp_field_timespec_skipped_bad_ptr;
-	} cmp_field_attr;
+	struct kcov_cmp_field_attr cmp_field_attr;
 
 	/* A/B-comparison counter for the substitution-pool "uninteresting
 	 * constant" drop mask.  Each CMP-mode child is stamped at fork into
