@@ -635,10 +635,26 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		usleep(1000);
 	}
 
-	/* Timed out, or waitpid errored. Force-kill and reap to prevent zombies. */
+	/* Timed out, or waitpid errored. Force-kill, then try a bounded
+	 * WNOHANG reap. A D-state grandchild survives SIGKILL, and a
+	 * blocking waitpid here would pin the worker past the ~1s budget
+	 * claimed above. If the grandchild still hasn't exited after a
+	 * few short polls, log and continue -- leave it as a zombie for
+	 * the eventual SIGCHLD path rather than wedging the worker.
+	 */
 	if (pid <= 0) {
+		pid_t rp = 0;
+
 		kill(extrapid, SIGKILL);
-		(void)waitpid_eintr(extrapid, NULL, 0);
+		for (int i = 0; i < 5; i++) {
+			rp = waitpid_eintr(extrapid, NULL, WNOHANG);
+			if (rp != 0)
+				break;
+			usleep(1000);
+		}
+		if (rp == 0)
+			output(1, "extrafork: grandchild %d unreapable after SIGKILL, leaving zombie\n",
+			       extrapid);
 	}
 
 	/* Grandchild died before reaching __do_syscall's AFTER block, so
