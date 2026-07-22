@@ -20,6 +20,7 @@
 #include "kcov-groups/child_mode.h"
 #include "kcov-groups/childop_kcov.h"
 #include "kcov-groups/per_syscall.h"
+#include "kcov-groups/pc_ctx.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -97,24 +98,7 @@ struct kcov_shared {
 	 * carry the raw fresh-edge tally so a single big call is not
 	 * flattened to the same weight as a tiny one.  All bumped in
 	 * kcov_collect() keyed on kc->remote_mode. */
-	struct kcov_pc_ctx {
-	unsigned long local_pc_calls[MAX_NR_SYSCALL];
-	unsigned long remote_pc_calls[MAX_NR_SYSCALL];
-	unsigned long local_pc_edge_calls[MAX_NR_SYSCALL];
-	unsigned long remote_pc_edge_calls[MAX_NR_SYSCALL];
-	unsigned long local_pc_edge_count[MAX_NR_SYSCALL];
-	unsigned long remote_pc_edge_count[MAX_NR_SYSCALL];
-	/* Per-childop mirror of the local/remote PC split above, sized
-	 * to KCOV_CHILDOP_NR_MAX and indexed by op = nr -
-	 * CHILDOP_KCOV_NR_BASE inside kcov_collect().  Same semantics as
-	 * the per-syscall arrays; same bump keyed on kc->remote_mode. */
-	unsigned long childop_local_pc_calls[KCOV_CHILDOP_NR_MAX];
-	unsigned long childop_remote_pc_calls[KCOV_CHILDOP_NR_MAX];
-	unsigned long childop_local_pc_edge_calls[KCOV_CHILDOP_NR_MAX];
-	unsigned long childop_remote_pc_edge_calls[KCOV_CHILDOP_NR_MAX];
-	unsigned long childop_local_pc_edge_count[KCOV_CHILDOP_NR_MAX];
-	unsigned long childop_remote_pc_edge_count[KCOV_CHILDOP_NR_MAX];
-	} pc_ctx;
+	struct kcov_pc_ctx pc_ctx;
 	/* Per-syscall accounting of the KCOV_REMOTE_ENABLE attempt path.
 	 * The local_pc_calls / remote_pc_calls split above attributes calls
 	 * by the mode the kernel ultimately produced coverage in, which
