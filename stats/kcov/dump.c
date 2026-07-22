@@ -256,11 +256,11 @@ static void dump_stats_render_kcov_cmp_field_consumer(void)
 		unsigned long fc_key_absent = __atomic_load_n(&kcov_shm->field_consumer.cmp_field_consumer_key_absent, __ATOMIC_RELAXED);
 		unsigned long fc_pool_corrupt = __atomic_load_n(&kcov_shm->field_consumer.cmp_field_consumer_pool_corrupted, __ATOMIC_RELAXED);
 		unsigned long fc_live_picks = __atomic_load_n(&kcov_shm->field_consumer.cmp_field_consumer_live_picks, __ATOMIC_RELAXED);
-		unsigned long fc_g_variant = __atomic_load_n(&kcov_shm->cmp_field_consumer_guard_variant_layout, __ATOMIC_RELAXED);
-		unsigned long fc_g_bufdisc = __atomic_load_n(&kcov_shm->cmp_field_consumer_guard_buffer_discrim, __ATOMIC_RELAXED);
-		unsigned long fc_g_lenpair = __atomic_load_n(&kcov_shm->cmp_field_consumer_guard_len_pair, __ATOMIC_RELAXED);
-		unsigned long fc_g_nested = __atomic_load_n(&kcov_shm->cmp_field_consumer_guard_nested_pointer, __ATOMIC_RELAXED);
-		unsigned long fc_g_dep = __atomic_load_n(&kcov_shm->cmp_field_consumer_guard_dependent, __ATOMIC_RELAXED);
+		unsigned long fc_g_variant = __atomic_load_n(&kcov_shm->field_consumer_guard.cmp_field_consumer_guard_variant_layout, __ATOMIC_RELAXED);
+		unsigned long fc_g_bufdisc = __atomic_load_n(&kcov_shm->field_consumer_guard.cmp_field_consumer_guard_buffer_discrim, __ATOMIC_RELAXED);
+		unsigned long fc_g_lenpair = __atomic_load_n(&kcov_shm->field_consumer_guard.cmp_field_consumer_guard_len_pair, __ATOMIC_RELAXED);
+		unsigned long fc_g_nested = __atomic_load_n(&kcov_shm->field_consumer_guard.cmp_field_consumer_guard_nested_pointer, __ATOMIC_RELAXED);
+		unsigned long fc_g_dep = __atomic_load_n(&kcov_shm->field_consumer_guard.cmp_field_consumer_guard_dependent, __ATOMIC_RELAXED);
 		unsigned long fc_p_elig = __atomic_load_n(&kcov_shm->cmp_field_consumer_prove_eligible, __ATOMIC_RELAXED);
 		unsigned long fc_p_edges = __atomic_load_n(&kcov_shm->cmp_field_consumer_prove_edges_at_pick, __ATOMIC_RELAXED);
 		unsigned long fc_p_cmps = __atomic_load_n(&kcov_shm->cmp_field_consumer_prove_cmp_records_at_pick, __ATOMIC_RELAXED);

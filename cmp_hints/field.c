@@ -595,19 +595,19 @@ static bool cmp_field_key_guard_skip(const struct struct_desc *desc,
 	case CMP_FIELD_GUARD_OK:
 		return false;
 	case CMP_FIELD_GUARD_VARIANT_LAYOUT:
-		slot = &kcov_shm->cmp_field_consumer_guard_variant_layout;
+		slot = &kcov_shm->field_consumer_guard.cmp_field_consumer_guard_variant_layout;
 		break;
 	case CMP_FIELD_GUARD_BUFFER_DISCRIM:
-		slot = &kcov_shm->cmp_field_consumer_guard_buffer_discrim;
+		slot = &kcov_shm->field_consumer_guard.cmp_field_consumer_guard_buffer_discrim;
 		break;
 	case CMP_FIELD_GUARD_LEN_PAIR:
-		slot = &kcov_shm->cmp_field_consumer_guard_len_pair;
+		slot = &kcov_shm->field_consumer_guard.cmp_field_consumer_guard_len_pair;
 		break;
 	case CMP_FIELD_GUARD_NESTED_POINTER:
-		slot = &kcov_shm->cmp_field_consumer_guard_nested_pointer;
+		slot = &kcov_shm->field_consumer_guard.cmp_field_consumer_guard_nested_pointer;
 		break;
 	case CMP_FIELD_GUARD_DEPENDENT:
-		slot = &kcov_shm->cmp_field_consumer_guard_dependent;
+		slot = &kcov_shm->field_consumer_guard.cmp_field_consumer_guard_dependent;
 		break;
 	default:
 		return false;
