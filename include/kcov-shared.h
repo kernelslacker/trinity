@@ -38,6 +38,7 @@
 #include "kcov-groups/cmp_field_attr.h"
 #include "kcov-groups/cmp_boring.h"
 #include "kcov-groups/cmp_recent.h"
+#include "kcov-groups/field_consumer.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -806,13 +807,7 @@ struct kcov_shared {
 	 * Append-only at the tail per the existing convention so
 	 * consumer offsets stay stable.
 	 */
-	struct kcov_field_consumer {
-	unsigned long cmp_field_consumer_would_pick;
-	unsigned long cmp_field_consumer_would_miss;
-	unsigned long cmp_field_consumer_key_absent;
-	unsigned long cmp_field_consumer_pool_corrupted;
-	unsigned long cmp_field_consumer_live_picks;
-	} field_consumer;
+	struct kcov_field_consumer field_consumer;
 
 	/*
 	 * Generator-invariant guard skip counters (per rejection reason).
