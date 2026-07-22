@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "fd.h"
 #include "jsonl.h"
 
 int jsonl_open(const char *path)
@@ -27,9 +28,9 @@ void jsonl_write(int fd, const char *json_line)
 
 	len = strlen(json_line);
 	if (len > 0) {
-		ret = write(fd, json_line, len);
+		ret = write_all(fd, json_line, len);
 		(void)ret;
 	}
-	ret = write(fd, "\n", 1);
+	ret = write_all(fd, "\n", 1);
 	(void)ret;
 }
