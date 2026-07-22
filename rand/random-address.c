@@ -93,6 +93,66 @@ void * get_writable_address(unsigned long size)
 	return writable_pool + cursor;
 }
 
+/*
+ * Page-aligned bump allocation from the writable pool.
+ *
+ * get_writable_address() returns 16-byte-aligned slots (max_align_t),
+ * which is fine for arbitrary structs but wrong for buffers a kernel
+ * ioctl aligns down internally -- notably VFIO_IOMMU_MAP_DMA, whose
+ * vaddr is masked to PAGE_SIZE before the kernel pins the range.  A
+ * 16-byte-aligned pool slot rounded down to the next page boundary
+ * rewinds up to page_size - 1 bytes into whatever the previous
+ * sanitiser call parked immediately below (typically the ioctl arg
+ * struct itself), so the kernel then maps/pins those unrelated bytes
+ * and truncates the payload tail.  If the ioctl writes through the
+ * mapping, trinity's own scratch is corrupted and the child crashes
+ * far from the syscall that scribbled it.
+ *
+ * Reserve size + page_size - 1 bytes so we can slide the base up to
+ * the next page boundary and still fit `size` bytes above it inside
+ * the reservation.  The pool VMA is page-aligned (mmap), so a cursor
+ * offset rounded up to page_size is itself page-aligned in address
+ * space.  Cursor is advanced past the payload end and re-rounded to
+ * WRITABLE_POOL_ALIGN so subsequent get_writable_address() calls
+ * still start on a 16-byte boundary.
+ */
+void * get_writable_page_aligned(unsigned long size)
+{
+	struct childdata *child = this_child();
+	unsigned long cursor, aligned_offset, next_cursor;
+	static unsigned long parent_cursor;
+	unsigned long *cursor_p;
+	unsigned long page_mask = (unsigned long)page_size - 1;
+
+	if (writable_pool == NULL)
+		return NULL;
+
+	if (size == 0)
+		size = page_size;
+
+	if (size > WRITABLE_POOL_BYTES)
+		return NULL;
+
+	cursor_p = (child != NULL) ? &child->writable_pool_cursor
+				   : &parent_cursor;
+	cursor = *cursor_p;
+
+	aligned_offset = (cursor + page_mask) & ~page_mask;
+	if (aligned_offset + size > WRITABLE_POOL_BYTES) {
+		/*
+		 * Wrap: pool base is page-aligned so offset 0 is a valid
+		 * page-aligned start.  size <= WRITABLE_POOL_BYTES was
+		 * checked above, so the payload is guaranteed to fit.
+		 */
+		aligned_offset = 0;
+	}
+
+	next_cursor = (aligned_offset + size + (WRITABLE_POOL_ALIGN - 1))
+		      & ~(WRITABLE_POOL_ALIGN - 1);
+	*cursor_p = next_cursor;
+	return writable_pool + aligned_offset;
+}
+
 void * get_non_null_address(void)
 {
 	unsigned long size = RAND_ARRAY(mapping_sizes);
