@@ -1195,7 +1195,7 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 		 * pollute the native by-pool consumed distribution. */
 		if ((unsigned int)pool_kind < CMP_HINT_POOL_KIND_NR)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hint_consumed_by_pool[pool_kind],
+				&kcov_shm->cmp_hint_pool.cmp_hint_consumed_by_pool[pool_kind],
 				1UL, __ATOMIC_RELAXED);
 	}
 
