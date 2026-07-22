@@ -689,12 +689,14 @@ struct kcov_shared {
 	 * narrows the slot picker) -- see the strategy.h header for the
 	 * full consumer contract.  Interventions unwind automatically on
 	 * the matching CLEARED edge. */
+	struct kcov_plateau {
 	time_t plateau_window_start;
 	unsigned long plateau_prev_edges;
 	unsigned long plateau_last_window_delta;
 	time_t plateau_entered_at;
 	bool plateau_armed;
 	bool plateau_active;
+	} plateau;
 
 	/*
 	 * Coverage-jump breadcrumb state.  See KCOV_COVJUMP_* constants at

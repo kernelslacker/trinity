@@ -50,7 +50,7 @@
  * main/params/) only allocates the strategy-independent explorer pool
  * under bandit mode.  Defaulting to round-robin made both of those
  * adaptive paths silently inert -- a plateau under the round-robin
- * default would flip kcov_shm->plateau_active with nothing on the
+ * default would flip kcov_shm->plateau.plateau_active with nothing on the
  * picker side to respond.  --strategy=round-robin (alias rr) and
  * --strategy=bandit (aliases ucb1, bandit-ucb1) remain available as
  * explicit overrides.
@@ -456,7 +456,7 @@ int select_next_strategy(int prev,
 
 	if (mode == PICKER_BANDIT_UCB1 &&
 	    kcov_shm != NULL &&
-	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE))
+	    __atomic_load_n(&kcov_shm->plateau.plateau_active, __ATOMIC_ACQUIRE))
 		return select_plateau_intervention_strategy(reason_out);
 
 	/* Not in a plateau intervention -- clear the amplification AND the
