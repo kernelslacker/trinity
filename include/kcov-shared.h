@@ -36,6 +36,7 @@
 #include "kcov-groups/hint_reject.h"
 #include "kcov-groups/reexec_gate.h"
 #include "kcov-groups/cmp_field_attr.h"
+#include "kcov-groups/cmp_boring.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -710,9 +711,7 @@ struct kcov_shared {
 	 * the only band where the two arms diverge.  Append-only at the
 	 * struct tail per the existing convention so consumer offsets stay
 	 * stable. */
-	struct kcov_cmp_boring {
-	unsigned long cmp_hints_boring_arm_b_drops;
-	} cmp_boring;
+	struct kcov_cmp_boring cmp_boring;
 
 	/*
 	 * Observability counters for the run-local CMP "recent" pool
