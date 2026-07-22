@@ -23,6 +23,15 @@ unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum);
 void *get_address(void);
 void *get_non_null_address(void);
 void *get_writable_address(unsigned long size);
+/*
+ * As get_writable_address(), but returns a page-aligned start with a
+ * full `size` bytes of reservation above it.  For kernel APIs that
+ * round the caller pointer down to PAGE_SIZE (VFIO_IOMMU_MAP_DMA vaddr,
+ * anything using iommu_map()-style pinning), so the align-down cannot
+ * rewind into the sanitiser's own struct that lives immediately below
+ * in the pool.
+ */
+void *get_writable_page_aligned(unsigned long size);
 void *get_writable_struct(size_t size);
 /*
  * Output-only redirect: relocate *addr away from shared/heap if it
