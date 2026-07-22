@@ -2646,10 +2646,12 @@ struct kcov_shared {
 	 *
 	 * Append-only at the tail per the existing convention.
 	 */
+	struct kcov_reexec_arms {
 	unsigned long reexec_new_edges_total;
 	unsigned long reexec_attempts_by_arm[2];
 	unsigned long reexec_new_cmps_by_arm[2];
 	unsigned long reexec_new_edges_by_arm[2];
+	} reexec_arms;
 };
 
 extern struct kcov_shared *kcov_shm;
@@ -2705,5 +2707,5 @@ _Static_assert(offsetof(struct kcov_shared, hints_flat.cmp_hints_injected) == 83
 	"kcov_shared.hints_flat.cmp_hints_injected offset drifted");
 _Static_assert(offsetof(struct kcov_shared, per_syscall.per_syscall_edges) == 8397720UL,
 	"kcov_shared.per_syscall.per_syscall_edges offset drifted");
-_Static_assert(offsetof(struct kcov_shared, reexec_new_edges_by_arm) == 25845000UL,
+_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25845000UL,
 	"kcov_shared last-field offset drifted -- append-only tail broken");
