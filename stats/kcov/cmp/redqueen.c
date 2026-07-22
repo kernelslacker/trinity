@@ -72,9 +72,9 @@ void kcov_redqueen_observability_block_render(long elapsed __unused__)
 
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
 		unsigned long cur_attempts = __atomic_load_n(
-			&kcov_shm->reexec_attempts_by_syscall[i], __ATOMIC_RELAXED);
+			&kcov_shm->reexec_pending_hist.reexec_attempts_by_syscall[i], __ATOMIC_RELAXED);
 		unsigned long cur_ambig = __atomic_load_n(
-			&kcov_shm->reexec_ambiguous_by_syscall[i], __ATOMIC_RELAXED);
+			&kcov_shm->reexec_pending_hist.reexec_ambiguous_by_syscall[i], __ATOMIC_RELAXED);
 		unsigned long delta_attempts;
 		unsigned long delta_ambig;
 		unsigned int k;
@@ -113,13 +113,13 @@ void kcov_redqueen_observability_block_render(long elapsed __unused__)
 
 	for (i = 0; i < CMP_REDQUEEN_SLOT_HIST_NR; i++) {
 		slot_hist[i] = __atomic_load_n(
-			&kcov_shm->reexec_attribution_slot_hist[i],
+			&kcov_shm->reexec_pending_hist.reexec_attribution_slot_hist[i],
 			__ATOMIC_RELAXED);
 		slot_success[i] = __atomic_load_n(
-			&kcov_shm->reexec_success_by_slot[i],
+			&kcov_shm->reexec_pending_hist.reexec_success_by_slot[i],
 			__ATOMIC_RELAXED);
 		slot_fill[i] = __atomic_load_n(
-			&kcov_shm->typed_inject_fill_slot_hist[i],
+			&kcov_shm->reexec_pending_hist.typed_inject_fill_slot_hist[i],
 			__ATOMIC_RELAXED);
 		if ((slot_hist[i] | slot_success[i] | slot_fill[i]) != 0)
 			any_slot = true;
@@ -127,7 +127,7 @@ void kcov_redqueen_observability_block_render(long elapsed __unused__)
 
 	for (i = 0; i < REEXEC_PENDING_PICK_HIST_NR; i++) {
 		pick_success[i] = __atomic_load_n(
-			&kcov_shm->reexec_pending_pick_success[i],
+			&kcov_shm->reexec_pending_hist.reexec_pending_pick_success[i],
 			__ATOMIC_RELAXED);
 		if (pick_success[i] != 0)
 			any_pick_success = true;

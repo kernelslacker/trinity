@@ -286,7 +286,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_reexec_skipped_destructive     = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_destructive,     __ATOMIC_RELAXED);
 	cur_reexec_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_validate_silent, __ATOMIC_RELAXED);
 	cur_reexec_window_cap_hit          = __atomic_load_n(&kcov_shm->reexec_flat.reexec_window_cap_hit,          __ATOMIC_RELAXED);
-	cur_reexec_pending_dropped         = __atomic_load_n(&kcov_shm->reexec_pending_dropped,         __ATOMIC_RELAXED);
+	cur_reexec_pending_dropped         = __atomic_load_n(&kcov_shm->reexec_pending_hist.reexec_pending_dropped,         __ATOMIC_RELAXED);
 	cur_reexec_gate_skip_in_reexec     = __atomic_load_n(&kcov_shm->reexec_gate_skip_in_reexec,     __ATOMIC_RELAXED);
 	cur_reexec_gate_skip_disabled      = __atomic_load_n(&kcov_shm->reexec_gate_skip_disabled,      __ATOMIC_RELAXED);
 	cur_reexec_gate_skip_mode          = __atomic_load_n(&kcov_shm->reexec_gate_skip_mode,          __ATOMIC_RELAXED);

@@ -349,7 +349,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 				if (arg_idx >= 1 &&
 				    arg_idx <= CMP_REDQUEEN_SLOT_HIST_NR)
 					__atomic_fetch_add(
-						&kcov_shm->typed_inject_fill_slot_hist[arg_idx - 1],
+						&kcov_shm->reexec_pending_hist.typed_inject_fill_slot_hist[arg_idx - 1],
 						1UL, __ATOMIC_RELAXED);
 			}
 
