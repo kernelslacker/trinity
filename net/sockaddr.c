@@ -18,7 +18,7 @@ void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
 			un = zmalloc_tracked(sizeof(struct sockaddr_un));
 		un->sun_family = PF_UNSPEC;
 		*addr = (struct sockaddr *) un;
-		*addrlen = sizeof(struct sockaddr_un);
+		*addrlen = sizeof(sa_family_t);
 		return;
 	}
 
