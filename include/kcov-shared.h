@@ -24,6 +24,7 @@
 #include "kcov-groups/remote_enable.h"
 #include "kcov-groups/errno_state.h"
 #include "kcov-groups/per_syscall_cmp.h"
+#include "kcov-groups/plateau.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -174,14 +175,7 @@ struct kcov_shared {
 	 * narrows the slot picker) -- see the strategy.h header for the
 	 * full consumer contract.  Interventions unwind automatically on
 	 * the matching CLEARED edge. */
-	struct kcov_plateau {
-	time_t plateau_window_start;
-	unsigned long plateau_prev_edges;
-	unsigned long plateau_last_window_delta;
-	time_t plateau_entered_at;
-	bool plateau_armed;
-	bool plateau_active;
-	} plateau;
+	struct kcov_plateau plateau;
 
 	/*
 	 * Coverage-jump breadcrumb state.  See KCOV_COVJUMP_* constants at
