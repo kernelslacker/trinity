@@ -767,7 +767,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 		shadow_elect = __atomic_load_n(&pool->entries[0].value,
 					       __ATOMIC_RELAXED);
 		if (shadow_elect != fallback)
-			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_would_value_differs,
+			__atomic_fetch_add(&kcov_shm->field_consumer_shadow.cmp_field_consumer_would_value_differs,
 					   1UL, __ATOMIC_RELAXED);
 	}
 

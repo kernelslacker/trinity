@@ -2573,7 +2573,9 @@ struct kcov_shared {
 	 * Append-only at the tail per the existing convention so
 	 * consumer offsets stay stable.
 	 */
+	struct kcov_field_consumer_shadow {
 	unsigned long cmp_field_consumer_would_value_differs;
+	} field_consumer_shadow;
 
 	/*
 	 * SHADOW would-confirm win-scalar for the shared-tier cold-serve
