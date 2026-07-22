@@ -25,6 +25,7 @@
 #include "kcov-groups/errno_state.h"
 #include "kcov-groups/per_syscall_cmp.h"
 #include "kcov-groups/plateau.h"
+#include "kcov-groups/covjump.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -190,17 +191,7 @@ struct kcov_shared {
 	 * the in-tree _Static_assert on NR_CHILD_OP_TYPES pinning the
 	 * tail).  RELAXED atomics throughout.
 	 */
-	struct kcov_covjump {
-	unsigned long covjump_window_start_call_nr;
-	unsigned long covjump_window_start_distinct_edges;
-	unsigned long covjump_snap_saves_pc;
-	unsigned long covjump_snap_saves_cmp;
-	unsigned long covjump_snap_chain_saves;
-	unsigned long covjump_snap_chain_replays;
-	unsigned long covjump_snap_childop_invocations[KCOV_CHILDOP_NR_MAX];
-	unsigned long covjump_last_emit_call_nr;
-	bool covjump_window_armed;
-	} covjump;
+	struct kcov_covjump covjump;
 
 	/* Greedy CMP RedQueen re-exec stats.  A CMP-mode child records
 	 * attributable (cmp_ip, arg_slot, value) tuples from the parent
