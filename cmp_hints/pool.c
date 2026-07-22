@@ -657,9 +657,9 @@ void cmp_shared_tier_insert(unsigned int nr, unsigned long cmp_ip,
 					 __ATOMIC_RELEASE);
 			unlock(&cmp_hints_shm->shared_tier_lock);
 			if (kcov_shm != NULL) {
-				__atomic_fetch_add(&kcov_shm->cmp_shared_tier_ips,
+				__atomic_fetch_add(&kcov_shm->cmp_shared_tier.cmp_shared_tier_ips,
 						   1UL, __ATOMIC_RELAXED);
-				__atomic_fetch_add(&kcov_shm->cmp_shared_tier_entries,
+				__atomic_fetch_add(&kcov_shm->cmp_shared_tier.cmp_shared_tier_entries,
 						   1UL, __ATOMIC_RELAXED);
 			}
 			return;
@@ -683,7 +683,7 @@ void cmp_shared_tier_insert(unsigned int nr, unsigned long cmp_ip,
 			unlock(&cmp_hints_shm->shared_tier_lock);
 			if (kcov_shm != NULL) {
 				if (value_accepted && !was_present)
-					__atomic_fetch_add(&kcov_shm->cmp_shared_tier_entries,
+					__atomic_fetch_add(&kcov_shm->cmp_shared_tier.cmp_shared_tier_entries,
 							   1UL,
 							   __ATOMIC_RELAXED);
 				/* Cross-nr redundant learn: THIS nr is new to
@@ -694,11 +694,11 @@ void cmp_shared_tier_insert(unsigned int nr, unsigned long cmp_ip,
 				 * ourselves -- that is the SHADOW dedup signal
 				 * the follow-up live wire-up will exploit. */
 				if (new_nr && was_present)
-					__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow_dedup_supplied,
+					__atomic_fetch_add(&kcov_shm->cmp_shared_tier.cmp_shared_tier_shadow_dedup_supplied,
 							   1UL,
 							   __ATOMIC_RELAXED);
 				if (now_excluded)
-					__atomic_fetch_add(&kcov_shm->cmp_shared_tier_entry_path_excluded_ips,
+					__atomic_fetch_add(&kcov_shm->cmp_shared_tier.cmp_shared_tier_entry_path_excluded_ips,
 							   1UL,
 							   __ATOMIC_RELAXED);
 			}
@@ -864,12 +864,12 @@ void cmp_shared_tier_shadow_probe_cold_miss(void)
 	 * reads at worst misbucket a single probe sample, which matches
 	 * the tier's advisory-shadow discipline; the next miss resamples.
 	 * ZERO shared_tier_lock traffic on the get-path probe. */
-	ips = __atomic_load_n(&kcov_shm->cmp_shared_tier_ips,
+	ips = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_ips,
 			      __ATOMIC_RELAXED);
-	excluded = __atomic_load_n(&kcov_shm->cmp_shared_tier_entry_path_excluded_ips,
+	excluded = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_entry_path_excluded_ips,
 				   __ATOMIC_RELAXED);
 	if (ips > excluded) {
-		__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow_warmstart_eligible,
+		__atomic_fetch_add(&kcov_shm->cmp_shared_tier.cmp_shared_tier_shadow_warmstart_eligible,
 				   1UL, __ATOMIC_RELAXED);
 		cmp_shared_tier_shadow_probe_would_confirm();
 	}
@@ -930,9 +930,9 @@ bool cmp_shared_tier_try_serve_cold_miss(unsigned int nr, bool do32,
 	 * empty) short-circuits before acquiring the tier lock. */
 	if (kcov_shm == NULL)
 		return false;
-	ips = __atomic_load_n(&kcov_shm->cmp_shared_tier_ips,
+	ips = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_ips,
 			      __ATOMIC_RELAXED);
-	excluded = __atomic_load_n(&kcov_shm->cmp_shared_tier_entry_path_excluded_ips,
+	excluded = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_entry_path_excluded_ips,
 				   __ATOMIC_RELAXED);
 	if (ips <= excluded)
 		return false;
@@ -985,7 +985,7 @@ bool cmp_shared_tier_try_serve_cold_miss(unsigned int nr, bool do32,
 	transformed = cmp_hint_apply_transform(served_value, use, old);
 	if (accept != NULL &&
 	    (transformed < accept->lo || transformed > accept->hi)) {
-		__atomic_fetch_add(&kcov_shm->cmp_shared_tier_serve_accept_reject,
+		__atomic_fetch_add(&kcov_shm->cmp_shared_tier.cmp_shared_tier_serve_accept_reject,
 				   1UL, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -994,7 +994,7 @@ bool cmp_shared_tier_try_serve_cold_miss(unsigned int nr, bool do32,
 	if (out_size != NULL)
 		*out_size = served_size;
 
-	__atomic_fetch_add(&kcov_shm->cmp_shared_tier_serves, 1UL,
+	__atomic_fetch_add(&kcov_shm->cmp_shared_tier.cmp_shared_tier_serves, 1UL,
 			   __ATOMIC_RELAXED);
 
 	/* Stash under the CMP_HINT_POOL_KIND_NR sentinel so every

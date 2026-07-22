@@ -305,12 +305,12 @@ static void dump_stats_render_kcov_exit_edge_delta(void)
 		unsigned long rc_would_pick = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_would_pick, __ATOMIC_RELAXED);
 		unsigned long rc_would_miss = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_would_miss, __ATOMIC_RELAXED);
 		unsigned long rc_live_picks = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_live_picks, __ATOMIC_RELAXED);
-		unsigned long st_ips = __atomic_load_n(&kcov_shm->cmp_shared_tier_ips, __ATOMIC_RELAXED);
-		unsigned long st_entries = __atomic_load_n(&kcov_shm->cmp_shared_tier_entries, __ATOMIC_RELAXED);
-		unsigned long st_excluded = __atomic_load_n(&kcov_shm->cmp_shared_tier_entry_path_excluded_ips, __ATOMIC_RELAXED);
-		unsigned long st_eligible = __atomic_load_n(&kcov_shm->cmp_shared_tier_shadow_warmstart_eligible, __ATOMIC_RELAXED);
+		unsigned long st_ips = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_ips, __ATOMIC_RELAXED);
+		unsigned long st_entries = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_entries, __ATOMIC_RELAXED);
+		unsigned long st_excluded = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_entry_path_excluded_ips, __ATOMIC_RELAXED);
+		unsigned long st_eligible = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_shadow_warmstart_eligible, __ATOMIC_RELAXED);
 		unsigned long st_would_confirm = __atomic_load_n(&kcov_shm->cmp_shared_tier_shadow_would_confirm, __ATOMIC_RELAXED);
-		unsigned long st_supplied = __atomic_load_n(&kcov_shm->cmp_shared_tier_shadow_dedup_supplied, __ATOMIC_RELAXED);
+		unsigned long st_supplied = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_shadow_dedup_supplied, __ATOMIC_RELAXED);
 
 		if (rc_inserts > 0)
 			stat_row("kcov_coverage", "cmp_recent_inserts", rc_inserts);
