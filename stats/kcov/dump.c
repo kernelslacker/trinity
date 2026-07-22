@@ -1176,7 +1176,7 @@ static void dump_stats_render_kcov_per_syscall_local_pc_topn(unsigned int nr_sys
  * every stat_row call, its gate, and its ordering is preserved. */
 static void dump_stats_render_kcov_shadow_measurements(void)
 {
-	unsigned long kc_cmp_save_reject_nonconst      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_nonconst      = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
 	unsigned long kc_cmp_nonconst_arg1_unique      = __atomic_load_n(&kcov_shm->cmp_nonconst_arg1_unique,           __ATOMIC_RELAXED);
 	unsigned long kc_cmp_nonconst_arg2_unique      = __atomic_load_n(&kcov_shm->cmp_nonconst_arg2_unique,           __ATOMIC_RELAXED);
 	unsigned long kc_cmp_nonconst_both_match       = __atomic_load_n(&kcov_shm->cmp_nonconst_both_match,            __ATOMIC_RELAXED);
@@ -1351,11 +1351,11 @@ static void dump_stats_render_kcov_base_stats(void)
 	unsigned long kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
 	unsigned long kc_cmp_strip_skipped = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_strip_skipped, __ATOMIC_RELAXED);
 	unsigned long kc_cmp_unique  = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_unique_inserts, __ATOMIC_RELAXED);
-	unsigned long kc_cmp_save_reject_nonconst      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
-	unsigned long kc_cmp_save_reject_uninteresting = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
-	unsigned long kc_cmp_save_reject_sentinel      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_sentinel,      __ATOMIC_RELAXED);
-	unsigned long kc_cmp_save_reject_dup           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_dup,           __ATOMIC_RELAXED);
-	unsigned long kc_cmp_save_reject_cap           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_cap,           __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_nonconst      = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_uninteresting = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_sentinel      = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_sentinel,      __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_dup           = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_dup,           __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_cap           = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_cap,           __ATOMIC_RELAXED);
 
 	stat_row("kcov_coverage", "unique_edges",          kc_edges);
 	stat_row("kcov_coverage", "total_pcs",             kc_pcs);

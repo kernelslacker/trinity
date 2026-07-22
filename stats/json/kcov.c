@@ -62,15 +62,15 @@ static void json_emit_kcov_counters(void)
 	kc_cmp_unique = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_unique_inserts,
 		__ATOMIC_RELAXED);
 	kc_cmp_save_reject_nonconst = __atomic_load_n(
-		&kcov_shm->cmp_hints_save_reject_nonconst, __ATOMIC_RELAXED);
+		&kcov_shm->hint_reject.cmp_hints_save_reject_nonconst, __ATOMIC_RELAXED);
 	kc_cmp_save_reject_uninteresting = __atomic_load_n(
-		&kcov_shm->cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
+		&kcov_shm->hint_reject.cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
 	kc_cmp_save_reject_sentinel = __atomic_load_n(
-		&kcov_shm->cmp_hints_save_reject_sentinel, __ATOMIC_RELAXED);
+		&kcov_shm->hint_reject.cmp_hints_save_reject_sentinel, __ATOMIC_RELAXED);
 	kc_cmp_save_reject_dup = __atomic_load_n(
-		&kcov_shm->cmp_hints_save_reject_dup, __ATOMIC_RELAXED);
+		&kcov_shm->hint_reject.cmp_hints_save_reject_dup, __ATOMIC_RELAXED);
 	kc_cmp_save_reject_cap = __atomic_load_n(
-		&kcov_shm->cmp_hints_save_reject_cap, __ATOMIC_RELAXED);
+		&kcov_shm->hint_reject.cmp_hints_save_reject_cap, __ATOMIC_RELAXED);
 	kc_cmp_hint_wins = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_wins,
 					   __ATOMIC_RELAXED);
 	kc_cmp_hints_injected = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_injected,

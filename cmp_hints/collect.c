@@ -975,13 +975,13 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 
 	if (kcov_shm != NULL) {
 		if (reject_nonconst != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_nonconst,
+			__atomic_fetch_add(&kcov_shm->hint_reject.cmp_hints_save_reject_nonconst,
 					   reject_nonconst, __ATOMIC_RELAXED);
 		if (reject_uninteresting != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_uninteresting,
+			__atomic_fetch_add(&kcov_shm->hint_reject.cmp_hints_save_reject_uninteresting,
 					   reject_uninteresting, __ATOMIC_RELAXED);
 		if (reject_sentinel != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_sentinel,
+			__atomic_fetch_add(&kcov_shm->hint_reject.cmp_hints_save_reject_sentinel,
 					   reject_sentinel, __ATOMIC_RELAXED);
 		if (boring_arm_b_drops != 0)
 			__atomic_fetch_add(&kcov_shm->cmp_hints_boring_arm_b_drops,
