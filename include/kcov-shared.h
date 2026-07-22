@@ -606,10 +606,12 @@ struct kcov_shared {
 	 * All bumped inside kcov_enable_remote() keyed on the nr it now
 	 * takes as a parameter; childop callers (nr >= CHILDOP_KCOV_NR_BASE)
 	 * bypass the bumps via the standard nr < MAX_NR_SYSCALL gate. */
+	struct kcov_remote_enable {
 	unsigned long remote_enable_requested[MAX_NR_SYSCALL];
 	unsigned long remote_enable_succeeded[MAX_NR_SYSCALL];
 	unsigned long remote_enable_failed[MAX_NR_SYSCALL];
 	unsigned long remote_fallback_to_local[MAX_NR_SYSCALL];
+	} remote_enable;
 	/* Per-syscall 8-bucket errno histogram.  Sibling to the
 	 * per_syscall_edges/calls counters above: those track coverage-side
 	 * activity per syscall; this tracks the shape of what the kernel

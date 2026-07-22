@@ -252,7 +252,7 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id, unsigned i
 	arg.common_handle = KCOV_SUBSYSTEM_COMMON | (child_id + 1);
 
 	if (nr < MAX_NR_SYSCALL)
-		__atomic_fetch_add(&kcov_shm->remote_enable_requested[nr], 1,
+		__atomic_fetch_add(&kcov_shm->remote_enable.remote_enable_requested[nr], 1,
 				   __ATOMIC_RELAXED);
 
 	while (ioctl(kc->fd, KCOV_REMOTE_ENABLE, &arg) < 0) {
@@ -273,13 +273,13 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id, unsigned i
 
 	if (!remote_failed) {
 		if (nr < MAX_NR_SYSCALL)
-			__atomic_fetch_add(&kcov_shm->remote_enable_succeeded[nr],
+			__atomic_fetch_add(&kcov_shm->remote_enable.remote_enable_succeeded[nr],
 					   1, __ATOMIC_RELAXED);
 		return;
 	}
 
 	if (nr < MAX_NR_SYSCALL)
-		__atomic_fetch_add(&kcov_shm->remote_enable_failed[nr], 1,
+		__atomic_fetch_add(&kcov_shm->remote_enable.remote_enable_failed[nr], 1,
 				   __ATOMIC_RELAXED);
 
 	/* Fall back to per-thread mode if remote failed at runtime. */
@@ -322,7 +322,7 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id, unsigned i
 	__atomic_fetch_add(&kcov_shm->pc_diag.remote_fallback_to_pc,
 			   1, __ATOMIC_RELAXED);
 	if (nr < MAX_NR_SYSCALL)
-		__atomic_fetch_add(&kcov_shm->remote_fallback_to_local[nr], 1,
+		__atomic_fetch_add(&kcov_shm->remote_enable.remote_fallback_to_local[nr], 1,
 				   __ATOMIC_RELAXED);
 	kc->remote_mode = false;
 }
