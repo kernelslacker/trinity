@@ -1184,12 +1184,12 @@ static void dump_stats_render_kcov_shadow_measurements(void)
 	unsigned long kc_cmp_nonconst_measured         = __atomic_load_n(&kcov_shm->cmp_nonconst.cmp_nonconst_measured,              __ATOMIC_RELAXED);
 	unsigned long kc_cmp_width_pin_total           = __atomic_load_n(&kcov_shm->cmp_width_pin.cmp_width_pin_total,                __ATOMIC_RELAXED);
 	unsigned long kc_cmp_width_pin_would_differ    = __atomic_load_n(&kcov_shm->cmp_width_pin.cmp_width_pin_would_differ,         __ATOMIC_RELAXED);
-	unsigned long kc_cmp_hyp_pow2_derive_would_fire = __atomic_load_n(&kcov_shm->cmp_hyp_pow2_derive_would_fire,    __ATOMIC_RELAXED);
-	unsigned long kc_cmp_hyp_pow2_derive_would_win  = __atomic_load_n(&kcov_shm->cmp_hyp_pow2_derive_would_win,     __ATOMIC_RELAXED);
-	unsigned long kc_cmp_hyp_bm_full_or_would_fire     = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_full_or_would_fire,        __ATOMIC_RELAXED);
-	unsigned long kc_cmp_hyp_bm_full_or_would_win      = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_full_or_would_win,         __ATOMIC_RELAXED);
-	unsigned long kc_cmp_hyp_bm_andnot_would_fire      = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_andnot_toggle_would_fire,  __ATOMIC_RELAXED);
-	unsigned long kc_cmp_hyp_bm_andnot_would_win       = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_andnot_toggle_would_win,   __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_pow2_derive_would_fire = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_pow2_derive_would_fire,    __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_pow2_derive_would_win  = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_pow2_derive_would_win,     __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_bm_full_or_would_fire     = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_full_or_would_fire,        __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_bm_full_or_would_win      = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_full_or_would_win,         __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_bm_andnot_would_fire      = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_andnot_toggle_would_fire,  __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_bm_andnot_would_win       = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_andnot_toggle_would_win,   __ATOMIC_RELAXED);
 
 	/* Shadow measurement of the non-const relational drop-site.
 	 * Counts records the CMP loop drops today into
