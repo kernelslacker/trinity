@@ -335,11 +335,11 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_cmp_hint_cmp_novelty_wins      = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_cmp_novelty_wins,      __ATOMIC_RELAXED);
 	cur_cmp_hint_stash_overflow        = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_stash_overflow,        __ATOMIC_RELAXED);
 	cur_cmp_hint_credit_entry_evicted  = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_credit_entry_evicted,  __ATOMIC_RELAXED);
-	cur_cmp_recent_inserts             = __atomic_load_n(&kcov_shm->cmp_recent_inserts,             __ATOMIC_RELAXED);
-	cur_cmp_recent_evicts              = __atomic_load_n(&kcov_shm->cmp_recent_evicts,              __ATOMIC_RELAXED);
-	cur_cmp_recent_would_pick          = __atomic_load_n(&kcov_shm->cmp_recent_would_pick,          __ATOMIC_RELAXED);
-	cur_cmp_recent_would_miss          = __atomic_load_n(&kcov_shm->cmp_recent_would_miss,          __ATOMIC_RELAXED);
-	cur_cmp_recent_live_picks          = __atomic_load_n(&kcov_shm->cmp_recent_live_picks,          __ATOMIC_RELAXED);
+	cur_cmp_recent_inserts             = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_inserts,             __ATOMIC_RELAXED);
+	cur_cmp_recent_evicts              = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_evicts,              __ATOMIC_RELAXED);
+	cur_cmp_recent_would_pick          = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_would_pick,          __ATOMIC_RELAXED);
+	cur_cmp_recent_would_miss          = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_would_miss,          __ATOMIC_RELAXED);
+	cur_cmp_recent_live_picks          = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_live_picks,          __ATOMIC_RELAXED);
 	cur_cmp_inject_arm_a_baseline_fires = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_a_baseline_fires, __ATOMIC_RELAXED);
 	cur_cmp_inject_arm_b_baseline_fires = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_b_baseline_fires, __ATOMIC_RELAXED);
 	cur_cmp_inject_denom_diverged       = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_denom_diverged,       __ATOMIC_RELAXED);

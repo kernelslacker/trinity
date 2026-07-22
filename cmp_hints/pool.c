@@ -381,10 +381,10 @@ static void cmp_recent_insert(unsigned int nr, bool do32,
 	count = rp->count;
 
 	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->cmp_recent_inserts, 1UL,
+		__atomic_fetch_add(&kcov_shm->cmp_recent.cmp_recent_inserts, 1UL,
 				   __ATOMIC_RELAXED);
 		if (count >= CMP_RECENT_PER_SYSCALL)
-			__atomic_fetch_add(&kcov_shm->cmp_recent_evicts, 1UL,
+			__atomic_fetch_add(&kcov_shm->cmp_recent.cmp_recent_evicts, 1UL,
 					   __ATOMIC_RELAXED);
 	}
 
