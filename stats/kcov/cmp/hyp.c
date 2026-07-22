@@ -214,13 +214,13 @@ void kcov_cmp_render_hyp_shadow_per_kind_census(void)
 
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		unsigned long cur_ins = __atomic_load_n(
-			&kcov_shm->cmp_hyp_inserted_by_kind[k],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_inserted_by_kind[k],
 			__ATOMIC_RELAXED);
 		unsigned long cur_full = __atomic_load_n(
-			&kcov_shm->cmp_hyp_kind_full_by_kind[k],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_kind_full_by_kind[k],
 			__ATOMIC_RELAXED);
 		unsigned long cur_pool_full = __atomic_load_n(
-			&kcov_shm->cmp_hyp_pool_full_by_kind[k],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_pool_full_by_kind[k],
 			__ATOMIC_RELAXED);
 
 		stats_log_write(
@@ -253,7 +253,7 @@ void kcov_cmp_render_hyp_shadow_consumes_census(void)
 
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		unsigned long cur_cons = __atomic_load_n(
-			&kcov_shm->cmp_hyp_consumed_by_kind[k],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_consumed_by_kind[k],
 			__ATOMIC_RELAXED);
 
 		stats_log_write(
@@ -578,13 +578,13 @@ void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
 
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		cur_hyp_would_pick_kind[k] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_would_pick_by_kind[k],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_pick_by_kind[k],
 			__ATOMIC_RELAXED);
 		cur_hyp_would_miss_kind[k] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_would_miss_by_kind[k],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_miss_by_kind[k],
 			__ATOMIC_RELAXED);
 		cur_hyp_would_value_differs_kind[k] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_would_value_differs_by_kind[k],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_value_differs_by_kind[k],
 			__ATOMIC_RELAXED);
 		any_would_delta |=
 			sat_sub_ul(cur_hyp_would_pick_kind[k], prev_hyp_would_pick_kind[k]) |
@@ -593,7 +593,7 @@ void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
 				   prev_hyp_would_value_differs_kind[k]);
 	}
 	cur_hyp_would_value_differs = __atomic_load_n(
-		&kcov_shm->cmp_hyp_would_value_differs, __ATOMIC_RELAXED);
+		&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_value_differs, __ATOMIC_RELAXED);
 	delta_hyp_would_value_differs =
 		sat_sub_ul(cur_hyp_would_value_differs, prev_hyp_would_value_differs);
 	any_would_delta |= delta_hyp_would_value_differs;
@@ -721,9 +721,9 @@ void kcov_cmp_render_hyp_live_inject_block(long elapsed __unused__)
 	 * (which would make cur gap go negative under RELAXED).
 	 */
 	unsigned long cur_hyp_live_injected = __atomic_load_n(
-		&kcov_shm->cmp_hyp_live_injected, __ATOMIC_RELAXED);
+		&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_live_gate_passed = __atomic_load_n(
-		&kcov_shm->cmp_hyp_live_inject_gate_passed,
+		&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_inject_gate_passed,
 		__ATOMIC_RELAXED);
 	unsigned long cur_hyp_live_injected_kind[CMP_HYP_KIND_NR];
 	unsigned long delta_hyp_live_injected =
@@ -757,7 +757,7 @@ void kcov_cmp_render_hyp_live_inject_block(long elapsed __unused__)
 
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		cur_hyp_live_injected_kind[k] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_live_injected_by_kind[k],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected_by_kind[k],
 			__ATOMIC_RELAXED);
 	}
 
@@ -818,7 +818,7 @@ void kcov_cmp_render_hyp_live_inject_reasons_block(long elapsed __unused__)
 
 	for (r = 0; r < CMP_HYP_LIVE_INJECT_REASON_NR; r++) {
 		cur_hyp_live_inject_reason[r] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_live_inject_reason[r],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_inject_reason[r],
 			__ATOMIC_RELAXED);
 		any_delta |=
 			sat_sub_ul(cur_hyp_live_inject_reason[r],
@@ -871,16 +871,16 @@ void kcov_cmp_render_hyp_boundary_scorecard_block(long elapsed __unused__)
 		&kcov_shm->cmp_hyp_boundary_credit_window_hits,
 		__ATOMIC_RELAXED);
 	unsigned long cur_b_would_pick = __atomic_load_n(
-		&kcov_shm->cmp_hyp_would_pick_by_kind[CMP_HYP_BOUNDARY],
+		&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_pick_by_kind[CMP_HYP_BOUNDARY],
 		__ATOMIC_RELAXED);
 	unsigned long cur_b_would_miss = __atomic_load_n(
-		&kcov_shm->cmp_hyp_would_miss_by_kind[CMP_HYP_BOUNDARY],
+		&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_miss_by_kind[CMP_HYP_BOUNDARY],
 		__ATOMIC_RELAXED);
 	unsigned long cur_b_live_injected = __atomic_load_n(
-		&kcov_shm->cmp_hyp_live_injected_by_kind[CMP_HYP_BOUNDARY],
+		&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected_by_kind[CMP_HYP_BOUNDARY],
 		__ATOMIC_RELAXED);
 	unsigned long cur_b_consumed = __atomic_load_n(
-		&kcov_shm->cmp_hyp_consumed_by_kind[CMP_HYP_BOUNDARY],
+		&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_consumed_by_kind[CMP_HYP_BOUNDARY],
 		__ATOMIC_RELAXED);
 	unsigned long any_delta =
 		sat_sub_ul(cur_b_inserted, prev_b_inserted) |

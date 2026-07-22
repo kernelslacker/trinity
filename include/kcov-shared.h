@@ -1758,6 +1758,7 @@ struct kcov_shared {
 	 * The per-syscall pool->per_kind_count[] is ephemeral (reset
 	 * with the pool); this flat array is the persistent fleet
 	 * mirror.  SHADOW telemetry only -- no consumer reads it. */
+	struct kcov_cmp_hyp_lifecycle {
 	unsigned long cmp_hyp_inserted_by_kind[CMP_HYP_KIND_NR];
 
 	/* Per-kind flat census of typed CMP hypothesis insert rejections
@@ -1890,6 +1891,7 @@ struct kcov_shared {
 	 * consuming the per-syscall budget when cmp_hyp_pool_full dominates.
 	 * SHADOW telemetry only -- no consumer reads it. */
 	unsigned long cmp_hyp_pool_full_by_kind[CMP_HYP_KIND_NR];
+	} cmp_hyp_lifecycle;
 
 	/*
 	 * SHADOW old-flat-pool conversion baseline counters, partitioned by
