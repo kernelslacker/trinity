@@ -1274,16 +1274,16 @@ static bool redqueen_reexec_step(struct childdata *child,
 			 *   reexec_new_edges_by_arm[arm] /
 			 *   reexec_attempts_by_arm[arm]
 			 * has a clean denominator on both cohorts. */
-			__atomic_fetch_add(&kcov_shm->reexec_attempts_by_arm[arm],
+			__atomic_fetch_add(&kcov_shm->reexec_arms.reexec_attempts_by_arm[arm],
 					   1UL, __ATOMIC_RELAXED);
 
 			/* Per-arm distinct-edge lift for the plateau_burst
 			 * A/B measure.  Bumped unconditionally by the inner
 			 * transition-edge delta (0 attempts contribute 0 --
 			 * cheaper than a branch that skips the add). */
-			__atomic_fetch_add(&kcov_shm->reexec_new_edges_by_arm[arm],
+			__atomic_fetch_add(&kcov_shm->reexec_arms.reexec_new_edges_by_arm[arm],
 					   inner_new_edges, __ATOMIC_RELAXED);
-			__atomic_fetch_add(&kcov_shm->reexec_new_edges_total,
+			__atomic_fetch_add(&kcov_shm->reexec_arms.reexec_new_edges_total,
 					   inner_new_edges, __ATOMIC_RELAXED);
 		}
 
@@ -1305,7 +1305,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 			 * measure: sibling of reexec_new_edges_by_arm above so
 			 * a run can compare arm ratios on either the edge-lift
 			 * (primary) or the CMP-novelty (secondary) axis. */
-			__atomic_fetch_add(&kcov_shm->reexec_new_cmps_by_arm[arm],
+			__atomic_fetch_add(&kcov_shm->reexec_arms.reexec_new_cmps_by_arm[arm],
 					   inner_new_cmp, __ATOMIC_RELAXED);
 			if (rec->nr < MAX_NR_SYSCALL)
 				__atomic_fetch_add(
