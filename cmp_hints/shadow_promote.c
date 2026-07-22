@@ -187,7 +187,7 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.live_win_offset = 0,
 		.baseline_offset =
 			offsetof(struct kcov_shared,
-				 cmp_field_consumer_would_pick),
+				 field_consumer.cmp_field_consumer_would_pick),
 		.live_flag = 0,
 		.min_baseline_samples = 100,
 		.win_ratio_per_mille = 100,
