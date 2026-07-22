@@ -183,7 +183,7 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.name = "cmp_field_scoped_inject",
 		.would_win_offset =
 			offsetof(struct kcov_shared,
-				 cmp_field_consumer_would_value_differs),
+				 field_consumer_shadow.cmp_field_consumer_would_value_differs),
 		.live_win_offset = 0,
 		.baseline_offset =
 			offsetof(struct kcov_shared,
