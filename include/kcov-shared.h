@@ -39,6 +39,7 @@
 #include "kcov-groups/cmp_boring.h"
 #include "kcov-groups/cmp_recent.h"
 #include "kcov-groups/field_consumer.h"
+#include "kcov-groups/field_consumer_guard.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -851,13 +852,7 @@ struct kcov_shared {
 	 * Append-only at the tail per the existing convention so consumer
 	 * offsets stay stable.
 	 */
-	struct kcov_field_consumer_guard {
-	unsigned long cmp_field_consumer_guard_variant_layout;
-	unsigned long cmp_field_consumer_guard_buffer_discrim;
-	unsigned long cmp_field_consumer_guard_len_pair;
-	unsigned long cmp_field_consumer_guard_nested_pointer;
-	unsigned long cmp_field_consumer_guard_dependent;
-	} field_consumer_guard;
+	struct kcov_field_consumer_guard field_consumer_guard;
 
 	/*
 	 * Prove-overlay metric for the field-scoped SHADOW consumer.
