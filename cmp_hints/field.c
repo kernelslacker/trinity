@@ -812,7 +812,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 		uint8_t bucket = cmp_hint_age_bucket(age);
 
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hint_durable_consumed_age[bucket],
+			__atomic_fetch_add(&kcov_shm->hint_tier.cmp_hint_durable_consumed_age[bucket],
 					   1UL, __ATOMIC_RELAXED);
 
 		*out = cmp_hint_apply_transform(picked_value, use, old);
