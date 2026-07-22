@@ -261,10 +261,10 @@ static void dump_stats_render_kcov_cmp_field_consumer(void)
 		unsigned long fc_g_lenpair = __atomic_load_n(&kcov_shm->field_consumer_guard.cmp_field_consumer_guard_len_pair, __ATOMIC_RELAXED);
 		unsigned long fc_g_nested = __atomic_load_n(&kcov_shm->field_consumer_guard.cmp_field_consumer_guard_nested_pointer, __ATOMIC_RELAXED);
 		unsigned long fc_g_dep = __atomic_load_n(&kcov_shm->field_consumer_guard.cmp_field_consumer_guard_dependent, __ATOMIC_RELAXED);
-		unsigned long fc_p_elig = __atomic_load_n(&kcov_shm->cmp_field_consumer_prove_eligible, __ATOMIC_RELAXED);
-		unsigned long fc_p_edges = __atomic_load_n(&kcov_shm->cmp_field_consumer_prove_edges_at_pick, __ATOMIC_RELAXED);
-		unsigned long fc_p_cmps = __atomic_load_n(&kcov_shm->cmp_field_consumer_prove_cmp_records_at_pick, __ATOMIC_RELAXED);
-		unsigned long fc_p_einval = __atomic_load_n(&kcov_shm->cmp_field_consumer_prove_einval_at_pick, __ATOMIC_RELAXED);
+		unsigned long fc_p_elig = __atomic_load_n(&kcov_shm->field_consumer_prove.cmp_field_consumer_prove_eligible, __ATOMIC_RELAXED);
+		unsigned long fc_p_edges = __atomic_load_n(&kcov_shm->field_consumer_prove.cmp_field_consumer_prove_edges_at_pick, __ATOMIC_RELAXED);
+		unsigned long fc_p_cmps = __atomic_load_n(&kcov_shm->field_consumer_prove.cmp_field_consumer_prove_cmp_records_at_pick, __ATOMIC_RELAXED);
+		unsigned long fc_p_einval = __atomic_load_n(&kcov_shm->field_consumer_prove.cmp_field_consumer_prove_einval_at_pick, __ATOMIC_RELAXED);
 
 		if (fc_would_pick > 0)
 			stat_row("kcov_coverage", "cmp_field_consumer_would_pick", fc_would_pick);

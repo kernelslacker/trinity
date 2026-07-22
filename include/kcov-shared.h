@@ -1576,10 +1576,12 @@ struct kcov_shared {
 	 * Append-only at the tail per the existing convention so consumer
 	 * offsets stay stable.
 	 */
+	struct kcov_field_consumer_prove {
 	unsigned long cmp_field_consumer_prove_eligible;
 	unsigned long cmp_field_consumer_prove_edges_at_pick;
 	unsigned long cmp_field_consumer_prove_cmp_records_at_pick;
 	unsigned long cmp_field_consumer_prove_einval_at_pick;
+	} field_consumer_prove;
 
 	/*
 	 * Number of age-bucket slots for the CMP-hint staleness histogram
