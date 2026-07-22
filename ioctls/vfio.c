@@ -113,7 +113,17 @@ static void sanitise_vfio_dma_map(struct syscallrecord *rec)
 
 	size = VFIO_FUZZ_PAGE_SIZE << rnd_modulo_u32(VFIO_FUZZ_MAX_ORDER + 1);
 
-	ua = get_writable_address(size);
+	/*
+	 * vaddr must be page-aligned: the kernel's iommu_map() path masks
+	 * it down to PAGE_SIZE before pinning.  Aligning down here (as an
+	 * earlier revision did) would rewind up to page_size - 1 bytes
+	 * back into the pool -- straight into `m` and whatever the prior
+	 * sanitiser call left there -- so the kernel would map/pin those
+	 * unrelated bytes and truncate the payload tail.  Pull a page-
+	 * aligned reservation from the pool so [ua, ua + size) lies
+	 * entirely inside our own allocation.
+	 */
+	ua = get_writable_page_aligned(size);
 	if (ua == NULL)
 		return;
 
@@ -125,7 +135,7 @@ static void sanitise_vfio_dma_map(struct syscallrecord *rec)
 	m->iova = rnd_modulo_u64(VFIO_FUZZ_IOVA_LIMIT)
 		& ~(VFIO_FUZZ_PAGE_SIZE - 1);
 	m->size = size;
-	m->vaddr = (__u64)(unsigned long)ua & ~(VFIO_FUZZ_PAGE_SIZE - 1);
+	m->vaddr = (__u64)(unsigned long)ua;
 
 	rec->a3 = (unsigned long)m;
 }
