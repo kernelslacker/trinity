@@ -212,7 +212,7 @@ void cmp_hints_field_record(unsigned int nr, bool do32, unsigned int arg_idx,
 		unlock(&pool->lock);
 
 		if (kcov_shm != NULL) {
-			__atomic_fetch_add(&kcov_shm->cmp_field_attribution_found,
+			__atomic_fetch_add(&kcov_shm->cmp_field_attr.cmp_field_attribution_found,
 					   1UL, __ATOMIC_RELAXED);
 			(void) inserted;	/* dedup-refresh is a hit too */
 		}
@@ -221,7 +221,7 @@ void cmp_hints_field_record(unsigned int nr, bool do32, unsigned int arg_idx,
 
 	/* All probes filled with unrelated keys; advisory pool, drop. */
 	if (kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->cmp_field_attribution_pool_full,
+		__atomic_fetch_add(&kcov_shm->cmp_field_attr.cmp_field_attribution_pool_full,
 				   1UL, __ATOMIC_RELAXED);
 }
 
@@ -252,7 +252,7 @@ void cmp_hints_field_record_self_check(void)
 		return;
 
 	sentinel = (const struct struct_desc *)(uintptr_t) cmp_hints_shm;
-	before = __atomic_load_n(&kcov_shm->cmp_field_attribution_found,
+	before = __atomic_load_n(&kcov_shm->cmp_field_attr.cmp_field_attribution_found,
 				 __ATOMIC_RELAXED);
 
 	cmp_hints_field_record(/*nr=*/0, /*do32=*/false, /*arg_idx=*/1,
@@ -260,7 +260,7 @@ void cmp_hints_field_record_self_check(void)
 			       /*val=*/0x5a5a5a5a5a5a5a5aULL,
 			       /*cmp_ip=*/0xc0ffee00c0ffee00ULL);
 
-	after = __atomic_load_n(&kcov_shm->cmp_field_attribution_found,
+	after = __atomic_load_n(&kcov_shm->cmp_field_attr.cmp_field_attribution_found,
 				__ATOMIC_RELAXED);
 	if (after != before + 1)
 		BUG("cmp_hints: field-record self-check counter did not bump");
@@ -294,7 +294,7 @@ void cmp_hints_field_record_self_check(void)
 	claimed->key = (struct cmp_field_pool_key){ 0 };
 	/* Roll back the counter so the live table starts at zero -- the
 	 * synthetic self-check insert isn't a real field attribution. */
-	__atomic_fetch_sub(&kcov_shm->cmp_field_attribution_found, 1UL,
+	__atomic_fetch_sub(&kcov_shm->cmp_field_attr.cmp_field_attribution_found, 1UL,
 			   __ATOMIC_RELAXED);
 
 	output(0, "KCOV: CMP field-record self-check passed\n");
@@ -369,7 +369,7 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
 		if (is_corrupt_ptr_shape(buf)) {
 			if (kcov_shm != NULL)
 				__atomic_fetch_add(
-					&kcov_shm->cmp_field_attribution_arg_skipped_bad_ptr,
+					&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_bad_ptr,
 					1UL, __ATOMIC_RELAXED);
 			continue;
 		}
@@ -390,7 +390,7 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
 		if (actual_len == 0) {
 			if (kcov_shm != NULL)
 				__atomic_fetch_add(
-					&kcov_shm->cmp_field_attribution_arg_skipped_short_alloc,
+					&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_short_alloc,
 					1UL, __ATOMIC_RELAXED);
 			continue;
 		}
@@ -424,14 +424,14 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
 		if (!range_readable_user(buf, limit)) {
 			if (kcov_shm != NULL)
 				__atomic_fetch_add(
-					&kcov_shm->cmp_field_attribution_arg_skipped_bad_ptr,
+					&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_bad_ptr,
 					1UL, __ATOMIC_RELAXED);
 			continue;
 		}
 
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_field_attribution_scanned,
+				&kcov_shm->cmp_field_attr.cmp_field_attribution_scanned,
 				1UL, __ATOMIC_RELAXED);
 
 		for (i = 0; i < desc->num_fields; i++) {

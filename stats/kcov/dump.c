@@ -227,12 +227,12 @@ static void dump_stats_render_kcov_reexec(void)
 
 static void dump_stats_render_kcov_ring_replay(void)
 {
-		unsigned long fx_scanned = __atomic_load_n(&kcov_shm->cmp_field_attribution_scanned, __ATOMIC_RELAXED);
-		unsigned long fx_found = __atomic_load_n(&kcov_shm->cmp_field_attribution_found, __ATOMIC_RELAXED);
-		unsigned long fx_pool_full = __atomic_load_n(&kcov_shm->cmp_field_attribution_pool_full, __ATOMIC_RELAXED);
-		unsigned long fx_bad_ptr = __atomic_load_n(&kcov_shm->cmp_field_attribution_arg_skipped_bad_ptr, __ATOMIC_RELAXED);
-		unsigned long fx_short_alloc = __atomic_load_n(&kcov_shm->cmp_field_attribution_arg_skipped_short_alloc, __ATOMIC_RELAXED);
-		unsigned long fx_ts_bad_ptr = __atomic_load_n(&kcov_shm->cmp_field_timespec_skipped_bad_ptr, __ATOMIC_RELAXED);
+		unsigned long fx_scanned = __atomic_load_n(&kcov_shm->cmp_field_attr.cmp_field_attribution_scanned, __ATOMIC_RELAXED);
+		unsigned long fx_found = __atomic_load_n(&kcov_shm->cmp_field_attr.cmp_field_attribution_found, __ATOMIC_RELAXED);
+		unsigned long fx_pool_full = __atomic_load_n(&kcov_shm->cmp_field_attr.cmp_field_attribution_pool_full, __ATOMIC_RELAXED);
+		unsigned long fx_bad_ptr = __atomic_load_n(&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_bad_ptr, __ATOMIC_RELAXED);
+		unsigned long fx_short_alloc = __atomic_load_n(&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_short_alloc, __ATOMIC_RELAXED);
+		unsigned long fx_ts_bad_ptr = __atomic_load_n(&kcov_shm->cmp_field_attr.cmp_field_timespec_skipped_bad_ptr, __ATOMIC_RELAXED);
 
 		if (fx_scanned > 0)
 			stat_row("kcov_coverage", "cmp_field_attribution_scanned", fx_scanned);
