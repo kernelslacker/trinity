@@ -227,32 +227,38 @@ int get_num_fds(void)
 /* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Shared by every
  * persistence format trinity emits (minicorpus / cmp_hints /
  * kcov-bitmap) so the headers checksum payloads with one definition
- * instead of byte-identical copies that drift apart silently.  Lazy
- * 256-entry table; first call pays one build, every subsequent call
- * (in any caller) reuses the cached table. */
+ * instead of byte-identical copies that drift apart silently.  Table
+ * is built once at load time by the constructor below so crc32() is a
+ * pure reader — safe from a signal handler on the same thread and
+ * from any post-fork child. */
+static uint32_t crc32_table[256];
+
+static void crc32_build_table(void)
+{
+	uint32_t c;
+	unsigned int n, k;
+
+	for (n = 0; n < 256; n++) {
+		c = n;
+		for (k = 0; k < 8; k++)
+			c = (c & 1) ? (0xedb88320U ^ (c >> 1)) : (c >> 1);
+		crc32_table[n] = c;
+	}
+}
+
+static void __attribute__((constructor)) crc32_init(void)
+{
+	crc32_build_table();
+}
+
 uint32_t crc32(const void *buf, size_t len)
 {
-	static uint32_t table[256];
-	static bool table_built;
 	const uint8_t *p = buf;
 	uint32_t crc = 0xffffffffU;
 	size_t i;
 
-	if (!table_built) {
-		uint32_t c;
-		unsigned int n, k;
-
-		for (n = 0; n < 256; n++) {
-			c = n;
-			for (k = 0; k < 8; k++)
-				c = (c & 1) ? (0xedb88320U ^ (c >> 1)) : (c >> 1);
-			table[n] = c;
-		}
-		table_built = true;
-	}
-
 	for (i = 0; i < len; i++)
-		crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
+		crc = crc32_table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
 
 	return crc ^ 0xffffffffU;
 }
