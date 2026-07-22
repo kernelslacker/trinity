@@ -154,7 +154,7 @@ it actually ran without reconstructing the rotation history from the
 ### Anti-prior mode fast path
 
 `plateau_anti_prior_baseline_calls` caches the mean of
-`kcov_shm->per_syscall_calls` across the currently-active syscall set
+`kcov_shm->per_syscall.per_syscall_calls` across the currently-active syscall set
 (biarch: `nr_active_32bit_syscalls + nr_active_64bit_syscalls`;
 uniarch: `nr_active_syscalls`), refreshed by
 `plateau_anti_prior_refresh_baseline()` at every rotation that selects

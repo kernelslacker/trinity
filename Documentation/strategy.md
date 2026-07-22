@@ -725,10 +725,10 @@ path.
 
 All sourced from existing counters; no new wiring.
 
-- `pc_edges` (edges) -- `kcov_shm->edges_found`.  Headline coverage
+- `pc_edges` (edges) -- `kcov_shm->coverage.edges_found`.  Headline coverage
   signal, the same counter the plateau detector itself watches the
   rate of.
-- `cmp_unique` (records) -- `kcov_shm->cmp_hints_unique_inserts`.
+- `cmp_unique` (records) -- `kcov_shm->hints_flat.cmp_hints_unique_inserts`.
   Counts CMP records that survived bloom + pool dedup and changed pool
   state -- the right denominator for "how much unique CMP signal is
   the kernel still emitting" while `pc_edges` has flattened.
@@ -750,7 +750,7 @@ All sourced from existing counters; no new wiring.
   apples-to-apples comparator for `bandit_edges` / `explorer_edges`
   in the plateau classifier's Rule 2 ratio.
 - `remote_calls`, `total_calls` --
-  `kcov_shm->{remote,total}_calls`.  `KCOV_REMOTE_ENABLE` share of
+  `kcov_shm->coverage.{remote,total}_calls`.  `KCOV_REMOTE_ENABLE` share of
   the dispatch mix; inline = total - remote.
 - `frontier_picks` -- `shm->stats.frontier_strategy_picks`.  Calls
   that went through the coverage-frontier roulette wheel.
@@ -779,7 +779,7 @@ All sourced from existing counters; no new wiring.
   dominates" inside a plateau means the cold-weight fallback is doing
   the steering rather than the K-window ring.
 - `group_edges[NR_GROUPS]` -- per-syscall-group sum of
-  `kcov_shm->per_syscall_edges[]`, grouped by
+  `kcov_shm->per_syscall.per_syscall_edges[]`, grouped by
   `syscalls[nr].entry->group`.  Maps the call-count new-edge signal
   onto the `GROUP_*` axis the classifier needs for the
   single-group-dominant rule.
