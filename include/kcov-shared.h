@@ -28,6 +28,7 @@
 #include "kcov-groups/covjump.h"
 #include "kcov-groups/reexec_flat.h"
 #include "kcov-groups/transitions.h"
+#include "kcov-groups/cmp_hint_ps.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -302,23 +303,7 @@ struct kcov_shared {
 	 *      per_syscall_cmp_injected to read per-syscall hint-edge yield;
 	 *      a syscall with high injected and zero pc-wins is the
 	 *      diagnostic signature for an unproductive cmp-hint regime. */
-	struct kcov_cmp_hint_ps {
-	unsigned long per_syscall_cmp_injected[MAX_NR_SYSCALL];
-	unsigned long per_syscall_cmp_hint_pc_wins[MAX_NR_SYSCALL];
-
-	/* Per-syscall typed-hyp outcome partition.  Pairs with the
-	 * per_syscall_cmp_injected/_pc_wins counters above so the
-	 * cmp-frontier weight can route on real conversion rate rather
-	 * than insert volume alone.  Bumped from cmp_hyp_credit_outcome()
-	 * under the same nr-bounds guard as the sibling per-syscall
-	 * counters; only the typed-hyp outcome channels that can fire
-	 * today are partitioned. */
-	unsigned long per_syscall_cmp_hint_transition_wins[MAX_NR_SYSCALL];
-	unsigned long per_syscall_cmp_hint_misses[MAX_NR_SYSCALL];
-	unsigned long per_syscall_cmp_hint_corpus_saves[MAX_NR_SYSCALL];
-	unsigned long per_syscall_cmp_hint_destructive_skips[MAX_NR_SYSCALL];
-	unsigned long per_syscall_cmp_hint_cmp_novelty_wins[MAX_NR_SYSCALL];
-	} cmp_hint_ps;
+	struct kcov_cmp_hint_ps cmp_hint_ps;
 
 	/* Per-callsite total cmp-hint injections, indexed by enum
 	 * cmp_hint_callsite.  Aggregated across all syscalls; the "which
