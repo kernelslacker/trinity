@@ -1668,6 +1668,7 @@ struct kcov_shared {
 	 *      hints it produces drop to the recent ring (and decay
 	 *      from there) instead of carrying forward.
 	 */
+	struct kcov_hint_tier {
 	unsigned long cmp_hint_tier_recent_wins;
 	unsigned long cmp_hint_tier_recent_misses;
 	unsigned long cmp_hint_tier_durable_wins;
@@ -1676,6 +1677,7 @@ struct kcov_shared {
 	unsigned long cmp_hint_durable_age_wins[CMP_HINT_AGE_BUCKETS];
 	unsigned long cmp_hint_durable_age_misses[CMP_HINT_AGE_BUCKETS];
 	unsigned long per_syscall_cmp_reject_cap[MAX_NR_SYSCALL];
+	} hint_tier;
 
 	/*
 	 * SHADOW typed-CMP-hypothesis store counters.  Append-only at the

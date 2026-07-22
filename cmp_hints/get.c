@@ -310,7 +310,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 		}
 
 		if (kcov_shm != NULL) {
-			__atomic_fetch_add(&kcov_shm->cmp_hint_durable_consumed_age[bucket],
+			__atomic_fetch_add(&kcov_shm->hint_tier.cmp_hint_durable_consumed_age[bucket],
 					   1UL, __ATOMIC_RELAXED);
 
 			/* Inject-arm denominator + per-kind partition,

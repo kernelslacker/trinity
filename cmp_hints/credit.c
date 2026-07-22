@@ -369,8 +369,8 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 			continue;
 		if (e->served_from_recent) {
 			__atomic_fetch_add(outcome_win ?
-					   &kcov_shm->cmp_hint_tier_recent_wins :
-					   &kcov_shm->cmp_hint_tier_recent_misses,
+					   &kcov_shm->hint_tier.cmp_hint_tier_recent_wins :
+					   &kcov_shm->hint_tier.cmp_hint_tier_recent_misses,
 					   1UL, __ATOMIC_RELAXED);
 		} else {
 			uint8_t bucket = e->age_bucket;
@@ -378,12 +378,12 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 			if (bucket >= CMP_HINT_AGE_BUCKETS)
 				bucket = (uint8_t)(CMP_HINT_AGE_BUCKETS - 1U);
 			__atomic_fetch_add(outcome_win ?
-					   &kcov_shm->cmp_hint_tier_durable_wins :
-					   &kcov_shm->cmp_hint_tier_durable_misses,
+					   &kcov_shm->hint_tier.cmp_hint_tier_durable_wins :
+					   &kcov_shm->hint_tier.cmp_hint_tier_durable_misses,
 					   1UL, __ATOMIC_RELAXED);
 			__atomic_fetch_add(outcome_win ?
-					   &kcov_shm->cmp_hint_durable_age_wins[bucket] :
-					   &kcov_shm->cmp_hint_durable_age_misses[bucket],
+					   &kcov_shm->hint_tier.cmp_hint_durable_age_wins[bucket] :
+					   &kcov_shm->hint_tier.cmp_hint_durable_age_misses[bucket],
 					   1UL, __ATOMIC_RELAXED);
 		}
 	}

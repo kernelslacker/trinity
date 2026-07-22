@@ -92,16 +92,16 @@ static void dump_stats_render_kcov_transition_edges(void)
 static void dump_stats_render_kcov_cmp_hint_tier(void)
 {
 		unsigned long kc_tier_r_wins = __atomic_load_n(
-			&kcov_shm->cmp_hint_tier_recent_wins,
+			&kcov_shm->hint_tier.cmp_hint_tier_recent_wins,
 			__ATOMIC_RELAXED);
 		unsigned long kc_tier_r_misses = __atomic_load_n(
-			&kcov_shm->cmp_hint_tier_recent_misses,
+			&kcov_shm->hint_tier.cmp_hint_tier_recent_misses,
 			__ATOMIC_RELAXED);
 		unsigned long kc_tier_d_wins = __atomic_load_n(
-			&kcov_shm->cmp_hint_tier_durable_wins,
+			&kcov_shm->hint_tier.cmp_hint_tier_durable_wins,
 			__ATOMIC_RELAXED);
 		unsigned long kc_tier_d_misses = __atomic_load_n(
-			&kcov_shm->cmp_hint_tier_durable_misses,
+			&kcov_shm->hint_tier.cmp_hint_tier_durable_misses,
 			__ATOMIC_RELAXED);
 		unsigned long sum = kc_tier_r_wins + kc_tier_r_misses
 				  + kc_tier_d_wins + kc_tier_d_misses;
@@ -124,13 +124,13 @@ static void dump_stats_render_kcov_cmp_hint_tier(void)
 			for (b = 0; b < CMP_HINT_AGE_BUCKETS; b++) {
 				char key[64];
 				unsigned long v_consumed =
-					__atomic_load_n(&kcov_shm->cmp_hint_durable_consumed_age[b],
+					__atomic_load_n(&kcov_shm->hint_tier.cmp_hint_durable_consumed_age[b],
 							__ATOMIC_RELAXED);
 				unsigned long v_wins =
-					__atomic_load_n(&kcov_shm->cmp_hint_durable_age_wins[b],
+					__atomic_load_n(&kcov_shm->hint_tier.cmp_hint_durable_age_wins[b],
 							__ATOMIC_RELAXED);
 				unsigned long v_misses =
-					__atomic_load_n(&kcov_shm->cmp_hint_durable_age_misses[b],
+					__atomic_load_n(&kcov_shm->hint_tier.cmp_hint_durable_age_misses[b],
 							__ATOMIC_RELAXED);
 
 				if ((v_consumed | v_wins | v_misses) == 0)
