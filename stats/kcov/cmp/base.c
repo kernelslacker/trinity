@@ -106,9 +106,9 @@ void kcov_cmp_observability_block_render(long elapsed __unused__)
 		unsigned long cur_inserts = __atomic_load_n(
 			&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
 		unsigned long cur_injected = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp_injected[i], __ATOMIC_RELAXED);
+			&kcov_shm->cmp_hint_ps.per_syscall_cmp_injected[i], __ATOMIC_RELAXED);
 		unsigned long cur_pc_wins = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp_hint_pc_wins[i], __ATOMIC_RELAXED);
+			&kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_pc_wins[i], __ATOMIC_RELAXED);
 		unsigned long cur_edges = per_syscall_edges_total(i);
 		unsigned long cur_reject_cap = __atomic_load_n(
 			&kcov_shm->per_syscall_cmp_reject_cap[i], __ATOMIC_RELAXED);
