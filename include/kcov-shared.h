@@ -49,6 +49,7 @@
 #include "kcov-groups/cmp_hyp_results.h"
 #include "kcov-groups/childop_cmp.h"
 #include "kcov-groups/cmp_shared_tier.h"
+#include "kcov-groups/childop_cmp_consume.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -1270,15 +1271,7 @@ struct kcov_shared {
 	 * Append-only at the tail per the existing convention so
 	 * consumer offsets stay stable.
 	 */
-	struct kcov_childop_cmp_consume {
-	unsigned long childop_cmp_consume_would_pick[MAX_NR_SYSCALL];
-	unsigned long childop_cmp_consume_would_miss[MAX_NR_SYSCALL];
-	unsigned long childop_cmp_consume_would_value_differs[MAX_NR_SYSCALL];
-	unsigned long childop_cmp_consume_candidate_accepted[MAX_NR_SYSCALL];
-	unsigned long childop_cmp_consume_arg_changed[MAX_NR_SYSCALL];
-	unsigned long childop_cmp_consume_outcome_changed[MAX_NR_SYSCALL];
-	unsigned long childop_cmp_consume_new_cov[MAX_NR_SYSCALL];
-	} childop_cmp_consume;
+	struct kcov_childop_cmp_consume childop_cmp_consume;
 
 	/* Shadow measurement of the non-const relational CMP drop-site.
 	 * The per-record loop in cmp_hints_collect() drops every
