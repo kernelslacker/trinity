@@ -1464,11 +1464,13 @@ struct kcov_shared {
 	 * Append-only at the tail per the existing convention so
 	 * consumer offsets stay stable.
 	 */
+	struct kcov_field_consumer {
 	unsigned long cmp_field_consumer_would_pick;
 	unsigned long cmp_field_consumer_would_miss;
 	unsigned long cmp_field_consumer_key_absent;
 	unsigned long cmp_field_consumer_pool_corrupted;
 	unsigned long cmp_field_consumer_live_picks;
+	} field_consumer;
 
 	/*
 	 * Generator-invariant guard skip counters (per rejection reason).
