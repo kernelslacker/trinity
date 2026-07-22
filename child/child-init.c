@@ -741,9 +741,25 @@ static void init_child_isolate_io(void)
 	 * EBADF'ing — keeps the syscall behaviour realistic. */
 	devnull = open("/dev/null", O_RDWR);
 	if (devnull >= 0) {
-		dup2(devnull, STDIN_FILENO);
-		dup2(devnull, STDOUT_FILENO);
-		dup2(devnull, STDERR_FILENO);
+		/* On dup2 failure the std fd would remain pointing at the
+		 * operator tty or an inherited log fd -- exactly the hazard
+		 * this redirect exists to prevent -- so bail hard rather than
+		 * proceed to fuzzing with a poisoned fd 0/1/2. */
+		while (dup2(devnull, STDIN_FILENO) < 0) {
+			if (errno == EINTR)
+				continue;
+			_exit(EXIT_FAILURE);
+		}
+		while (dup2(devnull, STDOUT_FILENO) < 0) {
+			if (errno == EINTR)
+				continue;
+			_exit(EXIT_FAILURE);
+		}
+		while (dup2(devnull, STDERR_FILENO) < 0) {
+			if (errno == EINTR)
+				continue;
+			_exit(EXIT_FAILURE);
+		}
 		if (devnull > STDERR_FILENO)
 			close(devnull);
 	}
