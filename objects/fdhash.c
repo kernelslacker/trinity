@@ -126,8 +126,14 @@ static unsigned int fd_hash_slot(int fd)
  * Internal insert that preserves the entry's existing generation and
  * doesn't update fd_hash_count.  Used by fd_hash_remove to re-hash
  * displaced entries: the entry's identity is unchanged, only its slot.
+ *
+ * Returns true if the entry was inserted, false if the probe run was
+ * full and the entry had to be dropped.  The caller is responsible for
+ * adjusting parent_fd_hash_count on a drop -- the dropped entry has
+ * vanished from the table and would otherwise leak a slot of headroom
+ * off the count each time this fires.
  */
-static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type,
+static bool fd_hash_reinsert(int fd, struct object *obj, enum objecttype type,
 			     uint32_t gen)
 {
 	unsigned int slot;
@@ -143,13 +149,14 @@ static void fd_hash_reinsert(int fd, struct object *obj, enum objecttype type,
 		__atomic_add_fetch(&shm->stats.fd.hash_reinsert_dropped, 1,
 				   __ATOMIC_RELAXED);
 		outputerr("fd_hash_reinsert: table full, dropping fd %d\n", fd);
-		return;
+		return false;
 	}
 
 	parent_fd_hash[slot].obj = obj;
 	parent_fd_hash[slot].type = type;
 	parent_fd_hash[slot].gen = gen;
 	parent_fd_hash[slot].fd = fd;
+	return true;
 }
 
 bool fd_hash_insert(int fd, struct object *obj, enum objecttype type)
@@ -193,15 +200,16 @@ void fd_hash_remove(int fd)
 			parent_fd_hash[slot].gen++;
 			parent_fd_hash[slot].fd = -1;
 			fd_live_remove(fd);
+			parent_fd_hash_count--;
 			next = (slot + 1) & (FD_HASH_SIZE - 1);
 			while (parent_fd_hash[next].fd != -1) {
 				struct fd_hash_entry displaced = parent_fd_hash[next];
 				parent_fd_hash[next].fd = -1;
-				fd_hash_reinsert(displaced.fd, displaced.obj,
-						 displaced.type, displaced.gen);
+				if (!fd_hash_reinsert(displaced.fd, displaced.obj,
+						      displaced.type, displaced.gen))
+					parent_fd_hash_count--;
 				next = (next + 1) & (FD_HASH_SIZE - 1);
 			}
-			parent_fd_hash_count--;
 			return;
 		}
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
