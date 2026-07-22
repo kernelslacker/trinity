@@ -181,7 +181,7 @@ struct frontier_per_syscall_stats {
 	 *      syscall during the silent streak -- CMP novelty the PC-edge
 	 *      reset path did not see.
 	 *  frontier_silent_errno_success_baseline[nr]
-	 *      Mirror of kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_
+	 *      Mirror of kcov_shm->errno_state.per_syscall_errno[nr][ERRNO_BUCKET_
 	 *      SUCCESS] at the most recent streak reset.  Current > baseline
 	 *      means the syscall transitioned from error-only to producing
 	 *      a successful return at least once during the silent streak --

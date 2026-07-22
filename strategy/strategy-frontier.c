@@ -242,7 +242,7 @@ void frontier_record_new_edge(unsigned int nr)
 			&kcov_shm->per_syscall_cmp_inserts[nr],
 			__ATOMIC_RELAXED);
 		errno_snap = __atomic_load_n(
-			&kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
+			&kcov_shm->errno_state.per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
 			__ATOMIC_RELAXED);
 		__atomic_store_n(
 			&shm->stats.frontier.per_syscall.silent_cmp_baseline[nr],
@@ -345,7 +345,7 @@ void frontier_record_transition_edge(unsigned int nr)
 			&kcov_shm->per_syscall_cmp_inserts[nr],
 			__ATOMIC_RELAXED);
 		errno_snap = __atomic_load_n(
-			&kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
+			&kcov_shm->errno_state.per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
 			__ATOMIC_RELAXED);
 		__atomic_store_n(
 			&shm->stats.frontier.per_syscall.silent_cmp_baseline[nr],
@@ -462,7 +462,7 @@ bool frontier_errno_plateau_should_decay(unsigned int nr, bool do32)
 	for (bucket = ERRNO_BUCKET_SUCCESS + 1;
 	     bucket < ERRNO_BUCKET_NR; bucket++) {
 		unsigned long c = __atomic_load_n(
-			&kcov_shm->per_syscall_errno[nr][bucket],
+			&kcov_shm->errno_state.per_syscall_errno[nr][bucket],
 			__ATOMIC_RELAXED);
 		if (c > max_failure_bucket)
 			max_failure_bucket = c;
@@ -811,7 +811,7 @@ frontier_spare_lane_decide(unsigned int syscallnr, bool do32)
 		&shm->stats.frontier.per_syscall.silent_cmp_baseline[syscallnr],
 		__ATOMIC_RELAXED);
 	errno_now = __atomic_load_n(
-		&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
+		&kcov_shm->errno_state.per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
 		__ATOMIC_RELAXED);
 	errno_base = __atomic_load_n(
 		&shm->stats.frontier.per_syscall.silent_errno_success_baseline[syscallnr],
@@ -1314,7 +1314,7 @@ void context_regular_suppressed_shadow(unsigned int syscallnr, bool do32)
 	 * -> edges -> EPERM so the cheapest disproof gets first crack.
 	 */
 	success = __atomic_load_n(
-		&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
+		&kcov_shm->errno_state.per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
 		__ATOMIC_RELAXED);
 	if (success != 0)
 		return;
@@ -1324,7 +1324,7 @@ void context_regular_suppressed_shadow(unsigned int syscallnr, bool do32)
 		return;
 
 	eperm = __atomic_load_n(
-		&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_EPERM],
+		&kcov_shm->errno_state.per_syscall_errno[syscallnr][ERRNO_BUCKET_EPERM],
 		__ATOMIC_RELAXED);
 	if ((eperm * 100UL) <
 	    (calls_total * CONTEXT_REGULAR_SUPPRESSED_EPERM_PCT))

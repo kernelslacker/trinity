@@ -742,7 +742,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 						   __ATOMIC_RELAXED),
 				   __ATOMIC_RELAXED);
 		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_prove_einval_at_pick,
-				   __atomic_load_n(&kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_EINVAL],
+				   __atomic_load_n(&kcov_shm->errno_state.per_syscall_errno[nr][ERRNO_BUCKET_EINVAL],
 						   __ATOMIC_RELAXED),
 				   __ATOMIC_RELAXED);
 

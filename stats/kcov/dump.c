@@ -639,7 +639,7 @@ static void dump_stats_render_kcov_per_syscall_yield_topn(unsigned int nr_syscal
 			unsigned int b;
 
 			for (b = 0; b < ERRNO_BUCKET_NR; b++) {
-				buckets[b] = __atomic_load_n(&kcov_shm->per_syscall_errno[i][b],
+				buckets[b] = __atomic_load_n(&kcov_shm->errno_state.per_syscall_errno[i][b],
 							     __ATOMIC_RELAXED);
 				total += buckets[b];
 			}

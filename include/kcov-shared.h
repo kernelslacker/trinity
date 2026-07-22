@@ -625,6 +625,7 @@ struct kcov_shared {
 	 * tally consumed by dump_entry(); this is the kcov_shm-resident
 	 * compact view that pairs with the coverage tables above and lives
 	 * in the same dump section. */
+	struct kcov_errno_state {
 	unsigned long per_syscall_errno[MAX_NR_SYSCALL][ERRNO_BUCKET_NR];
 	/* Per-syscall errno-bucket "seen at least once in this run" bitmask.
 	 * Bit `bucket` set iff a call with errno bucket `bucket` has been
@@ -648,6 +649,7 @@ struct kcov_shared {
 	 * directly comparable (delta = last_edge_at[nr] - last_efault_at[nr]
 	 * is a signed "has progress outrun the fault?" signal). */
 	unsigned long last_efault_at[MAX_NR_SYSCALL];
+	} errno_state;
 	/* Per-syscall counterpart of cmp_hints_unique_inserts: every fresh
 	 * insert or evict-replace in pools[nr] bumps slot nr.  Dedup-refresh
 	 * hits are NOT counted, matching the global counter's semantics.
@@ -1529,7 +1531,7 @@ struct kcov_shared {
 	 *      whether injection unlocked more kernel-side CMPs, not just
 	 *      more PC coverage.
 	 *  cmp_field_consumer_prove_einval_at_pick
-	 *      Sum of kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_EINVAL]
+	 *      Sum of kcov_shm->errno_state.per_syscall_errno[nr][ERRNO_BUCKET_EINVAL]
 	 *      captured at each eligible would-pick, keyed to the pick's
 	 *      own syscall nr.  Answers "did it raise the rejected-struct
 	 *      rate": a live-arm counterpart sum divided by its
