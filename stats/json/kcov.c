@@ -78,7 +78,7 @@ static void json_emit_kcov_counters(void)
 	kc_cmp_hyp_pc_wins = __atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_pc_wins,
 					     __ATOMIC_RELAXED);
 	kc_cmp_hyp_live_injected = __atomic_load_n(
-		&kcov_shm->cmp_hyp_live_injected, __ATOMIC_RELAXED);
+		&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected, __ATOMIC_RELAXED);
 	for (i = 0; i < CMP_HINT_POOL_KIND_NR; i++)
 		kc_cmp_hint_pc_wins_by_pool[i] = __atomic_load_n(
 			&kcov_shm->cmp_hint_pc_wins_by_pool[i],
@@ -88,7 +88,7 @@ static void json_emit_kcov_counters(void)
 			&kcov_shm->cmp_hyp_pc_wins_by_kind[i],
 			__ATOMIC_RELAXED);
 		kc_cmp_hyp_live_injected_by_kind[i] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_live_injected_by_kind[i],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected_by_kind[i],
 			__ATOMIC_RELAXED);
 	}
 

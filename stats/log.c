@@ -524,7 +524,7 @@ static void stats_ts_emit_cmp_hints(FILE *fp)
 		cmp_hint_wins = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_wins,
 						__ATOMIC_RELAXED);
 		cmp_hyp_live_injected = __atomic_load_n(
-			&kcov_shm->cmp_hyp_live_injected, __ATOMIC_RELAXED);
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected, __ATOMIC_RELAXED);
 		cmp_hyp_consumed = __atomic_load_n(
 			&kcov_shm->hyp_flat.cmp_hyp_consumed, __ATOMIC_RELAXED);
 		cmp_hyp_pc_wins = __atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_pc_wins,

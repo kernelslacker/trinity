@@ -426,7 +426,7 @@ void kcov_cmp_render_pc_win_conversion_split_block(long elapsed __unused__)
 
 	cur_hints_injected = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_injected,
 					     __ATOMIC_RELAXED);
-	cur_hyp_live_injected = __atomic_load_n(&kcov_shm->cmp_hyp_live_injected,
+	cur_hyp_live_injected = __atomic_load_n(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected,
 						__ATOMIC_RELAXED);
 	cur_hyp_pc_wins = __atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_pc_wins,
 					  __ATOMIC_RELAXED);
@@ -439,7 +439,7 @@ void kcov_cmp_render_pc_win_conversion_split_block(long elapsed __unused__)
 	}
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		cur_hyp_live_injected_by_kind[k] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_live_injected_by_kind[k],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected_by_kind[k],
 			__ATOMIC_RELAXED);
 		cur_hyp_pc_wins_by_kind[k] = __atomic_load_n(
 			&kcov_shm->cmp_hyp_pc_wins_by_kind[k],
