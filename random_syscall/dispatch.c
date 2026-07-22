@@ -74,7 +74,7 @@ _Static_assert(REEXEC_PENDING_PICK_HIST_NR == MAX_REEXEC_PENDING,
  * pending_idx is the position in child->reexec_pending[] that the
  * consumer at the dispatch_step tail picked (0..reexec_pending_count);
  * carried through to the inner_new_cmp > 0 success block so the
- * per-pending-index success counter (kcov_shm->reexec_pending_pick_success[])
+ * per-pending-index success counter (kcov_shm->reexec_pending_hist.reexec_pending_pick_success[])
  * can be bumped at the chosen index without retaining the index in
  * per-child scratch.
  */
@@ -691,7 +691,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				 * staged entry is drained regardless of
 				 * pick order); the per-pending-index
 				 * success counters
-				 * (kcov_shm->reexec_pending_pick_success[])
+				 * (kcov_shm->reexec_pending_hist.reexec_pending_pick_success[])
 				 * still get bumped inside
 				 * redqueen_reexec_step at the entry's true
 				 * index, so per-slot/per-index lift remains
@@ -1227,7 +1227,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 		 * inner dispatch_step will actually re-run. */
 		if (rec->nr < MAX_NR_SYSCALL)
 			__atomic_fetch_add(
-				&kcov_shm->reexec_attempts_by_syscall[rec->nr],
+				&kcov_shm->reexec_pending_hist.reexec_attempts_by_syscall[rec->nr],
 				1UL, __ATOMIC_RELAXED);
 		/* per-childop partition of the re-exec attempt counter,
 		 * sibling of the per-syscall bump above.  Lets a re-exec
@@ -1331,7 +1331,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 			if (p->slot >= 1 &&
 			    p->slot <= CMP_REDQUEEN_SLOT_HIST_NR)
 				__atomic_fetch_add(
-					&kcov_shm->reexec_success_by_slot[p->slot - 1],
+					&kcov_shm->reexec_pending_hist.reexec_success_by_slot[p->slot - 1],
 					1UL, __ATOMIC_RELAXED);
 			/* Per-pending-buffer-index success counter, the
 			 * A/B signal for --redqueen-pending-pick.  The
@@ -1347,7 +1347,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 			 * rnd_modulo_u32 and rolling past the bound). */
 			if (pending_idx < REEXEC_PENDING_PICK_HIST_NR)
 				__atomic_fetch_add(
-					&kcov_shm->reexec_pending_pick_success[pending_idx],
+					&kcov_shm->reexec_pending_hist.reexec_pending_pick_success[pending_idx],
 					1UL, __ATOMIC_RELAXED);
 		}
 	}
