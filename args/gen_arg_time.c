@@ -207,20 +207,23 @@ unsigned long gen_arg_buf_sized(struct syscallentry *entry,
 	}
 
 	/*
-	 * --blob-mutator hook: author content into the owned buffer
-	 * before the length is published.  The OFF mode short-circuits
-	 * inside blob_fill() before any RNG draw, so the OFF arm is
-	 * byte-identical to a build before this row.
+	 * Author content into the owned buffer before the length is
+	 * published.  get_writable_struct() hands back a bump-pool slice
+	 * whose bytes are whatever the previous syscall left behind, so
+	 * the buffer MUST be overwritten -- otherwise the paired
+	 * copy_from_user() replays stale prior payload (potential
+	 * prior-pointer-as-length info-leak into the kernel).
 	 *
-	 * --blob-ab-mode also gates in here: when the flag is set the
-	 * per-fill coin-flip inside blob_fill() picks HAVOC or CMPDICT
-	 * regardless of blob_mutator_mode, so the caller must fire the
-	 * hook independent of the OFF check.  When the flag is absent
-	 * (default) the second disjunct collapses and the gate is
-	 * byte-identical to today.
+	 * --blob-mutator / --blob-ab-mode: when either gate fires, the
+	 * per-fill coin-flip inside blob_fill() picks HAVOC / CMPDICT /
+	 * ... and authors the buffer.  When both are off (default) fall
+	 * through to a plain random fill so the freshness invariant
+	 * still holds.
 	 */
 	if (blob_mutator_mode != BLOB_MUTATOR_OFF || blob_ab_mode)
 		blob_fill((unsigned char *) buf, (size_t) size, rec->nr, false);
+	else
+		generate_rand_bytes((unsigned char *) buf, (unsigned int) size);
 
 	if (rnd_modulo_u32(16) == 0) {
 		unsigned long pub;
