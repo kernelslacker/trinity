@@ -2449,6 +2449,7 @@ struct kcov_shared {
 	 * reexec_pending back-pressure, a live-resource throttle the
 	 * shadow lane must not inherit).  Append-only at the tail per
 	 * the existing convention so consumer offsets stay stable. */
+	struct kcov_cmp_nonconst {
 	unsigned long cmp_nonconst_arg1_unique;      /* rec_args has exactly one slot == arg1 */
 	unsigned long cmp_nonconst_arg2_unique;      /* rec_args has exactly one slot == arg2 */
 	unsigned long cmp_nonconst_both_match;       /* both operands appear in rec_args (>=1 each) */
@@ -2462,6 +2463,7 @@ struct kcov_shared {
 						      * dispatch_args invalid / reexec_pending
 						      * full-at-entry, all cases where rec_num_args
 						      * is 0 and the per-slot loop never runs. */
+	} cmp_nonconst;
 
 	/* Shadow measurement of a high-bit-preserving replacement for the
 	 * width-masked CMP RedQueen pin.  On a unique width match the live

@@ -1177,11 +1177,11 @@ static void dump_stats_render_kcov_per_syscall_local_pc_topn(unsigned int nr_sys
 static void dump_stats_render_kcov_shadow_measurements(void)
 {
 	unsigned long kc_cmp_save_reject_nonconst      = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
-	unsigned long kc_cmp_nonconst_arg1_unique      = __atomic_load_n(&kcov_shm->cmp_nonconst_arg1_unique,           __ATOMIC_RELAXED);
-	unsigned long kc_cmp_nonconst_arg2_unique      = __atomic_load_n(&kcov_shm->cmp_nonconst_arg2_unique,           __ATOMIC_RELAXED);
-	unsigned long kc_cmp_nonconst_both_match       = __atomic_load_n(&kcov_shm->cmp_nonconst_both_match,            __ATOMIC_RELAXED);
-	unsigned long kc_cmp_nonconst_would_attribute  = __atomic_load_n(&kcov_shm->cmp_nonconst_would_attribute,       __ATOMIC_RELAXED);
-	unsigned long kc_cmp_nonconst_measured         = __atomic_load_n(&kcov_shm->cmp_nonconst_measured,              __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_arg1_unique      = __atomic_load_n(&kcov_shm->cmp_nonconst.cmp_nonconst_arg1_unique,           __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_arg2_unique      = __atomic_load_n(&kcov_shm->cmp_nonconst.cmp_nonconst_arg2_unique,           __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_both_match       = __atomic_load_n(&kcov_shm->cmp_nonconst.cmp_nonconst_both_match,            __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_would_attribute  = __atomic_load_n(&kcov_shm->cmp_nonconst.cmp_nonconst_would_attribute,       __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_measured         = __atomic_load_n(&kcov_shm->cmp_nonconst.cmp_nonconst_measured,              __ATOMIC_RELAXED);
 	unsigned long kc_cmp_width_pin_total           = __atomic_load_n(&kcov_shm->cmp_width_pin_total,                __ATOMIC_RELAXED);
 	unsigned long kc_cmp_width_pin_would_differ    = __atomic_load_n(&kcov_shm->cmp_width_pin_would_differ,         __ATOMIC_RELAXED);
 	unsigned long kc_cmp_hyp_pow2_derive_would_fire = __atomic_load_n(&kcov_shm->cmp_hyp_pow2_derive_would_fire,    __ATOMIC_RELAXED);
