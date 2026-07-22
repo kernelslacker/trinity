@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "arch.h"		/* biarch */
 #include "child.h"		/* struct childdata */
 #include "cred_throttle.h"	/* cred_class_for_nr, CRED_CLASS_NR */
 #include "kcov.h"
@@ -480,6 +481,7 @@ void frontier_window_advance(void)
 {
 	uint32_t cur, next;
 	unsigned int nr;
+	unsigned int nr_to_scan;
 	unsigned long max_weight = 0;
 
 	/* Clear-then-publish, the opposite of the previous order.  The old
@@ -514,7 +516,40 @@ void frontier_window_advance(void)
 	cur = __atomic_load_n(&shm->frontier_slot, __ATOMIC_RELAXED);
 	next = (cur + 1U) & (FRONTIER_DECAY_WINDOWS - 1);
 
-	for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
+	/* Clamp the rotation sweep to the populated slot range.  The
+	 * frontier ring (frontier_history / frontier_recent_count_cached)
+	 * is sized MAX_NR_SYSCALL = 1024 but any given arch only fills a
+	 * few hundred entries; the tail is permanently zero and every
+	 * RELAXED exchange + CAS across those dead slots was pure wasted
+	 * work per rotation, and (worse) touched the same cache lines the
+	 * per-nr producer fetch_add paths in child processes hit, so the
+	 * dead-slot sweep also cost cross-CPU coherence traffic against
+	 * live producers.
+	 *
+	 * The ring is a shared per-nr index space under biarch: both the
+	 * 32-bit and 64-bit producer paths call frontier_record_new_edge()
+	 * with a bare syscall nr and no do32 discriminator, so under biarch
+	 * the array holds contributions from either table at the same slot.
+	 * Clamping just to max_nr_64bit_syscalls the way the top-syscalls
+	 * dump path does would leave 32-bit-only slots in the [max_nr_64bit
+	 * _syscalls, max_nr_32bit_syscalls) range never decayed -- their
+	 * cached sums would grow monotonically and their history slots
+	 * would never zero out.  So under biarch we clamp to the larger of
+	 * the two counts.  Under uniarch max_nr_syscalls is the single
+	 * populated bound.  MIN with MAX_NR_SYSCALL is kept as a hard guard
+	 * so a future bump to either count beyond the array size cannot
+	 * walk past the end. */
+	if (biarch) {
+		nr_to_scan = max_nr_64bit_syscalls > max_nr_32bit_syscalls
+				? max_nr_64bit_syscalls
+				: max_nr_32bit_syscalls;
+	} else {
+		nr_to_scan = max_nr_syscalls;
+	}
+	if (nr_to_scan > MAX_NR_SYSCALL)
+		nr_to_scan = MAX_NR_SYSCALL;
+
+	for (nr = 0; nr < nr_to_scan; nr++) {
 		uint32_t old_slot;
 		uint32_t old_cached;
 		uint32_t new_sum;
