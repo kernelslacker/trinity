@@ -71,7 +71,7 @@ static void json_emit_kcov_counters(void)
 		&kcov_shm->cmp_hints_save_reject_dup, __ATOMIC_RELAXED);
 	kc_cmp_save_reject_cap = __atomic_load_n(
 		&kcov_shm->cmp_hints_save_reject_cap, __ATOMIC_RELAXED);
-	kc_cmp_hint_wins = __atomic_load_n(&kcov_shm->cmp_hint_wins,
+	kc_cmp_hint_wins = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_wins,
 					   __ATOMIC_RELAXED);
 	kc_cmp_hints_injected = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_injected,
 						__ATOMIC_RELAXED);
