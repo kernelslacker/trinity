@@ -12,6 +12,7 @@
 #include "kcov-types.h"
 #include "kcov-groups/coverage.h"
 #include "kcov-groups/cmp_records.h"
+#include "kcov-groups/dedup.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -30,18 +31,7 @@ struct kcov_shared {
 	 * filled. */
 	struct kcov_cmp_records cmp_records;
 	/* Dedup-table health counters -- probe-chain overflow and hi-water. */
-	struct kcov_dedup {
-		/* Total number of dedup_inc() calls that walked the full probe chain
-		 * without finding either an empty slot or the matching edge.  When
-		 * this happens, the call's bucket fidelity collapses to old any-hit
-		 * semantics (count forced to 1).  Non-zero suggests KCOV_DEDUP_SIZE
-		 * may need to grow. */
-		unsigned long dedup_probe_overflow;
-		/* Largest probe distance observed by dedup_inc() so far.  Monotonic
-		 * across the run; useful for sizing KCOV_DEDUP_SIZE relative to the
-		 * fattest single-call edge load actually seen. */
-		unsigned long dedup_max_probe_seen;
-	} dedup;
+	struct kcov_dedup dedup;
 	/* Flat CMP-hint pipeline funnel: bloom/strip skips, unique inserts,
 	 * try_get injections, propagation-ring injections (flat + per-
 	 * callsite), and chaos-mode gate state.  Everything the operator
