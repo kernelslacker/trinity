@@ -43,6 +43,7 @@
 #include "kcov-groups/field_consumer_prove.h"
 #include "kcov-groups/hint_tier.h"
 #include "kcov-groups/hyp_flat.h"
+#include "kcov-groups/reexec_step.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -1041,10 +1042,7 @@ struct kcov_shared {
 	 *      Pending slot is zero or past entry->num_args -- attribution
 	 *      staged a slot that the resolved entry's arg count cannot
 	 *      accommodate (stale pending vs current entry resolution). */
-	struct kcov_reexec_step {
-	unsigned long reexec_step_skip_entry_null;
-	unsigned long reexec_step_skip_bad_slot;
-	} reexec_step;
+	struct kcov_reexec_step reexec_step;
 
 	/* Per-kind flat census of typed CMP hypothesis insertions.
 	 * Bumped in lock-step with the scalar cmp_hyp_inserted above
