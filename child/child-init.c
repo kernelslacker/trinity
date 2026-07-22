@@ -1066,8 +1066,13 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 	 * Bare syscall(__NR_capset, ...) on purpose — trinity_raw_syscall()
 	 * honours -x exclusions, which must not skip a security op.
 	 * Ambient is already empty (file caps never populate it).
-	 * Best-effort: ignore the return; if no file cap was applied the
-	 * child has no caps anyway and this is a harmless no-op.
+	 *
+	 * Enforcement is asymmetric: the root path is the only one that
+	 * can actually enter the fuzz loop still holding CAP_SYS_ADMIN
+	 * (or more) if the drop is silently skipped, so a failure there
+	 * is fatal -- the isolation invariant above must not be broken.
+	 * On the non-root path a failure is a genuine no-op (the child
+	 * was never privileged); log it and continue.
 	 */
 	{
 		struct __user_cap_header_struct hdr = {
@@ -1075,7 +1080,18 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 			.pid = 0,
 		};
 		struct __user_cap_data_struct data[2] = { {0}, {0} };
-		(void) syscall(__NR_capset, &hdr, data);
+
+		if (syscall(__NR_capset, &hdr, data) != 0) {
+			int saved_errno = errno;
+
+			if (orig_uid == 0) {
+				outputerr("child: capset(empty) failed on root path: %s\n",
+					  strerror(saved_errno));
+				_exit(EXIT_FAILURE);
+			}
+			outputerr("child: capset(empty) failed (non-root, continuing): %s\n",
+				  strerror(saved_errno));
+		}
 	}
 
 	/*
