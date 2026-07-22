@@ -490,11 +490,16 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 	 * Stamp the per-pool monotonic identity tag.  Pre-increment so
 	 * the first issued value is 1; the zero left by release_obj()'s
 	 * memset on a freed obj is reserved as a never-issued sentinel.
+	 * On the ~4-billion-add counter wrap the pre-increment lands on
+	 * 0; step past to 1 so the sentinel stays unissuable and a live
+	 * obj is never stamped with the value that marks a freed slot.
 	 * Stamped after the slot-array insert and the array_idx assign
 	 * so any consumer that re-reads obj fields off head->array sees
 	 * a fully populated obj as soon as num_entries below admits it.
 	 */
-	obj->slot_version = ++head->next_slot_version;
+	if (++head->next_slot_version == 0)
+		head->next_slot_version = 1;
+	obj->slot_version = head->next_slot_version;
 	/*
 	 * Stamp the publish-time fleet op tick from the child-readable
 	 * mirror page.  parent_stats.op_count is MAP_PRIVATE heap so
