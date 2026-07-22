@@ -85,7 +85,7 @@ static void json_emit_kcov_counters(void)
 			__ATOMIC_RELAXED);
 	for (i = 0; i < CMP_HYP_KIND_NR; i++) {
 		kc_cmp_hyp_pc_wins_by_kind[i] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_pc_wins_by_kind[i],
+			&kcov_shm->cmp_hyp_results.cmp_hyp_pc_wins_by_kind[i],
 			__ATOMIC_RELAXED);
 		kc_cmp_hyp_live_injected_by_kind[i] = __atomic_load_n(
 			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected_by_kind[i],

@@ -292,7 +292,7 @@ void kcov_cmp_render_hyp_shadow_picker_census(void)
 
 	for (s = 0; s < CMP_HYP_STATE_NR; s++) {
 		unsigned long cur = __atomic_load_n(
-			&kcov_shm->cmp_hyp_picked_by_state[s],
+			&kcov_shm->cmp_hyp_results.cmp_hyp_picked_by_state[s],
 			__ATOMIC_RELAXED);
 		unsigned long delta = sat_sub_ul(cur, prev_picked[s]);
 
@@ -305,7 +305,7 @@ void kcov_cmp_render_hyp_shadow_picker_census(void)
 	}
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		unsigned long cur = __atomic_load_n(
-			&kcov_shm->cmp_hyp_skipped_retired_by_kind[k],
+			&kcov_shm->cmp_hyp_results.cmp_hyp_skipped_retired_by_kind[k],
 			__ATOMIC_RELAXED);
 		unsigned long delta = sat_sub_ul(cur, prev_skipped_retired_kind[k]);
 
@@ -318,7 +318,7 @@ void kcov_cmp_render_hyp_shadow_picker_census(void)
 	}
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		unsigned long cur = __atomic_load_n(
-			&kcov_shm->cmp_hyp_demoted_reroll_picked_by_kind[k],
+			&kcov_shm->cmp_hyp_results.cmp_hyp_demoted_reroll_picked_by_kind[k],
 			__ATOMIC_RELAXED);
 		unsigned long delta = sat_sub_ul(cur, prev_demoted_reroll_kind[k]);
 
@@ -355,7 +355,7 @@ void kcov_cmp_render_hyp_shadow_state_transitions(void)
 			if (from == to)
 				continue;
 			cur = __atomic_load_n(
-				&kcov_shm->cmp_hyp_state_transitions[from][to],
+				&kcov_shm->cmp_hyp_results.cmp_hyp_state_transitions[from][to],
 				__ATOMIC_RELAXED);
 			delta = sat_sub_ul(cur, prev_trans[from][to]);
 			prev_trans[from][to] = cur;
@@ -393,19 +393,19 @@ void kcov_cmp_render_hyp_shadow_outcome_partition(void)
 
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		unsigned long pc = __atomic_load_n(
-			&kcov_shm->cmp_hyp_pc_wins_by_kind[k], __ATOMIC_RELAXED);
+			&kcov_shm->cmp_hyp_results.cmp_hyp_pc_wins_by_kind[k], __ATOMIC_RELAXED);
 		unsigned long tr = __atomic_load_n(
-			&kcov_shm->cmp_hyp_transition_wins_by_kind[k], __ATOMIC_RELAXED);
+			&kcov_shm->cmp_hyp_results.cmp_hyp_transition_wins_by_kind[k], __ATOMIC_RELAXED);
 		unsigned long ms = __atomic_load_n(
-			&kcov_shm->cmp_hyp_misses_by_kind[k], __ATOMIC_RELAXED);
+			&kcov_shm->cmp_hyp_results.cmp_hyp_misses_by_kind[k], __ATOMIC_RELAXED);
 		unsigned long cs = __atomic_load_n(
-			&kcov_shm->cmp_hyp_corpus_save_by_kind[k], __ATOMIC_RELAXED);
+			&kcov_shm->cmp_hyp_results.cmp_hyp_corpus_save_by_kind[k], __ATOMIC_RELAXED);
 		unsigned long ds = __atomic_load_n(
-			&kcov_shm->cmp_hyp_destructive_by_kind[k], __ATOMIC_RELAXED);
+			&kcov_shm->cmp_hyp_results.cmp_hyp_destructive_by_kind[k], __ATOMIC_RELAXED);
 		unsigned long ks = __atomic_load_n(
-			&kcov_shm->cmp_hyp_context_skip_by_kind[k], __ATOMIC_RELAXED);
+			&kcov_shm->cmp_hyp_results.cmp_hyp_context_skip_by_kind[k], __ATOMIC_RELAXED);
 		unsigned long nv = __atomic_load_n(
-			&kcov_shm->cmp_hyp_cmp_novelty_wins_by_kind[k], __ATOMIC_RELAXED);
+			&kcov_shm->cmp_hyp_results.cmp_hyp_cmp_novelty_wins_by_kind[k], __ATOMIC_RELAXED);
 
 		stats_log_write(
 			"  cmp_hyp[%-13s] outcome  pc +%lu  tr +%lu  ms +%lu  cs +%lu  ds +%lu  ks +%lu  nv +%lu\n",
@@ -446,7 +446,7 @@ void kcov_cmp_render_hyp_shadow_stats_block(long elapsed)
 	unsigned long cur_hyp_pool_full =
 		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_pool_full, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_pool_overflow =
-		__atomic_load_n(&kcov_shm->cmp_hyp_pool_overflow, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->cmp_hyp_results.cmp_hyp_pool_overflow, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_kind_full =
 		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_kind_full, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_consumed =
@@ -653,10 +653,10 @@ void kcov_cmp_render_hyp_would_promote_demote_block(long elapsed __unused__)
 
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		cur_hyp_would_promote_kind[k] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_would_promote_by_kind[k],
+			&kcov_shm->cmp_hyp_results.cmp_hyp_would_promote_by_kind[k],
 			__ATOMIC_RELAXED);
 		cur_hyp_would_demote_kind[k] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_would_demote_by_kind[k],
+			&kcov_shm->cmp_hyp_results.cmp_hyp_would_demote_by_kind[k],
 			__ATOMIC_RELAXED);
 		any_delta |=
 			sat_sub_ul(cur_hyp_would_promote_kind[k], prev_hyp_would_promote_kind[k]) |
@@ -863,12 +863,12 @@ void kcov_cmp_render_hyp_boundary_scorecard_block(long elapsed __unused__)
 	static unsigned long prev_b_live_injected;
 	static unsigned long prev_b_consumed;
 	unsigned long cur_b_inserted = __atomic_load_n(
-		&kcov_shm->cmp_hyp_boundary_inserted, __ATOMIC_RELAXED);
+		&kcov_shm->cmp_hyp_results.cmp_hyp_boundary_inserted, __ATOMIC_RELAXED);
 	unsigned long cur_b_candidate_available = __atomic_load_n(
-		&kcov_shm->cmp_hyp_boundary_candidate_available,
+		&kcov_shm->cmp_hyp_results.cmp_hyp_boundary_candidate_available,
 		__ATOMIC_RELAXED);
 	unsigned long cur_b_credit_window_hits = __atomic_load_n(
-		&kcov_shm->cmp_hyp_boundary_credit_window_hits,
+		&kcov_shm->cmp_hyp_results.cmp_hyp_boundary_credit_window_hits,
 		__ATOMIC_RELAXED);
 	unsigned long cur_b_would_pick = __atomic_load_n(
 		&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_pick_by_kind[CMP_HYP_BOUNDARY],
@@ -1037,7 +1037,7 @@ void kcov_cmp_render_hyp_score_bucket_block(long elapsed __unused__)
 
 	for (k = 0; k < 8; k++) {
 		cur_hyp_score_bucket[k] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_score_bucket_census[k],
+			&kcov_shm->cmp_hyp_results.cmp_hyp_score_bucket_census[k],
 			__ATOMIC_RELAXED);
 		any_delta |= sat_sub_ul(cur_hyp_score_bucket[k], prev_hyp_score_bucket[k]);
 	}
@@ -1097,7 +1097,7 @@ void kcov_cmp_render_hyp_probe_class_hist_block(long elapsed __unused__)
 
 	for (k = 0; k < CMP_HYP_PROBE_CLASS_NR; k++) {
 		cur_hyp_probe_class[k] = __atomic_load_n(
-			&kcov_shm->cmp_hyp_probe_class_hist[k],
+			&kcov_shm->cmp_hyp_results.cmp_hyp_probe_class_hist[k],
 			__ATOMIC_RELAXED);
 		if (cur_hyp_probe_class[k] >= prev_hyp_probe_class[k])
 			any_delta |= cur_hyp_probe_class[k] -
