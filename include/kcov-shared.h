@@ -30,6 +30,7 @@
 #include "kcov-groups/transitions.h"
 #include "kcov-groups/cmp_hint_ps.h"
 #include "kcov-groups/hint_callsite.h"
+#include "kcov-groups/hint_flat.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -369,14 +370,7 @@ struct kcov_shared {
 	 *      outcome is unambiguous); only the per-entry score is lost
 	 *      to the eviction.  Diagnostic gate on pool churn vs the
 	 *      consume-to-credit gap. */
-	struct kcov_hint_flat {
-	unsigned long cmp_hints_consumed;
-	unsigned long cmp_hint_wins;
-	unsigned long cmp_hint_misses;
-	unsigned long cmp_hint_cmp_novelty_wins;
-	unsigned long cmp_hint_stash_overflow;
-	unsigned long cmp_hint_credit_entry_evicted;
-	} hint_flat;
+	struct kcov_hint_flat hint_flat;
 
 	/* RedQueen re-exec observability counters, sibling of the flat
 	 * reexec_* family above.  Same callsite/attribution funnel, but
