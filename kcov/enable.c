@@ -505,25 +505,25 @@ bool kcov_cmp_bracket_begin(struct kcov_child *kc)
 		 * deref.  Mirrors the PC-bracket gate. */
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->childop_cmp_brackets_skipped_inactive,
+				&kcov_shm->childop_cmp.childop_cmp_brackets_skipped_inactive,
 				1, __ATOMIC_RELAXED);
 		return false;
 	}
 	if (kc->mode != KCOV_MODE_CMP) {
 		__atomic_fetch_add(
-			&kcov_shm->childop_cmp_brackets_skipped_pc_mode,
+			&kcov_shm->childop_cmp.childop_cmp_brackets_skipped_pc_mode,
 			1, __ATOMIC_RELAXED);
 		return false;
 	}
 	if (!kc->cmp_capable || kc->cmp_trace_buf == NULL) {
 		__atomic_fetch_add(
-			&kcov_shm->childop_cmp_brackets_skipped_incapable,
+			&kcov_shm->childop_cmp.childop_cmp_brackets_skipped_incapable,
 			1, __ATOMIC_RELAXED);
 		return false;
 	}
 	if (kc->bracket_owned) {
 		__atomic_fetch_add(
-			&kcov_shm->childop_cmp_brackets_skipped_nested,
+			&kcov_shm->childop_cmp.childop_cmp_brackets_skipped_nested,
 			1, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -535,7 +535,7 @@ bool kcov_cmp_bracket_begin(struct kcov_child *kc)
 		 * arm so the attempts == opened + sum(skipped) invariant
 		 * holds. */
 		__atomic_fetch_add(
-			&kcov_shm->childop_cmp_brackets_skipped_incapable,
+			&kcov_shm->childop_cmp.childop_cmp_brackets_skipped_incapable,
 			1, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -543,7 +543,7 @@ bool kcov_cmp_bracket_begin(struct kcov_child *kc)
 	kc->bracket_owned = true;
 	childop_cmp_bracket_records_this = 0;
 	childop_cmp_bracket_inserts_this = 0;
-	__atomic_fetch_add(&kcov_shm->childop_cmp_brackets_opened, 1,
+	__atomic_fetch_add(&kcov_shm->childop_cmp.childop_cmp_brackets_opened, 1,
 			   __ATOMIC_RELAXED);
 	return true;
 }
@@ -597,16 +597,16 @@ void childop_cmp_collect(struct kcov_child *kc, unsigned int nr)
 		truncated = 1;
 	}
 
-	__atomic_fetch_add(&kcov_shm->childop_cmp_syscalls_sampled[nr], 1UL,
+	__atomic_fetch_add(&kcov_shm->childop_cmp.childop_cmp_syscalls_sampled[nr], 1UL,
 			   __ATOMIC_RELAXED);
 	if (truncated)
-		__atomic_fetch_add(&kcov_shm->childop_cmp_trace_truncated[nr],
+		__atomic_fetch_add(&kcov_shm->childop_cmp.childop_cmp_trace_truncated[nr],
 				   1UL, __ATOMIC_RELAXED);
 
 	if (count == 0)
 		return;
 
-	__atomic_fetch_add(&kcov_shm->childop_cmp_records_collected[nr],
+	__atomic_fetch_add(&kcov_shm->childop_cmp.childop_cmp_records_collected[nr],
 			   count, __ATOMIC_RELAXED);
 
 	for (i = 0; i < count; i++) {
@@ -620,7 +620,7 @@ void childop_cmp_collect(struct kcov_child *kc, unsigned int nr)
 		if (childop_cmp_bracket_records_this >=
 		    CHILDOP_CMP_BRACKET_RECORDS_CAP) {
 			__atomic_fetch_add(
-				&kcov_shm->childop_cmp_record_cap_hits, 1UL,
+				&kcov_shm->childop_cmp.childop_cmp_record_cap_hits, 1UL,
 				__ATOMIC_RELAXED);
 			break;
 		}
@@ -656,7 +656,7 @@ void childop_cmp_collect(struct kcov_child *kc, unsigned int nr)
 		if (childop_cmp_bracket_inserts_this >=
 		    CHILDOP_CMP_BRACKET_INSERTS_CAP) {
 			__atomic_fetch_add(
-				&kcov_shm->childop_cmp_insert_cap_hits, 1UL,
+				&kcov_shm->childop_cmp.childop_cmp_insert_cap_hits, 1UL,
 				__ATOMIC_RELAXED);
 			break;
 		}
@@ -675,7 +675,7 @@ void childop_cmp_collect(struct kcov_child *kc, unsigned int nr)
 
 			if (op < KCOV_CHILDOP_NR_MAX)
 				__atomic_fetch_add(
-				    &kcov_shm->childop_cmp_syscalls_sampled_per_op[op],
+				    &kcov_shm->childop_cmp.childop_cmp_syscalls_sampled_per_op[op],
 				    1UL, __ATOMIC_RELAXED);
 		}
 	}

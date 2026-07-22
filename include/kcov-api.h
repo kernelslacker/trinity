@@ -108,7 +108,7 @@ void childop_cmp_collect(struct kcov_child *kc, unsigned int nr);
 
 /* Per-bracket record + insert caps for the §3.2 anti-domination
  * defence.  Records exceeding the cap on a single bracket are
- * counted (kcov_shm->childop_cmp_record_cap_hits) and dropped from
+ * counted (kcov_shm->childop_cmp.childop_cmp_record_cap_hits) and dropped from
  * harvest; insert-cap hits bump the matching insert counter.  Sized
  * generously vs typical childop fan-out (10..100 syscalls per
  * dispatch) so a normal childop never hits the caps; the caps catch

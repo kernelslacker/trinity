@@ -1075,7 +1075,7 @@ static unsigned long cmp_frontier_weight(unsigned int nr)
 	cmp_inserts = __atomic_load_n(&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr],
 				      __ATOMIC_RELAXED);
 	childop_inserts = __atomic_load_n(
-			&kcov_shm->childop_cmp_pool_inserts[nr],
+			&kcov_shm->childop_cmp.childop_cmp_pool_inserts[nr],
 			__ATOMIC_RELAXED);
 
 	/*
