@@ -62,13 +62,13 @@ void kcov_cmp_render_childop_cmp_consume_shadow_block(long elapsed __unused__)
 
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
 		cur_would_pick += __atomic_load_n(
-			&kcov_shm->childop_cmp_consume_would_pick[i],
+			&kcov_shm->childop_cmp_consume.childop_cmp_consume_would_pick[i],
 			__ATOMIC_RELAXED);
 		cur_would_miss += __atomic_load_n(
-			&kcov_shm->childop_cmp_consume_would_miss[i],
+			&kcov_shm->childop_cmp_consume.childop_cmp_consume_would_miss[i],
 			__ATOMIC_RELAXED);
 		cur_would_value_differs += __atomic_load_n(
-			&kcov_shm->childop_cmp_consume_would_value_differs[i],
+			&kcov_shm->childop_cmp_consume.childop_cmp_consume_would_value_differs[i],
 			__ATOMIC_RELAXED);
 	}
 

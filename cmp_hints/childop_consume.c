@@ -56,15 +56,15 @@ unsigned long childop_cmp_value(unsigned int nr, enum cmp_hint_use use,
 
 	if (got) {
 		__atomic_fetch_add(
-			&kcov_shm->childop_cmp_consume_would_pick[nr], 1UL,
+			&kcov_shm->childop_cmp_consume.childop_cmp_consume_would_pick[nr], 1UL,
 			__ATOMIC_RELAXED);
 		if (resolved != fallback)
 			__atomic_fetch_add(
-			    &kcov_shm->childop_cmp_consume_would_value_differs[nr],
+			    &kcov_shm->childop_cmp_consume.childop_cmp_consume_would_value_differs[nr],
 			    1UL, __ATOMIC_RELAXED);
 	} else {
 		__atomic_fetch_add(
-			&kcov_shm->childop_cmp_consume_would_miss[nr], 1UL,
+			&kcov_shm->childop_cmp_consume.childop_cmp_consume_would_miss[nr], 1UL,
 			__ATOMIC_RELAXED);
 	}
 
