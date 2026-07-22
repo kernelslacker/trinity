@@ -104,7 +104,7 @@ void kcov_cmp_observability_block_render(long elapsed __unused__)
 
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
 		unsigned long cur_inserts = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
+			&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
 		unsigned long cur_injected = __atomic_load_n(
 			&kcov_shm->per_syscall_cmp_injected[i], __ATOMIC_RELAXED);
 		unsigned long cur_pc_wins = __atomic_load_n(

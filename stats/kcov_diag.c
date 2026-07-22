@@ -198,7 +198,7 @@ void kcov_diag_emit_block(const char *counter_name,
 
 		for (i = 0; i < nr_per_arch[arch]; i++) {
 			uint64_t value = kcov_diag_load(
-				&kcov_shm->per_syscall_diag[i][do32 ? 1 : 0],
+				&kcov_shm->per_syscall_cmp.per_syscall_diag[i][do32 ? 1 : 0],
 				counter);
 
 			if (value == 0)
@@ -298,7 +298,7 @@ void kcov_diag_emit_truncation_topn(void)
 
 		for (i = 0; i < nr_per_arch[arch]; i++) {
 			const struct kcov_per_syscall_diag *d =
-				&kcov_shm->per_syscall_diag[i][do32 ? 1 : 0];
+				&kcov_shm->per_syscall_cmp.per_syscall_diag[i][do32 ? 1 : 0];
 			uint64_t tt = __atomic_load_n(&d->trace_truncated,
 						      __ATOMIC_RELAXED);
 			uint64_t ct = __atomic_load_n(&d->cmp_trace_truncated,

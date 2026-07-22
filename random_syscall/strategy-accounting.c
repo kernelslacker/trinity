@@ -776,9 +776,9 @@ void account_warm_reserve(struct childdata *child,
 		unsigned long calls = per_syscall_calls_total(rec->nr);
 		if (calls >= DEEP_WARM_PCS_MIN_CALLS) {
 			unsigned long distinct_sum =
-				__atomic_load_n(&kcov_shm->per_syscall_diag[rec->nr][0].distinct_pcs,
+				__atomic_load_n(&kcov_shm->per_syscall_cmp.per_syscall_diag[rec->nr][0].distinct_pcs,
 					__ATOMIC_RELAXED) +
-				__atomic_load_n(&kcov_shm->per_syscall_diag[rec->nr][1].distinct_pcs,
+				__atomic_load_n(&kcov_shm->per_syscall_cmp.per_syscall_diag[rec->nr][1].distinct_pcs,
 					__ATOMIC_RELAXED);
 			/* pcres.local_distinct_pcs * calls is the
 			 * per-call value scaled by the denominator

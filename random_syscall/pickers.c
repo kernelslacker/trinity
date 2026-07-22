@@ -834,16 +834,16 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 				    __ATOMIC_RELAXED);
 
 	bucket_bits = __atomic_load_n(
-			&kcov_shm->per_syscall_diag[nr][0].bucket_bits_real,
+			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][0].bucket_bits_real,
 			__ATOMIC_RELAXED) +
 		      __atomic_load_n(
-			&kcov_shm->per_syscall_diag[nr][1].bucket_bits_real,
+			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][1].bucket_bits_real,
 			__ATOMIC_RELAXED);
 	distinct_pcs = __atomic_load_n(
-			&kcov_shm->per_syscall_diag[nr][0].distinct_pcs,
+			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][0].distinct_pcs,
 			__ATOMIC_RELAXED) +
 		       __atomic_load_n(
-			&kcov_shm->per_syscall_diag[nr][1].distinct_pcs,
+			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][1].distinct_pcs,
 			__ATOMIC_RELAXED);
 	transition_edges_real_local =
 		(trew_mode == KCOV_TRANSITION_REWARD_OFF) ? 0UL :
@@ -1072,7 +1072,7 @@ static unsigned long cmp_frontier_weight(unsigned int nr)
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return 0;
 
-	cmp_inserts = __atomic_load_n(&kcov_shm->per_syscall_cmp_inserts[nr],
+	cmp_inserts = __atomic_load_n(&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr],
 				      __ATOMIC_RELAXED);
 	childop_inserts = __atomic_load_n(
 			&kcov_shm->childop_cmp_pool_inserts[nr],
@@ -1474,7 +1474,7 @@ retry:
 				unsigned long errno_now, errno_base;
 
 				cmp_now = __atomic_load_n(
-					&kcov_shm->per_syscall_cmp_inserts[syscallnr],
+					&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[syscallnr],
 					__ATOMIC_RELAXED);
 				cmp_base = __atomic_load_n(
 					&shm->stats.frontier.per_syscall.silent_cmp_baseline[syscallnr],

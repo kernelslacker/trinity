@@ -239,7 +239,7 @@ void frontier_record_new_edge(unsigned int nr)
 		unsigned long cmp_snap, errno_snap;
 
 		cmp_snap = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp_inserts[nr],
+			&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr],
 			__ATOMIC_RELAXED);
 		errno_snap = __atomic_load_n(
 			&kcov_shm->errno_state.per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
@@ -342,7 +342,7 @@ void frontier_record_transition_edge(unsigned int nr)
 		unsigned long cmp_snap, errno_snap;
 
 		cmp_snap = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp_inserts[nr],
+			&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr],
 			__ATOMIC_RELAXED);
 		errno_snap = __atomic_load_n(
 			&kcov_shm->errno_state.per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
@@ -434,7 +434,7 @@ bool frontier_errno_plateau_should_decay(unsigned int nr, bool do32)
 	 * syscall producing CMP signal without PC-edge progress is still
 	 * earning post-plateau coverage of a different shape, so don't
 	 * decay it.  Monotonic non-decreasing same as the edges counter. */
-	cmp_inserts = __atomic_load_n(&kcov_shm->per_syscall_cmp_inserts[nr],
+	cmp_inserts = __atomic_load_n(&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr],
 				      __ATOMIC_RELAXED);
 	if (cmp_inserts > 0)
 		return false;
@@ -805,7 +805,7 @@ frontier_spare_lane_decide(unsigned int syscallnr, bool do32)
 		return FRONTIER_SPARE_WINDOWED_EDGES;
 
 	cmp_now = __atomic_load_n(
-		&kcov_shm->per_syscall_cmp_inserts[syscallnr],
+		&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[syscallnr],
 		__ATOMIC_RELAXED);
 	cmp_base = __atomic_load_n(
 		&shm->stats.frontier.per_syscall.silent_cmp_baseline[syscallnr],
