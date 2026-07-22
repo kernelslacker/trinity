@@ -33,6 +33,7 @@
 #include "kcov-groups/hint_flat.h"
 #include "kcov-groups/reexec_pending_hist.h"
 #include "kcov-groups/cmp_parent.h"
+#include "kcov-groups/hint_reject.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -517,13 +518,7 @@ struct kcov_shared {
 	 *
 	 * Append-only at the tail of the struct so existing offsets
 	 * (and any consumer that has memorised them) stay stable. */
-	struct kcov_hint_reject {
-	unsigned long cmp_hints_save_reject_nonconst;
-	unsigned long cmp_hints_save_reject_uninteresting;
-	unsigned long cmp_hints_save_reject_sentinel;
-	unsigned long cmp_hints_save_reject_dup;
-	unsigned long cmp_hints_save_reject_cap;
-	} hint_reject;
+	struct kcov_hint_reject hint_reject;
 
 	/* Measurement-correctness counters for the RedQueen attribution +
 	 * re-exec funnel.  Counter-only -- nothing in the picker, gates, or
