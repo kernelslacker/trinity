@@ -1338,10 +1338,13 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 	case NLA_KIND_FLAG:	return 0;
 	case NLA_KIND_STRING:
 	case NLA_KIND_STRING_CPULIST:
-	case NLA_KIND_BINARY:
-		if (spec->max_len > 4)
-			return RAND_RANGE(4, spec->max_len);
+	case NLA_KIND_BINARY: {
+		unsigned int lo = spec->min_len > 4 ? spec->min_len : 4;
+
+		if (spec->max_len > lo)
+			return RAND_RANGE(lo, spec->max_len);
 		return spec->max_len;
+	}
 	case NLA_KIND_BINARY_FIXED2:
 		return ONE_IN(2) ? spec->min_len : spec->max_len;
 	case NLA_KIND_NESTED:
