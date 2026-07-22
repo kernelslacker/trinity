@@ -711,6 +711,7 @@ struct kcov_shared {
 	 * the in-tree _Static_assert on NR_CHILD_OP_TYPES pinning the
 	 * tail).  RELAXED atomics throughout.
 	 */
+	struct kcov_covjump {
 	unsigned long covjump_window_start_call_nr;
 	unsigned long covjump_window_start_distinct_edges;
 	unsigned long covjump_snap_saves_pc;
@@ -720,6 +721,7 @@ struct kcov_shared {
 	unsigned long covjump_snap_childop_invocations[KCOV_CHILDOP_NR_MAX];
 	unsigned long covjump_last_emit_call_nr;
 	bool covjump_window_armed;
+	} covjump;
 
 	/* Greedy CMP RedQueen re-exec stats.  A CMP-mode child records
 	 * attributable (cmp_ip, arg_slot, value) tuples from the parent

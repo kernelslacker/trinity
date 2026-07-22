@@ -85,26 +85,26 @@ static void covjump_seed_snapshot(unsigned long call_nr, unsigned long edges_now
 {
 	unsigned int op;
 
-	__atomic_store_n(&kcov_shm->covjump_window_start_call_nr, call_nr,
+	__atomic_store_n(&kcov_shm->covjump.covjump_window_start_call_nr, call_nr,
 			 __ATOMIC_RELAXED);
-	__atomic_store_n(&kcov_shm->covjump_window_start_distinct_edges,
+	__atomic_store_n(&kcov_shm->covjump.covjump_window_start_distinct_edges,
 			 edges_now, __ATOMIC_RELAXED);
 	if (minicorpus_shm != NULL) {
-		__atomic_store_n(&kcov_shm->covjump_snap_saves_pc,
+		__atomic_store_n(&kcov_shm->covjump.covjump_snap_saves_pc,
 			__atomic_load_n(&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_PC],
 					__ATOMIC_RELAXED),
 			__ATOMIC_RELAXED);
-		__atomic_store_n(&kcov_shm->covjump_snap_saves_cmp,
+		__atomic_store_n(&kcov_shm->covjump.covjump_snap_saves_cmp,
 			__atomic_load_n(&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_CMP],
 					__ATOMIC_RELAXED),
 			__ATOMIC_RELAXED);
 	}
 	if (chain_corpus_shm != NULL) {
-		__atomic_store_n(&kcov_shm->covjump_snap_chain_saves,
+		__atomic_store_n(&kcov_shm->covjump.covjump_snap_chain_saves,
 			__atomic_load_n(&chain_corpus_shm->save_count,
 					__ATOMIC_RELAXED),
 			__ATOMIC_RELAXED);
-		__atomic_store_n(&kcov_shm->covjump_snap_chain_replays,
+		__atomic_store_n(&kcov_shm->covjump.covjump_snap_chain_replays,
 			__atomic_load_n(&chain_corpus_shm->replay_count,
 					__ATOMIC_RELAXED),
 			__ATOMIC_RELAXED);
@@ -115,7 +115,7 @@ static void covjump_seed_snapshot(unsigned long call_nr, unsigned long edges_now
 		if (op < (unsigned int)NR_CHILD_OP_TYPES)
 			v = __atomic_load_n(&shm->stats.childop.invocations[op],
 					    __ATOMIC_RELAXED);
-		__atomic_store_n(&kcov_shm->covjump_snap_childop_invocations[op],
+		__atomic_store_n(&kcov_shm->covjump.covjump_snap_childop_invocations[op],
 				 v, __ATOMIC_RELAXED);
 	}
 }
@@ -149,20 +149,20 @@ void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 	 * fields are seeded so a peer that observes covjump_window_armed
 	 * via the ACQUIRE pair below also sees the freshly seeded
 	 * snapshot. */
-	if (!__atomic_load_n(&kcov_shm->covjump_window_armed,
+	if (!__atomic_load_n(&kcov_shm->covjump.covjump_window_armed,
 			     __ATOMIC_ACQUIRE)) {
 		bool expected = false;
 
 		edges_now = __atomic_load_n(&kcov_shm->coverage.distinct_edges,
 					    __ATOMIC_RELAXED);
 		covjump_seed_snapshot(call_nr, edges_now);
-		__atomic_compare_exchange_n(&kcov_shm->covjump_window_armed,
+		__atomic_compare_exchange_n(&kcov_shm->covjump.covjump_window_armed,
 			&expected, true, false,
 			__ATOMIC_RELEASE, __ATOMIC_RELAXED);
 		return;
 	}
 
-	expected_start = __atomic_load_n(&kcov_shm->covjump_window_start_call_nr,
+	expected_start = __atomic_load_n(&kcov_shm->covjump.covjump_window_start_call_nr,
 					 __ATOMIC_RELAXED);
 	if (call_nr <= expected_start)
 		return;
@@ -172,30 +172,30 @@ void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 
 	/* CAS-elect a single window-advance winner.  Losers see the new
 	 * start on a later call and re-evaluate. */
-	if (!__atomic_compare_exchange_n(&kcov_shm->covjump_window_start_call_nr,
+	if (!__atomic_compare_exchange_n(&kcov_shm->covjump.covjump_window_start_call_nr,
 		&expected_start, call_nr, false,
 		__ATOMIC_RELAXED, __ATOMIC_RELAXED))
 		return;
 
 	sample_calls = call_nr - expected_start;
 	edges_now = __atomic_load_n(&kcov_shm->coverage.distinct_edges, __ATOMIC_RELAXED);
-	edges_prev = __atomic_load_n(&kcov_shm->covjump_window_start_distinct_edges,
+	edges_prev = __atomic_load_n(&kcov_shm->covjump.covjump_window_start_distinct_edges,
 				     __ATOMIC_RELAXED);
 	delta = sat_sub_ul(edges_now, edges_prev);
 
 	/* Refresh the edge snapshot every window even when the delta is
 	 * sub-threshold so the NEXT window measures a contiguous interval. */
-	__atomic_store_n(&kcov_shm->covjump_window_start_distinct_edges,
+	__atomic_store_n(&kcov_shm->covjump.covjump_window_start_distinct_edges,
 			 edges_now, __ATOMIC_RELAXED);
 
 	if (delta < KCOV_COVJUMP_DELTA_THRESHOLD)
 		goto refresh_snapshot;
 
-	last_emit = __atomic_load_n(&kcov_shm->covjump_last_emit_call_nr,
+	last_emit = __atomic_load_n(&kcov_shm->covjump.covjump_last_emit_call_nr,
 				    __ATOMIC_RELAXED);
 	if (last_emit != 0 && call_nr - last_emit < KCOV_COVJUMP_RATE_CAP_CALLS)
 		goto refresh_snapshot;
-	__atomic_store_n(&kcov_shm->covjump_last_emit_call_nr, call_nr,
+	__atomic_store_n(&kcov_shm->covjump.covjump_last_emit_call_nr, call_nr,
 			 __ATOMIC_RELAXED);
 
 	/* Snapshot live + saved counters for the line. */
@@ -211,13 +211,13 @@ void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 		chain_replays_now = __atomic_load_n(&chain_corpus_shm->replay_count,
 						    __ATOMIC_RELAXED);
 	}
-	saves_pc_snap = __atomic_load_n(&kcov_shm->covjump_snap_saves_pc,
+	saves_pc_snap = __atomic_load_n(&kcov_shm->covjump.covjump_snap_saves_pc,
 					__ATOMIC_RELAXED);
-	saves_cmp_snap = __atomic_load_n(&kcov_shm->covjump_snap_saves_cmp,
+	saves_cmp_snap = __atomic_load_n(&kcov_shm->covjump.covjump_snap_saves_cmp,
 					 __ATOMIC_RELAXED);
-	chain_saves_snap = __atomic_load_n(&kcov_shm->covjump_snap_chain_saves,
+	chain_saves_snap = __atomic_load_n(&kcov_shm->covjump.covjump_snap_chain_saves,
 					   __ATOMIC_RELAXED);
-	chain_replays_snap = __atomic_load_n(&kcov_shm->covjump_snap_chain_replays,
+	chain_replays_snap = __atomic_load_n(&kcov_shm->covjump.covjump_snap_chain_replays,
 					     __ATOMIC_RELAXED);
 	for (op = 0; op < KCOV_CHILDOP_NR_MAX; op++) {
 		now_childop[op] = 0;
@@ -226,7 +226,7 @@ void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 				&shm->stats.childop.invocations[op],
 				__ATOMIC_RELAXED);
 		snap_childop[op] = __atomic_load_n(
-			&kcov_shm->covjump_snap_childop_invocations[op],
+			&kcov_shm->covjump.covjump_snap_childop_invocations[op],
 			__ATOMIC_RELAXED);
 	}
 
