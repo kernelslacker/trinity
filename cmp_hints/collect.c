@@ -845,7 +845,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 								 sizeof(*ts))) {
 						if (kcov_shm != NULL)
 							__atomic_fetch_add(
-								&kcov_shm->cmp_field_timespec_skipped_bad_ptr,
+								&kcov_shm->cmp_field_attr.cmp_field_timespec_skipped_bad_ptr,
 								1UL, __ATOMIC_RELAXED);
 						continue;
 					}
@@ -872,7 +872,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 								      &kind)) {
 						if (kcov_shm != NULL)
 							__atomic_fetch_add(
-								&kcov_shm->cmp_field_timespec_skipped_bad_ptr,
+								&kcov_shm->cmp_field_attr.cmp_field_timespec_skipped_bad_ptr,
 								1UL, __ATOMIC_RELAXED);
 						continue;
 					}
