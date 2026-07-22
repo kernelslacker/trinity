@@ -739,30 +739,36 @@ static void init_child_isolate_io(void)
 	 * is the operator's pty) lands on their shell.  Open O_RDWR so
 	 * fuzzed reads against fd 0 also succeed (with EOF) instead of
 	 * EBADF'ing — keeps the syscall behaviour realistic. */
+	/* If /dev/null can't be opened (absent, inaccessible, EMFILE,
+	 * chroot without /dev bind-mounted) fd 0/1/2 would remain pointed
+	 * at the operator tty / inherited log fd -- exactly the hazard
+	 * this redirect exists to prevent -- so bail hard rather than
+	 * proceed to fuzzing with poisoned stdio. */
 	devnull = open("/dev/null", O_RDWR);
-	if (devnull >= 0) {
-		/* On dup2 failure the std fd would remain pointing at the
-		 * operator tty or an inherited log fd -- exactly the hazard
-		 * this redirect exists to prevent -- so bail hard rather than
-		 * proceed to fuzzing with a poisoned fd 0/1/2. */
-		while (dup2(devnull, STDIN_FILENO) < 0) {
-			if (errno == EINTR)
-				continue;
-			_exit(EXIT_FAILURE);
-		}
-		while (dup2(devnull, STDOUT_FILENO) < 0) {
-			if (errno == EINTR)
-				continue;
-			_exit(EXIT_FAILURE);
-		}
-		while (dup2(devnull, STDERR_FILENO) < 0) {
-			if (errno == EINTR)
-				continue;
-			_exit(EXIT_FAILURE);
-		}
-		if (devnull > STDERR_FILENO)
-			close(devnull);
+	if (devnull < 0)
+		_exit(EXIT_FAILURE);
+
+	/* On dup2 failure the std fd would remain pointing at the
+	 * operator tty or an inherited log fd -- exactly the hazard
+	 * this redirect exists to prevent -- so bail hard rather than
+	 * proceed to fuzzing with a poisoned fd 0/1/2. */
+	while (dup2(devnull, STDIN_FILENO) < 0) {
+		if (errno == EINTR)
+			continue;
+		_exit(EXIT_FAILURE);
 	}
+	while (dup2(devnull, STDOUT_FILENO) < 0) {
+		if (errno == EINTR)
+			continue;
+		_exit(EXIT_FAILURE);
+	}
+	while (dup2(devnull, STDERR_FILENO) < 0) {
+		if (errno == EINTR)
+			continue;
+		_exit(EXIT_FAILURE);
+	}
+	if (devnull > STDERR_FILENO)
+		close(devnull);
 
 	/* Drop the inherited --stats-log-file fd before any syscall fuzzing
 	 * starts: it's a parent-only writer, but children would otherwise
