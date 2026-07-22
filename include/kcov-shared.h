@@ -747,6 +747,7 @@ struct kcov_shared {
 	 * here).  Total successful attributions ingested into
 	 * reexec_pending[] is therefore (reexec_attribution_found +
 	 * reexec_attribution_width_match). */
+	struct kcov_reexec_flat {
 	unsigned long reexec_attempts;
 	/*
 	 * Discrete count of re-exec attempts that produced
@@ -775,6 +776,7 @@ struct kcov_shared {
 	 * is the per-syscall version of the run-wide primary lift metric:
 	 * new CMP novelty per call gained from re-exec over baseline. */
 	unsigned long per_syscall_cmp_novelty_reexec[MAX_NR_SYSCALL];
+	} reexec_flat;
 
 	/* Shadow transition-coverage map and counters.  See
 	 * KCOV_NUM_TRANSITIONS and the kcov_transition_coverage_mode enum
