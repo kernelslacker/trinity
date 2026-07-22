@@ -686,7 +686,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 
 	if (pool == NULL) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_key_absent,
+			__atomic_fetch_add(&kcov_shm->field_consumer.cmp_field_consumer_key_absent,
 					   1UL, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -699,13 +699,13 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 	count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
 	if (count == 0) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_would_miss,
+			__atomic_fetch_add(&kcov_shm->field_consumer.cmp_field_consumer_would_miss,
 					   1UL, __ATOMIC_RELAXED);
 		return false;
 	}
 	if (cmp_field_pool_corrupted(pool, count)) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_pool_corrupted,
+			__atomic_fetch_add(&kcov_shm->field_consumer.cmp_field_consumer_pool_corrupted,
 					   1UL, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -729,7 +729,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 	if (kcov_shm != NULL) {
 		unsigned long shadow_elect;
 
-		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_would_pick,
+		__atomic_fetch_add(&kcov_shm->field_consumer.cmp_field_consumer_would_pick,
 				   1UL, __ATOMIC_RELAXED);
 		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_prove_eligible,
 				   1UL, __ATOMIC_RELAXED);
@@ -818,7 +818,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 		*out = cmp_hint_apply_transform(picked_value, use, old);
 
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_live_picks,
+			__atomic_fetch_add(&kcov_shm->field_consumer.cmp_field_consumer_live_picks,
 					   1UL, __ATOMIC_RELAXED);
 
 		/* CMP_HINT_CALLSITE_NR: field-scoped pulls have no argtype-
