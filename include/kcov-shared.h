@@ -11,6 +11,7 @@
 
 #include "kcov-types.h"
 #include "kcov-groups/coverage.h"
+#include "kcov-groups/cmp_records.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -27,16 +28,7 @@ struct kcov_shared {
 	/* CMP-trace collection totals: records pulled out of the second-fd
 	 * KCOV_TRACE_CMP buffers, and truncation events where the buffer
 	 * filled. */
-	struct kcov_cmp_records {
-		/* Total CMP records pulled out of per-child KCOV_TRACE_CMP buffers
-		 * across all syscalls.  Diagnostic — confirms the second-fd CMP
-		 * collection plumbing is producing records, and gauges how much
-		 * raw signal reaches the future mutator consumer. */
-		unsigned long cmp_records_collected;
-		/* Number of kcov_collect_cmp() calls where the cmp buffer filled
-		 * up.  Mirror of trace_truncated, sized off KCOV_CMP_BUFFER_SIZE. */
-		unsigned long cmp_trace_truncated;
-	} cmp_records;
+	struct kcov_cmp_records cmp_records;
 	/* Dedup-table health counters -- probe-chain overflow and hi-water. */
 	struct kcov_dedup {
 		/* Total number of dedup_inc() calls that walked the full probe chain
