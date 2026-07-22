@@ -751,10 +751,10 @@ static void dump_stats_render_kcov_per_syscall_dedup_topn(unsigned int nr_syscal
 		memset(lr_top_total, 0, sizeof(lr_top_total));
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
 			unsigned long lc = __atomic_load_n(
-				&kcov_shm->local_pc_calls[i],
+				&kcov_shm->pc_ctx.local_pc_calls[i],
 				__ATOMIC_RELAXED);
 			unsigned long rc = __atomic_load_n(
-				&kcov_shm->remote_pc_calls[i],
+				&kcov_shm->pc_ctx.remote_pc_calls[i],
 				__ATOMIC_RELAXED);
 			unsigned long tot = lc + rc;
 
@@ -775,22 +775,22 @@ static void dump_stats_render_kcov_per_syscall_dedup_topn(unsigned int nr_syscal
 				const char *name = entry ? entry->name : "???";
 				unsigned int nr = lr_top_nr[j];
 				unsigned long lc = __atomic_load_n(
-					&kcov_shm->local_pc_calls[nr],
+					&kcov_shm->pc_ctx.local_pc_calls[nr],
 					__ATOMIC_RELAXED);
 				unsigned long lec = __atomic_load_n(
-					&kcov_shm->local_pc_edge_calls[nr],
+					&kcov_shm->pc_ctx.local_pc_edge_calls[nr],
 					__ATOMIC_RELAXED);
 				unsigned long len_ = __atomic_load_n(
-					&kcov_shm->local_pc_edge_count[nr],
+					&kcov_shm->pc_ctx.local_pc_edge_count[nr],
 					__ATOMIC_RELAXED);
 				unsigned long rc = __atomic_load_n(
-					&kcov_shm->remote_pc_calls[nr],
+					&kcov_shm->pc_ctx.remote_pc_calls[nr],
 					__ATOMIC_RELAXED);
 				unsigned long rec = __atomic_load_n(
-					&kcov_shm->remote_pc_edge_calls[nr],
+					&kcov_shm->pc_ctx.remote_pc_edge_calls[nr],
 					__ATOMIC_RELAXED);
 				unsigned long ren = __atomic_load_n(
-					&kcov_shm->remote_pc_edge_count[nr],
+					&kcov_shm->pc_ctx.remote_pc_edge_count[nr],
 					__ATOMIC_RELAXED);
 
 				output(0, "  %-24s %10lu %10lu %10lu %10lu %10lu %10lu\n",
@@ -811,10 +811,10 @@ static void dump_stats_render_kcov_kcov_probe_costs(void)
 		memset(lr_top_total, 0, sizeof(lr_top_total));
 		for (op = 0; op < KCOV_CHILDOP_NR_MAX; op++) {
 			unsigned long lc = __atomic_load_n(
-				&kcov_shm->childop_local_pc_calls[op],
+				&kcov_shm->pc_ctx.childop_local_pc_calls[op],
 				__ATOMIC_RELAXED);
 			unsigned long rc = __atomic_load_n(
-				&kcov_shm->childop_remote_pc_calls[op],
+				&kcov_shm->pc_ctx.childop_remote_pc_calls[op],
 				__ATOMIC_RELAXED);
 			unsigned long tot = lc + rc;
 
@@ -833,22 +833,22 @@ static void dump_stats_render_kcov_kcov_probe_costs(void)
 				unsigned int op_id = lr_top_op[j];
 				char opname[64];
 				unsigned long lc = __atomic_load_n(
-					&kcov_shm->childop_local_pc_calls[op_id],
+					&kcov_shm->pc_ctx.childop_local_pc_calls[op_id],
 					__ATOMIC_RELAXED);
 				unsigned long lec = __atomic_load_n(
-					&kcov_shm->childop_local_pc_edge_calls[op_id],
+					&kcov_shm->pc_ctx.childop_local_pc_edge_calls[op_id],
 					__ATOMIC_RELAXED);
 				unsigned long len_ = __atomic_load_n(
-					&kcov_shm->childop_local_pc_edge_count[op_id],
+					&kcov_shm->pc_ctx.childop_local_pc_edge_count[op_id],
 					__ATOMIC_RELAXED);
 				unsigned long rc = __atomic_load_n(
-					&kcov_shm->childop_remote_pc_calls[op_id],
+					&kcov_shm->pc_ctx.childop_remote_pc_calls[op_id],
 					__ATOMIC_RELAXED);
 				unsigned long rec = __atomic_load_n(
-					&kcov_shm->childop_remote_pc_edge_calls[op_id],
+					&kcov_shm->pc_ctx.childop_remote_pc_edge_calls[op_id],
 					__ATOMIC_RELAXED);
 				unsigned long ren = __atomic_load_n(
-					&kcov_shm->childop_remote_pc_edge_count[op_id],
+					&kcov_shm->pc_ctx.childop_remote_pc_edge_count[op_id],
 					__ATOMIC_RELAXED);
 
 				snprintf(opname, sizeof(opname), "%s",
@@ -877,7 +877,7 @@ static void dump_stats_render_kcov_remote_edge_producers(unsigned int nr_syscall
 
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
 			unsigned long rec = __atomic_load_n(
-				&kcov_shm->remote_pc_edge_count[i],
+				&kcov_shm->pc_ctx.remote_pc_edge_count[i],
 				__ATOMIC_RELAXED);
 
 			if (rec == 0)
@@ -889,7 +889,7 @@ static void dump_stats_render_kcov_remote_edge_producers(unsigned int nr_syscall
 		}
 		for (op = 0; op < KCOV_CHILDOP_NR_MAX; op++) {
 			unsigned long rec = __atomic_load_n(
-				&kcov_shm->childop_remote_pc_edge_count[op],
+				&kcov_shm->pc_ctx.childop_remote_pc_edge_count[op],
 				__ATOMIC_RELAXED);
 
 			if (rec == 0)
@@ -915,19 +915,19 @@ static void dump_stats_render_kcov_remote_edge_producers(unsigned int nr_syscall
 			const char *name = entry ? entry->name : "???";
 			unsigned int nr = re_top_nr[j];
 			unsigned long lc = __atomic_load_n(
-				&kcov_shm->local_pc_calls[nr],
+				&kcov_shm->pc_ctx.local_pc_calls[nr],
 				__ATOMIC_RELAXED);
 			unsigned long lec = __atomic_load_n(
-				&kcov_shm->local_pc_edge_calls[nr],
+				&kcov_shm->pc_ctx.local_pc_edge_calls[nr],
 				__ATOMIC_RELAXED);
 			unsigned long len_ = __atomic_load_n(
-				&kcov_shm->local_pc_edge_count[nr],
+				&kcov_shm->pc_ctx.local_pc_edge_count[nr],
 				__ATOMIC_RELAXED);
 			unsigned long rc = __atomic_load_n(
-				&kcov_shm->remote_pc_calls[nr],
+				&kcov_shm->pc_ctx.remote_pc_calls[nr],
 				__ATOMIC_RELAXED);
 			unsigned long rec = __atomic_load_n(
-				&kcov_shm->remote_pc_edge_calls[nr],
+				&kcov_shm->pc_ctx.remote_pc_edge_calls[nr],
 				__ATOMIC_RELAXED);
 			unsigned long ren = re_top_rec[j];
 			char fbuf[4], lrate[8], rrate[8];
@@ -947,19 +947,19 @@ static void dump_stats_render_kcov_remote_edge_producers(unsigned int nr_syscall
 			const char *opname = alt_op_name(
 				(enum child_op_type)op_id);
 			unsigned long lc = __atomic_load_n(
-				&kcov_shm->childop_local_pc_calls[op_id],
+				&kcov_shm->pc_ctx.childop_local_pc_calls[op_id],
 				__ATOMIC_RELAXED);
 			unsigned long lec = __atomic_load_n(
-				&kcov_shm->childop_local_pc_edge_calls[op_id],
+				&kcov_shm->pc_ctx.childop_local_pc_edge_calls[op_id],
 				__ATOMIC_RELAXED);
 			unsigned long len_ = __atomic_load_n(
-				&kcov_shm->childop_local_pc_edge_count[op_id],
+				&kcov_shm->pc_ctx.childop_local_pc_edge_count[op_id],
 				__ATOMIC_RELAXED);
 			unsigned long rc = __atomic_load_n(
-				&kcov_shm->childop_remote_pc_calls[op_id],
+				&kcov_shm->pc_ctx.childop_remote_pc_calls[op_id],
 				__ATOMIC_RELAXED);
 			unsigned long rec = __atomic_load_n(
-				&kcov_shm->childop_remote_pc_edge_calls[op_id],
+				&kcov_shm->pc_ctx.childop_remote_pc_edge_calls[op_id],
 				__ATOMIC_RELAXED);
 			unsigned long ren = op_top_rec[j];
 			char fbuf[4], lrate[8], rrate[8];
@@ -988,17 +988,17 @@ static void dump_stats_render_kcov_per_syscall_last_edge_topn(unsigned int nr_sy
 
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
 			unsigned long lec = __atomic_load_n(
-				&kcov_shm->local_pc_edge_calls[i],
+				&kcov_shm->pc_ctx.local_pc_edge_calls[i],
 				__ATOMIC_RELAXED);
 			unsigned long rec = __atomic_load_n(
-				&kcov_shm->remote_pc_edge_calls[i],
+				&kcov_shm->pc_ctx.remote_pc_edge_calls[i],
 				__ATOMIC_RELAXED);
 			unsigned long ren, rate;
 
 			if (lec != 0 || rec == 0)
 				continue;
 			ren = __atomic_load_n(
-				&kcov_shm->remote_pc_edge_count[i],
+				&kcov_shm->pc_ctx.remote_pc_edge_count[i],
 				__ATOMIC_RELAXED);
 			/* rec > 0 here; ren >= rec by
 			 * construction so rate is >= 1.000. */
@@ -1019,16 +1019,16 @@ static void dump_stats_render_kcov_per_syscall_last_edge_topn(unsigned int nr_sy
 				unsigned int nr = ro_top_nr[j];
 				unsigned long milli = ro_top_rate[j];
 				unsigned long lc = __atomic_load_n(
-					&kcov_shm->local_pc_calls[nr],
+					&kcov_shm->pc_ctx.local_pc_calls[nr],
 					__ATOMIC_RELAXED);
 				unsigned long rc = __atomic_load_n(
-					&kcov_shm->remote_pc_calls[nr],
+					&kcov_shm->pc_ctx.remote_pc_calls[nr],
 					__ATOMIC_RELAXED);
 				unsigned long rec = __atomic_load_n(
-					&kcov_shm->remote_pc_edge_calls[nr],
+					&kcov_shm->pc_ctx.remote_pc_edge_calls[nr],
 					__ATOMIC_RELAXED);
 				unsigned long ren = __atomic_load_n(
-					&kcov_shm->remote_pc_edge_count[nr],
+					&kcov_shm->pc_ctx.remote_pc_edge_count[nr],
 					__ATOMIC_RELAXED);
 
 				output(0, "  %-24s %10lu %10lu %10lu %10lu %4lu.%03lu\n",
@@ -1122,7 +1122,7 @@ static void dump_stats_render_kcov_per_syscall_local_pc_topn(unsigned int nr_sys
 			if (req < REMOTE_WASTE_FLOOR)
 				continue;
 			rec = __atomic_load_n(
-				&kcov_shm->remote_pc_edge_calls[i],
+				&kcov_shm->pc_ctx.remote_pc_edge_calls[i],
 				__ATOMIC_RELAXED);
 			if (rec != 0)
 				continue;
@@ -1153,10 +1153,10 @@ static void dump_stats_render_kcov_per_syscall_local_pc_topn(unsigned int nr_sys
 					&kcov_shm->remote_fallback_to_local[nr],
 					__ATOMIC_RELAXED);
 				unsigned long rc = __atomic_load_n(
-					&kcov_shm->remote_pc_calls[nr],
+					&kcov_shm->pc_ctx.remote_pc_calls[nr],
 					__ATOMIC_RELAXED);
 				unsigned long ren = __atomic_load_n(
-					&kcov_shm->remote_pc_edge_count[nr],
+					&kcov_shm->pc_ctx.remote_pc_edge_count[nr],
 					__ATOMIC_RELAXED);
 				bool heavy = entry &&
 					(entry->flags & KCOV_REMOTE_HEAVY);
