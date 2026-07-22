@@ -164,26 +164,41 @@ static unsigned long ioctl_arg_for_request(const struct ioctl_group *grp,
 		dir = _IOC_DIR(request);
 		if (dir != _IOC_NONE) {
 			size = _IOC_SIZE(request);
-			if (size == 0 || size > page_size)
-				size = page_size;
-
-			buf = get_writable_address(size);
-			if (buf == NULL)
-				return random_ioctl_arg();
-
 			/*
-			 * _IOC_WRITE means userland writes / kernel reads
-			 * (the _IOW and _IOWR families).  Without meaningful
-			 * contents the kernel usually rejects on first-field
-			 * validation, so seed the buffer with random bytes.
-			 * Pure _IOC_READ ioctls have the kernel writing back
-			 * into the buffer — we just needed a writable dest.
+			 * _IOC_SIZE == 0 with a _IOC_WRITE / _IOC_READ
+			 * direction is legitimate for ioctls that predate
+			 * the size-encoding convention: the arg is a raw
+			 * scalar in the register, not a pointer to a
+			 * buffer.  Handing the kernel a page-sized random
+			 * blob dereferences an interior "pointer" from
+			 * garbage and produces EFAULT storms that block
+			 * deep-path coverage.  Fall through to Tier 2 and
+			 * let the EFAULT probe classify the shape.
 			 */
-			if (dir & _IOC_WRITE)
-				generate_rand_bytes((unsigned char *) buf,
-						    size);
+			if (size != 0) {
+				if (size > page_size)
+					size = page_size;
 
-			return (unsigned long) buf;
+				buf = get_writable_address(size);
+				if (buf == NULL)
+					return random_ioctl_arg();
+
+				/*
+				 * _IOC_WRITE means userland writes / kernel
+				 * reads (the _IOW and _IOWR families).
+				 * Without meaningful contents the kernel
+				 * usually rejects on first-field validation,
+				 * so seed the buffer with random bytes.
+				 * Pure _IOC_READ ioctls have the kernel
+				 * writing back into the buffer — we just
+				 * needed a writable dest.
+				 */
+				if (dir & _IOC_WRITE)
+					generate_rand_bytes(
+						(unsigned char *) buf, size);
+
+				return (unsigned long) buf;
+			}
 		}
 	}
 
@@ -194,7 +209,17 @@ static unsigned long ioctl_arg_for_request(const struct ioctl_group *grp,
 		return (unsigned long) rand64();
 	case IOCTL_ARG_POINTER:
 		size = _IOC_SIZE(request);
-		if (size == 0 || size > page_size)
+		/*
+		 * The probe confirmed the kernel dereferences arg, but
+		 * a size==0 request carries no width hint.  Rather than
+		 * fabricate a page-sized buffer of random bytes (which
+		 * the kernel treats as garbage after its first field
+		 * check), fall back to a raw scalar — the next probe
+		 * cycle will re-classify.
+		 */
+		if (size == 0)
+			return (unsigned long) rand64();
+		if (size > page_size)
 			size = page_size;
 		buf = get_writable_address(size);
 		if (buf == NULL)
