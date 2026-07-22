@@ -1128,7 +1128,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	if (entry == NULL) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->reexec_step_skip_entry_null,
+			__atomic_fetch_add(&kcov_shm->reexec_step.reexec_step_skip_entry_null,
 					   1UL, __ATOMIC_RELAXED);
 		return FAIL;
 	}
@@ -1160,7 +1160,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 
 	if (p->slot == 0 || p->slot > entry->num_args) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->reexec_step_skip_bad_slot,
+			__atomic_fetch_add(&kcov_shm->reexec_step.reexec_step_skip_bad_slot,
 					   1UL, __ATOMIC_RELAXED);
 		return FAIL;
 	}
