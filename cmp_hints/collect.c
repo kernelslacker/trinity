@@ -987,19 +987,19 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			__atomic_fetch_add(&kcov_shm->cmp_boring.cmp_hints_boring_arm_b_drops,
 					   boring_arm_b_drops, __ATOMIC_RELAXED);
 		if (nonconst_arg1_unique != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_nonconst_arg1_unique,
+			__atomic_fetch_add(&kcov_shm->cmp_nonconst.cmp_nonconst_arg1_unique,
 					   nonconst_arg1_unique, __ATOMIC_RELAXED);
 		if (nonconst_arg2_unique != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_nonconst_arg2_unique,
+			__atomic_fetch_add(&kcov_shm->cmp_nonconst.cmp_nonconst_arg2_unique,
 					   nonconst_arg2_unique, __ATOMIC_RELAXED);
 		if (nonconst_both_match != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_nonconst_both_match,
+			__atomic_fetch_add(&kcov_shm->cmp_nonconst.cmp_nonconst_both_match,
 					   nonconst_both_match, __ATOMIC_RELAXED);
 		if (nonconst_would_attribute != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_nonconst_would_attribute,
+			__atomic_fetch_add(&kcov_shm->cmp_nonconst.cmp_nonconst_would_attribute,
 					   nonconst_would_attribute, __ATOMIC_RELAXED);
 		if (nonconst_measured != 0)
-			__atomic_fetch_add(&kcov_shm->cmp_nonconst_measured,
+			__atomic_fetch_add(&kcov_shm->cmp_nonconst.cmp_nonconst_measured,
 					   nonconst_measured, __ATOMIC_RELAXED);
 		if (width_pin_total != 0)
 			__atomic_fetch_add(&kcov_shm->cmp_width_pin_total,
