@@ -2616,7 +2616,9 @@ struct kcov_shared {
 	 * Append-only at the tail per the existing convention so
 	 * consumer offsets stay stable.
 	 */
+	struct kcov_cmp_shared_tier_shadow {
 	unsigned long cmp_shared_tier_shadow_would_confirm;
+	} cmp_shared_tier_shadow;
 
 	/*
 	 * RedQueen plateau_burst per-call drain-cap A/B measure arm counters.

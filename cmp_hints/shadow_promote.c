@@ -229,7 +229,7 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.name = "cmp_shared_tier_coldserve",
 		.would_win_offset =
 			offsetof(struct kcov_shared,
-				 cmp_shared_tier_shadow_would_confirm),
+				 cmp_shared_tier_shadow.cmp_shared_tier_shadow_would_confirm),
 		.live_win_offset = 0,
 		.baseline_offset =
 			offsetof(struct kcov_shared,
