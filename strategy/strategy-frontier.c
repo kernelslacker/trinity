@@ -446,7 +446,7 @@ bool frontier_errno_plateau_should_decay(unsigned int nr, bool do32)
 	 * earning control-flow coverage the PC bitmap misses, so the decay
 	 * must release.  Monotonic non-decreasing. */
 	transition_edges = __atomic_load_n(
-		&kcov_shm->per_syscall_transition_edges_real_local[nr],
+		&kcov_shm->transitions.per_syscall_transition_edges_real_local[nr],
 		__ATOMIC_RELAXED);
 	if (transition_edges > 0)
 		return false;

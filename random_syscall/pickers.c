@@ -848,7 +848,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 	transition_edges_real_local =
 		(trew_mode == KCOV_TRANSITION_REWARD_OFF) ? 0UL :
 		__atomic_load_n(
-			&kcov_shm->per_syscall_transition_edges_real_local[nr],
+			&kcov_shm->transitions.per_syscall_transition_edges_real_local[nr],
 			__ATOMIC_RELAXED);
 
 	blend_productivity = edges +

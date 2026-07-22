@@ -823,6 +823,7 @@ struct kcov_shared {
 	 *      signal restricted to traces whose PC ordering Trinity can
 	 *      trust.  See the kcov_transition_reward_mode enum at the
 	 *      top of this header for the remote-mode contract. */
+	struct kcov_transitions {
 	unsigned long transition_edges_found;
 	unsigned long transition_distinct_edges;
 	unsigned long per_syscall_transition_edges[MAX_NR_SYSCALL];
@@ -830,6 +831,7 @@ struct kcov_shared {
 	unsigned long per_syscall_transition_edges_real[MAX_NR_SYSCALL];
 	unsigned long per_syscall_transition_edges_real_local[MAX_NR_SYSCALL];
 	unsigned char transition_seen[KCOV_NUM_TRANSITIONS];
+	} transitions;
 
 	/* CMP-hint / RedQueen pipeline observability.
 	 *
