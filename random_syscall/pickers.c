@@ -1098,12 +1098,12 @@ static unsigned long cmp_frontier_weight(unsigned int nr)
 	 * gets conv_bonus = 0 and ranks on inserts alone (the
 	 * historical behaviour) -- degrade-safe.
 	 */
-	injected = __atomic_load_n(&kcov_shm->per_syscall_cmp_injected[nr],
+	injected = __atomic_load_n(&kcov_shm->cmp_hint_ps.per_syscall_cmp_injected[nr],
 				   __ATOMIC_RELAXED);
-	pc_wins = __atomic_load_n(&kcov_shm->per_syscall_cmp_hint_pc_wins[nr],
+	pc_wins = __atomic_load_n(&kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_pc_wins[nr],
 				  __ATOMIC_RELAXED);
 	tr_wins = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp_hint_transition_wins[nr],
+			&kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_transition_wins[nr],
 			__ATOMIC_RELAXED);
 	wins = pc_wins + tr_wins;
 	if (injected >= CMP_FRONTIER_MIN_INJECTED && wins > 0UL) {

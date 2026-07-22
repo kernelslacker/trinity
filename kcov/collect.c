@@ -614,7 +614,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 				if (cc != NULL &&
 				    cc->cmp_hint_injected_this_call)
 					__atomic_fetch_add(
-						&kcov_shm->per_syscall_cmp_hint_pc_wins[nr],
+						&kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_pc_wins[nr],
 						1, __ATOMIC_RELAXED);
 			}
 			/* Bump the per-syscall frontier-edge ring so the
