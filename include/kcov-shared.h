@@ -32,6 +32,7 @@
 #include "kcov-groups/hint_callsite.h"
 #include "kcov-groups/hint_flat.h"
 #include "kcov-groups/reexec_pending_hist.h"
+#include "kcov-groups/cmp_parent.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -487,12 +488,7 @@ struct kcov_shared {
 	 * and discipline of the reexec_* family above.  Measurement-only
 	 * counters -- nothing in the picker, gates, or selection policy
 	 * reads them. */
-	struct kcov_cmp_parent {
-	unsigned long cmp_parent_calls_enabled;
-	unsigned long cmp_parent_calls_control;
-	unsigned long cmp_parent_new_cmps_enabled;
-	unsigned long cmp_parent_new_cmps_control;
-	} cmp_parent;
+	struct kcov_cmp_parent cmp_parent;
 	/* Per-reason granular counters for the cmp-hint save/persist
 	 * funnel.  The pre-existing cmp_hints_bloom_skipped and
 	 * cmp_hints_strip_skipped reach hundreds of millions per run and
