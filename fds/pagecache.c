@@ -313,13 +313,12 @@ int get_rand_pagecache_fd(void)
 	 * distribution would yield.
 	 *
 	 * The setuid_indices[] shortcut bypasses get_random_object() and
-	 * indexes head->array directly, so it doesn't pick up the
-	 * slot-version validation below.  Same UAF class applies (the
-	 * setuid slot can be destroyed/recycled out from under the read of
-	 * array_snap[slot]->fileobj.fd), but reworking the bias path to
-	 * round-trip through the versioned API would require teaching it
-	 * about specific slots rather than picks, which is out of scope
-	 * for the mechanical fd-getter wireup.  Tracked separately.
+	 * indexes head->array directly, so the version-check pattern the
+	 * random-pick loop below relies on has to be reproduced by hand:
+	 * objpool_check() to filter wild / cross-pool / OBJ_NONE reads,
+	 * plus a slot_version snapshot and object_slot_alive() recheck to
+	 * catch the "same address, same type, recycled identity" case
+	 * objpool_check() cannot see (see include/objects.h:606-609).
 	 *
 	 * Snapshot num_entries / array_capacity / array together before the
 	 * bound check and the deref so a sibling value-result syscall whose
@@ -335,19 +334,27 @@ int get_rand_pagecache_fd(void)
 		if (head != NULL && slot < head->num_entries &&
 		    head->array != NULL && head->array[slot] != NULL) {
 			struct object *obj = head->array[slot];
+			unsigned int captured;
 			int fd;
 
-			/* Same shape as the random-pick loop below: drop
-			 * any candidate that fails objpool_check (wild VA,
-			 * recycled chunk reading OBJ_NONE, cross-pool
-			 * pointer through a sibling stomp).  Closes the
-			 * direct-deref hole the older bias path left open,
-			 * which the comment block above this branch flagged
-			 * as deferred; with the check in place there is no
-			 * longer a UAF window specific to the bias path. */
+			/* Layered defense mirroring get_rand_socketinfo() in
+			 * fds/sockets.c: objpool_check() filters wild VAs,
+			 * cross-pool pointers written by a sibling stomp,
+			 * and recycled chunks reading OBJ_NONE; the
+			 * slot_version snapshot below plus the
+			 * object_slot_alive() recheck just before return
+			 * catches the recycled-identity race where the
+			 * setuid slot is destroyed and re-added under a
+			 * fresh obj between the bound check and the
+			 * caller's later use of the returned fd.  Capture
+			 * the version before reading fileobj.fd so a
+			 * mid-deref destroy shows up as a version mismatch
+			 * and the possibly stale fd value is discarded. */
 			if (objpool_check(obj, OBJ_FD_PAGECACHE)) {
+				captured = obj->slot_version;
 				fd = obj->fileobj.fd;
-				if (fd >= 0)
+				if (fd >= 0 &&
+				    object_slot_alive(obj, captured))
 					return fd;
 			}
 			/* fall through to the unbiased random-pick loop
