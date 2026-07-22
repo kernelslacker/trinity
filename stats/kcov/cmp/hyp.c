@@ -440,33 +440,33 @@ void kcov_cmp_render_hyp_shadow_stats_block(long elapsed)
 	static unsigned long prev_hyp_destructive;
 	static unsigned long prev_hyp_context_skip;
 	unsigned long cur_hyp_observations =
-		__atomic_load_n(&kcov_shm->cmp_hyp_observations, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_observations, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_inserted =
-		__atomic_load_n(&kcov_shm->cmp_hyp_inserted, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_inserted, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_pool_full =
-		__atomic_load_n(&kcov_shm->cmp_hyp_pool_full, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_pool_full, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_pool_overflow =
 		__atomic_load_n(&kcov_shm->cmp_hyp_pool_overflow, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_kind_full =
-		__atomic_load_n(&kcov_shm->cmp_hyp_kind_full, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_kind_full, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_consumed =
-		__atomic_load_n(&kcov_shm->cmp_hyp_consumed, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_consumed, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_pc_wins =
-		__atomic_load_n(&kcov_shm->cmp_hyp_pc_wins, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_pc_wins, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_transition_wins =
-		__atomic_load_n(&kcov_shm->cmp_hyp_transition_wins, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_transition_wins, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_cmp_novelty_wins =
-		__atomic_load_n(&kcov_shm->cmp_hyp_cmp_novelty_wins, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_cmp_novelty_wins, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_misses =
-		__atomic_load_n(&kcov_shm->cmp_hyp_misses, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_misses, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_disabled_skips =
-		__atomic_load_n(&kcov_shm->cmp_hyp_disabled_skips, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_disabled_skips, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_corpus_save =
-		__atomic_load_n(&kcov_shm->cmp_hyp_corpus_save, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_corpus_save, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_destructive =
-		__atomic_load_n(&kcov_shm->cmp_hyp_destructive, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_destructive, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_context_skip =
-		__atomic_load_n(&kcov_shm->cmp_hyp_context_skip, __ATOMIC_RELAXED);
+		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_context_skip, __ATOMIC_RELAXED);
 	unsigned long delta_hyp_observations = sat_sub_ul(cur_hyp_observations, prev_hyp_observations);
 	unsigned long delta_hyp_inserted = sat_sub_ul(cur_hyp_inserted, prev_hyp_inserted);
 	unsigned long delta_hyp_pool_full = sat_sub_ul(cur_hyp_pool_full, prev_hyp_pool_full);
