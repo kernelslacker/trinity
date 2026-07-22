@@ -218,8 +218,8 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 		if (e->served_from_shared) {
 			if (kcov_shm != NULL)
 				__atomic_fetch_add(outcome_win ?
-					&kcov_shm->cmp_hint_tier_shared_wins :
-					&kcov_shm->cmp_hint_tier_shared_misses,
+					&kcov_shm->cmp_shared_tier.cmp_hint_tier_shared_wins :
+					&kcov_shm->cmp_shared_tier.cmp_hint_tier_shared_misses,
 					1UL, __ATOMIC_RELAXED);
 			continue;
 		}

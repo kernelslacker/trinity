@@ -2290,6 +2290,7 @@ struct kcov_shared {
 	 * Append-only at the tail per the existing convention so consumer
 	 * offsets stay stable.
 	 */
+	struct kcov_cmp_shared_tier {
 	unsigned long cmp_shared_tier_ips;
 	unsigned long cmp_shared_tier_entries;
 	unsigned long cmp_shared_tier_entry_path_excluded_ips;
@@ -2356,6 +2357,7 @@ struct kcov_shared {
 	unsigned long cmp_shared_tier_serve_accept_reject;
 	unsigned long cmp_hint_tier_shared_wins;
 	unsigned long cmp_hint_tier_shared_misses;
+	} cmp_shared_tier;
 
 	/*
 	 * SHADOW consume-side counters for the childop CMP path -- the
