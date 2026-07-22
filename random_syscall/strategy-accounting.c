@@ -173,13 +173,13 @@ bool remote_adaptive_decide(unsigned int nr,
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL || entry == NULL)
 		return static_remote;
 
-	rcalls = __atomic_load_n(&kcov_shm->remote_pc_calls[nr],
+	rcalls = __atomic_load_n(&kcov_shm->pc_ctx.remote_pc_calls[nr],
 				 __ATOMIC_RELAXED);
-	redgec = __atomic_load_n(&kcov_shm->remote_pc_edge_calls[nr],
+	redgec = __atomic_load_n(&kcov_shm->pc_ctx.remote_pc_edge_calls[nr],
 				 __ATOMIC_RELAXED);
-	lcalls = __atomic_load_n(&kcov_shm->local_pc_calls[nr],
+	lcalls = __atomic_load_n(&kcov_shm->pc_ctx.local_pc_calls[nr],
 				 __ATOMIC_RELAXED);
-	ledgec = __atomic_load_n(&kcov_shm->local_pc_edge_calls[nr],
+	ledgec = __atomic_load_n(&kcov_shm->pc_ctx.local_pc_edge_calls[nr],
 				 __ATOMIC_RELAXED);
 
 	if ((entry->flags & KCOV_REMOTE_HEAVY) && static_remote) {
