@@ -27,6 +27,7 @@
 #include "kcov-groups/plateau.h"
 #include "kcov-groups/covjump.h"
 #include "kcov-groups/reexec_flat.h"
+#include "kcov-groups/transitions.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -265,15 +266,7 @@ struct kcov_shared {
 	 *      signal restricted to traces whose PC ordering Trinity can
 	 *      trust.  See the kcov_transition_reward_mode enum at the
 	 *      top of this header for the remote-mode contract. */
-	struct kcov_transitions {
-	unsigned long transition_edges_found;
-	unsigned long transition_distinct_edges;
-	unsigned long per_syscall_transition_edges[MAX_NR_SYSCALL];
-	unsigned long per_syscall_transition_edges_previous[MAX_NR_SYSCALL];
-	unsigned long per_syscall_transition_edges_real[MAX_NR_SYSCALL];
-	unsigned long per_syscall_transition_edges_real_local[MAX_NR_SYSCALL];
-	unsigned char transition_seen[KCOV_NUM_TRANSITIONS];
-	} transitions;
+	struct kcov_transitions transitions;
 
 	/* CMP-hint / RedQueen pipeline observability.
 	 *
