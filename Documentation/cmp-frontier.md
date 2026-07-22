@@ -18,8 +18,8 @@ productive frontier still exists.
 
 This row adds an alternate weight derived from the existing
 per-syscall CMP signal counters --
-`kcov_shm->per_syscall_cmp_inserts[nr]` (durable CMP pool inserts)
-and `kcov_shm->childop_cmp_pool_inserts[nr]` (childop CMP pool
+`kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr]` (durable CMP pool inserts)
+and `kcov_shm->childop_cmp.childop_cmp_pool_inserts[nr]` (childop CMP pool
 inserts) -- so a syscall whose CMP-side activity is high but whose
 PC-edge growth is flat ranks high under the new arm.  The two
 counters are the same ones the `dump_stats()` "Top syscalls by CMP
