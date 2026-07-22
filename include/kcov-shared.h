@@ -55,6 +55,7 @@
 #include "kcov-groups/cmp_hyp_shadow.h"
 #include "kcov-groups/field_consumer_shadow.h"
 #include "kcov-groups/cmp_shared_tier_shadow.h"
+#include "kcov-groups/reexec_arms.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -1426,12 +1427,7 @@ struct kcov_shared {
 	 *
 	 * Append-only at the tail per the existing convention.
 	 */
-	struct kcov_reexec_arms {
-	unsigned long reexec_new_edges_total;
-	unsigned long reexec_attempts_by_arm[2];
-	unsigned long reexec_new_cmps_by_arm[2];
-	unsigned long reexec_new_edges_by_arm[2];
-	} reexec_arms;
+	struct kcov_reexec_arms reexec_arms;
 };
 
 extern struct kcov_shared *kcov_shm;
