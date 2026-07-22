@@ -1255,6 +1255,7 @@ struct kcov_shared {
 	 *      shouldn't).  Attribution correctly skips the call; the
 	 *      counter exposes the rate so the snapshot-feed health is
 	 *      not silently zeroed-out into the eligible cohort. */
+	struct kcov_reexec_gate {
 	unsigned long reexec_attribution_found_by_syscall[MAX_NR_SYSCALL];
 	unsigned long reexec_attribution_dropped_pending_by_syscall[MAX_NR_SYSCALL];
 	unsigned long reexec_attribution_found_by_childop[KCOV_CHILDOP_NR_MAX];
@@ -1271,6 +1272,7 @@ struct kcov_shared {
 	unsigned long reexec_gate_pass;
 	unsigned long cmp_attribution_calls_eligible;
 	unsigned long cmp_attribution_snapshot_unavailable;
+	} reexec_gate;
 
 	/*
 	 * Field-scoped CMP attribution counters (PHASE 3 narrow MVP).
