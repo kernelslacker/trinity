@@ -1480,7 +1480,7 @@ retry:
 					&shm->stats.frontier.per_syscall.silent_cmp_baseline[syscallnr],
 					__ATOMIC_RELAXED);
 				errno_now = __atomic_load_n(
-					&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
+					&kcov_shm->errno_state.per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
 					__ATOMIC_RELAXED);
 				errno_base = __atomic_load_n(
 					&shm->stats.frontier.per_syscall.silent_errno_success_baseline[syscallnr],

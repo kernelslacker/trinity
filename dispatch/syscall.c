@@ -1478,7 +1478,7 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 			default:     bucket = ERRNO_BUCKET_OTHER;  break;
 			}
 		}
-		__atomic_add_fetch(&kcov_shm->per_syscall_errno[call][bucket],
+		__atomic_add_fetch(&kcov_shm->errno_state.per_syscall_errno[call][bucket],
 				   1, __ATOMIC_RELAXED);
 
 		/* Credential-class oracle (always on, no flag gate): mirror the
@@ -1501,7 +1501,7 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 			unsigned long now_call =
 				__atomic_load_n(&kcov_shm->coverage.total_calls,
 						__ATOMIC_RELAXED);
-			__atomic_store_n(&kcov_shm->last_efault_at[call],
+			__atomic_store_n(&kcov_shm->errno_state.last_efault_at[call],
 					 now_call, __ATOMIC_RELAXED);
 		}
 
@@ -1528,7 +1528,7 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 		if (bucket != ERRNO_BUCKET_EFAULT) {
 			unsigned int bit = 1u << bucket;
 			unsigned int prev = __atomic_fetch_or(
-				&kcov_shm->errno_bucket_seen[call], bit,
+				&kcov_shm->errno_state.errno_bucket_seen[call], bit,
 				__ATOMIC_RELAXED);
 
 			if ((prev & bit) == 0) {
