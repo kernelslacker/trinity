@@ -180,7 +180,7 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 		if (e->value == val && e->cmp_ip == cmp_ip && e->size == size) {
 			e->last_used = stamp;
 			if (kcov_shm != NULL)
-				__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_dup,
+				__atomic_fetch_add(&kcov_shm->hint_reject.cmp_hints_save_reject_dup,
 						   1UL, __ATOMIC_RELAXED);
 			return false;
 		}
@@ -240,7 +240,7 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 		 * tracks displacement events so a saturated pool is
 		 * directly visible as cap > unique_inserts_delta over a
 		 * window once the per-syscall pool tops out. */
-		__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_cap, 1UL,
+		__atomic_fetch_add(&kcov_shm->hint_reject.cmp_hints_save_reject_cap, 1UL,
 				   __ATOMIC_RELAXED);
 		/* Per-syscall partition of the cap-pressure counter.
 		 * Sibling of per_syscall_cmp_inserts[nr] (bumped above

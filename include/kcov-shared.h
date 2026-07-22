@@ -1142,11 +1142,13 @@ struct kcov_shared {
 	 *
 	 * Append-only at the tail of the struct so existing offsets
 	 * (and any consumer that has memorised them) stay stable. */
+	struct kcov_hint_reject {
 	unsigned long cmp_hints_save_reject_nonconst;
 	unsigned long cmp_hints_save_reject_uninteresting;
 	unsigned long cmp_hints_save_reject_sentinel;
 	unsigned long cmp_hints_save_reject_dup;
 	unsigned long cmp_hints_save_reject_cap;
+	} hint_reject;
 
 	/* Measurement-correctness counters for the RedQueen attribution +
 	 * re-exec funnel.  Counter-only -- nothing in the picker, gates, or
