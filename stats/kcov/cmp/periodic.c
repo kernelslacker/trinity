@@ -295,10 +295,10 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_reexec_gate_skip_no_pending    = __atomic_load_n(&kcov_shm->reexec_gate_skip_no_pending,    __ATOMIC_RELAXED);
 	cur_reexec_gate_skip_rate          = __atomic_load_n(&kcov_shm->reexec_gate_skip_rate,          __ATOMIC_RELAXED);
 	cur_reexec_gate_pass               = __atomic_load_n(&kcov_shm->reexec_gate_pass,               __ATOMIC_RELAXED);
-	cur_cmp_parent_calls_enabled       = __atomic_load_n(&kcov_shm->cmp_parent_calls_enabled,       __ATOMIC_RELAXED);
-	cur_cmp_parent_calls_control       = __atomic_load_n(&kcov_shm->cmp_parent_calls_control,       __ATOMIC_RELAXED);
-	cur_cmp_parent_new_cmps_enabled    = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_enabled,    __ATOMIC_RELAXED);
-	cur_cmp_parent_new_cmps_control    = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_control,    __ATOMIC_RELAXED);
+	cur_cmp_parent_calls_enabled       = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_enabled,       __ATOMIC_RELAXED);
+	cur_cmp_parent_calls_control       = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_control,       __ATOMIC_RELAXED);
+	cur_cmp_parent_new_cmps_enabled    = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_enabled,    __ATOMIC_RELAXED);
+	cur_cmp_parent_new_cmps_control    = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_control,    __ATOMIC_RELAXED);
 	cur_save_reject_nonconst      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
 	cur_save_reject_uninteresting = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
 	cur_save_reject_sentinel      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_sentinel,      __ATOMIC_RELAXED);

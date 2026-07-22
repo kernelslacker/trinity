@@ -564,18 +564,18 @@ void account_reexec_ab_cohort(struct childdata *child, unsigned long new_cmp)
 		return;
 
 	if (child->redqueen_enabled) {
-		__atomic_fetch_add(&kcov_shm->cmp_parent_calls_enabled,
+		__atomic_fetch_add(&kcov_shm->cmp_parent.cmp_parent_calls_enabled,
 				   1UL, __ATOMIC_RELAXED);
 		if (new_cmp > 0)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_parent_new_cmps_enabled,
+				&kcov_shm->cmp_parent.cmp_parent_new_cmps_enabled,
 				new_cmp, __ATOMIC_RELAXED);
 	} else {
-		__atomic_fetch_add(&kcov_shm->cmp_parent_calls_control,
+		__atomic_fetch_add(&kcov_shm->cmp_parent.cmp_parent_calls_control,
 				   1UL, __ATOMIC_RELAXED);
 		if (new_cmp > 0)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_parent_new_cmps_control,
+				&kcov_shm->cmp_parent.cmp_parent_new_cmps_control,
 				new_cmp, __ATOMIC_RELAXED);
 	}
 }

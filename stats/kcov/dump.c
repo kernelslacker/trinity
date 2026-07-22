@@ -170,10 +170,10 @@ static void dump_stats_render_kcov_reexec(void)
 		unsigned long rx_skipped_destructive = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_destructive, __ATOMIC_RELAXED);
 		unsigned long rx_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_validate_silent, __ATOMIC_RELAXED);
 		unsigned long rx_window_cap_hit = __atomic_load_n(&kcov_shm->reexec_flat.reexec_window_cap_hit, __ATOMIC_RELAXED);
-		unsigned long rx_parent_calls_enabled = __atomic_load_n(&kcov_shm->cmp_parent_calls_enabled, __ATOMIC_RELAXED);
-		unsigned long rx_parent_calls_control = __atomic_load_n(&kcov_shm->cmp_parent_calls_control, __ATOMIC_RELAXED);
-		unsigned long rx_parent_new_cmps_enabled = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_enabled, __ATOMIC_RELAXED);
-		unsigned long rx_parent_new_cmps_control = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_control, __ATOMIC_RELAXED);
+		unsigned long rx_parent_calls_enabled = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_enabled, __ATOMIC_RELAXED);
+		unsigned long rx_parent_calls_control = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_control, __ATOMIC_RELAXED);
+		unsigned long rx_parent_new_cmps_enabled = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_enabled, __ATOMIC_RELAXED);
+		unsigned long rx_parent_new_cmps_control = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_control, __ATOMIC_RELAXED);
 		unsigned long rx_gate_skip_in_reexec = __atomic_load_n(&kcov_shm->reexec_gate_skip_in_reexec, __ATOMIC_RELAXED);
 		unsigned long rx_gate_skip_disabled = __atomic_load_n(&kcov_shm->reexec_gate_skip_disabled, __ATOMIC_RELAXED);
 		unsigned long rx_gate_skip_mode = __atomic_load_n(&kcov_shm->reexec_gate_skip_mode, __ATOMIC_RELAXED);
