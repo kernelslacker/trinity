@@ -37,6 +37,7 @@
 #include "kcov-groups/reexec_gate.h"
 #include "kcov-groups/cmp_field_attr.h"
 #include "kcov-groups/cmp_boring.h"
+#include "kcov-groups/cmp_recent.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -754,13 +755,7 @@ struct kcov_shared {
 	 *
 	 * Append-only at the tail per the existing convention so
 	 * consumer offsets stay stable. */
-	struct kcov_cmp_recent {
-	unsigned long cmp_recent_inserts;
-	unsigned long cmp_recent_evicts;
-	unsigned long cmp_recent_would_pick;
-	unsigned long cmp_recent_would_miss;
-	unsigned long cmp_recent_live_picks;
-	} cmp_recent;
+	struct kcov_cmp_recent cmp_recent;
 
 	/*
 	 * SHADOW counters for the field-scoped CMP hint consumer.
