@@ -124,6 +124,7 @@ static void sanitise_iommufd_ioas_map(struct syscallrecord *rec)
 	ua = get_writable_address(length);
 	if (ua == NULL)
 		return;
+	generate_rand_bytes((unsigned char *)ua, length);
 
 	memset(m, 0, sizeof(*m));
 	m->size = sizeof(*m);
@@ -222,6 +223,7 @@ static void sanitise_iommufd_hwpt_alloc(struct syscallrecord *rec)
 		data = get_writable_address(data_len);
 		if (data == NULL)
 			return;
+		generate_rand_bytes((unsigned char *)data, data_len);
 		a->data_len = data_len;
 		a->data_uptr = (__u64)(unsigned long)data;
 	}
