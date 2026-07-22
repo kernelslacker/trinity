@@ -58,7 +58,7 @@ static void unix_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct 
 		/* Varying addrlen to exercise edge cases */
 		len = rnd_modulo_u32(20);
 		generate_rand_bytes((unsigned char *)unixsock->sun_path, len);
-		*addrlen = sizeof(sa_family_t) + rnd_modulo_u32(sizeof(unixsock->sun_path) + 1);
+		*addrlen = sizeof(sa_family_t) + len;
 		break;
 	}
 
