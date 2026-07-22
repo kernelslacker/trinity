@@ -251,7 +251,7 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 		 * threads the same nr through unchanged, so the index is
 		 * in-bounds. */
 		if (nr < MAX_NR_SYSCALL)
-			__atomic_fetch_add(&kcov_shm->per_syscall_cmp_reject_cap[nr],
+			__atomic_fetch_add(&kcov_shm->hint_tier.per_syscall_cmp_reject_cap[nr],
 					   1UL, __ATOMIC_RELAXED);
 	}
 	return true;
