@@ -262,16 +262,16 @@ void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 
 	for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
 		cur_consumed_by_pool[k] = __atomic_load_n(
-			&kcov_shm->cmp_hint_consumed_by_pool[k],
+			&kcov_shm->cmp_hint_pool.cmp_hint_consumed_by_pool[k],
 			__ATOMIC_RELAXED);
 		cur_pc_wins_by_pool[k] = __atomic_load_n(
-			&kcov_shm->cmp_hint_pc_wins_by_pool[k],
+			&kcov_shm->cmp_hint_pool.cmp_hint_pc_wins_by_pool[k],
 			__ATOMIC_RELAXED);
 		cur_misses_by_pool[k] = __atomic_load_n(
-			&kcov_shm->cmp_hint_misses_by_pool[k],
+			&kcov_shm->cmp_hint_pool.cmp_hint_misses_by_pool[k],
 			__ATOMIC_RELAXED);
 		cur_cmp_novelty_by_pool[k] = __atomic_load_n(
-			&kcov_shm->cmp_hint_cmp_novelty_wins_by_pool[k],
+			&kcov_shm->cmp_hint_pool.cmp_hint_cmp_novelty_wins_by_pool[k],
 			__ATOMIC_RELAXED);
 	}
 
@@ -432,7 +432,7 @@ void kcov_cmp_render_pc_win_conversion_split_block(long elapsed __unused__)
 					  __ATOMIC_RELAXED);
 	for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
 		cur_hint_pc_wins_by_pool[k] = __atomic_load_n(
-			&kcov_shm->cmp_hint_pc_wins_by_pool[k],
+			&kcov_shm->cmp_hint_pool.cmp_hint_pc_wins_by_pool[k],
 			__ATOMIC_RELAXED);
 		cur_pool_pc_wins_sum += cur_hint_pc_wins_by_pool[k];
 		prev_pool_pc_wins_sum += prev_hint_pc_wins_by_pool[k];

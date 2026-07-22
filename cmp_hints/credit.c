@@ -251,8 +251,8 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 		if (kcov_shm != NULL &&
 		    e->pool_kind < CMP_HINT_POOL_KIND_NR)
 			__atomic_fetch_add(outcome_win ?
-				&kcov_shm->cmp_hint_pc_wins_by_pool[e->pool_kind] :
-				&kcov_shm->cmp_hint_misses_by_pool[e->pool_kind],
+				&kcov_shm->cmp_hint_pool.cmp_hint_pc_wins_by_pool[e->pool_kind] :
+				&kcov_shm->cmp_hint_pool.cmp_hint_misses_by_pool[e->pool_kind],
 				1UL, __ATOMIC_RELAXED);
 
 		/* Sibling by-callsite PC outcome partition.  Same per-stash-
@@ -307,7 +307,7 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 
 				if (before >= CMP_HINT_ZERO_WIN_BUDGET_T)
 					__atomic_fetch_add(
-						&kcov_shm->cmp_hint_pool_zero_win_would_save,
+						&kcov_shm->cmp_hint_pool.cmp_hint_pool_zero_win_would_save,
 						1UL, __ATOMIC_RELAXED);
 			} else {
 				uint32_t after = __atomic_add_fetch(
@@ -316,11 +316,11 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 
 				if (after == CMP_HINT_ZERO_WIN_BUDGET_T)
 					__atomic_fetch_add(
-						&kcov_shm->cmp_hint_pool_zero_win_would_retire,
+						&kcov_shm->cmp_hint_pool.cmp_hint_pool_zero_win_would_retire,
 						1UL, __ATOMIC_RELAXED);
 				else if (after > CMP_HINT_ZERO_WIN_BUDGET_T)
 					__atomic_fetch_add(
-						&kcov_shm->cmp_hint_pool_zero_win_would_save,
+						&kcov_shm->cmp_hint_pool.cmp_hint_pool_zero_win_would_save,
 						1UL, __ATOMIC_RELAXED);
 			}
 		}
@@ -441,7 +441,7 @@ void cmp_hints_feedback_credit_cmp_novelty(void)
 		if (kcov_shm != NULL &&
 		    e->pool_kind < CMP_HINT_POOL_KIND_NR)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hint_cmp_novelty_wins_by_pool[e->pool_kind],
+				&kcov_shm->cmp_hint_pool.cmp_hint_cmp_novelty_wins_by_pool[e->pool_kind],
 				1UL, __ATOMIC_RELAXED);
 	}
 
