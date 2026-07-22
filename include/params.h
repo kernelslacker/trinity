@@ -319,7 +319,7 @@ extern char *stats_log_path;
  * re-executed.  Parsing is preserved so existing invocations do not
  * break; the enum, parser and name helper are kept for the
  * dump_stats policy label only.  Per-pending-index success counters
- * (kcov_shm->reexec_pending_pick_success[]) are still bumped at each
+ * (kcov_shm->reexec_pending_hist.reexec_pending_pick_success[]) are still bumped at each
  * entry's true index inside redqueen_reexec_step(), so per-slot /
  * per-index re-exec lift remains directly readable.
  */

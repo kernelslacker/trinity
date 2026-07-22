@@ -1043,6 +1043,7 @@ struct kcov_shared {
 	 *      redqueen_reexec_step() inside the existing inner_new_cmp > 0
 	 *      success block; the entry index is clamped to
 	 *      REEXEC_PENDING_PICK_HIST_NR before use. */
+	struct kcov_reexec_pending_hist {
 	unsigned long reexec_attempts_by_syscall[MAX_NR_SYSCALL];
 	unsigned long reexec_ambiguous_by_syscall[MAX_NR_SYSCALL];
 	unsigned long reexec_attribution_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
@@ -1058,6 +1059,7 @@ struct kcov_shared {
 	 */
 	unsigned long reexec_pending_drain_unused;
 	unsigned long reexec_pending_pick_success[REEXEC_PENDING_PICK_HIST_NR];
+	} reexec_pending_hist;
 
 	/* RedQueen A/B cohort denominators.  The existing reexec_* family
 	 * counts enabled-arm ACTIVITY (attempts, new_cmps, attribution wins

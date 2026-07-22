@@ -631,7 +631,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 					if (first_match >= 1 &&
 					    first_match <= CMP_REDQUEEN_SLOT_HIST_NR)
 						__atomic_fetch_add(
-							&kcov_shm->reexec_attribution_slot_hist[first_match - 1],
+							&kcov_shm->reexec_pending_hist.reexec_attribution_slot_hist[first_match - 1],
 							1UL, __ATOMIC_RELAXED);
 					if (match_count > 1) {
 						__atomic_fetch_add(
@@ -646,7 +646,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						 * per_syscall_cmp_inserts[nr]
 						 * bump below. */
 						__atomic_fetch_add(
-							&kcov_shm->reexec_ambiguous_by_syscall[nr],
+							&kcov_shm->reexec_pending_hist.reexec_ambiguous_by_syscall[nr],
 							1UL, __ATOMIC_RELAXED);
 						/* per-childop partition of
 						 * the ambiguity counter,
@@ -679,7 +679,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 					attribute_enabled = false;
 					if (kcov_shm != NULL) {
 						__atomic_fetch_add(
-							&kcov_shm->reexec_pending_dropped,
+							&kcov_shm->reexec_pending_hist.reexec_pending_dropped,
 							1UL, __ATOMIC_RELAXED);
 						/* per-nr partition of the
 						 * pending-overflow counter:
@@ -775,7 +775,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						attribute_enabled = false;
 						if (kcov_shm != NULL) {
 							__atomic_fetch_add(
-								&kcov_shm->reexec_pending_dropped,
+								&kcov_shm->reexec_pending_hist.reexec_pending_dropped,
 								1UL, __ATOMIC_RELAXED);
 							__atomic_fetch_add(
 								&kcov_shm->reexec_attribution_dropped_pending_by_syscall[nr],
@@ -904,7 +904,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 							1UL, __ATOMIC_RELAXED);
 						if (fk < CMP_REDQUEEN_SLOT_HIST_NR)
 							__atomic_fetch_add(
-								&kcov_shm->reexec_attribution_slot_hist[fk],
+								&kcov_shm->reexec_pending_hist.reexec_attribution_slot_hist[fk],
 								1UL, __ATOMIC_RELAXED);
 					}
 
@@ -916,7 +916,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						attribute_enabled = false;
 						if (kcov_shm != NULL) {
 							__atomic_fetch_add(
-								&kcov_shm->reexec_pending_dropped,
+								&kcov_shm->reexec_pending_hist.reexec_pending_dropped,
 								1UL, __ATOMIC_RELAXED);
 							__atomic_fetch_add(
 								&kcov_shm->reexec_attribution_dropped_pending_by_syscall[nr],
