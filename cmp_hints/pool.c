@@ -812,7 +812,7 @@ static void cmp_shared_tier_shadow_probe_would_confirm(void)
 		if (e->cmp_ip == served_cmp_ip &&
 		    e->value == served_value &&
 		    e->size == served_size) {
-			__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow_would_confirm,
+			__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow.cmp_shared_tier_shadow_would_confirm,
 					   1UL, __ATOMIC_RELAXED);
 			return;
 		}
@@ -833,7 +833,7 @@ static void cmp_shared_tier_shadow_probe_would_confirm(void)
 		if (e->cmp_ip == served_cmp_ip &&
 		    e->value == served_value &&
 		    e->size == served_size) {
-			__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow_would_confirm,
+			__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow.cmp_shared_tier_shadow_would_confirm,
 					   1UL, __ATOMIC_RELAXED);
 			return;
 		}

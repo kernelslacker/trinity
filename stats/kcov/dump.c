@@ -309,7 +309,7 @@ static void dump_stats_render_kcov_exit_edge_delta(void)
 		unsigned long st_entries = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_entries, __ATOMIC_RELAXED);
 		unsigned long st_excluded = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_entry_path_excluded_ips, __ATOMIC_RELAXED);
 		unsigned long st_eligible = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_shadow_warmstart_eligible, __ATOMIC_RELAXED);
-		unsigned long st_would_confirm = __atomic_load_n(&kcov_shm->cmp_shared_tier_shadow_would_confirm, __ATOMIC_RELAXED);
+		unsigned long st_would_confirm = __atomic_load_n(&kcov_shm->cmp_shared_tier_shadow.cmp_shared_tier_shadow_would_confirm, __ATOMIC_RELAXED);
 		unsigned long st_supplied = __atomic_load_n(&kcov_shm->cmp_shared_tier.cmp_shared_tier_shadow_dedup_supplied, __ATOMIC_RELAXED);
 
 		if (rc_inserts > 0)
