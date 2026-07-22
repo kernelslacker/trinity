@@ -2503,6 +2503,7 @@ struct kcov_shared {
 	 * per-mille sizes the delta a live promotion would open up.
 	 * Append-only at the tail per convention so consumer offsets
 	 * stay stable. */
+	struct kcov_cmp_hyp_shadow {
 	unsigned long cmp_hyp_pow2_derive_would_fire;
 	unsigned long cmp_hyp_pow2_derive_would_win;
 
@@ -2539,6 +2540,7 @@ struct kcov_shared {
 	unsigned long cmp_hyp_bitmask_full_or_would_win;
 	unsigned long cmp_hyp_bitmask_andnot_toggle_would_fire;
 	unsigned long cmp_hyp_bitmask_andnot_toggle_would_win;
+	} cmp_hyp_shadow;
 
 	/*
 	 * SHADOW win-scalar for the field-scoped CMP inject arm.

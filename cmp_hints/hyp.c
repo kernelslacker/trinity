@@ -1214,7 +1214,7 @@ static void cmp_hyp_pow2_shadow_probe(const struct cmp_hypothesis *picked,
 	if (!cmp_hyp_is_near_pow2(c))
 		return;
 
-	__atomic_fetch_add(&kcov_shm->cmp_hyp_pow2_derive_would_fire, 1UL,
+	__atomic_fetch_add(&kcov_shm->cmp_hyp_shadow.cmp_hyp_pow2_derive_would_fire, 1UL,
 			   __ATOMIC_RELAXED);
 
 	live_val = (uint64_t)live_out;
@@ -1276,7 +1276,7 @@ static void cmp_hyp_pow2_shadow_probe(const struct cmp_hypothesis *picked,
 	}
 
 	if (differs)
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_pow2_derive_would_win,
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_shadow.cmp_hyp_pow2_derive_would_win,
 				   1UL, __ATOMIC_RELAXED);
 }
 
@@ -1367,11 +1367,11 @@ static void cmp_hyp_bitmask_shadow_probe(const struct cmp_hypothesis *picked,
 	 * OR degenerates to the same single bit the live lane emits. */
 	if (mask_pop >= 2) {
 		__atomic_fetch_add(
-			&kcov_shm->cmp_hyp_bitmask_full_or_would_fire,
+			&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_full_or_would_fire,
 			1UL, __ATOMIC_RELAXED);
 		if (mask != live_val)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_bitmask_full_or_would_win,
+				&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_full_or_would_win,
 				1UL, __ATOMIC_RELAXED);
 	}
 
@@ -1387,7 +1387,7 @@ static void cmp_hyp_bitmask_shadow_probe(const struct cmp_hypothesis *picked,
 		return;
 
 	__atomic_fetch_add(
-		&kcov_shm->cmp_hyp_bitmask_andnot_toggle_would_fire,
+		&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_andnot_toggle_would_fire,
 		1UL, __ATOMIC_RELAXED);
 
 	andnot_differs = false;
@@ -1404,7 +1404,7 @@ static void cmp_hyp_bitmask_shadow_probe(const struct cmp_hypothesis *picked,
 	}
 	if (andnot_differs)
 		__atomic_fetch_add(
-			&kcov_shm->cmp_hyp_bitmask_andnot_toggle_would_win,
+			&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_andnot_toggle_would_win,
 			1UL, __ATOMIC_RELAXED);
 }
 
