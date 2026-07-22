@@ -175,7 +175,7 @@ static struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 		if (kcov_shm != NULL) {
 			__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_pool_full, 1UL,
 					   __ATOMIC_RELAXED);
-			__atomic_fetch_add(&kcov_shm->cmp_hyp_pool_full_by_kind[kind],
+			__atomic_fetch_add(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_pool_full_by_kind[kind],
 					   1UL, __ATOMIC_RELAXED);
 		}
 		return NULL;
@@ -184,7 +184,7 @@ static struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 		if (kcov_shm != NULL) {
 			__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_kind_full, 1UL,
 					   __ATOMIC_RELAXED);
-			__atomic_fetch_add(&kcov_shm->cmp_hyp_kind_full_by_kind[kind],
+			__atomic_fetch_add(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_kind_full_by_kind[kind],
 					   1UL, __ATOMIC_RELAXED);
 		}
 		return NULL;
@@ -203,7 +203,7 @@ static struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_inserted, 1UL,
 				   __ATOMIC_RELAXED);
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_inserted_by_kind[kind],
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_inserted_by_kind[kind],
 				   1UL, __ATOMIC_RELAXED);
 	}
 	return h;
@@ -852,7 +852,7 @@ void cmp_hyp_credit_consume(unsigned int nr, bool do32,
 	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_consumed, 1UL,
 				   __ATOMIC_RELAXED);
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_consumed_by_kind[h->kind],
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_consumed_by_kind[h->kind],
 				   1UL, __ATOMIC_RELAXED);
 	}
 }
@@ -1065,13 +1065,13 @@ void cmp_hyp_would_pick(unsigned int nr, bool do32,
 	picked = cmp_hyp_would_pick_locked(pool, cmp_ip, width, present);
 	if (picked != NULL) {
 		__atomic_fetch_add(
-			&kcov_shm->cmp_hyp_would_pick_by_kind[picked->kind],
+			&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_pick_by_kind[picked->kind],
 			1UL, __ATOMIC_RELAXED);
 		if (picked->exemplar != (uint64_t)live_value) {
-			__atomic_fetch_add(&kcov_shm->cmp_hyp_would_value_differs,
+			__atomic_fetch_add(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_value_differs,
 					   1UL, __ATOMIC_RELAXED);
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_would_value_differs_by_kind[picked->kind],
+				&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_value_differs_by_kind[picked->kind],
 				1UL, __ATOMIC_RELAXED);
 		}
 	}
@@ -1080,7 +1080,7 @@ void cmp_hyp_would_pick(unsigned int nr, bool do32,
 
 		if (!present[lk])
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_would_miss_by_kind[lk],
+				&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_miss_by_kind[lk],
 				1UL, __ATOMIC_RELAXED);
 	}
 	/*
@@ -1821,7 +1821,7 @@ bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	if (!channel_a_fired && !channel_b_fired && !channel_c_dice_won) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_live_inject_reason[plateau_on
+				&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_inject_reason[plateau_on
 					? CMP_HYP_LIVE_INJECT_REASON_DICE_MISS
 					: CMP_HYP_LIVE_INJECT_REASON_NOT_PLATEAU],
 				1UL, __ATOMIC_RELAXED);
@@ -1837,7 +1837,7 @@ bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	if (picked == NULL) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NO_MATCH],
+				&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NO_MATCH],
 				1UL, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -1863,17 +1863,17 @@ bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	if (channel_c_dice_won && picked_state == CMP_HYP_STATE_PROMOTED) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_PROMOTED_BYPASS],
+				&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_PROMOTED_BYPASS],
 				1UL, __ATOMIC_RELAXED);
 	} else if (channel_b_fired) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_BOOTSTRAP],
+				&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_BOOTSTRAP],
 				1UL, __ATOMIC_RELAXED);
 	} else if (!channel_a_fired) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NO_MATCH],
+				&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NO_MATCH],
 				1UL, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -1881,7 +1881,7 @@ bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	if (!cmp_hyp_derive_value(picked, callsite, &derived)) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_DERIVE_FAIL],
+				&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_DERIVE_FAIL],
 				1UL, __ATOMIC_RELAXED);
 		return false;
 	}

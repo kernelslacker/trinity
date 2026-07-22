@@ -372,7 +372,7 @@ struct stats_aggregate {
 	unsigned long per_syscall_cmp_returned[MAX_NR_SYSCALL];
 
 	/* Drained from STATS_FIELD_PER_SYSCALL_CMP_HYP_LIVE_INJECTED.  Per-nr
-	 * partition of the scalar kcov_shm->cmp_hyp_live_injected: counts
+	 * partition of the scalar kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected: counts
 	 * only typed-inject (hypothesis-store) live injects, so
 	 * per_syscall_cmp_returned[nr] - per_syscall_cmp_hyp_live_injected[nr]
 	 * isolates the raw-pool arm's per-nr yield.  Same write-only-by-child

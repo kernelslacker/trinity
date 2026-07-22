@@ -304,7 +304,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 			 * to a different cohort and is not counted here). */
 			if (hyp_injected && kcov_shm != NULL)
 				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT],
+					&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT],
 					1UL, __ATOMIC_RELAXED);
 			return false;
 		}
@@ -324,13 +324,13 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 			 * "gate fired but the typed store had nothing"
 			 * observability the kcov_shm doc describes. */
 			if (inject_gate_fired)
-				__atomic_fetch_add(&kcov_shm->cmp_hyp_live_inject_gate_passed,
+				__atomic_fetch_add(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_inject_gate_passed,
 						   1UL, __ATOMIC_RELAXED);
 			if (hyp_injected) {
-				__atomic_fetch_add(&kcov_shm->cmp_hyp_live_injected,
+				__atomic_fetch_add(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected,
 						   1UL, __ATOMIC_RELAXED);
 				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_live_injected_by_kind[inject_kind],
+					&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected_by_kind[inject_kind],
 					1UL, __ATOMIC_RELAXED);
 				/* Placement-proof fill-slot counter.
 				 * Sibling of reexec_attribution_slot_hist
