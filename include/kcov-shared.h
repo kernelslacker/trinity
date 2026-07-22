@@ -31,6 +31,7 @@
 #include "kcov-groups/cmp_hint_ps.h"
 #include "kcov-groups/hint_callsite.h"
 #include "kcov-groups/hint_flat.h"
+#include "kcov-groups/reexec_pending_hist.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -437,23 +438,7 @@ struct kcov_shared {
 	 *      redqueen_reexec_step() inside the existing inner_new_cmp > 0
 	 *      success block; the entry index is clamped to
 	 *      REEXEC_PENDING_PICK_HIST_NR before use. */
-	struct kcov_reexec_pending_hist {
-	unsigned long reexec_attempts_by_syscall[MAX_NR_SYSCALL];
-	unsigned long reexec_ambiguous_by_syscall[MAX_NR_SYSCALL];
-	unsigned long reexec_attribution_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
-	unsigned long reexec_success_by_slot[CMP_REDQUEEN_SLOT_HIST_NR];
-	unsigned long typed_inject_fill_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
-	unsigned long reexec_pending_dropped;
-	/*
-	 * Vestigial wastage counter.  Always zero: the dispatch_step tail
-	 * drains every staged reexec_pending[] entry per parent dispatch,
-	 * so no gate-pass entry is ever left behind.  Field retained only
-	 * for shm-ABI stability so existing stats consumers keep parsing
-	 * the layout unchanged.
-	 */
-	unsigned long reexec_pending_drain_unused;
-	unsigned long reexec_pending_pick_success[REEXEC_PENDING_PICK_HIST_NR];
-	} reexec_pending_hist;
+	struct kcov_reexec_pending_hist reexec_pending_hist;
 
 	/* RedQueen A/B cohort denominators.  The existing reexec_* family
 	 * counts enabled-arm ACTIVITY (attempts, new_cmps, attribution wins
