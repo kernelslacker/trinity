@@ -506,28 +506,35 @@ static bool alloc_track_consume(void *ptr)
  * the tracker.
  */
 /*
- * Ring control state -- the ring pointer, its mmap'd size, and the
- * in-flight slot count.  All three live in their own small mmap'd
- * armor page so a sibling fuzzed value-result syscall cannot scribble
- * the values that DRIVE ring[]'s own mprotect/munmap bracket: a
- * stomped ring would point mprotect at an arbitrary VA, a stomped
- * ring_bytes would extend munmap into unrelated VMAs, and a stomped
- * ring_count would mis-gate the enqueue full-ring check and the
- * tick early-bail.  ring and ring_bytes are write-once during init
- * (plus the dispose-time NULL/zero clear); ring_count mutates per
- * enqueue and drain.  Steady state of the armor page is PROT_READ so
- * the dominant reads (the "if (ring == NULL)" / "if (ring_count == 0)"
+ * Ring control state -- the ring pointer, its mmap'd size, the
+ * in-flight slot count, and the per-slot occupancy bitmap.  All four
+ * live in their own small mmap'd armor page so a sibling fuzzed
+ * value-result syscall cannot scribble the values that DRIVE ring[]'s
+ * own mprotect/munmap bracket: a stomped ring would point mprotect at
+ * an arbitrary VA, a stomped ring_bytes would extend munmap into
+ * unrelated VMAs, a stomped ring_count would mis-gate the enqueue
+ * full-ring check and the tick early-bail, and a stomped
+ * occupied_mask would either (mask=0 while ring is really full)
+ * bypass the full-ring eviction and orphan a live slot on the next
+ * enqueue, or (mask=~0ULL while ring is really empty) drive
+ * __builtin_ctzll(~mask) into its UB-on-zero case.  ring and
+ * ring_bytes are write-once during init (plus the dispose-time
+ * NULL/zero clear); ring_count and occupied_mask mutate per enqueue
+ * and drain.  Steady state of the armor page is PROT_READ so the
+ * dominant reads (the "if (ring == NULL)" / "if (ring_count == 0)"
  * fast-bail checks, the ring_count comparison in the full-ring
- * branch) execute without a syscall; the few writer paths flip RW
- * via rc_unlock()/rc_lock() for the duration of the mutation.  The
- * field access pattern is hidden behind the file-scope macros below
- * so the rest of the file keeps reading like ring/ring_count/
- * ring_bytes were still plain file-static scalars.
+ * branch, and __builtin_ctzll(~occupied_mask) in the slot-hunt)
+ * execute without a syscall; the few writer paths flip RW via
+ * rc_unlock()/rc_lock() for the duration of the mutation.  The field
+ * access pattern is hidden behind the file-scope macros below so the
+ * rest of the file keeps reading like ring/ring_count/ring_bytes/
+ * occupied_mask were still plain file-static scalars.
  */
 struct ring_control {
 	struct deferred_entry *ring;
 	size_t ring_bytes;
 	unsigned int ring_count;
+	uint64_t occupied_mask;
 };
 
 static struct ring_control *rc;
@@ -536,6 +543,7 @@ static size_t rc_bytes;
 #define ring		(rc->ring)
 #define ring_bytes	(rc->ring_bytes)
 #define ring_count	(rc->ring_count)
+#define occupied_mask	(rc->occupied_mask)
 
 static int rc_unlock(void)
 {
@@ -555,17 +563,16 @@ static void rc_lock(void)
 }
 
 /*
- * One bit per ring slot: 1 == occupied, 0 == free.  Lets enqueue find
- * the next empty slot in O(1) via __builtin_ctzll(~occupied_mask)
- * instead of a linear scan over all 64 entries.  Maintained alongside
- * ring_count: every ptr write that fills a slot sets the bit, every
- * clear that empties a slot clears it.  BSS-resident (not inside the
- * mprotect-bracketed ring), so the cheap scan in enqueue's full-ring
- * check and the ctzll lookup itself need no unlock.  uint64_t suffices
- * because DEFERRED_RING_SIZE == 64; a static_assert would be overkill
- * for a single contiguous file.
+ * occupied_mask: one bit per ring slot (1 == occupied, 0 == free).
+ * Lets enqueue find the next empty slot in O(1) via
+ * __builtin_ctzll(~occupied_mask) instead of a linear scan over all
+ * 64 entries.  Maintained alongside ring_count: every ptr write that
+ * fills a slot sets the bit, every clear that empties a slot clears
+ * it.  Lives in the ring_control armor page (see struct definition
+ * above) -- reads at rest hit PROT_READ without a syscall; writers
+ * update it inside the same rc_unlock/rc_lock bracket that guards
+ * ring_count.  uint64_t suffices because DEFERRED_RING_SIZE == 64.
  */
-static uint64_t occupied_mask;
 
 /*
  * Bracket writers/readers of ring[] with mprotect(): at rest PROT_NONE
@@ -741,15 +748,18 @@ void tracked_free_now(void *ptr)
 		return;
 
 	/*
-	 * Gate on ring != NULL, not occupied_mask != 0.  occupied_mask
-	 * lives in unarmored BSS; a sibling fuzzed value-result syscall
-	 * that scribbles it to zero would skip the authoritative ring[]
-	 * scan and let this function free() a ring-resident chunk, which
-	 * eviction or TTL would then free a second time.  ring is set
-	 * once at init and cleared only by ring_dispose_after_enomem();
-	 * both writers go through rc_unlock()'s armored bracket, so the
-	 * pointer cannot lie about ring liveness.  Always run the armored
-	 * ring[] scan whenever the ring still exists.
+	 * Gate on ring != NULL, not occupied_mask != 0.  Even now that
+	 * occupied_mask shares the armored ring_control page (see the
+	 * struct comment), the RW window opened by rc_unlock() during
+	 * eviction/enqueue/drain lets a sibling fuzzed value-result
+	 * syscall land inside; a mask-driven gate would still be
+	 * skippable within that window and would then let this function
+	 * free() a ring-resident chunk, which eviction or TTL would free
+	 * a second time.  ring is set once at init and cleared only by
+	 * ring_dispose_after_enomem(); both writers go through
+	 * rc_unlock()'s armored bracket, so the pointer cannot lie about
+	 * ring liveness.  Always run the armored ring[] scan whenever
+	 * the ring still exists.
 	 *
 	 * Ring residency check runs BEFORE alloc_track_consume:
 	 * alloc_track is now populated through ring residency (the
@@ -975,9 +985,9 @@ static void ring_dispose_after_enomem(void)
 	if (rc_unlock() == 0) {
 		ring = NULL;
 		ring_count = 0;
+		occupied_mask = 0;
 		rc_lock();
 	}
-	occupied_mask = 0;
 	if (inflight_unlock() == 0) {
 		memset(inflight_hash, 0, inflight_hash_bytes);
 		inflight_lock();
@@ -1284,8 +1294,8 @@ static void ring_evict_oldest_safe(void)
 				   1, __ATOMIC_RELAXED);
 	}
 	ring[oldest].ptr = NULL;
-	occupied_mask &= ~(1ULL << oldest);
 	if (rc_unlock() == 0) {
+		occupied_mask &= ~(1ULL << oldest);
 		ring_count--;
 		rc_lock();
 	}
@@ -1552,8 +1562,8 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	i = __builtin_ctzll(~occupied_mask);
 	ring[i].ptr = ptr;
 	ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
-	occupied_mask |= 1ULL << i;
 	if (rc_unlock() == 0) {
+		occupied_mask |= 1ULL << i;
 		ring_count++;
 		rc_lock();
 	}
@@ -1772,8 +1782,12 @@ void deferred_free_tick(void)
 			 * still marked occupied.  Reconcile the bookkeeping
 			 * so occupied_mask and ring_count track reality;
 			 * otherwise accumulated stomps drive occupied_mask
-			 * to ~0ULL and the enqueue path's __builtin_ctzll
-			 * lands on UB.
+			 * toward ~0ULL and the enqueue path pins itself in
+			 * the fallback immediate-free branch instead of
+			 * using the ring.  occupied_mask now lives in the
+			 * armored ring_control page (see struct comment),
+			 * so this is the sole remaining path that lets its
+			 * bits diverge from ring[]'s ptr state.
 			 */
 			if (occupied_mask & (1ULL << i)) {
 				occupied_mask &= ~(1ULL << i);
@@ -1852,9 +1866,9 @@ void deferred_free_flush(void)
 	}
 	if (rc_unlock() == 0) {
 		ring_count = 0;
+		occupied_mask = 0;
 		rc_lock();
 	}
-	occupied_mask = 0;
 
 	ring_lock();
 }
