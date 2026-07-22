@@ -367,7 +367,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				attribute_enabled = true;
 				if (kcov_shm != NULL)
 					__atomic_fetch_add(
-						&kcov_shm->cmp_attribution_calls_eligible,
+						&kcov_shm->reexec_gate.cmp_attribution_calls_eligible,
 						1UL, __ATOMIC_RELAXED);
 			} else if (kcov_shm != NULL &&
 				   entry != NULL && entry->num_args > 0 &&
@@ -380,7 +380,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				 * snapshot-feed health is not silently
 				 * folded into the eligible cohort. */
 				__atomic_fetch_add(
-					&kcov_shm->cmp_attribution_snapshot_unavailable,
+					&kcov_shm->reexec_gate.cmp_attribution_snapshot_unavailable,
 					1UL, __ATOMIC_RELAXED);
 			}
 		}
@@ -606,7 +606,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 					 * gated to MAX_NR_SYSCALL at
 					 * cmp_hints_collect() entry. */
 					__atomic_fetch_add(
-						&kcov_shm->reexec_attribution_found_by_syscall[nr],
+						&kcov_shm->reexec_gate.reexec_attribution_found_by_syscall[nr],
 						1UL, __ATOMIC_RELAXED);
 					/* per-childop partition of the same
 					 * HEAD counter, bounded by
@@ -617,7 +617,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 					 * from the default OP_SYSCALL flow. */
 					if (op_type < KCOV_CHILDOP_NR_MAX)
 						__atomic_fetch_add(
-							&kcov_shm->reexec_attribution_found_by_childop[op_type],
+							&kcov_shm->reexec_gate.reexec_attribution_found_by_childop[op_type],
 							1UL, __ATOMIC_RELAXED);
 					/* which arg slot
 					 * (a1..a6) won the first-match-wins
@@ -654,7 +654,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						 * sibling above. */
 						if (op_type < KCOV_CHILDOP_NR_MAX)
 							__atomic_fetch_add(
-								&kcov_shm->reexec_attribution_ambiguous_by_childop[op_type],
+								&kcov_shm->reexec_gate.reexec_attribution_ambiguous_by_childop[op_type],
 								1UL, __ATOMIC_RELAXED);
 					}
 				}
@@ -689,7 +689,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						 * MAX_REEXEC_PENDING cap is
 						 * truncating. */
 						__atomic_fetch_add(
-							&kcov_shm->reexec_attribution_dropped_pending_by_syscall[nr],
+							&kcov_shm->reexec_gate.reexec_attribution_dropped_pending_by_syscall[nr],
 							1UL, __ATOMIC_RELAXED);
 					}
 				}
@@ -778,7 +778,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 								&kcov_shm->reexec_pending_hist.reexec_pending_dropped,
 								1UL, __ATOMIC_RELAXED);
 							__atomic_fetch_add(
-								&kcov_shm->reexec_attribution_dropped_pending_by_syscall[nr],
+								&kcov_shm->reexec_gate.reexec_attribution_dropped_pending_by_syscall[nr],
 								1UL, __ATOMIC_RELAXED);
 						}
 					}
@@ -900,7 +900,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 							&kcov_shm->reexec_flat.reexec_attribution_found,
 							1UL, __ATOMIC_RELAXED);
 						__atomic_fetch_add(
-							&kcov_shm->reexec_attribution_found_by_syscall[nr],
+							&kcov_shm->reexec_gate.reexec_attribution_found_by_syscall[nr],
 							1UL, __ATOMIC_RELAXED);
 						if (fk < CMP_REDQUEEN_SLOT_HIST_NR)
 							__atomic_fetch_add(
@@ -919,7 +919,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 								&kcov_shm->reexec_pending_hist.reexec_pending_dropped,
 								1UL, __ATOMIC_RELAXED);
 							__atomic_fetch_add(
-								&kcov_shm->reexec_attribution_dropped_pending_by_syscall[nr],
+								&kcov_shm->reexec_gate.reexec_attribution_dropped_pending_by_syscall[nr],
 								1UL, __ATOMIC_RELAXED);
 						}
 					}

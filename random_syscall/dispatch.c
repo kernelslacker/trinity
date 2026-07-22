@@ -618,27 +618,27 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 		if (child->in_reexec) {
 			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate_skip_in_reexec
+				? &kcov_shm->reexec_gate.reexec_gate_skip_in_reexec
 				: NULL;
 		} else if (!child->redqueen_enabled) {
 			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate_skip_disabled
+				? &kcov_shm->reexec_gate.reexec_gate_skip_disabled
 				: NULL;
 		} else if (child->kcov.mode != KCOV_MODE_CMP) {
 			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate_skip_mode
+				? &kcov_shm->reexec_gate.reexec_gate_skip_mode
 				: NULL;
 		} else if (child->in_chain_mid_step) {
 			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate_skip_chain_mid
+				? &kcov_shm->reexec_gate.reexec_gate_skip_chain_mid
 				: NULL;
 		} else if (new_cmp == 0) {
 			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate_skip_no_new_cmp
+				? &kcov_shm->reexec_gate.reexec_gate_skip_no_new_cmp
 				: NULL;
 		} else if (child->reexec_pending_count == 0) {
 			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate_skip_no_pending
+				? &kcov_shm->reexec_gate.reexec_gate_skip_no_pending
 				: NULL;
 		} else {
 			/* All boolean gates cleared; the rate gate
@@ -740,7 +740,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				gate_passed = true;
 			} else {
 				gate_skipped = (kcov_shm != NULL)
-					? &kcov_shm->reexec_gate_skip_rate
+					? &kcov_shm->reexec_gate.reexec_gate_skip_rate
 					: NULL;
 			}
 		}
@@ -748,7 +748,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		if (kcov_shm != NULL) {
 			if (gate_passed)
 				__atomic_fetch_add(
-					&kcov_shm->reexec_gate_pass,
+					&kcov_shm->reexec_gate.reexec_gate_pass,
 					1UL, __ATOMIC_RELAXED);
 			else if (gate_skipped != NULL)
 				__atomic_fetch_add(gate_skipped,
@@ -1236,7 +1236,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 		 * from the default OP_SYSCALL flow. */
 		if (op_type < KCOV_CHILDOP_NR_MAX)
 			__atomic_fetch_add(
-				&kcov_shm->reexec_attempts_by_childop[op_type],
+				&kcov_shm->reexec_gate.reexec_attempts_by_childop[op_type],
 				1UL, __ATOMIC_RELAXED);
 	}
 	child->reexec_count_window++;
@@ -1318,7 +1318,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 			 * harvesting the bulk of the re-exec CMP novelty". */
 			if (op_type < KCOV_CHILDOP_NR_MAX)
 				__atomic_fetch_add(
-					&kcov_shm->per_childop_cmp_novelty_reexec[op_type],
+					&kcov_shm->reexec_gate.per_childop_cmp_novelty_reexec[op_type],
 					inner_new_cmp, __ATOMIC_RELAXED);
 			/* per-slot success counter.  Pair
 			 * with reexec_attribution_slot_hist (the per-slot

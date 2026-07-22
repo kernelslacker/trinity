@@ -174,14 +174,14 @@ static void dump_stats_render_kcov_reexec(void)
 		unsigned long rx_parent_calls_control = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_control, __ATOMIC_RELAXED);
 		unsigned long rx_parent_new_cmps_enabled = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_enabled, __ATOMIC_RELAXED);
 		unsigned long rx_parent_new_cmps_control = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_control, __ATOMIC_RELAXED);
-		unsigned long rx_gate_skip_in_reexec = __atomic_load_n(&kcov_shm->reexec_gate_skip_in_reexec, __ATOMIC_RELAXED);
-		unsigned long rx_gate_skip_disabled = __atomic_load_n(&kcov_shm->reexec_gate_skip_disabled, __ATOMIC_RELAXED);
-		unsigned long rx_gate_skip_mode = __atomic_load_n(&kcov_shm->reexec_gate_skip_mode, __ATOMIC_RELAXED);
-		unsigned long rx_gate_skip_chain_mid = __atomic_load_n(&kcov_shm->reexec_gate_skip_chain_mid, __ATOMIC_RELAXED);
-		unsigned long rx_gate_skip_no_new_cmp = __atomic_load_n(&kcov_shm->reexec_gate_skip_no_new_cmp, __ATOMIC_RELAXED);
-		unsigned long rx_gate_skip_no_pending = __atomic_load_n(&kcov_shm->reexec_gate_skip_no_pending, __ATOMIC_RELAXED);
-		unsigned long rx_gate_skip_rate = __atomic_load_n(&kcov_shm->reexec_gate_skip_rate, __ATOMIC_RELAXED);
-		unsigned long rx_gate_pass = __atomic_load_n(&kcov_shm->reexec_gate_pass, __ATOMIC_RELAXED);
+		unsigned long rx_gate_skip_in_reexec = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_in_reexec, __ATOMIC_RELAXED);
+		unsigned long rx_gate_skip_disabled = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_disabled, __ATOMIC_RELAXED);
+		unsigned long rx_gate_skip_mode = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_mode, __ATOMIC_RELAXED);
+		unsigned long rx_gate_skip_chain_mid = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_chain_mid, __ATOMIC_RELAXED);
+		unsigned long rx_gate_skip_no_new_cmp = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_no_new_cmp, __ATOMIC_RELAXED);
+		unsigned long rx_gate_skip_no_pending = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_no_pending, __ATOMIC_RELAXED);
+		unsigned long rx_gate_skip_rate = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_rate, __ATOMIC_RELAXED);
+		unsigned long rx_gate_pass = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_pass, __ATOMIC_RELAXED);
 
 		if (rx_attempts > 0)
 			stat_row("kcov_coverage", "reexec_attempts", rx_attempts);
