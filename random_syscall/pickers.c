@@ -419,7 +419,7 @@ retry:
 	 * the would_suppress family when the data-driven predicate fires.
 	 * Live picker is byte-identical -- the lever does NOT reject here. */
 	if (kcov_shm != NULL &&
-	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE)) {
+	    __atomic_load_n(&kcov_shm->plateau.plateau_active, __ATOMIC_ACQUIRE)) {
 		__atomic_fetch_add(&shm->stats.picker_bandit.wall_lever_eligible_total, 1UL,
 				   __ATOMIC_RELAXED);
 		if (wall_lever_should_suppress_shadow(syscallnr)) {
@@ -627,7 +627,7 @@ retry:
 	 * arm's contribution is the headline data point.  Live picker is
 	 * byte-identical -- the lever does NOT reject here. */
 	if (kcov_shm != NULL &&
-	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE)) {
+	    __atomic_load_n(&kcov_shm->plateau.plateau_active, __ATOMIC_ACQUIRE)) {
 		__atomic_fetch_add(&shm->stats.picker_bandit.wall_lever_eligible_total, 1UL,
 				   __ATOMIC_RELAXED);
 		if (wall_lever_should_suppress_shadow(syscallnr)) {

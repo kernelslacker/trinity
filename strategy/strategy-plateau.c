@@ -340,7 +340,7 @@ void strategy_plateau_hypothesis_tick(void)
 	if (kcov_shm == NULL)
 		return;
 
-	if (!__atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE)) {
+	if (!__atomic_load_n(&kcov_shm->plateau.plateau_active, __ATOMIC_ACQUIRE)) {
 		/* Plateau cleared: drop the entry snapshot so the next
 		 * plateau gets a fresh baseline.  hypothesis_fires[] is
 		 * NOT cleared -- the fire-count distribution is a
@@ -427,7 +427,7 @@ bool plateau_rescue_bias_active_for(enum random_rescue_class c)
 	if (c < 0 || c >= RRC_NR_CLASSES)
 		return false;
 	if (kcov_shm == NULL ||
-	    !__atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE))
+	    !__atomic_load_n(&kcov_shm->plateau.plateau_active, __ATOMIC_ACQUIRE))
 		return false;
 	/* ACQUIRE-load current_strategy pairs with the RELEASE-store in
 	 * maybe_rotate_strategy.  Callers reach this gate from paths that
@@ -470,7 +470,7 @@ bool plateau_rescue_bias_active_for(enum random_rescue_class c)
 bool plateau_anti_prior_active(void)
 {
 	if (kcov_shm == NULL ||
-	    !__atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE))
+	    !__atomic_load_n(&kcov_shm->plateau.plateau_active, __ATOMIC_ACQUIRE))
 		return false;
 	/* ACQUIRE-load current_strategy pairs with the RELEASE-store in
 	 * maybe_rotate_strategy.  Fenced here rather than relying on the
@@ -688,7 +688,7 @@ bool wall_lever_should_suppress_shadow(unsigned int nr)
 	 * but plateau_active gates that entire publish, so an ACQUIRE here
 	 * lets the gate degrade gracefully (return false) when the plateau
 	 * detector is off and the suppress table is stale or never written. */
-	if (!__atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE))
+	if (!__atomic_load_n(&kcov_shm->plateau.plateau_active, __ATOMIC_ACQUIRE))
 		return false;
 	baseline = __atomic_load_n(&shm->wall_lever_baseline_calls,
 				   __ATOMIC_RELAXED);

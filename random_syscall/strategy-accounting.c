@@ -347,7 +347,7 @@ void maybe_rotate_strategy(void)
 		unsigned long window = STRATEGY_WINDOW;
 
 		if (kcov_shm != NULL &&
-		    __atomic_load_n(&kcov_shm->plateau_active,
+		    __atomic_load_n(&kcov_shm->plateau.plateau_active,
 				    __ATOMIC_ACQUIRE))
 			window = PLATEAU_STRATEGY_WINDOW;
 

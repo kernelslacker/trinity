@@ -646,7 +646,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			 * CMP_RISING_PC_FLAT plateau) decides between
 			 * gate_pass and the rate-skip bucket. */
 			if (kcov_shm != NULL &&
-			    __atomic_load_n(&kcov_shm->plateau_active,
+			    __atomic_load_n(&kcov_shm->plateau.plateau_active,
 					    __ATOMIC_RELAXED)) {
 				int h = __atomic_load_n(
 					&shm->plateau_current_hypothesis,

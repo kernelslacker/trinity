@@ -297,7 +297,7 @@ static unsigned int window_iters_resolved(void)
 	 * below still applies, so a halved value cannot fall below
 	 * CANARY_WINDOW_ITERS_MIN. */
 	if (kcov_shm != NULL &&
-	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE))
+	    __atomic_load_n(&kcov_shm->plateau.plateau_active, __ATOMIC_ACQUIRE))
 		w /= 2;
 
 	if (w < CANARY_WINDOW_ITERS_MIN)
@@ -1478,7 +1478,7 @@ static void close_window_or_park(enum child_op_type op)
 static void log_plateau_edge(void)
 {
 	bool now_plateau = (kcov_shm != NULL &&
-		__atomic_load_n(&kcov_shm->plateau_active,
+		__atomic_load_n(&kcov_shm->plateau.plateau_active,
 				__ATOMIC_ACQUIRE));
 	if (now_plateau == canary_last_plateau)
 		return;
