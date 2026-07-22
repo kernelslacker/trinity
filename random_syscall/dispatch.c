@@ -1120,7 +1120,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 	}
 	if (child->reexec_count_window >= REDQUEEN_REEXEC_WINDOW_CAP) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->reexec_window_cap_hit,
+			__atomic_fetch_add(&kcov_shm->reexec_flat.reexec_window_cap_hit,
 					   1UL, __ATOMIC_RELAXED);
 		return FAIL;
 	}
@@ -1143,7 +1143,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 	if ((entry->sanitise != NULL && !(entry->flags & REEXEC_SANITISE_OK)) ||
 	    (entry->flags & AVOID_REEXEC)) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->reexec_skipped_destructive,
+			__atomic_fetch_add(&kcov_shm->reexec_flat.reexec_skipped_destructive,
 					   1UL, __ATOMIC_RELAXED);
 		return FAIL;
 	}
@@ -1153,7 +1153,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 			(biarch ? syscalls_64bit : syscalls),
 			(int)rec->nr)) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->reexec_skipped_validate_silent,
+			__atomic_fetch_add(&kcov_shm->reexec_flat.reexec_skipped_validate_silent,
 					   1UL, __ATOMIC_RELAXED);
 		return FAIL;
 	}
@@ -1218,7 +1218,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 	if (kcov_shm != NULL) {
 		unsigned int op_type = (unsigned int)child->op_type;
 
-		__atomic_fetch_add(&kcov_shm->reexec_attempts, 1UL,
+		__atomic_fetch_add(&kcov_shm->reexec_flat.reexec_attempts, 1UL,
 				   __ATOMIC_RELAXED);
 		/* per-nr partition of the re-exec attempt
 		 * counter.  Reaching this site means the destructive /
@@ -1297,9 +1297,9 @@ static bool redqueen_reexec_step(struct childdata *child,
 			 * SUM of inner_new_cmp).  The existing sum / attempts
 			 * pair conflates hit-rate with mean-novelty-per-win;
 			 * this discrete bump splits them. */
-			__atomic_fetch_add(&kcov_shm->reexec_attempts_with_new_cmp,
+			__atomic_fetch_add(&kcov_shm->reexec_flat.reexec_attempts_with_new_cmp,
 					   1UL, __ATOMIC_RELAXED);
-			__atomic_fetch_add(&kcov_shm->reexec_new_cmps_total,
+			__atomic_fetch_add(&kcov_shm->reexec_flat.reexec_new_cmps_total,
 					   inner_new_cmp, __ATOMIC_RELAXED);
 			/* Per-arm CMP-novelty lift for the plateau_burst A/B
 			 * measure: sibling of reexec_new_edges_by_arm above so
@@ -1309,7 +1309,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 					   inner_new_cmp, __ATOMIC_RELAXED);
 			if (rec->nr < MAX_NR_SYSCALL)
 				__atomic_fetch_add(
-					&kcov_shm->per_syscall_cmp_novelty_reexec[rec->nr],
+					&kcov_shm->reexec_flat.per_syscall_cmp_novelty_reexec[rec->nr],
 					inner_new_cmp, __ATOMIC_RELAXED);
 			/* per-childop partition of the re-exec lift signal,
 			 * sibling of the per-syscall sibling above.  Same

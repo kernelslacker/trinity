@@ -135,7 +135,7 @@ struct reexec_pending {
  * hot attributing syscall accumulates a stream of matches: per-child
  * re-exec count is reset every REDQUEEN_REEXEC_WINDOW_OPS child
  * iterations and capped at REDQUEEN_REEXEC_WINDOW_CAP within the
- * window.  Exceedance bumps kcov_shm->reexec_window_cap_hit and skips
+ * window.  Exceedance bumps kcov_shm->reexec_flat.reexec_window_cap_hit and skips
  * further re-execs until the next window roll.
  *
  * Sized off STRATEGY_WINDOW so the cap is conceptually "no more than
