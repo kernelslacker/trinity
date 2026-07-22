@@ -51,6 +51,7 @@
 #include "kcov-groups/cmp_shared_tier.h"
 #include "kcov-groups/childop_cmp_consume.h"
 #include "kcov-groups/cmp_nonconst.h"
+#include "kcov-groups/cmp_width_pin.h"
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
@@ -1300,13 +1301,7 @@ struct kcov_shared {
 	 * lever can be judged before building it.  Nothing in the collect /
 	 * save / re-exec paths reads them; live pin is unchanged.  Append-
 	 * only at the tail per convention so consumer offsets stay stable. */
-	struct kcov_cmp_width_pin {
-	unsigned long cmp_width_pin_total;           /* unique width-match stamps executed */
-	unsigned long cmp_width_pin_would_differ;    /* subset where the matched slot has non-zero
-						      * bits outside width_mask, so a high-bit-
-						      * preserving splice would produce a value
-						      * different from today's whole-slot overwrite */
-	} cmp_width_pin;
+	struct kcov_cmp_width_pin cmp_width_pin;
 
 	/* Shadow measurement of a POW2 / alignment probe class in the
 	 * typed-hypothesis derive.  Fires only on picks whose callsite
