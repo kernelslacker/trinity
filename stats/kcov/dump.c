@@ -1,38 +1,9 @@
-#include <errno.h>
-#include <inttypes.h>
-#include <stdarg.h>
 #include <stddef.h>
-#include <sys/utsname.h>
-#include <stdio.h>
-#include <string.h>
-#include <time.h>
-#include "arch.h"
-#include "arg-len-semantics.h"
-#include "breadcrumb_ring.h"
-#include "child-api.h"
-#include "cmp_hints.h"
-#include "cred_throttle.h"
-#include "fd.h"
+#include "compiler.h"
 #include "kcov.h"
-#include "minicorpus.h"
-#include "params.h"
-#include "pc_format.h"
-#include "pids.h"
-#include "reach-band.h"
-#include "sequence.h"
-#include "shadow_promote.h"
-#include "shm.h"
-#include "stats.h"
 #include "stats-internal.h"
-#include "stats_ring.h"
-#include "strategy.h"		/* frontier_spare_lane_decide, enum frontier_spare_reason */
 #include "syscall.h"
 #include "tables.h"
-#include "taint.h"
-#include "trinity.h"
-#include "utils.h"
-#include "utils-proc.h"
-#include "version.h"
 
 #include "dump-internal.h"
 
