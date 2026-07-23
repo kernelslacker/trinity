@@ -177,6 +177,16 @@ static void inotify_try_replenish(unsigned int budget)
 	};
 	struct childdata *child = this_child();
 	unsigned int i;
+	/*
+	 * See the block comment above memfd_try_replenish() (fds/memfd.c) for
+	 * the rationale.  child_fd_ring_push() is a shared, pure-overwrite
+	 * hint cache -- it does not own the fds it evicts.  Every inotify fd
+	 * we mint past live_fds's 16-slot window would leak for the child's
+	 * life, so keep a per-child 32-slot ring of the inotify fds WE
+	 * created and close the one that ages out before reusing its slot.
+	 */
+	static int created_fds[32];
+	static unsigned int created_head;
 
 	if (child == NULL)
 		return;
@@ -186,6 +196,12 @@ static void inotify_try_replenish(unsigned int budget)
 
 		if (fd < 0)
 			return;
+
+		if (created_head >= ARRAY_SIZE(created_fds))
+			close(created_fds[created_head % ARRAY_SIZE(created_fds)]);
+		created_fds[created_head % ARRAY_SIZE(created_fds)] = fd;
+		created_head++;
+
 		child_fd_ring_push(&child->live_fds, fd);
 	}
 }
