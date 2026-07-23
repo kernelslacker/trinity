@@ -631,20 +631,15 @@ static void dump_pid_stack(int pid)
 	size_t n = 0;
 	char *line = NULL;
 
-	while (!(feof(fp))) {
-		if (getline(&line, &n, fp) != -1) {
-			output(0, "pid %d stack: %s", pid, line);
-		} else {
-			if (errno != EAGAIN)
-				output(0, "Error reading /proc/%d/stack :%s\n", pid, strerror(errno));
-			free(line);
-			fclose(fp);
-			return;
-		}
-	}
-	free(line);
-	output(0, "------------------------------------------------\n");
+	while (getline(&line, &n, fp) != -1)
+		output(0, "pid %d stack: %s", pid, line);
 
+	if (ferror(fp))
+		output(0, "Error reading /proc/%d/stack :%s\n", pid, strerror(errno));
+	else
+		output(0, "------------------------------------------------\n");
+
+	free(line);
 	fclose(fp);
 }
 
