@@ -432,12 +432,14 @@ static int setup_af_alg(void)
 	}
 
 	child_fd = accept4(parent_fd, NULL, NULL, SOCK_CLOEXEC);
-	close(parent_fd);
 	if (child_fd < 0) {
-		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
+		int saved_errno = errno;
+		close(parent_fd);
+		if (is_syscall_unsupported(saved_errno) || is_proto_family_unsupported(saved_errno))
 			unsupported_setup[SPS_AF_ALG] = true;
 		return -1;
 	}
+	close(parent_fd);
 	return child_fd;
 #else
 	unsupported_setup[SPS_AF_ALG] = true;
