@@ -401,12 +401,14 @@ static int try_af_alg(int file_fd)
 	generate_rand_bytes(key, sizeof(key));
 	(void)setsockopt(parent_fd, SOL_ALG, ALG_SET_KEY, key, sizeof(key));
 	child_fd = accept4(parent_fd, NULL, NULL, SOCK_CLOEXEC);
-	close(parent_fd);
 	if (child_fd < 0) {
-		if (errno_unsupported(errno))
-			latch_target(TGT_AF_ALG, "accept4", errno);
+		int saved_errno = errno;
+		close(parent_fd);
+		if (errno_unsupported(saved_errno))
+			latch_target(TGT_AF_ALG, "accept4", saved_errno);
 		return -1;
 	}
+	close(parent_fd);
 	set_short_recv_timeout(child_fd);
 	(void)splice_into_socket(file_fd, child_fd);
 	(void)recv(child_fd, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
