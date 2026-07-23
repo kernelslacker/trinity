@@ -22,3 +22,6 @@ void dump_pid_syscall(int pid);
 ssize_t read_pid_wchan(int pid, char *buf, size_t bufsz);
 void dump_dstate_diagnostics(struct childdata *child, int childno, pid_t pid);
 bool dstate_diag_budget_take(struct childdata *child, const char *wchan);
+
+/* main/reap-zombie.c -- deferred D-state slot lifecycle. */
+void register_zombie_slot(int childno, pid_t pid);
