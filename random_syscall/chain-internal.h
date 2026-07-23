@@ -30,4 +30,13 @@ int chain_restype_classify_consumer(enum chain_resource_kind kind,
 bool chain_restype_has_consumer(enum chain_resource_kind kind,
 				bool do32bit_hint);
 
+/* chain-corpus.c -- replay-safety filter re-used by chain-persist.c's
+ * load-side re-validation so a saved chain whose syscall table has
+ * since tightened (an argtype went to ARG_PID / a sanitise was added
+ * / the syscall was deactivated) cannot slip back into the ring
+ * through the load path.  Same predicate the save side uses; the
+ * cross-file share is what keeps that invariant. */
+bool chain_is_replay_safe(const struct chain_step *steps,
+			  unsigned int len);
+
 #endif
