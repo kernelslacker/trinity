@@ -12,3 +12,6 @@
 
 /* main/reap.c -- reap-core helpers reused by watchdog / signal paths. */
 void reap_child(struct childdata *child, int childno, bool child_dead);
+
+/* main/reap-fastdie.c -- fork-die-respawn busy-loop detector. */
+void record_reap(int childno, int childstatus);
