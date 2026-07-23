@@ -695,6 +695,28 @@ void map_destructor(struct object *obj)
 	 */
 	extent = map->tracked_size ? map->tracked_size : map->size;
 	/*
+	 * Ownership gate: only the struct map that CREATED the VMA is
+	 * entitled to release it.  init_child_mappings() and
+	 * clone_global_mmap_pool() build OBJ_LOCAL entries by copying
+	 * m->ptr from OBJ_GLOBAL sources -- those cloned entries share
+	 * the VMA with the still-live global owner and with any sibling
+	 * child that also cloned from it, so untrack+munmap here would
+	 * (a) release a shared_regions[] slot the global source still
+	 * uses, and (b) leave the global's m->ptr pointing at freed VA.
+	 * The next clone_global_mmap_pool() refill would then re-copy
+	 * the stale pointer straight into the pool -- ASAN heap-buffer-
+	 * overflow on the first downstream walker (read_mapping_reverse
+	 * / dirty_mapping) that dereferences it.
+	 *
+	 * Runtime OBJ_LOCAL entries (post_mmap CHILD_ANON/MMAPED_FILE,
+	 * mmap_lifecycle do_create) set owns_vma=true at creation and
+	 * fall through to the untrack+munmap below; borrowed clones
+	 * (owns_vma=false, the zero default) skip it and leak the VA
+	 * for the rest of the child's run -- the global source will
+	 * unmap it via map_destructor_shared() at process teardown.
+	 * A missed untrack for a borrowed slot is silent: the shared_
+	 * regions[] slot stays live under the global owner's registration.
+	 *
 	 * Range-validate map->ptr and cap extent before untrack+munmap.
 	 * The alloc_track armor at get_map_handle (maps.c:103) only
 	 * validates the obj pointer; an in-place scribble of the map body
@@ -712,7 +734,8 @@ void map_destructor(struct object *obj)
 	 * than a wild unmap, and the name-free gate below still runs so
 	 * the proven-ours name buffer is recycled.
 	 */
-	if (map->ptr != NULL &&
+	if (map->owns_vma &&
+	    map->ptr != NULL &&
 	    (uintptr_t)map->ptr >= 0x10000UL &&
 	    (uintptr_t)map->ptr < 0x800000000000UL &&
 	    extent != 0 && extent <= GB(4UL)) {
@@ -910,6 +933,13 @@ static void clone_global_mmap_pool(enum objecttype type)
 		newobj->map.flags = m->flags;
 		newobj->map.fd = m->fd;
 		newobj->map.type = m->type;
+		/*
+		 * Borrowed VMA -- ptr is a copy of the OBJ_GLOBAL owner's
+		 * pointer.  Only the global source is entitled to munmap +
+		 * untrack_shared_region at destroy time.  See struct map's
+		 * owns_vma comment.
+		 */
+		newobj->map.owns_vma = false;
 		add_object(newobj, OBJ_LOCAL, type);
 	}
 }
@@ -1012,6 +1042,15 @@ void init_child_mappings(void)
 			 * by mprotect/mremap/munmap etc..
 			 */
 			newobj->map.type = INITIAL_ANON;
+			/*
+			 * Borrowed VMA -- see clone_global_mmap_pool() above
+			 * and struct map's owns_vma comment.  The global
+			 * setup_initial_mappings() ANON entry we cloned from
+			 * is the sole owner; pruning this clone must not munmap
+			 * the still-live VMA the global source (and any sibling
+			 * child that also cloned from it) points at.
+			 */
+			newobj->map.owns_vma = false;
 			add_object(newobj, OBJ_LOCAL, OBJ_MMAP_ANON);
 		}
 
@@ -1295,6 +1334,7 @@ retry_mmap:
 	obj->map.prot = prot;
 	obj->map.fd = fd;
 	obj->map.type = MMAPED_FILE;
+	obj->map.owns_vma = true;
 	/*
 	 * Capture the flags word into a local before mmap() so the actual
 	 * flags used for this mapping are stored on the obj.  Calling
