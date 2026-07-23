@@ -1,31 +1,23 @@
 /*
- * Sequence-aware fuzzing — chain executor and chain corpus.
+ * Sequence-chain corpus on-disk persistence and mid-run snapshot cadence.
  *
- * Phase 1 dispatches a short chain of random syscalls per fuzzer iteration
- * and threads each call's return value into the next call's args with a
- * tunable probability.  Phase 2 (this file) mines productive chains into a
- * global ring of saved chains, and replays them on a fraction of future
- * iterations with the per-arg mutator chain that the per-call mini-corpus
- * already runs (cross-arg splice + weighted-stack mutate + fd safety).
- * Phase 3 (deferred) will add resource-type dependency tracking so chains
- * are generated with structural awareness of which calls produce and
- * consume which kinds of resource.
+ * Cross-run warm-start: chain_corpus_save_file serialises every
+ * occupied slot of the ring under a versioned, arch- and kernel-
+ * release-tagged header and atomically renames the result into place.
+ * chain_corpus_load_file refuses incompatible headers outright and
+ * re-runs the same replay-safety predicate the save side uses
+ * (chain_is_replay_safe, imported via chain-internal.h) so a saved
+ * chain whose syscall table has since tightened cannot slip back
+ * into the ring through the load path.
  *
- * Chain length is drawn from pick_chain_length()'s discrete
- * distribution centred on 3: P(2)=30%, P(3)=40%, P(4)=30%.  Two-call
- * chains remain a common setup-then-use shape (open then ioctl,
- * socket then sendmsg) but the rebalanced weights -- moved here
- * from an earlier 50/30/20 bias toward 2 -- give length-3
- * setup-then-use-then-tear sequences the largest share, which is
- * where the chain corpus saw most of its productive replays.  Four
- * remains a backstop for the longer-tail patterns at the same 30%
- * rate; lengths beyond 4 are out of scope for this phase.
- *
- * Substitution-vs-failure: if a step's retval is negative (errno-style
- * failure) the next step is dispatched without a substitute, since
- * passing -EBADF as an fd to the following call wastes the slot.  The
- * chain itself continues — a single mid-chain failure does not abort
- * the remaining steps.
+ * chain_corpus_default_path builds an XDG-anchored, arch- and kernel-
+ * release-tagged path so a saved corpus is never accidentally reused
+ * across incompatible kernels.  chain_corpus_enable_snapshots plus
+ * chain_corpus_maybe_snapshot wire periodic mid-run saves so a crash
+ * between warm-start and clean shutdown does not lose every chain
+ * admitted during the run.  The chain corpus ring itself, the
+ * executor, and the resource-typing classifier live in the sibling
+ * chain-corpus.c, chain-exec.c and chain-restype.c files.
  */
 
 #include <errno.h>
@@ -60,7 +52,7 @@
 
 #include "kernel/socket.h"
 
-#include "random_syscall/chain-internal.h"
+#include "chain-internal.h"
 
 /*
  * On-disk chain corpus format.
