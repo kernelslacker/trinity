@@ -1,0 +1,620 @@
+/*
+ * Sequence-chain executor.
+ *
+ * One iteration of run_sequence_chain() draws a chain source (fresh vs
+ * corpus replay), dispatches each chain step, and records the outcome
+ * (chain_corpus_save admission + per-resource-kind pair credit).  The
+ * chain corpus ring and its save/pick helpers live in chain-corpus.c;
+ * the resource-typing classifier and consumer table live in
+ * chain-restype.c; on-disk persistence and the mid-run snapshot
+ * cadence live in chain-persist.c.
+ *
+ * The static helpers below (pick_chain_length, chain_restype_apply_bias,
+ * select_chain_source, execute_chain_steps, record_chain_outcome) are
+ * file-scope private to this executor; run_sequence_chain is the only
+ * public entry point and is declared in include/sequence.h.
+ */
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "arch.h"
+#include "child.h"
+#include "kcov.h"
+#include "minicorpus.h"
+#include "params.h"
+#include "random.h"
+#include "rnd.h"
+#include "sequence.h"
+#include "shm.h"
+#include "syscall.h"
+#include "trinity.h"
+
+#include "chain-internal.h"
+
+/*
+ * Probability (as 1/N) that an iteration replays a saved chain instead
+ * of generating a fresh one.
+ *
+ * 4 == 25%.  Same starting point as minicorpus_replay's per-call replay
+ * rate, picked so the two replay paths sit at the same baseline and
+ * any divergence in coverage productivity between per-call and per-
+ * chain replay is attributable to the structural difference rather
+ * than to a sampling rate gap.  Lower than 50/50 because fresh
+ * generation is still where new chain shapes are discovered — a
+ * replay-dominated mix would saturate on the seed distribution that
+ * Phase 1's random chain length and arg generation produce.  The
+ * gating is in run_sequence_chain so the replay rate can be tuned
+ * here without touching the dispatch code.
+ */
+#define CHAIN_REPLAY_RATIO 4
+
+/*
+ * Probability divisor (1/N) applied to replay picks whose source chain
+ * was admitted under a non-PC reason (TRANSITION / CMP).  The non-PC save
+ * reasons exist to grow the corpus on the warm-PC plateau where the PC-
+ * only gate produces ~zero saves; until per-reason replay productivity
+ * data is in (chain_replay_win_by_reason[] vs chain_save_by_reason[]) we
+ * deliberately pull non-PC replays at half the PC-saved rate.  Anchored
+ * to PC-saved replays at the full CHAIN_REPLAY_RATIO so the comparison
+ * stays controlled: any divergence in coverage productivity between PC-
+ * saved and non-PC-saved chain replay is attributable to the source
+ * signal rather than to a sampling rate gap.
+ */
+#define CHAIN_REPLAY_NONPC_DOWNSAMPLE 2
+
+#if ENABLE_SEQUENCE_CHAIN
+
+static unsigned int pick_chain_length(void)
+{
+	unsigned int r = rnd_modulo_u32(10);
+
+	if (r < 3)
+		return 2;
+	if (r < 7)
+		return 3;
+	return 4;
+}
+
+/*
+ * Cross-phase state for one run_sequence_chain() iteration.
+ *
+ * Filled by select_chain_source() (source pick + length), grown by
+ * execute_chain_steps() (steps[] + per-chain novelty), then consumed by
+ * record_chain_outcome() (save decision + replay-win credit).
+ *
+ * Per-chain novelty accounting tracks each save-reason category
+ * separately so the chain admission decision can prefer PC over
+ * TRANSITION over CMP -- the priority mirrors the per-call minicorpus
+ * save tag (PC wins on calls where both PC and CMP fire), keeping the
+ * chain corpus's reason mix interpretable alongside the per-call
+ * corpus's saves_by_reason[] for the same event class.  trigger_nr_*
+ * captures the syscall_nr of the FIRST step that fired each signal, so
+ * chain_corpus_save's per-(reason, nr) per-window cap is bounded by the
+ * actual triggering syscall and not the last step that happened to run.
+ */
+struct chain_run_state {
+	struct chain_step steps[MAX_SEQ_LEN];
+	unsigned int steps_recorded;
+
+	struct chain_entry replay;
+	unsigned int len;
+	bool replaying;
+
+	bool chain_found_new;
+	bool chain_new_transition;
+	bool chain_new_cmp;
+	unsigned int trigger_nr_pc;
+	unsigned int trigger_nr_transition;
+	unsigned int trigger_nr_cmp;
+
+	/* Producer-kind mask carried across steps of the same chain.
+	 * Bit k set means at least one step so far in this chain
+	 * classify_producer'd as kind k with a non-negative retval.
+	 * Consulted by the next step's chain-restype hook (drives the
+	 * consumer-bias override) and by record_chain_outcome's
+	 * per-kind save/replay-win accounting. */
+	unsigned int producer_kinds_seen;
+
+	/* Producer-followed-by-consumer pair mask.  Bit k set means
+	 * some step in this chain classify_producer'd as kind k AND a
+	 * strictly-later step classify_consumer'd as kind k.  This is
+	 * the mask record_chain_outcome uses to decide which
+	 * chain_restype_save[k] / chain_restype_replay_win[k] slots to
+	 * bump: a producer-only chain isn't the signal we're trying
+	 * to reward. */
+	unsigned int pair_kinds_seen;
+};
+
+/*
+ * Chain-restype hook, run before dispatching step i (>= 1) whenever
+ * some earlier step in this chain was classified as a resource
+ * producer (producer_kinds_seen != 0).  Returns the biased NR to use
+ * for this step (via @bias_nr_out) plus its do32bit flag; returns
+ * false when either the mode does not permit an override, no kind in
+ * the mask has a resolved consumer for the current dispatch arch, or
+ * the accept-probability roll (LIVE only) rejected the override.
+ *
+ * The per-kind chain_restype_would_bias / chain_restype_biased
+ * counters are bumped INSIDE this helper so the classifier's
+ * observability lands whether or not the caller ultimately overrides
+ * -- consistent with the "always-on classify counters" contract in
+ * the mode-enum comment.  SHADOW never consumes RNG (the pick stream
+ * stays byte-identical to OFF); LIVE consumes exactly two draws when
+ * the accept passes (kind selection + consumer selection).
+ */
+static bool chain_restype_apply_bias(const struct chain_run_state *s,
+				     bool do32bit_hint,
+				     unsigned int *bias_nr_out,
+				     bool *bias_do32_out)
+{
+	unsigned int mask = s->producer_kinds_seen;
+	unsigned int k;
+	int available[CHAIN_RESTYPE_NR];
+	unsigned int navailable = 0;
+
+	if (chain_resource_typing_mode == CHAIN_RESTYPE_MODE_OFF)
+		return false;
+	if (mask == 0)
+		return false;
+
+	/* Collect the kinds that (a) are set in mask and (b) have at
+	 * least one resolved consumer NR for this arch.  A kind with
+	 * an empty consumer table on the current arch cannot bias --
+	 * counting it toward would_bias would inflate the measurement
+	 * with picks we could never dispatch. */
+	for (k = 0; k < CHAIN_RESTYPE_NR; k++) {
+		if ((mask & (1u << k)) == 0)
+			continue;
+		if (!chain_restype_has_consumer((enum chain_resource_kind)k,
+						do32bit_hint))
+			continue;
+		available[navailable++] = (int)k;
+	}
+	if (navailable == 0)
+		return false;
+
+	if (chain_resource_typing_mode == CHAIN_RESTYPE_MODE_SHADOW) {
+		/* Shadow: count every available kind as "would_bias"
+		 * without consuming RNG.  The pick stream stays
+		 * identical to OFF; the counter only says "the LIVE arm
+		 * would have had these kinds available to override
+		 * with", which is the SHADOW mode's whole contract. */
+		unsigned int i;
+
+		for (i = 0; i < navailable; i++)
+			__atomic_fetch_add(
+				&shm->stats.chain_restype.would_bias[available[i]],
+				1UL, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	/* LIVE.  Probabilistic bias: 50% of the time (ONE_IN(2)) we
+	 * override, otherwise we let the plain random_syscall_step run
+	 * so other links stay possible.  Rationale for 50%: we want
+	 * strong enough steering that the productivity signal in
+	 * chain_restype_replay_win is legible above the fresh-chain
+	 * noise floor, without pinning the mid-chain slot to the
+	 * consumer table -- 100% override would starve the discovery
+	 * paths that Phase 1's uniform pick relies on. */
+	if (!ONE_IN(2))
+		return false;
+
+	{
+		enum chain_resource_kind chosen_kind =
+			(enum chain_resource_kind)
+			available[rnd_modulo_u32(navailable)];
+		int consumer_nr = chain_restype_pick_consumer(chosen_kind,
+							      do32bit_hint);
+
+		if (consumer_nr < 0)
+			return false;
+
+		*bias_nr_out = (unsigned int)consumer_nr;
+		*bias_do32_out = do32bit_hint;
+
+		__atomic_fetch_add(
+			&shm->stats.chain_restype.biased[chosen_kind],
+			1UL, __ATOMIC_RELAXED);
+		return true;
+	}
+}
+
+static void select_chain_source(struct chain_run_state *s)
+{
+	/* With CHAIN_REPLAY_RATIO probability, try to replay a saved chain
+	 * rather than generate a fresh one.  Falls back to fresh if the
+	 * corpus is empty (warm-start) or if the picked chain is rejected
+	 * mid-replay by replay_syscall_step's safety checks (deactivated
+	 * syscall, sanitise that wasn't there at save time, etc.). */
+	if (chain_corpus_shm != NULL && ONE_IN(CHAIN_REPLAY_RATIO) &&
+	    chain_corpus_pick(&s->replay)) {
+		/* chain_corpus_pick() is intentionally lockless and the
+		 * ring lives in shared memory that fuzzed syscalls can
+		 * scribble.  A torn read or a wild write into the slot's
+		 * len field would let the loop below index past the
+		 * fixed-size replay.steps[MAX_SEQ_LEN] before the per-
+		 * step safety checks in replay_syscall_step ever ran.
+		 * Reject the picked entry and fall back to a fresh chain
+		 * if len escapes the [1, MAX_SEQ_LEN] range. */
+		if (s->replay.len == 0 || s->replay.len > MAX_SEQ_LEN) {
+			__atomic_fetch_add(&shm->stats.chain_restype.replay_len_corrupt,
+					   1UL, __ATOMIC_RELAXED);
+			s->len = pick_chain_length();
+		} else if (s->replay.save_reason != CHAIN_SAVE_PC &&
+			   s->replay.save_reason < CHAIN_SAVE_NR_REASONS &&
+			   !ONE_IN(CHAIN_REPLAY_NONPC_DOWNSAMPLE)) {
+			/* Non-PC-saved chains replay at a lower rate than
+			 * PC-saved ones until per-reason productivity data
+			 * exists (chain_replay_win_by_reason).  Fall back to
+			 * a fresh chain on the down-sampled half so the
+			 * iteration still does useful work. */
+			s->len = pick_chain_length();
+		} else {
+			s->replaying = true;
+			s->len = s->replay.len;
+			__atomic_fetch_add(&chain_corpus_shm->replay_count, 1UL,
+					   __ATOMIC_RELAXED);
+		}
+	} else {
+		s->len = pick_chain_length();
+	}
+}
+
+static bool execute_chain_steps(struct childdata *child,
+				struct chain_run_state *s)
+{
+	struct syscallrecord *rec = &child->syscall;
+	bool have_substitute = false;
+	unsigned long substitute_retval = 0;
+	unsigned int i;
+
+	for (i = 0; i < s->len; i++) {
+		bool step_ret;
+		bool step_found_new = false;
+		unsigned long step_new_transition = 0;
+		unsigned long step_new_cmp = 0;
+		unsigned long rv;
+		unsigned int bias_nr = 0;
+		bool bias_do32 = false;
+		bool use_bias = false;
+
+		/* Mark steps i >= 1 of a fresh-generation chain as mid-chain
+		 * so anything that wants to distinguish a chained dispatch
+		 * from a standalone call can do so.  Step 0 and replay steps
+		 * leave the flag clear. */
+		child->in_chain_mid_step = (i > 0) && !s->replaying;
+
+		/* Chain-restype hook.  Only fires for mid-chain fresh
+		 * generation steps (i >= 1, !replaying) where a prior step
+		 * classified as a producer.  In SHADOW/LIVE this bumps the
+		 * per-kind observability counters; LIVE additionally hands
+		 * back a specific consumer NR to override the picker with.
+		 * Replay steps take the saved (nr, args) verbatim and are
+		 * outside the bias contract -- overriding a replayed step's
+		 * NR would break the replay contract with the corpus. */
+		if (i > 0 && !s->replaying && s->producer_kinds_seen != 0) {
+			bool do32_hint = biarch ? rec->do32bit : false;
+
+			use_bias = chain_restype_apply_bias(s, do32_hint,
+							    &bias_nr,
+							    &bias_do32);
+		}
+
+		if (s->replaying) {
+			step_ret = replay_syscall_step(child,
+						       &s->replay.steps[i],
+						       have_substitute,
+						       substitute_retval,
+						       &step_found_new,
+						       &step_new_transition,
+						       &step_new_cmp);
+			if (step_ret == FAIL) {
+				/* Replay safety check failed (saved syscall
+				 * has been deactivated or otherwise become
+				 * unreplayable since save).  Drop into fresh
+				 * generation for the rest of the chain so the
+				 * iteration still does useful work.  The
+				 * fallthrough fresh call is still step i, so
+				 * re-evaluate the mid-chain flag after clearing
+				 * replaying. */
+				s->replaying = false;
+				child->in_chain_mid_step = (i > 0);
+				step_ret = random_syscall_step(child,
+							       have_substitute,
+							       substitute_retval,
+							       &step_found_new,
+							       &step_new_transition,
+							       &step_new_cmp);
+			}
+		} else if (use_bias) {
+			step_ret = random_syscall_step_biased(child,
+							      bias_nr, bias_do32,
+							      have_substitute,
+							      substitute_retval,
+							      &step_found_new,
+							      &step_new_transition,
+							      &step_new_cmp);
+			if (step_ret == FAIL) {
+				/* Biased NR became uncallable between the
+				 * chain_restype_init resolve and now
+				 * (deactivated, lost cap, AVOID_SYSCALL).
+				 * Fall back to plain fresh dispatch so the
+				 * slot still runs; the chain_restype_biased
+				 * counter already bumped so a spike in
+				 * fall-backs will surface as fresh dispatch
+				 * counters advancing faster than the biased
+				 * counter's downstream chain_restype_save
+				 * numerator. */
+				step_ret = random_syscall_step(child,
+							       have_substitute,
+							       substitute_retval,
+							       &step_found_new,
+							       &step_new_transition,
+							       &step_new_cmp);
+			}
+		} else {
+			step_ret = random_syscall_step(child,
+						       have_substitute,
+						       substitute_retval,
+						       &step_found_new,
+						       &step_new_transition,
+						       &step_new_cmp);
+		}
+
+		/* Clear the flag immediately after dispatch so any non-chain
+		 * picker invocation (e.g. random_syscall called from outside
+		 * the chain executor on the next iteration of the main loop)
+		 * cannot see a stale true value. */
+		child->in_chain_mid_step = false;
+
+		if (step_ret == FAIL)
+			return FAIL;
+
+		/* Snapshot the dispatched call into the chain buffer.  Done
+		 * after dispatch returns so the args reflect any Phase 1
+		 * retval substitution and the retval is the kernel's actual
+		 * return.  cmp-mode steps have step_found_new == false
+		 * (kcov_collect was skipped) — they still get recorded in
+		 * the chain so saves preserve chain shape, but they don't
+		 * by themselves trigger a chain save. */
+		if (s->steps_recorded < MAX_SEQ_LEN) {
+			struct chain_step *cs = &s->steps[s->steps_recorded++];
+
+			cs->nr = rec->nr;
+			cs->do32bit = rec->do32bit;
+			cs->args[0] = rec->a1;
+			cs->args[1] = rec->a2;
+			cs->args[2] = rec->a3;
+			cs->args[3] = rec->a4;
+			cs->args[4] = rec->a5;
+			cs->args[5] = rec->a6;
+			cs->retval = rec->retval;
+		}
+
+		/* Chain-restype classifier.  Runs unconditionally after
+		 * every dispatched step -- classify itself is cheap (a
+		 * handful of NR compares) and the OFF gate lives inside
+		 * chain_restype_apply_bias, not here, so
+		 * chain_restype_produced remains an always-on
+		 * observability counter.  Producer classify runs on the
+		 * step's ACTUAL dispatched args + retval so socket-tcp's
+		 * (family, type) check and bpf-map-fd's cmd check see
+		 * what the kernel actually got.  Non-OFF only: OFF must
+		 * stay byte-identical to today, including the counter
+		 * writes -- an OFF run must not perturb shm->stats fields
+		 * that a follow-up A/B differences against a pre-row
+		 * baseline. */
+		if (chain_resource_typing_mode != CHAIN_RESTYPE_MODE_OFF) {
+			unsigned long step_args[6] = {
+				rec->a1, rec->a2, rec->a3,
+				rec->a4, rec->a5, rec->a6,
+			};
+			int pkind = chain_restype_classify_producer(
+					rec->nr, rec->do32bit,
+					step_args, rec->retval);
+			unsigned int k;
+
+			if (pkind >= 0) {
+				__atomic_fetch_add(
+					&shm->stats.chain_restype.produced[pkind],
+					1UL, __ATOMIC_RELAXED);
+				s->producer_kinds_seen |= (1u << pkind);
+			}
+
+			/* Pair detection.  For every producer kind already
+			 * seen in this chain, check whether THIS step is a
+			 * consumer of that kind.  Bit set means the chain
+			 * carried a producer->consumer pair, which is the
+			 * chain_restype_save[k] / chain_restype_replay_win[k]
+			 * gate at record_chain_outcome time. */
+			for (k = 0; k < CHAIN_RESTYPE_NR; k++) {
+				if ((s->producer_kinds_seen & (1u << k)) == 0)
+					continue;
+				if (chain_restype_classify_consumer(
+					    (enum chain_resource_kind)k,
+					    rec->nr, rec->do32bit,
+					    step_args) >= 0)
+					s->pair_kinds_seen |= (1u << k);
+			}
+		}
+
+		if (step_found_new) {
+			if (!s->chain_found_new)
+				s->trigger_nr_pc = rec->nr;
+			s->chain_found_new = true;
+		}
+		/* Per-step transition / CMP novelty.  Captured here on the
+		 * SAME step record as the chain snapshot above so the trigger
+		 * nr matches the syscall that actually fired the signal --
+		 * keeps the per-(reason, nr) admit cap aligned with what the
+		 * kernel-side counter actually observed. */
+		if (step_new_transition > 0) {
+			if (!s->chain_new_transition)
+				s->trigger_nr_transition = rec->nr;
+			s->chain_new_transition = true;
+		}
+		if (step_new_cmp > 0) {
+			if (!s->chain_new_cmp)
+				s->trigger_nr_cmp = rec->nr;
+			s->chain_new_cmp = true;
+		}
+
+		/* Decide whether the next step may receive a substitute.
+		 * Errno-style returns (-1..-4095 region, all negative when
+		 * read as long) are dropped because they are unlikely to
+		 * be useful as downstream arg values.  Zero is allowed
+		 * through — RET_ZERO_SUCCESS calls return 0 on success
+		 * and a NULL substituted into a pointer slot is a useful
+		 * boundary case to exercise. */
+		rv = child->syscall.retval;
+		if ((long)rv < 0) {
+			have_substitute = false;
+			substitute_retval = 0;
+		} else {
+			have_substitute = true;
+			substitute_retval = rv;
+		}
+	}
+
+	return true;
+}
+
+static void record_chain_outcome(const struct chain_run_state *s)
+{
+	unsigned int reason;
+	unsigned int trigger_nr;
+	bool admit = true;
+
+	/* Save chains that produced any novelty signal in any step.  The
+	 * historical PC-only gate (chain_found_new) saved ~zero chains under
+	 * a warm PC-edge plateau: at a 221k-edge fleet plateau the per-step
+	 * PC novelty rate is near zero and the chain corpus sat idle (no
+	 * saves, no replays) while the executor still spent the iter budget
+	 * generating and dispatching chains.  Widening to TRANSITION /
+	 * KCOV_CMP novelty parallels the per-call minicorpus save gate's
+	 * earlier widening from PC-only to PC || CMP (see dispatch_step),
+	 * keeping the chain corpus's "interesting input" definition aligned
+	 * with the per-call corpus.  PC wins the tag when multiple signals
+	 * fire on the same chain so the chain_save_by_reason[] historical
+	 * accounting is comparable to minicorpus's saves_by_reason[].
+	 *
+	 * Length-1 chains aren't saved (trivially subsumed by the per-call
+	 * minicorpus); the chain length floor of 2 from pick_chain_length()
+	 * makes that condition redundant in practice but the explicit check
+	 * keeps the contract obvious. */
+	if (s->steps_recorded < 2)
+		return;
+
+	if (s->chain_found_new) {
+		reason = CHAIN_SAVE_PC;
+		trigger_nr = s->trigger_nr_pc;
+	} else if (s->chain_new_transition) {
+		reason = CHAIN_SAVE_TRANSITION;
+		trigger_nr = s->trigger_nr_transition;
+	} else if (s->chain_new_cmp) {
+		reason = CHAIN_SAVE_CMP;
+		trigger_nr = s->trigger_nr_cmp;
+	} else {
+		admit = false;
+		reason = CHAIN_SAVE_NR_REASONS;
+		trigger_nr = 0;
+	}
+
+	if (admit)
+		chain_corpus_save(s->steps, s->steps_recorded, reason,
+				  trigger_nr);
+
+	/* Per-resource-kind chain_restype_save / chain_restype_replay_win
+	 * accounting.  Gated on pair_kinds_seen (producer + consumer of
+	 * the same kind both appeared in the chain) rather than the
+	 * looser producer_kinds_seen: a chain that carried an
+	 * epoll_create1 with no downstream epoll_ctl / epoll_wait step
+	 * did not exercise the pair the LIVE bias is trying to build,
+	 * and counting it toward chain_restype_save would inflate the
+	 * denominator that chain_restype_replay_win is measuring
+	 * productivity against.  OFF mode's classifier never runs, so
+	 * pair_kinds_seen is zero and both loops skip -- no
+	 * shm->stats mutation on the OFF path. */
+	if (s->pair_kinds_seen != 0) {
+		unsigned int k;
+
+		if (admit) {
+			for (k = 0; k < CHAIN_RESTYPE_NR; k++) {
+				if ((s->pair_kinds_seen & (1u << k)) == 0)
+					continue;
+				__atomic_fetch_add(
+					&shm->stats.chain_restype.save[k],
+					1UL, __ATOMIC_RELAXED);
+			}
+		}
+
+		if (s->replaying &&
+		    (s->chain_found_new || s->chain_new_transition ||
+		     s->chain_new_cmp)) {
+			for (k = 0; k < CHAIN_RESTYPE_NR; k++) {
+				if ((s->pair_kinds_seen & (1u << k)) == 0)
+					continue;
+				__atomic_fetch_add(
+					&shm->stats.chain_restype.replay_win[k],
+					1UL, __ATOMIC_RELAXED);
+			}
+		}
+	}
+
+	/* Credit a replay "win" when every step of the dispatched
+	 * chain came from the corpus and the chain earned any of the
+	 * novelty signals above.  Gated on `replaying` (still true at
+	 * loop exit means no replay_syscall_step FAIL forced a fresh-
+	 * suffix fallback) so a fresh-suffix step's novelty cannot be
+	 * mis-attributed to the picked entry's save_reason.
+	 *
+	 * The ratio chain_replay_win_by_reason[r] / chain_save_by_reason[r]
+	 * is the productivity signal that drives the per-reason replay
+	 * rate scaling in CHAIN_REPLAY_NONPC_DOWNSAMPLE. */
+	if (chain_corpus_shm != NULL && s->replaying &&
+	    (s->chain_found_new || s->chain_new_transition ||
+	     s->chain_new_cmp) &&
+	    s->replay.save_reason < CHAIN_SAVE_NR_REASONS)
+		__atomic_fetch_add(
+			&chain_corpus_shm->chain_replay_win_by_reason[
+				s->replay.save_reason],
+			1UL, __ATOMIC_RELAXED);
+}
+
+bool run_sequence_chain(struct childdata *child)
+{
+	struct chain_run_state state;
+
+	memset(&state, 0, sizeof(state));
+
+	select_chain_source(&state);
+
+	if (execute_chain_steps(child, &state) == FAIL)
+		return FAIL;
+
+	/* Defensive: per-iteration clear inside the loop should have left
+	 * the flag false on every exit, but a future early-return path
+	 * could miss it.  Clearing once here at the end of the chain is
+	 * cheap insurance against the next caller (post_run/syscall path
+	 * outside the chain executor) observing a stale true. */
+	child->in_chain_mid_step = false;
+
+	record_chain_outcome(&state);
+
+	if (minicorpus_shm != NULL)
+		__atomic_fetch_add(&minicorpus_shm->chain_iter_count, 1,
+				   __ATOMIC_RELAXED);
+
+	return true;
+}
+
+#else /* !ENABLE_SEQUENCE_CHAIN */
+
+bool run_sequence_chain(struct childdata *child)
+{
+	return random_syscall(child);
+}
+
+#endif
