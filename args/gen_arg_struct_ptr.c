@@ -228,7 +228,10 @@ static const struct struct_desc *paired_struct_desc(struct syscallentry *entry,
 {
 	unsigned int i;
 
-	for (i = 0; i < entry->num_args; i++) {
+	/* num_args lives in shared writable memory (copy_syscall_table in
+	 * tables/tables.c) — a wild-write from a child can drive it past
+	 * the 6-slot argtype[] and walk this loop off the entry.  Clamp. */
+	for (i = 0; i < entry->num_args && i < ARRAY_SIZE(entry->argtype); i++) {
 		enum argtype t = entry->argtype[i];
 
 		if (t == ARG_STRUCT_PTR_IN || t == ARG_STRUCT_PTR_OUT ||
