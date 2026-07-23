@@ -80,6 +80,7 @@ static bool do_create(void)
 	obj->map.prot = prot;
 	obj->map.fd = -1;
 	obj->map.type = CHILD_ANON;
+	obj->map.owns_vma = true;
 	add_object(obj, OBJ_LOCAL, OBJ_MMAP_ANON);
 
 	/*

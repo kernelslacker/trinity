@@ -44,6 +44,26 @@ struct map {
 	int fd;
 	unsigned char type;
 	/*
+	 * VMA ownership.  true when this struct map created the VMA
+	 * (setup_initial_mappings, mmap_fd, mmap_lifecycle do_create,
+	 * post_mmap runtime creations); false when the VMA pointer was
+	 * COPIED from another struct map (init_child_mappings ANON clone,
+	 * clone_global_mmap_pool for ANON refills and FILE/TESTFILE seed).
+	 * Only the true owner is allowed to munmap + untrack_shared_region
+	 * at destroy time -- a clone destroying the borrowed VMA unmaps the
+	 * address the global source still holds a live pointer to, and a
+	 * later refill clones that stale pointer straight back into the
+	 * pool (ASAN heap-buffer-overflow when a downstream walker touches
+	 * the freed VA).
+	 *
+	 * NOT derivable from map->type: cloned MMAPED_FILE entries and
+	 * runtime-created MMAPED_FILE entries share the same type tag and
+	 * only this field distinguishes them.  Explicit assignment at every
+	 * producer site is required -- the zero default is "borrowed" so an
+	 * unset field errs safe (leak a VA rather than double-unmap).
+	 */
+	bool owns_vma;
+	/*
 	 * Hot-path skip-cache for get_writable_address(): set true on a
 	 * successful whole-mapping mprotect(PROT_READ|PROT_WRITE) upgrade
 	 * inside that function, false everywhere else.  Future calls that

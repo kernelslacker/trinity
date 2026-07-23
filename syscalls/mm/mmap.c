@@ -445,6 +445,15 @@ static void post_mmap(struct syscallrecord *rec)
 	 * pattern in mm/maps-initial.c. */
 	new->map.flags = rec->a4;
 	new->map.ptr = p;
+	/*
+	 * Runtime mmap() we ourselves just issued -- we own the VMA and
+	 * map_destructor() is entitled to munmap + untrack_shared_region
+	 * against it.  Distinguishes this MMAPED_FILE entry from the
+	 * clone_global_mmap_pool() MMAPED_FILE entries which borrow their
+	 * ptr from an OBJ_GLOBAL mmap_fd() source; those set owns_vma
+	 * false so the local destructor leaves the shared VMA alone.
+	 */
+	new->map.owns_vma = true;
 
 	if (is_anon) {
 		new->map.fd = -1;
