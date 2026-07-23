@@ -56,6 +56,7 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 	new->map.flags = flags;
 	new->map.fd = -1;
 	new->map.type = INITIAL_ANON;
+	new->map.owns_vma = true;
 	new->map.ptr = mmap(NULL, size, prot, mmap_flags, -1, 0);
 	if (new->map.ptr == MAP_FAILED) {
 		outputerr("mmap failure:%s\n", strerror(errno));
@@ -95,6 +96,7 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 	new->map.flags = flags;
 	new->map.fd = -1;
 	new->map.type = INITIAL_ANON;
+	new->map.owns_vma = true;
 	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, -1, 0);
 	if (new->map.ptr == MAP_FAILED) {
 		tracked_free_now(new);
