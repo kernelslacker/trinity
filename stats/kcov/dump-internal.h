@@ -26,6 +26,12 @@ void dump_stats_render_kcov_per_syscall_last_edge_topn(unsigned int nr_syscalls_
 void dump_stats_render_kcov_per_syscall_last_efault_topn(unsigned int nr_syscalls_to_scan, const struct syscalltable *table);
 void dump_stats_render_kcov_per_syscall_local_pc_topn(unsigned int nr_syscalls_to_scan, const struct syscalltable *table);
 
+/* dump-reexec.c */
+void dump_stats_render_kcov_cmp_hint_tier(void);
+void dump_stats_render_kcov_reexec(void);
+void dump_stats_render_kcov_ring_replay(void);
+void dump_stats_render_kcov_cmp_field_consumer(void);
+
 /* dump-shadow.c (definition still in dump.c until the shadow split;
  * declared here so dump-base.c's base_stats can forward-call it). */
 void dump_stats_render_kcov_shadow_measurements(void);
