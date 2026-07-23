@@ -172,15 +172,34 @@ static void watch_queue_try_replenish(unsigned int budget)
 {
 	struct childdata *child = this_child();
 	unsigned int i;
+	/*
+	 * See the block comment above memfd_try_replenish() (fds/memfd.c) for
+	 * the rationale.  child_fd_ring_push() is a shared, pure-overwrite
+	 * hint cache -- it does not own the fds it evicts.  We push both
+	 * pipe ends per tick, so every pair past live_fds's 16-slot window
+	 * would leak (kernel pipe-page + notification-buffer pages) for the
+	 * child's life.  Keep a per-child 32-slot ring of the pipe fds WE
+	 * created and close the one that ages out before reusing its slot.
+	 */
+	static int created_fds[32];
+	static unsigned int created_head;
 
 	if (child == NULL)
 		return;
 
 	for (i = 0; i < budget; i++) {
 		int pipefd[2];
+		unsigned int j;
 
 		if (do_watch_queue(pipefd) < 0)
 			return;
+
+		for (j = 0; j < 2; j++) {
+			if (created_head >= ARRAY_SIZE(created_fds))
+				close(created_fds[created_head % ARRAY_SIZE(created_fds)]);
+			created_fds[created_head % ARRAY_SIZE(created_fds)] = pipefd[j];
+			created_head++;
+		}
 
 		child_fd_ring_push(&child->live_fds, pipefd[0]);
 		child_fd_ring_push(&child->live_fds, pipefd[1]);
