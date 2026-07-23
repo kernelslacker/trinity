@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -38,6 +39,8 @@ ssize_t proc_status_read(char *buf, size_t bufsz)
 
 		n = read(fd, buf + off, bufsz - off - 1);
 		if (n < 0) {
+			if (errno == EINTR)
+				continue;
 			close(fd);
 			return -1;
 		}
@@ -95,6 +98,8 @@ char *proc_status_slurp(void)
 
 		n = read(fd, buf + off, cap - off - 1);
 		if (n < 0) {
+			if (errno == EINTR)
+				continue;
 			free(buf);
 			close(fd);
 			return NULL;
