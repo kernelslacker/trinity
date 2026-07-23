@@ -490,10 +490,10 @@ static bool alloc_track_consume(void *ptr)
  * Ring storage lives in an mmap'd region whose address range is registered
  * with shared_regions[] via track_shared_region().  That tracking lets
  * avoid_shared_buffer() and the mm-syscall sanitisers refuse fuzzed
- * pointers/lengths that would land inside the ring -- previously the array
- * lived in trinity's BSS, which is NOT registered with shared_regions[],
- * so a fuzzed write could scribble ring[i].ptr with a pid-shaped value
- * and the next deferred_free_tick() would free() the bogus pointer.
+ * pointers/lengths that would land inside the ring.  Without that
+ * registration a fuzzed write could scribble ring[i].ptr with a
+ * pid-shaped value and the next deferred_free_tick() would free() the
+ * bogus pointer.
  *
  * MAP_PRIVATE (not MAP_SHARED via alloc_shared()) is deliberate: the queue
  * is process-local by contract -- pointers come from each child's own
