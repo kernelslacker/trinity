@@ -459,7 +459,22 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 			child->wedge_nr = wnr;
 			child->wedge_do32 = wdo32;
 			child->wedge_op_type = wop;
-			child->wedge_start_tp = child->tp;
+			/* Same torn-read pattern as the tv_sec load above:
+			 * the child writes child->tp with a non-atomic
+			 * clock_gettime() store every ~16 iterations, so a
+			 * plain struct copy of child->tp races the writer
+			 * and can latch a mismatched (tv_sec, tv_nsec) pair
+			 * (85e487f5 fixed the tv_sec-only read; the reap-time
+			 * elapsed-us clamp already tolerates torn reads, so
+			 * consistency matters more than freshness).  Load each
+			 * field with __ATOMIC_RELAXED so the compiler cannot
+			 * split or reorder the reads. */
+			child->wedge_start_tp.tv_sec =
+				__atomic_load_n(&child->tp.tv_sec,
+						__ATOMIC_RELAXED);
+			child->wedge_start_tp.tv_nsec =
+				__atomic_load_n(&child->tp.tv_nsec,
+						__ATOMIC_RELAXED);
 			child->wedge_accounted = true;
 			/* Gate the per-syscall axis on CHILD_OP_SYSCALL: for
 			 * non-syscall childops child->syscall.nr is stale
