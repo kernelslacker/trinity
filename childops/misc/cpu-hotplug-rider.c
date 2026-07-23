@@ -223,6 +223,7 @@ static enum hotplug_write_outcome sysfs_online_write(int cpu, char val)
 {
 	char path[128];
 	int fd;
+	int saved_errno;
 	ssize_t w;
 
 	snprintf(path, sizeof(path),
@@ -236,9 +237,10 @@ static enum hotplug_write_outcome sysfs_online_write(int cpu, char val)
 	}
 
 	w = write(fd, &val, 1);
+	saved_errno = errno;
 	close(fd);
 	if (w != 1) {
-		if (errno == EACCES || errno == EPERM)
+		if (saved_errno == EACCES || saved_errno == EPERM)
 			return HOTPLUG_WRITE_EPERM;
 		return HOTPLUG_OTHER;
 	}
