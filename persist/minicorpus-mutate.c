@@ -1,46 +1,27 @@
 /*
- * Coverage-guided argument retention (mini-corpus).
+ * Mini-corpus mutate + replay + attribution island.
  *
- * Stores syscall argument snapshots that discovered new KCOV edges.
- * During future arg generation for the same syscall, a stored
- * snapshot may be replayed with per-argument mutations to explore
- * nearby input space.
- *
- * Syscalls with sanitise callbacks or with arg types that carry
- * heap pointers (ARG_IOVEC, ARG_PATHNAME, ARG_SOCKADDR, ARG_MMAP)
- * are excluded — those pointers become stale after deferred-free
- * eviction, causing UAF on replay.
+ * Applies the per-arg mutator chain (splice, xprop, weighted-stack
+ * mutate) to a saved snapshot and replays it as the args for the next
+ * dispatch of the same syscall.  The attribution stash that credits
+ * per-op wins after the coverage signal lands lives here too because
+ * it is a private temporal coupling between mutate and commit -- see
+ * the module map in the split plan for why this stays one file.
  */
 
-#include <errno.h>
-#include <limits.h>
-#include <signal.h>
-#include <sys/stat.h>
-#include <sys/utsname.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
 
-#include "blob_corpus.h"
 #include "child.h"
 #include "fd.h"
-#include "kcov.h"
 #include "minicorpus.h"
-#include "persist-util.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "strategy.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
 #include "utils.h"
-#include "pids.h"
 
 #include "minicorpus-internal.h"
 
