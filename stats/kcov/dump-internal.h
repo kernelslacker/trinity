@@ -7,11 +7,18 @@
  * identical to the pre-split single-file layout; see the split notes
  * in ~/rag/plans/shrink-plan-master.md ("stats/kcov/dump.c"). */
 
+#include "syscall.h"
+
 /* dump-base.c */
 void dump_stats_render_kcov_base_stats(void);
 void dump_stats_render_kcov_warm_known_hits(void);
 void dump_stats_render_kcov_exit_edge_delta(void);
 void dump_stats_render_kcov_exit_edge_totals(void);
+
+/* dump-topn.c */
+void dump_stats_render_kcov_top_edges_and_cold(unsigned int nr_syscalls_to_scan, const struct syscalltable *table);
+void dump_stats_render_kcov_per_syscall_yield_topn(unsigned int nr_syscalls_to_scan, const struct syscalltable *table);
+void dump_stats_render_kcov_per_syscall_dedup_topn(unsigned int nr_syscalls_to_scan, const struct syscalltable *table);
 
 /* dump-shadow.c (definition still in dump.c until the shadow split;
  * declared here so dump-base.c's base_stats can forward-call it). */
