@@ -72,13 +72,22 @@ static void __cold dump_syscall_slot(FILE *fp, const struct chronicle_slot *slot
 	const unsigned long args[6] = {
 		slot->a1, slot->a2, slot->a3, slot->a4, slot->a5, slot->a6,
 	};
-	const char *name = entry ? entry->name : "?";
-	unsigned int n_args = entry ? entry->num_args : 6;
+	/* Runs in the parent after a taint, exactly when a wild write from
+	 * a child is most likely to have corrupted the shared syscall table
+	 * (copy_syscall_table in tables/tables.c makes num_args / argname[]
+	 * writable across processes).  A bogus num_args would walk past the
+	 * 6-slot argname[] and %s a garbage pointer; treat any out-of-range
+	 * num_args as failed validation and fall back to numeric-only
+	 * placeholders rather than dereferencing entry->name / argname[i]. */
+	unsigned int raw_n = entry ? entry->num_args : ARRAY_SIZE(args);
+	bool meta_ok = entry != NULL && raw_n <= ARRAY_SIZE(args);
+	unsigned int n_args = meta_ok ? raw_n : ARRAY_SIZE(args);
+	const char *name = meta_ok ? entry->name : "?";
 	unsigned int i;
 
 	fprintf(fp, "%s%s(", slot->do32bit ? "[32BIT] " : "", name);
 	for (i = 0; i < n_args; i++) {
-		const char *argname = (entry && entry->argname[i]) ?
+		const char *argname = (meta_ok && entry->argname[i]) ?
 			entry->argname[i] : NULL;
 		if (i > 0)
 			fprintf(fp, ", ");
