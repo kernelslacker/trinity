@@ -32,8 +32,9 @@ void dump_stats_render_kcov_reexec(void);
 void dump_stats_render_kcov_ring_replay(void);
 void dump_stats_render_kcov_cmp_field_consumer(void);
 
-/* dump-shadow.c (definition still in dump.c until the shadow split;
- * declared here so dump-base.c's base_stats can forward-call it). */
+/* dump-shadow.c */
 void dump_stats_render_kcov_shadow_measurements(void);
+void dump_stats_render_kcov_kcov_probe_costs(void);
+void dump_stats_render_kcov_kcov_dispatch_stats(void);
 
 #endif	/* _TRINITY_STATS_KCOV_DUMP_INTERNAL_H */
