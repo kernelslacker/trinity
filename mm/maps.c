@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <time.h>
 #include "arch.h"
 #include "child.h"
 #include "deferred-free.h"
@@ -207,62 +208,69 @@ static bool obj_ptr_in_user_va_band(struct object *obj,
 }
 
 /*
- * Ground-truth check before the first deref: obj pointers
- * for OBJ_LOCAL pools come back through __zmalloc(), which
- * registers them in the alloc-track ring.  A stomped slot
- * can hand back a value that passes the heap-range guard
- * above (8-byte aligned, inside user VA) yet doesn't match
- * any allocation we ever made -- the first obj->map.size
- * read then returns garbage and downstream consumers
- * (gen_xattr_name, generate_syscall_args, alloc_iovec)
- * walk into unmapped memory.  Skip the slot when the obj
- * isn't in the live malloc-result set.  This guard is gated
- * on OBJ_LOCAL: those live pointers belong to this child's
- * own tracked malloc set.  OBJ_GLOBAL objs are the parent's
- * pre-fork allocations inherited via COW (or cloned into the
- * child), so they aren't in this child's alloc-track ring and
- * need a separate validity rule.
+ * Ground-truth check before the first deref: validate that the pool
+ * slot still names a live obj of the expected type.  objpool_check()
+ * reads obj->obj_type -- the authoritative pool-slot state -- and
+ * catches the two failure modes get_map_handle would otherwise
+ * dereference through: (a) a stomped slot that survived the VA-band
+ * guard but points at bytes whose obj_type does not match, and
+ * (b) a recycled chunk where the slot pointer is heap-shaped but no
+ * longer a struct object of `type`.  Symmetric with the sibling
+ * addr_in_local_runtime_map / invalidate_mmap_pool_range walks that
+ * gate on the same objpool_check() before touching &obj->map.
+ *
+ * Replaces an older alloc_track_lookup() gate that was OBJ_LOCAL-only
+ * and false-rejected long-lived pool entries whenever they rotated
+ * out of the 4096-entry alloc-track ring under arg-buffer churn: a
+ * single child accumulated 12k+ rejects on live slots.  alloc_track
+ * is an allocation-provenance ring, not a live-object registry, and
+ * overloading it as the latter is what produced the flood.
+ *
+ * The stats.maps.reject_alloc_track_miss[_anon|_file|_testfile]
+ * counters retain their historical names for dashboard continuity;
+ * they now count objpool_check() rejects (bogus obj_type / VA-band
+ * mismatch that survived the earlier obj_ptr_in_user_va_band guard).
+ * The reject log is rate-limited to one line per second per child
+ * -- counters carry the exact aggregate; the log line names the
+ * attributed culprit syscall via log_self_corrupt_culprit(), matching
+ * the sibling walks' reject-path convention.
  */
-static bool obj_alloc_track_check(struct object *obj,
-				  enum objecttype type,
-				  enum obj_scope scope)
+static bool obj_pool_slot_check(struct object *obj, enum objecttype type)
 {
-	if (scope == OBJ_LOCAL && !alloc_track_lookup(obj)) {
-		__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss, 1, __ATOMIC_RELAXED);
-		/*
-		 * Per-type sub-attribution of the alloc-track-miss
-		 * reject.  Aggregate above stays bumped for historical
-		 * comparability; these tell which OBJ_MMAP_* pool's
-		 * slots are the dominant false-rejected source so a
-		 * 153M-class miss spike can be attributed to one pool
-		 * instead of pooled across all three.  `type` is the
-		 * pool the draw landed on this iteration and is the
-		 * only contextual axis available at this site without
-		 * new plumbing; `scope` is gated to OBJ_LOCAL by the
-		 * if-condition above so splitting on it would be inert.
-		 */
-		switch (type) {
-		case OBJ_MMAP_ANON:
-			__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss_anon,
-					   1, __ATOMIC_RELAXED);
-			break;
-		case OBJ_MMAP_FILE:
-			__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss_file,
-					   1, __ATOMIC_RELAXED);
-			break;
-		case OBJ_MMAP_TESTFILE:
-			__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss_testfile,
-					   1, __ATOMIC_RELAXED);
-			break;
-		default:
-			break;
-		}
-		outputerr("get_map_handle: obj %p not in alloc_track "
-			  "(stomped slot, type %u, scope %d)\n",
-			  obj, type, scope);
-		return false;
+	static struct timespec last_warn;
+	struct timespec now;
+	struct childdata *cc;
+
+	if (objpool_check(obj, type))
+		return true;
+
+	__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss, 1, __ATOMIC_RELAXED);
+	switch (type) {
+	case OBJ_MMAP_ANON:
+		__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss_anon,
+				   1, __ATOMIC_RELAXED);
+		break;
+	case OBJ_MMAP_FILE:
+		__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss_file,
+				   1, __ATOMIC_RELAXED);
+		break;
+	case OBJ_MMAP_TESTFILE:
+		__atomic_add_fetch(&shm->stats.maps.reject_alloc_track_miss_testfile,
+				   1, __ATOMIC_RELAXED);
+		break;
+	default:
+		break;
 	}
-	return true;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	if (now.tv_sec != last_warn.tv_sec) {
+		last_warn = now;
+		cc = this_child();
+		log_self_corrupt_culprit("mm:get_map_handle:objpool",
+					 (unsigned long)obj,
+					 cc != NULL ? &cc->syscall : NULL);
+	}
+	return false;
 }
 
 /*
@@ -425,7 +433,7 @@ bool get_map_handle(struct map_handle *h)
 		if (!obj_ptr_in_user_va_band(obj, type, scope))
 			continue;
 
-		if (!obj_alloc_track_check(obj, type, scope))
+		if (!obj_pool_slot_check(obj, type))
 			continue;
 
 		if (!map_size_in_range(obj, type, scope))
