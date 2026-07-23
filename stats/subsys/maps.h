@@ -39,11 +39,14 @@ struct maps_stats {
 	 * (stale or stomped slot pointer leaking out of the OBJ_MMAP pool). */
 	unsigned long reject_bogus_obj_ptr;
 
-	/* scope == OBJ_LOCAL and alloc_track_lookup(obj) miss.  Bumped on
-	 * the validator-LRU false-positive class: alloc_track[] is a 256-
-	 * slot LRU; OBJ_MMAP_ANON pool entries can rotate out under fd-
-	 * pressure cascades, causing legitimate live entries to be
-	 * false-rejected.  See [[stomped-slot-regression-bisect-20260529]]. */
+	/* obj_pool_slot_check(): objpool_check(obj, type) rejected the
+	 * draw because obj->obj_type does not match the pool the draw
+	 * landed on -- either a stomped slot that survived the VA-band
+	 * guard, or a chunk recycled by deferred_free since the slot
+	 * was published.  Named for historical continuity with the older
+	 * alloc_track_lookup()-based gate this replaces; the former was
+	 * OBJ_LOCAL-only and false-rejected long-lived live entries on
+	 * ring rotation, which objpool_check() no longer does. */
 	unsigned long reject_alloc_track_miss;
 
 	/* obj->map.size == 0.  Benign noise from pre-clamp mmap_fd pool
@@ -58,19 +61,14 @@ struct maps_stats {
 	unsigned long reject_size_too_large;
 
 	/* Per-pool-type sub-attributions of [[maps_reject_alloc_track_miss]].
-	 * The aggregate above is bumped per false-reject regardless of which
-	 * OBJ_MMAP_* pool the iteration sampled, so a 153M-class miss tally
-	 * cannot be attributed to one pool vs. another -- a 256-slot LRU
-	 * rotating out OBJ_MMAP_ANON entries under fd-pressure cascades looks
-	 * identical at the aggregate to a TESTFILE-only seeding bug.  These
-	 * three counters split the same reject by the pool the draw landed on
-	 * this iteration (the `type` local at the bump site is the only
-	 * contextual axis available there without new plumbing; `scope` is
-	 * gated to OBJ_LOCAL by the surrounding if-condition so splitting on
-	 * it would be inert).  Summed, they equal maps_reject_alloc_track_miss
-	 * minus any iteration where `type` is somehow neither ANON nor FILE
-	 * nor TESTFILE (defensively bounded; should be zero in practice).
-	 * Pure attribution -- no behaviour change. */
+	 * The aggregate above is bumped per objpool_check() reject regardless
+	 * of which OBJ_MMAP_* pool the iteration sampled; these three counters
+	 * split the same reject by the pool the draw landed on this iteration
+	 * (the `type` local at the bump site is the only contextual axis
+	 * available there without new plumbing).  Summed, they equal
+	 * maps_reject_alloc_track_miss minus any iteration where `type` is
+	 * neither ANON nor FILE nor TESTFILE (defensively bounded; should be
+	 * zero in practice).  Pure attribution -- no behaviour change. */
 	unsigned long reject_alloc_track_miss_anon;
 	unsigned long reject_alloc_track_miss_file;
 	unsigned long reject_alloc_track_miss_testfile;
@@ -149,7 +147,7 @@ struct maps_stats {
 	 * for-loop body with rdtsc; on sampled calls the
 	 * total cycles across pick_mmap_pool_type +
 	 * get_random_object + obj_ptr_in_user_va_band +
-	 * obj_alloc_track_check + map_size_in_range reject
+	 * obj_pool_slot_check + map_size_in_range reject
 	 * chain are added to _sum and _count is bumped once.
 	 * cycles_sampled_sum / cycles_sampled_count is the
 	 * mean cost of one pick call; multiplied by the
