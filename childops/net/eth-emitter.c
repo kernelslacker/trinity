@@ -208,6 +208,7 @@ static bool ensure_socket(struct childdata *child)
 	struct sockaddr_ll sll;
 	unsigned int idx;
 	int fd;
+	int saved_errno;
 
 	if (eth_disabled)
 		return false;
@@ -215,8 +216,10 @@ static bool ensure_socket(struct childdata *child)
 		return true;
 
 	fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-	if (fd < 0)
+	if (fd < 0) {
+		saved_errno = errno;
 		goto disable;
+	}
 	idx = if_nametoindex("lo");
 	if (idx == 0)
 		idx = 1;
@@ -225,6 +228,7 @@ static bool ensure_socket(struct childdata *child)
 	sll.sll_protocol = htons(ETH_P_ALL);
 	sll.sll_ifindex = (int)idx;
 	if (bind(fd, (struct sockaddr *)&sll, sizeof(sll)) < 0) {
+		saved_errno = errno;
 		close(fd);
 		goto disable;
 	}
@@ -242,7 +246,7 @@ disable:
 		const enum child_op_type op = child->op_type;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
-					 (errno == EPERM || errno == EACCES) ?
+					 (saved_errno == EPERM || saved_errno == EACCES) ?
 						 CHILDOP_LATCH_NS_UNSUPPORTED :
 						 CHILDOP_LATCH_INIT_FAILED,
 					 __ATOMIC_RELAXED);
@@ -250,7 +254,7 @@ disable:
 	if (!warned_unsupported) {
 		warned_unsupported = true;
 		outputerr("eth_emitter: AF_PACKET setup failed (errno=%d), disabling\n",
-		          errno);
+		          saved_errno);
 	}
 	return false;
 }
