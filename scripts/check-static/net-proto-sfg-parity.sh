@@ -7,7 +7,7 @@
 # PF-indexed dispatch table of struct netproto handlers used by
 # sfg_default_pick_triplet() and sfg_default_bind() to fabricate
 # sockaddrs and pick valid (family, type, protocol) triplets.  The
-# sibling table net/socket-family-grammar.c::sfg_registry[] holds
+# sibling table net/socket-family-grammar-core.c::sfg_registry[] holds
 # the per-family grammars driven by socket-family-chain childops.
 # Both tables are keyed by PF number.
 #
@@ -39,7 +39,7 @@ set -u
 NAME="net-proto-sfg-parity"
 ROOT="${REPO_ROOT:-$(pwd)}"
 PROTO_SRC="$ROOT/net/protocols.c"
-SFG_SRC="$ROOT/net/socket-family-grammar.c"
+SFG_SRC="$ROOT/net/socket-family-grammar-core.c"
 BASELINE="$ROOT/scripts/check-static/net-proto-sfg-parity.baseline"
 
 fail() {
@@ -203,7 +203,7 @@ if [ "${#new_gaps[@]}" -gt 0 ]; then
 		done
 		echo "  fix: add a per-family grammar in net/proto/<family>.c and"
 		echo "       register it in sfg_registry[] in"
-		echo "       net/socket-family-grammar.c.  If the gap is"
+		echo "       net/socket-family-grammar-core.c.  If the gap is"
 		echo "       intentional (netproto exists purely for triplet or"
 		echo "       sockaddr synthesis and no coherent grammar makes"
 		echo "       sense), pin the PF in"
