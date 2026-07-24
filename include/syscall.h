@@ -874,5 +874,5 @@ static inline unsigned long get_arg_snapshot(struct syscallrecord *rec,
 }
 
 #define for_each_arg(_e, _i) \
-	for (_i = 1; _i <= (_e)->num_args; _i++)
+	for (_i = 1; _i <= (_e)->num_args && _i <= (int)ARRAY_SIZE((_e)->argtype); _i++)
 
