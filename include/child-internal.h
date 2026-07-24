@@ -38,6 +38,13 @@ void open_fail_nth(struct childdata *child);
 void open_tainted_fd(struct childdata *child);
 void use_fpu(void);
 
+/* child-init-freeze.c -- the initial sibling-childdata freeze + one-
+ * shot shared-region pins, and the parent rendezvous / per-child
+ * PRNG + object-pool bring-up that follows.  init_child (still in
+ * child-init.c during the carve) calls both across the TU boundary. */
+void init_child_freeze_shared(struct childdata *child, int childno);
+void init_child_rendezvous_parent(struct childdata *child, int childno);
+
 /* child-altop-* quartet -- used by child.c::child_process for the
  * per-iter op-type pick (child-altop-pick.c), the per-call
  * adapt_budget feedback (child-altop-budget.c), and the indexed
