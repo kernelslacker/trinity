@@ -53,4 +53,14 @@ cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
 			  uint8_t width,
 			  bool present_out[CMP_HYP_KIND_NR]);
 
+/*
+ * hyp-derive.c: candidate synthesis used by hyp-live.c.  Emits ONE
+ * value from the picked hypothesis's ladder and returns whether the
+ * emission was constructable (RANGE with hi < lo, unrecognised kind
+ * -> false).
+ */
+bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
+			  enum cmp_hint_callsite callsite,
+			  unsigned long *out);
+
 #endif
