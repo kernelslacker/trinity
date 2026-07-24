@@ -1,5 +1,5 @@
 /*
- * Per-protocol body-struct builders split out of net/netlink/msg.c.
+ * Per-protocol body-struct builders split out of net/netlink/msg-core.c.
  *
  * Each NETLINK_* protocol family carries a small fixed header (or a
  * per-type struct) immediately after the nlmsghdr; the kernel

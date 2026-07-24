@@ -1,5 +1,5 @@
 /*
- * Spec-driven attribute emission split out of net/netlink/msg.c.
+ * Spec-driven attribute emission split out of net/netlink/msg-core.c.
  *
  * Families with a curated nla_attr_spec table (XFRM, ctnetlink,
  * nftables, genl-ctrl, sock_diag, ...) go through this path instead
