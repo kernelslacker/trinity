@@ -87,7 +87,7 @@ static void sanitise_iommufd_destroy(struct syscallrecord *rec)
 	if (d == NULL)
 		return;
 
-	memset(d, 0, sizeof(*d));
+	generate_rand_bytes((unsigned char *)d, sizeof(*d));
 	d->size = sizeof(*d);
 	d->id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 
@@ -102,7 +102,7 @@ static void sanitise_iommufd_ioas_alloc(struct syscallrecord *rec)
 	if (a == NULL)
 		return;
 
-	memset(a, 0, sizeof(*a));
+	generate_rand_bytes((unsigned char *)a, sizeof(*a));
 	a->size = sizeof(*a);
 
 	rec->a3 = (unsigned long)a;
@@ -126,7 +126,7 @@ static void sanitise_iommufd_ioas_map(struct syscallrecord *rec)
 		return;
 	generate_rand_bytes((unsigned char *)ua, length);
 
-	memset(m, 0, sizeof(*m));
+	generate_rand_bytes((unsigned char *)m, sizeof(*m));
 	m->size = sizeof(*m);
 	m->flags = IOMMU_IOAS_MAP_READABLE | IOMMU_IOAS_MAP_WRITEABLE;
 	if (ONE_IN(4))
@@ -152,7 +152,7 @@ static void sanitise_iommufd_ioas_unmap(struct syscallrecord *rec)
 	length = IOMMUFD_FUZZ_PAGE_SIZE
 	       << rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ORDER + 1);
 
-	memset(u, 0, sizeof(*u));
+	generate_rand_bytes((unsigned char *)u, sizeof(*u));
 	u->size = sizeof(*u);
 	u->ioas_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 	u->iova = rnd_modulo_u64(IOMMUFD_FUZZ_IOVA_LIMIT)
@@ -181,8 +181,9 @@ static void sanitise_iommufd_ioas_iova_ranges(struct syscallrecord *rec)
 	ranges = get_writable_address(buf_sz);
 	if (ranges == NULL)
 		return;
+	generate_rand_bytes((unsigned char *)ranges, buf_sz);
 
-	memset(r, 0, sizeof(*r));
+	generate_rand_bytes((unsigned char *)r, sizeof(*r));
 	r->size = sizeof(*r);
 	r->ioas_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 	r->num_iovas = num_iovas;
@@ -199,7 +200,7 @@ static void sanitise_iommufd_hwpt_alloc(struct syscallrecord *rec)
 	if (a == NULL)
 		return;
 
-	memset(a, 0, sizeof(*a));
+	generate_rand_bytes((unsigned char *)a, sizeof(*a));
 	a->size = sizeof(*a);
 	a->dev_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 	a->pt_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
@@ -250,8 +251,9 @@ static void sanitise_iommufd_ioas_allow_iovas(struct syscallrecord *rec)
 	ranges = get_writable_address(buf_sz);
 	if (ranges == NULL)
 		return;
+	generate_rand_bytes((unsigned char *)ranges, buf_sz);
 
-	memset(a, 0, sizeof(*a));
+	generate_rand_bytes((unsigned char *)a, sizeof(*a));
 	a->size = sizeof(*a);
 	a->ioas_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 	a->num_iovas = num_iovas;
@@ -272,7 +274,7 @@ static void sanitise_iommufd_ioas_copy(struct syscallrecord *rec)
 	length = IOMMUFD_FUZZ_PAGE_SIZE
 	       << rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ORDER + 1);
 
-	memset(c, 0, sizeof(*c));
+	generate_rand_bytes((unsigned char *)c, sizeof(*c));
 	c->size = sizeof(*c);
 	c->flags = IOMMU_IOAS_MAP_READABLE | IOMMU_IOAS_MAP_WRITEABLE;
 	if (ONE_IN(4))
@@ -296,7 +298,7 @@ static void sanitise_iommufd_hwpt_set_dirty_tracking(struct syscallrecord *rec)
 	if (s == NULL)
 		return;
 
-	memset(s, 0, sizeof(*s));
+	generate_rand_bytes((unsigned char *)s, sizeof(*s));
 	s->size = sizeof(*s);
 	s->hwpt_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 	if (RAND_BOOL())
@@ -326,8 +328,9 @@ static void sanitise_iommufd_hwpt_get_dirty_bitmap(struct syscallrecord *rec)
 	bitmap = get_writable_address(IOMMUFD_FUZZ_PAGE_SIZE);
 	if (bitmap == NULL)
 		return;
+	generate_rand_bytes((unsigned char *)bitmap, IOMMUFD_FUZZ_PAGE_SIZE);
 
-	memset(g, 0, sizeof(*g));
+	generate_rand_bytes((unsigned char *)g, sizeof(*g));
 	g->size = sizeof(*g);
 	g->hwpt_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 	if (RAND_BOOL())
@@ -366,8 +369,9 @@ static void sanitise_iommufd_hwpt_invalidate(struct syscallrecord *rec)
 	entries = get_writable_address(buf_sz);
 	if (entries == NULL)
 		return;
+	generate_rand_bytes((unsigned char *)entries, buf_sz);
 
-	memset(i, 0, sizeof(*i));
+	generate_rand_bytes((unsigned char *)i, sizeof(*i));
 	i->size = sizeof(*i);
 	i->hwpt_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 	i->data_uptr = (__u64)(unsigned long)entries;
@@ -394,7 +398,7 @@ static void sanitise_iommufd_get_hw_info(struct syscallrecord *rec)
 	if (data == NULL)
 		return;
 
-	memset(h, 0, sizeof(*h));
+	generate_rand_bytes((unsigned char *)h, sizeof(*h));
 	h->size = sizeof(*h);
 	h->dev_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 	h->data_len = data_len;
