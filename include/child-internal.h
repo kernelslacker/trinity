@@ -30,6 +30,14 @@ void disable_coredumps(void);
 void enable_coredumps(void);
 unsigned long read_tainted_mask(int fd);
 
+/* child-init-clean.c -- fault-injection fd setup + FPU dirtier that
+ * init_child_setup_sandbox (still in child-init.c during the carve)
+ * calls across the TU boundary. */
+void set_make_it_fail(void);
+void open_fail_nth(struct childdata *child);
+void open_tainted_fd(struct childdata *child);
+void use_fpu(void);
+
 /* child-altop-* quartet -- used by child.c::child_process for the
  * per-iter op-type pick (child-altop-pick.c), the per-call
  * adapt_budget feedback (child-altop-budget.c), and the indexed
