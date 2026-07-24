@@ -1,6 +1,6 @@
 # childops/io_uring/ — io_uring Childops
 
-Scripted io_uring stress workloads: SQE/CQE floods, command passthrough, multishot networking, zero-copy send, and the "recipes" catalogue (a family-based recipe dispatcher covering fs/net/poll-timeout/register operations). The `iouring-` prefix is dropped (redundant with the dir). One workload per file, dispatched by symbol via `op_dispatch[]` in `child/child-altop.c`.
+Scripted io_uring stress workloads: SQE/CQE floods, command passthrough, multishot networking, zero-copy send, and the "recipes" catalogue (a family-based recipe dispatcher covering fs/net/poll-timeout/register operations). The `iouring-` prefix is dropped (redundant with the dir). One workload per file, dispatched by symbol via `op_dispatch[]` in `child/child-altop-table.c`.
 
 ## Files (10 .c + 3 headers)
 - `flood.c` — SQE/CQE submission flood.

@@ -1,6 +1,6 @@
 # childops/mm/ — Memory-Management Childops
 
-Scripted VM/memory stress workloads: mapping lifecycle, protection-boundary splits, madvise patterns, memory locking, NUMA migration, userfaultfd, and pagecache/vDSO edge cases. One workload per file, dispatched by symbol via `op_dispatch[]` in `child/child-altop.c`.
+Scripted VM/memory stress workloads: mapping lifecycle, protection-boundary splits, madvise patterns, memory locking, NUMA migration, userfaultfd, and pagecache/vDSO edge cases. One workload per file, dispatched by symbol via `op_dispatch[]` in `child/child-altop-table.c`.
 
 ## Files (10)
 - `mmap-lifecycle` / `vma-split-storm` — mapping create/teardown + VMA-split pressure.
