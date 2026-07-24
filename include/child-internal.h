@@ -57,6 +57,13 @@ void init_child_isolate_io(void);
  * child-init.c during the carve) calls this across the TU boundary. */
 void init_child_setup_sandbox(struct childdata *child, int childno);
 
+/* child-init-runtime.c -- kcov bring-up, uniarch active-syscalls
+ * pin, explorer-pool slot flag, the A/B-comparison cohort stamps,
+ * heap-bounds re-snapshot, RLIMIT_AS pin, and one-shot
+ * disable_coredumps.  init_child (still in child-init.c during the
+ * carve) calls this across the TU boundary as the last phase. */
+void init_child_runtime_config(struct childdata *child, int childno);
+
 /* child-altop-* quartet -- used by child.c::child_process for the
  * per-iter op-type pick (child-altop-pick.c), the per-call
  * adapt_budget feedback (child-altop-budget.c), and the indexed
