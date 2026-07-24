@@ -1,10 +1,10 @@
 #!/bin/bash
 #
 # check-alt-op-rotation: every CHILD_OP_* referenced from
-# pick_op_type_table[] in child/child-altop.c must be either reachable via
-# the dedicated alt-op rotation (alt_op_rotation[]) or explicitly
-# listed in scripts/check-static/alt-op-rotation.denylist with a
-# reason.
+# pick_op_type_table[] in child/child-altop-pick.c must be either
+# reachable via the dedicated alt-op rotation (alt_op_rotation[]) or
+# explicitly listed in scripts/check-static/alt-op-rotation.denylist
+# with a reason.
 #
 # Background: alt_op_rotation[] is hand-maintained.  Newer childops
 # can land in pick_op_type_table[] (and thus the random picker / canary
@@ -19,7 +19,7 @@ set -u
 
 NAME="check-alt-op-rotation"
 ROOT="${REPO_ROOT:-$(pwd)}"
-CHILD_C="$ROOT/child/child-altop.c"
+CHILD_C="$ROOT/child/child-altop-pick.c"
 DENYLIST="$ROOT/scripts/check-static/alt-op-rotation.denylist"
 
 if [ ! -r "$CHILD_C" ]; then
@@ -37,7 +37,7 @@ extract_table_ops() {
 	local table="$1" src="$2"
 	awk -v tbl="$table" '
 		# Match "static ... <tbl>[...] = {" or "<tbl>[] = {" on a
-		# single line.  Both forms are used in child/child-altop.c.
+		# single line.  Both forms are used in child/child-altop-pick.c.
 		$0 ~ ("(^|[[:space:]])" tbl "\\[[^]]*\\][[:space:]]*=[[:space:]]*\\{") {
 			in_tbl = 1
 			next
@@ -113,7 +113,7 @@ if [ -n "$MISSING" ]; then
 	{
 		echo "  $missing_count childop(s) in pick_op_type_table[] are neither in alt_op_rotation[] nor in the denylist:"
 		printf '%s\n' "$MISSING" | sed 's/^/    /'
-		echo "  fix: either add the symbol to alt_op_rotation[] in child/child-altop.c, OR add a line to"
+		echo "  fix: either add the symbol to alt_op_rotation[] in child/child-altop-pick.c, OR add a line to"
 		echo "       scripts/check-static/alt-op-rotation.denylist with a REASON: (permanent) or"
 		echo "       TODO: review for rotation candidacy (pending)."
 	} >&2

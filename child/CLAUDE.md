@@ -2,13 +2,16 @@
 
 Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop that runs one workload per iteration — either a random syscall (`random_syscall/`) or a scripted childop (`childops/`) via the alt-op picker — under an `alarm()` backstop and a set of self-integrity oracles. Distinct from `childops/`: those are the scripted *workloads*; this is the runtime *infrastructure* that drives them.
 
-## Files (7 files, ~6,400 LOC)
+## Files (10 files, ~6,400 LOC)
 
 | File | Role |
 |---|---|
 | child.c | The per-child loop: init → iterate (alt-op vs random syscall → dispatch → record) → reap. The heart of a child's life. |
 | child-init.c | Child bring-up: sandbox setup, fd/map/object pool init, cred/cap drop, per-child cache seeding, `/dev/null` output redirect. |
-| child-altop.c | Alt-op picker: `op_dispatch[]` / `alt_op_name()` / `pick_op_type_table[]` / `alt_op_rotation[]` — the childop-vs-syscall selection tables (gated by `scripts/check-static/{childop-arrays,check-alt-op-rotation}.sh`). |
+| child-altop-pick.c | Alt-op picker + dedicated-child rotation + dormant-op gate: `pick_op_type()` / `pick_op_type_table[]` / `alt_op_rotation[]` / `assign_dedicated_alt_op()` / `init_altop_dispatch()` (gated by `scripts/check-static/check-alt-op-rotation.sh`). |
+| child-altop-table.c | Alt-op string names + indirect-call dispatch: `op_dispatch[]` / `alt_op_name()` / `alt_op_lookup_by_name()` / `op_uses_outer_bracket()` (gated by `scripts/check-static/childop-arrays.sh`). |
+| child-altop-budget.c | Adaptive per-op budget multiplier + decaying-recency edge/wall ring: `adapt_budget()` / `childop_decay_record_*()` / `childop_window_advance()`. |
+| child-altop-score.c | Per-op outcome snapshot + ranked score-dump tables emitted at shutdown: `childop_outcome_snapshot()` / `childop_outcome_window_dump()` / `childop_score_dump()`. Telemetry-only. |
 | child-canary.c | Dormant-childop canary promotion: periodically re-probes a cooled/dormant op to see if it's productive again. |
 | child-sentinel.c | Deterministic-divergence sentinel: flags when a child's execution diverges from the expected deterministic path (a state-corruption tell). |
 | child-capdrop-oracle.c | Post-capdrop assertion: verifies the child actually dropped to an empty capability set (fuzzing must never run privileged). |

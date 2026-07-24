@@ -1,6 +1,6 @@
 # childops/misc/ — Miscellaneous Childops
 
-Scripted workloads that don't fit a single subsystem cluster — BPF program lifecycle, IPC (futex/shm/pipe), keyrings, perf events, namespaces/cgroups, and process/fd/scheduler stress. One workload per file, dispatched by symbol via `op_dispatch[]` in `child/child-altop.c`.
+Scripted workloads that don't fit a single subsystem cluster — BPF program lifecycle, IPC (futex/shm/pipe), keyrings, perf events, namespaces/cgroups, and process/fd/scheduler stress. One workload per file, dispatched by symbol via `op_dispatch[]` in `child/child-altop-table.c`.
 
 ## Files (25)
 - **BPF**: `bpf-lifecycle`, `bpf-cgroup-attach`.

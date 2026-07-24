@@ -1,6 +1,6 @@
 # childops/fs/ — Filesystem Childops
 
-Scripted VFS/filesystem stress workloads: mount lifecycle, inode/dentry churn, block/ublk device lifecycle, xattr, file locks, and the pseudo-filesystems (proc/sys/trace). One workload per file, dispatched by symbol via `op_dispatch[]` in `child/child-altop.c` (no path coupling — the enum→function table wires them at link time).
+Scripted VFS/filesystem stress workloads: mount lifecycle, inode/dentry churn, block/ublk device lifecycle, xattr, file locks, and the pseudo-filesystems (proc/sys/trace). One workload per file, dispatched by symbol via `op_dispatch[]` in `child/child-altop-table.c` (no path coupling — the enum→function table wires them at link time).
 
 ## Files (12)
 - `mount-churn` / `umount-race` — mount/unmount lifecycle + teardown races.

@@ -4,10 +4,13 @@
 #include "child-api.h"
 
 /*
- * Internal-only declarations for symbols shared between the three
+ * Internal-only declarations for symbols shared between the
  * compilation units that make up the child fuzz loop: child.c (the
- * main loop), child-init.c (per-child setup), and child-altop.c (the
- * alt-op picker / dispatch / scoring machinery).
+ * main loop), child-init.c (per-child setup), and the child-altop-*
+ * quartet (child-altop-pick.c for the picker/dormancy tables,
+ * child-altop-table.c for the op_dispatch[] / alt_op_name metadata,
+ * child-altop-budget.c for adaptive budget + decay ring, and
+ * child-altop-score.c for the shutdown score dumps).
  *
  * Symbols here were file-static before the TU split.  They are
  * deliberately NOT promoted into the public include/child.h: callers
@@ -27,9 +30,10 @@ void disable_coredumps(void);
 void enable_coredumps(void);
 unsigned long read_tainted_mask(int fd);
 
-/* child-altop.c -- used by child.c::child_process for the per-iter
- * op-type pick, the per-call adapt_budget feedback, and the
- * indexed dispatch into op_dispatch[]. */
+/* child-altop-* quartet -- used by child.c::child_process for the
+ * per-iter op-type pick (child-altop-pick.c), the per-call
+ * adapt_budget feedback (child-altop-budget.c), and the indexed
+ * dispatch into op_dispatch[] (child-altop-table.c). */
 enum child_op_type pick_op_type(void);
 void adapt_budget(enum child_op_type op_type, unsigned long edges_this_call);
 extern bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *);

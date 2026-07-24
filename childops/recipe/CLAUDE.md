@@ -1,6 +1,6 @@
 # childops/recipe/ — Recipe-Runner Framework
 
-A childop framework that runs "recipes" — structured multi-step operation sequences — with variants for close-races, deadline-races, networking, and supervised orchestration. Builds on `childops/io_uring/`'s recipe pool. The `recipe-runner-` prefix is dropped (redundant with the dir). Dispatched by symbol via `op_dispatch[]` in `child/child-altop.c`.
+A childop framework that runs "recipes" — structured multi-step operation sequences — with variants for close-races, deadline-races, networking, and supervised orchestration. Builds on `childops/io_uring/`'s recipe pool. The `recipe-runner-` prefix is dropped (redundant with the dir). Dispatched by symbol via `op_dispatch[]` in `child/child-altop-table.c`.
 
 ## Files (6 .c + internal header)
 - `runner.c` — the core recipe-runner dispatcher.
