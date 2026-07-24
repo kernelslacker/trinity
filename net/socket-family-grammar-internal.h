@@ -50,6 +50,35 @@ static inline uint32_t sfg_arm_id(int family, unsigned int order_idx)
 unsigned int sfg_seq_record(uint32_t h);
 void sfg_seq_credit(unsigned int slot, uint32_t arm_id, uint32_t reward);
 
+/*
+ * Illegal-step injector rate: with probability ONE_IN(SFG_ILLEGAL_RATE)
+ * the coordinator splices exactly one precondition-violating step into
+ * an otherwise-coherent plan.  Kept rare so the bulk of walks stay
+ * coherent and the P1 sequence-variety metric stays interpretable; a
+ * tighter rate would swamp the variety signal with illegal-step noise.
+ * Only fires on the inet/TCP arm today (mirrors P1's
+ * inet_phase_orders_apply scope); other families opt in as their
+ * grammar tables land.
+ */
+#define SFG_ILLEGAL_RATE	16
+
+/*
+ * Illegal-step machinery (net/socket-family-grammar-illegal.c).  The
+ * coordinator picks an op via sfg_pick_illegal_op, splices it into the
+ * legal ordering via sfg_splice_illegal (which for AF_ALG builds a
+ * fresh hostile plan instead of splicing), and dispatches the mutated
+ * ordering; when the walker hits SFG_PHASE_ILLEGAL, sfg_do_illegal_step
+ * publishes labels on both forensic channels and fires the raw
+ * precondition-violating syscall.
+ */
+enum sfg_illegal_op sfg_pick_illegal_op(int family);
+bool sfg_splice_illegal(struct sfg_phase_order *out,
+			const struct sfg_phase_order *in,
+			enum sfg_illegal_op op);
+void sfg_do_illegal_step(struct socket_ctx *ctx,
+			 struct socket_triplet *triplet,
+			 enum sfg_illegal_op op);
+
 #ifdef USE_IF_ALG
 /*
  * AF_ALG lifecycle phase handlers (net/socket-family-grammar-alg.c).
