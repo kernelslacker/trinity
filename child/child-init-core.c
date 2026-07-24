@@ -1,13 +1,36 @@
 /*
- * Per-child setup: forked-process bring-up, sandboxing, and the
- * helpers that pin the lifetime-constant state child_process()
- * relies on.  Split out of child.c so make -j can compile this
- * concurrently with the alt-op picker and the main loop.
+ * Per-child setup coordinator: this file's init_child() is the sole
+ * setup entry point child_process() calls, and its body is the
+ * readable phase map for the forked-process bring-up sequence.  Each
+ * phase's implementation lives in a sibling child-init-*.c:
  *
- * Functions that crossed the TU boundary back into child.c
- * (freeze_sibling_childdata, disable_coredumps, enable_coredumps,
- * read_tainted_mask) shed their `static` linkage and are now
- * declared in include/child-internal.h.
+ *   - child-init-clean.c   coredump toggles, fault-injection fd
+ *                          setup (make-it-fail, fail-nth), tainted-
+ *                          mask fd, FPU dirtier, per-slot occupant
+ *                          reset (clean_childdata).
+ *   - child-init-isolate.c stdio + controlling-terminal isolation
+ *                          (fd 0/1/2 -> /dev/null, parent-fd drops,
+ *                          setsid()).
+ *   - child-init-freeze.c  initial sibling-childdata + shared-region
+ *                          mprotect(PROT_READ) sweeps and the parent
+ *                          rendezvous / per-child object-pool bring-
+ *                          up that follows.
+ *   - child-init-sandbox.c shm->ready barrier, fault-injector arm,
+ *                          per-child unshare()s, root-only
+ *                          drop_privs, capset()-to-empty + oracle
+ *                          anchor capture, rlimit / cgroup / umask
+ *                          sweep in munge_process.
+ *   - child-init-runtime.c kcov bring-up, uniarch active-syscalls
+ *                          pin, explorer-pool slot flag, A/B-
+ *                          comparison cohort stamps, heap-bounds
+ *                          re-snapshot, RLIMIT_AS pin, one-shot
+ *                          disable_coredumps.
+ *
+ * All five phase files' entry points are declared in
+ * include/child-internal.h; init_child() below calls them in the
+ * order they appear as the fork-side setup sequence.  Deliberately
+ * kept as a coordinator rather than folded into constructor-like
+ * side effects so the phase ordering stays readable in one place.
  */
 
 #include <errno.h>

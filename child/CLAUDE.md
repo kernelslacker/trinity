@@ -2,12 +2,17 @@
 
 Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop that runs one workload per iteration — either a random syscall (`random_syscall/`) or a scripted childop (`childops/`) via the alt-op picker — under an `alarm()` backstop and a set of self-integrity oracles. Distinct from `childops/`: those are the scripted *workloads*; this is the runtime *infrastructure* that drives them.
 
-## Files (10 files, ~6,400 LOC)
+## Files (15 files, ~6,400 LOC)
 
 | File | Role |
 |---|---|
 | child.c | The per-child loop: init → iterate (alt-op vs random syscall → dispatch → record) → reap. The heart of a child's life. |
-| child-init.c | Child bring-up: sandbox setup, fd/map/object pool init, cred/cap drop, per-child cache seeding, `/dev/null` output redirect. |
+| child-init-core.c | `init_child()` coordinator: the readable phase map that sequences the sibling child-init-* phase files. |
+| child-init-clean.c | Coredump toggles, fault-injection fd setup (make-it-fail, fail-nth), tainted-mask fd, FPU dirtier, per-slot occupant reset (`clean_childdata`). |
+| child-init-isolate.c | Stdio + controlling-terminal isolation: fd 0/1/2 → `/dev/null`, parent-fd drops (`--stats-log-file`, self-cgroup, `/proc/<pid>/stat`), `setsid()`. |
+| child-init-freeze.c | Initial sibling-childdata + shared-region `mprotect(PROT_READ)` sweeps, parent rendezvous, per-child object-pool bring-up, optional CPU pin. |
+| child-init-sandbox.c | `shm->ready` barrier, fault-injector arm, per-child unshare()s, root-only `drop_privs`, `capset()`-to-empty + oracle anchor capture, rlimit / cgroup / umask sweep. |
+| child-init-runtime.c | kcov bring-up, uniarch active-syscalls pin, explorer-pool slot flag, A/B-comparison cohort stamps, heap-bounds re-snapshot, `RLIMIT_AS` pin, one-shot `disable_coredumps`. |
 | child-altop-pick.c | Alt-op picker + dedicated-child rotation + dormant-op gate: `pick_op_type()` / `pick_op_type_table[]` / `alt_op_rotation[]` / `assign_dedicated_alt_op()` / `init_altop_dispatch()` (gated by `scripts/check-static/check-alt-op-rotation.sh`). |
 | child-altop-table.c | Alt-op string names + indirect-call dispatch: `op_dispatch[]` / `alt_op_name()` / `alt_op_lookup_by_name()` / `op_uses_outer_bracket()` (gated by `scripts/check-static/childop-arrays.sh`). |
 | child-altop-budget.c | Adaptive per-op budget multiplier + decaying-recency edge/wall ring: `adapt_budget()` / `childop_decay_record_*()` / `childop_window_advance()`. |
