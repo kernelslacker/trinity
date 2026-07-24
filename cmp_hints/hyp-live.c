@@ -1,31 +1,26 @@
 /*
- * SHADOW typed-hypothesis store: inference + would-pick + LIVE inject.
+ * SHADOW typed-hypothesis LIVE inject arm.
  *
- * Layered on top of the raw cmp-hint pools as a PARALLEL table.  The raw
- * pools stay the canonical (cmp_ip, value, size) ledger; this cluster
- * builds typed inferences from those observations and drives the LIVE
- * inject arm that replaces a raw pool value with a hypothesis-derived one
- * on the callsites that opted in.  Every writer runs under the matching
- * durable cmp_hint_pool lock so hyp_pools[nr][do32] is serialised
- * per-(nr, do32) without a second lock of its own.
+ * Split out of hyp.c: cmp_hyp_try_live_inject() and its three gating
+ * denominators (plateau-amplified channel A, always-on bootstrap
+ * channel B, PROMOTED-bypass channel C).  Composes the picker
+ * (cmp_hyp_would_pick_locked, in hyp-pick.c) and derive
+ * (cmp_hyp_derive_value, in hyp-derive.c) via the shared
+ * cmp_hints/hyp-internal.h prototypes; the raw pool's
+ * (cmp_ip, value, width) tuple is replaced by (cmp_ip, derived,
+ * width) on a successful inject.
  */
 
 #include <stdint.h>
-#include <string.h>
 
-#include "arch.h"
 #include "cmp_hints.h"
 #include "cmp_hints-internal.h"
 #include "cmp_hints/hyp-internal.h"
 #include "kcov.h"
 #include "random.h"
-#include "rnd.h"
 #include "shm.h"
 #include "strategy.h"
 #include "tables.h"
-#include "utils.h"
-
-
 
 /*
  * Inject rate for the LIVE typed-hypothesis arm under the
