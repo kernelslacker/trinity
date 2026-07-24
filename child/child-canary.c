@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "child-canary-internal.h"
 #include "kcov.h"
 #include "params.h"
 #include "pids.h"
@@ -46,10 +47,8 @@
  * a 10k-iter window is a real correlation. */
 #define CANARY_CRASH_THRESHOLD		2U
 
-/* Seconds a DEMOTED op must wait before re-entering the picker.  Long
- * enough that a backed-off op does not churn-cycle, short enough that
- * a single multi-hour fuzz run gets to re-test misjudged ops. */
-#define CANARY_BACKOFF_TIME		1800
+/* CANARY_BACKOFF_TIME lives in child-canary-internal.h -- shared with
+ * the picker's DEMOTED-state backoff check. */
 
 /* Per-window setup-failure count above which a canary op with zero
  * setup successes is treated as structurally broken (vs. low-yield)
@@ -60,14 +59,8 @@
  * is not "broken at setup", just bad at it. */
 #define CANARY_SETUP_BROKEN_FAILS	500U
 
-/* Backoff for an op demoted with reason setup_broken.  Much longer
- * than CANARY_BACKOFF_TIME because a 100%-setup-failure shape will
- * not self-heal in 30 minutes -- it needs a code fix to the op's
- * setup path (missing kconfig probe, stale capability check, wrong
- * netns scope).  Re-canarying before then just burns another window
- * rediscovering the same broken setup.  4 h is still inside a single
- * long fuzz session, so a fix that lands mid-run does get re-evaluated. */
-#define CANARY_SETUP_BROKEN_BACKOFF_TIME	(4 * 3600)
+/* CANARY_SETUP_BROKEN_BACKOFF_TIME lives in child-canary-internal.h --
+ * shared with the picker's DEMOTED-state backoff check. */
 
 /* Consecutive 100%-setup-failure windows before an op is auto-transitioned
  * out of the retry-with-backoff loop and into terminal CONFIG_BLOCKED.
@@ -94,9 +87,8 @@
  * not misclassified as wedged. */
 #define CANARY_WEDGE_STALL_SEC	600U
 
-/* Width of the small ring of recently-promoted op names rendered by
- * canary_queue_summary().  Fixed at 5; spec verbatim. */
-#define CANARY_PROMOTION_RING_SIZE	5
+/* CANARY_PROMOTION_RING_SIZE lives in child-canary-internal.h -- the
+ * promotion ring itself is owned by the report TU. */
 
 /* Per-window deltas at or above which a promotion is tagged as
  * "state-corrupting" in the promotion log line.  Inputs are fleet-
@@ -127,7 +119,7 @@
  * provide.
  * -------------------------------------------------------------------- */
 
-static const enum child_op_type canary_priority_seeds[] = {
+const enum child_op_type canary_priority_seeds[] = {
 	CHILD_OP_GENETLINK_FUZZER,
 	CHILD_OP_BPF_LIFECYCLE,
 	CHILD_OP_IOURING_RECIPES,
@@ -139,9 +131,9 @@ static const enum child_op_type canary_priority_seeds[] = {
 	CHILD_OP_USERNS_FUZZER,
 	CHILD_OP_SOCK_DIAG_WALKER,
 };
-#define CANARY_PRIORITY_COUNT	ARRAY_SIZE(canary_priority_seeds)
+const unsigned int canary_priority_seeds_count = ARRAY_SIZE(canary_priority_seeds);
 
-static const enum child_op_type canary_config_blocked[] = {
+const enum child_op_type canary_config_blocked[] = {
 	CHILD_OP_NUMA_MIGRATION,
 	CHILD_OP_TIPC_LINK_CHURN,
 	CHILD_OP_SCTP_ASSOC_CHURN,
@@ -153,6 +145,7 @@ static const enum child_op_type canary_config_blocked[] = {
 	CHILD_OP_FLOCK_THRASH,
 	CHILD_OP_FUTEX_STORM,
 };
+const unsigned int canary_config_blocked_count = ARRAY_SIZE(canary_config_blocked);
 
 /* Pid-heavy ops the picker temporarily evicts while the parent fork
  * loop is in the drain window (see fork_pressure_drain_active() in
@@ -174,7 +167,7 @@ static const enum child_op_type canary_pid_heavy_ops[] = {
 	CHILD_OP_SYSFS_STRING_RACE,
 };
 
-static const enum child_op_type canary_risky_defer[] = {
+const enum child_op_type canary_risky_defer[] = {
 	CHILD_OP_FORK_STORM,
 	CHILD_OP_CPU_HOTPLUG_RIDER,
 	CHILD_OP_VDSO_MREMAP_RACE,
@@ -185,33 +178,34 @@ static const enum child_op_type canary_risky_defer[] = {
 	CHILD_OP_RTNL_VF_BROADCAST_GETLINK,
 	CHILD_OP_TTY_LDISC_CHURN,
 };
+const unsigned int canary_risky_defer_count = ARRAY_SIZE(canary_risky_defer);
 
 /* --------------------------------------------------------------------
  * Per-op queue state.  Parent-private; indexed by child_op_type enum.
  * -------------------------------------------------------------------- */
 
-static struct canary_op_state canary_ops[NR_CHILD_OP_TYPES];
+struct canary_op_state canary_ops[NR_CHILD_OP_TYPES];
 
 /* Picker cursors.  canary_priority_cursor is the next index into
  * canary_priority_seeds[] (or the operator-supplied override).  fifo_cursor
  * is the last enum value picked from the general FIFO walk; the next
  * pick resumes from cursor+1 and wraps. */
-static unsigned int canary_priority_cursor = 0;
-static enum child_op_type canary_fifo_cursor = CHILD_OP_SYSCALL;
+unsigned int canary_priority_cursor = 0;
+enum child_op_type canary_fifo_cursor = CHILD_OP_SYSCALL;
 
 /* Resolved priority-seed list pointer.  Defaults to the built-in seed array;
  * if --canary-seed was passed, the parser put op enums into
  * canary_seed_override[] / canary_seed_override_count and the init path
  * swaps that in. */
-static const enum child_op_type *canary_priority_list = NULL;
-static unsigned int canary_priority_list_count = 0;
+const enum child_op_type *canary_priority_list = NULL;
+unsigned int canary_priority_list_count = 0;
 
 /* Storage backing canary_priority_list when --canary-seed is in use.  The
  * parser stuffs unsigned-char-narrowed op enums into
  * canary_seed_override[]; we widen them into a real enum array here so
  * the picker can iterate by value rather than by re-casting on every
  * pick. */
-static enum child_op_type canary_seed_override_widened[CANARY_SEED_OVERRIDE_MAX];
+enum child_op_type canary_seed_override_widened[CANARY_SEED_OVERRIDE_MAX];
 
 /* Active op the canary slot(s) should be running right now.  Two-stage
  * commit: enter_canarying() writes canary_pending_op and stamps the
@@ -220,10 +214,10 @@ static enum child_op_type canary_seed_override_widened[CANARY_SEED_OVERRIDE_MAX]
  * child has actually exited and a fresh one has been forked with the
  * new op.  Straggler iterations of the old op therefore do not
  * pollute the new op's window edges/crashes counters. */
-static enum child_op_type canary_active_op_cell = CHILD_OP_SYSCALL;
-static enum child_op_type canary_pending_op = CHILD_OP_SYSCALL;
-static bool canary_active_op_set = false;
-static bool canary_pending_op_set = false;
+enum child_op_type canary_active_op_cell = CHILD_OP_SYSCALL;
+enum child_op_type canary_pending_op = CHILD_OP_SYSCALL;
+bool canary_active_op_set = false;
+bool canary_pending_op_set = false;
 
 /* Parked state: when canary_queue_tick() finds the picker exhausted
  * (no eligible candidate after the active window closes), the queue
@@ -237,23 +231,23 @@ static bool canary_pending_op_set = false;
  * because canary_slot_active() returns true while parked), so the
  * slot drops back to the default syscall picker until the next canary
  * cycle stages a new pending op via enter_canarying(). */
-static bool canary_slots_parked = false;
+bool canary_slots_parked = false;
 
 /* True once the queue is fully initialised AND not gated off by
  * --no-canary-queue / canary_slots=0.  When false, every public entry
  * point returns immediately and the dormant gate is consulted as a
  * historical static vector. */
-static bool canary_queue_live = false;
+bool canary_queue_live = false;
 
 /* Recently-promoted op names, ring of last CANARY_PROMOTION_RING_SIZE
  * entries.  Rendered by the 60-s summary line when at least one
  * promotion has occurred. */
-static enum child_op_type canary_promotion_ring[CANARY_PROMOTION_RING_SIZE];
-static unsigned int canary_promotion_ring_count = 0;
-static unsigned int canary_promotion_ring_head = 0;
+enum child_op_type canary_promotion_ring[CANARY_PROMOTION_RING_SIZE];
+unsigned int canary_promotion_ring_count = 0;
+unsigned int canary_promotion_ring_head = 0;
 
 /* Cached time of last summary emit; the summary self-rate-limits. */
-static time_t canary_last_summary = 0;
+time_t canary_last_summary = 0;
 
 /* Last observed plateau_active value, used for edge-triggered logging in
  * canary_queue_tick().  File-static (not a function-local static) so
@@ -261,7 +255,7 @@ static time_t canary_last_summary = 0;
  * the previous epoch would suppress the first plateau-change log of the
  * new epoch (or emit a spurious one if the flag flipped while the queue
  * was reinitialising). */
-static bool canary_last_plateau = false;
+bool canary_last_plateau = false;
 
 /* Per-op latch set by leave_canarying_demote_setup_broken() to mark an op
  * whose last demotion was for 100%-setup-failure shape.  Read by the
@@ -269,7 +263,7 @@ static bool canary_last_plateau = false;
  * CANARY_SETUP_BROKEN_BACKOFF_TIME instead of CANARY_BACKOFF_TIME.
  * Cleared in enter_canarying() so a re-canary that survives (or hits a
  * different demote reason) drops back to the normal backoff schedule. */
-static bool canary_op_setup_broken[NR_CHILD_OP_TYPES];
+bool canary_op_setup_broken[NR_CHILD_OP_TYPES];
 
 /* --------------------------------------------------------------------
  * Helpers.
@@ -278,14 +272,14 @@ static bool canary_op_setup_broken[NR_CHILD_OP_TYPES];
 /* Wall-clock-skew-immune second counter for state-transition stamps and
  * the summary throttle.  CLOCK_MONOTONIC cannot fail on a supported
  * kernel, so the return is taken unconditionally. */
-static time_t monotonic_seconds(void)
+time_t monotonic_seconds(void)
 {
 	struct timespec ts;
 	(void)clock_gettime(CLOCK_MONOTONIC, &ts);
 	return ts.tv_sec;
 }
 
-static unsigned int window_iters_resolved(void)
+unsigned int window_iters_resolved(void)
 {
 	unsigned int w = canary_window_iters;
 
@@ -318,7 +312,7 @@ static unsigned int window_iters_resolved(void)
  * the no-KCOV degradation.  The noisier childop_edges_discovered[] is
  * still populated as a diagnostic comparator and surfaced in the stats
  * dump, but the scheduling decision now runs off the clean signal. */
-static unsigned long edges_for_op(enum child_op_type op)
+unsigned long edges_for_op(enum child_op_type op)
 {
 	if (op >= NR_CHILD_OP_TYPES)
 		return 0UL;
@@ -363,7 +357,7 @@ static const char *op_kcov_skip_reason(enum child_op_type op)
  * intended sample.  Reading the per-op counter directly keeps the
  * CLI / log 'iters' label honest -- one iter == one canary-op call,
  * regardless of fleet size or canary-slot count. */
-static unsigned long invocations_for_op(enum child_op_type op)
+unsigned long invocations_for_op(enum child_op_type op)
 {
 	if (op >= NR_CHILD_OP_TYPES)
 		return 0UL;
@@ -402,7 +396,7 @@ static bool op_is_in_table(enum child_op_type op,
  * naturally avoids polluting the op's window counters with a forced
  * mid-window kill, and the slot's contribution to pid pressure is
  * already bounded by the existing window-iter budget. */
-static bool fork_pressure_should_suppress(enum child_op_type op)
+bool fork_pressure_should_suppress(enum child_op_type op)
 {
 	unsigned long until;
 	struct timespec ts;
@@ -461,7 +455,7 @@ static const struct canary_setup_reason_hint canary_setup_reason_hints[] = {
 	{ CHILD_OP_HFS_MOUNT_FUZZ,		SETUP_FAIL_REASON_FS_UNSUPPORTED },
 };
 
-static const char *canary_setup_fail_reason_name(enum canary_setup_fail_reason r)
+const char *canary_setup_fail_reason_name(enum canary_setup_fail_reason r)
 {
 	switch (r) {
 	case SETUP_FAIL_REASON_UNKNOWN:			return "unknown";
@@ -478,7 +472,7 @@ static const char *canary_setup_fail_reason_name(enum canary_setup_fail_reason r
 	return "unknown";
 }
 
-static enum canary_setup_fail_reason
+enum canary_setup_fail_reason
 canary_setup_fail_reason_for_op(enum child_op_type op)
 {
 	unsigned int i;
@@ -489,7 +483,7 @@ canary_setup_fail_reason_for_op(enum child_op_type op)
 	return SETUP_FAIL_REASON_UNKNOWN;
 }
 
-static void push_promotion(enum child_op_type op)
+void push_promotion(enum child_op_type op)
 {
 	canary_promotion_ring[canary_promotion_ring_head] = op;
 	canary_promotion_ring_head =
@@ -514,7 +508,7 @@ static void push_promotion(enum child_op_type op)
 #define CANARY_SIGTERM_GRACE_ITERS	20
 #define CANARY_SIGTERM_GRACE_USLEEP	1000
 
-static void kill_canary_slot_children(void)
+void kill_canary_slot_children(void)
 {
 	unsigned int i, iter;
 	unsigned int n = canary_slots;
@@ -568,7 +562,7 @@ static void kill_canary_slot_children(void)
 	}
 }
 
-static void enter_canarying(enum child_op_type op)
+void enter_canarying(enum child_op_type op)
 {
 	struct canary_op_state *s;
 	time_t now = monotonic_seconds();
@@ -798,9 +792,9 @@ static void leave_canarying_demote(enum child_op_type op,
  * SETUP_BROKEN means the op NEVER ran a successful setup (broken, needs
  * code fix).  Keeping the reasons separate lets the operator triage them
  * differently. */
-static void leave_canarying_demote_setup_broken(enum child_op_type op,
-						unsigned long window_iters,
-						unsigned long setup_failures)
+void leave_canarying_demote_setup_broken(enum child_op_type op,
+					 unsigned long window_iters,
+					 unsigned long setup_failures)
 {
 	struct canary_op_state *s = &canary_ops[op];
 	enum canary_setup_fail_reason reason = canary_setup_fail_reason_for_op(op);
@@ -856,8 +850,8 @@ static void leave_canarying_demote_setup_broken(enum child_op_type op,
  * longer CANARY_SETUP_BROKEN_BACKOFF_TIME -- a childop whose op_fn
  * never returns needs a code fix (to the op or to the kernel), not a
  * 30-minute wait. */
-static void leave_canarying_demote_wedged(enum child_op_type op,
-					  time_t window_age_sec)
+void leave_canarying_demote_wedged(enum child_op_type op,
+				   time_t window_age_sec)
 {
 	struct canary_op_state *s = &canary_ops[op];
 
@@ -913,7 +907,7 @@ static void leave_canarying_ineligible(enum child_op_type op,
  * Picker.
  * -------------------------------------------------------------------- */
 
-static bool pick_next_canary(enum child_op_type *out)
+bool pick_next_canary(enum child_op_type *out)
 {
 	unsigned int safety;
 	enum child_op_type op;
@@ -1126,7 +1120,7 @@ static bool recommended_state_is_demote(enum childop_recommended_state s)
  * elapsed against the active canary op.
  * -------------------------------------------------------------------- */
 
-static void close_window_and_decide(enum child_op_type op)
+void close_window_and_decide(enum child_op_type op)
 {
 	struct canary_op_state *s = &canary_ops[op];
 	unsigned long now_invocations = invocations_for_op(op);
@@ -1261,7 +1255,7 @@ void canary_queue_init(void)
 	 * static reason hint so the startup enumeration and any later
 	 * canary_queue_summary() consumer can report a label instead of
 	 * a bare "config-blocked" state. */
-	for (i = 0; i < ARRAY_SIZE(canary_config_blocked); i++) {
+	for (i = 0; i < canary_config_blocked_count; i++) {
 		enum child_op_type op = canary_config_blocked[i];
 		if (op < NR_CHILD_OP_TYPES) {
 			canary_ops[op].state = CANARY_STATE_CONFIG_BLOCKED;
@@ -1273,7 +1267,7 @@ void canary_queue_init(void)
 	/* Risky-defer set: stay DORMANT but the picker skips them via
 	 * the phase1_ineligible flag.  These ops need isolation that the
 	 * queue does not provide. */
-	for (i = 0; i < ARRAY_SIZE(canary_risky_defer); i++) {
+	for (i = 0; i < canary_risky_defer_count; i++) {
 		enum child_op_type op = canary_risky_defer[i];
 		if (op < NR_CHILD_OP_TYPES)
 			canary_ops[op].phase1_ineligible = true;
@@ -1313,7 +1307,7 @@ void canary_queue_init(void)
 		canary_priority_list_count = canary_seed_override_count;
 	} else {
 		canary_priority_list = canary_priority_seeds;
-		canary_priority_list_count = (unsigned int)CANARY_PRIORITY_COUNT;
+		canary_priority_list_count = canary_priority_seeds_count;
 	}
 
 	canary_priority_cursor = 0;
