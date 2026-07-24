@@ -45,6 +45,11 @@ void use_fpu(void);
 void init_child_freeze_shared(struct childdata *child, int childno);
 void init_child_rendezvous_parent(struct childdata *child, int childno);
 
+/* child-init-isolate.c -- stdio + controlling-terminal isolation
+ * that init_child (still in child-init.c during the carve) runs as
+ * the first phase. */
+void init_child_isolate_io(void);
+
 /* child-altop-* quartet -- used by child.c::child_process for the
  * per-iter op-type pick (child-altop-pick.c), the per-call
  * adapt_budget feedback (child-altop-budget.c), and the indexed
