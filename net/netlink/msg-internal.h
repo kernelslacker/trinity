@@ -184,4 +184,34 @@ unsigned char rand_family(void);
 size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		     size_t buflen, unsigned char *out_family);
 
+/*
+ * Per-protocol body-struct builders defined in msg-proto-body.c and
+ * dispatched from build_one_nlmsg in msg.c.  Each writes a
+ * family-specific fixed struct (genlmsghdr, nfgenmsg, xfrm_usersa_info,
+ * audit_status, sock_diag_req, ...) into body and returns its length.
+ * The audit builder writes raw text for some message types instead of
+ * a struct; the sock_diag builder shares rand_family() with the
+ * rtnetlink builders.
+ */
+size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
+		     size_t buflen);
+size_t gen_nfnl_body(unsigned char *body, unsigned short nlmsg_type,
+		     size_t buflen);
+size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type,
+		     size_t buflen);
+size_t gen_audit_body(unsigned char *body, unsigned short nlmsg_type,
+		      size_t buflen);
+size_t gen_sockdiag_body(unsigned char *body, unsigned short nlmsg_type,
+			 size_t buflen);
+
+/*
+ * Attribute-type picker for NETLINK_GENERIC.  Defined in
+ * msg-proto-body.c, called from pick_attr_hint in msg.c.  Reads the
+ * ctrl_specs table for GENL_ID_CTRL messages so the legacy flat-attr
+ * path can nest a controller attr through
+ * append_nested_attr_container(); returns 0 for other families so the
+ * caller falls back to a random attr type.
+ */
+unsigned short pick_genl_attr_type(unsigned short nlmsg_type);
+
 #endif /* NET_NETLINK_MSG_INTERNAL_H */
