@@ -314,11 +314,10 @@ static void autofs_sanitise(const struct ioctl_group *grp, struct syscallrecord 
 			arg->path[3] = rnd_u32();
 			arg->path[4] = 0;
 		} else {
-			int i;
+			unsigned int extra = rnd_modulo_u32(256);
 
-			arg->size += rnd_modulo_u32(256);
-			for (i=0; i < 10; ++i)
-				arg->path[i] = rnd_u32();
+			arg->size += extra;
+			generate_rand_bytes((unsigned char *)arg->path, 10 + extra);
 		}
 		break;
 	default:
