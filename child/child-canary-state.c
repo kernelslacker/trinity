@@ -1,10 +1,29 @@
 /*
- * child-canary.c -- Dormant-childop canary promotion queue.
+ * child-canary-state.c -- State transitions + init for the dormant-
+ * childop canary promotion queue.
  *
  * Design write-up: see Documentation/childop-canary-queue.md
  *
  * Invariant: state lives entirely in parent-private static memory;
  * runtime flips are parent-only, not shm-resident.
+ *
+ * This TU owns:
+ *   - the parent-private state cells (canary_ops[], the two-stage
+ *     active/pending op cells, the parked/live flags, the setup-broken
+ *     latch),
+ *   - the shared helpers (monotonic_seconds, window_iters_resolved,
+ *     edges_for_op, invocations_for_op, op_kcov_skip_reason),
+ *   - the state-transition entry/exit hooks (enter_canarying,
+ *     leave_canarying_promote/demote/setup_broken/wedged/ineligible,
+ *     canary_health_verdict, close_window_and_decide),
+ *   - the shadow recommended-state helpers,
+ *   - the two-stage-commit respawn hook (canary_queue_on_child_respawn),
+ *   - canary_queue_init.
+ *
+ * The picker + tick loop, the summary/report/query surface, and the
+ * static policy tables live in child-canary-picker.c,
+ * child-canary-report.c, and child-canary-policy.c respectively; all
+ * four TUs share child-canary-internal.h.
  */
 #include <errno.h>
 #include <signal.h>
