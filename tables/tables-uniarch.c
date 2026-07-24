@@ -127,7 +127,7 @@ int setup_syscall_group_uniarch(unsigned int group)
 /* Walk the syscall table and stamp any entry whose ACTIVE flag was
  * set before shm existed (today: `-c <syscall>` in parse_args) into
  * the shm-backed active table.  activate_syscall_in_table() short-
- * circuits on entry->active_number != 0, so this is idempotent for
+ * circuits on syscall_rt(entry)->active_number != 0, so this is idempotent for
  * entries that mark_all_syscalls_active_uniarch() or enable_random_
  * syscalls_uniarch() already activated. */
 void activate_flagged_syscalls_uniarch(void)
@@ -139,7 +139,7 @@ void activate_flagged_syscalls_uniarch(void)
 		entry = syscalls[i].entry;
 		if (entry == NULL)
 			continue;
-		if ((entry->flags & ACTIVE) && entry->active_number == 0)
+		if ((entry->flags & ACTIVE) && syscall_rt(entry)->active_number == 0)
 			activate_syscall(i);
 	}
 }

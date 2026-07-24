@@ -317,7 +317,7 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 
 		if (entry == NULL)
 			continue;
-		if (entry->active_number == 0)
+		if (syscall_rt(entry)->active_number == 0)
 			continue;
 
 		nr = entry->number;

@@ -73,7 +73,7 @@ static long syscall32(unsigned int call,
 					if (entry == NULL)
 						continue;
 
-					if (entry->active_number != 0)
+					if (syscall_rt(entry)->active_number != 0)
 						deactivate_syscall_nolock(i, true);
 				}
 				/* The per-call deactivate path has already cleared the

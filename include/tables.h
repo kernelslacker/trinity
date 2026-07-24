@@ -59,7 +59,7 @@ void activate_syscall32(unsigned int calln);
 void activate_syscall64(unsigned int calln);
 /*
  * Picker-side deactivations must use deactivate_syscall_locked(); it
- * takes shm->syscalltable_lock and rechecks entry->active_number, like
+ * takes shm->syscalltable_lock and rechecks syscall_rt(entry)->active_number, like
  * deactivate_enosys() does, so concurrent children cannot tear the
  * swap-with-last update of the shared active_syscall[] arrays.
  * deactivate_syscall_nolock() is for callers that already hold the
