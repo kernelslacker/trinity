@@ -214,4 +214,42 @@ size_t gen_sockdiag_body(unsigned char *body, unsigned short nlmsg_type,
  */
 unsigned short pick_genl_attr_type(unsigned short nlmsg_type);
 
+/*
+ * Legacy random-payload attribute path.  Defined in msg-attr-random.c
+ * and dispatched from iter_nlmsg_attr in msg.c for families without a
+ * curated nla_attr_spec table (NETLINK_ROUTE plus anything unknown).
+ * append_nlattr() writes one flat nlattr; append_nested_attr_container()
+ * wraps 1-3 children in a NLA_F_NESTED outer attr.  Both routes size
+ * per-rtnl-group structured payloads via the msg-rtnl-payloads
+ * generators when the (rtnl_group, nla_type) pair is known and fall
+ * back to a short random blob otherwise.
+ */
+size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
+		     unsigned short nla_type_hint, unsigned char family,
+		     int rtnl_group);
+size_t append_nested_attr_container(unsigned char *buf, size_t offset,
+				    size_t buflen,
+				    unsigned short outer_type,
+				    int protocol,
+				    unsigned short nlmsg_type,
+				    unsigned char body_family,
+				    int rtnl_group);
+
+/*
+ * Per-rtnetlink-group attribute-type hint picker.  Defined in
+ * msg-attr-random.c, called from pick_attr_hint in msg.c.  Draws from
+ * the shared ifla_attrs / rta_attrs / ... tables in msg-tables.c plus
+ * a handful of narrower per-group hint lists that live alongside
+ * pick_rtnl_attr_type in msg-attr-random.c.
+ */
+unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type);
+
+/*
+ * pick_attr_hint fans out from msg.c to per-family attribute-type
+ * pickers; declare it here so append_nested_attr_container in
+ * msg-attr-random.c can call back into it when building child
+ * attributes for a NLA_F_NESTED container.
+ */
+unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type);
+
 #endif /* NET_NETLINK_MSG_INTERNAL_H */
