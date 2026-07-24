@@ -770,7 +770,8 @@ bool objpool_check(const struct object *obj, enum objecttype expected)
 		return false;
 
 	if ((uintptr_t)obj < 0x10000UL ||
-	    (uintptr_t)obj >= 0x800000000000UL) {
+	    (uintptr_t)obj >= 0x800000000000UL ||
+	    !is_in_glibc_heap(obj)) {
 		__atomic_add_fetch(&shm->stats.diag.global_obj_uaf_caught, 1,
 				   __ATOMIC_RELAXED);
 		return false;
