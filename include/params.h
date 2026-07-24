@@ -110,7 +110,7 @@ extern unsigned int alt_op_children;
 extern bool user_specified_alt_op_children;
 void clamp_default_alt_op_children(void);
 
-/* Canary queue (child-canary.c).  canary_slots is carved from the
+/* Canary queue (child-canary-*.c).  canary_slots is carved from the
  * front of the alt_op_children pool: the first canary_slots dedicated
  * alt-op slots are stamped with the queue's currently-canarying op
  * instead of the alt_op_rotation[] entry they would otherwise use.

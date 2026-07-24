@@ -32,7 +32,7 @@
  * to build the dense enabled_altops[] vector.  Mutated at runtime by the
  * parent's queue transition path (enter_canarying / close_window_and_decide);
  * to check what's CURRENTLY active, read the periodic `canary queue:` log
- * lines and see canary_queue_init() in child-canary.c, not this table.
+ * lines and see canary_queue_init() in child-canary-state.c, not this table.
  *
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
@@ -416,7 +416,7 @@ _Static_assert(ARRAY_SIZE(pick_op_type_table) == NR_CHILD_OP_TYPES - 1,
  * ~100 entries; called once per state transition, never on the hot
  * path.
  *
- * Exists so child-canary.c can flip the gate for a specific op
+ * Exists so child-canary-state.c can flip the gate for a specific op
  * without taking a direct reference to pick_op_type_table[] / the
  * dormant_op_disabled[] storage.  Keeps both arrays file-static.
  */
@@ -448,7 +448,7 @@ int dormant_op_slot_for(enum child_op_type op)
  * continue to consult their fork-time snapshot until the slot turns
  * over.  Dedicated canary slots are re-stamped on respawn and so see
  * the new state immediately on the next spawn cycle.  See the header
- * block in child-canary.c for the full scope statement; the shm-
+ * block in child-canary-state.c for the full scope statement; the shm-
  * published variant is Phase 2 work.
  */
 void dormant_op_set(enum child_op_type op, bool dormant)

@@ -324,7 +324,7 @@ void log_alt_op_config(void);
  * is first invoked (i.e. before fork_children); a fresh call is required
  * if dormant gates ever become runtime mutable -- the canary queue
  * re-invokes it on every state transition that mutates the gate.  See
- * child-canary.c. */
+ * child-canary-state.c. */
 void init_altop_dispatch(void);
 
 /* Runtime mutators for the dormant-op gate.  Exposed for the canary
@@ -353,7 +353,7 @@ enum child_op_type alt_op_lookup_by_name(const char *name);
  * gate the read on this predicate (see canary queue close_window). */
 bool op_uses_outer_bracket(enum child_op_type op);
 
-/* ---- Canary queue (child-canary.c) ---------------------------------
+/* ---- Canary queue (child-canary-*.c) -------------------------------
  *
  * Promotes dormant childops by reserving a small number of canary
  * child slots (carved from the front of the --alt-op-children pool),
