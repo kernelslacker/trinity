@@ -58,3 +58,12 @@ void validate_ret_bound(const struct syscallentry *entry,
 			struct syscallrecord *rec);
 void deactivate_enosys(struct syscallrecord *rec,
 		       struct syscallentry *entry, unsigned int call);
+
+struct kcov_child;
+struct childdata;
+
+void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
+		  enum syscallstate state,
+		  struct kcov_child *kc, struct childdata *child);
+void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
+		  struct childdata *child);
