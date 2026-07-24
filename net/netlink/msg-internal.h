@@ -166,4 +166,22 @@ size_t gen_rta_mdba_payload(unsigned char *p, size_t avail,
 size_t gen_rta_vlandb_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
+/*
+ * Address-family picker shared by the rtnetlink body builders and the
+ * sock_diag body builder.  Defined in msg-rtnl-body.c; the widened
+ * linkage mirrors the descriptor-table pattern above so both TUs can
+ * see the same distribution without duplicating the family list.
+ */
+unsigned char rand_family(void);
+
+/*
+ * Router that maps an RTM_* nlmsg_type to the correct per-group body
+ * struct emitter.  Defined in msg-rtnl-body.c, called from
+ * build_one_nlmsg in msg.c.  out_family receives the body's address
+ * family byte so the attribute path can size per-family payloads
+ * (RTA_DST length, etc.) consistently with the body.
+ */
+size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
+		     size_t buflen, unsigned char *out_family);
+
 #endif /* NET_NETLINK_MSG_INTERNAL_H */
