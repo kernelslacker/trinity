@@ -49,3 +49,20 @@ static inline uint32_t sfg_arm_id(int family, unsigned int order_idx)
 
 unsigned int sfg_seq_record(uint32_t h);
 void sfg_seq_credit(unsigned int slot, uint32_t arm_id, uint32_t reward);
+
+#ifdef USE_IF_ALG
+/*
+ * AF_ALG lifecycle phase handlers (net/socket-family-grammar-alg.c).
+ * bind/accept helpers return true on success; false signals bail to the
+ * coordinator so late phases don't run against an unopened fd.  The
+ * other handlers self-gate on ctx->conn_state / ctx->fam.alg.type and
+ * degrade to no-ops on unmet preconditions.
+ */
+bool sfg_alg_do_bind(struct socket_ctx *ctx, unsigned int *err_burst);
+void sfg_alg_do_setkey(struct socket_ctx *ctx);
+void sfg_alg_do_set_aead(struct socket_ctx *ctx);
+bool sfg_alg_do_accept(struct socket_ctx *ctx, unsigned int *err_burst);
+void sfg_alg_do_cmsg(struct socket_ctx *ctx);
+void sfg_alg_do_send_more(struct socket_ctx *ctx);
+void sfg_alg_do_recv(struct socket_ctx *ctx);
+#endif
