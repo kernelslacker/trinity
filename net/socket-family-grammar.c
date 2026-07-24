@@ -32,6 +32,7 @@
 #include "random.h"
 #include "shm.h"
 #include "socket-family-grammar.h"
+#include "socket-family-grammar-internal.h"
 #include "trinity.h"
 #include "utils.h"
 		/* keep last — matches net/proto-*.c order */
@@ -403,21 +404,6 @@ static const struct sfg_phase_order sfg_default_order = {
 	  SFG_PHASE_LISTEN, SFG_PHASE_ACCEPT, SFG_PHASE_DATA,
 	  SFG_PHASE_END },
 };
-
-/*
- * P4 arm id: one grammar "arm" is a (family, order-index) pair.
- * Several executed sequence hashes can map to one arm (via needs_la
- * gating and mid-walk bails), so reward is stored per hash-slot and
- * rolled up to the arm at pick time.  Packing family in the high bits
- * and the order-index in the low byte lets the rollup side (here) and
- * the credit side (sfg_seq_credit) derive the identical id.  order-
- * index is < SFG_MAX_PHASES and family is a small AF_* constant, so
- * the low byte never overflows.
- */
-static inline uint32_t sfg_arm_id(int family, unsigned int order_idx)
-{
-	return ((uint32_t)family << 8) | (order_idx & 0xffu);
-}
 
 /* P4 tilt strength: 1-in-N picks consult the reward arms; the other
  * N-1 stay uniform.  ε = 1/8 keeps the uniform pick strongly dominant
@@ -902,113 +888,6 @@ static void sfg_do_illegal_step(struct socket_ctx *ctx,
 #endif
 	default:
 		break;
-	}
-}
-
-/*
- * FNV-1a step-ID hash.  Streamed per-step from the executor loop so
- * a walk that bails mid-sequence hashes only the steps that actually
- * ran — the truncated hash is a distinct sequence in its own right,
- * which is the right variety signal for the P1 metric.
- */
-#define SFG_FNV1A_OFFSET	0x811c9dc5u
-#define SFG_FNV1A_PRIME		0x01000193u
-
-static inline uint32_t sfg_fnv1a_step(uint32_t h, unsigned char step)
-{
-	h ^= step;
-	h *= SFG_FNV1A_PRIME;
-	return h;
-}
-
-/* Returned by sfg_seq_record when the ring is full and the hash was
- * not already present -- the caller has no slot to attach per-sequence
- * data to and skips the attempt. */
-#define SFG_SEQ_SLOT_NONE	((unsigned int)-1)
-
-/*
- * Record a per-walk sequence hash in shm's bounded ring.  Linear scan
- * to skip duplicates; CAS on sfg_seq_count reserves a fresh slot and
- * bumps stats.socket_family_grammar_distinct_seq exactly once per new
- * sequence observed fleet-wide.  Saturates silently once the ring
- * fills (SFG_SEQ_HASH_CAP entries); the variety-signal use case does
- * not need a full inventory.
- *
- * Returns the ring slot holding this hash -- the index found on a
- * duplicate, or the freshly CAS-reserved slot on a first sighting --
- * so a caller can attach per-sequence data (the P4 reward arms) keyed
- * by the same slot.  Returns SFG_SEQ_SLOT_NONE when the ring is full.
- */
-static unsigned int sfg_seq_record(uint32_t h)
-{
-	unsigned int count, i, slot;
-
-	count = __atomic_load_n(&shm->sfg_seq_count, __ATOMIC_ACQUIRE);
-	for (;;) {
-		if (count > SFG_SEQ_HASH_CAP)	/* clamp: shm may be corrupted */
-			count = SFG_SEQ_HASH_CAP;
-		for (i = 0; i < count; i++) {
-			if (__atomic_load_n(&shm->sfg_seq_hashes[i],
-					    __ATOMIC_RELAXED) == h)
-				return i;
-		}
-		if (count >= SFG_SEQ_HASH_CAP)
-			return SFG_SEQ_SLOT_NONE;
-		slot = count;
-		if (__atomic_compare_exchange_n(&shm->sfg_seq_count,
-						&count, slot + 1,
-						false,
-						__ATOMIC_ACQ_REL,
-						__ATOMIC_ACQUIRE)) {
-			__atomic_store_n(&shm->sfg_seq_hashes[slot], h,
-					 __ATOMIC_RELEASE);
-			__atomic_add_fetch(
-				&shm->stats.socket_family_grammar.distinct_seq,
-				1, __ATOMIC_RELAXED);
-			return slot;
-		}
-		/* CAS lost: `count` now holds the witnessed slot count;
-		 * re-scan (the winning writer may have written OUR hash). */
-	}
-}
-
-/* Halve reward+attempts for a slot once its attempt count reaches this
- * cap, so a barren-but-historically-lucky arm releases instead of
- * winning forever on a stale lifetime mean (coverage is non-stationary,
- * mirroring the strategy bandit's EMA decay discipline). */
-#define SFG_P4_ATTEMPTS_CAP	1024u
-
-/*
- * Credit one legal walk's new-edge reward to its ring slot.  Stamps the
- * owning arm on the slot's first credit (attempts 0 -> 1), accumulates
- * reward + attempts, and decays both by half on reaching the cap to
- * keep the rolled-up mean recent.  Concurrent crediting from sibling
- * children is atomic on the accumulate; the coarse cap-halve races
- * benignly -- a lost increment is noise in a heuristic tilt.
- */
-static void sfg_seq_credit(unsigned int slot, uint32_t arm_id,
-			   uint32_t reward)
-{
-	if (__atomic_load_n(&shm->sfg_seq_attempts[slot],
-			    __ATOMIC_RELAXED) == 0)
-		__atomic_store_n(&shm->sfg_seq_arm[slot], arm_id,
-				 __ATOMIC_RELAXED);
-
-	__atomic_add_fetch(&shm->sfg_seq_reward[slot], reward,
-			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.socket_family_grammar.reward, reward,
-			   __ATOMIC_RELAXED);
-
-	if (__atomic_add_fetch(&shm->sfg_seq_attempts[slot], 1,
-			       __ATOMIC_RELAXED) >= SFG_P4_ATTEMPTS_CAP) {
-		__atomic_store_n(&shm->sfg_seq_reward[slot],
-			__atomic_load_n(&shm->sfg_seq_reward[slot],
-					__ATOMIC_RELAXED) / 2,
-			__ATOMIC_RELAXED);
-		__atomic_store_n(&shm->sfg_seq_attempts[slot],
-			__atomic_load_n(&shm->sfg_seq_attempts[slot],
-					__ATOMIC_RELAXED) / 2,
-			__ATOMIC_RELAXED);
 	}
 }
 
