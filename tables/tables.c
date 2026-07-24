@@ -181,6 +181,20 @@ void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 	int *pool;
 	unsigned int *nr_pool;
 
+	/*
+	 * Gate ineligible entries out of active_syscalls[] at construction
+	 * so the flat array is authoritative.  AVOID_SYSCALL / NI_SYSCALL
+	 * would otherwise sit in the active prefix and get filtered only at
+	 * pick-time by validate_specific_syscall_silent(), keeping validate
+	 * on the O(1) picker hot path.  NEEDS_ROOT is dropped here for the
+	 * same reason on non-root runs.  All activation paths (mark_all_
+	 * syscalls_active_*, setup_syscall_group_*, toggle_syscall_n,
+	 * enable_random_syscalls_*) funnel through this function, so a
+	 * single skip covers every mode.
+	 */
+	if (entry->flags & (AVOID_SYSCALL | NI_SYSCALL))
+		return;
+
 	if ((entry->flags & NEEDS_ROOT) && orig_uid != 0)
 		return;
 
