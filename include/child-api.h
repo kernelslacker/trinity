@@ -514,6 +514,29 @@ struct canary_op_state {
 	 * an op whose setup path is structurally missing a host prereq. */
 	unsigned int  consecutive_setup_broken;
 
+	/* Snapshots of the per-op PC-bracket attempts / opens counters at
+	 * window open (kcov_shm->childop_kcov.childop_kcov_op_{attempts,
+	 * bracketed}[op]).  Their close-time deltas let close_window_and_
+	 * decide() distinguish "no PC bracket opened because every canary-
+	 * slot child that ran this window happened to be KCOV_MODE_CMP"
+	 * (bracketed_delta==0 but attempts_delta>0) from "no PC bracket
+	 * opened because childop-kcov attribution is off run-wide"
+	 * (both deltas 0).  Only the former is eligible for the pre-demote
+	 * PC-trial retry.  Owner-only writes from parent context, no
+	 * atomics needed. */
+	unsigned long window_start_kcov_op_attempts;
+	unsigned long window_start_kcov_op_bracketed;
+
+	/* Consecutive count of canary windows for this op that closed with
+	 * a non-zero bracket attempt count but zero opens (every dispatch
+	 * hit an outer-bracket reject arm, dominantly KCOV_MODE_CMP).  Bumped
+	 * by the PC-trial retry gate in close_window_and_decide(); reset by
+	 * any terminal exit (promote / demote / ineligible / wedged /
+	 * setup_broken).  When the count reaches CANARY_PC_TRIAL_RETRIES_MAX
+	 * the op falls through to the normal demote path so a pathological
+	 * all-CMP draw cannot loop the canary slot forever. */
+	unsigned int  consecutive_no_pc_bracket;
+
 	/* Last-observed setup-failure reason for this op.  Written by
 	 * leave_canarying_demote_setup_broken() (per-window) and by
 	 * canary_queue_init() when populating the startup CONFIG_BLOCKED
