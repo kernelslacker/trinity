@@ -26,10 +26,10 @@
 #include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
 
 /* Prototypes for external-linkage generators defined below.  Their
- * sibling declarations for the dispatcher live in net/netlink/msg.c;
+ * sibling declarations for the dispatcher live in net/netlink/msg-core.c;
  * these self-declarations satisfy -Wmissing-prototypes without
  * widening the per-family wire-up beyond the two TUs that need it
- * (this file and msg.c). */
+ * (this file and msg-core.c). */
 size_t gen_rta_neightbl_payload(unsigned char *p, size_t avail,
 				unsigned short nla_type);
 

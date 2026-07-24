@@ -1,5 +1,5 @@
 /*
- * Rtnetlink body-struct builders split out of net/netlink/msg.c.
+ * Rtnetlink body-struct builders split out of net/netlink/msg-core.c.
  *
  * Each RTM_* message group carries a small fixed struct (ifinfomsg,
  * rtmsg, ndmsg, ...) immediately after the nlmsghdr; the kernel
@@ -11,7 +11,7 @@
  * rand_family() is shared with the sock_diag body builder in
  * msg-proto-body.c, so its declaration lives in msg-internal.h with
  * external linkage; the router gen_rtnl_body() is also declared in
- * msg-internal.h and dispatched from build_one_nlmsg() in msg.c.
+ * msg-internal.h and dispatched from build_one_nlmsg() in msg-core.c.
  */
 #include <sys/socket.h>
 #include <arpa/inet.h>

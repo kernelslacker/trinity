@@ -2,11 +2,11 @@
  * msg-rtnl-payloads.c
  *
  * Per-rtnetlink-group attribute payload builders, split out of
- * net/netlink/msg.c so the message emitter / dispatcher TU stays
+ * net/netlink/msg-core.c so the message emitter / dispatcher TU stays
  * focused on protocol-body and dispatch logic and the per-group
  * payload bodies can compile in parallel.  The five generators here
  * (gen_rta_{route,link,addr,neigh,dcb}_payload) are dispatched from
- * the gen_rta_payload switch in msg.c.
+ * the gen_rta_payload switch in msg-core.c.
  *
  * The four cross-family helpers (rand_ipv4, rand_ipv6, start_nlattr,
  * build_nested_attrs) live in net/netlink/msg-rtnl-common.c and are
@@ -39,7 +39,7 @@
 #include "rnd.h"
 #include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
 
-/* Prototype mirrored from the forward declaration in net/netlink/msg.c;
+/* Prototype mirrored from the forward declaration in net/netlink/msg-core.c;
  * kept here (rather than in msg-internal.h next to its
  * gen_rta_* siblings) to keep the rtnl_addrlabel wire-up confined to
  * the two TUs that actually need it. */

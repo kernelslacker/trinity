@@ -1,5 +1,5 @@
 /*
- * Legacy random-payload attribute emission split out of net/netlink/msg.c.
+ * Legacy random-payload attribute emission split out of net/netlink/msg-core.c.
  *
  * Families without a curated nla_attr_spec table (chiefly NETLINK_ROUTE,
  * plus any unknown family that falls through pick_spec_table()) still
@@ -8,7 +8,7 @@
  * rta_payload_is_nested classifier), the per-rtnl-group attribute-type
  * hint tables, pick_rtnl_attr_type(), and the two emitters
  * (append_nlattr, append_nested_attr_container) that iter_nlmsg_attr()
- * in msg.c dispatches to.
+ * in msg-core.c dispatches to.
  *
  * The per-group "hint lists" (ndtbl_attrs, ifla_stats_attrs,
  * netnsa_attrs, tca_chain_attrs, linkprop_attrs) stay file-static here
@@ -16,7 +16,7 @@
  * consumed by pick_rtnl_attr_type()'s single switch arm.
  *
  * append_nested_attr_container() calls back into pick_attr_hint(),
- * which stays in msg.c because it fans out to per-family pickers in
+ * which stays in msg-core.c because it fans out to per-family pickers in
  * both TUs; the declaration in msg-internal.h closes the loop.
  */
 #include <stddef.h>

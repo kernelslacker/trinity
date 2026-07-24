@@ -1,7 +1,7 @@
 /*
  * msg-internal.h
  *
- * Shared declarations split out of net/netlink/msg.c to allow the
+ * Shared declarations split out of net/netlink/msg-core.c to allow the
  * descriptor tables (per-protocol message-type lists, per-group
  * rtnetlink attribute lists, per-family nla_attr_spec tables and
  * xfrm family-field offsets) to live in their own translation unit
@@ -10,7 +10,7 @@
  * not include it from anywhere else.
  *
  * The tables in msg-tables.c are deliberately widened from
- * file-static to external linkage so the emitters in msg.c
+ * file-static to external linkage so the emitters in msg-core.c
  * can pick from them across the TU boundary.  Each table is paired
  * with a `_n` size constant so the emitters can index into it without
  * needing the full array type that ARRAY_SIZE() requires; the
@@ -53,7 +53,7 @@
 /*
  * Per-message-type family-field offsets within the xfrm body.  The
  * row layout was previously expressed as an anonymous struct literal
- * inside msg.c; it is named here so the table can be
+ * inside msg-core.c; it is named here so the table can be
  * declared extern and referenced from xfrm_pin_family() across the
  * TU boundary.  Field semantics are unchanged: family_offset is the
  * SA / id family byte offset, sel_family_offset is the (optional)
@@ -67,7 +67,7 @@ struct xfrm_family_offset {
 
 /*
  * Descriptor tables — defined in msg-tables.c, consumed by
- * the message emitters in msg.c.  Each table is paired with
+ * the message emitters in msg-core.c.  Each table is paired with
  * a `_n` size constant so the emitters can scale a uniform pick
  * across the table without needing the full array type.
  */
@@ -140,7 +140,7 @@ extern const size_t inet_diag_specs_n;
 /*
  * Per-rtnetlink-group attribute payload builders.  Defined in
  * msg-rtnl-payloads.c, dispatched from the gen_rta_payload
- * switch in msg.c.  Each generator returns the payload length
+ * switch in msg-core.c.  Each generator returns the payload length
  * it wrote into p, or 0 to signal "fall back to a random blob".
  */
 size_t gen_rta_route_payload(unsigned char *p, size_t avail,
@@ -177,7 +177,7 @@ unsigned char rand_family(void);
 /*
  * Router that maps an RTM_* nlmsg_type to the correct per-group body
  * struct emitter.  Defined in msg-rtnl-body.c, called from
- * build_one_nlmsg in msg.c.  out_family receives the body's address
+ * build_one_nlmsg in msg-core.c.  out_family receives the body's address
  * family byte so the attribute path can size per-family payloads
  * (RTA_DST length, etc.) consistently with the body.
  */
@@ -186,7 +186,7 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 
 /*
  * Per-protocol body-struct builders defined in msg-proto-body.c and
- * dispatched from build_one_nlmsg in msg.c.  Each writes a
+ * dispatched from build_one_nlmsg in msg-core.c.  Each writes a
  * family-specific fixed struct (genlmsghdr, nfgenmsg, xfrm_usersa_info,
  * audit_status, sock_diag_req, ...) into body and returns its length.
  * The audit builder writes raw text for some message types instead of
@@ -206,7 +206,7 @@ size_t gen_sockdiag_body(unsigned char *body, unsigned short nlmsg_type,
 
 /*
  * Attribute-type picker for NETLINK_GENERIC.  Defined in
- * msg-proto-body.c, called from pick_attr_hint in msg.c.  Reads the
+ * msg-proto-body.c, called from pick_attr_hint in msg-core.c.  Reads the
  * ctrl_specs table for GENL_ID_CTRL messages so the legacy flat-attr
  * path can nest a controller attr through
  * append_nested_attr_container(); returns 0 for other families so the
@@ -216,7 +216,7 @@ unsigned short pick_genl_attr_type(unsigned short nlmsg_type);
 
 /*
  * Legacy random-payload attribute path.  Defined in msg-attr-random.c
- * and dispatched from iter_nlmsg_attr in msg.c for families without a
+ * and dispatched from iter_nlmsg_attr in msg-core.c for families without a
  * curated nla_attr_spec table (NETLINK_ROUTE plus anything unknown).
  * append_nlattr() writes one flat nlattr; append_nested_attr_container()
  * wraps 1-3 children in a NLA_F_NESTED outer attr.  Both routes size
@@ -237,7 +237,7 @@ size_t append_nested_attr_container(unsigned char *buf, size_t offset,
 
 /*
  * Per-rtnetlink-group attribute-type hint picker.  Defined in
- * msg-attr-random.c, called from pick_attr_hint in msg.c.  Draws from
+ * msg-attr-random.c, called from pick_attr_hint in msg-core.c.  Draws from
  * the shared ifla_attrs / rta_attrs / ... tables in msg-tables.c plus
  * a handful of narrower per-group hint lists that live alongside
  * pick_rtnl_attr_type in msg-attr-random.c.
@@ -245,7 +245,7 @@ size_t append_nested_attr_container(unsigned char *buf, size_t offset,
 unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type);
 
 /*
- * pick_attr_hint fans out from msg.c to per-family attribute-type
+ * pick_attr_hint fans out from msg-core.c to per-family attribute-type
  * pickers; declare it here so append_nested_attr_container in
  * msg-attr-random.c can call back into it when building child
  * attributes for a NLA_F_NESTED container.
@@ -254,7 +254,7 @@ unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type);
 
 /*
  * Spec-driven attribute path.  Defined in msg-attr-spec.c and
- * dispatched from build_one_nlmsg / iter_nlmsg_attr in msg.c for
+ * dispatched from build_one_nlmsg / iter_nlmsg_attr in msg-core.c for
  * families with a curated nla_attr_spec table (XFRM, ctnetlink,
  * nftables, genl-ctrl, sock_diag, ...).  pick_spec_table() returns
  * the (table, count) pair for a given protocol/nlmsg_type or NULL to
