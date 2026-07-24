@@ -50,6 +50,13 @@ void init_child_rendezvous_parent(struct childdata *child, int childno);
  * the first phase. */
 void init_child_isolate_io(void);
 
+/* child-init-sandbox.c -- shm->ready barrier, fault-injector arm,
+ * signal mask, per-child unshare()s, root-only drop_privs,
+ * capset()-to-empty + oracle anchor capture, and the random rlimit
+ * / cgroup / umask sweep in munge_process.  init_child (still in
+ * child-init.c during the carve) calls this across the TU boundary. */
+void init_child_setup_sandbox(struct childdata *child, int childno);
+
 /* child-altop-* quartet -- used by child.c::child_process for the
  * per-iter op-type pick (child-altop-pick.c), the per-call
  * adapt_budget feedback (child-altop-budget.c), and the indexed
