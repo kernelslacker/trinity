@@ -264,6 +264,16 @@ static void stage_next_or_park(void)
 static void close_window_or_park(enum child_op_type op)
 {
 	close_window_and_decide(op);
+	/* PC-trial retry path: close_window_and_decide() may have re-
+	 * canaried the SAME op via enter_canarying() when the just-closed
+	 * window logged bracket attempts but zero opens (every slot child
+	 * was KCOV_MODE_CMP).  In that case the op is back in
+	 * CANARY_STATE_CANARYING and enter_canarying() has already staged
+	 * it as pending + killed the slot children -- calling
+	 * stage_next_or_park() here would pick a DIFFERENT op and clobber
+	 * the staged retry, silently defeating the retry gate. */
+	if (canary_ops[op].state == CANARY_STATE_CANARYING)
+		return;
 	stage_next_or_park();
 }
 

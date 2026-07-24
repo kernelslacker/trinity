@@ -86,6 +86,19 @@
  * that transiently misbehaves but later recovers never reaches the cap. */
 #define CANARY_SETUP_BROKEN_AUTOBLOCK_N	3U
 
+/* Cap on the number of no-PC-bracket retries close_window_and_decide()
+ * will spend on a single op before allowing the demote-for-productivity
+ * path to fire.  A "no-PC-bracket window" is one whose attempts_delta
+ * > 0 but bracketed_delta == 0 -- every dispatch hit an outer-bracket
+ * reject arm, dominantly KCOV_MODE_CMP.  Each retry re-enters
+ * enter_canarying(), which kills the slot children so their respawn
+ * re-draws kcov mode and a subsequent window has another chance to
+ * land on a PC-mode child.  With KCOV_CMP_CHILD_RECIPROCAL=4 and one
+ * canary slot P(all-CMP window) ~= 25%; a cap of 3 retries requires
+ * four consecutive bad windows to trigger a demote (~0.4% false-
+ * negative rate) and terminates on a truly PC-hostile config. */
+#define CANARY_PC_TRIAL_RETRIES_MAX	3U
+
 /* CANARY_WEDGE_STALL_SEC moved to child-canary-picker.c (only user is
  * canary_queue_tick()'s wedge-stall bail-out branch). */
 
@@ -409,6 +422,22 @@ void enter_canarying(enum child_op_type op)
 			__ATOMIC_RELAXED);
 	}
 
+	/* Snapshots for the PC-trial retry gate in close_window_and_decide().
+	 * The delta at window close tells whether ANY canary-slot dispatch of
+	 * this op opened an outer PC bracket during the window; if not, the
+	 * clean-edges signal was uninformative and the demote decision is
+	 * deferred for up to CANARY_PC_TRIAL_RETRIES_MAX retries. */
+	s->window_start_kcov_op_attempts = kcov_shm
+		? __atomic_load_n(
+			&kcov_shm->childop_kcov.childop_kcov_op_attempts[op],
+			__ATOMIC_RELAXED)
+		: 0;
+	s->window_start_kcov_op_bracketed = kcov_shm
+		? __atomic_load_n(
+			&kcov_shm->childop_kcov.childop_kcov_op_bracketed[op],
+			__ATOMIC_RELAXED)
+		: 0;
+
 	s->last_canary_window_start = now;
 	s->last_state_transition = now;
 	s->canary_iterations++;
@@ -507,6 +536,9 @@ static void leave_canarying_promote(enum child_op_type op,
 	 * recovered op does not carry old setup-failure credit into a
 	 * later re-canary. */
 	s->consecutive_setup_broken = 0;
+	/* Terminal outcome: clear the PC-trial retry streak so a later
+	 * re-canary (after backoff / re-queue) starts fresh. */
+	s->consecutive_no_pc_bracket = 0;
 	push_promotion(op);
 
 	/* Gate stays at 0 (active).  The random picker keeps the op. */
@@ -552,6 +584,8 @@ static void leave_canarying_demote(enum child_op_type op,
 	 * counter.  An op that hit crash_threshold or zero_edges is not
 	 * on the auto-block track. */
 	s->consecutive_setup_broken = 0;
+	/* Terminal outcome: clear the PC-trial retry streak. */
+	s->consecutive_no_pc_bracket = 0;
 
 	/* Flip the gate back to dormant so the random picker stops
 	 * including this op. */
@@ -589,6 +623,10 @@ void leave_canarying_demote_setup_broken(enum child_op_type op,
 	s->setup_fail_reason = reason;
 	s->last_state_transition = monotonic_seconds();
 	s->total_demotions++;
+	/* Terminal outcome for the PC-trial streak: a broken setup path
+	 * will never open a PC bracket regardless of kcov mode, so any
+	 * accumulated no-PC-bracket count is not the reason we bailed. */
+	s->consecutive_no_pc_bracket = 0;
 
 	/* Flip the gate back to dormant so the random picker stops
 	 * including this op. */
@@ -648,6 +686,9 @@ void leave_canarying_demote_wedged(enum child_op_type op,
 	/* Wedge is a distinct failure mode from setup-broken, so a
 	 * wedged close breaks any "consecutive setup-broken" streak. */
 	s->consecutive_setup_broken = 0;
+	/* Wedged op_fn calls never reach the outer PC-bracket close either,
+	 * so the PC-trial retry streak is irrelevant here -- clear it. */
+	s->consecutive_no_pc_bracket = 0;
 
 	/* Flip the gate back to dormant so the random picker stops
 	 * including this op. */
@@ -682,6 +723,9 @@ static void leave_canarying_ineligible(enum child_op_type op,
 	s->state = CANARY_STATE_CONFIG_BLOCKED;
 	s->last_state_transition = monotonic_seconds();
 	s->consecutive_setup_broken = 0;
+	/* Terminal outcome: no further re-canary, so any accumulated
+	 * PC-trial retry streak is moot -- clear it. */
+	s->consecutive_no_pc_bracket = 0;
 
 	dormant_op_set(op, true);
 
@@ -893,6 +937,56 @@ void close_window_and_decide(enum child_op_type op)
 	}
 
 	{
+		/* PC-trial retry gate: the window failed to accrue clean edges
+		 * AND cannot be attributed to a fair PC-mode trial.  Every
+		 * canary-slot child that dispatched this op during the window
+		 * fell into an outer-bracket reject arm (dominantly
+		 * KCOV_MODE_CMP -- see kcov_bracket_begin) so childop_edges_
+		 * clean[op] could not have grown regardless of the op's actual
+		 * productivity.  Demoting on this signal loses coverage: an op
+		 * that would pay off under PC mode is cut on a cmp-mode-only
+		 * observation.  Re-canary instead, up to CANARY_PC_TRIAL_
+		 * RETRIES_MAX times; each re-entry kills the slot children and
+		 * forces a fresh kcov-mode draw at respawn, giving a subsequent
+		 * window another chance to land on a PC-mode child.
+		 *
+		 * Guards:
+		 *   attempts_delta > 0     the outer bracket was actually
+		 *                          engaged this window; with 0 attempts
+		 *                          childop-kcov attribution is off run-
+		 *                          wide and a retry cannot help.
+		 *   bracketed_delta == 0   every attempt was rejected; not a
+		 *                          fair PC-mode trial.
+		 *   retries < MAX          bounded so a pathological all-CMP
+		 *                          config still terminates. */
+		unsigned long now_attempts = kcov_shm
+			? __atomic_load_n(
+				&kcov_shm->childop_kcov.childop_kcov_op_attempts[op],
+				__ATOMIC_RELAXED)
+			: 0;
+		unsigned long now_bracketed = kcov_shm
+			? __atomic_load_n(
+				&kcov_shm->childop_kcov.childop_kcov_op_bracketed[op],
+				__ATOMIC_RELAXED)
+			: 0;
+		unsigned long attempts_delta =
+			(now_attempts > s->window_start_kcov_op_attempts)
+			? (now_attempts - s->window_start_kcov_op_attempts) : 0;
+		unsigned long bracketed_delta =
+			(now_bracketed > s->window_start_kcov_op_bracketed)
+			? (now_bracketed - s->window_start_kcov_op_bracketed) : 0;
+
+		if (attempts_delta > 0 && bracketed_delta == 0 &&
+		    s->consecutive_no_pc_bracket < CANARY_PC_TRIAL_RETRIES_MAX) {
+			s->consecutive_no_pc_bracket++;
+			output(0, "canary: %s pre-demote PC-trial retry %u/%u: %lu bracket attempts opened 0 (kcov_mode_cmp children only; edges=%lu noisy_edges_seen=%lu in %lu iters); re-canarying to re-draw slot kcov mode\n",
+				s->name, s->consecutive_no_pc_bracket,
+				(unsigned int)CANARY_PC_TRIAL_RETRIES_MAX,
+				attempts_delta, edges, noisy_delta, iters);
+			enter_canarying(op);
+			return;
+		}
+
 		/* Route the "zero clean edges" demote through the specific
 		 * kcov_bracket_begin() skip reason when one applies.  Same
 		 * confound the shadow's CHILDOP_REC_UNATTRIBUTED_EDGES
