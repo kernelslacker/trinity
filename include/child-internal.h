@@ -6,11 +6,18 @@
 /*
  * Internal-only declarations for symbols shared between the
  * compilation units that make up the child fuzz loop: child.c (the
- * main loop), child-init.c (per-child setup), and the child-altop-*
- * quartet (child-altop-pick.c for the picker/dormancy tables,
- * child-altop-table.c for the op_dispatch[] / alt_op_name metadata,
- * child-altop-budget.c for adaptive budget + decay ring, and
- * child-altop-score.c for the shutdown score dumps).
+ * main loop), the child-init-* sextet (child-init-core.c for the
+ * init_child() coordinator, child-init-clean.c for the coredump
+ * toggles / fault-injection fd setup / per-slot occupant reset,
+ * child-init-isolate.c for stdio isolation, child-init-freeze.c for
+ * sibling-childdata mprotect + parent rendezvous, child-init-
+ * sandbox.c for the shm->ready barrier + unshare/drop_privs/cap
+ * drop + rlimit sweep, and child-init-runtime.c for kcov + A/B
+ * cohort stamps + finalize), and the child-altop-* quartet
+ * (child-altop-pick.c for the picker/dormancy tables, child-altop-
+ * table.c for the op_dispatch[] / alt_op_name metadata, child-
+ * altop-budget.c for adaptive budget + decay ring, and child-altop-
+ * score.c for the shutdown score dumps).
  *
  * Symbols here were file-static before the TU split.  They are
  * deliberately NOT promoted into the public include/child.h: callers
@@ -19,49 +26,51 @@
  * linkage only as far as the split demands.
  */
 
-/* child-init.c -- init_child() is the lone setup entry point the
- * child_process() loop calls; the rest of these crossed the boundary
- * for the per-iter sibling-childdata refreeze, the coredump toggle
- * around shm->debug, and the taint mask read on the soft-taint
- * watcher path. */
+/* child-init-core.c -- init_child() is the lone setup entry point
+ * the child_process() loop calls; its body is the readable phase
+ * map that sequences the sibling child-init-* phase files. */
 void init_child(struct childdata *child, int childno);
+
+/* child-init-clean.c -- the per-iter sibling-childdata refreeze in
+ * child.c calls freeze_sibling_childdata across the TU boundary;
+ * the coredump toggles bracket the child_process() debug loop; the
+ * tainted-mask read fires on the soft-taint watcher path.  The
+ * fault-injector helpers (set_make_it_fail / open_fail_nth /
+ * open_tainted_fd) and the FPU dirtier are called by
+ * init_child_setup_sandbox in child-init-sandbox.c across the TU
+ * boundary. */
 void freeze_sibling_childdata(int my_childno);
 void disable_coredumps(void);
 void enable_coredumps(void);
 unsigned long read_tainted_mask(int fd);
-
-/* child-init-clean.c -- fault-injection fd setup + FPU dirtier that
- * init_child_setup_sandbox (still in child-init.c during the carve)
- * calls across the TU boundary. */
 void set_make_it_fail(void);
 void open_fail_nth(struct childdata *child);
 void open_tainted_fd(struct childdata *child);
 void use_fpu(void);
 
+/* child-init-isolate.c -- stdio + controlling-terminal isolation
+ * that init_child (in child-init-core.c) runs as the first phase. */
+void init_child_isolate_io(void);
+
 /* child-init-freeze.c -- the initial sibling-childdata freeze + one-
  * shot shared-region pins, and the parent rendezvous / per-child
- * PRNG + object-pool bring-up that follows.  init_child (still in
- * child-init.c during the carve) calls both across the TU boundary. */
+ * PRNG + object-pool bring-up that follows.  init_child (in
+ * child-init-core.c) calls both across the TU boundary. */
 void init_child_freeze_shared(struct childdata *child, int childno);
 void init_child_rendezvous_parent(struct childdata *child, int childno);
-
-/* child-init-isolate.c -- stdio + controlling-terminal isolation
- * that init_child (still in child-init.c during the carve) runs as
- * the first phase. */
-void init_child_isolate_io(void);
 
 /* child-init-sandbox.c -- shm->ready barrier, fault-injector arm,
  * signal mask, per-child unshare()s, root-only drop_privs,
  * capset()-to-empty + oracle anchor capture, and the random rlimit
- * / cgroup / umask sweep in munge_process.  init_child (still in
- * child-init.c during the carve) calls this across the TU boundary. */
+ * / cgroup / umask sweep in munge_process.  init_child (in
+ * child-init-core.c) calls this across the TU boundary. */
 void init_child_setup_sandbox(struct childdata *child, int childno);
 
 /* child-init-runtime.c -- kcov bring-up, uniarch active-syscalls
  * pin, explorer-pool slot flag, the A/B-comparison cohort stamps,
  * heap-bounds re-snapshot, RLIMIT_AS pin, and one-shot
- * disable_coredumps.  init_child (still in child-init.c during the
- * carve) calls this across the TU boundary as the last phase. */
+ * disable_coredumps.  init_child (in child-init-core.c) calls this
+ * across the TU boundary as the last phase. */
 void init_child_runtime_config(struct childdata *child, int childno);
 
 /* child-altop-* quartet -- used by child.c::child_process for the
