@@ -252,4 +252,23 @@ unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type);
  */
 unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type);
 
+/*
+ * Spec-driven attribute path.  Defined in msg-attr-spec.c and
+ * dispatched from build_one_nlmsg / iter_nlmsg_attr in msg.c for
+ * families with a curated nla_attr_spec table (XFRM, ctnetlink,
+ * nftables, genl-ctrl, sock_diag, ...).  pick_spec_table() returns
+ * the (table, count) pair for a given protocol/nlmsg_type or NULL to
+ * fall through to the legacy random-payload path in msg-attr-random.c.
+ * append_specced_nlattr() emits one attribute using that table,
+ * routing NLA_KIND_NESTED entries through an internal 1-3 child
+ * container so the depth stays one level deep.
+ */
+const struct nla_attr_spec *pick_spec_table(int protocol,
+					    unsigned short nlmsg_type,
+					    size_t *nr_out);
+size_t append_specced_nlattr(unsigned char *buf, size_t offset,
+			     size_t buflen,
+			     const struct nla_attr_spec *table,
+			     size_t nr_specs);
+
 #endif /* NET_NETLINK_MSG_INTERNAL_H */
