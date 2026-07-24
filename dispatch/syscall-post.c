@@ -160,7 +160,7 @@ void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *entry, un
 	lock(&shm->syscalltable_lock);
 
 	/* check another thread didn't already do this. */
-	if (entry->active_number != 0) {
+	if (syscall_rt(entry)->active_number != 0) {
 		deactivate_syscall_nolock(call, rec->do32bit);
 		did_deactivate = true;
 	}

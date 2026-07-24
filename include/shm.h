@@ -141,8 +141,9 @@ struct shm_s {
 	 * discipline, same shm->syscalltable_lock coverage as the flat
 	 * arrays' mutations in deactivate_syscall_locked().  The
 	 * per-entry back-index for pool-side swap-with-last is
-	 * syscallentry->pool_number (see include/syscall.h), mirroring
-	 * active_number's role for the flat array.
+	 * syscall_rt(entry)->pool_number in the parallel syscall_runtime
+	 * array (see include/syscall.h), mirroring active_number's role
+	 * for the flat array.
 	 *
 	 * Partition invariant, checked from within the activate /
 	 * deactivate paths under the lock:

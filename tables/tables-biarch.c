@@ -202,7 +202,7 @@ retry:
 			goto try32bit;
 		}
 
-		if (entry->active_number != 0) {
+		if (syscall_rt(entry)->active_number != 0) {
 			call64 = NOTFOUND;
 			goto try32bit;
 		}
@@ -236,7 +236,7 @@ just32:
 
 		entry = syscalls_32bit[call32].entry;
 
-		if ((entry->flags & TO_BE_DEACTIVATED) || (entry->active_number != 0))
+		if ((entry->flags & TO_BE_DEACTIVATED) || (syscall_rt(entry)->active_number != 0))
 			return;
 
 		//If we got so far, then active it.
@@ -288,7 +288,7 @@ int setup_syscall_group_biarch(unsigned int group)
 /* Walk the syscall tables and stamp any entry whose ACTIVE flag was
  * set before shm existed (today: `-c <syscall>` in parse_args) into
  * the shm-backed active table.  activate_syscall_in_table() short-
- * circuits on entry->active_number != 0, so this is idempotent for
+ * circuits on syscall_rt(entry)->active_number != 0, so this is idempotent for
  * entries that mark_all_syscalls_active_biarch() or enable_random_
  * syscalls_biarch() already activated. */
 void activate_flagged_syscalls_biarch(void)
@@ -301,7 +301,7 @@ void activate_flagged_syscalls_biarch(void)
 			entry = syscalls_64bit[i].entry;
 			if (entry == NULL)
 				continue;
-			if ((entry->flags & ACTIVE) && entry->active_number == 0)
+			if ((entry->flags & ACTIVE) && syscall_rt(entry)->active_number == 0)
 				activate_syscall64(i);
 		}
 	}
@@ -311,7 +311,7 @@ void activate_flagged_syscalls_biarch(void)
 			entry = syscalls_32bit[i].entry;
 			if (entry == NULL)
 				continue;
-			if ((entry->flags & ACTIVE) && entry->active_number == 0)
+			if ((entry->flags & ACTIVE) && syscall_rt(entry)->active_number == 0)
 				activate_syscall32(i);
 		}
 	}

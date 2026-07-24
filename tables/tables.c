@@ -199,7 +199,7 @@ void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 		return;
 
 	//Check if the call is activated already, and activate it only if needed
-	if (entry->active_number == 0) {
+	if (syscall_rt(entry)->active_number == 0) {
 		//Sanity check
 		if ((*nr_active + 1) > MAX_NR_SYSCALL) {
 			output(0, "[tables] MAX_NR_SYSCALL needs to be increased. More syscalls than active table can fit.\n");
@@ -209,7 +209,7 @@ void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 		//save the call no
 		active_syscall[*nr_active] = calln + 1;
 		(*nr_active) += 1;
-		entry->active_number = *nr_active;
+		syscall_rt(entry)->active_number = *nr_active;
 
 		/*
 		 * Cost-pool routing: mirror the flat-array append into the
@@ -228,7 +228,7 @@ void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 		}
 		pool[*nr_pool] = calln + 1;
 		(*nr_pool) += 1;
-		entry->pool_number = *nr_pool;
+		syscall_rt(entry)->pool_number = *nr_pool;
 	}
 
 	assert_pool_partition(*nr_active, *nr_active_cheap, *nr_active_exp);
@@ -247,18 +247,18 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 	entry = table[calln].entry;
 
 	//Check if the call is activated already, and deactivate it only if needed
-	if ((entry->active_number != 0) && (*nr_active > 0)) {
-		unsigned int idx = entry->active_number - 1;
+	if ((syscall_rt(entry)->active_number != 0) && (*nr_active > 0)) {
+		unsigned int idx = syscall_rt(entry)->active_number - 1;
 		unsigned int last = *nr_active - 1;
 
 		// Swap with the last active entry to avoid O(N) memmove.
 		if (idx != last) {
 			active_syscall[idx] = active_syscall[last];
-			table[active_syscall[idx] - 1].entry->active_number = idx + 1;
+			syscall_rt(table[active_syscall[idx] - 1].entry)->active_number = idx + 1;
 		}
 		active_syscall[last] = 0;
 		(*nr_active) -= 1;
-		entry->active_number = 0;
+		syscall_rt(entry)->active_number = 0;
 
 		/*
 		 * Cost-pool mirror: same swap-with-last shape, but the
@@ -270,7 +270,7 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 		 * so nr_pool > 0 whenever active_number != 0; the guard on
 		 * *nr_pool below is defence-in-depth.
 		 */
-		if (entry->pool_number != 0) {
+		if (syscall_rt(entry)->pool_number != 0) {
 			if (cost_pool_of(calln, do32)) {
 				pool = active_expensive;
 				nr_pool = nr_active_exp;
@@ -279,17 +279,17 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 				nr_pool = nr_active_cheap;
 			}
 			if (*nr_pool > 0) {
-				unsigned int pidx = entry->pool_number - 1;
+				unsigned int pidx = syscall_rt(entry)->pool_number - 1;
 				unsigned int plast = *nr_pool - 1;
 
 				if (pidx != plast) {
 					pool[pidx] = pool[plast];
-					table[pool[pidx] - 1].entry->pool_number = pidx + 1;
+					syscall_rt(table[pool[pidx] - 1].entry)->pool_number = pidx + 1;
 				}
 				pool[plast] = 0;
 				(*nr_pool) -= 1;
 			}
-			entry->pool_number = 0;
+			syscall_rt(entry)->pool_number = 0;
 		}
 	}
 
@@ -299,7 +299,7 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 /*
  * Remove a syscall from the active table.  Caller must already hold
  * shm->syscalltable_lock; the swap-with-last update mutates the shared
- * active_syscall[] array and entry->active_number atomically with the
+ * active_syscall[] array and syscall_rt(entry)->active_number atomically with the
  * *nr_active counter, and those three fields must be consistent for
  * concurrent pickers.
  */
@@ -335,7 +335,7 @@ void deactivate_syscall_locked(unsigned int call, bool do32bit)
 		goto already_done;
 
 	/* Another child may have raced us and already removed this slot. */
-	if (entry->active_number == 0)
+	if (syscall_rt(entry)->active_number == 0)
 		goto already_done;
 
 	deactivate_syscall_nolock(call, do32bit);
@@ -677,7 +677,8 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 {
 	unsigned int n, m;
 	struct syscallentry *copy;
-	size_t bytes;
+	struct syscall_runtime *runtime;
+	size_t bytes, rt_bytes;
 
 	if (!shared_size_mul(nr, sizeof(struct syscallentry), &bytes)) {
 		outputerr("copy_syscall_table: nr=%u * sizeof(struct syscallentry) overflows size_t\n",
@@ -688,6 +689,27 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 	if (copy == NULL)
 		exit(EXIT_FAILURE);
 
+	/*
+	 * Parallel RW runtime state array (RO-table split, Phase 1 step b).
+	 * Same length (nr slots) and same slot index (m) as `copy`, so an
+	 * over-allocated tail is fine -- what matters is that copy[m].rt
+	 * points at runtime[m] and never moves.  alloc_shared POISONS the
+	 * fresh mapping with random bytes to expose uninitialized reads
+	 * (see utils/shared_mem.c __alloc_shared), so the runtime slots
+	 * must be explicitly zeroed here -- both back-indices (and every
+	 * counter/scoreboard field added by the later commits in this
+	 * stack) are read as "not-yet-set" via a zero compare.
+	 */
+	if (!shared_size_mul(nr, sizeof(struct syscall_runtime), &rt_bytes)) {
+		outputerr("copy_syscall_table: nr=%u * sizeof(struct syscall_runtime) overflows size_t\n",
+			  nr);
+		exit(EXIT_FAILURE);
+	}
+	runtime = alloc_shared(rt_bytes);
+	if (runtime == NULL)
+		exit(EXIT_FAILURE);
+	memset(runtime, 0, rt_bytes);
+
 	for (n = 0, m = 0; n < nr; n++) {
 		struct syscallentry *entry = from[n].entry;
 
@@ -696,8 +718,7 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 
 		memcpy(copy + m , entry, sizeof(struct syscallentry));
 		copy[m].number = n;
-		copy[m].active_number = 0;
-		copy[m].pool_number = 0;
+		copy[m].rt = &runtime[m];
 		copy[m].syscall_category = stats_syscall_category(copy[m].name);
 		copy[m].is_close_syscall = (strcmp(copy[m].name, "close") == 0);
 		/*
@@ -868,7 +889,7 @@ static void enable_random_syscalls(void)
 /* Pick up syscalls flagged ACTIVE before create_shm() ran (the
  * `-c <syscall>` handler in parse_args) and stamp them into the
  * shm-backed active table.  Idempotent: activate_syscall_in_table()
- * skips entries with entry->active_number != 0. */
+ * skips entries with syscall_rt(entry)->active_number != 0. */
 static void activate_flagged_syscalls(void)
 {
 	if (biarch == true)

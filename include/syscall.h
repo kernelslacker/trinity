@@ -407,6 +407,46 @@ struct results {
 #define FAIL_RUN_THRESHOLD	3
 #define FAILED_FD_REROLL_LIMIT	16
 
+/*
+ * Per-syscallentry runtime-mutable state.  Extracted out of struct
+ * syscallentry so the descriptor itself can move to RO (mprotect
+ * PROT_READ) after construction -- RO-table split, Phase 1.  Lives in a
+ * parallel RW array allocated alongside each per-arch descriptor copy in
+ * copy_syscall_table(); every entry gets a write-once pointer
+ * (entry->rt) into its own slot.
+ *
+ * Writers here follow exactly the same synchronisation discipline they
+ * held before the split -- see the individual field comments for the
+ * lock (or atomic order) that covers each mutation.
+ */
+struct syscall_runtime {
+	/*
+	 * Back-index into shm->active_syscalls*[] (val = idx + 1, 0 == not
+	 * live).  Mutated only under shm->syscalltable_lock, at the
+	 * activate / deactivate sites in tables/tables.c.
+	 */
+	unsigned int active_number;
+	/*
+	 * Per-cost-pool back-index, mirroring active_number's role in the
+	 * flat shm->active_syscalls[] array.  Zero when the entry is not
+	 * live in any pool; when the entry is active, pool_number is 1 +
+	 * its slot in the cost-appropriate shm->active_cheap*[] or
+	 * shm->active_expensive*[] array, letting the pool-side
+	 * swap-with-last update run in O(1) alongside the existing
+	 * active_number back-index maintained for the flat array.
+	 *
+	 * Cost classification is authoritative from syscall_is_expensive()
+	 * (which reads the read-only EXPENSIVE bitmap built once at
+	 * select_syscall_tables() time), never inferred from array
+	 * contents or from a live-mutable shm counter -- see cost_pool_of()
+	 * in tables.c.  Mutated only under shm->syscalltable_lock.
+	 */
+	unsigned int pool_number;
+};
+
+struct syscallentry;
+static inline struct syscall_runtime *syscall_rt(const struct syscallentry *entry);
+
 struct syscallentry {
 	void (*sanitise)(struct syscallrecord *rec);
 	void (*post)(struct syscallrecord *rec);
@@ -440,23 +480,15 @@ struct syscallentry {
 	char * (*decode)(struct syscallrecord *rec, unsigned int argnum);
 
 	unsigned int number;
-	unsigned int active_number;
 	/*
-	 * Per-cost-pool back-index, mirroring active_number's role in the
-	 * flat shm->active_syscalls[] array.  Zero when the entry is not
-	 * live in any pool; when the entry is active, pool_number is 1 +
-	 * its slot in the cost-appropriate shm->active_cheap*[] or
-	 * shm->active_expensive*[] array, letting the pool-side
-	 * swap-with-last update run in O(1) alongside the existing
-	 * active_number back-index maintained for the flat array.
-	 *
-	 * Cost classification is authoritative from syscall_is_expensive()
-	 * (which reads the read-only EXPENSIVE bitmap built once at
-	 * select_syscall_tables() time), never inferred from array
-	 * contents or from a live-mutable shm counter -- see cost_pool_of()
-	 * in tables.c.
+	 * Write-once at copy_syscall_table() time; points at this entry's
+	 * slot in the parallel RW syscall_runtime array.  Split out of the
+	 * descriptor so struct syscallentry can move to RO once RO-table
+	 * split lands the mprotect step -- all runtime-mutable per-entry
+	 * state (activation back-indices, dispatch counters, results
+	 * scoreboard) lives behind this pointer, never in the descriptor.
 	 */
-	unsigned int pool_number;
+	struct syscall_runtime *rt;
 	const char *name;
 	const unsigned int num_args;
 	unsigned int flags;
@@ -651,6 +683,11 @@ struct syscallentry {
 	 */
 	uint8_t arg_snapshot_mask;
 };
+
+static inline struct syscall_runtime *syscall_rt(const struct syscallentry *entry)
+{
+	return entry->rt;
+}
 
 #define RET_BORING		-1
 #define RET_NONE		0
