@@ -42,4 +42,15 @@ cmp_hyp_find_range_by_identity(struct cmp_hyp_pool *pool, uint64_t lo,
 			       uint64_t hi, uint8_t width, uint8_t dir,
 			       uint8_t sign, uint8_t rel);
 
+/*
+ * hyp-pick.c: value-agnostic picker used by hyp-live.c to resolve the
+ * candidate hypothesis at (cmp_ip, width).  Writes a CMP_HYP_KIND_NR-
+ * wide presence mask through *present_out reflecting which kinds the
+ * picker would have CONSIDERED (RETIRED slots do not register).
+ */
+struct cmp_hypothesis *
+cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
+			  uint8_t width,
+			  bool present_out[CMP_HYP_KIND_NR]);
+
 #endif
