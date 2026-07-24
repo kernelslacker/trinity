@@ -132,6 +132,13 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
  * head fields on every iteration.  No cross-process coherence is
  * required post-Stage-5 — every pool lives in the iterating
  * process's private heap.
+ *
+ * The array_snap is additionally range-checked and gated through
+ * is_in_glibc_heap() before the walk publishes n_snap, mirroring
+ * the guard in objhead_indexed_read().  A scribbled head->array
+ * that survives the NULL test still lands the indexed load off
+ * for_each_obj's array_snap[idx] on an unmapped page; forcing
+ * n_snap to 0 makes the iterator bail cleanly instead.
  */
 void __for_each_obj_init(struct objhead *head,
 			 struct __for_each_obj_state *s)
@@ -139,8 +146,18 @@ void __for_each_obj_init(struct objhead *head,
 	s->n_snap = head->num_entries;
 	s->array_snap = head->array;
 
-	if (s->array_snap == NULL)
+	if (s->array_snap == NULL) {
 		s->n_snap = 0;
+		return;
+	}
+
+	if ((uintptr_t)s->array_snap < 0x10000UL ||
+	    (uintptr_t)s->array_snap >= 0x800000000000UL ||
+	    !is_in_glibc_heap(s->array_snap)) {
+		__atomic_add_fetch(&shm->stats.diag.objpool_array_stale_caught, 1,
+				   __ATOMIC_RELAXED);
+		s->n_snap = 0;
+	}
 }
 
 /*
