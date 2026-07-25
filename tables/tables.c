@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <errno.h>
 #include "arch.h"
 #include "arch-syscalls.h"
 #include "params.h"
@@ -662,30 +664,37 @@ void show_unannotated_args(void)
 }
 
 /*
- * This changes the pointers in the table 'from' to be copies in
- * shared mmaps across all children.  We do this so that a child can
- * modify the flags field (adding AVOID for eg) and have other processes see the change.
+ * Rewrite the pointers in table 'from' so each .entry points at a
+ * copy in a shared mmap visible across all children.  Every runtime-
+ * mutable field of the descriptor has moved off to the parallel RW
+ * syscall_runtime array (see struct syscall_runtime); the descriptor
+ * itself is written only from here and from munge_tables()'s flag-
+ * stamping helpers, so it can be frozen PROT_READ once munge_tables
+ * completes.
  *
- * Wild-write risk: a child syscall buffer pointer aliasing into the
- * table could corrupt a syscallentry's argtype[] / num_args / flags,
- * which would then drive the random-syscall generator down a wrong
- * arg path until the corruption clears.  Bounded — random-syscall.c
- * gates on the shape it sees and won't crash the parent on a
- * malformed entry.
+ * The descriptor `copy` array is routed through alloc_shared_page_-
+ * aligned() so its base is page-aligned and its length is whole-page
+ * padded.  This lets protect_syscall_tables() mprotect(PROT_READ) the
+ * span exactly after munge_tables() finishes stamping flag bits and
+ * before the child fleet forks.  The parallel RW `syscall_runtime`
+ * array stays on its own alloc_shared() mapping so it remains
+ * writable at runtime.  The out-params return the descriptor's base
+ * and rounded length so the caller can hand both to the mprotect.
  */
-static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsigned int nr)
+static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsigned int nr,
+						void **out_desc_base, size_t *out_desc_len)
 {
 	unsigned int n, m;
 	struct syscallentry *copy;
 	struct syscall_runtime *runtime;
-	size_t bytes, rt_bytes;
+	size_t bytes, rt_bytes, desc_len = 0;
 
 	if (!shared_size_mul(nr, sizeof(struct syscallentry), &bytes)) {
 		outputerr("copy_syscall_table: nr=%u * sizeof(struct syscallentry) overflows size_t\n",
 			  nr);
 		exit(EXIT_FAILURE);
 	}
-	copy = alloc_shared(bytes);
+	copy = alloc_shared_page_aligned(bytes, &desc_len);
 	if (copy == NULL)
 		exit(EXIT_FAILURE);
 
@@ -772,14 +781,72 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		from[n].entry = &copy[m];
 		m++;
 	}
+
+	if (out_desc_base != NULL)
+		*out_desc_base = copy;
+	if (out_desc_len != NULL)
+		*out_desc_len = desc_len;
+
 	return from;
+}
+
+/*
+ * Per-arch descriptor table extents captured at select_syscall_tables()
+ * time so protect_syscall_tables() can mprotect(PROT_READ) exactly the
+ * page span the descriptor array occupies.  Only the entries populated
+ * by the active biarch/uniarch branch of select_syscall_tables() have
+ * non-zero .len; protect_syscall_tables() skips zero-len slots so it
+ * is safe to call under either build configuration.
+ */
+static struct desc_extent {
+	void *base;
+	size_t len;
+} desc_extents[3];
+
+/*
+ * Freeze the per-arch syscallentry descriptor tables PROT_READ after
+ * munge_tables() has finished stamping the ACTIVE / TO_BE_DEACTIVATED /
+ * EXPLICITLY_EXCLUDED flag bits and before fork_children() carves the
+ * fleet.  A subsequent wild write from a fuzzed child into any field
+ * of a descriptor (num_args, argtype[], argname[], flags, ...) faults
+ * at the offending store instead of driving downstream code down a
+ * corrupted path -- retire of the defensive clamps in for_each_arg,
+ * gen_arg_struct_ptr and health/post-mortem rides on this contract.
+ * The parallel syscall_runtime array stays RW on its own mapping so
+ * per-child stats / scoreboard writes continue to succeed.
+ */
+void protect_syscall_tables(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(desc_extents); i++) {
+		if (desc_extents[i].base == NULL || desc_extents[i].len == 0)
+			continue;
+		if (mprotect(desc_extents[i].base, desc_extents[i].len,
+			     PROT_READ) != 0) {
+			int saved_errno = errno;
+
+			log_mprotect_failure(desc_extents[i].base,
+					     desc_extents[i].len, PROT_READ,
+					     __builtin_return_address(0),
+					     saved_errno);
+			outputerr("protect_syscall_tables: mprotect(desc[%u] base=%p len=%zu) failed: %s\n",
+				  i, desc_extents[i].base, desc_extents[i].len,
+				  strerror(saved_errno));
+			exit(EXIT_FAILURE);
+		}
+	}
 }
 
 void select_syscall_tables(void)
 {
 #ifdef ARCH_IS_BIARCH
-	syscalls_64bit = copy_syscall_table(SYSCALLS64, ARRAY_SIZE(SYSCALLS64));
-	syscalls_32bit = copy_syscall_table(SYSCALLS32, ARRAY_SIZE(SYSCALLS32));
+	syscalls_64bit = copy_syscall_table(SYSCALLS64, ARRAY_SIZE(SYSCALLS64),
+					    &desc_extents[1].base,
+					    &desc_extents[1].len);
+	syscalls_32bit = copy_syscall_table(SYSCALLS32, ARRAY_SIZE(SYSCALLS32),
+					    &desc_extents[2].base,
+					    &desc_extents[2].len);
 
 	max_nr_64bit_syscalls = ARRAY_SIZE(SYSCALLS64);
 	max_nr_32bit_syscalls = ARRAY_SIZE(SYSCALLS32);
@@ -790,7 +857,9 @@ void select_syscall_tables(void)
 	build_expensive_bitmap(syscalls_32bit, max_nr_32bit_syscalls,
 			       expensive_bits_32);
 #else
-	syscalls = copy_syscall_table(SYSCALLS, ARRAY_SIZE(SYSCALLS));
+	syscalls = copy_syscall_table(SYSCALLS, ARRAY_SIZE(SYSCALLS),
+				      &desc_extents[0].base,
+				      &desc_extents[0].len);
 	max_nr_syscalls = ARRAY_SIZE(SYSCALLS);
 
 	build_expensive_bitmap(syscalls, max_nr_syscalls,
