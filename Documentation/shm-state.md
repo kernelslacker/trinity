@@ -243,3 +243,71 @@ distribution every time the orchestrator fires.
 Same CAS-serialised single-writer protocol as `bandit_pulls[]`;
 `dump_strategy_stats()` uses RELAXED loads to tolerate the writer race
 the same way it does for the lifetime fields.
+
+## CLONE_NEWNET throttle
+
+Trinity children fuzzing `fork()` / `clone()` / `clone3()` spawn
+untracked grandchildren; each grandchild that calls `unshare` with
+`CLONE_NEWNET` feeds the kernel's netns cleanup workqueue, and the
+per-call cost grows with the queue's backlog.  Past a few in-flight
+unshares per host the workqueue can't keep up -- `copy_net_ns()` begins
+blocking in D-state, the untracked grandchild population grows
+unbounded, and the box turns into a forkbomb.
+
+`MAX_CONCURRENT_NEWNET` (4) caps the fleet-wide in-flight
+`CLONE_NEWNET` caller count so the kernel-side workqueue can drain.
+The sanitise hooks for `unshare` / `clone` / `clone3` bump
+`shm->newnet_in_flight` on admission and the matching post hooks drop
+it; calls that find the count already at the cap strip `CLONE_NEWNET`
+from the flag arg instead of admitting another in-flight caller and
+bump the `unshare_newnet_throttled` aggregate counter.
+
+`newnet_in_flight` lives in shm so all children plus any untracked
+grandchildren they fork share one counter -- a process-local static
+would be duplicated across the COW fork tree and let each subtree run
+its own unbounded admission rate.
+
+### `try_admit_newnet()` -- single-CAS admission
+
+Returns true iff the caller now owns one ticket against
+`shm->newnet_in_flight`; the caller MUST stamp
+`NEWNET_INFLIGHT_TICKET` onto `rec->post_state` and release with
+`release_newnet_ticket()` from the post hook.  Returns false if the cap
+is full -- caller strips `CLONE_NEWNET` and bumps the throttled stat.
+
+A relaxed load followed by a separate `__atomic_fetch_add()` (the
+shape the three call sites used to share) lets several callers all
+observe the counter below the cap then all increment, over-admitting by
+an entire wave.  CAS closes that window: the increment only commits if
+the value we tested against is still what we read.
+
+Unconditional `fetch_add` + rollback is not equivalent -- the transient
+over-admission still feeds `copy_net_ns()` and is the whole thing the
+cap exists to prevent.
+
+### `release_newnet_ticket()` -- single-RMW release
+
+Atomically clears `NEWNET_INFLIGHT_TICKET` on `rec->post_state` and
+decrements `shm->newnet_in_flight` iff the bit was set on entry.
+Idempotent: a second caller racing in observes the bit already cleared
+and skips the decrement.
+
+The race this guards against is raw `clone()` / `clone3()`: the kernel
+returns in both the calling task and the newly created one, the
+`syscallrecord` lives in shared memory (`children[]` ->
+`alloc_shared`), and both branches run the post hook against the same
+`post_state`.  A plain check-then-clear-then-decrement lets both
+branches decrement for one admission, drifting the counter toward
+negative and permanently disabling the cap.
+
+`post_state` for `clone3` carries the args pointer in the high bits;
+`fetch_and(~NEWNET_INFLIGHT_TICKET)` clears only bit 0 and leaves the
+pointer intact for the post handler's downstream `deferred_freeptr()`.
+
+### `NEWNET_INFLIGHT_TICKET` bit encoding
+
+Low-bit ticket the throttle stamps onto `rec->post_state` after a
+successful admission.  `clone3` packs the args pointer in the high
+bits of `post_state`; `zmalloc` returns >=8-byte-aligned pointers, so
+bit 0 is free.  `unshare` and `clone` leave the rest of `post_state`
+as zero, so the same bit overlays cleanly there too.
