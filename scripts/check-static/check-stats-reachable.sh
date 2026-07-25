@@ -7,13 +7,13 @@
 # counters.
 #
 # The dump renderer walks the stat_field descriptor tables in
-# stats/stats.c and stats/json_dump.c and emits one JSON key per row.
+# stats/json/*.c and emits one JSON key per row.
 # A field added to struct stats_s without a matching STAT_FIELD() row
 # (or an alternative emission path) is a "dead counter": bumped inside
-# the child, but never printed, never scraped, never useful.  Fable
-# and codex triage lean on the JSON dump to decide whether a strategy
-# is exercising the kernel, so a dead counter looks identical to a
-# broken strategy from the outside.
+# the child, but never printed, never scraped, never useful.  Downstream
+# triage relies on the JSON dump to decide whether a strategy is
+# exercising the kernel, so a dead counter looks identical to a broken
+# strategy from the outside.
 #
 # This script makes the "is this counter dead?" question mechanical:
 #
@@ -22,10 +22,10 @@
 #
 #   2. Build the REACHABLE set from three sources:
 #      a) STAT_FIELD(prefix, suffix) / STAT_FIELD_JSON(prefix, suffix, ...)
-#         invocations in stats/stats.c and stats/json_dump.c.  These
-#         concatenate prefix + "_" + suffix to form the struct field
-#         name, so the literal token never appears in the source --
-#         extract it symbolically.
+#         invocations in stats/json/*.c.  These concatenate
+#         prefix + "_" + suffix to form the struct field name, so the
+#         literal token never appears in the source -- extract it
+#         symbolically.
 #      b) Every whole-word occurrence of a field name in any *.c file
 #         in the tree.  Covers direct writes (shm->stats.foo++),
 #         offsetof() lookups, sizeof() references, etc.
@@ -41,21 +41,18 @@
 # The allowlist is tuned so this script exits 0 on the current tree.
 # Its purpose is to catch FUTURE fields that ship without an emission
 # path -- add a counter, forget the STAT_FIELD row, this trips.
-#
-# Wire-up into scripts/check-static.sh is intentionally deferred:
-# check-static is a fleet-visible gate and this audit needs a burn-in
-# window against the allowlist policy before it becomes load-bearing.
-# For now the script is standalone; invoke directly.
 
 set -u
 
 NAME="check-stats-reachable"
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 STATS_H="$ROOT/include/stats.h"
-STATS_C_FILES=("$ROOT/stats/stats.c" "$ROOT/stats/json_dump.c")
+# Glob every stats/json/*.c source -- the STAT_FIELD() descriptor tables
+# were split out of the old monolithic stats/json_dump.c and now live
+# scattered across per-subsystem TUs (core.c, network.c, tail.c, ...).
+STATS_C_FILES=("$ROOT"/stats/json/*.c)
 
 fail() {
 	echo "FAIL: $NAME: $1" >&2
@@ -97,7 +94,13 @@ awk '/^struct stats_s \{/,/^\};/' "$STATS_H" | \
 	sort -u > "$FIELDS"
 
 field_count="$(wc -l < "$FIELDS")"
-if [ "$field_count" -lt 100 ]; then
+# Sanity floor: after the mid-2026 refactor most counters live inside
+# per-subsystem sub-structs (oracle_stats, uid_change_stats, ...) which
+# this scalar-only walker deliberately skips.  The residue is the small
+# set of flat top-level counters (per-family genl call counters, a
+# handful of one-offs).  If the parser drops below that floor the
+# scalar decl regex has broken and needs updating.
+if [ "$field_count" -lt 20 ]; then
 	fail "extracted only $field_count fields from $STATS_H (parser broke?)"
 fi
 
@@ -196,7 +199,7 @@ if [ -s "$UNALLOWED" ]; then
 	sed 's/^/  /' "$UNALLOWED" >&2
 	echo "" >&2
 	echo "Either add a STAT_FIELD(prefix, suffix) descriptor row in" >&2
-	echo "stats/stats.c or stats/json_dump.c so the dump renderer" >&2
+	echo "one of the stats/json/*.c tables so the dump renderer" >&2
 	echo "surfaces the counter, or remove the field." >&2
 	echo "If the counter is emitted through a bespoke walker, extend the" >&2
 	echo "allowlist in $0 with a specific pattern and a comment explaining" >&2
