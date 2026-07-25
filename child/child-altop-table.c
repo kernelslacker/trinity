@@ -27,31 +27,31 @@
 #include "kernel/if_packet.h"
 
 /*
- * KCOV bracketing opt-in.  Read by the childop dispatcher.
- * Defaults to true for every op.
- * CHILD_OP_SYSCALL falls through to run_sequence_chain
- * which brackets per-syscall internally.  CHILD_OP_SCHED_CYCLER
- * (childops/misc/sched-cycler.c) calls random_syscall(child) in
- * a tight loop; an outer bracket would double-call
- * ioctl(KCOV_ENABLE) and the kernel returns -EBUSY which
- * kcov_enable_trace currently treats as fatal.
+ * KCOV bracketing opt-in.  Read by the childop dispatcher.  The
+ * per-op verdict lives in childop.def's fourth (uses_outer_bracket)
+ * field; today only CHILD_OP_SYSCALL and CHILD_OP_SCHED_CYCLER are
+ * false.  CHILD_OP_SYSCALL falls through to run_sequence_chain which
+ * brackets per-syscall internally.  CHILD_OP_SCHED_CYCLER
+ * (childops/misc/sched-cycler.c) calls random_syscall(child) in a
+ * tight loop; an outer bracket would double-call ioctl(KCOV_ENABLE)
+ * and the kernel returns -EBUSY which kcov_enable_trace currently
+ * treats as fatal.
  *
- * Expressed as an accessor so new enum members default to
- * eligible without per-table maintenance and without the
- * [0 ... N-1] = true designated-init override idiom, which
- * trips -Woverride-init on this codebase's -Wextra build.
- * Compiler folds the switch into a constant-time check at
- * the future call site.
+ * Kept as an accessor (rather than a lookup table) so the compiler
+ * can fold the switch into a constant-time check at the call site
+ * and so that new CHILDOP() rows without an explicit false pick up
+ * the default without touching this function.
  */
 bool op_uses_outer_bracket(enum child_op_type op)
 {
 	switch (op) {
-	case CHILD_OP_SYSCALL:
-	case CHILD_OP_SCHED_CYCLER:
-		return false;
-	default:
-		return true;
+#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket)	\
+	case enum_name: return uses_outer_bracket;
+#include "childop.def"
+#undef CHILDOP
+	case NR_CHILD_OP_TYPES:		break;
 	}
+	return true;
 }
 
 const char *alt_op_name(enum child_op_type op)
