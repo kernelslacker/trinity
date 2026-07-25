@@ -1371,9 +1371,12 @@ void * alloc_shared_str(size_t size)
 	}
 
 	/* Lock-free bump via CAS on the shm-resident cursor.  RELAXED
-	 * is sufficient because the caller publishes the obj (and therefore the string pointer)
-	 * to consumers via add_object()'s RELEASE store on
-	 * num_entries. */
+	 * is sufficient because OBJ_GLOBAL additions are refused post-fork
+	 * by add_object_validate()'s guard, so objheads (and any shared_str
+	 * pointer they carry) are process-private at allocation time.  With
+	 * no concurrent cross-process reader, plain accesses within the
+	 * allocating process are correctly ordered by program order; no
+	 * inter-process publish barrier is needed on the bump cursor. */
 	old_used = __atomic_load_n(&shm->shared_str_heap_used,
 				   __ATOMIC_RELAXED);
 	do {
