@@ -31,6 +31,8 @@
 #ifndef SYSCALLS_PERF_EVENT_OPEN_INTERNAL_H
 #define SYSCALLS_PERF_EVENT_OPEN_INTERNAL_H
 
+#include <linux/types.h>
+
 struct generic_event_type {
 	const char *name;
 	const char *value;
@@ -67,5 +69,9 @@ extern struct pmu_type *pmus;
 #define MAX_FIELDS	4
 
 int init_pmus(void);
+
+long long random_sysfs_config(__u32 *type,
+			__u64 *config1,
+			__u64 *config2);
 
 #endif /* SYSCALLS_PERF_EVENT_OPEN_INTERNAL_H */
