@@ -138,6 +138,21 @@ int emit_tier1_map_val_deref(struct bpf_insn *insns, int pos,
 int gen_tier1(struct bpf_insn *insns, int max_insns,
 	      struct helper_set hs, int prepend_map_reg);
 
+/* Program size limits (tier 2) */
+#define TIER2_MIN_INSNS		16
+#define TIER2_MAX_INSNS		256
+
+/*
+ * Which tier 2 sub-strategy index forces a typed helper call.  Acts as
+ * the dedicated counterpart to tier1's lottery so map-helper and
+ * scalar-arg paths see traffic even when the lottery doesn't fire.
+ */
+#define TIER2_STRATEGY_HELPER_CALL	5
+#define TIER2_STRATEGY_COUNT		6
+
+int gen_tier2(struct bpf_insn *insns, int max_insns,
+	      struct helper_set hs, int prepend_map_reg);
+
 #endif /* USE_BPF */
 
 #endif /* NET_BPF_EBPF_INTERNAL_H */
