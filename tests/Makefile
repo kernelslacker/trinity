@@ -51,6 +51,7 @@ endif
 # silently pulled it in" surprise.
 REAL_SRCS	:= \
 	$(TOP)/args/struct_mutate.c \
+	$(TOP)/args/struct_mutate_selftest.c \
 	$(TOP)/struct_catalog/variant.c \
 	$(TOP)/struct_catalog/address.c
 

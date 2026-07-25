@@ -2,11 +2,10 @@
  * Test-binary driver.
  *
  * Seeds the RNG from a fixed constant (or -s <seed>) so every run is
- * reproducible, then hands control to the per-suite entry points.
- * Today the suite set is empty: this commit lands the link-graph
- * scaffolding (fake shm + RNG + linker glue) and proves the test
- * binary reaches main() cleanly.  Follow-up commits wire the
- * struct_mutate selftest and the one-child ASAN dry-run path in.
+ * reproducible, then dispatches to the per-suite entry points.  New
+ * suites go in a single call in main() -- the test binary is small
+ * enough that a suite registry would be more machinery than the ~10
+ * total suite entry points ever need.
  *
  * The seed default is chosen for legibility (0xa17e57 -- "a test"),
  * not for RNG quality; the splitmix64 mix inside rnd_seed() folds any
@@ -18,6 +17,7 @@
 #include <string.h>
 
 #include "rnd.h"
+#include "struct_catalog.h"		/* struct_field_mutate_self_check */
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -39,7 +39,13 @@ int main(int argc, char **argv)
 	rnd_seed(seed);
 	rnd_blob_seed(seed);
 
-	printf("trinity test-bin: seed=0x%llx (scaffolding only)\n",
+	printf("trinity test-bin: seed=0x%llx\n",
 	       (unsigned long long) seed);
+
+	printf("  struct_field_mutate_self_check ... ");
+	fflush(stdout);
+	struct_field_mutate_self_check();
+	printf("OK\n");
+
 	return 0;
 }
