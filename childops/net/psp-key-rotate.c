@@ -81,6 +81,8 @@
 
 #include "kernel/psp.h"
 
+#include "psp-key-rotate-internal.h"
+
 /* netdevsim is the in-tree PSP probe vehicle.  Brought up via
  * IFLA_INFO_KIND="netdevsim" -- the kernel returns -ENODEV /
  * -EOPNOTSUPP if the module is not loaded and the cap-gate latches on
@@ -131,11 +133,6 @@
 #define PDPC_INNER_WALL_NS		(100ULL * 1000ULL * 1000ULL)
 #define PDPC_GATE_ONE_IN		4
 
-#define PKR_OUTER_BASE			4U
-#define PKR_OUTER_FLOOR			8U
-#define PKR_OUTER_CAP			16U
-#define PKR_WALL_CAP_NS			(200ULL * 1000ULL * 1000ULL)
-#define PKR_TIMEO_MS			100
 #define PKR_NL_RX_BUF			4096
 
 /* Per-grandchild gate.  Inherited as false at grandchild fork time
@@ -147,7 +144,7 @@
  * namespace cannot manufacture an absent kernel CONFIG -- the gate
  * still short-circuits the rest of the grandchild's iteration once
  * it fires. */
-static bool ns_unsupported_psp_key_rotate;
+bool ns_unsupported_psp_key_rotate;
 
 /* Master gate: persistent across iterations in the persistent child.
  * Set when userns_run_in_ns returns -EPERM (hardened userns policy
@@ -165,23 +162,6 @@ static void warn_once_unsupported_psp_key_rotate(const char *reason, int err)
 	ns_unsupported_psp_key_rotate_master = true;
 	outputerr("psp_key_rotate: %s failed (errno=%d), latching unsupported_psp_key_rotate\n",
 		  reason, err);
-}
-
-static void apply_timeouts(int s)
-{
-	struct timeval tv;
-
-	tv.tv_sec  = 0;
-	tv.tv_usec = PKR_TIMEO_MS * 1000;
-	(void)setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-	(void)setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-}
-
-static bool errno_is_unsupported(int e)
-{
-	return e == EPERM || e == ENOSYS || e == EOPNOTSUPP ||
-	       e == ENOPROTOOPT || e == EAFNOSUPPORT ||
-	       e == EPROTONOSUPPORT || e == ENODEV;
 }
 
 /* Best-effort netdevsim spawn via rtnl RTM_NEWLINK with
@@ -227,7 +207,7 @@ static int rtnl_make_netdevsim(struct nl_ctx *rtnl, const char *ifname)
 
 /* Issue PSP_CMD_KEY_ROTATE for @dev_id.  Returns 0 on success, -errno
  * (or -EIO on send/recv failure) otherwise. */
-static int psp_key_rotate_cmd(struct genl_ctx *ctx, uint32_t dev_id)
+int psp_key_rotate_cmd(struct genl_ctx *ctx, uint32_t dev_id)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -250,8 +230,8 @@ static int psp_key_rotate_cmd(struct genl_ctx *ctx, uint32_t dev_id)
 /* Issue PSP_CMD_TX_ASSOC binding @sockfd to @dev_id.  Returns 0 on
  * success, -errno on failure.  Mid-flow re-issue is the "spi switch"
  * path under spec naming. */
-static int psp_tx_assoc_cmd(struct genl_ctx *ctx,
-			    uint32_t dev_id, int sockfd)
+int psp_tx_assoc_cmd(struct genl_ctx *ctx,
+		     uint32_t dev_id, int sockfd)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -311,7 +291,7 @@ static void inner_traffic_burst(int sockfd)
  * iter_one path does its own per-call unshare.
  * ------------------------------------------------------------------ */
 
-static bool ns_unsupported_psp_devlink_port;
+bool ns_unsupported_psp_devlink_port;
 static bool ns_unsupported_psp_sriov;
 static bool pdpc_setup_done;
 static bool pdpc_modprobe_tried;
@@ -676,8 +656,8 @@ static void pdpc_try_sriov_crossfire(__u32 bus_id, struct nl_ctx *rtnl)
 	(void)pdpc_sysfs_write_str(path, "0");
 }
 
-static void iter_devlink_port_churn(unsigned int iter_idx,
-				    const struct timespec *t_outer)
+void iter_devlink_port_churn(unsigned int iter_idx,
+			     const struct timespec *t_outer)
 {
 	struct nl_ctx rtnl = { .fd = -1 };
 	struct genl_ctx devlink_ctx = { .nl = { .fd = -1 } };
@@ -851,7 +831,7 @@ out:
 /* Issue a single PSP_CMD_DEV_GET on @ctx as a structural probe; the
  * reply is consumed but not parsed.  Returns the underlying
  * genl_send_recv() rc. */
-static int psp_dev_get_probe(struct genl_ctx *ctx)
+int psp_dev_get_probe(struct genl_ctx *ctx)
 {
 	unsigned char buf[NLMSG_HDRLEN + GENL_HDRLEN];
 	struct nlmsghdr *nlh;
@@ -875,7 +855,7 @@ static int psp_dev_get_probe(struct genl_ctx *ctx)
  * -ENODEV / -EOPNOTSUPP / -EEXIST the subsequent PSP family probe
  * still runs and the per-grandchild gate latches there if PSP isn't
  * built in. */
-static int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
+int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
 {
 	struct nl_open_opts nlopts;
 	char ifname[IFNAMSIZ];
@@ -906,8 +886,8 @@ static int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
  * issue a best-effort PSP_CMD_DEV_GET probe.  Writes the chosen dev_id
  * into *dev_id_out on success.  Returns 0 on success or -1 if the
  * iteration should bail to iter_one's out: cleanup. */
-static int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
-					      uint32_t *dev_id_out)
+int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
+				       uint32_t *dev_id_out)
 {
 	struct genl_open_opts gopts;
 	int rc, rc2;
@@ -947,8 +927,8 @@ static int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
  * stats are recorded inline and ns_unsupported_psp_key_rotate may
  * latch from psp_key_rotate_cmd's errno, which the caller checks
  * before entering the traffic loop. */
-static int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
-					      uint32_t dev_id)
+int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
+				       uint32_t dev_id)
 {
 	struct sockaddr_in peer;
 	int sockfd;
@@ -990,10 +970,10 @@ static int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
  * target) -> PSP_CMD_TX_ASSOC re-bind -> second send/recv burst.  The
  * outer 200 ms wall-clock cap (PKR_WALL_CAP_NS) bounds the loop.  On
  * exit a single shutdown(SHUT_RDWR) flushes the socket. */
-static void psp_key_rotate_iter_traffic(int sockfd,
-					struct genl_ctx *psp_ctx,
-					uint32_t dev_id,
-					const struct timespec *t_outer)
+void psp_key_rotate_iter_traffic(int sockfd,
+				 struct genl_ctx *psp_ctx,
+				 uint32_t dev_id,
+				 const struct timespec *t_outer)
 {
 	unsigned int inner, j;
 	int rc;
@@ -1037,9 +1017,9 @@ static void psp_key_rotate_iter_traffic(int sockfd,
  * cleanup runs only on the early-bail paths -- by the time this
  * helper is called the standard path is done and there is no
  * subsequent observer of sockfd, so the cases need not reset it. */
-static void psp_key_rotate_iter_teardown(unsigned int iter_idx, int sockfd,
-					 struct genl_ctx *psp_ctx,
-					 struct nl_ctx *rtnl)
+void psp_key_rotate_iter_teardown(unsigned int iter_idx, int sockfd,
+				  struct genl_ctx *psp_ctx,
+				  struct nl_ctx *rtnl)
 {
 	switch (iter_idx & 3U) {
 	case 0:
