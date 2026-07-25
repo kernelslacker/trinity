@@ -596,13 +596,14 @@ bool kcov_first_ebadf_trap_drain(void)
 	       (unsigned int) recov, (unsigned int) cmp_recov,
 	       (unsigned int) count, KCOV_EBADF_CHRONICLE_MAX);
 
-	if (count > KCOV_EBADF_CHRONICLE_MAX)
-		count = KCOV_EBADF_CHRONICLE_MAX;
-
-	/* Walk the full snapshot, newest first.  Slot 0 is the most
-	 * recent retired syscall; the real closer that scrolled off
-	 * the live ring's tail is somewhere in here even when both
-	 * walkers' "most recent <X>" answer disagreed with reality. */
+	/* Walk every chronicle slot and gate on the per-slot valid bit
+	 * rather than the producer-published count -- the count is only
+	 * informational (printed in the header line above) and a full
+	 * valid-bit scan tolerates a producer that leaves gaps or
+	 * publishes slots out of order.  Slot 0 is the most recent
+	 * retired syscall; the real closer that scrolled off the live
+	 * ring's tail is somewhere in here even when both walkers'
+	 * "most recent <X>" answer disagreed with reality. */
 	for (i = 0; i < KCOV_EBADF_CHRONICLE_MAX; i++) {
 		const struct kcov_ebadf_chronicle_slot *s =
 			&d->first_ebadf_chronicle[i];
