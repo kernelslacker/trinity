@@ -131,6 +131,13 @@ binary. Grouped by concern:
   #define BPF_F_NEW_FLAG (1U << 17)
   #endif
   ```
+- The `#ifndef NAME` fallback only works for **macros**. An enum value or a
+  struct field is not a preprocessor symbol, so `#ifndef` is always true and
+  `#ifdef` always false — the guard silently compiles to nothing and the build
+  still breaks on the older header. For an enum value or struct member, add a
+  `configure` compile-test that emits `#define HAVE_<SYMBOL> 1` into `config.h`
+  and `#ifdef HAVE_<SYMBOL>` at the use site (see the `IOMMU_HWPT_ALLOC_PASID`
+  and `IOMMU_HW_INFO_FLAG_INPUT_TYPE` probes).
 
 ## Build & static checks
 
@@ -261,3 +268,19 @@ not aesthetics.
   Size TTL/lifetime constants against the longest reader window — including a
   reader interrupted by a signal handler that itself ticks the ring — not the
   nominal TTL.
+- **Freeze construct-once-then-read-only tables `PROT_READ` before the fuzz
+  loop.** A descriptor table built at startup and only read afterward has no
+  reason to stay writable; `mprotect(PROT_READ)` it after construction and
+  before fork so a stray or fuzzed write faults at the offending store instead
+  of silently corrupting a path a later reader walks (`protect_syscall_tables()`
+  after `munge_tables()`, before `fork_children()`; the RW runtime fields stay
+  on separate pages in `syscall_runtime`). The enforced invariant then lets you
+  retire the per-read defensive clamps that were compensating for its absence.
+- **Childop scratch files go under `trinity_tmpdir_abs()`, never a fixed
+  `/tmp/...` name.** A hardcoded path collides across sibling children and
+  repeat runs (silent `EEXIST`, so the op just re-runs its own error path),
+  lets a same-uid process pre-seed the namespace, and escapes trinity's
+  resolved working directory after a fuzzed `chdir()`. Build an absolute
+  per-child path from `trinity_tmpdir_abs()`, create it under a held directory
+  fd (`mkstemp`/`mkdirat`), and gate the paired `unlink` on the creation having
+  succeeded — an `unlink` after a failed `mkstemp` removes the wrong file.
