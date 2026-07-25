@@ -205,59 +205,6 @@ static int rtnl_make_netdevsim(struct nl_ctx *rtnl, const char *ifname)
 	return nl_send_recv(rtnl, buf, off);
 }
 
-/* Issue PSP_CMD_KEY_ROTATE for @dev_id.  Returns 0 on success, -errno
- * (or -EIO on send/recv failure) otherwise. */
-int psp_key_rotate_cmd(struct genl_ctx *ctx, uint32_t dev_id)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	size_t off;
-
-	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
-			   nl_seq_next(&ctx->nl),
-			   PSP_CMD_KEY_ROTATE, 0);
-	if (!off)
-		return -EIO;
-	off = nla_put_u32(buf, off, sizeof(buf), PSP_A_DEV_ID, dev_id);
-	if (!off)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_len = (uint32_t)off;
-	return genl_send_recv(ctx, buf, off);
-}
-
-/* Issue PSP_CMD_TX_ASSOC binding @sockfd to @dev_id.  Returns 0 on
- * success, -errno on failure.  Mid-flow re-issue is the "spi switch"
- * path under spec naming. */
-int psp_tx_assoc_cmd(struct genl_ctx *ctx,
-		     uint32_t dev_id, int sockfd)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	size_t off;
-
-	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
-			   nl_seq_next(&ctx->nl),
-			   PSP_CMD_TX_ASSOC, 0);
-	if (!off)
-		return -EIO;
-	off = nla_put_u32(buf, off, sizeof(buf), PSP_A_ASSOC_DEV_ID, dev_id);
-	if (!off)
-		return -EIO;
-	off = nla_put_u32(buf, off, sizeof(buf), PSP_A_ASSOC_VERSION, 0U);
-	if (!off)
-		return -EIO;
-	off = nla_put_u32(buf, off, sizeof(buf),
-			  PSP_A_ASSOC_SOCK_FD, (uint32_t)sockfd);
-	if (!off)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_len = (uint32_t)off;
-	return genl_send_recv(ctx, buf, off);
-}
-
 static void inner_traffic_burst(int sockfd)
 {
 	static const unsigned char payload[16] = { 0 };
@@ -826,25 +773,6 @@ out:
 			pdpc_latched_netns_fd = -1;
 		}
 	}
-}
-
-/* Issue a single PSP_CMD_DEV_GET on @ctx as a structural probe; the
- * reply is consumed but not parsed.  Returns the underlying
- * genl_send_recv() rc. */
-int psp_dev_get_probe(struct genl_ctx *ctx)
-{
-	unsigned char buf[NLMSG_HDRLEN + GENL_HDRLEN];
-	struct nlmsghdr *nlh;
-	size_t off;
-
-	off = genl_msg_put(buf, 0, sizeof(buf), ctx,
-			   nl_seq_next(&ctx->nl),
-			   PSP_CMD_DEV_GET, 0);
-	if (!off)
-		return -EIO;
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_len = (uint32_t)off;
-	return genl_send_recv(ctx, buf, off);
 }
 
 /* Open the rtnl socket inside the grandchild's private netns (set up
