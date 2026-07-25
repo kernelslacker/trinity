@@ -255,4 +255,16 @@ size_t esprx_build_v4_frame(uint8_t *buf, __be32 spi, __u32 seq,
 size_t esprx_build_v6_frame(uint8_t *buf, __be32 spi, __u32 seq,
 			    uint8_t inner_proto, uint8_t trunc_len);
 
+/* esp-crafted-rx-frag.c */
+void build_esp_blob(uint8_t *esp, __be32 spi, __u32 seq,
+		    uint8_t inner_proto);
+size_t build_v4_esp_fragment(uint8_t *buf, uint16_t ident,
+			     uint16_t frag_off_units, bool more,
+			     const uint8_t *esp_slice, size_t slice_len);
+size_t build_v6_esp_fragment(uint8_t *buf, uint32_t ident,
+			     uint16_t frag_off_units, bool more,
+			     const uint8_t *esp_slice, size_t slice_len);
+void esp_crafted_rx_send_frag_pair(struct esp_crafted_rx_iter_ctx *ctx,
+				   int fd);
+
 #endif /* _CHILDOPS_NET_ESP_CRAFTED_RX_INTERNAL_H */
