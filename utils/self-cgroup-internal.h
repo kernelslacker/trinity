@@ -51,3 +51,49 @@ char *read_self_cg_path(void);
  * cgroup-write failure cause.
  */
 bool write_cg_file(const char *cg_path, const char *name, const char *value);
+
+/*
+ * Detect a wrapper scope: if our current cgroup already has a non-"max"
+ * memory.max, an outer agent (systemd-run, kubelet, the run-trinity.sh
+ * stopgap) has already capped us.  Defer to it: nesting our own
+ * sub-cgroup inside would just confuse exit accounting and leak rmdir
+ * permission errors when the wrapper tears its scope down before us.
+ */
+bool already_capped(const char *parent_cg_path);
+
+/*
+ * Compute the parent's memory.high reservation.  Parent does little work
+ * per-iter (waitpid/reap/fork loop, periodic_work bookkeeping), so a small
+ * soft limit is plenty.
+ *
+ *   parent_high = min(200M, total_max / 16)
+ *
+ * The /16 split keeps the parent's reservation proportional on tiny
+ * budgets (e.g. a 256M total cap leaves ~16M for the parent — small but
+ * functional) while capping at 200M on large budgets so the operator's
+ * --memory-max value mostly goes to children where the work happens.
+ *
+ * memory.high is a soft limit (kernel throttles allocations above it),
+ * not a hard cap.  We deliberately do not set memory.max on the parent —
+ * if parent ever genuinely needs more, it should be allowed to allocate.
+ */
+uint64_t compute_parent_high(uint64_t total_max_bytes, bool total_is_max);
+
+/*
+ * Try to enable the memory controller in the container's subtree so the
+ * parent/ and children/ sub-cgroups can carry memory.* knobs.  Returns
+ * true on success.  Failure (EOPNOTSUPP, EINVAL, EACCES) is the signal to
+ * fall back to single-cgroup mode.
+ */
+bool enable_memory_subtree(const char *container_path);
+
+/*
+ * Decide whether the current scope is ours to carve a memory subtree out
+ * of.  True only when the memory controller is available here, the
+ * scope's subtree_control is writable, and the scope holds no process
+ * other than trinity-main -- i.e. it is trinity's own systemd-run scope,
+ * not a shared cgroup whose siblings we must not disturb.  Checked at
+ * setup time, before fork_children(), so trinity-main is the only trinity
+ * process that can be present.
+ */
+bool scope_can_delegate(const char *scope_path);
