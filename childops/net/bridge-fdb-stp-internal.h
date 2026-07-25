@@ -171,4 +171,9 @@ int bfs_build_setlink_master(struct nl_ctx *ctx, int ifindex,
 			 int master_ifindex);
 int bfs_build_setlink_brport_learning(struct nl_ctx *ctx, int ifindex);
 
+/* bridge-fdb-stp-fdb.c */
+int build_fdb_del(struct nl_ctx *ctx, int port_ifindex,
+		  const unsigned char *mac);
+void random_unicast_lla(unsigned char *mac);
+
 #endif /* _CHILDOPS_NET_BRIDGE_FDB_STP_INTERNAL_H */
