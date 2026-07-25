@@ -176,4 +176,7 @@ int build_fdb_del(struct nl_ctx *ctx, int port_ifindex,
 		  const unsigned char *mac);
 void random_unicast_lla(unsigned char *mac);
 
+/* bridge-fdb-stp-stp.c */
+void bridge_fdb_stp_iter_stp_toggle(struct bridge_fdb_stp_iter_ctx *ctx);
+
 #endif /* _CHILDOPS_NET_BRIDGE_FDB_STP_INTERNAL_H */
