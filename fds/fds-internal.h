@@ -34,3 +34,23 @@ extern char last_init_detail[128];
  */
 extern struct fd_provider *fd_providers;
 extern unsigned int num_fd_providers;
+
+/*
+ * Enable/disable accounting driven by the --enable-fds / --disable-fds
+ * CLI parser and finalised by open_fds().  num_fd_providers_to_enable
+ * counts request coming in from the parser; num_fd_providers_enabled and
+ * num_fd_providers_initialized are written by the init dispatch and
+ * consulted from the startup log line.
+ */
+extern unsigned int num_fd_providers_to_enable;
+extern unsigned int num_fd_providers_enabled;
+extern unsigned int num_fd_providers_initialized;
+
+/*
+ * Flat array of enabled+initialized providers, built once at the tail of
+ * open_fds() from the registered fd_providers list, for O(1) random
+ * selection by the picker.  num_active_providers is 0 before open_fds()
+ * runs.
+ */
+extern struct fd_provider **active_providers;
+extern unsigned int num_active_providers;
