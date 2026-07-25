@@ -153,6 +153,12 @@ int gen_tier1(struct bpf_insn *insns, int max_insns,
 int gen_tier2(struct bpf_insn *insns, int max_insns,
 	      struct helper_set hs, int prepend_map_reg);
 
+/* Program size limits (tier 3) */
+#define TIER3_MIN_INSNS		2
+#define TIER3_MAX_INSNS		512
+
+int gen_tier3(struct bpf_insn *insns, int max_insns);
+
 #endif /* USE_BPF */
 
 #endif /* NET_BPF_EBPF_INTERNAL_H */
