@@ -109,6 +109,15 @@ void init_syscalls_uniarch(void);
 
 int munge_tables(void);
 
+/*
+ * Freeze the per-arch syscallentry descriptor tables PROT_READ.  Must
+ * run AFTER munge_tables() (all flag stamping done) and BEFORE
+ * fork_children() (children inherit RO page tables); a later write to
+ * any descriptor field faults at the offending store.  The parallel
+ * syscall_runtime array (RW) is on separate pages and stays writable.
+ */
+void protect_syscall_tables(void);
+
 struct syscallentry * get_syscall_entry(unsigned int calln, bool do32) __must_check;
 
 /*

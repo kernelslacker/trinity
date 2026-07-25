@@ -716,6 +716,15 @@ static enum init_action init_taint_and_handle_disabled_dump(void)
 	if (munge_tables() == false)
 		return INIT_FAILED;
 
+	/*
+	 * Freeze the descriptor tables PROT_READ now that every flag-
+	 * stamping site inside munge_tables() has run and before
+	 * fork_children() carves the fleet.  A later wild write from a
+	 * child into a syscallentry field faults at the corruptor
+	 * instead of driving downstream code down a corrupted path.
+	 */
+	protect_syscall_tables();
+
 	return INIT_CONTINUE;
 }
 
