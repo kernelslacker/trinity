@@ -166,4 +166,10 @@ int trigger_scan(struct genl_ctx *ctx, int ifindex);
 bool wait_scan_results(struct genl_ctx *ctx);
 int set_reg_zz(struct genl_ctx *ctx);
 
+/* Station/key phase -- nl80211-churn-station.c */
+int connect_iface(struct genl_ctx *ctx, int ifindex);
+int disconnect_iface(struct genl_ctx *ctx, int ifindex);
+int build_pmsr_ftm_req(struct genl_ctx *ctx, uint32_t ifindex, bool ftms_as_u32);
+void nl80211_admin_gate_probe(uint32_t wiphy_idx);
+
 #endif /* CHILDOPS_NL80211_CHURN_INTERNAL_H */
