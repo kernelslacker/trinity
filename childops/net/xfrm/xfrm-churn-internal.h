@@ -444,4 +444,12 @@ unsigned int drive_inner_traffic_zc(int udp, unsigned int iters,
 void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 			     struct childdata *child);
 
+/*
+ * PF_KEYv2 flush alt path.  Defined in
+ * childops/net/xfrm/xfrm-churn-pfkey.c.  Opens AF_KEY and emits a
+ * SADB_FLUSH for ESP and AH — drives net/key/af_key.c dispatch and
+ * flush paths that share the SAD / SPD with the netlink_xfrm side.
+ */
+void pfkey_flush_burst(struct childdata *child);
+
 #endif /* CHILDOPS_XFRM_CHURN_INTERNAL_H */
