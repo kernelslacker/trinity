@@ -38,3 +38,4 @@ struct syscallrecord;
 
 void vt_sanitise_kd(struct syscallrecord *rec);
 void vt_sanitise_tioc(struct syscallrecord *rec);
+void vt_sanitise_unimap(struct syscallrecord *rec);
