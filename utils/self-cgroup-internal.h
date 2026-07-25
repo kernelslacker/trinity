@@ -14,7 +14,17 @@
  * setup/cleanup); sibling TUs read/write these through the extern
  * declarations below.
  */
+extern char *cg_workload;	/* children/ (split mode) or trinity-<pid>/ */
 extern int cg_workload_fd;	/* O_DIRECTORY on cg_workload; -1 if unset */
+extern bool cg_split_mode;	/* true iff parent/children sub-cgroups are live */
+
+/*
+ * memory.events watcher.  events_setup() is a no-op if cg_workload is
+ * unset; events_cleanup() is a no-op if the watcher never armed.  Both
+ * are called from self_cgroup_setup / _cleanup respectively.
+ */
+void events_setup(void);
+void events_cleanup(void);
 
 /*
  * Read MemTotal from /proc/meminfo and return it as bytes.  Returns 0
