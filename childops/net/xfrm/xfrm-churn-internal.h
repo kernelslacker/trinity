@@ -358,6 +358,17 @@ struct sadb_msg {
  * sk_dst_cache. */
 #define XFRM_INNER_PORT		34571
 
+/* Fixed-size inner-burst count used by the AH+ESN async sub-mode.
+ * Same value as the main-flow burst floor so the async-hash
+ * post-callback (the codepath upstream commit ec54093e6a8f patches)
+ * gets a comparable amount of encrypt-side pressure. */
+#define XFRM_PACKET_FLOOR	16U
+
+/* SA reqid rotation range.  Kernel uses reqid as a per-policy bundle
+ * cache key — rotating across [1, XFRM_REQID_RANGE] spreads the
+ * bundle cache without exhausting the kernel's reqid allocator. */
+#define XFRM_REQID_RANGE	16U
+
 /*
  * XFRM algorithm rotation.  Each entry is one transform the kernel
  * can install via XFRM_MSG_NEWSA.  proto picks the IPPROTO (ESP/AH/
@@ -421,5 +432,16 @@ unsigned int drive_inner_traffic(int udp, unsigned int iters,
 				 const struct timespec *t0);
 unsigned int drive_inner_traffic_zc(int udp, unsigned int iters,
 				    const struct timespec *t0);
+
+/*
+ * AH+ESN+async-hash sub-mode.  Defined in
+ * childops/net/xfrm/xfrm-churn-ah-esn.c.  Installs an AH SA with
+ * XFRM_STATE_ESN + a replay-window attribute and an async-friendly
+ * auth algorithm name, drives the inner UDP through it (v4 only),
+ * then DELSA.  The (AH, ESN, async-algo) trifecta walks the codepath
+ * upstream commit ec54093e6a8f patches.
+ */
+void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
+			     struct childdata *child);
 
 #endif /* CHILDOPS_XFRM_CHURN_INTERNAL_H */
