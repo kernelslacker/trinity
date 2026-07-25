@@ -452,4 +452,16 @@ void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
  */
 void pfkey_flush_burst(struct childdata *child);
 
+/*
+ * Socket-attached xfrm policy sub-mode.  Defined in
+ * childops/net/xfrm/xfrm-churn-sk-policy.c.  Drives
+ * xfrm_user_policy() through both the accepted-and-inserted branch
+ * and the rejection branches on a UDP socket whose sk_dst_cache has
+ * been primed by connect().  Short-circuits when the shared
+ * ns_unsupported_inet latch (set by the main setup path in
+ * xfrm-churn.c) or its own per-child latch has fired.
+ */
+extern bool ns_unsupported_inet;
+void xfrm_sk_policy_churn(struct childdata *child);
+
 #endif /* CHILDOPS_XFRM_CHURN_INTERNAL_H */
