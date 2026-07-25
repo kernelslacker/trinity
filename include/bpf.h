@@ -110,6 +110,31 @@ extern const unsigned int bpf_attach_types_count;
 #endif
 
 /*
+ * Attach-type fallbacks for older /usr/include/linux/bpf.h.  Consumed
+ * by bpf_attach_types[] in struct_catalog/bpf.c and by the tracing /
+ * kprobe / uprobe attach-type pools in struct_catalog/bpf-link.c;
+ * shared here so both sites see the same numeric values.
+ */
+#ifndef BPF_TRACE_KPROBE_SESSION
+#define BPF_TRACE_KPROBE_SESSION	56
+#endif
+#ifndef BPF_TRACE_UPROBE_SESSION
+#define BPF_TRACE_UPROBE_SESSION	57
+#endif
+#ifndef BPF_TRACE_FSESSION
+#define BPF_TRACE_FSESSION		58
+#endif
+#ifndef BPF_TRACE_FENTRY_MULTI
+#define BPF_TRACE_FENTRY_MULTI		59
+#endif
+#ifndef BPF_TRACE_FEXIT_MULTI
+#define BPF_TRACE_FEXIT_MULTI		60
+#endif
+#ifndef BPF_TRACE_FSESSION_MULTI
+#define BPF_TRACE_FSESSION_MULTI	61
+#endif
+
+/*
  * eBPF instruction definitions for the program generator.
  *
  * eBPF uses a 64-bit ISA with 11 registers (r0-r10), 64-bit ALU ops,
