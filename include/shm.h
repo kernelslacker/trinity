@@ -443,111 +443,21 @@ struct shm_s {
 	uint32_t sfg_seq_arm[SFG_SEQ_HASH_CAP];
 
 	/*
-	 * Multi-strategy syscall picker — see include/strategy.h.
-	 *
-	 * current_strategy: fleet-wide active strategy enum.  Children read
-	 *   it on every syscall pick (relaxed atomic, single int read — cheap).
-	 *   Updated only by the CAS-winning child at a rotation boundary.
-	 *
-	 * syscalls_at_last_switch: shm_published->fleet_op_count at the most
-	 *   recent rotation.  Doubles as the CAS guard — a child computes
-	 *   (op_count - syscalls_at_last_switch); if that crosses
-	 *   STRATEGY_WINDOW it tries to CAS this field forward to op_count.
-	 *   The CAS winner performs the strategy switch and emits the stats
-	 *   line; losers just continue with the new strategy on their next
-	 *   pick.
-	 *
-	 * pc_edge_calls_at_window_start / pc_edge_count_at_window_start:
-	 *   snapshots of pc_edge_calls_by_strategy[prev] and
-	 *   pc_edge_count_by_strategy[prev] taken at the previous switch.
-	 *   Let the next switch compute the per-window deltas as
-	 *   pc_edge_calls_by_strategy[prev] - pc_edge_calls_at_window_start
-	 *   (call-count delta), and similarly for the bucket-count series.
-	 *   Written only by the CAS-winning child during a switch and read
-	 *   back by the next CAS-winning child; accesses are RELAXED-atomic
-	 *   so the cross-arch shared-memory discipline stays uniform with
-	 *   the surrounding per-strategy counter fields rather than relying
-	 *   on the CAS for ordering.
-	 *
-	 * pc_edge_calls_by_strategy[]: cumulative count of SYSCALL CALLS
-	 *   attributed to each strategy whose post-call kcov_collect()
-	 *   flipped at least one never-seen bucket bit.  Bumped by +1 per
-	 *   such call, NOT by the number of distinct edges that call
-	 *   uncovered: a syscall that exposes 50 fresh edges in one shot
-	 *   still bumps the call-count series by 1.  This series counts
-	 *   calls-with-≥1-new-edge (not the edge count itself) and feeds
-	 *   the UCB1 learner via bandit_reward_calls[] below.
-	 *
-	 * pc_edge_count_by_strategy[]: cumulative count of REAL bucket-edge
-	 *   bits flipped by syscalls attributed to each strategy — the
-	 *   per-call new_edge_count from kcov_collect(), summed across all
-	 *   contributing calls.  Strictly >= the call-count series, often
-	 *   far larger when individual calls uncover deep paths.  Added
-	 *   alongside the call-count series so both signals are visible
-	 *   without changing the learner's behaviour; a future commit may
-	 *   switch UCB1 to consume this series instead, or fold a transform
-	 *   of it (e.g. log2(1 + count)) into the reward.
-	 *
-	 * Cmp-mode runs do not produce a new-edge signal and are not
-	 * attributed to either series.
+	 * Multi-strategy syscall picker + UCB1 bandit -- fleet-wide state
+	 * for the rotation cadence, the per-window edge-count bookkeeping,
+	 * and the learner reward series.  Field-by-field rationale (write
+	 * discipline, atomic ordering, why calls-with-new-edge vs real
+	 * bucket count, why current_selection_reason is stored):
+	 * Documentation/shm-state.md (Multi-strategy syscall picker).
+	 * See include/strategy.h for the enum definitions.
 	 */
 	int current_strategy;
-
-	/*
-	 * current_selection_reason: enum strategy_selection_reason for the
-	 *   current_strategy above -- why select_next_strategy() returned
-	 *   that arm for this window.  Stored alongside current_strategy
-	 *   so the rotation site can read it back at window close and
-	 *   decide whether to feed the just-finished window into the UCB
-	 *   learner.  Forced-intervention windows (SR_PLATEAU_FORCE) skip
-	 *   the learner update so policy-chosen RANDOM windows and
-	 *   intervention RANDOM windows do not get conflated in
-	 *   bandit_pulls[]/bandit_reward_calls[].  Held as int rather than
-	 *   the enum type so the shm layout stays language-stable across
-	 *   any future enum reorder.
-	 */
 	int current_selection_reason;
 	unsigned long syscalls_at_last_switch;
 	unsigned long pc_edge_calls_at_window_start;
 	unsigned long pc_edge_count_at_window_start;
 	unsigned long pc_edge_calls_by_strategy[NR_STRATEGIES];
 	unsigned long pc_edge_count_by_strategy[NR_STRATEGIES];
-
-	/*
-	 * UCB1 bandit picker (Phase 2) — see include/strategy.h.
-	 *
-	 * picker_mode: arm-selection policy (PICKER_ROUND_ROBIN or
-	 *   PICKER_BANDIT_UCB1).  Set once at init_shm time from
-	 *   picker_mode_arg, never mutated thereafter.  Read by the
-	 *   CAS-winning child on the rotation path.
-	 *
-	 * bandit_pulls[]: number of windows each arm was selected for.
-	 *   Bumped by bandit_record_pull() during the rotation switch,
-	 *   which is serialised by the syscalls_at_last_switch CAS, so
-	 *   plain integer writes are safe (no concurrent writers).
-	 *
-	 * bandit_reward_calls[]: cumulative reward attributed to each arm,
-	 *   in CALL-COUNT units — sum of per-window
-	 *   (pc_edge_calls_by_strategy delta + cmp_term).  The PC
-	 *   component counts CALLS that produced at least one new edge,
-	 *   not real bucket edges (see the pc_edge_calls_by_strategy
-	 *   comment above).  This is the signal the UCB1 picker scores
-	 *   against.  The learner may later switch to consuming
-	 *   bandit_reward_pc_edge_count[] below (real bucket count) or a
-	 *   transform of it; both signals are exposed so that choice can
-	 *   be made later.
-	 *
-	 * bandit_reward_pc_edge_count[]: cumulative PC-edge BUCKET COUNT
-	 *   attributed to each arm — sum of per-window
-	 *   pc_edge_count_by_strategy deltas, no cmp term folded in.
-	 *   Diagnostic-only today: visible alongside the call-count series
-	 *   in dump_strategy_stats() so the operator can see how the two
-	 *   signals would score the same set of windows differently before
-	 *   we commit to flipping the learner.
-	 *
-	 * Both reward series are written under the same CAS-serialised
-	 * rotation path as bandit_pulls[].
-	 */
 	int picker_mode;
 	unsigned long bandit_pulls[NR_STRATEGIES];
 	unsigned long bandit_reward_calls[NR_STRATEGIES];
