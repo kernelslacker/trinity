@@ -444,6 +444,59 @@ else
 fi
 
 #############################################################################################
+# Does linux/iommufd.h give the IOMMU_HWPT_ALLOC_PASID flag
+# (added in 6.14). The flag is an enum value, not a #define, so we
+# need a compile test rather than #ifdef.
+#
+echo -n "[*] Checking if iommufd has IOMMU_HWPT_ALLOC_PASID.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/iommufd.h>
+
+int main(void)
+{
+	return IOMMU_HWPT_ALLOC_PASID;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define HAVE_IOMMU_HWPT_ALLOC_PASID 1" >> $CONFIGH
+fi
+
+#############################################################################################
+# Does linux/iommufd.h give the IOMMU_HW_INFO_FLAG_INPUT_TYPE flag
+# and the in_data_type member of iommu_hw_info (added in 6.14).
+# Enum value, so compile-test.
+#
+echo -n "[*] Checking if iommufd has IOMMU_HW_INFO_FLAG_INPUT_TYPE.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/iommufd.h>
+
+int main(void)
+{
+	struct iommu_hw_info h = { .in_data_type = 0 };
+	return h.in_data_type + IOMMU_HW_INFO_FLAG_INPUT_TYPE;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define HAVE_IOMMU_HW_INFO_INPUT_TYPE 1" >> $CONFIGH
+fi
+
+#############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP
 check_header linux/if_alg.h USE_IF_ALG
