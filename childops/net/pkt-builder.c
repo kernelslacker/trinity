@@ -22,37 +22,12 @@
 #include <linux/if_packet.h>
 
 #include "pkt-builder.h"
+#include "pkt-builder-internal.h"
 #include "random.h"
 #include "rnd.h"
 #include "trinity.h"
 
 #include "kernel/socket.h"
-
-#ifndef IP_HDRINCL
-#define IP_HDRINCL		3
-#endif
-#ifndef ETH_P_TEB
-#define ETH_P_TEB		0x6558
-#endif
-#ifndef ETH_P_MPLS_UC
-#define ETH_P_MPLS_UC		0x8847
-#endif
-#ifndef IPPROTO_MPLS
-#define IPPROTO_MPLS		137
-#endif
-#ifndef IPPROTO_ESP
-#define IPPROTO_ESP		50
-#endif
-#ifndef IPPROTO_GRE
-#define IPPROTO_GRE		47
-#endif
-#ifndef IPPROTO_ROUTING
-#define IPPROTO_ROUTING		43
-#endif
-
-/* Well-known UDP encap destination ports (RFC 7348 / RFC 8926). */
-#define UDP_PORT_VXLAN		4789
-#define UDP_PORT_GENEVE		6081
 
 /*
  * ==== Descriptor table ==================================================
@@ -212,26 +187,6 @@ const struct pktb_layer_manifest *pktb_manifest(enum pktb_layer_kind kind)
 	if ((unsigned)kind >= NR_PKTB_LAYER_KINDS)
 		return NULL;
 	return &layer_descs[kind];
-}
-
-/*
- * ==== Endian helpers ====================================================
- * We build headers by hand rather than through struct casts so the
- * layer offsets used by the manifest (and the repair pass) are the
- * same byte offsets the emitter wrote.
- */
-static void put_be16(uint8_t *p, uint16_t v)
-{
-	p[0] = (uint8_t)(v >> 8);
-	p[1] = (uint8_t)v;
-}
-
-static void put_be32(uint8_t *p, uint32_t v)
-{
-	p[0] = (uint8_t)(v >> 24);
-	p[1] = (uint8_t)(v >> 16);
-	p[2] = (uint8_t)(v >> 8);
-	p[3] = (uint8_t)v;
 }
 
 /*
