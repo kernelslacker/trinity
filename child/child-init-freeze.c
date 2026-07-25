@@ -13,8 +13,8 @@
  * exposed via include/child-internal.h (the loop-top catch-up sweep
  * in child.c calls across the TU boundary).  init_child_freeze_shared
  * and init_child_rendezvous_parent shed their static linkage so
- * init_child (still in child-init.c during the carve) can call them;
- * declarations added to include/child-internal.h.
+ * init_child (in child-init-core.c) can call them; declarations
+ * added to include/child-internal.h.
  */
 
 #include <errno.h>

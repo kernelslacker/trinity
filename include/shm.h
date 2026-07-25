@@ -365,7 +365,7 @@ struct shm_s {
 	bool socket_family_chain_unsupported;
 
 	/* Per-family latch for the socket-family-grammar dispatcher
-	 * (net/socket-family-grammar.c).  sfg_unsupported[family] is set
+	 * (net/socket-family-grammar-core.c).  sfg_unsupported[family] is set
 	 * when can_run() probes fail or when run_grammar_chain() exhausts
 	 * its ERR_BURST_LIMIT for that family — siblings then skip the
 	 * grammar entry on subsequent picks.  No auto-clear; module load

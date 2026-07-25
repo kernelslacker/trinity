@@ -425,7 +425,7 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	/* Per-child mode picked once in kcov_init_child: PC-mode children
 	 * enable the PC fd (per-thread or remote) and feed edge coverage,
 	 * CMP-mode children enable the cmp fd and feed comparison-operand
-	 * hints.  Exactly one fd is enabled per syscall because the kernel's
+	 * hints.  At most one fd is enabled per syscall because the kernel's
 	 * one-`t->kcov`-per-task rule returns -EBUSY on a second simultaneous
 	 * enable; the fleet-wide PC/CMP signal split comes from the
 	 * population mix instead of per-call mode toggling. */

@@ -2,7 +2,7 @@
 #define _TRINITY_STATS_SUBSYS_CHAIN_CORPUS_H
 
 /*
- * Chain-corpus duplicate-shape rate (sequence.c).  Bumped from
+ * Chain-corpus duplicate-shape rate (chain-corpus.c).  Bumped from
  * chain_corpus_save() under the ring lock: dup means the incoming
  * chain's (nr, do32bit) tuple shape matched at least one of the
  * CHAIN_CORPUS_DUP_LOOKBACK most-recent saved slots; unique means

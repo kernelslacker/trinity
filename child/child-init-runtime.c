@@ -11,8 +11,8 @@
  * init_child_ab_stamps, init_child_finalize) stay static -- only
  * init_child_runtime_config calls them and all four live here.
  * init_child_runtime_config sheds its static linkage so init_child
- * (still in child-init.c during the carve) can call it across the
- * new TU boundary; declaration added to include/child-internal.h.
+ * (in child-init-core.c) can call it across the TU boundary;
+ * declaration added to include/child-internal.h.
  * TRINITY_CHILD_AS_CAP_BYTES moves too -- init_child_finalize is
  * the only reader of the macro.
  */

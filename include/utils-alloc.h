@@ -249,7 +249,7 @@ void post_handler_corrupt_ptr_bump_full(struct syscallrecord *rec,
 /*
  * Attribution overlay for the SELF-corruption cluster.  The
  * kcov_local_stats_plausible() gates in kcov/collect.c, the
- * objpool_check() sites in mm/maps.c, and the dispatch-boundary
+ * objpool_check() sites in mm/maps-pick.c, and the dispatch-boundary
  * check in random_syscall/dispatch.c all short-circuit the bad
  * deref when they fire, but the stats-counter bump on its own
  * records nothing about which syscall ran immediately before

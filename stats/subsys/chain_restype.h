@@ -8,7 +8,7 @@
  * --chain-resource-typing=off|shadow|live).  All arrays are
  * indexed by enum chain_resource_kind (CHAIN_RESTYPE_NR wide);
  * ordering is defined by that enum and MUST NOT change without
- * updating the resource table in sequence.c.
+ * updating the resource table in chain-restype.c.
  *
  * produced[k]     : a chain step matched the (nr, args) pattern for a
  *                   kind-k producer with a non-negative retval.  Bumped

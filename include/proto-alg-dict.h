@@ -59,7 +59,7 @@ void pick_alg(enum alg_dict_type type, const char *type_str,
 /*
  * Boundary tables shared between the per-syscall alg_setsockopt() path
  * (net/proto/alg.c) and the grammar_alg walker's SETKEY / SET_AEAD
- * phase handlers (net/socket-family-grammar.c).  Owned by
+ * phase handlers (net/socket-family-grammar-alg.c).  Owned by
  * net/proto/alg.c; the count symbols are kept alongside so callers can
  * do rnd_modulo_u32(alg_boundary_keylens_count) without needing
  * ARRAY_SIZE() from a different translation unit.

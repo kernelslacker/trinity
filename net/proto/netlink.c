@@ -124,7 +124,7 @@ const struct netproto proto_netlink = {
 
 /*
  * grammar_netlink — coherent walk for AF_NETLINK driven by the
- * per-family grammar dispatcher (net/socket-family-grammar.c).
+ * per-family grammar dispatcher (net/socket-family-grammar-core.c).
  *
  * walk_setsockopts fires the multicast group-membership churn the
  * design doc calls for: NETLINK_ADD_MEMBERSHIP across N random group

@@ -231,7 +231,7 @@ struct deferred_free_stats {
 	 * binds the same value to a new chunk; the second slot's TTL
 	 * fires and free()s the new owner's chunk.  Non-zero proves the
 	 * gate is engaged; rate-of-change correlates with refresh
-	 * pressure on the maps.c / objects/ hot paths. */
+	 * pressure on the mm/maps-*.c / objects/ hot paths. */
 	unsigned long double_admit_skip;
 
 	/* tracked_free_now() could not verify ring residency because
@@ -273,7 +273,7 @@ struct deferred_free_stats {
 	 * matches a fresh consume entry and free()s a now-live chunk
 	 * owned by a different allocation.  Non-zero proves the gate
 	 * is engaged on a refresh of a ring-resident ptr; rate-of-
-	 * change correlates with the maps.c / objects/ refresh
+	 * change correlates with the mm/maps-*.c / objects/ refresh
 	 * pressure that previously fed double_admit_skip at the
 	 * enqueue dedup. */
 	unsigned long alloc_track_refresh_ring_owned_skip;

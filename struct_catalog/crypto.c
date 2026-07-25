@@ -6,7 +6,7 @@
  * control-message payload carried by AF_ALG cipher / aead / skcipher
  * sockets to pin the per-request IV.  The bespoke walkers in
  * childops/net/af-alg-*.c and the setsockopt/sendmsg wiring in
- * net/socket-family-grammar.c own every live fill; this table exists
+ * net/socket-family-grammar-alg.c own every live fill; this table exists
  * so struct_field_for_cmp() can attribute a KCOV-CMP-learned constant
  * (typical IV lengths: 8, 12, 16, 32) to the ivlen slot by name rather
  * than guessing off a coincidentally-same-width field.

@@ -177,7 +177,7 @@ const struct netproto proto_packet = {
 
 /*
  * grammar_packet — coherent walk for AF_PACKET driven by the
- * per-family grammar dispatcher (net/socket-family-grammar.c).
+ * per-family grammar dispatcher (net/socket-family-grammar-core.c).
  *
  * walk_setsockopts fires the TPACKET ring-teardown sequence the
  * design doc calls for: PACKET_VERSION cycles V1 -> V2 -> V3,

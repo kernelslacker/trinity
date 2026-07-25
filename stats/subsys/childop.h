@@ -179,7 +179,7 @@ struct childop_stats {
 	unsigned long latch_reason[NR_CHILD_OP_TYPES];
 
 	/* SHADOW recommendation counters, indexed by enum child_op_type.
-	 * Bumped from close_window_and_decide() in child-canary.c whenever
+	 * Bumped from close_window_and_decide() in child-canary-state.c whenever
 	 * the score-driven recommended-state computation would respectively
 	 * demote (THROTTLED / QUARANTINED / NO_OUTER_BRACKET) or promote
 	 * (PROMOTED_CLEAN / PROMOTED_INTERFERENCE) the just-closed canary

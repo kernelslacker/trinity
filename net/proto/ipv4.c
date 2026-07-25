@@ -527,7 +527,7 @@ const struct netproto proto_ipv4 = {
 
 /*
  * grammar_inet — coherent walk for AF_INET sockets driven by the
- * per-family grammar dispatcher (net/socket-family-grammar.c).
+ * per-family grammar dispatcher (net/socket-family-grammar-core.c).
  *
  * pick_triplet biases TCP/UDP because that's where the
  * sequence-dependent kernel paths live (TCP_ULP install + TLS

@@ -61,7 +61,7 @@ void map_destructor(struct object *obj)
 	 * regions[] slot stays live under the global owner's registration.
 	 *
 	 * Range-validate map->ptr and cap extent before untrack+munmap.
-	 * The alloc_track armor at get_map_handle (maps.c:103) only
+	 * The obj-pool armor at get_map_handle (maps-pick.c) only
 	 * validates the obj pointer; an in-place scribble of the map body
 	 * via a fuzzed value-result syscall whose user buffer aliases a
 	 * real, pool-resident obj can leave .ptr / .tracked_size wild while
@@ -71,8 +71,9 @@ void map_destructor(struct object *obj)
 	 * untrack_shared_region() with the same pair would also corrupt
 	 * shared_regions[] bookkeeping by chance-matching an unrelated
 	 * slot.  Mirror the existing get_map_handle guards: user VA band
-	 * [0x10000, 0x800000000000) (maps.c:78-79) and the GB(4) cap on
-	 * size (maps.c:137).  Skip the whole untrack+munmap pair on miss
+	 * [0x10000, 0x800000000000) (maps-pick.c obj_ptr_in_user_va_band)
+	 * and the GB(4) cap on size (maps-pick.c).  Skip the whole
+	 * untrack+munmap pair on miss
 	 * -- leaking the VA for the rest of the run is strictly safer
 	 * than a wild unmap, and the name-free gate below still runs so
 	 * the proven-ours name buffer is recycled.
@@ -250,7 +251,7 @@ void clone_global_mmap_pool(enum objecttype type)
 				if (localobj->map.ptr == m->ptr) {
 					dup = true;
 					/* Refresh the local obj in alloc_track[] so the validator
-					 * LRU lookup at get_map_handle (mm/maps.c:103) stays warm
+					 * LRU lookup at get_map_handle (mm/maps-pick.c) stays warm
 					 * even when dedup skips a fresh __zmalloc_tracked.  Without
 					 * this, dedup starves alloc_track and pool entries rotate
 					 * out under churn (the 256->4096 alloc_track widen was outpaced 100x

@@ -354,7 +354,7 @@ struct diag_stats {
 	 * takes a SIGBUS or SIGSEGV inside the sigsetjmp-guarded
 	 * section and the walk siglongjmps out cleanly instead of
 	 * killing the child.  The write side already clamps via
-	 * dirty_random_mapping (mm/maps.c) before dispatch, so this
+	 * dirty_random_mapping (mm/maps-dirty.c) before dispatch, so this
 	 * counter primarily reflects the residual sibling
 	 * fallocate(PUNCH_HOLE) / fallocate(COLLAPSE_RANGE) /
 	 * madvise(MADV_REMOVE) and ftruncate-shrink race rate that

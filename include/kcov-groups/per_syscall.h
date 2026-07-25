@@ -78,7 +78,7 @@ unsigned long total_warm_known_hits;
  *
  *   per_syscall_edges_noisy[nr]     Sum of edges_found deltas across
  *                                   the sampled windows for this nr.
- *                                   Bumped from dispatch/syscall.c
+ *                                   Bumped from dispatch/syscall-exec.c
  *                                   around the syscall's enable/
  *                                   disable pair only on the 1-in-N
  *                                   sampled call (see

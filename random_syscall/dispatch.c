@@ -1090,7 +1090,7 @@ static void redqueen_pin_field(struct syscallrecord *rec,
  * regenerate fresh args via generate_syscall_args, overwrite the
  * targeted slot with the captured kernel-side constant, and re-enter
  * dispatch_step for the actual call.  Rec state is snapshotted on
- * entry and restored on exit so the chain-corpus save in sequence.c
+ * entry and restored on exit so the chain-corpus save in chain-corpus.c
  * (which reads rec->a1..a6 after dispatch_step returns) sees the
  * ORIGINAL dispatched args, not the re-exec's args.
  *
@@ -1167,7 +1167,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 
 	/* Snapshot the rec fields the re-exec's dispatch_step will rewrite.
 	 * Restore on exit so a caller that reads rec after the helper
-	 * returns -- the chain-corpus save in sequence.c being the
+	 * returns -- the chain-corpus save in chain-corpus.c being the
 	 * load-bearing one -- sees the original dispatched call's args /
 	 * retval, not the re-exec's.  nr / do32bit are NOT in the snapshot
 	 * set: redqueen always dispatches the same (nr, do32) as the

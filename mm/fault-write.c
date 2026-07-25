@@ -208,7 +208,7 @@ static const struct faultfn write_faultfns[] = {
 };
 
 /*
- * Per-walk SIGBUS / SIGSEGV guard.  dirty_random_mapping (mm/maps.c)
+ * Per-walk SIGBUS / SIGSEGV guard.  dirty_random_mapping (mm/maps-dirty.c)
  * already snapshot+fstat-clamps the walkable extent before dispatch,
  * but two TOCTOU races remain unclosable without a signal handler:
  *

@@ -36,7 +36,7 @@ bool user_specified_explorer_children = false;
  * intent in user_specified_canary_slots and bypasses the auto-derive
  * -- range enforcement against alt_op_children still applies in
  * trinity.c.  CANARY_WINDOW_ITERS_DEFAULT and the queue's other
- * defaults live in child-canary.c. */
+ * defaults live in child-canary-state.c. */
 unsigned int canary_slots = 0;
 bool user_specified_canary_slots = false;
 unsigned int canary_window_iters = 10000;
