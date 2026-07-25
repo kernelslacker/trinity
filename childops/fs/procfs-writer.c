@@ -9,11 +9,15 @@
  * fd-creating syscalls; it almost never hits these targets because they
  * make up a tiny slice of the total fd space.
  *
- * Discovery happens once per child: walk a small set of well-known trees
- * with a bounded recursion depth, stat() every regular file, and keep
- * those accessible W_OK by the current user.  A blocklist refuses paths
- * that would corrupt trinity itself, change panic policy, spam dmesg into
- * uselessness, or trigger sysrq from random bytes.
+ * Discovery runs once in the parent before fork_children: walk a small
+ * set of well-known trees with a bounded recursion depth, stat() every
+ * regular file, and keep those accessible W_OK by the parent's
+ * (higher-privileged) uid.  Children inherit the entries[] table via
+ * COW and use a per-child inaccessible[] prune to skip paths the
+ * dropped-privilege child cannot open; a lazy in-child fallback re-runs
+ * discovery only if the parent init was skipped.  A blocklist refuses
+ * paths that would corrupt trinity itself, change panic policy, spam
+ * dmesg into uselessness, or trigger sysrq from random bytes.
  *
  * Each call: pick a random entry, generate a fuzzy payload with the
  * existing rand_bytes generator, open(O_WRONLY|O_NONBLOCK), write, close.

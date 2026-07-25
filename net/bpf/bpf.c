@@ -493,13 +493,18 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
  * bpf_gen_filter / bpf_gen_seccomp) or at minimum readable for a
  * sock_fprog-sized window.
  *
- * Inner-filter free is alloc_track_lookup()-only: free what we own,
- * leak the unproven.  A readable-but-untracked inner pointer (a wild
- * fuzz pointer that happens to land in a real mapping) is deliberately
- * left to leak rather than handed to deferred_free_enqueue() ->
- * tracked_free_now(), which resolves an alloc_track miss to free() on
- * a foreign chunk (deferred-free.c:525-532).  The outer wrapper still
- * enqueues so the post_state / tracker slot releases.
+ * Inner-filter free is alloc_track_lookup()-only: free what we can
+ * prove we own, leak the unproven.  alloc_track_lookup() is a hash
+ * probe with no fallback scan of the alloc_track[] array, so a hash
+ * miss (including the mirror-desync class where the hash desyncs
+ * from a still-valid entry in alloc_track[]) makes us fail-closed
+ * and skip the free entirely.  A readable-but-untracked inner pointer
+ * (a wild fuzz pointer that happens to land in a real mapping) is
+ * deliberately left to leak rather than handed to
+ * deferred_free_enqueue(): leaking an unproven pointer is the safer
+ * direction than freeing a chunk we cannot prove we allocated.  The
+ * outer wrapper still enqueues so the post_state / tracker slot
+ * releases.
  */
 void bpf_free_filter(struct sock_fprog *bpf)
 {
