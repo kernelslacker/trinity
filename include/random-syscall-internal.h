@@ -82,11 +82,19 @@ static inline unsigned ilog2_ul(unsigned long x)
 bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 			      struct childdata *child);
 
+/* pick-frontier-weight.c -- per-syscall weight helpers consumed by
+ * the silent-regime accept gate in set_syscall_nr_coverage_frontier.
+ * frontier_cold_weight is the plateau-fallback weight when the
+ * frontier ring goes silent; cmp_frontier_weight is the CMP-weighted
+ * alternate weight consulted under cmp_frontier_mode != OFF.  Both
+ * cap output at FRONTIER_COLD_SCALE. */
+unsigned long frontier_cold_weight(unsigned int nr, struct childdata *child);
+unsigned long cmp_frontier_weight(unsigned int nr);
+
 /* pickers.c -- top-level picker dispatch, called from dispatch_step
  * in dispatch.c.  set_syscall_nr_random is public via
- * include/syscall.h; set_syscall_nr_coverage_frontier and the
- * frontier weight helpers (frontier_cold_weight, cmp_frontier_weight)
- * are file-scope static inside pickers.c. */
+ * include/syscall.h; set_syscall_nr_coverage_frontier is file-scope
+ * static inside pickers.c. */
 bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child);
 
 /* chain-subst.c -- rewrite rec->aN in place for chain-substituted
