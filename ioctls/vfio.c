@@ -414,10 +414,12 @@ static void sanitise_vfio_attach_iommufd_pt(struct syscallrecord *rec)
 	memset(a, 0, sizeof(*a));
 	a->argsz = sizeof(*a);
 	a->pt_id = rnd_modulo_u32(VFIO_FUZZ_MAX_INDEX);
+#ifdef VFIO_DEVICE_ATTACH_PASID
 	if (RAND_BOOL()) {
 		a->flags |= VFIO_DEVICE_ATTACH_PASID;
 		a->pasid = rnd_modulo_u32(VFIO_FUZZ_MAX_INDEX);
 	}
+#endif
 
 	rec->a3 = (unsigned long)a;
 }
@@ -434,10 +436,12 @@ static void sanitise_vfio_detach_iommufd_pt(struct syscallrecord *rec)
 
 	memset(d, 0, sizeof(*d));
 	d->argsz = sizeof(*d);
+#ifdef VFIO_DEVICE_DETACH_PASID
 	if (RAND_BOOL()) {
 		d->flags |= VFIO_DEVICE_DETACH_PASID;
 		d->pasid = rnd_modulo_u32(VFIO_FUZZ_MAX_INDEX);
 	}
+#endif
 
 	rec->a3 = (unsigned long)d;
 }

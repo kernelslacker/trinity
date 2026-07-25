@@ -208,8 +208,10 @@ static void sanitise_iommufd_hwpt_alloc(struct syscallrecord *rec)
 		a->flags |= IOMMU_HWPT_ALLOC_NEST_PARENT;
 	if (RAND_BOOL())
 		a->flags |= IOMMU_HWPT_ALLOC_DIRTY_TRACKING;
+#ifdef HAVE_IOMMU_HWPT_ALLOC_PASID
 	if (RAND_BOOL())
 		a->flags |= IOMMU_HWPT_ALLOC_PASID;
+#endif
 	if (RAND_BOOL()) {
 		a->flags |= IOMMU_HWPT_FAULT_ID_VALID;
 		a->fault_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
@@ -403,11 +405,13 @@ static void sanitise_iommufd_get_hw_info(struct syscallrecord *rec)
 	h->dev_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 	h->data_len = data_len;
 	h->data_uptr = (__u64)(unsigned long)data;
+#ifdef HAVE_IOMMU_HW_INFO_INPUT_TYPE
 	if (RAND_BOOL()) {
 		h->flags |= IOMMU_HW_INFO_FLAG_INPUT_TYPE;
 		h->in_data_type =
 			rnd_modulo_u32(IOMMUFD_FUZZ_HW_INFO_TYPE_MAX);
 	}
+#endif
 
 	rec->a3 = (unsigned long)h;
 }
