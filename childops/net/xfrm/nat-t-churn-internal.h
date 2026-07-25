@@ -329,4 +329,14 @@ int nat_t_build_delsa6(struct nl_ctx *ctx, __be32 spi);
  * triple's coherence. */
 void nat_keepalive_err_cycle(struct nl_ctx *ctx);
 
+/* nat-t-churn-traffic.c -- UDP-encaps-ESP data-plane drivers.  The v4
+ * socket / send / drain trio is the baseline single-SA data-plane
+ * cycle; nat_t_churn_v6() is the full IPv6 UDPv6-encap-ESP error-path
+ * cycle (SA install, encap socket, sendto burst, mid-flight DELSA,
+ * cleanup DELSA). */
+int nat_t_open_encap_udp(void);
+bool nat_t_send_esp_in_udp(int udp, __be32 spi, __u32 seq);
+void nat_t_maybe_drain_recv(int udp);
+void nat_t_churn_v6(void);
+
 #endif /* CHILDOPS_XFRM_NAT_T_CHURN_INTERNAL_H */
