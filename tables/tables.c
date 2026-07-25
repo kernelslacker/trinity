@@ -759,14 +759,14 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		if (copy[m].flags & SKIP_BLANKET_SCRUB)
 			copy[m].nested_address_scrub_mask = 0;
 
-		/* memcpy + alloc_shared zero-init leaves results[].len_score
-		 * decoding as (min=0, max=0) -- a valid range, not the
-		 * not-seen sentinel.  Stamp every per-arg slot so a reader
-		 * sees min > max on a fresh slot. */
+		/* The runtime array is memset(0) above, which leaves
+		 * results[].len_score decoding as (min=0, max=0) -- a valid
+		 * range, not the not-seen sentinel.  Stamp every per-arg
+		 * slot so a reader sees min > max on a fresh slot. */
 		{
 			unsigned int i;
 			for (i = 0; i < 6; i++)
-				results_init_one(&copy[m].results[i]);
+				results_init_one(&runtime[m].results[i]);
 		}
 
 		from[n].entry = &copy[m];

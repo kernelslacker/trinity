@@ -32,12 +32,12 @@ unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
  * the results[] array ever grows past six slots, that clamp needs to grow
  * with it (or the callers need to widen their arg masks).  Anchor the
  * invariant here so a stale clamp fires a compile error. */
-_Static_assert(ARRAY_SIZE(((struct syscallentry *)0)->results) == 6,
+_Static_assert(ARRAY_SIZE(((struct syscall_runtime *)0)->results) == 6,
 	       "results[] must have six slots to match the 0x3f arg-mask clamp");
 
 static struct results * get_results_ptr(struct syscallentry *entry, unsigned int argnum)
 {
-	return &entry->results[argnum - 1];
+	return &syscall_rt(entry)->results[argnum - 1];
 }
 
 static void store_successful_len(struct results *results, unsigned long value)
