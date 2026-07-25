@@ -191,3 +191,135 @@ int xfrm_emit_polexpire(int fd)
 	nlh->nlmsg_len = (__u32)off;
 	return xfrm_send_recv(fd, buf, off);
 }
+
+/*
+ * Build XFRM_MSG_MIGRATE coherently: a xfrm_userpolicy_id body
+ * (selector + dir, index=0 to take the match-by-selector path) plus a
+ * required XFRMA_MIGRATE attribute carrying 1-3 xfrm_user_migrate
+ * slots.  Per-tmpl old_family == new_family here so the per-template
+ * family validation arm sees the coherent shape; the random-body path
+ * in xfrm_types[] still covers garbage payloads.
+ */
+int xfrm_emit_migrate(int fd)
+{
+	unsigned char buf[XFRM_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct xfrm_userpolicy_id *id;
+	struct xfrm_user_migrate mig[3];
+	__u16 family = pick_family();
+	__u8 dir = (__u8)rnd_modulo_u32(3);
+	unsigned int n_slots = 1 + rnd_modulo_u32(3);
+	size_t off, addr_bytes;
+	unsigned int i;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_MIGRATE;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = xfrm_next_seq();
+
+	id = (struct xfrm_userpolicy_id *)NLMSG_DATA(nlh);
+	fill_selector(&id->sel, family);
+
+	/* P2.11 family desync: 1-in-8 flip id->sel.family so the body
+	 * selector disagrees with the per-template old_family / new_family
+	 * we emit in the XFRMA_MIGRATE attribute below.  Drives the
+	 * xfrm_migrate_check / copy_to_user_migrate family-mismatch arms
+	 * the coherent always-matched path would never reach. */
+	if (rnd_modulo_u32(8) == 0)
+		id->sel.family = (family == AF_INET) ? AF_INET6 : AF_INET;
+
+	id->index = 0;
+	id->dir   = dir;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*id));
+
+	addr_bytes = (family == AF_INET6) ? 16 : 4;
+	memset(mig, 0, sizeof(mig));
+	for (i = 0; i < n_slots; i++) {
+		generate_rand_bytes((unsigned char *)&mig[i].old_daddr, addr_bytes);
+		generate_rand_bytes((unsigned char *)&mig[i].old_saddr, addr_bytes);
+		generate_rand_bytes((unsigned char *)&mig[i].new_daddr, addr_bytes);
+		generate_rand_bytes((unsigned char *)&mig[i].new_saddr, addr_bytes);
+		mig[i].proto      = pick_sa_proto();
+		mig[i].mode       = pick_mode();
+		/* P3.13 reserved-bit OR: xfrm_user_migrate.reserved is a
+		 * must-be-zero pad in the UAPI.  Plant a low 3-bit random
+		 * value so the validator-side zero check (if any) actually
+		 * fires; old kernels ignored it, newer ones may reject. */
+		mig[i].reserved   = (__u8)rnd_modulo_u32(8);
+		mig[i].reqid      = (rand32() & 0xff) + 1U;
+		mig[i].old_family = family;
+		mig[i].new_family = family;
+	}
+
+	off = xfrm_nla_put(buf, off, sizeof(buf), XFRMA_MIGRATE, mig,
+			   n_slots * sizeof(struct xfrm_user_migrate));
+	if (!off)
+		return -EIO;
+
+	nlh->nlmsg_len = (__u32)off;
+	return xfrm_send_recv(fd, buf, off);
+}
+
+/*
+ * SETDEFAULT/GETDEFAULT body bytes are small enums (0..2).  Bias the
+ * rotation toward valid values but keep low-probability edge bytes so
+ * any future reserved-bit handling on the kernel side gets exercised.
+ */
+static __u8 pick_default_byte(void)
+{
+	unsigned int r = rnd_modulo_u32(100);
+
+	if (r < 75)
+		return r % 3;		/* UNSPEC / BLOCK / ACCEPT */
+	if (r < 90)
+		return 0xff;		/* top-byte edge */
+	return rand32() & 0xff;		/* full-byte fuzz */
+}
+
+int xfrm_emit_setdefault(int fd)
+{
+	unsigned char buf[64];
+	struct nlmsghdr *nlh;
+	struct xfrm_userpolicy_default *upd;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_SETDEFAULT;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = xfrm_next_seq();
+
+	upd = (struct xfrm_userpolicy_default *)NLMSG_DATA(nlh);
+	upd->in  = pick_default_byte();
+	upd->fwd = pick_default_byte();
+	upd->out = pick_default_byte();
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*upd));
+	nlh->nlmsg_len = (__u32)off;
+	return xfrm_send_recv(fd, buf, off);
+}
+
+int xfrm_emit_getdefault(int fd)
+{
+	unsigned char buf[64];
+	struct nlmsghdr *nlh;
+	struct xfrm_userpolicy_default *upd;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_GETDEFAULT;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = xfrm_next_seq();
+
+	upd = (struct xfrm_userpolicy_default *)NLMSG_DATA(nlh);
+	upd->in  = pick_default_byte();
+	upd->fwd = pick_default_byte();
+	upd->out = pick_default_byte();
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*upd));
+	nlh->nlmsg_len = (__u32)off;
+	return xfrm_send_recv(fd, buf, off);
+}
