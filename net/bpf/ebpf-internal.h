@@ -159,6 +159,28 @@ int gen_tier2(struct bpf_insn *insns, int max_insns,
 
 int gen_tier3(struct bpf_insn *insns, int max_insns);
 
+/*
+ * Map-fd injection probability.  Most generated programs stay scalar-
+ * only; this is the chance that any program prepends an LD_MAP_FD
+ * loading a real bpf-map fd from trinity's object pool.  Picked low so
+ * scalar-only programs still dominate coverage; the tier-2 dedicated
+ * map-exercise sub-strategy below forces map-fd loading independently
+ * when that coverage path is wanted.  Not env-tunable on purpose; the
+ * weight bakes into the build.
+ */
+#define MAP_FD_WEIGHT_PCT	5
+
+/*
+ * Chance that tier 2 forces the dedicated map-exercise sub-strategy,
+ * which prepends an LD_MAP_FD regardless of the base rate above.  The
+ * arm only fires when get_rand_bpf_fd() returns a live map fd; empty
+ * pools fall back to scalar-only generation.
+ */
+#define TIER2_FORCE_MAP_FD_DENOM	4
+
+int pick_map_fd_for_program(int tier_id);
+int emit_ld_map_fd_prologue(struct bpf_insn *insns, int map_fd);
+
 #endif /* USE_BPF */
 
 #endif /* NET_BPF_EBPF_INTERNAL_H */
