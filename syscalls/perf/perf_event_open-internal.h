@@ -82,4 +82,8 @@ long long random_event_config(__u32 *event_type,
 struct perf_event_attr;
 void setup_breakpoints(struct perf_event_attr *attr);
 
+long long random_sample_type(void);
+long long random_read_format(void);
+long long random_branch_sample_type(void);
+
 #endif /* SYSCALLS_PERF_EVENT_OPEN_INTERNAL_H */
