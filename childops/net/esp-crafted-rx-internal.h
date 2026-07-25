@@ -244,4 +244,9 @@ uint8_t esprx_pick_inner_proto(void);
 uint8_t esprx_pick_inner_trunc_len(void);
 __u32 esprx_pick_esp_seq(void);
 
+/* esp-crafted-rx-sa.c */
+int install_null_esp_sa(struct nl_ctx *ctx, __be32 spi, __u32 reqid,
+			bool v6);
+int delete_esp_sa(struct nl_ctx *ctx, __be32 spi, bool v6);
+
 #endif /* _CHILDOPS_NET_ESP_CRAFTED_RX_INTERNAL_H */
