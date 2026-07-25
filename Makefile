@@ -314,6 +314,8 @@ clean:
 	@rm -rf $(DEPDIR)/*
 	@rm -rf trinity-coverity.tar.xz cov-int
 	@rm -f $(VERSION_H)
+	@find . -name '__pycache__' -type d -prune -exec rm -rf {} +
+	@find . -name '*.pyc' -delete
 
 tag:
 	@git tag -a v$(VERSION) -m "$(VERSION) release."
