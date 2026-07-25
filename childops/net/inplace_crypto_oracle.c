@@ -60,6 +60,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -156,9 +157,9 @@ static void set_short_recv_timeout(int fd)
 
 /*
  * Open the oracle source file (rotate /etc/hosts vs a self-owned
- * /tmp marker) and capture up to ORACLE_FILE_CAP baseline bytes.
- * The /tmp variant is mkstemp + write + unlink + reopen via
- * /proc/self/fd so the inode is auto-reaped on child exit.
+ * scratch-dir marker) and capture up to ORACLE_FILE_CAP baseline
+ * bytes.  The scratch-dir variant is mkstemp + write + unlink +
+ * reopen via /proc/self/fd so the inode is auto-reaped on child exit.
  */
 static int open_oracle_file(char *out_path, size_t path_cap,
 			    unsigned char *out_baseline, size_t *out_size)
@@ -172,9 +173,13 @@ static int open_oracle_file(char *out_path, size_t path_cap,
 			snprintf(out_path, path_cap, "/etc/hosts");
 	}
 	if (fd < 0) {
-		char tmpl[] = "/tmp/trinity-oracle-XXXXXX";
+		char tmpl[PATH_MAX + 32];
 		unsigned char marker[ORACLE_MARKER_BYTES];
-		int wfd = mkstemp(tmpl);
+		int wfd;
+
+		snprintf(tmpl, sizeof(tmpl), "%s/trinity-oracle-XXXXXX",
+			 trinity_tmpdir_abs());
+		wfd = mkstemp(tmpl);
 
 		if (wfd < 0)
 			return -1;
