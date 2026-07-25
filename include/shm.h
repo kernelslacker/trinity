@@ -614,149 +614,61 @@ struct shm_s {
 	unsigned long recent_pulls_x1000[NR_STRATEGIES];
 	unsigned long recent_reward_x1000[NR_STRATEGIES];
 
-	/*
-	 * Monotonic rotation counter, bumped by the CAS-winning child in
+	/* Monotonic rotation counter, bumped by the CAS-winning child in
 	 * maybe_rotate_strategy() once per completed window.  Used as the
-	 * generation tag for the cmp_novelty[] bloom decay below: a bloom
-	 * entry with window_tag more than CMP_NOVELTY_DECAY_WINDOWS behind
-	 * this counter is considered stale and gets cleared on next access.
-	 * Stays plain unsigned long with explicit __atomic_* accessors to
-	 * match the existing bandit_pulls[]/bandit_reward_calls[] convention.
-	 */
+	 * generation tag for cmp_novelty[] bloom decay.  See
+	 * Documentation/shm-state.md (Cmp-novelty bloom + reward). */
 	unsigned long bandit_window_count;
 
-	/*
-	 * Per-syscall comparison-constant novelty bloom — see include/strategy.h
-	 * (bandit_cmp_observe).  Each entry holds a 1024-bit bloom filter over
-	 * the comparison constants observed for that syscall in the recent
-	 * past, plus a generation tag (the rotation count at which the bloom
-	 * was last cleared).  When a child observing a fresh CMP record finds
-	 * the entry's tag more than CMP_NOVELTY_DECAY_WINDOWS rotations old it
-	 * lazily zeroes the bloom and republishes the tag, so a constant that
-	 * stops appearing for K windows is forgotten and counts as novel
-	 * again.  Sized 132 bytes per syscall * MAX_NR_SYSCALL ≈ 132 KiB inside
-	 * shm — well below other arrays already living here (per_syscall_*).
-	 *
-	 * bandit_cmp_new_constants[]: per-arm cumulative count of CMP records
-	 *   that missed the bloom at observation time.  Bumped by every child
-	 *   inside bandit_cmp_observe() (atomic add, multiple producers).  The
-	 *   rotation hook turns the per-window delta into a secondary reward
-	 *   term inside bandit_record_pull().
-	 */
-	/*
-	 * Indexed by [syscall_nr][do32 ? 1 : 0].  Biarch builds split the
-	 * novelty bloom per arch so 32-bit nr=N and 64-bit nr=N (which
-	 * may be unrelated calls) do not poison each other's per-syscall
-	 * constant-novelty signal.  Uniarch builds only touch [*][0].
-	 */
+	/* Per-syscall comparison-constant novelty bloom (128-byte bloom +
+	 * generation tag per entry) -- see include/strategy.h
+	 * (bandit_cmp_observe) and Documentation/shm-state.md
+	 * (Cmp-novelty bloom + reward).  Indexed by [syscall_nr][do32?1:0];
+	 * biarch builds split per arch so nr=N in each arch does not poison
+	 * the other.  bandit_cmp_new_constants[] is the per-arm cumulative
+	 * miss count; bandit_cmp_at_window_start snapshots the active arm's
+	 * counter for the window-close delta. */
 	struct cmp_novelty_entry {
 		uint32_t window_tag;
 		uint8_t bloom[128];
 	} cmp_novelty[MAX_NR_SYSCALL][2];
 	unsigned long bandit_cmp_new_constants[NR_STRATEGIES];
-
-	/*
-	 * Snapshot of bandit_cmp_new_constants[active_arm] at the start of
-	 * the current window, by symmetry with pc_edge_calls_at_window_start.
-	 * The
-	 * rotation hook reads bandit_cmp_new_constants[prev] and subtracts
-	 * this snapshot to compute the cmp-novelty delta the just-finished
-	 * window produced, then reseeds the snapshot from the next arm's
-	 * counter.  Single field rather than per-arm because only one arm
-	 * is active per window.  Written only by the CAS-winning child and
-	 * read back by the next; accesses are RELAXED-atomic to keep the
-	 * shared-memory discipline uniform with the companion *_at_window_start
-	 * fields rather than relying on the CAS for cross-arch ordering.
-	 */
 	unsigned long bandit_cmp_at_window_start;
 
-	/*
-	 * Snapshot of kcov_shm->kmsg.kmsg_warn_fires at the start of the current
-	 * bandit window.  Single global field (mirrors bandit_cmp_at_window_
-	 * start) because kmsg_warn_fires is global rather than per-arm --
-	 * the chaos-cohort attribution that consumes the delta needs only
-	 * "how many WARNs fired in this window", not "how many WARNs fired
-	 * while strategy X was active".  Reseeded from the
-	 * live counter at every rotation regardless of selection reason, so
-	 * the delta the cohort split sees represents only events the kernel
-	 * emitted inside the just-finished window.  Written only by the
-	 * CAS-winning child on the rotation path; RELAXED accesses match the
-	 * other *_at_window_start fields.
-	 */
+	/* Snapshot of kcov_shm->kmsg.kmsg_warn_fires at the start of the
+	 * current bandit window; single global (not per-arm) because the
+	 * chaos-cohort attribution that consumes the delta needs only
+	 * "WARNs this window", not per-arm.  See
+	 * Documentation/shm-state.md (Cmp-novelty bloom + reward). */
 	unsigned long kmsg_warn_fires_at_window_start;
 
-	/*
-	 * Per-arm cumulative sum of (cmp_term * 1000 / total_reward) across
-	 * windows where cmp_term > 0.  Divided by bandit_pulls[arm] at end
-	 * of run to print the average per-window CMP contribution share, so
-	 * the operator can tune CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL on real
-	 * run data.  Written only by the CAS-winning child, same path as
-	 * bandit_pulls/bandit_reward_calls.
-	 */
+	/* Per-arm cumulative sum of (cmp_term * 1000 / total_reward) across
+	 * windows where cmp_term > 0; divided by bandit_pulls[arm] at end
+	 * of run to print the average per-window CMP contribution share for
+	 * tuning CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL.  See
+	 * Documentation/shm-state.md (Cmp-novelty bloom + reward). */
 	unsigned long bandit_cmp_share_sum_x1000[NR_STRATEGIES];
 
-	/*
-	 * Per-syscall frontier-edge ring -- see include/strategy.h.
-	 *
-	 * frontier_history[nr][slot] counts NEW edges syscall nr produced
-	 * during the rotation window mapped to slot.  Slot is an index in
-	 * [0, FRONTIER_DECAY_WINDOWS); the slot currently being filled is
-	 * (frontier_slot & mask), advanced once per rotation by the
-	 * CAS-winning child via frontier_window_advance().  Sum across all
-	 * slots is the syscall's "recent frontier-edge count" -- the weight
-	 * the coverage-frontier picker biases its uniform pick toward.
-	 *
-	 * Bumped on the kcov_collect new-edge branch by every child
-	 * (multi-producer, atomic add).  Slot rotation zeroes the new slot
-	 * before publishing the new index, so a producer racing the rotation
-	 * either bumps the previous (still-valid) slot or the freshly cleared
-	 * new slot -- both attribute correctly within the K-window decay.
-	 *
-	 * Sized MAX_NR_SYSCALL * FRONTIER_DECAY_WINDOWS * 4 = 32 KiB, a
-	 * rounding error against the cmp_novelty[] block above.
-	 */
+	/* Per-syscall frontier-edge ring + cached recent-count / max.  The
+	 * coverage-frontier picker biases its uniform pick by each
+	 * syscall's recent NEW-edge count.  frontier_history[nr][slot]
+	 * counts new edges per rotation window (multi-producer, atomic
+	 * add); frontier_slot advances once per rotation; the *_cached
+	 * fields let the picker read the recent-count / max with single
+	 * RELAXED loads.  See include/strategy.h and
+	 * Documentation/shm-state.md (Coverage-frontier picker state). */
 	uint32_t frontier_history[MAX_NR_SYSCALL][FRONTIER_DECAY_WINDOWS];
 	uint32_t frontier_slot;
-
-	/*
-	 * Per-syscall cached recent-edge count -- running sum of
-	 * frontier_history[nr][*] across the live ring, maintained
-	 * incrementally so frontier_recent_count(nr) is a single RELAXED
-	 * load instead of an O(FRONTIER_DECAY_WINDOWS) walk.  Producers
-	 * fetch_add 1 here in lockstep with the per-slot bump; the window
-	 * rotator subtracts the just-zeroed slot's contribution from this
-	 * counter in the same pass that clears the slot.  Same RELAXED
-	 * race envelope as frontier_history -- a producer add that
-	 * interleaves with the rotation's exchange-then-subtract can leave
-	 * cached one bump above the live sum, bounded by one window and
-	 * folded back in by the next rotation.
-	 */
 	uint32_t frontier_recent_count_cached[MAX_NR_SYSCALL];
-
-	/*
-	 * Cached max of frontier_recent_count() across all syscalls --
-	 * the rejection-sampling acceptance ratio in the coverage-frontier
-	 * picker uses this as the bias-mass denominator.  Recomputed
-	 * authoritatively on each window rotation, and ratcheted upward
-	 * on new-edge bumps, so the picker reads it with a single
-	 * RELAXED load instead of walking ~MAX_NR_SYSCALL frontier rings
-	 * (8 RELAXED loads each) per pick.  Torn / stale values are
-	 * acceptable: a slightly low cached max biases the picker toward
-	 * heavier-weighted syscalls (under-rejecting cold ones); a
-	 * slightly high one biases it toward uniform.  Both errors are
-	 * bounded by one window rotation.
-	 */
 	unsigned int frontier_max_weight_cached;
 
-	/*
-	 * EFAULT-probe cache for ioctl arg classification.  Open-addressing
-	 * hashmap keyed on (group_idx, request); see ioctls/efault_cache.c
-	 * for the slot encoding and the probing protocol.  Lives in shm so
-	 * a verdict reached by one child is reused by all the others — the
-	 * kernel's ioctl tables are global and the probe has side effects
-	 * we want to amortise.  Zero-initialised by create_shm(); packed ==
-	 * 0 is the empty-slot sentinel.
-	 */
+	/* EFAULT-probe cache for ioctl arg classification; open-addressing
+	 * hashmap keyed on (group_idx, request).  Lives in shm so a verdict
+	 * reached by one child is reused by all the others (the kernel's
+	 * ioctl tables are global and the probe has side effects worth
+	 * amortising).  packed == 0 is the empty-slot sentinel; see
+	 * ioctls/efault_cache.c for the slot encoding and probing
+	 * protocol. */
 	uint64_t ioctl_efault_cache[IOCTL_EFAULT_CACHE_SIZE];
 };
 extern struct shm_s *shm;
@@ -804,40 +716,12 @@ static inline void release_newnet_ticket(struct syscallrecord *rec)
 				   __ATOMIC_RELAXED);
 }
 
-/*
- * Global pointer to the children array.  Lives in normal data segment
- * (NOT in shm), so each forked process gets its own COW copy.  A stray
- * child write to this pointer corrupts only that one child's copy and
- * cannot zero out the pointer for parent or siblings.  The pointed-to
- * array is mprotected PROT_READ in init_shm() so its contents are
- * also protected.
- */
+/* Data-segment externs paired with shm state.  These live OUTSIDE the
+ * shared region (COW-per-child) so a stray write in one child cannot
+ * perturb parent or siblings; canary arrays let drain paths detect and
+ * work around wild-write damage to per-child ring pointers.  See
+ * Documentation/shm-state.md (Data-segment externs). */
 extern struct childdata **children;
-
-/*
- * Length of each per-child childdata mapping in bytes.  Set once by
- * init_shm_per_child_rings() to sizeof(struct childdata) rounded up
- * to a page multiple, so freeze_sibling_childdata's mprotect() call
- * covers exactly the span the mapping owns.  Kept in the parent's
- * data segment (inherited COW-per-child) so a wild write to the
- * variable in one child cannot perturb another child's freeze length.
- */
 extern size_t childdata_mapping_len;
-
-/*
- * Canary copy of each child's fd_event_ring pointer, taken at init time
- * so wild-write damage to the per-child ring pointer can be detected.
- * fd_event_drain_all() compares the live pointer against this array;
- * a mismatch means the pointer was overwritten after init, and we use
- * the known-good value to keep draining while logging the incident.
- */
 extern struct fd_event_ring **expected_fd_event_rings;
-
-/*
- * Canary copy of each child's stats_ring pointer, taken at init time so
- * wild-write damage to the per-child ring pointer can be detected.
- * stats_ring_drain_all() compares the live pointer against this array;
- * a mismatch means the pointer was overwritten after init, and we use
- * the known-good value to keep draining while logging the incident.
- */
 extern struct stats_ring **expected_stats_rings;
