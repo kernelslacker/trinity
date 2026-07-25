@@ -16,12 +16,18 @@
  * call at the producer site (minicorpus_save_with_reason in
  * random-syscall.c) is untouched: its arguments and branch shape are
  * byte-identical to the pre-row baseline, and the shadow block
- * fires strictly AFTER it on the same gated arm.
+ * fires immediately BEFORE it on the same gated arm.  The ordering
+ * is mandatory: the live save publishes a new entry into
+ * rings[rec->nr] and bumps its count from 0 to 1, which would race
+ * the corpus-absent snapshot to always-false for the headline
+ * first-admission case (the very event the absent subset is meant
+ * to capture).  Reading the count pre-save pins absent to the
+ * pre-decision state the overflow lane would see.
  *
- * Predicate composition at the bump site, all evaluated AFTER the
- * existing found_something / entry->sanitise == NULL save gate so
- * the population is the same population that already passes
- * through minicorpus_save_with_reason:
+ * Predicate composition at the bump site, mirroring the existing
+ * found_something / entry->sanitise == NULL save gate so the
+ * population is the same population that already passes through
+ * minicorpus_save_with_reason:
  *   plateau == CMP_RISING_PC_FLAT
  *     (RELAXED load of shm->plateau_current_hypothesis, the
  *     same key the cmp-recent-first arm and the live-inject path
