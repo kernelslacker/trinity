@@ -146,27 +146,6 @@ static void mark_kind_unsupported(void)
 }
 
 /*
- * IPv4 header checksum, standard one's-complement over the 20-byte
- * header.  Kept local so this file has no dependency on utils/csum
- * plumbing.  Mirrors ip_gre-churn.c / sctp-chunk-rx.c.
- */
-static __u16 ip_csum16(const void *data, size_t len)
-{
-	const __u16 *p = data;
-	__u32 s = 0;
-
-	while (len > 1) {
-		s += *p++;
-		len -= 2;
-	}
-	if (len)
-		s += *(const __u8 *)p;
-	while (s >> 16)
-		s = (s & 0xffff) + (s >> 16);
-	return (__u16)~s;
-}
-
-/*
  * Install an inbound ESP SA with cipher_null + digest_null so any
  * ciphertext survives ICV verify and decrypt.  reqid, spi and v6
  * are captured by the caller so the packet-emit loop can stamp
@@ -296,61 +275,6 @@ static int delete_esp_sa(struct nl_ctx *ctx, __be32 spi, bool v6)
 }
 
 /*
- * Draw the inner protocol byte for a crafted frame.  Weighting keeps
- * TCP/UDP/ICMP in the mix (each maps to its own kernel parser entry
- * on the post-decap path) plus an escape hatch of random bytes for
- * the unknown-protocol branch.
- */
-static uint8_t pick_inner_proto(void)
-{
-	uint32_t roll = rnd_modulo_u32(8);
-
-	switch (roll) {
-	case 0: case 1: case 2: return IPPROTO_TCP;
-	case 3: case 4:         return IPPROTO_UDP;
-	case 5:                 return IPPROTO_ICMP;
-	default:                return (uint8_t)rnd_modulo_u32(256);
-	}
-}
-
-/*
- * Draw an inner-payload length shorter than the nominal parser read
- * for that proto, so the post-decap header walk over-reads.  Values
- * span {0, 1, 4, 8, 16} -- 0 leaves the parser reading the ESP
- * trailer bytes as if they were an inner header; 4/8/16 are common
- * short-header sizes that slice a real fixed header off mid-field.
- */
-static uint8_t pick_inner_trunc_len(void)
-{
-	uint32_t roll = rnd_modulo_u32(5);
-
-	switch (roll) {
-	case 0:  return 0U;
-	case 1:  return 1U;
-	case 2:  return 4U;
-	case 3:  return 8U;
-	default: return 16U;
-	}
-}
-
-/*
- * Draw an ESP sequence number.  Rotates {0, 1, small random, large
- * random} to walk the replay-window edges the kernel checks before
- * the ICV verify.  Zero is included even though the kernel typically
- * treats seq=0 as invalid -- the reject path itself is worth
- * exercising.
- */
-static __u32 pick_esp_seq(void)
-{
-	switch (rnd_modulo_u32(4)) {
-	case 0:  return 0U;
-	case 1:  return 1U;
-	case 2:  return rand32() & 0xffffU;
-	default: return rand32();
-	}
-}
-
-/*
  * Build an IPv4(ESP) frame with a truncated inner payload of the
  * given proto.  Returns the total wire length ready for sendto().
  * Layout:
@@ -406,7 +330,7 @@ static size_t build_v4_frame(uint8_t *buf, __be32 spi, __u32 seq,
 
 	iph->tot_len = htons((uint16_t)off);
 	iph->check   = 0;
-	iph->check   = ip_csum16(iph, sizeof(*iph));
+	iph->check   = esprx_ip_csum16(iph, sizeof(*iph));
 
 	return off;
 }
@@ -508,7 +432,7 @@ static size_t build_v4_esp_fragment(uint8_t *buf, uint16_t ident,
 
 	memcpy(buf + sizeof(*iph), esp_slice, slice_len);
 
-	iph->check = ip_csum16(iph, sizeof(*iph));
+	iph->check = esprx_ip_csum16(iph, sizeof(*iph));
 	return sizeof(*iph) + slice_len;
 }
 
@@ -697,8 +621,8 @@ static void esp_crafted_rx_send_frag_pair(struct esp_crafted_rx_iter_ctx *ctx,
 	spi = ONE_IN(8)
 		? htonl((rand32() % ESPRX_SPI_RANGE) + ESPRX_SPI_MIN)
 		: ctx->spi;
-	seq         = pick_esp_seq();
-	inner_proto = pick_inner_proto();
+	seq         = esprx_pick_esp_seq();
+	inner_proto = esprx_pick_inner_proto();
 
 	build_esp_blob(esp, spi, seq, inner_proto);
 
@@ -882,7 +806,7 @@ static void esp_crafted_rx_send_stacked_v6(struct esp_crafted_rx_iter_ctx *ctx,
 	dst.sin6_addr.s6_addr[15] = 1;
 
 	len = build_v6_stacked_esp_frame(pkt, ctx->stack_spi, ctx->stack_depth,
-					 pick_esp_seq(), ONE_IN(2));
+					 esprx_pick_esp_seq(), ONE_IN(2));
 	if (len == 0)
 		return;
 
@@ -939,9 +863,9 @@ static void esp_crafted_rx_iter_send_burst(struct esp_crafted_rx_iter_ctx *ctx)
 		spi = ONE_IN(8)
 			? htonl((rand32() % ESPRX_SPI_RANGE) + ESPRX_SPI_MIN)
 			: ctx->spi;
-		seq         = pick_esp_seq();
-		inner_proto = pick_inner_proto();
-		trunc_len   = pick_inner_trunc_len();
+		seq         = esprx_pick_esp_seq();
+		inner_proto = esprx_pick_inner_proto();
+		trunc_len   = esprx_pick_inner_trunc_len();
 
 		if (ctx->v6) {
 			struct sockaddr_in6 dst;
