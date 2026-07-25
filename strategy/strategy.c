@@ -10,23 +10,52 @@
  * pure arm-selection policy) lives in strategy-bandit.c.  The
  * intervention layer in select_next_strategy() below sits one level
  * above that picker: when kcov reports the fleet's edge-discovery
- * rate is stalled, it forces STRATEGY_RANDOM (or one of the
- * intervention modes) with reason SR_PLATEAU_FORCE without
- * consulting the UCB scorer, so the bandit is shaken out of
- * whatever local minimum it has settled into.  The rotation site
- * checks the stamped reason at window close and skips the
- * bandit_record_pull() call for SR_PLATEAU_FORCE windows so the
- * learner's reward history stays clean of intervention noise.
+ * rate is stalled, it dispatches through select_plateau_intervention_
+ * strategy() with reason SR_PLATEAU_FORCE without consulting the
+ * UCB scorer, so the bandit is shaken out of whatever local minimum
+ * it has settled into.  The rotation site checks the stamped reason
+ * at window close and skips the bandit_record_pull() call for
+ * SR_PLATEAU_FORCE windows so the learner's reward history stays
+ * clean of intervention noise.
  *
- * Round-robin mode bypasses the intervention -- its own cycling
- * already includes RANDOM, and forcing it here would collapse the
- * cycle to one arm.
+ * The intervention layer is itself two-tiered.  A per-rotation PIM
+ * counter rotates round-robin across the four intervention modes:
  *
- * Future dispatches will replace the "force STRATEGY_RANDOM" policy
- * with smarter interventions (e.g. a classifier that picks the arm
- * most likely to break the stall) inside this function; the
- * separation between intervention and learner keeps that work from
- * disturbing the UCB scoring path.
+ *   PIM_RRC_BIASED       -- consult dominant_rescue_class() and map
+ *                           the winner through amplified_intervention_
+ *                           arm() to a targeted arm (HEURISTIC for
+ *                           RRC_COLD_SKIP, COVERAGE_FRONTIER for
+ *                           RRC_CMP_DERIVED, STRATEGY_RANDOM for the
+ *                           unwired placeholder classes and the
+ *                           "no class dominant" sentinel).
+ *   PIM_ANTI_PRIOR       -- STRATEGY_RANDOM with a per-call accept
+ *                           gate biased against the picker's current
+ *                           learned distribution; the baseline is
+ *                           refreshed at every rotation boundary.
+ *   PIM_COVERAGE_FRONTIER-- unconditional STRATEGY_COVERAGE_FRONTIER
+ *                           so the frontier arm remains reachable
+ *                           during plateau windows.  Substituted with
+ *                           PIM_UNIFORM_RANDOM when the per-syscall
+ *                           frontier rings have fully aged out
+ *                           (frontier_max_weight_cached == 0), which
+ *                           avoids demote-to-idle spirals on cold
+ *                           rings.
+ *   PIM_UNIFORM_RANDOM   -- baseline STRATEGY_RANDOM with no per-call
+ *                           bias, kept as the A/B anchor for the
+ *                           other three modes.
+ *
+ * Round-robin picker mode bypasses the intervention -- its own
+ * cycling already includes RANDOM, and forcing it here would
+ * collapse the cycle to one arm.
+ *
+ * Genuinely unwired work still lives inside the classifier: the
+ * placeholder rescue classes (RRC_UNUSUAL_FD_PRODUCER, RRC_WRONG_
+ * TYPE_FD, RRC_PERSONA_GATED) are scanned by dominant_rescue_class()
+ * but no code path currently credits a rescue to them, and
+ * amplified_intervention_arm() falls back to STRATEGY_RANDOM for
+ * each.  Wiring structured replay for those classes is the remaining
+ * follow-on; the separation between intervention and learner keeps
+ * that work off the UCB scoring path.
  */
 
 #include <stdbool.h>
