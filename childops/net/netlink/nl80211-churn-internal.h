@@ -161,4 +161,9 @@ void cleanup_ifaces(struct genl_ctx *ctx);
 int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
 		       int *ifindex, const struct timespec *t_outer);
 
+/* Scan/BSS churn phase -- nl80211-churn-scan.c */
+int trigger_scan(struct genl_ctx *ctx, int ifindex);
+bool wait_scan_results(struct genl_ctx *ctx);
+int set_reg_zz(struct genl_ctx *ctx);
+
 #endif /* CHILDOPS_NL80211_CHURN_INTERNAL_H */
