@@ -86,4 +86,6 @@ long long random_sample_type(void);
 long long random_read_format(void);
 long long random_branch_sample_type(void);
 
+bool pick_perf_tuple(struct perf_event_attr *attr);
+
 #endif /* SYSCALLS_PERF_EVENT_OPEN_INTERNAL_H */
