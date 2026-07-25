@@ -21,11 +21,9 @@
 #include "utils.h"
 #include "rnd.h"
 
-#ifdef USE_BPF
+#include "ebpf-internal.h"
 
-/* Stack frame: 512 bytes max, 8-byte aligned slots */
-#define EBPF_STACK_SIZE		512
-#define EBPF_STACK_SLOTS	(EBPF_STACK_SIZE / 8)
+#ifdef USE_BPF
 
 /* Program size limits */
 #define TIER1_MIN_INSNS		5
@@ -240,92 +238,6 @@ static struct helper_set get_helpers_for_prog_type(unsigned int prog_type)
 	default:
 		return (struct helper_set) HELPER_SET(helpers_universal);
 	}
-}
-
-/*
- * Register liveness bitmap. Tracks which registers hold known-valid values
- * so we only read from initialized registers.
- *
- * map_reg tracks the most recent register holding a PTR_TO_MAP
- * (set by the LD_MAP_FD prepend in ebpf_gen_program_into).  Helper calls
- * needing an ARG_MAP_PTR copy from this register instead of emitting a
- * fresh LD_MAP_FD pair, keeping the call sequence short and avoiding any
- * mid-program 2-slot pseudo-imm that a future jump might land on.  Cleared
- * (-1) whenever the tracked register is overwritten or clobbered by a
- * caller-saved reset.
- */
-struct reg_state {
-	uint16_t live;		/* bitmask: 1 << reg if initialized */
-	int8_t map_reg;		/* register holding PTR_TO_MAP, or -1 */
-	bool r0_or_null;	/* R0 holds a PTR_OR_NULL return value */
-	bool r0_writable;	/* deref of R0 may use STXW as well as LDXW */
-};
-
-static void reg_init(struct reg_state *rs, int prepend_map_reg)
-{
-	/* r1 = context pointer, r10 = frame pointer (read-only) */
-	rs->live = (1 << BPF_REG_1) | (1 << BPF_REG_10);
-	rs->map_reg = -1;
-	rs->r0_or_null = false;
-	rs->r0_writable = false;
-	if (prepend_map_reg >= 0) {
-		rs->live |= (1 << prepend_map_reg);
-		rs->map_reg = prepend_map_reg;
-	}
-}
-
-static void reg_set(struct reg_state *rs, int reg)
-{
-	rs->live |= (1 << reg);
-	/* Overwriting the tracked map reg drops the PTR_TO_MAP tag. */
-	if (reg == rs->map_reg)
-		rs->map_reg = -1;
-	/* Any write to R0 invalidates the or-null marker. */
-	if (reg == BPF_REG_0) {
-		rs->r0_or_null = false;
-		rs->r0_writable = false;
-	}
-}
-
-static void reg_clear_caller_saved(struct reg_state *rs)
-{
-	/* After a call, r0 has the return value, r1-r5 are clobbered */
-	rs->live &= ~((1 << BPF_REG_1) | (1 << BPF_REG_2) |
-		       (1 << BPF_REG_3) | (1 << BPF_REG_4) |
-		       (1 << BPF_REG_5));
-	rs->live |= (1 << BPF_REG_0);
-	if (rs->map_reg >= BPF_REG_1 && rs->map_reg <= BPF_REG_5)
-		rs->map_reg = -1;
-	/* Caller re-arms r0_or_null for or-null-returning helpers. */
-	rs->r0_or_null = false;
-	rs->r0_writable = false;
-}
-
-static int reg_pick_live(struct reg_state *rs)
-{
-	int candidates[MAX_BPF_REG];
-	int n = 0;
-
-	for (int i = 0; i < BPF_REG_10; i++) {
-		if (rs->live & (1 << i))
-			candidates[n++] = i;
-	}
-	if (n == 0)
-		return BPF_REG_1;	/* shouldn't happen, but safe fallback */
-	return candidates[rnd_modulo_u32(n)];
-}
-
-/* Pick a writable destination register (r0-r9, not r10) */
-static int reg_pick_dst(void)
-{
-	return rnd_modulo_u32(BPF_REG_10);
-}
-
-/* Random stack offset, 8-byte aligned, negative from r10 */
-static int rand_stack_offset(void)
-{
-	int slot = (rnd_modulo_u32(EBPF_STACK_SLOTS)) + 1;
-	return -(slot * 8);
 }
 
 /* ALU ops safe for the verifier (no div/mod by potential zero from reg) */
