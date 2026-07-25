@@ -549,6 +549,7 @@ static void splice_protocols_selftest(void)
 	struct iovec iov;
 	struct msghdr mh;
 	int tmpfd = -1, rdfd = -1, tx = -1, rx = -1;
+	bool have_tmpfile = false;
 	ssize_t n;
 
 	snprintf(path, sizeof(path), "%s/splice-self-test-XXXXXX",
@@ -556,6 +557,7 @@ static void splice_protocols_selftest(void)
 	tmpfd = mkstemp(path);
 	if (tmpfd < 0)
 		goto out;
+	have_tmpfile = true;
 	memset(marker, 'A', sizeof(marker));
 	if (write(tmpfd, marker, sizeof(marker)) != (ssize_t) sizeof(marker))
 		goto out;
@@ -615,7 +617,8 @@ out:
 		close(rdfd);
 	if (tmpfd >= 0)
 		close(tmpfd);
-	(void) unlink(path);
+	if (have_tmpfile)
+		(void) unlink(path);
 }
 
 static void run_iter(struct childdata *child, unsigned int iter)
