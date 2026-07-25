@@ -74,5 +74,10 @@ size_t emit_eth(struct pktb_frame *f);
 size_t emit_vlan_single(struct pktb_frame *f);
 size_t emit_vlan_double(struct pktb_frame *f);
 size_t emit_mpls(struct pktb_frame *f);
+size_t emit_ip4(struct pktb_frame *f);
+size_t emit_ip6(struct pktb_frame *f);
+size_t emit_gre_teb(struct pktb_frame *f);
+size_t emit_esp(struct pktb_frame *f);
+size_t emit_rpl_srh(struct pktb_frame *f);
 
 #endif /* _CHILDOPS_NET_PKT_BUILDER_INTERNAL_H */
