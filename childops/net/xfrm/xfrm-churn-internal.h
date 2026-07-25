@@ -350,6 +350,14 @@ struct sadb_msg {
 #define XFRM_SADDR_BE		(__be32)__builtin_bswap32(0x7f000001U)
 #define XFRM_DADDR_BE		(__be32)__builtin_bswap32(0x7f000002U)
 
+/* UDP destination port for the inner traffic.  Loopback-only inside
+ * a private netns; value functionally arbitrary; a fixed
+ * non-privileged port keeps any escaped packet trivially identifiable
+ * in a tcpdump trace during triage.  Shared with the socket-attached
+ * xfrm policy sub-mode, which connects to the same port to prime
+ * sk_dst_cache. */
+#define XFRM_INNER_PORT		34571
+
 /*
  * XFRM algorithm rotation.  Each entry is one transform the kernel
  * can install via XFRM_MSG_NEWSA.  proto picks the IPPROTO (ESP/AH/
@@ -401,5 +409,17 @@ int build_newpolicy(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 int build_delpolicy(struct nl_ctx *ctx);
 int build_allocspi(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 		   __u32 reqid, __u8 mode, __u32 seq);
+
+/*
+ * Cross-TU inner-traffic drivers.  Defined in
+ * childops/net/xfrm/xfrm-churn-traffic.c.  Each returns the count of
+ * successful sends so the caller's burst-stats stay symmetric.  The
+ * MSG_ZEROCOPY variant exists to drive esp_output's shared-frag / COW
+ * branch (esp4.c:876) that the copying sendto path never reaches.
+ */
+unsigned int drive_inner_traffic(int udp, unsigned int iters,
+				 const struct timespec *t0);
+unsigned int drive_inner_traffic_zc(int udp, unsigned int iters,
+				    const struct timespec *t0);
 
 #endif /* CHILDOPS_XFRM_CHURN_INTERNAL_H */
