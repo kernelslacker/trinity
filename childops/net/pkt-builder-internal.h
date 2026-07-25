@@ -79,5 +79,8 @@ size_t emit_ip6(struct pktb_frame *f);
 size_t emit_gre_teb(struct pktb_frame *f);
 size_t emit_esp(struct pktb_frame *f);
 size_t emit_rpl_srh(struct pktb_frame *f);
+size_t emit_vxlan(struct pktb_frame *f);
+size_t emit_geneve(struct pktb_frame *f);
+size_t emit_udp_encap(struct pktb_frame *f);
 
 #endif /* _CHILDOPS_NET_PKT_BUILDER_INTERNAL_H */
