@@ -45,7 +45,8 @@ bool parse_cache_options(int opt, const char *name, char *arg)
 	if (opt != 0)
 		return false;
 
-	if (strcmp("no-warm-start", name) == 0) {
+	if (strcmp("no-minicorpus-warm-start", name) == 0 ||
+	    strcmp("no-warm-start", name) == 0) {
 		no_warm_start = true;
 		return true;
 	}
@@ -71,6 +72,14 @@ bool parse_cache_options(int opt, const char *name, char *arg)
 	}
 
 	if (strcmp("no-chain-warm-start", name) == 0) {
+		no_chain_warm_start = true;
+		return true;
+	}
+
+	if (strcmp("hermetic", name) == 0) {
+		no_warm_start = true;
+		no_kcov_warm_start = true;
+		no_cmp_hints_warm_start = true;
 		no_chain_warm_start = true;
 		return true;
 	}
