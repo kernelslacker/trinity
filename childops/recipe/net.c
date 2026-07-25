@@ -501,7 +501,7 @@ bool recipe_fsnotify_xwatch(bool *unsupported)
 	ssize_t r __unused__;
 	bool ok = false;
 
-	snprintf(path, sizeof(path), "/tmp/trinity-recipe-fsx-%d-%u",
+	snprintf(path, sizeof(path), "%s/trinity-recipe-fsx-%d-%u", trinity_tmpdir_abs(),
 		 (int)mypid(), rnd_u32());
 
 	wfd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
