@@ -203,6 +203,12 @@ enum {
 
 	BPF_ATTR_BTF_LOAD_FIELDS_N	= 8,
 	BPF_ATTR_INFO_FIELDS_N		= 3,
+
+	BPF_ATTR_ENABLE_STATS_FIELDS_N	= 1,
+	BPF_ATTR_ITER_CREATE_FIELDS_N	= 2,
+	BPF_ATTR_TOKEN_CREATE_FIELDS_N	= 2,
+	BPF_ATTR_TASK_FD_QUERY_FIELDS_N	= 9,
+	BPF_ATTR_RAW_TRACEPOINT_FIELDS_N	= 3,
 };
 
 extern const struct struct_field bpf_attr_MAP_CREATE_fields[BPF_ATTR_MAP_CREATE_FIELDS_N];
@@ -213,19 +219,19 @@ extern const struct struct_field bpf_attr_MAP_ELEM_fields[BPF_ATTR_MAP_ELEM_FIEL
 extern const struct struct_field bpf_attr_GET_ID_fields[];
 extern const struct struct_field bpf_attr_LINK_UPDATE_fields[BPF_ATTR_LINK_UPDATE_FIELDS_N];
 extern const struct struct_field bpf_attr_LINK_DETACH_fields[BPF_ATTR_LINK_DETACH_FIELDS_N];
-extern const struct struct_field bpf_attr_ENABLE_STATS_fields[];
-extern const struct struct_field bpf_attr_ITER_CREATE_fields[];
+extern const struct struct_field bpf_attr_ENABLE_STATS_fields[BPF_ATTR_ENABLE_STATS_FIELDS_N];
+extern const struct struct_field bpf_attr_ITER_CREATE_fields[BPF_ATTR_ITER_CREATE_FIELDS_N];
 extern const struct struct_field bpf_attr_PROG_BIND_MAP_fields[BPF_ATTR_PROG_BIND_MAP_FIELDS_N];
-extern const struct struct_field bpf_attr_TOKEN_CREATE_fields[];
+extern const struct struct_field bpf_attr_TOKEN_CREATE_fields[BPF_ATTR_TOKEN_CREATE_FIELDS_N];
 extern const char *const bpf_attr_query_arrays[BPF_ATTR_QUERY_ARRAYS_N];
 extern const struct struct_field bpf_attr_QUERY_fields[BPF_ATTR_QUERY_FIELDS_N];
-extern const struct struct_field bpf_attr_TASK_FD_QUERY_fields[];
+extern const struct struct_field bpf_attr_TASK_FD_QUERY_fields[BPF_ATTR_TASK_FD_QUERY_FIELDS_N];
 extern const struct struct_field bpf_attr_BTF_LOAD_fields[BPF_ATTR_BTF_LOAD_FIELDS_N];
 extern const char *const bpf_attr_batch_arrays[BPF_ATTR_BATCH_ARRAYS_N];
 extern const struct struct_field bpf_attr_BATCH_fields[BPF_ATTR_BATCH_FIELDS_N];
 extern const struct struct_field bpf_attr_TEST_fields[BPF_ATTR_TEST_FIELDS_N];
 extern const struct struct_field bpf_attr_INFO_fields[BPF_ATTR_INFO_FIELDS_N];
-extern const struct struct_field bpf_attr_RAW_TRACEPOINT_fields[];
+extern const struct struct_field bpf_attr_RAW_TRACEPOINT_fields[BPF_ATTR_RAW_TRACEPOINT_FIELDS_N];
 #ifdef USE_BPF_PROG_STREAM_READ
 extern const struct struct_field bpf_attr_PROG_STREAM_READ_fields[BPF_ATTR_PROG_STREAM_READ_FIELDS_N];
 #endif
