@@ -52,6 +52,14 @@ void post_bpf_prog_get_fd_by_id(int fd);
 void post_bpf_prog_attach(unsigned long ret, bool attr_readable,
 			  union bpf_attr *attr);
 
+/* Link family (defined in syscalls/bpf-link.c). */
+void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_link_update(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_link_detach(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_iter_create(union bpf_attr *attr, struct syscallrecord *rec);
+void post_bpf_link_create(int fd, bool attr_readable, union bpf_attr *attr);
+void post_bpf_link_get_fd_by_id(int fd);
+
 #endif	/* USE_BPF */
 
 #endif	/* SYSCALLS_BPF_INTERNAL_H */
