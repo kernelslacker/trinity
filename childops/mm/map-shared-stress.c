@@ -38,9 +38,9 @@
  *   - Sibling worker count is fixed at MAP_SHARED_STRESS_WORKERS (2)
  *     and every fork is drained with waitpid_eintr before this op
  *     returns.
- *   - Backing file lives under $TMPDIR (falling back to /tmp) with a
- *     unique per-invocation name; unlinked immediately after open so
- *     an abort cannot leak files.
+ *   - Backing file lives under trinity_tmpdir_abs() with a unique
+ *     per-invocation name; unlinked immediately after open so an
+ *     abort cannot leak files.
  *   - If the initial file create/mmap probe fails, latch
  *     unsupported=true and no-op on every subsequent call, mirroring
  *     the sibling childops' unsupported-latch pattern.
@@ -50,6 +50,7 @@
  */
 
 #include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -84,24 +85,18 @@ static bool map_shared_stress_unsupported;
 static bool map_shared_stress_probed;
 
 /*
- * Open a fresh backing file under $TMPDIR (or /tmp), ftruncate it to
+ * Open a fresh backing file under trinity_tmpdir_abs(), ftruncate it to
  * MAP_SHARED_STRESS_FILE_BYTES, and unlink the path immediately so an
  * unexpected exit cannot leak the file.  Returns the fd on success,
  * -1 on failure with the unsupported latch armed for future calls.
  */
 static int open_backing_file(void)
 {
-	const char *tmp = getenv("TMPDIR");
-	char path[64];
+	char path[PATH_MAX + 32];
 	int fd;
-	int n;
 
-	if (tmp == NULL || *tmp == '\0')
-		tmp = "/tmp";
-
-	n = snprintf(path, sizeof(path), "%s/trinity-mss-XXXXXX", tmp);
-	if (n <= 0 || (size_t)n >= sizeof(path))
-		return -1;
+	snprintf(path, sizeof(path), "%s/trinity-mss-XXXXXX",
+		 trinity_tmpdir_abs());
 
 	fd = mkstemp(path);
 	if (fd < 0)
