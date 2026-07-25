@@ -238,4 +238,10 @@ struct esp_crafted_rx_iter_ctx {
 	unsigned int stack_depth;
 };
 
+/* esp-crafted-rx-helpers.c */
+__u16 esprx_ip_csum16(const void *data, size_t len);
+uint8_t esprx_pick_inner_proto(void);
+uint8_t esprx_pick_inner_trunc_len(void);
+__u32 esprx_pick_esp_seq(void);
+
 #endif /* _CHILDOPS_NET_ESP_CRAFTED_RX_INTERNAL_H */
