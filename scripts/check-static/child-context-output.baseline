@@ -16,8 +16,8 @@ childops/net/ipvs-sysctl-writer.c:warn_once_unsupported_ipvs_sysctl
 childops/net/mpls-route-churn.c:latch_ns_unsupported_lwtunnel
 childops/net/mpls-route-churn.c:latch_ns_unsupported_mpls
 childops/net/mpls-route-churn.c:maybe_modprobe_once
-childops/net/xfrm/nat-t-churn.c:nat_t_churn_v6
-childops/net/xfrm/nat-t-churn.c:open_encap_udp6
+childops/net/xfrm/nat-t-churn-traffic.c:nat_t_churn_v6
+childops/net/xfrm/nat-t-churn-traffic.c:open_encap_udp6
 childops/net/xfrm/nat-t-churn-setup.c:warn_once_unsupported
 childops/net/netfilter/nftables/churn.c:warn_once_unsupported_nftables
 childops/mm/numa-migration-churn.c:parse_online_nodes
