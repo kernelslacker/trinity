@@ -87,6 +87,57 @@ int helper_call_insns(const struct helper_desc *h, bool *need_init);
 const struct helper_desc *
 pick_helper_satisfiable(struct helper_set hs, const struct reg_state *rs);
 
+/* Program size limits */
+#define TIER1_MIN_INSNS		5
+#define TIER1_MAX_INSNS		64
+
+/*
+ * Lottery weight for emitting an arg-bearing helper call inside tier 1's
+ * main dispatch.  Picked a touch under the map-fd weight so call-storms
+ * don't crowd out scalar coverage — the tier 2 dedicated sub-strategy
+ * below provides a second, deterministic source.
+ */
+#define HELPER_CALL_WEIGHT_PCT		8
+
+/*
+ * Lottery weight for emitting the NULL-check + deref idiom after any
+ * PTR_OR_NULL-returning helper leaves R0 holding a possibly-NULL
+ * pointer.  Lower than HELPER_CALL_WEIGHT_PCT because the
+ * deref carries a runtime prereq (live or-null pointer in R0) the
+ * dispatch cannot force, so most rolls would be no-ops anyway -- the
+ * marker survives across iterations that don't touch R0, giving 3% a
+ * chance to fire on any of several iterations after a lookup lands.
+ * The same weight covers every helper in the or-null set; widening the
+ * set keeps the aggregate gate reasonable since per-helper firing rate
+ * still tracks how often each helper is picked from the table.
+ */
+#define MAP_VAL_DEREF_WEIGHT_PCT	3
+
+/* ALU ops safe for the verifier (no div/mod by potential zero from reg) */
+static const int alu_ops[] __attribute__((unused)) = {
+	BPF_ADD, BPF_SUB, BPF_MUL, BPF_OR, BPF_AND,
+	BPF_LSH, BPF_RSH, BPF_XOR, BPF_MOV, BPF_ARSH,
+};
+
+/* Jump comparison ops (used with forward-only offsets) */
+static const int jmp_ops[] __attribute__((unused)) = {
+	BPF_JEQ, BPF_JGT, BPF_JGE, BPF_JSET, BPF_JNE,
+	BPF_JSGT, BPF_JSGE, BPF_JLT, BPF_JLE, BPF_JSLT, BPF_JSLE,
+};
+
+/* Memory access sizes */
+static const int mem_sizes[] __attribute__((unused)) = { BPF_B, BPF_H, BPF_W, BPF_DW };
+
+struct bpf_insn;
+
+int emit_tier1_helper_call(struct bpf_insn *insns, int pos,
+			    int body_len, struct reg_state *rs,
+			    struct helper_set hs);
+int emit_tier1_map_val_deref(struct bpf_insn *insns, int pos,
+			      struct reg_state *rs);
+int gen_tier1(struct bpf_insn *insns, int max_insns,
+	      struct helper_set hs, int prepend_map_reg);
+
 #endif /* USE_BPF */
 
 #endif /* NET_BPF_EBPF_INTERNAL_H */
