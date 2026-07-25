@@ -60,6 +60,11 @@ void sanitise_bpf_iter_create(union bpf_attr *attr, struct syscallrecord *rec);
 void post_bpf_link_create(int fd, bool attr_readable, union bpf_attr *attr);
 void post_bpf_link_get_fd_by_id(int fd);
 
+/* BTF family (defined in syscalls/bpf-btf.c). */
+void sanitise_bpf_btf_load(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_obj_get_info_by_fd(union bpf_attr *attr, struct syscallrecord *rec);
+void post_bpf_btf_fd(int fd);
+
 #endif	/* USE_BPF */
 
 #endif	/* SYSCALLS_BPF_INTERNAL_H */
