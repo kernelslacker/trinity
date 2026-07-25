@@ -24,7 +24,16 @@ struct kcov_pc_result;
 
 /* pick-common.c -- table selection and validation helpers, shared by
  * the three picker arms in pickers.c.  choose_syscall_table is public
- * via include/syscall.h; the rest are cluster-private. */
+ * via include/syscall.h; the rest are cluster-private.
+ *
+ * load_active_syscall_count centralises the RELAXED load + validate +
+ * log for the shm active-syscall counts.  Callers detect corruption
+ * via the returned value being > MAX_NR_SYSCALL and route into their
+ * existing FAIL / skip path; the raw observed value is returned so
+ * forensics from the log line and the caller's decision are
+ * consistent. */
+unsigned int load_active_syscall_count(const unsigned int *shm_count,
+				       const char *arch_label);
 void note_validation_success(unsigned int syscallnr, bool do32);
 void note_validation_failure(unsigned int syscallnr, bool do32);
 bool expensive_accept(unsigned int nr, bool do32);
@@ -33,12 +42,46 @@ void cost_pool_selector_live_note(unsigned int nr, bool do32);
 void cost_pool_selector_predraw_note(unsigned int nr, bool do32);
 bool syscall_in_group(unsigned int nr, bool do32, unsigned int target_group);
 
+/*
+ * Acceptance-weight scale for the cold/untried-syscall fallback path in
+ * set_syscall_nr_coverage_frontier().  Engaged when the frontier ring
+ * is silent (max_weight <= 2) so the picker has a per-syscall signal
+ * to steer on instead of degenerating to plain uniform draw -- see the
+ * fallback gate for the full rationale.
+ *
+ * Sized at 256 so the integer-divide inverse-productivity transform
+ * (SCALE - floor(SCALE * edges / calls)) resolves at ~0.4%/step: even
+ * a syscall with a handful of productive calls in the high-thousands
+ * range stays distinguishable from a never-tried slot instead of
+ * flooring the divide to 0 and collapsing to MAX.  256 is also the
+ * Q8.8 unit used by adapt_budget's mult table -- staying on a
+ * power-of-two keeps the rnd_modulo_u32(SCALE + 1) draw in the same
+ * Lemire fast-path the soft-max path already uses.
+ *
+ * Shared between the frontier-picker cluster (frontier_cold_weight,
+ * cmp_frontier_weight, set_syscall_nr_coverage_frontier): both weight
+ * helpers cap their return at FRONTIER_COLD_SCALE and the coverage-
+ * frontier accept gate consumes the same scale when mixing that
+ * weight into its acceptance probability.
+ */
+#define FRONTIER_COLD_SCALE 256
+
+/*
+ * static inline so each translation unit that includes this header
+ * gets its own copy without ODR headaches.  Used by the frontier
+ * weight helpers and by the coverage-frontier accept gate.
+ */
+static inline unsigned ilog2_ul(unsigned long x)
+{
+	return x ? (unsigned)(63 - __builtin_clzl(x)) : 0;
+}
+
 /* pickers.c -- top-level picker dispatch, called from dispatch_step
  * in dispatch.c.  set_syscall_nr_random is public via
  * include/syscall.h; the other picker arms
  * (set_syscall_nr_heuristic, set_syscall_nr_coverage_frontier) and
- * their helpers (frontier_cold_weight, cmp_frontier_weight,
- * ilog2_ul) are file-scope static inside pickers.c. */
+ * their helpers (frontier_cold_weight, cmp_frontier_weight) are
+ * file-scope static inside pickers.c. */
 bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child);
 
 /* chain-subst.c -- rewrite rec->aN in place for chain-substituted

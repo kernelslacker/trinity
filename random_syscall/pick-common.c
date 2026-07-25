@@ -81,14 +81,9 @@
  * slot loads; the val == 0 retry absorbs any tear on the paired
  * entry).  Consumes no RNG so seeded-run determinism is preserved.
  *
- * Prototype duplicated in pickers.c (the other caller): not hoisted
- * into random-syscall-internal.h yet -- promote when a caller
- * appears outside this two-file cluster.  The local prototype
- * silences -Wmissing-prototypes for the non-static definition
- * without dragging a header edit into this fix.
+ * Prototype lives in random-syscall-internal.h now that the picker
+ * arms carved out of pickers.c each want a caller.
  */
-unsigned int load_active_syscall_count(const unsigned int *shm_count,
-				       const char *arch_label);
 unsigned int load_active_syscall_count(const unsigned int *shm_count,
 				       const char *arch_label)
 {
