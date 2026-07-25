@@ -207,7 +207,7 @@ bool recipe_vfs_leases(bool *unsupported)
 	int lease;
 	bool ok = false;
 
-	snprintf(path, sizeof(path), "/tmp/trinity-recipe-lease-%d-%u",
+	snprintf(path, sizeof(path), "%s/trinity-recipe-lease-%d-%u", trinity_tmpdir_abs(),
 		 (int)mypid(), rnd_u32());
 
 	fd = open(path, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
