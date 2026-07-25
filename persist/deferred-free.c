@@ -424,7 +424,7 @@ void deferred_alloc_track(void *ptr, size_t size)
 	if (alloc_track_unlock() != 0)
 		return;
 
-	slot = alloc_track_head % ALLOC_TRACK_SIZE;
+	slot = alloc_track_head & (ALLOC_TRACK_SIZE - 1);
 	displaced = alloc_track[slot];
 
 	alloc_track[slot] = ptr;
@@ -449,25 +449,26 @@ void deferred_alloc_track(void *ptr, size_t size)
  * the slot); false if the pointer was not in the side-set, meaning the
  * caller is about to free something __zmalloc() never produced.
  *
- * Hash-gated fast reject: misses short-circuit without touching the
- * alloc_track[] array at all.  This is the path that fires when a
- * fuzzed scribble arrives at deferred_free_enqueue (heap-shape, not
- * malloc-returned), so the reject is O(1).
- *
- * Hits proceed to the backward scan to locate the slot for the mirror
- * clear.  The scan stays cheap in practice because post handlers free
+ * Backward scan from head against alloc_track[] (source of truth) --
+ * NO hash-lookup fast-reject.  A miss on the hash is not proof of
+ * absence: an aggressive glibc address reuse can land the same pointer
+ * in two different alloc_track[] slots (deferred_alloc_track does not
+ * scrub the older slot when its insert idempotently no-ops on the
+ * duplicate), and a later displaced-eviction of the older slot then
+ * removes the hash entry while the newer slot still holds the pointer.
+ * Treating a hash miss as "untracked" in that state would leak the
+ * newer slot instead of freeing it, so the array is the definitive
+ * check.  In practice the scan stays cheap because post handlers free
  * a few syscalls after the matching __zmalloc -- the hit lives near
  * head (PATHNAME / IOVEC / SOCKADDR generators enqueue 1-3 pointers
- * per arg).  The fall-through return false at the end covers the
- * duplicate-ptr edge case where the hash records membership but the
- * specific slot has rotated out.
+ * per arg).
  */
 static bool alloc_track_consume(void *ptr)
 {
 	unsigned int idx;
 	unsigned int i;
 
-	if (!alloc_track_lookup(ptr))
+	if (ptr == NULL)
 		return false;
 
 	idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
