@@ -322,4 +322,11 @@ int nat_t_build_newsa6(struct nl_ctx *ctx, __be32 spi, __u8 mode, bool esn,
 		       const struct nat_t_alg *crypt);
 int nat_t_build_delsa6(struct nl_ctx *ctx, __be32 spi);
 
+/* nat-t-churn-cleanup.c -- nat_keepalive construct-error and teardown
+ * driver.  One call = one NEWSA-that-arms-a-worker plus a matching
+ * DELSA, walking both the construct-error cleanup and the successful
+ * teardown paths depending on the rolled (direction, encap, interval)
+ * triple's coherence. */
+void nat_keepalive_err_cycle(struct nl_ctx *ctx);
+
 #endif /* CHILDOPS_XFRM_NAT_T_CHURN_INTERNAL_H */
