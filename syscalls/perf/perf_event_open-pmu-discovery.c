@@ -799,3 +799,62 @@ unsigned long long random_tracepoint_config(void)
 		return rnd_u32() & 0xfff;
 	return rand64();
 }
+
+long long random_sysfs_config(__u32 *type,
+			__u64 *config1,
+			__u64 *config2) {
+
+	int i,j;
+	long long c=0,c1=0,c2=0;
+
+	if (num_pmus==0) {
+		/* PMU sysfs enumeration failed or found no PMUs.  Fall back to
+		 * fully random config values so the generator remains usable
+		 * and avoids a modulo/divide-by-zero path. */
+		*type=rand32();
+		*config1=rand64();
+		return rand64();
+	}
+
+	i=rnd_modulo_u32(num_pmus);
+
+	*type=pmus[i].type;
+
+	switch(rnd_modulo_u32(3)) {
+		/* Random by Format */
+		case 0:
+			if (pmus[i].num_formats==0) goto out;
+			for(j=0;j<pmus[i].num_formats;j++) {
+				/* 50% chance of having field set */
+				if (rnd_modulo_u32(2)) {
+					if (pmus[i].formats[j].field==FIELD_CONFIG) {
+						c|=(rand64()&pmus[i].formats[j].mask);
+					} else if (pmus[i].formats[j].field==FIELD_CONFIG1) {
+						c1|=(rand64()&pmus[i].formats[j].mask);
+					} else {
+						c2|=(rand64()&pmus[i].formats[j].mask);
+					}
+				}
+			}
+			break;
+
+
+		/* Random by generic event */
+		case 1:
+			if (pmus[i].num_generic_events==0) goto out;
+			j=rnd_modulo_u32(pmus[i].num_generic_events);
+			c=pmus[i].generic_events[j].config;
+			c1=pmus[i].generic_events[j].config1;
+			c2=pmus[i].generic_events[j].config2;
+			break;
+
+		case 2:
+			goto out;
+	}
+	*config1=c1;
+	*config2=c2;
+	return c;
+out:
+	*config1=rnd_modulo_u32(64);
+	return rnd_modulo_u32(64);
+}
