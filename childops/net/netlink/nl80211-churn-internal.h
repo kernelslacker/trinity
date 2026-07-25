@@ -140,4 +140,15 @@ static inline int genl_send_recv_retry(struct genl_ctx *ctx, void *msg, size_t l
 	return -EAGAIN;
 }
 
+/*
+ * Cross-TU phase entry points.  Each declaration widens its
+ * definition's linkage from file-static (in the pre-carve monolithic
+ * TU) to external so the top-level coordinator in nl80211-churn.c can
+ * call it across the TU boundary.  See the definition site for the
+ * per-function contract.
+ */
+
+/* Discovery/setup phase -- nl80211-churn-discovery.c */
+bool hwsim_present(struct genl_ctx *ctx);
+
 #endif /* CHILDOPS_NL80211_CHURN_INTERNAL_H */
