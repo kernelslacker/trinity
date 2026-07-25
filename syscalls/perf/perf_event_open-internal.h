@@ -88,4 +88,9 @@ long long random_branch_sample_type(void);
 
 bool pick_perf_tuple(struct perf_event_attr *attr);
 
+enum csfu_bucket;
+void maybe_fill_perf_attr_body(struct perf_event_attr *attr,
+			      enum csfu_bucket bucket,
+			      int group_leader);
+
 #endif /* SYSCALLS_PERF_EVENT_OPEN_INTERNAL_H */
