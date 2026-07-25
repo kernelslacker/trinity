@@ -28,6 +28,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <linux/futex.h>
 #include <pthread.h>
 #include <signal.h>
@@ -241,9 +242,11 @@ static void cleanup_dup2_race(struct racer_shared *s)
 
 static bool setup_ftruncate_race(struct racer_shared *s)
 {
-	char path[] = "trinity-racer-XXXXXX";
+	char path[PATH_MAX + 32];
 	int fd;
 
+	snprintf(path, sizeof(path), "%s/trinity-racer-XXXXXX",
+		 trinity_tmpdir_abs());
 	fd = mkstemp(path);
 	if (fd < 0)
 		return false;
