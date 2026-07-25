@@ -182,4 +182,7 @@ void bridge_fdb_stp_iter_stp_toggle(struct bridge_fdb_stp_iter_ctx *ctx);
 /* bridge-fdb-stp-traffic.c */
 void bridge_fdb_stp_iter_traffic_burst(struct bridge_fdb_stp_iter_ctx *ctx);
 
+/* bridge-fdb-stp-vlan-mass.c */
+void bridge_vlan_mass_add(struct nl_ctx *ctx);
+
 #endif /* _CHILDOPS_NET_BRIDGE_FDB_STP_INTERNAL_H */
