@@ -65,6 +65,9 @@ void sanitise_bpf_btf_load(union bpf_attr *attr, struct syscallrecord *rec);
 void sanitise_bpf_obj_get_info_by_fd(union bpf_attr *attr, struct syscallrecord *rec);
 void post_bpf_btf_fd(int fd);
 
+/* Schema-aware bpf_attr fallback (defined in syscalls/bpf-fallback.c). */
+void sanitise_bpf_default(union bpf_attr *attr, struct syscallrecord *rec);
+
 #endif	/* USE_BPF */
 
 #endif	/* SYSCALLS_BPF_INTERNAL_H */
