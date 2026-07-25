@@ -63,4 +63,16 @@ static inline void put_be32(uint8_t *p, uint32_t v)
 	p[3] = (uint8_t)v;
 }
 
+/*
+ * Per-layer emitters.  Each writes its manifest.nominal_len bytes at
+ * frame->buf[frame->len] and returns that byte count.  Split out so
+ * the L2 / L3 / L4 families live in separate translation units; the
+ * emitters[] dispatch table in pkt-builder.c still name-resolves each
+ * of them through this header.
+ */
+size_t emit_eth(struct pktb_frame *f);
+size_t emit_vlan_single(struct pktb_frame *f);
+size_t emit_vlan_double(struct pktb_frame *f);
+size_t emit_mpls(struct pktb_frame *f);
+
 #endif /* _CHILDOPS_NET_PKT_BUILDER_INTERNAL_H */
