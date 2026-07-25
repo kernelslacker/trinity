@@ -249,4 +249,10 @@ int install_null_esp_sa(struct nl_ctx *ctx, __be32 spi, __u32 reqid,
 			bool v6);
 int delete_esp_sa(struct nl_ctx *ctx, __be32 spi, bool v6);
 
+/* esp-crafted-rx-packet.c */
+size_t esprx_build_v4_frame(uint8_t *buf, __be32 spi, __u32 seq,
+			    uint8_t inner_proto, uint8_t trunc_len);
+size_t esprx_build_v6_frame(uint8_t *buf, __be32 spi, __u32 seq,
+			    uint8_t inner_proto, uint8_t trunc_len);
+
 #endif /* _CHILDOPS_NET_ESP_CRAFTED_RX_INTERNAL_H */
