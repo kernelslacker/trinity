@@ -10,6 +10,13 @@
 #include <stdint.h>
 
 /*
+ * Shared mutable state.  Defined in utils/self_cgroup.c (which owns
+ * setup/cleanup); sibling TUs read/write these through the extern
+ * declarations below.
+ */
+extern int cg_workload_fd;	/* O_DIRECTORY on cg_workload; -1 if unset */
+
+/*
  * Read MemTotal from /proc/meminfo and return it as bytes.  Returns 0
  * on read failure -- callers treat that as "cannot determine host
  * memory" and abort setup.
