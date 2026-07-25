@@ -243,7 +243,7 @@ void chain_corpus_maybe_snapshot(void);
  * Snapshot a random saved chain into @out.  Returns true on success
  * (out->len populated, out->steps[] copied), false if the corpus is
  * empty.  The snapshot is intentionally lockless -- see the long
- * comment in chain_corpus_pick() (sequence.c) for the race tolerance
+ * comment in chain_corpus_pick() (chain-corpus.c) for the race tolerance
  * argument.  Callers MUST validate out->len before indexing
  * out->steps[]: a torn lockless read or wild write into the shared
  * slot can leave len outside [1, MAX_SEQ_LEN].  run_sequence_chain()

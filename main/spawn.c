@@ -33,7 +33,7 @@
  * Parent-private (the canary picker is parent-only).  Written from
  * fork_children() when consecutive_fork_failures crosses
  * FORK_PRESSURE_DRAIN_THRESHOLD and --fork-pressure-drain is set;
- * read from child-canary.c via fork_pressure_drain_active().  Read
+ * read from child-canary-policy.c via fork_pressure_drain_active().  Read
  * RELAXED -- the picker only needs eventual consistency; a one-tick
  * lag in seeing pressure raised or lifted is fine. */
 static unsigned long fork_pressure_active_until;

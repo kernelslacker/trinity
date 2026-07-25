@@ -207,7 +207,7 @@ extern bool no_chain_warm_start;
  * --chain-resource-typing: bias chain generation to pair resource
  * producers (e.g. epoll_create1, socket, io_uring_setup) with their
  * consumers (e.g. epoll_ctl, sendmsg, io_uring_enter).  Consulted by
- * the chain executor in sequence.c AFTER a step whose (nr, args) match
+ * the chain executor in chain-exec.c AFTER a step whose (nr, args) match
  * a producer in the small high-confidence resource table:
  *
  *   OFF     - default.  Byte-identical to a build without this flag:
@@ -257,7 +257,7 @@ extern unsigned int kcov_trace_size;
 /*
  * --frontier-noise-sample=N: SHADOW-ONLY per-syscall clean-vs-noisy
  * attribution sampler.  When N > 0, every Nth per-syscall enable/disable
- * bracket in dispatch/syscall.c snapshots the shared edges_found counter
+ * bracket in dispatch/syscall-exec.c snapshots the shared edges_found counter
  * before enable and after disable, records the delta into
  * kcov_shm->per_syscall.per_syscall_edges_noisy[nr], and bumps
  * per_syscall_noisy_samples[nr] so a reader can scale the sampled sum

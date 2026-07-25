@@ -464,7 +464,7 @@ static void dump_stats_render_childop_latch_reason(void)
 }
 
 /* SHADOW score-driven recommendation counters bumped from
- * close_window_and_decide() in child-canary.c.  Divergence
+ * close_window_and_decide() in child-canary-state.c.  Divergence
  * between these and the live promote/demote count
  * (canary_op_state.total_demotions / total_promotions, surfaced
  * via canary_queue_summary()) is the signal the 75.2.B

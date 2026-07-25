@@ -12,8 +12,8 @@
  *
  * munge_process stays static -- only init_child_setup_sandbox calls
  * it and both live here.  init_child_setup_sandbox sheds its static
- * linkage so init_child (still in child-init.c during the carve)
- * can call it; declaration added to include/child-internal.h.
+ * linkage so init_child (in child-init-core.c) can call it;
+ * declaration added to include/child-internal.h.
  * set_make_it_fail / open_fail_nth / open_tainted_fd / use_fpu
  * remain declared in include/child-internal.h from the clean.c carve.
  */

@@ -6,13 +6,13 @@
  * get_map_with_prot() / common_set_mmap_ptr_len() observability.
  *
  * Bespoke (non-category) RAW group.  All bumps RELAXED on shm->stats
- * from mm/maps.c (same writer set, same atomic convention, same
+ * from mm/maps-*.c (same writer set, same atomic convention, same
  * shm->stats home), so no new hot cross-child synchronisation class is
  * introduced.  The surrounding struct stats_s composes an instance of
  * struct maps_stats as its "maps" member.
  */
 struct maps_stats {
-	/* Bumped by get_map_handle() in mm/maps.c when the 1000-iteration
+	/* Bumped by get_map_handle() in mm/maps-pick.c when the 1000-iteration
 	 * random-pool draw loop exhausts its retry budget without finding a
 	 * usable map handle.  Most commonly fires because OBJ_LOCAL OBJ_MMAP_*
 	 * pools are sparse or empty (TESTFILE in particular has no producer in
@@ -76,7 +76,7 @@ struct maps_stats {
 	/* Map subsystem scan-cost / health observability.
 	 * Pure attribution; no behaviour change.  All bumps RELAXED on
 	 * shm->stats from get_map_handle / get_map_with_prot /
-	 * common_set_mmap_ptr_len (mm/maps.c) — mirrors the existing
+	 * common_set_mmap_ptr_len (mm/maps-*.c) — mirrors the existing
 	 * maps_reject_* class above (same writer set, same atomic
 	 * convention, same shm->stats home), so no new hot cross-child
 	 * synchronisation class is introduced.
@@ -143,7 +143,7 @@ struct maps_stats {
 
 	/* SAMPLED shadow telemetry over get_map_handle()'s
 	 * pool-pick reject loop.  A per-child call counter
-	 * (see mm/maps.c) gates 1-in-N calls to bracket the
+	 * (see mm/maps-pick.c) gates 1-in-N calls to bracket the
 	 * for-loop body with rdtsc; on sampled calls the
 	 * total cycles across pick_mmap_pool_type +
 	 * get_random_object + obj_ptr_in_user_va_band +

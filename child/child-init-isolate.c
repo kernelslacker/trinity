@@ -7,8 +7,8 @@
  * / sandbox / runtime setup helpers.
  *
  * init_child_isolate_io sheds its static linkage so init_child
- * (still in child-init.c during the carve) can call it across the
- * new TU boundary; declaration added to include/child-internal.h.
+ * (in child-init-core.c) can call it across the TU boundary;
+ * declaration added to include/child-internal.h.
  */
 
 #include <errno.h>

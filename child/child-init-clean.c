@@ -7,9 +7,9 @@
  * setup helpers.
  *
  * set_make_it_fail, open_fail_nth, open_tainted_fd, and use_fpu shed
- * their `static` linkage here so init_child_setup_sandbox (still in
- * child-init.c during the split) can reach them across the TU
- * boundary; declarations are in include/child-internal.h.
+ * their `static` linkage here so init_child_setup_sandbox (now in
+ * child-init-sandbox.c) can reach them across the TU boundary;
+ * declarations are in include/child-internal.h.
  * disable_coredumps, enable_coredumps, read_tainted_mask, and
  * clean_childdata were already exposed via child-internal.h /
  * child-api.h.

@@ -89,7 +89,7 @@ void mptcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *trip
 
 /*
  * grammar_mptcp — coherent walk for IPPROTO_MPTCP sockets driven by
- * the per-family grammar dispatcher (net/socket-family-grammar.c).
+ * the per-family grammar dispatcher (net/socket-family-grammar-core.c).
  *
  * MPTCP is not its own AF_*; it lives under AF_INET / AF_INET6 with
  * IPPROTO_MPTCP / SOCK_STREAM.  This entry sits next to the existing

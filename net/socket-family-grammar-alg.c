@@ -3,7 +3,7 @@
  * net/socket-family-grammar.c so the ctx-aware AF_ALG state (key_set,
  * alg type, authsize/assoclen staged at SET_AEAD, splice pipe pair)
  * and the AF_ALG-only cmsg / splice helpers live in one TU.  The
- * coordinator (still in socket-family-grammar.c) dispatches to these
+ * coordinator (in socket-family-grammar-core.c) dispatches to these
  * from its SFG_PHASE_ALG_* case bodies via the prototypes in
  * socket-family-grammar-internal.h.
  */

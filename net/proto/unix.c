@@ -117,7 +117,7 @@ const struct netproto proto_unix = {
 
 /*
  * grammar_unix — coherent walk for AF_UNIX driven by the per-family
- * grammar dispatcher (net/socket-family-grammar.c).
+ * grammar dispatcher (net/socket-family-grammar-core.c).
  *
  * walk_setsockopts fires the SO_PASS* toggle sequence in order:
  *   SO_PASSCRED -> SO_PASSPIDFD -> SO_PASSSEC -> SO_PASSRIGHTS.

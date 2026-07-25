@@ -179,7 +179,7 @@ static const struct faultfn read_faultfns[] = {
 /*
  * Snapshot the caller's map into a stack-local and re-fstat the backing
  * fd to clamp the walkable extent against current i_size.  Mirrors the
- * defense already present in dirty_random_mapping (mm/maps.c) so every
+ * defense already present in dirty_random_mapping (mm/maps-dirty.c) so every
  * read entry path benefits from a fresh clamp instead of just the
  * dirty_random_mapping caller.
  *

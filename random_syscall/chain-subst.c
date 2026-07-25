@@ -54,7 +54,7 @@
 /*
  * Probability (in percent) that, when a substitute retval is offered by
  * the sequence-chain executor, one randomly-chosen arg slot is overwritten
- * with it.  Exposed here (rather than in sequence.c) because the substitution
+ * with it.  Exposed here (rather than in chain-exec.c) because the substitution
  * itself happens between argument generation and dispatch, which lives in
  * this file.  Tunable independently of the chain length distribution.
  */

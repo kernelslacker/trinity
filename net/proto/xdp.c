@@ -257,7 +257,7 @@ const struct netproto proto_xdp = {
 
 /*
  * grammar_xdp — coherent walk for AF_XDP driven by the per-family
- * grammar dispatcher (net/socket-family-grammar.c).
+ * grammar dispatcher (net/socket-family-grammar-core.c).
  *
  * walk_setsockopts walks the canonical UMEM/ring setup
  * (XDP_UMEM_REG → fill ring → completion ring → RX_RING → TX_RING)

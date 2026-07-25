@@ -91,7 +91,7 @@ static bool do_create(void)
 	 * drawn from one of these OBJ_LOCAL OBJ_MMAP_ANON entries via
 	 * get_map() -- slip through into libc free(), which then aborts
 	 * inside _int_malloc on the bogus chunk metadata at ptr-16.
-	 * The matching untrack lives in map_destructor (mm/maps.c), so
+	 * The matching untrack lives in map_destructor (mm/maps-lifecycle.c), so
 	 * destroy_object() on this entry releases the slot as well.
 	 */
 	track_shared_region((unsigned long)p, size);

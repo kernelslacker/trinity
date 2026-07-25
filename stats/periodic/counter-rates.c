@@ -241,7 +241,7 @@ static const struct {
 	/* SAMPLED get_map_handle() reject-loop cost.  cycles_sum
 	 * accumulates the total rdtsc delta across the loop body on
 	 * gated 1/N calls; cycles_count is the sample denominator.
-	 * See include/stats.h and mm/maps.c for the sampling gate. */
+	 * See include/stats.h and mm/maps-pick.c for the sampling gate. */
 	{ "maps_pick_cycles_sampled_sum",
 	  offsetof(struct stats_s, maps.pick_cycles_sampled_sum) },
 	{ "maps_pick_cycles_sampled_count",

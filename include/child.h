@@ -471,7 +471,7 @@ struct childdata {
 	 * {SFG_ILLEGAL_NONE, SFG_CONN_INIT, 0} if the child has never
 	 * fired one.  Mirrors the corrupt_ptr breadcrumb model:
 	 * owner-only writes from inside the child (sfg_publish_illegal in
-	 * net/socket-family-grammar.c, called immediately before the raw
+	 * net/socket-family-grammar-illegal.c, called immediately before the raw
 	 * illegal syscall), read by the parent's post-mortem walk to
 	 * label the crash context when the kernel oopses inside the
 	 * illegal path.  No cross-process coherence needed -- the parent

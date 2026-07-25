@@ -65,7 +65,7 @@ enum sfg_phase {
 	 * not an IP address; accept is NOT LISTEN-gated — it produces the
 	 * operation fd from a bound parent; the data leg is a MSG_MORE-
 	 * segmented cmsg-driven send/recv against the op fd).  Handled by
-	 * the executor's ctx-aware case bodies in net/socket-family-grammar.c,
+	 * the AF_ALG phase handlers in net/socket-family-grammar-alg.c,
 	 * not by the stateless (fd, triplet) sfg-> callback table.  Values
 	 * kept stable so sfg_fnv1a_step's per-walk sequence hash stays
 	 * comparable across runs.
@@ -241,7 +241,7 @@ struct socket_ctx {
 
 /*
  * Per-family grammar entry — an outer driver (run_grammar_chain in
- * net/socket-family-grammar.c) walks one of these end-to-end inside
+ * net/socket-family-grammar-core.c) walks one of these end-to-end inside
  * a single childop, with the same fd flowing through every step.
  *
  * Generalises the v1 socket_family_chain childop (84b298906961) which
@@ -324,7 +324,7 @@ struct socket_family_grammar {
 	bool (*phase_orders_apply)(const struct socket_triplet *triplet);
 };
 
-/* Registry helpers (see net/socket-family-grammar.c). */
+/* Registry helpers (see net/socket-family-grammar-core.c). */
 const struct socket_family_grammar *sfg_pick_random_active(void);
 bool sfg_can_run_default(int family);
 void sfg_mark_unsupported(int family);
@@ -395,7 +395,7 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 
 /*
  * Per-family extern declarations.  The registry array in
- * net/socket-family-grammar.c grows in lockstep with this list as
+ * net/socket-family-grammar-core.c grows in lockstep with this list as
  * each grammar lands.
  */
 extern const struct socket_family_grammar grammar_inet;

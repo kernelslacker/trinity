@@ -439,7 +439,7 @@ const struct netproto proto_alg = {
 
 /*
  * grammar_alg — coherent AF_ALG walk driven by the per-family grammar
- * dispatcher (net/socket-family-grammar.c).
+ * dispatcher (net/socket-family-grammar-core.c).
  *
  * AF_ALG's lifecycle does not fit the inet-shaped generic phase
  * vocabulary (bind carries salg_type/salg_name; accept is not LISTEN-

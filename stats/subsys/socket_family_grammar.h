@@ -3,7 +3,7 @@
 
 struct socket_family_grammar_stats {
 	/* socket-family-grammar dispatcher counters
-	 * (net/socket-family-grammar.c).  Bumped per call into
+	 * (net/socket-family-grammar-core.c).  Bumped per call into
 	 * run_grammar_chain() — runs counts every entry, completed counts
 	 * the walks that reached the data leg cleanly.  Per-family
 	 * completion counters are intentionally absent: the existing

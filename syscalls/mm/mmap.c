@@ -343,7 +343,7 @@ static void post_mmap_clamp_filebacked(struct object *new, struct syscallrecord 
  * cluster, post_mmap → memcpy SIGBUS).
  *
  * Re-snapshot into a stack-local and re-fstat right before the
- * dirty walk, mirroring dirty_random_mapping (mm/maps.c).  The
+ * dirty walk, mirroring dirty_random_mapping (mm/maps-dirty.c).  The
  * obj's stored map is left at its post-allocation extent — other
  * consumers (the OBJ_LOCAL pool walker, get_map() readers from
  * later syscalls in this child) reuse that value and may race with
@@ -429,8 +429,8 @@ static void post_mmap(struct syscallrecord *rec)
 	 * anonymous mappings no clamp fires and size stays equal to
 	 * tracked_size; setting it unconditionally documents intent and
 	 * keeps the fallback path off the hot teardown lane.  Mirrors
-	 * mmap_fd() in mm/maps.c which captures the same field at line
-	 * obj->map.tracked_size = len; before its own fstat clamp.
+	 * mmap_fd() in mm/maps-lifecycle.c which captures the same field
+	 * (obj->map.tracked_size = len) before its own fstat clamp.
 	 */
 	new->map.tracked_size = rec->a2;
 	new->map.prot = rec->a3;

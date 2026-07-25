@@ -83,9 +83,9 @@ struct run_start_baseline {
 
 static struct run_start_baseline run_start;
 
-/* CLOCK_MONOTONIC second counter -- duplicate of child-canary.c's
- * file-static helper (kept private to avoid exposing it through a
- * widely-included header for two callers).  Wall-clock-skew-immune,
+/* CLOCK_MONOTONIC second counter -- duplicate of the monotonic_seconds()
+ * helper in child-canary-state.c (kept private here to avoid pulling in
+ * child-canary-internal.h for two callers).  Wall-clock-skew-immune,
  * so a negative duration cannot trip a spurious panic on an NTP
  * step. */
 static time_t runid_monotonic_seconds(void)
