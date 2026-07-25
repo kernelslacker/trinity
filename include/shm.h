@@ -373,178 +373,35 @@ struct shm_s {
 	 * above. */
 	bool sfg_unsupported[TRINITY_PF_MAX];
 
-	/* Per-kind feature-absent latches for the vxlan_encap_churn
-	 * childop (childops/net/vxlan-encap.c).  Indexed by the file-local
-	 * enum tun_kind (0 = vxlan, 1 = gre, 2 = geneve); the indices
-	 * are stable and pinned by a _Static_assert in vxlan-encap.c.
-	 * Set when RTM_NEWLINK rejects the kind with rtnl_link_ops-not-
-	 * registered errno (absent module / CONFIG); subsequent picks
-	 * skip the kind so the unsupported attempt is paid once per
-	 * fleet rather than once per grandchild invocation.
+	/*
+	 * Per-childop feature-absent latches for childops that build
+	 * their kernel objects inside a transient userns_run_in_ns()
+	 * grandchild.  The rejection (RTM_NEWLINK / socket() / setsockopt()
+	 * / open() etc.) is observed after _exit(), so a process-local
+	 * static would die with the grandchild and every subsequent
+	 * invocation would re-attempt the same unsupported kind forever
+	 * (latch-in-grandchild bug).  RELAXED atomic load/store from
+	 * multiple grandchildren is safe -- only false -> true, and the
+	 * write is idempotent.  No auto-clear.  See
+	 * Documentation/shm-state.md (Per-childop feature-absent latches)
+	 * for per-latch trigger errnos and CONFIG dependencies.
 	 *
-	 * Must live in shm: the rejection is observed inside the
-	 * transient grandchild forked by userns_run_in_ns(), which
-	 * _exit()s after the body returns.  A process-local static
-	 * would die with the grandchild and the next invocation would
-	 * re-attempt the same unsupported kind every single time
-	 * (latch-in-grandchild bug).  No auto-clear; an absent kernel
-	 * CONFIG does not appear mid-run, same recovery story as the
-	 * sfg_unsupported gates above.  RELAXED atomic load/store from
-	 * multiple grandchildren is safe — the only transition is
-	 * false -> true and the write is idempotent. */
+	 * vxlan_encap_kind_unsupported[] and veth_xdp_kind_unsupported[]
+	 * are indexed by file-local enums whose indices are PINNED by a
+	 * _Static_assert in vxlan-encap.c and veth-asymmetric-xdp.c.
+	 */
 #define VXLAN_ENCAP_NR_KINDS 3
 	bool vxlan_encap_kind_unsupported[VXLAN_ENCAP_NR_KINDS];
-
-	/* Feature-absent latch for the ip_gre_churn childop
-	 * (childops/net/ip_gre-churn.c).  Set when RTM_NEWLINK type=gretap
-	 * rejects with the rtnl_link_ops-not-registered errno set (absent
-	 * CONFIG_NET_IPGRE / module).  Same shm-vs-static rationale as the
-	 * vxlan_encap_kind_unsupported[] block above: the rejection is
-	 * observed inside a transient userns_run_in_ns grandchild that
-	 * _exit()s after the body returns, so a process-local static would
-	 * die with the grandchild and every subsequent invocation would
-	 * re-attempt the unsupported create.  RELAXED atomic load/store
-	 * from multiple grandchildren is safe -- only false -> true, and
-	 * the write is idempotent. */
 	bool ip_gre_kind_unsupported;
-
-	/* Feature-absent latch for the sctp_chunk_rx childop
-	 * (childops/net/sctp-chunk-rx.c).  Set when socket(IPPROTO_SCTP)
-	 * rejects with EPROTONOSUPPORT / ESOCKTNOSUPPORT / EAFNOSUPPORT /
-	 * EACCES inside the transient userns_run_in_ns grandchild
-	 * (missing CONFIG_IP_SCTP / hardening policy blocking raw SCTP
-	 * sockets in the child's userns).  Same shm-vs-static rationale
-	 * as the ip_gre_kind_unsupported gate above: the rejection is
-	 * observed inside a transient grandchild that _exit()s after the
-	 * body returns, so a process-local static would die with the
-	 * grandchild and every subsequent invocation would re-attempt
-	 * the missing kind forever.  RELAXED atomic load/store from
-	 * multiple grandchildren is safe -- only false -> true, and the
-	 * write is idempotent. */
 	bool sctp_chunk_rx_kind_unsupported;
-
-	/* Feature-absent latch for the esp_crafted_rx childop
-	 * (childops/net/esp-crafted-rx.c).  Set when NETLINK_XFRM open
-	 * or XFRM_MSG_NEWSA installing a null-cipher/null-auth ESP SA
-	 * rejects with the CONFIG_XFRM / CONFIG_INET_ESP / CONFIG_INET6_ESP
-	 * absent errno set (EOPNOTSUPP / EPROTONOSUPPORT / EAFNOSUPPORT /
-	 * ENOPROTOOPT / ENOENT) inside the transient userns_run_in_ns
-	 * grandchild.  Same shm-vs-static rationale as the two gates above:
-	 * the rejection is observed inside a transient grandchild that
-	 * _exit()s after the body returns, so a process-local static would
-	 * die with the grandchild and every subsequent invocation would
-	 * re-attempt the missing kind forever.  RELAXED atomic load/store
-	 * from multiple grandchildren is safe -- only false -> true, and
-	 * the write is idempotent. */
 	bool esp_crafted_rx_kind_unsupported;
-
-	/* Feature-absent latch for the fou_gue_mcast_rx childop
-	 * (childops/net/fou-gue-mcast-rx.c).  Set when genl_open("fou")
-	 * or FOU_CMD_ADD installing a FOU/GUE receive port rejects with
-	 * the CONFIG_NET_FOU / CONFIG_IPV6_FOU absent errno set (ENOENT /
-	 * EPROTONOSUPPORT / EAFNOSUPPORT / EOPNOTSUPP / ENOPROTOOPT /
-	 * EPERM) inside the transient userns_run_in_ns grandchild.  Same
-	 * shm-vs-static rationale as the sibling latches above: the
-	 * rejection is observed inside a transient grandchild that
-	 * _exit()s after the body returns, so a process-local static
-	 * would die with the grandchild and every subsequent invocation
-	 * would re-attempt the missing kind forever.  RELAXED atomic
-	 * load/store from multiple grandchildren is safe -- only
-	 * false -> true, and the write is idempotent. */
 	bool fou_gue_mcast_rx_kind_unsupported;
-
-	/* Feature-absent latch for the geneve_rx childop
-	 * (childops/net/geneve-rx.c).  Set when RTM_NEWLINK kind="geneve"
-	 * installing a geneve tunnel dev rejects with the CONFIG_GENEVE
-	 * / module-absent errno set (EAFNOSUPPORT / EOPNOTSUPP / ENOTSUP
-	 * / ENOENT / EPROTONOSUPPORT) inside the transient
-	 * userns_run_in_ns grandchild.  Same shm-vs-static rationale as
-	 * the sibling latches above: the rejection is observed inside a
-	 * transient grandchild that _exit()s after the body returns, so
-	 * a process-local static would die with the grandchild and every
-	 * subsequent invocation would re-attempt the missing kind
-	 * forever.  RELAXED atomic load/store from multiple grandchildren
-	 * is safe -- only false -> true, and the write is idempotent. */
 	bool geneve_rx_kind_unsupported;
-
-	/* Feature-absent latch for the bareudp_rx childop
-	 * (childops/net/bareudp-rx.c).  Set when RTM_NEWLINK kind="bareudp"
-	 * installing a bareudp tunnel dev rejects with the CONFIG_BAREUDP
-	 * / module-absent errno set (EAFNOSUPPORT / EOPNOTSUPP / ENOTSUP
-	 * / ENOENT / EPROTONOSUPPORT) inside the transient
-	 * userns_run_in_ns grandchild.  Same shm-vs-static rationale as
-	 * the sibling latches above: the rejection is observed inside a
-	 * transient grandchild that _exit()s after the body returns, so
-	 * a process-local static would die with the grandchild and every
-	 * subsequent invocation would re-attempt the missing kind
-	 * forever.  RELAXED atomic load/store from multiple grandchildren
-	 * is safe -- only false -> true, and the write is idempotent. */
 	bool bareudp_rx_kind_unsupported;
-
-	/* Feature-absent latch for the mpls_label_stack_rx childop
-	 * (childops/net/mpls-label-stack-rx.c).  Set when
-	 * /proc/sys/net/mpls/platform_labels open returns ENOENT (missing
-	 * CONFIG_MPLS_ROUTING / mpls_router module) inside the transient
-	 * userns_run_in_ns grandchild.  Same shm-vs-static rationale as
-	 * the sibling latches above: the rejection is observed inside a
-	 * transient grandchild that _exit()s after the body returns, so
-	 * a process-local static would die with the grandchild and every
-	 * subsequent invocation would re-attempt the missing kind
-	 * forever.  RELAXED atomic load/store from multiple grandchildren
-	 * is safe -- only false -> true, and the write is idempotent. */
 	bool mpls_label_stack_rx_kind_unsupported;
-
-	/* Feature-absent latch for the espintcp_coalesce_churn childop
-	 * (childops/net/espintcp-coalesce-churn.c).  Set when
-	 * setsockopt(TCP_ULP, "espintcp") rejects with the
-	 * CONFIG_INET_ESPINTCP absent errno set (ENOPROTOOPT /
-	 * EOPNOTSUPP / EAFNOSUPPORT / EPERM) inside the transient
-	 * userns_run_in_ns grandchild.  Same shm-vs-static rationale as
-	 * the sibling latches above: the rejection is observed inside a
-	 * transient grandchild that _exit()s after the body returns, so
-	 * a process-local static would die with the grandchild and every
-	 * subsequent invocation would re-attempt the missing kind
-	 * forever.  RELAXED atomic load/store from multiple grandchildren
-	 * is safe -- only false -> true, and the write is idempotent. */
 	bool espintcp_coalesce_kind_unsupported;
-
-	/* Per-kind feature-absent latches for the veth_asymmetric_xdp
-	 * childop (childops/net/veth-asymmetric-xdp.c).  Indexed by the
-	 * file-local enum pair_kind (0 = veth, 1 = vxcan, 2 = ipvlan,
-	 * 3 = macvlan); the indices are stable and pinned by a
-	 * _Static_assert in veth-asymmetric-xdp.c.  Set when
-	 * RTM_NEWLINK rejects the pair/slave kind with the rtnl_link_ops-
-	 * not-registered errno set (absent module / CONFIG); subsequent
-	 * picks skip the kind so the unsupported attempt is paid once per
-	 * fleet rather than once per grandchild invocation.
-	 *
-	 * Must live in shm: the rejection is observed inside the transient
-	 * grandchild forked by userns_run_in_ns(), which _exit()s after
-	 * the body returns.  A process-local static would die with the
-	 * grandchild and the next invocation would re-attempt the same
-	 * unsupported kind every single time (latch-in-grandchild bug).
-	 * No auto-clear; an absent kernel CONFIG does not appear mid-run,
-	 * same recovery story as the sibling latches above.  RELAXED
-	 * atomic load/store from multiple grandchildren is safe -- only
-	 * false -> true, and the write is idempotent. */
 #define VETH_XDP_NR_KINDS 4
 	bool veth_xdp_kind_unsupported[VETH_XDP_NR_KINDS];
-
-	/* Feature-absent latch for BPF_PROG_LOAD of the XDP program used
-	 * by the veth_asymmetric_xdp childop.  Set when BPF_PROG_LOAD
-	 * rejects with the CONFIG_BPF_SYSCALL / BPF_PROG_TYPE_XDP absent
-	 * or unprivileged-bpf-disabled errno set (EPERM / EACCES / EINVAL
-	 * / EOPNOTSUPP) inside the transient userns_run_in_ns grandchild.
-	 * Kept separate from veth_xdp_kind_unsupported[] so a missing XDP
-	 * facility doesn't disable the per-kind asymmetric-queue exercise
-	 * and a missing kind doesn't disable XDP for the others.  Same
-	 * shm-vs-static rationale as the sibling latches above: the
-	 * rejection is observed inside a transient grandchild that
-	 * _exit()s after the body returns, so a process-local static
-	 * would die with the grandchild and every subsequent invocation
-	 * would re-attempt the missing facility forever.  RELAXED atomic
-	 * load/store from multiple grandchildren is safe -- only
-	 * false -> true, and the write is idempotent. */
 	bool veth_xdp_xdp_unsupported;
 
 	/*

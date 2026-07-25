@@ -304,6 +304,110 @@ negative and permanently disabling the cap.
 `fetch_and(~NEWNET_INFLIGHT_TICKET)` clears only bit 0 and leaves the
 pointer intact for the post handler's downstream `deferred_freeptr()`.
 
+## Per-childop feature-absent latches
+
+Several `childops/net/*` childops build a kernel object inside a
+transient `userns_run_in_ns()` grandchild, so the create/attach syscall
+that would surface a missing `CONFIG_*` returns inside a `_exit()`ing
+process.  A per-process static latch would die with the grandchild and
+every subsequent invocation would re-attempt the same unsupported
+kind forever (the "latch in grandchild" bug).  The fix is a fleet-wide
+latch in `shm` per childop / per kind: first grandchild to observe the
+absent-feature errno set flips the latch; siblings then skip the entry
+so the unsupported attempt is paid once per fleet, not once per
+grandchild.
+
+RELAXED atomic load/store from multiple grandchildren is safe -- the
+only transition is `false -> true` and the write is idempotent.  No
+auto-clear; an absent kernel `CONFIG` does not appear mid-run, same
+recovery story as the `sfg_unsupported[]` gates.
+
+### `vxlan_encap_kind_unsupported[VXLAN_ENCAP_NR_KINDS]`
+
+Per-kind gate for `vxlan_encap_churn` (`childops/net/vxlan-encap.c`).
+Indexed by the file-local `enum tun_kind` (`0 = vxlan`, `1 = gre`,
+`2 = geneve`) -- indices are PINNED by a `_Static_assert` in
+`vxlan-encap.c`.  Set when `RTM_NEWLINK` rejects the kind with the
+`rtnl_link_ops`-not-registered errno (absent module / CONFIG).
+
+### `ip_gre_kind_unsupported`
+
+Gate for `ip_gre_churn` (`childops/net/ip_gre-churn.c`).  Set when
+`RTM_NEWLINK type=gretap` rejects with the `rtnl_link_ops`-not-
+registered errno set (absent `CONFIG_NET_IPGRE` / module).
+
+### `sctp_chunk_rx_kind_unsupported`
+
+Gate for `sctp_chunk_rx` (`childops/net/sctp-chunk-rx.c`).  Set when
+`socket(IPPROTO_SCTP)` rejects with `EPROTONOSUPPORT` /
+`ESOCKTNOSUPPORT` / `EAFNOSUPPORT` / `EACCES` (missing
+`CONFIG_IP_SCTP` / hardening policy blocking raw SCTP sockets in the
+child's userns).
+
+### `esp_crafted_rx_kind_unsupported`
+
+Gate for `esp_crafted_rx` (`childops/net/esp-crafted-rx.c`).  Set when
+`NETLINK_XFRM` open or `XFRM_MSG_NEWSA` installing a
+null-cipher/null-auth ESP SA rejects with the `CONFIG_XFRM` /
+`CONFIG_INET_ESP` / `CONFIG_INET6_ESP` absent errno set (`EOPNOTSUPP`
+/ `EPROTONOSUPPORT` / `EAFNOSUPPORT` / `ENOPROTOOPT` / `ENOENT`).
+
+### `fou_gue_mcast_rx_kind_unsupported`
+
+Gate for `fou_gue_mcast_rx` (`childops/net/fou-gue-mcast-rx.c`).  Set
+when `genl_open("fou")` or `FOU_CMD_ADD` installing a FOU/GUE receive
+port rejects with the `CONFIG_NET_FOU` / `CONFIG_IPV6_FOU` absent
+errno set (`ENOENT` / `EPROTONOSUPPORT` / `EAFNOSUPPORT` /
+`EOPNOTSUPP` / `ENOPROTOOPT` / `EPERM`).
+
+### `geneve_rx_kind_unsupported`
+
+Gate for `geneve_rx` (`childops/net/geneve-rx.c`).  Set when
+`RTM_NEWLINK kind="geneve"` installing a geneve tunnel dev rejects
+with the `CONFIG_GENEVE` / module-absent errno set (`EAFNOSUPPORT` /
+`EOPNOTSUPP` / `ENOTSUP` / `ENOENT` / `EPROTONOSUPPORT`).
+
+### `bareudp_rx_kind_unsupported`
+
+Gate for `bareudp_rx` (`childops/net/bareudp-rx.c`).  Set when
+`RTM_NEWLINK kind="bareudp"` installing a bareudp tunnel dev rejects
+with the `CONFIG_BAREUDP` / module-absent errno set (`EAFNOSUPPORT` /
+`EOPNOTSUPP` / `ENOTSUP` / `ENOENT` / `EPROTONOSUPPORT`).
+
+### `mpls_label_stack_rx_kind_unsupported`
+
+Gate for `mpls_label_stack_rx` (`childops/net/mpls-label-stack-rx.c`).
+Set when `/proc/sys/net/mpls/platform_labels` open returns `ENOENT`
+(missing `CONFIG_MPLS_ROUTING` / `mpls_router` module).
+
+### `espintcp_coalesce_kind_unsupported`
+
+Gate for `espintcp_coalesce_churn`
+(`childops/net/espintcp-coalesce-churn.c`).  Set when
+`setsockopt(TCP_ULP, "espintcp")` rejects with the
+`CONFIG_INET_ESPINTCP` absent errno set (`ENOPROTOOPT` /
+`EOPNOTSUPP` / `EAFNOSUPPORT` / `EPERM`).
+
+### `veth_xdp_kind_unsupported[VETH_XDP_NR_KINDS]`
+
+Per-kind gate for `veth_asymmetric_xdp`
+(`childops/net/veth-asymmetric-xdp.c`).  Indexed by the file-local
+`enum pair_kind` (`0 = veth`, `1 = vxcan`, `2 = ipvlan`,
+`3 = macvlan`) -- indices are PINNED by a `_Static_assert` in
+`veth-asymmetric-xdp.c`.  Set when `RTM_NEWLINK` rejects the
+pair/slave kind with the `rtnl_link_ops`-not-registered errno set.
+
+### `veth_xdp_xdp_unsupported`
+
+Companion gate for the same `veth_asymmetric_xdp` childop, latched
+when `BPF_PROG_LOAD` rejects the XDP program with the
+`CONFIG_BPF_SYSCALL` / `BPF_PROG_TYPE_XDP` absent or
+`unprivileged-bpf-disabled` errno set (`EPERM` / `EACCES` /
+`EINVAL` / `EOPNOTSUPP`).  Kept separate from
+`veth_xdp_kind_unsupported[]` so a missing XDP facility doesn't
+disable the per-kind asymmetric-queue exercise and a missing kind
+doesn't disable XDP for the others.
+
 ### `NEWNET_INFLIGHT_TICKET` bit encoding
 
 Low-bit ticket the throttle stamps onto `rec->post_state` after a
