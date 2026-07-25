@@ -463,44 +463,14 @@ struct shm_s {
 	unsigned long bandit_reward_calls[NR_STRATEGIES];
 	unsigned long bandit_reward_pc_edge_count[NR_STRATEGIES];
 
-	/*
-	 * Per-arm x chaos-state cohort accumulators -- chaos-mode V2
-	 * observation-only attribution.  Each completed window is bucketed
-	 * into [arm][chaos_state] in bandit_record_pull, where chaos_state
-	 * is the cmp_hints_chaos_active flag sampled at window close
-	 * (chaos_off=0 / chaos_on=1).  The cohort split lets the operator
-	 * compare per-arm reward and kernel-diagnostic-fire rates between
-	 * windows where cmp_hints suppression was active and windows where
-	 * it was not, without re-running the fuzzer with chaos disabled.
-	 *
-	 * Three parallel matrices mirror the existing lifetime series with
-	 * a chaos-state dimension:
-	 *
-	 *   bandit_pulls_by_chaos[a][c]              -- window count for arm
-	 *     a with chaos state c.  Bumped on every non-SR_PLATEAU_FORCE
-	 *     window the learner accepts; the per-cohort sum across c
-	 *     equals bandit_pulls[a].
-	 *   bandit_reward_calls_by_chaos[a][c]       -- combined reward
-	 *     (pc_edge_calls + cmp_term), same units as
-	 *     bandit_reward_calls[a].  Sum across c equals bandit_reward_
-	 *     calls[a].
-	 *   bandit_warn_fires_by_chaos[a][c]         -- per-window delta
-	 *     of kmsg_warn_fires bucketed into the matching cohort.  Brand
-	 *     new V2 counter; no companion lifetime series because the
-	 *     headline V2 question is "does chaos correlate with WARNs?"
-	 *     and a per-arm-flat WARN total without the cohort split would
-	 *     not answer it.
-	 *
-	 * Observation-only -- nothing in select_next_strategy / ucb1_score
-	 * / pick_next_strategy reads these arrays.  The learner's reward
-	 * formula in bandit_record_pull is unchanged.  Action mode (V3)
-	 * will fold the chaos cohort signal back into the picker once the
-	 * statistical-significance gate from the design doc clears.
-	 *
-	 * Single-writer protocol matches the existing bandit_pulls[] path
-	 * (CAS-serialised rotation), dump-side reads are RELAXED.
-	 * NR_STRATEGIES * 2 * 3 series * 8 bytes = 192 bytes today.
-	 */
+	/* Per-arm x chaos-state cohort accumulators (chaos-mode V2,
+	 * observation-only): three parallel matrices bucketed by chaos_state
+	 * (chaos_off=0 / chaos_on=1) so per-arm reward and diagnostic-fire
+	 * rates split by cmp_hints suppression can be compared without
+	 * re-running the fuzzer.  Nothing in the picker reads these -- the
+	 * learner formula is unchanged.  Rationale (write discipline, why
+	 * bandit_warn_fires_by_chaos has no lifetime companion, V3 plan):
+	 * Documentation/shm-state.md (Chaos-cohort observation counters). */
 	unsigned long bandit_pulls_by_chaos[NR_STRATEGIES][2];
 	unsigned long bandit_reward_calls_by_chaos[NR_STRATEGIES][2];
 	unsigned long bandit_warn_fires_by_chaos[NR_STRATEGIES][2];
@@ -528,98 +498,37 @@ struct shm_s {
 	unsigned long strategy_bandit_pool_ops[NR_STRATEGIES];
 	unsigned long strategy_completed_calls[NR_STRATEGIES];
 
-	/*
-	 * Per-arm-per-selection-reason reward attribution.  Each window's
+	/* Per-arm-per-selection-reason reward attribution.  Each window's
 	 * outcome is bucketed into [arm][reason] independent of the
-	 * learner-facing bandit_pulls[]/bandit_reward_calls[] series above
-	 * so the operator and the future intervention classifier can see
-	 * how each arm's exposure splits across selection paths:
-	 *
-	 *   bandit_pulls_by_reason[a][SR_NORMAL_UCB]    -- arm a was
-	 *     chosen by the UCB1 scorer (the bandit's policy decision).
-	 *   bandit_pulls_by_reason[a][SR_COLD_START]    -- arm a was
-	 *     chosen because UCB1 had not seen it pulled yet.
-	 *   bandit_pulls_by_reason[a][SR_ROUND_ROBIN]   -- arm a's slot
-	 *     in the fixed cycle (round-robin mode only).
-	 *   bandit_pulls_by_reason[a][SR_PLATEAU_FORCE] -- arm a (always
-	 *     STRATEGY_RANDOM today) was forced by the intervention
-	 *     orchestrator over the top of the bandit's pick.  These
-	 *     windows are deliberately EXCLUDED from bandit_pulls[] and
-	 *     the recent_*_x1000 EMA so the learner's view of RANDOM
-	 *     stays uncontaminated, but they ARE recorded here so the
-	 *     operator can see the intervention cohort's reward
-	 *     separately and a future plateau-rescue classifier can
-	 *     read pulls_by_reason[*][SR_PLATEAU_FORCE] +
-	 *     pc_edge_calls_by_strategy[*] to decide which arm to force
-	 *     next time.
-	 *
-	 * Three parallel matrices mirror the lifetime series:
-	 *
-	 *   bandit_pulls_by_reason[a][r]              -- window count
-	 *   bandit_reward_calls_by_reason[a][r]       -- combined reward
-	 *     (pc_edge_calls + cmp_term), same units as
-	 *     bandit_reward_calls[].
-	 *   bandit_reward_pc_edge_count_by_reason[a][r] -- real bucket-
-	 *     edge count, same units as bandit_reward_pc_edge_count[].
-	 *
-	 * Same single-writer protocol as bandit_pulls[] (CAS-serialised
-	 * rotation path).  dump_strategy_stats() uses RELAXED loads.
-	 * 3 strategies * 4 reasons * 3 series * 8 bytes = 288 bytes,
-	 * trivial against existing shm consumers.
-	 */
+	 * learner-facing bandit_pulls[] series so operator- and classifier-
+	 * side analysis can see how each arm's exposure splits across
+	 * selection paths (SR_NORMAL_UCB / SR_COLD_START / SR_ROUND_ROBIN /
+	 * SR_PLATEAU_FORCE).  SR_PLATEAU_FORCE windows are deliberately
+	 * excluded from the learner-facing series but recorded here so the
+	 * intervention cohort is visible.  Rationale (per-reason semantics,
+	 * write protocol): Documentation/shm-state.md
+	 * (Per-selection-reason attribution). */
 	unsigned long bandit_pulls_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];
 	unsigned long bandit_reward_calls_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];
 	unsigned long bandit_reward_pc_edge_count_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];
 
-	/*
-	 * Random-rescue classifier counters -- see classify_random_rescue
-	 * in include/strategy.h.  Each new-edge syscall completed during a
-	 * SR_PLATEAU_FORCE window is classified into one of the
-	 * RRC_* buckets and the corresponding slot here is bumped.  The
-	 * cumulative distribution is what the next plateau intervention
-	 * reads to decide whether plain RANDOM is still the right rescue
-	 * arm or whether the classifier has accumulated enough evidence to
-	 * point at a more targeted intervention (cold-skip disable,
-	 * cmp-hint boost, etc.).
-	 *
-	 * Multi-producer (every child that completes a rescue increments
-	 * its class slot); RELAXED fetch_add on the write side, RELAXED
-	 * loads on the orchestrator-side reads in select_next_strategy and
-	 * dump_strategy_stats.  Per-class cacheline contention is
-	 * acceptable: the writer set is small (only children whose syscall
-	 * landed in a forced-intervention window and produced new edges)
-	 * and the readers consult these counts at rotation boundaries and
-	 * at end-of-run, not on the hot pick path.
-	 */
+	/* Random-rescue classifier counters -- see classify_random_rescue
+	 * in include/strategy.h.  Each new-edge syscall completed during an
+	 * SR_PLATEAU_FORCE window is classified into an RRC_* bucket and the
+	 * corresponding slot here is bumped; multi-producer RELAXED
+	 * fetch_add.  Rationale (why the picker consults these, why
+	 * per-class contention is acceptable):
+	 * Documentation/shm-state.md (Random-rescue classifier). */
 	unsigned long random_rescue_class_count[RRC_NR_CLASSES];
 
-	/*
-	 * Currently-amplified random-rescue class, published by the
-	 * orchestrator (select_next_strategy) at every rotation boundary.
-	 * RRC_NR_CLASSES is the "no amplification" sentinel -- either the
-	 * fleet is not in a plateau intervention or no class has cleared
-	 * the dominance threshold against its peers.  Held as int rather
-	 * than the enum so the shm layout stays language-stable across any
-	 * future enum reorder.
-	 *
-	 * Read by children on the hot pick / arg-generation path to
-	 * conditionally relax structured filters that the classifier
-	 * blamed for the recent rescue cohort:
-	 *
-	 *   RRC_COLD_SKIP    -> set_syscall_nr_heuristic skips its
-	 *                       kcov_syscall_cold_skip_pct retry, so
-	 *                       cold syscalls flow through the heuristic
-	 *                       arm during the intervention.
-	 *   RRC_CMP_DERIVED  -> generate-args.c's 1-in-16
-	 *                       cmp_hints_try_get rolls flip to 1-in-4
-	 *                       so the learned constants the classifier
-	 *                       credited the rescues to fire more often.
-	 *
-	 * Gated on (shm->plateau_active && current_selection_reason ==
-	 * SR_PLATEAU_FORCE) at every read site so the relaxation applies
-	 * only inside the intervention window, never as a permanent
-	 * change to the structured pickers.
-	 */
+	/* Currently-amplified random-rescue class, published by
+	 * select_next_strategy at every rotation.  RRC_NR_CLASSES is the
+	 * "no amplification" sentinel.  Held as int (not the enum) so the
+	 * shm layout stays language-stable across enum reorders.  Read on
+	 * the hot pick / arg-generation path to conditionally relax
+	 * structured filters (cold-skip disable, cmp-hint boost) inside
+	 * the intervention window.  See Documentation/shm-state.md
+	 * (Random-rescue classifier). */
 	int plateau_rescue_amplified_class;
 
 	/*
@@ -663,57 +572,24 @@ struct shm_s {
 	unsigned long plateau_intervention_rotation_counter;
 	unsigned long plateau_intervention_mode_windows[NR_PIM_MODES];
 
-	/*
-	 * Wall-lever shadow gate.  Identifies high-call zero-yield
-	 * syscalls during a warm-plateau window so a future live variant can
-	 * reclaim their pick budget for productive / cold syscalls.  Held in
-	 * shm next to the anti-prior cache because the publish ordering and
-	 * the rotation-boundary refresh discipline are identical.
-	 *
-	 * wall_lever_baseline_calls: cached mean of kcov_shm->per_syscall_
-	 *   calls across the active syscall count (biarch ? nr_active_32 +
-	 *   nr_active_64 : nr_active_syscalls; mirrors no_syscalls_enabled).
-	 *   Refreshed by wall_lever_refresh_baseline() on every rotation
-	 *   where plateau_active is set, BEFORE the mode-specific arm
-	 *   dispatch.  Zero means "no baseline yet" (no plateau-active
-	 *   rotation has fired, or no syscalls are active) and the shadow
-	 *   predicate short-circuits to "not suppressed" in that state so
-	 *   warm-up runs and the cold-start window degrade to today's pure
-	 *   picker.
-	 *
-	 * wall_lever_suppress[MAX_NR_SYSCALL]: per-syscall pre-computed
-	 *   suppression decision in {0, 1}, populated alongside the baseline
-	 *   at every plateau-active rotation.  Picker-side shadow gate reads
-	 *   a single relaxed byte per candidate -- the clamp / multiply /
-	 *   compare math lives in the refresh path so the per-pick cost is
-	 *   one load and one branch.  uint8_t suffices because the field is
-	 *   a boolean carrier.  Visibility hand-off rides on the same
-	 *   RELEASE store of current_strategy that publishes plateau_
-	 *   intervention_mode_current -- mirrors plateau_anti_prior_accept_
-	 *   weight's publish ordering.
-	 */
+	/* Wall-lever shadow gate.  Identifies high-call zero-yield syscalls
+	 * during a warm-plateau window so a future live variant can reclaim
+	 * their pick budget.  Baseline + per-syscall {0,1} suppress carrier
+	 * (uint8_t) refreshed at every plateau-active rotation; picker-side
+	 * gate reads a single RELAXED byte per candidate.  Publish ordering
+	 * mirrors plateau_anti_prior_accept_weight.  Rationale (baseline
+	 * math, zero-baseline short-circuit): Documentation/shm-state.md
+	 * (Wall-lever shadow gate). */
 	unsigned long wall_lever_baseline_calls;
 	uint8_t wall_lever_suppress[MAX_NR_SYSCALL];
 
-	/*
-	 * Phase 2 plateau intervention: shm mirror of strategy.c's
+	/* Phase 2 plateau intervention: shm mirror of strategy.c's
 	 * parent-private hypothesis_current.  Published by
-	 * strategy_plateau_hypothesis_tick() (parent only) at every stats
-	 * tick; read RELAXED by select_next_strategy() on every rotation
-	 * to gate the targeted intervention selection.
-	 *
-	 * PLATEAU_HYPOTHESIS_NONE means "no rule matched" or "no plateau
-	 * active" -- both cases revert to the round-robin intervention
-	 * path.  Held as int (not the enum) so the shm layout stays
-	 * language-stable across any future enum reorder, same convention
-	 * as plateau_rescue_amplified_class.
-	 *
-	 * The gate is a derived predicate over this field, not a latched
-	 * flag: when plateau_active falls and the tick driver writes NONE
-	 * here, the next select_next_strategy rotation reverts to round-
-	 * robin automatically.  No standalone activation/deactivation
-	 * state to keep in sync.
-	 */
+	 * strategy_plateau_hypothesis_tick() (parent only); read RELAXED by
+	 * select_next_strategy() on every rotation.  PLATEAU_HYPOTHESIS_NONE
+	 * reverts to round-robin.  Held as int (not the enum) for shm
+	 * layout stability.  See Documentation/shm-state.md
+	 * (Plateau-hypothesis mirror). */
 	int plateau_current_hypothesis;
 
 	/*
