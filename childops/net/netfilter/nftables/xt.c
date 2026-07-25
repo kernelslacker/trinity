@@ -620,3 +620,228 @@ void nft_xt_idletimer_sweep(void)
 	if (!ns_unsupported_xt_idletimer)
 		xt_idletimer_probe_one(true, 1);
 }
+
+/*
+ * xt_tcp match-install sub-mode.  Complements the xt_CT / xt_IDLETIMER
+ * paths above -- both of those install matchless (target-only) rules,
+ * leaving the generic x_tables match-install validation surface entirely
+ * dark: xt_check_match() family/proto/hooks compat, matchsize / XT_ALIGN
+ * checks, and any match .checkentry callback are never exercised.  This
+ * probe builds a real xt_entry_match for "tcp" (struct xt_tcp) on both
+ * IPv4 and IPv6 rule blobs and drives IPT/IP6T_SO_SET_REPLACE, so the
+ * setsockopt-time match validator gets exercised for real.
+ *
+ * Layout mirrors xt_ct_probe_one and shares the xt_lc_ipt_* /
+ * xt_ct_emit_target / xt_ct_emit_std_policy / xt_ct_emit_error /
+ * xt_ct_fill_replace_hdr helpers so the wire format stays byte-identical
+ * with the CT path -- only the rule entry differs (proto=IPPROTO_TCP,
+ * with an xt_tcp match preceding a std ACCEPT verdict target).
+ *
+ * Config: CONFIG_NETFILTER_XTABLES + IP{,6}_NF_IPTABLES (the target config has both).
+ * A missing xt_tcp match, missing kernel modules, or CAP_NET_ADMIN denial
+ * latches ns_unsupported_xt_tcp_match so sibling iterations skip the
+ * socket() + setsockopt roundtrip for the child's lifetime.  A malformed
+ * size/name/revision yields early -EINVAL; that's fine -- the value here
+ * is the xt_check_match validation path itself.
+ *
+ * Local mirrors track the stable kernel UAPI in linux/netfilter/x_tables.h
+ * and linux/netfilter/xt_tcpudp.h; XT_ALIGN is a locally-named alias for
+ * the standard 8-byte alignment used by x_tables so we don't hardcode 8
+ * in the size expressions.
+ */
+#ifndef IPPROTO_TCP
+#define IPPROTO_TCP		6
+#endif
+#ifndef XT_ALIGN
+#define XT_ALIGN(x)		XT_LC_ALIGN8(x)
+#endif
+
+/* Locally-named mirror of struct xt_entry_match (user side).  Layout
+ * matches linux/netfilter/x_tables.h xt_entry_match::u.user. */
+struct xt_lc_entry_match_hdr {
+	__u16	match_size;
+	char	name[XT_LC_EXT_MAXNAMELEN];
+	__u8	revision;
+};	/* 32 bytes; matches xt_entry_match.u.user */
+
+/* Locally-named mirror of struct xt_tcp from linux/netfilter/xt_tcpudp.h. */
+struct xt_lc_tcp {
+	__u16	spts[2];	/* source port range (min, max) */
+	__u16	dpts[2];	/* dest port range (min, max) */
+	__u8	option;		/* TCP option to match */
+	__u8	flg_mask;	/* TCP flags mask */
+	__u8	flg_cmp;	/* TCP flags compare */
+	__u8	invflags;	/* invert flags */
+};
+
+static bool ns_unsupported_xt_tcp_match;
+
+bool nft_xt_tcp_match_unsupported(void)
+{
+	return ns_unsupported_xt_tcp_match;
+}
+
+static void xt_tcp_emit_match(unsigned char *m_off, __u16 match_size_total)
+{
+	struct xt_lc_entry_match_hdr *mh = (struct xt_lc_entry_match_hdr *)m_off;
+	struct xt_lc_tcp *tcp;
+
+	mh->match_size = match_size_total;
+	mh->revision   = 0;
+	memcpy(mh->name, "tcp", 3);	/* NUL-padded via zeroed buf */
+	tcp = (struct xt_lc_tcp *)(m_off +
+		(unsigned int)XT_ALIGN(sizeof(struct xt_lc_entry_match_hdr)));
+	tcp->spts[0] = 0;
+	tcp->spts[1] = 0xffff;
+	tcp->dpts[0] = 0;
+	tcp->dpts[1] = 0xffff;
+	tcp->option   = 0;
+	tcp->flg_mask = 0;
+	tcp->flg_cmp  = 0;
+	tcp->invflags = 0;
+}
+
+static void xt_tcp_match_probe_one(bool ipv6)
+{
+	unsigned char buf[1536];
+	struct xt_lc_counters counters_scratch[8];
+	unsigned int hdr_sz, entry_hdr_sz;
+	unsigned int match_hdr_sz, match_data_sz, match_total;
+	unsigned int target_hdr_sz, std_total, err_total;
+	unsigned int rule_sz, policy_sz, error_sz, total_sz;
+	unsigned int off;
+	int fd, level, sockopt_set;
+	int *verdict;
+
+	__atomic_add_fetch(&shm->stats.nftables_churn.xt_tcp_match_iters, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ipv6) {
+		level        = IPPROTO_IPV6;
+		sockopt_set  = IP6T_SO_SET_REPLACE;
+		entry_hdr_sz = (unsigned int)sizeof(struct xt_lc_ip6t_entry);
+		fd = socket(AF_INET6, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_RAW);
+	} else {
+		level        = IPPROTO_IP;
+		sockopt_set  = IPT_SO_SET_REPLACE;
+		entry_hdr_sz = (unsigned int)sizeof(struct xt_lc_ipt_entry);
+		fd = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_RAW);
+	}
+	hdr_sz = (unsigned int)sizeof(struct xt_lc_ipt_replace);
+	if (fd < 0) {
+		if (errno == EPERM) {
+			ns_unsupported_xt_tcp_match = true;
+			__atomic_add_fetch(&shm->stats.nftables_churn.xt_tcp_match_eperm,
+					   1, __ATOMIC_RELAXED);
+		} else if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
+			ns_unsupported_xt_tcp_match = true;
+			__atomic_add_fetch(&shm->stats.nftables_churn.xt_tcp_match_unsupported,
+					   1, __ATOMIC_RELAXED);
+		}
+		return;
+	}
+
+	match_hdr_sz  = (unsigned int)XT_ALIGN(sizeof(struct xt_lc_entry_match_hdr));
+	match_data_sz = (unsigned int)XT_ALIGN(sizeof(struct xt_lc_tcp));
+	match_total   = match_hdr_sz + match_data_sz;
+	target_hdr_sz = (unsigned int)XT_ALIGN(sizeof(struct xt_lc_entry_target_hdr));
+	std_total     = target_hdr_sz + (unsigned int)XT_ALIGN(sizeof(int));
+	err_total     = target_hdr_sz +
+			(unsigned int)XT_LC_ALIGN8(XT_LC_FUNC_MAXNAMELEN);
+
+	rule_sz   = entry_hdr_sz + match_total + std_total;
+	policy_sz = entry_hdr_sz + std_total;
+	error_sz  = entry_hdr_sz + err_total;
+	total_sz  = rule_sz + 2 * policy_sz + error_sz;
+
+	if (hdr_sz + total_sz > sizeof(buf))
+		goto out;
+
+	memset(buf, 0, sizeof(buf));
+	memset(counters_scratch, 0, sizeof(counters_scratch));
+	xt_ct_fill_replace_hdr(buf, rule_sz, policy_sz, total_sz,
+			       counters_scratch, 4);
+
+	off = hdr_sz;
+
+	/* Entry 1: PRE_ROUTING rule -- xt_tcp match + std ACCEPT verdict.
+	 * Set ip.proto = IPPROTO_TCP so xt_check_match() accepts the tcp
+	 * match's per-family proto requirement. */
+	if (ipv6) {
+		struct xt_lc_ip6t_entry *e = (struct xt_lc_ip6t_entry *)(buf + off);
+
+		e->ipv6.proto    = IPPROTO_TCP;
+		e->target_offset = (__u16)(entry_hdr_sz + match_total);
+		e->next_offset   = (__u16)rule_sz;
+	} else {
+		struct xt_lc_ipt_entry *e = (struct xt_lc_ipt_entry *)(buf + off);
+
+		e->ip.proto      = IPPROTO_TCP;
+		e->target_offset = (__u16)(entry_hdr_sz + match_total);
+		e->next_offset   = (__u16)rule_sz;
+	}
+	xt_tcp_emit_match(buf + off + entry_hdr_sz, (__u16)match_total);
+	xt_ct_emit_target(buf + off + entry_hdr_sz + match_total,
+			  "", 0, (__u16)std_total);
+	verdict = (int *)(buf + off + entry_hdr_sz + match_total + target_hdr_sz);
+	*verdict = -NF_ACCEPT - 1;
+	off += rule_sz;
+
+	/* Entries 2 + 3: PRE_ROUTING policy + LOCAL_OUT policy (std ACCEPT). */
+	xt_ct_emit_std_policy(buf + off, entry_hdr_sz, policy_sz, std_total, ipv6);
+	off += policy_sz;
+	xt_ct_emit_std_policy(buf + off, entry_hdr_sz, policy_sz, std_total, ipv6);
+	off += policy_sz;
+
+	/* Entry 4: error sentinel. */
+	xt_ct_emit_error(buf + off, entry_hdr_sz, error_sz, err_total, ipv6);
+
+	if (setsockopt(fd, level, sockopt_set, buf,
+		       (socklen_t)(hdr_sz + total_sz)) < 0) {
+		if (errno == EPERM) {
+			ns_unsupported_xt_tcp_match = true;
+			__atomic_add_fetch(&shm->stats.nftables_churn.xt_tcp_match_eperm,
+					   1, __ATOMIC_RELAXED);
+		} else if (errno == ENOENT || errno == EOPNOTSUPP ||
+			   errno == ENOPROTOOPT) {
+			ns_unsupported_xt_tcp_match = true;
+			__atomic_add_fetch(&shm->stats.nftables_churn.xt_tcp_match_unsupported,
+					   1, __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+	__atomic_add_fetch(&shm->stats.nftables_churn.xt_tcp_match_set_ok, 1,
+			   __ATOMIC_RELAXED);
+
+	/* Cleanup: empty replace (no rule, only policies + error). */
+	{
+		unsigned int empty_total = 2 * policy_sz + error_sz;
+		unsigned int empty_off;
+
+		memset(buf, 0, sizeof(buf));
+		xt_ct_fill_replace_hdr(buf, 0, policy_sz, empty_total,
+				       counters_scratch, 3);
+		empty_off = hdr_sz;
+		xt_ct_emit_std_policy(buf + empty_off, entry_hdr_sz,
+				      policy_sz, std_total, ipv6);
+		empty_off += policy_sz;
+		xt_ct_emit_std_policy(buf + empty_off, entry_hdr_sz,
+				      policy_sz, std_total, ipv6);
+		empty_off += policy_sz;
+		xt_ct_emit_error(buf + empty_off, entry_hdr_sz,
+				 error_sz, err_total, ipv6);
+		(void)setsockopt(fd, level, sockopt_set, buf,
+				 (socklen_t)(hdr_sz + empty_total));
+	}
+out:
+	close(fd);
+}
+
+void nft_xt_tcp_match_sweep(void)
+{
+	if (ns_unsupported_xt_tcp_match)
+		return;
+	xt_tcp_match_probe_one(false);
+	if (!ns_unsupported_xt_tcp_match)
+		xt_tcp_match_probe_one(true);
+}

@@ -61,6 +61,10 @@ struct nftables_churn_stats {
 	unsigned long xt_ct_set_ok;		/* IPT/IP6T_SO_SET_REPLACE accepted */
 	unsigned long xt_ct_get_ok;		/* IPT/IP6T_SO_GET_ENTRIES accepted (xt_target_to_user reply path) */
 	unsigned long xt_ct_v2_seen;		/* revision 2 path actually accepted on this kernel */
+	unsigned long xt_tcp_match_iters;	/* xt_tcp match-install sub-mode invocations */
+	unsigned long xt_tcp_match_eperm;	/* setsockopt EPERM (CAP_NET_ADMIN gate) -- latches */
+	unsigned long xt_tcp_match_unsupported;	/* xt_tcp / ip[6]t_iptables absent (ENOENT/EOPNOTSUPP/ENOPROTOOPT/EAFNOSUPPORT) -- latches */
+	unsigned long xt_tcp_match_set_ok;	/* IPT/IP6T_SO_SET_REPLACE accepted with a tcp match */
 	unsigned long nft_fwd_loop_runs;		/* nft_fwd_netdev loop sub-mode invocations */
 	unsigned long nft_fwd_loop_ns_setup_failed;	/* veth/addr/netdev-table install failed -- latches */
 	unsigned long nft_fwd_loop_probe_sent_ok;	/* ICMP probe via raw socket sendto returned >0 */
