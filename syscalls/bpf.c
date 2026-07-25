@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include "arch.h"
 #include "bpf.h"
+#include "bpf-internal.h"
 #include "name-pool.h"
 #include "net.h"
 #include "objects.h"
@@ -62,7 +63,7 @@ static const char license[] = "GPLv2";
  * the prog_name dedup in trace dumps), and the mutated arms exercise
  * bpf_obj_name_cpy()'s isalnum/'_'/'.' validator on near-valid input.
  */
-static void bpf_fill_obj_name(char *name)
+void bpf_fill_obj_name(char *name)
 {
 	static const char alphabet[] =
 		"abcdefghijklmnopqrstuvwxyz0123456789_";
@@ -277,86 +278,13 @@ struct bpf_post_state {
  * exists.  Live token draws otherwise dominate once the pool warms
  * and the EBADF arm of bpf_token_capable() would never run.
  */
-static int bpf_random_token_fd(void)
+int bpf_random_token_fd(void)
 {
 	int fd = get_rand_bpf_token_fd();
 
 	if (fd < 0 || ONE_IN(4))
 		fd = ONE_IN(2) ? -1 : (int) rnd_u32();
 	return fd;
-}
-
-static void sanitise_bpf_map_create(union bpf_attr *attr, struct syscallrecord *rec)
-{
-	attr->map_type = bpf_map_types[rnd_modulo_u32(bpf_map_types_count)];
-	attr->key_size = rnd_modulo_u32(1024);
-	attr->value_size = rnd_modulo_u32((1024 * 64));
-	attr->max_entries = rnd_modulo_u32(1024);
-	attr->map_flags = RAND_RANGE(0, 4);
-	bpf_fill_obj_name(attr->map_name);
-	/* Cover map_name so the fill above reaches the kernel; previous
-	 * rec->a3 = 20 stopped at map_flags.  The token-fd arm below
-	 * overrides this with a still-larger window that already
-	 * encompasses map_name. */
-	rec->a3 = offsetof(union bpf_attr, map_name) +
-		  sizeof(attr->map_name);
-	if (ONE_IN(8)) {
-		/* BPF_F_TOKEN_FD in map_flags is the gate the kernel
-		 * uses to decide whether to resolve map_token_fd at
-		 * all; without it the token fd is ignored and
-		 * bpf_token_capable() never runs.  Bump rec->a3 to
-		 * cover map_token_fd so the kernel reads the slot
-		 * we just wrote. */
-		attr->map_token_fd = bpf_random_token_fd();
-		attr->map_flags |= BPF_F_TOKEN_FD;
-		rec->a3 = offsetof(union bpf_attr, map_token_fd) +
-			  sizeof(attr->map_token_fd);
-	}
-}
-
-static void sanitise_bpf_map_lookup(union bpf_attr *attr, struct syscallrecord *rec)
-{
-	attr->map_fd = get_rand_bpf_fd();
-	attr->key = RAND_RANGE(0, 10);
-	attr->value = rnd_u32();
-	rec->a3 = 32;
-}
-
-static void sanitise_bpf_map_update(union bpf_attr *attr, struct syscallrecord *rec)
-{
-	attr->map_fd = get_rand_bpf_fd();
-	attr->key = RAND_RANGE(0, 10);
-	attr->value = rnd_u32();
-	attr->next_key = rnd_u32();
-	attr->flags = RAND_RANGE(0, 4);
-	rec->a3 = 32;
-}
-
-static void sanitise_bpf_map_delete(union bpf_attr *attr, struct syscallrecord *rec)
-{
-	attr->map_fd = get_rand_bpf_fd();
-	attr->key = RAND_RANGE(0, 10);
-	rec->a3 = 32;
-}
-
-static void sanitise_bpf_map_get_next_key(union bpf_attr *attr, struct syscallrecord *rec)
-{
-	attr->map_fd = get_rand_bpf_fd();
-	attr->key = RAND_RANGE(0, 10);
-	attr->value = rnd_u32();
-	rec->a3 = 32;
-}
-
-static void sanitise_bpf_map_freeze(union bpf_attr *attr, struct syscallrecord *rec)
-{
-	attr->map_fd = get_rand_bpf_fd();
-	rec->a3 = 4;
-}
-
-static void sanitise_bpf_obj_get(union bpf_attr *attr, struct syscallrecord *rec)
-{
-	attr->map_fd = get_rand_bpf_fd();
-	rec->a3 = 32;
 }
 
 static bool sanitise_bpf_prog_load(union bpf_attr *attr, struct syscallrecord *rec)
@@ -846,13 +774,6 @@ static void bpf_post_validate_retval(struct syscallrecord *rec,
 	}
 }
 
-static void post_bpf_map_create(int fd, bool attr_readable, union bpf_attr *attr)
-{
-	if (fd >= 0 && attr_readable)
-		publish_resource(OBJ_FD_BPF_MAP, fd,
-				 &(struct resource_meta){.subtype = attr->map_type});
-}
-
 static void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
 			       bool classic_bpf_insns)
 {
@@ -911,22 +832,6 @@ static void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
 				deferred_free_enqueue(ptr);
 		}
 	}
-}
-
-static void post_bpf_map_get_fd_by_id(int fd)
-{
-	/*
-	 * Looked-up map fd is the same kind of object as one fresh
-	 * from BPF_MAP_CREATE — just sourced via id-lookup against
-	 * the kernel's id table.  Publish into the per-child pool so
-	 * subsequent map-fd consumers (LOOKUP_ELEM, UPDATE_ELEM,
-	 * FREEZE, etc.) can pick it up.  Map type is unknown at this
-	 * point; leaving it as BPF_MAP_TYPE_UNSPEC just makes the
-	 * dump output read "unknown" — no behavioural impact since
-	 * map_type is metadata only.
-	 */
-	if (fd >= 0)
-		publish_resource(OBJ_FD_BPF_MAP, fd, NULL);
 }
 
 static void post_bpf_prog_get_fd_by_id(int fd)
