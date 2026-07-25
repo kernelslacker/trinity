@@ -74,4 +74,12 @@ long long random_sysfs_config(__u32 *type,
 			__u64 *config1,
 			__u64 *config2);
 
+long long random_cache_config(void);
+int random_event_type(void);
+long long random_event_config(__u32 *event_type,
+				__u64 *config1,
+				__u64 *config2);
+struct perf_event_attr;
+void setup_breakpoints(struct perf_event_attr *attr);
+
 #endif /* SYSCALLS_PERF_EVENT_OPEN_INTERNAL_H */
