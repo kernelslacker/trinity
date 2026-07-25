@@ -121,7 +121,7 @@ unsigned long gen_arg_fd(struct syscallentry *entry,
 				struct syscallrecord *rec __unused__,
 				unsigned int argnum)
 {
-	struct results *results = &entry->results[argnum - 1];
+	struct results *results = &syscall_rt(entry)->results[argnum - 1];
 	bool filter;
 	int fd = 0;
 	int tries;
@@ -179,7 +179,7 @@ unsigned long gen_arg_typed_fd(struct syscallentry *entry,
 				      unsigned int argnum)
 {
 	enum argtype argtype = get_argtype(entry, argnum);
-	struct results *results = &entry->results[argnum - 1];
+	struct results *results = &syscall_rt(entry)->results[argnum - 1];
 	bool filter = rnd_modulo_u32(10) < 7;
 	enum argtype effective_argtype = argtype;
 	bool use_generic = false;

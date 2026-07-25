@@ -443,6 +443,20 @@ struct syscall_runtime {
 	 */
 	unsigned int pool_number;
 	/*
+	 * Per-arg-slot scoreboard.  Lock-free RMWs from the syscall-return
+	 * path: fd bitmaps via __atomic_fetch_or / _fetch_and, len_score via
+	 * CAS on the packed 64-bit word, fail_run via CAS on the packed
+	 * 32-bit word.  See struct results above for the field-level
+	 * synchronisation notes.
+	 *
+	 * Zero-initialised by the memset on the parallel runtime array in
+	 * copy_syscall_table(); results_init_one() is then called per slot
+	 * to stamp the len_score not-seen sentinel (min=UINT32_MAX, max=0)
+	 * so a reader that observes min > max treats the slot as never-seen
+	 * rather than mis-decoding the zero range.
+	 */
+	struct results results[6];
+	/*
 	 * Per-syscall dispatch counters.  Bumped from the syscall-return
 	 * path in dispatch/syscall-return.c via __atomic_add_fetch with
 	 * __ATOMIC_RELAXED (the only writers); readers in stats/dump/,
@@ -513,8 +527,6 @@ struct syscallentry {
 	enum argtype argtype[6];
 
 	const char *argname[6];
-
-	struct results results[6];
 
 	/*
 	 * Per-argument type-specific parameters, indexed [0..5] for args 1..6.

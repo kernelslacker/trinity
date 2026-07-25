@@ -554,7 +554,7 @@ unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *rec, un
 	 * last time, so we keep exercising the post-validation path instead
 	 * of bouncing off EBADF/EINVAL on a fresh random pick. */
 	if (ops->can_use_success_fd_bias && RAND_BOOL()) {
-		int fd = pick_successful_fd(&entry->results[argnum - 1]);
+		int fd = pick_successful_fd(&syscall_rt(entry)->results[argnum - 1]);
 
 		if (fd >= 0)
 			return (unsigned long) fd;
