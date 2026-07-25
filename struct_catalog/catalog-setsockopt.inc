@@ -1,0 +1,42 @@
+	[SC_LINGER] = {
+		.name		= "linger",
+		.struct_size	= sizeof(struct linger),
+		.fields		= linger_fields,
+		.num_fields	= ARRAY_SIZE(linger_fields),
+	},
+	[SC_IP_MREQN] = {
+		.name		= "ip_mreqn",
+		.struct_size	= sizeof(struct ip_mreqn),
+		.fields		= ip_mreqn_fields,
+		.num_fields	= ARRAY_SIZE(ip_mreqn_fields),
+	},
+	[SC_IPV6_MREQ] = {
+		.name		= "ipv6_mreq",
+		.struct_size	= sizeof(struct ipv6_mreq),
+		.fields		= ipv6_mreq_fields,
+		.num_fields	= ARRAY_SIZE(ipv6_mreq_fields),
+	},
+	[SC_PACKET_MREQ] = {
+		.name		= "packet_mreq",
+		.struct_size	= sizeof(struct packet_mreq),
+		.fields		= packet_mreq_fields,
+		.num_fields	= ARRAY_SIZE(packet_mreq_fields),
+	},
+	[SC_GROUP_REQ] = {
+		.name		= "group_req",
+		.struct_size	= sizeof(struct group_req),
+		.fields		= group_req_fields,
+		.num_fields	= ARRAY_SIZE(group_req_fields),
+	},
+	[SC_GROUP_SOURCE_REQ] = {
+		.name		= "group_source_req",
+		.struct_size	= sizeof(struct group_source_req),
+		.fields		= group_source_req_fields,
+		.num_fields	= ARRAY_SIZE(group_source_req_fields),
+	},
+	[SC_IP_MREQ_SOURCE] = {
+		.name		= "ip_mreq_source",
+		.struct_size	= sizeof(struct ip_mreq_source),
+		.fields		= ip_mreq_source_fields,
+		.num_fields	= ARRAY_SIZE(ip_mreq_source_fields),
+	},
