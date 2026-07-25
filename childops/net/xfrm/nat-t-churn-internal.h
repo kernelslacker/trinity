@@ -305,4 +305,21 @@ size_t nat_t_append_replay_esn(unsigned char *buf, size_t off, size_t cap,
 			 __u32 replay_window, __u32 seq_hi);
 __u32 nat_t_pick_seq_hi(void);
 
+/* nat-t-churn-sa.c -- XFRM_MSG_NEWSA / XFRM_MSG_DELSA netlink
+ * assemblers.  v4 and v6 walk the same attribute set but pick their
+ * selector / template / id addresses from NAT_T_[SD]ADDR_BE and
+ * nat_t_v6_addr respectively. */
+int nat_t_build_newsa(struct nl_ctx *ctx, __be32 spi, __u8 mode, bool esn,
+		      enum nat_t_encap_choice encap_choice,
+		      __u8 replay_window,
+		      const struct nat_t_alg *auth,
+		      const struct nat_t_alg *crypt);
+int nat_t_build_delsa(struct nl_ctx *ctx, __be32 spi);
+int nat_t_build_newsa6(struct nl_ctx *ctx, __be32 spi, __u8 mode, bool esn,
+		       enum nat_t_encap_choice encap_choice,
+		       __u8 replay_window,
+		       const struct nat_t_alg *auth,
+		       const struct nat_t_alg *crypt);
+int nat_t_build_delsa6(struct nl_ctx *ctx, __be32 spi);
+
 #endif /* CHILDOPS_XFRM_NAT_T_CHURN_INTERNAL_H */

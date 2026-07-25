@@ -169,3 +169,193 @@ __u32 nat_t_pick_seq_hi(void)
 		return rand32();
 	return RAND_ARRAY(nat_t_esn_seq_hi_edges);
 }
+
+/*
+ * Build XFRM_MSG_NEWSA carrying the full attribute set for one
+ * NAT-T-shaped SA.  spi / mode / encap_choice are captured by the
+ * caller for the matching DELSA and for the encap port the UDP socket
+ * targets.
+ */
+int nat_t_build_newsa(struct nl_ctx *ctx, __be32 spi, __u8 mode, bool esn,
+		      enum nat_t_encap_choice encap_choice,
+		      __u8 replay_window,
+		      const struct nat_t_alg *auth,
+		      const struct nat_t_alg *crypt)
+{
+	unsigned char buf[NAT_T_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct xfrm_usersa_info *sa;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_NEWSA;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
+	nat_t_fill_selector(&sa->sel);
+	sa->id.daddr.a4   = NAT_T_DADDR_BE;
+	sa->id.spi        = spi;
+	sa->id.proto      = IPPROTO_ESP;
+	sa->saddr.a4      = NAT_T_SADDR_BE;
+	nat_t_fill_lifetime(&sa->lft);
+	sa->reqid         = 1;
+	sa->family        = AF_INET;
+	sa->mode          = mode;
+	sa->replay_window = replay_window;
+	sa->flags         = esn ? XFRM_STATE_ESN : 0;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*sa));
+
+	off = nat_t_append_auth_trunc(buf, off, sizeof(buf), auth);
+	if (!off)
+		return -EIO;
+
+	off = nat_t_append_crypt(buf, off, sizeof(buf), crypt);
+	if (!off)
+		return -EIO;
+
+	if (encap_choice != NAT_T_ENCAP_OMIT) {
+		__u16 et = (encap_choice == NAT_T_ENCAP_NON_IKE)
+				? UDP_ENCAP_ESPINUDP_NON_IKE
+				: UDP_ENCAP_ESPINUDP;
+		off = nat_t_append_encap(buf, off, sizeof(buf), et);
+		if (!off)
+			return -EIO;
+	}
+
+	if (esn) {
+		off = nat_t_append_replay_esn(buf, off, sizeof(buf),
+					replay_window ? replay_window : 32U,
+					nat_t_pick_seq_hi());
+		if (!off)
+			return -EIO;
+	}
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+int nat_t_build_delsa(struct nl_ctx *ctx, __be32 spi)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct xfrm_usersa_id *uid;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_DELSA;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	uid = (struct xfrm_usersa_id *)NLMSG_DATA(nlh);
+	uid->daddr.a4 = NAT_T_DADDR_BE;
+	uid->spi      = spi;
+	uid->family   = AF_INET;
+	uid->proto    = IPPROTO_ESP;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uid));
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * v6 sibling of build_newsa: same attribute set, but the selector /
+ * template / id daddrs are 2001:db8::dead and the family is AF_INET6,
+ * so the kernel installs an xfrm6 SA whose ESP-encap output path runs
+ * through esp6_output rather than esp4_output.  Pure-add helper -- the
+ * IPv4 build_newsa is left untouched.
+ */
+int nat_t_build_newsa6(struct nl_ctx *ctx, __be32 spi, __u8 mode, bool esn,
+		       enum nat_t_encap_choice encap_choice,
+		       __u8 replay_window,
+		       const struct nat_t_alg *auth,
+		       const struct nat_t_alg *crypt)
+{
+	unsigned char buf[NAT_T_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct xfrm_usersa_info *sa;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_NEWSA;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
+	memset(&sa->sel, 0, sizeof(sa->sel));
+	memcpy(sa->sel.saddr.a6, nat_t_v6_addr, sizeof(sa->sel.saddr.a6));
+	memcpy(sa->sel.daddr.a6, nat_t_v6_addr, sizeof(sa->sel.daddr.a6));
+	sa->sel.family      = AF_INET6;
+	sa->sel.prefixlen_s = 128;
+	sa->sel.prefixlen_d = 128;
+	sa->sel.proto       = IPPROTO_UDP;
+
+	memcpy(sa->id.daddr.a6, nat_t_v6_addr, sizeof(sa->id.daddr.a6));
+	sa->id.spi   = spi;
+	sa->id.proto = IPPROTO_ESP;
+	memcpy(sa->saddr.a6, nat_t_v6_addr, sizeof(sa->saddr.a6));
+	nat_t_fill_lifetime(&sa->lft);
+	sa->reqid         = NAT_T_V6_REQID;
+	sa->family        = AF_INET6;
+	sa->mode          = mode;
+	sa->replay_window = replay_window;
+	sa->flags         = esn ? XFRM_STATE_ESN : 0;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*sa));
+
+	off = nat_t_append_auth_trunc(buf, off, sizeof(buf), auth);
+	if (!off)
+		return -EIO;
+
+	off = nat_t_append_crypt(buf, off, sizeof(buf), crypt);
+	if (!off)
+		return -EIO;
+
+	if (encap_choice != NAT_T_ENCAP_OMIT) {
+		__u16 et = (encap_choice == NAT_T_ENCAP_NON_IKE)
+				? UDP_ENCAP_ESPINUDP_NON_IKE
+				: UDP_ENCAP_ESPINUDP;
+		off = nat_t_append_encap(buf, off, sizeof(buf), et);
+		if (!off)
+			return -EIO;
+	}
+
+	if (esn) {
+		off = nat_t_append_replay_esn(buf, off, sizeof(buf),
+					replay_window ? replay_window : 32U,
+					nat_t_pick_seq_hi());
+		if (!off)
+			return -EIO;
+	}
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+int nat_t_build_delsa6(struct nl_ctx *ctx, __be32 spi)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct xfrm_usersa_id *uid;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_DELSA;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	uid = (struct xfrm_usersa_id *)NLMSG_DATA(nlh);
+	memcpy(uid->daddr.a6, nat_t_v6_addr, sizeof(uid->daddr.a6));
+	uid->spi    = spi;
+	uid->family = AF_INET6;
+	uid->proto  = IPPROTO_ESP;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uid));
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
