@@ -23,3 +23,14 @@
 extern enum fd_init_reason last_init_reason;
 extern int last_init_errno;
 extern char last_init_detail[128];
+
+/*
+ * Provider registration list.  The list-head node is heap-allocated on
+ * first register_fd_provider() call (which runs from REG_FD_PROV
+ * constructors, before main()) and never freed.  num_fd_providers is the
+ * count of entries linked into fd_providers->list.  Both are consumed by
+ * every carve-out that walks the provider list — init dispatch, picker,
+ * child_ops/replenish, param parser.
+ */
+extern struct fd_provider *fd_providers;
+extern unsigned int num_fd_providers;
