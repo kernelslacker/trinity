@@ -464,4 +464,17 @@ void pfkey_flush_burst(struct childdata *child);
 extern bool ns_unsupported_inet;
 void xfrm_sk_policy_churn(struct childdata *child);
 
+/*
+ * Compat-table opcode sweep.  Defined in
+ * childops/net/xfrm/xfrm-churn-compat-sweep.c.  Iterates
+ * XFRM_MSG_NEWSA..XFRM_COMPAT_SWEEP_MAX against an already-open
+ * NETLINK_XFRM fd to shake off-end indices out of
+ * net/xfrm/xfrm_compat.c::xfrm_msg_min[] and the broader xfrm_user
+ * dispatch.  Short-circuits on the shared ns_unsupported_xfrm latch
+ * set by the main setup path in xfrm-churn.c when NETLINK_XFRM is
+ * absent entirely.
+ */
+extern bool ns_unsupported_xfrm;
+void xfrm_compat_msg_sweep(struct nl_ctx *ctx);
+
 #endif /* CHILDOPS_XFRM_CHURN_INTERNAL_H */
