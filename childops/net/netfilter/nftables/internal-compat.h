@@ -1413,6 +1413,8 @@ void nft_xt_ct_usersize_sweep(void);
 bool nft_xt_ct_usersize_unsupported(void);
 void nft_xt_idletimer_sweep(void);
 bool nft_xt_idletimer_unsupported(void);
+void nft_xt_tcp_match_sweep(void);
+bool nft_xt_tcp_match_unsupported(void);
 
 void nft_compat_validate_sweep(struct nfnl_ctx *ctx);
 bool nft_compat_validate_unsupported(void);

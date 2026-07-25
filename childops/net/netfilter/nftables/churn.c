@@ -229,6 +229,18 @@ static int nftables_churn_iter_submode_dispatch(struct nftables_churn_iter_ctx *
 		return 1;
 	}
 
+	/* xt_tcp match-install sub-mode.  Complements xt_CT / xt_IDLETIMER
+	 * coverage above (both matchless / target-only) by exercising the
+	 * generic xt_check_match() validation surface with a real
+	 * xt_entry_match "tcp" on IPv4 and IPv6 rules.  Rare gate so the
+	 * expression-fuzz path stays dominant.  Independent latch
+	 * (ns_unsupported_xt_tcp_match) so a kernel without xt_tcp or the
+	 * ip[6]_tables sockopt path pays the EFAIL once. */
+	if (ONE_IN(8) && !nft_xt_tcp_match_unsupported()) {
+		nft_xt_tcp_match_sweep();
+		return 1;
+	}
+
 	/* Per-hook .validate sweep on xt-compat targets, gated separately
 	 * so the legacy expression-fuzz path above is undisturbed. */
 	if (ONE_IN(2) && !nft_compat_validate_unsupported()) {

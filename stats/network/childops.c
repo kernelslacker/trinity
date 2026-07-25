@@ -165,6 +165,10 @@ static void dump_stats_render_nftables_churn(void)
 		stat_row("nftables_churn", "xt_ct_set_ok",        shm->stats.nftables_churn.xt_ct_set_ok);
 		stat_row("nftables_churn", "xt_ct_get_ok",        shm->stats.nftables_churn.xt_ct_get_ok);
 		stat_row("nftables_churn", "xt_ct_v2_seen",       shm->stats.nftables_churn.xt_ct_v2_seen);
+		stat_row("nftables_churn", "xt_tcp_match_iters",       shm->stats.nftables_churn.xt_tcp_match_iters);
+		stat_row("nftables_churn", "xt_tcp_match_eperm",       shm->stats.nftables_churn.xt_tcp_match_eperm);
+		stat_row("nftables_churn", "xt_tcp_match_unsupported", shm->stats.nftables_churn.xt_tcp_match_unsupported);
+		stat_row("nftables_churn", "xt_tcp_match_set_ok",      shm->stats.nftables_churn.xt_tcp_match_set_ok);
 		stat_row("nftables_churn", "fwd_loop_runs",             shm->stats.nftables_churn.nft_fwd_loop_runs);
 		stat_row("nftables_churn", "fwd_loop_ns_setup_failed",  shm->stats.nftables_churn.nft_fwd_loop_ns_setup_failed);
 		stat_row("nftables_churn", "fwd_loop_probe_sent_ok",    shm->stats.nftables_churn.nft_fwd_loop_probe_sent_ok);
