@@ -78,44 +78,11 @@
 #include "childops-util.h"
 #include "jitter.h"
 #include "name-pool.h"
+#include "nl80211-churn-internal.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
-
-/* Outer churn-loop budget knobs (per spec). */
-#define NL80211_OUTER_BASE		5U
-#define NL80211_OUTER_FLOOR		16U
-#define NL80211_OUTER_CAP		64U
-#define NL80211_WALL_CAP_NS		(200ULL * 1000ULL * 1000ULL)
-
-/* Inner UDP burst (per spec): 5..32 packets per outer iter. */
-#define NL80211_BURST_MIN		5U
-#define NL80211_BURST_MAX		32U
-#define NL80211_BURST_PORT		9	/* discard port */
-
-/* Per-syscall recv window for the netlink ack drain.  100 ms is the
- * "brief BUDGETED yield" the spec calls for between TRIGGER_SCAN and
- * NEW_SCAN_RESULTS; the whole outer iter is wall-bounded by
- * NL80211_WALL_CAP_NS so nothing here can punch through SIGALRM(1s). */
-#define NL80211_TIMEO_MS		100
-#define NL80211_NL_RX_BUF		8192
-
-/* Bounded retry on the netlink config plane: a sibling iteration mid-
- * teardown can briefly bounce an EAGAIN / EBUSY / EINPROGRESS that the
- * very next attempt clears.  Eight retries comfortably rides through
- * the longest such window observed in tc-qdisc-churn / nftables-churn.
- * The shared childops-genl genl_send_recv is unicast-single-ack only
- * by design (devlink and tipc don't need retry); the retry wrapper
- * stays in this file -- see genl_send_recv_retry below. */
-#define NL80211_RETRY_MAX		8
-
-/* Cap on per-child created-iface ring.  Each outer iter creates one
- * STATION iface and (best-effort) tears it down before the next.  Ring
- * exists only to catch the cleanup case where a NEW_INTERFACE landed but
- * the per-iter DEL_INTERFACE was skipped (jump-out / wall cap hit).
- * 64 == NL80211_OUTER_CAP, the worst case if every iter leaks. */
-#define NL80211_IFACE_RING_CAP		NL80211_OUTER_CAP
 
 /* Per-grandchild latched gates.  Inherited as false at grandchild
  * fork time (the persistent child never writes them -- the in-ns
@@ -127,8 +94,12 @@
  * ENODEV detection arms are preserved because a fresh user namespace
  * cannot manufacture an absent kernel CONFIG -- the gate still
  * short-circuits the rest of the grandchild's iteration once it
- * fires. */
-static bool ns_unsupported_nl80211;
+ * fires.
+ *
+ * ns_unsupported_nl80211 is declared extern in nl80211-churn-internal.h
+ * because the split phase TUs (discovery/iface/scan/station) each
+ * latch it on their own probe outcomes; the definition lives here. */
+bool ns_unsupported_nl80211;
 static bool modprobe_tried_mac80211_hwsim;
 
 /* Master gate: persistent across iterations in the persistent child.
@@ -152,47 +123,19 @@ static void warn_once_unsupported_nl80211_userns(const char *reason, int err)
 /* Per-child scratch state.  Family id is resolved per-ctx by genl_open
  * now (was a cached static); only the first-wiphy lookup result needs
  * to survive across invocations so we don't pay the GET_WIPHY enumerate
- * every churn call. */
-static uint32_t nl80211_phy0;
+ * every churn call.  nl80211_phy0 is declared extern in
+ * nl80211-churn-internal.h so the iface + station phases can read the
+ * cached index; nl80211_phy0_cached stays file-local (only the
+ * coordinator in this TU writes it, from nl80211_churn_in_ns). */
+uint32_t nl80211_phy0;
 static bool nl80211_phy0_cached;
 
-/* Created-iface ring for the cleanup sweep. */
-static int created_ifindex[NL80211_IFACE_RING_CAP];
-static unsigned int created_count;
-
-static bool errno_is_unsupported(int e)
-{
-	return e == EPERM || e == ENOSYS || e == EOPNOTSUPP ||
-	       e == ENOPROTOOPT || e == EAFNOSUPPORT ||
-	       e == EPROTONOSUPPORT || e == ENODEV;
-}
-
-static bool errno_is_transient(int e)
-{
-	return e == EAGAIN || e == EBUSY || e == EINPROGRESS;
-}
-
-/*
- * Local wrapper around genl_send_recv() that retries up to
- * NL80211_RETRY_MAX times on EAGAIN/EBUSY/EINPROGRESS.  See the
- * comment on NL80211_RETRY_MAX -- the shared childops-genl wrapper is
- * intentionally unicast-single-ack only; the retry pattern is
- * nl80211-specific (a sibling iteration's mid-teardown briefly bounces
- * the config plane on EINPROGRESS, the very next attempt clears).
- */
-static int genl_send_recv_retry(struct genl_ctx *ctx, void *msg, size_t len)
-{
-	int retries;
-
-	for (retries = 0; retries < NL80211_RETRY_MAX; retries++) {
-		int rc = genl_send_recv(ctx, msg, len);
-
-		if (rc != 0 && errno_is_transient(-rc))
-			continue;
-		return rc;
-	}
-	return -EAGAIN;
-}
+/* Created-iface ring for the cleanup sweep.  Both symbols are declared
+ * extern in nl80211-churn-internal.h so the iface-setup phase can
+ * append, the teardown phase can clear slots, and the end-of-child
+ * sweep can drain the tail. */
+int created_ifindex[NL80211_IFACE_RING_CAP];
+unsigned int created_count;
 
 /*
  * Send a genl request and drain a sequence of responses until a
