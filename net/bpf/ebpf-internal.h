@@ -44,6 +44,49 @@ int reg_pick_live(struct reg_state *rs);
 int reg_pick_dst(void);
 int rand_stack_offset(void);
 
+/*
+ * Per-arg type tag in the helper descriptor table.  The generator emits
+ * a setup sequence for each arg matching its kind, then a BPF_CALL.
+ * Kinds intentionally limited to what we can satisfy cheaply and
+ * verifier-cleanly; richer kinds (ARG_CONST_MAP_VALUE, ARG_PTR_TO_MEM
+ * with strict size matching, varargs, etc.) are not modelled.
+ */
+enum helper_arg_kind {
+	ARG_SCALAR,		/* MOV64_IMM small constant */
+	ARG_MAP_PTR,		/* copy of an existing PTR_TO_MAP reg */
+	ARG_STACK_PTR,		/* R10 + offset into the call-local init slot */
+	ARG_STACK_SIZE,		/* MOV64_IMM matching the init-slot byte size */
+};
+
+struct helper_desc {
+	int	func;		/* BPF_FUNC_* helper id */
+	uint8_t	nargs;		/* 0..5 */
+	uint8_t	arg_kind[5];	/* per-arg enum helper_arg_kind */
+};
+
+struct helper_set {
+	const struct helper_desc *helpers;
+	int count;
+};
+
+/*
+ * Per-call init slot the verifier sees as "definitely written" before
+ * any ARG_STACK_PTR is read.  Zero-initialised at the start of the call
+ * sequence with a single ST_MEM BPF_DW so each STACK_PTR arg can point
+ * at it without dragging in its own init burden.  Fixed offset/size
+ * keeps the descriptor emission tiny; map keys/values larger than
+ * HELPER_ARG_STACK_BYTES will be verifier-rejected (an accepted
+ * outcome).
+ */
+#define HELPER_ARG_STACK_OFF	-8
+#define HELPER_ARG_STACK_BYTES	8
+#define HELPER_PICK_RETRIES	4
+
+struct helper_set get_helpers_for_prog_type(unsigned int prog_type);
+int helper_call_insns(const struct helper_desc *h, bool *need_init);
+const struct helper_desc *
+pick_helper_satisfiable(struct helper_set hs, const struct reg_state *rs);
+
 #endif /* USE_BPF */
 
 #endif /* NET_BPF_EBPF_INTERNAL_H */
