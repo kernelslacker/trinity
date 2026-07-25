@@ -19,3 +19,5 @@ ncscope.*
 cov-int
 trinity-coverity.tar.xz
 stats-timeseries-*.jsonl
+*.pyc
+__pycache__/
