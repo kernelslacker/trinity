@@ -76,12 +76,17 @@ static inline unsigned ilog2_ul(unsigned long x)
 	return x ? (unsigned)(63 - __builtin_clzl(x)) : 0;
 }
 
+/* pick-heuristic.c -- STRATEGY_HEURISTIC arm dispatched from
+ * set_syscall_nr in pickers.c.  Uniform draw + layered biases (group
+ * affinity, kcov cold-skip); trinity's pre-rotation default. */
+bool set_syscall_nr_heuristic(struct syscallrecord *rec,
+			      struct childdata *child);
+
 /* pickers.c -- top-level picker dispatch, called from dispatch_step
  * in dispatch.c.  set_syscall_nr_random is public via
- * include/syscall.h; the other picker arms
- * (set_syscall_nr_heuristic, set_syscall_nr_coverage_frontier) and
- * their helpers (frontier_cold_weight, cmp_frontier_weight) are
- * file-scope static inside pickers.c. */
+ * include/syscall.h; set_syscall_nr_coverage_frontier and the
+ * frontier weight helpers (frontier_cold_weight, cmp_frontier_weight)
+ * are file-scope static inside pickers.c. */
 bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child);
 
 /* chain-subst.c -- rewrite rec->aN in place for chain-substituted
