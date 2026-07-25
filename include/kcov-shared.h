@@ -171,7 +171,7 @@ struct kcov_shared {
 	 * ERRNO_BUCKET_* enum below.  Surfaced via dump_stats() as a
 	 * sibling block to the top-edges / cold-syscalls tables so the
 	 * operator can tell at a glance which syscalls are EFAULT-heavy
-	 * vs EINVAL-heavy.  Per-syscall entry->errnos[] already exists but
+	 * vs EINVAL-heavy.  Per-syscall syscall_rt(entry)->errnos[] already exists but
 	 * is sized NR_ERRNOS (133) per syscall and is the per-syscallentry
 	 * tally consumed by dump_entry(); this is the kcov_shm-resident
 	 * compact view that pairs with the coverage tables above and lives

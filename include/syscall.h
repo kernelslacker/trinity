@@ -442,6 +442,23 @@ struct syscall_runtime {
 	 * in tables.c.  Mutated only under shm->syscalltable_lock.
 	 */
 	unsigned int pool_number;
+	/*
+	 * Per-syscall dispatch counters.  Bumped from the syscall-return
+	 * path in dispatch/syscall-return.c via __atomic_add_fetch with
+	 * __ATOMIC_RELAXED (the only writers); readers in stats/dump/,
+	 * stats/json/, and stats/log.c consume them unlocked.  attempted
+	 * counts every dispatched invocation (including EXTRA_FORK
+	 * grandchildren that never reached AFTER, validator-rejected, and
+	 * --dry-run synthesised ENOSYS); successes / failures gate on
+	 * state == AFTER.
+	 */
+	unsigned int successes, failures, attempted;
+	/*
+	 * Per-errno histogram bumped alongside failures on the failure
+	 * branch of syscall_ret_dispatch_phase().  Same __ATOMIC_RELAXED
+	 * discipline; indexed by errno_post in [0..NR_ERRNOS].
+	 */
+	unsigned int errnos[NR_ERRNOS + 1];
 };
 
 struct syscallentry;
@@ -498,9 +515,6 @@ struct syscallentry {
 	const char *argname[6];
 
 	struct results results[6];
-
-	unsigned int successes, failures, attempted;
-	unsigned int errnos[NR_ERRNOS + 1];
 
 	/*
 	 * Per-argument type-specific parameters, indexed [0..5] for args 1..6.

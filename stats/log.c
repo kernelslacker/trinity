@@ -257,10 +257,10 @@ static unsigned long stats_ts_prev_childop_would_demote[NR_CHILD_OP_TYPES];
  * the syscall tables to label the row.
  *
  * kcov_calls and attempted_calls are named explicitly (replacing the
- * ambiguous "calls" this used to emit as entry->attempted) because
+ * ambiguous "calls" this used to emit as attempted) because
  * they measure different denominators: kcov_calls is the KCOV-bracketed
  * count kcov_collect() bumps into per_syscall_calls[], while
- * attempted_calls is the entry->attempted dispatch count -- larger,
+ * attempted_calls is the syscall_rt(entry)->attempted dispatch count -- larger,
  * covering EXTRA_FORK / validator-rejected / dry-run paths where the
  * kcov bracket never runs.  Callers comparing ratios across the two
  * tripped over shared naming before.
@@ -321,7 +321,7 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 			continue;
 
 		nr = entry->number;
-		attempted_calls = entry->attempted;
+		attempted_calls = syscall_rt(entry)->attempted;
 		if (nr < MAX_NR_SYSCALL && kcov_shm != NULL) {
 			edges = __atomic_load_n(
 				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][arch_ix].bucket_bits_real,

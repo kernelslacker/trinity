@@ -137,20 +137,22 @@ void dump_syscall_category_histogram(void)
 static void dump_entry(const struct syscalltable *table, unsigned int i)
 {
 	struct syscallentry *entry;
+	struct syscall_runtime *rt;
 	unsigned int j;
 
 	entry = table[i].entry;
 	if (entry == NULL)
 		return;
 
-	if (entry->attempted == 0)
+	rt = syscall_rt(entry);
+	if (rt->attempted == 0)
 		return;
 
-	output(0, "%s: (attempted:%u. success:%u. failures:%u.\n", entry->name, entry->attempted, entry->successes, entry->failures);
+	output(0, "%s: (attempted:%u. success:%u. failures:%u.\n", entry->name, rt->attempted, rt->successes, rt->failures);
 
 	for (j = 0; j <= NR_ERRNOS; j++) {
-		if (entry->errnos[j] != 0) {
-			output(0, "    %s: %d\n", strerror(j), entry->errnos[j]);
+		if (rt->errnos[j] != 0) {
+			output(0, "    %s: %d\n", strerror(j), rt->errnos[j]);
 		}
 	}
 }

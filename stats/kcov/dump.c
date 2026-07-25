@@ -54,7 +54,7 @@ void __cold dump_stats_kcov_block(void)
 		 * convention as the "Top edge-producing syscalls" block.  Eight
 		 * buckets in dump order: success, EFAULT, EINVAL, ENOSYS,
 		 * EPERM, EBADF, EAGAIN, other.  Bumped from handle_syscall_ret()
-		 * next to where the existing entry->failures / entry->errnos[]
+		 * next to where the existing syscall_rt(entry)->failures / errnos[]
 		 * tallies are updated.  Sort order matches the top-edges block:
 		 * descending by total syscall activity (sum of all eight
 		 * buckets) so the syscalls doing the most work appear first. */

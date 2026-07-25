@@ -179,7 +179,7 @@ static void syscall_ret_validate_phase(struct syscallrecord *rec,
 	 * structurally corrupt fd return (e.g. upper bits set, or below the
 	 * NR_OPEN ceiling but negative-when-cast) is != -1UL, so without
 	 * this gate it would take the success branch: handle_success()
-	 * scoreboards the bogus value, entry->successes and stats.successes
+	 * scoreboards the bogus value, syscall_rt(entry)->successes and stats.successes
 	 * both bump.  Coercing to -1UL here lets the dispatch below route
 	 * the rejected case through handle_failure() naturally, and the
 	 * forced errno_post = EINVAL drops cleanly into the errno bucket.
@@ -209,7 +209,7 @@ static void syscall_ret_validate_phase(struct syscallrecord *rec,
  * rec->retval and rec->errno_post are stale shm noise.  Failure
  * branch handles ENOSYS deactivation, handle_failure(), and the
  * per-errno classification; success branch routes through
- * handle_success() + entry->successes. */
+ * handle_success() + syscall_rt(entry)->successes. */
 static void syscall_ret_dispatch_phase(struct syscallrecord *rec,
 				       struct syscallentry *entry,
 				       unsigned int call)
@@ -228,9 +228,9 @@ static void syscall_ret_dispatch_phase(struct syscallrecord *rec,
 				deactivate_enosys(rec, entry, call);
 
 			handle_failure(rec);
-			__atomic_add_fetch(&entry->failures, 1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&syscall_rt(entry)->failures, 1, __ATOMIC_RELAXED);
 			if (err >= 0 && err <= NR_ERRNOS) {
-				__atomic_add_fetch(&entry->errnos[err], 1, __ATOMIC_RELAXED);
+				__atomic_add_fetch(&syscall_rt(entry)->errnos[err], 1, __ATOMIC_RELAXED);
 			} else if (err < 0) {
 				/* A real kernel return can never produce a
 				 * negative errno_post: __do_syscall stores
@@ -243,10 +243,10 @@ static void syscall_ret_dispatch_phase(struct syscallrecord *rec,
 				 * errno_post with garbage.  Without a lower
 				 * bound the original guard (err < NR_ERRNOS,
 				 * signed) admits negative values and indexes
-				 * entry->errnos[] before the array, silently
+				 * the runtime errnos[] before the array, silently
 				 * corrupting whatever struct field precedes
 				 * the errnos[] member in the per-syscall
-				 * entry.  Log with a distinct message so this
+				 * runtime.  Log with a distinct message so this
 				 * corruption shape can be told apart in
 				 * post-mortem logs from the err >= NR_ERRNOS
 				 * shape handled below. */
@@ -269,11 +269,11 @@ static void syscall_ret_dispatch_phase(struct syscallrecord *rec,
 		 * before reaching __do_syscall's AFTER block leaves
 		 * rec->retval as whatever the previous syscall stamped
 		 * into shm.  Without this gate handle_success() would
-		 * scoreboard a stale fd/len, and entry->successes /
+		 * scoreboard a stale fd/len, and syscall_rt(entry)->successes /
 		 * the successes aggregate would tally a syscall that
 		 * never actually returned. */
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning
-		__atomic_add_fetch(&entry->successes, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&syscall_rt(entry)->successes, 1, __ATOMIC_RELAXED);
 	}
 }
 
@@ -302,7 +302,7 @@ static inline unsigned int errno_gradient_class(unsigned long retval,
 
 /* Phase 3 of handle_syscall_ret: post-dispatch stats, hooks, and
  * cleanup.  Bumps the per-syscall errno-bucket histogram and the
- * unconditional entry->attempted counter, then under state == AFTER
+ * unconditional syscall_rt(entry)->attempted counter, then under state == AFTER
  * runs the count-bound checks, the ret_objtype_via_post / entry->post
  * hooks, register_returned_fd, and prop_ring_push.  Finally runs
  * check_uid, entry->cleanup, rec_owned_drain, and generic_free_arg
@@ -322,7 +322,7 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 	 * Surfaced via dump_stats() as a sibling block to the top-edges
 	 * table so the operator can spot EFAULT-heavy vs EINVAL-heavy
 	 * syscalls at a glance.  Gated on state == AFTER for the same
-	 * reason the entry->failures/entry->errnos[] tallies above are:
+	 * reason the syscall_rt(entry)->failures/errnos[] tallies above are:
 	 * an EXTRA_FORK grandchild that was SIGKILL'd before AFTER
 	 * leaves rec->retval / rec->errno_post holding whatever shm
 	 * noise the previous syscall stamped, and we don't want to
@@ -476,7 +476,7 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 	 * attempt even if the grandchild never reached AFTER, and
 	 * (attempted - successes - failures) gives operators visibility
 	 * on how many EXTRA_FORK grandchildren are getting killed. */
-	__atomic_add_fetch(&entry->attempted, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&syscall_rt(entry)->attempted, 1, __ATOMIC_RELAXED);
 
 	/* enforce_count_bound, entry->post, and register_returned_fd all
 	 * read rec->aN / rec->retval and would act on the previous
