@@ -1,10 +1,9 @@
 /*
- * netlink-xfrm-emit.c -- per-message-kind NETLINK_XFRM builders.
- * Each xfrm_emit_* function assembles one message (NEWSA / NEWAE /
- * NEWPOLICY / ...) plus its coherent attribute payload, sends it
- * through xfrm_send_recv, and -- on accept -- pushes any installed
- * SA / policy onto the per-process ring so later UPDSA / NEWAE /
- * DELSA / POLEXPIRE invocations target a real entry.
+ * netlink-xfrm-misc.c -- NETLINK_XFRM ACQUIRE and FLUSH message
+ * builders.  Everything left over after the SA-family builders moved
+ * to netlink-xfrm-state.c and the policy-family builders moved to
+ * netlink-xfrm-policy.c.  Shares internals with the other
+ * proto-netlink-xfrm-*.c modules via proto-netlink-xfrm-internal.h.
  */
 
 #include <stdbool.h>
