@@ -267,4 +267,9 @@ size_t build_v6_esp_fragment(uint8_t *buf, uint32_t ident,
 void esp_crafted_rx_send_frag_pair(struct esp_crafted_rx_iter_ctx *ctx,
 				   int fd);
 
+/* esp-crafted-rx-stacked.c */
+void install_stacked_null_esp_sas(struct esp_crafted_rx_iter_ctx *ctx);
+void esp_crafted_rx_send_stacked_v6(struct esp_crafted_rx_iter_ctx *ctx,
+				    int fd);
+
 #endif /* _CHILDOPS_NET_ESP_CRAFTED_RX_INTERNAL_H */
