@@ -8,8 +8,10 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #include <linux/io_uring.h>
@@ -632,9 +634,14 @@ bool recipe_renameat(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
-	static const char oldp[] = "/tmp/trinity-iour-rn-src";
-	static const char newp[] = "/tmp/trinity-iour-rn-dst";
+	char oldp[PATH_MAX + 32];
+	char newp[PATH_MAX + 32];
 	int r;
+
+	snprintf(oldp, sizeof(oldp), "%s/trinity-iour-rn-src",
+		 trinity_tmpdir_abs());
+	snprintf(newp, sizeof(newp), "%s/trinity-iour-rn-dst",
+		 trinity_tmpdir_abs());
 
 	sqe_clear(&sqe);
 	sqe.opcode       = IORING_OP_RENAMEAT;
@@ -661,8 +668,11 @@ bool recipe_unlinkat(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
-	static const char path[] = "/tmp/trinity-iour-unlink-target";
+	char path[PATH_MAX + 32];
 	int r;
+
+	snprintf(path, sizeof(path), "%s/trinity-iour-unlink-target",
+		 trinity_tmpdir_abs());
 
 	sqe_clear(&sqe);
 	sqe.opcode       = IORING_OP_UNLINKAT;
@@ -687,8 +697,11 @@ bool recipe_mkdirat(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
-	static const char path[] = "/tmp/trinity-iour-mkdir-target";
+	char path[PATH_MAX + 32];
 	int r;
+
+	snprintf(path, sizeof(path), "%s/trinity-iour-mkdir-target",
+		 trinity_tmpdir_abs());
 
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_MKDIRAT;
@@ -717,8 +730,11 @@ bool recipe_symlinkat(struct iour_recipe_state *s, bool *unsupported __unused__)
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char target[] = "/dev/null";
-	static const char linkp[]  = "/tmp/trinity-iour-symlink";
+	char linkp[PATH_MAX + 32];
 	int r;
+
+	snprintf(linkp, sizeof(linkp), "%s/trinity-iour-symlink",
+		 trinity_tmpdir_abs());
 
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_SYMLINKAT;
@@ -744,8 +760,11 @@ bool recipe_linkat(struct iour_recipe_state *s, bool *unsupported __unused__)
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char oldp[] = "/dev/null";
-	static const char newp[] = "/tmp/trinity-iour-hardlink";
+	char newp[PATH_MAX + 32];
 	int r;
+
+	snprintf(newp, sizeof(newp), "%s/trinity-iour-hardlink",
+		 trinity_tmpdir_abs());
 
 	sqe_clear(&sqe);
 	sqe.opcode         = IORING_OP_LINKAT;
@@ -774,10 +793,13 @@ bool recipe_setxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
-	static const char path[]  = "/tmp/trinity-iour-xattr-tgt";
+	char path[PATH_MAX + 32];
 	static const char name[]  = "user.trinity";
 	static const char value[] = "v";
 	int r;
+
+	snprintf(path, sizeof(path), "%s/trinity-iour-xattr-tgt",
+		 trinity_tmpdir_abs());
 
 	sqe_clear(&sqe);
 	sqe.opcode      = IORING_OP_SETXATTR;
