@@ -9,19 +9,28 @@ int get_rand_bpf_btf_fd(void);
 int get_rand_bpf_token_fd(void);
 
 /*
- * bpf map / prog / attach type vocabularies.  Defined alongside the
- * bpf_attr struct catalog (struct_catalog.c) so the schema-aware
- * fill's FT_ENUM tags and sanitise_bpf's RAND_ARRAY paths share a
- * single source.  Counts live as their own extern so syscalls/bpf.c
- * keeps a runtime read.  Populated only when USE_BPF is set; the
- * catalog itself is also USE_BPF-gated, so undefined-reference
- * builds without bpf support never name these symbols.
+ * bpf map / prog / attach type vocabularies.  Defined in the facade
+ * struct_catalog/bpf.c so the schema-aware fill's FT_ENUM tags and
+ * sanitise_bpf's RAND_ARRAY paths share a single source.  Counts
+ * live as their own extern so syscalls/bpf.c keeps a runtime read.
+ * The _N constants give the extern decls a complete array type so
+ * the per-family leaf TUs (struct_catalog/bpf-map.c, bpf-prog.c,
+ * bpf-link.c, ...) can fold ARRAY_SIZE() at their FT_ENUM
+ * initialisers.  Populated only when USE_BPF is set; the catalog
+ * itself is also USE_BPF-gated, so undefined-reference builds
+ * without bpf support never name these symbols.
  */
-extern const unsigned long bpf_map_types[];
+enum {
+	BPF_MAP_TYPES_N		= 35,
+	BPF_PROG_TYPES_N	= 33,
+	BPF_ATTACH_TYPES_N	= 62,
+};
+
+extern const unsigned long bpf_map_types[BPF_MAP_TYPES_N];
 extern const unsigned int bpf_map_types_count;
-extern const unsigned long bpf_prog_types[];
+extern const unsigned long bpf_prog_types[BPF_PROG_TYPES_N];
 extern const unsigned int bpf_prog_types_count;
-extern const unsigned long bpf_attach_types[];
+extern const unsigned long bpf_attach_types[BPF_ATTACH_TYPES_N];
 extern const unsigned int bpf_attach_types_count;
 
 /*
