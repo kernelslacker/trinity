@@ -43,6 +43,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <setjmp.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -448,13 +449,15 @@ static void mode_splice(int fd, unsigned int file_idx, size_t size,
 static void mode_sendfile(int fd, unsigned int file_idx, size_t size,
 			  const char *path)
 {
-	char tmpl[] = "trinity-canary-XXXXXX";
+	char tmpl[PATH_MAX + 32];
 	int tfd;
 	off_t soff = 0;
 	ssize_t sent;
 	unsigned char buf[READ_CHUNK];
 	size_t off = 0;
 
+	snprintf(tmpl, sizeof(tmpl), "%s/trinity-canary-XXXXXX",
+		 trinity_tmpdir_abs());
 	tfd = mkstemp(tmpl);
 	if (tfd < 0)
 		return;
