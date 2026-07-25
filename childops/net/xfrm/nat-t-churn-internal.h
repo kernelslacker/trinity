@@ -259,4 +259,23 @@ struct nat_t_alg {
 /* Bounded retry on transient SA-install failure (EAGAIN/EBUSY/ENOMEM). */
 #define NAT_T_XFRM6_RETRY_CAP		8U
 
+/*
+ * Shared file-scope state.  Defined in nat-t-churn-setup.c; every
+ * other TU in the family sees the same latches / iteration counter /
+ * documentation address via extern.
+ */
+extern bool ns_unsupported_nat_t;
+extern bool ns_unsupported_xfrm6;
+extern bool lo_brought_up;
+extern __u32 g_iter;
+extern const __u8 nat_t_v6_addr[16];
+
+/*
+ * Cross-TU function set.  Bodies live in the file named in the
+ * comment beside each prototype.
+ */
+/* nat-t-churn-setup.c */
+void warn_once_unsupported(const char *reason, int err);
+void bring_lo_up(void);
+
 #endif /* CHILDOPS_XFRM_NAT_T_CHURN_INTERNAL_H */
