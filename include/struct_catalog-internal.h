@@ -140,16 +140,17 @@ extern const struct struct_field sctp_prim_fields[SCTP_PRIM_FIELDS_N];
 
 #ifdef USE_BPF
 /*
- * BPF leaf tables defined in struct_catalog/bpf.c.  The spine in
- * struct_catalog.c references bpf_attr_variants and bpf_insn_fields
- * by name with ARRAY_SIZE() at the use site, so those two carry
- * explicit array bounds via _N constants -- a count mismatch fails
- * at the leaf TU as "excess elements" / "too few".  The remaining
- * tables are referenced only from within bpf.c (per-cmd field
- * arrays threaded into bpf_attr_variants, nested-variant tails
- * threaded into bpf_attr_LINK_CREATE_nested, and the attach-type
- * value pools they pin), so their extern decls land here without
- * sizes -- bpf.c sees the complete definition at every use site.
+ * BPF leaf tables.  bpf_attr_variants and bpf_insn_fields live in the
+ * facade struct_catalog/bpf.c and are consumed from the spine in
+ * struct_catalog.c via ARRAY_SIZE() at the use site; every other
+ * table listed below lives in a per-family leaf TU
+ * (struct_catalog/bpf-map.c, bpf-prog.c, bpf-link.c, bpf-btf.c,
+ * bpf-task-storage.c) and is threaded into the facade's
+ * bpf_attr_variants aggregator by extern reference.  Every table
+ * carries an explicit _N constant so the extern decl compiles against
+ * a complete array type -- a count mismatch fails at the leaf TU as
+ * "excess elements" / "too few", and the facade's ARRAY_SIZE() at
+ * the reference site keeps folding.
  *
  * bpf_map_types / bpf_prog_types / bpf_attach_types and their
  * _count companions are declared in include/bpf.h (shared with
@@ -166,14 +167,19 @@ enum {
 #else
 	BPF_ATTR_VARIANTS_N	= 37,
 #endif
-	BPF_INSN_FIELDS_N	= 3,
+	BPF_INSN_FIELDS_N		= 3,
+
+	BPF_ATTR_MAP_CREATE_FIELDS_N	= 16,
+	BPF_ATTR_MAP_ELEM_FIELDS_N	= 4,
+	BPF_ATTR_BATCH_ARRAYS_N		= 2,
+	BPF_ATTR_BATCH_FIELDS_N		= 8,
 };
 
-extern const struct struct_field bpf_attr_MAP_CREATE_fields[];
+extern const struct struct_field bpf_attr_MAP_CREATE_fields[BPF_ATTR_MAP_CREATE_FIELDS_N];
 extern const struct struct_field bpf_attr_PROG_LOAD_fields[];
 extern const struct struct_field bpf_attr_PROG_ATTACH_fields[];
 extern const struct struct_field bpf_attr_OBJ_fields[];
-extern const struct struct_field bpf_attr_MAP_ELEM_fields[];
+extern const struct struct_field bpf_attr_MAP_ELEM_fields[BPF_ATTR_MAP_ELEM_FIELDS_N];
 extern const struct struct_field bpf_attr_GET_ID_fields[];
 extern const struct struct_field bpf_attr_LINK_UPDATE_fields[];
 extern const struct struct_field bpf_attr_LINK_DETACH_fields[];
@@ -185,8 +191,8 @@ extern const char *const bpf_attr_query_arrays[];
 extern const struct struct_field bpf_attr_QUERY_fields[];
 extern const struct struct_field bpf_attr_TASK_FD_QUERY_fields[];
 extern const struct struct_field bpf_attr_BTF_LOAD_fields[];
-extern const char *const bpf_attr_batch_arrays[];
-extern const struct struct_field bpf_attr_BATCH_fields[];
+extern const char *const bpf_attr_batch_arrays[BPF_ATTR_BATCH_ARRAYS_N];
+extern const struct struct_field bpf_attr_BATCH_fields[BPF_ATTR_BATCH_FIELDS_N];
 extern const struct struct_field bpf_attr_TEST_fields[];
 extern const struct struct_field bpf_attr_INFO_fields[];
 extern const struct struct_field bpf_attr_RAW_TRACEPOINT_fields[];
