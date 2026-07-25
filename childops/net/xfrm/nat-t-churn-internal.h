@@ -278,4 +278,31 @@ extern const __u8 nat_t_v6_addr[16];
 void warn_once_unsupported(const char *reason, int err);
 void bring_lo_up(void);
 
+/* nat-t-churn-sa.c -- algorithm-rotation tables plus their sizes.
+ * Cross-TU callers spin an index via rnd_modulo_u32(<name>_n); the
+ * paired _n avoids leaking sizeof onto the extern array declarations. */
+extern const struct nat_t_alg nat_t_auth_algs[];
+extern const struct nat_t_alg nat_t_crypt_algs[];
+extern const __u8 nat_t_replay_windows[];
+extern const __u32 nat_t_esn_seq_hi_edges[];
+extern const size_t nat_t_auth_algs_n;
+extern const size_t nat_t_crypt_algs_n;
+extern const size_t nat_t_replay_windows_n;
+extern const size_t nat_t_esn_seq_hi_edges_n;
+
+/* nat-t-churn-sa.c -- SA attribute assemblers.  The fill / append
+ * helpers write directly into the caller's buffer; nat_t_pick_seq_hi() rolls
+ * an ESN seq_hi with edge-value bias. */
+void nat_t_fill_selector(struct xfrm_selector *sel);
+void nat_t_fill_lifetime(struct xfrm_lifetime_cfg *lft);
+size_t nat_t_append_auth_trunc(unsigned char *buf, size_t off, size_t cap,
+			 const struct nat_t_alg *a);
+size_t nat_t_append_crypt(unsigned char *buf, size_t off, size_t cap,
+		    const struct nat_t_alg *a);
+size_t nat_t_append_encap(unsigned char *buf, size_t off, size_t cap,
+		    __u16 encap_type);
+size_t nat_t_append_replay_esn(unsigned char *buf, size_t off, size_t cap,
+			 __u32 replay_window, __u32 seq_hi);
+__u32 nat_t_pick_seq_hi(void);
+
 #endif /* CHILDOPS_XFRM_NAT_T_CHURN_INTERNAL_H */
