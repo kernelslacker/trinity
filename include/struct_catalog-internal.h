@@ -200,6 +200,9 @@ enum {
 		+ 1
 #endif
 		,
+
+	BPF_ATTR_BTF_LOAD_FIELDS_N	= 8,
+	BPF_ATTR_INFO_FIELDS_N		= 3,
 };
 
 extern const struct struct_field bpf_attr_MAP_CREATE_fields[BPF_ATTR_MAP_CREATE_FIELDS_N];
@@ -217,11 +220,11 @@ extern const struct struct_field bpf_attr_TOKEN_CREATE_fields[];
 extern const char *const bpf_attr_query_arrays[BPF_ATTR_QUERY_ARRAYS_N];
 extern const struct struct_field bpf_attr_QUERY_fields[BPF_ATTR_QUERY_FIELDS_N];
 extern const struct struct_field bpf_attr_TASK_FD_QUERY_fields[];
-extern const struct struct_field bpf_attr_BTF_LOAD_fields[];
+extern const struct struct_field bpf_attr_BTF_LOAD_fields[BPF_ATTR_BTF_LOAD_FIELDS_N];
 extern const char *const bpf_attr_batch_arrays[BPF_ATTR_BATCH_ARRAYS_N];
 extern const struct struct_field bpf_attr_BATCH_fields[BPF_ATTR_BATCH_FIELDS_N];
 extern const struct struct_field bpf_attr_TEST_fields[BPF_ATTR_TEST_FIELDS_N];
-extern const struct struct_field bpf_attr_INFO_fields[];
+extern const struct struct_field bpf_attr_INFO_fields[BPF_ATTR_INFO_FIELDS_N];
 extern const struct struct_field bpf_attr_RAW_TRACEPOINT_fields[];
 #ifdef USE_BPF_PROG_STREAM_READ
 extern const struct struct_field bpf_attr_PROG_STREAM_READ_fields[BPF_ATTR_PROG_STREAM_READ_FIELDS_N];
