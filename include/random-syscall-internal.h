@@ -91,10 +91,17 @@ bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 unsigned long frontier_cold_weight(unsigned int nr, struct childdata *child);
 unsigned long cmp_frontier_weight(unsigned int nr);
 
+/* pick-frontier.c -- STRATEGY_COVERAGE_FRONTIER arm dispatched from
+ * set_syscall_nr in pickers.c.  Uniform draw with rejection sampling
+ * against the per-syscall frontier-edge weight; silent-regime
+ * fallback consults the weight helpers above. */
+bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
+				      struct childdata *child);
+
 /* pickers.c -- top-level picker dispatch, called from dispatch_step
  * in dispatch.c.  set_syscall_nr_random is public via
- * include/syscall.h; set_syscall_nr_coverage_frontier is file-scope
- * static inside pickers.c. */
+ * include/syscall.h; the per-strategy picker arms and the frontier
+ * weight helpers live in their own sibling files (declared above). */
 bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child);
 
 /* chain-subst.c -- rewrite rec->aN in place for chain-substituted
