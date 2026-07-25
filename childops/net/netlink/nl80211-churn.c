@@ -136,48 +136,6 @@ static bool nl80211_phy0_cached;
 int created_ifindex[NL80211_IFACE_RING_CAP];
 unsigned int created_count;
 
-/*
- * Issue NL80211_CMD_NEW_INTERFACE iftype=NL80211_IFTYPE_STATION on
- * @phy.  On success returns the new ifindex (looked up by name, since
- * the kernel may or may not echo NL80211_ATTR_IFINDEX in the ack); on
- * failure returns the negated kernel errno or -EIO.
- */
-static int new_station_iface(struct genl_ctx *ctx, uint32_t phy,
-			     const char *ifname)
-{
-	unsigned char buf[512];
-	struct nlmsghdr *nlh;
-	size_t off;
-	int rc;
-	int ifindex;
-
-	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
-			   NL80211_CMD_NEW_INTERFACE, 0);
-	if (!off)
-		return -EIO;
-	off = nla_put_u32(buf, off, sizeof(buf), NL80211_ATTR_WIPHY, phy);
-	if (!off)
-		return -EIO;
-	off = nla_put_str(buf, off, sizeof(buf), NL80211_ATTR_IFNAME, ifname);
-	if (!off)
-		return -EIO;
-	off = nla_put_u32(buf, off, sizeof(buf),
-			  NL80211_ATTR_IFTYPE, NL80211_IFTYPE_STATION);
-	if (!off)
-		return -EIO;
-
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_len = (uint32_t)off;
-	rc = genl_send_recv_retry(ctx, buf, off);
-	if (rc != 0)
-		return rc;
-
-	ifindex = (int)if_nametoindex(ifname);
-	if (ifindex == 0)
-		return -EIO;
-	return ifindex;
-}
-
 static void random_bssid(unsigned char mac[6]);
 
 /*
@@ -308,26 +266,6 @@ static int build_pmsr_ftm_req(struct genl_ctx *ctx, uint32_t ifindex,
 	nla_nest_end(buf, peer1_off, off);
 	nla_nest_end(buf, peers_off, off);
 	nla_nest_end(buf, pmsr_off, off);
-
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_len = (uint32_t)off;
-	return genl_send_recv_retry(ctx, buf, off);
-}
-
-static int del_iface_by_index(struct genl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	size_t off;
-
-	off = genl_msg_put(buf, 0, sizeof(buf), ctx, nl_seq_next(&ctx->nl),
-			   NL80211_CMD_DEL_INTERFACE, 0);
-	if (!off)
-		return -EIO;
-	off = nla_put_u32(buf, off, sizeof(buf),
-			  NL80211_ATTR_IFINDEX, (uint32_t)ifindex);
-	if (!off)
-		return -EIO;
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
@@ -564,29 +502,6 @@ static void send_inner_burst(const char *ifname, const struct timespec *t_outer)
 }
 
 /*
- * Walk the per-child created-iface ring and issue a final
- * NL80211_CMD_DEL_INTERFACE for each.  Skips entries already torn down
- * inside the per-iter sequence (the entry has been zeroed).  Ring is
- * cleared on return.
- */
-static void cleanup_ifaces(struct genl_ctx *ctx)
-{
-	unsigned int i;
-
-	for (i = 0; i < created_count; i++) {
-		int ifx = created_ifindex[i];
-
-		if (ifx <= 0)
-			continue;
-		if (del_iface_by_index(ctx, ifx) == 0)
-			__atomic_add_fetch(&shm->stats.nl80211.iface_destroyed,
-					   1, __ATOMIC_RELAXED);
-		created_ifindex[i] = 0;
-	}
-	created_count = 0;
-}
-
-/*
  * Admin-gate detector.  Forks; the child enters an unmapped
  * CLONE_NEWUSER (no uid mapping -> all init_user_ns capabilities are
  * dropped instantly), opens a fresh genl ctx of its own via genl_open
@@ -716,47 +631,6 @@ static void nl80211_admin_gate_probe(uint32_t wiphy_idx)
 	}
 
 	(void)waitpid_eintr(pid, NULL, 0);
-}
-
-/*
- * Phase: gate on the outer wall-clock budget, pick a fresh STATION ifname,
- * and create the iface via NEW_INTERFACE.  Returns 0 on success and fills
- * *ifindex / ifname; returns -1 when the wall cap is hit or NEW_INTERFACE
- * fails (caller bails -- the rest of the phases have nothing to anchor on).
- * Latches ns_unsupported_nl80211 on the kernel-doesn't-have-nl80211 errnos
- * so subsequent outer iters short-circuit cheaply.
- */
-static int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
-			      int *ifindex, const struct timespec *t_outer)
-{
-	int rc;
-
-	if ((unsigned long long)ns_since(t_outer) >= NL80211_WALL_CAP_NS)
-		return -1;
-
-	(void)snprintf(ifname, IFNAMSIZ, "twl%u",
-		       (unsigned int)(rand32() & 0xffffu));
-
-	rc = new_station_iface(ctx, nl80211_phy0, ifname);
-	if (rc < 0) {
-		if (errno_is_unsupported(-rc))
-			ns_unsupported_nl80211 = true;
-		return -1;
-	}
-	*ifindex = rc;
-
-	/* Kernel confirmed @ifname now names a real STATION iface; publish
-	 * it via the NETDEV name pool so sibling childops (and per-syscall
-	 * fuzzers drawing this kind) can reach "name a previous syscall
-	 * planted" lookup codepaths instead of always-fresh-random near-miss
-	 * space. */
-	name_pool_record(NAME_KIND_NETDEV, ifname, strlen(ifname));
-
-	__atomic_add_fetch(&shm->stats.nl80211.iface_created,
-			   1, __ATOMIC_RELAXED);
-	if (created_count < NL80211_IFACE_RING_CAP)
-		created_ifindex[created_count++] = *ifindex;
-	return 0;
 }
 
 /*

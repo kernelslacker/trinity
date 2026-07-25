@@ -151,4 +151,14 @@ static inline int genl_send_recv_retry(struct genl_ctx *ctx, void *msg, size_t l
 /* Discovery/setup phase -- nl80211-churn-discovery.c */
 bool hwsim_present(struct genl_ctx *ctx);
 
+/* Interface churn phase -- nl80211-churn-iface.c.  struct timespec is
+ * forward-referenced in the nl80211_iter_setup() signature so this
+ * header does not need to pull in <time.h> transitively. */
+struct timespec;
+int new_station_iface(struct genl_ctx *ctx, uint32_t phy, const char *ifname);
+int del_iface_by_index(struct genl_ctx *ctx, int ifindex);
+void cleanup_ifaces(struct genl_ctx *ctx);
+int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
+		       int *ifindex, const struct timespec *t_outer);
+
 #endif /* CHILDOPS_NL80211_CHURN_INTERNAL_H */
