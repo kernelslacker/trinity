@@ -99,194 +99,6 @@ static bool lo_brought_up;
  * naturally.
  */
 /*
- * RTM_NEWLINK type=bridge with the supplied dev name.  No
- * IFLA_INFO_DATA — defaults are fine for our purposes (STP off,
- * default ageing, default forward delay).  STP gets toggled later
- * via sysfs.  Returns 0 on accept, negated errno on rejection,
- * -EIO on local failure.
- */
-static int build_bridge_create(struct nl_ctx *ctx, const char *name)
-{
-	unsigned char buf[RTNL_BUF_BYTES];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-	size_t li_off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_NEWLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
-			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-
-	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
-	if (!off)
-		return -EIO;
-
-	li_off = off;
-	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
-	if (!off)
-		return -EIO;
-
-	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "bridge");
-	if (!off)
-		return -EIO;
-
-	nla_nest_end(buf, li_off, off);
-
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
-/*
- * RTM_NEWLINK type=veth with VETH_INFO_PEER carrying the peer's
- * ifinfomsg + IFLA_IFNAME.  Distinct peer names per pair so the four
- * veth ends in this op are unambiguously addressable by name.
- */
-static int build_veth_create(struct nl_ctx *ctx, const char *name,
-			     const char *peer_name)
-{
-	unsigned char buf[RTNL_BUF_BYTES];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	struct ifinfomsg *peer_ifi;
-	size_t off;
-	size_t li_off, id_off, peer_off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_NEWLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
-			   NLM_F_CREATE | NLM_F_EXCL;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-
-	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
-	if (!off)
-		return -EIO;
-
-	li_off = off;
-	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
-	if (!off)
-		return -EIO;
-
-	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "veth");
-	if (!off)
-		return -EIO;
-
-	id_off = off;
-	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
-	if (!off)
-		return -EIO;
-
-	peer_off = off;
-	off = nla_nest_start(buf, off, sizeof(buf), VETH_INFO_PEER);
-	if (!off)
-		return -EIO;
-
-	/* VETH_INFO_PEER's payload starts with an ifinfomsg, then
-	 * regular IFLA attributes (IFLA_IFNAME for the peer name). */
-	if (off + NLMSG_ALIGN(sizeof(*peer_ifi)) > sizeof(buf))
-		return -EIO;
-	peer_ifi = (struct ifinfomsg *)(buf + off);
-	memset(peer_ifi, 0, sizeof(*peer_ifi));
-	peer_ifi->ifi_family = AF_UNSPEC;
-	off += NLMSG_ALIGN(sizeof(*peer_ifi));
-
-	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, peer_name);
-	if (!off)
-		return -EIO;
-
-	nla_nest_end(buf, peer_off, off);
-	nla_nest_end(buf, id_off, off);
-	nla_nest_end(buf, li_off, off);
-
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
-/*
- * RTM_SETLINK with IFLA_MASTER=master_ifindex on ifindex.  Enslaves
- * the veth end to the bridge.
- */
-static int build_setlink_master(struct nl_ctx *ctx, int ifindex,
-				int master_ifindex)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_SETLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	off = nla_put_u32(buf, off, sizeof(buf), IFLA_MASTER,
-			  (__u32)master_ifindex);
-	if (!off)
-		return -EIO;
-
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
-/*
- * RTM_SETLINK family=AF_BRIDGE with IFLA_PROTINFO containing
- * IFLA_BRPORT_LEARNING=1 — arms BR_LEARNING on the port.  This is
- * what makes the receive-path frame ingress drive br_fdb_update
- * (the rx-driven learning path the op exists to exercise).
- */
-static int build_setlink_brport_learning(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off, pi_off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_SETLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_BRIDGE;
-	ifi->ifi_index  = ifindex;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-
-	pi_off = off;
-	off = nla_nest_start(buf, off, sizeof(buf),
-			     IFLA_PROTINFO | NLA_F_NESTED);
-	if (!off)
-		return -EIO;
-
-	off = nla_put_u8(buf, off, sizeof(buf), IFLA_BRPORT_LEARNING, 1);
-	if (!off)
-		return -EIO;
-
-	nla_nest_end(buf, pi_off, off);
-
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
-/*
  * RTM_DELNEIGH for a fdb entry: family=AF_BRIDGE, ndm_ifindex=port,
  * NDA_LLADDR=mac.  Races the receive-path learning that may be
  * re-installing the same entry concurrently — the targeted
@@ -477,21 +289,21 @@ static void bridge_vlan_mass_add(struct nl_ctx *ctx)
 	snprintf(veth_a, sizeof(veth_a), "trbmv%ua", rng);
 	snprintf(veth_b, sizeof(veth_b), "trbmv%ub", rng);
 
-	if (build_bridge_create(ctx, br_name) != 0)
+	if (bfs_build_bridge_create(ctx, br_name) != 0)
 		goto out;
 	bridge_added = true;
 	br_idx = (int)if_nametoindex(br_name);
 	if (br_idx <= 0)
 		goto out;
 
-	if (build_veth_create(ctx, veth_a, veth_b) != 0)
+	if (bfs_build_veth_create(ctx, veth_a, veth_b) != 0)
 		goto out;
 	veth_added = true;
 	va_idx = (int)if_nametoindex(veth_a);
 	if (va_idx <= 0)
 		goto out;
 
-	(void)build_setlink_master(ctx, va_idx, br_idx);
+	(void)bfs_build_setlink_master(ctx, va_idx, br_idx);
 	(void)rtnl_setlink_up(ctx, br_idx);
 	(void)rtnl_setlink_up(ctx, va_idx);
 
@@ -571,7 +383,7 @@ static int bridge_fdb_stp_iter_bridge_create(struct bridge_fdb_stp_iter_ctx *ctx
 {
 	int rc;
 
-	rc = build_bridge_create(&ctx->ctx, ctx->br_name);
+	rc = bfs_build_bridge_create(&ctx->ctx, ctx->br_name);
 	if (rc != 0) {
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -ENOENT || rc == -EPROTONOSUPPORT)
@@ -619,7 +431,7 @@ static void bridge_fdb_stp_iter_veth_attach(struct bridge_fdb_stp_iter_ctx *ctx)
 	int rc;
 
 	if (!ns_unsupported_veth) {
-		rc = build_veth_create(&ctx->ctx, ctx->veth0a, ctx->veth0b);
+		rc = bfs_build_veth_create(&ctx->ctx, ctx->veth0a, ctx->veth0b);
 		if (rc != 0) {
 			if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 			    rc == -ENOTSUP || rc == -ENOENT)
@@ -632,7 +444,7 @@ static void bridge_fdb_stp_iter_veth_attach(struct bridge_fdb_stp_iter_ctx *ctx)
 	}
 
 	if (!ns_unsupported_veth) {
-		rc = build_veth_create(&ctx->ctx, ctx->veth1a, ctx->veth1b);
+		rc = bfs_build_veth_create(&ctx->ctx, ctx->veth1a, ctx->veth1b);
 		if (rc == 0) {
 			ctx->veth1_added = true;
 			__atomic_add_fetch(&shm->stats.bridge_fdb_stp.veth_create_ok,
@@ -650,7 +462,7 @@ static void bridge_fdb_stp_iter_veth_attach(struct bridge_fdb_stp_iter_ctx *ctx)
 			continue;
 		ctx->port_idx[i] = (int)if_nametoindex(port_names[i]);
 		if (ctx->port_idx[i] > 0)
-			(void)build_setlink_master(&ctx->ctx, ctx->port_idx[i],
+			(void)bfs_build_setlink_master(&ctx->ctx, ctx->port_idx[i],
 						   ctx->br_idx);
 	}
 
@@ -662,7 +474,7 @@ static void bridge_fdb_stp_iter_veth_attach(struct bridge_fdb_stp_iter_ctx *ctx)
 
 	for (i = 0; i < 4; i++) {
 		if (ctx->port_idx[i] > 0)
-			(void)build_setlink_brport_learning(&ctx->ctx,
+			(void)bfs_build_setlink_brport_learning(&ctx->ctx,
 							    ctx->port_idx[i]);
 	}
 }
