@@ -1,0 +1,46 @@
+/*
+ * bpf-internal.h
+ *
+ * Shared declarations for the syscalls/bpf.c source-split.  Each
+ * per-command family (map / prog / link / btf) lives in its own
+ * sibling translation unit; the aggregator syscalls/bpf.c keeps the
+ * switch dispatch, cross-family helpers, post-state plumbing,
+ * sanitise_bpf_default, and the syscall_bpf registration.
+ *
+ * This header is private to the syscalls/bpf*.c TUs -- do not include
+ * it from anywhere else.
+ *
+ * The two file-static helpers bpf_fill_obj_name and bpf_random_token_fd
+ * were deliberately widened from static to external linkage so the
+ * split map / prog / btf / get_fd_by_id sites can reach them without
+ * duplicating the pool-draw / mutated-name logic across TUs.
+ */
+
+#ifndef SYSCALLS_BPF_INTERNAL_H
+#define SYSCALLS_BPF_INTERNAL_H
+
+#ifdef USE_BPF
+
+#include <stdbool.h>
+#include <linux/bpf.h>
+
+#include "syscall.h"
+
+/* Shared helpers (defined in syscalls/bpf.c). */
+void bpf_fill_obj_name(char *name);
+int bpf_random_token_fd(void);
+
+/* Map family (defined in syscalls/bpf-map.c). */
+void sanitise_bpf_map_create(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_map_lookup(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_map_update(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_map_delete(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_map_get_next_key(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_map_freeze(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_obj_get(union bpf_attr *attr, struct syscallrecord *rec);
+void post_bpf_map_create(int fd, bool attr_readable, union bpf_attr *attr);
+void post_bpf_map_get_fd_by_id(int fd);
+
+#endif	/* USE_BPF */
+
+#endif	/* SYSCALLS_BPF_INTERNAL_H */
