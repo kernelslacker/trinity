@@ -99,41 +99,6 @@ static bool lo_brought_up;
  * naturally.
  */
 /*
- * RTM_DELNEIGH for a fdb entry: family=AF_BRIDGE, ndm_ifindex=port,
- * NDA_LLADDR=mac.  Races the receive-path learning that may be
- * re-installing the same entry concurrently — the targeted
- * learn-vs-delete window.
- */
-static int build_fdb_del(struct nl_ctx *ctx, int port_ifindex,
-			 const unsigned char *mac)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ndmsg *ndm;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_DELNEIGH;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ndm = (struct ndmsg *)NLMSG_DATA(nlh);
-	ndm->ndm_family  = AF_BRIDGE;
-	ndm->ndm_ifindex = port_ifindex;
-	ndm->ndm_state   = NUD_REACHABLE;
-	ndm->ndm_flags   = NTF_MASTER;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ndm));
-	off = nla_put(buf, off, sizeof(buf), NDA_LLADDR, mac, 6);
-	if (!off)
-		return -EIO;
-
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
-/*
  * Toggle STP via /sys/class/net/<br>/bridge/stp_state.  Open + write
  * + close per call.  EROFS / EACCES / ENOENT all latch
  * ns_unsupported_sysfs_stp — those are the failure modes for a
@@ -160,18 +125,6 @@ static bool sysfs_stp_write(const char *brname, char val)
 	n = write(fd, &val, 1);
 	close(fd);
 	return n == 1;
-}
-
-/*
- * Generate a random unicast, locally-administered MAC.  Bit 0 of the
- * first byte is the multicast bit (must be 0); bit 1 is the
- * locally-administered bit (set so we don't collide with any host
- * OUI).  br_fdb_update accepts any unicast lladdr.
- */
-static void random_unicast_lla(unsigned char *mac)
-{
-	generate_rand_bytes(mac, 6);
-	mac[0] = (unsigned char)((mac[0] & 0xfc) | 0x02);
 }
 
 /*
