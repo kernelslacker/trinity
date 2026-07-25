@@ -181,6 +181,25 @@ enum {
 	BPF_ATTR_QUERY_FIELDS_N		= 10,
 	BPF_ATTR_TEST_FIELDS_N		= 15,
 	BPF_ATTR_PROG_STREAM_READ_FIELDS_N	= 4,
+
+	BPF_ATTR_LINK_UPDATE_FIELDS_N	= 4,
+	BPF_ATTR_LINK_DETACH_FIELDS_N	= 1,
+	BPF_ATTR_LINK_CREATE_FIELDS_N	= 4,
+	/*
+	 * bpf_attr_LINK_CREATE_nested[] fan-out: 8 always-on sub-variants
+	 * (ITER, PERF_EVENT, TRACING, KPROBE_MULTI, UPROBE_MULTI,
+	 * NETFILTER, TCX, NETKIT) + optional TRACING_MULTI and CGROUP
+	 * arms gated on the same USE_* macros as their inner-union member
+	 * definitions.
+	 */
+	BPF_ATTR_LINK_CREATE_NESTED_N	= 8
+#ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
+		+ 1
+#endif
+#ifdef USE_BPF_LINK_CREATE_CGROUP
+		+ 1
+#endif
+		,
 };
 
 extern const struct struct_field bpf_attr_MAP_CREATE_fields[BPF_ATTR_MAP_CREATE_FIELDS_N];
@@ -189,8 +208,8 @@ extern const struct struct_field bpf_attr_PROG_ATTACH_fields[BPF_ATTR_PROG_ATTAC
 extern const struct struct_field bpf_attr_OBJ_fields[];
 extern const struct struct_field bpf_attr_MAP_ELEM_fields[BPF_ATTR_MAP_ELEM_FIELDS_N];
 extern const struct struct_field bpf_attr_GET_ID_fields[];
-extern const struct struct_field bpf_attr_LINK_UPDATE_fields[];
-extern const struct struct_field bpf_attr_LINK_DETACH_fields[];
+extern const struct struct_field bpf_attr_LINK_UPDATE_fields[BPF_ATTR_LINK_UPDATE_FIELDS_N];
+extern const struct struct_field bpf_attr_LINK_DETACH_fields[BPF_ATTR_LINK_DETACH_FIELDS_N];
 extern const struct struct_field bpf_attr_ENABLE_STATS_fields[];
 extern const struct struct_field bpf_attr_ITER_CREATE_fields[];
 extern const struct struct_field bpf_attr_PROG_BIND_MAP_fields[BPF_ATTR_PROG_BIND_MAP_FIELDS_N];
@@ -207,7 +226,7 @@ extern const struct struct_field bpf_attr_RAW_TRACEPOINT_fields[];
 #ifdef USE_BPF_PROG_STREAM_READ
 extern const struct struct_field bpf_attr_PROG_STREAM_READ_fields[BPF_ATTR_PROG_STREAM_READ_FIELDS_N];
 #endif
-extern const struct struct_field bpf_attr_LINK_CREATE_fields[];
+extern const struct struct_field bpf_attr_LINK_CREATE_fields[BPF_ATTR_LINK_CREATE_FIELDS_N];
 extern const struct struct_field bpf_attr_LINK_CREATE_BASE_fields[];
 extern const struct union_variant bpf_attr_LINK_CREATE_base;
 extern const unsigned long bpf_attach_types_tracing[];
@@ -230,7 +249,7 @@ extern const struct struct_field bpf_attr_LINK_CREATE_KPROBE_MULTI_fields[];
 extern const unsigned long bpf_attach_types_uprobe_multi[];
 extern const char *const bpf_attr_link_create_uprobe_multi_arrays[];
 extern const struct struct_field bpf_attr_LINK_CREATE_UPROBE_MULTI_fields[];
-extern const struct union_variant bpf_attr_LINK_CREATE_nested[];
+extern const struct union_variant bpf_attr_LINK_CREATE_nested[BPF_ATTR_LINK_CREATE_NESTED_N];
 extern const struct struct_field bpf_insn_fields[BPF_INSN_FIELDS_N];
 extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
 #endif /* USE_BPF */
