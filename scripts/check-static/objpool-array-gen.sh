@@ -32,7 +32,10 @@ ROOT="${REPO_ROOT:-$(pwd)}"
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
 OBJ_H="include/objects.h"
-OBJ_C="objects/registry.c"
+# Registry logic is split across objects/registry*.c sibling TUs
+# (registry.c + registry-lifecycle.c + registry-pool.c + registry-pick.c
+# + registry-diag.c).  The checks below scan all of them.
+OBJ_C_LIST="objects/registry.c objects/registry-lifecycle.c objects/registry-pool.c objects/registry-pick.c objects/registry-diag.c"
 
 fail=0
 
@@ -45,30 +48,41 @@ fi
 # (2) get_random_object() must not contain a bare head->array[ ... ]
 # indexed load (the pre-fix form).  It MUST contain a call to
 # objhead_indexed_read instead.  Extract the function body by brace
-# tracking and inspect it.
-body="$(awk '
-	/^struct object \* get_random_object\(/ { in_fn=1; depth=0 }
-	in_fn {
-		print
-		n_open=gsub(/\{/, "{")
-		n_close=gsub(/\}/, "}")
-		depth += n_open - n_close
-		if (depth > 0) seen=1
-		if (seen && depth == 0) { exit }
-	}
-' "$OBJ_C")"
+# tracking and inspect it -- search across the registry-*.c set for
+# the TU that defines it.
+body=""
+body_file=""
+for f in $OBJ_C_LIST; do
+	[ -f "$f" ] || continue
+	b="$(awk '
+		/^struct object \* get_random_object\(/ { in_fn=1; depth=0 }
+		in_fn {
+			print
+			n_open=gsub(/\{/, "{")
+			n_close=gsub(/\}/, "}")
+			depth += n_open - n_close
+			if (depth > 0) seen=1
+			if (seen && depth == 0) { exit }
+		}
+	' "$f")"
+	if [ -n "$b" ]; then
+		body="$b"
+		body_file="$f"
+		break
+	fi
+done
 
 if [ -z "$body" ]; then
-	echo "FAIL: $NAME: could not locate get_random_object() body in $OBJ_C"
+	echo "FAIL: $NAME: could not locate get_random_object() body in $OBJ_C_LIST"
 	fail=1
 else
 	if echo "$body" | grep -qE 'head->array\['; then
-		echo "FAIL: $NAME: get_random_object() still contains a bare head->array[idx] indexed load"
+		echo "FAIL: $NAME: get_random_object() still contains a bare head->array[idx] indexed load (in $body_file)"
 		echo "$body" | grep -nE 'head->array\[' >&2
 		fail=1
 	fi
 	if ! echo "$body" | grep -qE 'objhead_indexed_read\('; then
-		echo "FAIL: $NAME: get_random_object() does not route through objhead_indexed_read()"
+		echo "FAIL: $NAME: get_random_object() does not route through objhead_indexed_read() (in $body_file)"
 		fail=1
 	fi
 fi
@@ -85,40 +99,54 @@ fi
 #   deferred_free_enqueue(oldarray);-- OBJ_LOCAL grow
 #   tracked_free_now(head->array);  -- destroy_objects teardown
 #
-# Walk the file collecting (anchor_line, label) and (bump_lines).  Each
-# anchor must have a bump within +/- 12 lines.
+# Walk each registry-*.c file collecting (anchor_line, label) and
+# (bump_lines).  Each anchor must have a bump within +/- 12 lines
+# of the SAME file (anchors and bumps are always co-located in the
+# same TU because the array-replace + generation-bump lines are one
+# atomic sequence in the source).
 
-awk -v NAME="$NAME" '
-	BEGIN { exit_code = 0; nb = 0; na = 0 }
-	$0 ~ /head->array_generation\+\+;/ { bumps[nb++] = NR }
-	$0 ~ /free\(head->array\);/        { anchors[na] = NR; labels[na] = "free(head->array)"; na++ }
-	$0 ~ /tracked_free_now\(head->array\);/ { anchors[na] = NR; labels[na] = "tracked_free_now(head->array)"; na++ }
-	$0 ~ /deferred_free_enqueue\(oldarray\);/ { anchors[na] = NR; labels[na] = "deferred_free_enqueue(oldarray)"; na++ }
-	END {
-		for (i = 0; i < na; i++) {
-			found = 0
-			for (j = 0; j < nb; j++) {
-				if (bumps[j] >= anchors[i] - 12 && bumps[j] <= anchors[i] + 12) {
-					found = 1
-					break
+total_anchors=0
+for f in $OBJ_C_LIST; do
+	[ -f "$f" ] || continue
+	awk -v NAME="$NAME" '
+		BEGIN { exit_code = 0; nb = 0; na = 0 }
+		$0 ~ /head->array_generation\+\+;/ { bumps[nb++] = NR }
+		$0 ~ /free\(head->array\);/        { anchors[na] = NR; labels[na] = "free(head->array)"; na++ }
+		$0 ~ /tracked_free_now\(head->array\);/ { anchors[na] = NR; labels[na] = "tracked_free_now(head->array)"; na++ }
+		$0 ~ /deferred_free_enqueue\(oldarray\);/ { anchors[na] = NR; labels[na] = "deferred_free_enqueue(oldarray)"; na++ }
+		END {
+			for (i = 0; i < na; i++) {
+				found = 0
+				for (j = 0; j < nb; j++) {
+					if (bumps[j] >= anchors[i] - 12 && bumps[j] <= anchors[i] + 12) {
+						found = 1
+						break
+					}
+				}
+				if (!found) {
+					printf("FAIL: %s: replace site %s at %s:%d not paired with head->array_generation++ within +/-12 lines\n",
+						NAME, labels[i], FILENAME, anchors[i]) > "/dev/stderr"
+					exit_code = 1
 				}
 			}
-			if (!found) {
-				printf("FAIL: %s: replace site %s at %s:%d not paired with head->array_generation++ within +/-12 lines\n",
-					NAME, labels[i], FILENAME, anchors[i]) > "/dev/stderr"
-				exit_code = 1
-			}
+			printf("%d\n", na)
+			exit exit_code
 		}
-		if (na == 0) {
-			printf("FAIL: %s: no array-replace anchor sites found in %s -- check script may be stale\n",
-				NAME, FILENAME) > "/dev/stderr"
-			exit_code = 1
-		}
-		exit exit_code
-	}
-' "$OBJ_C"
-awk_rc=$?
-if [ "$awk_rc" -ne 0 ]; then
+	' "$f" > /tmp/objpool-check-$$-count 2>/tmp/objpool-check-$$-err
+	awk_rc=$?
+	na_here=$(cat /tmp/objpool-check-$$-count 2>/dev/null)
+	cat /tmp/objpool-check-$$-err >&2 2>/dev/null
+	rm -f /tmp/objpool-check-$$-count /tmp/objpool-check-$$-err
+	if [ "$awk_rc" -ne 0 ]; then
+		fail=1
+	fi
+	if [ -n "$na_here" ]; then
+		total_anchors=$((total_anchors + na_here))
+	fi
+done
+
+if [ "$total_anchors" -eq 0 ]; then
+	echo "FAIL: $NAME: no array-replace anchor sites found in $OBJ_C_LIST -- check script may be stale" >&2
 	fail=1
 fi
 
