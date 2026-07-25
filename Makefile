@@ -94,6 +94,33 @@ debug: trinity
 test:
 	@if [ ! -f config.h ]; then  echo "[1;31mRun ./configure first.[0m" ; exit; fi
 
+# PURE-module test binary integration paths (arch-program #10).
+#
+# `make test-bin`  -- build the tests/ binary against the fake
+#                     shm+RNG providers.  Does not run it.
+# `make test-asan` -- clean rebuild under -fsanitize=address + run
+#                     with the default fixed seed (0xa17e57).  This
+#                     is the canonical single-shot integration
+#                     invocation: any BUG() from a selftest lands as
+#                     an ASAN report on the same seed every time, so
+#                     a failure is instantly reproducible.
+#
+# Both targets shell out to tests/Makefile, which builds into
+# tests/build/ and never touches the top-level Makefile's object
+# cache.  New PURE modules migrate onto the test-bin cargo by
+# adding one line to tests/Makefile REAL_SRCS, not by wiring
+# anything here.
+.PHONY: test-bin test-asan
+
+test-bin: test
+	@$(MAKE) --no-print-directory -C tests
+
+test-asan: test
+	@$(MAKE) --no-print-directory -C tests clean
+	@$(MAKE) --no-print-directory -C tests ASAN=1
+	@echo "  RUN  tests/test-bin (ASAN, seed=default)"
+	@./tests/test-bin
+
 
 MACHINE		:= $(shell $(CC) -dumpmachine)
 SYSCALLS_ARCH	:= $(shell case "$(MACHINE)" in \
