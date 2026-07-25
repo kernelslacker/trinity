@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "rnd.h"
+#include "rnd_stream_golden.h"		/* rnd_stream_golden_check */
 #include "struct_catalog.h"		/* struct_field_mutate_self_check */
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
@@ -45,6 +46,11 @@ int main(int argc, char **argv)
 	printf("  struct_field_mutate_self_check ... ");
 	fflush(stdout);
 	struct_field_mutate_self_check();
+	printf("OK\n");
+
+	printf("  rnd_stream_golden_check ... ");
+	fflush(stdout);
+	rnd_stream_golden_check();
 	printf("OK\n");
 
 	return 0;

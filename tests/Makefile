@@ -59,6 +59,7 @@ FAKE_SRCS	:= \
 	fake_rng.c \
 	fake_shm.c \
 	fake_stubs.c \
+	rnd_stream_golden.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
