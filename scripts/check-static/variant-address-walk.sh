@@ -28,7 +28,7 @@ set -u
 NAME="variant-address-walk"
 ROOT="${REPO_ROOT:-$(pwd)}"
 SCRUB="$ROOT/args/scrub.c"
-MUT="$ROOT/args/struct_mutate.c"
+MUT="$ROOT/args/struct_mutate_selftest.c"
 CAT="$ROOT/struct_catalog/address.c"
 
 fail() {
@@ -124,7 +124,8 @@ done
 
 # Runtime selftest must exist AND be wired into the entry point.
 # selftest_variant_address_walk() and struct_field_mutate_self_check()
-# live in args/struct_mutate.c after the generate-args carve.
+# live in args/struct_mutate_selftest.c after the arch-#10 test-target
+# split (previously both were in args/struct_mutate.c).
 checked=$((checked + 1))
 if ! grep -qE '^static void selftest_variant_address_walk\(void\)' "$MUT"; then
 	problems+=("selftest_variant_address_walk() not defined in $MUT")
