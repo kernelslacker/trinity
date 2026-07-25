@@ -50,46 +50,10 @@
 #include "utils.h"
 
 /*
- * Defined in pick-common.c.  Checked loader for shm->nr_active_
- * *syscalls: returns the RELAXED-loaded count, logs a self-corrupt
- * marker when it exceeds MAX_NR_SYSCALL.  Callers detect corruption
- * via the returned value being > MAX_NR_SYSCALL and route into
- * their existing FAIL path.  Not hoisted into random-syscall-
- * internal.h yet -- promote when a fourth caller appears outside
- * this cluster.
- */
-unsigned int load_active_syscall_count(const unsigned int *shm_count,
-				       const char *arch_label);
-
-/*
  * Compression factor for the frontier-weighted acceptance denominator.
  * See the gate in set_syscall_nr_coverage_frontier() for the rationale.
  */
 #define FRONTIER_SOFT_SCALE 16
-
-/*
- * Acceptance-weight scale for the cold/untried-syscall fallback path in
- * set_syscall_nr_coverage_frontier().  Engaged when the frontier ring
- * is silent (max_weight <= 2) so the picker has a per-syscall signal
- * to steer on instead of degenerating to plain uniform draw -- see the
- * fallback gate for the full rationale.
- *
- * Sized at 256 so the integer-divide inverse-productivity transform
- * (SCALE - floor(SCALE * edges / calls)) resolves at ~0.4%/step: even
- * a syscall with a handful of productive calls in the high-thousands
- * range stays distinguishable from a never-tried slot instead of
- * flooring the divide to 0 and collapsing to MAX.  256 is also the
- * Q8.8 unit used by adapt_budget's mult table -- staying on a
- * power-of-two keeps the rnd_modulo_u32(SCALE + 1) draw in the same
- * Lemire fast-path the soft-max path already uses.
- */
-#define FRONTIER_COLD_SCALE 256
-
-static inline unsigned ilog2_ul(unsigned long x)
-{
-	return x ? (unsigned)(63 - __builtin_clzl(x)) : 0;
-}
-
 
 /*
  * Pick the syscall to run under STRATEGY_HEURISTIC: uniform draw from
