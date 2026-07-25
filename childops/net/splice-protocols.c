@@ -52,6 +52,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/socket.h>
@@ -540,7 +541,7 @@ static bool selftest_done;
  */
 static void splice_protocols_selftest(void)
 {
-	char path[] = "/tmp/splice-self-test-XXXXXX";
+	char path[PATH_MAX + 32];
 	unsigned char marker[SPLICE_SELFTEST_LEN];
 	unsigned char rxbuf[SPLICE_SELFTEST_LEN * 2];
 	struct sockaddr_in sin_tx, sin_rx;
@@ -550,6 +551,8 @@ static void splice_protocols_selftest(void)
 	int tmpfd = -1, rdfd = -1, tx = -1, rx = -1;
 	ssize_t n;
 
+	snprintf(path, sizeof(path), "%s/splice-self-test-XXXXXX",
+		 trinity_tmpdir_abs());
 	tmpfd = mkstemp(path);
 	if (tmpfd < 0)
 		goto out;
