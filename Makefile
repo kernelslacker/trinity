@@ -337,6 +337,7 @@ clean:
 	@rm -f *.o args/*.o lib/*.o main/*.o main/params/*.o net/*.o objects/*.o stats/*.o stats/json/*.o stats/periodic/*.o tables/*.o utils/*.o
 	@rm -f core.*
 	@rm -f trinity
+	@$(MAKE) --no-print-directory -C tests clean
 	@rm -f tags tags.json
 	@rm -rf $(DEPDIR)/*
 	@rm -rf trinity-coverity.tar.xz cov-int
