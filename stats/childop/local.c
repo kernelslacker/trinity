@@ -174,12 +174,15 @@ void __cold dump_stats_childop_fd_delta(void)
 	bool any = false;
 
 	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
-		unsigned long sum, ops;
+		unsigned long sum, ops, ceiling;
 
 		sum = __atomic_load_n(
 				&shm->stats.childop.fd_delta_positive_sum[op],
 				__ATOMIC_RELAXED);
-		if (sum == 0)
+		ceiling = __atomic_load_n(
+				&shm->stats.childop.fd_leak_at_ceiling[op],
+				__ATOMIC_RELAXED);
+		if (sum == 0 && ceiling == 0)
 			continue;
 		ops = __atomic_load_n(
 				&shm->stats.childop.fd_delta_positive_ops[op],
@@ -192,8 +195,8 @@ void __cold dump_stats_childop_fd_delta(void)
 			any = true;
 		}
 		output(1,
-		       "childop_fd_delta %s: positive_sum=%lu positive_ops=%lu\n",
-		       alt_op_name(op), sum, ops);
+		       "childop_fd_delta %s: positive_sum=%lu positive_ops=%lu at_ceiling=%lu\n",
+		       alt_op_name(op), sum, ops, ceiling);
 	}
 }
 
