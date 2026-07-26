@@ -387,6 +387,65 @@ struct shm_s {
 	bool veth_xdp_kind_unsupported[VETH_XDP_NR_KINDS];
 	bool veth_xdp_xdp_unsupported;
 
+	/* nftables_churn per-subsystem latches (childops/net/netfilter/
+	 * nftables/churn.c).  Grandchild observes NETLINK_NETFILTER socket
+	 * EPROTONOSUPPORT (CONFIG_NF_NETLINK=n), NEWTABLE
+	 * EOPNOTSUPP/EAFNOSUPPORT/EPROTONOSUPPORT (nf_tables absent), or
+	 * AF_INET SOCK_DGRAM socket() refusal. */
+	bool nft_churn_ns_unsupported_nfnetlink;
+	bool nft_churn_ns_unsupported_nf_tables;
+	bool nft_churn_ns_unsupported_inet;
+
+	/* bridge-conntrack-churn per-subsystem latches (childops/net/
+	 * bridge-conntrack-churn.c).  Grandchild observes RTM_NEWLINK
+	 * bridge rejection, nf_tables NEWTABLE/NEWCHAIN rejection on the
+	 * bridge family, or ctnetlink IPCTNL_MSG_CT_FLUSH rejection. */
+	bool bridge_ct_churn_ns_unsupported_bridge;
+	bool bridge_ct_churn_ns_unsupported_nf_tables;
+	bool bridge_ct_churn_ns_unsupported_ctnetlink;
+
+	/* bridge-ip6frag-refrag per-subsystem latches (childops/net/
+	 * bridge-ip6frag-refrag.c).  Grandchild observes RTM_NEWLINK
+	 * bridge rejection, nf_tables NEWTABLE/NEWCHAIN/NEWRULE rejection,
+	 * or AF_PACKET SOCK_RAW socket() refusal. */
+	bool bridge_ip6frag_ns_unsupported_bridge;
+	bool bridge_ip6frag_ns_unsupported_nf_tables;
+	bool bridge_ip6frag_ns_unsupported_af_packet;
+
+	/* bridge-ip6-refrag-fraggap per-subsystem latches (childops/net/
+	 * bridge-ip6-refrag-fraggap.c).  Grandchild observes RTM_NEWLINK
+	 * bridge rejection, nf_tables NEWTABLE/NEWCHAIN rejection, or the
+	 * bridge-nf-call-ip6tables sysctl being absent. */
+	bool bridge_ip6_fraggap_ns_unsupported_bridge;
+	bool bridge_ip6_fraggap_ns_unsupported_nf_tables;
+	bool bridge_ip6_fraggap_ns_unsupported_brnf;
+
+	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
+	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
+	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC
+	 * clsact rejection, cls_matchall/act_mirred rejection, or
+	 * AF_INET SOCK_DGRAM socket() refusal. */
+	bool tc_mirred_bc_ns_unsupported_rtnl;
+	bool tc_mirred_bc_ns_unsupported_dummy;
+	bool tc_mirred_bc_ns_unsupported_clsact;
+	bool tc_mirred_bc_ns_unsupported_mirred;
+	bool tc_mirred_bc_ns_unsupported_matchall;
+	bool tc_mirred_bc_ns_unsupported_inet;
+
+	/* tc/live-traffic per-subsystem latches (childops/net/tc/
+	 * live-traffic.c).  Grandchild observes NETLINK_ROUTE socket
+	 * refusal, RTM_NEWLINK "veth" rejection, RTM_NEWQDISC clsact
+	 * rejection, cls_matchall rejection, cls_bpf BPF_PROG_LOAD
+	 * refusal, AF_INET SOCK_DGRAM socket() refusal, or XDP prog
+	 * load / attach refusal. */
+	bool tc_live_ns_unsupported_rtnl;
+	bool tc_live_ns_unsupported_veth;
+	bool tc_live_ns_unsupported_clsact;
+	bool tc_live_ns_unsupported_matchall;
+	bool tc_live_ns_unsupported_bpf_cls;
+	bool tc_live_ns_unsupported_inet;
+	bool tc_live_ns_unsupported_xdp;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the

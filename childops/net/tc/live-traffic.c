@@ -213,19 +213,104 @@ struct fallback_tc_gact {
 
 #define TCLIVE_INNER_PORT	34573
 
-/* Per-grandchild latched gates.  Same discipline as the sibling tc ops:
- * inherited as false at grandchild fork time, flipped on the first
- * config-absent rejection from the corresponding subsystem, die with
- * the grandchild on _exit().  A fresh user namespace cannot manufacture
- * an absent CONFIG so the gate still short-circuits inside its own
- * grandchild once fired. */
-static bool ns_unsupported_rtnl;
-static bool ns_unsupported_veth;
-static bool ns_unsupported_clsact;
-static bool ns_unsupported_matchall;
-static bool ns_unsupported_bpf_cls;
-static bool ns_unsupported_inet;
-static bool ns_unsupported_xdp;
+/* Per-subsystem config-absent gates live in shm
+ * (shm->tc_live_ns_unsupported_{rtnl,veth,clsact,matchall,bpf_cls,
+ * inet,xdp}).  The write site is inside the userns_run_in_ns()
+ * grandchild -- a process-local static would die with the grandchild
+ * on _exit() and every subsequent invocation would re-attempt the
+ * same unsupported NETLINK_ROUTE / veth NEWLINK / clsact NEWQDISC /
+ * matchall install / cls_bpf load / AF_INET socket() / XDP
+ * load-or-attach forever (latch-in-grandchild bug).  Set when the
+ * corresponding subsystem rejects with the CONFIG-absent errno set;
+ * persists fleet-wide via shm so the unsupported attempt is paid
+ * once per fleet rather than once per grandchild.  RELAXED atomic
+ * load/store from multiple grandchildren is safe -- only false ->
+ * true, and the write is idempotent. */
+
+static bool ns_unsupported_rtnl(void)
+{
+	return __atomic_load_n(&shm->tc_live_ns_unsupported_rtnl,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_rtnl(void)
+{
+	__atomic_store_n(&shm->tc_live_ns_unsupported_rtnl, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_veth(void)
+{
+	return __atomic_load_n(&shm->tc_live_ns_unsupported_veth,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_veth(void)
+{
+	__atomic_store_n(&shm->tc_live_ns_unsupported_veth, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_clsact(void)
+{
+	return __atomic_load_n(&shm->tc_live_ns_unsupported_clsact,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_clsact(void)
+{
+	__atomic_store_n(&shm->tc_live_ns_unsupported_clsact, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_matchall(void)
+{
+	return __atomic_load_n(&shm->tc_live_ns_unsupported_matchall,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_matchall(void)
+{
+	__atomic_store_n(&shm->tc_live_ns_unsupported_matchall, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_bpf_cls(void)
+{
+	return __atomic_load_n(&shm->tc_live_ns_unsupported_bpf_cls,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_bpf_cls(void)
+{
+	__atomic_store_n(&shm->tc_live_ns_unsupported_bpf_cls, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_inet(void)
+{
+	return __atomic_load_n(&shm->tc_live_ns_unsupported_inet,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_inet(void)
+{
+	__atomic_store_n(&shm->tc_live_ns_unsupported_inet, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_xdp(void)
+{
+	return __atomic_load_n(&shm->tc_live_ns_unsupported_xdp,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_xdp(void)
+{
+	__atomic_store_n(&shm->tc_live_ns_unsupported_xdp, true,
+			 __ATOMIC_RELAXED);
+}
+
 static bool lo_brought_up;
 static bool modprobe_tried_ingress;
 static bool modprobe_tried_matchall;
@@ -646,13 +731,13 @@ static int tc_live_in_ns(void *arg)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (ns_unsupported_rtnl || ns_unsupported_veth ||
-	    ns_unsupported_clsact || ns_unsupported_matchall)
+	if (ns_unsupported_rtnl() || ns_unsupported_veth() ||
+	    ns_unsupported_clsact() || ns_unsupported_matchall())
 		return 0;
 
 	if (nl_open(&nl, &nl_opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
-			ns_unsupported_rtnl = true;
+			mark_ns_unsupported_rtnl();
 		__atomic_add_fetch(&shm->stats.tc_live_traffic.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return 0;
@@ -698,7 +783,7 @@ static int tc_live_in_ns(void *arg)
 	rc = build_veth_pair(&nl, a_name, b_name);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
-			ns_unsupported_veth = true;
+			mark_ns_unsupported_veth();
 		__atomic_add_fetch(&shm->stats.tc_live_traffic.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -718,7 +803,7 @@ static int tc_live_in_ns(void *arg)
 	rc = build_clsact(&nl, a_idx);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
-			ns_unsupported_clsact = true;
+			mark_ns_unsupported_clsact();
 		__atomic_add_fetch(&shm->stats.tc_live_traffic.qdisc_fail,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -732,7 +817,7 @@ static int tc_live_in_ns(void *arg)
 	rc = build_matchall_mirred(&nl, a_idx, b_idx, prio, false);
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
-			ns_unsupported_matchall = true;
+			mark_ns_unsupported_matchall();
 		}
 		__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_fail,
 				   1, __ATOMIC_RELAXED);
@@ -748,10 +833,10 @@ static int tc_live_in_ns(void *arg)
 	 * never re-charge coverage for a permanently-refused facility.
 	 * The tc-only classification chain above is the primary target;
 	 * XDP is a bonus surface, not a gate. */
-	if (!ns_unsupported_xdp) {
+	if (!ns_unsupported_xdp()) {
 		xdp_fd = xdp_pass_prog_load();
 		if (xdp_fd < 0) {
-			ns_unsupported_xdp = true;
+			mark_ns_unsupported_xdp();
 		} else {
 			__atomic_add_fetch(&shm->stats.tc_live_traffic.xdp_load_ok,
 					   1, __ATOMIC_RELAXED);
@@ -762,12 +847,12 @@ static int tc_live_in_ns(void *arg)
 				__atomic_add_fetch(&shm->stats.tc_live_traffic.xdp_attach_ok,
 						   1, __ATOMIC_RELAXED);
 			} else {
-				ns_unsupported_xdp = true;
+				mark_ns_unsupported_xdp();
 			}
 		}
 	}
 
-	if (!ns_unsupported_inet) {
+	if (!ns_unsupported_inet()) {
 		struct sockaddr_in dst;
 		struct timespec t0;
 		unsigned int iters, i;
@@ -775,7 +860,7 @@ static int tc_live_in_ns(void *arg)
 		udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 		if (udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-				ns_unsupported_inet = true;
+				mark_ns_unsupported_inet();
 			goto out;
 		}
 		(void)setsockopt(udp, SOL_SOCKET, SO_BINDTODEVICE,
@@ -846,10 +931,10 @@ static int tc_live_in_ns(void *arg)
 	 * classify path gets its own coverage window.  Best-effort:
 	 * missing cls_bpf / disabled unprivileged BPF latches
 	 * ns_unsupported_bpf_cls off for the grandchild. */
-	if (!ns_unsupported_bpf_cls && udp >= 0) {
+	if (!ns_unsupported_bpf_cls() && udp >= 0) {
 		cls_bpf_fd = cls_bpf_prog_load();
 		if (cls_bpf_fd < 0) {
-			ns_unsupported_bpf_cls = true;
+			mark_ns_unsupported_bpf_cls();
 		} else {
 			__atomic_add_fetch(&shm->stats.tc_live_traffic.bpf_load_ok,
 					   1, __ATOMIC_RELAXED);

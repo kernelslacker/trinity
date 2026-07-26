@@ -152,10 +152,56 @@
 #define B6R_FRAME_CAP			1600U		/* MTU (1500) + eth + slop */
 
 static bool ns_unsupported;
-static bool ns_unsupported_bridge;
-static bool ns_unsupported_nf_tables;
-static bool ns_unsupported_af_packet;
 static bool lo_up_done;
+
+/* Per-subsystem config-absent gates live in shm
+ * (shm->bridge_ip6frag_ns_unsupported_{bridge,nf_tables,af_packet}).
+ * The write site is inside the userns_run_in_ns() grandchild -- a
+ * process-local static would die with the grandchild on _exit() and
+ * every subsequent invocation would re-attempt the same unsupported
+ * RTM_NEWLINK / nf_tables NEWTABLE / AF_PACKET socket() forever
+ * (latch-in-grandchild bug).  Set when the corresponding subsystem
+ * rejects with the CONFIG-absent errno set; persists fleet-wide via
+ * shm so the unsupported attempt is paid once per fleet rather than
+ * once per grandchild.  RELAXED atomic load/store from multiple
+ * grandchildren is safe -- only false -> true, and the write is
+ * idempotent. */
+
+static bool ns_unsupported_bridge(void)
+{
+	return __atomic_load_n(&shm->bridge_ip6frag_ns_unsupported_bridge,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_bridge(void)
+{
+	__atomic_store_n(&shm->bridge_ip6frag_ns_unsupported_bridge, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_nf_tables(void)
+{
+	return __atomic_load_n(&shm->bridge_ip6frag_ns_unsupported_nf_tables,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_nf_tables(void)
+{
+	__atomic_store_n(&shm->bridge_ip6frag_ns_unsupported_nf_tables, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_af_packet(void)
+{
+	return __atomic_load_n(&shm->bridge_ip6frag_ns_unsupported_af_packet,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_af_packet(void)
+{
+	__atomic_store_n(&shm->bridge_ip6frag_ns_unsupported_af_packet, true,
+			 __ATOMIC_RELAXED);
+}
 
 static uint32_t b6r_ident_counter;
 
@@ -615,7 +661,7 @@ static int b6r_iter_bridge_and_veth(struct b6r_iter_ctx *ctx)
 	if (rc != 0) {
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT) {
-			ns_unsupported_bridge = true;
+			mark_ns_unsupported_bridge();
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
@@ -666,7 +712,7 @@ static int b6r_iter_nft_setup(struct b6r_iter_ctx *ctx)
 	rc = b6r_nft_install_bridge_ct(&ctx->nfnl_nft, "br_ip6ct", "in");
 	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
-		ns_unsupported_nf_tables = true;
+		mark_ns_unsupported_nf_tables();
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
@@ -698,7 +744,7 @@ static void b6r_iter_packet_burst(struct b6r_iter_ctx *ctx)
 			  htons(ETH_P_IPV6));
 	if (ctx->raw < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
-			ns_unsupported_af_packet = true;
+			mark_ns_unsupported_af_packet();
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
@@ -820,8 +866,8 @@ bool bridge_ip6frag_refrag(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.bridge_ip6frag.runs, 1,
 			   __ATOMIC_RELAXED);
 
-	if (ns_unsupported || ns_unsupported_bridge ||
-	    ns_unsupported_nf_tables || ns_unsupported_af_packet)
+	if (ns_unsupported || ns_unsupported_bridge() ||
+	    ns_unsupported_nf_tables() || ns_unsupported_af_packet())
 		return true;
 
 	if (!ONE_IN(8))
