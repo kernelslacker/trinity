@@ -2,9 +2,9 @@
  * SHADOW typed-hypothesis derive lane.
  *
  * Split out of hyp.c: the per-kind derive ladder
- * (cmp_hyp_derive_value) plus the two SHADOW shadow-only probe
- * classes (pow2 / alignment, bitmask FULL_OR / ANDNOT_TOGGLE) it
- * fans out to on emission.
+ * (cmp_hyp_derive_value) plus the three SHADOW shadow-only probe
+ * classes (pow2 / alignment, bitmask FULL_OR / ANDNOT_TOGGLE, signed
+ * / unsigned SIGN-SWITCH) it fans out to on emission.
  *
  * cmp_hyp_derive_value drops static because the live inject arm in
  * hyp-live.c consumes it; declaration lives in
@@ -286,6 +286,191 @@ static void cmp_hyp_bitmask_shadow_probe(const struct cmp_hypothesis *picked,
 		__atomic_fetch_add(
 			&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_andnot_toggle_would_win,
 			1UL, __ATOMIC_RELAXED);
+}
+
+/*
+ * Argtype signedness verdict for the SHADOW SIGN-SWITCH probe class.
+ * KCOV cmp records carry only operand values (no sign flag), so the
+ * signedness a derive candidate should be interpreted under has to be
+ * inferred separately -- from the argtype callsite the pull came from,
+ * with the picked hypothesis as tiebreak when the callsite alone is
+ * ambiguous.  UNKNOWN is the honest default: outside the two verdicts
+ * wired here the sign is genuinely un-inferable at this layer and the
+ * probe stays silent rather than guess.
+ */
+enum cmp_hyp_signedness {
+	CMP_HYP_SIGN_UNKNOWN = 0,
+	CMP_HYP_SIGN_UNSIGNED,
+	CMP_HYP_SIGN_SIGNED,
+};
+
+/*
+ * SIGN-SWITCH argtype-signedness inference groundwork.  First slice of
+ * the D4 sign-switch derive lane: builds the signedness verdict for
+ * the two argtype callsites where it can be read off with high
+ * confidence, and leaves the rest UNKNOWN for follow-up slices.
+ *
+ *   CMP_HINT_CALLSITE_ARG_STRUCT_SIZE is the struct-size / length
+ *   argtype family (size_t / u32 in the syscall ABI); its signedness
+ *   is unsigned by definition, regardless of picked kind or width.
+ *
+ *   CMP_HINT_CALLSITE_ARG_RANGE with a CMP_HYP_RANGE-kind pick
+ *   inherits the observer's already-computed range_signedness (see
+ *   cmp_hyp_range_identity_infer in cmp_hints/hyp-pool.c, which
+ *   flips to SIGNED when either bound has the width's sign bit set,
+ *   else UNSIGNED).  Non-RANGE picks at ARG_RANGE carry no sign flag
+ *   -- BITMASK / EXACT / BOUNDARY exemplars are un-inferable from
+ *   this layer -- so those stay UNKNOWN.
+ *
+ * Every other callsite (ARG_OP, ARG_LIST, ARG_UNDEFINED, STRUCT_FIELD,
+ * OTHER, unclassified NR) stays UNKNOWN: OP / LIST flag-and-enum
+ * argtypes have no meaningful sign, STRUCT_FIELD's signedness lives in
+ * the field descriptor and needs a separate slice to route through,
+ * and the sentinel buckets are by construction typeless.
+ */
+static enum cmp_hyp_signedness
+cmp_hyp_infer_signedness(const struct cmp_hypothesis *picked,
+			 enum cmp_hint_callsite callsite)
+{
+	if (picked == NULL)
+		return CMP_HYP_SIGN_UNKNOWN;
+
+	if (callsite == CMP_HINT_CALLSITE_ARG_STRUCT_SIZE)
+		return CMP_HYP_SIGN_UNSIGNED;
+
+	if (callsite == CMP_HINT_CALLSITE_ARG_RANGE &&
+	    picked->kind == CMP_HYP_RANGE) {
+		return (picked->range_signedness == CMP_RANGE_SIGN_SIGNED)
+			? CMP_HYP_SIGN_SIGNED
+			: CMP_HYP_SIGN_UNSIGNED;
+	}
+
+	return CMP_HYP_SIGN_UNKNOWN;
+}
+
+/*
+ * SHADOW signed / unsigned SIGN-SWITCH derive-class measurement.  Runs
+ * on every derive whose (callsite, picked) pair yields a KNOWN
+ * signedness verdict from the inference helper above AND whose picked
+ * exemplar sits with the operand-width sign bit set -- the "signed-
+ * negative vs unsigned-large" ambiguous region where the sign
+ * reinterpretation carries information.  Bumps
+ * cmp_hyp_sign_switch_would_fire on eligibility, and
+ * cmp_hyp_sign_switch_would_win when at least one candidate from the
+ * {two's-complement negation, sign-bit XOR, sign_bit,
+ * sign_bit - 1} ladder differs from live_out (the value the live
+ * derive lane just wrote to *out).  Does NOT touch *out and does NOT
+ * consume the RNG -- pure observation, so the OFF-mode pick stream and
+ * every downstream caller's byte sequence is unchanged.
+ *
+ * Bug-pattern rationale (D4 in the derive-lane plan): the classic
+ * kernel bug shape here is `if ((int)len < 0) return -EINVAL; ...
+ * use len as size_t` -- a value at or above the width's sign bit
+ * flips interpretation between the guard and the use, and the
+ * existing EXACT / ENUM_FAMILY / RANGE / BITMASK / BOUNDARY lanes do
+ * not construct probes that specifically test the reinterpretation
+ * boundary.  Below sign_bit both interpretations agree and the class
+ * has no candidate to add; the exemplar-side gate suppresses the
+ * would-fire bump on that half so the ratio measures headroom only
+ * on the informative population.
+ *
+ * Bug-pattern guards:
+ *   * width validated to {1,2,4,8} up front so the (width*8 - 1)
+ *     shift used to synthesise sign_bit is well-defined (a torn read
+ *     of picked->width outside that set would otherwise UB the
+ *     shift).  Widths outside the set fall through silently rather
+ *     than fire on a garbage sign bit.
+ *   * width_mask uses the same >=8 short-circuit the BOUNDARY arm
+ *     uses so a picked->width of 8 does not shift by 64.
+ *   * two's-complement negation is masked to width so an u8 exemplar
+ *     at 0xFF yields the u8 magnitude 0x01 rather than leaking high
+ *     bits.
+ *   * all four ladder candidates are & width_mask before the compare
+ *     against live_val (also & width_mask), matching the width the
+ *     accept-range gate would judge.
+ */
+static void cmp_hyp_sign_switch_shadow_probe(const struct cmp_hypothesis *picked,
+					     enum cmp_hint_callsite callsite,
+					     unsigned long live_out)
+{
+	enum cmp_hyp_signedness sign;
+	uint64_t c, width_mask, sign_bit, cand;
+	uint64_t live_val;
+	bool differs;
+
+	if (kcov_shm == NULL || picked == NULL)
+		return;
+
+	/* Width gate: KCOV only records 1/2/4/8-byte compares; anything
+	 * else is a torn read of picked->width and the sign_bit shift
+	 * below would be UB.  Silently skip so the OFF-mode counter
+	 * stream is unchanged by garbage widths. */
+	if (picked->width != 1 && picked->width != 2 &&
+	    picked->width != 4 && picked->width != 8)
+		return;
+
+	sign = cmp_hyp_infer_signedness(picked, callsite);
+	if (sign == CMP_HYP_SIGN_UNKNOWN)
+		return;
+
+	width_mask = (picked->width >= 8)
+		? ~(uint64_t)0
+		: ((uint64_t)1 << (picked->width * 8)) - 1;
+	sign_bit = (uint64_t)1 << (picked->width * 8U - 1U);
+
+	c = picked->exemplar & width_mask;
+
+	/* Argtype gate is open; the sign-switch class carries information
+	 * only when the exemplar sits in the ambiguous half.  For c below
+	 * sign_bit the signed and unsigned readings agree bit-for-bit,
+	 * every candidate below would either equal c (already covered by
+	 * the existing EXACT / RANGE lanes) or produce a value outside
+	 * the useful sign-transition neighbourhood. */
+	if ((c & sign_bit) == 0)
+		return;
+
+	__atomic_fetch_add(&kcov_shm->cmp_hyp_shadow.cmp_hyp_sign_switch_would_fire,
+			   1UL, __ATOMIC_RELAXED);
+
+	live_val = (uint64_t)live_out & width_mask;
+	differs = false;
+
+	/* Ladder candidate 1: two's-complement negation within width.
+	 * For c=0xFF at width 1 the negation is 0x01 (the magnitude of
+	 * the signed -1 reinterpretation) -- surfaces the "kernel
+	 * treated our large unsigned as signed-negative, we want to
+	 * probe the corresponding positive magnitude" direction. */
+	cand = ((~c) + 1UL) & width_mask;
+	if (cand != live_val)
+		differs = true;
+
+	/* Ladder candidate 2: sign-bit XOR flips c across the signed /
+	 * unsigned boundary in place.  For c=0x80 at width 1 -> 0x00,
+	 * for c=0xFF -> 0x7F -- the "same bit pattern, opposite half
+	 * of the width" probe. */
+	cand = c ^ sign_bit;
+	if (cand != live_val)
+		differs = true;
+
+	/* Ladder candidate 3: sign_bit itself.  Smallest negative
+	 * signed / smallest "high" unsigned; the canonical sign-
+	 * transition tipping value.  Independent of c so the class
+	 * still contributes when the exemplar sits well past the
+	 * boundary. */
+	cand = sign_bit & width_mask;
+	if (cand != live_val)
+		differs = true;
+
+	/* Ladder candidate 4: sign_bit - 1.  Max positive signed at
+	 * this width, one below the transition -- pairs with candidate
+	 * 3 to bracket the sign boundary from both sides. */
+	cand = (sign_bit - 1UL) & width_mask;
+	if (cand != live_val)
+		differs = true;
+
+	if (differs)
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_shadow.cmp_hyp_sign_switch_would_win,
+				   1UL, __ATOMIC_RELAXED);
 }
 
 /*
@@ -598,5 +783,18 @@ out_bump:
 	 * touched -- *out and the probe-class histogram bump above are
 	 * unchanged. */
 	cmp_hyp_bitmask_shadow_probe(picked, *out);
+
+	/* SHADOW: signed / unsigned SIGN-SWITCH would-fire / would-win
+	 * measurement.  Argtype-gated inside the helper via
+	 * cmp_hyp_infer_signedness(): fires only where the callsite +
+	 * picked hypothesis together yield a known signedness verdict
+	 * (ARG_STRUCT_SIZE, or ARG_RANGE with a CMP_HYP_RANGE-kind pick
+	 * inheriting the observer's range_signedness) AND the exemplar
+	 * sits with the operand-width sign bit set.  Consumes no RNG
+	 * and does not touch *out, so the OFF-mode pick stream is
+	 * byte-identical -- the live derive path (and every downstream
+	 * caller of cmp_hyp_derive_value) is unchanged by the addition
+	 * of this class. */
+	cmp_hyp_sign_switch_shadow_probe(picked, callsite, *out);
 	return true;
 }

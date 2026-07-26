@@ -40,4 +40,34 @@ unsigned long cmp_hyp_bitmask_full_or_would_fire;
 unsigned long cmp_hyp_bitmask_full_or_would_win;
 unsigned long cmp_hyp_bitmask_andnot_toggle_would_fire;
 unsigned long cmp_hyp_bitmask_andnot_toggle_would_win;
+
+/* Shadow measurement of a signed / unsigned SIGN-SWITCH probe class
+ * in the typed-hypothesis derive.  KCOV cmp words carry no sign bit,
+ * so the class is strictly ARGTYPE-GATED: only fires where the
+ * argtype callsite plus the picked hypothesis together yield a known
+ * signedness verdict.  Two verdicts are wired in this row --
+ * CMP_HINT_CALLSITE_ARG_STRUCT_SIZE is inherently unsigned
+ * (size_t / u32 argtype family), and CMP_HINT_CALLSITE_ARG_RANGE
+ * with a CMP_HYP_RANGE-kind pick inherits the observer's already-
+ * inferred range_signedness; every other callsite / kind stays
+ * UNKNOWN and the probe is silent (further inference slices are
+ * follow-ups per the derive-lane plan).
+ *
+ * would_fire counts every derive at an argtype-gated signedness-
+ * known callsite whose picked exemplar has the sign bit of the
+ * operand width set -- i.e. sits in the ambiguous "signed-negative
+ * vs unsigned-large" region where reinterpretation carries
+ * information.  Below the sign boundary both interpretations agree
+ * and the class has no candidate to add.
+ *
+ * would_win counts the subset where at least one candidate from the
+ * {two's-complement negation, sign-bit XOR, sign_bit,
+ * sign_bit - 1} ladder (all masked to the operand width) differs
+ * from the value the live derive lane just emitted, so a live
+ * promotion would surface a value the existing lanes did not.  The
+ * live derive is byte-for-byte unchanged; the ratio in per-mille
+ * sizes the coverage headroom of promoting the class.  Append-only
+ * at the tail per convention so consumer offsets stay stable. */
+unsigned long cmp_hyp_sign_switch_would_fire;
+unsigned long cmp_hyp_sign_switch_would_win;
 };
