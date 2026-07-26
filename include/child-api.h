@@ -480,6 +480,12 @@ void inode_spewer_cleanup(void);
 void inode_spewer_reap(pid_t pid);
 bool procfs_writer(struct childdata *child);
 void procfs_writer_init(void);
+/* Comma-separated distinct-class list of the compile-time deny policy
+ * applied by discover_targets().  Emitted from the run-identity block
+ * so a crash triage can immediately see which host-global control
+ * classes were withheld from mutation.  Cached; safe to call from any
+ * context. */
+const char *procfs_writer_deny_policy_summary(void);
 bool memory_pressure(struct childdata *child);
 bool userns_fuzzer(struct childdata *child);
 bool sched_cycler(struct childdata *child);
