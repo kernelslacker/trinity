@@ -5,7 +5,14 @@
  * is offset-sensitive: consumers snapshot fields via __atomic_load_n
  * and stats/kcov/cmp/ indexes into fixed-length arrays here.  Do not
  * add alignment attributes, reorder fields, or insert nested structs
- * without matching updates in every consumer. */
+ * without matching updates in every consumer.  New fields are always
+ * appended at the tail so existing offsets stay stable.
+ *
+ * Per-member documentation for the aggregated group structs lives in
+ * the include/kcov-groups/<group>.h header that defines each type.
+ * Cross-cutting design narrative (why the group exists, how it plugs
+ * into the rest of the pipeline, A/B methodology, etc.) lives in
+ * Documentation/kcov-shared-layout.md, anchored by member name. */
 
 #include <stddef.h>	/* offsetof */
 
@@ -59,1374 +66,188 @@
 
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
-	/* Per-edge bucket-seen mask.  See KCOV_NUM_BUCKETS comment above for
-	 * the bucket layout.  A child's atomic-OR on this byte that flips a
-	 * never-seen bucket bit is the "new coverage" signal that drives the
-	 * minicorpus and mutator-attribution feedback loops. */
+	/* Per-edge bucket-seen mask; a child's atomic-OR that flips a
+	 * never-seen bucket bit is the "new coverage" signal. */
 	unsigned char bucket_seen[KCOV_NUM_EDGES];
-	/* Coverage-core aggregate counters: bucket-flip volume, distinct-edge
-	 * cardinality, warm-start baselines, PC/call totals, and trace
-	 * truncation.  All accessed atomically from the kcov collect path
-	 * and read by health/stats/plateau consumers. */
+	/* Coverage-core aggregate counters: bucket-flip volume, distinct
+	 * edges, warm-start baselines, PC/call totals, truncation. */
 	struct kcov_coverage_core coverage;
-	/* CMP-trace collection totals: records pulled out of the second-fd
-	 * KCOV_TRACE_CMP buffers, and truncation events where the buffer
-	 * filled. */
+	/* CMP-trace collection totals from second-fd KCOV_TRACE_CMP. */
 	struct kcov_cmp_records cmp_records;
-	/* Dedup-table health counters -- probe-chain overflow and hi-water. */
+	/* Dedup-table health -- probe-chain overflow + hi-water. */
 	struct kcov_dedup dedup;
-	/* Flat CMP-hint pipeline funnel: bloom/strip skips, unique inserts,
-	 * try_get injections, propagation-ring injections (flat + per-
-	 * callsite), and chaos-mode gate state.  Everything the operator
-	 * needs to see the record-drop path through hint generation. */
+	/* Flat CMP-hint pipeline funnel: bloom/strip skips, unique
+	 * inserts, injections, chaos gate. */
 	struct kcov_hints_flat hints_flat;
 	/* Kernel-log-monitor signals surfaced from health/kmsg-monitor.c. */
 	struct kcov_kmsg kmsg;
-	/* Wild-write / SHM-pool corruption detectors for the cmp_hints pool.
-	 * count_oob is the primary gate (bumped when pool->count exceeds the
-	 * hard cap); the three canary counters narrow the stomp direction. */
+	/* Wild-write / SHM-pool corruption detectors for cmp_hints. */
 	struct kcov_hints_canary hints_canary;
-	/* A/B cohort child-stamp population counters + per-arm fire counts
-	 * for every ONE_IN(2) stamp taken at init_child_runtime_config time
-	 * (cmp-hint baseline inject, prop_ring argop, prop_ring typed,
-	 * frontier blend, frontier errno_decay, frontier silent_decay,
-	 * remote_adaptive).  All the fields the operator needs to normalise
-	 * per-arm live rates against the realised population split. */
+	/* A/B cohort child-stamp population + per-arm fire counts. */
 	struct kcov_ab_cohorts cohorts;
-	/* See struct kcov_cmp_diag — child-context writes are routed here
-	 * because the child's stdout has already been dup2'd to /dev/null
-	 * by the time KCOV_TRACE_CMP setup runs. */
+	/* Child-context CMP/PC diagnostic writes; child's stdout has
+	 * already been dup2'd to /dev/null by KCOV setup time. */
 	struct kcov_cmp_diag cmp_diag;
 	struct kcov_pc_diag pc_diag;
-	/* Per-mode child population counters, bumped once per child in
-	 * kcov_init_child after the cmp_capable probe.  Surfaced through
-	 * print_kcov_cmp_diag so the operator can confirm the realised
-	 * mode mix matches KCOV_CMP_CHILD_RECIPROCAL.  Diagnostic only —
-	 * nothing depends on these for control flow. */
+	/* Per-mode child population counters, one bump per child. */
 	struct kcov_child_mode_pop child_mode;
-	/* Aggregate + per-op childop KCOV bracket attempt / reject-arm /
-	 * trace-truncation counters.  All bumped through child.c mirroring
-	 * kcov_bracket_begin()'s decision tree; the invariant
+	/* Childop KCOV bracket attempt / skip / trace-truncation counters.
+	 * See kcov-groups/childop_kcov.h for the per-op partition invariant
 	 *   attempts == bracketed + skipped_cmp + skipped_nested
 	 *             + skipped_inactive
-	 * holds both for the flat aggregates and per-op indexed by
-	 * enum child_op_type. */
+	 * that also holds on the flat aggregates. */
 	struct kcov_childop_kcov childop_kcov;
 	/* Per-syscall coverage / call / warm-known / extrafork / prior /
-	 * SHADOW-noisy accounting arrays, all sized to MAX_NR_SYSCALL (with
-	 * a leading [do32 ? 1 : 0] second dim on the edges/calls arrays so
-	 * IA32 compat entries do not merge with the 64-bit total).  The
-	 * "how did each syscall behave" family. */
+	 * SHADOW-noisy accounting arrays sized to MAX_NR_SYSCALL. */
 	struct kcov_per_syscall per_syscall;
-	/* Per-syscall split of kcov_collect() activity by collection mode.
-	 * A remote-sampled syscall lands in a DIFFERENT mode (the kernel
-	 * puts the task in KCOV_MODE_REMOTE and drops synchronous local
-	 * PC), so a static remote-sampling policy can spend half a
-	 * syscall's samples on a mode with no annotated producer --
-	 * invisible today behind the single global remote_calls counter.
-	 * local_pc_calls / remote_pc_calls count every kcov_collect()
-	 * invocation in that mode (apples-to-apples against
-	 * per_syscall_calls[] which still tracks both modes summed).
-	 * local_pc_edge_calls / remote_pc_edge_calls count calls that
-	 * produced >= 1 fresh edge (call-count semantics matching
-	 * per_syscall_edges[]).  local_pc_edge_count / remote_pc_edge_count
-	 * carry the raw fresh-edge tally so a single big call is not
-	 * flattened to the same weight as a tiny one.  All bumped in
-	 * kcov_collect() keyed on kc->remote_mode. */
+	/* Per-syscall / per-childop split of kcov_collect() activity by
+	 * local vs remote collection mode.  See
+	 * Documentation/kcov-shared-layout.md#pc_ctx for why the split
+	 * exists (a remote-sampled syscall lands in a different mode and
+	 * a static policy can spend budget on the wrong side). */
 	struct kcov_pc_ctx pc_ctx;
 	/* Per-syscall accounting of the KCOV_REMOTE_ENABLE attempt path.
-	 * The local_pc_calls / remote_pc_calls split above attributes calls
-	 * by the mode the kernel ultimately produced coverage in, which
-	 * folds "remote was attempted and the kernel refused" into the
-	 * local-mode column -- a HEAVY-flagged syscall whose
-	 * KCOV_REMOTE_ENABLE consistently returns EBADF reads as "zero
-	 * remote yield" through the yield-side counters, indistinguishable
-	 * from "remote was sampled and the kernel actually ran the work on
-	 * the calling task".  These four counters partition the enable path
-	 * itself so a genuinely zero-yield remote syscall (kernel ran
-	 * remote, found nothing) can be told apart from one where remote
-	 * was never actually enabled (EBADF losses, EINVAL, etc.):
-	 *   remote_enable_requested  -- entered kcov_enable_remote() and
-	 *                               about to attempt the ioctl.
-	 *   remote_enable_succeeded  -- the KCOV_REMOTE_ENABLE ioctl
-	 *                               returned 0; the call genuinely
-	 *                               sampled remote coverage.
-	 *   remote_enable_failed     -- the KCOV_REMOTE_ENABLE ioctl
-	 *                               exhausted its EINTR retries or
-	 *                               returned a non-EINTR error and
-	 *                               flipped remote_capable=false.
-	 *   remote_fallback_to_local -- after a failed remote enable, the
-	 *                               PC-mode fallback ioctl in turn
-	 *                               succeeded, so the child finished
-	 *                               the syscall in local mode.
-	 * All bumped inside kcov_enable_remote() keyed on the nr it now
-	 * takes as a parameter; childop callers (nr >= CHILDOP_KCOV_NR_BASE)
-	 * bypass the bumps via the standard nr < MAX_NR_SYSCALL gate. */
+	 * See Documentation/kcov-shared-layout.md#remote_enable for the
+	 * enable/succeeded/failed/fallback partition and how it lets a
+	 * genuinely zero-yield remote call be told apart from EBADF. */
 	struct kcov_remote_enable remote_enable;
-	/* Per-syscall 8-bucket errno histogram.  Sibling to the
-	 * per_syscall_edges/calls counters above: those track coverage-side
-	 * activity per syscall; this tracks the shape of what the kernel
-	 * returned.  Bumped from handle_syscall_ret() once per completed
-	 * syscall (state == AFTER), bucket index selected by the
-	 * ERRNO_BUCKET_* enum below.  Surfaced via dump_stats() as a
-	 * sibling block to the top-edges / cold-syscalls tables so the
-	 * operator can tell at a glance which syscalls are EFAULT-heavy
-	 * vs EINVAL-heavy.  Per-syscall syscall_rt(entry)->errnos[] already exists but
-	 * is sized NR_ERRNOS (133) per syscall and is the per-syscallentry
-	 * tally consumed by dump_entry(); this is the kcov_shm-resident
-	 * compact view that pairs with the coverage tables above and lives
-	 * in the same dump section. */
+	/* Per-syscall 8-bucket errno histogram; bumped once per completed
+	 * syscall in handle_syscall_ret().  Sized bucket enum lives inline
+	 * below this header's static asserts. */
 	struct kcov_errno_state errno_state;
-	/* Per-syscall counterpart of cmp_hints_unique_inserts: every fresh
-	 * insert or evict-replace in pools[nr] bumps slot nr.  Dedup-refresh
-	 * hits are NOT counted, matching the global counter's semantics.
-	 * Drives the "Top syscalls by CMP unique inserts" sibling block in
-	 * dump_stats() that pairs with "Top syscalls by recent edge growth"
-	 * -- a syscall whose CMP insert rate is high while its edge-growth
-	 * rate is flat is generating CMP signal that is not translating into
-	 * coverage, the diagnostic signature of the CMP-rising-PC-flat
-	 * plateau pattern. */
+	/* Per-syscall counterpart of cmp_hints_unique_inserts; drives the
+	 * "top syscalls by CMP unique inserts" block in dump_stats(). */
 	struct kcov_per_syscall_cmp per_syscall_cmp;
-	/* Sliding-window edge-rate plateau detector state.  Sampled at the
-	 * 600s parent stats tick: each tick, delta = edges_found -
-	 * plateau_prev_edges is the count of new edges discovered in the
-	 * most recent KCOV_PLATEAU_WINDOW_SEC window.  When the delta drops
-	 * below KCOV_PLATEAU_ENTER_THRESHOLD (rate < 1 edge per 60s sustained
-	 * over the 10-minute window) the parent enters PLATEAU state and
-	 * emits a one-line warning to stats.log; a matching CLEARED line is
-	 * emitted when the rate climbs back above threshold.  Entry into
-	 * PLATEAU also fires strategy_plateau_response(), which forces an
-	 * immediate strategy rotation into the plateau-intervention layer.
-	 * That layer is a flat round-robin among RRC-biased replay, anti-
-	 * prior accept gating, and uniform random; the rotation does not
-	 * pin a mode based on the hypothesis classifier.  The published
-	 * hypothesis is consumed separately at per-call gates in child.c
-	 * (CHILDOP_DOMINANT raises the alt-op burst threshold) and in
-	 * minicorpus.c (CMP_RISING_PC_FLAT doubles the replay rate and
-	 * narrows the slot picker) -- see the strategy.h header for the
-	 * full consumer contract.  Interventions unwind automatically on
-	 * the matching CLEARED edge. */
+	/* Sliding-window edge-rate plateau detector state.  See
+	 * Documentation/kcov-shared-layout.md#plateau for the entry/clear
+	 * contract and the strategy consumer wiring. */
 	struct kcov_plateau plateau;
-
-	/*
-	 * Coverage-jump breadcrumb state.  See KCOV_COVJUMP_* constants at
-	 * the top of this header for the detector contract.  Pure
-	 * diagnostic; no runtime path reads these.  The snapshot block is
-	 * sampled by the CAS winner at each window boundary and replayed
-	 * against the live counters at the next boundary to compute the
-	 * per-window deltas that populate the breadcrumb.
-	 *
-	 * covjump_snap_childop_invocations[] mirrors the indexing of the
-	 * surrounding childop_* arrays (sized to KCOV_CHILDOP_NR_MAX with
-	 * the in-tree _Static_assert on NR_CHILD_OP_TYPES pinning the
-	 * tail).  RELAXED atomics throughout.
-	 */
+	/* Coverage-jump breadcrumb state.  See KCOV_COVJUMP_* constants for
+	 * the detector contract.  Pure diagnostic. */
 	struct kcov_covjump covjump;
-
-	/* Greedy CMP RedQueen re-exec stats.  A CMP-mode child records
-	 * attributable (cmp_ip, arg_slot, value) tuples from the parent
-	 * call's KCOV_TRACE_CMP records; when the gate fires, these counters
-	 * track the re-exec funnel.  Each counter is bumped once per re-exec
-	 * dispatch (or once per gated skip) so the funnel
+	/* Greedy CMP RedQueen re-exec funnel.  Invariant per attempt:
 	 *   attribution_found -> attempts -> new_cmps_total
 	 *                                 -> skipped_destructive
 	 *                                 -> skipped_validate_silent
 	 *                                 -> window_cap_hit
-	 * is directly observable.  attribution_ambiguous is bumped once per
-	 * (cmp_ip, value) where more than one arg slot matched, before
-	 * first-match-wins picked one.
-	 *
-	 * reexec_attribution_width_match is the width-aware fallback
-	 * tally: counted SEPARATELY from reexec_attribution_found so the
-	 * exact full-width predicate's low-noise numerator stays clean.
-	 * Bumped from cmp_hints_collect() when the exact-pass arg vs arg2
-	 * compare misses, the comparison size is narrower than a long, and
-	 * a width-masked rescan finds EXACTLY one matching slot (any
-	 * masked ambiguity is dropped rather than guessed -- the masked
-	 * predicate's higher hit rate makes first-match-wins unreliable
-	 * here).  Total successful attributions ingested into
-	 * reexec_pending[] is therefore (reexec_attribution_found +
-	 * reexec_attribution_width_match). */
+	 * See Documentation/kcov-shared-layout.md#reexec_flat for the
+	 * width-match vs found split and its noise contract. */
 	struct kcov_reexec_flat reexec_flat;
-
 	/* Shadow transition-coverage map and counters.  See
 	 * KCOV_NUM_TRANSITIONS and the kcov_transition_coverage_mode enum
-	 * at the top of this header for the design.  All four counters and
-	 * the map stay at zero when the mode is OFF; the map and per-
-	 * syscall arrays are still allocated (the size is fixed at compile
-	 * time and the byte cost is fleet-acceptable, ~16 MB).
-	 *
-	 *  transition_seen[]
-	 *      One byte per (prev_canon_pc, cur_canon_pc) hash slot.  Bit 0
-	 *      is the seen flag bumped from kcov_collect(); the upper seven
-	 *      bits are reserved for a future bucket layer that would
-	 *      parallel bucket_seen[]'s 8-bucket hit-count semantics.
-	 *  transition_edges_found
-	 *      Count of slot bits ever flipped 0 -> 1.  Today this tracks
-	 *      distinct slot occupancy (one bit per slot); the name keeps
-	 *      the PC-side edges_found / distinct_edges naming pattern so a
-	 *      future bucket layer can split the two cleanly.
-	 *  transition_distinct_edges
-	 *      Distinct first-sighting count of new transition slots —
-	 *      identical to transition_edges_found until a bucket layer is
-	 *      added.  Kept separate now so the published counter API is
-	 *      stable when the split lands.
-	 *  per_syscall_transition_edges[nr]
-	 *      Call-count semantics: bumped once per kcov_collect() call
-	 *      that flipped at least one new transition slot.  Mirrors the
-	 *      per_syscall_edges[] semantics noted in the comment above it.
-	 *  per_syscall_transition_edges_previous[nr]
-	 *      Snapshot of the above at the previous dump_stats() interval.
-	 *      Drives the "top syscalls by recent transition growth" delta
-	 *      block in the stats dump.
-	 *  per_syscall_transition_edges_real[nr]
-	 *      Real edge-flip count: sum across all calls of the number of
-	 *      new transition slots flipped in that call.  A single call
-	 *      that opens an entirely new control-flow region bumps this by
-	 *      the size of the region, not by 1 — pair with the call-count
-	 *      counter above to read transitions-per-productive-call.
-	 *  per_syscall_transition_edges_real_local[nr]
-	 *      Local-mode-only mirror of per_syscall_transition_edges_real.
-	 *      Bumped only when the collecting kcov child is NOT in remote
-	 *      mode AND kcov_transition_reward_mode != OFF.  Consumed by
-	 *      the frontier_cold_weight() blend as the transition-yield
-	 *      term so the live picker (under COMBINED) sees a transition
-	 *      signal restricted to traces whose PC ordering Trinity can
-	 *      trust.  See the kcov_transition_reward_mode enum at the
-	 *      top of this header for the remote-mode contract. */
+	 * for the design; Documentation/kcov-shared-layout.md#transitions
+	 * covers the remote-mode contract and the frontier blend usage. */
 	struct kcov_transitions transitions;
-
-	/* CMP-hint / RedQueen pipeline observability.
-	 *
-	 * The two per-syscall counters below partition the existing flat
-	 * cmp_hints_injected funnel by syscall slot.  Without the per-nr
-	 * split, the question "is this syscall producing the bulk of cmp-hint
-	 * deliveries and eventual PC-edge wins, or are the totals dominated
-	 * by a noisy few unrelated to the syscall whose tuning we're judging"
-	 * is unanswerable from the periodic stats log.  Both arrays are
-	 * MAX_NR_SYSCALL-indexed (matching per_syscall_edges[]) and gated on
-	 * nr < bound at each bump site.  Relaxed atomics; cumulative across
-	 * the run.
-	 *
-	 * The consumer-side demand/pool-hit partitions
-	 * (per_syscall_cmp_attempts/_returned) live in parent_stats and are
-	 * fed via STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS / _RETURNED on the
-	 * per-child stats_ring -- write-only-by-child, no cross-child reader,
-	 * so the migration off kernel-visible shm purely shrinks the wild-
-	 * write attack surface.
-	 *
-	 *  per_syscall_cmp_injected[nr]
-	 *      Bumped from each of the four generate-args.c callsites that
-	 *      commit a cmp_hints_try_get() hint to a produced syscall arg,
-	 *      alongside the existing flat cmp_hints_injected counter.
-	 *      Strictly <= parent_stats.per_syscall_cmp_returned[nr]; the
-	 *      gap is callsites that pulled a hint but discarded it (none
-	 *      today).
-	 *  per_syscall_cmp_hint_pc_wins[nr]
-	 *      Bumped from kcov_collect()'s found_new branch when the calling
-	 *      child had cmp_hint_injected_this_call set for the call being
-	 *      collected.  The per-syscall version of "did the injected hint
-	 *      drive new PC-edge coverage on this call".  Pair with
-	 *      per_syscall_cmp_injected to read per-syscall hint-edge yield;
-	 *      a syscall with high injected and zero pc-wins is the
-	 *      diagnostic signature for an unproductive cmp-hint regime. */
+	/* Per-syscall CMP-hint pipeline observability -- partition of the
+	 * flat cmp_hints_injected funnel by syscall slot. */
 	struct kcov_cmp_hint_ps cmp_hint_ps;
-
-	/* Per-callsite total cmp-hint injections, indexed by enum
-	 * cmp_hint_callsite.  Aggregated across all syscalls; the "which
-	 * argtype-handler is responsible for the bulk of injections" question
-	 * is callsite-shaped, not syscall-shaped, so the per-nr split lives
-	 * in per_syscall_cmp_injected above and this array stays flat.  7
-	 * buckets: ARG_OP, ARG_LIST, ARG_UNDEFINED, ARG_STRUCT_SIZE,
-	 * STRUCT_FIELD (reserved -- no call site today), OTHER, ARG_RANGE. */
+	/* Per-callsite total cmp-hint injections, indexed by
+	 * enum cmp_hint_callsite. */
 	struct kcov_hint_callsite hint_callsite;
-
-	/* SHADOW feedback scoring counters ([11-feedback-loop] PHASE 4).
-	 *
-	 * These are SHADOW / measurement-only: cmp_hints_try_get pool
-	 * selection stays uniform.  A future live-pick path is intended to
-	 * read these counters and gate a weighted live pick
-	 * (`weight = floor + wins*4 - misses`, clamped, keeping random
-	 * exploration) once a real signal is visible.
-	 *
-	 *  cmp_hints_consumed
-	 *      Bumped from cmp_hints_try_get_ex right before the true return,
-	 *      next to the existing cmp_hints_try_get_returned bump.  Counts
-	 *      successful pulls that produced a stashed (nr, arch, cmp_ip,
-	 *      value, size, transform) tuple for credit at dispatch tail.
-	 *      Same conceptual counter as cmp_hints_try_get_returned --
-	 *      tracked SEPARATELY so a future change to the stash discipline
-	 *      (overflow-drop, narrowing to a subset of consumers) is visible
-	 *      against the unchanged try_get_returned baseline.
-	 *  cmp_hint_wins
-	 *      PC-mode dispatch produced new_edges == true AND the per-child
-	 *      stash for the call was non-empty.  Bumped once per such
-	 *      dispatch from cmp_hints_feedback_credit_pc(true).  Each
-	 *      stashed entry's matching pool entry's saturating uint16_t
-	 *      wins counter is bumped at the same site -- the per-entry
-	 *      counters feed the follow-up live-pick weight; this flat
-	 *      counter is the cohort-level rollup for the periodic dump.
-	 *  cmp_hint_misses
-	 *      PC-mode dispatch produced no new edges AND the per-child
-	 *      stash was non-empty.  Bumped once per such dispatch from
-	 *      cmp_hints_feedback_credit_pc(false), with the per-entry
-	 *      pool misses bumped at the same site.
-	 *  cmp_hint_cmp_novelty_wins
-	 *      CMP-mode dispatch produced new_cmp > 0 AND the per-child
-	 *      stash was non-empty.  Bumped once per such dispatch from
-	 *      cmp_hints_feedback_credit_cmp_novelty().  Kept SEPARATE
-	 *      from cmp_hint_wins per the spec's "CMP novelty credit must
-	 *      not masquerade as PC-edge conversion" discipline: the
-	 *      follow-up live-pick weight is PC-edge-only and this counter
-	 *      is the visibility channel for the CMP-mode novelty signal
-	 *      that the PC-mode score does not include.
-	 *  cmp_hint_stash_overflow
-	 *      cmp_hints_try_get_ex tried to push onto a full stash
-	 *      (cmp_hints_consumed_count == CMP_HINT_CONSUMED_STASH_MAX).
-	 *      Records the dropped tail.  Operator gate on resizing the
-	 *      stash; a non-trivial delta means a hot syscall regularly
-	 *      pulls more hints per call than the buffer holds and the
-	 *      tail credit is lost to truncation.
-	 *  cmp_hint_credit_entry_evicted
-	 *      Credit-drain scan walked the matching pool entries[] and
-	 *      did NOT find the stashed (cmp_ip, value, size) tuple --
-	 *      the entry was evicted between consume and credit.  The
-	 *      flat wins/misses counter still bumps (the call-level
-	 *      outcome is unambiguous); only the per-entry score is lost
-	 *      to the eviction.  Diagnostic gate on pool churn vs the
-	 *      consume-to-credit gap. */
+	/* SHADOW feedback scoring counters for cmp-hints
+	 * (consumed/wins/misses/novelty/overflow/evicted). */
 	struct kcov_hint_flat hint_flat;
-
-	/* RedQueen re-exec observability counters, sibling of the flat
-	 * reexec_* family above.  Same callsite/attribution funnel, but
-	 * partitioned by syscall slot or by attribution arg-slot so the
-	 * operator can ask "which syscalls are driving the re-exec attempt
-	 * volume, and once attributed, which arg slot did the kernel CMP
-	 * fire on" without having to grep child logs.
-	 *
-	 *  reexec_attempts_by_syscall[nr]
-	 *      Per-nr partition of reexec_attempts: bumped from
-	 *      redqueen_reexec_step() alongside the flat counter.
-	 *  reexec_ambiguous_by_syscall[nr]
-	 *      Per-nr partition of reexec_attribution_ambiguous: bumped from
-	 *      cmp_hints_collect() alongside the flat counter when >1 arg
-	 *      slot matched the same kernel CMP constant.
-	 *  reexec_attribution_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR]
-	 *      6-slot histogram (a1..a6) of which arg slot won the first-
-	 *      match-wins attribution scan.  Bumped from cmp_hints_collect()
-	 *      next to the reexec_attribution_found bump.  Index = slot - 1.
-	 *  reexec_success_by_slot[CMP_REDQUEEN_SLOT_HIST_NR]
-	 *      6-slot success counter: bumped from redqueen_reexec_step()
-	 *      when the inner dispatch returned inner_new_cmp > 0.  Pair
-	 *      with reexec_attribution_slot_hist to read per-slot success
-	 *      rate -- a slot that gets the bulk of attributions but no
-	 *      successes is wasted re-exec budget.
-	 *  typed_inject_fill_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR]
-	 *      Sibling of reexec_attribution_slot_hist: same 6-slot
-	 *      histogram (index = argnum - 1) but counting the arg slot the
-	 *      typed-hypothesis LIVE inject arm actually FILLED, threaded
-	 *      through from the caller's argnum on the two typed-eligible
-	 *      call sites (ARG_RANGE, ARG_STRUCT_SIZE) and bumped inside
-	 *      the accept-gated commit block in cmp_try_get_durable_tier()
-	 *      only when hyp_injected -- so an accept-rejected derived
-	 *      value cannot contaminate the fill distribution.  Placement-
-	 *      proof observability: reexec_attribution_slot_hist reports
-	 *      which arg slot the kernel-side CMP fired ON (source slot);
-	 *      this counter reports which arg slot the typed inject
-	 *      landed IN (fill slot).  A divergence between the two
-	 *      distributions means the derived value is being placed on a
-	 *      different arg slot than the one it was learned from --
-	 *      placement is confirmed as the CMP-conversion killer.
-	 *      Value-neutral shadow: no rnd draw is added and no derived
-	 *      value is changed by the plumbing; the counter is bumped by
-	 *      __atomic_fetch_add only.
-	 *  reexec_pending_dropped
-	 *      Per-call counter: bumped once per parent call from
-	 *      cmp_hints_collect() when the per-child reexec_pending[] buffer
-	 *      fills (count reaches MAX_REEXEC_PENDING) and the per-record
-	 *      attribution scan is force-disabled for the remainder of that
-	 *      call.  Non-zero means a parent call surfaced more attribution
-	 *      candidates than MAX_REEXEC_PENDING can hold -- the
-	 *      attribution census is truncated, and (cmp_ip, value, size,
-	 *      slot) tuples beyond the cap are silently dropped.
-	 *  reexec_pending_pick_success[REEXEC_PENDING_PICK_HIST_NR]
-	 *      Per-pending-buffer-index success counter.  The
-	 *      dispatch_step-tail RedQueen consumer drains every staged
-	 *      reexec_pending[] entry per parent dispatch
-	 *      (--redqueen-pending-pick is a no-op); this counter bumps the
-	 *      entry's true index (0..reexec_pending_count) inside
-	 *      redqueen_reexec_step() when the inner re-exec dispatch
-	 *      returned inner_new_cmp > 0 (i.e., the re-exec produced
-	 *      bloom-novel CMP records), so per-slot / per-index re-exec
-	 *      lift remains directly readable.  Bumped from
-	 *      redqueen_reexec_step() inside the existing inner_new_cmp > 0
-	 *      success block; the entry index is clamped to
-	 *      REEXEC_PENDING_PICK_HIST_NR before use. */
+	/* RedQueen re-exec observability sibling of the flat family --
+	 * per-syscall / per-slot partitions of attempts, ambiguity, and
+	 * success. */
 	struct kcov_reexec_pending_hist reexec_pending_hist;
-
-	/* RedQueen A/B cohort denominators.  The existing reexec_* family
-	 * counts enabled-arm ACTIVITY (attempts, new_cmps, attribution wins
-	 * etc.) but provides no denominator -- so the fleet-level question
-	 * "did re-exec actually lift CMP novelty per parent call versus the
-	 * control arm" is unanswerable: reexec_new_cmps_total is the enabled
-	 * cohort's numerator with no matching denominator, and the control
-	 * cohort's parent-call population is invisible to the dump.
-	 *
-	 * Bumped from the kcov_collect_cmp() callsite in dispatch_step,
-	 * gated on child->redqueen_enabled to pick the cohort.  Every
-	 * CMP-mode parent call counts: validator-rejected calls (which
-	 * cannot trigger re-exec because their new_cmp is forced to zero)
-	 * are still part of the population the re-exec gate samples from,
-	 * so excluding them would bias the denominator.
-	 *
-	 *  cmp_parent_calls_enabled
-	 *      Count of CMP-mode parent calls in the redqueen-enabled
-	 *      cohort.  Pair with reexec_attempts (and the rest of the
-	 *      reexec_* numerator family) to read per-parent-call re-exec
-	 *      yield in the enabled arm.
-	 *  cmp_parent_calls_control
-	 *      Count of CMP-mode parent calls in the control cohort.  No
-	 *      re-exec ever fires here (the redqueen_enabled gate at
-	 *      dispatch_step's tail short-circuits) so this is purely the
-	 *      A/B baseline denominator.
-	 *  cmp_parent_new_cmps_enabled
-	 *      Sum of kcov_collect_cmp()'s per-call new_cmp return value
-	 *      across all enabled-cohort parent calls.  Together with
-	 *      cmp_parent_calls_enabled, gives baseline per-parent-call
-	 *      bloom-novel CMP yield in the enabled cohort BEFORE the
-	 *      re-exec lift is layered on top.
-	 *  cmp_parent_new_cmps_control
-	 *      Same, for the control cohort.  The two cohorts should
-	 *      produce statistically equivalent per-parent-call novelty in
-	 *      the absence of selection bias: a sustained drift between
-	 *      cmp_parent_new_cmps_enabled / cmp_parent_calls_enabled and
-	 *      cmp_parent_new_cmps_control / cmp_parent_calls_control is
-	 *      itself a sanity-check failure that says the A/B stamp is
-	 *      not actually balanced.  With the two arms confirmed
-	 *      balanced, the lift signal is
-	 *        reexec_new_cmps_total / cmp_parent_calls_enabled
-	 *      measured against either cohort's per-call novelty baseline.
-	 *
-	 * Relaxed atomics; cumulative across the run; mirror the storage
-	 * and discipline of the reexec_* family above.  Measurement-only
-	 * counters -- nothing in the picker, gates, or selection policy
-	 * reads them. */
+	/* RedQueen A/B cohort denominators (calls_enabled/control +
+	 * new_cmps_enabled/control) so re-exec lift is measurable per
+	 * parent call rather than as an unpaired numerator. */
 	struct kcov_cmp_parent cmp_parent;
 	/* Per-reason granular counters for the cmp-hint save/persist
-	 * funnel.  The pre-existing cmp_hints_bloom_skipped and
-	 * cmp_hints_strip_skipped reach hundreds of millions per run and
-	 * are kept unchanged for historical comparability, but neither
-	 * explains why the per-syscall pool plateaus at a few thousand
-	 * entries despite a torrent of bloom-novel records.  These five
-	 * count the per-record drops that survive bloom + strip and still
-	 * fail to grow the pool, bucketed by the branch the code actually
-	 * distinguishes at the site -- so the operator can read which
-	 * reason dominates the gap between "collected" and "unique_inserts"
-	 * instead of inferring it from a single coarse aggregate.
-	 *
-	 * Bumped with __atomic_fetch_add RELAXED at the site of each
-	 * reject branch in cmp_hints_collect() / pool_add_locked();
-	 * counter-only -- no save/evict/strip DECISION change rides
-	 * alongside.  Reasons are mutually exclusive per record: the
-	 * value-filter pair (uninteresting / sentinel) short-circuits
-	 * BEFORE the bloom + pool path, so a record can land in at most
-	 * one bucket per call.  cap and dup are pool-add-time outcomes
-	 * (the bloom miss reached pool_add_locked() and either found a
-	 * matching entry -> dup, or did not and the pool was full ->
-	 * cap evict-replace).  nonconst is the type-bit gate at the head
-	 * of the per-record loop -- KCOV_CMP_CONST records are the only
-	 * ones whose arg1 is a kernel compile-time constant worth
-	 * pooling; non-CONST records are dropped wholesale.
-	 *
-	 * Append-only at the tail of the struct so existing offsets
-	 * (and any consumer that has memorised them) stay stable. */
+	 * reject funnel (nonconst / uninteresting / sentinel / dup / cap).
+	 * Reasons are mutually exclusive per record. */
 	struct kcov_hint_reject hint_reject;
-
 	/* Measurement-correctness counters for the RedQueen attribution +
-	 * re-exec funnel.  Counter-only -- nothing in the picker, gates, or
-	 * selection policy reads them.  Relaxed atomics; cumulative across
-	 * the run; append-only at struct tail per the comment above.
-	 *
-	 * The pre-existing reexec_* family covers the flat aggregates and
-	 * the per-syscall partitions of attempts + ambiguity; the per-call
-	 * gate disposition (why a parent call with staged attributions
-	 * did or did not fire a re-exec) was a single un-partitioned gap
-	 * between reexec_attribution_found and reexec_attempts, and the
-	 * per-childop dimension of the same funnel was invisible (a
-	 * childop-driven OP_SYSCALL flow was indistinguishable from a
-	 * top-level random-syscall dispatch in the per-syscall arrays).
-	 *
-	 * The split below mirrors the existing reexec_*_by_syscall pattern
-	 * for the per-syscall HEAD of the funnel and adds the matching
-	 * per-childop arrays + the gate-cause bucketing.  Snapshot health
-	 * is the consumer-side counterpart of dispatch_args_valid: a
-	 * non-zero cmp_attribution_snapshot_unavailable means the
-	 * [11-snapshot] dispatch_args[] feed is not reaching attribution.
-	 *
-	 *  reexec_attribution_found_by_syscall[nr]
-	 *      Per-nr partition of reexec_attribution_found: bumped from
-	 *      cmp_hints_collect() alongside the flat counter on every
-	 *      record where the attribution scan staged a (slot, value)
-	 *      tuple into reexec_pending[].
-	 *  reexec_attribution_dropped_pending_by_syscall[nr]
-	 *      Per-nr partition of reexec_pending_dropped: bumped once per
-	 *      parent call from cmp_hints_collect() when the reexec_pending
-	 *      buffer fills mid-scan.  Non-zero per-nr identifies the hot
-	 *      attributing syscalls whose attribution census is truncated.
-	 *  reexec_attribution_found_by_childop[op]
-	 *      Per-childop partition of reexec_attribution_found, indexed
-	 *      by enum child_op_type bounded to KCOV_CHILDOP_NR_MAX.
-	 *      Bumped alongside the per-syscall sibling so an attribution
-	 *      driven through a non-OP_SYSCALL childop (e.g. recipe runner,
-	 *      io_uring flood) is countable separately from the same nr
-	 *      dispatched from the default OP_SYSCALL flow.
-	 *  reexec_attribution_ambiguous_by_childop[op]
-	 *      Per-childop partition of reexec_attribution_ambiguous.
-	 *  reexec_attempts_by_childop[op]
-	 *      Per-childop partition of reexec_attempts.  Bumped from
-	 *      redqueen_reexec_step() alongside the per-syscall sibling.
-	 *  per_childop_cmp_novelty_reexec[op]
-	 *      Per-childop partition of reexec_new_cmps_total.  Bumped
-	 *      from redqueen_reexec_step() with the inner-dispatch
-	 *      new_cmp value, alongside the per-syscall sibling.
-	 *
-	 *  reexec_gate_skip_in_reexec
-	 *  reexec_gate_skip_disabled
-	 *  reexec_gate_skip_mode
-	 *  reexec_gate_skip_chain_mid
-	 *  reexec_gate_skip_no_new_cmp
-	 *  reexec_gate_skip_no_pending
-	 *  reexec_gate_skip_rate
-	 *  reexec_gate_pass
-	 *      Per-parent-call gate disposition at dispatch_step's re-exec
-	 *      tail.  Mutually exclusive: each dispatch_step that reaches
-	 *      the tail bumps EXACTLY ONE of these (the first gate to
-	 *      fail in evaluation order, or _pass when all gates cleared
-	 *      and redqueen_reexec_step ran).  Sum across the eight
-	 *      counters == total dispatch_step calls that reached the
-	 *      tail, which is the parent-call population the gate samples
-	 *      from.  Skip-reasons in evaluation order:
-	 *        - in_reexec      recursion guard (the inner dispatch_step
-	 *                         the re-exec helper itself invoked)
-	 *        - disabled       child not in the A/B redqueen-enabled
-	 *                         cohort (control arm)
-	 *        - mode           PC-mode child; CMP-mode is required to
-	 *                         produce attribution at all
-	 *        - chain_mid      in_chain_mid_step set; a chain replay's
-	 *                         saved step sequence cannot accommodate
-	 *                         an intermediate re-exec
-	 *        - no_new_cmp     parent call produced no bloom-novel CMP
-	 *                         records (only re-harvested known ones)
-	 *        - no_pending     attribution scan staged zero matches
-	 *                         (no rec->aN value tied to the kernel's
-	 *                         compared operand)
-	 *        - rate           rate gate (ONE_IN(N)) did not fire and
-	 *                         plateau-burst was not active
-	 *      The gap reexec_attribution_found - reexec_attempts is now
-	 *      bucketed by this counter family rather than inferred from
-	 *      a single global delta.
-	 *
-	 *  cmp_attribution_calls_eligible
-	 *      Count of cmp_hints_collect() calls where every attribution
-	 *      precondition cleared (child != NULL, redqueen_enabled,
-	 *      !in_reexec, reexec_pending_count < MAX_REEXEC_PENDING,
-	 *      entry != NULL, entry->num_args > 0, dispatch_args_valid).
-	 *      Denominator for the per-eligible-call attribution win
-	 *      rate -- pair with reexec_attribution_found to read what
-	 *      fraction of eligible parent calls staged at least one
-	 *      match across the call's CMP trace.
-	 *  cmp_attribution_snapshot_unavailable
-	 *      Count of cmp_hints_collect() calls where the redqueen
-	 *      cohort gate cleared and entry->num_args > 0, but
-	 *      rec->dispatch_args_valid was false -- i.e. the per-call
-	 *      arg snapshot the [11-snapshot] feed promised was missing.
-	 *      A healthy run holds this at zero; non-zero means a
-	 *      regression somewhere between __do_syscall's snapshot
-	 *      populate and the cmp_hints_collect consumer (or a
-	 *      parent-context caller reaching cmp_hints_collect that
-	 *      shouldn't).  Attribution correctly skips the call; the
-	 *      counter exposes the rate so the snapshot-feed health is
-	 *      not silently zeroed-out into the eligible cohort. */
+	 * re-exec funnel: per-syscall / per-childop partitions of the head,
+	 * eight mutually-exclusive gate-cause buckets at the tail, plus
+	 * snapshot-availability counters.  See
+	 * Documentation/kcov-shared-layout.md#reexec_gate for the per-call
+	 * partition invariant
+	 *   sum(reexec_gate_skip_*) + reexec_gate_pass
+	 *       == every dispatch_step that reached the re-exec tail. */
 	struct kcov_reexec_gate reexec_gate;
-
-	/*
-	 * Field-scoped CMP attribution counters (PHASE 3 narrow MVP).
-	 * Scalar attribution (reexec_attribution_found above) maps the kernel
-	 * constant to a syscall slot; field attribution scans the cataloged
-	 * struct sitting at that slot's pointer and -- on a runtime field
-	 * value matching arg2 -- records the constant into a field pool keyed
-	 * (nr, do32, arg_idx, desc, field_idx, size).  Counted separately
-	 * from the scalar tally so the new path's signal-to-noise can be read
-	 * without polluting the existing low-noise scalar numerator.
-	 *
-	 *  cmp_field_attribution_scanned
-	 *      Bumped once per (CMP record, cataloged INPUT struct arg) the
-	 *      field scan walked.  Denominator for the scan's hit rate.
-	 *  cmp_field_attribution_found
-	 *      Bumped once per (CMP record, struct arg, field) where the
-	 *      field's runtime value matched arg2 and the recording-path
-	 *      insert was attempted.  Numerator for the scan's hit rate.
-	 *  cmp_field_attribution_pool_full
-	 *      Bumped when every probe position in field_pools[] was occupied
-	 *      by an unrelated key, so the record was dropped.  A sustained
-	 *      non-zero rate flags a saturated table -- raise
-	 *      CMP_FIELD_POOL_BUCKETS or sharpen the key.
-	 *  cmp_field_attribution_arg_skipped_bad_ptr
-	 *      Bumped when the struct arg's snapshotted pointer failed the
-	 *      is_corrupt_ptr_shape() gate (NULL, non-canonical, or
-	 *      misaligned) so the field scan was suppressed for that slot --
-	 *      the kernel did not crash on the same address, so a non-zero
-	 *      rate signals a sanitiser that hands a non-shared-region
-	 *      pointer through and the field scan can't safely deref.
-	 *  cmp_field_attribution_arg_skipped_short_alloc
-	 *      Bumped when alloc_track_lookup_size() returned 0 for the
-	 *      snapshotted pointer (untracked / consumed / rotated out of
-	 *      the alloc-track ring) so the scan could not prove the
-	 *      buffer's real extent and refused to bound the field walk by
-	 *      desc->struct_size alone -- variable-length / over-large
-	 *      catalog rows can claim more bytes than the runtime alloc
-	 *      owns and the read would otherwise spill past the chunk
-	 *      (heap-buffer-overflow).  A sustained non-zero rate flags a
-	 *      sanitiser that fills a cataloged struct from an untracked
-	 *      allocation; rebase the alloc onto zmalloc_tracked() so the
-	 *      scan can recover the extent.
-	 *  cmp_field_timespec_skipped_bad_ptr
-	 *      Bumped when the field-scoped ARG_TIMESPEC fallback in
-	 *      cmp_hints_collect() could not safely deref the saved
-	 *      timespec pointer.  Two pathways feed the same counter --
-	 *      both are "shape-valid (>= 4096) but not safe to read"
-	 *      skips and have the same root cause (the dispatched
-	 *      syscall, or a sibling, freed/munmapped the original
-	 *      timespec between dispatch and CMP collection):
-	 *        (a) range_readable_user() proved the cached VMA state
-	 *            had no mapping for the pointer -- gate fired and
-	 *            the deref was skipped without faulting; or
-	 *        (b) range_readable_user() returned yes (cached VMA
-	 *            state still claimed the mapping) but a sibling raw
-	 *            munmap/mremap bypassed untrack_shared_region() and
-	 *            staled the cache, so the tv_sec/tv_nsec load
-	 *            actually faulted -- the sigsetjmp guard around the
-	 *            reads caught the SIGSEGV/SIGBUS and longjmp'd back
-	 *            to bump this counter and continue with the next
-	 *            field.
-	 *      A non-zero rate is expected churn (both gates prevented
-	 *      a child-killing SIGSEGV); a sustained high rate against
-	 *      cmp_field_attribution_scanned flags an arg-gen path that
-	 *      hands the kernel a non-shared-region timespec the
-	 *      harvest can't safely deref.
-	 */
+	/* Field-scoped CMP attribution counters (PHASE 3 narrow MVP).
+	 * Field lane is counted separately from the scalar tally so its
+	 * signal-to-noise stays legible. */
 	struct kcov_cmp_field_attr cmp_field_attr;
-
-	/* A/B-comparison counter for the substitution-pool "uninteresting
-	 * constant" drop mask.  Each CMP-mode child is stamped at fork into
-	 * one of two arms (boring_filter_arm in childdata): Arm A uses the
-	 * historical ~3UL mask (drop 0/1/2/3); Arm B widens to ~7UL (also
-	 * drop 4/5/6/7).  The widened band straddles common meaningful
-	 * bounds (struct sizes, low flag bits), so the per-arm pool-novelty
-	 * delta tells whether the dropped values were carrying actual
-	 * signal.  Counter-only -- no decision rides on it.  Bumped from
-	 * cmp_hints_collect() once per record where arg1 is in [4,7] (i.e.
-	 * Arm A would keep the record and Arm B would drop it); this is
-	 * the only band where the two arms diverge.  Append-only at the
-	 * struct tail per the existing convention so consumer offsets stay
-	 * stable. */
+	/* A/B counter for the substitution-pool "uninteresting constant"
+	 * drop mask (Arm A ~3UL, Arm B ~7UL).  Bumped only in the [4,7]
+	 * band where the two arms diverge. */
 	struct kcov_cmp_boring cmp_boring;
-
-	/*
-	 * Observability counters for the run-local CMP "recent" pool
-	 * tier.  The recent ring sits next to the durable per-syscall
-	 * pool and absorbs every fresh insert / evict-replace
-	 * pool_add_locked() observes -- a small lossy window over
-	 * constants the kernel has produced recently that the
-	 * saturated durable pool would otherwise drop on the eviction
-	 * floor.  cmp_hints_try_get_ex() samples the recent ring first
-	 * during a CMP_RISING_PC_FLAT plateau (the unconditional rule).
-	 * Every counter below is RELAXED + flat.
-	 *
-	 *  cmp_recent_inserts
-	 *      Bumped once per pool_add_locked() success that also
-	 *      landed an entry in the per-syscall recent ring.  Pairs
-	 *      with cmp_hints_unique_inserts -- the durable counter --
-	 *      so the relative volume of "recent absorbed" vs
-	 *      "durable accepted" is observable.
-	 *  cmp_recent_evicts
-	 *      Bumped once per recent-ring insert that displaced an
-	 *      existing entry (the ring head wrapped over a populated
-	 *      slot).  The ring is small (CMP_RECENT_PER_SYSCALL) so
-	 *      this saturates quickly on a hot syscall; the rate is
-	 *      the recent tier's churn signal.
-	 *  cmp_recent_would_pick
-	 *      Bumped once per cmp_hints_try_get_ex() call where the
-	 *      recent ring was non-empty AND the current plateau
-	 *      hypothesis is CMP_RISING_PC_FLAT -- i.e. the recent-tier
-	 *      opportunity count.  Pairs with cmp_recent_live_picks for
-	 *      the served-vs-opportunity ratio.
-	 *  cmp_recent_would_miss
-	 *      Bumped once per cmp_hints_try_get_ex() call where the
-	 *      plateau hypothesis is CMP_RISING_PC_FLAT but the recent
-	 *      ring is empty (the consumer falls through to the durable
-	 *      pool).  would_pick + would_miss is the plateau-window
-	 *      try_get population.
-	 *  cmp_recent_live_picks
-	 *      Bumped once per cmp_hints_try_get_ex() return that was
-	 *      actually served from the recent ring.
-	 *
-	 * Append-only at the tail per the existing convention so
-	 * consumer offsets stay stable. */
+	/* Observability for the run-local CMP "recent" pool tier.  Sampled
+	 * first on a CMP_RISING_PC_FLAT plateau; the pair of would-pick
+	 * counters + live-picks sizes served vs opportunity. */
 	struct kcov_cmp_recent cmp_recent;
-
-	/*
-	 * SHADOW counters for the field-scoped CMP hint consumer.
-	 *
-	 * cmp_hints_field_try_get() is wired end-to-end at the
-	 * gen_arg_timespec() callsite (tv_sec / tv_nsec) but the LIVE
-	 * arm is gated off by default so the pool stays observation-
-	 * only.  Every counter below is RELAXED + flat per the SHADOW-
-	 * first discipline that the per-syscall recent-ring tier
-	 * follows: recording active in BOTH arms so an A/B run reads
-	 * the same shadow rates the live arm will eventually consume.
-	 *
-	 *  cmp_field_consumer_would_pick
-	 *      Bumped once per cmp_hints_field_try_get() call where the
-	 *      keyed bucket was found AND its entries[] pool was non-
-	 *      empty AND uncorrupted AND the generator-invariant guard
-	 *      classified the (desc, field_idx) as eligible -- i.e. the
-	 *      call where the live arm would have served a value.  Guard-
-	 *      skipped keys are excluded from this counter and land in the
-	 *      per-reason cmp_field_consumer_guard_* counters below
-	 *      instead.  Active in BOTH arms.
-	 *  cmp_field_consumer_would_miss
-	 *      Bumped once per cmp_hints_field_try_get() call where the
-	 *      keyed bucket was found but its entries[] pool was empty.
-	 *      Active in BOTH arms.  would_pick + would_miss bounds the
-	 *      sites where the consumer found a matching bucket.
-	 *  cmp_field_consumer_key_absent
-	 *      Bumped once per cmp_hints_field_try_get() call where the
-	 *      probe loop exhausted CMP_FIELD_POOL_PROBE_MAX without a
-	 *      matching key (no recorder has populated a bucket for
-	 *      this (desc, nr, do32, arg_idx, field_idx, size) tuple
-	 *      yet).  Active in BOTH arms; a steady non-zero rate just
-	 *      means the consumer is asking for keys the recorder has
-	 *      not produced.
-	 *  cmp_field_consumer_pool_corrupted
-	 *      Bumped once per cmp_hints_field_try_get() call where the
-	 *      keyed bucket was found but cmp_field_pool_corrupted()
-	 *      latched corruption on it (wild-write evidence).  Folds
-	 *      into the existing cmp_hints_count_oob / canary counters;
-	 *      called out here so the consumer-side fraction of
-	 *      corruption-bucket skips is directly observable.
-	 *  cmp_field_consumer_live_picks
-	 *      Bumped once per cmp_hints_field_try_get() return that
-	 *      actually served a value (i.e. would_pick AND the LIVE
-	 *      arm flag is on).  Stays at zero under the default SHADOW
-	 *      arm; non-zero once a follow-up flips the live gate.
-	 *
-	 * Append-only at the tail per the existing convention so
-	 * consumer offsets stay stable.
-	 */
+	/* SHADOW counters for the field-scoped CMP hint consumer.  Active
+	 * in both arms so an A/B run reads the same shadow rates a future
+	 * live arm will eventually consume. */
 	struct kcov_field_consumer field_consumer;
-
-	/*
-	 * Generator-invariant guard skip counters (per rejection reason).
-	 * The would_pick counter above measures raw eligibility: the pool
-	 * had a key and non-empty entries[].  A subset of those keys, if
-	 * their value were ever injected into the generated struct, would
-	 * damage a generator invariant and turn a real syscall into a
-	 * guaranteed reject (union arm corruption, length/buffer desync,
-	 * pointer-shaped fields overwritten with data, tagged-union
-	 * discriminator picking a wrong variant, and so on).  The classifier
-	 * fires BEFORE the would_pick bump so the counter now reflects
-	 * post-guard eligibility -- what the live arm would actually
-	 * inject -- and each skip lands in exactly one of the reasons below.
-	 * All observation-only; no live behaviour changes with the arm off.
-	 *
-	 *  cmp_field_consumer_guard_variant_layout
-	 *      Struct descriptor carries syscall-arg tagged-union variants
-	 *      (desc->variants / num_variants).  Overwriting one arm's field
-	 *      corrupts whichever arm the fill path chose at generation.
-	 *  cmp_field_consumer_guard_buffer_discrim
-	 *      Struct descriptor selects its variant off an in-buffer byte
-	 *      (desc->buffer_discrim_size != 0), so any field overwrite risks
-	 *      steering the discriminator (or a sibling variant field) to a
-	 *      wrong arm -- includes sockaddr_storage / ioctl-request shapes.
-	 *  cmp_field_consumer_guard_len_pair
-	 *      Field is FT_LEN_BYTES / FT_LEN_COUNT: its value is the paired
-	 *      buffer's chosen length.  Injecting a kernel-observed CMP
-	 *      constant here desyncs the (ptr, len) pair.
-	 *  cmp_field_consumer_guard_nested_pointer
-	 *      Field is a pointer / embedded-struct / eBPF-buffer container
-	 *      (FT_PTR_BYTES, FT_PTR_ARRAY, FT_PTR_STRUCT, FT_EMBEDDED_STRUCT,
-	 *      FT_BPF_PROGRAM).  The stored value is an address / structural
-	 *      handle, not data; injecting a scalar hint mints a garbage
-	 *      pointer.
-	 *  cmp_field_consumer_guard_dependent
-	 *      Field carries structural state whose meaning is relative to
-	 *      another field (FT_TAGGED_UNION per-arm subset selector,
-	 *      FT_VOCAB NUL-padded curated-string slot).  A raw scalar hint
-	 *      doesn't honour the coupling and injecting it desyncs the pair.
-	 *
-	 * Append-only at the tail per the existing convention so consumer
-	 * offsets stay stable.
-	 */
+	/* Per-reason skip counters for the generator-invariant guard on
+	 * the field consumer would-pick path. */
 	struct kcov_field_consumer_guard field_consumer_guard;
-
-	/*
-	 * Prove-overlay metric for the field-scoped SHADOW consumer.
-	 *
-	 * The would_pick counter above proves the pool has post-guard hits.
-	 * It does NOT prove that routing the entry's value into the field
-	 * would produce new edge / cmp progress, nor that it would raise
-	 * the rejected-struct rate.  The counters below capture the
-	 * fleet-wide baseline state at each eligible would-pick sample so
-	 * a later live-arm flip can diff shadow-window vs live-window
-	 * rates: eligible_pick_count is the sample denominator, and the
-	 * three "_at_pick" sums are the numerators the live counterpart
-	 * (bumped from the same site with the arm on) will be measured
-	 * against.
-	 *
-	 * All bumps are keyed to the field-pool identity (struct type /
-	 * arg slot / offset+width): each snapshot fires exactly at the
-	 * point where the live arm would have injected that specific
-	 * pool's value.  The counters accumulate flat totals -- precision
-	 * comes from the tight sampling condition, not per-key storage --
-	 * so a run whose eligible pick population is dominated by one
-	 * pool cannot bias a later broader flip's read.
-	 *
-	 *  cmp_field_consumer_prove_eligible
-	 *      Bumped once per eligible (post-guard) would-pick.  The
-	 *      denominator for the three sums below.  Numerically equal
-	 *      to cmp_field_consumer_would_pick under the current wiring
-	 *      -- kept as an independently named counter so downstream
-	 *      readers of the prove overlay do not have to memorise the
-	 *      identity.
-	 *  cmp_field_consumer_prove_edges_at_pick
-	 *      Sum of kcov_shm->distinct_edges captured at each eligible
-	 *      would-pick.  Grows linearly with prove_eligible while
-	 *      distinct_edges is stable; a live-arm counterpart summed
-	 *      the same way (post-arm-flip) plus the corresponding
-	 *      prove_eligible delta answers "did routing this value in
-	 *      produce new edges".
-	 *  cmp_field_consumer_prove_cmp_records_at_pick
-	 *      Sum of kcov_shm->cmp_records_collected captured at each
-	 *      eligible would-pick.  Same shape as the edges baseline but
-	 *      the CMP-progress axis: a live-arm delta on this sum tells
-	 *      whether injection unlocked more kernel-side CMPs, not just
-	 *      more PC coverage.
-	 *  cmp_field_consumer_prove_einval_at_pick
-	 *      Sum of kcov_shm->errno_state.per_syscall_errno[nr][ERRNO_BUCKET_EINVAL]
-	 *      captured at each eligible would-pick, keyed to the pick's
-	 *      own syscall nr.  Answers "did it raise the rejected-struct
-	 *      rate": a live-arm counterpart sum divided by its
-	 *      prove_eligible delta, compared to the shadow ratio here,
-	 *      is the injection's contribution to the EINVAL floor for
-	 *      the population of syscalls where the arm actually fired.
-	 *
-	 * Append-only at the tail per the existing convention so consumer
-	 * offsets stay stable.
-	 */
+	/* Prove-overlay baseline for the field consumer: eligible-pick
+	 * denominator + three "_at_pick" numerators for a later live-arm
+	 * diff. */
 	struct kcov_field_consumer_prove field_consumer_prove;
-
-	/*
-	 * CMP-hint freshness / tier observability counters.
-	 *
-	 * A fuzz run that injects tens of thousands of unique hints but
-	 * credits only a handful of PC-wins suggests the durable pool is
-	 * saturated and its hot entries are stale -- the hints being
-	 * pulled at substitution time predate the kernel state the
-	 * current call is actually probing.  These counters expose the
-	 * per-call tier of the hint that was consumed (durable per-syscall
-	 * pool vs run-local recent ring) and the staleness of the durable
-	 * entry as measured by the gap between the pool's LRU clock at
-	 * pick time and the entry's last_used stamp at pick time, then
-	 * partition the PC-win / PC-miss credit drain by the same axes
-	 * so the conversion rate per (tier, age-bucket) is directly
-	 * observable.
-	 *
-	 * All counters RELAXED + flat per the SHADOW-first discipline:
-	 * the recording is active in every run regardless of consumer
-	 * arm so the freshness signal is legible from a default run with
-	 * no behaviour change.  Append-only at the struct tail per the
-	 * existing convention so consumer offsets stay stable.
-	 *
-	 *  cmp_hint_tier_recent_wins / cmp_hint_tier_recent_misses
-	 *      Bumped from cmp_hints_feedback_credit_pc(): for each
-	 *      stashed entry served from the recent ring, the outcome of
-	 *      the parent dispatch (new_edges true/false) bumps the
-	 *      matching wins/misses counter once per stash entry.
-	 *      Sibling of the existing flat cmp_hint_wins / cmp_hint_misses
-	 *      which count per parent dispatch (once); the per-stash
-	 *      partition here is what isolates the tier signal: a single
-	 *      parent dispatch may have stashed multiple hints from
-	 *      different tiers, and the conversion attribution lands on
-	 *      whichever tier sourced each individual stash entry.
-	 *  cmp_hint_tier_durable_wins / cmp_hint_tier_durable_misses
-	 *      Mirror of the recent tier above, bumped on stash entries
-	 *      served from the durable per-syscall pool or the field-
-	 *      scoped pool (both share the durable / saturating-LRU
-	 *      lineage).  recent_wins + durable_wins is the total per-
-	 *      stash-entry wins count, drained at the same site as the
-	 *      flat per-parent-dispatch counter.
-	 *  cmp_hint_durable_consumed_age[CMP_HINT_AGE_BUCKETS]
-	 *      Bumped once per cmp_hints_try_get_ex() / cmp_hints_field_try_get()
-	 *      return served from the durable per-syscall pool / field
-	 *      pool: indexed by cmp_hint_age_bucket() of the LRU clock
-	 *      delta (pool->last_used_stamp - picked->last_used) measured
-	 *      lock-free at pick time.  Bucket 0 == picked entry is the
-	 *      most recently refreshed in the pool; higher buckets ==
-	 *      the entry has been carried over many pool mutations
-	 *      without being refreshed.  Recent-ring picks bypass this
-	 *      counter (their freshness story is the tier itself; the
-	 *      ring has no per-entry LRU stamp).
-	 *  cmp_hint_durable_age_wins[CMP_HINT_AGE_BUCKETS]
-	 *  cmp_hint_durable_age_misses[CMP_HINT_AGE_BUCKETS]
-	 *      Outcome partition of cmp_hint_durable_consumed_age:
-	 *      bumped from cmp_hints_feedback_credit_pc() on each stashed
-	 *      durable-served entry, indexed by the same age bucket the
-	 *      pick path stored on the stash entry.  Per-bucket
-	 *      conversion rate = age_wins[b] / (age_wins[b] +
-	 *      age_misses[b]) and proves directly whether fresh entries
-	 *      (bucket 0..2) convert at higher rates than the stale tail
-	 *      (bucket 5..6).
-	 *  per_syscall_cmp_reject_cap[MAX_NR_SYSCALL]
-	 *      Per-syscall partition of the existing flat
-	 *      cmp_hints_save_reject_cap: every evict-replace in
-	 *      pools[nr] (durable pool saturated at CMP_HINTS_PER_SYSCALL,
-	 *      a fresh insert displaced an existing entry) bumps slot nr.
-	 *      Pair with the existing per_syscall_cmp_inserts[nr] to
-	 *      read per-syscall pool pressure: a syscall whose
-	 *      reject_cap rate dominates its inserts rate has a
-	 *      saturated pool churning the same 16 slots; the durable
-	 *      hints it produces drop to the recent ring (and decay
-	 *      from there) instead of carrying forward.
-	 */
+	/* CMP-hint freshness / tier observability -- per-tier and per-age
+	 * partitions of wins/misses/consumed so conversion rate per
+	 * (tier, age-bucket) is directly readable. */
 	struct kcov_hint_tier hint_tier;
-
-	/*
-	 * SHADOW typed-CMP-hypothesis store counters.  Append-only at the
-	 * struct tail per the existing convention.
-	 *
-	 *  cmp_hyp_observations    -- one bump per cmp_hyp_observe() call.
-	 *  cmp_hyp_inserted        -- typed hypothesis added to the store.
-	 *  cmp_hyp_pool_full       -- hyp_pool saturated (per-syscall cap).
-	 *                             Bumped only from cmp_hyp_alloc()'s
-	 *                             pool->count >= CMP_HYP_PER_SYSCALL
-	 *                             reject; the cmp_hyp_observe() corruption
-	 *                             bail (count > cap) bumps the sibling
-	 *                             cmp_hyp_pool_overflow counter instead.
-	 *  cmp_hyp_kind_full       -- per-kind sub-cap exhausted for a kind.
-	 *  cmp_hyp_consumed        -- typed hypothesis selected for injection
-	 *                             (shadow: counts would-have-been picks).
-	 *                             Zero until the consumer unit lands.
-	 *  cmp_hyp_pc_wins / cmp_hyp_transition_wins / cmp_hyp_cmp_novelty_wins
-	 *                          -- per-outcome credit drained against the
-	 *                             matching hypothesis.  Kept SEPARATE so
-	 *                             CMP novelty cannot masquerade as a
-	 *                             PC-edge conversion (same discipline as
-	 *                             the raw-hint cmp_hint_* counters above).
-	 *                             Zero until the feedback unit lands.
-	 *  cmp_hyp_misses / cmp_hyp_disabled_skips
-	 *                          -- drained against the matching hypothesis
-	 *                             on a no-outcome / chaos-suppressed pick.
-	 *                             Zero until the feedback unit lands.
-	 *  cmp_hyp_corpus_save / cmp_hyp_destructive / cmp_hyp_context_skip
-	 *                          -- flat mirrors of the matching per-
-	 *                             hypothesis corpus_save_wins /
-	 *                             destructive_skips / context_skips
-	 *                             fields so the fleet rollup sees the
-	 *                             same partition the per-hyp struct
-	 *                             already records.  Zero until the
-	 *                             feedback unit lands.
-	 */
+	/* SHADOW typed-CMP-hypothesis store counters.  Consumer-side wins
+	 * stay at zero until the follow-up unit lands. */
 	struct kcov_hyp_flat hyp_flat;
-
-	/* Per-entry early-FAIL skip counters inside redqueen_reexec_step.
-	 * Sibling family to the per-call reexec_gate_skip_* buckets, but
-	 * scoped to the entry-resolution bails that fire AFTER the per-call
-	 * gate has already passed.  Closes the per-entry skip partition so
-	 * the gap between reexec_gate_pass and (reexec_attempts +
-	 * reexec_skipped_destructive + reexec_skipped_validate_silent +
-	 * reexec_window_cap_hit) is fully attributed.
-	 *
-	 *  reexec_step_skip_entry_null
-	 *      get_syscall_entry(rec->nr, rec->do32bit) returned NULL --
-	 *      parent rec carried a syscall nr the table cannot resolve.
-	 *  reexec_step_skip_bad_slot
-	 *      Pending slot is zero or past entry->num_args -- attribution
-	 *      staged a slot that the resolved entry's arg count cannot
-	 *      accommodate (stale pending vs current entry resolution). */
+	/* Per-entry early-FAIL skip counters inside redqueen_reexec_step:
+	 * closes the per-entry skip partition once the per-call gate has
+	 * already passed. */
 	struct kcov_reexec_step reexec_step;
-
 	/* Per-kind flat census of typed CMP hypothesis insertions.
-	 * Bumped in lock-step with the scalar cmp_hyp_inserted above
-	 * from the cmp_hyp_alloc() success path, so the sum across
-	 * kinds equals cmp_hyp_inserted modulo concurrent sampling.
-	 * The per-syscall pool->per_kind_count[] is ephemeral (reset
-	 * with the pool); this flat array is the persistent fleet
-	 * mirror.  SHADOW telemetry only -- no consumer reads it. */
-	struct kcov_cmp_hyp_lifecycle cmp_hyp_lifecycle;
-
-	/*
-	 * SHADOW old-flat-pool conversion baseline counters, partitioned by
-	 * pool kind so the per-syscall pool and the field-scoped pool are
-	 * directly comparable to each other and to the typed-hypothesis store
-	 * above.  Together with the per-syscall cmp_hint_* arrays already in
-	 * this struct, this is the proof side of the t75 row: "does the typed
-	 * store predict better-converting picks than the flat pool".  Live
-	 * inject path is unchanged -- these counters bump alongside the
-	 * existing flat cmp_hint_* / cmp_hints_consumed credit drains using
-	 * the pool_kind already carried on each stash entry.
-	 *
-	 * Semantics differ from the flat cmp_hint_wins / cmp_hint_misses by
-	 * design: the flat counters bump ONCE per parent dispatch (the
-	 * call-level outcome); the by-pool partitions bump ONCE PER STASHED
-	 * ENTRY, mirroring the per-tier cmp_hint_tier_* discipline.  A
-	 * dispatch that stashed two hints from different pool kinds bumps
-	 * both kinds' counters once each, so SUM(by_pool[*]) for a given
-	 * outcome can exceed the matching flat counter.  Consumers compute
-	 * conversion as
-	 *     pc_wins_by_pool[k] / (pc_wins_by_pool[k] + misses_by_pool[k])
-	 * which is per-pool-kind and per-stash-entry, the cohort the
-	 * follow-up live-pick weight would actually score.
-	 *
-	 *  cmp_hint_consumed_by_pool[k]
-	 *      Per-pool-kind partition of cmp_hints_consumed.  Bumped from
-	 *      cmp_hints_stash_consumed() once per successful try_get pull
-	 *      using the pool_kind argument the caller already provides.
-	 *      Denominator for the per-pool conversion ratio above.
-	 *  cmp_hint_pc_wins_by_pool[k] / cmp_hint_misses_by_pool[k]
-	 *      Per-pool-kind partition of cmp_hint_wins / cmp_hint_misses,
-	 *      bumped per stashed entry from cmp_hints_feedback_credit_pc()
-	 *      using the stashed entry's pool_kind.  PC-edge only.
-	 *  cmp_hint_cmp_novelty_wins_by_pool[k]
-	 *      Per-pool-kind partition of cmp_hint_cmp_novelty_wins, bumped
-	 *      per stashed entry from cmp_hints_feedback_credit_cmp_novelty().
-	 *      Kept SEPARATE from the PC partition so CMP novelty cannot
-	 *      masquerade as PC-edge conversion (same discipline as the flat
-	 *      cmp_hint_cmp_novelty_wins counter and the typed
-	 *      cmp_hyp_cmp_novelty_wins counter).
-	 */
-	struct kcov_cmp_hint_pool cmp_hint_pool;
-
-	/* Corruption-channel sibling of cmp_hyp_pool_full, split out so the
-	 * legitimate per-syscall saturation lane and the wild-write bail
-	 * become independently countable.  Bumped only from
-	 * cmp_hyp_observe()'s pool->count > CMP_HYP_PER_SYSCALL guard --
-	 * a value past the cap is a stomp signal, not back-pressure, and
-	 * any non-zero delta here means a writer scribbled the per-syscall
-	 * pool out of bounds.  cmp_hyp_pool_full now bumps ONLY from the
-	 * cmp_hyp_alloc() per-syscall-exhausted branch (legit saturation).
 	 * SHADOW telemetry only -- no consumer reads it. */
+	struct kcov_cmp_hyp_lifecycle cmp_hyp_lifecycle;
+	/* SHADOW old-flat-pool conversion baseline, partitioned by pool
+	 * kind so the per-syscall pool and field-scoped pool are directly
+	 * comparable.  Counters bump per stashed entry (not per parent
+	 * dispatch) so SUM by pool can exceed the matching flat counter. */
+	struct kcov_cmp_hint_pool cmp_hint_pool;
+	/* Corruption-channel sibling of cmp_hyp_pool_full; any non-zero
+	 * delta here means a writer scribbled the per-syscall pool out
+	 * of bounds. */
 	struct kcov_cmp_hyp_results cmp_hyp_results;
-
-	/*
-	 * Childop CMP harvest shadow counters.  Populated only when
-	 * --childop-cmp-harvest=on opens the kcov_cmp_bracket on a
-	 * CMP-mode child at the child.c childop dispatch gate; the OFF
-	 * default leaves every counter below at zero so the row is
-	 * directly observable as "harvest path is dormant on this build".
-	 *
-	 * Per the design (projects/trinity/childop-cmp-integration-design.md
-	 * sections 3.1 / 3.2 / 4):
-	 *   - Inserts feed the QUARANTINED childop lane
-	 *     (cmp_hints_shared.childop_recent_pools[nr][do32]), not the
-	 *     durable per-syscall pool, so no childop constant can evict a
-	 *     random-syscall constant out of the 16-entry LRU until a
-	 *     promotion phase (C6) is earned per-nr by the conversion-chain
-	 *     metrics that land alongside the consume side (C2/C4).
-	 *   - All bumps key on the real __NR_X carried by the wrapped
-	 *     childop syscall (do32=false; childops issue native 64-bit
-	 *     syscalls only) so the consumer-side resolver (when it lands)
-	 *     can look constants up under the same (nr, do32) coordinate
-	 *     the random-syscall picker uses.
-	 *   - window_contaminated[nr] is the §3.2 "all-routed invariant"
-	 *     debug counter: best-effort signal that a wrapped collect saw
-	 *     records when the kernel was not expected to run (some
-	 *     unwrapped helper syscall landed inside the reset/syscall/
-	 *     collect window and was misattributed to nr).  Pure
-	 *     observability -- the cap arms below are the actual
-	 *     domination defence.
-	 */
+	/* Childop CMP harvest SHADOW counters; wired to a quarantined
+	 * childop lane so no childop constant can evict a random-syscall
+	 * constant until per-nr promotion is earned. */
 	struct kcov_childop_cmp childop_cmp;
-
-	/*
-	 * SHADOW counters for the fleet-wide shared cmp_ip tier
-	 * (cmp_hints_shared.shared_tier[]).  All six are RELAXED + flat.
-	 * The tier's data model, entry-path filter, and rollout gate live
-	 * in include/cmp_hints.h -- see the CMP_SHARED_TIER_* /
-	 * cmp_shared_tier_mode comments there for the shape.  A default
-	 * OFF-mode build never touches any of these counters (the collect-
-	 * side insert and the get-side probe both short-circuit before
-	 * any shm access), so an OFF vs pre-tier-baseline byte-for-byte
-	 * pick stream reads all six as zero on either side of the diff.
-	 *
-	 *  cmp_shared_tier_ips
-	 *      Cumulative: bumped once per first-time bucket claim in
-	 *      cmp_shared_tier_insert().  Monotonically non-decreasing --
-	 *      the tier has no eviction path (fallback pool; drops on
-	 *      probe exhaustion are silent).  Reads the OCCUPANCY size of
-	 *      the tier at any given moment.  Sibling denominator for
-	 *      cmp_shared_tier_entry_path_excluded_ips below; the non-
-	 *      entry-path IP population is (ips - excluded) and is what
-	 *      the shadow probe consults on every cold per-nr miss.
-	 *  cmp_shared_tier_entries
-	 *      Cumulative: bumped once per fresh (value, size) pair
-	 *      appended into a bucket's values[] array.  Sibling of
-	 *      cmp_shared_tier_ips: total entries / total IPs is the
-	 *      average value-set density per bucket, one of the section
-	 *      6 overlap-mine deltas the shadow validates.
-	 *  cmp_shared_tier_entry_path_excluded_ips
-	 *      Cumulative: bumped once per bucket that crosses the
-	 *      CMP_SHARED_TIER_ENTRY_PATH_NR_MAX distinct-nr threshold and
-	 *      latches entry_path_excluded=1.  Entry-path IPs (do_syscall_
-	 *      64 / seccomp gate / kcov entry / copy_from_user length
-	 *      probes / ...) are noise as a warm-start seed and this
-	 *      counter measures how much of the tier population is
-	 *      filtered by the entry-path rule.
-	 *  cmp_shared_tier_shadow_warmstart_eligible
-	 *      Cumulative: bumped once per cmp_hints_try_get_ex() cold-
-	 *      miss return (durable pool empty on the requested (nr, do32),
-	 *      recent-tier pre-pass returned MISS) where the shared tier
-	 *      had at least one non-entry-path IP available to seed from
-	 *      (cmp_shared_tier_ips > cmp_shared_tier_entry_path_excluded_
-	 *      ips at probe time).  This is the OPPORTUNITY size the
-	 *      Phase 2 live warm-start would consume -- the follow-up
-	 *      commit converts this shadow eligibility into a live seed
-	 *      served from the tier, at which point the counter becomes
-	 *      the denominator for actual warm-start yield.
-	 *  cmp_shared_tier_shadow_dedup_supplied
-	 *      Cumulative: bumped once per cmp_shared_tier_insert() call
-	 *      where THIS nr is a NEW contributor for the bucket AND the
-	 *      (value, size) pair was already present from a prior nr's
-	 *      contribution.  The tier could have SUPPLIED this cross-nr
-	 *      redundant learn via warm-start instead of us learning it
-	 *      here -- the exact section 6 overlap-mine signal (~87% of
-	 *      learned entries are cross-nr duplicates) that motivates
-	 *      the shared tier at all.  Ratio to cmp_shared_tier_entries
-	 *      is the cross-nr redundancy rate on live commits.
-	 *
-	 * Append-only at the tail per the existing convention so consumer
-	 * offsets stay stable.
-	 */
+	/* SHADOW counters for the fleet-wide shared cmp_ip tier
+	 * (cmp_hints_shared.shared_tier[]).  All six OFF-mode counters
+	 * stay at zero; see include/cmp_hints.h for the tier's shape. */
 	struct kcov_cmp_shared_tier cmp_shared_tier;
-
-	/*
-	 * SHADOW consume-side counters for the childop CMP path -- the
-	 * consumer half of the harvest counters above.  All per-nr and
-	 * RELAXED; keyed by the real __NR_X the childop passed at its
-	 * field site (nr-only, no cmd/field split -- pilot single-
-	 * semantic).  Bumped from childop_cmp_value() when
-	 * --childop-cmp-consume=on; the OFF default short-circuits
-	 * before any shm access, so every counter reads as zero on the
-	 * default build and a fixed-seed pick stream is byte-identical
-	 * either way.
-	 *
-	 * Consume-side names mirror the CMP-hyp shadow counters
-	 * (cmp_hyp_would_pick_by_kind / would_miss_by_kind /
-	 * would_value_differs) with per-nr partitioning replacing the
-	 * per-kind partition; the two lanes are independent and can be
-	 * summed for a fleet-wide would-pull rate.  Any counter here
-	 * SIZES what a future C3/C4 live consume WOULD do at this site
-	 * -- no arg is changed, no outcome is changed, and the pick
-	 * stream stays byte-for-byte identical to a build without the
-	 * knob.
-	 *
-	 *  childop_cmp_consume_would_pick[nr]
-	 *      Bumped once per childop_cmp_value() call where the
-	 *      cmp_hints_try_get_ex() shadow probe returned a hint (a
-	 *      pool value exists at this (nr, do32=false, use, cmp_ip
-	 *      family) and the transform succeeded).  The hint is NOT
-	 *      applied -- the caller still writes its rng-drawn
-	 *      fallback -- but the counter records the OPPORTUNITY:
-	 *      how many field-site draws could have been replaced by a
-	 *      learned constant on a run with the same seed.  Sibling
-	 *      denominator for _would_value_differs below.
-	 *
-	 *  childop_cmp_consume_would_miss[nr]
-	 *      Bumped once per childop_cmp_value() call where the
-	 *      cmp_hints_try_get_ex() probe returned FALSE (pool empty
-	 *      on this (nr, do32=false), chaos suppression, or the
-	 *      accept-range gate rejected).  Sum with _would_pick is
-	 *      the field-site draw volume the resolver saw; the ratio
-	 *      is the raw pool-populated rate at these sites.
-	 *
-	 *  childop_cmp_consume_would_value_differs[nr]
-	 *      Bumped once per _would_pick where the returned hint
-	 *      value differed from the caller's rng-drawn fallback (a
-	 *      LIVE consume at this site would have actually changed
-	 *      the arg the syscall received).  Ratio to _would_pick is
-	 *      the "arg would have changed" rate -- the C3/C4 decision
-	 *      gate for whether a live consume at this site has any
-	 *      hope of moving downstream metrics at all.
-	 *
-	 *  childop_cmp_consume_candidate_accepted[nr]
-	 *  childop_cmp_consume_arg_changed[nr]
-	 *  childop_cmp_consume_outcome_changed[nr]
-	 *  childop_cmp_consume_new_cov[nr]
-	 *      Conversion-chain counters MEASURED-ONLY in this build --
-	 *      they are declared here so the shm layout settles before
-	 *      the follow-up C3/C4 slices, but NO bump site exists in
-	 *      the shadow-only tree.  A default run reads all four as
-	 *      zero, always.  When the live-consume slice lands, each
-	 *      stage of the chain (candidate accepted by the resolver
-	 *      transform -> arg written differs from the rng fallback
-	 *      -> the syscall's dispatch outcome differs from a
-	 *      recorded shadow-off outcome -> the call produced fresh
-	 *      PC coverage) bumps its counter, giving the C4 A/B
-	 *      readout a single per-nr yield ratio to size the win at.
-	 *
-	 * Append-only at the tail per the existing convention so
-	 * consumer offsets stay stable.
-	 */
+	/* SHADOW consume-side counters for the childop CMP path.  All
+	 * would_* counters SIZE what a future live consume WOULD do; the
+	 * pick stream stays byte-identical to a build without the knob. */
 	struct kcov_childop_cmp_consume childop_cmp_consume;
-
-	/* Shadow measurement of the non-const relational CMP drop-site.
-	 * The per-record loop in cmp_hints_collect() drops every
-	 * !KCOV_CMP_CONST record (both operands runtime) into
-	 * cmp_hints_save_reject_nonconst.  These five counters measure
-	 * how much of that dropped stream WOULD be actionable if a
-	 * future "relational" attribution lane were built -- purely a
-	 * headroom sizing readout, no live path reads them.  Gated on
-	 * rec_num_args > 0 (dispatch-time arg snapshot present); NOT
-	 * gated on attribute_enabled (that flips off under
-	 * reexec_pending back-pressure, a live-resource throttle the
-	 * shadow lane must not inherit).  Append-only at the tail per
-	 * the existing convention so consumer offsets stay stable. */
+	/* SHADOW measurement of the non-const relational CMP drop site --
+	 * sizes headroom for a future relational attribution lane. */
 	struct kcov_cmp_nonconst cmp_nonconst;
-
-	/* Shadow measurement of a high-bit-preserving replacement for the
-	 * width-masked CMP RedQueen pin.  On a unique width match the live
-	 * consumer overwrites the WHOLE 64-bit arg slot with arg1 (the
-	 * kernel constant), clobbering the slot's high bits; an
-	 * alternative splice -- replacement = (orig & ~width_mask) |
-	 * (arg1 & width_mask) -- which matters when the high bits feed a
-	 * separate validation path.  These two counters size how often
-	 * that splice would produce a byte-different pin from today's
-	 * whole-slot overwrite, so the headroom of a future preserving
-	 * lever can be judged before building it.  Nothing in the collect /
-	 * save / re-exec paths reads them; live pin is unchanged.  Append-
-	 * only at the tail per convention so consumer offsets stay stable. */
+	/* SHADOW measurement of a high-bit-preserving replacement for the
+	 * width-masked CMP RedQueen pin. */
 	struct kcov_cmp_width_pin cmp_width_pin;
-
-	/* Shadow measurement of a POW2 / alignment probe class in the
-	 * typed-hypothesis derive.  Fires only on picks whose callsite
-	 * is a size / offset-class argtype (ARG_RANGE / ARG_STRUCT_SIZE
-	 * today) AND whose picked exemplar C is at or near a power of
-	 * two: the class would emit candidates from {C>>1, C, C<<1,
-	 * round-to-512, round-to-4096, round-to-page-size}.  The live
-	 * derive path (cmp_hyp_derive_value's *out and probe-class
-	 * histogram bump) is byte-for-byte unchanged; these two counters
-	 * size the coverage headroom of promoting the class:
-	 * would_fire counts every eligible pick (argtype gate AND bit-
-	 * pattern gate both open); would_win counts the subset where at
-	 * least one pow2 / align candidate differs from the value the
-	 * live derive lane just emitted -- i.e. the class would have
-	 * contributed a value the existing lanes did not.  Nothing on
-	 * the live pick / inject / credit path reads these; ratio in
-	 * per-mille sizes the delta a live promotion would open up.
-	 * Append-only at the tail per convention so consumer offsets
-	 * stay stable. */
+	/* SHADOW measurement of a POW2 / alignment probe class in the
+	 * typed-hypothesis derive.  Nothing on the live pick path reads
+	 * these; sizes the coverage headroom of promoting the class. */
 	struct kcov_cmp_hyp_shadow cmp_hyp_shadow;
-
-	/*
-	 * SHADOW win-scalar for the field-scoped CMP inject arm.
-	 *
-	 * Sibling to the existing cmp_field_consumer_would_pick baseline
-	 * above: pick counts every post-guard eligible would-pick (the
-	 * denominator the shadow_arm_registry evaluator reads), and this
-	 * counter is the numerator -- bumped on the subset where the
-	 * pool would have offered a value DIFFERENT from the value the
-	 * generator was about to write to that slot.  A raw would-pick
-	 * that always resolves to the same value the generator already
-	 * chose is a no-op for coverage -- the live arm would flip zero
-	 * bytes on the wire and no downstream metric could move.  The
-	 * differs subset is the actionable slice: only these would_picks
-	 * could produce a byte-changed arg on a live flip.
-	 *
-	 * Mirrors the measure-only "differs" precedent set by
-	 * childop_cmp_consume_would_value_differs above: bumped once
-	 * per would_pick where the elected pool entry differs from the
-	 * caller's fallback, active in BOTH arms (SHADOW and LIVE), and
-	 * strictly bounded above by cmp_field_consumer_would_pick so
-	 * differs/would_pick reads as a plain per-mille rate.  Elected
-	 * entry is entries[0] as a deterministic RNG-free proxy for the
-	 * live arm's uniform draw (see cmp_hints_field_try_get): pool
-	 * rotation over run duration surfaces the population differs-
-	 * rate through slot 0 without advancing per-child RNG state or
-	 * touching the generator, keeping the shadow bump dry-run byte-
-	 * identical to a build without this row.
-	 *
-	 * Append-only at the tail per the existing convention so
-	 * consumer offsets stay stable.
-	 */
+	/* SHADOW win-scalar for the field-scoped CMP inject arm.  Bumped
+	 * on the would_pick subset where the pool value differs from what
+	 * the generator was about to write. */
 	struct kcov_field_consumer_shadow field_consumer_shadow;
-
-	/*
-	 * SHADOW would-confirm win-scalar for the shared-tier cold-serve
-	 * arm.
-	 *
-	 * Sibling to the cmp_shared_tier_shadow_warmstart_eligible
-	 * baseline above: eligible bumps once per cmp_hints_try_get_ex()
-	 * cold-miss return where the shared tier had at least one non-
-	 * entry-path IP available to seed from (the OPPORTUNITY size a
-	 * live cold-serve would consume), and this counter is the
-	 * numerator -- bumped on the subset where the deterministically
-	 * elected (cmp_ip, value, size) triple from the shared tier is
-	 * already present in THIS nr's OWN native durable / recent pool
-	 * at probe time (exact identity match).  A would-confirm bump
-	 * means the shared tier's cold-serve would have elected a triple
-	 * the native pool for this syscall already carries -- i.e. a
-	 * live serve at this site would confirm what the native evidence
-	 * already agrees with, and the elected value is not a cross-
-	 * syscall lift the native pool has never seen.
-	 *
-	 * The election is READ-ONLY, no-RNG and deterministic (first
-	 * occupied non-entry-path-excluded bucket by ascending index):
-	 * no generator state is advanced and the pick stream stays byte-
-	 * for-byte identical to a build without this row.  Bumped
-	 * strictly inside the SAME eligible branch that bumps
-	 * cmp_shared_tier_shadow_warmstart_eligible so
-	 * would_confirm <= warmstart_eligible holds and the ratio
-	 * reads as a plain per-mille rate -- the fraction of shared-
-	 * tier cold-serve opportunities whose elected triple is already
-	 * corroborated by this nr's own native evidence.
-	 *
-	 * CONSERVATIVE FLOOR: "present now" undercounts delayed native
-	 * discovery -- a native pool that eventually observes the triple
-	 * but has not yet at probe time reads as a would-confirm MISS.
-	 * The measurement bounds the confirm fraction from below, which
-	 * is the direction the go/no-go decision needs.
-	 *
-	 * Append-only at the tail per the existing convention so
-	 * consumer offsets stay stable.
-	 */
+	/* SHADOW would-confirm win-scalar for the shared-tier cold-serve
+	 * arm.  Election is READ-ONLY, no-RNG, deterministic; sizes the
+	 * fraction of opportunities already corroborated by this nr's
+	 * native pool. */
 	struct kcov_cmp_shared_tier_shadow cmp_shared_tier_shadow;
-
-	/*
-	 * RedQueen plateau_burst per-call drain-cap A/B measure arm counters.
-	 *
-	 * The go/no-go metric for the burst_drain_arm_b measure lives in the
-	 * distinct-edge lift domain, not the CMP-record domain: the 85k
-	 * distinct-PC-edge wall is what the plateau intensification is meant
-	 * to break, but reexec_new_cmps_total counts bloom-novel CMP records
-	 * and a fresh CMP that opens no new distinct edge is invisible to
-	 * that wall.  reexec_new_edges_total wires the 6th dispatch_step()
-	 * out-param (pcres.transition_edges_real_local at
-	 * random_syscall/dispatch.c:709) into redqueen_reexec_step()'s
-	 * inner_new_cmp > 0 success block and accumulates it in lock-step
-	 * with reexec_new_cmps_total, so a run can be scored on transition-
-	 * distinct-edge lift instead of CMP-record lift.
-	 *
-	 * The _by_arm[2] triplet partitions each numerator by the child's
-	 * burst_drain_arm_b stamp (arm A = index 0, arm B = index 1), bumped
-	 * from redqueen_reexec_step() inside the same critical sections that
-	 * bump the flat counters.  reexec_attempts_by_arm supplies the
-	 * per-arm denominator; a per-arm distinct-edge ratio is then
-	 *     reexec_new_edges_by_arm[B] / reexec_attempts_by_arm[B]
-	 * versus the same ratio for arm A -- the shadow success criterion
-	 * (§4 of the plateau-burst spec) is arm-B >= arm-A.
-	 *
-	 * Append-only at the tail per the existing convention.
-	 */
+	/* RedQueen plateau_burst per-call drain-cap A/B measure arm
+	 * counters.  Distinct-edge lift domain, not CMP-record domain --
+	 * see Documentation/kcov-shared-layout.md#reexec_arms. */
 	struct kcov_reexec_arms reexec_arms;
 };
 
