@@ -53,13 +53,15 @@ REAL_SRCS	:= \
 	$(TOP)/args/struct_mutate.c \
 	$(TOP)/args/struct_mutate_selftest.c \
 	$(TOP)/struct_catalog/variant.c \
-	$(TOP)/struct_catalog/address.c
+	$(TOP)/struct_catalog/address.c \
+	$(TOP)/utils/shared_freelist.c
 
 FAKE_SRCS	:= \
 	fake_rng.c \
 	fake_shm.c \
 	fake_stubs.c \
 	rnd_stream_golden.c \
+	shared_freelist_selftest.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

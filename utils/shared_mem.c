@@ -12,6 +12,7 @@
 #include "params.h"
 #include "pc_format.h"
 #include "pids.h"
+#include "shared_freelist.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -1056,186 +1057,20 @@ bool shared_size_mul(size_t a, size_t b, size_t *out)
  * whose aligned size falls within a bucket is pushed onto that bucket's
  * lock-free stack; the next alloc of the same size pops it instead of
  * burning new bump space.  Allocations larger than 1024 bytes bypass the
- * freelist and use the bump allocator directly (documented below).
- *
- * The freelist link lives in the slot's own first uint32_t.  This is safe
- * because the slot is not live when the link is written: the caller has
- * just handed it back to us, and we zero the rest of the slot before
- * writing the link so that a use-after-free still surfaces as zero-byte
- * reads rather than as a stale link token.
- *
- * CAS ordering.  A naive RELAXED-everywhere scheme is fine on x86-64's
- * strong model but corrupts on weak-memory architectures (arm64, riscv):
- * a popper could observe a head installed by an in-flight push before the
- * push's earlier store to the slot's link word had propagated, and then
- * dereference an uninitialised or stale link.  So:
- *
- *   push: success CAS is RELEASE, failure is RELAXED.  The release
- *   pairs with pop's acquire load below, ordering the slot-link store
- *   (which is a plain non-atomic write inside the CAS loop) before the
- *   head publication that other poppers see.
- *
- *   pop: the initial head load is ACQUIRE, the success CAS is ACQ_REL,
- *   and the failure CAS is ACQUIRE.  Acquire on both the load and the
- *   failure path guarantees the retry re-reads with acquire semantics
- *   before it dereferences the linked slot; ACQ_REL on success makes the
- *   pop safe to sequence with subsequent pushes of the same slot.
- *
- * ABA safety via tagged head.  A naive lock-free stack with a single
- * token head is vulnerable to the classic ABA race: a popper reads
- * old_head=X and next=*X, but before its CAS another thread pops X, pops
- * X.next, and then pushes X back.  The CAS still sees head==X and succeeds,
- * but it installs the stale "next" value, leaving head pointing at a slot
- * that has already been handed back to a caller.  Two callers then think
- * they own the same slot; the resulting double-use corrupts whichever
- * obj struct was layered over the slot and faults later in unrelated
- * code paths far from the buggy free.
- *
- * The mitigation is a 32-bit version counter packed into the high half of
- * the head word.  Each push and pop increments the version; the CAS
- * compares the full 64-bit (version, token) tuple.  The A→B→A sequence
- * above now leaves the head as (X, ver+2) rather than (X, ver), so the
- * racer's CAS fails on the version mismatch and it retries with a fresh
- * load.
- *
- * The packing uses a heap-offset token instead of the old x86-64 48-bit
- * pointer trick: low 32 bits carry (offset+1), high 32 bits carry the
- * version.  Offsets are stable across processes that mmap the shared
- * heap at different base addresses, and the encoding assumes nothing
- * about pointer layout, so the same code compiles and runs correctly on
- * arm64/riscv/s390x/x86-64-5-level.  Token 0 is the empty-list sentinel;
- * offset+1 guarantees offset-0 never encodes to 0.  See the
- * FREELIST_OFF_MASK block below for the exact bit layout.
- *
- * The 32-bit version is effectively unwrappable in practice: a targeted
- * ABA would need 2^32 push/pop pairs interleaved between a victim's
- * load and CAS; at sub-microsecond critical sections and a
- * process-bounded fuzzer this is astronomically improbable.
+ * freelist and use the bump allocator directly (documented below).  The
+ * ABA-safe head-word packing, CAS-ordering rules and per-token bounds
+ * armour live in utils/shared_freelist.c; this TU only owns the shared-
+ * string heap base pointer + capacity that the primitives operate over,
+ * and the alloc_shared_str / free_shared_str wrappers below.
  */
 
 /*
  * Base pointer of the shared string heap.  Freelist tokens encode an
  * offset+1 into this region; both push and pop translate between tokens
- * and pointers via this base, so it must be visible above the freelist
- * primitives.  The actual mapping is created lazily in
- * shared_str_heap_init() below the freelist code.
+ * and pointers via this base, so it must be visible above the wrappers.
+ * The actual mapping is created lazily in shared_str_heap_init() below.
  */
 static char *shared_str_heap;
-
-/*
- * The head-word packing uses a heap-offset token instead of a raw pointer,
- * which makes it arch-portable: no assumption about pointer widths, no
- * dependency on x86-64's canonical 48-bit userspace VA layout, and no
- * conflict with 52-bit VA arm64 or 5-level-paging x86-64.
- *
- *   low 32 bits  = token = (slot_offset_in_heap + 1)
- *   high 32 bits = version counter (ABA guard)
- *
- * Token 0 is reserved as the empty-list sentinel.  Offsets themselves run
- * from 0 to SHARED_STR_HEAP_SIZE-1, so token 1 unambiguously names the
- * slot at offset 0 and no valid slot ever encodes to 0.  The version tag
- * remains in the high 32 bits and still defeats the classic ABA race in
- * freelist_pop (see the long block comment above).
- *
- * The slot's stored "next" word is the next slot's token, not a raw
- * pointer — the same offset+1 encoding — so the whole invariant (any
- * value written into head or slot link is a valid token) survives across
- * processes that map the shared heap at different base addresses.
- *
- * The bound on the offset+1 token is UINT32_MAX (not 1U<<32 — that shift
- * is a width-of-type UB on a 32-bit int).  SHARED_STR_HEAP_SIZE at the
- * current 1 MiB is well under that; the _Static_assert lives beside the
- * SHARED_STR_HEAP_SIZE define so any future growth trips the compile.
- */
-#define FREELIST_OFF_MASK	((uint64_t)0xffffffffULL)
-#define FREELIST_VER_SHIFT	32
-
-static const size_t bucket_sizes[NUM_SHM_FREELIST_BUCKETS] = {
-	8, 16, 32, 64, 128, 256, 512, 1024
-};
-
-/*
- * Return the index of the smallest bucket that fits an allocation of
- * already-pointer-aligned size, or -1 if size exceeds all buckets.
- */
-static int freelist_bucket(size_t aligned_size)
-{
-	unsigned int i;
-
-	for (i = 0; i < NUM_SHM_FREELIST_BUCKETS; i++) {
-		if (aligned_size <= bucket_sizes[i])
-			return (int)i;
-	}
-	return -1;
-}
-
-/*
- * Pop a slot from the freelist bucket whose head lives at *head.
- * Returns NULL if the freelist is empty; otherwise returns a fully-zeroed
- * slot of slot_size bytes.  ABA-safe via the version tag in the high half
- * of the head — see the block comment above.  The head load and the
- * failing CAS branch both use ACQUIRE so that the slot-link store from
- * the concurrent push that installed this head is visible before we
- * dereference the link.
- */
-static void *freelist_pop(uint64_t *head, size_t slot_size)
-{
-	uint64_t old_tagged, new_tagged;
-	uint32_t token, next_token;
-	uint32_t new_ver;
-	void *p;
-
-	old_tagged = __atomic_load_n(head, __ATOMIC_ACQUIRE);
-	do {
-		token = (uint32_t)(old_tagged & FREELIST_OFF_MASK);
-		if (token == 0)
-			return NULL;
-		p = shared_str_heap + (token - 1);
-		/* Slot's first uint32_t holds the next slot's token (offset+1),
-		 * with no version bits — versions live only in the head. */
-		next_token = *(uint32_t *)p;
-		new_ver = (uint32_t)(old_tagged >> FREELIST_VER_SHIFT) + 1;
-		new_tagged = ((uint64_t)next_token & FREELIST_OFF_MASK) |
-			     ((uint64_t)new_ver << FREELIST_VER_SHIFT);
-	} while (!__atomic_compare_exchange_n(head, &old_tagged, new_tagged,
-					      false,
-					      __ATOMIC_ACQ_REL,
-					      __ATOMIC_ACQUIRE));
-
-	memset(p, 0, slot_size);
-	return p;
-}
-
-/*
- * Push a slot onto the freelist bucket whose head lives at *head.
- * The entire slot (slot_size bytes) is zeroed first so that a use-after-
- * free reads as zero rather than stale data; then the next-slot token is
- * written into the slot's first uint32_t before the CAS.  The version tag
- * in the head is incremented on every successful CAS to keep poppers safe
- * from ABA — see the block comment above.  The success CAS uses RELEASE
- * so poppers that ACQUIRE-load the resulting head see the slot-link store
- * we made just above.
- */
-static void freelist_push(uint64_t *head, void *p, size_t slot_size)
-{
-	uint64_t old_tagged, new_tagged;
-	uint32_t my_token, new_ver;
-
-	memset(p, 0, slot_size);
-	my_token = (uint32_t)((char *)p - shared_str_heap) + 1;
-	old_tagged = __atomic_load_n(head, __ATOMIC_RELAXED);
-	do {
-		/* Store only the token half of the previous head into our
-		 * slot — the version stays in the head word. */
-		*(uint32_t *)p = (uint32_t)(old_tagged & FREELIST_OFF_MASK);
-		new_ver = (uint32_t)(old_tagged >> FREELIST_VER_SHIFT) + 1;
-		new_tagged = ((uint64_t)my_token & FREELIST_OFF_MASK) |
-			     ((uint64_t)new_ver << FREELIST_VER_SHIFT);
-	} while (!__atomic_compare_exchange_n(head, &old_tagged, new_tagged,
-					      false,
-					      __ATOMIC_RELEASE,
-					      __ATOMIC_RELAXED));
-}
 
 /*
  * Shared string heap — backing store for the string PAYLOADS of
@@ -1358,16 +1193,18 @@ void * alloc_shared_str(size_t size)
 	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
 
 	/* Try the freelist before touching the bump cursor. */
-	bucket = freelist_bucket(size);
+	bucket = shared_freelist_bucket(size);
 	if (bucket >= 0) {
-		p = freelist_pop(&shm->shared_str_freelist[bucket],
-				 bucket_sizes[bucket]);
+		p = shared_freelist_pop(&shm->shared_str_freelist[bucket],
+					shared_str_heap,
+					shared_str_heap_capacity,
+					shared_freelist_bucket_sizes[bucket]);
 		if (p != NULL)
 			return p;
 		/* Round bump to bucket size so the first free of a bump
 		 * slot doesn't overrun the next slot via freelist_push's
 		 * bucket-size memset. */
-		size = bucket_sizes[bucket];
+		size = shared_freelist_bucket_sizes[bucket];
 	}
 
 	/* Lock-free bump via CAS on the shm-resident cursor.  RELAXED
@@ -1425,10 +1262,12 @@ void free_shared_str(void *p, size_t size)
 
 	size = (size + sizeof(void *) - 1) & ~(sizeof(void *) - 1);
 
-	bucket = freelist_bucket(size);
+	bucket = shared_freelist_bucket(size);
 	if (bucket >= 0) {
-		freelist_push(&shm->shared_str_freelist[bucket], p,
-			      bucket_sizes[bucket]);
+		shared_freelist_push(&shm->shared_str_freelist[bucket], p,
+				     shared_str_heap,
+				     shared_str_heap_capacity,
+				     shared_freelist_bucket_sizes[bucket]);
 		return;
 	}
 
