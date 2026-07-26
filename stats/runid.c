@@ -502,16 +502,22 @@ static void runid_knob_manifest_render(void)
 	output(0, "run-id knobs: %s\n", off > 0 ? buf : "all defaults");
 
 	/*
-	 * Safety-policy line for procfs_writer.  Its discovery walk admits
+	 * Safety-policy lines for procfs_writer.  Its discovery walk admits
 	 * any writable regular file under /proc/sys, /sys/kernel, /sys/module,
-	 * /sys/class, debugfs and cgroupfs; a compile-time class/prefix deny
-	 * table withholds host-global control nodes from that pool.  Emitting
-	 * the class list here means a crash that mutated a knob outside the
-	 * deny set is immediately attributable to the fuzzer's mutation pool
-	 * rather than to unrelated host state.
+	 * /sys/class, debugfs and cgroupfs; two compile-time class/prefix
+	 * tables classify the pool.  The deny list withholds host-global
+	 * control nodes unless the operator has opted into --dangerous (see
+	 * the mode line); the allow list tags the parser-shaped families
+	 * this childop was built to fuzz.  Emitting both plus the mode means
+	 * a crash triage can immediately see whether a host-global knob was
+	 * in-scope for mutation and attribute (or rule out) the fuzzer.
 	 */
+	output(0, "run-id procfs-writer-mode: %s\n",
+	       procfs_writer_mode_summary());
 	output(0, "run-id procfs-writer-deny: %s\n",
 	       procfs_writer_deny_policy_summary());
+	output(0, "run-id procfs-writer-allow: %s\n",
+	       procfs_writer_allow_policy_summary());
 }
 
 void __cold stats_runid_render(void)

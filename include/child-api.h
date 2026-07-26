@@ -486,6 +486,15 @@ void procfs_writer_init(void);
  * classes were withheld from mutation.  Cached; safe to call from any
  * context. */
 const char *procfs_writer_deny_policy_summary(void);
+/* Comma-separated distinct-class list of the compile-time allow policy
+ * -- the parser-shaped families this childop was built to fuzz, admitted
+ * unconditionally past the deny table. */
+const char *procfs_writer_allow_policy_summary(void);
+/* "safe" if the deny table is enforced (the default), "dangerous" if
+ * --dangerous has lifted the deny and host-global control writes are
+ * being admitted.  Sampled at emit time; --dangerous is set during
+ * option parsing before fork_children so the value is stable. */
+const char *procfs_writer_mode_summary(void);
 bool memory_pressure(struct childdata *child);
 bool userns_fuzzer(struct childdata *child);
 bool sched_cycler(struct childdata *child);
