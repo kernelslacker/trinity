@@ -142,6 +142,11 @@ void init_child_isolate_io(void)
 	 * closes the wider class of paths that re-acquire the tty (open of
 	 * /dev/tty itself, ioctl(TIOCSCTTY), etc.).  setsid() makes us our
 	 * own session leader without a controlling terminal — subsequent
-	 * /dev/tty opens fail with ENXIO. */
-	(void) setsid();
+	 * /dev/tty opens fail with ENXIO.  A failure here (typically EPERM
+	 * because we are already a process-group leader) leaves the child
+	 * attached to the parent's session, so a fuzzed /dev/tty write can
+	 * still reach the operator's terminal — log it and continue; the
+	 * dup2 of 0/1/2 above still covers the common path. */
+	if (setsid() == (pid_t) -1)
+		outputerr("setsid failed! (%s)\n", strerror(errno));
 }
