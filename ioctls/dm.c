@@ -67,16 +67,21 @@ static void dm_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 		return;
 	dm = (struct dm_ioctl *) rec->a3;
 
+	/*
+	 * get_writable_address() hands out un-zeroed bump-pool memory that
+	 * may still hold a prior syscall's typed struct (valid user VA
+	 * pointers included).  Zero it so copy_from_user never reads stale
+	 * bytes as data_size / target_count / flags.  This also empties
+	 * name[] and uuid[], which passes the kernel's "not both set"
+	 * validation without a separate clear step.
+	 */
+	memset(dm, 0, sizeof(*dm));
+
 	/* set a sensible version to get past the initial checks */
 	dm->version[0] = DM_VERSION_MAJOR;
 	dm->version[1] = DM_VERSION_MINOR;
 	dm->version[2] = DM_VERSION_PATCHLEVEL;
-
-	/* clear one of these strings to pass some kernel validation */
-	if (RAND_BOOL())
-		dm->name[0] = 0;
-	else
-		dm->uuid[0] = 0;
+	dm->data_size = sizeof(*dm);
 }
 
 static const struct ioctl_group dm_grp_misc = {
