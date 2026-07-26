@@ -38,15 +38,61 @@
  *                         so drop the record on the floor.
  */
 
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "args-internal.h"
 #include "debug.h"
 #include "minicorpus.h"
 #include "struct_catalog.h"
+
+/*
+ * mainpid, outputerr, alloc_shared: minimum needed to link
+ * utils/shared_str_heap.c into the test binary.  mainpid is stamped
+ * with getpid() at test start-up so shared_str_heap_init()'s parent-
+ * only guard is satisfied.  alloc_shared is the fake sibling of the
+ * production allocator in utils/shared_mem.c; without CONFIG_GUARD_
+ * SHARED the alloc_shared_pool() macro in utils-mem.h collapses to
+ * alloc_shared(), so exporting alloc_shared alone is enough to
+ * satisfy the pool call sites too.  Test-binary allocs do not need
+ * MAP_SHARED (single-process harness, no fork), so a plain mmap of an
+ * anonymous private region is sufficient; the returned region is
+ * zeroed by the kernel.
+ */
+pid_t mainpid;
+
+/* Prototypes for the fakes below.  The production headers that
+ * declare these (trinity.h, utils-mem.h) drag in shm/state includes
+ * we intentionally don't pull into the test binary. */
+void outputerr(const char *fmt, ...);
+void *alloc_shared(size_t size);
+
+void outputerr(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+}
+
+void *alloc_shared(size_t size)
+{
+	void *p = mmap(NULL, size, PROT_READ | PROT_WRITE,
+		       MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+
+	if (p == MAP_FAILED) {
+		fprintf(stderr, "fake alloc_shared mmap %zu failed\n", size);
+		abort();
+	}
+	return p;
+}
 
 void __BUG(const char *bugtxt, const char *filename, const char *funcname,
 	   unsigned int lineno)

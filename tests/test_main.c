@@ -15,12 +15,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "rnd.h"
 #include "rnd_stream_golden.h"		/* rnd_stream_golden_check */
 #include "struct_catalog.h"		/* struct_field_mutate_self_check */
 
+extern pid_t mainpid;
 void shared_freelist_self_check(void);
+void shared_str_heap_free_size_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -41,6 +45,12 @@ int main(int argc, char **argv)
 
 	rnd_seed(seed);
 	rnd_blob_seed(seed);
+	/* Stamp mainpid so shared_str_heap_init()'s parent-only guard
+	 * (getpid() == mainpid) is satisfied when the test binary
+	 * exercises alloc_shared_str().  Production trinity stamps this
+	 * from main() before any fork; the test binary never forks so
+	 * the current pid is trivially the mainpid for the whole run. */
+	mainpid = getpid();
 
 	printf("trinity test-bin: seed=0x%llx\n",
 	       (unsigned long long) seed);
@@ -58,6 +68,11 @@ int main(int argc, char **argv)
 	printf("  shared_freelist_self_check ... ");
 	fflush(stdout);
 	shared_freelist_self_check();
+	printf("OK\n");
+
+	printf("  shared_str_heap_free_size_check ... ");
+	fflush(stdout);
+	shared_str_heap_free_size_check();
 	printf("OK\n");
 
 	return 0;
