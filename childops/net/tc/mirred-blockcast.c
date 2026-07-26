@@ -184,22 +184,92 @@ struct fallback_tc_mirred {
 
 #define MIRRED_INNER_PORT	34571
 
-/* Per-grandchild latched gates.  Inherited as false at grandchild
- * fork time (the persistent child never writes them -- the in-ns
- * callback runs exclusively in transient grandchildren) and flipped
- * on the first config-absent rejection from the corresponding
- * subsystem.  Die with the grandchild on _exit(); each subsequent
- * grandchild re-discovers the latch in its own fresh netns.  The
- * EOPNOTSUPP / EAFNOSUPPORT / ENOENT detection arms stay because a
- * fresh user namespace cannot manufacture an absent kernel CONFIG --
- * the gate still short-circuits the rest of the grandchild's
- * iteration once it fires. */
-static bool ns_unsupported_rtnl;
-static bool ns_unsupported_dummy;
-static bool ns_unsupported_clsact;
-static bool ns_unsupported_mirred;
-static bool ns_unsupported_matchall;
-static bool ns_unsupported_inet;
+/* Per-subsystem config-absent gates live in shm
+ * (shm->tc_mirred_bc_ns_unsupported_{rtnl,dummy,clsact,mirred,
+ * matchall,inet}).  The write site is inside the userns_run_in_ns()
+ * grandchild -- a process-local static would die with the grandchild
+ * on _exit() and every subsequent invocation would re-attempt the
+ * same unsupported NETLINK_ROUTE / RTM_NEWLINK / RTM_NEWQDISC /
+ * matchall+mirred install / AF_INET socket() forever
+ * (latch-in-grandchild bug).  Set when the corresponding subsystem
+ * rejects with the CONFIG-absent errno set; persists fleet-wide via
+ * shm so the unsupported attempt is paid once per fleet rather than
+ * once per grandchild.  RELAXED atomic load/store from multiple
+ * grandchildren is safe -- only false -> true, and the write is
+ * idempotent. */
+
+static bool ns_unsupported_rtnl(void)
+{
+	return __atomic_load_n(&shm->tc_mirred_bc_ns_unsupported_rtnl,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_rtnl(void)
+{
+	__atomic_store_n(&shm->tc_mirred_bc_ns_unsupported_rtnl, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_dummy(void)
+{
+	return __atomic_load_n(&shm->tc_mirred_bc_ns_unsupported_dummy,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_dummy(void)
+{
+	__atomic_store_n(&shm->tc_mirred_bc_ns_unsupported_dummy, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_clsact(void)
+{
+	return __atomic_load_n(&shm->tc_mirred_bc_ns_unsupported_clsact,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_clsact(void)
+{
+	__atomic_store_n(&shm->tc_mirred_bc_ns_unsupported_clsact, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_mirred(void)
+{
+	return __atomic_load_n(&shm->tc_mirred_bc_ns_unsupported_mirred,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_mirred(void)
+{
+	__atomic_store_n(&shm->tc_mirred_bc_ns_unsupported_mirred, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_matchall(void)
+{
+	return __atomic_load_n(&shm->tc_mirred_bc_ns_unsupported_matchall,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_matchall(void)
+{
+	__atomic_store_n(&shm->tc_mirred_bc_ns_unsupported_matchall, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_inet(void)
+{
+	return __atomic_load_n(&shm->tc_mirred_bc_ns_unsupported_inet,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_inet(void)
+{
+	__atomic_store_n(&shm->tc_mirred_bc_ns_unsupported_inet, true,
+			 __ATOMIC_RELAXED);
+}
+
 static bool lo_brought_up;
 static bool modprobe_tried_ingress;
 static bool modprobe_tried_matchall;
@@ -426,7 +496,7 @@ static int tc_mirred_setup_netns(struct nl_ctx *ctx)
 
 	if (nl_open(ctx, &nl_opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
-			ns_unsupported_rtnl = true;
+			mark_ns_unsupported_rtnl();
 		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -480,9 +550,9 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	int rc;
 	int eaction;
 
-	if (ns_unsupported_rtnl || ns_unsupported_dummy ||
-	    ns_unsupported_clsact || ns_unsupported_matchall ||
-	    ns_unsupported_mirred)
+	if (ns_unsupported_rtnl() || ns_unsupported_dummy() ||
+	    ns_unsupported_clsact() || ns_unsupported_matchall() ||
+	    ns_unsupported_mirred())
 		return 0;
 
 	if (tc_mirred_setup_netns(&nl) != 0)
@@ -511,7 +581,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	rc = build_dummy_create(&nl, a_name);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
-			ns_unsupported_dummy = true;
+			mark_ns_unsupported_dummy();
 		goto out;
 	}
 	a_added = true;
@@ -531,7 +601,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	rc = build_dummy_create(&nl, b_name);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
-			ns_unsupported_dummy = true;
+			mark_ns_unsupported_dummy();
 		goto out;
 	}
 	b_added = true;
@@ -551,7 +621,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	rc = build_clsact_with_egress_block(&nl, a_idx, block_idx);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
-			ns_unsupported_clsact = true;
+			mark_ns_unsupported_clsact();
 		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.qdisc_fail,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -562,7 +632,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	rc = build_clsact_with_egress_block(&nl, b_idx, block_idx);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
-			ns_unsupported_clsact = true;
+			mark_ns_unsupported_clsact();
 		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.qdisc_fail,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -575,8 +645,8 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	rc = build_mirred_blockcast_filter(&nl, block_idx, eaction);
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
-			ns_unsupported_matchall = true;
-			ns_unsupported_mirred = true;
+			mark_ns_unsupported_matchall();
+			mark_ns_unsupported_mirred();
 		}
 		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.filter_fail,
 				   1, __ATOMIC_RELAXED);
@@ -585,7 +655,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast.filter_ok,
 			   1, __ATOMIC_RELAXED);
 
-	if (!ns_unsupported_inet) {
+	if (!ns_unsupported_inet()) {
 		struct sockaddr_in dst;
 		struct timespec t0;
 		unsigned int iters, i;
@@ -593,7 +663,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 		udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 		if (udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-				ns_unsupported_inet = true;
+				mark_ns_unsupported_inet();
 			goto out;
 		}
 

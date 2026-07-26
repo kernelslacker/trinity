@@ -56,19 +56,53 @@
  * identifiable in a tcpdump trace during triage. */
 #define NFT_INNER_PORT			34568
 
-/* Per-grandchild latched gates.  Inherited as false at grandchild
- * fork time (the persistent child never writes them -- the in-ns
- * callback runs exclusively in transient grandchildren) and flipped
- * on the first config-absent rejection from the corresponding
- * subsystem.  Die with the grandchild on _exit(); each subsequent
- * grandchild re-discovers the latch in its own fresh netns.  The
- * EPROTONOSUPPORT / EAFNOSUPPORT / EOPNOTSUPP detection arms are
- * preserved because a fresh user namespace cannot manufacture an
- * absent kernel CONFIG -- the gate still short-circuits the rest of
- * the grandchild's iteration once it fires. */
-static bool ns_unsupported_nfnetlink;
-static bool ns_unsupported_nf_tables;
-static bool ns_unsupported_inet;
+/* Per-subsystem config-absent gates live in shm
+ * (shm->nft_churn_ns_unsupported_{nfnetlink,nf_tables,inet}).  The
+ * write site is inside the userns_run_in_ns() grandchild -- a
+ * process-local static would die with the grandchild on _exit() and
+ * every subsequent invocation would re-attempt the same unsupported
+ * socket()/NEWTABLE forever (latch-in-grandchild bug).  Set when the
+ * corresponding subsystem rejects with the CONFIG-absent errno set;
+ * persists fleet-wide via shm so the unsupported attempt is paid
+ * once per fleet rather than once per grandchild.  RELAXED atomic
+ * load/store from multiple grandchildren is safe -- only false ->
+ * true, and the write is idempotent. */
+
+static bool ns_unsupported_nfnetlink(void)
+{
+	return __atomic_load_n(&shm->nft_churn_ns_unsupported_nfnetlink,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_nfnetlink(void)
+{
+	__atomic_store_n(&shm->nft_churn_ns_unsupported_nfnetlink, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_nf_tables(void)
+{
+	return __atomic_load_n(&shm->nft_churn_ns_unsupported_nf_tables,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_nf_tables(void)
+{
+	__atomic_store_n(&shm->nft_churn_ns_unsupported_nf_tables, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_inet(void)
+{
+	return __atomic_load_n(&shm->nft_churn_ns_unsupported_inet,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_inet(void)
+{
+	__atomic_store_n(&shm->nft_churn_ns_unsupported_inet, true,
+			 __ATOMIC_RELAXED);
+}
 
 static bool lo_brought_up;
 
@@ -143,7 +177,7 @@ static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 		 * EMFILE) are transient; fall through and re-try next
 		 * invocation. */
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
-			ns_unsupported_nfnetlink = true;
+			mark_ns_unsupported_nfnetlink();
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
@@ -305,7 +339,7 @@ static int nftables_churn_iter_build_table(struct nftables_churn_iter_ctx *ctx)
 		 * will work either. */
 		if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
 		    rc == -EAFNOSUPPORT) {
-			ns_unsupported_nf_tables = true;
+			mark_ns_unsupported_nf_tables();
 			/* ctx->child->op_type lives in shared memory and
 			 * can be scribbled by a poisoned-arena write from
 			 * a sibling; bounds-check the snapshot before
@@ -374,11 +408,11 @@ static void nftables_churn_iter_drive_traffic(struct nftables_churn_iter_ctx *ct
 	unsigned int iters;
 	unsigned int i;
 
-	if (!ns_unsupported_inet) {
+	if (!ns_unsupported_inet()) {
 		ctx->udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 		if (ctx->udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-				ns_unsupported_inet = true;
+				mark_ns_unsupported_inet();
 		}
 	}
 
@@ -506,7 +540,7 @@ static int nftables_churn_in_ns(void *arg)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (ns_unsupported_nfnetlink || ns_unsupported_nf_tables)
+	if (ns_unsupported_nfnetlink() || ns_unsupported_nf_tables())
 		return 0;
 
 	if (nftables_churn_iter_setup_netns(ctx) != 0)

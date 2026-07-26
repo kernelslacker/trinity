@@ -144,9 +144,55 @@
  * next iteration. */
 static bool ns_unsupported;
 static bool lo_up_done;
-static bool ns_unsupported_bridge;
-static bool ns_unsupported_nf_tables;
-static bool ns_unsupported_ctnetlink;
+
+/* Per-subsystem config-absent gates live in shm
+ * (shm->bridge_ct_churn_ns_unsupported_{bridge,nf_tables,ctnetlink}).
+ * The write site is inside the userns_run_in_ns() grandchild -- a
+ * process-local static would die with the grandchild on _exit() and
+ * every subsequent invocation would re-attempt the same unsupported
+ * RTM_NEWLINK / nf_tables NEWTABLE / ctnetlink FLUSH forever
+ * (latch-in-grandchild bug).  Set when the corresponding subsystem
+ * rejects with the CONFIG-absent errno set; persists fleet-wide via
+ * shm so the unsupported attempt is paid once per fleet rather than
+ * once per grandchild.  RELAXED atomic load/store from multiple
+ * grandchildren is safe -- only false -> true, and the write is
+ * idempotent. */
+
+static bool ns_unsupported_bridge(void)
+{
+	return __atomic_load_n(&shm->bridge_ct_churn_ns_unsupported_bridge,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_bridge(void)
+{
+	__atomic_store_n(&shm->bridge_ct_churn_ns_unsupported_bridge, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_nf_tables(void)
+{
+	return __atomic_load_n(&shm->bridge_ct_churn_ns_unsupported_nf_tables,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_nf_tables(void)
+{
+	__atomic_store_n(&shm->bridge_ct_churn_ns_unsupported_nf_tables, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_ctnetlink(void)
+{
+	return __atomic_load_n(&shm->bridge_ct_churn_ns_unsupported_ctnetlink,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_ctnetlink(void)
+{
+	__atomic_store_n(&shm->bridge_ct_churn_ns_unsupported_ctnetlink, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Per-invocation state handed to the in-ns callback so it can keep
  * accounting against the right childop slot. */
@@ -568,7 +614,7 @@ static int bridge_conntrack_iter_bridge_create(struct bridge_conntrack_iter_ctx 
 	if (rc != 0) {
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT) {
-			ns_unsupported_bridge = true;
+			mark_ns_unsupported_bridge();
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
@@ -653,7 +699,7 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
 	rc = nft_install_bridge_ct(&ctx->nfnl_nft, "br_ct", "in");
 	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
-		ns_unsupported_nf_tables = true;
+		mark_ns_unsupported_nf_tables();
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
@@ -731,7 +777,7 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 			rc = ctnetlink_flush(&ctx->nfnl_ct);
 			if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 			    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
-				ns_unsupported_ctnetlink = true;
+				mark_ns_unsupported_ctnetlink();
 				if (valid_op)
 					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
@@ -848,8 +894,8 @@ bool bridge_conntrack_churn(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.bridge_ct.runs, 1, __ATOMIC_RELAXED);
 
-	if (ns_unsupported || ns_unsupported_bridge ||
-	    ns_unsupported_nf_tables || ns_unsupported_ctnetlink)
+	if (ns_unsupported || ns_unsupported_bridge() ||
+	    ns_unsupported_nf_tables() || ns_unsupported_ctnetlink())
 		return true;
 
 	if (!ONE_IN(8))
