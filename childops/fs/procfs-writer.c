@@ -15,12 +15,24 @@
  * (higher-privileged) uid.  Children inherit the entries[] table via
  * COW and use a per-child inaccessible[] prune to skip paths the
  * dropped-privilege child cannot open; a lazy in-child fallback re-runs
- * discovery only if the parent init was skipped.  A class/prefix-based
- * deny table (see deny_rules[] below) refuses whole families of host-
- * global control nodes — panic / watchdog / sysrq / core / kexec /
- * module / trace / cgroup-host — so a random write cannot silence the
- * kernel's own crash detectors, mutate policy that later runs inherit,
- * or fire immediate one-shot actions from a stray byte.
+ * discovery only if the parent init was skipped.
+ *
+ * Discovery admission runs two classifiers over each candidate path:
+ *   - allow_rules[] tags the parser-shaped families this childop exists
+ *     to fuzz (sysctl-net / sysctl-fs / sysctl-vm / sysctl-user /
+ *     sysctl-keys / sysctl-random / module-params / sysclass-attr); a
+ *     match is admitted unconditionally so a later deny rule that ever
+ *     grew to overlap the same subtree could not silently retract the
+ *     intent this childop was built for.
+ *   - deny_rules[] refuses whole families of host-global control nodes
+ *     — panic / watchdog / sysrq / core / kexec / module / trace /
+ *     cgroup-host — so a random write cannot silence the kernel's own
+ *     crash detectors, mutate policy that later runs inherit, or fire
+ *     immediate one-shot actions from a stray byte.  The deny is lifted
+ *     only when the operator opts into --dangerous, so a run that WANTS
+ *     to mutate host-global knobs (fuzzing the parsers behind them,
+ *     deliberately) can do so via one operator-visible flag rather than
+ *     a source edit.  A default run never mutates a host-global knob.
  *
  * Each call: pick a random entry, generate a fuzzy payload with the
  * existing rand_bytes generator, open(O_WRONLY|O_NONBLOCK), write, close.
@@ -45,6 +57,7 @@
 #include "arch.h"
 #include "pids.h"
 #include "child.h"
+#include "params.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -103,17 +116,35 @@ static void mark_inaccessible(const struct discovered_entry *e)
 }
 
 /*
- * Class-based deny policy.
+ * Class-based admission policy.
  *
  * Discovery walks the /proc, /sys and debugfs trees indiscriminately and
- * would happily admit any writable regular file it finds.  Writes to a
- * handful of well-known control nodes have side effects that outlast the
- * fuzzer's run: they silence the kernel's own crash-on-wedge detectors
- * (so real bugs later in the run wedge the box with no panic/kdump), they
- * mutate host-global policy that later trinity runs (or unrelated
- * workloads) inherit, or they fire immediate one-shot actions like sysrq
- * or kexec from a random byte.  Any of those turn "trinity found a bug"
- * into an unattributable outage on the host.
+ * would happily admit any writable regular file it finds.  Two classifier
+ * tables run against each candidate:
+ *
+ *   allow_rules[]  — parser-shaped families this childop exists to fuzz
+ *                    (sysctl-net / sysctl-fs / sysctl-vm / sysctl-user /
+ *                    sysctl-keys / sysctl-random / module-params /
+ *                    sysclass-attr).  A match admits unconditionally so a
+ *                    later deny rule that grew to overlap the same
+ *                    subtree could not silently retract these families.
+ *
+ *   deny_rules[]   — host-global / persistent control nodes whose write
+ *                    handler has side effects that outlast this run:
+ *                    silencing the kernel's own crash-on-wedge detectors
+ *                    (so a real bug later in the run wedges the box with
+ *                    no panic/kdump), mutating host-global policy that
+ *                    later runs inherit, or firing immediate one-shot
+ *                    actions like sysrq or kexec from a random byte.
+ *                    Any of those turn "trinity found a bug" into an
+ *                    unattributable outage on the host, so the class is
+ *                    refused by default and only admitted when the
+ *                    operator opts into --dangerous.
+ *
+ * A path is admitted iff allow_rules[] matches, or deny_rules[] does not
+ * match, or --dangerous lifts the deny.  Unclassified paths (matched by
+ * neither table) are admitted as before -- the tables narrow the risky
+ * edges rather than fence in the parser mid-set.
  *
  * The old deny table listed a handful of exact paths and quietly missed
  * newer siblings (e.g. hardlockup_all_cpu_backtrace, panic_on_warn,
@@ -125,50 +156,50 @@ static void mark_inaccessible(const struct discovered_entry *e)
  *
  * Every rule carries a class tag; the tags are emitted in the run-id
  * provenance block so a crash triage can immediately see which classes
- * were withheld from mutation and rule the fuzzer in or out.
+ * were withheld from (or admitted into) mutation.
  */
-enum deny_match {
-	DENY_PREFIX,	/* pattern is a leading substring of path */
-	DENY_EXACT,	/* pattern equals path */
-	DENY_SUFFIX, /* path lives under a discovery root AND ends with pattern */
+enum path_match {
+	MATCH_PREFIX,	/* pattern is a leading substring of path */
+	MATCH_EXACT,	/* pattern equals path */
+	MATCH_SUFFIX,	/* path lives under a discovery root AND ends with pattern */
 };
 
-struct deny_rule {
+struct path_rule {
 	const char *pattern;
-	enum deny_match kind;
+	enum path_match kind;
 	const char *class;
 };
 
-static const struct deny_rule deny_rules[] = {
+static const struct path_rule deny_rules[] = {
 	/*
 	 * panic policy — random writes (often a zero byte) disable the
 	 * kernel's crash-on-condition triggers, so a later real bug wedges
 	 * the box silently with no panic / kdump / netconsole output.
 	 */
-	{ "/proc/sys/kernel/panic",           DENY_PREFIX, "panic" },
-	{ "/proc/sys/kernel/softlockup_",     DENY_PREFIX, "panic" },
-	{ "/proc/sys/kernel/hardlockup_",     DENY_PREFIX, "panic" },
-	{ "/proc/sys/kernel/hung_task_",      DENY_PREFIX, "panic" },
-	{ "/proc/sys/kernel/oops_",           DENY_PREFIX, "panic" },
-	{ "/proc/sys/kernel/unknown_nmi_panic",     DENY_EXACT, "panic" },
-	{ "/proc/sys/kernel/max_rcu_stall_to_panic", DENY_EXACT, "panic" },
-	{ "/proc/sys/kernel/print-fatal-signals",   DENY_EXACT, "panic" },
+	{ "/proc/sys/kernel/panic",           MATCH_PREFIX, "panic" },
+	{ "/proc/sys/kernel/softlockup_",     MATCH_PREFIX, "panic" },
+	{ "/proc/sys/kernel/hardlockup_",     MATCH_PREFIX, "panic" },
+	{ "/proc/sys/kernel/hung_task_",      MATCH_PREFIX, "panic" },
+	{ "/proc/sys/kernel/oops_",           MATCH_PREFIX, "panic" },
+	{ "/proc/sys/kernel/unknown_nmi_panic",     MATCH_EXACT, "panic" },
+	{ "/proc/sys/kernel/max_rcu_stall_to_panic", MATCH_EXACT, "panic" },
+	{ "/proc/sys/kernel/print-fatal-signals",   MATCH_EXACT, "panic" },
 
 	/*
 	 * watchdog — same failure mode as the panic class: mutating any of
 	 * these turns the on-CPU / hung-task watchdogs off and future real
 	 * hangs stop being observable.
 	 */
-	{ "/proc/sys/kernel/watchdog",     DENY_PREFIX, "watchdog" },
-	{ "/proc/sys/kernel/nmi_watchdog", DENY_EXACT,  "watchdog" },
-	{ "/proc/sys/kernel/soft_watchdog", DENY_EXACT, "watchdog" },
+	{ "/proc/sys/kernel/watchdog",     MATCH_PREFIX, "watchdog" },
+	{ "/proc/sys/kernel/nmi_watchdog", MATCH_EXACT,  "watchdog" },
+	{ "/proc/sys/kernel/soft_watchdog", MATCH_EXACT, "watchdog" },
 
 	/*
 	 * sysrq — fires immediate one-shot actions (reboot, sync, oom-kill,
 	 * emergency-sync) from any random byte, ending the run.
 	 */
-	{ "/proc/sysrq-trigger",     DENY_EXACT, "sysrq" },
-	{ "/proc/sys/kernel/sysrq",  DENY_EXACT, "sysrq" },
+	{ "/proc/sysrq-trigger",     MATCH_EXACT, "sysrq" },
+	{ "/proc/sys/kernel/sysrq",  MATCH_EXACT, "sysrq" },
 
 	/*
 	 * core-dump policy — per-pid mem and coredump_filter cover both
@@ -176,24 +207,24 @@ static const struct deny_rule deny_rules[] = {
 	 * suffix.  core_pattern and core_uses_pid rewrite the system-wide
 	 * dump handler that kdump and bandicoot rely on.
 	 */
-	{ "/proc/sys/kernel/core_", DENY_PREFIX,      "core" },
-	{ "/mem",                   DENY_SUFFIX, "core" },
-	{ "/coredump_filter",       DENY_SUFFIX, "core" },
+	{ "/proc/sys/kernel/core_", MATCH_PREFIX,      "core" },
+	{ "/mem",                   MATCH_SUFFIX, "core" },
+	{ "/coredump_filter",       MATCH_SUFFIX, "core" },
 
 	/*
 	 * kexec — a mutated crashkernel image or load-limit is either an
 	 * unreproducible boot at the next reset or a silent regression of
 	 * the crash-dump path.
 	 */
-	{ "/proc/sys/kernel/kexec_", DENY_PREFIX, "kexec" },
-	{ "/sys/kernel/kexec_",      DENY_PREFIX, "kexec" },
+	{ "/proc/sys/kernel/kexec_", MATCH_PREFIX, "kexec" },
+	{ "/sys/kernel/kexec_",      MATCH_PREFIX, "kexec" },
 
 	/*
 	 * module loading policy — modules_disabled is a one-way latch and
 	 * modprobe is executed by the kernel with root creds.
 	 */
-	{ "/proc/sys/kernel/modprobe",         DENY_EXACT, "module" },
-	{ "/proc/sys/kernel/modules_disabled", DENY_EXACT, "module" },
+	{ "/proc/sys/kernel/modprobe",         MATCH_EXACT, "module" },
+	{ "/proc/sys/kernel/modules_disabled", MATCH_EXACT, "module" },
 
 	/*
 	 * tracing / dynamic-debug control — mutating filter, enable or
@@ -203,11 +234,11 @@ static const struct deny_rule deny_rules[] = {
 	 * list; procfs_writer stumbling into the same tree at random
 	 * poisons that fuzzer's signal and the host's tracing.
 	 */
-	{ "/sys/kernel/debug/dynamic_debug/", DENY_PREFIX, "trace" },
-	{ "/sys/kernel/tracing/",             DENY_PREFIX, "trace" },
-	{ "/sys/kernel/debug/tracing/",       DENY_PREFIX, "trace" },
-	{ "/proc/sys/kernel/ftrace_",         DENY_PREFIX, "trace" },
-	{ "/proc/sys/kernel/traceoff_on_warning", DENY_EXACT, "trace" },
+	{ "/sys/kernel/debug/dynamic_debug/", MATCH_PREFIX, "trace" },
+	{ "/sys/kernel/tracing/",             MATCH_PREFIX, "trace" },
+	{ "/sys/kernel/debug/tracing/",       MATCH_PREFIX, "trace" },
+	{ "/proc/sys/kernel/ftrace_",         MATCH_PREFIX, "trace" },
+	{ "/proc/sys/kernel/traceoff_on_warning", MATCH_EXACT, "trace" },
 
 	/*
 	 * host-global cgroup controls — cgroup.subtree_control /
@@ -215,15 +246,41 @@ static const struct deny_rule deny_rules[] = {
 	 * whole slices, including trinity's own children and unrelated host
 	 * workloads.  Deny the class by filename anywhere in the tree.
 	 */
-	{ "/cgroup.subtree_control", DENY_SUFFIX, "cgroup-host" },
-	{ "/cgroup.procs",           DENY_SUFFIX, "cgroup-host" },
-	{ "/cgroup.threads",         DENY_SUFFIX, "cgroup-host" },
-	{ "/cgroup.max.depth",       DENY_SUFFIX, "cgroup-host" },
-	{ "/cgroup.max.descendants", DENY_SUFFIX, "cgroup-host" },
+	{ "/cgroup.subtree_control", MATCH_SUFFIX, "cgroup-host" },
+	{ "/cgroup.procs",           MATCH_SUFFIX, "cgroup-host" },
+	{ "/cgroup.threads",         MATCH_SUFFIX, "cgroup-host" },
+	{ "/cgroup.max.depth",       MATCH_SUFFIX, "cgroup-host" },
+	{ "/cgroup.max.descendants", MATCH_SUFFIX, "cgroup-host" },
 };
 
 /*
- * DENY_SUFFIX fires when the path lives under a discovery root — cgroup
+ * Positive classification of the parser-shaped families this childop
+ * exists to fuzz.  Each entry tags a subtree we know is parser-heavy
+ * and free of the "silences the kernel's own crash detectors" or
+ * "instant one-shot action" failure modes deny_rules[] covers.  A path
+ * matching an allow rule is admitted unconditionally: the tables can
+ * never fence out one of these families by mistake as the deny table
+ * grows.
+ *
+ * The set is deliberately narrower than the discovery walk -- it lists
+ * only the families we can vouch for.  Paths that match neither table
+ * (the "unclassified middle": most of /sys/kernel, cgroup children
+ * outside the host-control set, per-task /proc/<pid> entries) stay on
+ * the pre-existing admit-by-default path.
+ */
+static const struct path_rule allow_rules[] = {
+	{ "/proc/sys/net/",           MATCH_PREFIX, "sysctl-net" },
+	{ "/proc/sys/fs/",            MATCH_PREFIX, "sysctl-fs" },
+	{ "/proc/sys/vm/",            MATCH_PREFIX, "sysctl-vm" },
+	{ "/proc/sys/user/",          MATCH_PREFIX, "sysctl-user" },
+	{ "/proc/sys/kernel/keys/",   MATCH_PREFIX, "sysctl-keys" },
+	{ "/proc/sys/kernel/random/", MATCH_PREFIX, "sysctl-random" },
+	{ "/sys/module/",             MATCH_PREFIX, "module-params" },
+	{ "/sys/class/",              MATCH_PREFIX, "sysclass-attr" },
+};
+
+/*
+ * MATCH_SUFFIX fires when the path lives under a discovery root — cgroup
  * v2 controls sit under /sys/fs/cgroup and per-pid /mem / coredump_filter
  * under /proc/, so the reachable set spans both trees.
  */
@@ -233,67 +290,77 @@ static bool path_under_discovery_root(const char *path)
 	       strncmp(path, "/sys/", 5) == 0;
 }
 
-static bool path_denied(const char *path)
+static bool rule_matches(const struct path_rule *r, const char *path,
+			 size_t path_len)
+{
+	size_t plen;
+
+	switch (r->kind) {
+	case MATCH_EXACT:
+		return strcmp(path, r->pattern) == 0;
+	case MATCH_PREFIX:
+		plen = strlen(r->pattern);
+		return path_len >= plen &&
+		       strncmp(path, r->pattern, plen) == 0;
+	case MATCH_SUFFIX:
+		plen = strlen(r->pattern);
+		if (!path_under_discovery_root(path))
+			return false;
+		return path_len >= plen &&
+		       strcmp(path + path_len - plen, r->pattern) == 0;
+	}
+	return false;
+}
+
+static bool path_matches_table(const struct path_rule *table, size_t n,
+			       const char *path)
 {
 	size_t path_len = strlen(path);
 	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(deny_rules); i++) {
-		const struct deny_rule *r = &deny_rules[i];
-		size_t plen;
-
-		switch (r->kind) {
-		case DENY_EXACT:
-			if (strcmp(path, r->pattern) == 0)
-				return true;
-			break;
-		case DENY_PREFIX:
-			plen = strlen(r->pattern);
-			if (path_len >= plen &&
-			    strncmp(path, r->pattern, plen) == 0)
-				return true;
-			break;
-		case DENY_SUFFIX:
-			plen = strlen(r->pattern);
-			if (!path_under_discovery_root(path))
-				break;
-			if (path_len >= plen &&
-			    strcmp(path + path_len - plen, r->pattern) == 0)
-				return true;
-			break;
-		}
-	}
-
+	for (i = 0; i < n; i++)
+		if (rule_matches(&table[i], path, path_len))
+			return true;
 	return false;
 }
 
-/*
- * Build a comma-separated list of the distinct deny classes, preserving
- * the order in which each class first appears in deny_rules[].  Emitted
- * once from stats_runid_render() as part of the run-identity block so a
- * crash triage can attribute (or rule out) mutation of a host-global
- * knob without reading source.
- *
- * Cached on first call — the deny table is compile-time constant.
- */
-const char *procfs_writer_deny_policy_summary(void)
+static bool path_denied(const char *path)
 {
-	static char summary[128];
-	static bool built;
+	return path_matches_table(deny_rules, ARRAY_SIZE(deny_rules), path);
+}
+
+static bool path_allowed(const char *path)
+{
+	return path_matches_table(allow_rules, ARRAY_SIZE(allow_rules), path);
+}
+
+/*
+ * Build a comma-separated list of the distinct classes in one policy
+ * table, preserving the order in which each class first appears.  Used
+ * for both the deny and allow provenance lines emitted from the run-id
+ * block so a crash triage can attribute (or rule out) mutation of a
+ * host-global knob without reading source.
+ *
+ * The caller supplies the storage; the tables are compile-time constant
+ * so building into a caller-owned static buffer once is sufficient.
+ */
+static void render_class_summary(const struct path_rule *table, size_t n,
+				 char *out, size_t cap)
+{
 	size_t off = 0;
 	unsigned int i, j;
 
-	if (built)
-		return summary;
+	if (cap == 0)
+		return;
+	out[0] = '\0';
 
-	summary[0] = '\0';
-	for (i = 0; i < ARRAY_SIZE(deny_rules); i++) {
-		const char *cls = deny_rules[i].class;
+	for (i = 0; i < n; i++) {
+		const char *cls = table[i].class;
 		bool seen = false;
-		int n;
+		int written;
 
 		for (j = 0; j < i; j++) {
-			if (strcmp(deny_rules[j].class, cls) == 0) {
+			if (strcmp(table[j].class, cls) == 0) {
 				seen = true;
 				break;
 			}
@@ -301,19 +368,54 @@ const char *procfs_writer_deny_policy_summary(void)
 		if (seen)
 			continue;
 
-		if (off >= sizeof(summary))
+		if (off >= cap)
 			break;
-		n = snprintf(summary + off, sizeof(summary) - off,
-			     "%s%s", off > 0 ? "," : "", cls);
-		if (n < 0 || (size_t)n >= sizeof(summary) - off) {
-			summary[off] = '\0';
+		written = snprintf(out + off, cap - off, "%s%s",
+				   off > 0 ? "," : "", cls);
+		if (written < 0 || (size_t)written >= cap - off) {
+			out[off] = '\0';
 			break;
 		}
-		off += (size_t)n;
+		off += (size_t)written;
 	}
+}
 
-	built = true;
+const char *procfs_writer_deny_policy_summary(void)
+{
+	static char summary[128];
+	static bool built;
+
+	if (!built) {
+		render_class_summary(deny_rules, ARRAY_SIZE(deny_rules),
+				     summary, sizeof(summary));
+		built = true;
+	}
 	return summary;
+}
+
+const char *procfs_writer_allow_policy_summary(void)
+{
+	static char summary[128];
+	static bool built;
+
+	if (!built) {
+		render_class_summary(allow_rules, ARRAY_SIZE(allow_rules),
+				     summary, sizeof(summary));
+		built = true;
+	}
+	return summary;
+}
+
+/*
+ * Operator-visible admission mode for the run-id block: "safe" means the
+ * deny table is enforced, "dangerous" means the operator has opted into
+ * mutating host-global control nodes via --dangerous.  Sampled once at
+ * emit time -- --dangerous is set during option parsing before the
+ * fleet forks, so this is a stable snapshot for the run.
+ */
+const char *procfs_writer_mode_summary(void)
+{
+	return dangerous ? "dangerous" : "safe";
 }
 
 static enum tree_kind tree_for_path(const char *path)
@@ -331,7 +433,14 @@ static void add_entry(const char *path)
 		return;
 	if (strlen(path) >= PROCFS_MAX_PATH)
 		return;
-	if (path_denied(path))
+	/*
+	 * Allow-list wins: a positively-classified parser family is
+	 * admitted even if a future deny rule ever grew to overlap it,
+	 * so the intent of this childop stays anchored regardless of
+	 * how deny_rules[] evolves.  Otherwise a host-global deny stops
+	 * admission unless the operator has opted into --dangerous.
+	 */
+	if (!path_allowed(path) && path_denied(path) && !dangerous)
 		return;
 	if (access(path, W_OK) != 0)
 		return;
