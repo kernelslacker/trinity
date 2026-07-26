@@ -68,8 +68,18 @@ bool pid_alive(pid_t pid)
 		return true;
 	}
 
-	if (kill(pid, 0) != 0)
+	if (kill(pid, 0) != 0) {
+		int saved = errno;
+		/* EPERM means the task exists but we can no longer signal
+		 * it — the child has dropped privileges (setresuid/capset)
+		 * and the parent's uid no longer matches.  Treat as alive,
+		 * matching reap_dead_kids() in main/reap.c; the previous
+		 * "any failure means dead" guard reported cred-dropped
+		 * children as dead and drove premature stuck-detection. */
+		if (saved == EPERM)
+			return true;
 		return false;
+	}
 
 	/* kill() returned 0, so the task struct exists.  Check whether
 	 * it's a zombie via /proc/<pid>/stat — third whitespace-separated
