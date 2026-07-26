@@ -1,9 +1,7 @@
-#include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -19,50 +17,6 @@
 #include "utils.h"
 #include "main-internal.h"
 #include "reap-internal.h"
-
-void dump_pid_stack(int pid)
-{
-	FILE *fp;
-	char filename[80];
-
-	snprintf(filename, sizeof(filename), "/proc/%d/stack", pid);
-
-	fp = fopen(filename, "r");
-	if (fp == NULL)
-		return;
-
-	size_t n = 0;
-	char *line = NULL;
-
-	while (getline(&line, &n, fp) != -1)
-		output(0, "pid %d stack: %s", pid, line);
-
-	if (ferror(fp))
-		output(0, "Error reading /proc/%d/stack :%s\n", pid, strerror(errno));
-	else
-		output(0, "------------------------------------------------\n");
-
-	free(line);
-	fclose(fp);
-}
-
-void dump_pid_syscall(int pid)
-{
-	FILE *fp;
-	char filename[80];
-	char buf[256];
-
-	snprintf(filename, sizeof(filename), "/proc/%d/syscall", pid);
-
-	fp = fopen(filename, "r");
-	if (fp == NULL)
-		return;
-
-	if (fgets(buf, sizeof(buf), fp) != NULL)
-		output(0, "pid %d syscall: %s", pid, buf);
-
-	fclose(fp);
-}
 
 /*
  * Bounded /proc/<pid>/wchan reader used by the D-state diagnostic
@@ -112,15 +66,18 @@ static void dump_pid_wchan(int pid)
 }
 
 /*
- * Bounded /proc/<pid>/stack reader.  Distinct from the existing
- * dump_pid_stack() (which uses fopen/getline and allocates per call)
- * because the D-state diagnostic path runs unconditionally -- not
- * gated on shm->debug -- and must stay quiet about permission failures
- * (most production kernels reject /proc/<pid>/stack reads without
- * CAP_SYS_ADMIN, returning EACCES; some configs hide it entirely with
- * ENOENT).  Silent on any open/read failure.
+ * Bounded, alloc-free /proc/<pid>/stack reader.  open(O_RDONLY) +
+ * single read into a fixed stack buffer + close: no heap allocation,
+ * no looped reads.  Callers run on the parent's reap / watchdog path,
+ * which fires under memory / pid pressure (fork-failure, OOM) --
+ * exactly where a malloc is most likely to fail or deepen the
+ * pressure.  Silent on any open / read failure: most production
+ * kernels reject /proc/<pid>/stack reads without CAP_SYS_ADMIN
+ * (EACCES) and some configs hide it entirely (ENOENT); the caller
+ * treats a missing stack as an omitted diagnostic line, not a
+ * failure to investigate further.
  */
-static void dump_pid_stack_bounded(int pid)
+void dump_pid_stack(int pid)
 {
 	char filename[80];
 	char buf[2048];
@@ -150,6 +107,40 @@ static void dump_pid_stack_bounded(int pid)
 		if (*p != '\0')
 			output(0, "pid %d stack: %s\n", pid, p);
 	}
+}
+
+/*
+ * Bounded, alloc-free /proc/<pid>/syscall reader.  Same rationale
+ * as dump_pid_stack() above: the reap / watchdog path must stay
+ * allocation-free under OOM.  /proc/<pid>/syscall is a one-line
+ * report (call number + up to six arg registers + sp + pc), so a
+ * single 256 B read is generous.  Silent on any open / read
+ * failure -- the caller treats a missing syscall line as an
+ * omitted diagnostic.
+ */
+void dump_pid_syscall(int pid)
+{
+	char filename[80];
+	char buf[256];
+	int fd;
+	ssize_t n;
+
+	snprintf(filename, sizeof(filename), "/proc/%d/syscall", pid);
+
+	fd = open(filename, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	buf[n] = '\0';
+
+	while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+		buf[--n] = '\0';
+
+	if (buf[0] != '\0')
+		output(0, "pid %d syscall: %s\n", pid, buf);
 }
 
 /*
@@ -371,7 +362,7 @@ void dump_dstate_diagnostics(struct childdata *child, int childno,
 	}
 
 	dump_pid_wchan(pid);
-	dump_pid_stack_bounded(pid);
+	dump_pid_stack(pid);
 	dump_pid_fdinfo_bounded(pid);
 }
 
