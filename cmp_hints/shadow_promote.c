@@ -54,6 +54,7 @@ enum shadow_arm_id {
 	SHADOW_ARM_CMP_HYP_POW2_DERIVE,
 	SHADOW_ARM_CMP_HYP_BITMASK_FULL_OR,
 	SHADOW_ARM_CMP_HYP_BITMASK_ANDNOT_TOGGLE,
+	SHADOW_ARM_CMP_HYP_SIGN_SWITCH,
 	SHADOW_ARM_CMP_FIELD_SCOPED_INJECT,
 	SHADOW_ARM_CMP_SHARED_TIER_COLDSERVE,
 	SHADOW_ARM_NR,
@@ -150,6 +151,38 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.baseline_offset =
 			offsetof(struct kcov_shared,
 				 cmp_hyp_shadow.cmp_hyp_bitmask_andnot_toggle_would_fire),
+		.live_flag = 0,
+		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
+		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,
+	},
+	/*
+	 * Signed / unsigned SIGN-SWITCH derive-class layered on the
+	 * typed-hypothesis derive.  Argtype-gated inside the shadow
+	 * probe: only fires where the callsite + picked hypothesis
+	 * together yield a known signedness verdict (ARG_STRUCT_SIZE
+	 * is unsigned by argtype family; ARG_RANGE with a
+	 * CMP_HYP_RANGE-kind pick inherits the observer's
+	 * range_signedness) AND the exemplar sits with the operand-
+	 * width sign bit set.  would_fire bumps on eligibility;
+	 * would_win bumps on the subset where at least one candidate
+	 * from {two's-complement negation, sign-bit XOR, sign_bit,
+	 * sign_bit - 1} differs from the value the live derive lane
+	 * just emitted, i.e. the class would have contributed a value
+	 * the existing lanes did not.  Argtype gate is deliberately
+	 * narrow this row (two verdicts only) so the promotion
+	 * criterion measures headroom on the informative population;
+	 * follow-up slices widen the inference to more callsites.  No
+	 * live counterpart yet.
+	 */
+	[SHADOW_ARM_CMP_HYP_SIGN_SWITCH] = {
+		.name = "cmp_hyp_sign_switch",
+		.would_win_offset =
+			offsetof(struct kcov_shared,
+				 cmp_hyp_shadow.cmp_hyp_sign_switch_would_win),
+		.live_win_offset = 0,
+		.baseline_offset =
+			offsetof(struct kcov_shared,
+				 cmp_hyp_shadow.cmp_hyp_sign_switch_would_fire),
 		.live_flag = 0,
 		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
 		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,

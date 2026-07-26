@@ -167,6 +167,8 @@ void dump_stats_render_kcov_shadow_measurements(void)
 	unsigned long kc_cmp_hyp_bm_full_or_would_win      = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_full_or_would_win,         __ATOMIC_RELAXED);
 	unsigned long kc_cmp_hyp_bm_andnot_would_fire      = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_andnot_toggle_would_fire,  __ATOMIC_RELAXED);
 	unsigned long kc_cmp_hyp_bm_andnot_would_win       = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_bitmask_andnot_toggle_would_win,   __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_sign_switch_would_fire    = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_sign_switch_would_fire,            __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_sign_switch_would_win     = __atomic_load_n(&kcov_shm->cmp_hyp_shadow.cmp_hyp_sign_switch_would_win,             __ATOMIC_RELAXED);
 
 	/* Shadow measurement of the non-const relational drop-site.
 	 * Counts records the CMP loop drops today into
@@ -297,6 +299,32 @@ void dump_stats_render_kcov_shadow_measurements(void)
 			(kc_cmp_hyp_bm_andnot_would_win * 1000UL) /
 			kc_cmp_hyp_bm_andnot_would_fire;
 		stat_row("kcov_coverage", "cmp_hyp_bitmask_andnot_toggle_would_win_per_mille", ratio_milli);
+	}
+
+	/* Shadow measurement of a signed / unsigned SIGN-SWITCH probe
+	 * class in the typed-hypothesis derive.  Argtype-gated: only
+	 * fires where the callsite + picked hypothesis together yield a
+	 * known signedness verdict (ARG_STRUCT_SIZE is unsigned; ARG_RANGE
+	 * with a CMP_HYP_RANGE-kind pick inherits the observer's
+	 * range_signedness) AND the exemplar sits with the operand-width
+	 * sign bit set.  cmp_hyp_sign_switch_would_fire counts every
+	 * eligible derive; cmp_hyp_sign_switch_would_win counts the
+	 * subset where at least one candidate from the {two's-complement
+	 * negation, sign-bit XOR, sign_bit, sign_bit - 1} ladder differs
+	 * from the value the live derive lane just emitted, so a live
+	 * promotion would surface a value the existing lanes did not.
+	 * The live derive is byte-for-byte unchanged; the ratio in
+	 * per-mille sizes the coverage headroom of promoting the
+	 * class. */
+	if (kc_cmp_hyp_sign_switch_would_fire > 0)
+		stat_row("kcov_coverage", "cmp_hyp_sign_switch_would_fire", kc_cmp_hyp_sign_switch_would_fire);
+	if (kc_cmp_hyp_sign_switch_would_win > 0)
+		stat_row("kcov_coverage", "cmp_hyp_sign_switch_would_win", kc_cmp_hyp_sign_switch_would_win);
+	if (kc_cmp_hyp_sign_switch_would_fire > 0) {
+		unsigned long ratio_milli =
+			(kc_cmp_hyp_sign_switch_would_win * 1000UL) /
+			kc_cmp_hyp_sign_switch_would_fire;
+		stat_row("kcov_coverage", "cmp_hyp_sign_switch_would_win_per_mille", ratio_milli);
 	}
 
 	/* Walk the shadow-arm promotion registry after the counter
