@@ -417,27 +417,32 @@ static void check_fd_leaks(struct childdata *child)
  * the per-op bump); the probe is diagnostic only, never load-bearing.
  * EMFILE is special-cased: the fd table is at RLIMIT_NOFILE, which is
  * exactly the leak signature we want to catch, so return the ceiling
- * (rlim_cur) as a sentinel.  That way a before-probe at fd N followed
- * by an after-probe that hits EMFILE registers a positive delta of
- * (ceiling - N) instead of vanishing into the short-circuit -- the
- * leak IS accounted for at the moment fd exhaustion bites.  If
- * getrlimit itself fails or reports a ceiling that would not fit in
- * int, fall back to -1.
+ * (rlim_cur) and set *at_ceiling = true so the caller can record the
+ * exhaustion event without inflating fd_delta_positive_sum by
+ * (ceiling - N) -- a single leaked fd at the ceiling would otherwise
+ * masquerade as a ~rlim_cur-sized single-op leak.  The caller caps the
+ * observed delta to 1 in that case and bumps fd_leak_at_ceiling[op]
+ * as the sentinel signal.  If getrlimit itself fails or reports a
+ * ceiling that would not fit in int, fall back to -1.
  * Two syscalls per alt-op dispatch is well inside the syscall-per-op
  * budget the alarm(1) watchdog and the childop_wall_ns bracket already
  * pay.
  */
-static int probe_lowest_free_fd(void)
+static int probe_lowest_free_fd(bool *at_ceiling)
 {
 	int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+
+	*at_ceiling = false;
 
 	if (fd < 0) {
 		if (errno == EMFILE) {
 			struct rlimit rl;
 
 			if (getrlimit(RLIMIT_NOFILE, &rl) == 0 &&
-			    rl.rlim_cur > 0 && rl.rlim_cur <= INT_MAX)
+			    rl.rlim_cur > 0 && rl.rlim_cur <= INT_MAX) {
+				*at_ceiling = true;
 				return (int)rl.rlim_cur;
+			}
 		}
 		return -1;
 	}
@@ -916,7 +921,9 @@ void child_process(struct childdata *child, int childno)
 		 * the RLIMIT_NOFILE ceiling as a sentinel so the leak
 		 * IS accounted for at fd-exhaustion time -- see
 		 * probe_lowest_free_fd(). */
-		int fd_probe_before = is_alt_op ? probe_lowest_free_fd() : -1;
+		bool fd_probe_at_ceiling = false;
+		int fd_probe_before = is_alt_op ?
+			probe_lowest_free_fd(&fd_probe_at_ceiling) : -1;
 		clock_gettime(CLOCK_MONOTONIC, &split_t0);
 		child->in_childop = is_alt_op;
 
@@ -925,10 +932,22 @@ void child_process(struct childdata *child, int childno)
 		child->in_childop = false;
 		clock_gettime(CLOCK_MONOTONIC, &split_t1);
 		if (is_alt_op && fd_probe_before >= 0 && valid_op) {
-			int fd_probe_after = probe_lowest_free_fd();
+			int fd_probe_after =
+				probe_lowest_free_fd(&fd_probe_at_ceiling);
 
 			if (fd_probe_after > fd_probe_before) {
-				unsigned int delta =
+				/* At the RLIMIT_NOFILE ceiling the ceiling
+				 * value is a sentinel, not a real fd number:
+				 * treating (ceiling - before) as the delta
+				 * inflates fd_delta_positive_sum by ~rlim_cur
+				 * per hit and mis-attributes a single leaked
+				 * fd as a giant single-op leak.  Cap the
+				 * reported delta to 1 and record the ceiling
+				 * hit in a separate counter so operators can
+				 * distinguish "op leaked N fds this call" from
+				 * "fd table was already saturated". */
+				unsigned int delta = fd_probe_at_ceiling ?
+					1U :
 					(unsigned int)(fd_probe_after - fd_probe_before);
 
 				__atomic_add_fetch(
@@ -937,6 +956,10 @@ void child_process(struct childdata *child, int childno)
 				__atomic_add_fetch(
 					&shm->stats.childop.fd_delta_positive_ops[op],
 					1UL, __ATOMIC_RELAXED);
+				if (fd_probe_at_ceiling)
+					__atomic_add_fetch(
+						&shm->stats.childop.fd_leak_at_ceiling[op],
+						1UL, __ATOMIC_RELAXED);
 			}
 		}
 
@@ -1123,13 +1146,16 @@ void child_process(struct childdata *child, int childno)
 		}
 	}
 
-	/* If we're exiting because we tainted, wait here for it to be done. */
+	/* If we're exiting because we tainted, wait here for it to be done.
+	 * usleep(1) spins at ~1M syscalls/sec on this loop; 1ms is fine --
+	 * postmortem is human-scale and the extra latency is unobservable
+	 * next to the postmortem itself. */
 	while (__atomic_load_n(&shm->postmortem_in_progress, __ATOMIC_ACQUIRE) == true) {
 		/* Make sure the main process is still around. */
 		if (pid_alive(mainpid) == false)
 			goto out;
 
-		usleep(1);
+		usleep(1000);
 	}
 
 out:

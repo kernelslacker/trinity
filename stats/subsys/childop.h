@@ -280,6 +280,18 @@ struct childop_stats {
 	unsigned long fd_delta_positive_sum[NR_CHILD_OP_TYPES];
 	unsigned long fd_delta_positive_ops[NR_CHILD_OP_TYPES];
 
+	/* Counts alt-op invocations whose fd-delta after-probe hit
+	 * RLIMIT_NOFILE (probe_lowest_free_fd's EMFILE sentinel path).
+	 * At the ceiling the returned "fd number" is rlim_cur, not a
+	 * real fd, so the (after - before) delta would inflate
+	 * fd_delta_positive_sum by ~rlim_cur per hit and make a single
+	 * leaked fd look like a giant single-op leak.  The dispatch
+	 * caps the reported delta to 1 in that case and bumps this
+	 * per-op counter as the "we saturated the fd table on this op"
+	 * sentinel, so operators can separate real per-op growth from
+	 * hits taken because the table was already full. */
+	unsigned long fd_leak_at_ceiling[NR_CHILD_OP_TYPES];
+
 	/* SHADOW-ONLY per-childop stuck-child accounting.  Sister of the
 	 * syscall_wedge_* pair above but keyed by enum child_op_type
 	 * (childdata.op_type captured at latch time) instead of by syscall
