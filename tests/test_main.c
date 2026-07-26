@@ -20,6 +20,8 @@
 #include "rnd_stream_golden.h"		/* rnd_stream_golden_check */
 #include "struct_catalog.h"		/* struct_field_mutate_self_check */
 
+void shared_freelist_self_check(void);
+
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
 static uint64_t parse_seed(int argc, char **argv)
@@ -51,6 +53,11 @@ int main(int argc, char **argv)
 	printf("  rnd_stream_golden_check ... ");
 	fflush(stdout);
 	rnd_stream_golden_check();
+	printf("OK\n");
+
+	printf("  shared_freelist_self_check ... ");
+	fflush(stdout);
+	shared_freelist_self_check();
 	printf("OK\n");
 
 	return 0;
