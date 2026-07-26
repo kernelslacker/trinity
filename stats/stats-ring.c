@@ -23,6 +23,7 @@
 
 #include "arch.h"		/* page_size, PAGE_MASK */
 #include "child.h"
+#include "kcov.h"		/* KCOV_TRACE_SIZE */
 #include "pids.h"
 #include "shm.h"
 #include "spsc-ring.h"
@@ -75,6 +76,31 @@ bool stats_ring_enqueue_call_complete(struct stats_ring *ring,
 }
 
 /*
+ * Per-class ceiling on the delta a single ring slot may contribute.
+ * The slot lives in a page the child owns and a wild value-result
+ * syscall arg can scribble the whole 16-byte record -- a delta of
+ * 0xFFFFFFFF applied to op_count republishes into fleet_op_count and
+ * jumps the strategy rotation clock / syscalls_todo termination check
+ * by 4G in one drain.  Cap by plausible per-slot magnitude so a
+ * stomped slot distorts at most one class by its normal per-drain
+ * ceiling.  Producers currently emit +1 on every path except
+ * TOTAL_PCS, which emits the per-drain kcov trace length; keep that
+ * one at KCOV_TRACE_SIZE and hold everything else to ~1M, enough
+ * headroom for any batched producer that might land later.
+ */
+static uint32_t delta_cap_for(enum stats_field field)
+{
+	switch (field) {
+	case STATS_FIELD_CALL_COMPLETE:
+		return 1;
+	case STATS_FIELD_TOTAL_PCS:
+		return KCOV_TRACE_SIZE;
+	default:
+		return 1u << 20;
+	}
+}
+
+/*
  * Apply a single ring slot to parent_stats.  Validates the field_id /
  * aux combination before touching any array index -- children produce
  * hostile fuzzed workload and a wild value-result syscall buffer that
@@ -85,7 +111,11 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	const struct stats_ring_slot *s = p;
 	enum stats_field field = (enum stats_field)s->field_id;
 	uint16_t aux = s->aux;
+	uint32_t cap = delta_cap_for(field);
 	unsigned long delta = s->delta;
+
+	if (delta > cap)
+		delta = cap;
 
 	switch (field) {
 	case STATS_FIELD_OP_COUNT:
