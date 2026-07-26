@@ -169,7 +169,7 @@ void open_fail_nth(struct childdata *child)
 	if (__atomic_load_n(&shm->no_fail_nth, __ATOMIC_RELAXED))
 		return;
 
-	fd = open("/proc/self/fail-nth", O_WRONLY);
+	fd = open("/proc/self/fail-nth", O_WRONLY | O_CLOEXEC);
 	if (fd == -1) {
 		__atomic_store_n(&shm->no_fail_nth, true, __ATOMIC_RELAXED);
 		return;
@@ -214,7 +214,7 @@ void open_tainted_fd(struct childdata *child)
 {
 	int fd;
 
-	fd = open("/proc/sys/kernel/tainted", O_RDONLY);
+	fd = open("/proc/sys/kernel/tainted", O_RDONLY | O_CLOEXEC);
 	if (fd == -1) {
 		child->tainted_fd = -1;
 		child->last_tainted = 0;

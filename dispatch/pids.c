@@ -81,7 +81,7 @@ bool pid_alive(pid_t pid)
 	 * here.  Under ASAN, every one of those mallocs is a candidate
 	 * abort site; under normal builds it's just wasted work. */
 	snprintf(path, sizeof(path), "/proc/%d/stat", pid);
-	fd = open(path, O_RDONLY);
+	fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (fd < 0) {
 		/* Race: process exited between kill() and open.  Treat as
 		 * not alive — caller will recover. */
@@ -142,7 +142,7 @@ unsigned long long pid_start_time(pid_t pid)
 		return 0;
 
 	snprintf(path, sizeof(path), "/proc/%d/stat", pid);
-	fd = open(path, O_RDONLY);
+	fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (fd < 0)
 		return 0;
 	n = read(fd, buf, sizeof(buf) - 1);
@@ -281,7 +281,7 @@ void dump_pids_page_state(void)
 		  pids, (unsigned long) page, max_children,
 		  max_children * sizeof(pid_t));
 
-	fd = open("/proc/self/maps", O_RDONLY);
+	fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
 	if (fd >= 0) {
 		char buf[8192];
 		ssize_t n = read(fd, buf, sizeof(buf) - 1);
