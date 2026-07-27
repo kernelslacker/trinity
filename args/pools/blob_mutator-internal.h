@@ -63,3 +63,7 @@ void havoc_set_interesting(unsigned char *buf, size_t len, unsigned int width);
 void havoc_memset_block(unsigned char *buf, size_t len);
 void havoc_splice_copy(unsigned char *buf, size_t len);
 void havoc_swap_regions(unsigned char *buf, size_t len);
+
+/* Arithmetic / length-oriented arms (blob_mutator_arith.c). */
+void havoc_arith(unsigned char *buf, size_t len, unsigned int width, bool sub);
+void havoc_prefix_len(unsigned char *buf, size_t len);
