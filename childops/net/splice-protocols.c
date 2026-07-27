@@ -150,7 +150,7 @@ static int open_src_fd(unsigned int idx)
 
 	switch (idx % SRC_NR) {
 	case SRC_TMPFILE:
-		fd = open("/tmp", O_TMPFILE | O_RDWR | O_CLOEXEC, 0600);
+		fd = open(trinity_tmpdir_abs(), O_TMPFILE | O_RDWR | O_CLOEXEC, 0600);
 		if (fd >= 0) {
 			unsigned char buf[SPLICE_PROTO_PAGE];
 
