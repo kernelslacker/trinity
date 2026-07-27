@@ -76,10 +76,30 @@ struct cmp_hints_shared {
 	 * zero at init alongside the rest of the shm allocation.
 	 */
 	struct cmp_recent_pool childop_recent_pools[MAX_NR_SYSCALL][2];
-	/* SHADOW typed-hypothesis store.  Zero-initialised by the same
-	 * memset that clears the rest of cmp_hints_shared; written by
-	 * cmp_hyp_observe() under the matching durable cmp_hint_pool lock
-	 * and not yet read by any consumer or injection path. */
+	/* Typed-hypothesis store.  Zero-initialised by the same memset
+	 * that clears the rest of cmp_hints_shared.  Live observe →
+	 * select → inject → feedback → transition contract:
+	 *   - cmp_hyp_observe() (from cmp_hints_flush_pending, under the
+	 *     matching durable cmp_hint_pool lock) inserts / refreshes
+	 *     entries and lands them in CMP_HYP_STATE_OBSERVED.
+	 *   - cmp_hyp_would_pick_locked() (hyp-pick.c) walks the pool at
+	 *     (cmp_ip, width) and returns the most-specific state-preferred
+	 *     entry (PROMOTED > OBSERVED/TESTING > DEMOTED via reroll,
+	 *     RETIRED skipped) across the EXACT > ENUM_FAMILY > BITMASK >
+	 *     RANGE > BOUNDARY ladder.
+	 *   - cmp_hyp_try_live_inject() (hyp-live.c) composes the picker
+	 *     with cmp_hyp_derive_value() and, on a channel-A/B/C fire,
+	 *     substitutes the derived value for the raw pool pick before
+	 *     it reaches the caller's accept gate.
+	 *   - cmp_hyp_credit_outcome() (hyp-credit.c) resolves the credit
+	 *     back to a hypothesis and mutates h->state through the
+	 *     OBSERVED ↔ PROMOTED ↔ DEMOTED graph (DEMOTED → RETIRED at
+	 *     CMP_HYP_RETIRE_MISS_THRESHOLD sustained misses), closing the
+	 *     feedback loop the picker routes on.
+	 * Concurrency: writers (observe, credit-side state mutation) run
+	 * lock-free RELAXED against parallel readers (pick, inject); the
+	 * count > cap bail bounds walks and torn RELAXED reads on h->state
+	 * at worst route one pick / one credit under a stale state. */
 	struct cmp_hyp_pool hyp_pools[MAX_NR_SYSCALL][2];
 	/*
 	 * Fleet-wide shared cmp_ip tier.  Single global lock covers every
@@ -136,35 +156,49 @@ void cmp_hints_childop_insert(unsigned int nr, bool do32,
 			      unsigned int size);
 
 /*
- * SHADOW typed-hypothesis observation hook.
+ * Typed-hypothesis observation hook.
  *
  * Called from cmp_hints_flush_pending() once per fresh insert into the
- * durable per-syscall pool, still under that pool's lock.  Drives the
- * typed inference lanes (EXACT / BITMASK / ENUM_FAMILY / RANGE) and
- * bumps the cmp_hyp_* shadow counters; does NOT influence injection or
- * the live cmp-hint pick.  Out-of-range nr / unsupported size / NULL
- * shm are bailed early.
+ * durable per-syscall pool, still under that pool's lock.  Populates
+ * the typed inference lanes (EXACT / ENUM_FAMILY / BITMASK / RANGE /
+ * BOUNDARY) in hyp_pools[nr][do32] and bumps the cmp_hyp_* observation
+ * counters.  New entries land in CMP_HYP_STATE_OBSERVED, from which
+ * they immediately become candidates for cmp_hyp_would_pick_locked()
+ * and the live inject arm (cmp_hyp_try_live_inject); the picker and
+ * inject path are what read what this hook writes.  Out-of-range nr /
+ * unsupported size / NULL shm are bailed early.
  */
 void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 		     unsigned long value, unsigned int size);
 
 /*
- * SHADOW per-hypothesis feedback credit.
+ * Per-hypothesis feedback credit.
  *
  * Resolve the would-have-been-chosen hypothesis at hyp_pools[nr][do32]
- * from the (cmp_ip, value, width) tuple via the same EXACT > ENUM_FAMILY
- * > BITMASK > RANGE specificity ladder the consumer side will use, then
- * bump the matching per-hypothesis outcome counter and the matching
- * cmp_hyp_* flat counter in kcov_shm.  Out-of-range nr / unsupported
- * size / NULL shm / no-matching-hypothesis are bailed silently (advisory
- * shadow accounting -- a credit that finds no hypothesis is just an
- * unobserved value, never a correctness issue).
+ * from the (cmp_ip, value, width) tuple via the same EXACT >
+ * ENUM_FAMILY > BITMASK > RANGE > BOUNDARY (|value - exemplar| <=
+ * CMP_HYP_BOUNDARY_CREDIT_WINDOW) specificity ladder the picker and
+ * inject arm use, then bump the matching per-hypothesis outcome
+ * counter and the matching cmp_hyp_* flat counter in kcov_shm.
+ * Out-of-range nr / unsupported size / NULL shm / no-matching-
+ * hypothesis are bailed silently (a credit that finds no hypothesis
+ * is just an unobserved value, never a correctness issue).
  *
- * Does NOT influence injection or the live cmp-hint pick: the function
- * is a write-only sink against the parallel hyp_pools[] grid.  Callers
- * pass the same (cmp_ip, value, size) tuple they stashed at hint-pull
- * time so the credit lands on the hypothesis whose typed inference
- * explains the picked value.
+ * Feedback-driven state transition.  After the counter bumps the
+ * function recomputes h->score_bucket and drives the live state
+ * machine on the resolved hypothesis:
+ *   OBSERVED + would_promote  -> PROMOTED  (first win)
+ *   OBSERVED + would_demote   -> DEMOTED   (miss threshold hit)
+ *   DEMOTED  + would_promote  -> OBSERVED  (revive)
+ *   DEMOTED  + sustained miss -> RETIRED   (dead end at
+ *                                CMP_HYP_RETIRE_MISS_THRESHOLD)
+ * These state changes are what the picker (hyp-pick.c) and the
+ * PROMOTED-bypass channel of the inject arm (hyp-live.c) route on --
+ * this hook is the feedback edge that closes the observe -> select ->
+ * inject -> credit -> transition loop.  Callers pass the same
+ * (cmp_ip, value, size) tuple they stashed at hint-pull time so the
+ * credit lands on the hypothesis whose typed inference explains the
+ * picked value.
  */
 void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
 			    unsigned long value, unsigned int size,
