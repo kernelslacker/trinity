@@ -8,6 +8,8 @@ extern int kernel_taint_initial;
 
 int get_taint(void);
 
+void close_parent_tainted_fd(void);
+
 bool is_tainted(void);
 
 void process_taint_arg(char *taintarg);

@@ -249,6 +249,8 @@ finalize_and_exit(int ret, bool clean_run)
 	stats_log_close();
 	stats_timeseries_close();
 
+	close_parent_tainted_fd();
+
 #ifdef __SANITIZE_ADDRESS__
 	/*
 	 * ASAN/LSAN build: skip atexit handlers on the parent's normal
