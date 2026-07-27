@@ -253,6 +253,41 @@ struct childop_stats {
 	unsigned long walltime_ns;
 	unsigned long wall_ns[NR_CHILD_OP_TYPES];
 
+	/* Per-childop CPU time (user+sys nanoseconds), indexed by enum
+	 * child_op_type.  Written from the same child.c per-op dispatch
+	 * bracket as wall_ns[op] using a CLOCK_THREAD_CPUTIME_ID sample
+	 * pair around op_fn.  Pairs with wall_ns[op] so a consumer can
+	 * separate on-CPU work from wall time spent blocked (e.g. futex_
+	 * storm parks the calling thread in ppoll while its siblings burn
+	 * CPU; wall_ns registers the block but cpu_ns[op] stays flat).
+	 * Read by childop_outcome_snapshot() into struct childop_outcome's
+	 * cpu_ns slot for the operator-visibility dumps and future yield-
+	 * per-CPU-work bandit-arm inputs.  RELAXED add-fetch: cumulative
+	 * diagnostic, multi-producer (one writer per child), lost-update
+	 * races are tolerated. */
+	unsigned long cpu_ns[NR_CHILD_OP_TYPES];
+
+	/* Per-childop direct syscall count -- syscalls the alt-op op_fn
+	 * issues DIRECTLY (via libc / raw syscall()) rather than through
+	 * random_syscall().  Opt-in: producers call childop_direct_
+	 * syscalls_add() from inside their own inner loops so the exact
+	 * count is authoritative for that childop's structure.  Ops that
+	 * do not opt in leave their slot at 0 -- the dump path treats
+	 * zero as "not instrumented" and skips it rather than reporting
+	 * a false-negative denominator.
+	 *
+	 * The existing shm->stats.syscall_dispatch.in_childops counter
+	 * only sees random_syscall-mediated calls made from an alt-op
+	 * body (e.g. sched_cycler's inner random_syscall() loop); the
+	 * dominant childop workloads (pipe_thrash, slab_cache_thrash,
+	 * flock_thrash, futex_storm, ...) issue direct libc calls and
+	 * are therefore invisible to that counter.  Without this array
+	 * their iteration count is not a comparable work unit against
+	 * random-syscall picks.  Read by childop_outcome_snapshot() into
+	 * struct childop_outcome's direct_syscalls slot.  RELAXED add-
+	 * fetch: cumulative diagnostic, single-writer-per-child. */
+	unsigned long direct_syscalls[NR_CHILD_OP_TYPES];
+
 	/* Per-op SIGALRM-timeout counters for the 1-second alt-op stall
 	 * watchdog (arm at child.c is_alt_op `alarm(1)`, fire in the
 	 * sigalrm_pending block at the top of the next iter, disarm at

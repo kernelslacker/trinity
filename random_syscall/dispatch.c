@@ -84,6 +84,66 @@ static bool redqueen_reexec_step(struct childdata *child,
 				 unsigned int pending_idx);
 
 /*
+ * Return-class buckets used by classify_strategy_return_class() and the
+ * per-arm ret_* counters in shm.  Kept file-local -- the only consumer
+ * that needs the enum is the bump site below; the dump path reads the
+ * three shm counters directly.
+ */
+enum strategy_return_class {
+	STRATEGY_RET_CLASS_SUCCESS = 0,
+	STRATEGY_RET_CLASS_SHALLOW_REJECT,
+	STRATEGY_RET_CLASS_DEEP_ERROR,
+};
+
+/*
+ * Split a completed syscall's rec->retval / rec->errno_post into
+ * success / shallow-reject / deep-error.  Shallow rejects are the
+ * errnos userspace hits when the validation layer bounces the call
+ * BEFORE any subsystem-specific code runs (per-syscall arg check,
+ * fdtable lookup, capability probe, mount / path parse).  Deep errors
+ * are anything else -- the syscall reached the subsystem, tried real
+ * work, and hit an internal condition (ENOMEM / EBUSY / EIO / ...).
+ * The distinction matters because a late-run picker that mostly
+ * surfaces shallow rejects is buying validation-path replay, not
+ * kernel depth.
+ */
+static enum strategy_return_class
+classify_strategy_return_class(const struct syscallrecord *rec)
+{
+	if (rec->retval != (unsigned long)-1L)
+		return STRATEGY_RET_CLASS_SUCCESS;
+
+	switch (rec->errno_post) {
+	case EINVAL:
+	case EBADF:
+	case EPERM:
+	case EACCES:
+	case ENOENT:
+	case EFAULT:
+	case ENOSYS:
+	case ENOTTY:
+	case EOPNOTSUPP:
+	case ENOTDIR:
+	case ELOOP:
+	case ENAMETOOLONG:
+	case EDOM:
+	case ERANGE:
+	case EOVERFLOW:
+	case EAFNOSUPPORT:
+	case EPROTONOSUPPORT:
+	case ENODEV:
+	case ENOEXEC:
+	case EBADR:
+	case EMSGSIZE:
+	case EISDIR:
+	case ENOTSOCK:
+		return STRATEGY_RET_CLASS_SHALLOW_REJECT;
+	default:
+		return STRATEGY_RET_CLASS_DEEP_ERROR;
+	}
+}
+
+/*
  * Dispatch a fully-prepared syscallrecord and run the per-call
  * post-dispatch bookkeeping: kcov collection / cmp-hint collection,
  * edge-pair recording, mutator-attribution commit, mini-corpus save,
@@ -566,10 +626,36 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		int sap = child->strategy_at_pick;
 		if (sap < 0 && child->is_explorer)
 			sap = STRATEGY_RANDOM;
-		if (sap >= 0 && sap < NR_STRATEGIES)
+		if (sap >= 0 && sap < NR_STRATEGIES) {
 			__atomic_fetch_add(
 				&shm->strategy_completed_calls[sap],
 				1UL, __ATOMIC_RELAXED);
+
+			/* Partition the completion into success / shallow-
+			 * reject / deep-error and bump the matching per-arm
+			 * counter alongside strategy_completed_calls[] above.
+			 * The three ret_* counters sum to strategy_completed_
+			 * calls[] within the usual RELAXED lost-update
+			 * tolerance.  See classify_strategy_return_class()
+			 * for the errno partition. */
+			switch (classify_strategy_return_class(rec)) {
+			case STRATEGY_RET_CLASS_SUCCESS:
+				__atomic_fetch_add(
+					&shm->strategy_ret_success[sap],
+					1UL, __ATOMIC_RELAXED);
+				break;
+			case STRATEGY_RET_CLASS_SHALLOW_REJECT:
+				__atomic_fetch_add(
+					&shm->strategy_ret_shallow_reject[sap],
+					1UL, __ATOMIC_RELAXED);
+				break;
+			case STRATEGY_RET_CLASS_DEEP_ERROR:
+				__atomic_fetch_add(
+					&shm->strategy_ret_deep_error[sap],
+					1UL, __ATOMIC_RELAXED);
+				break;
+			}
+		}
 	}
 
 	/*

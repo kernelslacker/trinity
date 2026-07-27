@@ -65,6 +65,11 @@ void childop_outcome_snapshot(enum child_op_type op,
 	out->noisy_edges = sat_sub_ul(discovered, clean);
 	out->wall_ns = __atomic_load_n(&shm->stats.childop.wall_ns[op],
 				       __ATOMIC_RELAXED);
+	out->cpu_ns = __atomic_load_n(&shm->stats.childop.cpu_ns[op],
+				      __ATOMIC_RELAXED);
+	out->direct_syscalls = __atomic_load_n(
+			&shm->stats.childop.direct_syscalls[op],
+			__ATOMIC_RELAXED);
 	out->wedges = (uint32_t)__atomic_load_n(
 			&shm->stats.childop.wedge_count[op], __ATOMIC_RELAXED);
 	out->timeout_observed = (uint32_t)__atomic_load_n(
@@ -97,14 +102,37 @@ void childop_outcome_window_dump(void)
 				__ATOMIC_RELAXED);
 
 		output(1,
-		       "childop_window %s: invocations=%lu wall_ns=%lu clean_edges=%lu noisy_edges=%lu wedges=%u crashes=%u setup_failures=%u timeout_observed=%u timeout_missed=%u latch=%lu\n",
+		       "childop_window %s: invocations=%lu wall_ns=%lu cpu_ns=%lu direct_syscalls=%lu clean_edges=%lu noisy_edges=%lu wedges=%u crashes=%u setup_failures=%u timeout_observed=%u timeout_missed=%u latch=%lu\n",
 		       alt_op_name(op), invocations,
 		       (unsigned long)rec.wall_ns,
+		       (unsigned long)rec.cpu_ns,
+		       (unsigned long)rec.direct_syscalls,
 		       (unsigned long)rec.clean_edges,
 		       (unsigned long)rec.noisy_edges,
 		       rec.wedges, rec.crashes, rec.setup_failures,
 		       rec.timeout_observed, rec.timeout_missed, latch);
 	}
+}
+
+/*
+ * Opt-in producer for shm->stats.childop.direct_syscalls[op].  Called
+ * from inside a childop's op_fn body with the number of direct kernel
+ * calls the caller just issued (usually a per-inner-iter constant --
+ * pipe_thrash: 1 per create + 1 per close in the drain).  Bounds-check
+ * the op index so a corrupted child->op_type read (poisoned-arena
+ * write from a sibling) cannot scribble past the array; matches the
+ * defensive gates in the other per-childop bump paths (see the
+ * shm->stats.pipe_thrash bumps in pipe_thrash and the valid_op gate
+ * around them).  RELAXED add-fetch -- cumulative diagnostic.
+ */
+void childop_direct_syscalls_add(enum child_op_type op, unsigned long n)
+{
+	if ((int) op < 0 || op >= NR_CHILD_OP_TYPES)
+		return;
+	if (n == 0)
+		return;
+	__atomic_add_fetch(&shm->stats.childop.direct_syscalls[op], n,
+			   __ATOMIC_RELAXED);
 }
 
 /*

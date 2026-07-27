@@ -642,6 +642,19 @@ void child_process(struct childdata *child, int childno)
 		 * the iter so a corrupted op_type can't reroute the bucket
 		 * after we've already paid the op_fn). */
 		struct timespec split_t0, split_t1;
+		/* Per-op CPU-time bracket.  Paired with the wall bracket
+		 * below and populated with the same is_alt_op gate so on-CPU
+		 * work is attributed to the same op_type slot.  Read into
+		 * struct childop_outcome's cpu_ns field, which lets the
+		 * operator separate "spent N ns of wall time in this op"
+		 * (wall_ns) from "burned N ns of CPU in this op" (cpu_ns) --
+		 * a blocked-on-futex thread accrues wall time without CPU,
+		 * whereas a busy-loop childop's cpu_ns approaches its wall_ns.
+		 * CLOCK_THREAD_CPUTIME_ID measures the CALLING THREAD's
+		 * user+sys CPU, which is exactly the accounting boundary the
+		 * op_fn call site expects. */
+		struct timespec cpu_t0, cpu_t1;
+		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_t0);
 		/* Fd-delta instrumentation: sample the lowest unused fd
 		 * number before and after the dispatch so a leaking op
 		 * (opens fds and forgets to close some on an error path)
@@ -666,6 +679,7 @@ void child_process(struct childdata *child, int childno)
 
 		child->in_childop = false;
 		clock_gettime(CLOCK_MONOTONIC, &split_t1);
+		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_t1);
 		if (is_alt_op && fd_probe_before >= 0 && valid_op) {
 			int fd_probe_after =
 				probe_lowest_free_fd(&fd_probe_at_ceiling);
@@ -712,10 +726,16 @@ void child_process(struct childdata *child, int childno)
 			if (ns < 0)
 				ns = 0;
 			if (is_alt_op) {
+				long cpu_ns = (cpu_t1.tv_sec - cpu_t0.tv_sec) * 1000000000L
+					+ (cpu_t1.tv_nsec - cpu_t0.tv_nsec);
+				if (cpu_ns < 0)
+					cpu_ns = 0;
 				__atomic_add_fetch(&shm->stats.childop.walltime_ns,
 						   (unsigned long)ns, __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.childop.wall_ns[op],
 						   (unsigned long)ns, __ATOMIC_RELAXED);
+				__atomic_add_fetch(&shm->stats.childop.cpu_ns[op],
+						   (unsigned long)cpu_ns, __ATOMIC_RELAXED);
 				/* SHADOW: feed the decaying-recency ring with
 				 * the same delta.  No reader on the picker path;
 				 * the ring is aged out by childop_window_advance()

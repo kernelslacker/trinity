@@ -78,6 +78,8 @@ enum frontier_pick_regime {
  *   clean_edges       shm->stats.childop.edges_clean[op]
  *   noisy_edges       shm->stats.childop.edges_discovered[op] - clean_edges
  *   wall_ns           shm->stats.childop.wall_ns[op]
+ *   cpu_ns            shm->stats.childop.cpu_ns[op]
+ *   direct_syscalls   shm->stats.childop.direct_syscalls[op]
  *   wedges            shm->stats.childop.wedge_count[op]
  *   timeout_observed  shm->stats.childop.timeout_observed[op]
  *   timeout_missed    shm->stats.childop.timeout_missed[op]
@@ -94,6 +96,7 @@ enum frontier_pick_regime {
 struct childop_outcome {
 	enum child_op_type op;
 	uint64_t wall_ns;
+	uint64_t cpu_ns;
 	uint64_t direct_syscalls;
 	uint64_t clean_edges;
 	uint64_t noisy_edges;
@@ -115,6 +118,16 @@ struct childop_outcome {
  * from any context that already has shm mapped; never modifies shm. */
 void childop_outcome_snapshot(enum child_op_type op,
 			      struct childop_outcome *out);
+
+/* Opt-in producer for shm->stats.childop.direct_syscalls[op].
+ * Childops whose inner loop issues syscalls DIRECTLY (via libc or raw
+ * syscall(), not through random_syscall()) call this with the number
+ * of kernel calls they just issued so the operator can compare their
+ * saturation cost against the random-syscall path's completed-call
+ * denominator.  No-op for out-of-range op values so callers can pass
+ * child->op_type without extra bounds checks (matches the surrounding
+ * per-childop bump sites in child.c).  RELAXED add-fetch. */
+void childop_direct_syscalls_add(enum child_op_type op, unsigned long n);
 
 /* Render a per-childop window summary line via output(1, ...) for every
  * op that has been invoked at least once this run.  Skips
