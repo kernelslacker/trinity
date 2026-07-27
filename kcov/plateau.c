@@ -446,6 +446,45 @@ void kcov_plateau_check(void)
 	__atomic_store_n(&kcov_shm->plateau.plateau_window_start, now,
 			 __ATOMIC_RELAXED);
 
+	/* Per-eval telemetry so the detector state is visible even on
+	 * runs that never transition.  The original enter/exit sites
+	 * below only fire on state change, which leaves saturated tails
+	 * that gain e.g. ~420 edges/window silently reading "healthy"
+	 * because the check never crosses ENTER (=10).  Emitted BEFORE
+	 * the enter/exit branch so state= reflects the state entering
+	 * this window; any transition triggered by this delta shows up
+	 * as its own PLATEAU: / PLATEAU CLEARED: line right after.
+	 * Labelled hard_stall in telemetry; the internal variable name
+	 * (plateau_active) is retained. */
+	{
+		bool state_active = __atomic_load_n(
+			&kcov_shm->plateau.plateau_active, __ATOMIC_RELAXED);
+		char reason[128];
+
+		if (delta < KCOV_PLATEAU_ENTER_THRESHOLD)
+			snprintf(reason, sizeof(reason),
+				 "delta=%lu < enter(%d) -> hard stall",
+				 delta, KCOV_PLATEAU_ENTER_THRESHOLD);
+		else if (delta < KCOV_PLATEAU_EXIT_THRESHOLD)
+			snprintf(reason, sizeof(reason),
+				 "delta=%lu in hysteresis band [enter=%d,exit=%d) -> state held",
+				 delta, KCOV_PLATEAU_ENTER_THRESHOLD,
+				 KCOV_PLATEAU_EXIT_THRESHOLD);
+		else
+			snprintf(reason, sizeof(reason),
+				 "delta=%lu >= enter(%d) -> not a hard stall; healthy",
+				 delta, KCOV_PLATEAU_ENTER_THRESHOLD);
+
+		stats_log_write(
+			"HARD_STALL: state=%s last_window_delta=%lu enter=%d exit=%d window=%ds reason=\"%s\"\n",
+			state_active ? "active" : "inactive",
+			delta,
+			KCOV_PLATEAU_ENTER_THRESHOLD,
+			KCOV_PLATEAU_EXIT_THRESHOLD,
+			KCOV_PLATEAU_WINDOW_SEC,
+			reason);
+	}
+
 	if (delta < KCOV_PLATEAU_ENTER_THRESHOLD) {
 		/* Edge-triggered: emit the warning, bump the transition
 		 * counter, and fire the auto-response hook only when we cross
