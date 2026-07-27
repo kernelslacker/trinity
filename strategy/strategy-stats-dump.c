@@ -86,6 +86,52 @@ static void dump_strategy_stats_intervention_modes(void)
 			       mode_windows[pim]);
 		output(0, "\n");
 
+		/* Per-mode outcome accounting (paired with the windows[]
+		 * denominator above).  One line per mode; rates derived at
+		 * dump time so the shm surface stays denormalised.  Suppress
+		 * modes that never ran a window so a run that only exercised
+		 * two of the four modes stays quiet on the other two.  Rate
+		 * lines guard against divide-by-zero: edges/window uses the
+		 * mode's window count, edges/call uses its fleet-op-count
+		 * total (the same denominator as the rotation output). */
+		for (pim = 0; pim < NR_PIM_MODES; pim++) {
+			unsigned long windows = mode_windows[pim];
+			unsigned long calls, pc_edge_calls, pc_edges, cmp_wins;
+			unsigned long edges_per_window_x1000 = 0;
+			unsigned long edges_per_call_x1000 = 0;
+
+			if (windows == 0)
+				continue;
+
+			calls = __atomic_load_n(
+				&shm->plateau_intervention_mode_calls[pim],
+				__ATOMIC_RELAXED);
+			pc_edge_calls = __atomic_load_n(
+				&shm->plateau_intervention_mode_pc_edge_calls[pim],
+				__ATOMIC_RELAXED);
+			pc_edges = __atomic_load_n(
+				&shm->plateau_intervention_mode_pc_edges[pim],
+				__ATOMIC_RELAXED);
+			cmp_wins = __atomic_load_n(
+				&shm->plateau_intervention_mode_cmp_wins[pim],
+				__ATOMIC_RELAXED);
+
+			edges_per_window_x1000 = (pc_edges * 1000UL) / windows;
+			if (calls > 0)
+				edges_per_call_x1000 =
+					(pc_edges * 1000UL) / calls;
+
+			output(0, "    %s: windows=%lu calls=%lu pc_edge_calls=%lu pc_edges=%lu cmp_wins=%lu edges/window=%lu.%03lu edges/call=%lu.%03lu\n",
+			       plateau_intervention_mode_name(
+				       (enum plateau_intervention_mode)pim),
+			       windows, calls, pc_edge_calls, pc_edges,
+			       cmp_wins,
+			       edges_per_window_x1000 / 1000UL,
+			       edges_per_window_x1000 % 1000UL,
+			       edges_per_call_x1000 / 1000UL,
+			       edges_per_call_x1000 % 1000UL);
+		}
+
 		cur_mode = __atomic_load_n(
 			&shm->plateau_intervention_mode_current,
 			__ATOMIC_RELAXED);
