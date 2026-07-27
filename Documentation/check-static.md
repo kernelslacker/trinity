@@ -26,7 +26,7 @@ if any check failed.  Detailed failure output goes to stderr.
 
 ## Skipping a check
 
-    CHECK_STATIC_SKIP=childop-arrays,post-state-magic make check-static
+    CHECK_STATIC_SKIP=check-alt-op-rotation,post-state-magic make check-static
 
 Comma-separated list of check basenames (without `.sh`).
 
@@ -77,9 +77,6 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `outputstd()` calls reachable from child-context code (`.post`
   handlers and `childops/*.c`), where they vanish into the child's
   /dev/null'd stdio.
-- `childop-arrays`: arrays and dispatch tables indexed by
-  `NR_CHILD_OP_TYPES` must have one entry per `enum child_op_type`
-  value.
 - `doc-pointer-exists`: every flat `Documentation/<name>.md` path named
   in a code comment must resolve to a real file, so the one-line
   pointers that replaced carved-out design essays never dangle.

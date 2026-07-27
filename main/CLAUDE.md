@@ -171,7 +171,7 @@ API surface.
   `canary_queue_on_child_respawn()`, `canary_queue_on_crash()`,
   `canary_queue_tick()`, `fork_pressure_drain_active()` consumed by the
   canary picker to suppress pid-heavy ops during fork pressure.
-- `child-altop.c` — `init_altop_dispatch()`/`assign_dedicated_alt_op()` for
+- `child-altop-pick.c` — `init_altop_dispatch()`/`assign_dedicated_alt_op()` for
   dedicated-alt-op child slots.
 - `random.c` — `reseed()` on every replacement spawn and on epoch reset.
 - `locks.c` — `check_all_locks()`/`force_bust_lock()` for lock recovery

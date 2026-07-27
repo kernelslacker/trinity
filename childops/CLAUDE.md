@@ -32,7 +32,7 @@ A typical childop file is one self-contained translation unit:
    still-wedged path.
 4. Static helpers, then one exported entry point matching
    `bool <name>(struct childdata *child)` — the name matches the
-   `enum child_op_type` case in `child-altop.c` (e.g. `fork_storm`,
+   `enum child_op_type` case in `child-altop-table.c` (e.g. `fork_storm`,
    `nftables_churn`).
 5. Per-op shm stats bumped via `__atomic_add_fetch`/`__atomic_store_n`
    (RELAXED) directly inside the childop — no separate stats-registration
@@ -124,15 +124,15 @@ by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
 1. **Enum + dense dispatch table, not per-file registration.** Every
    dispatched childop has a slot in `enum child_op_type` (`include/child.h`)
    and a matching entry in the `op_dispatch[NR_CHILD_OP_TYPES]` function
-   pointer array in `child-altop.c`
+   pointer array in `child-altop-table.c`
    (`bool (*const op_dispatch[])(struct childdata *)`). `CHILD_OP_SYSCALL`
    maps to `NULL` — that case is the default random_syscall path and never
    reaches this table. A `_Static_assert` pins the table size to the enum
    count. Files are wired into the build by `Makefile`'s
    `$(wildcard childops/*.c)` glob — no separate manifest to edit for a new
-   `.c` file, but a new *dispatched op* still requires manually adding the
-   enum value, the `case … return "name"` in the name-lookup switch, and the
-   `op_dispatch[]` slot, all in `child-altop.c`.
+   `.c` file, but a new *dispatched op* still requires manually adding a
+   row to `include/childop.def` (which expands into the enum, name switch,
+   and `op_dispatch[]` slot) and picker coverage in `child-altop-pick.c`.
 2. **File count > enum count.** 169 `.c` files but ~118 dispatch slots:
    several ops are split across multiple files for size/cohesion
    (`nftables/{builders,compat,dormant,fwd,l4frag,xt}.c`,
@@ -192,7 +192,7 @@ by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
 
 ## Integration points
 
-- `child-altop.c` — the dispatch table (`op_dispatch[]`), the
+- `child-altop-table.c` — the dispatch table (`op_dispatch[]`), the
   `enum child_op_type` → name switch, and `alt_op_lookup_by_name()`/
   `alt_op_name()` for CLI `--childop=<name>` selection.
 - `child.c` — the per-iteration loop: calls `pick_op_type()`, bounds-checks
@@ -213,18 +213,22 @@ by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
 - `cmp_hints/collect.c` — consumes the `childop_recent_pools[]` lane fed by
   `trinity_cmp_syscall()` calls inside childops.
 - `params.c` — `--childop=`, `--no-childop=`, `--childop-cmp-harvest`
-  CLI wiring that maps names to `enum child_op_type` via `child-altop.c`.
+  CLI wiring that maps names to `enum child_op_type` via `child-altop-table.c`.
 - `Makefile` — `$(wildcard childops/*.c)` builds every `.c` file
   unconditionally; no per-file enable/disable at build time.
 
 ## Areas of attention
 
-1. **`child-altop.c` is a hidden fourth registration point.** Adding a new
-   dispatched childop requires four synchronized edits spread across one
-   1400+-line file (enum value, name-switch case, `op_dispatch[]` slot,
-   plus often a `dormant_op`/outer-bracket table entry) — nothing in
-   childops/ itself enforces this; a `.c` file with no matching enum/table
-   entry silently compiles but is never dispatched.
+1. **The `child-altop-*.c` cluster is a hidden fourth registration
+   point.** Adding a new dispatched childop requires a coordinated set of
+   edits across `include/childop.def` (the authoritative registry that
+   feeds the enum, name switch, and `op_dispatch[]` slot in
+   `child-altop-table.c`) and picker coverage plus any dormant-op /
+   outer-bracket entries in `child-altop-pick.c`. Nothing in childops/
+   itself enforces this; a `.c` file with no matching def-registry entry
+   silently compiles but is never dispatched. The
+   `check-alt-op-rotation` static check catches picker/registry
+   mismatches.
 2. **The `netfilter/nftables/` cluster** forms the single largest logical unit
    in the directory (~7700 LOC across the dispatched orchestrator, core
    builders, sub-mode files, six `-exprs-*.c` companions, and the internal
@@ -254,5 +258,6 @@ a header comment, self-bounding via round/budget caps under child.c's
 `alarm(1)`, self-isolating destructive work into throwaway user+net
 namespaces, and self-latching off permanently when the running kernel
 lacks the targeted feature. Wiring a childop into the fuzzer is manual and
-centralized in `child-altop.c`'s enum + dispatch table, not automatic from
-the file's presence in the directory.
+centralized in `include/childop.def`'s registry (expanded into the enum,
+name switch, and `op_dispatch[]` slot in `child-altop-table.c`), not
+automatic from the file's presence in the directory.
