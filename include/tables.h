@@ -115,7 +115,18 @@ int munge_tables(void);
  * fork_children() (children inherit RO page tables); a later write to
  * any descriptor field faults at the offending store.  The parallel
  * syscall_runtime array (RW) is on separate pages and stays writable.
+ *
+ * desc_extents[] is populated by select_syscall_tables() (in tables.c)
+ * from copy_syscall_table()'s out-params and consumed by
+ * protect_syscall_tables() (in tables/table-protect.c).  Extern here so
+ * both sides can reach the shared bookkeeping without a translation-
+ * unit split.
  */
+struct desc_extent {
+	void *base;
+	size_t len;
+};
+extern struct desc_extent desc_extents[3];
 void protect_syscall_tables(void);
 
 struct syscallentry * get_syscall_entry(unsigned int calln, bool do32) __must_check;
