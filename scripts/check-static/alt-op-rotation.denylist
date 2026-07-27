@@ -22,6 +22,13 @@
 # `make check-static`.
 #
 # Lines starting with `#` and blank lines are ignored.
+#
+#   3. Omitted from the picker.  Childops declared in
+#      include/childop.def that deliberately have no slot in
+#      pick_op_type_table[] (e.g. off-dispatcher fallthrough ops).
+#      Format: `CHILD_OP_FOO  OMIT-FROM-PICKER: <one-line reason>`
+#      Enforced by the def -> picker completeness sub-check.
+CHILD_OP_SYSCALL                 OMIT-FROM-PICKER: off-dispatcher fallthrough; sequence-chain fast path in child/child.c handles it directly and it must not be selectable by the random picker
 CHILD_OP_BLKDEV_LIFECYCLE_RACE   REASON: lifecycle race; destabilises runs
 CHILD_OP_KVM_RUN_CHURN           REASON: hardware-state heavy; not safe steady
 CHILD_OP_UBLK_LIFECYCLE          REASON: device lifecycle race
