@@ -144,3 +144,30 @@ each insert is one source pull plus at most one width-`<= 8`
 little-endian splat (possibly value-transformed); worst case stays
 `O(BLOB_CMPDICT_MAX_INSERTS)`, independent of `len` and of how rich
 the per-nr cmp pool is.
+
+## --blob-ab-mode
+
+Within-run A/B harness for the blob-mutator content-authoring lane.
+When set, each `blob_fill()` coin-flips HAVOC vs CMPDICT for that
+fill so both modes run in one process against the same warm corpus /
+coverage / kernel state at every moment -- the confound that flattens
+sequential blob-mode runs (warm-start creep, saturation) cancels.
+
+All blob-side RNG draws for the fill (the coin-flip, havoc arms,
+cmpdict pulls, and the nested `generate_rand_bytes` /
+`cmp_hints_try_get`) route through a dedicated per-child
+`rnd_blob_state` stream via a swap of `rnd_state` around
+`blob_fill()`, keeping the main syscall-selection stream identical
+to what it would have been without the flag; without this the modes
+desync the main stream and the comparison leaks (cmpdict pulls more
+RNG than havoc).
+
+The dispatch-site novelty gate credits
+`blob_ab_<mode>_fills` and `blob_ab_<mode>_new_edges` per call for
+the stashed mode; the verdict metric is `new_edges / fills` per
+mode -- an `~2x` separation is a real effect, a null (rates equal)
+is a solid answer.
+
+When the flag is absent, the caller gate and `blob_fill()` body
+bypass the ab path entirely and blob mutation is byte-identical to a
+build without this row.  Default off; opt-in only.
