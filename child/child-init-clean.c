@@ -129,7 +129,7 @@ void set_make_it_fail(void)
 	if (__atomic_load_n(&shm->dont_make_it_fail, __ATOMIC_RELAXED))
 		return;
 
-	fd = open("/proc/self/make-it-fail", O_WRONLY);
+	fd = open("/proc/self/make-it-fail", O_WRONLY | O_CLOEXEC);
 	if (fd == -1) {
 		__atomic_store_n(&shm->dont_make_it_fail, true, __ATOMIC_RELAXED);
 		return;
