@@ -38,9 +38,10 @@
  * treats as fatal.
  *
  * Kept as an accessor (rather than a lookup table) so the compiler
- * can fold the switch into a constant-time check at the call site
- * and so that new CHILDOP() rows without an explicit false pick up
- * the default without touching this function.
+ * can fold the switch into a constant-time check at the call site.
+ * The uses_outer_bracket field is required on every CHILDOP() row
+ * (the macro takes four arguments); a new row picks up the default
+ * by passing true explicitly and needs no edit to this function.
  */
 bool op_uses_outer_bracket(enum child_op_type op)
 {

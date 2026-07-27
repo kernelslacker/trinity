@@ -98,8 +98,10 @@ static void __cold dump_syscall_slot(FILE *fp, const struct chronicle_slot *slot
  * Drain one child's syscall ring into the entries array.  Returns the
  * number of entries copied.  Lock-free SPSC: acquire-load on head pairs
  * with the child's release-store after writing the slot, so any entry
- * we observe in [head-N, head-1] was fully written before head was
- * published.
+ * we observe in [head-(N-1), head-1] was fully written before head was
+ * published.  The window caps at N-1 slots (not N): the oldest physical
+ * slot is skipped as a guard, since a writer that wraps is one publish
+ * away from clobbering it.
  *
  * The acquire-load gives a consistent starting snapshot, but the loop
  * is not instantaneous and a still-running child can advance head

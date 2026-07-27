@@ -18,7 +18,7 @@ their own.
    persisted state, then hands control to the parent control plane.
 2. `main/` — the parent tick loop: fork the fleet, poll-reap exits,
    D-state/stuck watchdog, periodic stats. Calls into nothing that fuzzes.
-3. `child/` (child.c loop + child-init.c + child-altop.c picker) — each forked child's
+3. `child/` (child.c loop + child-init-*.c + child-altop-*.c picker) — each forked child's
    per-iteration loop: pick a syscall **or** an alt-op (childop), run it under
    an `alarm(1)` stall backstop, thread results forward.
 4. Per iteration the child either:

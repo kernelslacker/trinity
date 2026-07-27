@@ -14,7 +14,7 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 | child-init-sandbox.c | `shm->ready` barrier, fault-injector arm, per-child unshare()s, root-only `drop_privs`, `capset()`-to-empty + oracle anchor capture, rlimit / cgroup / umask sweep. |
 | child-init-runtime.c | kcov bring-up, uniarch active-syscalls pin, explorer-pool slot flag, A/B-comparison cohort stamps, heap-bounds re-snapshot, `RLIMIT_AS` pin, one-shot `disable_coredumps`. |
 | child-altop-pick.c | Alt-op picker + dedicated-child rotation + dormant-op gate: `pick_op_type()` / `pick_op_type_table[]` / `alt_op_rotation[]` / `assign_dedicated_alt_op()` / `init_altop_dispatch()` (gated by `scripts/check-static/check-alt-op-rotation.sh`). |
-| child-altop-table.c | Alt-op string names + indirect-call dispatch: `op_dispatch[]` / `alt_op_name()` / `alt_op_lookup_by_name()` / `op_uses_outer_bracket()` (gated by `scripts/check-static/childop-arrays.sh`). |
+| child-altop-table.c | Alt-op string names + indirect-call dispatch: `op_dispatch[]` / `alt_op_name()` / `alt_op_lookup_by_name()` / `op_uses_outer_bracket()` (gated by `scripts/check-static/check-alt-op-rotation.sh`). |
 | child-altop-budget.c | Adaptive per-op budget multiplier + decaying-recency edge/wall ring: `adapt_budget()` / `childop_decay_record_*()` / `childop_window_advance()`. |
 | child-altop-score.c | Per-op outcome snapshot + ranked score-dump tables emitted at shutdown: `childop_outcome_snapshot()` / `childop_outcome_window_dump()` / `childop_score_dump()`. Telemetry-only. |
 | child-canary-state.c | Dormant-childop canary promotion queue: state transitions (`enter_canarying` / `leave_canarying_*` / `close_window_and_decide`) + `canary_queue_init` + the two-stage commit-on-respawn hook. |

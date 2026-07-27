@@ -46,7 +46,7 @@ Persistence is entirely separate: kcov/persist.c persists the PC-edge bitmap (`k
 - `random_syscall/dispatch.c` — main per-syscall driver: calls `kcov_collect()` for PC coverage and `kcov_collect_cmp()` for CMP-mode children; reads `new_edge_count`/`struct kcov_pc_result` out-params
 - `child-init.c` — calls `kcov_init_child()` once per forked child (after stdio dup2, before the syscall loop)
 - `child.c`, `syscall.c` — call the enable/disable/bracket API around syscall dispatch and extra-fork paths (`kcov_note_extrafork`)
-- `child-altop.c`, `child-canary.c` — childop callers of the PC/CMP bracket API for non-syscall child operations
+- `child-altop-*.c`, `child-canary-*.c` — childop callers of the PC/CMP bracket API for non-syscall child operations
 - `signals.c` — `child_fault_handler` siglongjmp target for the `CONFIG_GUARD_SHARED` protection-strip fault detector in `kcov_enable_trace`
 - `utils/range_overlap.c` — mm-syscall sanitiser (`range_overlaps_shared`) consults the shared-region tracker that kcov/lifecycle.c registers trace buffers into, so fuzzed `munmap`/`mprotect`/`madvise` can't corrupt kcov's own mmaps
 - `cmp_hints/collect.c`, `cmp_hints/persist.c`, `cmp_hints/cmp_hints.c` — consumers of `kcov_canon_cmp_ip()` and `kcov_kaslr_base_value()`; see Boundary section above
