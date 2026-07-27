@@ -58,3 +58,8 @@ uint64_t apply_splat_form(uint64_t v, unsigned int width,
 void havoc_bit_flip(unsigned char *buf, size_t len);
 void havoc_byte_flip(unsigned char *buf, size_t len);
 void havoc_set_interesting(unsigned char *buf, size_t len, unsigned int width);
+
+/* Block-scoped arms (blob_mutator_block.c). */
+void havoc_memset_block(unsigned char *buf, size_t len);
+void havoc_splice_copy(unsigned char *buf, size_t len);
+void havoc_swap_regions(unsigned char *buf, size_t len);
