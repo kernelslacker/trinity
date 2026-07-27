@@ -12,8 +12,18 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>    /* FILE * -- shadow_sat JSONL emitter */
 #include "params.h"   /* ARRAY_SIZE for STAT_CATEGORY() */
 #include "shm.h"      /* struct stats_s for offsetof() in macros */
+
+/* Shadow soft-saturation JSONL emitter (row t371-b).  Appends the
+ * ",\"soft_sat\":{...},\"raw_windows\":[...]" block to fp.  Called
+ * from stats_timeseries_emit_window() in stats/log.c after the last
+ * scalar block and before the "per_syscall" array.  Public API
+ * (stats_shadow_sat_tick / stats_shadow_sat_emit_out_log) is in
+ * stats.h -- this prototype stays here because FILE * is not part of
+ * that header's public surface. */
+void stats_ts_emit_shadow_sat(FILE *fp);
 
 /* Aggregate-stats descriptor types.  One stat_field per counter, one
  * stat_category per group; the renderer walks the field table and

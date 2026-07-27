@@ -880,6 +880,7 @@ void stats_timeseries_emit_window(unsigned long op_count)
 	stats_ts_emit_plateau(stats_timeseries_fp);
 	stats_ts_emit_by_strategy(stats_timeseries_fp);
 	stats_ts_emit_by_childop(stats_timeseries_fp);
+	stats_ts_emit_shadow_sat(stats_timeseries_fp);
 
 	fputs(",\"per_syscall\":[", stats_timeseries_fp);
 

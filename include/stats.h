@@ -1183,6 +1183,26 @@ void stats_timeseries_close(void);
 void stats_timeseries_emit_window(unsigned long op_count);
 void stats_timeseries_drop_in_child(void);
 
+/*
+ * Shadow soft-saturation score (row t371-b).  Parent-side, observation-
+ * only: computed each stats-emit window over trailing 10-min and 60-min
+ * horizons from parent-visible counters (distinct_edges, op_count,
+ * RUSAGE_CHILDREN, stall_count, trace_truncated).  Raises a shadow
+ * `soft_saturated` boolean when both horizons' distinct-edge yield sit
+ * below configured floors for K consecutive evals; a health veto
+ * (D-state wedges / trace_truncated rising / throughput halved)
+ * distinguishes the diagnosis from supply-side starvation.  Consumed by
+ * NOTHING -- routing/policy is untouched.  tick() samples + recomputes,
+ * emit_out_log() prints the one-line human summary, emit_shadow_sat()
+ * appends the JSONL block (rates, floors, health inputs, raw per-window
+ * edge deltas for offline estimator swap-in).
+ */
+void stats_shadow_sat_tick(void);
+void stats_shadow_sat_emit_out_log(void);
+/* stats_ts_emit_shadow_sat(FILE *) is prototyped in stats-internal.h --
+ * FILE isn't part of stats.h's public surface, and only stats/log.c
+ * calls it. */
+
 /* Implemented in childops/recipe/runner.c; emits per-recipe completion
  * counts so the catalog layout stays private to that file. */
 void recipe_runner_dump_stats(void) __cold;
