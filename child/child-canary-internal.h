@@ -175,6 +175,7 @@ void close_window_and_decide(enum child_op_type op);
 bool fork_pressure_should_suppress(enum child_op_type op);
 const char *canary_setup_fail_reason_name(enum canary_setup_fail_reason r);
 enum canary_setup_fail_reason canary_setup_fail_reason_for_op(enum child_op_type op);
+const char *canary_blocked_reason_name(enum canary_blocked_reason r);
 
 /* Picker TU (child-canary-picker.c): candidate selection. */
 bool pick_next_canary(enum child_op_type *out);

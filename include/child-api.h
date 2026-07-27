@@ -314,11 +314,48 @@ enum canary_setup_fail_reason {
 	SETUP_FAIL_REASON_QUOTA_HIT,
 };
 
+/* Sub-reason distinguishing the three distinct paths into CANARY_STATE_
+ * CONFIG_BLOCKED.  The state itself is terminal-and-never-picked in all
+ * three cases, but the operator-facing meaning is very different:
+ *
+ *   CONFIG_ABSENT       Static config-blocked table hit at queue init:
+ *                       the host kernel is not compiled with the feature
+ *                       this op exercises.  Not a code bug; the fix is
+ *                       either a kernel rebuild or accepting the op will
+ *                       not run on this fleet.
+ *   SETUP_BROKEN        Auto-block after CANARY_SETUP_BROKEN_AUTOBLOCK_N
+ *                       consecutive 100%-setup-failure windows.  The op
+ *                       code (or a host prereq the hint table names) is
+ *                       broken; this is actionable.
+ *   NO_OUTER_BRACKET    leave_canarying_ineligible(): the op's dispatch
+ *                       shape cannot carry the outer KCOV bracket, so
+ *                       the canary mechanism has no signal to score it
+ *                       on.  Not a failure of the op -- it still runs
+ *                       via the promoted-picker path if enabled -- just
+ *                       an acknowledgement that the queue cannot rate
+ *                       it.  Distinct from CONFIG_ABSENT because the op
+ *                       is not blocked from running at all, only from
+ *                       canary-based promotion.
+ *
+ * NONE is the sentinel value for ops whose state is not CONFIG_BLOCKED;
+ * the field must not be read without first checking state. */
+enum canary_blocked_reason {
+	CANARY_BLOCKED_REASON_NONE = 0,
+	CANARY_BLOCKED_REASON_CONFIG_ABSENT,
+	CANARY_BLOCKED_REASON_SETUP_BROKEN,
+	CANARY_BLOCKED_REASON_NO_OUTER_BRACKET,
+};
+
 struct canary_op_state {
 	/* identity */
 	enum child_op_type op;		/* keyed by op enum */
 	const char *name;		/* cached alt_op_name(op) for log lines */
 	enum canary_state state;
+
+	/* Sub-reason for state == CANARY_STATE_CONFIG_BLOCKED.  NONE
+	 * otherwise.  See enum canary_blocked_reason for the three
+	 * paths and their distinct operator meanings. */
+	enum canary_blocked_reason blocked_reason;
 
 	/* per-window counters (reset on CANARYING entry) */
 	unsigned long window_start_invocations;	/* shm->stats.childop.invocations[op] snapshot at window open;

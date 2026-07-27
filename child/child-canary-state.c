@@ -641,6 +641,7 @@ void leave_canarying_demote_setup_broken(enum child_op_type op,
 	 * here because the DEMOTED-backoff path is no longer used. */
 	if (s->consecutive_setup_broken >= CANARY_SETUP_BROKEN_AUTOBLOCK_N) {
 		s->state = CANARY_STATE_CONFIG_BLOCKED;
+		s->blocked_reason = CANARY_BLOCKED_REASON_SETUP_BROKEN;
 		canary_op_setup_broken[op] = false;
 		output(0, "canary: %s AUTO-BLOCKED after %u consecutive 100%% setup-failure windows (reason: %s, last setup_failures=%lu in %lu iters); terminal, no further re-canary; effective for new children at next respawn\n",
 			s->name, s->consecutive_setup_broken,
@@ -721,6 +722,7 @@ static void leave_canarying_ineligible(enum child_op_type op,
 	struct canary_op_state *s = &canary_ops[op];
 
 	s->state = CANARY_STATE_CONFIG_BLOCKED;
+	s->blocked_reason = CANARY_BLOCKED_REASON_NO_OUTER_BRACKET;
 	s->last_state_transition = monotonic_seconds();
 	s->consecutive_setup_broken = 0;
 	/* Terminal outcome: no further re-canary, so any accumulated
@@ -1035,6 +1037,8 @@ void canary_queue_init(void)
 		enum child_op_type op = canary_config_blocked[i];
 		if (op < NR_CHILD_OP_TYPES) {
 			canary_ops[op].state = CANARY_STATE_CONFIG_BLOCKED;
+			canary_ops[op].blocked_reason =
+				CANARY_BLOCKED_REASON_CONFIG_ABSENT;
 			canary_ops[op].setup_fail_reason =
 				canary_setup_fail_reason_for_op(op);
 		}
@@ -1145,8 +1149,10 @@ void canary_queue_init(void)
 	for (i = (unsigned int)CHILD_OP_SYSCALL + 1; i < NR_CHILD_OP_TYPES; i++) {
 		if (canary_ops[i].state != CANARY_STATE_CONFIG_BLOCKED)
 			continue;
-		output(0, "canary queue: config-blocked op %s (reason: %s)\n",
+		output(0, "canary queue: config-blocked op %s (subreason: %s, hint: %s)\n",
 			canary_ops[i].name,
+			canary_blocked_reason_name(
+				canary_ops[i].blocked_reason),
 			canary_setup_fail_reason_name(
 				canary_ops[i].setup_fail_reason));
 	}
