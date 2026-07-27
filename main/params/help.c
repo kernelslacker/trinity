@@ -170,6 +170,7 @@ static const struct option_help option_descs[] = {
 	{ "stats-json",		 0,  "emit dump_stats output as a single JSON object on stdout (machine-readable)" },
 	{ "stats-log-file",	 0,  "path to append periodic stats dumps to (in addition to stdout)" },
 	{ "strategy",		 0,  "arm-selection policy: bandit/ucb1 (default) or round-robin/rr" },
+	{ "sysrq-on-lockup",	 0,  "on fleet wedge (>= max(3, running/2) stuck), fire SysRq w+l once and drain kmsg (default off)" },
 	{ "syslog",		'S', "log important info to syslog (useful if syslog is remote)" },
 	{ "verbose",		'v', "increase output verbosity. Repeat for more detail (-vv)" },
 	{ "victims",		'V', "path to victim files (may be repeated)" },

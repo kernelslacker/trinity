@@ -229,6 +229,11 @@ bool parse_long_misc_options(int opt, const char *name, char *arg)
 		return true;
 	}
 
+	if (strcmp("sysrq-on-lockup", name) == 0) {
+		sysrq_on_lockup = true;
+		return true;
+	}
+
 	if (strcmp("blob-ab-mode", name) == 0) {
 		blob_ab_mode = true;
 		return true;

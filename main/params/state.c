@@ -58,6 +58,7 @@ bool do_specific_domain = false;
 bool no_domains[TRINITY_PF_MAX];
 
 bool dry_run = false;
+bool sysrq_on_lockup = false;
 bool self_corrupt_canary = false;
 bool show_unannotated = false;
 bool show_syscall_list = false;

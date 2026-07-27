@@ -22,6 +22,7 @@
 #include "stats.h"
 #include "syscall.h"
 #include "syscall_record.h"
+#include "sysrq-lockup.h"
 #include "tables.h"
 #include "trinity.h"
 #include "utils.h"
@@ -553,6 +554,7 @@ unsigned int stall_count;
 void check_children_progressing(void)
 {
 	unsigned int i;
+	unsigned int running;
 
 	stall_count = 0;
 
@@ -575,6 +577,14 @@ void check_children_progressing(void)
 			hiscore = op_nr;
 	}
 
-	if (stall_count == __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED))
+	running = __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED);
+
+	/* Opt-in diagnostic.  Runs BEFORE stall_genocide so the kernel
+	 * dump captures the wedge state before we start killing tasks;
+	 * the fire helper short-circuits on the sysrq_on_lockup flag so
+	 * a default run pays only the single flag test. */
+	sysrq_lockup_check_and_fire(stall_count, running);
+
+	if (stall_count == running)
 		stall_genocide();
 }

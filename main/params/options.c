@@ -80,6 +80,7 @@ const struct option longopts[] = {
 	{ "strategy", required_argument, NULL, 0 },
 	{ "self-corrupt-canary", no_argument, NULL, 0 },
 	{ "show-unannotated", no_argument, NULL, 0 },
+	{ "sysrq-on-lockup", no_argument, NULL, 0 },
 	{ "syslog", no_argument, NULL, 'S' },
 	{ "verbose", no_argument, NULL, 'v' },
 	{ "victims", required_argument, NULL, 'V' },
