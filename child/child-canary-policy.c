@@ -207,3 +207,14 @@ canary_setup_fail_reason_for_op(enum child_op_type op)
 			return canary_setup_reason_hints[i].reason;
 	return SETUP_FAIL_REASON_UNKNOWN;
 }
+
+const char *canary_blocked_reason_name(enum canary_blocked_reason r)
+{
+	switch (r) {
+	case CANARY_BLOCKED_REASON_NONE:			return "none";
+	case CANARY_BLOCKED_REASON_CONFIG_ABSENT:		return "config-absent";
+	case CANARY_BLOCKED_REASON_SETUP_BROKEN:		return "setup-broken";
+	case CANARY_BLOCKED_REASON_NO_OUTER_BRACKET:		return "no-outer-bracket";
+	}
+	return "unknown";
+}

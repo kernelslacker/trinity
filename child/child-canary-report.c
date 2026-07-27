@@ -53,6 +53,7 @@ void canary_queue_summary(void)
 {
 	unsigned int dormant = 0, canarying = 0, promoted = 0;
 	unsigned int demoted = 0, blocked = 0;
+	unsigned int blocked_config = 0, blocked_broken = 0, blocked_nobracket = 0;
 	unsigned int total = 0;
 	unsigned int i;
 	time_t now;
@@ -72,12 +73,29 @@ void canary_queue_summary(void)
 		case CANARY_STATE_CANARYING:		canarying++; break;
 		case CANARY_STATE_PROMOTED:		promoted++; break;
 		case CANARY_STATE_DEMOTED:		demoted++; break;
-		case CANARY_STATE_CONFIG_BLOCKED:	blocked++; break;
+		case CANARY_STATE_CONFIG_BLOCKED:
+			blocked++;
+			switch (canary_ops[i].blocked_reason) {
+			case CANARY_BLOCKED_REASON_CONFIG_ABSENT:
+				blocked_config++; break;
+			case CANARY_BLOCKED_REASON_SETUP_BROKEN:
+				blocked_broken++; break;
+			case CANARY_BLOCKED_REASON_NO_OUTER_BRACKET:
+				blocked_nobracket++; break;
+			case CANARY_BLOCKED_REASON_NONE:
+				/* Should never happen -- every CONFIG_BLOCKED
+				 * assignment sets a reason.  Fall through so an
+				 * unset field still counts in the total blocked
+				 * tally, just not in any subreason bucket. */
+				break;
+			}
+			break;
 		}
 	}
 
-	output(0, "canary queue: %u dormant, %u canarying, %u promoted, %u demoted, %u config-blocked (total=%u)\n",
-		dormant, canarying, promoted, demoted, blocked, total);
+	output(0, "canary queue: %u dormant, %u canarying, %u promoted, %u demoted, %u config-blocked [config-absent=%u setup-broken=%u no-outer-bracket=%u] (total=%u)\n",
+		dormant, canarying, promoted, demoted, blocked,
+		blocked_config, blocked_broken, blocked_nobracket, total);
 
 	/* When the fleet has any non-dedicated random children (i.e.
 	 * max_children > alt_op_children), those children's snapshots
