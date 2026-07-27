@@ -58,6 +58,19 @@
  * reap because their OBJ_LOCAL destructor is also skipped on SIGKILL. */
 #define MAX_FUZZ_SEM_IDS 128
 
+/* Picker-context axis: identifies which caller-context stamped the
+ * current pick.  Baseline runs use PICKER_CTX_INIT exclusively; the
+ * axis exists so a future user-namespace helper can distinguish its
+ * own picks from the default init-user context without widening any
+ * per-arm storage.  Owner-only field, stamped at child init and (for
+ * the baseline) never mutated -- introduced as infrastructure for the
+ * per-context storage split that follows. */
+enum picker_context {
+	PICKER_CTX_INIT		= 0,
+	PICKER_CTX_USERNS	= 1,
+	PICKER_NCTX,
+};
+
 struct childdata {
 	/* ---- Hot leading cacheline (64 bytes) ---- */
 
@@ -231,6 +244,16 @@ struct childdata {
 	 * (who bypass the stamp write entirely) and for any pre-first-pick
 	 * reads.  Owner-only field, no cross-process coherence needed. */
 	int strategy_at_pick;
+
+	/* Picker-context stamp paired with strategy_at_pick.  Records
+	 * which caller-context the current pick was made under so
+	 * downstream attribution can key per-arm state on (context_id,
+	 * strategy_at_pick).  Written once at child init from
+	 * clean_childdata; the baseline runs with PICKER_CTX_INIT on
+	 * every pick, so the field is byte-identical to a would-be
+	 * zero-initialised slot and no hot-path reader touches it yet.
+	 * Owner-only, no cross-process coherence needed. */
+	enum picker_context context_id;
 
 	/* FD leak instrumentation: count fds created and closed by
 	 * this child's syscalls, with per-group breakdown.

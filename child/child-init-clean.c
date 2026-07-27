@@ -314,6 +314,12 @@ void clean_childdata(struct childdata *child)
 	 * stamp read for clarity. */
 	child->strategy_at_pick = -1;
 
+	/* Baseline runs pick under the init-user context on every call;
+	 * the axis exists as infrastructure for a follow-up that keys
+	 * per-arm state on (context_id, strategy_at_pick).  No hot-path
+	 * site reads this field yet, so the stamp is a pure-add. */
+	child->context_id = PICKER_CTX_INIT;
+
 	/* Pair with the per-call top-of-set_syscall_nr() reset that gates
 	 * non-frontier strategy picks out of the post-call attribution.  A
 	 * fresh slot occupant must start from NONE so the first post-call
