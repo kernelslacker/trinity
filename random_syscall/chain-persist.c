@@ -40,6 +40,7 @@
 #include "kcov.h"
 #include "minicorpus.h"
 #include "params.h"
+#include "persist-envelope.h"
 #include "persist-util.h"
 #include "random.h"
 #include "rnd.h"
@@ -222,6 +223,15 @@ bool chain_corpus_save_file(const char *path)
 		return false;
 	}
 
+	{
+		struct trinity_persist_envelope env;
+
+		persist_envelope_init(&env, PERSIST_CHAIN,
+				      CHAIN_CORPUS_FILE_VERSION, 0, 0);
+		if (write_all(fd, &env, sizeof(env)) < 0)
+			goto fail;
+	}
+
 	if (write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
 
@@ -349,6 +359,26 @@ bool chain_corpus_load_file(const char *path,
 	fd = open(path, O_RDONLY);
 	if (fd < 0)
 		return false;
+
+	{
+		struct trinity_persist_envelope env;
+		ssize_t en;
+
+		en = read_all(fd, &env, sizeof(env));
+		if (en != (ssize_t)sizeof(env)) {
+			(void)close(fd);
+			return false;
+		}
+		if (!persist_envelope_validate(&env, PERSIST_CHAIN, path)) {
+			(void)close(fd);
+			return false;
+		}
+		if (!persist_envelope_check_generation(&env, PERSIST_CHAIN,
+						       path)) {
+			(void)close(fd);
+			return false;
+		}
+	}
 
 	hn = read_all(fd, &hdr, sizeof(hdr));
 	if (hn != (ssize_t)sizeof(hdr)) {
