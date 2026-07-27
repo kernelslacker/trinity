@@ -35,6 +35,7 @@
 
 #include "blob_corpus.h"
 #include "blob_mutator.h"
+#include "blob_mutator-internal.h"
 #include "child.h"
 #include "child-api.h"
 #include "cmp_hints.h"
@@ -50,27 +51,6 @@
 enum blob_mutator_mode blob_mutator_mode = BLOB_MUTATOR_OFF;
 
 bool blob_ab_mode = false;
-
-/*
- * Pick one bounded byte position inside [0, len).  Returns 0 when
- * len == 0 (caller already gates on len, but the guard keeps a future
- * caller from tripping the rnd_modulo_u32(0) early return into a
- * silent always-zero position).
- */
-static size_t pick_pos(size_t len)
-{
-	if (len == 0)
-		return 0;
-	/*
-	 * rnd_modulo_u32 takes a u32 bound; size_t can be wider but
-	 * trinity ARG_BUF_SIZED sizes top out around 64 KiB so the
-	 * cast is loss-free in practice.  Clamp to UINT32_MAX
-	 * defensively in case a future caller passes a larger len.
-	 */
-	if (len > UINT32_MAX)
-		return (size_t) rnd_modulo_u32(UINT32_MAX);
-	return (size_t) rnd_modulo_u32((uint32_t) len);
-}
 
 /* HAVOC arm: flip exactly one bit somewhere in [0, len). */
 static void havoc_bit_flip(unsigned char *buf, size_t len)
@@ -160,15 +140,6 @@ static void havoc_set_interesting(unsigned char *buf, size_t len,
 	}
 	}
 }
-
-/*
- * Cap on the run length of the block-scoped HAVOC arms (memset run,
- * splice copy, region swap).  Kept small so total worst-case bytes
- * touched per blob_fill() stays O(BLOB_HAVOC_MAX_OPS *
- * BLOB_HAVOC_BLOCK_MAX) -- 64 * 64 = 4 KiB, comfortably below any
- * ARG_BUF_SIZED allocation.  Bounded independent of len.
- */
-#define BLOB_HAVOC_BLOCK_MAX	64u
 
 /*
  * HAVOC arm: add or subtract a small magnitude (1..35) to a byte /
@@ -565,140 +536,6 @@ static unsigned int blob_havoc(unsigned char *buf, size_t len,
 }
 
 /*
- * Well-known FS / binary-format header magics that a kernel parser
- * checks BEFORE the KCOV_TRACE_CMP-instrumented compare in the deeper
- * arm (ext4 / XFS / BTRFS / squashfs super-block sanity, ELF eident,
- * gzip member header).  The learned cmp_hints pool cannot bootstrap
- * these: the pre-parser gate rejects the buffer and the instrumented
- * compare downstream is never reached, so no learned constant ever
- * flows back into the pool for the arm to draw from.
- *
- * All entries are stored so that a little-endian splat of value at
- * width bytes reproduces the on-disk byte sequence the kernel checks
- * -- values for headers that are big-endian on disk (XFS) are pre-
- * byteswapped in the table so the same LE splat helper in
- * blob_cmpdict() consumes the entry unchanged.  Widths are restricted
- * to {1, 2, 4, 8} to fit that helper without a new byte-path.
- */
-struct blob_static_magic {
-	uint64_t value;
-	unsigned int width;
-};
-
-static const struct blob_static_magic blob_static_magics[] = {
-	/* EXT2/3/4 s_magic (include/uapi/linux/magic.h) -- LE on disk. */
-	{ 0xEF53ULL,             2 },
-	/* XFS_SB_MAGIC "XFSB" (fs/xfs/libxfs/xfs_format.h) -- big-endian
-	 * on disk; byteswapped here so an LE splat writes the on-disk
-	 * bytes 0x58 0x46 0x53 0x42. */
-	{ 0x42534658ULL,         4 },
-	/* BTRFS_MAGIC "_BHRfS_M" (include/uapi/linux/btrfs_tree.h) --
-	 * LE splat writes 0x5F 0x42 0x48 0x52 0x66 0x53 0x5F 0x4D. */
-	{ 0x4D5F53665248425FULL, 8 },
-	/* SQUASHFS_MAGIC "hsqs" (include/uapi/linux/magic.h) -- LE. */
-	{ 0x73717368ULL,         4 },
-	/* ELF eident (include/uapi/linux/elf.h ELFMAG) -- LE splat writes
-	 * 0x7f 'E' 'L' 'F'. */
-	{ 0x464C457FULL,         4 },
-	/* gzip member header (RFC 1952) -- LE splat writes 0x1f 0x8b. */
-	{ 0x8B1FULL,             2 },
-};
-
-/*
- * Splat-form arms drawn per iteration inside the CMPDICT loop.  The
- * majority draw stays plain little-endian; the three transform arms
- * are additive coverage for the {LE-only, exact-value} blind spot the
- * baseline splat has:
- *
- *   BE          -- byte-reverse to width.  The heavy netlink / socket
- *                  / on-wire surface trinity fuzzes checks big-endian
- *                  fields (family/version u16, port u16, netlink
- *                  attribute headers), so a raw LE splat of an ORed-
- *                  in-from-the-cmp-pool constant can never satisfy a
- *                  BE compare.
- *   PLUS_ONE    -- (value + 1) at width, wrapping.  Off-by-one over
- *                  a length/size/offset constant is a well-known
- *                  boundary that the exact splat misses by
- *                  construction.
- *   MINUS_ONE   -- (value - 1) at width, wrapping.  Symmetric
- *                  boundary neighbour; on unsigned constants that
- *                  hit zero this wraps to the width-full UINT_MAX
- *                  which is itself an interesting boundary value.
- *
- * A width-1 BE splat is arithmetically the same as the LE-plain
- * splat; it is still selected and still bumps the transform counter
- * so the arm-selection distribution stays observable.
- */
-enum blob_splat_form {
-	BLOB_SPLAT_LE_PLAIN,
-	BLOB_SPLAT_BE,
-	BLOB_SPLAT_PLUS_ONE,
-	BLOB_SPLAT_MINUS_ONE,
-};
-
-/*
- * Draw one splat form for this iteration.  Eight-slot roll keeps
- * plain LE the majority arm (5/8 = 62.5%) with the three transform
- * arms sharing the remaining 3/8 (12.5% each).  The LE-plain slot
- * count is a deliberate choice: transforms are additive coverage,
- * not a replacement, and the well-known-magic table entries in
- * blob_static_magics[] are curated to satisfy the on-disk check
- * under an LE splat -- shifting the majority away from plain would
- * regress the static-magic hit-rate for a marginal gain elsewhere.
- */
-static enum blob_splat_form pick_splat_form(void)
-{
-	switch (rnd_modulo_u32(8)) {
-	case 5:  return BLOB_SPLAT_BE;
-	case 6:  return BLOB_SPLAT_PLUS_ONE;
-	case 7:  return BLOB_SPLAT_MINUS_ONE;
-	default: return BLOB_SPLAT_LE_PLAIN;
-	}
-}
-
-/*
- * Width-bounded mask so ±1 arithmetic wraps in the operand size and
- * the BE arm ignores the upper bytes of an over-wide hint.  Width is
- * always one of {1, 2, 4, 8} on this path; width == 8 dodges the
- * 1<<64 undefined shift by returning all-ones directly.
- */
-static uint64_t splat_width_mask(unsigned int width)
-{
-	if (width >= 8)
-		return ~(uint64_t) 0;
-	return (((uint64_t) 1) << (width * 8u)) - 1u;
-}
-
-/* Byte-reverse the low `width` bytes of v; upper bytes are dropped. */
-static uint64_t splat_bswap(uint64_t v, unsigned int width)
-{
-	switch (width) {
-	case 2:  return (uint64_t) __builtin_bswap16((uint16_t) v);
-	case 4:  return (uint64_t) __builtin_bswap32((uint32_t) v);
-	case 8:  return __builtin_bswap64(v);
-	default: return v & 0xffu;
-	}
-}
-
-static uint64_t apply_splat_form(uint64_t v, unsigned int width,
-				 enum blob_splat_form form)
-{
-	uint64_t mask = splat_width_mask(width);
-
-	switch (form) {
-	case BLOB_SPLAT_BE:
-		return splat_bswap(v & mask, width);
-	case BLOB_SPLAT_PLUS_ONE:
-		return (v + 1u) & mask;
-	case BLOB_SPLAT_MINUS_ONE:
-		return (v - 1u) & mask;
-	case BLOB_SPLAT_LE_PLAIN:
-	default:
-		return v & mask;
-	}
-}
-
-/*
  * CMPDICT arm: splat one bounded cmp-source into the buffer per
  * iteration, at a random offset.  Insert count is drawn from
  * [1, BLOB_CMPDICT_MAX_INSERTS] so the worst case is bounded
@@ -783,7 +620,7 @@ static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 		if (rnd_u32() & 1u) {
 			const struct blob_static_magic *m =
 				&blob_static_magics[rnd_modulo_u32(
-					ARRAY_SIZE(blob_static_magics))];
+					(uint32_t) blob_static_magics_count)];
 
 			if (m->width <= len) {
 				hint = (unsigned long) m->value;
