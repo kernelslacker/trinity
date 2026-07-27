@@ -506,7 +506,7 @@ bool recipe_openat2_leak_combos(struct iour_recipe_state *s, bool *unsupported _
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct iour_open_how how;
-	static const char tmp_dir[]   = "/tmp";
+	const char *tmp_dir = trinity_tmpdir_abs();
 	static const char dev_null[]  = "/dev/null";
 	static const char etc_passwd[] = "/etc/passwd";
 	const char *path;
