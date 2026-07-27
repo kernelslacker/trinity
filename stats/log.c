@@ -118,10 +118,13 @@ void stats_log_close(void)
  * Per-syscall timeseries log (--stats side-effect).
  *
  * When --stats is passed, append one JSON-Lines record per print_stats()
- * window to stats-timeseries-<epoch>.jsonl in the operator's launch CWD
- * (opened from main_init() before change_tmp_dir(), mirroring the
- * --stats-log-file path-resolution rule).  Each line carries the
- * current op_count, the parent's distinct-edge total, and a per-syscall
+ * window to stats-timeseries-<epoch>-p<pid>-<mono_ns>.jsonl in the
+ * operator's launch CWD (opened from main_init() before change_tmp_dir(),
+ * mirroring the --stats-log-file path-resolution rule).  The pid and
+ * CLOCK_MONOTONIC-ns tail keep the name unique when two runs share a
+ * wall-clock second or the wall clock steps backwards under NTP.
+ * Each line carries the current op_count, the parent's distinct-edge
+ * total, and a per-syscall
  * {nr,edges,calls} array over enabled syscalls.  The per-syscall
  * "edges" field is bucket_bits_real (the same real edge metric the
  * full --stats dump reports per syscall), not the productive-call
@@ -138,17 +141,28 @@ static FILE *stats_timeseries_fp = NULL;
 
 void stats_timeseries_open(void)
 {
-	char path[64];
+	char path[96];
 	time_t now;
 
 	if (show_stats == false)
 		return;
 
+	/* Seconds-granularity time(NULL) alone collides when two runs land in
+	 * the same CWD within one wall-clock second, and CLOCK_REALTIME can
+	 * step backwards under NTP -- either interleaves two runs' JSONL
+	 * records into one file and corrupts the stream.  Fold in the pid and
+	 * a CLOCK_MONOTONIC-ns tail (immune to wall-clock steps) so the name
+	 * is unique per opener even under a REALTIME step.  Open O_CLOEXEC
+	 * ('e' mode) so the child fuzzer cannot reach the fd numerically
+	 * after any exec path -- belt-and-braces with the fork-time drop in
+	 * stats_timeseries_drop_in_child(). */
 	now = time(NULL);
 	snprintf(path, sizeof(path),
-		 "stats-timeseries-%lld.jsonl", (long long)now);
+		 "stats-timeseries-%lld-p%d-%llu.jsonl",
+		 (long long)now, (int)mypid(),
+		 (unsigned long long)mono_ns());
 
-	stats_timeseries_fp = fopen(path, "a");
+	stats_timeseries_fp = fopen(path, "ae");
 	if (stats_timeseries_fp == NULL) {
 		outputerr("failed to open stats timeseries file %s: %s\n",
 			  path, strerror(errno));
