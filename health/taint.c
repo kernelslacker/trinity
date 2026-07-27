@@ -13,39 +13,71 @@ int kernel_taint_initial = 0;
 
 static bool taint_available = false;
 
+/*
+ * Parent-side cached fd for /proc/sys/kernel/tainted.  The parent
+ * doesn't fuzz its own fd table, so a persistent fd here is safe
+ * against the fd-reuse race that killed the earlier startup cache
+ * (children now use their own per-child fd via read_tainted_mask()
+ * and never touch this static).  Reused across get_taint() calls to
+ * avoid a per-call open/read/close on the panic-check hot path.
+ */
+static int tainted_fd_cached = -1;
+
+void close_parent_tainted_fd(void)
+{
+	if (tainted_fd_cached != -1) {
+		close(tainted_fd_cached);
+		tainted_fd_cached = -1;
+	}
+}
+
 int get_taint(void)
 {
-	int fd, ret = 0;
 	char buffer[11];
+	ssize_t n;
+	int retried = 0;
 
 	if (!taint_available)
 		return 0;
 
-	fd = open("/proc/sys/kernel/tainted", O_RDONLY | O_CLOEXEC);
-	if (fd < 0)
+reopen:
+	if (tainted_fd_cached == -1) {
+		int fd = open("/proc/sys/kernel/tainted", O_RDONLY | O_CLOEXEC);
+		if (fd < 0)
+			return 0;
+		tainted_fd_cached = fd;
+	}
+
+	if (lseek(tainted_fd_cached, 0, SEEK_SET) == (off_t) -1) {
+		if (errno == EBADF && !retried) {
+			tainted_fd_cached = -1;
+			retried = 1;
+			goto reopen;
+		}
 		return 0;
+	}
 
 	buffer[10] = 0;
+	n = read(tainted_fd_cached, buffer, 10);
+	if (n < 0 && errno == EBADF && !retried) {
+		tainted_fd_cached = -1;
+		retried = 1;
+		goto reopen;
+	}
+	if (n <= 0)
+		return 0;
 
-	ret = read(fd, buffer, 10);
-
-	if (ret > 0) {
+	{
 		char *endptr;
 		long val;
 
-		buffer[ret] = '\0';
+		buffer[n] = '\0';
 		errno = 0;
 		val = strtol(buffer, &endptr, 10);
 		if (errno != 0 || endptr == buffer)
-			ret = 0;
-		else
-			ret = (int)val;
-	} else {
-		ret = 0;
+			return 0;
+		return (int)val;
 	}
-
-	close(fd);
-	return ret;
 }
 
 static bool became_tainted = false;

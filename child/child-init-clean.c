@@ -52,6 +52,7 @@
 #include "stats.h"
 #include "stats_ring.h"
 #include "syscall.h"
+#include "taint.h"
 #include "trinity.h"	// ARRAY_SIZE
 #include "writer-watch.h"
 #include "uid.h"
@@ -213,6 +214,15 @@ unsigned long read_tainted_mask(int fd)
 void open_tainted_fd(struct childdata *child)
 {
 	int fd;
+
+	/* Release the parent's cached tainted fd inherited via fork.
+	 * The child's own get_taint() calls (from is_tainted() in the
+	 * syscall-exec hot path) would otherwise read through that
+	 * inherited fd number, which the child's own close()/dup2()
+	 * fuzzing can rewire to point at an unrelated file — exactly
+	 * the fd-reuse false-taint race that killed the original
+	 * startup-cache attempt. */
+	close_parent_tainted_fd();
 
 	fd = open("/proc/sys/kernel/tainted", O_RDONLY | O_CLOEXEC);
 	if (fd == -1) {
