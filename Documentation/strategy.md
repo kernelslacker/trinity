@@ -812,3 +812,58 @@ specific (we can see CMP signal still arriving while PC has gone cold)
 and `SINGLE_GROUP_DOMINANT` is the most general (one group accounting
 for `>70%` of edges is informative but compatible with several
 finer-grained explanations).
+
+## --strategy
+
+Arm-selection POLICY for the multi-strategy rotation (NOT a specific
+arm).  The set of arms is fixed
+(`heuristic`, `random`, `coverage-frontier`); this flag picks how the
+rotation chooses between them.
+
+- `bandit` / `ucb1` (default): UCB1 bandit picker consumes the
+  per-strategy edge-attribution counters to weight arm selection
+  toward the arm currently lifting the most edges.
+- `round-robin` / `rr`: fixed round-robin over the arms every
+  `STRATEGY_WINDOW` ops.
+
+## --explorer-children
+
+Reserve `N` children to always run `STRATEGY_RANDOM` as a
+strategy-independent explorer pool.  The explorer pool is
+`STRATEGY_RANDOM` on every dispatch regardless of what the
+bandit / round-robin picker has selected for the fleet -- it
+guarantees a floor on random-arm coverage so an arm-selection policy
+that starves `STRATEGY_RANDOM` cannot flatten the picker's
+exploratory tail.
+
+Default: `max_children/4` under `--strategy=bandit`, `0` otherwise.
+Maximum: `max_children/2`.  Works in any picker mode; non-bandit
+modes get no explorer pool unless this is set.
+
+## --bandit-reward-edge-count
+
+Blended edge-count secondary reward for the UCB1 bandit.  The
+default UCB1 reward is call-count plus a weighted CMP-novelty term
+plus a transition-reward term; this row folds in the raw per-pull
+`pc_edge_count` so the bandit learns from real bucket-edge yield
+alongside the call-count headline.
+
+- `off`: byte-identical to the pre-knob baseline -- `edge_count_term`
+  is not computed, no shadow counter bumps, and
+  `bandit_reward_calls[]` stays call-count + weighted CMP-novelty +
+  `trans_term`.
+- `shadow-only`: compute
+  `edge_count_term = pc_edge_count / EDGE_COUNT_BANDIT_REWARD_WEIGHT_RECIPROCAL`
+  and bump the `bandit_edge_count_reward_added` counter on every
+  non-forced window where the term is non-zero, but do NOT fold the
+  term into the ucb1 total -- selection stays byte-identical to
+  `off`; the counter surfaces how often `combined` would move the
+  reward.
+- `combined`: fold `edge_count_term` into the reward total so the
+  bandit learns from real bucket-edge yield alongside the call-count
+  headline.
+
+`SR_PLATEAU_FORCE` windows are excluded from the learner path even
+under `combined`, mirroring the CMP and transition secondary reward
+terms.  Shadow-first ramp -- validate the shadow firing rate on a
+real run before promoting the mode.  Default off.

@@ -51,3 +51,74 @@ Consumed in this order before the FIFO walk over remaining dormant ops:
 8. `af_unix_scm_rights_gc_churn`
 9. `userns_fuzzer`
 10. `sock_diag_walker`
+
+## --alt-op-children
+
+Reserve `N` children to run dedicated alt ops
+(`mmap_lifecycle`, `mprotect_split`, ...) round-robin instead of
+mixing them at 1% in every child.  Alt ops that need a stable per-op
+address space (mmap/mprotect churn) get concentrated dispatch on
+their reserved children; the rest of the fleet stays free to focus
+on the random syscall picker.
+
+Default: `max(2, --children/8)`.
+
+## --canary-seed
+
+Override the built-in priority seed list.  Accepts a comma-separated
+list of childop names; names match `alt_op_name`
+(e.g. `genetlink_fuzzer,bpf_lifecycle`).  Unknown names abort
+startup.  Use this when a targeted run needs a specific dormant op
+promoted first.
+
+## --canary-slots
+
+Reserve `N` slots from the front of `--alt-op-children` to run the
+dormant-op canary queue.  Default: `min(alt-op-children, 2)` when
+unset.  Clamped to `min(N, alt_op_children)`; `N=0` disables the
+queue identically to `--no-canary-queue`.
+
+## --canary-window
+
+Invocations of the active canary op per window.  Counted against the
+per-op invocation counter, not the fleet-wide op count, so window
+size is independent of `-C` and `--canary-slots`.  Lower windows are
+too noisy to promote on; higher windows let a useless op squat a
+slot for too long.  Default 10000, range 1000..1000000.
+
+## --no-canary-queue
+
+Disable the dormant-childop canary queue entirely.  The dormant gate
+is consulted as a static compile-time vector and no canary slots are
+reserved.  Use this to revert the canary machinery off completely
+for A/B comparisons against a build without the queue.
+
+## --childop-kcov-attribution
+
+Per-childop KCOV attribution mode.  Controls whether alt-op edges
+are attributed to the per-childop `edges_clean` counter (the signal
+`adapt_budget` and the canary queue consume) or only to the
+diagnostic `edges_discovered` global-delta comparator.
+
+- `off`: no bracketing; `childop_edges_clean` stays zero.  Budget
+  multipliers stay at unity and canary windows always demote on
+  `zero_edges`.
+- `dual` (default): bracket every eligible alt-op and publish the
+  per-call edge delta to `childop_edges_clean` -- `adapt_budget` and
+  the canary queue consume this clean signal; the global-delta path
+  keeps writing `childop_edges_discovered` as a diagnostic
+  comparator.
+- `on`: reserved; identical to `dual` until the discovered counter
+  is retired.
+
+## --fork-pressure-drain
+
+Under sustained `fork()` failure (`>=100` consecutive
+`spawn_child` failures), suppress canary picks of pid-heavy ops
+(`pidfd_storm`, `qrtr_bind_race`, `pfkey_spd_walk`,
+`l2tp_ifname_race`, `statmount_idmap_overflow`, `sysfs_string_race`)
+for 30 s so the canary picker stops piling new fork demand on a
+parent already losing the spawn race.
+
+`fork_storm` is always skipped via the risky-defer set (independent
+of this flag).  Default off; opt-in only.

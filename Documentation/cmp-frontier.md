@@ -103,3 +103,105 @@ noise spikes and against syscalls the CMP-hint pipeline has yet to
 touch.  The saturating clamp at `FRONTIER_COLD_SCALE` applies to
 the final `signal * SIGNAL_SCALE`, so the bonus never pushes past
 the same cap the inserts-only weight already respected.
+
+## --cmp-shared-tier
+
+Fleet-wide shared `cmp_ip` tier rollout mode.  The shared tier is a
+cross-syscall pool of CMP IPs seen at least once anywhere in the
+fleet; it exists so a syscall's durable per-nr pool can be warm-seeded
+at cold-miss time by values another syscall has already learned.  An
+entry-path filter (`distinct_nr_count > CMP_SHARED_TIER_ENTRY_PATH_NR_MAX`)
+excludes IPs that fire under too many syscalls to be a useful
+warm-start seed -- those are shared kernel entry frames, not
+syscall-specific.
+
+- `off`: both the collect-side insert and the get-side shadow probe
+  short-circuit BEFORE any shared-tier shm access; every
+  `cmp_shared_tier_*` counter stays at zero, and a fixed-seed
+  `--dry-run` pick stream is bit-for-bit identical to a build before
+  the shared tier landed.
+- `shadow`: populate the tier at warm-load and on every fresh
+  `pool_add_locked` success, and on every `cmp_hints_try_get_ex`
+  cold-miss return -- durable per-nr pool empty on the requested
+  `(nr, do32)` and the recent-tier pre-pass did not serve -- bump
+  `cmp_shared_tier_shadow_warmstart_eligible` when the tier has at
+  least one non-entry-path IP available to seed from.  The probe
+  does NOT read or return a tier value, does NOT consume RNG, and
+  does NOT change what `try_get` returns.
+  `cmp_shared_tier_shadow_dedup_supplied` captures the cross-nr
+  redundant-learn opportunity size.
+- `combined`: LIVE cold-miss serve on top of the shadow probe.  On
+  every `cmp_hints_try_get_ex` cold miss -- durable per-nr pool empty
+  on the requested `(nr, do32)` AND the recent-tier pre-pass returned
+  MISS -- the shadow probe fires as under `shadow` AND
+  `cmp_shared_tier_try_serve_cold_miss` consumes RNG
+  (`ONE_IN(CMP_SHARED_TIER_SERVE_DICE)` budget gate plus an
+  `rnd_modulo_u32` random-start bucket walk) to elect an occupied
+  non-entry-path shared-tier bucket and return that value as the
+  `try_get` hit, altering the live pick.  The stash sets
+  `served_from_shared=1` so the credit drain routes the PC outcome to
+  the shared-tier lane only and a shared-served value NEVER becomes
+  native pool evidence.
+
+NOT an inert / RESERVED control tier -- an operator running
+`combined` as an A/B control against `off` or `shadow` will see live
+arg mutation on cold misses.
+
+Validate the
+`(shadow_dedup_supplied / cmp_hints_unique_inserts)` cross-nr
+redundancy rate and the
+`(shadow_warmstart_eligible / cold-miss population)` opportunity
+size under `shadow`, and use the shared-tier lane wins/misses
+counters under `combined` to gauge whether served values earn their
+consumption.
+
+## --childop-cmp-harvest
+
+Producer side of the per-childop CMP pool.  Open a per-childop
+`KCOV_TRACE_CMP` bracket on CMP-mode children at the `child.c`
+childop dispatch gate; childop syscalls routed through
+`trinity_cmp_syscall` harvest their CMP operands into the QUARANTINED
+`childop_recent_pools[nr][do32]` lane (non-persisted; does NOT evict
+the durable per-syscall cmp pool).
+
+- `off`: the bracket is never opened; `trinity_cmp_syscall` is a
+  no-op wrapper around `trinity_raw_syscall`; every
+  `childop_cmp_*` shadow counter stays at zero -- the childop
+  dispatch surface is byte-identical to a build without this knob.
+- `on`: the bracket opens on every CMP-mode child whose dispatch
+  reaches the existing `op_uses_outer_bracket` gate; honour the §3.2
+  all-routed invariant on any childop migrated to
+  `trinity_cmp_syscall`.
+
+Per-childop migration to the wrapper is a separate per-op step
+earned by the conversion-chain metrics; the OFF default ships the
+harvest path behaviour-neutral.  Default off.
+
+## --childop-cmp-consume
+
+Consumer side of the per-childop CMP pool.  Enable the SHADOW
+consume-side resolver `childop_cmp_value()` at childop field sites
+(rxrpc pilot: `kver` / `security_index` / `ticket_length` / `toklen`
+/ `tktlen` / `sec_ix` / `enctype` in
+`childops/net/rxrpc-key-install.c`).
+
+- `off`: `childop_cmp_value` returns the caller's rng fallback
+  verbatim before any `cmp_hints_try_get_ex` probe; every
+  `childop_cmp_consume_*` counter in `kcov_shm` stays at zero and
+  the field-site pick stream is byte-for-byte identical to a build
+  without this knob.
+- `on`: the resolver probes the durable per-nr pool via
+  `cmp_hints_try_get_ex` and bumps `_would_pick` / `_would_miss` /
+  `_would_value_differs` on the outcome, but STILL returns the
+  caller's rng fallback -- no arg is changed and no downstream
+  behaviour differs.
+
+Independent of `--childop-cmp-harvest`: the two knobs gate
+producer-side and consumer-side of the same childop CMP pool, and
+the pool is shared, so `consume` can bump `_would_pick` against
+warm-started / non-childop entries even with `harvest` OFF.
+
+The conversion-chain counters (`_candidate_accepted` /
+`_arg_changed` / `_outcome_changed` / `_new_cov`) ship declared but
+never bumped in this build; C3 / C4 slices fill them in once the
+shadow readout justifies live consume.  Default off.

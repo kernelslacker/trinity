@@ -218,3 +218,73 @@ per-arm denominator; a per-arm distinct-edge ratio is then
 
 versus the same ratio for arm A -- the shadow success criterion is
 arm-B >= arm-A.
+
+## --kcov-trace-size
+
+Per-child KCOV PC-trace buffer size, in unsigned longs.  Must be a
+power of 2 in `[KCOV_TRACE_SIZE, KCOV_TRACE_SIZE_MAX]`
+(default `KCOV_TRACE_SIZE = 262144 longs = 2 MB` on 64-bit; maximum
+`4M longs = 32 MB`).
+
+A/B knob for testing whether the hot syscalls
+(`mincore` / `mlock` / `writev` / `shmget` / `shmat`) that today
+saturate `trace_buf[0]` at `KCOV_TRACE_SIZE-1` are dropping real tail
+edges.  Default value is byte-identical to a build without this
+flag.
+
+## --frontier-noise-sample
+
+Shadow-only per-syscall clean-vs-noisy attribution sampler.  With
+`N > 0`, every Nth per-syscall enable/disable bracket in
+`dispatch/syscall-exec.c` snapshots the shared `edges_found` counter
+before enable and after disable, records the delta into
+`kcov_shm->per_syscall.per_syscall_edges_noisy[nr]`, and bumps
+`per_syscall_noisy_samples[nr]` so a reader can scale the sampled
+sum back up by N to estimate the full-population global-delta
+denominator.
+
+Paired with the pre-existing `per_syscall_edges[]` clean numerator
+and the `per_syscall_edges_clean_remote[]` remote-context split
+(bumped inside `kcov_collect`'s `found_new` branch when
+`kc->remote_mode`), this feeds the per-syscall attribution-confidence
+diagnostic block in the stats dump.
+
+SHADOW-ONLY: no live picker, accept-gate, or scoring code reads any
+of the three counters -- selection stays byte-identical to a build
+with `N=0`.  With `N=0` the sampler helpers short-circuit at the
+earliest gate and issue zero `edges_found` loads on the syscall hot
+path, so the default build carries zero added cost.
+
+Suggested first fleet value: `64` (loads `~1.5%` of the time,
+statistically usable denominator over a run since each syscall fires
+thousands of times).  Cadence is a single non-atomic per-child
+increment on file-scope state in `dispatch/syscall-exec.c`; no
+cross-child shared counter is touched for the cadence itself.
+Default 0 (off).
+
+## --kcov-transition-coverage
+
+Shadow transition-coverage map mode.  Hashes consecutive canonical
+PCs into a separate 16M-slot map and surfaces a transition top-N
+beside the PC top-N in the stats dump.
+
+- `shadow` (default): compute the transition hash; no effect on
+  reward / frontier / plateau steering.
+- `off`: skip the per-PC transition hash entirely.
+
+## --kcov-transition-reward
+
+Transition-edge reward mode (requires
+`--kcov-transition-coverage=shadow`).
+
+- `combined` (default): feed the capped transition delta into
+  `frontier_cold_weight`, `bandit_record_pull`, and the frontier-edge
+  ring so syscalls producing only transitions earn frontier credit.
+- `shadow-only`: compute the transition reward and bump per-strategy
+  attribution counters in `shm->stats` but leave live picker
+  behaviour byte-identical to the pre-knob baseline -- rollback
+  path.
+- `off`: skip the reward path entirely.
+
+Remote-mode transitions are excluded from live reward under
+`combined` until ordering quality is checked.
