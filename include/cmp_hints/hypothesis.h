@@ -3,20 +3,29 @@
 #include <sys/types.h>
 
 /*
- * SHADOW typed-CMP-hypothesis store.
+ * Typed-CMP-hypothesis store.
  *
  * Layered on top of the raw cmp-hint pools above as a PARALLEL table:
  * the raw pools stay the canonical (cmp_ip, value, size) ledger and
  * the hypothesis store represents typed inferences built FROM those
  * observations.  Kept outside struct cmp_hint_entry deliberately so the
  * raw-hint lookup path stays cache-tight and so hypothesis layout churn
- * during the rewrite cannot perturb the recording-side fast path.
+ * does not perturb the recording-side fast path.
  *
- * Populated by cmp_hyp_observe() out of cmp_hints_flush_pending(); no
- * consumer reads the store and no injection path substitutes a
- * hypothesis-derived value -- the candidate-API + feedback wiring lands
- * in follow-up units.  Until then the live pick stays byte-for-byte
- * unchanged and every entry sits in CMP_HYP_STATE_OBSERVED.
+ * Live observe -> select -> inject -> feedback -> transition loop:
+ * cmp_hyp_observe() (from cmp_hints_flush_pending) populates entries
+ * in CMP_HYP_STATE_OBSERVED; cmp_hyp_would_pick_locked() (hyp-pick.c)
+ * selects the most-specific state-preferred entry at (cmp_ip, width)
+ * across the EXACT > ENUM_FAMILY > BITMASK > RANGE > BOUNDARY ladder;
+ * cmp_hyp_try_live_inject() (hyp-live.c) derives a typed replacement
+ * via cmp_hyp_derive_value() (hyp-derive.c) -- EXACT rotates
+ * {N-1, N, N+1}, ENUM_FAMILY / BITMASK / RANGE emit family / mask /
+ * bound-relative values, BOUNDARY emits the N-1 / N / N+1 / +/-2
+ * sweep classes -- and substitutes it for the raw pool value the
+ * pick step computed; cmp_hyp_credit_outcome() (hyp-credit.c) drives
+ * the OBSERVED <-> PROMOTED <-> DEMOTED transitions and the terminal
+ * DEMOTED -> RETIRED at sustained-miss threshold, which the picker
+ * and the PROMOTED-bypass channel of the inject arm route on.
  */
 enum cmp_hypothesis_kind {
 	CMP_HYP_EXACT,
@@ -31,11 +40,26 @@ enum cmp_hypothesis_kind {
 };
 
 enum cmp_hypothesis_state {
-	CMP_HYP_STATE_OBSERVED,		/* inferred from observations, never injected */
-	CMP_HYP_STATE_TESTING,		/* selected for injection / RedQueen re-exec */
-	CMP_HYP_STATE_PROMOTED,		/* produced a PC-edge / transition / corpus win */
-	CMP_HYP_STATE_DEMOTED,		/* repeatedly consumed without useful outcome */
-	CMP_HYP_STATE_RETIRED,		/* stale, invalid, or superseded */
+	CMP_HYP_STATE_OBSERVED,		/* landing state at cmp_hyp_observe(); eligible for
+					 * the picker (fallback when no PROMOTED entry
+					 * exists at (cmp_ip, width) for the same kind)
+					 * and therefore for the live inject arm --
+					 * cmp_hyp_credit_outcome() promotes on first
+					 * win, demotes after miss threshold */
+	CMP_HYP_STATE_TESTING,		/* reserved per-pick waystation.  Declared for
+					 * downstream use; the credit-side state machine
+					 * does not currently drive entries in or out of
+					 * this state (see hyp-credit.c) and the picker
+					 * treats TESTING as OBSERVED */
+	CMP_HYP_STATE_PROMOTED,		/* produced a PC-edge / transition / corpus win;
+					 * top-tier picker preference and unlocks the
+					 * PROMOTED-bypass channel in hyp-live.c */
+	CMP_HYP_STATE_DEMOTED,		/* repeatedly consumed without useful outcome;
+					 * hidden from the picker except via the
+					 * CMP_HYP_DEMOTED_RETRY_DENOM reroll that keeps
+					 * revival reachable */
+	CMP_HYP_STATE_RETIRED,		/* stale, invalid, or superseded -- terminal;
+					 * skipped by the picker */
 	CMP_HYP_STATE_NR,
 };
 
