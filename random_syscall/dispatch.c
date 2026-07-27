@@ -871,6 +871,15 @@ bool random_syscall_step(struct childdata *child,
 {
 	struct syscallrecord *rec = &child->syscall;
 	struct syscallentry *entry;
+	bool ok;
+
+	/* Untraced dispatch-shape denominator.  Bump attempts BEFORE
+	 * set_syscall_nr() so a picker-declined NR (deactivated,
+	 * missing capability, biased-consumer reject) still counts as
+	 * an attempt -- the completion counter at the tail then
+	 * surfaces the attempt/completion gap. */
+	__atomic_add_fetch(&shm->stats.syscall_dispatch.random_syscall_attempts,
+			   1, __ATOMIC_RELAXED);
 
 	if (set_syscall_nr(rec, child) == FAIL)
 		return FAIL;
@@ -889,8 +898,18 @@ bool random_syscall_step(struct childdata *child,
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
 
-	return dispatch_step(child, entry, found_new, new_cmp_out,
-			     new_transition_out);
+	ok = dispatch_step(child, entry, found_new, new_cmp_out,
+			   new_transition_out);
+
+	/* dispatch_step returning here means do_syscall() ran (regardless
+	 * of the syscall's own success/failure); count as one completed
+	 * random-syscall dispatch.  A pre-dispatch bail (set_syscall_nr
+	 * FAIL above) leaves the completion counter untouched, so the
+	 * attempts vs completions delta is the pre-dispatch reject rate. */
+	__atomic_add_fetch(&shm->stats.syscall_dispatch.random_syscall_completions,
+			   1, __ATOMIC_RELAXED);
+
+	return ok;
 }
 
 bool random_syscall(struct childdata *child)

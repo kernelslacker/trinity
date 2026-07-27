@@ -306,6 +306,43 @@ struct deferred_free_stats {
 	 * pointer that consume() approved on the falsely-blessed
 	 * re-insert.  Non-zero proves the gate is engaged. */
 	unsigned long alloc_track_refresh_consume_miss;
+
+	/* Untraced cost accounting for the mprotect brackets that
+	 * armor the three deferred-free protection regions.  Prior
+	 * strace surveys showed these brackets dominating the random-
+	 * syscall hot path (42-47% of all child syscall entries), but
+	 * ptrace scheduler interference inflates the absolute wall-
+	 * time cost so trace-derived timings cannot price a subsequent
+	 * optimization (batched RW windows, pkey_mprotect, smaller
+	 * alloc_track partition).  These counters measure the same
+	 * brackets untraced.
+	 *
+	 * Three regions, three counters each -- matched pairs of RW-
+	 * open (unlock) + RO-close (lock) calls plus the cumulative
+	 * CLOCK_MONOTONIC nanoseconds spent between them.  Both mprotect
+	 * syscalls and any userspace work performed inside the bracket
+	 * fall inside the measured window.  The ring bucket sums BOTH
+	 * the ring_control armor page (~4K) and the data ring page
+	 * (~4K); the traces already treat them as one 4K family and
+	 * enqueue paths nest the two windows, so the ns totals may
+	 * double-count overlapping periods -- that is the intended
+	 * shape (total protection-window time, not disjoint ownership).
+	 *
+	 * All bumps are RELAXED add-fetch: cumulative diagnostic, single-
+	 * writer-per-child, lost-update races tolerated.  Rendered under
+	 * the deferred_free_* periodic-counter rate slot so an operator
+	 * can watch the untraced per-second bracket rate accumulate
+	 * during a live run and quantify the mprotect cost the big
+	 * mprotect lever aims to eliminate. */
+	unsigned long alloc_track_rw_calls;
+	unsigned long alloc_track_ro_calls;
+	unsigned long alloc_track_rw_ns_total;
+	unsigned long inflight_rw_calls;
+	unsigned long inflight_ro_calls;
+	unsigned long inflight_rw_ns_total;
+	unsigned long ring_rw_calls;
+	unsigned long ring_ro_calls;
+	unsigned long ring_rw_ns_total;
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_DEFERRED_FREE_H */

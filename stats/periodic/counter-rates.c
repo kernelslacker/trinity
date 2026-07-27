@@ -426,6 +426,41 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free.alloc_track_refresh_unverified_skip) },
 	{ "alloc_track_refresh_consume_miss",
 	  offsetof(struct stats_s, deferred_free.alloc_track_refresh_consume_miss) },
+	/* Untraced protection-region mprotect-bracket cost counters.
+	 * Three regions x (rw-open + ro-close + ns-held-rw) = 9 rows.
+	 * Non-zero rate lines quantify how much of the deferred-free
+	 * hot path the mprotect brackets consume without ptrace
+	 * distortion; the ns-per-call ratio is derivable from the
+	 * ns-total delta divided by the rw-open-call delta.  See
+	 * stats/subsys/deferred_free.h for the bucket semantics. */
+	{ "deferred_free_alloc_track_rw_calls",
+	  offsetof(struct stats_s, deferred_free.alloc_track_rw_calls) },
+	{ "deferred_free_alloc_track_ro_calls",
+	  offsetof(struct stats_s, deferred_free.alloc_track_ro_calls) },
+	{ "deferred_free_alloc_track_rw_ns_total",
+	  offsetof(struct stats_s, deferred_free.alloc_track_rw_ns_total) },
+	{ "deferred_free_inflight_rw_calls",
+	  offsetof(struct stats_s, deferred_free.inflight_rw_calls) },
+	{ "deferred_free_inflight_ro_calls",
+	  offsetof(struct stats_s, deferred_free.inflight_ro_calls) },
+	{ "deferred_free_inflight_rw_ns_total",
+	  offsetof(struct stats_s, deferred_free.inflight_rw_ns_total) },
+	{ "deferred_free_ring_rw_calls",
+	  offsetof(struct stats_s, deferred_free.ring_rw_calls) },
+	{ "deferred_free_ring_ro_calls",
+	  offsetof(struct stats_s, deferred_free.ring_ro_calls) },
+	{ "deferred_free_ring_rw_ns_total",
+	  offsetof(struct stats_s, deferred_free.ring_rw_ns_total) },
+	/* Untraced random-syscall vs childop dispatch-shape counters.
+	 * See stats/subsys/syscall_dispatch.h for the bucket semantics. */
+	{ "random_syscall_attempts",
+	  offsetof(struct stats_s, syscall_dispatch.random_syscall_attempts) },
+	{ "random_syscall_completions",
+	  offsetof(struct stats_s, syscall_dispatch.random_syscall_completions) },
+	{ "childop_dispatches",
+	  offsetof(struct stats_s, syscall_dispatch.childop_dispatches) },
+	{ "childop_iterations",
+	  offsetof(struct stats_s, syscall_dispatch.childop_iterations) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, diag.pagecache_canary_corrupt_caught) },
 	{ "objpool_array_stale_caught",
