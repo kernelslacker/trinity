@@ -160,7 +160,7 @@ frontier_spare_lane_decide(unsigned int syscallnr, bool do32);
 
 /*
  * Saturation-cooldown spare-lane helper, extracted from the silent-
- * regime accept site in random-syscall.c so the predicate, the per-
+ * regime accept site in random_syscall/pick-frontier.c so the predicate, the per-
  * arch producer-observer bitmap, and the shadow-counter bumps live in
  * one place.  No-op when frontier_saturation_cooldown_mode is OFF or
  * kcov_shm is unavailable; otherwise evaluates the windowed-plateau +
@@ -209,7 +209,7 @@ extern enum frontier_live_cooldown_mode frontier_live_cooldown_mode;
  * No-op when frontier_live_cooldown_mode is OFF or kcov_shm is
  * unavailable; SHADOW-ONLY -- never returns a value, never gates picker
  * selection; the COMBINED live divergence is a deliberate follow-up.
- * Called from the LIVE-regime miss-attribution path in random-syscall.c
+ * Called from the LIVE-regime miss-attribution path in random_syscall/strategy-accounting.c
  * (account_per_syscall_new_edges) immediately after the existing
  * frontier_live_would_skip projection so the discriminated counters
  * sit alongside the undiscriminated projection for direct comparison.
@@ -272,7 +272,7 @@ extern enum frontier_barren_demote_mode frontier_barren_demote_mode;
  * kcov_shm is unavailable; SHADOW-ONLY -- never returns a value,
  * never gates picker selection; the COMBINED sub-floor live divergence
  * is a deliberate follow-up.  Called from the silent-regime accept
- * site in random-syscall.c immediately after frontier_satcool_spare
+ * site in random_syscall/pick-frontier.c immediately after frontier_satcool_spare
  * so the two shadow projections sit alongside each other.
  */
 void frontier_barren_demote(unsigned int syscallnr, bool do32);

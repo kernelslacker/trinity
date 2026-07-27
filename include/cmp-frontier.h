@@ -1,7 +1,7 @@
 #pragma once
 
 /* --cmp-frontier: CMP-weighted alternate picker arm for the silent
- * regime of set_syscall_nr_coverage_frontier() in random-syscall.c.
+ * regime of set_syscall_nr_coverage_frontier() in random_syscall/pick-frontier.c.
  *
  * Design rationale: Documentation/cmp-frontier.md
  *

@@ -143,7 +143,7 @@ struct shm_s {
 	 *
 	 * BEHAVIOUR-NEUTRAL storage: the live picker still draws from
 	 * the flat active_syscalls*[] + expensive_accept.  These pools
-	 * are maintained but NOT read by random-syscall.c -- they are
+	 * are maintained but NOT read by random_syscall/ -- they are
 	 * the foundation for the later O(1) cost-selector phases.
 	 *
 	 * Uniarch builds only touch the un-suffixed pair; biarch builds

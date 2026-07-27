@@ -590,7 +590,7 @@ struct syscallentry {
 	/*
 	 * Cached "is this the close(2) syscall?" flag.  Resolved once from
 	 * .name at table-init time in copy_syscall_table() so the dispatch
-	 * fd-leak accounting in random-syscall.c can branch on a single
+	 * fd-leak accounting in random_syscall/strategy-accounting.c can branch on a single
 	 * byte load instead of running strcmp(entry->name, "close") on
 	 * every syscall invocation.
 	 */
@@ -629,7 +629,7 @@ struct syscallentry {
 	 * legal target for the sequence-chain executor's retval-substitute
 	 * stomp.  Resolved once from .argtype[] at table-init time in
 	 * copy_syscall_table() via compute_numeric_substitute_mask() so
-	 * apply_chain_substitution() in random-syscall.c can dispatch via a
+	 * apply_chain_substitution() in random_syscall/chain-subst.c can dispatch via a
 	 * single masked-rand + __builtin_ctz instead of re-walking the
 	 * argtype array and re-running the 23-case
 	 * argtype_accepts_numeric_substitute() switch on every chain step.

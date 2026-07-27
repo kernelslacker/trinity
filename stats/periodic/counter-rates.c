@@ -680,7 +680,7 @@ static const struct {
 	  offsetof(struct stats_s, picker_bandit.reach_band_would_boost_high) },
 	/* Observability for the adaptive expensive-syscall accept gate.
 	 * See the expensive_adaptive_* field-comment block in include/
-	 * stats.h and the expensive_accept() helper in random-syscall.c
+	 * stats.h and the expensive_accept() helper in random_syscall/pick-common.c
 	 * for the OFF / SHADOW_ONLY / COMBINED mode contract. */
 	{ "expensive_adaptive_samples",
 	  offsetof(struct stats_s, expensive_adaptive.samples) },

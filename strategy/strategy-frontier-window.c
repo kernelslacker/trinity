@@ -32,7 +32,7 @@ void frontier_window_advance(void)
 	 * was already in the slot but not yet in the cached counter -- so
 	 * the subtract wrapped negative and the cached count flipped to a
 	 * near-UINT32_MAX weight.  That bogus weight is consumed by
-	 * random-syscall.c's frontier roulette wheel; an arm-wide blow-up
+	 * random_syscall/pick-frontier.c's frontier roulette wheel; an arm-wide blow-up
 	 * either collapses the wheel onto one syscall or pushes the
 	 * rejection sampler into an effectively-uniform reject loop.
 	 *

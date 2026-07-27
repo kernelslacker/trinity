@@ -393,7 +393,7 @@ void stats_published_init(void)
  * Per-child mprotect freeze of the shm_published mirror page.  The
  * mirror is parent-write / child-read: children read fleet_op_count
  * off it on the cold path (maybe_rotate_strategy()'s rotation clock
- * in random-syscall.c and the syscalls_todo termination check in
+ * in random_syscall/strategy-accounting.c and the syscalls_todo termination check in
  * child_process()), and the parent's stats_publish_locked() inside
  * stats_ring_drain_all() is the sole writer.  The mirror-integrity
  * sample in shm_is_corrupt() (main/loop.c) already documents the

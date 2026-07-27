@@ -13,7 +13,7 @@
  * frseq per-group breakdown.
  *
  * Bespoke (non-category) RAW group.  All bumps RELAXED on shm->stats
- * from strategy-frontier.c / random-syscall.c / kcov.c; the shadow
+ * from strategy-frontier.c / random_syscall/ / kcov.c; the shadow
  * predicates are strictly observability-only (no live-path code reads
  * any of these counters).  The surrounding struct stats_s composes an
  * instance of struct frontier_stats as its "frontier" member.
@@ -763,7 +763,7 @@ struct frontier_discriminator_stats {
 	 *      promoted.
 	 *
 	 * Observability only in this commit: the predicate-evaluation
-	 * block is added inside the group_bias gate (random-syscall.c
+	 * block is added inside the group_bias gate (random_syscall/pick-heuristic.c
 	 * heuristic-arm set_syscall_nr) with NO live release wired, so
 	 * live selection stays byte-identical to today regardless of
 	 * which mode is selected.  COMBINED is reserved in the enum
@@ -820,7 +820,7 @@ struct frontier_plateau_stats {
 	unsigned long errno_decay_overlap_silent;
 
 	/* SHADOW-ONLY A/B scoring for the frontier-blend cold-weight
-	 * blend.  See the frontier_cold_weight() comment in random-syscall.c
+	 * blend.  See the frontier_cold_weight() comment in random_syscall/pick-frontier-weight.c
 	 * for the experimental formula.
 	 *
 	 * Bumped once per frontier_cold_weight() call on the

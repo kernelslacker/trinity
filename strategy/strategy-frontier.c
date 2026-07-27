@@ -197,7 +197,7 @@ void frontier_record_new_edge(unsigned int nr)
 	 * collection path is added.
 	 *
 	 * The counter and the global frontier_shadow_decay_candidates it
-	 * edge-triggers in random-syscall.c's silent-regime accept site
+	 * edge-triggers in random_syscall/pick-frontier.c's silent-regime accept site
 	 * are observability-only: no live selection or scoring code reads
 	 * them, so the reset cannot perturb the picker distribution. */
 	__atomic_store_n(
@@ -290,7 +290,7 @@ void frontier_record_new_edge(unsigned int nr)
  * silent-regime picker steers away from exactly the syscalls that are
  * still earning the post-plateau coverage.
  *
- * Caller-side gates (in random-syscall.c at the kcov_collect call
+ * Caller-side gates (in random_syscall/dispatch.c at the kcov_collect call
  * site) handle the kcov_transition_reward_mode == COMBINED and
  * !child->is_explorer and !child->kcov.remote_mode filters before
  * invoking, so this function only sees calls that should bump the

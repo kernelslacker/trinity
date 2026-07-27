@@ -14,7 +14,7 @@
  * field here -- the only effect of these writes is the counter
  * values rendered by the shutdown stats dump.  The existing live save
  * call at the producer site (minicorpus_save_with_reason in
- * random-syscall.c) is untouched: its arguments and branch shape are
+ * random_syscall/dispatch.c) is untouched: its arguments and branch shape are
  * byte-identical to the pre-row baseline, and the shadow block
  * fires immediately BEFORE it on the same gated arm.  The ordering
  * is mandatory: the live save publishes a new entry into

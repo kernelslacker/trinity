@@ -1,7 +1,7 @@
 /*
  * Credential-syscall observability oracle + flag-gated throttle.
  *
- * Companion to random-syscall.c.  Splitting the implementation out keeps
+ * Companion to random_syscall/.  Splitting the implementation out keeps
  * the cred-class enum, the name -> nr cache, and the dump-side counters
  * in a single self-contained TU so a later "expand the class set" or
  * "tune the throttle thresholds" change touches one file instead of the

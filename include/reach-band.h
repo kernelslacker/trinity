@@ -1,7 +1,7 @@
 #pragma once
 
 /* --reach-band: reach-banded adjustment for the silent-regime picker
- * weight returned by frontier_cold_weight() in random-syscall.c.
+ * weight returned by frontier_cold_weight() in random_syscall/pick-frontier-weight.c.
  *
  * Design rationale: Documentation/reach-band.md
  *

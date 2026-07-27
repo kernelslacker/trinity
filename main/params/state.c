@@ -134,7 +134,7 @@ char *stats_log_path = NULL;
 
 /*
  * Retained for compatibility; no-op.  The dispatch_step-tail RedQueen
- * re-exec consumer (random-syscall.c) now drains every staged
+ * re-exec consumer (random_syscall/dispatch.c) now drains every staged
  * reexec_pending[] entry per parent dispatch, so neither
  * REDQUEEN_PENDING_PICK_RANDOM nor REDQUEEN_PENDING_PICK_FIRST alters
  * which entries (or how many) get re-executed -- both modes drain all.

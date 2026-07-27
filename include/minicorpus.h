@@ -421,7 +421,7 @@ bool minicorpus_wp_sweep(unsigned long *bad_addr, uint64_t *bad_val);
  * the save against the PC-source bucket -- equivalent to
  * minicorpus_save_with_reason(rec, CORPUS_SAVE_REASON_PC) and kept as
  * the legacy entry point so existing call sites (the PC-edge gate in
- * random-syscall.c) don't have to change. */
+ * random_syscall/dispatch.c) don't have to change. */
 void minicorpus_save(struct syscallrecord *rec);
 
 /* Save a syscall's args into the corpus ring with the @reason that

@@ -96,7 +96,7 @@ enum kcov_transition_reward_mode {
 extern enum kcov_transition_reward_mode kcov_transition_reward_mode;
 
 /* --expensive-adaptive: adaptive accept-rate mode for the EXPENSIVE
- * early-out gate in random-syscall.c.
+ * early-out gate in random_syscall/pick-common.c.
  *
  * The static gate is `syscall_is_expensive(nr, do32) && !ONE_IN(1000)`:
  * EXPENSIVE-flagged syscalls take a fixed 999/1000 reject, so fleet
@@ -158,7 +158,7 @@ extern enum expensive_adaptive_mode expensive_adaptive_mode;
  * in strategy.c.  Declared here (rather than alongside frontier_
  * record_new_edge in include/strategy.h) because the function exists
  * solely to feed the transition-reward path: its only caller is the
- * COMBINED-mode branch in random-syscall.c, and gating the prototype
+ * COMBINED-mode branch in random_syscall/dispatch.c, and gating the prototype
  * to the same header that defines kcov_transition_reward_mode keeps
  * "who is allowed to call this" co-located with "what makes calling
  * this meaningful".  See the function body for the contract. */

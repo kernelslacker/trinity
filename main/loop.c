@@ -532,7 +532,7 @@ void reset_epoch_state(void)
 
 	/*
 	 * Strategy-rotation window-start snapshots.  maybe_rotate_strategy()
-	 * in random-syscall.c computes the window interval as
+	 * in random_syscall/strategy-accounting.c computes the window interval as
 	 *   (shm_published->fleet_op_count - shm->syscalls_at_last_switch)
 	 * with unsigned subtraction.  fleet_op_count is reset above; if we
 	 * leave syscalls_at_last_switch holding the previous epoch's final
