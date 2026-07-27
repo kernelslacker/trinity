@@ -741,6 +741,16 @@ void child_process(struct childdata *child, int childno)
 				 * the ring is aged out by childop_window_advance()
 				 * from the periodic-surface tick. */
 				childop_decay_record_wall(op, (unsigned long)ns);
+				/* Untraced dispatch-shape denominator: one
+				 * bump per alt-op op_fn call.  Parallel to
+				 * random_dispatches on the CHILD_OP_SYSCALL
+				 * branch below; unlike childop.invocations[]
+				 * this is a fleet-total scalar (no per-op
+				 * NR_CHILD_OP_TYPES fan-out) so the child
+				 * hot-path dispatch-cost model has a single
+				 * denominator per source. */
+				__atomic_add_fetch(&shm->stats.syscall_dispatch.childop_dispatches,
+						   1UL, __ATOMIC_RELAXED);
 			} else if (op == CHILD_OP_SYSCALL) {
 				__atomic_add_fetch(&shm->stats.syscall_dispatch.walltime_ns,
 						   (unsigned long)ns, __ATOMIC_RELAXED);
@@ -751,6 +761,15 @@ void child_process(struct childdata *child, int childno)
 				__atomic_add_fetch(&shm->stats.syscall_dispatch.random_dispatches,
 						   1UL, __ATOMIC_RELAXED);
 			}
+			/* Untraced outer-loop iteration denominator: bumped
+			 * once per child_process() dispatch pass regardless of
+			 * op_type or valid_op.  Pairs with the per-source
+			 * (random_dispatches / childop_dispatches) counters
+			 * above so the operator can price iterations-per-
+			 * completed-syscall and iterations-per-childop without
+			 * inferring the split from the per-op arrays. */
+			__atomic_add_fetch(&shm->stats.syscall_dispatch.childop_iterations,
+					   1UL, __ATOMIC_RELAXED);
 		}
 
 		if (watch_taint) {
