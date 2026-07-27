@@ -80,6 +80,7 @@ void maybe_rotate_strategy(void)
 	unsigned long last;
 	int prev, next;
 	int prev_reason_raw;
+	int prev_intervention_mode_raw;
 	enum strategy_selection_reason prev_reason;
 	enum strategy_selection_reason next_reason = SR_NORMAL_UCB;
 	unsigned long calls_now, calls_in_window;
@@ -146,6 +147,26 @@ void maybe_rotate_strategy(void)
 		break;
 	}
 
+	/* Latch the plateau intervention mode BEFORE select_next_strategy
+	 * publishes the next mode below.  Attribution rule: the numerator
+	 * for the just-closing window belongs to the mode that was ACTIVE
+	 * across it, i.e. the mode select_plateau_intervention_strategy
+	 * stamped when this window was entered.  Reading current before
+	 * select_next_strategy runs pins it to the closing-window mode; a
+	 * concurrent parent republish cannot shift the attribution.
+	 *
+	 * Effective-mode attribution rides for free: mode_current is stored
+	 * post-substitution at the pick site (a cold-ring FRONTIER window
+	 * degrades to UNIFORM_RANDOM there), so a degraded FRONTIER window
+	 * lands its outcomes under UNIFORM_RANDOM and matches the effective-
+	 * mode denominator bumped in the same block.
+	 *
+	 * Held as int and range-checked so a wild write into the shm field
+	 * skips the outcome update rather than corrupts adjacent arrays;
+	 * only consumed under prev_reason == SR_PLATEAU_FORCE below. */
+	prev_intervention_mode_raw = __atomic_load_n(
+		&shm->plateau_intervention_mode_current, __ATOMIC_RELAXED);
+
 	calls_now = __atomic_load_n(&shm->pc_edge_calls_by_strategy[prev],
 				    __ATOMIC_RELAXED);
 	calls_in_window = calls_now -
@@ -169,6 +190,39 @@ void maybe_rotate_strategy(void)
 	cmp_in_window = cmp_now -
 		__atomic_load_n(&shm->bandit_cmp_at_window_start,
 				__ATOMIC_RELAXED);
+
+	/* Per-PIM-mode outcome accounting (observation-only substrate).
+	 * When the just-closed window was an SR_PLATEAU_FORCE intervention,
+	 * add its deltas to the numerator arrays that pair with
+	 * plateau_intervention_mode_windows[].  Attribution uses the mode
+	 * latched at the top of the close path (see comment there), and
+	 * calls uses the raw op-count delta so the invariant
+	 *
+	 *   sum over m of plateau_intervention_mode_calls[m]
+	 *     == total fleet ops elapsed while SR_PLATEAU_FORCE was active
+	 *
+	 * holds by construction.  No dependency on bandit_record_pull's
+	 * per-arm learner exclusion of SR_PLATEAU_FORCE: mode outcomes are
+	 * a separate diagnostic surface.  RELAXED writes, single-writer
+	 * ordering piggybacks on the CAS above the same way the existing
+	 * denominator does. */
+	if (prev_reason == SR_PLATEAU_FORCE &&
+	    prev_intervention_mode_raw >= 0 &&
+	    prev_intervention_mode_raw < NR_PIM_MODES) {
+		int pm = prev_intervention_mode_raw;
+
+		__atomic_fetch_add(&shm->plateau_intervention_mode_calls[pm],
+				   syscalls_in_window, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->plateau_intervention_mode_pc_edge_calls[pm],
+			calls_in_window, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->plateau_intervention_mode_pc_edges[pm],
+			edges_in_window, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->plateau_intervention_mode_cmp_wins[pm],
+			cmp_in_window, __ATOMIC_RELAXED);
+	}
 
 	/* WARN-fires delta + chaos-cohort snapshot for the chaos-mode V2
 	 * attribution.  warn_now reads the live counter kmsg-monitor bumps

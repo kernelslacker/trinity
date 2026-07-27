@@ -607,7 +607,30 @@ struct shm_s {
 	 *   plateau_intervention_mode_windows[NR_PIM_MODES]: per-mode
 	 *     window count, bumped at the same rotation site as the mode
 	 *     selection so end-of-run analysis has an exact denominator per
-	 *     mode.
+	 *     mode.  Attributed to the EFFECTIVE mode after the cold-ring
+	 *     substitution in select_plateau_intervention_strategy (a
+	 *     PIM_COVERAGE_FRONTIER rotation that ran with empty per-syscall
+	 *     frontier rings lands in plateau_intervention_mode_windows
+	 *     [PIM_UNIFORM_RANDOM]).
+	 *   plateau_intervention_mode_calls[NR_PIM_MODES]:
+	 *   plateau_intervention_mode_pc_edge_calls[NR_PIM_MODES]:
+	 *   plateau_intervention_mode_pc_edges[NR_PIM_MODES]:
+	 *   plateau_intervention_mode_cmp_wins[NR_PIM_MODES]:
+	 *     Per-mode outcome numerators paired with the windows[] denominator
+	 *     above.  Bumped at window CLOSE in maybe_rotate_strategy from the
+	 *     already-computed per-strategy deltas, attributed to the mode
+	 *     latched from plateau_intervention_mode_current at the top of the
+	 *     close path (BEFORE select_next_strategy publishes the next mode),
+	 *     and only when the just-closed window's selection reason was
+	 *     SR_PLATEAU_FORCE.  Attribution matches the denominator: because
+	 *     mode_current is stored post-substitution at pick time, a
+	 *     degraded FRONTIER window's outcomes land under UNIFORM_RANDOM.
+	 *     _calls counts fleet ops observed during the window (same delta
+	 *     as the rotation output's syscalls=... field), _pc_edge_calls
+	 *     counts productive (>=1 new edge) calls, _pc_edges counts total
+	 *     new PC edges, _cmp_wins counts CMP novel constants exposed.
+	 *     Observation-only substrate for later plateau soft-saturation
+	 *     work; no live-policy consumer today.
 	 */
 	int plateau_intervention_mode_current;
 	unsigned long plateau_anti_prior_baseline_calls;
@@ -618,6 +641,10 @@ struct shm_s {
 	uint8_t plateau_anti_prior_accept_weight[MAX_NR_SYSCALL][PICKER_NCTX];
 	unsigned long plateau_intervention_rotation_counter;
 	unsigned long plateau_intervention_mode_windows[NR_PIM_MODES];
+	unsigned long plateau_intervention_mode_calls[NR_PIM_MODES];
+	unsigned long plateau_intervention_mode_pc_edge_calls[NR_PIM_MODES];
+	unsigned long plateau_intervention_mode_pc_edges[NR_PIM_MODES];
+	unsigned long plateau_intervention_mode_cmp_wins[NR_PIM_MODES];
 
 	/* Wall-lever shadow gate.  Identifies high-call zero-yield syscalls
 	 * during a warm-plateau window so a future live variant can reclaim
