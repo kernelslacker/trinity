@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "child.h"		/* this_child(), struct childdata */
 #include "kcov.h"
 #include "rnd.h"
 #include "shm.h"
@@ -491,11 +492,16 @@ bool plateau_anti_prior_active(void)
 
 bool plateau_anti_prior_accept(unsigned int nr)
 {
+	struct childdata *cc;
+	unsigned int ctx;
 	unsigned long baseline;
 	uint8_t weight;
 
 	if (nr >= MAX_NR_SYSCALL)
 		return true;
+
+	cc = this_child();
+	ctx = cc != NULL ? cc->context_id : PICKER_CTX_INIT;
 
 	baseline = __atomic_load_n(&shm->plateau_anti_prior_baseline_calls,
 				   __ATOMIC_RELAXED);
@@ -518,7 +524,11 @@ bool plateau_anti_prior_accept(unsigned int nr)
 	 * in plateau_anti_prior_refresh_baseline so the per-retry inner
 	 * loop in set_syscall_nr_random reduces to one relaxed load, one
 	 * modulo, and one compare. */
-	weight = __atomic_load_n(&shm->plateau_anti_prior_accept_weight[nr],
+	/* Keyed by the caller's picker-context stamp -- refresh writes
+	 * every context slice from the same summed per-nr snapshot, so
+	 * under baseline INIT-only operation the INIT slice equals the
+	 * pre-widening flat weight. */
+	weight = __atomic_load_n(&shm->plateau_anti_prior_accept_weight[nr][ctx],
 				 __ATOMIC_RELAXED);
 
 	return rnd_modulo_u32(ANTI_PRIOR_THRESHOLD_SCALE) < weight;
@@ -629,6 +639,7 @@ void plateau_anti_prior_refresh_baseline(void)
 
 		for (i = 0; i < MAX_NR_SYSCALL; i++) {
 			unsigned long calls, clamped, weight;
+			unsigned int ctx;
 
 			calls = calls_snapshot[i];
 			clamped = calls;
@@ -641,9 +652,18 @@ void plateau_anti_prior_refresh_baseline(void)
 			if (weight > ANTI_PRIOR_THRESHOLD_SCALE)
 				weight = ANTI_PRIOR_THRESHOLD_SCALE;
 
-			__atomic_store_n(
-				&shm->plateau_anti_prior_accept_weight[i],
-				(uint8_t)weight, __ATOMIC_RELAXED);
+			/* Mirror the same per-nr weight into every
+			 * picker-context slice.  The baseline / calls
+			 * inputs above are summed across contexts (via
+			 * per_syscall_calls_total()) so each context sees
+			 * the same weight.  A follow-up that computes
+			 * per-context weights (per-context call totals in
+			 * the baseline math) can peel the slices apart
+			 * without churning the reader-side layout. */
+			for (ctx = 0; ctx < PICKER_NCTX; ctx++)
+				__atomic_store_n(
+					&shm->plateau_anti_prior_accept_weight[i][ctx],
+					(uint8_t)weight, __ATOMIC_RELAXED);
 		}
 	}
 
@@ -678,6 +698,8 @@ void plateau_anti_prior_refresh_baseline(void)
 
 bool wall_lever_should_suppress_shadow(unsigned int nr)
 {
+	struct childdata *cc;
+	unsigned int ctx;
 	unsigned long baseline;
 
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
@@ -694,7 +716,13 @@ bool wall_lever_should_suppress_shadow(unsigned int nr)
 				   __ATOMIC_RELAXED);
 	if (baseline == 0)
 		return false;
-	return __atomic_load_n(&shm->wall_lever_suppress[nr],
+	cc = this_child();
+	ctx = cc != NULL ? cc->context_id : PICKER_CTX_INIT;
+	/* Keyed by the caller's picker-context stamp; wall_lever_refresh_
+	 * baseline mirrors the same suppress verdict into every context
+	 * slice so under baseline INIT-only operation this is byte-
+	 * identical to the pre-widening flat load. */
+	return __atomic_load_n(&shm->wall_lever_suppress[nr][ctx],
 			       __ATOMIC_RELAXED) != 0;
 }
 
@@ -782,13 +810,22 @@ void wall_lever_refresh_baseline(void)
 
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
 		uint8_t suppress = 0;
+		unsigned int ctx;
 
 		if (baseline > 0 &&
 		    edges_snapshot[i] == 0 &&
 		    calls_snapshot[i] >= qualify_at)
 			suppress = 1;
-		__atomic_store_n(&shm->wall_lever_suppress[i], suppress,
-				 __ATOMIC_RELAXED);
+		/* Mirror the same suppress verdict into every picker-
+		 * context slice.  The eligibility signal (calls_snapshot /
+		 * edges_snapshot) is a per-nr total summed across contexts,
+		 * so each context sees the same verdict today.  A follow-up
+		 * with per-context totals can peel the slices apart without
+		 * churning the reader-side layout. */
+		for (ctx = 0; ctx < PICKER_NCTX; ctx++)
+			__atomic_store_n(
+				&shm->wall_lever_suppress[i][ctx],
+				suppress, __ATOMIC_RELAXED);
 	}
 
 	__atomic_store_n(&shm->wall_lever_baseline_calls, baseline,

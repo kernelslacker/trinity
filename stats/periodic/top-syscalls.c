@@ -466,9 +466,18 @@ void __cold top_syscalls_periodic_dump(void)
 		cur_frontier_last_productive[i] = __atomic_load_n(
 			&shm->stats.frontier.per_syscall.last_productive_window_per_syscall[i],
 			__ATOMIC_RELAXED);
-		cur_frontier_recent_weight[i] = __atomic_load_n(
-			&shm->frontier_recent_count_cached[i],
-			__ATOMIC_RELAXED);
+		{
+			/* Sum every picker-context slice: this periodic
+			 * top-syscalls block reports a per-nr run-wide
+			 * frontier weight. */
+			unsigned int ctx;
+
+			cur_frontier_recent_weight[i] = 0;
+			for (ctx = 0; ctx < PICKER_NCTX; ctx++)
+				cur_frontier_recent_weight[i] += __atomic_load_n(
+					&shm->frontier_recent_count_cached[i][ctx],
+					__ATOMIC_RELAXED);
+		}
 		cur_rq_saves[i] = __atomic_load_n(
 			&shm->stats.pc_edge_source.rq_saves[i],
 			__ATOMIC_RELAXED);

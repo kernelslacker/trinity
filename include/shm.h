@@ -12,6 +12,7 @@
 #include "locks.h"
 #include "net.h"
 #include "object-types.h"
+#include "picker-context.h"
 #include "scratch_block.h"
 #include "stats.h"
 #include "strategy.h"
@@ -610,7 +611,11 @@ struct shm_s {
 	 */
 	int plateau_intervention_mode_current;
 	unsigned long plateau_anti_prior_baseline_calls;
-	uint8_t plateau_anti_prior_accept_weight[MAX_NR_SYSCALL];
+	/* [nr][picker_context] -- see the block comment above; the
+	 * context dim splits INIT-user weight computation from other
+	 * caller-context picks.  Baseline: INIT slice byte-identical to
+	 * the pre-widening flat counter. */
+	uint8_t plateau_anti_prior_accept_weight[MAX_NR_SYSCALL][PICKER_NCTX];
 	unsigned long plateau_intervention_rotation_counter;
 	unsigned long plateau_intervention_mode_windows[NR_PIM_MODES];
 
@@ -623,7 +628,11 @@ struct shm_s {
 	 * math, zero-baseline short-circuit): Documentation/shm-state.md
 	 * (Wall-lever shadow gate). */
 	unsigned long wall_lever_baseline_calls;
-	uint8_t wall_lever_suppress[MAX_NR_SYSCALL];
+	/* [nr][picker_context] -- see the block comment above; the
+	 * context dim splits the suppress carrier per caller-context.
+	 * Baseline: INIT slice byte-identical to the pre-widening flat
+	 * counter. */
+	uint8_t wall_lever_suppress[MAX_NR_SYSCALL][PICKER_NCTX];
 
 	/* Phase 2 plateau intervention: shm mirror of strategy.c's
 	 * parent-private hypothesis_current.  Published by
@@ -699,9 +708,18 @@ struct shm_s {
 	 * fields let the picker read the recent-count / max with single
 	 * RELAXED loads.  See include/strategy.h and
 	 * Documentation/shm-state.md (Coverage-frontier picker state). */
-	uint32_t frontier_history[MAX_NR_SYSCALL][FRONTIER_DECAY_WINDOWS];
+	/* [nr][picker_context][slot] and [nr][picker_context] -- the
+	 * picker_context dim splits the frontier-edge ring and its
+	 * cached sum per caller-context so a context-specific edge
+	 * cluster does not poison the INIT-slice weight the roulette
+	 * wheel consumes.  frontier_window_advance() rotates every
+	 * per-nr slice across every context, so an idle context's
+	 * ring/cache still ages out (a no-op sweep at baseline since
+	 * PICKER_CTX_INIT is the only writer).  Baseline: INIT slice
+	 * byte-identical to the pre-widening flat counter. */
+	uint32_t frontier_history[MAX_NR_SYSCALL][PICKER_NCTX][FRONTIER_DECAY_WINDOWS];
 	uint32_t frontier_slot;
-	uint32_t frontier_recent_count_cached[MAX_NR_SYSCALL];
+	uint32_t frontier_recent_count_cached[MAX_NR_SYSCALL][PICKER_NCTX];
 	unsigned int frontier_max_weight_cached;
 
 	/* EFAULT-probe cache for ioctl arg classification; open-addressing

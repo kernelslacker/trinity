@@ -296,12 +296,21 @@ static void json_emit_kcov_snapshot_previous(unsigned int nr_syscalls_to_scan)
 	unsigned int i;
 
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
-		kcov_shm->per_syscall.per_syscall_edges_previous[i][0] =
-			__atomic_load_n(&kcov_shm->per_syscall.per_syscall_edges[i][0],
-					__ATOMIC_RELAXED);
-		kcov_shm->per_syscall.per_syscall_edges_previous[i][1] =
-			__atomic_load_n(&kcov_shm->per_syscall.per_syscall_edges[i][1],
-					__ATOMIC_RELAXED);
+		unsigned int ctx;
+		unsigned long e0 = 0, e1 = 0;
+
+		/* Fold every picker-context slice into the per-arch
+		 * snapshot -- previous is a per-nr per-arch total. */
+		for (ctx = 0; ctx < PICKER_NCTX; ctx++) {
+			e0 += __atomic_load_n(
+				&kcov_shm->per_syscall.per_syscall_edges[i][ctx][0],
+				__ATOMIC_RELAXED);
+			e1 += __atomic_load_n(
+				&kcov_shm->per_syscall.per_syscall_edges[i][ctx][1],
+				__ATOMIC_RELAXED);
+		}
+		kcov_shm->per_syscall.per_syscall_edges_previous[i][0] = e0;
+		kcov_shm->per_syscall.per_syscall_edges_previous[i][1] = e1;
 	}
 }
 

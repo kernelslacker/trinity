@@ -534,7 +534,17 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	}
 
 	if (nr < MAX_NR_SYSCALL) {
-		__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_calls[nr][do32 ? 1 : 0],
+		/* Route per-syscall attribution through the calling
+		 * child's picker-context stamp so an INIT-user call and
+		 * a would-be user-namespace call cannot cross-contaminate
+		 * each other's evidence.  Fall back to PICKER_CTX_INIT if
+		 * this_child() is unavailable (defensive; kcov_collect
+		 * runs inside the per-child KCOV bracket so it should
+		 * always be reachable). */
+		struct childdata *ccx = this_child();
+		unsigned int ctx = ccx != NULL ? ccx->context_id : PICKER_CTX_INIT;
+
+		__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_calls[nr][ctx][do32 ? 1 : 0],
 			1, __ATOMIC_RELAXED);
 		/* per-syscall split of
 		 * kcov_collect() activity by collection mode.  See the field
@@ -573,8 +583,9 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			/* per_syscall_edges bumps by 1 (call-count semantics --
 			 * see the comment on the field in include/kcov.h).  The
 			 * real bucket-edge count is surfaced via the
-			 * new_edge_count out-param below. */
-			__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_edges[nr][do32 ? 1 : 0],
+			 * new_edge_count out-param below.  Sibling of the calls
+			 * bump above, keyed by the same picker-context stamp. */
+			__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_edges[nr][ctx][do32 ? 1 : 0],
 				1, __ATOMIC_RELAXED);
 			/* SHADOW-only Phase-1 remote-context split of the clean
 			 * per-thread signal above.  kcov_enable_remote()'s
