@@ -18,6 +18,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "errno-classify.h"
@@ -86,6 +87,30 @@ static int iour_make_memfd(void)
 		return -1;
 	}
 	return fd;
+}
+
+/* ------------------------------------------------------------------ *
+ * Build a per-invocation unique scratch path under trinity_tmpdir_abs().
+ *
+ * Stateful recipes (MKDIRAT/SYMLINKAT/LINKAT/xattr targets) used to
+ * hard-code names like "trinity-iour-mkdir-target"; back-to-back or
+ * sibling invocations therefore collided on EEXIST and never exercised
+ * the intended success transition of the underlying op.  Combining the
+ * caller pid with a CLOCK_MONOTONIC nanosecond stamp gives us a fresh
+ * slot every time without requiring shared state between children.
+ * ------------------------------------------------------------------ */
+static void iour_unique_scratch_path(char *buf, size_t buflen, const char *tag)
+{
+	struct timespec ts;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0) {
+		ts.tv_sec  = 0;
+		ts.tv_nsec = 0;
+	}
+	snprintf(buf, buflen, "%s/trinity-iour-%s-%d-%llu",
+		 trinity_tmpdir_abs(), tag, (int)getpid(),
+		 (unsigned long long)ts.tv_sec * 1000000000ULL +
+		 (unsigned long long)ts.tv_nsec);
 }
 
 /* ------------------------------------------------------------------ *
@@ -700,8 +725,7 @@ bool recipe_mkdirat(struct iour_recipe_state *s, bool *unsupported __unused__)
 	char path[PATH_MAX + 32];
 	int r;
 
-	snprintf(path, sizeof(path), "%s/trinity-iour-mkdir-target",
-		 trinity_tmpdir_abs());
+	iour_unique_scratch_path(path, sizeof(path), "mkdir");
 
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_MKDIRAT;
@@ -716,6 +740,8 @@ bool recipe_mkdirat(struct iour_recipe_state *s, bool *unsupported __unused__)
 	if (r < 0)
 		return false;
 	iour_drain_cqes(ctx);
+	/* Leave the tmpdir clean: rmdir no-ops if the op did not create. */
+	(void)rmdir(path);
 	return true;
 }
 
@@ -733,8 +759,7 @@ bool recipe_symlinkat(struct iour_recipe_state *s, bool *unsupported __unused__)
 	char linkp[PATH_MAX + 32];
 	int r;
 
-	snprintf(linkp, sizeof(linkp), "%s/trinity-iour-symlink",
-		 trinity_tmpdir_abs());
+	iour_unique_scratch_path(linkp, sizeof(linkp), "symlink");
 
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_SYMLINKAT;
@@ -749,6 +774,7 @@ bool recipe_symlinkat(struct iour_recipe_state *s, bool *unsupported __unused__)
 	if (r < 0)
 		return false;
 	iour_drain_cqes(ctx);
+	(void)unlink(linkp);
 	return true;
 }
 
@@ -763,8 +789,7 @@ bool recipe_linkat(struct iour_recipe_state *s, bool *unsupported __unused__)
 	char newp[PATH_MAX + 32];
 	int r;
 
-	snprintf(newp, sizeof(newp), "%s/trinity-iour-hardlink",
-		 trinity_tmpdir_abs());
+	iour_unique_scratch_path(newp, sizeof(newp), "hardlink");
 
 	sqe_clear(&sqe);
 	sqe.opcode         = IORING_OP_LINKAT;
@@ -781,6 +806,7 @@ bool recipe_linkat(struct iour_recipe_state *s, bool *unsupported __unused__)
 	if (r < 0)
 		return false;
 	iour_drain_cqes(ctx);
+	(void)unlink(newp);
 	return true;
 }
 
@@ -798,8 +824,7 @@ bool recipe_setxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
 	static const char value[] = "v";
 	int r;
 
-	snprintf(path, sizeof(path), "%s/trinity-iour-xattr-tgt",
-		 trinity_tmpdir_abs());
+	iour_unique_scratch_path(path, sizeof(path), "xattr-tgt");
 
 	sqe_clear(&sqe);
 	sqe.opcode      = IORING_OP_SETXATTR;
