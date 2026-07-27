@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <inttypes.h>
+#include <poll.h>
 #include <stdint.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
@@ -65,10 +66,12 @@ static void final_ring_drain(void)
  * drain the two observation rings (fd_event/stats) into the parent
  * aggregates, then poll the two child-side beacons (hit_bug,
  * fault_beacon) for events a BUG'd or fault-handler-bound child
- * couldn't print itself.  No reorder, no new state. */
-static void drain_child_surfaces(void)
+ * couldn't print itself.  No reorder, no new state.  Returns the
+ * waitpid drain count so main_loop can skip its idle-tick wait when
+ * this pass actually reaped something. */
+static unsigned int drain_child_surfaces(void)
 {
-	handle_children();
+	unsigned int reaped = handle_children();
 
 	/* Drain fd events from all children's ring buffers.
 	 * This processes dup/close events that children couldn't
@@ -136,6 +139,46 @@ static void drain_child_surfaces(void)
 			dump_child_fault_beacon(fc);
 		}
 	}
+
+	return reaped;
+}
+
+/* Idle-tick wait: block up to 25 ms for a cgroup memory.events
+ * inotify notification, then run the throttle bookkeeping and
+ * continue the tick.  When the watcher armed at setup, one ppoll()
+ * replaces the older usleep(25000): memory.high crossings wake the
+ * parent immediately instead of waiting for the next sleep to expire.
+ *
+ * self_cgroup_events_check() runs unconditionally after the ppoll --
+ * on POLLIN it drains the notification and bumps fork_throttle_us; on
+ * timeout the empty read is what advances the quiet-tick decay counter
+ * that halves fork_throttle_us back to zero after sustained calm, so
+ * removing the call from the timeout path would freeze the throttle
+ * at its last elevated value.  The per-tick fcntl(F_GETFL) re-assert
+ * that the old sleep-based path did inside events_check is gone -- the
+ * fd is IN_NONBLOCK from inotify_init1 and children drop the inherited
+ * copy in self_cgroup_drop_fds_in_child before fuzzing, so no path
+ * outside the parent can clear O_NONBLOCK on the shared OFD.
+ *
+ * When the watcher never armed (no cgroup, inotify setup failed) fall
+ * back to a plain usleep for the same tick timeout. */
+static void wait_for_idle_tick_or_cgroup_event(void)
+{
+	int fd = self_cgroup_events_fd();
+
+	if (fd < 0) {
+		usleep(25000);
+		return;
+	}
+
+	{
+		struct pollfd pfd = { .fd = fd, .events = POLLIN };
+		struct timespec ts = { .tv_sec = 0, .tv_nsec = 25 * 1000 * 1000 };
+
+		(void) ppoll(&pfd, 1, &ts, NULL);
+	}
+
+	self_cgroup_events_check();
 }
 
 /* Per-tick stop-condition checks.  Runs after the child-surface
@@ -148,8 +191,6 @@ static void drain_child_surfaces(void)
 static bool check_main_loop_stops(const struct timespec *epoch_start)
 {
 	taint_check();
-
-	self_cgroup_events_check();
 
 	if (shm_is_corrupt() == true)
 		return true;
@@ -476,8 +517,7 @@ void main_loop(void)
 	fork_children();
 
 	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_ACQUIRE) == STILL_RUNNING) {
-
-		drain_child_surfaces();
+		unsigned int reaped = drain_child_surfaces();
 
 		if (check_main_loop_stops(&epoch_start) == true)
 			goto corrupt;
@@ -489,6 +529,13 @@ void main_loop(void)
 		 */
 		if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < max_children)
 			fork_children();
+
+		/* When the drain reaped nothing this tick, pace the loop and
+		 * wait for the next memory.events notification (or the 25 ms
+		 * timeout) in one ppoll.  On a busy tick we already did real
+		 * work and skip the wait so a spawn-storm can catch up. */
+		if (reaped == 0)
+			wait_for_idle_tick_or_cgroup_event();
 	}
 
 	/* if the pid map is corrupt, we can't trust that we'll

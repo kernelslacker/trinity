@@ -196,6 +196,11 @@ void self_cgroup_drop_fds_in_child(void)
 	}
 }
 
+int self_cgroup_events_fd(void)
+{
+	return events_inotify_fd;
+}
+
 void self_cgroup_events_check(void)
 {
 	char drain[4096];
@@ -204,20 +209,6 @@ void self_cgroup_events_check(void)
 
 	if (events_inotify_fd < 0)
 		return;
-
-	/* Re-assert O_NONBLOCK before the drain.  A fuzzed
-	 * fcntl(fd, F_SETFL, ...) in a pre-fd-drop child (or any other
-	 * path that touches the shared OFD) can clear O_NONBLOCK on the
-	 * description we set at inotify_init1(IN_NONBLOCK) time.  Without
-	 * this re-assert the read() below blocks forever on an empty queue
-	 * and the main loop wedges. */
-	{
-		int fl = fcntl(events_inotify_fd, F_GETFL);
-
-		if (fl >= 0 && !(fl & O_NONBLOCK))
-			(void) fcntl(events_inotify_fd, F_SETFL,
-				     fl | O_NONBLOCK);
-	}
 
 	/* Drain the inotify queue.  We don't care which event fired
 	 * (memory.events only carries IN_MODIFY for us) — only that

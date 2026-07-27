@@ -80,7 +80,9 @@ API surface.
   `stall_genocide()` randomly SIGKILLs ~1/4 of the fleet to break a
   fleet-wide wedge.
 - **Pacing**: no sleep-based pacing in the steady state — `handle_children()`
-  only `usleep(25000)`s when a `waitpid` pass collects nothing. Fork storms
+  returns the drain count and `main_loop()` only ppoll()s (25 ms timeout,
+  cgroup memory.events inotify fd for early wake) when the tick reaped
+  nothing. Fork storms
   self-throttle: `fork_throttle_us` (set from cgroup memory.high
   back-pressure) sleeps before each `spawn_child()` and yields back to
   `main_loop` after one spawn so reap/drain get a turn; `fork_pressure_drain`
@@ -164,8 +166,10 @@ API surface.
 - `minicorpus.c` — `minicorpus_mut_attrib_canary_check()`,
   `minicorpus_save_file()` in `final_state_save()`, chain-corpus snapshot
   trigger (`chain_corpus_maybe_snapshot()`).
-- `self_cgroup.c` — `self_cgroup_events_check()` per tick,
-  `self_cgroup_fork_into_workload()` for the actual fork, memory.high
+- `self_cgroup.c` — `self_cgroup_events_fd()` exposes the memory.events
+  inotify fd for `main_loop()`'s ppoll idle-wait; `self_cgroup_events_check()`
+  runs on POLLIN to drain the notification and update the fork throttle;
+  `self_cgroup_fork_into_workload()` performs the actual fork; memory.high
   back-pressure feeds `fork_throttle_us`.
 - `child-canary.c` / canary queue — `canary_queue_init()`,
   `canary_queue_on_child_respawn()`, `canary_queue_on_crash()`,

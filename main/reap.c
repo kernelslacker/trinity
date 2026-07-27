@@ -554,19 +554,18 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 	}
 }
 
-void handle_children(void)
+unsigned int handle_children(void)
 {
 	if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) == 0)
-		return;
+		return 0;
 
 	if (children == NULL)
-		return;
+		return 0;
 
 	/* One waitpid(-1) drain instead of a per-slot waitpid(pid) scan.
 	 * The kernel already knows which of our children (if any) have a
 	 * pending state change; asking it once beats probing every slot
-	 * on every tick.  If nothing happened, sleep briefly to avoid
-	 * busy-looping. */
-	if (drain_reapable_children() == 0)
-		usleep(25000);
+	 * on every tick.  Return the drained count so main_loop's tick
+	 * timer can skip the idle-wait when we just did real work. */
+	return drain_reapable_children();
 }
