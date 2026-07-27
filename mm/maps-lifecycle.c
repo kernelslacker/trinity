@@ -154,31 +154,34 @@ void map_destructor_shared(struct object *obj)
 		munmap(map->ptr, extent);
 	}
 	/*
-	 * Gate the name free on shared-heap residency BEFORE strlen
-	 * touches the bytes.  The local destructor uses alloc_track_lookup
-	 * (libc heap); this variant's names live in the shared str heap
-	 * (alloc_shared_pool, registered via shared_regions[]), so
-	 * range_in_tracked_shared() is the matching ownership check.
-	 * Without the pre-strlen gate, a scribbled .name pointing outside
-	 * any tracked region drives strlen into unmapped memory before the
-	 * free_shared_str call is reached -- a wild read on the way to a
-	 * bad free.  Skip-and-leak on miss, mirror of map_destructor's
-	 * alloc_track_lookup gate.
+	 * Gate the name free on shared-heap residency and on an
+	 * authoritative alloc-time length recorded in name_alloc_size.
+	 * The local destructor uses alloc_track_lookup (libc heap); this
+	 * variant's names live in the shared str heap (alloc_shared_pool,
+	 * registered via shared_regions[]), so range_in_tracked_shared()
+	 * is the matching residency check.
+	 *
+	 * The old code path derived the free size from strlen(map->name) +
+	 * 1 for non-INITIAL_ANON names.  Those bytes live in a MAP_SHARED
+	 * region that fuzzed syscalls can hand to the kernel as a user
+	 * buffer -- a stomped NUL walked strlen off the slot's end (in
+	 * the worst case past shared_str_heap_capacity, SEGV) before
+	 * free_shared_str even saw the pointer, and even without a SEGV
+	 * a fuzz-influenced size flowed into free_shared_str's leak-path
+	 * memset.  name_alloc_size stashes the length passed at carve
+	 * time on the parent-populated struct; use it instead so the
+	 * fuzzer can no longer steer either the strlen read or the free
+	 * size.  A zero or out-of-range value has no authoritative
+	 * source -- leak the shared_str slot rather than steer the free
+	 * path with a fuzzed quantity.  1024 is the largest bucketed
+	 * size; above-bucket slots are bump-and-leak so their "correct"
+	 * free-size is a no-op.
 	 */
 	if (map->name != NULL &&
-	    range_in_tracked_shared((unsigned long)map->name, 1)) {
-		/*
-		 * INITIAL_ANON names are alloc_shared_str(80) fixed-size
-		 * slots, not alloc_shared_strdup(name).  Releasing them with
-		 * strlen+1 lands in a smaller free-bucket than the allocator
-		 * carved, stranding the 80-byte slot in the shared str heap.
-		 * Match the alloc with a literal 80; MMAPED_FILE keeps the
-		 * strlen+1 pairing its alloc_shared_strdup expects.
-		 */
-		if (map->type == INITIAL_ANON)
-			free_shared_str(map->name, 80);
-		else
-			free_shared_str(map->name, strlen(map->name) + 1);
+	    range_in_tracked_shared((unsigned long)map->name, 1) &&
+	    map->name_alloc_size != 0 &&
+	    map->name_alloc_size <= 1024U) {
+		free_shared_str(map->name, map->name_alloc_size);
 	}
 	map->name = NULL;
 }
@@ -454,14 +457,29 @@ void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scop
 	 * the OBJ_GLOBAL sweep closed).
 	 */
 	if (scope == OBJ_GLOBAL) {
+		size_t namelen;
+
 		obj = alloc_object();
 		if (obj == NULL)
 			return;
+		/*
+		 * Capture the length passed to alloc_shared_strdup() BEFORE
+		 * publishing the pointer to the obj.  alloc_shared_strdup()
+		 * carves strlen(name)+1 bytes; recording the same quantity
+		 * here lets map_destructor_shared() free the slot without
+		 * re-strlen()'ing the payload (which lives in fuzz-reachable
+		 * shared memory -- a stomped NUL would drive strlen past the
+		 * slot end).  Held in a local until after the alloc succeeds
+		 * so a NULL return leaves name_alloc_size at 0, which the
+		 * destructor treats as "no authoritative size, leak".
+		 */
+		namelen = strlen(name) + 1;
 		obj->map.name = alloc_shared_strdup(name);
 		if (obj->map.name == NULL) {
 			deferred_free_enqueue(obj);
 			return;
 		}
+		obj->map.name_alloc_size = namelen;
 	} else {
 		obj = alloc_object();
 		obj->map.name = strdup(name);
@@ -502,8 +520,22 @@ retry_mmap:
 		retries++;
 		if (retries == 100) {
 			if (scope == OBJ_GLOBAL) {
-				free_shared_str(obj->map.name,
-						strlen(obj->map.name) + 1);
+				/*
+				 * Use the alloc-time name_alloc_size stashed
+				 * on the map when alloc_shared_strdup()
+				 * returned above -- see map_destructor_shared()
+				 * for why re-strlen()'ing a shared-heap payload
+				 * at free time is unsafe.  A zero or out-of-
+				 * range value means the alloc never completed
+				 * (unreachable on this branch: we returned on
+				 * NULL name above) or an in-place scribble
+				 * zeroed the field -- leak the slot in either
+				 * case rather than trust the fuzzable strlen.
+				 */
+				if (obj->map.name_alloc_size != 0 &&
+				    obj->map.name_alloc_size <= 1024U)
+					free_shared_str(obj->map.name,
+							obj->map.name_alloc_size);
 				obj->map.name = NULL;
 				deferred_free_enqueue(obj);
 			} else {
@@ -563,8 +595,14 @@ retry_mmap:
 	if (obj->map.size == 0) {
 		munmap(obj->map.ptr, len > 0 ? len : page_size);
 		if (scope == OBJ_GLOBAL) {
-			free_shared_str(obj->map.name,
-					strlen(obj->map.name) + 1);
+			/* See the retries==100 branch above for why the
+			 * alloc-time name_alloc_size is the authoritative
+			 * source and re-strlen()'ing the shared-heap payload
+			 * would be unsafe. */
+			if (obj->map.name_alloc_size != 0 &&
+			    obj->map.name_alloc_size <= 1024U)
+				free_shared_str(obj->map.name,
+						obj->map.name_alloc_size);
 			obj->map.name = NULL;
 			deferred_free_enqueue(obj);
 		} else {

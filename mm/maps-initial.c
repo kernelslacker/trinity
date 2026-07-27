@@ -69,6 +69,7 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 		outputerr("alloc_shared_str failure for OBJ_MMAP_ANON name\n");
 		exit(EXIT_FAILURE);
 	}
+	new->map.name_alloc_size = 80;
 	snprintf(new->map.name, 80, "anon(%s)", name);
 
 	add_object(new, OBJ_GLOBAL, OBJ_MMAP_ANON);
@@ -118,6 +119,7 @@ static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const ch
 		tracked_free_now(new);
 		return false;
 	}
+	new->map.name_alloc_size = 80;
 	snprintf(new->map.name, 80, "anon(%s)", name);
 	add_object(new, OBJ_GLOBAL, OBJ_MMAP_ANON);
 
