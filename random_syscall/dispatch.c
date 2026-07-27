@@ -48,6 +48,7 @@
 #include "sanitise.h"
 #include "stats.h"
 #include "stats_ring.h"
+#include "strategy-accounting-internal.h"
 #include "strategy.h"
 #include "syscall.h"
 #include "syscall_record.h"

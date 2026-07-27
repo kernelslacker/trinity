@@ -118,32 +118,7 @@ void apply_chain_substitution(struct syscallrecord *rec,
  * reward / cohort attribution.  Called from dispatch.c on every
  * parent syscall; remote_adaptive_decide is queried from
  * dispatch_step before the raw call to decide whether to publish the
- * remote-adaptive path. */
-void maybe_rotate_strategy(void);
-bool remote_adaptive_decide(unsigned int nr,
-			    struct syscallentry *entry,
-			    bool static_remote);
-void account_reexec_ab_cohort(struct childdata *child, unsigned long new_cmp);
-void account_per_syscall_new_edges(struct childdata *child,
-				   struct syscallrecord *rec,
-				   unsigned long new_edge_count);
-void account_warm_reserve(struct childdata *child,
-			  struct syscallrecord *rec,
-			  bool new_edges, unsigned long new_cmp,
-			  const struct kcov_pc_result *pcres);
-void account_cold_overflow_would_save(struct syscallentry *entry,
-				      struct syscallrecord *rec,
-				      unsigned long new_cmp);
-void account_pc_edge_only(struct childdata *child,
-			  struct syscallrecord *rec,
-			  unsigned long new_edge_count,
-			  unsigned int rescue_cold_skip_pct_before);
-void account_transition_reward(struct childdata *child,
-			       struct syscallrecord *rec,
-			       const struct kcov_pc_result *pcres);
-void account_fd_and_group(struct childdata *child,
-			  struct syscallentry *entry,
-			  struct syscallrecord *rec,
-			  bool found_local_coverage);
+ * remote-adaptive path.  Public API is declared in the cluster-local
+ * header random_syscall/strategy-accounting-internal.h. */
 
 #endif /* _TRINITY_RANDOM_SYSCALL_INTERNAL_H */
