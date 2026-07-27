@@ -17,6 +17,19 @@ void self_cgroup_cleanup(void);
 void self_cgroup_events_check(void);
 
 /*
+ * The memory.events inotify fd, or -1 if the watcher never armed
+ * (cg_workload unset, inotify_init1 failed, watch add denied, or the
+ * fd was dropped in a child via self_cgroup_drop_fds_in_child()).
+ *
+ * Exposed so the main loop can ppoll() on it as its idle-tick timer:
+ * a single ppoll wakes on POLLIN when memory.events is rewritten and
+ * otherwise expires on the tick timeout, replacing the older
+ * usleep(25000)+per-tick empty inotify-drain pair.  When this returns
+ * -1 the caller must fall back to a plain sleep for the tick timeout.
+ */
+int self_cgroup_events_fd(void);
+
+/*
  * Close the parent's self-cgroup fds in a freshly forked child.  All
  * are opened IN_CLOEXEC, but CLOEXEC only fires on exec(); trinity's
  * children fork-and-fuzz without exec, so they inherit the parent's

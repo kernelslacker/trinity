@@ -32,7 +32,7 @@ int shm_is_corrupt(void);
 int open_child_pidstat(pid_t target);
 char get_pid_state(int childno);
 int find_free_childno(void);
-void handle_children(void);
+unsigned int handle_children(void);
 void check_children_progressing(void);
 void kill_all_kids(void);
 void reap_dead_kids(void);
