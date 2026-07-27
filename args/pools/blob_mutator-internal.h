@@ -53,3 +53,8 @@ size_t pick_pos(size_t len);
 enum blob_splat_form pick_splat_form(void);
 uint64_t apply_splat_form(uint64_t v, unsigned int width,
 			  enum blob_splat_form form);
+
+/* Byte + bit flipper arms (blob_mutator_flip.c). */
+void havoc_bit_flip(unsigned char *buf, size_t len);
+void havoc_byte_flip(unsigned char *buf, size_t len);
+void havoc_set_interesting(unsigned char *buf, size_t len, unsigned int width);
