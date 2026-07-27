@@ -81,4 +81,22 @@ enum child_op_type pick_op_type(void);
 void adapt_budget(enum child_op_type op_type, unsigned long edges_this_call);
 extern bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *);
 
+/* child-periodic.c -- the every-16-ops periodic_work() maintenance
+ * tick invoked from the child_process() main loop.  Its parent-pid
+ * watchdog helper stays static in that TU (single caller). */
+void periodic_work(struct childdata *child, unsigned long op_nr);
+
+/* child-watchdog.c -- stall detection consulted from child_process()
+ * every time SIGALRM is observed.  The per-op-type threshold table
+ * (stall_threshold) stays static in that TU (single caller). */
+bool check_stall(struct childdata *child);
+
+/* child-dispatch-arm.c -- helpers the alt-op dispatch arm in
+ * child_process() consults each iteration: the lowest-free-fd probe
+ * that brackets each alt-op dispatch to detect fd leaks, and the
+ * per-child corruption-rate storm-recycle check gated on the
+ * LOCAL_STORM_CHECK_PERIOD cadence. */
+int probe_lowest_free_fd(bool *at_ceiling);
+bool storm_rate_recycle(struct childdata *child);
+
 #endif /* _CHILD_INTERNAL_H */
