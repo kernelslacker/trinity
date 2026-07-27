@@ -2,6 +2,7 @@
 #include <netiucv/iucv.h>
 #include <string.h>
 #include "net.h"
+#include "random.h"
 #include "rnd.h"
 
 #include "kernel/socket.h"
@@ -49,6 +50,8 @@ static void iucv_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct 
 
 	if (!iucv_available()) {
 		*addr = zmalloc_tracked(sizeof(struct sockaddr));
+		generate_rand_bytes((unsigned char *) *addr, sizeof(struct sockaddr));
+		((struct sockaddr_storage *) *addr)->ss_family = AF_IUCV;
 		*addrlen = sizeof(struct sockaddr);
 		return;
 	}
