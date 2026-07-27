@@ -1,6 +1,7 @@
 #ifndef _TRINITY_STATS_SUBSYS_CONTEXT_SUPPRESS_H
 #define _TRINITY_STATS_SUBSYS_CONTEXT_SUPPRESS_H
 
+#include "picker-context.h"	/* PICKER_NCTX */
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
 /*
@@ -47,7 +48,12 @@ struct context_suppress_stats {
 	unsigned long spared_windowed;
 	unsigned long spared_arggen;
 	unsigned long spared_objproducer;
-	unsigned long would_skip_per_syscall[MAX_NR_SYSCALL];
+	/* [nr][picker_context] -- keyed by the picker-context stamp
+	 * so a context-specific EPERM regime records against its own
+	 * slice and cannot poison the INIT-slice diagnostic.
+	 * Baseline: INIT slice byte-identical to the pre-widening flat
+	 * counter. */
+	unsigned long would_skip_per_syscall[MAX_NR_SYSCALL][PICKER_NCTX];
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_CONTEXT_SUPPRESS_H */

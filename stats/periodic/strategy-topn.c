@@ -413,8 +413,13 @@ void dump_context_regular_suppressed_per_syscall_top(void)
 	memset(top, 0, sizeof(top));
 
 	for (i = 0; i < nr_to_scan; i++) {
-		unsigned long c =
-			shm->stats.context_suppress.would_skip_per_syscall[i];
+		unsigned int ctx;
+		unsigned long c = 0;
+
+		/* Sum every picker-context slice: the top-N would-skip
+		 * report is a per-nr run-wide count. */
+		for (ctx = 0; ctx < PICKER_NCTX; ctx++)
+			c += shm->stats.context_suppress.would_skip_per_syscall[i][ctx];
 
 		if (c == 0)
 			continue;

@@ -66,9 +66,19 @@ frontier_spare_lane_decide(unsigned int syscallnr, bool do32)
 	cmp_base = __atomic_load_n(
 		&shm->stats.frontier.per_syscall.silent_cmp_baseline[syscallnr],
 		__ATOMIC_RELAXED);
-	errno_now = __atomic_load_n(
-		&kcov_shm->errno_state.per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
-		__ATOMIC_RELAXED);
+	{
+		/* Sum SUCCESS across every picker-context slice so this
+		 * compare uses matching "run-wide SUCCESS" semantics as
+		 * the summed capture in the baseline snapshot sites in
+		 * strategy-frontier.c. */
+		unsigned int cix;
+
+		errno_now = 0;
+		for (cix = 0; cix < PICKER_NCTX; cix++)
+			errno_now += __atomic_load_n(
+				&kcov_shm->errno_state.per_syscall_errno[syscallnr][cix][ERRNO_BUCKET_SUCCESS],
+				__ATOMIC_RELAXED);
+	}
 	errno_base = __atomic_load_n(
 		&shm->stats.frontier.per_syscall.silent_errno_success_baseline[syscallnr],
 		__ATOMIC_RELAXED);

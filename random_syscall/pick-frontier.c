@@ -408,9 +408,21 @@ retry:
 				cmp_base = __atomic_load_n(
 					&shm->stats.frontier.per_syscall.silent_cmp_baseline[syscallnr],
 					__ATOMIC_RELAXED);
-				errno_now = __atomic_load_n(
-					&kcov_shm->errno_state.per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
-					__ATOMIC_RELAXED);
+				{
+					/* Sum the SUCCESS-bucket across every
+					 * picker-context slice so this
+					 * current-vs-baseline compare stays
+					 * consistent with the summed capture
+					 * at the streak-reset baseline snapshot
+					 * (frontier_record_new_edge()). */
+					unsigned int ctx;
+
+					errno_now = 0;
+					for (ctx = 0; ctx < PICKER_NCTX; ctx++)
+						errno_now += __atomic_load_n(
+							&kcov_shm->errno_state.per_syscall_errno[syscallnr][ctx][ERRNO_BUCKET_SUCCESS],
+							__ATOMIC_RELAXED);
+				}
 				errno_base = __atomic_load_n(
 					&shm->stats.frontier.per_syscall.silent_errno_success_baseline[syscallnr],
 					__ATOMIC_RELAXED);

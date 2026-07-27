@@ -1,5 +1,7 @@
 #pragma once
 
+#include "picker-context.h"	/* PICKER_NCTX */
+
 /* Sub-struct of struct kcov_shared, embedded as .per_syscall.
  * Layout is offset-sensitive; do not reorder fields. */
 
@@ -12,12 +14,18 @@ struct kcov_per_syscall {
  * field name predates the call-count vs edge-count distinction; kept
  * for ABI compatibility with the cold-skip heuristic and the
  * top-syscalls dump in stats.c. */
-/* [nr][do32 ? 1 : 0] -- 32-bit and 64-bit paths bump their own
- * slot so IA32 compat entries no longer merge with the 64-bit
- * total; readers that want the pre-split per-nr value sum both
- * dims via per_syscall_edges_total() / _calls_total() below. */
-unsigned long per_syscall_edges[MAX_NR_SYSCALL][2];
-unsigned long per_syscall_calls[MAX_NR_SYSCALL][2];
+/* [nr][picker_context][do32 ? 1 : 0] -- 32-bit and 64-bit paths
+ * bump their own slot so IA32 compat entries no longer merge with
+ * the 64-bit total; readers that want the pre-split per-nr value
+ * sum both arch dims via per_syscall_edges_total() /
+ * _calls_total() below.  The picker_context dim splits INIT-user
+ * picks from other caller-context picks so a context that skews
+ * per-syscall edge/call attribution cannot poison the INIT-slice
+ * evidence the picker consumes; baseline runs use PICKER_CTX_INIT
+ * exclusively and the INIT slice is byte-identical to the
+ * pre-widening flat counter. */
+unsigned long per_syscall_edges[MAX_NR_SYSCALL][PICKER_NCTX][2];
+unsigned long per_syscall_calls[MAX_NR_SYSCALL][PICKER_NCTX][2];
 /* EXTRA_FORK dispatches (execve, execveat, vfork) run their real
  * syscall in a throwaway grandchild that do_extrafork() spawns
  * OUTSIDE the parent worker's kcov_enable / syscall / kcov_disable

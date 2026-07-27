@@ -72,16 +72,23 @@ static void dump_stats_render_kcov_per_syscall_edges_topn(unsigned int nr_syscal
 
 		/* Snapshot current counts for the next interval.  Both arch
 		 * slots are snapshotted so the [nr][arch] delta stays a pure
-		 * subtraction on the next window. */
+		 * subtraction on the next window.  The picker-context dim on
+		 * per_syscall_edges is folded here -- previous is a per-nr
+		 * per-arch total that predates the context axis. */
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
-			kcov_shm->per_syscall.per_syscall_edges_previous[i][0] =
-				__atomic_load_n(
-					&kcov_shm->per_syscall.per_syscall_edges[i][0],
+			unsigned int ctx;
+			unsigned long e0 = 0, e1 = 0;
+
+			for (ctx = 0; ctx < PICKER_NCTX; ctx++) {
+				e0 += __atomic_load_n(
+					&kcov_shm->per_syscall.per_syscall_edges[i][ctx][0],
 					__ATOMIC_RELAXED);
-			kcov_shm->per_syscall.per_syscall_edges_previous[i][1] =
-				__atomic_load_n(
-					&kcov_shm->per_syscall.per_syscall_edges[i][1],
+				e1 += __atomic_load_n(
+					&kcov_shm->per_syscall.per_syscall_edges[i][ctx][1],
 					__ATOMIC_RELAXED);
+			}
+			kcov_shm->per_syscall.per_syscall_edges_previous[i][0] = e0;
+			kcov_shm->per_syscall.per_syscall_edges_previous[i][1] = e1;
 		}
 }
 /*
@@ -317,8 +324,18 @@ void dump_stats_render_kcov_per_syscall_yield_topn(unsigned int nr_syscalls_to_s
 			unsigned int b;
 
 			for (b = 0; b < ERRNO_BUCKET_NR; b++) {
-				buckets[b] = __atomic_load_n(&kcov_shm->errno_state.per_syscall_errno[i][b],
-							     __ATOMIC_RELAXED);
+				unsigned int ctx;
+				unsigned long sum = 0;
+
+				/* Sum every picker-context slice: the
+				 * top-N errno report is a per-syscall
+				 * run-wide histogram, not a per-context
+				 * breakdown. */
+				for (ctx = 0; ctx < PICKER_NCTX; ctx++)
+					sum += __atomic_load_n(
+						&kcov_shm->errno_state.per_syscall_errno[i][ctx][b],
+						__ATOMIC_RELAXED);
+				buckets[b] = sum;
 				total += buckets[b];
 			}
 
@@ -522,9 +539,15 @@ void dump_stats_render_kcov_top_edges_and_cold(unsigned int nr_syscalls_to_scan,
 				if (!kcov_syscall_is_cold(i))
 					continue;
 
-				slot_edges = __atomic_load_n(
-					&kcov_shm->per_syscall.per_syscall_edges[i][arch],
-					__ATOMIC_RELAXED);
+				{
+					unsigned int ctx;
+
+					slot_edges = 0;
+					for (ctx = 0; ctx < PICKER_NCTX; ctx++)
+						slot_edges += __atomic_load_n(
+							&kcov_shm->per_syscall.per_syscall_edges[i][ctx][arch],
+							__ATOMIC_RELAXED);
+				}
 				if (slot_edges == 0)
 					continue;
 

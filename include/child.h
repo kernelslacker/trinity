@@ -58,18 +58,12 @@
  * reap because their OBJ_LOCAL destructor is also skipped on SIGKILL. */
 #define MAX_FUZZ_SEM_IDS 128
 
-/* Picker-context axis: identifies which caller-context stamped the
- * current pick.  Baseline runs use PICKER_CTX_INIT exclusively; the
- * axis exists so a future user-namespace helper can distinguish its
- * own picks from the default init-user context without widening any
- * per-arm storage.  Owner-only field, stamped at child init and (for
- * the baseline) never mutated -- introduced as infrastructure for the
- * per-context storage split that follows. */
-enum picker_context {
-	PICKER_CTX_INIT		= 0,
-	PICKER_CTX_USERNS	= 1,
-	PICKER_NCTX,
-};
+/* Picker-context axis: enum lives in picker-context.h so shm-side
+ * arrays sized by PICKER_NCTX can pick it up without dragging in the
+ * whole child.h header.  Baseline runs use PICKER_CTX_INIT exclusively;
+ * the axis exists so a future user-namespace helper can distinguish
+ * its own picks from the default init-user context. */
+#include "picker-context.h"
 
 struct childdata {
 	/* ---- Hot leading cacheline (64 bytes) ---- */

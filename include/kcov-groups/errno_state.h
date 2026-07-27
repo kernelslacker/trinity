@@ -1,10 +1,18 @@
 #pragma once
 
+#include "picker-context.h"	/* PICKER_NCTX */
+
 /* Sub-struct of struct kcov_shared, embedded as .errno_state.
  * Layout is offset-sensitive; do not reorder fields. */
 
 struct kcov_errno_state {
-unsigned long per_syscall_errno[MAX_NR_SYSCALL][ERRNO_BUCKET_NR];
+/* [nr][picker_context][ERRNO_BUCKET_NR] -- the context dim splits
+ * INIT-user picks from other caller-context picks (e.g. a future
+ * user-namespace helper) so a context that produces an atypical errno
+ * distribution cannot poison the INIT-slice attribution the picker
+ * consumes.  Baseline runs use PICKER_CTX_INIT exclusively and the
+ * INIT slice is byte-identical to the pre-widening flat counter. */
+unsigned long per_syscall_errno[MAX_NR_SYSCALL][PICKER_NCTX][ERRNO_BUCKET_NR];
 /* Per-syscall errno-bucket "seen at least once in this run" bitmask.
  * Bit `bucket` set iff a call with errno bucket `bucket` has been
  * classified for syscall slot nr.  Set via __atomic_fetch_or by the

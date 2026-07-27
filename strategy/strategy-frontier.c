@@ -142,6 +142,8 @@ void topo_pair_record_shadow(unsigned int nr, unsigned int reason)
 
 void frontier_record_new_edge(unsigned int nr)
 {
+	struct childdata *cc = this_child();
+	unsigned int ctx = cc != NULL ? cc->context_id : PICKER_CTX_INIT;
 	uint32_t slot;
 	unsigned long w;
 	unsigned int cached;
@@ -151,9 +153,12 @@ void frontier_record_new_edge(unsigned int nr)
 
 	slot = __atomic_load_n(&shm->frontier_slot, __ATOMIC_RELAXED) &
 	       (FRONTIER_DECAY_WINDOWS - 1);
-	__atomic_fetch_add(&shm->frontier_history[nr][slot], 1U,
+	/* Ring + cached sum are keyed by the caller-context stamp so a
+	 * context-specific edge cluster does not pollute the INIT-slice
+	 * roulette weight. */
+	__atomic_fetch_add(&shm->frontier_history[nr][ctx][slot], 1U,
 			   __ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->frontier_recent_count_cached[nr], 1U,
+	__atomic_fetch_add(&shm->frontier_recent_count_cached[nr][ctx], 1U,
 			   __ATOMIC_RELAXED);
 
 	/* RedQueen-source PC-edge attribution.  When the call that produced
@@ -164,10 +169,9 @@ void frontier_record_new_edge(unsigned int nr)
 	 * dump can report PC-edge conversion of RedQueen-sourced saves
 	 * separately from the bulk per-strategy attribution.  Observability
 	 * only -- no selection / reward code reads this counter.  RELAXED
-	 * add-fetch matches the surrounding accounting. */
+	 * add-fetch matches the surrounding accounting.  Reuses the
+	 * function-scope `cc` above so the this_child() lookup fires once. */
 	{
-		struct childdata *cc = this_child();
-
 		if (cc != NULL && cc->replay_rq_sourced)
 			__atomic_fetch_add(
 				&shm->stats.pc_edge_source.rq_pcedge_wins[nr],
@@ -239,14 +243,19 @@ void frontier_record_new_edge(unsigned int nr)
 	 * unreachable without a coverage trace under collection, but the
 	 * guard matches the pattern other kcov_shm consumers follow. */
 	if (kcov_shm != NULL) {
-		unsigned long cmp_snap, errno_snap;
+		unsigned long cmp_snap, errno_snap = 0;
+		unsigned int cix;
 
 		cmp_snap = __atomic_load_n(
 			&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr],
 			__ATOMIC_RELAXED);
-		errno_snap = __atomic_load_n(
-			&kcov_shm->errno_state.per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
-			__ATOMIC_RELAXED);
+		/* Sum SUCCESS across every picker-context slice so the
+		 * silent-decay compare in pick-frontier.c uses matching
+		 * "run-wide SUCCESS" semantics on both sides. */
+		for (cix = 0; cix < PICKER_NCTX; cix++)
+			errno_snap += __atomic_load_n(
+				&kcov_shm->errno_state.per_syscall_errno[nr][cix][ERRNO_BUCKET_SUCCESS],
+				__ATOMIC_RELAXED);
 		__atomic_store_n(
 			&shm->stats.frontier.per_syscall.silent_cmp_baseline[nr],
 			cmp_snap, __ATOMIC_RELAXED);
@@ -305,6 +314,8 @@ void frontier_record_new_edge(unsigned int nr)
  */
 void frontier_record_transition_edge(unsigned int nr)
 {
+	struct childdata *cc = this_child();
+	unsigned int ctx = cc != NULL ? cc->context_id : PICKER_CTX_INIT;
 	uint32_t slot;
 	unsigned long w;
 	unsigned int cached;
@@ -314,9 +325,9 @@ void frontier_record_transition_edge(unsigned int nr)
 
 	slot = __atomic_load_n(&shm->frontier_slot, __ATOMIC_RELAXED) &
 	       (FRONTIER_DECAY_WINDOWS - 1);
-	__atomic_fetch_add(&shm->frontier_history[nr][slot], 1U,
+	__atomic_fetch_add(&shm->frontier_history[nr][ctx][slot], 1U,
 			   __ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->frontier_recent_count_cached[nr], 1U,
+	__atomic_fetch_add(&shm->frontier_recent_count_cached[nr][ctx], 1U,
 			   __ATOMIC_RELAXED);
 
 	__atomic_store_n(
@@ -342,14 +353,16 @@ void frontier_record_transition_edge(unsigned int nr)
 	 * observability-only contract; see the matching block in
 	 * frontier_record_new_edge() for full rationale. */
 	if (kcov_shm != NULL) {
-		unsigned long cmp_snap, errno_snap;
+		unsigned long cmp_snap, errno_snap = 0;
+		unsigned int cix;
 
 		cmp_snap = __atomic_load_n(
 			&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr],
 			__ATOMIC_RELAXED);
-		errno_snap = __atomic_load_n(
-			&kcov_shm->errno_state.per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
-			__ATOMIC_RELAXED);
+		for (cix = 0; cix < PICKER_NCTX; cix++)
+			errno_snap += __atomic_load_n(
+				&kcov_shm->errno_state.per_syscall_errno[nr][cix][ERRNO_BUCKET_SUCCESS],
+				__ATOMIC_RELAXED);
 		__atomic_store_n(
 			&shm->stats.frontier.per_syscall.silent_cmp_baseline[nr],
 			cmp_snap, __ATOMIC_RELAXED);
@@ -370,10 +383,21 @@ void frontier_record_transition_edge(unsigned int nr)
 
 unsigned long frontier_recent_count(unsigned int nr)
 {
+	struct childdata *cc;
+	unsigned int ctx;
+
 	if (nr >= MAX_NR_SYSCALL)
 		return 0;
 
-	return __atomic_load_n(&shm->frontier_recent_count_cached[nr],
+	/* Reads the calling child's picker-context slice so a syscall
+	 * that is recently productive in one context but not another
+	 * gets the roulette weight for the context the caller is picking
+	 * under.  this_child() is unavailable only from a handful of
+	 * parent-side stats paths where INIT is the safe default (and
+	 * the only context that any writer touches at baseline anyway). */
+	cc = this_child();
+	ctx = cc != NULL ? cc->context_id : PICKER_CTX_INIT;
+	return __atomic_load_n(&shm->frontier_recent_count_cached[nr][ctx],
 			       __ATOMIC_RELAXED);
 }
 
@@ -464,9 +488,16 @@ bool frontier_errno_plateau_should_decay(unsigned int nr, bool do32)
 	 * DOM_PCT, restoring the syscall to full sampling. */
 	for (bucket = ERRNO_BUCKET_SUCCESS + 1;
 	     bucket < ERRNO_BUCKET_NR; bucket++) {
-		unsigned long c = __atomic_load_n(
-			&kcov_shm->errno_state.per_syscall_errno[nr][bucket],
-			__ATOMIC_RELAXED);
+		unsigned long c = 0;
+		unsigned int cix;
+
+		/* Sum across every picker-context slice: paired with the
+		 * per_syscall_calls_total() denominator above so the
+		 * dominant-bucket ratio compares matching run-wide totals. */
+		for (cix = 0; cix < PICKER_NCTX; cix++)
+			c += __atomic_load_n(
+				&kcov_shm->errno_state.per_syscall_errno[nr][cix][bucket],
+				__ATOMIC_RELAXED);
 		if (c > max_failure_bucket)
 			max_failure_bucket = c;
 	}
@@ -542,6 +573,8 @@ void context_regular_suppressed_shadow(unsigned int syscallnr, bool do32)
 	enum frontier_spare_reason reason;
 	unsigned long calls_total, edges_total;
 	unsigned long eperm, success;
+	struct childdata *cc = this_child();
+	unsigned int ctx = cc != NULL ? cc->context_id : PICKER_CTX_INIT;
 
 	mode = __atomic_load_n(&context_pool_mode, __ATOMIC_RELAXED);
 	if (mode == CONTEXT_POOL_MODE_OFF)
@@ -561,9 +594,15 @@ void context_regular_suppressed_shadow(unsigned int syscallnr, bool do32)
 	 * the "regular-dead" classification and short-circuits the whole
 	 * predicate cheaply before the spare-lane load.  Ordered success
 	 * -> edges -> EPERM so the cheapest disproof gets first crack.
+	 *
+	 * SUCCESS / EPERM reads are keyed by the caller's picker-context
+	 * stamp: the classifier is asking "is this syscall regular-dead
+	 * in the context I am about to pick under?", which is a
+	 * per-context judgment.  Under baseline INIT-only operation this
+	 * is byte-identical to the pre-widening flat read.
 	 */
 	success = __atomic_load_n(
-		&kcov_shm->errno_state.per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
+		&kcov_shm->errno_state.per_syscall_errno[syscallnr][ctx][ERRNO_BUCKET_SUCCESS],
 		__ATOMIC_RELAXED);
 	if (success != 0)
 		return;
@@ -573,7 +612,7 @@ void context_regular_suppressed_shadow(unsigned int syscallnr, bool do32)
 		return;
 
 	eperm = __atomic_load_n(
-		&kcov_shm->errno_state.per_syscall_errno[syscallnr][ERRNO_BUCKET_EPERM],
+		&kcov_shm->errno_state.per_syscall_errno[syscallnr][ctx][ERRNO_BUCKET_EPERM],
 		__ATOMIC_RELAXED);
 	if ((eperm * 100UL) <
 	    (calls_total * CONTEXT_REGULAR_SUPPRESSED_EPERM_PCT))
@@ -606,7 +645,7 @@ void context_regular_suppressed_shadow(unsigned int syscallnr, bool do32)
 			&shm->stats.context_suppress.would_skip,
 			1UL, __ATOMIC_RELAXED);
 		__atomic_fetch_add(
-			&shm->stats.context_suppress.would_skip_per_syscall[syscallnr],
+			&shm->stats.context_suppress.would_skip_per_syscall[syscallnr][ctx],
 			1UL, __ATOMIC_RELAXED);
 		/*
 		 * COMBINED live suppression would sit here gated on mode ==

@@ -347,8 +347,19 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 			default:     bucket = ERRNO_BUCKET_OTHER;  break;
 			}
 		}
-		__atomic_add_fetch(&kcov_shm->errno_state.per_syscall_errno[call][bucket],
-				   1, __ATOMIC_RELAXED);
+		{
+			/* Route errno-bucket attribution through the
+			 * calling child's picker-context stamp so a
+			 * context-specific errno distribution cannot
+			 * poison the INIT-slice histogram the picker
+			 * consumes.  Fall back to PICKER_CTX_INIT if
+			 * this_child() is unavailable. */
+			struct childdata *ccx = this_child();
+			unsigned int ctx = ccx != NULL ? ccx->context_id : PICKER_CTX_INIT;
+
+			__atomic_add_fetch(&kcov_shm->errno_state.per_syscall_errno[call][ctx][bucket],
+					   1, __ATOMIC_RELAXED);
+		}
 
 		/* Credential-class oracle (always on, no flag gate): mirror the
 		 * just-classified bucket into the per-class success / EPERM /

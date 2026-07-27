@@ -580,10 +580,20 @@ bool kcov_bitmap_save_file(const char *path)
 		unsigned int i;
 
 		for (i = 0; i < MAX_NR_SYSCALL; i++) {
-			p_edges[i] = kcov_shm->per_syscall.per_syscall_edges[i][0] +
-				     kcov_shm->per_syscall.per_syscall_edges[i][1];
-			p_calls[i] = kcov_shm->per_syscall.per_syscall_calls[i][0] +
-				     kcov_shm->per_syscall.per_syscall_calls[i][1];
+			unsigned int ctx;
+			unsigned long edges_sum = 0, calls_sum = 0;
+
+			/* Fold every picker-context slice into the
+			 * cross-session prior blob: priors are per-syscall
+			 * totals, not per-context. */
+			for (ctx = 0; ctx < PICKER_NCTX; ctx++) {
+				edges_sum += kcov_shm->per_syscall.per_syscall_edges[i][ctx][0] +
+					     kcov_shm->per_syscall.per_syscall_edges[i][ctx][1];
+				calls_sum += kcov_shm->per_syscall.per_syscall_calls[i][ctx][0] +
+					     kcov_shm->per_syscall.per_syscall_calls[i][ctx][1];
+			}
+			p_edges[i] = edges_sum;
+			p_calls[i] = calls_sum;
 		}
 	}
 
