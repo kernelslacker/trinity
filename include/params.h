@@ -46,6 +46,21 @@ extern bool do_specific_domain;
 extern char *specific_domain_optarg;
 extern bool no_domains[TRINITY_PF_MAX];
 extern bool dry_run;
+
+/*
+ * --sysrq-on-lockup: DEFAULT-OFF opt-in wedge diagnostic.  When enabled,
+ * the parent watchdog fires SysRq 'w' (blocked/uninterruptible tasks)
+ * followed by 'l' (backtrace all active CPUs) via /proc/sysrq-trigger
+ * once per wedge event, defined as max(3, running_childs/2) children
+ * simultaneously wedged.  The post-mortem is drained (bounded) from
+ * /dev/kmsg and emitted to the run's diagnostic output.  With the flag
+ * absent the entire trigger path, sysrq write, and kmsg drain are
+ * unreachable and the default build is byte-identical.  Requires the
+ * parent to hold CAP_SYS_ADMIN (setcap on the binary); when
+ * /proc/sys/kernel/sysrq is zero the code path attempts to raise it and
+ * gives up cleanly on EACCES/EPERM.
+ */
+extern bool sysrq_on_lockup;
 extern bool self_corrupt_canary;
 extern bool show_unannotated;
 extern bool show_syscall_list;
