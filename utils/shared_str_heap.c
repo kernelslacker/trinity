@@ -30,30 +30,47 @@
  *   the push's memset(slot, 0, bucket_size) already scribbled past
  *   the slot end.
  *
- *   Fix: record the bucket at alloc time in an out-of-band table
- *   (slot_bucket, indexed by slot_offset / 8; all bucket sizes and
- *   slot offsets are multiples of 8), and gate free_shared_str's
- *   bucket choice on that record instead of on any quantity a fuzz
- *   scribble can influence.  The size parameter to free_shared_str is
- *   kept for API stability but is advisory only when the slot has a
- *   recorded bucket -- which is every bucketed slot.  Above-bucket
- *   bump-and-leak slots have no record and still consult the
- *   caller-supplied size for the poison memset, capped to the
- *   heap-remaining extent so a fuzzable size cannot drive a scribble
- *   past the heap.
+ *   Fix: record the slot's state at alloc time in an out-of-band table
+ *   (slot_state, indexed by slot_offset / SHARED_FREELIST_SLOT_STRIDE;
+ *   all bucket sizes and slot offsets are multiples of the stride) and
+ *   gate free_shared_str's bucket choice on that record instead of on
+ *   any quantity a fuzz scribble can influence.  The size parameter
+ *   to free_shared_str is kept for API stability but is advisory only
+ *   when the slot has a recorded state -- which is every bucketed
+ *   slot.  Above-bucket bump-and-leak slots have no record and still
+ *   consult the caller-supplied size for the poison memset, capped to
+ *   the heap-remaining extent so a fuzzable size cannot drive a
+ *   scribble past the heap.
  *
- *   The metadata table lives in its own alloc_shared_pool region --
- *   NOT inside shared_str_heap and NOT registered as a fuzz target --
- *   so a fuzzed syscall cannot rewrite the authoritative bucket the
- *   free path reads.
+ * Slot-provenance authority (the reason the state is not just a bucket
+ * tag):
+ *
+ *   A bounds-check on the freelist token only proves the address is
+ *   IN-SLAB; it does NOT prove the address names a live, non-interior,
+ *   same-bucket slot.  A forged in-bounds token can still name a live
+ *   slot (aliased allocation), a slot from another bucket (cross-
+ *   bucket handout), or an aligned interior address inside a live slot
+ *   (silent payload corruption); a double-free re-links the same
+ *   address into two chains.
+ *
+ *   Fix: slot_state encodes FREE(bucket)/LIVE(bucket)/UNCARVED, and
+ *   shared_freelist_pop/push perform the atomic FREE<->LIVE transition
+ *   as the sole gate for handing out or reclaiming a slot.  Every
+ *   provenance failure -- link-to-live, cross-bucket, interior-offset,
+ *   double-free -- collapses to a failing state CAS; the primitive
+ *   leaks the slot without touching slab memory.  The state array
+ *   lives in its own alloc_shared_pool region -- NOT inside
+ *   shared_str_heap and NOT registered as a fuzz target -- so a fuzzed
+ *   syscall cannot rewrite the authoritative state the primitives
+ *   read.
  *
  * Freelist primitives:
  *
- *   The per-bucket lock-free freelist heads (ABA-safe, bounds-checked)
- *   live in utils/shared_freelist.c.  This TU owns the heap base, the
- *   per-bucket head words, and the per-slot bucket record; it calls
- *   shared_freelist_pop / shared_freelist_push to move slots on and
- *   off each head.
+ *   The per-bucket lock-free freelist heads (ABA-safe, bounds-checked,
+ *   provenance-checked) live in utils/shared_freelist.c.  This TU owns
+ *   the heap base, the per-bucket head words, and the per-slot state
+ *   record; it calls shared_freelist_pop / shared_freelist_push to
+ *   move slots on and off each head.
  */
 
 #include <stdbool.h>
@@ -87,8 +104,6 @@
 _Static_assert(SHARED_STR_HEAP_SIZE <= UINT32_MAX,
 	       "shared string heap offset+1 must fit in uint32_t");
 
-#define NUM_SHM_FREELIST_BUCKETS	8
-
 /*
  * Cross-process state.  Lives in its own alloc_shared_pool region so
  * children inherit a pointer to the same mapping; the mapping is set
@@ -110,30 +125,34 @@ struct shared_str_state {
 	 * (version, offset+1) tuple manipulated by
 	 * shared_freelist_pop / shared_freelist_push (see
 	 * utils/shared_freelist.c for the head-word packing and the
-	 * bounds-check armour applied on every deref).
+	 * bounds+provenance armour applied on every deref).
 	 */
-	uint64_t freelist[NUM_SHM_FREELIST_BUCKETS];
+	uint64_t freelist[SHARED_FREELIST_NUM_BUCKETS];
 
 	/*
-	 * Per-slot bucket record.  Indexed by slot_offset / 8 (all
-	 * bucket sizes and slot offsets are multiples of 8); each entry
-	 * is bucket_index + 1, with 0 == unrecorded (either uncarved or
-	 * an above-bucket bump-and-leak slot).  free_shared_str reads
-	 * this to pick the target bucket instead of recomputing size
-	 * from the slot's own (fuzzable) payload bytes.
+	 * Per-slot state.  Indexed by slot_offset /
+	 * SHARED_FREELIST_SLOT_STRIDE (all bucket sizes and slot
+	 * offsets are multiples of the stride).  See shared_freelist.h
+	 * for the encoding: 0 == UNCARVED / interior, 1..N ==
+	 * FREE(bucket_idx = v - 1), N+1..2N == LIVE(bucket_idx =
+	 * v - 1 - N).  free_shared_str reads this to pick the target
+	 * bucket instead of recomputing size from the slot's own
+	 * (fuzzable) payload bytes, AND the freelist primitives use it
+	 * as the atomic gate for slot ownership.
 	 */
-	uint8_t slot_bucket[SHARED_STR_HEAP_SIZE / 8];
+	uint8_t slot_state[SHARED_STR_HEAP_SIZE /
+			   SHARED_FREELIST_SLOT_STRIDE];
 };
 
 /*
- * Compile-time cross-check: uint8_t is enough to encode every
- * bucket index + 1 plus the "unrecorded" sentinel.  If a future
- * refactor grows NUM_SHM_FREELIST_BUCKETS past 254, the recording
- * would silently truncate and the free-path lookup would land in
- * the wrong bucket.
+ * Compile-time cross-check: uint8_t is enough to hold every state
+ * encoding.  The highest legal value is LIVE(NUM_BUCKETS - 1) which
+ * is 2 * NUM_BUCKETS.  If a future refactor grows NUM_BUCKETS past
+ * 127, LIVE and FREE ranges would collide the sign bit / need a
+ * wider table.
  */
-_Static_assert(NUM_SHM_FREELIST_BUCKETS <= 254,
-	       "bucket index + 1 must fit in slot_bucket's uint8_t");
+_Static_assert(2 * SHARED_FREELIST_NUM_BUCKETS <= 254,
+	       "state encoding must fit in slot_state's uint8_t");
 
 /*
  * Base pointer of the shared string heap.  Freelist tokens encode an
@@ -166,9 +185,11 @@ static void shared_str_heap_init(void)
 	/* __alloc_shared() poisons the region with random bytes to
 	 * expose uninitialised reads.  Zero the state block explicitly:
 	 * the bump cursor and freelist heads read as 0 only if we
-	 * clear it, and slot_bucket must start at 0 (== unrecorded)
-	 * so the free path treats a not-yet-allocated slot correctly
-	 * (skip freelist push, fall through to the leak path). */
+	 * clear it, and slot_state must start at 0 (== UNCARVED) so
+	 * the free path treats a not-yet-allocated slot correctly
+	 * (skip freelist push, fall through to the leak path) and the
+	 * freelist pop primitive correctly rejects a forged token that
+	 * names an uncarved offset. */
 	memset(sss, 0, sizeof(*sss));
 }
 
@@ -194,12 +215,16 @@ void * alloc_shared_str(size_t size)
 	bucket = shared_freelist_bucket(size);
 	if (bucket >= 0) {
 		p = shared_freelist_pop(&sss->freelist[bucket],
+					sss->slot_state,
+					(unsigned int)bucket,
 					shared_str_heap,
 					shared_str_heap_capacity,
 					shared_freelist_bucket_sizes[bucket]);
 		if (p != NULL) {
-			size_t off = (size_t)((char *)p - shared_str_heap);
-			sss->slot_bucket[off / 8U] = (uint8_t)(bucket + 1);
+			/* Primitive already installed LIVE(bucket) at
+			 * slot_state[off / SHARED_FREELIST_SLOT_STRIDE]
+			 * via the FREE->LIVE state CAS, so no local
+			 * post-fixup is needed here. */
 			return p;
 		}
 		/* Round bump to bucket size so the first free of a bump
@@ -234,12 +259,20 @@ void * alloc_shared_str(size_t size)
 	p = shared_str_heap + old_used;
 	memset(p, 0, size);
 	if (bucket >= 0) {
-		/* Bucketed bump slot: record the bucket so free lands
-		 * in the right freelist even if the payload NUL is
-		 * later stomped.  Above-bucket bump slots leave the
-		 * record at 0 (unrecorded) and free them via the
-		 * leak-with-capped-memset path. */
-		sss->slot_bucket[old_used / 8U] = (uint8_t)(bucket + 1);
+		/* Bucketed bump slot: publish LIVE(bucket) into
+		 * slot_state so a subsequent free_shared_str() finds
+		 * the correct bucket and passes the primitive's
+		 * LIVE->FREE state CAS.  The bump CAS above guaranteed
+		 * this offset is uniquely owned by us, so the transition
+		 * is UNCARVED (0) -> LIVE(bucket); a plain atomic store
+		 * with RELEASE ordering suffices.  Above-bucket bump
+		 * slots leave the record at UNCARVED and free them via
+		 * the leak-with-capped-memset path. */
+		__atomic_store_n(&sss->slot_state[old_used /
+						  SHARED_FREELIST_SLOT_STRIDE],
+				 SHARED_FREELIST_STATE_LIVE(
+					 (unsigned int)bucket),
+				 __ATOMIC_RELEASE);
 	}
 	return p;
 }
@@ -271,7 +304,7 @@ void free_shared_str(void *p, size_t size)
 
 	/* Slot must live inside the heap.  A wild pointer -- fuzzed
 	 * scribble into an obj->name field, or an above-heap alloc that
-	 * escaped a caller-side range check -- has no recorded bucket
+	 * escaped a caller-side range check -- has no recorded state
 	 * for us to trust; skip and leak rather than dereference an
 	 * out-of-heap pointer or scribble a random address.  This is
 	 * the same "release what we own, leak the unproven" invariant
@@ -284,44 +317,50 @@ void free_shared_str(void *p, size_t size)
 
 	off = (size_t)((char *)p - shared_str_heap);
 
-	/* Slot starts are 8-byte aligned by construction (bucket sizes
-	 * are all multiples of 8, initial cursor is 0, bump rounds to
-	 * bucket size for bucketed slots).  A misaligned pointer means
-	 * either a corrupt caller or a poisoned pointer that happened
-	 * to land in the heap band -- skip and leak. */
-	if ((off & 7U) != 0)
+	/* Slot starts are STRIDE-aligned by construction (bucket sizes
+	 * are all multiples of STRIDE, initial cursor is 0, bump rounds
+	 * to bucket size for bucketed slots).  A misaligned pointer
+	 * means either a corrupt caller or a poisoned pointer that
+	 * happened to land in the heap band -- skip and leak. */
+	if ((off & (SHARED_FREELIST_SLOT_STRIDE - 1U)) != 0)
 		return;
 
-	/* Authoritative bucket lookup: recorded at alloc time in
-	 * memory the fuzzer cannot reach.  A non-zero record wins over
-	 * whatever the caller passed as `size' (which for the maps
-	 * strdup path is a strlen()-derived quantity computed from a
-	 * payload the kernel can scribble via a fuzzed syscall).  See
-	 * the block comment at the top of this file. */
-	recorded = sss->slot_bucket[off / 8U];
-	if (recorded != 0 && recorded <= NUM_SHM_FREELIST_BUCKETS) {
-		unsigned int bucket = (unsigned int)recorded - 1U;
+	/* Authoritative state lookup: recorded at alloc time in memory
+	 * the fuzzer cannot reach.  A LIVE(bucket) record picks the
+	 * bucket to push to and wins over whatever the caller passed as
+	 * `size' (which for the maps strdup path is a strlen()-derived
+	 * quantity computed from a payload the kernel can scribble via
+	 * a fuzzed syscall).  See the block comment at the top of this
+	 * file. */
+	recorded = __atomic_load_n(&sss->slot_state[off /
+						    SHARED_FREELIST_SLOT_STRIDE],
+				   __ATOMIC_ACQUIRE);
+	if (recorded > SHARED_FREELIST_NUM_BUCKETS &&
+	    recorded <= 2 * SHARED_FREELIST_NUM_BUCKETS) {
+		unsigned int bucket = (unsigned int)recorded - 1U -
+				      SHARED_FREELIST_NUM_BUCKETS;
 
-		/* Clear the record BEFORE push: the slot is about to
-		 * be handed to the next popper, and stale metadata
-		 * would then misattribute a future free of an
-		 * unrelated (untracked) pointer that happened to land
-		 * on this offset.  Reset here so the invariant "record
-		 * == 0 iff slot is not currently live" holds across
-		 * the alloc-free cycle. */
-		sss->slot_bucket[off / 8U] = 0;
-		shared_freelist_push(&sss->freelist[bucket], p,
+		/* Primitive owns the LIVE->FREE state transition
+		 * atomically (see shared_freelist.c).  A double-free,
+		 * cross-bucket push, or interior-address push all fail
+		 * the CAS inside the primitive and the slot is leaked;
+		 * we don't need to pre-clear state here. */
+		shared_freelist_push(&sss->freelist[bucket],
+				     sss->slot_state, bucket, p,
 				     shared_str_heap,
 				     shared_str_heap_capacity,
 				     shared_freelist_bucket_sizes[bucket]);
 		return;
 	}
 
-	/* No record -- above-bucket bump-and-leak slot, or an alloc
-	 * that predates any record (there are none at HEAD, but be
-	 * conservative).  Poison and leak, capping the memset to the
-	 * heap-remaining extent so a fuzzable `size' cannot drive a
-	 * scribble past the heap end. */
+	/* No LIVE record -- above-bucket bump-and-leak slot, an
+	 * already-freed slot (state == FREE(bucket)), or a wild pointer
+	 * into an uncarved offset.  Poison and leak, capping the memset
+	 * to the heap-remaining extent so a fuzzable `size' cannot
+	 * drive a scribble past the heap end.  For state == FREE this
+	 * is a double-free; the leaking memset is fine because the
+	 * slot's link bytes have already been overwritten by the first
+	 * push (they're just a next-token in the free chain now). */
 	if (size == 0)
 		return;
 	if (size > shared_str_heap_capacity - off)
