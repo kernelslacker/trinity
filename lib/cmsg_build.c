@@ -128,9 +128,6 @@ enum cmsg_kind pick_cmsg_kind(unsigned int family)
 	if (family == AF_INET || family == AF_INET6)
 		pool[n++] = CMSG_KIND_TLS_SET_RECORD_TYPE;
 
-	if (n == 0)
-		return (enum cmsg_kind) rnd_modulo_u32(NR_CMSG_KINDS_BASE);
-
 	return pool[rnd_modulo_u32(n)];
 }
 
