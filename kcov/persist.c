@@ -22,6 +22,7 @@
 #include "exit.h"		/* EXIT_SHM_CORRUPTION, STILL_RUNNING */
 #include "fd.h"			/* read_all, write_all */
 #include "kcov-internal.h"	/* kcov_kaslr_base, public kcov API */
+#include "persist-envelope.h"
 #include "persist-util.h"	/* persist_sweep_stale_tmp */
 #include "pids.h"		/* mypid */
 #include "shm.h"		/* shm */
@@ -785,6 +786,15 @@ bool kcov_bitmap_save_file(const char *path)
 		return false;
 	}
 
+	{
+		struct trinity_persist_envelope env;
+
+		persist_envelope_init(&env, PERSIST_KCOV,
+				      KCOV_BITMAP_FILE_VERSION, 0, 0);
+		if (write_all(fd, &env, sizeof(env)) < 0)
+			goto fail;
+	}
+
 	if (write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
 	if (write_all(fd, bucket_seen_blob, KCOV_NUM_EDGES) < 0)
@@ -856,6 +866,28 @@ bool kcov_bitmap_load_file(const char *path)
 			output(0, "kcov-bitmap: open(%s) failed: %s -- cold start\n",
 			       path, strerror(errno));
 		return false;
+	}
+
+	{
+		struct trinity_persist_envelope env;
+		ssize_t en;
+
+		en = read_all(fd, &env, sizeof(env));
+		if (en != (ssize_t)sizeof(env)) {
+			output(0, "kcov-bitmap: envelope truncated at %s (got %zd, want %zu) -- cold start\n",
+			       path, en, sizeof(env));
+			(void)close(fd);
+			return false;
+		}
+		if (!persist_envelope_validate(&env, PERSIST_KCOV, path)) {
+			(void)close(fd);
+			return false;
+		}
+		if (!persist_envelope_check_generation(&env, PERSIST_KCOV,
+						       path)) {
+			(void)close(fd);
+			return false;
+		}
 	}
 
 	/* Read only the v6-sized prefix first so a v5/v6 file (88 B

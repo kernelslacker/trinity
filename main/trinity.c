@@ -25,6 +25,7 @@
 #include "objects.h"
 #include "pids.h"
 #include "params.h"
+#include "persist-envelope.h"
 #include "domains.h"
 #include "random.h"
 #include "rlimits.h"
@@ -424,6 +425,9 @@ static void warm_start_all(void)
  */
 static void persist_state_on_clean_exit(void)
 {
+	enum trinity_persist_component saved[4];
+	uint32_t nr_saved = 0;
+
 	/*
 	 * Persist the minicorpus on graceful exit so the next run starts
 	 * warm.  Skip after a corruption or crash — saving from a poisoned
@@ -437,8 +441,10 @@ static void persist_state_on_clean_exit(void)
 		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
 			const char *path = warm_start_path ? warm_start_path
 							   : minicorpus_default_path();
-			if (path != NULL && minicorpus_save_file(path))
+			if (path != NULL && minicorpus_save_file(path)) {
 				output(0, "minicorpus: persisted to %s\n", path);
+				saved[nr_saved++] = PERSIST_MINICORPUS;
+			}
 		}
 	}
 
@@ -458,8 +464,10 @@ static void persist_state_on_clean_exit(void)
 		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
 			const char *kpath = kcov_bitmap_default_path();
 
-			if (kpath != NULL && kcov_bitmap_save_file(kpath))
+			if (kpath != NULL && kcov_bitmap_save_file(kpath)) {
 				output(0, "kcov-bitmap: persisted to %s\n", kpath);
+				saved[nr_saved++] = PERSIST_KCOV;
+			}
 		}
 	}
 
@@ -480,8 +488,10 @@ static void persist_state_on_clean_exit(void)
 		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
 			const char *cpath = cmp_hints_default_path();
 
-			if (cpath != NULL && cmp_hints_save_file(cpath))
+			if (cpath != NULL && cmp_hints_save_file(cpath)) {
 				output(0, "cmp-hints: persisted to %s\n", cpath);
+				saved[nr_saved++] = PERSIST_CMP_HINTS;
+			}
 		}
 	}
 
@@ -502,10 +512,26 @@ static void persist_state_on_clean_exit(void)
 		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
 			const char *cpath = chain_corpus_default_path();
 
-			if (cpath != NULL && chain_corpus_save_file(cpath))
+			if (cpath != NULL && chain_corpus_save_file(cpath)) {
 				output(0, "chain corpus: persisted to %s\n",
 				       cpath);
+				saved[nr_saved++] = PERSIST_CHAIN;
+			}
 		}
+	}
+
+	/*
+	 * All four components have finished saving.  Write the manifest
+	 * naming this generation and the components that landed, so the
+	 * next warm-start can detect a torn coordinated save (e.g. this
+	 * process was killed between two _save_file() calls, leaving one
+	 * carrier at gen N and another at gen N-1).  Best-effort; missing
+	 * manifest just means the load side falls back to per-file
+	 * validation.
+	 */
+	if (nr_saved > 0) {
+		(void)persist_write_generation_manifest(
+			persist_envelope_current_generation(), saved, nr_saved);
 	}
 }
 

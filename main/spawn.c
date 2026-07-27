@@ -17,6 +17,7 @@
 #include "kcov.h"
 #include "minicorpus.h"
 #include "params.h"
+#include "persist-envelope.h"
 #include "pids.h"
 #include "random.h"
 #include "self_cgroup.h"
@@ -513,30 +514,50 @@ static void dump_fork_failure_subworker_counters(void)
  */
 void final_state_save(void)
 {
+	enum trinity_persist_component saved[4];
+	uint32_t nr_saved = 0;
+
 	if (!no_warm_start) {
 		const char *path = warm_start_path ? warm_start_path
 						   : minicorpus_default_path();
 
-		if (path != NULL && minicorpus_save_file(path))
+		if (path != NULL && minicorpus_save_file(path)) {
 			output(0, "minicorpus: persisted to %s\n", path);
+			saved[nr_saved++] = PERSIST_MINICORPUS;
+		}
 	}
 	if (!no_kcov_warm_start && kcov_shm != NULL) {
 		const char *kpath = kcov_bitmap_default_path();
 
-		if (kpath != NULL && kcov_bitmap_save_file(kpath))
+		if (kpath != NULL && kcov_bitmap_save_file(kpath)) {
 			output(0, "kcov-bitmap: persisted to %s\n", kpath);
+			saved[nr_saved++] = PERSIST_KCOV;
+		}
 	}
 	if (!no_cmp_hints_warm_start && cmp_hints_shm != NULL) {
 		const char *cpath = cmp_hints_default_path();
 
-		if (cpath != NULL && cmp_hints_save_file(cpath))
+		if (cpath != NULL && cmp_hints_save_file(cpath)) {
 			output(0, "cmp-hints: persisted to %s\n", cpath);
+			saved[nr_saved++] = PERSIST_CMP_HINTS;
+		}
 	}
 	if (!no_chain_warm_start && chain_corpus_shm != NULL) {
 		const char *cpath = chain_corpus_default_path();
 
-		if (cpath != NULL && chain_corpus_save_file(cpath))
+		if (cpath != NULL && chain_corpus_save_file(cpath)) {
 			output(0, "chain corpus: persisted to %s\n", cpath);
+			saved[nr_saved++] = PERSIST_CHAIN;
+		}
+	}
+
+	/* Companion of persist_state_on_clean_exit()'s manifest write:
+	 * pin this generation and the components that landed so the next
+	 * warm-start can detect a torn coordinated save from the bail
+	 * path.  Best-effort. */
+	if (nr_saved > 0) {
+		(void)persist_write_generation_manifest(
+			persist_envelope_current_generation(), saved, nr_saved);
 	}
 }
 

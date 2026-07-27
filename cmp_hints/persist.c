@@ -31,6 +31,7 @@
 #include "cmp_hints.h"
 #include "cmp_hints-internal.h"
 #include "kcov.h"
+#include "persist-envelope.h"
 #include "persist-util.h"
 #include "pids.h"
 #include "shm.h"
@@ -305,6 +306,16 @@ bool cmp_hints_save_file(const char *path)
 		return false;
 	}
 
+	{
+		struct trinity_persist_envelope env;
+
+		persist_envelope_init(&env, PERSIST_CMP_HINTS,
+				      CMP_HINTS_FILE_VERSION,
+				      (uint32_t)payload_bytes, 0);
+		if (write_all(fd, &env, sizeof(env)) < 0)
+			goto fail;
+	}
+
 	if (write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
 	if (write_all(fd, payload, payload_bytes) < 0)
@@ -399,6 +410,27 @@ static bool cmp_hints_load_file_header(const char *path,
 			output(0, "cmp-hints: open(%s) failed: %s -- cold start\n",
 			       path, strerror(errno));
 		return false;
+	}
+
+	{
+		struct trinity_persist_envelope env;
+
+		n = read_all(fd, &env, sizeof(env));
+		if (n != (ssize_t)sizeof(env)) {
+			output(0, "cmp-hints: envelope truncated at %s (got %zd, want %zu) -- cold start\n",
+			       path, n, sizeof(env));
+			(void)close(fd);
+			return false;
+		}
+		if (!persist_envelope_validate(&env, PERSIST_CMP_HINTS, path)) {
+			(void)close(fd);
+			return false;
+		}
+		if (!persist_envelope_check_generation(&env, PERSIST_CMP_HINTS,
+						       path)) {
+			(void)close(fd);
+			return false;
+		}
 	}
 
 	n = read_all(fd, hdr, sizeof(*hdr));

@@ -25,6 +25,7 @@
 
 #include "fd.h"
 #include "minicorpus.h"
+#include "persist-envelope.h"
 #include "persist-util.h"
 #include "sanitise.h"
 #include "syscall.h"
@@ -172,6 +173,15 @@ bool minicorpus_save_file(const char *path)
 		return false;
 	}
 
+	{
+		struct trinity_persist_envelope env;
+
+		persist_envelope_init(&env, PERSIST_MINICORPUS,
+				      CORPUS_FILE_VERSION, 0, 0);
+		if (write_all(fd, &env, sizeof(env)) < 0)
+			goto fail;
+	}
+
 	if (write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
 
@@ -269,6 +279,28 @@ bool minicorpus_load_file(const char *path,
 			output(0, "minicorpus: open(%s) failed: %s -- cold start\n",
 			       path, strerror(errno));
 		return false;
+	}
+
+	{
+		struct trinity_persist_envelope env;
+		ssize_t en;
+
+		en = read_all(fd, &env, sizeof(env));
+		if (en != (ssize_t)sizeof(env)) {
+			output(0, "minicorpus: envelope truncated at %s (got %zd, want %zu) -- cold start\n",
+			       path, en, sizeof(env));
+			close(fd);
+			return false;
+		}
+		if (!persist_envelope_validate(&env, PERSIST_MINICORPUS, path)) {
+			close(fd);
+			return false;
+		}
+		if (!persist_envelope_check_generation(&env, PERSIST_MINICORPUS,
+						       path)) {
+			close(fd);
+			return false;
+		}
 	}
 
 	hn = read_all(fd, &hdr, sizeof(hdr));
