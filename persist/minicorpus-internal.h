@@ -41,3 +41,16 @@ extern bool this_replay_source_tracked;
 extern unsigned int this_replay_source_nr;
 extern unsigned int this_replay_source_slot;
 extern unsigned int this_replay_source_age;
+
+/*
+ * Per-arg mutator engine surface exposed to the splice-and-mutate
+ * driver.  minicorpus_mutate_arg_stacked() applies the weighted-case
+ * mutator @n_muts times in sequence; minicorpus_pick_stack_depth()
+ * returns the capped-geometric depth the driver bumps into the
+ * per-depth histogram before calling the stacker.
+ */
+unsigned int minicorpus_pick_stack_depth(void);
+unsigned long minicorpus_mutate_arg_stacked(unsigned long val,
+					    unsigned int n_muts,
+					    enum argtype atype,
+					    const struct arg_param *params);
