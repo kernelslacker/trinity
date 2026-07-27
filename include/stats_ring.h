@@ -413,7 +413,7 @@ extern struct stats_aggregate parent_stats;
 
 /*
  * Mirror page: parent-write / child-read.  Carries the coarse fleet
- * op_count that random-syscall.c's rotation clock and child.c's
+ * op_count that random_syscall/strategy-accounting.c's rotation clock and child.c's
  * syscalls_todo termination need to see.  The parent republishes on
  * each drain.
  */

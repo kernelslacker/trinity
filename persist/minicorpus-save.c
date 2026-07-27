@@ -70,7 +70,7 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 
 	/* RedQueen-source provenance tag: read the current child's in_reexec
 	 * recursion guard inside the save site rather than threading a new
-	 * parameter through the random-syscall.c caller.  A NULL child (the
+	 * parameter through the random_syscall/dispatch.c caller.  A NULL child (the
 	 * parent post-mortem path is the only realistic caller; the normal
 	 * dispatch_step save path always runs inside a child) leaves the
 	 * default-zero rq_sourced from the memset above, which is the

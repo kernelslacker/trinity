@@ -220,7 +220,7 @@ void kcov_cmp_render_reexec_skip_reason_breakdown(long elapsed,
 	 * reexec_attempts (rate-gate skip vs destructive vs pending-
 	 * full vs pass), instead of inferring it from a single delta.
 	 * Skip-row order mirrors the evaluation order in
-	 * random-syscall.c so the funnel reads top-to-bottom. */
+	 * random_syscall/dispatch.c so the funnel reads top-to-bottom. */
 	kcov_cmp_rate_line(elapsed, "reexec_gate_skip_in_reexec", delta_reexec_gate_skip_in_reexec, cur_reexec_gate_skip_in_reexec);
 	kcov_cmp_rate_line(elapsed, "reexec_gate_skip_disabled", delta_reexec_gate_skip_disabled, cur_reexec_gate_skip_disabled);
 	kcov_cmp_rate_line(elapsed, "reexec_gate_skip_mode", delta_reexec_gate_skip_mode, cur_reexec_gate_skip_mode);

@@ -387,6 +387,6 @@
  * per-call reexec_pending[] census is at most that many entries,
  * so the success-by-pick-index counter has the same bound.  Pinned
  * here as a separate define so kcov.h stays self-contained (no
- * dependency on cmp_hints.h); a _Static_assert in random-syscall.c
+ * dependency on cmp_hints.h); a _Static_assert in random_syscall/dispatch.c
  * (which includes both headers) catches any drift between the two. */
 #define REEXEC_PENDING_PICK_HIST_NR 8U

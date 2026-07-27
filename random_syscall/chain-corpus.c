@@ -118,7 +118,7 @@ void chain_corpus_init(void)
  * feeding stale heap pointers, stale pids, or sanitise-stashed
  * pointers to the kernel.  Same exclusions as minicorpus_save (which
  * treats these arg types as poison) plus the entry->sanitise gate
- * that random-syscall.c applies before it calls minicorpus_save.
+ * that random_syscall/dispatch.c applies before it calls minicorpus_save.
  *
  * The check happens at save time so the corpus only ever contains
  * chains that are themselves replay-safe.  Saving an unsafe chain and

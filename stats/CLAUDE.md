@@ -115,7 +115,7 @@ Two parallel counter stores, by design:
   `stats/dump/strategy.c` and `stats/kcov/dump.c`.
 - `strategy/strategy-stats-dump.c` provides a separate operator summary called
   from `dump_stats()` alongside the stats-owned sections.
-- `child-altop.c` owns `childop_score_dump()` and
+- `child-altop-score.c` owns `childop_score_dump()` and
   `childop_outcome_window_dump()`; `dump_stats()` invokes them as part of the
   childop block.
 - `childops/recipe-runner.c` and `childops/iouring-recipes.c` expose

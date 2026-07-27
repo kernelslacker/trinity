@@ -3,7 +3,7 @@
 
 /*
  * Observability for the adaptive expensive-syscall accept gate
- * (random-syscall.c :: expensive_accept()).  Bumped on the adaptive
+ * (random_syscall/pick-common.c :: expensive_accept()).  Bumped on the adaptive
  * compute path (mode != OFF, kcov_shm != NULL, nr in range).  The
  * OFF / NULL-kcov / out-of-range early-return path MUST NOT bump
  * these -- byte-identity contract documented on expensive_accept().

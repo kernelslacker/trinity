@@ -105,7 +105,7 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
   `CMP_RISING_PC_FLAT` plateau hypothesis reads `kcov_shm->cmp_hints_unique_inserts`;
   `RRC_CMP_DERIVED` rescue classification reads `cmp_hints_pool_safe_count()`; the two-tier
   picker in cmp_hints/get.c samples the recent ring first during a plateau.
-- `child.c` / `child-altop.c` — read frontier record hooks' side effects (childop-driven
+- `child.c` / `child-altop-*.c` — read frontier record hooks' side effects (childop-driven
   productive-event bookkeeping mirrors `frontier_window_advance()`'s clear-then-publish
   ordering); `strategy.h` included for the plateau/frontier declarations.
 - `include/strategy.h` / `include/strategy-internal.h` — shared enums (`strategy_t`,
@@ -143,7 +143,7 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
    functions (`plateau_rescue_bias_active_for`, `plateau_anti_prior_active`,
    `wall_lever_should_suppress_shadow`) rely on a specific ACQUIRE-load-then-RELAXED-read
    sequence to piggyback on an unrelated RELEASE store (`current_strategy`) elsewhere in
-   random-syscall.c for cross-field visibility. Any future refactor of the rotation site's
+   random_syscall/ for cross-field visibility. Any future refactor of the rotation site's
    store ordering would silently break these gates without a compiler error.
 
 ## Summary

@@ -334,7 +334,7 @@ struct childop_stats {
 	 * the active slot with the same delta they feed into
 	 * childop_wall_ns[] / childop_edges_clean[], and bump the matching
 	 * recent_cached counter in lockstep.  Window advance is driven by
-	 * childop_window_advance() (child-altop.c) from the same periodic
+	 * childop_window_advance() (child-altop-budget.c) from the same periodic
 	 * tick that runs the operator-visibility dumps; the rotator clears
 	 * the next slot before publishing the new index, subtracts the just-
 	 * cleared slot's contribution from the cached sum under a CAS retry

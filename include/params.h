@@ -313,7 +313,7 @@ extern char *stats_log_path;
 /*
  * --redqueen-pending-pick={random,first}: retained for compatibility,
  * no-op.  The RedQueen re-exec consumer at the dispatch_step tail
- * (random-syscall.c) drains every staged reexec_pending[] entry per
+ * (random_syscall/dispatch.c) drains every staged reexec_pending[] entry per
  * parent dispatch -- there is no per-call selection between entries
  * anymore, so neither mode alters which entries (or how many) get
  * re-executed.  Parsing is preserved so existing invocations do not

@@ -562,7 +562,7 @@ void dump_stats_strategy_summary(void)
 
 	/* Cost-pool one-shot selector observer -- shutdown surface for
 	 * the shadow / live accepted-pick counters bumped from the
-	 * HEURISTIC and RANDOM arms in random-syscall.c.  Emitted in
+	 * HEURISTIC and RANDOM arms in random_syscall/pick-heuristic.c and pick-random.c.  Emitted in
 	 * dump_stats_strategy_summary alongside the sibling frontier_
 	 * satcool_* / frontier_live_cool_* shadow families above so an
 	 * operator running a short dry-run (which never reaches the 600 s

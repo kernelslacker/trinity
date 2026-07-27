@@ -15,7 +15,7 @@
 
 /*
  * SHADOW-ONLY saturation-cooldown predicate, extracted from the silent-
- * regime accept site in random-syscall.c.  Gated by
+ * regime accept site in random_syscall/pick-frontier.c.  Gated by
  * --frontier-saturation-cooldown != off.  Sibling of the silent-streak
  * decay block and the errno-plateau block at the call site; this one
  * targets the same wasteful-silent-pick shape but uses the windowed
@@ -164,7 +164,7 @@ void frontier_satcool_spare(unsigned int syscallnr, bool do32)
  * reset (already wired via frontier_record_new_edge in strategy.c)
  * releases the demote.
  *
- * Called from the silent-regime accept site in random-syscall.c
+ * Called from the silent-regime accept site in random_syscall/pick-frontier.c
  * immediately after frontier_satcool_spare so the two shadow
  * projections sit alongside each other in the pick path and share
  * the outer MAX_NR_SYSCALL bound the caller already established.
@@ -271,7 +271,7 @@ void frontier_barren_demote(unsigned int syscallnr, bool do32)
  * 10000 -- see include/strategy.h for the low-floor rationale), and
  * the shadow counter family the bumps land in (frontier_live_cool_*).
  *
- * Called from the LIVE-regime miss-attribution path in random-syscall.c
+ * Called from the LIVE-regime miss-attribution path in random_syscall/strategy-accounting.c
  * inside the existing (streak >= FRONTIER_LIVE_MISS_COOLDOWN) branch,
  * right next to the undiscriminated frontier_live_would_skip projection
  * the existing F3 shadow row bumps.  The pairing puts the

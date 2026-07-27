@@ -49,7 +49,7 @@ future LIVE decay variant of the picker would treat as decay
 candidates, computed WITHOUT changing any selection today.
 
 Read by:
-- `random-syscall.c` -- silent-regime bump site, compares post-increment
+- `random_syscall/pick-frontier.c` -- silent-regime bump site, compares post-increment
   streak against this threshold.
 - `stats.c` -- periodic dump emits the threshold value alongside the
   candidate count so the operator can interpret the count.
@@ -279,7 +279,7 @@ the two halves of the no-input call budget that the run-1717
 measurements decomposed (one no-arg / never-fail `GROUP_PROCESS`
 member absorbing ~20-28k calls/run via the sticky `last_group` +
 70%-same-group retry loop in
-`random-syscall.c::set_syscall_nr_heuristic`; rotates by seed but
+`random_syscall/pick-heuristic.c::set_syscall_nr_heuristic`; rotates by seed but
 always collapses onto pure getters / no-op yields because those are
 the only `GROUP_PROCESS` members that pass every gate cheaply and
 re-arm the pin).  The damper releases a BARREN group pin (one whose
@@ -289,7 +289,7 @@ productive group clustering (`NET`
 `socket->bind->sendto`, `VFS` `open->read->close`) precisely because
 productive pins advance the coverage watermark on every yielding
 member and so never go stale within the window.  See the windowed-pin
-predicate body in `random-syscall.c` and the per-group / per-syscall
+predicate body in `random_syscall/pick-heuristic.c` and the per-group / per-syscall
 would-skip counters in `include/stats.h` for the shape this evaluates
 and counts in shadow.
 
@@ -735,7 +735,7 @@ All sourced from existing counters; no new wiring.
 - `bandit_edges`, `explorer_edges` (calls) --
   `shm->stats.{bandit,explorer}_pool_edges_discovered`.  Despite the
   `_edges_` name these are CALL counts: bumped by 1 per syscall pick
-  that surfaced one or more new edges (`random-syscall.c`), not by
+  that surfaced one or more new edges (`random_syscall/strategy-accounting.c`), not by
   the number of edges that call surfaced.  Excludes alt-op childops.
 - `childop_edges_total` (edges) -- sum of
   `shm->stats.childop_edges_discovered[]` across `enum child_op_type`.

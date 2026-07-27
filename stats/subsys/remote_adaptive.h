@@ -3,7 +3,7 @@
 
 /*
  * Adaptive remote-KCOV mode A/B disposition counters, bumped from
- * dispatch_step in random-syscall.c on every productive-signal call
+ * dispatch_step in random_syscall/dispatch.c on every productive-signal call
  * into the PC-mode + remote_capable path so the operator can A/B
  * compare the static remote-mode policy (per-syscall
  * KCOV_REMOTE_HEAVY flag + ONE_IN(remote_reciprocal)) against the
