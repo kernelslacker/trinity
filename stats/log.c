@@ -581,11 +581,30 @@ static void stats_ts_emit_cmp_hints(FILE *fp)
  * the picker is running.  Emitted as strings via the existing
  * name accessors so a consumer does not need to link against the
  * enums.  Both fall back to their zeroth entry when shm is not
- * mapped, which matches the picker's runtime behaviour. */
+ * mapped, which matches the picker's runtime behaviour.
+ *
+ * Detector-evaluation fields (hard_stall_active, last window delta,
+ * enter/exit thresholds, window seconds, window elapsed,
+ * intervention_active) are additive; they make the hard-stall
+ * detector state visible on runs that never cross the enter/exit
+ * boundaries and therefore never emit a transition line.
+ *
+ * When the plateau is inactive the intervention mode is reported as
+ * NONE rather than UNIFORM_RANDOM: select_next_strategy() clears the
+ * mode-current field back to PIM_UNIFORM_RANDOM (=0) as a "no bias"
+ * sentinel outside a plateau, which otherwise looks identical to an
+ * actively-forced uniform-random intervention.  intervention_active
+ * disambiguates the two states, and mirroring that in the mode
+ * string keeps the JSONL self-explanatory. */
 static void stats_ts_emit_plateau(FILE *fp)
 {
 	int plateau_hypothesis = 0;
 	int intervention_mode = 0;
+	bool hard_stall_active = false;
+	unsigned long last_window_delta = 0;
+	time_t window_start = 0;
+	long window_elapsed = 0;
+	const char *mode_name;
 
 	if (shm != NULL) {
 		plateau_hypothesis = __atomic_load_n(
@@ -594,12 +613,47 @@ static void stats_ts_emit_plateau(FILE *fp)
 			&shm->plateau_intervention_mode_current,
 			__ATOMIC_RELAXED);
 	}
+	if (kcov_shm != NULL) {
+		struct timespec ts;
+
+		hard_stall_active = __atomic_load_n(
+			&kcov_shm->plateau.plateau_active, __ATOMIC_RELAXED);
+		last_window_delta = __atomic_load_n(
+			&kcov_shm->plateau.plateau_last_window_delta,
+			__ATOMIC_RELAXED);
+		window_start = __atomic_load_n(
+			&kcov_shm->plateau.plateau_window_start,
+			__ATOMIC_RELAXED);
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		if (window_start > 0) {
+			window_elapsed = (long)(ts.tv_sec - window_start);
+			if (window_elapsed < 0)
+				window_elapsed = 0;
+		}
+	}
+
+	mode_name = hard_stall_active ?
+		plateau_intervention_mode_name(intervention_mode) : "NONE";
 
 	fprintf(fp,
 		",\"plateau_hypothesis\":\"%s\","
-		"\"plateau_intervention_mode\":\"%s\"",
+		"\"plateau_intervention_mode\":\"%s\","
+		"\"hard_stall_active\":%d,"
+		"\"intervention_active\":%d,"
+		"\"plateau_last_window_delta\":%lu,"
+		"\"enter_thresh\":%d,"
+		"\"exit_thresh\":%d,"
+		"\"window_sec\":%d,"
+		"\"plateau_window_elapsed\":%ld",
 		strategy_plateau_hypothesis_name(plateau_hypothesis),
-		plateau_intervention_mode_name(intervention_mode));
+		mode_name,
+		hard_stall_active ? 1 : 0,
+		hard_stall_active ? 1 : 0,
+		last_window_delta,
+		KCOV_PLATEAU_ENTER_THRESHOLD,
+		KCOV_PLATEAU_EXIT_THRESHOLD,
+		KCOV_PLATEAU_WINDOW_SEC,
+		window_elapsed);
 }
 
 /* Per-arm learner state.  Fixed-width array indexed by
