@@ -541,6 +541,41 @@ struct shm_s {
 	unsigned long strategy_bandit_pool_ops[NR_STRATEGIES];
 	unsigned long strategy_completed_calls[NR_STRATEGIES];
 
+	/* Per-arm return-class exposure: partition strategy_completed_calls[]
+	 * by the syscall's return disposition so a late-run operator can see
+	 * whether the arm is still surfacing genuine kernel work (success or
+	 * a subsystem-depth error) or has degenerated into replaying shallow
+	 * validation rejects.  The three counters sum to strategy_completed_
+	 * calls[arm] within the usual RELAXED lost-update tolerance.
+	 *
+	 *   strategy_ret_success[]         rec->retval != (unsigned long)-1
+	 *   strategy_ret_shallow_reject[]  failure with errno in the pre-
+	 *                                  entry validation set (EINVAL /
+	 *                                  EBADF / EPERM / EACCES / ENOENT /
+	 *                                  EFAULT / ENOSYS / ENOTTY /
+	 *                                  EOPNOTSUPP / ENOTDIR / ELOOP /
+	 *                                  ENAMETOOLONG / EDOM / ERANGE /
+	 *                                  EOVERFLOW / EAFNOSUPPORT /
+	 *                                  EPROTONOSUPPORT / ENODEV /
+	 *                                  ENOEXEC / EBADR / EMSGSIZE /
+	 *                                  EISDIR / ENOTSOCK)
+	 *   strategy_ret_deep_error[]      failure with any other errno
+	 *                                  (ENOMEM / EAGAIN / EBUSY / EIO /
+	 *                                  ENOSPC / ETIMEDOUT / EINTR /
+	 *                                  ENOMSG / ENOBUFS / EPIPE /
+	 *                                  ECONNREFUSED / ...) -- reached
+	 *                                  the subsystem before bailing
+	 *
+	 * A shallow-heavy arm is buying validation-path replay, not new
+	 * kernel depth, and its completed/picks success rate overstates its
+	 * true information yield.  Bumped at the same site as strategy_
+	 * completed_calls[] in dispatch_step so the three ret_* buckets and
+	 * the completed counter stay in lockstep.  RELAXED add-fetch,
+	 * multi-producer. */
+	unsigned long strategy_ret_success[NR_STRATEGIES];
+	unsigned long strategy_ret_deep_error[NR_STRATEGIES];
+	unsigned long strategy_ret_shallow_reject[NR_STRATEGIES];
+
 	/* Per-arm-per-selection-reason reward attribution.  Each window's
 	 * outcome is bucketed into [arm][reason] independent of the
 	 * learner-facing bandit_pulls[] series so operator- and classifier-

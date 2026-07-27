@@ -380,6 +380,12 @@ static void render_arm_exposure(int i)
 		&shm->strategy_bandit_pool_ops[i], __ATOMIC_RELAXED);
 	unsigned long completed = __atomic_load_n(
 		&shm->strategy_completed_calls[i], __ATOMIC_RELAXED);
+	unsigned long ret_success = __atomic_load_n(
+		&shm->strategy_ret_success[i], __ATOMIC_RELAXED);
+	unsigned long ret_deep = __atomic_load_n(
+		&shm->strategy_ret_deep_error[i], __ATOMIC_RELAXED);
+	unsigned long ret_shallow = __atomic_load_n(
+		&shm->strategy_ret_shallow_reject[i], __ATOMIC_RELAXED);
 
 	if (picks > 0) {
 		unsigned long success_x1000 =
@@ -387,6 +393,26 @@ static void render_arm_exposure(int i)
 		output(0, "    exposure: picks=%lu bandit_ops=%lu completed=%lu (success=%lu.%lu%%)\n",
 		       picks, bandit_ops, completed,
 		       success_x1000 / 10UL, success_x1000 % 10UL);
+
+		/* Per-arm return-class breakdown.  Suppressed on arms
+		 * that never completed a call (all three ret_* counters
+		 * still zero) so an arm the picker never resolved to a
+		 * dispatched syscall stays quiet.  The percentages
+		 * divide by completed (not picks) so a set_syscall_nr
+		 * FAIL doesn't dilute the shallow/deep signal. */
+		if (completed > 0) {
+			unsigned long succ_x10 = (ret_success * 1000UL) / completed;
+			unsigned long deep_x10 = (ret_deep * 1000UL) / completed;
+			unsigned long shal_x10 = (ret_shallow * 1000UL) / completed;
+
+			output(0, "    ret_class: success=%lu (%lu.%lu%%) deep_error=%lu (%lu.%lu%%) shallow_reject=%lu (%lu.%lu%%)\n",
+			       ret_success,
+			       succ_x10 / 10UL, succ_x10 % 10UL,
+			       ret_deep,
+			       deep_x10 / 10UL, deep_x10 % 10UL,
+			       ret_shallow,
+			       shal_x10 / 10UL, shal_x10 % 10UL);
+		}
 	}
 }
 

@@ -37,6 +37,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
@@ -120,6 +121,13 @@ bool pipe_thrash(struct childdata *child)
 	unsigned int filled = 0;
 	unsigned int iter;
 	unsigned int iters = BUDGETED(CHILD_OP_PIPE_THRASH, JITTER_RANGE(MAX_ITERATIONS));
+	/* Local direct-syscall tally.  Bumped 1 per create attempt below
+	 * and by `filled` on every batch drain so a mid-loop early exit
+	 * (alloc_failed / budget_elapsed) still credits the fds that were
+	 * actually closed.  Published once to shm at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -144,6 +152,7 @@ bool pipe_thrash(struct childdata *child)
 		int rc;
 		unsigned int which = rnd_modulo_u32(3);
 
+		direct_calls++;
 		switch (which) {
 		case 0:
 			rc = pipe(pair);
@@ -182,6 +191,7 @@ bool pipe_thrash(struct childdata *child)
 		batch[filled++] = pair[1];
 
 		if (filled + 2 > FD_BATCH) {
+			direct_calls += filled;
 			shuffle_close(batch, filled);
 			filled = 0;
 		}
@@ -190,8 +200,13 @@ bool pipe_thrash(struct childdata *child)
 			break;
 	}
 
-	if (filled > 0)
+	if (filled > 0) {
+		direct_calls += filled;
 		shuffle_close(batch, filled);
+	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
