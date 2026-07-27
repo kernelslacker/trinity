@@ -205,41 +205,38 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 		reap_child_sysv_sem(child);
 }
 
-/* Make sure there's no dead kids lying around.
- * We need to do this in case the oom killer has been killing them,
- * otherwise we end up stuck with no child processes.
- */
-void reap_dead_kids(void)
+/* Drain every reapable child via a single bounded waitpid(-1) loop.
+ *
+ * SIGCHLD is edge-triggered: when N children die between handler
+ * invocations the kernel still queues only one signal, so a reap
+ * path that reaps one zombie at a time falls behind any time more
+ * than one child dies in the same tick.  The previous per-slot
+ * waitpid() walks were also vulnerable to drift between pids[] and
+ * kernel reality (stale slot, racy spawn) — a zombie whose slot
+ * had already been cleared by some other path stayed unreaped
+ * indefinitely because no slot pointed at it.
+ *
+ * Under a crash storm (e.g. a post_handler_corrupt_ptr scribble
+ * round killing children faster than we replace them) that drift
+ * has been observed to leave 22 <defunct> children parked while
+ * only one slot was actually fuzzing — net throughput ~1/16th of
+ * nominal, KCOV edge growth flatlined.
+ *
+ * waitpid(-1) reaps whatever the kernel has, regardless of our
+ * bookkeeping.  Loop with WNOHANG until it returns 0 (nothing more
+ * pending) or -1 (ECHILD, no children at all — defensive; should
+ * not happen while main is fuzzing).  Bound to a sanity cap so a
+ * pathological case can't spin here forever.
+ *
+ * Shared by handle_children() (normal main-loop tick) and
+ * reap_dead_kids() (housekeeping/exit path).  Consolidating the
+ * drain means a no-exit tick issues one waitpid(-1) syscall
+ * instead of one waitpid(pid) probe per occupied slot — at 40Hz
+ * with 16 slots that is ~600 syscalls/s reclaimed. */
+static unsigned int drain_reapable_children(void)
 {
-	unsigned int i;
-	unsigned int reaped = 0;
 	unsigned int drained;
 
-	if (children == NULL)
-		return;
-
-	/* First pass: drain every reapable child via waitpid(-1).
-	 *
-	 * SIGCHLD is edge-triggered: when N children die between handler
-	 * invocations the kernel still queues only one signal, so a reap
-	 * path that reaps one zombie at a time falls behind any time more
-	 * than one child dies in the same tick.  The previous per-slot
-	 * waitpid() walk was also vulnerable to drift between pids[] and
-	 * kernel reality (stale slot, racy spawn) — a zombie whose slot
-	 * had already been cleared by some other path stayed unreaped
-	 * indefinitely because no slot pointed at it.
-	 *
-	 * Under a crash storm (e.g. a post_handler_corrupt_ptr scribble
-	 * round killing children faster than we replace them) that drift
-	 * has been observed to leave 22 <defunct> children parked while
-	 * only one slot was actually fuzzing — net throughput ~1/16th of
-	 * nominal, KCOV edge growth flatlined.
-	 *
-	 * waitpid(-1) reaps whatever the kernel has, regardless of our
-	 * bookkeeping.  Loop with WNOHANG until it returns 0 (nothing more
-	 * pending) or -1 (ECHILD, no children at all — defensive; should
-	 * not happen while main is fuzzing).  Bound to a sanity cap so a
-	 * pathological case can't spin here forever. */
 	for (drained = 0; drained < 64; drained++) {
 		pid_t wpid;
 		int childstatus;
@@ -263,12 +260,28 @@ void reap_dead_kids(void)
 			 * clear its cached pid if this was the helper —
 			 * otherwise a later stop() would signal a recycled
 			 * pid. */
-			output(1, "reap_dead_kids: reaped untracked pid %d (status 0x%x)\n",
+			output(1, "drain_reapable_children: reaped untracked pid %d (status 0x%x)\n",
 				wpid, childstatus);
 			kmsg_monitor_note_reaped(wpid, childstatus);
 		}
-		reaped++;
 	}
+	return drained;
+}
+
+/* Make sure there's no dead kids lying around.
+ * We need to do this in case the oom killer has been killing them,
+ * otherwise we end up stuck with no child processes.
+ */
+void reap_dead_kids(void)
+{
+	unsigned int i;
+	unsigned int reaped = 0;
+
+	if (children == NULL)
+		return;
+
+	/* First pass: drain every reapable child via waitpid(-1). */
+	reaped += drain_reapable_children();
 
 	/* Second pass: catch slots whose pid is gone but our bookkeeping
 	 * never noticed — e.g. the waitpid drain above reaped a slotted pid
@@ -543,31 +556,17 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 
 void handle_children(void)
 {
-	unsigned int i;
-	int collected = 0;
-
 	if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) == 0)
 		return;
 
 	if (children == NULL)
 		return;
 
-	for_each_child(i) {
-		int childstatus = 0;
-		pid_t pid;
-
-		pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
-
-		if (pid == EMPTY_PIDSLOT)
-			continue;
-
-		pid = waitpid_eintr(pid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-		if (pid > 0)
-			collected++;
-		handle_child(i, pid, childstatus);
-	}
-
-	/* If nothing happened, sleep briefly to avoid busy-looping. */
-	if (collected == 0)
+	/* One waitpid(-1) drain instead of a per-slot waitpid(pid) scan.
+	 * The kernel already knows which of our children (if any) have a
+	 * pending state change; asking it once beats probing every slot
+	 * on every tick.  If nothing happened, sleep briefly to avoid
+	 * busy-looping. */
+	if (drain_reapable_children() == 0)
 		usleep(25000);
 }
