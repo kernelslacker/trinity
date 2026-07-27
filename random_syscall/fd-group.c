@@ -1,15 +1,16 @@
 /*
- * Strategy-window rotation and per-syscall reward / cohort attribution.
- * Everything the random-syscall cluster knows about the strategy
- * window bookkeeping lives here: the SR_* rotation gate, the
- * remote-adaptive decision helper called before dispatch, the bandit
- * / A-B cohort attribution helpers called after dispatch, and the
- * SHADOW warm-reserve / cold-overflow probes that ride the same
- * post-collect seam.
+ * Per-child fd + group bookkeeping ran at the tail of dispatch_step:
+ * fd leak counters, live-fd ring push for arg-generation reuse, the
+ * group_bias-gated last_group stamp, and the F-RSEQ group-pin damper
+ * state machine (group-change streak reset, streak bump, fd-warm
+ * bump, coverage watermark advance).
  *
- * maybe_rotate_strategy, remote_adaptive_decide, and the account_*
- * helpers are cross-cluster private and declared in
- * include/random-syscall-internal.h.
+ * Carved out of strategy-accounting.c; the sibling seams (rotation,
+ * remote-adaptive decide, per-syscall edge accounting, warm-cold
+ * reserve) live in their own TUs under random_syscall/.
+ *
+ * account_fd_and_group is cross-cluster private and declared in
+ * random_syscall/strategy-accounting-internal.h.
  */
 
 #include <errno.h>
