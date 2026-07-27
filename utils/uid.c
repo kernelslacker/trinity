@@ -19,6 +19,12 @@ gid_t orig_gid;
 uid_t nobody_uid;
 gid_t nobody_gid;
 
+/* Cached value of /proc/sys/kernel/overflowuid, read once at startup.
+ * unshare() into a user namespace without a uid_map can flip getuid()
+ * to this value; check_uid() compares against it every syscall.  If
+ * the startup read fails we keep the historical 65534 fallback. */
+static uid_t overflowuid = 65534;
+
 void drop_privs(void)
 {
 	if (setresgid(nobody_gid, nobody_gid, nobody_gid) < 0) {
@@ -37,12 +43,27 @@ void drop_privs(void)
 	}
 }
 
+static void cache_overflowuid(void)
+{
+	FILE *fp;
+	unsigned int v;
+
+	fp = fopen("/proc/sys/kernel/overflowuid", "r");
+	if (fp == NULL)
+		return;
+	if (fscanf(fp, "%u", &v) == 1)
+		overflowuid = (uid_t)v;
+	fclose(fp);
+}
+
 void init_uids(void)
 {
 	struct passwd *passwd;
 
 	orig_uid = getuid();
 	orig_gid = getgid();
+
+	cache_overflowuid();
 
 	if (orig_uid != 0)
 		return;
@@ -90,8 +111,6 @@ void do_uid0_check(void)
 void check_uid(void)
 {
 	uid_t myuid, expected_uid;
-	uid_t overflowuid = 65534;
-	FILE *fp;
 
 	/* init_uids() loaded nobody_uid when we started as root; child
 	 * init then dropped to it.  Otherwise we expect to still be the
@@ -101,13 +120,8 @@ void check_uid(void)
 	if (myuid == expected_uid)
 		return;
 
-	/* unshare() can change us to /proc/sys/kernel/overflowuid */
-	fp = fopen("/proc/sys/kernel/overflowuid", "r");
-	if (fp) {
-		if (fscanf(fp, "%u", &overflowuid) != 1)
-			overflowuid = 65534;
-		fclose(fp);
-	}
+	/* unshare() can change us to /proc/sys/kernel/overflowuid.
+	 * Value cached at startup by cache_overflowuid(). */
 	if (myuid == overflowuid)
 		return;
 
