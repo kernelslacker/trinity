@@ -1,9 +1,9 @@
 #pragma once
 
 /*
- * Cross-module surface shared between the minicorpus TUs
- * (core / xprop / save / mutate / file / snapshot).  Everything else
- * stays file-static in its owning TU.
+ * Cross-module surface shared between the minicorpus TUs (core /
+ * xprop / save / accounting / field-mutate / splice / select / file /
+ * snapshot).  Everything else stays file-static in its owning TU.
  */
 
 #include "minicorpus.h"
