@@ -15,6 +15,35 @@ struct map {
 	void *ptr;
 	char *name;
 	/*
+	 * Byte length passed to alloc_shared_str / alloc_shared_strdup when
+	 * `name' was carved out of the shared-string heap (OBJ_GLOBAL only).
+	 * OBJ_LOCAL entries whose name is a libc strdup() leave this 0 and
+	 * are released via map_destructor -> tracked_free_now(), which never
+	 * consults it.
+	 *
+	 * Authoritative free-size source for map_destructor_shared() and the
+	 * mmap_fd() cleanup paths.  The alternative -- recomputing
+	 * strlen(map->name) + 1 at free time -- reads the payload bytes from
+	 * the shared_str_heap, a MAP_SHARED region a fuzzed syscall can hand
+	 * to the kernel as a user buffer.  A stomped NUL walks strlen off
+	 * the slot's end into whatever follows in the heap band (in the
+	 * worst case, past shared_str_heap_capacity and into unmapped VA --
+	 * a SEGV on the way to the free) before free_shared_str even sees
+	 * the pointer.  Stashing the alloc-time length on the parent-
+	 * populated struct sidesteps that wild read entirely.
+	 *
+	 * Zero == not set (legacy callsite, OBJ_LOCAL, or an in-place struct
+	 * map scribble that zeroed the field).  The free path treats zero as
+	 * "no authoritative size" and skips the free (leak the shared_str
+	 * slot for the rest of the run) rather than falling back to the
+	 * fuzzable strlen quantity.  Values above the largest
+	 * shared_freelist bucket (1024) are treated the same: above-bucket
+	 * slots are bump-and-leak already, so their "correct" free-size is
+	 * a no-op, and a plausibly-fuzzed huge value must not be trusted to
+	 * drive the free_shared_str leak-path memset.
+	 */
+	size_t name_alloc_size;
+	/*
 	 * size:         consumer-walkable extent (post-clamp).  Fuzzed picks
 	 *               bound by this -- dirty_mapping(), get_writable_address()
 	 *               and other walkers stay inside [ptr, ptr+size) to avoid
