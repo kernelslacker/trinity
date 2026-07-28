@@ -18,12 +18,17 @@
 
 #include "child.h"
 #include "deferred-free.h"
+#include "params.h"
 #include "pc_format.h"
 #include "random.h"
 #include "shm.h"
 #include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
+
+#ifndef NDEBUG
+#include <assert.h>
+#endif
 
 #include "kernel/fcntl.h"
 #define DEFERRED_RING_SIZE	64
@@ -158,6 +163,24 @@ static struct timespec inflight_rw_open_at;
 static struct timespec rc_rw_open_at;
 static struct timespec ring_rw_open_at;
 
+/*
+ * Per-region open flags for --deferred-free-batch.  With batching OFF
+ * these stay false and the X_unlock/X_lock helpers behave exactly as
+ * before (real mprotect flip per mutation).  With batching ON the
+ * first X_unlock() of a phase mprotects the region RW and sets its
+ * flag; subsequent X_unlock() calls on the same region within the same
+ * phase short-circuit; the paired X_lock() calls become no-ops (the
+ * deferred close is issued by deferred_free_seal_all() at the next
+ * kernel-entry chokepoint).  Only real mprotect flips bump the
+ * *_rw_calls / *_ro_calls / *_rw_ns_total accounting, so the t372-a
+ * counters measure the actual syscall reduction.  Statics are per-
+ * child by COW-at-fork and single-writer per region, so no locking.
+ */
+static bool alloc_track_rw_open;
+static bool inflight_rw_open;
+static bool rc_rw_open;
+static bool ring_rw_open;
+
 static inline unsigned long df_cost_elapsed_ns(const struct timespec *begin)
 {
 	struct timespec now;
@@ -195,6 +218,9 @@ static int alloc_track_unlock(void)
 {
 	struct timespec begin;
 
+	if (deferred_free_batch && alloc_track_rw_open)
+		return 0;
+
 	clock_gettime(CLOCK_MONOTONIC, &begin);
 	if (mprotect(alloc_track_base, alloc_track_bytes,
 		     PROT_READ | PROT_WRITE) != 0) {
@@ -203,6 +229,7 @@ static int alloc_track_unlock(void)
 		return -1;
 	}
 	alloc_track_rw_open_at = begin;
+	alloc_track_rw_open = true;
 	__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_rw_calls,
 			   1, __ATOMIC_RELAXED);
 	return 0;
@@ -212,10 +239,14 @@ static void alloc_track_lock(void)
 {
 	unsigned long ns;
 
+	if (deferred_free_batch)
+		return;
+
 	if (mprotect(alloc_track_base, alloc_track_bytes, PROT_READ) != 0)
 		outputerr("deferred_free: alloc_track lock failed: "
 			  "errno=%d\n", errno);
 	ns = df_cost_elapsed_ns(&alloc_track_rw_open_at);
+	alloc_track_rw_open = false;
 	__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_ro_calls,
 			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_rw_ns_total,
@@ -412,6 +443,9 @@ static int inflight_unlock(void)
 {
 	struct timespec begin;
 
+	if (deferred_free_batch && inflight_rw_open)
+		return 0;
+
 	clock_gettime(CLOCK_MONOTONIC, &begin);
 	if (mprotect(inflight_hash, inflight_hash_bytes,
 		     PROT_READ | PROT_WRITE) != 0) {
@@ -420,6 +454,7 @@ static int inflight_unlock(void)
 		return -1;
 	}
 	inflight_rw_open_at = begin;
+	inflight_rw_open = true;
 	__atomic_add_fetch(&shm->stats.deferred_free.inflight_rw_calls,
 			   1, __ATOMIC_RELAXED);
 	return 0;
@@ -429,10 +464,14 @@ static void inflight_lock(void)
 {
 	unsigned long ns;
 
+	if (deferred_free_batch)
+		return;
+
 	if (mprotect(inflight_hash, inflight_hash_bytes, PROT_READ) != 0)
 		outputerr("deferred_free: inflight_hash lock failed: "
 			  "errno=%d\n", errno);
 	ns = df_cost_elapsed_ns(&inflight_rw_open_at);
+	inflight_rw_open = false;
 	__atomic_add_fetch(&shm->stats.deferred_free.inflight_ro_calls,
 			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.deferred_free.inflight_rw_ns_total,
@@ -640,6 +679,9 @@ static int rc_unlock(void)
 {
 	struct timespec begin;
 
+	if (deferred_free_batch && rc_rw_open)
+		return 0;
+
 	clock_gettime(CLOCK_MONOTONIC, &begin);
 	if (mprotect(rc, rc_bytes, PROT_READ | PROT_WRITE) != 0) {
 		outputerr("deferred_free: ring_control unlock failed: "
@@ -647,6 +689,7 @@ static int rc_unlock(void)
 		return -1;
 	}
 	rc_rw_open_at = begin;
+	rc_rw_open = true;
 	__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_calls,
 			   1, __ATOMIC_RELAXED);
 	return 0;
@@ -656,10 +699,14 @@ static void rc_lock(void)
 {
 	unsigned long ns;
 
+	if (deferred_free_batch)
+		return;
+
 	if (mprotect(rc, rc_bytes, PROT_READ) != 0)
 		outputerr("deferred_free: ring_control lock failed: "
 			  "errno=%d\n", errno);
 	ns = df_cost_elapsed_ns(&rc_rw_open_at);
+	rc_rw_open = false;
 	__atomic_add_fetch(&shm->stats.deferred_free.ring_ro_calls,
 			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
@@ -697,6 +744,9 @@ static enum ring_unlock_result ring_unlock(void)
 {
 	struct timespec begin;
 
+	if (deferred_free_batch && ring_rw_open)
+		return RING_UNLOCK_OK;
+
 	clock_gettime(CLOCK_MONOTONIC, &begin);
 	if (mprotect(ring, ring_bytes, PROT_READ | PROT_WRITE) != 0) {
 		int e = errno;
@@ -705,6 +755,7 @@ static enum ring_unlock_result ring_unlock(void)
 		return (e == ENOMEM) ? RING_UNLOCK_ENOMEM : RING_UNLOCK_FAIL;
 	}
 	ring_rw_open_at = begin;
+	ring_rw_open = true;
 	__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_calls,
 			   1, __ATOMIC_RELAXED);
 	return RING_UNLOCK_OK;
@@ -714,9 +765,13 @@ static void ring_lock(void)
 {
 	unsigned long ns;
 
+	if (deferred_free_batch)
+		return;
+
 	if (mprotect(ring, ring_bytes, PROT_NONE) != 0)
 		outputerr("deferred_free: mprotect NONE failed: errno=%d\n", errno);
 	ns = df_cost_elapsed_ns(&ring_rw_open_at);
+	ring_rw_open = false;
 	__atomic_add_fetch(&shm->stats.deferred_free.ring_ro_calls,
 			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
@@ -1099,6 +1154,15 @@ static void ring_dispose_after_enomem(void)
 		outputerr("deferred_free: munmap ring after ENOMEM failed: errno=%d\n",
 			  errno);
 
+	/*
+	 * The ring page is gone.  Under --deferred-free-batch a leftover
+	 * ring_rw_open=true would drive the next seal barrier into an
+	 * mprotect against a stale VA (EFAULT, flag stays set, debug assert
+	 * trips at the next chokepoint).  Clear it now: no page to reprotect
+	 * anyway.  Byte-neutral under batch OFF (flag was never set).
+	 */
+	ring_rw_open = false;
+
 	if (rc_unlock() == 0) {
 		ring = NULL;
 		ring_count = 0;
@@ -1157,6 +1221,119 @@ static void deferred_free_record_outstanding(unsigned int v)
 			return;
 	}
 }
+
+/*
+ * Kernel-entry seal barrier for --deferred-free-batch.  Walk each of
+ * the four protection regions; for any left rw_open by an earlier
+ * lazy-open, mprotect it back to its steady state (READ for
+ * alloc_track / inflight_hash / rc, NONE for ring) and clear the
+ * flag.  Real close, so it bumps the *_ro_calls / *_rw_ns_total
+ * counters the same way the pre-batch X_lock() would have -- the
+ * A/B delta measured against the t372-a *_rw_calls totals stays
+ * accurate.  With batching OFF this is unreachable via the flag
+ * check on every X_lock (which flips the region back immediately),
+ * so the barrier body never runs and the seal is a no-op.
+ *
+ * Fail-closed: an mprotect that returns non-zero leaves the flag
+ * SET so a subsequent barrier re-attempts the close.  The caller
+ * (do_syscall prologue / op_fn dispatch prologue) then enters the
+ * kernel with the region still RW -- the same fail-open exposure
+ * the historical unlock/lock pair already had -- and the outputerr
+ * line preserves the breadcrumb; a persistent failure trips the
+ * debug assert at the next chokepoint.  Ring skipped when
+ * ring_dispose_after_enomem() has already torn it down (ring ==
+ * NULL); the disposed state re-arms via rw_open being clear once
+ * the dispose path runs.
+ */
+void deferred_free_seal_all(void)
+{
+	if (!deferred_free_batch)
+		return;
+
+	if (alloc_track_rw_open) {
+		unsigned long ns;
+
+		if (mprotect(alloc_track_base, alloc_track_bytes,
+			     PROT_READ) != 0) {
+			outputerr("deferred_free: seal alloc_track failed: "
+				  "errno=%d\n", errno);
+		} else {
+			ns = df_cost_elapsed_ns(&alloc_track_rw_open_at);
+			alloc_track_rw_open = false;
+			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_ro_calls,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_rw_ns_total,
+					   ns, __ATOMIC_RELAXED);
+		}
+	}
+
+	if (inflight_rw_open) {
+		unsigned long ns;
+
+		if (mprotect(inflight_hash, inflight_hash_bytes,
+			     PROT_READ) != 0) {
+			outputerr("deferred_free: seal inflight_hash failed: "
+				  "errno=%d\n", errno);
+		} else {
+			ns = df_cost_elapsed_ns(&inflight_rw_open_at);
+			inflight_rw_open = false;
+			__atomic_add_fetch(&shm->stats.deferred_free.inflight_ro_calls,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.deferred_free.inflight_rw_ns_total,
+					   ns, __ATOMIC_RELAXED);
+		}
+	}
+
+	if (rc_rw_open) {
+		unsigned long ns;
+
+		if (mprotect(rc, rc_bytes, PROT_READ) != 0) {
+			outputerr("deferred_free: seal ring_control failed: "
+				  "errno=%d\n", errno);
+		} else {
+			ns = df_cost_elapsed_ns(&rc_rw_open_at);
+			rc_rw_open = false;
+			__atomic_add_fetch(&shm->stats.deferred_free.ring_ro_calls,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
+					   ns, __ATOMIC_RELAXED);
+		}
+	}
+
+	if (ring_rw_open && ring != NULL) {
+		unsigned long ns;
+
+		if (mprotect(ring, ring_bytes, PROT_NONE) != 0) {
+			outputerr("deferred_free: seal ring failed: "
+				  "errno=%d\n", errno);
+		} else {
+			ns = df_cost_elapsed_ns(&ring_rw_open_at);
+			ring_rw_open = false;
+			__atomic_add_fetch(&shm->stats.deferred_free.ring_ro_calls,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
+					   ns, __ATOMIC_RELAXED);
+		}
+	} else if (ring == NULL) {
+		/* Ring was disposed after ENOMEM inside this phase; the
+		 * page is gone, so drop the flag with no mprotect.  A
+		 * PROT_NONE call against a stale VA would fail EFAULT
+		 * and leave the flag set, arming the assert. */
+		ring_rw_open = false;
+	}
+}
+
+#ifndef NDEBUG
+void deferred_free_debug_assert_sealed(void)
+{
+	if (!deferred_free_batch)
+		return;
+	assert(!alloc_track_rw_open);
+	assert(!inflight_rw_open);
+	assert(!rc_rw_open);
+	assert(!ring_rw_open);
+}
+#endif
 
 void deferred_free_init(void)
 {

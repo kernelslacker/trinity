@@ -244,6 +244,11 @@ bool parse_long_misc_options(int opt, const char *name, char *arg)
 		return true;
 	}
 
+	if (strcmp("deferred-free-batch", name) == 0) {
+		deferred_free_batch = true;
+		return true;
+	}
+
 	if (strcmp("enable-fds", name) == 0) {
 		process_fds_param(arg, true);
 		return true;

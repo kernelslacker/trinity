@@ -26,6 +26,40 @@ sentinel is allocated at `init_child`, so a fixed-seed `--dry-run`
 stderr md5 stays byte-identical to a build without this row.  Default
 off.
 
+## --deferred-free-batch
+
+Runtime A/B switch for per-iteration mprotect batching inside
+`persist/deferred-free.c`.  Each of the four protection regions
+(`alloc_track` + hash, `inflight_hash`, `ring_control`, `ring`) is
+normally flipped RW->write->RO/NONE by every metadata mutation:
+`deferred_alloc_track`, `alloc_track_consume`, `inflight_hash_insert`,
+`inflight_hash_remove`, ring enqueue/tick/evict, and every `rc_unlock`
+pair around `ring_count` / `occupied_mask` updates.  mprotect is
+~half of trinity's child syscall traffic; the batch mode collapses the
+N per-mutation brackets within one iteration-phase into ~1 real flip
+per region per phase, cutting the `*_rw_calls` / `*_ro_calls` counters
+by ~2x+ (measured against the untraced-cost counters landed in
+`ded23739`).
+
+`off` (default) leaves every `X_unlock` / `X_lock` real-flipping as
+today; landing this row is a behavioral no-op until the flag is
+flipped `on`.  `on` marks each region `rw_open` on first mutation
+inside a phase and defers the close; the seal barrier
+`deferred_free_seal_all()` at every kernel-entry chokepoint
+(`do_syscall`, childop dispatch, top-of-loop as the signal/longjmp
+fail-closed catch) restores the steady state before any fuzzed or
+childop direct syscall enters the kernel.  The debug build additionally
+asserts every region is sealed at each chokepoint so a missed barrier
+is caught in test rather than in production.
+
+Why not `pkey_mprotect` + PKRU gating?  `mprotect(PROT_READ)` /
+`PROT_NONE` reliably faults kernel `copy_to_user`, which is the
+value-result tripwire the current row relies on; PKRU gating of
+uaccess is CPU/kernel-version dependent and would risk silently
+gutting that tripwire.  The batching approach preserves the same
+fault semantics -- the window is only kept open across trinity's own
+userspace bookkeeping, never across the kernel boundary.
+
 ## --writer-pin-sweep
 
 Stage-1 detector for the writer-pinning canary.  At every

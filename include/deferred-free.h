@@ -244,6 +244,37 @@ void deferred_free_tick(void);
 void deferred_free_flush(void);
 
 /*
+ * Kernel-entry seal barrier.  With --deferred-free-batch OFF this is a
+ * no-op (each per-mutation X_unlock/X_lock still flips its region round-
+ * trip inside the caller).  With --deferred-free-batch ON every
+ * X_unlock() lazily promotes its region to RW and every X_lock() defers
+ * the mprotect back to steady state; this barrier walks the four
+ * protection regions (alloc_track, inflight_hash, ring_control, ring)
+ * and mprotects any left-open one back to its steady-state prot (READ
+ * for the three metadata regions, NONE for the ring).  MUST run at
+ * every trinity->kernel entry chokepoint so a fuzzed syscall / childop
+ * direct syscall never enters the kernel with a deferred-free region
+ * still RW: the PROT_READ/PROT_NONE steady state is the copy_to_user
+ * tripwire that catches value-result aliasing, and batching only
+ * defers the close across trinity's own userspace bookkeeping, never
+ * across the kernel boundary.
+ */
+void deferred_free_seal_all(void);
+
+#ifndef NDEBUG
+/*
+ * Debug-build tripwire: assert every deferred-free protection region is
+ * currently sealed (rw_open == false on all four).  Compiled out of
+ * release builds.  Call at each kernel-entry chokepoint right AFTER
+ * deferred_free_seal_all() to catch a missed barrier during test rather
+ * than in production.
+ */
+void deferred_free_debug_assert_sealed(void);
+#else
+static inline void deferred_free_debug_assert_sealed(void) {}
+#endif
+
+/*
  * Tag the argtype currently being processed by the generic_free_arg
  * cleanup loop, so deferred_free_reject_bump can attribute rejects to
  * the cleanup hook that drove them.  Set to the argtype just before
