@@ -15,8 +15,10 @@
  * horizons' yield sit below configured floors for K consecutive evals
  * (hysteresis).  Fleet-health signals veto the diagnosis -- if
  * throughput dropped in half, children wedged in D-state (`stall_count`
- * > 0), or `trace_truncated` is rising in the short window we emit the
- * veto reason instead of concluding saturated.
+ * > 0), `trace_truncated` is rising in the short window, or active
+ * findings (post_handler_corrupt_ptr / watchdog_fd_evict) are landing
+ * in the short window, we emit the veto reason instead of concluding
+ * saturated.
  *
  * MVP scope: trailing-rate + floor + hysteresis only.  No Bayesian
  * confidence interval.  The raw per-window edge blocks emitted at the
@@ -26,8 +28,9 @@
  *
  * Byte-identical guarantee: no new RNG draws, no pick/dispatch reorder,
  * no shm scalars.  Only reads: kcov_shm->coverage.{distinct_edges,
- * trace_truncated} (already loaded on this hot path), parent_stats.op_count
- * (parent's own aggregate), stall_count (parent's own scalar), and a
+ * trace_truncated} (already loaded on this hot path), parent_stats.
+ * {op_count, post_handler_corrupt_ptr, watchdog_fd_evict} (parent's own
+ * aggregates), stall_count (parent's own scalar), and a
  * getrusage(RUSAGE_CHILDREN) probe on the parent for CPU accounting.
  */
 
@@ -64,6 +67,17 @@ struct sat_sample {
 	unsigned long calls;
 	uint64_t cpu_ns;
 	unsigned long trace_truncated;
+	/*
+	 * Snapshot of parent-side finding aggregates at sample time.  Sum
+	 * of post_handler_corrupt_ptr (SELF-corrupt scribble catches) and
+	 * watchdog_fd_evict (in-child SIGALRM watchdog fd evictions -- a
+	 * proxy for children failing to make forward progress on syscalls
+	 * that hold fds).  A short-window rate on this sum feeds the
+	 * finding-pending veto: if the fuzzer is actively producing
+	 * findings, low edge yield is not economic saturation, it is the
+	 * corruption-and-recycle loop starving new coverage.
+	 */
+	unsigned long finding_events;
 };
 
 static struct sat_sample sat_ring[SAT_RING_SIZE];
@@ -107,9 +121,20 @@ static unsigned int sat_ring_count;	/* saturated at SAT_RING_SIZE */
 #define SAT_TRUNC_VETO_RATIO_NUM	3
 #define SAT_TRUNC_VETO_RATIO_DEN	1
 
+/* Finding-pending veto threshold.  When the short-window rate of
+ * finding_events (post_handler_corrupt_ptr + watchdog_fd_evict) meets
+ * or exceeds this many events per wall-hour, active findings are in
+ * flight and the low edge yield is more likely the corruption-and-
+ * recycle loop than economic saturation.  Calibrated against run2:
+ * 1,541 watchdog kills across an ~hour dwarfs any reasonable rate
+ * floor, and healthy runs with occasional stray corruption catches
+ * (<1 per 10 min) stay under it. */
+#define SAT_FINDING_VETO_MIN_PER_WALL_HOUR	6U
+
 enum sat_veto_reason {
 	SAT_VETO_NONE = 0,
 	SAT_VETO_STALLED_CHILDREN,
+	SAT_VETO_FINDING_PENDING,
 	SAT_VETO_TRACE_TRUNC_RISING,
 	SAT_VETO_THROUGHPUT_DROP,
 };
@@ -118,6 +143,7 @@ static const char *sat_veto_name(enum sat_veto_reason r)
 {
 	switch (r) {
 	case SAT_VETO_STALLED_CHILDREN:	  return "stalled_children";
+	case SAT_VETO_FINDING_PENDING:	  return "finding_pending";
 	case SAT_VETO_TRACE_TRUNC_RISING: return "trace_trunc_rising";
 	case SAT_VETO_THROUGHPUT_DROP:	  return "throughput_drop";
 	case SAT_VETO_NONE:
@@ -147,8 +173,11 @@ struct sat_state {
 	double long_call_rate;
 	unsigned long health_stall_count;
 	unsigned long health_trace_trunc_delta_short;
+	unsigned long health_finding_events_delta_short;
+	double health_finding_events_per_wall_hour;
 	unsigned int floor_edges_per_10k_calls;
 	unsigned int floor_edges_per_wall_hour;
+	unsigned int floor_finding_events_per_wall_hour;
 };
 
 static unsigned int sat_consec_below;
@@ -235,6 +264,8 @@ void stats_shadow_sat_tick(void)
 			&kcov_shm->coverage.trace_truncated, __ATOMIC_RELAXED);
 	}
 	s.calls = parent_stats.op_count;
+	s.finding_events = parent_stats.post_handler_corrupt_ptr
+		+ parent_stats.watchdog_fd_evict;
 
 	/* RUSAGE_CHILDREN accumulates CPU time of reaped children.
 	 * Trinity reaps its fuzzer children (reap.c) so this is a live
@@ -257,6 +288,7 @@ void stats_shadow_sat_tick(void)
 	st.hysteresis_k = SAT_HYSTERESIS_K;
 	st.floor_edges_per_10k_calls = SAT_FLOOR_EDGES_PER_10K_CALLS;
 	st.floor_edges_per_wall_hour = SAT_FLOOR_EDGES_PER_WALL_HOUR;
+	st.floor_finding_events_per_wall_hour = SAT_FINDING_VETO_MIN_PER_WALL_HOUR;
 
 	sh = sat_find_horizon(s.t_ns, SAT_SHORT_HORIZON_NS);
 	lg = sat_find_horizon(s.t_ns, SAT_LONG_HORIZON_NS);
@@ -274,15 +306,33 @@ void stats_shadow_sat_tick(void)
 			/ (double)st.long_win.window_ns;
 
 	st.health_stall_count = stall_count;
-	if (sh != NULL)
+	if (sh != NULL) {
 		st.health_trace_trunc_delta_short =
 			sat_sub_ul(s.trace_truncated, sh->trace_truncated);
+		st.health_finding_events_delta_short =
+			sat_sub_ul(s.finding_events, sh->finding_events);
+		if (st.short_win.window_ns > 0)
+			st.health_finding_events_per_wall_hour =
+				(double)st.health_finding_events_delta_short
+				* 3.6e12 / (double)st.short_win.window_ns;
+	}
 
-	/* Health veto in priority order: a wedge / trunc-loss burst /
-	 * throughput collapse means the low yield we're seeing is a
-	 * supply-side failure, not economic saturation, and we must not
-	 * conclude saturated.  rc5 tail is the archetypal case: throughput
-	 * dropped 841 -> 562/sec alongside D-state wedges.
+	/* Health veto in priority order: a wedge / active finding / trunc-
+	 * loss burst / throughput collapse means the low yield we're seeing
+	 * is a supply-side failure, not economic saturation, and we must
+	 * not conclude saturated.  rc5 tail is the archetypal case:
+	 * throughput dropped 841 -> 562/sec alongside D-state wedges.
+	 *
+	 * The finding-pending gate is second in priority (after in-flight
+	 * D-state wedges): if the short window shows finding_events
+	 * (post_handler_corrupt_ptr + watchdog_fd_evict) rising at a
+	 * per-wall-hour rate at or above SAT_FINDING_VETO_MIN_PER_WALL_HOUR,
+	 * the fuzzer is actively churning through the corruption-and-
+	 * recycle loop and the low yield is not economic saturation.
+	 * run2's 1,541-watchdog-kill tail is the archetypal case: the
+	 * point-in-time stall_count veto returned to 0 while findings
+	 * were still landing, so the shadow score would otherwise flip
+	 * saturated on active corruption.
 	 *
 	 * The trace-truncation gate is RATE-based rather than
 	 * any-rise-based: kcov truncation grows steadily on any long run
@@ -293,6 +343,10 @@ void stats_shadow_sat_tick(void)
 	 * instrumentation loss, not steady baseline growth. */
 	if (st.health_stall_count > 0) {
 		st.veto = SAT_VETO_STALLED_CHILDREN;
+	} else if (sh != NULL
+		   && st.health_finding_events_per_wall_hour
+		      >= (double)SAT_FINDING_VETO_MIN_PER_WALL_HOUR) {
+		st.veto = SAT_VETO_FINDING_PENDING;
 	} else if (st.short_win.window_ns > 0 && st.long_win.window_ns > 0
 		   && lg != NULL) {
 		double long_trunc_delta = (double)sat_sub_ul(
@@ -366,8 +420,8 @@ void stats_shadow_sat_emit_out_log(void)
 		"SHADOW_SAT: soft_saturated=%s consec=%u/%u veto=%s "
 		"short[win=%.1fs edges=%lu calls=%lu e_per_10kc=%.2f e_per_wallh=%.1f e_per_cpuh=%.1f] "
 		"long[win=%.1fs edges=%lu calls=%lu e_per_10kc=%.2f e_per_wallh=%.1f e_per_cpuh=%.1f] "
-		"floor[e_per_10kc=%u e_per_wallh=%u] "
-		"health[stall_count=%lu trace_trunc_delta=%lu tput_short=%.0f/s tput_long=%.0f/s]\n",
+		"floor[e_per_10kc=%u e_per_wallh=%u find_per_wallh=%u] "
+		"health[stall_count=%lu trace_trunc_delta=%lu find_delta=%lu find_per_wallh=%.1f tput_short=%.0f/s tput_long=%.0f/s]\n",
 		st->soft_saturated ? "true" : "false",
 		st->consec_below, st->hysteresis_k,
 		sat_veto_name(st->veto),
@@ -383,8 +437,11 @@ void stats_shadow_sat_emit_out_log(void)
 		st->long_win.edges_per_cpu_hour,
 		st->floor_edges_per_10k_calls,
 		st->floor_edges_per_wall_hour,
+		st->floor_finding_events_per_wall_hour,
 		st->health_stall_count,
 		st->health_trace_trunc_delta_short,
+		st->health_finding_events_delta_short,
+		st->health_finding_events_per_wall_hour,
 		st->short_call_rate, st->long_call_rate);
 }
 
@@ -412,8 +469,11 @@ void stats_ts_emit_shadow_sat(FILE *fp)
 		"\"long\":{\"window_s\":%.3f,\"edges\":%lu,\"calls\":%lu,\"cpu_s\":%.3f,"
 			  "\"e_per_10kc\":%.4f,\"e_per_wall_hour\":%.3f,\"e_per_cpu_hour\":%.3f,"
 			  "\"valid\":%s},"
-		"\"floor\":{\"e_per_10kc\":%u,\"e_per_wall_hour\":%u},"
+		"\"floor\":{\"e_per_10kc\":%u,\"e_per_wall_hour\":%u,"
+			  "\"finding_events_per_wall_hour\":%u},"
 		"\"health\":{\"stall_count\":%lu,\"trace_trunc_delta_short\":%lu,"
+			    "\"finding_events_delta_short\":%lu,"
+			    "\"finding_events_per_wall_hour\":%.3f,"
 			    "\"short_call_rate\":%.3f,\"long_call_rate\":%.3f}",
 		st->soft_saturated ? "true" : "false",
 		st->consec_below, st->hysteresis_k,
@@ -434,8 +494,11 @@ void stats_ts_emit_shadow_sat(FILE *fp)
 		st->long_win.valid ? "true" : "false",
 		st->floor_edges_per_10k_calls,
 		st->floor_edges_per_wall_hour,
+		st->floor_finding_events_per_wall_hour,
 		st->health_stall_count,
 		st->health_trace_trunc_delta_short,
+		st->health_finding_events_delta_short,
+		st->health_finding_events_per_wall_hour,
 		st->short_call_rate, st->long_call_rate);
 
 	/* Raw per-window blocks so an offline estimator (blocked
@@ -458,7 +521,7 @@ void stats_ts_emit_shadow_sat(FILE *fp)
 
 		fprintf(fp,
 			"%s{\"dt_ns\":%llu,\"de\":%lu,\"dc\":%lu,"
-			"\"dcpu_ns\":%llu,\"dtr\":%lu}",
+			"\"dcpu_ns\":%llu,\"dtr\":%lu,\"dfe\":%lu}",
 			first ? "" : ",",
 			(unsigned long long)((cur->t_ns > prev->t_ns) ?
 				cur->t_ns - prev->t_ns : 0),
@@ -466,7 +529,8 @@ void stats_ts_emit_shadow_sat(FILE *fp)
 			sat_sub_ul(cur->calls, prev->calls),
 			(unsigned long long)((cur->cpu_ns > prev->cpu_ns) ?
 				cur->cpu_ns - prev->cpu_ns : 0),
-			sat_sub_ul(cur->trace_truncated, prev->trace_truncated));
+			sat_sub_ul(cur->trace_truncated, prev->trace_truncated),
+			sat_sub_ul(cur->finding_events, prev->finding_events));
 		first = false;
 	}
 	fputs("]}", fp);
