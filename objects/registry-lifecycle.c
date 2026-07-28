@@ -166,8 +166,15 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
  * Stamp ordering inside the publish block is slot-array first,
  * then array_idx, then the monotonic slot_version tag, then the
  * publish-time fleet op tick, then the head->num_entries bump
- * last -- any consumer that re-reads obj fields off head->array
- * sees a fully-populated obj as soon as num_entries admits it.
+ * last -- this is single-writer source-order sequencing, not a
+ * cross-thread publish fence.  num_entries is a plain store with
+ * no release semantics; the objhead is safe to build up in-place
+ * because it is process-private: OBJ_LOCAL heads live in per-child
+ * memory, and OBJ_GLOBAL adds are refused post-fork by
+ * add_object_validate() so the parent is the sole writer before
+ * children COW their snapshots.  If OBJ_GLOBAL ever becomes mutable
+ * post-fork this assumption breaks and num_entries would need a
+ * real release store paired with an acquire on the reader side.
  *
  * head / is_fd / fd are resolved once in add_object() and threaded
  * through, so this function does not re-enter get_objhead(),
@@ -224,8 +231,10 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 	 * 0; step past to 1 so the sentinel stays unissuable and a live
 	 * obj is never stamped with the value that marks a freed slot.
 	 * Stamped after the slot-array insert and the array_idx assign
-	 * so any consumer that re-reads obj fields off head->array sees
-	 * a fully populated obj as soon as num_entries below admits it.
+	 * so the obj is fully built before num_entries below admits it;
+	 * the objhead is process-private single-writer (see the publish-
+	 * block header above) so this is source-order sequencing, not a
+	 * release-store guarantee.
 	 */
 	if (++head->next_slot_version == 0)
 		head->next_slot_version = 1;
