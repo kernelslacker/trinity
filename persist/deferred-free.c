@@ -152,11 +152,12 @@ static void **alloc_track_hash;
  * / *_ro_calls) let an operator compute mean-ns-per-bracket from the
  * cumulative totals without additional plumbing.  Statics are per-
  * child by COW-at-fork and single-writer per bracket, so no locking
- * is required.  Timestamps are updated ONLY on successful unlock; the
- * matching lock path is unreachable without a preceding successful
- * unlock (see the callers -- every unlock failure returns without
- * calling lock), so the delta computed in lock always corresponds to
- * the immediately-preceding unlock.
+ * is required.  A zero timestamp (tv_sec == 0 && tv_nsec == 0) means
+ * "no open unlock window" -- lock() skips the counter bumps and
+ * df_cost_elapsed_ns returns 0 in that case, so the four unpaired
+ * lock-downs at init tail (and any future unpaired lock) record
+ * nothing rather than charging the machine-uptime delta between the
+ * zero-init timestamp and CLOCK_MONOTONIC into *_rw_ns_total.
  */
 static struct timespec alloc_track_rw_open_at;
 static struct timespec inflight_rw_open_at;
@@ -181,10 +182,18 @@ static bool inflight_rw_open;
 static bool rc_rw_open;
 static bool ring_rw_open;
 
+static inline bool df_ts_is_zero(const struct timespec *ts)
+{
+	return ts->tv_sec == 0 && ts->tv_nsec == 0;
+}
+
 static inline unsigned long df_cost_elapsed_ns(const struct timespec *begin)
 {
 	struct timespec now;
 	long ns;
+
+	if (df_ts_is_zero(begin))
+		return 0;
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	ns = (now.tv_sec - begin->tv_sec) * 1000000000L
@@ -245,8 +254,11 @@ static void alloc_track_lock(void)
 	if (mprotect(alloc_track_base, alloc_track_bytes, PROT_READ) != 0)
 		outputerr("deferred_free: alloc_track lock failed: "
 			  "errno=%d\n", errno);
-	ns = df_cost_elapsed_ns(&alloc_track_rw_open_at);
 	alloc_track_rw_open = false;
+	if (df_ts_is_zero(&alloc_track_rw_open_at))
+		return;
+	ns = df_cost_elapsed_ns(&alloc_track_rw_open_at);
+	alloc_track_rw_open_at = (struct timespec){0};
 	__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_ro_calls,
 			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_rw_ns_total,
@@ -470,8 +482,11 @@ static void inflight_lock(void)
 	if (mprotect(inflight_hash, inflight_hash_bytes, PROT_READ) != 0)
 		outputerr("deferred_free: inflight_hash lock failed: "
 			  "errno=%d\n", errno);
-	ns = df_cost_elapsed_ns(&inflight_rw_open_at);
 	inflight_rw_open = false;
+	if (df_ts_is_zero(&inflight_rw_open_at))
+		return;
+	ns = df_cost_elapsed_ns(&inflight_rw_open_at);
+	inflight_rw_open_at = (struct timespec){0};
 	__atomic_add_fetch(&shm->stats.deferred_free.inflight_ro_calls,
 			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.deferred_free.inflight_rw_ns_total,
@@ -705,8 +720,11 @@ static void rc_lock(void)
 	if (mprotect(rc, rc_bytes, PROT_READ) != 0)
 		outputerr("deferred_free: ring_control lock failed: "
 			  "errno=%d\n", errno);
-	ns = df_cost_elapsed_ns(&rc_rw_open_at);
 	rc_rw_open = false;
+	if (df_ts_is_zero(&rc_rw_open_at))
+		return;
+	ns = df_cost_elapsed_ns(&rc_rw_open_at);
+	rc_rw_open_at = (struct timespec){0};
 	__atomic_add_fetch(&shm->stats.deferred_free.ring_ro_calls,
 			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
@@ -770,8 +788,11 @@ static void ring_lock(void)
 
 	if (mprotect(ring, ring_bytes, PROT_NONE) != 0)
 		outputerr("deferred_free: mprotect NONE failed: errno=%d\n", errno);
-	ns = df_cost_elapsed_ns(&ring_rw_open_at);
 	ring_rw_open = false;
+	if (df_ts_is_zero(&ring_rw_open_at))
+		return;
+	ns = df_cost_elapsed_ns(&ring_rw_open_at);
+	ring_rw_open_at = (struct timespec){0};
 	__atomic_add_fetch(&shm->stats.deferred_free.ring_ro_calls,
 			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
