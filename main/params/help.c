@@ -29,6 +29,7 @@
  *   --corpus-save-errno-grad-live  Documentation/params-picker.md#corpus-save-errno-grad-live
  *   --cost-pool-selector           Documentation/params-picker.md#cost-pool-selector
  *   --cred-throttle                Documentation/params-picker.md#cred-throttle
+ *   --deferred-free-batch          Documentation/params-debug.md#deferred-free-batch
  *   --expensive-adaptive           Documentation/params-picker.md#expensive-adaptive
  *   --explorer-children            Documentation/strategy.md#explorer-children
  *   --fork-pressure-drain          Documentation/childop-canary-queue.md#fork-pressure-drain
@@ -162,6 +163,7 @@ static const struct option_help option_descs[] = {
 	{ "print-disabled-syscalls", 0, "print syscalls disabled via AVOID_SYSCALL or NEED_ALARM and exit" },
 	{ "quiet",		'q', "suppress the per-second progress line (other output unchanged)" },
 	{ "self-corrupt-canary", 0, "checksum critical child self-state per dispatch (default off; heavyweight)" },
+	{ "deferred-free-batch", 0, "coalesce deferred-free mprotect brackets per iteration (default off; A/B)" },
 	{ "random",		'r', "pick N syscalls at random and just fuzz those" },
 	{ "reach-band", 0, "reach-banded silent-regime weight: off/shadow-only/combined (default off)" },
 	{ "redqueen-pending-pick", 0, "retained for compatibility; no-op (accepts 'random' or 'first')" },

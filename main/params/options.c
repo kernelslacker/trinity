@@ -33,6 +33,7 @@ const struct option longopts[] = {
 	{ "clowntown", no_argument, NULL, 0 },
 	{ "dangerous", no_argument, NULL, 'd' },
 	{ "debug", no_argument, NULL, 'D' },
+	{ "deferred-free-batch", no_argument, NULL, 0 },
 	{ "disable-fds", required_argument, NULL, 0 },
 	{ "dry-run", no_argument, NULL, 0 },
 	{ "enable-fds", required_argument, NULL, 0 },
