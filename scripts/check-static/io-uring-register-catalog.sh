@@ -128,7 +128,6 @@ done
 
 opcodes_count=$(printf '%s\n' "$opcodes" | wc -l)
 variants_count=$(printf '%s\n' "$variants" | wc -l)
-grand_count=${#GRANDFATHERED[@]}
 covered=$((opcodes_count - ${#new_gaps[@]} - ${#grand_gaps[@]}))
 
 if [ "${#new_gaps[@]}" -gt 0 ]; then

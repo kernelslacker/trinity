@@ -33,7 +33,7 @@ do
 	echo testing $syscalls
 
 	chmod 755 $TRINITY_TMP
-	pushd $TRINITY_TMP > /dev/null
+	pushd $TRINITY_TMP > /dev/null || exit
 
 	if [ ! -f $TRINITY_PATH/trinity ]; then
 		echo lost!
@@ -42,7 +42,7 @@ do
 	fi
 
 	MALLOC_CHECK_=2 $TRINITY_PATH/trinity $syscalls -N 99999 -C 64
-	popd > /dev/null
+	popd > /dev/null || exit
 
 	check_tainted
 	echo

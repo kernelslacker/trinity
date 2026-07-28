@@ -38,7 +38,6 @@ skipped() {
 }
 
 fail_count=0
-warn_count=0
 ran_count=0
 
 if [ ! -d "$CHECK_DIR" ] || [ -z "$(ls -A "$CHECK_DIR" 2>/dev/null)" ]; then
