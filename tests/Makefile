@@ -12,15 +12,19 @@
 # seam.  New PURE modules migrate onto the test target one at a time
 # by adding them to REAL_SRCS below.
 #
-# All object files land under build/ so this Makefile never stomps
-# the main tree's object cache -- ASAN and non-ASAN test-bin builds
-# stay independent of each other and of the top-level `make` build.
+# Object files and the linked binary are keyed by build flavor:
+#   normal -> build/       + test-bin
+#   ASAN   -> build-asan/  + test-bin-asan
+# Both flavors can coexist -- alternating `make test-bin` and
+# `make test-asan` never relinks stale objects from the other flavor
+# into a binary that lacks its runtime, so no clean is required
+# between flavor switches.  This Makefile also never stomps the main
+# tree's object cache.
 #
 # Depends on ../config.h from `./configure` in the tree root; run
 # configure once before building the test binary.
 
 TOP		:= ..
-BUILDDIR	:= build
 CC		?= gcc
 CFLAGS		?= -g -O2
 
@@ -39,10 +43,17 @@ CFLAGS		+= -Wno-missing-field-initializers
 # arch-program #10 spec calls for on the integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
 # selftest under the test binary lands the same backtrace shape a
-# failing selftest inside the live trinity would.
+# failing selftest inside the live trinity would.  Objects land in
+# a flavor-specific BUILDDIR so an ASAN-instrumented .o never leaks
+# into a subsequent non-ASAN link (and vice versa).
 ifeq ($(ASAN),1)
+BUILDDIR	:= build-asan
+TEST_BIN	:= test-bin-asan
 CFLAGS		+= -U_FORTIFY_SOURCE -fsanitize=address -Og -ggdb3
 LDFLAGS		+= -fsanitize=address
+else
+BUILDDIR	:= build
+TEST_BIN	:= test-bin
 endif
 
 # PURE-module sources reused verbatim from the main tree.  Kept
@@ -72,8 +83,6 @@ FAKE_SRCS	:= \
 REAL_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(REAL_SRCS))
 FAKE_OBJS	:= $(patsubst %.c,$(BUILDDIR)/%.o,$(FAKE_SRCS))
 
-TEST_BIN	:= test-bin
-
 .PHONY: all clean
 
 all: $(TEST_BIN)
@@ -90,4 +99,4 @@ $(BUILDDIR)/%.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	@rm -rf $(BUILDDIR) $(TEST_BIN)
+	@rm -rf build build-asan test-bin test-bin-asan
