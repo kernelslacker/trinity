@@ -98,28 +98,29 @@ test:
 #
 # `make test-bin`  -- build the tests/ binary against the fake
 #                     shm+RNG providers.  Does not run it.
-# `make test-asan` -- clean rebuild under -fsanitize=address + run
-#                     with the default fixed seed (0xa17e57).  This
-#                     is the canonical single-shot integration
-#                     invocation: any BUG() from a selftest lands as
-#                     an ASAN report on the same seed every time, so
-#                     a failure is instantly reproducible.
+# `make test-asan` -- rebuild under -fsanitize=address + run with
+#                     the default fixed seed (0xa17e57).  This is
+#                     the canonical single-shot integration
+#                     invocation: any BUG() from a selftest lands
+#                     as an ASAN report on the same seed every
+#                     time, so a failure is instantly reproducible.
 #
-# Both targets shell out to tests/Makefile, which builds into
-# tests/build/ and never touches the top-level Makefile's object
-# cache.  New PURE modules migrate onto the test-bin cargo by
-# adding one line to tests/Makefile REAL_SRCS, not by wiring
-# anything here.
+# Both targets shell out to tests/Makefile, which keys its object
+# directory and output binary by flavor (build/+test-bin for
+# normal, build-asan/+test-bin-asan for ASAN) so alternating the
+# two targets never links ASAN-instrumented .o files into a normal
+# binary (or vice versa).  New PURE modules migrate onto the
+# test-bin cargo by adding one line to tests/Makefile REAL_SRCS,
+# not by wiring anything here.
 .PHONY: test-bin test-asan
 
 test-bin: test
 	@$(MAKE) --no-print-directory -C tests
 
 test-asan: test
-	@$(MAKE) --no-print-directory -C tests clean
 	@$(MAKE) --no-print-directory -C tests ASAN=1
-	@echo "  RUN  tests/test-bin (ASAN, seed=default)"
-	@./tests/test-bin
+	@echo "  RUN  tests/test-bin-asan (ASAN, seed=default)"
+	@./tests/test-bin-asan
 
 
 MACHINE		:= $(shell $(CC) -dumpmachine)
