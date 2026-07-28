@@ -184,12 +184,12 @@ static unsigned int sat_consec_below;
 static struct sat_state sat_last_state;
 
 /*
- * Find the ring sample crossing (now_ns - horizon_ns) -- the oldest
- * sample at least as old as horizon_ns, or the oldest we have when
- * history is shorter.  Returns NULL when the ring hasn't accumulated
- * enough history to trust either yield (< 2 samples, or the oldest is
- * closer than horizon/2 -- half-horizon threshold keeps a fresh run
- * from firing off half-formed windows).
+ * Find the ring sample that closes a trailing (now_ns - horizon_ns)
+ * window -- the newest sample at or before the cutoff, or the oldest
+ * we have when history is shorter than horizon_ns.  Returns NULL when
+ * the ring hasn't accumulated enough history to trust either yield
+ * (< 2 samples, or the oldest is closer than horizon/2 -- half-horizon
+ * threshold keeps a fresh run from firing off half-formed windows).
  */
 static const struct sat_sample *sat_find_horizon(uint64_t now_ns,
 						 uint64_t horizon_ns)
