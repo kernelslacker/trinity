@@ -27,7 +27,13 @@
  * option-parse -> hot-path chain, which is not on the PURE-module
  * test seam yet -- it needs the picker migrated onto the arena test
  * infra first.  This row lands the floor; per-knob rows come after
- * that migration.
+ * that migration.  In the interim, scripts/check-static/check-option-
+ * off-branch-inert.sh pins the structural half of the same invariant
+ * per-knob: every arg=="off" parser branch is a bare
+ * VAR = ENUM_NAME_OFF assignment (no rnd_* / no side effect) landing
+ * on a zero-valued ENUM_NAME_OFF constant -- so the state a --foo=off
+ * run inherits is bit-equal to the C-zero-init default, and the parser
+ * itself consumes no incremental draw.
  *
  * Hashing shape: FNV-1a 64-bit over the raw byte layout of the
  * draw buffer, little-endian on the platforms trinity is built for
