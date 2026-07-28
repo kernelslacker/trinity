@@ -28,6 +28,7 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * scribbling.  No-op with the flag OFF; the pre-batch behaviour
 	 * (per-mutation X_unlock/X_lock round-trips) is byte-identical. */
 	deferred_free_seal_all();
+	deferred_free_debug_assert_sealed();
 
 	/* Arm the self-fuzzed-fatal-signal gate in child_fault_handler.
 	 * While set, an own-pid SI_USER/SI_TKILL/SI_QUEUE delivery of
