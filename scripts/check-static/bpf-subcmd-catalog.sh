@@ -121,7 +121,6 @@ done
 
 cmds_count=$(printf '%s\n' "$cmds" | wc -l)
 variants_count=$(printf '%s\n' "$variants" | wc -l)
-grand_count=${#GRANDFATHERED[@]}
 covered=$((cmds_count - ${#new_gaps[@]} - ${#grand_gaps[@]}))
 
 if [ "${#new_gaps[@]}" -gt 0 ]; then

@@ -175,10 +175,9 @@ fi
 
 baseline_size=${#GRANDFATHERED[@]}
 total=${#SEEN_KEY[@]}
-helper_routed=0   # producers outside objects/fd-event.c that route through
-		  # the helper never reference FD_EVENT_CLOSE directly,
-		  # so they are not counted here; this metric only
-		  # tracks remaining direct producers.
+# Producers outside objects/fd-event.c that route through the helper
+# never reference FD_EVENT_CLOSE directly, so they are not counted
+# here; this metric only tracks remaining direct producers.
 direct=$total
 echo "PASS: $NAME (direct=$direct, grandfathered=$baseline_size)"
 exit 0

@@ -20,12 +20,12 @@ set -u
 
 NAME="netlink-xfrm-attr-shim"
 ROOT="${REPO_ROOT:-$(pwd)}"
-SRC_GLOB="$ROOT/net/proto/netlink-xfrm"*.c
+SRC_GLOB=("$ROOT/net/proto/netlink-xfrm"*.c)
 HDR="$ROOT/include/proto-netlink-xfrm-internal.h"
 
 # Expand the glob and confirm at least one source file matches.
 srcs=()
-for f in $SRC_GLOB; do
+for f in "${SRC_GLOB[@]}"; do
 	[ -f "$f" ] && srcs+=("$f")
 done
 if [ "${#srcs[@]}" -eq 0 ]; then

@@ -52,12 +52,10 @@ INCLUDE_DIR="include"
 # cannot be inert -- do not use this to silence real drift.
 ALLOWLIST=""
 
-for f in "$OPTIONS_C"; do
-	if [ ! -f "$f" ]; then
-		echo "FAIL: $NAME: expected file missing: $f"
-		exit 1
-	fi
-done
+if [ ! -f "$OPTIONS_C" ]; then
+	echo "FAIL: $NAME: expected file missing: $OPTIONS_C"
+	exit 1
+fi
 if [ ! -d "$PARAMS_DIR" ] || [ ! -d "$INCLUDE_DIR" ]; then
 	echo "FAIL: $NAME: missing dir: $PARAMS_DIR or $INCLUDE_DIR"
 	exit 1
