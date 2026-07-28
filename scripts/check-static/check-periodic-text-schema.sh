@@ -187,7 +187,7 @@ extract_headers() {
 extract_counter_names() {
 	grep -oE '\{[[:space:]]*"[a-z_][a-z0-9_]*",' "$SRCDIR/counter-rates.c" \
 		| sed -E 's/^\{[[:space:]]*"//; s/",$//' \
-		| sort -u
+		| LC_ALL=C sort -u
 }
 
 emit_schema() {
