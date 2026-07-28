@@ -144,21 +144,20 @@ static unsigned int drain_child_surfaces(void)
 }
 
 /* Idle-tick wait: block up to 25 ms for a cgroup memory.events
- * inotify notification, then run the throttle bookkeeping and
- * continue the tick.  When the watcher armed at setup, one ppoll()
- * replaces the older usleep(25000): memory.high crossings wake the
- * parent immediately instead of waiting for the next sleep to expire.
+ * inotify notification, then return so main_loop can drain the queue
+ * and continue the tick.  When the watcher armed at setup, one
+ * ppoll() replaces the older usleep(25000): memory.high crossings
+ * wake the parent immediately instead of waiting for the next sleep
+ * to expire.
  *
- * self_cgroup_events_check() runs unconditionally after the ppoll --
- * on POLLIN it drains the notification and bumps fork_throttle_us; on
- * timeout the empty read is what advances the quiet-tick decay counter
- * that halves fork_throttle_us back to zero after sustained calm, so
- * removing the call from the timeout path would freeze the throttle
- * at its last elevated value.  The per-tick fcntl(F_GETFL) re-assert
- * that the old sleep-based path did inside events_check is gone -- the
- * fd is IN_NONBLOCK from inotify_init1 and children drop the inherited
- * copy in self_cgroup_drop_fds_in_child before fuzzing, so no path
- * outside the parent can clear O_NONBLOCK on the shared OFD.
+ * The drain (self_cgroup_events_check) runs unconditionally from
+ * main_loop after this returns, so both POLLIN and timeout paths
+ * advance the state machine.  Keeping the drain in main_loop -- not
+ * folded in here -- means it also fires on busy ticks that skip this
+ * wait entirely; those are exactly the ticks a spawn-storm / fork-
+ * churn workload generates memory pressure on, and gating the drain
+ * on the idle-tick wait would freeze both fork_throttle_us and the
+ * quiet-tick decay counter under the pressure they exist for.
  *
  * When the watcher never armed (no cgroup, inotify setup failed) fall
  * back to a plain usleep for the same tick timeout. */
@@ -177,8 +176,6 @@ static void wait_for_idle_tick_or_cgroup_event(void)
 
 		(void) ppoll(&pfd, 1, &ts, NULL);
 	}
-
-	self_cgroup_events_check();
 }
 
 /* Per-tick stop-condition checks.  Runs after the child-surface
@@ -536,6 +533,17 @@ void main_loop(void)
 		 * work and skip the wait so a spawn-storm can catch up. */
 		if (reaped == 0)
 			wait_for_idle_tick_or_cgroup_event();
+
+		/* Drain memory.events every tick regardless of whether we
+		 * paced above.  The inotify queue accumulates on busy ticks
+		 * that skip the ppoll, and the quiet-tick decay counter that
+		 * halves fork_throttle_us back to zero advances on the empty-
+		 * read branch.  A fork-storm workload -- the one that
+		 * generates memory.high crossings -- runs reaped!=0 ticks
+		 * back-to-back; gating this call on idle ticks would freeze
+		 * both the throttle and the decay under exactly that
+		 * pressure. */
+		self_cgroup_events_check();
 	}
 
 	/* if the pid map is corrupt, we can't trust that we'll
