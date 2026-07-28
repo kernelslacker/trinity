@@ -29,11 +29,12 @@ unsigned long cmp_hyp_pool_overflow;
  * Per credit landing at most one of the two arrays bumps (the two
  * predicates are mutually exclusive); a hyp credited with neither
  * (e.g. a single MISS, or a SKIP family outcome with no wins yet)
- * bumps nothing.  Only the four ladder kinds (EXACT, ENUM_FAMILY,
- * BITMASK, RANGE) ever populate, mirroring the existing _by_kind
- * shadow arrays; the other CMP_HYP_KIND_NR slots stay zero by
- * construction.  SHADOW telemetry only -- the h->state field is
- * NOT mutated; no consumer reads either the array or the state.
+ * bumps nothing.  Only the five ladder kinds (EXACT, ENUM_FAMILY,
+ * BITMASK, RANGE, BOUNDARY) ever populate, mirroring the existing
+ * _by_kind shadow arrays; the other CMP_HYP_KIND_NR slots stay
+ * zero by construction.  SHADOW telemetry only -- the h->state
+ * field is NOT mutated; no consumer reads either the array or the
+ * state.
  */
 unsigned long cmp_hyp_would_promote_by_kind[CMP_HYP_KIND_NR];
 unsigned long cmp_hyp_would_demote_by_kind[CMP_HYP_KIND_NR];

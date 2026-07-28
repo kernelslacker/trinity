@@ -44,16 +44,16 @@ unsigned long cmp_hyp_consumed_by_kind[CMP_HYP_KIND_NR];
  *      to a hypothesis for (cmp_ip, width).  Sum across kinds is
  *      the per-pick rate at which the typed store has SOMETHING
  *      to say about the comparison sites the raw pool is serving.
- *      Only the four ladder kinds (EXACT, ENUM_FAMILY, BITMASK,
- *      RANGE) ever populate; the other CMP_HYP_KIND_NR slots stay
- *      zero by construction.
+ *      Only the five ladder kinds (EXACT, ENUM_FAMILY, BITMASK,
+ *      RANGE, BOUNDARY) ever populate; the other CMP_HYP_KIND_NR
+ *      slots stay zero by construction.
  *  cmp_hyp_would_miss_by_kind[k]
  *      Bumped at index k for each ladder kind absent from
  *      (cmp_ip, width) on this pick.  Per raw pick: 0..4 bumps,
  *      one per missing ladder kind, so the per-kind ratio
  *      pick[k] / (pick[k] + miss[k]) reports the typed store's
  *      per-kind coverage of the served comparison sites.  Same
- *      four-slot population rule as the pick counter.
+ *      five-slot population rule as the pick counter.
  *  cmp_hyp_would_value_differs
  *      Bumped when the ladder resolves to a hypothesis whose
  *      exemplar is not equal to the raw pool's picked value --
@@ -96,9 +96,9 @@ unsigned long cmp_hyp_would_value_differs_by_kind[CMP_HYP_KIND_NR];
  *  cmp_hyp_live_injected_by_kind[k]
  *      Per-kind partition of the above.  Sum across kinds
  *      equals cmp_hyp_live_injected modulo concurrent sampling.
- *      Only the four ladder kinds (EXACT, ENUM_FAMILY, BITMASK,
- *      RANGE) ever populate; the other CMP_HYP_KIND_NR slots
- *      stay zero by construction.
+ *      Only the five ladder kinds (EXACT, ENUM_FAMILY, BITMASK,
+ *      RANGE, BOUNDARY) ever populate; the other CMP_HYP_KIND_NR
+ *      slots stay zero by construction.
  *  cmp_hyp_live_inject_gate_passed
  *      Total times the conservative gate (plateau AND ONE_IN(32))
  *      passed.  Paired with cmp_hyp_live_injected gives the
