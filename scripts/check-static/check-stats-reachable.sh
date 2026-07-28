@@ -1,58 +1,94 @@
 #!/bin/bash
 #
-# check-stats-reachable: audit that every scalar counter declared in
-# struct stats_s is surfaced somewhere the operator can see -- via a
-# STAT_FIELD() descriptor entry, a direct C-level reference, or an
-# explicit allowlist for hand-emitted / macro-concatenated shadow
-# counters.
+# check-stats-reachable: audit that every scalar counter in the
+# stats_s tree -- flat top-level members AND every leaf inside a
+# nested struct stats/subsys/*.h header -- is surfaced somewhere the
+# operator can see, either via a STAT_FIELD*() descriptor row or via a
+# consumer-side read (never via a producer write alone).
 #
-# The dump renderer walks the stat_field descriptor tables in
-# stats/json/*.c and emits one JSON key per row.
-# A field added to struct stats_s without a matching STAT_FIELD() row
-# (or an alternative emission path) is a "dead counter": bumped inside
-# the child, but never printed, never scraped, never useful.  Downstream
-# triage relies on the JSON dump to decide whether a strategy is
-# exercising the kernel, so a dead counter looks identical to a broken
-# strategy from the outside.
+# The dump renderer walks stat_field descriptor tables that emit one
+# JSON key per row.  A field added to a struct stats_s member (flat or
+# nested) without a matching STAT_FIELD*() row -- and without any
+# rendered read on some emit path -- is a "dead counter": bumped
+# inside the child, but never printed, never scraped, never useful.
+# Downstream triage relies on the JSON dump to decide whether a
+# strategy is exercising the kernel, so a dead counter looks
+# identical to a broken strategy from the outside.
 #
-# This script makes the "is this counter dead?" question mechanical:
+# The pre-refactor version of this script only walked the flat
+# scalars in struct stats_s and treated ANY whole-word occurrence in
+# a *.c file (including `shm->stats.foo++` producer writes) as
+# reachability evidence.  That left ~1300+ scalar leaves living in
+# stats/subsys/*_stats sub-structs completely unaudited, and let a
+# produced-but-never-rendered counter pass silently because its own
+# `++` looked identical to a render-side read.  Both holes are
+# closed here:
 #
-#   1. Enumerate the scalar field names declared inside
-#      `struct stats_s { ... }` in include/stats.h.
+#   1. Enumerate scalar field names by structurally walking:
+#      a) flat scalars declared directly in `struct stats_s { ... }`
+#         in include/stats.h;
+#      b) every scalar leaf reachable from a `struct <X>_stats <mbr>`
+#         member of stats_s by descending through the corresponding
+#         `struct <X>_stats { ... };` definition in stats/subsys/*.h.
+#         Descent is recursive: `struct frontier_stats` is composed of
+#         `struct frontier_core_stats core`, `struct
+#         frontier_per_syscall_stats per_syscall`, ... so the leaves
+#         come out as `frontier.core.strategy_picks`,
+#         `frontier.per_syscall.live_picks_per_syscall`, etc.
+#      Every leaf is stored as its fully-qualified access path from
+#      stats_s (flat: `foo`; nested: `member.leaf` /
+#      `member.sub.leaf`).
 #
-#   2. Build the REACHABLE set from three sources:
-#      a) STAT_FIELD(prefix, suffix) / STAT_FIELD_JSON(prefix, suffix, ...)
-#         invocations in stats/json/*.c.  These concatenate
-#         prefix + "_" + suffix to form the struct field name, so the
-#         literal token never appears in the source -- extract it
-#         symbolically.
-#      b) Every whole-word occurrence of a field name in any *.c file
-#         in the tree.  Covers direct writes (shm->stats.foo++),
-#         offsetof() lookups, sizeof() references, etc.
-#      c) An explicit ALLOWLIST of known-intentional hand-rolled /
-#         loop-emitted / shadow counters that neither route (a) nor
-#         (b) catches -- typically per-syscall / per-group arrays and
-#         macro-concatenated dispatch tables.
+#   2. Build the REACHABLE set from four independent sources:
+#      a) STAT_FIELD(cat, suffix) / STAT_FIELD_JSON(cat, suffix, ...)
+#         invocations.  Both macros build the flat identifier as
+#         `cat##_##suffix` via preprocessor concatenation, so the
+#         literal token never appears -- recover it symbolically.
+#      b) STAT_FIELD_SUB(sub, field) / STAT_FIELD_JSON_SUB(sub, field,
+#         ...) invocations.  These expand to
+#         `offsetof(struct stats_s, sub.field)` -- recover the
+#         qualified `sub.field` symbolically.
+#      c) Bespoke offset-based descriptor rows that spell the field
+#         out literally: `offsetof(struct stats_s, member.sub.leaf)`.
+#         The stats/periodic/counter-rates.c per-rate tables, the
+#         stats/dump/oracle.c anomaly rows via ORACLE_ANOMALY_ROW,
+#         and stats/categories/*.c per-index arrays all land here.
+#      d) A rendered CONSUMER read: `shm->stats.<path>` /
+#         `(&)shm->stats.<path>` occurring on a line that is NOT a
+#         producer write.  A line is treated as a producer write if
+#         either (i) the reference is immediately followed by an
+#         assignment / compound-assignment / post-inc/-dec operator,
+#         or (ii) the line invokes any mutating __atomic_*
+#         primitive (add / sub / store / exchange / and / or / xor /
+#         fetch / compare_exchange).  Non-mutating primitives
+#         (__atomic_load_n) are left alone, so a field loaded into a
+#         local and then rendered counts as reached.
 #
-#   3. Print every stats_s field NOT in REACHABLE and NOT covered by
-#      the allowlist.  Exit 0 if the set is empty, non-zero (with the
-#      list on stderr) otherwise.
+#      A produced-but-never-rendered field satisfies none of (a)-(d)
+#      -- it has a write line but no read line, no descriptor row,
+#      no offsetof entry -- and drops through to step 3.
+#
+#   3. Print every field NOT in REACHABLE and NOT covered by the
+#      allowlist.  Exit 0 if the residue is empty, non-zero (with
+#      the list on stderr) otherwise.
 #
 # The allowlist is tuned so this script exits 0 on the current tree.
 # Its purpose is to catch FUTURE fields that ship without an emission
-# path -- add a counter, forget the STAT_FIELD row, this trips.
+# path -- add a counter, forget the descriptor row / bespoke emit,
+# this trips.
 
 set -u
+
+# Bytewise sort order everywhere so `comm` doesn't trip on locale
+# collation drift between Python (codepoint) and shell sort (locale).
+export LC_ALL=C
 
 NAME="check-stats-reachable"
 
 ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 STATS_H="$ROOT/include/stats.h"
-# Glob every stats/json/*.c source -- the STAT_FIELD() descriptor tables
-# were split out of the old monolithic stats/json_dump.c and now live
-# scattered across per-subsystem TUs (core.c, network.c, tail.c, ...).
-STATS_C_FILES=("$ROOT"/stats/json/*.c)
+SUBSYS_DIR="$ROOT/stats/subsys"
 
 fail() {
 	echo "FAIL: $NAME: $1" >&2
@@ -60,152 +96,278 @@ fail() {
 }
 
 [ -r "$STATS_H" ] || fail "cannot read $STATS_H"
-for f in "${STATS_C_FILES[@]}"; do
-	[ -r "$f" ] || fail "cannot read $f"
-done
+[ -d "$SUBSYS_DIR" ] || fail "cannot read subsys dir $SUBSYS_DIR"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 FIELDS="$TMP/fields"
-STATFIELDS="$TMP/statfields"
-TOKENS="$TMP/tokens"
+DESC="$TMP/desc"
+REFS="$TMP/refs"
+OFF="$TMP/off"
 REACHABLE="$TMP/reachable"
 UNREACHED="$TMP/unreached"
 UNALLOWED="$TMP/unallowed"
+CFILES="$TMP/cfiles"
+HFILES="$TMP/hfiles"
+
+# NUL-delimited file lists reused by several xargs passes.
+find "$ROOT" -name '*.c' -type f -print0 > "$CFILES"
+find "$SUBSYS_DIR" "$ROOT/include" -maxdepth 1 -name '*.h' -type f > "$HFILES"
 
 # ---------------------------------------------------------------------
-# Step 1: enumerate scalar field names inside struct stats_s.
+# Field enumeration.
 #
-# The struct body runs from `struct stats_s {` to the terminating
-# `};`.  Field decls take the form
-#     <type> <name>[<dim>]... [__attribute__((...))];
-# where <type> is one of the fundamental unsigned-integer types used
-# throughout the struct.  Array dimensions (possibly multi-dim) and
-# alignment attributes are stripped to leave the bare identifier.
+# Emits fully-qualified access paths from stats_s to every scalar leaf:
+#     foo                                       flat top-level
+#     accept_unblocker.connects_fired           nested one deep
+#     frontier.core.strategy_picks              nested two deep
+#
+# Implemented as a single awk pass that indexes every
+# `struct <X>_stats { ... };` block in stats.h + include/*.h +
+# stats/subsys/*.h, then walks stats_s recursively.  Recursion is
+# capped at depth 8 as a safety valve; the current tree only nests
+# two levels (frontier -> core / per_syscall / ...).
 # ---------------------------------------------------------------------
-awk '/^struct stats_s \{/,/^\};/' "$STATS_H" | \
-	grep -E '^[[:space:]]+(uint16_t|uint32_t|uint64_t|unsigned int|unsigned long long|unsigned long)[[:space:]]+' | \
-	sed -E \
-		-e 's/^[[:space:]]+(uint16_t|uint32_t|uint64_t|unsigned int|unsigned long long|unsigned long)[[:space:]]+//' \
-		-e 's/(\[[^]]+\])+.*$//' \
-		-e 's/[[:space:]]*(__attribute__.*)?;.*$//' \
-		-e 's/[[:space:]]+$//' | \
-	sort -u > "$FIELDS"
+awk_enum() {
+	awk '
+	function is_scalar(t) {
+		return t == "uint16_t" || t == "uint32_t" || t == "uint64_t" ||
+		       t == "unsigned" || t == "unsignedint" ||
+		       t == "unsignedlong" || t == "unsignedlonglong"
+	}
+	BEGIN { cur = "" }
+	{
+		line = $0
+		if (match(line, /^struct [a-zA-Z_][a-zA-Z0-9_]*(_stats|_s) \{/)) {
+			# Capture struct name (drop leading "struct ", trailing " {").
+			s = substr(line, RSTART, RLENGTH)
+			sub(/^struct /, "", s); sub(/ \{$/, "", s)
+			cur = s
+			next
+		}
+		if (cur != "" && line ~ /^\};/) { cur = ""; next }
+		if (cur == "") next
+		# Strip leading whitespace, trailing comments.
+		sub(/^[[:space:]]+/, "", line)
+		sub(/\/\*.*/, "", line)
+		sub(/\/\/.*/, "", line)
+		sub(/[[:space:]]*(__attribute__.*)?;.*$/, "", line)
+		sub(/[[:space:]]+$/, "", line)
+		if (line == "") next
+		# Nested struct member?
+		if (match(line, /^struct [a-zA-Z_][a-zA-Z0-9_]*_stats[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*/)) {
+			m = substr(line, RSTART, RLENGTH)
+			sub(/^struct /, "", m)
+			# Split into "<sname> <member>" and strip array dims.
+			gsub(/\[[^]]+\]/, "", m)
+			n = split(m, parts, /[[:space:]]+/)
+			# parts[1] = <sname>, parts[2] = <member>
+			print "NEST\t" cur "\t" parts[2] "\t" parts[1]
+			next
+		}
+		# Scalar?  Type may be one or two tokens ("unsigned long").
+		# Split on whitespace, join type tokens until an identifier
+		# starting with a letter (the field name) shows up.
+		n = split(line, parts, /[[:space:]]+/)
+		type = ""
+		field = ""
+		for (i = 1; i <= n; i++) {
+			p = parts[i]
+			# Type keyword?
+			if (p == "uint16_t" || p == "uint32_t" || p == "uint64_t" ||
+			    p == "unsigned" || p == "int" || p == "long" || p == "signed") {
+				type = type p
+				continue
+			}
+			field = p
+			break
+		}
+		if (field == "" || !is_scalar(type)) next
+		# Strip array dims from the field name.
+		gsub(/\[[^]]+\]/, "", field)
+		if (field == "") next
+		print "SCALAR\t" cur "\t" field
+	}
+	' "$@"
+}
+
+# Build the struct index (all struct definitions), then walk.
+awk_enum "$STATS_H" $(cat "$HFILES") > "$TMP/index"
+
+# Walk stats_s recursively into a fully-qualified leaf list.
+python3 - "$TMP/index" > "$FIELDS" <<'PY'
+import sys, collections
+scalars = collections.defaultdict(list)   # struct -> [(field), ...]
+nested  = collections.defaultdict(list)   # struct -> [(member, child_struct), ...]
+with open(sys.argv[1]) as fh:
+    for row in fh:
+        parts = row.rstrip("\n").split("\t")
+        kind = parts[0]
+        if kind == "SCALAR":
+            _, s, field = parts
+            scalars[s].append(field)
+        elif kind == "NEST":
+            _, s, member, child = parts
+            nested[s].append((member, child))
+
+out = []
+def walk(struct, prefix, depth):
+    if depth > 8:
+        return
+    for f in scalars.get(struct, ()):
+        out.append(prefix + f)
+    for m, child in nested.get(struct, ()):
+        walk(child, prefix + m + ".", depth + 1)
+
+walk("stats_s", "", 0)
+for name in sorted(set(out)):
+    print(name)
+PY
 
 field_count="$(wc -l < "$FIELDS")"
-# Sanity floor: after the mid-2026 refactor most counters live inside
-# per-subsystem sub-structs (oracle_stats, uid_change_stats, ...) which
-# this scalar-only walker deliberately skips.  The residue is the small
-# set of flat top-level counters (per-family genl call counters, a
-# handful of one-offs).  If the parser drops below that floor the
-# scalar decl regex has broken and needs updating.
-if [ "$field_count" -lt 20 ]; then
-	fail "extracted only $field_count fields from $STATS_H (parser broke?)"
+# Sanity floor.  The pre-refactor scalar-only walker found ~30 flat
+# fields; the structural walker adds ~1300+ nested leaves across the
+# stats/subsys/ tree.  If we drop under 500 the enumeration has
+# broken.
+if [ "$field_count" -lt 500 ]; then
+	fail "extracted only $field_count fields (structural walker broke?)"
 fi
 
 # ---------------------------------------------------------------------
-# Step 2a: names constructed by STAT_FIELD() and STAT_FIELD_JSON().
-#
-# Both macros build the struct field name as `cat##_##suffix`, so the
-# literal identifier is never present in the source.  Recover it by
-# matching the macro invocation and joining the two arguments with
-# an underscore.
+# Reachability step 2a: flat STAT_FIELD / STAT_FIELD_JSON.
+# Emits `cat_suffix` (macro-concatenated identifier).
 # ---------------------------------------------------------------------
-grep -hoE 'STAT_FIELD(_JSON)?\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' "${STATS_C_FILES[@]}" | \
-	sed -E 's/STAT_FIELD(_JSON)?\([[:space:]]*//; s/[[:space:]]*,[[:space:]]*/_/' | \
-	sort -u > "$STATFIELDS"
+xargs -0 grep -hoE 'STAT_FIELD(_JSON)?\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' < "$CFILES" 2>/dev/null | \
+	sed -E 's/STAT_FIELD(_JSON)?\([[:space:]]*//; s/[[:space:]]*,[[:space:]]*/_/' \
+	> "$DESC.flat"
 
 # ---------------------------------------------------------------------
-# Step 2b: every identifier token that appears in any *.c file.
-#
-# Any field referenced via `shm->stats.foo`, `->stats.foo`,
-# `parent_stats.foo`, `offsetof(struct stats_s, foo)`, or a
-# `sizeof()` shows up here.  Restricting to *.c avoids counting the
-# declaration itself in stats.h as a "reference".
+# Reachability step 2b: STAT_FIELD_SUB / STAT_FIELD_JSON_SUB.
+# Emits `sub.field` (offsetof-based, member expressed literally).
 # ---------------------------------------------------------------------
-find "$ROOT" -name '*.c' -type f -print0 | \
-	xargs -0 grep -hoE '\b[a-zA-Z_][a-zA-Z0-9_]*\b' | \
-	sort -u > "$TOKENS"
+xargs -0 grep -hE 'STAT_FIELD_(JSON_)?SUB\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' < "$CFILES" 2>/dev/null | \
+	sed -E 's/.*STAT_FIELD_(JSON_)?SUB\([[:space:]]*([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*,[[:space:]]*([a-zA-Z_][a-zA-Z0-9_]*).*/\2.\3/' \
+	> "$DESC.sub"
 
-# Fields reached directly (present as an identifier in some .c file)
-# unioned with those reached through the STAT_FIELD() macro.
-comm -12 "$FIELDS" "$TOKENS" > "$TMP/direct"
-sort -u "$STATFIELDS" "$TMP/direct" > "$REACHABLE"
+# ---------------------------------------------------------------------
+# Reachability step 2c: bespoke offsetof(struct stats_s, path) entries.
+# Extract the full dotted path (may be multi-level, e.g. frontier.core.foo).
+# ---------------------------------------------------------------------
+xargs -0 grep -hoE 'offsetof\(struct stats_s,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_.]*' < "$CFILES" 2>/dev/null | \
+	sed -E 's/offsetof\(struct stats_s,[[:space:]]*//' \
+	> "$OFF"
+
+# ---------------------------------------------------------------------
+# Reachability step 2d: consumer reads.
+#
+# Match `stats.<path>` where <path> is one or more dot-joined
+# identifiers.  Drop any line where the reference is followed by a
+# write operator, and any line that also invokes a mutating
+# __atomic_* primitive (which typically takes `&stats.foo` as its
+# first arg and rewrites it in-place).  Everything left is a read
+# on some render path.
+# ---------------------------------------------------------------------
+xargs -0 grep -hE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' < "$CFILES" 2>/dev/null | \
+	grep -vE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+(\[[^]]*\])?[[:space:]]*(\+\+|--|=|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)' | \
+	grep -vE '__atomic_(add|sub|store|exchange|and|or|xor|fetch|compare)' | \
+	grep -oE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' | \
+	sed 's/^stats\.//' \
+	> "$REFS"
+
+# Combined REACHABLE set.  All emit paths canonicalise leaves to the
+# same dotted-path form as $FIELDS.
+sort -u "$DESC.flat" "$DESC.sub" "$OFF" "$REFS" > "$REACHABLE"
 
 comm -23 "$FIELDS" "$REACHABLE" > "$UNREACHED"
 
 # ---------------------------------------------------------------------
 # Step 3: allowlist known-intentional residue.
 #
-# Patterns are anchored ERE regexes matched against the whole field
-# name.  Categories:
+# Categories:
 #
-#   * Hand-emitted per-syscall / per-group arrays.  These are `unsigned
-#     long name[MAX_NR_SYSCALL]` (or [NR_..._GROUPS]) fields walked
-#     directly by dedicated dump helpers in stats/stats.c that pass
-#     the array pointer to a topN emitter.  There is no STAT_FIELD row
-#     and the array name may or may not be spelled in a .c file
-#     depending on whether the walker lives in the same TU.
+#   * Per-syscall / per-group arrays walked by dedicated topN emitters
+#     (`.*_per_syscall`, `.*_per_group`) -- the walker sits in
+#     stats/stats.c / stats/dump/*.c and passes the array pointer
+#     rather than spelling the field, so no ref pattern catches them.
 #
-#   * Multi-dim shadow histories (childop_edge_history,
-#     childop_wall_history).  Consumed via reservoir-style summaries;
-#     the raw array is not row-emitted.
+#   * Multi-dim shadow histories (`.*_history`) whose raw arrays are
+#     consumed via reservoir-style summaries, not row-emitted.
 #
-#   * Family-indexed dispatch tables (genl_family_calls_*,
-#     cmp_frontier_*, frontier_frseq_*) whose emission goes through a
-#     custom walker rather than a STAT_FIELD row.
+#   * Family-indexed dispatch tables (genl_family_calls_.*) still on
+#     the flat side, walked by a bespoke emitter.
 #
-#   * Macro-concatenated dispatch (nftables_churn_*_expr_emit) --
-#     addressed via `offsetof(struct stats_s,
-#     nftables_churn_##field##_expr_emit)` in the nft_expr_table[]
-#     descriptor.  Preprocessor concatenation means the literal
-#     identifier never appears in any .c file.
+#   * Macro-concatenated dispatch (nftables_churn_.*_expr_emit /
+#     nftables_churn\..*_expr_emit) -- addressed via
+#     `offsetof(struct stats_s, nftables_churn_##field##_expr_emit)`
+#     in the nft_expr_table[] descriptor.  Preprocessor concatenation
+#     hides the literal identifier from every text scan.
 #
-#   * Explicit dead-counter escrow.  The three names below have no
-#     writer, no reader, and no dump-side emission in the current
-#     tree.  They are pre-existing residue predating this audit --
-#     listed here so the script exits 0 on master, and called out in
-#     the commit message that introduced this audit so a follow-up
-#     can either wire them up or delete them.  Do NOT extend this
-#     block silently: a new unreachable field means either a missing
-#     STAT_FIELD row (fix the omission) or a genuinely dead counter
-#     (delete it or file a follow-up).
+#   * ORACLE_ANOMALY_ROW-emitted diagnostic counters
+#     (diag.statmount_setup_fail) whose macro invocation spells the
+#     field bare (`diag.statmount_setup_fail`) with no `stats.`
+#     prefix.  The macro itself expands to `offsetof(struct stats_s,
+#     field_)` at the definition site -- preprocessor swap hides the
+#     literal from our offsetof scan.
+#
+#   * Explicit dead-counter escrow.  Producer-only counters (writer
+#     but no reader, no descriptor row, no bespoke emit) that
+#     predate this audit.  Listed here so the script exits 0 on
+#     master; a follow-up either wires them up or deletes them.
+#     Do NOT extend this block silently: a new unreachable field
+#     means either a missing descriptor row (fix the omission) or a
+#     genuinely dead counter (delete it or file a follow-up).
 # ---------------------------------------------------------------------
 ALLOWLIST_PATTERNS=(
+	# --- flat ---
 	'.*_per_syscall'
 	'.*_per_group'
-	'childop_edge_history'
-	'childop_wall_history'
 	'genl_family_calls_.*'
-	'cmp_frontier_.*'
-	'frontier_frseq_.*'
-	'nftables_churn_.*_expr_emit'
-	# Pre-existing dead-counter escrow -- see block comment above.
-	'local_obj_num_entries_corrupted'
-	'perf_event_chains_pmu_unsupported'
-	'tracefs_ftrace_subset_skipped'
+
+	# --- nested: per-slot / walker-emitted arrays and shadow histories ---
+	'[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*_per_syscall'
+	'[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*_per_group'
+	'[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*\.[a-zA-Z_][a-zA-Z0-9_]*_history'
+
+	# --- nested: macro-concatenated dispatch (nft expr table) ---
+	'nftables_churn\.[a-zA-Z_][a-zA-Z0-9_]*_expr_emit'
+
+	# --- nested: ORACLE_ANOMALY_ROW bespoke emit ---
+	'diag\.statmount_setup_fail'
+
+	# --- pre-existing dead-counter escrow (nested successors of the
+	#     old flat perf_event_chains_pmu_unsupported /
+	#     tracefs_ftrace_subset_skipped /
+	#     local_obj_num_entries_corrupted names, plus a handful of
+	#     producer-only diagnostics that never got wired to an emit
+	#     path) ---
+	'perf_chains\.pmu_unsupported'
+	'tracefs_fuzzer\.ftrace_subset_skipped'
+	'diag\.local_obj_num_entries_corrupted'
+	'corrupt_ptr\.sample_seq'
+	'deferred_free\.tracked_free_unverified_leak'
+	'diag\.read_walk_aborted'
+	'diag\.write_walk_aborted'
+	'transition_edge\.calls_at_window_start'
 )
 
-# Join patterns into one anchored ERE alternation.  Anchoring both
-# ends prevents a pattern like `.*_per_syscall` from accidentally
-# matching a substring somewhere else.
 allow_re="^($(IFS='|'; echo "${ALLOWLIST_PATTERNS[*]}"))\$"
 
 grep -Ev "$allow_re" "$UNREACHED" > "$UNALLOWED" || true
 
 if [ -s "$UNALLOWED" ]; then
-	echo "FAIL: $NAME: struct stats_s fields with no STAT_FIELD row, no C reference, and no allowlist entry:" >&2
+	echo "FAIL: $NAME: stats_s fields with no descriptor row, no consumer read, and no allowlist entry:" >&2
 	sed 's/^/  /' "$UNALLOWED" >&2
 	echo "" >&2
-	echo "Either add a STAT_FIELD(prefix, suffix) descriptor row in" >&2
-	echo "one of the stats/json/*.c tables so the dump renderer" >&2
-	echo "surfaces the counter, or remove the field." >&2
-	echo "If the counter is emitted through a bespoke walker, extend the" >&2
-	echo "allowlist in $0 with a specific pattern and a comment explaining" >&2
-	echo "the emission path." >&2
+	echo "Either add a STAT_FIELD*() descriptor row (STAT_FIELD /" >&2
+	echo "STAT_FIELD_JSON for flat fields, STAT_FIELD_SUB /" >&2
+	echo "STAT_FIELD_JSON_SUB for nested ones) so the dump renderer" >&2
+	echo "surfaces the counter, or remove the field.  If the counter" >&2
+	echo "is emitted through a bespoke walker, extend the allowlist" >&2
+	echo "in $0 with a specific pattern and a comment explaining the" >&2
+	echo "emission path." >&2
 	exit 1
 fi
 
-echo "PASS: $NAME: $field_count stats_s fields, all reachable or allowlisted"
+echo "PASS: $NAME: $field_count stats_s fields (flat + nested), all reachable or allowlisted"
 exit 0
