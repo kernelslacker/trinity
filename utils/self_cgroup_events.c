@@ -45,7 +45,7 @@ unsigned int fork_throttle_us;
 
 #define THROTTLE_MIN_US		1000U		/* 1 ms initial step */
 #define THROTTLE_MAX_US		1000000U	/* 1 s cap under sustained pressure */
-#define THROTTLE_DECAY_TICKS	40U		/* ~1s of quiet at 25ms cadence */
+#define THROTTLE_DECAY_TICKS	40U		/* quiet main-loop ticks before halving; counts ticks, not wall time (busy ticks skip the 25ms ppoll and complete faster) */
 
 /*
  * The cap and the decay schedule together set how aggressively we back
