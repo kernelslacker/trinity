@@ -38,6 +38,7 @@
 #include "random-syscall-internal.h"
 #include "reach-band.h"
 #include "rnd.h"
+#include "rotation_event.h"
 #include "sequence.h"
 #include "shm.h"
 #include "signals.h"
@@ -51,6 +52,7 @@
 #include "tables.h"
 #include "trinity.h"
 #include "utils.h"
+#include "utils-proc.h"
 
 /*
  * Check the rotation boundary and, if crossed, atomically claim the
@@ -360,4 +362,50 @@ void maybe_rotate_strategy(void)
 	       cmp_in_window,
 	       prev_reason == SR_PLATEAU_FORCE ?
 	       ", learner-update skipped" : "");
+
+	/* Durable per-rotation-block event: one JSONL record per closed
+	 * window, assembled from the counters we already loaded above.
+	 * Emitted AFTER the RELEASE-store of current_strategy so a
+	 * reader that observes the record has also seen the corresponding
+	 * next-arm publish -- an offline consumer joining records to
+	 * subsequent per-arm coverage does not race the publish.
+	 *
+	 * pim_mode: reported as -1 for non-intervention windows to keep
+	 * the per-block schema stable; matches the "only SR_PLATEAU_FORCE
+	 * windows attribute to the per-PIM numerator arrays" contract in
+	 * the outcome-accounting block above.
+	 *
+	 * plateau_active reads through kcov_shm and tolerates a NULL
+	 * kcov_shm (kcov disabled) by reporting false -- same tolerant
+	 * shape as the window-tightening load at the top of this function. */
+	{
+		struct rotation_event ev;
+
+		ev.t_close_mono_ns = mono_ns();
+		ev.start_mono_ns = shm->start_mono_ns;
+		ev.op_count_start = last;
+		ev.op_count_end = now;
+		ev.syscalls_in_window = syscalls_in_window;
+		ev.strategy_prev = prev;
+		ev.strategy_next = next;
+		ev.selection_reason_prev = (int)prev_reason;
+		ev.selection_reason_next = (int)next_reason;
+		ev.pim_mode = (prev_reason == SR_PLATEAU_FORCE &&
+			       prev_intervention_mode_raw >= 0 &&
+			       prev_intervention_mode_raw < NR_PIM_MODES)
+			? prev_intervention_mode_raw : -1;
+		ev.pc_edge_calls_in_window = calls_in_window;
+		ev.pc_edges_in_window = edges_in_window;
+		ev.cmp_wins_in_window = cmp_in_window;
+		ev.warn_fires_in_window = warn_in_window;
+		ev.was_chaos = was_chaos;
+		ev.plateau_active = (kcov_shm != NULL) &&
+			__atomic_load_n(&kcov_shm->plateau.plateau_active,
+					__ATOMIC_RELAXED);
+		ev.distinct_edges_now = (kcov_shm != NULL) ?
+			__atomic_load_n(&kcov_shm->coverage.distinct_edges,
+					__ATOMIC_RELAXED) : 0UL;
+
+		stats_rotation_event_emit(&ev);
+	}
 }
