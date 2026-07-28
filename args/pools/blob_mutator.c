@@ -14,6 +14,7 @@
  * the owned buffer), HAVOC (FILL plus a bounded byte-mutation pass:
  * bit-flip / byte-flip / set-interesting at the four recorded cmp
  * widths {1,2,4,8} / ±1..±35 arithmetic on a byte/word/dword field /
+ * prefix-len stamp of a plausible length/size at offset 0 /
  * memset a bounded run to 0x00 or 0xff / self-splice copy a bounded
  * region over another / swap two non-overlapping bounded regions,
  * capped at BLOB_HAVOC_MAX_OPS ops per invocation regardless of arm
