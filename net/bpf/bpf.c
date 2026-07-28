@@ -494,11 +494,11 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
  * sock_fprog-sized window.
  *
  * Inner-filter free is alloc_track_lookup()-only: free what we can
- * prove we own, leak the unproven.  alloc_track_lookup() is a hash
- * probe with no fallback scan of the alloc_track[] array, so a hash
- * miss (including the mirror-desync class where the hash desyncs
- * from a still-valid entry in alloc_track[]) makes us fail-closed
- * and skip the free entirely.  A readable-but-untracked inner pointer
+ * prove we own, leak the unproven.  alloc_track_lookup() hashes first
+ * and falls back to a linear alloc_track[] scan on a NULL-slot hash
+ * miss, so the mirror-desync class (duplicate-ptr displaced-eviction
+ * leaves the hash empty while the array still owns the ptr) still
+ * gates the free.  A readable-but-untracked inner pointer
  * (a wild fuzz pointer that happens to land in a real mapping) is
  * deliberately left to leak rather than handed to
  * deferred_free_enqueue(): leaking an unproven pointer is the safer

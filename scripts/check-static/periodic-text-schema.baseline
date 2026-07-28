@@ -51,6 +51,7 @@ context_regular_suppressed_would_skip per-syscall top :
 =
 context_regular_suppressed_would_skip per-syscall total:
 === counter-rate-names ===
+alloc_track_lookup_array_fallback_hit
 alloc_track_refresh_consume_miss
 alloc_track_refresh_ring_owned_skip
 alloc_track_refresh_unverified_skip

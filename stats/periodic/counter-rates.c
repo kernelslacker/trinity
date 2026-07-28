@@ -426,6 +426,8 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free.alloc_track_refresh_unverified_skip) },
 	{ "alloc_track_refresh_consume_miss",
 	  offsetof(struct stats_s, deferred_free.alloc_track_refresh_consume_miss) },
+	{ "alloc_track_lookup_array_fallback_hit",
+	  offsetof(struct stats_s, deferred_free.alloc_track_lookup_array_fallback_hit) },
 	/* Untraced protection-region mprotect-bracket cost counters.
 	 * Three regions x (rw-open + ro-close + ns-held-rw) = 9 rows.
 	 * Non-zero rate lines quantify how much of the deferred-free
