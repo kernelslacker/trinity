@@ -319,6 +319,7 @@ void dump_stats_json_corruption_and_audit(void)
 			"\"alloc_track_refresh_ring_owned_skip\":%lu,"
 			"\"alloc_track_refresh_unverified_skip\":%lu,"
 			"\"alloc_track_refresh_consume_miss\":%lu,"
+			"\"alloc_track_lookup_array_fallback_hit\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
 			"\"objpool_array_stale_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
@@ -397,6 +398,7 @@ void dump_stats_json_corruption_and_audit(void)
 		shm->stats.deferred_free.alloc_track_refresh_ring_owned_skip,
 		shm->stats.deferred_free.alloc_track_refresh_unverified_skip,
 		shm->stats.deferred_free.alloc_track_refresh_consume_miss,
+		shm->stats.deferred_free.alloc_track_lookup_array_fallback_hit,
 		shm->stats.diag.pagecache_canary_corrupt_caught,
 		shm->stats.diag.objpool_array_stale_caught,
 		parent_stats.lock_word_scribbled,

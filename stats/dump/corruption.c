@@ -331,6 +331,8 @@ static void dump_stats_render_deferred_free_rejects(void)
 		stat_row("corruption", "alloc_track_refresh_unverified_skip", shm->stats.deferred_free.alloc_track_refresh_unverified_skip);
 	if (shm->stats.deferred_free.alloc_track_refresh_consume_miss)
 		stat_row("corruption", "alloc_track_refresh_consume_miss",    shm->stats.deferred_free.alloc_track_refresh_consume_miss);
+	if (shm->stats.deferred_free.alloc_track_lookup_array_fallback_hit)
+		stat_row("corruption", "alloc_track_lookup_array_fallback_hit", shm->stats.deferred_free.alloc_track_lookup_array_fallback_hit);
 	if (shm->stats.deferred_free.rec_owned_overflow_to_ring)
 		stat_row("corruption", "rec_owned_overflow_to_ring",          shm->stats.deferred_free.rec_owned_overflow_to_ring);
 }

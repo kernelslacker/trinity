@@ -307,6 +307,23 @@ struct deferred_free_stats {
 	 * re-insert.  Non-zero proves the gate is engaged. */
 	unsigned long alloc_track_refresh_consume_miss;
 
+	/* alloc_track_lookup() found @ptr via the linear alloc_track[]
+	 * fallback scan after its hash probe terminated on a NULL slot
+	 * without finding the entry.  The mirror-desync class this
+	 * catches: deferred_alloc_track()'s duplicate-ptr insert is
+	 * idempotent on the hash but still writes a fresh alloc_track[]
+	 * slot; a subsequent displaced-eviction of the older slot then
+	 * removes the hash entry while the newer alloc_track[] slot
+	 * still holds @ptr, so a hash-only lookup would leak the chunk
+	 * (bpf_free_filter inner buffer, cleanup_release_post_state,
+	 * deferred_free_enqueue).  Non-zero rate means duplicate-ptr
+	 * churn is producing desyncs the fallback rescues -- correlate
+	 * with reject_untracked to gauge how many leaks the fallback
+	 * avoids.  The fallback intentionally does NOT repair the hash
+	 * (would require the mprotect RW bracket on the read-mostly
+	 * lookup hot path). */
+	unsigned long alloc_track_lookup_array_fallback_hit;
+
 	/* Untraced cost accounting for the mprotect brackets that
 	 * armor the three deferred-free protection regions.  Prior
 	 * strace surveys showed these brackets dominating the random-

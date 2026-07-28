@@ -299,6 +299,27 @@ static void alloc_track_hash_remove(void *ptr)
 	alloc_track_hash[hole] = NULL;
 }
 
+/*
+ * Membership probe against the alloc_track side-set.  The hash mirrors
+ * alloc_track[] for the O(1) hit case, but a hash miss is NOT proof of
+ * absence: deferred_alloc_track()'s duplicate-ptr insert is idempotent
+ * on the hash (same value already present -> no-op) yet still writes a
+ * fresh alloc_track[] slot, so a subsequent displaced-eviction of the
+ * older slot removes the hash entry while the newer alloc_track[] slot
+ * still holds @ptr.  Falling back to a linear alloc_track[] scan on a
+ * NULL-slot hash miss restores the "array is source of truth" invariant
+ * the fail-closed callers below assume (all of them leak-on-miss
+ * rather than free-on-miss, so a false negative just leaks the chunk
+ * until child exit -- but that leak still shows up as bad user-visible
+ * behaviour: rejected enqueues at :1446, bpf_free_filter inner-buffer
+ * skips at net/bpf/bpf.c:516, cleanup_release_post_state drops at :939).
+ * The hash-repair path is intentionally NOT walked here -- the lookup
+ * hot path executes against the PROT_READ steady state, and an
+ * mprotect RW bracket to reinsert the missing entry would eat the
+ * PROT_READ speedup for the (rare) desync case.  A fallback hit bumps
+ * alloc_track_lookup_array_fallback_hit so operators can see when the
+ * desync is firing.
+ */
 bool alloc_track_lookup(void *ptr)
 {
 	unsigned int idx = alloc_track_hash_index(ptr);
@@ -306,27 +327,35 @@ bool alloc_track_lookup(void *ptr)
 
 	for (probes = 0; probes < ALLOC_TRACK_HASH_SIZE; probes++) {
 		if (alloc_track_hash[idx] == NULL)
-			return false;
+			goto fallback;
 		if (alloc_track_hash[idx] == ptr)
 			return true;
 		idx = (idx + 1) & ALLOC_TRACK_HASH_MASK;
+	}
+fallback:
+	for (probes = 0; probes < ALLOC_TRACK_SIZE; probes++) {
+		if (alloc_track[probes] == ptr) {
+			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_lookup_array_fallback_hit,
+					   1, __ATOMIC_RELAXED);
+			return true;
+		}
 	}
 	return false;
 }
 
 /*
- * Hash-gated fast reject mirrors alloc_track_consume(): a miss
- * short-circuits without touching alloc_track[] / alloc_track_sizes[].
- * Hits proceed to the backward scan to locate the slot whose ptr
- * matches, then read the parallel sizes array.  Backward-from-head
- * walks the recently-inserted entries first; most cmp_hints field
- * scans look up a buffer registered a handful of allocations earlier
- * (sanitiser zmalloc_tracked just before dispatch), so the scan
- * terminates close to head.  Reads run against the PROT_READ steady
- * state -- no mprotect bracket on this hot path.  Returns 0 on miss
- * so the caller can treat "unknown extent" as "do not derive a bound"
- * (the safer direction: a downstream read gated on lookup_size > 0
- * skips when we cannot prove the buffer's length).
+ * Hash-gated fast reject via alloc_track_lookup() (which itself falls
+ * back to a linear alloc_track[] scan on hash miss, so a mirror-desync
+ * @ptr still gates in).  Hits proceed to the backward scan below to
+ * locate the slot whose ptr matches, then read the parallel sizes
+ * array.  Backward-from-head walks the recently-inserted entries first;
+ * most cmp_hints field scans look up a buffer registered a handful of
+ * allocations earlier (sanitiser zmalloc_tracked just before dispatch),
+ * so the scan terminates close to head.  Reads run against the
+ * PROT_READ steady state -- no mprotect bracket on this hot path.
+ * Returns 0 on miss so the caller can treat "unknown extent" as "do
+ * not derive a bound" (the safer direction: a downstream read gated on
+ * lookup_size > 0 skips when we cannot prove the buffer's length).
  */
 size_t alloc_track_lookup_size(void *ptr)
 {
