@@ -287,6 +287,17 @@ void child_process(struct childdata *child, int childno)
 	const bool have_kcov = (kcov_shm != NULL);
 
 	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
+		/* Fail-closed seal for the signal / longjmp unwind path:
+		 * a fault handler that siglongjmps out of a mid-phase
+		 * bookkeeping site (e.g. inside cleanup_release_post_state
+		 * mid-consume) unwinds back to the loop top with regions
+		 * still rw_open under --deferred-free-batch.  Seal every
+		 * such leftover here, before the iteration touches any
+		 * deferred-free state or dispatches, so the next kernel
+		 * entry cannot see a stale window.  No-op with the flag
+		 * OFF. */
+		deferred_free_seal_all();
+
 		/* Catch-up sibling refreeze: a new sibling that ran init_child
 		 * since our last sweep bumped shm->sibling_freeze_gen.  Re-run
 		 * the mprotect sweep to pull that sibling's childdata into our
@@ -674,6 +685,18 @@ void child_process(struct childdata *child, int childno)
 			probe_lowest_free_fd(&fd_probe_at_ceiling) : -1;
 		clock_gettime(CLOCK_MONOTONIC, &split_t0);
 		child->in_childop = is_alt_op;
+
+		/* Childop dispatch is a kernel-entry chokepoint: op_fn
+		 * and run_sequence_chain call trinity_raw_syscall and
+		 * libc syscall wrappers directly, bypassing do_syscall
+		 * (which has its own barrier).  Seal any window left
+		 * rw_open by an earlier bookkeeping call in this
+		 * iteration BEFORE the childop can hand a syscall to
+		 * the kernel, otherwise a copy_to_user aliased to a
+		 * deferred-free page silently scribbles instead of
+		 * faulting on the PROT_READ/PROT_NONE tripwire.  No-op
+		 * with --deferred-free-batch OFF. */
+		deferred_free_seal_all();
 
 		ret = op_fn ? op_fn(child) : run_sequence_chain(child);
 
