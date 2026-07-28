@@ -29,6 +29,7 @@
 #include "domains.h"
 #include "random.h"
 #include "rlimits.h"
+#include "rotation_event.h"
 #include "self_cgroup.h"
 #include "sequence.h"
 #include "signals.h"
@@ -522,6 +523,14 @@ void init_post_parse_io(void)
 	 * launch CWD rather than trinity's tmp/ working directory.  No-op
 	 * when --stats was not passed. */
 	stats_timeseries_open();
+
+	/* Per-rotation-block event sink.  Same pre-fork CWD gating shape
+	 * as the timeseries file, so the two --stats-gated JSONL surfaces
+	 * land next to each other.  Unlike the timeseries file the fd is
+	 * intentionally inherited across fork() and written by the CAS-
+	 * winning child of maybe_rotate_strategy(); no drop_in_child
+	 * counterpart is called. */
+	stats_rotation_event_open();
 }
 
 /*

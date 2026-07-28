@@ -29,6 +29,7 @@
 #include "domains.h"
 #include "random.h"
 #include "rlimits.h"
+#include "rotation_event.h"
 #include "self_cgroup.h"
 #include "sequence.h"
 #include "signals.h"
@@ -248,6 +249,7 @@ finalize_and_exit(int ret, bool clean_run)
 
 	stats_log_close();
 	stats_timeseries_close();
+	stats_rotation_event_close();
 
 	close_parent_tainted_fd();
 
