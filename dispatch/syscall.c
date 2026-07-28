@@ -7,6 +7,7 @@
  */
 
 #include "child.h"
+#include "deferred-free.h"
 #include "kcov.h"
 #include "signals.h"
 #include "syscall.h"
@@ -17,6 +18,17 @@
 void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		struct kcov_child *kc, struct childdata *child)
 {
+	/* Kernel-entry seal barrier: with --deferred-free-batch ON any
+	 * X_unlock left rw_open by pre-dispatch bookkeeping (sanitiser
+	 * zmalloc_tracked, cleanup_release_post_state on the previous
+	 * iteration's return path) is mprotected back to steady state
+	 * BEFORE the syscall enters the kernel.  A fuzzed value-result
+	 * syscall that aliases the deferred-free metadata pages then
+	 * SIGSEGVs on the PROT_READ/PROT_NONE tripwire instead of silently
+	 * scribbling.  No-op with the flag OFF; the pre-batch behaviour
+	 * (per-mutation X_unlock/X_lock round-trips) is byte-identical. */
+	deferred_free_seal_all();
+
 	/* Arm the self-fuzzed-fatal-signal gate in child_fault_handler.
 	 * While set, an own-pid SI_USER/SI_TKILL/SI_QUEUE delivery of
 	 * SIGSEGV/SIGBUS/SIGILL/SIGABRT is treated as fuzzer noise (the
