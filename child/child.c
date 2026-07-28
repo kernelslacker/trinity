@@ -297,6 +297,7 @@ void child_process(struct childdata *child, int childno)
 		 * entry cannot see a stale window.  No-op with the flag
 		 * OFF. */
 		deferred_free_seal_all();
+		deferred_free_debug_assert_sealed();
 
 		/* Catch-up sibling refreeze: a new sibling that ran init_child
 		 * since our last sweep bumped shm->sibling_freeze_gen.  Re-run
@@ -697,6 +698,7 @@ void child_process(struct childdata *child, int childno)
 		 * faulting on the PROT_READ/PROT_NONE tripwire.  No-op
 		 * with --deferred-free-batch OFF. */
 		deferred_free_seal_all();
+		deferred_free_debug_assert_sealed();
 
 		ret = op_fn ? op_fn(child) : run_sequence_chain(child);
 
