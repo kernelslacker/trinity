@@ -38,6 +38,7 @@
 #include <stdio.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -282,12 +283,15 @@ bool flock_thrash(struct childdata *child)
 	unsigned int opened;
 	unsigned int iter, iter_cap, phase_split;
 	enum thrash_order order;
+	/* Local direct-syscall tally.  Every phase issues real kernel
+	 * calls that bypass random_syscall(): NR_FLOCK_FDS open()s in the
+	 * slot-setup, one flock() per non-skipped inner iter, and one
+	 * close() per opened slot in the teardown.  Published once via
+	 * childop_direct_syscalls_add() at the drain point so the hot
+	 * inner loop pays no per-syscall atomic. */
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.flock_thrash.runs, 1, __ATOMIC_RELAXED);
-
-	opened = flock_thrash_iter_open_slots(slots);
-	if (opened == 0)
-		return true;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -296,6 +300,17 @@ bool flock_thrash(struct childdata *child)
 	 * accounting on the same valid_op snapshot. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	/* Every slot-setup pass makes NR_FLOCK_FDS open() attempts
+	 * regardless of how many actually populate a slot -- failed opens
+	 * are still real kernel round-trips and belong on the counter. */
+	direct_calls += NR_FLOCK_FDS;
+	opened = flock_thrash_iter_open_slots(slots);
+	if (opened == 0) {
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
+		return true;
+	}
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -317,8 +332,14 @@ bool flock_thrash(struct childdata *child)
 		if (skip)
 			continue;
 		flock_thrash_iter_apply(s, op_used);
+		direct_calls++;
 	}
 
 	flock_thrash_iter_teardown(slots, opened);
+	direct_calls += opened;
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+
 	return true;
 }
