@@ -48,6 +48,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "errno-classify.h"
 #include "syscall-gate.h"
 #include "shm.h"
@@ -113,12 +114,14 @@ static void set_recv_timeo(int fd)
  * sibling child processes can fork between our setup and teardown.
  * Returns 0 on success, -1 on failure (sv[] left untouched).
  */
-static int unix_pair_open(int sv[2])
+static int unix_pair_open(int sv[2], unsigned long *direct_calls)
 {
+	(*direct_calls)++;	/* socketpair attempt -- counted whether or not it succeeds */
 	if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, sv) < 0)
 		return -1;
 	set_recv_timeo(sv[0]);
 	set_recv_timeo(sv[1]);
+	*direct_calls += 2;	/* two setsockopt(SO_RCVTIMEO) calls in set_recv_timeo() */
 	return 0;
 }
 
@@ -655,6 +658,20 @@ struct af_unix_scm_rights_gc_iter_ctx {
 	int		iouring_fd;
 	bool		use_iouring;
 	bool		cycle_ok;
+	/* Local tally of direct (libc- or raw-syscall) kernel round-trips
+	 * issued by the fuzzed work path this iter -- socketpair /
+	 * setsockopt in setup, sendmsg in build_cycle + trigger_gc +
+	 * race_burst, recvmsg drains + peeks in race_burst (parent + sibling),
+	 * close in drop_refs + race_burst + teardown, plus the optional
+	 * io_uring_setup for the multi-hop variant.  Sibling-side raw
+	 * syscalls (recvmsg PEEK per race iter) are estimated as
+	 * race_burst's `races` since the sibling never touches shm.
+	 * Deliberately excludes clone3 / prctl / futex / getppid / exit
+	 * (harness plumbing) and usleep(0) (workqueue-tick yield, not
+	 * fuzzed work) -- same discipline as futex-storm and pipe-thrash.
+	 * Published once via childop_direct_syscalls_add() at the outer
+	 * op-exit so the hot inner loop pays no per-syscall atomic. */
+	unsigned long	direct_calls;
 };
 
 /*
@@ -666,13 +683,13 @@ struct af_unix_scm_rights_gc_iter_ctx {
  */
 static int af_unix_scm_rights_gc_setup(struct af_unix_scm_rights_gc_iter_ctx *it)
 {
-	if (unix_pair_open(it->sv1) < 0)
+	if (unix_pair_open(it->sv1, &it->direct_calls) < 0)
 		return -1;
-	if (unix_pair_open(it->sv2) < 0)
+	if (unix_pair_open(it->sv2, &it->direct_calls) < 0)
 		return -1;
-	if (unix_pair_open(it->sv3) < 0)
+	if (unix_pair_open(it->sv3, &it->direct_calls) < 0)
 		return -1;
-	if (unix_pair_open(it->sv4) < 0)
+	if (unix_pair_open(it->sv4, &it->direct_calls) < 0)
 		return -1;
 	return 0;
 }
@@ -700,6 +717,10 @@ static void af_unix_scm_rights_gc_build_cycle(struct af_unix_scm_rights_gc_iter_
 
 	it->use_iouring = HAVE_IOURING_VARIANT && ONE_IN(8);
 	if (it->use_iouring) {
+		/* Count the io_uring_setup attempt whether the ring fd
+		 * comes back valid or not -- a failed setup is still a
+		 * kernel round-trip through the io_uring entry point. */
+		it->direct_calls++;
 		it->iouring_fd = iouring_open();
 		if (it->iouring_fd < 0)
 			it->use_iouring = false;
@@ -710,6 +731,11 @@ static void af_unix_scm_rights_gc_build_cycle(struct af_unix_scm_rights_gc_iter_
 	s1 = send_scm_fd(it->sv2[1], first_fd);
 	s2 = send_scm_fd(it->sv3[1], it->sv2[0]);
 	s3 = send_scm_fd(it->sv1[1], it->sv3[0]);
+	/* Three sendmsg() SCM_RIGHTS attach calls fire regardless of
+	 * per-call success -- unix_attach_fds runs on each and the
+	 * kernel round-trip cost is paid whether the attach folds
+	 * cleanly or splits into an error path. */
+	it->direct_calls += 3;
 	if (s1 >= 0 && s2 >= 0 && s3 >= 0) {
 		it->cycle_ok = true;
 		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.cycle_built_ok,
@@ -736,9 +762,14 @@ static void af_unix_scm_rights_gc_drop_refs(struct af_unix_scm_rights_gc_iter_ct
 	(void)close(it->sv1[0]); it->sv1[0] = -1;
 	(void)close(it->sv2[0]); it->sv2[0] = -1;
 	(void)close(it->sv3[0]); it->sv3[0] = -1;
+	/* Three close()s of the cycle-source fds -- the whole point of
+	 * this phase, kicks deferred gc on the sock queues that still
+	 * hold SCM_RIGHTS refs to them. */
+	it->direct_calls += 3;
 	if (it->use_iouring) {
 		(void)close(it->iouring_fd);
 		it->iouring_fd = -1;
+		it->direct_calls++;
 	}
 	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.close_ok,
 			   1, __ATOMIC_RELAXED);
@@ -757,10 +788,15 @@ static void af_unix_scm_rights_gc_trigger_gc(struct af_unix_scm_rights_gc_iter_c
 	int extra_fd;
 
 	if (RAND_BOOL()) {
+		/* open() attempt counts even if it fails (real kernel
+		 * round-trip through do_sys_open); sendmsg() + close()
+		 * only fire when the open succeeded. */
+		it->direct_calls++;
 		extra_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
 		if (extra_fd >= 0) {
 			ssize_t s = send_scm_fd(it->sv4[1], extra_fd);
 
+			it->direct_calls += 2;	/* sendmsg + close */
 			if (s >= 0) {
 				__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.trigger_ok,
 						   1, __ATOMIC_RELAXED);
@@ -768,6 +804,9 @@ static void af_unix_scm_rights_gc_trigger_gc(struct af_unix_scm_rights_gc_iter_c
 			(void)close(extra_fd);
 		}
 	} else {
+		/* usleep(0) is a scheduler yield (nanosleep) -- harness
+		 * plumbing to let the gc workqueue tick, not fuzzed work.
+		 * Not counted, matching futex-storm's discipline. */
 		(void)usleep(0);
 		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.trigger_ok,
 				   1, __ATOMIC_RELAXED);
@@ -814,6 +853,11 @@ static void af_unix_scm_rights_gc_race_burst(struct af_unix_scm_rights_gc_iter_c
 		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.sibling_spawn_failed,
 				   1, __ATOMIC_RELAXED);
 		run_race_burst_solo(it->sv2[1], it->sv4[1], races);
+		/* Solo path per iter: recvmsg(PEEK) + recvmsg(drain)
+		 * + sendmsg(SCM_RIGHTS attach) = 3.  Plus one open() +
+		 * one close() bracketing the extra_fd (guaranteed since
+		 * sv4[1] >= 0 -- setup already succeeded to reach here). */
+		it->direct_calls += (unsigned long)races * 3UL + 2UL;
 	} else {
 		__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.sibling_spawn_ok,
 				   1, __ATOMIC_RELAXED);
@@ -823,6 +867,16 @@ static void af_unix_scm_rights_gc_race_burst(struct af_unix_scm_rights_gc_iter_c
 		run_race_burst_parent_half(it->sv2[1], it->sv4[1], races);
 
 		reap_race_sibling(sibling);
+		/* Cross-task path per iter: parent issues recvmsg(drain)
+		 * + sendmsg(attach) = 2; sibling issues raw recvmsg(PEEK)
+		 * = 1 (estimate -- sibling never touches shm, so we lean
+		 * on the budget bound: actual sibling count is at most
+		 * `races`, shortfall from alarm(2) / PDEATHSIG ignored,
+		 * same discipline as futex-storm's ctx.s->iters estimate).
+		 * Plus one open() + one close() for extra_fd.  clone3,
+		 * futex wake/wait, prctl, getppid, and reap-side waitpid
+		 * are harness plumbing and stay uncounted. */
+		it->direct_calls += (unsigned long)races * 3UL + 2UL;
 	}
 
 	if (rs != NULL)
@@ -832,10 +886,12 @@ static void af_unix_scm_rights_gc_race_burst(struct af_unix_scm_rights_gc_iter_c
 /*
  * One outer iteration: build a 3-pair SCM_RIGHTS cycle, drop userspace
  * refs to make it gc-only-reachable, run a small race burst.  All
- * counters are best-effort -- iter_one returns void; the per-step bumps
- * carry the success signal.
+ * counters are best-effort -- the per-step bumps carry the success
+ * signal.  Returns the iteration's tally of direct kernel syscalls
+ * so the caller can publish the sum once via
+ * childop_direct_syscalls_add() at op-exit.
  */
-static void iter_one(struct childdata *child)
+static unsigned long iter_one(struct childdata *child)
 {
 	struct af_unix_scm_rights_gc_iter_ctx it = {
 		.sv1 = { -1, -1 },
@@ -845,6 +901,7 @@ static void iter_one(struct childdata *child)
 		.iouring_fd = -1,
 		.use_iouring = false,
 		.cycle_ok = false,
+		.direct_calls = 0,
 	};
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -869,15 +926,19 @@ static void iter_one(struct childdata *child)
 	af_unix_scm_rights_gc_race_burst(&it);
 
 out:
-	if (it.sv1[0] >= 0) (void)close(it.sv1[0]);
-	if (it.sv1[1] >= 0) (void)close(it.sv1[1]);
-	if (it.sv2[0] >= 0) (void)close(it.sv2[0]);
-	if (it.sv2[1] >= 0) (void)close(it.sv2[1]);
-	if (it.sv3[0] >= 0) (void)close(it.sv3[0]);
-	if (it.sv3[1] >= 0) (void)close(it.sv3[1]);
-	if (it.sv4[0] >= 0) (void)close(it.sv4[0]);
-	if (it.sv4[1] >= 0) (void)close(it.sv4[1]);
-	if (it.iouring_fd >= 0) (void)close(it.iouring_fd);
+	/* Teardown closes any fd still >= 0.  Each guarded close() that
+	 * actually fires is a real kernel round-trip on the fuzzed
+	 * AF_UNIX unix_sock (or io_uring rsrc file) -- count each one. */
+	if (it.sv1[0] >= 0) { (void)close(it.sv1[0]); it.direct_calls++; }
+	if (it.sv1[1] >= 0) { (void)close(it.sv1[1]); it.direct_calls++; }
+	if (it.sv2[0] >= 0) { (void)close(it.sv2[0]); it.direct_calls++; }
+	if (it.sv2[1] >= 0) { (void)close(it.sv2[1]); it.direct_calls++; }
+	if (it.sv3[0] >= 0) { (void)close(it.sv3[0]); it.direct_calls++; }
+	if (it.sv3[1] >= 0) { (void)close(it.sv3[1]); it.direct_calls++; }
+	if (it.sv4[0] >= 0) { (void)close(it.sv4[0]); it.direct_calls++; }
+	if (it.sv4[1] >= 0) { (void)close(it.sv4[1]); it.direct_calls++; }
+	if (it.iouring_fd >= 0) { (void)close(it.iouring_fd); it.direct_calls++; }
+	return it.direct_calls;
 }
 
 /*
@@ -904,6 +965,13 @@ static void probe_af_unix(void)
 bool af_unix_scm_rights_gc_churn(struct childdata *child)
 {
 	unsigned int outer_iters, i;
+	unsigned long direct_calls = 0;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling;
+	 * child.c dispatch gates on the same valid_op check. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.runs,
 			   1, __ATOMIC_RELAXED);
@@ -917,17 +985,10 @@ bool af_unix_scm_rights_gc_churn(struct childdata *child)
 	if (!af_unix_scm_rights_gc_probed) {
 		probe_af_unix();
 		if (ns_unsupported_af_unix_scm_rights_gc) {
-			/* child->op_type lives in shared memory and can be
-			 * scribbled by a poisoned-arena write from a sibling;
-			 * bounds-check the snapshot before indexing the
-			 * NR_CHILD_OP_TYPES-sized latch_reason array. */
-			{
-				const enum child_op_type op = child->op_type;
-				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop.latch_reason[op],
-							 CHILDOP_LATCH_NS_UNSUPPORTED,
-							 __ATOMIC_RELAXED);
-			}
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop.latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -942,7 +1003,13 @@ bool af_unix_scm_rights_gc_churn(struct childdata *child)
 		outer_iters = 1U;
 
 	for (i = 0; i < outer_iters; i++)
-		iter_one(child);
+		direct_calls += iter_one(child);
+
+	/* Publish this invocation's direct-syscall load once at the tail
+	 * so the hot inner loop pays a single RELAXED atomic add per op
+	 * dispatch, matching pipe-thrash / futex-storm / flock-thrash. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
