@@ -171,15 +171,15 @@ void maybe_rotate_strategy(void)
 
 	calls_now = __atomic_load_n(&shm->pc_edge_calls_by_strategy[prev],
 				    __ATOMIC_RELAXED);
-	calls_in_window = calls_now -
+	calls_in_window = sat_sub_ul(calls_now,
 		__atomic_load_n(&shm->pc_edge_calls_at_window_start,
-				__ATOMIC_RELAXED);
+				__ATOMIC_RELAXED));
 	edges_now = __atomic_load_n(&shm->pc_edge_count_by_strategy[prev],
 				    __ATOMIC_RELAXED);
-	edges_in_window = edges_now -
+	edges_in_window = sat_sub_ul(edges_now,
 		__atomic_load_n(&shm->pc_edge_count_at_window_start,
-				__ATOMIC_RELAXED);
-	syscalls_in_window = now - last;
+				__ATOMIC_RELAXED));
+	syscalls_in_window = sat_sub_ul(now, last);
 
 	/* CMP-novelty delta: number of comparison constants the active arm
 	 * exposed for the first time within CMP_NOVELTY_DECAY_WINDOWS this
@@ -189,9 +189,9 @@ void maybe_rotate_strategy(void)
 	 * lose to a noisier arm on PC delta alone. */
 	cmp_now = __atomic_load_n(&shm->bandit_cmp_new_constants[prev],
 				  __ATOMIC_RELAXED);
-	cmp_in_window = cmp_now -
+	cmp_in_window = sat_sub_ul(cmp_now,
 		__atomic_load_n(&shm->bandit_cmp_at_window_start,
-				__ATOMIC_RELAXED);
+				__ATOMIC_RELAXED));
 
 	/* Per-PIM-mode outcome accounting (observation-only substrate).
 	 * When the just-closed window was an SR_PLATEAU_FORCE intervention,
@@ -240,9 +240,9 @@ void maybe_rotate_strategy(void)
 	if (kcov_shm != NULL) {
 		warn_now = __atomic_load_n(&kcov_shm->kmsg.kmsg_warn_fires,
 					   __ATOMIC_RELAXED);
-		warn_in_window = warn_now -
+		warn_in_window = sat_sub_ul(warn_now,
 			__atomic_load_n(&shm->kmsg_warn_fires_at_window_start,
-					__ATOMIC_RELAXED);
+					__ATOMIC_RELAXED));
 	} else {
 		warn_in_window = 0UL;
 	}
