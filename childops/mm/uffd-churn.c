@@ -124,6 +124,13 @@ bool uffd_churn(struct childdata *child)
 {
 	unsigned int cycles;
 	unsigned int i;
+	/* Local direct-syscall tally.  Bumped once per userfaultfd(2)
+	 * attempt below — the ioctl/mmap/munmap/close calls in the loop
+	 * are lifecycle machinery around the fuzzed userfaultfd() site,
+	 * not fuzzed work themselves.  Published once at op-exit via
+	 * childop_direct_syscalls_add() so the hot loop pays no per-
+	 * syscall atomic. */
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.uffd.runs, 1, __ATOMIC_RELAXED);
 
@@ -155,6 +162,7 @@ bool uffd_churn(struct childdata *child)
 		 * O_CLOEXEC|O_NONBLOCK pair above never reaches. */
 		fd = do_userfaultfd(
 			(int)RAND_NEGATIVE_OR(O_CLOEXEC | O_NONBLOCK));
+		direct_calls++;
 		if (fd < 0) {
 			/* EPERM: vm.unprivileged_userfaultfd=0 and we lack
 			 * CAP_SYS_PTRACE.  ENOSYS: kernel built without
@@ -163,11 +171,13 @@ bool uffd_churn(struct childdata *child)
 			 * invocations no-op. */
 			if (errno == EPERM || errno == ENOSYS) {
 				ns_unsupported = true;
-				if (valid_op)
+				if (valid_op) {
 					__atomic_store_n(
 						&shm->stats.childop.latch_reason[op],
 						CHILDOP_LATCH_NS_UNSUPPORTED,
 						__ATOMIC_RELAXED);
+					childop_direct_syscalls_add(op, direct_calls);
+				}
 				return true;
 			}
 			__atomic_add_fetch(&shm->stats.uffd.failed,
@@ -242,6 +252,9 @@ bool uffd_churn(struct childdata *child)
 		(void)munmap(region, len);
 		close(fd);
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
