@@ -73,6 +73,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-iouring.h"
 #include "childops/io_uring/ring.h"
@@ -211,7 +212,8 @@ static unsigned int ms_drain(struct iour_ring *ctx)
  * unmap them after teardown.
  */
 static bool register_pbuf_ring(struct iour_ring *ctx,
-			       void **out_ring, void **out_data)
+			       void **out_ring, void **out_data,
+			       unsigned long *direct_calls)
 {
 	struct io_uring_buf_reg reg;
 	struct io_uring_buf *bufs;
@@ -252,6 +254,7 @@ static bool register_pbuf_ring(struct iour_ring *ctx,
 	reg.ring_entries = PBUF_COUNT;
 	reg.bgid        = PBUF_GROUP_ID;
 
+	(*direct_calls)++;
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_PBUF_RING, &reg, 1);
 	if (r < 0) {
@@ -266,12 +269,14 @@ static bool register_pbuf_ring(struct iour_ring *ctx,
 }
 
 static void unregister_pbuf_ring(struct iour_ring *ctx,
-				 void *ring, void *data)
+				 void *ring, void *data,
+				 unsigned long *direct_calls)
 {
 	struct io_uring_buf_reg reg;
 
 	memset(&reg, 0, sizeof(reg));
 	reg.bgid = PBUF_GROUP_ID;
+	(*direct_calls)++;
 	(void)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 		      IORING_UNREGISTER_PBUF_RING, &reg, 1);
 
@@ -284,7 +289,8 @@ static void unregister_pbuf_ring(struct iour_ring *ctx,
  * via *out_bufs (caller free()s) on success.  On failure, no resources
  * need releasing.
  */
-static bool provide_buffers_legacy(struct iour_ring *ctx, void **out_bufs)
+static bool provide_buffers_legacy(struct iour_ring *ctx, void **out_bufs,
+				   unsigned long *direct_calls)
 {
 	struct io_uring_sqe sqe;
 	void *bufs;
@@ -308,6 +314,7 @@ static bool provide_buffers_legacy(struct iour_ring *ctx, void **out_bufs)
 		free(bufs);
 		return false;
 	}
+	(*direct_calls)++;
 	r = ms_enter(ctx, 1, 1);
 	if (r < 0) {
 		free(bufs);
@@ -319,7 +326,8 @@ static bool provide_buffers_legacy(struct iour_ring *ctx, void **out_bufs)
 	return true;
 }
 
-static void remove_buffers_legacy(struct iour_ring *ctx, void *bufs)
+static void remove_buffers_legacy(struct iour_ring *ctx, void *bufs,
+				  unsigned long *direct_calls)
 {
 	struct io_uring_sqe sqe;
 
@@ -330,6 +338,7 @@ static void remove_buffers_legacy(struct iour_ring *ctx, void *bufs)
 	sqe.user_data = 0xb2;
 
 	if (ms_submit(ctx, &sqe, 1)) {
+		(*direct_calls)++;
 		(void)ms_enter(ctx, 1, 0);
 		(void)ms_drain(ctx);
 	}
@@ -398,13 +407,16 @@ struct iouring_multishot_iter_ctx {
  * Returns 0 on success; nonzero means the caller should bail to the
  * shared teardown path.
  */
-static int iouring_multishot_iter_setup_pbufs(struct iouring_multishot_iter_ctx *it)
+static int iouring_multishot_iter_setup_pbufs(struct iouring_multishot_iter_ctx *it,
+					      unsigned long *direct_calls)
 {
-	if (register_pbuf_ring(&it->ms, &it->pbuf_ring, &it->pbuf_data)) {
+	if (register_pbuf_ring(&it->ms, &it->pbuf_ring, &it->pbuf_data,
+			       direct_calls)) {
 		it->used_pbuf_ring = true;
 		__atomic_add_fetch(&shm->stats.iouring_net_multishot.pbuf_ring_ok,
 				   1, __ATOMIC_RELAXED);
-	} else if (provide_buffers_legacy(&it->ms, &it->legacy_bufs)) {
+	} else if (provide_buffers_legacy(&it->ms, &it->legacy_bufs,
+					  direct_calls)) {
 		__atomic_add_fetch(&shm->stats.iouring_net_multishot.pbuf_legacy_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
@@ -448,7 +460,8 @@ static int iouring_multishot_iter_setup_sockets(struct iouring_multishot_iter_ct
  * it->napi_armed latches success and the post-burst stale-NAPI probe
  * consults it later.
  */
-static void iouring_multishot_iter_arm_napi(struct iouring_multishot_iter_ctx *it)
+static void iouring_multishot_iter_arm_napi(struct iouring_multishot_iter_ctx *it,
+					    unsigned long *direct_calls)
 {
 	struct io_uring_napi napi_in;
 	int r;
@@ -460,6 +473,7 @@ static void iouring_multishot_iter_arm_napi(struct iouring_multishot_iter_ctx *i
 	napi_in.busy_poll_to     = (__u32)rnd_modulo_u32(200);
 	napi_in.prefer_busy_poll = (__u8)(rnd_u32() & 1);
 
+	(*direct_calls)++;
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, it->ms.fd,
 			 IORING_REGISTER_NAPI, &napi_in, 1);
 	if (r == 0) {
@@ -481,7 +495,8 @@ static void iouring_multishot_iter_arm_napi(struct iouring_multishot_iter_ctx *i
  * has been published via ms_enter; nonzero means the caller should
  * bail to the shared teardown path.
  */
-static int iouring_multishot_iter_arm_recv(struct iouring_multishot_iter_ctx *it)
+static int iouring_multishot_iter_arm_recv(struct iouring_multishot_iter_ctx *it,
+					   unsigned long *direct_calls)
 {
 	struct io_uring_sqe sqe;
 	int r;
@@ -498,6 +513,7 @@ static int iouring_multishot_iter_arm_recv(struct iouring_multishot_iter_ctx *it
 
 	if (!ms_submit(&it->ms, &sqe, 1))
 		return -1;
+	(*direct_calls)++;
 	r = ms_enter(&it->ms, 1, 0);
 	if (r < 0)
 		return -1;
@@ -514,7 +530,8 @@ static int iouring_multishot_iter_arm_recv(struct iouring_multishot_iter_ctx *it
  * sender for a small burst, but the packet count is capped so a stuck
  * receiver doesn't accumulate unbounded sk buffer charge.
  */
-static void iouring_multishot_iter_traffic(struct iouring_multishot_iter_ctx *it)
+static void iouring_multishot_iter_traffic(struct iouring_multishot_iter_ctx *it,
+					   unsigned long *direct_calls)
 {
 	struct sockaddr_in dst;
 	const char payload[64] = "trinity-multishot-payload";
@@ -535,6 +552,7 @@ static void iouring_multishot_iter_traffic(struct iouring_multishot_iter_ctx *it
 					   1, __ATOMIC_RELAXED);
 	}
 
+	(*direct_calls)++;
 	r = ms_enter(&it->ms, 0, 0);
 	if (r >= 0) {
 		unsigned int reaped = ms_drain(&it->ms);
@@ -555,7 +573,8 @@ static void iouring_multishot_iter_traffic(struct iouring_multishot_iter_ctx *it
  * io_uring/napi.c.  Kernel writes the previous napi config back into
  * the passed struct, so it must be writable.
  */
-static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it)
+static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it,
+					  unsigned long *direct_calls)
 {
 	struct io_uring_sqe sqe;
 	struct io_uring_napi napi_out;
@@ -569,6 +588,7 @@ static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it)
 	sqe.user_data    = CANCEL_USER_DATA;
 
 	if (ms_submit(&it->ms, &sqe, 1)) {
+		(*direct_calls)++;
 		r = ms_enter(&it->ms, 1, 0);
 		if (r >= 0) {
 			__atomic_add_fetch(&shm->stats.iouring_net_multishot.cancel_submitted,
@@ -581,6 +601,7 @@ static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it)
 		return;
 
 	memset(&napi_out, 0, sizeof(napi_out));
+	(*direct_calls)++;
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, it->ms.fd,
 			 IORING_UNREGISTER_NAPI, &napi_out, 1);
 	if (r == 0)
@@ -601,6 +622,7 @@ static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it)
 	sqe.user_data = MULTISHOT_USER_DATA;
 
 	if (ms_submit(&it->ms, &sqe, 1)) {
+		(*direct_calls)++;
 		r = ms_enter(&it->ms, 1, 0);
 		if (r >= 0)
 			(void)ms_drain(&it->ms);
@@ -610,6 +632,7 @@ static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it)
 bool iouring_net_multishot(struct childdata *child)
 {
 	struct iouring_multishot_iter_ctx it;
+	unsigned long direct_calls = 0;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -648,15 +671,15 @@ bool iouring_net_multishot(struct childdata *child)
 		}
 	}
 
-	if (iouring_multishot_iter_setup_pbufs(&it) != 0)
+	if (iouring_multishot_iter_setup_pbufs(&it, &direct_calls) != 0)
 		goto out;
 
 	if (iouring_multishot_iter_setup_sockets(&it) != 0)
 		goto out;
 
-	iouring_multishot_iter_arm_napi(&it);
+	iouring_multishot_iter_arm_napi(&it, &direct_calls);
 
-	if (iouring_multishot_iter_arm_recv(&it) != 0)
+	if (iouring_multishot_iter_arm_recv(&it, &direct_calls) != 0)
 		goto out;
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -664,8 +687,8 @@ bool iouring_net_multishot(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
-	iouring_multishot_iter_traffic(&it);
-	iouring_multishot_iter_cancel(&it);
+	iouring_multishot_iter_traffic(&it, &direct_calls);
+	iouring_multishot_iter_cancel(&it, &direct_calls);
 
 out:
 	if (it.txfd >= 0)
@@ -674,10 +697,13 @@ out:
 		close(it.rxfd);
 	if (it.used_pbuf_ring) {
 		if (it.pbuf_ring)
-			unregister_pbuf_ring(&it.ms, it.pbuf_ring, it.pbuf_data);
+			unregister_pbuf_ring(&it.ms, it.pbuf_ring, it.pbuf_data,
+					     &direct_calls);
 	} else if (it.legacy_bufs) {
-		remove_buffers_legacy(&it.ms, it.legacy_bufs);
+		remove_buffers_legacy(&it.ms, it.legacy_bufs, &direct_calls);
 	}
 	iour_ring_teardown(&it.ms);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
