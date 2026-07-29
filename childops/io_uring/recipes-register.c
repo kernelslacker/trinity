@@ -30,6 +30,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "child.h"
+#include "childop-outcome.h"
 #include "childops-iouring.h"
 #include "errno-classify.h"
 #include "maps.h"
@@ -64,6 +66,13 @@ bool recipe_fixed_buffer_read(struct iour_recipe_state *s, bool *unsupported)
 	void *buf = NULL;
 	size_t buf_sz = 0;
 	bool ok = false;
+	/* Local direct-syscall tally, published once to shm at op-exit
+	 * via childop_direct_syscalls_add() so the hot path pays one
+	 * atomic add per invocation instead of per-syscall.  Bumped after
+	 * the REGISTER_BUFFERS trinity_raw_syscall below regardless of
+	 * outcome — the syscall was issued and cost kernel work whether
+	 * the pin succeeded or errored out. */
+	unsigned long direct_calls = 0;
 	int r;
 
 	/* Draw the registered-buffer backing storage from the parent's
@@ -114,6 +123,7 @@ bool recipe_fixed_buffer_read(struct iour_recipe_state *s, bool *unsupported)
 
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_BUFFERS, &iov, 1);
+	direct_calls++;
 	if (r < 0) {
 		/* EPERM: no CAP_IPC_LOCK and RLIMIT_MEMLOCK is too small
 		 * to pin the buffer.  ENOMEM: memlock pressure (every
@@ -151,6 +161,7 @@ bool recipe_fixed_buffer_read(struct iour_recipe_state *s, bool *unsupported)
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
+	childop_direct_syscalls_add(CHILD_OP_IOURING_RECIPES, direct_calls);
 	return ok;
 }
 
@@ -171,6 +182,8 @@ bool recipe_write_read_fixed(struct iour_recipe_state *s, bool *unsupported)
 	void *buf = NULL;
 	size_t buf_sz = 0;
 	bool ok = false;
+	/* See recipe_fixed_buffer_read: single tally, published at out. */
+	unsigned long direct_calls = 0;
 	int r;
 
 	/* Same pool draw as recipe_fixed_buffer_read above — the registered
@@ -214,6 +227,7 @@ bool recipe_write_read_fixed(struct iour_recipe_state *s, bool *unsupported)
 
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_BUFFERS, &iov, 1);
+	direct_calls++;
 	if (r < 0) {
 		/* Same EPERM/ENOMEM latching as recipe_fixed_buffer_read:
 		 * memlock policy / pressure won't resolve mid-run. */
@@ -256,6 +270,7 @@ bool recipe_write_read_fixed(struct iour_recipe_state *s, bool *unsupported)
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
+	childop_direct_syscalls_add(CHILD_OP_IOURING_RECIPES, direct_calls);
 	return ok;
 }
 
@@ -440,6 +455,8 @@ bool recipe_statx_fixed_file(struct iour_recipe_state *s, bool *unsupported __un
 	struct statx stx;
 	int fds[1];
 	bool ok = false;
+	/* See recipe_fixed_buffer_read: single tally, published at out. */
+	unsigned long direct_calls = 0;
 	int r;
 	static const char empty[] = "";
 
@@ -450,6 +467,7 @@ bool recipe_statx_fixed_file(struct iour_recipe_state *s, bool *unsupported __un
 	fds[0] = s->open_fd;
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_FILES, fds, 1);
+	direct_calls++;
 	if (r < 0)
 		goto out;
 	s->registered_files = true;
@@ -476,6 +494,7 @@ bool recipe_statx_fixed_file(struct iour_recipe_state *s, bool *unsupported __un
 	iour_drain_cqes(ctx);
 	ok = true;
 out:
+	childop_direct_syscalls_add(CHILD_OP_IOURING_RECIPES, direct_calls);
 	return ok;
 }
 
@@ -491,16 +510,20 @@ bool recipe_files_update(struct iour_recipe_state *s, bool *unsupported __unused
 	struct io_uring_sqe sqe;
 	int regfds[4] = { -1, -1, -1, -1 };
 	int newfds[1];
+	bool ok = false;
+	/* See recipe_fixed_buffer_read: single tally, published at out. */
+	unsigned long direct_calls = 0;
 	int r;
 
 	s->open_fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
 	if (s->open_fd < 0)
-		return false;
+		goto out;
 
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_FILES, regfds, 4);
+	direct_calls++;
 	if (r < 0)
-		return false;
+		goto out;
 	s->registered_files = true;
 
 	newfds[0] = s->open_fd;
@@ -514,12 +537,15 @@ bool recipe_files_update(struct iour_recipe_state *s, bool *unsupported __unused
 	sqe.user_data = 380;
 
 	if (!iour_submit_sqes(ctx, &sqe, 1))
-		return false;
+		goto out;
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0)
-		return false;
+		goto out;
 	iour_drain_cqes(ctx);
-	return true;
+	ok = true;
+out:
+	childop_direct_syscalls_add(CHILD_OP_IOURING_RECIPES, direct_calls);
+	return ok;
 }
 
 /* ------------------------------------------------------------------ *
@@ -560,6 +586,12 @@ bool recipe_eventfd_recursive(struct iour_recipe_state *s, bool *unsupported)
 	unsigned int nreads, reg_op, head, tail, reaped, spins, i;
 	bool ok = false;
 	bool registered = false;
+	/* Local direct-syscall tally: register (1) + submit-enter (1) +
+	 * per-spin GETEVENTS-enter (up to 32) + UNREGISTER on cleanup
+	 * (1).  Published once to shm at out via
+	 * childop_direct_syscalls_add() so the drain loop pays one
+	 * atomic add per invocation instead of per-spin. */
+	unsigned long direct_calls = 0;
 	int r;
 
 	s->evfd = eventfd(0, EFD_NONBLOCK);
@@ -571,6 +603,7 @@ bool recipe_eventfd_recursive(struct iour_recipe_state *s, bool *unsupported)
 
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd, reg_op,
 			 &s->evfd, 1);
+	direct_calls++;
 	if (r < 0) {
 		__atomic_add_fetch(&shm->stats.iouring_eventfd.register_fail,
 				   1, __ATOMIC_RELAXED);
@@ -602,6 +635,7 @@ bool recipe_eventfd_recursive(struct iour_recipe_state *s, bool *unsupported)
 		goto cleanup;
 
 	r = (int)trinity_raw_syscall(__NR_io_uring_enter, ctx->fd, nreads, 0, 0, NULL, 0);
+	direct_calls++;
 	if (r < 0)
 		goto cleanup;
 
@@ -621,6 +655,7 @@ bool recipe_eventfd_recursive(struct iour_recipe_state *s, bool *unsupported)
 	for (spins = 0; spins < 32 && reaped < 32; spins++) {
 		(void)trinity_raw_syscall(__NR_io_uring_enter, ctx->fd, 0, 0,
 			      IORING_ENTER_GETEVENTS, NULL, 0);
+		direct_calls++;
 
 		head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 		tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
@@ -645,7 +680,9 @@ cleanup:
 	if (registered) {
 		(void)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			      IORING_UNREGISTER_EVENTFD, NULL, 0);
+		direct_calls++;
 	}
 out:
+	childop_direct_syscalls_add(CHILD_OP_IOURING_RECIPES, direct_calls);
 	return ok;
 }
