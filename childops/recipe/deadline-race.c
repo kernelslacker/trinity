@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "child.h"
 #include "syscall-gate.h"
 #include "name-pool.h"
 #include "random.h"
@@ -244,6 +245,29 @@ bool recipe_bpf_htab_iter_del(bool *unsupported)
 		close(map_fd);
 
 		completed++;
+	}
+
+	/* Publish the invocation's direct-syscall site count: five bpf()
+	 * sites are exercised from this recipe -- BPF_MAP_CREATE and the
+	 * pre-populate BPF_MAP_UPDATE_ELEM on the main thread, plus the
+	 * racer thread's BPF_MAP_DELETE_ELEM / BPF_MAP_UPDATE_ELEM loop
+	 * and the main thread's BPF_MAP_GET_NEXT_KEY walk.  Recipe rolls
+	 * up under CHILD_OP_RECIPE_RUNNER -- snapshot child->op_type
+	 * (the recipe-runner op) via this_child() and gate on valid_op
+	 * to match the surrounding per-op stats bumps in the dispatcher.
+	 * Single RELAXED add per invocation.  Mirrors the pattern from
+	 * childops/misc/futex-storm.c. */
+	{
+		struct childdata *tc = this_child();
+
+		if (tc != NULL) {
+			const enum child_op_type op = tc->op_type;
+			const bool valid_op = ((int) op >= 0 &&
+					       op < NR_CHILD_OP_TYPES);
+
+			if (valid_op)
+				childop_direct_syscalls_add(op, 5);
+		}
 	}
 
 	/* If every cycle was lost to pthread_create EAGAIN under sibling
@@ -475,6 +499,27 @@ bool recipe_perf_mmap_close(bool *unsupported)
 		munmap(ring, mmap_sz);
 
 		completed++;
+	}
+
+	/* Publish the invocation's direct-syscall site count: one
+	 * perf_event_open() call is issued per cycle from the main
+	 * thread; the racer's poll() and read() go through libc, not
+	 * trinity_raw_syscall, so they are not counted here.  Recipe
+	 * rolls up under CHILD_OP_RECIPE_RUNNER -- snapshot
+	 * child->op_type (the recipe-runner op) via this_child() and
+	 * gate on valid_op to match the surrounding per-op stats bumps
+	 * in the dispatcher.  Single RELAXED add per invocation. */
+	{
+		struct childdata *tc = this_child();
+
+		if (tc != NULL) {
+			const enum child_op_type op = tc->op_type;
+			const bool valid_op = ((int) op >= 0 &&
+					       op < NR_CHILD_OP_TYPES);
+
+			if (valid_op)
+				childop_direct_syscalls_add(op, 1);
+		}
 	}
 
 	/* If every cycle was lost to pthread_create EAGAIN under sibling
@@ -720,6 +765,31 @@ bool recipe_keys_revoke_race(bool *unsupported)
 			      0UL, 0UL);
 
 		completed++;
+	}
+
+	/* Publish the invocation's direct-syscall site count: seven
+	 * sites are exercised from this recipe -- one add_key() per
+	 * cycle plus six keyctl() sites (JOIN_SESSION_KEYRING once at
+	 * entry, the racer thread's KEYCTL_READ loop, the main
+	 * thread's KEYCTL_REVOKE per cycle, the post-race UNLINK per
+	 * cycle, and two conditional-cleanup UNLINK sites on the
+	 * clock_gettime / pthread_create failure paths).  Recipe
+	 * rolls up under CHILD_OP_RECIPE_RUNNER -- snapshot
+	 * child->op_type (the recipe-runner op) via this_child() and
+	 * gate on valid_op to match the surrounding per-op stats
+	 * bumps in the dispatcher.  Single RELAXED add per
+	 * invocation. */
+	{
+		struct childdata *tc = this_child();
+
+		if (tc != NULL) {
+			const enum child_op_type op = tc->op_type;
+			const bool valid_op = ((int) op >= 0 &&
+					       op < NR_CHILD_OP_TYPES);
+
+			if (valid_op)
+				childop_direct_syscalls_add(op, 7);
+		}
 	}
 
 	/* If every cycle was lost to pthread_create EAGAIN under sibling
