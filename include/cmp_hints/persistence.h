@@ -108,6 +108,7 @@
  * Param-settable from --cmp-shared-tier=off|shadow|combined.
  */
 enum cmp_shared_tier_mode {
+	/* opened / decides-on / by */
 	CMP_SHARED_TIER_MODE_OFF = 0,
 	CMP_SHARED_TIER_MODE_SHADOW_ONLY = 1,
 	CMP_SHARED_TIER_MODE_COMBINED = 2,

@@ -21,6 +21,7 @@
  * pick.
  */
 enum cmp_frontier_mode {
+	/* opened / decides-on / by */
 	CMP_FRONTIER_OFF = 0,
 	CMP_FRONTIER_SHADOW_ONLY = 1,
 	CMP_FRONTIER_COMBINED = 2,

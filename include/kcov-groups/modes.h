@@ -88,6 +88,7 @@ extern enum kcov_transition_coverage_mode kcov_transition_coverage_mode;
  * including remote contributions for the unchanged stats-dump top-N.
  */
 enum kcov_transition_reward_mode {
+	/* opened / decides-on / by */
 	KCOV_TRANSITION_REWARD_OFF = 0,
 	KCOV_TRANSITION_REWARD_SHADOW_ONLY = 1,
 	KCOV_TRANSITION_REWARD_COMBINED = 2,
@@ -127,6 +128,7 @@ extern enum kcov_transition_reward_mode kcov_transition_reward_mode;
  * kcov_shm is unavailable, same fallback shape kcov_syscall_cold_skip_
  * pct / frontier_cold_weight already take. */
 enum expensive_adaptive_mode {
+	/* opened / decides-on / by */
 	EXPENSIVE_ADAPTIVE_MODE_OFF = 0,
 	EXPENSIVE_ADAPTIVE_MODE_SHADOW_ONLY = 1,
 	EXPENSIVE_ADAPTIVE_MODE_COMBINED = 2,
