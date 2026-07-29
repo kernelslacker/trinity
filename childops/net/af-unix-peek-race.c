@@ -37,6 +37,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "errno-classify.h"
 #include "syscall-gate.h"
 #include "shm.h"
@@ -162,6 +163,12 @@ struct af_unix_peek_race_shared {
 	uint32_t	go;		/* futex word: 0 = wait, 1 = start */
 	uint32_t	stop;		/* 1 = sibling should break early */
 	uint32_t	done;		/* sibling sets 1 on exit */
+	/* Sibling-side tally of fuzzed-work recvfrom syscalls actually
+	 * issued (MSG_PEEK + plain-recv drain sites in the sibling loop).
+	 * RELAXED-bumped by the sibling per successful call attempt, drained
+	 * by the parent post-reap and folded into the childop's direct-
+	 * syscall telemetry via childop_direct_syscalls_add(). */
+	uint64_t	direct_calls;
 };
 
 static long raw_futex_wait(uint32_t *uaddr, uint32_t val)
@@ -241,6 +248,7 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 			    (long)sizeof(buf), (long)(MSG_PEEK | MSG_DONTWAIT),
 			    0L, 0L);
 		(void)r;
+		__atomic_add_fetch(&rs->direct_calls, 1U, __ATOMIC_RELAXED);
 
 		read_fd = __atomic_load_n(&rs->read_fd, __ATOMIC_ACQUIRE);
 		if (read_fd < 0)
@@ -250,6 +258,7 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 			    (long)sizeof(buf), (long)MSG_DONTWAIT,
 			    0L, 0L);
 		(void)r;
+		__atomic_add_fetch(&rs->direct_calls, 1U, __ATOMIC_RELAXED);
 	}
 
 	__atomic_store_n(&rs->done, 1U, __ATOMIC_RELEASE);
@@ -273,11 +282,12 @@ static struct af_unix_peek_race_shared *race_shared_alloc(void)
 	if (rs == MAP_FAILED)
 		return NULL;
 
-	rs->read_fd     = -1;
-	rs->race_budget = 0;
-	rs->go          = 0;
-	rs->stop        = 0;
-	rs->done        = 0;
+	rs->read_fd      = -1;
+	rs->race_budget  = 0;
+	rs->go           = 0;
+	rs->stop         = 0;
+	rs->done         = 0;
+	rs->direct_calls = 0;
 	return rs;
 }
 
@@ -448,13 +458,14 @@ static void run_race_burst_parent_half(int sv[2],
  * signal "ownership transferred / fd closed" simply by writing -1 back
  * into the slot.
  */
-static void iter_one(struct childdata *child)
+static unsigned long iter_one(struct childdata *child)
 {
 	int sv[2] = { -1, -1 };
 	int peek_off;
 	struct af_unix_peek_race_shared *rs = NULL;
 	pid_t sibling = -1;
 	unsigned int races;
+	unsigned long direct_calls = 0;
 
 	peek_off = (int)rnd_modulo_u32(UNIX_PEEK_OFF_MAX);
 
@@ -513,10 +524,18 @@ static void iter_one(struct childdata *child)
 	}
 
 out:
-	if (rs != NULL)
+	if (rs != NULL) {
+		/* Sibling has been reaped by reap_race_sibling() (or was
+		 * never spawned), so no further writes to rs->direct_calls
+		 * can race this load.  RELAXED is sufficient: the reap-side
+		 * waitpid() supplies the required memory ordering. */
+		direct_calls = (unsigned long)__atomic_load_n(&rs->direct_calls,
+							      __ATOMIC_RELAXED);
 		(void)munmap(rs, sizeof(*rs));
+	}
 	if (sv[0] >= 0) (void)close(sv[0]);
 	if (sv[1] >= 0) (void)close(sv[1]);
+	return direct_calls;
 }
 
 /*
@@ -580,8 +599,28 @@ bool af_unix_peek_race(struct childdata *child)
 	if (outer_iters == 0U)
 		outer_iters = 1U;
 
+	/* Accumulate the invocation's direct-syscall load across every
+	 * iter_one() burst: the fuzzed-work recvfrom MSG_PEEK + plain-recv
+	 * drain sites in af_unix_peek_sibling_main().  Harness plumbing
+	 * (sched_yield, futex, prctl, getppid, clone3) is intentionally
+	 * excluded so the tally reflects only race-target syscalls.  One
+	 * RELAXED atomic add per invocation, gated on valid_op to mirror
+	 * the surrounding per-op stats bumps. */
+	unsigned long direct_calls = 0;
+
 	for (i = 0; i < outer_iters; i++)
-		iter_one(child);
+		direct_calls += iter_one(child);
+
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats array.  Same guard shape as the setup_accepted
+	 * / data_path bumps inside iter_one(). */
+	{
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
+	}
 
 	return true;
 }
