@@ -116,7 +116,7 @@ void maybe_rotate_strategy(void)
 				    __ATOMIC_ACQUIRE))
 			window = PLATEAU_STRATEGY_WINDOW;
 
-		if (now - last < window)
+		if (sat_sub_ul(now, last) < window)
 			return;
 	}
 
