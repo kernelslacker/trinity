@@ -49,7 +49,7 @@ unsigned long cmp_hyp_consumed_by_kind[CMP_HYP_KIND_NR];
  *      slots stay zero by construction.
  *  cmp_hyp_would_miss_by_kind[k]
  *      Bumped at index k for each ladder kind absent from
- *      (cmp_ip, width) on this pick.  Per raw pick: 0..4 bumps,
+ *      (cmp_ip, width) on this pick.  Per raw pick: 0..5 bumps,
  *      one per missing ladder kind, so the per-kind ratio
  *      pick[k] / (pick[k] + miss[k]) reports the typed store's
  *      per-kind coverage of the served comparison sites.  Same
