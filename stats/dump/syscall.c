@@ -138,6 +138,8 @@ static void dump_entry(const struct syscalltable *table, unsigned int i)
 {
 	struct syscallentry *entry;
 	struct syscall_runtime *rt;
+	unsigned long edges = 0;
+	bool have_kcov;
 	unsigned int j;
 
 	entry = table[i].entry;
@@ -148,7 +150,27 @@ static void dump_entry(const struct syscalltable *table, unsigned int i)
 	if (rt->attempted == 0)
 		return;
 
-	output(0, "%s: (attempted:%u. success:%u. failures:%u.\n", entry->name, rt->attempted, rt->successes, rt->failures);
+	/* KCOV cross-ref: distinct edges hit for this syscall and the
+	 * calls/edge ratio.  High attempted with low edges (large ratio)
+	 * flags cold syscalls that spin without exploring new coverage --
+	 * candidates for arg reshuffling or deprioritisation. */
+	have_kcov = (kcov_shm != NULL && i < MAX_NR_SYSCALL);
+	if (have_kcov)
+		edges = per_syscall_edges_total(i);
+
+	if (have_kcov && edges > 0) {
+		unsigned long ratio_x100 =
+			((unsigned long)rt->attempted * 100UL) / edges;
+
+		output(0, "%s: (attempted:%u. success:%u. failures:%u. distinct edges=%lu calls/edge=%lu.%02lu\n",
+		       entry->name, rt->attempted, rt->successes,
+		       rt->failures, edges,
+		       ratio_x100 / 100, ratio_x100 % 100);
+	} else {
+		output(0, "%s: (attempted:%u. success:%u. failures:%u. distinct edges=%lu calls/edge=n/a\n",
+		       entry->name, rt->attempted, rt->successes,
+		       rt->failures, edges);
+	}
 
 	for (j = 0; j <= NR_ERRNOS; j++) {
 		if (rt->errnos[j] != 0) {
