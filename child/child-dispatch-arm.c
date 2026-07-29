@@ -43,9 +43,10 @@
  * observed delta to 1 in that case and bumps fd_leak_at_ceiling[op]
  * as the sentinel signal.  If getrlimit itself fails or reports a
  * ceiling that would not fit in int, fall back to -1.
- * Two syscalls per alt-op dispatch is well inside the syscall-per-op
- * budget the alarm(1) watchdog and the childop_wall_ns bracket already
- * pay.
+ * Two syscalls per probe (open + close), and the probe brackets each
+ * alt-op dispatch (before + after) for four syscalls total -- well
+ * inside the syscall-per-op budget the alarm(1) watchdog and the
+ * childop_wall_ns bracket already pay.
  */
 int probe_lowest_free_fd(bool *at_ceiling)
 {

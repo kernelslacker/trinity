@@ -666,7 +666,8 @@ void child_process(struct childdata *child, int childno)
 		 * user+sys CPU, which is exactly the accounting boundary the
 		 * op_fn call site expects. */
 		struct timespec cpu_t0, cpu_t1;
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_t0);
+		if (is_alt_op)
+			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_t0);
 		/* Fd-delta instrumentation: sample the lowest unused fd
 		 * number before and after the dispatch so a leaking op
 		 * (opens fds and forgets to close some on an error path)
@@ -704,7 +705,8 @@ void child_process(struct childdata *child, int childno)
 
 		child->in_childop = false;
 		clock_gettime(CLOCK_MONOTONIC, &split_t1);
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_t1);
+		if (is_alt_op)
+			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_t1);
 		if (is_alt_op && fd_probe_before >= 0 && valid_op) {
 			int fd_probe_after =
 				probe_lowest_free_fd(&fd_probe_at_ceiling);
