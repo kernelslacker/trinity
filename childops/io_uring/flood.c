@@ -47,6 +47,7 @@
 #include "arch.h"		/* page_size */
 #include "syscall-gate.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-iouring.h"
 #include "childops/io_uring/ring.h"
 #include "maps.h"
@@ -329,6 +330,13 @@ bool iouring_flood(struct childdata *child)
 	unsigned int i;
 	int dev_null_rd = -1;
 	int dev_null_wr = -1;
+	/* Local direct-syscall tally.  Bumped once per iouring_flood_iter_reap_cqes
+	 * call — that is the sole trinity_raw_syscall(__NR_io_uring_enter) site in
+	 * this op, and it issues exactly one raw syscall regardless of the kernel's
+	 * return value.  Published once to shm at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic add per
+	 * invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.iouring.runs, 1, __ATOMIC_RELAXED);
 
@@ -417,6 +425,7 @@ bool iouring_flood(struct childdata *child)
 		if (valid_op)
 			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
+		direct_calls++;
 		iouring_flood_iter_reap_cqes(&ctx, n_subs);
 
 		iour_ring_teardown(&ctx);
@@ -424,6 +433,9 @@ bool iouring_flood(struct childdata *child)
 
 	close(dev_null_rd);
 	close(dev_null_wr);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
