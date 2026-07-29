@@ -6,6 +6,7 @@
 #include "pids.h"
 #include "signals.h"
 #include "syscall.h"
+#include "taint.h"
 
 /*
  * Protected-fd registry.  Argument generators for the close family
@@ -16,7 +17,7 @@
  * to keep diagnostic and coverage fds out of the fuzz picker pool.
  * See the contract in include/fd.h.
  *
- * Two classes of fd live in this registry:
+ * Three classes of fd live in this registry:
  *
  *   - the calling child's kcov PC fd and cmp fd, opened in
  *     kcov_init_child and re-located above KCOV_FD_HIGH_BASE so the
@@ -25,6 +26,21 @@
  *     can still reach them.  A successful close / dup2 over either
  *     slot silently disables coverage for the rest of the child's
  *     life (next ioctl(KCOV_ENABLE, ...) returns -ENOTTY).
+ *
+ *   - the calling child's per-childop taint watcher fd
+ *     (child->tainted_fd, opened by open_tainted_fd) and, in parent
+ *     context, the panic-check cached fd (trinity_tainted_fd_cached).
+ *     Both name /proc/sys/kernel/tainted; open_tainted_fd also
+ *     F_DUPFD_CLOEXEC-relocates its slot up to TAINTED_FD_HIGH_BASE
+ *     for the same defence-in-depth reason kcov does.  A fuzz-induced
+ *     rewire onto the taint fd makes the next taint read strtol() an
+ *     unrelated file's contents into a fabricated taint bit that
+ *     kills the run with EXIT_KERNEL_TAINTED (see health/taint.c and
+ *     the block comment above tainted_fd_cached).  Registering both
+ *     slots closes the last window where child-side fuzz syscalls
+ *     could clobber a live taint fd -- child->tainted_fd stays live
+ *     for the child's lifetime, and the parent's cache is registered
+ *     for symmetry so parent-side arg gen never hands it out.
  *
  *   - STDERR_FILENO and the in-memory stderr capture memfd installed
  *     by init_stderr_memfd.  The SIGABRT handler drains the memfd
@@ -40,10 +56,12 @@
  *     the on-disk log on the next abort, swamping the host.
  *
  * Parent context (this_child() == NULL): STDERR_FILENO still matches
- * the constant check, but the parent never opens a kcov_child or a
- * stderr memfd, so those branches naturally fall through.  Parent-side
- * arg generation is rare and the conservative answer (treat fd 2 as
- * protected) is the right one regardless.
+ * the constant check, but the parent never opens a kcov_child, a
+ * stderr memfd, or a per-child tainted_fd, so those branches naturally
+ * fall through.  The parent's own trinity_tainted_fd_cached() slot is
+ * still consulted here; parent-side arg generation is rare but the
+ * conservative answer (treat the taint fd as protected) is the right
+ * one regardless.
  *
  * The fd < 0 / hi < lo guards mirror the kernel-side validation order
  * the close-family syscalls themselves apply, so a sanitiser that
@@ -54,6 +72,7 @@ bool fd_is_protected(int fd)
 {
 	struct childdata *child;
 	int memfd;
+	int taintfd;
 
 	if (fd < 0)
 		return false;
@@ -62,12 +81,17 @@ bool fd_is_protected(int fd)
 	memfd = trinity_stderr_memfd();
 	if (memfd >= 0 && fd == memfd)
 		return true;
+	taintfd = trinity_tainted_fd_cached();
+	if (taintfd >= 0 && fd == taintfd)
+		return true;
 	child = this_child();
 	if (child == NULL)
 		return false;
 	if (child->kcov.fd >= 0 && fd == child->kcov.fd)
 		return true;
 	if (child->kcov.cmp_fd >= 0 && fd == child->kcov.cmp_fd)
+		return true;
+	if (child->tainted_fd >= 0 && fd == child->tainted_fd)
 		return true;
 	return false;
 }
@@ -89,6 +113,7 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 {
 	struct childdata *child;
 	int memfd;
+	int taintfd;
 	int lowest = -1;
 
 	if (hi < lo)
@@ -104,6 +129,12 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 		if (lowest < 0 || memfd < lowest)
 			lowest = memfd;
 
+	taintfd = trinity_tainted_fd_cached();
+	if (taintfd >= 0 &&
+	    (unsigned int) taintfd >= lo && (unsigned int) taintfd <= hi)
+		if (lowest < 0 || taintfd < lowest)
+			lowest = taintfd;
+
 	child = this_child();
 	if (child != NULL) {
 		if (child->kcov.fd >= 0 &&
@@ -116,6 +147,11 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 		    (unsigned int) child->kcov.cmp_fd <= hi)
 			if (lowest < 0 || child->kcov.cmp_fd < lowest)
 				lowest = child->kcov.cmp_fd;
+		if (child->tainted_fd >= 0 &&
+		    (unsigned int) child->tainted_fd >= lo &&
+		    (unsigned int) child->tainted_fd <= hi)
+			if (lowest < 0 || child->tainted_fd < lowest)
+				lowest = child->tainted_fd;
 	}
 
 	return lowest;
