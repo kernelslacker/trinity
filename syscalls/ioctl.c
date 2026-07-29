@@ -16,10 +16,19 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 {
 	const struct ioctl_group *grp;
 
-	if (ONE_IN(100))
+	if (ONE_IN(100)) {
 		grp = get_random_ioctl_group();
-	else
+		__atomic_add_fetch(&shm->stats.ioctl_group_random, 1,
+				   __ATOMIC_RELAXED);
+	} else {
 		grp = find_ioctl_group(rec->a1);
+		if (grp)
+			__atomic_add_fetch(&shm->stats.ioctl_group_match, 1,
+					   __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(&shm->stats.ioctl_group_miss, 1,
+					   __ATOMIC_RELAXED);
+	}
 
 	if (grp)
 		grp->sanitise(grp, rec);

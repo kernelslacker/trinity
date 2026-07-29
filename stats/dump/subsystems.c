@@ -327,6 +327,16 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("ioctl", "btrfs_ioctls_dispatched",
 			 shm->stats.btrfs_ioctls_dispatched);
 
+	if (shm->stats.ioctl_group_match)
+		stat_row("ioctl", "group_match",
+			 shm->stats.ioctl_group_match);
+	if (shm->stats.ioctl_group_miss)
+		stat_row("ioctl", "group_miss",
+			 shm->stats.ioctl_group_miss);
+	if (shm->stats.ioctl_group_random)
+		stat_row("ioctl", "group_random",
+			 shm->stats.ioctl_group_random);
+
 	if (shm->stats.diag.mmap_size_clamped)
 		stat_row("mmap", "mmap_size_clamped",
 			 shm->stats.diag.mmap_size_clamped);
