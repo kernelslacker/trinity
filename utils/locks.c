@@ -18,6 +18,22 @@
 #include "utils.h"
 
 /*
+ * Dead-owner fingerprint test used by all three recovery sites
+ * (check_lock, try_release_dead_holder, force_bust_lock).  Returns
+ * true when the original holder is gone -- either the pid can no
+ * longer be read (start_time == 0) or the live start_time differs
+ * from the snapshot stored at acquire time (pid recycled to a new
+ * process).  Returning false means the same holder is still alive
+ * and the caller must not release the lock.
+ */
+static inline bool is_dead_holder(pid_t pid, unsigned long stored_start)
+{
+	unsigned long long current_start = pid_start_time(pid);
+
+	return current_start == 0 || current_start != stored_start;
+}
+
+/*
  * Periodic sanity walker.  Recovers the lock word in two failure
  * modes: a scribbled word whose reserved bits got smeared by a
  * stray fuzz write (force_bust_lock + bump shm-wide counter), and a
@@ -69,7 +85,6 @@ static bool check_lock(lock_t *lk)
 
 	if (pid_alive(pid) == false) {
 		unsigned long stored_start;
-		unsigned long long current_start;
 		bool dead_confirmed = (errno == ESRCH);
 
 		/* Recycle race: between pid_alive returning ESRCH and our CAS
@@ -89,8 +104,7 @@ static bool check_lock(lock_t *lk)
 		 * which made the caller reap+re-enter check_all_locks with the
 		 * lock still held — an unrepaired true-return loop. */
 		stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
-		current_start = pid_start_time(pid);
-		if (current_start != 0 && current_start == stored_start) {
+		if (!is_dead_holder(pid, stored_start)) {
 			/* Same fingerprint: cannot safely release.  On confirmed
 			 * dead (ESRCH) this is the rare same-fingerprint recycle
 			 * race documented above; defer to the next tick.  On
@@ -318,15 +332,13 @@ static void try_release_dead_holder(lock_t *lk)
 {
 	unsigned long sampled = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
 	unsigned long stored_start;
-	unsigned long long current_start;
 	pid_t owner = LOCK_OWNER(sampled);
 
 	if (LOCK_STATE(sampled) != LOCKED || owner == 0)
 		return;
 
 	stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
-	current_start = pid_start_time(owner);
-	if (current_start != 0 && current_start == stored_start)
+	if (!is_dead_holder(owner, stored_start))
 		return;
 
 	/* Either the pid is gone (current_start == 0) or it was recycled
@@ -451,7 +463,6 @@ void force_bust_lock(lock_t *lk)
 {
 	unsigned long s = __atomic_load_n(&lk->state, __ATOMIC_ACQUIRE);
 	unsigned long stored_start;
-	unsigned long long current_start;
 	pid_t owner;
 
 	/* Scribbled reserved bits: the encoded state and owner are both
@@ -470,8 +481,7 @@ void force_bust_lock(lock_t *lk)
 
 	owner = LOCK_OWNER(s);
 	stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
-	current_start = pid_start_time(owner);
-	if (current_start != 0 && current_start == stored_start) {
+	if (!is_dead_holder(owner, stored_start)) {
 		static bool warned;
 		if (!warned) {
 			warned = true;
