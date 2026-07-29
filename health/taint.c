@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include "child-api.h"
 #include "params.h"
 #include "types.h"
 #include "taint.h"
@@ -14,12 +15,18 @@ int kernel_taint_initial = 0;
 static bool taint_available = false;
 
 /*
- * Parent-side cached fd for /proc/sys/kernel/tainted.  The parent
- * doesn't fuzz its own fd table, so a persistent fd here is safe
- * against the fd-reuse race that killed the earlier startup cache
- * (children now use their own per-child fd via read_tainted_mask()
- * and never touch this static).  Reused across get_taint() calls to
- * avoid a per-call open/read/close on the panic-check hot path.
+ * Parent-only cached fd for /proc/sys/kernel/tainted.  The parent
+ * process never fuzzes its own fd table, so a persistent fd here is
+ * safe.  Child processes MUST NOT cache in this static: is_tainted()
+ * runs after every fuzzed syscall (dispatch/syscall-exec.c), and a
+ * cached long-lived fd in the child's fd table is directly reachable
+ * from fuzzed dup2 / dup3 / close_range / close -- a successful
+ * rewire would make the next get_taint() read an unrelated file,
+ * strtol() an arbitrary byte stream, and fabricate a spurious taint
+ * bit that panics the run.  Children therefore open/read/close per
+ * call (see the this_child() branch below); the per-childop watcher
+ * in child.c has its own long-lived child->tainted_fd which is kept
+ * out of the picker pool via the fds-protected registry.
  */
 static int tainted_fd_cached = -1;
 
@@ -31,6 +38,42 @@ void close_parent_tainted_fd(void)
 	}
 }
 
+/*
+ * Uncached child-context read: open, read, close.  Called from
+ * get_taint() on the child hot path so no long-lived fd number lands
+ * in the child's fd table for a fuzzed close-family syscall to
+ * hijack.  Returns -1 on any error so the caller can degrade to
+ * "unknown taint" rather than fabricating a value.
+ */
+static int read_taint_uncached(void)
+{
+	char buffer[11];
+	ssize_t n;
+	int fd;
+
+	fd = open("/proc/sys/kernel/tainted", O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return -1;
+
+	buffer[10] = 0;
+	n = read(fd, buffer, 10);
+	close(fd);
+	if (n <= 0)
+		return -1;
+
+	{
+		char *endptr;
+		long val;
+
+		buffer[n] = '\0';
+		errno = 0;
+		val = strtol(buffer, &endptr, 10);
+		if (errno != 0 || endptr == buffer)
+			return -1;
+		return (int)val;
+	}
+}
+
 int get_taint(void)
 {
 	char buffer[11];
@@ -39,6 +82,16 @@ int get_taint(void)
 
 	if (!taint_available)
 		return 0;
+
+	/* Child context: no long-lived fd number that a fuzzed
+	 * dup2/dup3/close_range can rewire.  Parent context (init and
+	 * shutdown paths, plus this_child()==NULL early in bring-up
+	 * before pids[]/children[] are mapped) keeps using the cache. */
+	if (this_child() != NULL) {
+		int ret = read_taint_uncached();
+
+		return ret < 0 ? 0 : ret;
+	}
 
 reopen:
 	if (tainted_fd_cached == -1) {
