@@ -23,6 +23,7 @@
  * band degrade to "no band action" rather than wrapping.
  */
 enum reach_band_mode {
+	/* opened / decides-on / by */
 	REACH_BAND_OFF = 0,
 	REACH_BAND_SHADOW_ONLY = 1,
 	REACH_BAND_COMBINED = 2,
