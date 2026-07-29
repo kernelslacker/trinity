@@ -80,6 +80,7 @@
 #include "bpf.h"
 #include "bpf-syscall.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "objects.h"
 #include "publish_resource.h"
@@ -257,7 +258,8 @@ static struct object *publish_prog_fd(int fd, uint32_t prog_type)
  * errors), false if a structural failure means we should not retry this
  * combo for this child.
  */
-static bool combo_socket_filter(struct childdata *child)
+static bool combo_socket_filter(struct childdata *child,
+				unsigned long *direct_calls)
 {
 	int sv[2] = { -1, -1 };
 	int map_fd = -1;
@@ -286,11 +288,13 @@ static bool combo_socket_filter(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 
 	map_fd = create_array_map();
+	(*direct_calls)++;
 	if (map_fd < 0)
 		goto out;
 	map_obj = publish_map_fd(map_fd, BPF_MAP_TYPE_ARRAY);
 
 	prog_fd = load_template_prog(BPF_PROG_TYPE_SOCKET_FILTER, map_fd);
+	(*direct_calls)++;
 	if (prog_fd < 0) {
 		if (errno == EPERM || errno == EACCES) {
 			__atomic_add_fetch(&shm->stats.bpf_lifecycle.eperm,
@@ -312,8 +316,10 @@ static bool combo_socket_filter(struct childdata *child)
 	}
 
 	/* Populate map before attach so first execution sees live entries. */
-	for (key = 0; key < MAP_ENTRIES; key++)
+	for (key = 0; key < MAP_ENTRIES; key++) {
 		update_elem(map_fd, key, rand32());
+		(*direct_calls)++;
+	}
 
 	if (setsockopt(sv[0], SOL_SOCKET, SO_ATTACH_BPF,
 		       &prog_fd, sizeof(prog_fd)) < 0) {
@@ -340,18 +346,22 @@ static bool combo_socket_filter(struct childdata *child)
 
 		update_elem(map_fd, (uint32_t)(i & (MAP_ENTRIES - 1)),
 			    rand32());
+		(*direct_calls)++;
 		(void)send(sv[1], "trig", 4, MSG_DONTWAIT);
 		r = recv(sv[0], buf, sizeof(buf), MSG_DONTWAIT);
 		(void)r;
 		test_run(prog_fd);
+		(*direct_calls)++;
 	}
 	__atomic_add_fetch(&shm->stats.bpf_lifecycle.triggered, 1,
 			   __ATOMIC_RELAXED);
 
 	(void)setsockopt(sv[0], SOL_SOCKET, SO_DETACH_BPF, NULL, 0);
 
-	for (key = 0; key < MAP_ENTRIES; key++)
+	for (key = 0; key < MAP_ENTRIES; key++) {
 		delete_elem(map_fd, key);
+		(*direct_calls)++;
+	}
 
 	ok = true;
 
@@ -410,7 +420,8 @@ static void cgroup_trigger(void)
  * one of the trinity{0..7} cgroup directories that munge_process()
  * already uses.  Latches off on EPERM/EACCES or missing cgroup.
  */
-static bool combo_cgroup_skb(struct childdata *child)
+static bool combo_cgroup_skb(struct childdata *child,
+			     unsigned long *direct_calls)
 {
 	int cgroup_fd = -1;
 	int map_fd = -1;
@@ -448,11 +459,13 @@ static bool combo_cgroup_skb(struct childdata *child)
 	}
 
 	map_fd = create_array_map();
+	(*direct_calls)++;
 	if (map_fd < 0)
 		goto out;
 	map_obj = publish_map_fd(map_fd, BPF_MAP_TYPE_ARRAY);
 
 	prog_fd = load_template_prog(BPF_PROG_TYPE_CGROUP_SKB, map_fd);
+	(*direct_calls)++;
 	if (prog_fd < 0) {
 		if (errno == EPERM || errno == EACCES) {
 			__atomic_add_fetch(&shm->stats.bpf_lifecycle.eperm,
@@ -468,14 +481,17 @@ static bool combo_cgroup_skb(struct childdata *child)
 			   __ATOMIC_RELAXED);
 	prog_obj = publish_prog_fd(prog_fd, BPF_PROG_TYPE_CGROUP_SKB);
 
-	for (key = 0; key < MAP_ENTRIES; key++)
+	for (key = 0; key < MAP_ENTRIES; key++) {
 		update_elem(map_fd, key, rand32());
+		(*direct_calls)++;
+	}
 
 	memset(&attr, 0, sizeof(attr));
 	attr.target_fd = cgroup_fd;
 	attr.attach_bpf_fd = prog_fd;
 	attr.attach_type = BPF_CGROUP_INET_INGRESS;
 	attr.attach_flags = (uint32_t)RAND_NEGATIVE_OR(BPF_F_ALLOW_MULTI);
+	(*direct_calls)++;
 	if (sys_bpf(BPF_PROG_ATTACH, &attr, sizeof(attr)) < 0) {
 		if (errno == EPERM || errno == EACCES) {
 			__atomic_add_fetch(&shm->stats.bpf_lifecycle.eperm,
@@ -497,13 +513,16 @@ static bool combo_cgroup_skb(struct childdata *child)
 
 	for (key = 0; key < MAP_ENTRIES; key++) {
 		update_elem(map_fd, key, rand32());
+		(*direct_calls)++;
 		cgroup_trigger();
 	}
 	__atomic_add_fetch(&shm->stats.bpf_lifecycle.triggered, 1,
 			   __ATOMIC_RELAXED);
 
-	for (key = 0; key < MAP_ENTRIES; key++)
+	for (key = 0; key < MAP_ENTRIES; key++) {
 		delete_elem(map_fd, key);
+		(*direct_calls)++;
+	}
 
 	ok = true;
 
@@ -514,6 +533,7 @@ out:
 		attr.attach_bpf_fd = prog_fd;
 		attr.attach_type = BPF_CGROUP_INET_INGRESS;
 		(void)sys_bpf(BPF_PROG_DETACH, &attr, sizeof(attr));
+		(*direct_calls)++;
 	}
 	if (cgroup_fd >= 0)
 		close(cgroup_fd);
@@ -564,7 +584,8 @@ out:
  * CONFIG_BPF_SYSCALL=n / arena disabled), latch arena_unsupported and
  * bail cleanly — we must not crash trinity over a missing feature.
  */
-static bool combo_arena_fork(struct childdata *child)
+static bool combo_arena_fork(struct childdata *child,
+			     unsigned long *direct_calls)
 {
 	union bpf_attr attr;
 	unsigned int npages;
@@ -602,6 +623,7 @@ static bool combo_arena_fork(struct childdata *child)
 	attr.max_entries = npages;
 
 	map_fd = sys_bpf(BPF_MAP_CREATE, &attr, sizeof(attr));
+	(*direct_calls)++;
 	if (map_fd < 0) {
 		arena_unsupported = true;
 		__atomic_add_fetch(&shm->stats.bpf_lifecycle.eperm,
@@ -676,6 +698,22 @@ static bool combo_arena_fork(struct childdata *child)
 
 bool bpf_lifecycle(struct childdata *child)
 {
+	/* Local direct-syscall tally.  Each combo bumps this at every
+	 * sys_bpf() site it reaches (early goto out paths still credit the
+	 * attempted calls); publish once at return via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per syscall, mirroring the
+	 * pipe-thrash reporter pattern. */
+	unsigned long direct_calls = 0;
+
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * combo bodies already gate their own stats writes on the same
+	 * valid_op snapshot pattern. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.bpf_lifecycle.runs, 1, __ATOMIC_RELAXED);
 
 	/*
@@ -684,8 +722,8 @@ bool bpf_lifecycle(struct childdata *child)
 	 * the running kernel or the combo decides not to run this turn.
 	 */
 	if (!arena_unsupported && RAND_RANGE(0, 9) < 2) {
-		if (combo_arena_fork(child))
-			return true;
+		if (combo_arena_fork(child, &direct_calls))
+			goto publish;
 		/* fall through */
 	}
 
@@ -695,11 +733,16 @@ bool bpf_lifecycle(struct childdata *child)
 	 * cheap, and avoids busy-failing on a kernel without BPF support.
 	 */
 	if (!cgroup_disabled && RAND_RANGE(0, 9) < 3) {
-		if (combo_cgroup_skb(child))
-			return true;
+		if (combo_cgroup_skb(child, &direct_calls))
+			goto publish;
 		/* fall through to socket combo on failure */
 	}
 
-	(void)combo_socket_filter(child);
+	(void)combo_socket_filter(child, &direct_calls);
+
+publish:
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+
 	return true;
 }
