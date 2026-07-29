@@ -187,7 +187,14 @@ void xfrm_sk_policy_churn(struct childdata *child)
 
 		switch (rand32() & 7U) {
 		case 0:  len = 0; break;
-		case 1:  len = sizeof(buf); break;	/* > PAGE_SIZE arm */
+		case 1:
+			/* > PAGE_SIZE arm: kernel rejects with EMSGSIZE
+			 * before touching the buffer, but zero-fill so
+			 * --dry-run stays byte-identical and MSan / valgrind
+			 * don't flag the setsockopt() read. */
+			memset(buf, 0, sizeof(buf));
+			len = sizeof(buf);
+			break;
 		default:
 			len = build_sk_policy_blob(buf, sizeof(buf),
 						   RAND_ARRAY(dirs),
