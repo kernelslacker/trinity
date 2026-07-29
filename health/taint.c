@@ -38,6 +38,11 @@ void close_parent_tainted_fd(void)
 	}
 }
 
+int trinity_tainted_fd_cached(void)
+{
+	return tainted_fd_cached;
+}
+
 /*
  * Uncached child-context read: open, read, close.  Called from
  * get_taint() on the child hot path so no long-lived fd number lands

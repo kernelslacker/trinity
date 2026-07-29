@@ -204,6 +204,20 @@ unsigned long read_tainted_mask(int fd)
 }
 
 /*
+ * Park the per-child taint fd well above the low-numbered range the
+ * kernel typically hands out.  Mirrors KCOV_FD_HIGH_BASE (kcov/
+ * lifecycle.c) both in value and rationale: open_tainted_fd runs after
+ * std{in,out,err} have been isolated but before the fuzz loop starts,
+ * so the kernel returns lowest-available (3, 4, ...) which sits
+ * squarely inside every ARG_FD picker and typed-fd reroll working set.
+ * F_DUPFD_CLOEXEC-relocating the slot up out of that range drops the
+ * incidental hit rate sharply.  The fds-protected registry
+ * (fds/fds-protected.c) remains the actual safety net; the relocation
+ * is defence-in-depth.  Keep this in sync with KCOV_FD_HIGH_BASE.
+ */
+#define TAINTED_FD_HIGH_BASE 60000U
+
+/*
  * Cache an fd to /proc/sys/kernel/tainted for the per-childop taint
  * watcher.  -1 disables the watcher (e.g. on kernels where the file is
  * unreadable).  Sibling probes don't share state via shm because the
@@ -221,7 +235,10 @@ void open_tainted_fd(struct childdata *child)
 	 * inherited fd number, which the child's own close()/dup2()
 	 * fuzzing can rewire to point at an unrelated file — exactly
 	 * the fd-reuse false-taint race that killed the original
-	 * startup-cache attempt. */
+	 * startup-cache attempt.  get_taint() now also gates its cache
+	 * on this_child()==NULL so child hot-path calls never re-cache
+	 * a fresh slot here; this close plus that gate together keep
+	 * the child's fd table clear of the parent's tainted slot. */
 	close_parent_tainted_fd();
 
 	fd = open("/proc/sys/kernel/tainted", O_RDONLY | O_CLOEXEC);
@@ -230,6 +247,21 @@ void open_tainted_fd(struct childdata *child)
 		child->last_tainted = 0;
 		return;
 	}
+
+	/* Relocate up out of the low ARG_FD picker range.  Best-effort:
+	 * if the dup fails (EMFILE, no free slot above the base), keep
+	 * the low fd and let fds-protected catch subsequent attempts on
+	 * it. */
+	if ((unsigned int) fd < TAINTED_FD_HIGH_BASE) {
+		int new_fd = fcntl(fd, F_DUPFD_CLOEXEC,
+				   (int) TAINTED_FD_HIGH_BASE);
+
+		if (new_fd >= 0) {
+			close(fd);
+			fd = new_fd;
+		}
+	}
+
 	child->tainted_fd = fd;
 	child->last_tainted = read_tainted_mask(fd);
 }
