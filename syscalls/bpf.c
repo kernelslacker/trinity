@@ -281,6 +281,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	switch (cmd) {
 	case BPF_MAP_CREATE:
 		sanitise_bpf_map_create(attr, rec);
+		rec->rettype = RET_FD;
 		break;
 	case BPF_MAP_LOOKUP_ELEM:
 	case BPF_MAP_LOOKUP_AND_DELETE_ELEM:
@@ -300,9 +301,11 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		break;
 	case BPF_OBJ_GET:
 		sanitise_bpf_obj_get(attr, rec);
+		rec->rettype = RET_FD;
 		break;
 	case BPF_PROG_LOAD:
 		classic_bpf_insns = sanitise_bpf_prog_load(attr, rec);
+		rec->rettype = RET_FD;
 		break;
 	case BPF_PROG_ATTACH:
 	case BPF_PROG_DETACH:
@@ -322,15 +325,18 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	case BPF_BTF_GET_FD_BY_ID:
 	case BPF_LINK_GET_FD_BY_ID:
 		sanitise_bpf_get_fd_by_id(attr, rec);
+		rec->rettype = RET_FD;
 		break;
 	case BPF_BTF_LOAD:
 		sanitise_bpf_btf_load(attr, rec);
+		rec->rettype = RET_FD;
 		break;
 	case BPF_OBJ_GET_INFO_BY_FD:
 		sanitise_bpf_obj_get_info_by_fd(attr, rec);
 		break;
 	case BPF_LINK_CREATE:
 		sanitise_bpf_link_create(attr, rec);
+		rec->rettype = RET_FD;
 		break;
 	case BPF_LINK_UPDATE:
 		sanitise_bpf_link_update(attr, rec);
@@ -340,15 +346,22 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		break;
 	case BPF_ENABLE_STATS:
 		sanitise_bpf_enable_stats(attr, rec);
+		rec->rettype = RET_FD;
 		break;
 	case BPF_ITER_CREATE:
 		sanitise_bpf_iter_create(attr, rec);
+		rec->rettype = RET_FD;
 		break;
 	case BPF_PROG_BIND_MAP:
 		sanitise_bpf_prog_bind_map(attr, rec);
 		break;
 	case BPF_RAW_TRACEPOINT_OPEN:
 		sanitise_bpf_raw_tracepoint(attr, rec);
+		rec->rettype = RET_FD;
+		break;
+	case BPF_TOKEN_CREATE:
+		sanitise_bpf_default(attr, rec);
+		rec->rettype = RET_FD;
 		break;
 	default:
 		sanitise_bpf_default(attr, rec);
@@ -690,5 +703,11 @@ struct syscallentry syscall_bpf = {
 	.flags = KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_bpf,
 	.post = post_bpf,
+	/* Op-multiplexed: sanitise_bpf publishes rec->rettype = RET_FD
+	 * for the fd-returning cmd arms (MAP_CREATE, PROG_LOAD, OBJ_GET,
+	 * *_GET_FD_BY_ID, BTF_LOAD, LINK_CREATE, ENABLE_STATS, ITER_CREATE,
+	 * RAW_TRACEPOINT_OPEN, TOKEN_CREATE).  Hint so xprop's whitelist
+	 * walker still recognises bpf as an fd source. */
+	.rettype_publish_hint = RET_FD,
 };
 #endif

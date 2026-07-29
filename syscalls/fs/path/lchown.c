@@ -89,6 +89,7 @@ struct syscallentry syscall_lchown16 = {
 	.arg_params[1].range.hi = 65535,
 	.arg_params[2].range.low = 0,
 	.arg_params[2].range.hi = 65535,
+	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 	.flags = REEXEC_SANITISE_OK,
 	.sanitise = sanitise_lchown,

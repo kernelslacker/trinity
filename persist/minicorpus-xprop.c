@@ -15,8 +15,10 @@
  * Built once from minicorpus_init() by walking the syscall table
  * (which select_syscall_tables() has already populated by the time
  * init_shm runs) and recording the nr of every syscall with
- * rettype == RET_FD whose argtype set is corpus-replayable.  Inherited
- * COW by every child fork.
+ * effective_rettype == RET_FD, plus the op-multiplexed entries that
+ * publish rec->rettype = RET_FD from their .sanitise (bpf, seccomp --
+ * flagged via entry->rettype_publish_hint) whose argtype set is
+ * corpus-replayable.  Inherited COW by every child fork.
  */
 
 #include "minicorpus.h"
@@ -43,7 +45,15 @@ static void xprop_consider_nr(unsigned int nr)
 	if (xprop_n_fd_src >= XPROP_FD_SRC_MAX)
 		return;
 	e = get_syscall_entry(nr, false);
-	if (e == NULL || e->rettype != RET_FD)
+	if (e == NULL)
+		return;
+	/* effective_rettype with rec=NULL just returns entry->rettype (op-
+	 * multiplexed entries fall through to RET_NONE at build time -- no
+	 * per-call rec exists here).  Fall back to entry->rettype_publish_hint
+	 * so bpf and seccomp, which stamp rec->rettype = RET_FD per-op from
+	 * their .sanitise hooks, still land in the fd-source whitelist. */
+	if (effective_rettype(e, NULL) != RET_FD &&
+	    e->rettype_publish_hint != RET_FD)
 		return;
 	if (!corpus_args_replayable(e))
 		return;

@@ -154,6 +154,16 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		avoid_shared_buffer_inout(&rec->a3, sizeof(struct sock_fprog));
 		heap = addr;
 #endif
+		/*
+		 * SECCOMP_FILTER_FLAG_NEW_LISTENER swaps the return contract from
+		 * zero-success to a fresh notification fd -- publish RET_FD so
+		 * dispatch/fd-group.c registers the returned fd via the generic
+		 * RET_FD path.  effective_rettype falls through to rec->rettype
+		 * because the entry's static rettype is RET_NONE (op-multiplexed,
+		 * mirroring fcntl / futex / bpf).
+		 */
+		if (rec->a2 & SECCOMP_FILTER_FLAG_NEW_LISTENER)
+			rec->rettype = RET_FD;
 	}
 
 	if (rec->a1 == SECCOMP_GET_ACTION_AVAIL) {
@@ -370,4 +380,9 @@ struct syscallentry syscall_seccomp = {
 	 * saw, instead of either leaking a real listener fd (stomp clears
 	 * the bit) or close()ing a non-fd return value (stomp sets it). */
 	.arg_snapshot_mask = (1u << 1),
+	/* Op-multiplexed: sanitise_seccomp publishes rec->rettype = RET_FD
+	 * for SECCOMP_SET_MODE_FILTER + SECCOMP_FILTER_FLAG_NEW_LISTENER,
+	 * which returns a notification listener fd.  Hint so xprop's
+	 * whitelist walker still recognises seccomp as an fd source. */
+	.rettype_publish_hint = RET_FD,
 };

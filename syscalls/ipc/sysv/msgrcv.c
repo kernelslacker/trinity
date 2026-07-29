@@ -231,6 +231,7 @@ struct syscallentry syscall_msgrcv = {
 	.arg_params[3].range.low = 0,
 	.arg_params[3].range.hi = 10,
 	.arg_params[4].list = ARGLIST(msgrcv_flags),
+	.rettype = RET_NUM_BYTES,
 	.flags = IGNORE_ENOSYS | NEED_ALARM,
 	.sanitise = sanitise_msgrcv,
 	.post = post_msgrcv,

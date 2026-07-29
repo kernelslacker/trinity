@@ -306,6 +306,7 @@ struct syscallentry syscall_io_submit = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_AIO_CTX, [1] = ARG_LEN, [2] = ARG_ADDRESS },
 	.argname = { [0] = "ctx_id", [1] = "nr", [2] = "iocbpp" },
+	.rettype = RET_NUM_BYTES,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_submit,
