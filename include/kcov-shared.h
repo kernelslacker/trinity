@@ -310,7 +310,7 @@ static inline unsigned long per_syscall_calls_prior_total(unsigned int nr)
  * and offsetof for a set of load-bearing fields so an accidental
  * reorder or padding-introducing edit fails to compile instead of
  * silently shifting layout across a wide set of readers. */
-_Static_assert(sizeof(struct kcov_shared) == 25943336UL,
+_Static_assert(sizeof(struct kcov_shared) == 25943520UL,
 	"struct kcov_shared sizeof drifted -- audit layout before updating this");
 _Static_assert(offsetof(struct kcov_shared, bucket_seen) == 0UL,
 	"kcov_shared.bucket_seen must remain the first field");
@@ -320,5 +320,5 @@ _Static_assert(offsetof(struct kcov_shared, hints_flat.cmp_hints_injected) == 83
 	"kcov_shared.hints_flat.cmp_hints_injected offset drifted");
 _Static_assert(offsetof(struct kcov_shared, per_syscall.per_syscall_edges) == 8397720UL,
 	"kcov_shared.per_syscall.per_syscall_edges offset drifted");
-_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25943320UL,
+_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25943504UL,
 	"kcov_shared last-field offset drifted -- append-only tail broken");

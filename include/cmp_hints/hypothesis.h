@@ -36,6 +36,20 @@ enum cmp_hypothesis_kind {
 	CMP_HYP_ALIGNMENT,
 	CMP_HYP_LENGTH,
 	CMP_HYP_FOREIGN_VALUE,
+	/*
+	 * SHADOW length-correlation lane.  Fires when a KCOV cmp record's
+	 * runtime operand equals a length we chose for an FT_LEN_BYTES /
+	 * FT_LEN_COUNT field of a dispatched cataloged struct AND the record
+	 * carries KCOV_CMP_CONST (arg1 = the compile-time constant the
+	 * kernel is comparing our length against).  The recorded exemplar
+	 * holds that expected constant; keying is by cmp_field_pool_hash
+	 * (desc, nr, do32, arg_idx, field_idx, size) folded into the
+	 * cmp_ip slot of the hyp entry so the shared alloc/find/pick/derive
+	 * machinery keeps working unmodified.  Slice A is observation-only:
+	 * populated by the record path, drained only by the derive case
+	 * (returns exemplar as expected), never injected by struct_fill.
+	 */
+	CMP_HYP_LEN_CORRELATED,
 	CMP_HYP_KIND_NR,
 };
 

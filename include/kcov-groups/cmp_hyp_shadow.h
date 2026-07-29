@@ -70,4 +70,49 @@ unsigned long cmp_hyp_bitmask_andnot_toggle_would_win;
  * at the tail per convention so consumer offsets stay stable. */
 unsigned long cmp_hyp_sign_switch_would_fire;
 unsigned long cmp_hyp_sign_switch_would_win;
+
+/*
+ * SHADOW length-correlation lane telemetry.
+ *
+ * cmp_hyp_len_correlated_would_fire
+ *      Bumped once per (dispatched struct arg slot, FT_LEN_* field)
+ *      whose slot value equals a KCOV cmp record's runtime operand
+ *      (arg2, since KCOV_CMP_CONST plants the compile-time constant
+ *      in arg1) AND the record carries KCOV_CMP_CONST -- the
+ *      structural condition under which the lane records a
+ *      hypothesis with expected == arg1.  Sizes the "how often does
+ *      the kernel compare our chosen length against a constant"
+ *      opportunity across the fuzz workload; a non-trivial rate on
+ *      netlink / sized-ioctl surface is the "is it worth it" gate
+ *      for the Slice B live-inject follow-up.
+ *
+ * cmp_hyp_len_correlated_recorded
+ *      Subset of _would_fire where the observe path successfully
+ *      stashed / refreshed a CMP_HYP_LEN_CORRELATED hypothesis in the
+ *      hyp_pool.  A pool-full / per-kind-cap saturation surfaces as
+ *      _would_fire ahead of _recorded via the shared cmp_hyp_pool_full
+ *      / cmp_hyp_kind_full counters.
+ *
+ * cmp_hyp_len_correlated_value_nonzero
+ *      Subset of _would_fire where the expected constant (arg1) is
+ *      non-zero -- filters out the "kernel compares length against 0"
+ *      shape (bail-on-empty checks) which is a distinct pattern from
+ *      the sizeof-struct / bounded-cap gates the lane is targeting.
+ *      Pure observability; no code path gates on this.
+ *
+ * cmp_hyp_len_correlated_bad_desc
+ *      Bumped when the observe path is handed a slot whose dispatched
+ *      struct pointer is shape-corrupt / short-alloc / unreadable at
+ *      scan time (mirrors the cmp_field_attribution_arg_skipped_*
+ *      family from the field-scan path).  Non-zero means the strict
+ *      gate deflected records that would otherwise mis-attribute.
+ *
+ * All counters are RELAXED-bumped and SHADOW-only.  Nothing on the
+ * live pick / inject / credit path reads them.  Append-only at the
+ * tail per convention so consumer offsets stay stable.
+ */
+unsigned long cmp_hyp_len_correlated_would_fire;
+unsigned long cmp_hyp_len_correlated_recorded;
+unsigned long cmp_hyp_len_correlated_value_nonzero;
+unsigned long cmp_hyp_len_correlated_bad_desc;
 };

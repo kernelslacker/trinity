@@ -111,6 +111,24 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
 				 unsigned int size, unsigned long cmp_ip);
 
 /*
+ * Per-CMP-record SHADOW length-correlation scan.  Definition in
+ * cmp_hints/hyp-len-correlated.c; called from cmp_hints_collect
+ * (collect.c) on every KCOV_CMP_CONST record alongside the
+ * cmp_hints_field_scan_record() field-attribution scan.  Walks the
+ * dispatching syscall's cataloged INPUT struct args looking for an
+ * FT_LEN_BYTES / FT_LEN_COUNT field whose slot value equals arg2
+ * (runtime operand) and records a SHADOW CMP_HYP_LEN_CORRELATED
+ * hypothesis with expected == arg1 (compile-time constant).  Never
+ * feeds the picker / inject arm -- Slice A is observation-only,
+ * byte-identical fuzzing.
+ */
+void cmp_hyp_len_correlated_scan_record(struct syscallrecord *srec,
+					struct syscallentry *entry,
+					unsigned int nr, bool do32,
+					unsigned long arg1, unsigned long arg2,
+					unsigned int size, unsigned long cmp_ip);
+
+/*
  * Per-child seen-bloom check + set.  Called once per CMP record in
  * cmp_hints/collect.c before the per-pool lock + dedup path; a hit
  * short-circuits the pool_add_locked() round-trip.  Definition in

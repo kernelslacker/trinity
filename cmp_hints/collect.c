@@ -945,6 +945,26 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						    nr, do32, arg1, arg2,
 						    size, ip);
 
+		/*
+		 * SHADOW length-correlation scan.  Same dispatch-args snapshot
+		 * gate as the field-attribution scan above: any dispatched
+		 * syscall with a valid arg snapshot is a candidate.  Walks the
+		 * cataloged INPUT struct args looking for an FT_LEN_* field
+		 * whose slot value equals arg2 (runtime operand), records
+		 * arg1 (compile-time constant) as the expected length in a
+		 * CMP_HYP_LEN_CORRELATED hyp-pool entry keyed by
+		 * cmp_field_pool_hash.  Observation-only in Slice A -- neither
+		 * the picker nor struct_fill consumes LEN_CORRELATED entries,
+		 * so the fuzzing byte stream stays byte-identical.  Runs only
+		 * against KCOV_CMP_CONST records (guaranteed by the
+		 * !KCOV_CMP_CONST drop earlier in this loop). */
+		if (srec_field != NULL && entry_field != NULL)
+			cmp_hyp_len_correlated_scan_record(srec_field,
+							   entry_field,
+							   nr, do32,
+							   arg1, arg2,
+							   size, ip);
+
 		if (bloom != NULL &&
 		    cmp_hints_bloom_check_and_set(bloom, ip, arg1, size)) {
 			skipped++;

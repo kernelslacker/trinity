@@ -658,6 +658,21 @@ bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
 			cls = CMP_HYP_PROBE_CLASS_RANGE_MIDPOINT;
 			goto out_bump;
 		}
+	case CMP_HYP_LEN_CORRELATED:
+		/*
+		 * SHADOW length-correlation derive: return the recorded
+		 * expected length verbatim.  Only reachable in shadow --
+		 * the picker + inject arm do not resolve LEN_CORRELATED
+		 * (the picker's ladder is EXACT/ENUM/BITMASK/RANGE/BOUNDARY,
+		 * see cmp_hyp_would_pick_locked's static ladder_kinds[]),
+		 * so this arm is exercised only by explicit shadow probes
+		 * that walk the pool by kind.  No RNG draw, no probe-class
+		 * histogram bump (the class enum has no LEN_CORRELATED
+		 * bucket -- adding one is a Slice B follow-up), no ladder:
+		 * length correlation is a single-value probe.
+		 */
+		*out = (unsigned long)picked->exemplar;
+		return true;
 	case CMP_HYP_BOUNDARY: {
 		/*
 		 * Neighbourhood ladder around the exemplar N: the strict-
