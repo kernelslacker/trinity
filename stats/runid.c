@@ -297,7 +297,6 @@ static const char *runid_frontier_live_cooldown_mode_name(void)
 	switch (frontier_live_cooldown_mode) {
 	case FRONTIER_LIVE_COOLDOWN_MODE_OFF:         return "off";
 	case FRONTIER_LIVE_COOLDOWN_MODE_SHADOW_ONLY: return "shadow-only";
-	case FRONTIER_LIVE_COOLDOWN_MODE_COMBINED:    return "combined";
 	}
 	return "?";
 }
@@ -307,7 +306,6 @@ static const char *runid_frontier_saturation_cooldown_mode_name(void)
 	switch (frontier_saturation_cooldown_mode) {
 	case FRONTIER_SATURATION_COOLDOWN_MODE_OFF:         return "off";
 	case FRONTIER_SATURATION_COOLDOWN_MODE_SHADOW_ONLY: return "shadow-only";
-	case FRONTIER_SATURATION_COOLDOWN_MODE_COMBINED:    return "combined";
 	}
 	return "?";
 }
@@ -317,7 +315,6 @@ static const char *runid_frontier_barren_demote_mode_name(void)
 	switch (frontier_barren_demote_mode) {
 	case FRONTIER_BARREN_DEMOTE_MODE_OFF:         return "off";
 	case FRONTIER_BARREN_DEMOTE_MODE_SHADOW_ONLY: return "shadow-only";
-	case FRONTIER_BARREN_DEMOTE_MODE_COMBINED:    return "combined";
 	}
 	return "?";
 }
@@ -327,7 +324,6 @@ static const char *runid_frontier_group_antilock_mode_name(void)
 	switch (frontier_group_antilock_mode) {
 	case FRONTIER_GROUP_ANTILOCK_MODE_OFF:         return "off";
 	case FRONTIER_GROUP_ANTILOCK_MODE_SHADOW_ONLY: return "shadow-only";
-	case FRONTIER_GROUP_ANTILOCK_MODE_COMBINED:    return "combined";
 	}
 	return "?";
 }
@@ -337,7 +333,6 @@ static const char *runid_cost_pool_selector_mode_name(void)
 	switch (cost_pool_selector_mode) {
 	case COST_POOL_SELECTOR_MODE_OFF:         return "off";
 	case COST_POOL_SELECTOR_MODE_SHADOW_ONLY: return "shadow-only";
-	case COST_POOL_SELECTOR_MODE_COMBINED:    return "combined";
 	}
 	return "?";
 }

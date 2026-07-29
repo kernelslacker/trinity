@@ -231,11 +231,8 @@ bool parse_strategy_options(int opt, const char *name, char *arg)
 		} else if (strcmp(arg, "shadow-only") == 0) {
 			frontier_live_cooldown_mode =
 				FRONTIER_LIVE_COOLDOWN_MODE_SHADOW_ONLY;
-		} else if (strcmp(arg, "combined") == 0) {
-			frontier_live_cooldown_mode =
-				FRONTIER_LIVE_COOLDOWN_MODE_COMBINED;
 		} else {
-			outputerr("--frontier-live-cooldown-mode: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+			outputerr("--frontier-live-cooldown-mode: unknown mode '%s' (expected off or shadow-only)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}
@@ -249,11 +246,8 @@ bool parse_strategy_options(int opt, const char *name, char *arg)
 		} else if (strcmp(arg, "shadow-only") == 0) {
 			frontier_saturation_cooldown_mode =
 				FRONTIER_SATURATION_COOLDOWN_MODE_SHADOW_ONLY;
-		} else if (strcmp(arg, "combined") == 0) {
-			frontier_saturation_cooldown_mode =
-				FRONTIER_SATURATION_COOLDOWN_MODE_COMBINED;
 		} else {
-			outputerr("--frontier-saturation-cooldown: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+			outputerr("--frontier-saturation-cooldown: unknown mode '%s' (expected off or shadow-only)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}
@@ -267,11 +261,8 @@ bool parse_strategy_options(int opt, const char *name, char *arg)
 		} else if (strcmp(arg, "shadow-only") == 0) {
 			frontier_barren_demote_mode =
 				FRONTIER_BARREN_DEMOTE_MODE_SHADOW_ONLY;
-		} else if (strcmp(arg, "combined") == 0) {
-			frontier_barren_demote_mode =
-				FRONTIER_BARREN_DEMOTE_MODE_COMBINED;
 		} else {
-			outputerr("--frontier-barren-demote: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+			outputerr("--frontier-barren-demote: unknown mode '%s' (expected off or shadow-only)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}
@@ -285,11 +276,8 @@ bool parse_strategy_options(int opt, const char *name, char *arg)
 		} else if (strcmp(arg, "shadow-only") == 0) {
 			cost_pool_selector_mode =
 				COST_POOL_SELECTOR_MODE_SHADOW_ONLY;
-		} else if (strcmp(arg, "combined") == 0) {
-			cost_pool_selector_mode =
-				COST_POOL_SELECTOR_MODE_COMBINED;
 		} else {
-			outputerr("--cost-pool-selector: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+			outputerr("--cost-pool-selector: unknown mode '%s' (expected off or shadow-only)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}
@@ -301,10 +289,8 @@ bool parse_strategy_options(int opt, const char *name, char *arg)
 			context_pool_mode = CONTEXT_POOL_MODE_OFF;
 		} else if (strcmp(arg, "shadow-only") == 0) {
 			context_pool_mode = CONTEXT_POOL_MODE_SHADOW_ONLY;
-		} else if (strcmp(arg, "combined") == 0) {
-			context_pool_mode = CONTEXT_POOL_MODE_COMBINED;
 		} else {
-			outputerr("--context-pool: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+			outputerr("--context-pool: unknown mode '%s' (expected off or shadow-only)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}
@@ -421,11 +407,8 @@ bool parse_strategy_options(int opt, const char *name, char *arg)
 		} else if (strcmp(arg, "shadow-only") == 0) {
 			frontier_group_antilock_mode =
 				FRONTIER_GROUP_ANTILOCK_MODE_SHADOW_ONLY;
-		} else if (strcmp(arg, "combined") == 0) {
-			frontier_group_antilock_mode =
-				FRONTIER_GROUP_ANTILOCK_MODE_COMBINED;
 		} else {
-			outputerr("--frontier-group-antilock: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+			outputerr("--frontier-group-antilock: unknown mode '%s' (expected off or shadow-only)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}
