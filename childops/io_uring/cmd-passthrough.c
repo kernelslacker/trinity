@@ -49,6 +49,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-iouring.h"
 #include "childops/io_uring/ring.h"
@@ -311,7 +312,7 @@ static const __u32 sock_cmd_ops[] = {
 	SOCKET_URING_OP_SETSOCKOPT,
 };
 
-static bool variant_socket(struct iour_ring *ctx)
+static bool variant_socket(struct iour_ring *ctx, unsigned long *direct_calls)
 {
 	struct io_uring_sqe sqe;
 	int sock_fd = -1;
@@ -349,6 +350,7 @@ static bool variant_socket(struct iour_ring *ctx)
 	if (!ring_submit_sqe(ctx, &sqe))
 		goto out;
 
+	(*direct_calls)++;
 	r = ring_enter(ctx, 1, 1);
 	if (r < 0)
 		goto out;
@@ -410,7 +412,7 @@ static bool loop_still_unbound(int minor)
 	return buf[0] == '\0';
 }
 
-static bool variant_blockdev(struct iour_ring *ctx)
+static bool variant_blockdev(struct iour_ring *ctx, unsigned long *direct_calls)
 {
 	struct io_uring_sqe sqe;
 	char devpath[PATH_MAX];
@@ -445,6 +447,7 @@ static bool variant_blockdev(struct iour_ring *ctx)
 	if (!ring_submit_sqe(ctx, &sqe))
 		goto out;
 
+	(*direct_calls)++;
 	r = ring_enter(ctx, 1, 1);
 	if (r < 0)
 		goto out;
@@ -474,6 +477,14 @@ bool iouring_cmd_passthrough(struct childdata *child)
 	enum { V_SOCKET, V_BLOCKDEV, V_MAX };
 	int avail[V_MAX];
 	int navail = 0;
+	/* Local direct-syscall tally.  Bumped once per ring_enter() call
+	 * inside the picked variant — that is the sole
+	 * trinity_raw_syscall(__NR_io_uring_enter) site in this op, and
+	 * it issues exactly one raw syscall regardless of the kernel's
+	 * return value.  Published once to shm at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -528,16 +539,20 @@ bool iouring_cmd_passthrough(struct childdata *child)
 	switch (avail[rnd_modulo_u32((unsigned int)navail)]) {
 #ifndef TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
 	case V_SOCKET:
-		ok = variant_socket(&ctx);
+		ok = variant_socket(&ctx, &direct_calls);
 		break;
 #endif
 	case V_BLOCKDEV:
-		ok = variant_blockdev(&ctx);
+		ok = variant_blockdev(&ctx, &direct_calls);
 		break;
 	}
 
 	iour_ring_teardown(&ctx);
 
 	(void)ok;
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+
 	return true;
 }
