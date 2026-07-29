@@ -129,9 +129,9 @@ enum strategy_t {
  * See Documentation/strategy.md for the design rationale.
  */
 enum frontier_saturation_cooldown_mode {
+	/* opened / decides-on / by */
 	FRONTIER_SATURATION_COOLDOWN_MODE_OFF = 0,
 	FRONTIER_SATURATION_COOLDOWN_MODE_SHADOW_ONLY = 1,
-	FRONTIER_SATURATION_COOLDOWN_MODE_COMBINED = 2,
 };
 
 extern enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode;
@@ -190,9 +190,9 @@ void frontier_satcool_spare(unsigned int syscallnr, bool do32);
  * See Documentation/strategy.md for the design rationale.
  */
 enum frontier_live_cooldown_mode {
+	/* opened / decides-on / by */
 	FRONTIER_LIVE_COOLDOWN_MODE_OFF = 0,
 	FRONTIER_LIVE_COOLDOWN_MODE_SHADOW_ONLY = 1,
-	FRONTIER_LIVE_COOLDOWN_MODE_COMBINED = 2,
 };
 
 extern enum frontier_live_cooldown_mode frontier_live_cooldown_mode;
@@ -253,9 +253,9 @@ void frontier_live_cool_spare(unsigned int syscallnr, bool do32);
  * See Documentation/strategy.md for the design rationale.
  */
 enum frontier_barren_demote_mode {
+	/* opened / decides-on / by */
 	FRONTIER_BARREN_DEMOTE_MODE_OFF = 0,
 	FRONTIER_BARREN_DEMOTE_MODE_SHADOW_ONLY = 1,
-	FRONTIER_BARREN_DEMOTE_MODE_COMBINED = 2,
 };
 
 extern enum frontier_barren_demote_mode frontier_barren_demote_mode;
@@ -287,9 +287,9 @@ void frontier_barren_demote(unsigned int syscallnr, bool do32);
  * shape, state keying, and dispatch-tail bookkeeping order.
  */
 enum frontier_group_antilock_mode {
+	/* opened / decides-on / by */
 	FRONTIER_GROUP_ANTILOCK_MODE_OFF = 0,
 	FRONTIER_GROUP_ANTILOCK_MODE_SHADOW_ONLY = 1,
-	FRONTIER_GROUP_ANTILOCK_MODE_COMBINED = 2,
 };
 
 extern enum frontier_group_antilock_mode frontier_group_antilock_mode;
@@ -305,9 +305,9 @@ extern enum frontier_group_antilock_mode frontier_group_antilock_mode;
  * coin-then-draw closed form.
  */
 enum cost_pool_selector_mode {
+	/* opened / decides-on / by */
 	COST_POOL_SELECTOR_MODE_OFF = 0,
 	COST_POOL_SELECTOR_MODE_SHADOW_ONLY = 1,
-	COST_POOL_SELECTOR_MODE_COMBINED = 2,
 };
 
 extern enum cost_pool_selector_mode cost_pool_selector_mode;
@@ -321,9 +321,9 @@ extern enum cost_pool_selector_mode cost_pool_selector_mode;
  * See Documentation/strategy.md for the design rationale.
  */
 enum context_pool_mode {
+	/* opened / decides-on / by */
 	CONTEXT_POOL_MODE_OFF = 0,
 	CONTEXT_POOL_MODE_SHADOW_ONLY = 1,
-	CONTEXT_POOL_MODE_COMBINED = 2,
 };
 
 extern enum context_pool_mode context_pool_mode;
@@ -501,6 +501,7 @@ const char *picker_mode_name(enum picker_mode_t mode);
  * See Documentation/strategy.md for the design rationale.
  */
 enum bandit_reward_edge_count_mode {
+	/* opened / decides-on / by */
 	BANDIT_REWARD_EDGE_COUNT_OFF = 0,
 	BANDIT_REWARD_EDGE_COUNT_SHADOW_ONLY = 1,
 	BANDIT_REWARD_EDGE_COUNT_COMBINED = 2,

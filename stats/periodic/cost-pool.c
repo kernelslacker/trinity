@@ -153,8 +153,6 @@ void __cold cost_pool_periodic_dump(void)
 			mode_name = "off"; break;
 		case COST_POOL_SELECTOR_MODE_SHADOW_ONLY:
 			mode_name = "shadow-only"; break;
-		case COST_POOL_SELECTOR_MODE_COMBINED:
-			mode_name = "combined"; break;
 		default:
 			mode_name = "?"; break;
 		}
