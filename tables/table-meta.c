@@ -195,12 +195,30 @@ static void check_syscall(struct syscallentry *entry)
 	CHECK(5, 6, 5);
 }
 
+static void check_no_slots_past_num_args(struct syscallentry *entry)
+{
+	unsigned int j;
+
+	if (entry == NULL)
+		return;
+
+	for (j = entry->num_args; j < ARRAY_SIZE(entry->argtype); j++) {
+		if (entry->argtype[j] != ARG_UNDEFINED) {
+			outputerr("%s: argtype slot %u is set (%d) but num_args=%u; slots past num_args must be zero\n",
+				  entry->name, j, entry->argtype[j], entry->num_args);
+			exit(EXIT_FAILURE);
+		}
+	}
+}
+
 static void sanity_check(const struct syscalltable *table, unsigned int nr)
 {
 	unsigned int i;
 
-	for (i = 0; i < nr; i++)
+	for (i = 0; i < nr; i++) {
 		check_syscall(table[i].entry);
+		check_no_slots_past_num_args(table[i].entry);
+	}
 }
 
 void sanity_check_tables(void)
