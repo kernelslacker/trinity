@@ -64,6 +64,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
 #include "kernel/mount.h"
@@ -451,21 +452,24 @@ fail:
  * mount fd.  Returns -1 on failure; the caller treats failure as
  * iteration-skip.
  */
-static int build_detached_tmpfs(void)
+static int build_detached_tmpfs(unsigned long *direct_calls)
 {
 	int fs_fd, mnt_fd;
 	long rc;
 
+	(*direct_calls)++;
 	fs_fd = (int)sys_fsopen("tmpfs", 0);
 	if (fs_fd < 0)
 		return -1;
 
+	(*direct_calls)++;
 	rc = sys_fsconfig(fs_fd, FSCONFIG_CMD_CREATE, NULL, NULL, 0);
 	if (rc < 0) {
 		close(fs_fd);
 		return -1;
 	}
 
+	(*direct_calls)++;
 	mnt_fd = (int)sys_fsmount(fs_fd, 0, 0);
 	close(fs_fd);
 	if (mnt_fd < 0)
@@ -477,7 +481,7 @@ static int build_detached_tmpfs(void)
  * mount_setattr(MOUNT_ATTR_IDMAP, userns_fd) on a detached mount fd
  * with AT_EMPTY_PATH.  Returns 0 on success, -1 on failure.
  */
-static int install_idmap(int mnt_fd, int userns_fd)
+static int install_idmap(int mnt_fd, int userns_fd, unsigned long *direct_calls)
 {
 	struct mount_attr attr;
 
@@ -485,6 +489,7 @@ static int install_idmap(int mnt_fd, int userns_fd)
 	attr.attr_set = MOUNT_ATTR_IDMAP;
 	attr.userns_fd = (__u64)userns_fd;
 
+	(*direct_calls)++;
 	if (sys_mount_setattr(mnt_fd, "", AT_EMPTY_PATH, &attr,
 			      sizeof(attr)) < 0)
 		return -1;
@@ -500,7 +505,8 @@ static int install_idmap(int mnt_fd, int userns_fd)
  * is mis-honoured.
  */
 static void issue_one_statmount(int mnt_fd, void *buf,
-				unsigned long bufsize)
+				unsigned long bufsize,
+				unsigned long *direct_calls)
 {
 	struct mnt_id_req_v1 req;
 	long rc;
@@ -521,6 +527,7 @@ static void issue_one_statmount(int mnt_fd, void *buf,
 		&shm->stats.statmount_idmap.statmount_call,
 		1, __ATOMIC_RELAXED);
 
+	(*direct_calls)++;
 	rc = sys_statmount(&req, (struct statmount *)buf, bufsize,
 			   STATMOUNT_BY_FD);
 	if (rc == 0) {
@@ -538,10 +545,12 @@ static void issue_one_statmount(int mnt_fd, void *buf,
  * One outer iteration: build a carrier userns, build a detached
  * tmpfs, install the idmap, sweep bufsizes, tear it all down.
  */
-static void iter_one(int op_type, void *scratch_buf, unsigned long scratch_cap)
+static unsigned long iter_one(int op_type, void *scratch_buf,
+			      unsigned long scratch_cap)
 {
 	int userns_fd, mnt_fd;
 	size_t i;
+	unsigned long direct_calls = 0;
 	/* op_type is copied from shared memory (child->op_type via
 	 * ctx->op_type) and can be scribbled by a sibling poisoned-arena
 	 * write; bounds-check before indexing the NR_CHILD_OP_TYPES-sized
@@ -554,21 +563,21 @@ static void iter_one(int op_type, void *scratch_buf, unsigned long scratch_cap)
 
 	userns_fd = build_carrier_userns();
 	if (userns_fd < 0)
-		return;
+		return direct_calls;
 
-	mnt_fd = build_detached_tmpfs();
+	mnt_fd = build_detached_tmpfs(&direct_calls);
 	if (mnt_fd < 0) {
 		close(userns_fd);
-		return;
+		return direct_calls;
 	}
 
-	if (install_idmap(mnt_fd, userns_fd) < 0) {
+	if (install_idmap(mnt_fd, userns_fd, &direct_calls) < 0) {
 		__atomic_add_fetch(
 			&shm->stats.statmount_idmap.setattr_fail,
 			1, __ATOMIC_RELAXED);
 		close(mnt_fd);
 		close(userns_fd);
-		return;
+		return direct_calls;
 	}
 	__atomic_add_fetch(&shm->stats.statmount_idmap.setattr_ok,
 			   1, __ATOMIC_RELAXED);
@@ -594,11 +603,12 @@ static void iter_one(int op_type, void *scratch_buf, unsigned long scratch_cap)
 
 		if (sz > scratch_cap)
 			sz = scratch_cap;
-		issue_one_statmount(mnt_fd, scratch_buf, sz);
+		issue_one_statmount(mnt_fd, scratch_buf, sz, &direct_calls);
 	}
 
 	close(mnt_fd);
 	close(userns_fd);
+	return direct_calls;
 }
 
 /*
@@ -627,9 +637,15 @@ static int statmount_idmap_loop_in_ns(void *arg)
 	struct statmount_idmap_ctx *ctx = (struct statmount_idmap_ctx *)arg;
 	struct timespec t_outer;
 	unsigned int i;
+	unsigned long direct_calls = 0;
+	const enum child_op_type op = (enum child_op_type)ctx->op_type;
+	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	/* MS_PRIVATE on / so anything we mount cannot propagate even
-	 * if the host's mount namespace had MS_SHARED propagation. */
+	 * if the host's mount namespace had MS_SHARED propagation.
+	 * Propagation-isolation plumbing, not fuzzed work -- not counted
+	 * in direct_calls (same discipline as futex-storm's barrier/wait
+	 * exclusions). */
 	(void)trinity_raw_syscall(__NR_mount, NULL, "/", NULL,
 				  MS_REC | MS_PRIVATE, NULL);
 
@@ -642,8 +658,12 @@ static int statmount_idmap_loop_in_ns(void *arg)
 		if (budget_elapsed_ns(&t_outer,
 				      STATMOUNT_IDMAP_WALL_CAP_NS))
 			break;
-		iter_one(ctx->op_type, ctx->scratch_buf, ctx->scratch_cap);
+		direct_calls += iter_one(ctx->op_type, ctx->scratch_buf,
+					 ctx->scratch_cap);
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return 0;
 }
