@@ -74,6 +74,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "jitter.h"
 #include "random.h"
@@ -133,45 +134,49 @@ static unsigned int pick_burst(void)
  * runs.  Each successful close decrements the per-class success count
  * (fail-only counter would be misleading: a failed close on EBADF means
  * the fd was already gone, not that the slab pressure was wasted). */
-static void free_fds_interleaved(int *fds, unsigned int n)
+static unsigned int free_fds_interleaved(int *fds, unsigned int n)
 {
 	unsigned int i;
+	unsigned int closed = 0;
 
 	for (i = 0; i < n; i += 2) {
 		if (fds[i] >= 0) {
 			close(fds[i]);
 			fds[i] = -1;
+			closed++;
 		}
 	}
 	for (i = 1; i < n; i += 2) {
 		if (fds[i] >= 0) {
 			close(fds[i]);
 			fds[i] = -1;
+			closed++;
 		}
 	}
+	return closed;
 }
 
-static void burst_timerfd(unsigned int n)
+static unsigned long burst_timerfd(unsigned int n)
 {
 	int fds[SLAB_THRASH_MAX];
 	unsigned int i;
 
 	for (i = 0; i < n; i++)
 		fds[i] = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
-	free_fds_interleaved(fds, n);
+	return (unsigned long)n + free_fds_interleaved(fds, n);
 }
 
-static void burst_eventfd(unsigned int n)
+static unsigned long burst_eventfd(unsigned int n)
 {
 	int fds[SLAB_THRASH_MAX];
 	unsigned int i;
 
 	for (i = 0; i < n; i++)
 		fds[i] = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-	free_fds_interleaved(fds, n);
+	return (unsigned long)n + free_fds_interleaved(fds, n);
 }
 
-static void burst_signalfd(unsigned int n)
+static unsigned long burst_signalfd(unsigned int n)
 {
 	int fds[SLAB_THRASH_MAX];
 	sigset_t ss;
@@ -189,10 +194,10 @@ static void burst_signalfd(unsigned int n)
 
 	for (i = 0; i < n; i++)
 		fds[i] = signalfd(-1, &ss, SFD_NONBLOCK | SFD_CLOEXEC);
-	free_fds_interleaved(fds, n);
+	return (unsigned long)n + free_fds_interleaved(fds, n);
 }
 
-static void burst_inotify_watches(unsigned int n)
+static unsigned long burst_inotify_watches(unsigned int n)
 {
 	char path[PATH_MAX + 32];
 	int ifd;
@@ -202,7 +207,7 @@ static void burst_inotify_watches(unsigned int n)
 
 	ifd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 	if (ifd < 0)
-		return;
+		return 1UL;
 
 	/* Watch the trinity tmpdir; it always exists for the running
 	 * fuzzer.  inotify_add_watch on the same path twice updates the
@@ -236,13 +241,15 @@ static void burst_inotify_watches(unsigned int n)
 	 * is what we want: it walks the per-fsnotify_group mark list and
 	 * frees every fsnotify_mark slab object back to the cache. */
 	close(ifd);
+	return 1UL + (unsigned long)n + 1UL;
 }
 
-static void burst_dentry(unsigned int n)
+static unsigned long burst_dentry(unsigned int n)
 {
 	int fds[SLAB_THRASH_MAX];
 	char path[PATH_MAX + 64];
 	unsigned int i;
+	unsigned long calls = 0;
 	pid_t pid = mypid();
 
 	/* Each open of a fresh path allocates a dentry + inode pair on
@@ -253,18 +260,22 @@ static void burst_dentry(unsigned int n)
 	for (i = 0; i < n; i++) {
 		fds[i] = openat(AT_FDCWD, trinity_tmpdir_abs(),
 				O_TMPFILE | O_RDWR | O_CLOEXEC, 0600);
+		calls++;
 		if (fds[i] >= 0)
 			continue;
 		snprintf(path, sizeof(path), "%s/scthrash-%d-%u",
 			 trinity_tmpdir_abs(), (int)pid, i);
 		fds[i] = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600);
-		if (fds[i] >= 0)
+		calls++;
+		if (fds[i] >= 0) {
 			(void)unlink(path);
+			calls++;
+		}
 	}
-	free_fds_interleaved(fds, n);
+	return calls + free_fds_interleaved(fds, n);
 }
 
-static void burst_inode_cache(unsigned int n)
+static unsigned long burst_inode_cache(unsigned int n)
 {
 	int fds[SLAB_THRASH_MAX];
 	char name[32];
@@ -278,14 +289,15 @@ static void burst_inode_cache(unsigned int n)
 			 (unsigned int)mypid(), i);
 		fds[i] = (int)trinity_raw_syscall(__NR_memfd_create, name, 0U);
 	}
-	free_fds_interleaved(fds, n);
+	return (unsigned long)n + free_fds_interleaved(fds, n);
 }
 
-static void burst_files_cache(unsigned int n)
+static unsigned long burst_files_cache(unsigned int n)
 {
 	int fds[SLAB_THRASH_MAX];
 	int seed_fd;
 	unsigned int i;
+	unsigned int freed;
 
 	/* dup() bursts force the per-process fdtable to grow when it
 	 * exhausts its current bucket.  The growth path goes through
@@ -297,27 +309,29 @@ static void burst_files_cache(unsigned int n)
 	if (seed_fd < 0) {
 		for (i = 0; i < n; i++)
 			fds[i] = -1;
-		return;
+		return 1UL;
 	}
 
 	for (i = 0; i < n; i++)
 		fds[i] = dup(seed_fd);
 
-	free_fds_interleaved(fds, n);
+	freed = free_fds_interleaved(fds, n);
 	close(seed_fd);
+	return 1UL + (unsigned long)n + freed + 1UL;
 }
 
-static void run_burst(enum slab_target t, unsigned int n)
+static unsigned long run_burst(enum slab_target t, unsigned int n)
 {
 	switch (t) {
-	case SLAB_KMALLOC_32:	burst_timerfd(n);		break;
-	case SLAB_KMALLOC_64:	burst_eventfd(n);		break;
-	case SLAB_KMALLOC_192:	burst_signalfd(n);		break;
-	case SLAB_KMALLOC_256:	burst_inotify_watches(n);	break;
-	case SLAB_DENTRY:	burst_dentry(n);		break;
-	case SLAB_INODE_CACHE:	burst_inode_cache(n);		break;
-	case SLAB_FILES_CACHE:	burst_files_cache(n);		break;
+	case SLAB_KMALLOC_32:	return burst_timerfd(n);
+	case SLAB_KMALLOC_64:	return burst_eventfd(n);
+	case SLAB_KMALLOC_192:	return burst_signalfd(n);
+	case SLAB_KMALLOC_256:	return burst_inotify_watches(n);
+	case SLAB_DENTRY:	return burst_dentry(n);
+	case SLAB_INODE_CACHE:	return burst_inode_cache(n);
+	case SLAB_FILES_CACHE:	return burst_files_cache(n);
 	}
+	return 0;
 }
 
 const char *slab_target_name(unsigned int idx)
@@ -338,6 +352,7 @@ bool slab_cache_thrash(struct childdata *child)
 {
 	enum slab_target t;
 	unsigned int n;
+	unsigned long direct_calls;
 
 	t = (enum slab_target)rnd_modulo_u32(NR_SLAB_TARGETS);
 	n = pick_burst();
@@ -360,7 +375,10 @@ bool slab_cache_thrash(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
-	run_burst(t, n);
+	direct_calls = run_burst(t, n);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
