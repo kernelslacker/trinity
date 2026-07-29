@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <string.h>
 
+#include "debug.h"
 #include "isolation.h"
 #include "params.h"
 #include "shm.h"
@@ -121,6 +122,14 @@ static int privnet_bring_link_up(int fd, int ifindex)
 	nlh->nlmsg_type  = RTM_NEWLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 	nlh->nlmsg_len   = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+	/*
+	 * Header-only message: nlmsg_len is compile-time bounded by the
+	 * ifinfomsg layout, but assert here so a future edit that grows
+	 * the header region (adding attributes, switching to a larger
+	 * base struct) trips at the first run instead of silently
+	 * clobbering the caller's stack.
+	 */
+	BUG_ON(nlh->nlmsg_len > sizeof(buf));
 
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
@@ -168,15 +177,25 @@ static int privnet_add_loopback_addr(int fd, int ifindex, int family,
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifa));
 
+	/*
+	 * Defensive bounds: today's callers pass AF_INET (4) or AF_INET6
+	 * (16) so the two IFA_LOCAL/IFA_ADDRESS attributes fit comfortably
+	 * inside buf[128] alongside the nlmsg + ifaddrmsg headers.  A
+	 * future family (or any edit that grows addrlen) would silently
+	 * overflow the stack without these asserts.  Check before each
+	 * memcpy so the abort fires before the write, not after.
+	 */
 	nla = (struct nlattr *)(buf + off);
 	nla->nla_type = IFA_LOCAL;
 	nla->nla_len  = (unsigned short)(NLA_HDRLEN + addrlen);
+	BUG_ON(off + NLA_HDRLEN + addrlen > sizeof(buf));
 	memcpy(buf + off + NLA_HDRLEN, addr, addrlen);
 	off += NLA_ALIGN(nla->nla_len);
 
 	nla = (struct nlattr *)(buf + off);
 	nla->nla_type = IFA_ADDRESS;
 	nla->nla_len  = (unsigned short)(NLA_HDRLEN + addrlen);
+	BUG_ON(off + NLA_HDRLEN + addrlen > sizeof(buf));
 	memcpy(buf + off + NLA_HDRLEN, addr, addrlen);
 	off += NLA_ALIGN(nla->nla_len);
 
