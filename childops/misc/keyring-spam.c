@@ -175,9 +175,9 @@ static void ring_drop(int32_t *ring, int32_t serial)
  * key_update is a narrower path and we want allocation pressure here.
  * -EDQUOT / -EPERM / -ENOSYS are expected and counted; the call still
  * exercised the per-op validator. */
-static void keyring_spam_iter_add_key(int32_t *live,
-				      const unsigned char *payload,
-				      unsigned int iter, int anchor)
+static unsigned int keyring_spam_iter_add_key(int32_t *live,
+					      const unsigned char *payload,
+					      unsigned int iter, int anchor)
 {
 	char desc[64];
 	long rc;
@@ -213,6 +213,7 @@ static void keyring_spam_iter_add_key(int32_t *live,
 	} else {
 		ring_insert(live, (int32_t) rc);
 	}
+	return 1;
 }
 
 /* OP_READ: pull payload bytes out of a live serial via KEYCTL_READ.
@@ -220,7 +221,7 @@ static void keyring_spam_iter_add_key(int32_t *live,
  * flips the opcode negative to exercise the keyctl op dispatcher's
  * out-of-range path; the kernel returns -ENOTTY/-EOPNOTSUPP there and
  * we count it as expected. */
-static void keyring_spam_iter_read(int32_t *live)
+static unsigned int keyring_spam_iter_read(int32_t *live)
 {
 	unsigned char buf[64];
 	int32_t serial;
@@ -228,7 +229,7 @@ static void keyring_spam_iter_read(int32_t *live)
 
 	serial = ring_pick(live);
 	if (serial == 0)
-		return;
+		return 0;
 	rc = trinity_raw_syscall(__NR_keyctl,
 		     (unsigned long) RAND_NEGATIVE_OR(KEYCTL_READ),
 		     (unsigned long) serial,
@@ -237,12 +238,13 @@ static void keyring_spam_iter_read(int32_t *live)
 	if (rc < 0)
 		__atomic_add_fetch(&shm->stats.keyring_spam.failed,
 				   1, __ATOMIC_RELAXED);
+	return 1;
 }
 
 /* OP_DESCRIBE: KEYCTL_DESCRIBE drives the type->describe path with a
  * generous 128-byte buffer (the kernel returns "type;uid;gid;perm;desc"
  * truncated to fit).  Skips when the ring is empty. */
-static void keyring_spam_iter_describe(int32_t *live)
+static unsigned int keyring_spam_iter_describe(int32_t *live)
 {
 	char buf[128];
 	int32_t serial;
@@ -250,7 +252,7 @@ static void keyring_spam_iter_describe(int32_t *live)
 
 	serial = ring_pick(live);
 	if (serial == 0)
-		return;
+		return 0;
 	rc = trinity_raw_syscall(__NR_keyctl, (unsigned long) KEYCTL_DESCRIBE,
 		     (unsigned long) serial,
 		     (unsigned long) buf,
@@ -258,39 +260,41 @@ static void keyring_spam_iter_describe(int32_t *live)
 	if (rc < 0)
 		__atomic_add_fetch(&shm->stats.keyring_spam.failed,
 				   1, __ATOMIC_RELAXED);
+	return 1;
 }
 
 /* OP_REVOKE: mark a serial revoked.  Deliberately kept in the ring
  * afterwards -- revoked keys are still queryable as -EKEYREVOKED, so
  * subsequent READ/DESCRIBE iterations exercise the revoked-key validate
  * path. */
-static void keyring_spam_iter_revoke(int32_t *live)
+static unsigned int keyring_spam_iter_revoke(int32_t *live)
 {
 	int32_t serial;
 	long rc;
 
 	serial = ring_pick(live);
 	if (serial == 0)
-		return;
+		return 0;
 	rc = trinity_raw_syscall(__NR_keyctl, (unsigned long) KEYCTL_REVOKE,
 		     (unsigned long) serial, 0UL, 0UL, 0UL);
 	if (rc < 0)
 		__atomic_add_fetch(&shm->stats.keyring_spam.failed,
 				   1, __ATOMIC_RELAXED);
+	return 1;
 }
 
 /* OP_INVALIDATE: schedule the key for GC.  Unlike revoke, an
  * invalidated serial becomes unusable immediately, so on success we
  * drop it from the ring -- otherwise subsequent iterations would burn
  * budget on guaranteed -ENOKEY follow-ups. */
-static void keyring_spam_iter_invalidate(int32_t *live)
+static unsigned int keyring_spam_iter_invalidate(int32_t *live)
 {
 	int32_t serial;
 	long rc;
 
 	serial = ring_pick(live);
 	if (serial == 0)
-		return;
+		return 0;
 	rc = trinity_raw_syscall(__NR_keyctl,
 		     (unsigned long) KEYCTL_INVALIDATE,
 		     (unsigned long) serial, 0UL, 0UL, 0UL);
@@ -300,6 +304,7 @@ static void keyring_spam_iter_invalidate(int32_t *live)
 	} else {
 		ring_drop(live, serial);
 	}
+	return 1;
 }
 
 /* OP_UNLINK: detach a serial from the picked anchor keyring.  We do
@@ -307,14 +312,14 @@ static void keyring_spam_iter_invalidate(int32_t *live)
  * the key's parent -- the kernel returns -ENOENT in that case, which
  * still exercises keyring_search_aux on the wrong keyring (a useful
  * negative path).  Successful unlinks drop the serial from the ring. */
-static void keyring_spam_iter_unlink(int32_t *live, int anchor)
+static unsigned int keyring_spam_iter_unlink(int32_t *live, int anchor)
 {
 	int32_t serial;
 	long rc;
 
 	serial = ring_pick(live);
 	if (serial == 0)
-		return;
+		return 0;
 	rc = trinity_raw_syscall(__NR_keyctl, (unsigned long) KEYCTL_UNLINK,
 		     (unsigned long) serial,
 		     (unsigned long) anchor, 0UL, 0UL);
@@ -324,6 +329,7 @@ static void keyring_spam_iter_unlink(int32_t *live, int anchor)
 	} else {
 		ring_drop(live, serial);
 	}
+	return 1;
 }
 
 bool keyring_spam(struct childdata *child)
@@ -333,6 +339,13 @@ bool keyring_spam(struct childdata *child)
 	unsigned int iter;
 	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned char payload[KEYRING_PAYLOAD_BYTES];
+	/* Local direct-syscall tally.  Each keyring_spam_iter_* helper
+	 * returns 1 when it issued its add_key/keyctl call and 0 when the
+	 * live-ring was empty and the per-key op skipped.  Published once
+	 * to shm at op-exit via childop_direct_syscalls_add() so the hot
+	 * inner loop pays one atomic add per invocation instead of per
+	 * syscall (mirrors pipe_thrash / futex_storm). */
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.keyring_spam.runs, 1, __ATOMIC_RELAXED);
 
@@ -369,27 +382,27 @@ bool keyring_spam(struct childdata *child)
 
 		switch (op) {
 		case OP_ADD_KEY:
-			keyring_spam_iter_add_key(live, payload, iter, anchor);
+			direct_calls += keyring_spam_iter_add_key(live, payload, iter, anchor);
 			break;
 
 		case OP_READ:
-			keyring_spam_iter_read(live);
+			direct_calls += keyring_spam_iter_read(live);
 			break;
 
 		case OP_DESCRIBE:
-			keyring_spam_iter_describe(live);
+			direct_calls += keyring_spam_iter_describe(live);
 			break;
 
 		case OP_REVOKE:
-			keyring_spam_iter_revoke(live);
+			direct_calls += keyring_spam_iter_revoke(live);
 			break;
 
 		case OP_INVALIDATE:
-			keyring_spam_iter_invalidate(live);
+			direct_calls += keyring_spam_iter_invalidate(live);
 			break;
 
 		case OP_UNLINK:
-			keyring_spam_iter_unlink(live, anchor);
+			direct_calls += keyring_spam_iter_unlink(live, anchor);
 			break;
 
 		case NR_KEYRING_OPS:
@@ -399,6 +412,9 @@ bool keyring_spam(struct childdata *child)
 		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op_type, direct_calls);
 
 	return true;
 }
