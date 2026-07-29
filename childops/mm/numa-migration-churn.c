@@ -508,5 +508,8 @@ bool numa_migration_churn(struct childdata *child)
 	 * MPOL_DEFAULT, not whatever sticky mode we last set. */
 	(void) sys_set_mempolicy(MPOL_DEFAULT, NULL, 0);
 
+	if (valid_op)
+		childop_direct_syscalls_add(op, 4);
+
 	return true;
 }
