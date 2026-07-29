@@ -29,6 +29,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "random.h"
 #include "rnd.h"
@@ -257,6 +258,12 @@ bool perf_event_chains(struct childdata *child)
 	int member_fds[MAX_GROUP_MEMBERS - 1];
 	unsigned int nr_members;
 	unsigned int i;
+	/* Local direct-syscall tally.  Bumped once per do_perf_event_open
+	 * attempt (leader + each member, success or failure) and published
+	 * once at op-exit via childop_direct_syscalls_add() so the hot
+	 * path pays one atomic add per invocation instead of per-syscall,
+	 * mirroring the pipe-thrash reporter pattern. */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -282,8 +289,9 @@ bool perf_event_chains(struct childdata *child)
 
 	/* Open the group leader: group_fd=-1 makes this the leader. */
 	leader_fd = (int)do_perf_event_open(&attr, 0, -1, -1, 0UL);
+	direct_calls++;
 	if (leader_fd < 0)
-		return true;
+		goto publish;
 
 	__atomic_add_fetch(&shm->stats.perf_chains.groups_created, 1,
 			   __ATOMIC_RELAXED);
@@ -305,6 +313,7 @@ bool perf_event_chains(struct childdata *child)
 		attr.pinned = 0;
 		member_fds[i] = (int)do_perf_event_open(&attr, 0, -1,
 							  leader_fd, 0UL);
+		direct_calls++;
 		if (member_fds[i] < 0) {
 			nr_members = i;
 			break;
@@ -319,6 +328,10 @@ bool perf_event_chains(struct childdata *child)
 	for (i = 0; i < nr_members; i++)
 		close(member_fds[i]);
 	close(leader_fd);
+
+publish:
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
