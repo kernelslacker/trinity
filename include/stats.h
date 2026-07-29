@@ -917,6 +917,23 @@ struct stats_s {
 	 * fds means find_ioctl_group() arbitration isn't picking btrfs_grp. */
 	unsigned long btrfs_ioctls_dispatched;
 
+	/* ioctl group-match rate accounting.  Bumped from sanitise_ioctl()
+	 * in syscalls/ioctl.c to surface whether the ~62 registered ioctl
+	 * groups (~1864 gen rows) are actually being reached for fd-derived
+	 * picks (99% of the time), or if find_ioctl_group() is routinely
+	 * falling through to the "make some shit up" a3-junk branch.
+	 *  - ioctl_group_match:  fd-derived group found and dispatched.
+	 *  - ioctl_group_miss:   fd-derived lookup returned NULL; fell
+	 *                        through to the a3-junk fallback switch.
+	 *  - ioctl_group_random: the 1% get_random_ioctl_group() branch
+	 *                        was taken (independent of match/miss).
+	 * A low match/(match+miss) ratio means most fds don't map to any
+	 * registered group; a starved random count means the 1% branch is
+	 * being under-sampled. */
+	unsigned long ioctl_group_match;
+	unsigned long ioctl_group_miss;
+	unsigned long ioctl_group_random;
+
 	/* nl80211_churn childop counters (cfg80211 state-machine fuzz).
 	 * See stats/subsys/nl80211.h. */
 	struct nl80211_stats nl80211;
