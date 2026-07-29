@@ -72,6 +72,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
 #include "jitter.h"
@@ -474,6 +475,18 @@ bool pidfd_storm(struct childdata *child)
 	struct pidfd_slot slots[NR_CHILDREN];
 	unsigned int active;
 	unsigned long iters = 0;
+	/* Local direct-syscall tally.  Three phases issue pidfd_* calls
+	 * that bypass random_syscall(): spawn does one pidfd_open per
+	 * live slot, drive does one pidfd_send_signal or pidfd_getfd
+	 * per inner iteration (already summed into `iters`), and reap
+	 * does one pidfd_send_signal(SIGKILL) per slot whose pidfd_open
+	 * succeeded.  The prctl(PR_SET_PDEATHSIG) in the pause-child
+	 * body is harness plumbing, not fuzzed work, so it is not
+	 * counted.  Published once via childop_direct_syscalls_add() at
+	 * op-exit so the hot path pays one atomic add per invocation
+	 * instead of per-syscall. */
+	unsigned long direct_calls = 0;
+	unsigned int i;
 
 	__atomic_add_fetch(&shm->stats.pidfd_storm.runs, 1, __ATOMIC_RELAXED);
 
@@ -490,6 +503,11 @@ bool pidfd_storm(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
+	/* Every populated slot had exactly one pidfd_open attempted in
+	 * spawn (success or failure -- a failed pidfd_open is still a
+	 * real kernel round-trip and belongs on the counter). */
+	direct_calls += active;
+
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
@@ -498,7 +516,21 @@ bool pidfd_storm(struct childdata *child)
 	}
 	pidfd_storm_iter_drive(slots, active, JITTER_RANGE(MAX_ITERATIONS), &iters);
 	__atomic_add_fetch(&shm->stats.pidfd_storm.iters, iters, __ATOMIC_RELAXED);
+	direct_calls += iters;
+
+	/* Reap issues one pidfd_send_signal(SIGKILL) per slot whose
+	 * pidfd_open succeeded; the pidfd<0 fallback uses kill(2), which
+	 * is not a pidfd_* syscall and is not counted here.  Tally
+	 * before reap so we don't have to thread an out-param through
+	 * the teardown helper. */
+	for (i = 0; i < active; i++) {
+		if (slots[i].pidfd >= 0)
+			direct_calls++;
+	}
 	pidfd_storm_iter_reap(slots, active);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
