@@ -85,6 +85,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "kernel/mount.h"
 #include "pids.h"
 #include "random.h"
@@ -224,7 +225,12 @@ static void fsopen_path_churn(int mnt_fd, unsigned long seq)
 	}
 }
 
-static void fsopen_mount_cycle(void)
+/* Returns the number of trinity_raw_syscall() invocations issued so the
+ * caller can publish them once via childop_direct_syscalls_add(): fsopen
+ * always fires; the two pre-CREATE fsconfig arms are RAND_BOOL-gated;
+ * CREATE and fsmount fire iff the preceding step succeeded; move_mount
+ * fires iff the 1-in-4 draw plus the mkdir both succeed. */
+static unsigned long fsopen_mount_cycle(void)
 {
 	const char *type;
 	int fs_fd;
@@ -233,6 +239,7 @@ static void fsopen_mount_cycle(void)
 	unsigned int fsmount_flags;
 	unsigned int attr_flags = 0;
 	unsigned long seq;
+	unsigned long direct_calls = 0;
 	pid_t pid;
 	char path[PATH_MAX + 64];
 	bool moved = false;
@@ -241,30 +248,36 @@ static void fsopen_mount_cycle(void)
 	fsopen_flags = RAND_BOOL() ? FSOPEN_CLOEXEC : 0U;
 
 	fs_fd = (int)trinity_raw_syscall(__NR_fsopen, type, fsopen_flags);
+	direct_calls++;
 	if (fs_fd < 0) {
 		__atomic_add_fetch(&shm->stats.mount_churn.failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return direct_calls;
 	}
 
 	/* Exercise the per-parameter fsconfig() arms before the CREATE.
 	 * Most fstypes will reject these key strings -- the point is to
 	 * land in the fs_parser dispatch, not to succeed. */
-	if (RAND_BOOL())
+	if (RAND_BOOL()) {
 		(void)trinity_raw_syscall(__NR_fsconfig, fs_fd,
 					  FSCONFIG_SET_STRING, "source",
 					  type, 0);
-	if (RAND_BOOL())
+		direct_calls++;
+	}
+	if (RAND_BOOL()) {
 		(void)trinity_raw_syscall(__NR_fsconfig, fs_fd,
 					  FSCONFIG_SET_FLAG, "ro",
 					  NULL, 0);
+		direct_calls++;
+	}
 
+	direct_calls++;
 	if (trinity_raw_syscall(__NR_fsconfig, fs_fd,
 				FSCONFIG_CMD_CREATE, NULL, NULL, 0) != 0) {
 		__atomic_add_fetch(&shm->stats.mount_churn.failed,
 				   1, __ATOMIC_RELAXED);
 		close(fs_fd);
-		return;
+		return direct_calls;
 	}
 
 	fsmount_flags = RAND_BOOL() ? FSMOUNT_CLOEXEC : 0U;
@@ -279,11 +292,12 @@ static void fsopen_mount_cycle(void)
 
 	mnt_fd = (int)trinity_raw_syscall(__NR_fsmount, fs_fd,
 					  fsmount_flags, attr_flags);
+	direct_calls++;
 	close(fs_fd);
 	if (mnt_fd < 0) {
 		__atomic_add_fetch(&shm->stats.mount_churn.failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return direct_calls;
 	}
 
 	__atomic_add_fetch(&shm->stats.mount_churn.mounts,
@@ -302,11 +316,13 @@ static void fsopen_mount_cycle(void)
 		(void)snprintf(path, sizeof(path),
 			       "%s/trinity-fsmount-%d-%lu",
 			       trinity_tmpdir_abs(), (int)pid, seq);
-		if (mkdir(path, 0755) == 0 &&
-		    trinity_raw_syscall(__NR_move_mount, mnt_fd, "",
-					AT_FDCWD, path,
-					MOVE_MOUNT_F_EMPTY_PATH) == 0)
-			moved = true;
+		if (mkdir(path, 0755) == 0) {
+			direct_calls++;
+			if (trinity_raw_syscall(__NR_move_mount, mnt_fd, "",
+						AT_FDCWD, path,
+						MOVE_MOUNT_F_EMPTY_PATH) == 0)
+				moved = true;
+		}
 	}
 
 	fsopen_path_churn(mnt_fd, seq);
@@ -319,6 +335,7 @@ static void fsopen_mount_cycle(void)
 	}
 
 	close(mnt_fd);
+	return direct_calls;
 }
 #endif /* HAVE_FSOPEN_QUARTET */
 
@@ -348,6 +365,11 @@ static int mount_churn_iter(void *arg)
 	unsigned int i;
 	unsigned int pick_modulo;
 	unsigned int fsopen_idx;
+	/* Only the new-mount-API path issues trinity_raw_syscall() -- the
+	 * legacy mount()/umount2() below are libc wrappers and outside the
+	 * direct-syscall accounting.  Accumulated across cycles and drained
+	 * once at return so the inner loop pays no per-syscall atomic. */
+	unsigned long direct_calls = 0;
 	pid_t pid = mypid();
 
 	(void)mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
@@ -377,7 +399,7 @@ static int mount_churn_iter(void *arg)
 
 #ifdef HAVE_FSOPEN_QUARTET
 		if (pick == fsopen_idx) {
-			fsopen_mount_cycle();
+			direct_calls += fsopen_mount_cycle();
 			continue;
 		}
 #endif
@@ -462,6 +484,9 @@ static int mount_churn_iter(void *arg)
 
 		(void)rmdir(path);
 	}
+
+	if (valid_op && direct_calls > 0)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return 0;
 }
