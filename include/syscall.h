@@ -544,6 +544,17 @@ struct syscallentry {
 	const int rettype;
 
 	/*
+	 * Static hint that this op-multiplexed entry's .sanitise hook may
+	 * publish rec->rettype = RET_<X> for at least one cmd arm, even
+	 * though the static entry->rettype is RET_NONE (bpf, seccomp).
+	 * Consumed by whitelist walkers that have no rec to feed to
+	 * effective_rettype (persist/minicorpus-xprop.c) so a per-op fd
+	 * publisher still lands in the fd-source whitelist.  Default 0
+	 * (RET_NONE) leaves non-op-multiplexed entries unaffected.
+	 */
+	const int rettype_publish_hint;
+
+	/*
 	 * Object type for the fd this syscall returns, or OBJ_NONE if
 	 * the syscall does not return a trackable fd.  Set once in the
 	 * syscallentry; the generic post-hook in handle_syscall_ret()
@@ -730,6 +741,41 @@ static inline struct syscall_runtime *syscall_rt(const struct syscallentry *entr
  * syscall.c that drives the table-driven generic return-bound validator;
  * keep in sync when adding a new RET_* above. */
 #define RET_LAST		RET_ADDRESS
+
+/*
+ * Source of truth for the per-syscall return-type contract consumed by
+ * dispatch/syscall-*.c (reject_corrupt_retfd, RZS gate, validate_ret_bound)
+ * and by non-dispatch consumers that need to reason about the effective
+ * rettype (random_syscall/fd-group.c fd accounting, persist/minicorpus-
+ * xprop.c fd-source whitelist).
+ *
+ * Prefer entry->rettype: it is stamped once at table-init time in
+ * copy_syscall_table() and never rewritten after, so a sibling stomp
+ * targeting per-rec slots in shm cannot drift it.  rec->rettype lives
+ * inside struct syscallrecord alongside rec->retval / rec->errno_post,
+ * is rewritten on every dispatch from generate_syscall_args(), and is
+ * directly exposed to the same value-result sibling-stomp class the
+ * rzs/retfd validators are meant to catch against rec->retval.  Sourcing
+ * from entry sidesteps that class for every syscall that declares a
+ * static rettype.
+ *
+ * Op-multiplexed entries (fcntl, futex, bpf, seccomp) leave entry->rettype
+ * unset (RET_NONE) and rely on their .sanitise hook to publish rec->rettype
+ * per cmd at dispatch time.  Fall through to rec for those so the per-cmd
+ * contract still drives the gate.  Callers with no rec (build-time whitelist
+ * walkers) pass NULL and get RET_NONE for op-multiplexed entries -- they
+ * must consult entry->rettype_publish_hint to still recognise those entries
+ * as potential dynamic RET_FD sources.
+ */
+static inline int effective_rettype(const struct syscallentry *entry,
+				    const struct syscallrecord *rec)
+{
+	if (entry->rettype != RET_NONE)
+		return entry->rettype;
+	if (rec == NULL)
+		return RET_NONE;
+	return rec->rettype;
+}
 
 #define GROUP_NONE	0
 #define GROUP_VM	1

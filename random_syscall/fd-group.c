@@ -80,7 +80,12 @@ void account_fd_and_group(struct childdata *child,
 	enum frontier_group_antilock_mode antilock_mode;
 
 	if (rec->retval != -1UL) {
-		if (entry->rettype == RET_FD) {
+		/* effective_rettype falls through to rec->rettype for op-
+		 * multiplexed entries (bpf, seccomp, fcntl, futex) whose
+		 * static entry->rettype is RET_NONE and whose per-cmd sanitise
+		 * publishes RET_FD only on fd-returning arms.  Static-contract
+		 * entries still short-circuit on entry->rettype. */
+		if (effective_rettype(entry, rec) == RET_FD) {
 			child->fd_created++;
 			if (entry->group < NR_GROUPS)
 				child->fd_created_by_group[entry->group]++;
@@ -135,7 +140,8 @@ void account_fd_and_group(struct childdata *child,
 		 * group bound check needed -- the bump tracks any fd
 		 * produced inside the current pin, regardless of which
 		 * group that pin is. */
-		if (rec->retval != -1UL && entry->rettype == RET_FD &&
+		if (rec->retval != -1UL &&
+		    effective_rettype(entry, rec) == RET_FD &&
 		    child->group_fd_created_in_streak != UINT_MAX)
 			child->group_fd_created_in_streak++;
 		/* Coverage watermark advance: tracks the most recent

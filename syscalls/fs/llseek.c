@@ -85,6 +85,7 @@ struct syscallentry syscall_llseek = {
 	.argtype = { [0] = ARG_FD, [3] = ARG_ADDRESS, [4] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "offset_high", [2] = "offset_low", [3] = "result", [4] = "origin" },
 	.arg_params[4].list = ARGLIST(llseek_origins),
+	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_llseek,
 	.post = post_llseek,
 	.group = GROUP_VFS,

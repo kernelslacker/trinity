@@ -153,6 +153,7 @@ struct syscallentry syscall_sync_file_range2 = {
 	.sanitise = sanitise_sync_file_range,
 	.argtype = { [0] = ARG_FD, [3] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "flags", [2] = "offset", [3] = "nbytes" },
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 };
