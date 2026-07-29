@@ -42,6 +42,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "pids.h"
 #include "childops-util.h"
@@ -536,6 +537,24 @@ bool futex_storm(struct childdata *child)
 	}
 	futex_storm_iter_drive_burst(&ctx);
 	futex_storm_iter_reap(&ctx);
+
+	/* Publish the invocation's direct-syscall load: one raw futex()
+	 * per worker iteration (already summed into ctx.s->iters by the
+	 * per-worker bump in inner_worker() and drained by reap()), plus
+	 * the NR_FUTEX_WORDS broadcast wakes drive_burst issues in the
+	 * parent at shutdown.  ctx.s is still mapped here -- teardown is
+	 * the next call.  Skip on the spawn-shortfall goto path
+	 * (unreachable via this branch; that goto lands past the label
+	 * below).  Gated on valid_op to match the surrounding per-op
+	 * stats bumps.  Single atomic add per invocation. */
+	if (valid_op) {
+		unsigned long direct_calls;
+
+		direct_calls = (unsigned long)NR_FUTEX_WORDS;
+		direct_calls += __atomic_load_n(&ctx.s->iters,
+						__ATOMIC_RELAXED);
+		childop_direct_syscalls_add(op, direct_calls);
+	}
 
 out:
 	futex_storm_iter_teardown(&ctx);
