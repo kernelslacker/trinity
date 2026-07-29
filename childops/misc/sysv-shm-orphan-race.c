@@ -637,6 +637,20 @@ bool sysv_shm_orphan_race(struct childdata *child)
 	for (i = 0; i < outer_iters; i++)
 		iter_one(child);
 
+	/* Publish the invocation's direct-syscall site count: shmget,
+	 * shmat, shmdt, shmctl are the four fuzzed-work raw syscalls
+	 * issued via trinity_raw_syscall from the sibling/parent halves.
+	 * Race-harness plumbing (futex, prctl, getppid, clone3) is
+	 * excluded.  Single RELAXED add per invocation, gated on
+	 * valid_op to match the surrounding per-op stats bumps. */
+	{
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 4);
+	}
+
 	return true;
 }
 
