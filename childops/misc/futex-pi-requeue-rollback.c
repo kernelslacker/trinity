@@ -77,6 +77,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
 #include "random.h"
@@ -110,11 +111,22 @@ struct fpr_shared {
 	int consumer_nice;	/* nice value when policy is OTHER */
 	int requeue_nr_wake;	/* val (nr_wake) for CMP_REQUEUE_PI */
 	int requeue_nr;		/* val2 (nr_requeue) for CMP_REQUEUE_PI */
+	/* Direct-syscall accumulator: every raw_futex() bumps this
+	 * before entering the kernel, plus the consumer's sched_setattr
+	 * trinity_raw_syscall and the waiter's syscall(__NR_gettid).
+	 * Workers and parent all live in the same MAP_SHARED region so
+	 * the RELAXED atomic add serialises cross-process without
+	 * dragging the futex hot path onto a heavier ordering.  Drained
+	 * once by the orchestrator at reap-time and published via
+	 * childop_direct_syscalls_add(). */
+	unsigned long direct_syscalls;
 };
 
-static long raw_futex(int *uaddr, int op, unsigned int flag_or, int val,
+static long raw_futex(struct fpr_shared *s, int *uaddr, int op,
+		      unsigned int flag_or, int val,
 		      const struct timespec *ts, int *uaddr2, int val3)
 {
+	__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
 	return trinity_raw_syscall(__NR_futex, uaddr, op | (int)flag_or, val,
 				   ts, uaddr2, val3);
 }
@@ -137,7 +149,7 @@ static bool wait_for_state(struct fpr_shared *s, uint32_t at_least)
 			return true;
 		ts.tv_sec  = 0;
 		ts.tv_nsec = FPR_HANDSHAKE_WAIT_NS;
-		(void)raw_futex((int *)&s->state, FUTEX_WAIT, 0U, (int)cur,
+		(void)raw_futex(s, (int *)&s->state, FUTEX_WAIT, 0U, (int)cur,
 				&ts, NULL, 0);
 	}
 	return __atomic_load_n(&s->state, __ATOMIC_ACQUIRE) >= at_least;
@@ -146,7 +158,7 @@ static bool wait_for_state(struct fpr_shared *s, uint32_t at_least)
 static void publish_state(struct fpr_shared *s, uint32_t val)
 {
 	__atomic_store_n(&s->state, val, __ATOMIC_RELEASE);
-	(void)raw_futex((int *)&s->state, FUTEX_WAKE, 0U, INT_MAX, NULL, NULL, 0);
+	(void)raw_futex(s, (int *)&s->state, FUTEX_WAKE, 0U, INT_MAX, NULL, NULL, 0);
 }
 
 /*
@@ -163,7 +175,7 @@ static void fpr_owner_main(struct fpr_shared *s)
 	if (getppid() == 1)
 		_exit(0);
 
-	if (raw_futex(&s->futex_target_pi, FUTEX_LOCK_PI, flag, 0, NULL, NULL, 0) < 0)
+	if (raw_futex(s, &s->futex_target_pi, FUTEX_LOCK_PI, flag, 0, NULL, NULL, 0) < 0)
 		_exit(0);
 	publish_state(s, FPR_STATE_OWNER_READY);
 
@@ -172,7 +184,7 @@ static void fpr_owner_main(struct fpr_shared *s)
 	 * the exact chain shape rt_mutex_adjust_prio_chain has to walk when
 	 * the parent later requeues the waiter onto target_pi's rt_mutex.
 	 */
-	(void)raw_futex(&s->futex_chain_pi, FUTEX_LOCK_PI, flag, 0, NULL, NULL, 0);
+	(void)raw_futex(s, &s->futex_chain_pi, FUTEX_LOCK_PI, flag, 0, NULL, NULL, 0);
 	_exit(0);
 }
 
@@ -186,10 +198,11 @@ static void fpr_waiter_main(struct fpr_shared *s)
 	if (getppid() == 1)
 		_exit(0);
 
+	__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
 	__atomic_store_n(&s->waiter_tid, (pid_t)syscall(__NR_gettid),
 			 __ATOMIC_RELEASE);
 
-	if (raw_futex(&s->futex_chain_pi, FUTEX_LOCK_PI, flag, 0, NULL, NULL, 0) < 0)
+	if (raw_futex(s, &s->futex_chain_pi, FUTEX_LOCK_PI, flag, 0, NULL, NULL, 0) < 0)
 		_exit(0);
 	if (!wait_for_state(s, FPR_STATE_OWNER_READY))
 		_exit(0);
@@ -205,7 +218,7 @@ static void fpr_waiter_main(struct fpr_shared *s)
 
 	ts.tv_sec  = 0;
 	ts.tv_nsec = s->wait_timeout_ns;
-	(void)raw_futex(&s->futex_wait, FUTEX_WAIT_REQUEUE_PI, flag, val,
+	(void)raw_futex(s, &s->futex_wait, FUTEX_WAIT_REQUEUE_PI, flag, val,
 			&ts, &s->futex_target_pi, 0);
 	_exit(0);
 }
@@ -242,6 +255,7 @@ static void fpr_consumer_main(struct fpr_shared *s)
 	 * expected on unprivileged runs; the plain-nice fallback still
 	 * exercises SCHED_NORMAL's dynamic prio path.
 	 */
+	__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
 	(void)trinity_raw_syscall(__NR_sched_setattr, waiter_tid, &attr, 0U);
 	_exit(0);
 }
@@ -375,7 +389,7 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 	 * and syscall exercises the cmp-vs-enqueue rollback path.
 	 */
 	wait_val = __atomic_load_n(&s->futex_wait, __ATOMIC_RELAXED);
-	if (raw_futex(&s->futex_wait, FUTEX_CMP_REQUEUE_PI, flag,
+	if (raw_futex(s, &s->futex_wait, FUTEX_CMP_REQUEUE_PI, flag,
 		      s->requeue_nr_wake, NULL, &s->futex_target_pi, wait_val) >= 0)
 		__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback.requeue_ok,
 				   1, __ATOMIC_RELAXED);
@@ -390,12 +404,24 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 	 * EPERM is the expected path when we never became the owner and is
 	 * ignored.
 	 */
-	(void)raw_futex(&s->futex_target_pi, FUTEX_UNLOCK_PI, flag, 0, NULL, NULL, 0);
+	(void)raw_futex(s, &s->futex_target_pi, FUTEX_UNLOCK_PI, flag, 0, NULL, NULL, 0);
 
 out:
 	fpr_reap_worker(consumer_pid);
 	fpr_reap_worker(waiter_pid);
 	fpr_reap_worker(owner_pid);
+
+	/* All workers are reaped here so their per-worker bumps against
+	 * s->direct_syscalls have retired; the RELAXED add-fetches
+	 * happened-before the waitpid_eintr() return that gave us this
+	 * pid, so a plain load lifts the total safely.  Read before the
+	 * munmap that follows.  Gated on valid_op to match the childop
+	 * stats bumps above; the fpr_shared_alloc-failure early return
+	 * skips this by virtue of returning before we ever touched s. */
+	if (valid_op)
+		childop_direct_syscalls_add(op,
+			__atomic_load_n(&s->direct_syscalls, __ATOMIC_RELAXED));
+
 	(void)munmap(s, sizeof(*s));
 	return true;
 }
