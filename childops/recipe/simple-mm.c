@@ -34,6 +34,8 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "maps.h"
 #include "rnd.h"
@@ -59,6 +61,16 @@
  */
 bool recipe_memfd_seal(bool *unsupported __unused__)
 {
+	/* Snapshot the recipe-runner childop under which we're executing so
+	 * the direct-syscall reporter attributes this invocation's raw
+	 * memfd_create() to the parent op's per-childop tally.  Bounds-
+	 * check the snapshot -- the field lives in shared memory and can
+	 * be scribbled by a poisoned-arena write from a sibling; matches
+	 * the surrounding valid_op gate in recipe_runner. */
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	int fd = -1;
 	void *p = MAP_FAILED;
 	char data[64];
@@ -96,6 +108,8 @@ out:
 		munmap(p, page_size);
 	if (fd >= 0)
 		close(fd);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 
@@ -177,6 +191,13 @@ out:
  */
 bool recipe_userfaultfd(bool *unsupported)
 {
+	/* See recipe_memfd_seal for the op / valid_op snapshot rationale
+	 * -- attribute the raw userfaultfd() below to the parent recipe-
+	 * runner op's direct-syscall tally. */
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	struct uffdio_api api;
 	struct uffdio_register reg;
 	struct uffdio_range range;
@@ -230,6 +251,8 @@ out:
 		(void)munmap(region, page_size);
 	if (fd >= 0)
 		close(fd);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 
@@ -321,6 +344,13 @@ out:
  */
 bool recipe_mm_memfd(bool *unsupported)
 {
+	/* See recipe_memfd_seal for the op / valid_op snapshot rationale
+	 * -- attribute the raw memfd_create() below to the parent recipe-
+	 * runner op's direct-syscall tally. */
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	int fd = -1;
 	void *p = MAP_FAILED;
 	size_t total = (size_t)page_size * 4;
@@ -365,5 +395,7 @@ out:
 		(void)munmap(p, total);
 	if (fd >= 0)
 		close(fd);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
