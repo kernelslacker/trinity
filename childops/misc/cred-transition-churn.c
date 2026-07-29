@@ -515,6 +515,14 @@ bool cred_transition_churn(struct childdata *child)
 		return true;
 	}
 
+	{
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 4);
+	}
+
 	return true;
 }
 
