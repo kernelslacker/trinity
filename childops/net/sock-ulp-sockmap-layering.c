@@ -56,6 +56,7 @@
 #include "bpf.h"
 #include "bpf-syscall.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -87,7 +88,7 @@ static const char sock_ulp_layering_license[] = "GPL";
 static int sock_ulp_layering_bpf_off;	/* BPF_PROG_LOAD ENOSYS / EPERM */
 static int sock_ulp_layering_tls_off;	/* TCP_ULP "tls" ENOENT */
 
-static int make_loopback_pair(int *cli, int *srv)
+static int make_loopback_pair(int *cli, int *srv, unsigned long *tally)
 {
 	struct sockaddr_in addr;
 	socklen_t slen = sizeof(addr);
@@ -95,10 +96,12 @@ static int make_loopback_pair(int *cli, int *srv)
 	int c = -1, s = -1;
 	int one = 1;
 
+	(*tally)++;
 	listener = socket(AF_INET, SOCK_STREAM, 0);
 	if (listener < 0)
 		goto fail;
 
+	(*tally)++;
 	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
 	memset(&addr, 0, sizeof(addr));
@@ -106,41 +109,56 @@ static int make_loopback_pair(int *cli, int *srv)
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	addr.sin_port = 0;
 
+	(*tally)++;
 	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 		goto fail;
+	(*tally)++;
 	if (listen(listener, 1) < 0)
 		goto fail;
+	(*tally)++;
 	if (getsockname(listener, (struct sockaddr *)&addr, &slen) < 0)
 		goto fail;
 
+	(*tally)++;
 	c = socket(AF_INET, SOCK_STREAM, 0);
 	if (c < 0)
 		goto fail;
 
 	/* Non-blocking connect — loopback completes synchronously in
 	 * practice, but EINPROGRESS is also fine; we accept() regardless. */
+	(*tally)++;
 	(void)fcntl(c, F_SETFL, O_NONBLOCK);
+	(*tally)++;
 	if (connect(c, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
 	    errno != EINPROGRESS)
 		goto fail;
 
+	(*tally)++;
 	s = accept(listener, NULL, NULL);
 	if (s < 0)
 		goto fail;
+	(*tally)++;
 	(void)fcntl(s, F_SETFL, O_NONBLOCK);
 
+	(*tally)++;
 	close(listener);
 	*cli = c;
 	*srv = s;
 	return 0;
 
 fail:
-	if (listener >= 0)
+	if (listener >= 0) {
+		(*tally)++;
 		close(listener);
-	if (c >= 0)
+	}
+	if (c >= 0) {
+		(*tally)++;
 		close(c);
-	if (s >= 0)
+	}
+	if (s >= 0) {
+		(*tally)++;
 		close(s);
+	}
 	return -1;
 }
 
@@ -248,10 +266,11 @@ static int sockmap_del(int map_fd, __u32 key)
 /* Install TCP_ULP "tls" plus a SOL_TLS TLS_RX cipher_info on a fd.
  * Returns 0 if BOTH installed, -1 otherwise (still treated as coverage
  * by the caller — the rejection path is itself a code-path edge). */
-static int install_tls_rx(int fd, struct childdata *child)
+static int install_tls_rx(int fd, struct childdata *child, unsigned long *tally)
 {
 	struct tls12_crypto_info_aes_gcm_128 ci;
 
+	(*tally)++;
 	if (setsockopt(fd, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
 		if (errno == ENOENT) {
 			__atomic_store_n(&sock_ulp_layering_tls_off, 1,
@@ -276,6 +295,7 @@ static int install_tls_rx(int fd, struct childdata *child)
 	generate_rand_bytes((unsigned char *)&ci, sizeof(ci));
 	ci.info.version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
 	ci.info.cipher_type = TLS_CIPHER_AES_GCM_128;
+	(*tally)++;
 	if (setsockopt(fd, SOL_TLS, TLS_RX, &ci, sizeof(ci)) < 0)
 		return -1;
 	return 0;
@@ -293,6 +313,15 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	int i;
 	bool layered_a = false, layered_b = false;
 	bool redir_armed = false;
+	/* Local direct-syscall tally.  Every real kernel round-trip
+	 * bypasses random_syscall(): the loopback pair setup + TLS_ULP
+	 * install helpers bump it inline, the bpf() map/prog/attach
+	 * wrappers bump 1 each at the call site, the interleaved
+	 * send/recv bursts bump per iteration, and the shutdown/close
+	 * teardown bumps per fd.  Published once to shm at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.runs, 1,
 			   __ATOMIC_RELAXED);
@@ -309,13 +338,14 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (make_loopback_pair(&cli_a, &srv_a) < 0 ||
-	    make_loopback_pair(&cli_b, &srv_b) < 0) {
+	if (make_loopback_pair(&cli_a, &srv_a, &direct_calls) < 0 ||
+	    make_loopback_pair(&cli_b, &srv_b, &direct_calls) < 0) {
 		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
+	direct_calls++;
 	map_fd = create_sockmap();
 	if (map_fd < 0) {
 		if (errno == ENOSYS || errno == EPERM || errno == EINVAL) {
@@ -331,6 +361,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		goto out;
 	}
 
+	direct_calls++;
 	prog_fd = load_sk_skb_verdict_prog();
 	if (prog_fd < 0) {
 		if (errno == ENOSYS || errno == EPERM) {
@@ -346,6 +377,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		goto out;
 	}
 
+	direct_calls++;
 	if (attach_verdict(map_fd, prog_fd) < 0) {
 		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.attach_failed,
 				   1, __ATOMIC_RELAXED);
@@ -362,8 +394,9 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	 * lands on a socket whose sk_prot has already been swapped to
 	 * tls_prots.  This is the path where sk_psock_init must detect
 	 * the ULP and bail / re-route. */
-	if (install_tls_rx(cli_a, child) == 0)
+	if (install_tls_rx(cli_a, child, &direct_calls) == 0)
 		layered_a = true;
+	direct_calls += 2;
 	(void)sockmap_add(map_fd, 0, cli_a);
 	(void)sockmap_add(map_fd, 1, srv_a);
 
@@ -371,9 +404,10 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	 * psock + sk_data_ready rewire is already in place; THEN
 	 * setsockopt(TCP_ULP,"tls") drives the tls_init path against
 	 * a socket whose sk_data_ready isn't the vanilla one. */
+	direct_calls += 2;
 	(void)sockmap_add(map_fd, 2, cli_b);
 	(void)sockmap_add(map_fd, 3, srv_b);
-	if (install_tls_rx(cli_b, child) == 0)
+	if (install_tls_rx(cli_b, child, &direct_calls) == 0)
 		layered_b = true;
 
 	if (layered_a || layered_b)
@@ -391,21 +425,25 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	 * whole block is gated by the runtime sock_ulp_layering_bpf_off
 	 * latch checked at function entry, matching the existing pattern
 	 * -- no separate compile-time guard is needed. */
+	direct_calls++;
 	redir_map_fd = create_sockmap();
 	if (redir_map_fd >= 0) {
+		direct_calls++;
 		redir_prog_fd = load_sk_skb_redirect_prog(redir_map_fd);
 		if (redir_prog_fd < 0) {
 			__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.prog_failed,
 					   1, __ATOMIC_RELAXED);
 		} else {
+			direct_calls++;
 			if (attach_verdict(redir_map_fd, redir_prog_fd) < 0)
 				__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering.attach_failed,
 						   1, __ATOMIC_RELAXED);
-			if (make_loopback_pair(&cli_r, &srv_r) == 0) {
+			if (make_loopback_pair(&cli_r, &srv_r, &direct_calls) == 0) {
 				/* srv_r at slot 0 -- its incoming skbs fire
 				 * the verdict.  cli_r at slot 1 -- redirect
 				 * target: sk_psock_skb_redirect() enqueues
 				 * the skb onto cli_r's rx queue. */
+				direct_calls += 2;
 				(void)sockmap_add(redir_map_fd, 0, srv_r);
 				(void)sockmap_add(redir_map_fd, 1, cli_r);
 				redir_armed = true;
@@ -430,6 +468,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	for (i = 0; i < 4; i++) {
 		size_t n = 1 + rnd_modulo_u32(sizeof(payload));
 
+		direct_calls += 8;
 		(void)send(cli_a, payload, n, MSG_DONTWAIT | MSG_NOSIGNAL);
 		(void)send(cli_b, payload, n, MSG_DONTWAIT | MSG_NOSIGNAL);
 		(void)recv(srv_a, drain, sizeof(drain), MSG_DONTWAIT);
@@ -447,6 +486,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		 * it just sent -- exercising sk_psock_skb_redirect()
 		 * enqueue interleaved with the ULP-layered pairs above. */
 		if (redir_armed) {
+			direct_calls += 3;
 			(void)send(cli_r, payload, n,
 				   MSG_DONTWAIT | MSG_NOSIGNAL);
 			(void)recv(srv_r, drain, sizeof(drain),
@@ -468,6 +508,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		size_t k = 1 + rnd_modulo_u32(sizeof(payload));
 		size_t f = 1 + rnd_modulo_u32(sizeof(payload));
 
+		direct_calls += 4;
 		(void)send(cli_a, payload, m,
 			   MSG_MORE | MSG_NOSIGNAL | MSG_DONTWAIT);
 		(void)send(cli_a, payload, k,
@@ -479,11 +520,13 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 
 	/* Best-effort detach of the map entries before fd close —
 	 * exercises the sockmap unlink path against ULP-armed sockets. */
+	direct_calls += 4;
 	(void)sockmap_del(map_fd, 0);
 	(void)sockmap_del(map_fd, 1);
 	(void)sockmap_del(map_fd, 2);
 	(void)sockmap_del(map_fd, 3);
 	if (redir_map_fd >= 0) {
+		direct_calls += 2;
 		(void)sockmap_del(redir_map_fd, 0);
 		(void)sockmap_del(redir_map_fd, 1);
 	}
@@ -491,36 +534,52 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 out:
 	/* Close ALL fds — sockmap + prog + sockets — every path. */
 	if (cli_a >= 0) {
+		direct_calls += 2;
 		(void)shutdown(cli_a, SHUT_RDWR);
 		close(cli_a);
 	}
 	if (srv_a >= 0) {
+		direct_calls += 2;
 		(void)shutdown(srv_a, SHUT_RDWR);
 		close(srv_a);
 	}
 	if (cli_b >= 0) {
+		direct_calls += 2;
 		(void)shutdown(cli_b, SHUT_RDWR);
 		close(cli_b);
 	}
 	if (srv_b >= 0) {
+		direct_calls += 2;
 		(void)shutdown(srv_b, SHUT_RDWR);
 		close(srv_b);
 	}
 	if (cli_r >= 0) {
+		direct_calls += 2;
 		(void)shutdown(cli_r, SHUT_RDWR);
 		close(cli_r);
 	}
 	if (srv_r >= 0) {
+		direct_calls += 2;
 		(void)shutdown(srv_r, SHUT_RDWR);
 		close(srv_r);
 	}
-	if (redir_prog_fd >= 0)
+	if (redir_prog_fd >= 0) {
+		direct_calls++;
 		close(redir_prog_fd);
-	if (redir_map_fd >= 0)
+	}
+	if (redir_map_fd >= 0) {
+		direct_calls++;
 		close(redir_map_fd);
-	if (prog_fd >= 0)
+	}
+	if (prog_fd >= 0) {
+		direct_calls++;
 		close(prog_fd);
-	if (map_fd >= 0)
+	}
+	if (map_fd >= 0) {
+		direct_calls++;
 		close(map_fd);
+	}
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
