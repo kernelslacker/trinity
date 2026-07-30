@@ -171,13 +171,21 @@ static void atm_fire_one(int fd, const struct atm_ioctl_spec *spec)
 /*
  * One full churn cycle: open an AF_ATMPVC vcc, drive a small batch of
  * rotated ioctls back-to-back, then close.
+ *
+ * Bumps *direct_calls at each unconditional syscall site.  atm_open_one
+ * always issues one socket() (even on the EAFNOSUPPORT latch path), and
+ * atm_fire_one always issues exactly one ioctl(), so counting at the
+ * call site here keeps the tally next to the actual kernel call without
+ * threading a pointer down into single-syscall helpers.
  */
-static void atm_churn_cycle(struct childdata *child)
+static void atm_churn_cycle(struct childdata *child,
+			    unsigned long *direct_calls)
 {
 	const struct atm_ioctl_spec *spec;
 	unsigned int batch, j;
 	int fd;
 
+	(*direct_calls)++;
 	fd = atm_open_one(child, ATMPROTO_AAL5);
 	if (fd < 0)
 		return;
@@ -187,15 +195,25 @@ static void atm_churn_cycle(struct childdata *child)
 	batch = 1U + rnd_modulo_u32(4U);
 	for (j = 0; j < batch; j++) {
 		spec = &RAND_ARRAY(atm_ioctl_table);
+		(*direct_calls)++;
 		atm_fire_one(fd, spec);
 	}
 
+	(*direct_calls)++;
 	close(fd);
 }
 
 bool atm_vcc_churn(struct childdata *child)
 {
 	unsigned int iters, i;
+	/* Local direct-syscall tally.  Bumped at each socket / ioctl /
+	 * close site inside atm_churn_cycle().  Published once to shm at
+	 * op-exit via childop_direct_syscalls_add() so the hot path pays
+	 * one atomic add per invocation instead of per-syscall.  Early
+	 * bail-out on the unsupported latch returns without publishing --
+	 * no work was done and op / valid_op are not in scope yet, matching
+	 * pipe-thrash's shape where a pre-loop bail also skips the publish. */
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.atm_vcc_churn.runs, 1,
 			   __ATOMIC_RELAXED);
@@ -220,10 +238,13 @@ bool atm_vcc_churn(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++) {
-		atm_churn_cycle(child);
+		atm_churn_cycle(child, &direct_calls);
 		if (ns_atm_unsupported)
 			break;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
