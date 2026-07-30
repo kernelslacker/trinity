@@ -238,7 +238,7 @@ struct syscallentry syscall_lookup_dcookie = {
 #if defined(SYS_lookup_dcookie) || defined(__NR_lookup_dcookie)
 	.post = post_lookup_dcookie,
 #endif
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.rettype = RET_NUM_BYTES,
 };

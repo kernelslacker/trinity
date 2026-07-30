@@ -20,7 +20,7 @@ struct syscallentry syscall_fspick = {
 	.arg_params[2].list = ARGLIST(fspick_flags),
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_FS_CTX,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_MOUNT,
 	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
 	.post = post_fs_ctx_fd,
 };

@@ -64,7 +64,7 @@ struct syscallentry syscall_faccessat = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_faccessat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 };
 
 #define AT_FDCWD                -100    /* Special value used to indicate
@@ -87,5 +87,5 @@ struct syscallentry syscall_faccessat2 = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_faccessat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 };

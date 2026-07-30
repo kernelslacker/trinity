@@ -8,4 +8,5 @@ struct syscallentry syscall_vm86old = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_ADDRESS },
 	.argname = { [0] = "v86" },
+	.group = GROUP_PROCESS,
 };

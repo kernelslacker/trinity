@@ -83,7 +83,7 @@ struct syscallentry syscall_read = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "buf", [2] = "count" },
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
 };
@@ -159,7 +159,7 @@ struct syscallentry syscall_readv = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_IOVEC, [2] = ARG_IOVECLEN },
 	.argname = { [0] = "fd", [1] = "vec", [2] = "vlen" },
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 };
 
@@ -187,7 +187,7 @@ struct syscallentry syscall_pread64 = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "buf", [2] = "count", [3] = "pos" },
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
 };
@@ -219,7 +219,7 @@ struct syscallentry syscall_preadv = {
 	.argname = { [0] = "fd", [1] = "vec", [2] = "vlen", [3] = "pos_l", [4] = "pos_h" },
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_preadv,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 };
 
@@ -262,6 +262,6 @@ struct syscallentry syscall_preadv2 = {
 	.arg_params[5].list = ARGLIST(preadv2_flags),
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_preadv2,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 };

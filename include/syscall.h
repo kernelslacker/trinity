@@ -789,7 +789,14 @@ static inline int effective_rettype(const struct syscallentry *entry,
 #define GROUP_SCHED	9
 #define GROUP_TIME	10
 #define GROUP_XATTR	11
-#define NR_GROUPS	12
+#define GROUP_VFS_PATH	12
+#define GROUP_VFS_STAT	13
+#define GROUP_VFS_MOUNT	14
+#define GROUP_VFS_SYNC	15
+#define GROUP_VFS_IO	16
+#define GROUP_CRED	17
+#define GROUP_NS	18
+#define NR_GROUPS	19
 
 struct syscalltable {
 	struct syscallentry *entry;

@@ -146,5 +146,5 @@ struct syscallentry syscall_memfd_create = {
 	.ret_objtype = OBJ_FD_MEMFD,
 	.sanitise = sanitise_memfd_create,
 	.post = post_memfd_create,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

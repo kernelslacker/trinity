@@ -219,7 +219,7 @@ struct syscallentry syscall_open_tree_attr = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "flags", [3] = "uattr", [4] = "usize" },
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_MOUNT,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_MOUNT,
 	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_open_tree_attr,
 	.post = post_mount_fd,

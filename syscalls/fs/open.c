@@ -157,7 +157,7 @@ struct syscallentry syscall_open = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_open,
 	.post = post_open,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };
 
 /*
@@ -219,7 +219,7 @@ struct syscallentry syscall_openat = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,
 	.post = post_openat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };
 
 /*
@@ -437,7 +437,7 @@ struct syscallentry syscall_openat2 = {
 	.sanitise = sanitise_openat2,
 	.post = post_openat2,
 	.cleanup = cleanup_openat2,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };
 
 /*
@@ -455,5 +455,5 @@ struct syscallentry syscall_open_by_handle_at = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat,	// For now we only sanitise .flags, which is also arg3
 	.post = post_open,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

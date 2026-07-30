@@ -212,7 +212,7 @@ struct syscallentry syscall_write = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_write,
 	.post     = post_write,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
 };
@@ -312,7 +312,7 @@ struct syscallentry syscall_writev = {
 	.argname = { [0] = "fd", [1] = "vec", [2] = "vlen" },
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_writev,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 };
 
@@ -340,7 +340,7 @@ struct syscallentry syscall_pwrite64 = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_pwrite64,
 	.post     = post_write,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
 };
@@ -375,7 +375,7 @@ struct syscallentry syscall_pwritev = {
 	.argname = { [0] = "fd", [1] = "vec", [2] = "vlen", [3] = "pos_l", [4] = "pos_h" },
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_pwritev,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 };
 
@@ -421,6 +421,6 @@ struct syscallentry syscall_pwritev2 = {
 	.arg_params[5].list = ARGLIST(pwritev2_flags),
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_pwritev2,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 };

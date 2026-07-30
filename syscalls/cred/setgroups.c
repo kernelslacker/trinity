@@ -317,7 +317,7 @@ struct syscallentry syscall_setgroups = {
 	.arg_params[0].range.hi = 65536,
 	.sanitise = sanitise_setgroups,
 	.post = post_setgroups,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.rettype = RET_ZERO_SUCCESS,
 };
 
@@ -333,6 +333,6 @@ struct syscallentry syscall_setgroups16 = {
 	.argname = { [0] = "gidsetsize", [1] = "grouplist" },
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 65536,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.rettype = RET_ZERO_SUCCESS,
 };

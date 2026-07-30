@@ -146,7 +146,7 @@ struct syscallentry syscall_lstat = {
 	.argname = { [0] = "filename", [1] = "statbuf" },
 	.sanitise = sanitise_lstat_buf,
 	.post = post_lstat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };
@@ -164,7 +164,7 @@ struct syscallentry syscall_lstat64 = {
 	.argname = { [0] = "filename", [1] = "statbuf" },
 	.sanitise = sanitise_lstat_buf,
 	.post = post_lstat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };

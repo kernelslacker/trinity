@@ -113,7 +113,7 @@ struct syscallentry syscall_fadvise64 = {
 	.sanitise = sanitise_fadvise64,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };
 
 #ifndef __arm__
@@ -133,7 +133,7 @@ struct syscallentry syscall_fadvise64_64 = {
 	.sanitise = sanitise_fadvise64,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };
 
 #else
@@ -161,6 +161,6 @@ struct syscallentry syscall_arm_fadvise64_64 = {
 	.sanitise = sanitise_arm_fadvise64_64,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };
 #endif

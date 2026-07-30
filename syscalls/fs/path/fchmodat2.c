@@ -71,6 +71,6 @@ struct syscallentry syscall_fchmodat2 = {
 	.arg_params[3].list = ARGLIST(fchmodat2_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_fchmodat2,
 };

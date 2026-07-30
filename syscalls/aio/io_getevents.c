@@ -175,7 +175,7 @@ struct syscallentry syscall_io_getevents = {
 	.argname = { [0] = "ctx_id", [1] = "min_nr", [2] = "nr", [3] = "events", [4] = "timeout" },
 	.rettype = RET_NUM_BYTES,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_io_getevents,
 	.post = post_io_getevents,
 	.bound_arg = 3,

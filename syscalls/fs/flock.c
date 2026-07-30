@@ -82,5 +82,5 @@ struct syscallentry syscall_flock = {
 	.sanitise = sanitise_flock,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

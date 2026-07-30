@@ -288,7 +288,7 @@ struct syscallentry syscall_statfs = {
 #if defined(SYS_statfs) || defined(__NR_statfs)
 	.post = post_statfs,
 #endif
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };
@@ -535,7 +535,7 @@ struct syscallentry syscall_statfs64 = {
 #ifdef SYS_statfs64
 	.post = post_statfs64,
 #endif
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };

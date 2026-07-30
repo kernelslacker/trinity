@@ -95,7 +95,7 @@ struct syscallentry syscall_ftruncate = {
 	.post = post_ftruncate,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };
 
 
@@ -115,5 +115,5 @@ struct syscallentry syscall_ftruncate64 = {
 	.post = post_ftruncate,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

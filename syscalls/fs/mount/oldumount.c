@@ -8,6 +8,6 @@ struct syscallentry syscall_oldumount = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_PATHNAME },
 	.argname = { [0] = "name" },
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_MOUNT,
 	.rettype = RET_ZERO_SUCCESS,
 };

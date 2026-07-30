@@ -251,7 +251,7 @@ struct syscallentry syscall_cachestat = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS },
 	.argname = { [0] = "fd", [1] = "cstat_range", [2] = "cstat", [3] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.sanitise = sanitise_cachestat,
 	.post = post_cachestat,
 	.flags = REEXEC_SANITISE_OK,

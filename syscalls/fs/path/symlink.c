@@ -9,7 +9,7 @@ struct syscallentry syscall_symlink = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_PATHNAME },
 	.argname = { [0] = "oldname", [1] = "newname" },
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 };
 
 /*
@@ -24,5 +24,5 @@ struct syscallentry syscall_symlinkat = {
 	.argname = { [0] = "oldname", [1] = "newdfd", [2] = "newname" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 };

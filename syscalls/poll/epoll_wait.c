@@ -250,7 +250,7 @@ struct syscallentry syscall_epoll_wait = {
 	.post = post_epoll_wait,
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	/* a3 (maxevents) is read in post to bound retval -- snapshot it so
 	 * a sibling stomp between BEFORE and AFTER cannot fabricate a
 	 * post_handler_corrupt_ptr by overwriting the bound. */

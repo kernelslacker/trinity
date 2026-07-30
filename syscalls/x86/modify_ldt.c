@@ -154,5 +154,6 @@ struct syscallentry syscall_modify_ldt = {
 	.sanitise = sanitise_modify_ldt,
 	.post = post_modify_ldt,
 	.rettype = RET_BORING,
+	.group = GROUP_PROCESS,
 };
 #endif

@@ -37,5 +37,5 @@ struct syscallentry syscall_close = {
 	.flags = AVOID_SYSCALL,
 	.post = post_close,
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

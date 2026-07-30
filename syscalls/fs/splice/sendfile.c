@@ -64,7 +64,7 @@ struct syscallentry syscall_sendfile = {
 	.argname = { [0] = "out_fd", [1] = "in_fd", [2] = "offset", [3] = "count" },
 	.sanitise = sanitise_sendfile,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 	.bound_arg = 4,
 };
@@ -80,7 +80,7 @@ struct syscallentry syscall_sendfile64 = {
 	.argname = { [0] = "out_fd", [1] = "in_fd", [2] = "offset", [3] = "count" },
 	.sanitise = sanitise_sendfile64,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 	.bound_arg = 4,
 };

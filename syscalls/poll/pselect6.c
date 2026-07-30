@@ -246,6 +246,6 @@ struct syscallentry syscall_pselect6 = {
 	.argname = { [0] = "n", [1] = "inp", [2] = "outp", [3] = "exp", [4] = "tsp", [5] = "sig" },
 	.sanitise = sanitise_pselect6,
 	.post = post_pselect6,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_BORING,
 };

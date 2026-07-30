@@ -8,7 +8,7 @@ struct syscallentry syscall_pivot_root = {
 	.num_args = 2,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_PATHNAME },
 	.argname = { [0] = "new_root", [1] = "put_old" },
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_MOUNT,
 	.flags = NEEDS_ROOT,
 	.rettype = RET_ZERO_SUCCESS,
 };

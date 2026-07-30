@@ -175,5 +175,5 @@ struct syscallentry syscall_file_setattr = {
 	.sanitise = sanitise_file_setattr,
 	.cleanup = cleanup_file_setattr,
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 };

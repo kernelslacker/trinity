@@ -186,7 +186,7 @@ struct syscallentry syscall_io_cancel = {
 	.argtype = { [0] = ARG_AIO_CTX, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS },
 	.argname = { [0] = "ctx_id", [1] = "iocb", [2] = "result" },
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_io_cancel,
 	.post = post_io_cancel,
 };

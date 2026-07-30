@@ -57,7 +57,7 @@ static void post_setns(struct syscallrecord *rec)
 
 struct syscallentry syscall_setns= {
 	.name = "setns",
-	.group = GROUP_PROCESS,
+	.group = GROUP_NS,
 	.num_args = 2,
 	.argtype = { [0] = ARG_FD, [1] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "nstype" },

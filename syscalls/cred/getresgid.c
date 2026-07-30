@@ -247,7 +247,7 @@ struct syscallentry syscall_getresgid = {
 	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "rgid", [1] = "egid", [2] = "sgid" },
 	.sanitise = sanitise_getresgid,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.post = post_getresgid,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
@@ -270,7 +270,7 @@ struct syscallentry syscall_getresgid16 = {
 	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "rgid", [1] = "egid", [2] = "sgid" },
 	.sanitise = sanitise_getresgid16,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };

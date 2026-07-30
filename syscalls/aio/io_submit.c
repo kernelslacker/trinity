@@ -308,7 +308,7 @@ struct syscallentry syscall_io_submit = {
 	.argname = { [0] = "ctx_id", [1] = "nr", [2] = "iocbpp" },
 	.rettype = RET_NUM_BYTES,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_io_submit,
 	.post = post_io_submit,
 	.arg_snapshot_mask = (1u << 1),

@@ -186,6 +186,6 @@ struct syscallentry syscall_ustat = {
 	.argname = { [0] = "dev", [1] = "ubuf" },
 	.sanitise = sanitise_ustat,
 	.post = post_ustat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 };

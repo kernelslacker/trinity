@@ -149,7 +149,7 @@ struct syscallentry syscall_stat = {
 	.argname = { [0] = "filename", [1] = "statbuf" },
 	.sanitise = sanitise_stat,
 	.post = post_stat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.flags = REEXEC_SANITISE_OK,
 };
 
@@ -229,7 +229,7 @@ struct syscallentry syscall_stat64 = {
 	.argname = { [0] = "filename", [1] = "statbuf" },
 	.sanitise = sanitise_stat64,
 	.post = post_stat64,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.flags = REEXEC_SANITISE_OK,
 };
 
@@ -741,6 +741,6 @@ struct syscallentry syscall_statx = {
 	.arg_params[3].list = ARGLIST(statx_mask),
 	.sanitise = sanitise_statx,
 	.post = post_statx,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 };

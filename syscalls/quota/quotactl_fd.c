@@ -145,7 +145,7 @@ struct syscallentry syscall_quotactl_fd = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD },
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "id", [3] = "addr" },
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_MOUNT,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_quotactl_fd,
 	.rettype = RET_ZERO_SUCCESS,

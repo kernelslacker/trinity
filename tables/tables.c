@@ -88,7 +88,14 @@ void dump_syscall_tables(void)
  * defaults to GROUP_NONE.
  */
 const unsigned int group_parent[NR_GROUPS] = {
-	[GROUP_XATTR] = GROUP_VFS,
+	[GROUP_XATTR]     = GROUP_VFS,
+	[GROUP_VFS_PATH]  = GROUP_VFS,
+	[GROUP_VFS_STAT]  = GROUP_VFS,
+	[GROUP_VFS_MOUNT] = GROUP_VFS,
+	[GROUP_VFS_SYNC]  = GROUP_VFS,
+	[GROUP_VFS_IO]    = GROUP_VFS,
+	[GROUP_CRED]      = GROUP_PROCESS,
+	[GROUP_NS]        = GROUP_PROCESS,
 };
 
 int setup_syscall_group(unsigned int group)

@@ -214,5 +214,5 @@ struct syscallentry syscall_fanotify_init = {
 	.ret_objtype = OBJ_FD_FANOTIFY,
 	.sanitise = sanitise_fanotify_init,
 	.post = post_fanotify_init,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

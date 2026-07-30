@@ -23,17 +23,24 @@ static const struct {
 	const char *name;
 	unsigned char id;
 } group_names[] = {
-	{ "vm",       GROUP_VM },
-	{ "vfs",      GROUP_VFS },
-	{ "net",      GROUP_NET },
-	{ "ipc",      GROUP_IPC },
-	{ "process",  GROUP_PROCESS },
-	{ "signal",   GROUP_SIGNAL },
-	{ "io_uring", GROUP_IO_URING },
-	{ "bpf",      GROUP_BPF },
-	{ "sched",    GROUP_SCHED },
-	{ "time",     GROUP_TIME },
-	{ "xattr",    GROUP_XATTR },
+	{ "vm",         GROUP_VM },
+	{ "vfs",        GROUP_VFS },
+	{ "vfs_path",   GROUP_VFS_PATH },
+	{ "vfs_stat",   GROUP_VFS_STAT },
+	{ "vfs_mount",  GROUP_VFS_MOUNT },
+	{ "vfs_sync",   GROUP_VFS_SYNC },
+	{ "vfs_io",     GROUP_VFS_IO },
+	{ "net",        GROUP_NET },
+	{ "ipc",        GROUP_IPC },
+	{ "process",    GROUP_PROCESS },
+	{ "cred",       GROUP_CRED },
+	{ "ns",         GROUP_NS },
+	{ "signal",     GROUP_SIGNAL },
+	{ "io_uring",   GROUP_IO_URING },
+	{ "bpf",        GROUP_BPF },
+	{ "sched",      GROUP_SCHED },
+	{ "time",       GROUP_TIME },
+	{ "xattr",      GROUP_XATTR },
 };
 
 static void select_group_by_name(const char *name)

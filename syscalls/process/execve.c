@@ -443,7 +443,7 @@ struct syscallentry syscall_execve = {
 	.argname = { [0] = "name", [1] = "argv", [2] = "envp" },
 	.sanitise = sanitise_execve,
 	.post = post_execve,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	.flags = AVOID_SYSCALL | EXTRA_FORK,
 };
 
@@ -463,6 +463,6 @@ struct syscallentry syscall_execveat = {
 	.arg_params[4].list = ARGLIST(execveat_flags),
 	.sanitise = sanitise_execve,
 	.post = post_execveat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	.flags = AVOID_SYSCALL | EXTRA_FORK,
 };

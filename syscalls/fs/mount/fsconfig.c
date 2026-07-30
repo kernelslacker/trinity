@@ -324,7 +324,7 @@ struct syscallentry syscall_fsconfig = {
 	.argtype = { [0] = ARG_FD_FS_CTX, [1] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "_key", [3] = "_value", [4] = "aux" },
 	.arg_params[1].list = ARGLIST(fsconfig_ops),
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_MOUNT,
 	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_fsconfig,
 	.ret_objtype_via_post = post_fsconfig_record_fsctx_ready,

@@ -218,7 +218,7 @@ struct syscallentry syscall_select = {
 	.argname = { [0] = "n", [1] = "inp", [2] = "outp", [3] = "exp", [4] = "tvp" },
 	.sanitise = sanitise_select,
 	.post = post_select,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.flags = NEED_ALARM,
 	.rettype = RET_BORING,
 };

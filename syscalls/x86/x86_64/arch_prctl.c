@@ -290,5 +290,6 @@ struct syscallentry syscall_arch_prctl = {
 	.sanitise = sanitise_arch_prctl,
 	.post = post_arch_prctl,
 	.rettype = RET_BORING,
+	.group = GROUP_PROCESS,
 };
 #endif

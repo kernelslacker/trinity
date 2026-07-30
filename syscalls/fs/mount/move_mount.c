@@ -19,7 +19,7 @@ struct syscallentry syscall_move_mount = {
 	.argtype = { [0] = ARG_FD_MOUNT, [1] = ARG_PATHNAME, [2] = ARG_FD_MOUNT, [3] = ARG_PATHNAME, [4] = ARG_OP },
 	.argname = { [0] = "from_dfd", [1] = "from_pathname", [2] = "to_dfd", [3] = "to_pathname", [4] = "flags" },
 	.arg_params[4].list = ARGLIST(move_mount_flags),
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_MOUNT,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_move_mount,

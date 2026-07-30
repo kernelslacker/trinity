@@ -22,7 +22,7 @@ static void post_inotify_init(struct syscallrecord *rec)
 struct syscallentry syscall_inotify_init = {
 	.name = "inotify_init",
 	.num_args = 0,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_INOTIFY,
 	.post = post_inotify_init,
@@ -77,7 +77,7 @@ struct syscallentry syscall_inotify_init1 = {
 	.argname = { [0] = "flags" },
 	.arg_params[0].list = ARGLIST(inotify_init1_flags),
 	.sanitise = sanitise_inotify_init1,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_INOTIFY,
 	.post = post_inotify_init,

@@ -60,7 +60,7 @@ struct syscallentry syscall_chdir = {
 	.argtype = { [0] = ARG_PATHNAME },
 	.argname = { [0] = "filename" },
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	/*
 	 * REEXEC_SANITISE_OK: chdir had no sanitise before this change so
 	 * it was eligible for the CMP RedQueen re-exec step.  This

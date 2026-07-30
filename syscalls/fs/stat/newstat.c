@@ -277,7 +277,7 @@ struct syscallentry syscall_newstat = {
 	.argname = { [0] = "filename", [1] = "statbuf" },
 	.sanitise = sanitise_newstat,
 	.post = post_newstat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };

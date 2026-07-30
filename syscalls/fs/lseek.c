@@ -91,5 +91,5 @@ struct syscallentry syscall_lseek = {
 	.sanitise = sanitise_lseek,
 	.post = post_lseek,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

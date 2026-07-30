@@ -67,7 +67,7 @@ struct syscallentry syscall_setuid = {
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 65535,
 	.post = post_setuid,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.rettype = RET_ZERO_SUCCESS,
 };
 
@@ -82,6 +82,6 @@ struct syscallentry syscall_setuid16 = {
 	.argname = { [0] = "uid" },
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 65535,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.rettype = RET_ZERO_SUCCESS,
 };

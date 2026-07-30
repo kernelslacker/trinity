@@ -134,5 +134,5 @@ struct syscallentry syscall_fanotify_mark = {
 	.post = post_fanotify_mark,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

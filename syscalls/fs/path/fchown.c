@@ -23,7 +23,7 @@ struct syscallentry syscall_fchown = {
 	.arg_params[2].range.hi = 65535,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 };
 
 /*
@@ -43,7 +43,7 @@ struct syscallentry syscall_fchown16 = {
 	.arg_params[2].range.low = 0,
 	.arg_params[2].range.hi = 65535,
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 };
 
 
@@ -87,6 +87,6 @@ struct syscallentry syscall_fchownat = {
 	.arg_params[4].list = ARGLIST(fchownat_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_fchownat,
 };
