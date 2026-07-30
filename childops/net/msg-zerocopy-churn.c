@@ -99,7 +99,7 @@ static bool ns_unsupported_msg_zerocopy;
  * shape as the helper in tcp_ulp_swap_churn -- intentionally inlined
  * (different timeouts, different drain budget appropriate for the
  * larger ZC payload size). */
-static int open_loopback_pair(pid_t *out_pid)
+static int open_loopback_pair(pid_t *out_pid, unsigned long *direct_calls)
 {
 	struct sockaddr_in addr;
 	socklen_t slen = sizeof(addr);
@@ -112,15 +112,18 @@ static int open_loopback_pair(pid_t *out_pid)
 	*out_pid = -1;
 
 	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	*direct_calls += 1;
 	if (listener < 0)
 		return -1;
 	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+	*direct_calls += 1;
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	addr.sin_port = 0;
 
+	*direct_calls += 3; /* bind + listen + getsockname (attempted). */
 	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 		goto fail;
 	if (listen(listener, 1) < 0)
@@ -129,6 +132,7 @@ static int open_loopback_pair(pid_t *out_pid)
 		goto fail;
 
 	pid = fork();
+	*direct_calls += 1;
 	if (pid < 0)
 		goto fail;
 	if (pid == 0) {
@@ -156,8 +160,10 @@ static int open_loopback_pair(pid_t *out_pid)
 	}
 
 	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	*direct_calls += 1;
 	if (cli < 0) {
 		close(listener);
+		*direct_calls += 1;
 		goto reap;
 	}
 
@@ -167,14 +173,18 @@ static int open_loopback_pair(pid_t *out_pid)
 	snd_to.tv_sec = 0;
 	snd_to.tv_usec = ZC_SND_TIMEO_MS * 1000;
 	(void)setsockopt(cli, SOL_SOCKET, SO_SNDTIMEO, &snd_to, sizeof(snd_to));
+	*direct_calls += 2;
 
+	*direct_calls += 1; /* connect */
 	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
 	    errno != EINPROGRESS) {
 		close(cli);
 		close(listener);
+		*direct_calls += 2;
 		goto reap;
 	}
 	close(listener);
+	*direct_calls += 1;
 
 	*out_pid = pid;
 	return cli;
@@ -184,11 +194,13 @@ reap:
 		int status;
 		(void)kill(pid, SIGTERM);
 		(void)waitpid_eintr(pid, &status, 0);
+		*direct_calls += 2;
 	}
 	return -1;
 
 fail:
 	close(listener);
+	*direct_calls += 1;
 	return -1;
 }
 
@@ -199,7 +211,7 @@ fail:
  * tells us whether the kernel actually reached the completion path
  * for this kernel/config.  Bounded by ZC_ERRQ_DRAIN_CAP so a flood
  * of stale notifications can't pin the inner loop. */
-static void drain_errqueue(int s)
+static void drain_errqueue(int s, unsigned long *direct_calls)
 {
 	struct msghdr msg;
 	struct iovec iov;
@@ -220,6 +232,7 @@ static void drain_errqueue(int s)
 		msg.msg_controllen = sizeof(ctrl);
 
 		r = recvmsg(s, &msg, MSG_ERRQUEUE | MSG_DONTWAIT);
+		*direct_calls += 1;
 		if (r < 0)
 			/* EAGAIN: queue empty.  Other errnos (EBADF /
 			 * ENOTCONN / etc.) are terminal for this fd.
@@ -267,7 +280,8 @@ static void drain_errqueue(int s)
  * blocked send doesn't escape the brick-safe envelope.  Returns the
  * final send() return value (>=0 on success, -1 with errno preserved
  * on terminal failure). */
-static ssize_t zc_send_retry(int s, const void *pages, size_t len)
+static ssize_t zc_send_retry(int s, const void *pages, size_t len,
+			     unsigned long *direct_calls)
 {
 	ssize_t r = -1;
 	unsigned int retries;
@@ -275,6 +289,7 @@ static ssize_t zc_send_retry(int s, const void *pages, size_t len)
 	for (retries = 0; retries < ZC_RETRY_CAP; retries++) {
 		r = send(s, pages, len,
 			 MSG_ZEROCOPY | MSG_DONTWAIT | MSG_NOSIGNAL);
+		*direct_calls += 1;
 		if (r >= 0)
 			return r;
 		if (errno != EAGAIN && errno != EBUSY && errno != ENOMEM)
@@ -295,11 +310,13 @@ static ssize_t zc_send_retry(int s, const void *pages, size_t len)
  * *pages_out set; -1 on failure (counters bumped here).
  */
 static int msg_zerocopy_iter_setup(int s, void **pages_out,
-				   struct childdata *child)
+				   struct childdata *child,
+				   unsigned long *direct_calls)
 {
 	int one = 1;
 	void *pages;
 
+	*direct_calls += 1;
 	if (setsockopt(s, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) < 0) {
 		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
 		    errno == EPERM) {
@@ -325,6 +342,7 @@ static int msg_zerocopy_iter_setup(int s, void **pages_out,
 
 	pages = mmap(NULL, ZC_PAGE_BYTES, PROT_READ | PROT_WRITE,
 		     MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
+	*direct_calls += 1;
 	if (pages == MAP_FAILED) {
 		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -349,7 +367,8 @@ static int msg_zerocopy_iter_setup(int s, void **pages_out,
  * the munmap-race step (no successful pin, no race to drive).
  */
 static unsigned int msg_zerocopy_iter_send(int s, const void *pages,
-					   const struct timespec *t_outer)
+					   const struct timespec *t_outer,
+					   unsigned long *direct_calls)
 {
 	unsigned int sent_count = 0;
 	unsigned int i;
@@ -360,7 +379,7 @@ static unsigned int msg_zerocopy_iter_send(int s, const void *pages,
 		if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 			break;
 
-		r = zc_send_retry(s, pages, ZC_PAGE_BYTES);
+		r = zc_send_retry(s, pages, ZC_PAGE_BYTES, direct_calls);
 		if (r >= 0) {
 			sent_count++;
 			__atomic_add_fetch(
@@ -398,7 +417,8 @@ static unsigned int msg_zerocopy_iter_send(int s, const void *pages,
  * succeeds so the orchestrator out: cleanup doesn't double-unmap.
  */
 static void msg_zerocopy_iter_unmap_resend(int s, void **pages_inout,
-					   unsigned int sent_count)
+					   unsigned int sent_count,
+					   unsigned long *direct_calls)
 {
 	void *saved_pages = NULL;
 	bool munmapped = false;
@@ -406,6 +426,7 @@ static void msg_zerocopy_iter_unmap_resend(int s, void **pages_inout,
 
 	if (sent_count > 0) {
 		saved_pages = *pages_inout;
+		*direct_calls += 1;
 		if (munmap(*pages_inout, ZC_PAGE_BYTES) == 0) {
 			munmapped = true;
 			*pages_inout = MAP_FAILED;
@@ -419,6 +440,7 @@ static void msg_zerocopy_iter_unmap_resend(int s, void **pages_inout,
 	if (munmapped && saved_pages != NULL) {
 		rc = (int)send(s, saved_pages, ZC_PAGE_BYTES,
 			       MSG_ZEROCOPY | MSG_DONTWAIT | MSG_NOSIGNAL);
+		*direct_calls += 1;
 		if (rc < 0 && errno == EFAULT)
 			__atomic_add_fetch(
 				&shm->stats.msg_zerocopy_churn.send_after_munmap_caught,
@@ -437,21 +459,24 @@ static void msg_zerocopy_iter_unmap_resend(int s, void **pages_inout,
  * pending zerocopy completions).  Best-effort throughout; the attempt
  * is the coverage.
  */
-static void msg_zerocopy_iter_teardown(int s)
+static void msg_zerocopy_iter_teardown(int s, unsigned long *direct_calls)
 {
 	int zero = 0;
 
+	*direct_calls += 1;
 	if (setsockopt(s, SOL_SOCKET, SO_ZEROCOPY, &zero, sizeof(zero)) == 0)
 		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.sndzc_disable_ok,
 				   1, __ATOMIC_RELAXED);
 
-	drain_errqueue(s);
+	drain_errqueue(s, direct_calls);
 
 	(void)shutdown(s, SHUT_RDWR);
+	*direct_calls += 1;
 }
 
 /* One full sequence on a freshly-created loopback TCP socket. */
-static void iter_one(const struct timespec *t_outer, struct childdata *child)
+static void iter_one(const struct timespec *t_outer, struct childdata *child,
+		     unsigned long *direct_calls)
 {
 	pid_t acceptor = -1;
 	int s = -1;
@@ -461,14 +486,14 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child)
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 		return;
 
-	s = open_loopback_pair(&acceptor);
+	s = open_loopback_pair(&acceptor, direct_calls);
 	if (s < 0) {
 		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
-	if (msg_zerocopy_iter_setup(s, &pages, child) != 0)
+	if (msg_zerocopy_iter_setup(s, &pages, child, direct_calls) != 0)
 		goto out;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -485,7 +510,7 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
-	sent_count = msg_zerocopy_iter_send(s, pages, t_outer);
+	sent_count = msg_zerocopy_iter_send(s, pages, t_outer, direct_calls);
 
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 		goto out;
@@ -494,27 +519,49 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child)
 	 * shape on each cmsg.  Whether anything actually arrives is
 	 * timing-dependent (the completion notifications may not have
 	 * reached the queue yet); both outcomes get counter coverage. */
-	drain_errqueue(s);
+	drain_errqueue(s, direct_calls);
 
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 		goto out;
 
-	msg_zerocopy_iter_unmap_resend(s, &pages, sent_count);
+	msg_zerocopy_iter_unmap_resend(s, &pages, sent_count, direct_calls);
 
-	msg_zerocopy_iter_teardown(s);
+	msg_zerocopy_iter_teardown(s, direct_calls);
 
 out:
-	if (pages != MAP_FAILED)
+	if (pages != MAP_FAILED) {
 		(void)munmap(pages, ZC_PAGE_BYTES);
-	if (s >= 0)
+		*direct_calls += 1;
+	}
+	if (s >= 0) {
 		close(s);
+		*direct_calls += 1;
+	}
 	reap_acceptor(acceptor);
+	if (acceptor > 0)
+		*direct_calls += 1; /* waitpid inside reap_acceptor. */
 }
 
 bool msg_zerocopy_churn(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
+	/* Local direct-syscall tally.  Bumped at each syscall issue site
+	 * across the outer iter_one loop (per-iter socket setup, inner
+	 * ZC-send burst, errqueue drain, munmap-resend, teardown, cleanup).
+	 * Published once at op-exit via childop_direct_syscalls_add() so
+	 * the hot path pays one atomic add per invocation instead of
+	 * per-syscall.  Early bail-out paths (unsupported/latched,
+	 * clock_gettime failure) still publish -- direct_calls is 0 on
+	 * those paths and the add is a no-op. */
+	unsigned long direct_calls = 0;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.msg_zerocopy_churn.runs,
 			   1, __ATOMIC_RELAXED);
@@ -541,10 +588,13 @@ bool msg_zerocopy_churn(struct childdata *child)
 		if ((unsigned long long)ns_since(&t_outer) >=
 		    ZC_WALL_CAP_NS)
 			break;
-		iter_one(&t_outer, child);
+		iter_one(&t_outer, child, &direct_calls);
 		if (ns_unsupported_msg_zerocopy)
 			break;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
