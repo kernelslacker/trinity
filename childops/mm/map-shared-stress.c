@@ -64,6 +64,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
@@ -121,12 +122,13 @@ static int open_backing_file(void)
  * parent interleaves its own writes plus a full-region msync sweep so
  * writeback races sibling dirtying on the same pagecache pages.
  */
-static void run_concurrent_writeback(int fd, unsigned char *map,
-				     unsigned long region_bytes)
+static unsigned long run_concurrent_writeback(int fd, unsigned char *map,
+					      unsigned long region_bytes)
 {
 	unsigned long slice = region_bytes / MAP_SHARED_STRESS_WORKERS;
 	pid_t workers[MAP_SHARED_STRESS_WORKERS];
 	unsigned int i;
+	unsigned long calls = 0;
 
 	for (i = 0; i < MAP_SHARED_STRESS_WORKERS; i++)
 		workers[i] = -1;
@@ -134,6 +136,7 @@ static void run_concurrent_writeback(int fd, unsigned char *map,
 	for (i = 0; i < MAP_SHARED_STRESS_WORKERS; i++) {
 		pid_t pid = fork();
 
+		calls++;
 		if (pid < 0)
 			break;
 		if (pid == 0) {
@@ -159,6 +162,7 @@ static void run_concurrent_writeback(int fd, unsigned char *map,
 			map[p] ^= byte;
 	}
 	(void)msync(map, region_bytes, MS_ASYNC);
+	calls++;
 
 	for (i = 0; i < MAP_SHARED_STRESS_WORKERS; i++) {
 		int status;
@@ -166,9 +170,11 @@ static void run_concurrent_writeback(int fd, unsigned char *map,
 		if (workers[i] < 0)
 			continue;
 		(void)waitpid_eintr(workers[i], &status, 0);
+		calls++;
 	}
 
 	(void)fd;
+	return calls;
 }
 
 /*
@@ -177,27 +183,31 @@ static void run_concurrent_writeback(int fd, unsigned char *map,
  * only the inheritable half then _exits; parent reaps and msync's.
  * Both regions unmap on return regardless of fork outcome.
  */
-static void run_dontfork_split(int fd, unsigned long region_bytes)
+static unsigned long run_dontfork_split(int fd, unsigned long region_bytes)
 {
 	unsigned long half = region_bytes / 2;
 	unsigned char *dontfork_map;
 	unsigned char *inherit_map;
+	unsigned long calls = 0;
 	pid_t pid;
 	int status;
 
 	if (half < page_size)
-		return;
+		return calls;
 
 	dontfork_map = mmap(NULL, half, PROT_READ | PROT_WRITE,
 			    MAP_SHARED, fd, 0);
+	calls++;
 	if (dontfork_map == MAP_FAILED)
-		return;
+		return calls;
 
 	inherit_map = mmap(NULL, half, PROT_READ | PROT_WRITE,
 			   MAP_SHARED, fd, (off_t)half);
+	calls++;
 	if (inherit_map == MAP_FAILED) {
 		(void)munmap(dontfork_map, half);
-		return;
+		calls++;
+		return calls;
 	}
 
 	/* MADV_DONTFORK marks the first VMA VM_DONTCOPY: the fork
@@ -206,16 +216,21 @@ static void run_dontfork_split(int fd, unsigned long region_bytes)
 	 * unmarked so the child sees a MAP_SHARED copy of the same
 	 * inode pages the parent sees. */
 	if (madvise(dontfork_map, half, MADV_DONTFORK) < 0) {
+		calls++;
 		(void)munmap(dontfork_map, half);
 		(void)munmap(inherit_map, half);
-		return;
+		calls += 2;
+		return calls;
 	}
+	calls++;
 
 	pid = fork();
+	calls++;
 	if (pid < 0) {
 		(void)munmap(dontfork_map, half);
 		(void)munmap(inherit_map, half);
-		return;
+		calls += 2;
+		return calls;
 	}
 	if (pid == 0) {
 		unsigned long p;
@@ -231,9 +246,13 @@ static void run_dontfork_split(int fd, unsigned long region_bytes)
 
 	(void)waitpid_eintr(pid, &status, 0);
 	(void)msync(inherit_map, half, MS_ASYNC);
+	calls += 2;
 
 	(void)munmap(dontfork_map, half);
 	(void)munmap(inherit_map, half);
+	calls += 2;
+
+	return calls;
 }
 
 /*
@@ -243,11 +262,12 @@ static void run_dontfork_split(int fd, unsigned long region_bytes)
  * through the sync path.  Exercises the ordering between the write()
  * append-past-i_size and the shared-writeback walker.
  */
-static void run_append_vs_mmap(int fd, unsigned char *map,
-			       unsigned long region_bytes)
+static unsigned long run_append_vs_mmap(int fd, unsigned char *map,
+					unsigned long region_bytes)
 {
 	char proc_link[64];
 	unsigned char payload[MAP_SHARED_STRESS_APPEND_BYTES];
+	unsigned long calls = 0;
 	unsigned int i;
 	int append_fd;
 	int n;
@@ -255,11 +275,12 @@ static void run_append_vs_mmap(int fd, unsigned char *map,
 	n = snprintf(proc_link, sizeof(proc_link),
 		     "/proc/self/fd/%d", fd);
 	if (n <= 0 || (size_t)n >= sizeof(proc_link))
-		return;
+		return calls;
 
 	append_fd = open(proc_link, O_APPEND | O_RDWR);
+	calls++;
 	if (append_fd < 0)
-		return;
+		return calls;
 
 	for (i = 0; i < MAP_SHARED_STRESS_APPEND_BYTES; i++)
 		payload[i] = (unsigned char)(rnd_u32() & 0xff);
@@ -269,8 +290,10 @@ static void run_append_vs_mmap(int fd, unsigned char *map,
 		(void)w;
 	}
 	(void)close(append_fd);
+	calls += 2;
 
 	(void)msync(map, region_bytes, MS_ASYNC);
+	calls++;
 
 	/* Volatile touch of the last page so a subsequent read faults
 	 * a fresh pagecache page in if the append grew i_size onto a
@@ -282,6 +305,8 @@ static void run_append_vs_mmap(int fd, unsigned char *map,
 		volatile unsigned char sink = last[0];
 		(void)sink;
 	}
+
+	return calls;
 }
 
 bool map_shared_stress(struct childdata *child)
@@ -290,6 +315,14 @@ bool map_shared_stress(struct childdata *child)
 	unsigned char *map;
 	unsigned int iters, i;
 	int fd;
+	/* Local direct-syscall tally.  Bumped as syscalls are actually
+	 * issued (open_backing_file's mkstemp+ftruncate+unlink,
+	 * top-level mmap/munmap/close, plus each sub-op's own count)
+	 * so early-exit paths still credit what they issued.  Published
+	 * once to shm at op-exit via childop_direct_syscalls_add() so
+	 * the hot path pays one atomic add per invocation instead of
+	 * per-syscall.  Mirrors childops/misc/pipe-thrash.c. */
+	unsigned long direct_calls = 0;
 
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
@@ -301,7 +334,12 @@ bool map_shared_stress(struct childdata *child)
 			   __ATOMIC_RELAXED);
 
 	fd = open_backing_file();
+	/* open_backing_file issues mkstemp; on success also ftruncate
+	 * and unlink.  Failure is charged as one syscall (the mkstemp
+	 * attempt) rather than trying to distinguish where inside the
+	 * helper it tripped. */
 	if (fd < 0) {
+		direct_calls += 1;
 		if (!map_shared_stress_probed) {
 			map_shared_stress_probed = true;
 			map_shared_stress_unsupported = true;
@@ -312,16 +350,23 @@ bool map_shared_stress(struct childdata *child)
 		}
 		__atomic_add_fetch(&shm->stats.map_shared_stress.setup_failed,
 				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
 	}
+	direct_calls += 3;
 	map_shared_stress_probed = true;
 
 	map = mmap(NULL, region_bytes, PROT_READ | PROT_WRITE,
 		   MAP_SHARED, fd, 0);
+	direct_calls++;
 	if (map == MAP_FAILED) {
 		__atomic_add_fetch(&shm->stats.map_shared_stress.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		(void)close(fd);
+		direct_calls++;
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
 	}
 
@@ -340,19 +385,21 @@ bool map_shared_stress(struct childdata *child)
 
 		switch (pick) {
 		case 0:
-			run_concurrent_writeback(fd, map, region_bytes);
+			direct_calls += run_concurrent_writeback(fd, map,
+								 region_bytes);
 			__atomic_add_fetch(
 				&shm->stats.map_shared_stress.writeback_ok,
 				1, __ATOMIC_RELAXED);
 			break;
 		case 1:
-			run_dontfork_split(fd, region_bytes);
+			direct_calls += run_dontfork_split(fd, region_bytes);
 			__atomic_add_fetch(
 				&shm->stats.map_shared_stress.dontfork_ok,
 				1, __ATOMIC_RELAXED);
 			break;
 		default:
-			run_append_vs_mmap(fd, map, region_bytes);
+			direct_calls += run_append_vs_mmap(fd, map,
+							   region_bytes);
 			__atomic_add_fetch(
 				&shm->stats.map_shared_stress.append_ok,
 				1, __ATOMIC_RELAXED);
@@ -362,5 +409,10 @@ bool map_shared_stress(struct childdata *child)
 
 	(void)munmap(map, region_bytes);
 	(void)close(fd);
+	direct_calls += 2;
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+
 	return true;
 }
