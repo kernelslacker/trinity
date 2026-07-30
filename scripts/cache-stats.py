@@ -6,6 +6,10 @@ Parses three on-disk formats version-aware:
   - corpus/<arch>      magic "TRNC", version 3
   - cmp-hints          magic "CHP_", version 4
 
+Each carrier is wrapped in a shared 96-byte "TRNPERS" envelope
+(include/persist-envelope.h), stripped before parsing; pre-envelope files
+without it are still read.
+
 Two modes:
   stats <cache-dir>            single-kernel summary
   diff  <cacheA> <cacheB>      cross-kernel proxies (not edge-level)
@@ -31,6 +35,18 @@ from typing import Optional
 KCOV_MAGIC = 0x4B434256
 CORPUS_MAGIC = 0x54524E43
 CMP_HINTS_MAGIC = 0x4348505F
+
+# Shared persistence envelope (include/persist-envelope.h): since the 2026-07
+# envelope adoption every carrier prepends a fixed 96-byte header (magic
+# "TRNPERS") ahead of its own header.  strip_persist_envelope() skips it so
+# the version-specific parsers below still see their magic at offset 0.
+TRINITY_PERSIST_MAGIC = 0x54524E50455253  # "TRNPERS"
+PERSIST_ENVELOPE_FMT = "<QIIQ64sII"
+PERSIST_ENVELOPE_SIZE = struct.calcsize(PERSIST_ENVELOPE_FMT)
+# enum trinity_persist_component -- stable on-disk ids.
+PERSIST_MINICORPUS = 1
+PERSIST_KCOV = 3
+PERSIST_CMP_HINTS = 4
 
 KCOV_NUM_EDGES = 1 << 23
 KCOV_NUM_BUCKETS = 8
@@ -72,6 +88,33 @@ def cstr(b: bytes) -> str:
     if end >= 0:
         b = b[:end]
     return b.decode("utf-8", errors="replace")
+
+
+def strip_persist_envelope(
+    raw: bytes, path: str, expected_component: int, kind: str
+) -> Optional[bytes]:
+    """Skip trinity's shared persistence envelope, returning the inner payload.
+
+    Since the 2026-07 envelope adoption every carrier prepends a fixed 96-byte
+    envelope (magic "TRNPERS", include/persist-envelope.h) ahead of its own
+    header.  Return raw past the envelope so the version-specific parsers see
+    their component magic at offset 0.  Files with no envelope magic
+    (pre-2026-07 caches) are returned unchanged.  On a component-id mismatch
+    (e.g. a cmp-hints file handed to the kcov loader) warn and return None so
+    the caller cold-starts that carrier.
+    """
+    if len(raw) < PERSIST_ENVELOPE_SIZE:
+        return raw
+    magic, component_id = struct.unpack_from("<QI", raw, 0)
+    if magic != TRINITY_PERSIST_MAGIC:
+        return raw
+    if component_id != expected_component:
+        warn(
+            f"{kind}: {path}: envelope component {component_id} "
+            f"!= expected {expected_component}"
+        )
+        return None
+    return raw[PERSIST_ENVELOPE_SIZE:]
 
 
 def fmt_pct(num: float) -> str:
@@ -179,6 +222,10 @@ def load_kcov(path: str) -> Optional[KcovData]:
             raw = fh.read()
     except OSError as exc:
         warn(f"kcov: open {path}: {exc}")
+        return None
+
+    raw = strip_persist_envelope(raw, path, PERSIST_KCOV, "kcov")
+    if raw is None:
         return None
 
     if len(raw) < KCOV_HDR_V5_SIZE:
@@ -390,6 +437,10 @@ def load_corpus(path: str) -> Optional[CorpusData]:
         warn(f"corpus: open {path}: {exc}")
         return None
 
+    raw = strip_persist_envelope(raw, path, PERSIST_MINICORPUS, "corpus")
+    if raw is None:
+        return None
+
     if len(raw) < CORPUS_HDR_SIZE:
         warn(f"corpus: {path}: file too small ({len(raw)} bytes)")
         return None
@@ -485,6 +536,10 @@ def load_cmp_hints(path: str) -> Optional[CmpHintsData]:
             raw = fh.read()
     except OSError as exc:
         warn(f"cmp-hints: open {path}: {exc}")
+        return None
+
+    raw = strip_persist_envelope(raw, path, PERSIST_CMP_HINTS, "cmp-hints")
+    if raw is None:
         return None
 
     if len(raw) < CMP_HINTS_HDR_SIZE:
