@@ -56,6 +56,7 @@
 #endif
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "jitter.h"
 #include "proto-alg-dict.h"
@@ -129,7 +130,8 @@ static bool pick_algorithm(enum alg_type_idx *type_out, const char **name_out)
  * cmsg even when iov is empty.  Caller chooses op (ALG_SET_KEY/IV) and
  * supplies a length that may be zero (the zero-length edge is part of
  * the rotation). */
-static void send_cmsg_only(int fd, int op, const void *payload, size_t len)
+static void send_cmsg_only(int fd, int op, const void *payload, size_t len,
+			   unsigned long *direct_calls)
 {
 	char buf[CMSG_SPACE(ARC_KEY_MAX)];
 	struct msghdr mh = {0};
@@ -149,6 +151,7 @@ static void send_cmsg_only(int fd, int op, const void *payload, size_t len)
 	if (len > 0 && payload != NULL)
 		memcpy(CMSG_DATA(cmsg), payload, len);
 
+	(*direct_calls)++;
 	(void)sendmsg(fd, &mh, MSG_DONTWAIT);
 }
 
@@ -179,7 +182,8 @@ struct alg_recvmsg_child_ctx {
  * scatter trailer and the oversize single iov both live in cctx's
  * per-child scratch (sized for the larger of the two) so the hot
  * send path doesn't calloc/free on every iter. */
-static bool send_rotating_payload(int fd, struct alg_recvmsg_child_ctx *cctx)
+static bool send_rotating_payload(int fd, struct alg_recvmsg_child_ctx *cctx,
+				  unsigned long *direct_calls)
 {
 	unsigned char small_buf[1] = {0xa5};
 	struct iovec iov[8];
@@ -223,6 +227,7 @@ static bool send_rotating_payload(int fd, struct alg_recvmsg_child_ctx *cctx)
 		break;
 	}
 
+	(*direct_calls)++;
 	(void)sendmsg(fd, &mh, MSG_DONTWAIT);
 	return oob;
 }
@@ -232,7 +237,7 @@ static bool send_rotating_payload(int fd, struct alg_recvmsg_child_ctx *cctx)
  * of the rotating shape switch so it fires unconditionally per iter
  * rather than 1-of-N -- the trigger is cheap and the shape is the
  * exact one upstream CI has a C reproducer for. */
-static void send_empty_cmsg_no_more(int fd)
+static void send_empty_cmsg_no_more(int fd, unsigned long *direct_calls)
 {
 	struct msghdr mh = {0};
 
@@ -240,6 +245,7 @@ static void send_empty_cmsg_no_more(int fd)
 	mh.msg_iovlen = 0;
 	mh.msg_control = NULL;
 	mh.msg_controllen = 0;
+	(*direct_calls)++;
 	(void)sendmsg(fd, &mh, MSG_DONTWAIT);
 }
 
@@ -251,7 +257,8 @@ static void send_empty_cmsg_no_more(int fd)
  * per-child scratch (the many-small case packs 16x64=1024 into the
  * head of the same buffer), so the hot recv path doesn't calloc/free
  * on every iter. */
-static void recv_rotating(int fd, struct alg_recvmsg_child_ctx *cctx)
+static void recv_rotating(int fd, struct alg_recvmsg_child_ctx *cctx,
+			  unsigned long *direct_calls)
 {
 	unsigned char tiny[1];
 	struct iovec iov[16];
@@ -292,6 +299,7 @@ static void recv_rotating(int fd, struct alg_recvmsg_child_ctx *cctx)
 		break;
 	}
 
+	(*direct_calls)++;
 	(void)recvmsg(fd, &mh, MSG_DONTWAIT);
 }
 
@@ -323,7 +331,8 @@ struct alg_recvmsg_iter_ctx {
  * reason for child->op_type at the same site.
  */
 static int alg_recvmsg_iter_setup(struct alg_recvmsg_iter_ctx *ictx,
-				  struct childdata *child)
+				  struct childdata *child,
+				  unsigned long *direct_calls)
 {
 	enum alg_type_idx type;
 	const char *name;
@@ -331,6 +340,7 @@ static int alg_recvmsg_iter_setup(struct alg_recvmsg_iter_ctx *ictx,
 	if (!pick_algorithm(&type, &name))
 		return -1;
 
+	(*direct_calls)++;
 	ictx->parent_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
 	if (ictx->parent_fd < 0) {
 		if (errno == EAFNOSUPPORT) {
@@ -367,20 +377,24 @@ static int alg_recvmsg_iter_setup(struct alg_recvmsg_iter_ctx *ictx,
  * parent_fd via teardown; on success child_fd is owned by the context
  * and teardown closes both.  Returns 0 on success, -1 to bail.
  */
-static int alg_recvmsg_iter_arm(struct alg_recvmsg_iter_ctx *ictx)
+static int alg_recvmsg_iter_arm(struct alg_recvmsg_iter_ctx *ictx,
+				unsigned long *direct_calls)
 {
 	struct timeval tv;
 
+	(*direct_calls)++;
 	if (bind(ictx->parent_fd, (struct sockaddr *)&ictx->sa,
 		 sizeof(ictx->sa)) < 0)
 		return -1;
 
+	(*direct_calls)++;
 	ictx->child_fd = accept(ictx->parent_fd, NULL, NULL);
 	if (ictx->child_fd < 0)
 		return -1;
 
 	tv.tv_sec = ARC_RECVMSG_TIMEO_S;
 	tv.tv_usec = 0;
+	(*direct_calls)++;
 	(void)setsockopt(ictx->child_fd, SOL_SOCKET, SO_RCVTIMEO,
 			 &tv, sizeof(tv));
 	return 0;
@@ -399,7 +413,8 @@ static int alg_recvmsg_iter_arm(struct alg_recvmsg_iter_ctx *ictx)
  * them, so they don't belong in the cross-phase ictx.
  */
 static void alg_recvmsg_iter_drive(struct alg_recvmsg_iter_ctx *ictx,
-				   struct alg_recvmsg_child_ctx *cctx)
+				   struct alg_recvmsg_child_ctx *cctx,
+				   unsigned long *direct_calls)
 {
 	unsigned char keybuf[ARC_KEY_MAX];
 	unsigned char ivbuf[ARC_IV_MAX];
@@ -410,7 +425,8 @@ static void alg_recvmsg_iter_drive(struct alg_recvmsg_iter_ctx *ictx,
 
 		if (klen > 0)
 			generate_rand_bytes(keybuf, klen);
-		send_cmsg_only(ictx->child_fd, ALG_SET_KEY, keybuf, klen);
+		send_cmsg_only(ictx->child_fd, ALG_SET_KEY, keybuf, klen,
+			       direct_calls);
 		__atomic_add_fetch(&shm->stats.af_alg_recvmsg.setkey_sent,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -421,19 +437,20 @@ static void alg_recvmsg_iter_drive(struct alg_recvmsg_iter_ctx *ictx,
 
 		if (ilen > 0)
 			generate_rand_bytes(ivbuf, ilen);
-		send_cmsg_only(ictx->child_fd, ALG_SET_IV, ivbuf, ilen);
+		send_cmsg_only(ictx->child_fd, ALG_SET_IV, ivbuf, ilen,
+			       direct_calls);
 		__atomic_add_fetch(&shm->stats.af_alg_recvmsg.iv_sent,
 				   1, __ATOMIC_RELAXED);
 	}
 
-	if (send_rotating_payload(ictx->child_fd, cctx))
+	if (send_rotating_payload(ictx->child_fd, cctx, direct_calls))
 		__atomic_add_fetch(&shm->stats.af_alg_recvmsg.oob_iov,
 				   1, __ATOMIC_RELAXED);
 
 	/* Always emit the af_alg_pull_tsgl trigger shape (cmsg-only,
 	 * empty payload, no MSG_MORE) before recvmsg() so the slab-OOB
 	 * window is exercised on every iter, not just statistically. */
-	send_empty_cmsg_no_more(ictx->child_fd);
+	send_empty_cmsg_no_more(ictx->child_fd, direct_calls);
 	__atomic_add_fetch(&shm->stats.af_alg_recvmsg.empty_cmsg_no_more,
 			   1, __ATOMIC_RELAXED);
 }
@@ -446,26 +463,32 @@ static void alg_recvmsg_iter_drive(struct alg_recvmsg_iter_ctx *ictx,
  * child_fd is closed before parent_fd to match the pre-extraction
  * teardown order (close(op_fd); close(sk)).
  */
-static void alg_recvmsg_iter_teardown(struct alg_recvmsg_iter_ctx *ictx)
+static void alg_recvmsg_iter_teardown(struct alg_recvmsg_iter_ctx *ictx,
+				      unsigned long *direct_calls)
 {
-	if (ictx->child_fd >= 0)
+	if (ictx->child_fd >= 0) {
+		(*direct_calls)++;
 		close(ictx->child_fd);
-	if (ictx->parent_fd >= 0)
+	}
+	if (ictx->parent_fd >= 0) {
+		(*direct_calls)++;
 		close(ictx->parent_fd);
+	}
 }
 
 static void iter_one(struct alg_recvmsg_child_ctx *cctx,
-		     struct childdata *child)
+		     struct childdata *child,
+		     unsigned long *direct_calls)
 {
 	struct alg_recvmsg_iter_ctx ictx = {
 		.parent_fd = -1,
 		.child_fd = -1,
 	};
 
-	if (alg_recvmsg_iter_setup(&ictx, child) != 0)
+	if (alg_recvmsg_iter_setup(&ictx, child, direct_calls) != 0)
 		goto out;
 
-	if (alg_recvmsg_iter_arm(&ictx) != 0)
+	if (alg_recvmsg_iter_arm(&ictx, direct_calls) != 0)
 		goto out;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -483,11 +506,11 @@ static void iter_one(struct alg_recvmsg_child_ctx *cctx,
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
-	alg_recvmsg_iter_drive(&ictx, cctx);
-	recv_rotating(ictx.child_fd, cctx);
+	alg_recvmsg_iter_drive(&ictx, cctx, direct_calls);
+	recv_rotating(ictx.child_fd, cctx, direct_calls);
 
 out:
-	alg_recvmsg_iter_teardown(&ictx);
+	alg_recvmsg_iter_teardown(&ictx, direct_calls);
 }
 
 bool af_alg_recvmsg_churn(struct childdata *child)
@@ -504,6 +527,20 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 	struct alg_recvmsg_child_ctx cctx;
 	struct timespec t0;
 	unsigned int outer_iters, i;
+	/* Local direct-syscall tally.  Incremented at each socket/bind/
+	 * accept/setsockopt/sendmsg/recvmsg/close site inside iter_one and
+	 * its helpers.  Published once to shm at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
+
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.af_alg_recvmsg.runs, 1, __ATOMIC_RELAXED);
 
@@ -535,10 +572,13 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t0) >= ARC_WALL_CAP_NS)
 			break;
-		iter_one(&cctx, child);
+		iter_one(&cctx, child, &direct_calls);
 		if (alg_unsupported)
 			break;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
