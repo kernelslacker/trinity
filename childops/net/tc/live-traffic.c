@@ -65,6 +65,7 @@
 #include "bpf.h"
 #include "bpf-syscall.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
 #include "jitter.h"
@@ -727,21 +728,38 @@ static int tc_live_in_ns(void *arg)
 	int udp = -1;
 	__u32 prio;
 	int rc;
+	/* Direct-syscall tally accumulated across the setup / burst /
+	 * teardown paths.  Every helper site bumps this counter by the
+	 * number of raw kernel calls it just issued: nl_open success ==
+	 * 3 (socket + bind + setsockopt for recv_timeo_s), each
+	 * nl_send_recv wrapper (build_veth_pair / build_clsact /
+	 * build_matchall_mirred / build_delfilter / xdp_netlink_attach /
+	 * rtnl_setlink_up / rtnl_dellink / rtnl_bring_lo_up) == 2
+	 * (sendmsg + recv), each bpf(BPF_PROG_LOAD) == 1, AF_INET
+	 * socket()/setsockopt/close == 1, sendto() in the burst loop == 1
+	 * per attempt, nl_close == 1.  Published once via
+	 * childop_direct_syscalls_add() gated on valid_op so the setup-
+	 * latched short-circuit paths attribute only the syscalls they
+	 * actually issued. */
+	unsigned long direct_calls = 0;
 
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (ns_unsupported_rtnl() || ns_unsupported_veth() ||
 	    ns_unsupported_clsact() || ns_unsupported_matchall())
-		return 0;
+		goto out;
 
 	if (nl_open(&nl, &nl_opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
 			mark_ns_unsupported_rtnl();
 		__atomic_add_fetch(&shm->stats.tc_live_traffic.setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return 0;
+		goto out;
 	}
+	/* nl_open success path issued socket + bind + setsockopt
+	 * (recv_timeo_s > 0 above). */
+	direct_calls += 3;
 
 	if (!modprobe_tried_ingress) {
 		modprobe_tried_ingress = true;
@@ -766,6 +784,11 @@ static int tc_live_in_ns(void *arg)
 
 	if (!lo_brought_up) {
 		rtnl_bring_lo_up(&nl);
+		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
+		 * when the lo lookup succeeds; the if_nametoindex libc
+		 * probe stays unattributed to match the surrounding per-
+		 * childop convention. */
+		direct_calls += 2;
 		lo_brought_up = true;
 	}
 
@@ -781,6 +804,8 @@ static int tc_live_in_ns(void *arg)
 		 (unsigned int)(rand32() & 0xffffu));
 
 	rc = build_veth_pair(&nl, a_name, b_name);
+	/* build_veth_pair: sendmsg + recv. */
+	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			mark_ns_unsupported_veth();
@@ -799,8 +824,12 @@ static int tc_live_in_ns(void *arg)
 
 	(void)rtnl_setlink_up(&nl, a_idx);
 	(void)rtnl_setlink_up(&nl, b_idx);
+	/* rtnl_setlink_up (x2): sendmsg + recv each. */
+	direct_calls += 4;
 
 	rc = build_clsact(&nl, a_idx);
+	/* build_clsact: sendmsg + recv. */
+	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			mark_ns_unsupported_clsact();
@@ -815,6 +844,8 @@ static int tc_live_in_ns(void *arg)
 	prio = (rand32() & 0x1fU) + 1U;
 
 	rc = build_matchall_mirred(&nl, a_idx, b_idx, prio, false);
+	/* build_matchall_mirred: sendmsg + recv. */
+	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
 			mark_ns_unsupported_matchall();
@@ -835,6 +866,8 @@ static int tc_live_in_ns(void *arg)
 	 * XDP is a bonus surface, not a gate. */
 	if (!ns_unsupported_xdp()) {
 		xdp_fd = xdp_pass_prog_load();
+		/* xdp_pass_prog_load: one bpf(BPF_PROG_LOAD) syscall. */
+		direct_calls += 1;
 		if (xdp_fd < 0) {
 			mark_ns_unsupported_xdp();
 		} else {
@@ -842,6 +875,8 @@ static int tc_live_in_ns(void *arg)
 					   1, __ATOMIC_RELAXED);
 			rc = xdp_netlink_attach(&nl, (unsigned int)a_idx,
 						xdp_fd);
+			/* xdp_netlink_attach: sendmsg + recv. */
+			direct_calls += 2;
 			if (rc == 0) {
 				xdp_attached = true;
 				__atomic_add_fetch(&shm->stats.tc_live_traffic.xdp_attach_ok,
@@ -858,6 +893,8 @@ static int tc_live_in_ns(void *arg)
 		unsigned int iters, i;
 
 		udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		/* socket() is a raw kernel call. */
+		direct_calls += 1;
 		if (udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 				mark_ns_unsupported_inet();
@@ -865,6 +902,8 @@ static int tc_live_in_ns(void *arg)
 		}
 		(void)setsockopt(udp, SOL_SOCKET, SO_BINDTODEVICE,
 				 a_name, strlen(a_name) + 1);
+		/* setsockopt() is a raw kernel call. */
+		direct_calls += 1;
 
 		memset(&dst, 0, sizeof(dst));
 		dst.sin_family      = AF_INET;
@@ -903,6 +942,10 @@ static int tc_live_in_ns(void *arg)
 			n = sendto(udp, payload, sizeof(payload),
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
+			/* sendto(): one raw kernel call per attempt (not per
+			 * success) since even ENOBUFS / EMSGSIZE returns paid
+			 * the syscall entry. */
+			direct_calls += 1;
 			if (n > 0)
 				__atomic_add_fetch(&shm->stats.tc_live_traffic.packet_sent_ok,
 						   1, __ATOMIC_RELAXED);
@@ -914,6 +957,8 @@ static int tc_live_in_ns(void *arg)
 						    false) == 0)
 					__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_del_ok,
 							   1, __ATOMIC_RELAXED);
+				/* build_delfilter: sendmsg + recv. */
+				direct_calls += 2;
 
 				if (build_matchall_mirred(&nl, a_idx, b_idx,
 							  new_prio,
@@ -922,6 +967,8 @@ static int tc_live_in_ns(void *arg)
 					__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_replace_ok,
 							   1, __ATOMIC_RELAXED);
 				}
+				/* build_matchall_mirred: sendmsg + recv. */
+				direct_calls += 2;
 			}
 		}
 	}
@@ -933,6 +980,8 @@ static int tc_live_in_ns(void *arg)
 	 * ns_unsupported_bpf_cls off for the grandchild. */
 	if (!ns_unsupported_bpf_cls() && udp >= 0) {
 		cls_bpf_fd = cls_bpf_prog_load();
+		/* cls_bpf_prog_load: one bpf(BPF_PROG_LOAD) syscall. */
+		direct_calls += 1;
 		if (cls_bpf_fd < 0) {
 			mark_ns_unsupported_bpf_cls();
 		} else {
@@ -942,14 +991,25 @@ static int tc_live_in_ns(void *arg)
 	}
 
 out:
-	if (udp >= 0)
+	if (udp >= 0) {
 		close(udp);
-	if (cls_bpf_fd >= 0)
+		/* close() is a raw kernel call. */
+		direct_calls += 1;
+	}
+	if (cls_bpf_fd >= 0) {
 		close(cls_bpf_fd);
+		/* close() is a raw kernel call. */
+		direct_calls += 1;
+	}
 	if (xdp_fd >= 0) {
-		if (xdp_attached && a_idx > 0)
+		if (xdp_attached && a_idx > 0) {
 			(void)xdp_netlink_attach(&nl, (unsigned int)a_idx, -1);
+			/* xdp_netlink_attach detach: sendmsg + recv. */
+			direct_calls += 2;
+		}
 		close(xdp_fd);
+		/* close() is a raw kernel call. */
+		direct_calls += 1;
 	}
 	if (nl.fd >= 0) {
 		(void)clsact_added;	/* dellink cascades the clsact down */
@@ -957,9 +1017,24 @@ out:
 			if (rtnl_dellink(&nl, a_idx) == 0)
 				__atomic_add_fetch(&shm->stats.tc_live_traffic.link_del_ok,
 						   1, __ATOMIC_RELAXED);
+			/* rtnl_dellink: sendmsg + recv. */
+			direct_calls += 2;
 		}
 		nl_close(&nl);
+		/* nl_close: one close() on the netlink fd. */
+		direct_calls += 1;
 	}
+
+	/* Publish this invocation's direct-syscall load in ONE
+	 * RELAXED atomic add.  Tally was accumulated across the
+	 * setup / burst / teardown paths via direct_calls; the
+	 * grandchild's write on the shm slot is visible to the parent
+	 * (and to sibling children) after _exit() because shm is a
+	 * shared mapping.  Gated on valid_op to match the surrounding
+	 * per-op stats bumps -- setup-latched short-circuit exits
+	 * publish only the syscalls they actually issued. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 }
 
