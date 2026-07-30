@@ -55,6 +55,7 @@
 #include <linux/in6.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "errno-classify.h"
 #include "jitter.h"
@@ -488,6 +489,15 @@ static void iter_one_v4(int op_type, unsigned int iter_idx,
 		.salt     = (unsigned int)(rand32() & 0xffu),
 		.op_type  = op_type,
 	};
+	/* Running tally of direct kernel syscalls issued through libc on this
+	 * iter.  Bumped by the fixed per-phase syscall counts on the success
+	 * path (setup_send=4, setup_recv=6, join=2, each send_burst=2, race=1,
+	 * teardown=2 -- >3 per invocation) so the operator can compare this
+	 * op's saturation cost against the random-syscall denominator.
+	 * Published once, at op-exit, gated on valid_op via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic add
+	 * per iter instead of one per syscall. */
+	unsigned long direct_calls = 0;
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		return;
@@ -499,10 +509,15 @@ static void iter_one_v4(int op_type, unsigned int iter_idx,
 
 	if (igmp_source_iter_v4_setup_send(&it) != 0)
 		goto out;
+	direct_calls += 4;	/* socket + 2*setsockopt (apply_timeouts) + connect */
 	if (igmp_source_iter_v4_setup_recv(&it) != 0)
 		goto out;
+	direct_calls += 6;	/* socket + 2*setsockopt (apply_timeouts)
+				 * + setsockopt SO_REUSEADDR
+				 * + setsockopt IP_MULTICAST_LOOP + bind */
 	if (igmp_source_iter_v4_join(&it) != 0)
 		goto out;
+	direct_calls += 2;	/* 2 * MCAST_JOIN_SOURCE_GROUP setsockopt */
 
 	/* op_type was passed in from child->op_type, which lives in shared
 	 * memory and can be scribbled by a poisoned-arena write from a
@@ -518,16 +533,25 @@ static void iter_one_v4(int op_type, unsigned int iter_idx,
 				   1, __ATOMIC_RELAXED);
 	}
 	send_burst(it.send_s, 2);
+	direct_calls += 2;
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		goto teardown;
 
 	igmp_source_iter_v4_race(&it);
+	direct_calls += 1;	/* one MCAST_* / IP_DROP_MEMBERSHIP setsockopt
+				 * (race case C's rare calloc-fail edge elided
+				 * -- undercount is <1 syscall per iter). */
 
 	send_burst(it.send_s, 2);
+	direct_calls += 2;
 
 teardown:
 	igmp_source_iter_v4_teardown(&it);
+	direct_calls += 2;	/* close(send_s) + close(recv_s) */
+	if (valid_op)
+		childop_direct_syscalls_add((enum child_op_type)op_type,
+					    direct_calls);
 	return;
 
 out:
@@ -788,6 +812,10 @@ static void iter_one_v6(int op_type, unsigned int iter_idx,
 		.salt     = (unsigned int)(rand32() & 0xffu),
 		.op_type  = op_type,
 	};
+	/* v6 mirror of the v4 tally; see iter_one_v4 for the per-phase
+	 * accounting rationale.  Published once at op-exit gated on
+	 * valid_op. */
+	unsigned long direct_calls = 0;
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		return;
@@ -796,10 +824,15 @@ static void iter_one_v6(int op_type, unsigned int iter_idx,
 
 	if (mld_source_iter_v6_setup_send(&it) != 0)
 		goto out;
+	direct_calls += 4;	/* socket + 2*setsockopt (apply_timeouts) + connect */
 	if (mld_source_iter_v6_setup_recv(&it) != 0)
 		goto out;
+	direct_calls += 6;	/* socket + 2*setsockopt (apply_timeouts)
+				 * + setsockopt SO_REUSEADDR
+				 * + setsockopt IPV6_MULTICAST_LOOP + bind */
 	if (mld_source_iter_v6_join(&it) != 0)
 		goto out;
+	direct_calls += 2;	/* 2 * MCAST_JOIN_SOURCE_GROUP setsockopt */
 
 	/* op_type was passed in from child->op_type, which lives in shared
 	 * memory and can be scribbled by a poisoned-arena write from a
@@ -815,16 +848,24 @@ static void iter_one_v6(int op_type, unsigned int iter_idx,
 				   1, __ATOMIC_RELAXED);
 	}
 	send_burst(it.send_s, 2);
+	direct_calls += 2;
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		goto teardown;
 
 	mld_source_iter_v6_race(&it);
+	direct_calls += 1;	/* one MCAST_* / IPV6_DROP_MEMBERSHIP setsockopt
+				 * (race case C's rare calloc-fail edge elided). */
 
 	send_burst(it.send_s, 2);
+	direct_calls += 2;
 
 teardown:
 	mld_source_iter_v6_teardown(&it);
+	direct_calls += 2;	/* close(send_s) + close(recv_s) */
+	if (valid_op)
+		childop_direct_syscalls_add((enum child_op_type)op_type,
+					    direct_calls);
 	return;
 
 out:
