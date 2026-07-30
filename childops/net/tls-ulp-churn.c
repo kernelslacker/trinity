@@ -67,6 +67,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
 #include "jitter.h"
@@ -175,7 +176,7 @@ static void fill_cinfo_aes_gcm_128(struct tls12_crypto_info_aes_gcm_128 *ci,
  * success, -1 on failure.  The acceptor pid is reaped via waitpid() in
  * the caller's cleanup path so a half-built pair never leaves a
  * zombie. */
-static int open_loopback_pair(pid_t *out_pid)
+static int open_loopback_pair(pid_t *out_pid, unsigned long *calls)
 {
 	struct sockaddr_in addr;
 	socklen_t slen = sizeof(addr);
@@ -186,9 +187,11 @@ static int open_loopback_pair(pid_t *out_pid)
 
 	*out_pid = -1;
 
+	(*calls)++;
 	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (listener < 0)
 		return -1;
+	(*calls)++;
 	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
 	memset(&addr, 0, sizeof(addr));
@@ -196,20 +199,28 @@ static int open_loopback_pair(pid_t *out_pid)
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	addr.sin_port = 0;
 
+	(*calls)++;
 	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 		goto fail;
+	(*calls)++;
 	if (listen(listener, 1) < 0)
 		goto fail;
+	(*calls)++;
 	if (getsockname(listener, (struct sockaddr *)&addr, &slen) < 0)
 		goto fail;
 
+	(*calls)++;
 	pid = fork();
 	if (pid < 0)
 		goto fail;
 	if (pid == 0) {
 		/* Acceptor child.  accept() one connection, drain a small
 		 * amount of data so the parent's sends don't all go to the
-		 * receive queue and stall on watermarks, then exit. */
+		 * receive queue and stall on watermarks, then exit.
+		 * Runs in the FORKED child process — its accept/recv/close
+		 * are excluded from the parent's direct-syscall tally by
+		 * construction (the child's copy of *calls is discarded on
+		 * _exit()). */
 		int s;
 		unsigned char drain[1024];
 
@@ -229,18 +240,24 @@ static int open_loopback_pair(pid_t *out_pid)
 		_exit(0);
 	}
 
+	(*calls)++;
 	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (cli < 0) {
+		(*calls)++;
 		close(listener);
 		goto reap;
 	}
+	(*calls)++;
 	(void)fcntl(cli, F_SETFL, O_NONBLOCK);
+	(*calls)++;
 	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
 	    errno != EINPROGRESS) {
+		(*calls) += 2;
 		close(cli);
 		close(listener);
 		goto reap;
 	}
+	(*calls)++;
 	close(listener);
 
 	*out_pid = pid;
@@ -249,11 +266,13 @@ static int open_loopback_pair(pid_t *out_pid)
 reap:
 	{
 		int status;
+		(*calls)++;
 		(void)waitpid_eintr(pid, &status, WNOHANG);
 	}
 	return -1;
 
 fail:
+	(*calls)++;
 	close(listener);
 	return -1;
 }
@@ -264,8 +283,10 @@ fail:
  * per-process cap-gate and bump setup_failed on either errno.  Returns
  * 0 on success or -1 when tls_ulp_churn should bail to its out: cleanup
  * (s closed, acceptor reaped). */
-static int tls_ulp_churn_iter_install_tls_ulp(int s, struct childdata *child)
+static int tls_ulp_churn_iter_install_tls_ulp(int s, struct childdata *child,
+					      unsigned long *calls)
 {
+	(*calls)++;
 	if (setsockopt(s, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
 		if (errno == ENOPROTOOPT || errno == EPERM) {
 			ns_unsupported_tls_ulp = true;
@@ -303,7 +324,8 @@ static int tls_ulp_churn_iter_install_tls_ulp(int s, struct childdata *child)
  * stay on the same record-format variant. */
 static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out,
 					   struct childdata *child,
-					   int urandom_fd)
+					   int urandom_fd,
+					   unsigned long *calls)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
 	unsigned short version;
@@ -312,6 +334,7 @@ static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out,
 	version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
 	fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
 
+	(*calls)++;
 	rc = setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo));
 	if (rc < 0) {
 		/* child->op_type lives in shared memory and can be scribbled
@@ -343,6 +366,7 @@ static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out,
 			   1, __ATOMIC_RELAXED);
 
 	fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
+	(*calls)++;
 	(void)setsockopt(s, SOL_TLS, TLS_RX, &cinfo, sizeof(cinfo));
 
 	*version_out = version;
@@ -354,32 +378,40 @@ static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out,
  * into the TLS-armed socket.  The splice source is opened on demand and
  * closed inline; if /etc/passwd isn't there (chroot, slimmed sysroot)
  * the splice is silently skipped — the rest of the sequence still has
- * coverage value.  Returns void: both syscalls are best-effort and the
- * caller has no branch on either outcome. */
-static void tls_ulp_churn_iter_initial_traffic(int s)
+ * coverage value.  Returns the count of direct kernel syscalls issued
+ * so the caller can fold it into the per-invocation reporter tally;
+ * both syscalls are best-effort and the caller has no branch on either
+ * outcome. */
+static unsigned long tls_ulp_churn_iter_initial_traffic(int s)
 {
 	unsigned char payload[64];
 	int splice_src;
+	unsigned long calls = 0;
 
 	generate_rand_bytes(payload, sizeof(payload));
+	calls++;
 	if (send(s, payload, 1 + rnd_modulo_u32(sizeof(payload)),
 		 MSG_DONTWAIT | MSG_NOSIGNAL) > 0)
 		__atomic_add_fetch(&shm->stats.tls_ulp_churn.send_ok,
 				   1, __ATOMIC_RELAXED);
 
+	calls++;
 	splice_src = open(SPLICE_SRC_PATH, O_RDONLY | O_CLOEXEC);
 	if (splice_src >= 0) {
 		off_t off_in = 0;
 		ssize_t n;
 
+		calls++;
 		n = splice(splice_src, &off_in, s, NULL,
 			   SPLICE_MAX_BYTES,
 			   SPLICE_F_NONBLOCK | SPLICE_F_MORE);
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.tls_ulp_churn.splice_ok,
 					   1, __ATOMIC_RELAXED);
+		calls++;
 		close(splice_src);
 	}
+	return calls;
 }
 
 /* Step 7: rekey burst.  Each iteration installs TLS_TX with a fresh
@@ -389,23 +421,27 @@ static void tls_ulp_churn_iter_initial_traffic(int s)
  * tls_sw_splice_eof back-pressure edge.  Iter count is JITTER+BUDGETED
  * around ULP_CHURN_ITERS_BASE; the wall-clock cap fires inline against
  * @t0 whenever the loop spins past STORM_BUDGET_NS regardless of iter
- * count.  Returns void: failed rekey is itself an exercised reject edge
- * (kTLS historically returned EBUSY for in-place TX re-init) so neither
- * outcome triggers a caller-side branch. */
-static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
-					   const struct timespec *t0,
-					   int urandom_fd)
+ * count.  Returns the count of direct kernel syscalls issued so the
+ * caller can fold it into the per-invocation reporter tally; failed
+ * rekey is itself an exercised reject edge (kTLS historically returned
+ * EBUSY for in-place TX re-init) so neither outcome triggers a
+ * caller-side branch. */
+static unsigned long tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
+						    const struct timespec *t0,
+						    int urandom_fd)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
 	unsigned char payload[64];
 	unsigned int iters, i;
 	int rc, sp_src;
+	unsigned long calls = 0;
 
 	/* Splice source is reused across the whole burst: the coverage
 	 * target is the splice path against the rotated key, not a fresh
 	 * struct file per iteration.  off_in is passed by pointer so the
 	 * fd's f_pos is not consumed; resetting off_in to 0 inside the
 	 * loop keeps every splice rooted at the start of the file. */
+	calls++;
 	sp_src = open(SPLICE_SRC_PATH, O_RDONLY | O_CLOEXEC);
 
 	iters = BUDGETED(CHILD_OP_TLS_ULP_CHURN,
@@ -415,12 +451,14 @@ static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
 			break;
 
 		fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
+		calls++;
 		rc = setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo));
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.tls_ulp_churn.rekey_ok,
 					   1, __ATOMIC_RELAXED);
 
 			generate_rand_bytes(payload, sizeof(payload));
+			calls++;
 			(void)send(s, payload,
 				   1 + rnd_modulo_u32(sizeof(payload)),
 				   MSG_DONTWAIT | MSG_NOSIGNAL);
@@ -446,12 +484,16 @@ static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
 			/* SO_SNDBUFFORCE bypasses wmem_max with CAP_NET_ADMIN;
 			 * non-privileged callers fall back to SO_SNDBUF where
 			 * the kernel-min floor (SOCK_MIN_SNDBUF) still bites. */
+			calls++;
 			if (setsockopt(s, SOL_SOCKET, SO_SNDBUFFORCE,
 				       &snd, sizeof(snd)) < 0 &&
-			    errno == EPERM)
+			    errno == EPERM) {
+				calls++;
 				(void)setsockopt(s, SOL_SOCKET, SO_SNDBUF,
 						 &snd, sizeof(snd));
+			}
 
+			calls++;
 			n = splice(sp_src, &off_in, s, NULL,
 				   SPLICE_MAX_BYTES,
 				   SPLICE_F_NONBLOCK | SPLICE_F_MORE);
@@ -461,26 +503,35 @@ static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
 		}
 	}
 
-	if (sp_src >= 0)
+	if (sp_src >= 0) {
+		calls++;
 		close(sp_src);
+	}
+	return calls;
 }
 
 /* Step 8 + Step 9: drain the RX queue once (recv on the TLS-armed RX
  * path drives tls_sw_recvmsg / tls_strp even on the empty-queue case,
  * which is the strparser teardown vs queue-empty coverage edge) and
- * flush the socket with shutdown(SHUT_RDWR).  Returns void: both
- * syscalls are best-effort and the caller has no branch on either. */
-static void tls_ulp_churn_iter_recv_and_shutdown(int s)
+ * flush the socket with shutdown(SHUT_RDWR).  Returns the count of
+ * direct kernel syscalls issued so the caller can fold it into the
+ * per-invocation reporter tally; both syscalls are best-effort and the
+ * caller has no branch on either. */
+static unsigned long tls_ulp_churn_iter_recv_and_shutdown(int s)
 {
 	unsigned char rxbuf[256];
 	ssize_t n;
+	unsigned long calls = 0;
 
+	calls++;
 	n = recv(s, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.tls_ulp_churn.recv_ok,
 				   1, __ATOMIC_RELAXED);
 
+	calls++;
 	(void)shutdown(s, SHUT_RDWR);
+	return calls;
 }
 
 bool tls_ulp_churn(struct childdata *child)
@@ -490,6 +541,20 @@ bool tls_ulp_churn(struct childdata *child)
 	int s = -1;
 	int urandom_fd = -1;
 	unsigned short version;
+	/* Running tally of direct kernel syscalls issued across all phase
+	 * helpers this invocation.  Published once via
+	 * childop_direct_syscalls_add() after all cleanup so the operator
+	 * can compare tls_ulp_churn's saturation cost against the
+	 * random-syscall path's completed-call denominator.  One RELAXED
+	 * atomic add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.tls_ulp_churn.runs, 1, __ATOMIC_RELAXED);
 
@@ -505,28 +570,21 @@ bool tls_ulp_churn(struct childdata *child)
 		t0.tv_nsec = 0;
 	}
 
-	s = open_loopback_pair(&acceptor);
+	s = open_loopback_pair(&acceptor, &direct_calls);
 	if (s < 0) {
 		__atomic_add_fetch(&shm->stats.tls_ulp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return true;
+		goto out;
 	}
 
-	if (tls_ulp_churn_iter_install_tls_ulp(s, child) != 0)
+	if (tls_ulp_churn_iter_install_tls_ulp(s, child, &direct_calls) != 0)
 		goto out;
 
 	urandom_fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
 
-	if (tls_ulp_churn_iter_install_keys(s, &version, child, urandom_fd) != 0)
+	if (tls_ulp_churn_iter_install_keys(s, &version, child, urandom_fd,
+					    &direct_calls) != 0)
 		goto out;
-
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -535,11 +593,11 @@ bool tls_ulp_churn(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 
-	tls_ulp_churn_iter_initial_traffic(s);
+	direct_calls += tls_ulp_churn_iter_initial_traffic(s);
 
-	tls_ulp_churn_iter_rekey_burst(s, version, &t0, urandom_fd);
+	direct_calls += tls_ulp_churn_iter_rekey_burst(s, version, &t0, urandom_fd);
 
-	tls_ulp_churn_iter_recv_and_shutdown(s);
+	direct_calls += tls_ulp_churn_iter_recv_and_shutdown(s);
 
 out:
 	if (urandom_fd >= 0)
@@ -547,5 +605,7 @@ out:
 	if (s >= 0)
 		close(s);
 	reap_acceptor(acceptor);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
