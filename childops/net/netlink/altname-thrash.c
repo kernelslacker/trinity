@@ -72,6 +72,7 @@
 #include <time.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "jitter.h"
 #include "name-pool.h"
@@ -350,6 +351,18 @@ struct altname_iter_ctx {
 	int dummy_idx;
 	bool nl_opened;
 	bool dummy_added;
+	/* Direct-syscall tally accumulated across the setup / burst /
+	 * teardown helpers.  Every helper bumps this counter by the
+	 * number of raw kernel calls it just issued: nl_open success ==
+	 * 3 (socket + bind + setsockopt for recv_timeo_s), each
+	 * nl_send_recv wrapper == 2 (sendmsg + recv), nl_close == 1
+	 * (close).  Published once in altname_thrash_in_ns() via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall.  Setup-latched
+	 * short-circuit paths publish whatever they issued before
+	 * bailing (0 when socket() itself failed), which correctly
+	 * attributes no data-path work to those exits. */
+	unsigned long direct_calls;
 };
 
 /*
@@ -393,11 +406,18 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 		return -1;
 	}
 	ctx->nl_opened = true;
+	/* nl_open success path issued socket + bind + setsockopt
+	 * (recv_timeo_s > 0 above). */
+	ctx->direct_calls += 3;
 
 	(void)snprintf(ctx->dummy_name, sizeof(ctx->dummy_name), "tralt%u",
 		       (unsigned int)(rand32() & 0xffffu));
 
 	rc = build_dummy_create(&ctx->nl, ctx->dummy_name);
+	/* build_dummy_create wraps one nl_send_recv (sendmsg + recv).
+	 * Count the call attempt; a sendmsg early-fail overcounts by 1
+	 * on rare paths, negligible against burst dominance. */
+	ctx->direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
 			if (valid_op)
@@ -409,11 +429,16 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 	}
 	ctx->dummy_added = true;
 
+	/* if_nametoindex() is libc-internal (opens a socket, ioctl or
+	 * reads /proc/net/dev depending on glibc version); leave it
+	 * unattributed to keep the tally bounded to the wrappers we
+	 * know cold. */
 	ctx->dummy_idx = (int)if_nametoindex(ctx->dummy_name);
 	if (ctx->dummy_idx == 0)
 		return -1;
 
 	(void)rtnl_setlink_up(&ctx->nl, ctx->dummy_idx);
+	ctx->direct_calls += 2;
 	return 0;
 }
 
@@ -460,11 +485,15 @@ static void altname_thrash_iter_burst(struct altname_iter_ctx *ctx)
 			__atomic_add_fetch(&shm->stats.altname_thrash.addprop_done,
 					   1, __ATOMIC_RELAXED);
 		}
+		/* nl_send_recv: sendmsg + recv. */
+		ctx->direct_calls += 2;
 
 		if (build_getlink(&ctx->nl, ctx->dummy_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash.getlink_done,
 					   1, __ATOMIC_RELAXED);
 		}
+		/* nl_send_recv_any: sendmsg + recv. */
+		ctx->direct_calls += 2;
 
 		/* Pick victims for the del side from the ring of
 		 * recently-added names.  This keeps the kernel-side
@@ -487,6 +516,8 @@ static void altname_thrash_iter_burst(struct altname_iter_ctx *ctx)
 			__atomic_add_fetch(&shm->stats.altname_thrash.delprop_done,
 					   1, __ATOMIC_RELAXED);
 		}
+		/* nl_send_recv: sendmsg + recv. */
+		ctx->direct_calls += 2;
 	}
 }
 
@@ -504,9 +535,14 @@ static void altname_thrash_iter_teardown(struct altname_iter_ctx *ctx)
 {
 	if (!ctx->nl_opened)
 		return;
-	if (ctx->dummy_added && ctx->dummy_idx > 0)
+	if (ctx->dummy_added && ctx->dummy_idx > 0) {
 		(void)rtnl_dellink(&ctx->nl, ctx->dummy_idx);
+		/* nl_send_recv: sendmsg + recv. */
+		ctx->direct_calls += 2;
+	}
 	nl_close(&ctx->nl);
+	/* nl_close: one close() on the netlink fd. */
+	ctx->direct_calls += 1;
 }
 
 /*
@@ -541,6 +577,20 @@ static int altname_thrash_in_ns(void *arg)
 	}
 
 	altname_thrash_iter_teardown(ctx);
+
+	/* Publish this invocation's direct-syscall load in ONE
+	 * RELAXED atomic add.  Tally was accumulated across setup /
+	 * burst / teardown helpers via ctx->direct_calls; the grand-
+	 * child's write on the shm slot is visible to the parent (and
+	 * to sibling children) after _exit() because shm is a shared
+	 * mapping.  Gated on valid_op to match the surrounding per-op
+	 * stats bumps.  Setup-latched paths (nl_open fail or dummy-
+	 * create bounce) publish whatever they issued before bailing,
+	 * which correctly attributes no burst-phase work to those
+	 * exits. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx->direct_calls);
+
 	return 0;
 }
 
