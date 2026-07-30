@@ -144,46 +144,57 @@ enum splice_src {
 #define SPLICE_PROTO_MIN_LEN		16U
 #define SPLICE_PROTO_PAGE		4096U
 
-static int open_src_fd(unsigned int idx)
+static int open_src_fd(unsigned int idx, unsigned long *count)
 {
 	int fd = -1;
 
 	switch (idx % SRC_NR) {
 	case SRC_TMPFILE:
+		(*count)++;
 		fd = open(trinity_tmpdir_abs(), O_TMPFILE | O_RDWR | O_CLOEXEC, 0600);
 		if (fd >= 0) {
 			unsigned char buf[SPLICE_PROTO_PAGE];
 
 			generate_rand_bytes(buf, sizeof(buf));
+			(*count)++;
 			if (write(fd, buf, sizeof(buf)) < 0) {
+				(*count)++;
 				close(fd);
 				fd = -1;
 				break;
 			}
+			(*count)++;
 			(void) lseek(fd, 0, SEEK_SET);
 		}
 		break;
 	case SRC_DEV_SHM:
+		(*count)++;
 		fd = open("/dev/shm", O_TMPFILE | O_RDWR | O_CLOEXEC, 0600);
 		if (fd >= 0) {
 			unsigned char buf[SPLICE_PROTO_PAGE];
 
 			generate_rand_bytes(buf, sizeof(buf));
+			(*count)++;
 			if (write(fd, buf, sizeof(buf)) < 0) {
+				(*count)++;
 				close(fd);
 				fd = -1;
 				break;
 			}
+			(*count)++;
 			(void) lseek(fd, 0, SEEK_SET);
 		}
 		break;
 	case SRC_PROC_SELF_MAPS:
+		(*count)++;
 		fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
 		break;
 	case SRC_DEV_ZERO:
+		(*count)++;
 		fd = open("/dev/zero", O_RDONLY | O_CLOEXEC);
 		break;
 	case SRC_DEV_URANDOM:
+		(*count)++;
 		fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
 		break;
 	}
@@ -219,7 +230,7 @@ static unsigned int pick_flags(void)
  * paths to a pipe whose first buffers are vmsplice anon pages instead
  * of file-backed pages.  Skip / 8-byte / page / over-page rotation.
  */
-static void maybe_vmsplice_header(int pipe_w)
+static void maybe_vmsplice_header(int pipe_w, unsigned long *count)
 {
 	unsigned int arm = rnd_modulo_u32(4);
 	struct iovec iov;
@@ -246,23 +257,28 @@ static void maybe_vmsplice_header(int pipe_w)
 		iov.iov_len  = sizeof(over_buf);
 		break;
 	}
+	(*count)++;
 	(void) vmsplice(pipe_w, &iov, 1, SPLICE_F_NONBLOCK);
 }
 
-static int setup_udp_encap(unsigned int encap_type, enum splice_proto_setup tag)
+static int setup_udp_encap(unsigned int encap_type, enum splice_proto_setup tag,
+			   unsigned long *count)
 {
 	int fd;
 	int v = (int) encap_type;
 
+	(*count)++;
 	fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
 	if (fd < 0) {
 		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[tag] = true;
 		return -1;
 	}
+	(*count)++;
 	if (setsockopt(fd, SOL_UDP, UDP_ENCAP, &v, sizeof(v)) < 0) {
 		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[tag] = true;
+		(*count)++;
 		close(fd);
 		return -1;
 	}
@@ -273,19 +289,22 @@ static int setup_udp_encap(unsigned int encap_type, enum splice_proto_setup tag)
 		sin.sin_family = AF_INET;
 		sin.sin_port   = 0;
 		sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		(*count)++;
 		(void) bind(fd, (struct sockaddr *) &sin, sizeof(sin));
+		(*count)++;
 		(void) connect(fd, (struct sockaddr *) &sin, sizeof(sin));
 	}
 	return fd;
 }
 
-static int setup_tcp_repair(void)
+static int setup_tcp_repair(unsigned long *count)
 {
 	int listener = -1, client = -1;
 	struct sockaddr_in sin;
 	socklen_t slen;
 	int on = 1;
 
+	(*count)++;
 	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
 	if (listener < 0) {
 		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
@@ -296,37 +315,48 @@ static int setup_tcp_repair(void)
 	sin.sin_family = AF_INET;
 	sin.sin_port   = 0;
 	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	(*count)++;
 	if (bind(listener, (struct sockaddr *) &sin, sizeof(sin)) < 0)
 		goto fail;
+	(*count)++;
 	if (listen(listener, 1) < 0)
 		goto fail;
 	slen = sizeof(sin);
+	(*count)++;
 	if (getsockname(listener, (struct sockaddr *) &sin, &slen) < 0)
 		goto fail;
 
+	(*count)++;
 	client = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
 	if (client < 0)
 		goto fail;
+	(*count)++;
 	if (connect(client, (struct sockaddr *) &sin, sizeof(sin)) < 0)
 		goto fail;
 
+	(*count)++;
 	if (setsockopt(client, IPPROTO_TCP, TCP_REPAIR, &on, sizeof(on)) < 0) {
 		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[SPS_TCP_REPAIR] = true;
 		goto fail;
 	}
 
+	(*count)++;
 	close(listener);
 	return client;
 fail:
-	if (client >= 0)
+	if (client >= 0) {
+		(*count)++;
 		close(client);
-	if (listener >= 0)
+	}
+	if (listener >= 0) {
+		(*count)++;
 		close(listener);
+	}
 	return -1;
 }
 
-static int setup_packet_rx_ring(void)
+static int setup_packet_rx_ring(unsigned long *count)
 {
 #ifdef ETH_P_ALL
 	int fd;
@@ -348,6 +378,7 @@ static int setup_packet_rx_ring(void)
 	} req3;
 	unsigned int arm;
 
+	(*count)++;
 	fd = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
 	if (fd < 0) {
 		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
@@ -357,6 +388,7 @@ static int setup_packet_rx_ring(void)
 
 	arm = rnd_modulo_u32(3);
 	ver = (arm == 0) ? TPACKET_V1 : (arm == 1) ? TPACKET_V2 : TPACKET_V3;
+	(*count)++;
 	(void) setsockopt(fd, SOL_PACKET, PACKET_VERSION, &ver, sizeof(ver));
 
 	if (arm < 2) {
@@ -366,10 +398,12 @@ static int setup_packet_rx_ring(void)
 		req.tp_frame_size = 2048;
 		req.tp_frame_nr   = (req.tp_block_size / req.tp_frame_size) *
 				    req.tp_block_nr;
+		(*count)++;
 		if (setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
 			       &req, sizeof(req)) < 0) {
 			if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 				unsupported_setup[SPS_PACKET_RX_RING] = true;
+			(*count)++;
 			close(fd);
 			return -1;
 		}
@@ -381,27 +415,31 @@ static int setup_packet_rx_ring(void)
 		req3.tp_frame_nr   = (req3.tp_block_size / req3.tp_frame_size) *
 				     req3.tp_block_nr;
 		req3.tp_retire_blk_tov = 100;
+		(*count)++;
 		if (setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
 			       &req3, sizeof(req3)) < 0) {
 			if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 				unsupported_setup[SPS_PACKET_RX_RING] = true;
+			(*count)++;
 			close(fd);
 			return -1;
 		}
 	}
 	return fd;
 #else
+	(void) count;
 	unsupported_setup[SPS_PACKET_RX_RING] = true;
 	return -1;
 #endif
 }
 
-static int setup_af_alg(void)
+static int setup_af_alg(unsigned long *count)
 {
 #ifdef AF_ALG
 	int parent_fd, child_fd;
 	struct sockaddr_alg sa;
 
+	(*count)++;
 	parent_fd = socket(AF_ALG, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
 	if (parent_fd < 0) {
 		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
@@ -416,10 +454,12 @@ static int setup_af_alg(void)
 	strncpy((char *) sa.salg_name, "cbc(aes)",
 		sizeof(sa.salg_name) - 1);
 
+	(*count)++;
 	if (bind(parent_fd, (struct sockaddr *) &sa, sizeof(sa)) < 0) {
 		if ((is_syscall_unsupported(errno) || is_proto_family_unsupported(errno)) || errno == ENOENT ||
 		    errno == ESRCH)
 			unsupported_setup[SPS_AF_ALG] = true;
+		(*count)++;
 		close(parent_fd);
 		return -1;
 	}
@@ -428,32 +468,38 @@ static int setup_af_alg(void)
 		unsigned char key[16];
 
 		generate_rand_bytes(key, sizeof(key));
+		(*count)++;
 		(void) setsockopt(parent_fd, SOL_ALG, ALG_SET_KEY,
 				  key, sizeof(key));
 	}
 
+	(*count)++;
 	child_fd = accept4(parent_fd, NULL, NULL, SOCK_CLOEXEC);
 	if (child_fd < 0) {
 		int saved_errno = errno;
+		(*count)++;
 		close(parent_fd);
 		if (is_syscall_unsupported(saved_errno) || is_proto_family_unsupported(saved_errno))
 			unsupported_setup[SPS_AF_ALG] = true;
 		return -1;
 	}
+	(*count)++;
 	close(parent_fd);
 	return child_fd;
 #else
+	(void) count;
 	unsupported_setup[SPS_AF_ALG] = true;
 	return -1;
 #endif
 }
 
-static int setup_af_rxrpc(void)
+static int setup_af_rxrpc(unsigned long *count)
 {
 #if defined(AF_RXRPC) && __has_include(<linux/rxrpc.h>)
 	int fd;
 	struct sockaddr_rxrpc srx;
 
+	(*count)++;
 	fd = socket(AF_RXRPC, SOCK_DGRAM | SOCK_CLOEXEC, PF_INET);
 	if (fd < 0) {
 		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
@@ -470,34 +516,37 @@ static int setup_af_rxrpc(void)
 	srx.transport.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	srx.transport.sin.sin_port = 0;
 
+	(*count)++;
 	if (bind(fd, (struct sockaddr *) &srx, sizeof(srx)) < 0) {
 		if (is_syscall_unsupported(errno) || is_proto_family_unsupported(errno))
 			unsupported_setup[SPS_AF_RXRPC] = true;
+		(*count)++;
 		close(fd);
 		return -1;
 	}
 	return fd;
 #else
+	(void) count;
 	unsupported_setup[SPS_AF_RXRPC] = true;
 	return -1;
 #endif
 }
 
-static int build_socket(enum splice_proto_setup setup)
+static int build_socket(enum splice_proto_setup setup, unsigned long *count)
 {
 	switch (setup) {
 	case SPS_UDP_ESPINUDP:
-		return setup_udp_encap(UDP_ENCAP_ESPINUDP, setup);
+		return setup_udp_encap(UDP_ENCAP_ESPINUDP, setup, count);
 	case SPS_UDP_L2TPINUDP:
-		return setup_udp_encap(UDP_ENCAP_L2TPINUDP, setup);
+		return setup_udp_encap(UDP_ENCAP_L2TPINUDP, setup, count);
 	case SPS_TCP_REPAIR:
-		return setup_tcp_repair();
+		return setup_tcp_repair(count);
 	case SPS_PACKET_RX_RING:
-		return setup_packet_rx_ring();
+		return setup_packet_rx_ring(count);
 	case SPS_AF_ALG:
-		return setup_af_alg();
+		return setup_af_alg(count);
 	case SPS_AF_RXRPC:
-		return setup_af_rxrpc();
+		return setup_af_rxrpc(count);
 	case SPS_NR:
 		break;
 	}
@@ -621,7 +670,7 @@ out:
 		(void) unlink(path);
 }
 
-static void run_iter(struct childdata *child, unsigned int iter)
+static unsigned long run_iter(struct childdata *child, unsigned int iter)
 {
 	enum splice_proto_setup setup;
 	int sock_fd = -1, src_fd = -1;
@@ -629,11 +678,12 @@ static void run_iter(struct childdata *child, unsigned int iter)
 	unsigned int len, flags_in, flags_out;
 	ssize_t in_n, out_n;
 	bool first_skip = false;
+	unsigned long direct_calls = 0;
 
 	if (pick_setup(iter, &setup) < 0)
-		return;
+		return direct_calls;
 
-	sock_fd = build_socket(setup);
+	sock_fd = build_socket(setup, &direct_calls);
 	if (sock_fd < 0) {
 		__atomic_add_fetch(&shm->stats.splice_protocols.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -669,10 +719,11 @@ static void run_iter(struct childdata *child, unsigned int iter)
 	if (first_skip)
 		goto out;
 
-	src_fd = open_src_fd(iter);
+	src_fd = open_src_fd(iter, &direct_calls);
 	if (src_fd < 0)
 		goto out;
 
+	direct_calls++;
 	if (pipe2(pfd, O_CLOEXEC | O_NONBLOCK) < 0)
 		goto out;
 
@@ -689,7 +740,7 @@ static void run_iter(struct childdata *child, unsigned int iter)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
-	maybe_vmsplice_header(pfd[1]);
+	maybe_vmsplice_header(pfd[1], &direct_calls);
 
 	len = pick_len();
 	flags_in  = pick_flags();
@@ -698,6 +749,7 @@ static void run_iter(struct childdata *child, unsigned int iter)
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
+	direct_calls++;
 	in_n = splice(src_fd, NULL, pfd[1], NULL, len, flags_in);
 	if (in_n > 0) {
 		__atomic_add_fetch(&shm->stats.splice_protocols.in_bytes,
@@ -714,6 +766,7 @@ static void run_iter(struct childdata *child, unsigned int iter)
 		 */
 		__atomic_add_fetch(&shm->stats.splice_protocols.msg_splice_pages_attempted,
 				   1, __ATOMIC_RELAXED);
+		direct_calls++;
 		out_n = splice(pfd[0], NULL, sock_fd, NULL,
 			       (size_t) in_n, flags_out);
 		if (out_n > 0) {
@@ -728,6 +781,7 @@ static void run_iter(struct childdata *child, unsigned int iter)
 			if (RAND_BOOL()) {
 				unsigned char rxbuf[512];
 
+				direct_calls++;
 				(void) recv(sock_fd, rxbuf, sizeof(rxbuf),
 					    MSG_DONTWAIT);
 			}
@@ -735,20 +789,37 @@ static void run_iter(struct childdata *child, unsigned int iter)
 	}
 
 out:
-	if (pfd[0] >= 0)
+	if (pfd[0] >= 0) {
+		direct_calls++;
 		close(pfd[0]);
-	if (pfd[1] >= 0)
+	}
+	if (pfd[1] >= 0) {
+		direct_calls++;
 		close(pfd[1]);
-	if (src_fd >= 0)
+	}
+	if (src_fd >= 0) {
+		direct_calls++;
 		close(src_fd);
-	if (sock_fd >= 0)
+	}
+	if (sock_fd >= 0) {
+		direct_calls++;
 		close(sock_fd);
+	}
+	return direct_calls;
 }
 
 bool splice_protocols(struct childdata *child)
 {
 	unsigned int iters, i, start;
 	bool any_supported = false;
+	unsigned long direct_calls = 0;
+	/* Snapshot child->op_type once and bounds-check before publishing
+	 * per-op direct-syscall telemetry.  The field lives in shared memory
+	 * and can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.splice_protocols.runs,
 			   1, __ATOMIC_RELAXED);
@@ -765,13 +836,7 @@ bool splice_protocols(struct childdata *child)
 		}
 	}
 	if (!any_supported) {
-		/* child->op_type lives in shared memory and can be scribbled
-		 * by a poisoned-arena write from a sibling; bounds-check the
-		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
-		 * array, same pattern the child.c dispatch loop uses for the
-		 * unguarded write that motivated this guard. */
-		const enum child_op_type op = child->op_type;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+		if (valid_op)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
@@ -788,7 +853,10 @@ bool splice_protocols(struct childdata *child)
 
 	start = rnd_u32();
 	for (i = 0; i < iters; i++)
-		run_iter(child, start + i);
+		direct_calls += run_iter(child, start + i);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
