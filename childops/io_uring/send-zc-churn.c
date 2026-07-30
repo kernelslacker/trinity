@@ -57,6 +57,7 @@
 #include <linux/io_uring.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-iouring.h"
 #include "childops-netlink.h"
@@ -102,14 +103,17 @@ static bool ns_unsupported_iouring_send_zc_churn;
 #define ZC_BUF_COUNT			8U
 #define ZC_BUF_BYTES			4096U
 
-static int do_register(int fd, unsigned int op, void *arg, unsigned int nr)
+static int do_register(int fd, unsigned int op, void *arg, unsigned int nr,
+		       unsigned long *direct_calls)
 {
+	(*direct_calls)++;
 	return (int)trinity_raw_syscall(__NR_io_uring_register, fd, op, arg, nr);
 }
 
 static int do_enter(int fd, unsigned int to_submit, unsigned int min_complete,
-		    unsigned int flags)
+		    unsigned int flags, unsigned long *direct_calls)
 {
+	(*direct_calls)++;
 	return (int)trinity_raw_syscall(__NR_io_uring_enter, fd, to_submit, min_complete,
 			    flags, NULL, 0);
 }
@@ -330,6 +334,12 @@ struct iouring_send_zc_iter_ctx {
 	/* Caller's struct childdata so the iter phase helpers can
 	 * attribute per-childop yield counters to child->op_type. */
 	struct childdata *child;
+	/* Accumulator owned by iouring_send_zc_churn(); bumped inside
+	 * do_register()/do_enter() at every trinity_raw_syscall site so
+	 * fleet-wide direct-syscall telemetry sees the register/enter
+	 * traffic this op issues.  Published once at op-exit via a
+	 * single RELAXED childop_direct_syscalls_add(). */
+	unsigned long *direct_calls;
 };
 
 /*
@@ -398,7 +408,7 @@ static int iouring_send_zc_iter_setup(struct iouring_send_zc_iter_ctx *it)
 	}
 
 	if (do_register(it->ring.fd, IORING_REGISTER_BUFFERS,
-			it->bufs, ZC_BUF_COUNT) < 0) {
+			it->bufs, ZC_BUF_COUNT, it->direct_calls) < 0) {
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -538,7 +548,7 @@ static void iouring_send_zc_iter_race(struct iouring_send_zc_iter_ctx *it)
 	upd.nr     = 1;
 
 	if (do_register(it->ring.fd, IORING_REGISTER_BUFFERS_UPDATE,
-			&upd, sizeof(upd)) >= 0)
+			&upd, sizeof(upd), it->direct_calls) >= 0)
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.update_race_ok,
 				   1, __ATOMIC_RELAXED);
 }
@@ -558,7 +568,7 @@ static void iouring_send_zc_iter_drive(struct iouring_send_zc_iter_ctx *it,
 	unsigned int reaped;
 
 	r = do_enter(it->ring.fd, it->submitted, it->submitted,
-		     IORING_ENTER_GETEVENTS);
+		     IORING_ENTER_GETEVENTS, it->direct_calls);
 	if (r >= 0) {
 		reaped = drain_cqes(&it->ring);
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.cqe_drained,
@@ -568,7 +578,8 @@ static void iouring_send_zc_iter_drive(struct iouring_send_zc_iter_ctx *it,
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
 		return;
 
-	if (do_register(it->ring.fd, IORING_UNREGISTER_BUFFERS, NULL, 0) >= 0) {
+	if (do_register(it->ring.fd, IORING_UNREGISTER_BUFFERS, NULL, 0,
+			it->direct_calls) >= 0) {
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.unregister_race_ok,
 				   1, __ATOMIC_RELAXED);
 		it->bufs_registered = false;
@@ -580,16 +591,18 @@ static void iouring_send_zc_iter_drive(struct iouring_send_zc_iter_ctx *it,
 }
 
 /* One full sequence on a freshly-created ring + loopback TCP socket. */
-static void iter_one(const struct timespec *t_outer, struct childdata *child)
+static void iter_one(const struct timespec *t_outer, struct childdata *child,
+		     unsigned long *direct_calls)
 {
 	struct iouring_send_zc_iter_ctx it;
 	unsigned int i;
 
 	memset(&it, 0, sizeof(it));
-	it.replacement = MAP_FAILED;
-	it.acceptor    = -1;
-	it.sock_fd     = -1;
-	it.child       = child;
+	it.replacement   = MAP_FAILED;
+	it.acceptor      = -1;
+	it.sock_fd       = -1;
+	it.child         = child;
+	it.direct_calls  = direct_calls;
 	for (i = 0; i < ZC_BUF_COUNT; i++)
 		it.pages[i] = MAP_FAILED;
 
@@ -630,7 +643,8 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child)
 
 out:
 	if (it.bufs_registered)
-		(void)do_register(it.ring.fd, IORING_UNREGISTER_BUFFERS, NULL, 0);
+		(void)do_register(it.ring.fd, IORING_UNREGISTER_BUFFERS, NULL, 0,
+				  it.direct_calls);
 	if (it.replacement != MAP_FAILED)
 		(void)munmap(it.replacement, ZC_BUF_BYTES);
 	for (i = 0; i < ZC_BUF_COUNT; i++) {
@@ -648,6 +662,22 @@ bool iouring_send_zc_churn(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling, same
+	 * pattern as 825305aed33d. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	/* Fleet-wide direct-syscall tally.  Bumped inside do_register()/
+	 * do_enter() at every trinity_raw_syscall site (REGISTER_BUFFERS,
+	 * REGISTER_BUFFERS_UPDATE, io_uring_enter, UNREGISTER_BUFFERS) so
+	 * telemetry sees the register/enter traffic this op issues.  The
+	 * shared iour_ring_setup / iour_ring_teardown helpers are not
+	 * counted -- they are per-cycle plumbing, not the fuzzed work the
+	 * reporter is measuring.  Published once at op-exit via a single
+	 * RELAXED childop_direct_syscalls_add() so the hot path pays one
+	 * atomic add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn.runs,
 			   1, __ATOMIC_RELAXED);
@@ -673,10 +703,13 @@ bool iouring_send_zc_churn(struct childdata *child)
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t_outer) >= ZC_WALL_CAP_NS)
 			break;
-		iter_one(&t_outer, child);
+		iter_one(&t_outer, child, &direct_calls);
 		if (ns_unsupported_iouring_send_zc_churn)
 			break;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
