@@ -68,6 +68,7 @@
 #include <time.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "childops-nfnl.h"
 #include "jitter.h"
@@ -467,6 +468,13 @@ struct sender_args {
 	int		ifindex;
 	unsigned char	dst_mac[6];
 	struct timespec	t0;
+	/* Direct-syscall tally accumulated inside brct_packet_sender.
+	 * Written by the sender thread and read by the main thread after
+	 * pthread_join() completes -- the join provides the necessary
+	 * happens-before edge so no atomic is required.  Bumped once per
+	 * sendto() attempt (not per success) since even ENOBUFS / EMSGSIZE
+	 * returns paid the syscall entry. */
+	unsigned long	direct_calls;
 };
 
 /* Per-invocation state shared across the extracted phase helpers.  Fd
@@ -492,6 +500,23 @@ struct bridge_conntrack_iter_ctx {
 	bool			veth_added;
 	bool			sender_started;
 	struct childdata	*child;
+	/* Direct-syscall tally accumulated across the setup / nft / traffic
+	 * / teardown phase helpers.  Every helper bumps this counter by the
+	 * number of raw kernel calls it just issued: nl_open / nfnl_open
+	 * success == 3 (socket + bind + setsockopt for recv_timeo_s > 0),
+	 * each nl_send_recv wrapper (rtnl_create_bridge / rtnl_setlink_up /
+	 * rtnl_dellink / ...) == 2 (sendmsg + recv), each
+	 * nfnl_send_recv_batched / _dump == 3 (sendmsg + blocking recv +
+	 * one MSG_DONTWAIT drain recv), each AF_PACKET socket / bind /
+	 * close == 1, each recv() in the drain loop == 1, nl_close /
+	 * nfnl_close == 1.  The pthread sender's tally is folded in from
+	 * ctx->sa.direct_calls after pthread_join().  Published once in
+	 * bridge_conntrack_churn_in_ns() via childop_direct_syscalls_add()
+	 * so the hot path pays one atomic add per invocation instead of
+	 * per-syscall.  Setup-latched short-circuit paths publish whatever
+	 * they issued before bailing, which correctly attributes no data-
+	 * path work to those exits. */
+	unsigned long		direct_calls;
 };
 
 static long brct_ns_since(const struct timespec *t0)
@@ -507,6 +532,7 @@ static long brct_ns_since(const struct timespec *t0)
 static void *brct_packet_sender(void *arg)
 {
 	struct sender_args *a = arg;
+	unsigned long calls = 0;
 	unsigned int i;
 
 	for (i = 0; i < BRCT_PACKET_CAP; i++) {
@@ -546,11 +572,16 @@ static void *brct_packet_sender(void *arg)
 		sll.sll_halen    = 6;
 		memcpy(sll.sll_addr, a->dst_mac, 6);
 
+		/* sendto(): one raw kernel call per attempt (not per success)
+		 * since even ENOBUFS / EMSGSIZE returns paid the syscall
+		 * entry. */
+		calls++;
 		if (sendto(a->raw_fd, frame, sizeof(frame), MSG_DONTWAIT,
 			   (struct sockaddr *)&sll, sizeof(sll)) > 0)
 			__atomic_add_fetch(&shm->stats.bridge_ct.pkts_sent,
 					   1, __ATOMIC_RELAXED);
 	}
+	a->direct_calls = calls;
 	return NULL;
 }
 
@@ -575,8 +606,16 @@ static int bridge_conntrack_iter_setup_names(struct bridge_conntrack_iter_ctx *c
 
 	if (nl_open(&ctx->rtnl, &rtnl_opts) < 0)
 		return -1;
+	/* nl_open success issued socket + bind + setsockopt (recv_timeo_s
+	 * > 0 above). */
+	ctx->direct_calls += 3;
 	if (!lo_up_done) {
 		rtnl_bring_lo_up(&ctx->rtnl);
+		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
+		 * when the lo lookup succeeds; the if_nametoindex libc probe
+		 * stays unattributed to match the surrounding per-childop
+		 * convention. */
+		ctx->direct_calls += 2;
 		lo_up_done = true;
 	}
 
@@ -611,6 +650,8 @@ static int bridge_conntrack_iter_bridge_create(struct bridge_conntrack_iter_ctx 
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	rc = rtnl_create_bridge(&ctx->rtnl, ctx->br_name);
+	/* rtnl_create_bridge wraps one nl_send_recv (sendmsg + recv). */
+	ctx->direct_calls += 2;
 	if (rc != 0) {
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT) {
@@ -651,7 +692,10 @@ static int bridge_conntrack_iter_bridge_create(struct bridge_conntrack_iter_ctx 
  */
 static int bridge_conntrack_iter_veth_attach(struct bridge_conntrack_iter_ctx *ctx)
 {
-	if (rtnl_create_veth(&ctx->rtnl, ctx->veth_a, ctx->veth_b) != 0)
+	int rc = rtnl_create_veth(&ctx->rtnl, ctx->veth_a, ctx->veth_b);
+	/* rtnl_create_veth wraps one nl_send_recv (sendmsg + recv). */
+	ctx->direct_calls += 2;
+	if (rc != 0)
 		return -1;
 	ctx->veth_added = true;
 	ctx->va_idx = (int)if_nametoindex(ctx->veth_a);
@@ -663,6 +707,9 @@ static int bridge_conntrack_iter_veth_attach(struct bridge_conntrack_iter_ctx *c
 	(void)rtnl_setlink_up(&ctx->rtnl, ctx->br_idx);
 	(void)rtnl_setlink_up(&ctx->rtnl, ctx->va_idx);
 	(void)rtnl_setlink_up(&ctx->rtnl, ctx->vb_idx);
+	/* Four nl_send_recv wrappers: setlink_master + 3x setlink_up.
+	 * Each is sendmsg + recv. */
+	ctx->direct_calls += 8;
 	return 0;
 }
 
@@ -696,7 +743,14 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
 
 	if (nfnl_open(&ctx->nfnl_nft, &nfnl_opts) < 0)
 		return -1;
+	/* nfnl_open success issued socket + bind + setsockopt (via nl_open
+	 * with recv_timeo_s > 0 above). */
+	ctx->direct_calls += 3;
 	rc = nft_install_bridge_ct(&ctx->nfnl_nft, "br_ct", "in");
+	/* nft_install_bridge_ct wraps one nfnl_send_recv_batched: one
+	 * sendmsg for the coalesced batch + one blocking recv + one
+	 * MSG_DONTWAIT drain recv that typically returns EAGAIN. */
+	ctx->direct_calls += 3;
 	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 		mark_ns_unsupported_nf_tables();
@@ -737,6 +791,9 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	ctx->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
+	/* socket() is a raw kernel call, counted whether it succeeds or
+	 * not since the syscall entry ran either way. */
+	ctx->direct_calls += 1;
 	if (ctx->raw >= 0) {
 		struct sockaddr_ll bind_sll;
 
@@ -746,6 +803,8 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 		bind_sll.sll_ifindex  = ctx->vb_idx;
 		(void)bind(ctx->raw, (struct sockaddr *)&bind_sll,
 			   sizeof(bind_sll));
+		/* bind() is a raw kernel call. */
+		ctx->direct_calls += 1;
 
 		memset(&ctx->sa, 0, sizeof(ctx->sa));
 		ctx->sa.raw_fd  = ctx->raw;
@@ -763,6 +822,10 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 	if (nfnl_open(&ctx->nfnl_ct, &nfnl_opts) == 0) {
 		struct timespec t0;
 
+		/* nfnl_open success issued socket + bind + setsockopt (via
+		 * nl_open with recv_timeo_s > 0 above). */
+		ctx->direct_calls += 3;
+
 		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 		iters = BUDGETED(CHILD_OP_BRIDGE_CT_CHURN,
 				 JITTER_RANGE(BRCT_FLUSH_BASE));
@@ -775,6 +838,11 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 			if (brct_ns_since(&t0) >= BRCT_BUDGET_NS)
 				break;
 			rc = ctnetlink_flush(&ctx->nfnl_ct);
+			/* ctnetlink_flush wraps one nfnl_send_recv_dump:
+			 * one sendmsg + one blocking recv + one MSG_DONTWAIT
+			 * drain recv (typically returns 0 or EAGAIN since a
+			 * fresh netns has no confirmed tuples to stream). */
+			ctx->direct_calls += 3;
 			if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 			    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 				mark_ns_unsupported_ctnetlink();
@@ -789,8 +857,13 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 		}
 	}
 
-	if (ctx->sender_started)
+	if (ctx->sender_started) {
 		(void)pthread_join(ctx->tid, NULL);
+		/* pthread_join provides the happens-before edge so the
+		 * sender's final ctx->sa.direct_calls store is visible
+		 * here without any explicit atomic barrier. */
+		ctx->direct_calls += ctx->sa.direct_calls;
+	}
 }
 
 /*
@@ -811,17 +884,43 @@ static void bridge_conntrack_iter_teardown(struct bridge_conntrack_iter_ctx *ctx
 		unsigned char drain[256];
 
 		while (recv(ctx->raw, drain, sizeof(drain), MSG_DONTWAIT) > 0)
-			;
+			/* Each successful drain recv is a raw kernel call;
+			 * the terminating EAGAIN return also paid a syscall
+			 * entry, so count one per loop iteration. */
+			ctx->direct_calls += 1;
+		/* Terminating EAGAIN / EOF recv still paid the syscall
+		 * entry. */
+		ctx->direct_calls += 1;
 		close(ctx->raw);
+		/* close() is a raw kernel call. */
+		ctx->direct_calls += 1;
 	}
+	/* nfnl_close wraps nl_close: only issues close() when the wrapped
+	 * fd is >= 0.  Attribute one syscall to teardown only when the fd
+	 * was actually open; a nfnl_open() that failed left fd == -1 and
+	 * paid no close(). */
+	if (ctx->nfnl_ct.nl.fd >= 0)
+		ctx->direct_calls += 1;
 	nfnl_close(&ctx->nfnl_ct);
+	if (ctx->nfnl_nft.nl.fd >= 0)
+		ctx->direct_calls += 1;
 	nfnl_close(&ctx->nfnl_nft);
 	if (ctx->rtnl.fd >= 0) {
-		if (ctx->bridge_added && ctx->br_idx > 0)
+		if (ctx->bridge_added && ctx->br_idx > 0) {
 			(void)rtnl_dellink(&ctx->rtnl, ctx->br_idx);
-		if (ctx->veth_added && ctx->vb_idx > 0)
+			/* rtnl_dellink wraps one nl_send_recv (sendmsg +
+			 * recv). */
+			ctx->direct_calls += 2;
+		}
+		if (ctx->veth_added && ctx->vb_idx > 0) {
 			(void)rtnl_dellink(&ctx->rtnl, ctx->vb_idx);
+			/* rtnl_dellink wraps one nl_send_recv (sendmsg +
+			 * recv). */
+			ctx->direct_calls += 2;
+		}
 		nl_close(&ctx->rtnl);
+		/* nl_close: one close() on the netlink fd. */
+		ctx->direct_calls += 1;
 	}
 }
 
@@ -875,6 +974,17 @@ static int bridge_conntrack_churn_in_ns(void *arg)
 
 out:
 	bridge_conntrack_iter_teardown(&ctx);
+
+	/* Publish this invocation's direct-syscall load in ONE RELAXED
+	 * atomic add.  Tally was accumulated across the setup / bridge /
+	 * veth / nft / traffic / teardown helpers via ctx.direct_calls
+	 * (with the pthread sender's contribution folded in from
+	 * ctx.sa.direct_calls after pthread_join); the grandchild's write
+	 * on the shm slot is visible to the parent (and to sibling
+	 * children) after _exit() because shm is a shared mapping.  Gated
+	 * on valid_op to match the surrounding per-op stats bumps. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return 0;
 }
 
