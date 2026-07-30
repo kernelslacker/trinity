@@ -73,6 +73,36 @@ enum stats_field {
 	STATS_FIELD_UNSHARE_NEWNET_THROTTLED,
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_64,	/* aux = syscall nr */
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_32,	/* aux = syscall nr */
+	/* Per-child staging + batched-flush migration of the hot per-syscall
+	 * kcov_collect() counters kcov_shm->per_syscall.per_syscall_calls[nr][ctx][do32]
+	 * and per_syscall_edges[nr][ctx][do32].  Previously bumped with a
+	 * per-call relaxed __atomic_fetch_add on a shared cacheline; the
+	 * children now accumulate into kcov_child_local_stats and flush via
+	 * this ring in the same cadence as the other kcov staging counters
+	 * (found-new-edge piggyback OR KCOV_LOCAL_STATS_FLUSH_SYSCALLS cap).
+	 * The parent drain applies the delta back into the same
+	 * kcov_shm->per_syscall.per_syscall_{calls,edges}[nr][ctx][do32]
+	 * cell so every existing reader (frontier picker, warm-reserve,
+	 * cold-skip, per_syscall_edges_total / per_syscall_calls_total,
+	 * kcov/persist.c prior emit, stats.c dump paths) keeps reading from
+	 * the same array and sees aggregated post-flush values.  The write
+	 * is single-writer (only the parent drain touches these cells now),
+	 * so plain += is safe against the RELAXED reader loads on aligned
+	 * unsigned long -- same shape as the RANGE_REJECTS_PER_SYSCALL
+	 * precedent above.
+	 *
+	 * Split 64/32 enums mirror the RANGE_REJECTS_PER_SYSCALL_{64,32}
+	 * split so the low do32 dim of the target array does not have to
+	 * be encoded into aux, leaving aux to carry (nr, ctx) packed as
+	 * (nr << 1) | ctx.  MAX_NR_SYSCALL == 1024 fits in 10 bits;
+	 * PICKER_NCTX == 2 fits in 1 bit, so the packed value fits in
+	 * uint16_t aux with room to spare.  The drain rejects nr >=
+	 * MAX_NR_SYSCALL; ctx is always in-bounds by construction (1 bit
+	 * covers both PICKER_CTX_INIT and PICKER_CTX_USERNS). */
+	STATS_FIELD_PER_SYSCALL_CALLS_64,	/* aux = (nr << 1) | ctx */
+	STATS_FIELD_PER_SYSCALL_CALLS_32,	/* aux = (nr << 1) | ctx */
+	STATS_FIELD_PER_SYSCALL_EDGES_64,	/* aux = (nr << 1) | ctx */
+	STATS_FIELD_PER_SYSCALL_EDGES_32,	/* aux = (nr << 1) | ctx */
 	STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
 	/*
 	 * Structural pre-dispatch reject from validate_arg_coupling().

@@ -544,8 +544,30 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		struct childdata *ccx = this_child();
 		unsigned int ctx = ccx != NULL ? ccx->context_id : PICKER_CTX_INIT;
 
-		__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_calls[nr][ctx][do32 ? 1 : 0],
-			1, __ATOMIC_RELAXED);
+		/* Per-child staging bump for per_syscall_calls[nr][ctx][do32].
+		 * Formerly a per-call relaxed atomic on the shared kcov_shm
+		 * cacheline; children now accumulate into local_stats and the
+		 * batched flush in kcov_child_flush_stats() enqueues one ring
+		 * slot per touched (nr, ctx, do32) tuple.  The parent drain
+		 * applies the delta back into the same shm cell so every
+		 * pre-existing reader (per_syscall_calls_total() and the
+		 * frontier / cold-skip / warm-reserve callers above it, the
+		 * kcov_diag dump and the persist priors emitter) keeps
+		 * reading from the same array.  ctx is bounds-checked here
+		 * even though generate_child_context stamps it in-range,
+		 * because a wild kernel store through a fuzzed syscall arg
+		 * could scribble context_id and turn the staged store into
+		 * an OOB write into adjacent local_stats fields.  do32 is a
+		 * bool so the ternary keeps the index in {0, 1}. */
+		{
+			struct childdata *ccps = this_child();
+
+			if (ccps != NULL &&
+			    kcov_local_stats_plausible(ccps->local_stats) &&
+			    ctx < PICKER_NCTX) {
+				ccps->local_stats->per_syscall_calls[nr][ctx][do32 ? 1 : 0]++;
+			}
+		}
 		/* per-syscall split of
 		 * kcov_collect() activity by collection mode.  See the field
 		 * comments in include/kcov.h: a remote-sampled syscall lands
@@ -585,8 +607,20 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * real bucket-edge count is surfaced via the
 			 * new_edge_count out-param below.  Sibling of the calls
 			 * bump above, keyed by the same picker-context stamp. */
-			__atomic_fetch_add(&kcov_shm->per_syscall.per_syscall_edges[nr][ctx][do32 ? 1 : 0],
-				1, __ATOMIC_RELAXED);
+			/* Per-child staging bump for per_syscall_edges[nr][ctx][do32].
+			 * Sibling of the per_syscall_calls bump above, same
+			 * staging + batched-flush model and the same ctx <
+			 * PICKER_NCTX bounds check for the scribble-recovery
+			 * gate. */
+			{
+				struct childdata *cceg = this_child();
+
+				if (cceg != NULL &&
+				    kcov_local_stats_plausible(cceg->local_stats) &&
+				    ctx < PICKER_NCTX) {
+					cceg->local_stats->per_syscall_edges[nr][ctx][do32 ? 1 : 0]++;
+				}
+			}
 			/* SHADOW-only Phase-1 remote-context split of the clean
 			 * per-thread signal above.  kcov_enable_remote()'s
 			 * KCOV_REMOTE_ENABLE puts the task in KCOV_MODE_REMOTE and
