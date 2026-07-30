@@ -183,13 +183,18 @@ static void bump_weak_bucket(enum probe_kind kind)
 /*
  * Drive one (type, name) entry through socket -> bind -> [setkey] ->
  * close.  Returns true if the top-level AF_ALG family probe latched
- * (caller should mark unsupported_af_alg_top_level and bail).  child
- * is threaded in so the per-childop yield counters
- * (childop_setup_accepted / childop_data_path / childop_latch_reason)
- * can be attributed to child->op_type; setup is "AF_ALG socket open",
- * data_path is "about to issue the bind() probe".
+ * (caller should mark unsupported_af_alg_top_level and bail).  op /
+ * valid_op are hoisted from the caller so the per-childop yield
+ * counters (childop_setup_accepted / childop_data_path /
+ * childop_latch_reason) can be attributed without re-snapshotting
+ * child->op_type; setup is "AF_ALG socket open", data_path is "about
+ * to issue the bind() probe".  direct_calls is bumped once per
+ * in-process syscall so the caller can feed
+ * childop_direct_syscalls_add on the valid_op path.
  */
-static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
+static bool probe_one_entry(struct probe_entry *e,
+			    enum child_op_type op, bool valid_op,
+			    unsigned long *direct_calls)
 {
 	struct sockaddr_alg sa;
 	unsigned char key[WEAK_CIPHER_PROBE_KEY_BYTES];
@@ -197,15 +202,8 @@ static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
 	int outcome;
 	bool retried = false;
 
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
 	fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
+	(*direct_calls)++;
 	if (fd < 0) {
 		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.socket_failed,
 				   1, __ATOMIC_RELAXED);
@@ -236,6 +234,7 @@ static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
 
 retry:
 	bind_rc = bind(fd, (struct sockaddr *)&sa, sizeof(sa));
+	(*direct_calls)++;
 	bind_errno = errno;
 	if (bind_rc < 0 && bind_errno == EBUSY && !retried) {
 		struct timespec ts = { 0, WEAK_CIPHER_EBUSY_RETRY_USEC * 1000L };
@@ -261,6 +260,7 @@ retry:
 			generate_rand_bytes(key, sizeof(key));
 			set_rc = setsockopt(fd, SOL_ALG, ALG_SET_KEY,
 					    key, sizeof(key));
+			(*direct_calls)++;
 			if (set_rc == 0) {
 				e->setkey_accepted++;
 				__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.setkey_accepted_total,
@@ -281,12 +281,20 @@ retry:
 
 	update_outcome_latch(e, outcome);
 	close(fd);
+	(*direct_calls)++;
 	return false;
 }
 
 bool af_alg_weak_cipher_probe(struct childdata *child)
 {
 	unsigned int i;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe.runs,
 			   1, __ATOMIC_RELAXED);
@@ -297,28 +305,23 @@ bool af_alg_weak_cipher_probe(struct childdata *child)
 	for (i = 0; i < PROBE_TABLE_LEN; i++) {
 		unsigned int idx = (rotation_cursor + i) % PROBE_TABLE_LEN;
 		struct probe_entry *e = &probe_table[idx];
+		unsigned long direct_calls = 0;
 
 		if (e->latched)
 			continue;
 
 		rotation_cursor = (idx + 1) % PROBE_TABLE_LEN;
-		if (probe_one_entry(e, child))
+		if (probe_one_entry(e, op, valid_op, &direct_calls))
 			unsupported_af_alg_top_level = true;
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
 	}
 
 	/* All entries latched -- nothing left to learn from this op. */
 	unsupported_af_alg_top_level = true;
-	/* child->op_type lives in shared memory and can be scribbled by a
-	 * poisoned-arena write from a sibling; bounds-check the snapshot
-	 * before indexing the NR_CHILD_OP_TYPES-sized stats arrays, same
-	 * pattern the child.c dispatch loop uses for the unguarded write
-	 * that motivated this guard. */
-	{
-		const enum child_op_type op = child->op_type;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			__atomic_store_n(&shm->stats.childop.latch_reason[op],
-					 CHILDOP_LATCH_OTHER, __ATOMIC_RELAXED);
-	}
+	if (valid_op)
+		__atomic_store_n(&shm->stats.childop.latch_reason[op],
+				 CHILDOP_LATCH_OTHER, __ATOMIC_RELAXED);
 	return true;
 }
