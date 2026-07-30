@@ -140,6 +140,14 @@ bool vma_split_storm(struct childdata *child)
 	void *base;
 	unsigned long region_bytes = VMA_SPLIT_STORM_REGION_BYTES;
 	unsigned int iters, i;
+	/* Local direct-syscall tally.  Each loop iteration issues exactly
+	 * one of mprotect/madvise/mremap (mutually exclusive branches) and
+	 * the trailing munmap always runs.  vma_pressure_is_high() may
+	 * break the loop early, so a tally beats a fixed iters*1 multiplier.
+	 * The initial mmap is excluded: on MAP_FAILED we return before any
+	 * reporter site is reachable.  Published once at op-exit via
+	 * childop_direct_syscalls_add(). */
+	unsigned long direct_calls = 0;
 
 	base = mmap(NULL, region_bytes, PROT_READ | PROT_WRITE,
 		    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -213,11 +221,19 @@ bool vma_split_storm(struct childdata *child)
 				base = moved;
 		}
 
+		/* One direct syscall issued above regardless of branch. */
+		direct_calls++;
+
 		/* Keep ptes hot for the next iteration. */
 		if ((i & 3U) == 0U)
 			touch_random_page(base, region_bytes);
 	}
 
 	(void)munmap(base, region_bytes);
+	direct_calls++;
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+
 	return true;
 }
