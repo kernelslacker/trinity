@@ -62,6 +62,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
 #include "jitter.h"
@@ -407,6 +408,9 @@ bool cpu_hotplug_rider(struct childdata *child)
 	if (real_offlines)
 		__atomic_add_fetch(&shm->stats.cpu_hotplug.actual_offlines,
 				   real_offlines, __ATOMIC_RELAXED);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, affinity_calls + sysfs_writes);
 
 	return true;
 }
