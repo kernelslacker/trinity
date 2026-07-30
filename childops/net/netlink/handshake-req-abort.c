@@ -55,6 +55,7 @@
 #include <netinet/in.h>
 #include <linux/netlink.h>
 
+#include "childop-outcome.h"
 #include "childops-genl.h"
 #include "jitter.h"
 #include "random.h"
@@ -180,6 +181,12 @@ bool handshake_req_abort(struct childdata *child)
 	unsigned int iters;
 	unsigned int i;
 	int rc;
+	/* Local direct-syscall tally.  Bumped by 2 per genl round-trip
+	 * (sendmsg + recv inside genl_send_recv()) so a mid-loop early
+	 * exit still credits the round-trips actually issued.  Published
+	 * once to shm at op-exit via childop_direct_syscalls_add() so the
+	 * hot path pays one atomic add per invocation. */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -235,6 +242,7 @@ bool handshake_req_abort(struct childdata *child)
 	 *    table walk under hs_lock.  Counted regardless of ack errno
 	 *    (EAGAIN is the ordinary outcome). */
 	(void)handshake_accept(&ctx);
+	direct_calls += 2;
 	__atomic_add_fetch(&shm->stats.handshake_req_abort.accept_ok,
 			   1, __ATOMIC_RELAXED);
 
@@ -250,6 +258,7 @@ bool handshake_req_abort(struct childdata *child)
 		 *    Kernel walks the request table; ENOENT without a
 		 *    live submitter, which is the bulk case. */
 		(void)handshake_done(&ctx, sock, 0);
+		direct_calls += 2;
 		__atomic_add_fetch(&shm->stats.handshake_req_abort.done_ok,
 				   1, __ATOMIC_RELAXED);
 
@@ -258,6 +267,7 @@ bool handshake_req_abort(struct childdata *child)
 		 *    against the prior DONE. */
 		(void)handshake_done(&ctx, sock,
 				     -(__s32)(1U + (rand32() & 0x7fU)));
+		direct_calls += 2;
 		__atomic_add_fetch(&shm->stats.handshake_req_abort.abort_ok,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -276,6 +286,8 @@ out:
 		close(sock);
 	if (ctx_open)
 		genl_close(&ctx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
 
