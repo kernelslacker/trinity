@@ -91,6 +91,7 @@
 #endif
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-genl.h"
 #include "childops-util.h"
@@ -148,11 +149,12 @@ static void latch_target(enum oracle_target t, const char *step, int err)
 		  target_names[t], step, err, target_names[t]);
 }
 
-static void set_short_recv_timeout(int fd)
+static void set_short_recv_timeout(int fd, unsigned long *n_calls)
 {
 	struct timeval tv = { 0, ORACLE_RCV_TIMEO_USEC };
 
 	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	(*n_calls)++;
 }
 
 /*
@@ -162,13 +164,15 @@ static void set_short_recv_timeout(int fd)
  * reopen via /proc/self/fd so the inode is auto-reaped on child exit.
  */
 static int open_oracle_file(char *out_path, size_t path_cap,
-			    unsigned char *out_baseline, size_t *out_size)
+			    unsigned char *out_baseline, size_t *out_size,
+			    unsigned long *n_calls)
 {
 	int fd = -1;
 	ssize_t n;
 
 	if (RAND_BOOL()) {
 		fd = open("/etc/hosts", O_RDONLY | O_CLOEXEC);
+		(*n_calls)++;
 		if (fd >= 0)
 			snprintf(out_path, path_cap, "/etc/hosts");
 	}
@@ -180,29 +184,39 @@ static int open_oracle_file(char *out_path, size_t path_cap,
 		snprintf(tmpl, sizeof(tmpl), "%s/trinity-oracle-XXXXXX",
 			 trinity_tmpdir_abs());
 		wfd = mkstemp(tmpl);
+		(*n_calls)++;
 
 		if (wfd < 0)
 			return -1;
 		(void)unlink(tmpl);
+		(*n_calls)++;
 		generate_rand_bytes(marker, sizeof(marker));
 		if (write(wfd, marker, sizeof(marker)) !=
 		    (ssize_t)sizeof(marker)) {
+			(*n_calls)++;
 			close(wfd);
+			(*n_calls)++;
 			return -1;
 		}
+		(*n_calls)++;
 		snprintf(out_path, path_cap, "/proc/self/fd/%d", wfd);
 		fd = open(out_path, O_RDONLY | O_CLOEXEC);
+		(*n_calls)++;
 		close(wfd);
+		(*n_calls)++;
 		if (fd < 0)
 			return -1;
 	}
 	n = read(fd, out_baseline, ORACLE_FILE_CAP);
+	(*n_calls)++;
 	if (n <= 0) {
 		close(fd);
+		(*n_calls)++;
 		return -1;
 	}
 	*out_size = (size_t)n;
 	(void)lseek(fd, 0, SEEK_SET);
+	(*n_calls)++;
 	return fd;
 }
 
@@ -215,17 +229,20 @@ static bool oracle_check_unchanged(const char *path,
 				   const unsigned char *baseline,
 				   size_t baseline_len, size_t *out_off,
 				   unsigned char *out_after,
-				   size_t *out_after_valid)
+				   size_t *out_after_valid,
+				   unsigned long *n_calls)
 {
 	unsigned char after[ORACLE_FILE_CAP];
 	int fd = open(path, O_RDONLY | O_CLOEXEC);
 	ssize_t n;
 	size_t i, lim, copy, avail;
 
+	(*n_calls)++;
 	if (fd < 0)
 		return true;
 	n = read(fd, after, sizeof(after));
 	close(fd);
+	(*n_calls) += 2;
 	if (n <= 0)
 		return true;
 	lim = (size_t)n < baseline_len ? (size_t)n : baseline_len;
@@ -273,7 +290,8 @@ static void log_corruption(enum oracle_target t, const char *path,
  * so the caller can still run the oracle (no MSG_SPLICE_PAGES =
  * non-frag skb = expected no-corruption); hard pipe failure is -1.
  */
-static ssize_t splice_into_socket(int file_fd, int sock_fd)
+static ssize_t splice_into_socket(int file_fd, int sock_fd,
+				  unsigned long *n_calls)
 {
 	int pfd[2] = { -1, -1 };
 	struct iovec iov;
@@ -281,17 +299,23 @@ static ssize_t splice_into_socket(int file_fd, int sock_fd)
 	unsigned char buf[ORACLE_SPLICE_BYTES];
 	ssize_t n_in, rd, n_out;
 
-	if (pipe2(pfd, O_CLOEXEC | O_NONBLOCK) < 0)
+	if (pipe2(pfd, O_CLOEXEC | O_NONBLOCK) < 0) {
+		(*n_calls)++;
 		return -1;
+	}
+	(*n_calls)++;
 	n_in = splice(file_fd, NULL, pfd[1], NULL, ORACLE_SPLICE_BYTES,
 		      SPLICE_F_MOVE | SPLICE_F_NONBLOCK);
+	(*n_calls)++;
 	if (n_in <= 0) {
 		close(pfd[0]); close(pfd[1]);
+		(*n_calls) += 2;
 		return 0;
 	}
 	rd = read(pfd[0], buf,
 		  (size_t)n_in > sizeof(buf) ? sizeof(buf) : (size_t)n_in);
 	close(pfd[0]); close(pfd[1]);
+	(*n_calls) += 3;
 	if (rd <= 0)
 		return 0;
 	iov.iov_base = buf;
@@ -301,16 +325,18 @@ static ssize_t splice_into_socket(int file_fd, int sock_fd)
 	mh.msg_iovlen = 1;
 	n_out = sendmsg(sock_fd, &mh,
 			MSG_SPLICE_PAGES | MSG_DONTWAIT | MSG_NOSIGNAL);
+	(*n_calls)++;
 	return n_out < 0 ? 0 : n_out;
 }
 
-static int try_espinudp(int file_fd)
+static int try_espinudp(int file_fd, unsigned long *n_calls)
 {
 	struct sockaddr_in sin;
 	int udp, v = UDP_ENCAP_ESPINUDP;
 	unsigned char rxbuf[256];
 
 	udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	(*n_calls)++;
 	if (udp < 0) {
 		if (errno_unsupported(errno))
 			latch_target(TGT_ESPINUDP, "socket", errno);
@@ -321,20 +347,25 @@ static int try_espinudp(int file_fd)
 	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	(void)bind(udp, (struct sockaddr *)&sin, sizeof(sin));
 	(void)connect(udp, (struct sockaddr *)&sin, sizeof(sin));
+	(*n_calls) += 2;
 	if (setsockopt(udp, SOL_UDP, UDP_ENCAP, &v, sizeof(v)) < 0) {
+		(*n_calls)++;
 		if (errno_unsupported(errno))
 			latch_target(TGT_ESPINUDP, "UDP_ENCAP", errno);
 		close(udp);
+		(*n_calls)++;
 		return -1;
 	}
-	set_short_recv_timeout(udp);
-	(void)splice_into_socket(file_fd, udp);
+	(*n_calls)++;
+	set_short_recv_timeout(udp, n_calls);
+	(void)splice_into_socket(file_fd, udp, n_calls);
 	(void)recv(udp, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
 	close(udp);
+	(*n_calls) += 2;
 	return 0;
 }
 
-static int try_af_rxrpc(int file_fd)
+static int try_af_rxrpc(int file_fd, unsigned long *n_calls)
 {
 #if defined(AF_RXRPC) && __has_include(<linux/rxrpc.h>) && \
     __has_include(<linux/keyctl.h>)
@@ -343,6 +374,7 @@ static int try_af_rxrpc(int file_fd)
 	long rc;
 
 	fd = socket(AF_RXRPC, SOCK_DGRAM | SOCK_CLOEXEC, PF_INET);
+	(*n_calls)++;
 	if (fd < 0) {
 		if (errno_unsupported(errno))
 			latch_target(TGT_AF_RXRPC, "socket", errno);
@@ -350,9 +382,11 @@ static int try_af_rxrpc(int file_fd)
 	}
 	rc = trinity_raw_syscall(SYS_add_key, "rxrpc", "trinity-oracle",
 		     NULL, (size_t)0, KEY_SPEC_THREAD_KEYRING);
+	(*n_calls)++;
 	if (rc < 0 && errno_unsupported(errno)) {
 		latch_target(TGT_AF_RXRPC, "add_key", errno);
 		close(fd);
+		(*n_calls)++;
 		return -1;
 	}
 	memset(&srx, 0, sizeof(srx));
@@ -362,25 +396,31 @@ static int try_af_rxrpc(int file_fd)
 	srx.transport.sin.sin_family = AF_INET;
 	srx.transport.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	if (bind(fd, (struct sockaddr *)&srx, sizeof(srx)) < 0) {
+		(*n_calls)++;
 		if (errno_unsupported(errno))
 			latch_target(TGT_AF_RXRPC, "bind", errno);
 		close(fd);
+		(*n_calls)++;
 		return -1;
 	}
+	(*n_calls)++;
 	(void)setsockopt(fd, SOL_RXRPC, RXRPC_MIN_SECURITY_LEVEL,
 			 &level, sizeof(level));
-	set_short_recv_timeout(fd);
-	(void)splice_into_socket(file_fd, fd);
+	(*n_calls)++;
+	set_short_recv_timeout(fd, n_calls);
+	(void)splice_into_socket(file_fd, fd, n_calls);
 	close(fd);
+	(*n_calls)++;
 	return 0;
 #else
 	(void)file_fd;
+	(void)n_calls;
 	latch_target(TGT_AF_RXRPC, "build", ENOSYS);
 	return -1;
 #endif
 }
 
-static int try_af_alg(int file_fd)
+static int try_af_alg(int file_fd, unsigned long *n_calls)
 {
 #if defined(AF_ALG) && __has_include(<linux/if_alg.h>)
 	struct sockaddr_alg sa;
@@ -388,6 +428,7 @@ static int try_af_alg(int file_fd)
 	int parent_fd, child_fd;
 
 	parent_fd = socket(AF_ALG, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
+	(*n_calls)++;
 	if (parent_fd < 0) {
 		if (errno_unsupported(errno))
 			latch_target(TGT_AF_ALG, "socket", errno);
@@ -398,29 +439,37 @@ static int try_af_alg(int file_fd)
 	strncpy((char *)sa.salg_type, "skcipher", sizeof(sa.salg_type) - 1);
 	strncpy((char *)sa.salg_name, "cbc(aes)", sizeof(sa.salg_name) - 1);
 	if (bind(parent_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+		(*n_calls)++;
 		if (errno_unsupported(errno) || errno == ESRCH)
 			latch_target(TGT_AF_ALG, "bind", errno);
 		close(parent_fd);
+		(*n_calls)++;
 		return -1;
 	}
+	(*n_calls)++;
 	generate_rand_bytes(key, sizeof(key));
 	(void)setsockopt(parent_fd, SOL_ALG, ALG_SET_KEY, key, sizeof(key));
 	child_fd = accept4(parent_fd, NULL, NULL, SOCK_CLOEXEC);
+	(*n_calls) += 2;
 	if (child_fd < 0) {
 		int saved_errno = errno;
 		close(parent_fd);
+		(*n_calls)++;
 		if (errno_unsupported(saved_errno))
 			latch_target(TGT_AF_ALG, "accept4", saved_errno);
 		return -1;
 	}
 	close(parent_fd);
-	set_short_recv_timeout(child_fd);
-	(void)splice_into_socket(file_fd, child_fd);
+	(*n_calls)++;
+	set_short_recv_timeout(child_fd, n_calls);
+	(void)splice_into_socket(file_fd, child_fd, n_calls);
 	(void)recv(child_fd, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
 	close(child_fd);
+	(*n_calls) += 2;
 	return 0;
 #else
 	(void)file_fd;
+	(void)n_calls;
 	latch_target(TGT_AF_ALG, "build", ENOSYS);
 	return -1;
 #endif
@@ -429,7 +478,7 @@ static int try_af_alg(int file_fd)
 /* One-shot loopback acceptor.  ktls needs a real connected peer or
  * the TLS_TX install would race against the connect handshake.  The
  * acceptor child accept()s once, drains, and exits; caller waitpids. */
-static int open_loopback_pair(pid_t *out_pid)
+static int open_loopback_pair(pid_t *out_pid, unsigned long *n_calls)
 {
 	struct sockaddr_in addr;
 	socklen_t slen = sizeof(addr);
@@ -438,24 +487,35 @@ static int open_loopback_pair(pid_t *out_pid)
 
 	*out_pid = -1;
 	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	(*n_calls)++;
 	if (listener < 0)
 		return -1;
 	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+	(*n_calls)++;
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0 ||
 	    listen(listener, 1) < 0 ||
 	    getsockname(listener, (struct sockaddr *)&addr, &slen) < 0) {
+		(*n_calls) += 3;
 		close(listener);
+		(*n_calls)++;
 		return -1;
 	}
+	(*n_calls) += 3;
 	pid = fork();
+	(*n_calls)++;
 	if (pid < 0) {
 		close(listener);
+		(*n_calls)++;
 		return -1;
 	}
 	if (pid == 0) {
+		/* Forked child: accept/recv/close/close/_exit run OUTSIDE
+		 * the counted parent body and must NOT contribute to the
+		 * per-invocation direct-syscall tally.  Do not touch
+		 * *n_calls in this branch. */
 		int s = accept(listener, NULL, NULL);
 		unsigned char drain[512];
 
@@ -468,18 +528,22 @@ static int open_loopback_pair(pid_t *out_pid)
 	}
 	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	close(listener);
+	(*n_calls) += 2;
 	if (cli < 0)
 		return -1;
 	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
 	    errno != EINPROGRESS) {
+		(*n_calls)++;
 		close(cli);
+		(*n_calls)++;
 		return -1;
 	}
+	(*n_calls)++;
 	*out_pid = pid;
 	return cli;
 }
 
-static void reap_acceptor_blocking(pid_t pid)
+static void reap_acceptor_blocking(pid_t pid, unsigned long *n_calls)
 {
 	int status;
 
@@ -487,24 +551,28 @@ static void reap_acceptor_blocking(pid_t pid)
 		return;
 	(void)kill(pid, SIGTERM);
 	(void)waitpid_eintr(pid, &status, 0);
+	(*n_calls) += 2;
 }
 
-static int try_ktls(int file_fd)
+static int try_ktls(int file_fd, unsigned long *n_calls)
 {
 	struct tls12_crypto_info_aes_gcm_128 ci;
 	pid_t acceptor;
 	int s;
 
-	s = open_loopback_pair(&acceptor);
+	s = open_loopback_pair(&acceptor, n_calls);
 	if (s < 0)
 		return -1;
 	if (setsockopt(s, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
+		(*n_calls)++;
 		if (errno_unsupported(errno))
 			latch_target(TGT_KTLS, "TCP_ULP", errno);
 		close(s);
-		reap_acceptor_blocking(acceptor);
+		(*n_calls)++;
+		reap_acceptor_blocking(acceptor, n_calls);
 		return -1;
 	}
+	(*n_calls)++;
 	memset(&ci, 0, sizeof(ci));
 	ci.info.version     = TLS_1_2_VERSION;
 	ci.info.cipher_type = TLS_CIPHER_AES_GCM_128;
@@ -513,16 +581,20 @@ static int try_ktls(int file_fd)
 	generate_rand_bytes(ci.salt, sizeof(ci.salt));
 	generate_rand_bytes(ci.rec_seq, sizeof(ci.rec_seq));
 	if (setsockopt(s, SOL_TLS, TLS_TX, &ci, sizeof(ci)) < 0) {
+		(*n_calls)++;
 		if (errno_unsupported(errno))
 			latch_target(TGT_KTLS, "TLS_TX", errno);
 		close(s);
-		reap_acceptor_blocking(acceptor);
+		(*n_calls)++;
+		reap_acceptor_blocking(acceptor, n_calls);
 		return -1;
 	}
-	set_short_recv_timeout(s);
-	(void)splice_into_socket(file_fd, s);
+	(*n_calls)++;
+	set_short_recv_timeout(s, n_calls);
+	(void)splice_into_socket(file_fd, s, n_calls);
 	close(s);
-	reap_acceptor_blocking(acceptor);
+	(*n_calls)++;
+	reap_acceptor_blocking(acceptor, n_calls);
 	return 0;
 }
 
@@ -558,11 +630,12 @@ static int probe_genl_family(const char *name)
  * built" vs "built but scaffold gap") then latch so we don't repeat-
  * spend the syscalls.
  */
-static int try_macsec(int file_fd)
+static int try_macsec(int file_fd, unsigned long *n_calls)
 {
 	int rc;
 
 	(void)file_fd;
+	(void)n_calls;
 	rc = probe_genl_family("macsec");
 	if (rc != 0)
 		latch_target(TGT_MACSEC, "genl_family", -rc);
@@ -571,25 +644,28 @@ static int try_macsec(int file_fd)
 	return rc == 0 ? 0 : -1;
 }
 
-static int try_bluetooth(int file_fd)
+static int try_bluetooth(int file_fd, unsigned long *n_calls)
 {
 	int s = socket(AF_BLUETOOTH, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
 
 	(void)file_fd;
+	(*n_calls)++;
 	if (s < 0) {
 		latch_target(TGT_BLUETOOTH, "socket", errno);
 		return -1;
 	}
 	close(s);
+	(*n_calls)++;
 	latch_target(TGT_BLUETOOTH, "scaffold_out_of_scope", ENOSYS);
 	return 0;
 }
 
-static int try_wireguard(int file_fd)
+static int try_wireguard(int file_fd, unsigned long *n_calls)
 {
 	int rc;
 
 	(void)file_fd;
+	(void)n_calls;
 	rc = probe_genl_family("wireguard");
 	if (rc != 0)
 		latch_target(TGT_WIREGUARD, "genl_family", -rc);
@@ -598,7 +674,7 @@ static int try_wireguard(int file_fd)
 	return rc == 0 ? 0 : -1;
 }
 
-static int try_mptcp_ao(int file_fd)
+static int try_mptcp_ao(int file_fd, unsigned long *n_calls)
 {
 	struct sockaddr_in sin;
 	struct tcp_ao_add ao;
@@ -606,6 +682,7 @@ static int try_mptcp_ao(int file_fd)
 	int s;
 
 	s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
+	(*n_calls)++;
 	if (s < 0) {
 		if (errno_unsupported(errno))
 			latch_target(TGT_MPTCP_AO, "socket", errno);
@@ -615,6 +692,7 @@ static int try_mptcp_ao(int file_fd)
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	(void)bind(s, (struct sockaddr *)&sin, sizeof(sin));
+	(*n_calls)++;
 	memset(&ao, 0, sizeof(ao));
 	ao.addr.ss_family = AF_INET;
 	ao.sndid = 1;
@@ -624,18 +702,22 @@ static int try_mptcp_ao(int file_fd)
 	memcpy(ao.key, key, sizeof(key));
 	ao.keylen = sizeof(key);
 	if (setsockopt(s, IPPROTO_TCP, TCP_AO_ADD_KEY, &ao, sizeof(ao)) < 0) {
+		(*n_calls)++;
 		if (errno_unsupported(errno))
 			latch_target(TGT_MPTCP_AO, "TCP_AO_ADD_KEY", errno);
 		close(s);
+		(*n_calls)++;
 		return -1;
 	}
-	set_short_recv_timeout(s);
-	(void)splice_into_socket(file_fd, s);
+	(*n_calls)++;
+	set_short_recv_timeout(s, n_calls);
+	(void)splice_into_socket(file_fd, s, n_calls);
 	close(s);
+	(*n_calls)++;
 	return 0;
 }
 
-typedef int (*target_fn)(int file_fd);
+typedef int (*target_fn)(int file_fd, unsigned long *n_calls);
 static const target_fn target_fns[TGT_NR] = {
 	try_espinudp,  try_af_rxrpc, try_af_alg,    try_ktls,
 	try_macsec,    try_bluetooth, try_wireguard, try_mptcp_ao,
@@ -662,6 +744,7 @@ bool inplace_crypto_oracle(struct childdata *child)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	unsigned long direct_calls = 0;
 
 	for (i = 0; i < TGT_NR; i++) {
 		enum oracle_target t = (enum oracle_target)
@@ -683,9 +766,12 @@ bool inplace_crypto_oracle(struct childdata *child)
 	}
 
 	file_fd = open_oracle_file(path, sizeof(path),
-				   baseline, &baseline_len);
-	if (file_fd < 0)
+				   baseline, &baseline_len, &direct_calls);
+	if (file_fd < 0) {
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
+	}
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
@@ -693,12 +779,13 @@ bool inplace_crypto_oracle(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
-	(void)target_fns[chosen](file_fd);
+	(void)target_fns[chosen](file_fd, &direct_calls);
 	close(file_fd);
+	direct_calls++;
 
 	if (!oracle_check_unchanged(path, baseline, baseline_len,
 				    &diff_off, after_window,
-				    &after_valid)) {
+				    &after_valid, &direct_calls)) {
 		dump_len = baseline_len - diff_off;
 		if (dump_len > after_valid)
 			dump_len = after_valid;
@@ -706,5 +793,7 @@ bool inplace_crypto_oracle(struct childdata *child)
 			       baseline + diff_off, after_window,
 			       dump_len);
 	}
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
