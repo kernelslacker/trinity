@@ -66,6 +66,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -188,7 +189,7 @@ static void rnd_fill(unsigned char *buf, size_t len)
  * timeout.  Returns the connected fd, or -1 with errno preserved on
  * failure / timeout.  Caller checks errno == ECONNREFUSED specifically
  * to latch the no-target gate. */
-static int iscsi_connect(int timeout_ms)
+static int iscsi_connect(int timeout_ms, unsigned long *direct_calls)
 {
 	struct sockaddr_in srv;
 	struct pollfd pfd;
@@ -198,6 +199,7 @@ static int iscsi_connect(int timeout_ms)
 	int rc;
 
 	fd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	(*direct_calls)++;
 	if (fd < 0)
 		return -1;
 
@@ -207,12 +209,14 @@ static int iscsi_connect(int timeout_ms)
 	srv.sin_port = htons(ISCSI_TARGET_PORT);
 
 	rc = connect(fd, (const struct sockaddr *)&srv, sizeof(srv));
+	(*direct_calls)++;
 	if (rc == 0)
 		return fd;
 	if (errno != EINPROGRESS) {
 		int saved = errno;
 
 		close(fd);
+		(*direct_calls)++;
 		errno = saved;
 		return -1;
 	}
@@ -221,14 +225,18 @@ static int iscsi_connect(int timeout_ms)
 	pfd.events = POLLOUT;
 	pfd.revents = 0;
 	rc = poll(&pfd, 1, timeout_ms);
+	(*direct_calls)++;
 	if (rc <= 0) {
 		close(fd);
+		(*direct_calls)++;
 		errno = (rc == 0) ? ETIMEDOUT : errno;
 		return -1;
 	}
-	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &sockerr, &slen) < 0 ||
-	    sockerr != 0) {
+	rc = getsockopt(fd, SOL_SOCKET, SO_ERROR, &sockerr, &slen);
+	(*direct_calls)++;
+	if (rc < 0 || sockerr != 0) {
 		close(fd);
+		(*direct_calls)++;
 		errno = sockerr ? sockerr : EIO;
 		return -1;
 	}
@@ -242,7 +250,8 @@ static int iscsi_connect(int timeout_ms)
  * successful BHS read the follow-up data segment (if any) is drained
  * from the socket best-effort so the next PDU we send doesn't share the
  * kernel's socket read cursor with unread response bytes. */
-static int iscsi_read_bhs(int fd, unsigned char *bhs)
+static int iscsi_read_bhs(int fd, unsigned char *bhs,
+			  unsigned long *direct_calls)
 {
 	struct pollfd pfd;
 	size_t got = 0;
@@ -254,11 +263,13 @@ static int iscsi_read_bhs(int fd, unsigned char *bhs)
 		pfd.events = POLLIN;
 		pfd.revents = 0;
 		rc = poll(&pfd, 1, ISCSI_RECV_TIMEOUT_MS);
+		(*direct_calls)++;
 		if (rc <= 0)
 			return -1;
 		if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))
 			return -1;
 		n = recv(fd, bhs + got, ISCSI_BHS_LEN - got, MSG_DONTWAIT);
+		(*direct_calls)++;
 		if (n <= 0) {
 			if (n < 0 && errno == EAGAIN)
 				continue;
@@ -275,7 +286,7 @@ static int iscsi_read_bhs(int fd, unsigned char *bhs)
  * We do not need to parse it -- PDU2 does not consume any negotiated
  * key from the target -- but leaving unread bytes in the socket buffer
  * would blur the response cursor for the next PDU on this fd. */
-static void iscsi_drain_after_bhs(int fd)
+static void iscsi_drain_after_bhs(int fd, unsigned long *direct_calls)
 {
 	unsigned char buf[ISCSI_RX_BUF];
 	struct pollfd pfd;
@@ -286,9 +297,11 @@ static void iscsi_drain_after_bhs(int fd)
 	pfd.events = POLLIN;
 	pfd.revents = 0;
 	rc = poll(&pfd, 1, ISCSI_RECV_TIMEOUT_MS);
+	(*direct_calls)++;
 	if (rc <= 0)
 		return;
 	n = recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
+	(*direct_calls)++;
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.iscsi_walker.bytes_in,
 				   (unsigned long)n, __ATOMIC_RELAXED);
@@ -489,7 +502,8 @@ static size_t build_chaos_bhs(unsigned char *out)
  * connected socket, draining any response between each.  This mirrors the
  * random-spam arm of the older iscsi_target_probe and keeps front-door BHS
  * validator coverage intact when the walker skips the state-machine path. */
-static void iscsi_send_chaos_burst(int fd, unsigned char *pdu)
+static void iscsi_send_chaos_burst(int fd, unsigned char *pdu,
+				   unsigned long *direct_calls)
 {
 	unsigned int chaos_pdus = 1 + rnd_modulo_u32(CHAOS_PDUS_MAX);
 	unsigned int j;
@@ -500,6 +514,7 @@ static void iscsi_send_chaos_burst(int fd, unsigned char *pdu)
 		pdu_len = build_chaos_bhs(pdu);
 		n = send(fd, pdu, pdu_len,
 			 MSG_DONTWAIT | MSG_NOSIGNAL);
+		(*direct_calls)++;
 		if (n > 0) {
 			__atomic_add_fetch(&shm->stats.iscsi_walker.chaos_pdus,
 					   1, __ATOMIC_RELAXED);
@@ -507,7 +522,7 @@ static void iscsi_send_chaos_burst(int fd, unsigned char *pdu)
 					   (unsigned long)n,
 					   __ATOMIC_RELAXED);
 		}
-		iscsi_drain_after_bhs(fd);
+		iscsi_drain_after_bhs(fd, direct_calls);
 	}
 }
 
@@ -519,7 +534,8 @@ static void iscsi_send_chaos_burst(int fd, unsigned char *pdu)
  * with the corresponding rejection counter bumped -- caller must not
  * follow up with an FFP burst on a false return. */
 static bool iscsi_login_walk(int fd, unsigned char *pdu,
-			     const uint8_t isid[6], uint16_t *tsih_out)
+			     const uint8_t isid[6], uint16_t *tsih_out,
+			     unsigned long *direct_calls)
 {
 	unsigned char resp[ISCSI_BHS_LEN];
 	uint32_t itt = rnd_u32();
@@ -530,6 +546,7 @@ static bool iscsi_login_walk(int fd, unsigned char *pdu,
 
 	pdu_len = build_login_pdu1(pdu, isid, itt);
 	n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
+	(*direct_calls)++;
 	if (n <= 0)
 		return false;
 	__atomic_add_fetch(&shm->stats.iscsi_walker.state_security_sent,
@@ -537,7 +554,7 @@ static bool iscsi_login_walk(int fd, unsigned char *pdu,
 	__atomic_add_fetch(&shm->stats.iscsi_walker.bytes_out,
 			   (unsigned long)n, __ATOMIC_RELAXED);
 
-	if (iscsi_read_bhs(fd, resp) < 0)
+	if (iscsi_read_bhs(fd, resp, direct_calls) < 0)
 		return false;
 	if (resp[0] != ISCSI_OP_LOGIN_RSP)
 		return false;
@@ -550,10 +567,11 @@ static bool iscsi_login_walk(int fd, unsigned char *pdu,
 	}
 	tsih = (uint16_t)(((uint16_t)resp[14] << 8) | resp[15]);
 	stat_sn = get_be32(resp + 24);
-	iscsi_drain_after_bhs(fd);
+	iscsi_drain_after_bhs(fd, direct_calls);
 
 	pdu_len = build_login_pdu2(pdu, isid, itt, tsih, stat_sn + 1);
 	n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
+	(*direct_calls)++;
 	if (n <= 0)
 		return false;
 	__atomic_add_fetch(&shm->stats.iscsi_walker.state_op_neg_sent,
@@ -561,7 +579,7 @@ static bool iscsi_login_walk(int fd, unsigned char *pdu,
 	__atomic_add_fetch(&shm->stats.iscsi_walker.bytes_out,
 			   (unsigned long)n, __ATOMIC_RELAXED);
 
-	if (iscsi_read_bhs(fd, resp) < 0)
+	if (iscsi_read_bhs(fd, resp, direct_calls) < 0)
 		return false;
 	if (resp[0] != ISCSI_OP_LOGIN_RSP)
 		return false;
@@ -576,7 +594,7 @@ static bool iscsi_login_walk(int fd, unsigned char *pdu,
 		return false;
 	if ((resp[1] & ISCSI_RSP_NSG_MASK) != ISCSI_NSG_FFP)
 		return false;
-	iscsi_drain_after_bhs(fd);
+	iscsi_drain_after_bhs(fd, direct_calls);
 
 	__atomic_add_fetch(&shm->stats.iscsi_walker.ffp_reached, 1,
 			   __ATOMIC_RELAXED);
@@ -588,7 +606,8 @@ static bool iscsi_login_walk(int fd, unsigned char *pdu,
  * reported FFP was actually reached; the target-assigned TSIH is echoed
  * into each PDU so the session state stays coherent. */
 static void iscsi_send_ffp_burst(int fd, unsigned char *pdu,
-				 const uint8_t isid[6], uint16_t tsih)
+				 const uint8_t isid[6], uint16_t tsih,
+				 unsigned long *direct_calls)
 {
 	unsigned int j;
 	unsigned int ffp_pdus = 1 + rnd_modulo_u32(FFP_PDUS_MAX);
@@ -601,6 +620,7 @@ static void iscsi_send_ffp_burst(int fd, unsigned char *pdu,
 		pdu_len = build_ffp_fuzz(pdu, isid, tsih);
 		n = send(fd, pdu, pdu_len,
 			 MSG_DONTWAIT | MSG_NOSIGNAL);
+		(*direct_calls)++;
 		if (n > 0) {
 			__atomic_add_fetch(&shm->stats.iscsi_walker.ffp_pdus,
 					   1, __ATOMIC_RELAXED);
@@ -608,7 +628,7 @@ static void iscsi_send_ffp_burst(int fd, unsigned char *pdu,
 					   (unsigned long)n,
 					   __ATOMIC_RELAXED);
 		}
-		iscsi_drain_after_bhs(fd);
+		iscsi_drain_after_bhs(fd, direct_calls);
 	}
 }
 
@@ -624,6 +644,13 @@ bool iscsi_login_walker(struct childdata *child)
 	unsigned int i;
 	int fd;
 	bool chaos;
+	/* Local direct-syscall tally.  Bumped at each real kernel syscall
+	 * the walker issues (socket / connect / poll / getsockopt / send /
+	 * recv / shutdown / close) both here and inside the helpers via a
+	 * &direct_calls out-param.  Published once to shm at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -652,14 +679,17 @@ bool iscsi_login_walker(struct childdata *child)
 		uint8_t isid[6];
 		uint16_t tsih = 0;
 
-		fd = iscsi_connect(ISCSI_CONNECT_TIMEOUT_MS);
+		fd = iscsi_connect(ISCSI_CONNECT_TIMEOUT_MS, &direct_calls);
 		if (fd < 0) {
 			if (errno == ECONNREFUSED) {
 				ns_unsupported = true;
-				if (valid_op)
+				if (valid_op) {
 					__atomic_store_n(&shm->stats.childop.latch_reason[op],
 							 CHILDOP_LATCH_NS_UNSUPPORTED,
 							 __ATOMIC_RELAXED);
+					if (direct_calls > 0)
+						childop_direct_syscalls_add(op, direct_calls);
+				}
 				__atomic_add_fetch(&shm->stats.iscsi_walker.no_target,
 						   1, __ATOMIC_RELAXED);
 				return true;
@@ -678,10 +708,12 @@ bool iscsi_login_walker(struct childdata *child)
 		}
 
 		if (chaos) {
-			iscsi_send_chaos_burst(fd, pdu);
+			iscsi_send_chaos_burst(fd, pdu, &direct_calls);
 
 			(void)shutdown(fd, SHUT_RDWR);
+			direct_calls++;
 			close(fd);
+			direct_calls++;
 			continue;
 		}
 
@@ -690,12 +722,17 @@ bool iscsi_login_walker(struct childdata *child)
 		 * session being driven forward. */
 		rnd_fill(isid, sizeof(isid));
 
-		if (iscsi_login_walk(fd, pdu, isid, &tsih))
-			iscsi_send_ffp_burst(fd, pdu, isid, tsih);
+		if (iscsi_login_walk(fd, pdu, isid, &tsih, &direct_calls))
+			iscsi_send_ffp_burst(fd, pdu, isid, tsih, &direct_calls);
 
 		(void)shutdown(fd, SHUT_RDWR);
+		direct_calls++;
 		close(fd);
+		direct_calls++;
 	}
+
+	if (valid_op && direct_calls > 0)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
