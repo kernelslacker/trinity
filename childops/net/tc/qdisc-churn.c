@@ -58,6 +58,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "name-pool.h"
@@ -334,7 +335,8 @@ static unsigned int qdisc_kind_idx(const char *name)
  * tc_qdisc_churn out: label so any installed qdisc tree gets
  * cascaded down via dev_qdisc_destroy when the dummy goes.
  */
-static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
+static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name,
+			  unsigned long *direct_calls)
 {
 	const struct peek_parent *p;
 	const char *child_name;
@@ -376,6 +378,8 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 	rc = build_newqdisc_opts(ctx, ifindex, p_handle, TC_H_ROOT,
 				 p->name, p->enc, p->inner_type,
 				 NLM_F_CREATE | NLM_F_EXCL);
+	/* build_newqdisc_opts wraps one nl_send_recv (sendmsg + recv). */
+	*direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[p_kind_idx] = true;
@@ -386,12 +390,16 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 
 	rc = build_newqdisc(ctx, ifindex, c_handle, c_parent,
 			    child_name, NLM_F_CREATE | NLM_F_EXCL);
+	/* build_newqdisc wraps one nl_send_recv (sendmsg + recv). */
+	*direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[c_kind_idx] = true;
 		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.peek_stack_install_fail,
 				   1, __ATOMIC_RELAXED);
 		(void)build_delqdisc(ctx, ifindex, p_handle, TC_H_ROOT);
+		/* build_delqdisc: sendmsg + recv. */
+		*direct_calls += 2;
 		return;
 	}
 
@@ -411,6 +419,9 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 
 		(void)build_qfq_class(ctx, ifindex, qfq_class, c_handle);
 		(void)build_newtfilter(ctx, ifindex, c_handle, "matchall");
+		/* build_qfq_class + build_newtfilter: two nl_send_recv
+		 * calls (sendmsg + recv each). */
+		*direct_calls += 4;
 	}
 
 	if (!ns_unsupported_inet) {
@@ -420,6 +431,8 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 		int udp;
 
 		udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		/* socket() is a raw kernel call. */
+		*direct_calls += 1;
 		if (udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 				ns_unsupported_inet = true;
@@ -427,6 +440,8 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 		}
 		(void)setsockopt(udp, SOL_SOCKET, SO_BINDTODEVICE,
 				 dev_name, strlen(dev_name) + 1);
+		/* setsockopt() is a raw kernel call. */
+		*direct_calls += 1;
 
 		memset(&dst, 0, sizeof(dst));
 		dst.sin_family      = AF_INET;
@@ -452,12 +467,18 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 			n = sendto(udp, payload, sizeof(payload),
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
+			/* sendto() is a raw kernel call, counted per
+			 * attempt (not per success) since even ENOBUFS
+			 * / EMSGSIZE returns paid the syscall entry. */
+			*direct_calls += 1;
 			if (n > 0)
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.peek_stack_burst_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 
 		close(udp);
+		/* close() is a raw kernel call. */
+		*direct_calls += 1;
 	}
 }
 
@@ -484,6 +505,20 @@ struct tc_qdisc_iter_ctx {
 	__u32		class1;
 	__u32		class2;
 	struct childdata *child;
+	/* Direct-syscall tally accumulated across the setup / churn /
+	 * teardown helpers.  Every helper bumps this counter by the
+	 * number of raw kernel calls it just issued: nl_open success ==
+	 * 3 (socket + bind + setsockopt for recv_timeo_s), each
+	 * nl_send_recv wrapper (build_newqdisc / rtnl_dellink / ...) ==
+	 * 2 (sendmsg + recv), each AF_INET socket()/setsockopt/close ==
+	 * 1, each sendto() in the burst loops == 1, nl_close == 1.
+	 * Published once in tc_qdisc_churn_in_ns() via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall.  Setup-latched
+	 * short-circuit paths publish whatever they issued before
+	 * bailing, which correctly attributes no data-path work to
+	 * those exits. */
+	unsigned long	direct_calls;
 };
 
 /*
@@ -510,6 +545,8 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 			 (unsigned int)(rand32() & 0xffffu));
 
 		rc = build_bridge_create(&it->nl, it->bridge_name);
+		/* build_bridge_create: sendmsg + recv. */
+		it->direct_calls += 2;
 		if (rc != 0) {
 			if (is_unsupported_err(rc))
 				ns_unsupported_bridge = true;
@@ -517,20 +554,34 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 		} else {
 			it->bridge_idx = (int)if_nametoindex(it->bridge_name);
 			rc = build_veth_pair(&it->nl, it->dummy_name, it->peer_name);
+			/* build_veth_pair: sendmsg + recv. */
+			it->direct_calls += 2;
 			if (rc != 0) {
-				if (it->bridge_idx > 0)
+				if (it->bridge_idx > 0) {
 					(void)rtnl_dellink(&it->nl, it->bridge_idx);
+					/* rtnl_dellink: sendmsg + recv. */
+					it->direct_calls += 2;
+				}
 				it->bridge_idx = 0;
 				it->bridge_mode = false;
 			} else {
 				it->dummy_idx = (int)if_nametoindex(it->dummy_name);
-				if (it->dummy_idx > 0 && it->bridge_idx > 0)
+				if (it->dummy_idx > 0 && it->bridge_idx > 0) {
 					(void)build_setlink_master(&it->nl, it->dummy_idx,
 								   it->bridge_idx);
-				if (it->bridge_idx > 0)
+					/* build_setlink_master: sendmsg + recv. */
+					it->direct_calls += 2;
+				}
+				if (it->bridge_idx > 0) {
 					(void)rtnl_setlink_up(&it->nl, it->bridge_idx);
-				if (it->dummy_idx > 0)
+					/* rtnl_setlink_up: sendmsg + recv. */
+					it->direct_calls += 2;
+				}
+				if (it->dummy_idx > 0) {
 					(void)rtnl_setlink_up(&it->nl, it->dummy_idx);
+					/* rtnl_setlink_up: sendmsg + recv. */
+					it->direct_calls += 2;
+				}
 				it->dummy_added = true;
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.link_create_ok,
 						   1, __ATOMIC_RELAXED);
@@ -545,6 +596,8 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 			 (unsigned int)(rand32() & 0xffffu));
 
 		rc = build_dummy_create(&it->nl, it->dummy_name);
+		/* build_dummy_create: sendmsg + recv. */
+		it->direct_calls += 2;
 		if (rc != 0) {
 			if (is_unsupported_err(rc))
 				ns_unsupported_dummy = true;
@@ -559,6 +612,8 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 			return -1;
 
 		(void)rtnl_setlink_up(&it->nl, it->dummy_idx);
+		/* rtnl_setlink_up: sendmsg + recv. */
+		it->direct_calls += 2;
 	}
 
 	if (it->dummy_idx <= 0)
@@ -604,6 +659,8 @@ static int tc_qdisc_add_qdisc(struct tc_qdisc_iter_ctx *it)
 	rc = build_newqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT,
 			    qdisc_kinds[it->qidx].name,
 			    NLM_F_CREATE | NLM_F_EXCL);
+	/* build_newqdisc: sendmsg + recv. */
+	it->direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[it->qidx] = true;
@@ -631,10 +688,14 @@ static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
 				    qdisc_kinds[it->qidx].name) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tclass_create_ok,
 					   1, __ATOMIC_RELAXED);
+		/* build_newtclass: sendmsg + recv. */
+		it->direct_calls += 2;
 		if (build_newtclass(&it->nl, it->dummy_idx, it->class2, TC_H_ROOT,
 				    qdisc_kinds[it->qidx].name) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tclass_create_ok,
 					   1, __ATOMIC_RELAXED);
+		/* build_newtclass: sendmsg + recv. */
+		it->direct_calls += 2;
 	}
 
 	cidx = pick_cls_idx();
@@ -642,6 +703,8 @@ static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
 		modprobe_cls(cidx);
 		rc = build_newtfilter(&it->nl, it->dummy_idx, it->handle,
 				      cls_kinds[cidx]);
+		/* build_newtfilter: sendmsg + recv. */
+		it->direct_calls += 2;
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tfilter_create_ok,
 					   1, __ATOMIC_RELAXED);
@@ -665,7 +728,8 @@ static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
  * runs the accounting code is what matters.
  */
 static void send_udp_gso_burst(int udp, const struct sockaddr_in *dst,
-			       unsigned int iters)
+			       unsigned int iters,
+			       unsigned long *direct_calls)
 {
 	int gso_size = 128;
 	unsigned char payload[1024];
@@ -675,6 +739,8 @@ static void send_udp_gso_burst(int udp, const struct sockaddr_in *dst,
 		return;
 	(void)setsockopt(udp, SOL_UDP, UDP_SEGMENT,
 			 &gso_size, sizeof(gso_size));
+	/* setsockopt() is a raw kernel call. */
+	*direct_calls += 1;
 
 	for (i = 0; i < iters; i++) {
 		ssize_t n;
@@ -682,6 +748,8 @@ static void send_udp_gso_burst(int udp, const struct sockaddr_in *dst,
 		generate_rand_bytes(payload, sizeof(payload));
 		n = sendto(udp, payload, sizeof(payload), MSG_DONTWAIT,
 			   (const struct sockaddr *)dst, sizeof(*dst));
+		/* sendto(): one raw kernel call per attempt. */
+		*direct_calls += 1;
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.gso_burst_ok,
 					   1, __ATOMIC_RELAXED);
@@ -721,12 +789,16 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 
 	if (!ns_unsupported_inet) {
 		it->udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		/* socket() is a raw kernel call. */
+		it->direct_calls += 1;
 		if (it->udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 				ns_unsupported_inet = true;
 		} else {
 			(void)setsockopt(it->udp, SOL_SOCKET, SO_BINDTODEVICE,
 					 it->dummy_name, strlen(it->dummy_name) + 1);
+			/* setsockopt() is a raw kernel call. */
+			it->direct_calls += 1;
 		}
 	}
 
@@ -757,6 +829,8 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 			n = sendto(it->udp, payload, sizeof(payload),
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
+			/* sendto(): one raw kernel call per attempt. */
+			it->direct_calls += 1;
 			if (n > 0)
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.packet_sent_ok,
 						   1, __ATOMIC_RELAXED);
@@ -769,7 +843,7 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 		 * skbs.  4 sends * 8 segments each gives the kernel work
 		 * to drain across the teardown window.
 		 */
-		send_udp_gso_burst(it->udp, &dst, 4);
+		send_udp_gso_burst(it->udp, &dst, 4, &it->direct_calls);
 	}
 
 	qidx2 = pick_qdisc_idx_other(it->qidx);
@@ -778,6 +852,8 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 		rc = build_newqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT,
 				    qdisc_kinds[qidx2].name,
 				    NLM_F_CREATE | NLM_F_REPLACE);
+		/* build_newqdisc: sendmsg + recv. */
+		it->direct_calls += 2;
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qdisc_replace_ok,
 					   1, __ATOMIC_RELAXED);
@@ -790,10 +866,14 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 		if (build_deltfilter(&it->nl, it->dummy_idx, it->handle) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tfilter_del_ok,
 					   1, __ATOMIC_RELAXED);
+		/* build_deltfilter: sendmsg + recv. */
+		it->direct_calls += 2;
 
 		if (build_delqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qdisc_del_ok,
 					   1, __ATOMIC_RELAXED);
+		/* build_delqdisc: sendmsg + recv. */
+		it->direct_calls += 2;
 	} else if (it->udp >= 0 && it->dummy_idx > 0) {
 		struct sockaddr_in dst;
 		unsigned char payload[64];
@@ -809,6 +889,8 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 			(void)sendto(it->udp, payload, sizeof(payload),
 				     MSG_DONTWAIT,
 				     (struct sockaddr *)&dst, sizeof(dst));
+			/* sendto(): one raw kernel call per attempt. */
+			it->direct_calls += 1;
 		}
 		if (rtnl_dellink(&it->nl, it->dummy_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.link_del_ok,
@@ -817,11 +899,15 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 					   1, __ATOMIC_RELAXED);
 			it->slave_dellinked = true;
 		}
+		/* rtnl_dellink: sendmsg + recv. */
+		it->direct_calls += 2;
 		for (j = 0; j < 8; j++) {
 			generate_rand_bytes(payload, sizeof(payload));
 			(void)sendto(it->udp, payload, sizeof(payload),
 				     MSG_DONTWAIT,
 				     (struct sockaddr *)&dst, sizeof(dst));
+			/* sendto(): one raw kernel call per attempt. */
+			it->direct_calls += 1;
 		}
 		/*
 		 * Final GSO sub-burst: slave is gone but the netdev
@@ -831,7 +917,7 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 		 * is dropping out from underneath -- the exact UAF
 		 * shape this childop chases.
 		 */
-		send_udp_gso_burst(it->udp, &dst, 4);
+		send_udp_gso_burst(it->udp, &dst, 4, &it->direct_calls);
 	}
 }
 
@@ -867,11 +953,24 @@ static int tc_qdisc_churn_in_ns(void *arg)
 			ns_unsupported_rtnl = true;
 		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
+		/* nl_open failed before any syscall inside it succeeded
+		 * far enough to matter; publish zero and bail so the
+		 * setup-latched exit attributes no data-path work. */
+		if (valid_op)
+			childop_direct_syscalls_add(op, it->direct_calls);
 		return 0;
 	}
+	/* nl_open success path issued socket + bind + setsockopt
+	 * (recv_timeo_s > 0 above). */
+	it->direct_calls += 3;
 
 	if (!lo_brought_up) {
 		rtnl_bring_lo_up(&it->nl);
+		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
+		 * when the lo lookup succeeds; the if_nametoindex libc
+		 * probe stays unattributed to match the surrounding
+		 * per-childop convention. */
+		it->direct_calls += 2;
 		lo_brought_up = true;
 	}
 
@@ -894,7 +993,8 @@ static int tc_qdisc_churn_in_ns(void *arg)
 	 * cascaded down via dev_qdisc_destroy when the link goes.
 	 */
 	if (ONE_IN(4)) {
-		do_peek_stack(&it->nl, it->dummy_idx, it->dummy_name);
+		do_peek_stack(&it->nl, it->dummy_idx, it->dummy_name,
+			      &it->direct_calls);
 		goto out;
 	}
 
@@ -905,19 +1005,39 @@ static int tc_qdisc_churn_in_ns(void *arg)
 	tc_qdisc_churn_loop(it);
 
 out:
-	if (it->udp >= 0)
+	if (it->udp >= 0) {
 		close(it->udp);
+		/* close() is a raw kernel call. */
+		it->direct_calls += 1;
+	}
 
 	if (it->nl.fd >= 0) {
 		if (it->dummy_added && it->dummy_idx > 0 && !it->slave_dellinked) {
 			if (rtnl_dellink(&it->nl, it->dummy_idx) == 0)
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.link_del_ok,
 						   1, __ATOMIC_RELAXED);
+			/* rtnl_dellink: sendmsg + recv. */
+			it->direct_calls += 2;
 		}
-		if (it->bridge_idx > 0)
+		if (it->bridge_idx > 0) {
 			(void)rtnl_dellink(&it->nl, it->bridge_idx);
+			/* rtnl_dellink: sendmsg + recv. */
+			it->direct_calls += 2;
+		}
 		nl_close(&it->nl);
+		/* nl_close: one close() on the netlink fd. */
+		it->direct_calls += 1;
 	}
+
+	/* Publish this invocation's direct-syscall load in ONE
+	 * RELAXED atomic add.  Tally was accumulated across the
+	 * setup / churn / teardown helpers via it->direct_calls;
+	 * the grandchild's write on the shm slot is visible to the
+	 * parent (and to sibling children) after _exit() because
+	 * shm is a shared mapping.  Gated on valid_op to match the
+	 * surrounding per-op stats bumps. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, it->direct_calls);
 
 	return 0;
 }
