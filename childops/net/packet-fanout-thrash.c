@@ -52,6 +52,7 @@
 #include <string.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -121,6 +122,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	unsigned int group1, group2;
 	unsigned int type1, type2;
 	unsigned int flags1;
+	unsigned long direct_calls = 0;
 	int rc;
 
 	__atomic_add_fetch(&shm->stats.packet_fanout_thrash.runs, 1, __ATOMIC_RELAXED);
@@ -139,15 +141,18 @@ bool packet_fanout_thrash(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 
 	fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+	direct_calls++;
 	if (fd < 0) {
 		/* EPERM (no CAP_NET_RAW), EAFNOSUPPORT (no CONFIG_PACKET),
 		 * EPROTONOSUPPORT — all valid no-coverage early-outs. */
 		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return true;
+		goto out;
 	}
 
-	if (setsockopt(fd, SOL_PACKET, PACKET_VERSION, &v3, sizeof(v3)) < 0)
+	rc = setsockopt(fd, SOL_PACKET, PACKET_VERSION, &v3, sizeof(v3));
+	direct_calls++;
+	if (rc < 0)
 		goto out;
 
 	memset(&req, 0, sizeof(req));
@@ -158,8 +163,10 @@ bool packet_fanout_thrash(struct childdata *child)
 	req.tp_retire_blk_tov = 60;
 	req.tp_feature_req_word = 0;
 
-	if (setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
-		       &req, sizeof(req)) < 0) {
+	rc = setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
+			&req, sizeof(req));
+	direct_calls++;
+	if (rc < 0) {
 		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.ring_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -169,6 +176,7 @@ bool packet_fanout_thrash(struct childdata *child)
 
 	ring = mmap(NULL, RING_BYTES, PROT_READ | PROT_WRITE,
 		    MAP_SHARED, fd, 0);
+	direct_calls++;
 	if (ring == MAP_FAILED) {
 		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.mmap_failed,
 				   1, __ATOMIC_RELAXED);
@@ -178,6 +186,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	}
 
 	lo_ifindex = if_nametoindex("lo");
+	direct_calls++;
 	if (lo_ifindex == 0)
 		lo_ifindex = 1;	/* lo is conventionally ifindex 1 */
 
@@ -186,6 +195,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	sll.sll_protocol = htons(ETH_P_ALL);
 	sll.sll_ifindex = (int)lo_ifindex;
 	(void)bind(fd, (struct sockaddr *)&sll, sizeof(sll));
+	direct_calls++;
 
 	/* Step 6: join a fanout group with random type + flags. */
 	group1 = 1 + (rnd_u32() & 0xff);
@@ -204,6 +214,7 @@ bool packet_fanout_thrash(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	rc = setsockopt(fd, SOL_PACKET, PACKET_FANOUT,
 			&fanout1, sizeof(fanout1));
+	direct_calls++;
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.joins,
 				   1, __ATOMIC_RELAXED);
@@ -214,6 +225,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	 * probability ~zero. */
 	(void)setsockopt(fd, SOL_PACKET, PACKET_TX_RING,
 			 &req, sizeof(req));
+	direct_calls++;
 
 	/* Step 8: re-join a different fanout group OR with a different
 	 * type.  The dispatcher will reject (EALREADY / EINVAL) on
@@ -227,6 +239,7 @@ bool packet_fanout_thrash(struct childdata *child)
 	fanout2 = make_fanout_arg(group2, type2, 0);
 	rc = setsockopt(fd, SOL_PACKET, PACKET_FANOUT,
 			&fanout2, sizeof(fanout2));
+	direct_calls++;
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.packet_fanout_thrash.rejoins_ok,
 				   1, __ATOMIC_RELAXED);
@@ -243,12 +256,19 @@ bool packet_fanout_thrash(struct childdata *child)
 
 		(void)getsockopt(fd, SOL_PACKET, PACKET_STATISTICS,
 				 &stats, &len);
+		direct_calls++;
 	}
 
 out:
-	if (ring != MAP_FAILED)
+	if (ring != MAP_FAILED) {
 		(void)munmap(ring, RING_BYTES);
-	if (fd >= 0)
+		direct_calls++;
+	}
+	if (fd >= 0) {
 		close(fd);
+		direct_calls++;
+	}
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
