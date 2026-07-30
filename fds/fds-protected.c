@@ -17,7 +17,7 @@
  * to keep diagnostic and coverage fds out of the fuzz picker pool.
  * See the contract in include/fd.h.
  *
- * Three classes of fd live in this registry:
+ * Four classes of fd live in this registry:
  *
  *   - the calling child's kcov PC fd and cmp fd, opened in
  *     kcov_init_child and re-located above KCOV_FD_HIGH_BASE so the
@@ -42,6 +42,20 @@
  *     for the child's lifetime, and the parent's cache is registered
  *     for symmetry so parent-side arg gen never hands it out.
  *
+ *   - the calling child's per-child fault-injection arm fd
+ *     (child->fail_nth_fd, opened by open_fail_nth against
+ *     /proc/self/fail-nth).  Written on the hot path by
+ *     maybe_inject_fault() with the fault-count digit string that
+ *     arms the next allocation-failure injection.  A fuzz-induced
+ *     rewire onto this slot is strictly worse than the taint case:
+ *     the next arm-write successfully stamps digit bytes into the
+ *     victim file (data corruption) AND silently disables fault
+ *     injection for the rest of this child's life.  open_fail_nth
+ *     F_DUPFD_CLOEXEC-relocates the slot up to FAIL_NTH_FD_HIGH_BASE
+ *     for the same defence-in-depth reason kcov / tainted_fd do; the
+ *     registry entry here closes the residual window where a dup2 /
+ *     dup3 / close_range pick could still land on the slot.
+ *
  *   - STDERR_FILENO and the in-memory stderr capture memfd installed
  *     by init_stderr_memfd.  The SIGABRT handler drains the memfd
  *     into the per-pid bug log via read(memfd, ...) + write(fd 2, ...);
@@ -57,8 +71,9 @@
  *
  * Parent context (this_child() == NULL): STDERR_FILENO still matches
  * the constant check, but the parent never opens a kcov_child, a
- * stderr memfd, or a per-child tainted_fd, so those branches naturally
- * fall through.  The parent's own trinity_tainted_fd_cached() slot is
+ * stderr memfd, a per-child tainted_fd, or a per-child fail_nth_fd,
+ * so those branches naturally fall through.  The parent's own
+ * trinity_tainted_fd_cached() slot is
  * still consulted here; parent-side arg generation is rare but the
  * conservative answer (treat the taint fd as protected) is the right
  * one regardless.
@@ -92,6 +107,8 @@ bool fd_is_protected(int fd)
 	if (child->kcov.cmp_fd >= 0 && fd == child->kcov.cmp_fd)
 		return true;
 	if (child->tainted_fd >= 0 && fd == child->tainted_fd)
+		return true;
+	if (child->fail_nth_fd >= 0 && fd == child->fail_nth_fd)
 		return true;
 	return false;
 }
@@ -152,6 +169,11 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 		    (unsigned int) child->tainted_fd <= hi)
 			if (lowest < 0 || child->tainted_fd < lowest)
 				lowest = child->tainted_fd;
+		if (child->fail_nth_fd >= 0 &&
+		    (unsigned int) child->fail_nth_fd >= lo &&
+		    (unsigned int) child->fail_nth_fd <= hi)
+			if (lowest < 0 || child->fail_nth_fd < lowest)
+				lowest = child->fail_nth_fd;
 	}
 
 	return lowest;

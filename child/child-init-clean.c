@@ -176,6 +176,20 @@ void open_fail_nth(struct childdata *child)
 		return;
 	}
 
+	/* Relocate up out of the low ARG_FD picker range.  Best-effort:
+	 * if the dup fails (EMFILE, no free slot above the base), keep
+	 * the low fd and let fds-protected catch subsequent attempts on
+	 * it.  Mirrors the open_tainted_fd relocation. */
+	if ((unsigned int) fd < FAIL_NTH_FD_HIGH_BASE) {
+		int new_fd = fcntl(fd, F_DUPFD_CLOEXEC,
+				   (int) FAIL_NTH_FD_HIGH_BASE);
+
+		if (new_fd >= 0) {
+			close(fd);
+			fd = new_fd;
+		}
+	}
+
 	child->fail_nth_fd = fd;
 }
 
