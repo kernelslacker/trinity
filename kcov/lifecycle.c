@@ -407,6 +407,7 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	kc->cmp_fd = -1;
 	kc->cmp_trace_buf = NULL;
 	kc->active = false;
+	kc->bracket_owned = false;
 	kc->cmp_capable = false;
 	kc->cmp_enabled_this_call = false;
 	kc->remote_mode = false;
