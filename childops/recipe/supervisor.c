@@ -298,12 +298,13 @@ bool recipe_mount_userns_dance(bool *unsupported)
 		return false;
 	}
 
-	/* Any other exit code -- including WIFSIGNALED, WEXITSTATUS in
-	 * {0, 2, 3} -- counts as having driven the path far enough to
-	 * be useful.  WEXITSTATUS 2/3 indicate map-write or root-
-	 * remount failure after a successful unshare; the unshare itself
-	 * is the dominant kernel surface and is exercised in those
-	 * paths regardless. */
+	/* Only a clean exit 0 counts as a completed run.  WEXITSTATUS 2/3
+	 * (map-write or root-remount failure after a successful unshare)
+	 * and a signalled inner drove the unshare -- the dominant kernel
+	 * surface -- but did not finish the dance, so they score as
+	 * partial, not completed.  They are deliberately not treated as
+	 * *unsupported* (only exit 1 latches the recipe off): the recipe
+	 * is supported, this cycle just did not run to completion. */
 	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
