@@ -61,6 +61,7 @@
 #include <string.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "random.h"
 #include "rnd.h"
@@ -430,6 +431,13 @@ static int genetlink_fuzzer_in_ns(void *arg)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	/* Direct-syscall tally for this grandchild's data-path work.  The
+	 * OWN-process discovery is credited by the parent frame's own
+	 * accumulator; this counter only covers the genl socket lifecycle
+	 * plus the single send_fuzzed_msg burst issued in the fresh netns.
+	 * Published once at exit gated on valid_op, matching the sibling
+	 * reporters in nl80211-churn / devlink-port-churn. */
+	unsigned long direct_calls = 0;
 
 	if (nl_open(&ctx, &opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
@@ -445,6 +453,9 @@ static int genetlink_fuzzer_in_ns(void *arg)
 			  errno);
 		return 0;
 	}
+	/* nl_open success path: socket + bind + setsockopt (recv_timeo_us
+	 * > 0 in opts).  Matches the nl80211_churn genl_open credit shape. */
+	direct_calls += 3;
 
 	fam = &cat->entries[rnd_modulo_u32(cat->count)];
 
@@ -452,8 +463,20 @@ static int genetlink_fuzzer_in_ns(void *arg)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	send_fuzzed_msg(&ctx, fam);
+	/* send_fuzzed_msg -> nl_send_drain_errors: one sendmsg plus a
+	 * drain-recv loop that walks until MSG_DONTWAIT returns EAGAIN
+	 * (typically the matching ack recv + the EAGAIN probe = 2 recvs).
+	 * Approximate at 3; a sendmsg-failure short-circuit overcounts by
+	 * 2, a queue with many stale acks undercounts by K-2.  Telemetry
+	 * only, matches the sibling reporters' fixed-shape credit. */
+	direct_calls += 3;
 
 	nl_close(&ctx);
+	/* nl_close: one close() on the netlink fd. */
+	direct_calls += 1;
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 }
 
@@ -469,7 +492,7 @@ static int genetlink_fuzzer_in_ns(void *arg)
  * from a controller-side NLMSG_ERROR -- previously all three collapsed
  * into a single silent return and showed only as derived setup_fail.
  */
-static bool build_catalog(struct genl_catalog *cat)
+static bool build_catalog(struct genl_catalog *cat, unsigned long *direct_calls)
 {
 	static const struct nl_open_opts opts = {
 		.proto         = NETLINK_GENERIC,
@@ -482,9 +505,21 @@ static bool build_catalog(struct genl_catalog *cat)
 
 	if (nl_open(&ctx, &opts) < 0)
 		return false;
+	/* nl_open success: socket + bind + setsockopt (recv_timeo_us > 0). */
+	*direct_calls += 3;
 
 	rc = do_discovery(&ctx, cat);
+	/* do_discovery -> nl_send_recv_dump_cb: one sendmsg to kick the
+	 * CTRL_CMD_GETFAMILY/NLM_F_DUMP + K recv() calls draining the
+	 * 8 KiB-buffered dump until NLMSG_DONE.  A typical box registers
+	 * 25-50 families; each CTRL_CMD_NEWFAMILY response fits well
+	 * under 8 KiB, so K is usually 2-3 buffers plus the DONE marker.
+	 * Approximate at 4; on -EIO sendmsg failure we overcount by 3,
+	 * on a large registry we may undercount by a small K-4. */
+	*direct_calls += 4;
 	nl_close(&ctx);
+	/* nl_close: one close() on the netlink fd. */
+	*direct_calls += 1;
 
 	if (cat->count > 0)
 		return true;
@@ -513,6 +548,14 @@ bool genetlink_fuzzer(struct childdata *child)
 	 * out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	/* Direct-syscall tally for the OWN-process discovery leg
+	 * (nl_open + CTRL_CMD_GETFAMILY dump + nl_close).  Published
+	 * once below, right after build_catalog() returns, regardless of
+	 * outcome: a mid-dump -EIO / NLMSG_ERROR still credits the
+	 * sendmsg + partial recv + close that were issued before the
+	 * bail.  The grandchild's data-path counter is separate and
+	 * lives in genetlink_fuzzer_in_ns()'s frame. */
+	unsigned long own_direct_calls = 0;
 
 	if (ns_unsupported_genetlink_fuzzer)
 		return true;
@@ -523,8 +566,13 @@ bool genetlink_fuzzer(struct childdata *child)
 	 * report essentially no registered families, so dumping the
 	 * controller inside it (the prior shape) produced an empty
 	 * catalog and bailed silently. */
-	if (!build_catalog(&cat))
+	if (!build_catalog(&cat, &own_direct_calls)) {
+		if (valid_op)
+			childop_direct_syscalls_add(op, own_direct_calls);
 		return true;
+	}
+	if (valid_op)
+		childop_direct_syscalls_add(op, own_direct_calls);
 
 	/* Discovery is the real setup gate: once build_catalog() returns
 	 * with count > 0 we have a family registry the fuzzer can drive
