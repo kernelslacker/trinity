@@ -899,6 +899,39 @@ void stats_timeseries_emit_window(unsigned long op_count)
 
 	fputs("]}\n", stats_timeseries_fp);
 	fflush(stats_timeseries_fp);
+
+	/* One JSONL record = one atomic transaction: many helper writes then
+	 * a flush.  ferror() is sticky, so a single check here catches a
+	 * failure in any prior fprintf / fputs / fflush in this window.  If
+	 * we don't check, the FILE stays in the error state, subsequent
+	 * writes are silently discarded, and the operator sees the timeseries
+	 * stream just stop mid-run with no diagnostic -- every later window's
+	 * data is lost.  Latch the first errno, surface it, and null the
+	 * sink; the existing NULL guard at the head of every entry point
+	 * turns every future call into a no-op.  Bypass stdio for the
+	 * terminal truncation marker via write(fileno()) so a downstream
+	 * collector can distinguish sink-disabled truncation from a clean
+	 * end-of-run. */
+	if (ferror(stats_timeseries_fp)) {
+		int saved_errno = errno;
+		/* Leading \n guarantees the marker starts on its own line
+		 * even if the failed prior record left a partial line with
+		 * no terminating newline; a collector can then either accept
+		 * the blank line or the marker as its own JSONL record. */
+		const char *marker =
+			"\n{\"truncated\":true,\"reason\":\"write_error\"}\n";
+		int fd = fileno(stats_timeseries_fp);
+
+		if (fd >= 0) {
+			if (write(fd, marker, strlen(marker)) < 0) {
+				/* nothing to do -- sink is already dead */
+			}
+		}
+		fclose(stats_timeseries_fp);
+		stats_timeseries_fp = NULL;
+		outputerr("stats timeseries write failed, disabling sink: %s\n",
+			  strerror(saved_errno));
+	}
 }
 
 /* Drop the inherited stats-log fd from a fork()'d child.  fopen() on the
