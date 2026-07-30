@@ -63,6 +63,7 @@
 #endif
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "jitter.h"
 #include "pids.h"
 #include "rnd.h"
@@ -147,23 +148,27 @@ static void dp_component(char *out, size_t outsz, unsigned int i,
  * chdir back to it after tree teardown.
  */
 static int dp_enter_scratch_run(char *base, size_t basesz,
-				unsigned long seq)
+				unsigned long seq, unsigned long *tally)
 {
 	char run[64];
 
 	(void)snprintf(base, basesz, "%s/trinity-deep-path-%d",
 		       trinity_tmpdir_abs(), (int)mypid());
+	(*tally)++;
 	if (mkdir(base, 0755) != 0 && errno != EEXIST) {
 		dp_unsupported = true;
 		return -1;
 	}
+	(*tally)++;
 	if (chdir(base) != 0) {
 		dp_unsupported = true;
 		return -1;
 	}
 	(void)snprintf(run, sizeof(run), "run-%lu", seq);
+	(*tally)++;
 	if (mkdir(run, 0755) != 0 && errno != EEXIST)
 		return -2;
+	(*tally)++;
 	if (chdir(run) != 0)
 		return -2;
 	return 0;
@@ -179,15 +184,18 @@ static int dp_enter_scratch_run(char *base, size_t basesz,
  * lands us at the same depth.
  */
 static unsigned int dp_build_tree(unsigned int target_depth,
-				  unsigned int complen)
+				  unsigned int complen,
+				  unsigned long *tally)
 {
 	char comp[DP_MAX_COMPLEN + 1];
 	unsigned int i;
 
 	for (i = 0U; i < target_depth; i++) {
 		dp_component(comp, sizeof(comp), i, complen);
+		(*tally)++;
 		if (mkdir(comp, 0755) != 0 && errno != EEXIST)
 			break;
+		(*tally)++;
 		if (chdir(comp) != 0)
 			break;
 	}
@@ -199,11 +207,12 @@ static unsigned int dp_build_tree(unsigned int target_depth,
  * file, drain it, close.  Bumps reader_ok / reader_failed based on
  * open + read outcome.  read() returning 0 is EOF (success).
  */
-static void dp_read_proc_file(const char *path)
+static void dp_read_proc_file(const char *path, unsigned long *tally)
 {
 	ssize_t sz = -1;
 	int fd;
 
+	(*tally)++;
 	fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (fd < 0) {
 		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
@@ -211,8 +220,10 @@ static void dp_read_proc_file(const char *path)
 		return;
 	}
 	do {
+		(*tally)++;
 		sz = read(fd, dp_buf, sizeof(dp_buf));
 	} while (sz > 0);
+	(*tally)++;
 	(void)close(fd);
 	if (sz < 0)
 		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
@@ -227,19 +238,23 @@ static void dp_read_proc_file(const char *path)
  * name so successive passes do not collide.  Any error path bumps
  * reader_failed and returns cleanly.
  */
-static void dp_reader_unlink_leaf(unsigned int reader_seq)
+static void dp_reader_unlink_leaf(unsigned int reader_seq,
+				  unsigned long *tally)
 {
 	char leaf[64];
 	int fd;
 
 	(void)snprintf(leaf, sizeof(leaf), "leaf-%u", reader_seq);
+	(*tally)++;
 	fd = open(leaf, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 	if (fd < 0) {
 		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
+	(*tally)++;
 	(void)close(fd);
+	(*tally)++;
 	if (unlink(leaf) == 0)
 		__atomic_add_fetch(&shm->stats.deep_path.reader_ok,
 				   1, __ATOMIC_RELAXED);
@@ -253,25 +268,31 @@ static void dp_reader_unlink_leaf(unsigned int reader_seq)
  * at extreme depth), then unlink the destination.  Any error path
  * bumps reader_failed and cleans up any residual leaf.
  */
-static void dp_reader_rename_leaf(unsigned int reader_seq)
+static void dp_reader_rename_leaf(unsigned int reader_seq,
+				  unsigned long *tally)
 {
 	char src[64], dst[64];
 	int fd;
 
 	(void)snprintf(src, sizeof(src), "leafA-%u", reader_seq);
 	(void)snprintf(dst, sizeof(dst), "leafB-%u", reader_seq);
+	(*tally)++;
 	fd = open(src, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 	if (fd < 0) {
 		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
+	(*tally)++;
 	(void)close(fd);
+	(*tally)++;
 	if (rename(src, dst) == 0) {
+		(*tally)++;
 		(void)unlink(dst);
 		__atomic_add_fetch(&shm->stats.deep_path.reader_ok,
 				   1, __ATOMIC_RELAXED);
 	} else {
+		(*tally)++;
 		(void)unlink(src);
 		__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 				   1, __ATOMIC_RELAXED);
@@ -284,21 +305,22 @@ static void dp_reader_rename_leaf(unsigned int reader_seq)
  * through so unlink/rename can key their leaf names on the pass
  * counter.
  */
-static void dp_reader_pass(unsigned int reader_seq)
+static void dp_reader_pass(unsigned int reader_seq, unsigned long *tally)
 {
 	unsigned int kind = rnd_modulo_u32(NR_DP_READERS);
 	ssize_t sz;
 
 	switch (kind) {
 	case DP_RD_MOUNTINFO:
-		dp_read_proc_file("/proc/self/mountinfo");
+		dp_read_proc_file("/proc/self/mountinfo", tally);
 		return;
 
 	case DP_RD_MAPS:
-		dp_read_proc_file("/proc/self/maps");
+		dp_read_proc_file("/proc/self/maps", tally);
 		return;
 
 	case DP_RD_GETCWD:
+		(*tally)++;
 		if (getcwd(dp_buf, sizeof(dp_buf)) == NULL)
 			__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 					   1, __ATOMIC_RELAXED);
@@ -308,6 +330,7 @@ static void dp_reader_pass(unsigned int reader_seq)
 		return;
 
 	case DP_RD_READLINK_CWD:
+		(*tally)++;
 		sz = readlink("/proc/self/cwd", dp_buf, sizeof(dp_buf));
 		if (sz < 0)
 			__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
@@ -321,7 +344,10 @@ static void dp_reader_pass(unsigned int reader_seq)
 #if defined(__NR_statx) && defined(STATX_BASIC_STATS)
 		{
 			struct statx stx;
-			long r = trinity_raw_syscall(__NR_statx,
+			long r;
+
+			(*tally)++;
+			r = trinity_raw_syscall(__NR_statx,
 					AT_FDCWD, ".", 0U,
 					(unsigned int)STATX_BASIC_STATS, &stx);
 			if (r < 0)
@@ -337,6 +363,8 @@ static void dp_reader_pass(unsigned int reader_seq)
 		 * bypasses the statx-specific renderers. */
 		{
 			struct stat st;
+
+			(*tally)++;
 			if (stat(".", &st) < 0)
 				__atomic_add_fetch(&shm->stats.deep_path.reader_failed,
 						   1, __ATOMIC_RELAXED);
@@ -348,11 +376,11 @@ static void dp_reader_pass(unsigned int reader_seq)
 		return;
 
 	case DP_RD_UNLINK_LEAF:
-		dp_reader_unlink_leaf(reader_seq);
+		dp_reader_unlink_leaf(reader_seq, tally);
 		return;
 
 	case DP_RD_RENAME_LEAF:
-		dp_reader_rename_leaf(reader_seq);
+		dp_reader_rename_leaf(reader_seq, tally);
 		return;
 	}
 }
@@ -365,15 +393,18 @@ static void dp_reader_pass(unsigned int reader_seq)
  * -- anything left below is orphaned but bounded (this iteration's
  * fresh run-<seq> subdir).
  */
-static void dp_teardown_tree(unsigned int depth, unsigned int complen)
+static void dp_teardown_tree(unsigned int depth, unsigned int complen,
+			     unsigned long *tally)
 {
 	char comp[DP_MAX_COMPLEN + 1];
 	unsigned int i;
 
 	for (i = depth; i-- > 0U; ) {
 		dp_component(comp, sizeof(comp), i, complen);
+		(*tally)++;
 		if (chdir("..") != 0)
 			return;
+		(*tally)++;
 		(void)rmdir(comp);
 	}
 }
@@ -384,14 +415,14 @@ static void dp_teardown_tree(unsigned int depth, unsigned int complen)
  * what they can and return silently -- outer counters attribute the
  * work.
  */
-static void dp_iter_one(void)
+static void dp_iter_one(unsigned long *tally)
 {
 	char base[128];
 	char runsub[64];
 	unsigned long seq = ++dp_run_seq;
 	unsigned int target_depth, complen, depth, i;
 
-	if (dp_enter_scratch_run(base, sizeof(base), seq) != 0)
+	if (dp_enter_scratch_run(base, sizeof(base), seq, tally) != 0)
 		return;
 
 	target_depth = DP_MIN_DEPTH +
@@ -399,7 +430,7 @@ static void dp_iter_one(void)
 	complen = DP_MIN_COMPLEN +
 		rnd_modulo_u32(DP_MAX_COMPLEN - DP_MIN_COMPLEN + 1U);
 
-	depth = dp_build_tree(target_depth, complen);
+	depth = dp_build_tree(target_depth, complen, tally);
 	if (depth == target_depth)
 		__atomic_add_fetch(&shm->stats.deep_path.max_depth_reached,
 				   1, __ATOMIC_RELAXED);
@@ -409,10 +440,10 @@ static void dp_iter_one(void)
 	 * relevant stress. */
 	if (depth > 0U) {
 		for (i = 0U; i < DP_READER_PASSES; i++)
-			dp_reader_pass(i);
+			dp_reader_pass(i, tally);
 	}
 
-	dp_teardown_tree(depth, complen);
+	dp_teardown_tree(depth, complen, tally);
 
 	/* Return to BASE and drop the run subdir.  chdir(base) is
 	 * reliable regardless of teardown residue because BASE is
@@ -420,15 +451,27 @@ static void dp_iter_one(void)
 	 * only wastes an inode for the life of the child.  If chdir
 	 * back to BASE fails (should not happen), skip the rmdir --
 	 * we would rmdir the wrong path from the leftover cwd. */
+	(*tally)++;
 	if (chdir(base) != 0)
 		return;
 	(void)snprintf(runsub, sizeof(runsub), "run-%lu", seq);
+	(*tally)++;
 	(void)rmdir(runsub);
 }
 
 bool deep_path_nesting(struct childdata *child)
 {
 	unsigned int iters, i;
+	/* Local direct-syscall tally accumulated across all outer
+	 * iterations.  Each helper bumps this pointer for every raw
+	 * mkdir/chdir/rmdir/open/read/close/unlink/rename plus the
+	 * per-reader-kind getcwd/readlink/statx.  Published once to
+	 * shm at op-exit via childop_direct_syscalls_add() so the hot
+	 * path pays one atomic add per invocation instead of per-
+	 * syscall.  Setup-latched and dp_unsupported short-circuit
+	 * paths return before the loop and publish zero, which
+	 * correctly attributes no data-path work to those exits. */
+	unsigned long direct_calls = 0;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory
 	 * and can be scribbled by a poisoned-arena write from a
@@ -462,7 +505,10 @@ bool deep_path_nesting(struct childdata *child)
 		iters = 1U;
 
 	for (i = 0U; i < iters; i++)
-		dp_iter_one();
+		dp_iter_one(&direct_calls);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
