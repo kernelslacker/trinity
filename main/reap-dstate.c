@@ -148,16 +148,66 @@ void dump_pid_syscall(int pid)
  * per-fd files, so a wedged child with many open descriptors could
  * stream unbounded text into the watchdog snapshot, and individual
  * entries (eventpoll, in particular) can dump every watched fd.
- * Cap both the number of entries walked and the bytes read per
- * entry; truncate the rest silently rather than chase the long
- * tail.  Uses getdents64 directly to stay allocation-free on the
- * reap/watchdog path (opendir/readdir would malloc), and a single
- * O_RDONLY read per fdinfo file to match the wchan/stack helpers.
- * Silent on any open/read failure -- the snapshot treats missing
- * fdinfo as an omitted line, not a failure to investigate further.
+ * Three axes are bounded:
+ *
+ *   - DSTATE_FDINFO_MAX_ENTRIES caps how many fdinfo files are read.
+ *   - DSTATE_FDINFO_MAX_BYTES caps the bytes read per fdinfo file.
+ *   - DSTATE_FDINFO_MAX_LINES_PER_SNAP caps the total output() lines
+ *     the fdinfo dump may emit in one snapshot; after that the rest
+ *     is suppressed with a single "... truncated ..." summary line.
+ *
+ * Each fd is compacted to ONE output() line containing pos/flags/mnt_id
+ * (the fields present in every fdinfo entry), rather than one line per
+ * raw fdinfo line -- a fleet snapshot of wedged children was 78.7%
+ * fdinfo lines, drowning the real signal in per-line noise.
+ *
+ * Uses getdents64 directly to stay allocation-free on the reap/watchdog
+ * path (opendir/readdir would malloc), and a single O_RDONLY read per
+ * fdinfo file to match the wchan/stack helpers.  Silent on any
+ * open/read failure -- the snapshot treats missing fdinfo as an
+ * omitted line, not a failure to investigate further.
  */
-#define DSTATE_FDINFO_MAX_ENTRIES 64
-#define DSTATE_FDINFO_MAX_BYTES   512
+#define DSTATE_FDINFO_MAX_ENTRIES         64
+#define DSTATE_FDINFO_MAX_BYTES           512
+#define DSTATE_FDINFO_MAX_LINES_PER_SNAP  32
+
+/*
+ * Locate "key:" at the start of a line in the fdinfo blob and copy its
+ * value (up to the newline) into out.  Returns true on hit.  fdinfo
+ * fields are formatted as "key:\tvalue\n"; we tolerate spaces as well.
+ */
+static bool fdinfo_get_field(const char *buf, const char *key,
+			     char *out, size_t outsz)
+{
+	size_t klen = strlen(key);
+	const char *p = buf;
+
+	if (outsz == 0)
+		return false;
+
+	while (*p != '\0') {
+		if (strncmp(p, key, klen) == 0 && p[klen] == ':') {
+			const char *v = p + klen + 1;
+			const char *e;
+			size_t vlen;
+
+			while (*v == '\t' || *v == ' ')
+				v++;
+			e = strchr(v, '\n');
+			vlen = (e != NULL) ? (size_t)(e - v) : strlen(v);
+			if (vlen >= outsz)
+				vlen = outsz - 1;
+			memcpy(out, v, vlen);
+			out[vlen] = '\0';
+			return true;
+		}
+		p = strchr(p, '\n');
+		if (p == NULL)
+			break;
+		p++;
+	}
+	return false;
+}
 
 static void dump_pid_fdinfo_bounded(int pid)
 {
@@ -172,11 +222,15 @@ static void dump_pid_fdinfo_bounded(int pid)
 	char filename[96];
 	char dirbuf[4096];
 	char buf[DSTATE_FDINFO_MAX_BYTES];
-	int dirfd, fd;
-	long nread, pos;
+	char line[192];
+	char pos_v[32], flags_v[32], mnt_v[32];
+	int dirfd, fd, off;
+	long nread, dpos;
 	unsigned int seen = 0;
+	unsigned int emitted = 0;
+	unsigned int skipped = 0;
+	bool have_pos, have_flags, have_mnt;
 	ssize_t n;
-	char *p, *eol;
 
 	snprintf(dirpath, sizeof(dirpath), "/proc/%d/fdinfo", pid);
 
@@ -187,13 +241,13 @@ static void dump_pid_fdinfo_bounded(int pid)
 	while (seen < DSTATE_FDINFO_MAX_ENTRIES &&
 	       (nread = syscall(SYS_getdents64, dirfd, dirbuf,
 				sizeof(dirbuf))) > 0) {
-		for (pos = 0; pos < nread &&
+		for (dpos = 0; dpos < nread &&
 		     seen < DSTATE_FDINFO_MAX_ENTRIES; ) {
 			struct linux_dirent64 *de =
-				(struct linux_dirent64 *)(dirbuf + pos);
+				(struct linux_dirent64 *)(dirbuf + dpos);
 			const char *name = de->d_name;
 
-			pos += de->d_reclen;
+			dpos += de->d_reclen;
 
 			/* Skip "." / ".." and any non-numeric entry. */
 			if (name[0] < '0' || name[0] > '9')
@@ -211,23 +265,44 @@ static void dump_pid_fdinfo_bounded(int pid)
 			buf[n] = '\0';
 			seen++;
 
-			for (p = buf; *p != '\0'; p = eol + 1) {
-				eol = strchr(p, '\n');
-				if (eol == NULL) {
-					if (*p != '\0')
-						output(0, "pid %d fdinfo[%s]: %s\n",
-						       pid, name, p);
-					break;
-				}
-				*eol = '\0';
-				if (*p != '\0')
-					output(0, "pid %d fdinfo[%s]: %s\n",
-					       pid, name, p);
+			have_pos = fdinfo_get_field(buf, "pos",
+						    pos_v, sizeof(pos_v));
+			have_flags = fdinfo_get_field(buf, "flags",
+						      flags_v, sizeof(flags_v));
+			have_mnt = fdinfo_get_field(buf, "mnt_id",
+						    mnt_v, sizeof(mnt_v));
+			if (!have_pos && !have_flags && !have_mnt)
+				continue;
+
+			off = 0;
+			if (have_pos)
+				off += snprintf(line + off,
+						sizeof(line) - off,
+						"pos=%s", pos_v);
+			if (have_flags && off < (int)sizeof(line))
+				off += snprintf(line + off,
+						sizeof(line) - off,
+						"%sflags=%s",
+						off > 0 ? " " : "", flags_v);
+			if (have_mnt && off < (int)sizeof(line))
+				snprintf(line + off, sizeof(line) - off,
+					 "%smnt_id=%s",
+					 off > 0 ? " " : "", mnt_v);
+
+			if (emitted >= DSTATE_FDINFO_MAX_LINES_PER_SNAP) {
+				skipped++;
+				continue;
 			}
+			output(0, "pid %d fdinfo[%s]: %s\n", pid, name, line);
+			emitted++;
 		}
 	}
 
 	close(dirfd);
+
+	if (skipped > 0)
+		output(0, "pid %d fdinfo: ... truncated, %u more fd(s) suppressed ...\n",
+		       pid, skipped);
 }
 
 struct dstate_fd_print_ctx {
@@ -296,11 +371,11 @@ static bool dump_dstate_epoll_select_topology(const char *name,
  *   - /proc/<pid>/wchan: the kernel sleep address/symbol.
  *   - /proc/<pid>/stack: the kernel call stack (silently omitted when
  *     the kernel hides it from unprivileged readers).
- *   - /proc/<pid>/fdinfo/: per-fd state (pos/flags + driver-specific
- *     bits like eventpoll/inotify watches) for the wedged task's open
- *     descriptors, capped at DSTATE_FDINFO_MAX_ENTRIES entries and
- *     DSTATE_FDINFO_MAX_BYTES per entry so a fd-heavy child cannot
- *     stream unbounded text into the snapshot.
+ *   - /proc/<pid>/fdinfo/: one compact line per fd carrying pos/flags/
+ *     mnt_id, capped at DSTATE_FDINFO_MAX_ENTRIES fds walked,
+ *     DSTATE_FDINFO_MAX_BYTES read per fd, and
+ *     DSTATE_FDINFO_MAX_LINES_PER_SNAP total output lines per snapshot,
+ *     with a trailing "... truncated ..." note when the line cap trips.
  *
  * Runs on the parent's reap/watchdog path.  All /proc reads go through
  * the bounded helpers above so a wedged task cannot stall the reap
