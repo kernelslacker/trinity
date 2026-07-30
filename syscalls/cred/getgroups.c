@@ -244,7 +244,7 @@ struct syscallentry syscall_getgroups = {
 	.sanitise = sanitise_getgroups,
 	.rettype = RET_BORING,
 	.flags = REEXEC_SANITISE_OK,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.post = post_getgroups,
 };
 
@@ -261,5 +261,5 @@ struct syscallentry syscall_getgroups16 = {
 	.sanitise = sanitise_getgroups_common,
 	.rettype = RET_BORING,
 	.flags = REEXEC_SANITISE_OK,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 };

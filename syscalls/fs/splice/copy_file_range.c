@@ -61,7 +61,7 @@ struct syscallentry syscall_copy_file_range = {
 	.arg_params[5].list = ARGLIST(copy_file_range_flags),
 	.sanitise = sanitise_copy_file_range,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 	.bound_arg = 5,
 };

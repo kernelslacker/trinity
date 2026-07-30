@@ -27,5 +27,5 @@ struct syscallentry syscall_memfd_secret = {
 	 * generic_post_close_fd hook, which closed the fd immediately
 	 * and so prevented any consumer from picking it up.
 	 */
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

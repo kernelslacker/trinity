@@ -299,7 +299,7 @@ struct syscallentry syscall_capget = {
 	.argname = { [0] = "header", [1] = "dataptr" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.sanitise = sanitise_capget,
 	.post = post_capget,
 };

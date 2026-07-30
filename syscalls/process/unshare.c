@@ -70,7 +70,7 @@ static void post_unshare(struct syscallrecord *rec)
 
 struct syscallentry syscall_unshare = {
 	.name = "unshare",
-	.group = GROUP_PROCESS,
+	.group = GROUP_NS,
 	.num_args = 1,
 	.argtype = { [0] = ARG_LIST },
 	.argname = { [0] = "unshare_flags" },

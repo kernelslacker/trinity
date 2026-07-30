@@ -133,7 +133,7 @@ struct syscallentry syscall_fstat64 = {
 	.post = post_fstat64,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 };
 
 /*
@@ -297,5 +297,5 @@ struct syscallentry syscall_fstatat64 = {
 	.post = post_fstatat64,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 };

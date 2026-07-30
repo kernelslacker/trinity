@@ -345,7 +345,7 @@ struct syscallentry syscall_io_setup = {
 	.argname = { [0] = "nr_events", [1] = "ctxp" },
 	.arg_params[0].range.low = 1,
 	.arg_params[0].range.hi = 256,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_io_setup,
 	.post = post_io_setup,
 	.ret_objtype_via_post = post_io_setup_record_ctx,

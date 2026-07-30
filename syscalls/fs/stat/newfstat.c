@@ -209,7 +209,7 @@ struct syscallentry syscall_newfstat = {
 	.sanitise = sanitise_newfstat,
 	.post = post_newfstat,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 };
 
@@ -460,6 +460,6 @@ struct syscallentry syscall_newfstatat = {
 	.arg_params[3].list = ARGLIST(newfstatat_flags),
 	.sanitise = sanitise_newfstatat,
 	.post = post_newfstatat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 };

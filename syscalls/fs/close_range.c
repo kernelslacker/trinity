@@ -370,5 +370,5 @@ struct syscallentry syscall_close_range = {
 	.sanitise = sanitise_close_range,
 	.post = post_close_range,
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

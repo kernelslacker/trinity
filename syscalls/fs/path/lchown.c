@@ -61,7 +61,7 @@ struct syscallentry syscall_lchown = {
 	.arg_params[2].range.low = 0,
 	.arg_params[2].range.hi = 65535,
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	/*
 	 * REEXEC_SANITISE_OK: lchown had no sanitise before this change so
 	 * it was eligible for the CMP RedQueen re-exec step.  This
@@ -90,7 +90,7 @@ struct syscallentry syscall_lchown16 = {
 	.arg_params[2].range.low = 0,
 	.arg_params[2].range.hi = 65535,
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	.flags = REEXEC_SANITISE_OK,
 	.sanitise = sanitise_lchown,
 };

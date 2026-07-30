@@ -68,7 +68,7 @@ struct syscallentry syscall_getuid = {
 	.num_args = 0,
 	.rettype = RET_UID_T,
 	.post = post_getuid,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 };
 
 
@@ -80,5 +80,5 @@ struct syscallentry syscall_getuid16 = {
 	.name = "getuid16",
 	.num_args = 0,
 	.rettype = RET_UID_T,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 };

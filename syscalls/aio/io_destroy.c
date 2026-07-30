@@ -47,6 +47,6 @@ struct syscallentry syscall_io_destroy = {
 	.argtype = { [0] = ARG_AIO_CTX },
 	.argname = { [0] = "ctx" },
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_io_destroy,
 };

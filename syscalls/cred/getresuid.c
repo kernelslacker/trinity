@@ -247,7 +247,7 @@ struct syscallentry syscall_getresuid = {
 	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "ruid", [1] = "euid", [2] = "suid" },
 	.sanitise = sanitise_getresuid,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.post = post_getresuid,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
@@ -269,7 +269,7 @@ struct syscallentry syscall_getresuid16 = {
 	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "ruid", [1] = "euid", [2] = "suid" },
 	.sanitise = sanitise_getresuid16,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };

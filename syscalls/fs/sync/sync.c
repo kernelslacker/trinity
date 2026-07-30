@@ -6,7 +6,7 @@
 struct syscallentry syscall_sync = {
 	.name = "sync",
 	.num_args = 0,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_SYNC,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = AVOID_SYSCALL,	/* whole-system flush, blocks long enough to trip the watchdog regularly */
 };

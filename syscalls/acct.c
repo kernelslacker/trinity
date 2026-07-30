@@ -80,7 +80,7 @@ struct syscallentry syscall_acct = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_PATHNAME },
 	.argname = { [0] = "name" },
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	.flags = NEEDS_ROOT,
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_acct,

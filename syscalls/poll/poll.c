@@ -176,7 +176,7 @@ struct syscallentry syscall_poll = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_poll,
 	.post = post_poll,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_BORING,
 	/* a2 (nfds) is the per-call retval bound the post-oracle compares
 	 * rec->retval against.  Shadow it so a sibling stomp between
@@ -367,7 +367,7 @@ struct syscallentry syscall_ppoll = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_ppoll,
 	.post = post_ppoll,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_BORING,
 	/* Mirror syscall_poll: shadow a2 (nfds) so the post-oracle's
 	 * retval-vs-nfds bound reads the kernel-visible value via

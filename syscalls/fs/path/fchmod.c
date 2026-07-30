@@ -17,7 +17,7 @@ struct syscallentry syscall_fchmod = {
 	.argname = { [0] = "fd", [1] = "mode" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 };
 
 
@@ -66,6 +66,6 @@ struct syscallentry syscall_fchmodat = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "mode" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_fchmodat,
 };

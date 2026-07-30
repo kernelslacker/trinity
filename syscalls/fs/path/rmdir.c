@@ -9,5 +9,5 @@ struct syscallentry syscall_rmdir = {
 	.argtype = { [0] = ARG_PATHNAME },
 	.argname = { [0] = "pathname" },
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 };

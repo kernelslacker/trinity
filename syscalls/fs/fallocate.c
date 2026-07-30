@@ -238,5 +238,5 @@ struct syscallentry syscall_fallocate = {
 	.post = post_fallocate,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

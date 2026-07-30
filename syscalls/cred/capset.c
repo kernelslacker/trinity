@@ -260,7 +260,7 @@ struct syscallentry syscall_capset = {
 	.argname = { [0] = "header", [1] = "data" },
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS },
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.sanitise = sanitise_capset,
 	.post = post_capset,
 };

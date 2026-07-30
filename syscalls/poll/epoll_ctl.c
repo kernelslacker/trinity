@@ -109,5 +109,5 @@ struct syscallentry syscall_epoll_ctl = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_epoll_ctl,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

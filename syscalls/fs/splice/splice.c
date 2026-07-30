@@ -164,7 +164,7 @@ struct syscallentry syscall_splice = {
 	.arg_params[5].list = ARGLIST(splice_flags),
 	.sanitise = sanitise_splice,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 	.bound_arg = 5,
 };

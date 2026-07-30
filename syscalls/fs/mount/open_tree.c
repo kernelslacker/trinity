@@ -20,7 +20,7 @@ struct syscallentry syscall_open_tree = {
 	.arg_params[2].list = ARGLIST(open_tree_flags),
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_MOUNT,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_MOUNT,
 	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
 	.post = post_mount_fd,
 };

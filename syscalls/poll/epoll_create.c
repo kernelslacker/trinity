@@ -76,7 +76,7 @@ struct syscallentry syscall_epoll_create = {
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_EPOLL,
 	.post = post_epoll_create,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };
 
 /*
@@ -133,5 +133,5 @@ struct syscallentry syscall_epoll_create1 = {
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_EPOLL,
 	.post = post_epoll_create,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

@@ -103,5 +103,5 @@ struct syscallentry syscall_readahead = {
 	.sanitise = sanitise_readahead,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

@@ -80,5 +80,5 @@ struct syscallentry syscall_creat = {
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_creat,
 	.post = post_creat,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

@@ -165,7 +165,7 @@ struct syscallentry syscall_getcwd = {
 	.sanitise = sanitise_getcwd,
 	.post = post_getcwd,
 	.rettype = RET_PATH,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.bound_arg = 2,
 	.flags = REEXEC_SANITISE_OK,
 };

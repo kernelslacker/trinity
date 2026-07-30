@@ -316,7 +316,7 @@ struct syscallentry syscall_epoll_pwait = {
 	.post = post_epoll_pwait,
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	/* a3 (maxevents) read in post -- shared with epoll_pwait2 via
 	 * post_epoll_pwait().  See syscall_epoll_wait for rationale. */
 	.arg_snapshot_mask = (1u << 2),
@@ -331,6 +331,6 @@ struct syscallentry syscall_epoll_pwait2 = {
 	.post = post_epoll_pwait,
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.arg_snapshot_mask = (1u << 2),
 };

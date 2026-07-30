@@ -18,7 +18,7 @@ struct syscallentry syscall_tee = {
 	.argname = { [0] = "fdin", [1] = "fdout", [2] = "len", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(tee_flags),
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.rettype = RET_NUM_BYTES,
 	.bound_arg = 3,
 };

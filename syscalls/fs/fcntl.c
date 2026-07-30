@@ -744,7 +744,7 @@ struct syscallentry syscall_fcntl = {
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg" },
 	.arg_params[1].list = ARGLIST(fcntl_flags),
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_fcntl,
 	.post = post_fcntl,
 	/* a1/a2/a3 (fd/cmd/arg) all feed post_fcntl's oracle: the cmd

@@ -66,7 +66,7 @@ struct syscallentry syscall_access = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_LIST },
 	.argname = { [0] = "filename", [1] = "mode" },
 	.arg_params[1].list = ARGLIST(access_modes),
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	.rettype = RET_ZERO_SUCCESS,
 	/*
 	 * REEXEC_SANITISE_OK: access had no sanitise before this change so

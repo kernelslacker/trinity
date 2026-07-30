@@ -48,7 +48,7 @@ struct syscallentry syscall_setresgid = {
 	.arg_params[2].range.low = 0,
 	.arg_params[2].range.hi = 65535,
 	.post = post_setresgid,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.rettype = RET_ZERO_SUCCESS,
 };
 
@@ -68,6 +68,6 @@ struct syscallentry syscall_setresgid16 = {
 	.arg_params[1].range.hi = 65535,
 	.arg_params[2].range.low = 0,
 	.arg_params[2].range.hi = 65535,
-	.group = GROUP_PROCESS,
+	.group = GROUP_CRED,
 	.rettype = RET_ZERO_SUCCESS,
 };

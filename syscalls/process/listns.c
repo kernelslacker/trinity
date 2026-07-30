@@ -316,7 +316,7 @@ struct syscallentry syscall_listns = {
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.sanitise = sanitise_listns,
 	.post = post_listns,
-	.group = GROUP_PROCESS,
+	.group = GROUP_NS,
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
 	.flags = REEXEC_SANITISE_OK,

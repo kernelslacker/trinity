@@ -58,7 +58,7 @@ struct syscallentry syscall_getdents = {
 	.post = post_getdents,
 	.rettype = RET_NUM_BYTES,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	/* a3 (count) is the upper bound the post oracle compares retval
 	 * against to flag filldir() emitting past the declared buffer
 	 * size.  Shadow it so a sibling stomp of rec->a3 between dispatch
@@ -84,7 +84,7 @@ struct syscallentry syscall_getdents64 = {
 	.post = post_getdents,
 	.rettype = RET_NUM_BYTES,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	/* See syscall_getdents above: both entries feed the same
 	 * post_getdents oracle, so the a3 (count) shadow must be opted in
 	 * here too. */

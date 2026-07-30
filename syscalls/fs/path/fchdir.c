@@ -13,5 +13,5 @@ struct syscallentry syscall_fchdir = {
 	.argname = { [0] = "fd" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 };

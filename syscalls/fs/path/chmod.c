@@ -57,7 +57,7 @@ struct syscallentry syscall_chmod = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_MODE_T },
 	.argname = { [0] = "filename", [1] = "mode" },
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	/*
 	 * REEXEC_SANITISE_OK: chmod had no sanitise before this change so
 	 * it was eligible for the CMP RedQueen re-exec step.  This

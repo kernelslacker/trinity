@@ -69,5 +69,5 @@ struct syscallentry syscall_ioctl = {
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg" },
 	.sanitise = sanitise_ioctl,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 };

@@ -87,7 +87,7 @@ struct syscallentry syscall_inotify_add_watch = {
 	 * redqueen_reexec_step() would otherwise drop.
 	 */
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_inotify_add_watch,
 	.post = post_inotify_add_watch,
 };

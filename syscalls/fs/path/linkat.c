@@ -132,6 +132,6 @@ struct syscallentry syscall_linkat = {
 	.argname = { [0] = "olddfd", [1] = "oldname", [2] = "newdfd", [3] = "newname", [4] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_linkat,
 };

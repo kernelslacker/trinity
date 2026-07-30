@@ -466,5 +466,5 @@ struct syscallentry syscall_file_getattr = {
 	.post = post_file_getattr,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_STAT,
 };

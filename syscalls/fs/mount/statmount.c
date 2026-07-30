@@ -470,7 +470,7 @@ struct syscallentry syscall_statmount = {
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_STRUCT_SIZE },
 	.argname = { [0] = "req", [1] = "buf", [2] = "bufsize", [3] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
-	.group = GROUP_VFS,
+	.group = GROUP_VFS_MOUNT,
 	.flags = KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_statmount,
 	.post = post_statmount,

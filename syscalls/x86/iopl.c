@@ -11,4 +11,5 @@ struct syscallentry syscall_iopl = {
 	.arg_params[0].range.low = 0, .arg_params[0].range.hi = 3,
 	.flags = NEEDS_ROOT,
 	.rettype = RET_ZERO_SUCCESS,
+	.group = GROUP_PROCESS,
 };
