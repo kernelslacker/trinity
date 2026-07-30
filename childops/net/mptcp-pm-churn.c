@@ -42,6 +42,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "errno-classify.h"
 #include "shm.h"
 #include "trinity.h"
@@ -350,6 +351,14 @@ struct mptcp_pm_churn_iter_ctx {
 	struct sockaddr_in srv_addr;
 	uint16_t srv_port_n;
 	struct childdata *child;
+	/* Running tally of direct kernel syscalls issued across all phase
+	 * helpers this invocation.  Published once via
+	 * childop_direct_syscalls_add() after the pm-ops burst returns so the
+	 * operator can compare mptcp_pm_churn's saturation cost against the
+	 * random-syscall path's completed-call denominator.  Best-effort
+	 * counting -- genl_send_recv() failure modes may be off by one but
+	 * telemetry-only, no dispatch surface. */
+	unsigned long direct_syscalls;
 };
 
 /*
@@ -380,7 +389,8 @@ static unsigned int sweep_get_subflow_count(int sk)
  * the master is the bug-signal counter — collected, not asserted;
  * upstream 70ece9d7021c is the fix shape.
  */
-static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
+static unsigned long mptcp_sockopt_inheritance_sweep(int cli,
+						     struct genl_ctx *ctx)
 {
 	const struct mptcp_sf_optspec *spec;
 	unsigned int idx = 0, tries;
@@ -389,6 +399,7 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 	socklen_t glen;
 	__u8 loc_id;
 	__u32 addr_h;
+	unsigned long calls = 0;
 	const unsigned int n_opts = ARRAY_SIZE(mptcp_sf_sweep_opts);
 	const unsigned int all_mask = (n_opts >= 32U) ? ~0U
 					: ((1U << n_opts) - 1U);
@@ -397,7 +408,7 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 			   1, __ATOMIC_RELAXED);
 
 	if (sweep_unsupported_mask == all_mask)
-		return;
+		return 0;
 
 	for (tries = 0; tries < n_opts * 2U; tries++) {
 		idx = (unsigned int)rnd_modulo_u32(n_opts);
@@ -405,13 +416,15 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 			break;
 	}
 	if (sweep_unsupported_mask & (1U << idx))
-		return;
+		return 0;
 
 	spec = &mptcp_sf_sweep_opts[idx];
 	set_val = spec->genval();
 
 	n_before = sweep_get_subflow_count(cli);
+	calls += 1;
 
+	calls += 1;
 	if (setsockopt(cli, IPPROTO_TCP, spec->optname,
 		       &set_val, sizeof(set_val)) < 0) {
 		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT) {
@@ -421,7 +434,7 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 		}
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_set_failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return calls;
 	}
 	__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_set_ok,
 			   1, __ATOMIC_RELAXED);
@@ -430,19 +443,23 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 	addr_h = MPTCP_PM_LOOPBACK_BASE + rnd_modulo_u32(NR_MPTCP_LOOPBACK_ADDRS);
 	(void)mptcp_pm_addr_cmd(ctx, MPTCP_PM_CMD_ADD_ADDR,
 				loc_id, addr_h);
+	calls += 2;
 
 	n_after = n_before;
 	for (tries = 0; tries < 8U; tries++) {
 		n_after = sweep_get_subflow_count(cli);
+		calls += 1;
 		if (n_after > n_before)
 			break;
 		sched_yield();
+		calls += 1;
 	}
 	if (n_after > n_before)
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_subflow_added,
 				   1, __ATOMIC_RELAXED);
 
 	glen = sizeof(get_val);
+	calls += 1;
 	if (getsockopt(cli, IPPROTO_TCP, spec->optname,
 		       &get_val, &glen) == 0 && glen == sizeof(get_val)) {
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_readback_ok,
@@ -451,6 +468,7 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.sockopt_inherit_mismatch,
 					   1, __ATOMIC_RELAXED);
 	}
+	return calls;
 }
 
 /*
@@ -473,7 +491,7 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
  * getsockopt on the subflow.  Goal here is just to drive the codepath
  * under fuzz so KASAN/UBSAN/lockdep can fire.
  */
-static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
+static unsigned long mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 {
 	const struct mptcp_sf_optspec *spec;
 	int sk;
@@ -483,20 +501,23 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 	__u8 loc_id;
 	__u32 addr_h;
 	unsigned int idle;
+	unsigned long calls = 0;
 
 	sk = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
+	calls += 1;
 	if (sk < 0) {
 		if (is_proto_family_unsupported(errno)) {
 			ns_unsupported_mptcp = true;
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setsockopt_unsupported,
 					   1, __ATOMIC_RELAXED);
 		}
-		return;
+		return calls;
 	}
 
 	spec = &RAND_ARRAY(mptcp_sf_opts);
 	set_val = spec->genval();
 
+	calls += 1;
 	if (setsockopt(sk, IPPROTO_TCP, spec->optname,
 		       &set_val, sizeof(set_val)) < 0) {
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setsockopt_master_fail,
@@ -514,12 +535,16 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 	addr_h = MPTCP_PM_LOOPBACK_BASE + rnd_modulo_u32(NR_MPTCP_LOOPBACK_ADDRS);
 	(void)mptcp_pm_addr_cmd(ctx, MPTCP_PM_CMD_ADD_ADDR,
 				loc_id, addr_h);
+	calls += 2;
 
 	idle = 1U + rnd_modulo_u32(3U);
-	while (idle--)
+	while (idle--) {
 		sched_yield();
+		calls += 1;
+	}
 
 	glen = sizeof(get_val);
+	calls += 1;
 	if (getsockopt(sk, IPPROTO_TCP, spec->optname,
 		       &get_val, &glen) == 0 && glen == sizeof(get_val)) {
 		if (get_val == set_val)
@@ -531,6 +556,8 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 	}
 
 	close(sk);
+	calls += 1;
+	return calls;
 }
 
 /*
@@ -558,6 +585,7 @@ static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	ctx->srv = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
+	ctx->direct_syscalls += 1;
 	if (ctx->srv < 0) {
 		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT) {
 			ns_unsupported_mptcp = true;
@@ -574,11 +602,13 @@ static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx
 			   1, __ATOMIC_RELAXED);
 
 	mptcp_enable_tfo_ts(ctx->srv);
+	ctx->direct_syscalls += 2;
 
 	memset(&ctx->srv_addr, 0, sizeof(ctx->srv_addr));
 	ctx->srv_addr.sin_family = AF_INET;
 	ctx->srv_addr.sin_addr.s_addr = htonl(MPTCP_PM_LOOPBACK_BASE);
 	ctx->srv_addr.sin_port = 0;
+	ctx->direct_syscalls += 1;
 	if (bind(ctx->srv, (struct sockaddr *)&ctx->srv_addr,
 		 sizeof(ctx->srv_addr)) < 0) {
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
@@ -586,6 +616,7 @@ static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx
 		return -1;
 	}
 	slen = sizeof(ctx->srv_addr);
+	ctx->direct_syscalls += 1;
 	if (getsockname(ctx->srv, (struct sockaddr *)&ctx->srv_addr, &slen) < 0) {
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -593,6 +624,7 @@ static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx
 	}
 	ctx->srv_port_n = ctx->srv_addr.sin_port;
 
+	ctx->direct_syscalls += 1;
 	if (listen(ctx->srv, 4) < 0) {
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -600,6 +632,7 @@ static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx
 	}
 
 	ctx->cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
+	ctx->direct_syscalls += 1;
 	if (ctx->cli < 0) {
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -607,6 +640,7 @@ static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx
 	}
 
 	mptcp_enable_tfo_ts(ctx->cli);
+	ctx->direct_syscalls += 2;
 	return 0;
 }
 
@@ -629,11 +663,13 @@ static int mptcp_pm_churn_iter_connect_pair(struct mptcp_pm_churn_iter_ctx *ctx)
 
 	(void)fcntl(ctx->cli, F_SETFL, O_NONBLOCK);
 	(void)fcntl(ctx->srv, F_SETFL, O_NONBLOCK);
+	ctx->direct_syscalls += 2;
 
 	memset(&cli_addr, 0, sizeof(cli_addr));
 	cli_addr.sin_family = AF_INET;
 	cli_addr.sin_addr.s_addr = htonl(MPTCP_PM_LOOPBACK_BASE);
 	cli_addr.sin_port = ctx->srv_port_n;
+	ctx->direct_syscalls += 1;
 	if (connect(ctx->cli, (struct sockaddr *)&cli_addr,
 		    sizeof(cli_addr)) < 0 && errno != EINPROGRESS) {
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn.setup_failed,
@@ -642,12 +678,18 @@ static int mptcp_pm_churn_iter_connect_pair(struct mptcp_pm_churn_iter_ctx *ctx)
 	}
 
 	ctx->srv_acc = accept(ctx->srv, NULL, NULL);
-	if (ctx->srv_acc >= 0)
+	ctx->direct_syscalls += 1;
+	if (ctx->srv_acc >= 0) {
 		(void)fcntl(ctx->srv_acc, F_SETFL, O_NONBLOCK);
+		ctx->direct_syscalls += 1;
+	}
 
 	churn_send(ctx->cli);
-	if (ctx->srv_acc >= 0)
+	ctx->direct_syscalls += 1;
+	if (ctx->srv_acc >= 0) {
 		churn_send(ctx->srv_acc);
+		ctx->direct_syscalls += 1;
+	}
 	return 0;
 }
 
@@ -717,6 +759,7 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 	__u8 loc_id;
 	unsigned int rot_idx;
 	int rc;
+	unsigned long calls = 0;
 
 	/* Initial loc_id: random in [1, MPTCP_PM_LOC_ID_MAX].  The
 	 * kernel's loc_id 0 is reserved for the primary subflow auto-
@@ -738,6 +781,7 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 		 *    option for transmit on every up MPTCP socket. */
 		rc = mptcp_pm_addr_cmd(&ctx->ctx, MPTCP_PM_CMD_ADD_ADDR,
 				       loc_id, addr_h);
+		calls += 2;
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.addr_added_ok,
 					   1, __ATOMIC_RELAXED);
@@ -748,17 +792,22 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 		 *    response we don't parse — recv consumes it. */
 		(void)mptcp_pm_addr_cmd(&ctx->ctx, MPTCP_PM_CMD_GET_ADDR,
 					loc_id, addr_h);
+		calls += 2;
 
 		/* c) Send during the ADD_ADDR option emit window. */
 		churn_send(ctx->cli);
-		if (ctx->srv_acc >= 0)
+		calls += 1;
+		if (ctx->srv_acc >= 0) {
 			churn_send(ctx->srv_acc);
+			calls += 1;
+		}
 
 		/* d) DEL_ADDR — drives mptcp_pm_remove_anno_addr() and
 		 *    any in-flight subflow cleanup against the address
 		 *    we just installed. */
 		rc = mptcp_pm_addr_cmd(&ctx->ctx, MPTCP_PM_CMD_DEL_ADDR,
 				       loc_id, addr_h);
+		calls += 2;
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn.addr_removed_ok,
 					   1, __ATOMIC_RELAXED);
@@ -767,8 +816,11 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 		 *    concurrently with subflow teardown for the just-
 		 *    removed loc_id. */
 		churn_send(ctx->cli);
-		if (ctx->srv_acc >= 0)
+		calls += 1;
+		if (ctx->srv_acc >= 0) {
 			churn_send(ctx->srv_acc);
+			calls += 1;
+		}
 
 		/* f) Coin-flip between SET_LIMITS and FLUSH_ADDRS —
 		 *    both reach pernet pm_nl state under the spinlock
@@ -779,6 +831,7 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 			(void)mptcp_pm_set_limits(&ctx->ctx);
 		else
 			(void)mptcp_pm_flush_addrs(&ctx->ctx);
+		calls += 2;
 
 		/* g) Occasional setsockopt_all_sf seq-window probe:
 		 *    open a fresh master mptcp socket, set a TCP-level
@@ -787,7 +840,7 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 		 *    master got the value.  Same cadence as other
 		 *    sub-modes, drives the path 70ece9d7021c fixed. */
 		if (ONE_IN(8))
-			mptcp_setsockopt_all_sf_recipe(&ctx->ctx);
+			calls += mptcp_setsockopt_all_sf_recipe(&ctx->ctx);
 
 		/* h) Sockopt-inheritance sweep on the live master.  Walks
 		 *    a curated TCP_* table, sets one opt, drives ADD_ADDR
@@ -798,7 +851,8 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 		 *    fresh-socket recipe above — reusing the established
 		 *    connection is much cheaper. */
 		if (ONE_IN(4))
-			mptcp_sockopt_inheritance_sweep(ctx->cli, &ctx->ctx);
+			calls += mptcp_sockopt_inheritance_sweep(ctx->cli,
+								 &ctx->ctx);
 
 		/* Walk loc_id forward bounded to [1, MPTCP_PM_LOC_ID_MAX].
 		 * The kernel rejects loc_id > 127 with EINVAL so capping
@@ -807,6 +861,8 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
 		loc_id = (loc_id % MPTCP_PM_LOC_ID_MAX) + 1U;
 		rot_idx = (rot_idx + 1U) % NR_MPTCP_LOOPBACK_ADDRS;
 	}
+
+	ctx->direct_syscalls += calls;
 }
 
 /*
@@ -821,14 +877,22 @@ static void mptcp_pm_churn_iter_pm_ops_burst(struct mptcp_pm_churn_iter_ctx *ctx
  */
 static void mptcp_pm_churn_iter_teardown(struct mptcp_pm_churn_iter_ctx *ctx)
 {
-	if (ctx->ctx_open)
+	if (ctx->ctx_open) {
 		genl_close(&ctx->ctx);
-	if (ctx->srv_acc >= 0)
+		ctx->direct_syscalls += 1;
+	}
+	if (ctx->srv_acc >= 0) {
 		close(ctx->srv_acc);
-	if (ctx->cli >= 0)
+		ctx->direct_syscalls += 1;
+	}
+	if (ctx->cli >= 0) {
 		close(ctx->cli);
-	if (ctx->srv >= 0)
+		ctx->direct_syscalls += 1;
+	}
+	if (ctx->srv >= 0) {
 		close(ctx->srv);
+		ctx->direct_syscalls += 1;
+	}
 }
 
 bool mptcp_pm_churn(struct childdata *child)
@@ -872,6 +936,8 @@ bool mptcp_pm_churn(struct childdata *child)
 
 out:
 	mptcp_pm_churn_iter_teardown(&ctx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_syscalls);
 	return true;
 }
 
