@@ -48,6 +48,7 @@
 #include <linux/kvm.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "object-types.h"
 #include "objects.h"
 #include "random.h"
@@ -94,7 +95,7 @@ static bool memslot_race_user_memory2_probed;
 static bool memslot_race_user_memory2_supported;
 static bool memslot_race_unsupported;
 
-static void probe_sync_regs_caps(void)
+static void probe_sync_regs_caps(unsigned long *direct_calls)
 {
 	struct objhead *head;
 	struct object *obj;
@@ -112,6 +113,7 @@ static void probe_sync_regs_caps(void)
 	for_each_obj(head, obj, idx) {
 		if (obj->kvmsysobj.fd < 0)
 			continue;
+		(*direct_calls)++;
 		rc = ioctl(obj->kvmsysobj.fd, KVM_CHECK_EXTENSION,
 			   (unsigned long)KVM_CAP_SYNC_REGS);
 		if (rc > 0)
@@ -201,7 +203,8 @@ static void tally_exit(struct kvm_run *kr, size_t kvm_run_size)
 	}
 }
 
-static void run_one(int vcpufd, struct kvm_run *kr, size_t kvm_run_size)
+static void run_one(int vcpufd, struct kvm_run *kr, size_t kvm_run_size,
+		    unsigned long *direct_calls)
 {
 	int rc;
 
@@ -210,6 +213,7 @@ static void run_one(int vcpufd, struct kvm_run *kr, size_t kvm_run_size)
 
 	scribble_pre_run(kr);
 
+	(*direct_calls)++;
 	rc = ioctl(vcpufd, KVM_RUN, 0UL);
 
 	if (rc < 0) {
@@ -239,7 +243,7 @@ static void run_one(int vcpufd, struct kvm_run *kr, size_t kvm_run_size)
 	tally_exit(kr, kvm_run_size);
 }
 
-static void probe_user_memory2_cap(void)
+static void probe_user_memory2_cap(unsigned long *direct_calls)
 {
 	struct objhead *head;
 	struct object *obj;
@@ -256,6 +260,7 @@ static void probe_user_memory2_cap(void)
 	for_each_obj(head, obj, idx) {
 		if (obj->kvmsysobj.fd < 0)
 			continue;
+		(*direct_calls)++;
 		rc = ioctl(obj->kvmsysobj.fd, KVM_CHECK_EXTENSION,
 			   (unsigned long)KVM_CAP_USER_MEMORY2);
 		memslot_race_user_memory2_supported = (rc > 0);
@@ -274,6 +279,10 @@ struct memslot_race_args {
 	int vmfd;
 	uint32_t slot;
 	bool use_v2;
+	/* Writer-thread-local direct-syscall tally.  Merged back into the
+	 * caller's counter after pthread_join(), which supplies the
+	 * happens-before edge; no atomic needed. */
+	unsigned long direct_calls;
 };
 
 static void *memslot_race_writer(void *p)
@@ -290,6 +299,7 @@ static void *memslot_race_writer(void *p)
 	for (i = 0; i < KVM_RUN_CHURN_MEMSLOT_BURN; i++) {
 		int rc;
 
+		a->direct_calls++;
 		if (a->use_v2 && (i & 1)) {
 			struct kvm_userspace_memory_region2 r = {
 				.slot = a->slot,
@@ -316,19 +326,21 @@ static void *memslot_race_writer(void *p)
 }
 
 static void run_memslot_race(int vmfd, int vcpufd,
-			     struct kvm_run *kr, size_t kvm_run_size)
+			     struct kvm_run *kr, size_t kvm_run_size,
+			     unsigned long *direct_calls)
 {
 	struct memslot_race_args args;
 	pthread_t tid;
 	bool spawned = false;
 
-	probe_user_memory2_cap();
+	probe_user_memory2_cap(direct_calls);
 	if (memslot_race_unsupported || vmfd < 0)
 		return;
 
 	args.vmfd = vmfd;
 	args.slot = (uint32_t)(rnd_u32() & 0x7);
 	args.use_v2 = memslot_race_user_memory2_supported;
+	args.direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.kvm.gpc_memslot_race_runs, 1,
 			   __ATOMIC_RELAXED);
@@ -336,10 +348,12 @@ static void run_memslot_race(int vmfd, int vcpufd,
 	if (pthread_create(&tid, NULL, memslot_race_writer, &args) == 0)
 		spawned = true;
 
-	run_one(vcpufd, kr, kvm_run_size);
+	run_one(vcpufd, kr, kvm_run_size, direct_calls);
 
-	if (spawned)
+	if (spawned) {
 		(void)pthread_join(tid, NULL);
+		*direct_calls += args.direct_calls;
+	}
 }
 
 bool kvm_run_churn(struct childdata *child)
@@ -348,8 +362,9 @@ bool kvm_run_churn(struct childdata *child)
 	int vcpufd, iters, i;
 	struct kvm_run *kr;
 	size_t kvm_run_size;
+	unsigned long direct_calls = 0;
 
-	probe_sync_regs_caps();
+	probe_sync_regs_caps(&direct_calls);
 
 	if (objects_pool_empty(OBJ_LOCAL, OBJ_FD_KVM_VCPU))
 		return true;
@@ -395,13 +410,15 @@ bool kvm_run_churn(struct childdata *child)
 
 	if (ONE_IN(8)) {
 		run_memslot_race(obj->kvmvcpuobj.parent_vmfd, vcpufd, kr,
-				 kvm_run_size);
-		return true;
+				 kvm_run_size, &direct_calls);
+	} else {
+		iters = 1 + rnd_modulo_u32(KVM_RUN_CHURN_INNER_MAX);
+		for (i = 0; i < iters; i++)
+			run_one(vcpufd, kr, kvm_run_size, &direct_calls);
 	}
 
-	iters = 1 + rnd_modulo_u32(KVM_RUN_CHURN_INNER_MAX);
-	for (i = 0; i < iters; i++)
-		run_one(vcpufd, kr, kvm_run_size);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
