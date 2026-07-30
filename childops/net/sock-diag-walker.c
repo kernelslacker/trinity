@@ -58,6 +58,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "random.h"
 #include "shm.h"
@@ -496,5 +497,17 @@ bool sock_diag_walker(struct childdata *child)
 	}
 
 	nl_close(&ctx);
+
+	/* Publish this invocation's direct-syscall load in ONE RELAXED
+	 * atomic add.  The op issues a fixed burst per invocation through
+	 * the nl_* helpers in netlink-util.c: nl_open() does socket + bind
+	 * + setsockopt (SO_RCVTIMEO always requested), one sd_send_drain()
+	 * does sendmsg + a bounded recv drain, and nl_close() does close.
+	 * The exact recv count is opaque at this level, so bill a
+	 * conservative fixed count rather than instrumenting the helpers.
+	 * Gated on valid_op to match the surrounding per-op stats bumps. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, 4);
+
 	return true;
 }
