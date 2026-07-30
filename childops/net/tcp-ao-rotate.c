@@ -72,6 +72,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -180,6 +181,14 @@ struct tcp_ao_rotate_iter_ctx {
 	struct sockaddr_in cli_addr;
 	const char *alg;
 	struct childdata *child;
+	/* Running tally of direct kernel syscalls this invocation issued
+	 * (socket / bind / listen / getsockname / fcntl / connect / accept /
+	 * setsockopt / send / shutdown / close).  Bumped on every attempt,
+	 * including those that return an error, so the count reflects the
+	 * saturation cost we imposed on the kernel regardless of outcome.
+	 * Published once from tcp_ao_rotate() via
+	 * childop_direct_syscalls_add() gated on valid_op. */
+	unsigned long direct_calls;
 };
 
 /*
@@ -227,15 +236,18 @@ static void fill_ao_del(struct tcp_ao_del *opt,
  * the listener fd via *listener and the bound address (port filled
  * in) via *addr.  Returns -1 on any failure.  Listener is O_CLOEXEC.
  */
-static int open_loopback_listener(int *listener, struct sockaddr_in *addr)
+static int open_loopback_listener(int *listener, struct sockaddr_in *addr,
+				  unsigned long *direct_calls)
 {
 	socklen_t slen = sizeof(*addr);
 	int one = 1;
 	int s;
 
+	(*direct_calls)++;
 	s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (s < 0)
 		return -1;
+	(*direct_calls)++;
 	(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
 	memset(addr, 0, sizeof(*addr));
@@ -243,10 +255,13 @@ static int open_loopback_listener(int *listener, struct sockaddr_in *addr)
 	addr->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	addr->sin_port = 0;
 
+	(*direct_calls)++;
 	if (bind(s, (struct sockaddr *)addr, sizeof(*addr)) < 0)
 		goto fail;
+	(*direct_calls)++;
 	if (listen(s, 1) < 0)
 		goto fail;
+	(*direct_calls)++;
 	if (getsockname(s, (struct sockaddr *)addr, &slen) < 0)
 		goto fail;
 
@@ -254,6 +269,7 @@ static int open_loopback_listener(int *listener, struct sockaddr_in *addr)
 	return 0;
 
 fail:
+	(*direct_calls)++;
 	close(s);
 	return -1;
 }
@@ -265,12 +281,13 @@ fail:
  * succeeded packets_sent stat tick distinguishes "key worked" from
  * "key was rejected before egress" without needing a return value.
  */
-static void rotate_send(int fd)
+static void rotate_send(int fd, unsigned long *direct_calls)
 {
 	unsigned char buf[64];
 	ssize_t n;
 
 	generate_rand_bytes(buf, sizeof(buf));
+	(*direct_calls)++;
 	n = send(fd, buf, 1 + rnd_modulo_u32(sizeof(buf)),
 		 MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (n > 0)
@@ -293,12 +310,14 @@ static int tcp_ao_rotate_iter_setup_sockets(struct tcp_ao_rotate_iter_ctx *ctx)
 {
 	socklen_t slen;
 
-	if (open_loopback_listener(&ctx->listener, &ctx->srv_addr) < 0) {
+	if (open_loopback_listener(&ctx->listener, &ctx->srv_addr,
+				   &ctx->direct_calls) < 0) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
+	ctx->direct_calls++;
 	ctx->cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (ctx->cli < 0) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.setup_failed,
@@ -310,6 +329,7 @@ static int tcp_ao_rotate_iter_setup_sockets(struct tcp_ao_rotate_iter_ctx *ctx)
 	ctx->cli_addr.sin_family = AF_INET;
 	ctx->cli_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	ctx->cli_addr.sin_port = 0;
+	ctx->direct_calls++;
 	if (bind(ctx->cli, (struct sockaddr *)&ctx->cli_addr,
 		 sizeof(ctx->cli_addr)) < 0) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.setup_failed,
@@ -317,6 +337,7 @@ static int tcp_ao_rotate_iter_setup_sockets(struct tcp_ao_rotate_iter_ctx *ctx)
 		return -1;
 	}
 	slen = sizeof(ctx->cli_addr);
+	ctx->direct_calls++;
 	if (getsockname(ctx->cli, (struct sockaddr *)&ctx->cli_addr, &slen) < 0) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -343,6 +364,7 @@ static int tcp_ao_rotate_iter_install_keys(struct tcp_ao_rotate_iter_ctx *ctx)
 	ctx->alg = ao_algs[rnd_modulo_u32(NR_AO_ALGS)];
 
 	fill_ao_add(&ao_add, &ctx->cli_addr, 1, 1, true, ctx->alg);
+	ctx->direct_calls++;
 	rc = setsockopt(ctx->listener, IPPROTO_TCP, TCP_AO_ADD_KEY,
 			&ao_add, sizeof(ao_add));
 	if (rc < 0) {
@@ -368,6 +390,7 @@ static int tcp_ao_rotate_iter_install_keys(struct tcp_ao_rotate_iter_ctx *ctx)
 			   1, __ATOMIC_RELAXED);
 
 	fill_ao_add(&ao_add, &ctx->srv_addr, 1, 1, true, ctx->alg);
+	ctx->direct_calls++;
 	rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
 			&ao_add, sizeof(ao_add));
 	if (rc < 0) {
@@ -393,7 +416,9 @@ static int tcp_ao_rotate_iter_install_keys(struct tcp_ao_rotate_iter_ctx *ctx)
  */
 static int tcp_ao_rotate_iter_connect(struct tcp_ao_rotate_iter_ctx *ctx)
 {
+	ctx->direct_calls++;
 	(void)fcntl(ctx->cli, F_SETFL, O_NONBLOCK);
+	ctx->direct_calls++;
 	if (connect(ctx->cli, (struct sockaddr *)&ctx->srv_addr,
 		    sizeof(ctx->srv_addr)) < 0 && errno != EINPROGRESS) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.connect_failed,
@@ -401,18 +426,20 @@ static int tcp_ao_rotate_iter_connect(struct tcp_ao_rotate_iter_ctx *ctx)
 		return -1;
 	}
 
+	ctx->direct_calls++;
 	ctx->srv_acc = accept(ctx->listener, NULL, NULL);
 	if (ctx->srv_acc < 0) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.connect_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
+	ctx->direct_calls++;
 	(void)fcntl(ctx->srv_acc, F_SETFL, O_NONBLOCK);
 	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.connected,
 			   1, __ATOMIC_RELAXED);
 
-	rotate_send(ctx->cli);
-	rotate_send(ctx->srv_acc);
+	rotate_send(ctx->cli, &ctx->direct_calls);
+	rotate_send(ctx->srv_acc, &ctx->direct_calls);
 	return 0;
 }
 
@@ -456,6 +483,7 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 		 *    so the rotate path is exercised separately from the
 		 *    install path. */
 		fill_ao_add(&ao_add, &ctx->cli_addr, next_id, next_id, false, ctx->alg);
+		ctx->direct_calls++;
 		rc = setsockopt(ctx->srv_acc, IPPROTO_TCP, TCP_AO_ADD_KEY,
 				&ao_add, sizeof(ao_add));
 		if (rc == 0)
@@ -466,6 +494,7 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 					   1, __ATOMIC_RELAXED);
 
 		fill_ao_add(&ao_add, &ctx->srv_addr, next_id, next_id, false, ctx->alg);
+		ctx->direct_calls++;
 		rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
 				&ao_add, sizeof(ao_add));
 		if (rc == 0)
@@ -479,6 +508,7 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 		memset(&ao_info, 0, sizeof(ao_info));
 		ao_info.set_current = 1;
 		ao_info.current_key = next_id;
+		ctx->direct_calls++;
 		rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_INFO,
 				&ao_info, sizeof(ao_info));
 		if (rc == 0)
@@ -487,6 +517,7 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 		else
 			__atomic_add_fetch(&shm->stats.tcp_ao_rotate.info_rejected,
 					   1, __ATOMIC_RELAXED);
+		ctx->direct_calls++;
 		(void)setsockopt(ctx->srv_acc, IPPROTO_TCP, TCP_AO_INFO,
 				 &ao_info, sizeof(ao_info));
 
@@ -494,13 +525,14 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 		 *    against the new key on the peer" edge.  Drive both
 		 *    directions so retransmit / dup-ack races land on
 		 *    both endpoints' AO state machines. */
-		rotate_send(ctx->cli);
-		rotate_send(ctx->srv_acc);
+		rotate_send(ctx->cli, &ctx->direct_calls);
+		rotate_send(ctx->srv_acc, &ctx->direct_calls);
 
 		/* d) DEL_KEY old cur_id — race against in-flight retx
 		 *    that's still using sndid=cur_id on the wire.  This
 		 *    is the rcu-walk-vs-free race window. */
 		fill_ao_del(&ao_del, &ctx->srv_addr, cur_id, cur_id);
+		ctx->direct_calls++;
 		rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_DEL_KEY,
 				&ao_del, sizeof(ao_del));
 		if (rc == 0)
@@ -511,6 +543,7 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 					   1, __ATOMIC_RELAXED);
 
 		fill_ao_del(&ao_del, &ctx->cli_addr, cur_id, cur_id);
+		ctx->direct_calls++;
 		rc = setsockopt(ctx->srv_acc, IPPROTO_TCP, TCP_AO_DEL_KEY,
 				&ao_del, sizeof(ao_del));
 		if (rc == 0)
@@ -523,7 +556,9 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 		cur_id = next_id;
 	}
 
+	ctx->direct_calls++;
 	(void)shutdown(ctx->cli, SHUT_RDWR);
+	ctx->direct_calls++;
 	(void)shutdown(ctx->srv_acc, SHUT_RDWR);
 }
 
@@ -538,33 +573,34 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
  */
 static void tcp_ao_rotate_iter_teardown(struct tcp_ao_rotate_iter_ctx *ctx)
 {
-	if (ctx->srv_acc >= 0)
+	if (ctx->srv_acc >= 0) {
+		ctx->direct_calls++;
 		close(ctx->srv_acc);
-	if (ctx->cli >= 0)
+	}
+	if (ctx->cli >= 0) {
+		ctx->direct_calls++;
 		close(ctx->cli);
-	if (ctx->listener >= 0)
+	}
+	if (ctx->listener >= 0) {
+		ctx->direct_calls++;
 		close(ctx->listener);
+	}
 }
 
 bool tcp_ao_rotate(struct childdata *child)
 {
 	struct tcp_ao_rotate_iter_ctx ctx = {
-		.listener = -1,
-		.cli      = -1,
-		.srv_acc  = -1,
-		.child    = child,
+		.listener     = -1,
+		.cli          = -1,
+		.srv_acc      = -1,
+		.child        = child,
+		.direct_calls = 0,
 	};
 
 	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
 		return true;
-
-	if (tcp_ao_rotate_iter_setup_sockets(&ctx) != 0)
-		goto out;
-
-	if (tcp_ao_rotate_iter_install_keys(&ctx) != 0)
-		goto out;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -574,6 +610,12 @@ bool tcp_ao_rotate(struct childdata *child)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (tcp_ao_rotate_iter_setup_sockets(&ctx) != 0)
+		goto out;
+
+	if (tcp_ao_rotate_iter_install_keys(&ctx) != 0)
+		goto out;
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -590,5 +632,7 @@ bool tcp_ao_rotate(struct childdata *child)
 out:
 	tcp_ao_rotate_iter_teardown(&ctx);
 	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.cycles, 1, __ATOMIC_RELAXED);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return true;
 }
