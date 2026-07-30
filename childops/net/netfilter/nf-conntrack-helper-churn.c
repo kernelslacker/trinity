@@ -54,6 +54,7 @@
 #include <string.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -499,7 +500,8 @@ static void probe_ctnetlink(struct nfnl_ctx *ctx)
  * the socket fd (already used) so the caller can close it; a negative
  * return means socket() failed.
  */
-static int loopback_drive(__u8 l4proto, __u16 dport, __u32 mark)
+static int loopback_drive(__u8 l4proto, __u16 dport, __u32 mark,
+			  unsigned long *direct_calls)
 {
 	struct sockaddr_in dst;
 	const char payload[] = "trinity-nfct-helper-churn-payload";
@@ -507,22 +509,27 @@ static int loopback_drive(__u8 l4proto, __u16 dport, __u32 mark)
 	int sotype = (l4proto == IPPROTO_TCP) ? SOCK_STREAM : SOCK_DGRAM;
 
 	fd = socket(AF_INET, sotype | SOCK_CLOEXEC, l4proto);
+	(*direct_calls)++;
 	if (fd < 0)
 		return -1;
 
 	(void)fcntl(fd, F_SETFL, O_NONBLOCK);
 	(void)setsockopt(fd, SOL_SOCKET, SO_MARK, &mark, sizeof(mark));
+	(*direct_calls) += 2;
 
 	memset(&dst, 0, sizeof(dst));
 	dst.sin_family = AF_INET;
 	dst.sin_addr.s_addr = htonl(NFCT_LOOPBACK_ADDR);
 	dst.sin_port = htons(dport);
 
-	if (l4proto == IPPROTO_TCP)
+	if (l4proto == IPPROTO_TCP) {
 		(void)connect(fd, (struct sockaddr *)&dst, sizeof(dst));
+		(*direct_calls)++;
+	}
 
 	(void)sendto(fd, payload, sizeof(payload) - 1, MSG_DONTWAIT,
 		     (struct sockaddr *)&dst, sizeof(dst));
+	(*direct_calls)++;
 	return fd;
 }
 
@@ -627,12 +634,15 @@ static int nfct_helper_iter_pick(struct nfct_helper_iter_ctx *ictx)
  * attach_fail stats accordingly.  EEXIST is benign coverage (the lookup
  * + collision-detection path ran end-to-end).
  */
-static void nfct_helper_iter_attach(struct nfct_helper_iter_ctx *ictx)
+static void nfct_helper_iter_attach(struct nfct_helper_iter_ctx *ictx,
+				    unsigned long *direct_calls)
 {
 	int rc;
 
 	rc = build_ct_new(ictx->ctx, ictx->zone, ictx->l4proto,
 			  ictx->sport, ictx->dport, ictx->helper_name, 0);
+	/* nfnl_send_recv: sendmsg + recv. */
+	(*direct_calls) += 2;
 	update_helper_mask(ictx->helper_idx, rc);
 	if (rc == 0 || rc == -EEXIST) {
 		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.attach_ok,
@@ -649,7 +659,8 @@ static void nfct_helper_iter_attach(struct nfct_helper_iter_ctx *ictx)
  * cross-zone expectation-vs-conntrack split under the same net->
  * expect_lock the per-helper expectation list takes.
  */
-static void nfct_helper_iter_expect(struct nfct_helper_iter_ctx *ictx)
+static void nfct_helper_iter_expect(struct nfct_helper_iter_ctx *ictx,
+				    unsigned long *direct_calls)
 {
 	__u16 exp_zone = (rand32() & 1U) ? ictx->alt_zone : ictx->zone;
 	int rc;
@@ -658,6 +669,8 @@ static void nfct_helper_iter_expect(struct nfct_helper_iter_ctx *ictx)
 			   ictx->sport, ictx->dport,
 			   ictx->child_sport, ictx->child_dport,
 			   ictx->helper_name);
+	/* nfnl_send_recv: sendmsg + recv. */
+	(*direct_calls) += 2;
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.exp_ok,
 				   1, __ATOMIC_RELAXED);
@@ -670,16 +683,18 @@ static void nfct_helper_iter_expect(struct nfct_helper_iter_ctx *ictx)
  * ->help() callback.  Send failures are benign coverage -- the
  * conntrack lookup already ran by the time sendto returns.
  */
-static void nfct_helper_iter_drive(struct nfct_helper_iter_ctx *ictx)
+static void nfct_helper_iter_drive(struct nfct_helper_iter_ctx *ictx,
+				   unsigned long *direct_calls)
 {
 	int drive_fd;
 
 	drive_fd = loopback_drive(ictx->l4proto, ictx->dport,
-				  0xc0de0000U | (__u32)ictx->zone);
+				  0xc0de0000U | (__u32)ictx->zone, direct_calls);
 	if (drive_fd >= 0) {
 		__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.packet_sent,
 				   1, __ATOMIC_RELAXED);
 		close(drive_fd);
+		(*direct_calls)++;
 	}
 }
 
@@ -692,7 +707,8 @@ static void nfct_helper_iter_drive(struct nfct_helper_iter_ctx *ictx)
  * and __nf_ct_helper_destroy() while the expectation list may still
  * hold an entry pointing at the helper extension.
  */
-static void nfct_helper_iter_race(struct nfct_helper_iter_ctx *ictx)
+static void nfct_helper_iter_race(struct nfct_helper_iter_ctx *ictx,
+				  unsigned long *direct_calls)
 {
 	unsigned int races, r;
 	int drive_fd;
@@ -709,6 +725,8 @@ static void nfct_helper_iter_race(struct nfct_helper_iter_ctx *ictx)
 		 *    expectation walk. */
 		rc = build_ct_delete(ictx->ctx, ictx->zone, ictx->l4proto,
 				     ictx->sport, ictx->dport);
+		/* nfnl_send_recv: sendmsg + recv. */
+		(*direct_calls) += 2;
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.delete_ok,
 					   1, __ATOMIC_RELAXED);
@@ -718,11 +736,13 @@ static void nfct_helper_iter_race(struct nfct_helper_iter_ctx *ictx)
 		 *    while the prior delete may still be in-flight on the
 		 *    RCU grace period. */
 		drive_fd = loopback_drive(ictx->l4proto, ictx->dport,
-					  0xc0de0000U | (__u32)ictx->alt_zone);
+					  0xc0de0000U | (__u32)ictx->alt_zone,
+					  direct_calls);
 		if (drive_fd >= 0) {
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.zone_swap,
 					   1, __ATOMIC_RELAXED);
 			close(drive_fd);
+			(*direct_calls)++;
 		}
 
 		/* c) Mid-flow helper detach: CT_NEW with NLM_F_REPLACE,
@@ -731,6 +751,8 @@ static void nfct_helper_iter_race(struct nfct_helper_iter_ctx *ictx)
 		rc = build_ct_new(ictx->ctx, ictx->zone, ictx->l4proto,
 				  ictx->sport, ictx->dport,
 				  NULL, NLM_F_REPLACE);
+		/* nfnl_send_recv: sendmsg + recv. */
+		(*direct_calls) += 2;
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.detach_ok,
 					   1, __ATOMIC_RELAXED);
@@ -743,17 +765,17 @@ static void nfct_helper_iter_race(struct nfct_helper_iter_ctx *ictx)
  * (delete / zone-swap / detach).  Returns true on every path; the
  * stats counters carry the per-step success signal.
  */
-static void iter_one(struct nfnl_ctx *ctx)
+static void iter_one(struct nfnl_ctx *ctx, unsigned long *direct_calls)
 {
 	struct nfct_helper_iter_ctx ictx = { .ctx = ctx };
 
 	if (nfct_helper_iter_pick(&ictx) < 0)
 		return;
 
-	nfct_helper_iter_attach(&ictx);
-	nfct_helper_iter_expect(&ictx);
-	nfct_helper_iter_drive(&ictx);
-	nfct_helper_iter_race(&ictx);
+	nfct_helper_iter_attach(&ictx, direct_calls);
+	nfct_helper_iter_expect(&ictx, direct_calls);
+	nfct_helper_iter_drive(&ictx, direct_calls);
+	nfct_helper_iter_race(&ictx, direct_calls);
 }
 
 bool nf_conntrack_helper_churn(struct childdata *child)
@@ -763,6 +785,17 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 		.recv_timeo_s = NFCT_RECV_TIMEO_S,
 	};
 	unsigned int outer_iters, i;
+	/* Running tally of direct kernel syscalls this invocation issued
+	 * across nfnl_open/close, the per-iter nfnl_send_recv wrappers
+	 * (sendmsg + recv), and loopback_drive (socket + fcntl +
+	 * setsockopt [+ connect for TCP] + sendto, then close by the
+	 * caller).  Published once via childop_direct_syscalls_add() at
+	 * op-exit -- gated on valid_op to match the surrounding per-op
+	 * stats bumps -- so the hot outer/race loops pay one RELAXED
+	 * atomic add per invocation instead of per-syscall.  Harness
+	 * plumbing (prctl / getppid / barrier futex / clone3 /
+	 * sched_yield) is not on this path and stays uncounted. */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -787,9 +820,14 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
+	/* nfnl_open success: socket + bind + setsockopt(SO_RCVTIMEO). */
+	direct_calls += 3;
 
 	if (!ctnetlink_probed) {
 		probe_ctnetlink(&nfnl);
+		/* probe_ctnetlink issues one build_ct_new -> nfnl_send_recv
+		 * (sendmsg + recv). */
+		direct_calls += 2;
 		if (ns_unsupported_nf_conntrack_helper) {
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
@@ -798,6 +836,9 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.nf_conntrack_helper_churn.setup_failed,
 					   1, __ATOMIC_RELAXED);
 			nfnl_close(&nfnl);
+			direct_calls += 1;
+			if (valid_op)
+				childop_direct_syscalls_add(op, direct_calls);
 			return true;
 		}
 	}
@@ -816,9 +857,13 @@ bool nf_conntrack_helper_churn(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < outer_iters; i++)
-		iter_one(&nfnl);
+		iter_one(&nfnl, &direct_calls);
 
 	nfnl_close(&nfnl);
+	direct_calls += 1;
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
 
