@@ -113,13 +113,15 @@ _Static_assert(ARRAY_SIZE(probe_table) == NR_AF_ALG_PROBE_TEMPLATES,
 static bool af_alg_probe_local_done;
 
 #ifdef USE_IF_ALG
-static void run_one_template(unsigned int idx)
+static unsigned long run_one_template(unsigned int idx)
 {
 	const struct af_alg_probe_entry *e = &probe_table[idx];
 	struct sockaddr_alg sa;
+	unsigned long direct_calls = 0;
 	int sk;
 
 	sk = socket(AF_ALG, SOCK_SEQPACKET, 0);
+	direct_calls++;
 	if (sk < 0) {
 		/* Front-door already checked by caller — getting here means
 		 * a transient socket() failure (ENFILE/EMFILE).  Count as
@@ -128,7 +130,7 @@ static void run_one_template(unsigned int idx)
 				   1, __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.af_alg_probe.reject_total,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return direct_calls;
 	}
 
 	memset(&sa, 0, sizeof(sa));
@@ -136,6 +138,7 @@ static void run_one_template(unsigned int idx)
 	strncpy((char *)sa.salg_type, e->type, sizeof(sa.salg_type) - 1);
 	strncpy((char *)sa.salg_name, e->name, sizeof(sa.salg_name) - 1);
 
+	direct_calls++;
 	if (bind(sk, (struct sockaddr *)&sa, sizeof(sa)) == 0) {
 		__atomic_add_fetch(&shm->stats.af_alg_probe.accept[idx],
 				   1, __ATOMIC_RELAXED);
@@ -149,6 +152,8 @@ static void run_one_template(unsigned int idx)
 	}
 
 	close(sk);
+	direct_calls++;
+	return direct_calls;
 }
 #endif /* USE_IF_ALG */
 
@@ -157,6 +162,7 @@ bool af_alg_template_probe(struct childdata *child)
 	unsigned int expected = 0;
 	unsigned int i;
 #ifdef USE_IF_ALG
+	unsigned long direct_calls = 0;
 	int sk;
 #endif
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -206,6 +212,7 @@ bool af_alg_template_probe(struct childdata *child)
 		return true;
 	}
 	close(sk);
+	direct_calls = 2;	/* front-door socket + close */
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
@@ -213,7 +220,10 @@ bool af_alg_template_probe(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 	for (i = 0; i < NR_AF_ALG_PROBE_TEMPLATES; i++)
-		run_one_template(i);
+		direct_calls += run_one_template(i);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 #else
 	(void)i;
 	__atomic_add_fetch(&shm->stats.af_alg_probe.unsupported,
