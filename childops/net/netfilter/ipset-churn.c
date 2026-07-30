@@ -45,6 +45,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -505,7 +506,7 @@ static int build_list_dump(struct nfnl_ctx *ctx, const char *name)
  * EPROTONOSUPPORT / EAFNOSUPPORT latch ns_unsupported_ipset; anything
  * else means the subsystem is present.
  */
-static void probe_ipset(struct nfnl_ctx *ctx)
+static unsigned long probe_ipset(struct nfnl_ctx *ctx)
 {
 	unsigned char buf[IPSET_BUF_BYTES];
 	size_t off;
@@ -516,12 +517,13 @@ static void probe_ipset(struct nfnl_ctx *ctx)
 	ipset_probed = true;
 	if (!off) {
 		ns_unsupported_ipset = true;
-		return;
+		return 0;
 	}
 	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
 	rc = nfnl_send_recv(ctx, buf, off);
 	if (rc == -EPROTONOSUPPORT || rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT)
 		ns_unsupported_ipset = true;
+	return 2;
 }
 
 /*
@@ -558,15 +560,18 @@ static void tracker_add(struct ipset_tracker *tr, const char *name,
  * sets unlock the SWAP path in iter_swap_flush; a single successful
  * create still exercises ADD / DEL / TEST / LIST / HEADER.
  */
-static void iter_create_pair(struct nfnl_ctx *ctx, struct ipset_tracker *tr,
-			     enum ipset_kind kind, __u16 salt)
+static unsigned long iter_create_pair(struct nfnl_ctx *ctx,
+				      struct ipset_tracker *tr,
+				      enum ipset_kind kind, __u16 salt)
 {
 	char name[IPSET_MAXNAMELEN];
 	unsigned int i;
+	unsigned long direct_calls = 0;
 	int rc;
 
 	for (i = 0; i < 2U && tr->count < IPSET_MAX_TRACKED; i++) {
 		make_set_name(name, sizeof(name), salt, i);
+		direct_calls += 2;
 		rc = build_create(ctx, name, kind);
 		if (rc == 0 || rc == -EEXIST) {
 			tracker_add(tr, name, kind);
@@ -577,6 +582,7 @@ static void iter_create_pair(struct nfnl_ctx *ctx, struct ipset_tracker *tr,
 					   1, __ATOMIC_RELAXED);
 		}
 	}
+	return direct_calls;
 }
 
 /*
@@ -584,9 +590,11 @@ static void iter_create_pair(struct nfnl_ctx *ctx, struct ipset_tracker *tr,
  * The salt varies per triple so hash entries spread across the /16
  * range rather than colliding on a single bucket.
  */
-static void iter_adt_burst(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
+static unsigned long iter_adt_burst(struct nfnl_ctx *ctx,
+				    struct ipset_tracker *tr)
 {
 	unsigned int rounds, r, s;
+	unsigned long direct_calls = 0;
 
 	rounds = BUDGETED(CHILD_OP_IPSET_CHURN, IPSET_ADT_ITERS_BASE);
 	if (rounds > IPSET_ADT_BUDGET)
@@ -599,6 +607,7 @@ static void iter_adt_burst(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
 			__u16 salt = (__u16)(rand32() & 0xffffU);
 			enum ipset_kind k = (enum ipset_kind)tr->kinds[s];
 
+			direct_calls += 6;
 			if (build_adt(ctx, tr->names[s], k,
 				      IPSET_CMD_ADD, salt) == 0)
 				__atomic_add_fetch(&shm->stats.ipset_churn.add_ok,
@@ -613,6 +622,7 @@ static void iter_adt_burst(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
 						   1, __ATOMIC_RELAXED);
 		}
 	}
+	return direct_calls;
 }
 
 /*
@@ -620,22 +630,26 @@ static void iter_adt_burst(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
  * the first.  HEADER exercises the per-type header serializer; LIST
  * drives the element walker (nlmsg_dump path).
  */
-static void iter_query(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
+static unsigned long iter_query(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
 {
 	unsigned int s;
+	unsigned long direct_calls = 0;
 
 	if (tr->count == 0U)
-		return;
+		return 0;
 
 	for (s = 0; s < tr->count; s++) {
+		direct_calls += 2;
 		if (build_setname_only(ctx, IPSET_CMD_HEADER,
 				       tr->names[s]) == 0)
 			__atomic_add_fetch(&shm->stats.ipset_churn.header_ok,
 					   1, __ATOMIC_RELAXED);
 	}
+	direct_calls += 2;
 	if (build_list_dump(ctx, tr->names[0]) == 0)
 		__atomic_add_fetch(&shm->stats.ipset_churn.list_ok,
 				   1, __ATOMIC_RELAXED);
+	return direct_calls;
 }
 
 /*
@@ -644,17 +658,26 @@ static void iter_query(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
  * by construction (iter_create_pair uses one kind per invocation).
  * FLUSH on a swap partner exercises the walker with a live set alias.
  */
-static void iter_swap_flush(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
+static unsigned long iter_swap_flush(struct nfnl_ctx *ctx,
+				     struct ipset_tracker *tr)
 {
-	if (tr->count >= 2U &&
-	    build_swap(ctx, tr->names[0], tr->names[1]) == 0)
-		__atomic_add_fetch(&shm->stats.ipset_churn.swap_ok,
-				   1, __ATOMIC_RELAXED);
+	unsigned long direct_calls = 0;
 
-	if (tr->count >= 1U &&
-	    build_setname_only(ctx, IPSET_CMD_FLUSH, tr->names[0]) == 0)
-		__atomic_add_fetch(&shm->stats.ipset_churn.flush_ok,
-				   1, __ATOMIC_RELAXED);
+	if (tr->count >= 2U) {
+		direct_calls += 2;
+		if (build_swap(ctx, tr->names[0], tr->names[1]) == 0)
+			__atomic_add_fetch(&shm->stats.ipset_churn.swap_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+
+	if (tr->count >= 1U) {
+		direct_calls += 2;
+		if (build_setname_only(ctx, IPSET_CMD_FLUSH,
+				       tr->names[0]) == 0)
+			__atomic_add_fetch(&shm->stats.ipset_churn.flush_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+	return direct_calls;
 }
 
 /*
@@ -663,18 +686,22 @@ static void iter_swap_flush(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
  * this childop invocation.  ENOENT is treated as clean coverage --
  * the parse gate walked and simply found nothing to remove.
  */
-static void teardown_all(struct nfnl_ctx *ctx, struct ipset_tracker *tr)
+static unsigned long teardown_all(struct nfnl_ctx *ctx,
+				  struct ipset_tracker *tr)
 {
 	unsigned int s;
+	unsigned long direct_calls = 0;
 	int rc;
 
 	for (s = 0; s < tr->count; s++) {
+		direct_calls += 2;
 		rc = build_setname_only(ctx, IPSET_CMD_DESTROY, tr->names[s]);
 		if (rc == 0 || rc == -ENOENT)
 			__atomic_add_fetch(&shm->stats.ipset_churn.destroy_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 	tr->count = 0;
+	return direct_calls;
 }
 
 /*
@@ -778,7 +805,7 @@ static int build_create_resize(struct nfnl_ctx *ctx, const char *name,
  *
  * All created sets are destroyed by teardown_all() before return.
  */
-static void iter_resize(struct nfnl_ctx *ctx)
+static unsigned long iter_resize(struct nfnl_ctx *ctx)
 {
 	static const enum ipset_kind kinds[2] = {
 		IPSET_KIND_HASH_IP,
@@ -792,6 +819,7 @@ static void iter_resize(struct nfnl_ctx *ctx)
 	char name[IPSET_MAXNAMELEN];
 	__u16 base_salt;
 	unsigned int ki, ei, e, r;
+	unsigned long direct_calls = 0;
 	int rc;
 
 	base_salt = (__u16)(rand32() & 0xffffU);
@@ -801,6 +829,7 @@ static void iter_resize(struct nfnl_ctx *ctx)
 
 			make_set_name(name, sizeof(name),
 				      (__u16)(base_salt + slot), slot);
+			direct_calls += 2;
 			rc = build_create_resize(ctx, name, kinds[ki], evs[ei]);
 			if (rc == 0 || rc == -EEXIST) {
 				tracker_add(&tr, name, kinds[ki]);
@@ -814,7 +843,7 @@ static void iter_resize(struct nfnl_ctx *ctx)
 	}
 
 	if (tr.count == 0U)
-		return;
+		return direct_calls;
 
 	/*
 	 * Fill phase: monotonic salts fan entries across the loopback
@@ -826,6 +855,7 @@ static void iter_resize(struct nfnl_ctx *ctx)
 		enum ipset_kind k = (enum ipset_kind)tr.kinds[r];
 
 		for (e = 0; e < IPSET_RESIZE_FILL_ENTRIES; e++) {
+			direct_calls += 2;
 			if (build_adt(ctx, tr.names[r], k,
 				      IPSET_CMD_ADD, (__u16)e) == 0)
 				__atomic_add_fetch(&shm->stats.ipset_churn.add_ok,
@@ -844,6 +874,7 @@ static void iter_resize(struct nfnl_ctx *ctx)
 		enum ipset_kind k = (enum ipset_kind)tr.kinds[s];
 		__u16 salt = (__u16)(rand32() & 0xffffU);
 
+		direct_calls += 4;
 		if (build_adt(ctx, tr.names[s], k,
 			      IPSET_CMD_ADD, salt) == 0)
 			__atomic_add_fetch(&shm->stats.ipset_churn.add_ok,
@@ -854,7 +885,8 @@ static void iter_resize(struct nfnl_ctx *ctx)
 					   1, __ATOMIC_RELAXED);
 	}
 
-	teardown_all(ctx, &tr);
+	direct_calls += teardown_all(ctx, &tr);
+	return direct_calls;
 }
 
 /*
@@ -863,20 +895,22 @@ static void iter_resize(struct nfnl_ctx *ctx)
  * per-invocation tracker state stays local so the teardown always
  * matches this iteration's create set.
  */
-static void iter_one(struct nfnl_ctx *ctx)
+static unsigned long iter_one(struct nfnl_ctx *ctx)
 {
 	struct ipset_tracker tr = { .count = 0 };
 	enum ipset_kind kind;
 	__u16 salt;
+	unsigned long direct_calls = 0;
 
 	kind = (enum ipset_kind)(rand32() % (__u32)IPSET_KIND_NR);
 	salt = (__u16)(rand32() & 0xffffU);
 
-	iter_create_pair(ctx, &tr, kind, salt);
-	iter_adt_burst(ctx, &tr);
-	iter_query(ctx, &tr);
-	iter_swap_flush(ctx, &tr);
-	teardown_all(ctx, &tr);
+	direct_calls += iter_create_pair(ctx, &tr, kind, salt);
+	direct_calls += iter_adt_burst(ctx, &tr);
+	direct_calls += iter_query(ctx, &tr);
+	direct_calls += iter_swap_flush(ctx, &tr);
+	direct_calls += teardown_all(ctx, &tr);
+	return direct_calls;
 }
 
 bool ipset_churn(struct childdata *child)
@@ -887,6 +921,14 @@ bool ipset_churn(struct childdata *child)
 	};
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
+	/* Per-invocation direct-syscall tally: every nfnl_send_recv /
+	 * nfnl_send_recv_dump call site issues sendmsg + recvmsg (2 raw
+	 * syscalls).  Accumulated locally across every inner burst and
+	 * published once via childop_direct_syscalls_add() at op-exit so
+	 * the hot path pays one atomic add per invocation instead of per
+	 * netlink round-trip.  Excludes harness plumbing (nfnl_open /
+	 * nfnl_close). */
+	unsigned long direct_calls = 0;
 	unsigned int outer_iters, i;
 
 	__atomic_add_fetch(&shm->stats.ipset_churn.runs, 1, __ATOMIC_RELAXED);
@@ -894,17 +936,17 @@ bool ipset_churn(struct childdata *child)
 	if (ns_unsupported_ipset) {
 		__atomic_add_fetch(&shm->stats.ipset_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return true;
+		goto out;
 	}
 
 	if (nfnl_open(&nfnl, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.ipset_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return true;
+		goto out;
 	}
 
 	if (!ipset_probed) {
-		probe_ipset(&nfnl);
+		direct_calls += probe_ipset(&nfnl);
 		if (ns_unsupported_ipset) {
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
@@ -912,8 +954,7 @@ bool ipset_churn(struct childdata *child)
 						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.ipset_churn.setup_failed,
 					   1, __ATOMIC_RELAXED);
-			nfnl_close(&nfnl);
-			return true;
+			goto out;
 		}
 	}
 	if (valid_op)
@@ -931,7 +972,7 @@ bool ipset_churn(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < outer_iters; i++)
-		iter_one(&nfnl);
+		direct_calls += iter_one(&nfnl);
 
 	{
 		unsigned int rz_iters;
@@ -943,10 +984,13 @@ bool ipset_churn(struct childdata *child)
 		if (rz_iters == 0U)
 			rz_iters = 1U;
 		for (i = 0; i < rz_iters; i++)
-			iter_resize(&nfnl);
+			direct_calls += iter_resize(&nfnl);
 	}
 
+out:
 	nfnl_close(&nfnl);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
 
