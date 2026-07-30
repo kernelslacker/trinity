@@ -49,6 +49,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "random.h"
 #include "rnd.h"
@@ -173,8 +174,10 @@ static void __attribute__((noreturn)) grandchild(void)
  * One round: spawn up to MAX_FORKS grandchildren, then drain them all.
  * Returns the number of grandchildren actually reaped so the outer
  * loop can early-out if the kernel is rejecting forks (RLIMIT_NPROC).
+ * Increments *direct_calls by every fork(2)/waitpid(2) issued from this
+ * process (the caller reports the total via childop_direct_syscalls_add).
  */
-static unsigned int run_round(void)
+static unsigned int run_round(unsigned long *direct_calls)
 {
 	pid_t pids[MAX_FORKS];
 	unsigned int nforks;
@@ -185,7 +188,10 @@ static unsigned int run_round(void)
 	nforks = 1 + rnd_modulo_u32(MAX_FORKS);
 
 	for (i = 0; i < nforks; i++) {
-		pid_t pid = fork();
+		pid_t pid;
+
+		(*direct_calls)++;
+		pid = fork();
 
 		if (pid == 0)
 			grandchild();
@@ -214,10 +220,14 @@ static unsigned int run_round(void)
 		pid_t r;
 
 		if (RAND_BOOL()) {
+			(*direct_calls)++;
 			r = waitpid_eintr(pids[i], &status, WNOHANG);
-			if (r == 0)
+			if (r == 0) {
+				(*direct_calls)++;
 				r = waitpid_eintr(pids[i], &status, 0);
+			}
 		} else {
+			(*direct_calls)++;
 			r = waitpid_eintr(pids[i], &status, 0);
 		}
 
@@ -237,6 +247,7 @@ bool fork_storm(struct childdata *child)
 {
 	unsigned int rounds;
 	unsigned int i;
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.fork_storm.runs, 1, __ATOMIC_RELAXED);
 
@@ -257,12 +268,15 @@ bool fork_storm(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 	for (i = 0; i < rounds; i++) {
-		if (run_round() == 0) {
+		if (run_round(&direct_calls) == 0) {
 			/* Whole round produced zero reaped grandchildren —
 			 * fork is failing.  Bail rather than spin. */
 			break;
 		}
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
