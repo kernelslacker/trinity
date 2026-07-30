@@ -208,14 +208,18 @@ static void *racer_thread(void *arg)
 /* Create a fresh fd pair the op fully owns.  socketpair() is the default
  * because it gives a bidirectional connected channel where closing the
  * peer always unblocks a blocked recv(); pipe2() picks up the pipe-side
- * teardown path occasionally. */
-static bool make_fd_pair(int sv[2])
+ * teardown path occasionally.  Bumps *direct_calls for each syscall
+ * actually issued: 1 for the fast path, 2 when pipe2() fails and we fall
+ * through to socketpair(). */
+static bool make_fd_pair(int sv[2], unsigned long *direct_calls)
 {
 	if (RAND_BOOL()) {
+		(*direct_calls)++;
 		if (pipe2(sv, (int)RAND_NEGATIVE_OR(O_CLOEXEC)) == 0)
 			return true;
 		/* Fall through to socketpair on pipe2 failure. */
 	}
+	(*direct_calls)++;
 	return socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0;
 }
 
@@ -246,12 +250,13 @@ struct close_racer_iter_ctx {
  * rather than bailing mid-loop so any already-spawned racers are
  * guaranteed to be joined later.  Writes ctx->n_spawned for the
  * orchestrator's THREAD_SPAWN_LATCH check. */
-static void close_racer_iter_open_pairs(struct close_racer_iter_ctx *ctx)
+static void close_racer_iter_open_pairs(struct close_racer_iter_ctx *ctx,
+					unsigned long *direct_calls)
 {
 	unsigned int j;
 
 	for (j = 0; j < ctx->k; j++) {
-		if (!make_fd_pair(ctx->sv[j])) {
+		if (!make_fd_pair(ctx->sv[j], direct_calls)) {
 			__atomic_add_fetch(&shm->stats.close_racer.failed,
 					   1, __ATOMIC_RELAXED);
 			continue;
@@ -267,6 +272,7 @@ static void close_racer_iter_open_pairs(struct close_racer_iter_ctx *ctx)
 					   1, __ATOMIC_RELAXED);
 			close(ctx->sv[j][0]);
 			close(ctx->sv[j][1]);
+			*direct_calls += 2;
 			continue;
 		}
 		ctx->spawned[j] = true;
@@ -292,7 +298,8 @@ static void close_racer_iter_open_pairs(struct close_racer_iter_ctx *ctx)
  *     post-close fput-vs-join settling window. */
 static void close_racer_iter_close_phase(struct close_racer_iter_ctx *ctx,
 					 int *deferred_fds,
-					 unsigned int *deferred_n)
+					 unsigned int *deferred_n,
+					 unsigned long *direct_calls)
 {
 	unsigned int j;
 
@@ -303,18 +310,22 @@ static void close_racer_iter_close_phase(struct close_racer_iter_ctx *ctx,
 	case CYCLE_PEER_FIRST:
 		(void)close(ctx->sv[0][1]);
 		(void)close(ctx->sv[0][0]);
+		*direct_calls += 2;
 		break;
 
 	case CYCLE_SKIP_CLOSE:
 		/* Defer to function exit so the racer is fully
 		 * joined first; the deferred close then drops the
-		 * last ref synchronously rather than racing fdget. */
+		 * last ref synchronously rather than racing fdget.
+		 * The deferred closes are tallied in the cleanup
+		 * helper; only the backlog-full fallback counts here. */
 		if (*deferred_n + 2 <= DEFERRED_FD_MAX) {
 			deferred_fds[(*deferred_n)++] = ctx->sv[0][0];
 			deferred_fds[(*deferred_n)++] = ctx->sv[0][1];
 		} else {
 			(void)close(ctx->sv[0][0]);
 			(void)close(ctx->sv[0][1]);
+			*direct_calls += 2;
 		}
 		break;
 
@@ -344,6 +355,7 @@ static void close_racer_iter_close_phase(struct close_racer_iter_ctx *ctx,
 
 			(void)close(ctx->sv[idx >> 1][idx & 1]);
 		}
+		*direct_calls += n;
 		break;
 	}
 
@@ -352,6 +364,7 @@ static void close_racer_iter_close_phase(struct close_racer_iter_ctx *ctx,
 	default:
 		(void)close(ctx->sv[0][0]);
 		(void)close(ctx->sv[0][1]);
+		*direct_calls += 2;
 		if (ctx->mode == CYCLE_POST_SLEEP) {
 			/* Short post-close sleep: racer's syscall has
 			 * returned by now, so this widens the window
@@ -387,12 +400,14 @@ static void close_racer_iter_join_racers(struct close_racer_iter_ctx *ctx)
  * been joined, so these closes hit the post-syscall teardown path
  * rather than the mid-fdget race that the in-cycle modes target. */
 static void close_racer_iter_cleanup_deferred(int *deferred_fds,
-					      unsigned int deferred_n)
+					      unsigned int deferred_n,
+					      unsigned long *direct_calls)
 {
 	unsigned int i;
 
 	for (i = 0; i < deferred_n; i++)
 		(void)close(deferred_fds[i]);
+	*direct_calls += deferred_n;
 }
 
 bool close_racer(struct childdata *child)
@@ -402,6 +417,17 @@ bool close_racer(struct childdata *child)
 	unsigned int spawn_fail_streak = 0;
 	int deferred_fds[DEFERRED_FD_MAX];
 	unsigned int deferred_n = 0;
+	/* Local direct-syscall tally.  Bumped by make_fd_pair (1 per
+	 * pipe2/socketpair actually issued, 2 when pipe2 fails and we
+	 * fall through to socketpair) and by each close() in the
+	 * open-pairs spawn-fail path, the per-mode close phase, and the
+	 * deferred-close cleanup.  The racer thread's syscalls are
+	 * intentionally excluded -- it's a same-process pthread, so those
+	 * are counted on the persistent child itself outside this helper.
+	 * Published once via childop_direct_syscalls_add() at exit so the
+	 * hot path pays one atomic add per invocation instead of per-
+	 * syscall. */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -424,7 +450,7 @@ bool close_racer(struct childdata *child)
 		if (ctx.mode == CYCLE_MULTI_PAIR)
 			ctx.k = 2 + rnd_modulo_u32(2);
 
-		close_racer_iter_open_pairs(&ctx);
+		close_racer_iter_open_pairs(&ctx, &direct_calls);
 
 		if (ctx.n_spawned == 0) {
 			/* Count the cycle as one streak step, not k steps,
@@ -432,7 +458,7 @@ bool close_racer(struct childdata *child)
 			 * than wide cycles where every pair tripped EAGAIN. */
 			spawn_fail_streak++;
 			if (spawn_fail_streak >= THREAD_SPAWN_LATCH)
-				return true;
+				goto out;
 			continue;
 		}
 		spawn_fail_streak = 0;
@@ -442,10 +468,15 @@ bool close_racer(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		}
-		close_racer_iter_close_phase(&ctx, deferred_fds, &deferred_n);
+		close_racer_iter_close_phase(&ctx, deferred_fds, &deferred_n,
+					     &direct_calls);
 		close_racer_iter_join_racers(&ctx);
 	}
 
-	close_racer_iter_cleanup_deferred(deferred_fds, deferred_n);
+	close_racer_iter_cleanup_deferred(deferred_fds, deferred_n,
+					  &direct_calls);
+out:
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
