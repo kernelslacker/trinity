@@ -65,6 +65,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
@@ -310,6 +311,14 @@ bool pci_bind(struct childdata *child)
 	int err_bind = 0;
 	bool ran_unbind;
 	bool ran_bind;
+	/* Local direct-syscall tally.  Bumped by 3 for the collect_devs
+	 * scan (opendir + getdents + closedir) and by 3 for each
+	 * pci_bind_write_bdf() (open + write + close), so an early exit
+	 * after the enum still credits the syscalls that actually ran.
+	 * Published once to shm at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -330,9 +339,12 @@ bool pci_bind(struct childdata *child)
 	drv = pci_bind_safe_drivers[drv_idx];
 
 	n_devs = pci_bind_collect_devs(drv, devs);
+	direct_calls += 3;
 	if (n_devs == 0U) {
 		__atomic_add_fetch(&shm->stats.pci_bind.no_devices, 1,
 				   __ATOMIC_RELAXED);
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
 	}
 
@@ -348,7 +360,9 @@ bool pci_bind(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 
 	ran_unbind = pci_bind_write_bdf(drv, "unbind", bdf, &err_unbind);
+	direct_calls += 3;
 	ran_bind  = pci_bind_write_bdf(drv, "bind",   bdf, &err_bind);
+	direct_calls += 3;
 
 	if (ran_unbind && err_unbind == 0)
 		__atomic_add_fetch(&shm->stats.pci_bind.unbind_ok, 1,
@@ -369,6 +383,9 @@ bool pci_bind(struct childdata *child)
 	else
 		__atomic_add_fetch(&shm->stats.pci_bind.bind_failed, 1,
 				   __ATOMIC_RELAXED);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
