@@ -46,6 +46,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -250,19 +251,26 @@ static int devlink_reload_driver_reinit(struct genl_ctx *ctx,
 /*
  * Write `s` to the sysfs path `path`.  Returns 0 on success or the
  * negated errno on failure.  Used for new_device / del_device / addr
- * assignment via the sysfs control plane.
+ * assignment via the sysfs control plane.  Bumps `*direct_calls` for
+ * every syscall issued (1 if open() fails, 3 for the full
+ * open/write/close triple) so the caller can publish a per-invocation
+ * tally via childop_direct_syscalls_add().
  */
-static int sysfs_write(const char *path, const char *s)
+static int sysfs_write(const char *path, const char *s,
+		       unsigned long *direct_calls)
 {
 	int fd = open(path, O_WRONLY | O_CLOEXEC);
 	ssize_t n;
 	int rc;
 
+	(*direct_calls)++;
 	if (fd < 0)
 		return -errno;
 	n = write(fd, s, strlen(s));
+	(*direct_calls)++;
 	rc = (n < 0) ? -errno : 0;
 	close(fd);
+	(*direct_calls)++;
 	return rc;
 }
 
@@ -312,8 +320,12 @@ static bool netdevsim_available(struct childdata *child)
  * Bind failure is benign (EPERM without CAP_NET_RAW; ENODEV if the
  * netdev hasn't surfaced yet); the SPLIT/RELOAD path still races the
  * netdev teardown via the routing table even without an explicit bind.
+ * Returns the number of setsockopt() calls actually issued (1 if the
+ * eni<bus_id>np0 candidate stuck, 2 if we also tried the legacy
+ * eth<N> name) so the caller can fold it into a per-invocation direct-
+ * syscall tally.
  */
-static void try_bindtodevice(int sock, __u32 bus_id)
+static unsigned int try_bindtodevice(int sock, __u32 bus_id)
 {
 	char name[IFNAMSIZ];
 
@@ -321,23 +333,26 @@ static void try_bindtodevice(int sock, __u32 bus_id)
 	snprintf(name, sizeof(name), "eni%unp0", (unsigned int)bus_id);
 	if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE,
 		       name, (socklen_t)strlen(name)) == 0)
-		return;
+		return 1U;
 	/* Older naming sometimes seen on legacy builds. */
 	snprintf(name, sizeof(name), "eth%u", (unsigned int)bus_id);
 	if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE,
 		       name, (socklen_t)strlen(name)) == 0)
-		return;
+		return 2U;
 	/* Couldn't bind to the netdevsim port — drop through; the
 	 * subsequent sendto loop just rides loopback routing. */
+	return 2U;
 }
 
 /*
  * Drive a short non-blocking sendto burst at 127.0.0.1.  Bounded by
  * DEVLINK_CHURN_PKTS_PER_ITER so we don't burn the per-cycle budget on
  * data-plane traffic.  Failures are silent — what matters is that
- * skbs are in flight when the SPLIT/RELOAD lands.
+ * skbs are in flight when the SPLIT/RELOAD lands.  Returns the number
+ * of sendto() calls actually issued so the caller can fold them into
+ * a per-invocation direct-syscall tally.
  */
-static void churn_sendto_burst(int sock)
+static unsigned int churn_sendto_burst(int sock)
 {
 	struct sockaddr_in dst;
 	unsigned char buf[64];
@@ -355,16 +370,23 @@ static void churn_sendto_burst(int sock)
 			     MSG_DONTWAIT | MSG_NOSIGNAL,
 			     (struct sockaddr *)&dst, sizeof(dst));
 	}
+	return n;
 }
 
 /*
  * Run one create/churn/destroy cycle for bus_id.  Returns true if the
  * device was successfully created (caller bumps iterations), false if
  * we couldn't even create the device — the latter is a transient that
- * shouldn't burn the iter counter but isn't worth latching.
+ * shouldn't burn the iter counter but isn't worth latching.  Bumps
+ * `*direct_calls` for every kernel syscall issued along the cycle
+ * (sysfs open/write/close ×2, PORT_GET / SPLIT / RELOAD / UNSPLIT genl
+ * round-trips counted as sendmsg+recvmsg pairs, socket/fcntl/setsockopt,
+ * per-burst sendto fan-out, and the residual close) so the caller can
+ * publish a single childop_direct_syscalls_add() at op-exit.
  */
 static bool devlink_port_churn_one(struct genl_ctx *ctx,
-				   struct childdata *child, __u32 bus_id)
+				   struct childdata *child, __u32 bus_id,
+				   unsigned long *direct_calls)
 {
 	char dev_name[32];
 	char create_payload[64];
@@ -373,7 +395,7 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx,
 	int rc;
 
 	snprintf(create_payload, sizeof(create_payload), "%u 1", bus_id);
-	rc = sysfs_write(NETDEVSIM_NEW_DEVICE, create_payload);
+	rc = sysfs_write(NETDEVSIM_NEW_DEVICE, create_payload, direct_calls);
 	if (rc == -EEXIST) {
 		/* Rare collision with a sibling — the next iter rolls
 		 * forward, but for this iter we have nothing to drive. */
@@ -407,17 +429,21 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx,
 	 * the kernel side — reply parsing is intentionally skipped
 	 * (we use port_index 0, the netdevsim default). */
 	(void)devlink_dev_cmd(ctx, DEVLINK_CMD_PORT_GET, dev_name);
+	*direct_calls += 2;	/* sendmsg + recvmsg */
 
 	sock = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	(*direct_calls)++;
 	if (sock >= 0) {
 		(void)fcntl(sock, F_SETFL, O_NONBLOCK);
-		try_bindtodevice(sock, bus_id);
-		churn_sendto_burst(sock);
+		(*direct_calls)++;
+		*direct_calls += try_bindtodevice(sock, bus_id);
+		*direct_calls += churn_sendto_burst(sock);
 	}
 
 	/* g) Bug window 1: PORT_SPLIT mid-flow. */
 	rc = devlink_port_split(ctx, dev_name, 0U,
 				DEVLINK_PORT_SPLIT_COUNT);
+	*direct_calls += 2;
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.devlink_port_churn.split_ok,
 				   1, __ATOMIC_RELAXED);
@@ -427,11 +453,12 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx,
 
 	/* Drive more skbs into the queue between SPLIT and RELOAD. */
 	if (sock >= 0)
-		churn_sendto_burst(sock);
+		*direct_calls += churn_sendto_burst(sock);
 
 	/* h) Bug window 2: DRIVER_REINIT while bound socket alive.
 	 * Bus name is HARDCODED to netdevsim — see file header. */
 	rc = devlink_reload_driver_reinit(ctx, dev_name);
+	*direct_calls += 2;
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.devlink_port_churn.reload_ok,
 				   1, __ATOMIC_RELAXED);
@@ -441,14 +468,17 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx,
 
 	/* i) Undo the split so del_device sees a clean port topology. */
 	(void)devlink_port_unsplit(ctx, dev_name, 0U);
+	*direct_calls += 2;
 
-	if (sock >= 0)
+	if (sock >= 0) {
 		close(sock);
+		(*direct_calls)++;
+	}
 
 	/* j) Bug window 3: del_device while the residual socket-in-
 	 * close cleanup may still be racing.  Safe to ignore the rc —
 	 * the kernel will GC even if we leak the bus_id on failure. */
-	(void)sysfs_write(NETDEVSIM_DEL_DEVICE, del_payload);
+	(void)sysfs_write(NETDEVSIM_DEL_DEVICE, del_payload, direct_calls);
 
 	return true;
 }
@@ -461,6 +491,13 @@ bool devlink_port_churn(struct childdata *child)
 	unsigned int budget;
 	unsigned int i;
 	int rc;
+	/* Running per-invocation tally of direct kernel syscalls issued
+	 * across every cycle (sysfs open/write/close, four genl round-
+	 * trips, socket/fcntl/setsockopt, two sendto bursts, residual
+	 * close, sysfs del_device).  Published once at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	if (!netdevsim_available(child)) {
 		__atomic_add_fetch(&shm->stats.devlink_port_churn.create_skipped,
@@ -520,7 +557,7 @@ bool devlink_port_churn(struct childdata *child)
 	for (i = 0; i < iters; i++) {
 		__u32 bus_id = alloc_bus_id();
 
-		if (devlink_port_churn_one(&ctx, child, bus_id))
+		if (devlink_port_churn_one(&ctx, child, bus_id, &direct_calls))
 			__atomic_add_fetch(&shm->stats.devlink_port_churn.iterations,
 					   1, __ATOMIC_RELAXED);
 		else if (ns_unsupported_netdevsim)
@@ -528,6 +565,9 @@ bool devlink_port_churn(struct childdata *child)
 	}
 
 	genl_close(&ctx);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
 
