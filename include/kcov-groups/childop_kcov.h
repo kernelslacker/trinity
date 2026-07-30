@@ -63,4 +63,32 @@ unsigned long childop_kcov_op_skipped_inactive[KCOV_CHILDOP_NR_MAX];
  * Sized to KCOV_CHILDOP_NR_MAX; a build-time assertion in kcov.c
  * pins NR_CHILD_OP_TYPES below the bound. */
 unsigned long childop_kcov_trace_truncated[KCOV_CHILDOP_NR_MAX];
+/* Per-childop KCOV bracket trace-size telemetry.  Populated in
+ * kcov_bracket_end() from the struct kcov_pc_result.trace_size the
+ * kcov_collect() PC walk already stores (post-cap PC count for this
+ * bracket).  Together with childop_kcov_op_bracketed[] (sample count)
+ * and childop_kcov_trace_truncated[] (buffer-full events), operators
+ * can compute mean and peak buffer utilisation per op:
+ *
+ *   mean = trace_size_sum[op] / childop_kcov_op_bracketed[op]
+ *   peak = trace_size_max[op]
+ *   truncation-rate = childop_kcov_trace_truncated[op] /
+ *                     childop_kcov_op_bracketed[op]
+ *
+ * An op whose mean approaches KCOV_TRACE_SIZE or whose truncation-rate
+ * is non-trivial is dropping tail edges under a single outer bracket
+ * -- the signal that motivates a sub-burst refactor (split the hot
+ * loop into N smaller brackets so each fits the buffer, then credit
+ * new edges proportionally instead of raw).  Kept as pure telemetry
+ * for now; no scoring path consumes these yet.  Sized to
+ * KCOV_CHILDOP_NR_MAX; same NR_CHILD_OP_TYPES build-time bound
+ * asserted in kcov.c applies here.
+ *
+ * trace_size_max uses a compare-and-swap high-water update in
+ * kcov_bracket_end() (same shape as per_syscall_diag[].max_trace_size
+ * in kcov_collect()); trace_size_sum uses a plain relaxed add.  Sum
+ * is unsigned long -- at KCOV_TRACE_SIZE == 65535 and 2^63 brackets
+ * before overflow the counter is unreachable for any real run. */
+unsigned long childop_kcov_op_trace_size_sum[KCOV_CHILDOP_NR_MAX];
+unsigned long childop_kcov_op_trace_size_max[KCOV_CHILDOP_NR_MAX];
 };
