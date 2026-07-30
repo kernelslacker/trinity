@@ -214,12 +214,18 @@ static int epoll_volatility_iter_setup(struct epoll_volatility_iter_ctx *ctx)
  * it return 0, so ctx.n_epfds > 0 and ctx.n_target_fds > 0 are
  * the helper's precondition (rnd_modulo_u32() on them would
  * otherwise divide by zero).
+ *
+ * Returns the number of epoll_ctl / epoll_wait syscalls actually
+ * issued by the loop so the caller can fold it into the per-op
+ * childop_direct_syscalls_add() report.  One syscall per iteration
+ * regardless of which op branch fires.
  */
-static void epoll_volatility_iter_drive(struct epoll_volatility_iter_ctx *ctx)
+static unsigned long epoll_volatility_iter_drive(struct epoll_volatility_iter_ctx *ctx)
 {
 	struct timespec start;
 	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned int iter;
+	unsigned long direct_calls = 0;
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
@@ -292,9 +298,13 @@ static void epoll_volatility_iter_drive(struct epoll_volatility_iter_ctx *ctx)
 					  (int) ARRAY_SIZE(evs), 1);
 		}
 
+		direct_calls++;
+
 		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
+
+	return direct_calls;
 }
 
 /*
@@ -323,6 +333,15 @@ bool epoll_volatility(struct childdata *child)
 		.n_epfds = 0,
 		.n_target_fds = 0,
 	};
+	/* Local direct-syscall tally.  Setup contributes n_epfds
+	 * epoll_create1s + n_target_fds eventfds; the drive loop returns
+	 * one count per epoll_ctl / epoll_wait iteration it actually ran.
+	 * Teardown close(2)s are intentionally NOT counted — they aren't
+	 * the epoll test surface, matching the ADD/MOD/DEL/WAIT focus of
+	 * this childop.  Published once to shm at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -341,9 +360,14 @@ bool epoll_volatility(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 		}
-		epoll_volatility_iter_drive(&ctx);
+		direct_calls += ctx.n_epfds + ctx.n_target_fds;
+		direct_calls += epoll_volatility_iter_drive(&ctx);
 	}
 
 	epoll_volatility_iter_teardown(&ctx);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+
 	return true;
 }
