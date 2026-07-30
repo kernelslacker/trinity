@@ -32,6 +32,7 @@
 #include "arch.h"
 #include "pids.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -65,21 +66,24 @@ static unsigned long pick_file_size(void)
 /*
  * Create a file, optionally extend it, close it.
  * Sometimes leave unlink for later to create orphan inodes.
+ * Returns the number of fuzzed-work syscalls issued.
  */
-static bool do_create_and_destroy(void)
+static unsigned long do_create_and_destroy(void)
 {
 	char spew_dir[PATH_MAX + 32];
 	char path[PATH_MAX + 64];
 	int fd;
 	unsigned long size;
+	unsigned long direct_calls = 0;
 
 	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
 	snprintf(path, sizeof(path), "%s/%lu", spew_dir, file_counter++);
 
 	fd = open(path, O_CREAT | O_RDWR | O_EXCL, 0600);
+	direct_calls++;
 	if (fd < 0)
-		return true;	/* non-fatal */
+		return direct_calls;	/* non-fatal */
 
 	/* Optionally extend the file. */
 	if (RAND_BOOL()) {
@@ -97,6 +101,7 @@ static bool do_create_and_destroy(void)
 					(off_t)RAND_NEGATIVE_OR(size));
 			else
 				ret = fallocate(fd, 0, 0, size);
+			direct_calls++;
 		}
 	}
 
@@ -104,9 +109,11 @@ static bool do_create_and_destroy(void)
 	if (ONE_IN(4)) {
 		int ret __unused__;
 		size = pick_file_size();
-		if (size > 0)
+		if (size > 0) {
 			ret = fallocate(fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
 					0, size);
+			direct_calls++;
+		}
 	}
 
 	/* Optionally write some data. */
@@ -115,6 +122,7 @@ static bool do_create_and_destroy(void)
 		ssize_t ret __unused__;
 		generate_rand_bytes((unsigned char *)buf, sizeof(buf));
 		ret = write(fd, buf, sizeof(buf));
+		direct_calls++;
 	}
 
 	/*
@@ -122,26 +130,32 @@ static bool do_create_and_destroy(void)
 	 * This creates an orphan inode that exercises the orphan
 	 * list cleanup path when the fd is finally closed.
 	 */
-	if (ONE_IN(10))
+	if (ONE_IN(10)) {
 		(void)unlink(path);
+		direct_calls++;
+	}
 
 	close(fd);
+	direct_calls++;
 
 	/* Unlink if we didn't already. */
 	(void)unlink(path);
+	direct_calls++;
 
-	return true;
+	return direct_calls;
 }
 
 /*
  * Batch-create several files then batch-unlink, to build up
  * directory hash table entries before tearing them all down.
+ * Returns the number of fuzzed-work syscalls issued.
  */
-static bool do_batch_spew(void)
+static unsigned long do_batch_spew(void)
 {
 	char spew_dir[PATH_MAX + 32];
 	char paths[32][PATH_MAX + 64];
 	unsigned int i, count;
+	unsigned long direct_calls = 0;
 
 	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
@@ -154,8 +168,11 @@ static bool do_batch_spew(void)
 			 spew_dir, file_counter++);
 
 		fd = open(paths[i], O_CREAT | O_RDWR | O_EXCL, 0600);
-		if (fd >= 0)
+		direct_calls++;
+		if (fd >= 0) {
 			close(fd);
+			direct_calls++;
+		}
 	}
 
 	/* Unlink in random order for extra churn. */
@@ -167,48 +184,59 @@ static bool do_batch_spew(void)
 		memcpy(paths[j], tmp, sizeof(tmp));
 	}
 
-	for (i = 0; i < count; i++)
+	for (i = 0; i < count; i++) {
 		(void)unlink(paths[i]);
+		direct_calls++;
+	}
 
-	return true;
+	return direct_calls;
 }
 
 /*
  * Create and immediately remove directories to exercise
  * the directory inode allocation paths.
+ * Returns the number of fuzzed-work syscalls issued.
  */
-static bool do_mkdir_rmdir(void)
+static unsigned long do_mkdir_rmdir(void)
 {
 	char spew_dir[PATH_MAX + 32];
 	char path[PATH_MAX + 64];
+	unsigned long direct_calls = 0;
 
 	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
 	snprintf(path, sizeof(path), "%s/d%lu", spew_dir, file_counter++);
 
-	if (mkdir(path, 0700) == 0)
+	if (mkdir(path, 0700) == 0) {
 		(void)rmdir(path);
+		direct_calls++;
+	}
+	direct_calls++;
 
-	return true;
+	return direct_calls;
 }
 
 /*
  * Create hard links and symlinks for dentry cache variety.
+ * Returns the number of fuzzed-work syscalls issued.
  */
-static bool do_link_dance(void)
+static unsigned long do_link_dance(void)
 {
 	char spew_dir[PATH_MAX + 32];
 	char src[PATH_MAX + 64], dst[PATH_MAX + 64];
 	int fd, ret __unused__;
+	unsigned long direct_calls = 0;
 
 	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
 	snprintf(src, sizeof(src), "%s/%lu", spew_dir, file_counter++);
 
 	fd = open(src, O_CREAT | O_RDWR | O_EXCL, 0600);
+	direct_calls++;
 	if (fd < 0)
-		return true;
+		return direct_calls;
 	close(fd);
+	direct_calls++;
 
 	snprintf(dst, sizeof(dst), "%s/%lu", spew_dir, file_counter++);
 
@@ -216,11 +244,13 @@ static bool do_link_dance(void)
 		ret = link(src, dst);
 	else
 		ret = symlink(src, dst);
+	direct_calls++;
 
 	(void)unlink(dst);
 	(void)unlink(src);
+	direct_calls += 2;
 
-	return true;
+	return direct_calls;
 }
 
 bool inode_spewer(struct childdata *child)
@@ -233,6 +263,7 @@ bool inode_spewer(struct childdata *child)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	unsigned long direct_calls = 0;
 
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -242,11 +273,14 @@ bool inode_spewer(struct childdata *child)
 	}
 
 	switch (rnd_modulo_u32(10)) {
-	case 0 ... 5:	do_create_and_destroy();	break;
-	case 6 ... 7:	do_batch_spew();		break;
-	case 8:		do_mkdir_rmdir();		break;
-	case 9:		do_link_dance();		break;
+	case 0 ... 5:	direct_calls = do_create_and_destroy();	break;
+	case 6 ... 7:	direct_calls = do_batch_spew();		break;
+	case 8:		direct_calls = do_mkdir_rmdir();	break;
+	case 9:		direct_calls = do_link_dance();		break;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
