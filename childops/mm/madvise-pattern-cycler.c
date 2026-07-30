@@ -64,6 +64,7 @@
 #include "arch.h"
 #include "pids.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "maps.h"
@@ -474,6 +475,19 @@ bool madvise_cycler(struct childdata *child)
 
 		madvise_cycler_iter_disarm_guard(&old_segv, &old_bus, aborted);
 	}
+
+	/* Publish the per-invocation direct-syscall count so the operator
+	 * can compare this op's saturation cost against the random_syscall
+	 * path's completed-call denominator, matching the reporter wired
+	 * into childops/misc/pipe-thrash.c.  One madvise(2) is issued per
+	 * inner-loop iteration; iter_cap is the budget passed to the loop
+	 * and is used here as the approximation — early bails on
+	 * vma_pressure_is_high(), budget_elapsed_ns(), or the pool-race
+	 * siglongjmp leave the true count no larger than iter_cap.  One
+	 * atomic add per invocation, not per syscall, so the hot path is
+	 * unaffected. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, iter_cap);
 
 	return true;
 }
