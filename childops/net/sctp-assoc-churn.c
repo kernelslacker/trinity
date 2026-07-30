@@ -84,6 +84,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -152,6 +153,7 @@ struct sctp_assoc_churn_iter_ctx {
 	uint16_t cli_port_n;
 	sctp_assoc_t_compat assoc_id;
 	struct childdata *child;
+	unsigned long direct_calls;
 };
 
 static void fill_sin(struct sockaddr_in *sa, uint32_t addr_h, uint16_t port_n)
@@ -234,6 +236,7 @@ static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *
 
 	ctx->sock_type = (rnd_u32() & 1) ? SOCK_STREAM : SOCK_SEQPACKET;
 
+	ctx->direct_calls++;
 	ctx->srv = socket(AF_INET, ctx->sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
 	if (ctx->srv < 0) {
 		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT) {
@@ -258,6 +261,7 @@ static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *
 	}
 
 	fill_sin(&srv_primary, loopback_pool[0], 0);
+	ctx->direct_calls++;
 	if (bind(ctx->srv, (struct sockaddr *)&srv_primary,
 		 sizeof(srv_primary)) < 0) {
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
@@ -265,6 +269,7 @@ static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *
 		return -1;
 	}
 	slen = sizeof(srv_primary);
+	ctx->direct_calls++;
 	if (getsockname(ctx->srv, (struct sockaddr *)&srv_primary, &slen) < 0) {
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -273,6 +278,7 @@ static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *
 	ctx->srv_port_n = srv_primary.sin_port;
 
 	addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS, 1, 2, ctx->srv_port_n);
+	ctx->direct_calls++;
 	rc = setsockopt(ctx->srv, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_ADD,
 			addrs, (socklen_t)addr_len);
 	if (rc == 0)
@@ -282,6 +288,7 @@ static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.bindx_rejected,
 				   1, __ATOMIC_RELAXED);
 
+	ctx->direct_calls++;
 	if (listen(ctx->srv, 4) < 0) {
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -306,6 +313,7 @@ static int sctp_assoc_churn_iter_setup_client(struct sctp_assoc_churn_iter_ctx *
 	struct sockaddr_in cli_primary;
 	socklen_t slen;
 
+	ctx->direct_calls++;
 	ctx->cli = socket(AF_INET, ctx->sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
 	if (ctx->cli < 0) {
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
@@ -313,6 +321,7 @@ static int sctp_assoc_churn_iter_setup_client(struct sctp_assoc_churn_iter_ctx *
 		return -1;
 	}
 	fill_sin(&cli_primary, loopback_pool[3], 0);
+	ctx->direct_calls++;
 	if (bind(ctx->cli, (struct sockaddr *)&cli_primary,
 		 sizeof(cli_primary)) < 0) {
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
@@ -320,6 +329,7 @@ static int sctp_assoc_churn_iter_setup_client(struct sctp_assoc_churn_iter_ctx *
 		return -1;
 	}
 	slen = sizeof(cli_primary);
+	ctx->direct_calls++;
 	if (getsockname(ctx->cli, (struct sockaddr *)&cli_primary, &slen) < 0) {
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -357,6 +367,7 @@ static int sctp_assoc_churn_iter_connect(struct sctp_assoc_churn_iter_ctx *ctx)
 	int rc;
 
 	addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS, 0, 3, ctx->srv_port_n);
+	ctx->direct_calls++;
 	rc = setsockopt(ctx->cli, IPPROTO_SCTP, SCTP_SOCKOPT_CONNECTX,
 			addrs, (socklen_t)addr_len);
 	if (rc < 0 && errno != EINPROGRESS) {
@@ -370,6 +381,7 @@ static int sctp_assoc_churn_iter_connect(struct sctp_assoc_churn_iter_ctx *ctx)
 			   1, __ATOMIC_RELAXED);
 
 	if (ctx->sock_type == SOCK_STREAM) {
+		ctx->direct_calls++;
 		ctx->srv_acc = accept(ctx->srv, NULL, NULL);
 		if (ctx->srv_acc >= 0) {
 			(void)fcntl(ctx->srv_acc, F_SETFL, O_NONBLOCK);
@@ -379,9 +391,12 @@ static int sctp_assoc_churn_iter_connect(struct sctp_assoc_churn_iter_ctx *ctx)
 		}
 	}
 
+	ctx->direct_calls++;
 	churn_send(ctx->cli);
-	if (ctx->srv_acc >= 0)
+	if (ctx->srv_acc >= 0) {
+		ctx->direct_calls++;
 		churn_send(ctx->srv_acc);
+	}
 	return 0;
 }
 
@@ -417,6 +432,7 @@ static void sctp_assoc_churn_iter_churn_loop(struct sctp_assoc_churn_iter_ctx *c
 		 *    before the setsockopt returns to userspace). */
 		addr_len = pack_addrs(addrs, NR_LOOPBACK_ADDRS,
 				      rot_idx, 1, ctx->cli_port_n);
+		ctx->direct_calls++;
 		rc = setsockopt(ctx->cli, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_ADD,
 				addrs, (socklen_t)addr_len);
 		if (rc == 0)
@@ -430,14 +446,18 @@ static void sctp_assoc_churn_iter_churn_loop(struct sctp_assoc_churn_iter_ctx *c
 
 		/* b) Send during the ASCONF reply window — race window
 		 *    against ASCONF parameter parsing on the server. */
+		ctx->direct_calls++;
 		churn_send(ctx->cli);
-		if (ctx->srv_acc >= 0)
+		if (ctx->srv_acc >= 0) {
+			ctx->direct_calls++;
 			churn_send(ctx->srv_acc);
+		}
 
 		/* c) REM the address we just added.  Hits the
 		 *    sctp_send_asconf_del_ip path; if the data send
 		 *    above hasn't been ACKed yet, this races a path
 		 *    deletion against in-flight DATA on that path. */
+		ctx->direct_calls++;
 		rc = setsockopt(ctx->cli, IPPROTO_SCTP, SCTP_SOCKOPT_BINDX_REM,
 				addrs, (socklen_t)addr_len);
 		if (rc == 0)
@@ -478,6 +498,7 @@ static void sctp_assoc_churn_iter_peeloff(struct sctp_assoc_churn_iter_ctx *ctx)
 		memset(&parg, 0, sizeof(parg));
 		parg.associd = ctx->assoc_id;
 		parg.sd = -1;
+		ctx->direct_calls++;
 		rc = getsockopt(ctx->cli, IPPROTO_SCTP, SCTP_SOCKOPT_PEELOFF,
 				&parg, &plen);
 		if (rc == 0 && parg.sd >= 0) {
@@ -529,6 +550,15 @@ bool sctp_assoc_churn(struct childdata *child)
 		.peeled = -1,
 		.child = child,
 	};
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Declared up top so
+	 * the childop_direct_syscalls_add() report at out: is reachable
+	 * from every goto path. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.sctp_assoc_churn.runs,
 			   1, __ATOMIC_RELAXED);
@@ -541,13 +571,6 @@ bool sctp_assoc_churn(struct childdata *child)
 
 	if (sctp_assoc_churn_iter_setup_client(&ctx) != 0)
 		goto out;
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -567,5 +590,7 @@ out:
 	sctp_assoc_churn_iter_teardown(&ctx);
 	__atomic_add_fetch(&shm->stats.sctp_assoc_churn.cycles,
 			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return true;
 }
