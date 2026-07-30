@@ -66,6 +66,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
 #include "jitter.h"
@@ -420,6 +421,18 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
+		/* Opt-in direct-syscall reporter: this op issues the
+		 * fuzzed sendmsg(MSG_ZEROCOPY) and the bounded
+		 * sk_error_queue drain via libc, bypassing
+		 * random_syscall() accounting.  Publish a per-iter
+		 * upper bound (1 sendmsg + up to RDSZC_DRAIN_CAP
+		 * recvmsgs) so shm->stats.childop.direct_syscalls[op]
+		 * reflects this op's saturation cost instead of
+		 * reading zero.  Socket create / setsockopt / mmap /
+		 * munmap / close are per-cycle plumbing and are not
+		 * counted, same discipline as pipe-thrash and
+		 * send-zc-churn. */
+		childop_direct_syscalls_add(op, 1UL + RDSZC_DRAIN_CAP);
 	}
 
 	rds_zcopy_iter_send_faulting(&it);
