@@ -13,6 +13,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "maps.h"
 #include "objects.h"
 #include "random.h"
@@ -121,6 +122,7 @@ bool mprotect_split(struct childdata *child)
 	struct map *map;
 	enum prot_mode mode;
 	unsigned int iter;
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -180,6 +182,7 @@ bool mprotect_split(struct childdata *child)
 		 */
 		prot_used = (int)RAND_NEGATIVE_OR(new_prot);
 
+		direct_calls++;
 		if (mprotect(addr, len, prot_used) != 0)
 			continue;
 
@@ -228,6 +231,9 @@ bool mprotect_split(struct childdata *child)
 		 */
 		map->known_rw = false;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
