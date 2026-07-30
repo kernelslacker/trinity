@@ -147,8 +147,12 @@ static void rnd_fill(unsigned char *buf, size_t len)
 
 /* Nonblocking connect with a poll-based timeout.  Returns the connected
  * fd, or -1 with errno preserved on failure / timeout.  Caller checks
- * errno == ECONNREFUSED specifically to latch the no-target gate. */
-static int iscsi_connect(int timeout_ms)
+ * errno == ECONNREFUSED specifically to latch the no-target gate.  Every
+ * kernel-visible syscall issued on any path (socket + connect on the
+ * happy path; +poll/getsockopt/close on the slow/failure paths) is
+ * counted into *dc so the outer op can publish the full direct-syscall
+ * tally with a single childop_direct_syscalls_add() at op-exit. */
+static int iscsi_connect(int timeout_ms, unsigned long *dc)
 {
 	struct sockaddr_in srv;
 	struct pollfd pfd;
@@ -158,6 +162,7 @@ static int iscsi_connect(int timeout_ms)
 	int rc;
 
 	fd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	(*dc)++;
 	if (fd < 0)
 		return -1;
 
@@ -167,12 +172,14 @@ static int iscsi_connect(int timeout_ms)
 	srv.sin_port = htons(ISCSI_TARGET_PORT);
 
 	rc = connect(fd, (const struct sockaddr *)&srv, sizeof(srv));
+	(*dc)++;
 	if (rc == 0)
 		return fd;
 	if (errno != EINPROGRESS) {
 		int saved = errno;
 
 		close(fd);
+		(*dc)++;
 		errno = saved;
 		return -1;
 	}
@@ -181,14 +188,18 @@ static int iscsi_connect(int timeout_ms)
 	pfd.events = POLLOUT;
 	pfd.revents = 0;
 	rc = poll(&pfd, 1, timeout_ms);
+	(*dc)++;
 	if (rc <= 0) {
 		close(fd);
+		(*dc)++;
 		errno = (rc == 0) ? ETIMEDOUT : errno;
 		return -1;
 	}
-	if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &sockerr, &slen) < 0 ||
-	    sockerr != 0) {
+	rc = getsockopt(fd, SOL_SOCKET, SO_ERROR, &sockerr, &slen);
+	(*dc)++;
+	if (rc < 0 || sockerr != 0) {
 		close(fd);
+		(*dc)++;
 		errno = sockerr ? sockerr : EIO;
 		return -1;
 	}
@@ -198,8 +209,9 @@ static int iscsi_connect(int timeout_ms)
 /* Drain whatever the target sent back, up to ISCSI_RX_BUF bytes.
  * Bumps bytes_in for operator visibility.  Doesn't try to parse the
  * response — the kernel-side coverage is in handling our request, not
- * in what comes back. */
-static void iscsi_drain(int fd)
+ * in what comes back.  Counts the poll() (always) and recv() (only when
+ * poll signalled data) into *dc for the outer op's direct-syscall tally. */
+static void iscsi_drain(int fd, unsigned long *dc)
 {
 	unsigned char buf[ISCSI_RX_BUF];
 	struct pollfd pfd;
@@ -210,10 +222,12 @@ static void iscsi_drain(int fd)
 	pfd.events = POLLIN;
 	pfd.revents = 0;
 	rc = poll(&pfd, 1, ISCSI_RECV_TIMEOUT_MS);
+	(*dc)++;
 	if (rc <= 0)
 		return;
 
 	n = recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
+	(*dc)++;
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.iscsi_target_probe.bytes_in,
 				   (unsigned long)n, __ATOMIC_RELAXED);
@@ -595,6 +609,13 @@ bool iscsi_target_probe(struct childdata *child)
 	ssize_t n;
 	size_t pdu_len;
 	unsigned int arm;
+	/* Local direct-syscall tally.  Bumped at every socket/connect/
+	 * poll/getsockopt/close site inside iscsi_connect(), at the
+	 * poll/recv sites inside iscsi_drain(), and at each send /
+	 * shutdown / close in the outer iter body.  Published once to
+	 * shm at op-exit via childop_direct_syscalls_add() so the hot
+	 * path pays one atomic add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -615,7 +636,7 @@ bool iscsi_target_probe(struct childdata *child)
 		iters = 1;
 
 	for (i = 0; i < iters; i++) {
-		fd = iscsi_connect(ISCSI_CONNECT_TIMEOUT_MS);
+		fd = iscsi_connect(ISCSI_CONNECT_TIMEOUT_MS, &direct_calls);
 		if (fd < 0) {
 			if (errno == ECONNREFUSED) {
 				/* No LIO target on this host.  Latch and
@@ -633,6 +654,8 @@ bool iscsi_target_probe(struct childdata *child)
 							 __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.iscsi_target_probe.no_target,
 						   1, __ATOMIC_RELAXED);
+				if (valid_op)
+					childop_direct_syscalls_add(op, direct_calls);
 				return true;
 			}
 			__atomic_add_fetch(&shm->stats.iscsi_target_probe.setup_failed,
@@ -667,6 +690,7 @@ bool iscsi_target_probe(struct childdata *child)
 		}
 
 		n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
+		direct_calls++;
 		if (n > 0) {
 			__atomic_add_fetch(&shm->stats.iscsi_target_probe.login_sent,
 					   1, __ATOMIC_RELAXED);
@@ -674,7 +698,7 @@ bool iscsi_target_probe(struct childdata *child)
 					   (unsigned long)n, __ATOMIC_RELAXED);
 		}
 
-		iscsi_drain(fd);
+		iscsi_drain(fd, &direct_calls);
 		__atomic_add_fetch(&shm->stats.iscsi_target_probe.login_replies,
 				   1, __ATOMIC_RELAXED);
 
@@ -688,6 +712,7 @@ bool iscsi_target_probe(struct childdata *child)
 			pdu_len = build_scsi_cmd_fuzzed(pdu);
 			n = send(fd, pdu, pdu_len,
 				 MSG_DONTWAIT | MSG_NOSIGNAL);
+			direct_calls++;
 			if (n > 0) {
 				__atomic_add_fetch(&shm->stats.iscsi_target_probe.scsi_cmd_sent,
 						   1, __ATOMIC_RELAXED);
@@ -695,12 +720,16 @@ bool iscsi_target_probe(struct childdata *child)
 						   (unsigned long)n,
 						   __ATOMIC_RELAXED);
 			}
-			iscsi_drain(fd);
+			iscsi_drain(fd, &direct_calls);
 		}
 
 		(void)shutdown(fd, SHUT_RDWR);
+		direct_calls++;
 		close(fd);
+		direct_calls++;
 	}
 
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
