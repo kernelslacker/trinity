@@ -55,6 +55,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -144,7 +145,7 @@ static void *psi_writer(void *arg)
  * cgroup_churn cycle uses a fresh seq-suffixed path so a leaked dir
  * from one race doesn't compound across iterations.
  */
-static void cgroup_psi_race(const char *cgroup_path)
+static unsigned long cgroup_psi_race(const char *cgroup_path)
 {
 	char file_path[128];
 	int fds[PSI_RACE_FDS];
@@ -153,15 +154,17 @@ static void cgroup_psi_race(const char *cgroup_path)
 	bool spawned[PSI_RACE_FDS] = { false };
 	unsigned int writes = 0;
 	unsigned int file_idx = rnd_modulo_u32(NR_PSI_FILES);
-	unsigned int i, n_open = 0;
+	unsigned int i, n_open = 0, n_spawned = 0;
+	unsigned long syscalls = 0;
 
 	if (psi_unsupported)
-		return;
+		return 0;
 
 	snprintf(file_path, sizeof(file_path), "%s/%s",
 		 cgroup_path, psi_files[file_idx]);
 
 	for (i = 0; i < PSI_RACE_FDS; i++) {
+		syscalls++;
 		fds[i] = open(file_path, O_WRONLY | O_CLOEXEC);
 		if (fds[i] < 0) {
 			/* ENOENT here on a freshly-created cgroup means
@@ -177,7 +180,7 @@ static void cgroup_psi_race(const char *cgroup_path)
 	if (n_open == 0) {
 		__atomic_add_fetch(&shm->stats.cgroup_churn.psi_race_failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return syscalls;
 	}
 
 	__atomic_add_fetch(&shm->stats.cgroup_churn.psi_race_runs,
@@ -187,8 +190,10 @@ static void cgroup_psi_race(const char *cgroup_path)
 		args[i].fd = fds[i];
 		args[i].writes = &writes;
 		if (pthread_create(&tids[i], NULL,
-				   psi_writer, &args[i]) == 0)
+				   psi_writer, &args[i]) == 0) {
 			spawned[i] = true;
+			n_spawned++;
+		}
 	}
 
 	/* The race itself: rmdir while writers are mid-pressure_write.
@@ -196,20 +201,31 @@ static void cgroup_psi_race(const char *cgroup_path)
 	 * cgroup_get/cgroup_put window; not a problem — the cleanup
 	 * rmdir below catches it once the writer fds are released. */
 	(void)rmdir(cgroup_path);
+	syscalls++;
 
 	for (i = 0; i < n_open; i++) {
 		if (spawned[i])
 			(void)pthread_join(tids[i], NULL);
 		close(fds[i]);
+		syscalls++;
 	}
 
 	/* Cleanup pass: the close()s above released any psi_trigger
 	 * refs that were pinning the cgroup, so a second rmdir cleans
 	 * up if the in-race attempt above hit EBUSY. */
 	(void)rmdir(cgroup_path);
+	syscalls++;
 
 	__atomic_add_fetch(&shm->stats.cgroup_churn.psi_race_writes,
 			   writes, __ATOMIC_RELAXED);
+
+	/* Each spawned writer thread issues exactly one write() before
+	 * exiting; credit those attempts to the direct-syscall tally
+	 * regardless of whether the write itself was accepted (the
+	 * `writes` counter tracks accepted writes for the psi-race stats
+	 * bucket, which has a different meaning). */
+	syscalls += n_spawned;
+	return syscalls;
 }
 
 bool cgroup_churn(struct childdata *child)
@@ -217,6 +233,12 @@ bool cgroup_churn(struct childdata *child)
 	unsigned int cycles;
 	unsigned int i;
 	pid_t pid = mypid();
+	/* Local direct-syscall tally.  Bumped 1 per mkdir attempt below,
+	 * 1 per baseline-branch rmdir attempt, and by whatever
+	 * cgroup_psi_race issued on the race-branch path.  Published once
+	 * to shm at op-exit via childop_direct_syscalls_add() so the hot
+	 * path pays one atomic add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.cgroup_churn.runs, 1, __ATOMIC_RELAXED);
 
@@ -255,6 +277,7 @@ bool cgroup_churn(struct childdata *child)
 		snprintf(path, sizeof(path),
 			 "/sys/fs/cgroup/trinity-%d-%lu", (int)pid, seq);
 
+		direct_calls++;
 		if (mkdir(path, 0755) != 0) {
 			__atomic_add_fetch(&shm->stats.cgroup_churn.failed,
 					   1, __ATOMIC_RELAXED);
@@ -266,7 +289,7 @@ bool cgroup_churn(struct childdata *child)
 			 * won't help. */
 			if (errno == EACCES || errno == EROFS ||
 			    errno == ENOENT || errno == EPERM)
-				return true;
+				break;
 			continue;
 		}
 
@@ -278,10 +301,11 @@ bool cgroup_churn(struct childdata *child)
 		 * handles its own teardown (and a leak-cleanup rmdir on
 		 * the way out) so the main loop doesn't need to follow up. */
 		if (ONE_IN(PSI_RACE_GATE)) {
-			cgroup_psi_race(path);
+			direct_calls += cgroup_psi_race(path);
 			continue;
 		}
 
+		direct_calls++;
 		if (rmdir(path) == 0) {
 			__atomic_add_fetch(&shm->stats.cgroup_churn.rmdirs,
 					   1, __ATOMIC_RELAXED);
@@ -294,6 +318,9 @@ bool cgroup_churn(struct childdata *child)
 			 * invocation uses a new name so we don't compound. */
 		}
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
