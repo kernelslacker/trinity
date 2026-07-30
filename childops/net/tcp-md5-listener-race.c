@@ -136,6 +136,15 @@ bool tcp_md5_listener_race(struct childdata *child)
 	unsigned int iters;
 	unsigned int i, j;
 	int rc;
+	/* Local direct-syscall tally.  Bumped at each syscall issue site
+	 * along the successful path (setup, per-iter burst + rotate +
+	 * drain + delete + reinstall, teardown close).  Published once to
+	 * shm at op-exit via childop_direct_syscalls_add() so the hot path
+	 * pays one atomic add per invocation instead of per-syscall.  Early
+	 * bail-out paths (unsupported/latched, listener setup fail, initial
+	 * MD5 install fail) return without publishing: they never reached
+	 * the loop, matching pipe-thrash's shape. */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -158,11 +167,15 @@ bool tcp_md5_listener_race(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
+	/* open_loopback_listener success path: socket, setsockopt(REUSEADDR),
+	 * bind, listen, getsockname. */
+	direct_calls += 5;
 
 	/* Install initial MD5 key for the loopback peer.  This is the
 	 * call that hits the support gate. */
 	fill_md5(&md5, &srv_addr, 16);
 	rc = setsockopt(listener, IPPROTO_TCP, TCP_MD5SIG, &md5, sizeof(md5));
+	direct_calls += 1;
 	if (rc < 0) {
 		if (errno == EOPNOTSUPP || errno == EINVAL || errno == EPERM) {
 			ns_unsupported_tcp_md5 = true;
@@ -198,6 +211,12 @@ bool tcp_md5_listener_race(struct childdata *child)
 				__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.rst_sent_ok,
 						   1, __ATOMIC_RELAXED);
 			}
+			/* Best-case burst_one_client cost: socket,
+			 * setsockopt(SO_LINGER), connect, close.  A
+			 * failed socket() short-circuits earlier, but
+			 * that is the rare EMFILE path and the metric
+			 * is an approximate saturation cost. */
+			direct_calls += 4;
 		}
 
 		/* Mid-burst rotate: replace the key bytes for the same
@@ -206,6 +225,7 @@ bool tcp_md5_listener_race(struct childdata *child)
 		fill_md5(&md5, &srv_addr, 16);
 		rc = setsockopt(listener, IPPROTO_TCP, TCP_MD5SIG,
 				&md5, sizeof(md5));
+		direct_calls += 1;
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.md5_set_ok,
 					   1, __ATOMIC_RELAXED);
@@ -218,9 +238,11 @@ bool tcp_md5_listener_race(struct childdata *child)
 		for (;;) {
 			int a = accept4(listener, NULL, NULL, SOCK_NONBLOCK);
 
+			direct_calls += 1;
 			if (a < 0)
 				break;
 			close(a);
+			direct_calls += 1;
 		}
 
 		/* Delete the MD5 key for this peer (keylen=0).  This is
@@ -230,6 +252,7 @@ bool tcp_md5_listener_race(struct childdata *child)
 		fill_md5(&md5, &srv_addr, 0);
 		rc = setsockopt(listener, IPPROTO_TCP, TCP_MD5SIG,
 				&md5, sizeof(md5));
+		direct_calls += 1;
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.md5_set_ok,
 					   1, __ATOMIC_RELAXED);
@@ -242,10 +265,14 @@ bool tcp_md5_listener_race(struct childdata *child)
 		fill_md5(&md5, &srv_addr, 16);
 		(void)setsockopt(listener, IPPROTO_TCP, TCP_MD5SIG,
 				 &md5, sizeof(md5));
+		direct_calls += 1;
 	}
 
 	close(listener);
+	direct_calls += 1;
 	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race.completed_ok, 1,
 			   __ATOMIC_RELAXED);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
