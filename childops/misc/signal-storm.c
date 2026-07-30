@@ -37,6 +37,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"
@@ -351,6 +352,14 @@ bool signal_storm(struct childdata *child)
 		signal_storm_iter_burst_mixed(&ictx);
 		break;
 	}
+
+	/* Publish direct-syscall load: every burst arm issues exactly
+	 * ictx.iters emit_signal() calls, and each emit_signal() issues
+	 * exactly one raw kill(2) or sigqueue(2) -- no other syscalls run
+	 * on the burst path.  Gated on valid_op to match the surrounding
+	 * per-op stats bumps.  Single atomic add per invocation. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, ictx.iters);
 
 	return true;
 }
