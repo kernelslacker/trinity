@@ -463,6 +463,7 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
 				unsigned long op_nr)
 {
 	unsigned long edges_this_call = 0;
+	struct kcov_pc_result result;
 
 	if (kc == NULL || !kc->bracket_owned)
 		return 0;
@@ -471,9 +472,45 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
 	/* Childops are PC-mode only (kcov_bracket_begin rejects KCOV_MODE_CMP)
 	 * and op_nr >= CHILDOP_KCOV_NR_BASE bypasses the per-syscall arrays
 	 * inside kcov_collect, so the do32 dimension is unused on this path;
-	 * pass false as the conservative default. */
-	kcov_collect(kc, (unsigned int)op_nr, false, &edges_this_call, NULL);
+	 * pass false as the conservative default.  Pass a result struct so we
+	 * can read trace_size (post-cap PC count) and feed the per-op buffer-
+	 * utilisation telemetry below without a second trace_buf load and
+	 * without any addition to the SERIAL kcov_collect() hot path. */
+	kcov_collect(kc, (unsigned int)op_nr, false, &edges_this_call, &result);
 	kc->bracket_owned = false;
+
+	/* Per-childop trace-size telemetry.  Same op-index derivation as the
+	 * childop_kcov_trace_truncated[] bump inside kcov_collect(); guarded
+	 * on kcov_shm because the childop_kcov_bracketed success path already
+	 * dereferenced it, but kcov_shm re-check keeps this defensive should
+	 * a teardown race clear it between begin and end.  op_nr < base means
+	 * a non-childop caller reused this API (none exist today); leave the
+	 * per-op arrays alone in that case rather than aliasing into slot 0. */
+	if (kcov_shm != NULL && op_nr >= CHILDOP_KCOV_NR_BASE) {
+		unsigned long op = op_nr - CHILDOP_KCOV_NR_BASE;
+
+		if (op < KCOV_CHILDOP_NR_MAX) {
+			unsigned long ts = result.trace_size;
+			unsigned long cur;
+
+			__atomic_fetch_add(
+				&kcov_shm->childop_kcov.childop_kcov_op_trace_size_sum[op],
+				ts, __ATOMIC_RELAXED);
+			cur = __atomic_load_n(
+				&kcov_shm->childop_kcov.childop_kcov_op_trace_size_max[op],
+				__ATOMIC_RELAXED);
+			while (ts > cur) {
+				if (__atomic_compare_exchange_n(
+					&kcov_shm->childop_kcov.childop_kcov_op_trace_size_max[op],
+					&cur, ts,
+					false,
+					__ATOMIC_RELAXED,
+					__ATOMIC_RELAXED))
+					break;
+			}
+		}
+	}
+
 	return edges_this_call;
 }
 
