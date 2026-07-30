@@ -583,6 +583,67 @@ void kcov_child_flush_stats(struct childdata *child)
 		ls->total_warm_known_hits = delta - pub;
 	}
 
+	/* Flush the per-syscall calls/edges staging arrays.  Dense sweep of
+	 * MAX_NR_SYSCALL * PICKER_NCTX * 2 slots; per-child selectivity is
+	 * high (a child typically touches a small subset of syscalls per
+	 * flush window) so the zero-suppress branch below is the common
+	 * case.  Each touched (nr, ctx, do32) tuple emits one ring slot
+	 * with aux = (nr << 1) | ctx, and the enum choice (_64 vs _32)
+	 * carries the do32 dim so the reconstructed slot on the drain side
+	 * lands in the same shm cell the pre-migration atomic bumped.  If
+	 * the ring is full the slot is dropped (parent_stats.ring_overflow_
+	 * total records it) but the staged delta is only cleared on a
+	 * successful enqueue -- next flush retries, so a transient overflow
+	 * causes at most a stats-interval-scale visibility delay in the
+	 * shm cell, not permanent loss. */
+	{
+		unsigned int nr, ctx;
+		uint32_t pub;
+
+		for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
+			for (ctx = 0; ctx < PICKER_NCTX; ctx++) {
+				uint16_t aux = (uint16_t)((nr << 1) | ctx);
+
+				delta = ls->per_syscall_calls[nr][ctx][0];
+				if (delta > 0) {
+					pub = (delta > UINT32_MAX)
+						? UINT32_MAX : (uint32_t)delta;
+					if (stats_ring_enqueue(child->stats_ring,
+						    STATS_FIELD_PER_SYSCALL_CALLS_64,
+						    aux, pub))
+						ls->per_syscall_calls[nr][ctx][0] = delta - pub;
+				}
+				delta = ls->per_syscall_calls[nr][ctx][1];
+				if (delta > 0) {
+					pub = (delta > UINT32_MAX)
+						? UINT32_MAX : (uint32_t)delta;
+					if (stats_ring_enqueue(child->stats_ring,
+						    STATS_FIELD_PER_SYSCALL_CALLS_32,
+						    aux, pub))
+						ls->per_syscall_calls[nr][ctx][1] = delta - pub;
+				}
+				delta = ls->per_syscall_edges[nr][ctx][0];
+				if (delta > 0) {
+					pub = (delta > UINT32_MAX)
+						? UINT32_MAX : (uint32_t)delta;
+					if (stats_ring_enqueue(child->stats_ring,
+						    STATS_FIELD_PER_SYSCALL_EDGES_64,
+						    aux, pub))
+						ls->per_syscall_edges[nr][ctx][0] = delta - pub;
+				}
+				delta = ls->per_syscall_edges[nr][ctx][1];
+				if (delta > 0) {
+					pub = (delta > UINT32_MAX)
+						? UINT32_MAX : (uint32_t)delta;
+					if (stats_ring_enqueue(child->stats_ring,
+						    STATS_FIELD_PER_SYSCALL_EDGES_32,
+						    aux, pub))
+						ls->per_syscall_edges[nr][ctx][1] = delta - pub;
+				}
+			}
+		}
+	}
+
 	ls->local_syscalls_since_flush = 0;
 }
 

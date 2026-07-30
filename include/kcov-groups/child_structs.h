@@ -6,6 +6,8 @@
  * mmap'd child-private).  Included from kcov-types.h so consumers keep
  * seeing these types transparently. */
 
+#include "picker-context.h"	/* PICKER_NCTX */
+#include "syscall.h"		/* MAX_NR_SYSCALL */
 #include "types.h"	/* uint8_t / uint32_t / uint64_t */
 
 /* Per-call dedup slot — counts how many times a single trace hit a given
@@ -81,6 +83,21 @@ struct kcov_child_local_stats {
 	unsigned long remote_calls;
 	unsigned long total_pcs;
 	unsigned long total_warm_known_hits;
+	/* Per-child staging for the two hot per-syscall kcov_collect()
+	 * counters previously bumped as per-call __atomic_fetch_add on
+	 * kcov_shm->per_syscall.per_syscall_{calls,edges}[nr][ctx][do32].
+	 * Bumped by the owning child on the plain hot path (no atomics
+	 * because the memory is child-private) and drained in batches
+	 * by kcov_child_flush_stats() via the stats_ring; the parent-side
+	 * apply_slot() writes the delta back into the same kcov_shm cell
+	 * so every existing reader keeps seeing aggregated post-flush
+	 * values through the pre-existing per_syscall_edges_total() /
+	 * per_syscall_calls_total() accessors.  Dense layout matches the
+	 * shm target shape 1:1 so the flush walk is a straight
+	 * MAX_NR_SYSCALL * PICKER_NCTX * 2 sweep with a zero-suppress
+	 * gate per slot. */
+	unsigned long per_syscall_calls[MAX_NR_SYSCALL][PICKER_NCTX][2];
+	unsigned long per_syscall_edges[MAX_NR_SYSCALL][PICKER_NCTX][2];
 	/* Running count of syscalls since the last local-stats flush.
 	 * Drives the flush-cadence heuristic in kcov_child_flush_stats()
 	 * (flush when >= KCOV_LOCAL_STATS_FLUSH_SYSCALLS); bumped

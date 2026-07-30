@@ -24,6 +24,7 @@
 #include "arch.h"		/* page_size, PAGE_MASK */
 #include "child.h"
 #include "kcov.h"		/* KCOV_TRACE_SIZE */
+#include "picker-context.h"	/* PICKER_NCTX */
 #include "pids.h"
 #include "shm.h"
 #include "spsc-ring.h"
@@ -106,7 +107,7 @@ static uint32_t delta_cap_for(enum stats_field field)
  * hostile fuzzed workload and a wild value-result syscall buffer that
  * scribbled a slot can leave any field at any value.
  */
-static void apply_slot(const void *p, void *ctx __unused__)
+static void apply_slot(const void *p, void *cb_ctx __unused__)
 {
 	const struct stats_ring_slot *s = p;
 	enum stats_field field = (enum stats_field)s->field_id;
@@ -168,6 +169,57 @@ static void apply_slot(const void *p, void *ctx __unused__)
 		if (aux < MAX_NR_SYSCALL)
 			parent_stats.range_overlaps_shared_rejects_per_syscall_32[aux] += delta;
 		break;
+	/* PER_SYSCALL_{CALLS,EDGES}_{64,32}: drained target lives on
+	 * kcov_shm rather than parent_stats.  The pre-migration reader
+	 * set (per_syscall_calls_total / per_syscall_edges_total, the
+	 * frontier / cold-skip / warm-reserve consumers, kcov_diag,
+	 * kcov/persist priors emitter) reads from the shm array and
+	 * this migration is purely a hot-path write-side change: the
+	 * writer swaps from N children RELAXED-atomic-adding on a
+	 * shared cacheline to the single parent drain applying a
+	 * batched delta into the same cell.  aux packs (nr << 1) | ctx;
+	 * nr is bounds-checked before the write, ctx is always in
+	 * {0, 1} which is <= PICKER_NCTX - 1 by construction of the
+	 * 1-bit encoding.  Plain += is safe against the reader-side
+	 * __ATOMIC_RELAXED loads on aligned unsigned long because the
+	 * parent is now the sole writer -- same shape as the
+	 * kcov_shm gate the pre-migration code relied on for the
+	 * ordered per_syscall_edges_previous snapshot in stats/log.c.
+	 * kcov_shm can be NULL until init_shm completes; a slot
+	 * enqueued before that (defensive; children only start after
+	 * shm init) is dropped by the NULL guard. */
+	case STATS_FIELD_PER_SYSCALL_CALLS_64: {
+		unsigned int nr = (unsigned int)(aux >> 1);
+		unsigned int ctx = aux & 1u;
+
+		if (kcov_shm != NULL && nr < MAX_NR_SYSCALL && ctx < PICKER_NCTX)
+			kcov_shm->per_syscall.per_syscall_calls[nr][ctx][0] += delta;
+		break;
+	}
+	case STATS_FIELD_PER_SYSCALL_CALLS_32: {
+		unsigned int nr = (unsigned int)(aux >> 1);
+		unsigned int ctx = aux & 1u;
+
+		if (kcov_shm != NULL && nr < MAX_NR_SYSCALL && ctx < PICKER_NCTX)
+			kcov_shm->per_syscall.per_syscall_calls[nr][ctx][1] += delta;
+		break;
+	}
+	case STATS_FIELD_PER_SYSCALL_EDGES_64: {
+		unsigned int nr = (unsigned int)(aux >> 1);
+		unsigned int ctx = aux & 1u;
+
+		if (kcov_shm != NULL && nr < MAX_NR_SYSCALL && ctx < PICKER_NCTX)
+			kcov_shm->per_syscall.per_syscall_edges[nr][ctx][0] += delta;
+		break;
+	}
+	case STATS_FIELD_PER_SYSCALL_EDGES_32: {
+		unsigned int nr = (unsigned int)(aux >> 1);
+		unsigned int ctx = aux & 1u;
+
+		if (kcov_shm != NULL && nr < MAX_NR_SYSCALL && ctx < PICKER_NCTX)
+			kcov_shm->per_syscall.per_syscall_edges[nr][ctx][1] += delta;
+		break;
+	}
 	case STATS_FIELD_POST_HANDLER_CORRUPT_PTR:
 		parent_stats.post_handler_corrupt_ptr += delta;
 		break;
