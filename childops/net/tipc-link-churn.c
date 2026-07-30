@@ -510,6 +510,24 @@ out:
 	if (ctx_open)
 		genl_close(&ctx);
 
+	/* Publish this invocation's direct-syscall load in ONE RELAXED
+	 * atomic add.  This op issues a fixed burst per invocation from
+	 * the parent body: the initial AF_TIPC socket probe (with a
+	 * one-shot retry after modprobe), genl_open's socket/bind/
+	 * ctrl-lookup, three TIPC genl send+recv pairs (net_set,
+	 * bearer_enable, bearer_disable), bind for the RDM publication,
+	 * socket+connect+send for the topsrv subscription, then
+	 * close(topsrv) + close(rdm) + genl_close.  The exact recv
+	 * counts inside the genl helpers are opaque at this level, so
+	 * bill a conservative fixed count of parent-body sites rather
+	 * than instrumenting the helpers, matching sock-diag-walker's
+	 * discipline.  The forked modprobe helper's open/dup2/execl
+	 * live inside a short-lived _exit(127) child and are not counted
+	 * here.  Gated on valid_op to match the surrounding per-op stats
+	 * bumps. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, 13);
+
 	return true;
 }
 
