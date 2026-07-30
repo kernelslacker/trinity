@@ -52,6 +52,7 @@
 #include <string.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -113,8 +114,12 @@ static socklen_t fill_cinfo(enum tls_cipher_choice choice,
 
 /* Build a connected TCP pair on loopback.  Returns 0 on success and
  * fills the cli/srv outparams; returns -1 on any setup failure (caller
- * treats it as benign — no kernel TLS == no coverage to grab). */
-static int make_loopback_pair(int *cli, int *srv)
+ * treats it as benign — no kernel TLS == no coverage to grab).  The
+ * *calls accumulator is bumped for every direct syscall attempted so
+ * the caller can publish a single childop_direct_syscalls_add() at
+ * op-exit; on the fail path close()s of the partially-built fds are
+ * counted too. */
+static int make_loopback_pair(int *cli, int *srv, unsigned long *calls)
 {
 	struct sockaddr_in addr;
 	socklen_t slen = sizeof(addr);
@@ -122,10 +127,12 @@ static int make_loopback_pair(int *cli, int *srv)
 	int c = -1, s = -1;
 	int one = 1;
 
+	(*calls)++;
 	listener = socket(AF_INET, SOCK_STREAM, 0);
 	if (listener < 0)
 		goto fail;
 
+	(*calls)++;
 	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
 	memset(&addr, 0, sizeof(addr));
@@ -133,13 +140,17 @@ static int make_loopback_pair(int *cli, int *srv)
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	addr.sin_port = 0;
 
+	(*calls)++;
 	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 		goto fail;
+	(*calls)++;
 	if (listen(listener, 1) < 0)
 		goto fail;
+	(*calls)++;
 	if (getsockname(listener, (struct sockaddr *)&addr, &slen) < 0)
 		goto fail;
 
+	(*calls)++;
 	c = socket(AF_INET, SOCK_STREAM, 0);
 	if (c < 0)
 		goto fail;
@@ -148,27 +159,37 @@ static int make_loopback_pair(int *cli, int *srv)
 	 * the SIGALRM bound.  Loopback connect completes synchronously
 	 * in practice, but EINPROGRESS is also acceptable — we accept()
 	 * regardless and proceed. */
+	(*calls)++;
 	(void)fcntl(c, F_SETFL, O_NONBLOCK);
+	(*calls)++;
 	if (connect(c, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
 	    errno != EINPROGRESS)
 		goto fail;
 
+	(*calls)++;
 	s = accept(listener, NULL, NULL);
 	if (s < 0)
 		goto fail;
 
+	(*calls)++;
 	close(listener);
 	*cli = c;
 	*srv = s;
 	return 0;
 
 fail:
-	if (listener >= 0)
+	if (listener >= 0) {
+		(*calls)++;
 		close(listener);
-	if (c >= 0)
+	}
+	if (c >= 0) {
+		(*calls)++;
 		close(c);
-	if (s >= 0)
+	}
+	if (s >= 0) {
+		(*calls)++;
 		close(s);
+	}
 	return -1;
 }
 
@@ -182,34 +203,13 @@ bool tls_rotate(struct childdata *child)
 	int cli = -1, srv = -1;
 	int rc;
 	bool srv_ulp = false;
-
-	__atomic_add_fetch(&shm->stats.tls_rotate.runs, 1, __ATOMIC_RELAXED);
-
-	if (make_loopback_pair(&cli, &srv) < 0) {
-		__atomic_add_fetch(&shm->stats.tls_rotate.setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	/* Install TCP_ULP="tls" on both ends.  Both sides must be ULP'd
-	 * for the rekey-while-RX-is-also-armed bug class to be reachable. */
-	if (setsockopt(cli, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
-		__atomic_add_fetch(&shm->stats.tls_rotate.ulp_failed,
-				   1, __ATOMIC_RELAXED);
-		goto out;
-	}
-	/* Server-side install can fail independently (e.g. kernel attached
-	 * a different ULP first).  Without it, the TLS_RX setsockopt below
-	 * is a guaranteed EINVAL, so skip it — the TX-armed/RX-unarmed bug
-	 * shape we want to test isn't reachable and the counter inflates. */
-	if (setsockopt(srv, IPPROTO_TCP, TCP_ULP, "tls", 3) == 0)
-		srv_ulp = true;
-	else
-		__atomic_add_fetch(&shm->stats.tls_rotate.ulp_asymmetric,
-				   1, __ATOMIC_RELAXED);
-
-	c1 = (enum tls_cipher_choice)rnd_modulo_u32(NR_TLS_CHOICES);
-	v1 = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
+	/* Local direct-syscall tally.  Bumped 1 per direct syscall issued
+	 * across make_loopback_pair() + the ULP install / TLS_TX / TLS_RX
+	 * / send / rekey / shutdown / close sequence below.  Published
+	 * once to shm at op-exit via childop_direct_syscalls_add() so the
+	 * hot path pays one atomic add per invocation instead of per-
+	 * syscall. */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -220,8 +220,39 @@ bool tls_rotate(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
+	__atomic_add_fetch(&shm->stats.tls_rotate.runs, 1, __ATOMIC_RELAXED);
+
+	if (make_loopback_pair(&cli, &srv, &direct_calls) < 0) {
+		__atomic_add_fetch(&shm->stats.tls_rotate.setup_failed,
+				   1, __ATOMIC_RELAXED);
+		goto out;
+	}
+
+	/* Install TCP_ULP="tls" on both ends.  Both sides must be ULP'd
+	 * for the rekey-while-RX-is-also-armed bug class to be reachable. */
+	direct_calls++;
+	if (setsockopt(cli, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
+		__atomic_add_fetch(&shm->stats.tls_rotate.ulp_failed,
+				   1, __ATOMIC_RELAXED);
+		goto out;
+	}
+	/* Server-side install can fail independently (e.g. kernel attached
+	 * a different ULP first).  Without it, the TLS_RX setsockopt below
+	 * is a guaranteed EINVAL, so skip it — the TX-armed/RX-unarmed bug
+	 * shape we want to test isn't reachable and the counter inflates. */
+	direct_calls++;
+	if (setsockopt(srv, IPPROTO_TCP, TCP_ULP, "tls", 3) == 0)
+		srv_ulp = true;
+	else
+		__atomic_add_fetch(&shm->stats.tls_rotate.ulp_asymmetric,
+				   1, __ATOMIC_RELAXED);
+
+	c1 = (enum tls_cipher_choice)rnd_modulo_u32(NR_TLS_CHOICES);
+	v1 = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
+
 	/* Step 4a: client TX install. */
 	clen = fill_cinfo(c1, cinfo, v1);
+	direct_calls++;
 	rc = setsockopt(cli, SOL_TLS, TLS_TX, cinfo, clen);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.tls_rotate.installs,
@@ -237,6 +268,7 @@ bool tls_rotate(struct childdata *child)
 	 * path — we don't gate progress on it. */
 	if (srv_ulp) {
 		clen = fill_cinfo(c1, cinfo, v1);
+		direct_calls++;
 		(void)setsockopt(srv, SOL_TLS, TLS_RX, cinfo, clen);
 	}
 
@@ -245,6 +277,7 @@ bool tls_rotate(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	generate_rand_bytes(payload, sizeof(payload));
+	direct_calls++;
 	(void)send(cli, payload, 1 + rnd_modulo_u32(sizeof(payload)),
 		   MSG_DONTWAIT);
 
@@ -257,6 +290,7 @@ bool tls_rotate(struct childdata *child)
 	v2 = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
 
 	clen = fill_cinfo(c2, cinfo, v2);
+	direct_calls++;
 	rc = setsockopt(cli, SOL_TLS, TLS_TX, cinfo, clen);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.tls_rotate.rekeys_ok,
@@ -273,6 +307,7 @@ bool tls_rotate(struct childdata *child)
 	 * still drives the original key's send path; if it was accepted,
 	 * it drives the new key — either way we get coverage. */
 	generate_rand_bytes(payload, sizeof(payload));
+	direct_calls++;
 	(void)send(cli, payload, 1 + rnd_modulo_u32(sizeof(payload)),
 		   MSG_DONTWAIT);
 
@@ -282,17 +317,26 @@ bool tls_rotate(struct childdata *child)
 	if (ONE_IN(4)) {
 		int zc = RAND_BOOL();
 
+		direct_calls++;
 		(void)setsockopt(cli, SOL_TLS, TLS_TX_ZEROCOPY_RO,
 				 &zc, sizeof(zc));
 	}
 
+	direct_calls++;
 	(void)shutdown(cli, SHUT_RDWR);
+	direct_calls++;
 	(void)shutdown(srv, SHUT_RDWR);
 
 out:
-	if (cli >= 0)
+	if (cli >= 0) {
+		direct_calls++;
 		close(cli);
-	if (srv >= 0)
+	}
+	if (srv >= 0) {
+		direct_calls++;
 		close(srv);
+	}
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
