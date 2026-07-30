@@ -386,21 +386,30 @@ static void tcp_ulp_swap_iter_cycle_uninstall_reinstall(int s)
 	(void)shutdown(s, SHUT_RDWR);
 }
 
-/* One full sequence on a freshly-created loopback TCP socket. */
-static void iter_one(const struct timespec *t_outer, struct childdata *child,
-		     int urandom_fd)
+/* One full sequence on a freshly-created loopback TCP socket.  Returns
+ * the number of direct kernel syscalls this iteration attempted so the
+ * outer loop can publish a single childop_direct_syscalls_add(). */
+static unsigned long iter_one(const struct timespec *t_outer,
+			      struct childdata *child, int urandom_fd)
 {
 	pid_t acceptor = -1;
 	int s;
+	unsigned long direct_calls = 0;
 
 	if ((unsigned long long)ns_since(t_outer) >= ULP_SWAP_WALL_CAP_NS)
-		return;
+		return direct_calls;
 
 	s = open_loopback_pair(&acceptor);
+	/* open_loopback_pair issues up to ten direct syscalls on the full
+	 * setup path (socket, setsockopt, bind, listen, getsockname, fork,
+	 * socket, setsockopt, connect, close(listener)); failure paths are
+	 * a subset.  Count the nominal cost -- flock-thrash / mount-churn
+	 * follow the same "attempted work" accounting. */
+	direct_calls += 10;
 	if (s < 0) {
 		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return direct_calls;
 	}
 
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -411,7 +420,10 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child,
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	/* Steps 3+4: install kTLS, then TLS_TX / TLS_RX cinfo. */
+	/* Steps 3+4: install kTLS, then TLS_TX / TLS_RX cinfo.  TCP_ULP
+	 * setsockopt always fires; on success TX and RX setsockopts follow
+	 * (RX fire-and-forget). */
+	direct_calls += 3;
 	if (tcp_ulp_swap_iter_install_tls(s, child, urandom_fd) != 0)
 		goto out;
 	if (valid_op)
@@ -421,25 +433,41 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child,
 	if ((unsigned long long)ns_since(t_outer) >= ULP_SWAP_WALL_CAP_NS)
 		goto out;
 
-	/* Step 5: drive live tls_sw send + recv on the ULP. */
+	/* Step 5: drive live tls_sw send + recv on the ULP -- send + recv. */
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	tcp_ulp_swap_iter_traffic_burst(s);
+	direct_calls += 2;
 
-	/* Steps 6-8: illegal swap attempts + ifname round-trip. */
+	/* Steps 6-8: illegal swap attempts + ifname round-trip.  Two
+	 * TCP_ULP setsockopt rejections plus SIOCGIFNAME + SIOCSIFNAME
+	 * (the ifname probe latches off on EPERM but still pays the first
+	 * ioctl -- nominal cost is two ioctls). */
 	tcp_ulp_swap_iter_swap_attempts(s);
+	direct_calls += 4;
 
 	if ((unsigned long long)ns_since(t_outer) >= ULP_SWAP_WALL_CAP_NS)
 		goto out;
 
-	/* Steps 9-10: uninstall + reinstall ULP, then shutdown. */
+	/* Steps 9-10: uninstall + reinstall ULP, then shutdown -- two
+	 * setsockopts + one shutdown. */
 	tcp_ulp_swap_iter_cycle_uninstall_reinstall(s);
+	direct_calls += 3;
 
 out:
-	if (s >= 0)
+	if (s >= 0) {
 		close(s);
+		direct_calls++;
+	}
+	if (acceptor > 0) {
+		/* reap_acceptor issues at least one waitpid; the SIGTERM
+		 * escalation path adds a kill + a blocking waitpid.  Two
+		 * calls is the common-case approximation. */
+		direct_calls += 2;
+	}
 	reap_acceptor(acceptor);
+	return direct_calls;
 }
 
 bool tcp_ulp_swap_churn(struct childdata *child)
@@ -447,6 +475,14 @@ bool tcp_ulp_swap_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 	int urandom_fd;
+	unsigned long direct_calls = 0;
+
+	/* Snapshot child->op_type once and bounds-check before publishing
+	 * to the per-op direct-syscall counter.  Same defensive pattern the
+	 * child.c dispatch loop uses (child->op_type lives in shm and can
+	 * be scribbled by a poisoned-arena write from a sibling). */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn.runs,
 			   1, __ATOMIC_RELAXED);
@@ -470,18 +506,23 @@ bool tcp_ulp_swap_churn(struct childdata *child)
 		outer_iters = ULP_SWAP_OUTER_CAP;
 
 	urandom_fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+	if (urandom_fd >= 0)
+		direct_calls++;
 
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t_outer) >=
 		    ULP_SWAP_WALL_CAP_NS)
 			break;
-		iter_one(&t_outer, child, urandom_fd);
+		direct_calls += iter_one(&t_outer, child, urandom_fd);
 		if (ns_unsupported_tcp_ulp_swap)
 			break;
 	}
 
 	if (urandom_fd >= 0)
 		close(urandom_fd);
+
+	if (valid_op && direct_calls > 0)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
