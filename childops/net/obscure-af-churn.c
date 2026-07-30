@@ -78,6 +78,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "deferred-free.h"
 #include "net.h"
 #include "params.h"		/* no_domains[] */
@@ -173,7 +174,7 @@ static int open_one(const struct socket_triplet *t)
 	return socket(t->family, t->type, t->protocol);
 }
 
-static void run_sendmsg_no_bind(const struct socket_triplet *t)
+static unsigned int run_sendmsg_no_bind(const struct socket_triplet *t)
 {
 	unsigned char buf[64];
 	struct iovec iov;
@@ -185,7 +186,7 @@ static void run_sendmsg_no_bind(const struct socket_triplet *t)
 
 	fd = open_one(t);
 	if (fd < 0)
-		return;
+		return 1;
 
 	generate_rand_bytes(buf, sizeof(buf));
 	iov.iov_base = buf;
@@ -201,9 +202,10 @@ static void run_sendmsg_no_bind(const struct socket_triplet *t)
 		bump_unexpected_success(AP_SENDMSG_NO_BIND);
 
 	close(fd);
+	return 3;
 }
 
-static void run_bind_then_sendmsg(const struct socket_triplet *t)
+static unsigned int run_bind_then_sendmsg(const struct socket_triplet *t)
 {
 	const struct netproto *proto;
 	struct sockaddr *sa = NULL;
@@ -211,6 +213,7 @@ static void run_bind_then_sendmsg(const struct socket_triplet *t)
 	unsigned char buf[64];
 	struct iovec iov;
 	struct msghdr msg;
+	unsigned int calls = 0;
 	int fd;
 	ssize_t r;
 
@@ -218,22 +221,26 @@ static void run_bind_then_sendmsg(const struct socket_triplet *t)
 
 	proto = net_protocols[t->family].proto;
 	if (proto == NULL || proto->gen_sockaddr == NULL)
-		return;
+		return 0;
 
 	fd = open_one(t);
+	calls++;
 	if (fd < 0)
-		return;
+		return calls;
 
 	proto->gen_sockaddr((struct socket_triplet *) t, &sa, &salen);
 	if (sa != NULL) {
-		if (bind(fd, sa, salen) < 0) {
+		int br = bind(fd, sa, salen);
+		calls++;
+		if (br < 0) {
 			/* Bind failures are expected for many type/proto
 			 * combinations even with a coherent sockaddr;
 			 * treat as kernel-rejected for symmetry. */
 			bump_rejected(AP_BIND_THEN_SENDMSG);
 			tracked_free_now(sa);
 			close(fd);
-			return;
+			calls++;
+			return calls;
 		}
 		tracked_free_now(sa);
 	}
@@ -246,14 +253,17 @@ static void run_bind_then_sendmsg(const struct socket_triplet *t)
 	msg.msg_iovlen = 1;
 
 	r = sendmsg(fd, &msg, MSG_NOSIGNAL | MSG_DONTWAIT);
+	calls++;
 	if (r < 0)
 		bump_rejected(AP_BIND_THEN_SENDMSG);
 	/* Success here is the canonical-good outcome -- not a bug flag. */
 
 	close(fd);
+	calls++;
+	return calls;
 }
 
-static void run_connect_no_listen(const struct socket_triplet *t)
+static unsigned int run_connect_no_listen(const struct socket_triplet *t)
 {
 	const struct netproto *proto;
 	struct sockaddr *sa = NULL;
@@ -269,22 +279,22 @@ static void run_connect_no_listen(const struct socket_triplet *t)
 	 * UDP/DCCP/SCTP triplet.
 	 */
 	if (t->type == SOCK_DGRAM)
-		return;
+		return 0;
 
 	bump_run(AP_CONNECT_NO_LISTEN);
 
 	proto = net_protocols[t->family].proto;
 	if (proto == NULL || proto->gen_sockaddr == NULL)
-		return;
+		return 0;
 
 	fd = open_one(t);
 	if (fd < 0)
-		return;
+		return 1;
 
 	proto->gen_sockaddr((struct socket_triplet *) t, &sa, &salen);
 	if (sa == NULL) {
 		close(fd);
-		return;
+		return 2;
 	}
 
 	(void) fcntl(fd, F_SETFL, O_NONBLOCK);
@@ -296,9 +306,10 @@ static void run_connect_no_listen(const struct socket_triplet *t)
 
 	tracked_free_now(sa);
 	close(fd);
+	return 4;
 }
 
-static void run_ioctl_rotation(const struct socket_triplet *t)
+static unsigned int run_ioctl_rotation(const struct socket_triplet *t)
 {
 	unsigned long req;
 	int val = 0;
@@ -309,7 +320,7 @@ static void run_ioctl_rotation(const struct socket_triplet *t)
 
 	fd = open_one(t);
 	if (fd < 0)
-		return;
+		return 1;
 
 	req = generic_ioctls[rnd_modulo_u32(ARRAY_SIZE(generic_ioctls))];
 	r = ioctl(fd, req, &val);
@@ -318,9 +329,10 @@ static void run_ioctl_rotation(const struct socket_triplet *t)
 	/* Success on a generic ioctl is fine; not a bug flag. */
 
 	close(fd);
+	return 3;
 }
 
-static void run_setsockopt_zero_len(const struct socket_triplet *t)
+static unsigned int run_setsockopt_zero_len(const struct socket_triplet *t)
 {
 	int level;
 	int optname;
@@ -332,7 +344,7 @@ static void run_setsockopt_zero_len(const struct socket_triplet *t)
 
 	fd = open_one(t);
 	if (fd < 0)
-		return;
+		return 1;
 
 	if (RAND_BOOL()) {
 		level = SOL_SOCKET;
@@ -349,9 +361,10 @@ static void run_setsockopt_zero_len(const struct socket_triplet *t)
 		bump_unexpected_success(AP_SETSOCKOPT_ZERO_LEN);
 
 	close(fd);
+	return 3;
 }
 
-static void run_close_via_dup(const struct socket_triplet *t)
+static unsigned int run_close_via_dup(const struct socket_triplet *t)
 {
 	unsigned char buf[16];
 	int fd;
@@ -362,12 +375,12 @@ static void run_close_via_dup(const struct socket_triplet *t)
 
 	fd = open_one(t);
 	if (fd < 0)
-		return;
+		return 1;
 
 	dup_fd = dup(fd);
 	if (dup_fd < 0) {
 		close(fd);
-		return;
+		return 3;
 	}
 
 	close(fd);
@@ -379,11 +392,13 @@ static void run_close_via_dup(const struct socket_triplet *t)
 		bump_unexpected_success(AP_CLOSE_VIA_DUP);
 
 	close(dup_fd);
+	return 5;
 }
 
 bool obscure_af_churn(struct childdata *child)
 {
 	struct socket_triplet triplet = { 0, 0, 0 };
+	unsigned long direct_calls = 0;
 	int pf;
 
 	__atomic_add_fetch(&shm->stats.obscure_af_churn.runs, 1,
@@ -412,12 +427,15 @@ bool obscure_af_churn(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 
-	run_sendmsg_no_bind(&triplet);
-	run_bind_then_sendmsg(&triplet);
-	run_connect_no_listen(&triplet);
-	run_ioctl_rotation(&triplet);
-	run_setsockopt_zero_len(&triplet);
-	run_close_via_dup(&triplet);
+	direct_calls += run_sendmsg_no_bind(&triplet);
+	direct_calls += run_bind_then_sendmsg(&triplet);
+	direct_calls += run_connect_no_listen(&triplet);
+	direct_calls += run_ioctl_rotation(&triplet);
+	direct_calls += run_setsockopt_zero_len(&triplet);
+	direct_calls += run_close_via_dup(&triplet);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
