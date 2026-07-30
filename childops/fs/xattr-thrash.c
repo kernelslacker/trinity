@@ -302,6 +302,7 @@ bool xattr_thrash(struct childdata *child)
 	struct timespec start;
 	unsigned int opened;
 	unsigned int iter;
+	unsigned long direct_calls = 0;
 	unsigned int iters = BUDGETED(CHILD_OP_XATTR_THRASH,
 				      JITTER_RANGE(MAX_ITERATIONS));
 
@@ -334,12 +335,16 @@ bool xattr_thrash(struct childdata *child)
 		const char *name = xattr_names[rnd_modulo_u32(NR_XATTR_NAMES)];
 
 		xattr_thrash_iter_dispatch(s, name, rnd_modulo_u32(12));
+		direct_calls++;
 
 		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
 
 	xattr_thrash_iter_teardown_fds(slots, opened);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
