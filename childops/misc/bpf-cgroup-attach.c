@@ -76,6 +76,7 @@
 #include "bpf.h"
 #include "bpf-syscall.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -156,12 +157,16 @@ static int load_allow_prog(const struct attach_combo *c)
 
 /* Drive the hook with a UDP loopback burst.  For CONNECT we additionally
  * issue connect() to fire INET4_CONNECT.  Returns the count of send/connect
- * ops that returned >= 0 — used for the packets_sent stat.
+ * ops that returned >= 0 — used for the packets_sent stat.  Emits the
+ * number of direct kernel calls issued (socket/connect/sendto/recv/close,
+ * the syscalls that actually drive the cgroup-bpf hook chain) through
+ * *calls_out for the childop_direct_syscalls reporter.
  */
-static unsigned int udp_burst(uint32_t attach_type)
+static unsigned int udp_burst(uint32_t attach_type, unsigned int *calls_out)
 {
 	struct sockaddr_in sin;
 	unsigned int sent = 0;
+	unsigned int calls = 0;
 	int s;
 	int i;
 
@@ -172,17 +177,20 @@ static unsigned int udp_burst(uint32_t attach_type)
 
 	for (i = 0; i < BURST; i++) {
 		s = socket(AF_INET, SOCK_DGRAM, 0);
+		calls++;
 		if (s < 0)
 			continue;
 
 		(void)fcntl(s, F_SETFL, O_NONBLOCK);
 
 		if (attach_type == BPF_CGROUP_INET4_CONNECT) {
+			calls++;
 			if (connect(s, (struct sockaddr *)&sin,
 				    sizeof(sin)) >= 0)
 				sent++;
 		}
 
+		calls++;
 		if (sendto(s, "x", 1, MSG_DONTWAIT,
 			   (struct sockaddr *)&sin, sizeof(sin)) >= 0)
 			sent++;
@@ -192,10 +200,13 @@ static unsigned int udp_burst(uint32_t attach_type)
 			char buf[8];
 
 			(void)recv(s, buf, sizeof(buf), MSG_DONTWAIT);
+			calls++;
 		}
 
 		close(s);
+		calls++;
 	}
+	*calls_out = calls;
 	return sent;
 }
 
@@ -209,6 +220,8 @@ bool bpf_cgroup_attach(struct childdata *child)
 	bool attached = false;
 	uint32_t attach_flags;
 	unsigned int sent;
+	unsigned int burst_calls;
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.runs, 1,
 			   __ATOMIC_RELAXED);
@@ -242,6 +255,7 @@ bool bpf_cgroup_attach(struct childdata *child)
 	c = &combos[rnd_modulo_u32(ARRAY_SIZE(combos))];
 
 	prog_fd = load_allow_prog(c);
+	direct_calls++;
 	if (prog_fd < 0) {
 		if (errno == EPERM || errno == EACCES) {
 			latched_off = true;
@@ -264,6 +278,7 @@ bool bpf_cgroup_attach(struct childdata *child)
 	attr.attach_bpf_fd = prog_fd;
 	attr.attach_type = c->attach_type;
 	attr.attach_flags = attach_flags;
+	direct_calls++;
 	if (sys_bpf(BPF_PROG_ATTACH, &attr, sizeof(attr)) < 0) {
 		if (errno == EPERM || errno == EACCES) {
 			latched_off = true;
@@ -289,7 +304,8 @@ bool bpf_cgroup_attach(struct childdata *child)
 	/* Drive the hook in-burst.  Sibling children fuzzing in the same
 	 * cgroup at the same time supply the cross-process concurrency
 	 * the dispatch-vs-detach race window needs. */
-	sent = udp_burst(c->attach_type);
+	sent = udp_burst(c->attach_type, &burst_calls);
+	direct_calls += burst_calls;
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.packets_sent,
 			   sent, __ATOMIC_RELAXED);
 
@@ -299,6 +315,7 @@ bool bpf_cgroup_attach(struct childdata *child)
 	attr.target_fd = cgroup_fd;
 	attr.attach_bpf_fd = prog_fd;
 	attr.attach_type = c->attach_type;
+	direct_calls++;
 	if (sys_bpf(BPF_PROG_DETACH, &attr, sizeof(attr)) == 0) {
 		attached = false;
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.detached,
@@ -307,7 +324,8 @@ bool bpf_cgroup_attach(struct childdata *child)
 
 	/* Post-detach burst — exercises the immediately-after-detach
 	 * dispatch path; this is where stale-array UAFs surface. */
-	sent = udp_burst(c->attach_type);
+	sent = udp_burst(c->attach_type, &burst_calls);
+	direct_calls += burst_calls;
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.post_detach_sent,
 			   sent, __ATOMIC_RELAXED);
 
@@ -323,5 +341,9 @@ out:
 		close(prog_fd);
 	if (cgroup_fd >= 0)
 		close(cgroup_fd);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+
 	return true;
 }
