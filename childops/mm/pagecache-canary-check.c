@@ -60,6 +60,7 @@
 #include "canary.h"
 #include "pids.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -225,7 +226,7 @@ static void report_mismatch(unsigned int file_idx, const char *path,
 /* ---------------- per-mode read implementations ---------------- */
 
 static void mode_read(int fd, unsigned int file_idx, size_t size,
-		      const char *path)
+		      const char *path, unsigned long *direct_calls)
 {
 	unsigned char buf[READ_CHUNK];
 	size_t off = 0;
@@ -238,6 +239,7 @@ static void mode_read(int fd, unsigned int file_idx, size_t size,
 		if (want > sizeof(buf))
 			want = sizeof(buf);
 		n = read(fd, buf, want);
+		(*direct_calls)++;
 		if (n <= 0)
 			return;
 		if (!canary_walk(buf, (size_t)n, file_idx, (off_t)off, &mis)) {
@@ -250,7 +252,7 @@ static void mode_read(int fd, unsigned int file_idx, size_t size,
 }
 
 static void mode_pread(int fd, unsigned int file_idx, size_t size,
-		       const char *path)
+		       const char *path, unsigned long *direct_calls)
 {
 	unsigned char buf[READ_CHUNK];
 	size_t total_chunks = (size + READ_CHUNK - 1) / READ_CHUNK;
@@ -284,6 +286,7 @@ static void mode_pread(int fd, unsigned int file_idx, size_t size,
 			want = sizeof(buf);
 
 		n = pread(fd, buf, want, off);
+		(*direct_calls)++;
 		if (n <= 0)
 			continue;
 		if (!canary_walk(buf, (size_t)n, file_idx, off, &mis)) {
@@ -309,7 +312,7 @@ static void mode_pread(int fd, unsigned int file_idx, size_t size,
 }
 
 static void mode_readv(int fd, unsigned int file_idx, size_t size,
-		       const char *path)
+		       const char *path, unsigned long *direct_calls)
 {
 	unsigned char chunks[READV_IOV_COUNT][READ_CHUNK];
 	struct iovec iov[READV_IOV_COUNT];
@@ -334,6 +337,7 @@ static void mode_readv(int fd, unsigned int file_idx, size_t size,
 		}
 
 		n = readv(fd, iov, n_iov);
+		(*direct_calls)++;
 		if (n <= 0)
 			return;
 
@@ -359,13 +363,14 @@ static void mode_readv(int fd, unsigned int file_idx, size_t size,
 }
 
 static void mode_mmap(int fd, unsigned int file_idx, size_t size,
-		      const char *path)
+		      const char *path, unsigned long *direct_calls)
 {
 	struct sigaction sa, old_bus;
 	void *map;
 	volatile bool aborted = false;
 
 	map = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+	(*direct_calls)++;
 	if (map == MAP_FAILED)
 		return;
 
@@ -374,9 +379,12 @@ static void mode_mmap(int fd, unsigned int file_idx, size_t size,
 	sa.sa_flags = SA_SIGINFO;
 	sa.sa_sigaction = canary_sigbus_handler;
 	if (sigaction(SIGBUS, &sa, &old_bus) != 0) {
+		(*direct_calls)++;
 		(void)munmap(map, size);
+		(*direct_calls)++;
 		return;
 	}
+	(*direct_calls)++;
 
 	canary_sigbus_lo = (uintptr_t)map;
 	canary_sigbus_hi = (uintptr_t)map + size;
@@ -398,7 +406,9 @@ static void mode_mmap(int fd, unsigned int file_idx, size_t size,
 	canary_sigbus_lo = 0;
 	canary_sigbus_hi = 0;
 	(void)sigaction(SIGBUS, &old_bus, NULL);
+	(*direct_calls)++;
 	(void)munmap(map, size);
+	(*direct_calls)++;
 
 	if (aborted) {
 		/* SIGBUS during memcmp.  Not a corruption signal —
@@ -408,14 +418,17 @@ static void mode_mmap(int fd, unsigned int file_idx, size_t size,
 }
 
 static void mode_splice(int fd, unsigned int file_idx, size_t size,
-			const char *path)
+			const char *path, unsigned long *direct_calls)
 {
 	int pfd[2];
 	unsigned char buf[READ_CHUNK];
 	size_t off = 0;
 
-	if (pipe2(pfd, O_CLOEXEC) < 0)
+	if (pipe2(pfd, O_CLOEXEC) < 0) {
+		(*direct_calls)++;
 		return;
+	}
+	(*direct_calls)++;
 
 	while (off < size) {
 		size_t want = size - off;
@@ -427,10 +440,12 @@ static void mode_splice(int fd, unsigned int file_idx, size_t size,
 
 		spliced = splice(fd, NULL, pfd[1], NULL, want,
 				 SPLICE_F_MOVE);
+		(*direct_calls)++;
 		if (spliced <= 0)
 			break;
 
 		rd = read(pfd[0], buf, (size_t)spliced);
+		(*direct_calls)++;
 		if (rd <= 0)
 			break;
 		if (!canary_walk(buf, (size_t)rd, file_idx, (off_t)off,
@@ -444,10 +459,11 @@ static void mode_splice(int fd, unsigned int file_idx, size_t size,
 
 	close(pfd[0]);
 	close(pfd[1]);
+	*direct_calls += 2;
 }
 
 static void mode_sendfile(int fd, unsigned int file_idx, size_t size,
-			  const char *path)
+			  const char *path, unsigned long *direct_calls)
 {
 	char tmpl[PATH_MAX + 32];
 	int tfd;
@@ -459,23 +475,29 @@ static void mode_sendfile(int fd, unsigned int file_idx, size_t size,
 	snprintf(tmpl, sizeof(tmpl), "%s/trinity-canary-XXXXXX",
 		 trinity_tmpdir_abs());
 	tfd = mkstemp(tmpl);
+	(*direct_calls)++;
 	if (tfd < 0)
 		return;
 	(void)unlink(tmpl);
+	(*direct_calls)++;
 
 	while ((size_t)soff < size) {
 		size_t want = size - (size_t)soff;
 		if (want > sizeof(buf))
 			want = sizeof(buf);
 		sent = sendfile(tfd, fd, &soff, want);
+		(*direct_calls)++;
 		if (sent <= 0)
 			break;
 	}
 
 	if (lseek(tfd, 0, SEEK_SET) == (off_t)-1) {
+		(*direct_calls)++;
 		close(tfd);
+		(*direct_calls)++;
 		return;
 	}
+	(*direct_calls)++;
 
 	while (off < size) {
 		size_t want = size - off;
@@ -485,6 +507,7 @@ static void mode_sendfile(int fd, unsigned int file_idx, size_t size,
 		if (want > sizeof(buf))
 			want = sizeof(buf);
 		n = read(tfd, buf, want);
+		(*direct_calls)++;
 		if (n <= 0)
 			break;
 		if (!canary_walk(buf, (size_t)n, file_idx, (off_t)off,
@@ -497,6 +520,7 @@ static void mode_sendfile(int fd, unsigned int file_idx, size_t size,
 	}
 
 	close(tfd);
+	(*direct_calls)++;
 }
 
 /* ---------------- dispatch ---------------- */
@@ -517,6 +541,7 @@ bool pagecache_canary_check(struct childdata *child)
 	 * valid_op snapshot. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	unsigned long direct_calls = 0;
 
 	pool_size = canary_pool_size();
 	if (pool_size == 0)
@@ -539,11 +564,16 @@ bool pagecache_canary_check(struct childdata *child)
 	}
 
 	fd = open(info->path, open_flags);
+	direct_calls++;
 	if (fd < 0 && (open_flags & O_DIRECT) && errno == EINVAL) {
 		fd = open(info->path, O_RDONLY);
+		direct_calls++;
 	}
-	if (fd < 0)
+	if (fd < 0) {
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
+	}
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -552,6 +582,7 @@ bool pagecache_canary_check(struct childdata *child)
 	if (rnd_modulo_u32(100) < FADVISE_DONTNEED_PCT) {
 		(void)posix_fadvise(fd, 0, (off_t)info->size,
 				    POSIX_FADV_DONTNEED);
+		direct_calls++;
 	}
 
 	mode = (enum read_mode)rnd_modulo_u32(RM_NR);
@@ -570,15 +601,19 @@ bool pagecache_canary_check(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 
 	switch (mode) {
-	case RM_READ:	  mode_read(fd, idx, info->size, info->path);     break;
-	case RM_PREAD:	  mode_pread(fd, idx, info->size, info->path);    break;
-	case RM_READV:	  mode_readv(fd, idx, info->size, info->path);    break;
-	case RM_MMAP:	  mode_mmap(fd, idx, info->size, info->path);     break;
-	case RM_SPLICE:	  mode_splice(fd, idx, info->size, info->path);   break;
-	case RM_SENDFILE: mode_sendfile(fd, idx, info->size, info->path); break;
+	case RM_READ:	  mode_read(fd, idx, info->size, info->path, &direct_calls);     break;
+	case RM_PREAD:	  mode_pread(fd, idx, info->size, info->path, &direct_calls);    break;
+	case RM_READV:	  mode_readv(fd, idx, info->size, info->path, &direct_calls);    break;
+	case RM_MMAP:	  mode_mmap(fd, idx, info->size, info->path, &direct_calls);     break;
+	case RM_SPLICE:	  mode_splice(fd, idx, info->size, info->path, &direct_calls);   break;
+	case RM_SENDFILE: mode_sendfile(fd, idx, info->size, info->path, &direct_calls); break;
 	case RM_NR: break;
 	}
 
 	close(fd);
+	direct_calls++;
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
