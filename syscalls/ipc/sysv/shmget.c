@@ -211,6 +211,7 @@ struct syscallentry syscall_shmget = {
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 65535,
 	.arg_params[2].list = ARGLIST(ipc_flags),
+	.rettype = RET_BORING,
 	.post = post_shmget,
 	.sanitise = sanitise_shmget,
 };

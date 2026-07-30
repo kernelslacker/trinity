@@ -163,6 +163,7 @@ struct syscallentry syscall_semget = {
 	.arg_params[1].range.low = 0,
 	.arg_params[1].range.hi = 250,
 	.arg_params[2].list = ARGLIST(ipc_flags),
+	.rettype = RET_BORING,
 	.sanitise = sanitise_semget,
 	.post = post_semget,
 };

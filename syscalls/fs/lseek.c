@@ -88,6 +88,7 @@ struct syscallentry syscall_lseek = {
 	.argtype = { [0] = ARG_FD, [2] = ARG_OP },
 	.argname = { [0] = "fd", [1] = "offset", [2] = "whence" },
 	.arg_params[2].list = ARGLIST(lseek_whences),
+	.rettype = RET_BORING,
 	.sanitise = sanitise_lseek,
 	.post = post_lseek,
 	.flags = NEED_ALARM,

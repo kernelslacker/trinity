@@ -146,5 +146,6 @@ struct syscallentry syscall_msgget = {
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 65535,
 	.arg_params[1].list = ARGLIST(ipc_flags),
+	.rettype = RET_BORING,
 	.post = post_msgget,
 };
