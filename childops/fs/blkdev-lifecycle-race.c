@@ -186,35 +186,46 @@ static void *blkdev_rescan_thread(void *arg)
  * drive blkdev_fallocate + sync_bdevs paths, LOOP_CLR_FD, close.
  * EBUSY / ENXIO / EPERM on LOOP_SET_FD are the ordinary outcomes when
  * a sibling is mid-cycle on the same node — count and continue.
+ *
+ * Returns the number of direct kernel syscalls the cycle issued so the
+ * caller can accumulate a per-invocation tally for
+ * childop_direct_syscalls_add().  Early returns on failure yield a
+ * partial count; the switch branch contributes one or two calls
+ * depending on which teardown-adjacent mix was picked.
  */
-static void blkdev_lifecycle_cycle(int loop_n)
+static unsigned int blkdev_lifecycle_cycle(int loop_n)
 {
 	off_t backing_size = blkdev_pick_size();
 	int loop_fd, backing_fd, rc;
+	unsigned int calls = 0;
 
 	backing_fd = (int)trinity_raw_syscall(__NR_memfd_create, "trinity-blkdev",
 				  MFD_CLOEXEC);
+	calls++;
 	if (backing_fd < 0)
-		return;
+		return calls;
+	calls++;	/* ftruncate below */
 	if (ftruncate(backing_fd, backing_size) < 0) {
 		close(backing_fd);
-		return;
+		return calls;
 	}
 
 	loop_fd = blkdev_loop_open(loop_n, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+	calls++;	/* open(/dev/loop$N) */
 	if (loop_fd < 0) {
 		close(backing_fd);
-		return;
+		return calls;
 	}
 
 	rc = ioctl(loop_fd, LOOP_SET_FD, (unsigned long)backing_fd);
+	calls++;
 	if (rc < 0) {
 		if (errno == EBUSY || errno == ENXIO || errno == EPERM)
 			__atomic_add_fetch(&shm->stats.blkdev_lifecycle.ebusy,
 					   1, __ATOMIC_RELAXED);
 		close(loop_fd);
 		close(backing_fd);
-		return;
+		return calls;
 	}
 	__atomic_add_fetch(&shm->stats.blkdev_lifecycle.set_fd_ok,
 			   1, __ATOMIC_RELAXED);
@@ -226,26 +237,32 @@ static void blkdev_lifecycle_cycle(int loop_n)
 	switch (rand32() & 0x3U) {
 	case 0:
 		(void)ioctl(loop_fd, BLKFLSBUF);
+		calls++;
 		break;
 	case 1:
 		(void)fsync(loop_fd);
+		calls++;
 		break;
 	case 2:
 		(void)fallocate(loop_fd,
 				FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
 				0, backing_size);
+		calls++;
 		break;
 	default:
 		(void)ioctl(loop_fd, BLKFLSBUF);
 		(void)fsync(loop_fd);
+		calls += 2;
 		break;
 	}
 
 	(void)ioctl(loop_fd, LOOP_CLR_FD);
+	calls++;
 	__atomic_add_fetch(&shm->stats.blkdev_lifecycle.clr_fd, 1,
 			   __ATOMIC_RELAXED);
 	close(loop_fd);
 	close(backing_fd);
+	return calls;
 }
 
 bool blkdev_lifecycle_race(struct childdata *child)
@@ -254,6 +271,7 @@ bool blkdev_lifecycle_race(struct childdata *child)
 	pthread_t tid;
 	bool spawned = false;
 	unsigned int iters, i;
+	unsigned long direct_calls = 0;
 	struct timespec gap = { .tv_sec = 0, .tv_nsec = BLKDEV_RESCAN_NS };
 
 	__atomic_add_fetch(&shm->stats.blkdev_lifecycle.runs, 1,
@@ -295,7 +313,7 @@ bool blkdev_lifecycle_race(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++)
-		blkdev_lifecycle_cycle(ra.loop_n);
+		direct_calls += blkdev_lifecycle_cycle(ra.loop_n);
 
 	if (spawned) {
 		(void)nanosleep(&gap, NULL);
@@ -303,6 +321,9 @@ bool blkdev_lifecycle_race(struct childdata *child)
 				      memory_order_release);
 		(void)pthread_join(tid, NULL);
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
 
