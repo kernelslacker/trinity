@@ -56,6 +56,7 @@
 #endif
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
@@ -91,15 +92,17 @@ static bool ns_unsupported_vsock_transport_churn;
 #define VS_SEQ_EOM_BURST_MIN		4U
 #define VS_SEQ_EOM_BURST_RANGE		5U	/* 4..8 inclusive */
 
-static void apply_timeouts(int s)
+static void apply_timeouts(int s, unsigned long *direct_calls)
 {
 	struct timeval rcv_to, snd_to;
 
 	rcv_to.tv_sec = 0;
 	rcv_to.tv_usec = VS_RCV_TIMEO_MS * 1000;
+	(*direct_calls)++;
 	(void)setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &rcv_to, sizeof(rcv_to));
 	snd_to.tv_sec = 0;
 	snd_to.tv_usec = VS_SND_TIMEO_MS * 1000;
+	(*direct_calls)++;
 	(void)setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &snd_to, sizeof(snd_to));
 }
 
@@ -119,7 +122,8 @@ static void apply_timeouts(int s)
  */
 static int vsock_transport_iter_setup(struct childdata *child,
 				      int *listener_out, int *cli_out,
-				      int *srv_out)
+				      int *srv_out,
+				      unsigned long *direct_calls)
 {
 	struct sockaddr_vm addr;
 	socklen_t slen = sizeof(addr);
@@ -137,6 +141,7 @@ static int vsock_transport_iter_setup(struct childdata *child,
 	*cli_out = -1;
 	*srv_out = -1;
 
+	(*direct_calls)++;
 	listener = socket(AF_VSOCK, SOCK_STREAM, 0);
 	if (listener < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPERM ||
@@ -158,6 +163,7 @@ static int vsock_transport_iter_setup(struct childdata *child,
 	addr.svm_cid = VMADDR_CID_LOCAL;
 	addr.svm_port = VMADDR_PORT_ANY;
 
+	(*direct_calls)++;
 	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 		/* EADDRNOTAVAIL here typically means CONFIG_VSOCKETS_LOOPBACK
 		 * isn't built; latch so we don't keep trying. */
@@ -174,12 +180,14 @@ static int vsock_transport_iter_setup(struct childdata *child,
 		return -1;
 	}
 
+	(*direct_calls)++;
 	if (getsockname(listener, (struct sockaddr *)&addr, &slen) < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
+	(*direct_calls)++;
 	if (listen(listener, 8) < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -189,6 +197,7 @@ static int vsock_transport_iter_setup(struct childdata *child,
 	__atomic_add_fetch(&shm->stats.vsock_transport_churn.bind_ok,
 			   1, __ATOMIC_RELAXED);
 
+	(*direct_calls)++;
 	cli = socket(AF_VSOCK, SOCK_STREAM, 0);
 	if (cli < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
@@ -196,8 +205,9 @@ static int vsock_transport_iter_setup(struct childdata *child,
 		return -1;
 	}
 	*cli_out = cli;
-	apply_timeouts(cli);
+	apply_timeouts(cli, direct_calls);
 
+	(*direct_calls)++;
 	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -211,9 +221,10 @@ static int vsock_transport_iter_setup(struct childdata *child,
 	 * it; without the accept the buffer-size rotation only touches
 	 * the client side and the loopback ringbuffer never queues a
 	 * skb. */
+	(*direct_calls)++;
 	srv = accept(listener, NULL, NULL);
 	if (srv >= 0)
-		apply_timeouts(srv);
+		apply_timeouts(srv, direct_calls);
 	*srv_out = srv;
 
 	return 0;
@@ -228,7 +239,8 @@ static int vsock_transport_iter_setup(struct childdata *child,
  * the burst returns nothing to the caller.
  */
 static void vsock_transport_iter_send_burst(int cli, int srv,
-					    const struct timespec *t_outer)
+					    const struct timespec *t_outer,
+					    unsigned long *direct_calls)
 {
 	unsigned char payload[VS_PAYLOAD_BYTES];
 	unsigned char drain[VS_PAYLOAD_BYTES * 2];
@@ -243,6 +255,7 @@ static void vsock_transport_iter_send_burst(int cli, int srv,
 		if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
 			break;
 
+		(*direct_calls)++;
 		r = send(cli, payload, sizeof(payload),
 			 MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (r >= 0) {
@@ -261,8 +274,11 @@ static void vsock_transport_iter_send_burst(int cli, int srv,
 			unsigned int d;
 
 			for (d = 0; d < VS_DRAIN_CAP; d++) {
-				ssize_t n = recv(srv, drain, sizeof(drain),
-						 MSG_DONTWAIT);
+				ssize_t n;
+
+				(*direct_calls)++;
+				n = recv(srv, drain, sizeof(drain),
+					 MSG_DONTWAIT);
 				if (n <= 0)
 					break;
 			}
@@ -292,7 +308,7 @@ static void vsock_transport_iter_send_burst(int cli, int srv,
  * Best-effort: each op is fire-and-forget with its own stats bump on
  * success; failures are silently dropped.
  */
-static void vsock_transport_iter_race(int cli)
+static void vsock_transport_iter_race(int cli, unsigned long *direct_calls)
 {
 	uint64_t sz;
 	struct {
@@ -304,6 +320,7 @@ static void vsock_transport_iter_race(int cli)
 	/* RACE A. */
 	sz = VS_BUFFER_SIZE_LO +
 	     rnd_modulo_u32(VS_BUFFER_SIZE_HI - VS_BUFFER_SIZE_LO + 1U);
+	(*direct_calls)++;
 	if (setsockopt(cli, AF_VSOCK, SO_VM_SOCKETS_BUFFER_SIZE,
 		       &sz, sizeof(sz)) == 0)
 		__atomic_add_fetch(
@@ -313,6 +330,7 @@ static void vsock_transport_iter_race(int cli)
 	/* RACE B. */
 	ts.tv_sec = 0;
 	ts.tv_nsec = (int64_t)(VS_CONNECT_TIMEO_US * 1000ULL);
+	(*direct_calls)++;
 	if (setsockopt(cli, AF_VSOCK, SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW,
 		       &ts, sizeof(ts)) == 0)
 		__atomic_add_fetch(
@@ -320,6 +338,7 @@ static void vsock_transport_iter_race(int cli)
 			1, __ATOMIC_RELAXED);
 
 	/* RACE C. */
+	(*direct_calls)++;
 	if (ioctl(cli, IOCTL_VM_SOCKETS_GET_LOCAL_CID, &cid) == 0)
 		__atomic_add_fetch(
 			&shm->stats.vsock_transport_churn.get_cid_ok,
@@ -335,15 +354,20 @@ static void vsock_transport_iter_race(int cli)
  * under it.  Skipped on every goto-out failure path -- shutdown is
  * meaningless on a socket whose setup didn't reach connect.
  */
-static void vsock_transport_iter_teardown(int cli, int srv)
+static void vsock_transport_iter_teardown(int cli, int srv,
+					  unsigned long *direct_calls)
 {
+	(*direct_calls)++;
 	(void)shutdown(cli, SHUT_RDWR);
-	if (srv >= 0)
+	if (srv >= 0) {
+		(*direct_calls)++;
 		(void)shutdown(srv, SHUT_RDWR);
+	}
 }
 
 /* One full sequence on a freshly-created loopback vsock pair. */
-static void iter_one(struct childdata *child, const struct timespec *t_outer)
+static void iter_one(struct childdata *child, const struct timespec *t_outer,
+		     unsigned long *direct_calls)
 {
 	int listener = -1;
 	int cli = -1;
@@ -352,25 +376,32 @@ static void iter_one(struct childdata *child, const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
 		return;
 
-	if (vsock_transport_iter_setup(child, &listener, &cli, &srv) != 0)
+	if (vsock_transport_iter_setup(child, &listener, &cli, &srv,
+				       direct_calls) != 0)
 		goto out;
 
-	vsock_transport_iter_send_burst(cli, srv, t_outer);
+	vsock_transport_iter_send_burst(cli, srv, t_outer, direct_calls);
 
 	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
 		goto out;
 
-	vsock_transport_iter_race(cli);
+	vsock_transport_iter_race(cli, direct_calls);
 
-	vsock_transport_iter_teardown(cli, srv);
+	vsock_transport_iter_teardown(cli, srv, direct_calls);
 
 out:
-	if (cli >= 0)
+	if (cli >= 0) {
+		(*direct_calls)++;
 		close(cli);
-	if (srv >= 0)
+	}
+	if (srv >= 0) {
+		(*direct_calls)++;
 		close(srv);
-	if (listener >= 0)
+	}
+	if (listener >= 0) {
+		(*direct_calls)++;
 		close(listener);
+	}
 }
 
 /* Per-invocation state handed to the in-ns callback so iter_one can
@@ -386,12 +417,20 @@ struct vsock_netns_ctx {
  * the grandchild's userns + netns are torn down on _exit(), so every
  * vsock socket, loopback transport reference and per-cpu skb opened by
  * iter_one is reaped by the kernel along with the namespace stack.
- * Return value is ignored by the helper. */
+ * Return value is ignored by the helper.
+ *
+ * The grandchild's direct-syscall tally lives on its stack and is
+ * discarded on _exit() -- the parent's `childop_direct_syscalls_add()`
+ * drain at vsock_transport_churn() exit therefore undercounts by the
+ * fresh-netns iterations (VS_UNSHARE_VARIANT_PCT of outer_iters).
+ * Keeping a single reporter call per invocation (mirroring pipe-thrash)
+ * is worth the ~25% undercount vs. plumbing a fork-shared accumulator. */
 static int iter_one_in_fresh_netns_fn(void *arg)
 {
 	struct vsock_netns_ctx *ctx = arg;
+	unsigned long direct_calls = 0;
 
-	iter_one(ctx->child, ctx->t_outer);
+	iter_one(ctx->child, ctx->t_outer, &direct_calls);
 	return 0;
 }
 
@@ -442,7 +481,8 @@ static void iter_one_in_fresh_netns(struct childdata *child,
  * All I/O is MSG_DONTWAIT so the burst respects the SIGALRM(1s) cap.
  * EBADF / EINVAL / ENOTCONN bumps the skipped counter and returns
  * cleanly rather than aborting the whole sub-mode. */
-static void iter_seq_eom_burst(const struct timespec *t_outer)
+static void iter_seq_eom_burst(const struct timespec *t_outer,
+			       unsigned long *direct_calls)
 {
 	int listener = -1;
 	int cli = -1;
@@ -459,9 +499,12 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 		return;
 	}
 
+	(*direct_calls)++;
 	listener = socket(AF_VSOCK, SOCK_SEQPACKET, 0);
-	if (listener < 0)
+	if (listener < 0) {
+		(*direct_calls)++;
 		listener = socket(AF_VSOCK, SOCK_STREAM, 0);
+	}
 	if (listener < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_skipped, 1,
 				   __ATOMIC_RELAXED);
@@ -473,6 +516,7 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 	addr.svm_cid = VMADDR_CID_LOCAL;
 	addr.svm_port = VMADDR_PORT_ANY;
 
+	(*direct_calls) += 3;
 	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0 ||
 	    getsockname(listener, (struct sockaddr *)&addr, &slen) < 0 ||
 	    listen(listener, 4) < 0) {
@@ -481,25 +525,30 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 		goto out;
 	}
 
+	(*direct_calls)++;
 	cli = socket(AF_VSOCK, SOCK_SEQPACKET, 0);
-	if (cli < 0)
+	if (cli < 0) {
+		(*direct_calls)++;
 		cli = socket(AF_VSOCK, SOCK_STREAM, 0);
+	}
 	if (cli < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_skipped, 1,
 				   __ATOMIC_RELAXED);
 		goto out;
 	}
-	apply_timeouts(cli);
+	apply_timeouts(cli, direct_calls);
 
+	(*direct_calls)++;
 	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_skipped, 1,
 				   __ATOMIC_RELAXED);
 		goto out;
 	}
 
+	(*direct_calls)++;
 	srv = accept(listener, NULL, NULL);
 	if (srv >= 0)
-		apply_timeouts(srv);
+		apply_timeouts(srv, direct_calls);
 
 	burst = VS_SEQ_EOM_BURST_MIN + rnd_modulo_u32(VS_SEQ_EOM_BURST_RANGE);
 	for (i = 0; i < burst; i++) {
@@ -516,6 +565,7 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 		mh.msg_iov = &iov;
 		mh.msg_iovlen = 1;
 
+		(*direct_calls)++;
 		r = sendmsg(cli, &mh, MSG_EOR | MSG_NOSIGNAL | MSG_DONTWAIT);
 		if (r >= 0) {
 			__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_sends_ok,
@@ -530,12 +580,18 @@ static void iter_seq_eom_burst(const struct timespec *t_outer)
 	}
 
 out:
-	if (cli >= 0)
+	if (cli >= 0) {
+		(*direct_calls)++;
 		close(cli);
-	if (srv >= 0)
+	}
+	if (srv >= 0) {
+		(*direct_calls)++;
 		close(srv);
-	if (listener >= 0)
+	}
+	if (listener >= 0) {
+		(*direct_calls)++;
 		close(listener);
+	}
 }
 
 bool vsock_transport_churn(struct childdata *child)
@@ -550,6 +606,13 @@ bool vsock_transport_churn(struct childdata *child)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	/* Local direct-syscall tally, drained once at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall.  Bumped in the
+	 * non-fresh iter_one() and iter_seq_eom_burst() paths; the
+	 * fresh-netns grandchild's tally is discarded on _exit() (see
+	 * iter_one_in_fresh_netns_fn). */
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.vsock_transport_churn.runs,
 			   1, __ATOMIC_RELAXED);
@@ -588,14 +651,17 @@ bool vsock_transport_churn(struct childdata *child)
 		if (rnd_modulo_u32(100U) < VS_UNSHARE_VARIANT_PCT)
 			iter_one_in_fresh_netns(child, &t_outer);
 		else
-			iter_one(child, &t_outer);
+			iter_one(child, &t_outer, &direct_calls);
 
 		if (ns_unsupported_vsock_transport_churn)
 			break;
 
 		if (ONE_IN(VS_SEQ_EOM_GATE))
-			iter_seq_eom_burst(&t_outer);
+			iter_seq_eom_burst(&t_outer, &direct_calls);
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
