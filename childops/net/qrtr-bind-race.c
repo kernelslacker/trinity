@@ -216,8 +216,14 @@ static void reap_bind_child(pid_t pid)
 /*
  * One outer iteration: pick a port, fork two short-lived bind
  * children, reap both.  Coverage bumps live on each successful step.
+ *
+ * Returns the count of parent-side direct syscalls issued this
+ * iteration so the caller can publish them once via
+ * childop_direct_syscalls_add(): 2x fork + 2x waitpid_eintr on the
+ * happy path, with partial counts on early-exit paths (1 if the first
+ * fork fails, 3 if the second fork fails after reaping p1).
  */
-static void iter_one(void)
+static unsigned long iter_one(void)
 {
 	uint32_t port;
 	pid_t p1, p2;
@@ -231,7 +237,7 @@ static void iter_one(void)
 	if (p1 < 0) {
 		__atomic_add_fetch(&shm->stats.qrtr_bind_race.fork_failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return 1UL;
 	}
 	if (p1 == 0)
 		qrtr_bind_child(port);
@@ -243,7 +249,7 @@ static void iter_one(void)
 		/* p1 already in flight; reap it so we don't leave a
 		 * zombie behind when the outer loop continues. */
 		reap_bind_child(p1);
-		return;
+		return 3UL;
 	}
 	if (p2 == 0)
 		qrtr_bind_child(port);
@@ -253,12 +259,15 @@ static void iter_one(void)
 
 	reap_bind_child(p1);
 	reap_bind_child(p2);
+
+	return 4UL;
 }
 
 bool qrtr_bind_race(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
+	unsigned long direct_calls = 0UL;
 
 	__atomic_add_fetch(&shm->stats.qrtr_bind_race.runs,
 			   1, __ATOMIC_RELAXED);
@@ -309,10 +318,13 @@ bool qrtr_bind_race(struct childdata *child)
 	for (i = 0; i < outer_iters; i++) {
 		if (budget_elapsed_ns(&t_outer, (long)QRTR_BIND_WALL_CAP_NS))
 			break;
-		iter_one();
+		direct_calls += iter_one();
 		if (ns_unsupported_qrtr_bind_race)
 			break;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
