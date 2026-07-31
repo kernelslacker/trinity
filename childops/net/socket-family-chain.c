@@ -51,6 +51,7 @@
 #include <stdint.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -79,6 +80,16 @@ bool socket_family_chain(struct childdata *child)
 	unsigned int inner, cycles;
 	unsigned int gram_err_burst = 0;
 	bool any_completed = false;
+	/* Local direct-syscall tally.  Each run_grammar_chain() invocation
+	 * drives one coherent grammar walk through the socket lifecycle
+	 * (socket -> [pre/post cfg + setsockopts] -> bind -> [listen/accept]
+	 * -> sendmsg/recv), so each iteration below that reaches the call
+	 * represents one direct-syscall unit of work published to the
+	 * per-childop reporter.  The sfg==NULL early-return path issues
+	 * no syscalls and is deliberately not credited.  Published once at
+	 * op-exit via childop_direct_syscalls_add() so the hot path pays
+	 * one atomic add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.socket_family_chain.runs, 1,
 			   __ATOMIC_RELAXED);
@@ -95,6 +106,7 @@ bool socket_family_chain(struct childdata *child)
 	cycles = INNER_MIN + rnd_modulo_u32(INNER_MAX_GRAMMAR - INNER_MIN + 1);
 
 	for (inner = 0; inner < cycles; inner++) {
+		direct_calls++;
 		if (run_grammar_chain(sfg, &gram_err_burst)) {
 			any_completed = true;
 			if (valid_op) {
@@ -119,6 +131,9 @@ bool socket_family_chain(struct childdata *child)
 	else
 		__atomic_add_fetch(&shm->stats.socket_family_chain.failed, 1,
 				   __ATOMIC_RELAXED);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
