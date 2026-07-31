@@ -309,6 +309,22 @@ struct childdata {
 	 */
 	unsigned long writable_pool_cursor;
 
+	/*
+	 * Per-child bump-cursor into the parent's objpool_local_arena (see
+	 * objpool_local_arena_init in objects/objpool-arena.c).  Same COW-
+	 * inherited zero-init pattern as writable_pool_cursor above: the
+	 * arena backing is a parent-side MAP_PRIVATE|MAP_ANON region
+	 * registered once with track_shared_region_tagged() so avoid_shared_
+	 * buffer_out()'s range_overlaps_shared() gate refuses fuzzed value-
+	 * result pointers inside it -- the bounded first slice of the
+	 * payload-arena direction, targeted at the mm:runtime-map:objpool
+	 * self-corruption class in maps-pick.c.  Bump-only, no wrap: on
+	 * exhaustion the caller falls back to zmalloc_tracked and the slot
+	 * loses shared-regions protection for the rest of this child's
+	 * lifetime.  Owner-only writes.
+	 */
+	unsigned long objpool_arena_cursor;
+
 	/* Rate limiter for the OBJ_LOCAL ANON pool lazy top-up in
 	 * get_map_handle().  Bumped on every draw exhaustion; once it
 	 * reaches MAPS_LOCAL_REFILL_PERIOD we re-clone the OBJ_GLOBAL

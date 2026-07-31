@@ -19,6 +19,7 @@
 #include "fd-event.h"
 #include "kcov.h"
 #include "minicorpus.h"
+#include "objects.h"		// objpool_local_arena_init
 #include "params.h"
 #include "pids.h"
 #include "random.h"
@@ -477,6 +478,19 @@ static void init_shm_publish_and_subsystems(void)
 	 * SEGV(ACCERR) classes at the same time.
 	 */
 	writable_pool_init();
+
+	/*
+	 * Same pre-fork-allocate / register-once / inherit-via-COW pattern
+	 * for the OBJ_LOCAL objpool arena.  Backs alloc_object() and the
+	 * head->array grow path in objects/registry-pool.c so their storage
+	 * lives inside a single track_shared_region_tagged() region, closing
+	 * the mm:runtime-map:objpool self-corruption window that a fuzzed
+	 * value-result pointer opens when it lands in a post-fork glibc mmap
+	 * arena the range_overlaps_libc_heap snapshot did not capture.
+	 * Bounded first slice of the payload-arena direction -- see
+	 * objects/objpool-arena.c for the full rationale.
+	 */
+	objpool_local_arena_init();
 }
 
 void init_shm(void)

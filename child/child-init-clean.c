@@ -393,6 +393,13 @@ void clean_childdata(struct childdata *child)
 	 * slot restarts allocation at pool offset 0 rather than
 	 * continuing from wherever the previous occupant left off. */
 	child->writable_pool_cursor = 0;
+	/* Same reset for the OBJ_LOCAL objpool arena's bump cursor: a
+	 * recycled slot must re-enter alloc_object() / add_object_grow_
+	 * capacity()'s arena path from arena offset 0, not from the
+	 * previous occupant's high-water mark (which would exhaust the
+	 * arena earlier and force the fallback zmalloc_tracked path
+	 * sooner than necessary). */
+	child->objpool_arena_cursor = 0;
 	child->mmap_pool_nonempty_mask = 0;
 	child->storm_check_last_time = child->tp;
 	child->storm_check_last_post_handler = 0;
