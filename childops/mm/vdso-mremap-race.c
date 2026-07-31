@@ -77,6 +77,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
@@ -320,6 +321,7 @@ bool vdso_mremap_race(struct childdata *child)
 	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	struct timespec start, now;
 	long elapsed_ns;
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -356,21 +358,25 @@ bool vdso_mremap_race(struct childdata *child)
 		pid_t spinner_pid, mutator_pid;
 		int status;
 
+		direct_calls++;
 		spinner_pid = fork();
 		if (spinner_pid < 0)
 			break;
 		if (spinner_pid == 0)
 			spinner_helper();
 
+		direct_calls++;
 		mutator_pid = fork();
 		if (mutator_pid < 0) {
 			/* Couldn't fork the mutator — drain spinner and bail. */
+			direct_calls++;
 			(void) waitpid_eintr(spinner_pid, &status, 0);
 			break;
 		}
 		if (mutator_pid == 0)
 			mutator_helper();
 
+		direct_calls++;
 		if (waitpid_eintr(spinner_pid, &status, 0) == spinner_pid) {
 			if (WIFSIGNALED(status)) {
 				int sig = WTERMSIG(status);
@@ -380,6 +386,7 @@ bool vdso_mremap_race(struct childdata *child)
 							   1, __ATOMIC_RELAXED);
 			}
 		}
+		direct_calls++;
 		(void) waitpid_eintr(mutator_pid, &status, 0);
 
 		clock_gettime(CLOCK_MONOTONIC, &now);
@@ -388,6 +395,9 @@ bool vdso_mremap_race(struct childdata *child)
 		if (elapsed_ns >= BUDGET_NS)
 			break;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
