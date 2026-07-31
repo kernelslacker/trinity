@@ -57,6 +57,7 @@
 #include "arch.h"
 #include "pids.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "params.h"
 #include "random.h"
 #include "rnd.h"
@@ -647,7 +648,13 @@ static void bump_tree_counter(enum tree_kind tree, enum write_outcome outcome)
 	__atomic_add_fetch(p, 1, __ATOMIC_RELAXED);
 }
 
-static void do_one_write(const struct discovered_entry *e)
+/*
+ * Returns the number of real syscalls issued (open, and on success write +
+ * close), so the caller can publish a single childop_direct_syscalls_add()
+ * for the whole op-invocation rather than paying per-syscall for a
+ * shared-mem atomic.
+ */
+static unsigned long do_one_write(const struct discovered_entry *e)
 {
 	unsigned char buf[256];
 	/*
@@ -673,7 +680,7 @@ static void do_one_write(const struct discovered_entry *e)
 		if (errno == EACCES || errno == EPERM)
 			mark_inaccessible(e);
 		bump_tree_counter(e->tree, OUTCOME_OPEN_FAIL);
-		return;
+		return 1;
 	}
 
 	if (ONE_IN(4)) {
@@ -689,6 +696,7 @@ static void do_one_write(const struct discovered_entry *e)
 
 	bump_tree_counter(e->tree,
 			  ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
+	return 3;
 }
 
 /*
@@ -712,6 +720,13 @@ void procfs_writer_init(void)
 
 bool procfs_writer(struct childdata *child)
 {
+	/* Local direct-syscall tally.  Bumped by do_one_write()'s return
+	 * (1 on open-fail, 3 on the full open/write/close path) and
+	 * published once via childop_direct_syscalls_add() at op-exit so
+	 * the hot path pays one atomic add per invocation instead of per
+	 * syscall. */
+	unsigned long direct_calls = 0;
+
 	/* discover_targets() should have been called from the parent, but
 	 * keep the lazy fallback so a missing init does not break the op. */
 	if (discovery_done == false) {
@@ -760,6 +775,9 @@ bool procfs_writer(struct childdata *child)
 				break;
 		}
 	}
-	do_one_write(&entries[idx]);
+	direct_calls += do_one_write(&entries[idx]);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
