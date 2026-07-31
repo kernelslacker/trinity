@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "pkt-builder.h"
 #include "random.h"
@@ -156,6 +157,7 @@ bool pkt_builder_probe(struct childdata *child)
 	struct pktb_ctx ctx;
 	struct timespec t0;
 	unsigned int i;
+	unsigned long direct_calls = 0;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -206,6 +208,12 @@ bool pkt_builder_probe(struct childdata *child)
 			break;
 
 		rc = probe_one_recipe(&ctx, &probe_recipes[pick]);
+		/* rc == -2 means pktb_push rejected the recipe before any
+		 * kernel entry; every other outcome ran pktb_deliver, which
+		 * issues at least one syscall (a sendto attempt, or a
+		 * failing socket() that latched off delivery). */
+		if (rc != -2)
+			direct_calls++;
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.pkt_builder.per_recipe[pick],
 					   1, __ATOMIC_RELAXED);
@@ -225,6 +233,21 @@ bool pkt_builder_probe(struct childdata *child)
 		}
 	}
 
+	/* Account for the close(2)s pktb_ctx_close is about to issue —
+	 * one per open delivery fd — so the reporter reflects every
+	 * kernel entry this invocation caused. */
+	if (ctx.af_packet_fd >= 0)
+		direct_calls++;
+	if (ctx.raw_ipv4_fd >= 0)
+		direct_calls++;
+	if (ctx.raw_ipv6_fd >= 0)
+		direct_calls++;
+	if (ctx.loopback_udp_fd >= 0)
+		direct_calls++;
+
 	pktb_ctx_close(&ctx);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
