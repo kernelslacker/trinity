@@ -515,7 +515,8 @@ static void ovs_race_dellink_loop(const char *helper_name,
  * ovs_setup_failed on any fatal step so subsequent invocations short-
  * circuit to the runs counter without retrying.
  */
-static bool ovs_one_time_setup(struct childdata *child)
+static bool ovs_one_time_setup(struct childdata *child,
+			       unsigned long *direct_calls)
 {
 	struct genl_open_opts opts;
 	char dpname[32];
@@ -556,6 +557,9 @@ static bool ovs_one_time_setup(struct childdata *child)
 		ovs_setup_failed = true;
 		return false;
 	}
+	/* genl_open success = nl_open (socket + bind + setsockopt) +
+	 * resolve_family_id (sendmsg + recv). */
+	*direct_calls += 5;
 
 	memset(&opts, 0, sizeof(opts));
 	opts.family_name  = "ovs_vport";
@@ -572,18 +576,23 @@ static bool ovs_one_time_setup(struct childdata *child)
 		}
 		ovs_setup_failed = true;
 		genl_close(&ovs_dp_ctx);
+		*direct_calls += 1;
 		return false;
 	}
+	*direct_calls += 5;
 
 	(void)snprintf(dpname, sizeof(dpname), "tcdp_%u",
 		       (unsigned int)(child->num & 0xffffu));
 	rc = ovs_create_datapath(&ovs_dp_ctx, dpname);
+	/* ovs_create_datapath wraps one genl_send_recv (sendmsg + recv). */
+	*direct_calls += 2;
 	if (rc != 0 && rc != -EEXIST) {
 		/* EOPNOTSUPP / EPROTONOSUPPORT means the kernel is missing
 		 * CONFIG_OPENVSWITCH outright; nothing more we can do. */
 		ovs_setup_failed = true;
 		genl_close(&ovs_vport_ctx);
 		genl_close(&ovs_dp_ctx);
+		*direct_calls += 2;
 		return false;
 	}
 
@@ -607,22 +616,16 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 	unsigned int i;
 	pid_t racer_pid = 0;
 	int rc;
-
-	__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.runs, 1,
-			   __ATOMIC_RELAXED);
-
-	if (ovs_setup_failed)
-		return true;
-
-	if (!ovs_one_time_setup(child)) {
-		__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	kind = ovs_pick_kind();
-	if (kind == OVS_TUN_NR)
-		return true;
+	/* Persistent-child direct-syscall counter.  Accumulates the genl
+	 * socket/bind/setsockopt + CTRL_CMD_GETFAMILY resolve syscalls
+	 * during one-time setup (which only runs once per child) plus the
+	 * per-invocation CMD_NEW / CMD_DEL sendmsg+recv pairs.  The forked
+	 * rtnl DELLINK racer's sends and the modprobe forks are grandchild
+	 * work and stay unattributed here.  Published once via
+	 * childop_direct_syscalls_add() below on the valid_op path so the
+	 * hot loop pays one atomic add per invocation instead of one per
+	 * syscall. */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -632,6 +635,27 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ovs_setup_failed)
+		return true;
+
+	if (!ovs_one_time_setup(child, &direct_calls)) {
+		__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.setup_failed,
+				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
+		return true;
+	}
+
+	kind = ovs_pick_kind();
+	if (kind == OVS_TUN_NR) {
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
+		return true;
+	}
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -672,6 +696,10 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	rc = ovs_create_vport(&ovs_vport_ctx, 0, kind, vname, dst_port);
+	/* ovs_create_vport wraps one genl_send_recv (sendmsg + recv);
+	 * counted whether the kernel accepted the CMD_NEW or not because
+	 * the syscall entry ran either way. */
+	direct_calls += 2;
 	if (rc != 0) {
 		/* Module-not-loaded / type-not-registered errors latch the
 		 * kind off; transient EBUSY / EEXIST / EADDRINUSE leave the
@@ -690,6 +718,8 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 
 			(void)waitpid_eintr(racer_pid, &wstatus, 0);
 		}
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
 	}
 	__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.create_ok, 1,
@@ -706,6 +736,8 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 	if (ovs_delete_vport(&ovs_vport_ctx, 0, vname) == 0)
 		__atomic_add_fetch(&shm->stats.ovs_tunnel_vport_churn.delete_ok,
 				   1, __ATOMIC_RELAXED);
+	/* ovs_delete_vport wraps one genl_send_recv (sendmsg + recv). */
+	direct_calls += 2;
 
 	if (racer_pid > 0) {
 		int wstatus;
@@ -715,5 +747,7 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		(void)waitpid_eintr(racer_pid, &wstatus, 0);
 	}
 
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
