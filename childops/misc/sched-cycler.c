@@ -34,6 +34,7 @@
 #include <string.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "random.h"
 #include "rnd.h"
@@ -61,6 +62,22 @@ bool sched_cycler(struct childdata *child)
 	struct sched_attr attr, restore;
 	cpu_set_t set;
 	int cls, i;
+	/* Local direct-syscall tally.  Bumped 1 per raw sched_setattr /
+	 * sched_setaffinity actually issued below (the random_syscall burst
+	 * is dispatcher-mediated and NOT counted here).  Published once to
+	 * shm at op-exit via childop_direct_syscalls_add() so the hot path
+	 * pays one atomic add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
+
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Hoisted above the
+	 * first raw syscall so the goto-restore early-exit path can still
+	 * publish direct_calls under the same gate. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.sched_cycler.runs, 1, __ATOMIC_RELAXED);
 
@@ -90,21 +107,13 @@ bool sched_cycler(struct childdata *child)
 		break;
 	}
 
+	direct_calls++;
 	if (do_sched_setattr(0, &attr) != 0) {
 		if (errno == EPERM)
 			__atomic_add_fetch(&shm->stats.sched_cycler.eperm,
 					   1, __ATOMIC_RELAXED);
 		goto restore_other;
 	}
-
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot.  Skip the stats
-	 * writes entirely when the snapshot is out of range. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -113,6 +122,7 @@ bool sched_cycler(struct childdata *child)
 	/* Migrate to a random CPU while in the new class. */
 	CPU_ZERO(&set);
 	CPU_SET(rnd_modulo_u32(num_online_cpus), &set);
+	direct_calls++;
 	(void)sched_setaffinity(0, sizeof(set), &set);
 
 	if (valid_op)
@@ -127,7 +137,11 @@ restore_other:
 	restore.size = sizeof(restore);
 	restore.sched_policy = SCHED_OTHER;
 	restore.sched_priority = 0;
+	direct_calls++;
 	(void)do_sched_setattr(0, &restore);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
