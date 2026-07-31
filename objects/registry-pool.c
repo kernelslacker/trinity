@@ -150,10 +150,25 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 		 * any in-flight reader's window.  Same hazard shape as
 		 * the obj-struct deferred-free path: freeing a live
 		 * container underneath a cached reader is a use-after-free.
+		 *
+		 * First-slice payload-arena wiring: the new array prefers
+		 * objpool_local_arena_alloc() so the container inherits the
+		 * arena's track_shared_region_tagged() protection against
+		 * fuzzed value-result writes.  Falls back to zmalloc_tracked
+		 * on arena exhaustion (bump-only allocator; late-lifetime
+		 * grows may miss the arena and rely on the range_overlaps_
+		 * libc_heap safety net instead).  The old container's release
+		 * routes back to deferred_free_enqueue only when it was libc-
+		 * heap: an arena-allocated old container has no free()able
+		 * chunk header and no tracker entry to consume, so it stays
+		 * where the arena bump-cursor left it -- a bounded per-child
+		 * leak of past-grown array footprint that the arena's ~13x
+		 * headroom over steady-state OBJ_LOCAL storage accounts for.
 		 */
 		struct object **newarray;
 		struct object **oldarray;
 		unsigned int newcap = cap ? cap * 2 : 16;
+		unsigned long newbytes;
 
 		if (cap > UINT_MAX / 2) {
 			outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
@@ -163,7 +178,10 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 			release_obj(obj, scope, type);
 			return true;
 		}
-		newarray = zmalloc_tracked(newcap * sizeof(struct object *));
+		newbytes = (unsigned long)newcap * sizeof(struct object *);
+		newarray = objpool_local_arena_alloc(newbytes);
+		if (newarray == NULL)
+			newarray = zmalloc_tracked(newbytes);
 		if (newarray == NULL) {
 			outputerr("add_object: malloc failed for type %u (cap %u)\n",
 				  type, newcap);
@@ -184,8 +202,14 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 		 * container.  See objhead_indexed_read().
 		 */
 		head->array_generation++;
-		if (oldarray != NULL)
-			deferred_free_enqueue(oldarray);
+		if (oldarray != NULL) {
+			unsigned long oldbytes =
+				(unsigned long)cap * sizeof(struct object *);
+
+			if (!objpool_local_arena_owns(oldarray, oldbytes))
+				deferred_free_enqueue(oldarray);
+			/* else: arena slot -- bump-only, leaks by design. */
+		}
 	}
 
 	return false;

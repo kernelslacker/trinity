@@ -533,6 +533,15 @@ void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype ty
 void destroy_global_objects(void);
 
 /*
+ * Parent-side one-shot init for the OBJ_LOCAL objpool arena (mmap +
+ * track_shared_region_tagged).  Called from init_shm_publish_and_
+ * subsystems() alongside writable_pool_init() so the arena exists and
+ * is registered before any child forks.  See objects/objpool-arena.c
+ * for the full rationale.
+ */
+void objpool_local_arena_init(void);
+
+/*
  * Self-registration for global object initializers.  Each object subsystem
  * calls REG_GLOBAL_OBJ() once (at program startup, via a constructor) to
  * register its init function.  init_global_objects() iterates the list and

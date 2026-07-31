@@ -50,3 +50,25 @@ void local_fd_hash_remove(struct objhead *head, int fd);
 void __destroy_object(struct object *obj, enum obj_scope scope,
 		      enum objecttype type, bool already_closed);
 void destroy_objects(enum objecttype type, enum obj_scope scope);
+
+/*
+ * Per-child OBJ_LOCAL objpool arena API.  See objects/objpool-arena.c
+ * for the rationale (bounded first slice of the payload-arena
+ * direction; closes the shared-region hole in the mm:runtime-map:
+ * objpool self-corruption class).
+ *
+ *   objpool_local_arena_alloc  -- bump allocation from the tracked arena;
+ *                                 returns NULL on unavailable / oversize
+ *                                 / exhausted, cueing the caller to fall
+ *                                 back to zmalloc_tracked.
+ *   objpool_local_arena_owns   -- containment check used by the release
+ *                                 path to route back into the arena
+ *                                 memset-and-leak branch instead of the
+ *                                 libc-heap deferred_free_enqueue path.
+ *
+ * The parent-side one-shot init entry point (objpool_local_arena_init)
+ * is declared in include/objects.h so the pre-fork init call from
+ * utils/shm.c can pick it up without pulling in the internal glue.
+ */
+void *objpool_local_arena_alloc(unsigned long size) __must_check;
+bool objpool_local_arena_owns(const void *p, unsigned long size) __must_check;

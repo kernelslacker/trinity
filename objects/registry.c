@@ -21,15 +21,38 @@
 #include "utils.h"
 
 /*
- * Every obj struct comes from alloc_object() (zmalloc) and lives in
- * the allocating process's private heap.  OBJ_GLOBAL pools are
- * populated pre-fork in the parent, then fork-COW'd into children's
- * snapshots; OBJ_LOCAL pools are wholly per-child.  No path crosses
- * the shared mapping for obj storage.
+ * Every obj struct comes from alloc_object().  Two backing stores:
+ *
+ *  1. this_child() != NULL and objpool_local_arena_alloc() succeeds:
+ *     the slot lives inside the parent-registered MAP_PRIVATE|MAP_ANON
+ *     objpool arena tracked with track_shared_region_tagged().  Fuzzed
+ *     value-result pointers landing inside the arena get relocated by
+ *     avoid_shared_buffer_out()'s range_overlaps_shared() gate before
+ *     the syscall issues, closing the mm:runtime-map:objpool scribble
+ *     window the range_overlaps_libc_heap gate misses when a post-fork
+ *     glibc mmap arena falls outside the pre-fork snapshot's bbox.
+ *     Bounded first slice of the payload-arena direction.
+ *
+ *  2. Fallback -- parent context (pre-fork OBJ_GLOBAL setup), or arena
+ *     exhausted / init failure: plain zmalloc_tracked() into the
+ *     process's libc heap, protected by the range_overlaps_libc_heap
+ *     safety net at the sanitiser layer.
+ *
+ * OBJ_GLOBAL pools are populated pre-fork in the parent, then fork-
+ * COW'd into children's snapshots; OBJ_LOCAL pools are wholly per-child.
+ * No path crosses the shared mapping for obj storage.
  */
 struct object * alloc_object(void)
 {
+	struct object *p;
+
 	heap_brk_maybe_refresh();
+
+	if (this_child() != NULL) {
+		p = objpool_local_arena_alloc(sizeof(struct object));
+		if (p != NULL)
+			return p;
+	}
 	return zmalloc_tracked(sizeof(struct object));
 }
 
@@ -38,6 +61,17 @@ void release_obj(struct object *obj,
 		 enum objecttype type __attribute__((unused)))
 {
 	memset(obj, 0, sizeof(*obj));
+	/*
+	 * Arena slots never route through free(): the arena is bump-only,
+	 * has no recycler, and its pointers do not carry glibc chunk
+	 * headers.  A zeroed slot leaves obj_type == OBJ_NONE so a stale
+	 * reader fails objpool_check(), matching the deferred-free path's
+	 * post-TTL semantics.  deferred_free_enqueue()'s alloc_track
+	 * consume gate would also reject an arena pointer (it was never
+	 * deferred_alloc_track()'d), leaking bookkeeping.
+	 */
+	if (objpool_local_arena_owns(obj, sizeof(*obj)))
+		return;
 	deferred_free_enqueue(obj);
 }
 
