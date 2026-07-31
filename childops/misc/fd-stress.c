@@ -51,6 +51,7 @@
 #include <fcntl.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "fd.h"
 #include "fd-event.h"
 #include "objects.h"
@@ -146,13 +147,21 @@ static void notify_close(struct childdata *child, int fd)
 	notify_child_fd_closed(child, fd);
 }
 
-static bool fd_stress_close_reopen(struct childdata *child)
+/*
+ * The per-mode helpers return the number of direct syscalls they
+ * actually issued this invocation (not counting guard/early-return
+ * paths that bailed before entering the kernel).  fd_stress() sums
+ * these and publishes one atomic add via
+ * childop_direct_syscalls_add() at op-exit, mirroring the pipe-thrash
+ * reporter pattern: one atomic per invocation, not per syscall.
+ */
+static unsigned long fd_stress_close_reopen(struct childdata *child)
 {
 	int fd;
 
 	fd = get_random_fd();
 	if (fd <= 2)
-		return true;
+		return 0;
 
 	/*
 	 * Mark the slot dead BEFORE the close.  notify_close() enqueues a
@@ -167,10 +176,10 @@ static bool fd_stress_close_reopen(struct childdata *child)
 	if (close(fd) == 0)
 		__atomic_add_fetch(&shm->stats.fdstress.close_reopen, 1,
 				   __ATOMIC_RELAXED);
-	return true;
+	return 1;
 }
 
-static bool fd_stress_dup2_replace(struct childdata *child)
+static unsigned long fd_stress_dup2_replace(struct childdata *child)
 {
 	int fd_src, fd_dst;
 	unsigned int tries;
@@ -182,7 +191,7 @@ static bool fd_stress_dup2_replace(struct childdata *child)
 			break;
 	}
 	if (tries == 8)
-		return true;
+		return 0;
 
 	/* Same ordering invariant as close-reopen: publish the slot's
 	 * impending death before dup2's implicit close runs, otherwise the
@@ -191,16 +200,16 @@ static bool fd_stress_dup2_replace(struct childdata *child)
 	if (dup2(fd_src, fd_dst) >= 0)
 		__atomic_add_fetch(&shm->stats.fdstress.dup2_replace, 1,
 				   __ATOMIC_RELAXED);
-	return true;
+	return 1;
 }
 
-static bool fd_stress_type_confusion(struct childdata *child)
+static unsigned long fd_stress_type_confusion(struct childdata *child)
 {
 	int fd_a, fd_b;
 	enum objecttype type_a __unused__, type_b;
 
 	if (!pick_two_typed_fds(&fd_a, &fd_b, &type_a, &type_b))
-		return true;
+		return 0;
 
 	/*
 	 * dup2 closes fd_b silently and replaces it with a copy of
@@ -217,31 +226,37 @@ static bool fd_stress_type_confusion(struct childdata *child)
 	if (dup2(fd_a, fd_b) >= 0)
 		__atomic_add_fetch(&shm->stats.fdstress.type_confusion, 1,
 				   __ATOMIC_RELAXED);
-	return true;
+	return 1;
 }
 
-static bool fd_stress_cloexec_toggle(struct childdata *child __unused__)
+static unsigned long fd_stress_cloexec_toggle(struct childdata *child __unused__)
 {
 	int fd;
 	int flags;
 	unsigned int i;
+	unsigned long calls = 0;
 
 	fd = get_random_fd();
 	if (fd <= 2)
-		return true;
+		return 0;
 
 	/* A few rapid flips to bias toward landing in a window where a
-	 * concurrent reader sees the bitmap mid-update. */
+	 * concurrent reader sees the bitmap mid-update.  Count each
+	 * fcntl() we actually issue -- F_GETFD always fires when we
+	 * reach the loop body; F_SETFD only fires when the preceding
+	 * F_GETFD succeeded. */
 	for (i = 0; i < 4; i++) {
 		flags = fcntl(fd, F_GETFD);
+		calls++;
 		if (flags < 0)
-			return true;
+			return calls;
 		(void)fcntl(fd, F_SETFD, flags ^ FD_CLOEXEC);
+		calls++;
 	}
 
 	__atomic_add_fetch(&shm->stats.fdstress.cloexec_toggle, 1,
 			   __ATOMIC_RELAXED);
-	return true;
+	return calls;
 }
 
 bool fd_stress(struct childdata *child)
@@ -254,6 +269,12 @@ bool fd_stress(struct childdata *child)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	/* Local direct-syscall tally.  Each mode helper returns the
+	 * number of syscalls it actually issued (0 for guard/early-return
+	 * paths that never entered the kernel).  Published once to shm at
+	 * op-exit via childop_direct_syscalls_add() so the hot path pays
+	 * one atomic add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -263,10 +284,14 @@ bool fd_stress(struct childdata *child)
 	}
 
 	switch (rnd_modulo_u32(4)) {
-	case 0:	return fd_stress_close_reopen(child);
-	case 1:	return fd_stress_dup2_replace(child);
-	case 2:	return fd_stress_type_confusion(child);
-	case 3:	return fd_stress_cloexec_toggle(child);
+	case 0:	direct_calls = fd_stress_close_reopen(child);		break;
+	case 1:	direct_calls = fd_stress_dup2_replace(child);		break;
+	case 2:	direct_calls = fd_stress_type_confusion(child);		break;
+	case 3:	direct_calls = fd_stress_cloexec_toggle(child);		break;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+
 	return true;
 }
