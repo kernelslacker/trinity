@@ -191,8 +191,17 @@ static unsigned int tty_set_random_ldisc(int slave)
  * tear down.  Close slave first so the master sees a hangup right
  * before its own close -- that's the teardown-vs-rebind window the
  * upstream KMSAN/UAF reports landed in.
+ *
+ * Returns the number of direct syscalls issued so the caller can
+ * publish them once via childop_direct_syscalls_add(): setup failure
+ * yields 1 (posix_openpt attempted, then bail); the full path yields
+ * 6 (posix_openpt, ioctl TIOCSETD, write, read, close slave, close
+ * master).  The pty handshake helpers (grantpt/unlockpt/ptsname_r/
+ * open-of-slave) are absorbed into the posix_openpt bucket -- they
+ * only fire when the master open succeeded and don't contribute
+ * distinct coverage beyond "the pair came up".
  */
-static void tty_churn_cycle(void)
+static unsigned long tty_churn_cycle(void)
 {
 	unsigned char buf[CHURN_IO_BUF_MAX];
 	unsigned int io_len;
@@ -202,7 +211,7 @@ static void tty_churn_cycle(void)
 	if (tty_open_pty_pair(&master, &slave) < 0) {
 		__atomic_add_fetch(&shm->stats.tty_ldisc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return;
+		return 1;
 	}
 
 	(void)tty_set_random_ldisc(slave);
@@ -227,11 +236,14 @@ static void tty_churn_cycle(void)
 
 	close(slave);
 	close(master);
+
+	return 6;
 }
 
 bool tty_ldisc_churn(struct childdata *child)
 {
 	unsigned int iters, i;
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.tty_ldisc_churn.runs, 1,
 			   __ATOMIC_RELAXED);
@@ -242,19 +254,22 @@ bool tty_ldisc_churn(struct childdata *child)
 	 * child.c dispatch loop already gates its dispatch + alt-op
 	 * accounting on the same valid_op snapshot.  Skip the stats
 	 * writes entirely when the snapshot is out of range. */
-	{
-		const enum child_op_type op = child->op_type;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES) {
-			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop.data_path[op],
-					   1, __ATOMIC_RELAXED);
-		}
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (valid_op) {
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
+				   1, __ATOMIC_RELAXED);
 	}
 
 	iters = BUDGETED(CHILD_OP_TTY_LDISC_CHURN, JITTER_RANGE(CHURN_ITERS_BASE));
 	for (i = 0; i < iters; i++)
-		tty_churn_cycle();
+		direct_calls += tty_churn_cycle();
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
