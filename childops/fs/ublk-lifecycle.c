@@ -55,6 +55,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops/io_uring/ring.h"
 #include "kernel/ublk.h"
@@ -181,6 +182,12 @@ struct ublk_lifecycle_iter_ctx {
 	bool			io_ring_up;
 	bool			fetch_in_flight;
 	struct childdata	*child;
+	/* Local direct-syscall tally.  Bumped 1 per raw open /
+	 * io_uring_setup / io_uring_enter / close actually issued by the
+	 * helpers below.  Published once to shm at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall. */
+	unsigned long		direct_calls;
 };
 
 /* Open /dev/ublk-control and stand up both io_urings.  Splits the two
@@ -193,6 +200,7 @@ struct ublk_lifecycle_iter_ctx {
  * jumps to teardown which honours the partial-up flags. */
 static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
 {
+	ctx->direct_calls++;
 	ctx->ctrl_fd = open("/dev/ublk-control", O_RDWR | O_CLOEXEC);
 	if (ctx->ctrl_fd < 0) {
 		if (errno == EPERM || errno == ENOENT || errno == ENXIO ||
@@ -219,6 +227,7 @@ static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
 		enum iour_setup_status st;
 
 		memset(&p, 0, sizeof(p));
+		ctx->direct_calls++;
 		st = iour_ring_setup(&p, UBLK_LC_RING_DEPTH, &ctx->ctrl_ring);
 		if (st != IOUR_SUPPORTED) {
 			/* Latch ns_unsupported_ublk only on a real "this
@@ -234,6 +243,7 @@ static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
 		ctx->ctrl_ring_up = true;
 
 		memset(&p, 0, sizeof(p));
+		ctx->direct_calls++;
 		if (iour_ring_setup(&p, UBLK_LC_RING_DEPTH,
 				    &ctx->io_ring) != IOUR_SUPPORTED)
 			return false;
@@ -276,6 +286,7 @@ static bool ublk_lifecycle_iter_add_dev(struct ublk_lifecycle_iter_ctx *ctx)
 	sqe.len = (__u32)sizeof(cc);
 	sqe.user_data = 0xadd0;
 
+	ctx->direct_calls++;
 	if (!ring_submit(&ctx->ctrl_ring, &sqe, 1))
 		return false;
 	ring_drain(&ctx->ctrl_ring);
@@ -302,6 +313,7 @@ static void ublk_lifecycle_iter_arm_fetch(struct ublk_lifecycle_iter_ctx *ctx)
 	char qpath[64];
 
 	(void)snprintf(qpath, sizeof(qpath), "/dev/ublkc%d", ctx->dev_id);
+	ctx->direct_calls++;
 	ctx->q_fd = open(qpath, O_RDWR | O_CLOEXEC);
 	if (ctx->q_fd < 0)
 		return;
@@ -319,6 +331,7 @@ static void ublk_lifecycle_iter_arm_fetch(struct ublk_lifecycle_iter_ctx *ctx)
 	sqe.len = (__u32)sizeof(ic);
 	sqe.user_data = 0xfe70;
 
+	ctx->direct_calls++;
 	if (ring_submit(&ctx->io_ring, &sqe, 0)) {
 		ctx->fetch_in_flight = true;
 		__atomic_add_fetch(&shm->stats.ublk_lifecycle.fetch_ok, 1,
@@ -350,6 +363,7 @@ static void ublk_lifecycle_iter_del_dev(struct ublk_lifecycle_iter_ctx *ctx)
 	sqe.len = (__u32)sizeof(cc);
 	sqe.user_data = 0xde10;
 
+	ctx->direct_calls++;
 	if (ring_submit(&ctx->ctrl_ring, &sqe, 1)) {
 		ring_drain(&ctx->ctrl_ring);
 		__atomic_add_fetch(&shm->stats.ublk_lifecycle.del_ok, 1,
@@ -369,14 +383,23 @@ static void ublk_lifecycle_iter_del_dev(struct ublk_lifecycle_iter_ctx *ctx)
  * came up. */
 static void ublk_lifecycle_iter_teardown(struct ublk_lifecycle_iter_ctx *ctx)
 {
-	if (ctx->q_fd >= 0)
+	if (ctx->q_fd >= 0) {
+		ctx->direct_calls++;
 		close(ctx->q_fd);
-	if (ctx->io_ring_up)
+	}
+	if (ctx->io_ring_up) {
+		/* iour_ring_teardown() close()s the ring fd. */
+		ctx->direct_calls++;
 		iour_ring_teardown(&ctx->io_ring);
-	if (ctx->ctrl_ring_up)
+	}
+	if (ctx->ctrl_ring_up) {
+		ctx->direct_calls++;
 		iour_ring_teardown(&ctx->ctrl_ring);
-	if (ctx->ctrl_fd >= 0)
+	}
+	if (ctx->ctrl_fd >= 0) {
+		ctx->direct_calls++;
 		close(ctx->ctrl_fd);
+	}
 }
 
 bool ublk_lifecycle(struct childdata *child)
@@ -387,6 +410,15 @@ bool ublk_lifecycle(struct childdata *child)
 		.dev_id  = -1,
 		.child   = child,
 	};
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; same
+	 * pattern as 825305aed33d.  Hoisted to function scope so the out:
+	 * publish uses the same gate as the setup_accepted / data_path
+	 * increments below, and so a mid-flow early exit that already
+	 * issued real syscalls still credits them via one atomic add. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.ublk_lifecycle.iters, 1,
 			   __ATOMIC_RELAXED);
@@ -400,25 +432,18 @@ bool ublk_lifecycle(struct childdata *child)
 	if (!ublk_lifecycle_iter_add_dev(&ctx))
 		goto out;
 
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; same
-	 * pattern as 825305aed33d. */
-	{
-		const enum child_op_type op = child->op_type;
-		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop.data_path[op],
-					   1, __ATOMIC_RELAXED);
-		}
+	if (valid_op) {
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
+				   1, __ATOMIC_RELAXED);
 	}
 	ublk_lifecycle_iter_arm_fetch(&ctx);
 	ublk_lifecycle_iter_del_dev(&ctx);
 
 out:
 	ublk_lifecycle_iter_teardown(&ctx);
+	if (valid_op && ctx.direct_calls > 0)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return true;
 }
