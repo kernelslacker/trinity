@@ -94,6 +94,7 @@ bool mlock_pressure(struct childdata *child)
 {
 	struct object *obj;
 	struct map *map;
+	unsigned long direct_calls = 0;
 
 	/* Global VMA-pressure backoff.  mlock on a page-aligned sub-range
 	 * splits the underlying VMA at the lock boundary; the mlockall
@@ -142,6 +143,7 @@ bool mlock_pressure(struct childdata *child)
 			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 
+		direct_calls++;
 		if (mlockall(flags) == 0 && (flags & MCL_FUTURE)) {
 			/*
 			 * MCL_FUTURE only matters if we make new mappings
@@ -160,6 +162,7 @@ bool mlock_pressure(struct childdata *child)
 					       MAP_PRIVATE | MAP_ANONYMOUS,
 					       -1, 0);
 
+				direct_calls++;
 				if (p == MAP_FAILED)
 					continue;
 				/* Touch a byte so non-ONFAULT locking actually
@@ -169,13 +172,18 @@ bool mlock_pressure(struct childdata *child)
 				lens[i] = len;
 			}
 			for (i = 0; i < n; i++) {
-				if (probes[i] != NULL)
+				if (probes[i] != NULL) {
 					munmap(probes[i], lens[i]);
+					direct_calls++;
+				}
 			}
 		}
 
 		/* Always unlock to avoid running out of lockable memory. */
 		munlockall();
+		direct_calls++;
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
 	}
 
@@ -204,6 +212,10 @@ bool mlock_pressure(struct childdata *child)
 		do_mlock(map);
 	else
 		do_munlock(map);
+	direct_calls++;
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
