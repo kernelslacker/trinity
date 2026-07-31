@@ -81,6 +81,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -299,8 +300,10 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	enum rxrpc_cmsg_slot slot;
 	bool v6;
 	bool have_peer;
+	bool did_connect = false;
 	int fd;
 	int rc;
+	int direct_calls;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -365,6 +368,7 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	have_peer = RAND_BOOL();
 	if (have_peer) {
 		make_peer(&peer, v6);
+		did_connect = true;
 		if (connect(fd, (struct sockaddr *)&peer, sizeof(peer)) < 0) {
 			/* connect failures are fine: the unconnected
 			 * sendmsg path with msg_name set is also part of
@@ -389,6 +393,10 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	else
 		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg.sendmsg_fail,
 				   1, __ATOMIC_RELAXED);
+
+	direct_calls = 4 + (did_connect ? 1 : 0);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	close(fd);
 	return true;
