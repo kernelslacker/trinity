@@ -23,6 +23,7 @@
 #include "arch.h"
 #include "pids.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "maps.h"
 #include "random.h"
 #include "shm.h"
@@ -134,6 +135,12 @@ bool memory_pressure(struct childdata *child)
 	void *region;
 	volatile unsigned char *p;
 	size_t stride, i;
+	/* Local direct-syscall tally.  Bumped 1 per madvise actually issued
+	 * below (the dirty/refault loops are memory reads/writes, NOT
+	 * syscalls, and are deliberately excluded).  Published once to shm
+	 * at op-exit via childop_direct_syscalls_add() so the hot path pays
+	 * one atomic add per invocation instead of per-syscall. */
+	unsigned long direct_calls = 0;
 
 	/*
 	 * Draw the region from the parent's inherited mapping pool instead
@@ -237,6 +244,7 @@ bool memory_pressure(struct childdata *child)
 			 * madvise_behavior_valid's unknown/negative advice
 			 * rejection which the single MADV_* constant above
 			 * never reaches. */
+			direct_calls++;
 			madvise(region, len,
 				(int)RAND_NEGATIVE_OR(MADV_PAGEOUT));
 
@@ -264,13 +272,20 @@ bool memory_pressure(struct childdata *child)
 		if (aborted) {
 			/* siglongjmp skipped any in-flight cleanup —
 			 * the in-flight allocation leak is accepted
-			 * per the dispatch tradeoff. */
+			 * per the dispatch tradeoff.  The pool-race exit
+			 * is a hostile-fault path; leave direct_calls
+			 * unpublished here so the reporter's single
+			 * publish site stays on the normal completion
+			 * path (matches sched-cycler/fault-injector). */
 			__atomic_add_fetch(
 				&shm->stats.childop.pool_race_aborted[CHILD_OP_MEMORY_PRESSURE],
 				1, __ATOMIC_RELAXED);
 			return false;
 		}
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
