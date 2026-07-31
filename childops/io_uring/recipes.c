@@ -44,6 +44,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-iouring.h"
 #include "childops/io_uring/recipes.h"
 #include "childops/io_uring/recipes-internal.h"
@@ -585,6 +586,17 @@ bool iouring_recipes(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
+		/* Conservative floor for the per-invocation direct-syscall
+		 * cost: io_uring_setup + ~2 mmap calls inside
+		 * iour_ring_setup() plus the ring-fd close in
+		 * iour_ring_teardown() -- everything the outer dispatch
+		 * pays regardless of which recipe runs.  The recipe body
+		 * itself issues additional io_uring_enter / io_uring_register
+		 * calls that aren't counted here; refine later if the
+		 * per-op telemetry needs finer resolution.  A count > 0 is
+		 * what makes these invocations visible to the alt-op
+		 * scoring window at all. */
+		childop_direct_syscalls_add(op, 4);
 	}
 
 	iour_recipe_state_init(&state, &ctx);
