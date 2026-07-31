@@ -13,6 +13,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "childop-outcome.h"
 #include "deferred-free.h"
 #include "maps.h"
 #include "objects.h"
@@ -53,28 +54,31 @@ static int pick_prot(void)
 	return (int)mmap_prot_combos[rnd_modulo_u32(ARRAY_SIZE(mmap_prot_combos))];
 }
 
-static bool do_create(void)
+static unsigned long do_create(void)
 {
 	struct object *obj;
 	unsigned long size = pick_size();
 	int prot = pick_prot();
 	int flags = MAP_ANONYMOUS | MAP_PRIVATE;
+	unsigned long direct_calls = 0;
 	void *p;
 
 	if (ONE_IN(3))
 		flags |= MAP_POPULATE;
 
+	direct_calls++;
 	p = mmap(NULL, size, prot, (int)RAND_NEGATIVE_OR(flags), -1, 0);
 	if (p == MAP_FAILED)
-		return true;	/* non-fatal */
+		return direct_calls;	/* non-fatal */
 
 	obj = alloc_object();
 	obj->map.ptr = p;
 	obj->map.name = strdup("lifecycle");
 	if (!obj->map.name) {
+		direct_calls++;
 		munmap(p, size);
 		tracked_free_now(obj);
-		return true;	/* non-fatal */
+		return direct_calls;	/* non-fatal */
 	}
 	obj->map.size = size;
 	obj->map.prot = prot;
@@ -96,10 +100,10 @@ static bool do_create(void)
 	 */
 	track_shared_region((unsigned long)p, size);
 
-	return true;
+	return direct_calls;
 }
 
-static bool do_mremap(void)
+static unsigned long do_mremap(void)
 {
 	struct object *obj;
 	struct map *map;
@@ -108,13 +112,13 @@ static bool do_mremap(void)
 
 	obj = get_random_object(OBJ_MMAP_ANON, OBJ_LOCAL);
 	if (obj == NULL)
-		return true;
+		return 0;
 
 	map = &obj->map;
 
 	/* Don't mremap initial mappings shared with siblings. */
 	if (map->type == INITIAL_ANON)
-		return true;
+		return 0;
 
 	old_ptr = (unsigned long)map->ptr;
 	old_size = map->size;
@@ -130,7 +134,7 @@ static bool do_mremap(void)
 
 	if (range_overlaps_shared(old_ptr, old_size)) {
 		track_shared_region(old_ptr, old_size);
-		return true;
+		return 0;
 	}
 
 	/* Grow or shrink. */
@@ -145,7 +149,7 @@ static bool do_mremap(void)
 	p = mremap(map->ptr, old_size, new_size, MREMAP_MAYMOVE);
 	if (p == MAP_FAILED) {
 		track_shared_region(old_ptr, old_size);
-		return true;
+		return 1;
 	}
 
 	map->ptr = p;
@@ -158,23 +162,23 @@ static bool do_mremap(void)
 	 */
 	map->known_rw = false;
 	track_shared_region((unsigned long)p, new_size);
-	return true;
+	return 1;
 }
 
-static bool do_teardown(void)
+static unsigned long do_teardown(void)
 {
 	struct object *obj;
 	struct map *map;
 
 	obj = get_random_object(OBJ_MMAP_ANON, OBJ_LOCAL);
 	if (obj == NULL)
-		return true;
+		return 0;
 
 	map = &obj->map;
 
 	/* Never unmap initial mappings — other children share them. */
 	if (map->type == INITIAL_ANON)
-		return true;
+		return 0;
 
 	/*
 	 * Drop our shared_regions[] registration before the
@@ -186,28 +190,40 @@ static bool do_teardown(void)
 	untrack_shared_region((unsigned long)map->ptr, map->size);
 
 	if (range_overlaps_shared((unsigned long)map->ptr, map->size))
-		return true;
+		return 0;
 
+	/*
+	 * destroy_object -> map_destructor -> munmap.  do_create sets
+	 * owns_vma=true on every OBJ_LOCAL entry it adds, so the
+	 * destructor's ownership gate lets the munmap fire; count 1.
+	 */
 	destroy_object(obj, OBJ_LOCAL, OBJ_MMAP_ANON);
-	return true;
+	return 1;
 }
 
-static bool do_dirty(void)
+static unsigned long do_dirty(void)
 {
 	struct object *obj;
 
 	obj = get_random_object(OBJ_MMAP_ANON, OBJ_LOCAL);
 	if (obj == NULL)
-		return true;
+		return 0;
 
 	dirty_mapping(&obj->map);
-	return true;
+	return 0;
 }
 
 bool mmap_lifecycle(struct childdata *child)
 {
 	struct objhead *head;
 	unsigned int nr_maps;
+	/* Local tally of the direct mmap/mremap/munmap syscalls this
+	 * invocation actually issued.  Bumped by each do_* helper and
+	 * published once to shm at op-exit via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per-syscall.  Mirrors the
+	 * pipe_thrash reporter pattern. */
+	unsigned long direct_calls = 0;
 
 	/* Global VMA-pressure backoff.  Skip the whole dispatch when
 	 * latched: do_create / do_mremap can only add VMAs from here, and
@@ -237,17 +253,20 @@ bool mmap_lifecycle(struct childdata *child)
 	 * toward teardown when we have many.
 	 */
 	if (nr_maps < 4) {
-		do_create();
+		direct_calls += do_create();
 	} else if (nr_maps >= MAX_LIFECYCLE_MAPS) {
-		do_teardown();
+		direct_calls += do_teardown();
 	} else {
 		switch (rnd_modulo_u32(10)) {
-		case 0 ... 3:	do_create();	break;
-		case 4 ... 5:	do_mremap();	break;
-		case 6 ... 7:	do_dirty();	break;
-		case 8 ... 9:	do_teardown();	break;
+		case 0 ... 3:	direct_calls += do_create();	break;
+		case 4 ... 5:	direct_calls += do_mremap();	break;
+		case 6 ... 7:	direct_calls += do_dirty();	break;
+		case 8 ... 9:	direct_calls += do_teardown();	break;
 		}
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
