@@ -45,6 +45,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "random.h"
 #include "rnd.h"
@@ -240,6 +241,7 @@ bool sysfs_string_race(struct childdata *child)
 	const char *cand_a, *cand_b;
 	int fd;
 	pid_t pa, pb;
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.sysfs_string_race.runs,
 			   1, __ATOMIC_RELAXED);
@@ -259,6 +261,7 @@ bool sysfs_string_race(struct childdata *child)
 	tgt_idx = pick_writable_target();
 	tgt = &targets[tgt_idx];
 
+	direct_calls++;
 	fd = open(tgt->path, O_RDWR | O_CLOEXEC);
 	if (fd < 0) {
 		/* Permission may have been dropped or the attr file may
@@ -309,6 +312,7 @@ bool sysfs_string_race(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 
+	direct_calls++;
 	pa = fork();
 	if (pa == 0) {
 		writer_child(fd, cand_a, per_child);	/* noreturn */
@@ -320,6 +324,7 @@ bool sysfs_string_race(struct childdata *child)
 		return true;
 	}
 
+	direct_calls++;
 	pb = fork();
 	if (pb == 0) {
 		writer_child(fd, cand_b, per_child);	/* noreturn */
@@ -339,10 +344,16 @@ bool sysfs_string_race(struct childdata *child)
 	{
 		int sa = 0, sb = 0;
 
+		direct_calls++;
 		(void)waitpid_eintr(pa, &sa, 0);
+		direct_calls++;
 		(void)waitpid_eintr(pb, &sb, 0);
 	}
 
+	direct_calls++;
 	(void)close(fd);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
