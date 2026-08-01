@@ -139,6 +139,15 @@ void stats_log_close(void)
  */
 static FILE *stats_timeseries_fp = NULL;
 
+/* Last op_count successfully emitted in a window record.  Used at
+ * clean shutdown for the terminal record's cross-check: the running
+ * tally the sink itself printed vs the authoritative parent_stats.op_count
+ * we stamp into total_ops.  op_count is monotonic, so a shutdown-total
+ * below the last emitted value indicates a rewind or corruption -- log
+ * a warning and mark cross_check_ok=false so a downstream consumer can
+ * reject the stream. */
+static unsigned long stats_ts_last_emitted_op_count = 0;
+
 void stats_timeseries_open(void)
 {
 	char path[96];
@@ -172,8 +181,33 @@ void stats_timeseries_open(void)
 
 void stats_timeseries_close(void)
 {
+	unsigned long total_ops;
+	bool cross_check_ok;
+
 	if (stats_timeseries_fp == NULL)
 		return;
+
+	/* parent_stats.op_count is the authoritative shutdown total; the
+	 * per-window emitter reads the same counter, so a divergence below
+	 * the last emitted value is a rewind/corruption signal.  A tail of
+	 * ops beyond the last window emit is expected (windows fire on a
+	 * ~10k-op cadence -- close() lands somewhere in the middle of the
+	 * next window) so cross_check_ok tolerates total_ops >= last. */
+	total_ops = parent_stats.op_count;
+	cross_check_ok = (total_ops >= stats_ts_last_emitted_op_count);
+
+	fprintf(stats_timeseries_fp,
+		"{\"type\":\"terminal\",\"total_ops\":%lu"
+		",\"last_window_op_count\":%lu"
+		",\"cross_check_ok\":%s}\n",
+		total_ops, stats_ts_last_emitted_op_count,
+		cross_check_ok ? "true" : "false");
+	fflush(stats_timeseries_fp);
+
+	if (!cross_check_ok)
+		outputerr("stats timeseries cross-check failed: total_ops=%lu < last_window_op_count=%lu\n",
+			  total_ops, stats_ts_last_emitted_op_count);
+
 	fclose(stats_timeseries_fp);
 	stats_timeseries_fp = NULL;
 }
@@ -931,6 +965,8 @@ void stats_timeseries_emit_window(unsigned long op_count)
 		stats_timeseries_fp = NULL;
 		outputerr("stats timeseries write failed, disabling sink: %s\n",
 			  strerror(saved_errno));
+	} else {
+		stats_ts_last_emitted_op_count = op_count;
 	}
 }
 
