@@ -420,18 +420,27 @@ struct canary_op_state {
 	 * an op whose setup path is structurally missing a host prereq. */
 	unsigned int  consecutive_setup_broken;
 
-	/* Snapshots of the per-op PC-bracket attempts / opens counters at
-	 * window open (kcov_shm->childop_kcov.childop_kcov_op_{attempts,
-	 * bracketed}[op]).  Their close-time deltas let close_window_and_
-	 * decide() distinguish "no PC bracket opened because every canary-
-	 * slot child that ran this window happened to be KCOV_MODE_CMP"
-	 * (bracketed_delta==0 but attempts_delta>0) from "no PC bracket
-	 * opened because childop-kcov attribution is off run-wide"
-	 * (both deltas 0).  Only the former is eligible for the pre-demote
-	 * PC-trial retry.  Owner-only writes from parent context, no
-	 * atomics needed. */
+	/* Snapshots of the per-op PC-bracket attempt counter plus the
+	 * three outer-bracket reject arms (kcov_shm->childop_kcov.
+	 * childop_kcov_op_{attempts,skipped_cmp,skipped_nested,
+	 * skipped_inactive}[op]).  Close-time deltas let close_window_
+	 * and_decide()'s PC-trial retry gate label the window by
+	 * rejection reason: bracketed_delta == 0 alone conflates the
+	 * CMP-mode rejection (re-drawing the kcov mode has a real chance
+	 * of landing a PC-mode child next window) with the nested
+	 * rejection (lifecycle-invariant violation -- an outer bracket
+	 * was already owned when the childop dispatch attempted one; a
+	 * retry cannot fix a caller-side bug) and the inactive rejection
+	 * (kcov attribution is off run-wide; a retry cannot turn it on).
+	 * Retry-eligible windows have skipped_cmp_delta == attempts_
+	 * delta; anything else falls through to the standard demote path
+	 * so a productive op is not demoted on a false zero-bracket
+	 * signal from a mixed rejection window.  Owner-only writes from
+	 * parent context, no atomics needed. */
 	unsigned long window_start_kcov_op_attempts;
-	unsigned long window_start_kcov_op_bracketed;
+	unsigned long window_start_kcov_op_skipped_cmp;
+	unsigned long window_start_kcov_op_skipped_nested;
+	unsigned long window_start_kcov_op_skipped_inactive;
 
 	/* Consecutive count of canary windows for this op that closed with
 	 * a non-zero bracket attempt count but zero opens (every dispatch
