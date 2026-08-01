@@ -1245,8 +1245,22 @@ static bool redqueen_reexec_step(struct childdata *child,
 	 * pin with the re-sanitise's preferred value.  Same gate
 	 * replay_syscall_step uses for the same reason.  Layered with the
 	 * AVOID_REEXEC denylist for sanitise-free entries whose effects are
-	 * still destructive to the calling child or to global state. */
-	if ((entry->sanitise != NULL && !(entry->flags & REEXEC_SANITISE_OK)) ||
+	 * still destructive to the calling child or to global state.
+	 *
+	 * The sanitise-bearing exclusion is bypassed when EITHER the static
+	 * entry-level REEXEC_SANITISE_OK is set (every arm of this
+	 * sanitise is re-exec safe) OR the parent dispatch's sanitise arm
+	 * lit the per-invocation rec->flags REEXEC_OK bit (op-multiplexed
+	 * sanitisers whose safety varies per (level, optname) / per (cmd,
+	 * arg) discriminator publish the bit from the arm that ran).
+	 * rec->flags is reset in generate_syscall_args() before sanitise
+	 * runs, so the bit here reflects the arm that actually shaped the
+	 * dispatched call, not a stale inherit from a prior dispatch.
+	 * AVOID_REEXEC is unconditional -- an entry on that denylist is
+	 * never re-exec'd regardless of the dynamic bit. */
+	if ((entry->sanitise != NULL &&
+	     !(entry->flags & REEXEC_SANITISE_OK) &&
+	     !(rec->flags & REEXEC_OK)) ||
 	    (entry->flags & AVOID_REEXEC)) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(&kcov_shm->reexec_flat.reexec_skipped_destructive,
