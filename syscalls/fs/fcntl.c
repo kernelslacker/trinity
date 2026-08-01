@@ -188,6 +188,12 @@ static void fcntl_lease(struct syscallrecord *rec)
 	case F_SETLEASE: {
 		int lease_types[] = { F_RDLCK, F_WRLCK, F_UNLCK };
 		rec->a3 = lease_types[rnd_modulo_u32(3)];
+		/* Scalar-only arm: a3 is the lease-type enum (int) with no
+		 * nested pointer chains, no INOUT / output buffers, no
+		 * shared-buffer relocation, and no bespoke deferred-free /
+		 * post_state oracle.  Opt into the CMP RedQueen re-exec gate
+		 * per-invocation -- see include/syscall.h REEXEC_OK. */
+		rec->flags |= REEXEC_OK;
 		break;
 	}
 
@@ -259,6 +265,11 @@ static void fcntl_owner(struct syscallrecord *rec)
 	switch (rec->a2) {
 	case F_SETOWN:
 		rec->a3 = (unsigned long) get_pid();
+		/* Scalar-only arm: a3 is a pid_t int.  See REEXEC_OK contract
+		 * in include/syscall.h -- no nested pointer chains, no INOUT /
+		 * output buffers, no shared-buffer relocation, and no bespoke
+		 * deferred-free / post_state oracle. */
+		rec->flags |= REEXEC_OK;
 		break;
 
 	/* arg = struct f_owner_ex *) */
@@ -282,6 +293,9 @@ static void fcntl_owner(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) rand32();
 		if (rec->a3 == SIGINT)
 			rec->a3 = 0; /* restore default (SIGIO) */
+		/* Scalar-only arm: a3 is a signal number int.  See REEXEC_OK
+		 * contract in include/syscall.h. */
+		rec->flags |= REEXEC_OK;
 		break;
 	}
 }
@@ -312,6 +326,11 @@ static void fcntl_seals(struct syscallrecord *rec)
 		F_SEAL_WRITE, F_SEAL_FUTURE_WRITE, F_SEAL_EXEC,
 	};
 	rec->a3 = set_rand_bitmask(ARRAY_SIZE(seal_bits), seal_bits);
+	/* Scalar-only arm: a3 is a fixed-size seal bitmask (unsigned int).
+	 * See REEXEC_OK contract in include/syscall.h -- no nested pointer
+	 * chains, no INOUT / output buffers, no shared-buffer relocation,
+	 * and no bespoke deferred-free / post_state oracle. */
+	rec->flags |= REEXEC_OK;
 }
 
 static void fcntl_notify(struct syscallrecord *rec)
@@ -329,6 +348,11 @@ static void fcntl_notify(struct syscallrecord *rec)
 		rec->a3 |= DN_RENAME;
 	if (RAND_BOOL())
 		rec->a3 |= DN_ATTRIB;
+	/* Scalar-only arm: a3 is a fixed-size DN_* bitmask (unsigned long).
+	 * See REEXEC_OK contract in include/syscall.h -- no nested pointer
+	 * chains, no INOUT / output buffers, no shared-buffer relocation,
+	 * and no bespoke deferred-free / post_state oracle. */
+	rec->flags |= REEXEC_OK;
 }
 
 static void sanitise_fcntl(struct syscallrecord *rec)
@@ -340,6 +364,12 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 	case F_DUPFD:
 	case F_DUPFD_CLOEXEC:
 		rec->a3 = (unsigned long) get_random_fd();
+		/* Scalar-only arm: a3 is a fd int.  See REEXEC_OK contract
+		 * in include/syscall.h -- no nested pointer chains, no INOUT /
+		 * output buffers, no shared-buffer relocation, and no bespoke
+		 * deferred-free / post_state oracle.  post_fcntl_dupfd only
+		 * bumps a stats counter on retval, no state pin. */
+		rec->flags |= REEXEC_OK;
 		break;
 
 	case F_SETLEASE:
@@ -347,21 +377,38 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 		fcntl_lease(rec);
 		break;
 
-	/* no arg */
+	/* no arg -- kernel ignores a3 for these cmds; the generic INOUT
+	 * buffer that gen_arg_struct_ptr_inout() placed in a3 is untouched
+	 * by the kernel and re-minted fresh on any re-exec.  See REEXEC_OK
+	 * contract in include/syscall.h.  F_GETOWNER_UIDS technically writes
+	 * two uid_t into the buffer at a3 (kernel-side put_user pair), which
+	 * lands in the fresh INOUT buffer -- benign under the same
+	 * re-mint-on-re-exec invariant. */
 	case F_GETFD:
 	case F_GETFL:
 	case F_GETOWN:
 	case F_GETSIG:
 	case F_GETPIPE_SZ:
 	case F_GETOWNER_UIDS:
+	case F_GET_SEALS:
+		rec->flags |= REEXEC_OK;
 		break;
 
 	case F_SETFD:	/* arg = flags */
 		rec->a3 = (unsigned int) rand32();
+		/* Scalar-only arm: a3 is a fixed-size flags int (FD_CLOEXEC
+		 * bit). See REEXEC_OK contract in include/syscall.h. */
+		rec->flags |= REEXEC_OK;
 		break;
 
 	case F_SETFL:
 		rec->a3 = (unsigned long) random_fcntl_setfl_flags();
+		/* Scalar-only arm: a3 is a fixed-size O_* status-flags word.
+		 * See REEXEC_OK contract in include/syscall.h.  post_fcntl_setfl
+		 * runs a live F_GETFL round-trip oracle on the parent dispatch
+		 * only -- not gated by the re-exec, which regenerates fresh
+		 * flags via generate_syscall_args() anyway. */
+		rec->flags |= REEXEC_OK;
 		break;
 
 	/* arg = (struct flock *) */
@@ -412,6 +459,9 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 
 	case F_SETPIPE_SZ:
 		rec->a3 = rand32();
+		/* Scalar-only arm: a3 is a fixed-size pipe-size int.  See
+		 * REEXEC_OK contract in include/syscall.h. */
+		rec->flags |= REEXEC_OK;
 		break;
 
 	default:
