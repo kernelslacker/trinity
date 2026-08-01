@@ -951,6 +951,16 @@ stats	object
     stats.ip4_udp_cork_splice.p1_ok	u64
     stats.ip4_udp_cork_splice.p1_rejected	u64
     stats.ip4_udp_cork_splice.p2_ok	u64
+  stats.nexthop_replace_churn	object
+    stats.nexthop_replace_churn.runs	u64
+    stats.nexthop_replace_churn.setup_failed	u64
+    stats.nexthop_replace_churn.nh_setup_ok	u64
+    stats.nexthop_replace_churn.sentinel_ok	u64
+    stats.nexthop_replace_churn.replace_single_ok	u64
+    stats.nexthop_replace_churn.replace_group_ok	u64
+    stats.nexthop_replace_churn.route_add_ok	u64
+    stats.nexthop_replace_churn.route_del_ok	u64
+    stats.nexthop_replace_churn.teardown_ok	u64
   stats.mpls_route_churn	object
     stats.mpls_route_churn.runs	u64
     stats.mpls_route_churn.label_install_ok	u64

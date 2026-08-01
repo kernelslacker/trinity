@@ -117,6 +117,7 @@
 #include "stats/subsys/mptcp_pm_churn.h"
 #include "stats/subsys/msg_zerocopy_churn.h"
 #include "stats/subsys/netdev_netns_migrate.h"
+#include "stats/subsys/nexthop_replace_churn.h"
 #include "stats/subsys/netlink_monitor_race.h"
 #include "stats/subsys/netns_mountns_setup.h"
 #include "stats/subsys/netns_teardown.h"
@@ -625,6 +626,9 @@ struct stats_s {
 
 	/* ip4_udp_cork_splice accounting.  See stats/subsys/ip4_udp_cork_splice.h. */
 	struct ip4_udp_cork_splice_stats ip4_udp_cork_splice __attribute__((aligned(64)));
+
+	/* nexthop_replace_churn accounting.  See stats/subsys/nexthop_replace_churn.h. */
+	struct nexthop_replace_churn_stats nexthop_replace_churn __attribute__((aligned(64)));
 
 	/* mpls_route_churn accounting.  See stats/subsys/mpls_route_churn.h. */
 	struct mpls_route_churn_stats mpls_route_churn __attribute__((aligned(64)));

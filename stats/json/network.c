@@ -413,6 +413,9 @@ void json_emit_tcp_ipv6_and_tunnels_section(void)
 	stat_category_emit_json(&ip4_udp_cork_splice_category);
 
 	printf(",");
+	stat_category_emit_json(&nexthop_replace_churn_category);
+
+	printf(",");
 	stat_category_emit_json(&mpls_route_churn_category);
 
 	printf(",");
