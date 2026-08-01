@@ -372,6 +372,46 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 */
 	if (snap->arg_len > 0)
 		avoid_shared_buffer_inout(&rec->a3, snap->arg_len);
+
+	/*
+	 * Publish per-invocation REEXEC_OK when this dispatch resolved to
+	 * a no-arg scalar shape: the switch produced arg_len == 0 (so the
+	 * avoid_shared_buffer_inout relocation above was skipped and no
+	 * pointer landed in rec->a3) AND rec->a4 == 0 (no nr_args count
+	 * either).  The two arms that reach this shape today are
+	 * IORING_REGISTER_PERSONALITY (helper returns {0, 0, 0}) and
+	 * IORING_REGISTER_ENABLE_RINGS (inline {0, 0, 0}); the picker
+	 * only draws from opcodes_common / opcodes_rare, neither of
+	 * which lists UNREGISTER_*, so those UNREGISTER helpers' {0, 0, 0}
+	 * returns are unreachable from here.  Every kernel entry gets a
+	 * plain (fd, opcode) pair with no pointer slot -- exactly the
+	 * fixed-size scalar contract REEXEC_OK documents in
+	 * include/syscall.h.
+	 *
+	 * Outcome-gate (arg_len / a4) rather than an opcode allowlist so
+	 * the whitelist is self-tightening: a future opcode whose helper
+	 * returns non-zero len or nr is auto-excluded, and the blind
+	 * fd == -1 override above (SEND_MSG_RING / RESTRICTIONS /
+	 * BPF_FILTER, all pointer-bearing with p.len > 0) never lights
+	 * the bit either.
+	 *
+	 * post_state safety: the snapshot installed above carries only
+	 * (magic, opcode, arg_len) -- no per-arm resource ownership, no
+	 * deferred free of a3.  The oracle in post_io_uring_register is
+	 * retval-shape only (PERSONALITY validates [1, INT_MAX];
+	 * ENABLE_RINGS falls into the default "must be 0 or -1UL" arm),
+	 * with no state that a re-exec would corrupt.  The parent's post
+	 * handler has already run (handle_syscall_ret fires .post before
+	 * dispatch_step's redqueen_reexec_step tail), so the child re-exec
+	 * starts with a clean rec->post_state slot, sanitise re-runs to
+	 * install a fresh snap, the child's post handler releases it, and
+	 * the saved_post_state restore at the tail returns rec->post_state
+	 * to 0 -- no cross-run interaction.  See
+	 * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
+	 * that consumes this bit.
+	 */
+	if (arg_len == 0 && rec->a4 == 0)
+		rec->flags |= REEXEC_OK;
 }
 
 /*
