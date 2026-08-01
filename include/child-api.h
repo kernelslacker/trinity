@@ -673,3 +673,4 @@ bool hfs_mount_fuzz(struct childdata *child);
 bool rds_zcopy_crafted_send(struct childdata *child);
 bool bridge_ip6frag_refrag(struct childdata *child);
 bool ip4_udp_cork_splice(struct childdata *child);
+bool nexthop_replace_churn(struct childdata *child);
