@@ -223,6 +223,42 @@ static void sanitise_arch_prctl(struct syscallrecord *rec)
 	default:
 		break;
 	}
+
+	/*
+	 * Publish per-invocation REEXEC_OK for the non-getter subset of
+	 * the curated arch_prctl_codes[] whitelist: setter codes whose
+	 * a2 is a pinned scalar (REQ_XCOMP_{,GUEST_}PERM AMX xfeature
+	 * bit, ENABLE_TAGGED_ADDR nbits, SHSTK_LOCK feature mask) and
+	 * the two codes the kernel ignores a2 for entirely
+	 * (GET_CPUID / FORCE_TAGGED_SVA).  See include/syscall.h
+	 * REEXEC_OK for the safety contract and
+	 * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
+	 * that consumes this bit -- the syscall entry lacks the static
+	 * REEXEC_SANITISE_OK because the seven getter arms above call
+	 * avoid_shared_buffer_out(&rec->a2) (relocating a2 to a shared
+	 * writable buffer whose content mutates between the two
+	 * re-execs) and install an arch_prctl_post_state oracle via
+	 * post_state_install() (bespoke deferred-free ownership) --
+	 * both disqualify those arms from the re-exec gate.  The
+	 * setter/scalar arms below take neither path: a2 is a pinned
+	 * scalar (or ignored), no post_state is registered, and the
+	 * kernel writes nothing user-visible outside the syscall return
+	 * slot.  Set only after the sanitise dispatch has pinned the
+	 * code, so a getter pick still carries rec->flags without
+	 * REEXEC_OK.
+	 */
+	switch (rec->a1) {
+	case ARCH_REQ_XCOMP_PERM:
+	case ARCH_REQ_XCOMP_GUEST_PERM:
+	case ARCH_ENABLE_TAGGED_ADDR:
+	case ARCH_SHSTK_LOCK:
+	case ARCH_GET_CPUID:
+	case ARCH_FORCE_TAGGED_SVA:
+		rec->flags |= REEXEC_OK;
+		break;
+	default:
+		break;
+	}
 }
 
 /*
