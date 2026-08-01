@@ -516,6 +516,19 @@ void generate_syscall_args(struct syscallrecord *rec)
 	 * values that are actually passed to the kernel. */
 	rec->arg_snapshot_mask = 0;
 
+	/* Per-invocation dynamic flag word.  Sanitise arms opt this
+	 * specific dispatch in / out of the CMP RedQueen re-exec gate via
+	 * REEXEC_OK (see include/syscall.h); reset here before sanitise
+	 * runs so a prior call's bit cannot leak into the new call.  Same
+	 * rationale as the post_state / owned_count / arg_snapshot_mask
+	 * hoists above: the re-exec gate at
+	 * random_syscall/dispatch.c:redqueen_reexec_step() reads
+	 * rec->flags AFTER the parent sanitise has run and BEFORE this
+	 * function is called for the re-exec's fresh args, so an inherited
+	 * bit from an unrelated prior dispatch would misgate the current
+	 * call. */
+	rec->flags = 0;
+
 	/* For syscalls without sanitise callbacks, try replaying a
 	 * saved arg set from the mini-corpus. If replay succeeds,
 	 * skip generic_sanitise — the args are already populated. */

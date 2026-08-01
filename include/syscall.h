@@ -252,6 +252,25 @@ struct syscallrecord {
 	 */
 	struct arg_slot_meta arg_meta[6];
 	uint32_t	arg_meta_gen;
+
+	/*
+	 * Per-invocation dynamic flag word.  Read by
+	 * random_syscall/dispatch.c's redqueen_reexec_step() gate alongside
+	 * entry->flags so a sanitise arm can declare, on a per-call basis,
+	 * that this specific dispatch is safe for the CMP RedQueen re-exec
+	 * step even when the syscall entry lacks the static
+	 * REEXEC_SANITISE_OK opt-in.  The static entry flag remains the
+	 * dominant knob for sanitisers whose EVERY arm is re-exec safe;
+	 * this dynamic word is for op-multiplexed sanitisers (setsockopt,
+	 * keyctl, prctl, ...) whose safety varies per (level, optname) /
+	 * per (cmd, arg) discriminator.  Reset to zero in
+	 * generate_syscall_args() before sanitise runs so a prior
+	 * dispatch's bit cannot leak into a call whose sanitise arm
+	 * chooses to leave it clear.  Namespace is DISTINCT from
+	 * entry->flags -- bit values here are defined alongside REEXEC_OK
+	 * below and must not be tested against entry->flags.
+	 */
+	unsigned int flags;
 };
 
 #define REC_CANARY_MAGIC	0xdeadbeefcafebabeULL
@@ -883,6 +902,28 @@ struct syscalltable {
  * tail of redqueen_reexec_step() runs unchanged.
  */
 #define REEXEC_SANITISE_OK	(1<<13)
+/*
+ * rec->flags bits (NOT entry->flags -- separate namespace on the
+ * per-invocation syscallrecord.flags word, so bit values here may
+ * overlap the entry->flags values above without conflict).  Set from
+ * a sanitise arm to communicate per-call metadata to downstream
+ * dispatcher stages.
+ *
+ * REEXEC_OK: this specific invocation is safe for the CMP RedQueen
+ * re-exec step even when the syscall entry lacks the static
+ * REEXEC_SANITISE_OK opt-in.  The dispatch gate at
+ * random_syscall/dispatch.c:redqueen_reexec_step() ORs this bit into
+ * the sanitise-bearing exclusion so op-multiplexed sanitisers can
+ * light it from arms whose payload is a fixed-size scalar (int /
+ * bool / string) with no nested pointer chains, no INOUT / output
+ * buffers, no shared-buffer relocation, and no bespoke deferred-free
+ * / post_state oracle -- the same contract REEXEC_SANITISE_OK
+ * documents, but applied per-call rather than per-entry.  Read AFTER
+ * the parent sanitise has run and BEFORE generate_syscall_args() is
+ * re-invoked for the re-exec's fresh args, so the bit reflects the
+ * arm that actually shaped the original dispatched call.
+ */
+#define REEXEC_OK		(1u << 0)
 /*
  * EXPLICITLY_EXCLUDED: this entry was named in -x at parse time and the
  * exclusion must outlive deactivate_disabled_syscalls(), which clears
