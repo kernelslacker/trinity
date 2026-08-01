@@ -497,6 +497,117 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	default:
 		break;
 	}
+
+	/*
+	 * Publish per-invocation REEXEC_OK for scalar-only prctl options
+	 * whose payload is a fixed-size scalar (int / bool / bitmask)
+	 * with no nested pointer chains, no INOUT / output buffers, no
+	 * shared-buffer relocation, and no bespoke deferred-free arm --
+	 * the post_state snapshot the second switch above registers is a
+	 * pure retval / stored-value readback oracle that stays coherent
+	 * across a CMP RedQueen re-exec (the SET is idempotent for these
+	 * scalar-only arms, and the readback compares against the
+	 * captured set_arg which does not depend on which of the two
+	 * dispatches the reaper observes).  See include/syscall.h
+	 * REEXEC_OK for the safety contract and
+	 * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
+	 * that consumes this bit -- the syscall entry lacks the static
+	 * REEXEC_SANITISE_OK because prctl multiplexes to pointer /
+	 * heap-carrying arms (PR_SET_NAME / PR_GET_NAME 16-byte comm
+	 * buffer, PR_SET_MM prctl_mm_map struct, PR_SET_VMA path
+	 * pointer, PR_SET_SECCOMP sock_fprog + bpf heap arm,
+	 * PR_GET_AUXV auxv out-buffer, PR_GET_TID_ADDRESS /
+	 * PR_GET_SHADOW_STACK_STATUS unsigned-long out-slot, and the
+	 * PR_GET_PDEATHSIG / PR_GET_UNALIGN / PR_GET_FPEMU /
+	 * PR_GET_FPEXC / PR_GET_TSC / PR_GET_ENDIAN /
+	 * PR_GET_CHILD_SUBREAPER family whose arg2 the sanitise arm
+	 * above rewrote to a shared writable out-buffer whose content
+	 * mutates between the two re-execs) that cannot ride the gate.
+	 * Retval-only getters are safe here because the kernel writes
+	 * nothing user-visible outside the syscall return slot.
+	 */
+	switch (option) {
+	/*
+	 * Pure scalar SETs.  Kernel reads the arg as an unsigned long
+	 * without dereferencing any pointer.  PR_SET_TSC /
+	 * PR_SET_SHADOW_STACK_STATUS / PR_SET_SYSCALL_USER_DISPATCH
+	 * were pinned to safe/idempotent values by their sanitise arms
+	 * above; PR_SET_NO_NEW_PRIVS is a sticky one-way bit whose
+	 * second SET is a no-op.
+	 */
+	case PR_SET_PDEATHSIG:
+	case PR_SET_DUMPABLE:
+	case PR_SET_UNALIGN:
+	case PR_SET_KEEPCAPS:
+	case PR_SET_FPEMU:
+	case PR_SET_FPEXC:
+	case PR_SET_TIMING:
+	case PR_SET_ENDIAN:
+	case PR_CAPBSET_DROP:
+	case PR_SET_TSC:
+	case PR_SET_SECUREBITS:
+	case PR_SET_TIMERSLACK:
+	case PR_TASK_PERF_EVENTS_DISABLE:
+	case PR_TASK_PERF_EVENTS_ENABLE:
+	case PR_MCE_KILL:
+	case PR_SET_CHILD_SUBREAPER:
+	case PR_SET_NO_NEW_PRIVS:
+	case PR_SET_THP_DISABLE:
+	case PR_SET_SPECULATION_CTRL:
+	case PR_SET_FP_MODE:
+	case PR_SVE_SET_VL:
+	case PR_SME_SET_VL:
+	case PR_PAC_RESET_KEYS:
+	case PR_PAC_SET_ENABLED_KEYS:
+	case PR_CAP_AMBIENT:
+	case PR_SET_TAGGED_ADDR_CTRL:
+	case PR_SET_IO_FLUSHER:
+	case PR_SET_SYSCALL_USER_DISPATCH:
+	case PR_SET_MEMORY_MERGE:
+	case PR_SET_SHADOW_STACK_STATUS:
+	case PR_LOCK_SHADOW_STACK_STATUS:
+	case PR_TIMER_CREATE_RESTORE_IDS:
+	case PR_RSEQ_SLICE_EXTENSION:
+	case PR_SET_CFI:
+	case PR_RISCV_V_SET_CONTROL:
+	case PR_RISCV_SET_ICACHE_FLUSH_CTX:
+	case PR_PPC_SET_DEXCR:
+	case PR_SET_PTRACER:
+	/*
+	 * Retval-only GETs.  Kernel returns the value via the syscall
+	 * return slot; nothing user-visible outside that slot changes.
+	 * The PR_GET_* arms excluded above (PDEATHSIG / UNALIGN / FPEMU
+	 * / FPEXC / TSC / ENDIAN / CHILD_SUBREAPER / NAME / TID_ADDRESS
+	 * / SHADOW_STACK_STATUS / AUXV) all write via arg2 or a wider
+	 * out-buffer and are not in this list.
+	 */
+	case PR_GET_DUMPABLE:
+	case PR_GET_KEEPCAPS:
+	case PR_GET_TIMING:
+	case PR_GET_SECUREBITS:
+	case PR_GET_TIMERSLACK:
+	case PR_MCE_KILL_GET:
+	case PR_GET_NO_NEW_PRIVS:
+	case PR_GET_THP_DISABLE:
+	case PR_GET_SPECULATION_CTRL:
+	case PR_GET_FP_MODE:
+	case PR_SVE_GET_VL:
+	case PR_SME_GET_VL:
+	case PR_PAC_GET_ENABLED_KEYS:
+	case PR_GET_TAGGED_ADDR_CTRL:
+	case PR_GET_IO_FLUSHER:
+	case PR_GET_SECCOMP:
+	case PR_CAPBSET_READ:
+	case PR_GET_MDWE:
+	case PR_GET_MEMORY_MERGE:
+	case PR_GET_CFI:
+	case PR_RISCV_V_GET_CONTROL:
+	case PR_PPC_GET_DEXCR:
+		rec->flags |= REEXEC_OK;
+		break;
+	default:
+		break;
+	}
 }
 
 static void post_set_seccomp(struct prctl_post_state *snap)
