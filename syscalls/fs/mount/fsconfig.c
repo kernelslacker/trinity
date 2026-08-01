@@ -163,6 +163,25 @@ static void build_valid_payload(struct syscallrecord *rec, unsigned long cmd)
 		rec->a3 = 0;
 		rec->a4 = 0;
 		rec->a5 = 0;
+		/*
+		 * Finalize scalar arm: a3/a4/a5 are all zero -- no key
+		 * pointer, no value pointer, no aux buffer, no nested
+		 * pointer chains, no INOUT / output buffers, no shared-
+		 * buffer relocation.  The .ret_objtype_via_post hook
+		 * post_fsconfig_record_fsctx_ready is idempotent under
+		 * re-exec (find_local_object_by_fd short-circuits the
+		 * duplicate publish, and the a1/a2 arg_snapshot keeps the
+		 * fd/cmd it observes bound to THIS dispatch), so it does
+		 * not disqualify REEXEC_OK.  Opt into the CMP RedQueen
+		 * re-exec gate per-invocation -- see include/syscall.h
+		 * REEXEC_OK.  The fsconfig syscall entry cannot carry the
+		 * static REEXEC_SANITISE_OK because the SET_* arms above
+		 * write key/value pointers into a3/a4 that fail the
+		 * contract, and build_mismatched_payload attaches a stray
+		 * key pointer to a3 for the same CMD_* finalize cmds --
+		 * gate the bit on the valid-payload arm only.
+		 */
+		rec->flags |= REEXEC_OK;
 		break;
 	}
 }
