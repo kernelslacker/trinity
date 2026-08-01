@@ -121,6 +121,7 @@ static void apply_slot(const void *p, void *cb_ctx __unused__)
 	switch (field) {
 	case STATS_FIELD_OP_COUNT:
 		parent_stats.op_count += delta;
+		parent_stats.total_op_count += delta;
 		break;
 	case STATS_FIELD_FAULT_INJECTED:
 		parent_stats.fault_injected += delta;
@@ -305,6 +306,7 @@ static void apply_slot(const void *p, void *cb_ctx __unused__)
 		uint8_t result = (uint8_t)s->_reserved;
 
 		parent_stats.op_count += delta;
+		parent_stats.total_op_count += delta;
 		if (aux < NR_SYSCAT)
 			parent_stats.syscall_category_count[aux] += delta;
 		if (result == STATS_RESULT_SUCCESS)

@@ -263,7 +263,14 @@ void stats_shadow_sat_tick(void)
 		s.trace_truncated = __atomic_load_n(
 			&kcov_shm->coverage.trace_truncated, __ATOMIC_RELAXED);
 	}
-	s.calls = parent_stats.op_count;
+	/*
+	 * Sample the monotonic total_op_count -- op_count is per-epoch and
+	 * reset_epoch_state() zeroes it, which would drive sat_sub_ul() to
+	 * saturate every horizon delta to zero the first tick after an
+	 * epoch boundary and mask the very yield signal we're trying to
+	 * observe.  total_op_count is the run-wide counter.
+	 */
+	s.calls = parent_stats.total_op_count;
 	s.finding_events = parent_stats.post_handler_corrupt_ptr
 		+ parent_stats.watchdog_fd_evict;
 

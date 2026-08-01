@@ -290,6 +290,26 @@ struct stats_ring {
 struct stats_aggregate {
 	unsigned long op_count;
 	unsigned long previous_op_count;
+	/*
+	 * Run-wide monotonic op counter.  Bumped alongside op_count on every
+	 * ring-drained STATS_FIELD_OP_COUNT / STATS_FIELD_CALL_COMPLETE slot
+	 * and NEVER zeroed by reset_epoch_state() -- unlike op_count, which
+	 * is a per-epoch counter.  Consumers that compute deltas across
+	 * epoch boundaries (rate reporting in print_stats, per-window
+	 * timeseries in stats/log.c, shadow soft-saturation sampling in
+	 * stats/shadow_sat.c) MUST read this field rather than op_count to
+	 * avoid an unsigned-subtraction underflow the first tick after the
+	 * epoch reset zeroes op_count while their `lastcount` still holds the
+	 * previous epoch's tail value.
+	 */
+	unsigned long total_op_count;
+	/*
+	 * Snapshot of total_op_count captured at epoch entry by
+	 * reset_epoch_state().  The per-epoch iteration limit is enforced
+	 * against (total_op_count - epoch_start_op_count), so the check is
+	 * immune to the per-epoch op_count reset.
+	 */
+	unsigned long epoch_start_op_count;
 	unsigned long successes;
 	unsigned long failures;
 	unsigned long fault_injected;
