@@ -188,7 +188,7 @@ static unsigned int pick_mounted_index(unsigned int count)
  * the per-cycle wall-clock by the accessor budget plus the
  * parent's usleep and reap_acceptor cap.
  */
-static void one_cycle(void)
+static void one_cycle(unsigned long *direct_calls)
 {
 	char path[sizeof(shm->isolation.scratch_block[0].mount_path)];
 	unsigned int count;
@@ -217,6 +217,7 @@ static void one_cycle(void)
 
 	__atomic_add_fetch(&shm->stats.umount_race.picks, 1, __ATOMIC_RELAXED);
 
+	(*direct_calls)++;
 	pid = fork();
 	if (pid < 0) {
 		__atomic_add_fetch(&shm->stats.umount_race.setup_failed, 1,
@@ -233,6 +234,7 @@ static void one_cycle(void)
 
 	(void)usleep(rnd_modulo_u32(PARENT_USLEEP_MAX));
 
+	(*direct_calls)++;
 	if (umount2(path, MNT_DETACH) == 0)
 		__atomic_add_fetch(&shm->stats.umount_race.umounts, 1,
 				   __ATOMIC_RELAXED);
@@ -241,12 +243,14 @@ static void one_cycle(void)
 				   __ATOMIC_RELAXED);
 
 	reap_acceptor(pid);
+	(*direct_calls)++; /* waitpid inside reap_acceptor. */
 }
 
 bool umount_race(struct childdata *child)
 {
 	unsigned int cycles;
 	unsigned int i;
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.umount_race.runs, 1, __ATOMIC_RELAXED);
 
@@ -286,7 +290,10 @@ bool umount_race(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < cycles; i++)
-		one_cycle();
+		one_cycle(&direct_calls);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
