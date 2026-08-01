@@ -134,6 +134,19 @@ static void sanitise_quotactl_fd(struct syscallrecord *rec)
 	case Q_QUOTAOFF:
 	case Q_SYNC:
 		rec->a4 = 0;
+		/* Scalar-only arm: a1=fd, a2=QCMD(subcmd,type),
+		 * a3=id, a4=0.  No pointer chains, no INOUT / output
+		 * buffers, no shared-buffer relocation, and no bespoke
+		 * deferred-free / post_state oracle in this file.  Opt
+		 * into the CMP RedQueen re-exec gate per-invocation:
+		 * see REEXEC_OK contract in include/syscall.h and the
+		 * gate at random_syscall/dispatch.c:redqueen_reexec_step().
+		 * The quotactl_fd syscall entry cannot carry the static
+		 * REEXEC_SANITISE_OK because sibling arms (Q_GETQUOTA /
+		 * Q_SETQUOTA / Q_GETNEXTQUOTA dqb pointer, Q_GETINFO /
+		 * Q_SETINFO dqi pointer, Q_GETFMT fmt out-pointer,
+		 * Q_QUOTAON path pointer) fail the contract. */
+		rec->flags |= REEXEC_OK;
 		break;
 	default:
 		break;
