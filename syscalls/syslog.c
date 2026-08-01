@@ -118,7 +118,7 @@ static void sanitise_syslog(struct syscallrecord *rec)
 		if (map == NULL) {
 			rec->a2 = 0;
 			rec->a3 = 0;
-			return;
+			goto out;
 		}
 
 		rec->a2 = (unsigned long) map->ptr;
@@ -140,7 +140,7 @@ static void sanitise_syslog(struct syscallrecord *rec)
 			rec->a3 = 0x80000000UL;
 
 		avoid_shared_buffer_out(&rec->a2, rec->a3);
-		return;
+		goto out;
 	}
 
 	if (class == CLASS_LEVEL) {
@@ -155,7 +155,7 @@ static void sanitise_syslog(struct syscallrecord *rec)
 			rec->a3 = 9;
 		else
 			rec->a3 = rnd_u32();
-		return;
+		goto out;
 	}
 
 	if (class == CLASS_VOID || class == CLASS_SIZE) {
@@ -166,12 +166,12 @@ static void sanitise_syslog(struct syscallrecord *rec)
 				rec->a2 = (unsigned long) map->ptr;
 				rec->a3 = rnd_modulo_u32(map->size);
 				avoid_shared_buffer_out(&rec->a2, rec->a3);
-				return;
+				goto out;
 			}
 		}
 		rec->a2 = 0;
 		rec->a3 = 0;
-		return;
+		goto out;
 	}
 
 	if (class == CLASS_INVALID) {
@@ -179,7 +179,7 @@ static void sanitise_syslog(struct syscallrecord *rec)
 
 		rec->a2 = map ? (unsigned long) map->ptr : 0;
 		rec->a3 = rnd_modulo_u32(page_size);
-		return;
+		goto out;
 	}
 
 	/* CLASS_RANDOM: keep the pre-existing page-aligned shape so
@@ -190,13 +190,20 @@ static void sanitise_syslog(struct syscallrecord *rec)
 		if (map == NULL) {
 			rec->a2 = 0;
 			rec->a3 = 0;
-			return;
+			goto out;
 		}
 
 		rec->a2 = (unsigned long) map->ptr;
 		rec->a3 = rnd_modulo_u32(map->size) & PAGE_MASK;
 		avoid_shared_buffer_out(&rec->a2, rec->a3);
 	}
+
+out:
+	/* Light REEXEC_OK when no user buffer was attached — CLASS_LEVEL always,
+	 * VOID/SIZE on their no-buffer path.  Excludes READ/RANDOM/INVALID and
+	 * any VOID/SIZE arm that attached a mmap buffer (rec->a2 != 0). */
+	if (rec->a2 == 0)
+		rec->flags |= REEXEC_OK;
 }
 
 struct syscallentry syscall_syslog = {
