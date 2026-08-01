@@ -384,7 +384,16 @@ enum tracefs_arm {
 	NR_TRACEFS_ARMS,
 };
 
-static void bump_arm_counter(enum tracefs_arm arm, enum write_outcome outcome)
+/*
+ * Bump the per-arm outcome counter and return the number of direct
+ * syscalls the caller issued to produce that outcome.  Every write path
+ * does open()+write()+close() on success or write-fail (3 syscalls) and
+ * a single open() on open-fail (1 syscall), so the count is a pure
+ * function of the outcome.  Returning it here keeps callers to a single
+ * `return bump_arm_counter(...)` tail call instead of duplicating the
+ * mapping at each callsite.
+ */
+static unsigned long bump_arm_counter(enum tracefs_arm arm, enum write_outcome outcome)
 {
 	static const size_t offsets[NR_TRACEFS_ARMS][3] = {
 		[ARM_KPROBE] = {
@@ -416,6 +425,7 @@ static void bump_arm_counter(enum tracefs_arm arm, enum write_outcome outcome)
 	unsigned long *p = (unsigned long *)((char *)&shm->stats + offsets[arm][outcome]);
 
 	__atomic_add_fetch(p, 1, __ATOMIC_RELAXED);
+	return outcome == OUTCOME_OPEN_FAIL ? 1UL : 3UL;
 }
 
 static enum write_outcome write_text_payload(const char *path, bool *bad)
@@ -454,7 +464,7 @@ static enum write_outcome write_str(const char *path, const char *str, bool *bad
  *   - Delete a named probe:   "-:trinity_k<N>"
  *   - Raw garbage for parser stress
  */
-static void do_kprobe_events(void)
+static unsigned long do_kprobe_events(void)
 {
 	char path[TRACEFS_MAX_PATH];
 	char spec[256];
@@ -465,7 +475,7 @@ static void do_kprobe_events(void)
 	ssize_t ret;
 
 	if (*bad)
-		return;
+		return 0;
 
 	snprintf(path, sizeof(path), "%s/kprobe_events", tracefs_root);
 
@@ -499,20 +509,17 @@ static void do_kprobe_events(void)
 		 * and long strings reach deeper into the parser than random bytes
 		 * that fail at the first character.
 		 */
-		bump_arm_counter(ARM_KPROBE, write_text_payload(path, bad));
-		return;
+		return bump_arm_counter(ARM_KPROBE, write_text_payload(path, bad));
 	}
 
 	fd = open_write_target(path, bad);
-	if (fd < 0) {
-		bump_arm_counter(ARM_KPROBE, OUTCOME_OPEN_FAIL);
-		return;
-	}
+	if (fd < 0)
+		return bump_arm_counter(ARM_KPROBE, OUTCOME_OPEN_FAIL);
 	ret = write(fd, spec, strlen(spec));
 	close(fd);
 
-	bump_arm_counter(ARM_KPROBE,
-			 ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
+	return bump_arm_counter(ARM_KPROBE,
+				ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
 }
 
 /*
@@ -520,7 +527,7 @@ static void do_kprobe_events(void)
  * binary path -- it always exists and is a valid ELF target.  The offset
  * will likely miss any symbol, but the parser still runs to completion.
  */
-static void do_uprobe_events(void)
+static unsigned long do_uprobe_events(void)
 {
 	char path[TRACEFS_MAX_PATH];
 	char spec[256];
@@ -531,7 +538,7 @@ static void do_uprobe_events(void)
 	ssize_t ret;
 
 	if (*bad)
-		return;
+		return 0;
 
 	snprintf(path, sizeof(path), "%s/uprobe_events", tracefs_root);
 
@@ -556,27 +563,24 @@ static void do_uprobe_events(void)
 		snprintf(spec, sizeof(spec), "-:trinity_u%u", probe_num);
 		break;
 	default:
-		bump_arm_counter(ARM_UPROBE, write_text_payload(path, bad));
-		return;
+		return bump_arm_counter(ARM_UPROBE, write_text_payload(path, bad));
 	}
 
 	fd = open_write_target(path, bad);
-	if (fd < 0) {
-		bump_arm_counter(ARM_UPROBE, OUTCOME_OPEN_FAIL);
-		return;
-	}
+	if (fd < 0)
+		return bump_arm_counter(ARM_UPROBE, OUTCOME_OPEN_FAIL);
 	ret = write(fd, spec, strlen(spec));
 	close(fd);
 
-	bump_arm_counter(ARM_UPROBE,
-			 ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
+	return bump_arm_counter(ARM_UPROBE,
+				ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
 }
 
 /*
  * Write to one of the ftrace function-filter files.  Produces glob patterns,
  * known symbol names, wildcards, and occasionally clears the filter.
  */
-static void do_ftrace_filter(void)
+static unsigned long do_ftrace_filter(void)
 {
 	static const char * const globs[] = {
 		"*",
@@ -614,7 +618,7 @@ static void do_ftrace_filter(void)
 		idx = (idx + 1) % ARRAY_SIZE(filter_files);
 	}
 	if (filter_file_inaccessible[idx])
-		return;
+		return 0;
 	path = filter_files[idx];
 	bad = &filter_file_inaccessible[idx];
 
@@ -669,18 +673,18 @@ static void do_ftrace_filter(void)
 		break;
 	}
 
-	bump_arm_counter(ARM_FILTER, outcome);
+	return bump_arm_counter(ARM_FILTER, outcome);
 }
 
 /* Write to an events subsystem enable file -- toggles tracing for a subsystem. */
-static void do_event_enable(void)
+static unsigned long do_event_enable(void)
 {
 	const char *val;
 	unsigned int idx;
 	unsigned int attempt;
 
 	if (nr_event_enables == 0)
-		return;
+		return 0;
 
 	/*
 	 * Linear-probe a small bounded window from a random start, skipping
@@ -696,23 +700,23 @@ static void do_event_enable(void)
 		idx = (idx + 1) % nr_event_enables;
 	}
 	if (event_enable_inaccessible[idx])
-		return;
+		return 0;
 
 	val = RAND_BOOL() ? "1" : "0";
-	bump_arm_counter(ARM_EVENT_ENABLE,
-			 write_str(event_enable_paths[idx], val,
-				   &event_enable_inaccessible[idx]));
+	return bump_arm_counter(ARM_EVENT_ENABLE,
+				write_str(event_enable_paths[idx], val,
+					  &event_enable_inaccessible[idx]));
 }
 
 /* Write a trace_option name (with optional "no" prefix) to trace_options. */
-static void do_trace_options(void)
+static unsigned long do_trace_options(void)
 {
 	char path[TRACEFS_MAX_PATH];
 	char option[64];
 	bool *bad = &single_path_inaccessible[SP_TRACE_OPTIONS];
 
 	if (*bad)
-		return;
+		return 0;
 
 	snprintf(path, sizeof(path), "%s/trace_options", tracefs_root);
 
@@ -723,18 +727,18 @@ static void do_trace_options(void)
 		snprintf(option, sizeof(option), "no%s",
 			 RAND_ARRAY(trace_option_names));
 
-	bump_arm_counter(ARM_MISC, write_str(path, option, bad));
+	return bump_arm_counter(ARM_MISC, write_str(path, option, bad));
 }
 
 /* Switch the current tracer -- exercises the tracer registration path. */
-static void do_current_tracer(void)
+static unsigned long do_current_tracer(void)
 {
 	char path[TRACEFS_MAX_PATH];
 	bool *bad = &single_path_inaccessible[SP_CURRENT_TRACER];
 	enum write_outcome outcome;
 
 	if (*bad)
-		return;
+		return 0;
 
 	snprintf(path, sizeof(path), "%s/current_tracer", tracefs_root);
 
@@ -745,25 +749,25 @@ static void do_current_tracer(void)
 	else
 		outcome = write_str(path, RAND_ARRAY(tracer_names), bad);
 
-	bump_arm_counter(ARM_MISC, outcome);
+	return bump_arm_counter(ARM_MISC, outcome);
 }
 
 /* Toggle tracing on/off. */
-static void do_tracing_on(void)
+static unsigned long do_tracing_on(void)
 {
 	char path[TRACEFS_MAX_PATH];
 	bool *bad = &single_path_inaccessible[SP_TRACING_ON];
 
 	if (*bad)
-		return;
+		return 0;
 
 	snprintf(path, sizeof(path), "%s/tracing_on", tracefs_root);
-	bump_arm_counter(ARM_MISC,
-			 write_str(path, RAND_BOOL() ? "1" : "0", bad));
+	return bump_arm_counter(ARM_MISC,
+				write_str(path, RAND_BOOL() ? "1" : "0", bad));
 }
 
 /* Resize the ring buffer -- exercises the buffer reallocation path. */
-static void do_buffer_size(void)
+static unsigned long do_buffer_size(void)
 {
 	char path[TRACEFS_MAX_PATH];
 	char val[32];
@@ -773,11 +777,11 @@ static void do_buffer_size(void)
 	};
 
 	if (*bad)
-		return;
+		return 0;
 
 	snprintf(path, sizeof(path), "%s/buffer_size_kb", tracefs_root);
 	snprintf(val, sizeof(val), "%u", RAND_ARRAY(sizes));
-	bump_arm_counter(ARM_MISC, write_str(path, val, bad));
+	return bump_arm_counter(ARM_MISC, write_str(path, val, bad));
 }
 
 /*
@@ -797,7 +801,7 @@ enum tracefs_subset {
 };
 
 struct tracefs_op {
-	void (*fn)(void);
+	unsigned long (*fn)(void);
 	unsigned int required;
 	unsigned int weight;
 };
@@ -935,6 +939,8 @@ bool tracefs_fuzzer(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
-	pick_table[rnd_modulo_u32(nr_picks)]->fn();
+	unsigned long direct_calls = pick_table[rnd_modulo_u32(nr_picks)]->fn();
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
