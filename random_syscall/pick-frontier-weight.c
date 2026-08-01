@@ -428,11 +428,12 @@ unsigned long frontier_cold_weight(unsigned int nr,
  * floor keeps a zero-weight syscall reachable, matching the cold-
  * weight degrade-safe contract.
  *
- * Conversion accounting (CMP inserts that translate into NEW PC edges)
- * is not yet a per-syscall counter in kcov_shm; ranking on the two
- * inserts proxies alone is the deliberate first cut here.  A follow-up
- * that adds per-syscall conversion accounting can layer a third term
- * into this helper without changing the call site.
+ * Conversion accounting layers a third term on top of the two
+ * inserts proxies: per-syscall cmp-hint injections and their PC-edge
+ * plus transition wins are read from cmp_hint_ps and folded into a
+ * bounded conv_bonus (see the sample-size floor and scaling
+ * rationale on the block below) so proven converters are lifted
+ * above flat peers in the same insert-volume tier.
  */
 /*
  * Sample-size floor for the conversion-rate bonus.  Below this many
