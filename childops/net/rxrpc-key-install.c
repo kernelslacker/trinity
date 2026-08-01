@@ -134,7 +134,7 @@ static void ring_drop(int32_t *ring, int32_t serial)
  * mutation.  Failure errnos that mean "key type not registered" latch the
  * unsupported flag for the rest of the process; transient errnos (EDQUOT,
  * EPERM from a restrictive keyring policy) do not latch. */
-static void probe_rxrpc_key_supported(void)
+static void probe_rxrpc_key_supported(unsigned long *direct_calls)
 {
 	long rc;
 
@@ -142,6 +142,7 @@ static void probe_rxrpc_key_supported(void)
 		return;
 	probe_done = true;
 
+	(*direct_calls)++;
 	rc = trinity_raw_syscall(__NR_add_key, "rxrpc", "trinity-rxrpc-probe",
 		     NULL, (size_t) 0,
 		     (unsigned long) KEY_SPEC_THREAD_KEYRING);
@@ -279,12 +280,14 @@ static void build_xdr_rxgk_inner(unsigned char *buf, size_t *off,
  * Returns the new serial on success, 0 on failure (and bumps stats).
  */
 static int32_t do_add_rxrpc(const char *desc,
-			    const void *payload, size_t paylen)
+			    const void *payload, size_t paylen,
+			    unsigned long *direct_calls)
 {
 	long rc;
 
 	__atomic_add_fetch(&shm->stats.rxrpc_key_install.calls,
 			   1, __ATOMIC_RELAXED);
+	(*direct_calls)++;
 	rc = trinity_cmp_syscall(__NR_add_key, "rxrpc", desc, payload, paylen,
 		     (unsigned long) KEY_SPEC_THREAD_KEYRING);
 	if (rc < 0) {
@@ -310,12 +313,14 @@ static int32_t do_add_rxrpc(const char *desc,
  * pressure regime.
  */
 static int32_t do_add_rxrpc_s(const char *desc,
-			      const void *payload, size_t paylen)
+			      const void *payload, size_t paylen,
+			      unsigned long *direct_calls)
 {
 	long rc;
 
 	__atomic_add_fetch(&shm->stats.rxrpc_key_install.calls,
 			   1, __ATOMIC_RELAXED);
+	(*direct_calls)++;
 	rc = trinity_cmp_syscall(__NR_add_key, "rxrpc_s", desc, payload, paylen,
 		     (unsigned long) KEY_SPEC_THREAD_KEYRING);
 	if (rc < 0) {
@@ -327,19 +332,21 @@ static int32_t do_add_rxrpc_s(const char *desc,
 	return (int32_t) rc;
 }
 
-static void arm_null(int32_t *ring, unsigned int iter)
+static void arm_null(int32_t *ring, unsigned int iter,
+		     unsigned long *direct_calls)
 {
 	char desc[64];
 	int32_t serial;
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-null-%u-%u",
 		 (unsigned int) mypid(), iter);
-	serial = do_add_rxrpc(desc, NULL, 0);
+	serial = do_add_rxrpc(desc, NULL, 0, direct_calls);
 	if (serial != 0)
 		ring_insert(ring, serial);
 }
 
-static void arm_short_random(int32_t *ring, unsigned int iter)
+static void arm_short_random(int32_t *ring, unsigned int iter,
+			     unsigned long *direct_calls)
 {
 	unsigned char buf[28];
 	size_t paylen;
@@ -355,12 +362,13 @@ static void arm_short_random(int32_t *ring, unsigned int iter)
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-short-%u-%u",
 		 (unsigned int) mypid(), iter);
-	serial = do_add_rxrpc(desc, buf, paylen);
+	serial = do_add_rxrpc(desc, buf, paylen, direct_calls);
 	if (serial != 0)
 		ring_insert(ring, serial);
 }
 
-static void arm_v1_binary(int32_t *ring, unsigned int iter)
+static void arm_v1_binary(int32_t *ring, unsigned int iter,
+			  unsigned long *direct_calls)
 {
 	unsigned char buf[256];
 	size_t off = 0;
@@ -418,12 +426,13 @@ static void arm_v1_binary(int32_t *ring, unsigned int iter)
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-v1-%u-%u",
 		 (unsigned int) mypid(), iter);
-	serial = do_add_rxrpc(desc, buf, off);
+	serial = do_add_rxrpc(desc, buf, off, direct_calls);
 	if (serial != 0)
 		ring_insert(ring, serial);
 }
 
-static void arm_xdr_envelope(int32_t *ring, unsigned int iter)
+static void arm_xdr_envelope(int32_t *ring, unsigned int iter,
+			     unsigned long *direct_calls)
 {
 	unsigned char buf[512];
 	size_t off = 0;
@@ -483,12 +492,13 @@ static void arm_xdr_envelope(int32_t *ring, unsigned int iter)
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xdr-%u-%u",
 		 (unsigned int) mypid(), iter);
-	serial = do_add_rxrpc(desc, buf, off);
+	serial = do_add_rxrpc(desc, buf, off, direct_calls);
 	if (serial != 0)
 		ring_insert(ring, serial);
 }
 
-static void arm_xdr_rxkad(int32_t *ring, unsigned int iter)
+static void arm_xdr_rxkad(int32_t *ring, unsigned int iter,
+			  unsigned long *direct_calls)
 {
 	unsigned char buf[1024];
 	size_t off = 0;
@@ -529,7 +539,7 @@ static void arm_xdr_rxkad(int32_t *ring, unsigned int iter)
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xrxkad-%u-%u",
 		 (unsigned int) mypid(), iter);
-	serial = do_add_rxrpc(desc, buf, off);
+	serial = do_add_rxrpc(desc, buf, off, direct_calls);
 	if (serial != 0)
 		ring_insert(ring, serial);
 }
@@ -608,7 +618,8 @@ static int64_t pick_xrxgk_endtime(void)
 	}
 }
 
-static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
+static void arm_xdr_rxgk(int32_t *ring, unsigned int iter,
+			 unsigned long *direct_calls)
 {
 	unsigned char buf[1024];
 	size_t off = 0;
@@ -683,7 +694,7 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xrxgk-%u-%u",
 		 (unsigned int) mypid(), iter);
-	serial = do_add_rxrpc(desc, buf, off);
+	serial = do_add_rxrpc(desc, buf, off, direct_calls);
 	if (serial != 0) {
 		/* Penetration marker: only bumped when the kernel returned a
 		 * key serial, which means the XDR-RXGK token cleared every
@@ -698,7 +709,8 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 	}
 }
 
-static void arm_server_key(int32_t *ring, unsigned int iter __unused__)
+static void arm_server_key(int32_t *ring, unsigned int iter __unused__,
+			   unsigned long *direct_calls)
 {
 	unsigned char buf[64];
 	char desc[96];
@@ -711,7 +723,7 @@ static void arm_server_key(int32_t *ring, unsigned int iter __unused__)
 
 		generate_rand_bytes(buf, 8);
 		snprintf(desc, sizeof(desc), "%u:%u", svc, RXKAD_SEC_IDX);
-		serial = do_add_rxrpc_s(desc, buf, 8);
+		serial = do_add_rxrpc_s(desc, buf, 8, direct_calls);
 	} else {
 		/* RXGK server key.  description "<svc>:6:<kvno>:<enctype>",
 		 * payload length must equal krb5->key_len for the named
@@ -723,7 +735,7 @@ static void arm_server_key(int32_t *ring, unsigned int iter __unused__)
 		generate_rand_bytes(buf, (unsigned int) paylen);
 		snprintf(desc, sizeof(desc), "%u:%u:%u:%u",
 			 svc, RXGK_SEC_IDX, kvno, 17u);
-		serial = do_add_rxrpc_s(desc, buf, paylen);
+		serial = do_add_rxrpc_s(desc, buf, paylen, direct_calls);
 
 		/* One in eight server-key iterations also tries an
 		 * intentionally bad description to drive the
@@ -732,7 +744,7 @@ static void arm_server_key(int32_t *ring, unsigned int iter __unused__)
 		if (rnd_modulo_u32(8) == 0) {
 			snprintf(desc, sizeof(desc), "%u:%u:%u",
 				 svc, 0xffu, kvno);
-			(void) do_add_rxrpc_s(desc, buf, 8);
+			(void) do_add_rxrpc_s(desc, buf, 8, direct_calls);
 		}
 	}
 	if (serial != 0)
@@ -743,7 +755,7 @@ static void arm_server_key(int32_t *ring, unsigned int iter __unused__)
  * This drives the rxrpc_destroy() / rxrpc_destroy_s() paths and the
  * security-specific token-list teardown (rxgk_free_server_key,
  * crypto_free_skcipher on rxkad's pcbc(des) instance). */
-static void teardown_one(int32_t *ring)
+static void teardown_one(int32_t *ring, unsigned long *direct_calls)
 {
 	int32_t serial = ring_pick(ring);
 	long rc;
@@ -752,6 +764,7 @@ static void teardown_one(int32_t *ring)
 		return;
 
 	if (RAND_BOOL()) {
+		(*direct_calls)++;
 		rc = trinity_cmp_syscall(__NR_keyctl, (unsigned long) KEYCTL_REVOKE,
 			     (unsigned long) serial, 0UL, 0UL, 0UL);
 		if (rc == 0)
@@ -761,6 +774,7 @@ static void teardown_one(int32_t *ring)
 		 * naturally so subsequent picks land on a -EKEYREVOKED
 		 * read path too. */
 	} else {
+		(*direct_calls)++;
 		rc = trinity_cmp_syscall(__NR_keyctl, (unsigned long) KEYCTL_UNLINK,
 			     (unsigned long) serial,
 			     (unsigned long) KEY_SPEC_THREAD_KEYRING,
@@ -779,6 +793,7 @@ bool rxrpc_key_install(struct childdata *child)
 	struct timespec start;
 	unsigned int iter;
 	unsigned int iters;
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.rxrpc_key_install.runs,
 			   1, __ATOMIC_RELAXED);
@@ -792,12 +807,14 @@ bool rxrpc_key_install(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	probe_rxrpc_key_supported();
+	probe_rxrpc_key_supported(&direct_calls);
 	if (unsupported_rxrpc_key_install) {
-		if (valid_op)
+		if (valid_op) {
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
+			childop_direct_syscalls_add(op, direct_calls);
+		}
 		return true;
 	}
 
@@ -819,25 +836,25 @@ bool rxrpc_key_install(struct childdata *child)
 
 		switch (arm) {
 		case ARM_NULL:
-			arm_null(live, iter);
+			arm_null(live, iter, &direct_calls);
 			break;
 		case ARM_SHORT_RANDOM:
-			arm_short_random(live, iter);
+			arm_short_random(live, iter, &direct_calls);
 			break;
 		case ARM_V1_BINARY:
-			arm_v1_binary(live, iter);
+			arm_v1_binary(live, iter, &direct_calls);
 			break;
 		case ARM_XDR_ENVELOPE:
-			arm_xdr_envelope(live, iter);
+			arm_xdr_envelope(live, iter, &direct_calls);
 			break;
 		case ARM_XDR_RXKAD:
-			arm_xdr_rxkad(live, iter);
+			arm_xdr_rxkad(live, iter, &direct_calls);
 			break;
 		case ARM_XDR_RXGK:
-			arm_xdr_rxgk(live, iter);
+			arm_xdr_rxgk(live, iter, &direct_calls);
 			break;
 		case ARM_SERVER_KEY:
-			arm_server_key(live, iter);
+			arm_server_key(live, iter, &direct_calls);
 			break;
 		case ARM_NR:
 			break;
@@ -847,18 +864,23 @@ bool rxrpc_key_install(struct childdata *child)
 		 * destroy paths exercised even when EDQUOT capped the
 		 * recent add_keys to zero new serials. */
 		if ((iter & 3) == 3)
-			teardown_one(live);
+			teardown_one(live, &direct_calls);
 
 		if (unsupported_rxrpc_key_install) {
-			if (valid_op)
+			if (valid_op) {
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
+				childop_direct_syscalls_add(op, direct_calls);
+			}
 			return true;
 		}
 		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
