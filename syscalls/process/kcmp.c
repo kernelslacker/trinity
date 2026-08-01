@@ -34,6 +34,7 @@ static void sanitise_kcmp(struct syscallrecord *rec)
 	case KCMP_FILE:
 		rec->a4 = get_random_fd();
 		rec->a5 = get_random_fd();
+		rec->flags |= REEXEC_OK;
 		return;
 
 	case KCMP_EPOLL_TFD:
@@ -56,6 +57,8 @@ static void sanitise_kcmp(struct syscallrecord *rec)
 		 * random fd when the pool is empty. */
 		rec->a4 = (unsigned long) get_typed_fd(ARG_FD_EPOLL);
 		rec->a5 = (unsigned long) slot;
+		/* No REEXEC_OK: a5 holds a per-call userspace pointer;
+		 * a resubmission would race free/reuse of the struct. */
 		return;
 
 	default:
@@ -64,6 +67,7 @@ static void sanitise_kcmp(struct syscallrecord *rec)
 
 	rec->a4 = 0;
 	rec->a5 = 0;
+	rec->flags |= REEXEC_OK;
 }
 
 static void post_kcmp(struct syscallrecord *rec)
@@ -90,5 +94,4 @@ struct syscallentry syscall_kcmp = {
 	.sanitise = sanitise_kcmp,
 	.post = post_kcmp,
 	.rettype = RET_BORING,
-	.flags = REEXEC_SANITISE_OK,
 };
