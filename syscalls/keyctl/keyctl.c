@@ -143,6 +143,18 @@ static void sanitise_keyctl_get_keyring_id(struct syscallrecord *rec)
 	/* arg2=key, arg3=create flag */
 	rec->a2 = (unsigned long) random_key_id();
 	rec->a3 = RAND_BOOL();
+
+	/* Scalar-only arm: both slots are plain integers with no nested
+	 * pointer chains, no INOUT / output buffers, no shared-buffer
+	 * relocation, and no bespoke deferred-free / post_state oracle.
+	 * Opt into the CMP RedQueen re-exec gate per-invocation -- see
+	 * include/syscall.h REEXEC_OK and
+	 * random_syscall/dispatch.c:redqueen_reexec_step().  The keyctl
+	 * syscall entry cannot carry the static REEXEC_SANITISE_OK
+	 * because other arms (update, read_like, search, instantiate,
+	 * capabilities, watch_key, ...) have pointer / output / shared-
+	 * buffer-relocation shape that fails the contract. */
+	rec->flags |= REEXEC_OK;
 }
 
 static void sanitise_keyctl_join_session_keyring(struct syscallrecord *rec)
@@ -175,6 +187,14 @@ static void sanitise_keyctl_join_session_keyring(struct syscallrecord *rec)
 sess_done:
 		rec->a2 = (unsigned long) buf;
 	}
+
+	/* String-payload arm: a2 is either NULL (anonymous join) or a
+	 * pointer to a fresh per-child, stable, NUL-terminated key
+	 * description in writable memory.  No nested pointer chains, no
+	 * INOUT / output buffer, no shared-buffer relocation, and no
+	 * bespoke deferred-free / post_state oracle -- fits REEXEC_OK's
+	 * "string" scalar payload class.  See include/syscall.h. */
+	rec->flags |= REEXEC_OK;
 }
 
 static void sanitise_keyctl_update(struct syscallrecord *rec)
@@ -196,6 +216,11 @@ static void sanitise_keyctl_key_only(struct syscallrecord *rec)
 {
 	/* arg2=key */
 	rec->a2 = (unsigned long) random_key_id();
+
+	/* Scalar-only arm: single integer slot.  See REEXEC_OK contract
+	 * in include/syscall.h.  Covers KEYCTL_REVOKE / KEYCTL_CLEAR /
+	 * KEYCTL_INVALIDATE / KEYCTL_ASSUME_AUTHORITY. */
+	rec->flags |= REEXEC_OK;
 }
 
 static void sanitise_keyctl_chown(struct syscallrecord *rec)
@@ -204,6 +229,10 @@ static void sanitise_keyctl_chown(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) random_key_id();
 	rec->a3 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
 	rec->a4 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
+
+	/* Scalar-only arm: three integer slots.  See REEXEC_OK contract
+	 * in include/syscall.h. */
+	rec->flags |= REEXEC_OK;
 }
 
 static void sanitise_keyctl_setperm(struct syscallrecord *rec)
@@ -211,6 +240,10 @@ static void sanitise_keyctl_setperm(struct syscallrecord *rec)
 	/* arg2=key, arg3=perm mask */
 	rec->a2 = (unsigned long) random_key_id();
 	rec->a3 = rand32();
+
+	/* Scalar-only arm: two integer slots.  See REEXEC_OK contract
+	 * in include/syscall.h. */
+	rec->flags |= REEXEC_OK;
 }
 
 static void sanitise_keyctl_read_like(struct syscallrecord *rec)
@@ -272,6 +305,10 @@ static void sanitise_keyctl_set_reqkey_keyring(struct syscallrecord *rec)
 {
 	/* arg2=reqkey destination */
 	rec->a2 = rnd_modulo_u32(8);	/* KEY_REQKEY_DEFL_* range */
+
+	/* Scalar-only arm: single integer slot.  See REEXEC_OK contract
+	 * in include/syscall.h. */
+	rec->flags |= REEXEC_OK;
 }
 
 static void sanitise_keyctl_set_timeout(struct syscallrecord *rec)
@@ -279,6 +316,10 @@ static void sanitise_keyctl_set_timeout(struct syscallrecord *rec)
 	/* arg2=key, arg3=timeout_secs */
 	rec->a2 = (unsigned long) random_key_id();
 	rec->a3 = rnd_modulo_u32(3600);
+
+	/* Scalar-only arm: two integer slots.  See REEXEC_OK contract
+	 * in include/syscall.h. */
+	rec->flags |= REEXEC_OK;
 }
 
 static void sanitise_keyctl_instantiate(struct syscallrecord *rec)
@@ -324,6 +365,13 @@ static void sanitise_keyctl_get_persistent(struct syscallrecord *rec)
 	/* arg2=uid, arg3=dest_keyring */
 	rec->a2 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
 	rec->a3 = (unsigned long) random_key_id();
+
+	/* Scalar-only arm: two integer slots.  See REEXEC_OK contract
+	 * in include/syscall.h.  post_keyctl registers the returned
+	 * persistent-keyring serial into OBJ_KEY_SERIAL, which is
+	 * additive to the pool and does not gate any deferred-free /
+	 * post_state oracle -- safe under the contract. */
+	rec->flags |= REEXEC_OK;
 }
 
 static void sanitise_keyctl_capabilities(struct syscallrecord *rec)
