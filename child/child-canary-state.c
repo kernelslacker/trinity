@@ -432,9 +432,27 @@ void enter_canarying(enum child_op_type op)
 			&kcov_shm->childop_kcov.childop_kcov_op_attempts[op],
 			__ATOMIC_RELAXED)
 		: 0;
-	s->window_start_kcov_op_bracketed = kcov_shm
+	/* Per-reason snapshots.  Close-time deltas let the retry gate
+	 * label the window by rejection reason: the CMP arm is retry-
+	 * eligible (re-drawing the kcov mode can land a PC-mode child
+	 * next window), the nested arm is a lifecycle-invariant violation
+	 * (caller-side bug -- retry cannot help; reported instead), and
+	 * the inactive arm reflects a run-wide config a retry cannot
+	 * turn on.  Only "skipped_cmp_delta == attempts_delta" windows
+	 * are eligible for the pre-demote PC-trial retry. */
+	s->window_start_kcov_op_skipped_cmp = kcov_shm
 		? __atomic_load_n(
-			&kcov_shm->childop_kcov.childop_kcov_op_bracketed[op],
+			&kcov_shm->childop_kcov.childop_kcov_op_skipped_cmp[op],
+			__ATOMIC_RELAXED)
+		: 0;
+	s->window_start_kcov_op_skipped_nested = kcov_shm
+		? __atomic_load_n(
+			&kcov_shm->childop_kcov.childop_kcov_op_skipped_nested[op],
+			__ATOMIC_RELAXED)
+		: 0;
+	s->window_start_kcov_op_skipped_inactive = kcov_shm
+		? __atomic_load_n(
+			&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
 			__ATOMIC_RELAXED)
 		: 0;
 
@@ -940,45 +958,80 @@ void close_window_and_decide(enum child_op_type op)
 
 	{
 		/* PC-trial retry gate: the window failed to accrue clean edges
-		 * AND cannot be attributed to a fair PC-mode trial.  Every
-		 * canary-slot child that dispatched this op during the window
-		 * fell into an outer-bracket reject arm (dominantly
-		 * KCOV_MODE_CMP -- see kcov_bracket_begin) so childop_edges_
+		 * AND every canary-slot dispatch of this op landed in the CMP-
+		 * mode reject arm of kcov_bracket_begin() (childop_edges_
 		 * clean[op] could not have grown regardless of the op's actual
-		 * productivity.  Demoting on this signal loses coverage: an op
-		 * that would pay off under PC mode is cut on a cmp-mode-only
-		 * observation.  Re-canary instead, up to CANARY_PC_TRIAL_
+		 * productivity).  Re-canary instead, up to CANARY_PC_TRIAL_
 		 * RETRIES_MAX times; each re-entry kills the slot children and
 		 * forces a fresh kcov-mode draw at respawn, giving a subsequent
 		 * window another chance to land on a PC-mode child.
 		 *
+		 * Per-reason deltas are what makes the "CMP-only" label sound:
+		 * bracketed_delta == 0 alone conflates the CMP arm (retry can
+		 * help) with the nested arm (lifecycle-invariant violation --
+		 * a caller-side bug; retry cannot help) and the inactive arm
+		 * (kcov attribution off run-wide; retry cannot turn it on).
+		 * The invariant
+		 *   attempts == bracketed + skipped_cmp + skipped_nested
+		 *             + skipped_inactive
+		 * means skipped_cmp_delta == attempts_delta is exactly the
+		 * shape "attempts > 0 AND every reject was CMP-mode" -- the
+		 * only shape a mode-redraw retry can improve.  Any other mix
+		 * falls through to the standard demote path so a productive
+		 * op is not demoted on a false zero-bracket signal from a
+		 * window whose rejects were dominated by a caller-side or
+		 * config-side confound.
+		 *
 		 * Guards:
-		 *   attempts_delta > 0     the outer bracket was actually
-		 *                          engaged this window; with 0 attempts
-		 *                          childop-kcov attribution is off run-
-		 *                          wide and a retry cannot help.
-		 *   bracketed_delta == 0   every attempt was rejected; not a
-		 *                          fair PC-mode trial.
-		 *   retries < MAX          bounded so a pathological all-CMP
-		 *                          config still terminates. */
+		 *   attempts_delta > 0          the outer bracket was actually
+		 *                               engaged this window; with 0
+		 *                               attempts childop-kcov attri-
+		 *                               bution is off run-wide.
+		 *   skipped_cmp_delta ==        ALL rejects were CMP-mode;
+		 *     attempts_delta            no nested / inactive noise.
+		 *   retries < MAX               bounded so a pathological
+		 *                               all-CMP config terminates. */
 		unsigned long now_attempts = kcov_shm
 			? __atomic_load_n(
 				&kcov_shm->childop_kcov.childop_kcov_op_attempts[op],
 				__ATOMIC_RELAXED)
 			: 0;
-		unsigned long now_bracketed = kcov_shm
+		unsigned long now_skipped_cmp = kcov_shm
 			? __atomic_load_n(
-				&kcov_shm->childop_kcov.childop_kcov_op_bracketed[op],
+				&kcov_shm->childop_kcov.childop_kcov_op_skipped_cmp[op],
+				__ATOMIC_RELAXED)
+			: 0;
+		unsigned long now_skipped_nested = kcov_shm
+			? __atomic_load_n(
+				&kcov_shm->childop_kcov.childop_kcov_op_skipped_nested[op],
 				__ATOMIC_RELAXED)
 			: 0;
 		unsigned long attempts_delta =
 			(now_attempts > s->window_start_kcov_op_attempts)
 			? (now_attempts - s->window_start_kcov_op_attempts) : 0;
-		unsigned long bracketed_delta =
-			(now_bracketed > s->window_start_kcov_op_bracketed)
-			? (now_bracketed - s->window_start_kcov_op_bracketed) : 0;
+		unsigned long skipped_cmp_delta =
+			(now_skipped_cmp > s->window_start_kcov_op_skipped_cmp)
+			? (now_skipped_cmp - s->window_start_kcov_op_skipped_cmp) : 0;
+		unsigned long skipped_nested_delta =
+			(now_skipped_nested > s->window_start_kcov_op_skipped_nested)
+			? (now_skipped_nested - s->window_start_kcov_op_skipped_nested) : 0;
 
-		if (attempts_delta > 0 && bracketed_delta == 0 &&
+		/* Nested-rejection breadcrumb: a nested reject means an outer
+		 * bracket was already owned when the childop dispatch tried to
+		 * open its own -- a lifecycle-invariant violation on the
+		 * caller side (a stray bracket outlived its scope, or an inner
+		 * childop nested a call that itself opens a bracket).  Retry
+		 * cannot fix it; the counter (childop_kcov_op_skipped_nested
+		 * [op]) already logs the raw count run-wide, so we just report
+		 * the per-window observation so operators can correlate with
+		 * the op that surfaced it. */
+		if (skipped_nested_delta > 0) {
+			output(0, "canary: %s nested-rejection observed: skipped_nested_delta=%lu attempts_delta=%lu (lifecycle-invariant violation in kcov_bracket_begin; not retry-eligible) in %lu iters\n",
+				s->name, skipped_nested_delta,
+				attempts_delta, iters);
+		}
+
+		if (attempts_delta > 0 && skipped_cmp_delta == attempts_delta &&
 		    s->consecutive_no_pc_bracket < CANARY_PC_TRIAL_RETRIES_MAX) {
 			s->consecutive_no_pc_bracket++;
 			output(0, "canary: %s pre-demote PC-trial retry %u/%u: %lu bracket attempts opened 0 (kcov_mode_cmp children only; edges=%lu noisy_edges_seen=%lu in %lu iters); re-canarying to re-draw slot kcov mode\n",
