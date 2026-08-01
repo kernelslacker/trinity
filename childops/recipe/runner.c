@@ -42,49 +42,61 @@
  * missing CONFIG_*, etc.).  The dispatcher latches the recipe off in
  * shm so siblings stop probing.  Non-discoverable recipes leave the
  * pointer NULL.
+ *
+ * direct_syscalls is a per-recipe estimate of the number of raw
+ * kernel calls a single successful pass issues (construction +
+ * intermediate use + teardown).  Recipes don't thread a counter back
+ * up through r->run(), so the runner publishes this constant via
+ * childop_direct_syscalls_add() once the recipe has been dispatched;
+ * see the comment on that publish site for the rationale.  A
+ * mispricing here only skews the direct_syscalls diagnostic in
+ * child-altop-score output — nothing feedback-loops on it.  Race /
+ * loop-driven recipes give the per-attempt fixed cost, not the
+ * unbounded inner-iter total.
  */
 struct recipe {
 	const char *name;
 	bool (*run)(bool *unsupported);
+	unsigned int direct_syscalls;
 };
 
 static const struct recipe recipes[] = {
-	{ "timerfd",      recipe_timerfd      },
-	{ "eventfd",      recipe_eventfd      },
-	{ "pipe",         recipe_pipe         },
-	{ "epoll",        recipe_epoll        },
-	{ "signalfd",     recipe_signalfd     },
-	{ "memfd_seal",   recipe_memfd_seal   },
-	{ "tcp_server",   recipe_tcp_server   },
-	{ "inotify",      recipe_inotify      },
-	{ "shmget",       recipe_shmget       },
-	{ "msgget",       recipe_msgget       },
-	{ "semget",       recipe_semget       },
-	{ "posix_timer",  recipe_posix_timer  },
-	{ "mq_open",      recipe_mq_open      },
-	{ "futex",        recipe_futex        },
-	{ "fanotify",     recipe_fanotify     },
-	{ "userfaultfd",  recipe_userfaultfd  },
-	{ "vfs_leases",   recipe_vfs_leases   },
-	{ "mm_vma",       recipe_mm_vma       },
-	{ "mm_memfd",     recipe_mm_memfd     },
-	{ "net_unix_gc",  recipe_net_unix_gc  },
-	{ "net_tcp",      recipe_net_tcp      },
-	{ "net_unix_oob", recipe_net_unix_oob },
-	{ "net_raw",      recipe_net_raw      },
-	{ "fsnotify_xwatch", recipe_fsnotify_xwatch },
-	{ "uffd_wp",      recipe_uffd_wp      },
-	{ "timerfd_xclose", recipe_timerfd_xclose },
-	{ "signalfd_delivery", recipe_signalfd_delivery },
-	{ "epoll_xclose", recipe_epoll_xclose },
-	{ "iouring_fixed_uaf", recipe_iouring_fixed_uaf },
-	{ "bpf_htab_iter_del", recipe_bpf_htab_iter_del },
-	{ "perf_mmap_close", recipe_perf_mmap_close },
-	{ "keys_revoke_race", recipe_keys_revoke_race },
-	{ "ptrace_seize_exitkill", recipe_ptrace_seize_exitkill },
-	{ "mount_userns_dance", recipe_mount_userns_dance },
-	{ "seccomp_listener_exec", recipe_seccomp_listener_exec },
-	{ "cgroup_kill_events", recipe_cgroup_kill_events },
+	{ "timerfd",      recipe_timerfd,      5  },
+	{ "eventfd",      recipe_eventfd,      5  },
+	{ "pipe",         recipe_pipe,         9  },
+	{ "epoll",        recipe_epoll,        8  },
+	{ "signalfd",     recipe_signalfd,     5  },
+	{ "memfd_seal",   recipe_memfd_seal,   7  },
+	{ "tcp_server",   recipe_tcp_server,   10 },
+	{ "inotify",      recipe_inotify,      6  },
+	{ "shmget",       recipe_shmget,       6  },
+	{ "msgget",       recipe_msgget,       5  },
+	{ "semget",       recipe_semget,       6  },
+	{ "posix_timer",  recipe_posix_timer,  6  },
+	{ "mq_open",      recipe_mq_open,      7  },
+	{ "futex",        recipe_futex,        3  },
+	{ "fanotify",     recipe_fanotify,     6  },
+	{ "userfaultfd",  recipe_userfaultfd,  7  },
+	{ "vfs_leases",   recipe_vfs_leases,   6  },
+	{ "mm_vma",       recipe_mm_vma,       6  },
+	{ "mm_memfd",     recipe_mm_memfd,     5  },
+	{ "net_unix_gc",  recipe_net_unix_gc,  8  },
+	{ "net_tcp",      recipe_net_tcp,      10 },
+	{ "net_unix_oob", recipe_net_unix_oob, 9  },
+	{ "net_raw",      recipe_net_raw,      7  },
+	{ "fsnotify_xwatch", recipe_fsnotify_xwatch, 12 },
+	{ "uffd_wp",      recipe_uffd_wp,      10 },
+	{ "timerfd_xclose", recipe_timerfd_xclose, 6  },
+	{ "signalfd_delivery", recipe_signalfd_delivery, 13 },
+	{ "epoll_xclose", recipe_epoll_xclose, 14 },
+	{ "iouring_fixed_uaf", recipe_iouring_fixed_uaf, 6  },
+	{ "bpf_htab_iter_del", recipe_bpf_htab_iter_del, 10 },
+	{ "perf_mmap_close", recipe_perf_mmap_close, 12 },
+	{ "keys_revoke_race", recipe_keys_revoke_race, 8  },
+	{ "ptrace_seize_exitkill", recipe_ptrace_seize_exitkill, 10 },
+	{ "mount_userns_dance", recipe_mount_userns_dance, 5  },
+	{ "seccomp_listener_exec", recipe_seccomp_listener_exec, 5  },
+	{ "cgroup_kill_events", recipe_cgroup_kill_events, 5  },
 };
 
 /*
@@ -159,6 +171,19 @@ bool recipe_runner(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.recipe.partial, 1,
 				   __ATOMIC_RELAXED);
 	}
+
+	/* Publish a per-recipe direct-syscall estimate for the altop
+	 * score window.  Recipes don't thread a running counter back up
+	 * through r->run(), so we credit the recipe's construction +
+	 * teardown constant on every dispatch regardless of ok — a
+	 * partial pass still burned kernel entries getting to the point
+	 * of failure, and the counter is a cumulative diagnostic, not a
+	 * success metric.  Gated on valid_op to match the setup_accepted
+	 * / data_path bumps above; childop_direct_syscalls_add()
+	 * bounds-checks op independently but the local gate keeps the
+	 * shm-poisoning story consistent across all three bumps. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, r->direct_syscalls);
 
 	return true;
 }
