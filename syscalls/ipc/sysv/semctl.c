@@ -216,6 +216,53 @@ static void sanitise_semctl(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) pick_semnum((int) rec->a1);
 
 	build_semun_arg(rec);
+
+	/*
+	 * Publish per-invocation REEXEC_OK for the cmd arms whose payload
+	 * is a fixed-size scalar (or fully ignored) with no pointer-slot
+	 * write, no INOUT / output buffer, and no post_state oracle -- the
+	 * contract documented at include/syscall.h REEXEC_OK, consumed by
+	 * random_syscall/dispatch.c:redqueen_reexec_step().  The syscall
+	 * entry lacks the static REEXEC_SANITISE_OK because build_semun_arg
+	 * multiplexes to buffer-carrying arms (GETALL / SETALL fill an
+	 * unsigned-short array with avoid_shared_buffer_inout / _out
+	 * relocation, IPC_STAT / SEM_STAT / SEM_STAT_ANY / IPC_INFO /
+	 * SEM_INFO route through ipcctl_post_state_alloc + poison-output
+	 * readback oracle, IPC_SET copies sem_perm.uid/.gid/.mode out of
+	 * an INOUT semid_ds) that cannot ride the gate.
+	 */
+	switch ((int) rec->a3) {
+	/*
+	 * SETVAL: kernel reads u.val as an int by value out of a4 with no
+	 * pointer deref (see build_semun_arg SETVAL arm) -- pure scalar
+	 * input, no post_state.
+	 */
+	case SETVAL:
+	/*
+	 * Retval-only readers: the kernel answers via the syscall return
+	 * slot and ignores arg4 entirely.  build_semun_arg's default arm
+	 * leaves a4 as the random-pool address routed through
+	 * avoid_shared_buffer_out(), but the kernel never dereferences it
+	 * for these cmds, so the relocation is a no-op input-wise.  No
+	 * post_state oracle is registered on these arms.
+	 */
+	case GETVAL:
+	case GETPID:
+	case GETNCNT:
+	case GETZCNT:
+	/*
+	 * IPC_RMID: arg4 ignored, removes the sem set.  The re-exec's
+	 * second RMID on an already-removed id returns -EINVAL, which is
+	 * a stable retval outcome the CMP RedQueen reaper handles
+	 * identically to the first dispatch -- no post_state, no
+	 * pointer-slot write, no shared-buffer INOUT.
+	 */
+	case IPC_RMID:
+		rec->flags |= REEXEC_OK;
+		break;
+	default:
+		break;
+	}
 }
 
 static void post_semctl(struct syscallrecord *rec)
