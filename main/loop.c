@@ -233,13 +233,23 @@ static bool check_main_loop_stops(const struct timespec *epoch_start)
 	}
 
 	unsigned long op = parent_stats.op_count;
+	/*
+	 * Epoch iteration budget is measured against the monotonic
+	 * total_op_count minus the snapshot taken at epoch entry, so the
+	 * check remains correct even though op_count itself is zeroed by
+	 * reset_epoch_state().  Prior code compared op_count directly,
+	 * which underflowed no signal here (both zero) but skewed the
+	 * partner rate/timeseries paths that also read op_count.
+	 */
+	unsigned long epoch_ops = parent_stats.total_op_count
+		- parent_stats.epoch_start_op_count;
 
 	if (syscalls_todo && (op >= syscalls_todo)) {
 		output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
 		panic(EXIT_REACHED_COUNT);
 	}
 
-	if (epoch_iterations && (op >= epoch_iterations)) {
+	if (epoch_iterations && (epoch_ops >= epoch_iterations)) {
 		output(0, "Epoch iteration limit %lu reached.\n", epoch_iterations);
 		panic(EXIT_EPOCH_DONE);
 	}
@@ -580,6 +590,15 @@ void reset_epoch_state(void)
 
 	parent_stats.op_count = 0;
 	parent_stats.previous_op_count = 0;
+	/*
+	 * total_op_count is the run-wide monotonic counter; snapshot it
+	 * here so check_main_loop_stops() can enforce the epoch iteration
+	 * limit as (total_op_count - epoch_start_op_count).  Do NOT zero
+	 * total_op_count itself -- rate reporting, per-window timeseries
+	 * and shadow_sat sampling read it as a monotonic clock across
+	 * epoch boundaries.
+	 */
+	parent_stats.epoch_start_op_count = parent_stats.total_op_count;
 
 	if (shm_published != NULL)
 		__atomic_store_n(&shm_published->fleet_op_count, 0UL,

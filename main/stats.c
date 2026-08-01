@@ -426,7 +426,16 @@ static void print_stats_pool_ratio(void)
 
 void print_stats(void)
 {
-	unsigned long op_count = parent_stats.op_count;
+	/*
+	 * Rate reporting, per-window timeseries and shadow_sat sampling
+	 * all key off a delta against `lastcount`.  parent_stats.op_count
+	 * is a per-epoch counter that reset_epoch_state() zeroes; using
+	 * it here would underflow (op_count - lastcount) into a bogus
+	 * multi-gigaop delta on the first tick after an epoch boundary,
+	 * spiking the reported rate and the timeseries yield to garbage.
+	 * The monotonic total_op_count is safe across epochs.
+	 */
+	unsigned long op_count = parent_stats.total_op_count;
 
 	if (quiet)
 		return;
