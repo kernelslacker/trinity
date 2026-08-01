@@ -266,6 +266,7 @@ bool eth_emitter(struct childdata *child)
 	unsigned int pick;
 	size_t len;
 	ssize_t rc;
+	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.eth_emitter.runs, 1, __ATOMIC_RELAXED);
 
@@ -307,6 +308,7 @@ bool eth_emitter(struct childdata *child)
 
 	rc = sendto(eth_fd, frame, len, 0,
 	            (struct sockaddr *)&sll, sizeof(sll));
+	direct_calls++;
 	if (rc > 0) {
 		__atomic_add_fetch(&shm->stats.eth_emitter.sends_ok,
 		                   1, __ATOMIC_RELAXED);
@@ -316,5 +318,9 @@ bool eth_emitter(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.eth_emitter.sends_failed,
 		                   1, __ATOMIC_RELAXED);
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+
 	return true;
 }
