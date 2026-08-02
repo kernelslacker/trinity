@@ -144,7 +144,24 @@
  * (helper return -EAGAIN) do not set this — they may not recur on the
  * next iteration. */
 static bool ns_unsupported;
-static bool lo_up_done;
+
+/* Per-grandchild "lo up" setup latch lives in shm
+ * (shm->bridge_conntrack_lo_up_done).  Write site sits inside the
+ * userns_run_in_ns() grandchild body -- a process-local static would
+ * die with the grandchild and every subsequent invocation would re-pay
+ * the "lo up" rtnetlink round-trip.  RELAXED atomic load/store is
+ * safe: only false -> true, idempotent write. */
+static bool lo_up_done(void)
+{
+	return __atomic_load_n(&shm->bridge_conntrack_lo_up_done,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_lo_up_done(void)
+{
+	__atomic_store_n(&shm->bridge_conntrack_lo_up_done, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Per-subsystem config-absent gates live in shm
  * (shm->bridge_ct_churn_ns_unsupported_{bridge,nf_tables,ctnetlink}).
@@ -609,14 +626,14 @@ static int bridge_conntrack_iter_setup_names(struct bridge_conntrack_iter_ctx *c
 	/* nl_open success issued socket + bind + setsockopt (recv_timeo_s
 	 * > 0 above). */
 	ctx->direct_calls += 3;
-	if (!lo_up_done) {
+	if (!lo_up_done()) {
 		rtnl_bring_lo_up(&ctx->rtnl);
 		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
 		 * when the lo lookup succeeds; the if_nametoindex libc probe
 		 * stays unattributed to match the surrounding per-childop
 		 * convention. */
 		ctx->direct_calls += 2;
-		lo_up_done = true;
+		mark_lo_up_done();
 	}
 
 	rng = (unsigned int)(rand32() & 0xffffu);
