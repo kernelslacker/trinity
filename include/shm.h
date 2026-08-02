@@ -460,6 +460,21 @@ struct shm_s {
 	bool tc_live_ns_unsupported_inet;
 	bool tc_live_ns_unsupported_xdp;
 
+	/* tc/live-traffic per-grandchild setup latches (childops/net/tc/
+	 * live-traffic.c).  Written inside the userns_run_in_ns()
+	 * grandchild -- a process-local static would die with the
+	 * grandchild on _exit() and every subsequent invocation would
+	 * re-pay the full lo-up / modprobe cost forever.  Living in shm
+	 * lets one successful "lo up" or one modprobe attempt persist
+	 * fleet-wide.  RELAXED atomic load/store is safe -- only
+	 * false -> true, idempotent write. */
+	bool tc_live_lo_brought_up;
+	bool tc_live_modprobe_tried_ingress;
+	bool tc_live_modprobe_tried_matchall;
+	bool tc_live_modprobe_tried_cls_bpf;
+	bool tc_live_modprobe_tried_act_mirred;
+	bool tc_live_modprobe_tried_act_police;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the
