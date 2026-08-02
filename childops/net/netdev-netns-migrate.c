@@ -126,20 +126,45 @@ static const char * const nnm_kind_names[NNM_KIND_NR] = {
 	[NNM_KIND_GRETAP]	= "gretap",
 };
 
-/* Master gate.  Persistent across iterations in the persistent fuzz
- * child.  Set only when userns_run_in_ns() returns -EPERM (hardened
- * userns policy refused CLONE_NEWUSER -- user.max_user_namespaces=0
- * or kernel.unprivileged_userns_clone=0) or on EPERM from the initial
- * RTM_NEWLINK inside the grandchild.  Writes from inside the
- * grandchild only affect the grandchild's COW copy, so the
- * persistent-child latch is authoritatively driven by the outer
- * wrapper's helper-EPERM branch. */
-static bool ns_unsupported_netdev_migrate;
-/* Secondary gate: post-migration IFF_UP returned EOPNOTSUPP for the
- * rolled kind.  Bump inm_drive_unsupported_observed once per child
- * so a missing bring-up path doesn't kill the whole childop -- create
- * + migrate + teardown still walk. */
-static bool ns_unsupported_drive;
+/* Master and drive gates live in shm (shm->ns_unsupported_netdev_migrate
+ * and shm->ns_unsupported_netdev_migrate_drive).  latch_master() is
+ * called from mixed sites: the create/migrate/drive paths run inside
+ * the userns_run_in_ns() grandchild, where a process-local static
+ * would die with the grandchild on _exit() and every subsequent
+ * invocation would re-attempt the same unsupported RTM_NEWLINK /
+ * setns / unshare forever (latch-in-grandchild bug).  The outer
+ * wrapper also calls latch_master() on userns_run_in_ns() -EPERM
+ * where a static would survive -- moving to shm makes both callers
+ * work correctly.  The drive gate is written only inside the
+ * grandchild after post-migration IFF_UP returns EOPNOTSUPP -- pure
+ * grandchild leak in the static-storage form.  RELAXED atomic
+ * load/store from multiple grandchildren is safe -- only
+ * false -> true, and the write is idempotent. */
+
+static bool ns_unsupported_netdev_migrate(void)
+{
+	return __atomic_load_n(&shm->ns_unsupported_netdev_migrate,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_netdev_migrate(void)
+{
+	__atomic_store_n(&shm->ns_unsupported_netdev_migrate, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_drive(void)
+{
+	return __atomic_load_n(&shm->ns_unsupported_netdev_migrate_drive,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_drive(void)
+{
+	__atomic_store_n(&shm->ns_unsupported_netdev_migrate_drive, true,
+			 __ATOMIC_RELAXED);
+}
+
 static __u32 g_iter;
 
 struct nnm_iter_ctx {
@@ -158,9 +183,9 @@ struct nnm_iter_ctx {
 
 static void latch_master(struct childdata *child)
 {
-	if (ns_unsupported_netdev_migrate)
+	if (ns_unsupported_netdev_migrate())
 		return;
-	ns_unsupported_netdev_migrate = true;
+	mark_ns_unsupported_netdev_migrate();
 	{
 		const enum child_op_type op = child->op_type;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
@@ -499,8 +524,8 @@ static void nnm_iter_drive_target(struct nnm_iter_ctx *ctx,
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.netdev_netns_migrate.up_ok,
 				   1, __ATOMIC_RELAXED);
-	} else if (rc == -EOPNOTSUPP && !ns_unsupported_drive) {
-		ns_unsupported_drive = true;
+	} else if (rc == -EOPNOTSUPP && !ns_unsupported_drive()) {
+		mark_ns_unsupported_drive();
 		__atomic_add_fetch(&shm->stats.netdev_netns_migrate.drive_unsupported_observed,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -583,7 +608,7 @@ bool netdev_netns_migrate(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.netdev_netns_migrate.iters, 1, __ATOMIC_RELAXED);
 
-	if (ns_unsupported_netdev_migrate)
+	if (ns_unsupported_netdev_migrate())
 		return true;
 
 	iters = BUDGETED(CHILD_OP_NETDEV_NETNS_MIGRATE, NNM_OUTER_BASE);
@@ -608,7 +633,7 @@ bool netdev_netns_migrate(struct childdata *child)
 			 * not policy and may not recur. */
 			continue;
 		}
-		if (ns_unsupported_netdev_migrate)
+		if (ns_unsupported_netdev_migrate())
 			return true;
 	}
 
