@@ -498,6 +498,18 @@ struct shm_s {
 	bool mpls_route_ns_unsupported_mpls;
 	bool mpls_route_ns_unsupported_lwtunnel;
 
+	/* xfrm-churn per-grandchild setup latches (childops/net/xfrm/
+	 * xfrm-churn.c: lo_brought_up / ns_unsupported_iptfs /
+	 * ns_unsupported_zerocopy are written inside the
+	 * userns_run_in_ns() grandchild -- a process-local static would
+	 * die with the grandchild on _exit() and every subsequent call
+	 * would re-pay the full rtnetlink / SA-install / setsockopt cost.
+	 * RELAXED atomic load/store is safe -- only false -> true, and
+	 * the write is idempotent. */
+	bool xfrm_churn_lo_brought_up;
+	bool xfrm_churn_ns_unsupported_iptfs;
+	bool xfrm_churn_ns_unsupported_zerocopy;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the
