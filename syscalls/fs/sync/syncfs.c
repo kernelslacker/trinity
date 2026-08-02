@@ -37,6 +37,6 @@ struct syscallentry syscall_syncfs = {
 	.argname = { [0] = "fd" },
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_syncfs,
-	.flags = NEED_ALARM | EXPENSIVE,
+	.flags = NEED_ALARM | EXPENSIVE | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_SYNC,
 };

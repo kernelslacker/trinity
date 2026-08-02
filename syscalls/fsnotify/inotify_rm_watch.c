@@ -22,7 +22,7 @@ struct syscallentry syscall_inotify_rm_watch = {
 	.argtype = { [0] = ARG_FD_INOTIFY },
 	.argname = { [0] = "fd", [1] = "wd" },
 	.sanitise = sanitise_inotify_rm_watch,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 	.rettype = RET_ZERO_SUCCESS,
 };

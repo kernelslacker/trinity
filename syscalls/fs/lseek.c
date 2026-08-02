@@ -91,6 +91,6 @@ struct syscallentry syscall_lseek = {
 	.rettype = RET_BORING,
 	.sanitise = sanitise_lseek,
 	.post = post_lseek,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 };

@@ -214,4 +214,5 @@ struct syscallentry syscall_shmget = {
 	.rettype = RET_BORING,
 	.post = post_shmget,
 	.sanitise = sanitise_shmget,
+	.flags = REEXEC_SANITISE_OK,
 };

@@ -67,4 +67,5 @@ struct syscallentry syscall_nice = {
 	.post = post_nice,
 	.group = GROUP_SCHED,
 	.rettype = RET_BORING,
+	.flags = REEXEC_SANITISE_OK,
 };

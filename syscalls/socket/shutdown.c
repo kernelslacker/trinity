@@ -36,7 +36,7 @@ struct syscallentry syscall_shutdown = {
 	.argname = { [0] = "fd", [1] = "how" },
 	.arg_params[1].list = ARGLIST(shutdown_hows),
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_shutdown,
 };

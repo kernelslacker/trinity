@@ -49,4 +49,5 @@ struct syscallentry syscall_io_destroy = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_io_destroy,
+	.flags = REEXEC_SANITISE_OK,
 };

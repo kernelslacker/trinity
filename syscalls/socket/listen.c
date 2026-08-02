@@ -44,7 +44,7 @@ struct syscallentry syscall_listen = {
 	.arg_params[1].range.low = 0,
 	.arg_params[1].range.hi = 128,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_listen,
 };

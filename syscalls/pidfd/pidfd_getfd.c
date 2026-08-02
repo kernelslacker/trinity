@@ -31,6 +31,7 @@ struct syscallentry syscall_pidfd_getfd = {
 	.rettype = RET_FD,
 #ifdef PIDFD_SELF_THREAD
 	.sanitise = sanitise_pidfd_getfd,
+	.flags = REEXEC_SANITISE_OK,
 #endif
 	.post = generic_post_close_fd,
 };

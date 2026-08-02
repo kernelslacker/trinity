@@ -127,4 +127,5 @@ struct syscallentry syscall_ioprio_set = {
 	.sanitise = sanitise_ioprio_set,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_SCHED,
+	.flags = REEXEC_SANITISE_OK,
 };

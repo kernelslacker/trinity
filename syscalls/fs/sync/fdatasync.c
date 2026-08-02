@@ -38,7 +38,7 @@ struct syscallentry syscall_fdatasync = {
 	.argtype = { [0] = ARG_FD },
 	.argname = { [0] = "fd" },
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM | EXPENSIVE,
+	.flags = NEED_ALARM | EXPENSIVE | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_SYNC,
 	.sanitise = sanitise_fdatasync,
 };
