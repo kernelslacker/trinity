@@ -22,6 +22,8 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "rnd.h"
 #include "shm.h"
@@ -115,6 +117,22 @@ static ssize_t scm_send_one_fd(int sock, int fd)
  */
 bool recipe_net_unix_gc(bool *unsupported __unused__)
 {
+	/* Snapshot the recipe-runner childop under which we're executing
+	 * and publish once up front so the direct-syscall reporter
+	 * attributes this invocation's raw kernel entries (socketpair /
+	 * sendmsg / close) to the parent op regardless of which early-
+	 * return path the dispatch takes.  Bounds-check matches the
+	 * surrounding valid_op gate in recipe_runner. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	int sv1[2] = { -1, -1 };
 	int sv2[2] = { -1, -1 };
 	bool ok = false;
@@ -227,6 +245,16 @@ static void *tcp_racer_thread(void *arg)
 
 bool recipe_net_tcp(bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	unsigned int cycles;
 	unsigned int i;
 	unsigned int spawn_fail_streak = 0;
@@ -349,6 +377,16 @@ bool recipe_net_tcp(bool *unsupported __unused__)
  */
 bool recipe_uffd_wp(bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct uffdio_api api;
 	struct uffdio_register reg;
 	struct uffdio_range range;
@@ -493,6 +531,16 @@ out:
  */
 bool recipe_fsnotify_xwatch(bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	char path[64];
 	char buf[1024];
 	int wfd = -1;
@@ -590,6 +638,16 @@ out:
  */
 bool recipe_net_raw(bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	static const int protos[] = {
 		IPPROTO_RAW,
 		IPPROTO_ICMP,
@@ -672,6 +730,16 @@ bool recipe_net_raw(bool *unsupported)
  */
 bool recipe_net_unix_oob(bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	int sv[2] = { -1, -1 };
 	char buf[16];
 	char oob;
