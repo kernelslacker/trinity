@@ -607,7 +607,7 @@ void dump_proc_self_status(void)
 	char *p, *eol;
 	int fd;
 
-	fd = open("/proc/self/status", O_RDONLY);
+	fd = open("/proc/self/status", O_RDONLY | O_CLOEXEC);
 	if (fd < 0)
 		return;
 	n = read(fd, buf, sizeof(buf) - 1);

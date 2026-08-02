@@ -163,7 +163,7 @@ static bool read_manifest(uint64_t *gen_out,
 	if (path == NULL)
 		return false;
 
-	fd = open(path, O_RDONLY);
+	fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (fd < 0)
 		return false;
 
