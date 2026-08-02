@@ -90,7 +90,63 @@ bool ns_unsupported_inet;
 static bool ns_unsupported_algo[NR_XFRM_ALGOS];
 static bool modprobe_tried_algo[NR_XFRM_ALGOS];
 
-static bool lo_brought_up;
+/* Per-grandchild setup latches live in shm (shm->xfrm_churn_
+ * lo_brought_up / ns_unsupported_iptfs / ns_unsupported_zerocopy).
+ * The write sites sit inside the userns_run_in_ns() grandchild -- a
+ * process-local static would die with the grandchild on _exit() and
+ * every subsequent invocation would re-pay the "lo up" rtnetlink
+ * round-trip, the iptfs NEWSA EFAIL and the SO_ZEROCOPY setsockopt
+ * EFAIL forever (latch-in-grandchild bug).  Shared shm state means
+ * one successful lo-up / one iptfs reject / one zerocopy reject per
+ * fleet rather than per grandchild.  RELAXED atomic load/store from
+ * multiple grandchildren is safe -- only false -> true, idempotent. */
+
+static bool lo_brought_up(void)
+{
+	return __atomic_load_n(&shm->xfrm_churn_lo_brought_up,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_lo_brought_up(void)
+{
+	__atomic_store_n(&shm->xfrm_churn_lo_brought_up, true,
+			 __ATOMIC_RELAXED);
+}
+
+/* CONFIG_XFRM_IPTFS is compiled out unless CONFIG_XFRM_IPTFS is set;
+ * where it is, bursts route through xfrm_iptfs.c (iptfs_output ->
+ * iptfs_output_queued -> iptfs_consume_frags) ahead of the ESP
+ * encrypt.  First NEWSA rejection sets this latch so subsequent
+ * install_sa invocations skip the iptfs coin without re-paying the
+ * EFAIL. */
+static bool ns_unsupported_iptfs(void)
+{
+	return __atomic_load_n(&shm->xfrm_churn_ns_unsupported_iptfs,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_iptfs(void)
+{
+	__atomic_store_n(&shm->xfrm_churn_ns_unsupported_iptfs, true,
+			 __ATOMIC_RELAXED);
+}
+
+/* SO_ZEROCOPY on the inner UDP socket: setsockopt rejection is static
+ * for the kernel's lifetime (CONFIG_MSG_ZEROCOPY off / kernel < 5.0 /
+ * lockdown variant) so we pay the EFAIL once and then skip the
+ * zerocopy branch entirely.  The regular copying sendto path remains
+ * available unchanged. */
+static bool ns_unsupported_zerocopy(void)
+{
+	return __atomic_load_n(&shm->xfrm_churn_ns_unsupported_zerocopy,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_zerocopy(void)
+{
+	__atomic_store_n(&shm->xfrm_churn_ns_unsupported_zerocopy, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Master gate: persistent across iterations in the persistent child.
  * Set when userns_run_in_ns returns -EPERM (hardened userns policy
@@ -109,26 +165,6 @@ static void warn_once_unsupported_xfrm_churn(const char *reason, int err)
 	outputerr("xfrm_churn: %s failed (errno=%d), latching unsupported_xfrm_churn\n",
 		  reason, err);
 }
-
-/*
- * Per-child latch for iptfs-mode SA support.  CONFIG_XFRM_IPTFS is
- * compiled out unless CONFIG_XFRM_IPTFS is set; where it is, it
- * lights up and the bursts route through xfrm_iptfs.c
- * (iptfs_output -> iptfs_output_queued -> iptfs_consume_frags) ahead
- * of the ESP encrypt.  First NEWSA rejection sets this latch so
- * subsequent install_sa invocations skip the iptfs coin without
- * re-paying the EFAIL.
- */
-static bool ns_unsupported_iptfs;
-
-/*
- * Per-child latch for SO_ZEROCOPY support on the inner UDP socket.
- * setsockopt rejection is static for the kernel's lifetime
- * (CONFIG_MSG_ZEROCOPY off / kernel < 5.0 / lockdown variant) so we
- * pay the EFAIL once and then skip the zerocopy branch entirely.  The
- * regular copying sendto path remains available unchanged.
- */
-static bool ns_unsupported_zerocopy;
 
 static void modprobe_algo(unsigned int idx)
 {
@@ -324,7 +360,7 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 	const enum child_op_type op = ctx->child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (!lo_brought_up) {
+	if (!lo_brought_up()) {
 		struct nl_ctx rtnl = { .fd = -1 };
 		struct nl_open_opts rtnl_opts = {
 			.proto        = NETLINK_ROUTE,
@@ -335,7 +371,7 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 			rtnl_bring_lo_up(&rtnl);
 			nl_close(&rtnl);
 		}
-		lo_brought_up = true;
+		mark_lo_brought_up();
 	}
 
 	if (nl_open(&ctx->nl, &opts) < 0) {
@@ -410,7 +446,7 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 	 * without it; present where it is enabled).  Latched per
 	 * child on first rejection so the EFAIL is paid once. */
 	if (ctx->def->kind == XFRM_ALG_AEAD &&
-	    !ns_unsupported_iptfs && ONE_IN(8))
+	    !ns_unsupported_iptfs() && ONE_IN(8))
 		ctx->mode = XFRM_MODE_IPTFS;
 
 	modprobe_algo(ctx->aidx);
@@ -424,7 +460,7 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 			 * rejected our SA shape.  Latch the iptfs branch
 			 * off, leave the algo latch alone so transport /
 			 * tunnel AEAD installs keep working. */
-			ns_unsupported_iptfs = true;
+			mark_ns_unsupported_iptfs();
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
@@ -504,10 +540,10 @@ static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 	 * keep this fd as copying-sendto only without re-paying the
 	 * EFAIL; the burst dispatcher checks the latch before rolling
 	 * the zerocopy coin. */
-	if (!ns_unsupported_zerocopy &&
+	if (!ns_unsupported_zerocopy() &&
 	    setsockopt(ctx->udp, SOL_SOCKET, SO_ZEROCOPY,
 		       &one, sizeof(one)) < 0)
-		ns_unsupported_zerocopy = true;
+		mark_ns_unsupported_zerocopy();
 }
 
 /*
@@ -543,7 +579,7 @@ static void xfrm_churn_iter_drive_burst(struct xfrm_churn_iter_ctx *ctx)
 	 * is ~1 in 4 iterations per child — sparse enough that the
 	 * zerocopy errqueue drain can't perturb the rekey race window,
 	 * dense enough that the COW branch is reached steadily. */
-	if (!ns_unsupported_zerocopy && ONE_IN(8))
+	if (!ns_unsupported_zerocopy() && ONE_IN(8))
 		sent = drive_inner_traffic_zc(ctx->udp, iters, &t0);
 	else
 		sent = drive_inner_traffic(ctx->udp, iters, &t0);
