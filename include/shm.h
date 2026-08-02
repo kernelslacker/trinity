@@ -382,6 +382,15 @@ struct shm_s {
 	bool fou_gue_mcast_rx_kind_unsupported;
 	bool geneve_rx_kind_unsupported;
 	bool bareudp_rx_kind_unsupported;
+	/* bareudp-rx per-grandchild lo-up latch (childops/net/
+	 * bareudp-rx.c).  Written inside the userns_run_in_ns()
+	 * grandchild's bareudp_rx_in_ns() path -- a process-local static
+	 * would die with the grandchild on _exit() and every subsequent
+	 * invocation would re-pay the rtnetlink "lo up" round-trip
+	 * forever.  Living in shm lets one successful lo-up persist
+	 * fleet-wide.  RELAXED atomic load/store is safe -- only
+	 * false -> true, idempotent write. */
+	bool bareudp_rx_lo_brought_up;
 	bool mpls_label_stack_rx_kind_unsupported;
 	bool espintcp_coalesce_kind_unsupported;
 #define VETH_XDP_NR_KINDS 4
