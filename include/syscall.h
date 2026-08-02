@@ -887,10 +887,21 @@ struct syscalltable {
  * gate in redqueen_reexec_step() excludes every sanitise-bearing entry
  * because a generic .sanitise re-run can resurrect freed pointer slots
  * or stomp the captured slot pin; this flag is the auditable opt-in for
- * the small set of sanitisers whose ownership is well-understood --
- * sanitisers that populate ONLY fixed-size input structs (or strings)
- * with no nested pointer chains, no INOUT / output buffers, no shared-
- * buffer relocation, and no bespoke deferred-free / post_state oracle.
+ * the small set of sanitisers whose non-arg-generation side effects are
+ * either absent or safely re-runnable.  The bar is NOT "fixed-size input
+ * structs only" -- generate_syscall_args() re-runs in full for the
+ * re-exec, resetting rec->post_state / owned_count / arg_snapshot_mask /
+ * rec->flags to zero and re-invoking the entry's sanitise from a clean
+ * slate, so INOUT buffers, output buffers, shared-buffer relocation
+ * (avoid_shared_buffer_*), rec_own registrations, and post_state oracles
+ * are all fine: each re-exec allocates its own set and the inner
+ * dispatch_step's cleanup path drains them independently of the parent's
+ * already-drained owned[] / released post_state.  The disqualifiers are
+ * side effects that DO NOT belong to the args and cannot be replayed
+ * without observable consequence -- global registrations, one-shot
+ * resource claims, helper-process spawns, external-state mutations --
+ * or a sanitise whose slot layout perturbs the RedQueen pin target
+ * across runs.
  *
  * The re-exec contract for a flagged entry is unchanged from the
  * sanitise-free path: generate_syscall_args() runs in full so the
