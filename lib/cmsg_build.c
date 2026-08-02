@@ -138,6 +138,25 @@ static int build_scm_rights(struct msghdr *m)
 	size_t plen = nfds * sizeof(int);
 	int fds[2];
 	unsigned int i;
+	int tries;
+
+	/*
+	 * Populate the fd array first.  A single get_random_fd() == -1
+	 * (budget-exhausted / empty provider pool) makes scm_fp_copy()
+	 * bail with -EBADF before unix_attach_fds() runs, discarding the
+	 * whole sendmsg.  Reroll each slot up to FAILED_FD_REROLL_LIMIT
+	 * times; if a slot still can't be filled, skip this cmsg entirely
+	 * so the caller falls back to another control-path shape.
+	 */
+	for (i = 0; i < nfds; i++) {
+		for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
+			fds[i] = get_random_fd();
+			if (fds[i] >= 0)
+				break;
+		}
+		if (fds[i] < 0)
+			return -1;
+	}
 
 	void *buf = get_writable_struct(CMSG_SPACE(plen));
 	if (buf == NULL)
@@ -150,8 +169,6 @@ static int build_scm_rights(struct msghdr *m)
 	cmsg->cmsg_level = SOL_SOCKET;
 	cmsg->cmsg_type = SCM_RIGHTS;
 	cmsg->cmsg_len = CMSG_LEN(plen);
-	for (i = 0; i < nfds; i++)
-		fds[i] = get_random_fd();
 	memcpy(CMSG_DATA(cmsg), fds, plen);
 	return 0;
 }
@@ -728,7 +745,23 @@ static int build_cmsg_multi(struct msghdr *m, unsigned int family)
 		cmsg->cmsg_len = CMSG_LEN(chosen[i].plen);
 		if (chosen[i].level == SOL_SOCKET &&
 		    chosen[i].type == SCM_RIGHTS) {
-			int fd = get_random_fd();
+			int fd = -1;
+			int tries;
+
+			/*
+			 * Reroll on -1 (see build_scm_rights): a bad fd in
+			 * the SCM_RIGHTS slot makes scm_fp_copy() fail with
+			 * -EBADF and discards the whole sendmsg.  If the
+			 * reroll budget is exhausted, skip the entire multi-
+			 * cmsg build so the caller can try another shape.
+			 */
+			for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
+				fd = get_random_fd();
+				if (fd >= 0)
+					break;
+			}
+			if (fd < 0)
+				return -1;
 			memcpy(CMSG_DATA(cmsg), &fd, sizeof(fd));
 		} else if (chosen[i].fill != NULL) {
 			chosen[i].fill(CMSG_DATA(cmsg));
