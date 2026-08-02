@@ -62,6 +62,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "shm.h"
 #include "trinity.h"
@@ -305,6 +306,19 @@ struct netns_teardown_iter_ctx {
 	int	s_accept;
 	pid_t	pid;
 	struct childdata *child;
+	/* Direct-syscall tally accumulated across every phase helper of
+	 * this iteration.  Bumped at each raw syscall site: open (1),
+	 * unshare (1), bring_up_loopback (nl_open == 3 socket+bind+
+	 * setsockopt for recv_timeo_s > 0, two nl_send_recv wrappers == 2
+	 * sendmsg+recv each, nl_close == 1), each socket / bind / listen /
+	 * getsockname / connect / accept / setns / close in the sock-pair
+	 * and setns-back phases, fork (1), kill (1), waitpid (1).  The
+	 * child_pump body runs in a forked great-grandchild -- its
+	 * send/recv/fcntl calls are separate PIDs and are NOT counted here.
+	 * The caller in netns_teardown_churn_in_ns() folds this per-iter
+	 * tally into its own accumulator across the outer loop and
+	 * publishes once via childop_direct_syscalls_add(). */
+	unsigned long direct_calls;
 };
 
 /*
@@ -317,6 +331,7 @@ struct netns_teardown_iter_ctx {
  */
 static int netns_teardown_iter_setup_ns(struct netns_teardown_iter_ctx *it)
 {
+	it->direct_calls++;
 	it->nsfd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
 	if (it->nsfd < 0) {
 		__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
@@ -324,17 +339,29 @@ static int netns_teardown_iter_setup_ns(struct netns_teardown_iter_ctx *it)
 		return -1;
 	}
 
+	it->direct_calls++;
 	if (unshare(CLONE_NEWNET) < 0) {
 		__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		close(it->nsfd);
+		it->direct_calls++;
 		it->nsfd = -1;
 		return -1;
 	}
 	__atomic_add_fetch(&shm->stats.netns_teardown.unshare_ok,
 			   1, __ATOMIC_RELAXED);
 
-	(void)bring_up_loopback();
+	/* bring_up_loopback(): on success drives nl_open (socket + bind +
+	 * setsockopt for recv_timeo_s == 3), two nl_send_recv wrappers
+	 * (sendmsg + recv each == 2 apiece for the RTM_NEWADDR and
+	 * RTM_NEWLINK), and nl_close (== 1) -- 8 total.  On nl_open failure
+	 * we still paid the socket/bind attempts; approximate that with a
+	 * conservative 3.  Small over/underestimate at this granularity is
+	 * fine and matches the level bridge-conntrack-churn accounts at. */
+	if (bring_up_loopback() == 0)
+		it->direct_calls += 8;
+	else
+		it->direct_calls += 3;
 	return 0;
 }
 
@@ -352,6 +379,7 @@ static int netns_teardown_iter_sock_pair(struct netns_teardown_iter_ctx *it)
 	struct sockaddr_in addr;
 	socklen_t addrlen;
 
+	it->direct_calls++;
 	it->s_listen = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (it->s_listen < 0)
 		return -1;
@@ -360,22 +388,28 @@ static int netns_teardown_iter_sock_pair(struct netns_teardown_iter_ctx *it)
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(0x7f000001U);
 	addr.sin_port = 0;
+	it->direct_calls++;
 	if (bind(it->s_listen, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 		return -1;
+	it->direct_calls++;
 	if (listen(it->s_listen, 4) < 0)
 		return -1;
 
 	addrlen = sizeof(addr);
+	it->direct_calls++;
 	if (getsockname(it->s_listen, (struct sockaddr *)&addr, &addrlen) < 0)
 		return -1;
 
+	it->direct_calls++;
 	it->s_conn = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	if (it->s_conn < 0)
 		return -1;
+	it->direct_calls++;
 	if (connect(it->s_conn, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
 	    errno != EINPROGRESS)
 		return -1;
 
+	it->direct_calls++;
 	it->s_accept = accept(it->s_listen, NULL, NULL);
 	if (it->s_accept < 0)
 		return -1;
@@ -396,6 +430,7 @@ static int netns_teardown_iter_sock_pair(struct netns_teardown_iter_ctx *it)
  */
 static int netns_teardown_iter_fork_child(struct netns_teardown_iter_ctx *it)
 {
+	it->direct_calls++;
 	it->pid = fork();
 	if (it->pid < 0)
 		return -1;
@@ -438,6 +473,7 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
 	const enum child_op_type op = it->child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
+	it->direct_calls++;
 	if (setns(it->nsfd, CLONE_NEWNET) < 0) {
 		/* setns failure leaves us stuck in the doomed ns.  Best
 		 * effort: kill the child to release one ref so the
@@ -452,12 +488,14 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
 					 __ATOMIC_RELAXED);
 		(void)kill(it->pid, SIGKILL);
 		reap_inflight_child(it->pid);
+		it->direct_calls += 2;	/* kill + waitpid_eintr in reap */
 		__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		(void)close(it->s_listen); it->s_listen = -1;
 		(void)close(it->s_conn);   it->s_conn = -1;
 		(void)close(it->s_accept); it->s_accept = -1;
 		(void)close(it->nsfd);     it->nsfd = -1;
+		it->direct_calls += 4;
 		return -1;
 	}
 	__atomic_add_fetch(&shm->stats.netns_teardown.setns_ok,
@@ -469,6 +507,7 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
 	(void)close(it->s_listen); it->s_listen = -1;
 	(void)close(it->s_conn);   it->s_conn = -1;
 	(void)close(it->s_accept); it->s_accept = -1;
+	it->direct_calls += 3;
 	return 0;
 }
 
@@ -481,15 +520,20 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
  */
 static void netns_teardown_iter_drive_teardown(struct netns_teardown_iter_ctx *it)
 {
+	/* usleep drives nanosleep(2) in libc. */
 	(void)usleep(rnd_modulo_u32(NETNS_TD_PARENT_USLEEP_MAX));
+	it->direct_calls++;
 
+	it->direct_calls++;
 	if (kill(it->pid, SIGKILL) == 0) {
 		__atomic_add_fetch(&shm->stats.netns_teardown.kill_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 	reap_inflight_child(it->pid);
+	it->direct_calls++;	/* waitpid_eintr in reap */
 
 	(void)close(it->nsfd);
+	it->direct_calls++;
 	it->nsfd = -1;
 	__atomic_add_fetch(&shm->stats.netns_teardown.completed_ok,
 			   1, __ATOMIC_RELAXED);
@@ -513,10 +557,11 @@ static void netns_teardown_iter_recover(struct netns_teardown_iter_ctx *it)
 
 	__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 			   1, __ATOMIC_RELAXED);
-	if (it->s_accept >= 0) (void)close(it->s_accept);
-	if (it->s_conn   >= 0) (void)close(it->s_conn);
-	if (it->s_listen >= 0) (void)close(it->s_listen);
+	if (it->s_accept >= 0) { (void)close(it->s_accept); it->direct_calls++; }
+	if (it->s_conn   >= 0) { (void)close(it->s_conn);   it->direct_calls++; }
+	if (it->s_listen >= 0) { (void)close(it->s_listen); it->direct_calls++; }
 	if (it->nsfd >= 0) {
+		it->direct_calls++;
 		if (setns(it->nsfd, CLONE_NEWNET) < 0) {
 			ns_unsupported_netns_teardown = true;
 			if (valid_op)
@@ -525,6 +570,7 @@ static void netns_teardown_iter_recover(struct netns_teardown_iter_ctx *it)
 						 __ATOMIC_RELAXED);
 		}
 		(void)close(it->nsfd);
+		it->direct_calls++;
 	}
 }
 
@@ -534,12 +580,13 @@ static void netns_teardown_iter_recover(struct netns_teardown_iter_ctx *it)
  * carry the success signal.  Latches ns_unsupported on a probe-style
  * failure only (full-flow failures past the probe don't latch).
  */
-static void iter_one(struct childdata *child)
+static void iter_one(struct childdata *child, unsigned long *direct_calls)
 {
 	struct netns_teardown_iter_ctx it = {
 		.nsfd = -1, .s_listen = -1, .s_conn = -1, .s_accept = -1,
 		.pid = -1,
 		.child = child,
+		.direct_calls = 0,
 	};
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  See setns_back for the rationale. */
@@ -547,7 +594,7 @@ static void iter_one(struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (netns_teardown_iter_setup_ns(&it) != 0)
-		return;
+		goto out;
 
 	if (netns_teardown_iter_sock_pair(&it) != 0)
 		goto recover;
@@ -556,7 +603,7 @@ static void iter_one(struct childdata *child)
 		goto recover;
 
 	if (netns_teardown_iter_parent_setns_back(&it) != 0)
-		return;
+		goto out;
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
@@ -564,10 +611,12 @@ static void iter_one(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 	netns_teardown_iter_drive_teardown(&it);
-	return;
+	goto out;
 
 recover:
 	netns_teardown_iter_recover(&it);
+out:
+	*direct_calls += it.direct_calls;
 }
 
 /*
@@ -592,6 +641,9 @@ static int netns_teardown_churn_in_ns(void *arg)
 	struct netns_teardown_churn_ctx *cctx = arg;
 	struct childdata *child = cctx->child;
 	unsigned int outer_iters, i;
+	unsigned long direct_calls = 0;
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	outer_iters = BUDGETED(CHILD_OP_NETNS_TEARDOWN_CHURN,
 			       JITTER_RANGE(NETNS_TD_OUTER_BASE));
@@ -601,7 +653,14 @@ static int netns_teardown_churn_in_ns(void *arg)
 		outer_iters = 1U;
 
 	for (i = 0; i < outer_iters; i++)
-		iter_one(child);
+		iter_one(child, &direct_calls);
+
+	/* Publish this grandchild's direct-syscall tally.  shm is MAP_SHARED
+	 * so the atomic add is visible to the persistent trinity child after
+	 * this grandchild _exit()s (matches the bridge-conntrack-churn
+	 * publish site inside its in-ns callback). */
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return 0;
 }
