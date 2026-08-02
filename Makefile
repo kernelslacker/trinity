@@ -365,7 +365,7 @@ tagsjson:	$(SRCS)
 	@ctags -R --exclude=tmp --languages=C,Python,Sh --output-format=json --fields=+n -f tags.json
 
 scan:
-	@scan-build --use-analyzer=/usr/bin/clang make -j $(NR_CPUS)
+	@scan-build --use-analyzer=/usr/bin/clang make -B -j $(NR_CPUS)
 
 check-static:
 	@./scripts/check-static.sh
