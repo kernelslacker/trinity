@@ -135,13 +135,25 @@ static bool ns_unsupported_vxlan_encap;
  * persists fleet-wide via shm so the unsupported attempt is paid
  * once per fleet rather than once per grandchild. */
 
-/* Per-grandchild bookkeeping.  Inherited as false at grandchild fork
- * time (the persistent child never sets it -- the in-ns body runs
- * exclusively in transient grandchildren), set to true after the
- * grandchild's first rtnl_bring_lo_up() in its own fresh netns.  Dies
- * with the grandchild on _exit(), so each subsequent grandchild
- * correctly re-runs the bring-lo-up once in its own netns. */
-static bool lo_brought_up;
+/* Per-grandchild lo-up latch lives in shm
+ * (shm->vxlan_encap_lo_brought_up).  The write site sits inside the
+ * userns_run_in_ns() grandchild's vxlan_encap_in_ns() path, so a
+ * process-local static would die with the grandchild on _exit() and
+ * every subsequent invocation would re-pay the rtnetlink "lo up"
+ * round-trip forever -- the parent never observes the latch.  Living
+ * in shm lets one successful lo-up persist fleet-wide.  RELAXED
+ * atomic load/store is safe: only false -> true, idempotent write. */
+static bool lo_brought_up(void)
+{
+	return __atomic_load_n(&shm->vxlan_encap_lo_brought_up,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_lo_brought_up(void)
+{
+	__atomic_store_n(&shm->vxlan_encap_lo_brought_up, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Set once per persistent child after the best-effort modprobe burst
  * runs.  modprobe needs CAP_SYS_MODULE in init_user_ns, which the
@@ -431,9 +443,9 @@ static int vxlan_encap_iter_open_ctx(struct vxlan_encap_iter_ctx *ctx)
 	}
 	ctx->nl_opened = true;
 
-	if (!lo_brought_up) {
+	if (!lo_brought_up()) {
 		rtnl_bring_lo_up(&ctx->nl);
-		lo_brought_up = true;
+		mark_lo_brought_up();
 	}
 	return 0;
 }
