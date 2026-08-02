@@ -441,6 +441,13 @@ struct shm_s {
 	bool flowtable_vlan_ns_unsupported;
 	bool flowtable_vlan_ip_forward_set;
 
+	/* bridge-fdb-stp per-grandchild setup latch (childops/net/
+	 * bridge-fdb-stp.c).  "lo up" write site sits inside the
+	 * userns_run_in_ns() grandchild body; a process-local static
+	 * would die with the grandchild and every subsequent invocation
+	 * would re-pay the rtnetlink round-trip. */
+	bool bridge_fdb_stp_lo_brought_up;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC

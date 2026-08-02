@@ -84,7 +84,24 @@ bool ns_unsupported_veth;
  * -EAGAIN) do not set this — they may not recur on the next
  * iteration. */
 static bool ns_unsupported;
-static bool lo_brought_up;
+
+/* Per-grandchild "lo up" setup latch lives in shm
+ * (shm->bridge_fdb_stp_lo_brought_up).  The write site sits inside the
+ * userns_run_in_ns() grandchild body -- a process-local static would
+ * die with the grandchild on _exit() and every subsequent invocation
+ * would re-pay the "lo up" rtnetlink round-trip.  RELAXED atomic
+ * load/store is safe: only false -> true, idempotent write. */
+static bool lo_brought_up(void)
+{
+	return __atomic_load_n(&shm->bridge_fdb_stp_lo_brought_up,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_lo_brought_up(void)
+{
+	__atomic_store_n(&shm->bridge_fdb_stp_lo_brought_up, true,
+			 __ATOMIC_RELAXED);
+}
 
 /*
  * Bring lo up inside the private netns.  A freshly-unshared netns has
@@ -291,9 +308,9 @@ static int bridge_fdb_stp_in_ns(void *arg)
 		return 0;
 	}
 
-	if (!lo_brought_up) {
+	if (!lo_brought_up()) {
 		rtnl_bring_lo_up(&ictx.ctx);
-		lo_brought_up = true;
+		mark_lo_brought_up();
 	}
 
 	/* Snapshot child->op_type once and bounds-check before indexing
