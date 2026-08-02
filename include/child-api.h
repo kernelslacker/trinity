@@ -458,6 +458,26 @@ struct canary_op_state {
 	 * table; read by the log-line emitters and by the startup
 	 * enumeration.  UNKNOWN when the op is not in the hint table. */
 	enum canary_setup_fail_reason setup_fail_reason;
+
+	/* Per-window crash-signature breakdown.  window_crashes above is a
+	 * bare count that drives the demote threshold; this table splits
+	 * that same crash stream into distinct {signo, sig_code, fault_ip
+	 * rounded to the enclosing function} buckets so the demote/promote
+	 * log line can report "17 SIGSEGV/code=2 + 13 SIGSEGV/code=1 + 3
+	 * SIGSEGV/code=128" instead of collapsing all three shapes into a
+	 * single 33-count row.  Populated by canary_queue_on_crash() from
+	 * the dying child's fault_beacon; reset in enter_canarying()
+	 * alongside window_crashes.  Threshold decisions still key off the
+	 * scalar total -- this is reporting fidelity only. */
+	struct {
+		int32_t signo;
+		int32_t sig_code;
+		void *fault_ip_norm;	/* enclosing function base via dladdr(),
+					 * else raw beacon->fault_ip */
+		unsigned int count;
+	} window_crash_sigs[6];
+	unsigned int window_crash_sigs_count;	/* filled slots in window_crash_sigs[] */
+	unsigned int window_crash_sigs_overflow;/* distinct sigs that didn't fit */
 };
 
 void canary_queue_init(void);

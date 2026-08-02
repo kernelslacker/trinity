@@ -17,6 +17,7 @@
 #define CHILD_CANARY_INTERNAL_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <time.h>
 
 #include "child-api.h"
@@ -182,5 +183,13 @@ bool pick_next_canary(enum child_op_type *out);
 
 /* Report TU (child-canary-report.c): promotion-ring mutator. */
 void push_promotion(enum child_op_type op);
+
+/* Report TU (child-canary-report.c): render the per-window crash-signature
+ * breakdown into a caller-supplied buffer.  Format is space-separated tokens
+ * "SIG/code=N/pc=binary+0xOFF x COUNT" per distinct signature, followed by
+ * "+N overflow" if window_crash_sigs_overflow > 0.  Writes an empty string
+ * (buf[0] = 0) when window_crash_sigs_count == 0 so callers can concatenate
+ * unconditionally.  Returns buf. */
+const char *canary_crash_sig_render(enum child_op_type op, char *buf, size_t buflen);
 
 #endif /* CHILD_CANARY_INTERNAL_H */
