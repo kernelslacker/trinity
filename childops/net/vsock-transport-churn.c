@@ -68,12 +68,26 @@
 #include "kernel/socket.h"
 #if __has_include(<linux/vm_sockets.h>)
 
-/* Per-process latched gate.  Capability / config / kernel-version
- * support for AF_VSOCK + vsock_loopback is static across a child's
- * lifetime; once the install has paid the EAFNOSUPPORT we stop probing
- * and short-circuit to a runs+setup_failed bump.  Mirrors
- * msg_zerocopy_churn / iouring_send_zc_churn / tcp_ulp_swap_churn. */
-static bool ns_unsupported_vsock_transport_churn;
+/* Latch lives in shm (shm->vsock_transport_churn_ns_unsupported).
+ * Write sites include vsock_transport_iter_setup() (AF_VSOCK socket() /
+ * bind() rejection) which is called from both the parent-side iter_one
+ * path AND the userns_run_in_ns() grandchild's iter_one_in_fresh_netns
+ * path, plus the outer wrapper -EPERM branch.  Grandchild-side writes
+ * to a process-local static would die with the grandchild on _exit()
+ * and every subsequent invocation would re-attempt the same
+ * unsupported AF_VSOCK setup.  RELAXED atomic load/store is safe:
+ * only false -> true, idempotent write. */
+static bool ns_unsupported_vsock_transport_churn(void)
+{
+	return __atomic_load_n(&shm->vsock_transport_churn_ns_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_vsock_transport_churn(void)
+{
+	__atomic_store_n(&shm->vsock_transport_churn_ns_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
 
 #define VS_OUTER_BASE			4U
 #define VS_OUTER_CAP			16U
@@ -146,7 +160,7 @@ static int vsock_transport_iter_setup(struct childdata *child,
 	if (listener < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPERM ||
 		    errno == ENOPROTOOPT || errno == ENOENT) {
-			ns_unsupported_vsock_transport_churn = true;
+			mark_ns_unsupported_vsock_transport_churn();
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
@@ -169,7 +183,7 @@ static int vsock_transport_iter_setup(struct childdata *child,
 		 * isn't built; latch so we don't keep trying. */
 		if (errno == EADDRNOTAVAIL || errno == EAFNOSUPPORT ||
 		    errno == EPERM) {
-			ns_unsupported_vsock_transport_churn = true;
+			mark_ns_unsupported_vsock_transport_churn();
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
@@ -449,7 +463,7 @@ static void iter_one_in_fresh_netns(struct childdata *child,
 		 * (user.max_user_namespaces=0 or
 		 * kernel.unprivileged_userns_clone=0).  Latch so the outer
 		 * loop stops retrying for the rest of this child's life. */
-		ns_unsupported_vsock_transport_churn = true;
+		mark_ns_unsupported_vsock_transport_churn();
 		/* child->op_type lives in shared memory and can be scribbled
 		 * by a poisoned-arena write from a sibling; bounds-check the
 		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
@@ -617,7 +631,7 @@ bool vsock_transport_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.vsock_transport_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
-	if (ns_unsupported_vsock_transport_churn) {
+	if (ns_unsupported_vsock_transport_churn()) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -653,7 +667,7 @@ bool vsock_transport_churn(struct childdata *child)
 		else
 			iter_one(child, &t_outer, &direct_calls);
 
-		if (ns_unsupported_vsock_transport_churn)
+		if (ns_unsupported_vsock_transport_churn())
 			break;
 
 		if (ONE_IN(VS_SEQ_EOM_GATE))
