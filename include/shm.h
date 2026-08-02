@@ -430,6 +430,17 @@ struct shm_s {
 	bool ip6erspan_ns_unsupported;
 	bool ip6erspan_ns_unsupported_changelink;
 
+	/* flowtable-encap-vlan grandchild latches (childops/net/netfilter/
+	 * flowtable-encap-vlan.c).  ns_unsupported latches on NEWFLOWTABLE
+	 * EOPNOTSUPP/EAFNOSUPPORT/EPROTONOSUPPORT inside the
+	 * userns_run_in_ns() grandchild (or on outer wrapper -EPERM);
+	 * ip_forward_set is a one-shot gate on the grandchild's
+	 * /proc/sys/net/ipv4/ip_forward flip.  Statics would die with the
+	 * grandchild and every subsequent invocation would re-pay the
+	 * NEWFLOWTABLE round-trip / re-write ip_forward. */
+	bool flowtable_vlan_ns_unsupported;
+	bool flowtable_vlan_ip_forward_set;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC

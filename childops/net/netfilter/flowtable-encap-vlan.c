@@ -102,26 +102,47 @@
 #define FEV_GSO_PAYLOAD			(64U * 1024U)
 #define FEV_MTU_BORDER_PAYLOAD		1496U
 
-/* Latched per-child by two paths:
+/* Latches live in shm (shm->flowtable_vlan_ns_unsupported,
+ * shm->flowtable_vlan_ip_forward_set) so grandchild writes persist.
+ * The ns_unsupported latch fires on two paths:
  *   - userns_run_in_ns() returned -EPERM: the grandchild's
  *     unshare(CLONE_NEWUSER) was refused by a hardened policy
  *     (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
- *     Set in the wrapper, persists across invocations.  Without a
- *     private netns we MUST NOT touch the host's main flowtable / vlan
- *     / veth tables, so the op stays disabled for the remainder of this
- *     child's lifetime.
+ *     Set in the wrapper, persists fleet-wide.
  *   - NFT_MSG_NEWFLOWTABLE returned EOPNOTSUPP / EAFNOSUPPORT /
  *     EPROTONOSUPPORT inside the grandchild's iter_install()
- *     (CONFIG_NF_FLOW_TABLE absent at runtime).  Set inside the
- *     grandchild's address space, so the latch short-circuits the rest
- *     of that grandchild's outer loop; the persistent child's copy is
- *     unchanged, and subsequent invocations re-discover the CONFIG-
- *     absent state via one NEWFLOWTABLE round-trip per outer-loop iter.
- * Helper return -EAGAIN (transient grandchild setup failure: fork, id-map
- * write, secondary unshare) does NOT set this latch -- the failure is
- * not policy and may not recur on the next invocation. */
-static bool ns_unsupported_flowtable_vlan;
-static bool fev_ip_forward_set;
+ *     (CONFIG_NF_FLOW_TABLE absent at runtime).  Written inside the
+ *     grandchild -- a process-local static would die with _exit() and
+ *     every subsequent invocation would re-pay the NEWFLOWTABLE
+ *     round-trip.
+ * flowtable_vlan_ip_forward_set is a one-shot "write once" gate on the
+ * grandchild's /proc/sys/net/ipv4/ip_forward flip; same rationale.
+ * Helper return -EAGAIN (transient grandchild setup failure: fork,
+ * id-map write, secondary unshare) does NOT set this latch -- the
+ * failure is not policy and may not recur on the next invocation. */
+static bool ns_unsupported_flowtable_vlan(void)
+{
+	return __atomic_load_n(&shm->flowtable_vlan_ns_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_flowtable_vlan(void)
+{
+	__atomic_store_n(&shm->flowtable_vlan_ns_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool fev_ip_forward_set(void)
+{
+	return __atomic_load_n(&shm->flowtable_vlan_ip_forward_set,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_fev_ip_forward_set(void)
+{
+	__atomic_store_n(&shm->flowtable_vlan_ip_forward_set, true,
+			 __ATOMIC_RELAXED);
+}
 
 static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 			   unsigned short type, __u32 v)
@@ -414,7 +435,7 @@ static void enable_ip_forward(void)
 	ssize_t n;
 	int fd;
 
-	if (fev_ip_forward_set)
+	if (fev_ip_forward_set())
 		return;
 	fd = open("/proc/sys/net/ipv4/ip_forward", O_WRONLY | O_CLOEXEC);
 	if (fd < 0)
@@ -422,7 +443,7 @@ static void enable_ip_forward(void)
 	n = write(fd, "1\n", 2);
 	close(fd);
 	if (n > 0)
-		fev_ip_forward_set = true;
+		mark_fev_ip_forward_set();
 }
 
 /*
@@ -580,7 +601,7 @@ static int flowtable_vlan_iter_install(struct nfnl_ctx *nf,
 	if (rc != 0) {
 		if (rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT ||
 		    rc == -EPROTONOSUPPORT)
-			ns_unsupported_flowtable_vlan = true;
+			mark_ns_unsupported_flowtable_vlan();
 		__atomic_add_fetch(&shm->stats.flowtable_vlan.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -859,7 +880,7 @@ static int flowtable_encap_vlan_in_ns(void *arg)
 		if ((unsigned long long)ns_since(&t_outer) >= FEV_WALL_CAP_NS)
 			break;
 		iter_one(i, &t_outer);
-		if (ns_unsupported_flowtable_vlan) {
+		if (ns_unsupported_flowtable_vlan()) {
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
@@ -887,7 +908,7 @@ bool flowtable_encap_vlan(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.flowtable_vlan.runs, 1,
 			   __ATOMIC_RELAXED);
 
-	if (ns_unsupported_flowtable_vlan) {
+	if (ns_unsupported_flowtable_vlan()) {
 		__atomic_add_fetch(&shm->stats.flowtable_vlan.unsupported_latched,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -895,7 +916,7 @@ bool flowtable_encap_vlan(struct childdata *child)
 
 	rc = userns_run_in_ns(CLONE_NEWNET, flowtable_encap_vlan_in_ns, &cctx);
 	if (rc == -EPERM) {
-		ns_unsupported_flowtable_vlan = true;
+		mark_ns_unsupported_flowtable_vlan();
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
