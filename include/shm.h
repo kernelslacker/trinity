@@ -497,6 +497,16 @@ struct shm_s {
 	 * invocation would re-attempt the same unsupported create. */
 	bool vlan_filter_churn_ns_unsupported;
 
+	/* vsock-transport-churn per-grandchild unsupported latch
+	 * (childops/net/vsock-transport-churn.c).  Write sites include
+	 * vsock_transport_iter_setup() (AF_VSOCK socket()/bind() reject)
+	 * which fires from both the parent iter_one path and the
+	 * userns_run_in_ns() grandchild's iter_one_in_fresh_netns path,
+	 * plus the outer wrapper -EPERM branch; a process-local static
+	 * would die with the grandchild and every subsequent invocation
+	 * would re-attempt the same unsupported AF_VSOCK setup. */
+	bool vsock_transport_churn_ns_unsupported;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC
