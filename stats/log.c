@@ -187,13 +187,18 @@ void stats_timeseries_close(void)
 	if (stats_timeseries_fp == NULL)
 		return;
 
-	/* parent_stats.op_count is the authoritative shutdown total; the
-	 * per-window emitter reads the same counter, so a divergence below
-	 * the last emitted value is a rewind/corruption signal.  A tail of
+	/* parent_stats.total_op_count is the run-wide monotonic total; the
+	 * per-window emitter (print_stats -> stats_timeseries_emit_window)
+	 * reads the same counter and stashes it in stats_ts_last_emitted_op_count,
+	 * so a divergence below the last emitted value is a rewind/corruption
+	 * signal.  Must NOT use parent_stats.op_count: that one is the
+	 * per-epoch counter which reset_epoch_state() zeroes, so on any run
+	 * that crossed an epoch boundary op_count < last_emitted and the
+	 * cross-check would spuriously fail on clean shutdown.  A tail of
 	 * ops beyond the last window emit is expected (windows fire on a
 	 * ~10k-op cadence -- close() lands somewhere in the middle of the
 	 * next window) so cross_check_ok tolerates total_ops >= last. */
-	total_ops = parent_stats.op_count;
+	total_ops = parent_stats.total_op_count;
 	cross_check_ok = (total_ops >= stats_ts_last_emitted_op_count);
 
 	fprintf(stats_timeseries_fp,
