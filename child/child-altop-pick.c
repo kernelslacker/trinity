@@ -37,7 +37,7 @@
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[142] = {
+static int dormant_op_disabled[143] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -97,6 +97,7 @@ static int dormant_op_disabled[142] = {
 	1,	/* ipset_churn: dormant until canary-queue load-tests the NFNL_SUBSYS_IPSET CREATE/ADD/DEL/TEST/SWAP/FLUSH/DESTROY cycle across hash: and bitmap: set types with TIMEOUT/COUNTERS/COMMENT extensions. */
 	1,	/* ip4_udp_cork_splice: dormant until canary-queue load-tests the ip4 __ip_append_data continuation-skb length-accounting stress path. */
 	1,	/* nexthop_replace_churn: dormant until canary-queue load-tests the nexthop-replace-notifier vs unlocked IPv6 route f6i_list churn (fib6_check_nh_list walk vs fib6_purge_rt free). */
+	1,	/* sit_proto41_rx: dormant until canary-queue load-tests the SIT ipip6_rcv() truncated-inner-header OOB read burst (AF_PACKET IPv4 proto=41 frames with inner IPv6 shorter than sizeof(ipv6hdr) into loopback with sit0 up). */
 };
 
 /*
@@ -185,6 +186,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_OVS_TUNNEL_VPORT_CHURN,
 	CHILD_OP_TTY_LDISC_CHURN,
 	CHILD_OP_UMOUNT_RACE,
+	CHILD_OP_SIT_PROTO41_RX,
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
@@ -256,7 +258,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[142] = {
+static const enum child_op_type pick_op_type_table[143] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -399,6 +401,7 @@ static const enum child_op_type pick_op_type_table[142] = {
 	[139] = CHILD_OP_IPSET_CHURN,
 	[140] = CHILD_OP_IP4_UDP_CORK_SPLICE,
 	[141] = CHILD_OP_NEXTHOP_REPLACE_CHURN,
+	[142] = CHILD_OP_SIT_PROTO41_RX,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
