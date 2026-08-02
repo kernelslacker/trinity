@@ -36,12 +36,10 @@ void havoc_arith(unsigned char *buf, size_t len,
 		width = 1;
 
 	max_pos = len - width;
-	if (max_pos == 0)
-		pos = 0;
-	else if (max_pos > UINT32_MAX)
-		pos = (size_t) rnd_modulo_u32(UINT32_MAX);
-	else
-		pos = (size_t) rnd_modulo_u32((uint32_t) max_pos + 1u);
+	/* Full-width u64 draw so any pos in [0, max_pos] is reachable; an
+	 * earlier version clamped to rnd_modulo_u32(UINT32_MAX) on the
+	 * max_pos > UINT32_MAX branch, silently biasing away from the tail. */
+	pos = (size_t) rnd_modulo_u64((uint64_t) max_pos + 1u);
 
 	/* AFL-style [1..35] magnitude keeps the delta below the size of
 	 * any single byte and inside the "off-by-a-few" neighbourhood of
