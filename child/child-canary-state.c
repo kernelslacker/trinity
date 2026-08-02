@@ -378,6 +378,13 @@ void enter_canarying(enum child_op_type op)
 	s = &canary_ops[op];
 	s->state = CANARY_STATE_CANARYING;
 	s->window_crashes = 0;
+	/* Reset the per-signature breakdown table alongside the scalar
+	 * total so a fresh window scores its own {signo, sig_code,
+	 * fault_ip} distribution rather than carrying prior-window shapes
+	 * into the demote/promote log line. */
+	memset(s->window_crash_sigs, 0, sizeof(s->window_crash_sigs));
+	s->window_crash_sigs_count = 0;
+	s->window_crash_sigs_overflow = 0;
 	s->window_start_invocations = invocations_for_op(op);
 	s->window_start_edges = edges_for_op(op);
 	s->window_start_post_handler_corrupt_ptr =
@@ -575,6 +582,19 @@ static void leave_canarying_promote(enum child_op_type op,
 		s->name, window_edges, s->window_crashes, window_iters,
 		verdict, corrupt_delta, deferred_delta,
 		ebadf_in_window ? 1 : 0);
+
+	/* Crash-signature breakdown, keyed on {signo, sig_code, enclosing-
+	 * function fault_ip}.  Emitted only when at least one crash was
+	 * observed so a clean window stays quiet.  A promotion with N>0
+	 * crashes is legitimate (edges >= threshold outweighs crashes <
+	 * threshold), and knowing which shape those crashes had is
+	 * exactly what turns a "17 code-2 + 13 code-1 + 3 code-128" mix
+	 * back into three actionable signatures. */
+	if (s->window_crash_sigs_count > 0 || s->window_crash_sigs_overflow > 0) {
+		char sigbuf[512];
+		canary_crash_sig_render(op, sigbuf, sizeof(sigbuf));
+		output(0, "canary: %s crash-signatures: %s\n", s->name, sigbuf);
+	}
 }
 
 /* noisy_edges_delta is the window's accrual of sibling-attributed /
@@ -613,6 +633,20 @@ static void leave_canarying_demote(enum child_op_type op,
 		s->name, reason, window_edges, noisy_edges_delta,
 		s->window_crashes, window_iters,
 		(unsigned int)CANARY_BACKOFF_TIME);
+
+	/* Same crash-signature breakdown attached to leave_canarying_promote:
+	 * a demote for reason=crash_threshold is the exact case where
+	 * "17 code-2 + 13 code-1 + 3 code-128" being reported as a single
+	 * "crashes=33" number misleads triage.  Print the per-{signo,
+	 * sig_code, fault_ip} breakdown so distinct death classes stay
+	 * distinct in the log.  Skipped when the window closed with zero
+	 * crashes (reason=zero_edges / kcov_mode_cmp etc.) so a clean
+	 * window stays quiet. */
+	if (s->window_crash_sigs_count > 0 || s->window_crash_sigs_overflow > 0) {
+		char sigbuf[512];
+		canary_crash_sig_render(op, sigbuf, sizeof(sigbuf));
+		output(0, "canary: %s crash-signatures: %s\n", s->name, sigbuf);
+	}
 }
 
 /* Early-bail demote: the op has burned CANARY_SETUP_BROKEN_FAILS setup
