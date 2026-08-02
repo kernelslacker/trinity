@@ -190,17 +190,41 @@ static const __u8 inm_v6_remote[16] = {
 	0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,2,	/* ::2 */
 };
 
-/* Master gate.  Persistent across iterations in the persistent fuzz
- * child.  Set only when userns_run_in_ns() returns -EPERM (hardened
- * userns policy refused CLONE_NEWUSER -- typically
- * user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0)
- * or, from inside the grandchild, when create_link EPERM / setns /
- * open-self-netns fails; writes from inside the grandchild only
- * affect the grandchild's own copy and die with _exit(), so the
- * persistent-child latch is authoritatively driven by the outer
- * wrapper's helper-EPERM branch. */
-static bool ns_unsupported_ip6erspan;
-static bool ns_unsupported_changelink;
+/* Master gate + changelink secondary gate live in shm
+ * (shm->ip6erspan_ns_unsupported, shm->ip6erspan_ns_unsupported_changelink).
+ * Write sites include the userns_run_in_ns() grandchild body -- a
+ * process-local static would die with the grandchild on _exit() and every
+ * subsequent invocation would re-attempt the same unsupported
+ * create_link / setns / open-self-netns / changelink forever
+ * (latch-in-grandchild bug).  The outer wrapper's helper-EPERM branch
+ * also latches through the same shm gate so both parent-side and
+ * grandchild-side observations converge on one persistent flag.  RELAXED
+ * atomic load/store from multiple grandchildren is safe -- only
+ * false -> true, idempotent write. */
+static bool ns_unsupported_ip6erspan(void)
+{
+	return __atomic_load_n(&shm->ip6erspan_ns_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_ip6erspan(void)
+{
+	__atomic_store_n(&shm->ip6erspan_ns_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_changelink(void)
+{
+	return __atomic_load_n(&shm->ip6erspan_ns_unsupported_changelink,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_changelink(void)
+{
+	__atomic_store_n(&shm->ip6erspan_ns_unsupported_changelink, true,
+			 __ATOMIC_RELAXED);
+}
+
 static __u32 g_iter;
 
 /* Per-invocation state shared across the extracted phase helpers.
@@ -228,9 +252,9 @@ struct ip6erspan_migrate_iter_ctx {
 
 static void warn_once_unsupported(struct childdata *child)
 {
-	if (ns_unsupported_ip6erspan)
+	if (ns_unsupported_ip6erspan())
 		return;
-	ns_unsupported_ip6erspan = true;
+	mark_ns_unsupported_ip6erspan();
 	/* child->op_type lives in shared memory and can be scribbled by a
 	 * poisoned-arena write from a sibling; bounds-check the snapshot
 	 * before indexing the NR_CHILD_OP_TYPES-sized stats array, same
@@ -477,7 +501,7 @@ static int ip6erspan_migrate_iter_create_link(struct ip6erspan_migrate_iter_ctx 
 		if (rc == -EPERM) {
 			__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.eperm,
 					   1, __ATOMIC_RELAXED);
-			ns_unsupported_ip6erspan = true;
+			mark_ns_unsupported_ip6erspan();
 			/* ctx->child->op_type lives in shared memory and can
 			 * be scribbled by a poisoned-arena write from a
 			 * sibling; bounds-check the snapshot before indexing
@@ -597,8 +621,8 @@ static void ip6erspan_migrate_iter_changelink(struct ip6erspan_migrate_iter_ctx 
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.changelink_ok,
 				   1, __ATOMIC_RELAXED);
-	} else if (rc == -EOPNOTSUPP && !ns_unsupported_changelink) {
-		ns_unsupported_changelink = true;
+	} else if (rc == -EOPNOTSUPP && !ns_unsupported_changelink()) {
+		mark_ns_unsupported_changelink();
 		/* init_child redirected stderr to /dev/null, so an
 		 * outputerr here would be lost.  Bump a shm counter
 		 * under the same one-shot gate so the unsupported-
@@ -652,10 +676,10 @@ static void ip6erspan_migrate_iter_teardown(struct ip6erspan_migrate_iter_ctx *c
  * the namespace.  Explicit teardown is still issued so the in-ns
  * stats counters (inm_link_create_ok etc.) reflect only what actually
  * succeeded and so the target-ns dellink in phase 4 runs before the
- * grandchild dies.  Per-grandchild latch writes to
- * ns_unsupported_ip6erspan die with the grandchild -- helper-EPERM in
- * the outer wrapper is the only signal that survives across
- * iterations.  Return value is ignored by the helper.
+ * grandchild dies.  Latch writes to ns_unsupported_ip6erspan /
+ * ns_unsupported_changelink now live in shm so grandchild-side
+ * observations persist across iterations rather than dying with the
+ * grandchild.  Return value is ignored by the helper.
  */
 static int ip6erspan_netns_migrate_in_ns(void *arg)
 {
@@ -715,7 +739,7 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.ip6erspan_netns_migrate.iters, 1, __ATOMIC_RELAXED);
 
-	if (ns_unsupported_ip6erspan)
+	if (ns_unsupported_ip6erspan())
 		return true;
 
 	g_iter++;

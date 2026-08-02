@@ -421,6 +421,15 @@ struct shm_s {
 	bool bridge_ip6_fraggap_ns_unsupported_nf_tables;
 	bool bridge_ip6_fraggap_ns_unsupported_brnf;
 
+	/* ip6erspan-netns-migrate grandchild latches (childops/net/
+	 * ip6erspan-netns-migrate.c).  Master gate + changelink secondary
+	 * gate.  Write sites include the userns_run_in_ns() grandchild
+	 * body; process-local statics would die with the grandchild and
+	 * every subsequent invocation would re-attempt the same
+	 * unsupported create_link / setns / changelink forever. */
+	bool ip6erspan_ns_unsupported;
+	bool ip6erspan_ns_unsupported_changelink;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC
