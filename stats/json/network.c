@@ -145,6 +145,11 @@ static const struct stat_field xfrm_compat_fields[] = {
 	STAT_FIELD_SUB(xfrm_compat, sends_ok),
 	STAT_FIELD_SUB(xfrm_compat, sends_failed),
 	STAT_FIELD_SUB(xfrm_compat, replies_seen),
+	STAT_FIELD_SUB(xfrm_compat, allocspi_runs),
+	STAT_FIELD_SUB(xfrm_compat, allocspi_sends_ok),
+	STAT_FIELD_SUB(xfrm_compat, allocspi_sends_failed),
+	STAT_FIELD_SUB(xfrm_compat, allocspi_replies_seen),
+	STAT_FIELD_SUB(xfrm_compat, allocspi_unsupported),
 };
 
 const struct stat_category xfrm_compat_category =

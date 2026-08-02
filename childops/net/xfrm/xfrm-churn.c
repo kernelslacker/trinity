@@ -713,6 +713,16 @@ static void xfrm_churn_iter_teardown_sa(struct xfrm_churn_iter_ctx *ctx)
 	 * XFRM_MSG_MAPPING) and any later off-end indices added since. */
 	if (ONE_IN(8))
 		xfrm_compat_msg_sweep(&ctx->nl);
+
+	/* ALLOCSPI compat lane: ~1 in 8 invocations pushes an
+	 * XFRM_MSG_ALLOCSPI through the x86-64 ia32 compat entry point
+	 * (int 0x80) so alloc_compat() runs against the request as well as
+	 * against the dump_one_state() response.  Sweeps payload length
+	 * across the 228-byte compat xfrm_userspi_info boundary to walk
+	 * the 4-byte off-end read in xfrm_alloc_userspi() past the
+	 * allocation edge; KASAN is the oracle. */
+	if (ONE_IN(8))
+		xfrm_compat_allocspi_sweep(&ctx->nl);
 }
 
 /*

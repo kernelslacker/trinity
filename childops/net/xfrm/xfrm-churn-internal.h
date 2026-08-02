@@ -477,4 +477,17 @@ void xfrm_sk_policy_churn(struct childdata *child);
 extern bool ns_unsupported_xfrm;
 void xfrm_compat_msg_sweep(struct nl_ctx *ctx);
 
+/*
+ * ALLOCSPI compat lane.  Defined in
+ * childops/net/xfrm/xfrm-churn-compat-sweep.c.  Drives
+ * XFRM_MSG_ALLOCSPI through the ia32 compat entry point (int 0x80)
+ * against an already-open NETLINK_XFRM fd, sweeping payload length
+ * across the 228-byte compat xfrm_userspi_info boundary and both
+ * AF_INET / AF_INET6 to exercise the double-alloc_compat() 4-byte
+ * off-end read in xfrm_alloc_userspi().  No-op on non-x86_64
+ * architectures and on kernels without CONFIG_IA32_EMULATION.
+ * Short-circuits on the shared ns_unsupported_xfrm latch.
+ */
+void xfrm_compat_allocspi_sweep(struct nl_ctx *ctx);
+
 #endif /* CHILDOPS_XFRM_CHURN_INTERNAL_H */

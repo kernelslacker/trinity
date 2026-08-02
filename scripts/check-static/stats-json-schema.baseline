@@ -514,6 +514,11 @@ stats	object
     stats.xfrm_compat.sends_ok	u64
     stats.xfrm_compat.sends_failed	u64
     stats.xfrm_compat.replies_seen	u64
+    stats.xfrm_compat.allocspi_runs	u64
+    stats.xfrm_compat.allocspi_sends_ok	u64
+    stats.xfrm_compat.allocspi_sends_failed	u64
+    stats.xfrm_compat.allocspi_replies_seen	u64
+    stats.xfrm_compat.allocspi_unsupported	u64
   stats.sysfs_string_race	object
     stats.sysfs_string_race.runs	u64
     stats.sysfs_string_race.setup_failed	u64
