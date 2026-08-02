@@ -475,6 +475,21 @@ struct shm_s {
 	bool tc_live_modprobe_tried_act_mirred;
 	bool tc_live_modprobe_tried_act_police;
 
+	/* tc/qdisc-churn per-grandchild setup latches (childops/net/tc/
+	 * qdisc-churn.c).  Same rationale as the tc_live_* latches above:
+	 * the write sites sit inside the userns_run_in_ns() grandchild, so
+	 * a process-local static would die with the grandchild on _exit()
+	 * and every subsequent invocation would re-pay the same rtnl / inet
+	 * / bridge / dummy setup probe and the "lo up" rtnetlink round-trip
+	 * forever.  Living in shm lets one negative probe or one successful
+	 * lo-up persist fleet-wide.  RELAXED atomic load/store is safe --
+	 * only false -> true, idempotent write. */
+	bool tc_qdisc_churn_ns_unsupported_rtnl;
+	bool tc_qdisc_churn_ns_unsupported_dummy;
+	bool tc_qdisc_churn_ns_unsupported_inet;
+	bool tc_qdisc_churn_ns_unsupported_bridge;
+	bool tc_qdisc_churn_lo_brought_up;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the

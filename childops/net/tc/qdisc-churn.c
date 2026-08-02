@@ -131,20 +131,57 @@ static const char * const cls_kinds[] = {
 };
 #define NR_CLS_KINDS	ARRAY_SIZE(cls_kinds)
 
-/* Per-grandchild latched gates.  Inherited as false at grandchild
- * fork time (the persistent child never sets them -- the in-ns
- * callback runs exclusively in transient grandchildren) and flipped
- * on the first config-absent rejection from the corresponding
- * subsystem.  Die with the grandchild on _exit(); each subsequent
- * grandchild re-discovers the latch in its own fresh netns.  The
- * EOPNOTSUPP / EAFNOSUPPORT / EPROTONOSUPPORT detection arms are
- * preserved because a fresh user namespace cannot manufacture an
- * absent kernel CONFIG -- the gate still short-circuits the rest
- * of the grandchild's iteration once it fires. */
-static bool ns_unsupported_rtnl;
-static bool ns_unsupported_dummy;
-static bool ns_unsupported_inet;
-static bool ns_unsupported_bridge;
+/* Per-grandchild latched gates.  Live in shm because the write
+ * sites sit inside the userns_run_in_ns() grandchild -- a process-
+ * local static would die with the grandchild on _exit() and every
+ * subsequent invocation would re-pay the same rtnl / inet / bridge
+ * / dummy probe forever, since the parent never observes the
+ * latch.  RELAXED atomic load/store is safe: only false -> true,
+ * idempotent write.  The EOPNOTSUPP / EAFNOSUPPORT /
+ * EPROTONOSUPPORT detection arms are preserved because a fresh
+ * user namespace cannot manufacture an absent kernel CONFIG -- the
+ * gate still short-circuits the rest of the grandchild's iteration
+ * once it fires, and now fleet-wide too. */
+/* ns_unsupported_rtnl and ns_unsupported_dummy latches are write-only
+ * today -- the original code set them on the corresponding failure
+ * paths but never gated any future work on them.  Provide setters
+ * only so the shm write site still latches for future readers; a
+ * dead getter would trip -Werror=unused-function. */
+static void mark_ns_unsupported_rtnl(void)
+{
+	__atomic_store_n(&shm->tc_qdisc_churn_ns_unsupported_rtnl, true,
+			 __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_dummy(void)
+{
+	__atomic_store_n(&shm->tc_qdisc_churn_ns_unsupported_dummy, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_inet(void)
+{
+	return __atomic_load_n(&shm->tc_qdisc_churn_ns_unsupported_inet,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_inet(void)
+{
+	__atomic_store_n(&shm->tc_qdisc_churn_ns_unsupported_inet, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_unsupported_bridge(void)
+{
+	return __atomic_load_n(&shm->tc_qdisc_churn_ns_unsupported_bridge,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_bridge(void)
+{
+	__atomic_store_n(&shm->tc_qdisc_churn_ns_unsupported_bridge, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Per-kind latches: indexed by qdisc_kinds[] / cls_kinds[].  Set on
  * first NEWQDISC / NEWTFILTER rejection with EOPNOTSUPP /
@@ -158,7 +195,17 @@ static bool ns_unsupported_cls_kind[NR_CLS_KINDS];
 static bool modprobe_tried_qdisc[NR_QDISC_KINDS];
 static bool modprobe_tried_cls[NR_CLS_KINDS];
 
-static bool lo_brought_up;
+static bool lo_brought_up(void)
+{
+	return __atomic_load_n(&shm->tc_qdisc_churn_lo_brought_up,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_lo_brought_up(void)
+{
+	__atomic_store_n(&shm->tc_qdisc_churn_lo_brought_up, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Master gate: persistent across iterations in the persistent
  * child.  Set when userns_run_in_ns returns -EPERM (hardened userns
@@ -424,7 +471,7 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name,
 		*direct_calls += 4;
 	}
 
-	if (!ns_unsupported_inet) {
+	if (!ns_unsupported_inet()) {
 		struct sockaddr_in dst;
 		struct timespec t0;
 		unsigned int iters, i;
@@ -435,7 +482,7 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name,
 		*direct_calls += 1;
 		if (udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-				ns_unsupported_inet = true;
+				mark_ns_unsupported_inet();
 			return;
 		}
 		(void)setsockopt(udp, SOL_SOCKET, SO_BINDTODEVICE,
@@ -535,7 +582,7 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 {
 	int rc;
 
-	it->bridge_mode = !ns_unsupported_bridge && ONE_IN(3);
+	it->bridge_mode = !ns_unsupported_bridge() && ONE_IN(3);
 	if (it->bridge_mode) {
 		snprintf(it->bridge_name, sizeof(it->bridge_name), "trbr%u",
 			 (unsigned int)(rand32() & 0xffffu));
@@ -549,7 +596,7 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 		it->direct_calls += 2;
 		if (rc != 0) {
 			if (is_unsupported_err(rc))
-				ns_unsupported_bridge = true;
+				mark_ns_unsupported_bridge();
 			it->bridge_mode = false;
 		} else {
 			it->bridge_idx = (int)if_nametoindex(it->bridge_name);
@@ -600,7 +647,7 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 		it->direct_calls += 2;
 		if (rc != 0) {
 			if (is_unsupported_err(rc))
-				ns_unsupported_dummy = true;
+				mark_ns_unsupported_dummy();
 			return -1;
 		}
 		it->dummy_added = true;
@@ -787,13 +834,13 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 	unsigned int qidx2, iters, i;
 	int rc;
 
-	if (!ns_unsupported_inet) {
+	if (!ns_unsupported_inet()) {
 		it->udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 		/* socket() is a raw kernel call. */
 		it->direct_calls += 1;
 		if (it->udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-				ns_unsupported_inet = true;
+				mark_ns_unsupported_inet();
 		} else {
 			(void)setsockopt(it->udp, SOL_SOCKET, SO_BINDTODEVICE,
 					 it->dummy_name, strlen(it->dummy_name) + 1);
@@ -950,7 +997,7 @@ static int tc_qdisc_churn_in_ns(void *arg)
 
 	if (nl_open(&it->nl, &nl_opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
-			ns_unsupported_rtnl = true;
+			mark_ns_unsupported_rtnl();
 		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		/* nl_open failed before any syscall inside it succeeded
@@ -964,14 +1011,14 @@ static int tc_qdisc_churn_in_ns(void *arg)
 	 * (recv_timeo_s > 0 above). */
 	it->direct_calls += 3;
 
-	if (!lo_brought_up) {
+	if (!lo_brought_up()) {
 		rtnl_bring_lo_up(&it->nl);
 		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
 		 * when the lo lookup succeeds; the if_nametoindex libc
 		 * probe stays unattributed to match the surrounding
 		 * per-childop convention. */
 		it->direct_calls += 2;
-		lo_brought_up = true;
+		mark_lo_brought_up();
 	}
 
 	if (valid_op)
