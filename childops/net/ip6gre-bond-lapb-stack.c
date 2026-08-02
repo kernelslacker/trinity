@@ -122,7 +122,24 @@ static const __u8 ibls_v6_remote[16] = {
  * arms are preserved because a fresh user namespace cannot
  * manufacture an absent kernel CONFIG -- the gate still short-
  * circuits the rest of the grandchild's iteration once it fires. */
-static bool g_unsupported;
+/* Per-grandchild unsupported latch lives in shm
+ * (shm->ip6gre_bond_lapb_ns_unsupported).  Write sites sit inside the
+ * userns_run_in_ns() grandchild body -- a process-local static would
+ * die with the grandchild on _exit() and every subsequent invocation
+ * would re-attempt the same unsupported ip6gre / bond_enslave /
+ * lapb-lookup forever.  RELAXED atomic load/store is safe: only
+ * false -> true, idempotent write. */
+static bool g_unsupported(void)
+{
+	return __atomic_load_n(&shm->ip6gre_bond_lapb_ns_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_g_unsupported(void)
+{
+	__atomic_store_n(&shm->ip6gre_bond_lapb_ns_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Master gate: persistent across iterations in the persistent child.
  * Set when userns_run_in_ns returns -EPERM (hardened userns policy
@@ -145,9 +162,9 @@ static void warn_once_unsupported_ip6gre_lapb(const char *reason, int err)
 
 static void latch_unsupported(int op_type, const char *reason, int err)
 {
-	if (g_unsupported)
+	if (g_unsupported())
 		return;
-	g_unsupported = true;
+	mark_g_unsupported();
 	outputerr("ip6gre_bond_lapb_stack: %s failed (errno=%d), latching unsupported\n",
 		  reason, err);
 	/* op_type originates in shared memory (child->op_type) and can be
@@ -543,7 +560,7 @@ static int ip6gre_bond_lapb_stack_in_ns(void *arg)
 	struct ip6gre_lapb_iter_ctx *ictx = (struct ip6gre_lapb_iter_ctx *)arg;
 	struct childdata *child = ictx->child;
 
-	if (g_unsupported)
+	if (g_unsupported())
 		return 0;
 
 	if (ip6gre_lapb_iter_open_netlink(ictx) != 0)

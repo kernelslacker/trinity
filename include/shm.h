@@ -472,6 +472,14 @@ struct shm_s {
 	uint32_t nl80211_phy0;
 	bool nl80211_phy0_cached;
 
+	/* ip6gre-bond-lapb-stack per-grandchild unsupported latch
+	 * (childops/net/ip6gre-bond-lapb-stack.c).  Write sites sit
+	 * inside the userns_run_in_ns() grandchild body; a process-local
+	 * static would die with the grandchild and every subsequent
+	 * invocation would re-attempt the same unsupported ip6gre /
+	 * bond_enslave / lapb-lookup. */
+	bool ip6gre_bond_lapb_ns_unsupported;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC
