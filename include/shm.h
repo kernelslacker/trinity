@@ -538,6 +538,22 @@ struct shm_s {
 	bool ipmr_cache_report_ns_unsupported;
 	bool ipmr_cache_report_ns_eperm;
 
+	/* netdev-netns-migrate grandchild latches
+	 * (childops/net/netdev-netns-migrate.c).  Master gate is written
+	 * from mixed sites: latch_master() is called both from inside the
+	 * userns_run_in_ns() grandchild (create/migrate/drive failures)
+	 * and from the outer wrapper on userns_run_in_ns() -EPERM.  The
+	 * grandchild-side writes to a process-local static would die on
+	 * _exit() and the persistent child would keep retrying the same
+	 * unsupported RTM_NEWLINK / setns / unshare forever.  Drive gate
+	 * is written only inside the grandchild after post-migration
+	 * IFF_UP returns EOPNOTSUPP -- pure grandchild leak in the
+	 * static-storage form.  Moved to shm so both latches persist
+	 * fleet-wide.  RELAXED atomic load/store is safe -- only
+	 * false -> true, idempotent. */
+	bool ns_unsupported_netdev_migrate;
+	bool ns_unsupported_netdev_migrate_drive;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the
