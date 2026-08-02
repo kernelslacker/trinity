@@ -40,6 +40,7 @@
 #include <string.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "maps.h"
 #include "object-types.h"
 #include "objects.h"
@@ -58,19 +59,21 @@ static bool proc_net_unavailable;
  * Probe /proc availability via the fdinfo directory.
  * Returns false and latches proc_unavailable on first failure.
  */
-static bool check_proc_available(void)
+static bool check_proc_available(unsigned long *direct_calls)
 {
 	int fd;
 
 	if (proc_unavailable)
 		return false;
 
+	(*direct_calls)++;
 	fd = open("/proc/self/fdinfo", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (fd < 0) {
 		proc_unavailable = true;
 		return false;
 	}
 	close(fd);
+	(*direct_calls)++;
 	return true;
 }
 
@@ -102,14 +105,14 @@ static bool check_proc_available(void)
  * us — we may re-read an fd that was just removed, which the dup() check
  * naturally tolerates (it returns EBADF and we skip the entry).
  */
-static void audit_fd_bucket(void)
+static void audit_fd_bucket(unsigned long *direct_calls)
 {
 	struct childdata *child = this_child();
 	const int *fd_live;
 	unsigned int i;
 	unsigned int count;
 
-	if (!check_proc_available())
+	if (!check_proc_available(direct_calls))
 		return;
 
 	/*
@@ -139,11 +142,13 @@ static void audit_fd_bucket(void)
 		 * already closed fd.  Either outcome is race-free; the failure
 		 * case means the entry is genuinely gone, not a TOCTOU artifact.
 		 */
+		(*direct_calls)++;
 		newfd = dup(fd);
 		if (newfd < 0)
 			continue;
 
 		snprintf(path, sizeof(path), "/proc/self/fdinfo/%d", newfd);
+		(*direct_calls)++;
 		if (stat(path, &st) != 0 && errno == ENOENT) {
 			output(0, "refcount audit: fd %d tracked in pool but /proc/self/fdinfo/%d missing\n",
 			       fd, newfd);
@@ -151,6 +156,7 @@ static void audit_fd_bucket(void)
 					   1, __ATOMIC_RELAXED);
 		}
 		close(newfd);
+		(*direct_calls)++;
 	}
 }
 
@@ -219,7 +225,8 @@ static void audit_mmap_bucket(void)
 static bool collect_proc_net_inodes(const char *path,
 				    unsigned int inode_field,
 				    ino_t *out, unsigned int max,
-				    unsigned int *count_out)
+				    unsigned int *count_out,
+				    unsigned long *direct_calls)
 {
 	/* Chunked stack-buffer read, no stdio.  Each call to the auditor
 	 * sweeps six /proc/net files, and the auditor itself runs in the
@@ -247,6 +254,7 @@ static bool collect_proc_net_inodes(const char *path,
 
 	*count_out = 0;
 
+	(*direct_calls)++;
 	fd = open(path, O_RDONLY);
 	if (fd < 0)
 		return false;
@@ -255,6 +263,7 @@ static bool collect_proc_net_inodes(const char *path,
 		ssize_t n;
 		char *start, *eol;
 
+		(*direct_calls)++;
 		n = read(fd, buf + held, sizeof(buf) - 1 - held);
 		if (n < 0) {
 			if (errno == EINTR)
@@ -313,6 +322,7 @@ static bool collect_proc_net_inodes(const char *path,
 	}
 
 	close(fd);
+	(*direct_calls)++;
 	*count_out = count;
 	return true;
 }
@@ -330,17 +340,25 @@ static bool collect_proc_net_inodes(const char *path,
  * On opendir failure (containerised env with /proc hidden) we return 0; the
  * caller treats zero held inodes as "idle child" and skips the cross-check.
  */
-static unsigned int collect_held_socket_inodes(ino_t *out, unsigned int max)
+static unsigned int collect_held_socket_inodes(ino_t *out, unsigned int max,
+					       unsigned long *direct_calls)
 {
 	DIR *dir;
 	struct dirent *de;
 	unsigned int count = 0;
 
+	/* opendir(3) drives one open(2). */
+	(*direct_calls)++;
 	dir = opendir("/proc/self/fd");
 	if (dir == NULL)
 		return 0;
 
 	while (count < max && (de = readdir(dir)) != NULL) {
+		/* readdir(3) drives getdents64(2) in bursts; approximate one
+		 * per returned entry since we can't see the buffer fill from
+		 * here.  Underestimate on a busy dir, matches surrounding
+		 * granularity. */
+		(*direct_calls)++;
 		/* /proc/self/fd/ (14) + NAME_MAX (255) + NUL.  d_name is in
 		 * practice a small integer string, but gcc's format-truncation
 		 * check sees the full 255-byte upper bound. */
@@ -353,6 +371,7 @@ static unsigned int collect_held_socket_inodes(ino_t *out, unsigned int max)
 			continue;
 
 		snprintf(linkpath, sizeof(linkpath), "/proc/self/fd/%s", de->d_name);
+		(*direct_calls)++;
 		n = readlink(linkpath, target, sizeof(target) - 1);
 		if (n <= 0)
 			continue;
@@ -363,6 +382,7 @@ static unsigned int collect_held_socket_inodes(ino_t *out, unsigned int max)
 	}
 
 	closedir(dir);
+	(*direct_calls)++;
 	return count;
 }
 
@@ -403,7 +423,8 @@ static unsigned int collect_held_socket_inodes(ino_t *out, unsigned int max)
  * latter latches proc_net_unavailable to skip all future invocations.
  */
 static unsigned int collect_all_proc_net_inodes(ino_t *net_inodes,
-						bool *any_open_out)
+						bool *any_open_out,
+						unsigned long *direct_calls)
 {
 	static const struct {
 		const char *path;
@@ -427,7 +448,7 @@ static unsigned int collect_all_proc_net_inodes(ino_t *net_inodes,
 					    net_files[t].inode_field,
 					    net_inodes + net_count,
 					    MAX_PROC_NET_INODES - net_count,
-					    &n))
+					    &n, direct_calls))
 			any_open = true;
 		net_count += n;
 	}
@@ -445,7 +466,8 @@ static unsigned int collect_all_proc_net_inodes(ino_t *net_inodes,
  */
 static void audit_socket_pool_against_net_inodes(struct objhead *head,
 						 const ino_t *net_inodes,
-						 unsigned int net_count)
+						 unsigned int net_count,
+						 unsigned long *direct_calls)
 {
 	struct object *obj;
 	unsigned int i;
@@ -460,6 +482,7 @@ static void audit_socket_pool_against_net_inodes(struct objhead *head,
 		if (si->fd < 0)
 			continue;
 
+		(*direct_calls)++;
 		if (fstat(si->fd, &st) != 0)
 			continue;
 
@@ -483,7 +506,7 @@ static void audit_socket_pool_against_net_inodes(struct objhead *head,
 	}
 }
 
-static void audit_socket_bucket(void)
+static void audit_socket_bucket(unsigned long *direct_calls)
 {
 	struct objhead *head;
 	ino_t *net_inodes;
@@ -501,7 +524,7 @@ static void audit_socket_bucket(void)
 	if (!net_inodes)
 		return;
 
-	net_count = collect_all_proc_net_inodes(net_inodes, &any_open);
+	net_count = collect_all_proc_net_inodes(net_inodes, &any_open, direct_calls);
 
 	/*
 	 * Latch unavailable only when every probed file failed to open — a
@@ -520,7 +543,7 @@ static void audit_socket_bucket(void)
 		return;
 	}
 
-	audit_socket_pool_against_net_inodes(head, net_inodes, net_count);
+	audit_socket_pool_against_net_inodes(head, net_inodes, net_count, direct_calls);
 
 	/*
 	 * Phase 2: fdinfo-side cross-check.  Pull the kernel's own list of
@@ -540,7 +563,8 @@ static void audit_socket_bucket(void)
 		unsigned int held_count;
 		unsigned int j;
 
-		held_count = collect_held_socket_inodes(held, ARRAY_SIZE(held));
+		held_count = collect_held_socket_inodes(held, ARRAY_SIZE(held),
+							direct_calls);
 		for (j = 0; j < held_count; j++) {
 			unsigned int k;
 			bool found = false;
@@ -563,9 +587,22 @@ static void audit_socket_bucket(void)
 	free(net_inodes);
 }
 
-bool refcount_auditor(struct childdata *child __unused__)
+bool refcount_auditor(struct childdata *child)
 {
 	static unsigned int bucket_cursor;
+	/* Local direct-syscall tally for whichever bucket fires this
+	 * invocation.  audit_fd_bucket bumps for open+close in
+	 * check_proc_available and dup+stat+close per live fd;
+	 * audit_socket_bucket bumps for six /proc/net open+read+close
+	 * chains, one fstat per pool socket, and the /proc/self/fd
+	 * opendir+readdir+readlink+closedir walk.  audit_mmap_bucket
+	 * routes all its work through proc_maps_check (external helper),
+	 * so it contributes zero here and the publisher is skipped on
+	 * that bucket.  Published once via childop_direct_syscalls_add()
+	 * on the valid_op path. */
+	unsigned long direct_calls = 0;
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (!ONE_IN(50))
 		return true;
@@ -573,11 +610,14 @@ bool refcount_auditor(struct childdata *child __unused__)
 	__atomic_add_fetch(&shm->stats.refcount_audit.runs, 1, __ATOMIC_RELAXED);
 
 	switch (bucket_cursor % 3) {
-	case 0: audit_fd_bucket();     break;
-	case 1: audit_mmap_bucket();   break;
-	case 2: audit_socket_bucket(); break;
+	case 0: audit_fd_bucket(&direct_calls);     break;
+	case 1: audit_mmap_bucket();                break;
+	case 2: audit_socket_bucket(&direct_calls); break;
 	}
 	bucket_cursor++;
+
+	if (valid_op && direct_calls > 0)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }
