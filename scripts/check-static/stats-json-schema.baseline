@@ -659,6 +659,17 @@ stats	object
     stats.nf_conntrack_helper_churn.delete_ok	u64
     stats.nf_conntrack_helper_churn.zone_swap	u64
     stats.nf_conntrack_helper_churn.detach_ok	u64
+  stats.ct_expect_realloc	object
+    stats.ct_expect_realloc.runs	u64
+    stats.ct_expect_realloc.ns_setup_failed	u64
+    stats.ct_expect_realloc.ns_unsupported	u64
+    stats.ct_expect_realloc.ct_setup_failed	u64
+    stats.ct_expect_realloc.helper_missing	u64
+    stats.ct_expect_realloc.master_ok	u64
+    stats.ct_expect_realloc.expect_ok	u64
+    stats.ct_expect_realloc.realloc_ok	u64
+    stats.ct_expect_realloc.unlink_ok	u64
+    stats.ct_expect_realloc.full_cycle	u64
   stats.ipset_churn	object
     stats.ipset_churn.runs	u64
     stats.ipset_churn.setup_failed	u64
