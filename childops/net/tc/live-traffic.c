@@ -312,12 +312,85 @@ static void mark_ns_unsupported_xdp(void)
 			 __ATOMIC_RELAXED);
 }
 
-static bool lo_brought_up;
-static bool modprobe_tried_ingress;
-static bool modprobe_tried_matchall;
-static bool modprobe_tried_cls_bpf;
-static bool modprobe_tried_act_mirred;
-static bool modprobe_tried_act_police;
+/* Per-grandchild setup latches live in shm for the same reason as the
+ * ns_unsupported_* gates above: the write site sits inside the
+ * userns_run_in_ns() grandchild, so a process-local static dies with
+ * the grandchild on _exit() and every subsequent invocation re-pays
+ * the "lo up" rtnetlink round-trip and the try_modprobe() cost.
+ * Shared shm state means one successful lo-up / one modprobe attempt
+ * per fleet, not per grandchild. */
+
+static bool lo_brought_up(void)
+{
+	return __atomic_load_n(&shm->tc_live_lo_brought_up,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_lo_brought_up(void)
+{
+	__atomic_store_n(&shm->tc_live_lo_brought_up, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool modprobe_tried_ingress(void)
+{
+	return __atomic_load_n(&shm->tc_live_modprobe_tried_ingress,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_modprobe_tried_ingress(void)
+{
+	__atomic_store_n(&shm->tc_live_modprobe_tried_ingress, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool modprobe_tried_matchall(void)
+{
+	return __atomic_load_n(&shm->tc_live_modprobe_tried_matchall,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_modprobe_tried_matchall(void)
+{
+	__atomic_store_n(&shm->tc_live_modprobe_tried_matchall, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool modprobe_tried_cls_bpf(void)
+{
+	return __atomic_load_n(&shm->tc_live_modprobe_tried_cls_bpf,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_modprobe_tried_cls_bpf(void)
+{
+	__atomic_store_n(&shm->tc_live_modprobe_tried_cls_bpf, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool modprobe_tried_act_mirred(void)
+{
+	return __atomic_load_n(&shm->tc_live_modprobe_tried_act_mirred,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_modprobe_tried_act_mirred(void)
+{
+	__atomic_store_n(&shm->tc_live_modprobe_tried_act_mirred, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool modprobe_tried_act_police(void)
+{
+	return __atomic_load_n(&shm->tc_live_modprobe_tried_act_police,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_modprobe_tried_act_police(void)
+{
+	__atomic_store_n(&shm->tc_live_modprobe_tried_act_police, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Master gate: persistent across iterations in the persistent child.
  * Set when userns_run_in_ns() returns -EPERM (user.max_user_namespaces=0
@@ -761,35 +834,35 @@ static int tc_live_in_ns(void *arg)
 	 * (recv_timeo_s > 0 above). */
 	direct_calls += 3;
 
-	if (!modprobe_tried_ingress) {
-		modprobe_tried_ingress = true;
+	if (!modprobe_tried_ingress()) {
+		mark_modprobe_tried_ingress();
 		try_modprobe("sch_ingress");
 	}
-	if (!modprobe_tried_matchall) {
-		modprobe_tried_matchall = true;
+	if (!modprobe_tried_matchall()) {
+		mark_modprobe_tried_matchall();
 		try_modprobe("cls_matchall");
 	}
-	if (!modprobe_tried_cls_bpf) {
-		modprobe_tried_cls_bpf = true;
+	if (!modprobe_tried_cls_bpf()) {
+		mark_modprobe_tried_cls_bpf();
 		try_modprobe("cls_bpf");
 	}
-	if (!modprobe_tried_act_mirred) {
-		modprobe_tried_act_mirred = true;
+	if (!modprobe_tried_act_mirred()) {
+		mark_modprobe_tried_act_mirred();
 		try_modprobe("act_mirred");
 	}
-	if (!modprobe_tried_act_police) {
-		modprobe_tried_act_police = true;
+	if (!modprobe_tried_act_police()) {
+		mark_modprobe_tried_act_police();
 		try_modprobe("act_police");
 	}
 
-	if (!lo_brought_up) {
+	if (!lo_brought_up()) {
 		rtnl_bring_lo_up(&nl);
 		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
 		 * when the lo lookup succeeds; the if_nametoindex libc
 		 * probe stays unattributed to match the surrounding per-
 		 * childop convention. */
 		direct_calls += 2;
-		lo_brought_up = true;
+		mark_lo_brought_up();
 	}
 
 	if (valid_op)
