@@ -17,6 +17,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "child.h"
+#include "childop-outcome.h"
 #include "errno-classify.h"
 #include "shm.h"
 #include "stats.h"
@@ -37,6 +39,24 @@
  * ------------------------------------------------------------------ */
 bool recipe_send_recv_linked(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	/* Snapshot the caller's op via this_child()->op_type and publish
+	 * once up front so the direct-syscall reporter attributes this
+	 * recipe's libc entries (socketpair here; siblings variously
+	 * socket / bind / write) to the caller's per-childop tally.  The
+	 * outer iouring recipes dispatcher already publishes a fixed
+	 * per-invocation floor for the ring setup/teardown; this bump
+	 * adds a corroborating per-recipe delta so per-recipe telemetry
+	 * moves under load. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	char buf[32];
@@ -87,6 +107,16 @@ out:
  * ------------------------------------------------------------------ */
 bool recipe_socket_shutdown_linked(struct iour_recipe_state *s, bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	int r;
@@ -126,6 +156,16 @@ bool recipe_socket_shutdown_linked(struct iour_recipe_state *s, bool *unsupporte
  * ------------------------------------------------------------------ */
 bool recipe_sendmsg(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct msghdr msg;
@@ -165,6 +205,16 @@ bool recipe_sendmsg(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_recvmsg(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct msghdr msg;
@@ -211,6 +261,16 @@ bool recipe_recvmsg(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_accept(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct sockaddr_storage ss;
@@ -245,6 +305,16 @@ bool recipe_accept(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_connect(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct sockaddr_in sin;
@@ -286,6 +356,16 @@ bool recipe_connect(struct iour_recipe_state *s, bool *unsupported __unused__)
 #ifndef TRINITY_COMPAT_BACKFILLED_BIND
 bool recipe_bind(struct iour_recipe_state *s, bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct sockaddr_in sin;
@@ -328,6 +408,16 @@ bool recipe_bind(struct iour_recipe_state *s, bool *unsupported)
  * ------------------------------------------------------------------ */
 bool recipe_listen(struct iour_recipe_state *s, bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct sockaddr_in sin;
