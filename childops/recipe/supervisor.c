@@ -24,6 +24,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
 #include "rnd.h"
@@ -44,6 +46,22 @@
 
 bool recipe_ptrace_seize_exitkill(bool *unsupported)
 {
+	/* Snapshot the recipe-runner childop under which we're executing
+	 * and publish once up front so the direct-syscall reporter
+	 * attributes this invocation's raw kernel entries (fork / ptrace /
+	 * prctl / kill / waitpid) to the parent op regardless of which
+	 * early-return path the dispatch takes.  Bounds-check matches the
+	 * surrounding valid_op gate in recipe_runner. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	unsigned int cycles;
 	unsigned int i;
 	unsigned int fork_fail_streak = 0;
@@ -273,6 +291,16 @@ static void mount_userns_dance_inner(void)
 /* Recipe 34: mount/userns dance. See Documentation/recipe-catalog.md */
 bool recipe_mount_userns_dance(bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	pid_t pid;
 	int status;
 
@@ -489,6 +517,16 @@ static int recipe_seccomp_listener_supervisor(void)
 /* Recipe 35: seccomp USER_NOTIF listener + traced exec. See Documentation/recipe-catalog.md */
 bool recipe_seccomp_listener_exec(bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	pid_t supervisor;
 	int status;
 
@@ -756,6 +794,16 @@ out:
 /* Recipe 36: cgroup.kill + cgroup.events supervisor. See Documentation/recipe-catalog.md */
 bool recipe_cgroup_kill_events(bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	pid_t supervisor;
 	int status;
 
