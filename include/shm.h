@@ -477,6 +477,15 @@ struct shm_s {
 	bool bridge_ip6frag_ns_unsupported_bridge;
 	bool bridge_ip6frag_ns_unsupported_nf_tables;
 	bool bridge_ip6frag_ns_unsupported_af_packet;
+	/* bridge-ip6frag-refrag per-grandchild lo-up latch (childops/
+	 * net/bridge-ip6frag-refrag.c).  Written inside the
+	 * userns_run_in_ns() grandchild's bridge_ip6frag_refrag_in_ns()
+	 * path -- a process-local static would die with the grandchild
+	 * on _exit() and every subsequent invocation would re-pay the
+	 * rtnetlink "lo up" round-trip forever.  Living in shm lets one
+	 * successful lo-up persist fleet-wide.  RELAXED atomic
+	 * load/store is safe -- only false -> true, idempotent write. */
+	bool bridge_ip6frag_lo_up_done;
 
 	/* bridge-ip6-refrag-fraggap per-subsystem latches (childops/net/
 	 * bridge-ip6-refrag-fraggap.c).  Grandchild observes RTM_NEWLINK

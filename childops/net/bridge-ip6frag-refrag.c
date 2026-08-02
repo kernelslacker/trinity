@@ -152,7 +152,26 @@
 #define B6R_FRAME_CAP			1600U		/* MTU (1500) + eth + slop */
 
 static bool ns_unsupported;
-static bool lo_up_done;
+
+/* Per-grandchild lo-up latch lives in shm
+ * (shm->bridge_ip6frag_lo_up_done).  The write site sits inside the
+ * userns_run_in_ns() grandchild's bridge_ip6frag_refrag_in_ns() path,
+ * so a process-local static would die with the grandchild on _exit()
+ * and every subsequent invocation would re-pay the rtnetlink "lo up"
+ * round-trip forever -- the parent never observes the latch.  Living
+ * in shm lets one successful lo-up persist fleet-wide.  RELAXED
+ * atomic load/store is safe: only false -> true, idempotent write. */
+static bool lo_up_done(void)
+{
+	return __atomic_load_n(&shm->bridge_ip6frag_lo_up_done,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_lo_up_done(void)
+{
+	__atomic_store_n(&shm->bridge_ip6frag_lo_up_done, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Per-subsystem config-absent gates live in shm
  * (shm->bridge_ip6frag_ns_unsupported_{bridge,nf_tables,af_packet}).
@@ -632,9 +651,9 @@ static int b6r_iter_setup_names(struct b6r_iter_ctx *ctx)
 
 	if (nl_open(&ctx->rtnl, &rtnl_opts) < 0)
 		return -1;
-	if (!lo_up_done) {
+	if (!lo_up_done()) {
 		rtnl_bring_lo_up(&ctx->rtnl);
-		lo_up_done = true;
+		mark_lo_up_done();
 	}
 
 	rng = (unsigned int)(rand32() & 0xffffu);
