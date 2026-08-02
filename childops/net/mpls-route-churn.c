@@ -112,16 +112,13 @@ struct rtvia_compat {
 #define MPLS_RC_LABEL_MIN		16U
 #define MPLS_RC_LABEL_RANGE		(0x100000U - 16U)	/* [16, 0xFFFFF] */
 
-/* Per-child latches.  All start cleared; transitions are one-way
- * within a child's lifetime.  ns_unsupported_userns_mpls_route_churn
- * is the master latch set on userns_run_in_ns() -EPERM and gates the
- * outer dispatcher; the rest are set inside the grandchild and only
- * short-circuit the rest of one invocation's outer loop before the
- * COW copies die on _exit(). */
+/* Master latch: process-local static, set on userns_run_in_ns()
+ * -EPERM which is observed by the parent, so a plain static is fine
+ * here.  The per-grandchild latches (ns_unsupported_mpls,
+ * ns_unsupported_lwtunnel, modprobe_tried_mpls_router) live in shm
+ * because their writes happen inside the userns_run_in_ns() grandchild
+ * and would otherwise die on _exit(). */
 static bool ns_unsupported_userns_mpls_route_churn;
-static bool ns_unsupported_mpls;
-static bool ns_unsupported_lwtunnel;
-static bool modprobe_tried_mpls_router;
 
 /*
  * One-shot outputerr on the userns latch transition false->true.
@@ -138,9 +135,11 @@ static void warn_once_unsupported_userns(const char *reason, int err)
 
 static void maybe_modprobe_once(void)
 {
-	if (modprobe_tried_mpls_router)
+	if (__atomic_load_n(&shm->mpls_route_modprobe_tried_mpls_router,
+			    __ATOMIC_RELAXED))
 		return;
-	modprobe_tried_mpls_router = true;
+	__atomic_store_n(&shm->mpls_route_modprobe_tried_mpls_router, true,
+			 __ATOMIC_RELAXED);
 	try_modprobe("mpls_router");
 	try_modprobe("mpls_iptunnel");
 	if (verbosity > 2)
@@ -149,9 +148,11 @@ static void maybe_modprobe_once(void)
 
 static void latch_ns_unsupported_mpls(int rc)
 {
-	if (ns_unsupported_mpls)
+	if (__atomic_load_n(&shm->mpls_route_ns_unsupported_mpls,
+			    __ATOMIC_RELAXED))
 		return;
-	ns_unsupported_mpls = true;
+	__atomic_store_n(&shm->mpls_route_ns_unsupported_mpls, true,
+			 __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.mpls_route_churn.ns_unsupported,
 			   1, __ATOMIC_RELAXED);
 	if (verbosity > 2)
@@ -161,9 +162,11 @@ static void latch_ns_unsupported_mpls(int rc)
 
 static void latch_ns_unsupported_lwtunnel(int rc)
 {
-	if (ns_unsupported_lwtunnel)
+	if (__atomic_load_n(&shm->mpls_route_ns_unsupported_lwtunnel,
+			    __ATOMIC_RELAXED))
 		return;
-	ns_unsupported_lwtunnel = true;
+	__atomic_store_n(&shm->mpls_route_ns_unsupported_lwtunnel, true,
+			 __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.mpls_route_churn.ns_unsupported,
 			   1, __ATOMIC_RELAXED);
 	if (verbosity > 2)
@@ -617,7 +620,9 @@ static int mpls_route_churn_in_ns(void *arg)
 
 		pick_arm_a = (rand32() & 1U) != 0;
 
-		if (pick_arm_a && !ns_unsupported_mpls) {
+		if (pick_arm_a &&
+		    !__atomic_load_n(&shm->mpls_route_ns_unsupported_mpls,
+				     __ATOMIC_RELAXED)) {
 			__u32 in_label = 0;
 			int rc = build_mpls_label_install(&ctx, lo_ifindex,
 							  &in_label);
@@ -634,7 +639,9 @@ static int mpls_route_churn_in_ns(void *arg)
 			} else {
 				map_rc_to_latch(op, rc, 'A');
 			}
-		} else if (!pick_arm_a && !ns_unsupported_lwtunnel) {
+		} else if (!pick_arm_a &&
+			   !__atomic_load_n(&shm->mpls_route_ns_unsupported_lwtunnel,
+					    __ATOMIC_RELAXED)) {
 			__be32 dst = 0;
 			int rc = build_iptunnel_install(&ctx, lo_ifindex,
 							&dst);
@@ -653,7 +660,10 @@ static int mpls_route_churn_in_ns(void *arg)
 			}
 		}
 
-		if (ns_unsupported_mpls && ns_unsupported_lwtunnel)
+		if (__atomic_load_n(&shm->mpls_route_ns_unsupported_mpls,
+				    __ATOMIC_RELAXED) &&
+		    __atomic_load_n(&shm->mpls_route_ns_unsupported_lwtunnel,
+				    __ATOMIC_RELAXED))
 			break;
 	}
 
@@ -679,7 +689,10 @@ bool mpls_route_churn(struct childdata *child)
 	if (ns_unsupported_userns_mpls_route_churn)
 		return true;
 
-	if (ns_unsupported_mpls && ns_unsupported_lwtunnel)
+	if (__atomic_load_n(&shm->mpls_route_ns_unsupported_mpls,
+			    __ATOMIC_RELAXED) &&
+	    __atomic_load_n(&shm->mpls_route_ns_unsupported_lwtunnel,
+			    __ATOMIC_RELAXED))
 		return true;
 
 	rc = userns_run_in_ns(CLONE_NEWNET, mpls_route_churn_in_ns, &cctx);

@@ -490,6 +490,14 @@ struct shm_s {
 	bool tc_qdisc_churn_ns_unsupported_bridge;
 	bool tc_qdisc_churn_lo_brought_up;
 
+	/* mpls-route-churn per-grandchild setup latches (childops/net/
+	 * mpls-route-churn.c).  Written inside the userns_run_in_ns()
+	 * grandchild (_exit reaps the writes); use __ATOMIC_RELAXED
+	 * load/store so the parent sees monotonic false->true. */
+	bool mpls_route_modprobe_tried_mpls_router;
+	bool mpls_route_ns_unsupported_mpls;
+	bool mpls_route_ns_unsupported_lwtunnel;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the
