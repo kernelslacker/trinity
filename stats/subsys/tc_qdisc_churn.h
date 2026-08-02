@@ -21,6 +21,9 @@ struct tc_qdisc_churn_stats {
 	unsigned long bridge_parent_runs;	/* iter used a bridge slave veth as qdisc parent */
 	unsigned long bridge_dellink_race_ok;	/* RTM_DELLINK on bridge slave port accepted (raced flush burst) */
 	unsigned long gso_burst_ok;		/* UDP_SEGMENT sendto produced a GSO skb (reaches qdisc_pkt_len_segs_init) */
+	unsigned long qfq_traffic_runs;		/* qfq singleton-aggregate change/enqueue race lane fired */
+	unsigned long qfq_traffic_burst_ok;	/* loopback UDP sendto on qfq tree returned >0 */
+	unsigned long qfq_traffic_change_ok;	/* RTM_NEWTCLASS change accepted (qfq_change_class ran) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_TC_QDISC_CHURN_H */

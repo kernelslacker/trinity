@@ -68,6 +68,12 @@
 #define TCA_OPTIONS		2
 #endif
 
+/* sch_qfq per-class TCA_OPTIONS attribute IDs (kernel UAPI; stable). */
+#ifndef TCA_QFQ_WEIGHT
+#define TCA_QFQ_WEIGHT		1
+#define TCA_QFQ_LMAX		2
+#endif
+
 /* RTM_* qdisc / class / filter message types (kernel UAPI; stable). */
 #ifndef RTM_NEWQDISC
 #define RTM_NEWQDISC		36
@@ -119,7 +125,8 @@ int build_newqdisc_opts(struct nl_ctx *ctx, int ifindex, __u32 handle,
 			peek_opts_encoder enc,
 			unsigned short inner_type, __u16 extra_flags);
 int build_qfq_class(struct nl_ctx *ctx, int ifindex, __u32 handle,
-		    __u32 parent);
+		    __u32 parent, __u32 weight, __u32 lmax,
+		    __u16 extra_flags);
 size_t encode_red_opts(unsigned char *buf, size_t cap);
 size_t encode_tbf_opts(unsigned char *buf, size_t cap);
 

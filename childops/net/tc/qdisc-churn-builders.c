@@ -459,21 +459,25 @@ int build_newqdisc_opts(struct nl_ctx *ctx, int ifindex, __u32 handle,
 }
 
 /*
- * Build a NEWTCLASS with TCA_OPTIONS containing TCA_QFQ_WEIGHT.
- * qfq classes accept defaults but kernel-side qfq_change_class
- * reads weight; supplying a sane non-zero value avoids the EINVAL
- * path and ensures the class is actually installable so the
- * matchall filter has somewhere to point.
+ * Build an RTM_NEWTCLASS carrying TCA_OPTIONS { TCA_QFQ_WEIGHT [,
+ * TCA_QFQ_LMAX ] }.  extra_flags selects create vs change: pass
+ * NLM_F_CREATE | NLM_F_EXCL for the initial install; pass 0 for a
+ * qfq_change_class() run over an existing class handle -- the shape
+ * needed by the singleton-aggregate change/enqueue race, where the
+ * change request's (weight, lmax) is deliberately picked to collide
+ * with a live class's aggregate hash key.  lmax == 0 skips the
+ * TCA_QFQ_LMAX attribute so the kernel keeps the class's current
+ * lmax (peek-stack caller doesn't care about the exact value).
  */
 int build_qfq_class(struct nl_ctx *ctx, int ifindex, __u32 handle,
-		    __u32 parent)
+		    __u32 parent, __u32 weight, __u32 lmax,
+		    __u16 extra_flags)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
 	size_t off, opts_off;
-	__u32 weight = 1;
 
 	memset(buf, 0, sizeof(buf));
-	off = tcmsg_hdr(ctx, buf, RTM_NEWTCLASS, NLM_F_CREATE | NLM_F_EXCL,
+	off = tcmsg_hdr(ctx, buf, RTM_NEWTCLASS, extra_flags,
 			ifindex, handle, parent, 0);
 
 	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, "qfq");
@@ -488,6 +492,12 @@ int build_qfq_class(struct nl_ctx *ctx, int ifindex, __u32 handle,
 		      &weight, sizeof(weight));
 	if (!off)
 		return -EIO;
+	if (lmax != 0) {
+		off = nla_put(buf, off, sizeof(buf), TCA_QFQ_LMAX,
+			      &lmax, sizeof(lmax));
+		if (!off)
+			return -EIO;
+	}
 	nla_nest_end(buf, opts_off, off);
 
 	tcmsg_finalize(buf, off);

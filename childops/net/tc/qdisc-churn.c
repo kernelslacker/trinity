@@ -464,7 +464,8 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name,
 	if (strcmp(child_name, "qfq") == 0) {
 		__u32 qfq_class = c_handle | 1U;
 
-		(void)build_qfq_class(ctx, ifindex, qfq_class, c_handle);
+		(void)build_qfq_class(ctx, ifindex, qfq_class, c_handle,
+				      1, 0, NLM_F_CREATE | NLM_F_EXCL);
 		(void)build_newtfilter(ctx, ifindex, c_handle, "matchall");
 		/* build_qfq_class + build_newtfilter: two nl_send_recv
 		 * calls (sendmsg + recv each). */
@@ -527,6 +528,158 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name,
 		/* close() is a raw kernel call. */
 		*direct_calls += 1;
 	}
+}
+
+/*
+ * QFQ singleton-aggregate change/enqueue race lane.
+ *
+ * qfq_change_class() snapshots the requested (weight, lmax) under the
+ * qdisc lock, drops the lock, then calls qfq_find_agg() to select the
+ * destination aggregate.  In that window qfq_enqueue()'s implicit
+ * qfq_change_agg (fired when an skb's payload exceeds the class's
+ * current lmax, which grows the class into an aggregate matching the
+ * larger key) can move cl->agg to an aggregate whose (weight, lmax)
+ * now matches the snapshot; qfq_find_agg() then returns cl->agg
+ * itself.  When that aggregate is a singleton, qfq_deact_rm_from_agg
+ * frees the aggregate before qfq_add_to_agg dereferences it -- the
+ * KASAN UAF this lane chases.
+ *
+ * Setup shape: one qfq class per aggregate (singleton is what triggers
+ * the free), each class installed with a distinct (weight, lmax) pulled
+ * from qfq_shapes[].  A matchall filter pins every enqueued skb onto
+ * classes[0] so the racing enqueue-side qfq_change_agg all fires on the
+ * same class the change stream is beating on.  The change stream
+ * deliberately picks (weight, lmax) *from the other classes* rather
+ * than random values -- qfq_find_agg walks the per-qdisc aggregate hash
+ * by (weight, lmax), and only a value that matches a live aggregate can
+ * return the class's own agg pointer.  Random weights would land in
+ * unallocated hash buckets and never trip the race.
+ *
+ * Payload sizes span sub-lmax through the largest lmax entry so both
+ * "fits in current agg" and "needs a bigger agg" branches of the
+ * enqueue path get exercised across the burst.
+ */
+static const struct {
+	__u32 weight;
+	__u32 lmax;
+} qfq_shapes[] = {
+	{ 1,  256 },
+	{ 2,  512 },
+	{ 3, 1024 },
+	{ 4, 1500 },
+};
+#define NR_QFQ_SHAPES	ARRAY_SIZE(qfq_shapes)
+
+static void do_qfq_traffic_churn(struct nl_ctx *ctx, int ifindex,
+				 const char *dev_name,
+				 unsigned long *direct_calls)
+{
+	unsigned int q_kidx;
+	__u32 major, handle;
+	__u32 classes[NR_QFQ_SHAPES];
+	struct sockaddr_in dst;
+	struct timespec t0;
+	unsigned int i, iters;
+	int udp = -1;
+	int rc;
+
+	q_kidx = qdisc_kind_idx("qfq");
+	if (q_kidx >= NR_QDISC_KINDS || ns_unsupported_qdisc_kind[q_kidx])
+		return;
+
+	__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qfq_traffic_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	modprobe_qdisc(q_kidx);
+
+	major = (__u32)((rand32() % 0xfee0U) + 0x10U);
+	handle = major << 16;
+
+	rc = build_newqdisc(ctx, ifindex, handle, TC_H_ROOT, "qfq",
+			    NLM_F_CREATE | NLM_F_EXCL);
+	*direct_calls += 2;
+	if (rc != 0) {
+		if (is_unsupported_err(rc))
+			ns_unsupported_qdisc_kind[q_kidx] = true;
+		return;
+	}
+
+	for (i = 0; i < NR_QFQ_SHAPES; i++) {
+		classes[i] = handle | (i + 1);
+		(void)build_qfq_class(ctx, ifindex, classes[i], handle,
+				      qfq_shapes[i].weight,
+				      qfq_shapes[i].lmax,
+				      NLM_F_CREATE | NLM_F_EXCL);
+		*direct_calls += 2;
+	}
+
+	(void)build_newtfilter(ctx, ifindex, handle, "matchall");
+	*direct_calls += 2;
+
+	if (ns_unsupported_inet())
+		goto teardown;
+
+	udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	*direct_calls += 1;
+	if (udp < 0) {
+		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
+			mark_ns_unsupported_inet();
+		goto teardown;
+	}
+	(void)setsockopt(udp, SOL_SOCKET, SO_BINDTODEVICE,
+			 dev_name, strlen(dev_name) + 1);
+	*direct_calls += 1;
+
+	memset(&dst, 0, sizeof(dst));
+	dst.sin_family      = AF_INET;
+	dst.sin_port        = htons(TC_INNER_PORT);
+	dst.sin_addr.s_addr = htonl(0x7f000001U);
+
+	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
+	iters = BUDGETED(CHILD_OP_TC_QDISC_CHURN,
+			 JITTER_RANGE(TC_PACKET_BASE));
+	if (iters < TC_PACKET_FLOOR)
+		iters = TC_PACKET_FLOOR;
+	if (iters > TC_PACKET_CAP)
+		iters = TC_PACKET_CAP;
+
+	for (i = 0; i < iters; i++) {
+		unsigned char payload[1500];
+		size_t plen;
+		unsigned int j;
+		ssize_t n;
+
+		if (ns_since(&t0) >= STORM_BUDGET_NS)
+			break;
+
+		plen = (size_t)(rand32() % (sizeof(payload) - 64U)) + 64U;
+		generate_rand_bytes(payload, plen);
+		n = sendto(udp, payload, plen, MSG_DONTWAIT,
+			   (struct sockaddr *)&dst, sizeof(dst));
+		*direct_calls += 1;
+		if (n > 0)
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qfq_traffic_burst_ok,
+					   1, __ATOMIC_RELAXED);
+
+		j = 1U + rnd_modulo_u32(NR_QFQ_SHAPES - 1U);
+		rc = build_qfq_class(ctx, ifindex, classes[0], handle,
+				     qfq_shapes[j].weight,
+				     qfq_shapes[j].lmax, 0);
+		*direct_calls += 2;
+		if (rc == 0)
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qfq_traffic_change_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+
+teardown:
+	if (udp >= 0) {
+		close(udp);
+		*direct_calls += 1;
+	}
+	(void)build_deltfilter(ctx, ifindex, handle);
+	*direct_calls += 2;
+	(void)build_delqdisc(ctx, ifindex, handle, TC_H_ROOT);
+	*direct_calls += 2;
 }
 
 /*
@@ -1042,6 +1195,20 @@ static int tc_qdisc_churn_in_ns(void *arg)
 	if (ONE_IN(4)) {
 		do_peek_stack(&it->nl, it->dummy_idx, it->dummy_name,
 			      &it->direct_calls);
+		goto out;
+	}
+
+	/*
+	 * One iteration in four (of the remaining) runs the qfq
+	 * singleton-aggregate change/enqueue race lane instead of the
+	 * standard rotation.  Same shared-out cleanup applies: the
+	 * lane installs its own qdisc/filter/classes on it->dummy_idx
+	 * and deletes them before returning; any leftover is cascaded
+	 * down when the dummy goes at out:.
+	 */
+	if (ONE_IN(4)) {
+		do_qfq_traffic_churn(&it->nl, it->dummy_idx, it->dummy_name,
+				     &it->direct_calls);
 		goto out;
 	}
 
