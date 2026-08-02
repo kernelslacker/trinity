@@ -147,6 +147,26 @@ int afxdp_iter_setup_umem(struct childdata *child,
 	bool want_sg, want_tx_md, want_tun;
 	int rc;
 
+	/* Publish a single per-iter direct-syscall bump for the umem TU
+	 * under the shared CHILD_OP_AFXDP_CHURN op.  afxdp_iter_setup_umem
+	 * is the first entrypoint iter_one calls after xsk_init(), so
+	 * bumping at the top marks "the umem phase was entered" — mirrors
+	 * xsk_teardown()'s unconditional-per-iter bump.  Same op-snapshot +
+	 * bounds check pattern as teardown: child->op_type lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling, so refuse to index the per-op stats array on an out-of-
+	 * range snapshot.  The three afxdp-churn TUs (umem / io / teardown)
+	 * all attribute to the same op via child->op_type / this_child(),
+	 * so all bumps accumulate atomically into the single op's total. */
+	{
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
+
 	st->xsk_fd = socket(AF_XDP, SOCK_RAW | SOCK_CLOEXEC, 0);
 	if (st->xsk_fd < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT ||

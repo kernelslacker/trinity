@@ -102,6 +102,29 @@ void afxdp_iter_tx_burst(struct xsk_state *st,
 	uint64_t head_addr;
 	uint16_t head_opts;
 
+	/* Publish a single per-iter direct-syscall bump for the io TU
+	 * under the shared CHILD_OP_AFXDP_CHURN op.  afxdp_iter_tx_burst
+	 * is the first io entrypoint iter_one calls after the setup phases
+	 * succeed, so bumping at the top (before the !st->bound early
+	 * return) marks "the io phase was reached this iter" — mirrors
+	 * xsk_teardown()'s unconditional-per-iter bump.  Same op-snapshot
+	 * + bounds check pattern as teardown: this_child()->op_type lives
+	 * in shared memory and can be scribbled by a poisoned-arena write
+	 * from a sibling, so refuse to index the per-op stats array on an
+	 * out-of-range snapshot.  All three afxdp-churn TUs (umem / io /
+	 * teardown) attribute to the same op, so all bumps accumulate
+	 * atomically into the single op's total. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
+
 	if (!st->bound)
 		return;
 
