@@ -455,6 +455,13 @@ struct shm_s {
 	 * would re-pay the rtnetlink round-trip. */
 	bool nftables_churn_lo_brought_up;
 
+	/* bridge-conntrack-churn per-grandchild "lo up" setup latch
+	 * (childops/net/bridge-conntrack-churn.c).  Write site sits
+	 * inside the userns_run_in_ns() grandchild body; a process-local
+	 * static would die with the grandchild and every subsequent
+	 * invocation would re-pay the rtnetlink round-trip. */
+	bool bridge_conntrack_lo_up_done;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC
