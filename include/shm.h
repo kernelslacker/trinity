@@ -433,6 +433,19 @@ struct shm_s {
 	bool tc_mirred_bc_ns_unsupported_matchall;
 	bool tc_mirred_bc_ns_unsupported_inet;
 
+	/* tc/mirred-blockcast per-grandchild setup latches (childops/net/
+	 * tc/mirred-blockcast.c).  Written inside the userns_run_in_ns()
+	 * grandchild -- a process-local static would die with the
+	 * grandchild on _exit() and every subsequent invocation would
+	 * re-pay the full lo-up / modprobe cost forever.  Living in shm
+	 * lets one successful "lo up" or one modprobe attempt persist
+	 * fleet-wide.  RELAXED atomic load/store is safe -- only
+	 * false -> true, idempotent write. */
+	bool tc_mirred_bc_lo_brought_up;
+	bool tc_mirred_bc_modprobe_tried_ingress;
+	bool tc_mirred_bc_modprobe_tried_matchall;
+	bool tc_mirred_bc_modprobe_tried_mirred;
+
 	/* tc/live-traffic per-subsystem latches (childops/net/tc/
 	 * live-traffic.c).  Grandchild observes NETLINK_ROUTE socket
 	 * refusal, RTM_NEWLINK "veth" rejection, RTM_NEWQDISC clsact
