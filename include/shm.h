@@ -388,6 +388,16 @@ struct shm_s {
 	bool ip_gre_churn_lo_brought_up;
 	bool sctp_chunk_rx_kind_unsupported;
 	bool esp_crafted_rx_kind_unsupported;
+	/* esp-crafted-rx per-grandchild lo-up latch (childops/net/
+	 * esp-crafted-rx.c).  Written inside the userns_run_in_ns()
+	 * grandchild's esp_crafted_rx_in_ns() path -- a process-local
+	 * static would die with the grandchild on _exit() and every
+	 * subsequent invocation would re-open a NETLINK_ROUTE socket
+	 * and re-pay the "lo up" rtnetlink round-trip forever.  Living
+	 * in shm lets one successful lo-up persist fleet-wide.  RELAXED
+	 * atomic load/store is safe -- only false -> true, idempotent
+	 * write. */
+	bool esp_crafted_rx_lo_brought_up;
 	bool fou_gue_mcast_rx_kind_unsupported;
 	bool geneve_rx_kind_unsupported;
 	/* geneve-rx per-grandchild lo-up latch (childops/net/
