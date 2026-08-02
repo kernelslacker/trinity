@@ -44,6 +44,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
 #include "random.h"
@@ -67,23 +68,25 @@ struct racer_shared {
 };
 
 struct race_target {
-	bool (*setup)(struct racer_shared *s);
+	bool (*setup)(struct racer_shared *s, unsigned long *direct_calls);
 	void (*worker)(struct racer_shared *s);
-	void (*cleanup)(struct racer_shared *s);
+	void (*cleanup)(struct racer_shared *s, unsigned long *direct_calls);
 };
 
 /* ------------------------------------------------------------------ */
 /* double-close: race two close() calls on the same fd                */
 /* ------------------------------------------------------------------ */
 
-static bool setup_double_close(struct racer_shared *s)
+static bool setup_double_close(struct racer_shared *s, unsigned long *direct_calls)
 {
 	int pipefd[2];
 
+	(*direct_calls)++;
 	if (pipe(pipefd) < 0)
 		return false;
 	s->fd = pipefd[0];
 	close(pipefd[1]);
+	(*direct_calls)++;
 	return true;
 }
 
@@ -92,23 +95,26 @@ static void worker_double_close(struct racer_shared *s)
 	close(s->fd);
 }
 
-static void cleanup_double_close(struct racer_shared *s)
+static void cleanup_double_close(struct racer_shared *s, unsigned long *direct_calls)
 {
 	close(s->fd);	/* best-effort; may already be gone */
+	(*direct_calls)++;
 }
 
 /* ------------------------------------------------------------------ */
 /* close-while-ioctl: race close() vs ioctl(FIONREAD) on the same fd */
 /* ------------------------------------------------------------------ */
 
-static bool setup_close_ioctl(struct racer_shared *s)
+static bool setup_close_ioctl(struct racer_shared *s, unsigned long *direct_calls)
 {
 	int pipefd[2];
 
+	(*direct_calls)++;
 	if (pipe(pipefd) < 0)
 		return false;
 	s->fd = pipefd[0];
 	close(pipefd[1]);
+	(*direct_calls)++;
 	return true;
 }
 
@@ -122,16 +128,17 @@ static void worker_close_ioctl(struct racer_shared *s)
 		ioctl(s->fd, FIONREAD, &val);
 }
 
-static void cleanup_close_ioctl(struct racer_shared *s)
+static void cleanup_close_ioctl(struct racer_shared *s, unsigned long *direct_calls)
 {
 	close(s->fd);
+	(*direct_calls)++;
 }
 
 /* ------------------------------------------------------------------ */
 /* mmap MAP_FIXED overlap: two concurrent fixed-address remaps        */
 /* ------------------------------------------------------------------ */
 
-static bool setup_mmap_overlap(struct racer_shared *s)
+static bool setup_mmap_overlap(struct racer_shared *s, unsigned long *direct_calls)
 {
 	void *addr;
 
@@ -139,6 +146,7 @@ static bool setup_mmap_overlap(struct racer_shared *s)
 	 * Reserve a 4-page anonymous region so MAP_FIXED workers stomp
 	 * a known-safe VA range rather than clobbering arbitrary mappings.
 	 */
+	(*direct_calls)++;
 	addr = mmap(NULL, 4 * 4096, PROT_READ | PROT_WRITE,
 		    MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 	if (addr == MAP_FAILED)
@@ -157,17 +165,19 @@ static void worker_mmap_overlap(struct racer_shared *s)
 		munmap(ret, 4096);
 }
 
-static void cleanup_mmap_overlap(struct racer_shared *s)
+static void cleanup_mmap_overlap(struct racer_shared *s, unsigned long *direct_calls)
 {
 	munmap(s->mmap_addr, 4 * 4096);
+	(*direct_calls)++;
 }
 
 /* ------------------------------------------------------------------ */
 /* futex double-wake: two concurrent FUTEX_WAKE on the same word      */
 /* ------------------------------------------------------------------ */
 
-static bool setup_futex_wake(struct racer_shared *s)
+static bool setup_futex_wake(struct racer_shared *s, unsigned long *direct_calls)
 {
+	(void)direct_calls;
 	s->futex_val = 0;
 	return true;
 }
@@ -177,21 +187,23 @@ static void worker_futex_wake(struct racer_shared *s)
 	trinity_raw_syscall(__NR_futex, &s->futex_val, FUTEX_WAKE, 1, NULL, NULL, 0);
 }
 
-static void cleanup_futex_wake(struct racer_shared *s)
+static void cleanup_futex_wake(struct racer_shared *s, unsigned long *direct_calls)
 {
 	(void)s;
+	(void)direct_calls;
 }
 
 /* ------------------------------------------------------------------ */
 /* dup2 target collision: race dup2(old, target) vs dup2(old, target) */
 /* ------------------------------------------------------------------ */
 
-static bool setup_dup2_race(struct racer_shared *s)
+static bool setup_dup2_race(struct racer_shared *s, unsigned long *direct_calls)
 {
 	int pipefd[2];
 	int target = -1;
 	int try;
 
+	(*direct_calls)++;
 	if (pipe(pipefd) < 0)
 		return false;
 
@@ -205,6 +217,7 @@ static bool setup_dup2_race(struct racer_shared *s)
 	for (try = 0; try < 8; try++) {
 		int candidate = 100 + rnd_modulo_u32(100);
 
+		(*direct_calls)++;
 		if (fcntl(candidate, F_GETFD) == -1 && errno == EBADF) {
 			target = candidate;
 			break;
@@ -213,12 +226,14 @@ static bool setup_dup2_race(struct racer_shared *s)
 	if (target == -1) {
 		close(pipefd[0]);
 		close(pipefd[1]);
+		*direct_calls += 2;
 		return false;
 	}
 
 	s->fd = pipefd[0];
 	s->fd2 = target;
 	close(pipefd[1]);
+	(*direct_calls)++;
 	return true;
 }
 
@@ -230,27 +245,34 @@ static void worker_dup2_race(struct racer_shared *s)
 		close(newfd);
 }
 
-static void cleanup_dup2_race(struct racer_shared *s)
+static void cleanup_dup2_race(struct racer_shared *s, unsigned long *direct_calls)
 {
 	close(s->fd);
 	close(s->fd2);
+	*direct_calls += 2;
 }
 
 /* ------------------------------------------------------------------ */
 /* ftruncate race: concurrent ftruncate to different lengths          */
 /* ------------------------------------------------------------------ */
 
-static bool setup_ftruncate_race(struct racer_shared *s)
+static bool setup_ftruncate_race(struct racer_shared *s, unsigned long *direct_calls)
 {
 	char path[PATH_MAX + 32];
 	int fd;
 
 	snprintf(path, sizeof(path), "%s/trinity-racer-XXXXXX",
 		 trinity_tmpdir_abs());
+	/* mkstemp is a libc helper that ultimately drives one open(2) attempt
+	 * per candidate name.  Count it as one kernel call at the semantic
+	 * level -- an underestimate on collision retries, but matches the
+	 * granularity of the surrounding syscall tally. */
+	(*direct_calls)++;
 	fd = mkstemp(path);
 	if (fd < 0)
 		return false;
 	unlink(path);
+	(*direct_calls)++;
 	s->fd = fd;
 	return true;
 }
@@ -264,36 +286,42 @@ static void worker_ftruncate_race(struct racer_shared *s)
 			(off_t)RAND_NEGATIVE_OR(sizes[rnd_modulo_u32(ARRAY_SIZE(sizes))]));
 }
 
-static void cleanup_ftruncate_race(struct racer_shared *s)
+static void cleanup_ftruncate_race(struct racer_shared *s, unsigned long *direct_calls)
 {
 	close(s->fd);
+	(*direct_calls)++;
 }
 
 /* ------------------------------------------------------------------ */
 /* epoll close-while-wait: race epoll_wait() vs close(epollfd)        */
 /* ------------------------------------------------------------------ */
 
-static bool setup_epoll_race(struct racer_shared *s)
+static bool setup_epoll_race(struct racer_shared *s, unsigned long *direct_calls)
 {
 	int epfd, pipefd[2];
 	struct epoll_event ev;
 
+	(*direct_calls)++;
 	epfd = epoll_create1(0);
 	if (epfd < 0)
 		return false;
 
+	(*direct_calls)++;
 	if (pipe(pipefd) < 0) {
 		close(epfd);
+		(*direct_calls)++;
 		return false;
 	}
 
 	ev.events = EPOLLIN;
 	ev.data.fd = pipefd[0];
 	epoll_ctl(epfd, EPOLL_CTL_ADD, pipefd[0], &ev);
+	(*direct_calls)++;
 
 	s->fd  = epfd;
 	s->fd2 = pipefd[0];
 	close(pipefd[1]);
+	(*direct_calls)++;
 	return true;
 }
 
@@ -307,24 +335,27 @@ static void worker_epoll_race(struct racer_shared *s)
 		epoll_wait(s->fd, events, 1, 0);
 }
 
-static void cleanup_epoll_race(struct racer_shared *s)
+static void cleanup_epoll_race(struct racer_shared *s, unsigned long *direct_calls)
 {
 	close(s->fd);
 	close(s->fd2);
+	*direct_calls += 2;
 }
 
 /* ------------------------------------------------------------------ */
 /* fcntl flag flip: concurrent F_SETFL on the same fd                 */
 /* ------------------------------------------------------------------ */
 
-static bool setup_fcntl_race(struct racer_shared *s)
+static bool setup_fcntl_race(struct racer_shared *s, unsigned long *direct_calls)
 {
 	int pipefd[2];
 
+	(*direct_calls)++;
 	if (pipe(pipefd) < 0)
 		return false;
 	s->fd = pipefd[0];
 	close(pipefd[1]);
+	(*direct_calls)++;
 	return true;
 }
 
@@ -338,19 +369,21 @@ static void worker_fcntl_race(struct racer_shared *s)
 		fcntl(s->fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-static void cleanup_fcntl_race(struct racer_shared *s)
+static void cleanup_fcntl_race(struct racer_shared *s, unsigned long *direct_calls)
 {
 	close(s->fd);
+	(*direct_calls)++;
 }
 
 /* ------------------------------------------------------------------ */
 /* sigprocmask vs read: signal mask flip racing a blocking read        */
 /* ------------------------------------------------------------------ */
 
-static bool setup_signal_race(struct racer_shared *s)
+static bool setup_signal_race(struct racer_shared *s, unsigned long *direct_calls)
 {
 	int pipefd[2];
 
+	(*direct_calls)++;
 	if (pipe(pipefd) < 0)
 		return false;
 
@@ -359,6 +392,7 @@ static bool setup_signal_race(struct racer_shared *s)
 	ssize_t nw __attribute__((unused));
 	nw = write(pipefd[1], "x", 1);
 	close(pipefd[1]);
+	*direct_calls += 2;
 	return true;
 }
 
@@ -377,9 +411,10 @@ static void worker_signal_race(struct racer_shared *s)
 	}
 }
 
-static void cleanup_signal_race(struct racer_shared *s)
+static void cleanup_signal_race(struct racer_shared *s, unsigned long *direct_calls)
 {
 	close(s->fd);
+	(*direct_calls)++;
 }
 
 /* ------------------------------------------------------------------ */
@@ -417,6 +452,15 @@ bool barrier_racer(struct childdata *child)
 	unsigned int nworkers;
 	pid_t pids[4];
 	int i, alive, status;
+	/* Direct-syscall tally covering every kernel call issued from the
+	 * persistent trinity child body: the setup-page mmap, per-target
+	 * setup/cleanup helpers (via *direct_calls out-param), the fork
+	 * loop, spawn-fail kill+reap fallback, per-worker waitpid, and the
+	 * setup-page munmap.  Inner workers run in forked processes and
+	 * are excluded -- their syscalls do not attribute to the persistent
+	 * child (matches the close-racer pattern where same-process racer
+	 * threads WERE counted, but forked workers are separate PIDs). */
+	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -436,10 +480,11 @@ bool barrier_racer(struct childdata *child)
 	 * MAP_SHARED so the pthread barrier (PTHREAD_PROCESS_SHARED) is
 	 * visible to all forked workers without shm_open overhead.
 	 */
+	direct_calls++;
 	s = mmap(NULL, sizeof(*s), PROT_READ | PROT_WRITE,
 		 MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (s == MAP_FAILED)
-		return true;
+		goto out_publish;
 
 	s->fd       = -1;
 	s->fd2      = -1;
@@ -460,7 +505,7 @@ bool barrier_racer(struct childdata *child)
 	}
 	pthread_barrierattr_destroy(&attr);
 
-	if (!target->setup(s))
+	if (!target->setup(s, &direct_calls))
 		goto out_barrier;
 
 	if (valid_op)
@@ -469,7 +514,10 @@ bool barrier_racer(struct childdata *child)
 
 	alive = 0;
 	for (i = 0; i < (int)nworkers; i++) {
-		pid_t pid = fork();
+		pid_t pid;
+
+		direct_calls++;
+		pid = fork();
 
 		if (pid < 0)
 			break;
@@ -491,6 +539,7 @@ bool barrier_racer(struct childdata *child)
 			kill(pids[i], SIGKILL);
 		for (i = 0; i < alive; i++)
 			waitpid_eintr(pids[i], &status, 0);
+		direct_calls += (unsigned long)alive * 2UL;
 		goto out_cleanup;
 	}
 
@@ -499,6 +548,7 @@ bool barrier_racer(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < alive; i++) {
+		direct_calls++;
 		if (waitpid_eintr(pids[i], &status, 0) < 0)
 			continue;
 		if (WIFSIGNALED(status))
@@ -507,10 +557,14 @@ bool barrier_racer(struct childdata *child)
 	}
 
 out_cleanup:
-	target->cleanup(s);
+	target->cleanup(s, &direct_calls);
 out_barrier:
 	pthread_barrier_destroy(&s->barrier);
 out_unmap:
 	munmap(s, sizeof(*s));
+	direct_calls++;
+out_publish:
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
