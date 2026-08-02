@@ -52,6 +52,7 @@
 
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "kernel/pfkeyv2.h"
 #include "rnd.h"
@@ -616,6 +617,17 @@ bool pfkey_spd_walk(struct childdata *child)
 			return true;
 		}
 	}
+
+	/* Publish per-invocation direct-syscall attribution before the
+	 * userns_run_in_ns dispatch commits.  All the real kernel entries
+	 * live inside pfkey_spd_walk_in_ns (walker/racer AF_KEY sockets,
+	 * SADB_X_SPDADD/SPDDUMP sendtos, SPDDELETE burst); posting the
+	 * bump here on the setup-passed path attributes the invocation to
+	 * this childop without adding a per-syscall-site instrumentation
+	 * surface across the walker/racer forks.  Matches the surrounding
+	 * per-childop bump sites in child.c. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 
 	rc = userns_run_in_ns(CLONE_NEWNET, pfkey_spd_walk_in_ns, &cctx);
 	if (rc == -EPERM) {

@@ -14,6 +14,7 @@
  */
 
 #include "xfrm-churn-internal.h"
+#include "childop-outcome.h"
 
 /*
  * Per-child latch for the setsockopt(IP_XFRM_POLICY / IPV6_XFRM_POLICY)
@@ -229,4 +230,14 @@ void xfrm_sk_policy_churn(struct childdata *child)
 	}
 
 	close(fd);
+
+	/* Publish per-invocation direct-syscall attribution: socket +
+	 * connect + up to two setsockopt rotations + close.  The parent
+	 * xfrm-churn dispatcher's netlink path is auto-covered by the
+	 * netlink-util transport wiring; this sk-policy sibling is the
+	 * only branch left running via raw libc calls, so a single bump
+	 * here keeps the per-childop tally moving.  Matches the
+	 * surrounding per-childop bump sites in child.c. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 }

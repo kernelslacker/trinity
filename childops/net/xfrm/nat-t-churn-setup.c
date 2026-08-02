@@ -13,6 +13,7 @@
  */
 
 #include "nat-t-churn-internal.h"
+#include "childop-outcome.h"
 
 /* Per-process master latch.  Set by two paths:
  *
@@ -79,6 +80,25 @@ void warn_once_unsupported(const char *reason, int err)
  */
 void bring_lo_up(void)
 {
+	/* Snapshot the caller's op via this_child()->op_type (NULL guard
+	 * for parent-context callers, NR_CHILD_OP_TYPES bounds check to
+	 * match the surrounding valid_op gate in nat-t-churn) and
+	 * publish this one-shot lo bring-up's raw kernel entries (socket
+	 * + up to two ioctls + close) so the direct-syscall reporter
+	 * moves under load.  bring_lo_up runs at most once per
+	 * grandchild via the lo_brought_up latch, so a single per-call
+	 * bump lines up with "a grandchild committed to running this
+	 * op" without multi-counting per invocation. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct ifreq ifr;
 	int s;
 
