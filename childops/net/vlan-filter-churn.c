@@ -106,16 +106,29 @@
 #define VFC_RTNL_BUF			1024
 #define VFC_RANGE_LEN			4U
 
-/* Latched per-child on userns_run_in_ns() -EPERM (hardened policy:
- * user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0),
- * or inside the grandchild on a structural veth / vlan-dev create
- * rejection (CONFIG_VLAN_8021Q absent, or the vlan/veth kmod is not
- * loadable in this kernel).  Without a private netns we MUST NOT
- * touch the host vlan tables, so the op stays disabled for the
- * remainder of this child's lifetime.  The grandchild write dies
- * with the grandchild's COW copy on _exit(), which only short-
- * circuits the rest of the current invocation's outer loop. */
-static bool ns_unsupported_vlan_filter_churn;
+/* Latch lives in shm (shm->vlan_filter_churn_ns_unsupported).  Fires
+ * on two paths:
+ *   - userns_run_in_ns() -EPERM: outer wrapper (persists fleet-wide
+ *     via shm).
+ *   - Structural veth / vlan-dev create rejection inside the grandchild
+ *     (CONFIG_VLAN_8021Q absent, or vlan/veth kmod not loadable).  Write
+ *     site sits inside the userns_run_in_ns() grandchild body -- a
+ *     process-local static would die with the grandchild on _exit() and
+ *     every subsequent invocation would re-attempt the same unsupported
+ *     create.
+ * RELAXED atomic load/store from multiple grandchildren is safe --
+ * only false -> true, and the write is idempotent. */
+static bool ns_unsupported_vlan_filter_churn(void)
+{
+	return __atomic_load_n(&shm->vlan_filter_churn_ns_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_vlan_filter_churn(void)
+{
+	__atomic_store_n(&shm->vlan_filter_churn_ns_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
 
 static int build_veth_create(struct nl_ctx *ctx, const char *name,
 			     const char *peer)
@@ -293,7 +306,7 @@ static int vlan_filter_iter_setup(struct vlan_filter_iter_ctx *it,
 		if (rc == -EPERM || rc == -ENOSYS ||
 		    rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -EPROTONOSUPPORT)
-			ns_unsupported_vlan_filter_churn = true;
+			mark_ns_unsupported_vlan_filter_churn();
 		__atomic_add_fetch(&shm->stats.vlan_filter_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -343,7 +356,7 @@ static int vlan_child_add(struct vlan_filter_iter_ctx *it,
 	if (rc != 0) {
 		if (rc == -ENOSYS || rc == -EAFNOSUPPORT ||
 		    rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT)
-			ns_unsupported_vlan_filter_churn = true;
+			mark_ns_unsupported_vlan_filter_churn();
 		return rc;
 	}
 	__atomic_add_fetch(&shm->stats.vlan_filter_churn.vlan_add_ok,
@@ -519,7 +532,7 @@ static int vlan_filter_churn_in_ns(void *arg)
 
 		iter_one(i, &t_outer, child);
 
-		if (ns_unsupported_vlan_filter_churn)
+		if (ns_unsupported_vlan_filter_churn())
 			break;
 	}
 
@@ -534,7 +547,7 @@ bool vlan_filter_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.vlan_filter_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
-	if (ns_unsupported_vlan_filter_churn) {
+	if (ns_unsupported_vlan_filter_churn()) {
 		__atomic_add_fetch(&shm->stats.vlan_filter_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -542,7 +555,7 @@ bool vlan_filter_churn(struct childdata *child)
 
 	rc = userns_run_in_ns(CLONE_NEWNET, vlan_filter_churn_in_ns, &cctx);
 	if (rc == -EPERM) {
-		ns_unsupported_vlan_filter_churn = true;
+		mark_ns_unsupported_vlan_filter_churn();
 		{
 			const enum child_op_type op = child->op_type;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)

@@ -489,6 +489,14 @@ struct shm_s {
 	 * create. */
 	bool bridge_vlan_churn_ns_unsupported;
 
+	/* vlan-filter-churn per-grandchild unsupported latch (childops/
+	 * net/vlan-filter-churn.c).  Write sites include the
+	 * userns_run_in_ns() grandchild body (veth / vlan-dev create
+	 * rejection) plus the outer wrapper -EPERM branch; a process-local
+	 * static would die with the grandchild and every subsequent
+	 * invocation would re-attempt the same unsupported create. */
+	bool vlan_filter_churn_ns_unsupported;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC
