@@ -113,14 +113,17 @@ static void make_base_path(char *buf, size_t len)
 /*
  * Open path for writing (creating it), fill with sz bytes of fill, and
  * return the open fd.  Returns -1 on failure; caller must close on success.
+ * Bumps *direct_calls once for the open() plus once per write() attempted.
  */
-static int create_filled_file(const char *path, unsigned char fill, size_t sz)
+static int create_filled_file(const char *path, unsigned char fill, size_t sz,
+			      unsigned long *direct_calls)
 {
 	char buf[4096];
 	size_t written = 0;
 	ssize_t r;
 	int fd;
 
+	(*direct_calls)++;
 	fd = open(path, O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 	if (fd < 0)
 		return -1;
@@ -130,6 +133,7 @@ static int create_filled_file(const char *path, unsigned char fill, size_t sz)
 		size_t chunk = sz - written;
 		if (chunk > sizeof(buf))
 			chunk = sizeof(buf);
+		(*direct_calls)++;
 		r = write(fd, buf, chunk);
 		if (r <= 0)
 			break;
@@ -147,7 +151,7 @@ static int create_filled_file(const char *path, unsigned char fill, size_t sz)
  * hole-punch, user xattr path, cross-directory rename (dcache move),
  * copy_file_range (in-kernel copy path), sendfile (splice), statx.
  */
-static void do_tmpfs_lifecycle(void)
+static unsigned long do_tmpfs_lifecycle(void)
 {
 	char base[PATH_MAX + 64];
 	char dira[PATH_MAX + 96], dirb[PATH_MAX + 96];
@@ -155,11 +159,14 @@ static void do_tmpfs_lifecycle(void)
 	char filec[PATH_MAX + 128], moved[PATH_MAX + 128];
 	int fd_a = -1, fd_b = -1, fd_c = -1;
 	bool mounted = false;
+	unsigned long direct_calls = 0;
 
 	make_base_path(base, sizeof(base));
+	direct_calls++;
 	if (mkdir(base, 0755) != 0)
-		return;
+		return direct_calls;
 
+	direct_calls++;
 	if (mount("tmpfs", base, "tmpfs", 0, NULL) != 0)
 		goto out_rmdir;
 	mounted = true;
@@ -171,64 +178,82 @@ static void do_tmpfs_lifecycle(void)
 	snprintf(filec, sizeof(filec), "%s/b/dst",   base);
 	snprintf(moved, sizeof(moved), "%s/b/moved", base);
 
+	direct_calls++;
 	mkdir(dira, 0755);
+	direct_calls++;
 	mkdir(dirb, 0755);
 
-	fd_a = create_filled_file(filea, 0xAB, 65536);
+	fd_a = create_filled_file(filea, 0xAB, 65536, &direct_calls);
 	if (fd_a < 0)
 		goto cleanup;
 
+	direct_calls++;
 	(void)fallocate(fd_a, 0, 0, 131072);
+	direct_calls++;
 	(void)fallocate(fd_a, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
 			4096, 4096);
 
+	direct_calls++;
 	(void)fsetxattr(fd_a, "user.trinity", "fslife", 6, 0);
 	{
 		char xbuf[64];
 		char lbuf[256];
+		direct_calls++;
 		(void)fgetxattr(fd_a, "user.trinity", xbuf, sizeof(xbuf));
+		direct_calls++;
 		(void)flistxattr(fd_a, lbuf, sizeof(lbuf));
+		direct_calls++;
 		(void)fremovexattr(fd_a, "user.trinity");
 	}
 
-	fd_b = create_filled_file(fileb, 0xCD, 8192);
+	fd_b = create_filled_file(fileb, 0xCD, 8192, &direct_calls);
 	if (fd_b < 0)
 		goto cleanup;
 
+	direct_calls++;
 	fd_c = open(filec, O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 	if (fd_c >= 0) {
 #ifdef __NR_copy_file_range
 		off_t off_in = 0, off_out = 0;
+		direct_calls++;
 		(void)do_copy_file_range(fd_b, &off_in, fd_c, &off_out, 4096,
 					 (unsigned int)RAND_NEGATIVE_OR(0));
 #endif
 		{
 			off_t off = 0;
+			direct_calls++;
 			(void)lseek(fd_b, 0, SEEK_SET);
+			direct_calls++;
 			(void)sendfile(fd_c, fd_b, &off, 4096);
 		}
 #if defined(__NR_statx) && defined(STATX_BASIC_STATS)
 		{
 			struct statx stx;
+			direct_calls++;
 			(void)do_statx(fd_c, "", AT_EMPTY_PATH,
 				       STATX_BASIC_STATS, &stx);
 		}
 #endif
 	}
 
+	direct_calls++;
 	(void)rename(filea, moved);
 
 cleanup:
-	if (fd_a >= 0) close(fd_a);
-	if (fd_b >= 0) close(fd_b);
-	if (fd_c >= 0) close(fd_c);
+	if (fd_a >= 0) { direct_calls++; close(fd_a); }
+	if (fd_b >= 0) { direct_calls++; close(fd_b); }
+	if (fd_c >= 0) { direct_calls++; close(fd_c); }
 
-	if (mounted)
+	if (mounted) {
+		direct_calls++;
 		(void)umount2(base, MNT_DETACH);
+	}
 out_rmdir:
+	direct_calls++;
 	(void)rmdir(base);
 
 	__atomic_add_fetch(&shm->stats.fs_lifecycle.tmpfs, 1, __ATOMIC_RELAXED);
+	return direct_calls;
 }
 
 /*
@@ -238,18 +263,21 @@ out_rmdir:
  * and super_operations differ from tmpfs.  Hard links and truncate→rewrite
  * exercise the paths that tmpfs punts to the swap layer.
  */
-static void do_ramfs_lifecycle(void)
+static unsigned long do_ramfs_lifecycle(void)
 {
 	char base[PATH_MAX + 64], subdir[PATH_MAX + 96];
 	char filea[PATH_MAX + 128], fileb[PATH_MAX + 128];
 	char linkpath[PATH_MAX + 128];
 	int fd_a = -1, fd_b = -1;
 	bool mounted = false;
+	unsigned long direct_calls = 0;
 
 	make_base_path(base, sizeof(base));
+	direct_calls++;
 	if (mkdir(base, 0755) != 0)
-		return;
+		return direct_calls;
 
+	direct_calls++;
 	if (mount("ramfs", base, "ramfs", 0, NULL) != 0)
 		goto out_rmdir;
 	mounted = true;
@@ -259,43 +287,54 @@ static void do_ramfs_lifecycle(void)
 	snprintf(fileb,    sizeof(fileb),    "%s/sub/ren",   base);
 	snprintf(linkpath, sizeof(linkpath), "%s/sub/link",  base);
 
+	direct_calls++;
 	mkdir(subdir, 0755);
 
-	fd_a = create_filled_file(filea, 0x5A, 32768);
+	fd_a = create_filled_file(filea, 0x5A, 32768, &direct_calls);
 	if (fd_a < 0)
 		goto cleanup;
 
+	direct_calls++;
 	(void)fsetxattr(fd_a, "user.ramfs", "1", 1, 0);
+	direct_calls++;
 	(void)fremovexattr(fd_a, "user.ramfs");
 
-	fd_b = create_filled_file(fileb, 0xA5, 4096);
+	fd_b = create_filled_file(fileb, 0xA5, 4096, &direct_calls);
 	if (fd_b >= 0) {
 		int r __unused__;
+		direct_calls++;
 		r = link(fileb, linkpath);
+		direct_calls++;
 		(void)unlink(linkpath);
 	}
 
 	/* Truncate to zero then write again — new page allocated from ramfs. */
 	{
 		int r __unused__;
+		direct_calls++;
 		r = ftruncate(fd_a, 0);
 	}
 	{
 		const char msg[] = "ramfs-post-trunc";
 		ssize_t n __unused__;
+		direct_calls++;
 		n = write(fd_a, msg, sizeof(msg) - 1);
 	}
 
 cleanup:
-	if (fd_a >= 0) close(fd_a);
-	if (fd_b >= 0) close(fd_b);
+	if (fd_a >= 0) { direct_calls++; close(fd_a); }
+	if (fd_b >= 0) { direct_calls++; close(fd_b); }
 
-	if (mounted)
+	if (mounted) {
+		direct_calls++;
 		(void)umount2(base, MNT_DETACH);
+	}
 out_rmdir:
+	direct_calls++;
 	(void)rmdir(base);
 
 	__atomic_add_fetch(&shm->stats.fs_lifecycle.ramfs, 1, __ATOMIC_RELAXED);
+	return direct_calls;
 }
 
 /*
@@ -306,7 +345,7 @@ out_rmdir:
  * pseudo-filesystem ->kill_sb and ->put_super paths that differ from
  * tmpfs/ramfs.
  */
-static void do_rdonly_lifecycle(void)
+static unsigned long do_rdonly_lifecycle(void)
 {
 	static const struct {
 		const char *fstype;
@@ -320,38 +359,50 @@ static void do_rdonly_lifecycle(void)
 	bool mounted = false;
 	struct stat st;
 	unsigned int idx;
+	unsigned long direct_calls = 0;
 
 	idx = rnd_modulo_u32(ARRAY_SIZE(targets));
 	fstype = targets[idx].fstype;
 	probe  = targets[idx].probe;
 
 	make_base_path(base, sizeof(base));
+	direct_calls++;
 	if (mkdir(base, 0755) != 0)
-		return;
+		return direct_calls;
 
+	direct_calls++;
 	if (mount(fstype, base, fstype, MS_RDONLY, NULL) != 0)
 		goto out_rmdir;
 	mounted = true;
 
 	snprintf(probepath, sizeof(probepath), "%s/%s", base, probe);
+	direct_calls++;
 	(void)stat(probepath, &st);
 
 	{
-		int fd = open(probepath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+		int fd;
+		direct_calls++;
+		fd = open(probepath, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 		if (fd >= 0) {
 			char buf[256];
 			ssize_t n __unused__;
+			direct_calls++;
 			n = read(fd, buf, sizeof(buf));
+			direct_calls++;
 			close(fd);
 		}
 	}
 
-	if (mounted)
+	if (mounted) {
+		direct_calls++;
 		(void)umount2(base, MNT_DETACH);
+	}
 out_rmdir:
+	direct_calls++;
 	(void)rmdir(base);
 
 	__atomic_add_fetch(&shm->stats.fs_lifecycle.rdonly, 1, __ATOMIC_RELAXED);
+	return direct_calls;
 }
 
 /*
@@ -363,7 +414,7 @@ out_rmdir:
  * Copy-up and whiteout have historically been the densest sources of
  * overlayfs bugs.
  */
-static void do_overlay_lifecycle(void)
+static unsigned long do_overlay_lifecycle(void)
 {
 	char base[PATH_MAX + 64];
 	char lower[PATH_MAX + 96], upper[PATH_MAX + 96];
@@ -372,11 +423,14 @@ static void do_overlay_lifecycle(void)
 	char lfile[PATH_MAX + 128], mfile[PATH_MAX + 128];
 	int fd = -1;
 	bool base_mounted = false, overlay_mounted = false;
+	unsigned long direct_calls = 0;
 
 	make_base_path(base, sizeof(base));
+	direct_calls++;
 	if (mkdir(base, 0755) != 0)
-		return;
+		return direct_calls;
 
+	direct_calls++;
 	if (mount("tmpfs", base, "tmpfs", 0, NULL) != 0)
 		goto out_rmdir;
 	base_mounted = true;
@@ -386,51 +440,68 @@ static void do_overlay_lifecycle(void)
 	snprintf(work,   sizeof(work),   "%s/work",   base);
 	snprintf(merged, sizeof(merged), "%s/merged", base);
 
+	direct_calls++;
 	mkdir(lower, 0755);
+	direct_calls++;
 	mkdir(upper, 0755);
+	direct_calls++;
 	mkdir(work,  0755);
+	direct_calls++;
 	mkdir(merged, 0755);
 
 	snprintf(lfile, sizeof(lfile), "%s/shared", lower);
-	fd = create_filled_file(lfile, 0x42, 4096);
-	if (fd >= 0) close(fd);
+	fd = create_filled_file(lfile, 0x42, 4096, &direct_calls);
+	if (fd >= 0) { direct_calls++; close(fd); }
 
 	snprintf(opt, sizeof(opt),
 		 "lowerdir=%s,upperdir=%s,workdir=%s", lower, upper, work);
 
+	direct_calls++;
 	if (mount("overlay", merged, "overlay", 0, opt) != 0)
 		goto cleanup_base;
 	overlay_mounted = true;
 
 	/* Write via merged → triggers copy-up of shared into upper. */
 	snprintf(mfile, sizeof(mfile), "%s/shared", merged);
+	direct_calls++;
 	fd = open(mfile, O_RDWR | O_CLOEXEC);
 	if (fd >= 0) {
 		const char msg[] = "overlay-upper-write";
 		ssize_t n __unused__;
+		direct_calls++;
 		n = write(fd, msg, sizeof(msg) - 1);
+		direct_calls++;
 		close(fd);
 	}
 
 	/* New file created directly in upper via merged. */
 	snprintf(mfile, sizeof(mfile), "%s/upper-only", merged);
-	fd = create_filled_file(mfile, 0x99, 2048);
-	if (fd >= 0)
+	fd = create_filled_file(mfile, 0x99, 2048, &direct_calls);
+	if (fd >= 0) {
+		direct_calls++;
 		close(fd);
+	}
 
 	/* Delete shared via merged → whiteout entry in upper. */
 	snprintf(mfile, sizeof(mfile), "%s/shared", merged);
+	direct_calls++;
 	(void)unlink(mfile);
 
-	if (overlay_mounted)
+	if (overlay_mounted) {
+		direct_calls++;
 		(void)umount2(merged, MNT_DETACH);
+	}
 cleanup_base:
-	if (base_mounted)
+	if (base_mounted) {
+		direct_calls++;
 		(void)umount2(base, MNT_DETACH);
+	}
 out_rmdir:
+	direct_calls++;
 	(void)rmdir(base);
 
 	__atomic_add_fetch(&shm->stats.fs_lifecycle.overlay, 1, __ATOMIC_RELAXED);
+	return direct_calls;
 }
 
 /*
@@ -441,21 +512,25 @@ out_rmdir:
  * ENOSPC through a code path not reachable from a non-size-limited
  * tmpfs mount.
  */
-static void do_quota_lifecycle(void)
+static unsigned long do_quota_lifecycle(void)
 {
 	char base[PATH_MAX + 64], fpath[PATH_MAX + 128];
 	int fd = -1;
 	bool mounted = false;
+	unsigned long direct_calls = 0;
 
 	make_base_path(base, sizeof(base));
+	direct_calls++;
 	if (mkdir(base, 0755) != 0)
-		return;
+		return direct_calls;
 
+	direct_calls++;
 	if (mount("tmpfs", base, "tmpfs", 0, "size=512k") != 0)
 		goto out_rmdir;
 	mounted = true;
 
 	snprintf(fpath, sizeof(fpath), "%s/bigfile", base);
+	direct_calls++;
 	fd = open(fpath, O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 	if (fd < 0)
 		goto cleanup;
@@ -467,21 +542,27 @@ static void do_quota_lifecycle(void)
 		memset(buf, 0xBB, sizeof(buf));
 		/* Fill up to the 512k limit. */
 		for (i = 0; i < 8; i++) {
+			direct_calls++;
 			n = write(fd, buf, sizeof(buf));
 		}
 		/* One more write to hit ENOSPC. */
+		direct_calls++;
 		n = write(fd, buf, sizeof(buf));
 	}
 
 cleanup:
-	if (fd >= 0) close(fd);
+	if (fd >= 0) { direct_calls++; close(fd); }
 
-	if (mounted)
+	if (mounted) {
+		direct_calls++;
 		(void)umount2(base, MNT_DETACH);
+	}
 out_rmdir:
+	direct_calls++;
 	(void)rmdir(base);
 
 	__atomic_add_fetch(&shm->stats.fs_lifecycle.quota, 1, __ATOMIC_RELAXED);
+	return direct_calls;
 }
 
 /*
@@ -492,55 +573,71 @@ out_rmdir:
  * exercises attach_recursive_mnt() and the mntget/mntput reference
  * counting that guards against premature superblock release.
  */
-static void do_bind_lifecycle(void)
+static unsigned long do_bind_lifecycle(void)
 {
 	char src[PATH_MAX + 64], dst[PATH_MAX + 96], fpath[PATH_MAX + 128];
 	int fd = -1;
 	bool src_mounted = false, dst_mounted = false;
+	unsigned long direct_calls = 0;
 
 	make_base_path(src, sizeof(src));
 	snprintf(dst, sizeof(dst), "%s-bnd", src);
 
+	direct_calls++;
 	if (mkdir(src, 0755) != 0)
-		return;
+		return direct_calls;
+	direct_calls++;
 	if (mkdir(dst, 0755) != 0) {
+		direct_calls++;
 		rmdir(src);
-		return;
+		return direct_calls;
 	}
 
+	direct_calls++;
 	if (mount("tmpfs", src, "tmpfs", 0, NULL) != 0)
 		goto out_rmdir;
 	src_mounted = true;
 
 	snprintf(fpath, sizeof(fpath), "%s/testfile", src);
-	fd = create_filled_file(fpath, 0x77, 4096);
-	if (fd >= 0) close(fd);
+	fd = create_filled_file(fpath, 0x77, 4096, &direct_calls);
+	if (fd >= 0) { direct_calls++; close(fd); }
 
+	direct_calls++;
 	if (mount(src, dst, NULL, MS_BIND, NULL) != 0)
 		goto cleanup_src;
 	dst_mounted = true;
 
 	/* File visible via the bind path. */
 	snprintf(fpath, sizeof(fpath), "%s/testfile", dst);
+	direct_calls++;
 	fd = open(fpath, O_RDONLY | O_CLOEXEC);
 	if (fd >= 0) {
 		char buf[512];
 		ssize_t n __unused__;
+		direct_calls++;
 		n = read(fd, buf, sizeof(buf));
+		direct_calls++;
 		close(fd);
 	}
 
 	/* Unmount bind before original — exercises the two-phase teardown. */
-	if (dst_mounted)
+	if (dst_mounted) {
+		direct_calls++;
 		(void)umount2(dst, MNT_DETACH);
+	}
 cleanup_src:
-	if (src_mounted)
+	if (src_mounted) {
+		direct_calls++;
 		(void)umount2(src, MNT_DETACH);
+	}
 out_rmdir:
+	direct_calls++;
 	(void)rmdir(dst);
+	direct_calls++;
 	(void)rmdir(src);
 
 	__atomic_add_fetch(&shm->stats.fs_lifecycle.bind, 1, __ATOMIC_RELAXED);
+	return direct_calls;
 }
 
 /* ------------------------------------------------------------------ */
@@ -553,6 +650,7 @@ out_rmdir:
  */
 struct fs_lifecycle_ctx {
 	unsigned int variant;
+	enum child_op_type op;
 };
 
 /*
@@ -566,19 +664,27 @@ struct fs_lifecycle_ctx {
 static int fs_lifecycle_in_ns(void *arg)
 {
 	struct fs_lifecycle_ctx *ctx = (struct fs_lifecycle_ctx *)arg;
+	unsigned long direct_calls = 0;
 
 	/* MS_PRIVATE on / so anything we mount cannot propagate even
 	 * if the host's mount namespace had MS_SHARED propagation. */
+	direct_calls++;
 	(void)mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
 
 	switch (ctx->variant) {
-	case 0: do_tmpfs_lifecycle();   break;
-	case 1: do_ramfs_lifecycle();   break;
-	case 2: do_rdonly_lifecycle();  break;
-	case 3: do_overlay_lifecycle(); break;
-	case 4: do_quota_lifecycle();   break;
-	case 5: do_bind_lifecycle();    break;
+	case 0: direct_calls += do_tmpfs_lifecycle();   break;
+	case 1: direct_calls += do_ramfs_lifecycle();   break;
+	case 2: direct_calls += do_rdonly_lifecycle();  break;
+	case 3: direct_calls += do_overlay_lifecycle(); break;
+	case 4: direct_calls += do_quota_lifecycle();   break;
+	case 5: direct_calls += do_bind_lifecycle();    break;
 	}
+
+	/* shm is inherited across the fork() into this grandchild, so the
+	 * atomic add lands in the parent-visible counters even though the
+	 * increment happens here.  childop_direct_syscalls_add() bounds-
+	 * checks the op and no-ops on n == 0, so no additional guard here. */
+	childop_direct_syscalls_add(ctx->op, direct_calls);
 
 	return 0;
 }
@@ -599,6 +705,7 @@ bool fs_lifecycle(struct childdata *child)
 		return true;
 
 	ctx.variant = rnd_modulo_u32(6);
+	ctx.op = op;
 
 	rc = userns_run_in_ns(CLONE_NEWNS, fs_lifecycle_in_ns, &ctx);
 
