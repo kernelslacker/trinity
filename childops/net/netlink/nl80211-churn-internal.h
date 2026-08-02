@@ -90,17 +90,23 @@
  *     it -- the in-ns callback runs exclusively in transient
  *     grandchildren) and flipped on the first config-absent rejection
  *     from any phase probe.
- *   nl80211_phy0: first-wiphy index cached by hwsim_present; consumed
- *     by the iface + admin-gate paths so we don't pay the GET_WIPHY
- *     enumerate every churn call.
+ *   nl80211_get_phy0() / nl80211_set_phy0(): first-wiphy index cached
+ *     by hwsim_present in shm (shm->nl80211_phy0); consumed by the
+ *     iface + admin-gate paths so we don't pay the GET_WIPHY
+ *     enumerate every churn call.  The cache write and the paired
+ *     nl80211_phy0_cached gate live in shm because the write sites
+ *     sit inside the userns_run_in_ns() grandchild -- process-local
+ *     statics would die with the grandchild on _exit().
  *   created_ifindex[] / created_count: per-child created-iface ring
  *     written by the iface-setup phase and drained by the teardown +
  *     end-of-child cleanup sweep.
  */
 extern bool ns_unsupported_nl80211;
-extern uint32_t nl80211_phy0;
 extern int created_ifindex[NL80211_IFACE_RING_CAP];
 extern unsigned int created_count;
+
+uint32_t nl80211_get_phy0(void);
+void nl80211_set_phy0(uint32_t phy);
 
 static inline bool errno_is_unsupported(int e)
 {

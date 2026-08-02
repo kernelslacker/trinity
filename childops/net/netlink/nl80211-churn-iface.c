@@ -151,7 +151,7 @@ int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
 	(void)snprintf(ifname, IFNAMSIZ, "twl%u",
 		       (unsigned int)(rand32() & 0xffffu));
 
-	rc = new_station_iface(ctx, nl80211_phy0, ifname);
+	rc = new_station_iface(ctx, nl80211_get_phy0(), ifname);
 	if (rc < 0) {
 		if (errno_is_unsupported(-rc))
 			ns_unsupported_nl80211 = true;

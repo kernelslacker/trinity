@@ -120,15 +120,36 @@ static void warn_once_unsupported_nl80211_userns(const char *reason, int err)
 		  reason, err);
 }
 
-/* Per-child scratch state.  Family id is resolved per-ctx by genl_open
- * now (was a cached static); only the first-wiphy lookup result needs
- * to survive across invocations so we don't pay the GET_WIPHY enumerate
- * every churn call.  nl80211_phy0 is declared extern in
- * nl80211-churn-internal.h so the iface + station phases can read the
- * cached index; nl80211_phy0_cached stays file-local (only the
- * coordinator in this TU writes it, from nl80211_churn_in_ns). */
-uint32_t nl80211_phy0;
-static bool nl80211_phy0_cached;
+/* Per-grandchild first-wiphy cache.  Both the cached wiphy index and
+ * the "cached" flag live in shm (shm->nl80211_phy0,
+ * shm->nl80211_phy0_cached).  The write sites sit inside the
+ * userns_run_in_ns() grandchild body (coordinator in this TU,
+ * discovery.c hwsim_present()); process-local statics would die with
+ * the grandchild on _exit() and every subsequent invocation would
+ * re-pay the GET_WIPHY enumerate.  RELAXED atomic load/store is safe:
+ * cached is monotonic false -> true, and the paired phy0 store is
+ * idempotent (same hwsim iface every enumerate). */
+uint32_t nl80211_get_phy0(void)
+{
+	return __atomic_load_n(&shm->nl80211_phy0, __ATOMIC_RELAXED);
+}
+
+void nl80211_set_phy0(uint32_t phy)
+{
+	__atomic_store_n(&shm->nl80211_phy0, phy, __ATOMIC_RELAXED);
+}
+
+static bool nl80211_phy0_cached(void)
+{
+	return __atomic_load_n(&shm->nl80211_phy0_cached,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_nl80211_phy0_cached(void)
+{
+	__atomic_store_n(&shm->nl80211_phy0_cached, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Created-iface ring for the cleanup sweep.  Both symbols are declared
  * extern in nl80211-churn-internal.h so the iface-setup phase can
@@ -297,7 +318,7 @@ static void nl80211_iter_submodes(struct genl_ctx *ctx, int ifindex,
 	}
 
 	if (ONE_IN(16)) {
-		nl80211_admin_gate_probe(nl80211_phy0);
+		nl80211_admin_gate_probe(nl80211_get_phy0());
 		/* Admin-gate probe walks a fixed set of admin-gated cmds
 		 * against a fresh unmapped-userns genl socket.  Approximate
 		 * as one send/recv worth of load; the internal walk overcounts
@@ -453,7 +474,7 @@ static int nl80211_churn_in_ns(void *arg)
 	 * sendmsg + recv). */
 	cctx->direct_calls += 5;
 
-	if (!nl80211_phy0_cached) {
+	if (!nl80211_phy0_cached()) {
 		if (!hwsim_present(&ctx)) {
 			ns_unsupported_nl80211 = true;
 			__atomic_add_fetch(&shm->stats.nl80211.setup_failed,
@@ -466,7 +487,7 @@ static int nl80211_churn_in_ns(void *arg)
 		}
 		/* Same 3-call approximation on the success path. */
 		cctx->direct_calls += 3;
-		nl80211_phy0_cached = true;
+		mark_nl80211_phy0_cached();
 	}
 
 	if (cctx->valid_op)
