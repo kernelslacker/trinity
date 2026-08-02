@@ -59,6 +59,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
 #include "random.h"
@@ -80,12 +81,14 @@ static bool userns_disabled;
  * Write the single-line idmap that maps uid/gid 0 inside the new
  * userns to our real outer uid/gid.  Returns true on success.
  */
-static bool write_one_line(const char *path, const char *line)
+static bool write_one_line(const char *path, const char *line,
+			   unsigned long *direct_calls)
 {
 	ssize_t wlen;
 	size_t len;
 	int fd;
 
+	(*direct_calls)++;
 	fd = open(path, O_WRONLY);
 	if (fd < 0)
 		return false;
@@ -93,6 +96,7 @@ static bool write_one_line(const char *path, const char *line)
 	len = strlen(line);
 	wlen = write(fd, line, len);
 	close(fd);
+	*direct_calls += 2;
 	return wlen == (ssize_t)len;
 }
 
@@ -111,19 +115,20 @@ static bool write_one_line(const char *path, const char *line)
  * the map is installed, geteuid()/getegid() return the overflow id
  * (65534), which would EPERM here for the same reason.
  */
-static bool establish_root_in_userns(uid_t euid, gid_t egid)
+static bool establish_root_in_userns(uid_t euid, gid_t egid,
+				     unsigned long *direct_calls)
 {
 	char buf[64];
 
 	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)euid);
-	if (!write_one_line("/proc/self/uid_map", buf))
+	if (!write_one_line("/proc/self/uid_map", buf, direct_calls))
 		return false;
 
-	if (!write_one_line("/proc/self/setgroups", "deny\n"))
+	if (!write_one_line("/proc/self/setgroups", "deny\n", direct_calls))
 		return false;
 
 	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)egid);
-	if (!write_one_line("/proc/self/gid_map", buf))
+	if (!write_one_line("/proc/self/gid_map", buf, direct_calls))
 		return false;
 
 	return true;
@@ -146,8 +151,9 @@ static bool establish_root_in_userns(uid_t euid, gid_t egid)
  * appear in the host's mount tree.  Returns false on failure so the
  * caller can skip the follow-up mount entirely.
  */
-static bool make_root_private(void)
+static bool make_root_private(unsigned long *direct_calls)
 {
+	(*direct_calls)++;
 	if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
 		/* init_child redirected stderr to /dev/null, so an
 		 * output() here would be lost.  Bump a shm counter so
@@ -166,12 +172,14 @@ static bool make_root_private(void)
  * mount ns's owning userns.  We unshare a fresh mount ns first so
  * the resulting tmpfs is contained.
  */
-static void op_mount_tmpfs(void)
+static void op_mount_tmpfs(unsigned long *direct_calls)
 {
+	(*direct_calls)++;
 	if (unshare(CLONE_NEWNS) != 0)
 		return;
-	if (!make_root_private())
+	if (!make_root_private(direct_calls))
 		return;
+	(*direct_calls)++;
 	(void)mount("none", "/tmp", "tmpfs", 0, NULL);
 }
 
@@ -181,7 +189,7 @@ static void op_mount_tmpfs(void)
  * at random per call gives all five paths coverage over time without
  * leaving the inner child in a deeply-nested namespace state.
  */
-static void op_unshare_secondary(void)
+static void op_unshare_secondary(unsigned long *direct_calls)
 {
 	static const int flags[] = {
 		CLONE_NEWNET,
@@ -194,6 +202,7 @@ static void op_unshare_secondary(void)
 	};
 	int flag = flags[rnd_modulo_u32(ARRAY_SIZE(flags))];
 
+	(*direct_calls)++;
 	(void)unshare(flag);
 
 	/*
@@ -203,6 +212,7 @@ static void op_unshare_secondary(void)
 	if (flag == CLONE_NEWUTS) {
 		int ret __attribute__((unused));
 
+		(*direct_calls)++;
 		ret = sethostname("trinity-fuzz", 12);
 	}
 }
@@ -214,7 +224,7 @@ static void op_unshare_secondary(void)
  * primary target; license string is required and the kernel
  * compares it via strcmp, GPL is the simplest match.
  */
-static void op_bpf_prog_load(void)
+static void op_bpf_prog_load(unsigned long *direct_calls)
 {
 	struct bpf_insn insns[] = {
 		{ .code = 0xb7, .dst_reg = 0, .imm = 0 },	/* mov r0, 0 */
@@ -229,6 +239,7 @@ static void op_bpf_prog_load(void)
 	attr.insns = (uintptr_t)insns;
 	attr.license = (uintptr_t)license;
 
+	(*direct_calls)++;
 	(void)trinity_raw_syscall(__NR_bpf, BPF_PROG_LOAD, &attr, sizeof(attr));
 }
 
@@ -238,7 +249,7 @@ static void op_bpf_prog_load(void)
  * through ns_capable for many gates.  PERF_TYPE_SOFTWARE /
  * PERF_COUNT_SW_TASK_CLOCK is the most permissive event combo.
  */
-static void op_perf_event_open(void)
+static void op_perf_event_open(unsigned long *direct_calls)
 {
 	struct perf_event_attr attr;
 	int fd;
@@ -251,9 +262,12 @@ static void op_perf_event_open(void)
 	attr.exclude_kernel = 1;
 	attr.exclude_hv = 1;
 
+	(*direct_calls)++;
 	fd = (int)trinity_raw_syscall(__NR_perf_event_open, &attr, 0, -1, -1, 0UL);
-	if (fd >= 0)
+	if (fd >= 0) {
 		close(fd);
+		(*direct_calls)++;
+	}
 }
 
 /*
@@ -264,11 +278,12 @@ static void op_perf_event_open(void)
  * runs through tun_set_iff → ns_capable.  Distros without
  * /dev/net/tun device node skip silently.
  */
-static void op_tun_setiff(void)
+static void op_tun_setiff(unsigned long *direct_calls)
 {
 	struct ifreq ifr;
 	int fd;
 
+	(*direct_calls)++;
 	fd = open("/dev/net/tun", O_RDWR | O_NONBLOCK);
 	if (fd < 0)
 		return;
@@ -279,6 +294,7 @@ static void op_tun_setiff(void)
 
 	(void)ioctl(fd, TUNSETIFF, &ifr);
 	close(fd);
+	*direct_calls += 2;
 }
 
 /*
@@ -288,8 +304,9 @@ static void op_tun_setiff(void)
  * normally need privileged caller intent.  Exercises the keyring
  * lookup, alloc, and link paths.
  */
-static void op_keyctl_session(void)
+static void op_keyctl_session(unsigned long *direct_calls)
 {
+	(*direct_calls)++;
 	(void)trinity_raw_syscall(__NR_keyctl, KEYCTL_JOIN_SESSION_KEYRING,
 		      (unsigned long)NULL, 0UL, 0UL, 0UL);
 }
@@ -300,7 +317,7 @@ static void op_keyctl_session(void)
  * set.  The inner child exits immediately after, so the dropped
  * cap state vanishes with the process.
  */
-static void op_prctl_capbset_drop(void)
+static void op_prctl_capbset_drop(unsigned long *direct_calls)
 {
 	static const int caps[] = {
 		CAP_CHOWN,
@@ -316,6 +333,7 @@ static void op_prctl_capbset_drop(void)
 	 * value — exercises the kernel's cap_valid()/cap > CAP_LAST_CAP
 	 * rejection in PR_CAPBSET_DROP which the curated mix above never
 	 * reaches. */
+	(*direct_calls)++;
 	(void)prctl(PR_CAPBSET_DROP,
 		    (unsigned long)(int)RAND_NEGATIVE_OR(cap),
 		    0UL, 0UL, 0UL);
@@ -327,19 +345,21 @@ static void op_prctl_capbset_drop(void)
  * failure goes through nsproxy code that historically had bugs
  * around refcount handling and ns ownership checks.
  */
-static void op_setns_init_userns(void)
+static void op_setns_init_userns(unsigned long *direct_calls)
 {
 	int fd;
 
+	(*direct_calls)++;
 	fd = open("/proc/1/ns/user", O_RDONLY);
 	if (fd < 0)
 		return;
 
 	(void)setns(fd, CLONE_NEWUSER);
 	close(fd);
+	*direct_calls += 2;
 }
 
-typedef void (*inner_op_fn)(void);
+typedef void (*inner_op_fn)(unsigned long *direct_calls);
 
 static const inner_op_fn inner_ops[] = {
 	op_mount_tmpfs,
@@ -352,9 +372,9 @@ static const inner_op_fn inner_ops[] = {
 	op_setns_init_userns,
 };
 
-static void run_inner_fuzzer(void)
+static void run_inner_fuzzer(unsigned long *direct_calls)
 {
-	inner_ops[rnd_modulo_u32(ARRAY_SIZE(inner_ops))]();
+	inner_ops[rnd_modulo_u32(ARRAY_SIZE(inner_ops))](direct_calls);
 }
 
 /*
@@ -366,6 +386,15 @@ static void run_inner_fuzzer(void)
 static void inner_child_main(struct childdata *child)
 {
 	stack_t disable_ss = { .ss_flags = SS_DISABLE };
+	/* Direct-syscall tally accumulated inside the forked inner child.
+	 * Publishes via childop_direct_syscalls_add() before every _exit()
+	 * path so early bails on unshare/idmap failure still contribute
+	 * their small quota (the inner-child _exit drops the local copy,
+	 * but shm is a MAP_SHARED region so the reporter's atomic add is
+	 * visible to the parent and to sibling children).  The outer body
+	 * publishes its own fork+waitpid pair separately -- the two adds
+	 * accumulate on the same op slot. */
+	unsigned long direct_calls = 0;
 
 	/*
 	 * Drop any alt-signal-stack inherited from the trinity child.
@@ -384,18 +413,14 @@ static void inner_child_main(struct childdata *child)
 	 * the inherited alt stack has no functional cost.
 	 */
 	(void)sigaltstack(&disable_ss, NULL);
+	direct_calls++;
 
 	/* Sample effective ids in the parent userns before unshare(): the
 	 * uid_map / gid_map writes below need to be told the same effective
 	 * id the kernel will compare against (see establish_root_in_userns). */
 	const uid_t parent_euid = geteuid();
 	const gid_t parent_egid = getegid();
-
-	if (unshare(CLONE_NEWUSER) != 0)
-		_exit(1);
-
-	if (!establish_root_in_userns(parent_euid, parent_egid))
-		_exit(2);
+	direct_calls += 2;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -406,13 +431,28 @@ static void inner_child_main(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
+	direct_calls++;
+	if (unshare(CLONE_NEWUSER) != 0) {
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
+		_exit(1);
+	}
+
+	if (!establish_root_in_userns(parent_euid, parent_egid, &direct_calls)) {
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
+		_exit(2);
+	}
+
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
-	run_inner_fuzzer();
+	run_inner_fuzzer(&direct_calls);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	_exit(0);
 }
 
@@ -420,23 +460,39 @@ bool userns_fuzzer(struct childdata *child)
 {
 	pid_t pid;
 	int status;
+	/* Persistent-child tally covering the fork(2) + waitpid_eintr(2)
+	 * pair issued from this body.  The inner child publishes its own
+	 * tally (unshare, id-map writes, and whichever inner-op fires)
+	 * before every _exit path; the two adds accumulate on the same
+	 * shm slot. */
+	unsigned long direct_calls = 0;
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (userns_disabled)
 		return true;
 
 	__atomic_add_fetch(&shm->stats.userns_fuzzer.runs, 1, __ATOMIC_RELAXED);
 
+	direct_calls++;
 	pid = fork();
-	if (pid < 0)
+	if (pid < 0) {
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
+	}
 
 	if (pid == 0) {
 		inner_child_main(child);
 		_exit(0);	/* unreachable */
 	}
 
-	if (waitpid_eintr(pid, &status, 0) < 0)
+	direct_calls++;
+	if (waitpid_eintr(pid, &status, 0) < 0) {
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
+	}
 
 	if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
 		/*
@@ -448,19 +504,14 @@ bool userns_fuzzer(struct childdata *child)
 		 * lost; userns_unsupported is the survivor signal.
 		 */
 		userns_disabled = true;
-		/* child->op_type lives in shared memory and can be scribbled
-		 * by a poisoned-arena write from a sibling; bounds-check the
-		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
-		 * array. */
-		{
-			const enum child_op_type op = child->op_type;
-			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				__atomic_store_n(&shm->stats.childop.latch_reason[op],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-		}
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.userns_fuzzer.unsupported,
 				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return true;
 	}
 
@@ -468,5 +519,7 @@ bool userns_fuzzer(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.userns_fuzzer.inner_crashed,
 				   1, __ATOMIC_RELAXED);
 
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }
