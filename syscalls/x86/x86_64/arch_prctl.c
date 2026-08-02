@@ -60,6 +60,9 @@
 #ifndef ARCH_SHSTK_LOCK
 #define ARCH_SHSTK_LOCK			0x5003
 #endif
+#ifndef ARCH_SHSTK_UNLOCK
+#define ARCH_SHSTK_UNLOCK		0x5004
+#endif
 #ifndef ARCH_SHSTK_STATUS
 #define ARCH_SHSTK_STATUS		0x5005
 #endif
@@ -69,7 +72,10 @@
  * read-only getters (ARCH_GET_*, ARCH_SHSTK_STATUS) and benign feature-bit
  * setters whose effect on the child is harmless or transparent
  * (ARCH_REQ_XCOMP_PERM, ARCH_REQ_XCOMP_GUEST_PERM, ARCH_ENABLE_TAGGED_ADDR,
- * ARCH_FORCE_TAGGED_SVA, ARCH_SHSTK_LOCK).
+ * ARCH_FORCE_TAGGED_SVA, ARCH_SHSTK_LOCK, ARCH_SHSTK_UNLOCK -- the latter
+ * is ptrace-only in the kernel (shstk.c gates it on task != current) and
+ * returns -EINVAL when called on the child itself, so the child's own
+ * features_locked mask is never modified).
  *
  * Deliberately excluded:
  *   ARCH_SET_FS / ARCH_SET_GS / ARCH_SET_CPUID  -- mutate segment / cpuid
@@ -88,7 +94,7 @@ static unsigned long arch_prctl_codes[] = {
 	ARCH_GET_XCOMP_GUEST_PERM, ARCH_REQ_XCOMP_GUEST_PERM,
 	ARCH_GET_UNTAG_MASK, ARCH_GET_MAX_TAG_BITS,
 	ARCH_ENABLE_TAGGED_ADDR, ARCH_FORCE_TAGGED_SVA,
-	ARCH_SHSTK_STATUS, ARCH_SHSTK_LOCK,
+	ARCH_SHSTK_STATUS, ARCH_SHSTK_LOCK, ARCH_SHSTK_UNLOCK,
 };
 
 /*
@@ -210,8 +216,13 @@ static void sanitise_arch_prctl(struct syscallrecord *rec)
 		break;
 
 	case ARCH_SHSTK_LOCK:
-		/* arg2 is a small bitmask (SHSTK / WRSS) of features to lock
-		 * against further toggles; it just ORs into a per-task mask. */
+	case ARCH_SHSTK_UNLOCK:
+		/* arg2 is a small bitmask (SHSTK / WRSS): LOCK ORs it into the
+		 * per-task features_locked mask, UNLOCK ANDs its complement.
+		 * UNLOCK is ptrace-only in the kernel and returns -EINVAL when
+		 * task == current, so on a self-target it never mutates state;
+		 * either way pinning arg2 to the low 2-bit range keeps the
+		 * kernel arm bounded to the two documented feature bits. */
 		rec->a2 = RAND_RANGE(0, 3);
 		break;
 
@@ -228,8 +239,8 @@ static void sanitise_arch_prctl(struct syscallrecord *rec)
 	 * Publish per-invocation REEXEC_OK for the non-getter subset of
 	 * the curated arch_prctl_codes[] whitelist: setter codes whose
 	 * a2 is a pinned scalar (REQ_XCOMP_{,GUEST_}PERM AMX xfeature
-	 * bit, ENABLE_TAGGED_ADDR nbits, SHSTK_LOCK feature mask) and
-	 * the two codes the kernel ignores a2 for entirely
+	 * bit, ENABLE_TAGGED_ADDR nbits, SHSTK_{LOCK,UNLOCK} feature
+	 * mask) and the two codes the kernel ignores a2 for entirely
 	 * (GET_CPUID / FORCE_TAGGED_SVA).  See include/syscall.h
 	 * REEXEC_OK for the safety contract and
 	 * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
@@ -252,6 +263,7 @@ static void sanitise_arch_prctl(struct syscallrecord *rec)
 	case ARCH_REQ_XCOMP_GUEST_PERM:
 	case ARCH_ENABLE_TAGGED_ADDR:
 	case ARCH_SHSTK_LOCK:
+	case ARCH_SHSTK_UNLOCK:
 	case ARCH_GET_CPUID:
 	case ARCH_FORCE_TAGGED_SVA:
 		rec->flags |= REEXEC_OK;
