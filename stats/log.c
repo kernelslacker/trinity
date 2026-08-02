@@ -86,7 +86,7 @@ void stats_log_open(const char *path)
 	if (path == NULL || *path == '\0')
 		return;
 
-	stats_log_fp = fopen(path, "a");
+	stats_log_fp = fopen(path, "ae");
 	if (stats_log_fp == NULL) {
 		outputerr("failed to open stats log file %s: %s\n",
 			  path, strerror(errno));

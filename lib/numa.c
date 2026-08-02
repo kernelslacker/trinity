@@ -22,7 +22,7 @@ void init_numa_nodes(void)
 	char buf[4096];
 	char *p;
 
-	f = fopen("/sys/devices/system/node/online", "r");
+	f = fopen("/sys/devices/system/node/online", "re");
 	if (f == NULL)
 		goto fallback;
 

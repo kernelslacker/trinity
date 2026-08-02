@@ -183,7 +183,7 @@ static bool runid_read_boot_id(char *out, size_t outlen)
 	if (outlen < 37)
 		return false;
 
-	fd = open("/proc/sys/kernel/random/boot_id", O_RDONLY);
+	fd = open("/proc/sys/kernel/random/boot_id", O_RDONLY | O_CLOEXEC);
 	if (fd < 0)
 		return false;
 	n = read(fd, out, outlen - 1);

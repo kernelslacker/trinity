@@ -159,7 +159,7 @@ static void print_core_pattern(void)
 	ssize_t n;
 	int fd;
 
-	fd = open("/proc/sys/kernel/core_pattern", O_RDONLY);
+	fd = open("/proc/sys/kernel/core_pattern", O_RDONLY | O_CLOEXEC);
 	if (fd == -1)
 		return;
 
