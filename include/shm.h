@@ -507,6 +507,14 @@ struct shm_s {
 	 * would re-attempt the same unsupported AF_VSOCK setup. */
 	bool vsock_transport_churn_ns_unsupported;
 
+	/* netns-teardown-churn per-grandchild unsupported latch (childops/
+	 * misc/netns-teardown-churn.c).  Write sites include setns() /
+	 * setns-back failure inside the userns_run_in_ns() grandchild body
+	 * plus the outer wrapper -EPERM branch; a process-local static
+	 * would die with the grandchild and every subsequent invocation
+	 * would re-attempt the same broken setns. */
+	bool netns_teardown_ns_unsupported;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC
