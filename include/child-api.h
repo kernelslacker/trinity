@@ -706,3 +706,4 @@ bool nexthop_replace_churn(struct childdata *child);
 bool sit_proto41_rx(struct childdata *child);
 bool seg6_end_dt4_rx(struct childdata *child);
 bool ct_expect_realloc(struct childdata *child);
+bool inet_listener_rehash_race(struct childdata *child);
