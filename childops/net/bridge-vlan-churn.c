@@ -90,18 +90,30 @@
 #define BVC_RAW_TIMEO_MS		100
 #define BVC_RTNL_BUF			2048
 
-/* Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
- * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened
- * policy (user.max_user_namespaces=0 or
- * kernel.unprivileged_userns_clone=0).  Without a private user+net
- * namespace we MUST NOT touch the host bridge / veth / vlan tables,
- * so the op stays disabled for the remainder of this child's
- * lifetime.  Transient helper failures (-EAGAIN) do not set this --
- * they may not recur on the next iteration.  Also set inside the
- * grandchild on a CONFIG-absent bridge create probe; that write dies
- * with the grandchild's COW copy on _exit() and only short-circuits
- * the rest of the current invocation's outer loop. */
-static bool ns_unsupported_bridge_vlan_churn;
+/* Latch lives in shm (shm->bridge_vlan_churn_ns_unsupported).  Fires on
+ * two paths:
+ *   - userns_run_in_ns() returned -EPERM: outer wrapper (persists
+ *     fleet-wide via shm).
+ *   - CONFIG-absent bridge create probe inside the grandchild.  Write
+ *     site sits inside the userns_run_in_ns() grandchild body -- a
+ *     process-local static would die with the grandchild on _exit()
+ *     and every subsequent invocation would re-attempt the same
+ *     unsupported bridge create.
+ * Transient helper failures (-EAGAIN) do not set this -- they may not
+ * recur on the next iteration.  RELAXED atomic load/store from
+ * multiple grandchildren is safe -- only false -> true, and the write
+ * is idempotent. */
+static bool ns_unsupported_bridge_vlan_churn(void)
+{
+	return __atomic_load_n(&shm->bridge_vlan_churn_ns_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_bridge_vlan_churn(void)
+{
+	__atomic_store_n(&shm->bridge_vlan_churn_ns_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
 
 /*
  * RTM_NEWLINK type=bridge with IFLA_BR_VLAN_FILTERING=1 inside
@@ -551,7 +563,7 @@ static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
 		if (rc == -EPERM || rc == -ENOSYS ||
 		    rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -EPROTONOSUPPORT) {
-			ns_unsupported_bridge_vlan_churn = true;
+			mark_ns_unsupported_bridge_vlan_churn();
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
@@ -876,7 +888,7 @@ static int bridge_vlan_churn_in_ns(void *arg)
 
 		iter_one(i, &t_outer, child);
 
-		if (ns_unsupported_bridge_vlan_churn)
+		if (ns_unsupported_bridge_vlan_churn())
 			break;
 	}
 
@@ -891,7 +903,7 @@ bool bridge_vlan_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.bridge_vlan_churn.runs,
 			   1, __ATOMIC_RELAXED);
 
-	if (ns_unsupported_bridge_vlan_churn) {
+	if (ns_unsupported_bridge_vlan_churn()) {
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -899,7 +911,7 @@ bool bridge_vlan_churn(struct childdata *child)
 
 	rc = userns_run_in_ns(CLONE_NEWNET, bridge_vlan_churn_in_ns, &cctx);
 	if (rc == -EPERM) {
-		ns_unsupported_bridge_vlan_churn = true;
+		mark_ns_unsupported_bridge_vlan_churn();
 		/* child->op_type lives in shared memory and can be scribbled
 		 * by a poisoned-arena write from a sibling; bounds-check the
 		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats

@@ -480,6 +480,15 @@ struct shm_s {
 	 * bond_enslave / lapb-lookup. */
 	bool ip6gre_bond_lapb_ns_unsupported;
 
+	/* bridge-vlan-churn per-grandchild unsupported latch (childops/
+	 * net/bridge-vlan-churn.c).  Write sites include the
+	 * userns_run_in_ns() grandchild body (CONFIG-absent bridge create
+	 * probe) plus the outer wrapper -EPERM branch; a process-local
+	 * static would die with the grandchild and every subsequent
+	 * invocation would re-attempt the same unsupported bridge
+	 * create. */
+	bool bridge_vlan_churn_ns_unsupported;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC
