@@ -109,7 +109,6 @@ struct syscallrecord {
 	 * dispatch_step() alongside rec->entry.
 	 */
 	bool validator_rejected;
-	lock_t lock;
 	enum syscallstate state;
 	char prebuffer[PREBUFFER_LEN];
 	char postbuffer[POSTBUFFER_LEN];
@@ -187,10 +186,10 @@ struct syscallrecord {
 	 * Mutated by srec_publish_begin / srec_publish_end (see
 	 * syscall_record.h) which writers bracket around coherent field
 	 * writes: odd during in-progress mutations, even on completion.
-	 * The brackets are self-sufficient ordering anchors, so writers
-	 * are free to drop rec->lock around them.  Readers spin on
+	 * The brackets are self-sufficient ordering anchors and are the
+	 * record's sole writer/reader synchronisation.  Readers spin on
 	 * SREC_SNAPSHOT() against this field for a coherent multi-field
-	 * view without taking rec->lock.  Placed at the end of the
+	 * view.  Placed at the end of the
 	 * struct so existing field offsets stay put; the whole
 	 * syscallrecord is already pushed into the cold tail of struct
 	 * childdata, so seq lands far outside any hot cacheline.

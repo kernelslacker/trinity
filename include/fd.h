@@ -169,7 +169,7 @@ const char *fd_provider_name(enum objecttype type);
  * (post-sanitise slot 0 holds the resulting fd, not the socketinfo struct;
  * is_fdarg() does not cover that case so we mirror it explicitly here).
  * Values whose raw arg exceeds max_files_rlimit.rlim_cur are skipped.
- * No locking: caller owns rec->lock or a stable snapshot of args[].
+ * No locking: caller owns a stable snapshot of args[].
  */
 typedef void (*fd_arg_cb)(int fd, void *ctx);
 
