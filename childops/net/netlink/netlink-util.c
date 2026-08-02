@@ -134,15 +134,30 @@ int nl_open(struct nl_ctx *ctx, const struct nl_open_opts *opts)
 
 out_report:
 	/*
-	 * Copy caller_op from opts.  Treat opts->caller_op == 0 as unset
-	 * (no netlink caller is legitimately CHILD_OP_SYSCALL, which is
-	 * the enum value that a bare .proto = X initializer leaves in
-	 * caller_op).  Out-of-range values are silently ignored — the
-	 * publish in nl_close() bounds-checks before adding.
+	 * Resolve caller_op.  Explicit opts->caller_op wins (treating a
+	 * zero opts->caller_op == CHILD_OP_SYSCALL as "unset" -- no
+	 * netlink caller is legitimately the syscall path, and that
+	 * value is what a bare .proto = X initializer leaves in the
+	 * field).  When the caller did not set it, fall back to
+	 * this_child()->op_type so ordinary childop dispatch fns get
+	 * automatic attribution without any per-file wiring.  Fork()'d
+	 * grandchildren (nexthop-replace-churn's route worker et al.)
+	 * whose pid isn't in pids[] see this_child() == NULL; they
+	 * naturally skip the fallback and either stay unattributed or
+	 * publish via an explicit opts->caller_op the parent set before
+	 * fork.  Out-of-range values are silently ignored -- the publish
+	 * in nl_close() bounds-checks before adding.
 	 */
 	if (opts->caller_op != CHILD_OP_SYSCALL &&
-	    opts->caller_op < NR_CHILD_OP_TYPES)
+	    opts->caller_op < NR_CHILD_OP_TYPES) {
 		ctx->caller_op = opts->caller_op;
+	} else {
+		struct childdata *tc = this_child();
+
+		if (tc != NULL && tc->op_type < NR_CHILD_OP_TYPES &&
+		    tc->op_type != CHILD_OP_SYSCALL)
+			ctx->caller_op = tc->op_type;
+	}
 	ctx->direct_syscalls = calls;
 	return (fd < 0) ? -1 : 0;
 }
