@@ -34,6 +34,8 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "maps.h"
 #include "rnd.h"
@@ -59,6 +61,15 @@
  */
 bool recipe_pipe(bool *unsupported __unused__)
 {
+	/* Snapshot the recipe-runner childop under which we're executing
+	 * so the direct-syscall reporter attributes this invocation's
+	 * per-attempt raw kernel entries to the parent op's per-childop
+	 * tally.  Bounds-check matches the surrounding valid_op gate in
+	 * recipe_runner. */
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	int pfd[2] = { -1, -1 };
 	char buf[16];
 	bool ok = false;
@@ -87,6 +98,8 @@ out:
 		close(pfd[0]);
 	if (pfd[1] >= 0)
 		close(pfd[1]);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 
@@ -101,6 +114,10 @@ out:
  */
 bool recipe_inotify(bool *unsupported __unused__)
 {
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	char buf[1024];
 	ssize_t r __unused__;
 	int fd = -1;
@@ -128,6 +145,8 @@ out:
 		(void)inotify_rm_watch(fd, wd);
 	if (fd >= 0)
 		close(fd);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 
@@ -141,6 +160,10 @@ out:
  */
 bool recipe_fanotify(bool *unsupported)
 {
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	char buf[1024];
 	int fd = -1;
 	bool marked = false;
@@ -178,6 +201,8 @@ out:
 				    AT_FDCWD, "/tmp");
 	if (fd >= 0)
 		close(fd);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 
@@ -202,6 +227,10 @@ out:
  */
 bool recipe_vfs_leases(bool *unsupported)
 {
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	char path[64];
 	int fd = -1;
 	int lease;
@@ -242,5 +271,7 @@ bool recipe_vfs_leases(bool *unsupported)
 out:
 	if (fd >= 0)
 		close(fd);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }

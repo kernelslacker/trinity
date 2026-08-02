@@ -34,6 +34,8 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "maps.h"
 #include "rnd.h"
@@ -59,6 +61,18 @@
  */
 bool recipe_tcp_server(bool *unsupported __unused__)
 {
+	/* Snapshot the recipe-runner childop under which we're executing
+	 * so the direct-syscall reporter attributes this invocation's
+	 * per-attempt raw kernel entries (socket / bind / listen /
+	 * setsockopt / fcntl / accept / shutdown / close) to the parent
+	 * op's per-childop tally.  Bounds-check the snapshot — the field
+	 * lives in shared memory and can be scribbled by a poisoned-arena
+	 * write from a sibling; matches the surrounding valid_op gate in
+	 * recipe_runner. */
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	struct sockaddr_in sin;
 	socklen_t slen;
 	int s = -1;
@@ -99,6 +113,8 @@ bool recipe_tcp_server(bool *unsupported __unused__)
 out:
 	if (s >= 0)
 		close(s);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 
@@ -116,6 +132,10 @@ out:
  */
 bool recipe_mq_open(bool *unsupported)
 {
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	struct mq_attr attr;
 	char qname[64];
 	mqd_t q = (mqd_t)-1;
@@ -158,6 +178,8 @@ out:
 		(void)mq_close(q);
 		(void)mq_unlink(qname);
 	}
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 

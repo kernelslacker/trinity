@@ -34,6 +34,8 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "maps.h"
 #include "rnd.h"
@@ -57,6 +59,15 @@
  */
 bool recipe_eventfd(bool *unsupported __unused__)
 {
+	/* Snapshot the recipe-runner childop under which we're executing
+	 * so the direct-syscall reporter attributes this invocation's
+	 * per-attempt raw kernel entries to the parent op's per-childop
+	 * tally.  Bounds-check matches the surrounding valid_op gate in
+	 * recipe_runner. */
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	uint64_t v;
 	ssize_t r __unused__;
 	int fd;
@@ -80,6 +91,8 @@ bool recipe_eventfd(bool *unsupported __unused__)
 out:
 	if (fd >= 0)
 		close(fd);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 
@@ -93,6 +106,10 @@ out:
  */
 bool recipe_epoll(bool *unsupported __unused__)
 {
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	struct epoll_event ev;
 	struct epoll_event evs[4];
 	int epfd = -1;
@@ -127,6 +144,8 @@ out:
 		close(evfd);
 	if (epfd >= 0)
 		close(epfd);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 
@@ -142,6 +161,10 @@ out:
  */
 bool recipe_signalfd(bool *unsupported __unused__)
 {
+	struct childdata *child = this_child();
+	const enum child_op_type op = child ? child->op_type :
+		NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	sigset_t ss, oldss;
 	struct signalfd_siginfo si;
 	ssize_t r __unused__;
@@ -174,5 +197,7 @@ out:
 		close(sfd);
 	if (mask_saved)
 		(void)sigprocmask(SIG_SETMASK, &oldss, NULL);
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 	return ok;
 }
