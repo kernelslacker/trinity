@@ -696,6 +696,21 @@ struct shm_s {
 	bool xfrm_churn_ns_unsupported_iptfs;
 	bool xfrm_churn_ns_unsupported_zerocopy;
 
+	/* xfrm-churn per-algo latches indexed by xfrm_algos[]
+	 * (childops/net/xfrm/xfrm-churn.c).  Written inside the
+	 * userns_run_in_ns() grandchild -- a process-local static array
+	 * would die with the grandchild on _exit() and every subsequent
+	 * grandchild would re-pay the NEWSA EFAIL and the try_modprobe()
+	 * cost for each missing algorithm.  Shared shm state means one
+	 * rejection / one modprobe attempt per algo per fleet, not per
+	 * grandchild.  RELAXED atomic load/store is safe -- only
+	 * false -> true, idempotent write.  SHM_NR_XFRM_ALGOS is the
+	 * fixed slot count; a compile-time assert in xfrm-churn.c pins
+	 * it to ARRAY_SIZE(xfrm_algos) so the two stay in step. */
+#define SHM_NR_XFRM_ALGOS 8
+	bool xfrm_churn_ns_unsupported_algo[SHM_NR_XFRM_ALGOS];
+	bool xfrm_churn_modprobe_tried_algo[SHM_NR_XFRM_ALGOS];
+
 	/* ipmr-cache-report per-grandchild setup latches
 	 * (childops/net/ipmr-cache-report.c). Written inside the
 	 * userns_run_in_ns() grandchild callback; a process-local static

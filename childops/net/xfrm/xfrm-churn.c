@@ -83,12 +83,41 @@ bool ns_unsupported_inet;
 
 /* Per-algo latches: indexed by xfrm_algos[].  Set on first NEWSA
  * rejection with EOPNOTSUPP / EAFNOSUPPORT / ENOENT — the next
- * iteration skips that algo in the rotation.  Per-grandchild like
- * the gates above; modprobe_tried_algo[] is therefore re-armed in
- * each fresh grandchild and each algo's modname pays at most one
- * try_modprobe() per grandchild. */
-static bool ns_unsupported_algo[NR_XFRM_ALGOS];
-static bool modprobe_tried_algo[NR_XFRM_ALGOS];
+ * iteration skips that algo in the rotation.  Written inside the
+ * userns_run_in_ns() grandchild, so they live in shm alongside the
+ * lo-up / iptfs / zerocopy latches; a process-local static array
+ * would die with the grandchild on _exit() and every subsequent
+ * grandchild would re-pay the NEWSA EFAIL and the try_modprobe()
+ * cost for each missing algorithm.  RELAXED atomic load/store is
+ * safe -- only false -> true, idempotent write.  Slot count is
+ * pinned in shm.h via SHM_NR_XFRM_ALGOS; the static_assert below
+ * catches a divergence at compile time. */
+_Static_assert(NR_XFRM_ALGOS == SHM_NR_XFRM_ALGOS,
+	       "SHM_NR_XFRM_ALGOS must equal NR_XFRM_ALGOS");
+
+static bool ns_unsupported_algo(unsigned int idx)
+{
+	return __atomic_load_n(&shm->xfrm_churn_ns_unsupported_algo[idx],
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_algo(unsigned int idx)
+{
+	__atomic_store_n(&shm->xfrm_churn_ns_unsupported_algo[idx], true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool modprobe_tried_algo(unsigned int idx)
+{
+	return __atomic_load_n(&shm->xfrm_churn_modprobe_tried_algo[idx],
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_modprobe_tried_algo(unsigned int idx)
+{
+	__atomic_store_n(&shm->xfrm_churn_modprobe_tried_algo[idx], true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Per-grandchild setup latches live in shm (shm->xfrm_churn_
  * lo_brought_up / ns_unsupported_iptfs / ns_unsupported_zerocopy).
@@ -168,9 +197,9 @@ static void warn_once_unsupported_xfrm_churn(const char *reason, int err)
 
 static void modprobe_algo(unsigned int idx)
 {
-	if (modprobe_tried_algo[idx])
+	if (modprobe_tried_algo(idx))
 		return;
-	modprobe_tried_algo[idx] = true;
+	mark_modprobe_tried_algo(idx);
 	if (xfrm_algos[idx].modname)
 		try_modprobe(xfrm_algos[idx].modname);
 }
@@ -196,7 +225,7 @@ static unsigned int pick_algo_idx(void)
 	for (i = 0; i < NR_XFRM_ALGOS; i++) {
 		unsigned int idx = (start + i) % NR_XFRM_ALGOS;
 
-		if (!ns_unsupported_algo[idx])
+		if (!ns_unsupported_algo(idx))
 			return idx;
 	}
 	return NR_XFRM_ALGOS;
@@ -468,7 +497,7 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 			return -1;
 		}
 		if (is_unsupported_err(rc))
-			ns_unsupported_algo[ctx->aidx] = true;
+			mark_ns_unsupported_algo(ctx->aidx);
 		return -1;
 	}
 	__atomic_add_fetch(&shm->stats.xfrm_churn.sa_added,
