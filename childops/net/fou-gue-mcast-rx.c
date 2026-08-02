@@ -170,12 +170,26 @@
  */
 static bool ns_unsupported_fou_gue_mcast_rx;
 
-/* Per-grandchild bookkeeping.  Inherited as false at grandchild fork
- * time (the persistent child never sets it), set to true after the
- * grandchild's first rtnl_bring_lo_up() in its own fresh netns.  Dies
- * with the grandchild on _exit(), so each subsequent grandchild
- * correctly re-runs the bring-lo-up once in its own netns. */
-static bool lo_brought_up;
+/* Per-grandchild lo-up latch lives in shm
+ * (shm->fou_gue_mcast_rx_lo_brought_up).  The write site sits inside
+ * the userns_run_in_ns() grandchild's fou_gue_mcast_rx_in_ns() path,
+ * so a process-local static would die with the grandchild on _exit()
+ * and every subsequent invocation would re-open a NETLINK_ROUTE
+ * socket and re-pay the rtnetlink "lo up" round-trip forever -- the
+ * parent never observes the latch.  Living in shm lets one
+ * successful lo-up persist fleet-wide.  RELAXED atomic load/store is
+ * safe: only false -> true, idempotent write. */
+static bool lo_brought_up(void)
+{
+	return __atomic_load_n(&shm->fou_gue_mcast_rx_lo_brought_up,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_lo_brought_up(void)
+{
+	__atomic_store_n(&shm->fou_gue_mcast_rx_lo_brought_up, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Set once per persistent child after the modprobe attempts run.
  * modprobe needs CAP_SYS_MODULE in init_user_ns, which the grandchild
@@ -544,7 +558,7 @@ static int fou_gue_iter_open_ctx(struct fou_gue_iter_ctx *ctx)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	int rc;
 
-	if (!lo_brought_up) {
+	if (!lo_brought_up()) {
 		struct nl_ctx rtnl = { .fd = -1 };
 		struct nl_open_opts rtnl_opts = {
 			.proto        = NETLINK_ROUTE,
@@ -555,7 +569,7 @@ static int fou_gue_iter_open_ctx(struct fou_gue_iter_ctx *ctx)
 			rtnl_bring_lo_up(&rtnl);
 			nl_close(&rtnl);
 		}
-		lo_brought_up = true;
+		mark_lo_brought_up();
 	}
 
 	rc = genl_open(&ctx->genl, &opts);
