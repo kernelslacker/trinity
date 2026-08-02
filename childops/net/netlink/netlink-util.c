@@ -47,6 +47,8 @@
 #include <sys/types.h>
 #include <time.h>
 
+#include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "shm.h"
 
@@ -62,6 +64,7 @@
 int nl_open(struct nl_ctx *ctx, const struct nl_open_opts *opts)
 {
 	struct sockaddr_nl sa;
+	unsigned long calls = 0;
 	int fd;
 
 	if (!ctx || !opts) {
@@ -76,21 +79,36 @@ int nl_open(struct nl_ctx *ctx, const struct nl_open_opts *opts)
 	 * stdin (fd 0).  nl_close() treats fd < 0 as a no-op.
 	 */
 	ctx->fd = -1;
+	/*
+	 * Default caller_op to the "unset" sentinel now so a socket() /
+	 * bind() failure below still hands nl_close() a sane ctx to
+	 * publish against (the caller may have set opts->caller_op, but
+	 * we haven't copied it in yet, and a partial open still issued
+	 * the socket() we want to report).
+	 */
+	ctx->caller_op = NR_CHILD_OP_TYPES;
+	ctx->direct_syscalls = 0;
 
 	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, opts->proto);
+	calls++;
 	if (fd < 0)
-		return -1;
+		goto out_report;
 
 	memset(&sa, 0, sizeof(sa));
 	sa.nl_family = AF_NETLINK;
 	sa.nl_groups = opts->groups;
 	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		int saved = errno;
+		int saved;
 
+		calls++;
+		saved = errno;
 		close(fd);
+		calls++;
 		errno = saved;
-		return -1;
+		fd = -1;
+		goto out_report;
 	}
+	calls++;
 
 	if (opts->recv_timeo_s > 0) {
 		struct timeval tv;
@@ -98,12 +116,14 @@ int nl_open(struct nl_ctx *ctx, const struct nl_open_opts *opts)
 		tv.tv_sec = opts->recv_timeo_s;
 		tv.tv_usec = 0;
 		(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+		calls++;
 	} else if (opts->recv_timeo_us > 0) {
 		struct timeval tv;
 
 		tv.tv_sec = 0;
 		tv.tv_usec = opts->recv_timeo_us;
 		(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+		calls++;
 	}
 
 	memset(ctx, 0, sizeof(*ctx));
@@ -111,17 +131,40 @@ int nl_open(struct nl_ctx *ctx, const struct nl_open_opts *opts)
 	ctx->proto = opts->proto;
 	ctx->groups = opts->groups;
 	ctx->recv_timeo_s = opts->recv_timeo_s;
-	return 0;
+
+out_report:
+	/*
+	 * Copy caller_op from opts.  Treat opts->caller_op == 0 as unset
+	 * (no netlink caller is legitimately CHILD_OP_SYSCALL, which is
+	 * the enum value that a bare .proto = X initializer leaves in
+	 * caller_op).  Out-of-range values are silently ignored — the
+	 * publish in nl_close() bounds-checks before adding.
+	 */
+	if (opts->caller_op != CHILD_OP_SYSCALL &&
+	    opts->caller_op < NR_CHILD_OP_TYPES)
+		ctx->caller_op = opts->caller_op;
+	ctx->direct_syscalls = calls;
+	return (fd < 0) ? -1 : 0;
 }
 
 void nl_close(struct nl_ctx *ctx)
 {
+	enum child_op_type op;
+	unsigned long calls;
+
 	if (!ctx)
 		return;
-	if (ctx->fd >= 0)
+	if (ctx->fd >= 0) {
 		close(ctx->fd);
+		ctx->direct_syscalls++;
+	}
+	op = ctx->caller_op;
+	calls = ctx->direct_syscalls;
+	if (op < NR_CHILD_OP_TYPES && calls)
+		childop_direct_syscalls_add(op, calls);
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->fd = -1;
+	ctx->caller_op = NR_CHILD_OP_TYPES;
 }
 
 /*
@@ -147,6 +190,7 @@ static int nl_sendmsg(struct nl_ctx *ctx, void *msg, size_t len)
 	mh.msg_iov = &iov;
 	mh.msg_iovlen = 1;
 
+	ctx->direct_syscalls++;
 	if (sendmsg(ctx->fd, &mh, 0) < 0)
 		return -EIO;
 	return 0;
@@ -161,6 +205,7 @@ int nl_send_recv(struct nl_ctx *ctx, void *msg, size_t len)
 	if (nl_sendmsg(ctx, msg, len) < 0)
 		return -EIO;
 
+	ctx->direct_syscalls++;
 	n = recv(ctx->fd, rbuf, sizeof(rbuf), 0);
 	if (n < 0)
 		return -EIO;
@@ -185,6 +230,7 @@ int nl_send_recv_any(struct nl_ctx *ctx, void *msg, size_t len)
 	if (nl_sendmsg(ctx, msg, len) < 0)
 		return -EIO;
 
+	ctx->direct_syscalls++;
 	n = recv(ctx->fd, rbuf, sizeof(rbuf), 0);
 	if (n < 0)
 		return -EIO;
@@ -212,6 +258,7 @@ int nl_send_recv_dump(struct nl_ctx *ctx, void *msg, size_t len)
 		struct nlmsghdr *nlh;
 		size_t remaining;
 
+		ctx->direct_syscalls++;
 		n = recv(ctx->fd, rbuf, sizeof(rbuf), 0);
 		if (n <= 0)
 			return -EIO;
@@ -251,6 +298,7 @@ int nl_send_recv_dump_cb(struct nl_ctx *ctx, void *msg, size_t len,
 		struct nlmsghdr *nlh;
 		size_t remaining;
 
+		ctx->direct_syscalls++;
 		n = recv(ctx->fd, rbuf, sizeof(rbuf), 0);
 		if (n <= 0)
 			return -EIO;
@@ -290,6 +338,7 @@ int nl_send_drain_errors(struct nl_ctx *ctx, void *msg, size_t len,
 		struct nlmsghdr *nlh;
 		size_t remaining;
 
+		ctx->direct_syscalls++;
 		n = recv(ctx->fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
 		if (n < 0) {
 			/*
