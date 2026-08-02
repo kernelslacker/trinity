@@ -377,6 +377,15 @@ struct shm_s {
 #define VXLAN_ENCAP_NR_KINDS 3
 	bool vxlan_encap_kind_unsupported[VXLAN_ENCAP_NR_KINDS];
 	bool ip_gre_kind_unsupported;
+	/* ip_gre-churn per-grandchild lo-up latch (childops/net/
+	 * ip_gre-churn.c).  Written inside the userns_run_in_ns()
+	 * grandchild's ip_gre_in_ns() path -- a process-local static
+	 * would die with the grandchild on _exit() and every subsequent
+	 * invocation would re-pay the rtnetlink "lo up" round-trip
+	 * forever.  Living in shm lets one successful lo-up persist
+	 * fleet-wide.  RELAXED atomic load/store is safe -- only
+	 * false -> true, idempotent write. */
+	bool ip_gre_churn_lo_brought_up;
 	bool sctp_chunk_rx_kind_unsupported;
 	bool esp_crafted_rx_kind_unsupported;
 	bool fou_gue_mcast_rx_kind_unsupported;
