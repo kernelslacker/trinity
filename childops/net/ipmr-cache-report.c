@@ -124,17 +124,44 @@
  * setup failures (helper return -EAGAIN) do not set this -- they may
  * not recur on the next iteration. */
 static bool ns_userns_unsupported_ipmr_cache_report;
-/* CONFIG-absent latches.  Set inside the grandchild's address space
- * when the raw IGMP socket or MRT_INIT setsockopt returns a
- * structural-unsupport errno (EAFNOSUPPORT / EPROTONOSUPPORT /
- * EOPNOTSUPP / ENOPROTOOPT / EADDRINUSE).  Because the write happens
- * in the grandchild, the persistent child's copy is unchanged and the
- * CONFIG-absent state is re-discovered once per outer-loop iteration;
- * userns cannot manufacture a missing kernel CONFIG so re-probing is
- * correct.  The ns_eperm latch covers MRT_INIT / raw-socket EPERM
- * (trinity has dropped CAP_NET_ADMIN before entering the grandchild). */
-static bool ns_unsupported_ipmr_cache_report;
-static bool ns_eperm_ipmr_cache_report;
+/* CONFIG-absent + EPERM latches live in shm
+ * (shm->ipmr_cache_report_ns_unsupported / shm->ipmr_cache_report_ns_eperm).
+ * Set inside the grandchild's address space when the raw IGMP socket
+ * or MRT_INIT setsockopt returns a structural-unsupport errno
+ * (EAFNOSUPPORT / EPROTONOSUPPORT / EOPNOTSUPP / ENOPROTOOPT /
+ * EADDRINUSE), or an EPERM (MRT_INIT / raw-socket -- trinity has
+ * dropped CAP_NET_ADMIN before entering the grandchild).  The write
+ * site sits inside the userns_run_in_ns() grandchild -- a
+ * process-local static would die with the grandchild on _exit() and
+ * every subsequent invocation would re-attempt the same unsupported
+ * probe forever (latch-in-grandchild bug).  Living in shm lets the
+ * probe be paid once per fleet rather than once per grandchild.
+ * RELAXED atomic load/store from multiple grandchildren is safe --
+ * only false -> true, and the write is idempotent. */
+
+static bool ns_unsupported_ipmr_cache_report(void)
+{
+	return __atomic_load_n(&shm->ipmr_cache_report_ns_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_ipmr_cache_report(void)
+{
+	__atomic_store_n(&shm->ipmr_cache_report_ns_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_eperm_ipmr_cache_report(void)
+{
+	return __atomic_load_n(&shm->ipmr_cache_report_ns_eperm,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_eperm_ipmr_cache_report(void)
+{
+	__atomic_store_n(&shm->ipmr_cache_report_ns_eperm, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Per-invocation state handed to the in-ns callback so it can keep
  * accounting against the right childop slot. */
@@ -276,9 +303,9 @@ static int ipmr_cache_report_in_ns(void *arg)
 	raw = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_IGMP);
 	if (raw < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-			ns_unsupported_ipmr_cache_report = true;
+			mark_ns_unsupported_ipmr_cache_report();
 		else if (errno == EPERM)
-			ns_eperm_ipmr_cache_report = true;
+			mark_ns_eperm_ipmr_cache_report();
 		goto out;
 	}
 
@@ -286,10 +313,10 @@ static int ipmr_cache_report_in_ns(void *arg)
 		if (errno == EPERM) {
 			__atomic_add_fetch(&shm->stats.ipmr_cache_report.eperm,
 					   1, __ATOMIC_RELAXED);
-			ns_eperm_ipmr_cache_report = true;
+			mark_ns_eperm_ipmr_cache_report();
 		} else if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
 			   errno == EADDRINUSE) {
-			ns_unsupported_ipmr_cache_report = true;
+			mark_ns_unsupported_ipmr_cache_report();
 		}
 		goto out;
 	}
@@ -375,8 +402,8 @@ bool ipmr_cache_report(struct childdata *child)
 	int rc;
 
 	if (ns_userns_unsupported_ipmr_cache_report ||
-	    ns_unsupported_ipmr_cache_report ||
-	    ns_eperm_ipmr_cache_report)
+	    ns_unsupported_ipmr_cache_report() ||
+	    ns_eperm_ipmr_cache_report())
 		return true;
 
 	rc = userns_run_in_ns(CLONE_NEWNET, ipmr_cache_report_in_ns, &cctx);

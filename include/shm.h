@@ -528,6 +528,16 @@ struct shm_s {
 	bool xfrm_churn_ns_unsupported_iptfs;
 	bool xfrm_churn_ns_unsupported_zerocopy;
 
+	/* ipmr-cache-report per-grandchild setup latches
+	 * (childops/net/ipmr-cache-report.c). Written inside the
+	 * userns_run_in_ns() grandchild callback; a process-local static
+	 * dies with the grandchild on _exit() — the persistent child
+	 * never observes the write. Moved to shm so the probe is paid
+	 * once per fleet rather than per grandchild. RELAXED atomic
+	 * load/store is safe -- only false -> true, idempotent. */
+	bool ipmr_cache_report_ns_unsupported;
+	bool ipmr_cache_report_ns_eperm;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the
