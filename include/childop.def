@@ -174,3 +174,4 @@ CHILDOP(CHILD_OP_BRIDGE_IP6_REFRAG_FRAGGAP, "bridge_ip6_refrag_fraggap"  , bridg
 CHILDOP(CHILD_OP_IPSET_CHURN              , "ipset_churn"                , ipset_churn                , true)
 CHILDOP(CHILD_OP_IP4_UDP_CORK_SPLICE      , "ip4_udp_cork_splice"        , ip4_udp_cork_splice        , true)
 CHILDOP(CHILD_OP_NEXTHOP_REPLACE_CHURN    , "nexthop_replace_churn"      , nexthop_replace_churn      , true)
+CHILDOP(CHILD_OP_SIT_PROTO41_RX           , "sit_proto41_rx"             , sit_proto41_rx             , true)

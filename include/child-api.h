@@ -683,3 +683,4 @@ bool rds_zcopy_crafted_send(struct childdata *child);
 bool bridge_ip6frag_refrag(struct childdata *child);
 bool ip4_udp_cork_splice(struct childdata *child);
 bool nexthop_replace_churn(struct childdata *child);
+bool sit_proto41_rx(struct childdata *child);
