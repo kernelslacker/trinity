@@ -117,4 +117,5 @@ struct syscallentry syscall_shmctl = {
 	.arg_params[1].list = ARGLIST(shmctl_ops),
 	.sanitise = sanitise_shmctl,
 	.post = post_shmctl,
+	.rettype = RET_BORING,
 };

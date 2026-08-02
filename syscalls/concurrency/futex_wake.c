@@ -81,4 +81,5 @@ struct syscallentry syscall_futex_wake = {
 	 * from the dispatch-time value the kernel actually saw; mismatch
 	 * bumps arg_shadow_stomp from inside get_arg_snapshot(). */
 	.arg_snapshot_mask = (1u << 2),
+	.rettype = RET_BORING,
 };

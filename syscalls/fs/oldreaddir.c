@@ -24,4 +24,5 @@ struct syscallentry syscall_oldreaddir = {
 	.sanitise = sanitise_oldreaddir,
 	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
+	.rettype = RET_BORING,
 };

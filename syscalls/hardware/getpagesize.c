@@ -55,4 +55,5 @@ struct syscallentry syscall_getpagesize = {
 	.num_args = 0,
 	.group = GROUP_PROCESS,
 	.post = post_getpagesize,
+	.rettype = RET_BORING,
 };

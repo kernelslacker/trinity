@@ -266,4 +266,5 @@ struct syscallentry syscall_socketcall = {
 	 * from inside get_arg_snapshot() and the handler still dispatches
 	 * on the sub-call the kernel actually executed. */
 	.arg_snapshot_mask = (1u << 0),
+	.rettype = RET_BORING,
 };

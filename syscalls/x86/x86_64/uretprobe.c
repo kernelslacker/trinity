@@ -14,4 +14,5 @@ struct syscallentry syscall_uretprobe = {
 	.num_args = 0,
 	.flags = AVOID_SYSCALL, // out-of-trampoline call force_sig(SIGILL)s the caller — no coverage, floods logs
 	.group = GROUP_PROCESS,
+	.rettype = RET_BORING,
 };

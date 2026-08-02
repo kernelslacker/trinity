@@ -69,4 +69,5 @@ struct syscallentry syscall_ioprio_get = {
 	.group = GROUP_SCHED,
 	.post = post_ioprio_get,
 	.flags = REEXEC_SANITISE_OK,
+	.rettype = RET_BORING,
 };

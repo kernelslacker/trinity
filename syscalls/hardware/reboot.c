@@ -30,4 +30,5 @@ struct syscallentry syscall_reboot = {
 	.arg_params[2].list = ARGLIST(reboot_cmds),
 	.sanitise = sanitise_reboot,
 	.group = GROUP_PROCESS,
+	.rettype = RET_BORING,
 };

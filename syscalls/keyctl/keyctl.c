@@ -579,4 +579,5 @@ struct syscallentry syscall_keyctl = {
 	 * and the handler still dispatches against the cmd the kernel
 	 * actually executed. */
 	.arg_snapshot_mask = (1u << 0),
+	.rettype = RET_BORING,
 };

@@ -84,4 +84,5 @@ struct syscallentry syscall_signal = {
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = _NSIG,
 	.flags = AVOID_SYSCALL,
+	.rettype = RET_BORING,
 };

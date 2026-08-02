@@ -318,4 +318,5 @@ struct syscallentry syscall_lsm_list_modules = {
 	.post = post_lsm_list_modules,
 	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_PROCESS,
+	.rettype = RET_BORING,
 };

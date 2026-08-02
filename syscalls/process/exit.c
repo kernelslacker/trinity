@@ -9,4 +9,5 @@ struct syscallentry syscall_exit = {
 	.num_args = 1,
 	.flags = AVOID_SYSCALL | AVOID_REEXEC, // confuses fuzzer; AVOID_REEXEC is belt-and-braces against the redqueen tail
 	.argname = { [0] = "error_code" },
+	.rettype = RET_NONE,
 };

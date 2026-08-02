@@ -394,4 +394,5 @@ struct syscallentry syscall_ptrace = {
 	.post = post_ptrace,
 
 	.flags = AVOID_SYSCALL,
+	.rettype = RET_BORING,
 };

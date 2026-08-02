@@ -445,6 +445,7 @@ struct syscallentry syscall_execve = {
 	.post = post_execve,
 	.group = GROUP_VFS_PATH,
 	.flags = AVOID_SYSCALL | EXTRA_FORK,
+	.rettype = RET_BORING,
 };
 
 #ifndef AT_EXECVE_CHECK
@@ -465,4 +466,5 @@ struct syscallentry syscall_execveat = {
 	.post = post_execveat,
 	.group = GROUP_VFS_PATH,
 	.flags = AVOID_SYSCALL | EXTRA_FORK,
+	.rettype = RET_BORING,
 };

@@ -1105,4 +1105,5 @@ struct syscallentry syscall_prctl = {
 	.argname = { [0] = "option", [1] = "arg2", [2] = "arg3", [3] = "arg4", [4] = "arg5" },
 	.sanitise = sanitise_prctl,
 	.post = post_prctl,
+	.rettype = RET_BORING,
 };

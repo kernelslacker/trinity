@@ -215,4 +215,5 @@ struct syscallentry syscall_syslog = {
 	.sanitise = sanitise_syslog,
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,
+	.rettype = RET_BORING,
 };
