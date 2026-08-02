@@ -567,4 +567,5 @@ struct syscallentry syscall_futex = {
 	.sanitise = sanitise_futex,
 	.post = post_futex,
 	.group = GROUP_IPC,
+	.rettype = RET_BORING,
 };

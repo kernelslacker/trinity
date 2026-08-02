@@ -8,4 +8,5 @@ struct syscallentry syscall_vm86 = {
 	.num_args = 2,
 	.argname = { [0] = "cmd", [1] = "arg" },
 	.group = GROUP_PROCESS,
+	.rettype = RET_BORING,
 };

@@ -281,4 +281,5 @@ struct syscallentry syscall_semctl = {
 	.arg_params[2].list = ARGLIST(semctl_cmds),
 	.sanitise = sanitise_semctl,
 	.post = post_semctl,
+	.rettype = RET_BORING,
 };

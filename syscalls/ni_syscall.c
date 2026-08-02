@@ -7,4 +7,5 @@ struct syscallentry syscall_ni_syscall = {
 	.num_args = 0,
 	.flags = NI_SYSCALL,
 	.group = GROUP_PROCESS,
+	.rettype = RET_BORING,
 };

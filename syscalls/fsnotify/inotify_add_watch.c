@@ -90,4 +90,5 @@ struct syscallentry syscall_inotify_add_watch = {
 	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_inotify_add_watch,
 	.post = post_inotify_add_watch,
+	.rettype = RET_BORING,
 };

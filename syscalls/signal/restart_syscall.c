@@ -8,4 +8,5 @@ struct syscallentry syscall_restart_syscall = {
 	.num_args = 0,
 	.flags = AVOID_SYSCALL,
 	.group = GROUP_PROCESS,
+	.rettype = RET_BORING,
 };

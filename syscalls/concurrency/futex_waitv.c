@@ -93,4 +93,5 @@ struct syscallentry syscall_futex_waitv = {
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.sanitise = sanitise_futex_waitv,
 	.group = GROUP_IPC,
+	.rettype = RET_BORING,
 };

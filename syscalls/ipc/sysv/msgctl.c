@@ -112,4 +112,5 @@ struct syscallentry syscall_msgctl = {
 	.arg_params[1].list = ARGLIST(msgctl_cmds),
 	.sanitise = sanitise_msgctl,
 	.post = post_msgctl,
+	.rettype = RET_BORING,
 };

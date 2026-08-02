@@ -461,4 +461,5 @@ struct syscallentry syscall_ipc = {
 	.sanitise = sanitise_ipc,
 	.post = post_ipc,
 	.arg_snapshot_mask = (1u << 0),
+	.rettype = RET_BORING,
 };

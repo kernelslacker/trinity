@@ -212,4 +212,5 @@ struct syscallentry syscall_sysfs = {
 #if defined(SYS_sysfs) || defined(__NR_sysfs)
 	.post = post_sysfs,
 #endif
+	.rettype = RET_BORING,
 };

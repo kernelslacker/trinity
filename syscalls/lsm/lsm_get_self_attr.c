@@ -322,4 +322,5 @@ struct syscallentry syscall_lsm_get_self_attr = {
 #ifdef HAVE_SYS_LSM_GET_SELF_ATTR
 	.post = post_lsm_get_self_attr,
 #endif
+	.rettype = RET_BORING,
 };

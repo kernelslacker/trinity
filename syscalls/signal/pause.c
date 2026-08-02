@@ -31,4 +31,5 @@ struct syscallentry syscall_pause = {
 	.flags = AVOID_SYSCALL | NEED_ALARM, // Boring.  Can cause long sleeps
 	.group = GROUP_PROCESS,
 	.post = post_pause,
+	.rettype = RET_BORING,
 };
