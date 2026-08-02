@@ -211,6 +211,8 @@ unsigned long gen_arg_typed_fd(struct syscallentry *entry,
 	for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
 		fd = use_generic ? get_random_fd()
 				 : get_typed_fd(effective_argtype);
+		if (fd_is_protected(fd))
+			continue;
 		if (!filter || !fd_recently_failed(results, fd))
 			break;
 	}
