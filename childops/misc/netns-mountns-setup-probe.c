@@ -190,12 +190,13 @@ static int bring_up_loopback(void)
  * itself, not any single helper's success.  The grandchild's next iter
  * (or its _exit) reaps whatever nested ns state we leave behind.
  */
-static void iter_one(struct childdata *child)
+static void iter_one(struct childdata *child, unsigned long *direct_calls)
 {
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	int fd;
 
+	(*direct_calls)++;
 	if (unshare(CLONE_NEWNET | CLONE_NEWNS) < 0) {
 		__atomic_add_fetch(&shm->stats.netns_mountns_setup.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -210,6 +211,7 @@ static void iter_one(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 
+	(*direct_calls)++;
 	if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) == 0) {
 		__atomic_add_fetch(&shm->stats.netns_mountns_setup.mount_private_ok,
 				   1, __ATOMIC_RELAXED);
@@ -220,11 +222,13 @@ static void iter_one(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 
+	(*direct_calls)++;
 	fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (fd >= 0) {
 		__atomic_add_fetch(&shm->stats.netns_mountns_setup.socket_ok,
 				   1, __ATOMIC_RELAXED);
 		(void)close(fd);
+		(*direct_calls)++;
 	}
 
 	__atomic_add_fetch(&shm->stats.netns_mountns_setup.completed_ok,
@@ -248,6 +252,9 @@ static int netns_mountns_setup_in_ns(void *arg)
 	struct netns_mountns_setup_ctx *cctx = arg;
 	struct childdata *child = cctx->child;
 	unsigned int outer_iters, i;
+	unsigned long direct_calls = 0;
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	outer_iters = BUDGETED(CHILD_OP_NETNS_MOUNTNS_SETUP_PROBE,
 			       JITTER_RANGE(NETNS_MSP_OUTER_BASE));
@@ -257,7 +264,10 @@ static int netns_mountns_setup_in_ns(void *arg)
 		outer_iters = 1U;
 
 	for (i = 0; i < outer_iters; i++)
-		iter_one(child);
+		iter_one(child, &direct_calls);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 
 	return 0;
 }
