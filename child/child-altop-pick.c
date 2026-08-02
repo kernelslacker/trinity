@@ -37,7 +37,7 @@
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[144] = {
+static int dormant_op_disabled[145] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -99,6 +99,7 @@ static int dormant_op_disabled[144] = {
 	1,	/* nexthop_replace_churn: dormant until canary-queue load-tests the nexthop-replace-notifier vs unlocked IPv6 route f6i_list churn (fib6_check_nh_list walk vs fib6_purge_rt free). */
 	1,	/* sit_proto41_rx: dormant until canary-queue load-tests the SIT ipip6_rcv() truncated-inner-header OOB read burst (AF_PACKET IPv4 proto=41 frames with inner IPv6 shorter than sizeof(ipv6hdr) into loopback with sit0 up). */
 	1,	/* seg6_end_dt4_rx: dormant until canary-queue load-tests the SRv6 End.DT4 decap stale IPCB burst (userns_run_in_ns + private-netns VRF/table 100 + seg6local RTM_NEWROUTE + AF_PACKET IPv6/SRH/inner-IPv4-with-options frames at lo). */
+	1,	/* ct_expect_realloc: dormant until canary-queue load-tests the conntrack helper CT_NEW+CTA_HELP / EXP_NEW / CT_NEW NLM_F_REPLACE+CTA_LABELS realloc / EXP_DELETE unlink sequence targeting the hlist_add_head_rcu backpointer vs nf_ct_ext_add krealloc race. */
 };
 
 /*
@@ -259,7 +260,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[144] = {
+static const enum child_op_type pick_op_type_table[145] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -404,6 +405,7 @@ static const enum child_op_type pick_op_type_table[144] = {
 	[141] = CHILD_OP_NEXTHOP_REPLACE_CHURN,
 	[142] = CHILD_OP_SIT_PROTO41_RX,
 	[143] = CHILD_OP_SEG6_END_DT4_RX,
+	[144] = CHILD_OP_CT_EXPECT_REALLOC,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");

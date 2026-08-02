@@ -121,6 +121,7 @@
 #include "stats/subsys/netlink_monitor_race.h"
 #include "stats/subsys/netns_mountns_setup.h"
 #include "stats/subsys/netns_teardown.h"
+#include "stats/subsys/ct_expect_realloc.h"
 #include "stats/subsys/nf_conntrack_helper_churn.h"
 #include "stats/subsys/nl80211.h"
 #include "stats/subsys/nftables_churn.h"
@@ -728,6 +729,9 @@ struct stats_s {
 
 	/* nf_conntrack_helper_churn accounting.  See stats/subsys/nf_conntrack_helper_churn.h. */
 	struct nf_conntrack_helper_churn_stats nf_conntrack_helper_churn __attribute__((aligned(64)));
+
+	/* ct_expect_realloc accounting.  See stats/subsys/ct_expect_realloc.h. */
+	struct ct_expect_realloc_stats ct_expect_realloc __attribute__((aligned(64)));
 
 	/* ipset_churn accounting.  See stats/subsys/ipset_churn.h. */
 	struct ipset_churn_stats ipset_churn __attribute__((aligned(64)));

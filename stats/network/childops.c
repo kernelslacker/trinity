@@ -658,6 +658,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&nf_conntrack_helper_churn_category);
 
+	stat_category_emit_text(&ct_expect_realloc_category);
+
 	stat_category_emit_text(&ipset_churn_category);
 
 	stat_category_emit_text(&af_unix_scm_rights_gc_category);

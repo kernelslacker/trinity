@@ -284,6 +284,9 @@ void json_emit_net_churn_and_early_storms_section(void)
 	stat_category_emit_json(&nf_conntrack_helper_churn_category);
 
 	printf(",");
+	stat_category_emit_json(&ct_expect_realloc_category);
+
+	printf(",");
 	stat_category_emit_json(&ipset_churn_category);
 
 	printf(",");
