@@ -321,6 +321,14 @@ static void dump_stats_render_deferred_free_rejects(void)
 		stat_row("corruption", "deferred_free_pre_dispatch_leaked",   shm->stats.deferred_free.pre_dispatch_leaked);
 	if (shm->stats.deferred_free.ring_evict_leaked)
 		stat_row("corruption", "ring_evict_leaked",                   shm->stats.deferred_free.ring_evict_leaked);
+	if (shm->stats.deferred_free.gen_arena_admitted)
+		stat_row("corruption", "deferred_free_gen_arena_admitted",    shm->stats.deferred_free.gen_arena_admitted);
+	if (shm->stats.deferred_free.gen_arena_retired_ok)
+		stat_row("corruption", "deferred_free_gen_arena_retired_ok",  shm->stats.deferred_free.gen_arena_retired_ok);
+	if (shm->stats.deferred_free.gen_arena_retire_reject)
+		stat_row("corruption", "deferred_free_gen_arena_retire_reject", shm->stats.deferred_free.gen_arena_retire_reject);
+	if (shm->stats.deferred_free.gen_arena_pressure_leak)
+		stat_row("corruption", "deferred_free_gen_arena_pressure_leak", shm->stats.deferred_free.gen_arena_pressure_leak);
 	if (shm->stats.deferred_free.ring_owned_skip)
 		stat_row("corruption", "deferred_free_ring_owned_skip",       shm->stats.deferred_free.ring_owned_skip);
 	if (shm->stats.deferred_free.double_admit_skip)

@@ -418,6 +418,19 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free.pre_dispatch_leaked) },
 	{ "ring_evict_leaked",
 	  offsetof(struct stats_s, deferred_free.ring_evict_leaked) },
+	/* Generation-arena counters (see stats/subsys/deferred_free.h): the
+	 * _admitted / _retired_ok pair should track each other after the
+	 * retirement bake-in lag, _retire_reject flags mid-hold arena stomps,
+	 * and _pressure_leak flags an undersized arena that fell back to the
+	 * legacy leak-on-eviction path. */
+	{ "deferred_free_gen_arena_admitted",
+	  offsetof(struct stats_s, deferred_free.gen_arena_admitted) },
+	{ "deferred_free_gen_arena_retired_ok",
+	  offsetof(struct stats_s, deferred_free.gen_arena_retired_ok) },
+	{ "deferred_free_gen_arena_retire_reject",
+	  offsetof(struct stats_s, deferred_free.gen_arena_retire_reject) },
+	{ "deferred_free_gen_arena_pressure_leak",
+	  offsetof(struct stats_s, deferred_free.gen_arena_pressure_leak) },
 	{ "deferred_free_ring_owned_skip",
 	  offsetof(struct stats_s, deferred_free.ring_owned_skip) },
 	{ "deferred_free_double_admit_skip",
@@ -455,6 +468,12 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free.ring_ro_calls) },
 	{ "deferred_free_ring_rw_ns_total",
 	  offsetof(struct stats_s, deferred_free.ring_rw_ns_total) },
+	{ "deferred_free_gen_arena_rw_calls",
+	  offsetof(struct stats_s, deferred_free.gen_arena_rw_calls) },
+	{ "deferred_free_gen_arena_ro_calls",
+	  offsetof(struct stats_s, deferred_free.gen_arena_ro_calls) },
+	{ "deferred_free_gen_arena_rw_ns_total",
+	  offsetof(struct stats_s, deferred_free.gen_arena_rw_ns_total) },
 	/* Untraced random-syscall vs childop dispatch-shape counters.
 	 * See stats/subsys/syscall_dispatch.h for the bucket semantics. */
 	{ "random_syscall_attempts",
