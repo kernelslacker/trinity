@@ -10,6 +10,7 @@
 #include "child.h"
 #include "childops-util.h"
 #include "fd.h"
+#include "stats_ring.h"
 #include "syscall.h"
 #include "syscall_record.h"
 #include "tables.h"
@@ -408,6 +409,9 @@ void dump_dstate_diagnostics(struct childdata *child, int childno,
 		args[5] = rec->a6;
 	}, got);
 
+	if (!got)
+		parent_stats.srec_snapshot_giveups++;
+
 	output(0, "  D-state diag: child %d pid %u\n", childno, pid);
 
 	if (child->op_type != CHILD_OP_SYSCALL)
@@ -532,8 +536,10 @@ bool dstate_diag_budget_take(struct childdata *child,
 		SREC_SNAPSHOT(rec, {
 			callno = rec->nr;
 		}, got);
-		if (!got)
+		if (!got) {
 			callno = ~0u;
+			parent_stats.srec_snapshot_giveups++;
+		}
 	}
 
 	h = dstate_diag_hash(child->op_type, callno, wchan);

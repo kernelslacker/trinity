@@ -107,6 +107,8 @@ static const struct {
 	  offsetof(struct stats_aggregate, arg_shadow_stomp), true },
 	{ "lock_word_scribbled",
 	  offsetof(struct stats_aggregate, lock_word_scribbled), true },
+	{ "srec_snapshot_giveups",
+	  offsetof(struct stats_aggregate, srec_snapshot_giveups), true },
 	{ "lock_held_scribble",
 	  offsetof(struct stats_s, diag.lock_held_scribble) },
 	{ "rec_canary_stomped",
