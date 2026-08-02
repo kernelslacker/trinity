@@ -497,6 +497,24 @@ struct shm_s {
 	bool mpls_route_modprobe_tried_mpls_router;
 	bool mpls_route_ns_unsupported_mpls;
 	bool mpls_route_ns_unsupported_lwtunnel;
+	/* wireguard-decrypt-flood per-grandchild setup latches
+	 * (childops/net/wireguard-decrypt-flood.c).  Same rationale as the
+	 * tc_qdisc_churn_* latches above: the write sites sit inside the
+	 * userns_run_in_ns() grandchild -- a process-local static would die
+	 * with the grandchild on _exit() and every subsequent invocation
+	 * would re-probe the same wireguard-module-absent errno or re-run
+	 * wgdf_setup() forever.  Living in shm lets one negative probe or
+	 * one successful setup persist fleet-wide.  RELAXED atomic
+	 * load/store is safe -- only false -> true (bools) or once-set
+	 * monotonic (ints), and the writes are idempotent.  wgdf_udp_fd /
+	 * wgdf_wg_ifindex zero-initialise rather than -1; correctness does
+	 * not depend on that because reads are gated on wgdf_setup_done
+	 * being true, which is only set after wgdf_open_udp() /
+	 * if_nametoindex() have returned a valid handle. */
+	bool wg_ns_unsupported;
+	bool wgdf_setup_done;
+	int wgdf_udp_fd;
+	int wgdf_wg_ifindex;
 
 	/* xfrm-churn per-grandchild setup latches (childops/net/xfrm/
 	 * xfrm-churn.c: lo_brought_up / ns_unsupported_iptfs /
