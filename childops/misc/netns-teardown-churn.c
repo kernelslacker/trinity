@@ -85,17 +85,29 @@
 #include "kernel/fcntl.h"
 #include "kernel/netlink.h"
 #include "kernel/socket.h"
-/* Per-process latched gate: userns_run_in_ns() returned -EPERM,
- * meaning the grandchild's unshare(CLONE_NEWUSER) was refused by a
- * hardened policy (user.max_user_namespaces=0 or
- * kernel.unprivileged_userns_clone=0).  Without a private user+net
- * namespace we cannot race pernet teardown at all (the persistent
- * fuzz child runs cap-dropped and would silently EPERM out of the
- * inline unshare too), so the op stays disabled for the remainder of
- * this child's lifetime.  Transient helper failures (-EAGAIN) do not
- * set this -- they may not recur on the next iteration.  Mirrors the
- * bridge_vlan_churn / genetlink_fuzzer userns-adoption latch. */
-static bool ns_unsupported_netns_teardown;
+/* Latch lives in shm (shm->netns_teardown_ns_unsupported).  Fires on
+ * two paths:
+ *   - userns_run_in_ns() returned -EPERM: outer wrapper (persists
+ *     fleet-wide via shm).
+ *   - setns() failure inside the userns_run_in_ns() grandchild body
+ *     (setns_back / recover).  A process-local static would die with
+ *     the grandchild on _exit() and every subsequent invocation would
+ *     re-attempt the same broken setns.
+ * Transient helper failures (-EAGAIN) do not set this -- they may not
+ * recur on the next iteration.  RELAXED atomic load/store from
+ * multiple grandchildren is safe -- only false -> true, and the write
+ * is idempotent. */
+static bool ns_unsupported_netns_teardown(void)
+{
+	return __atomic_load_n(&shm->netns_teardown_ns_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_netns_teardown(void)
+{
+	__atomic_store_n(&shm->netns_teardown_ns_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
 
 #define NETNS_TD_OUTER_BASE		1U
 #define NETNS_TD_OUTER_CAP		3U
@@ -481,7 +493,7 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
 		 * itself eventually exits.  Then bail out — every
 		 * subsequent invocation will re-enter the same broken
 		 * state, so latch off. */
-		ns_unsupported_netns_teardown = true;
+		mark_ns_unsupported_netns_teardown();
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
@@ -563,7 +575,7 @@ static void netns_teardown_iter_recover(struct netns_teardown_iter_ctx *it)
 	if (it->nsfd >= 0) {
 		it->direct_calls++;
 		if (setns(it->nsfd, CLONE_NEWNET) < 0) {
-			ns_unsupported_netns_teardown = true;
+			mark_ns_unsupported_netns_teardown();
 			if (valid_op)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
 						 CHILDOP_LATCH_NS_UNSUPPORTED,
@@ -673,7 +685,7 @@ bool netns_teardown_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.netns_teardown.runs,
 			   1, __ATOMIC_RELAXED);
 
-	if (ns_unsupported_netns_teardown) {
+	if (ns_unsupported_netns_teardown()) {
 		__atomic_add_fetch(&shm->stats.netns_teardown.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -681,7 +693,7 @@ bool netns_teardown_churn(struct childdata *child)
 
 	rc = userns_run_in_ns(CLONE_NEWNET, netns_teardown_churn_in_ns, &cctx);
 	if (rc == -EPERM) {
-		ns_unsupported_netns_teardown = true;
+		mark_ns_unsupported_netns_teardown();
 		/* child->op_type lives in shared memory and can be scribbled
 		 * by a poisoned-arena write from a sibling; bounds-check the
 		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
