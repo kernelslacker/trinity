@@ -20,6 +20,8 @@
 
 #include "pkt-builder.h"
 #include "pkt-builder-internal.h"
+#include "child.h"
+#include "childop-outcome.h"
 
 /*
  * ==== Delivery =========================================================
@@ -245,6 +247,7 @@ int pktb_deliver(struct pktb_ctx *ctx, const struct pktb_frame *f)
 	const struct pktb_layer_manifest *outer;
 	enum pktb_delivery via;
 	uint16_t skip;
+	int rc;
 
 	if (ctx->disabled)
 		return -3;
@@ -259,11 +262,44 @@ int pktb_deliver(struct pktb_ctx *ctx, const struct pktb_frame *f)
 	skip = skip_for_delivery(f, via);
 
 	switch (via) {
-	case PKTB_DELIVER_AF_PACKET:    return deliver_af_packet(ctx, f);
-	case PKTB_DELIVER_RAW_IPV4:     return deliver_raw_ipv4(ctx, f, skip);
-	case PKTB_DELIVER_RAW_IPV6:     return deliver_raw_ipv6(ctx, f, skip);
-	case PKTB_DELIVER_LOOPBACK_UDP: return deliver_loopback_udp(ctx, f, skip);
-	case PKTB_DELIVER_NONE:         return -2;
+	case PKTB_DELIVER_AF_PACKET:
+		rc = deliver_af_packet(ctx, f);
+		break;
+	case PKTB_DELIVER_RAW_IPV4:
+		rc = deliver_raw_ipv4(ctx, f, skip);
+		break;
+	case PKTB_DELIVER_RAW_IPV6:
+		rc = deliver_raw_ipv6(ctx, f, skip);
+		break;
+	case PKTB_DELIVER_LOOPBACK_UDP:
+		rc = deliver_loopback_udp(ctx, f, skip);
+		break;
+	case PKTB_DELIVER_NONE:
+		return -2;
+	default:
+		return -2;
 	}
-	return -2;
+
+	/* Snapshot the caller's op via this_child()->op_type and publish
+	 * per-frame direct-syscall attribution.  Every dispatch that
+	 * reaches here either created a delivery-family socket
+	 * (first-use path, one raw kernel entry) and/or issued the
+	 * sendto for the frame (universal path, one raw kernel entry);
+	 * the -3 disabled fast-return above already skipped attribution
+	 * for the socket-refused latch path.  A single per-frame bump is
+	 * a conservative floor that stays consistent across the four
+	 * deliver_* branches without a per-branch counter.  Matches the
+	 * surrounding per-childop bump sites in child.c. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
+
+	return rc;
 }

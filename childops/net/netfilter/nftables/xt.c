@@ -5,6 +5,7 @@
  */
 
 #include "internal.h"
+#include "childop-outcome.h"
 
 /*
  * xt_CT v1+v2 usersize sub-mode (upstream 8bedb6c46945 "netfilter: xt_CT:
@@ -422,6 +423,25 @@ void nft_xt_ct_usersize_sweep(void)
 {
 	if (ns_unsupported_xt_ct)
 		return;
+	/* Snapshot the caller's op via this_child()->op_type and publish
+	 * per-sweep direct-syscall attribution.  Each xt_ct_probe_one call
+	 * opens an iptables sockopt socket, walks the GET_INFO / GET_ENTRIES
+	 * / replace-and-close sequence, and closes; the sweep drives up to
+	 * four probes (IPv4/IPv6 x revisions 1/2) before returning.  A
+	 * single per-sweep bump matches the ns_unsupported_xt_ct latch
+	 * granularity -- one attempt attributed per invocation regardless of
+	 * which per-revision branch surfaces the failure.  Matches the
+	 * surrounding per-childop bump sites in child.c. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	xt_ct_probe_one(false, 1);
 	if (!ns_unsupported_xt_ct)
 		xt_ct_probe_one(false, 2);
@@ -612,6 +632,16 @@ void nft_xt_idletimer_sweep(void)
 {
 	if (ns_unsupported_xt_idletimer)
 		return;
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	xt_idletimer_probe_one(false, 0);
 	if (!ns_unsupported_xt_idletimer)
 		xt_idletimer_probe_one(false, 1);
@@ -841,6 +871,16 @@ void nft_xt_tcp_match_sweep(void)
 {
 	if (ns_unsupported_xt_tcp_match)
 		return;
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	xt_tcp_match_probe_one(false);
 	if (!ns_unsupported_xt_tcp_match)
 		xt_tcp_match_probe_one(true);

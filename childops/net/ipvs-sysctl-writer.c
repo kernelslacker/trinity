@@ -37,6 +37,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
@@ -311,6 +312,17 @@ bool ipvs_sysctl_writer(struct childdata *child)
 		return true;
 
 	maybe_modprobe_ip_vs();
+
+	/* Publish per-invocation direct-syscall attribution before the
+	 * userns_run_in_ns dispatch commits.  All the real kernel entries
+	 * live inside ipvs_sysctl_writer_in_ns (per-sysctl open/write/
+	 * close plus the per-iter TCP conn-burn socket/connect/close on
+	 * loopback) but a single per-op bump at the dispatch point
+	 * attributes the invocation without a per-syscall-site
+	 * instrumentation surface across the grandchild.  Matches the
+	 * surrounding per-childop bump sites in child.c. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 
 	rc = userns_run_in_ns(CLONE_NEWNET, ipvs_sysctl_writer_in_ns, &ctx);
 	if (rc == -EPERM) {
