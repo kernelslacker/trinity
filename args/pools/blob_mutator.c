@@ -267,12 +267,11 @@ static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 		/* width is now in {1, 2, 4, 8} and <= len. */
 
 		max_pos = len - width;
-		if (max_pos == 0)
-			pos = 0;
-		else if (max_pos > UINT32_MAX)
-			pos = (size_t) rnd_modulo_u32(UINT32_MAX);
-		else
-			pos = (size_t) rnd_modulo_u32((uint32_t) max_pos + 1u);
+		/* Full-width u64 draw so any pos in [0, max_pos] is reachable;
+		 * an earlier version clamped to rnd_modulo_u32(UINT32_MAX) on
+		 * the max_pos > UINT32_MAX branch, silently biasing away from
+		 * the tail. */
+		pos = (size_t) rnd_modulo_u64((uint64_t) max_pos + 1u);
 
 		/* Apply the splat-form transform (plain LE in the
 		 * majority, else BE / ±1 at width).  Transform is
