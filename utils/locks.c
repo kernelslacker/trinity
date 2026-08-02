@@ -167,9 +167,6 @@ bool check_all_locks(void)
 	recalibrate = (reaps != last_seen_reaps);
 	last_seen_reaps = reaps;
 
-	for_each_child(i)
-		ret |= check_lock(&children[i]->syscall.lock);
-
 	/* Per-syscall cmp_hints pools each have their own lock_t.  These
 	 * are acquired by children from generate-args.c during cmp-mode
 	 * argument generation, so a SIGSEGV/SIGABRT mid-pool-update leaves

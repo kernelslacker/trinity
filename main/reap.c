@@ -124,7 +124,6 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 
 	child->tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	child->kill_in_flight = false;
-	force_bust_lock(&child->syscall.lock);
 
 	unsigned int cur;
 	do {
@@ -367,8 +366,6 @@ void kill_all_kids(void)
 	for (i = 0; check_all_locks() == true && i < 10; i++)
 		reap_dead_kids();
 	if (check_all_locks() == true) {
-		for_each_child(i)
-			force_bust_lock(&children[i]->syscall.lock);
 		force_bust_lock(&shm->syscalltable_lock);
 	}
 }

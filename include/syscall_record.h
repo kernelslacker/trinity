@@ -3,8 +3,8 @@
 #include "syscall.h"
 
 /*
- * Sequence-counter publish/snapshot helpers for diagnostic readers
- * that skip rec->lock.  Writer brackets every coherent publish with
+ * Sequence-counter publish/snapshot helpers for diagnostic readers.
+ * Writer brackets every coherent publish with
  * srec_publish_begin (odd sequence) / srec_publish_end (even sequence,
  * release).  Reader spin-copies fields between two acquire-loads of
  * rec->seq and accepts only when both reads are equal AND even.
@@ -13,11 +13,9 @@
  * The publish brackets are self-sufficient: srec_publish_begin's
  * release-store + acquire-fence prevents subsequent field writes
  * from being hoisted above the odd marker, and srec_publish_end's
- * release-store publishes those writes to readers.  Writers MAY
- * drop rec->lock provided all coherent field writes sit between
- * the brackets -- the brackets ARE the writer-side ordering anchor,
- * not the lock.  Readers that still take the lock for non-snapshot
- * reads keep working unchanged.
+ * release-store publishes those writes to readers.  All coherent
+ * field writes sit between the brackets -- the brackets ARE the
+ * writer-side ordering anchor; the record carries no separate lock.
  */
 
 /*
@@ -25,9 +23,8 @@
  * progress".  The release-store on seq orders prior writes against
  * the marker; the trailing acquire-fence prevents the compiler (and
  * the CPU on weak-ordering architectures) from hoisting subsequent
- * field writes above the marker.  Together these replace the lock
- * acquire as the writer-side ordering anchor, so writer sites are
- * free to drop the surrounding rec->lock.
+ * field writes above the marker.  Together these are the writer-side
+ * ordering anchor; the record carries no separate lock.
  */
 static inline void srec_publish_begin(struct syscallrecord *rec)
 {
