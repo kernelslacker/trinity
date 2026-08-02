@@ -457,6 +457,17 @@ struct stats_aggregate {
 	 * a fuzzed syscall arg -- the very class of event this counter
 	 * tracks -- cannot scribble the diagnostic that detects it. */
 	unsigned long lock_word_scribbled;
+
+	/* Run-monotonic count of SREC_SNAPSHOT() invocations that exited
+	 * with got_out=false -- the reader spun through the retry budget
+	 * without observing a clean sequence.  Callers degrade silently
+	 * (stuck_syscall_info prints "?", dump_dstate_diagnostics prints
+	 * a "snapshot unavailable" line, the wedge-accounting latch skips
+	 * the bump for this tick).  Without this counter a rising rate of
+	 * mutation-churn starvation looks identical to an idle child from
+	 * the parent's watchdog / D-state triage lens.  Bumped from
+	 * parent-only reap paths so plain ++ is safe. */
+	unsigned long srec_snapshot_giveups;
 };
 
 extern struct stats_aggregate parent_stats;

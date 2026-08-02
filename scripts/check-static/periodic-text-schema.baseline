@@ -314,6 +314,7 @@ shared_buffer_redirected
 sibling_mprotect_failed
 sibling_refreeze_count
 snapshot_non_heap_reject
+srec_snapshot_giveups
 stats_ring_corrupted
 stats_ring_overwritten
 strategy_explorer_picks

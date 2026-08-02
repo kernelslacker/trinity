@@ -20,6 +20,7 @@
 #include "random.h"
 #include "shm.h"
 #include "stats.h"
+#include "stats_ring.h"
 #include "syscall.h"
 #include "syscall_record.h"
 #include "sysrq-lockup.h"
@@ -101,6 +102,7 @@ static void scream_stuck_child(struct childdata *child, int childno,
 			opname = (entry != NULL) ? entry->name : "?";
 		} else {
 			opname = "?";
+			parent_stats.srec_snapshot_giveups++;
 		}
 	} else {
 		opname = alt_op_name(child->op_type);
@@ -189,6 +191,7 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 
 	if (!got) {
 		output(0, "  (snapshot give-up: writer churn)\n");
+		parent_stats.srec_snapshot_giveups++;
 		return;
 	}
 
@@ -352,6 +355,9 @@ static void latch_wedge_accounting(struct childdata *child)
 		wnr = wrec->nr;
 		wstate = __atomic_load_n(&wrec->state, __ATOMIC_RELAXED);
 	}, wgot);
+
+	if (!wgot)
+		parent_stats.srec_snapshot_giveups++;
 
 	if (wgot && wstate >= BEFORE && wnr < MAX_NR_SYSCALL) {
 		enum child_op_type wop = child->op_type;
