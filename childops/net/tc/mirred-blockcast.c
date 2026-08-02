@@ -271,10 +271,61 @@ static void mark_ns_unsupported_inet(void)
 			 __ATOMIC_RELAXED);
 }
 
-static bool lo_brought_up;
-static bool modprobe_tried_ingress;
-static bool modprobe_tried_matchall;
-static bool modprobe_tried_mirred;
+/* Per-grandchild setup latches also live in shm for the same reason
+ * as the ns_unsupported_* gates above: the write site sits inside the
+ * userns_run_in_ns() grandchild, so a process-local static dies with
+ * the grandchild on _exit() and every subsequent invocation re-pays
+ * the "lo up" rtnetlink round-trip and the try_modprobe() cost.
+ * Shared shm state means one successful lo-up / one modprobe attempt
+ * per fleet, not per grandchild. */
+
+static bool lo_brought_up(void)
+{
+	return __atomic_load_n(&shm->tc_mirred_bc_lo_brought_up,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_lo_brought_up(void)
+{
+	__atomic_store_n(&shm->tc_mirred_bc_lo_brought_up, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool modprobe_tried_ingress(void)
+{
+	return __atomic_load_n(&shm->tc_mirred_bc_modprobe_tried_ingress,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_modprobe_tried_ingress(void)
+{
+	__atomic_store_n(&shm->tc_mirred_bc_modprobe_tried_ingress, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool modprobe_tried_matchall(void)
+{
+	return __atomic_load_n(&shm->tc_mirred_bc_modprobe_tried_matchall,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_modprobe_tried_matchall(void)
+{
+	__atomic_store_n(&shm->tc_mirred_bc_modprobe_tried_matchall, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool modprobe_tried_mirred(void)
+{
+	return __atomic_load_n(&shm->tc_mirred_bc_modprobe_tried_mirred,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_modprobe_tried_mirred(void)
+{
+	__atomic_store_n(&shm->tc_mirred_bc_modprobe_tried_mirred, true,
+			 __ATOMIC_RELAXED);
+}
 
 /* Master gate: persistent across iterations in the persistent fuzz
  * child.  Set when userns_run_in_ns() returns -EPERM (hardened userns
@@ -506,27 +557,27 @@ static int tc_mirred_setup_netns(struct nl_ctx *ctx, unsigned long *direct_calls
 	 * > 0 above). */
 	*direct_calls += 3;
 
-	if (!modprobe_tried_ingress) {
-		modprobe_tried_ingress = true;
+	if (!modprobe_tried_ingress()) {
+		mark_modprobe_tried_ingress();
 		try_modprobe("sch_ingress");
 	}
-	if (!modprobe_tried_matchall) {
-		modprobe_tried_matchall = true;
+	if (!modprobe_tried_matchall()) {
+		mark_modprobe_tried_matchall();
 		try_modprobe("cls_matchall");
 	}
-	if (!modprobe_tried_mirred) {
-		modprobe_tried_mirred = true;
+	if (!modprobe_tried_mirred()) {
+		mark_modprobe_tried_mirred();
 		try_modprobe("act_mirred");
 	}
 
-	if (!lo_brought_up) {
+	if (!lo_brought_up()) {
 		rtnl_bring_lo_up(ctx);
 		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
 		 * when the lo lookup succeeds; the if_nametoindex libc probe
 		 * stays unattributed to match the surrounding per-childop
 		 * convention. */
 		*direct_calls += 2;
-		lo_brought_up = true;
+		mark_lo_brought_up();
 	}
 	return 0;
 }
