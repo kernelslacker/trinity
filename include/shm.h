@@ -430,6 +430,15 @@ struct shm_s {
 	 * false -> true, idempotent write. */
 	bool bareudp_rx_lo_brought_up;
 	bool mpls_label_stack_rx_kind_unsupported;
+	/* mpls-label-stack-rx per-grandchild lo-up latch (childops/net/
+	 * mpls-label-stack-rx.c).  Written inside the userns_run_in_ns()
+	 * grandchild's mpls_label_stack_rx_in_ns() path -- a
+	 * process-local static would die with the grandchild on _exit()
+	 * and every subsequent invocation would re-pay the rtnetlink
+	 * "lo up" round-trip forever.  Living in shm lets one successful
+	 * lo-up persist fleet-wide.  RELAXED atomic load/store is safe
+	 * -- only false -> true, idempotent write. */
+	bool mpls_label_stack_rx_lo_brought_up;
 	bool espintcp_coalesce_kind_unsupported;
 #define VETH_XDP_NR_KINDS 4
 	bool veth_xdp_kind_unsupported[VETH_XDP_NR_KINDS];
