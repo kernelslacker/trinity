@@ -14,6 +14,8 @@
 #include <unistd.h>
 
 #include "childops/io_uring/ring.h"
+#include "child.h"
+#include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "errno-classify.h"
 
@@ -78,6 +80,24 @@ enum iour_setup_status iour_ring_setup(struct io_uring_params *p,
 				       unsigned int entries,
 				       struct iour_ring *out)
 {
+	/* Snapshot the caller's op via this_child()->op_type (with a
+	 * NULL guard for parent-context callers and a NR_CHILD_OP_TYPES
+	 * bounds check) and publish once up front so the direct-syscall
+	 * reporter attributes this ring setup's raw kernel entries
+	 * (io_uring_setup + up to three mmaps + a bail-close on the
+	 * fail-close path) to the caller's per-childop tally regardless
+	 * of which early-return path the setup takes.  Matches the
+	 * surrounding per-childop bump sites in child.c. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	size_t sq_sz, cq_sz, sqes_sz, single_sz, cq_eff;
 	void *sq_ring, *cq_ring, *sqes;
 	int fd, saved_errno;
@@ -228,6 +248,16 @@ fail_close:
 
 void iour_ring_teardown(struct iour_ring *ring)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	int saved_errno = errno;
 
 	if (ring->sqes)
