@@ -166,4 +166,5 @@ struct syscallentry syscall_semget = {
 	.rettype = RET_BORING,
 	.sanitise = sanitise_semget,
 	.post = post_semget,
+	.flags = REEXEC_SANITISE_OK,
 };

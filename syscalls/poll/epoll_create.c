@@ -77,6 +77,7 @@ struct syscallentry syscall_epoll_create = {
 	.ret_objtype = OBJ_FD_EPOLL,
 	.post = post_epoll_create,
 	.group = GROUP_VFS_IO,
+	.flags = REEXEC_SANITISE_OK,
 };
 
 /*
@@ -134,4 +135,5 @@ struct syscallentry syscall_epoll_create1 = {
 	.ret_objtype = OBJ_FD_EPOLL,
 	.post = post_epoll_create,
 	.group = GROUP_VFS_IO,
+	.flags = REEXEC_SANITISE_OK,
 };

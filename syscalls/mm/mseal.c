@@ -46,4 +46,5 @@ struct syscallentry syscall_mseal = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VM,
 	.sanitise = sanitise_mseal,
+	.flags = REEXEC_SANITISE_OK,
 };

@@ -72,7 +72,7 @@ struct syscallentry syscall_msync = {
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_UNDEFINED },
 	.argname = { [0] = "start", [1] = "len", [2] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VM,
 	.sanitise = sanitise_msync,
 };

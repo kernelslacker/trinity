@@ -103,4 +103,5 @@ struct syscallentry syscall_eventfd2 = {
 	.ret_objtype = OBJ_FD_EVENTFD,
 	.post = post_eventfd_create,
 	.group = GROUP_IPC,
+	.flags = REEXEC_SANITISE_OK,
 };
