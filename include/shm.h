@@ -462,6 +462,16 @@ struct shm_s {
 	 * invocation would re-pay the rtnetlink round-trip. */
 	bool bridge_conntrack_lo_up_done;
 
+	/* nl80211-churn per-grandchild first-wiphy cache (childops/net/
+	 * netlink/nl80211-churn.c).  Both the cached wiphy index and the
+	 * "cached" gate live in shm; write sites sit inside the
+	 * userns_run_in_ns() grandchild (coordinator +
+	 * discovery.c hwsim_present).  Process-local statics would die
+	 * with the grandchild and every subsequent invocation would
+	 * re-pay the GET_WIPHY enumerate. */
+	uint32_t nl80211_phy0;
+	bool nl80211_phy0_cached;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC

@@ -223,7 +223,7 @@ bool hwsim_present(struct genl_ctx *ctx)
 	if (wcount <= 0)
 		return false;
 
-	nl80211_phy0 = phy;
+	nl80211_set_phy0(phy);
 	return true;
 }
 
