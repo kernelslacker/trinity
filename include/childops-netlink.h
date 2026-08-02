@@ -44,6 +44,7 @@
 #include <linux/netlink.h>
 #include <linux/types.h>
 
+#include "child-api.h"
 #include "kernel/socket.h"
 struct nl_ctx {
 	int	fd;
@@ -51,6 +52,18 @@ struct nl_ctx {
 	__u32	seq;		/* monotonic per ctx, bumped by nl_seq_next() */
 	__u32	groups;		/* multicast subscribe mask, 0 = unicast only */
 	int	recv_timeo_s;	/* SO_RCVTIMEO seconds; 0 = no timeout */
+	/*
+	 * Direct-syscall reporting.  When caller_op < NR_CHILD_OP_TYPES,
+	 * nl_close() publishes direct_syscalls via
+	 * childop_direct_syscalls_add(caller_op, direct_syscalls) so the
+	 * per-childop direct-syscall accounting picks up the transport's
+	 * socket/bind/setsockopt/sendmsg/recv/close calls.  Callers opt
+	 * in by setting nl_open_opts.caller_op; leaving it as the default
+	 * (NR_CHILD_OP_TYPES) skips publication, preserving the previous
+	 * behaviour for callers that have not been converted yet.
+	 */
+	enum child_op_type caller_op;
+	unsigned long direct_syscalls;
 };
 
 /*
@@ -66,7 +79,7 @@ struct nl_ctx {
  *   out:
  *           nl_close(&ctx);
  */
-#define NL_CTX_INIT	{ .fd = -1 }
+#define NL_CTX_INIT	{ .fd = -1, .caller_op = NR_CHILD_OP_TYPES }
 
 /*
  * Companion initializer for struct genl_ctx (defined in
@@ -80,6 +93,18 @@ struct nl_open_opts {
 	__u32	groups;		/* default 0 */
 	int	recv_timeo_s;	/* whole seconds; takes precedence if > 0 */
 	int	recv_timeo_us;	/* sub-second; used when recv_timeo_s == 0 */
+	/*
+	 * Optional: caller's childop enum for direct-syscall reporting.
+	 * When set to a valid enum value (< NR_CHILD_OP_TYPES), nl_close()
+	 * publishes the per-ctx syscall count via
+	 * childop_direct_syscalls_add() so the shared transport's
+	 * socket/bind/setsockopt/sendmsg/recv/close calls are attributed
+	 * to the caller.  Zero-init (leaving the field at CHILD_OP_SYSCALL,
+	 * which no netlink caller can legitimately be) is treated as unset
+	 * and skips publication so unconverted callers keep the old
+	 * behaviour.
+	 */
+	enum child_op_type caller_op;
 };
 
 /*
