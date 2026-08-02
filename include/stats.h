@@ -83,6 +83,7 @@
 #include "stats/subsys/handshake_req_abort.h"
 #include "stats/subsys/hfs_mount_fuzz.h"
 #include "stats/subsys/igmp_mld_source_churn.h"
+#include "stats/subsys/inet_listener_rehash_race.h"
 #include "stats/subsys/inplace_crypto.h"
 #include "stats/subsys/iouring.h"
 #include "stats/subsys/iouring_eventfd.h"
@@ -603,6 +604,9 @@ struct stats_s {
 
 	/* tcp_md5_listener_race accounting.  See stats/subsys/tcp_md5_listener_race.h. */
 	struct tcp_md5_listener_race_stats tcp_md5_listener_race __attribute__((aligned(64)));
+
+	/* inet_listener_rehash_race accounting.  See stats/subsys/inet_listener_rehash_race.h. */
+	struct inet_listener_rehash_race_stats inet_listener_rehash_race __attribute__((aligned(64)));
 
 	/* ipv6_ndisc_proxy accounting.  See stats/subsys/ipv6_ndisc_proxy.h. */
 	struct ipv6_ndisc_proxy_stats ipv6_ndisc_proxy __attribute__((aligned(64)));

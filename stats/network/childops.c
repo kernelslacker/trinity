@@ -586,6 +586,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&tcp_md5_listener_race_category);
 
+	stat_category_emit_text(&inet_listener_rehash_race_category);
+
 	stat_category_emit_text(&ipv6_pmtu_race_category);
 
 	stat_category_emit_text(&vrf_fib_churn_category);

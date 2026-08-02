@@ -404,6 +404,9 @@ void json_emit_tcp_ipv6_and_tunnels_section(void)
 	stat_category_emit_json(&tcp_md5_listener_race_category);
 
 	printf(",");
+	stat_category_emit_json(&inet_listener_rehash_race_category);
+
+	printf(",");
 	stat_category_emit_json(&ipv6_pmtu_race_category);
 
 	printf(",");
