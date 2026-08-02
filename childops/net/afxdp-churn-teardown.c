@@ -19,6 +19,7 @@
 #if __has_include(<linux/if_xdp.h>) && __has_include(<linux/bpf.h>)
 
 #include "afxdp-churn-internal.h"
+#include "childop-outcome.h"
 
 void xsk_init(struct xsk_state *st)
 {
@@ -38,6 +39,28 @@ void xsk_init(struct xsk_state *st)
 
 void xsk_teardown(struct xsk_state *st)
 {
+	/* Snapshot the caller's op via this_child()->op_type and publish
+	 * a single per-iter direct-syscall bump here.  xsk_teardown runs
+	 * unconditionally on every iter_one path (goto out; on any early
+	 * setup failure still lands in the cleanup call), which makes
+	 * this the one place inside the afxdp-churn TU split that maps
+	 * one-to-one to "an iteration ran" -- wiring the sibling umem /
+	 * io TUs would multi-count under the shared CHILD_OP_AFXDP_CHURN
+	 * op.  The bump accounts in aggregate for the ring munmaps + fd
+	 * closes below plus the setup-side raw calls (AF_XDP socket +
+	 * BPF prog / xskmap fds) the sibling TUs paid earlier in the
+	 * iteration.  Netlink teardown routes through the netlink-util
+	 * transport which already publishes its own count. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	/* Detach order: BPF link first (auto-detaches on close), then any
 	 * netlink-attached prog (explicit RTM_NEWLINK with prog_fd=-1 in
 	 * SKB mode), then close prog/map fds. */
