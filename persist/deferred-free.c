@@ -800,6 +800,316 @@ static void ring_lock(void)
 }
 
 /*
+ * Generation arena: bounded holding pen for pointers evicted out of the
+ * full-ring by ring_evict_oldest_safe().  The eviction site historically
+ * leaked its evicted chunk on the floor as an "interim defense" against
+ * the address-reuse bad-free class (see Documentation/deferred-free.md
+ * "Leak-on-eviction defense"); run3 observed 3,479,168 eviction leaks
+ * over a 6.21M-syscall campaign and host shmem past 10 GB, so the
+ * "benign leak" comment was falsified in practice.
+ *
+ * The arena replaces the permanent leak with a bounded-hold: every
+ * evicted chunk is filed into an ACTIVE generation, an ACTIVE generation
+ * SEALs when it fills or ages past GEN_ARENA_SEAL_TICKS, and a SEALED
+ * generation retires (drains its entire chunk list via
+ * tracked_free_checked, which alloc_track-consume-gates each free) once
+ * it has aged GEN_ARENA_RETIRE_TICKS batched-ticks beyond seal time.
+ * The retirement window is chosen a couple of orders of magnitude longer
+ * than the ring's own 5-50 TTL x DEFERRED_TICK_BATCH multiplier so any
+ * stale caller ref that survived the ring's own hold has itself naturally
+ * exited the caller's frame -- the same address-reuse class the interim
+ * leak avoided is closed by outliving the reuse window, not by refusing
+ * to free.
+ *
+ * Under arena pressure (every slot ACTIVE or SEALED-not-yet-retirable),
+ * eviction falls back to the historical leak-on-eviction behaviour and
+ * bumps the dedicated _pressure_leak counter in addition to
+ * ring_evict_leaked, so an operator can tell "arena defense engaged" from
+ * "arena undersized for this workload."
+ *
+ * Storage is one small mmap'd armor region shared across all generations;
+ * gen_unlock()/gen_lock() open the RW window for the duration of a
+ * mutation, matching the discipline of the other three protection
+ * regions.  Steady state PROT_READ so a fuzzed value-result stomp on a
+ * generation's ptrs[] page fails the write, preserving the
+ * "corruption-shaped stomp cannot silently reach free()" invariant.
+ */
+#define GEN_ARENA_SLOTS			4
+#define GEN_ARENA_ENTRIES		256
+#define GEN_ARENA_SEAL_TICKS		64	/* ~1024 syscalls: force-seal an under-filled active */
+#define GEN_ARENA_RETIRE_TICKS		512	/* ~8192 syscalls of post-seal bake before retire */
+
+enum gen_arena_state {
+	GEN_EMPTY = 0,
+	GEN_ACTIVE,
+	GEN_SEALED,
+};
+
+struct gen_arena {
+	void *ptrs[GEN_ARENA_ENTRIES];
+	unsigned int count;
+	unsigned long armed_tick;	/* tick_counter when it went ACTIVE */
+	unsigned long sealed_tick;	/* tick_counter when it went SEALED */
+	enum gen_arena_state state;
+};
+
+struct gen_arena_region {
+	struct gen_arena arenas[GEN_ARENA_SLOTS];
+	unsigned int active_idx;
+	unsigned long tick_counter;	/* monotonic batched-tick clock */
+};
+
+static struct gen_arena_region *gen;
+static size_t gen_bytes;
+static struct timespec gen_rw_open_at;
+static bool gen_rw_open;
+
+/*
+ * Forward declaration: the retire helper below hands ptrs off to
+ * tracked_free_checked() with the arena-retire site tag, but the
+ * consolidated free-site block lives further down the file with the
+ * other post-drain free entry points.  Declare the enum + prototype
+ * here so both this block and the definition below stay in agreement.
+ */
+enum tracked_free_site {
+	TRACKED_FREE_SITE_RING_EVICT,	/* ring_evict_oldest_safe */
+	TRACKED_FREE_SITE_RING_DRAIN,	/* free_ring_entry */
+	TRACKED_FREE_SITE_IMMEDIATE,	/* tracked_free_now + enqueue immediate-free fallbacks */
+	TRACKED_FREE_SITE_GEN_RETIRE,	/* gen_arena_retire_one -- generation-arena drain */
+};
+static void tracked_free_checked(void *ptr, enum tracked_free_site site);
+
+static int gen_unlock(void)
+{
+	struct timespec begin;
+
+	if (deferred_free_batch && gen_rw_open)
+		return 0;
+
+	clock_gettime(CLOCK_MONOTONIC, &begin);
+	if (mprotect(gen, gen_bytes, PROT_READ | PROT_WRITE) != 0) {
+		outputerr("deferred_free: gen_arena unlock failed: errno=%d\n",
+			  errno);
+		return -1;
+	}
+	gen_rw_open_at = begin;
+	gen_rw_open = true;
+	__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_rw_calls,
+			   1, __ATOMIC_RELAXED);
+	return 0;
+}
+
+static void gen_lock(void)
+{
+	unsigned long ns;
+
+	if (deferred_free_batch)
+		return;
+
+	if (mprotect(gen, gen_bytes, PROT_READ) != 0)
+		outputerr("deferred_free: gen_arena lock failed: errno=%d\n",
+			  errno);
+	gen_rw_open = false;
+	if (df_ts_is_zero(&gen_rw_open_at))
+		return;
+	ns = df_cost_elapsed_ns(&gen_rw_open_at);
+	gen_rw_open_at = (struct timespec){0};
+	__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_ro_calls,
+			   1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_rw_ns_total,
+			   ns, __ATOMIC_RELAXED);
+}
+
+/*
+ * Retirement gate for a SEALED generation.  Runs the same stateless
+ * prefilters free_ring_entry uses (shape / heap-bounds / shared-region)
+ * against every entry before handing it to tracked_free_checked with the
+ * arena-retire site tag; a stomp that scribbled the arena's ptrs[] slot
+ * during the hold is caught here rather than fed to free().  Caller must
+ * hold gen_unlock() -- we mutate arena->count and arena->state and clear
+ * arena->ptrs[].  Ordered "clear the slot BEFORE free()" for the same
+ * signal/longjmp reason free_ring_entry has.
+ */
+static void gen_arena_retire_one(struct gen_arena *arena)
+{
+	unsigned int i;
+
+	for (i = 0; i < arena->count; i++) {
+		void *ptr = arena->ptrs[i];
+		const char *reason = NULL;
+
+		arena->ptrs[i] = NULL;
+		if (ptr == NULL)
+			continue;
+
+		if (is_corrupt_ptr_shape(ptr))
+			reason = "shape";
+		else if (!is_in_glibc_heap(ptr))
+			reason = "non-heap";
+		else if (range_overlaps_shared((unsigned long)ptr, 1))
+			reason = "shared-region";
+
+		if (reason != NULL) {
+			outputerr("deferred_free: gen_arena retire rejected "
+				  "ptr=%p (%s)\n", ptr, reason);
+			__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_retire_reject,
+					   1, __ATOMIC_RELAXED);
+			continue;
+		}
+
+		tracked_free_checked(ptr, TRACKED_FREE_SITE_GEN_RETIRE);
+		__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_retired_ok,
+				   1, __ATOMIC_RELAXED);
+	}
+
+	arena->count = 0;
+	arena->armed_tick = 0;
+	arena->sealed_tick = 0;
+	arena->state = GEN_EMPTY;
+}
+
+/*
+ * Retire every SEALED generation whose sealed_tick has aged past
+ * GEN_ARENA_RETIRE_TICKS.  Also force-seals the ACTIVE generation if it
+ * has aged past GEN_ARENA_SEAL_TICKS since arming, so a slow-eviction
+ * workload does not indefinitely delay the retirement clock.  Called
+ * from deferred_free_tick() under the same batched cadence as the ring
+ * drain, so the arena's bookkeeping runs at 1/DEFERRED_TICK_BATCH the
+ * syscall rate and does not add per-syscall syscalls.  Caller must NOT
+ * hold gen_unlock() -- we open it ourselves.
+ */
+static void gen_arena_tick(void)
+{
+	unsigned int i;
+	unsigned long now;
+	bool did_work = false;
+
+	if (gen == NULL)
+		return;
+
+	if (gen_unlock() != 0)
+		return;
+
+	gen->tick_counter++;
+	now = gen->tick_counter;
+
+	for (i = 0; i < GEN_ARENA_SLOTS; i++) {
+		struct gen_arena *a = &gen->arenas[i];
+
+		if (a->state == GEN_ACTIVE && a->count > 0 &&
+		    (now - a->armed_tick) >= GEN_ARENA_SEAL_TICKS) {
+			a->state = GEN_SEALED;
+			a->sealed_tick = now;
+			did_work = true;
+		}
+	}
+
+	for (i = 0; i < GEN_ARENA_SLOTS; i++) {
+		struct gen_arena *a = &gen->arenas[i];
+
+		if (a->state == GEN_SEALED &&
+		    (now - a->sealed_tick) >= GEN_ARENA_RETIRE_TICKS) {
+			gen_arena_retire_one(a);
+			did_work = true;
+		}
+	}
+
+	(void)did_work;
+	gen_lock();
+}
+
+/*
+ * File @ptr into the current active generation.  Returns true on admit,
+ * false under arena pressure (every slot ACTIVE-and-full or SEALED-not-
+ * yet-retirable): the eviction caller falls back to the historical
+ * leak-on-eviction path so its "no longer your problem" contract still
+ * holds without arming a bad-free.  A push that fills the active
+ * generation seals it in place and rotates active_idx to a free slot;
+ * if no free slot exists at that point we intentionally do NOT retire
+ * a not-yet-mature SEALED generation (that would defeat the retirement
+ * bake) -- the next push returns false and the caller leaks.  Caller
+ * must NOT hold gen_unlock() -- we open it ourselves.
+ */
+static bool gen_arena_push(void *ptr)
+{
+	struct gen_arena *a;
+	unsigned int i;
+
+	if (gen == NULL || ptr == NULL)
+		return false;
+
+	if (gen_unlock() != 0)
+		return false;
+
+	a = &gen->arenas[gen->active_idx];
+
+	if (a->state == GEN_EMPTY) {
+		a->state = GEN_ACTIVE;
+		a->armed_tick = gen->tick_counter;
+	}
+
+	if (a->state != GEN_ACTIVE || a->count >= GEN_ARENA_ENTRIES) {
+		if (a->state == GEN_ACTIVE) {
+			a->state = GEN_SEALED;
+			a->sealed_tick = gen->tick_counter;
+		}
+		for (i = 0; i < GEN_ARENA_SLOTS; i++) {
+			struct gen_arena *cand = &gen->arenas[i];
+
+			if (cand->state == GEN_EMPTY) {
+				gen->active_idx = i;
+				cand->state = GEN_ACTIVE;
+				cand->armed_tick = gen->tick_counter;
+				a = cand;
+				break;
+			}
+		}
+		if (a->state != GEN_ACTIVE || a->count >= GEN_ARENA_ENTRIES) {
+			/* Arena pressure: every generation is either
+			 * ACTIVE-full or SEALED-not-yet-retirable.  The
+			 * caller leaks in this window. */
+			gen_lock();
+			return false;
+		}
+	}
+
+	a->ptrs[a->count++] = ptr;
+	__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_admitted,
+			   1, __ATOMIC_RELAXED);
+	gen_lock();
+	return true;
+}
+
+/*
+ * Drain every generation immediately, regardless of maturity.  Called on
+ * child exit from deferred_free_flush(): the child is going away, so
+ * holding chunks for the retirement bake is pointless -- the kernel
+ * reclaims the whole address space right after anyway.  Retire discipline
+ * still applies (prefilter + alloc_track_consume gate); a scribbled arena
+ * slot does not silently reach free().  Caller must NOT hold gen_unlock()
+ * -- we open it ourselves.
+ */
+static void gen_arena_flush(void)
+{
+	unsigned int i;
+
+	if (gen == NULL)
+		return;
+
+	if (gen_unlock() != 0)
+		return;
+
+	for (i = 0; i < GEN_ARENA_SLOTS; i++) {
+		struct gen_arena *a = &gen->arenas[i];
+
+		if (a->state != GEN_EMPTY)
+			gen_arena_retire_one(a);
+	}
+	gen->active_idx = 0;
+	gen_lock();
+}
+
+/*
  * Is @ptr currently pinned in the deferred-free ring?  Linear scan of
  * the 64 slots; cheap (64 cache-resident pointer compares) and definitive
  * because ring[] is the source-of-truth for ring residency.
@@ -883,12 +1193,6 @@ void alloc_track_refresh(void *ptr)
  * Documentation/deferred-free.md "Ownership gate: alloc_track_consume vs
  * alloc_track_lookup" for the historical bad-free class this replaced.
  */
-enum tracked_free_site {
-	TRACKED_FREE_SITE_RING_EVICT,	/* ring_evict_oldest_safe */
-	TRACKED_FREE_SITE_RING_DRAIN,	/* free_ring_entry */
-	TRACKED_FREE_SITE_IMMEDIATE,	/* tracked_free_now + enqueue immediate-free fallbacks */
-};
-
 static void tracked_free_checked(void *ptr, enum tracked_free_site site)
 {
 	struct childdata *c;
@@ -909,6 +1213,14 @@ static void tracked_free_checked(void *ptr, enum tracked_free_site site)
 			parent_stats.ring_eviction_corrupt++;
 		break;
 	case TRACKED_FREE_SITE_RING_DRAIN:
+	case TRACKED_FREE_SITE_GEN_RETIRE:
+		/* Both drains route consume-miss attribution through the
+		 * same corrupt-ptr counter: the arena retire is
+		 * definitionally the "later" tail of the ring drain, and
+		 * a consume miss at either site says the same thing --
+		 * the recorded alloc_track slot no longer matches this
+		 * value, so free()ing it would risk a bad-free.
+		 */
 		c = this_child();
 		if (c != NULL && c->stats_ring != NULL)
 			stats_ring_enqueue(c->stats_ring,
@@ -1342,6 +1654,22 @@ void deferred_free_seal_all(void)
 		 * and leave the flag set, arming the assert. */
 		ring_rw_open = false;
 	}
+
+	if (gen_rw_open && gen != NULL) {
+		unsigned long ns;
+
+		if (mprotect(gen, gen_bytes, PROT_READ) != 0) {
+			outputerr("deferred_free: seal gen_arena failed: "
+				  "errno=%d\n", errno);
+		} else {
+			ns = df_cost_elapsed_ns(&gen_rw_open_at);
+			gen_rw_open = false;
+			__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_ro_calls,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_rw_ns_total,
+					   ns, __ATOMIC_RELAXED);
+		}
+	}
 }
 
 #ifndef NDEBUG
@@ -1353,6 +1681,7 @@ void deferred_free_debug_assert_sealed(void)
 	assert(!inflight_rw_open);
 	assert(!rc_rw_open);
 	assert(!ring_rw_open);
+	assert(!gen_rw_open);
 }
 #endif
 
@@ -1443,6 +1772,33 @@ void deferred_free_init(void)
 	alloc_track_sizes = (size_t *)(alloc_track_hash + ALLOC_TRACK_HASH_SIZE);
 	track_shared_region((unsigned long)alloc_track_base, alloc_track_bytes);
 	alloc_track_lock();
+
+	/*
+	 * Generation-arena armor page.  One region shared across all
+	 * GEN_ARENA_SLOTS generations plus the active_idx and tick_counter
+	 * bookkeeping fields (see struct gen_arena_region above).  Steady
+	 * state PROT_READ so gen_arena_tick's per-generation state reads
+	 * (mostly the "sealed?  aged enough?" checks) run without an
+	 * mprotect syscall; only push/retire flip RW via
+	 * gen_unlock()/gen_lock().  Tracked with track_shared_region so the
+	 * mm-syscall sanitisers refuse fuzzed pointers/lengths aliasing the
+	 * arena's page.
+	 */
+	{
+		const size_t gen_raw = sizeof(struct gen_arena_region);
+
+		gen_bytes = ((gen_raw + page_size - 1) / page_size) * page_size;
+		gen = mmap(NULL, gen_bytes, PROT_READ | PROT_WRITE,
+			   MAP_PRIVATE | MAP_ANON, -1, 0);
+		if (gen == MAP_FAILED) {
+			outputerr("deferred_free_init: gen_arena mmap %zu failed\n",
+				  gen_bytes);
+			exit(EXIT_FAILURE);
+		}
+		memset(gen, 0, gen_bytes);
+		track_shared_region((unsigned long)gen, gen_bytes);
+		gen_lock();
+	}
 
 	/*
 	 * Read vm.max_map_count once in the parent so every child
@@ -1582,14 +1938,17 @@ static void ring_evict_oldest_safe(void)
 	evict_ptr = ring[oldest].ptr;
 
 	/*
-	 * Interim leak-on-eviction defense: this site does NOT free()
-	 * the evicted chunk.  Reclaim the slot, drop the inflight-hash
-	 * entry, bump ring_evict_leaked; the heap chunk leaks until
-	 * child exit.  alloc_track intentionally left populated (chunk
-	 * is still live from the heap's view).  Prefilters run for
-	 * telemetry granularity (ring_eviction_corrupt).  See
-	 * Documentation/deferred-free.md "Leak-on-eviction defense"
-	 * for the address-reuse bad-free class this closes.
+	 * Prefilter stays for telemetry granularity: a scribbled slot
+	 * bumps ring_eviction_corrupt instead of feeding a corrupt value
+	 * into the arena.  On clean shape the pointer is filed into the
+	 * generation arena for bounded-hold retirement (see the arena
+	 * definition above); an arena-pressure failure falls back to the
+	 * historical leak-on-eviction path, bumping both ring_evict_leaked
+	 * (the eviction-outcome headline) and gen_arena_pressure_leak (the
+	 * arena-undersized signal).  alloc_track stays populated on the
+	 * arena-admit path (retirement consumes at drain time); leaks
+	 * likewise leave alloc_track populated so a later address-reuse
+	 * enqueue of the same ptr is still recognised as owned.
 	 */
 	if (!is_in_glibc_heap(evict_ptr) ||
 	    range_overlaps_shared((unsigned long)evict_ptr, 1))
@@ -1605,8 +1964,12 @@ static void ring_evict_oldest_safe(void)
 			parent_stats.ring_eviction_corrupt++;
 	} else {
 		inflight_hash_remove(evict_ptr);
-		__atomic_add_fetch(&shm->stats.deferred_free.ring_evict_leaked,
-				   1, __ATOMIC_RELAXED);
+		if (!gen_arena_push(evict_ptr)) {
+			__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_pressure_leak,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.deferred_free.ring_evict_leaked,
+					   1, __ATOMIC_RELAXED);
+		}
 	}
 	ring[oldest].ptr = NULL;
 	if (rc_unlock() == 0) {
@@ -2027,9 +2390,13 @@ void deferred_free_tick(void)
 	/* Cheap path: ring_count is read while still locked, but it lives
 	 * in BSS (not in the protected ring), so this access is safe.
 	 * ring_count is also zero when the ring has been disposed after
-	 * an ENOMEM event, so this guard doubles as the ring==NULL bail. */
-	if (ring_count == 0)
-		return;
+	 * an ENOMEM event, so this guard doubles as the ring==NULL bail.
+	 * NOTE: even when ring_count == 0 we still fall through to the
+	 * batch check below so the generation arena can age and retire --
+	 * arena entries were admitted by prior evictions and their
+	 * retirement clock must keep advancing regardless of current
+	 * ring occupancy.
+	 */
 
 	/*
 	 * Batch ticks: run the full mprotect+walk+free bracket only on
@@ -2043,6 +2410,15 @@ void deferred_free_tick(void)
 	 * fork's COW, so this static is safe to touch without unlocking.
 	 */
 	if ((++tick_count & (DEFERRED_TICK_BATCH - 1)) != 0)
+		return;
+
+	/* Arena age-and-retire runs on every batched tick, even when the
+	 * ring is empty or disposed.  Kept ahead of the ring drain so a
+	 * retirement that free()s an alloc_track entry can, in the same
+	 * tick, be re-populated by a fresh admission below. */
+	gen_arena_tick();
+
+	if (ring_count == 0)
 		return;
 
 	/*
@@ -2139,6 +2515,18 @@ void deferred_free_flush(void)
 {
 	unsigned int i;
 	enum ring_unlock_result r;
+
+	/* Drain the generation arena unconditionally: the arena exists
+	 * independently of the ring, and a child exiting with SEALED-but-
+	 * not-yet-retired generations would otherwise leak the whole set
+	 * (kernel reclaims the address space right after, but the retire
+	 * discipline -- alloc_track_consume gate, corrupt-shape reject --
+	 * is what we want to run against every held ptr, not the anonymous
+	 * "process exit reclaims everything" path).  Runs BEFORE the ring
+	 * drain so an alloc_track_consume race between the two (a ptr that
+	 * somehow lives in both) resolves in favour of the ring's
+	 * source-of-truth path. */
+	gen_arena_flush();
 
 	/* Ring already disposed by a prior ENOMEM event.  Nothing to
 	 * flush; skip ring_unlock so we don't emit a "mprotect RW

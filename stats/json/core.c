@@ -314,6 +314,10 @@ void dump_stats_json_corruption_and_audit(void)
 			"\"deferred_free_rw_restore_enomem\":%lu,"
 			"\"deferred_free_pre_dispatch_leaked\":%lu,"
 			"\"ring_evict_leaked\":%lu,"
+			"\"deferred_free_gen_arena_admitted\":%lu,"
+			"\"deferred_free_gen_arena_retired_ok\":%lu,"
+			"\"deferred_free_gen_arena_retire_reject\":%lu,"
+			"\"deferred_free_gen_arena_pressure_leak\":%lu,"
 			"\"deferred_free_ring_owned_skip\":%lu,"
 			"\"deferred_free_double_admit_skip\":%lu,"
 			"\"alloc_track_refresh_ring_owned_skip\":%lu,"
@@ -393,6 +397,10 @@ void dump_stats_json_corruption_and_audit(void)
 		shm->stats.deferred_free.rw_restore_enomem,
 		shm->stats.deferred_free.pre_dispatch_leaked,
 		shm->stats.deferred_free.ring_evict_leaked,
+		shm->stats.deferred_free.gen_arena_admitted,
+		shm->stats.deferred_free.gen_arena_retired_ok,
+		shm->stats.deferred_free.gen_arena_retire_reject,
+		shm->stats.deferred_free.gen_arena_pressure_leak,
 		shm->stats.deferred_free.ring_owned_skip,
 		shm->stats.deferred_free.double_admit_skip,
 		shm->stats.deferred_free.alloc_track_refresh_ring_owned_skip,

@@ -314,6 +314,10 @@ stats	object
     stats.corruption.deferred_free_rw_restore_enomem	u64
     stats.corruption.deferred_free_pre_dispatch_leaked	u64
     stats.corruption.ring_evict_leaked	u64
+    stats.corruption.deferred_free_gen_arena_admitted	u64
+    stats.corruption.deferred_free_gen_arena_retired_ok	u64
+    stats.corruption.deferred_free_gen_arena_retire_reject	u64
+    stats.corruption.deferred_free_gen_arena_pressure_leak	u64
     stats.corruption.deferred_free_ring_owned_skip	u64
     stats.corruption.deferred_free_double_admit_skip	u64
     stats.corruption.alloc_track_refresh_ring_owned_skip	u64

@@ -360,6 +360,58 @@ struct deferred_free_stats {
 	unsigned long ring_rw_calls;
 	unsigned long ring_ro_calls;
 	unsigned long ring_rw_ns_total;
+
+	/* Generation-arena for evicted ring entries.  Full-ring evictions
+	 * used to leak-on-eviction (see ring_evict_leaked); under actual
+	 * load that "benign leak" observed 3.4M events per campaign and
+	 * drove host shmem past 10 GB.  Evictions now flow into a small
+	 * bounded arena of generation-tagged buckets: each generation ages
+	 * for a bounded call-window (long enough that any stale caller ref
+	 * that survived the ring's own 5-50 TTL has itself naturally
+	 * exited scope), then retires ALL its entries as one drain.
+	 * Retirement routes through tracked_free_checked() so alloc_track
+	 * remains the binding ownership gate; a stomp between admission
+	 * and retire is caught by the retire-time shape/heap/shared
+	 * prefilter and the alloc_track_consume gate.
+	 *
+	 *   _admitted: evicted-from-ring chunks pushed into the active
+	 *     generation.  Rate matches ring eviction rate less the
+	 *     _pressure_leak below.  A non-zero _admitted with a zero
+	 *     _retired_ok means either no generation has aged out yet or
+	 *     retirement fault-stalled -- correlate against _retired_ok.
+	 *
+	 *   _retired_ok: chunks free()d by the generation drain and
+	 *     confirmed by alloc_track_consume() -- the arena is doing
+	 *     what leak-on-eviction refused to.  Steady-state should
+	 *     track _admitted after a bake-in lag equal to the retirement
+	 *     window.
+	 *
+	 *   _retire_reject: chunks the drain refused because the retire-
+	 *     time re-check (shape / heap-bounds / shared-region overlap)
+	 *     said the slot had been scribbled during the arena hold.
+	 *     Non-zero rate confirms the retire-side prefilter is doing
+	 *     work; correlate with ring_eviction_corrupt.
+	 *
+	 *   _pressure_leak: arena was full when eviction tried to push --
+	 *     every generation was either ACTIVE or SEALED-and-not-yet-
+	 *     retirable, and the eviction fell back to the historical
+	 *     leak-on-eviction path (ring_evict_leaked ALSO bumps).  Non-
+	 *     zero rate means the arena sizing (SLOTS x ENTRIES vs the
+	 *     retirement window) is undersized for the actual eviction
+	 *     rate; the fallback keeps the child alive but wastes the
+	 *     defense.
+	 *
+	 *   _rw_calls / _ro_calls / _rw_ns_total: mprotect accounting for
+	 *     the arena's armor page, matching the shape used by the
+	 *     other three protection regions (alloc_track / inflight /
+	 *     ring). */
+	unsigned long gen_arena_admitted;
+	unsigned long gen_arena_retired_ok;
+	unsigned long gen_arena_retire_reject;
+	unsigned long gen_arena_pressure_leak;
+	unsigned long gen_arena_rw_calls;
+	unsigned long gen_arena_ro_calls;
+	unsigned long gen_arena_rw_ns_total;
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_DEFERRED_FREE_H */
