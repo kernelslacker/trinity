@@ -208,16 +208,32 @@ static unsigned long pick_statmount_bufsize(void)
 	return rnd_modulo_u32(sizeof(struct statmount));
 }
 
-static unsigned long pick_statmount_flags(void)
+/*
+ * Only STATMOUNT_BY_FD (== 0x1) is accepted by the kernel; any other
+ * flag bit triggers -EINVAL via the `flags & ~STATMOUNT_BY_FD` guard
+ * at the top of do_statmount().  Three-bucket draw:
+ *   60%  flags == 0         -- standard mnt_id path
+ *   25%  STATMOUNT_BY_FD    -- fd-based lookup; carry a real fd in
+ *                              req->spare (offset-4 mnt_fd union slot)
+ *                              and zero req->mnt_id (kernel rejects
+ *                              BY_FD with a non-zero mnt_id)
+ *   15%  invalid bit (2U)   -- keeps the -EINVAL reject arm warm
+ */
+static unsigned long pick_statmount_flags(struct mnt_id_req *req)
 {
-	/* 90% zero, 10% random.  Random rolls may include
-	 * STATMOUNT_BY_FD, which then reinterprets mnt_id as an fd --
-	 * the pool-drawn mnt_id will not be a valid fd and the kernel
-	 * EBADFs out, but that exercise of the fd-lookup arm is exactly
-	 * the coverage the BY_FD bit is there to produce. */
-	if (rnd_modulo_u32(10) < 9)
+	unsigned int bucket = rnd_modulo_u32(20);
+
+	if (bucket < 12)		/* 60%: standard path */
 		return 0;
-	return rnd_u32();
+
+	if (bucket < 17) {		/* 25%: BY_FD fd-lookup path */
+		req->spare = (unsigned int) get_random_fd();
+		req->mnt_id = 0;
+		return STATMOUNT_BY_FD;
+	}
+
+	/* 15%: no other flags are defined; exercises the reject arm */
+	return 2U;
 }
 
 /*
@@ -267,7 +283,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	rec->a1 = (unsigned long) req;
 	rec->a2 = (unsigned long) buf;
 	rec->a3 = pick_statmount_bufsize();
-	rec->a4 = pick_statmount_flags();
+	rec->a4 = pick_statmount_flags(req);
 
 #ifdef HAVE_SYS_STATMOUNT
 	/*
