@@ -504,6 +504,20 @@ struct shm_s {
 	bool ip6erspan_ns_unsupported;
 	bool ip6erspan_ns_unsupported_changelink;
 
+	/* ip6-tunnel-churn grandchild latches (childops/net/
+	 * ip6-tunnel-churn.c).  Master gate covers userns_run_in_ns()
+	 * -EPERM; the per-subsystem latches gate on RTM_NEWLINK
+	 * "ip6tnl" rejection (kernel built without CONFIG_IPV6_TUNNEL)
+	 * and on AF_PACKET SOCK_RAW socket() refusal (kernel built
+	 * without CONFIG_PACKET).  Write sites sit inside the
+	 * userns_run_in_ns() grandchild body -- process-local statics
+	 * would die with the grandchild and every subsequent invocation
+	 * would re-attempt the same unsupported create / socket forever
+	 * (latch-in-grandchild bug). */
+	bool ip6_tunnel_churn_ns_unsupported;
+	bool ip6_tunnel_churn_ns_unsupported_ip6tnl;
+	bool ip6_tunnel_churn_ns_unsupported_af_packet;
+
 	/* flowtable-encap-vlan grandchild latches (childops/net/netfilter/
 	 * flowtable-encap-vlan.c).  ns_unsupported latches on NEWFLOWTABLE
 	 * EOPNOTSUPP/EAFNOSUPPORT/EPROTONOSUPPORT inside the
