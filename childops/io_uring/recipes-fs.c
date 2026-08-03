@@ -21,6 +21,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "child.h"
+#include "childop-outcome.h"
 #include "errno-classify.h"
 #include "rnd.h"
 #include "shm.h"
@@ -44,6 +46,16 @@
  * ------------------------------------------------------------------ */
 bool recipe_openat_close_linked(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	int r;
@@ -118,6 +130,16 @@ static void iour_unique_scratch_path(char *buf, size_t buflen, const char *tag)
  * ------------------------------------------------------------------ */
 bool recipe_fsync(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
@@ -146,6 +168,16 @@ bool recipe_fsync(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_sync_file_range(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
@@ -176,6 +208,16 @@ bool recipe_sync_file_range(struct iour_recipe_state *s, bool *unsupported __unu
  * ------------------------------------------------------------------ */
 bool recipe_readv(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct iovec iov[2];
@@ -213,6 +255,16 @@ bool recipe_readv(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_writev(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct iovec iov[2];
@@ -254,6 +306,16 @@ bool recipe_writev(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_fallocate(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
@@ -286,6 +348,16 @@ bool recipe_fallocate(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_ftruncate(struct iour_recipe_state *s, bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
@@ -322,6 +394,16 @@ bool recipe_ftruncate(struct iour_recipe_state *s, bool *unsupported)
  * ------------------------------------------------------------------ */
 bool recipe_fadvise(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
@@ -356,6 +438,16 @@ bool recipe_fadvise(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_read_multishot(struct iour_recipe_state *s, bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
@@ -427,6 +519,16 @@ bool recipe_read_multishot(struct iour_recipe_state *s, bool *unsupported)
  * ------------------------------------------------------------------ */
 bool recipe_openat2(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct iour_open_how how;
@@ -503,6 +605,16 @@ bool recipe_openat2(struct iour_recipe_state *s, bool *unsupported __unused__)
 
 bool recipe_openat2_leak_combos(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct iour_open_how how;
@@ -578,6 +690,16 @@ bool recipe_openat2_leak_combos(struct iour_recipe_state *s, bool *unsupported _
  * ------------------------------------------------------------------ */
 bool recipe_splice(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
@@ -617,6 +739,16 @@ bool recipe_splice(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_tee(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
@@ -657,6 +789,16 @@ bool recipe_tee(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_renameat(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	char oldp[PATH_MAX + 32];
@@ -691,6 +833,16 @@ bool recipe_renameat(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_unlinkat(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	char path[PATH_MAX + 32];
@@ -720,6 +872,16 @@ bool recipe_unlinkat(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_mkdirat(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	char path[PATH_MAX + 32];
@@ -753,6 +915,16 @@ bool recipe_mkdirat(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_symlinkat(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char target[] = "/dev/null";
@@ -783,6 +955,16 @@ bool recipe_symlinkat(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_linkat(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char oldp[] = "/dev/null";
@@ -817,6 +999,16 @@ bool recipe_linkat(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_setxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	char path[PATH_MAX + 32];
@@ -846,6 +1038,16 @@ bool recipe_setxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
 
 bool recipe_fsetxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char name[]  = "user.trinity";
@@ -876,6 +1078,16 @@ bool recipe_fsetxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
 
 bool recipe_getxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char path[] = "/dev/null";
@@ -903,6 +1115,16 @@ bool recipe_getxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
 
 bool recipe_fgetxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char name[] = "user.trinity";

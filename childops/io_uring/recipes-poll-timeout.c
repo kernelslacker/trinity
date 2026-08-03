@@ -28,6 +28,8 @@
 #include <linux/io_uring.h>
 #include <string.h>
 
+#include "child.h"
+#include "childop-outcome.h"
 #include "errno-classify.h"
 #include "maps.h"
 #include "shm.h"
@@ -50,6 +52,16 @@
  * ------------------------------------------------------------------ */
 bool recipe_timeout_drain(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	struct __kernel_timespec ts;
@@ -96,6 +108,16 @@ bool recipe_timeout_drain(struct iour_recipe_state *s, bool *unsupported __unuse
 
 bool recipe_poll_multishot(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	bool ok = false;
@@ -144,6 +166,16 @@ out:
  * ------------------------------------------------------------------ */
 bool recipe_async_cancel(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	bool ok = false;
@@ -191,6 +223,16 @@ out:
 #ifndef TRINITY_COMPAT_BACKFILLED_FUTEX_WAIT_WAKE
 bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	struct map *m = NULL;
@@ -281,6 +323,16 @@ out:
  * ------------------------------------------------------------------ */
 bool recipe_epoll_wait(struct iour_recipe_state *s, bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct epoll_event ev;
@@ -337,6 +389,16 @@ out:
  * ------------------------------------------------------------------ */
 bool recipe_epoll_ctl(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct epoll_event ev;
@@ -379,6 +441,16 @@ bool recipe_epoll_ctl(struct iour_recipe_state *s, bool *unsupported __unused__)
  * ------------------------------------------------------------------ */
 bool recipe_link_timeout(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	struct __kernel_timespec ts;
@@ -413,6 +485,16 @@ bool recipe_link_timeout(struct iour_recipe_state *s, bool *unsupported __unused
  * ------------------------------------------------------------------ */
 bool recipe_timeout_remove(struct iour_recipe_state *s, bool *unsupported __unused__)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct __kernel_timespec ts;
@@ -454,6 +536,16 @@ bool recipe_timeout_remove(struct iour_recipe_state *s, bool *unsupported __unus
  * ------------------------------------------------------------------ */
 bool recipe_waitid(struct iour_recipe_state *s, bool *unsupported)
 {
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	siginfo_t infop;
