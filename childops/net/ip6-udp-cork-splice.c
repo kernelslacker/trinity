@@ -215,6 +215,14 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 	 * for the same guard pattern. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	/* Count raw kernel entries this file issues directly (socket,
+	 * setsockopt, sendmsg, mmap).  The netlink RTM_* traffic goes
+	 * through nl_open/nl_send_recv/nl_close which publish their own
+	 * direct-syscall count at nl_close(), so we deliberately do not
+	 * double-count them here.  Published once at exit via
+	 * childop_direct_syscalls_add() -- bumping shm from this
+	 * userns_run_in_ns() grandchild is safe because shm is shared. */
+	unsigned long direct_calls = 0;
 
 	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.setup_failed,
@@ -248,6 +256,7 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 	(void)lo_add_v6_loopback(&ctx, lo_idx);
 
 	rx = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	direct_calls++;
 	if (rx < 0)
 		goto out;
 	memset(&sin_rx, 0, sizeof(sin_rx));
@@ -261,6 +270,7 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 		goto out;
 
 	tx = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	direct_calls++;
 	if (tx < 0)
 		goto out;
 	/* Turn off PMTUD so the kernel does not cache a different PMTU
@@ -268,6 +278,7 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 	 * the wire but on lo that is moot. */
 	(void)setsockopt(tx, IPPROTO_IPV6, IPV6_MTU_DISCOVER,
 			 &one, sizeof(one));
+	direct_calls++;
 	if (connect(tx, (struct sockaddr *)&sin_rx, sizeof(sin_rx)) < 0)
 		goto out;
 
@@ -282,6 +293,7 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 	region = mmap(NULL, CORK_SPLICE_MMAP_BYTES,
 		      PROT_READ | PROT_WRITE,
 		      MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
+	direct_calls++;
 	if (region == MAP_FAILED)
 		goto out;
 	memset(region, 'F', CORK_SPLICE_MMAP_BYTES);
@@ -309,6 +321,7 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 
 		n = sendmsg(tx, &mh,
 			    MSG_MORE | MSG_SPLICE_PAGES | MSG_DONTWAIT);
+		direct_calls++;
 		if (n != (ssize_t)p1) {
 			/* Kernel refused the corked splice-pages send.
 			 * Common on stripped configs (no NETIF_F_SG on lo
@@ -344,6 +357,7 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 					   1, __ATOMIC_RELAXED);
 
 		n = sendmsg(tx, &mh, MSG_SPLICE_PAGES | MSG_DONTWAIT);
+		direct_calls++;
 		if (n >= 0)
 			__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.p2_ok,
 					   1, __ATOMIC_RELAXED);
@@ -368,6 +382,8 @@ out:
 	if (ctx.fd >= 0)
 		nl_close(&ctx);
 
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 }
 
