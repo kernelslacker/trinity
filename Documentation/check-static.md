@@ -126,6 +126,13 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `sanitiser-slow-path`: forbid hot-path slow-syscall callsites
   (`/proc/self/maps`, `fopen`/`getline`, `mincore`/`mprotect` probes)
   in the per-syscall sanitiser / argument-generation file set.
+- `sfg-phase-order-invariants`: for every `struct sfg_phase_order`
+  initializer in the tree, assert the six phase-order invariants the
+  `run_grammar_chain` walk relies on -- SOCKET first, BIND before
+  LISTEN, LISTEN before ACCEPT, DATA only after ACCEPT, PRE_CFG
+  before BIND, POST_CFG after BIND.  Conditional rules are gated on
+  "both phases present" so tables using a disjoint phase vocabulary
+  (AF_ALG's `SFG_PHASE_ALG_*`) satisfy them vacuously.
 - `shared-region-budget`: tripwire that warns when the number of
   shared-region producer call sites approaches `MAX_SHARED_ALLOCS`.
   Silent under-protection is the bug class, not loud over-protection.
