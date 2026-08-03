@@ -178,7 +178,7 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 			sa->sched_flags |= SCHED_FLAG_UTIL_CLAMP_MIN |
 					   SCHED_FLAG_UTIL_CLAMP_MAX;
 	} else {
-		sa->sched_flags |= (1ULL << (rnd_modulo_u32(56) + 8));
+		sa->sched_flags |= (1ULL << (rnd_modulo_u32(57) + 7));
 	}
 
 submit:
