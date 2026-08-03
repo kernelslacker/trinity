@@ -105,8 +105,36 @@ extern const unsigned int bpf_attach_types_count;
 #endif
 
 /* Flags referenced from the MAP_CREATE schema annotation. */
+#ifndef BPF_F_MMAPABLE
+# define BPF_F_MMAPABLE			(1U << 10)
+#endif
+#ifndef BPF_F_PRESERVE_ELEMS
+# define BPF_F_PRESERVE_ELEMS		(1U << 11)
+#endif
+#ifndef BPF_F_INNER_MAP
+# define BPF_F_INNER_MAP		(1U << 12)
+#endif
+#ifndef BPF_F_LINK
+# define BPF_F_LINK			(1U << 13)
+#endif
+#ifndef BPF_F_PATH_FD
+# define BPF_F_PATH_FD			(1U << 14)
+#endif
+#ifndef BPF_F_VTYPE_BTF_OBJ_FD
+# define BPF_F_VTYPE_BTF_OBJ_FD		(1U << 15)
+#endif
 #ifndef BPF_F_TOKEN_FD
-#define BPF_F_TOKEN_FD			(1U << 16)
+# define BPF_F_TOKEN_FD			(1U << 16)
+#endif
+#ifndef BPF_F_SEGV_ON_FAULT
+# define BPF_F_SEGV_ON_FAULT		(1U << 17)
+#endif
+#ifndef BPF_F_NO_USER_CONV
+# define BPF_F_NO_USER_CONV		(1U << 18)
+#endif
+/* Map-update flags that may be absent on older build hosts */
+#ifndef BPF_F_LOCK
+# define BPF_F_LOCK			4
 #endif
 
 /*
