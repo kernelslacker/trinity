@@ -219,6 +219,7 @@ out_free:
 	post_state_release(rec, snap);
 }
 
+#ifdef __aarch64__
 #ifndef PROT_MTE
 #define PROT_MTE	0x20		/* aarch64 MTE (5.10+) */
 #endif
@@ -226,11 +227,14 @@ out_free:
 #ifndef PROT_BTI
 #define PROT_BTI	0x10		/* aarch64 BTI */
 #endif
+#endif
 
 static unsigned long mprotect_prots[] = {
 	PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM,
 	PROT_GROWSDOWN, PROT_GROWSUP,
+#ifdef __aarch64__
 	PROT_MTE, PROT_BTI,
+#endif
 };
 
 struct syscallentry syscall_mprotect = {
