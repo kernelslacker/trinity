@@ -514,14 +514,13 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
  *       stretch without finding a new edge still publishes its
  *       per-call accounting in bounded time.
  *
- * Ring-overflow policy mirrors every other stats_ring_enqueue
- * caller: if the ring is full, stats_ring_enqueue() drops the slot
- * and bumps parent_stats.ring_overflow_total -- the staged delta is
- * still zeroed here so the next flush does not double-publish.  The
- * dump path's "total_calls" is best-effort by construction (the
- * pre-existing kcov_shm->coverage.total_calls atomic was a relaxed bump
- * anyway), so a dropped batch surfaces as a small undercount with
- * the overflow counter as the diagnostic.
+ * Ring-overflow policy: if stats_ring_enqueue() fails because the
+ * ring is full, parent_stats.ring_overflow_total records the drop
+ * but the staged delta is only cleared on a successful enqueue --
+ * the next flush retries the same residual, so a transient overflow
+ * causes at most a stats-interval-scale visibility delay in the
+ * published counter, not permanent loss.  The per-syscall staging
+ * arrays flushed below follow the same retry discipline.
  */
 void kcov_child_flush_stats(struct childdata *child)
 {
