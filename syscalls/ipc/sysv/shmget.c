@@ -18,7 +18,14 @@
 #include "utils.h"
 
 static unsigned long ipc_flags[] = {
-	IPC_CREAT, IPC_EXCL, SHM_NORESERVE,
+	IPC_CREAT | 0600,
+	IPC_CREAT | 0644,
+	IPC_CREAT | 0666,
+	IPC_CREAT | IPC_EXCL | 0600,
+	IPC_CREAT | IPC_EXCL | 0644,
+	IPC_CREAT | IPC_EXCL | 0666,
+	IPC_CREAT | SHM_NORESERVE | 0600,
+	IPC_CREAT | SHM_NORESERVE | 0666,
 };
 
 /*
