@@ -39,14 +39,14 @@
  *
  * Kept as an accessor (rather than a lookup table) so the compiler
  * can fold the switch into a constant-time check at the call site.
- * The uses_outer_bracket field is required on every CHILDOP() row
- * (the macro takes four arguments); a new row picks up the default
- * by passing true explicitly and needs no edit to this function.
+ * The uses_outer_bracket field is required on every CHILDOP() row;
+ * a new row picks up the default by passing true explicitly and
+ * needs no edit to this function.
  */
 bool op_uses_outer_bracket(enum child_op_type op)
 {
 	switch (op) {
-#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket)	\
+#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket, dormant_default)	\
 	case enum_name: return uses_outer_bracket;
 #include "childop.def"
 #undef CHILDOP
@@ -58,7 +58,7 @@ bool op_uses_outer_bracket(enum child_op_type op)
 const char *alt_op_name(enum child_op_type op)
 {
 	switch (op) {
-#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket)	\
+#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket, dormant_default)	\
 	case enum_name: return name_string;
 #include "childop.def"
 #undef CHILDOP
@@ -103,7 +103,7 @@ enum child_op_type alt_op_lookup_by_name(const char *name)
  * instead of the jump-table the compiler emits per branch site.
  */
 bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
-#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket)	\
+#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket, dormant_default)	\
 	[enum_name] = dispatch_fn,
 #include "childop.def"
 #undef CHILDOP
