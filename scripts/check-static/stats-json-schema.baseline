@@ -1618,3 +1618,20 @@ minicorpus	object?
 cmp_hints	object?
   cmp_hints.values_total	u32
   cmp_hints.syscalls_with_hints	u32
+type_graph	object?
+  type_graph.publish_observations	u64
+  type_graph.consume_observations	u64
+  type_graph.consume_hits	u64
+  type_graph.consume_misses	u64
+  type_graph.edge_inserts	u64
+  type_graph.edge_updates	u64
+  type_graph.edge_pool_exhausted	u64
+  type_graph.top_handoffs	array
+    type_graph.top_handoffs.producer	str
+    type_graph.top_handoffs.consumer	str
+    type_graph.top_handoffs.arg	u32
+    type_graph.top_handoffs.type	str
+    type_graph.top_handoffs.observations	u64
+    type_graph.top_handoffs.total_ema	u32
+    type_graph.top_handoffs.success_ema	u32
+    type_graph.top_handoffs.novel_ema	u32

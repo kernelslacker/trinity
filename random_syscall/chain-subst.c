@@ -49,6 +49,7 @@
 #include "syscall_record.h"
 #include "tables.h"
 #include "trinity.h"
+#include "type-graph.h"
 #include "utils.h"
 
 /*
@@ -250,4 +251,19 @@ void apply_chain_substitution(struct syscallrecord *rec,
 	if (minicorpus_shm != NULL)
 		__atomic_fetch_add(&minicorpus_shm->chain_substitution_count,
 				   1, __ATOMIC_RELAXED);
+
+	/*
+	 * Feed the resource type-graph consume observer.  Runs after the
+	 * dice, mask, and protected-fd gates so a consumption that never
+	 * actually mutates rec->aN never registers a fake handoff.  The
+	 * observer looks the substitute_retval up in the publish ring
+	 * that publish_resource() populates; on a hit it stashes the
+	 * inferred (producer_nr, obj_type) tuple in a per-child pending
+	 * slot that the chain executor's post-dispatch outcome hook
+	 * commits alongside the success / novel flags.  Slice A remains
+	 * observation only -- the picker consulting this graph is a
+	 * Slice B change gated on a Dave design pass.
+	 */
+	type_graph_observe_consume(rec->nr, rec->do32bit, slot,
+				   substitute_retval);
 }

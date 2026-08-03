@@ -31,6 +31,7 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
+#include "type-graph.h"
 #include "utils.h"
 #include "version.h"
 
@@ -87,6 +88,8 @@ void __cold dump_stats(void)
 	dump_stats_kcov_block();
 
 	dump_stats_corpus_and_taint_tail();
+
+	type_graph_dump_top_handoffs();
 
 	/* Cumulative childop vs random-syscall effort split.  Also emitted
 	 * mid-run from periodic_counter_rates_dump on the 600 s cadence

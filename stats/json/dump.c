@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include "stats-internal.h"
 #include "stats/json/internal.h"
+#include "type-graph.h"
 
 void __cold dump_stats_json(void)
 {
@@ -55,6 +56,7 @@ void __cold dump_stats_json(void)
 	json_emit_kcov_section();
 	json_emit_minicorpus_section();
 	json_emit_cmp_hints_section();
+	type_graph_json_emit_top_handoffs();
 
 	fputs("}\n", stdout);
 	fflush(stdout);

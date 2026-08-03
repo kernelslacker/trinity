@@ -9,9 +9,13 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#include "child-api.h"
+#include "child.h"
 #include "object-types.h"
 #include "objects.h"
 #include "publish_resource.h"
+#include "syscall_record.h"
+#include "type-graph.h"
 
 /*
  * Routing-acceptance gate.  Reject unsupported types BEFORE
@@ -204,6 +208,7 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 {
 	static const struct resource_meta zero_meta;
 	const struct resource_meta *m = meta ? meta : &zero_meta;
+	struct childdata *child;
 	struct object *obj;
 
 	if (!publish_resource_type_supported(type))
@@ -217,5 +222,20 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 	publish_resource_stamp_metadata(obj, type, m);
 
 	add_object(obj, OBJ_LOCAL, type);
+
+	/*
+	 * Feed the resource type-graph observer.  Cheap RELAXED updates
+	 * into a direct-mapped publish ring; the sequence-chain executor
+	 * looks the (retval -> producer) pair back up when it splices a
+	 * prior chain step's return into a consumer arg slot.  Fires only
+	 * from inside a child (parent-side callers such as fd setup are
+	 * skipped via the this_child() NULL guard) so the producer_nr the
+	 * ring stamps is the syscall that actually returned the handle.
+	 */
+	child = this_child();
+	if (child != NULL)
+		type_graph_observe_publish(child->syscall.nr,
+					   child->syscall.do32bit,
+					   type, id);
 	return obj;
 }
