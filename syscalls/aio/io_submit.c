@@ -156,8 +156,33 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 		}
 
 		for (i = 0; i < nr; i++) {
-			iocbs[i].aio_fildes = get_random_fd();
-			iocbs[i].aio_lio_opcode = pick_iocb_opcode_for_fd(iocbs[i].aio_fildes);
+			int fd = -1;
+			unsigned int tries;
+
+			/*
+			 * get_random_fd() has -1 return paths (budget
+			 * exhaustion, empty provider pool).  aio_fildes == -1
+			 * makes io_submit_one() fail with -EBADF, and fs/aio.c's
+			 * submit loop breaks on the first error -- every later
+			 * iocb in the batch is silently discarded.  Reroll each
+			 * slot up to FAILED_FD_REROLL_LIMIT times; if a slot
+			 * still can't be filled, shorten the batch to the iocbs
+			 * already filled rather than queueing one that will
+			 * bounce and drop its successors (same idiom as the
+			 * SCM_RIGHTS reroll in build_scm_rights()).
+			 */
+			for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
+				fd = get_random_fd();
+				if (fd >= 0)
+					break;
+			}
+			if (fd < 0) {
+				nr = i;
+				break;
+			}
+
+			iocbs[i].aio_fildes = fd;
+			iocbs[i].aio_lio_opcode = pick_iocb_opcode_for_fd(fd);
 			iocbs[i].aio_data = rnd_u64();
 
 			switch (iocbs[i].aio_lio_opcode) {
