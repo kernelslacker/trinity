@@ -291,6 +291,16 @@ static int ipmr_cache_report_in_ns(void *arg)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	/* Count raw kernel entries this file issues directly (socket,
+	 * setsockopt on the raw IGMP socket, sendto on the multicast UDP
+	 * socket).  The RTM_NEWLINK/mroute netlink listener traffic goes
+	 * through nl_open/nl_send_recv/nl_close (both in bring_lo_up()
+	 * and open_mroute_listener()) which publish their own
+	 * direct-syscall count at nl_close(), so we do not double-count
+	 * them here.  Published once at exit via
+	 * childop_direct_syscalls_add() -- bumping shm from this
+	 * userns_run_in_ns() grandchild is safe because shm is shared. */
+	unsigned long direct_calls = 0;
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -301,6 +311,7 @@ static int ipmr_cache_report_in_ns(void *arg)
 	(void)open_mroute_listener(&nl);		/* best-effort */
 
 	raw = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_IGMP);
+	direct_calls++;
 	if (raw < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 			mark_ns_unsupported_ipmr_cache_report();
@@ -309,6 +320,7 @@ static int ipmr_cache_report_in_ns(void *arg)
 		goto out;
 	}
 
+	direct_calls++;
 	if (setsockopt(raw, IPPROTO_IP, MRT_INIT, &one, sizeof(one)) < 0) {
 		if (errno == EPERM) {
 			__atomic_add_fetch(&shm->stats.ipmr_cache_report.eperm,
@@ -327,15 +339,18 @@ static int ipmr_cache_report_in_ns(void *arg)
 	vc.vifc_threshold = 1;
 	vc.vifc_lcl_addr.s_addr = htonl(INADDR_LOOPBACK);
 	vc.vifc_rmt_addr.s_addr = 0;
+	direct_calls++;
 	if (setsockopt(raw, IPPROTO_IP, MRT_ADD_VIF, &vc, sizeof(vc)) < 0)
 		goto done;
 
 	udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	direct_calls++;
 	if (udp < 0)
 		goto done;
 
 	lcl.s_addr = htonl(INADDR_LOOPBACK);
 	(void)setsockopt(udp, IPPROTO_IP, IP_MULTICAST_IF, &lcl, sizeof(lcl));
+	direct_calls++;
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 	iters = BUDGETED(CHILD_OP_IPMR_CACHE_REPORT,
@@ -366,6 +381,7 @@ static int ipmr_cache_report_in_ns(void *arg)
 
 		r = sendto(udp, payload, sizeof(payload), MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
+		direct_calls++;
 		if (r >= 0)
 			__atomic_add_fetch(&shm->stats.ipmr_cache_report.emit_ok,
 					   1, __ATOMIC_RELAXED);
@@ -384,6 +400,7 @@ static int ipmr_cache_report_in_ns(void *arg)
 
 done:
 	(void)setsockopt(raw, IPPROTO_IP, MRT_DONE, NULL, 0);
+	direct_calls++;
 
 out:
 	if (udp >= 0)
@@ -393,6 +410,8 @@ out:
 	if (nl.fd >= 0)
 		nl_close(&nl);
 
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 }
 
