@@ -4,6 +4,7 @@
  */
 #include <stdint.h>
 #include <sys/syscall.h>
+#include <sys/uio.h>
 #include <unistd.h>
 #include <string.h>
 #include "kernel/keyctl.h"
@@ -111,9 +112,12 @@ static long random_key_id(void)
  * exercises the rarer kernel paths (instantiate_iov/move/watch/restrict/
  * persistent/session_to_parent/perm-mgmt), because most of the cmds in
  * keyctl_cmds[] route into a small set of common key lookup/read paths.
- * Bias the picker so the rare paths get hit ~40% of the time, and also
- * drop in a fully random cmd ~10% of the time to cover out-of-table values
- * that exercise the kernel's input validation.
+ * Bias the picker so the common paths get ~50% and the named-rare paths
+ * get ~40%.  Route the remaining ~10% through keyctl_cmds[] uniformly
+ * (so every registered cmd -- including DH_COMPUTE, PKEY_*, ASSUME_-
+ * AUTHORITY, GET_SECURITY, REJECT, INVALIDATE, CAPABILITIES, and the
+ * rest -- stays reachable) with a small true-garbage tail to keep
+ * out-of-table input-validation paths exercised.
  */
 static const unsigned long keyctl_cmds_common[] = {
 	KEYCTL_GET_KEYRING_ID, KEYCTL_REVOKE, KEYCTL_READ,
@@ -135,7 +139,9 @@ static unsigned long pick_keyctl_cmd(void)
 		return keyctl_cmds_common[rnd_modulo_u32(ARRAY_SIZE(keyctl_cmds_common))];
 	if (r < 90)
 		return keyctl_cmds_rare[rnd_modulo_u32(ARRAY_SIZE(keyctl_cmds_rare))];
-	return (unsigned long) rand32();
+	if (r < 98)
+		return keyctl_cmds[rnd_modulo_u32(ARRAY_SIZE(keyctl_cmds))];
+	return (unsigned long) rnd_modulo_u32(10000);
 }
 
 static void sanitise_keyctl_get_keyring_id(struct syscallrecord *rec)
@@ -429,6 +435,59 @@ static void sanitise_keyctl_watch_key(struct syscallrecord *rec)
 		avoid_shared_buffer_out(&rec->a4, 64);
 }
 
+static void sanitise_keyctl_instantiate_iov(struct syscallrecord *rec)
+{
+	struct iovec *iov;
+	char *buf;
+	unsigned int nvec, i;
+
+	/* arg2=key, arg3=iovec, arg4=iovcnt, arg5=dest_keyring */
+	rec->a2 = (unsigned long) random_key_id();
+
+	nvec = 1 + rnd_modulo_u32(4);
+	iov = (struct iovec *) get_writable_address(nvec * sizeof(*iov));
+	if (iov == NULL)
+		return;
+	for (i = 0; i < nvec; i++) {
+		buf = (char *) get_writable_address(64);
+		iov[i].iov_base = buf;
+		iov[i].iov_len = buf ? (1 + rnd_modulo_u32(63)) : 0;
+	}
+	rec->a3 = (unsigned long) iov;
+	rec->a4 = nvec;
+	rec->a5 = (unsigned long) random_key_id();
+}
+
+static void sanitise_keyctl_restrict_keyring(struct syscallrecord *rec)
+{
+	char *buf;
+
+	/* arg2=keyring, arg3=type (or NULL), arg4=restriction (or NULL) */
+	rec->a2 = (unsigned long) random_key_id();
+
+	if (RAND_BOOL()) {
+		rec->a3 = 0;
+	} else {
+		buf = (char *) get_writable_address(32);
+		if (buf == NULL)
+			return;
+		strncpy(buf, "user", 31);
+		buf[31] = '\0';
+		rec->a3 = (unsigned long) buf;
+	}
+
+	if (RAND_BOOL()) {
+		rec->a4 = 0;
+	} else {
+		buf = (char *) get_writable_address(64);
+		if (buf == NULL)
+			return;
+		strncpy(buf, "restrict", 63);
+		buf[63] = '\0';
+		rec->a4 = (unsigned long) buf;
+	}
+}
+
 static void sanitise_keyctl(struct syscallrecord *rec)
 {
 	unsigned long cmd;
@@ -489,6 +548,14 @@ static void sanitise_keyctl(struct syscallrecord *rec)
 
 	case KEYCTL_INSTANTIATE:
 		sanitise_keyctl_instantiate(rec);
+		break;
+
+	case KEYCTL_INSTANTIATE_IOV:
+		sanitise_keyctl_instantiate_iov(rec);
+		break;
+
+	case KEYCTL_RESTRICT_KEYRING:
+		sanitise_keyctl_restrict_keyring(rec);
 		break;
 
 	case KEYCTL_NEGATE:
