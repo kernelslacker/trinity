@@ -22,11 +22,16 @@
 #      re-assigned, or the duplicate lands on a slot that would
 #      otherwise have held a different op) -- a silent bug.
 #
-# Background: alt_op_rotation[] and pick_op_type_table[] are both
-# hand-maintained.  Newer childops can land in the def registry
-# without being added to the picker, and can land in the picker
-# without being added to the rotation, leaving them unreachable.
-# The denylist is the escape hatch for both directions.
+# Background: alt_op_rotation[] is hand-maintained; pick_op_type_table[]
+# is generated at compile time out of include/childop.def by an X-macro
+# expansion in child/child-altop-pick.c, so the picker slot table is
+# always identical to the def-file rows (minus the CHILD_OP_SYSCALL
+# sentinel).  Direction 2 (def -> picker) is therefore trivially
+# satisfied by construction and the completeness check reduces to
+# validating that the generation site still spells the CHILDOP macro
+# it claims to.  The denylist is still needed for direction 1 (picker
+# op has no rotation slot) and the OMIT-FROM-PICKER tag still marks
+# def rows that should not participate in the picker at all.
 
 set -u
 
@@ -98,14 +103,19 @@ extract_table_ops_raw() {
 	' "$src"
 }
 
-# Extract the first CHILDOP() argument (the CHILD_OP_* enum tag) from
-# each row of include/childop.def.  Rows are one-per-line and always
-# begin at column 0; the first argument is the fully-qualified enum
-# name, so no transformation is needed.
-extract_def_ops() {
+# Extract the first CHILDOP() / CHILDOP_SENTINEL() argument (the
+# CHILD_OP_* enum tag) from each row of include/childop.def.  Rows are
+# one-per-line and always begin at column 0; the first argument is the
+# fully-qualified enum name, so no transformation is needed.  Both the
+# CHILDOP and CHILDOP_SENTINEL rows contribute to DEF_OPS so denylist
+# entries that document the sentinel op (CHILD_OP_SYSCALL) are not
+# flagged as stale; the picker's PICK_OPS derivation then removes the
+# sentinel explicitly.  Emits raw (undeduplicated) tokens in source
+# order so the direction-3 duplicate check has something to bite on.
+extract_def_ops_raw() {
 	local src="$1"
 	awk '
-		/^[[:space:]]*CHILDOP[[:space:]]*\(/ {
+		/^[[:space:]]*CHILDOP(_SENTINEL)?[[:space:]]*\(/ {
 			line = $0
 			# Strip comments.
 			gsub(/\/\*.*\*\//, "", line)
@@ -114,17 +124,35 @@ extract_def_ops() {
 				print substr(line, RSTART, RLENGTH)
 			}
 		}
-	' "$src" | sort -u
+	' "$src"
 }
 
-PICK_OPS_RAW="$(extract_table_ops_raw pick_op_type_table "$CHILD_C")"
 ROT_OPS_RAW="$(extract_table_ops_raw alt_op_rotation "$CHILD_C")"
-PICK_OPS="$(printf '%s\n' "$PICK_OPS_RAW" | sort -u)"
 ROT_OPS="$(printf '%s\n' "$ROT_OPS_RAW" | sort -u)"
-DEF_OPS="$(extract_def_ops "$CHILDOP_DEF")"
+DEF_OPS_RAW="$(extract_def_ops_raw "$CHILDOP_DEF")"
+DEF_OPS="$(printf '%s\n' "$DEF_OPS_RAW" | sort -u)"
+
+# pick_op_type_table[] is generated from childop.def via X-macro expansion
+# in child/child-altop-pick.c, so the picker table membership is exactly
+# the set of CHILDOP() rows (the CHILDOP_SENTINEL row -- CHILD_OP_SYSCALL
+# -- is excluded because CHILDOP_SENTINEL is redefined to nothing at the
+# picker's include site).  Verify the generation site is still spelt as
+# expected, then derive PICK_OPS from the def rows.
+if ! grep -q 'pick_op_type_table\[\][[:space:]]*=[[:space:]]*{' "$CHILD_C" \
+   || ! awk '
+	/pick_op_type_table\[\][[:space:]]*=[[:space:]]*\{/ { in_tbl = 1; next }
+	in_tbl && /^\};/ { in_tbl = 0; exit }
+	in_tbl && /^#[[:space:]]*include[[:space:]]+"childop\.def"/ { found = 1; exit }
+	END { exit !found }
+' "$CHILD_C"; then
+	echo "FAIL: $NAME: pick_op_type_table[] in $CHILD_C does not #include \"childop.def\" -- picker/def generation link is broken" >&2
+	exit 1
+fi
+PICK_OPS_RAW="$(printf '%s\n' "$DEF_OPS_RAW" | grep -v '^CHILD_OP_SYSCALL$' || true)"
+PICK_OPS="$(printf '%s\n' "$PICK_OPS_RAW" | sort -u)"
 
 if [ -z "$PICK_OPS" ]; then
-	echo "FAIL: $NAME: pick_op_type_table[] body produced no CHILD_OP_* tokens" >&2
+	echo "FAIL: $NAME: pick_op_type_table[] derived from $CHILDOP_DEF produced no CHILD_OP_* tokens" >&2
 	exit 1
 fi
 if [ -z "$ROT_OPS" ]; then

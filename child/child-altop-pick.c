@@ -34,79 +34,28 @@
  * to check what's CURRENTLY active, read the periodic `canary queue:` log
  * lines and see canary_queue_init() in child-canary-state.c, not this table.
  *
- * Slot ordering matches pick_op_type_table[]; the _Static_assert below
- * pins ARRAY_SIZE equality between the two.
+ * Slot ordering matches pick_op_type_table[]; both are generated from
+ * include/childop.def in the same walk, so the two arrays land in
+ * lockstep by construction and cannot drift.  The _Static_asserts below
+ * still pin ARRAY_SIZE equality and count against NR_CHILD_OP_TYPES-1
+ * as a belt-and-braces check against any future macro change.
  *
- * Declared with `[]` sizing on purpose: appending an initializer is the
- * ONLY way to grow the array, so two concurrent altop drafts can't
- * silently agree on a bumped `[N+1]` size and land a false auto-merge
- * that compiles with a bounds violation.  The _Static_assert below
- * against NR_CHILD_OP_TYPES-1 catches any real slot-count drift.
+ * Per-op dormant_default values live on the CHILDOP() row in
+ * include/childop.def -- adding a new altop is a single-line edit
+ * there, no touch to this array or to pick_op_type_table[] required.
+ * That collapses the four-way append conflict (enum + prototypes +
+ * these two arrays) that concurrent altop drafts used to hit down to
+ * the def-file row itself.  The sentinel row (CHILD_OP_SYSCALL) is
+ * skipped by redefining CHILDOP_SENTINEL to nothing before the
+ * #include, so the slot count stays at NR_CHILD_OP_TYPES - 1.
  */
 static int dormant_op_disabled[] = {
-	0, 0, 0, 0, 0,
-	0, 1, 1, 1, 1,
-	1, 1, 1, 0, 1,
-	1, 0, 0, 1, 1,
-	1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1,
-	1, 1, 1, 0, 1,
-	1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1,
-	1, 1, 1, 1, 0,
-	1, 1,
-	1, 1, 1, 1, 1, 1,
-	0,	/* pagecache_canary_check stays active: it's an in-tree verifier, not a fuzz target the queue should ever demote. */
-	1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1,
-	0,	/* eth_emitter is lightweight (one socket per child, fixed-size sendto) — promote at startup. */
-	1,	/* sysfs_string_race: dormant until canary-queue load-tests the .store() race burst. */
-	1,	/* pci_bind: dormant until canary-queue load-tests the driver attach/detach path on the conservative allowlist. */
-	1,	/* iscsi_login_walker: dormant until canary-queue load-tests the LIO Login state-machine walk. */
-	1,	/* vma_split_storm: dormant until canary-queue load-tests the heavy VMA-split mm pressure burst. */
-	1,	/* af_unix_peek_race: dormant until canary-queue load-tests the SO_PEEK_OFF + MSG_PEEK/recv/shutdown race burst. */
-	1,	/* sysv_shm_orphan_race: dormant until canary-queue load-tests the SysV SHM orphan-destroy attach/RMID race burst. */
-	1,	/* qrtr_bind_race: dormant until canary-queue load-tests the AF_QRTR same-port bind/close race burst. */
-	1,	/* tc_mirred_blockcast: dormant until canary-queue load-tests the clsact + shared egress block + mirred blockcast recursion burst. */
-	1,	/* pfkey_spd_walk: dormant until canary-queue load-tests the PF_KEYv2 SPDDUMP-vs-SPDADD walk-race burst. */
-	1,	/* l2tp_ifname_race: dormant until canary-queue load-tests the L2TP SESSION_CREATE same-ifname race burst. */
-	1,	/* statmount_idmap_overflow: dormant until canary-queue load-tests the statmount() idmap seq-buffer overflow sweep. */
-	1,	/* sock_ulp_sockmap_layering: dormant until canary-queue load-tests the TCP_ULP "tls" + sockmap STREAM_VERDICT layering burst. */
-	1,	/* umount_race: dormant until canary-queue load-tests the umount2(MNT_DETACH)-vs-accessor race against scratch_block-published mounts. */
-	1,	/* ip6_udp_cork_splice: dormant until canary-queue load-tests the ip6 __ip6_append_data continuation-skb length-accounting stress path. */
-	1,	/* ip_gre_churn: dormant until canary-queue load-tests the v4 gretap/ip_gre RX decap burst (userns_run_in_ns + IPPROTO_RAW hand-rolled outer IPv4/GRE/TEB frames). */
-	1,	/* futex_pi_requeue_rollback: default-off; only for a targeted debugging run behind the canary queue. */
-	1,	/* vlan_filter_churn: dormant until canary-queue load-tests the RTM_NEWLINK type=vlan add/del burst against a private-netns veth base (vlan_vid_add / vlan_vid_del pair). */
-	1,	/* sctp_chunk_rx: dormant until canary-queue load-tests the SCTP chunk-parse RX-path burst (userns_run_in_ns + IPPROTO_RAW hand-rolled outer IPv4/SCTP frames with fuzzed INIT/INIT_ACK/COOKIE_ECHO chunk + parameter TLV lengths). */
-	0,	/* pkt_builder_probe: lightweight infra prover — one raw/AF_PACKET/UDP socket per child, fixed 6-recipe stack; promote at startup so the composable layer stack keeps compiling and delivering across kernels. */
-	1,	/* esp_crafted_rx: dormant until canary-queue load-tests the crafted ESP RX-decap burst (userns_run_in_ns + NETLINK_XFRM inbound null-cipher/null-auth SA install + IPPROTO_RAW hand-rolled outer IPv4/IPv6 + ESP + truncated inner frames). */
-	1,	/* fou_gue_mcast_rx: dormant until canary-queue load-tests the FOU/GUE multicast crafted-RX burst (userns_run_in_ns + genl "fou" FOU_CMD_ADD install + IPPROTO_RAW hand-rolled outer IPv4/IPv6 + UDP-encap + optional GUE + truncated inner frames at mcast dst). */
-	1,	/* geneve_rx: dormant until canary-queue load-tests the geneve UDP/6081 RX-decap burst (userns_run_in_ns + RTM_NEWLINK kind=geneve install + IPPROTO_RAW hand-rolled outer IPv4/UDP/GENEVE + variable-length options + truncated inner frames). */
-	1,	/* netns_mountns_setup_probe: dormant until canary-queue load-tests the fresh-namespace SETUP-path burst (userns_run_in_ns + repeated CLONE_NEWNET|CLONE_NEWNS unshare + MS_PRIVATE remount + loopback rtnl bring-up + first-socket alloc). */
-	1,	/* bareudp_rx: dormant until canary-queue load-tests the bareudp UDP RX-decap burst (userns_run_in_ns + RTM_NEWLINK kind=bareudp install with picked port+ethertype+multiproto + IPPROTO_RAW hand-rolled outer IPv4/UDP/inner-L3 frames against 127.0.0.1). */
-	1,	/* mpls_label_stack_rx: dormant until canary-queue load-tests the MPLS label-stack crafted-RX burst (userns_run_in_ns + net.mpls.conf.lo.input=1 + AF_PACKET SOCK_RAW hand-rolled Ethernet(0x8847)/label-stack/inner-IPv4 frames at lo). */
-	1,	/* deep_path_nesting: dormant until canary-queue load-tests the deeply-nested chdir/mkdir tree + proc mountinfo/maps + getcwd/readlink/statx + leaf unlink/rename readers at extreme cwd depth. */
-	1,	/* espintcp_coalesce_churn: dormant until canary-queue load-tests the espintcp TCP-coalesce/page-cache reassembly RX-path burst (userns_run_in_ns + loopback TCP pair + setsockopt(TCP_ULP,"espintcp") both ends + crafted length-prefixed frames with TCP_CORK/TCP_NODELAY toggling to force skb coalescing). */
-	1,	/* cred_transition_churn: dormant until canary-queue load-tests the userns_run_in_ns capset()-into-a-churned-effective-cap-subset + immediate cred-checked op (raw socket / in-ns unshare / session-keyring keyctl) + interleaved JOIN_SESSION_KEYRING / add_key / READ / REVOKE churn. */
-	1,	/* netdev_netns_migrate: dormant until canary-queue load-tests the userns_run_in_ns + private-netns RTM_NEWLINK (veth/vxlan/gretap) + RTM_SETLINK IFLA_NET_NS_FD migration into a sibling userns-owned netns + in-target-ns bring-up + RTM_NEWADDR drive, with a source-ns AF_INET socket pinned as ref across the move. */
-	1,	/* map_shared_stress: dormant until canary-queue load-tests the file-backed MAP_SHARED writeback / MADV_DONTFORK fork / O_APPEND-vs-mmap coherence burst. */
-	1,	/* tc_live_traffic: dormant until canary-queue load-tests the private-veth clsact matchall+mirred chain with live UDP burst + mid-burst RTM_DELTFILTER/RTM_NEWTFILTER race + opportunistic XDP-pass attach. */
-	1,	/* hfs_mount_fuzz: dormant until canary-queue load-tests the crafted-image HFS mount fuzzer over a scratch_block loop inside a userns_run_in_ns grandchild (image-mount lifecycle race; not safe for steady rotation). */
-	1,	/* rds_zcopy_crafted_send: dormant until canary-queue load-tests the AF_RDS SO_ZEROCOPY sendmsg with a partially-mapped iovec that faults mid pin-walk (rds_message_zcopy_from_user + rds_message_purge page-refcount edge). */
-	1,	/* bridge_ip6frag_refrag: dormant until canary-queue load-tests the bridge IPv6 defrag / refrag burst (userns_run_in_ns + private-netns bridge + veth + nft bridge-family ct rule + AF_PACKET IPv6-fragment injection with pre-frag extension headers and small egress MTU forcing br_ip6_fragment on the reassembled skb). */
-	1,	/* bridge_ip6_refrag_fraggap: dormant until canary-queue load-tests the bridge IPv6 refrag path (userns_run_in_ns + bridge + veth + bridge-nf + nft ct + AF_PACKET hand-rolled fragmented IPv6 frames with churned HbH/DstOpt chain + short-prevhdr arm). */
-	1,	/* ipset_churn: dormant until canary-queue load-tests the NFNL_SUBSYS_IPSET CREATE/ADD/DEL/TEST/SWAP/FLUSH/DESTROY cycle across hash: and bitmap: set types with TIMEOUT/COUNTERS/COMMENT extensions. */
-	1,	/* ip4_udp_cork_splice: dormant until canary-queue load-tests the ip4 __ip_append_data continuation-skb length-accounting stress path. */
-	1,	/* nexthop_replace_churn: dormant until canary-queue load-tests the nexthop-replace-notifier vs unlocked IPv6 route f6i_list churn (fib6_check_nh_list walk vs fib6_purge_rt free). */
-	1,	/* sit_proto41_rx: dormant until canary-queue load-tests the SIT ipip6_rcv() truncated-inner-header OOB read burst (AF_PACKET IPv4 proto=41 frames with inner IPv6 shorter than sizeof(ipv6hdr) into loopback with sit0 up). */
-	1,	/* seg6_end_dt4_rx: dormant until canary-queue load-tests the SRv6 End.DT4 decap stale IPCB burst (userns_run_in_ns + private-netns VRF/table 100 + seg6local RTM_NEWROUTE + AF_PACKET IPv6/SRH/inner-IPv4-with-options frames at lo). */
-	1,	/* ct_expect_realloc: dormant until canary-queue load-tests the conntrack helper CT_NEW+CTA_HELP / EXP_NEW / CT_NEW NLM_F_REPLACE+CTA_LABELS realloc / EXP_DELETE unlink sequence targeting the hlist_add_head_rcu backpointer vs nf_ct_ext_add krealloc race. */
-	1,	/* inet_listener_rehash_race: dormant until canary-queue load-tests the concurrent listener-churn + SYN + rehash burst that pits lhash2 lookup vs unhash->ehash transitions on the same fixed port pool. */
+#define CHILDOP_SENTINEL(enum_name, name_string)	/* skip -- picker has no slot for CHILD_OP_SYSCALL */
+#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket, dormant_default) \
+	dormant_default,
+#include "childop.def"
+#undef CHILDOP
+#undef CHILDOP_SENTINEL
 };
 
 /*
@@ -262,165 +211,27 @@ void log_alt_op_config(void)
 
 /*
  * Slot -> alt-op mapping.  Same indexing as dormant_op_disabled[]: slot N
- * is enabled iff dormant_op_disabled[N] == 0.  Slot 53 was previously a hole
- * left by a removed op; it now holds CHILD_OP_MPLS_ROUTE_CHURN.  The
- * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
- * defensive coding for any future hole.
+ * is enabled iff dormant_op_disabled[N] == 0.  Slot ordering follows
+ * the childop.def row order (minus the CHILD_OP_SYSCALL sentinel row);
+ * both arrays are generated from the same file in the same walk, so
+ * pick_op_type_table[i] and dormant_op_disabled[i] describe the same op
+ * for every i by construction.
  *
- * Declared with `[]` sizing on purpose (see the matching note above
- * dormant_op_disabled[]): the array grows only via a designator append,
- * so parallel altop drafts can't silently agree on a bumped `[N+1]`
- * size line.  Two drafts adding the same designator index conflict at
- * the append site, and any drift between the two arrays or against the
- * enum is caught by the _Static_asserts below.
+ * The old file-static designator layout kept an explicit `[N] = op`
+ * designator per row so parallel altop drafts would conflict on the
+ * same append line -- codegen out of childop.def moves that conflict
+ * up into the .def file's row list, where the same "conflict on
+ * append" property still holds but a new altop is now a single-line
+ * edit instead of four.  The _Static_asserts below still guard the
+ * total slot count and the sentinel-vs-picker relationship.
  */
 static const enum child_op_type pick_op_type_table[] = {
-	[0]  = CHILD_OP_MMAP_LIFECYCLE,
-	[1]  = CHILD_OP_MPROTECT_SPLIT,
-	[2]  = CHILD_OP_MLOCK_PRESSURE,
-	[3]  = CHILD_OP_INODE_SPEWER,
-	[4]  = CHILD_OP_PROCFS_WRITER,
-	[5]  = CHILD_OP_MEMORY_PRESSURE,
-	[6]  = CHILD_OP_USERNS_FUZZER,
-	[7]  = CHILD_OP_SCHED_CYCLER,
-	[8]  = CHILD_OP_BARRIER_RACER,
-	[9]  = CHILD_OP_GENETLINK_FUZZER,
-	[10] = CHILD_OP_PERF_CHAINS,
-	[11] = CHILD_OP_TRACEFS_FUZZER,
-	[12] = CHILD_OP_BPF_LIFECYCLE,
-	[13] = CHILD_OP_FAULT_INJECTOR,
-	[14] = CHILD_OP_RECIPE_RUNNER,
-	[15] = CHILD_OP_IOURING_RECIPES,
-	[16] = CHILD_OP_FD_STRESS,
-	[17] = CHILD_OP_REFCOUNT_AUDITOR,
-	[18] = CHILD_OP_FS_LIFECYCLE,
-	[19] = CHILD_OP_SIGNAL_STORM,
-	[20] = CHILD_OP_FUTEX_STORM,
-	[21] = CHILD_OP_PIPE_THRASH,
-	[22] = CHILD_OP_FORK_STORM,
-	[23] = CHILD_OP_FLOCK_THRASH,
-	[24] = CHILD_OP_CGROUP_CHURN,
-	[25] = CHILD_OP_MOUNT_CHURN,
-	[26] = CHILD_OP_UFFD_CHURN,
-	[27] = CHILD_OP_IOURING_FLOOD,
-	[28] = CHILD_OP_CLOSE_RACER,
-	[29] = CHILD_OP_SOCKET_FAMILY_CHAIN,
-	[30] = CHILD_OP_XATTR_THRASH,
-	[31] = CHILD_OP_PIDFD_STORM,
-	[32] = CHILD_OP_MADVISE_CYCLER,
-	[33] = CHILD_OP_EPOLL_VOLATILITY,
-	[34] = CHILD_OP_KEYRING_SPAM,
-	[35] = CHILD_OP_VDSO_MREMAP_RACE,
-	[36] = CHILD_OP_NUMA_MIGRATION,
-	[37] = CHILD_OP_CPU_HOTPLUG_RIDER,
-	[38] = CHILD_OP_SLAB_CACHE_THRASH,
-	[39] = CHILD_OP_TLS_ROTATE,
-	[40] = CHILD_OP_PACKET_FANOUT_THRASH,
-	[41] = CHILD_OP_IOURING_NET_MULTISHOT,
-	[42] = CHILD_OP_TCP_AO_ROTATE,
-	[43] = CHILD_OP_VRF_FIB_CHURN,
-	[44] = CHILD_OP_NETLINK_MONITOR_RACE,
-	[45] = CHILD_OP_TIPC_LINK_CHURN,
-	[46] = CHILD_OP_TLS_ULP_CHURN,
-	[47] = CHILD_OP_VXLAN_ENCAP_CHURN,
-	[48] = CHILD_OP_BRIDGE_FDB_STP,
-	[49] = CHILD_OP_NFTABLES_CHURN,
-	[50] = CHILD_OP_TC_QDISC_CHURN,
-	[51] = CHILD_OP_XFRM_CHURN,
-	[52] = CHILD_OP_BPF_CGROUP_ATTACH,
-	[53] = CHILD_OP_MPLS_ROUTE_CHURN,
-	[54] = CHILD_OP_SCTP_ASSOC_CHURN,
-	[55] = CHILD_OP_MPTCP_PM_CHURN,
-	[56] = CHILD_OP_DEVLINK_PORT_CHURN,
-	[57] = CHILD_OP_HANDSHAKE_REQ_ABORT,
-	[58] = CHILD_OP_NF_CONNTRACK_HELPER,
-	[59] = CHILD_OP_AF_UNIX_SCM_RIGHTS_GC,
-	[60] = CHILD_OP_NETNS_TEARDOWN_CHURN,
-	[61] = CHILD_OP_TCP_ULP_SWAP_CHURN,
-	[62] = CHILD_OP_MSG_ZEROCOPY_CHURN,
-	[63] = CHILD_OP_IOURING_SEND_ZC_CHURN,
-	[64] = CHILD_OP_VSOCK_TRANSPORT_CHURN,
-	[65] = CHILD_OP_BRIDGE_VLAN_CHURN,
-	[66] = CHILD_OP_IGMP_MLD_SOURCE_CHURN,
-	[67] = CHILD_OP_PSP_KEY_ROTATE,
-	[68] = CHILD_OP_AFXDP_CHURN,
-	[69] = CHILD_OP_KVM_RUN_CHURN,
-	[70] = CHILD_OP_NL80211_CHURN,
-	[71] = CHILD_OP_NAT_T_CHURN,
-	[72] = CHILD_OP_SPLICE_PROTOCOLS,
-	[73] = CHILD_OP_RXRPC_KEY_INSTALL,
-	[74] = CHILD_OP_INPLACE_CRYPTO_ORACLE,
-	[75] = CHILD_OP_AF_ALG_WEAK_CIPHER_PROBE,
-	[76] = CHILD_OP_AF_ALG_TEMPLATE_PROBE,
-	[77] = CHILD_OP_IOURING_CMD_PASSTHROUGH,
-	[78] = CHILD_OP_PAGECACHE_CANARY_CHECK,
-	[79] = CHILD_OP_SOCK_DIAG_WALKER,
-	[80] = CHILD_OP_ALTNAME_THRASH,
-	[81] = CHILD_OP_IPMR_CACHE_REPORT,
-	[82] = CHILD_OP_UBLK_LIFECYCLE,
-	[83] = CHILD_OP_VETH_ASYMMETRIC_XDP,
-	[84] = CHILD_OP_IP6ERSPAN_NETNS_MIGRATE,
-	[85] = CHILD_OP_IPVS_SYSCTL_WRITER,
-	[86] = CHILD_OP_TCP_MD5_LISTENER_RACE,
-	[87] = CHILD_OP_IPV6_NDISC_PROXY,
-	[88] = CHILD_OP_IPFRAG_SOURCE_CHURN,
-	[89] = CHILD_OP_RTNL_VF_BROADCAST_GETLINK,
-	[90] = CHILD_OP_OBSCURE_AF_CHURN,
-	[91] = CHILD_OP_AF_ALG_RECVMSG_CHURN,
-	[92] = CHILD_OP_BRIDGE_CT_CHURN,
-	[93] = CHILD_OP_ATM_VCC_CHURN,
-	[94] = CHILD_OP_IP6GRE_BOND_LAPB_STACK,
-	[95] = CHILD_OP_FLOWTABLE_ENCAP_VLAN,
-	[96] = CHILD_OP_IPV6_PMTU_TEARDOWN_RACE,
-	[97] = CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN,
-	[98] = CHILD_OP_OVS_TUNNEL_VPORT_CHURN,
-	[99] = CHILD_OP_TTY_LDISC_CHURN,
-	[100] = CHILD_OP_WIREGUARD_DECRYPT_FLOOD,
-	[101] = CHILD_OP_BLKDEV_LIFECYCLE_RACE,
-	[102] = CHILD_OP_ISCSI_TARGET_PROBE,
-	[103] = CHILD_OP_ETH_EMITTER,
-	[104] = CHILD_OP_SYSFS_STRING_RACE,
-	[105] = CHILD_OP_PCI_BIND,
-	[106] = CHILD_OP_ISCSI_LOGIN_WALKER,
-	[107] = CHILD_OP_VMA_SPLIT_STORM,
-	[108] = CHILD_OP_AF_UNIX_PEEK_RACE,
-	[109] = CHILD_OP_SYSV_SHM_ORPHAN_RACE,
-	[110] = CHILD_OP_QRTR_BIND_RACE,
-	[111] = CHILD_OP_TC_MIRRED_BLOCKCAST,
-	[112] = CHILD_OP_PFKEY_SPD_WALK,
-	[113] = CHILD_OP_L2TP_IFNAME_RACE,
-	[114] = CHILD_OP_STATMOUNT_IDMAP_OVERFLOW,
-	[115] = CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING,
-	[116] = CHILD_OP_UMOUNT_RACE,
-	[117] = CHILD_OP_IP6_UDP_CORK_SPLICE,
-	[118] = CHILD_OP_IP_GRE_CHURN,
-	[119] = CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK,
-	[120] = CHILD_OP_VLAN_FILTER_CHURN,
-	[121] = CHILD_OP_SCTP_CHUNK_RX,
-	[122] = CHILD_OP_PKT_BUILDER_PROBE,
-	[123] = CHILD_OP_ESP_CRAFTED_RX,
-	[124] = CHILD_OP_FOU_GUE_MCAST_RX,
-	[125] = CHILD_OP_GENEVE_RX,
-	[126] = CHILD_OP_NETNS_MOUNTNS_SETUP_PROBE,
-	[127] = CHILD_OP_BAREUDP_RX,
-	[128] = CHILD_OP_MPLS_LABEL_STACK_RX,
-	[129] = CHILD_OP_DEEP_PATH_NESTING,
-	[130] = CHILD_OP_ESPINTCP_COALESCE_CHURN,
-	[131] = CHILD_OP_CRED_TRANSITION_CHURN,
-	[132] = CHILD_OP_NETDEV_NETNS_MIGRATE,
-	[133] = CHILD_OP_MAP_SHARED_STRESS,
-	[134] = CHILD_OP_TC_LIVE_TRAFFIC,
-	[135] = CHILD_OP_HFS_MOUNT_FUZZ,
-	[136] = CHILD_OP_RDS_ZCOPY_CRAFTED_SEND,
-	[137] = CHILD_OP_BRIDGE_IP6FRAG_REFRAG,
-	[138] = CHILD_OP_BRIDGE_IP6_REFRAG_FRAGGAP,
-	[139] = CHILD_OP_IPSET_CHURN,
-	[140] = CHILD_OP_IP4_UDP_CORK_SPLICE,
-	[141] = CHILD_OP_NEXTHOP_REPLACE_CHURN,
-	[142] = CHILD_OP_SIT_PROTO41_RX,
-	[143] = CHILD_OP_SEG6_END_DT4_RX,
-	[144] = CHILD_OP_CT_EXPECT_REALLOC,
-	[145] = CHILD_OP_INET_LISTENER_REHASH_RACE,
+#define CHILDOP_SENTINEL(enum_name, name_string)	/* skip -- picker has no slot for CHILD_OP_SYSCALL */
+#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket, dormant_default) \
+	enum_name,
+#include "childop.def"
+#undef CHILDOP
+#undef CHILDOP_SENTINEL
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");

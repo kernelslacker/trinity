@@ -99,7 +99,8 @@ struct sentinel_reading {
  * count sentinel.
  */
 enum child_op_type {
-#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket) enum_name,
+#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket, dormant_default) \
+	enum_name,
 #include "childop.def"
 #undef CHILDOP
 	NR_CHILD_OP_TYPES,
