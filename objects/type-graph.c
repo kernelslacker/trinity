@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include "child-api.h"
+#include "child.h"
 #include "object-types.h"
 #include "shm.h"
 #include "syscall.h"
@@ -57,9 +58,18 @@ static struct {
 #define EMA_DECAY_SHIFT		6u
 #define EMA_INCREMENT		100u
 
-static uint32_t hash_id(unsigned long id)
+/*
+ * Slot index derives from (owner, id) not id alone.  Kernel handles
+ * are per-child namespaces: fd 5 in child A and fd 5 in child B are
+ * unrelated objects that would otherwise collide on the same ring
+ * slot and cross-attribute producer records.  Mixing the owner num
+ * into the hash spreads siblings' publishes across the ring; the
+ * consume side still compares owner in the slot to catch the
+ * residual same-bucket collisions.
+ */
+static uint32_t hash_id(unsigned int owner, unsigned long id)
 {
-	uint32_t x = (uint32_t)id ^ (uint32_t)(id >> 32);
+	uint32_t x = (uint32_t)id ^ (uint32_t)(id >> 32) ^ owner;
 
 	x ^= x >> 16;
 	x *= 0x85ebca6bu;
@@ -125,6 +135,8 @@ void type_graph_observe_publish(unsigned int producer_nr, bool do32bit,
 				enum objecttype type, unsigned long id)
 {
 	struct type_graph_publish_slot *slot;
+	struct childdata *child;
+	uint32_t owner;
 	uint32_t gen;
 
 	if (type_graph_shm == NULL)
@@ -134,14 +146,21 @@ void type_graph_observe_publish(unsigned int producer_nr, bool do32bit,
 	if (type == OBJ_NONE || (unsigned int)type >= MAX_OBJECT_TYPES)
 		return;
 
+	child = this_child();
+	if (child == NULL)
+		return;
+	owner = (uint32_t)child->num;
+
 	gen = __atomic_add_fetch(&type_graph_shm->next_gen, 1u,
 				 __ATOMIC_RELAXED);
 	if (gen == 0u)
 		gen = __atomic_add_fetch(&type_graph_shm->next_gen, 1u,
 					 __ATOMIC_RELAXED);
 
-	slot = &type_graph_shm->publish[hash_id(id) & (TYPE_GRAPH_PUBLISH_SLOTS - 1u)];
+	slot = &type_graph_shm->publish[hash_id(owner, id) &
+					(TYPE_GRAPH_PUBLISH_SLOTS - 1u)];
 	__atomic_store_n(&slot->id, id, __ATOMIC_RELAXED);
+	__atomic_store_n(&slot->owner, owner, __ATOMIC_RELAXED);
 	__atomic_store_n(&slot->producer_nr, (uint16_t)producer_nr,
 			 __ATOMIC_RELAXED);
 	__atomic_store_n(&slot->obj_type, (uint8_t)type, __ATOMIC_RELAXED);
@@ -158,6 +177,9 @@ void type_graph_observe_consume(unsigned int consumer_nr, bool do32bit,
 				unsigned long substitute_retval)
 {
 	struct type_graph_publish_slot *slot;
+	struct childdata *child;
+	uint32_t owner;
+	uint32_t slot_owner;
 	uint32_t gen;
 	unsigned long id;
 	uint16_t producer_nr;
@@ -173,10 +195,15 @@ void type_graph_observe_consume(unsigned int consumer_nr, bool do32bit,
 	if (consumer_arg == 0u || consumer_arg > 6u)
 		return;
 
+	child = this_child();
+	if (child == NULL)
+		return;
+	owner = (uint32_t)child->num;
+
 	__atomic_add_fetch(&type_graph_shm->consume_observations, 1UL,
 			   __ATOMIC_RELAXED);
 
-	slot = &type_graph_shm->publish[hash_id(substitute_retval) &
+	slot = &type_graph_shm->publish[hash_id(owner, substitute_retval) &
 					(TYPE_GRAPH_PUBLISH_SLOTS - 1u)];
 	gen = __atomic_load_n(&slot->gen, __ATOMIC_ACQUIRE);
 	if (gen == 0u) {
@@ -187,6 +214,21 @@ void type_graph_observe_consume(unsigned int consumer_nr, bool do32bit,
 
 	id = __atomic_load_n(&slot->id, __ATOMIC_RELAXED);
 	if (id != substitute_retval) {
+		__atomic_add_fetch(&type_graph_shm->consume_misses, 1UL,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+
+	/*
+	 * Owner match is what makes the whole thing sound: even with
+	 * owner mixed into the hash, two children can land in the same
+	 * bucket for different ids that happen to hash together, and a
+	 * fresh publish from a sibling can overwrite our slot between
+	 * our own publish and consume.  Reject anything that isn't
+	 * stamped with our own child->num.
+	 */
+	slot_owner = __atomic_load_n(&slot->owner, __ATOMIC_RELAXED);
+	if (slot_owner != owner) {
 		__atomic_add_fetch(&type_graph_shm->consume_misses, 1UL,
 				   __ATOMIC_RELAXED);
 		return;

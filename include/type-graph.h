@@ -41,6 +41,15 @@
  * magnitude as the other observer subsystems (chain-corpus,
  * minicorpus).  Both dimensions are powers of two so slot lookup
  * is a mask.
+ *
+ * The publish ring lives in shared memory but is keyed on
+ * (owner, id) rather than id alone -- kernel handles (small fds
+ * especially) are per-child namespaces and alias trivially across
+ * siblings.  Slots carry the producing child's num so the consume
+ * side can reject a slot that belongs to a different child before
+ * ever recording a handoff.  With owner in the mix, publish slot
+ * size is 24 B (16 B * 2048 -> 24 B * 2048 = +16 KiB), still under
+ * the 200 KiB envelope shared with the edge pool.
  */
 #define TYPE_GRAPH_PUBLISH_SLOTS	2048u
 #define TYPE_GRAPH_EDGES_MAX		4096u
@@ -56,6 +65,7 @@
 struct type_graph_publish_slot {
 	unsigned long id;		/* value returned by producer */
 	uint32_t gen;			/* monotonic; 0 == empty slot */
+	uint32_t owner;			/* child->num of producing child */
 	uint16_t producer_nr;
 	uint8_t obj_type;		/* enum objecttype fits in 8 bits */
 	uint8_t producer_do32;
