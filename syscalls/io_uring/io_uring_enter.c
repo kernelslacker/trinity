@@ -247,7 +247,7 @@ struct syscallentry syscall_io_uring_enter = {
 	.name = "io_uring_enter",
 	.group = GROUP_IO_URING,
 	.num_args = 6,
-	.argtype = { [0] = ARG_FD_IO_URING, [1] = ARG_RANGE, [2] = ARG_RANGE, [3] = ARG_OP, [4] = ARG_ADDRESS, [5] = ARG_LEN },
+	.argtype = { [0] = ARG_FD_IO_URING, [1] = ARG_RANGE, [2] = ARG_RANGE, [3] = ARG_LIST, [4] = ARG_ADDRESS, [5] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "to_submit", [2] = "min_complete", [3] = "flags", [4] = "sig", [5] = "sigsz" },
 	.arg_params[1].range.low = 1,
 	.arg_params[1].range.hi = 128,
