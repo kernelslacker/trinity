@@ -94,6 +94,7 @@
 #include "stats/subsys/ipfrag_source_churn.h"
 #include "stats/subsys/ipmr_cache_report.h"
 #include "stats/subsys/ipmr_getroute_pktinfo.h"
+#include "stats/subsys/ip6mr_churn.h"
 #include "stats/subsys/ip4_udp_cork_splice.h"
 #include "stats/subsys/ip6_udp_cork_splice.h"
 #include "stats/subsys/ip6erspan_netns_migrate.h"
@@ -981,6 +982,8 @@ struct stats_s {
 
 	/* ipmr_getroute_pktinfo accounting.  See stats/subsys/ipmr_getroute_pktinfo.h. */
 	struct ipmr_getroute_pktinfo_stats ipmr_getroute_pktinfo;
+	/* ip6mr_churn accounting.  See stats/subsys/ip6mr_churn.h. */
+	struct ip6mr_churn_stats ip6mr_churn;
 
 	/* ublk_lifecycle accounting.  See stats/subsys/ublk_lifecycle.h. */
 	struct ublk_lifecycle_stats ublk_lifecycle __attribute__((aligned(64)));

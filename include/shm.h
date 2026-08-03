@@ -742,6 +742,13 @@ struct shm_s {
 	 * atomic load/store is safe -- only false -> true, idempotent. */
 	bool ipmr_getroute_pktinfo_ns_unsupported;
 	bool ipmr_getroute_pktinfo_ns_eperm;
+	/* ip6mr_churn grandchild latches
+	 * (childops/net/ip6mr-churn.c).  Same rationale as
+	 * ipmr_cache_report above: written from the userns_run_in_ns()
+	 * grandchild and must survive _exit().  RELAXED atomic
+	 * load/store is safe -- only false -> true, idempotent. */
+	bool ip6mr_churn_ns_unsupported;
+	bool ip6mr_churn_ns_eperm;
 
 	/* netdev-netns-migrate grandchild latches
 	 * (childops/net/netdev-netns-migrate.c).  Master gate is written
