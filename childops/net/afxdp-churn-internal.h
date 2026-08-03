@@ -25,6 +25,7 @@
 
 #if __has_include(<linux/if_xdp.h>) && __has_include(<linux/bpf.h>)
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <net/if.h>
@@ -75,6 +76,19 @@
 #endif
 #ifndef XDP_USE_NEED_WAKEUP
 #define XDP_USE_NEED_WAKEUP		(1 << 3)
+#endif
+
+/* AF_PACKET / ETH_P_ALL fallbacks for the ptype_all-clone probe.
+ * AF_PACKET is stable at 17 since the beginning of Linux; ETH_P_ALL 0x0003
+ * is the ETH_P_ALL promiscuous listener value defined in <linux/if_ether.h>.
+ * Provide integer fallbacks so a stripped sysroot without those headers
+ * compiles cleanly — the socket() call degrades to EAFNOSUPPORT/-EINVAL on
+ * a kernel that genuinely lacks AF_PACKET, which is handled gracefully. */
+#ifndef AF_PACKET
+#define AF_PACKET			17
+#endif
+#ifndef ETH_P_ALL
+#define ETH_P_ALL			0x0003
 #endif
 
 /* BPF map type and helper id fallbacks (XSKMAP and bpf_redirect_map are
@@ -165,6 +179,15 @@
  * inside the per-iter AFXDP_WALL_CAP_NS budget. */
 #define AFXDP_TX_META_SCRIBBLE_CAP	(1U << 20)
 
+/* Length of the tailroom-probe TX descriptor: fills the UMEM chunk right
+ * up to one byte before the end.  With no headroom this leaves zero bytes
+ * of tailroom before skb_shared_info when the kernel builds the skb, and
+ * a clone (triggered by an AF_PACKET ETH_P_ALL ptype_all listener) will
+ * overrun the shared-info region unless the kernel's clone-reject check
+ * is in place.  The -1U keeps addr+len within the chunk boundary so
+ * UMEM-validation in xsk_rcv_check() does not pre-reject the descriptor. */
+#define AFXDP_TAILROOM_PROBE_LEN	(AFXDP_CHUNK_SIZE - 1U)
+
 #define AFXDP_OUTER_BASE		5U
 #define AFXDP_OUTER_FLOOR		16U
 #define AFXDP_OUTER_CAP			64U
@@ -247,7 +270,8 @@ int xdp_netlink_set_fd(struct nl_ctx *rtnl, unsigned int ifindex,
  * open the CVE-2024-50115 / CVE-2023-39197 race windows on the live
  * socket. */
 void afxdp_iter_tx_burst(struct xsk_state *st,
-			 bool want_sg, bool want_tx_md);
+			 bool want_sg, bool want_tx_md,
+			 bool want_tailroom);
 void afxdp_iter_run_races(struct xsk_state *st);
 
 #endif /* __has_include(<linux/if_xdp.h>) && __has_include(<linux/bpf.h>) */

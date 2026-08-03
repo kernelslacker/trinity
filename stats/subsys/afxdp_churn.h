@@ -23,6 +23,7 @@ struct afxdp_churn_stats {
 	unsigned long tun_bind_iters;			/* per-iter knob: bound to tun (IFF_NAPI|IFF_NAPI_FRAGS) instead of lo */
 	unsigned long xsg_bind_failed;			/* UMEM_REG with XDP_UMEM_FLAGS_USE_SG rejected; latched off, retried without */
 	unsigned long tx_md_bind_failed;		/* UMEM_REG with tx_metadata_len rejected; latched off, retried without */
+	unsigned long tailroom_iters;			/* tailroom-probe TX desc sent (near-full-chunk len + AF_PACKET tap) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_AFXDP_CHURN_H */

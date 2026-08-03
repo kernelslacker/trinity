@@ -62,7 +62,7 @@ static void iter_one(struct childdata *child, unsigned int idx,
 	struct xsk_state st;
 	char tun_name[IFNAMSIZ];
 	unsigned int target_ifindex;
-	bool want_sg, want_tx_md, want_tun;
+	bool want_sg, want_tx_md, want_tun, want_tailroom;
 
 	(void)idx;
 
@@ -110,7 +110,12 @@ static void iter_one(struct childdata *child, unsigned int idx,
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
-	afxdp_iter_tx_burst(&st, want_sg, want_tx_md);
+	/* Tailroom-probe knob: independent of sg/tx_md.  Fires on ~25% of
+	 * iterations to keep the near-full-chunk + ptype_all clone path in
+	 * rotation without crowding out the other lanes. */
+	want_tailroom = (rnd_u32() & 3U) == 0U;
+
+	afxdp_iter_tx_burst(&st, want_sg, want_tx_md, want_tailroom);
 
 	afxdp_iter_run_races(&st);
 

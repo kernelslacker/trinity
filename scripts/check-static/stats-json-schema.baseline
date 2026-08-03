@@ -1429,6 +1429,7 @@ stats	object
     stats.afxdp_churn.tun_bind_iters	u64
     stats.afxdp_churn.xsg_bind_failed	u64
     stats.afxdp_churn.tx_md_bind_failed	u64
+    stats.afxdp_churn.tailroom_iters	u64
   stats.kvm	object
     stats.kvm.vcpu_ioctls_dispatched	u64
     stats.kvm.vm_ioctls_dispatched	u64
