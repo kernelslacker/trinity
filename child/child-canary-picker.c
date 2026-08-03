@@ -54,16 +54,16 @@
 #define CANARY_WEDGE_STALL_SEC	600U
 
 /* Picker cursors.  canary_priority_cursor is the next index into
- * canary_priority_seeds[] (or the operator-supplied override).  fifo_cursor
- * is the last enum value picked from the general FIFO walk; the next
- * pick resumes from cursor+1 and wraps. */
+ * canary_priority_list (the per-run random shuffle, or the operator-
+ * supplied override).  fifo_cursor is the last enum value picked from
+ * the general FIFO walk; the next pick resumes from cursor+1 and wraps. */
 unsigned int canary_priority_cursor = 0;
 enum child_op_type canary_fifo_cursor = CHILD_OP_SYSCALL;
 
-/* Resolved priority-seed list pointer.  Defaults to the built-in seed array;
- * if --canary-seed was passed, the parser put op enums into
- * canary_seed_override[] / canary_seed_override_count and the init path
- * swaps that in. */
+/* Resolved priority list pointer.  Defaults to a per-epoch random shuffle
+ * of every eligible op (built in canary_queue_init()); if --canary-seed
+ * was passed, the parser put op enums into canary_seed_override[] /
+ * canary_seed_override_count and the init path swaps that in. */
 const enum child_op_type *canary_priority_list = NULL;
 unsigned int canary_priority_list_count = 0;
 
@@ -92,9 +92,10 @@ bool pick_next_canary(enum child_op_type *out)
 	enum child_op_type op;
 	time_t now;
 
-	/* Seed-priority queue: priority seeds first.  fork-pressure drain
-	 * is consulted here so a pid-heavy seed defers to the next seed
-	 * during the recovery window instead of being skipped permanently:
+	/* Priority pass: the randomised first-pass order (or operator
+	 * override).  fork-pressure drain is consulted here so a pid-heavy
+	 * op defers to the next entry during the recovery window instead
+	 * of being skipped permanently:
 	 * the cursor is NOT advanced past a suppressed entry, so the
 	 * picker walks back to it once the window expires and a later
 	 * tick re-enters via retry_parked_slot(). */

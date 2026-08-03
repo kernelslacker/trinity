@@ -100,16 +100,16 @@ extern bool canary_queue_live;
  * -------------------------------------------------------------------- */
 
 /* Picker cursors.  canary_priority_cursor is the next index into
- * canary_priority_seeds[] (or the operator-supplied override).  fifo_cursor
- * is the last enum value picked from the general FIFO walk; the next
- * pick resumes from cursor+1 and wraps. */
+ * canary_priority_list (the per-run random shuffle, or the operator-
+ * supplied override).  fifo_cursor is the last enum value picked from
+ * the general FIFO walk; the next pick resumes from cursor+1 and wraps. */
 extern unsigned int canary_priority_cursor;
 extern enum child_op_type canary_fifo_cursor;
 
-/* Resolved priority-seed list pointer.  Defaults to the built-in seed array;
- * if --canary-seed was passed, the parser put op enums into
- * canary_seed_override[] / canary_seed_override_count and the init path
- * swaps that in. */
+/* Resolved priority list pointer.  Defaults to a per-epoch random shuffle
+ * of every eligible op (built in canary_queue_init()); if --canary-seed
+ * was passed, the parser put op enums into canary_seed_override[] /
+ * canary_seed_override_count and the init path swaps that in. */
 extern const enum child_op_type *canary_priority_list;
 extern unsigned int canary_priority_list_count;
 
@@ -145,8 +145,6 @@ extern time_t canary_last_summary;
  * has an incomplete type and cannot be fed to ARRAY_SIZE() -- the
  * counts let consumers walk the tables without re-declaring the sizes.
  * -------------------------------------------------------------------- */
-extern const enum child_op_type canary_priority_seeds[];
-extern const unsigned int canary_priority_seeds_count;
 
 extern const enum child_op_type canary_config_blocked[];
 extern const unsigned int canary_config_blocked_count;
