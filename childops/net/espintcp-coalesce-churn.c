@@ -342,8 +342,13 @@ static void send_burst(int fd, const struct timespec *t_outer)
 	int cork_off = 0;
 	int nodelay  = RAND_BOOL() ? 1 : 0;
 
-	_Static_assert(ESPINTCP_FRAME_MAX + 2 <= sizeof(buf),
-		       "buf must be at least ESPINTCP_FRAME_MAX + 2 bytes");
+	/* pick_frame_len()'s widest arm returns
+	 * (uint16_t)(ESPINTCP_FRAME_MAX - rnd_modulo_u32(64U)); if
+	 * ESPINTCP_FRAME_MAX ever exceeds the uint16_t return type the cast
+	 * silently truncates and the arm no longer produces the intended
+	 * near-cap length.  Pin the producer's constant to the return type. */
+	_Static_assert(ESPINTCP_FRAME_MAX <= UINT16_MAX,
+		       "pick_frame_len() widest arm ESPINTCP_FRAME_MAX must fit uint16_t return");
 
 	(void)setsockopt(fd, SOL_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 	(void)setsockopt(fd, SOL_TCP, TCP_CORK, &cork_on, sizeof(cork_on));
@@ -358,8 +363,9 @@ static void send_burst(int fd, const struct timespec *t_outer)
 			break;
 
 		len = pick_frame_len();
+		if (len > (uint16_t)(sizeof(buf) - 2))
+			len = (uint16_t)(sizeof(buf) - 2);
 		total = 2U + (size_t)len;
-		total = total < sizeof(buf) ? total : sizeof(buf);
 		buf[0] = (unsigned char)(len >> 8);
 		buf[1] = (unsigned char)(len & 0xffU);
 		if (len > 0)
@@ -540,8 +546,13 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 	int cli = -1;
 	int v1_idx;
 
-	_Static_assert(ESPINTCP_FRAME_MAX + 2 <= sizeof(buf),
-		       "buf must be at least ESPINTCP_FRAME_MAX + 2 bytes");
+	/* pick_frame_len()'s widest arm returns
+	 * (uint16_t)(ESPINTCP_FRAME_MAX - rnd_modulo_u32(64U)); if
+	 * ESPINTCP_FRAME_MAX ever exceeds the uint16_t return type the cast
+	 * silently truncates and the arm no longer produces the intended
+	 * near-cap length.  Pin the producer's constant to the return type. */
+	_Static_assert(ESPINTCP_FRAME_MAX <= UINT16_MAX,
+		       "pick_frame_len() widest arm ESPINTCP_FRAME_MAX must fit uint16_t return");
 
 	sync = 'R';
 	if (write(ctrl_fd, &sync, 1) != 1)
@@ -580,10 +591,12 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 
 	while ((unsigned long long)ns_since(t_outer) < ESPINTCP_WALL_CAP_NS) {
 		uint16_t len = pick_frame_len();
-		size_t total = 2U + (size_t)len;
+		size_t total;
 		ssize_t n;
 
-		total = total < sizeof(buf) ? total : sizeof(buf);
+		if (len > (uint16_t)(sizeof(buf) - 2))
+			len = (uint16_t)(sizeof(buf) - 2);
+		total = 2U + (size_t)len;
 		buf[0] = (unsigned char)(len >> 8);
 		buf[1] = (unsigned char)(len & 0xffU);
 		if (len > 0)
