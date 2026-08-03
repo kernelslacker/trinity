@@ -342,6 +342,9 @@ static void send_burst(int fd, const struct timespec *t_outer)
 	int cork_off = 0;
 	int nodelay  = RAND_BOOL() ? 1 : 0;
 
+	_Static_assert(ESPINTCP_FRAME_MAX + 2 <= sizeof(buf),
+		       "buf must be at least ESPINTCP_FRAME_MAX + 2 bytes");
+
 	(void)setsockopt(fd, SOL_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 	(void)setsockopt(fd, SOL_TCP, TCP_CORK, &cork_on, sizeof(cork_on));
 
@@ -356,6 +359,7 @@ static void send_burst(int fd, const struct timespec *t_outer)
 
 		len = pick_frame_len();
 		total = 2U + (size_t)len;
+		total = total < sizeof(buf) ? total : sizeof(buf);
 		buf[0] = (unsigned char)(len >> 8);
 		buf[1] = (unsigned char)(len & 0xffU);
 		if (len > 0)
@@ -536,6 +540,9 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 	int cli = -1;
 	int v1_idx;
 
+	_Static_assert(ESPINTCP_FRAME_MAX + 2 <= sizeof(buf),
+		       "buf must be at least ESPINTCP_FRAME_MAX + 2 bytes");
+
 	sync = 'R';
 	if (write(ctrl_fd, &sync, 1) != 1)
 		goto out;
@@ -576,6 +583,7 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 		size_t total = 2U + (size_t)len;
 		ssize_t n;
 
+		total = total < sizeof(buf) ? total : sizeof(buf);
 		buf[0] = (unsigned char)(len >> 8);
 		buf[1] = (unsigned char)(len & 0xffU);
 		if (len > 0)
