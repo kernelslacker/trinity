@@ -544,9 +544,9 @@ void kcov_child_flush_stats(struct childdata *child)
 		uint32_t pub = (delta > UINT32_MAX) ? UINT32_MAX
 						    : (uint32_t)delta;
 
-		(void) stats_ring_enqueue(child->stats_ring,
-					  STATS_FIELD_TOTAL_CALLS, 0, pub);
-		ls->total_calls = delta - pub;
+		if (stats_ring_enqueue(child->stats_ring,
+				       STATS_FIELD_TOTAL_CALLS, 0, pub))
+			ls->total_calls = delta - pub;
 	}
 
 	delta = ls->remote_calls;
@@ -554,9 +554,9 @@ void kcov_child_flush_stats(struct childdata *child)
 		uint32_t pub = (delta > UINT32_MAX) ? UINT32_MAX
 						    : (uint32_t)delta;
 
-		(void) stats_ring_enqueue(child->stats_ring,
-					  STATS_FIELD_REMOTE_CALLS, 0, pub);
-		ls->remote_calls = delta - pub;
+		if (stats_ring_enqueue(child->stats_ring,
+				       STATS_FIELD_REMOTE_CALLS, 0, pub))
+			ls->remote_calls = delta - pub;
 	}
 
 	delta = ls->total_pcs;
@@ -569,9 +569,9 @@ void kcov_child_flush_stats(struct childdata *child)
 		uint32_t pub = (delta > UINT32_MAX) ? UINT32_MAX
 						    : (uint32_t)delta;
 
-		(void) stats_ring_enqueue(child->stats_ring,
-					  STATS_FIELD_TOTAL_PCS, 0, pub);
-		ls->total_pcs = delta - pub;
+		if (stats_ring_enqueue(child->stats_ring,
+				       STATS_FIELD_TOTAL_PCS, 0, pub))
+			ls->total_pcs = delta - pub;
 	}
 
 	delta = ls->total_warm_known_hits;
@@ -579,9 +579,9 @@ void kcov_child_flush_stats(struct childdata *child)
 		uint32_t pub = (delta > UINT32_MAX) ? UINT32_MAX
 						    : (uint32_t)delta;
 
-		(void) stats_ring_enqueue(child->stats_ring,
-					  STATS_FIELD_WARM_KNOWN_HITS, 0, pub);
-		ls->total_warm_known_hits = delta - pub;
+		if (stats_ring_enqueue(child->stats_ring,
+				       STATS_FIELD_WARM_KNOWN_HITS, 0, pub))
+			ls->total_warm_known_hits = delta - pub;
 	}
 
 	/* Flush the per-syscall calls/edges staging arrays.  Dense sweep of
