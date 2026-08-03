@@ -91,6 +91,14 @@ update this section to match `ls scripts/check-static/*.sh`.)
   against a golden baseline, so rename / removal / reorder never
   silently reshapes the surface downstream operator tooling greps.
   Regenerate with `--regen` and review the baseline diff.
+- `check-static-doc-parity`: every script in `scripts/check-static/`
+  must have a matching row in this file, and every row here must
+  correspond to a real script.  A new check landing with no doc row
+  fails the gate; a stale row for a removed check fails it in the
+  other direction.  This gate exists because the "What today's checks
+  enforce" list is hand-maintained -- without enforcement, it drifted
+  silently until 22 scripts were undocumented at once (the state
+  7f68e0c25768 exposed).
 - `check-stats-reachable`: every scalar counter reachable from
   `struct stats_s` (flat leaves plus recursively-descended
   `stats/subsys/*_stats` sub-structs) must be surfaced by a
