@@ -10,5 +10,5 @@
 #define SHM_HUGE_1GB (30 << SHM_HUGE_SHIFT)
 #endif
 #ifndef SHM_NORESERVE
-#define SHM_NORESERVE 0x2000
+#define SHM_NORESERVE 010000
 #endif
