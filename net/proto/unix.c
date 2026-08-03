@@ -274,6 +274,60 @@ static bool unix_grammar_can_run(void)
 	return sfg_can_run_default(PF_UNIX);
 }
 
+/*
+ * Legal phase orderings for the AF_UNIX/SOCK_STREAM grammar walk.
+ * Every entry satisfies the run_grammar_chain invariants: SOCKET
+ * first; BIND before LISTEN; LISTEN before ACCEPT; DATA only after
+ * ACCEPT (STREAM); PRE_CFG always precedes BIND; POST_CFG always
+ * follows BIND.  The only degree of freedom exercised here is where
+ * the setsockopt WALK lands relative to the pre/post configure legs
+ * and the bind — the SO_PASSCRED / SO_PASSPIDFD / SO_PASSSEC /
+ * SO_PASSRIGHTS toggles fired by unix_grammar_walk_setsockopts are
+ * generic sock_setsockopt() flag writes with no bind-state
+ * precondition, so shifting the walk stresses combinations the
+ * random per-syscall driver never reaches in coherent succession.
+ *
+ * Gated to SOCK_STREAM triplets by unix_phase_orders_apply — the
+ * DGRAM and SEQPACKET arms keep the framework default single
+ * ordering, since only the STREAM leg exercises the full
+ * bind/listen/accept/data chain the alternate orderings pivot on.
+ */
+static const struct sfg_phase_order unix_stream_orders[] = {
+	/* Baseline: setsockopt walk pre-bind, matches the pre-P1 driver. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_PRE_CFG, SFG_PHASE_WALK,
+	    SFG_PHASE_BIND, SFG_PHASE_POST_CFG,
+	    SFG_PHASE_LISTEN, SFG_PHASE_ACCEPT, SFG_PHASE_DATA,
+	    SFG_PHASE_END } },
+
+	/* Walk before configure_pre_bind — fires the SO_PASS* toggle
+	 * sequence on a blocking socket (O_NONBLOCK is set inside
+	 * configure_pre_bind), exercising the flag installs on a
+	 * fresh unmodified fd. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_WALK, SFG_PHASE_PRE_CFG,
+	    SFG_PHASE_BIND, SFG_PHASE_POST_CFG,
+	    SFG_PHASE_LISTEN, SFG_PHASE_ACCEPT, SFG_PHASE_DATA,
+	    SFG_PHASE_END } },
+
+	/* Walk post-bind but before configure_post_bind — the SO_PASS*
+	 * toggles see a bound-but-not-yet-listening AF_UNIX socket. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_PRE_CFG, SFG_PHASE_BIND,
+	    SFG_PHASE_WALK, SFG_PHASE_POST_CFG,
+	    SFG_PHASE_LISTEN, SFG_PHASE_ACCEPT, SFG_PHASE_DATA,
+	    SFG_PHASE_END } },
+
+	/* Walk fully post-bind and post configure_post_bind, still
+	 * before listen() so the socket is bound but not accepting. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_PRE_CFG, SFG_PHASE_BIND,
+	    SFG_PHASE_POST_CFG, SFG_PHASE_WALK,
+	    SFG_PHASE_LISTEN, SFG_PHASE_ACCEPT, SFG_PHASE_DATA,
+	    SFG_PHASE_END } },
+};
+
+static bool unix_phase_orders_apply(const struct socket_triplet *triplet)
+{
+	return triplet->family == PF_UNIX && triplet->type == SOCK_STREAM;
+}
+
 const struct socket_family_grammar grammar_unix = {
 	.family			= PF_UNIX,
 	.name			= "unix",
@@ -282,4 +336,7 @@ const struct socket_family_grammar grammar_unix = {
 	.configure_pre_bind	= unix_grammar_configure_pre_bind,
 	.walk_setsockopts	= unix_grammar_walk_setsockopts,
 	.gen_cmsg		= unix_grammar_gen_cmsg,
+	.phase_orders		= unix_stream_orders,
+	.nr_phase_orders	= ARRAY_SIZE(unix_stream_orders),
+	.phase_orders_apply	= unix_phase_orders_apply,
 };
