@@ -7,6 +7,12 @@
  * manifest-declared nominal_len bytes and, where relevant, patches
  * the preceding IPv4/IPv6 next-protocol byte so the assembled stack
  * still resolves down the intended parser path pre-mutation.
+ *
+ * Two SRH emitters live here:
+ *   emit_rpl_srh  - routing type 3 (RPL Source Routing, RFC 9008)
+ *                   → ipv6_rpl_srh_rcv
+ *   emit_seg6_srh - routing type 4 (SRH, RFC 8754)
+ *                   → ipv6_srh_rcv
  */
 
 #include <stdint.h>
@@ -100,6 +106,55 @@ size_t emit_esp(struct pktb_frame *f)
 	put_be32(p, (uint32_t)rnd_u32() | 0x00000001U);	/* SPI (nonzero) */
 	put_be32(p + 4, 0);				/* seq */
 	return 8;
+}
+
+size_t emit_rpl_srh(struct pktb_frame *f)
+{
+	/*
+	 * IPv6 RPL Source Routing Header (RFC 9008), routing type 3.
+	 *
+	 * The kernel's ipv6_rpl_srh_rcv() validates the compressed-address
+	 * length equation before doing any interesting work:
+	 *
+	 *   looped_w = (hdrlen * 8) - pad - (16 - cmpre)
+	 *   looped_w % (16 - cmpri) == 0            ... or drop
+	 *
+	 * With cmpri=0 and cmpre=0 (no prefix compression) and pad=0 this
+	 * simplifies to: (hdrlen * 8 - 16) % 16 == 0, i.e. hdrlen must be
+	 * even.  We fix nsegments=3, giving hdrlen=6 (even) and a 56-byte
+	 * header: (6*8 - 16) % 16 = 32 % 16 = 0. ✓
+	 *
+	 * segments_left=0 causes ipv6_rpl_srh_rcv() to return immediately
+	 * before the dst-rewrite and CID-copy paths, so sweep {1,2,3}
+	 * (all <= nsegments, so the "sl > n" rejection edge is not hit by
+	 * the first two values; the third equals n exactly).
+	 */
+	const uint8_t  nsegments = 3;
+	const size_t   srh_bytes = 8U + 16U * nsegments;  /* 56 bytes */
+	const uint8_t  hdrlen    = (uint8_t)((srh_bytes / 8U) - 1U);  /* 6 */
+	static const uint8_t sweep[3] = { 1, 2, 3 };
+	uint8_t *p = f->buf + f->len;
+	unsigned int i;
+
+	if (f->n_layers > 0) {
+		const struct pktb_layer_inst *prev = &f->layers[f->n_layers - 1];
+
+		if (prev->kind == PKTB_LAYER_IP6)
+			f->buf[prev->offset + 6] = IPPROTO_ROUTING;
+	}
+	memset(p, 0, srh_bytes);
+	p[0] = IPPROTO_UDP;			/* next-header */
+	p[1] = hdrlen;				/* hdr_ext_len (owned, repaired) */
+	p[2] = 3;				/* routing type: RPL SRH */
+	p[3] = sweep[rnd_modulo_u32(3)];	/* segments_left (nonzero) */
+	/* p[4] = (cmpri << 4) | cmpre = 0: no prefix compression */
+	/* p[5] = (pad << 4) | 0        = 0: no pad bytes needed */
+	/* p[6..7] reserved, left zero */
+	/* Addresses[1..nsegments] at +8: fill with ::1 so the dst
+	 * rewrite in ipv6_rpl_srh_rcv() lands on loopback. */
+	for (i = 0; i < nsegments; i++)
+		p[8 + 16 * i + 15] = 0x01;
+	return srh_bytes;
 }
 
 size_t emit_seg6_srh(struct pktb_frame *f)

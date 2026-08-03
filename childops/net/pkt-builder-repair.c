@@ -94,6 +94,7 @@ static void repair_length_field(struct pktb_frame *f,
 		p[0] = (uint8_t)(p[0] & 0x3f);
 		break;
 	case PKTB_LAYER_RPL_SRH:
+	case PKTB_LAYER_SEG6_SRH:
 		/* hdr_ext_len: 8-byte units past the first 8 bytes.  Derive
 		 * from the layer's own written length so a 3-segment SRH
 		 * (56B) reports 6, not 0 — and a trunc-shortened header
