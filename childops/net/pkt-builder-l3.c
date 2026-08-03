@@ -102,9 +102,21 @@ size_t emit_esp(struct pktb_frame *f)
 	return 8;
 }
 
-size_t emit_rpl_srh(struct pktb_frame *f)
+size_t emit_seg6_srh(struct pktb_frame *f)
 {
+	/*
+	 * IPv6 Segment Routing Header (RFC 8754), routing type 4.  A
+	 * segments_left of 0 short-circuits ipv6_srh_rcv() before any of
+	 * the interesting work (decrement, dst rewrite, segments[] index)
+	 * runs, so this emitter lays down a fixed 3-segment header and
+	 * sweeps segments_left across {1, 2, nsegments+1} — the last
+	 * value hits the "segments_left > last_entry+1" rejection edge.
+	 */
+	const uint8_t nsegments = 3;
+	const size_t  srh_bytes = 8U + 16U * nsegments;
+	static const uint8_t sweep[3] = { 1, 2, 4 };	/* nsegments+1 == 4 */
 	uint8_t *p = f->buf + f->len;
+	unsigned int i;
 
 	if (f->n_layers > 0) {
 		const struct pktb_layer_inst *prev = &f->layers[f->n_layers - 1];
@@ -112,10 +124,17 @@ size_t emit_rpl_srh(struct pktb_frame *f)
 		if (prev->kind == PKTB_LAYER_IP6)
 			f->buf[prev->offset + 6] = IPPROTO_ROUTING;
 	}
-	memset(p, 0, 8);
-	p[0] = IPPROTO_UDP;	/* next-header */
-	p[1] = 0;		/* hdr_ext_len in 8-octet units past 8 (repaired) */
-	p[2] = 4;		/* routing type: SRH */
-	p[3] = 0;		/* segments_left */
-	return 8;
+	memset(p, 0, srh_bytes);
+	p[0] = IPPROTO_UDP;			/* next-header */
+	p[1] = (uint8_t)(srh_bytes / 8U - 1U);	/* hdr_ext_len (owned, repaired) */
+	p[2] = 4;				/* routing type: SRH */
+	p[3] = sweep[rnd_modulo_u32(3)];	/* segments_left sweep */
+	p[4] = (uint8_t)(nsegments - 1U);	/* last_entry */
+	p[5] = 0;				/* flags */
+	/* p[6..7] tag left zero */
+	/* segments[] at +8: fill each 16-byte slot with ::1 so the dst
+	 * rewrite in ipv6_srh_rcv() lands on loopback. */
+	for (i = 0; i < nsegments; i++)
+		p[8 + 16 * i + 15] = 0x01;
+	return srh_bytes;
 }
