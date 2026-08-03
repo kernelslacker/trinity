@@ -24,6 +24,17 @@ static void sanitise_shmat(struct syscallrecord *rec)
 		rec->a2 = 0;
 	else
 		rec->a2 = (unsigned long) get_map() & PAGE_MASK;
+
+	/*
+	 * SHM_REMAP requires a non-NULL shmaddr; the kernel rejects the
+	 * combination before any vma work is done.  Interlock: if SHM_REMAP
+	 * is set, force a page-aligned address; if shmaddr is still NULL,
+	 * strip SHM_REMAP from the flags.
+	 */
+	if (rec->a3 & SHM_REMAP)
+		rec->a2 = (unsigned long) get_map() & PAGE_MASK;
+	if (rec->a2 == 0)
+		rec->a3 &= ~SHM_REMAP;
 }
 
 static void post_shmat(struct syscallrecord *rec)
