@@ -37,7 +37,7 @@
 
 #define PKTB_PROBE_PER_INVOCATION	6	/* frames per invocation */
 #define PKTB_PROBE_WALL_CAP_NS		(50ULL * 1000ULL * 1000ULL)
-#define PKTB_PROBE_NR_RECIPES		6
+#define PKTB_PROBE_NR_RECIPES		8
 
 /*
  * Recipes: named layer stacks the prover assembles.  Each row lists
@@ -51,10 +51,15 @@
  *   ETH_VLAN_QINQ_IP4          — 802.1ad Q-in-Q over v4, AF_PACKET.
  *   ETH_IP6_UDP_GENEVE_ETH_IP6 — Geneve encap on v6, AF_PACKET.
  *   ETH_MPLS_IP4               — MPLS shim to IPv4, AF_PACKET.
+ *   ETH_IP6_SEG6_SRH_UDP       — IPv6 with a segment-routing (SRH type 4)
+ *                                extension header carrying a UDP payload;
+ *                                exercises the ipv6 routing-header parser
+ *                                path and the SRH length-field repair.
+ *   IP4_ESP                    — bare IPv4 outer with an IPsec ESP
+ *                                header, RAW_IPV4; exercises the xfrm4
+ *                                ESP receive path with no encryption.
  *
- * Each row is capped at PKTB_MAX_LAYERS.  A future extension can add
- * ESP / RPL_SRH recipes; two-stack Geneve/VXLAN + inner (eth, ip4) is
- * enough to prove the outer/inner discriminator patching.
+ * Each row is capped at PKTB_MAX_LAYERS.
  */
 struct pktb_probe_recipe {
 	const char *name;
@@ -95,6 +100,17 @@ static const struct pktb_probe_recipe probe_recipes[PKTB_PROBE_NR_RECIPES] = {
 	{
 		.name = "mpls_ip4", .n = 3, .layers = {
 			PKTB_LAYER_ETH, PKTB_LAYER_MPLS, PKTB_LAYER_IP4,
+		}
+	},
+	{
+		.name = "seg6_srh_udp", .n = 4, .layers = {
+			PKTB_LAYER_ETH, PKTB_LAYER_IP6,
+			PKTB_LAYER_RPL_SRH, PKTB_LAYER_UDP_ENCAP,
+		}
+	},
+	{
+		.name = "esp_ip4", .n = 2, .layers = {
+			PKTB_LAYER_IP4, PKTB_LAYER_ESP,
 		}
 	},
 };
