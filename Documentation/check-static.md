@@ -254,6 +254,15 @@ update this section to match `ls scripts/check-static/*.sh`.)
   can redirect `rec->post_state` at a foreign chunk with a matching
   cookie value and the `.post` handler clears the wrong struct.
   Grandfathered handlers live in `post-state-ownership.baseline`.
+- `rettype-multiplexer-conflict`: an op-multiplexed syscall (one whose
+  `.sanitise` publishes `rec->rettype` per-cmd) must not also carry a
+  static `.rettype = RET_XXX` initializer.  `effective_rettype()`
+  short-circuits on any non-`RET_NONE` `entry->rettype`, so a static
+  stamp silences the per-cmd contract for every downstream consumer
+  (fd-group `live_fds` tracking, retfd corruption guard, RZS blanket
+  gate, `validate_ret_bound()`).  Files that declare
+  `.rettype_publish_hint` are exempt -- that field lets static
+  walkers still classify the entry without stamping a real rettype.
 - `sanitiser-slow-path`: forbid hot-path slow-syscall callsites
   (`/proc/self/maps`, `fopen`/`getline`, `mincore`/`mprotect` probes)
   in the per-syscall sanitiser / argument-generation file set.
