@@ -120,10 +120,11 @@
 /* CANARY_SUMMARY_INTERVAL_SEC moved to child-canary-report.c alongside
  * canary_queue_summary(). */
 
-/* Priority seed list and skip sets: canary_priority_seeds[],
- * canary_config_blocked[], canary_pid_heavy_ops[], canary_risky_defer[]
- * moved to child-canary-policy.c.  These are the operator-visible
- * inputs to the queue's picker order. */
+/* Skip sets and classification tables: canary_config_blocked[],
+ * canary_pid_heavy_ops[], canary_risky_defer[] moved to
+ * child-canary-policy.c.  The picker's first-pass order is a per-run
+ * random shuffle built in canary_queue_init() below, not a static
+ * seed list. */
 
 /* --------------------------------------------------------------------
  * Per-op queue state.  Parent-private; indexed by child_op_type enum.
@@ -1101,6 +1102,14 @@ void close_window_and_decide(enum child_op_type op)
  * Public entry points.
  * -------------------------------------------------------------------- */
 
+/* Backing storage for the default priority list: a per-epoch random
+ * permutation of every canary-eligible op, rebuilt on each
+ * canary_queue_init().  Replaces the old static priority-seed list so
+ * the first-pass evaluation order differs every run and no hand-kept
+ * list can go stale.  --canary-seed overrides this via
+ * canary_seed_override_widened[] instead. */
+static enum child_op_type canary_priority_shuffle[NR_CHILD_OP_TYPES];
+
 void canary_queue_init(void)
 {
 	unsigned int i;
@@ -1165,7 +1174,9 @@ void canary_queue_init(void)
 		}
 	}
 
-	/* Priority list: built-in unless --canary-seed overrode it. */
+	/* Priority list: operator override if --canary-seed was passed,
+	 * otherwise a fresh random permutation of every eligible op so
+	 * each run evaluates a different first-pass order. */
 	if (canary_seed_override_count > 0) {
 		for (i = 0; i < canary_seed_override_count; i++)
 			canary_seed_override_widened[i] =
@@ -1173,8 +1184,32 @@ void canary_queue_init(void)
 		canary_priority_list = canary_seed_override_widened;
 		canary_priority_list_count = canary_seed_override_count;
 	} else {
-		canary_priority_list = canary_priority_seeds;
-		canary_priority_list_count = canary_priority_seeds_count;
+		unsigned int n = 0, k;
+
+		/* Collect the ops the picker would actually consider --
+		 * skip SYSCALL, config-blocked terminals, risky-defer and
+		 * already-active (PROMOTED) ops -- then Fisher-Yates the
+		 * set into a uniform permutation. */
+		for (i = (unsigned int)CHILD_OP_SYSCALL + 1;
+		     i < NR_CHILD_OP_TYPES; i++) {
+			if (canary_ops[i].state == CANARY_STATE_CONFIG_BLOCKED)
+				continue;
+			if (canary_ops[i].phase1_ineligible)
+				continue;
+			if (canary_ops[i].state == CANARY_STATE_PROMOTED)
+				continue;
+			canary_priority_shuffle[n++] = (enum child_op_type)i;
+		}
+		for (k = n; k > 1; k--) {
+			unsigned int j = rnd_modulo_u32(k);
+			enum child_op_type tmp =
+				canary_priority_shuffle[k - 1];
+			canary_priority_shuffle[k - 1] =
+				canary_priority_shuffle[j];
+			canary_priority_shuffle[j] = tmp;
+		}
+		canary_priority_list = canary_priority_shuffle;
+		canary_priority_list_count = n;
 	}
 
 	canary_priority_cursor = 0;
@@ -1223,7 +1258,7 @@ void canary_queue_init(void)
 		return;
 	}
 
-	output(0, "canary queue: enabled, slots=%u, window=%u iters, priority_seeds=%u, dormant_eligible=%u, config_blocked=%u\n",
+	output(0, "canary queue: enabled, slots=%u, window=%u iters, priority_ops=%u, dormant_eligible=%u, config_blocked=%u\n",
 		canary_slots, window_iters_resolved(),
 		canary_priority_list_count, dormant_eligible, config_blocked);
 
@@ -1251,7 +1286,6 @@ void canary_queue_init(void)
 
 	/* Silence compiler about input tables when build configs avoid
 	 * the picker (none today, but keeps the warning surface clean). */
-	(void)canary_priority_seeds;
 	(void)canary_config_blocked;
 	(void)canary_risky_defer;
 }

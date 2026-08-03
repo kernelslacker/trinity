@@ -2,9 +2,9 @@
  * child-canary-policy.c -- Static policy tables and eligibility helpers
  * for the dormant-childop canary queue.
  *
- * Owns the operator-visible input to the picker order: priority seeds,
- * config-blocked terminals, risky-defer skip set, pid-heavy drain set,
- * and the op -> setup-failure reason hint table.  These are the only
+ * Owns the operator-visible input to the picker order: config-blocked
+ * terminals, risky-defer skip set, pid-heavy drain set, and the op ->
+ * setup-failure reason hint table.  These are the only
  * places the queue's classification of an op is source-declared; every
  * other TU reads them via child-canary-internal.h.
  */
@@ -18,30 +18,18 @@
 #include "utils.h"
 
 /* --------------------------------------------------------------------
- * Priority seed list and skip sets.  These are the operator-visible
+ * Skip sets and classification tables.  These are the operator-visible
  * inputs to the queue's picker order.
  *
- * Priority seeds are consumed before the general FIFO walk over remaining
- * dormant ops.  config_blocked is permanent (CONFIG_BLOCKED state at
+ * The picker's first-pass order is a per-run random shuffle of every
+ * eligible op, built in canary_queue_init() -- there is no static
+ * priority seed list, so nothing here goes stale as ops are added or
+ * removed.  config_blocked is permanent (CONFIG_BLOCKED state at
  * startup, never picked).  risky_defer is left in DORMANT but the
  * picker silently skips it -- these ops need isolation (root-only /
  * inner-fork / SR-IOV / driver prereq) that the queue does not
  * provide.
  * -------------------------------------------------------------------- */
-
-const enum child_op_type canary_priority_seeds[] = {
-	CHILD_OP_GENETLINK_FUZZER,
-	CHILD_OP_BPF_LIFECYCLE,
-	CHILD_OP_IOURING_RECIPES,
-	CHILD_OP_NFTABLES_CHURN,
-	CHILD_OP_PERF_CHAINS,
-	CHILD_OP_TRACEFS_FUZZER,
-	CHILD_OP_TLS_ROTATE,
-	CHILD_OP_AF_UNIX_SCM_RIGHTS_GC,
-	CHILD_OP_USERNS_FUZZER,
-	CHILD_OP_SOCK_DIAG_WALKER,
-};
-const unsigned int canary_priority_seeds_count = ARRAY_SIZE(canary_priority_seeds);
 
 const enum child_op_type canary_config_blocked[] = {
 	CHILD_OP_NUMA_MIGRATION,
