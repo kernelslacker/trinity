@@ -36,6 +36,7 @@ static void arm_memfd(int fd)
 		F_SEAL_GROW,
 		F_SEAL_WRITE,
 		F_SEAL_FUTURE_WRITE,
+		F_SEAL_EXEC,
 	};
 	unsigned int seals = 0;
 	unsigned int i, count;
