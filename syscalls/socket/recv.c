@@ -156,6 +156,23 @@ static unsigned long recv_flags[] = {
 	MSG_BATCH, MSG_ZEROCOPY, MSG_SOCK_DEVMEM,
 };
 
+/*
+ * recvmsg / recvmmsg reject MSG_CMSG_COMPAT at the native syscall
+ * prologue (__sys_recvmsg / __sys_recvmmsg pass forbid_cmsg_compat=true),
+ * bouncing ~3/8 of attempts with -EINVAL before any structured msghdr,
+ * cmsg, or iovec is exercised.  Keep the bit out of the flag pool for
+ * these two entries; recv / recvfrom still carry it above where it is
+ * harmlessly unvalidated.
+ */
+static unsigned long recvmsg_flags[] = {
+	MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
+	MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
+	MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
+	MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
+	MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC,
+	MSG_BATCH, MSG_ZEROCOPY, MSG_SOCK_DEVMEM,
+};
+
 struct syscallentry syscall_recv = {
 	.name = "recv",
 	.num_args = 4,
@@ -498,7 +515,7 @@ struct syscallentry syscall_recvmsg = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "msg", [2] = "flags" },
-	.arg_params[2].list = ARGLIST(recv_flags),
+	.arg_params[2].list = ARGLIST(recvmsg_flags),
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.group = GROUP_NET,
 	.sanitise = sanitise_recvmsg,
@@ -781,7 +798,7 @@ struct syscallentry syscall_recvmmsg = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_LIST, [4] = ARG_ADDRESS },
 	.argname = { [0] = "fd", [1] = "mmsg", [2] = "vlen", [3] = "flags", [4] = "timeout" },
-	.arg_params[3].list = ARGLIST(recv_flags),
+	.arg_params[3].list = ARGLIST(recvmsg_flags),
 	.arg_params[2].range.low = 1, .arg_params[2].range.hi = 1024,
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.group = GROUP_NET,
