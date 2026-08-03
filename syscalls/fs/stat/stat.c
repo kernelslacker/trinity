@@ -150,6 +150,7 @@ struct syscallentry syscall_stat = {
 	.sanitise = sanitise_stat,
 	.post = post_stat,
 	.group = GROUP_VFS_STAT,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };
 
@@ -230,6 +231,7 @@ struct syscallentry syscall_stat64 = {
 	.sanitise = sanitise_stat64,
 	.post = post_stat64,
 	.group = GROUP_VFS_STAT,
+	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };
 
