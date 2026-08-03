@@ -457,6 +457,22 @@ struct syscallentry syscall_openat2 = {
 };
 
 /*
+ * open_by_handle_at's arg2 is a struct file_handle __user *, not a pathname,
+ * so it cannot share sanitise_openat -- that helper's testfile-path repoint
+ * clobbers a2 with a NUL-terminated C string on half the draws and the
+ * kernel bails out of do_handle_open() at the handle_bytes > MAX_HANDLE_SZ
+ * check before exportfs_decode_fh() ever runs.  ARG_STRUCT_PTR_IN already
+ * hands the kernel a plausible file_handle, so all this sanitiser has to do
+ * is fold random O_* flags into arg3.  O_CREAT / O_EXCL / O_TRUNC are
+ * rejected by do_handle_open(), so unlike sanitise_openat we do not OR in
+ * O_CREAT and do not set a mode.
+ */
+static void sanitise_open_by_handle_at(struct syscallrecord *rec)
+{
+	rec->a3 |= get_o_flags();
+}
+
+/*
  * SYSCALL_DEFINE3(open_by_handle_at, int, mountdirfd,
  *               struct file_handle __user *, handle,
  *               int, flags)
@@ -469,7 +485,7 @@ struct syscallentry syscall_open_by_handle_at = {
 	.arg_params[2].list = ARGLIST(open_o_flags_base),
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
-	.sanitise = sanitise_openat,	// For now we only sanitise .flags, which is also arg3
+	.sanitise = sanitise_open_by_handle_at,
 	.post = post_open,
 	.group = GROUP_VFS_IO,
 };
