@@ -10,9 +10,18 @@
 
 #include "kernel/futex.h"
 
+static const unsigned int futex2_sizes[] = {
+	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16,
+	FUTEX2_SIZE_U32, FUTEX2_SIZE_U32,	/* keep U32 dominant */
+	FUTEX2_SIZE_U64,
+};
+
 static void sanitise_futex_wake(struct syscallrecord *rec)
 {
 	unsigned long flags;
+	unsigned int size;
+
+	size = futex2_sizes[rnd_modulo_u32(ARRAY_SIZE(futex2_sizes))];
 
 	/* mask: generate a useful comparison mask */
 	switch (rnd_modulo_u32(4)) {
@@ -22,11 +31,11 @@ static void sanitise_futex_wake(struct syscallrecord *rec)
 	default: rec->a2 = rand32(); break;	/* random mask */
 	}
 
-	/* flags: only FUTEX2_SIZE_U32 is valid for normal futexes; OR in
-	 * PRIVATE/NUMA/MPOL modifiers to exercise the composed form
-	 * instead of picking a lone size that yields immediate -EINVAL.
+	/* flags: pair the drawn size with optional PRIVATE/NUMA/MPOL
+	 * modifiers so the composed form is exercised across all four size
+	 * dispatch paths instead of only the U32 lane.
 	 */
-	flags = FUTEX2_SIZE_U32;
+	flags = size;
 	if (RAND_BOOL())
 		flags |= FUTEX2_PRIVATE;
 	if (ONE_IN(4))

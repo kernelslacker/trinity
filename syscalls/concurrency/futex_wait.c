@@ -16,11 +16,18 @@ static unsigned long futex_wait_clockids[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC,
 };
 
+static const unsigned int futex2_sizes[] = {
+	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16,
+	FUTEX2_SIZE_U32, FUTEX2_SIZE_U32,	/* keep U32 dominant */
+	FUTEX2_SIZE_U64,
+};
+
 static void sanitise_futex_wait(struct syscallrecord *rec)
 {
 	/* val: write a known value to uaddr so the comparison can succeed */
 	static __thread struct timespec timeout_clamp;
 	unsigned long flags;
+	unsigned int size;
 	__u32 *futex_word;
 
 	futex_word = (__u32 *) get_writable_struct(sizeof(*futex_word));
@@ -30,19 +37,30 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 	rec->a1 = (unsigned long) futex_word;
 	rec->a2 = *futex_word;	/* match the value we just wrote */
 
-	/* mask: generate a useful comparison mask */
-	switch (rnd_modulo_u32(4)) {
-	case 0: rec->a3 = 0xffffffff; break;	/* all bits (common case) */
-	case 1: rec->a3 = 0xff; break;		/* U8 futex */
-	case 2: rec->a3 = 0xffff; break;	/* U16 futex */
-	default: rec->a3 = rand32(); break;	/* random mask */
+	/* Draw one of the four futex2 size variants; the mask below is
+	 * aligned to the drawn size so U8/U16 sub-word comparisons exercise
+	 * their own paths instead of always presenting a 32-bit-wide mask.
+	 */
+	size = futex2_sizes[rnd_modulo_u32(ARRAY_SIZE(futex2_sizes))];
+
+	/* mask: align width to the drawn size */
+	switch (size) {
+	case FUTEX2_SIZE_U8:
+		rec->a3 = 0xff;
+		break;
+	case FUTEX2_SIZE_U16:
+		rec->a3 = 0xffff;
+		break;
+	default:	/* U32 / U64 */
+		rec->a3 = RAND_BOOL() ? 0xffffffff : rand32();
+		break;
 	}
 
-	/* flags: only FUTEX2_SIZE_U32 is valid for normal futexes; OR in
-	 * PRIVATE/NUMA/MPOL modifiers to exercise the composed form
-	 * instead of picking a lone size that yields immediate -EINVAL.
+	/* flags: pair the drawn size with optional PRIVATE/NUMA/MPOL
+	 * modifiers so the composed form is exercised across all four size
+	 * dispatch paths instead of only the U32 lane.
 	 */
-	flags = FUTEX2_SIZE_U32;
+	flags = size;
 	if (RAND_BOOL())
 		flags |= FUTEX2_PRIVATE;
 	if (ONE_IN(4))
