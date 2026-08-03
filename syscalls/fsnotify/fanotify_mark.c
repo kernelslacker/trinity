@@ -48,27 +48,46 @@ static void sanitise_fanotify_mark(struct syscallrecord *rec)
 	chosen_objtype = objtype_choice[rnd_modulo_u32(ARRAY_SIZE(objtype_choice))];
 	rec->a2 = (rec->a2 & ~(unsigned long)FAN_MARK_OBJTYPE_MASK) | chosen_objtype;
 
-	/* FAN_MNT_ATTACH/DETACH are only legal when the mark is on a mntns. */
-	if (chosen_objtype == FAN_MARK_MNTNS) {
+	/*
+	 * Look up the fanotify fd once; both the MNTNS arm and the
+	 * FAN_FS_ERROR arm need the init-fd's flags.
+	 */
+	entry = fd_hash_lookup((int)rec->a1);
+
+	/*
+	 * FAN_MNT_ATTACH/DETACH are only legal on a FAN_REPORT_MNT group's
+	 * mntns mark.  Gate on the init fd carrying FAN_REPORT_MNT, and
+	 * replace rec->a3 (rather than OR into it) so no path/inode/error
+	 * bits from ARG_LIST survive alongside the mount bits -- the kernel
+	 * EINVALs that combination.
+	 */
+	if (chosen_objtype == FAN_MARK_MNTNS &&
+	    entry != NULL && entry->type == OBJ_FD_FANOTIFY && entry->obj != NULL &&
+	    (entry->obj->fanotifyobj.flags & FAN_REPORT_MNT)) {
+		unsigned long mnt_mask = 0;
 		if (RAND_BOOL())
-			rec->a3 |= FAN_MNT_ATTACH;
+			mnt_mask |= FAN_MNT_ATTACH;
 		if (RAND_BOOL())
-			rec->a3 |= FAN_MNT_DETACH;
+			mnt_mask |= FAN_MNT_DETACH;
+		rec->a3 = mnt_mask;
 	}
 
 	/*
-	 * FAN_FS_ERROR / FAN_PRE_ACCESS are gated on the init-fd's class.
-	 * Look up the fanotify fd in a1 and read back the flags it was
-	 * opened with so we only OR in valid combinations.
+	 * FAN_FS_ERROR is gated on the init-fd's class and requires a
+	 * filesystem mark -- force the mark type to FAN_MARK_FILESYSTEM
+	 * when we decide to set the bit, so the kernel's cross-check passes.
 	 */
-	entry = fd_hash_lookup((int)rec->a1);
 	if (entry != NULL && entry->type == OBJ_FD_FANOTIFY && entry->obj != NULL) {
 		unsigned int init_flags = entry->obj->fanotifyobj.flags;
 		unsigned int class_bits = init_flags & FAN_CLASS_MASK;
 
 		if (class_bits == FAN_CLASS_NOTIF &&
-		    (init_flags & FAN_REPORT_FID) && RAND_BOOL())
+		    (init_flags & FAN_REPORT_FID) && RAND_BOOL()) {
 			rec->a3 |= FAN_FS_ERROR;
+			/* FAN_FS_ERROR requires a filesystem mark */
+			rec->a2 = (rec->a2 & ~(unsigned long)FAN_MARK_OBJTYPE_MASK) |
+				  FAN_MARK_FILESYSTEM;
+		}
 
 		/*
 		 * FAN_PRE_ACCESS omitted for the same reason as the *_PERM mask

@@ -113,7 +113,9 @@ static unsigned long sanitise_fanotify_init_flags(void)
 		return FAN_CLOEXEC | FAN_CLASS_NOTIF | FAN_REPORT_PIDFD;
 	if (pick < 90)
 		return FAN_CLOEXEC | FAN_REPORT_FID | FAN_REPORT_FD_ERROR;
-	if (pick < 95)
+	if (pick < 94)
+		return FAN_CLOEXEC | FAN_CLASS_NOTIF | FAN_REPORT_MNT;
+	if (pick < 97)
 		return FAN_CLOEXEC | FAN_UNLIMITED_QUEUE |
 			FAN_UNLIMITED_MARKS;
 	/* Random-OR over fanotify_init_flags[] -- invalid-combo reject. */
