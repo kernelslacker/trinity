@@ -182,16 +182,32 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 
 		sigev->sigev_value.sival_int = (int) rnd_u32();
 		sigev->sigev_signo = pick_signo_avoiding_sigint();
+		/* good_sigevent() requires sigev_signo > 0 && <= SIGRTMAX on
+		 * arms that check it (SIGEV_SIGNAL, SIGEV_SIGNAL|SIGEV_THREAD_ID).
+		 * pick_signo_avoiding_sigint() can return 0, which -EINVALs
+		 * before any interesting kernel path runs -- clamp to 1. */
+		if (sigev->sigev_signo == 0)
+			sigev->sigev_signo = 1;
 
+		/* Disposition arms match the kernel's good_sigevent() acceptance
+		 * set: SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD, and the compound
+		 * SIGEV_SIGNAL|SIGEV_THREAD_ID.  A small bare-SIGEV_THREAD_ID
+		 * bucket is retained as a deliberate reject probe -- good_sigevent
+		 * falls it through to default: return NULL and the kernel emits
+		 * -EINVAL, exercising the rejection path itself. */
 		if (r < 25) {
 			sigev->sigev_notify = SIGEV_NONE;
 		} else if (r < 55) {
 			sigev->sigev_notify = SIGEV_SIGNAL;
-		} else if (r < 80) {
-			sigev->sigev_notify = SIGEV_THREAD_ID;
+		} else if (r < 75) {
+			sigev->sigev_notify = SIGEV_THREAD;
+		} else if (r < 95) {
+			sigev->sigev_notify = SIGEV_SIGNAL | SIGEV_THREAD_ID;
 			sigev->_sigev_un._tid = (pid_t) syscall(SYS_gettid);
 		} else {
-			sigev->sigev_notify = SIGEV_SIGNAL | SIGEV_THREAD_ID;
+			/* reject probe: bare SIGEV_THREAD_ID is not in
+			 * good_sigevent()'s switch and always -EINVALs. */
+			sigev->sigev_notify = SIGEV_THREAD_ID;
 			sigev->_sigev_un._tid = (pid_t) syscall(SYS_gettid);
 		}
 	}
