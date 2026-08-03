@@ -500,11 +500,24 @@ static void __cold dump_kcov_state(FILE *fp)
 
 	fprintf(fp, "KCOV: %lu unique edges, %lu total PCs, %lu calls (%lu remote)\n",
 		edges, pcs, calls, remote);
-	if (truncated > 0)
+	if (truncated > 0) {
+		unsigned long trace_loss = __atomic_load_n(
+			&kcov_shm->coverage.trace_loss, __ATOMIC_RELAXED);
+
 		fprintf(fp, "KCOV: %lu calls truncated trace buffer (%.2f%% of calls) — consider raising --kcov-trace-size (currently %u longs)\n",
 			truncated,
 			calls > 0 ? (100.0 * truncated) / calls : 0.0,
 			kcov_trace_size);
+		/* trace_loss is a PC-magnitude proxy: cumulative post-cap
+		 * PC count captured across truncated brackets.  Kernel
+		 * kcov does not report the dropped-tail length, so the
+		 * true dropped-PC total is strictly greater than this
+		 * lower-bound floor -- see the field comment on
+		 * kcov_shared.coverage.trace_loss for the ratio semantics. */
+		fprintf(fp, "KCOV: trace_loss=%lu PCs captured under truncation (>=0 more dropped; ratio vs total_pcs=%.2f%%)\n",
+			trace_loss,
+			pcs > 0 ? (100.0 * trace_loss) / pcs : 0.0);
+	}
 	fprintf(fp, "KCOV: %lu CMP records collected\n", cmp_records);
 	if (cmp_truncated > 0)
 		fprintf(fp, "KCOV: %lu calls truncated cmp buffer (%.2f%% of calls) — consider raising KCOV_CMP_BUFFER_SIZE\n",

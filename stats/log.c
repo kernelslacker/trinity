@@ -528,24 +528,31 @@ static void stats_ts_emit_truncation(FILE *fp)
 {
 	static unsigned long prev_trace_truncated = 0;
 	static unsigned long prev_cmp_trace_truncated = 0;
+	static unsigned long prev_trace_loss = 0;
 	unsigned long trace_truncated = 0;
 	unsigned long cmp_trace_truncated = 0;
+	unsigned long trace_loss = 0;
 
 	if (kcov_shm != NULL) {
 		trace_truncated = __atomic_load_n(&kcov_shm->coverage.trace_truncated,
 						  __ATOMIC_RELAXED);
 		cmp_trace_truncated = __atomic_load_n(
 			&kcov_shm->cmp_records.cmp_trace_truncated, __ATOMIC_RELAXED);
+		trace_loss = __atomic_load_n(&kcov_shm->coverage.trace_loss,
+					     __ATOMIC_RELAXED);
 	}
 
 	fprintf(fp,
 		",\"trace_truncated\":%lu,\"trace_truncated_delta\":%lu"
-		",\"cmp_trace_truncated\":%lu,\"cmp_trace_truncated_delta\":%lu",
+		",\"cmp_trace_truncated\":%lu,\"cmp_trace_truncated_delta\":%lu"
+		",\"trace_loss\":%lu,\"trace_loss_delta\":%lu",
 		trace_truncated,
 		stats_ts_window_delta(trace_truncated, &prev_trace_truncated),
 		cmp_trace_truncated,
 		stats_ts_window_delta(cmp_trace_truncated,
-				      &prev_cmp_trace_truncated));
+				      &prev_cmp_trace_truncated),
+		trace_loss,
+		stats_ts_window_delta(trace_loss, &prev_trace_loss));
 }
 
 /* CMP-hint / CMP-hyp inject + conversion snapshots.  A window
@@ -804,6 +811,7 @@ static void stats_ts_emit_by_childop(FILE *fp)
 		unsigned long kcov_op_skipped_cmp = 0;
 		unsigned long kcov_op_skipped_nested = 0;
 		unsigned long kcov_op_skipped_inactive = 0;
+		unsigned long kcov_op_skipped_sample = 0;
 		bool canary_active = (op == (int)active_canary);
 		bool canary_promoted = canary_op_is_promoted(op);
 
@@ -842,6 +850,9 @@ static void stats_ts_emit_by_childop(FILE *fp)
 				__ATOMIC_RELAXED);
 			kcov_op_skipped_inactive = __atomic_load_n(
 				&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
+				__ATOMIC_RELAXED);
+			kcov_op_skipped_sample = __atomic_load_n(
+				&kcov_shm->childop_kcov.childop_kcov_op_skipped_sample[op],
 				__ATOMIC_RELAXED);
 		}
 
@@ -884,6 +895,7 @@ static void stats_ts_emit_by_childop(FILE *fp)
 			",\"kcov_op_skipped_cmp\":%lu"
 			",\"kcov_op_skipped_nested\":%lu"
 			",\"kcov_op_skipped_inactive\":%lu"
+			",\"kcov_op_skipped_sample\":%lu"
 			",\"canary_active\":%d,\"canary_promoted\":%d}",
 			first_op ? "" : ",", op, alt_op_name(op),
 			edges_discovered, edges_discovered_delta,
@@ -897,6 +909,7 @@ static void stats_ts_emit_by_childop(FILE *fp)
 			kcov_op_skipped_cmp,
 			kcov_op_skipped_nested,
 			kcov_op_skipped_inactive,
+			kcov_op_skipped_sample,
 			canary_active ? 1 : 0,
 			canary_promoted ? 1 : 0);
 		first_op = false;
