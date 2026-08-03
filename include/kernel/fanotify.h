@@ -67,6 +67,9 @@
 #ifndef FAN_REPORT_FID
 #define FAN_REPORT_FID		0x00000200
 #endif
+#ifndef FAN_REPORT_MNT
+#define FAN_REPORT_MNT		0x00004000
+#endif
 #ifndef FAN_CLASS_NOTIF
 #define FAN_CLASS_NOTIF		0x00000000
 #endif
