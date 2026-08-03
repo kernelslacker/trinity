@@ -162,6 +162,21 @@ static unsigned long fd_stress_close_reopen(struct childdata *child)
 	fd = get_random_fd();
 	if (fd <= 2)
 		return 0;
+	/*
+	 * get_random_fd() doesn't consult the protected-fd registry, so a
+	 * draw here can legitimately land on STDERR_FILENO, the stderr
+	 * capture memfd, kcov.fd / kcov.cmp_fd, the per-child tainted_fd,
+	 * or fail_nth_fd.  A close() on any of those silently disables the
+	 * matching diagnostic surface for the rest of this child's life --
+	 * exactly the outcome fd_is_protected() exists to prevent, and the
+	 * same gate the fs/dup.c dup2 sanitiser uses on rec->a2 before
+	 * accepting a fuzz-chosen destination.
+	 */
+	if (fd_is_protected(fd)) {
+		__atomic_add_fetch(&shm->stats.fdstress.protected_skipped, 1,
+				   __ATOMIC_RELAXED);
+		return 0;
+	}
 
 	/*
 	 * Mark the slot dead BEFORE the close.  notify_close() enqueues a
@@ -193,6 +208,21 @@ static unsigned long fd_stress_dup2_replace(struct childdata *child)
 	if (tries == 8)
 		return 0;
 
+	/*
+	 * dup2 silently closes fd_dst before installing fd_src's file
+	 * struct there.  If fd_dst names a protected slot the effect is
+	 * the same as a raw close() on it -- we lose the diagnostic
+	 * surface for the child's remaining life -- so gate on
+	 * fd_is_protected() with the same intent as the fs/dup.c
+	 * rec->a2 sanitiser.  fd_src is only read here, so it does not
+	 * need the check.
+	 */
+	if (fd_is_protected(fd_dst)) {
+		__atomic_add_fetch(&shm->stats.fdstress.protected_skipped, 1,
+				   __ATOMIC_RELAXED);
+		return 0;
+	}
+
 	/* Same ordering invariant as close-reopen: publish the slot's
 	 * impending death before dup2's implicit close runs, otherwise the
 	 * pool can hand fd_dst back to a typed consumer mid-replace. */
@@ -210,6 +240,22 @@ static unsigned long fd_stress_type_confusion(struct childdata *child)
 
 	if (!pick_two_typed_fds(&fd_a, &fd_b, &type_a, &type_b))
 		return 0;
+	/*
+	 * The typed_args[] pool in pick_two_typed_fds includes
+	 * ARG_FD_MEMFD, so get_typed_fd(ARG_FD_MEMFD) can hand back the
+	 * stderr capture memfd -- and pick_two_typed_fds guarantees fd_b
+	 * is different-typed from fd_a but does not guarantee fd_b is
+	 * unprotected.  The dup2 below silently closes fd_b, so a
+	 * protected pick here reproduces the same diagnostic loss as
+	 * close-reopen would.  This is the site that matters most for
+	 * the memfd -- gate on fd_is_protected(fd_b) with the same
+	 * intent as the fs/dup.c rec->a2 sanitiser.
+	 */
+	if (fd_is_protected(fd_b)) {
+		__atomic_add_fetch(&shm->stats.fdstress.protected_skipped, 1,
+				   __ATOMIC_RELAXED);
+		return 0;
+	}
 
 	/*
 	 * dup2 closes fd_b silently and replaces it with a copy of
