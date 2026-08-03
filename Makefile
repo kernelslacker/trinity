@@ -372,7 +372,7 @@ check-static:
 
 coverity:
 	@rm -rf cov-int trinity-coverity.tar.xz
-	@cov-build --dir cov-int make -j $(NR_CPUS)
+	@cov-build --dir cov-int make -B -j $(NR_CPUS)
 	@tar cJvf trinity-coverity.tar.xz cov-int
 
 # Grant the file capabilities the parent process needs:
