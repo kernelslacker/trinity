@@ -1367,6 +1367,7 @@ stats	object
     stats.fdstress.dup2_replace	u64
     stats.fdstress.type_confusion	u64
     stats.fdstress.cloexec_toggle	u64
+    stats.fdstress.protected_skipped	u64
   stats.vsock_transport_churn	object
     stats.vsock_transport_churn.runs	u64
     stats.vsock_transport_churn.setup_failed	u64

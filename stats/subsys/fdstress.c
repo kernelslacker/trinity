@@ -6,6 +6,7 @@ static const struct stat_field fdstress_fields[] = {
 	STAT_FIELD_SUB(fdstress, dup2_replace),
 	STAT_FIELD_SUB(fdstress, type_confusion),
 	STAT_FIELD_SUB(fdstress, cloexec_toggle),
+	STAT_FIELD_SUB(fdstress, protected_skipped),
 };
 
 const struct stat_category fdstress_category =
