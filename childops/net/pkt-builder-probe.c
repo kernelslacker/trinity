@@ -38,7 +38,7 @@
 
 #define PKTB_PROBE_PER_INVOCATION	6	/* frames per invocation */
 #define PKTB_PROBE_WALL_CAP_NS		(50ULL * 1000ULL * 1000ULL)
-#define PKTB_PROBE_NR_RECIPES		8
+#define PKTB_PROBE_NR_RECIPES		9
 _Static_assert(PKTB_PROBE_NR_RECIPES <=
 	       ARRAY_SIZE(((struct pkt_builder_stats *)0)->per_recipe),
 	       "per_recipe[] too small for PKTB_PROBE_NR_RECIPES");
@@ -62,6 +62,9 @@ _Static_assert(PKTB_PROBE_NR_RECIPES <=
  *   IP4_ESP                    — bare IPv4 outer with an IPsec ESP
  *                                header, RAW_IPV4; exercises the xfrm4
  *                                ESP receive path with no encryption.
+ *   VLAN_IP4                   — single 802.1Q VLAN tag to IPv4,
+ *                                AF_PACKET; exercises PKTB_LAYER_VLAN_SINGLE
+ *                                (previously unreferenced by any recipe).
  *
  * Each row is capped at PKTB_MAX_LAYERS.
  */
@@ -115,6 +118,11 @@ static const struct pktb_probe_recipe probe_recipes[PKTB_PROBE_NR_RECIPES] = {
 	{
 		.name = "esp_ip4", .n = 2, .layers = {
 			PKTB_LAYER_IP4, PKTB_LAYER_ESP,
+		}
+	},
+	{
+		.name = "vlan_ip4", .n = 3, .layers = {
+			PKTB_LAYER_ETH, PKTB_LAYER_VLAN_SINGLE, PKTB_LAYER_IP4,
 		}
 	},
 };

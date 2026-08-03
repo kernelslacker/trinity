@@ -32,6 +32,8 @@ static const struct stat_field pkt_builder_fields[] = {
 	  .offset = offsetof(struct stats_s, pkt_builder.per_recipe[6]) },
 	{ .name = "recipe_esp_ip4",
 	  .offset = offsetof(struct stats_s, pkt_builder.per_recipe[7]) },
+	{ .name = "recipe_vlan_ip4",
+	  .offset = offsetof(struct stats_s, pkt_builder.per_recipe[8]) },
 };
 
 const struct stat_category pkt_builder_category =

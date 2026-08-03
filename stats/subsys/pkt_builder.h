@@ -18,7 +18,7 @@ struct pkt_builder_stats {
 	unsigned long delivered_ok;		/* pktb_deliver returned >0 */
 	unsigned long delivery_failed;		/* pktb_deliver returned -1 / -2 (send error / bad frame) */
 	unsigned long delivery_disabled;	/* CAP_NET_RAW absent — permanent per-child latch */
-	unsigned long per_recipe[8];		/* per-recipe successful deliveries */
+	unsigned long per_recipe[9];		/* per-recipe successful deliveries */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_PKT_BUILDER_H */
