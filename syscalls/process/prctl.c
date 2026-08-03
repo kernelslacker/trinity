@@ -54,6 +54,22 @@
 #ifndef PR_PMLEN_MASK
 #define PR_PMLEN_MASK			(0x7fUL << 24)
 #endif
+/* PR_SCHED_CORE sub-commands and scope (added in 5.14) */
+#ifndef PR_SCHED_CORE_GET
+#define PR_SCHED_CORE_GET		0
+#define PR_SCHED_CORE_CREATE		1
+#define PR_SCHED_CORE_SHARE_TO		2
+#define PR_SCHED_CORE_SHARE_FROM	3
+#define PR_SCHED_CORE_MAX		4
+#define PR_SCHED_CORE_SCOPE_THREAD		0
+#define PR_SCHED_CORE_SCOPE_THREAD_GROUP	1
+#define PR_SCHED_CORE_SCOPE_PROCESS_GROUP	2
+#endif
+/* PR_FUTEX_HASH sub-commands (added in 6.14) */
+#ifndef PR_FUTEX_HASH_SET_SLOTS
+#define PR_FUTEX_HASH_SET_SLOTS		1
+#define PR_FUTEX_HASH_GET_SLOTS		2
+#endif
 
 /* Capabilities added after Linux 5.8/5.9 — guard for older build systems. */
 #ifndef CAP_PERFMON
@@ -423,6 +439,26 @@ static void sanitise_prctl(struct syscallrecord *rec)
 
 	case PR_GET_AUXV:
 		sanitise_get_auxv(rec);
+		break;
+
+	case PR_SCHED_CORE:
+		rec->a2 = rnd_modulo_u32(PR_SCHED_CORE_MAX); /* cmd: 0..3 */
+		rec->a3 = 0;                                  /* pid: self */
+		rec->a4 = rnd_modulo_u32(PR_SCHED_CORE_SCOPE_PROCESS_GROUP + 1); /* type: 0..2 */
+		rec->a5 = (rec->a2 == PR_SCHED_CORE_GET)
+			? (unsigned long)get_writable_address(sizeof(unsigned long))
+			: 0;
+		break;
+
+	case PR_FUTEX_HASH:
+		if (ONE_IN(2)) {
+			rec->a2 = PR_FUTEX_HASH_GET_SLOTS;
+			rec->a3 = 0;
+		} else {
+			rec->a2 = PR_FUTEX_HASH_SET_SLOTS;
+			rec->a3 = 1u << rnd_modulo_u32(9); /* power-of-2 slot count */
+			rec->a4 = 0;                        /* required to be 0 */
+		}
 		break;
 
 	default:
