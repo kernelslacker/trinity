@@ -36,8 +36,14 @@
  *
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
+ *
+ * Declared with `[]` sizing on purpose: appending an initializer is the
+ * ONLY way to grow the array, so two concurrent altop drafts can't
+ * silently agree on a bumped `[N+1]` size and land a false auto-merge
+ * that compiles with a bounds violation.  The _Static_assert below
+ * against NR_CHILD_OP_TYPES-1 catches any real slot-count drift.
  */
-static int dormant_op_disabled[146] = {
+static int dormant_op_disabled[] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -260,8 +266,15 @@ void log_alt_op_config(void)
  * left by a removed op; it now holds CHILD_OP_MPLS_ROUTE_CHURN.  The
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
+ *
+ * Declared with `[]` sizing on purpose (see the matching note above
+ * dormant_op_disabled[]): the array grows only via a designator append,
+ * so parallel altop drafts can't silently agree on a bumped `[N+1]`
+ * size line.  Two drafts adding the same designator index conflict at
+ * the append site, and any drift between the two arrays or against the
+ * enum is caught by the _Static_asserts below.
  */
-static const enum child_op_type pick_op_type_table[146] = {
+static const enum child_op_type pick_op_type_table[] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
