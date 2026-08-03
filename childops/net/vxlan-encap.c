@@ -95,6 +95,20 @@
 #define NTF_SELF		(1 << 1)
 #endif
 
+/* Bulk-delete flag on RTM_DEL* messages -- used by the filtered
+ * vxlan fdb flush lane below.  Stripped sysroots may not expose it;
+ * the UAPI value is stable (see <linux/netlink.h>). */
+#ifndef NLM_F_BULK
+#define NLM_F_BULK		0x200
+#endif
+
+/* NDA_VNI is enum-backed in <linux/neighbour.h>; on stripped sysroots
+ * that don't ship the header at all the include-shim above skips it
+ * and we need a fallback.  Values mirror the upstream uapi enum. */
+#ifndef NDA_VNI
+#define NDA_VNI			7
+#endif
+
 /* Reasonable ceiling on a single rtnl message + payload.  vxlan link
  * create with all attributes set fits in well under 1 KiB; 2 KiB
  * leaves headroom for any future attribute additions. */
@@ -383,6 +397,103 @@ static int build_fdb_add(struct nl_ctx *ctx, int ifindex)
 }
 
 /*
+ * RTM_NEWNEIGH installing one remote (mac, remote_addr) on the vxlan
+ * fdb.  `first` picks NLM_F_EXCL for the first remote on this mac and
+ * NLM_F_APPEND for subsequent ones -- vxlan_fdb_update() appends the
+ * additional remote onto the existing fdb entry rather than rejecting
+ * as a duplicate.  The result is a multi-remote fdb entry, the exact
+ * shape vxlan_fdb_dst_destroy() unlinks one-by-one in the flush race.
+ * Returns 0 on ack, negated errno on rejection, -EIO on local failure.
+ */
+static int build_fdb_add_remote(struct nl_ctx *ctx, int ifindex,
+				const unsigned char *mac, __u32 remote_addr,
+				bool first)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct ndmsg *ndm;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWNEIGH;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+	nlh->nlmsg_flags |= first ? NLM_F_EXCL : NLM_F_APPEND;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ndm = (struct ndmsg *)NLMSG_DATA(nlh);
+	ndm->ndm_family  = AF_BRIDGE;
+	ndm->ndm_ifindex = ifindex;
+	ndm->ndm_state   = NUD_PERMANENT;
+	ndm->ndm_flags   = NTF_SELF;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ndm));
+
+	off = nla_put(buf, off, sizeof(buf), NDA_LLADDR, mac, 6);
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), NDA_DST, &remote_addr,
+		      sizeof(remote_addr));
+	if (!off)
+		return -EIO;
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * RTM_DELNEIGH + NLM_F_BULK: bulk-flush every fdb remote on this
+ * vxlan whose per-remote vni matches the device's vni.  Reaches
+ * vxlan_fdb_delete_bulk -> vxlan_flush -> vxlan_fdb_flush_match_remotes,
+ * which is the site of the deferred-P3 race: when every remote matches,
+ * vxlan_fdb_dst_destroy() unlinks the last remote before vxlan_fdb_destroy()
+ * removes the parent entry; an RCU reader landing between the two hits
+ * first_remote_rcu() on an empty list head.
+ *
+ * The vni filter is mandatory rather than cosmetic:
+ * vxlan_fdb_flush_should_match_remotes() gates the per-remote code path
+ * on desc->vni || desc->port || desc->dst_ip.sa.sa_family being set --
+ * an empty desc skips the remote flush entirely and destroys the fdb in
+ * one shot, missing the target window.  Every remote inserted by
+ * build_fdb_add_remote() above inherits remote_vni = vxlan->cfg.vni
+ * (no NDA_VNI on the add), so filtering by the device's own vni here
+ * is the "match everything" form the P3 spec calls for.
+ * Returns 0 on ack, negated errno on rejection, -EIO on local failure.
+ */
+static int build_fdb_flush_bulk(struct nl_ctx *ctx, int ifindex, __u32 vni)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct ndmsg *ndm;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_DELNEIGH;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_BULK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ndm = (struct ndmsg *)NLMSG_DATA(nlh);
+	ndm->ndm_family  = AF_BRIDGE;
+	ndm->ndm_ifindex = ifindex;
+	/* ndm_state / ndm_flags stay zero: the kernel's ALLOWED masks
+	 * (NUD_PERMANENT | NUD_NOARP for state, NTF_EXT_LEARNED |
+	 * NTF_OFFLOADED | NTF_ROUTER for flags) reject anything else, and
+	 * we want the widest fdb-side match; the state/flags MASK attrs
+	 * are also left absent, which combined with state=flags=0 makes
+	 * vxlan_fdb_flush_matches() accept every entry. */
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ndm));
+
+	off = nla_put_u32(buf, off, sizeof(buf), NDA_VNI, vni & VNI_MASK);
+	if (!off)
+		return -EIO;
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
  * Pick a starting kind that isn't latched off.  Returns TUN_NR if
  * every kind's latch is tripped — caller treats that as "all kinds
  * structurally unsupported, return cheaply".
@@ -609,6 +720,116 @@ static void vxlan_encap_iter_send_burst(struct vxlan_encap_iter_ctx *ctx)
 	}
 }
 
+/* Number of remotes stacked onto one MAC in the flush-race lane.  The
+ * kernel race is "vxlan_fdb_dst_destroy() unlinks the LAST remote before
+ * vxlan_fdb_destroy() removes the parent" -- a single-remote entry
+ * never hits that ordering because the parent is destroyed in the same
+ * step.  Kept small (4) so each round's ADD+FLUSH pair completes
+ * quickly and the lane cycles the race many times per invocation. */
+#define VXLAN_FDB_MULTI_REMOTES		4U
+
+/* Rounds of the flush-race interleave per invocation.  Each round does
+ * ADD-multi-remotes + tx burst + BULK flush.  Bounded so the lane
+ * cannot dominate the inherited SIGALRM(1s) budget on a slow rtnl. */
+#define VXLAN_FDB_FLUSH_RACE_ROUNDS	4U
+
+/* AF_PACKET frames sent per round of the flush-race lane -- each
+ * drives one vxlan_xmit -> FDB lookup -> first_remote_rcu() on the
+ * multi-remote entry that the concurrent BULK flush is about to
+ * unlink.  Kept small to keep each round fast; the round count above
+ * provides the repetition. */
+#define VXLAN_FDB_FLUSH_RACE_TX		2U
+
+/*
+ * Flush-race lane (vxlan only).  Installs a multi-remote fdb entry on
+ * one MAC (VXLAN_FDB_MULTI_REMOTES distinct remote IPs, all inheriting
+ * the device's vni), then alternates a short AF_PACKET burst driving
+ * vxlan_xmit -> FDB lookup -> first_remote_rcu() with a filtered
+ * RTM_DELNEIGH NLM_F_BULK flush whose vni filter matches every remote.
+ * That drives the kernel-side ordering
+ *   vxlan_fdb_dst_destroy() unlinks last remote
+ *     -> vxlan_fdb_destroy() removes parent fdb
+ * with an RCU reader landing between the two; the reader's
+ * first_remote_rcu() then dereferences an empty list head.  KASAN
+ * catches the invalid deref / UAF -- no bespoke oracle wiring needed.
+ *
+ * Kind gate: only TUN_VXLAN has a per-remote fdb path; gre/geneve
+ * ignore this and skip.
+ * Raw-fd gate: reuses the AF_PACKET fd opened by send_burst() so the
+ * lane never re-opens (or leaks) a second raw socket.  If burst did
+ * not open one (early bail), the lane bails cheaply.
+ */
+static void vxlan_encap_iter_flush_race(struct vxlan_encap_iter_ctx *ctx)
+{
+	struct sockaddr_ll sll;
+	unsigned char mac[6];
+	unsigned int round;
+	unsigned int i;
+
+	if (ctx->kind != TUN_VXLAN || ctx->raw < 0)
+		return;
+
+	/* Random locally-administered unicast mac, same shape build_fdb_add
+	 * uses for the single-remote arm.  Fresh per invocation so this lane
+	 * never collides with the single-remote entry above -- kernel would
+	 * fold the two into one fdb and the multi-remote shape would be lost. */
+	generate_rand_bytes(mac, sizeof(mac));
+	mac[0] = (unsigned char)((mac[0] & 0xfe) | 0x02);
+
+	memset(&sll, 0, sizeof(sll));
+	sll.sll_family   = AF_PACKET;
+	sll.sll_protocol = htons(ETH_P_IP);
+	sll.sll_ifindex  = ctx->ifindex;
+	sll.sll_halen    = 6;
+
+	for (round = 0; round < VXLAN_FDB_FLUSH_RACE_ROUNDS; round++) {
+		/* Stack VXLAN_FDB_MULTI_REMOTES remotes onto the same mac
+		 * via NLM_F_APPEND.  Remote IPs are 127.0.0.16 .. .19 --
+		 * inside the loopback net so they never escape the private
+		 * netns.  First add uses NLM_F_EXCL so a leftover entry from
+		 * a partially-flushed prior round trips EEXIST and is
+		 * observed rather than silently reused. */
+		for (i = 0; i < VXLAN_FDB_MULTI_REMOTES; i++) {
+			__u32 remote = htonl(0x7f000010U + i);
+
+			if (build_fdb_add_remote(&ctx->nl, ctx->ifindex, mac,
+						 remote, i == 0) == 0)
+				__atomic_add_fetch(&shm->stats.vxlan_encap_churn.fdb_add_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+
+		/* Small TX burst driving vxlan_xmit through the FDB
+		 * lookup that races the concurrent flush.  MSG_DONTWAIT so
+		 * queue backpressure never stalls the interleave. */
+		for (i = 0; i < VXLAN_FDB_FLUSH_RACE_TX; i++) {
+			unsigned char pkt[64];
+			struct iphdr *iph;
+			ssize_t n;
+
+			memset(pkt, 0, sizeof(pkt));
+			iph = (struct iphdr *)pkt;
+			iph->version  = 4;
+			iph->ihl      = 5;
+			iph->tot_len  = htons((__u16)sizeof(pkt));
+			iph->ttl      = 64;
+			iph->protocol = IPPROTO_UDP;
+			iph->saddr    = htonl(0x7f000001U);
+			iph->daddr    = htonl(0x7f000002U);
+
+			n = sendto(ctx->raw, pkt, sizeof(pkt), MSG_DONTWAIT,
+				   (struct sockaddr *)&sll, sizeof(sll));
+			if (n > 0)
+				__atomic_add_fetch(&shm->stats.vxlan_encap_churn.packet_sent_ok,
+						   1, __ATOMIC_RELAXED);
+		}
+
+		if (build_fdb_flush_bulk(&ctx->nl, ctx->ifindex,
+					 ctx->vni_or_key) == 0)
+			__atomic_add_fetch(&shm->stats.vxlan_encap_churn.fdb_flush_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+}
+
 /*
  * Teardown phase: close the AF_PACKET fd and tear down the tunnel
  * device + rtnl socket.  Each cleanup is gated independently
@@ -681,6 +902,7 @@ static int vxlan_encap_in_ns(void *arg)
 					   1, __ATOMIC_RELAXED);
 		}
 		vxlan_encap_iter_send_burst(&ctx);
+		vxlan_encap_iter_flush_race(&ctx);
 	}
 
 	vxlan_encap_iter_teardown(&ctx);
