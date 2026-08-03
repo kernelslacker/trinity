@@ -66,6 +66,7 @@ static const unsigned long fallocate_valid_combos[] = {
 	FALLOC_FL_INSERT_RANGE,
 	FALLOC_FL_UNSHARE_RANGE,
 	FALLOC_FL_UNSHARE_RANGE | FALLOC_FL_KEEP_SIZE,
+	FALLOC_FL_WRITE_ZEROES,
 };
 
 /*
@@ -76,7 +77,7 @@ static const unsigned long fallocate_valid_combos[] = {
  */
 static const unsigned long fallocate_extra_bits[] = {
 	FALLOC_FL_NO_HIDE_STALE,
-	0x80, 0x100, 0x200, 0x400, 0x800, 0x1000,
+	0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000,
 };
 
 /*
