@@ -88,10 +88,15 @@ static unsigned long ptrace_o_flags[] = {
 /*
  * Stratified request picker.  Uniform sampling across ptrace_reqs[]
  * under-exercises the rarer signal/options paths, because most of the
- * 25 requests funnel into the well-trodden access_remote_vm path
+ * requests funnel into the well-trodden access_remote_vm path
  * (PEEK/POKE).  Bias the picker so the siginfo/sigmask/options family
- * gets half the per-call budget, with control-flow ops kept rare since
- * they tend to detach the tracee or end the run early.
+ * gets roughly half the per-call budget, with control-flow ops kept
+ * rare since they tend to detach the tracee or end the run early.
+ *
+ * A residual bucket draws uniformly from the full ptrace_reqs[] list
+ * so every registered request stays reachable -- otherwise the arms
+ * for regset / attach / traceme / syscall-info-set / SUD-config would
+ * be dead code because the three stratified buckets do not name them.
  *
  * The request is overridden at the top of sanitise_ptrace() so the
  * existing per-request arg sanitisation (data buffers, signal numbers,
@@ -118,15 +123,34 @@ static const unsigned long ptrace_reqs_control[] = {
 	PTRACE_SEIZE, PTRACE_INTERRUPT, PTRACE_LISTEN,
 };
 
+static unsigned long ptrace_reqs[] = {
+	PTRACE_TRACEME, PTRACE_PEEKTEXT, PTRACE_PEEKDATA, PTRACE_PEEKUSR,
+	PTRACE_POKETEXT, PTRACE_POKEDATA, PTRACE_POKEUSR, PTRACE_GETREGS,
+	PTRACE_GETFPREGS, PTRACE_GETSIGINFO, PTRACE_SETREGS, PTRACE_SETFPREGS,
+	PTRACE_SETSIGINFO, PTRACE_SETOPTIONS, PTRACE_GETEVENTMSG, PTRACE_CONT,
+	PTRACE_SYSCALL, PTRACE_SINGLESTEP, PTRACE_SYSEMU, PTRACE_SYSEMU_SINGLESTEP,
+	PTRACE_KILL, PTRACE_ATTACH, PTRACE_DETACH, PTRACE_GETSIGMASK,
+	PTRACE_SETSIGMASK, PTRACE_PEEKSIGINFO,
+	PTRACE_GETREGSET, PTRACE_SETREGSET,
+	PTRACE_SEIZE, PTRACE_INTERRUPT, PTRACE_LISTEN,
+	PTRACE_SECCOMP_GET_FILTER, PTRACE_SECCOMP_GET_METADATA,
+	PTRACE_GET_SYSCALL_INFO, PTRACE_GET_RSEQ_CONFIGURATION,
+	PTRACE_SET_SYSCALL_INFO,
+	PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG,
+	PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG,
+};
+
 static unsigned long pick_ptrace_req(void)
 {
 	unsigned int r = rnd_modulo_u32(100);
 
-	if (r < 35)
+	if (r < 30)
 		return ptrace_reqs_common[rnd_modulo_u32(ARRAY_SIZE(ptrace_reqs_common))];
-	if (r < 85)
+	if (r < 75)
 		return ptrace_reqs_siginfo[rnd_modulo_u32(ARRAY_SIZE(ptrace_reqs_siginfo))];
-	return ptrace_reqs_control[rnd_modulo_u32(ARRAY_SIZE(ptrace_reqs_control))];
+	if (r < 87)
+		return ptrace_reqs_control[rnd_modulo_u32(ARRAY_SIZE(ptrace_reqs_control))];
+	return ptrace_reqs[rnd_modulo_u32(ARRAY_SIZE(ptrace_reqs))];
 }
 
 static void sanitise_ptrace(struct syscallrecord *rec)
@@ -365,23 +389,6 @@ static void post_ptrace(struct syscallrecord *rec)
 	deferred_free_enqueue(snap->data);
 	post_state_release(rec, snap);
 }
-
-static unsigned long ptrace_reqs[] = {
-	PTRACE_TRACEME, PTRACE_PEEKTEXT, PTRACE_PEEKDATA, PTRACE_PEEKUSR,
-	PTRACE_POKETEXT, PTRACE_POKEDATA, PTRACE_POKEUSR, PTRACE_GETREGS,
-	PTRACE_GETFPREGS, PTRACE_GETSIGINFO, PTRACE_SETREGS, PTRACE_SETFPREGS,
-	PTRACE_SETSIGINFO, PTRACE_SETOPTIONS, PTRACE_GETEVENTMSG, PTRACE_CONT,
-	PTRACE_SYSCALL, PTRACE_SINGLESTEP, PTRACE_SYSEMU, PTRACE_SYSEMU_SINGLESTEP,
-	PTRACE_KILL, PTRACE_ATTACH, PTRACE_DETACH, PTRACE_GETSIGMASK,
-	PTRACE_SETSIGMASK, PTRACE_PEEKSIGINFO,
-	PTRACE_GETREGSET, PTRACE_SETREGSET,
-	PTRACE_SEIZE, PTRACE_INTERRUPT, PTRACE_LISTEN,
-	PTRACE_SECCOMP_GET_FILTER, PTRACE_SECCOMP_GET_METADATA,
-	PTRACE_GET_SYSCALL_INFO, PTRACE_GET_RSEQ_CONFIGURATION,
-	PTRACE_SET_SYSCALL_INFO,
-	PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG,
-	PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG,
-};
 
 struct syscallentry syscall_ptrace = {
 	.name = "ptrace",
