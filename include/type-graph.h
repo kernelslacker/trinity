@@ -109,7 +109,6 @@ struct type_graph_shm {
 	uint64_t edge_inserts;
 	uint64_t edge_updates;
 	uint64_t edge_pool_exhausted;
-	uint64_t outcome_commits;
 };
 
 extern struct type_graph_shm *type_graph_shm;

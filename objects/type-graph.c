@@ -349,8 +349,6 @@ void type_graph_commit_outcome(bool success, bool novel)
 	__atomic_add_fetch(&e->observations, 1UL, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&type_graph_shm->edge_updates, 1UL,
 			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&type_graph_shm->outcome_commits, 1UL,
-			   __ATOMIC_RELAXED);
 }
 
 /*
