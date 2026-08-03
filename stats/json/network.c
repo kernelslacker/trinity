@@ -227,6 +227,18 @@ const struct stat_category ipmr_cache_report_category =
 	              ipmr_cache_report.iters,
 	              ipmr_cache_report_fields);
 
+static const struct stat_field ipmr_getroute_pktinfo_fields[] = {
+	STAT_FIELD_SUB(ipmr_getroute_pktinfo, iters),
+	STAT_FIELD_SUB(ipmr_getroute_pktinfo, eperm),
+	STAT_FIELD_SUB(ipmr_getroute_pktinfo, pktinfo_ok),
+	STAT_FIELD_SUB(ipmr_getroute_pktinfo, getroute_ok),
+};
+
+const struct stat_category ipmr_getroute_pktinfo_category =
+	STAT_CATEGORY("ipmr_getroute_pktinfo",
+	              ipmr_getroute_pktinfo.iters,
+	              ipmr_getroute_pktinfo_fields);
+
 void dump_stats_json_netfilter_and_xfrm(void)
 {
 	stat_category_emit_json(&nftables_churn_category);
@@ -276,6 +288,8 @@ void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&devlink_port_churn_category);
 	putchar(',');
 	stat_category_emit_json(&ipmr_cache_report_category);
+	putchar(',');
+	stat_category_emit_json(&ipmr_getroute_pktinfo_category);
 }
 
 void json_emit_socket_family_grammar_section(void)

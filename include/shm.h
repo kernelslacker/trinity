@@ -735,6 +735,14 @@ struct shm_s {
 	bool ipmr_cache_report_ns_unsupported;
 	bool ipmr_cache_report_ns_eperm;
 
+	/* ipmr-getroute-pktinfo per-grandchild setup latches
+	 * (childops/net/ipmr-cache-report.c). Same write discipline as
+	 * ipmr_cache_report above: written inside userns_run_in_ns()
+	 * grandchild so must live in shm to survive _exit(). RELAXED
+	 * atomic load/store is safe -- only false -> true, idempotent. */
+	bool ipmr_getroute_pktinfo_ns_unsupported;
+	bool ipmr_getroute_pktinfo_ns_eperm;
+
 	/* netdev-netns-migrate grandchild latches
 	 * (childops/net/netdev-netns-migrate.c).  Master gate is written
 	 * from mixed sites: latch_master() is called both from inside the

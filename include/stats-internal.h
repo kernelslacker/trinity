@@ -207,6 +207,7 @@ extern const struct stat_category ip6erspan_netns_migrate_category;
 extern const struct stat_category ip6gre_bond_lapb_stack_category;
 extern const struct stat_category ip_gre_churn_category;
 extern const struct stat_category ipmr_cache_report_category;
+extern const struct stat_category ipmr_getroute_pktinfo_category;
 extern const struct stat_category ipv6_ndisc_proxy_category;
 extern const struct stat_category ipv6_pmtu_race_category;
 extern const struct stat_category iscsi_login_walker_category;

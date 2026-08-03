@@ -138,6 +138,7 @@ CHILDOP(CHILD_OP_MPLS_ROUTE_CHURN         , "mpls_route_churn"           , mpls_
 CHILDOP(CHILD_OP_SOCK_DIAG_WALKER         , "sock_diag_walker"           , sock_diag_walker           , true, 1)
 CHILDOP(CHILD_OP_ALTNAME_THRASH           , "altname_thrash"             , altname_thrash             , true, 1)
 CHILDOP(CHILD_OP_IPMR_CACHE_REPORT        , "ipmr_cache_report"          , ipmr_cache_report          , true, 1)
+CHILDOP(CHILD_OP_IPMR_GETROUTE_PKTINFO    , "ipmr_getroute_pktinfo"       , ipmr_getroute_pktinfo       , true, 1)
 CHILDOP(CHILD_OP_UBLK_LIFECYCLE           , "ublk_lifecycle"             , ublk_lifecycle             , true, 1)
 CHILDOP(CHILD_OP_VETH_ASYMMETRIC_XDP      , "veth_asymmetric_xdp"        , veth_asymmetric_xdp        , true, 1)
 CHILDOP(CHILD_OP_IP6ERSPAN_NETNS_MIGRATE  , "ip6erspan_netns_migrate"    , ip6erspan_netns_migrate    , true, 1)
