@@ -56,7 +56,8 @@ enum pktb_layer_kind {
 	PKTB_LAYER_MPLS,		/* single MPLS shim (BoS=1) */
 	PKTB_LAYER_ESP,			/* IPsec ESP header (no encryption) */
 	PKTB_LAYER_UDP_ENCAP,		/* bare UDP header suitable for encap probes */
-	PKTB_LAYER_RPL_SRH,		/* IPv6 routing header (SRH type 4) */
+	PKTB_LAYER_RPL_SRH,		/* IPv6 Routing Header type 3 (RPL Source Routing) */
+	PKTB_LAYER_SEG6_SRH,		/* IPv6 Routing Header type 4 (SRH, RFC 8754) */
 
 	NR_PKTB_LAYER_KINDS
 };

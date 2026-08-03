@@ -78,6 +78,7 @@ size_t emit_ip4(struct pktb_frame *f);
 size_t emit_ip6(struct pktb_frame *f);
 size_t emit_gre_teb(struct pktb_frame *f);
 size_t emit_esp(struct pktb_frame *f);
+size_t emit_rpl_srh(struct pktb_frame *f);
 size_t emit_seg6_srh(struct pktb_frame *f);
 size_t emit_vxlan(struct pktb_frame *f);
 size_t emit_geneve(struct pktb_frame *f);

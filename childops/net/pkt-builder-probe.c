@@ -38,7 +38,7 @@
 
 #define PKTB_PROBE_PER_INVOCATION	6	/* frames per invocation */
 #define PKTB_PROBE_WALL_CAP_NS		(50ULL * 1000ULL * 1000ULL)
-#define PKTB_PROBE_NR_RECIPES		9
+#define PKTB_PROBE_NR_RECIPES		10
 _Static_assert(PKTB_PROBE_NR_RECIPES <=
 	       ARRAY_SIZE(((struct pkt_builder_stats *)0)->per_recipe),
 	       "per_recipe[] too small for PKTB_PROBE_NR_RECIPES");
@@ -110,9 +110,15 @@ static const struct pktb_probe_recipe probe_recipes[PKTB_PROBE_NR_RECIPES] = {
 		}
 	},
 	{
-		.name = "seg6_srh_udp", .n = 4, .layers = {
+		.name = "rpl_srh_udp", .n = 4, .layers = {
 			PKTB_LAYER_ETH, PKTB_LAYER_IP6,
 			PKTB_LAYER_RPL_SRH, PKTB_LAYER_UDP_ENCAP,
+		}
+	},
+	{
+		.name = "seg6_srh_udp", .n = 4, .layers = {
+			PKTB_LAYER_ETH, PKTB_LAYER_IP6,
+			PKTB_LAYER_SEG6_SRH, PKTB_LAYER_UDP_ENCAP,
 		}
 	},
 	{

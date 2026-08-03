@@ -171,6 +171,18 @@ static const struct pktb_layer_manifest layer_descs[NR_PKTB_LAYER_KINDS] = {
 	[PKTB_LAYER_RPL_SRH] = {
 		.name             = "rpl_srh",
 		.valid_min        = 8,
+		.nominal_len      = 8U + 16U * 3U,	/* 8B fixed + 3 uncompressed addrs */
+		.n_length_fields  = 1,
+		.length_fields    = { { .offset = 1, .width = 1 } },	/* hdr_ext_len */
+		.n_checksum_fields = 0,
+		.n_trunc_points   = 1,
+		.trunc_points     = { 4 },
+		.delivery         = PKTB_DELIVER_RAW_IPV6,
+		.parser_hint      = "ipv6_rpl_srh_rcv",
+	},
+	[PKTB_LAYER_SEG6_SRH] = {
+		.name             = "seg6_srh",
+		.valid_min        = 8,
 		.nominal_len      = 8U + 16U * 3U,	/* 8B fixed + 3 segment addrs */
 		.n_length_fields  = 1,
 		.length_fields    = { { .offset = 1, .width = 1 } },	/* hdr_ext_len */
@@ -200,10 +212,10 @@ const struct pktb_layer_manifest *pktb_manifest(enum pktb_layer_kind kind)
  * checksum / discriminator fields after mutation.
  *
  * L2 emitters (eth, vlan_single, vlan_double, mpls) live in
- * pkt-builder-l2.c; L3 emitters (ip4, ip6, gre_teb, esp, seg6_srh)
- * live in pkt-builder-l3.c; L4 encap emitters (vxlan, geneve,
- * udp_encap) live in pkt-builder-l4.c.  All prototypes come in via
- * pkt-builder-internal.h.
+ * pkt-builder-l2.c; L3 emitters (ip4, ip6, gre_teb, esp, rpl_srh,
+ * seg6_srh) live in pkt-builder-l3.c; L4 encap emitters (vxlan,
+ * geneve, udp_encap) live in pkt-builder-l4.c.  All prototypes come
+ * in via pkt-builder-internal.h.
  */
 
 typedef size_t (*pktb_emitter_fn)(struct pktb_frame *);
@@ -220,7 +232,8 @@ static const pktb_emitter_fn emitters[NR_PKTB_LAYER_KINDS] = {
 	[PKTB_LAYER_MPLS]        = emit_mpls,
 	[PKTB_LAYER_ESP]         = emit_esp,
 	[PKTB_LAYER_UDP_ENCAP]   = emit_udp_encap,
-	[PKTB_LAYER_RPL_SRH]     = emit_seg6_srh,
+	[PKTB_LAYER_RPL_SRH]     = emit_rpl_srh,
+	[PKTB_LAYER_SEG6_SRH]    = emit_seg6_srh,
 };
 
 /*
