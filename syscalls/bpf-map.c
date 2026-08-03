@@ -20,6 +20,48 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "utils.h"
+
+/*
+ * Full set of BPF_MAP_CREATE flags so set_rand_bitmask can generate
+ * composite values that reach every flag bit, not just bits 0-2.
+ * BPF_F_TOKEN_FD (bit 16) is excluded here because the token-fd arm
+ * in sanitise_bpf_map_create handles it with dedicated logic below.
+ */
+static const unsigned long bpf_map_create_flags[] = {
+	BPF_F_NO_PREALLOC,
+	BPF_F_NO_COMMON_LRU,
+	BPF_F_NUMA_NODE,
+	BPF_F_RDONLY,
+	BPF_F_WRONLY,
+	BPF_F_STACK_BUILD_ID,
+	BPF_F_ZERO_SEED,
+	BPF_F_RDONLY_PROG,
+	BPF_F_WRONLY_PROG,
+	BPF_F_CLONE,
+	BPF_F_MMAPABLE,
+	BPF_F_PRESERVE_ELEMS,
+	BPF_F_INNER_MAP,
+	BPF_F_LINK,
+	BPF_F_PATH_FD,
+	BPF_F_VTYPE_BTF_OBJ_FD,
+	BPF_F_SEGV_ON_FAULT,
+	BPF_F_NO_USER_CONV,
+};
+
+/*
+ * BPF_MAP_UPDATE_ELEM flags.  BPF_ANY (0), BPF_NOEXIST (1), and
+ * BPF_EXIST (2) encode the existence policy; BPF_F_LOCK (4) is an
+ * orthogonal spin-lock flag that may be combined with any policy.
+ * Using set_rand_bitmask over the non-zero members generates all
+ * valid combinations including NOEXIST|LOCK and EXIST|LOCK that a
+ * plain RAND_RANGE(0, 4) can never produce.
+ */
+static const unsigned long bpf_map_update_flags[] = {
+	BPF_NOEXIST,
+	BPF_EXIST,
+	BPF_F_LOCK,
+};
 
 void sanitise_bpf_map_create(union bpf_attr *attr, struct syscallrecord *rec)
 {
@@ -27,7 +69,8 @@ void sanitise_bpf_map_create(union bpf_attr *attr, struct syscallrecord *rec)
 	attr->key_size = rnd_modulo_u32(1024);
 	attr->value_size = rnd_modulo_u32((1024 * 64));
 	attr->max_entries = rnd_modulo_u32(1024);
-	attr->map_flags = RAND_RANGE(0, 4);
+	attr->map_flags = set_rand_bitmask(ARRAY_SIZE(bpf_map_create_flags),
+					   bpf_map_create_flags);
 	bpf_fill_obj_name(attr->map_name);
 	/* Cover map_name so the fill above reaches the kernel; previous
 	 * rec->a3 = 20 stopped at map_flags.  The token-fd arm below
@@ -63,7 +106,8 @@ void sanitise_bpf_map_update(union bpf_attr *attr, struct syscallrecord *rec)
 	attr->key = RAND_RANGE(0, 10);
 	attr->value = rnd_u32();
 	attr->next_key = rnd_u32();
-	attr->flags = RAND_RANGE(0, 4);
+	attr->flags = set_rand_bitmask(ARRAY_SIZE(bpf_map_update_flags),
+				       bpf_map_update_flags);
 	rec->a3 = 32;
 }
 
