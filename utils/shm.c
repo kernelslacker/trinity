@@ -29,6 +29,7 @@
 #include "strategy.h"
 #include "stats_ring.h"
 #include "trinity.h"
+#include "type-graph.h"
 #include "utils.h"
 
 struct shm_s *shm;
@@ -442,6 +443,7 @@ static void init_shm_publish_and_subsystems(void)
 	kcov_init_global();
 	minicorpus_init();
 	chain_corpus_init();
+	type_graph_init();
 	cmp_hints_init();
 	struct_catalog_init();
 	blob_corpus_init();

@@ -30,6 +30,7 @@
 #include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
+#include "type-graph.h"
 
 #include "chain-internal.h"
 
@@ -439,6 +440,18 @@ static bool execute_chain_steps(struct childdata *child,
 					s->pair_kinds_seen |= (1u << k);
 			}
 		}
+
+		/*
+		 * Commit the pending type-graph handoff, if apply_chain_
+		 * substitution() saw a publish-ring hit above.  A no-op
+		 * on steps where no substitution fired or the retval
+		 * lookup missed the ring.  Reads the freshly-dispatched
+		 * rec->retval for the success flag; novel piggybacks on
+		 * the same step_found_new signal that drives the chain
+		 * snapshot's coverage attribution.
+		 */
+		type_graph_commit_outcome((long)rec->retval >= 0,
+					  step_found_new);
 
 		if (step_found_new) {
 			if (!s->chain_found_new)
