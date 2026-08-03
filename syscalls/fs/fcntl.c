@@ -807,5 +807,4 @@ struct syscallentry syscall_fcntl = {
 	 * get_arg_snapshot() and the handler still sees the dispatch
 	 * values the kernel actually executed against. */
 	.arg_snapshot_mask = (1u << 0) | (1u << 1) | (1u << 2),
-	.rettype = RET_BORING,
 };
