@@ -118,13 +118,14 @@ static void warn_once_unsupported_ipfrag(const char *reason, int err)
 
 /* Bring lo up and bind 127.0.0.1/8 so the loopback route exists in
  * the freshly-unshared netns.  Returns 0 on success, -1 otherwise. */
-static int bring_lo_up_with_addr(void)
+static int bring_lo_up_with_addr(unsigned long *direct_calls)
 {
 	int s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	struct ifreq ifr;
 	struct sockaddr_in *sin;
 	int rc = -1;
 
+	(*direct_calls)++;
 	if (s < 0)
 		return -1;
 
@@ -133,6 +134,7 @@ static int bring_lo_up_with_addr(void)
 	sin = (struct sockaddr_in *)&ifr.ifr_addr;
 	sin->sin_family = AF_INET;
 	sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	(*direct_calls)++;
 	if (ioctl(s, SIOCSIFADDR, &ifr) < 0)
 		goto out;
 
@@ -141,14 +143,17 @@ static int bring_lo_up_with_addr(void)
 	sin = (struct sockaddr_in *)&ifr.ifr_netmask;
 	sin->sin_family = AF_INET;
 	sin->sin_addr.s_addr = htonl(0xff000000U);
+	(*direct_calls)++;
 	if (ioctl(s, SIOCSIFNETMASK, &ifr) < 0)
 		goto out;
 
 	memset(&ifr, 0, sizeof(ifr));
 	strncpy(ifr.ifr_name, "lo", IFNAMSIZ - 1);
+	(*direct_calls)++;
 	if (ioctl(s, SIOCGIFFLAGS, &ifr) < 0)
 		goto out;
 	ifr.ifr_flags |= IFF_UP | IFF_RUNNING;
+	(*direct_calls)++;
 	if (ioctl(s, SIOCSIFFLAGS, &ifr) < 0)
 		goto out;
 
@@ -158,16 +163,18 @@ out:
 	return rc;
 }
 
-static int open_listener(uint16_t *port_be_out)
+static int open_listener(uint16_t *port_be_out, unsigned long *direct_calls)
 {
 	int s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
 	struct sockaddr_in sin;
 	socklen_t slen = sizeof(sin);
 	int rcvbuf = IPF_LISTEN_RCVBUF;
 
+	(*direct_calls)++;
 	if (s < 0)
 		return -1;
 	(void)setsockopt(s, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+	(*direct_calls)++;
 
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
@@ -185,10 +192,11 @@ static int open_listener(uint16_t *port_be_out)
 	return s;
 }
 
-static int open_sender(void)
+static int open_sender(unsigned long *direct_calls)
 {
 	int s = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_RAW);
 
+	(*direct_calls)++;
 	/* SOCK_RAW with IPPROTO_RAW implicitly enables IP_HDRINCL: the
 	 * kernel transmits the iphdr we hand it verbatim, so the saddr
 	 * cycling drives the inetpeer rbtree directly. */
@@ -214,7 +222,8 @@ static void build_iphdr(struct iphdr *ip, uint32_t saddr_be, uint32_t daddr_be,
 }
 
 static void send_frag_pair(int send_fd, uint16_t listen_port_be,
-			   uint32_t saddr_be, uint16_t id_he)
+			   uint32_t saddr_be, uint16_t id_he,
+			   unsigned long *direct_calls)
 {
 	uint8_t pkt1[sizeof(struct iphdr) + IPF_FRAG1_PAYLOAD];
 	uint8_t pkt2[sizeof(struct iphdr) + IPF_FRAG2_PAYLOAD];
@@ -239,6 +248,7 @@ static void send_frag_pair(int send_fd, uint16_t listen_port_be,
 
 	n = sendto(send_fd, pkt1, sizeof(pkt1), MSG_DONTWAIT,
 		   (struct sockaddr *)&dst, sizeof(dst));
+	(*direct_calls)++;
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.ipfrag_source_churn.packets_sent_ok, 1,
 				   __ATOMIC_RELAXED);
@@ -248,6 +258,7 @@ static void send_frag_pair(int send_fd, uint16_t listen_port_be,
 
 	n = sendto(send_fd, pkt2, sizeof(pkt2), MSG_DONTWAIT,
 		   (struct sockaddr *)&dst, sizeof(dst));
+	(*direct_calls)++;
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.ipfrag_source_churn.packets_sent_ok, 1,
 				   __ATOMIC_RELAXED);
@@ -287,18 +298,28 @@ static int ipfrag_source_churn_in_ns(void *arg)
 	unsigned int i;
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	/* Count raw kernel entries this file issues directly: the
+	 * ifreq-based lo bring-up (socket + four ioctls), the UDP
+	 * listener (socket + setsockopt SO_RCVBUF), the raw sender
+	 * (socket), and the per-iter sendto() pair.  There is no
+	 * netlink transport on this file's grandchild so no risk of
+	 * double-counting.  Published once at exit via
+	 * childop_direct_syscalls_add() -- bumping shm from the
+	 * userns_run_in_ns() grandchild is safe because shm is
+	 * shared. */
+	unsigned long direct_calls = 0;
 
-	if (bring_lo_up_with_addr() < 0)
-		return 0;
+	if (bring_lo_up_with_addr(&direct_calls) < 0)
+		goto out_publish;
 
-	send_fd = open_sender();
+	send_fd = open_sender(&direct_calls);
 	if (send_fd < 0)
-		return 0;
+		goto out_publish;
 
-	listen_fd = open_listener(&listen_port_be);
+	listen_fd = open_listener(&listen_port_be, &direct_calls);
 	if (listen_fd < 0) {
 		close(send_fd);
-		return 0;
+		goto out_publish;
 	}
 
 	if (valid_op)
@@ -326,13 +347,17 @@ static int ipfrag_source_churn_in_ns(void *arg)
 			       (inner & 0xffffU));
 		id_he  = (uint16_t)(cctx->id_counter_start + i);
 
-		send_frag_pair(send_fd, listen_port_be, src_be, id_he);
+		send_frag_pair(send_fd, listen_port_be, src_be, id_he,
+			       &direct_calls);
 		__atomic_add_fetch(&shm->stats.ipfrag_source_churn.unique_srcs, 1,
 				   __ATOMIC_RELAXED);
 	}
 
 	close(listen_fd);
 	close(send_fd);
+out_publish:
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 }
 
