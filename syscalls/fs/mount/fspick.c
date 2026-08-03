@@ -15,7 +15,7 @@ static unsigned long fspick_flags[] = {
 struct syscallentry syscall_fspick = {
 	.name = "fspick",
 	.num_args = 3,
-	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_OP },
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST },
 	.argname = { [0] = "dfd", [1] = "path", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(fspick_flags),
 	.rettype = RET_FD,
