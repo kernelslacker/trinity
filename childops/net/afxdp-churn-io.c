@@ -75,6 +75,68 @@ static void *afxdp_meta_scribbler(void *p)
 }
 
 /*
+ * Tailroom-probe lane: enqueue a near-full-chunk TX descriptor and kick
+ * it while an AF_PACKET/ETH_P_ALL ptype_all listener socket is open.
+ * xsk_build_skb() places the skb data right up to the UMEM chunk
+ * boundary; when __netif_receive_skb_core() delivers a clone to the
+ * ptype_all listener, the clone has no room for skb_shared_info —
+ * exactly the overrun that the kernel's per-clone tailroom check catches.
+ * KASAN fires on kernels without the check; with it, the clone is
+ * rejected cleanly.  The AF_PACKET socket is opened just before the
+ * sendto() kick and closed immediately after so it can't absorb any
+ * unrelated traffic or leave a stale ptype_all registration.
+ */
+static void afxdp_tailroom_probe(struct xsk_state *st, bool want_tx_md)
+{
+	uint32_t *prod;
+	struct xdp_desc *desc;
+	uint64_t probe_addr;
+	uint32_t probe_len;
+	uint32_t p;
+	int pkt_fd;
+
+	if (!st->bound)
+		return;
+
+	/* Open a promiscuous AF_PACKET socket so the kernel registers a
+	 * ptype_all listener.  Any skb that passes through
+	 * __netif_receive_skb_core() — including the loopback-reflected
+	 * copy of our TX packet — will be cloned for this listener.
+	 * Failure (EPERM in a restricted netns, or EAFNOSUPPORT on a
+	 * stripped build) is non-fatal: the large descriptor still
+	 * exercises the xsk build path without the clone trigger. */
+	pkt_fd = socket(AF_PACKET,
+			SOCK_RAW | SOCK_NONBLOCK | SOCK_CLOEXEC,
+			(int)htons((uint16_t)ETH_P_ALL));
+
+	/* probe_addr mirrors the normal head_addr logic: if TX metadata
+	 * headroom is in use, the descriptor's data starts after the
+	 * 16-byte metadata header; otherwise it starts at offset 0.  We
+	 * fill from probe_addr to (probe_addr + probe_len), reaching
+	 * one byte before the UMEM chunk end so the resulting skb has
+	 * zero tailroom before skb_shared_info. */
+	probe_addr = want_tx_md ? AFXDP_TX_META_BYTES : 0;
+	probe_len  = AFXDP_TAILROOM_PROBE_LEN - (uint32_t)probe_addr;
+
+	prod = (uint32_t *)((char *)st->tx_ring + st->off.tx.producer);
+	desc = (struct xdp_desc *)((char *)st->tx_ring + st->off.tx.desc);
+	p    = __atomic_load_n(prod, __ATOMIC_RELAXED);
+
+	desc[p % AFXDP_RING_ENTRIES].addr    = probe_addr;
+	desc[p % AFXDP_RING_ENTRIES].len     = probe_len;
+	desc[p % AFXDP_RING_ENTRIES].options = 0;
+	__atomic_store_n(prod, p + 1U, __ATOMIC_RELEASE);
+
+	if (sendto(st->xsk_fd, NULL, 0, MSG_DONTWAIT, NULL, 0) >= 0 ||
+	    errno == EAGAIN || errno == ENOBUFS || errno == EBUSY)
+		__atomic_add_fetch(&shm->stats.afxdp_churn.tailroom_iters,
+				   1, __ATOMIC_RELAXED);
+
+	if (pkt_fd >= 0)
+		close(pkt_fd);
+}
+
+/*
  * Phase 6: enqueue 1 (or 2 chained, for want_sg) TX descriptors into
  * the TX ring then sendto(MSG_DONTWAIT) to kick xsk_sendmsg.  This
  * drives descriptors through xsk_buff_pool — the live-pool path we
@@ -91,7 +153,8 @@ static void *afxdp_meta_scribbler(void *p)
  * corrupt subsequent ops.
  */
 void afxdp_iter_tx_burst(struct xsk_state *st,
-			 bool want_sg, bool want_tx_md)
+			 bool want_sg, bool want_tx_md,
+			 bool want_tailroom)
 {
 	struct afxdp_meta_scribbler_args sa;
 	pthread_t scribbler_tid;
@@ -202,6 +265,12 @@ void afxdp_iter_tx_burst(struct xsk_state *st,
 		__atomic_store_n(&sa.stop, 1, __ATOMIC_RELAXED);
 		(void)pthread_join(scribbler_tid, NULL);
 	}
+
+	/* Tailroom-probe lane: fires after the scribbler is joined so the
+	 * UMEM metadata region it owns is no longer being written by a
+	 * background thread when we enqueue the large descriptor. */
+	if (want_tailroom)
+		afxdp_tailroom_probe(st, want_tx_md);
 }
 
 /*
