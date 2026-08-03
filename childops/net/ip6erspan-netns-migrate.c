@@ -95,6 +95,7 @@
 
 #include "child.h"
 #include "childops-netlink.h"
+#include "childops-util.h"
 #include "name-pool.h"
 #include "random.h"
 #include "shm.h"
@@ -201,6 +202,12 @@ static const __u8 inm_v6_remote[16] = {
  * grandchild-side observations converge on one persistent flag.  RELAXED
  * atomic load/store from multiple grandchildren is safe -- only
  * false -> true, idempotent write. */
+/* Set once per persistent child after the modprobe attempts run.
+ * try_modprobe() needs CAP_SYS_MODULE in init_user_ns, which the
+ * grandchild does not hold; fire from the persistent child before
+ * the userns hop. */
+static bool modprobe_attempted;
+
 static bool ns_unsupported_ip6erspan(void)
 {
 	return __atomic_load_n(&shm->ip6erspan_ns_unsupported,
@@ -741,6 +748,12 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 
 	if (ns_unsupported_ip6erspan())
 		return true;
+
+	if (!modprobe_attempted) {
+		modprobe_attempted = true;
+		try_modprobe("ip6_gre");
+		try_modprobe("ip_gre");
+	}
 
 	g_iter++;
 	rc = userns_run_in_ns(CLONE_NEWNET, ip6erspan_netns_migrate_in_ns,
