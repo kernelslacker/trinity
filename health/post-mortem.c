@@ -328,8 +328,26 @@ static void slurp_proc_file(FILE *fp, pid_t pid, const char *name)
 		fwrite(buf, 1, n, fp);
 		last = (unsigned char) buf[n - 1];
 	}
-	if (last != -1 && last != '\n')
+
+	/* fread returns short on EOF *or* error and ferror() is sticky, so a
+	 * single check after the loop catches a failure in any prior read.
+	 * Without it a child that exits mid-slurp (or a /proc file that
+	 * faults partway through) produces a silently-truncated section --
+	 * the exact state we're trying to preserve for post-mortem analysis,
+	 * quietly mangled.  Latch the errno and emit a marker so a downstream
+	 * reader can distinguish truncation from a clean read.  The leading
+	 * newline (only if the partial content didn't end with one) keeps the
+	 * marker on its own line. */
+	if (ferror(src)) {
+		int saved_errno = errno;
+
+		if (last != -1 && last != '\n')
+			fputc('\n', fp);
+		fprintf(fp, "<truncated: proc read failed: %s>\n",
+			strerror(saved_errno));
+	} else if (last != -1 && last != '\n') {
 		fputc('\n', fp);
+	}
 	fclose(src);
 }
 
