@@ -22,8 +22,15 @@
  */
 #define NR_TESTFILES 4
 
+/*
+ * Access-mode enum: exactly one of O_RDONLY/O_WRONLY/O_RDWR occupies the
+ * low two bits of the flags word.  O_CREAT is an independent modifier and
+ * is OR'd in separately by each sanitiser so the create-a-file-to-write-it
+ * shapes (O_WRONLY|O_CREAT, O_RDWR|O_CREAT|O_EXCL, ...) are actually
+ * reachable instead of colliding with the pick-one access-mode draw.
+ */
 static unsigned long open_o_flags_base[] = {
-	O_RDONLY, O_WRONLY, O_RDWR, O_CREAT,
+	O_RDONLY, O_WRONLY, O_RDWR,
 };
 
 #ifndef O_EMPTYPATH
@@ -58,6 +65,9 @@ static void sanitise_open(struct syscallrecord *rec)
 	flags = get_o_flags();
 
 	rec->a2 |= flags;
+
+	if (ONE_IN(4))
+		rec->a2 |= O_CREAT;
 
 	if (rec->a2 & O_CREAT)
 		rec->a3 = 0666;
@@ -106,6 +116,9 @@ static void sanitise_openat(struct syscallrecord *rec)
 	flags = get_o_flags();
 
 	rec->a3 |= flags;
+
+	if (ONE_IN(4))
+		rec->a3 |= O_CREAT;
 
 	if (rec->a3 & O_CREAT)
 		rec->a4 = 0666;
@@ -337,6 +350,9 @@ static void sanitise_openat2(struct syscallrecord *rec)
 	how = buf.ptr;
 
 	how->flags = RAND_ARRAY(open_o_flags_base) | get_o_flags();
+
+	if (ONE_IN(4))
+		how->flags |= O_CREAT;
 
 	/*
 	 * OPENAT2_REGULAR (upper-32-bit, openat2-exclusive) restricts the
