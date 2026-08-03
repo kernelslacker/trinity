@@ -358,6 +358,15 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 					1, __ATOMIC_RELAXED);
 		}
 		count = (unsigned long)kcov_trace_size - 1;
+		/* Trace-loss magnitude accounting.  count is now the post-cap PC
+		 * count actually captured (= kcov_trace_size - 1 on every
+		 * truncation branch); bumping trace_loss by this value gives a
+		 * cumulative "PC-magnitude captured under truncation" counter
+		 * whose true dropped-tail length is strictly greater than zero
+		 * on every event.  See the field comment on trace_loss in
+		 * kcov-groups/coverage.h for the ratio consumers. */
+		__atomic_fetch_add(&kcov_shm->coverage.trace_loss, count,
+			__ATOMIC_RELAXED);
 	}
 
 	/* CAS-loop-up the per-syscall trace-size high-water mark using the

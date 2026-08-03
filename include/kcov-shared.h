@@ -310,15 +310,29 @@ static inline unsigned long per_syscall_calls_prior_total(unsigned int nr)
  * and offsetof for a set of load-bearing fields so an accidental
  * reorder or padding-introducing edit fails to compile instead of
  * silently shifting layout across a wide set of readers. */
-_Static_assert(sizeof(struct kcov_shared) == 25946080UL,
+/* Adding coverage.trace_loss (+8) and childop_kcov.{skipped_sample,
+ * op_skipped_sample[KCOV_CHILDOP_NR_MAX]} (+8 +1280 = +1288) shifts
+ * every offset after each addition:
+ *   - trace_loss lives at the tail of struct kcov_coverage_core, so
+ *     every subsequent group offset shifts by +8.
+ *   - childop_kcov new fields append to struct kcov_childop_kcov, so
+ *     every group offset AFTER childop_kcov (per_syscall.., reexec_arms
+ *     tail, sizeof) shifts by an additional +1288.
+ * Absolute deltas:
+ *   sizeof:                     25946080 + 8 + 1288 = 25947376
+ *   cmp_records..:              8388672  + 8        = 8388680
+ *   hints_flat..:               8388728  + 8        = 8388736
+ *   per_syscall.per_syscall_edges: 8400280 + 8 + 1288 = 8401576
+ *   reexec_arms..:              25946064 + 8 + 1288 = 25947360 */
+_Static_assert(sizeof(struct kcov_shared) == 25947376UL,
 	"struct kcov_shared sizeof drifted -- audit layout before updating this");
 _Static_assert(offsetof(struct kcov_shared, bucket_seen) == 0UL,
 	"kcov_shared.bucket_seen must remain the first field");
-_Static_assert(offsetof(struct kcov_shared, cmp_records.cmp_records_collected) == 8388672UL,
+_Static_assert(offsetof(struct kcov_shared, cmp_records.cmp_records_collected) == 8388680UL,
 	"kcov_shared.cmp_records.cmp_records_collected offset drifted");
-_Static_assert(offsetof(struct kcov_shared, hints_flat.cmp_hints_injected) == 8388728UL,
+_Static_assert(offsetof(struct kcov_shared, hints_flat.cmp_hints_injected) == 8388736UL,
 	"kcov_shared.hints_flat.cmp_hints_injected offset drifted");
-_Static_assert(offsetof(struct kcov_shared, per_syscall.per_syscall_edges) == 8400280UL,
+_Static_assert(offsetof(struct kcov_shared, per_syscall.per_syscall_edges) == 8401576UL,
 	"kcov_shared.per_syscall.per_syscall_edges offset drifted");
-_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25946064UL,
+_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25947360UL,
 	"kcov_shared last-field offset drifted -- append-only tail broken");

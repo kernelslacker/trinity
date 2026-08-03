@@ -21,6 +21,7 @@ const struct option longopts[] = {
 	{ "canary-slots", required_argument, NULL, 0 },
 	{ "canary-window", required_argument, NULL, 0 },
 	{ "childop-kcov-attribution", required_argument, NULL, 0 },
+	{ "childop-kcov-sample", required_argument, NULL, 0 },
 	{ "childop-cmp-harvest", required_argument, NULL, 0 },
 	{ "childop-cmp-consume", required_argument, NULL, 0 },
 	{ "kcov-trace-size", required_argument, NULL, 0 },

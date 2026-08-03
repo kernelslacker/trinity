@@ -570,45 +570,76 @@ void child_process(struct childdata *child, int childno)
 			__atomic_fetch_add(
 				&kcov_shm->childop_kcov.childop_kcov_op_attempts[op],
 				1, __ATOMIC_RELAXED);
-			/* Snapshot the fields kcov_bracket_begin() consults
-			 * BEFORE the call so a declined begin can be
-			 * classified into the same reject arm the aggregate
-			 * skip counter got bumped for.  Order matches the
-			 * decision tree in kcov_bracket_begin(); kept in
-			 * sync with that function. */
-			const bool was_inactive =
-				(!child->kcov.active || kcov_shm == NULL);
-			const bool was_cmp =
-				child->kcov.mode == KCOV_MODE_CMP;
-			const bool was_nested = child->kcov.bracket_owned;
 
-			bracketed = kcov_bracket_begin(&child->kcov);
+			/* 1-of-N outer-bracket sampling gate.  With sample_n=1
+			 * (the pre-sample default) ONE_IN(1) is always true and
+			 * every eligible attempt reaches kcov_bracket_begin -- so
+			 * a run with the gate disabled is byte-identical to the
+			 * pre-sample codepath.  With sample_n=N>1 (default N=4),
+			 * ~1/N attempts pass and the remaining (N-1)/N short-
+			 * circuit here, bumping the per-op and aggregate
+			 * skipped_sample counters so the invariant
+			 *   attempts == bracketed + sum(skipped_*)
+			 * closes with the new arm included.  The RNG draw uses
+			 * the child's per-process rnd stream (fresh per child at
+			 * init) so ordering across concurrent children stays
+			 * decorrelated; deterministic modulo counters were
+			 * considered but would concentrate every child's brackets
+			 * on the same dispatch positions and skew the per-op
+			 * sample stream toward whichever ops happen to land on
+			 * those positions. */
+			const bool sample_skipped =
+				(childop_kcov_sample_n > 1U &&
+				 !ONE_IN(childop_kcov_sample_n));
 
-			if (bracketed) {
+			if (sample_skipped) {
 				__atomic_fetch_add(
-					&kcov_shm->childop_kcov.childop_kcov_op_bracketed[op],
+					&kcov_shm->childop_kcov.childop_kcov_skipped_sample,
 					1, __ATOMIC_RELAXED);
-			} else if (was_inactive) {
 				__atomic_fetch_add(
-					&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
-					1, __ATOMIC_RELAXED);
-			} else if (was_cmp) {
-				__atomic_fetch_add(
-					&kcov_shm->childop_kcov.childop_kcov_op_skipped_cmp[op],
-					1, __ATOMIC_RELAXED);
-			} else if (was_nested) {
-				__atomic_fetch_add(
-					&kcov_shm->childop_kcov.childop_kcov_op_skipped_nested[op],
+					&kcov_shm->childop_kcov.childop_kcov_op_skipped_sample[op],
 					1, __ATOMIC_RELAXED);
 			} else {
-				/* Fell past every pre-check but begin still
-				 * declined -- kcov_enable_trace() flipped
-				 * active to false on ioctl failure, matching
-				 * the second skipped_inactive arm inside
-				 * kcov_bracket_begin(). */
-				__atomic_fetch_add(
-					&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
-					1, __ATOMIC_RELAXED);
+				/* Snapshot the fields kcov_bracket_begin() consults
+				 * BEFORE the call so a declined begin can be
+				 * classified into the same reject arm the aggregate
+				 * skip counter got bumped for.  Order matches the
+				 * decision tree in kcov_bracket_begin(); kept in
+				 * sync with that function. */
+				const bool was_inactive =
+					(!child->kcov.active || kcov_shm == NULL);
+				const bool was_cmp =
+					child->kcov.mode == KCOV_MODE_CMP;
+				const bool was_nested = child->kcov.bracket_owned;
+
+				bracketed = kcov_bracket_begin(&child->kcov);
+
+				if (bracketed) {
+					__atomic_fetch_add(
+						&kcov_shm->childop_kcov.childop_kcov_op_bracketed[op],
+						1, __ATOMIC_RELAXED);
+				} else if (was_inactive) {
+					__atomic_fetch_add(
+						&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
+						1, __ATOMIC_RELAXED);
+				} else if (was_cmp) {
+					__atomic_fetch_add(
+						&kcov_shm->childop_kcov.childop_kcov_op_skipped_cmp[op],
+						1, __ATOMIC_RELAXED);
+				} else if (was_nested) {
+					__atomic_fetch_add(
+						&kcov_shm->childop_kcov.childop_kcov_op_skipped_nested[op],
+						1, __ATOMIC_RELAXED);
+				} else {
+					/* Fell past every pre-check but begin still
+					 * declined -- kcov_enable_trace() flipped
+					 * active to false on ioctl failure, matching
+					 * the second skipped_inactive arm inside
+					 * kcov_bracket_begin(). */
+					__atomic_fetch_add(
+						&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
+						1, __ATOMIC_RELAXED);
+				}
 			}
 		}
 

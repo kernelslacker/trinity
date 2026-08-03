@@ -45,4 +45,22 @@ struct kcov_coverage_core {
 	 * trace buffer.  When non-zero a non-trivial fraction of syscalls
 	 * are losing tail coverage and KCOV_TRACE_SIZE should be raised. */
 	unsigned long trace_truncated;
+	/* Magnitude estimate for coverage dropped by trace-buffer truncation.
+	 * Bumped in kcov_collect() on every truncation event by the
+	 * post-cap PC count actually captured (= kcov_trace_size - 1).
+	 * The kernel-side kcov stops writing once the buffer fills and
+	 * does not report the dropped-tail length, so this is a
+	 * PC-magnitude proxy rather than a direct "edges lost" tally: the
+	 * true lost PC count is >= trace_loss / trace_truncated per event,
+	 * strictly greater than zero on any truncated bracket.  Exposed
+	 * so operators can read (trace_loss / total_pcs) as the "fraction
+	 * of captured coverage that lived in a truncated bracket" and
+	 * (trace_loss / edges_found) as the "PCs captured under truncation
+	 * per discovered edge" -- both climb toward saturation when the
+	 * trace buffer is the bottleneck on coverage growth.  Distinct
+	 * from trace_truncated (event count) in units and monotonicity:
+	 * a run of small truncated brackets grows trace_truncated fast
+	 * but trace_loss slowly, whereas one large truncated bracket
+	 * grows both together. */
+	unsigned long trace_loss;
 };

@@ -74,6 +74,18 @@ _Static_assert(NR_CHILD_OP_TYPES <= KCOV_CHILDOP_NR_MAX,
 enum childop_kcov_attribution_mode childop_kcov_attr_mode =
 	CHILDOP_KCOV_ATTR_DUAL;
 
+/* Default N=4: bracket one in four eligible childop dispatches.  Cuts
+ * the KCOV_ENABLE / KCOV_DISABLE ioctl volume paid for outer-bracket
+ * attribution by ~75% while keeping a per-op sample stream dense
+ * enough that the childop_edges_clean signal is still readable within
+ * a canary window.  Scale-by-N applies to any consumer that treats
+ * childop_edges_clean as an absolute magnitude (rather than a
+ * relative rank across ops); the canary scorer already handles the
+ * variance because its threshold is set relative to the same window's
+ * childop_kcov_op_bracketed[op] sample count.  --childop-kcov-sample=1
+ * restores every-dispatch bracketing byte-for-byte. */
+unsigned int childop_kcov_sample_n = 4U;
+
 /* Default is OFF: the childop CMP harvest path is dormant and the
  * childop dispatch surface is byte-identical to a build without the
  * --childop-cmp-harvest knob.  Flipping to ON opens the §3.2 bracket

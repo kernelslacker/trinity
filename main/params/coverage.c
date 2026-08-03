@@ -45,6 +45,25 @@ bool parse_kcov_options(int opt, const char *name, char *arg)
 		return true;
 	}
 
+	if (strcmp("childop-kcov-sample", name) == 0) {
+		unsigned long val;
+
+		if (!parse_unsigned(arg, "childop-kcov-sample", false, &val))
+			exit(EXIT_FAILURE);
+		if (val < 1UL) {
+			outputerr("--childop-kcov-sample=%lu: must be >= 1 (use --childop-kcov-attribution=off to disable outer brackets entirely)\n",
+				val);
+			exit(EXIT_FAILURE);
+		}
+		if (val > (unsigned long)KCOV_CHILDOP_SAMPLE_MAX) {
+			outputerr("--childop-kcov-sample=%lu exceeds upper bound %u (KCOV_CHILDOP_SAMPLE_MAX)\n",
+				val, (unsigned int)KCOV_CHILDOP_SAMPLE_MAX);
+			exit(EXIT_FAILURE);
+		}
+		childop_kcov_sample_n = (unsigned int)val;
+		return true;
+	}
+
 	if (strcmp("childop-cmp-harvest", name) == 0) {
 		if (strcmp(arg, "off") == 0) {
 			childop_cmp_harvest_mode = CHILDOP_CMP_HARVEST_OFF;

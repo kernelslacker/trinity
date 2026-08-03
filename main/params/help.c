@@ -106,6 +106,7 @@ static const struct option_help option_descs[] = {
 	{ "canary-slots",	 0,  "reserve N front slots from --alt-op-children for the dormant-op canary queue" },
 	{ "canary-window",	 0,  "invocations of active canary op per window (default 10000, range 1k..1M)" },
 	{ "childop-kcov-attribution", 0, "per-childop KCOV attribution: off/dual/on (default dual)" },
+	{ "childop-kcov-sample", 0, "1-of-N outer-bracket sampler (default 4, N=1 brackets every dispatch)" },
 	{ "childop-cmp-harvest", 0, "per-childop KCOV_TRACE_CMP bracket on CMP children: off/on (default off)" },
 	{ "childop-cmp-consume", 0, "shadow consume-side resolver at childop field sites: off/on (default off)" },
 	{ "children",		'C', "specify number of child processes" },

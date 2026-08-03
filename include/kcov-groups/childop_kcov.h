@@ -7,22 +7,43 @@ struct kcov_childop_kcov {
 /* Childop bracket attempt + skip-reason counters.  Every gated
  * kcov_bracket_begin() call from child.c bumps childop_kcov_attempts
  * once; the begin then either fires (childop_kcov_bracketed) or
- * short-circuits at one of the three reject arms (skipped_cmp /
- * skipped_nested / skipped_inactive — see kcov_bracket_begin in
- * kcov.c for the reject contract).  The arms are mutually exclusive
- * per attempt, so the invariant
+ * short-circuits at one of the four reject arms (skipped_cmp /
+ * skipped_nested / skipped_inactive / skipped_sample — see
+ * kcov_bracket_begin in kcov.c for the first three, and the
+ * --childop-kcov-sample 1-of-N gate in child_process() for the
+ * fourth).  The arms are mutually exclusive per attempt, so the
+ * invariant
  *   attempts == bracketed + skipped_cmp + skipped_nested
- *             + skipped_inactive
+ *             + skipped_inactive + skipped_sample
  * holds at run end (and is the smoke-test gate on this row).
  * Prereq for the childop-dual default flip: without the
  * per-reason split a low childop_edges_clean / attempts ratio can't
  * be told apart from "bracket never fired because of a known
- * short-circuit" vs "bracket fired but found nothing". */
+ * short-circuit" vs "bracket fired but found nothing".
+ *
+ * skipped_sample is the 1-of-N outer-bracket sampler skip arm:
+ * when --childop-kcov-sample=N (default N=4) is >1, only 1 in every
+ * N eligible dispatches opens the outer bracket, so the cost of the
+ * KCOV_ENABLE / KCOV_DISABLE ioctl pair is amortised across N
+ * dispatches.  Inner per-syscall brackets (do_syscall's own
+ * kcov_enable_trace / kcov_disable / kcov_collect cycle) still fire
+ * every call regardless -- sampling only touches the OUTER childop
+ * bracket introduced by --childop-kcov-attribution.  The bump lives
+ * at the child.c gate BEFORE kcov_bracket_begin() so a sampled-out
+ * dispatch never opens an ioctl on the KCOV fd, distinguishing it
+ * cleanly from skipped_inactive (bracket began, then bailed on
+ * ioctl failure) and skipped_nested (bracket refused because an
+ * outer was in flight).  Non-eligible dispatches
+ * (!op_uses_outer_bracket, mode == OFF, !have_kcov) bump nothing
+ * at all -- the attempts counter is scoped to eligible-and-mode-on
+ * dispatches, so a run with sample_n=1 keeps every counter
+ * byte-identical to the pre-sample codepath. */
 unsigned long childop_kcov_attempts;
 unsigned long childop_kcov_bracketed;
 unsigned long childop_kcov_skipped_cmp;
 unsigned long childop_kcov_skipped_nested;
 unsigned long childop_kcov_skipped_inactive;
+unsigned long childop_kcov_skipped_sample;
 /* Per-childop mirrors of the aggregate childop_kcov_* counters above,
  * indexed by enum child_op_type.  Sized to KCOV_CHILDOP_NR_MAX (same
  * bound as childop_kcov_trace_truncated[] below); kcov.c's build-time
@@ -49,12 +70,14 @@ unsigned long childop_kcov_skipped_inactive;
  *     + childop_kcov_op_skipped_cmp[op]
  *     + childop_kcov_op_skipped_nested[op]
  *     + childop_kcov_op_skipped_inactive[op]
+ *     + childop_kcov_op_skipped_sample[op]
  * (the smoke-test gate on this row, parallel to the aggregate one). */
 unsigned long childop_kcov_op_attempts[KCOV_CHILDOP_NR_MAX];
 unsigned long childop_kcov_op_bracketed[KCOV_CHILDOP_NR_MAX];
 unsigned long childop_kcov_op_skipped_cmp[KCOV_CHILDOP_NR_MAX];
 unsigned long childop_kcov_op_skipped_nested[KCOV_CHILDOP_NR_MAX];
 unsigned long childop_kcov_op_skipped_inactive[KCOV_CHILDOP_NR_MAX];
+unsigned long childop_kcov_op_skipped_sample[KCOV_CHILDOP_NR_MAX];
 /* Per-childop trace-truncation count, indexed by enum child_op_type
  * (op = nr - CHILDOP_KCOV_NR_BASE inside kcov_collect()).  Mirrors
  * per_syscall_diag[].trace_truncated for the childop bracket path:

@@ -146,6 +146,33 @@ enum childop_kcov_attribution_mode {
 extern enum childop_kcov_attribution_mode childop_kcov_attr_mode;
 
 /*
+ * --childop-kcov-sample=N: outer-bracket 1-of-N sampling rate.
+ *
+ * Controls how often the per-childop outer KCOV bracket in
+ * child_process() actually opens.  Default N=4 means one in every
+ * four eligible childop dispatches pays the KCOV_ENABLE /
+ * KCOV_DISABLE ioctl pair for the outer bracket; the other three
+ * short-circuit at the gate and bump childop_kcov_skipped_sample
+ * (aggregate and per-op).  Inner per-syscall brackets fire on every
+ * call regardless -- this knob only touches the OUTER bracket
+ * introduced by --childop-kcov-attribution, so the inner-only
+ * coverage attribution (per_syscall_edges / per_syscall_calls) stays
+ * byte-identical to a build with sampling off.
+ *
+ * Legal range: [1, KCOV_CHILDOP_SAMPLE_MAX].  N=1 disables the
+ * gate entirely (every eligible dispatch brackets, matching pre-
+ * sample behaviour); N=0 is rejected at parse time as ambiguous
+ * (would mean "no dispatch ever brackets" but that is what --childop-
+ * kcov-attribution=off already expresses).  Larger N cuts ioctl
+ * overhead proportionally but multiplies per-op sample variance:
+ * a childop_edges_clean[op] delta observed under sample_n=N should
+ * be scaled by N before compared against an inner-bracket signal
+ * from the same op.
+ */
+#define KCOV_CHILDOP_SAMPLE_MAX 1024U
+extern unsigned int childop_kcov_sample_n;
+
+/*
  * Childop CMP harvest mode (--childop-cmp-harvest).  Mirrors the
  * --kcov-transition-coverage / --frontier-saturation-cooldown A/B
  * pattern: a default-OFF behaviour-neutral knob that opens the
