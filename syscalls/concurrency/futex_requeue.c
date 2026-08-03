@@ -8,11 +8,20 @@
 #include "sanitise.h"
 
 #include "kernel/futex.h"
+#include "rnd.h"
+
+static const unsigned int futex2_sizes[] = {
+	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16,
+	FUTEX2_SIZE_U32, FUTEX2_SIZE_U32,	/* keep U32 dominant */
+	FUTEX2_SIZE_U64,
+};
+
 static void sanitise_futex_requeue(struct syscallrecord *rec)
 {
 	struct futex_waitv *waiters;
 	__u32 *futex_words;
 	unsigned int waitv_flags;
+	unsigned int size;
 
 	/* futex_requeue takes exactly 2 waiters: [0]=wake source, [1]=requeue target */
 	futex_words = (__u32 *) get_writable_address(2 * sizeof(*futex_words));
@@ -28,9 +37,12 @@ static void sanitise_futex_requeue(struct syscallrecord *rec)
 
 	/* Source and destination waitv must share identical flags; otherwise
 	 * futex_validate_input() rejects with -EINVAL before any of the
-	 * requeue / PI / waiter-walk paths run.
+	 * requeue / PI / waiter-walk paths run.  Draw one of the four futex2
+	 * size variants (U32 kept dominant) so all four size dispatch paths
+	 * are exercised, not just the U32 lane.
 	 */
-	waitv_flags = FUTEX2_SIZE_U32;
+	size = futex2_sizes[rnd_modulo_u32(ARRAY_SIZE(futex2_sizes))];
+	waitv_flags = size;
 	if (RAND_BOOL())
 		waitv_flags |= FUTEX2_PRIVATE;
 
