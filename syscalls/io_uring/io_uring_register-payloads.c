@@ -8,6 +8,7 @@
 #include <sched.h>
 #include <string.h>
 #include "arch.h"
+#include "fd.h"
 #include "kernel/io_uring.h"
 #include "objects.h"
 #include "random.h"
@@ -49,22 +50,48 @@ struct ioring_register_payload ioring_reg_buffers_payload(unsigned int opcode)
 
 /*
  * IORING_REGISTER_FILES: arg = int[] of fds, nr_args = count.
- * Use -1 as placeholder; kernel accepts sparse sets with -1 holes.
+ * Fill ~75% of slots with a real fd from the shared pool so
+ * io_sqe_files_register reaches io_fixed_file_set() and the file
+ * refcount path rather than short-circuiting on an all-sparse table;
+ * leave the remaining ~25% as -1 holes so the sparse-slot code path
+ * stays covered.  Reroll get_random_fd() up to FAILED_FD_REROLL_LIMIT
+ * times per real slot to skip -1 returns and protected fds -- a
+ * protected fd installed into a ring can outlive the reroll_-
+ * protected_fd_arg gate on later dup/close paths.  On reroll
+ * exhaustion fall back to -1 for that slot.
  * IORING_UNREGISTER_FILES takes no arg.
  */
 struct ioring_register_payload ioring_reg_files_payload(unsigned int opcode)
 {
 	struct ioring_register_payload p = { 0, 0, 0 };
-	unsigned int nr;
-	void *buf;
+	unsigned int nr, i;
+	int *buf;
 
 	if (opcode == IORING_UNREGISTER_FILES)
 		return p;
 
 	nr = 1 + (rnd_modulo_u32(16));
-	buf = get_writable_struct(nr * sizeof(int));
-	if (buf)
-		memset(buf, 0xff, nr * sizeof(int));  /* fill with -1 */
+	buf = (int *) get_writable_struct(nr * sizeof(int));
+	if (buf) {
+		for (i = 0; i < nr; i++) {
+			int fd = -1;
+			int tries;
+
+			if ((rnd_modulo_u32(4)) == 0) {
+				buf[i] = -1;
+				continue;
+			}
+			for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
+				int cand = get_random_fd();
+
+				if (cand >= 0 && !fd_is_protected(cand)) {
+					fd = cand;
+					break;
+				}
+			}
+			buf[i] = fd;
+		}
+	}
 	p.arg = (unsigned long) buf;
 	p.nr = nr;
 	p.len = nr * sizeof(int);
