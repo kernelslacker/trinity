@@ -656,6 +656,11 @@ stats	object
     stats.ipmr_cache_report.iters	u64
     stats.ipmr_cache_report.eperm	u64
     stats.ipmr_cache_report.emit_ok	u64
+  stats.ipmr_getroute_pktinfo	object
+    stats.ipmr_getroute_pktinfo.iters	u64
+    stats.ipmr_getroute_pktinfo.eperm	u64
+    stats.ipmr_getroute_pktinfo.pktinfo_ok	u64
+    stats.ipmr_getroute_pktinfo.getroute_ok	u64
   stats.nf_conntrack_helper_churn	object
     stats.nf_conntrack_helper_churn.runs	u64
     stats.nf_conntrack_helper_churn.setup_failed	u64

@@ -93,6 +93,7 @@
 #include "stats/subsys/kvm.h"
 #include "stats/subsys/ipfrag_source_churn.h"
 #include "stats/subsys/ipmr_cache_report.h"
+#include "stats/subsys/ipmr_getroute_pktinfo.h"
 #include "stats/subsys/ip4_udp_cork_splice.h"
 #include "stats/subsys/ip6_udp_cork_splice.h"
 #include "stats/subsys/ip6erspan_netns_migrate.h"
@@ -977,6 +978,9 @@ struct stats_s {
 
 	/* ipmr_cache_report accounting.  See stats/subsys/ipmr_cache_report.h. */
 	struct ipmr_cache_report_stats ipmr_cache_report;
+
+	/* ipmr_getroute_pktinfo accounting.  See stats/subsys/ipmr_getroute_pktinfo.h. */
+	struct ipmr_getroute_pktinfo_stats ipmr_getroute_pktinfo;
 
 	/* ublk_lifecycle accounting.  See stats/subsys/ublk_lifecycle.h. */
 	struct ublk_lifecycle_stats ublk_lifecycle __attribute__((aligned(64)));

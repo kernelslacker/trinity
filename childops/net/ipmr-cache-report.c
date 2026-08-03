@@ -415,6 +415,324 @@ out:
 	return 0;
 }
 
+/* ------------------------------------------------------------------ *
+ * RTM_GETROUTE / IP_PKTINFO arm                                       *
+ *                                                                      *
+ * Exercises the ipmr_cache_report() → IP_PKTINFO delivery path        *
+ * exposed by commit bb7403655b3c ("ipmr: support IP_PKTINFO on cache   *
+ * report IGMP msg").  The relevant overlap: ipmr_cache_report() clones *
+ * the arriving skb's cb[] into the new report skb; the mrouted raw     *
+ * socket's receive path reads that cb[] as IPCB(), so the ipi_ifindex  *
+ * field sits over the same bytes as NETLINK_CB(skb).portid when the    *
+ * trigger skb was synthesised by the RTM_GETROUTE handler.  KASAN /    *
+ * a garbage ipi_ifindex in the recvmsg PKTINFO cmsg are the oracle.    *
+ *                                                                       *
+ * Sequence (per invocation, inside private netns):                     *
+ *   1. MRT_INIT + IP_PKTINFO on the raw IGMP socket — IP_PKTINFO on   *
+ *      the mrouted socket is what makes the overlap consumable.        *
+ *   2. MRT_ADD_VIF as in the NOCACHE arm.                              *
+ *   3. Loop:                                                            *
+ *      a. Send RTM_GETROUTE (AF_INET, RTA_DST=mcast group) via         *
+ *         NETLINK_ROUTE — exercises ipmr_rtm_getroute and potentially  *
+ *         builds a report skb whose cb[] carries NETLINK_CB portid.    *
+ *      b. sendto() a UDP datagram to the same group (no MFC entry) to  *
+ *         fire the NOCACHE upcall and deliver the report to raw.       *
+ *      c. recvmsg() on raw with a cmsg buffer; harvest IP_PKTINFO and  *
+ *         bump pktinfo_ok so the stat surface shows coverage.          *
+ * ------------------------------------------------------------------ */
+
+#define IPMR_PKTINFO_LOOP_BASE	5U
+#define IPMR_PKTINFO_LOOP_FLOOR	8U
+#define IPMR_PKTINFO_LOOP_CAP	32U
+#define IPMR_PKTINFO_BUDGET_NS	200000000L	/* 200 ms */
+
+static bool ns_userns_unsupported_ipmr_getroute_pktinfo;
+
+static bool ns_unsupported_ipmr_getroute_pktinfo(void)
+{
+	return __atomic_load_n(&shm->ipmr_getroute_pktinfo_ns_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_ipmr_getroute_pktinfo(void)
+{
+	__atomic_store_n(&shm->ipmr_getroute_pktinfo_ns_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
+
+static bool ns_eperm_ipmr_getroute_pktinfo(void)
+{
+	return __atomic_load_n(&shm->ipmr_getroute_pktinfo_ns_eperm,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_eperm_ipmr_getroute_pktinfo(void)
+{
+	__atomic_store_n(&shm->ipmr_getroute_pktinfo_ns_eperm, true,
+			 __ATOMIC_RELAXED);
+}
+
+struct ipmr_getroute_pktinfo_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Build and send an RTM_GETROUTE query for the given multicast
+ * destination address on the nl_ctx socket.  Best-effort: the response
+ * (RTM_NEWROUTE or NLMSG_ERROR) is not consumed here — the caller
+ * drains or ignores it.  Returns 0 on success, -1 on send failure.
+ */
+static int send_getroute_query(struct nl_ctx *ctx, __be32 dst_addr)
+{
+	struct {
+		struct nlmsghdr	nlh;
+		struct rtmsg	rtm;
+		unsigned char	attrs[RTA_LENGTH(4)];
+	} req;
+	struct rtattr *rta;
+	ssize_t sent;
+
+	memset(&req, 0, sizeof(req));
+	req.nlh.nlmsg_type  = RTM_GETROUTE;
+	req.nlh.nlmsg_flags = NLM_F_REQUEST;
+	req.nlh.nlmsg_seq   = nl_seq_next(ctx);
+	req.rtm.rtm_family  = AF_INET;
+	req.rtm.rtm_dst_len = 32;
+
+	rta = (struct rtattr *)req.attrs;
+	rta->rta_type = RTA_DST;
+	rta->rta_len  = (__u16)RTA_LENGTH(4);
+	memcpy(RTA_DATA(rta), &dst_addr, 4);
+
+	req.nlh.nlmsg_len = (__u32)(NLMSG_ALIGN(NLMSG_HDRLEN +
+					    sizeof(req.rtm)) +
+					    (unsigned int)rta->rta_len);
+
+	sent = send(ctx->fd, &req, req.nlh.nlmsg_len, MSG_DONTWAIT);
+	return (sent >= 0) ? 0 : -1;
+}
+
+static int ipmr_getroute_pktinfo_in_ns(void *arg)
+{
+	struct ipmr_getroute_pktinfo_ctx *cctx =
+		(struct ipmr_getroute_pktinfo_ctx *)arg;
+	struct childdata *child = cctx->child;
+	struct vifctl vc;
+	struct sockaddr_in dst;
+	struct in_addr lcl;
+	struct nl_ctx nl = { .fd = -1 };
+	struct nl_open_opts nl_opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 0,	/* non-blocking drain only */
+	};
+	int raw = -1;
+	int udp = -1;
+	int one = 1;
+	struct timespec t0;
+	unsigned int iters;
+	unsigned int i;
+
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	unsigned long direct_calls = 0;
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+
+	bring_lo_up();
+
+	if (nl_open(&nl, &nl_opts) < 0) {
+		/* NETLINK_ROUTE unavailable — still attempt the rest so we
+		 * cover the IP_PKTINFO path even without RTM_GETROUTE. */
+		nl.fd = -1;
+	}
+
+	raw = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_IGMP);
+	direct_calls++;
+	if (raw < 0) {
+		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
+			mark_ns_unsupported_ipmr_getroute_pktinfo();
+		else if (errno == EPERM)
+			mark_ns_eperm_ipmr_getroute_pktinfo();
+		goto out;
+	}
+
+	direct_calls++;
+	if (setsockopt(raw, IPPROTO_IP, MRT_INIT, &one, sizeof(one)) < 0) {
+		if (errno == EPERM) {
+			__atomic_add_fetch(
+				&shm->stats.ipmr_getroute_pktinfo.eperm,
+				1, __ATOMIC_RELAXED);
+			mark_ns_eperm_ipmr_getroute_pktinfo();
+		} else if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
+			   errno == EADDRINUSE) {
+			mark_ns_unsupported_ipmr_getroute_pktinfo();
+		}
+		goto out;
+	}
+
+	/* Enable IP_PKTINFO on the mrouted socket so the kernel populates
+	 * the PKTINFO cmsg when delivering the cache report.  This is the
+	 * knob that makes the IPCB/NETLINK_CB cb[] overlap observable:
+	 * without it the kernel skips the pktinfo fill entirely. */
+	direct_calls++;
+	(void)setsockopt(raw, IPPROTO_IP, IP_PKTINFO, &one, sizeof(one));
+
+	memset(&vc, 0, sizeof(vc));
+	vc.vifc_vifi	  = 0;
+	vc.vifc_flags	  = 0;
+	vc.vifc_threshold = 1;
+	vc.vifc_lcl_addr.s_addr = htonl(INADDR_LOOPBACK);
+	vc.vifc_rmt_addr.s_addr = 0;
+	direct_calls++;
+	if (setsockopt(raw, IPPROTO_IP, MRT_ADD_VIF, &vc, sizeof(vc)) < 0)
+		goto done;
+
+	udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	direct_calls++;
+	if (udp < 0)
+		goto done;
+
+	lcl.s_addr = htonl(INADDR_LOOPBACK);
+	(void)setsockopt(udp, IPPROTO_IP, IP_MULTICAST_IF, &lcl, sizeof(lcl));
+	direct_calls++;
+
+	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
+	iters = BUDGETED(CHILD_OP_IPMR_GETROUTE_PKTINFO,
+			 JITTER_RANGE(IPMR_PKTINFO_LOOP_BASE));
+	if (iters < IPMR_PKTINFO_LOOP_FLOOR)
+		iters = IPMR_PKTINFO_LOOP_FLOOR;
+	if (iters > IPMR_PKTINFO_LOOP_CAP)
+		iters = IPMR_PKTINFO_LOOP_CAP;
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
+				   1, __ATOMIC_RELAXED);
+
+	for (i = 0; i < iters; i++) {
+		const char payload[8] = {
+			'i','p','m','r','g','r','t','p'
+		};
+		unsigned char cmsgbuf[CMSG_SPACE(sizeof(struct in_pktinfo))];
+		unsigned char rcvbuf[256];
+		struct iovec iov;
+		struct msghdr mh;
+		struct cmsghdr *cmsg;
+		ssize_t r;
+		__be32 group;
+
+		if (ns_since(&t0) >= IPMR_PKTINFO_BUDGET_NS)
+			break;
+
+		__atomic_add_fetch(&shm->stats.ipmr_getroute_pktinfo.iters,
+				   1, __ATOMIC_RELAXED);
+
+		group = pick_nocache_group();
+
+		/* RTM_GETROUTE for this group — exercises ipmr_rtm_getroute
+		 * and may build a report skb whose cb[] holds NETLINK_CB
+		 * portid where IPCB ipi_ifindex would be read on delivery. */
+		if (nl.fd >= 0) {
+			if (send_getroute_query(&nl, group) == 0)
+				__atomic_add_fetch(
+					&shm->stats.ipmr_getroute_pktinfo.getroute_ok,
+					1, __ATOMIC_RELAXED);
+			/* Drain the NLMSG_ERROR / RTM_NEWROUTE reply so
+			 * the socket does not pile up. */
+			{
+				unsigned char rbuf[RTNL_BUF_BYTES];
+				(void)recv(nl.fd, rbuf, sizeof(rbuf),
+					   MSG_DONTWAIT);
+			}
+		}
+
+		/* UDP sendto triggers the NOCACHE upcall which calls
+		 * ipmr_cache_report() and delivers the IGMP NOCACHE msg
+		 * to raw (our mrouted socket) with IP_PKTINFO populated.
+		 * The overlap oracle: ipi_ifindex in the PKTINFO cmsg may
+		 * carry NETLINK_CB(skb).portid from a preceding skb reuse. */
+		memset(&dst, 0, sizeof(dst));
+		dst.sin_family	    = AF_INET;
+		dst.sin_port	    = htons(1024 + (rand32() & 0x3fff));
+		dst.sin_addr.s_addr = group;
+		(void)sendto(udp, payload, sizeof(payload), MSG_DONTWAIT,
+			     (struct sockaddr *)&dst, sizeof(dst));
+		direct_calls++;
+
+		/* recvmsg on the mrouted socket with cmsg space for
+		 * IP_PKTINFO — this is the IPCB/NETLINK_CB overlap site. */
+		memset(&cmsgbuf, 0, sizeof(cmsgbuf));
+		iov.iov_base = rcvbuf;
+		iov.iov_len  = sizeof(rcvbuf);
+		memset(&mh, 0, sizeof(mh));
+		mh.msg_iov	   = &iov;
+		mh.msg_iovlen	   = 1;
+		mh.msg_control	   = cmsgbuf;
+		mh.msg_controllen  = sizeof(cmsgbuf);
+		r = recvmsg(raw, &mh, MSG_DONTWAIT);
+		direct_calls++;
+		if (r >= 0) {
+			for (cmsg = CMSG_FIRSTHDR(&mh); cmsg;
+			     cmsg = CMSG_NXTHDR(&mh, cmsg)) {
+				if (cmsg->cmsg_level == IPPROTO_IP &&
+				    cmsg->cmsg_type  == IP_PKTINFO) {
+					__atomic_add_fetch(
+						&shm->stats.ipmr_getroute_pktinfo.pktinfo_ok,
+						1, __ATOMIC_RELAXED);
+					break;
+				}
+			}
+		}
+	}
+
+done:
+	(void)setsockopt(raw, IPPROTO_IP, MRT_DONE, NULL, 0);
+	direct_calls++;
+
+out:
+	if (udp >= 0)
+		close(udp);
+	if (raw >= 0)
+		close(raw);
+	if (nl.fd >= 0)
+		nl_close(&nl);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+	return 0;
+}
+
+bool ipmr_getroute_pktinfo(struct childdata *child)
+{
+	struct ipmr_getroute_pktinfo_ctx cctx = { .child = child };
+	int rc;
+
+	if (ns_userns_unsupported_ipmr_getroute_pktinfo ||
+	    ns_unsupported_ipmr_getroute_pktinfo() ||
+	    ns_eperm_ipmr_getroute_pktinfo())
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, ipmr_getroute_pktinfo_in_ns,
+			      &cctx);
+	if (rc == -EPERM) {
+		ns_userns_unsupported_ipmr_getroute_pktinfo = true;
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(
+					&shm->stats.childop.latch_reason[op],
+					CHILDOP_LATCH_NS_UNSUPPORTED,
+					__ATOMIC_RELAXED);
+		}
+		return true;
+	}
+	if (rc < 0)
+		return true;
+
+	return true;
+}
+
 bool ipmr_cache_report(struct childdata *child)
 {
 	struct ipmr_cache_report_ctx cctx = { .child = child };
