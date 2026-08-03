@@ -43,12 +43,15 @@ static void do_anon(struct syscallrecord *rec)
 }
 
 /*
- * Type bits live in the low 2 bits of the mmap flags word: exactly one
- * of MAP_SHARED (0x01), MAP_PRIVATE (0x02), or MAP_SHARED_VALIDATE (0x03).
- * Picking the type is mutually exclusive — never OR these together.
+ * Type field lives in the low 4 bits (MAP_TYPE == 0x0f) of the mmap
+ * flags word: exactly one of MAP_SHARED (0x01), MAP_PRIVATE (0x02),
+ * MAP_SHARED_VALIDATE (0x03), or MAP_DROPPABLE (0x08).  Picking the
+ * type is mutually exclusive — never OR these together.  The kernel's
+ * switch (flags & MAP_TYPE) hits the default -EINVAL arm for any other
+ * value in that field.
  */
 unsigned long mmap_excl_flags[] = {
-	MAP_SHARED, MAP_PRIVATE, MAP_SHARED_VALIDATE,
+	MAP_SHARED, MAP_PRIVATE, MAP_SHARED_VALIDATE, MAP_DROPPABLE,
 };
 
 unsigned long get_rand_mmap_flags(void)
@@ -59,7 +62,7 @@ unsigned long get_rand_mmap_flags(void)
 		MAP_FIXED, MAP_ANONYMOUS, MAP_GROWSDOWN, MAP_DENYWRITE,
 		MAP_EXECUTABLE, MAP_LOCKED, MAP_NORESERVE, MAP_POPULATE,
 		MAP_NONBLOCK, MAP_STACK, MAP_HUGETLB, MAP_UNINITIALIZED,
-		MAP_FIXED_NOREPLACE, MAP_DROPPABLE,
+		MAP_FIXED_NOREPLACE,
 #ifdef __x86_64__
 		MAP_32BIT,
 		MAP_ABOVE4G,
@@ -79,6 +82,19 @@ unsigned long get_rand_mmap_flags(void)
 	 */
 	if (type == MAP_SHARED_VALIDATE && RAND_BOOL())
 		flags |= MAP_SYNC;
+
+	/*
+	 * MAP_DROPPABLE has no file-backed arm — the kernel takes the
+	 * MAP_DROPPABLE case in switch (flags & MAP_TYPE) and requires
+	 * MAP_ANONYMOUS, and it EINVALs when paired with MAP_LOCKED or
+	 * MAP_HUGETLB.  Force the required bit and drop the two rejected
+	 * modifiers so every draw exercises the VM_DROPPABLE path instead
+	 * of dead-ending in -EINVAL.
+	 */
+	if (type == MAP_DROPPABLE) {
+		flags |= MAP_ANONYMOUS;
+		flags &= ~(unsigned long)(MAP_LOCKED | MAP_HUGETLB);
+	}
 
 	/*
 	 * If MAP_HUGETLB ended up set, sometimes also encode a specific
