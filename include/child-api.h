@@ -658,6 +658,7 @@ bool pagecache_canary_check(struct childdata *child);
 bool mpls_route_churn(struct childdata *child);
 bool sock_diag_walker(struct childdata *child);
 bool altname_thrash(struct childdata *child);
+bool ip6mr_churn(struct childdata *child);
 bool ipmr_cache_report(struct childdata *child);
 bool ipmr_getroute_pktinfo(struct childdata *child);
 bool ublk_lifecycle(struct childdata *child);
