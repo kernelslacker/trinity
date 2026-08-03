@@ -54,6 +54,23 @@ static unsigned long sendflags[] = {
 	MSG_BATCH, MSG_ZEROCOPY, MSG_SPLICE_PAGES,
 };
 
+/*
+ * sendmsg / sendmmsg reject MSG_CMSG_COMPAT at the native syscall
+ * prologue (__sys_sendmsg / __sys_sendmmsg pass forbid_cmsg_compat=true),
+ * bouncing ~3/8 of attempts with -EINVAL before any structured msghdr,
+ * cmsg, or gen_msg payload is exercised.  Keep the bit out of the
+ * flag pool for these two entries; send / sendto still carry it above
+ * where it is harmlessly unvalidated.
+ */
+static unsigned long sendmsg_flags[] = {
+	MSG_OOB, MSG_PEEK, MSG_DONTROUTE, MSG_CTRUNC,
+	MSG_PROBE, MSG_TRUNC, MSG_DONTWAIT, MSG_EOR,
+	MSG_WAITALL, MSG_FIN, MSG_SYN, MSG_CONFIRM,
+	MSG_RST, MSG_ERRQUEUE, MSG_NOSIGNAL, MSG_MORE,
+	MSG_WAITFORONE, MSG_FASTOPEN, MSG_CMSG_CLOEXEC,
+	MSG_BATCH, MSG_ZEROCOPY, MSG_SPLICE_PAGES,
+};
+
 struct syscallentry syscall_send = {
 	.name = "send",
 	.num_args = 4,
@@ -451,7 +468,7 @@ struct syscallentry syscall_sendmsg = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "msg", [2] = "flags" },
-	.arg_params[2].list = ARGLIST(sendflags),
+	.arg_params[2].list = ARGLIST(sendmsg_flags),
 	.sanitise = sanitise_sendmsg,
 	.post = post_sendmsg,
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
@@ -726,7 +743,7 @@ struct syscallentry syscall_sendmmsg = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "mmsg", [2] = "vlen", [3] = "flags" },
-	.arg_params[3].list = ARGLIST(sendflags),
+	.arg_params[3].list = ARGLIST(sendmsg_flags),
 	.arg_params[2].range.low = 1, .arg_params[2].range.hi = 1024,
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.group = GROUP_NET,
