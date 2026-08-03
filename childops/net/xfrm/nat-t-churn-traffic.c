@@ -32,11 +32,27 @@ int nat_t_open_encap_udp(void)
 	struct sockaddr_in src;
 	int udp;
 	int encap_type = UDP_ENCAP_ESPINUDP;
+	/* Count raw kernel entries this helper issues directly (socket,
+	 * setsockopt).  Sibling nat-t-churn-setup.c publishes its
+	 * bring_lo_up() one-shot the same way; both aggregate into the
+	 * CHILD_OP_NAT_T_CHURN direct-syscall bucket without collision
+	 * (the atomic add is monotonic + additive).  Snapshot the
+	 * caller's op via this_child()->op_type (NULL guard for
+	 * parent-context callers, NR_CHILD_OP_TYPES bounds check) since
+	 * the v4 helpers are reached from nat-t-churn.c across the TU
+	 * boundary without a struct childdata handle. */
+	unsigned long direct_calls = 0;
+	struct childdata *tc = this_child();
+	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	direct_calls++;
 	if (udp < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 			warn_once_unsupported("AF_INET socket", errno);
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return -1;
 	}
 
@@ -46,15 +62,22 @@ int nat_t_open_encap_udp(void)
 	src.sin_port        = htons(NAT_T_ENCAP_PORT);
 	if (bind(udp, (struct sockaddr *)&src, sizeof(src)) < 0) {
 		close(udp);
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return -1;
 	}
 
+	direct_calls++;
 	if (setsockopt(udp, SOL_UDP, UDP_ENCAP, &encap_type,
 		       sizeof(encap_type)) < 0) {
 		close(udp);
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
 		return -1;
 	}
 
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return udp;
 }
 
@@ -71,6 +94,16 @@ bool nat_t_send_esp_in_udp(int udp, __be32 spi, __u32 seq)
 	struct sockaddr_in dst;
 	unsigned char frame[8 + NAT_T_INNER_PAYLOAD_LEN];
 	__be32 *hdr = (__be32 *)frame;
+	ssize_t n;
+	/* Snapshot the caller's op via this_child()->op_type -- reached
+	 * from nat-t-churn.c across the TU boundary without a
+	 * struct childdata handle -- and publish the single sendto()
+	 * this v4 send helper issues.  Aggregates into the same
+	 * CHILD_OP_NAT_T_CHURN bucket the setup/traffic siblings
+	 * publish to. */
+	struct childdata *tc = this_child();
+	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	hdr[0] = spi;
 	hdr[1] = htonl(seq);
@@ -81,8 +114,11 @@ bool nat_t_send_esp_in_udp(int udp, __be32 spi, __u32 seq)
 	dst.sin_addr.s_addr = NAT_T_DADDR_BE;
 	dst.sin_port        = htons(NAT_T_ENCAP_PORT);
 
-	return sendto(udp, frame, sizeof(frame), MSG_DONTWAIT,
-		      (struct sockaddr *)&dst, sizeof(dst)) > 0;
+	n = sendto(udp, frame, sizeof(frame), MSG_DONTWAIT,
+		   (struct sockaddr *)&dst, sizeof(dst));
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
+	return n > 0;
 }
 
 void nat_t_maybe_drain_recv(int udp)
@@ -104,7 +140,7 @@ void nat_t_maybe_drain_recv(int udp)
  * unreachable v6 destination hits the xfrm6 dst error-return path the
  * upstream commit fixed.
  */
-static int open_encap_udp6(void)
+static int open_encap_udp6(unsigned long *direct_calls)
 {
 	struct sockaddr_in6 src;
 	int udp;
@@ -113,6 +149,7 @@ static int open_encap_udp6(void)
 			: UDP_ENCAP_ESPINUDP;
 
 	udp = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	(*direct_calls)++;
 	if (udp < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			if (!ns_unsupported_xfrm6) {
@@ -133,6 +170,7 @@ static int open_encap_udp6(void)
 		return -1;
 	}
 
+	(*direct_calls)++;
 	if (setsockopt(udp, SOL_UDP, UDP_ENCAP, &encap_type,
 		       sizeof(encap_type)) < 0) {
 		if (errno == EOPNOTSUPP) {
@@ -198,6 +236,17 @@ void nat_t_churn_v6(void)
 	bool delsa_fired = false;
 	bool sa_installed = false;
 	struct timespec t0;
+	/* Count raw v6 kernel entries this driver issues directly
+	 * (open_encap_udp6's socket + setsockopt, plus each sendto in
+	 * the burst).  The XFRM_MSG_* control-plane traffic on this
+	 * ctx already publishes at nl_close(), so we deliberately do
+	 * not double-count it here.  Snapshot the caller's op via
+	 * this_child()->op_type since the v6 driver is reached from
+	 * nat-t-churn.c across the TU boundary. */
+	unsigned long direct_calls = 0;
+	struct childdata *tc = this_child();
+	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_setup_fail,
@@ -247,7 +296,7 @@ void nat_t_churn_v6(void)
 		goto out;
 	}
 
-	udp = open_encap_udp6();
+	udp = open_encap_udp6(&direct_calls);
 	if (udp < 0) {
 		__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_setup_fail,
 				   1, __ATOMIC_RELAXED);
@@ -291,6 +340,7 @@ void nat_t_churn_v6(void)
 			hdr[1] = htonl(++g_iter);
 			(void)sendto(udp, frame, sizeof(frame), MSG_DONTWAIT,
 				     (struct sockaddr *)&dst, sizeof(dst));
+			direct_calls++;
 			__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_sendto_runs,
 					   1, __ATOMIC_RELAXED);
 
@@ -314,4 +364,6 @@ out:
 	if (udp >= 0)
 		close(udp);
 	nl_close(&ctx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 }
