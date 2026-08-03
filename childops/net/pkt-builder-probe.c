@@ -34,10 +34,14 @@
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"
 
 #define PKTB_PROBE_PER_INVOCATION	6	/* frames per invocation */
 #define PKTB_PROBE_WALL_CAP_NS		(50ULL * 1000ULL * 1000ULL)
 #define PKTB_PROBE_NR_RECIPES		8
+_Static_assert(PKTB_PROBE_NR_RECIPES <=
+	       ARRAY_SIZE(((struct pkt_builder_stats *)0)->per_recipe),
+	       "per_recipe[] too small for PKTB_PROBE_NR_RECIPES");
 
 /*
  * Recipes: named layer stacks the prover assembles.  Each row lists

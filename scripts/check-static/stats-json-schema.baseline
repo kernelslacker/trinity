@@ -1099,6 +1099,8 @@ stats	object
     stats.pkt_builder.recipe_qinq_ip4	u64
     stats.pkt_builder.recipe_geneve_v6_eth_ip6	u64
     stats.pkt_builder.recipe_mpls_ip4	u64
+    stats.pkt_builder.recipe_seg6_srh_udp	u64
+    stats.pkt_builder.recipe_esp_ip4	u64
   stats.pci_bind	object
     stats.pci_bind.runs	u64
     stats.pci_bind.drivers_available	u64
