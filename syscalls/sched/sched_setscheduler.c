@@ -79,6 +79,16 @@ static void sanitise_sched_setscheduler(struct syscallrecord *rec)
 	if (rnd_modulo_u32(100) < 70)
 		rec->a1 = 0;
 
+	/*
+	 * SCHED_RESET_ON_FORK (0x40000000) is a modifier bit OR'd onto the
+	 * base policy rather than a policy value in its own right.  Apply it
+	 * ~25% of the time so the reset_on_fork branch in
+	 * __sched_setscheduler() gets exercised, including the -EINVAL path
+	 * the kernel emits when SCHED_DEADLINE has this bit set.
+	 */
+	if (rnd_modulo_u32(100) < 25)
+		rec->a2 |= SCHED_RESET_ON_FORK;
+
 	rec->a3 = (unsigned long) sp;
 	avoid_shared_buffer_inout(&rec->a3, sizeof(*sp));
 }

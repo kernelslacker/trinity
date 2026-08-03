@@ -48,3 +48,12 @@
 #define SCHED_EXT 7
 #endif
 
+/*
+ * SCHED_RESET_ON_FORK is a modifier bit OR'd onto a base policy rather
+ * than a policy of its own.  It landed in Linux 2.6.32; the fallback
+ * here keeps the build clean on older build hosts.
+ */
+#ifndef SCHED_RESET_ON_FORK
+#define SCHED_RESET_ON_FORK 0x40000000
+#endif
+
