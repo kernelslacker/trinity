@@ -552,6 +552,57 @@ static bool inet6_can_run(void)
 	return sfg_can_run_default(PF_INET6);
 }
 
+/*
+ * Legal phase orderings for the inet6/TCP grammar walk.  Every entry
+ * satisfies the run_grammar_chain invariants: SOCKET first; BIND
+ * before LISTEN; LISTEN before ACCEPT; DATA only after ACCEPT (STREAM);
+ * PRE_CFG always precedes BIND; POST_CFG always follows BIND.  The
+ * only degree of freedom exercised here is where the setsockopt WALK
+ * lands relative to the pre/post configure legs and the bind — the
+ * TCP options fired by inet6_walk_tcp (TCP_CONGESTION, TCP_ULP,
+ * TLS_TX/RX install) are legal on both sides of bind on TCP sockets,
+ * so shifting the walk stresses kernel paths random per-syscall
+ * fuzzing does not reach in coherent succession.
+ *
+ * Gated to SOCK_STREAM triplets by inet6_phase_orders_apply — the UDP
+ * arm keeps the framework default single ordering because its options
+ * assume the walk lands pre-bind.
+ */
+static const struct sfg_phase_order inet6_tcp_orders[] = {
+	/* Baseline: setsockopt walk pre-bind, matches the pre-P1 driver. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_PRE_CFG, SFG_PHASE_WALK,
+	    SFG_PHASE_BIND, SFG_PHASE_POST_CFG,
+	    SFG_PHASE_LISTEN, SFG_PHASE_ACCEPT, SFG_PHASE_DATA,
+	    SFG_PHASE_END } },
+
+	/* Walk before configure_pre_bind — fires the setsockopt sequence
+	 * on a blocking socket (O_NONBLOCK is set inside configure_pre_bind),
+	 * exercising TCP_ULP install on a fresh unmodified fd. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_WALK, SFG_PHASE_PRE_CFG,
+	    SFG_PHASE_BIND, SFG_PHASE_POST_CFG,
+	    SFG_PHASE_LISTEN, SFG_PHASE_ACCEPT, SFG_PHASE_DATA,
+	    SFG_PHASE_END } },
+
+	/* Walk post-bind but before configure_post_bind — the setsockopt
+	 * sequence sees a bound-but-not-yet-listening socket. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_PRE_CFG, SFG_PHASE_BIND,
+	    SFG_PHASE_WALK, SFG_PHASE_POST_CFG,
+	    SFG_PHASE_LISTEN, SFG_PHASE_ACCEPT, SFG_PHASE_DATA,
+	    SFG_PHASE_END } },
+
+	/* Walk fully post-bind and post configure_post_bind, still before
+	 * listen() so the socket is bound but not accepting. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_PRE_CFG, SFG_PHASE_BIND,
+	    SFG_PHASE_POST_CFG, SFG_PHASE_WALK,
+	    SFG_PHASE_LISTEN, SFG_PHASE_ACCEPT, SFG_PHASE_DATA,
+	    SFG_PHASE_END } },
+};
+
+static bool inet6_phase_orders_apply(const struct socket_triplet *triplet)
+{
+	return triplet->family == PF_INET6 && triplet->type == SOCK_STREAM;
+}
+
 const struct socket_family_grammar grammar_inet6 = {
 	.family			= PF_INET6,
 	.name			= "inet6",
@@ -560,5 +611,8 @@ const struct socket_family_grammar grammar_inet6 = {
 	.configure_pre_bind	= inet6_configure_pre_bind,
 	.walk_setsockopts	= inet6_walk_setsockopts,
 	.gen_cmsg		= inet6_gen_cmsg,
+	.phase_orders		= inet6_tcp_orders,
+	.nr_phase_orders	= ARRAY_SIZE(inet6_tcp_orders),
+	.phase_orders_apply	= inet6_phase_orders_apply,
 };
 #endif
