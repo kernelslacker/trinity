@@ -12,6 +12,7 @@
 #include <sys/mman.h>
 #include <linux/kvm.h>
 
+#include "kernel/kvm.h"
 #include "child-api.h"
 #include "fd.h"
 #include "objects.h"
@@ -190,7 +191,7 @@ static void kvm_seed_guest(struct object *vmobj)
 
 	memcpy(ram, kvm_guest_code, sizeof(kvm_guest_code));
 
-	region.slot = 0;
+	region.slot = KVM_GUEST_MEMSLOT;
 	region.guest_phys_addr = 0;
 	region.memory_size = KVM_GUEST_RAM_SIZE;
 	region.userspace_addr = (uintptr_t)ram;

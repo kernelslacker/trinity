@@ -2,6 +2,9 @@
 
 #include <linux/kvm.h>
 
+/* Slot 0 is reserved by kvm_seed_guest() for the guest bootstrap image. */
+#define KVM_GUEST_MEMSLOT	0
+
 #ifndef KVMIO
 #define KVMIO 0xAE
 #endif

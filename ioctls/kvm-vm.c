@@ -154,7 +154,7 @@ static void sanitise_kvm_user_memory_region(struct syscallrecord *rec)
 	if (ua == NULL)
 		return;
 
-	m->slot = rnd_modulo_u32(KVM_FUZZ_MEM_SLOTS);
+	m->slot = KVM_GUEST_MEMSLOT + 1 + rnd_modulo_u32(KVM_FUZZ_MEM_SLOTS - 1);
 	m->flags = rnd_modulo_u32(2) ? 0 : KVM_MEM_LOG_DIRTY_PAGES;
 	m->guest_phys_addr = (rnd_u64() % KVM_FUZZ_GPA_LIMIT)
 			   & ~(KVM_FUZZ_PAGE_SIZE - 1);
@@ -181,7 +181,7 @@ static void sanitise_kvm_user_memory_region2(struct syscallrecord *rec)
 
 	memset(m, 0, sizeof(*m));
 
-	m->slot = rnd_modulo_u32(KVM_FUZZ_MEM_SLOTS);
+	m->slot = KVM_GUEST_MEMSLOT + 1 + rnd_modulo_u32(KVM_FUZZ_MEM_SLOTS - 1);
 	m->flags = rnd_modulo_u32(2) ? 0 : KVM_MEM_LOG_DIRTY_PAGES;
 	m->guest_phys_addr = (rnd_u64() % KVM_FUZZ_GPA_LIMIT)
 			   & ~(KVM_FUZZ_PAGE_SIZE - 1);
