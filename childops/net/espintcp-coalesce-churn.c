@@ -172,6 +172,24 @@ static void mark_kind_unsupported(void)
 			 __ATOMIC_RELAXED);
 }
 
+/* Publish n direct kernel entries against this childdata's op via
+ * childop_direct_syscalls_add().  Snapshot the caller's op through
+ * this_child() -- the espintcp coalesce path fans out across the
+ * userns_run_in_ns() grandchild, the open_loopback_pair() acceptor
+ * fork, and the run_no_ingress_dev_arm() helper fork; each of those
+ * subprocesses inherits the parent's this_child() handle and writes
+ * to the shared shm, so per-site publish from any of them attributes
+ * correctly to CHILD_OP_ESPINTCP_COALESCE.  The netlink RTM_* traffic
+ * on these ctxes already publishes at nl_close(), so we deliberately
+ * do not double-count it here. */
+static void bump_direct(unsigned long n)
+{
+	struct childdata *tc = this_child();
+
+	if (tc)
+		childop_direct_syscalls_add(tc->op_type, n);
+}
+
 /* Set both timeouts on @fd so a wedged peer cannot pin the child
  * past the inherited SIGALRM(1s) or our own wall-clock cap.  100 ms
  * matches the sibling tcp_ulp_swap_churn value. */
@@ -182,10 +200,12 @@ static void set_sock_timeouts(int fd)
 	tv.tv_sec  = 0;
 	tv.tv_usec = ESPINTCP_RCV_TIMEO_MS * 1000;
 	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	bump_direct(1);
 
 	tv.tv_sec  = 0;
 	tv.tv_usec = ESPINTCP_SND_TIMEO_MS * 1000;
 	(void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+	bump_direct(1);
 }
 
 /* Draw the frame's length prefix.  Rotates:
@@ -237,9 +257,11 @@ static int open_loopback_pair(pid_t *out_pid)
 	*out_pid = -1;
 
 	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	bump_direct(1);
 	if (listener < 0)
 		return -1;
 	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+	bump_direct(1);
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family      = AF_INET;
@@ -266,6 +288,7 @@ static int open_loopback_pair(pid_t *out_pid)
 			set_sock_timeouts(s);
 			(void)setsockopt(s, SOL_TCP, TCP_ULP,
 					 "espintcp", 8);
+			bump_direct(1);
 			while (loops-- > 0) {
 				ssize_t n = recv(s, drain, sizeof(drain),
 						 MSG_DONTWAIT);
@@ -279,6 +302,7 @@ static int open_loopback_pair(pid_t *out_pid)
 	}
 
 	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	bump_direct(1);
 	if (cli < 0) {
 		close(listener);
 		goto reap;
@@ -314,7 +338,10 @@ fail:
  * (ENOPROTOOPT / EOPNOTSUPP / EAFNOSUPPORT / EPERM). */
 static int install_espintcp_ulp(int fd, struct childdata *child)
 {
-	if (setsockopt(fd, SOL_TCP, TCP_ULP, "espintcp", 8) == 0)
+	int rc = setsockopt(fd, SOL_TCP, TCP_ULP, "espintcp", 8);
+
+	bump_direct(1);
+	if (rc == 0)
 		return 0;
 
 	if (errno == ENOPROTOOPT || errno == EOPNOTSUPP ||
@@ -351,7 +378,9 @@ static void send_burst(int fd, const struct timespec *t_outer)
 		       "pick_frame_len() widest arm ESPINTCP_FRAME_MAX must fit uint16_t return");
 
 	(void)setsockopt(fd, SOL_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+	bump_direct(1);
 	(void)setsockopt(fd, SOL_TCP, TCP_CORK, &cork_on, sizeof(cork_on));
+	bump_direct(1);
 
 	for (i = 0; i < ESPINTCP_INNER_BURST; i++) {
 		uint16_t len;
@@ -390,12 +419,15 @@ static void send_burst(int fd, const struct timespec *t_outer)
 		if ((i & 3) == 3) {
 			(void)setsockopt(fd, SOL_TCP, TCP_CORK,
 					 &cork_off, sizeof(cork_off));
+			bump_direct(1);
 			(void)setsockopt(fd, SOL_TCP, TCP_CORK,
 					 &cork_on, sizeof(cork_on));
+			bump_direct(1);
 		}
 	}
 
 	(void)setsockopt(fd, SOL_TCP, TCP_CORK, &cork_off, sizeof(cork_off));
+	bump_direct(1);
 }
 
 /* ---------- no-ingress-device RX arm ---------- *
@@ -577,6 +609,7 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 		goto out;
 
 	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	bump_direct(1);
 	if (cli < 0)
 		goto out;
 	set_sock_timeouts(cli);
@@ -659,8 +692,12 @@ static void run_no_ingress_dev_arm(struct childdata *child,
 		goto out_setup_fail;
 	}
 	if (helper == 0) {
+		int un_rc;
+
 		close(sv[0]);
-		if (unshare(CLONE_NEWNET) != 0) {
+		un_rc = unshare(CLONE_NEWNET);
+		bump_direct(1);
+		if (un_rc != 0) {
 			close(sv[1]);
 			_exit(0);
 		}
@@ -673,7 +710,9 @@ static void run_no_ingress_dev_arm(struct childdata *child,
 	tv.tv_sec  = 0;
 	tv.tv_usec = ESPINTCP_NOING_HANDSHAKE_MS * 1000;
 	(void)setsockopt(sv[0], SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	bump_direct(1);
 	(void)setsockopt(sv[0], SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+	bump_direct(1);
 
 	if (read(sv[0], &sync, 1) != 1 || sync != 'R')
 		goto out_cleanup;
@@ -695,10 +734,12 @@ static void run_no_ingress_dev_arm(struct childdata *child,
 		goto out_cleanup;
 
 	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	bump_direct(1);
 	if (listener < 0)
 		goto out_cleanup;
 	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR,
 			 &one, sizeof(one));
+	bump_direct(1);
 	set_sock_timeouts(listener);
 
 	memset(&addr, 0, sizeof(addr));
