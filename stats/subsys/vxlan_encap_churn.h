@@ -10,6 +10,7 @@ struct vxlan_encap_churn_stats {
 	unsigned long link_up_ok;	/* RTM_NEWLINK setlink IFF_UP accepted */
 	unsigned long packet_sent_ok;	/* sendto on AF_PACKET raw bound to tunnel returned >0 */
 	unsigned long link_del_ok;	/* RTM_DELLINK accepted */
+	unsigned long fdb_flush_ok;	/* RTM_DELNEIGH NLM_F_BULK bulk-flush accepted (vxlan only) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_VXLAN_ENCAP_CHURN_H */
