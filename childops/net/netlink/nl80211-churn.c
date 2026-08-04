@@ -232,9 +232,8 @@ static void nl80211_iter_scan_connect(struct genl_ctx *ctx, int ifindex,
 	/* wait_scan_results reports poll + conditional recv via direct_calls. */
 	(void)wait_scan_results(ctx, direct_calls);
 
-	rc = connect_iface(ctx, ifindex);
-	/* connect_iface wraps one genl_send_recv_retry. */
-	*direct_calls += 2;
+	/* connect_iface reports its genl_send_recv_retry tally via direct_calls. */
+	rc = connect_iface(ctx, ifindex, direct_calls);
 	__atomic_add_fetch(&shm->stats.nl80211.connect_attempted,
 			   1, __ATOMIC_RELAXED);
 	if (rc == 0)
@@ -284,9 +283,8 @@ static void nl80211_iter_submodes(struct genl_ctx *ctx, int ifindex,
 {
 	int rc;
 
-	rc = disconnect_iface(ctx, ifindex);
-	/* disconnect_iface wraps one genl_send_recv_retry. */
-	*direct_calls += 2;
+	/* disconnect_iface reports its genl_send_recv_retry tally via direct_calls. */
+	rc = disconnect_iface(ctx, ifindex, direct_calls);
 	__atomic_add_fetch(&shm->stats.nl80211.disconnect_attempted,
 			   1, __ATOMIC_RELAXED);
 	(void)rc;
@@ -299,26 +297,19 @@ static void nl80211_iter_submodes(struct genl_ctx *ctx, int ifindex,
 		if (target > 0) {
 			__atomic_add_fetch(&shm->stats.nl80211.pmsr_runs,
 					   1, __ATOMIC_RELAXED);
+			/* build_pmsr_ftm_req reports its genl_send_recv_retry
+			 * tally via direct_calls. */
 			if (build_pmsr_ftm_req(ctx, (uint32_t)target,
-					       as_u32) == 0)
+					       as_u32, direct_calls) == 0)
 				__atomic_add_fetch(&shm->stats.nl80211.pmsr_ok,
 						   1, __ATOMIC_RELAXED);
-			/* build_pmsr_ftm_req wraps one genl_send_recv_retry.
-			 * Bumped inside the ONE_IN(8) arm so the tally tracks
-			 * the actual call; no rnd_*() added or moved. */
-			*direct_calls += 2;
 		}
 	}
 
 	if (ONE_IN(16)) {
-		nl80211_admin_gate_probe(nl80211_get_phy0());
-		/* Admin-gate probe walks a fixed set of admin-gated cmds
-		 * against a fresh unmapped-userns genl socket.  Approximate
-		 * as one send/recv worth of load; the internal walk overcounts
-		 * or undercounts by a small constant, negligible against
-		 * burst dominance.  Bumped inside the ONE_IN(16) arm so the
-		 * tally tracks the actual call; no rnd_*() added or moved. */
-		*direct_calls += 2;
+		/* nl80211_admin_gate_probe reports fork + waitpid tally
+		 * via direct_calls. */
+		nl80211_admin_gate_probe(nl80211_get_phy0(), direct_calls);
 	}
 }
 

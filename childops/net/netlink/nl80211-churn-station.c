@@ -63,7 +63,7 @@ static void random_bssid(unsigned char mac[6]);
  * socket close.  Tolerates any errno.
  */
 int build_pmsr_ftm_req(struct genl_ctx *ctx, uint32_t ifindex,
-		       bool ftms_as_u32)
+		       bool ftms_as_u32, unsigned long *direct_calls)
 {
 	unsigned char buf[1024];
 	struct nlmsghdr *nlh;
@@ -179,6 +179,8 @@ int build_pmsr_ftm_req(struct genl_ctx *ctx, uint32_t ifindex,
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
+	/* genl_send_recv_retry: sendmsg + recv. */
+	*direct_calls += 2;
 	return genl_send_recv_retry(ctx, buf, off);
 }
 
@@ -200,7 +202,8 @@ static void random_bssid(unsigned char mac[6])
  * suites; the bug surface lives in cfg80211_connect_result /
  * cfg80211_disconnect, not in the per-suite key install path.
  */
-int connect_iface(struct genl_ctx *ctx, int ifindex)
+int connect_iface(struct genl_ctx *ctx, int ifindex,
+		  unsigned long *direct_calls)
 {
 	unsigned char buf[512];
 	struct nlmsghdr *nlh;
@@ -231,10 +234,13 @@ int connect_iface(struct genl_ctx *ctx, int ifindex)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
+	/* genl_send_recv_retry: sendmsg + recv. */
+	*direct_calls += 2;
 	return genl_send_recv_retry(ctx, buf, off);
 }
 
-int disconnect_iface(struct genl_ctx *ctx, int ifindex)
+int disconnect_iface(struct genl_ctx *ctx, int ifindex,
+		     unsigned long *direct_calls)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -251,6 +257,8 @@ int disconnect_iface(struct genl_ctx *ctx, int ifindex)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
+	/* genl_send_recv_retry: sendmsg + recv. */
+	*direct_calls += 2;
 	return genl_send_recv_retry(ctx, buf, off);
 }
 
@@ -291,13 +299,14 @@ static const struct admin_gate_cmd_desc admin_gate_catalogue[] = {
 	{ NL80211_CMD_NEW_INTERFACE,   false, false },	/* positive control */
 };
 
-void nl80211_admin_gate_probe(uint32_t wiphy_idx)
+void nl80211_admin_gate_probe(uint32_t wiphy_idx, unsigned long *direct_calls)
 {
 	pid_t pid;
 
 	__atomic_add_fetch(&shm->stats.nl80211.admin_gate_runs,
 			   1, __ATOMIC_RELAXED);
 
+	(*direct_calls)++;	/* fork: spawn admin-gate probe child */
 	pid = fork();
 	if (pid < 0)
 		return;
@@ -383,6 +392,7 @@ void nl80211_admin_gate_probe(uint32_t wiphy_idx)
 		_exit(0);
 	}
 
+	(*direct_calls)++;	/* reap the probe child via waitpid_eintr */
 	(void)waitpid_eintr(pid, NULL, 0);
 }
 
