@@ -276,7 +276,7 @@ static bool is_unsupported_err(int rc)
  */
 #define XFRM_BURN_GATE_DENOM	64U
 
-static bool xfrm_burn_netns(void)
+static bool xfrm_burn_netns(unsigned long *direct_calls_p)
 {
 	struct nl_ctx burn_ctx = { .fd = -1 };
 	struct nl_open_opts burn_opts = {
@@ -299,17 +299,20 @@ static bool xfrm_burn_netns(void)
 	def = &xfrm_algos[aidx];
 
 	anchor = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
+	(*direct_calls_p)++;
 	if (anchor < 0)
 		return false;
 
 	if (!try_admit_newnet()) {
 		__atomic_add_fetch(&shm->stats.xfrm_churn.burn_throttled, 1,
 				   __ATOMIC_RELAXED);
+		(*direct_calls_p)++;
 		close(anchor);
 		return false;
 	}
 	ticketed = true;
 
+	(*direct_calls_p)++;
 	if (unshare(CLONE_NEWNET) < 0)
 		goto out;
 
@@ -336,7 +339,9 @@ static bool xfrm_burn_netns(void)
 out:
 	nl_close(&burn_ctx);
 	if (anchor >= 0) {
+		(*direct_calls_p)++;
 		(void)setns(anchor, CLONE_NEWNET);
+		(*direct_calls_p)++;
 		close(anchor);
 	}
 	if (ticketed)
@@ -361,6 +366,9 @@ struct xfrm_churn_iter_ctx {
 	__u8 mode;
 	__u32 seq;
 	struct childdata *child;
+	/* Accumulates own-body raw-syscall count; published once via
+	 * childop_direct_syscalls_add() at xfrm_churn_in_ns() exit. */
+	unsigned long direct_calls;
 };
 
 /*
@@ -544,6 +552,7 @@ static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 		return;
 
 	ctx->udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	ctx->direct_calls++;
 	if (ctx->udp < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			ns_unsupported_inet = true;
@@ -558,6 +567,7 @@ static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 	memset(&src, 0, sizeof(src));
 	src.sin_family      = AF_INET;
 	src.sin_addr.s_addr = XFRM_SADDR_BE;
+	ctx->direct_calls++;
 	(void)bind(ctx->udp, (struct sockaddr *)&src, sizeof(src));
 
 	/* Arm the socket for MSG_ZEROCOPY so drive_inner_traffic_zc can
@@ -569,10 +579,12 @@ static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 	 * keep this fd as copying-sendto only without re-paying the
 	 * EFAIL; the burst dispatcher checks the latch before rolling
 	 * the zerocopy coin. */
-	if (!ns_unsupported_zerocopy() &&
-	    setsockopt(ctx->udp, SOL_SOCKET, SO_ZEROCOPY,
-		       &one, sizeof(one)) < 0)
-		mark_ns_unsupported_zerocopy();
+	if (!ns_unsupported_zerocopy()) {
+		ctx->direct_calls++;
+		if (setsockopt(ctx->udp, SOL_SOCKET, SO_ZEROCOPY,
+			       &one, sizeof(one)) < 0)
+			mark_ns_unsupported_zerocopy();
+	}
 }
 
 /*
@@ -768,8 +780,8 @@ static int xfrm_churn_in_ns(void *arg)
 	 * netns, so cleanup_net runs once for the inner sub-netns at
 	 * setns-back and again for the grandchild's netns at exit.
 	 */
-	if (ONE_IN(XFRM_BURN_GATE_DENOM) && xfrm_burn_netns())
-		return 0;
+	if (ONE_IN(XFRM_BURN_GATE_DENOM) && xfrm_burn_netns(&ctx->direct_calls))
+		goto out;
 
 	if (xfrm_churn_iter_setup_netns(ctx) != 0)
 		return 0;
@@ -792,10 +804,13 @@ static int xfrm_churn_in_ns(void *arg)
 	xfrm_churn_iter_teardown_sa(ctx);
 
 out:
-	if (ctx->udp >= 0)
+	if (ctx->udp >= 0) {
+		ctx->direct_calls++;
 		close(ctx->udp);
+	}
 	nl_close(&ctx->nl);
-
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx->direct_calls);
 	return 0;
 }
 
