@@ -395,6 +395,9 @@ struct ip6t_iter_ctx {
 	int			udp_fd;
 	bool			tnl_added;
 	struct childdata	*child;
+	/* Accumulates own-body raw-syscall count; published once via
+	 * childop_direct_syscalls_add() at ip6_tunnel_churn_in_ns() exit. */
+	unsigned long		direct_calls;
 };
 
 /*
@@ -477,6 +480,7 @@ static void ip6t_iter_lane_err(struct ip6t_iter_ctx *ctx)
 
 	ctx->icmp_fd = socket(AF_INET6, SOCK_RAW | SOCK_CLOEXEC,
 			      IPPROTO_ICMPV6);
+	ctx->direct_calls++;
 	if (ctx->icmp_fd < 0)
 		return;
 
@@ -494,6 +498,7 @@ static void ip6t_iter_lane_err(struct ip6t_iter_ctx *ctx)
 			continue;
 		(void)sendto(ctx->icmp_fd, buf, len, MSG_DONTWAIT,
 			     (struct sockaddr *)&dst, sizeof(dst));
+		ctx->direct_calls++;
 	}
 }
 
@@ -521,6 +526,7 @@ static void ip6t_iter_lane_xmit(struct ip6t_iter_ctx *ctx)
 
 	ctx->tap_fd = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
 			     htons(ETH_P_ALL));
+	ctx->direct_calls++;
 	if (ctx->tap_fd < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			mark_ns_unsupported_af_packet();
@@ -538,11 +544,13 @@ static void ip6t_iter_lane_xmit(struct ip6t_iter_ctx *ctx)
 	bind_sll.sll_family   = AF_PACKET;
 	bind_sll.sll_protocol = htons(ETH_P_ALL);
 	bind_sll.sll_ifindex  = (int)lo_idx;
+	ctx->direct_calls++;
 	(void)bind(ctx->tap_fd, (struct sockaddr *)&bind_sll,
 		   sizeof(bind_sll));
 
 	ctx->udp_fd = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC,
 			     IPPROTO_UDP);
+	ctx->direct_calls++;
 	if (ctx->udp_fd < 0)
 		return;
 
@@ -561,6 +569,7 @@ static void ip6t_iter_lane_xmit(struct ip6t_iter_ctx *ctx)
 		generate_rand_bytes(payload, payload_len);
 		(void)sendto(ctx->udp_fd, payload, payload_len, MSG_DONTWAIT,
 			     (struct sockaddr *)&peer, sizeof(peer));
+		ctx->direct_calls++;
 	}
 }
 
@@ -572,18 +581,23 @@ static void ip6t_iter_lane_xmit(struct ip6t_iter_ctx *ctx)
  */
 static void ip6t_iter_teardown(struct ip6t_iter_ctx *ctx)
 {
-	if (ctx->udp_fd >= 0)
+	if (ctx->udp_fd >= 0) {
+		ctx->direct_calls++;
 		close(ctx->udp_fd);
+	}
 	if (ctx->tap_fd >= 0) {
 		unsigned char drain[256];
 
 		while (recv(ctx->tap_fd, drain, sizeof(drain),
 			    MSG_DONTWAIT) > 0)
 			;
+		ctx->direct_calls++;
 		close(ctx->tap_fd);
 	}
-	if (ctx->icmp_fd >= 0)
+	if (ctx->icmp_fd >= 0) {
+		ctx->direct_calls++;
 		close(ctx->icmp_fd);
+	}
 	if (ctx->rtnl.fd >= 0) {
 		if (ctx->tnl_added && ctx->tnl_idx > 0)
 			(void)rtnl_dellink(&ctx->rtnl, ctx->tnl_idx);
@@ -634,6 +648,8 @@ static int ip6_tunnel_churn_in_ns(void *arg)
 
 out:
 	ip6t_iter_teardown(&ctx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return 0;
 }
 
