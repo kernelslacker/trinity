@@ -83,6 +83,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "kernel/netlink.h"
 #include "name-pool.h"
@@ -258,6 +259,15 @@ struct netlink_monitor_race_iter_ctx {
 	__u32		addr;
 	bool		link_added;
 	bool		addr_added;
+	/* Direct-syscall tally accumulated across the open / burst /
+	 * teardown helpers.  nl_open success == 3 (socket + bind +
+	 * setsockopt), each nl_send_recv wrapper == 2 (sendmsg + recv),
+	 * nl_close == 1 (close).  Additional setsockopt calls for
+	 * NETLINK_LISTEN_ALL_NSID / NETLINK_BROADCAST_ERROR / membership
+	 * churn each count as 1.  drain_monitor() recv calls are counted
+	 * from the returned success count.  Published once in
+	 * netlink_monitor_race_in_ns() via childop_direct_syscalls_add(). */
+	unsigned long	direct_calls;
 };
 
 /*
@@ -289,6 +299,8 @@ static int netlink_monitor_race_iter_open_monitor(struct netlink_monitor_race_it
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
+	/* nl_open success: socket + bind + setsockopt (SO_RCVTIMEO). */
+	ctx->direct_calls += 3;
 	__atomic_add_fetch(&shm->stats.netlink_monitor_race.mon_open,
 			   1, __ATOMIC_RELAXED);
 
@@ -296,11 +308,13 @@ static int netlink_monitor_race_iter_open_monitor(struct netlink_monitor_race_it
 	 * on older kernels is fine; we still hit the broadcast race below. */
 	(void)setsockopt(ctx->mon.fd, SOL_NETLINK, NETLINK_LISTEN_ALL_NSID,
 			 &one, sizeof(one));
+	ctx->direct_calls += 1;		/* setsockopt NETLINK_LISTEN_ALL_NSID */
 
 	/* Promote ENOBUFS into recv error returns so a heavy broadcast
 	 * burst surfaces as an actual error rather than silent drops. */
 	(void)setsockopt(ctx->mon.fd, SOL_NETLINK, NETLINK_BROADCAST_ERROR,
 			 &one, sizeof(one));
+	ctx->direct_calls += 1;		/* setsockopt NETLINK_BROADCAST_ERROR */
 
 	return 0;
 }
@@ -326,6 +340,8 @@ static int netlink_monitor_race_iter_open_mutator(struct netlink_monitor_race_it
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
+	/* nl_open success: socket + bind + setsockopt (SO_RCVTIMEO). */
+	ctx->direct_calls += 3;
 	__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_open,
 			   1, __ATOMIC_RELAXED);
 
@@ -334,6 +350,8 @@ static int netlink_monitor_race_iter_open_mutator(struct netlink_monitor_race_it
 
 	if (build_dummy_link(&ctx->mut, dev_name) != 0)
 		return -1;
+	/* build_dummy_link wraps one nl_send_recv: sendmsg + recv. */
+	ctx->direct_calls += 2;
 	ctx->link_added = true;
 	__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 			   1, __ATOMIC_RELAXED);
@@ -371,11 +389,15 @@ static void netlink_monitor_race_iter_address_burst(struct netlink_monitor_race_
 			__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 					   1, __ATOMIC_RELAXED);
 		}
+		/* build_addr wraps one nl_send_recv: sendmsg + recv. */
+		ctx->direct_calls += 2;
 
 		drained = drain_monitor(&ctx->mon);
 		if (drained)
 			__atomic_add_fetch(&shm->stats.netlink_monitor_race.recv_drained,
 					   drained, __ATOMIC_RELAXED);
+		/* drain_monitor issues one recv() per queued message. */
+		ctx->direct_calls += drained;
 
 		if (ctx->addr_added) {
 			if (build_addr(&ctx->mut, RTM_DELADDR, ctx->ifindex, ctx->addr) == 0) {
@@ -383,12 +405,16 @@ static void netlink_monitor_race_iter_address_burst(struct netlink_monitor_race_
 				__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 						   1, __ATOMIC_RELAXED);
 			}
+			/* build_addr wraps one nl_send_recv: sendmsg + recv. */
+			ctx->direct_calls += 2;
 		}
 
 		drained = drain_monitor(&ctx->mon);
 		if (drained)
 			__atomic_add_fetch(&shm->stats.netlink_monitor_race.recv_drained,
 					   drained, __ATOMIC_RELAXED);
+		/* drain_monitor issues one recv() per queued message. */
+		ctx->direct_calls += drained;
 	}
 }
 
@@ -410,11 +436,13 @@ static void netlink_monitor_race_iter_membership_churn(struct netlink_monitor_ra
 		       &drop_grp, sizeof(drop_grp)) == 0)
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race.group_drop,
 				   1, __ATOMIC_RELAXED);
+	ctx->direct_calls += 1;	/* setsockopt NETLINK_DROP_MEMBERSHIP */
 
 	if (setsockopt(ctx->mon.fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
 		       &add_grp, sizeof(add_grp)) == 0)
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race.group_add,
 				   1, __ATOMIC_RELAXED);
+	ctx->direct_calls += 1;	/* setsockopt NETLINK_ADD_MEMBERSHIP */
 }
 
 /*
@@ -432,11 +460,15 @@ static void netlink_monitor_race_iter_final_burst(struct netlink_monitor_race_it
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 				   1, __ATOMIC_RELAXED);
 	}
+	/* build_addr wraps one nl_send_recv: sendmsg + recv. */
+	ctx->direct_calls += 2;
 
 	drained = drain_monitor(&ctx->mon);
 	if (drained)
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race.recv_drained,
 				   drained, __ATOMIC_RELAXED);
+	/* drain_monitor issues one recv() per queued message. */
+	ctx->direct_calls += drained;
 }
 
 /*
@@ -490,13 +522,33 @@ static int netlink_monitor_race_in_ns(void *arg)
 
 out:
 	if (ctx.mut.fd >= 0) {
-		if (ctx.addr_added)
+		if (ctx.addr_added) {
 			(void)build_addr(&ctx.mut, RTM_DELADDR, ctx.ifindex, ctx.addr);
-		if (ctx.link_added && ctx.ifindex > 0)
+			/* nl_send_recv: sendmsg + recv. */
+			ctx.direct_calls += 2;
+		}
+		if (ctx.link_added && ctx.ifindex > 0) {
 			(void)rtnl_dellink(&ctx.mut, ctx.ifindex);
+			/* nl_send_recv: sendmsg + recv. */
+			ctx.direct_calls += 2;
+		}
 		nl_close(&ctx.mut);
+		/* nl_close: close(). */
+		ctx.direct_calls += 1;
 	}
 	nl_close(&ctx.mon);
+	/* nl_close: close(). */
+	ctx.direct_calls += 1;
+
+	/* Publish this invocation's direct-syscall load in one RELAXED
+	 * atomic add.  Tally accumulated across setup / burst / teardown
+	 * helpers via ctx.direct_calls; the grandchild's write is visible
+	 * to the parent after _exit() because shm is a shared mapping.
+	 * Gated on valid_op to match the surrounding per-op stats bumps.
+	 * Setup-latched paths publish whatever they issued before bailing,
+	 * correctly attributing no burst-phase work to those exits. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return 0;
 }
 
