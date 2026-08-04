@@ -461,6 +461,87 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		}
 		break;
 
+	case PR_RSEQ_SLICE_EXTENSION: {
+		/*
+		 * arg2: sub-command — GET (1), SET (2); 3 is out-of-range
+		 * to keep the kernel's -EINVAL reject path covered.
+		 * For SET, arg3 carries the feature flag
+		 * (PR_RSEQ_SLICE_EXT_ENABLE = 0x01 to enable, 0 to
+		 * disable).  GET and the reject draw require
+		 * arg3-arg5 zero.  Per 4f56302c4d6d.
+		 */
+		static const unsigned long rseq_ext_cmds[] = {
+			PR_RSEQ_SLICE_EXT_GET, PR_RSEQ_SLICE_EXT_SET, 3,
+		};
+		unsigned long rseq_cmd = RAND_ARRAY(rseq_ext_cmds);
+
+		rec->a2 = rseq_cmd;
+		rec->a3 = (rseq_cmd == PR_RSEQ_SLICE_EXT_SET)
+			? (RAND_BOOL() ? PR_RSEQ_SLICE_EXT_ENABLE : 0)
+			: 0;
+		rec->a4 = 0;
+		rec->a5 = 0;
+		break;
+	}
+
+	case PR_TIMER_CREATE_RESTORE_IDS: {
+		/*
+		 * arg2: OFF (0), ON (1), GET (2); 3 is out-of-range to
+		 * keep the kernel's -EINVAL reject path covered.
+		 * arg3-arg5 must be zero — the kernel rejects non-zero
+		 * trailing args with -EINVAL.  Per 4f56302c4d6d.
+		 */
+		static const unsigned long timer_restore_cmds[] = {
+			PR_TIMER_CREATE_RESTORE_IDS_OFF,
+			PR_TIMER_CREATE_RESTORE_IDS_ON,
+			PR_TIMER_CREATE_RESTORE_IDS_GET,
+			3,
+		};
+		rec->a2 = RAND_ARRAY(timer_restore_cmds);
+		rec->a3 = 0;
+		rec->a4 = 0;
+		rec->a5 = 0;
+		break;
+	}
+
+	case PR_SET_THP_DISABLE: {
+		/*
+		 * arg2: 0 (re-enable THP), 1 (disable THP), or
+		 * PR_THP_DISABLE_EXCEPT_ADVISED (1<<1) which keeps THP
+		 * active only for madvise(MADV_HUGEPAGE) regions
+		 * (kernel 6.16+, 4f56302c4d6d).  4 is out-of-range to
+		 * keep the reject path covered.  arg3-arg5 must be zero.
+		 */
+		static const unsigned long thp_disable_vals[] = {
+			0, 1, PR_THP_DISABLE_EXCEPT_ADVISED, 4,
+		};
+		rec->a2 = RAND_ARRAY(thp_disable_vals);
+		rec->a3 = 0;
+		rec->a4 = 0;
+		rec->a5 = 0;
+		break;
+	}
+
+	case PR_SET_PTRACER:
+		/*
+		 * arg2: 0 (remove ptracer allowance), a live PID
+		 * (allow that specific process to ptrace this task),
+		 * or PR_SET_PTRACER_ANY ((unsigned long)-1, allow any
+		 * process).  Three-way split: ANY to exercise the
+		 * special-value arm, 0 to exercise the remove-allowance
+		 * arm, get_pid() to produce a live child PID for the
+		 * accept-pid arm.  arg3-arg5 must be zero.
+		 */
+		switch (rnd_modulo_u32(3)) {
+		case 0:  rec->a2 = PR_SET_PTRACER_ANY;        break;
+		case 1:  rec->a2 = 0;                          break;
+		default: rec->a2 = (unsigned long)get_pid();   break;
+		}
+		rec->a3 = 0;
+		rec->a4 = 0;
+		rec->a5 = 0;
+		break;
+
 	default:
 		break;
 	}
