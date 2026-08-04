@@ -16,8 +16,6 @@ struct splice_protocols_stats {
 	unsigned long packet_ring_attempted;	/* AF_PACKET TPACKET RX-ring setup arm picked */
 	unsigned long alg_attempted;		/* AF_ALG skcipher setup arm picked */
 	unsigned long rxrpc_attempted;		/* AF_RXRPC bound-socket setup arm picked */
-	unsigned long msg_splice_pages_attempted;	/* splice()/sendmsg() calls where the kernel is expected to plant pages via MSG_SPLICE_PAGES */
-	unsigned long msg_splice_pages_path_taken_inferred;	/* of those, how many returned len matching input with no errno (zero-copy plant inferred). Operator: ratio < 90% means many calls fell back to copy and aren't reproducing the intended bug shape. */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_SPLICE_PROTOCOLS_H */
