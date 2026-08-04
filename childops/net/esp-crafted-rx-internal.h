@@ -236,6 +236,10 @@ struct esp_crafted_rx_iter_ctx {
 	 * primary SA on teardown. */
 	__be32 stack_spi[ESPRX_STACK_DEPTH];
 	unsigned int stack_depth;
+	/* Accumulates own-body raw-syscall count across helpers;
+	 * published once via childop_direct_syscalls_add() at
+	 * esp_crafted_rx_in_ns() exit. */
+	unsigned long direct_calls;
 };
 
 /* esp-crafted-rx-helpers.c */

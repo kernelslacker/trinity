@@ -256,12 +256,16 @@ static void esp_crafted_rx_iter_open_raw(struct esp_crafted_rx_iter_ctx *ctx)
 	if (ctx->v6) {
 		ctx->raw_v6 = socket(AF_INET6, SOCK_RAW | SOCK_CLOEXEC,
 				     IPPROTO_RAW);
-		if (ctx->raw_v6 >= 0)
+		ctx->direct_calls++;
+		if (ctx->raw_v6 >= 0) {
 			(void)setsockopt(ctx->raw_v6, IPPROTO_IPV6,
 					 IPV6_HDRINCL, &one, sizeof(one));
+			ctx->direct_calls++;
+		}
 	} else {
 		ctx->raw_v4 = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC,
 				     IPPROTO_RAW);
+		ctx->direct_calls++;
 	}
 }
 
@@ -326,6 +330,7 @@ static void esp_crafted_rx_iter_send_burst(struct esp_crafted_rx_iter_ctx *ctx)
 					     trunc_len);
 			n = sendto(fd, pkt, len, MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
+			ctx->direct_calls++;
 		} else {
 			struct sockaddr_in dst;
 
@@ -336,6 +341,7 @@ static void esp_crafted_rx_iter_send_burst(struct esp_crafted_rx_iter_ctx *ctx)
 					     trunc_len);
 			n = sendto(fd, pkt, len, MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
+			ctx->direct_calls++;
 		}
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.esp_crafted_rx.packet_sent_ok,
@@ -419,6 +425,8 @@ static int esp_crafted_rx_in_ns(void *arg)
 
 out:
 	esp_crafted_rx_iter_teardown(&ctx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return 0;
 }
 
