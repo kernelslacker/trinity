@@ -474,14 +474,16 @@ static void build_tagged_frame(unsigned char *frame, __u16 vid)
 	memset(frame + 18, 0, 64 - 18);
 }
 
-static void apply_raw_timeouts(int s)
+static void apply_raw_timeouts(int s, unsigned long *direct_calls_p)
 {
 	struct timeval tv;
 
 	tv.tv_sec  = 0;
 	tv.tv_usec = BVC_RAW_TIMEO_MS * 1000;
 	(void)setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	(*direct_calls_p)++;
 	(void)setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+	(*direct_calls_p)++;
 }
 
 /*
@@ -509,6 +511,9 @@ struct bridge_vlan_iter_ctx {
 	__u16		vid_base;
 	__u16		pvid;
 	__u16		range_end;
+	/* Accumulates own-body raw-syscall count; published once via
+	 * childop_direct_syscalls_add() per iter_one() exit. */
+	unsigned long	direct_calls;
 };
 
 /*
@@ -668,14 +673,16 @@ static void bridge_vlan_iter_open_raw(struct bridge_vlan_iter_ctx *it)
 
 	it->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
 			 htons(ETH_P_8021Q));
+	it->direct_calls++;
 	if (it->raw < 0)
 		return;
 
-	apply_raw_timeouts(it->raw);
+	apply_raw_timeouts(it->raw, &it->direct_calls);
 	memset(&sll, 0, sizeof(sll));
 	sll.sll_family   = AF_PACKET;
 	sll.sll_protocol = htons(ETH_P_8021Q);
 	sll.sll_ifindex  = it->v0b_idx;
+	it->direct_calls++;
 	(void)bind(it->raw, (struct sockaddr *)&sll, sizeof(sll));
 
 	build_tagged_frame(frame, it->pvid);
@@ -688,6 +695,7 @@ static void bridge_vlan_iter_open_raw(struct bridge_vlan_iter_ctx *it)
 
 	n = sendto(it->raw, frame, sizeof(frame), MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll));
+	it->direct_calls++;
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.raw_send_ok,
 				   1, __ATOMIC_RELAXED);
@@ -766,6 +774,7 @@ static void bridge_vlan_iter_race(struct bridge_vlan_iter_ctx *it,
 
 	n = sendto(it->raw, frame, sizeof(frame), MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll));
+	it->direct_calls++;
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn.raw_send_ok,
 				   1, __ATOMIC_RELAXED);
@@ -783,7 +792,9 @@ static void bridge_vlan_iter_race(struct bridge_vlan_iter_ctx *it,
 static void bridge_vlan_iter_teardown(struct bridge_vlan_iter_ctx *it)
 {
 	if (it->raw >= 0) {
+		it->direct_calls++;
 		(void)shutdown(it->raw, SHUT_RDWR);
+		it->direct_calls++;
 		close(it->raw);
 		it->raw = -1;
 	}
@@ -844,6 +855,8 @@ out:
 	if (it.raw >= 0)
 		close(it.raw);
 	nl_close(&it.nl);
+	if (valid_op)
+		childop_direct_syscalls_add(op, it.direct_calls);
 }
 
 /*
