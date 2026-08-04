@@ -530,6 +530,9 @@ struct vxlan_encap_iter_ctx {
 	bool		nl_opened;	/* rtnl socket is open */
 	bool		link_added;	/* RTM_NEWLINK ack received */
 	struct childdata *child;
+	/* Accumulates own-body raw-syscall count; published once via
+	 * childop_direct_syscalls_add() at vxlan_encap_in_ns() exit. */
+	unsigned long	direct_calls;
 };
 
 /*
@@ -673,6 +676,7 @@ static void vxlan_encap_iter_send_burst(struct vxlan_encap_iter_ctx *ctx)
 
 	ctx->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
 			  htons(ETH_P_IP));
+	ctx->direct_calls++;
 	if (ctx->raw < 0)
 		return;
 
@@ -680,6 +684,7 @@ static void vxlan_encap_iter_send_burst(struct vxlan_encap_iter_ctx *ctx)
 	sll.sll_family   = AF_PACKET;
 	sll.sll_protocol = htons(ETH_P_IP);
 	sll.sll_ifindex  = ctx->ifindex;
+	ctx->direct_calls++;
 	(void)bind(ctx->raw, (struct sockaddr *)&sll, sizeof(sll));
 
 	iters = BUDGETED(CHILD_OP_VXLAN_ENCAP_CHURN,
@@ -714,6 +719,7 @@ static void vxlan_encap_iter_send_burst(struct vxlan_encap_iter_ctx *ctx)
 
 		n = sendto(ctx->raw, pkt, pkt_len, MSG_DONTWAIT,
 			   (struct sockaddr *)&sll, sizeof(sll));
+		ctx->direct_calls++;
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.vxlan_encap_churn.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
@@ -818,6 +824,7 @@ static void vxlan_encap_iter_flush_race(struct vxlan_encap_iter_ctx *ctx)
 
 			n = sendto(ctx->raw, pkt, sizeof(pkt), MSG_DONTWAIT,
 				   (struct sockaddr *)&sll, sizeof(sll));
+			ctx->direct_calls++;
 			if (n > 0)
 				__atomic_add_fetch(&shm->stats.vxlan_encap_churn.packet_sent_ok,
 						   1, __ATOMIC_RELAXED);
@@ -842,8 +849,10 @@ static void vxlan_encap_iter_flush_race(struct vxlan_encap_iter_ctx *ctx)
  */
 static void vxlan_encap_iter_teardown(struct vxlan_encap_iter_ctx *ctx)
 {
-	if (ctx->raw >= 0)
+	if (ctx->raw >= 0) {
+		ctx->direct_calls++;
 		close(ctx->raw);
+	}
 
 	if (!ctx->nl_opened)
 		return;
@@ -906,6 +915,8 @@ static int vxlan_encap_in_ns(void *arg)
 	}
 
 	vxlan_encap_iter_teardown(&ctx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return 0;
 }
 
