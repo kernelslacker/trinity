@@ -166,6 +166,7 @@
 #include "stats/subsys/sock_ulp_sockmap_layering.h"
 #include "stats/subsys/socket_family_chain.h"
 #include "stats/subsys/socket_family_grammar.h"
+#include "stats/subsys/sockmap_cork_race.h"
 #include "stats/subsys/splice_protocols.h"
 #include "stats/subsys/statmount_idmap.h"
 #include "stats/subsys/syscall_wedge.h"
@@ -852,6 +853,9 @@ struct stats_s {
 
 	/* slab_cache_thrash accounting.  See stats/subsys/slab_cache_thrash.h. */
 	struct slab_cache_thrash_stats slab_cache_thrash __attribute__((aligned(64)));
+
+	/* sockmap_cork_race accounting.  See stats/subsys/sockmap_cork_race.h. */
+	struct sockmap_cork_race_stats sockmap_cork_race __attribute__((aligned(64)));
 
 	/* ---- Group D: diagnostic / parent-side / one-shot ---- */
 

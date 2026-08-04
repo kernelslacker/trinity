@@ -261,6 +261,8 @@ void dump_stats_json_netfilter_and_xfrm(void)
 	putchar(',');
 	stat_category_emit_json(&sock_ulp_sockmap_layering_category);
 	putchar(',');
+	stat_category_emit_json(&sockmap_cork_race_category);
+	putchar(',');
 	stat_category_emit_json(&sock_diag_walker_category);
 	putchar(',');
 	stat_category_emit_json(&altname_thrash_category);

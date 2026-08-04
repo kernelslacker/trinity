@@ -543,6 +543,14 @@ stats	object
     stats.sock_ulp_sockmap_layering.prog_failed	u64
     stats.sock_ulp_sockmap_layering.attach_failed	u64
     stats.sock_ulp_sockmap_layering.layered_ok	u64
+  stats.sockmap_cork_race	object
+    stats.sockmap_cork_race.runs	u64
+    stats.sockmap_cork_race.setup_failed	u64
+    stats.sockmap_cork_race.map_failed	u64
+    stats.sockmap_cork_race.prog_failed	u64
+    stats.sockmap_cork_race.attach_failed	u64
+    stats.sockmap_cork_race.enroll_failed	u64
+    stats.sockmap_cork_race.races_run	u64
   stats.sock_diag_walker	object
     stats.sock_diag_walker.runs	u64
     stats.sock_diag_walker.setup_failed	u64
