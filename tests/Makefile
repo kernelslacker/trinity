@@ -1,8 +1,9 @@
 # tests/Makefile -- test-binary build for the PURE-module test seam.
 #
 # Usage:
-#   make -C tests             # build the test binary
-#   make -C tests ASAN=1      # rebuild under -fsanitize=address
+#   make -C tests             # build and run the test binary (debug)
+#   make -C tests ASAN=1      # rebuild and run under -fsanitize=address
+#   make -C tests NDEBUG=1    # rebuild and run with -DNDEBUG (fixture 7 aborts at HEAD)
 #   make -C tests clean       # remove build artefacts
 #
 # The test binary links a small set of PURE modules from the main
@@ -13,13 +14,13 @@
 # by adding them to REAL_SRCS below.
 #
 # Object files and the linked binary are keyed by build flavor:
-#   normal -> build/       + test-bin
-#   ASAN   -> build-asan/  + test-bin-asan
-# Both flavors can coexist -- alternating `make test-bin` and
-# `make test-asan` never relinks stale objects from the other flavor
-# into a binary that lacks its runtime, so no clean is required
-# between flavor switches.  This Makefile also never stomps the main
-# tree's object cache.
+#   normal -> build/          + test-bin
+#   ASAN   -> build-asan/     + test-bin-asan
+#   NDEBUG -> build-ndebug/   + test-bin-ndebug
+# All three flavors can coexist -- switching flavors never relinks stale
+# objects from another flavor into a binary that lacks its runtime, so
+# no clean is required between flavor switches.  This Makefile also
+# never stomps the main tree's object cache.
 #
 # Depends on ../config.h from `./configure` in the tree root; run
 # configure once before building the test binary.
@@ -52,11 +53,22 @@ LDFLAGS		+= -Wl,--wrap=mprotect
 # failing selftest inside the live trinity would.  Objects land in
 # a flavor-specific BUILDDIR so an ASAN-instrumented .o never leaks
 # into a subsequent non-ASAN link (and vice versa).
+#
+# NDEBUG target: `make -C tests NDEBUG=1` compiles with -DNDEBUG,
+# disabling assert() guards in persist/deferred-free.c and activating
+# fixture 7's #else abort() arm.  At HEAD, fixture 7 is expected to
+# reach abort() (RED) -- this proves the fail-closed seal bug is live.
+# The NDEBUG binary lands in build-ndebug/ so it never contaminates
+# a subsequent debug or ASAN build.
 ifeq ($(ASAN),1)
 BUILDDIR	:= build-asan
 TEST_BIN	:= test-bin-asan
 CFLAGS		+= -U_FORTIFY_SOURCE -fsanitize=address -Og -ggdb3
 LDFLAGS		+= -fsanitize=address
+else ifeq ($(NDEBUG),1)
+BUILDDIR	:= build-ndebug
+TEST_BIN	:= test-bin-ndebug
+CFLAGS		+= -DNDEBUG
 else
 BUILDDIR	:= build
 TEST_BIN	:= test-bin
@@ -92,9 +104,19 @@ FAKE_SRCS	:= \
 REAL_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(REAL_SRCS))
 FAKE_OBJS	:= $(patsubst %.c,$(BUILDDIR)/%.o,$(FAKE_SRCS))
 
-.PHONY: all clean
+.PHONY: all test test-asan test-ndebug clean
 
 all: $(TEST_BIN)
+	./$(TEST_BIN)
+
+test:
+	$(MAKE) ASAN=0 NDEBUG=0
+
+test-asan:
+	$(MAKE) ASAN=1
+
+test-ndebug:
+	$(MAKE) NDEBUG=1
 
 $(TEST_BIN): $(REAL_OBJS) $(FAKE_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(FAKE_OBJS)
@@ -108,4 +130,4 @@ $(BUILDDIR)/%.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	@rm -rf build build-asan test-bin test-bin-asan
+	@rm -rf build build-asan build-ndebug test-bin test-bin-asan test-bin-ndebug
