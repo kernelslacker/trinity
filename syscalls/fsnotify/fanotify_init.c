@@ -81,7 +81,7 @@ unsigned long get_fanotify_init_event_flags(void)
 }
 
 /*
- * ARG_LIST on a1 only picks a single bit from fanotify_init_flags[]
+ * ARG_LIST on a1 ORs 1..N bits from fanotify_init_flags[]
  * at a time, so most kernel cross-checks (FAN_REPORT_NAME requires
  * FAN_REPORT_DIR_FID; FAN_REPORT_TARGET_FID requires both;
  * FAN_REPORT_PIDFD requires FAN_CLASS_NOTIF; FAN_REPORT_FD_ERROR
