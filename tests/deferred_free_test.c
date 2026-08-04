@@ -2,10 +2,12 @@
  * deferred_free_test.c -- deferred-free ownership and sealing fixtures.
  *
  * Seven fixtures covering deferred-free ownership and sealing
- * invariants.  Each fixture runs with assertions both on and off
- * (NDEBUG both ways).  Fixture 7's NDEBUG arm is expected to fail at
- * HEAD until the fail-closed seal repair lands -- it is left
- * deliberately failing; the abort() in the #else arm is the deliverable.
+ * invariants.  Three build flavors exist: debug (default), ASAN
+ * (ASAN=1), and NDEBUG (NDEBUG=1).  Fixtures 1-6 pass in all three
+ * flavors.  Fixture 7 has both a debug arm (#ifndef NDEBUG) that passes
+ * at HEAD and an NDEBUG arm (#else) that aborts at HEAD until the
+ * fail-closed seal repair lands -- the abort() is the deliverable,
+ * proving the seal-failure bug is live in NDEBUG builds.
  *
  * Prerequisites: persist/deferred-free.c compiled as a REAL_SRC (added
  * by the test-seam extension that compiles persist/deferred-free.c).
