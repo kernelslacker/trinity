@@ -116,19 +116,30 @@ static void build_mount_attr(struct mount_attr *ma)
 
 static unsigned long pick_open_tree_attr_flags(void)
 {
-	unsigned int bucket = rnd_modulo_u32(10);
+	unsigned int bucket = rnd_modulo_u32(12);
 
+	/*
+	 * OPEN_TREE_CLONE (1) and OPEN_TREE_NAMESPACE (2) are mutually-
+	 * exclusive mode bits introduced in v6.15: CLONE detaches a copy of
+	 * the mount tree; NAMESPACE opens an existing namespace fd.  ORing
+	 * both is rejected by the kernel, so each gets its own bucket.
+	 * OPEN_TREE_CLOEXEC is orthogonal and may combine with either.
+	 */
 	switch (bucket) {
 	case 0: case 1: case 2:
-		return OPEN_TREE_CLONE;			/* 30% */
-	case 3: case 4: case 5:
-		return OPEN_TREE_CLOEXEC;		/* 30% */
-	case 6: case 7:
-		return OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC;	/* 20% */
-	case 8:
-		return 0;				/* 10% attach-in-place */
+		return OPEN_TREE_CLONE;			/* 25% */
+	case 3: case 4:
+		return OPEN_TREE_NAMESPACE;		/* 17% */
+	case 5: case 6:
+		return OPEN_TREE_CLOEXEC;		/* 17% */
+	case 7: case 8:
+		return OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC;	/* 17% */
+	case 9:
+		return OPEN_TREE_NAMESPACE | OPEN_TREE_CLOEXEC;	/*  8% */
+	case 10:
+		return 0;				/*  8% attach-in-place */
 	default:
-		/* 10%: high-bit garbage to keep the flag validator warm. */
+		/*  8%: high-bit garbage to keep the flag validator warm. */
 		return OPEN_TREE_CLONE |
 			(1UL << (16 + rnd_modulo_u32(16)));
 	}
