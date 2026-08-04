@@ -13,6 +13,7 @@
  *
  *   kprobe_events        -- kprobe/kretprobe creation spec strings
  *   uprobe_events        -- uprobe/uretprobe creation spec strings
+ *   dynamic_events       -- eprobe creation spec strings (e: prefix)
  *   set_ftrace_filter    -- function name glob patterns (clears filter too)
  *   set_ftrace_notrace   -- negated function name glob patterns
  *   set_graph_function   -- function graph depth filter
@@ -51,7 +52,8 @@
 #include "trinity.h"
 #include "utils.h"
 
-#define MAX_EVENTS	512
+#define MAX_EVENTS		512
+#define MAX_AVAIL_EVENTS	128
 #define TRACEFS_MAX_PATH	256
 
 /*
@@ -174,6 +176,15 @@ static char event_enable_paths[MAX_EVENTS][TRACEFS_MAX_PATH];
 static unsigned int nr_event_enables;
 
 /*
+ * Available event source names, read from available_events once in the parent
+ * and stored as "subsys.event" (dot-separated) for direct use in eprobe specs.
+ * Children inherit via COW.  Capped at MAX_AVAIL_EVENTS; the kernel typically
+ * exposes hundreds -- a modest sample gives good coverage without bloating BSS.
+ */
+static char avail_event_names[MAX_AVAIL_EVENTS][64];
+static unsigned int nr_avail_event_names;
+
+/*
  * Available tracers discovered once in the parent from available_tracers.
  */
 static char discovered_tracers[16][32];
@@ -211,6 +222,7 @@ static bool event_enable_inaccessible[MAX_EVENTS];
 enum single_path_id {
 	SP_KPROBE_EVENTS = 0,
 	SP_UPROBE_EVENTS,
+	SP_DYNAMIC_EVENTS,
 	SP_TRACE_OPTIONS,
 	SP_CURRENT_TRACER,
 	SP_TRACING_ON,
@@ -378,6 +390,7 @@ enum write_outcome {
 enum tracefs_arm {
 	ARM_KPROBE = 0,
 	ARM_UPROBE,
+	ARM_DYNEVENT,
 	ARM_FILTER,
 	ARM_EVENT_ENABLE,
 	ARM_MISC,
@@ -405,6 +418,11 @@ static unsigned long bump_arm_counter(enum tracefs_arm arm, enum write_outcome o
 			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_fuzzer.uprobe_open_fail),
 			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_fuzzer.uprobe_write_fail),
 			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_fuzzer.uprobe_write_ok),
+		},
+		[ARM_DYNEVENT] = {
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_fuzzer.dynevent_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_fuzzer.dynevent_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_fuzzer.dynevent_write_ok),
 		},
 		[ARM_FILTER] = {
 			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_fuzzer.filter_open_fail),
@@ -456,6 +474,204 @@ static enum write_outcome write_str(const char *path, const char *str, bool *bad
 	return ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK;
 }
 
+
+/*
+ * Read available_events once and store up to MAX_AVAIL_EVENTS entries as
+ * "subsys.event" (dot-separated) for use as eprobe sources.  The file has
+ * one "subsys:event" token per line; we replace the colon with a dot to
+ * match the separator the eprobe parser accepts.
+ */
+static void discover_avail_events(void)
+{
+	char path[TRACEFS_MAX_PATH];
+	char buf[8192];
+	char *p, *end;
+	ssize_t n;
+	int fd;
+
+	snprintf(path, sizeof(path), "%s/available_events", tracefs_root);
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	buf[n] = '\0';
+
+	p = buf;
+	end = buf + n;
+	while (p < end && nr_avail_event_names < MAX_AVAIL_EVENTS) {
+		char *nl, *colon;
+		size_t toklen;
+
+		/* skip leading whitespace */
+		while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' ||
+				   *p == '\r'))
+			p++;
+		if (p >= end)
+			break;
+
+		nl = p;
+		while (nl < end && *nl != '\n' && *nl != '\r')
+			nl++;
+		toklen = (size_t)(nl - p);
+		if (toklen == 0 || toklen >= sizeof(avail_event_names[0])) {
+			p = nl;
+			continue;
+		}
+
+		memcpy(avail_event_names[nr_avail_event_names], p, toklen);
+		avail_event_names[nr_avail_event_names][toklen] = '\0';
+
+		/* Replace colon separator with dot for eprobe spec format. */
+		colon = strchr(avail_event_names[nr_avail_event_names], ':');
+		if (colon != NULL)
+			*colon = '.';
+
+		nr_avail_event_names++;
+		p = nl;
+	}
+}
+
+/*
+ * Generate a dynamic_events eprobe spec string.  The eprobe parser
+ * (trace_eprobe.c) is reachable only through this file, not through
+ * kprobe_events or uprobe_events.  Spec format:
+ *
+ *   e[:[GRP/][EVENT]] EVENT-SOURCE.EVENT-NAME [FETCHARGS]
+ *
+ * where EVENT-SOURCE.EVENT-NAME identifies an existing tracepoint.
+ * Common "$field" fetch tokens work on every event; event-specific
+ * fields are not required for the parser to run its error paths.
+ *
+ * Malformed variants intentionally exercised:
+ *   - lone 'e' or 'e:' without a source
+ *   - truncated '$field' and '+off(reg)' fetch tokens
+ *   - empty / whitespace-only writes
+ *   - oversized argument lists
+ *   - delete ops: "-:<group>/<name>"
+ */
+static unsigned long do_dynamic_events(void)
+{
+	/* Common fields present on every tracepoint event. */
+	static const char * const common_fields[] = {
+		"$common_pid",
+		"$common_preempt_count",
+		"$common_flags",
+		"$common_type",
+	};
+	/* Malformed fragment table for parser stress. */
+	static const char * const malformed[] = {
+		"e",
+		"e:",
+		"e:trinity_e",
+		"e:/",
+		"e:/ ",
+		"e:trinity_e/ep .",
+		"e:trinity_e/ep $",
+		"e:trinity_e/ep $x",
+		" ",
+		"",
+		"e:trinity_e/ep sched.sched_switch a=$common_pid b=$common_pid c=$common_pid "
+		    "d=$common_pid e=$common_pid f=$common_pid g=$common_pid h=$common_pid "
+		    "i=$common_pid j=$common_pid k=$common_pid l=$common_pid m=$common_pid "
+		    "n=$common_pid o=$common_pid p=$common_pid",
+	};
+
+	char path[TRACEFS_MAX_PATH];
+	char spec[384];
+	bool *bad = &single_path_inaccessible[SP_DYNAMIC_EVENTS];
+	unsigned int probe_num;
+	int fd;
+	ssize_t ret;
+
+	if (*bad)
+		return 0;
+
+	snprintf(path, sizeof(path), "%s/dynamic_events", tracefs_root);
+
+	probe_num = rnd_modulo_u32(64);
+
+	switch (rnd_modulo_u32(6)) {
+	case 0:
+		/* Well-formed eprobe create without fetch args. */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		snprintf(spec, sizeof(spec), "e:trinity_eg%u/trinity_e%u %s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)]);
+		break;
+	case 1:
+		/* Eprobe create with a common fetch arg. */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		snprintf(spec, sizeof(spec),
+			 "e:trinity_eg%u/trinity_e%u %s arg=%s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
+			 RAND_ARRAY(common_fields));
+		break;
+	case 2:
+		/* Eprobe create with two common fetch args. */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		snprintf(spec, sizeof(spec),
+			 "e:trinity_eg%u/trinity_e%u %s a=%s b=%s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
+			 RAND_ARRAY(common_fields),
+			 RAND_ARRAY(common_fields));
+		break;
+	case 3:
+		/* Delete an eprobe we may have created. */
+		snprintf(spec, sizeof(spec), "-:trinity_eg%u/trinity_e%u",
+			 probe_num, probe_num);
+		break;
+	case 4:
+	malformed_write:
+		/* Malformed spec -- exercises parser error paths. */
+		{
+			const char *m = RAND_ARRAY(malformed);
+
+			if (*m == '\0') {
+				/* Empty write: open and write zero bytes. */
+				fd = open_write_target(path, bad);
+				if (fd < 0)
+					return bump_arm_counter(ARM_DYNEVENT,
+								OUTCOME_OPEN_FAIL);
+				ret = write(fd, "", 0);
+				close(fd);
+				return bump_arm_counter(ARM_DYNEVENT,
+							ret < 0 ? OUTCOME_WRITE_FAIL
+								: OUTCOME_WRITE_OK);
+			}
+			fd = open_write_target(path, bad);
+			if (fd < 0)
+				return bump_arm_counter(ARM_DYNEVENT,
+							OUTCOME_OPEN_FAIL);
+			ret = write(fd, m, strlen(m));
+			close(fd);
+			return bump_arm_counter(ARM_DYNEVENT,
+						ret < 0 ? OUTCOME_WRITE_FAIL
+							: OUTCOME_WRITE_OK);
+		}
+	default:
+		/* Raw garbage payload -- treats the eprobe parser as a
+		 * general string consumer reaching deeper format-string
+		 * and numeric boundary paths. */
+		return bump_arm_counter(ARM_DYNEVENT,
+					write_text_payload(path, bad));
+	}
+
+	fd = open_write_target(path, bad);
+	if (fd < 0)
+		return bump_arm_counter(ARM_DYNEVENT, OUTCOME_OPEN_FAIL);
+	ret = write(fd, spec, strlen(spec));
+	close(fd);
+	return bump_arm_counter(ARM_DYNEVENT,
+				ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
+}
 
 /*
  * Generate a kprobe_events spec string.  Produces four kinds:
@@ -796,8 +1012,9 @@ static unsigned long do_buffer_size(void)
  * entries depend on the static event tree under events/.
  */
 enum tracefs_subset {
-	REQ_FTRACE = 1u << 0,
-	REQ_EVENTS = 1u << 1,
+	REQ_FTRACE   = 1u << 0,
+	REQ_EVENTS   = 1u << 1,
+	REQ_DYNEVENT = 1u << 2,	/* dynamic_events file present (CONFIG_DYNAMIC_EVENTS) */
 };
 
 struct tracefs_op {
@@ -807,14 +1024,15 @@ struct tracefs_op {
 };
 
 static const struct tracefs_op tracefs_ops[] = {
-	{ do_kprobe_events,  0,          2 },
-	{ do_uprobe_events,  0,          2 },
-	{ do_ftrace_filter,  REQ_FTRACE, 2 },
-	{ do_event_enable,   REQ_EVENTS, 1 },
-	{ do_trace_options,  0,          1 },
-	{ do_current_tracer, REQ_FTRACE, 1 },
-	{ do_tracing_on,     0,          1 },
-	{ do_buffer_size,    0,          1 },
+	{ do_kprobe_events,  0,                        2 },
+	{ do_uprobe_events,  0,                        2 },
+	{ do_dynamic_events, REQ_EVENTS | REQ_DYNEVENT, 2 },
+	{ do_ftrace_filter,  REQ_FTRACE,               2 },
+	{ do_event_enable,   REQ_EVENTS,               1 },
+	{ do_trace_options,  0,                        1 },
+	{ do_current_tracer, REQ_FTRACE,               1 },
+	{ do_tracing_on,     0,                        1 },
+	{ do_buffer_size,    0,                        1 },
 };
 
 /*
@@ -822,7 +1040,9 @@ static const struct tracefs_op tracefs_ops[] = {
  * the entries whose required-subset mask is satisfied by the kernel under
  * test.  Each op is pushed weight-times so rnd_modulo_u32(nr_picks) gives
  * weighted uniform selection without a separate weight-walk on every
- * dispatch.  Sized to comfortably hold the sum of all weights (currently 11).
+ * dispatch.  Sized to comfortably hold the sum of all weights (currently 13
+ * when all subsets present: kprobe*2 + uprobe*2 + dynevent*2 + filter*2 +
+ * event_enable + trace_options + current_tracer + tracing_on + buffer_size).
  */
 static const struct tracefs_op *pick_table[16];
 static unsigned int nr_picks;
@@ -906,7 +1126,12 @@ void tracefs_fuzzer_init(void)
 	if (events_subset_present) {
 		avail |= REQ_EVENTS;
 		discover_event_enables();
+		discover_avail_events();
 	}
+
+	snprintf(path, sizeof(path), "%s/dynamic_events", tracefs_root);
+	if (access(path, W_OK) == 0)
+		avail |= REQ_DYNEVENT;
 
 	snprintf(filter_files[0], sizeof(filter_files[0]),
 		 "%s/set_ftrace_filter", tracefs_root);

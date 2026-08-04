@@ -189,6 +189,9 @@ static const struct stat_field tracefs_fuzzer_fields[] = {
 	STAT_FIELD_JSON_SUB(tracefs_fuzzer, misc_open_fail,          "misc_open_fail"),
 	STAT_FIELD_JSON_SUB(tracefs_fuzzer, misc_write_fail,         "misc_write_fail"),
 	STAT_FIELD_JSON_SUB(tracefs_fuzzer, misc_write_ok,           "misc_write_ok"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, dynevent_open_fail,      "dynevent_open_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, dynevent_write_fail,     "dynevent_write_fail"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, dynevent_write_ok,       "dynevent_write_ok"),
 };
 
 const struct stat_category tracefs_fuzzer_category =
