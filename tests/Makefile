@@ -75,6 +75,7 @@ FAKE_SRCS	:= \
 	rnd_stream_golden.c \
 	shared_freelist_selftest.c \
 	shared_str_heap_selftest.c \
+	dispatch_stage_order_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
