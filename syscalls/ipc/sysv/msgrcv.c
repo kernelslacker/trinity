@@ -93,6 +93,8 @@ static long pick_msgrcv_msgtyp(unsigned long *flags_out)
 		return -(1 + (long) rnd_modulo_u32(255));
 	if (pick < 90) {
 		*flags_out |= MSG_COPY;
+		*flags_out |= IPC_NOWAIT;
+		*flags_out &= ~(unsigned long) MSG_EXCEPT;
 		return (long) rnd_modulo_u32(8);
 	}
 	return (long) rnd_u64();
