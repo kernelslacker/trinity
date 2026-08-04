@@ -411,7 +411,8 @@ struct nl80211_churn_in_ns_ctx {
 	 * of raw kernel calls it just issued: genl_open success == 5
 	 * (socket + bind + setsockopt from nl_open, sendmsg + recv from
 	 * the family-id resolve); genl_close == 1 (close); hwsim_present
-	 * ~= 3 (stat + enumerate send/recv); each phase-helper genl wrap
+	 * reports its own tally (stat + genl_dump send/recv) via the
+	 * direct_calls pointer; each phase-helper genl wrap
 	 * == 2 (sendmsg + recv); send_inner_burst == 3 + n_sendto
 	 * (socket + setsockopt + n * sendto + close).  Published once in
 	 * nl80211_churn_in_ns() via childop_direct_syscalls_add() so the
@@ -475,18 +476,12 @@ static int nl80211_churn_in_ns(void *arg)
 	cctx->direct_calls += 5;
 
 	if (!nl80211_phy0_cached()) {
-		if (!hwsim_present(&ctx)) {
+		if (!hwsim_present(&ctx, &cctx->direct_calls)) {
 			ns_unsupported_nl80211 = true;
 			__atomic_add_fetch(&shm->stats.nl80211.setup_failed,
 					   1, __ATOMIC_RELAXED);
-			/* hwsim_present issued stat() + enumerate_wiphys
-			 * (one send + at least one recv drain).  Approximate
-			 * at 3; a short-drain path may overcount by one. */
-			cctx->direct_calls += 3;
 			goto out;
 		}
-		/* Same 3-call approximation on the success path. */
-		cctx->direct_calls += 3;
 		mark_nl80211_phy0_cached();
 	}
 

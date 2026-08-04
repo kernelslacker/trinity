@@ -155,7 +155,7 @@ static inline int genl_send_recv_retry(struct genl_ctx *ctx, void *msg, size_t l
  */
 
 /* Discovery/setup phase -- nl80211-churn-discovery.c */
-bool hwsim_present(struct genl_ctx *ctx);
+bool hwsim_present(struct genl_ctx *ctx, unsigned long *direct_calls);
 
 /* Interface churn phase -- nl80211-churn-iface.c.  struct timespec is
  * forward-referenced in the nl80211_iter_setup() signature so this
