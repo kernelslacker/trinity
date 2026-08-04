@@ -221,21 +221,16 @@ static void nl80211_iter_scan_connect(struct genl_ctx *ctx, int ifindex,
 {
 	int rc;
 
-	rc = trigger_scan(ctx, ifindex);
-	/* trigger_scan wraps one genl_send_recv_retry: sendmsg + recv. */
-	*direct_calls += 2;
+	/* trigger_scan reports its genl_send_recv_retry tally via direct_calls. */
+	rc = trigger_scan(ctx, ifindex, direct_calls);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.nl80211.scan_triggered,
 				   1, __ATOMIC_RELAXED);
 	else if (errno_is_unsupported(-rc))
 		ns_unsupported_nl80211 = true;
 
-	(void)wait_scan_results(ctx);
-	/* wait_scan_results issues one poll(); on POLLIN it also issues one
-	 * MSG_DONTWAIT recv().  Count 2 for the "results arrived" hot path;
-	 * the poll-timeout arm overcounts by 1, negligible against burst
-	 * dominance. */
-	*direct_calls += 2;
+	/* wait_scan_results reports poll + conditional recv via direct_calls. */
+	(void)wait_scan_results(ctx, direct_calls);
 
 	rc = connect_iface(ctx, ifindex);
 	/* connect_iface wraps one genl_send_recv_retry. */
@@ -263,16 +258,14 @@ static void nl80211_iter_races(struct genl_ctx *ctx, int ifindex,
 {
 	int rc;
 
-	rc = trigger_scan(ctx, ifindex);
-	/* trigger_scan wraps one genl_send_recv_retry. */
-	*direct_calls += 2;
+	/* trigger_scan reports its genl_send_recv_retry tally via direct_calls. */
+	rc = trigger_scan(ctx, ifindex, direct_calls);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.nl80211.scan_triggered,
 				   1, __ATOMIC_RELAXED);
 
-	rc = set_reg_zz(ctx);
-	/* set_reg_zz wraps one genl_send_recv_retry. */
-	*direct_calls += 2;
+	/* set_reg_zz reports its genl_send_recv_retry tally via direct_calls. */
+	rc = set_reg_zz(ctx, direct_calls);
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.nl80211.regdom_changed,
 				   1, __ATOMIC_RELAXED);
