@@ -3,6 +3,7 @@
 #include <sys/uio.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
@@ -46,7 +47,8 @@ static const unsigned int rds_opts[] = {
 	RDS_CANCEL_SENT_TO, RDS_GET_MR, RDS_FREE_MR,
 	4, /* deprecated RDS_BARRIER 4 */
 	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST,
-	SO_RDS_TRANSPORT,
+	SO_RDS_TRANSPORT, SO_RDS_MSG_RXPATH_LATENCY,
+	SO_TIMESTAMP_OLD, SO_TIMESTAMP_NEW,
 };
 
 static void rds_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
@@ -242,20 +244,55 @@ static bool rds_needs_listen_accept(__unused__ struct socket_triplet *triplet)
 static void rds_walk_setsockopts(int fd, __unused__ struct socket_triplet *triplet,
 				 unsigned int n)
 {
+	/*
+	 * Length set drawn for the RDS_INFO_* getsockopt arm.  0 and 1
+	 * exercise the -ENOSPC length-probe protocol (kernel writes the
+	 * required size into optlen and returns -ENOSPC when the buffer is
+	 * too small).  32 and 4096 drive the normal read path.  INT_MAX
+	 * probes the int-overflow shape in net/rds/info.c:230 where the
+	 * per-entry size multiplication can wrap a signed int.
+	 */
+	static const socklen_t info_lens[] = { 0, 1, 32, 4096,
+					       (socklen_t) INT_MAX };
+	unsigned char info_buf[4096];
 	unsigned int i;
 	int v;
 	unsigned long long cong_mask;
 
 	for (i = 0; i < n; i++) {
-		if (i & 1) {
+		switch (i % 3) {
+		case 0:
 			cong_mask = ((unsigned long long) rnd_u32() << 32) |
 				    rnd_u32();
 			(void) setsockopt(fd, SOL_RDS, RDS_CONG_MONITOR,
 					  &cong_mask, sizeof(cong_mask));
-		} else {
+			break;
+		case 1:
 			v = (i >> 1) & 1;
 			(void) setsockopt(fd, SOL_RDS, RDS_RECVERR,
 					  &v, sizeof(v));
+			break;
+		default: {
+			/*
+			 * RDS_INFO_* getsockopt arm.  optname drawn from
+			 * [RDS_INFO_FIRST..RDS_INFO_LAST] (10000-10017);
+			 * unreachable via RAND_BYTE() (max 255) so must be
+			 * drawn explicitly here.  Uses a capped copy of len
+			 * so we never overflow info_buf, while still passing
+			 * the raw drawn value into the kernel via the
+			 * pointer-aliased socklen_t so it sees the INT_MAX
+			 * probe value before the kernel clamps it.
+			 */
+			unsigned int optname = RDS_INFO_FIRST +
+				rnd_modulo_u32(RDS_INFO_LAST -
+					       RDS_INFO_FIRST + 1);
+			socklen_t len = RAND_ARRAY(info_lens);
+			socklen_t safe = (len > sizeof(info_buf)) ?
+					 sizeof(info_buf) : len;
+			(void) getsockopt(fd, SOL_RDS, (int) optname,
+					  info_buf, &safe);
+			break;
+		}
 		}
 	}
 }
