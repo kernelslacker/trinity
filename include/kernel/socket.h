@@ -283,6 +283,9 @@
 #ifndef SO_BINDTOIFINDEX
 #define SO_BINDTOIFINDEX        62
 #endif
+#ifndef SO_TIMESTAMP_OLD
+#define SO_TIMESTAMP_OLD        29
+#endif
 #ifndef SO_TIMESTAMP_NEW
 #define SO_TIMESTAMP_NEW        63
 #endif
