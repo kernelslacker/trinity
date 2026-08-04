@@ -109,7 +109,7 @@ static int rtnl_make_netdevsim(struct nl_ctx *rtnl, const char *ifname)
  * -ENODEV / -EOPNOTSUPP / -EEXIST the subsequent PSP family probe
  * still runs and the per-grandchild gate latches there if PSP isn't
  * built in. */
-int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
+int psp_key_rotate_iter_setup(struct nl_ctx *rtnl, unsigned long *dc)
 {
 	struct nl_open_opts nlopts;
 	char ifname[IFNAMSIZ];
@@ -123,10 +123,14 @@ int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
+	/* nl_open success: socket() + bind() + setsockopt(SO_RCVTIMEO). */
+	*dc += 3;
 
 	(void)snprintf(ifname, sizeof(ifname), "psp%u",
 		       (unsigned int)(rand32() & 0xffff));
 	rc = rtnl_make_netdevsim(rtnl, ifname);
+	/* rtnl_make_netdevsim wraps nl_send_recv: sendmsg() + recv(). */
+	*dc += 2;
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.psp_key_rotate.netdev_create_ok,
 				   1, __ATOMIC_RELAXED);
@@ -141,7 +145,8 @@ int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
  * into *dev_id_out on success.  Returns 0 on success or -1 if the
  * iteration should bail to iter_one's out: cleanup. */
 int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
-				       uint32_t *dev_id_out)
+				       uint32_t *dev_id_out,
+				       unsigned long *dc)
 {
 	struct genl_open_opts gopts;
 	int rc, rc2;
@@ -156,6 +161,9 @@ int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
+	/* genl_open success: nl_open (socket + bind + setsockopt) +
+	 * resolve_family_id (sendmsg + recv). */
+	*dc += 5;
 	__atomic_add_fetch(&shm->stats.psp_key_rotate.family_resolve_ok,
 			   1, __ATOMIC_RELAXED);
 
@@ -163,6 +171,8 @@ int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
 	 * device exposes id starting at 1; on a real PSP-capable host the
 	 * netdevsim spawned above lands here. */
 	rc2 = psp_dev_get_probe(psp_ctx);
+	/* psp_dev_get_probe wraps genl_send_recv: sendmsg() + recv(). */
+	*dc += 2;
 	if (rc2 == 0)
 		__atomic_add_fetch(&shm->stats.psp_key_rotate.dev_get_ok,
 				   1, __ATOMIC_RELAXED);
@@ -182,7 +192,8 @@ int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
  * latch from psp_key_rotate_cmd's errno, which the caller checks
  * before entering the traffic loop. */
 int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
-				       uint32_t dev_id)
+				       uint32_t dev_id,
+				       unsigned long *dc)
 {
 	struct sockaddr_in peer;
 	int sockfd;
@@ -194,15 +205,20 @@ int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
+	*dc += 1;			/* socket() */
 	apply_timeouts(sockfd);
+	*dc += 2;			/* setsockopt(SO_RCVTIMEO) + setsockopt(SO_SNDTIMEO) */
 	memset(&peer, 0, sizeof(peer));
 	peer.sin_family      = AF_INET;
 	peer.sin_port        = htons(0xCAFE);
 	peer.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	(void)connect(sockfd, (struct sockaddr *)&peer, sizeof(peer));
+	*dc += 1;			/* connect() */
 
 	/* Initial key install. */
 	rc = psp_key_rotate_cmd(psp_ctx, dev_id);
+	/* psp_key_rotate_cmd wraps genl_send_recv: sendmsg() + recv(). */
+	*dc += 2;
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.psp_key_rotate.key_install_ok,
 				   1, __ATOMIC_RELAXED);
@@ -212,6 +228,8 @@ int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
 	/* Bind the SA to the socket via the assoc command (spec stat:
 	 * spi_set_ok -- see spec-deviation note in the file header). */
 	rc = psp_tx_assoc_cmd(psp_ctx, dev_id, sockfd);
+	/* psp_tx_assoc_cmd wraps genl_send_recv: sendmsg() + recv(). */
+	*dc += 2;
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.psp_key_rotate.spi_set_ok,
 				   1, __ATOMIC_RELAXED);

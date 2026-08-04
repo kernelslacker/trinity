@@ -63,7 +63,8 @@ static void inner_traffic_burst(int sockfd)
 void psp_key_rotate_iter_traffic(int sockfd,
 				 struct genl_ctx *psp_ctx,
 				 uint32_t dev_id,
-				 const struct timespec *t_outer)
+				 const struct timespec *t_outer,
+				 unsigned long *dc)
 {
 	unsigned int inner, j;
 	int rc;
@@ -79,9 +80,11 @@ void psp_key_rotate_iter_traffic(int sockfd,
 			break;
 
 		inner_traffic_burst(sockfd);
+		*dc += 2;		/* send() + recv() */
 
 		/* RACE TARGET: rotate keys mid-flow. */
 		rc = psp_key_rotate_cmd(psp_ctx, dev_id);
+		*dc += 2;		/* genl_send_recv: sendmsg() + recv() */
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.psp_key_rotate.rotate_ok,
 					   1, __ATOMIC_RELAXED);
@@ -89,14 +92,17 @@ void psp_key_rotate_iter_traffic(int sockfd,
 		/* Re-bind the assoc to the rotated generation mid-flow --
 		 * "spi switch" per spec naming. */
 		rc = psp_tx_assoc_cmd(psp_ctx, dev_id, sockfd);
+		*dc += 2;		/* genl_send_recv: sendmsg() + recv() */
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.psp_key_rotate.spi_switch_ok,
 					   1, __ATOMIC_RELAXED);
 
 		inner_traffic_burst(sockfd);
+		*dc += 2;		/* send() + recv() */
 	}
 
 	(void)shutdown(sockfd, SHUT_RDWR);
+	*dc += 1;			/* shutdown() */
 	__atomic_add_fetch(&shm->stats.psp_key_rotate.shutdown_ok,
 			   1, __ATOMIC_RELAXED);
 }
@@ -109,7 +115,8 @@ void psp_key_rotate_iter_traffic(int sockfd,
  * subsequent observer of sockfd, so the cases need not reset it. */
 void psp_key_rotate_iter_teardown(unsigned int iter_idx, int sockfd,
 				  struct genl_ctx *psp_ctx,
-				  struct nl_ctx *rtnl)
+				  struct nl_ctx *rtnl,
+				  unsigned long *dc)
 {
 	switch (iter_idx & 3U) {
 	case 0:
@@ -133,6 +140,8 @@ void psp_key_rotate_iter_teardown(unsigned int iter_idx, int sockfd,
 		if (psp_ctx->nl.fd >= 0) genl_close(psp_ctx);
 		break;
 	}
+	/* close(sockfd) + genl_close (nl_close -> close) + nl_close (close). */
+	*dc += 3;
 }
 
 #endif /* __has_include gate matches psp-key-rotate.c */
