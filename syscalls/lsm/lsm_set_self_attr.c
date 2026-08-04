@@ -17,14 +17,47 @@
 #endif
 
 /* LSM IDs from linux/lsm.h; guard in case system headers provide them. */
+#ifndef LSM_ID_CAPABILITY
+#define LSM_ID_CAPABILITY	100
+#endif
 #ifndef LSM_ID_SELINUX
 #define LSM_ID_SELINUX		101
+#endif
+#ifndef LSM_ID_SMACK
 #define LSM_ID_SMACK		102
+#endif
+#ifndef LSM_ID_TOMOYO
+#define LSM_ID_TOMOYO		103
+#endif
+#ifndef LSM_ID_APPARMOR
 #define LSM_ID_APPARMOR		104
 #endif
-
+#ifndef LSM_ID_YAMA
+#define LSM_ID_YAMA		105
+#endif
+#ifndef LSM_ID_LOADPIN
+#define LSM_ID_LOADPIN		106
+#endif
+#ifndef LSM_ID_SAFESETID
+#define LSM_ID_SAFESETID	107
+#endif
+#ifndef LSM_ID_LOCKDOWN
+#define LSM_ID_LOCKDOWN		108
+#endif
+#ifndef LSM_ID_BPF
+#define LSM_ID_BPF		109
+#endif
 #ifndef LSM_ID_LANDLOCK
 #define LSM_ID_LANDLOCK		110
+#endif
+#ifndef LSM_ID_IMA
+#define LSM_ID_IMA		111
+#endif
+#ifndef LSM_ID_EVM
+#define LSM_ID_EVM		112
+#endif
+#ifndef LSM_ID_IPE
+#define LSM_ID_IPE		113
 #endif
 
 static unsigned long lsm_attrs[] = {
@@ -45,7 +78,10 @@ struct trinity_lsm_ctx {
 };
 
 static unsigned long lsm_ids[] = {
-	LSM_ID_SELINUX, LSM_ID_SMACK, LSM_ID_APPARMOR, LSM_ID_LANDLOCK,
+	LSM_ID_CAPABILITY,
+	LSM_ID_SELINUX, LSM_ID_SMACK, LSM_ID_TOMOYO, LSM_ID_APPARMOR,
+	LSM_ID_YAMA, LSM_ID_LOADPIN, LSM_ID_SAFESETID, LSM_ID_LOCKDOWN,
+	LSM_ID_BPF, LSM_ID_LANDLOCK, LSM_ID_IMA, LSM_ID_EVM, LSM_ID_IPE,
 };
 
 static void sanitise_lsm_set_self_attr(struct syscallrecord *rec)
