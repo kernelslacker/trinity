@@ -76,7 +76,7 @@ static size_t build_scan_ssids(unsigned char *buf, size_t cap)
  * Returns 0 on accept, the negated kernel errno on reject, -EIO on
  * local failure.
  */
-int trigger_scan(struct genl_ctx *ctx, int ifindex)
+int trigger_scan(struct genl_ctx *ctx, int ifindex, unsigned long *direct_calls)
 {
 	unsigned char buf[1536];
 	unsigned char ssids_buf[512];
@@ -102,6 +102,8 @@ int trigger_scan(struct genl_ctx *ctx, int ifindex)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
+	/* genl_send_recv_retry: sendmsg + recv. */
+	*direct_calls += 2;
 	return genl_send_recv_retry(ctx, buf, off);
 }
 
@@ -112,17 +114,20 @@ int trigger_scan(struct genl_ctx *ctx, int ifindex)
  * without an observed scan completion (the kernel's scan-cache may
  * still have entries from prior iters).
  */
-bool wait_scan_results(struct genl_ctx *ctx)
+bool wait_scan_results(struct genl_ctx *ctx, unsigned long *direct_calls)
 {
 	struct pollfd pfd;
 
 	pfd.fd     = ctx->nl.fd;
 	pfd.events = POLLIN;
 	pfd.revents = 0;
+	(*direct_calls)++;	/* poll() */
 	if (poll(&pfd, 1, NL80211_TIMEO_MS) > 0 && (pfd.revents & POLLIN)) {
 		unsigned char buf[NL80211_NL_RX_BUF];
-		ssize_t r = recv(ctx->nl.fd, buf, sizeof(buf), MSG_DONTWAIT);
+		ssize_t r;
 
+		(*direct_calls)++;	/* recv() */
+		r = recv(ctx->nl.fd, buf, sizeof(buf), MSG_DONTWAIT);
 		(void)r;
 		return true;
 	}
@@ -136,7 +141,7 @@ bool wait_scan_results(struct genl_ctx *ctx)
  * managed_hint / regulatory_hint_user codepath.  This path is what the
  * CVE-2023-3090 wiphy-index race lives in.
  */
-int set_reg_zz(struct genl_ctx *ctx)
+int set_reg_zz(struct genl_ctx *ctx, unsigned long *direct_calls)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -153,6 +158,8 @@ int set_reg_zz(struct genl_ctx *ctx)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
+	/* genl_send_recv_retry: sendmsg + recv. */
+	*direct_calls += 2;
 	return genl_send_recv_retry(ctx, buf, off);
 }
 

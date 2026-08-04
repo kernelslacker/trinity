@@ -171,9 +171,9 @@ int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
 		       unsigned long *direct_calls);
 
 /* Scan/BSS churn phase -- nl80211-churn-scan.c */
-int trigger_scan(struct genl_ctx *ctx, int ifindex);
-bool wait_scan_results(struct genl_ctx *ctx);
-int set_reg_zz(struct genl_ctx *ctx);
+int trigger_scan(struct genl_ctx *ctx, int ifindex, unsigned long *direct_calls);
+bool wait_scan_results(struct genl_ctx *ctx, unsigned long *direct_calls);
+int set_reg_zz(struct genl_ctx *ctx, unsigned long *direct_calls);
 
 /* Station/key phase -- nl80211-churn-station.c */
 int connect_iface(struct genl_ctx *ctx, int ifindex);
