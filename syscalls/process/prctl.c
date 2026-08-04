@@ -117,7 +117,7 @@ static int prctl_opts[] = {
 	PR_GET_CFI, PR_SET_CFI,
 	PR_RISCV_V_SET_CONTROL, PR_RISCV_V_GET_CONTROL, PR_RISCV_SET_ICACHE_FLUSH_CTX,
 	PR_PPC_GET_DEXCR, PR_PPC_SET_DEXCR,
-	PR_SET_PTRACER, PR_SET_VMA, PR_GET_AUXV,
+	PR_SET_VMA, PR_GET_AUXV,
 };
 #define NR_PRCTL_OPTS ARRAY_SIZE(prctl_opts)
 
@@ -526,26 +526,6 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		break;
 	}
 
-	case PR_SET_PTRACER:
-		/*
-		 * arg2: 0 (remove ptracer allowance), a live PID
-		 * (allow that specific process to ptrace this task),
-		 * or PR_SET_PTRACER_ANY ((unsigned long)-1, allow any
-		 * process).  Three-way split: ANY to exercise the
-		 * special-value arm, 0 to exercise the remove-allowance
-		 * arm, get_pid() to produce a live child PID for the
-		 * accept-pid arm.  arg3-arg5 must be zero.
-		 */
-		switch (rnd_modulo_u32(3)) {
-		case 0:  rec->a2 = PR_SET_PTRACER_ANY;        break;
-		case 1:  rec->a2 = 0;                          break;
-		default: rec->a2 = (unsigned long)get_pid();   break;
-		}
-		rec->a3 = 0;
-		rec->a4 = 0;
-		rec->a5 = 0;
-		break;
-
 	default:
 		break;
 	}
@@ -693,7 +673,6 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	case PR_RISCV_V_SET_CONTROL:
 	case PR_RISCV_SET_ICACHE_FLUSH_CTX:
 	case PR_PPC_SET_DEXCR:
-	case PR_SET_PTRACER:
 	/*
 	 * Retval-only GETs.  Kernel returns the value via the syscall
 	 * return slot; nothing user-visible outside that slot changes.
