@@ -244,6 +244,8 @@ void dump_stats_json_iouring_and_zombies(void)
 	putchar(',');
 	stat_category_emit_json(&inplace_crypto_category);
 	putchar(',');
+	stat_category_emit_json(&rpl_clone_fidelity_category);
+	putchar(',');
 	stat_category_emit_json(&fd_runtime_skipped_category);
 	putchar(',');
 	stat_category_emit_json(&child_category);
