@@ -112,7 +112,7 @@ test:
 # binary (or vice versa).  New PURE modules migrate onto the
 # test-bin cargo by adding one line to tests/Makefile REAL_SRCS,
 # not by wiring anything here.
-.PHONY: test-bin test-asan
+.PHONY: test-bin test-asan test-ndebug
 
 test-bin: test
 	@$(MAKE) --no-print-directory -C tests
@@ -121,6 +121,14 @@ test-asan: test
 	@$(MAKE) --no-print-directory -C tests ASAN=1
 	@echo "  RUN  tests/test-bin-asan (ASAN, seed=default)"
 	@./tests/test-bin-asan
+
+# test-ndebug: expected-RED at HEAD (fixture 7 aborts with -DNDEBUG).
+# Not wired into the default test chain until the follow-on fix lands;
+# run manually with: make test-ndebug
+test-ndebug: test
+	@$(MAKE) --no-print-directory -C tests NDEBUG=1
+	@echo "  RUN  tests/test-bin-ndebug (NDEBUG, seed=default)"
+	@./tests/test-bin-ndebug
 
 
 MACHINE		:= $(shell $(CC) -dumpmachine)
