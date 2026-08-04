@@ -565,7 +565,8 @@ static size_t b6r_build_frag_frame(unsigned char *frame, size_t cap,
 static void b6r_send_frag_pair(int raw_fd, int ifindex,
 			       const unsigned char *dst_mac,
 			       const unsigned char *src_mac,
-			       uint32_t ident, uint32_t rnd_hi)
+			       uint32_t ident, uint32_t rnd_hi,
+			       unsigned long *direct_calls_p)
 {
 	unsigned char frame[B6R_FRAME_CAP];
 	unsigned char payload[1400];
@@ -598,22 +599,26 @@ static void b6r_send_frag_pair(int raw_fd, int ifindex,
 					 dst_mac, src_mac, ext_kind,
 					 ident, 0U, true,
 					 payload, frag1_len);
-	if (frame_len &&
-	    sendto(raw_fd, frame, frame_len, MSG_DONTWAIT,
-		   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-		__atomic_add_fetch(&shm->stats.bridge_ip6frag.frames_sent,
-				   1, __ATOMIC_RELAXED);
+	if (frame_len) {
+		if (sendto(raw_fd, frame, frame_len, MSG_DONTWAIT,
+			   (struct sockaddr *)&sll, sizeof(sll)) > 0)
+			__atomic_add_fetch(&shm->stats.bridge_ip6frag.frames_sent,
+					   1, __ATOMIC_RELAXED);
+		(*direct_calls_p)++;
+	}
 
 	frame_len = b6r_build_frag_frame(frame, sizeof(frame),
 					 dst_mac, src_mac, ext_kind,
 					 ident, (uint16_t)frag1_len, false,
 					 payload + frag1_len,
 					 total_len - frag1_len);
-	if (frame_len &&
-	    sendto(raw_fd, frame, frame_len, MSG_DONTWAIT,
-		   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-		__atomic_add_fetch(&shm->stats.bridge_ip6frag.frames_sent,
-				   1, __ATOMIC_RELAXED);
+	if (frame_len) {
+		if (sendto(raw_fd, frame, frame_len, MSG_DONTWAIT,
+			   (struct sockaddr *)&sll, sizeof(sll)) > 0)
+			__atomic_add_fetch(&shm->stats.bridge_ip6frag.frames_sent,
+					   1, __ATOMIC_RELAXED);
+		(*direct_calls_p)++;
+	}
 }
 
 /* Per-invocation state carried across the extracted phase helpers.
@@ -633,6 +638,9 @@ struct b6r_iter_ctx {
 	bool			bridge_added;
 	bool			veth_added;
 	struct childdata	*child;
+	/* Accumulates own-body raw-syscall count; published once via
+	 * childop_direct_syscalls_add() at bridge_ip6frag_refrag_in_ns() exit. */
+	unsigned long		direct_calls;
 };
 
 /*
@@ -761,6 +769,7 @@ static void b6r_iter_packet_burst(struct b6r_iter_ctx *ctx)
 
 	ctx->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
 			  htons(ETH_P_IPV6));
+	ctx->direct_calls++;
 	if (ctx->raw < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			mark_ns_unsupported_af_packet();
@@ -776,6 +785,7 @@ static void b6r_iter_packet_burst(struct b6r_iter_ctx *ctx)
 	bind_sll.sll_family   = AF_PACKET;
 	bind_sll.sll_protocol = htons(ETH_P_IPV6);
 	bind_sll.sll_ifindex  = ctx->vb_idx;
+	ctx->direct_calls++;
 	(void)bind(ctx->raw, (struct sockaddr *)&bind_sll, sizeof(bind_sll));
 
 	generate_rand_bytes(src_mac, 6);
@@ -808,7 +818,8 @@ static void b6r_iter_packet_burst(struct b6r_iter_ctx *ctx)
 		rnd_hi = rand32();
 		b6r_send_frag_pair(ctx->raw, ctx->vb_idx,
 				   dst_mac, src_mac,
-				   b6r_ident_counter, rnd_hi);
+				   b6r_ident_counter, rnd_hi,
+				   &ctx->direct_calls);
 		b6r_ident_counter++;
 		__atomic_add_fetch(&shm->stats.bridge_ip6frag.pairs_sent,
 				   1, __ATOMIC_RELAXED);
@@ -861,6 +872,8 @@ static int bridge_ip6frag_refrag_in_ns(void *arg)
 		.raw      = -1,
 		.child    = cctx->child,
 	};
+	const enum child_op_type op = cctx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (b6r_iter_setup_names(&ctx) != 0)
 		goto out;
@@ -872,6 +885,8 @@ static int bridge_ip6frag_refrag_in_ns(void *arg)
 
 out:
 	b6r_iter_teardown(&ctx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return 0;
 }
 
