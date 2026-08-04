@@ -85,6 +85,10 @@ static int xdp_netlink_open(struct nl_ctx *ctx)
 	memset(&opts, 0, sizeof(opts));
 	opts.proto         = NETLINK_ROUTE;
 	opts.recv_timeo_s  = 1;
+	/* Set caller_op explicitly so the netlink transport credits the
+	 * AF_XDP churn op directly rather than relying on the implicit
+	 * this_child()->op_type fallback in nl_open / nl_close. */
+	opts.caller_op     = CHILD_OP_AFXDP_CHURN;
 	return nl_open(ctx, &opts);
 }
 
@@ -150,6 +154,12 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	unsigned int target_ifindex = 0;
 	unsigned int retry;
 	int rc;
+	/* Accumulate non-netlink raw syscall count for the direct-syscall
+	 * reporter.  The netlink open / close path (xdp_netlink_open +
+	 * nl_close via xsk_teardown) credits its own calls under
+	 * CHILD_OP_AFXDP_CHURN via opts.caller_op; only count the
+	 * non-netlink sites here: tun open/ioctl/close and bind(). */
+	unsigned long dc = 0;
 
 	/* Pick bind target: tun-with-NAPI_FRAGS when the per-iter knob fired
 	 * (and tun is reachable), else lo.  d73a9a63f9f7's bug surface is
@@ -157,12 +167,16 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	 * exposes that path; lo does not. */
 	if (*want_tun) {
 		st->tun_fd = tun_open_napi_frags(tun_name);
+		/* tun_open_napi_frags issues open() and on success ioctl();
+		 * credit two syscalls on success, one on failed open. */
+		dc += (st->tun_fd >= 0) ? 2 : 1;
 		if (st->tun_fd >= 0)
 			target_ifindex = if_nametoindex(tun_name);
 		if (target_ifindex == 0) {
 			if (st->tun_fd >= 0) {
 				close(st->tun_fd);
 				st->tun_fd = -1;
+				dc++;			/* close() */
 			}
 			*want_tun = false;
 		}
@@ -172,6 +186,14 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	if (target_ifindex == 0) {
 		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
+		/* Publish any tun-phase syscalls credited before the bail. */
+		if (dc) {
+			struct childdata *tc = this_child();
+			const enum child_op_type op = tc ? tc->op_type :
+				NR_CHILD_OP_TYPES;
+			if ((int)op >= 0 && op < NR_CHILD_OP_TYPES)
+				childop_direct_syscalls_add(op, dc);
+		}
 		return -1;
 	}
 
@@ -186,6 +208,7 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	rc = -1;
 	for (retry = 0; retry < AFXDP_RETRY_CAP; retry++) {
 		rc = bind(st->xsk_fd, (struct sockaddr *)&sxdp, sizeof(sxdp));
+		dc++;				/* bind() */
 		if (rc == 0 || !afxdp_retryable(errno))
 			break;
 	}
@@ -205,6 +228,13 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	}
 
 	*target_ifindex_out = target_ifindex;
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		if ((int)op >= 0 && op < NR_CHILD_OP_TYPES && dc)
+			childop_direct_syscalls_add(op, dc);
+	}
 	return 0;
 }
 
@@ -223,6 +253,12 @@ void afxdp_iter_attach_prog(struct xsk_state *st,
 		return;
 
 	st->xdp_link_fd = xdp_link_attach(st->prog_fd, target_ifindex);
+	/* xdp_link_attach wraps sys_bpf(BPF_LINK_CREATE); credit one
+	 * non-netlink syscall unconditionally (always attempted when
+	 * st->bound && st->prog_fd >= 0).  The netlink fallback path
+	 * (xdp_netlink_open + xdp_netlink_set_fd) credits its own calls
+	 * to CHILD_OP_AFXDP_CHURN via opts.caller_op in xdp_netlink_open. */
+	unsigned long dc = 1;
 	if (st->xdp_link_fd >= 0) {
 		__atomic_add_fetch(&shm->stats.afxdp_churn.link_attach_ok,
 				   1, __ATOMIC_RELAXED);
@@ -239,6 +275,13 @@ void afxdp_iter_attach_prog(struct xsk_state *st,
 			__atomic_add_fetch(&shm->stats.afxdp_churn.attach_failed,
 					   1, __ATOMIC_RELAXED);
 		}
+	}
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		if ((int)op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, dc);
 	}
 }
 
