@@ -3,9 +3,11 @@
 	 unsigned long, nr_segs, unsigned int, flags)
  */
 
+#include <errno.h>
 #include <limits.h>
 #include <sys/uio.h>
 #include <fcntl.h>
+#include "arch.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -18,11 +20,38 @@ static unsigned long vmsplice_flags[] = {
 static void post_vmsplice(struct syscallrecord *rec)
 {
 	long ret = (long) rec->retval;
+	struct iovec *iov;
+	unsigned long nr_segs, i;
 
 	if (ret == -1L)
-		return;
+		goto check_kernel_range;
 	if (ret < 0 || ret > SSIZE_MAX)
 		post_handler_corrupt_ptr_bump(rec, NULL);
+
+check_kernel_range:
+	/*
+	 * If any iov entry carries a kernel-range base the kernel must
+	 * return -EFAULT: a correct access_ok() rejects addresses above
+	 * TASK_SIZE before the page-table walk.  A non-EFAULT return
+	 * from a kernel-range base means access_ok was skipped or
+	 * bypassed and is itself a finding.
+	 */
+	iov = (struct iovec *) rec->a2;
+	nr_segs = rec->a3;
+	if (iov == NULL || nr_segs == 0)
+		return;
+	if (nr_segs > UIO_MAXIOV)
+		nr_segs = UIO_MAXIOV;
+	for (i = 0; i < nr_segs; i++) {
+		unsigned long base = (unsigned long) iov[i].iov_base;
+
+		if (base < (unsigned long) KERNEL_ADDR)
+			continue;
+		/* kernel-range base: must have EFAULTed */
+		if (rec->errno_post != EFAULT)
+			post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
 }
 
 struct syscallentry syscall_vmsplice = {
