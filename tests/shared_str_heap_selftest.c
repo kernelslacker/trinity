@@ -60,6 +60,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "shared_freelist.h"
 #include "shared_str_heap.h"
 #include "utils-mem.h"
 
@@ -100,6 +101,280 @@ static void fail(const char *msg, size_t alloc_size, void *expected,
 		msg, alloc_size, expected, got);
 	fflush(stderr);
 	abort();
+}
+
+/* =====================================================================
+ * Cases 1-4 below are additional free_shared_str() fixtures.
+ *
+ * Cases 1-3 are XFAIL at HEAD: they expose known corruption paths in
+ * free_shared_str()'s fall-through "no LIVE record" branch.  Each
+ * function detects the failure, prints an XFAIL diagnostic, and
+ * returns without abort()ing so that case 4 and the original suite
+ * continue to execute.  The planned free_shared_str() repair should make these
+ * cases pass (the XFAIL lines will then not print).
+ *
+ * Case 4 is EXPECTED TO PASS at HEAD.
+ * ===================================================================== */
+
+/*
+ * CASE 1 (XFAIL at HEAD): duplicate free corrupts the freelist chain.
+ *
+ * After a slot is freed correctly its first four bytes hold the
+ * next-token link for the freelist chain.  A second free_shared_str()
+ * call on the same pointer (with a non-zero size) falls through the
+ * "no LIVE record" path and issues memset(p, 0, size), zeroing the
+ * link and silently truncating the chain.  The repair must gate the
+ * fall-through memset on the slot genuinely being above-bucket /
+ * out-of-range so FREE(bucket) state slots are not scribbled.
+ *
+ * Assertion: the first four bytes of the freed slot (its next-chain
+ * link) are identical before and after the second free call.
+ */
+static void xfail_double_free_chain(void)
+{
+	char *slot_a, *slot_b;
+	uint32_t link_before, link_after;
+
+	shared_str_heap_reset_for_test();
+
+	/* Two bucket-0 (8-byte) allocations from a fresh heap.
+	 * Bump order gives slot_a at offset 0, slot_b at offset 8. */
+	slot_a = alloc_shared_str(1);
+	slot_b = alloc_shared_str(1);
+	if (!slot_a || !slot_b) {
+		fprintf(stderr, "xfail_double_free_chain: alloc failed\n");
+		return;
+	}
+
+	/* Build chain slot_a -> slot_b -> nil.
+	 * Free slot_b first so its next-token is 0 (empty),
+	 * then free slot_a so its next-token points at slot_b. */
+	free_shared_str(slot_b, 8);
+	free_shared_str(slot_a, 8);
+	/* slot_a[0..3] now holds the token (offset+1) of slot_b. */
+	memcpy(&link_before, slot_a, sizeof(link_before));
+
+	/* Second free of slot_a.  State at slot_a is FREE(0), which
+	 * is NOT in the LIVE range, so free_shared_str() falls through
+	 * to memset(slot_a, 0, 8) and clobbers the link. */
+	free_shared_str(slot_a, 8);
+	memcpy(&link_after, slot_a, sizeof(link_after));
+
+	if (link_after != link_before) {
+		fprintf(stderr,
+			"XFAIL (case 1 - double_free_chain): "
+			"freelist link at slot_a[0..3] was clobbered by "
+			"the second free_shared_str() call "
+			"(was 0x%08x, now 0x%08x). "
+			"Fix: gate the fall-through memset on LIVE state "
+			"so FREE-state slots are not scribbled.\n",
+			link_before, link_after);
+		return;
+	}
+	fprintf(stderr,
+		"case 1 (double_free_chain): PASS "
+		"(previously XFAIL -- 374*A landed?)\n");
+}
+
+/*
+ * CASE 2 (XFAIL at HEAD): aligned interior pointer corrupts a live
+ * allocation.
+ *
+ * free_shared_str() of a stride-aligned interior offset within a
+ * larger live slot finds state == UNCARVED (0) at that stride index
+ * and falls through to memset(interior_ptr, 0, size), scribbling
+ * payload bytes inside the covering live slot.  The repair must verify
+ * that the presented address is NOT an interior stride unit of any
+ * live slot before allowing the fall-through memset.
+ *
+ * Assertion: bytes at the interior stride offset are byte-identical
+ * before and after the bogus free call.
+ */
+static void xfail_interior_ptr_corruption(void)
+{
+	char *big;
+	char before_buf[SHARED_FREELIST_SLOT_STRIDE];
+	char after_buf[SHARED_FREELIST_SLOT_STRIDE];
+
+	shared_str_heap_reset_for_test();
+
+	/* Bucket 3: alloc_size 33 rounds to 64-byte slot.
+	 * slot_state[off/STRIDE] = LIVE(3) for the slot start only;
+	 * slot_state[(off + STRIDE)/STRIDE] = 0 (UNCARVED) for +8. */
+	big = alloc_shared_str(33);
+	if (!big) {
+		fprintf(stderr,
+			"xfail_interior_ptr_corruption: alloc failed\n");
+		return;
+	}
+
+	/* Fill the whole slot so the interior stride unit is non-zero. */
+	memset(big, 'M', 64);
+	memcpy(before_buf, big + SHARED_FREELIST_SLOT_STRIDE,
+	       sizeof(before_buf));
+
+	/* Free the stride-aligned interior address big + STRIDE.
+	 * It is in-slab, STRIDE-aligned, but state is UNCARVED (0),
+	 * so free_shared_str() falls through and issues
+	 * memset(big + STRIDE, 0, STRIDE), corrupting the live slot. */
+	free_shared_str(big + SHARED_FREELIST_SLOT_STRIDE,
+			SHARED_FREELIST_SLOT_STRIDE);
+	memcpy(after_buf, big + SHARED_FREELIST_SLOT_STRIDE,
+	       sizeof(after_buf));
+
+	if (memcmp(before_buf, after_buf, sizeof(before_buf)) != 0) {
+		fprintf(stderr,
+			"XFAIL (case 2 - interior_ptr_corruption): "
+			"live slot bytes at interior stride offset (+%u) "
+			"were modified by free_shared_str() -- "
+			"expected all 'M' (0x4d), got 0x%02x at byte 0. "
+			"Fix: skip the fall-through memset for aligned "
+			"interior addresses inside live slots.\n",
+			(unsigned int)SHARED_FREELIST_SLOT_STRIDE,
+			(unsigned char)after_buf[0]);
+		return;
+	}
+	fprintf(stderr,
+		"case 2 (interior_ptr_corruption): PASS "
+		"(previously XFAIL -- 374*A landed?)\n");
+}
+
+/*
+ * CASE 3 (XFAIL at HEAD): free of an uncarved in-heap pointer writes
+ * bytes into never-allocated heap space.
+ *
+ * free_shared_str() of a stride-aligned offset that was never carved
+ * (state == UNCARVED / 0, past the current bump cursor) falls through
+ * to memset(p, 0, size).  No live allocation owns those bytes, but
+ * the write still silently happens.  The repair must skip the memset for
+ * any pointer whose slot_state entry is not LIVE.
+ *
+ * Assertion: zero bytes are written anywhere in the heap target range,
+ * verified by priming those bytes with a non-zero sentinel before the
+ * bogus free and checking they are unchanged afterwards.
+ */
+static void xfail_uncarved_ptr_write(void)
+{
+	char *slot_a, *uncarved;
+	unsigned int i;
+
+	shared_str_heap_reset_for_test();
+
+	/* Alloc one bucket-0 slot to initialise the heap; bump cursor
+	 * lands at STRIDE.  The next stride-aligned address (slot_a +
+	 * STRIDE) is inside the mmap'd region but was never carved. */
+	slot_a = alloc_shared_str(1);
+	if (!slot_a) {
+		fprintf(stderr, "xfail_uncarved_ptr_write: alloc failed\n");
+		return;
+	}
+
+	uncarved = slot_a + SHARED_FREELIST_SLOT_STRIDE;
+
+	/* Prime with a non-zero sentinel so a spurious memset is
+	 * detectable: if free_shared_str() is a no-op the bytes
+	 * survive; if it issues memset() they become 0. */
+	memset(uncarved, 'P', SHARED_FREELIST_SLOT_STRIDE);
+
+	/* Bogus free: uncarved is stride-aligned, inside the heap,
+	 * state == UNCARVED (0) -- should be a no-op; is not at HEAD. */
+	free_shared_str(uncarved, SHARED_FREELIST_SLOT_STRIDE);
+
+	for (i = 0; i < SHARED_FREELIST_SLOT_STRIDE; i++) {
+		if ((unsigned char)uncarved[i] != 'P') {
+			fprintf(stderr,
+				"XFAIL (case 3 - uncarved_ptr_write): "
+				"free_shared_str() wrote to never-carved heap "
+				"at byte +%u "
+				"(expected 'P'=0x50, got 0x%02x). "
+				"Fix: skip the fall-through memset for "
+				"UNCARVED (state==0) slots.\n",
+				i, (unsigned char)uncarved[i]);
+			return;
+		}
+	}
+	fprintf(stderr,
+		"case 3 (uncarved_ptr_write): PASS "
+		"(previously XFAIL -- 374*A landed?)\n");
+}
+
+/*
+ * CASE 4 (EXPECTED TO PASS at HEAD): alloc/free/realloc round-trip
+ * across every one of the 8 size buckets.
+ *
+ * For each bucket: allocate a slot at the bucket's canonical size,
+ * fill it with a per-bucket sentinel byte, free it, then re-allocate
+ * the same size.  The re-alloc MUST return the exact same pointer
+ * (the freelist held exactly one slot -- the one we freed -- so a
+ * correct-bucket pop returns it).  The returned slot MUST be zeroed
+ * by the freelist pop's memset.  After freeing each slot the sibling
+ * buckets' freelists must remain unaffected (no cross-bucket
+ * leakage).
+ */
+static void pass_bucket_roundtrip(void)
+{
+	unsigned int i;
+
+	shared_str_heap_reset_for_test();
+
+	for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+		size_t alloc_size   = cases[i].alloc_size;
+		size_t bucket_bytes = cases[i].bucket_bytes;
+		char *slot, *slot2;
+		unsigned int j;
+
+		slot = alloc_shared_str(alloc_size);
+		if (slot == NULL)
+			fail("pass_bucket_roundtrip: initial alloc failed",
+			     alloc_size, NULL, NULL);
+
+		/* Fill with a per-bucket sentinel so a stale-slot pop
+		 * (wrong bucket) would return non-zero bytes. */
+		memset(slot, (int)('A' + i), bucket_bytes);
+
+		/* Free and immediately re-alloc the same size: with one
+		 * slot in the freelist the pop MUST return the same addr. */
+		free_shared_str(slot, bucket_bytes);
+
+		slot2 = alloc_shared_str(alloc_size);
+		if (slot2 == NULL)
+			fail("pass_bucket_roundtrip: re-alloc returned NULL "
+			     "(freelist empty -- wrong-bucket free?)",
+			     alloc_size, slot, NULL);
+		if (slot2 != slot)
+			fail("pass_bucket_roundtrip: wrong-bucket free "
+			     "(re-alloc did not recycle the freed slot)",
+			     alloc_size, slot, slot2);
+
+		/* Freelist pop zeroes the slot on success. */
+		for (j = 0; j < bucket_bytes; j++) {
+			if (slot2[j] != 0)
+				fail("pass_bucket_roundtrip: slot not zeroed "
+				     "after freelist pop",
+				     alloc_size, slot, slot2);
+		}
+
+		/* Return slot2 to the freelist so it is empty entering
+		 * the next iteration (cross-bucket contamination check). */
+		free_shared_str(slot2, bucket_bytes);
+
+		/* Cross-bucket leakage check: alloc this bucket's size
+		 * once more; we should get slot back (it is the only slot
+		 * on this bucket's freelist).  If a cross-bucket push
+		 * occurred, the pop would return something else or NULL. */
+		slot = alloc_shared_str(alloc_size);
+		if (slot == NULL)
+			fail("pass_bucket_roundtrip: cross-bucket check alloc "
+			     "returned NULL",
+			     alloc_size, slot2, NULL);
+		if (slot != slot2)
+			fail("pass_bucket_roundtrip: cross-bucket leakage "
+			     "(unexpected pointer on freelist)",
+			     alloc_size, slot2, slot);
+
+		/* Leave the slot allocated so subsequent bucket iterations
+		 * have a clean freelist for their own round-trip. */
+	}
 }
 
 void shared_str_heap_free_size_check(void);
@@ -168,4 +443,16 @@ void shared_str_heap_free_size_check(void)
 			fail("free lost the slot -- wrong bucket",
 			     alloc_size, target, target2);
 	}
+
+	/* === four additional free_shared_str() corruption cases === */
+
+	/* Cases 1-3: XFAIL at HEAD.  These print an XFAIL diagnostic
+	 * and return rather than abort()ing so case 4 (and this
+	 * original suite) still run.  The repair turns them green. */
+	xfail_double_free_chain();
+	xfail_interior_ptr_corruption();
+	xfail_uncarved_ptr_write();
+
+	/* Case 4: expected to PASS at HEAD. */
+	pass_bucket_roundtrip();
 }
