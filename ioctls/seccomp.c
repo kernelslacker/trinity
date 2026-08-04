@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 #include "kernel/seccomp.h"
 
 /*
@@ -100,7 +101,8 @@ static void seccomp_notif_sanitise(const struct ioctl_group *grp,
 		resp->id = rnd_u64();
 		resp->val = (__s64) rnd_u64();
 		resp->error = (__s32) rnd_u32();
-		resp->flags = rnd_u32();
+		/* Draw from valid set; ~1-in-8 inject one invalid bit for reject coverage */
+		resp->flags = ONE_IN(8) ? rnd_u32() : (RAND_BOOL() ? SECCOMP_USER_NOTIF_FLAG_CONTINUE : 0);
 		rec->a3 = (unsigned long) resp;
 		break;
 	}
@@ -112,10 +114,14 @@ static void seccomp_notif_sanitise(const struct ioctl_group *grp,
 			break;
 		memset(afd, 0, sizeof(*afd));
 		afd->id = rnd_u64();
-		afd->flags = rnd_u32();
+		/* Draw from valid set; ~1-in-8 inject one invalid bit for reject coverage */
+		afd->flags = ONE_IN(8) ? rnd_u32() :
+			((RAND_BOOL() ? SECCOMP_ADDFD_FLAG_SETFD : 0) |
+			 (RAND_BOOL() ? SECCOMP_ADDFD_FLAG_SEND  : 0));
 		afd->srcfd = (__u32) get_random_fd();
 		afd->newfd = rnd_u32();
-		afd->newfd_flags = rnd_u32();
+		/* Draw from valid set; ~1-in-8 inject one invalid bit for reject coverage */
+		afd->newfd_flags = ONE_IN(8) ? rnd_u32() : (RAND_BOOL() ? O_CLOEXEC : 0);
 		rec->a3 = (unsigned long) afd;
 		break;
 	}
