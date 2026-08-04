@@ -40,4 +40,16 @@ void dump_child_bug(struct childdata *child);
  */
 void dump_child_fault_beacon(struct childdata *child);
 
+/*
+ * Return the three beacon-capture loss counters accumulated by
+ * dump_child_fault_beacon() across the run.  Any out-pointer may be NULL.
+ *   *out_total   -- total beacons surfaced (dump_child_fault_beacon calls
+ *                   that passed the cmpxchg gate)
+ *   *out_no_log  -- subset with no per-pid bug log file on disk
+ *   *out_partial -- subset with log file but no BUGLOG-COMPLETE sentinel
+ */
+void beacon_loss_get_counts(unsigned int *out_total,
+			    unsigned int *out_no_log,
+			    unsigned int *out_partial);
+
 void syslogf(const char *fmt, ...);
