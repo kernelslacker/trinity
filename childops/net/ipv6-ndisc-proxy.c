@@ -221,14 +221,17 @@ static int proxy_neigh_add(struct nl_ctx *ctx, int idx,
 	return nl_send_recv(ctx, buf, off);
 }
 
-static bool sysfs_write_one(const char *path, const char *val)
+static bool sysfs_write_one(const char *path, const char *val,
+			unsigned long *direct_calls_p)
 {
 	int fd = open(path, O_WRONLY | O_CLOEXEC);
 	ssize_t n;
 
+	(*direct_calls_p)++;
 	if (fd < 0)
 		return false;
 	n = write(fd, val, strlen(val));
+	(*direct_calls_p)++;
 	close(fd);
 	return n > 0;
 }
@@ -255,7 +258,8 @@ static bool sysfs_write_one(const char *path, const char *val)
  * Frames stay well under a 1500 byte MTU and inside the 256 byte
  * scratch buffer even in the widest variant.
  */
-static bool send_one_ns(int raw, int ifindex, unsigned int rot)
+static bool send_one_ns(int raw, int ifindex, unsigned int rot,
+			unsigned long *direct_calls_p)
 {
 	unsigned char frame[256];
 	struct sockaddr_ll sll;
@@ -392,6 +396,7 @@ static bool send_one_ns(int raw, int ifindex, unsigned int rot)
 	n = sendto(raw, frame, icmp_off + sizeof(*ns) + nd_opt_len,
 		   MSG_DONTWAIT,
 		   (struct sockaddr *)&sll, sizeof(sll));
+	(*direct_calls_p)++;
 	return n > 0;
 }
 
@@ -425,6 +430,9 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 	int lo_idx, vp0_idx, vp1_idx;
 	int raw = -1;
 	unsigned int iters, i;
+	unsigned long direct_calls = 0;
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.setup_failed,
@@ -474,8 +482,10 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 	/* Both arms of the proxy_ndp gate: per-dev knob (vp0) plus the
 	 * /all/ knob — kernels differ on which one ip6_forward consults
 	 * for the proxy check, so flip both. */
-	if (sysfs_write_one("/proc/sys/net/ipv6/conf/vp0/proxy_ndp", "1") ||
-	    sysfs_write_one("/proc/sys/net/ipv6/conf/all/proxy_ndp", "1"))
+	if (sysfs_write_one("/proc/sys/net/ipv6/conf/vp0/proxy_ndp", "1",
+			    &direct_calls) ||
+	    sysfs_write_one("/proc/sys/net/ipv6/conf/all/proxy_ndp", "1",
+			    &direct_calls))
 		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.proxy_enable_ok,
 				   1, __ATOMIC_RELAXED);
 
@@ -484,10 +494,11 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 	nl_close(&ctx);
 
 	raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IPV6));
+	direct_calls++;
 	if (raw < 0) {
 		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return 0;
+		goto out;
 	}
 	{
 		struct sockaddr_ll bnd;
@@ -496,17 +507,9 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 		bnd.sll_family   = AF_PACKET;
 		bnd.sll_protocol = htons(ETH_P_IPV6);
 		bnd.sll_ifindex  = vp1_idx;
+		direct_calls++;
 		(void)bind(raw, (struct sockaddr *)&bnd, sizeof(bnd));
 	}
-
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot.  Skip the stats
-	 * writes entirely when the snapshot is out of range. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -525,12 +528,16 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 	for (i = 0; i < iters; i++) {
 		if (ns_since(&t0) >= NDP_STORM_BUDGET_NS)
 			break;
-		if (send_one_ns(raw, vp1_idx, rand32()))
+		if (send_one_ns(raw, vp1_idx, rand32(), &direct_calls))
 			__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy.ns_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
-	close(raw);
+out:
+	if (raw >= 0)
+		close(raw);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 }
 
