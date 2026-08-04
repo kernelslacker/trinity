@@ -110,26 +110,35 @@ const struct netproto proto_rds = {
  *        rds_bind_inet4 and rds_bind_inet6 paths over the run.
  *     -> post-bind setsockopt churn to walk the option dispatcher's
  *        bound-state arm
- *     -> sendmsg() with one of two cmsg shapes randomised per walk:
+ *     -> sendmsg() with one of five cmsg shapes randomised per walk:
  *          A) raw datagram (no SOL_RDS cmsg) — drives the bare
  *             rds_sendmsg path through rds_send_xmit
- *          B) RDMA arm: RDS_CMSG_RDMA_MAP carrying a synthetic
+ *          B) RDMA-MAP arm: RDS_CMSG_RDMA_MAP carrying a synthetic
  *             rds_get_mr_args (RDS_RDMA_USE_ONCE | READWRITE so the
  *             MR registration walks both lifecycle ends in one msg)
- *             plus an optional RDS_CMSG_RDMA_DEST cookie
+ *             plus an optional RDS_CMSG_RDMA_DEST cookie and an
+ *             optional RDS_CMSG_ZCOPY_COOKIE (u32)
+ *          C) RDMA-ARGS arm: RDS_CMSG_RDMA_ARGS with nr_local + a
+ *             real local_vec_addr iovec array; gates the
+ *             rds_rdma_extra_size() int-truncation path
+ *          D) Atomic pair: RDS_CMSG_ATOMIC_FADD / CSWP and masked
+ *             variants in the same msghdr; hits the op_active re-entry
+ *             reject and the sg-leak-on-error shape
+ *          E) cmsg-group conflict: RDMA_MAP + RDMA_ARGS in one
+ *             msghdr; trips cmsg_groups == 3 (net/rds/send.c:1026)
  *     -> non-blocking recvmsg() to drain RDS_CMSG_CONG_UPDATE /
  *        RDS_CMSG_RDMA_STATUS notifications
  *     -> close()
  *
- * RDMA hardware reality.  The fuzz box almost certainly has no IB or
- * iWARP wired up — the loaded transport is rds_tcp.  rds_rdma_map()
- * checks rs->rs_transport->get_mr early; TCP's transport ops leave
- * get_mr NULL and the call returns -EOPNOTSUPP without touching the
- * user buffer.  The cmsg parser (rds_cmsg_send → rds_cmsg_rdma_map)
- * has already dispatched by then, which is the surface this grammar
- * is for.  No runtime probe needed; both arms are reachable on any
- * RDS-enabled kernel and the RDMA arm gracefully degrades to a
- * parser-only walk on TCP-only boxes.
+ * RDMA hardware reality.  A box with no IB or iWARP wired up uses
+ * rds_tcp as its transport.  rds_rdma_map() checks
+ * rs->rs_transport->get_mr early; TCP's transport ops leave get_mr
+ * NULL and the call returns -EOPNOTSUPP without touching the user
+ * buffer.  The cmsg parser (rds_cmsg_send → rds_cmsg_rdma_map /
+ * rds_cmsg_rdma_args / rds_cmsg_atomic_*) has already dispatched by
+ * then, which is the surface this grammar exists for.  All five arms
+ * are reachable on any RDS-enabled kernel; the RDMA and atomic arms
+ * gracefully degrade to parser-only walks on TCP-only boxes.
  *
  * needs_listen_accept = false.  RDS has no listen()/accept() — the
  * SEQPACKET semantics are datagram-style on top of an in-kernel
@@ -273,16 +282,18 @@ static socklen_t rds_fill_peer(void *out)
 }
 
 /*
- * Build an RDMA-arm cmsg burst: RDS_CMSG_RDMA_MAP with synthesised
+ * Build an RDMA-MAP cmsg burst: RDS_CMSG_RDMA_MAP with synthesised
  * rds_get_mr_args (RDS_RDMA_USE_ONCE | READWRITE walks both ends of
- * the MR lifecycle in one sendmsg) plus an optional RDS_CMSG_RDMA_DEST
- * carrying a bogus rdma cookie.
+ * the MR lifecycle in one sendmsg), plus an optional RDMA_DEST cookie
+ * and an optional ZCOPY_COOKIE (u32, unblocked alongside the zcopy
+ * send path).
  *
  * On a TCP-transport box rds_rdma_map returns -EOPNOTSUPP early
  * (transport->get_mr is NULL); the user buffer is never touched
  * because get_mr is checked before rds_pin_pages.  The parser
- * dispatch (rds_cmsg_send → rds_cmsg_rdma_map / rds_cmsg_rdma_dest)
- * already ran, which is the surface this arm exists for.
+ * dispatch (rds_cmsg_send → rds_cmsg_rdma_map / rds_cmsg_rdma_dest /
+ * rds_cmsg_zcopy_cookie) already ran, which is the surface this arm
+ * exists for.
  */
 static size_t rds_build_rdma_cmsgs(unsigned char *buf, size_t buflen,
 				   unsigned char *user_buf, size_t user_len,
@@ -291,6 +302,7 @@ static size_t rds_build_rdma_cmsgs(unsigned char *buf, size_t buflen,
 	struct cmsghdr *cmsg;
 	struct rds_get_mr_args mr_args;
 	rds_rdma_cookie_t bogus;
+	uint32_t zcookie;
 	size_t used = 0;
 	size_t need;
 
@@ -324,6 +336,140 @@ static size_t rds_build_rdma_cmsgs(unsigned char *buf, size_t buflen,
 		used += need;
 	}
 
+	if (RAND_BOOL()) {
+		zcookie = rnd_u32();
+		need = CMSG_SPACE(sizeof(zcookie));
+		if (used + need > buflen)
+			return used;
+		cmsg = (struct cmsghdr *) (buf + used);
+		cmsg->cmsg_level = SOL_RDS;
+		cmsg->cmsg_type = RDS_CMSG_ZCOPY_COOKIE;
+		cmsg->cmsg_len = CMSG_LEN(sizeof(zcookie));
+		memcpy(CMSG_DATA(cmsg), &zcookie, sizeof(zcookie));
+		used += need;
+	}
+
+	return used;
+}
+
+/*
+ * Build an RDMA-ARGS cmsg: RDS_CMSG_RDMA_ARGS carrying a
+ * struct rds_rdma_args with a non-zero nr_local and a real
+ * local_vec_addr pointer into caller-owned stack memory.
+ *
+ * This gates the rds_rdma_extra_size() path (net/rds/rdma.c) which
+ * computes the extra page-list size from nr_local; the int-truncation
+ * shape there is only reachable when nr_local is large, but even
+ * small values drive the copy_from_user of the iovec array.
+ */
+static size_t rds_build_rdma_args_cmsg(unsigned char *buf, size_t buflen,
+				       struct rds_iovec *lvec,
+				       unsigned int nr_local)
+{
+	struct cmsghdr *cmsg;
+	struct rds_rdma_args rdma_args;
+	size_t need;
+
+	memset(&rdma_args, 0, sizeof(rdma_args));
+	rdma_args.cookie        = ((rds_rdma_cookie_t) rnd_u32() << 32) |
+				 rnd_u32();
+	rdma_args.remote_vec.addr  = (uint64_t) rnd_u64();
+	rdma_args.remote_vec.bytes = rnd_modulo_u32(4096) + 1;
+	rdma_args.local_vec_addr   = (uint64_t)(uintptr_t) lvec;
+	rdma_args.nr_local         = nr_local;
+	rdma_args.flags            = rnd_modulo_u32(16);
+	rdma_args.user_token       = rnd_u64();
+
+	need = CMSG_SPACE(sizeof(rdma_args));
+	if (need > buflen)
+		return 0;
+	cmsg = (struct cmsghdr *) buf;
+	cmsg->cmsg_level = SOL_RDS;
+	cmsg->cmsg_type  = RDS_CMSG_RDMA_ARGS;
+	cmsg->cmsg_len   = CMSG_LEN(sizeof(rdma_args));
+	memcpy(CMSG_DATA(cmsg), &rdma_args, sizeof(rdma_args));
+	return need;
+}
+
+/*
+ * Build an atomic cmsg pair in one msghdr.  One plain op
+ * (FADD or CSWP) followed by one masked op (MASKED_FADD or
+ * MASKED_CSWP).  The second atomic in the same msghdr hits the
+ * op_active re-entry reject in rds_cmsg_send(); emitting both plain
+ * and masked variants in alternation also walks the sg-leak-on-error
+ * unwind shape.
+ */
+static size_t rds_build_atomic_cmsgs(unsigned char *buf, size_t buflen)
+{
+	static const int plain_types[2]  = { RDS_CMSG_ATOMIC_FADD,
+					    RDS_CMSG_ATOMIC_CSWP };
+	static const int masked_types[2] = { RDS_CMSG_MASKED_ATOMIC_FADD,
+					    RDS_CMSG_MASKED_ATOMIC_CSWP };
+	struct cmsghdr *cmsg;
+	struct rds_atomic_args aargs;
+	size_t used = 0, need;
+	int t0 = plain_types[rnd_modulo_u32(2)];
+	int t1 = masked_types[rnd_modulo_u32(2)];
+
+	memset(&aargs, 0, sizeof(aargs));
+	aargs.cookie      = ((rds_rdma_cookie_t) rnd_u32() << 32) | rnd_u32();
+	aargs.local_addr  = rnd_u64();
+	aargs.remote_addr = rnd_u64();
+	aargs.fadd.add    = rnd_u64();
+	aargs.flags       = rnd_modulo_u32(8);
+	aargs.user_token  = rnd_u64();
+
+	need = CMSG_SPACE(sizeof(aargs));
+	if (used + need > buflen)
+		return used;
+	cmsg = (struct cmsghdr *) (buf + used);
+	cmsg->cmsg_level = SOL_RDS;
+	cmsg->cmsg_type  = t0;
+	cmsg->cmsg_len   = CMSG_LEN(sizeof(aargs));
+	memcpy(CMSG_DATA(cmsg), &aargs, sizeof(aargs));
+	used += need;
+
+	/* second atomic — hits the op_active re-entry reject */
+	aargs.local_addr  = rnd_u64();
+	aargs.remote_addr = rnd_u64();
+	aargs.m_fadd.add         = rnd_u64();
+	aargs.m_fadd.nocarry_mask = rnd_u64();
+	need = CMSG_SPACE(sizeof(aargs));
+	if (used + need > buflen)
+		return used;
+	cmsg = (struct cmsghdr *) (buf + used);
+	cmsg->cmsg_level = SOL_RDS;
+	cmsg->cmsg_type  = t1;
+	cmsg->cmsg_len   = CMSG_LEN(sizeof(aargs));
+	memcpy(CMSG_DATA(cmsg), &aargs, sizeof(aargs));
+	used += need;
+
+	return used;
+}
+
+/*
+ * Build a cmsg-group conflict: one RDMA_MAP (group 1) plus one
+ * RDMA_ARGS (group 2) in the same msghdr.  The kernel's
+ * rds_cmsg_send() validates cmsg_groups and rejects the combination
+ * with EINVAL when both group bits are set (net/rds/send.c:1026 —
+ * "Ensure (DEST, MAP) are never used with (ARGS, ATOMIC)").  That
+ * validation path is otherwise dead in random per-syscall fuzzing.
+ */
+static size_t rds_build_group_conflict_cmsgs(unsigned char *buf, size_t buflen,
+					     unsigned char *user_buf,
+					     size_t user_len,
+					     struct rds_iovec *lvec,
+					     unsigned int nr_local,
+					     rds_rdma_cookie_t *cookie_out)
+{
+	size_t used = 0, n;
+
+	n = rds_build_rdma_cmsgs(buf, buflen, user_buf, user_len, cookie_out);
+	used += n;
+
+	n = rds_build_rdma_args_cmsg(buf + used, buflen - used, lvec, nr_local);
+	used += n;
+
 	return used;
 }
 
@@ -340,11 +486,23 @@ static void rds_data_leg(int parent_fd, __unused__ int child_fd,
 	unsigned char user_buf[256];
 	unsigned char rcvbuf[256];
 	unsigned char rcvcmsg[CMSG_SPACE(256)];
+	/*
+	 * Buffer sized for the largest combination we emit: the group
+	 * conflict arm (RDMA_MAP + optional RDMA_DEST + optional
+	 * ZCOPY_COOKIE) followed by RDMA_ARGS, or two atomic ops.
+	 */
 	unsigned char cmsgbuf[CMSG_SPACE(sizeof(struct rds_get_mr_args))
-			      + CMSG_SPACE(sizeof(rds_rdma_cookie_t))];
+			      + CMSG_SPACE(sizeof(rds_rdma_cookie_t))
+			      + CMSG_SPACE(sizeof(uint32_t))
+			      + CMSG_SPACE(sizeof(struct rds_rdma_args))
+			      + 2 * CMSG_SPACE(sizeof(struct rds_atomic_args))];
+	/* Stack iovec array used by RDMA_ARGS arms; valid across sendmsg. */
+	struct rds_iovec local_vecs[4];
 	rds_rdma_cookie_t mr_cookie = 0;
 	socklen_t peerlen;
 	size_t cmsg_used = 0;
+	unsigned int nr_local;
+	unsigned int arm;
 
 	peerlen = rds_fill_peer(&peer);
 
@@ -358,17 +516,53 @@ static void rds_data_leg(int parent_fd, __unused__ int child_fd,
 	msg.msg_iov = &iov;
 	msg.msg_iovlen = 1;
 
-	/* RDMA arm vs raw arm: 50/50 per walk.  Both reach rds_sendmsg's
-	 * cmsg parser; the RDMA arm additionally walks the MR-lookup and
-	 * cookie-validation paths even when the underlying transport
-	 * doesn't implement them (-EOPNOTSUPP after parser dispatch). */
-	if (RAND_BOOL()) {
-		memset(cmsgbuf, 0, sizeof(cmsgbuf));
-		memset(user_buf, 0, sizeof(user_buf));
+	/*
+	 * Five arms, each targeting a distinct cmsg parser path:
+	 *   0 — raw datagram (no cmsgs)
+	 *   1 — RDMA_MAP + optional RDMA_DEST + optional ZCOPY_COOKIE
+	 *   2 — RDMA_ARGS (rds_rdma_extra_size / iovec copy_from_user)
+	 *   3 — atomic pair: plain op + masked op (op_active re-entry)
+	 *   4 — group conflict: RDMA_MAP + RDMA_ARGS (cmsg_groups == 3)
+	 */
+	memset(cmsgbuf, 0, sizeof(cmsgbuf));
+	memset(user_buf, 0, sizeof(user_buf));
+
+	nr_local = 1 + rnd_modulo_u32(ARRAY_SIZE(local_vecs));
+	memset(local_vecs, 0, sizeof(local_vecs));
+	local_vecs[0].addr  = (uint64_t)(uintptr_t) user_buf;
+	local_vecs[0].bytes = sizeof(user_buf);
+
+	arm = rnd_modulo_u32(5);
+	switch (arm) {
+	case 0:
+		/* raw datagram — no cmsgs */
+		break;
+	case 1:
+		/* RDMA_MAP + optional RDMA_DEST + optional ZCOPY_COOKIE */
 		cmsg_used = rds_build_rdma_cmsgs(cmsgbuf, sizeof(cmsgbuf),
 						 user_buf, sizeof(user_buf),
 						 &mr_cookie);
-		msg.msg_control = cmsgbuf;
+		break;
+	case 2:
+		/* RDMA_ARGS — gates rds_rdma_extra_size() */
+		cmsg_used = rds_build_rdma_args_cmsg(cmsgbuf, sizeof(cmsgbuf),
+						      local_vecs, nr_local);
+		break;
+	case 3:
+		/* atomic pair — op_active re-entry + sg-leak-on-error */
+		cmsg_used = rds_build_atomic_cmsgs(cmsgbuf, sizeof(cmsgbuf));
+		break;
+	case 4:
+		/* cmsg-group conflict — trips cmsg_groups == 3 */
+		cmsg_used = rds_build_group_conflict_cmsgs(
+				cmsgbuf, sizeof(cmsgbuf),
+				user_buf, sizeof(user_buf),
+				local_vecs, nr_local, &mr_cookie);
+		break;
+	}
+
+	if (cmsg_used > 0) {
+		msg.msg_control    = cmsgbuf;
 		msg.msg_controllen = cmsg_used;
 	}
 
