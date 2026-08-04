@@ -75,6 +75,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/rds.h"
 #include "kernel/socket.h"
 
 #include <netinet/in.h>
@@ -251,6 +252,9 @@ static void rds_zcopy_iter_send_faulting(struct rds_zcopy_iter_ctx *it)
 	struct msghdr msg;
 	struct sockaddr_in dst;
 	struct iovec iov[RDSZC_MAX_NENTS];
+	unsigned char ctrl[CMSG_SPACE(sizeof(uint32_t))];
+	struct cmsghdr *cmsg;
+	uint32_t zcookie = 0;
 	unsigned int nents, i;
 	size_t off;
 	ssize_t r;
@@ -300,10 +304,28 @@ static void rds_zcopy_iter_send_faulting(struct rds_zcopy_iter_ctx *it)
 					       (rand32() & RDSZC_DST_PORT_MASK)));
 
 	memset(&msg, 0, sizeof(msg));
-	msg.msg_name    = &dst;
-	msg.msg_namelen = sizeof(dst);
-	msg.msg_iov     = iov;
-	msg.msg_iovlen  = nents;
+	memset(ctrl, 0, sizeof(ctrl));
+	msg.msg_name       = &dst;
+	msg.msg_namelen    = sizeof(dst);
+	msg.msg_iov        = iov;
+	msg.msg_iovlen     = nents;
+	msg.msg_control    = ctrl;
+	msg.msg_controllen = sizeof(ctrl);
+
+	/*
+	 * Attach an RDS_CMSG_ZCOPY_COOKIE ancillary message.  Without this
+	 * cmsg rds_rm_size() returns -EINVAL before the zcopy path is
+	 * entered (MSG_ZEROCOPY && !zcopy_cookie check in net/rds/send.c),
+	 * making rds_message_zcopy_from_user() structurally unreachable.
+	 * The cookie value is arbitrary; a zero cookie is valid and causes
+	 * the kernel to allocate a fresh zcopy_cookie on the rds_message.
+	 */
+	cmsg = CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level = SOL_RDS;
+	cmsg->cmsg_type  = RDS_CMSG_ZCOPY_COOKIE;
+	cmsg->cmsg_len   = CMSG_LEN(sizeof(zcookie));
+	memcpy(CMSG_DATA(cmsg), &zcookie, sizeof(zcookie));
+	msg.msg_controllen = cmsg->cmsg_len;
 
 	r = sendmsg(it->sfd, &msg, MSG_ZEROCOPY | MSG_DONTWAIT | MSG_NOSIGNAL);
 	if (r >= 0) {

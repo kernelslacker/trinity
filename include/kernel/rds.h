@@ -8,6 +8,9 @@
 #ifndef SOL_RDS
 #define SOL_RDS			276
 #endif
+#ifndef RDS_CMSG_ZCOPY_COOKIE
+#define RDS_CMSG_ZCOPY_COOKIE	12
+#endif
 
 #ifndef RDS_CANCEL_SENT_TO
 #define RDS_CANCEL_SENT_TO              1
