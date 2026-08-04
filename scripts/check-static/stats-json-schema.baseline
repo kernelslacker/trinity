@@ -840,6 +840,11 @@ stats	object
     stats.epoll_volatility.runs	u64
     stats.epoll_volatility.ctl_calls	u64
     stats.epoll_volatility.failed	u64
+  stats.epoll_nest_race	object
+    stats.epoll_nest_race.runs	u64
+    stats.epoll_nest_race.ctl_calls	u64
+    stats.epoll_nest_race.racer_laps	u64
+    stats.epoll_nest_race.failed	u64
   stats.cgroup_churn	object
     stats.cgroup_churn.runs	u64
     stats.cgroup_churn.mkdirs	u64

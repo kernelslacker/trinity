@@ -61,6 +61,7 @@
 #include "stats/subsys/devlink_port_churn.h"
 #include "stats/subsys/divergence_sentinel.h"
 #include "stats/subsys/epoll_volatility.h"
+#include "stats/subsys/epoll_nest_race.h"
 #include "stats/subsys/errno_gradient.h"
 #include "stats/subsys/esp_crafted_rx.h"
 #include "stats/subsys/espintcp_coalesce.h"
@@ -531,6 +532,9 @@ struct stats_s {
 
 	/* epoll_volatility childop counters.  See stats/subsys/epoll_volatility.h. */
 	struct epoll_volatility_stats epoll_volatility __attribute__((aligned(64)));
+
+	/* epoll_nest_race childop counters.  See stats/subsys/epoll_nest_race.h. */
+	struct epoll_nest_race_stats epoll_nest_race __attribute__((aligned(64)));
 
 	/* cgroup_churn accounting.  See stats/subsys/cgroup_churn.h. */
 	struct cgroup_churn_stats cgroup_churn __attribute__((aligned(64)));
