@@ -165,10 +165,11 @@ static void rpl_cf_set_rcvtimeo(int fd, unsigned long *calls)
 
 /*
  * Write "1\n" to /proc/sys/net/ipv6/conf/<dev>/rpl_seg_enabled.
- * Best-effort; if the file is absent (CONFIG_IPV6_RPL_LWTUNNEL not set)
- * we skip silently -- the inject burst still runs, and ipv6_rpl_srh_rcv()
- * is simply gated off so no SRH will be delivered to the raw socket, and
- * the oracle will time out on recvfrom() without detecting any mutation.
+ * Best-effort; a failure here means the running kernel predates the knob
+ * (added with the rpl_seg_enabled sysctl in the unconditional ipv6-y
+ * build list -- rpl.o carries no CONFIG_IPV6_RPL_LWTUNNEL guard).
+ * If the write fails we skip silently; ipv6_rpl_srh_rcv() will gate
+ * every packet and the oracle times out on recvfrom() harmlessly.
  */
 static void rpl_cf_enable_seg(const char *dev, unsigned long *calls)
 {
@@ -450,11 +451,20 @@ static int rpl_cf_setup_net(struct rpl_cf_iter_ctx *ctx)
 	if (rpl_cf_add_v6_addr(&ctx->nl, ctx->veth1_idx) != 0)
 		return -1;
 
-	/* Enable RPL SRH processing for this netns.  The "all" entry
-	 * covers both veth ends; we also write the inject dev explicitly
-	 * as the spec requires. */
+	/* Enable RPL SRH processing for this netns.
+	 *
+	 * ipv6_rpl_srh_rcv() gates on:
+	 *   min(net->ipv6.devconf_all->rpl_seg_enabled,
+	 *       idev->cnf.rpl_seg_enabled)           -- idev == skb->dev
+	 * where skb->dev for a frame injected on trplv0 is its veth peer
+	 * trplv1 (the receive side).  The "all" knob satisfies the
+	 * devconf_all side of the min(); the per-device write on the
+	 * *receive* veth (VETH1) satisfies the per-idev side.  Omitting
+	 * the VETH1 write leaves cnf.rpl_seg_enabled==0 on the receive
+	 * device so min(1,0)==0 and every injected packet is dropped. */
 	rpl_cf_enable_seg("all",        &ctx->direct_calls);
 	rpl_cf_enable_seg(RPL_CF_VETH0, &ctx->direct_calls);
+	rpl_cf_enable_seg(RPL_CF_VETH1, &ctx->direct_calls);
 
 	return 0;
 }
