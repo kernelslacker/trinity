@@ -165,7 +165,9 @@ static void dump_stats_render_tracefs(void)
 	    shm->stats.tracefs_fuzzer.event_enable_open_fail || shm->stats.tracefs_fuzzer.event_enable_write_fail ||
 	    shm->stats.tracefs_fuzzer.event_enable_write_ok ||
 	    shm->stats.tracefs_fuzzer.misc_open_fail || shm->stats.tracefs_fuzzer.misc_write_fail ||
-	    shm->stats.tracefs_fuzzer.misc_write_ok) {
+	    shm->stats.tracefs_fuzzer.misc_write_ok ||
+	    shm->stats.tracefs_fuzzer.dynevent_open_fail || shm->stats.tracefs_fuzzer.dynevent_write_fail ||
+	    shm->stats.tracefs_fuzzer.dynevent_write_ok) {
 		stat_row("tracefs_fuzzer", "kprobe_open_fail",         shm->stats.tracefs_fuzzer.kprobe_open_fail);
 		stat_row("tracefs_fuzzer", "kprobe_write_fail",        shm->stats.tracefs_fuzzer.kprobe_write_fail);
 		stat_row("tracefs_fuzzer", "kprobe_write_ok",          shm->stats.tracefs_fuzzer.kprobe_write_ok);
@@ -181,6 +183,9 @@ static void dump_stats_render_tracefs(void)
 		stat_row("tracefs_fuzzer", "misc_open_fail",           shm->stats.tracefs_fuzzer.misc_open_fail);
 		stat_row("tracefs_fuzzer", "misc_write_fail",          shm->stats.tracefs_fuzzer.misc_write_fail);
 		stat_row("tracefs_fuzzer", "misc_write_ok",            shm->stats.tracefs_fuzzer.misc_write_ok);
+		stat_row("tracefs_fuzzer", "dynevent_open_fail",       shm->stats.tracefs_fuzzer.dynevent_open_fail);
+		stat_row("tracefs_fuzzer", "dynevent_write_fail",      shm->stats.tracefs_fuzzer.dynevent_write_fail);
+		stat_row("tracefs_fuzzer", "dynevent_write_ok",        shm->stats.tracefs_fuzzer.dynevent_write_ok);
 	}
 }
 

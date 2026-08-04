@@ -210,6 +210,9 @@ stats	object
     stats.tracefs_fuzzer.misc_open_fail	u64
     stats.tracefs_fuzzer.misc_write_fail	u64
     stats.tracefs_fuzzer.misc_write_ok	u64
+    stats.tracefs_fuzzer.dynevent_open_fail	u64
+    stats.tracefs_fuzzer.dynevent_write_fail	u64
+    stats.tracefs_fuzzer.dynevent_write_ok	u64
   stats.bpf_fd_provider	object
     stats.bpf_fd_provider.maps_provided	u64
     stats.bpf_fd_provider.progs_provided	u64
