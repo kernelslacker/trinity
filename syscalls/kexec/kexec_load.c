@@ -15,6 +15,9 @@
 #ifndef KEXEC_CRASH_HOTPLUG_SUPPORT
 #define KEXEC_CRASH_HOTPLUG_SUPPORT 0x00000008
 #endif
+#ifndef KEXEC_ARCH_ARM64
+#define KEXEC_ARCH_ARM64	(183 << 16)
+#endif
 
 static unsigned long kexec_load_flags[] = {
 	KEXEC_ON_CRASH, KEXEC_PRESERVE_CONTEXT,
@@ -22,9 +25,23 @@ static unsigned long kexec_load_flags[] = {
 };
 
 /* Arch bits for flags[31:16] */
+#if defined(__x86_64__) || defined(__i386__)
 static unsigned long kexec_arches[] = {
 	KEXEC_ARCH_DEFAULT, KEXEC_ARCH_386, KEXEC_ARCH_X86_64,
 };
+#elif defined(__aarch64__)
+static unsigned long kexec_arches[] = {
+	KEXEC_ARCH_DEFAULT, KEXEC_ARCH_ARM64,
+};
+#elif defined(__arm__)
+static unsigned long kexec_arches[] = {
+	KEXEC_ARCH_DEFAULT, KEXEC_ARCH_ARM,
+};
+#else
+static unsigned long kexec_arches[] = {
+	KEXEC_ARCH_DEFAULT,
+};
+#endif
 
 static void sanitise_kexec_load(struct syscallrecord *rec)
 {
