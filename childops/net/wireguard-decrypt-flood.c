@@ -520,6 +520,7 @@ static int wireguard_decrypt_flood_in_ns(void *arg)
 	struct sockaddr_in dst;
 	struct timespec gap = { .tv_sec = 0, .tv_nsec = WGDF_GAP_NS };
 	unsigned char pkt[WGDF_PAYLOAD_MAX + 16];
+	unsigned long direct_calls = 0;
 	unsigned int i;
 
 	if (!wgdf_load_setup_done()) {
@@ -569,12 +570,17 @@ static int wireguard_decrypt_flood_in_ns(void *arg)
 
 		len = wgdf_build_data_pkt(pkt, sizeof(pkt));
 
+		direct_calls++;
 		if (sendto(udp_fd, pkt, len, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst)) > 0)
 			__atomic_add_fetch(&shm->stats.wgdf.packets_sent, 1,
 					   __ATOMIC_RELAXED);
+		direct_calls++;
 		(void)nanosleep(&gap, NULL);
 	}
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 }
 
