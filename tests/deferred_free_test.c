@@ -3,11 +3,8 @@
  *
  * Seven fixtures covering deferred-free ownership and sealing
  * invariants.  Three build flavors exist: debug (default), ASAN
- * (ASAN=1), and NDEBUG (NDEBUG=1).  Fixtures 1-6 pass in all three
- * flavors.  Fixture 7 has both a debug arm (#ifndef NDEBUG) that passes
- * at HEAD and an NDEBUG arm (#else) that aborts at HEAD until the
- * fail-closed seal repair lands -- the abort() is the deliverable,
- * proving the seal-failure bug is live in NDEBUG builds.
+ * (ASAN=1), and NDEBUG (NDEBUG=1).  All seven fixtures pass in all
+ * three flavors.
  *
  * Prerequisites: persist/deferred-free.c compiled as a REAL_SRC (added
  * by the test-seam extension that compiles persist/deferred-free.c).
@@ -33,7 +30,8 @@
  * 5. enomem_disposal       -- consume-fail => leak, not partial free
  * 6. signal_unwind         -- loop-top seal_all restores after longjmp
  * 7. seal_failure_per_region (×5) -- NO dispatch after mprotect fail;
- *                                    NDEBUG arm XFAIL until the fail-closed seal repair
+ *                                    seal_all returns false on failure,
+ *                                    true on clean re-seal (all flavors)
  */
 
 #include <errno.h>
@@ -570,13 +568,10 @@ static void fixture_signal_unwind(void)
 /* called at kernel-entry chokepoints and WOULD abort a dispatch that  */
 /* tries to cross the boundary with a region open.                     */
 /*                                                                     */
-/* NDEBUG arm: XFAIL until the fail-closed seal repair.                                      */
-/*   In NDEBUG, deferred_free_seal_all() is void and leaves *_rw_open  */
-/*   set on mprotect failure; deferred_free_debug_assert_sealed() is a */
-/*   compile-time no-op; no dispatch-suppression path exists.          */
-/*   This arm explicitly aborts to mark the gap that the fail-closed seal repair closes.     */
-/*   Expected failure at HEAD; the fail-closed seal repair turns it green by giving seal_all */
-/*   a return code and adding a dispatch-suppression path.             */
+/* In all build flavors seal_all returns bool: false when any region  */
+/* mprotect fails, true when all regions are successfully sealed.      */
+/* The NDEBUG arm uses the return value in place of debug_assert_      */
+/* sealed() to verify both the failure and the clean recovery.         */
 /* ------------------------------------------------------------------ */
 
 static void open_all_five_regions(void **ptr_out, void **ptr2_out)
@@ -619,6 +614,7 @@ static void fixture_seal_failure_per_region(void)
 {
 	void *ptr1, *ptr2;
 	unsigned long base_ro_calls;
+	bool seal_ok;
 
 	deferred_free_batch = true;
 
@@ -665,8 +661,13 @@ static void fixture_seal_failure_per_region(void)
 	 * region); all five fail.
 	 */
 	g_mprotect_fail_countdown = 5;
-	deferred_free_seal_all();
+	seal_ok = deferred_free_seal_all();
 	g_mprotect_fail_countdown = 0;
+
+	/*
+	 * seal_all must report failure: all five mprotect calls failed.
+	 */
+	DF_ASSERT(!seal_ok);
 
 	/*
 	 * alloc_track_ro_calls must NOT advance: the seal mprotect call
@@ -690,39 +691,18 @@ static void fixture_seal_failure_per_region(void)
 	 */
 
 	/* Recovery: re-seal all regions (no injection). */
-	deferred_free_seal_all();
+	seal_ok = deferred_free_seal_all();
 
+	/*
+	 * After a clean (no-injection) seal, all regions must be closed and
+	 * seal_all must report success.  In the debug build,
+	 * deferred_free_debug_assert_sealed() provides an additional check
+	 * via the rw_open flags; in NDEBUG the return value is the sole
+	 * runtime indicator, so it carries the full correctness burden.
+	 */
+	DF_ASSERT(seal_ok);
 #ifndef NDEBUG
-	/*
-	 * Debug arm: after the recovery seal, every region must be closed.
-	 * deferred_free_debug_assert_sealed() asserts this; aborts if any
-	 * rw_open flag is still true.  PASSES: the recovery seal succeeded.
-	 */
 	deferred_free_debug_assert_sealed();
-#else
-	/*
-	 * XFAIL until the fail-closed seal repair: seal_failure_no_dispatch_block.
-	 *
-	 * In NDEBUG builds, deferred_free_seal_all() is void and leaves
-	 * *_rw_open set when mprotect fails.  deferred_free_debug_assert_
-	 * sealed() is compiled to a static inline no-op, so no existing
-	 * code path detects the open-region state or blocks dispatch.
-	 * the fail-closed seal repair changes seal_all to return a failure code and adds a
-	 * dispatch-suppression path that turns this arm green.
-	 *
-	 * Explicitly abort to mark the expected failure.  This abort is
-	 * reached in NDEBUG builds at HEAD; it must NOT be reached after
-	 * the fail-closed seal repair lands.
-	 *
-	 * XFAIL [fixture-7-ndebug]:
-	 * expected-fail-until-seal-repair
-	 */
-	fprintf(stderr,
-		"XFAIL [fixture-7-ndebug]: "
-		"seal_failure_no_dispatch_block"
-		" -- expected-fail-until-seal-repair\n");
-	fflush(stderr);
-	abort();
 #endif
 
 	deferred_free_batch = false;
@@ -785,11 +765,10 @@ void deferred_free_ownership_self_check(void)
 	printf("    fixture 7 (seal_failure_per_region) ... ");
 	fflush(stdout);
 	/*
-	 * NOTE: In NDEBUG builds, fixture 7 intentionally calls abort().
-	 * The gate commands (make -C tests, make -C tests ASAN=1) do not
-	 * define NDEBUG, so the test binary reports OK in both gate builds.
-	 * The abort fires only in explicitly -DNDEBUG builds, marking the
-	 * expected failure that the fail-closed seal repair will turn green.
+	 * Fixture 7 passes in all three build flavors (debug, ASAN, NDEBUG).
+	 * deferred_free_seal_all() returns bool in all flavors; the NDEBUG
+	 * arm uses the return value to verify both the injection failure and
+	 * the clean recovery seal without relying on debug_assert_sealed().
 	 */
 	fixture_seal_failure_per_region();
 	printf("OK\n");

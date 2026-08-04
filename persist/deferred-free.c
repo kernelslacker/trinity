@@ -1578,10 +1578,12 @@ static void deferred_free_record_outstanding(unsigned int v)
  * NULL); the disposed state re-arms via rw_open being clear once
  * the dispose path runs.
  */
-void deferred_free_seal_all(void)
+bool deferred_free_seal_all(void)
 {
+	bool sealed = true;
+
 	if (!deferred_free_batch)
-		return;
+		return true;
 
 	if (alloc_track_rw_open) {
 		unsigned long ns;
@@ -1590,6 +1592,7 @@ void deferred_free_seal_all(void)
 			     PROT_READ) != 0) {
 			outputerr("deferred_free: seal alloc_track failed: "
 				  "errno=%d\n", errno);
+			sealed = false;
 		} else {
 			ns = df_cost_elapsed_ns(&alloc_track_rw_open_at);
 			alloc_track_rw_open = false;
@@ -1607,6 +1610,7 @@ void deferred_free_seal_all(void)
 			     PROT_READ) != 0) {
 			outputerr("deferred_free: seal inflight_hash failed: "
 				  "errno=%d\n", errno);
+			sealed = false;
 		} else {
 			ns = df_cost_elapsed_ns(&inflight_rw_open_at);
 			inflight_rw_open = false;
@@ -1623,6 +1627,7 @@ void deferred_free_seal_all(void)
 		if (mprotect(rc, rc_bytes, PROT_READ) != 0) {
 			outputerr("deferred_free: seal ring_control failed: "
 				  "errno=%d\n", errno);
+			sealed = false;
 		} else {
 			ns = df_cost_elapsed_ns(&rc_rw_open_at);
 			rc_rw_open = false;
@@ -1639,6 +1644,7 @@ void deferred_free_seal_all(void)
 		if (mprotect(ring, ring_bytes, PROT_NONE) != 0) {
 			outputerr("deferred_free: seal ring failed: "
 				  "errno=%d\n", errno);
+			sealed = false;
 		} else {
 			ns = df_cost_elapsed_ns(&ring_rw_open_at);
 			ring_rw_open = false;
@@ -1661,6 +1667,7 @@ void deferred_free_seal_all(void)
 		if (mprotect(gen, gen_bytes, PROT_READ) != 0) {
 			outputerr("deferred_free: seal gen_arena failed: "
 				  "errno=%d\n", errno);
+			sealed = false;
 		} else {
 			ns = df_cost_elapsed_ns(&gen_rw_open_at);
 			gen_rw_open = false;
@@ -1670,6 +1677,8 @@ void deferred_free_seal_all(void)
 					   ns, __ATOMIC_RELAXED);
 		}
 	}
+
+	return sealed;
 }
 
 #ifndef NDEBUG
