@@ -168,7 +168,7 @@ static void draw_sid(struct in6_addr *sid)
  * (ENOENT) and the caller falls through to the netlink install which
  * will also fail, so the burst is skipped.
  */
-static void sed_enable_seg6(void)
+static void sed_enable_seg6(unsigned long *direct_calls_p)
 {
 	static const char * const paths[] = {
 		"/proc/sys/net/ipv6/conf/all/seg6_enabled",
@@ -180,9 +180,11 @@ static void sed_enable_seg6(void)
 		int fd = open(paths[i], O_WRONLY | O_CLOEXEC);
 		ssize_t n;
 
+		(*direct_calls_p)++;
 		if (fd < 0)
 			continue;
 		n = write(fd, "1", 1);
+		(*direct_calls_p)++;
 		(void)n;
 		close(fd);
 	}
@@ -492,6 +494,9 @@ struct sed_iter_ctx {
 	int			vrf_ifindex;
 	bool			vrf_added;
 	struct childdata	*child;
+	/* Accumulates own-body raw-syscall count; published once via
+	 * childop_direct_syscalls_add() at seg6_end_dt4_rx_in_ns() exit. */
+	unsigned long		direct_calls;
 };
 
 /*
@@ -523,7 +528,7 @@ static int sed_build(struct sed_iter_ctx *ctx)
 {
 	char vrf_name[IFNAMSIZ];
 
-	sed_enable_seg6();
+	sed_enable_seg6(&ctx->direct_calls);
 
 	ctx->lo_ifindex = (int)if_nametoindex("lo");
 	if (ctx->lo_ifindex <= 0)
@@ -565,6 +570,7 @@ static void sed_burst(struct sed_iter_ctx *ctx)
 
 	ctx->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
 			  htons(ETH_P_IPV6));
+	ctx->direct_calls++;
 	if (ctx->raw < 0)
 		return;
 
@@ -572,6 +578,7 @@ static void sed_burst(struct sed_iter_ctx *ctx)
 	sll.sll_family   = AF_PACKET;
 	sll.sll_protocol = htons(ETH_P_IPV6);
 	sll.sll_ifindex  = ctx->lo_ifindex;
+	ctx->direct_calls++;
 	if (bind(ctx->raw, (struct sockaddr *)&sll, sizeof(sll)) < 0)
 		return;
 
@@ -608,6 +615,7 @@ static void sed_burst(struct sed_iter_ctx *ctx)
 
 		(void)sendto(ctx->raw, pkt, len, MSG_DONTWAIT,
 			     (struct sockaddr *)&dst, sizeof(dst));
+		ctx->direct_calls++;
 	}
 }
 
@@ -666,6 +674,8 @@ static int seg6_end_dt4_rx_in_ns(void *arg)
 	}
 
 	sed_teardown(&ctx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return 0;
 }
 
