@@ -66,7 +66,8 @@ REAL_SRCS	:= \
 	$(TOP)/struct_catalog/variant.c \
 	$(TOP)/struct_catalog/address.c \
 	$(TOP)/utils/shared_freelist.c \
-	$(TOP)/utils/shared_str_heap.c
+	$(TOP)/utils/shared_str_heap.c \
+	$(TOP)/persist/deferred-free.c
 
 FAKE_SRCS	:= \
 	fake_rng.c \
