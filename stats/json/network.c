@@ -379,6 +379,9 @@ void json_emit_pidfd_fs_and_container_section(void)
 	stat_category_emit_json(&epoll_volatility_category);
 
 	printf(",");
+	stat_category_emit_json(&epoll_nest_race_category);
+
+	printf(",");
 	stat_category_emit_json(&cgroup_churn_category);
 
 	printf(",");

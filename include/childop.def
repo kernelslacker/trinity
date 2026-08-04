@@ -90,6 +90,7 @@ CHILDOP(CHILD_OP_XATTR_THRASH             , "xattr_thrash"               , xattr
 CHILDOP(CHILD_OP_PIDFD_STORM              , "pidfd_storm"                , pidfd_storm                , true, 1)
 CHILDOP(CHILD_OP_MADVISE_CYCLER           , "madvise_cycler"             , madvise_cycler             , true, 1)
 CHILDOP(CHILD_OP_EPOLL_VOLATILITY         , "epoll_volatility"           , epoll_volatility           , true, 1)
+CHILDOP(CHILD_OP_EPOLL_NEST_RACE          , "epoll_nest_race"             , epoll_nest_race             , true, 1)
 CHILDOP(CHILD_OP_KEYRING_SPAM             , "keyring_spam"               , keyring_spam               , true, 1)
 CHILDOP(CHILD_OP_VDSO_MREMAP_RACE         , "vdso_mremap_race"           , vdso_mremap_race           , true, 1)
 CHILDOP(CHILD_OP_NUMA_MIGRATION           , "numa_migration"             , numa_migration_churn       , true, 1)
