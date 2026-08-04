@@ -96,22 +96,24 @@ test:
 
 # PURE-module test binary integration paths (arch-program #10).
 #
-# `make test-bin`  -- build the tests/ binary against the fake
-#                     shm+RNG providers.  Does not run it.
-# `make test-asan` -- rebuild under -fsanitize=address + run with
-#                     the default fixed seed (0xa17e57).  This is
-#                     the canonical single-shot integration
-#                     invocation: any BUG() from a selftest lands
-#                     as an ASAN report on the same seed every
-#                     time, so a failure is instantly reproducible.
+# `make test-bin`    -- build the tests/ binary against the fake
+#                       shm+RNG providers.  Does not run it.
+# `make test-asan`   -- rebuild under -fsanitize=address + run with
+#                       the default fixed seed (0xa17e57).  This is
+#                       the canonical single-shot integration
+#                       invocation: any BUG() from a selftest lands
+#                       as an ASAN report on the same seed every
+#                       time, so a failure is instantly reproducible.
+# `make test-ndebug` -- rebuild under -DNDEBUG + run.  Exercises the
+#                       release-build code paths (assert() compiled
+#                       out); all seven fixtures must pass green.
 #
-# Both targets shell out to tests/Makefile, which keys its object
-# directory and output binary by flavor (build/+test-bin for
-# normal, build-asan/+test-bin-asan for ASAN) so alternating the
-# two targets never links ASAN-instrumented .o files into a normal
-# binary (or vice versa).  New PURE modules migrate onto the
-# test-bin cargo by adding one line to tests/Makefile REAL_SRCS,
-# not by wiring anything here.
+# All three targets shell out to tests/Makefile, which keys its object
+# directory and output binary by flavor (build/+test-bin for normal,
+# build-asan/+test-bin-asan for ASAN, build-ndebug/+test-bin-ndebug for
+# NDEBUG) so alternating targets never link incompatible .o files.
+# New PURE modules migrate onto the test-bin cargo by adding one line
+# to tests/Makefile REAL_SRCS, not by wiring anything here.
 .PHONY: test-bin test-asan test-ndebug
 
 test-bin: test
@@ -122,9 +124,6 @@ test-asan: test
 	@echo "  RUN  tests/test-bin-asan (ASAN, seed=default)"
 	@./tests/test-bin-asan
 
-# test-ndebug: expected-RED at HEAD (fixture 7 aborts with -DNDEBUG).
-# Not wired into the default test chain until the follow-on fix lands;
-# run manually with: make test-ndebug
 test-ndebug: test
 	@$(MAKE) --no-print-directory -C tests NDEBUG=1
 	@echo "  RUN  tests/test-bin-ndebug (NDEBUG, seed=default)"

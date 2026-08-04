@@ -3,7 +3,7 @@
 # Usage:
 #   make -C tests             # build and run the test binary (debug)
 #   make -C tests ASAN=1      # rebuild and run under -fsanitize=address
-#   make -C tests NDEBUG=1    # rebuild and run with -DNDEBUG (fixture 7 aborts at HEAD)
+#   make -C tests NDEBUG=1    # rebuild and run with -DNDEBUG (all fixtures pass)
 #   make -C tests clean       # remove build artefacts
 #
 # The test binary links a small set of PURE modules from the main
@@ -55,9 +55,9 @@ LDFLAGS		+= -Wl,--wrap=mprotect
 # into a subsequent non-ASAN link (and vice versa).
 #
 # NDEBUG target: `make -C tests NDEBUG=1` compiles with -DNDEBUG,
-# disabling assert() guards in persist/deferred-free.c and activating
-# fixture 7's #else abort() arm.  At HEAD, fixture 7 is expected to
-# reach abort() (RED) -- this proves the fail-closed seal bug is live.
+# disabling assert() guards in persist/deferred-free.c.  All seven
+# fixtures pass green in NDEBUG builds; fixture 7 uses the bool return
+# value of deferred_free_seal_all() in place of debug_assert_sealed().
 # The NDEBUG binary lands in build-ndebug/ so it never contaminates
 # a subsequent debug or ASAN build.
 ifeq ($(ASAN),1)

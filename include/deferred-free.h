@@ -259,7 +259,7 @@ void deferred_free_flush(void);
  * defers the close across trinity's own userspace bookkeeping, never
  * across the kernel boundary.
  */
-void deferred_free_seal_all(void);
+bool deferred_free_seal_all(void);
 
 #ifndef NDEBUG
 /*
