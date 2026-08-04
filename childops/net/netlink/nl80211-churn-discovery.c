@@ -61,7 +61,8 @@ static bool modprobe_tried_mac80211_hwsim;
  */
 static ssize_t genl_dump(struct genl_ctx *ctx, uint8_t cmd,
 			 const unsigned char *attrs, size_t attrs_len,
-			 unsigned char *resp, size_t resp_cap)
+			 unsigned char *resp, size_t resp_cap,
+			 unsigned long *direct_calls)
 {
 	unsigned char buf[2048];
 	struct nlmsghdr *nlh;
@@ -92,6 +93,7 @@ static ssize_t genl_dump(struct genl_ctx *ctx, uint8_t cmd,
 
 	memset(&sa, 0, sizeof(sa));
 	sa.nl_family = AF_NETLINK;
+	(*direct_calls)++;		/* sendto */
 	if (sendto(ctx->nl.fd, buf, total, 0,
 		   (struct sockaddr *)&sa, sizeof(sa)) < 0)
 		return -EIO;
@@ -104,6 +106,7 @@ static ssize_t genl_dump(struct genl_ctx *ctx, uint8_t cmd,
 
 		if (resp_cap - written < NLMSG_HDRLEN)
 			break;
+		(*direct_calls)++;	/* recv */
 		rx = recv(ctx->nl.fd, resp + written, resp_cap - written, 0);
 		if (rx < 0)
 			break;
@@ -124,7 +127,8 @@ static ssize_t genl_dump(struct genl_ctx *ctx, uint8_t cmd,
  * @first_phy on success.  A zero count after a successful dump is the
  * "hwsim absent" signal -- the caller latches ns_unsupported_nl80211.
  */
-static int enumerate_wiphys(struct genl_ctx *ctx, uint32_t *first_phy)
+static int enumerate_wiphys(struct genl_ctx *ctx, uint32_t *first_phy,
+			    unsigned long *direct_calls)
 {
 	unsigned char resp[NL80211_NL_RX_BUF];
 	ssize_t got;
@@ -132,7 +136,7 @@ static int enumerate_wiphys(struct genl_ctx *ctx, uint32_t *first_phy)
 	int count = 0;
 
 	got = genl_dump(ctx, NL80211_CMD_GET_WIPHY, NULL, 0,
-			resp, sizeof(resp));
+			resp, sizeof(resp), direct_calls);
 	if (got < 0)
 		return -EIO;
 
@@ -199,18 +203,20 @@ static int enumerate_wiphys(struct genl_ctx *ctx, uint32_t *first_phy)
  * Return true iff a real hwsim radio is reachable; false sets
  * ns_unsupported_nl80211 on the caller side.
  */
-bool hwsim_present(struct genl_ctx *ctx)
+bool hwsim_present(struct genl_ctx *ctx, unsigned long *direct_calls)
 {
 	struct stat st;
 	uint32_t phy = 0;
 	int wcount;
 
+	(*direct_calls)++;		/* stat: /sys/class/mac80211_hwsim */
 	if (stat("/sys/class/mac80211_hwsim", &st) < 0 ||
 	    !S_ISDIR(st.st_mode)) {
 		if (!modprobe_tried_mac80211_hwsim) {
 			modprobe_tried_mac80211_hwsim = true;
 			try_modprobe("mac80211_hwsim");
 		}
+		(*direct_calls)++;	/* stat: re-check after modprobe */
 		if (stat("/sys/class/mac80211_hwsim", &st) < 0 ||
 		    !S_ISDIR(st.st_mode)) {
 			/* sysfs class still absent -- fall through to the
@@ -219,7 +225,7 @@ bool hwsim_present(struct genl_ctx *ctx)
 		}
 	}
 
-	wcount = enumerate_wiphys(ctx, &phy);
+	wcount = enumerate_wiphys(ctx, &phy, direct_calls);
 	if (wcount <= 0)
 		return false;
 
