@@ -240,6 +240,9 @@ stats	object
     stats.cold_overflow.would_save_absent	u64
   stats.inplace_crypto	object
     stats.inplace_crypto.mutated	u64
+  stats.rpl_clone_fidelity	object
+    stats.rpl_clone_fidelity.srh_mutated	u64
+    stats.rpl_clone_fidelity.daddr_mutated	u64
   stats.fd_runtime_skipped	object
     stats.fd_runtime_skipped.stdio	u64
     stats.fd_runtime_skipped.already_registered	u64

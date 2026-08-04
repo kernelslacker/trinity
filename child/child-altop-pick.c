@@ -145,6 +145,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_TTY_LDISC_CHURN,
 	CHILD_OP_UMOUNT_RACE,
 	CHILD_OP_SIT_PROTO41_RX,
+	CHILD_OP_IPV6_RPL_CLONE_FIDELITY,
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 

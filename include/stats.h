@@ -151,6 +151,7 @@
 #include "stats/subsys/recipe.h"
 #include "stats/subsys/remote_adaptive.h"
 #include "stats/subsys/refcount_audit.h"
+#include "stats/subsys/rpl_clone_fidelity.h"
 #include "stats/subsys/rtnl_vf_broadcast.h"
 #include "stats/subsys/rxrpc_key_install.h"
 #include "stats/subsys/rxrpc_sendmsg_cmsg.h"
@@ -970,6 +971,10 @@ struct stats_s {
 	/* inplace_crypto_oracle childop counters.
 	 * See stats/subsys/inplace_crypto.h. */
 	struct inplace_crypto_stats inplace_crypto __attribute__((aligned(64)));
+
+	/* ipv6_rpl_clone_fidelity oracle childop counters.
+	 * See stats/subsys/rpl_clone_fidelity.h. */
+	struct rpl_clone_fidelity_stats rpl_clone_fidelity __attribute__((aligned(64)));
 
 	/* sock_diag_walker accounting.  See stats/subsys/sock_diag_walker.h. */
 	struct sock_diag_walker_stats sock_diag_walker;
