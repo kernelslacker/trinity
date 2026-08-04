@@ -269,7 +269,7 @@ static unsigned long pipe2_flags[] = {
 /*
  * pipe2_flags[] is still wired up to ARG_LIST so the argument
  * generator has a default to publish; sanitise_pipe2 overrides
- * rec->a2 below with an explicit bucket draw.  ARG_LIST's single-bit
+ * rec->a2 below with an explicit bucket draw.  ARG_LIST's multi-bit OR
  * pick never reaches the zero-flags arm, the canonical CLOEXEC|
  * NONBLOCK pair, or the invalid-high-bit reject path.  Buckets are
  * biased toward success-path shapes so post_pipe keeps registering
