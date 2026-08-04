@@ -296,12 +296,34 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 
 static void sanitise_ipc_shmat(struct syscallrecord *rec)
 {
-	/* first=shmid, ptr=shmaddr, second=shmflg */
+	/* first=shmid, second=shmflg, third=&raddr, ptr=shmaddr */
+	unsigned long *raddr;
+	unsigned long shmflg = 0;
+
+	/*
+	 * The ipc() SHMAT path does:
+	 *   ret = do_shmat(...); if (ret) return ret;
+	 *   return put_user(raddr, (unsigned long __user *)third);
+	 * third must point at a writable slot; a bogus value lets the
+	 * segment attach and then leaks it when put_user returns -EFAULT.
+	 */
+	raddr = (unsigned long *) get_writable_struct(sizeof(*raddr));
+	if (!raddr)
+		return;
+	*raddr = 0;
+	rec->a4 = (unsigned long) raddr;
+
 	rec->a2 = ONE_IN(5) ? rnd_modulo_u32(1000) : (unsigned long) get_random_sysv_shm();
-	rec->a3 = 0;			/* let kernel pick */
-	rec->a5 = 0;			/* shmaddr=NULL */
 	if (RAND_BOOL())
-		rec->a3 |= SHM_RDONLY;
+		shmflg |= SHM_RDONLY;
+	if (RAND_BOOL())
+		shmflg |= SHM_RND;
+	if (RAND_BOOL())
+		shmflg |= SHM_REMAP;
+	if (RAND_BOOL())
+		shmflg |= SHM_EXEC;
+	rec->a3 = shmflg;
+	rec->a5 = 0;				/* shmaddr=NULL, kernel picks */
 }
 
 static void sanitise_ipc_shmdt(struct syscallrecord *rec)
