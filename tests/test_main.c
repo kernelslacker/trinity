@@ -25,6 +25,7 @@
 extern pid_t mainpid;
 void shared_freelist_self_check(void);
 void shared_str_heap_free_size_check(void);
+void dispatch_stage_order_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -73,6 +74,11 @@ int main(int argc, char **argv)
 	printf("  shared_str_heap_free_size_check ... ");
 	fflush(stdout);
 	shared_str_heap_free_size_check();
+	printf("OK\n");
+
+	printf("  dispatch_stage_order_self_check ... ");
+	fflush(stdout);
+	dispatch_stage_order_self_check();
 	printf("OK\n");
 
 	return 0;
