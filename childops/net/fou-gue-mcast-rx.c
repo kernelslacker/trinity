@@ -539,6 +539,9 @@ struct fou_gue_iter_ctx {
 	bool v6;
 	bool ctx_open;
 	struct childdata *child;
+	/* Accumulates own-body raw-syscall count; published once via
+	 * childop_direct_syscalls_add() at fou_gue_mcast_rx_in_ns() exit. */
+	unsigned long direct_calls;
 };
 
 /*
@@ -645,12 +648,16 @@ static void fou_gue_iter_open_raw(struct fou_gue_iter_ctx *ctx)
 	if (ctx->v6) {
 		ctx->raw_fd = socket(AF_INET6, SOCK_RAW | SOCK_CLOEXEC,
 				     IPPROTO_RAW);
-		if (ctx->raw_fd >= 0)
+		ctx->direct_calls++;
+		if (ctx->raw_fd >= 0) {
 			(void)setsockopt(ctx->raw_fd, IPPROTO_IPV6,
 					 IPV6_HDRINCL, &one, sizeof(one));
+			ctx->direct_calls++;
+		}
 	} else {
 		ctx->raw_fd = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC,
 				     IPPROTO_RAW);
+		ctx->direct_calls++;
 	}
 }
 
@@ -697,6 +704,7 @@ static void fou_gue_iter_send_burst(struct fou_gue_iter_ctx *ctx)
 					     inner_proto, inner_v6, trunc_len);
 			n = sendto(ctx->raw_fd, pkt, len, MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
+			ctx->direct_calls++;
 		} else {
 			struct sockaddr_in dst;
 			__be32 d4 = pick_v4_dst();
@@ -709,6 +717,7 @@ static void fou_gue_iter_send_burst(struct fou_gue_iter_ctx *ctx)
 					     inner_proto, inner_v6, trunc_len);
 			n = sendto(ctx->raw_fd, pkt, len, MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
+			ctx->direct_calls++;
 		}
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.packet_sent_ok,
@@ -783,6 +792,8 @@ static int fou_gue_mcast_rx_in_ns(void *arg)
 
 out:
 	fou_gue_iter_teardown(&ctx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return 0;
 }
 
