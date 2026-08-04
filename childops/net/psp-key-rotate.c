@@ -154,14 +154,26 @@ static int iter_one_in_ns(void *arg)
 	 * accounting on the same valid_op snapshot. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	/* Direct-syscall tally accumulated across setup / traffic /
+	 * teardown helpers.  nl_open in a userns_run_in_ns grandchild
+	 * sees this_child() == NULL and leaves caller_op unattributed, so
+	 * nl_close / genl_close do not auto-publish here.  Count every
+	 * syscall phase manually and publish once via
+	 * childop_direct_syscalls_add() on the valid_op snapshot below,
+	 * paying one atomic add per invocation instead of per call.
+	 * Setup-bailed paths publish whatever they issued before jumping
+	 * to out:, correctly attributing no traffic-phase work. */
+	unsigned long direct_calls = 0;
 
-	if (psp_key_rotate_iter_setup(&rtnl) != 0)
+	if (psp_key_rotate_iter_setup(&rtnl, &direct_calls) != 0)
 		goto out;
 
-	if (psp_key_rotate_iter_family_resolve(&psp_ctx, &dev_id) != 0)
+	if (psp_key_rotate_iter_family_resolve(&psp_ctx, &dev_id,
+					       &direct_calls) != 0)
 		goto out;
 
-	sockfd = psp_key_rotate_iter_socket_install(&psp_ctx, dev_id);
+	sockfd = psp_key_rotate_iter_socket_install(&psp_ctx, dev_id,
+						    &direct_calls);
 	if (sockfd < 0)
 		goto out;
 
@@ -173,27 +185,39 @@ static int iter_one_in_ns(void *arg)
 		if (valid_op)
 			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
-		psp_key_rotate_iter_traffic(sockfd, &psp_ctx, dev_id, t_outer);
+		psp_key_rotate_iter_traffic(sockfd, &psp_ctx, dev_id, t_outer,
+					    &direct_calls);
 	}
 
-	psp_key_rotate_iter_teardown(iter_idx, sockfd, &psp_ctx, &rtnl);
+	psp_key_rotate_iter_teardown(iter_idx, sockfd, &psp_ctx, &rtnl,
+				     &direct_calls);
 	if (ns_unsupported_psp_key_rotate && valid_op)
 		__atomic_store_n(&shm->stats.childop.latch_reason[op],
 				 CHILDOP_LATCH_NS_UNSUPPORTED,
 				 __ATOMIC_RELAXED);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 
 out:
-	if (sockfd >= 0)
+	if (sockfd >= 0) {
 		close(sockfd);
-	if (psp_ctx.nl.fd >= 0)
+		direct_calls++;
+	}
+	if (psp_ctx.nl.fd >= 0) {
 		genl_close(&psp_ctx);
-	if (rtnl.fd >= 0)
+		direct_calls++;
+	}
+	if (rtnl.fd >= 0) {
 		nl_close(&rtnl);
+		direct_calls++;
+	}
 	if (ns_unsupported_psp_key_rotate && valid_op)
 		__atomic_store_n(&shm->stats.childop.latch_reason[op],
 				 CHILDOP_LATCH_NS_UNSUPPORTED,
 				 __ATOMIC_RELAXED);
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 }
 

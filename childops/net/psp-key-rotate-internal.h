@@ -101,20 +101,24 @@ int psp_dev_get_probe(struct genl_ctx *ctx);
 
 /* Key lifecycle -- psp-key-rotate-lifecycle.c */
 struct nl_ctx;
-int psp_key_rotate_iter_setup(struct nl_ctx *rtnl);
+int psp_key_rotate_iter_setup(struct nl_ctx *rtnl, unsigned long *dc);
 int psp_key_rotate_iter_family_resolve(struct genl_ctx *psp_ctx,
-				       uint32_t *dev_id_out);
+				       uint32_t *dev_id_out,
+				       unsigned long *dc);
 int psp_key_rotate_iter_socket_install(struct genl_ctx *psp_ctx,
-				       uint32_t dev_id);
+				       uint32_t dev_id,
+				       unsigned long *dc);
 
 /* Traffic + race loop -- psp-key-rotate-traffic.c */
 void psp_key_rotate_iter_traffic(int sockfd,
 				 struct genl_ctx *psp_ctx,
 				 uint32_t dev_id,
-				 const struct timespec *t_outer);
+				 const struct timespec *t_outer,
+				 unsigned long *dc);
 void psp_key_rotate_iter_teardown(unsigned int iter_idx, int sockfd,
 				  struct genl_ctx *psp_ctx,
-				  struct nl_ctx *rtnl);
+				  struct nl_ctx *rtnl,
+				  unsigned long *dc);
 
 /* devlink port churn sub-mode -- psp-key-rotate-devlink-port.c */
 extern bool ns_unsupported_psp_devlink_port;
