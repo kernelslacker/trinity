@@ -1,0 +1,53 @@
+# Grandfathered childop files that issue raw syscalls in their own body
+# without a local childop_direct_syscalls_add() call.
+#
+# Each entry is a repo-relative path to a childops/*.c translation unit
+# whose comment-stripped code contains at least one raw-syscall site
+# (trinity_raw_syscall(), trinity_cmp_syscall(), socket(), sendmsg(),
+# sendto(), setsockopt(), mmap(), syscall()) but does not directly call
+# childop_direct_syscalls_add().
+#
+# Many of these files route their netlink-path syscalls through the nl_*
+# transport (nl_open/nl_send_recv/nl_close) which calls
+# childop_direct_syscalls_add() internally at nl_close() for the netlink
+# budget.  Own-body calls outside that transport (additional socket(),
+# sendmsg(), etc.) are the uncounted portion that still needs wiring.
+#
+# This list should shrink over time as each file is wired.  Never grow.
+childops/fs/hfs-mount-fuzz.c
+childops/net/bareudp-rx.c
+childops/net/bridge-fdb-stp-traffic.c
+childops/net/bridge-fdb-stp-vlan-mass.c
+childops/net/bridge-ip6-refrag-fraggap.c
+childops/net/bridge-ip6frag-refrag.c
+childops/net/bridge-vlan-churn.c
+childops/net/esp-crafted-rx-frag.c
+childops/net/esp-crafted-rx-stacked.c
+childops/net/fou-gue-mcast-rx.c
+childops/net/geneve-rx.c
+childops/net/ip6-tunnel-churn.c
+childops/net/ip_gre-churn.c
+childops/net/ipv6-ndisc-proxy.c
+childops/net/ipv6-pmtu-teardown-race.c
+childops/net/l2tp-ifname-race.c
+childops/net/mpls-label-stack-rx.c
+childops/net/netdev-netns-migrate.c
+childops/net/netfilter/nfnl-util.c
+childops/net/netfilter/nftables/churn.c
+childops/net/netfilter/nftables/fwd.c
+childops/net/netfilter/nftables/l4frag.c
+childops/net/netlink/genl-util.c
+childops/net/netlink/netlink-monitor-race.c
+childops/net/netlink/nl80211-churn-discovery.c
+childops/net/psp-key-rotate-devlink-port.c
+childops/net/psp-key-rotate-lifecycle.c
+childops/net/sctp-chunk-rx.c
+childops/net/seg6-end-dt4-rx.c
+childops/net/veth-asymmetric-xdp.c
+childops/net/vrf-fib-churn.c
+childops/net/vxlan-encap.c
+childops/net/wireguard-decrypt-flood.c
+childops/net/xfrm/xfrm-churn-compat-sweep.c
+childops/net/xfrm/xfrm-churn-pfkey.c
+childops/net/xfrm/xfrm-churn-traffic.c
+childops/net/xfrm/xfrm-churn.c

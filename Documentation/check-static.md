@@ -123,6 +123,17 @@ update this section to match `ls scripts/check-static/*.sh`.)
   code.  Genuine happy-path callsites that over-fire the heuristic
   are pinned in `scripts/check-static/child-exit-zero-error-path.baseline`;
   that list should shrink over time, never grow.
+- `childop-direct-syscall-uncounted`: every childop translation unit
+  that issues raw syscalls in its own body (via `trinity_raw_syscall()`,
+  `trinity_cmp_syscall()`, `socket()`, `sendmsg()`, `sendto()`,
+  `setsockopt()`, `mmap()`, or `syscall()`) must call
+  `childop_direct_syscalls_add()` so those calls appear in the
+  direct-syscall telemetry bucket.  Files whose netlink path is already
+  counted by `nl_close()` (which calls `childop_direct_syscalls_add()`
+  internally when `caller_op` is set) are grandfathered in
+  `scripts/check-static/childop-direct-syscall-uncounted.baseline` if
+  their additional own-body calls are not yet wired; that list should
+  shrink over time, never grow.
 - `cmp-hints-canonicalise-cmp-ip`: (i) `kcov_canon_cmp_ip()` in
   `kcov/collect.c` must subtract `kcov_kaslr_base`, and (ii) every
   function in `cmp_hints/cmp_hints.c` that calls
