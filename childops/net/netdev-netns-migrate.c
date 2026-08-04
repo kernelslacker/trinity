@@ -179,6 +179,9 @@ struct nnm_iter_ctx {
 	char		ifname[IFNAMSIZ];
 	char		peer_ifname[IFNAMSIZ];	/* veth only */
 	struct childdata *child;
+	/* Accumulates own-body raw-syscall count; published once via
+	 * childop_direct_syscalls_add() at netdev_netns_migrate_in_ns() exit. */
+	unsigned long	direct_calls;
 };
 
 static void latch_master(struct childdata *child)
@@ -399,16 +402,19 @@ static int nnm_open_self_netns(void)
  * was created in, which is the invariant the rest of the op relies
  * on (the socket does NOT follow the migrating netdev).  Returns
  * a valid fd or -1 with errno preserved. */
-static int nnm_pin_source_socket(void)
+static int nnm_pin_source_socket(unsigned long *direct_calls_p)
 {
 	struct sockaddr_in sin;
 	int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+
+	(*direct_calls_p)++;
 	if (fd < 0)
 		return -1;
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = htonl(INADDR_ANY);
 	sin.sin_port = 0;
+	(*direct_calls_p)++;
 	(void)bind(fd, (struct sockaddr *)&sin, sizeof(sin));
 	return fd;
 }
@@ -422,7 +428,7 @@ static int nnm_iter_setup(struct nnm_iter_ctx *ctx,
 	snprintf(ctx->peer_ifname, sizeof(ctx->peer_ifname), "nnp%u",
 		 g_iter & 0xffffU);
 
-	ctx->pin_sock = nnm_pin_source_socket();
+	ctx->pin_sock = nnm_pin_source_socket(&ctx->direct_calls);
 	if (ctx->pin_sock >= 0)
 		__atomic_add_fetch(&shm->stats.netdev_netns_migrate.pin_sock_ok,
 				   1, __ATOMIC_RELAXED);
@@ -466,17 +472,22 @@ static int nnm_iter_migrate(struct nnm_iter_ctx *ctx)
 	 * held.  Cannot be delegated to a second userns_run_in_ns()
 	 * because the FD dance needs both source and target ns FDs
 	 * held concurrently. */
+	ctx->direct_calls++;
 	if (unshare(CLONE_NEWNET) < 0) {
 		latch_master(ctx->child);
 		return -1;
 	}
 	ctx->tgt_ns_fd = nnm_open_self_netns();
+	ctx->direct_calls++;
 	if (ctx->tgt_ns_fd < 0) {
+		ctx->direct_calls++;
 		(void)setns(ctx->src_ns_fd, CLONE_NEWNET);
 		latch_master(ctx->child);
 		return -1;
 	}
+	ctx->direct_calls++;
 	if (setns(ctx->src_ns_fd, CLONE_NEWNET) < 0) {
+		ctx->direct_calls++;
 		close(ctx->tgt_ns_fd);
 		ctx->tgt_ns_fd = -1;
 		latch_master(ctx->child);
@@ -513,6 +524,7 @@ static void nnm_iter_drive_target(struct nnm_iter_ctx *ctx,
 {
 	int rc;
 
+	ctx->direct_calls++;
 	if (setns(ctx->tgt_ns_fd, CLONE_NEWNET) < 0) {
 		latch_master(ctx->child);
 		return;
@@ -542,18 +554,25 @@ static void nnm_iter_drive_target(struct nnm_iter_ctx *ctx,
 static void nnm_iter_teardown(struct nnm_iter_ctx *ctx)
 {
 	if (ctx->migrated) {
+		ctx->direct_calls++;
 		(void)setns(ctx->src_ns_fd, CLONE_NEWNET);
 	} else if (ctx->ifindex > 0 && ctx->src_nl.fd >= 0) {
 		(void)nnm_dellink(&ctx->src_nl, ctx->ifindex);
 	}
 	if (ctx->tgt_nl.fd >= 0)
 		nl_close(&ctx->tgt_nl);
-	if (ctx->tgt_ns_fd >= 0)
+	if (ctx->tgt_ns_fd >= 0) {
+		ctx->direct_calls++;
 		close(ctx->tgt_ns_fd);
-	if (ctx->pin_sock >= 0)
+	}
+	if (ctx->pin_sock >= 0) {
+		ctx->direct_calls++;
 		close(ctx->pin_sock);
-	if (ctx->src_ns_fd >= 0)
+	}
+	if (ctx->src_ns_fd >= 0) {
+		ctx->direct_calls++;
 		close(ctx->src_ns_fd);
+	}
 	if (ctx->src_nl.fd >= 0)
 		nl_close(&ctx->src_nl);
 }
@@ -573,11 +592,14 @@ static int netdev_netns_migrate_in_ns(void *arg)
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	ictx.src_ns_fd = nnm_open_self_netns();
+	ictx.direct_calls++;
 	if (ictx.src_ns_fd < 0) {
 		latch_master(child);
-		return 0;
+		goto out;
 	}
 
 	if (nnm_iter_setup(&ictx, &opts) != 0)
@@ -586,19 +608,18 @@ static int netdev_netns_migrate_in_ns(void *arg)
 		goto out;
 	if (nnm_iter_migrate(&ictx) != 0)
 		goto out;
-	{
-		const enum child_op_type op = child->op_type;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES) {
-			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop.data_path[op],
-					   1, __ATOMIC_RELAXED);
-		}
+	if (valid_op) {
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
+				   1, __ATOMIC_RELAXED);
 	}
 	nnm_iter_drive_target(&ictx, &opts);
 
 out:
 	nnm_iter_teardown(&ictx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ictx.direct_calls);
 	return 0;
 }
 
