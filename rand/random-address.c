@@ -495,30 +495,48 @@ void scrub_msghdr_for_kernel_write(struct msghdr *msg)
 /*
  * Per-entry iovec shape picker.  Returns a bucket index that the
  * alloc_iovec() loop dispatches on so individual entries get NULL /
- * tiny / page-crossing / shared-base / pool / invalid shapes instead
- * of the original blanket "valid-map + variable length".  The
- * shared-base bucket needs a predecessor entry to mirror, so for the
- * first entry the picker collapses that band into SHAPE_VALID_MAP.
+ * tiny / page-crossing / shared-base / pool / invalid / kernel-range
+ * shapes instead of the original blanket "valid-map + variable
+ * length".  The shared-base bucket needs a predecessor entry to
+ * mirror, so for the first entry the picker collapses that band into
+ * SHAPE_VALID_MAP.
  *
  * Bucket weights for IOV_KERNEL_WRITE callers (sum 100):
- *  10  SHAPE_NULL        — NULL base, zero len; iov_iter skip arm
- *  10  SHAPE_TINY        — valid map base, len=1; page-walk early-exit
- *  10  SHAPE_PAGECROSS   — len > page_size; iov_iter page advance
- *  10  SHAPE_SHARED      — iov[i-1].iov_base with a different length
- *   5  SHAPE_POOL        — get_writable_address() page, half-len
- *   5  SHAPE_INVALID     — 0xdeadbeef, len=1; EFAULT reject arm
- *  50  SHAPE_VALID_MAP   — preserves the original behaviour
+ *  10  SHAPE_NULL         — NULL base, zero len; iov_iter skip arm
+ *  10  SHAPE_TINY         — valid map base, len=1; page-walk early-exit
+ *  10  SHAPE_PAGECROSS    — len > page_size; iov_iter page advance
+ *  10  SHAPE_SHARED       — iov[i-1].iov_base with a different length
+ *   5  SHAPE_POOL         — get_writable_address() page, half-len
+ *   5  SHAPE_INVALID      — 0xdeadbeef, len=1; user-range EFAULT arm
+ *   3  SHAPE_KERNEL_RANGE — KERNEL_ADDR, len=8; access_ok reject arm
+ *  47  SHAPE_VALID_MAP    — preserves the original behaviour
  *
- * For IOV_KERNEL_READ callers (writev / sendmsg / vmsplice /
- * process_vm_writev) SHAPE_NULL and SHAPE_INVALID would EFAULT the
- * kernel's copy_from_iter() before any fuzz coverage is reached, so
- * the picker drops both buckets and renormalises the remaining 85
- * units back to 100:
+ * SHAPE_INVALID uses a user-range pointer (0xdeadbeef < TASK_SIZE on
+ * x86-64), so access_ok accepts it and the fault comes from the page
+ * tables.  SHAPE_KERNEL_RANGE uses KERNEL_ADDR (above TASK_SIZE on
+ * every supported architecture), which access_ok must reject.  A
+ * path that lacks access_ok silently accepts the kernel pointer and
+ * proceeds to the page-table lookup, producing a different outcome.
+ * Both buckets serve the IOV_KERNEL_READ direction (writev / sendmsg
+ * / vmsplice / process_vm_writev) because those are the syscalls
+ * where missing-access_ok bugs historically appear: the kernel reads
+ * from the user-supplied buffer, so the bad base becomes an
+ * arbitrary kernel read rather than an immediate EFAULT.  Do NOT
+ * re-exclude SHAPE_INVALID from IOV_KERNEL_READ on the grounds that
+ * it EFAULTs before coverage — that reasoning only holds on paths
+ * that perform access_ok; exactly the paths we are trying to detect
+ * skip it.
+ *
+ * For IOV_KERNEL_READ callers SHAPE_NULL is still excluded (a NULL
+ * base causes copy_from_iter() to bail before any coverage path is
+ * exercised on all known kernel versions) and renormalised:
  *  12  SHAPE_TINY
  *  12  SHAPE_PAGECROSS
- *  12  SHAPE_SHARED      — collapses to SHAPE_VALID_MAP for idx == 0
+ *  12  SHAPE_SHARED       — collapses to SHAPE_VALID_MAP for idx == 0
  *   6  SHAPE_POOL
- *  58  SHAPE_VALID_MAP
+ *   3  SHAPE_INVALID
+ *   3  SHAPE_KERNEL_RANGE
+ *  52  SHAPE_VALID_MAP
  */
 enum iovec_entry_shape {
 	SHAPE_NULL,
@@ -527,6 +545,7 @@ enum iovec_entry_shape {
 	SHAPE_SHARED,
 	SHAPE_POOL,
 	SHAPE_INVALID,
+	SHAPE_KERNEL_RANGE,
 	SHAPE_VALID_MAP,
 };
 
@@ -536,6 +555,9 @@ static enum iovec_entry_shape pick_iovec_entry_shape(unsigned int idx,
 	unsigned int r = rnd_modulo_u32(100);
 
 	if (dir == IOV_KERNEL_READ) {
+		/* SHAPE_NULL excluded; all other shapes including
+		 * SHAPE_INVALID and SHAPE_KERNEL_RANGE are admitted.
+		 * See the block comment above for rationale. */
 		if (r < 12)
 			return SHAPE_TINY;
 		if (r < 24)
@@ -544,6 +566,10 @@ static enum iovec_entry_shape pick_iovec_entry_shape(unsigned int idx,
 			return (idx > 0) ? SHAPE_SHARED : SHAPE_VALID_MAP;
 		if (r < 42)
 			return SHAPE_POOL;
+		if (r < 45)
+			return SHAPE_INVALID;
+		if (r < 48)
+			return SHAPE_KERNEL_RANGE;
 		return SHAPE_VALID_MAP;
 	}
 
@@ -559,6 +585,8 @@ static enum iovec_entry_shape pick_iovec_entry_shape(unsigned int idx,
 		return SHAPE_POOL;
 	if (r < 50)
 		return SHAPE_INVALID;
+	if (r < 53)
+		return SHAPE_KERNEL_RANGE;
 	return SHAPE_VALID_MAP;
 }
 
@@ -809,18 +837,31 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 			break;
 		case SHAPE_INVALID:
 			/*
-			 * EFAULT reject arm.  scrub_iovec_for_kernel_write()
-			 * leaves this base alone (its overlap checks key off
-			 * heap / shared-region bounds, not arbitrary
-			 * pointers), so read-side callers like readv/recvmsg
-			 * still EFAULT cleanly; write-side callers (vmsplice,
-			 * process_madvise, process_vm_readv) get the EFAULT
-			 * path directly.  Intentionally asymmetric -- new
-			 * coverage, document so a future audit does not mistake
-			 * the kernel reject for a trinity regression.
+			 * User-range EFAULT arm.  0xdeadbeef is below
+			 * TASK_SIZE on x86-64, so access_ok accepts it and
+			 * the fault comes from the page tables.  Exercises
+			 * the page-fault EFAULT path on both read and write
+			 * directions.  scrub_iovec_for_kernel_write() leaves
+			 * this base alone (overlap checks key off heap /
+			 * shared-region bounds, not arbitrary pointers).
 			 */
 			iov[i].iov_base = (void *) 0xdeadbeefUL;
 			iov[i].iov_len = 1;
+			continue;
+		case SHAPE_KERNEL_RANGE:
+			/*
+			 * Kernel-range access_ok reject arm.  KERNEL_ADDR is
+			 * above TASK_SIZE on every supported architecture, so
+			 * a correct access_ok() rejects it before any page-
+			 * table walk.  A path that omits access_ok proceeds
+			 * to the walk and either faults or reads/writes kernel
+			 * memory -- both are distinct from the user-range
+			 * page-fault path that SHAPE_INVALID exercises.
+			 * scrub_iovec_for_kernel_write() does not touch this
+			 * entry (KERNEL_ADDR is outside all tracked regions).
+			 */
+			iov[i].iov_base = (void *)(unsigned long) KERNEL_ADDR;
+			iov[i].iov_len = 8;
 			continue;
 		case SHAPE_TINY:
 		case SHAPE_PAGECROSS:
