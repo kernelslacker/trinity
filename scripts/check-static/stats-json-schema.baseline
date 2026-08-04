@@ -1364,8 +1364,6 @@ stats	object
     stats.splice_protocols.packet_ring_attempted	u64
     stats.splice_protocols.alg_attempted	u64
     stats.splice_protocols.rxrpc_attempted	u64
-    stats.splice_protocols.msg_splice_pages_attempted	u64
-    stats.splice_protocols.msg_splice_pages_path_taken_inferred	u64
   stats.wireguard_decrypt_flood	object
     stats.wireguard_decrypt_flood.runs	u64
     stats.wireguard_decrypt_flood.setup_failed	u64

@@ -324,7 +324,7 @@ static ssize_t splice_into_socket(int file_fd, int sock_fd,
 	mh.msg_iov    = &iov;
 	mh.msg_iovlen = 1;
 	n_out = sendmsg(sock_fd, &mh,
-			MSG_SPLICE_PAGES | MSG_DONTWAIT | MSG_NOSIGNAL);
+			MSG_DONTWAIT | MSG_NOSIGNAL);
 	(*n_calls)++;
 	return n_out < 0 ? 0 : n_out;
 }

@@ -12,8 +12,6 @@ static const struct stat_field splice_protocols_fields[] = {
 	STAT_FIELD_SUB(splice_protocols, packet_ring_attempted),
 	STAT_FIELD_SUB(splice_protocols, alg_attempted),
 	STAT_FIELD_SUB(splice_protocols, rxrpc_attempted),
-	STAT_FIELD_SUB(splice_protocols, msg_splice_pages_attempted),
-	STAT_FIELD_SUB(splice_protocols, msg_splice_pages_path_taken_inferred),
 };
 
 const struct stat_category splice_protocols_category =
