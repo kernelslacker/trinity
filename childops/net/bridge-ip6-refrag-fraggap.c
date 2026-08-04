@@ -216,14 +216,17 @@ static size_t bif_nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 	return nla_put(buf, off, cap, type, &be, sizeof(be));
 }
 
-static bool bif_sysfs_write_one(const char *path, const char *val)
+static bool bif_sysfs_write_one(const char *path, const char *val,
+				unsigned long *direct_calls_p)
 {
 	int fd = open(path, O_WRONLY | O_CLOEXEC);
 	ssize_t n;
 
+	(*direct_calls_p)++;
 	if (fd < 0)
 		return false;
 	n = write(fd, val, strlen(val));
+	(*direct_calls_p)++;
 	close(fd);
 	return n > 0;
 }
@@ -637,7 +640,8 @@ static void bif_emit_frag_pair(int raw, int ifindex,
 			       const unsigned char *src_mac,
 			       const struct in6_addr *src,
 			       const struct in6_addr *dst,
-			       unsigned int variant, uint32_t frag_id)
+			       unsigned int variant, uint32_t frag_id,
+			       unsigned long *direct_calls_p)
 {
 	unsigned char frame[BIF_FRAME_BYTES];
 	unsigned char payload1[512];
@@ -678,11 +682,13 @@ static void bif_emit_frag_pair(int raw, int ifindex,
 					     nr_opts, opt_pad, short_opt,
 					     frag_id, 0, true,
 					     IPPROTO_UDP, payload1, p1_len);
-	if (frame_len &&
-	    sendto(raw, frame, frame_len, MSG_DONTWAIT,
-		   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-		__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap.frags_sent,
-				   1, __ATOMIC_RELAXED);
+	if (frame_len) {
+		if (sendto(raw, frame, frame_len, MSG_DONTWAIT,
+			   (struct sockaddr *)&sll, sizeof(sll)) > 0)
+			__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap.frags_sent,
+					   1, __ATOMIC_RELAXED);
+		(*direct_calls_p)++;
+	}
 
 	/* Second fragment: MF=0, offset = payload1 rounded to 8-byte units. */
 	frame_len = bif_build_fragment_frame(frame, sizeof(frame),
@@ -692,11 +698,13 @@ static void bif_emit_frag_pair(int raw, int ifindex,
 					     (uint16_t)((p1_len + 7U) & ~7U),
 					     false, IPPROTO_UDP,
 					     payload2, p2_len);
-	if (frame_len &&
-	    sendto(raw, frame, frame_len, MSG_DONTWAIT,
-		   (struct sockaddr *)&sll, sizeof(sll)) > 0)
-		__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap.frags_sent,
-				   1, __ATOMIC_RELAXED);
+	if (frame_len) {
+		if (sendto(raw, frame, frame_len, MSG_DONTWAIT,
+			   (struct sockaddr *)&sll, sizeof(sll)) > 0)
+			__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap.frags_sent,
+					   1, __ATOMIC_RELAXED);
+		(*direct_calls_p)++;
+	}
 }
 
 /*
@@ -706,14 +714,17 @@ static void bif_emit_frag_pair(int raw, int ifindex,
  * path is unreachable and the burst degrades to inert traffic.
  * Returns 0 on success, -1 to signal the caller should skip cleanly.
  */
-static int bif_enable_bridge_nf(void)
+static int bif_enable_bridge_nf(unsigned long *direct_calls_p)
 {
-	(void)bif_sysfs_write_one("/proc/sys/net/ipv6/conf/all/forwarding", "1");
+	(void)bif_sysfs_write_one("/proc/sys/net/ipv6/conf/all/forwarding", "1",
+				  direct_calls_p);
 	if (!bif_sysfs_write_one(
-		    "/proc/sys/net/bridge/bridge-nf-call-ip6tables", "1"))
+		    "/proc/sys/net/bridge/bridge-nf-call-ip6tables", "1",
+			    direct_calls_p))
 		return -1;
 	(void)bif_sysfs_write_one(
-		"/proc/sys/net/bridge/bridge-nf-filter-vlan-tagged", "0");
+		"/proc/sys/net/bridge/bridge-nf-filter-vlan-tagged", "0",
+		direct_calls_p);
 	return 0;
 }
 
@@ -755,6 +766,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 	unsigned int iters, i;
 	unsigned int rng;
 	bool bridge_added = false, veth_added = false;
+	unsigned long direct_calls = 0;
 
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
@@ -812,7 +824,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 	(void)bif_rtnl_addr_add_v6(&rtnl, br_idx, &br_addr, 64);
 	(void)bif_rtnl_addr_add_v6(&rtnl, vb_idx, &v1_addr, 64);
 
-	if (bif_enable_bridge_nf() != 0) {
+	if (bif_enable_bridge_nf(&direct_calls) != 0) {
 		mark_ns_unsupported_brnf();
 		if (valid_op)
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
@@ -837,6 +849,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 	}
 
 	raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IPV6));
+	direct_calls++;
 	if (raw < 0)
 		goto out;
 	{
@@ -846,6 +859,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 		bind_sll.sll_family   = AF_PACKET;
 		bind_sll.sll_protocol = htons(ETH_P_IPV6);
 		bind_sll.sll_ifindex  = vb_idx;
+		direct_calls++;
 		(void)bind(raw, (struct sockaddr *)&bind_sll,
 			   sizeof(bind_sll));
 	}
@@ -884,7 +898,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 			break;
 		bif_emit_frag_pair(raw, vb_idx, dst_mac, src_mac,
 				   &src_addr, &dst_addr, i,
-				   frag_id_base + i);
+				   frag_id_base + i, &direct_calls);
 		__atomic_add_fetch(&shm->stats.bridge_ip6_refrag_fraggap.bursts,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -907,6 +921,8 @@ out:
 			(void)rtnl_dellink(&rtnl, vb_idx);
 		nl_close(&rtnl);
 	}
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 }
 
