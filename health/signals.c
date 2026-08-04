@@ -663,6 +663,23 @@ void open_buglog_and_drain_stderr(int sig)
 		}
 		dup2(bug_fd, STDERR_FILENO);
 		close(bug_fd);
+	} else {
+		/*
+		 * Buglog open failed (e.g. /tmp full, stripped mode bits
+		 * from a fuzzed umask run before our umask(0) reset, or a
+		 * namespace fault on the path).  Write a BUGLOG-FAIL reason
+		 * marker to STDERR_FILENO -- still the pre-dup2 stderr memfd
+		 * at this point -- so the parent's memfd drain at reap time
+		 * surfaces the open failure as the explanation for why the
+		 * per-pid bug log is absent from the archive.  The parent's
+		 * dump_child_fault_beacon() will annotate the FAULT! line
+		 * and increment its no-buglog counter.  write() is on the
+		 * POSIX 2024 §2.4.3 async-signal-safe list.
+		 */
+		static const char fail_marker[] =
+			"BUGLOG-FAIL: buglog open() failed -- no per-pid log\n";
+		(void)syscall(SYS_write, STDERR_FILENO,
+			      fail_marker, sizeof(fail_marker) - 1);
 	}
 }
 
@@ -1055,10 +1072,23 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 * keep snprintf() out of this handler.  open / lseek / read /
 	 * write / dup2 / close are all on the POSIX 2024 §2.4.3
 	 * async-signal-safe list.  Silent no-op on stderr_memfd == -1
-	 * (memfd_create() failed) or open() failure.
+	 * (memfd_create() failed); open() failure emits a BUGLOG-FAIL
+	 * marker to the stderr memfd for parent-side accounting.
 	 */
 	open_buglog_and_drain_stderr(sig);
 skip_buglog:
+	/*
+	 * Phase sentinel: written to STDERR_FILENO (the per-pid buglog
+	 * after open_buglog_and_drain_stderr, /dev/null for extrafork
+	 * grandchildren, or the stderr memfd when buglog open failed).
+	 * A partial log that ends mid-phase identifies which write stage
+	 * re-faulted.  write() is on the POSIX 2024 §2.4.3 safe list.
+	 */
+	{
+		static const char bt_phase[] = "BUGLOG-PHASE: backtrace\n";
+		(void)syscall(SYS_write, STDERR_FILENO,
+			      bt_phase, sizeof(bt_phase) - 1);
+	}
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 	/*
 	 * RAW PCs only -- backtrace_symbols_fd() is async-unsafe and
@@ -1095,6 +1125,18 @@ skip_buglog:
 	 * syscalls.  See Documentation/signals.md.
 	 */
 	stamp_childop_identity();
+
+	/*
+	 * Completion sentinel: present only when all in-handler write
+	 * stages finished without re-faulting or async kill.  A log
+	 * that lacks this line was truncated; the last BUGLOG-PHASE
+	 * line names the stage that was in flight at truncation time.
+	 */
+	{
+		static const char done[] = "BUGLOG-COMPLETE\n";
+		(void)syscall(SYS_write, STDERR_FILENO,
+			      done, sizeof(done) - 1);
+	}
 
 	escalate_fault(sig);
 }

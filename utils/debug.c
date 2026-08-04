@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <syslog.h>
 #include <stdio.h>
+#include <limits.h>
 #include <unistd.h>
 #include "child.h"
 #include "debug.h"
@@ -301,6 +302,32 @@ void dump_child_fault_beacon(struct childdata *child)
 	outputerr("FAULT!:  op_nr=%lu last_syscall_nr=%d\n",
 		  beacon->op_nr, (int)beacon->last_syscall_nr);
 	outputerr("FAULT!:  (signal-time beacon -- pre-libc capture; the in-handler backtrace may have re-faulted)\n");
+
+	/*
+	 * Beacon-with-no-buglog accounting.  Compare the FAULT! emission
+	 * above against whether the per-pid bug log actually landed on
+	 * disk.  A missing log means the child's open_buglog_and_drain_stderr
+	 * open() failed (child wrote a BUGLOG-FAIL marker into the memfd)
+	 * or the child died before reaching the buglog open call.  Bump a
+	 * run-static counter and annotate the FAULT! stream so the gap
+	 * between beacon count and archive count is visible in outerr.log.
+	 * access() is safe to call here (parent context, not a signal handler).
+	 */
+	{
+		static unsigned int no_buglog_beacons;
+		char logpath[PATH_MAX + 64];
+		int pn;
+
+		pn = snprintf(logpath, sizeof(logpath), "%s/trinity-bug-%d.log",
+			      trinity_tmpdir_abs(), (int)pids[child->num]);
+		if (pn > 0 && (size_t)pn < sizeof(logpath) &&
+		    access(logpath, F_OK) != 0) {
+			no_buglog_beacons++;
+			outputerr("FAULT!:  (no bug log at %s -- open() failed in child or pre-stamp death; "
+				  "total beacon-without-log: %u)\n",
+				  logpath, no_buglog_beacons);
+		}
+	}
 }
 
 void dump_syscallrec(struct syscallrecord *rec)
