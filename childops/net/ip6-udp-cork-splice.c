@@ -1,10 +1,10 @@
 /*
- * ip6_udp_cork_splice - stress the IPv6 UDP corked + paged-splice send
- * path through __ip6_append_data()'s continuation-skb length accounting.
- * A corked datagram that fills the path MTU exactly, followed by a
- * MSG_SPLICE_PAGES flush, drives the second append down the paged
- * continuation branch, where the copy length (datalen minus the
- * continuation gap minus the paged length) is computed.  If that
+ * ip6_udp_cork_splice - stress the IPv6 UDP corked send path through
+ * __ip6_append_data()'s continuation-skb length accounting at the exact
+ * MTU boundary.  A corked datagram that fills the path MTU exactly
+ * (p1 = mtu - ipv6hdr - udphdr), followed by a one-byte flush (p2),
+ * drives the second append down the continuation branch, where the copy
+ * length (datalen minus the continuation gap) is computed.  If that
  * arithmetic ever lets a negative result through,
  * skb_copy_and_csum_bits() writes past skb->end into skb_shared_info --
  * an out-of-bounds write.  The childop stresses this accounting rather
@@ -12,6 +12,14 @@
  * a miscomputed (negative) copy length would overrun, so a kernel that
  * mis-accounts here is exercised where it matters, and one that accounts
  * correctly handles the sequence benignly (no crash, no misbehaviour).
+ *
+ * NOTE: MSG_SPLICE_PAGES is intentionally absent from the sendmsg(2)
+ * call sites.  net/socket.c strips MSG_INTERNAL_SENDMSG_FLAGS (which
+ * includes MSG_SPLICE_PAGES) before any protocol handler runs, so the
+ * flag has no effect when passed from userspace.  The childop exercises
+ * __ip6_append_data()'s continuation-skb length accounting via ordinary
+ * corked sendmsg; reaching the true in-kernel paged branch requires
+ * splice(2) rather than sendmsg(2) and is deferred to a follow-on row.
  *
  * Reachability is exact-or-nothing (it either gets the math right or
  * misses silently), so the setup is deliberate rather than fuzzed:
@@ -25,13 +33,11 @@
  *     mtu - ipv6hdr(40) - udphdr(8), with MSG_MORE so the cork holds
  *     (a single uncorked >MTU send fragments cleanly and never builds
  *     a continuation skb).
- *   - P2 is a 1-byte MSG_SPLICE_PAGES flush; the continuation skb then
- *     takes the paged branch (MSG_SPLICE_PAGES + lo's NETIF_F_SG), with
- *     a continuation gap of (mtu - maxfraglen) bytes (8 at mtu 1280,
- *     12 at mtu 1500).
+ *   - P2 is a 1-byte flush; the continuation skb carries a gap of
+ *     (mtu - maxfraglen) bytes (8 at mtu 1280, 12 at mtu 1500) that
+ *     exercises the length computation.
  *
- * The send iov points at a touched, page-aligned anonymous mmap region
- * so the pages are pinnable, matching what real splice callers pass.
+ * The send iov points at a touched, page-aligned anonymous mmap region.
  *
  * Self-bounding: one full sequence per invocation inside a transient
  * userns_run_in_ns(CLONE_NEWNET) grandchild that _exit()s, so links,
@@ -75,11 +81,11 @@
 #include "kernel/fcntl.h"
 #include "kernel/socket.h"
 /* Per-invocation MTU picks: both IPv6-valid and both yield a nonzero
- * continuation gap, so the two-send sequence exercises the paged
- * continuation branch at every value.  p1 is derived from the picked
- * mtu inside the body so the first datagram fills the MTU exactly;
- * see the file header for the derivation -- do not decouple p1 from
- * mtu. */
+ * continuation gap, so the two-send sequence exercises the
+ * continuation-skb length accounting at every value.  p1 is derived
+ * from the picked mtu inside the body so the first datagram fills the
+ * MTU exactly; see the file header for the derivation -- do not
+ * decouple p1 from mtu. */
 static const uint32_t cork_splice_mtus[] = { 1280, 1500 };
 #define CORK_SPLICE_MTU_MAX	1500U
 #define CORK_SPLICE_P2		1U	/* tail byte; anything >0 works */
@@ -299,16 +305,13 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 	memset(region, 'F', CORK_SPLICE_MMAP_BYTES);
 
 	/* First send: FILLS the MTU exactly.  MSG_MORE corks so the
-	 * kernel does not flush until the follow-up send arrives; the
-	 * MSG_SPLICE_PAGES flag takes the paged branch in the
-	 * ip_generic_getfrag / __ip6_append_data machinery.
+	 * kernel does not flush until the follow-up send arrives.
 	 *
 	 * p1 is derived (mtu - ipv6hdr - udphdr) so the first skb lands
 	 * on the MTU boundary at every picked mtu.  Any other value
-	 * would send a generic datagram: the continuation skb's length
-	 * accounting looks correct and the childop silently observes
-	 * zero coverage of the paged continuation branch.  Do NOT
-	 * decouple p1 from mtu. */
+	 * would send a generic datagram and the continuation skb's
+	 * length accounting would not be stressed.  Do NOT decouple
+	 * p1 from mtu. */
 	{
 		struct iovec iov;
 		struct msghdr mh;
@@ -319,13 +322,11 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 		mh.msg_iov    = &iov;
 		mh.msg_iovlen = 1;
 
-		n = sendmsg(tx, &mh,
-			    MSG_MORE | MSG_SPLICE_PAGES | MSG_DONTWAIT);
+		n = sendmsg(tx, &mh, MSG_MORE | MSG_DONTWAIT);
 		direct_calls++;
 		if (n != (ssize_t)p1) {
-			/* Kernel refused the corked splice-pages send.
-			 * Common on stripped configs (no NETIF_F_SG on lo
-			 * in exotic builds, or MSG_SPLICE_PAGES rejected).
+			/* Corked first send did not accept the full
+			 * payload (short write or transient error).
 			 * Benign coverage -- the trigger requires both
 			 * sends to land. */
 			__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.p1_rejected,
@@ -338,8 +339,8 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 
 	/* Second send: no MSG_MORE, so the datagram is flushed.  The
 	 * continuation skb sees continuation gap = mtu - maxfraglen
-	 * (8 at mtu 1280, 12 at mtu 1500); the paged path then computes
-	 * copy = datalen - contgap - pagedlen.  If that accounting ever
+	 * (8 at mtu 1280, 12 at mtu 1500); __ip6_append_data then
+	 * computes copy = datalen - contgap.  If that accounting ever
 	 * underflows, skb_copy_and_csum_bits writes past skb->end into
 	 * skb_shared_info -- an out-of-bounds write. */
 	{
@@ -356,7 +357,7 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 			__atomic_add_fetch(&shm->stats.childop.data_path[op],
 					   1, __ATOMIC_RELAXED);
 
-		n = sendmsg(tx, &mh, MSG_SPLICE_PAGES | MSG_DONTWAIT);
+		n = sendmsg(tx, &mh, MSG_DONTWAIT);
 		direct_calls++;
 		if (n >= 0)
 			__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice.p2_ok,
