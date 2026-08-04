@@ -539,13 +539,20 @@ bool random_syscall_step_biased(struct childdata *child,
 				bool *found_new,
 				unsigned long *new_transition_out,
 				unsigned long *new_cmp_out);
-bool mmap_lifecycle(struct childdata *child);
-bool mprotect_split(struct childdata *child);
-bool mlock_pressure(struct childdata *child);
-bool inode_spewer(struct childdata *child);
+/*
+ * Childop dispatch-entry prototypes -- generated from childop.def.
+ * Adding a new CHILDOP() row to the def file automatically adds its
+ * prototype here; no manual edit needed.
+ */
+#define CHILDOP_SENTINEL(enum_name, name_string)	/* no dispatch fn */
+#define CHILDOP(enum_name, name_string, dispatch_fn, uses_outer_bracket, dormant_default) \
+	bool dispatch_fn(struct childdata *);
+#include "childop.def"
+#undef CHILDOP
+#undef CHILDOP_SENTINEL
+
 void inode_spewer_cleanup(void);
 void inode_spewer_reap(pid_t pid);
-bool procfs_writer(struct childdata *child);
 void procfs_writer_init(void);
 /* Comma-separated distinct-class list of the compile-time deny policy
  * applied by discover_targets().  Emitted from the run-identity block
@@ -562,152 +569,8 @@ const char *procfs_writer_allow_policy_summary(void);
  * being admitted.  Sampled at emit time; --dangerous is set during
  * option parsing before fork_children so the value is stable. */
 const char *procfs_writer_mode_summary(void);
-bool memory_pressure(struct childdata *child);
-bool userns_fuzzer(struct childdata *child);
-bool sched_cycler(struct childdata *child);
-bool barrier_racer(struct childdata *child);
-bool genetlink_fuzzer(struct childdata *child);
-bool perf_event_chains(struct childdata *child);
 void perf_event_chains_init(void);
-bool tracefs_fuzzer(struct childdata *child);
 void tracefs_fuzzer_init(void);
-bool bpf_lifecycle(struct childdata *child);
-bool fault_injector(struct childdata *child);
-bool recipe_runner(struct childdata *child);
-bool iouring_recipes(struct childdata *child);
-bool fd_stress(struct childdata *child);
-bool refcount_auditor(struct childdata *child);
-bool fs_lifecycle(struct childdata *child);
-bool signal_storm(struct childdata *child);
-bool futex_storm(struct childdata *child);
-bool futex_pi_requeue_rollback(struct childdata *child);
-bool pipe_thrash(struct childdata *child);
-bool fork_storm(struct childdata *child);
-bool flock_thrash(struct childdata *child);
-bool cgroup_churn(struct childdata *child);
-bool mount_churn(struct childdata *child);
-bool uffd_churn(struct childdata *child);
-bool iouring_flood(struct childdata *child);
-bool close_racer(struct childdata *child);
-bool socket_family_chain(struct childdata *child);
-bool xattr_thrash(struct childdata *child);
-bool pidfd_storm(struct childdata *child);
-bool madvise_cycler(struct childdata *child);
-bool epoll_volatility(struct childdata *child);
-bool keyring_spam(struct childdata *child);
-bool vdso_mremap_race(struct childdata *child);
-bool numa_migration_churn(struct childdata *child);
-bool cpu_hotplug_rider(struct childdata *child);
-bool slab_cache_thrash(struct childdata *child);
 const char *slab_target_name(unsigned int idx);
-bool tls_rotate(struct childdata *child);
-bool sock_ulp_sockmap_layering(struct childdata *child);
-bool packet_fanout_thrash(struct childdata *child);
-bool iouring_net_multishot(struct childdata *child);
-bool tcp_ao_rotate(struct childdata *child);
-bool vrf_fib_churn(struct childdata *child);
-bool netlink_monitor_race(struct childdata *child);
-bool tipc_link_churn(struct childdata *child);
-bool tls_ulp_churn(struct childdata *child);
-bool vxlan_encap_churn(struct childdata *child);
-bool ip_gre_churn(struct childdata *child);
-bool bridge_fdb_stp(struct childdata *child);
-bool nftables_churn(struct childdata *child);
-bool tc_qdisc_churn(struct childdata *child);
-bool tc_mirred_blockcast(struct childdata *child);
-bool xfrm_churn(struct childdata *child);
-bool bpf_cgroup_attach(struct childdata *child);
-bool sctp_assoc_churn(struct childdata *child);
-bool sctp_chunk_rx(struct childdata *child);
-bool bridge_ip6_refrag_fraggap(struct childdata *child);
-bool ipset_churn(struct childdata *child);
-bool mptcp_pm_churn(struct childdata *child);
-bool devlink_port_churn(struct childdata *child);
-bool handshake_req_abort(struct childdata *child);
-bool nf_conntrack_helper_churn(struct childdata *child);
-bool af_unix_scm_rights_gc_churn(struct childdata *child);
-bool af_unix_peek_race(struct childdata *child);
-bool sysv_shm_orphan_race(struct childdata *child);
-bool qrtr_bind_race(struct childdata *child);
-bool netns_teardown_churn(struct childdata *child);
-bool cred_transition_churn(struct childdata *child);
-bool netdev_netns_migrate(struct childdata *child);
-bool netns_mountns_setup_probe(struct childdata *child);
-bool tcp_ulp_swap_churn(struct childdata *child);
-bool msg_zerocopy_churn(struct childdata *child);
-bool iouring_send_zc_churn(struct childdata *child);
-bool vsock_transport_churn(struct childdata *child);
-bool bridge_vlan_churn(struct childdata *child);
-bool vlan_filter_churn(struct childdata *child);
-bool igmp_mld_source_churn(struct childdata *child);
-bool psp_key_rotate(struct childdata *child);
-void psp_key_rotate_cleanup_child(void);
-bool afxdp_churn(struct childdata *child);
-bool kvm_run_churn(struct childdata *child);
-bool nl80211_churn(struct childdata *child);
-bool nat_t_churn(struct childdata *child);
-bool splice_protocols(struct childdata *child);
-bool rxrpc_key_install(struct childdata *child);
-bool inplace_crypto_oracle(struct childdata *child);
-bool af_alg_weak_cipher_probe(struct childdata *child);
-bool af_alg_template_probe(struct childdata *child);
 const char *af_alg_probe_template_label(unsigned int idx);
-bool af_alg_recvmsg_churn(struct childdata *child);
-bool iouring_cmd_passthrough(struct childdata *child);
-bool pagecache_canary_check(struct childdata *child);
-bool mpls_route_churn(struct childdata *child);
-bool sock_diag_walker(struct childdata *child);
-bool altname_thrash(struct childdata *child);
-bool ip6mr_churn(struct childdata *child);
-bool ipmr_cache_report(struct childdata *child);
-bool ipmr_getroute_pktinfo(struct childdata *child);
-bool ublk_lifecycle(struct childdata *child);
-bool veth_asymmetric_xdp(struct childdata *child);
-bool ip6erspan_netns_migrate(struct childdata *child);
-bool ipvs_sysctl_writer(struct childdata *child);
-bool tcp_md5_listener_race(struct childdata *child);
-bool ipv6_ndisc_proxy(struct childdata *child);
-bool ipfrag_source_churn(struct childdata *child);
-bool rtnl_vf_broadcast_getlink(struct childdata *child);
-bool obscure_af_churn(struct childdata *child);
-bool bridge_conntrack_churn(struct childdata *child);
-bool atm_vcc_churn(struct childdata *child);
-bool ip6gre_bond_lapb_stack(struct childdata *child);
-bool flowtable_encap_vlan(struct childdata *child);
-bool ipv6_pmtu_teardown_race(struct childdata *child);
-bool rxrpc_sendmsg_cmsg_churn(struct childdata *child);
-bool ovs_tunnel_vport_churn(struct childdata *child);
-bool tty_ldisc_churn(struct childdata *child);
-bool wireguard_decrypt_flood(struct childdata *child);
-bool blkdev_lifecycle_race(struct childdata *child);
-bool iscsi_target_probe(struct childdata *child);
-bool iscsi_login_walker(struct childdata *child);
-bool eth_emitter(struct childdata *child);
-bool vma_split_storm(struct childdata *child);
-bool map_shared_stress(struct childdata *child);
-bool sysfs_string_race(struct childdata *child);
-bool pci_bind(struct childdata *child);
-bool pfkey_spd_walk(struct childdata *child);
-bool l2tp_ifname_race(struct childdata *child);
-bool statmount_idmap_overflow(struct childdata *child);
-bool umount_race(struct childdata *child);
-bool ip6_udp_cork_splice(struct childdata *child);
-bool pkt_builder_probe(struct childdata *child);
-bool esp_crafted_rx(struct childdata *child);
-bool fou_gue_mcast_rx(struct childdata *child);
-bool geneve_rx(struct childdata *child);
-bool bareudp_rx(struct childdata *child);
-bool mpls_label_stack_rx(struct childdata *child);
-bool deep_path_nesting(struct childdata *child);
-bool espintcp_coalesce_churn(struct childdata *child);
-bool tc_live_traffic(struct childdata *child);
-bool hfs_mount_fuzz(struct childdata *child);
-bool rds_zcopy_crafted_send(struct childdata *child);
-bool bridge_ip6frag_refrag(struct childdata *child);
-bool ip4_udp_cork_splice(struct childdata *child);
-bool nexthop_replace_churn(struct childdata *child);
-bool sit_proto41_rx(struct childdata *child);
-bool seg6_end_dt4_rx(struct childdata *child);
-bool ct_expect_realloc(struct childdata *child);
-bool inet_listener_rehash_race(struct childdata *child);
-bool ip6_tunnel_churn(struct childdata *child);
+void psp_key_rotate_cleanup_child(void);

@@ -34,9 +34,10 @@
  * every CHILD_OP_* constant AND the slot ordering of the picker
  * arrays (pick_op_type_table[] / dormant_op_disabled[]) generated
  * out of this file.  Append new ops at the bottom; never reorder
- * existing rows.  Adding a new altop is now a single-line edit here:
- * the enum, the picker slot, the dormant gate, and the KCOV-bracket
- * predicate all pick it up on the next build.
+ * existing rows.  Adding a new altop is a single-line edit here:
+ * the enum, the picker slot, the dormant gate, the KCOV-bracket
+ * predicate, and the dispatch-entry prototype in child-api.h all
+ * pick it up on the next build.
  *
  * NO include guard -- this file is intended to be included multiple
  * times with different CHILDOP macro definitions.  Callers that
