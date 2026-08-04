@@ -1,6 +1,7 @@
 #pragma once
 
 #include <linux/rds.h>
+#include <linux/sockios.h>	/* SIOCPROTOPRIVATE for SIOCRDSSETTOS/SIOCRDSGETTOS */
 
 #ifndef SO_RDS_TRANSPORT
 #define SO_RDS_TRANSPORT	8
@@ -81,3 +82,14 @@ struct rds_atomic_args {
 #define RDS_INFO_LAST			10017
 #endif
 
+
+#ifndef SIOCRDSSETTOS
+/*
+ * RDS Type-of-Service ioctls.  Both live at SIOCPROTOPRIVATE + {0,1}.
+ * The argument is a rds_tos_t (u8); SET writes the per-socket TOS
+ * field, GET reads it back.  Defined upstream in include/uapi/linux/rds.h
+ * since v4.17 but absent from stripped sysroots.
+ */
+#define SIOCRDSSETTOS		SIOCPROTOPRIVATE
+#define SIOCRDSGETTOS		(SIOCPROTOPRIVATE + 1)
+#endif

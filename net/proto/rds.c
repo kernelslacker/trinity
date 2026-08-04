@@ -1,5 +1,6 @@
 #ifdef USE_RDS
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -613,6 +614,30 @@ static void rds_data_leg(int parent_fd, __unused__ int child_fd,
 	rmsg.msg_control = rcvcmsg;
 	rmsg.msg_controllen = sizeof(rcvcmsg);
 	(void) recvmsg(parent_fd, &rmsg, MSG_DONTWAIT);
+
+	/*
+	 * RDS TOS ioctl coverage: SIOCRDSSETTOS / SIOCRDSGETTOS.
+	 * Both live at SIOCPROTOPRIVATE + {0,1}.  The argument is a
+	 * rds_tos_t (u8).  SET walks rds_set_tos() which validates the
+	 * value against the transport's supported TOS set; GET reads
+	 * the cached per-socket rs_tos field back.  Interleave SET then
+	 * GET in both orderings across calls so both syscall directions
+	 * are exercised and we also probe the read-back consistency path.
+	 */
+	{
+		rds_tos_t tos_val = (rds_tos_t) RAND_BYTE();
+		rds_tos_t tos_out = 0;
+
+		if (RAND_BOOL()) {
+			/* SET then GET */
+			(void) ioctl(parent_fd, SIOCRDSSETTOS, &tos_val);
+			(void) ioctl(parent_fd, SIOCRDSGETTOS, &tos_out);
+		} else {
+			/* GET then SET (probe unset state first) */
+			(void) ioctl(parent_fd, SIOCRDSGETTOS, &tos_out);
+			(void) ioctl(parent_fd, SIOCRDSSETTOS, &tos_val);
+		}
+	}
 }
 
 const struct socket_family_grammar grammar_rds = {
