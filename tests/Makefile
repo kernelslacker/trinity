@@ -39,6 +39,12 @@ CFLAGS		+= -Wundef -Wwrite-strings -Wno-format-nonliteral
 CFLAGS		+= -Wstrict-prototypes -Wmissing-prototypes -fsigned-char
 CFLAGS		+= -Wno-missing-field-initializers
 
+# mprotect failure injection: wrap mprotect so fixture 7 can fail
+# individual seal calls without touching production code.  The wrapper
+# (__wrap_mprotect in deferred_free_test.c) is transparent when
+# g_mprotect_fail_countdown == 0 (the default).
+LDFLAGS		+= -Wl,--wrap=mprotect
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs the
 # arch-program #10 spec calls for on the integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -77,6 +83,7 @@ FAKE_SRCS	:= \
 	shared_freelist_selftest.c \
 	shared_str_heap_selftest.c \
 	dispatch_stage_order_test.c \
+	deferred_free_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
