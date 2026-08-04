@@ -54,7 +54,7 @@
  * failure returns the negated kernel errno or -EIO.
  */
 int new_station_iface(struct genl_ctx *ctx, uint32_t phy,
-		      const char *ifname)
+		      const char *ifname, unsigned long *direct_calls)
 {
 	unsigned char buf[512];
 	struct nlmsghdr *nlh;
@@ -80,6 +80,8 @@ int new_station_iface(struct genl_ctx *ctx, uint32_t phy,
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
 	rc = genl_send_recv_retry(ctx, buf, off);
+	/* genl_send_recv_retry: sendmsg + recv. */
+	*direct_calls += 2;
 	if (rc != 0)
 		return rc;
 
@@ -89,7 +91,8 @@ int new_station_iface(struct genl_ctx *ctx, uint32_t phy,
 	return ifindex;
 }
 
-int del_iface_by_index(struct genl_ctx *ctx, int ifindex)
+int del_iface_by_index(struct genl_ctx *ctx, int ifindex,
+		       unsigned long *direct_calls)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -106,6 +109,8 @@ int del_iface_by_index(struct genl_ctx *ctx, int ifindex)
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
+	/* genl_send_recv_retry: sendmsg + recv. */
+	*direct_calls += 2;
 	return genl_send_recv_retry(ctx, buf, off);
 }
 
@@ -115,7 +120,7 @@ int del_iface_by_index(struct genl_ctx *ctx, int ifindex)
  * inside the per-iter sequence (the entry has been zeroed).  Ring is
  * cleared on return.
  */
-void cleanup_ifaces(struct genl_ctx *ctx)
+void cleanup_ifaces(struct genl_ctx *ctx, unsigned long *direct_calls)
 {
 	unsigned int i;
 
@@ -124,7 +129,7 @@ void cleanup_ifaces(struct genl_ctx *ctx)
 
 		if (ifx <= 0)
 			continue;
-		if (del_iface_by_index(ctx, ifx) == 0)
+		if (del_iface_by_index(ctx, ifx, direct_calls) == 0)
 			__atomic_add_fetch(&shm->stats.nl80211.iface_destroyed,
 					   1, __ATOMIC_RELAXED);
 		created_ifindex[i] = 0;
@@ -141,7 +146,8 @@ void cleanup_ifaces(struct genl_ctx *ctx)
  * so subsequent outer iters short-circuit cheaply.
  */
 int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
-		       int *ifindex, const struct timespec *t_outer)
+		       int *ifindex, const struct timespec *t_outer,
+		       unsigned long *direct_calls)
 {
 	int rc;
 
@@ -151,7 +157,7 @@ int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
 	(void)snprintf(ifname, IFNAMSIZ, "twl%u",
 		       (unsigned int)(rand32() & 0xffffu));
 
-	rc = new_station_iface(ctx, nl80211_get_phy0(), ifname);
+	rc = new_station_iface(ctx, nl80211_get_phy0(), ifname, direct_calls);
 	if (rc < 0) {
 		if (errno_is_unsupported(-rc))
 			ns_unsupported_nl80211 = true;
