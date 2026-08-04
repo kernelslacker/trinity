@@ -255,6 +255,9 @@ struct ip6erspan_migrate_iter_ctx {
 	bool		migrated;
 	char		ifname[IFNAMSIZ];
 	struct childdata *child;
+	/* Accumulates own-body raw-syscall count; published once via
+	 * childop_direct_syscalls_add() at ip6erspan_netns_migrate_in_ns() exit. */
+	unsigned long	direct_calls;
 };
 
 static void warn_once_unsupported(struct childdata *child)
@@ -569,18 +572,23 @@ static int ip6erspan_migrate_iter_migrate(struct ip6erspan_migrate_iter_ctx *ctx
 	 * is held; cannot be delegated to a second userns_run_in_ns() call
 	 * because the FD dance below needs to hold both the outer (original)
 	 * and inner (target) netns FDs concurrently. */
+	ctx->direct_calls++;
 	if (unshare(CLONE_NEWNET) < 0) {
 		warn_once_unsupported(ctx->child);
 		return -1;
 	}
 	ctx->target_ns_fd = inm_open_self_netns();
+	ctx->direct_calls++;
 	if (ctx->target_ns_fd < 0) {
 		warn_once_unsupported(ctx->child);
+		ctx->direct_calls++;
 		(void)setns(ctx->orig_ns_fd, CLONE_NEWNET);
 		return -1;
 	}
+	ctx->direct_calls++;
 	if (setns(ctx->orig_ns_fd, CLONE_NEWNET) < 0) {
 		warn_once_unsupported(ctx->child);
+		ctx->direct_calls++;
 		close(ctx->target_ns_fd);
 		ctx->target_ns_fd = -1;
 		return -1;
@@ -617,6 +625,7 @@ static void ip6erspan_migrate_iter_changelink(struct ip6erspan_migrate_iter_ctx 
 {
 	int rc;
 
+	ctx->direct_calls++;
 	if (setns(ctx->target_ns_fd, CLONE_NEWNET) < 0) {
 		warn_once_unsupported(ctx->child);
 		return;
@@ -661,16 +670,21 @@ static void ip6erspan_migrate_iter_changelink(struct ip6erspan_migrate_iter_ctx 
 static void ip6erspan_migrate_iter_teardown(struct ip6erspan_migrate_iter_ctx *ctx)
 {
 	if (ctx->migrated) {
+		ctx->direct_calls++;
 		(void)setns(ctx->orig_ns_fd, CLONE_NEWNET);
 	} else if (ctx->ifindex > 0 && ctx->nl.fd >= 0) {
 		(void)inm_dellink(&ctx->nl, ctx->ifindex);
 	}
 	if (ctx->target_nl.fd >= 0)
 		nl_close(&ctx->target_nl);
-	if (ctx->target_ns_fd >= 0)
+	if (ctx->target_ns_fd >= 0) {
+		ctx->direct_calls++;
 		close(ctx->target_ns_fd);
-	if (ctx->orig_ns_fd >= 0)
+	}
+	if (ctx->orig_ns_fd >= 0) {
+		ctx->direct_calls++;
 		close(ctx->orig_ns_fd);
+	}
 	if (ctx->nl.fd >= 0)
 		nl_close(&ctx->nl);
 }
@@ -702,11 +716,14 @@ static int ip6erspan_netns_migrate_in_ns(void *arg)
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	ictx.orig_ns_fd = inm_open_self_netns();
+	ictx.direct_calls++;
 	if (ictx.orig_ns_fd < 0) {
 		warn_once_unsupported(child);
-		return 0;
+		goto out;
 	}
 
 	if (ip6erspan_migrate_iter_setup(&ictx, &opts) != 0)
@@ -722,21 +739,18 @@ static int ip6erspan_netns_migrate_in_ns(void *arg)
 	 * can be scribbled by a poisoned-arena write from a sibling; the
 	 * child.c dispatch loop already gates its dispatch + alt-op
 	 * accounting on the same valid_op snapshot. */
-	{
-		const enum child_op_type op = child->op_type;
-		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop.data_path[op],
-					   1, __ATOMIC_RELAXED);
-		}
+	if (valid_op) {
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
+				   1, __ATOMIC_RELAXED);
 	}
 	ip6erspan_migrate_iter_changelink(&ictx, &opts);
 
 out:
 	ip6erspan_migrate_iter_teardown(&ictx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, ictx.direct_calls);
 	return 0;
 }
 
