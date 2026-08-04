@@ -161,11 +161,14 @@ bool hwsim_present(struct genl_ctx *ctx, unsigned long *direct_calls);
  * forward-referenced in the nl80211_iter_setup() signature so this
  * header does not need to pull in <time.h> transitively. */
 struct timespec;
-int new_station_iface(struct genl_ctx *ctx, uint32_t phy, const char *ifname);
-int del_iface_by_index(struct genl_ctx *ctx, int ifindex);
-void cleanup_ifaces(struct genl_ctx *ctx);
+int new_station_iface(struct genl_ctx *ctx, uint32_t phy, const char *ifname,
+		      unsigned long *direct_calls);
+int del_iface_by_index(struct genl_ctx *ctx, int ifindex,
+		       unsigned long *direct_calls);
+void cleanup_ifaces(struct genl_ctx *ctx, unsigned long *direct_calls);
 int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
-		       int *ifindex, const struct timespec *t_outer);
+		       int *ifindex, const struct timespec *t_outer,
+		       unsigned long *direct_calls);
 
 /* Scan/BSS churn phase -- nl80211-churn-scan.c */
 int trigger_scan(struct genl_ctx *ctx, int ifindex);

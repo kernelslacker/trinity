@@ -341,9 +341,8 @@ static void nl80211_iter_teardown(struct genl_ctx *ctx, int ifindex,
 {
 	int rc;
 
-	rc = del_iface_by_index(ctx, ifindex);
-	/* del_iface_by_index wraps one genl_send_recv_retry. */
-	*direct_calls += 2;
+	rc = del_iface_by_index(ctx, ifindex, direct_calls);
+	/* genl_send_recv_retry tally reported by del_iface_by_index. */
 	if (rc == 0) {
 		unsigned int j;
 
@@ -374,15 +373,10 @@ static void iter_one(struct genl_ctx *ctx, struct childdata *child,
 
 	(void)iter_idx;
 
-	if (nl80211_iter_setup(ctx, ifname, &ifindex, t_outer) < 0) {
-		/* nl80211_iter_setup issues one genl_send_recv_retry via
-		 * new_station_iface before returning; count it on both the
-		 * success and setup-failure exits so the per-iter tally
-		 * reflects work actually issued. */
-		*direct_calls += 2;
+	/* nl80211_iter_setup calls new_station_iface which reports its
+	 * genl_send_recv_retry tally via direct_calls directly. */
+	if (nl80211_iter_setup(ctx, ifname, &ifindex, t_outer, direct_calls) < 0)
 		return;
-	}
-	*direct_calls += 2;
 
 	/* child->op_type lives in shared memory and can be scribbled by a
 	 * poisoned-arena write from a sibling; bounds-check the snapshot
@@ -513,19 +507,9 @@ static int nl80211_churn_in_ns(void *arg)
 	/* Snapshot created_count BEFORE cleanup_ifaces so the tally sees the
 	 * pre-drain ring high-water mark; cleanup_ifaces zeroes the ring on
 	 * return and would otherwise attribute zero drain work. */
-	{
-		unsigned long ring_before_drain = (unsigned long)created_count;
-
-		cleanup_ifaces(&ctx);
-		/* cleanup_ifaces walks the created-iface ring and issues
-		 * del_iface_by_index (one genl_send_recv_retry, sendmsg +
-		 * recv) for each still-live slot.  ring_before_drain is
-		 * the ring high-water mark, an upper bound; live-slot bumps
-		 * overcount by at most the number of slots the per-iter
-		 * teardown already cleared, negligible against the outer-
-		 * loop send/recv dominance. */
-		cctx->direct_calls += ring_before_drain * 2UL;
-	}
+	/* cleanup_ifaces reports each del_iface_by_index genl_send_recv_retry
+	 * tally directly via &cctx->direct_calls. */
+	cleanup_ifaces(&ctx, &cctx->direct_calls);
 
 out:
 	if (ctx_open) {
