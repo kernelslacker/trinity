@@ -23,13 +23,20 @@ static const unsigned long personalities[] = {
 };
 
 /*
- * All ten upper flag bits from include/uapi/linux/personality.h.
- * set_rand_bitmask() ORs a random non-empty subset onto the base persona,
- * exercising every combination including the three (ADDR_NO_RANDOMIZE,
- * ADDR_COMPAT_LAYOUT, READ_IMPLIES_EXEC) that never appear in any named
- * PER_* constant and therefore had 0% coverage under the old ARG_OP draw.
+ * All eleven upper flag bits from include/uapi/linux/personality.h:
+ *   UNAME26 = 0x0020000, ADDR_NO_RANDOMIZE = 0x0040000, FDPIC_FUNCPTRS = 0x0080000,
+ *   MMAP_PAGE_ZERO = 0x0100000, ADDR_COMPAT_LAYOUT = 0x0200000,
+ *   READ_IMPLIES_EXEC = 0x0400000, ADDR_LIMIT_32BIT = 0x0800000,
+ *   SHORT_INODE = 0x1000000, WHOLE_SECONDS = 0x2000000,
+ *   STICKY_TIMEOUTS = 0x4000000, ADDR_LIMIT_3GB = 0x8000000.
+ * UNAME26 is consumed by kernel/sys.c:override_release() and is not embedded
+ * in any named PER_* constant, so it requires explicit coverage here.
+ * The three (ADDR_NO_RANDOMIZE, ADDR_COMPAT_LAYOUT, READ_IMPLIES_EXEC) that
+ * never appear in any named PER_* constant likewise had 0% coverage under
+ * the old ARG_OP draw.
  */
 static const unsigned long personality_flags[] = {
+	UNAME26,
 	ADDR_NO_RANDOMIZE,
 	FDPIC_FUNCPTRS,
 	MMAP_PAGE_ZERO,
@@ -44,13 +51,25 @@ static const unsigned long personality_flags[] = {
 
 static void sanitise_personality(struct syscallrecord *rec)
 {
-	/* ~5%: emit the canonical query form personality(0xffffffff). */
-	if (rnd_modulo_u32(20) == 0) {
+	unsigned int bucket = rnd_modulo_u32(20);
+
+	/* ~5% (1/20): emit the canonical query form personality(0xffffffff). */
+	if (bucket == 0) {
 		rec->a1 = 0xffffffffUL;
 		return;
 	}
 
-	/* Base persona | random subset of upper flag bits. */
+	/* ~30% (6/20): bare persona — no flag bits ORed in.
+	 * This restores reachability for clean PER_LINUX, PER_LINUX32, etc.
+	 * invocations, which are the most common real-world form and were
+	 * reduced to 0% when set_rand_bitmask() gained its "always >= 1 bit"
+	 * guard. */
+	if (bucket <= 6) {
+		rec->a1 = RAND_ARRAY(personalities);
+		return;
+	}
+
+	/* ~65% (13/20): base persona | random non-empty subset of flag bits. */
 	rec->a1 = RAND_ARRAY(personalities) |
 		  set_rand_bitmask(ARRAY_SIZE(personality_flags), personality_flags);
 }
