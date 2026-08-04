@@ -338,6 +338,62 @@ void dump_child_fault_beacon(struct childdata *child)
 	outputerr("FAULT!:  (signal-time beacon -- pre-libc capture; the in-handler backtrace may have re-faulted)\n");
 
 	/*
+	 * Structured aggregation key.  Stable one-line format parsed by the
+	 * bugs.txt post-processor to produce distinct summary rows per crash
+	 * class.  Key components:
+	 *
+	 *   <signame>/<si_code>/<fault_ip_class>/<breadcrumb_hash>
+	 *
+	 * fault_ip_class buckets the instruction pointer at signal delivery:
+	 *   nil     -- NULL (extractor returned NULL or no ucontext)
+	 *   nearnil -- tiny user address (< 4096; near-null deref)
+	 *   kernel  -- kernel-space VA (bit 63 set on x86-64/arm64)
+	 *   user    -- normal user-space address
+	 *
+	 * breadcrumb_hash is a 32-bit XOR-fold over the syscall_nr fields of
+	 * the last <=8 pre-crash ring entries.  Cheap and stable: provides a
+	 * coarse execution-context discriminator so crashes sharing the same
+	 * {signal, si_code, fault_ip_class} bucket but arriving from distinct
+	 * call sequences remain distinguishable in the summary.
+	 *
+	 * The key is appended to the FAULT! stream (outerr.log) so a simple
+	 * grep/awk over the existing log format is sufficient to aggregate
+	 * crashes; no binary format or separate file is needed.
+	 */
+	{
+		const char *ip_class;
+		uintptr_t fip = (uintptr_t)beacon->fault_ip;
+		uint32_t crumb = 0;
+
+		if (beacon->fault_ip == NULL)
+			ip_class = "nil";
+		else if (fip < 4096U)
+			ip_class = "nearnil";
+		else if (fip >= (uintptr_t)0x8000000000000000UL)
+			ip_class = "kernel";
+		else
+			ip_class = "user";
+
+		/* XOR-fold the last <=8 pre-crash ring syscall numbers. */
+		{
+			struct pre_crash_ring *ring = &child->pre_crash;
+			uint32_t head = __atomic_load_n(&ring->base.head,
+							__ATOMIC_ACQUIRE);
+			uint32_t look = head < 8U ? head : 8U;
+			uint32_t i;
+
+			for (i = 0; i < look; i++) {
+				uint32_t slot = (head - look + i) &
+						(PRE_CRASH_RING_SIZE - 1U);
+				crumb ^= (uint32_t)ring->entries[slot].syscall_nr;
+			}
+		}
+
+		outputerr("FAULT!:  key=%s/%d/%s/%08x\n",
+			  signame, (int)beacon->sig_code, ip_class, crumb);
+	}
+
+	/*
 	 * Beacon-capture accounting.  Three classes of outcome:
 	 *
 	 *  no_log:   access() shows no bug log file -- child's
