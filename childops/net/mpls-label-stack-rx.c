@@ -70,6 +70,7 @@
 #include <linux/if_packet.h>
 
 #include "child.h"
+#include "childop-outcome.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
 #include "jitter.h"
@@ -427,6 +428,16 @@ struct mpls_label_stack_rx_iter_ctx {
 	bool		nl_opened;
 	bool		mpls_enabled;
 	struct childdata *child;
+	/* Direct-syscall tally accumulated across setup / burst / teardown.
+	 * nl_open success: socket + bind + setsockopt == 3;
+	 * mlr_enable_mpls_on_lo success: open+write+close x2 == 6;
+	 * rtnl_setlink_up success: sendmsg + recv == 2;
+	 * socket(AF_PACKET): 1; bind: 1; sendto: 1 each;
+	 * close(raw): 1; nl_close: 1.
+	 * Published once in mpls_label_stack_rx_in_ns() via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic
+	 * add per invocation instead of per syscall. */
+	unsigned long	direct_calls;
 };
 
 /*
@@ -446,6 +457,8 @@ static int mpls_label_stack_rx_iter_open_ctx(struct mpls_label_stack_rx_iter_ctx
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
+	/* nl_open success: socket + bind + setsockopt. */
+	ctx->direct_calls += 3;
 	ctx->nl_opened = true;
 
 	if (!lo_brought_up()) {
@@ -482,13 +495,19 @@ static int mpls_label_stack_rx_iter_build_link(struct mpls_label_stack_rx_iter_c
 					 __ATOMIC_RELAXED);
 		return -1;
 	}
+	/* mlr_enable_mpls_on_lo: open+write+close for platform_labels
+	 * and open+write+close for conf/lo/input == 6 total. */
+	ctx->direct_calls += 6;
 	ctx->mpls_enabled = true;
 	__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.config_ok,
 			   1, __ATOMIC_RELAXED);
 
-	if (rtnl_setlink_up(&ctx->nl, ctx->lo_ifindex) == 0)
+	if (rtnl_setlink_up(&ctx->nl, ctx->lo_ifindex) == 0) {
+		/* rtnl_setlink_up: sendmsg + recv. */
+		ctx->direct_calls += 2;
 		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.link_up_ok,
 				   1, __ATOMIC_RELAXED);
+	}
 
 	return 0;
 }
@@ -514,6 +533,7 @@ static void mpls_label_stack_rx_iter_send_burst(struct mpls_label_stack_rx_iter_
 
 	ctx->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC,
 			  htons(ETH_P_MPLS_UC));
+	ctx->direct_calls++;		/* socket() */
 	if (ctx->raw < 0)
 		return;
 
@@ -521,6 +541,7 @@ static void mpls_label_stack_rx_iter_send_burst(struct mpls_label_stack_rx_iter_
 	sll.sll_family   = AF_PACKET;
 	sll.sll_protocol = htons(ETH_P_MPLS_UC);
 	sll.sll_ifindex  = ctx->lo_ifindex;
+	ctx->direct_calls++;		/* bind() */
 	if (bind(ctx->raw, (struct sockaddr *)&sll, sizeof(sll)) < 0)
 		return;
 
@@ -546,6 +567,7 @@ static void mpls_label_stack_rx_iter_send_burst(struct mpls_label_stack_rx_iter_
 
 		n = sendto(ctx->raw, pkt, len, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
+		ctx->direct_calls++;		/* sendto() */
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
@@ -562,11 +584,15 @@ static void mpls_label_stack_rx_iter_send_burst(struct mpls_label_stack_rx_iter_
  */
 static void mpls_label_stack_rx_iter_teardown(struct mpls_label_stack_rx_iter_ctx *ctx)
 {
-	if (ctx->raw >= 0)
+	if (ctx->raw >= 0) {
+		ctx->direct_calls++;	/* close(raw) */
 		close(ctx->raw);
+	}
 
-	if (ctx->nl_opened)
+	if (ctx->nl_opened) {
+		ctx->direct_calls++;	/* nl_close -> close() */
 		nl_close(&ctx->nl);
+	}
 }
 
 struct mpls_label_stack_rx_ctx {
@@ -589,6 +615,7 @@ static int mpls_label_stack_rx_in_ns(void *arg)
 		.nl = { .fd = -1 },
 		.raw = -1,
 		.child = child,
+		.direct_calls = 0,
 	};
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
@@ -608,6 +635,16 @@ static int mpls_label_stack_rx_in_ns(void *arg)
 	}
 
 	mpls_label_stack_rx_iter_teardown(&ctx);
+
+	/* Publish this invocation's direct-syscall load in one RELAXED
+	 * atomic add.  Tally accumulated across setup / burst / teardown
+	 * helpers via ctx.direct_calls; the grandchild's write is visible
+	 * to the parent after _exit() because shm is a shared mapping.
+	 * Gated on valid_op to match the surrounding per-op stats bumps.
+	 * The kind_unsupported() early-return above issues no syscalls so
+	 * the tally is correctly zero on that path. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return 0;
 }
 
