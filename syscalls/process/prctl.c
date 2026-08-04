@@ -506,17 +506,21 @@ static void sanitise_prctl(struct syscallrecord *rec)
 
 	case PR_SET_THP_DISABLE: {
 		/*
-		 * arg2: 0 (re-enable THP), 1 (disable THP), or
-		 * PR_THP_DISABLE_EXCEPT_ADVISED (1<<1) which keeps THP
-		 * active only for madvise(MADV_HUGEPAGE) regions
-		 * (kernel 6.16+, 4f56302c4d6d).  4 is out-of-range to
-		 * keep the reject path covered.  arg3-arg5 must be zero.
+		 * arg2: bool 0 (re-enable THP) or 1 (disable THP).
+		 * arg3: flags, only meaningful when disabling (arg2 != 0):
+		 *   0                             normal disable,
+		 *   PR_THP_DISABLE_EXCEPT_ADVISED (1<<1) keeps THP active
+		 *   only for madvise(MADV_HUGEPAGE) regions (kernel 6.16+,
+		 *   4f56302c4d6d); 4 is out-of-range to cover the reject
+		 *   path.  Nonzero flags with arg2==0 are rejected by the
+		 *   kernel, so arg3 must be 0 when re-enabling THP.
+		 *   arg4-arg5 must be zero.
 		 */
-		static const unsigned long thp_disable_vals[] = {
-			0, 1, PR_THP_DISABLE_EXCEPT_ADVISED, 4,
+		static const unsigned long thp_flags[] = {
+			0, PR_THP_DISABLE_EXCEPT_ADVISED, 4,
 		};
-		rec->a2 = RAND_ARRAY(thp_disable_vals);
-		rec->a3 = 0;
+		rec->a2 = RAND_BOOL();
+		rec->a3 = rec->a2 ? RAND_ARRAY(thp_flags) : 0;
 		rec->a4 = 0;
 		rec->a5 = 0;
 		break;
