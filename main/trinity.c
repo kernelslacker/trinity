@@ -12,6 +12,7 @@
 
 #include "arch.h"
 #include "child-api.h"
+#include "debug.h"
 #include "cmp_hints.h"
 #include "fd.h"
 #include "files.h"
@@ -239,6 +240,26 @@ finalize_and_exit(int ret, bool clean_run)
 		output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
 			parent_stats.op_count,
 			parent_stats.successes, parent_stats.failures);
+
+		/* Beacon-capture loss summary.  Always emitted when at
+		 * least one fault beacon fired during this run so the
+		 * number of captured vs missed bug logs is visible in
+		 * the final output regardless of --stats mode. */
+		{
+			unsigned int btotal, bno_log, bpartial;
+
+			beacon_loss_get_counts(&btotal, &bno_log, &bpartial);
+			if (btotal > 0)
+				output(0,
+				       "FAULT-CAPTURE: beacons=%u "
+				       "complete=%u partial=%u "
+				       "no_log=%u\n",
+				       btotal,
+				       btotal - bno_log - bpartial,
+				       bpartial,
+				       bno_log);
+		}
+
 		if (show_stats == true)
 			dump_stats();
 

@@ -10,6 +10,7 @@
 #include "stats_ring.h"
 #include "strategy.h"
 #include "trinity.h"
+#include "debug.h"
 #include "main-internal.h"
 
 /*
@@ -498,6 +499,28 @@ void print_stats(void)
 			 * existing ~10k-op cadence so the operator gets one
 			 * JSONL record per visible iterations line. */
 			stats_timeseries_emit_window(op_count);
+
+			/* Beacon-capture loss summary.  Emit only when at
+			 * least one fault beacon has been surfaced so the
+			 * line is absent from clean runs.  Lets the operator
+			 * spot the gap between beacons seen and complete bug
+			 * logs archived without grepping outerr.log. */
+			{
+				unsigned int btotal, bno_log, bpartial;
+
+				beacon_loss_get_counts(&btotal,
+						       &bno_log,
+						       &bpartial);
+				if (btotal > 0)
+					output(0,
+					       "FAULT-CAPTURE: beacons=%u "
+					       "complete=%u partial=%u "
+					       "no_log=%u\n",
+					       btotal,
+					       btotal - bno_log - bpartial,
+					       bpartial,
+					       bno_log);
+			}
 
 			lastcount = op_count;
 		}
