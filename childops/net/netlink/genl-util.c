@@ -109,9 +109,14 @@ static int resolve_family_id(struct nl_ctx *nl, const char *name,
 	mh.msg_iov     = &iov;
 	mh.msg_iovlen  = 1;
 
+	/* resolve_family_id issues sendmsg + recv directly on nl->fd;
+	 * track both as direct kernel calls so nl_close() can attribute
+	 * them to the caller via direct_syscalls on the nl_ctx. */
+	nl->direct_syscalls++;
 	if (sendmsg(nl->fd, &mh, 0) < 0)
 		return -EIO;
 
+	nl->direct_syscalls++;
 	n = recv(nl->fd, rbuf, sizeof(rbuf), 0);
 	if (n < 0)
 		return -EIO;
@@ -245,9 +250,13 @@ int genl_send_recv(struct genl_ctx *ctx, void *msg, size_t len)
 	mh.msg_iov     = &iov;
 	mh.msg_iovlen  = 1;
 
+	/* genl_send_recv issues sendmsg + recv directly on ctx->nl.fd;
+	 * track both so nl_close() attributes them to the caller. */
+	ctx->nl.direct_syscalls++;
 	if (sendmsg(ctx->nl.fd, &mh, 0) < 0)
 		return -EIO;
 
+	ctx->nl.direct_syscalls++;
 	n = recv(ctx->nl.fd, rbuf, sizeof(rbuf), 0);
 	if (n < 0)
 		return -EIO;
