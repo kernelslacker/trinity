@@ -111,8 +111,19 @@ static void sanitise_semctl_cmd_stat(struct syscallrecord *rec)
 
 static void sanitise_semctl_cmd_setval(struct syscallrecord *rec)
 {
-	/* ptr is the value directly for old-style ipc() */
-	rec->a5 = rnd_modulo_u32(32768);
+	unsigned long *slot;
+
+	/*
+	 * The ipc() multiplexer reads the union semun through ptr:
+	 *   get_user(arg, (unsigned long __user *)ptr)
+	 * so a5 must point at a writable slot holding the value,
+	 * not carry the value itself.
+	 */
+	slot = (unsigned long *) get_writable_struct(sizeof(*slot));
+	if (!slot)
+		return;
+	*slot = rnd_modulo_u32(32768);
+	rec->a5 = (unsigned long) slot;
 }
 
 static void sanitise_semctl_cmd_getall(struct syscallrecord *rec)
