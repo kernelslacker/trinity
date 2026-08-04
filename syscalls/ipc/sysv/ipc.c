@@ -71,7 +71,7 @@ static void sanitise_ipc_semop(struct syscallrecord *rec, unsigned long call)
 		if (RAND_BOOL())
 			sops[i].sem_flg |= SEM_UNDO;
 	}
-	rec->a2 = rnd_modulo_u32(1000);	/* semid */
+	rec->a2 = ONE_IN(5) ? rnd_modulo_u32(1000) : (unsigned long) get_random_sysv_sem();
 	rec->a3 = nsops;
 	rec->a5 = (unsigned long) sops;
 
@@ -160,7 +160,7 @@ static void sanitise_ipc_semctl(struct syscallrecord *rec)
 	 */
 	int cmd;
 
-	rec->a2 = rnd_modulo_u32(1000);	/* semid */
+	rec->a2 = ONE_IN(5) ? rnd_modulo_u32(1000) : (unsigned long) get_random_sysv_sem();
 	rec->a3 = rnd_modulo_u32(32);		/* semnum */
 	cmd = sem_cmds[rnd_modulo_u32(ARRAY_SIZE(sem_cmds))];
 	rec->a4 = cmd;
@@ -200,7 +200,7 @@ static void sanitise_ipc_msgsnd(struct syscallrecord *rec)
 	mb->mtype = 1 + (rnd_modulo_u32(100));
 	memset(mb->mtext, 'A', msgsz);
 
-	rec->a2 = rnd_modulo_u32(1000);	/* msqid */
+	rec->a2 = ONE_IN(5) ? rnd_modulo_u32(1000) : (unsigned long) get_random_sysv_msg();
 	rec->a3 = msgsz;
 	rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
 	rec->a5 = (unsigned long) mb;
@@ -240,7 +240,7 @@ static void sanitise_ipc_msgrcv(struct syscallrecord *rec)
 	tmp->msgp = mb;
 	tmp->msgtyp = rnd_modulo_u32(10);	/* 0=any type */
 
-	rec->a2 = rnd_modulo_u32(1000);	/* msqid */
+	rec->a2 = ONE_IN(5) ? rnd_modulo_u32(1000) : (unsigned long) get_random_sysv_msg();
 	rec->a3 = 256;			/* msgsz */
 	rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
 	rec->a5 = (unsigned long) tmp;
@@ -263,7 +263,7 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 	/* first=msqid, second=cmd, ptr=struct msqid_ds */
 	int cmd;
 
-	rec->a2 = rnd_modulo_u32(1000);
+	rec->a2 = ONE_IN(5) ? rnd_modulo_u32(1000) : (unsigned long) get_random_sysv_msg();
 	cmd = msg_cmds[rnd_modulo_u32(ARRAY_SIZE(msg_cmds))];
 	rec->a3 = cmd;
 
@@ -297,7 +297,7 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 static void sanitise_ipc_shmat(struct syscallrecord *rec)
 {
 	/* first=shmid, ptr=shmaddr, second=shmflg */
-	rec->a2 = rnd_modulo_u32(1000);	/* shmid */
+	rec->a2 = ONE_IN(5) ? rnd_modulo_u32(1000) : (unsigned long) get_random_sysv_shm();
 	rec->a3 = 0;			/* let kernel pick */
 	rec->a5 = 0;			/* shmaddr=NULL */
 	if (RAND_BOOL())
@@ -330,7 +330,7 @@ static void sanitise_ipc_shmctl(struct syscallrecord *rec)
 	/* first=shmid, second=cmd, ptr=struct shmid_ds */
 	int cmd;
 
-	rec->a2 = rnd_modulo_u32(1000);
+	rec->a2 = ONE_IN(5) ? rnd_modulo_u32(1000) : (unsigned long) get_random_sysv_shm();
 	cmd = shm_cmds[rnd_modulo_u32(ARRAY_SIZE(shm_cmds))];
 	rec->a3 = cmd;
 
