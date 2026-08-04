@@ -66,6 +66,23 @@ static void iter_one(struct childdata *child, unsigned int idx,
 
 	(void)idx;
 
+	/* Entry-TU direct-syscall reporter.  iter_one is a pure dispatcher;
+	 * all raw syscalls are issued inside the sub-TUs.  Bump once per
+	 * invocation so the entry TU participates in the per-op
+	 * direct_syscalls tally alongside the umem / io / teardown TUs.
+	 * Same op-snapshot + bounds-check pattern as the sibling TUs:
+	 * child->op_type lives in shared memory and can be scribbled by a
+	 * poisoned-arena write from a sibling; refuse to index the per-op
+	 * stats array on an out-of-range snapshot. */
+	{
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
+
 	if ((unsigned long long)ns_since(t_outer) >= AFXDP_WALL_CAP_NS)
 		return;
 
