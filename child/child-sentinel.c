@@ -180,9 +180,9 @@ static void sentinel_report(struct childdata *child,
 	pre_crash_ring_record(child, &rec, &now);
 
 	/* SF_UNAME_RELEASE and SF_UNAME_MACHINE are legitimately rewritten
-	 * by personality(PER_LINUX32|UNAME26), which the fuzzer hits often
-	 * enough during a bandit plateau (~130 bumps/window) to drown the
-	 * real corruption signal if it goes onto the anomaly histogram.
+	 * by personality(PER_LINUX32|UNAME26), which the fuzzer can now emit
+	 * again (UNAME26 was added back to personality_flags[] in commit
+	 * "personality: add UNAME26 flag, restore bare-persona reachability").
 	 * Route those into a separate "expected drift" counter — the
 	 * pre_crash_ring entry is still recorded above so the post-mortem
 	 * decoder can replay the divergence, only the live histogram is
