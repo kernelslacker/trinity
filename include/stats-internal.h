@@ -270,6 +270,7 @@ extern const struct stat_category sock_diag_walker_category;
 extern const struct stat_category sock_ulp_sockmap_layering_category;
 extern const struct stat_category socket_family_chain_category;
 extern const struct stat_category socket_family_grammar_category;
+extern const struct stat_category sockmap_cork_race_category;
 extern const struct stat_category splice_protocols_category;
 extern const struct stat_category statmount_idmap_category;
 extern const struct stat_category sysfs_string_race_category;

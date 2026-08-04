@@ -575,6 +575,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&socket_family_grammar_category);
 
+	stat_category_emit_text(&sockmap_cork_race_category);
+
 	stat_category_emit_text(&tls_rotate_category);
 
 	dump_stats_render_packet_fanout_thrash();

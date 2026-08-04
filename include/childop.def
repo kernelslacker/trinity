@@ -207,6 +207,7 @@ CHILDOP(CHILD_OP_CT_EXPECT_REALLOC        , "ct_expect_realloc"          , ct_ex
 CHILDOP(CHILD_OP_INET_LISTENER_REHASH_RACE, "inet_listener_rehash_race"  , inet_listener_rehash_race  , true, 1)
 CHILDOP(CHILD_OP_IP6_TUNNEL_CHURN         , "ip6_tunnel_churn"           , ip6_tunnel_churn           , true, 1)
 CHILDOP(CHILD_OP_IPV6_RPL_CLONE_FIDELITY  , "ipv6_rpl_clone_fidelity"    , ipv6_rpl_clone_fidelity    , true, 1)
+CHILDOP(CHILD_OP_SOCKMAP_CORK_RACE        , "sockmap_cork_race"          , sockmap_cork_race          , true, 1)
 
 #ifdef _CHILDOP_SENTINEL_DEFAULT
 #undef CHILDOP_SENTINEL
