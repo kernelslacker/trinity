@@ -75,12 +75,18 @@
 #endif
 #ifndef PR_TIMER_CREATE_RESTORE_IDS
 #define PR_TIMER_CREATE_RESTORE_IDS	77
+# define PR_TIMER_CREATE_RESTORE_IDS_OFF	0
+# define PR_TIMER_CREATE_RESTORE_IDS_ON		1
+# define PR_TIMER_CREATE_RESTORE_IDS_GET	2
 #endif
 #ifndef PR_FUTEX_HASH
 #define PR_FUTEX_HASH			78
 #endif
 #ifndef PR_RSEQ_SLICE_EXTENSION
 #define PR_RSEQ_SLICE_EXTENSION		79
+# define PR_RSEQ_SLICE_EXT_GET		1
+# define PR_RSEQ_SLICE_EXT_SET		2
+# define PR_RSEQ_SLICE_EXT_ENABLE	0x01
 #endif
 #ifndef PR_GET_CFI
 #define PR_GET_CFI			80
@@ -92,6 +98,13 @@
 #endif
 #ifndef PR_SET_PTRACER
 #define PR_SET_PTRACER			0x59616d61
+# ifndef PR_SET_PTRACER_ANY
+#  define PR_SET_PTRACER_ANY		((unsigned long)-1)
+# endif
+#endif
+#ifndef PR_THP_DISABLE_EXCEPT_ADVISED
+/* Kernel 6.16+: keep THP enabled only for madvise(MADV_HUGEPAGE) regions. */
+#define PR_THP_DISABLE_EXCEPT_ADVISED	(1 << 1)
 #endif
 #ifndef PR_SET_VMA
 #define PR_SET_VMA			0x53564d41
