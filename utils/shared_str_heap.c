@@ -299,6 +299,10 @@ void free_shared_str(void *p, size_t size)
 	size_t off;
 	uint8_t recorded;
 
+	/* size is accepted for API compatibility; provenance state
+	 * now determines all branching and the parameter is unused. */
+	(void)size;
+
 	if (p == NULL)
 		return;
 
@@ -328,10 +332,9 @@ void free_shared_str(void *p, size_t size)
 	/* Authoritative state lookup: recorded at alloc time in memory
 	 * the fuzzer cannot reach.  A LIVE(bucket) record picks the
 	 * bucket to push to and wins over whatever the caller passed as
-	 * `size' (which for the maps strdup path is a strlen()-derived
-	 * quantity computed from a payload the kernel can scribble via
-	 * a fuzzed syscall).  See the block comment at the top of this
-	 * file. */
+	 * `size' (the maps path frees by recorded name_alloc_size, not
+	 * a strlen()-derived quantity).  See the block comment at the
+	 * top of this file. */
 	recorded = __atomic_load_n(&sss->slot_state[off /
 						    SHARED_FREELIST_SLOT_STRIDE],
 				   __ATOMIC_ACQUIRE);
@@ -354,18 +357,24 @@ void free_shared_str(void *p, size_t size)
 	}
 
 	/* No LIVE record -- above-bucket bump-and-leak slot, an
-	 * already-freed slot (state == FREE(bucket)), or a wild pointer
-	 * into an uncarved offset.  Poison and leak, capping the memset
-	 * to the heap-remaining extent so a fuzzable `size' cannot
-	 * drive a scribble past the heap end.  For state == FREE this
-	 * is a double-free; the leaking memset is fine because the
-	 * slot's link bytes have already been overwritten by the first
-	 * push (they're just a next-token in the free chain now). */
-	if (size == 0)
-		return;
-	if (size > shared_str_heap_capacity - off)
-		size = shared_str_heap_capacity - off;
-	memset(p, 0, size);
+	 * already-freed slot (state == FREE(bucket)), an interior
+	 * stride unit of a live slot, or a never-carved in-heap
+	 * address.  Leak without touching any slab bytes:
+	 *
+	 *   FREE(bucket): slot's link bytes hold the next-token for
+	 *     the freelist chain; a memset would truncate the chain
+	 *     (duplicate-free corruption).
+	 *
+	 *   UNCARVED / interior: the bytes belong to a live
+	 *     allocation; a memset scribbles payload (interior-
+	 *     pointer corruption).
+	 *
+	 * Only an exact LIVE(bucket) provenance match earns the
+	 * LIVE->FREE transition, and that transition must go through
+	 * shared_freelist_push() as the sole authorised path.
+	 * Above-bucket bump allocations and all other unproven
+	 * pointers are leaked here. */
+	return;
 }
 
 void shared_str_heap_reset_for_test(void)
