@@ -506,27 +506,32 @@ void print_stats(void)
 			 * spot the gap between beacons seen and complete bug
 			 * logs archived without grepping outerr.log. */
 			{
-				unsigned int btotal, bno_log, bpartial, bunreadable, bcomplete;
+				unsigned int btotal, bno_log, bpartial, bunreadable,
+					     bcomplete, bskipped_timed_out;
 
 				beacon_loss_get_counts(&btotal,
 						       &bno_log,
 						       &bpartial,
 						       &bunreadable,
-						       &bcomplete);
+						       &bcomplete,
+						       &bskipped_timed_out);
 				if (btotal > 0) {
 					unsigned int bpending =
 						btotal - bno_log - bpartial
-						- bunreadable - bcomplete;
+						- bunreadable - bcomplete
+						- bskipped_timed_out;
 					output(0,
 					       "FAULT-CAPTURE: beacons=%u "
 					       "complete=%u partial=%u "
 					       "unreadable=%u no_log=%u "
+					       "skipped_timed_out=%u "
 					       "pending/lost=%u\n",
 					       btotal,
 					       bcomplete,
 					       bpartial,
 					       bunreadable,
 					       bno_log,
+					       bskipped_timed_out,
 					       bpending);
 				}
 			}
