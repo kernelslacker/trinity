@@ -382,7 +382,7 @@ static void sed_stamp_ipv4_options(uint8_t *optbase, unsigned int optbytes)
  * frame at buf.  Returns total wire length or 0 on layout overflow.
  *
  * Layout:
- *   [ether (14): dst=broadcast, src=locally-administered, type=0x86dd]
+ *   [ether (14): dst=zero (PACKET_HOST on lo), src=locally-administered, type=0x86dd]
  *   [outer IPv6 (40): nh=43, hop_limit=64, saddr=::1, daddr=sid]
  *   [SRH (8 + 16*nseg): routing_type=4, segments_left, first_segment,
  *                       segments[0..nseg-1], segments[0]=sid]
@@ -393,9 +393,6 @@ static void sed_stamp_ipv4_options(uint8_t *optbase, unsigned int optbytes)
 static size_t build_seg6_frame(uint8_t *buf, const struct in6_addr *sid,
 			       uint8_t nseg, uint8_t segs_left, uint8_t ihl)
 {
-	static const uint8_t bcast_mac[6] = {
-		0xff, 0xff, 0xff, 0xff, 0xff, 0xff
-	};
 	unsigned int off = 0;
 	unsigned int i;
 	unsigned int srh_bytes;
@@ -418,7 +415,7 @@ static size_t build_seg6_frame(uint8_t *buf, const struct in6_addr *sid,
 	memset(buf, 0, SED_PKT_MAX);
 
 	/* Ethernet header. */
-	memcpy(buf + off, bcast_mac, 6);	off += 6;
+	off += 6;				/* dst stays zero: PACKET_HOST on lo */
 	buf[off + 0] = 0x02;			/* locally-administered src */
 	off += 6;
 	buf[off + 0] = 0x86;			/* ethertype IPv6 = 0x86dd */
