@@ -521,8 +521,19 @@ static void reap_sibling(pid_t pid)
  * best-effort tunnel delete.  Per-step counters live on every
  * success path so a child that latches off mid-run still leaves a
  * forensic trail in the per-op stats.
+ *
+ * Non-netlink direct syscalls accumulated into *direct_calls:
+ *   open_tunnel_udp success: socket + bind + getsockname (+3)
+ *   build_tunnel_create bail or tunnel_fail exit: close (+1)
+ *   fork(creator), fork(racer): +1 each
+ *   reap_sibling calls: waitpid +1 each
+ *   out_delete close(udp): +1
+ * Netlink transport calls (TUNNEL_CREATE sendmsg/recv,
+ * TUNNEL_DELETE sendmsg/recv) are tracked by parent_gctx.nl and
+ * auto-published by genl_close() via the caller_op set in
+ * l2tp_ifname_race_in_ns() -- no double-count.
  */
-static void iter_one(struct genl_ctx *parent_gctx)
+static void iter_one(struct genl_ctx *parent_gctx, unsigned long *direct_calls)
 {
 	struct l2tp_variant v;
 	unsigned char buf[512];
@@ -539,15 +550,18 @@ static void iter_one(struct genl_ctx *parent_gctx)
 
 	udp = open_tunnel_udp(&udp_port);
 	if (udp < 0) {
+		*direct_calls += 1;  /* socket (attempted) */
 		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
+	*direct_calls += 3;  /* socket + bind + getsockname */
 
 	len = build_tunnel_create(parent_gctx, buf, sizeof(buf),
 				  v.conn_id, v.peer_conn_id, udp);
 	if (len == 0) {
 		close(udp);
+		*direct_calls += 1;  /* close */
 		return;
 	}
 	rc = genl_send_recv(parent_gctx, buf, len);
@@ -555,12 +569,14 @@ static void iter_one(struct genl_ctx *parent_gctx)
 		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.tunnel_fail,
 				   1, __ATOMIC_RELAXED);
 		close(udp);
+		*direct_calls += 1;  /* close */
 		return;
 	}
 	__atomic_add_fetch(&shm->stats.l2tp_ifname_race.tunnel_ok,
 			   1, __ATOMIC_RELAXED);
 
 	creator = fork();
+	*direct_calls += 1;  /* fork */
 	if (creator < 0) {
 		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.fork_failed,
 				   1, __ATOMIC_RELAXED);
@@ -572,10 +588,12 @@ static void iter_one(struct genl_ctx *parent_gctx)
 	}
 
 	racer = fork();
+	*direct_calls += 1;  /* fork */
 	if (racer < 0) {
 		__atomic_add_fetch(&shm->stats.l2tp_ifname_race.fork_failed,
 				   1, __ATOMIC_RELAXED);
 		reap_sibling(creator);
+		*direct_calls += 1;  /* waitpid (creator) */
 		goto out_delete;
 	}
 	if (racer == 0) {
@@ -587,22 +605,30 @@ static void iter_one(struct genl_ctx *parent_gctx)
 			   1, __ATOMIC_RELAXED);
 
 	reap_sibling(creator);
+	*direct_calls += 1;  /* waitpid */
 	reap_sibling(racer);
+	*direct_calls += 1;  /* waitpid */
 
 out_delete:
 	len = build_tunnel_delete(parent_gctx, buf, sizeof(buf), v.conn_id);
 	if (len > 0)
 		(void)genl_send_recv(parent_gctx, buf, len);
-	if (udp >= 0)
+	if (udp >= 0) {
 		close(udp);
+		*direct_calls += 1;  /* close */
+	}
 }
 
 /*
  * Per-invocation state handed to the in-ns callback so per-op stats
- * stay indexed against the right childop slot.
+ * stay indexed against the right childop slot.  direct_calls
+ * accumulates the non-netlink syscall count across all outer iters;
+ * the netlink half is published separately by genl_close() once
+ * caller_op is set explicitly in l2tp_ifname_race_in_ns().
  */
 struct l2tp_ifname_race_ctx {
 	struct childdata *child;
+	unsigned long    direct_calls;
 };
 
 /*
@@ -639,6 +665,17 @@ static int l2tp_ifname_race_in_ns(void *arg)
 				   1, __ATOMIC_RELAXED);
 		return 0;
 	}
+	/*
+	 * userns_run_in_ns() forks a grandchild whose PID is not in the
+	 * parent's pids[] table, so this_child() returns NULL here and
+	 * nl_open()'s this_child() fallback never fires.  Set caller_op
+	 * explicitly so genl_close() → nl_close() auto-publishes the
+	 * netlink transport calls (socket + bind + setsockopt from
+	 * nl_open, sendmsg + recv per genl_send_recv, close from
+	 * nl_close) for this op.  Non-netlink calls are accumulated
+	 * in cctx->direct_calls and published below.
+	 */
+	parent_gctx.nl.caller_op = CHILD_OP_L2TP_IFNAME_RACE;
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
@@ -660,10 +697,18 @@ static int l2tp_ifname_race_in_ns(void *arg)
 	for (i = 0; i < outer_iters; i++) {
 		if (budget_elapsed_ns(&t_outer, L2TP_WALL_CAP_NS))
 			break;
-		iter_one(&parent_gctx);
+		iter_one(&parent_gctx, &cctx->direct_calls);
 	}
 
+	/* genl_close() → nl_close() publishes the netlink-layer tally
+	 * (socket + bind + setsockopt + per-message sendmsg/recv + close)
+	 * via childop_direct_syscalls_add(CHILD_OP_L2TP_IFNAME_RACE, ...).
+	 * The non-netlink portion (open_tunnel_udp, fork, waitpid, close)
+	 * is published in the separate add below.  The two are additive
+	 * on the same stats slot and do not overlap. */
 	genl_close(&parent_gctx);
+	if (valid_op)
+		childop_direct_syscalls_add(op, cctx->direct_calls);
 	return 0;
 }
 
