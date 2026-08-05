@@ -21,8 +21,17 @@ enum exit_reasons {
 	EXIT_TIMED_OUT = 17,
 	EXIT_USER_REQUEST = 18,
 	EXIT_EPOCH_DONE = 19,
+	/*
+	 * Too many D-state child slots quarantined: the kernel failed to
+	 * release unkillable tasks within the timeout on enough slots that
+	 * continued fuzzing with a depleted fleet is not useful.  Distinct
+	 * from EXIT_KERNEL_TAINTED (taint-bit detection) — this fires on
+	 * slot exhaustion caused by D-state accumulation even when no taint
+	 * bit has been set.
+	 */
+	EXIT_KERNEL_STUCK = 20,
 
-	NUM_EXIT_REASONS = 20
+	NUM_EXIT_REASONS = 21
 };
 
 static inline const char * decode_exit(enum exit_reasons reason)
@@ -48,6 +57,7 @@ static inline const char * decode_exit(enum exit_reasons reason)
 		"timed out waiting for children.",
 		"user requested exit.",
 		"epoch completed.",
+		"kernel stuck: too many D-state slots quarantined.",
 	};
 	if ((unsigned int)reason >= NUM_EXIT_REASONS)
 		return "Unknown exit reason";

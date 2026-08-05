@@ -59,6 +59,7 @@ static const struct stat_field zombie_slots_fields[] = {
 	STAT_FIELD_JSON_SUB(zombie_reaper, slots_pending, "pending"),
 	STAT_FIELD_JSON_SUB(zombie_reaper, reaped, "reaped"),
 	STAT_FIELD_JSON_SUB(zombie_reaper, timed_out, "timed_out"),
+	STAT_FIELD_JSON_SUB(zombie_reaper, quarantined, "quarantined"),
 };
 
 const struct stat_category zombie_slots_category =

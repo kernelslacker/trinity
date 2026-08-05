@@ -261,6 +261,7 @@ stats	object
     stats.zombie_slots.pending	u64
     stats.zombie_slots.reaped	u64
     stats.zombie_slots.timed_out	u64
+    stats.zombie_slots.quarantined	u64
   stats.corruption	object
     stats.corruption.fd_event_ring_noncanon	u64
     stats.corruption.fd_event_ring_canary	u64

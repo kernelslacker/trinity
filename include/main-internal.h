@@ -21,6 +21,7 @@
 extern int *pidstatfiles;
 extern pid_t *zombie_pids;
 extern time_t *zombie_since;
+extern bool *zombie_quarantined;
 extern time_t *spawn_times;
 
 /* Updated by check_children_progressing(), read by print_stats. */
