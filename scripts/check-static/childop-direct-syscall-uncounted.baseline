@@ -62,3 +62,21 @@ FORK_UNCOUNTED:childops/net/espintcp-coalesce-churn.c#noing_helper # fork-child 
 FORK_UNCOUNTED:childops/net/ipv6-pmtu-teardown-race.c#worker_ptb # socket+sendto+close loop; shm-write tally not yet wired in fork worker
 FORK_UNCOUNTED:childops/recipe/supervisor.c#cgroup_kill_inner # open+write+close+prctl before _exit; parent accounts separately
 FORK_UNCOUNTED:childops/recipe/supervisor.c#seccomp_listener_inner # trinity_raw_syscall(__NR_uname) before _exit; parent accounts separately
+# Newly surfaced by extended fork-worker detection (t439): these workers use
+# __attribute__((noreturn)) on the same line as the static void signature, or
+# terminate via syscall(__NR_exit) rather than bare _exit(), making them
+# invisible to the previous _exit()-only predicate. All files are wired at
+# the op-body level; the fork-child raw-syscall budget is not yet propagated
+# back into the parent's direct_calls tally. Wiring is a separate concern.
+FORK_UNCOUNTED:childops/fs/statmount-idmap-overflow.c#carrier_child # static __attribute__((noreturn)) void (noreturn+static on same line); socket/setsockopt in carrier userns setup; parent tally wiring needed
+FORK_UNCOUNTED:childops/misc/sysv-shm-orphan-race.c#sysv_shm_originator_main # noreturn preceding line + syscall(__NR_exit,0); SysV shm orphan race loop; parent tally wiring needed
+FORK_UNCOUNTED:childops/misc/sysv-shm-orphan-race.c#sysv_shm_attacher_main # noreturn preceding line + syscall(__NR_exit,0); SysV shm attach race loop; parent tally wiring needed
+FORK_UNCOUNTED:childops/net/af-unix-peek-race.c#af_unix_peek_sibling_main # noreturn preceding line + syscall(__NR_exit,0); AF_UNIX peek-race sibling; parent tally wiring needed
+FORK_UNCOUNTED:childops/net/af-unix-scm-rights-gc.c#af_unix_sibling_main # motivating case for this commit: noreturn preceding line + syscall(__NR_exit,0); AF_UNIX gc-race sibling; parent tally wiring needed
+FORK_UNCOUNTED:childops/net/inet-listener-rehash-race.c#twseed_worker # static __attribute__((noreturn)) void (same line); _exit(); inet listener rehash tw-seed worker; parent tally wiring needed
+FORK_UNCOUNTED:childops/net/inet-listener-rehash-race.c#churn_worker # static __attribute__((noreturn)) void (same line); _exit(); inet listener rehash churn worker; parent tally wiring needed
+FORK_UNCOUNTED:childops/net/inet-listener-rehash-race.c#syn_worker # static __attribute__((noreturn)) void (same line); _exit(); inet listener rehash syn worker; parent tally wiring needed
+FORK_UNCOUNTED:childops/net/inet-listener-rehash-race.c#rehash_worker # static __attribute__((noreturn)) void (same line); _exit(); inet listener rehash worker; parent tally wiring needed
+FORK_UNCOUNTED:childops/net/qrtr-bind-race.c#qrtr_bind_child # static __attribute__((noreturn)) void (same line); _exit(); QRTR bind-race fork child; parent tally wiring needed
+FORK_UNCOUNTED:childops/net/xfrm/pfkey-spd-walk.c#spd_walker_child # static __attribute__((noreturn)) void (same line); _exit(); PF_KEY SPD walker fork child; parent tally wiring needed
+FORK_UNCOUNTED:childops/net/xfrm/pfkey-spd-walk.c#spd_racer_child # static __attribute__((noreturn)) void (same line); _exit(); PF_KEY SPD racer fork child; parent tally wiring needed
