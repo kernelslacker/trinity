@@ -133,14 +133,30 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	} while (!__atomic_compare_exchange_n(&shm->running_childs, &cur, cur - 1,
 					       0, __ATOMIC_RELAXED, __ATOMIC_RELAXED));
 
+	/* Surface any stamped beacon while pids[childno] still holds the
+	 * real pid and the pre-crash ring is still intact.  Both pieces of
+	 * state are read by dump_child_fault_beacon: pids[child->num] builds
+	 * the bug-log path (trinity-bug-<pid>.log) and the pre-crash ring
+	 * supplies the breadcrumb hash in the FAULT! aggregation key.
+	 * Clearing pids[] first produces trinity-bug--1.log (access() fails,
+	 * no_buglog_beacons fires spuriously); resetting the ring first zeros
+	 * head so the breadcrumb loop runs 0 iterations regardless of what
+	 * the child actually executed.  Both bugs affect the exact fast-dying
+	 * class the beacon was added to catch (the reap path is the dominant
+	 * path for that class).  Dump here, before either destructive store,
+	 * and before the .written edge-trigger is zeroed below.
+	 * The bottom-of-main-loop poll also calls dump_child_fault_beacon;
+	 * the fault_beacon_dumped cmpxchg gate makes this call idempotent
+	 * against that path so it is safe even if both paths see the beacon. */
+	dump_child_fault_beacon(child);
+
 	__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
 
-	/* Drop the per-child pre-crash ring's backing pages now that the
-	 * child is fully gone and any forensic dump has already run via
-	 * dump_childdata / pre_crash_ring_dump.  Forensic semantics are
-	 * preserved: reap runs strictly after the child has been waited on,
-	 * and head is reset to 0 so the dumper sees an empty ring until
-	 * the slot's next occupant publishes its first entry. */
+	/* Drop the per-child pre-crash ring's backing pages.  The forensic
+	 * dump above has already consumed the ring contents; reset head to 0
+	 * so the slot's next occupant publishes its first entry into a clean
+	 * ring.  Reap runs strictly after the child has been waited on, so
+	 * no live writer can race this reset. */
 	pre_crash_ring_reset(&child->pre_crash);
 
 	/* Drop the slot's bug-backtrace snapshot too.  The ~520 B struct
@@ -149,17 +165,6 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	 * are unreachable once count=0.  bug_dumped is cleared in
 	 * clean_childdata alongside hit_bug for the fresh occupant. */
 	__atomic_store_n(&child->bug_backtrace.count, 0, __ATOMIC_RELAXED);
-
-	/* Surface any stamped beacon BEFORE the .written edge-trigger is
-	 * zeroed below.  The bottom-of-main-loop poll runs after
-	 * handle_children() has already reaped fast-dying children, so a
-	 * child that re-faults inside the in-handler symboliser (the exact
-	 * silent-death class the beacon was added for) loses the race and
-	 * its forensic is dropped.  Dumping here closes that window; the
-	 * fault_beacon_dumped cmpxchg gate in dump_child_fault_beacon makes
-	 * the call idempotent against the bottom poll and any other future
-	 * caller, so this is safe even if both paths see the beacon. */
-	dump_child_fault_beacon(child);
 
 	/* Same treatment for the signal-time fault beacon: zero the
 	 * .written edge-trigger so a fresh occupant of this slot doesn't
