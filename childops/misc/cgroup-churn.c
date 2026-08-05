@@ -113,6 +113,7 @@ static unsigned long cgroup_churn_seq;
 struct psi_writer_arg {
 	int fd;
 	unsigned int *writes;
+	unsigned long direct_syscalls;	/* write() attempts issued by this thread */
 };
 
 /*
@@ -128,6 +129,11 @@ static void *psi_writer(void *arg)
 {
 	struct psi_writer_arg *a = arg;
 
+	/* Count the write() attempt unconditionally — the syscall is issued
+	 * whether or not it succeeds.  a->writes tracks accepted writes for
+	 * the psi-race stats bucket; a->direct_syscalls feeds the
+	 * direct-syscall tally folded back by the caller after pthread_join. */
+	a->direct_syscalls++;
 	if (write(a->fd, psi_payload, sizeof(psi_payload) - 1) > 0)
 		__atomic_add_fetch(a->writes, 1, __ATOMIC_RELAXED);
 	return NULL;
@@ -154,7 +160,7 @@ static unsigned long cgroup_psi_race(const char *cgroup_path)
 	bool spawned[PSI_RACE_FDS] = { false };
 	unsigned int writes = 0;
 	unsigned int file_idx = rnd_modulo_u32(NR_PSI_FILES);
-	unsigned int i, n_open = 0, n_spawned = 0;
+	unsigned int i, n_open = 0;
 	unsigned long syscalls = 0;
 
 	if (psi_unsupported)
@@ -189,11 +195,10 @@ static unsigned long cgroup_psi_race(const char *cgroup_path)
 	for (i = 0; i < n_open; i++) {
 		args[i].fd = fds[i];
 		args[i].writes = &writes;
+		args[i].direct_syscalls = 0;
 		if (pthread_create(&tids[i], NULL,
-				   psi_writer, &args[i]) == 0) {
+				   psi_writer, &args[i]) == 0)
 			spawned[i] = true;
-			n_spawned++;
-		}
 	}
 
 	/* The race itself: rmdir while writers are mid-pressure_write.
@@ -204,8 +209,10 @@ static unsigned long cgroup_psi_race(const char *cgroup_path)
 	syscalls++;
 
 	for (i = 0; i < n_open; i++) {
-		if (spawned[i])
+		if (spawned[i]) {
 			(void)pthread_join(tids[i], NULL);
+			syscalls += args[i].direct_syscalls;
+		}
 		close(fds[i]);
 		syscalls++;
 	}
@@ -219,12 +226,6 @@ static unsigned long cgroup_psi_race(const char *cgroup_path)
 	__atomic_add_fetch(&shm->stats.cgroup_churn.psi_race_writes,
 			   writes, __ATOMIC_RELAXED);
 
-	/* Each spawned writer thread issues exactly one write() before
-	 * exiting; credit those attempts to the direct-syscall tally
-	 * regardless of whether the write itself was accepted (the
-	 * `writes` counter tracks accepted writes for the psi-race stats
-	 * bucket, which has a different meaning). */
-	syscalls += n_spawned;
 	return syscalls;
 }
 
