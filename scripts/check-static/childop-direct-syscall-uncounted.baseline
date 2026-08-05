@@ -59,7 +59,6 @@ THREAD_UNCOUNTED:childops/misc/cgroup-churn.c#psi_writer
 THREAD_UNCOUNTED:childops/net/bridge-conntrack-churn.c#brct_packet_sender
 THREAD_UNCOUNTED:childops/recipe/net.c#tcp_racer_thread
 FORK_UNCOUNTED:childops/net/espintcp-coalesce-churn.c#noing_helper # fork-child body; syscalls via bump_direct wrapper but not visible to scanner
-FORK_UNCOUNTED:childops/net/ipv6-pmtu-teardown-race.c#worker_ptb # socket+sendto+close loop; shm-write tally not yet wired in fork worker
 FORK_UNCOUNTED:childops/recipe/supervisor.c#cgroup_kill_inner # open+write+close+prctl before _exit; parent accounts separately
 FORK_UNCOUNTED:childops/recipe/supervisor.c#seccomp_listener_inner # trinity_raw_syscall(__NR_uname) before _exit; parent accounts separately
 # Newly surfaced by extended fork-worker detection (t439): these workers use

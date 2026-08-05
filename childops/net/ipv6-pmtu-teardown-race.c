@@ -335,16 +335,18 @@ static void setup_pairs(struct nl_ctx *ctx, char names[V6PMTU_NUM_PAIRS][8])
  * V6PMTU_WORKER_WALL_NS.  Counter bumps land in shared shm directly
  * because the worker shares the trinity mapping.
  */
-static void worker_ptb(void)
+static void worker_ptb(int op_type)
 {
 	int sfd;
 	struct timespec start, now;
 	struct sockaddr_in6 dst;
 	struct icmp6_hdr hdr;
 	unsigned int i = 0;
+	unsigned long direct_calls = 0;
 	static const __u32 mtu_ladder[] = { 576, 1280, 1500, 4096, 9000 };
 
 	sfd = socket(AF_INET6, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_ICMPV6);
+	direct_calls++;  /* socket */
 	if (sfd < 0)
 		_exit(0);
 
@@ -373,6 +375,7 @@ static void worker_ptb(void)
 
 		r = sendto(sfd, &hdr, sizeof(hdr), MSG_DONTWAIT | MSG_NOSIGNAL,
 			   (struct sockaddr *)&dst, sizeof(dst));
+		direct_calls++;  /* sendto */
 		if (r >= 0)
 			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.ptb_sent_ok,
 					   1, __ATOMIC_RELAXED);
@@ -389,6 +392,9 @@ static void worker_ptb(void)
 	}
 
 	(void)close(sfd);
+	direct_calls++;  /* close */
+	if (op_type >= 0 && op_type < NR_CHILD_OP_TYPES)
+		childop_direct_syscalls_add((enum child_op_type)op_type, direct_calls);
 	_exit(0);
 }
 
@@ -512,7 +518,7 @@ static int v6pmtu_iter_setup_network(char names[V6PMTU_NUM_PAIRS][8])
  */
 static int v6pmtu_iter_spawn_workers(char names[V6PMTU_NUM_PAIRS][8],
 				     pid_t *a, pid_t *b,
-				     unsigned long *dc)
+				     unsigned long *dc, int op_type)
 {
 	*a = fork();
 	*dc += 1;  /* fork */
@@ -522,7 +528,7 @@ static int v6pmtu_iter_spawn_workers(char names[V6PMTU_NUM_PAIRS][8],
 		return -1;
 	}
 	if (*a == 0)
-		worker_ptb();
+		worker_ptb(op_type);
 
 	*b = fork();
 	*dc += 1;  /* fork */
@@ -605,7 +611,7 @@ static int iter_one_in_ns(void *arg)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op_type],
 				   1, __ATOMIC_RELAXED);
 
-	if (v6pmtu_iter_spawn_workers(names, &a, &b, &ctx->direct_calls) != 0)
+	if (v6pmtu_iter_spawn_workers(names, &a, &b, &ctx->direct_calls, ctx->op_type) != 0)
 		return 0;
 
 	if (valid_op)
