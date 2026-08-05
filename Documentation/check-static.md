@@ -221,6 +221,13 @@ update this section to match `ls scripts/check-static/*.sh`.)
   caller that publishes a NULL pointer into an object's `filename` /
   `name` field would produce a `strlen` / `free` NULL-deref in the
   dump or destructor path, far from the allocation site.
+- `no-time-subtraction`: reject duration arithmetic of the form
+  `time(NULL) - start` or `end - time(NULL)` in `*.c`/`*.h`.
+  A wall-clock duration goes negative (or wraps to an enormous
+  unsigned value) when NTP steps the clock backwards; all runtime
+  timing must use `mono_ns()` / `CLOCK_MONOTONIC`.  Comment lines
+  are stripped so the existing hazard note in
+  `syscalls/timer/timer_settime.c` does not false-positive.
 - `objpool-array-gen`: enforce the `array_generation` invariant on
   `struct objhead` in `include/objects.h` and `objects/registry*.c`
   -- (i) the field exists, (ii) `get_random_object()` routes its
