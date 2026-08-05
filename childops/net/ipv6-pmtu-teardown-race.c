@@ -443,8 +443,13 @@ static void worker_dellink(char names[V6PMTU_NUM_PAIRS][8])
 /*
  * Reap one worker, retrying through EINTR.  After V6PMTU_PARENT_WALL_NS
  * a SIGKILL is sent so a wedged worker can't outrun the trinity SIGALRM.
+ *
+ * Direct-syscall sites (accumulated into *dc):
+ *   waitpid_eintr(WNOHANG) per poll iteration   (+1 per loop)
+ *   kill + waitpid_eintr(0) on deadline path     (+2 when fired)
  */
-static void reap_with_deadline(pid_t pid, struct timespec *deadline)
+static void reap_with_deadline(pid_t pid, struct timespec *deadline,
+				unsigned long *dc)
 {
 	for (;;) {
 		struct timespec now;
@@ -452,6 +457,7 @@ static void reap_with_deadline(pid_t pid, struct timespec *deadline)
 		pid_t r;
 
 		r = waitpid_eintr(pid, &status, WNOHANG);
+		*dc += 1;  /* waitpid */
 		if (r == pid)
 			return;
 		if (r < 0 && errno != ECHILD)
@@ -462,7 +468,9 @@ static void reap_with_deadline(pid_t pid, struct timespec *deadline)
 		     (now.tv_sec == deadline->tv_sec &&
 		      now.tv_nsec >= deadline->tv_nsec))) {
 			(void)kill(pid, SIGKILL);
+			*dc += 1;  /* kill */
 			(void)waitpid_eintr(pid, &status, 0);
+			*dc += 1;  /* waitpid */
 			return;
 		}
 		(void)usleep(2000);
@@ -503,9 +511,11 @@ static int v6pmtu_iter_setup_network(char names[V6PMTU_NUM_PAIRS][8])
  * so the caller's failure bail doesn't leak a stray child.
  */
 static int v6pmtu_iter_spawn_workers(char names[V6PMTU_NUM_PAIRS][8],
-				     pid_t *a, pid_t *b)
+				     pid_t *a, pid_t *b,
+				     unsigned long *dc)
 {
 	*a = fork();
+	*dc += 1;  /* fork */
 	if (*a < 0) {
 		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -515,9 +525,12 @@ static int v6pmtu_iter_spawn_workers(char names[V6PMTU_NUM_PAIRS][8],
 		worker_ptb();
 
 	*b = fork();
+	*dc += 1;  /* fork */
 	if (*b < 0) {
 		(void)kill(*a, SIGKILL);
+		*dc += 1;  /* kill */
 		(void)waitpid_eintr(*a, NULL, 0);
+		*dc += 1;  /* waitpid */
 		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -533,7 +546,7 @@ static int v6pmtu_iter_spawn_workers(char names[V6PMTU_NUM_PAIRS][8],
  * reap both workers under it.  reap_with_deadline SIGKILLs a laggard
  * past the deadline so a wedged worker can't outrun trinity's SIGALRM.
  */
-static void v6pmtu_iter_reap_workers(pid_t a, pid_t b)
+static void v6pmtu_iter_reap_workers(pid_t a, pid_t b, unsigned long *dc)
 {
 	struct timespec deadline;
 
@@ -547,16 +560,20 @@ static void v6pmtu_iter_reap_workers(pid_t a, pid_t b)
 		deadline.tv_sec  += 1;
 	}
 
-	reap_with_deadline(a, &deadline);
-	reap_with_deadline(b, &deadline);
+	reap_with_deadline(a, &deadline, dc);
+	reap_with_deadline(b, &deadline, dc);
 }
 
 /*
  * Per-invocation state handed to the in-ns callback so iter-time stats
- * writes keep landing against the right childop slot.
+ * writes keep landing against the right childop slot.  direct_calls
+ * accumulates the non-netlink direct syscall count across all outer
+ * iterations; published once via childop_direct_syscalls_add() at the
+ * end of iter_one_in_ns().
  */
 struct ipv6_pmtu_race_ctx {
-	int op_type;
+	int            op_type;
+	unsigned long  direct_calls;
 };
 
 /*
@@ -588,17 +605,20 @@ static int iter_one_in_ns(void *arg)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op_type],
 				   1, __ATOMIC_RELAXED);
 
-	if (v6pmtu_iter_spawn_workers(names, &a, &b) != 0)
+	if (v6pmtu_iter_spawn_workers(names, &a, &b, &ctx->direct_calls) != 0)
 		return 0;
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op_type],
 				   1, __ATOMIC_RELAXED);
 
-	v6pmtu_iter_reap_workers(a, b);
+	v6pmtu_iter_reap_workers(a, b, &ctx->direct_calls);
 
 	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race.completed_ok,
 			   1, __ATOMIC_RELAXED);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op_type, ctx->direct_calls);
 	return 0;
 }
 
