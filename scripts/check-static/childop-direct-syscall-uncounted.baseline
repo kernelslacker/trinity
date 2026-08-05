@@ -30,10 +30,7 @@ UNCOUNTED:childops/net/esp-crafted-rx-frag.c
 UNCOUNTED:childops/net/esp-crafted-rx-stacked.c
 UNCOUNTED:childops/net/geneve-rx.c
 UNCOUNTED:childops/net/ip_gre-churn.c
-UNCOUNTED:childops/net/ipv6-pmtu-teardown-race.c
-UNCOUNTED:childops/net/l2tp-ifname-race.c
 UNCOUNTED:childops/net/netfilter/nfnl-util.c
-UNCOUNTED:childops/net/netfilter/nftables/churn.c
 UNCOUNTED:childops/net/netfilter/nftables/fwd.c
 UNCOUNTED:childops/net/netfilter/nftables/l4frag.c
 UNCOUNTED:childops/net/netlink/genl-util.c
@@ -42,7 +39,6 @@ UNCOUNTED:childops/net/psp-key-rotate-devlink-port.c
 UNCOUNTED:childops/net/psp-key-rotate-lifecycle.c
 UNCOUNTED:childops/net/sctp-chunk-rx.c
 UNCOUNTED:childops/net/veth-asymmetric-xdp.c
-UNCOUNTED:childops/net/vrf-fib-churn.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-compat-sweep.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-pfkey.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-traffic.c
