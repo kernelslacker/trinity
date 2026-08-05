@@ -6,6 +6,7 @@
 #ifdef USE_BACKTRACE
 #include <execinfo.h>
 #endif
+#include <errno.h>		// errno for open() failure reporting in classify_child_buglog
 #include <signal.h>		// SIGSEGV / SIGABRT / SIGBUS / SIGILL for fault_beacon dump
 #include <stdbool.h>
 #include <stdarg.h>
@@ -253,34 +254,56 @@ void dump_child_bug(struct childdata *child)
 
 /*
  * Beacon-capture accounting.  Written only from dump_child_fault_beacon()
- * (parent main-loop context, no concurrent writers), read from
- * print_stats() and finalize_and_exit() via beacon_loss_get_counts().
+ * and classify_child_buglog() (parent main-loop / reap context, no
+ * concurrent writers), read from print_stats() and finalize_and_exit()
+ * via beacon_loss_get_counts().
  *
- * total_beacon_dumps -- incremented once per FAULT! beacon surfaced.
- * no_buglog_beacons  -- beacon fired but no per-pid bug log file present
- *                       (open() failed in child or child died pre-stamp).
- * partial_buglog_beacons -- log file present but BUGLOG-COMPLETE sentinel
- *                           absent (child re-faulted during handler writes).
+ * total_beacon_dumps      -- incremented once per FAULT! beacon surfaced.
+ * no_buglog_beacons       -- beacon fired but no per-pid bug log file
+ *                            present (open() failed in child or child died
+ *                            before reaching open_buglog_and_drain_stderr).
+ * partial_buglog_beacons  -- log file present but BUGLOG-COMPLETE sentinel
+ *                            absent; child re-faulted mid-handler.
+ *                            Classified only after the child is reaped so
+ *                            the per-tick poll path cannot produce false
+ *                            positives (child publishes the beacon before
+ *                            writing the log, so a mid-write check yields
+ *                            a spurious partial for an otherwise-complete
+ *                            log).  Partial counts are therefore a strict
+ *                            lower bound: false negatives are possible
+ *                            (unlikely; would require the child to finish
+ *                            writing between reap and classify_child_buglog),
+ *                            false positives are not.
+ * unreadable_buglog_beacons -- log file present but open() or read() on
+ *                              the parent side failed, or read returned 0
+ *                              bytes (zero-byte log, e.g. child SIGKILLed
+ *                              between open() and first write()).  Tracked
+ *                              separately from partial to keep the
+ *                              re-faulted-mid-write signal clean.
  */
 static unsigned int total_beacon_dumps;
 static unsigned int no_buglog_beacons;
 static unsigned int partial_buglog_beacons;
+static unsigned int unreadable_buglog_beacons;
 
 /*
- * Return the three beacon-capture loss counters accumulated across the run.
+ * Return the four beacon-capture counters accumulated across the run.
  * Called from print_stats() and finalize_and_exit() to surface numbers in
  * the run summary.  Safe to call from any parent context.
  */
 void beacon_loss_get_counts(unsigned int *out_total,
 			    unsigned int *out_no_log,
-			    unsigned int *out_partial)
+			    unsigned int *out_partial,
+			    unsigned int *out_unreadable)
 {
 	if (out_total)
-		*out_total  = total_beacon_dumps;
+		*out_total       = total_beacon_dumps;
 	if (out_no_log)
-		*out_no_log = no_buglog_beacons;
+		*out_no_log      = no_buglog_beacons;
 	if (out_partial)
-		*out_partial = partial_buglog_beacons;
+		*out_partial     = partial_buglog_beacons;
+	if (out_unreadable)
+		*out_unreadable  = unreadable_buglog_beacons;
 }
 
 void dump_child_fault_beacon(struct childdata *child)
@@ -405,71 +428,122 @@ void dump_child_fault_beacon(struct childdata *child)
 	}
 
 	/*
-	 * Beacon-capture accounting.  Three classes of outcome:
-	 *
-	 *  no_log:   access() shows no bug log file -- child's
-	 *            open_buglog_and_drain_stderr open() failed (child wrote
-	 *            a BUGLOG-FAIL marker into the memfd) or the child died
-	 *            before reaching the buglog open call.
-	 *
-	 *  partial:  log file is present but the BUGLOG-COMPLETE sentinel is
-	 *            absent from its tail -- the child re-faulted inside the
-	 *            in-handler write stages before writing the sentinel.
-	 *            A narrow race exists on the per-tick poll path (child may
-	 *            still be writing); partial counts are therefore a lower
-	 *            bound: false negatives are possible, false positives are not.
-	 *
-	 *  (complete: total - no_log - partial -- implicitly).
-	 *
-	 * Counters are module-scope (not function-local) so beacon_loss_get_counts()
-	 * can surface them in the run summary.  access() and open()/read() are
-	 * safe here (parent context, not a signal handler).
+	 * Count this beacon.  Log-file classification (no_log / partial /
+	 * unreadable) is deferred to classify_child_buglog(), called from
+	 * the reap path after the child has fully exited.  Deferring
+	 * avoids false positives on this per-tick poll path: the child
+	 * publishes the beacon *before* opening or writing the log
+	 * (health/signals.c stamp_fault_beacon precedes
+	 * open_buglog_and_drain_stderr), so a mid-write check here would
+	 * spuriously charge partial for an otherwise-complete log.
 	 */
+	total_beacon_dumps++;
+}
+
+/*
+ * Classify the on-disk bug log for a child whose beacon was surfaced by
+ * dump_child_fault_beacon().  Must be called from the reap path -- after
+ * the child has exited and before pids[child->num] is cleared -- so that
+ * the classification sees the final state of the log file rather than a
+ * snapshot mid-write.
+ *
+ * Four outcomes, tracked as distinct counters:
+ *
+ *  no_log:      access() shows no trinity-bug-<pid>.log -- child's
+ *               open_buglog_and_drain_stderr open() failed, or the child
+ *               died before reaching the buglog open call.
+ *
+ *  unreadable:  log file is present but parent open() or read() failed,
+ *               or read() returned 0 bytes (zero-byte log, e.g. child
+ *               SIGKILLed between open() and first write()).  Worst-case
+ *               truncation is the most dangerous outcome; tracked
+ *               separately from partial to keep the re-faulted-mid-write
+ *               signal clean.
+ *
+ *  partial:     log file is present and readable, but the BUGLOG-COMPLETE
+ *               sentinel is absent from its tail.  Child re-faulted inside
+ *               the in-handler write stages before writing the sentinel.
+ *
+ *  complete:    implicit -- total_beacon_dumps - no_log - unreadable
+ *               - partial.
+ *
+ * access() and open()/read() are safe here (parent context).
+ */
+void classify_child_buglog(struct childdata *child)
+{
+	char logpath[PATH_MAX + 64];
+	int pn;
+
+	if (child == NULL)
+		return;
+	if (__atomic_load_n(&child->fault_beacon.written, __ATOMIC_ACQUIRE) == 0U)
+		return;
+
+	pn = snprintf(logpath, sizeof(logpath), "%s/trinity-bug-%d.log",
+		      trinity_tmpdir_abs(), (int)pids[child->num]);
+	if (pn <= 0 || (size_t)pn >= sizeof(logpath))
+		return;
+
+	if (access(logpath, F_OK) != 0) {
+		/* No log file at all. */
+		no_buglog_beacons++;
+		outputerr("FAULT!:  (no bug log at %s -- open() failed in child "
+			  "or pre-stamp death; "
+			  "no_log: %u/%u)\n",
+			  logpath,
+			  no_buglog_beacons,
+			  total_beacon_dumps);
+		return;
+	}
+
+	/* Log file present: open and read the tail for the sentinel. */
 	{
-		char logpath[PATH_MAX + 64];
-		int pn;
+		int tfd = open(logpath, O_RDONLY | O_CLOEXEC);
 
-		total_beacon_dumps++;
+		if (tfd < 0) {
+			/* Parent-side open() failure. */
+			unreadable_buglog_beacons++;
+			outputerr("FAULT!:  (unreadable bug log at %s -- "
+				  "parent open() failed (errno %d); "
+				  "unreadable: %u/%u)\n",
+				  logpath, errno,
+				  unreadable_buglog_beacons,
+				  total_beacon_dumps);
+		} else {
+			enum { TAIL_BYTES = 64 };
+			char tail[TAIL_BYTES];
+			ssize_t nr;
 
-		pn = snprintf(logpath, sizeof(logpath), "%s/trinity-bug-%d.log",
-			      trinity_tmpdir_abs(), (int)pids[child->num]);
-		if (pn > 0 && (size_t)pn < sizeof(logpath)) {
-			if (access(logpath, F_OK) != 0) {
-				/* No log file at all. */
-				no_buglog_beacons++;
-				outputerr("FAULT!:  (no bug log at %s -- open() failed in child "
-					  "or pre-stamp death; "
-					  "beacon-without-log: %u/%u)\n",
+			if (lseek(tfd, -(off_t)TAIL_BYTES, SEEK_END) < 0)
+				(void)lseek(tfd, 0, SEEK_SET);
+			nr = read(tfd, tail, sizeof(tail));
+			close(tfd);
+
+			if (nr <= 0) {
+				/*
+				 * Zero-byte log (nr == 0): child was killed
+				 * between open() and first write() -- the
+				 * worst truncation class, not a complete log.
+				 * Read error (nr < 0): treat identically.
+				 */
+				unreadable_buglog_beacons++;
+				outputerr("FAULT!:  (unreadable bug log at %s -- "
+					  "%s; "
+					  "unreadable: %u/%u)\n",
 					  logpath,
-					  no_buglog_beacons,
+					  (nr == 0) ? "zero-byte log (killed before first write)"
+						    : "read() error",
+					  unreadable_buglog_beacons,
 					  total_beacon_dumps);
-			} else {
-				/* Log file present: check for BUGLOG-COMPLETE at tail. */
-				int tfd = open(logpath, O_RDONLY | O_CLOEXEC);
-
-				if (tfd >= 0) {
-					enum { TAIL_BYTES = 64 };
-					char tail[TAIL_BYTES];
-					ssize_t nr;
-
-					if (lseek(tfd, -(off_t)TAIL_BYTES, SEEK_END) < 0)
-						(void)lseek(tfd, 0, SEEK_SET);
-					nr = read(tfd, tail, sizeof(tail));
-					close(tfd);
-
-					if (nr > 0 &&
-					    memmem(tail, (size_t)nr,
-						   "BUGLOG-COMPLETE",
-						   15) == NULL) {
-						partial_buglog_beacons++;
-						outputerr("FAULT!:  (partial bug log -- "
-							  "BUGLOG-COMPLETE absent; "
-							  "handler likely re-faulted; "
-							  "partial: %u/%u)\n",
-							  partial_buglog_beacons,
-							  total_beacon_dumps);
-					}
-				}
+			} else if (memmem(tail, (size_t)nr,
+					  "BUGLOG-COMPLETE", 15) == NULL) {
+				partial_buglog_beacons++;
+				outputerr("FAULT!:  (partial bug log -- "
+					  "BUGLOG-COMPLETE absent; "
+					  "handler likely re-faulted; "
+					  "partial: %u/%u)\n",
+					  partial_buglog_beacons,
+					  total_beacon_dumps);
 			}
 		}
 	}
