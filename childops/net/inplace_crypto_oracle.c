@@ -347,7 +347,7 @@ static int try_espinudp(int file_fd, unsigned long *n_calls)
 	int udp, v = UDP_ENCAP_ESPINUDP;
 	unsigned char rxbuf[256];
 
-	udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+	udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, IPPROTO_UDP);
 	(*n_calls)++;
 	if (udp < 0) {
 		if (errno_unsupported(errno))
@@ -385,7 +385,7 @@ static int try_af_rxrpc(int file_fd, unsigned long *n_calls)
 	int level = 1, fd;
 	long rc;
 
-	fd = socket(AF_RXRPC, SOCK_DGRAM | SOCK_CLOEXEC, PF_INET);
+	fd = socket(AF_RXRPC, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, PF_INET);
 	(*n_calls)++;
 	if (fd < 0) {
 		if (errno_unsupported(errno))
@@ -439,7 +439,7 @@ static int try_af_alg(int file_fd, unsigned long *n_calls)
 	unsigned char key[16], rxbuf[256];
 	int parent_fd, child_fd;
 
-	parent_fd = socket(AF_ALG, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
+	parent_fd = socket(AF_ALG, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 	(*n_calls)++;
 	if (parent_fd < 0) {
 		if (errno_unsupported(errno))
@@ -461,7 +461,7 @@ static int try_af_alg(int file_fd, unsigned long *n_calls)
 	(*n_calls)++;
 	generate_rand_bytes(key, sizeof(key));
 	(void)setsockopt(parent_fd, SOL_ALG, ALG_SET_KEY, key, sizeof(key));
-	child_fd = accept4(parent_fd, NULL, NULL, SOCK_CLOEXEC);
+	child_fd = accept4(parent_fd, NULL, NULL, SOCK_CLOEXEC | SOCK_NONBLOCK);
 	(*n_calls) += 2;
 	if (child_fd < 0) {
 		int saved_errno = errno;
@@ -538,7 +538,7 @@ static int open_loopback_pair(pid_t *out_pid, unsigned long *n_calls)
 		close(listener);
 		_exit(0);
 	}
-	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 	close(listener);
 	(*n_calls) += 2;
 	if (cli < 0)
@@ -658,7 +658,7 @@ static int try_macsec(int file_fd, unsigned long *n_calls)
 
 static int try_bluetooth(int file_fd, unsigned long *n_calls)
 {
-	int s = socket(AF_BLUETOOTH, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
+	int s = socket(AF_BLUETOOTH, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 
 	(void)file_fd;
 	(*n_calls)++;
@@ -693,7 +693,7 @@ static int try_mptcp_ao(int file_fd, unsigned long *n_calls)
 	unsigned char key[16];
 	int s;
 
-	s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
+	s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, IPPROTO_MPTCP);
 	(*n_calls)++;
 	if (s < 0) {
 		if (errno_unsupported(errno))
