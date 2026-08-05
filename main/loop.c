@@ -499,6 +499,7 @@ void main_loop(void)
 		pidstatfiles = zmalloc(max_children * sizeof(int));
 		zombie_pids = zmalloc(max_children * sizeof(pid_t));
 		zombie_since = zmalloc(max_children * sizeof(time_t));
+		zombie_quarantined = zmalloc(max_children * sizeof(bool));
 		spawn_times = zmalloc(max_children * sizeof(time_t));
 		for_each_child(i) {
 			pidstatfiles[i] = -1;
@@ -676,6 +677,7 @@ void reset_epoch_state(void)
 		}
 		zombie_pids[i] = EMPTY_PIDSLOT;
 		zombie_since[i] = 0;
+		zombie_quarantined[i] = false;
 		spawn_times[i] = 0;
 	}
 

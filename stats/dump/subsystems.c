@@ -256,10 +256,12 @@ static void dump_stats_render_iouring(void)
 static void dump_stats_render_zombie_slots(void)
 {
 	if (shm->stats.zombie_reaper.reaped || shm->stats.zombie_reaper.timed_out ||
-	    shm->stats.zombie_reaper.slots_pending) {
-		stat_row("zombie_slots", "pending",   shm->stats.zombie_reaper.slots_pending);
-		stat_row("zombie_slots", "reaped",    shm->stats.zombie_reaper.reaped);
-		stat_row("zombie_slots", "timed_out", shm->stats.zombie_reaper.timed_out);
+	    shm->stats.zombie_reaper.slots_pending ||
+	    shm->stats.zombie_reaper.quarantined) {
+		stat_row("zombie_slots", "pending",     shm->stats.zombie_reaper.slots_pending);
+		stat_row("zombie_slots", "reaped",      shm->stats.zombie_reaper.reaped);
+		stat_row("zombie_slots", "timed_out",   shm->stats.zombie_reaper.timed_out);
+		stat_row("zombie_slots", "quarantined", shm->stats.zombie_reaper.quarantined);
 	}
 }
 

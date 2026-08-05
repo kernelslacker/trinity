@@ -15,7 +15,16 @@
 struct zombie_reaper_stats {
 	unsigned long slots_pending;	/* current count (gauge) */
 	unsigned long reaped;		/* total successfully reaped */
-	unsigned long timed_out;	/* force-reused after timeout */
+	unsigned long timed_out;	/* timed out waiting for kernel release */
+	/*
+	 * Slots permanently removed from the active fleet because the
+	 * kernel did not release the D-state task within
+	 * ZOMBIE_REAP_TIMEOUT_SEC.  These are never recycled; the fleet
+	 * shrinks by one per quarantined slot for the rest of the run.
+	 * When this counter reaches ZOMBIE_QUARANTINE_FATAL_THRESHOLD
+	 * the run is terminated with EXIT_KERNEL_STUCK.
+	 */
+	unsigned long quarantined;
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_ZOMBIE_REAPER_H */

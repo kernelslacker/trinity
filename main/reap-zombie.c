@@ -41,12 +41,21 @@
  */
 pid_t *zombie_pids;
 time_t *zombie_since;
+bool *zombie_quarantined;
 
 /* If the kernel still hasn't released a zombie task after this long,
- * something is badly wrong (likely a kernel bug worth investigating).
- * We log loudly and reuse the slot anyway, accepting a possible
- * one-shot corruption in exchange for not stalling fuzzing forever. */
+ * the slot is quarantined: removed from the active fleet for the rest
+ * of the run rather than recycled.  Recycling without proof of task
+ * teardown risks the ghost-producer corruption documented above. */
 #define ZOMBIE_REAP_TIMEOUT_SEC 300
+
+/*
+ * Number of concurrently-quarantined slots that triggers
+ * EXIT_KERNEL_STUCK.  Each quarantine represents one slot permanently
+ * removed from the fleet; past this threshold the depleted fleet is
+ * not useful and operator attention is warranted.
+ */
+#define ZOMBIE_QUARANTINE_FATAL_THRESHOLD 4
 
 /*
  * Move a slot into zombie-pending state.  The child is unkillable
@@ -145,8 +154,11 @@ void register_zombie_slot(int childno, pid_t pid)
  * waitpid(WNOHANG) returns the pid once the kernel has fully torn down
  * the task — at that point no further writes to the slot are possible
  * and we can safely spawn a replacement.  If the wait times out
- * (ZOMBIE_REAP_TIMEOUT_SEC), log loudly and reuse the slot anyway:
- * indefinite throughput loss is worse than one possible corruption.
+ * (ZOMBIE_REAP_TIMEOUT_SEC) WITHOUT proof of task teardown, the slot
+ * is quarantined: removed from the active fleet permanently so the
+ * D-state task's late writes cannot corrupt a replacement child's
+ * childdata.  Once ZOMBIE_QUARANTINE_FATAL_THRESHOLD slots are
+ * quarantined the run terminates with EXIT_KERNEL_STUCK.
  */
 void process_zombie_pending(void)
 {
@@ -192,6 +204,7 @@ void process_zombie_pending(void)
 				__atomic_load_n(&children[i], __ATOMIC_ACQUIRE);
 			bool from_bug = (child != NULL &&
 				__atomic_load_n(&child->hit_bug, __ATOMIC_ACQUIRE));
+			unsigned long qcount;
 
 			if (from_bug) {
 				output(0, "child %d zombie (pid %u) still pending "
@@ -205,16 +218,78 @@ void process_zombie_pending(void)
 					child->bug_lineno);
 			} else {
 				output(0, "child %d zombie (pid %u) still pending "
-					"after %d seconds — forcing slot reuse. "
-					"Possible causes: a D-state task in the "
-					"kernel finishing a cancelled syscall, or "
-					"a real kernel bug holding the task table "
-					"entry.\n",
+					"after %d seconds — D-state task not "
+					"released; quarantining slot.\n",
 					i, pid, ZOMBIE_REAP_TIMEOUT_SEC);
 			}
 			__atomic_add_fetch(&shm->stats.zombie_reaper.timed_out, 1,
 					   __ATOMIC_RELAXED);
-		} else {
+
+			/* Clear slot bookkeeping before quarantine. */
+			zombie_pids[i] = EMPTY_PIDSLOT;
+			zombie_since[i] = 0;
+			__atomic_sub_fetch(
+				&shm->stats.zombie_reaper.slots_pending,
+				1, __ATOMIC_RELAXED);
+
+			/*
+			 * Quarantine: do NOT recycle the slot.  The kernel
+			 * has not released the D-state task; handing the
+			 * slot to a replacement child allows the old task's
+			 * late writes to corrupt the new child's childdata
+			 * (tp, fd_event_ring head/tail, syscall record).
+			 * Shrink the effective fleet and keep this slot
+			 * permanently out of service for the rest of the run.
+			 *
+			 * Skip classify and sysv drains: the old task may
+			 * still be live inside the kernel.  Classifying
+			 * risks a torn bug-log read; draining sysv resources
+			 * risks racing the task's own cleanup path.  Count
+			 * beacon loss instead of skipping silently.
+			 */
+			if (child != NULL &&
+			    __atomic_load_n(&child->fault_beacon.written,
+					    __ATOMIC_RELAXED))
+				beacon_loss_count_skipped_timed_out();
+
+			zombie_quarantined[i] = true;
+			qcount = __atomic_add_fetch(
+					&shm->stats.zombie_reaper.quarantined,
+					1, __ATOMIC_RELAXED);
+			output(0, "child %d (pid %u) slot quarantined "
+				"(%lu total); continuing with smaller fleet.\n",
+				i, pid, qcount);
+			if (qcount >= ZOMBIE_QUARANTINE_FATAL_THRESHOLD) {
+				output(0, "kernel-stuck: %lu D-state slots "
+					"quarantined (threshold %d exceeded)"
+					" — stopping.\n",
+					qcount,
+					ZOMBIE_QUARANTINE_FATAL_THRESHOLD);
+				panic(EXIT_KERNEL_STUCK);
+			}
+			continue;
+		}
+
+		/* Confirmed dead: waitpid returned the pid or ECHILD.
+		 * reap_child() at the deferral point ran with
+		 * child_dead=false; finish the work it skipped.
+		 *
+		 * classify_child_buglog: pid is passed explicitly from the
+		 * local variable captured above; pids[i] is already
+		 * EMPTY_PIDSLOT (cleared by reap_child at the deferral
+		 * point) so the function cannot reconstruct it from
+		 * pids[child->num] (8cce4ee57d0e moved bug-log path
+		 * building into this function for exactly this reason).
+		 * reap_child() did NOT zero fault_beacon.written on the
+		 * child_dead=false path (that store is now gated), so
+		 * classify_child_buglog can read the beacon here.
+		 *
+		 * shm/msg/sem drains: child_dead=false deferred these to
+		 * avoid racing a still-alive child registering new ids.
+		 * waitpid above confirms death; drain now before
+		 * replace_child recycles the slot and clean_childdata()
+		 * zeroes the rings. */
+		{
 			long elapsed = (long)(now.tv_sec - zombie_since[i]);
 			/* Only report when the kernel actually held the
 			 * zombie around long enough to be operationally
@@ -236,39 +311,7 @@ void process_zombie_pending(void)
 		__atomic_sub_fetch(&shm->stats.zombie_reaper.slots_pending, 1,
 				   __ATOMIC_RELAXED);
 
-		/* Deferred child is now confirmed gone (waitpid above) or
-		 * we gave up waiting (timed_out).  reap_child() at the
-		 * deferral point ran with child_dead=false; finish the work
-		 * it skipped.
-		 *
-		 * classify_child_buglog: pid is passed explicitly from the
-		 * local variable captured above; pids[i] is already
-		 * EMPTY_PIDSLOT (cleared by reap_child at the deferral
-		 * point) so the function cannot reconstruct it from
-		 * pids[child->num] (8cce4ee57d0e moved bug-log path
-		 * building into this function for exactly this reason).
-		 * reap_child() did NOT zero fault_beacon.written on the
-		 * child_dead=false path (that store is now gated), so
-		 * classify_child_buglog can read the beacon here.
-		 *
-		 * Skip classify on the timed_out arm: the child is not
-		 * confirmed dead — it may still be writing its bug log —
-		 * so reading the log from this side risks a torn read.
-		 *
-		 * shm/msg/sem drains: child_dead=false deferred these to
-		 * avoid racing a still-alive child registering new ids.
-		 * waitpid above confirms death; drain now before
-		 * replace_child recycles the slot and clean_childdata()
-		 * zeroes the rings. */
-		if (!timed_out) {
-			classify_child_buglog(children[i], pid);
-		} else {
-			/* skip classify: child not confirmed dead on timed-out arm; count the loss */
-			if (children[i] != NULL &&
-			    __atomic_load_n(&children[i]->fault_beacon.written,
-					    __ATOMIC_RELAXED))
-				beacon_loss_count_skipped_timed_out();
-		}
+		classify_child_buglog(children[i], pid);
 		reap_child_sysv_shm(children[i]);
 		reap_child_sysv_msg(children[i]);
 		reap_child_sysv_sem(children[i]);
@@ -299,6 +342,11 @@ int find_free_childno(void)
 		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) != EMPTY_PIDSLOT)
 			continue;
 		if (zombie_pids[i] != EMPTY_PIDSLOT)
+			continue;
+		/* Quarantined slots stay out of service for the entire
+		 * run: the kernel D-state task was never confirmed dead
+		 * and may still write into the slot's childdata. */
+		if (zombie_quarantined[i])
 			continue;
 		return i;
 	}
