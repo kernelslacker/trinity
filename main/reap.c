@@ -134,30 +134,31 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 					       0, __ATOMIC_RELAXED, __ATOMIC_RELAXED));
 
 	/* Surface any stamped beacon while pids[childno] still holds the
-	 * real pid and the pre-crash ring is still intact.  Both pieces of
-	 * state are read by dump_child_fault_beacon: pids[child->num] builds
-	 * the bug-log path (trinity-bug-<pid>.log) and the pre-crash ring
-	 * supplies the breadcrumb hash in the FAULT! aggregation key.
-	 * Clearing pids[] first produces trinity-bug--1.log (access() fails,
-	 * no_buglog_beacons fires spuriously); resetting the ring first zeros
-	 * head so the breadcrumb loop runs 0 iterations regardless of what
-	 * the child actually executed.  Both bugs affect the exact fast-dying
-	 * class the beacon was added to catch (the reap path is the dominant
-	 * path for that class).  Dump here, before either destructive store,
-	 * and before the .written edge-trigger is zeroed below.
-	 * The bottom-of-main-loop poll also calls dump_child_fault_beacon;
-	 * the fault_beacon_dumped cmpxchg gate makes this call idempotent
-	 * against that path so it is safe even if both paths see the beacon. */
+	 * real pid and the pre-crash ring is still intact.  dump_child_fault_beacon
+	 * reads pids[child->num] for the FAULT!/BUG! output lines and reads
+	 * the pre-crash ring for the breadcrumb hash in the FAULT! aggregation
+	 * key.  Clearing pids[] first produces a stale pid in the FAULT! line;
+	 * resetting the ring first zeros head so the breadcrumb loop runs 0
+	 * iterations regardless of what the child actually executed.  Both bugs
+	 * affect the exact fast-dying class the beacon was added to catch.
+	 * Dump here, before either destructive store, and before the .written
+	 * edge-trigger is zeroed below.  The bottom-of-main-loop poll also
+	 * calls dump_child_fault_beacon; the fault_beacon_dumped cmpxchg gate
+	 * makes this call idempotent against that path so it is safe even if
+	 * both paths see the beacon. */
 	dump_child_fault_beacon(child);
 	/*
-	 * Classify the on-disk bug log now that the child has exited and
-	 * pids[childno] still holds the real pid (needed to build the
-	 * trinity-bug-<pid>.log path).  Must come before the EMPTY_PIDSLOT
-	 * store below.  The poll path (loop.c) deliberately skips log
-	 * classification to avoid false-positive partial counts from
-	 * reading the log mid-write; this is the authoritative site.
+	 * Classify the on-disk bug log once the child has exited.  Pass pid
+	 * explicitly -- captured from pids[childno] above -- so the zombie-
+	 * deferred path in process_zombie_pending() can also call with the
+	 * original pid after pids[childno] is already EMPTY_PIDSLOT (see
+	 * 8cce4ee57d0e which moved bug-log path building into this function).
+	 * Skip when child_dead is false: the child may still be writing its
+	 * log; process_zombie_pending() calls classify_child_buglog() once
+	 * waitpid confirms the task is gone (the authoritative deferred site).
 	 */
-	classify_child_buglog(child);
+	if (child_dead)
+		classify_child_buglog(child, pid);
 
 	__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
 
