@@ -88,6 +88,7 @@ static atomic_int g_thread_b_stop;
 
 struct blkdev_rescan_arg {
 	int loop_n;
+	unsigned long thread_tally;	/* direct-syscall count from blkdev_rescan_thread, read after join */
 };
 
 static int blkdev_loop_open(int n, int flags)
@@ -155,6 +156,7 @@ static off_t blkdev_pick_size(void)
 static void *blkdev_rescan_thread(void *arg)
 {
 	struct blkdev_rescan_arg *ra = arg;
+	unsigned long thread_calls = 0;
 	unsigned int i;
 
 	for (i = 0; i < BLKDEV_RESCAN_BURST; i++) {
@@ -167,16 +169,25 @@ static void *blkdev_rescan_thread(void *arg)
 				      O_RDWR | O_NONBLOCK | O_CLOEXEC);
 		if (fd < 0)
 			continue;
+		thread_calls++;			/* open(/dev/loop$N) succeeded */
 
 		/* BLKRRPART takes the queue freeze; BLKFLSBUF rides the same
 		 * lock the close path needs.  Either ordering exercises the
 		 * race window. */
 		(void)ioctl(fd, BLKRRPART);
+		thread_calls++;			/* ioctl(BLKRRPART) */
 		__atomic_add_fetch(&shm->stats.blkdev_lifecycle.rescans,
 				   1, __ATOMIC_RELAXED);
 		(void)ioctl(fd, BLKFLSBUF);
+		thread_calls++;			/* ioctl(BLKFLSBUF) */
 		close(fd);
+		thread_calls++;			/* close(fd) */
 	}
+	/* pthread_join() in the caller provides the happens-before; a
+	 * relaxed store is sufficient to publish thread_calls to the
+	 * joining thread. */
+	__atomic_store_n(&ra->thread_tally,
+			 ra->thread_tally + thread_calls, __ATOMIC_RELAXED);
 	return NULL;
 }
 
@@ -267,7 +278,7 @@ static unsigned int blkdev_lifecycle_cycle(int loop_n)
 
 bool blkdev_lifecycle_race(struct childdata *child)
 {
-	struct blkdev_rescan_arg ra;
+	struct blkdev_rescan_arg ra = { 0 };
 	pthread_t tid;
 	bool spawned = false;
 	unsigned int iters, i;
@@ -320,6 +331,8 @@ bool blkdev_lifecycle_race(struct childdata *child)
 		atomic_store_explicit(&g_thread_b_stop, 1,
 				      memory_order_release);
 		(void)pthread_join(tid, NULL);
+		/* join establishes happens-before; plain read is safe */
+		direct_calls += ra.thread_tally;
 	}
 
 	if (valid_op)

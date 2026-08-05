@@ -49,7 +49,6 @@ UNCOUNTED:childops/net/veth-asymmetric-xdp.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-compat-sweep.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-pfkey.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-traffic.c
-THREAD_UNCOUNTED:childops/fs/blkdev-lifecycle-race.c#blkdev_rescan_thread
 THREAD_UNCOUNTED:childops/misc/close-racer.c#racer_thread
 THREAD_UNCOUNTED:childops/recipe/close-race.c#timerfd_xclose_racer_thread
 THREAD_UNCOUNTED:childops/recipe/deadline-race.c#bpf_htab_racer_thread
