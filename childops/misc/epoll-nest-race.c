@@ -147,13 +147,15 @@ static void *racer_fn(void *arg)
 
 	for (lap = 0; lap < RACER_LAPS; lap++) {
 		int fd;
+		int cur = __atomic_load_n(&ra->fd_to_race, __ATOMIC_RELAXED);
 
-		close(ra->fd_to_race);
+		if (cur >= 0)
+			close(cur);
 		ra->racer_syscalls++;	/* close */
 		fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
 		ra->racer_syscalls++;	/* open */
-		if (fd >= 0)
-			ra->fd_to_race = fd;
+		__atomic_store_n(&ra->fd_to_race,
+				 fd >= 0 ? fd : -1, __ATOMIC_RELAXED);
 	}
 
 	ra->laps_done = lap;
@@ -264,7 +266,7 @@ bool epoll_nest_race(struct childdata *child)
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (i = 0; i < iters; i++) {
-		int slot = ra.fd_to_race;	/* may change between laps */
+		int slot = __atomic_load_n(&ra.fd_to_race, __ATOMIC_RELAXED);	/* may change between laps */
 
 		/* DEL: tolerate ENOENT (racer closed it already). */
 		epoll_ctl(epfds[n_epfds - 1], EPOLL_CTL_DEL, slot, NULL);
