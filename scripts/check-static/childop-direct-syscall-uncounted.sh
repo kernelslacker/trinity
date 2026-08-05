@@ -270,12 +270,14 @@ while IFS= read -r srcfile; do
 				fork_fn_has_fork = 1
 			# Tally-accumulation heuristic (tightened): require the struct
 			# member name accessed via -> to contain "syscall", "tally",
-			# or "count".  Bare __atomic_add_fetch / __atomic_fetch_add
-			# calls are NOT treated as tally evidence -- they are used
-			# pervasively for stats counters unrelated to syscall tallying
-			# and would suppress legitimate detections.
+			# or "count", OR a direct childop_direct_syscalls_add() call
+			# inside the worker body.  Bare __atomic_add_fetch /
+			# __atomic_fetch_add calls are NOT treated as tally evidence --
+			# they are used pervasively for stats counters unrelated to
+			# syscall tallying and would suppress legitimate detections.
 			if (!fn_has_tally) {
-				if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/))
+				if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
+				    index(code, "childop_direct_syscalls_add(") > 0)
 					fn_has_tally = 1
 			}
 		}
