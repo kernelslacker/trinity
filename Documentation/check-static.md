@@ -212,6 +212,15 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `no-libc-rand`: reject libc PRNG callsites (`rand`, `random`,
   `srand`, `*rand48`) outside the `rand/` wrapper layer and
   `include/rnd.h`.
+- `no-unchecked-alloc-shared-str`: every `alloc_shared_str()` /
+  `alloc_shared_strdup()` assignment must have a NULL guard on the
+  lvalue within 4 lines.  Both functions are `__must_check`
+  (`include/utils-mem.h`), which catches a fully discarded return but
+  not the assign-then-use-without-check pattern.  Trinity's shared-str
+  heap has a 1 MiB ceiling so NULL is a genuinely reachable return; a
+  caller that publishes a NULL pointer into an object's `filename` /
+  `name` field would produce a `strlen` / `free` NULL-deref in the
+  dump or destructor path, far from the allocation site.
 - `objpool-array-gen`: enforce the `array_generation` invariant on
   `struct objhead` in `include/objects.h` and `objects/registry*.c`
   -- (i) the field exists, (ii) `get_random_object()` routes its
