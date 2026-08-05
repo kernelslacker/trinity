@@ -9,6 +9,9 @@
  * distinguishable from a window where the childop never fired. */
 static const struct stat_field inplace_crypto_fields[] = {
 	STAT_FIELD_SUB(inplace_crypto, mutated),
+	STAT_FIELD_SUB(inplace_crypto, splice_attempts),
+	STAT_FIELD_SUB(inplace_crypto, splice_ok),
+	STAT_FIELD_SUB(inplace_crypto, splice_warned),
 };
 
 const struct stat_category inplace_crypto_category =
