@@ -254,10 +254,14 @@ fi
 
 if [ "${#stale_baseline[@]}" -gt 0 ]; then
 	{
-		echo "  note: ${#stale_baseline[@]} baseline entry/entries no longer"
-		echo "        have uncounted raw-syscall sites (consider pruning):"
+		echo "  ${#stale_baseline[@]} baseline entry/entries no longer"
+		echo "  have uncounted raw-syscall sites (stale entries must be pruned):"
 		for e in "${stale_baseline[@]}"; do echo "    $e"; done
+		echo "  fix: remove the listed entries from"
+		echo "       scripts/check-static/childop-direct-syscall-uncounted.baseline"
 	} >&2
+	echo "FAIL: $NAME: ${#stale_baseline[@]} stale baseline entry/entries"
+	exit 1
 fi
 
 if [ "${#new_unbaselined[@]}" -gt 0 ]; then
