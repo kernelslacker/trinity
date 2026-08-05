@@ -1524,6 +1524,7 @@ static void deferred_free_read_max_map_count(void)
 	char buf[32];
 	ssize_t n;
 	long v;
+	char *endp;
 
 	fd = open("/proc/sys/vm/max_map_count", O_RDONLY | O_CLOEXEC);
 	if (fd < 0) {
@@ -1540,9 +1541,14 @@ static void deferred_free_read_max_map_count(void)
 		return;
 	}
 	buf[n] = '\0';
-	v = strtol(buf, NULL, 10);
-	if (v > 0 && v <= INT_MAX)
-		g_max_vmas = (unsigned int)v;
+	errno = 0;
+	v = strtol(buf, &endp, 10);
+	if (errno == ERANGE || endp == buf || v <= 0 || v > INT_MAX) {
+		outputerr("deferred_free: parse(/proc/sys/vm/max_map_count) "
+			  "failed: \"%s\"; using default %u\n", buf, g_max_vmas);
+		return;
+	}
+	g_max_vmas = (unsigned int)v;
 }
 
 /*
