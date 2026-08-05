@@ -18,10 +18,17 @@
 # Each worker gets its own baseline slot so that new workers added to an
 # already-baselined file are caught immediately.
 #
+# FORK_UNCOUNTED:<file>#<fn> — fork-worker level: the file IS wired but
+# contains a static void fork-child body <fn> (detected by presence of
+# _exit() without an internal fork() call) that issues raw syscalls
+# without a ->syscall/tally/count accumulation visible to the scanner.
+# Like THREAD_UNCOUNTED, each worker gets its own slot.  Fix by adding
+# a shared-memory tally (shm is MAP_SHARED) or by wiring the worker
+# to call childop_direct_syscalls_add() before _exit().
+#
 # The UNCOUNTED list should shrink over time as each file is wired.
-# THREAD_UNCOUNTED entries should be fixed by adding a tally field to the
-# thread arg struct, accumulating in the worker, and folding after join.
-# Never grow either list.
+# THREAD_UNCOUNTED and FORK_UNCOUNTED entries should be fixed by proper
+# per-worker tally wiring.  Never grow any of these lists.
 UNCOUNTED:childops/fs/hfs-mount-fuzz.c
 UNCOUNTED:childops/net/bareudp-rx.c
 UNCOUNTED:childops/net/bridge-fdb-stp-traffic.c
@@ -42,9 +49,16 @@ UNCOUNTED:childops/net/veth-asymmetric-xdp.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-compat-sweep.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-pfkey.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-traffic.c
+THREAD_UNCOUNTED:childops/fs/blkdev-lifecycle-race.c#blkdev_rescan_thread
 THREAD_UNCOUNTED:childops/misc/close-racer.c#racer_thread
 THREAD_UNCOUNTED:childops/recipe/close-race.c#timerfd_xclose_racer_thread
 THREAD_UNCOUNTED:childops/recipe/deadline-race.c#bpf_htab_racer_thread
 THREAD_UNCOUNTED:childops/recipe/deadline-race.c#perf_mmap_close_racer_thread
 THREAD_UNCOUNTED:childops/recipe/deadline-race.c#keys_revoke_racer_thread
+THREAD_UNCOUNTED:childops/misc/cgroup-churn.c#psi_writer
+THREAD_UNCOUNTED:childops/net/bridge-conntrack-churn.c#brct_packet_sender
 THREAD_UNCOUNTED:childops/recipe/net.c#tcp_racer_thread
+FORK_UNCOUNTED:childops/net/espintcp-coalesce-churn.c#noing_helper # fork-child body; syscalls via bump_direct wrapper but not visible to scanner
+FORK_UNCOUNTED:childops/net/ipv6-pmtu-teardown-race.c#worker_ptb # socket+sendto+close loop; shm-write tally not yet wired in fork worker
+FORK_UNCOUNTED:childops/recipe/supervisor.c#cgroup_kill_inner # open+write+close+prctl before _exit; parent accounts separately
+FORK_UNCOUNTED:childops/recipe/supervisor.c#seccomp_listener_inner # trinity_raw_syscall(__NR_uname) before _exit; parent accounts separately
