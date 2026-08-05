@@ -315,6 +315,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 	 * out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	unsigned long direct_calls = 0;
 
 	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.vrf_fib_churn.setup_failed,
@@ -363,6 +364,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 	}
 
 	udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	direct_calls++;  /* socket */
 	if (udp < 0)
 		goto out;
 
@@ -370,6 +372,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 		       vrf_name, (socklen_t)strlen(vrf_name)) == 0)
 		__atomic_add_fetch(&shm->stats.vrf_fib_churn.bound,
 				   1, __ATOMIC_RELAXED);
+	direct_calls++;  /* setsockopt */
 
 	/* Drive the bound-socket FIB lookup through l3mdev_fib_table.
 	 * Destination is a random 240/4 (reserved) address so we never
@@ -390,6 +393,7 @@ static int vrf_fib_churn_in_ns(void *arg)
 					   1, __ATOMIC_RELAXED);
 		n = sendto(udp, "x", 1, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
+		direct_calls++;  /* sendto */
 		if (n >= 0)
 			__atomic_add_fetch(&shm->stats.vrf_fib_churn.sendto_ok,
 					   1, __ATOMIC_RELAXED);
@@ -407,8 +411,10 @@ static int vrf_fib_churn_in_ns(void *arg)
 	}
 
 out:
-	if (udp >= 0)
+	if (udp >= 0) {
 		close(udp);
+		direct_calls++;  /* close */
+	}
 
 	if (ctx.fd >= 0) {
 		if (rule2_added)
@@ -426,6 +432,8 @@ out:
 		nl_close(&ctx);
 	}
 
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
 }
 
