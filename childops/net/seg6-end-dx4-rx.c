@@ -19,9 +19,9 @@
  *   2. RTM_NEWROUTE family=AF_INET6 dst=<sid>/128 dev=lo
  *      RTA_ENCAP_TYPE=LWTUNNEL_ENCAP_SEG6_LOCAL, nested RTA_ENCAP:
  *        SEG6_LOCAL_ACTION=SEG6_LOCAL_ACTION_END_DX4
- *        SEG6_LOCAL_NH4=10.0.0.1  (IPv4 cross-connect next-hop;
- *        never actually routed -- inner TTL=1 / bad dst elicits ICMP
- *        before any real forwarding occurs)
+ *        SEG6_LOCAL_NH4=10.0.0.1  (IPv4 next-hop; used as daddr
+ *        by ip_route_input() in the seg6 decap path -- the ICMP
+ *        oracle fires on the inner saddr when that lookup succeeds)
  *      When the kernel refuses the encap type as unsupported
  *      (CONFIG_IPV6_SEG6_LWTUNNEL=n on this build), we accept the
  *      wasted round-trip and skip the burst.  The target fleet is
@@ -244,9 +244,9 @@ static int build_seg6local_route(struct nl_ctx *ctx,
 	if (!off)
 		return -EIO;
 
-	/* NH4 next-hop: 10.0.0.1 -- a private address that is never
-	 * actually routed since inner TTL=1 causes ICMP TIME EXCEEDED
-	 * before any forwarding toward the NH occurs. */
+	/* NH4 next-hop: 10.0.0.1 -- routed as daddr by ip_route_input()
+	 * in the seg6 decap path; the ICMP oracle fires on the inner
+	 * saddr when the route lookup succeeds. */
 	nh4.s_addr = htonl(0x0a000001U);	/* 10.0.0.1 */
 	off = nla_put(buf, off, sizeof(buf), SEG6_LOCAL_NH4,
 		      &nh4, sizeof(nh4));
@@ -465,14 +465,49 @@ static int sed_open_ctx(struct sed_iter_ctx *ctx)
 }
 
 /*
- * Build phase: enable per-netns seg6 sysctls, install a seg6local
- * End.DX4 route pointing at lo for a freshly-drawn SID with NH4
- * next-hop 10.0.0.1.  Returns 0 if the burst phase should run, -1
- * otherwise.
+ * Write "1" to the four per-net IPv4 sysctls needed for the decap
+ * forward path to reach the ICMP oracle:
+ *   route_localnet: allows ip_route_input() to accept a loopback
+ *     saddr (127.0.0.2) without taking the martian-source bail-out.
+ *   forwarding: enables the IPv4 forward path so the NH4 route
+ *     lookup in the seg6 decap arm reaches ip_forward() and the
+ *     ICMP oracle fires on the inner saddr.
+ * Per-net sysctls; the host tree is untouched.  Best-effort.
+ */
+static void sed_enable_ipv4_routing(unsigned long *direct_calls_p)
+{
+	static const char * const paths[] = {
+		"/proc/sys/net/ipv4/conf/all/route_localnet",
+		"/proc/sys/net/ipv4/conf/lo/route_localnet",
+		"/proc/sys/net/ipv4/conf/all/forwarding",
+		"/proc/sys/net/ipv4/conf/lo/forwarding",
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(paths); i++) {
+		int fd = open(paths[i], O_WRONLY | O_CLOEXEC);
+		ssize_t n;
+
+		(*direct_calls_p)++;
+		if (fd < 0)
+			continue;
+		n = write(fd, "1", 1);
+		(*direct_calls_p)++;
+		(void)n;
+		close(fd);
+	}
+}
+
+/*
+ * Build phase: enable per-netns seg6 and IPv4 routing sysctls,
+ * install a seg6local End.DX4 route pointing at lo for a freshly-
+ * drawn SID with NH4 next-hop 10.0.0.1.  Returns 0 if the burst
+ * phase should run, -1 otherwise.
  */
 static int sed_build(struct sed_iter_ctx *ctx)
 {
 	sed_enable_seg6(&ctx->direct_calls);
+	sed_enable_ipv4_routing(&ctx->direct_calls);
 
 	ctx->lo_ifindex = (int)if_nametoindex("lo");
 	if (ctx->lo_ifindex <= 0)
