@@ -15,7 +15,10 @@
  * Reach shape per invocation (inside a userns_run_in_ns grandchild --
  * identity userns + CLONE_NEWNET, _exit reaps):
  *   1. Bring lo up in the private netns; write net.ipv6.conf.all.
- *      seg6_enabled and net.ipv6.conf.lo.seg6_enabled to 1.
+ *      seg6_enabled and net.ipv6.conf.lo.seg6_enabled to 1; write
+ *      net.ipv4.conf.all/lo.route_localnet and forwarding to 1 so
+ *      the inner saddr (127.0.0.2) is not dropped as a martian source
+ *      and the IPv4 forward path is open for the post-decap lookup.
  *   2. RTM_NEWLINK kind="vrf" with IFLA_VRF_TABLE=100, then
  *      RTM_SETLINK IFF_UP so a VRF backed by table 100 exists for the
  *      End.DT4 vrftable lookup.
@@ -516,16 +519,51 @@ static int sed_open_ctx(struct sed_iter_ctx *ctx)
 }
 
 /*
- * Build phase: enable per-netns seg6 sysctls, create a VRF for table
- * SED_VRF_TABLE, install a seg6local End.DT4 route pointing at lo for
- * a freshly-drawn SID.  Returns 0 if the burst phase should run, -1
- * otherwise.
+ * Write "1" to the four per-net IPv4 sysctls needed for the decap
+ * forward path to reach the ICMP oracle:
+ *   route_localnet: allows ip_route_input() to accept a loopback
+ *     saddr (127.0.0.2) without taking the martian-source bail-out.
+ *   forwarding: enables the IPv4 forward path so the post-decap
+ *     route lookup reaches ip_forward() and the ICMP oracle fires
+ *     on the inner saddr.
+ * Per-net sysctls; the host tree is untouched.  Best-effort.
+ */
+static void sed_enable_ipv4_routing(unsigned long *direct_calls_p)
+{
+	static const char * const paths[] = {
+		"/proc/sys/net/ipv4/conf/all/route_localnet",
+		"/proc/sys/net/ipv4/conf/lo/route_localnet",
+		"/proc/sys/net/ipv4/conf/all/forwarding",
+		"/proc/sys/net/ipv4/conf/lo/forwarding",
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(paths); i++) {
+		int fd = open(paths[i], O_WRONLY | O_CLOEXEC);
+		ssize_t n;
+
+		(*direct_calls_p)++;
+		if (fd < 0)
+			continue;
+		n = write(fd, "1", 1);
+		(*direct_calls_p)++;
+		(void)n;
+		close(fd);
+	}
+}
+
+/*
+ * Build phase: enable per-netns seg6 and IPv4 routing sysctls, create
+ * a VRF for table SED_VRF_TABLE, install a seg6local End.DT4 route
+ * pointing at lo for a freshly-drawn SID.  Returns 0 if the burst
+ * phase should run, -1 otherwise.
  */
 static int sed_build(struct sed_iter_ctx *ctx)
 {
 	char vrf_name[IFNAMSIZ];
 
 	sed_enable_seg6(&ctx->direct_calls);
+	sed_enable_ipv4_routing(&ctx->direct_calls);
 
 	ctx->lo_ifindex = (int)if_nametoindex("lo");
 	if (ctx->lo_ifindex <= 0)
