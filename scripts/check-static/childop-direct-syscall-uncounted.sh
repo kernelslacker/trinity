@@ -67,15 +67,24 @@ trap 'rm -f "$RESULTS_FILE" 2>/dev/null' EXIT
 # issues syscalls that are not reported into the direct-syscall telemetry
 # bucket.
 #
-# Second pass: even for wired files, scan static void *-returning
-# (pthread worker) function bodies.  A worker that issues raw syscalls
-# but does not accumulate a tally back into its arg struct is invisible
-# to the first pass and is reported as THREAD_UNCOUNTED.  Tally
-# accumulation is inferred from: a reference to a struct member whose
-# name contains "syscall", "tally", or "count" via ->, or an
-# __atomic_add_fetch / __atomic_fetch_add call.  The worker-thread raw-
-# syscall set is broader than the main-body set: it includes close, open,
-# recv, send, read, and write in addition to the standard set.
+# Second pass: even for wired files, scan worker function bodies.
+# Two worker shapes are detected:
+#
+#   Pthread workers (static void * return): reported as THREAD_UNCOUNTED.
+#   Fork workers (static void return, body contains _exit()):  reported as
+#     FORK_UNCOUNTED.  The _exit() call is the definitive signal that a
+#     function is a fork-child body rather than an ordinary helper.
+#
+# A worker is flagged only when it both (a) has raw-syscall sites and
+# (b) does not accumulate those syscalls back via a struct member whose
+# name contains "syscall", "tally", or "count" accessed through ->.
+# The worker raw-syscall set is broader than the main-body set: it
+# includes close, open, recv, send, read, and write in addition to
+# the standard set.
+#
+# FORK_UNCOUNTED entries are buffered and emitted only for wired files
+# (where the file-level UNCOUNTED check would otherwise pass silently);
+# for unwired files the file-level UNCOUNTED entry covers fork workers.
 while IFS= read -r srcfile; do
 	rel="${srcfile#"$ROOT"/}"
 
@@ -107,10 +116,14 @@ while IFS= read -r srcfile; do
 		raw_sites = 0
 		wired = 0
 		in_fn = 0
+		is_fork_fn = 0
+		fork_fn_exit_seen = 0
+		fork_fn_has_fork = 0
 		brace_depth = 0
 		fn_raw_sites = 0
 		fn_has_tally = 0
 		fn_name = ""
+		fork_uncounted_n = 0
 	}
 	{
 		code = strip_comments($0)
@@ -132,11 +145,14 @@ while IFS= read -r srcfile; do
 			scan = substr(scan, RSTART + RLENGTH - 1)
 		}
 
-		# --- Worker-thread (static void *) function scan ---
-		# Detect the start of a static void * function definition.
+		# --- Worker function scans ---
+		#
+		# Pthread workers: static void * return.
 		if (!in_fn && match(code,
 		    /static[[:space:]]+void[[:space:]]*\*[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/)) {
 			in_fn = 1
+			is_fork_fn = 0
+			fork_fn_exit_seen = 0
 			brace_depth = 0
 			fn_raw_sites = 0
 			fn_has_tally = 0
@@ -144,6 +160,25 @@ while IFS= read -r srcfile; do
 			tmp = substr(code, RSTART)
 			sub(/static[[:space:]]+void[[:space:]]*\*[[:space:]]*/, "", tmp)
 			match(tmp, /^[a-zA-Z_][a-zA-Z0-9_]*/)
+			fn_name = substr(tmp, RSTART, RLENGTH)
+		}
+		# Fork workers: static void return (not void *).  The pattern
+		# void[[:space:]]+ (at least one space, then a letter) is mutually
+		# exclusive with void[[:space:]]*\* above: a void* return always has
+		# * before the name.  Starting the name with [a-zA-Z] (not _)
+		# prevents false-matching __attribute__ annotations.
+		if (!in_fn && match(code,
+		    /static[[:space:]]+void[[:space:]]+[a-zA-Z][a-zA-Z0-9_]*[[:space:]]*\(/)) {
+			in_fn = 1
+			is_fork_fn = 1
+			fork_fn_exit_seen = 0
+			fork_fn_has_fork = 0
+			brace_depth = 0
+			fn_raw_sites = 0
+			fn_has_tally = 0
+			tmp = substr(code, RSTART)
+			sub(/static[[:space:]]+void[[:space:]]+/, "", tmp)
+			match(tmp, /^[a-zA-Z][a-zA-Z0-9_]*/)
 			fn_name = substr(tmp, RSTART, RLENGTH)
 		}
 
@@ -156,8 +191,21 @@ while IFS= read -r srcfile; do
 				else if (c == "}") {
 					brace_depth--
 					if (brace_depth == 0) {
-						if (fn_raw_sites > 0 && !fn_has_tally)
-							print "THREAD_UNCOUNTED " file " fn=" fn_name " raw_sites=" fn_raw_sites
+						if (is_fork_fn) {
+							# Fork worker: only flag if _exit() was
+							# seen (confirms fork-child body) AND the
+							# function does not call fork() itself
+							# (which would make it a parent wrapper
+							# with an inline child branch, not a pure
+							# fork-child body).  Buffer for END.
+							if (fork_fn_exit_seen && !fork_fn_has_fork && fn_raw_sites > 0 && !fn_has_tally)
+								fork_uncounted[fork_uncounted_n++] = \
+									"FORK_UNCOUNTED " file " fn=" fn_name " raw_sites=" fn_raw_sites
+							is_fork_fn = 0
+						} else {
+							if (fn_raw_sites > 0 && !fn_has_tally)
+								print "THREAD_UNCOUNTED " file " fn=" fn_name " raw_sites=" fn_raw_sites
+						}
 						in_fn = 0
 						fn_name = ""
 					}
@@ -172,13 +220,26 @@ while IFS= read -r srcfile; do
 				fn_raw_sites++
 				tscan = substr(tscan, RSTART + RLENGTH - 1)
 			}
-			# Tally-accumulation heuristic: a reference to a struct
-			# member containing "syscall", "tally", or "count" via
-			# ->, or an __atomic_add_fetch / __atomic_fetch_add call.
+			# _exit() detection: marks this function as a fork-child body.
+			# Word-boundary guard prevents matching substrings like
+			# wait_for_pidfd_exit() where _exit appears inside a longer name.
+			if (is_fork_fn && !fork_fn_exit_seen &&
+			    match(code, /(^|[^a-zA-Z0-9_])_exit[[:space:]]*\(/))
+				fork_fn_exit_seen = 1
+			# fork() detection: a function that calls fork() internally is a
+			# parent-side wrapper (fork-within-a-function), not a pure
+			# fork-child body.  Exclude such functions from FORK_UNCOUNTED.
+			if (is_fork_fn && !fork_fn_has_fork &&
+			    match(code, /(^|[^a-zA-Z0-9_])fork[[:space:]]*\(/))
+				fork_fn_has_fork = 1
+			# Tally-accumulation heuristic (tightened): require the struct
+			# member name accessed via -> to contain "syscall", "tally",
+			# or "count".  Bare __atomic_add_fetch / __atomic_fetch_add
+			# calls are NOT treated as tally evidence -- they are used
+			# pervasively for stats counters unrelated to syscall tallying
+			# and would suppress legitimate detections.
 			if (!fn_has_tally) {
-				if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
-				    index(code, "__atomic_add_fetch") ||
-				    index(code, "__atomic_fetch_add"))
+				if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/))
 					fn_has_tally = 1
 			}
 		}
@@ -186,6 +247,12 @@ while IFS= read -r srcfile; do
 	END {
 		if (!wired && raw_sites > 0)
 			print "UNCOUNTED " file " raw_sites=" raw_sites
+		# Fork-worker findings are only meaningful for wired files:
+		# unwired files are already covered by the UNCOUNTED emit above.
+		if (wired) {
+			for (i = 0; i < fork_uncounted_n; i++)
+				print fork_uncounted[i]
+		}
 	}
 	' "$srcfile"
 done < <(find "$CHILDOPS_DIR" -name '*.c' | LC_ALL=C sort) > "$RESULTS_FILE"
@@ -207,6 +274,13 @@ while IFS=' ' read -r kind key rest; do
 			key="${key}#${fn_name}"
 			gf_key="THREAD_UNCOUNTED:${key}"
 			;;
+		FORK_UNCOUNTED)
+			# Same key structure as THREAD_UNCOUNTED: file#fn_name.
+			fn_token="${rest%% *}"
+			fn_name="${fn_token#fn=}"
+			key="${key}#${fn_name}"
+			gf_key="FORK_UNCOUNTED:${key}"
+			;;
 		*) continue ;;
 	esac
 	[ -n "${SEEN_KEY[$key]+x}" ] && continue
@@ -225,6 +299,7 @@ for gf_entry in "${!GRANDFATHERED[@]}"; do
 	case "$gf_entry" in
 		UNCOUNTED:*)        bare_key="${gf_entry#UNCOUNTED:}" ;;
 		THREAD_UNCOUNTED:*) bare_key="${gf_entry#THREAD_UNCOUNTED:}" ;;
+		FORK_UNCOUNTED:*)   bare_key="${gf_entry#FORK_UNCOUNTED:}" ;;
 		*)                  bare_key="$gf_entry" ;;
 	esac
 	if [ -z "${SEEN_KEY[$bare_key]+x}" ]; then
