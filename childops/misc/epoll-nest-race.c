@@ -128,6 +128,7 @@
 struct racer_arg {
 	int		fd_to_race;	/* initial fd to close (leaf efd) */
 	unsigned long	laps_done;	/* filled in by racer before exit */
+	unsigned long	racer_syscalls;	/* close+open count across all laps */
 };
 
 /*
@@ -148,7 +149,9 @@ static void *racer_fn(void *arg)
 		int fd;
 
 		close(ra->fd_to_race);
+		ra->racer_syscalls++;	/* close */
 		fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+		ra->racer_syscalls++;	/* open */
 		if (fd >= 0)
 			ra->fd_to_race = fd;
 	}
@@ -289,24 +292,34 @@ bool epoll_nest_race(struct childdata *child)
 	if (racer_spawned)
 		pthread_join(racer, NULL);
 
+	/* Fold racer-thread syscalls into the main tally now that join
+	 * provides the happens-before barrier. */
+	direct_calls += ra.racer_syscalls;
+
 	__atomic_add_fetch(&shm->stats.epoll_nest_race.racer_laps,
 			   ra.laps_done, __ATOMIC_RELAXED);
 
 	/* The racer may have left its last open fd in ra.fd_to_race.
 	 * Close it so we don't leak. */
-	if (ra.fd_to_race >= 0)
+	if (ra.fd_to_race >= 0) {
+		direct_calls++;
 		close(ra.fd_to_race);
+	}
 
 teardown:
 	/* Close all epfds.  The ep_eventpoll release path runs per-epfd
 	 * cleanup, walking the registered epitem list — this is also part
 	 * of the test surface.  Close epfds first so the reverse-path
 	 * list is torn down before the targets it referenced disappear. */
-	for (i = 0; i < n_epfds; i++)
+	for (i = 0; i < n_epfds; i++) {
+		direct_calls++;
 		close(epfds[i]);
+	}
 
-	if (leaf_efd >= 0)
+	if (leaf_efd >= 0) {
+		direct_calls++;
 		close(leaf_efd);
+	}
 
 	__atomic_add_fetch(&shm->stats.epoll_nest_race.ctl_calls,
 			   ctl_calls, __ATOMIC_RELAXED);
