@@ -7,8 +7,8 @@
  * adds eventfds to epoll instances.  Because the target files are
  * eventfds, is_file_epoll(tfile) is always false and the nesting /
  * reverse-path guard — ep_loop_check() / ep_loop_check_proc() and the
- * associated tfile_check_list / tfile_check_lock machinery in
- * fs/eventpoll.c — is never entered.
+ * associated nested-file-list machinery (epnested_mutex-protected in
+ * 6.13; per-ep_ctl_ctx at HEAD) in fs/eventpoll.c — is never entered.
  *
  * This childop closes that gap.  It builds a chain of epoll fds where
  * each one monitors the next (epfd[0] → epfd[1] → ... → epfd[N-1] →
@@ -33,11 +33,10 @@
  * so KASAN is blind to this class by construction — poisoning the slot
  * would break the RCU guarantee.
  *
- * DO NOT add this childop to KASAN-only runs.  The required detectors
- * are:
+ * DO NOT add this childop to KASAN-only runs.  The required detector is:
  *   CONFIG_DEBUG_SPINLOCK=y  (catches the already-unlocked spinlock)
- *   CONFIG_LOCKDEP=y         (catches lock-class invariant violations)
- * Both are enabled in the target config used in the standard fuzz fleet.
+ * CONFIG_PROVE_LOCKING / CONFIG_LOCKDEP is not set on the target config;
+ * DEBUG_SPINLOCK is the sole live detector in the standard fuzz fleet.
  *
  * STRUCTURE
  * ---------
@@ -57,11 +56,11 @@
  *
  * CHAIN DEPTH
  * -----------
- * CHAIN_DEPTH is 6 (in the 4–8 range).  This is deep enough to reach
+ * CHAIN_DEPTH is 5 (in the 4–8 range).  This is deep enough to reach
  * ep_loop_check_proc on every ADD of an epfd target without approaching
- * the kernel's existing nesting limit (EP_MAX_NESTS = 5 levels of epfd-
- * in-epfd nesting, enforced separately in ep_loop_check).  A depth of 6
- * links means 5 epfd→epfd ADD steps, landing exactly at the nesting
+ * the kernel's existing nesting limit (EP_MAX_NESTS = 4 levels of epfd-
+ * in-epfd nesting, enforced separately in ep_loop_check).  A depth of 5
+ * links means 4 epfd→epfd ADD steps, landing exactly at the nesting
  * limit from below — the kernel accepts the chain, exercises the full
  * reverse-path walk on each step, and returns 0.  Depths beyond 8 would
  * enter the nesting-limit rejection path, which is tested by other means.
@@ -101,12 +100,12 @@
 #include "kernel/eventfd.h"
 
 /*
- * Number of epoll fds in the watch chain.  Six links produce five
- * epfd→epfd ADD steps (depth 5 = EP_MAX_NESTS exactly), exercising the
+ * Number of epoll fds in the watch chain.  Five links produce four
+ * epfd→epfd ADD steps (depth 4 = EP_MAX_NESTS exactly), exercising the
  * full reverse-path walk on each step without triggering the nesting-
  * limit rejection that kicks in at depth > EP_MAX_NESTS.
  */
-#define CHAIN_DEPTH	6
+#define CHAIN_DEPTH	5
 
 /* Hard cap on inner-loop iterations.  Each iteration issues one or two
  * epoll_ctl calls (DEL + ADD on the leaf slot), so total syscalls in
