@@ -1466,6 +1466,16 @@ void rec_owned_drain(struct syscallrecord *rec)
  * enqueue (which would happen if g_max_vmas were left at zero).
  */
 #define DEFERRED_DEFAULT_MAX_VMAS	65536U
+/*
+ * Compile-time guard: if DEFERRED_RING_SIZE ever grows to the point
+ * where ring_count could reach g_max_vmas/2 under the default
+ * max_map_count, this fires loudly instead of silently re-activating
+ * a runtime check that has been dead since DEFERRED_RING_SIZE == 64.
+ */
+_Static_assert(DEFERRED_RING_SIZE * 2 <= DEFERRED_DEFAULT_MAX_VMAS,
+	       "DEFERRED_RING_SIZE * 2 exceeds DEFERRED_DEFAULT_MAX_VMAS: "
+	       "g_max_vmas/2 soft cap would activate before ring fills; "
+	       "raise DEFERRED_DEFAULT_MAX_VMAS or revisit the cap formula");
 static unsigned int g_max_vmas = DEFERRED_DEFAULT_MAX_VMAS;
 
 /*
@@ -2098,6 +2108,9 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * DEFERRED_RING_SIZE of 64 the cap is non-binding under any
 	 * default max_map_count (32768+), but stays correct on systems
 	 * tuned down and would limit a future per-slot redzone variant.
+	 * The _Static_assert above DEFERRED_DEFAULT_MAX_VMAS ensures this
+	 * check stays non-binding at compile time; it will fire loudly
+	 * if DEFERRED_RING_SIZE ever grows past the half-budget threshold.
 	 *
 	 * Placed AFTER the alloc_track_lookup ownership gate so an
 	 * untracked-ptr reject short-circuits before the VMA accounting,
