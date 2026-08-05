@@ -672,8 +672,9 @@ void open_buglog_and_drain_stderr(int sig)
 		 * at this point -- so the parent's memfd drain at reap time
 		 * surfaces the open failure as the explanation for why the
 		 * per-pid bug log is absent from the archive.  The parent's
-		 * dump_child_fault_beacon() will annotate the FAULT! line
-		 * and increment its no-buglog counter.  write() is on the
+		 * dump_child_fault_beacon() will annotate the FAULT! line;
+		 * classify_child_buglog() (called from the reap path after the
+		 * child exits) will increment the no-buglog counter.  write() is on the
 		 * POSIX 2024 §2.4.3 async-signal-safe list.
 		 */
 		static const char fail_marker[] =

@@ -447,10 +447,12 @@ void dump_child_fault_beacon(struct childdata *child)
 
 /*
  * Classify the on-disk bug log for a child whose beacon was surfaced by
- * dump_child_fault_beacon().  Must be called from the reap path -- after
- * the child has exited and before pids[child->num] is cleared -- so that
- * the classification sees the final state of the log file rather than a
- * snapshot mid-write.
+ * dump_child_fault_beacon().  Must be called after the child has exited so
+ * that the classification sees the final state of the log file rather than
+ * a snapshot mid-write.  The pid is passed explicitly so zombie-deferred
+ * callers in process_zombie_pending() can supply the original pid after
+ * pids[child->num] has already been set to EMPTY_PIDSLOT (8cce4ee57d0e
+ * moved the bug-log path build from dump_child_fault_beacon into here).
  *
  * Four outcomes, tracked as distinct counters:
  *
@@ -474,7 +476,7 @@ void dump_child_fault_beacon(struct childdata *child)
  *
  * access() and open()/read() are safe here (parent context).
  */
-void classify_child_buglog(struct childdata *child)
+void classify_child_buglog(struct childdata *child, pid_t pid)
 {
 	char logpath[PATH_MAX + 64];
 	int pn;
@@ -485,7 +487,7 @@ void classify_child_buglog(struct childdata *child)
 		return;
 
 	pn = snprintf(logpath, sizeof(logpath), "%s/trinity-bug-%d.log",
-		      trinity_tmpdir_abs(), (int)pids[child->num]);
+		      trinity_tmpdir_abs(), (int)pid);
 	if (pn <= 0 || (size_t)pn >= sizeof(logpath))
 		return;
 

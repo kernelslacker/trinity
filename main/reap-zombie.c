@@ -238,9 +238,22 @@ void process_zombie_pending(void)
 
 		/* Deferred child is now confirmed gone (waitpid above, or the
 		 * long-stuck timeout).  reap_child() at the deferral point ran
-		 * with child_dead=false, so drain its fuzzed shm ring here --
-		 * before replace_child() recycles the slot and clean_childdata()
-		 * zeroes the count. */
+		 * with child_dead=false, so finish the work it skipped.
+		 *
+		 * classify_child_buglog: pid is passed explicitly from the
+		 * local variable captured above; pids[i] is already
+		 * EMPTY_PIDSLOT (cleared by reap_child at the deferral point)
+		 * so the function cannot reconstruct it from pids[child->num]
+		 * (8cce4ee57d0e moved bug-log path building into this function
+		 * for exactly this reason).  Must run here, before
+		 * replace_child() recycles the slot and clean_childdata()
+		 * zeroes fault_beacon.written.
+		 *
+		 * shm/msg/sem drains: child_dead=false deferred these to
+		 * avoid racing a still-alive child registering new ids.
+		 * waitpid above confirms death; drain now before replace_child
+		 * recycles the slot and clean_childdata() zeroes the rings. */
+		classify_child_buglog(children[i], pid);
 		reap_child_sysv_shm(children[i]);
 		reap_child_sysv_msg(children[i]);
 		reap_child_sysv_sem(children[i]);

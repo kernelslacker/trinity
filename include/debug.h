@@ -42,13 +42,14 @@ void dump_child_fault_beacon(struct childdata *child);
 
 /*
  * Classify the on-disk bug log for a reaped child that had a fault beacon.
- * Must be called from the reap path (after the child has exited, before
- * pids[child->num] is cleared) to avoid false-positive partial counts that
- * the per-tick poll path would produce by reading the log mid-write.
+ * Must be called after the child has exited to avoid false-positive partial
+ * counts that the per-tick poll path would produce by reading the log
+ * mid-write.  The pid is passed explicitly so zombie-deferred callers can
+ * supply the original pid after pids[child->num] is already EMPTY_PIDSLOT.
  * Updates no_buglog_beacons, partial_buglog_beacons, and
  * unreadable_buglog_beacons.  No-op when child is NULL or no beacon fired.
  */
-void classify_child_buglog(struct childdata *child);
+void classify_child_buglog(struct childdata *child, pid_t pid);
 
 /*
  * Return the four beacon-capture loss counters accumulated by
