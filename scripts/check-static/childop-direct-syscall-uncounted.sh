@@ -55,7 +55,7 @@ if [ -r "$BASELINE" ]; then
 		[ -z "$entry" ] && continue
 		case "$entry" in \#*) continue ;; esac
 		GRANDFATHERED["$entry"]=1
-	done < <(sed -e 's/#.*$//' -e 's/[[:space:]]*$//' "$BASELINE")
+	done < <(sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' "$BASELINE")
 fi
 
 RESULTS_FILE="$(mktemp)"
@@ -195,24 +195,40 @@ declare -A SEEN_KEY=()
 
 while IFS=' ' read -r kind key rest; do
 	case "$kind" in
-		UNCOUNTED|THREAD_UNCOUNTED)
-			[ -n "${SEEN_KEY[$key]+x}" ] && continue
-			SEEN_KEY["$key"]=1
-			if [ -n "${GRANDFATHERED[$key]+x}" ]; then
-				:
-			else
-				new_unbaselined+=("[$kind] $key ($rest)")
-			fi
+		UNCOUNTED)
+			# Key is bare filename; baseline entry is UNCOUNTED:<file>.
+			gf_key="UNCOUNTED:${key}"
 			;;
+		THREAD_UNCOUNTED)
+			# Derive per-function key: file#fn_name so that multiple
+			# workers in the same file each get their own baseline slot.
+			fn_token="${rest%% *}"
+			fn_name="${fn_token#fn=}"
+			key="${key}#${fn_name}"
+			gf_key="THREAD_UNCOUNTED:${key}"
+			;;
+		*) continue ;;
 	esac
+	[ -n "${SEEN_KEY[$key]+x}" ] && continue
+	SEEN_KEY["$key"]=1
+	if [ -n "${GRANDFATHERED[$gf_key]+x}" ]; then
+		:
+	else
+		new_unbaselined+=("[$kind] $key ($rest)")
+	fi
 done < "$RESULTS_FILE"
 
 # Stale baseline entries: listed but no longer have uncounted syscall
 # sites (wired up or removed).  Advisory, not fatal.
 stale_baseline=()
-for entry in "${!GRANDFATHERED[@]}"; do
-	if [ -z "${SEEN_KEY[$entry]+x}" ]; then
-		stale_baseline+=("$entry")
+for gf_entry in "${!GRANDFATHERED[@]}"; do
+	case "$gf_entry" in
+		UNCOUNTED:*)        bare_key="${gf_entry#UNCOUNTED:}" ;;
+		THREAD_UNCOUNTED:*) bare_key="${gf_entry#THREAD_UNCOUNTED:}" ;;
+		*)                  bare_key="$gf_entry" ;;
+	esac
+	if [ -z "${SEEN_KEY[$bare_key]+x}" ]; then
+		stale_baseline+=("$gf_entry")
 	fi
 done
 
