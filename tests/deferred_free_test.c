@@ -1,9 +1,9 @@
 /*
  * deferred_free_test.c -- deferred-free ownership and sealing fixtures.
  *
- * Seven fixtures covering deferred-free ownership and sealing
+ * Eight fixtures covering deferred-free ownership and sealing
  * invariants.  Three build flavors exist: debug (default), ASAN
- * (ASAN=1), and NDEBUG (NDEBUG=1).  All seven fixtures pass in all
+ * (ASAN=1), and NDEBUG (NDEBUG=1).  All eight fixtures pass in all
  * three flavors.
  *
  * Prerequisites: persist/deferred-free.c compiled as a REAL_SRC (added
@@ -32,6 +32,10 @@
  * 7. seal_failure_per_region (×5) -- NO dispatch after mprotect fail;
  *                                    seal_all returns false on failure,
  *                                    true on clean re-seal (all flavors)
+ * 8. permanent_seal_failure_suppresses_dispatch -- permanent mprotect
+ *                                    failure: seal_all returns false on
+ *                                    every call; simulated chokepoint
+ *                                    caller proves dispatch suppressed
  */
 
 #include <errno.h>
@@ -56,7 +60,7 @@
 #define DEFERRED_TICK_BATCH	16
 
 /* ------------------------------------------------------------------ */
-/* mprotect failure-injection wrapper (fixture 7)                     */
+/* mprotect failure-injection wrapper (fixtures 7 and 8)              */
 /* ------------------------------------------------------------------ */
 
 extern int __real_mprotect(void *addr, size_t len, int prot);
@@ -68,14 +72,23 @@ int __wrap_mprotect(void *addr, size_t len, int prot);
  * All other mprotect calls (prot & PROT_WRITE, i.e. "unlock" calls)
  * are passed through unconditionally so the deferred-free init and
  * normal admission paths are unaffected.
+ *
+ * When g_mprotect_fail_permanent is true EVERY seal mprotect call
+ * (prot == PROT_READ or prot == PROT_NONE) fails unconditionally,
+ * regardless of the countdown.  Used by fixture 8 to simulate a
+ * persistent mprotect failure so that deferred_free_seal_all() never
+ * recovers and the caller cannot "race past" a transient window.
  */
-static volatile int g_mprotect_fail_countdown;
+static volatile int  g_mprotect_fail_countdown;
+static volatile bool g_mprotect_fail_permanent;
 
 int __wrap_mprotect(void *addr, size_t len, int prot)
 {
-	if (g_mprotect_fail_countdown > 0 &&
-	    (prot == PROT_READ || prot == PROT_NONE)) {
-		g_mprotect_fail_countdown--;
+	if ((prot == PROT_READ || prot == PROT_NONE) &&
+	    (g_mprotect_fail_permanent ||
+	     g_mprotect_fail_countdown > 0)) {
+		if (!g_mprotect_fail_permanent)
+			g_mprotect_fail_countdown--;
 		errno = EACCES;
 		return -1;
 	}
@@ -717,6 +730,88 @@ static void fixture_seal_failure_per_region(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Fixture 8: permanent seal failure suppresses dispatch              */
+/* ------------------------------------------------------------------ */
+/* Inject a PERMANENT mprotect failure (every seal call fails) and    */
+/* verify that the simulated chokepoint caller — mirroring the        */
+/* pattern used by the three production kernel-entry chokepoints —    */
+/* does NOT proceed to the target operation.                          */
+/*                                                                    */
+/* Unlike fixture 7 (g_mprotect_fail_countdown=5), the permanent flag */
+/* ensures seal_all() never recovers on its own, making it            */
+/* impossible for a caller to "race past" a transient window.         */
+/*                                                                    */
+/* The simulated dispatch variable mirrors exactly what the           */
+/* production callers do after the fail-closed repair:                */
+/*   if (!deferred_free_seal_all())                                   */
+/*       <abort / return>;   <- kernel NOT entered                    */
+/*   <kernel entry here>;    <- only reached on success              */
+/* ------------------------------------------------------------------ */
+
+static void fixture_permanent_seal_failure_suppresses_dispatch(void)
+{
+	void *ptr;
+	bool seal_ok;
+	bool kernel_entered;
+
+	deferred_free_batch = true;
+
+	ptr = malloc(8);
+	DF_ASSERT(ptr != NULL);
+
+	/* Open alloc_track so seal_all has real work to do. */
+	deferred_alloc_track(ptr, 8);
+
+	/*
+	 * Part 1: permanent failure — seal_all must return false on every
+	 * call while the permanent flag is set.
+	 */
+	g_mprotect_fail_permanent = true;
+	seal_ok = deferred_free_seal_all();
+	DF_ASSERT(!seal_ok);
+
+	/* A second call under the permanent flag must also fail. */
+	seal_ok = deferred_free_seal_all();
+	DF_ASSERT(!seal_ok);
+
+	/*
+	 * Part 2: simulate the fail-closed chokepoint caller pattern.
+	 * Production code (dispatch/syscall.c, child/child.c) now reads:
+	 *
+	 *   if (!deferred_free_seal_all())
+	 *       <abort/return>;    <- kernel NOT entered
+	 *   <kernel entry>;        <- only reached when seal succeeds
+	 *
+	 * Replicate that pattern here: kernel_entered must stay false
+	 * because the seal is still permanently failing.
+	 */
+	kernel_entered = false;
+	if (deferred_free_seal_all())
+		kernel_entered = true;
+
+	DF_ASSERT(!kernel_entered);
+
+	/* Lift the permanent failure. */
+	g_mprotect_fail_permanent = false;
+
+	/*
+	 * Part 3: once the failure is cleared, seal_all must succeed and
+	 * the simulated dispatch must now proceed (kernel_entered = true).
+	 */
+	if (deferred_free_seal_all())
+		kernel_entered = true;
+
+	DF_ASSERT(kernel_entered);
+#ifndef NDEBUG
+	deferred_free_debug_assert_sealed();
+#endif
+
+	deferred_free_flush();
+	free(ptr);
+	deferred_free_batch = false;
+}
+
+/* ------------------------------------------------------------------ */
 /* Suite entry point                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -771,5 +866,17 @@ void deferred_free_ownership_self_check(void)
 	 * the clean recovery seal without relying on debug_assert_sealed().
 	 */
 	fixture_seal_failure_per_region();
+	printf("OK\n");
+
+	printf("    fixture 8 (permanent_seal_failure_suppresses_dispatch) ... ");
+	fflush(stdout);
+	/*
+	 * Fixture 8 proves the fail-closed guarantee: when mprotect never
+	 * succeeds (permanent failure), the simulated dispatch caller does
+	 * NOT proceed to the target operation.  Passing in all three build
+	 * flavors; the permanent flag prevents any race-past scenario that
+	 * a finite countdown could allow.
+	 */
+	fixture_permanent_seal_failure_suppresses_dispatch();
 	printf("OK\n");
 }

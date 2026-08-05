@@ -296,7 +296,11 @@ void child_process(struct childdata *child, int childno)
 		 * deferred-free state or dispatches, so the next kernel
 		 * entry cannot see a stale window.  No-op with the flag
 		 * OFF. */
-		deferred_free_seal_all();
+		if (!deferred_free_seal_all()) {
+			outputerr("deferred_free: seal failed at loop-top "
+				  "chokepoint; aborting child\n");
+			goto out;
+		}
 		deferred_free_debug_assert_sealed();
 
 		/* Catch-up sibling refreeze: a new sibling that ran init_child
@@ -729,7 +733,11 @@ void child_process(struct childdata *child, int childno)
 		 * deferred-free page silently scribbles instead of
 		 * faulting on the PROT_READ/PROT_NONE tripwire.  No-op
 		 * with --deferred-free-batch OFF. */
-		deferred_free_seal_all();
+		if (!deferred_free_seal_all()) {
+			outputerr("deferred_free: seal failed at childop "
+				  "dispatch chokepoint; aborting child\n");
+			goto out;
+		}
 		deferred_free_debug_assert_sealed();
 
 		ret = op_fn ? op_fn(child) : run_sequence_chain(child);

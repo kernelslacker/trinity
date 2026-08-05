@@ -27,7 +27,12 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * SIGSEGVs on the PROT_READ/PROT_NONE tripwire instead of silently
 	 * scribbling.  No-op with the flag OFF; the pre-batch behaviour
 	 * (per-mutation X_unlock/X_lock round-trips) is byte-identical. */
-	deferred_free_seal_all();
+	if (!deferred_free_seal_all()) {
+		outputerr("deferred_free: seal failed at syscall "
+			  "dispatch chokepoint; suppressing kernel "
+			  "entry\n");
+		return;
+	}
 	deferred_free_debug_assert_sealed();
 
 	/* Arm the self-fuzzed-fatal-signal gate in child_fault_handler.
