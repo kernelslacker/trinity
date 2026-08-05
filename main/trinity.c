@@ -246,20 +246,27 @@ finalize_and_exit(int ret, bool clean_run)
 		 * number of captured vs missed bug logs is visible in
 		 * the final output regardless of --stats mode. */
 		{
-			unsigned int btotal, bno_log, bpartial, bunreadable;
+			unsigned int btotal, bno_log, bpartial, bunreadable, bcomplete;
 
 			beacon_loss_get_counts(&btotal, &bno_log,
-					       &bpartial, &bunreadable);
-			if (btotal > 0)
+					       &bpartial, &bunreadable,
+					       &bcomplete);
+			if (btotal > 0) {
+				unsigned int bpending =
+					btotal - bno_log - bpartial
+					- bunreadable - bcomplete;
 				output(0,
 				       "FAULT-CAPTURE: beacons=%u "
 				       "complete=%u partial=%u "
-				       "unreadable=%u no_log=%u\n",
+				       "unreadable=%u no_log=%u "
+				       "pending/lost=%u\n",
 				       btotal,
-				       btotal - bno_log - bpartial - bunreadable,
+				       bcomplete,
 				       bpartial,
 				       bunreadable,
-				       bno_log);
+				       bno_log,
+				       bpending);
+			}
 		}
 
 		if (show_stats == true)

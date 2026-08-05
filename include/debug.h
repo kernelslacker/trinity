@@ -59,10 +59,16 @@ void classify_child_buglog(struct childdata *child, pid_t pid);
  *   *out_no_log      -- no per-pid bug log file on disk
  *   *out_partial     -- log present but BUGLOG-COMPLETE sentinel absent
  *   *out_unreadable  -- log present but zero-byte, read error, or open error
+ *   *out_complete    -- log present, readable, BUGLOG-COMPLETE sentinel found
+ *
+ * total - (no_log + partial + unreadable + complete) is the 'pending/lost'
+ * residual: beacons surfaced but never classified (child killed before
+ * reap_child() ran classify_child_buglog()).
  */
 void beacon_loss_get_counts(unsigned int *out_total,
 			    unsigned int *out_no_log,
 			    unsigned int *out_partial,
-			    unsigned int *out_unreadable);
+			    unsigned int *out_unreadable,
+			    unsigned int *out_complete);
 
 void syslogf(const char *fmt, ...);

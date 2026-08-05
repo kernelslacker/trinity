@@ -280,21 +280,35 @@ void dump_child_bug(struct childdata *child)
  *                              between open() and first write()).  Tracked
  *                              separately from partial to keep the
  *                              re-faulted-mid-write signal clean.
+ * complete_buglog_beacons   -- log file present, readable, and
+ *                              BUGLOG-COMPLETE sentinel found in the tail.
+ *                              Counted directly so that
+ *                              total - (no_log + partial + unreadable +
+ *                              complete) surfaces a visible 'pending/lost'
+ *                              residual for beacons that never reached
+ *                              classify_child_buglog().
  */
 static unsigned int total_beacon_dumps;
 static unsigned int no_buglog_beacons;
 static unsigned int partial_buglog_beacons;
 static unsigned int unreadable_buglog_beacons;
+static unsigned int complete_buglog_beacons;
 
 /*
- * Return the four beacon-capture counters accumulated across the run.
+ * Return the five beacon-capture counters accumulated across the run.
  * Called from print_stats() and finalize_and_exit() to surface numbers in
  * the run summary.  Safe to call from any parent context.
+ *
+ * total - (no_log + partial + unreadable + complete) gives the 'pending/lost'
+ * residual: beacons surfaced but never classified because the owning child
+ * was killed (e.g. via kill_all_kids()) before reap_child() ran
+ * classify_child_buglog().
  */
 void beacon_loss_get_counts(unsigned int *out_total,
 			    unsigned int *out_no_log,
 			    unsigned int *out_partial,
-			    unsigned int *out_unreadable)
+			    unsigned int *out_unreadable,
+			    unsigned int *out_complete)
 {
 	if (out_total)
 		*out_total       = total_beacon_dumps;
@@ -304,6 +318,8 @@ void beacon_loss_get_counts(unsigned int *out_total,
 		*out_partial     = partial_buglog_beacons;
 	if (out_unreadable)
 		*out_unreadable  = unreadable_buglog_beacons;
+	if (out_complete)
+		*out_complete    = complete_buglog_beacons;
 }
 
 void dump_child_fault_beacon(struct childdata *child)
@@ -471,8 +487,14 @@ void dump_child_fault_beacon(struct childdata *child)
  *               sentinel is absent from its tail.  Child re-faulted inside
  *               the in-handler write stages before writing the sentinel.
  *
- *  complete:    implicit -- total_beacon_dumps - no_log - unreadable
- *               - partial.
+ *  complete:    log file present, readable, BUGLOG-COMPLETE sentinel found.
+ *               Counted directly via complete_buglog_beacons++ in the
+ *               memmem()-found branch so that the residual
+ *               total - (no_log + partial + unreadable + complete)
+ *               surfaces beacons from children lost before reap_child()
+ *               ran classify_child_buglog() (e.g. SIGKILL via
+ *               kill_all_kids()).  Prior to 8cce4ee57d0e this gap was
+ *               silently absorbed into the subtraction-derived complete.
  *
  * access() and open()/read() are safe here (parent context).
  */
@@ -551,6 +573,9 @@ void classify_child_buglog(struct childdata *child, pid_t pid)
 					  "partial: %u/%u)\n",
 					  partial_buglog_beacons,
 					  total_beacon_dumps);
+			} else {
+				/* BUGLOG-COMPLETE sentinel present: full log captured. */
+				complete_buglog_beacons++;
 			}
 		}
 	}
