@@ -535,6 +535,42 @@ static void discover_avail_events(void)
 }
 
 /*
+ * Build a dereference chain of the given depth around a core fetch token.
+ * depth=1 gives "+off(<core>)"; depth=2 gives "+off(+off(<core>))"; etc.
+ * Offsets are multiples of 8 to stay pointer-aligned on 64-bit targets.
+ * Returns the number of bytes stored, not counting the NUL terminator.
+ */
+static int gen_deref_chain(char *buf, size_t bufsz, const char *core,
+			   unsigned int depth)
+{
+	size_t pos = 0;
+	unsigned int i;
+
+	for (i = 0; i < depth; i++) {
+		int n = snprintf(buf + pos, bufsz - pos, "+%u(", i * 8u);
+
+		if (n < 0 || (size_t)n >= bufsz - pos)
+			goto finish;
+		pos += (size_t)n;
+	}
+	{
+		int n = snprintf(buf + pos, bufsz - pos, "%s", core);
+
+		if (n < 0 || (size_t)n >= bufsz - pos)
+			goto finish;
+		pos += (size_t)n;
+	}
+	for (i = 0; i < depth && pos + 1 < bufsz; i++)
+		buf[pos++] = ')';
+finish:
+	if (pos < bufsz)
+		buf[pos] = '\0';
+	else
+		buf[bufsz - 1] = '\0';
+	return (int)pos;
+}
+
+/*
  * Generate a dynamic_events eprobe spec string.  The eprobe parser
  * (trace_eprobe.c) is reachable only through this file, not through
  * kprobe_events or uprobe_events.  Spec format:
@@ -545,12 +581,21 @@ static void discover_avail_events(void)
  * Common "$field" fetch tokens work on every event; event-specific
  * fields are not required for the parser to run its error paths.
  *
- * Malformed variants intentionally exercised:
- *   - lone 'e' or 'e:' without a source
- *   - truncated '$field' and '+off(reg)' fetch tokens
- *   - empty / whitespace-only writes
- *   - oversized argument lists
- *   - delete ops: "-:<group>/<name>"
+ * The fetch-arg grammar exercised here covers:
+ *   - Leaf tokens:  $common_*, $comm, $retval
+ *   - Type casts:   $field:u8, $field:s64, $field:string, :ustring, :symbol
+ *   - Array casts:  $field:u8[N] including N=0, N<0, N=INT_MAX
+ *   - Deref chains: +off($field), +off(+off($field)), ...
+ *   - Deep nesting: at and beyond the parser's internal depth limit
+ *   - Member access: $field->name (exercises the -> parser branch)
+ *   - Multi-arg:    mixed well-formed and partly-formed token lists
+ *   - Malformed:    unbalanced parens, missing offset, empty type,
+ *                   lone separators, truncated specs
+ *   - Delete ops:   -:<group>/<name>, -:<group>
+ *
+ * Oracle note: an oops from this parser presents as a NULL-deref crash
+ * (wild write at a near-zero address), not a KASAN report -- KASAN is
+ * on but is blind to this class of bug by construction.
  */
 static unsigned long do_dynamic_events(void)
 {
@@ -561,8 +606,37 @@ static unsigned long do_dynamic_events(void)
 		"$common_flags",
 		"$common_type",
 	};
+	/* Special fetch tokens beyond $common_*. */
+	static const char * const special_fields[] = {
+		"$comm",
+		"$retval",
+	};
+	/* Scalar type suffixes understood by traceprobe_parse_probe_arg_body(). */
+	static const char * const type_suffixes[] = {
+		":u8", ":s8", ":u16", ":s16", ":u32", ":s32", ":u64", ":s64",
+		":string", ":ustring", ":symbol",
+	};
+	/* Array cast suffixes: valid counts and boundary-probing values. */
+	static const char * const array_suffixes[] = {
+		":u8[4]", ":u16[4]", ":u32[4]", ":u64[2]",
+		":u8[0]",		/* zero-length: should be rejected */
+		":u8[-1]",		/* negative count */
+		":u8[9999]",		/* absurdly large */
+		":u8[2147483647]",	/* INT_MAX */
+	};
+	/*
+	 * Struct member-access field names sampled from common tracepoint
+	 * structs (sched, net, mm).  The eprobe parser walks the source
+	 * event's field list on ->, so a name miss is a graceful ENOENT;
+	 * hitting one exercises the member-resolution fast path.
+	 */
+	static const char * const member_names[] = {
+		"next", "prev", "pid", "comm", "prio",
+		"state", "flags", "len", "addr", "size",
+	};
 	/* Malformed fragment table for parser stress. */
 	static const char * const malformed[] = {
+		/* Bare prefix forms */
 		"e",
 		"e:",
 		"e:trinity_e",
@@ -573,14 +647,38 @@ static unsigned long do_dynamic_events(void)
 		"e:trinity_e/ep $x",
 		" ",
 		"",
+		/* Oversized argument list */
 		"e:trinity_e/ep sched.sched_switch a=$common_pid b=$common_pid c=$common_pid "
 		    "d=$common_pid e=$common_pid f=$common_pid g=$common_pid h=$common_pid "
 		    "i=$common_pid j=$common_pid k=$common_pid l=$common_pid m=$common_pid "
 		    "n=$common_pid o=$common_pid p=$common_pid",
+		/* Unbalanced paren in deref */
+		"e:trinity_e/ep sched.sched_switch arg=+0($common_pid",
+		/* Missing offset in deref */
+		"e:trinity_e/ep sched.sched_switch arg=+($common_pid)",
+		/* Empty type suffix */
+		"e:trinity_e/ep sched.sched_switch arg=$common_pid:",
+		/* Lone member-access operator */
+		"e:trinity_e/ep sched.sched_switch arg=->",
+		/* Truncated deref -- no closing paren, no core token */
+		"e:trinity_e/ep sched.sched_switch arg=+0(",
+		/* Truncated field name */
+		"e:trinity_e/ep sched.sched_switch arg=$",
+		/* Lone +offset with nothing after */
+		"e:trinity_e/ep sched.sched_switch arg=+8",
+		/* Over-deep nesting -- well beyond the parser's depth limit */
+		"e:trinity_e/ep sched.sched_switch "
+		    "arg=+0(+8(+16(+24(+32(+40(+48(+56(+64(+72(+80(+88("
+		    "$common_pid))))))))))))",
+		/* Whitespace-only (not the same code path as empty string) */
+		"   ",
+		/* Delete with no event name */
+		"-:",
 	};
 
 	char path[TRACEFS_MAX_PATH];
-	char spec[384];
+	char spec[512];
+	char deref[128];
 	bool *bad = &single_path_inaccessible[SP_DYNAMIC_EVENTS];
 	unsigned int probe_num;
 	int fd;
@@ -593,12 +691,12 @@ static unsigned long do_dynamic_events(void)
 
 	probe_num = rnd_modulo_u32(64);
 
-	switch (rnd_modulo_u32(6)) {
+	switch (rnd_modulo_u32(14)) {
 	case 0:
 		/* Well-formed eprobe create without fetch args. */
 		if (nr_avail_event_names == 0)
 			goto malformed_write;
-		snprintf(spec, sizeof(spec), "e:trinity_eg%u/trinity_e%u %s",
+		snprintf(spec, sizeof(spec), "e:trinity_eg%u/trinity_e%u %.63s",
 			 probe_num, probe_num,
 			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)]);
 		break;
@@ -607,7 +705,7 @@ static unsigned long do_dynamic_events(void)
 		if (nr_avail_event_names == 0)
 			goto malformed_write;
 		snprintf(spec, sizeof(spec),
-			 "e:trinity_eg%u/trinity_e%u %s arg=%s",
+			 "e:trinity_eg%u/trinity_e%u %.63s arg=%s",
 			 probe_num, probe_num,
 			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
 			 RAND_ARRAY(common_fields));
@@ -617,18 +715,134 @@ static unsigned long do_dynamic_events(void)
 		if (nr_avail_event_names == 0)
 			goto malformed_write;
 		snprintf(spec, sizeof(spec),
-			 "e:trinity_eg%u/trinity_e%u %s a=%s b=%s",
+			 "e:trinity_eg%u/trinity_e%u %.63s a=%s b=%s",
 			 probe_num, probe_num,
 			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
 			 RAND_ARRAY(common_fields),
 			 RAND_ARRAY(common_fields));
 		break;
 	case 3:
-		/* Delete an eprobe we may have created. */
+		/* Delete a named eprobe we may have created. */
 		snprintf(spec, sizeof(spec), "-:trinity_eg%u/trinity_e%u",
 			 probe_num, probe_num);
 		break;
 	case 4:
+		/* Delete by group name only -- exercises the group-delete path. */
+		snprintf(spec, sizeof(spec), "-:trinity_eg%u", probe_num);
+		break;
+	case 5:
+		/* Special fetch tokens: $comm and $retval. */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		snprintf(spec, sizeof(spec),
+			 "e:trinity_eg%u/trinity_e%u %.63s arg=%s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
+			 RAND_ARRAY(special_fields));
+		break;
+	case 6:
+		/* Scalar type suffix: $field:type. */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		snprintf(spec, sizeof(spec),
+			 "e:trinity_eg%u/trinity_e%u %.63s arg=%s%s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
+			 RAND_ARRAY(common_fields),
+			 RAND_ARRAY(type_suffixes));
+		break;
+	case 7:
+		/* Array type suffix: $field:type[N] -- including boundary sizes. */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		snprintf(spec, sizeof(spec),
+			 "e:trinity_eg%u/trinity_e%u %.63s arg=%s%s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
+			 RAND_ARRAY(common_fields),
+			 RAND_ARRAY(array_suffixes));
+		break;
+	case 8:
+		/* Single-level dereference: +offset($field). */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		gen_deref_chain(deref, sizeof(deref),
+				RAND_ARRAY(common_fields), 1);
+		snprintf(spec, sizeof(spec),
+			 "e:trinity_eg%u/trinity_e%u %.63s arg=%s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
+			 deref);
+		break;
+	case 9:
+		/* Multi-level dereference: +off(+off($field)). Depth 2-4. */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		gen_deref_chain(deref, sizeof(deref),
+				RAND_ARRAY(common_fields),
+				2 + rnd_modulo_u32(3));
+		snprintf(spec, sizeof(spec),
+			 "e:trinity_eg%u/trinity_e%u %.63s a=%s b=%s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
+			 deref,
+			 RAND_ARRAY(common_fields));
+		break;
+	case 10:
+		/*
+		 * Dereference chain at or just beyond the parser's depth limit.
+		 * traceprobe_parse_probe_arg_body() caps recursion depth at
+		 * FETCH_INSN_MAX (roughly 6-8 levels depending on kernel version).
+		 * Hitting the limit exercises the depth-guard error path; exceeding
+		 * it by one probes the off-by-one in the guard itself.
+		 */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		gen_deref_chain(deref, sizeof(deref),
+				RAND_ARRAY(common_fields),
+				6 + rnd_modulo_u32(4));
+		snprintf(spec, sizeof(spec),
+			 "e:trinity_eg%u/trinity_e%u %.63s arg=%s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
+			 deref);
+		break;
+	case 11:
+		/*
+		 * Struct member access: $field->member.  On eprobes the source
+		 * field must resolve to a pointer-type field in the source event;
+		 * a miss is a graceful ENOENT.  Either way the -> parsing branch
+		 * in traceprobe_parse_probe_arg_body() is reached.
+		 */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		snprintf(spec, sizeof(spec),
+			 "e:trinity_eg%u/trinity_e%u %.63s arg=%s->%s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
+			 RAND_ARRAY(common_fields),
+			 RAND_ARRAY(member_names));
+		break;
+	case 12:
+		/*
+		 * Multi-arg spec mixing deref, type suffix, and plain field --
+		 * exercises the arg-list loop and per-arg allocator together.
+		 */
+		if (nr_avail_event_names == 0)
+			goto malformed_write;
+		gen_deref_chain(deref, sizeof(deref),
+				RAND_ARRAY(common_fields), 2);
+		snprintf(spec, sizeof(spec),
+			 "e:trinity_eg%u/trinity_e%u %.63s "
+			 "a=%s b=%s%s c=%s",
+			 probe_num, probe_num,
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)],
+			 deref,
+			 RAND_ARRAY(common_fields),
+			 RAND_ARRAY(type_suffixes),
+			 RAND_ARRAY(special_fields));
+		break;
+	case 13:
 	malformed_write:
 		/* Malformed spec -- exercises parser error paths. */
 		{
