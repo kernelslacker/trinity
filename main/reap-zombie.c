@@ -43,6 +43,15 @@ pid_t *zombie_pids;
 time_t *zombie_since;
 bool *zombie_quarantined;
 
+/*
+ * Live (non-quarantined) slot count for the current epoch.  Starts at
+ * max_children, decremented each time a slot is quarantined, and reset
+ * to max_children at epoch start by reset_epoch_state().  The main loop
+ * gates fork_children() on this value so a depleted fleet does not
+ * trigger an endless scan that can never find a free slot.
+ */
+unsigned int live_child_slots;
+
 /* If the kernel still hasn't released a zombie task after this long,
  * the slot is quarantined: removed from the active fleet for the rest
  * of the run rather than recycled.  Recycling without proof of task
@@ -50,12 +59,25 @@ bool *zombie_quarantined;
 #define ZOMBIE_REAP_TIMEOUT_SEC 300
 
 /*
- * Number of concurrently-quarantined slots that triggers
- * EXIT_KERNEL_STUCK.  Each quarantine represents one slot permanently
- * removed from the fleet; past this threshold the depleted fleet is
- * not useful and operator attention is warranted.
+ * Per-epoch quarantine count that triggers EXIT_KERNEL_STUCK.  A hard
+ * constant of 4 was too lax at small fleet sizes (half the fleet at
+ * -C 8) and too eager at large ones (kills a healthy 64-child campaign
+ * after a handful of D-state events over a long run).  Scale with
+ * max_children: max(2, max_children/8) gives a threshold that is ~12%
+ * of the fleet regardless of size, with a floor of 2 so tiny fleets
+ * still get at least one grace event before stopping.
+ *
+ * The check uses the per-epoch live_child_slots deficit
+ * (max_children - live_child_slots) rather than the cumulative shm
+ * counter: zombie_quarantined[] is cleared by reset_epoch_state(), so
+ * a multi-epoch run must not accumulate quarantine debt across epoch
+ * boundaries or the threshold is inevitably breached on long runs.
  */
-#define ZOMBIE_QUARANTINE_FATAL_THRESHOLD 4
+static inline unsigned int zombie_quarantine_threshold(void)
+{
+	unsigned int t = max_children / 8U;
+	return (t < 2U) ? 2U : t;
+}
 
 /*
  * Move a slot into zombie-pending state.  The child is unkillable
@@ -253,19 +275,25 @@ void process_zombie_pending(void)
 				beacon_loss_count_skipped_timed_out();
 
 			zombie_quarantined[i] = true;
+			live_child_slots--;
 			qcount = __atomic_add_fetch(
 					&shm->stats.zombie_reaper.quarantined,
 					1, __ATOMIC_RELAXED);
 			output(0, "child %d (pid %u) slot quarantined "
 				"(%lu total); continuing with smaller fleet.\n",
 				i, pid, qcount);
-			if (qcount >= ZOMBIE_QUARANTINE_FATAL_THRESHOLD) {
-				output(0, "kernel-stuck: %lu D-state slots "
-					"quarantined (threshold %d exceeded)"
-					" — stopping.\n",
-					qcount,
-					ZOMBIE_QUARANTINE_FATAL_THRESHOLD);
-				panic(EXIT_KERNEL_STUCK);
+			{
+				unsigned int epoch_q = max_children - live_child_slots;
+				unsigned int thresh = zombie_quarantine_threshold();
+
+				if (epoch_q >= thresh) {
+					output(0, "kernel-stuck: %u D-state slots "
+						"quarantined this epoch "
+						"(threshold %u = max(%u/8,2)) "
+						"— stopping.\n",
+						epoch_q, thresh, max_children);
+					panic(EXIT_KERNEL_STUCK);
+				}
 			}
 			continue;
 		}
@@ -351,4 +379,26 @@ int find_free_childno(void)
 		return i;
 	}
 	return CHILD_NOT_FOUND;
+}
+
+/*
+ * Count quarantined slots whose childno falls in [lo, hi).  Used by
+ * the stats reporter to compute live per-lane pool sizes so that the
+ * plateau-controller's explorer/bandit ratio reflects the actual active
+ * fleet rather than the startup-time partition.
+ */
+unsigned int count_quarantined_in_range(unsigned int lo, unsigned int hi)
+{
+	unsigned int i;
+	unsigned int count = 0;
+
+	if (zombie_quarantined == NULL)
+		return 0;
+	if (hi > max_children)
+		hi = max_children;
+	for (i = lo; i < hi; i++) {
+		if (zombie_quarantined[i])
+			count++;
+	}
+	return count;
 }

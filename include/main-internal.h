@@ -23,6 +23,10 @@ extern pid_t *zombie_pids;
 extern time_t *zombie_since;
 extern bool *zombie_quarantined;
 extern time_t *spawn_times;
+/* Number of non-quarantined slots available for forking this epoch. */
+extern unsigned int live_child_slots;
+/* Count quarantined slots in [lo, hi) — for per-lane pool-size adjustments. */
+unsigned int count_quarantined_in_range(unsigned int lo, unsigned int hi);
 
 /* Updated by check_children_progressing(), read by print_stats. */
 extern unsigned long hiscore;

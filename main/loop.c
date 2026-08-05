@@ -501,6 +501,7 @@ void main_loop(void)
 		zombie_since = zmalloc(max_children * sizeof(time_t));
 		zombie_quarantined = zmalloc(max_children * sizeof(bool));
 		spawn_times = zmalloc(max_children * sizeof(time_t));
+		live_child_slots = max_children;
 		for_each_child(i) {
 			pidstatfiles[i] = -1;
 			zombie_pids[i] = EMPTY_PIDSLOT;
@@ -535,7 +536,12 @@ void main_loop(void)
 		/* This should never happen, but just to catch corner cases, like if
 		 * fork() failed when we tried to replace a child.
 		 */
-		if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < max_children)
+		/* Gate on live (non-quarantined) slot count: quarantined slots
+		 * have no free childno so find_free_childno() can never succeed
+		 * for them.  Using max_children here would trigger fork_children()
+		 * on every main-loop pass once any slot is quarantined, paying a
+		 * full scan that can never find a free slot. */
+		if (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < live_child_slots)
 			fork_children();
 
 		/* When the drain reaped nothing this tick, pace the loop and
@@ -687,6 +693,10 @@ void reset_epoch_state(void)
 	 * zombies_reaped / zombies_timed_out are cumulative-by-design and
 	 * correctly persist; only the live gauge needs the re-zero. */
 	__atomic_store_n(&shm->stats.zombie_reaper.slots_pending, 0, __ATOMIC_RELAXED);
+
+	/* Per-epoch live slot count: zombie_quarantined[] was just cleared
+	 * above, so all slots are back in service for the new epoch. */
+	live_child_slots = max_children;
 
 	reseed();
 }
