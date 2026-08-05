@@ -71,9 +71,21 @@ trap 'rm -f "$RESULTS_FILE" 2>/dev/null' EXIT
 # Two worker shapes are detected:
 #
 #   Pthread workers (static void * return): reported as THREAD_UNCOUNTED.
-#   Fork workers (static void return, body contains _exit()):  reported as
-#     FORK_UNCOUNTED.  The _exit() call is the definitive signal that a
-#     function is a fork-child body rather than an ordinary helper.
+#   Fork workers (static void return, or __attribute__((noreturn)) static void):
+#     reported as FORK_UNCOUNTED.  The function is classified as a fork-child
+#     body when ANY of the following terminators appears inside it (any one is
+#     sufficient; _exit() alone is too narrow -- some workers use raw syscalls
+#     or the POSIX _Exit() form):
+#       _exit(              -- traditional POSIX
+#       _Exit(              -- POSIX capital-E form (C99/C11)
+#       syscall(__NR_exit   -- raw kernel exit via glibc syscall()
+#       trinity_raw_syscall(__NR_exit  -- raw exit via trinity's wrapper
+#       syscall(__NR_exit_group       -- exit_group raw form
+#       trinity_raw_syscall(__NR_exit_group
+#       __attribute__.*noreturn        -- function is noreturn (unconditional)
+#     Concrete motivating case: af_unix_sibling_main() in
+#     childops/net/af-unix-scm-rights-gc.c terminates via
+#     syscall(__NR_exit, 0) with no bare _exit() token in the file.
 #
 # A worker is flagged only when it both (a) has raw-syscall sites and
 # (b) does not accumulate those syscalls back via a struct member whose
@@ -162,13 +174,18 @@ while IFS= read -r srcfile; do
 			match(tmp, /^[a-zA-Z_][a-zA-Z0-9_]*/)
 			fn_name = substr(tmp, RSTART, RLENGTH)
 		}
-		# Fork workers: static void return (not void *).  The pattern
-		# void[[:space:]]+ (at least one space, then a letter) is mutually
-		# exclusive with void[[:space:]]*\* above: a void* return always has
-		# * before the name.  Starting the name with [a-zA-Z] (not _)
-		# prevents false-matching __attribute__ annotations.
+		# Fork workers: static void return (not void *).  Three header shapes
+		# are matched:
+		#   (a) plain:    static void foo(
+		#   (b) noreturn before: __attribute__((noreturn)) static void foo(
+		#   (c) noreturn after:  static __attribute__((noreturn)) void foo(
+		# The void[[:space:]]+ guard (at least one space, then a letter) is
+		# mutually exclusive with void[[:space:]]*\* above: a void* return
+		# always has * before the name.  When __attribute__((noreturn)) appears
+		# on its own line before the static void line, shape (a) catches it on
+		# the following line.
 		if (!in_fn && match(code,
-		    /static[[:space:]]+void[[:space:]]+[a-zA-Z][a-zA-Z0-9_]*[[:space:]]*\(/)) {
+		    /(__attribute__[[:space:]]*\(\([^)]*noreturn[^)]*\)\)[[:space:]]+static[[:space:]]+void|static[[:space:]]+(__attribute__[[:space:]]*\(\([^)]*noreturn[^)]*\)\)[[:space:]]+)?void)[[:space:]]+[a-zA-Z][a-zA-Z0-9_]*[[:space:]]*\(/)) {
 			in_fn = 1
 			is_fork_fn = 1
 			fork_fn_exit_seen = 0
@@ -177,7 +194,9 @@ while IFS= read -r srcfile; do
 			fn_raw_sites = 0
 			fn_has_tally = 0
 			tmp = substr(code, RSTART)
-			sub(/static[[:space:]]+void[[:space:]]+/, "", tmp)
+			# Strip any leading __attribute__ and/or static void prefix
+			# before extracting the function name.
+			sub(/.*void[[:space:]]+/, "", tmp)
 			match(tmp, /^[a-zA-Z][a-zA-Z0-9_]*/)
 			fn_name = substr(tmp, RSTART, RLENGTH)
 		}
@@ -220,12 +239,29 @@ while IFS= read -r srcfile; do
 				fn_raw_sites++
 				tscan = substr(tscan, RSTART + RLENGTH - 1)
 			}
-			# _exit() detection: marks this function as a fork-child body.
-			# Word-boundary guard prevents matching substrings like
-			# wait_for_pidfd_exit() where _exit appears inside a longer name.
-			if (is_fork_fn && !fork_fn_exit_seen &&
-			    match(code, /(^|[^a-zA-Z0-9_])_exit[[:space:]]*\(/))
-				fork_fn_exit_seen = 1
+			# Fork-child body terminator detection.  ANY one of the following
+			# is sufficient to mark this function as a fork-child body:
+			#   _exit(              -- traditional POSIX
+			#   _Exit(              -- POSIX C99/C11 capital-E form
+			#                          (word-boundary: exclude _Exit_foo)
+			#   syscall(__NR_exit   -- raw exit via glibc syscall()
+			#   trinity_raw_syscall(__NR_exit  -- trinity raw wrapper
+			#   syscall(__NR_exit_group       -- exit_group raw form
+			#   trinity_raw_syscall(__NR_exit_group
+			#   __attribute__.*noreturn -- noreturn annotation within body
+			if (is_fork_fn && !fork_fn_exit_seen) {
+				if (match(code, /(^|[^a-zA-Z0-9_])_exit[[:space:]]*\(/))
+					fork_fn_exit_seen = 1
+				else if (match(code, /(^|[^a-zA-Z0-9_])_Exit[[:space:]]*\(/) &&
+				         !match(code, /(^|[^a-zA-Z0-9_])_Exit_/))
+					fork_fn_exit_seen = 1
+				else if (match(code, /syscall[[:space:]]*\([[:space:]]*__NR_exit/))
+					fork_fn_exit_seen = 1
+				else if (match(code, /trinity_raw_syscall[[:space:]]*\([[:space:]]*__NR_exit/))
+					fork_fn_exit_seen = 1
+				else if (match(code, /__attribute__[[:space:]]*\(\([^)]*noreturn/))
+					fork_fn_exit_seen = 1
+			}
 			# fork() detection: a function that calls fork() internally is a
 			# parent-side wrapper (fork-within-a-function), not a pure
 			# fork-child body.  Exclude such functions from FORK_UNCOUNTED.
