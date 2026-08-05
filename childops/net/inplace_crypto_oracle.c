@@ -302,10 +302,12 @@ static ssize_t splice_into_socket(int file_fd, int sock_fd,
 
 	/* Warn once if the socket-side splice never succeeds across many
 	 * attempts -- indicates splice(pipe->socket) is silently failing
-	 * for all targets and the oracle is structurally inert. */
-	static unsigned long s_attempts;
-	static unsigned long s_ok;
-	static bool s_warned;
+	 * for all targets and the oracle is structurally inert.
+	 *
+	 * Counters live in shm->stats.inplace_crypto so they accumulate
+	 * across child respawns.  Process-local statics reset to zero on
+	 * every fork, preventing the 1000-attempt threshold from firing
+	 * in recycled children. */
 
 	if (pipe2(pfd, O_CLOEXEC | O_NONBLOCK) < 0) {
 		(*n_calls)++;
@@ -324,18 +326,26 @@ static ssize_t splice_into_socket(int file_fd, int sock_fd,
 	close(pfd[0]); close(pfd[1]);
 	(*n_calls) += 3;
 
-	__atomic_add_fetch(&s_attempts, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.inplace_crypto.splice_attempts, 1,
+			   __ATOMIC_RELAXED);
 	if (rc > 0)
-		__atomic_add_fetch(&s_ok, 1, __ATOMIC_RELAXED);
-	if (!s_warned &&
-	    __atomic_load_n(&s_attempts, __ATOMIC_RELAXED) >= 1000 &&
-	    __atomic_load_n(&s_ok, __ATOMIC_RELAXED) == 0) {
-		s_warned = true;
+		__atomic_add_fetch(&shm->stats.inplace_crypto.splice_ok, 1,
+				   __ATOMIC_RELAXED);
+	if (!__atomic_load_n(&shm->stats.inplace_crypto.splice_warned,
+			     __ATOMIC_RELAXED) &&
+	    __atomic_load_n(&shm->stats.inplace_crypto.splice_attempts,
+			    __ATOMIC_RELAXED) >= 1000 &&
+	    __atomic_load_n(&shm->stats.inplace_crypto.splice_ok,
+			    __ATOMIC_RELAXED) == 0) {
+		__atomic_store_n(&shm->stats.inplace_crypto.splice_warned, 1,
+				 __ATOMIC_RELAXED);
 		/* check-static: child-output-ok */
 		outputerr("inplace_crypto_oracle: WARNING -- "
 			  "splice(pipe->socket) returned >0 for 0 of "
 			  "%lu attempts; oracle may be inert\n",
-			  __atomic_load_n(&s_attempts, __ATOMIC_RELAXED));
+			  __atomic_load_n(
+				&shm->stats.inplace_crypto.splice_attempts,
+				__ATOMIC_RELAXED));
 	}
 
 	return rc < 0 ? 0 : rc;
