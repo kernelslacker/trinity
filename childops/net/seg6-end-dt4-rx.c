@@ -469,10 +469,14 @@ static size_t build_seg6_frame(uint8_t *buf, const struct in6_addr *sid,
 	buf[off + 8] = 1U;					/* TTL=1 */
 	buf[off + 9] = IPPROTO_UDP;				/* proto */
 	buf[off + 10] = 0U; buf[off + 11] = 0U;			/* csum */
-	/* saddr = 127.0.0.2, daddr = 127.0.0.1 -- both loopback so the
-	 * post-decap forward path runs but nothing escapes the netns. */
+	/* saddr = 127.0.0.X (X random in [2,254]), daddr = 127.0.0.1.
+	 * Both are loopback so the post-decap forward path runs but nothing
+	 * escapes the netns.  Randomising the last octet per frame mints a
+	 * fresh inet_peer on each call; a fresh peer has rate_last==0 so
+	 * ip_error()'s per-peer ICMP rate-limiter starts from a full token
+	 * bucket instead of one shared depleted peer (~1 eval/sec). */
 	buf[off + 12] = 127U; buf[off + 13] = 0U;
-	buf[off + 14] = 0U;   buf[off + 15] = 2U;
+	buf[off + 14] = 0U;   buf[off + 15] = (uint8_t)(2U + (rand32() % 253U));
 	buf[off + 16] = 127U; buf[off + 17] = 0U;
 	buf[off + 18] = 0U;   buf[off + 19] = 1U;
 
