@@ -19,7 +19,10 @@
  */
 
 #include <errno.h>
+#include <fcntl.h>
+#include <sched.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -34,6 +37,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 #include "utils.h"
 
 #define PKTB_PROBE_PER_INVOCATION	6	/* frames per invocation */
@@ -138,6 +142,116 @@ static bool pktb_probe_self_check_ran;
 static bool pktb_probe_self_check_ok;
 static bool pktb_probe_disabled;
 static bool pktb_probe_warned_disabled;
+/*
+ * Set when userns_run_in_ns(CLONE_NEWNET) is refused by a hardened
+ * policy (user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  Without a private netns we
+ * cannot safely write the per-net SRH sysctls, so the two SRH
+ * recipes are skipped for the lifetime of this child.
+ */
+static bool pktb_probe_srh_ns_unsupported;
+
+/*
+ * Returns true when the recipe at index `pick` contains an SRH layer
+ * (RPL type 3 or SEG6 type 4) that requires per-netns sysctl setup
+ * before the kernel's extension-header receive path will process it.
+ */
+static bool recipe_needs_srh_ns(unsigned int pick)
+{
+	const struct pktb_probe_recipe *r = &probe_recipes[pick];
+	uint8_t li;
+
+	for (li = 0; li < r->n; li++) {
+		if (r->layers[li] == PKTB_LAYER_RPL_SRH ||
+		    r->layers[li] == PKTB_LAYER_SEG6_SRH)
+			return true;
+	}
+	return false;
+}
+
+/*
+ * Write "1" to /proc/sys/net/ipv6/conf/{all,lo}/<knob> inside the
+ * current (private) netns.  Per-net sysctl; the host tree is
+ * untouched.  Best-effort: a missing file (ENOENT) means the kernel
+ * predates the knob and the deliver attempt below will simply be
+ * dropped; open/write failures are silently ignored.
+ */
+static void pktb_probe_write_ipv6_sysctl(const char *knob)
+{
+	char path[128];
+	static const char * const ifaces[] = { "all", "lo" };
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(ifaces); i++) {
+		int fd;
+		ssize_t n;
+
+		snprintf(path, sizeof(path),
+			 "/proc/sys/net/ipv6/conf/%s/%s", ifaces[i], knob);
+		fd = open(path, O_WRONLY | O_CLOEXEC);
+		if (fd < 0)
+			continue;
+		n = write(fd, "1", 1);
+		(void)n;
+		close(fd);
+	}
+}
+
+/* Forward declaration: defined after the helpers below. */
+static int probe_one_recipe(struct pktb_ctx *ctx,
+			    const struct pktb_probe_recipe *r);
+
+struct pktb_probe_srh_arg {
+	const struct pktb_probe_recipe *r;
+	unsigned int			pick;
+	enum child_op_type		op;
+};
+
+/*
+ * Callback for userns_run_in_ns(): runs inside a transient grandchild
+ * that owns a private CLONE_NEWNET netns.
+ *
+ * 1. Enables net.ipv6.conf.{all,lo}.rpl_seg_enabled = 1 for RPL SRH
+ *    recipes, or net.ipv6.conf.{all,lo}.seg6_enabled = 1 for SEG6 SRH
+ *    recipes.  These are per-net sysctls; writes are confined to the
+ *    grandchild's private netns and do not affect the host network tree.
+ * 2. Opens a fresh delivery context in the same netns (the AF_PACKET
+ *    socket created by pktb_deliver lives in the grandchild's netns so
+ *    the kernel receives the frame in a namespace where the sysctl is
+ *    already set to 1).
+ * 3. The grandchild exits when this returns, tearing down the netns;
+ *    the socket, sysctl change, and any routing state vanish with it.
+ */
+static int pktb_probe_srh_in_ns(void *arg)
+{
+	const struct pktb_probe_srh_arg *a =
+		(const struct pktb_probe_srh_arg *)arg;
+	const struct pktb_probe_recipe  *r = a->r;
+	struct pktb_ctx ctx;
+	unsigned long dc = 0;
+	uint8_t li;
+
+	for (li = 0; li < r->n; li++) {
+		if (r->layers[li] == PKTB_LAYER_RPL_SRH)
+			pktb_probe_write_ipv6_sysctl("rpl_seg_enabled");
+		else if (r->layers[li] == PKTB_LAYER_SEG6_SRH)
+			pktb_probe_write_ipv6_sysctl("seg6_enabled");
+	}
+
+	pktb_ctx_init(&ctx);
+	(void)probe_one_recipe(&ctx, r);
+
+	/* Tally the close(2)s pktb_ctx_close is about to issue. */
+	if (ctx.af_packet_fd >= 0)    dc++;
+	if (ctx.raw_ipv4_fd >= 0)     dc++;
+	if (ctx.raw_ipv6_fd >= 0)     dc++;
+	if (ctx.loopback_udp_fd >= 0) dc++;
+	pktb_ctx_close(&ctx);
+
+	if ((int)a->op >= 0 && a->op < NR_CHILD_OP_TYPES)
+		childop_direct_syscalls_add(a->op, dc);
+	return 0;
+}
 
 /*
  * Assemble one recipe into the frame, mutate + repair, and deliver.
@@ -240,6 +354,35 @@ bool pkt_builder_probe(struct childdata *child)
 
 		if (budget_elapsed_ns(&t0, (long)PKTB_PROBE_WALL_CAP_NS))
 			break;
+
+		/*
+		 * SRH recipes (RPL type 3 / SEG6 type 4) require per-net
+		 * sysctl setup before the kernel's extension-header receive
+		 * path will process them.  Run them inside a private netns
+		 * (CLONE_NEWNET) via userns_run_in_ns() so the sysctl
+		 * writes are confined to the grandchild's netns and never
+		 * touch the host network tree.
+		 */
+		if (recipe_needs_srh_ns(pick)) {
+			if (!pktb_probe_srh_ns_unsupported) {
+				struct pktb_probe_srh_arg srh_arg = {
+					.r    = &probe_recipes[pick],
+					.pick = pick,
+					.op   = op,
+				};
+				int nsrc = userns_run_in_ns(CLONE_NEWNET,
+							    pktb_probe_srh_in_ns,
+							    &srh_arg);
+
+				if (nsrc == -EPERM)
+					pktb_probe_srh_ns_unsupported = true;
+				/* Count the fork+in-ns path as one direct
+				 * syscall; the grandchild accounts the rest
+				 * via childop_direct_syscalls_add(). */
+				direct_calls++;
+			}
+			continue;
+		}
 
 		rc = probe_one_recipe(&ctx, &probe_recipes[pick]);
 		/* rc == -2 means pktb_push rejected the recipe before any
