@@ -160,6 +160,14 @@ struct nftables_churn_iter_ctx {
 	__u32			verdict;
 	bool			table_created;
 	struct childdata	*child;
+	/* Non-netlink direct-syscall tally: socket() + sendto() burst +
+	 * close() for the UDP loopback drive.  The NETLINK_ROUTE transport
+	 * syscalls (socket + bind + setsockopt + lo bring-up sendmsg/recv +
+	 * close) are credited by nl_close() via rtnl_opts.caller_op below
+	 * and must NOT be added here.  Published once in
+	 * nftables_churn_in_ns() via childop_direct_syscalls_add() so the
+	 * hot path pays one atomic add per invocation. */
+	unsigned long		direct_calls;
 };
 
 /*
@@ -222,6 +230,11 @@ static int nftables_churn_iter_open_rtnl(struct nftables_churn_iter_ctx *ctx)
 	struct nl_open_opts rtnl_opts = {
 		.proto         = NETLINK_ROUTE,
 		.recv_timeo_s  = NFNL_RECV_TIMEO_S,
+		/* Set caller_op explicitly so nl_close() credits the
+		 * NETLINK_ROUTE transport syscalls to this op directly
+		 * rather than relying on the this_child() fallback, which
+		 * returns NULL for the userns_run_in_ns() grandchild. */
+		.caller_op     = CHILD_OP_NFTABLES_CHURN,
 	};
 
 	if (nl_open(&ctx->rtnl, &rtnl_opts) < 0) {
@@ -426,6 +439,7 @@ static void nftables_churn_iter_drive_traffic(struct nftables_churn_iter_ctx *ct
 
 	if (!ns_unsupported_inet()) {
 		ctx->udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+		ctx->direct_calls++;		/* socket() attempt */
 		if (ctx->udp < 0) {
 			if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 				mark_ns_unsupported_inet();
@@ -459,6 +473,7 @@ static void nftables_churn_iter_drive_traffic(struct nftables_churn_iter_ctx *ct
 		n = sendto(ctx->udp, payload, sizeof(payload),
 			   MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
+		ctx->direct_calls++;		/* sendto() */
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.nftables_churn.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
@@ -511,8 +526,10 @@ static void nftables_churn_iter_mid_churn(struct nftables_churn_iter_ctx *ctx)
  */
 static void nftables_churn_iter_teardown(struct nftables_churn_iter_ctx *ctx)
 {
-	if (ctx->udp >= 0)
+	if (ctx->udp >= 0) {
+		ctx->direct_calls++;		/* close(udp) */
 		close(ctx->udp);
+	}
 
 	if (ctx->nfnl.nl.fd >= 0) {
 		/* DELTABLE cascades cleanup of any chain/rule/set
@@ -557,10 +574,10 @@ static int nftables_churn_in_ns(void *arg)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (ns_unsupported_nfnetlink() || ns_unsupported_nf_tables())
-		return 0;
+		goto out;
 
 	if (nftables_churn_iter_setup_netns(ctx) != 0)
-		return 0;
+		goto out;
 
 	if (nftables_churn_iter_open_rtnl(ctx) != 0)
 		goto out;
@@ -582,6 +599,13 @@ static int nftables_churn_in_ns(void *arg)
 
 out:
 	nftables_churn_iter_teardown(ctx);
+	/* Publish non-netlink direct-syscall tally accumulated in
+	 * ctx->direct_calls (UDP socket + sendto burst + close) after
+	 * teardown so the close(udp) increment is already included.
+	 * The NETLINK_ROUTE transport is credited separately by
+	 * nl_close() via rtnl_opts.caller_op; do not add it here. */
+	if (valid_op)
+		childop_direct_syscalls_add(op, ctx->direct_calls);
 	return 0;
 }
 
