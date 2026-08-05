@@ -128,7 +128,7 @@ bool recipe_inotify(bool *unsupported __unused__)
 	if (fd < 0)
 		goto out;
 
-	wd = inotify_add_watch(fd, "/tmp",
+	wd = inotify_add_watch(fd, trinity_tmpdir_abs(),
 			       IN_CREATE | IN_DELETE | IN_ATTRIB);
 	if (wd < 0)
 		goto out;
@@ -182,14 +182,14 @@ bool recipe_fanotify(bool *unsupported)
 	}
 
 	if (fanotify_mark(fd, FAN_MARK_ADD,
-			  FAN_MODIFY | FAN_ACCESS, AT_FDCWD, "/tmp") < 0)
+			  FAN_MODIFY | FAN_ACCESS, AT_FDCWD, trinity_tmpdir_abs()) < 0)
 		goto out;
 	marked = true;
 
 	r = read(fd, buf, sizeof(buf));
 
 	if (fanotify_mark(fd, FAN_MARK_REMOVE,
-			  FAN_MODIFY | FAN_ACCESS, AT_FDCWD, "/tmp") < 0)
+			  FAN_MODIFY | FAN_ACCESS, AT_FDCWD, trinity_tmpdir_abs()) < 0)
 		goto out;
 	marked = false;
 
@@ -198,7 +198,7 @@ out:
 	if (marked)
 		(void)fanotify_mark(fd, FAN_MARK_REMOVE,
 				    FAN_MODIFY | FAN_ACCESS,
-				    AT_FDCWD, "/tmp");
+				    AT_FDCWD, trinity_tmpdir_abs());
 	if (fd >= 0)
 		close(fd);
 	if (valid_op)
