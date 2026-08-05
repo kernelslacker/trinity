@@ -96,12 +96,6 @@
 #define PR_CFI_DISABLE			(1U << 1)
 #define PR_CFI_LOCK			(1U << 2)
 #endif
-#ifndef PR_SET_PTRACER
-#define PR_SET_PTRACER			0x59616d61
-# ifndef PR_SET_PTRACER_ANY
-#  define PR_SET_PTRACER_ANY		((unsigned long)-1)
-# endif
-#endif
 #ifndef PR_THP_DISABLE_EXCEPT_ADVISED
 /* Kernel 6.16+: keep THP enabled only for madvise(MADV_HUGEPAGE) regions. */
 #define PR_THP_DISABLE_EXCEPT_ADVISED	(1 << 1)
