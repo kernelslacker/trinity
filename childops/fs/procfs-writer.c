@@ -495,9 +495,12 @@ static enum tree_kind tree_for_path(const char *path)
 
 static void add_entry(const char *path)
 {
+	size_t len;
+
 	if (nr_entries >= MAX_DISCOVERY_ENTRIES)
 		return;
-	if (strlen(path) >= PROCFS_MAX_PATH)
+	len = strlen(path);
+	if (len >= PROCFS_MAX_PATH)
 		return;
 	/*
 	 * Allow-list wins: a positively-classified parser family is
@@ -511,7 +514,7 @@ static void add_entry(const char *path)
 	if (access(path, W_OK) != 0)
 		return;
 
-	strcpy(entries[nr_entries].path, path);
+	memcpy(entries[nr_entries].path, path, len + 1);
 	entries[nr_entries].tree = tree_for_path(path);
 	nr_entries++;
 }
