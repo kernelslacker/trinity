@@ -388,12 +388,12 @@ static void dump_fork_failure_snapshot(void)
 	if (have_pid_max)
 		snprintf(pid_max_str, sizeof(pid_max_str), "%llu", pid_max);
 	else
-		(void)strcpy(pid_max_str, "-");
+		snprintf(pid_max_str, sizeof(pid_max_str), "-");
 	if (have_ns_last_pid)
 		snprintf(ns_last_pid_str, sizeof(ns_last_pid_str),
 			 "%llu", ns_last_pid);
 	else
-		(void)strcpy(ns_last_pid_str, "-");
+		snprintf(ns_last_pid_str, sizeof(ns_last_pid_str), "-");
 
 	outputerr("main: fork-failure record"
 		  " children_filled:%u children_max:%u"
