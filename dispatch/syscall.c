@@ -28,9 +28,15 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * scribbling.  No-op with the flag OFF; the pre-batch behaviour
 	 * (per-mutation X_unlock/X_lock round-trips) is byte-identical. */
 	if (!deferred_free_seal_all()) {
-		outputerr("deferred_free: seal failed at syscall "
-			  "dispatch chokepoint; suppressing kernel "
-			  "entry\n");
+		static unsigned long seal_fail_n;
+		if ((++seal_fail_n % 1000) == 1)
+			outputerr("deferred_free: seal failed at syscall "
+				  "dispatch chokepoint; suppressing kernel "
+				  "entry\n");
+		/* Mark as kernel-never-entered so kcov_collect() skips
+		 * total_calls / per_syscall_calls[nr] and the arg-drain
+		 * in handle_syscall_ret() still runs on return. */
+		rec->validator_rejected = true;
 		return;
 	}
 	deferred_free_debug_assert_sealed();

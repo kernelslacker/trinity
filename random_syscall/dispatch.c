@@ -544,7 +544,10 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	/* Also append a compact record to the per-child pre-crash ring,
 	 * dumped on __BUG() to attribute the assertion to a specific
-	 * recent syscall.  rec->tp was just refreshed in do_syscall(). */
+	 * recent syscall.  rec->tp was just refreshed in do_syscall() on
+	 * the normal dispatch path; on a seal-fail early return it retains
+	 * the timestamp from the previous iteration (still useful for
+	 * crash attribution, just not cycle-accurate for this call). */
 	pre_crash_ring_record(child, rec, &rec->tp);
 
 	/* Single combined enqueue: op_count + success/failure +
@@ -901,9 +904,12 @@ bool random_syscall_step(struct childdata *child,
 	ok = dispatch_step(child, entry, found_new, new_cmp_out,
 			   new_transition_out);
 
-	/* dispatch_step returning here means do_syscall() ran (regardless
-	 * of the syscall's own success/failure); count as one completed
-	 * random-syscall dispatch.  A pre-dispatch bail (set_syscall_nr
+	/* dispatch_step returning here normally means do_syscall() ran
+	 * (regardless of the syscall's own success/failure); count as one
+	 * completed random-syscall dispatch.  Exception: a seal failure
+	 * inside do_syscall() returns early with rec->validator_rejected
+	 * set -- the kernel was never entered, but handle_syscall_ret()
+	 * still ran the arg drain.  A pre-dispatch bail (set_syscall_nr
 	 * FAIL above) leaves the completion counter untouched, so the
 	 * attempts vs completions delta is the pre-dispatch reject rate. */
 	__atomic_add_fetch(&shm->stats.syscall_dispatch.random_syscall_completions,
