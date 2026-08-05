@@ -284,42 +284,60 @@ void dump_child_bug(struct childdata *child)
  *                              BUGLOG-COMPLETE sentinel found in the tail.
  *                              Counted directly so that
  *                              total - (no_log + partial + unreadable +
- *                              complete) surfaces a visible 'pending/lost'
- *                              residual for beacons that never reached
- *                              classify_child_buglog().
+ *                              complete + skipped_timed_out) surfaces a
+ *                              visible 'pending/lost' residual for beacons
+ *                              that never reached classify_child_buglog().
+ * skipped_timed_out_beacons -- beacon written but classify deliberately
+ *                              skipped because the child was not confirmed
+ *                              dead on the timed-out reap arm; the child
+ *                              may still be writing its bug log.
  */
 static unsigned int total_beacon_dumps;
 static unsigned int no_buglog_beacons;
 static unsigned int partial_buglog_beacons;
 static unsigned int unreadable_buglog_beacons;
 static unsigned int complete_buglog_beacons;
+static unsigned int skipped_timed_out_beacons;
 
 /*
  * Return the five beacon-capture counters accumulated across the run.
  * Called from print_stats() and finalize_and_exit() to surface numbers in
  * the run summary.  Safe to call from any parent context.
  *
- * total - (no_log + partial + unreadable + complete) gives the 'pending/lost'
- * residual: beacons surfaced but never classified because the owning child
- * was killed (e.g. via kill_all_kids()) before reap_child() ran
- * classify_child_buglog().
+ * total - (no_log + partial + unreadable + complete + skipped_timed_out)
+ * gives the 'pending/lost' residual: beacons surfaced but never classified
+ * because the owning child was killed (e.g. via kill_all_kids()) before
+ * reap_child() ran classify_child_buglog().
  */
 void beacon_loss_get_counts(unsigned int *out_total,
 			    unsigned int *out_no_log,
 			    unsigned int *out_partial,
 			    unsigned int *out_unreadable,
-			    unsigned int *out_complete)
+			    unsigned int *out_complete,
+			    unsigned int *out_skipped_timed_out)
 {
 	if (out_total)
-		*out_total       = total_beacon_dumps;
+		*out_total             = total_beacon_dumps;
 	if (out_no_log)
-		*out_no_log      = no_buglog_beacons;
+		*out_no_log            = no_buglog_beacons;
 	if (out_partial)
-		*out_partial     = partial_buglog_beacons;
+		*out_partial           = partial_buglog_beacons;
 	if (out_unreadable)
-		*out_unreadable  = unreadable_buglog_beacons;
+		*out_unreadable        = unreadable_buglog_beacons;
 	if (out_complete)
-		*out_complete    = complete_buglog_beacons;
+		*out_complete          = complete_buglog_beacons;
+	if (out_skipped_timed_out)
+		*out_skipped_timed_out = skipped_timed_out_beacons;
+}
+
+/*
+ * Record one beacon that was skipped on the timed-out reap arm.  Written
+ * only from process_zombie_pending() (parent main-loop context, no concurrent
+ * writers); plain increment matches the other beacon-loss counters above.
+ */
+void beacon_loss_count_skipped_timed_out(void)
+{
+	skipped_timed_out_beacons++;
 }
 
 void dump_child_fault_beacon(struct childdata *child)

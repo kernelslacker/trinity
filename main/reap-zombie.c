@@ -260,8 +260,15 @@ void process_zombie_pending(void)
 		 * waitpid above confirms death; drain now before
 		 * replace_child recycles the slot and clean_childdata()
 		 * zeroes the rings. */
-		if (!timed_out)
+		if (!timed_out) {
 			classify_child_buglog(children[i], pid);
+		} else {
+			/* skip classify: child not confirmed dead on timed-out arm; count the loss */
+			if (children[i] != NULL &&
+			    __atomic_load_n(&children[i]->fault_beacon.written,
+					    __ATOMIC_RELAXED))
+				beacon_loss_count_skipped_timed_out();
+		}
 		reap_child_sysv_shm(children[i]);
 		reap_child_sysv_msg(children[i]);
 		reap_child_sysv_sem(children[i]);

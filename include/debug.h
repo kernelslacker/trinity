@@ -61,14 +61,22 @@ void classify_child_buglog(struct childdata *child, pid_t pid);
  *   *out_unreadable  -- log present but zero-byte, read error, or open error
  *   *out_complete    -- log present, readable, BUGLOG-COMPLETE sentinel found
  *
- * total - (no_log + partial + unreadable + complete) is the 'pending/lost'
- * residual: beacons surfaced but never classified (child killed before
- * reap_child() ran classify_child_buglog()).
+ * total - (no_log + partial + unreadable + complete + skipped_timed_out)
+ * is the 'pending/lost' residual: beacons surfaced but never classified
+ * (child killed before reap_child() ran classify_child_buglog()).
  */
 void beacon_loss_get_counts(unsigned int *out_total,
 			    unsigned int *out_no_log,
 			    unsigned int *out_partial,
 			    unsigned int *out_unreadable,
-			    unsigned int *out_complete);
+			    unsigned int *out_complete,
+			    unsigned int *out_skipped_timed_out);
+
+/*
+ * Increment the skipped-timed-out beacon counter.  Call from the reap
+ * path when fault_beacon.written is set but classify is skipped because
+ * the child was not confirmed dead on the timed-out arm.
+ */
+void beacon_loss_count_skipped_timed_out(void);
 
 void syslogf(const char *fmt, ...);
