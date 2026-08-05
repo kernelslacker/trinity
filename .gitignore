@@ -1,5 +1,6 @@
 core.*
 !stats/json/core.c
+core
 *.o
 *.d
 *.orig
