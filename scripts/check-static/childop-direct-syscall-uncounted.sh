@@ -66,6 +66,16 @@ trap 'rm -f "$RESULTS_FILE" 2>/dev/null' EXIT
 # scan for raw-syscall invocations.  A non-zero count means the file
 # issues syscalls that are not reported into the direct-syscall telemetry
 # bucket.
+#
+# Second pass: even for wired files, scan static void *-returning
+# (pthread worker) function bodies.  A worker that issues raw syscalls
+# but does not accumulate a tally back into its arg struct is invisible
+# to the first pass and is reported as THREAD_UNCOUNTED.  Tally
+# accumulation is inferred from: a reference to a struct member whose
+# name contains "syscall", "tally", or "count" via ->, or an
+# __atomic_add_fetch / __atomic_fetch_add call.  The worker-thread raw-
+# syscall set is broader than the main-body set: it includes close, open,
+# recv, send, read, and write in addition to the standard set.
 while IFS= read -r srcfile; do
 	rel="${srcfile#"$ROOT"/}"
 
@@ -96,6 +106,11 @@ while IFS= read -r srcfile; do
 		in_block = 0
 		raw_sites = 0
 		wired = 0
+		in_fn = 0
+		brace_depth = 0
+		fn_raw_sites = 0
+		fn_has_tally = 0
+		fn_name = ""
 	}
 	{
 		code = strip_comments($0)
@@ -116,6 +131,57 @@ while IFS= read -r srcfile; do
 			raw_sites++
 			scan = substr(scan, RSTART + RLENGTH - 1)
 		}
+
+		# --- Worker-thread (static void *) function scan ---
+		# Detect the start of a static void * function definition.
+		if (!in_fn && match(code,
+		    /static[[:space:]]+void[[:space:]]*\*[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/)) {
+			in_fn = 1
+			brace_depth = 0
+			fn_raw_sites = 0
+			fn_has_tally = 0
+			# Extract the function name.
+			tmp = substr(code, RSTART)
+			sub(/static[[:space:]]+void[[:space:]]*\*[[:space:]]*/, "", tmp)
+			match(tmp, /^[a-zA-Z_][a-zA-Z0-9_]*/)
+			fn_name = substr(tmp, RSTART, RLENGTH)
+		}
+
+		if (in_fn) {
+			# Track brace depth to find function body bounds.
+			n = length(code)
+			for (j = 1; j <= n; j++) {
+				c = substr(code, j, 1)
+				if (c == "{") brace_depth++
+				else if (c == "}") {
+					brace_depth--
+					if (brace_depth == 0) {
+						if (fn_raw_sites > 0 && !fn_has_tally)
+							print "THREAD_UNCOUNTED " file " fn=" fn_name " raw_sites=" fn_raw_sites
+						in_fn = 0
+						fn_name = ""
+					}
+				}
+			}
+			# Broader raw-syscall set for worker bodies: includes
+			# close, open, recv, send, read, write in addition to
+			# the standard set used for the file-level check.
+			tscan = code
+			while (match(tscan,
+			    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall|close|open|recv|send|read|write)[[:space:]]*\(/)) {
+				fn_raw_sites++
+				tscan = substr(tscan, RSTART + RLENGTH - 1)
+			}
+			# Tally-accumulation heuristic: a reference to a struct
+			# member containing "syscall", "tally", or "count" via
+			# ->, or an __atomic_add_fetch / __atomic_fetch_add call.
+			if (!fn_has_tally) {
+				if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
+				    index(code, "__atomic_add_fetch") ||
+				    index(code, "__atomic_fetch_add"))
+					fn_has_tally = 1
+			}
+		}
 	}
 	END {
 		if (!wired && raw_sites > 0)
@@ -129,13 +195,13 @@ declare -A SEEN_KEY=()
 
 while IFS=' ' read -r kind key rest; do
 	case "$kind" in
-		UNCOUNTED)
+		UNCOUNTED|THREAD_UNCOUNTED)
 			[ -n "${SEEN_KEY[$key]+x}" ] && continue
 			SEEN_KEY["$key"]=1
 			if [ -n "${GRANDFATHERED[$key]+x}" ]; then
 				:
 			else
-				new_unbaselined+=("$key ($rest)")
+				new_unbaselined+=("[$kind] $key ($rest)")
 			fi
 			;;
 	esac

@@ -289,11 +289,13 @@ struct sender_arg {
 	int cli_fd;
 	unsigned int rounds;
 	volatile int *stop;
+	unsigned long thread_syscalls;	/* sendmsg count, written by thread */
 };
 
 struct drainer_arg {
 	int srv_fd;
 	volatile int *stop;
+	unsigned long thread_syscalls;	/* recv count, written by thread */
 };
 
 /*
@@ -314,6 +316,7 @@ static void *sender_thread(void *arg)
 	struct iovec iov;
 	struct msghdr msg;
 	unsigned int i;
+	unsigned long local_syscalls = 0;
 
 	memset(&msg, 0, sizeof(msg));
 	memset(buf, 0xa5, sizeof(buf));
@@ -337,6 +340,7 @@ static void *sender_thread(void *arg)
 		 * the op's wall-clock budget.
 		 */
 		(void)sendmsg(sa->cli_fd, &msg, MSG_MORE | MSG_NOSIGNAL);
+		local_syscalls++;
 
 		/*
 		 * Every 4th round flush the cork without MSG_MORE.
@@ -347,8 +351,14 @@ static void *sender_thread(void *arg)
 		if ((i & 3) == 3) {
 			iov.iov_len = 1;
 			(void)sendmsg(sa->cli_fd, &msg, MSG_NOSIGNAL);
+			local_syscalls++;
 		}
 	}
+	/* Accumulate into the shared tally.  Multiple sender threads share
+	 * the same sender_arg so we use an atomic add; the pthread_join() in
+	 * the parent provides the release barrier for the final read. */
+	__atomic_add_fetch(&sa->thread_syscalls, local_syscalls,
+			   __ATOMIC_RELAXED);
 	return NULL;
 }
 
@@ -362,6 +372,7 @@ static void *drainer_thread(void *arg)
 {
 	struct drainer_arg *da = arg;
 	unsigned char buf[4096];
+	unsigned long local_syscalls = 0;
 
 	while (!*da->stop) {
 		/*
@@ -371,7 +382,9 @@ static void *drainer_thread(void *arg)
 		 */
 		usleep(1000);	/* 1 ms */
 		(void)recv(da->srv_fd, buf, sizeof(buf), MSG_DONTWAIT);
+		local_syscalls++;
 	}
+	da->thread_syscalls = local_syscalls;
 	return NULL;
 }
 
@@ -499,9 +512,10 @@ bool sockmap_cork_race(struct childdata *child)
 	clock_gettime(CLOCK_MONOTONIC, &race_start);
 
 	/* 6. Spawn sender threads. */
-	sa.cli_fd = cli;
-	sa.rounds = NROUNDS;
-	sa.stop   = &stop_flag;
+	sa.cli_fd         = cli;
+	sa.rounds         = NROUNDS;
+	sa.stop           = &stop_flag;
+	sa.thread_syscalls = 0;
 
 	for (i = 0; i < NSENDERS; i++) {
 		if (pthread_create(&senders[i], NULL, sender_thread, &sa) == 0)
@@ -509,8 +523,9 @@ bool sockmap_cork_race(struct childdata *child)
 	}
 
 	/* 7. Spawn drainer thread. */
-	da.srv_fd = srv;
-	da.stop   = &stop_flag;
+	da.srv_fd          = srv;
+	da.stop            = &stop_flag;
+	da.thread_syscalls = 0;
 	if (pthread_create(&drainer_tid, NULL, drainer_thread, &da) == 0)
 		drainer_live = true;
 
@@ -529,6 +544,12 @@ bool sockmap_cork_race(struct childdata *child)
 	}
 	if (drainer_live)
 		pthread_join(drainer_tid, NULL);
+
+	/* Fold worker-thread syscalls into direct_calls now that all
+	 * joins provide the happens-before barrier. */
+	direct_calls += sa.thread_syscalls;
+	if (drainer_live)
+		direct_calls += da.thread_syscalls;
 
 	__atomic_add_fetch(&shm->stats.sockmap_cork_race.races_run, 1,
 			   __ATOMIC_RELAXED);
