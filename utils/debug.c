@@ -390,20 +390,21 @@ void dump_child_fault_beacon(struct childdata *child)
 	 *   user    -- normal user-space address
 	 *
 	 * breadcrumb_hash is a 32-bit rotate-mix fold over the last <=8
-	 * PRE_CRASH_KIND_SYSCALL and PRE_CRASH_KIND_CANARY ring entries.
-	 * PRE_CRASH_KIND_TAINT entries are skipped (their syscall_nr is
-	 * zero-initialised and they carry no useful syscall identity).
+	 * ring entries of any kind.  Every entry contributes its kind byte
+	 * so that its existence and position are always visible in the hash.
+	 * For PRE_CRASH_KIND_SYSCALL entries the syscall_nr (with bit 31 set
+	 * when do32bit is true) is additionally mixed so that the same
+	 * syscall on different ABIs hashes differently.
+	 * PRE_CRASH_KIND_TAINT and PRE_CRASH_KIND_CANARY entries contribute
+	 * only their kind: CANARY's syscall_nr fields are untrustworthy
+	 * (copied from a stomped syscallrecord), and TAINT's syscall_nr is
+	 * zero-initialised, so neither is mixed into the key.
 	 * Each step rotates the accumulator left by 5 bits then XORs in the
-	 * next contribution: crumb = (crumb<<5 | crumb>>27) ^ nr, where nr
-	 * is the entry's syscall_nr with bit 31 set when do32bit is true so
-	 * that the same syscall number on different ABIs hashes differently.
-	 * This is position-sensitive (order matters) and non-cancelling (a
-	 * repeated syscall number changes the accumulator rather than zeroing
-	 * it), so crashes sharing the same {signal, si_code, fault_ip_class}
-	 * bucket but arriving from distinct call sequences remain
-	 * distinguishable in the summary.  CANARY entries mark detected
-	 * memory-corruption stomps and are included so a crash sequence with
-	 * a canary stomp hashes differently from one without.
+	 * contribution: crumb = (crumb<<5 | crumb>>27) ^ value.  This is
+	 * position-sensitive (order matters) and non-cancelling (a repeated
+	 * value changes the accumulator rather than zeroing it), so crashes
+	 * sharing the same {signal, si_code, fault_ip_class} bucket but
+	 * arriving from distinct call sequences remain distinguishable.
 	 *
 	 * The key is appended to the FAULT! stream (outerr.log) so a simple
 	 * grep/awk over the existing log format is sufficient to aggregate
@@ -423,7 +424,7 @@ void dump_child_fault_beacon(struct childdata *child)
 		else
 			ip_class = "user";
 
-		/* Rotate-mix fold over the last <=8 SYSCALL/CANARY ring entries. */
+		/* Rotate-mix fold over the last <=8 ring entries (any kind). */
 		{
 			struct pre_crash_ring *ring = &child->pre_crash;
 			uint32_t head = __atomic_load_n(&ring->base.head,
@@ -434,9 +435,9 @@ void dump_child_fault_beacon(struct childdata *child)
 			for (i = 0; i < look; i++) {
 				uint32_t slot = (head - look + i) &
 						(PRE_CRASH_RING_SIZE - 1U);
-				if (ring->entries[slot].kind == PRE_CRASH_KIND_TAINT)
-					continue;
-				{
+				uint8_t kind = ring->entries[slot].kind;
+				crumb = (crumb << 5 | crumb >> 27) ^ (uint32_t)kind;
+				if (kind == PRE_CRASH_KIND_SYSCALL) {
 					uint32_t nr = (uint32_t)ring->entries[slot].syscall_nr |
 						      (ring->entries[slot].do32bit ? 0x80000000U : 0);
 					crumb = (crumb << 5 | crumb >> 27) ^ nr;
