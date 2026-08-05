@@ -389,23 +389,43 @@ static void print_stats_pool_ratio(void)
 		 * line is byte-for-byte unchanged, so suppress repeats
 		 * and force a print every 30 windows to keep an anchor.
 		 */
+		/*
+		 * Compute live per-lane pool sizes: subtract quarantined
+		 * slots in each range so the plateau-controller sees the
+		 * actual active fleet rather than the startup-time partition.
+		 * A quarantined slot in the explorer band shrinks that pool
+		 * while leaving the bandit count unchanged, skewing the A/B
+		 * ratio the plateau-controller reads.
+		 */
+		unsigned int live_expl =
+			explorer_children -
+			count_quarantined_in_range(alt_op_children,
+						   alt_op_children +
+						   explorer_children);
+		unsigned int live_band =
+			live_child_slots -
+			count_quarantined_in_range(0, alt_op_children) -
+			live_expl;
 		static unsigned int last_eb_explorers;
 		static unsigned int last_eb_max;
+		static unsigned int last_eb_live;
 		static unsigned long last_eb_e_cur;
 		static unsigned long last_eb_b_cur;
 		static unsigned int eb_suppress = 30; /* force first print */
 		if (eb_suppress >= 30 ||
 		    explorer_children != last_eb_explorers ||
 		    max_children != last_eb_max ||
+		    live_child_slots != last_eb_live ||
 		    e_cur != last_eb_e_cur ||
 		    b_cur != last_eb_b_cur) {
 			output(0, "explorer: %u/%u children, %lu edges (%u%%%s)  bandit: %u/%u, %lu edges (%u%%%s)\n",
-				explorer_children, max_children,
+				live_expl, live_child_slots,
 				e_cur, e_share_pct, e_delta_str,
-				max_children - explorer_children, max_children,
+				live_band, live_child_slots,
 				b_cur, b_share_pct, b_delta_str);
 			last_eb_explorers = explorer_children;
 			last_eb_max = max_children;
+			last_eb_live = live_child_slots;
 			last_eb_e_cur = e_cur;
 			last_eb_b_cur = b_cur;
 			eb_suppress = 0;
@@ -414,13 +434,17 @@ static void print_stats_pool_ratio(void)
 		}
 		last_explorer_edges = e_cur;
 	} else {
+		/* No explorer pool: all live non-altop slots are bandit. */
+		unsigned int live_band_solo =
+			live_child_slots -
+			count_quarantined_in_range(0, alt_op_children);
 		if (b_delta > 0)
 			output(0, "bandit: %u/%u children, %lu edges (+%lu)\n",
-				max_children, max_children,
+				live_band_solo, live_child_slots,
 				b_cur, b_delta);
 		else
 			output(0, "bandit: %u/%u children, %lu edges\n",
-				max_children, max_children, b_cur);
+				live_band_solo, live_child_slots, b_cur);
 	}
 	last_bandit_edges = b_cur;
 }
