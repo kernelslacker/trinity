@@ -1569,14 +1569,13 @@ static void deferred_free_record_outstanding(unsigned int v)
  *
  * Fail-closed: an mprotect that returns non-zero leaves the flag
  * SET so a subsequent barrier re-attempts the close.  The caller
- * (do_syscall prologue / op_fn dispatch prologue) then enters the
- * kernel with the region still RW -- the same fail-open exposure
- * the historical unlock/lock pair already had -- and the outputerr
- * line preserves the breadcrumb; a persistent failure trips the
- * debug assert at the next chokepoint.  Ring skipped when
- * ring_dispose_after_enomem() has already torn it down (ring ==
- * NULL); the disposed state re-arms via rw_open being clear once
- * the dispose path runs.
+ * (do_syscall prologue / op_fn dispatch prologue) checks the bool
+ * return and, on false, does NOT proceed to the target syscall or
+ * childop — it aborts or recycles the child before any kernel
+ * entry.  The outputerr line preserves the breadcrumb.  Ring
+ * skipped when ring_dispose_after_enomem() has already torn it
+ * down (ring == NULL); the disposed state re-arms via rw_open
+ * being clear once the dispose path runs.
  */
 bool deferred_free_seal_all(void)
 {
