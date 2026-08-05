@@ -41,15 +41,27 @@ void dump_child_bug(struct childdata *child);
 void dump_child_fault_beacon(struct childdata *child);
 
 /*
- * Return the three beacon-capture loss counters accumulated by
- * dump_child_fault_beacon() across the run.  Any out-pointer may be NULL.
- *   *out_total   -- total beacons surfaced (dump_child_fault_beacon calls
- *                   that passed the cmpxchg gate)
- *   *out_no_log  -- subset with no per-pid bug log file on disk
- *   *out_partial -- subset with log file but no BUGLOG-COMPLETE sentinel
+ * Classify the on-disk bug log for a reaped child that had a fault beacon.
+ * Must be called from the reap path (after the child has exited, before
+ * pids[child->num] is cleared) to avoid false-positive partial counts that
+ * the per-tick poll path would produce by reading the log mid-write.
+ * Updates no_buglog_beacons, partial_buglog_beacons, and
+ * unreadable_buglog_beacons.  No-op when child is NULL or no beacon fired.
+ */
+void classify_child_buglog(struct childdata *child);
+
+/*
+ * Return the four beacon-capture loss counters accumulated by
+ * dump_child_fault_beacon() / classify_child_buglog() across the run.
+ * Any out-pointer may be NULL.
+ *   *out_total       -- total beacons surfaced (cmpxchg-gated)
+ *   *out_no_log      -- no per-pid bug log file on disk
+ *   *out_partial     -- log present but BUGLOG-COMPLETE sentinel absent
+ *   *out_unreadable  -- log present but zero-byte, read error, or open error
  */
 void beacon_loss_get_counts(unsigned int *out_total,
 			    unsigned int *out_no_log,
-			    unsigned int *out_partial);
+			    unsigned int *out_partial,
+			    unsigned int *out_unreadable);
 
 void syslogf(const char *fmt, ...);

@@ -149,6 +149,15 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	 * the fault_beacon_dumped cmpxchg gate makes this call idempotent
 	 * against that path so it is safe even if both paths see the beacon. */
 	dump_child_fault_beacon(child);
+	/*
+	 * Classify the on-disk bug log now that the child has exited and
+	 * pids[childno] still holds the real pid (needed to build the
+	 * trinity-bug-<pid>.log path).  Must come before the EMPTY_PIDSLOT
+	 * store below.  The poll path (loop.c) deliberately skips log
+	 * classification to avoid false-positive partial counts from
+	 * reading the log mid-write; this is the authoritative site.
+	 */
+	classify_child_buglog(child);
 
 	__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
 
