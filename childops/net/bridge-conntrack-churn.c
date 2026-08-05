@@ -598,6 +598,10 @@ static void *brct_packet_sender(void *arg)
 			__atomic_add_fetch(&shm->stats.bridge_ct.pkts_sent,
 					   1, __ATOMIC_RELAXED);
 	}
+	/* TALLY: accumulated in a->direct_calls; folded into
+	 * ctx->sa.direct_calls by bridge_conntrack_iter_traffic_burst()
+	 * after pthread_join(), then published via
+	 * childop_direct_syscalls_add() in bridge_conntrack_churn_in_ns(). */
 	a->direct_calls = calls;
 	return NULL;
 }
