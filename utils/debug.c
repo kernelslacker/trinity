@@ -350,11 +350,17 @@ void dump_child_fault_beacon(struct childdata *child)
 	 *   kernel  -- kernel-space VA (bit 63 set on x86-64/arm64)
 	 *   user    -- normal user-space address
 	 *
-	 * breadcrumb_hash is a 32-bit XOR-fold over the syscall_nr fields of
-	 * the last <=8 pre-crash ring entries.  Cheap and stable: provides a
-	 * coarse execution-context discriminator so crashes sharing the same
-	 * {signal, si_code, fault_ip_class} bucket but arriving from distinct
-	 * call sequences remain distinguishable in the summary.
+	 * breadcrumb_hash is a 32-bit rotate-mix fold over the syscall_nr
+	 * fields of the last <=8 PRE_CRASH_KIND_SYSCALL ring entries.  Each
+	 * step rotates the accumulator left by 5 bits then XORs in the next
+	 * syscall number: crumb = (crumb<<5 | crumb>>27) ^ nr.  This is
+	 * position-sensitive (order matters) and non-cancelling (a repeated
+	 * syscall number changes the accumulator rather than zeroing it), so
+	 * crashes sharing the same {signal, si_code, fault_ip_class} bucket
+	 * but arriving from distinct call sequences remain distinguishable in
+	 * the summary.  Non-SYSCALL ring entries (TAINT, CANARY) carry
+	 * syscall_nr == 0 by construction and are skipped to avoid silently
+	 * shortening the effective window.
 	 *
 	 * The key is appended to the FAULT! stream (outerr.log) so a simple
 	 * grep/awk over the existing log format is sufficient to aggregate
@@ -374,7 +380,7 @@ void dump_child_fault_beacon(struct childdata *child)
 		else
 			ip_class = "user";
 
-		/* XOR-fold the last <=8 pre-crash ring syscall numbers. */
+		/* Rotate-mix fold over the last <=8 SYSCALL-kind ring entries. */
 		{
 			struct pre_crash_ring *ring = &child->pre_crash;
 			uint32_t head = __atomic_load_n(&ring->base.head,
@@ -385,7 +391,12 @@ void dump_child_fault_beacon(struct childdata *child)
 			for (i = 0; i < look; i++) {
 				uint32_t slot = (head - look + i) &
 						(PRE_CRASH_RING_SIZE - 1U);
-				crumb ^= (uint32_t)ring->entries[slot].syscall_nr;
+				if (ring->entries[slot].kind != PRE_CRASH_KIND_SYSCALL)
+					continue;
+				{
+					uint32_t nr = (uint32_t)ring->entries[slot].syscall_nr;
+					crumb = (crumb << 5 | crumb >> 27) ^ nr;
+				}
 			}
 		}
 
