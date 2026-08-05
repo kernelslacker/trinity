@@ -181,9 +181,17 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	 * inherit the previous occupant's signal-death context and
 	 * fault_beacon_dumped is cleared in clean_childdata for the new
 	 * child.  Any si_addr / fault_ip / fault_sp left in the beacon
-	 * are unreachable once .written=0. */
-	__atomic_store_n(&child->fault_beacon.written, 0U,
-			 __ATOMIC_RELAXED);
+	 * are unreachable once .written=0.
+	 *
+	 * Gated on child_dead for the same reason as shm/msg/sem below:
+	 * when child_dead=false the deferred path (process_zombie_pending)
+	 * needs .written to remain set so classify_child_buglog can see the
+	 * beacon and act on it.  clean_childdata() already zeroes .written
+	 * for the next occupant, so the store is redundant on the recycle
+	 * path regardless. */
+	if (child_dead)
+		__atomic_store_n(&child->fault_beacon.written, 0U,
+				 __ATOMIC_RELAXED);
 
 	/* Catch the SIGKILL'd-child case where inode_spewer_cleanup()
 	 * never ran in the child.  No-op when the dir doesn't exist. */
