@@ -1,49 +1,54 @@
 # Grandfathered childop files that issue raw syscalls without a complete
 # childop_direct_syscalls_add() accounting chain.
 #
-# Two categories:
+# Two namespaced categories:
 #
-# UNCOUNTED — file-level: the translation unit calls raw-syscall functions
-# (trinity_raw_syscall(), socket(), sendmsg(), sendto(), setsockopt(),
-# mmap(), syscall()) but does not call childop_direct_syscalls_add().
-# Many of these route netlink-path syscalls through the nl_* transport
-# which calls childop_direct_syscalls_add() internally at nl_close(); own-
-# body calls outside that transport remain uncounted.
+# UNCOUNTED:<file> — file-level: the translation unit calls raw-syscall
+# functions (trinity_raw_syscall(), socket(), sendmsg(), sendto(),
+# setsockopt(), mmap(), syscall()) but does not call
+# childop_direct_syscalls_add().  Many of these route netlink-path
+# syscalls through the nl_* transport which calls
+# childop_direct_syscalls_add() internally at nl_close(); own-body calls
+# outside that transport remain uncounted.
 #
-# THREAD_UNCOUNTED — worker-thread level: the file IS wired at the op-body
-# level (calls childop_direct_syscalls_add()) but contains a static void *
-# pthread worker function that issues raw syscalls without accumulating them
-# back into the parent's direct_calls tally.
+# THREAD_UNCOUNTED:<file>#<fn> — worker-thread level: the file IS wired at
+# the op-body level (calls childop_direct_syscalls_add()) but contains a
+# static void * pthread worker function <fn> that issues raw syscalls
+# without accumulating them back into the parent's direct_calls tally.
+# Each worker gets its own baseline slot so that new workers added to an
+# already-baselined file are caught immediately.
 #
 # The UNCOUNTED list should shrink over time as each file is wired.
 # THREAD_UNCOUNTED entries should be fixed by adding a tally field to the
 # thread arg struct, accumulating in the worker, and folding after join.
 # Never grow either list.
-childops/fs/hfs-mount-fuzz.c
-childops/misc/close-racer.c
-childops/net/bareudp-rx.c
-childops/net/bridge-fdb-stp-traffic.c
-childops/net/bridge-fdb-stp-vlan-mass.c
-childops/net/esp-crafted-rx-frag.c
-childops/net/esp-crafted-rx-stacked.c
-childops/net/geneve-rx.c
-childops/net/ip_gre-churn.c
-childops/net/ipv6-pmtu-teardown-race.c
-childops/net/l2tp-ifname-race.c
-childops/net/netfilter/nfnl-util.c
-childops/net/netfilter/nftables/churn.c
-childops/net/netfilter/nftables/fwd.c
-childops/net/netfilter/nftables/l4frag.c
-childops/net/netlink/genl-util.c
-childops/net/netlink/nl80211-churn-discovery.c
-childops/net/psp-key-rotate-devlink-port.c
-childops/net/psp-key-rotate-lifecycle.c
-childops/net/sctp-chunk-rx.c
-childops/net/veth-asymmetric-xdp.c
-childops/net/vrf-fib-churn.c
-childops/net/xfrm/xfrm-churn-compat-sweep.c
-childops/net/xfrm/xfrm-churn-pfkey.c
-childops/net/xfrm/xfrm-churn-traffic.c
-childops/recipe/close-race.c
-childops/recipe/deadline-race.c
-childops/recipe/net.c
+UNCOUNTED:childops/fs/hfs-mount-fuzz.c
+UNCOUNTED:childops/net/bareudp-rx.c
+UNCOUNTED:childops/net/bridge-fdb-stp-traffic.c
+UNCOUNTED:childops/net/bridge-fdb-stp-vlan-mass.c
+UNCOUNTED:childops/net/esp-crafted-rx-frag.c
+UNCOUNTED:childops/net/esp-crafted-rx-stacked.c
+UNCOUNTED:childops/net/geneve-rx.c
+UNCOUNTED:childops/net/ip_gre-churn.c
+UNCOUNTED:childops/net/ipv6-pmtu-teardown-race.c
+UNCOUNTED:childops/net/l2tp-ifname-race.c
+UNCOUNTED:childops/net/netfilter/nfnl-util.c
+UNCOUNTED:childops/net/netfilter/nftables/churn.c
+UNCOUNTED:childops/net/netfilter/nftables/fwd.c
+UNCOUNTED:childops/net/netfilter/nftables/l4frag.c
+UNCOUNTED:childops/net/netlink/genl-util.c
+UNCOUNTED:childops/net/netlink/nl80211-churn-discovery.c
+UNCOUNTED:childops/net/psp-key-rotate-devlink-port.c
+UNCOUNTED:childops/net/psp-key-rotate-lifecycle.c
+UNCOUNTED:childops/net/sctp-chunk-rx.c
+UNCOUNTED:childops/net/veth-asymmetric-xdp.c
+UNCOUNTED:childops/net/vrf-fib-churn.c
+UNCOUNTED:childops/net/xfrm/xfrm-churn-compat-sweep.c
+UNCOUNTED:childops/net/xfrm/xfrm-churn-pfkey.c
+UNCOUNTED:childops/net/xfrm/xfrm-churn-traffic.c
+THREAD_UNCOUNTED:childops/misc/close-racer.c#racer_thread
+THREAD_UNCOUNTED:childops/recipe/close-race.c#timerfd_xclose_racer_thread
+THREAD_UNCOUNTED:childops/recipe/deadline-race.c#bpf_htab_racer_thread
+THREAD_UNCOUNTED:childops/recipe/deadline-race.c#perf_mmap_close_racer_thread
+THREAD_UNCOUNTED:childops/recipe/deadline-race.c#keys_revoke_racer_thread
+THREAD_UNCOUNTED:childops/recipe/net.c#tcp_racer_thread
