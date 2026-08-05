@@ -768,8 +768,10 @@ static enum ring_unlock_result ring_unlock(void)
 	clock_gettime(CLOCK_MONOTONIC, &begin);
 	if (mprotect(ring, ring_bytes, PROT_READ | PROT_WRITE) != 0) {
 		int e = errno;
+		static unsigned long rw_fail_n;
 
-		outputerr("deferred_free: mprotect RW failed: errno=%d\n", e);
+		if ((++rw_fail_n % 1000) == 1)
+			outputerr("deferred_free: mprotect RW failed: errno=%d\n", e);
 		return (e == ENOMEM) ? RING_UNLOCK_ENOMEM : RING_UNLOCK_FAIL;
 	}
 	ring_rw_open_at = begin;
@@ -786,8 +788,12 @@ static void ring_lock(void)
 	if (deferred_free_batch)
 		return;
 
-	if (mprotect(ring, ring_bytes, PROT_NONE) != 0)
-		outputerr("deferred_free: mprotect NONE failed: errno=%d\n", errno);
+	if (mprotect(ring, ring_bytes, PROT_NONE) != 0) {
+		static unsigned long none_fail_n;
+
+		if ((++none_fail_n % 1000) == 1)
+			outputerr("deferred_free: mprotect NONE failed: errno=%d\n", errno);
+	}
 	ring_rw_open = false;
 	if (df_ts_is_zero(&ring_rw_open_at))
 		return;
