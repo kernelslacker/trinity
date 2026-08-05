@@ -284,20 +284,28 @@ static void log_corruption(enum oracle_target t, const char *path,
 }
 
 /*
- * splice(file -> pipe) plants page-cache pages in the pipe; sendmsg
- * with EXPLICIT MSG_SPLICE_PAGES then hands those pages to the
- * socket as skb frags without copying.  Soft-failure paths return 0
- * so the caller can still run the oracle (no MSG_SPLICE_PAGES =
- * non-frag skb = expected no-corruption); hard pipe failure is -1.
+ * splice(file -> pipe -> socket): the kernel's splice_to_socket()
+ * sets MSG_SPLICE_PAGES internally, handing page-cache pages to the
+ * socket as skb frags without copying.  The previous read()+sendmsg()
+ * path pulled bytes into a stack buffer, creating a private copy that
+ * made the in-place-crypto oracle structurally unreachable -- the
+ * socket never saw a page-cache page, so a skip_cow input handler
+ * could never scribble one.  Soft-failure paths (splice <= 0) return
+ * 0 so the caller can still run the file-content check; hard pipe
+ * failure returns -1.
  */
 static ssize_t splice_into_socket(int file_fd, int sock_fd,
 				  unsigned long *n_calls)
 {
 	int pfd[2] = { -1, -1 };
-	struct iovec iov;
-	struct msghdr mh;
-	unsigned char buf[ORACLE_SPLICE_BYTES];
-	ssize_t n_in, rd, n_out;
+	ssize_t n_in, rc;
+
+	/* Warn once if the socket-side splice never succeeds across many
+	 * attempts -- indicates splice(pipe->socket) is silently failing
+	 * for all targets and the oracle is structurally inert. */
+	static unsigned long s_attempts;
+	static unsigned long s_ok;
+	static bool s_warned;
 
 	if (pipe2(pfd, O_CLOEXEC | O_NONBLOCK) < 0) {
 		(*n_calls)++;
@@ -312,21 +320,25 @@ static ssize_t splice_into_socket(int file_fd, int sock_fd,
 		(*n_calls) += 2;
 		return 0;
 	}
-	rd = read(pfd[0], buf,
-		  (size_t)n_in > sizeof(buf) ? sizeof(buf) : (size_t)n_in);
+	rc = splice(pfd[0], NULL, sock_fd, NULL, (size_t)n_in, SPLICE_F_MOVE);
 	close(pfd[0]); close(pfd[1]);
 	(*n_calls) += 3;
-	if (rd <= 0)
-		return 0;
-	iov.iov_base = buf;
-	iov.iov_len  = (size_t)rd;
-	memset(&mh, 0, sizeof(mh));
-	mh.msg_iov    = &iov;
-	mh.msg_iovlen = 1;
-	n_out = sendmsg(sock_fd, &mh,
-			MSG_DONTWAIT | MSG_NOSIGNAL);
-	(*n_calls)++;
-	return n_out < 0 ? 0 : n_out;
+
+	__atomic_add_fetch(&s_attempts, 1, __ATOMIC_RELAXED);
+	if (rc > 0)
+		__atomic_add_fetch(&s_ok, 1, __ATOMIC_RELAXED);
+	if (!s_warned &&
+	    __atomic_load_n(&s_attempts, __ATOMIC_RELAXED) >= 1000 &&
+	    __atomic_load_n(&s_ok, __ATOMIC_RELAXED) == 0) {
+		s_warned = true;
+		/* check-static: child-output-ok */
+		outputerr("inplace_crypto_oracle: WARNING -- "
+			  "splice(pipe->socket) returned >0 for 0 of "
+			  "%lu attempts; oracle may be inert\n",
+			  __atomic_load_n(&s_attempts, __ATOMIC_RELAXED));
+	}
+
+	return rc < 0 ? 0 : rc;
 }
 
 static int try_espinudp(int file_fd, unsigned long *n_calls)
