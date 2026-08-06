@@ -275,15 +275,9 @@ while IFS= read -r srcfile; do
 			# __atomic_fetch_add calls are NOT treated as tally evidence --
 			# they are used pervasively for stats counters unrelated to
 			# syscall tallying and would suppress legitimate detections.
-			# A /* TALLY: */ annotation comment (checked in the raw $0
-			# before comment stripping) marks a struct-field indirection
-			# pattern whose folding the scanner cannot trace statically
-			# (e.g. brct_packet_sender accumulating into a->direct_calls
-			# which the parent folds after pthread_join).
 			if (!fn_has_tally) {
 				if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
-				    index(code, "childop_direct_syscalls_add(") > 0 ||
-				    index($0, "/* TALLY:") > 0)
+				    index(code, "childop_direct_syscalls_add(") > 0)
 					fn_has_tally = 1
 			}
 		}
