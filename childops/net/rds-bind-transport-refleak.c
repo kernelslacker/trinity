@@ -461,6 +461,20 @@ bool rds_bind_transport_refleak(struct childdata *child)
 				__atomic_add_fetch(
 					&shm->stats.rds_bind_transport_refleak.ref_delta_nonpositive,
 					1, __ATOMIC_RELAXED);
+			} else {
+				/*
+				 * 0 < delta < local_failed_binds: the delta
+				 * is positive but smaller than the locally-
+				 * observed failed-bind count.  Sibling closes
+				 * during the window partially cancelled the
+				 * leaked refs, causing the calibration
+				 * threshold to reject the reading.  Record so
+				 * operators can quantify how often busy-box
+				 * sibling activity lands in this band.
+				 */
+				__atomic_add_fetch(
+					&shm->stats.rds_bind_transport_refleak.ref_delta_undercount,
+					1, __ATOMIC_RELAXED);
 			}
 		}
 

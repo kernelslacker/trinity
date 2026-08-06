@@ -42,6 +42,15 @@ struct rds_bind_transport_refleak_stats {
 	unsigned long ref_delta_nonpositive;
 
 	/*
+	 * ref_delta_undercount: band 0 < delta < local_failed_binds --
+	 * partial sibling close masked a potential leak.  The delta is
+	 * positive but smaller than the locally-observed failed-bind count,
+	 * so the calibration threshold rejects it from leaked_refs.  Records
+	 * how often busy-box sibling activity lands in this band.
+	 */
+	unsigned long ref_delta_undercount;
+
+	/*
 	 * HWM oracle.  rds_tcp_refcount_hwm is the largest absolute
 	 * /proc/modules refcount observed for rds_tcp across all
 	 * invocations in this run.  baseline_refcount is seeded from the

@@ -10,6 +10,7 @@ static const struct stat_field rds_bind_transport_refleak_fields[] = {
 	STAT_FIELD_SUB(rds_bind_transport_refleak, leaked_refs),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, ref_read_failed),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, ref_delta_nonpositive),
+	STAT_FIELD_SUB(rds_bind_transport_refleak, ref_delta_undercount),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, baseline_refcount),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, rds_tcp_refcount_hwm),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, leaked_refs_hwm_growth),
