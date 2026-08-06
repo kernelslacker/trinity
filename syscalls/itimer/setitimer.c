@@ -131,7 +131,12 @@ out_free:
 }
 
 struct syscallentry syscall_setitimer = {
-	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,		/* setitimer interferes with alarm() */
+	/* setitimer interferes with alarm() (AVOID_SYSCALL).
+	 * sanitise_setitimer is re-exec clean (avoid_shared_buffer_out +
+	 * zmalloc_tracked snap only, no global side effects): keep
+	 * REEXEC_SANITISE_OK.  AVOID_REEXEC belt-and-braces alongside
+	 * AVOID_SYSCALL. */
+	.flags = AVOID_SYSCALL | AVOID_REEXEC | REEXEC_SANITISE_OK,
 	.name = "setitimer",
 	.group = GROUP_TIME,
 	.num_args = 3,

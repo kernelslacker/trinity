@@ -385,5 +385,14 @@ struct syscallentry syscall_seccomp = {
 	 * which returns a notification listener fd.  Hint so xprop's
 	 * whitelist walker still recognises seccomp as an fd source. */
 	.rettype_publish_hint = RET_FD,
-	.flags = REEXEC_SANITISE_OK,
+	/* sanitise_seccomp is re-exec clean (BPF program generation + heap
+	 * allocs only, no global side effects): REEXEC_SANITISE_OK is correct.
+	 * However, the SYSCALL itself compounds across re-exec: a second
+	 * SECCOMP_SET_MODE_FILTER dispatch stacks an additional irreversible
+	 * filter with no teardown; SECCOMP_SET_MODE_STRICT would lock down the
+	 * calling child mid-re-exec, breaking the re-exec machinery.  Add
+	 * AVOID_REEXEC to prevent the re-exec step from ever firing on this
+	 * entry, while retaining REEXEC_SANITISE_OK as an accurate audit
+	 * record of the sanitise's shape. */
+	.flags = AVOID_REEXEC | REEXEC_SANITISE_OK,
 };

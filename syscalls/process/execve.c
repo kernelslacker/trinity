@@ -444,7 +444,11 @@ struct syscallentry syscall_execve = {
 	.sanitise = sanitise_execve,
 	.post = post_execve,
 	.group = GROUP_VFS_PATH,
-	.flags = AVOID_SYSCALL | EXTRA_FORK | REEXEC_SANITISE_OK,
+	/* EXTRA_FORK spawns a helper process -- explicit re-exec disqualifier
+	 * per include/syscall.h:884-905.  AVOID_REEXEC belt-and-braces alongside
+	 * AVOID_SYSCALL so a future flag rework cannot silently expose this
+	 * entry to re-exec while REEXEC_SANITISE_OK is absent. */
+	.flags = AVOID_SYSCALL | EXTRA_FORK | AVOID_REEXEC,
 	.rettype = RET_BORING,
 };
 
@@ -465,6 +469,10 @@ struct syscallentry syscall_execveat = {
 	.sanitise = sanitise_execve,
 	.post = post_execveat,
 	.group = GROUP_VFS_PATH,
-	.flags = AVOID_SYSCALL | EXTRA_FORK | REEXEC_SANITISE_OK,
+	/* EXTRA_FORK spawns a helper process -- explicit re-exec disqualifier
+	 * per include/syscall.h:884-905.  AVOID_REEXEC belt-and-braces alongside
+	 * AVOID_SYSCALL so a future flag rework cannot silently expose this
+	 * entry to re-exec while REEXEC_SANITISE_OK is absent. */
+	.flags = AVOID_SYSCALL | EXTRA_FORK | AVOID_REEXEC,
 	.rettype = RET_BORING,
 };

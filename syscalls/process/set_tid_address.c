@@ -32,7 +32,11 @@ struct syscallentry syscall_set_tid_address = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_ADDRESS },
 	.argname = { [0] = "tidptr" },
-	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,
+	/* sanitise is re-exec clean (avoid_shared_buffer_out only, no global
+	 * side effects): keep REEXEC_SANITISE_OK.  AVOID_REEXEC belt-and-braces
+	 * alongside AVOID_SYSCALL so a future flag rework cannot silently
+	 * expose this entry with the standing 'audited' attestation. */
+	.flags = AVOID_SYSCALL | AVOID_REEXEC | REEXEC_SANITISE_OK,
 	.group = GROUP_PROCESS,
 	.sanitise = sanitise_set_tid_address,
 	.post = post_set_tid_address,

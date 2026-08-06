@@ -75,7 +75,11 @@ struct syscallentry syscall_unshare = {
 	.argtype = { [0] = ARG_LIST },
 	.argname = { [0] = "unshare_flags" },
 	.arg_params[0].list = ARGLIST(unshare_flags),
-	.flags = KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
+	/* sanitise_unshare calls try_admit_newnet() which increments a global
+	 * in-flight counter; a re-exec would re-admit before the prior
+	 * post_unshare release fires, risking counter imbalance.  Drop
+	 * REEXEC_SANITISE_OK and add AVOID_REEXEC (same shape as clone/clone3). */
+	.flags = KCOV_REMOTE_HEAVY | AVOID_REEXEC,
 	.sanitise = sanitise_unshare,
 	.post = post_unshare,
 	.rettype = RET_ZERO_SUCCESS,

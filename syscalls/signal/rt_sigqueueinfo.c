@@ -143,7 +143,11 @@ struct syscallentry syscall_rt_sigqueueinfo = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_PID },
 	.argname = { [0] = "pid", [1] = "sig", [2] = "uinfo" },
-	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,	/* can disrupt signal handling */
+	/* sanitise is re-exec clean (pid/sig selection + fill_siginfo_by_class,
+	 * no global side effects): keep REEXEC_SANITISE_OK.  AVOID_REEXEC
+	 * belt-and-braces alongside AVOID_SYSCALL (signal delivery can disrupt
+	 * the calling child even if the sanitise is safe). */
+	.flags = AVOID_SYSCALL | AVOID_REEXEC | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_rt_sigqueueinfo,
 	.rettype = RET_ZERO_SUCCESS,
 };
