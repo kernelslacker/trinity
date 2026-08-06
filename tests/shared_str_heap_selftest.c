@@ -106,26 +106,19 @@ static void fail(const char *msg, size_t alloc_size, void *expected,
 /* =====================================================================
  * Cases 1-4 below are additional free_shared_str() fixtures.
  *
- * Cases 1-3 are XFAIL at HEAD: they expose known corruption paths in
- * free_shared_str()'s fall-through "no LIVE record" branch.  Each
- * function detects the failure, prints an XFAIL diagnostic, and
- * returns without abort()ing so that case 4 and the original suite
- * continue to execute.  The planned free_shared_str() repair should make these
- * cases pass (the XFAIL lines will then not print).
- *
- * Case 4 is EXPECTED TO PASS at HEAD.
+ * Cases 1-3 are regression assertions for the 374·A fix: they verify
+ * that free_shared_str() range/alignment/slot_state-gates the pointer
+ * and skips any memset for non-LIVE slots.  Case 4 is a full
+ * alloc/free/realloc round-trip across every size bucket.
  * ===================================================================== */
 
 /*
- * CASE 1 (XFAIL at HEAD): duplicate free corrupts the freelist chain.
+ * CASE 1: duplicate free must leave the freelist chain intact.
  *
  * After a slot is freed correctly its first four bytes hold the
- * next-token link for the freelist chain.  A second free_shared_str()
- * call on the same pointer (with a non-zero size) falls through the
- * "no LIVE record" path and issues memset(p, 0, size), zeroing the
- * link and silently truncating the chain.  The repair must gate the
- * fall-through memset on the slot genuinely being above-bucket /
- * out-of-range so FREE(bucket) state slots are not scribbled.
+ * next-token link for the freelist chain.  free_shared_str() must
+ * recognise FREE(bucket) state and skip the memset so the link is
+ * not clobbered by a double-free.
  *
  * Assertion: the first four bytes of the freed slot (its next-chain
  * link) are identical before and after the second free call.
@@ -141,10 +134,8 @@ static void xfail_double_free_chain(void)
 	 * Bump order gives slot_a at offset 0, slot_b at offset 8. */
 	slot_a = alloc_shared_str(1);
 	slot_b = alloc_shared_str(1);
-	if (!slot_a || !slot_b) {
-		fprintf(stderr, "xfail_double_free_chain: alloc failed\n");
-		return;
-	}
+	if (!slot_a || !slot_b)
+		fail("double_free_chain: alloc failed", 8, NULL, NULL);
 
 	/* Build chain slot_a -> slot_b -> nil.
 	 * Free slot_b first so its next-token is 0 (empty),
@@ -160,32 +151,19 @@ static void xfail_double_free_chain(void)
 	free_shared_str(slot_a, 8);
 	memcpy(&link_after, slot_a, sizeof(link_after));
 
-	if (link_after != link_before) {
-		fprintf(stderr,
-			"XFAIL (case 1 - double_free_chain): "
-			"freelist link at slot_a[0..3] was clobbered by "
-			"the second free_shared_str() call "
-			"(was 0x%08x, now 0x%08x). "
-			"Fix: gate the fall-through memset on LIVE state "
-			"so FREE-state slots are not scribbled.\n",
-			link_before, link_after);
-		return;
-	}
-	fprintf(stderr,
-		"case 1 (double_free_chain): PASS "
-		"(previously XFAIL -- 374*A landed?)\n");
+	if (link_after != link_before)
+		fail("double_free_chain: freelist link clobbered by second free",
+		     8, (void *)(uintptr_t)link_before, (void *)(uintptr_t)link_after);
+	fprintf(stderr, "case 1 (double_free_chain): PASS\n");
 }
 
 /*
- * CASE 2 (XFAIL at HEAD): aligned interior pointer corrupts a live
- * allocation.
+ * CASE 2: free of a stride-aligned interior pointer must not corrupt
+ * the enclosing live allocation.
  *
- * free_shared_str() of a stride-aligned interior offset within a
- * larger live slot finds state == UNCARVED (0) at that stride index
- * and falls through to memset(interior_ptr, 0, size), scribbling
- * payload bytes inside the covering live slot.  The repair must verify
- * that the presented address is NOT an interior stride unit of any
- * live slot before allowing the fall-through memset.
+ * free_shared_str() must recognise that a stride-aligned address
+ * falling inside a live slot has state UNCARVED (not LIVE at that
+ * index) and skip any memset rather than scribbling the live payload.
  *
  * Assertion: bytes at the interior stride offset are byte-identical
  * before and after the bogus free call.
@@ -202,11 +180,9 @@ static void xfail_interior_ptr_corruption(void)
 	 * slot_state[off/STRIDE] = LIVE(3) for the slot start only;
 	 * slot_state[(off + STRIDE)/STRIDE] = 0 (UNCARVED) for +8. */
 	big = alloc_shared_str(33);
-	if (!big) {
-		fprintf(stderr,
-			"xfail_interior_ptr_corruption: alloc failed\n");
-		return;
-	}
+	if (!big)
+		fail("interior_ptr_corruption: alloc failed",
+		     33, NULL, NULL);
 
 	/* Fill the whole slot so the interior stride unit is non-zero. */
 	memset(big, 'M', 64);
@@ -222,36 +198,23 @@ static void xfail_interior_ptr_corruption(void)
 	memcpy(after_buf, big + SHARED_FREELIST_SLOT_STRIDE,
 	       sizeof(after_buf));
 
-	if (memcmp(before_buf, after_buf, sizeof(before_buf)) != 0) {
-		fprintf(stderr,
-			"XFAIL (case 2 - interior_ptr_corruption): "
-			"live slot bytes at interior stride offset (+%u) "
-			"were modified by free_shared_str() -- "
-			"expected all 'M' (0x4d), got 0x%02x at byte 0. "
-			"Fix: skip the fall-through memset for aligned "
-			"interior addresses inside live slots.\n",
-			(unsigned int)SHARED_FREELIST_SLOT_STRIDE,
-			(unsigned char)after_buf[0]);
-		return;
-	}
-	fprintf(stderr,
-		"case 2 (interior_ptr_corruption): PASS "
-		"(previously XFAIL -- 374*A landed?)\n");
+	if (memcmp(before_buf, after_buf, sizeof(before_buf)) != 0)
+		fail("interior_ptr_corruption: live slot bytes modified by "
+		     "free of interior stride pointer",
+		     SHARED_FREELIST_SLOT_STRIDE,
+		     big + SHARED_FREELIST_SLOT_STRIDE, NULL);
+	fprintf(stderr, "case 2 (interior_ptr_corruption): PASS\n");
 }
 
 /*
- * CASE 3 (XFAIL at HEAD): free of an uncarved in-heap pointer writes
- * bytes into never-allocated heap space.
+ * CASE 3: free of a never-carved in-heap pointer must be a no-op.
  *
- * free_shared_str() of a stride-aligned offset that was never carved
- * (state == UNCARVED / 0, past the current bump cursor) falls through
- * to memset(p, 0, size).  No live allocation owns those bytes, but
- * the write still silently happens.  The repair must skip the memset for
- * any pointer whose slot_state entry is not LIVE.
+ * free_shared_str() of a stride-aligned offset whose slot_state is
+ * UNCARVED (never allocated, past the bump cursor) must skip the
+ * memset entirely rather than writing into never-used heap space.
  *
- * Assertion: zero bytes are written anywhere in the heap target range,
- * verified by priming those bytes with a non-zero sentinel before the
- * bogus free and checking they are unchanged afterwards.
+ * Assertion: every byte in the target range retains its sentinel
+ * value after the bogus free call.
  */
 static void xfail_uncarved_ptr_write(void)
 {
@@ -264,10 +227,8 @@ static void xfail_uncarved_ptr_write(void)
 	 * lands at STRIDE.  The next stride-aligned address (slot_a +
 	 * STRIDE) is inside the mmap'd region but was never carved. */
 	slot_a = alloc_shared_str(1);
-	if (!slot_a) {
-		fprintf(stderr, "xfail_uncarved_ptr_write: alloc failed\n");
-		return;
-	}
+	if (!slot_a)
+		fail("uncarved_ptr_write: alloc failed", 1, NULL, NULL);
 
 	uncarved = slot_a + SHARED_FREELIST_SLOT_STRIDE;
 
@@ -281,21 +242,12 @@ static void xfail_uncarved_ptr_write(void)
 	free_shared_str(uncarved, SHARED_FREELIST_SLOT_STRIDE);
 
 	for (i = 0; i < SHARED_FREELIST_SLOT_STRIDE; i++) {
-		if ((unsigned char)uncarved[i] != 'P') {
-			fprintf(stderr,
-				"XFAIL (case 3 - uncarved_ptr_write): "
-				"free_shared_str() wrote to never-carved heap "
-				"at byte +%u "
-				"(expected 'P'=0x50, got 0x%02x). "
-				"Fix: skip the fall-through memset for "
-				"UNCARVED (state==0) slots.\n",
-				i, (unsigned char)uncarved[i]);
-			return;
-		}
+		if ((unsigned char)uncarved[i] != 'P')
+			fail("uncarved_ptr_write: free_shared_str() wrote to "
+			     "never-carved heap (UNCARVED slot not gated)",
+			     SHARED_FREELIST_SLOT_STRIDE, uncarved, NULL);
 	}
-	fprintf(stderr,
-		"case 3 (uncarved_ptr_write): PASS "
-		"(previously XFAIL -- 374*A landed?)\n");
+	fprintf(stderr, "case 3 (uncarved_ptr_write): PASS\n");
 }
 
 /*
@@ -446,9 +398,7 @@ void shared_str_heap_free_size_check(void)
 
 	/* === four additional free_shared_str() corruption cases === */
 
-	/* Cases 1-3: XFAIL at HEAD.  These print an XFAIL diagnostic
-	 * and return rather than abort()ing so case 4 (and this
-	 * original suite) still run.  The repair turns them green. */
+	/* Cases 1-3: regression assertions for the 374·A fix. */
 	xfail_double_free_chain();
 	xfail_interior_ptr_corruption();
 	xfail_uncarved_ptr_write();
