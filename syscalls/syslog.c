@@ -214,6 +214,6 @@ struct syscallentry syscall_syslog = {
 	.arg_params[0].list = ARGLIST(syslog_types),
 	.sanitise = sanitise_syslog,
 	.group = GROUP_PROCESS,
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.rettype = RET_BORING,
 };

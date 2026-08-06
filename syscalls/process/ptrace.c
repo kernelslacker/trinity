@@ -400,6 +400,6 @@ struct syscallentry syscall_ptrace = {
 	.sanitise = sanitise_ptrace,
 	.post = post_ptrace,
 
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,
 	.rettype = RET_BORING,
 };

@@ -137,5 +137,5 @@ struct syscallentry syscall_waitpid = {
 	.sanitise = sanitise_waitpid,
 	.post = post_waitpid,
 	.rettype = RET_PID_T,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 };

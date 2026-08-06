@@ -263,4 +263,5 @@ struct syscallentry syscall_capset = {
 	.group = GROUP_CRED,
 	.sanitise = sanitise_capset,
 	.post = post_capset,
+	.flags = REEXEC_SANITISE_OK,
 };

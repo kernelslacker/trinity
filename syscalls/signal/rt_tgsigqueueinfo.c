@@ -141,7 +141,7 @@ struct syscallentry syscall_rt_tgsigqueueinfo = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_PID, [1] = ARG_PID },
 	.argname = { [0] = "tgid", [1] = "pid", [2] = "sig", [3] = "uinfo" },
-	.flags = AVOID_SYSCALL,	/* can disrupt signal handling */
+	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,	/* can disrupt signal handling */
 	.sanitise = sanitise_rt_tgsigqueueinfo,
 	.rettype = RET_ZERO_SUCCESS,
 };

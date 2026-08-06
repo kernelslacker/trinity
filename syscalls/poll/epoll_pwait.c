@@ -315,7 +315,7 @@ struct syscallentry syscall_epoll_pwait = {
 	.sanitise = sanitise_epoll_pwait,
 	.post = post_epoll_pwait,
 	.rettype = RET_BORING,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 	/* a3 (maxevents) read in post -- shared with epoll_pwait2 via
 	 * post_epoll_pwait().  See syscall_epoll_wait for rationale. */
@@ -330,7 +330,7 @@ struct syscallentry syscall_epoll_pwait2 = {
 	.sanitise = sanitise_epoll_pwait2,
 	.post = post_epoll_pwait,
 	.rettype = RET_BORING,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 	.arg_snapshot_mask = (1u << 2),
 };

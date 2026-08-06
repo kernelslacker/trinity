@@ -303,4 +303,5 @@ struct syscallentry syscall_socketpair = {
 	 * get_arg_snapshot() and the handlers still see the address the
 	 * kernel actually wrote, not the stomped value. */
 	.arg_snapshot_mask = (1u << 3),
+	.flags = REEXEC_SANITISE_OK,
 };

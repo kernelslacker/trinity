@@ -159,7 +159,7 @@ struct syscallentry syscall_mq_timedreceive = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_FD_MQ, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_ADDRESS, [4] = ARG_TIMESPEC },
 	.argname = { [0] = "mqdes", [1] = "u_msg_ptr", [2] = "msg_len", [3] = "u_msg_prio", [4] = "u_abs_timeout" },
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_mq_timedreceive,
 	.post = post_mq_timedreceive,
 	.bound_arg = 3,

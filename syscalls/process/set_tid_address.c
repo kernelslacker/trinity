@@ -32,7 +32,7 @@ struct syscallentry syscall_set_tid_address = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_ADDRESS },
 	.argname = { [0] = "tidptr" },
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,
 	.group = GROUP_PROCESS,
 	.sanitise = sanitise_set_tid_address,
 	.post = post_set_tid_address,

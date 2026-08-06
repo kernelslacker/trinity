@@ -231,4 +231,5 @@ struct syscallentry syscall_madvise = {
 	.sanitise = sanitise_madvise,
 	.post = post_madvise,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

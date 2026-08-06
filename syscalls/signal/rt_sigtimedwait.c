@@ -241,6 +241,6 @@ struct syscallentry syscall_rt_sigtimedwait = {
 	.argname = { [0] = "uthese", [1] = "uinfo", [2] = "uts", [3] = "sigsetsize" },
 	.sanitise = sanitise_rt_sigtimedwait,
 	.post = post_rt_sigtimedwait,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.rettype = RET_BORING,
 };

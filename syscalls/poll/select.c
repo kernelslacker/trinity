@@ -219,6 +219,6 @@ struct syscallentry syscall_select = {
 	.sanitise = sanitise_select,
 	.post = post_select,
 	.group = GROUP_VFS_IO,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.rettype = RET_BORING,
 };

@@ -488,4 +488,5 @@ struct syscallentry syscall_timer_create = {
 	 * get_arg_snapshot() and the handlers still see the address the
 	 * kernel actually wrote, not the stomped value. */
 	.arg_snapshot_mask = (1u << 2),
+	.flags = REEXEC_SANITISE_OK,
 };

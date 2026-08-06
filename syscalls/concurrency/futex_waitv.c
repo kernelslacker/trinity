@@ -96,7 +96,7 @@ struct syscallentry syscall_futex_waitv = {
 	.argname = { [0] = "waiters", [1] = "nr_futexes", [2] = "flags", [3] = "timeout", [4] = "clockid" },
 	.arg_params[4].list = ARGLIST(futex_waitv_clockids),
 	.bound_arg = 2,
-	.flags = NEED_ALARM | IGNORE_ENOSYS,
+	.flags = NEED_ALARM | IGNORE_ENOSYS | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_futex_waitv,
 	.group = GROUP_IPC,
 	.rettype = RET_BORING,

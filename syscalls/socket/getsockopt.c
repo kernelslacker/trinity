@@ -160,7 +160,7 @@ struct syscallentry syscall_getsockopt = {
 	.num_args = 5,
 	.argtype = { [0] = ARG_SOCKETINFO, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS },
 	.argname = { [0] = "fd", [1] = "level", [2] = "optname", [3] = "optval", [4] = "optlen" },
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_getsockopt,
 	.post = post_getsockopt,

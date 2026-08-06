@@ -102,4 +102,5 @@ struct syscallentry syscall_sched_setscheduler = {
 	.argname = { [0] = "pid", [1] = "policy", [2] = "param" },
 	.arg_params[1].list = ARGLIST(sched_setscheduler_policies),
 	.sanitise = sanitise_sched_setscheduler,
+	.flags = REEXEC_SANITISE_OK,
 };

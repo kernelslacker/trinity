@@ -30,4 +30,5 @@ struct syscallentry syscall_pciconfig_read = {
 	.sanitise = sanitise_pciconfig_read,
 	.group = GROUP_PROCESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

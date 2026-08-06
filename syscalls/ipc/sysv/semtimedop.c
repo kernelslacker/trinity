@@ -89,6 +89,6 @@ struct syscallentry syscall_semtimedop = {
 	.argtype = { [0] = ARG_SEM_ID, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_TIMESPEC },
 	.argname = { [0] = "semid", [1] = "tsops", [2] = "nsops", [3] = "timeout" },
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_semtimedop,
 };

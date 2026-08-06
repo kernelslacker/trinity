@@ -40,7 +40,7 @@ struct syscallentry syscall_settimeofday = {
 	.num_args = 2,
 	.argname = { [0] = "tv", [1] = "tz" },
 	.argtype = { [0] = ARG_TIMEVAL, [1] = ARG_ADDRESS },
-	.flags = NEEDS_ROOT,	/* autodrops EPERM on the fleet; type is still correct (mirror clock_settime). */
+	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,	/* autodrops EPERM on the fleet; type is still correct (mirror clock_settime). */
 	.sanitise = sanitise_settimeofday,
 	.rettype = RET_ZERO_SUCCESS,
 };

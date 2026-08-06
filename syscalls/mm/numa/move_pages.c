@@ -226,4 +226,5 @@ struct syscallentry syscall_move_pages = {
 	.sanitise = sanitise_move_pages,
 	.post = post_move_pages,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

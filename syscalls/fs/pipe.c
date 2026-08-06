@@ -252,6 +252,7 @@ struct syscallentry syscall_pipe = {
 	 * get_arg_snapshot() and the handler still sees the address the
 	 * kernel actually wrote, not the stomped value. */
 	.arg_snapshot_mask = (1u << 0),
+	.flags = REEXEC_SANITISE_OK,
 };
 
 /*
@@ -357,4 +358,5 @@ struct syscallentry syscall_pipe2 = {
 	 * get_arg_snapshot() and the handler still sees the address the
 	 * kernel actually wrote, not the stomped value. */
 	.arg_snapshot_mask = (1u << 0),
+	.flags = REEXEC_SANITISE_OK,
 };

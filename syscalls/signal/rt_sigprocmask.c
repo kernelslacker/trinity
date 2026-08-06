@@ -230,4 +230,5 @@ struct syscallentry syscall_rt_sigprocmask = {
 	.arg_params[0].list = ARGLIST(sigprocmask_how),
 	.post = post_rt_sigprocmask,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

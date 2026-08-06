@@ -385,4 +385,5 @@ struct syscallentry syscall_seccomp = {
 	 * which returns a notification listener fd.  Hint so xprop's
 	 * whitelist walker still recognises seccomp as an fd source. */
 	.rettype_publish_hint = RET_FD,
+	.flags = REEXEC_SANITISE_OK,
 };

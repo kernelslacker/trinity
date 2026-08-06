@@ -156,7 +156,7 @@ struct syscallentry syscall_mq_getsetattr = {
 	.argtype = { [0] = ARG_FD_MQ, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS },
 	.argname = { [0] = "mqdes", [1] = "u_mqstat", [2] = "u_omqstat" },
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_mq_getsetattr,
 	.post = post_mq_getsetattr,
 };

@@ -249,7 +249,7 @@ struct syscallentry syscall_epoll_wait = {
 	.sanitise = sanitise_epoll_wait,
 	.post = post_epoll_wait,
 	.rettype = RET_BORING,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 	/* a3 (maxevents) is read in post to bound retval -- snapshot it so
 	 * a sibling stomp between BEFORE and AFTER cannot fabricate a

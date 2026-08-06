@@ -70,4 +70,5 @@ struct syscallentry syscall_mq_unlink = {
 	.argtype = { [0] = ARG_ADDRESS },
 	.argname = { [0] = "u_name" },
 	.sanitise = sanitise_mq_unlink,
+	.flags = REEXEC_SANITISE_OK,
 };

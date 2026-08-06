@@ -230,4 +230,5 @@ struct syscallentry syscall_landlock_create_ruleset = {
 	.post = post_landlock_create_ruleset,
 	.cleanup = cleanup_landlock_create_ruleset,
 	.group = GROUP_PROCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

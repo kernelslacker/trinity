@@ -437,4 +437,5 @@ struct syscallentry syscall_prlimit64 = {
 	.post = post_prlimit64,
 #endif
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

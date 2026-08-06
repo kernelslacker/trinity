@@ -145,6 +145,7 @@ struct syscallentry syscall_truncate = {
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_truncate,
 	.post = post_truncate,
+	.flags = REEXEC_SANITISE_OK,
 };
 
 /*
@@ -160,4 +161,5 @@ struct syscallentry syscall_truncate64 = {
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_truncate,
 	.post = post_truncate,
+	.flags = REEXEC_SANITISE_OK,
 };

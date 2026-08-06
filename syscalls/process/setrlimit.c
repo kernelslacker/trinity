@@ -114,4 +114,5 @@ struct syscallentry syscall_setrlimit = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
 	.sanitise = sanitise_setrlimit,
+	.flags = REEXEC_SANITISE_OK,
 };

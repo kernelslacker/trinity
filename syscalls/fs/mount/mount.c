@@ -374,7 +374,7 @@ struct syscallentry syscall_mount = {
 	.arg_params[3].list = ARGLIST(mount_flags),
 	.group = GROUP_VFS_MOUNT,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
+	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_mount,
 };
 
@@ -561,7 +561,7 @@ struct syscallentry syscall_mount_setattr = {
 	.arg_params[2].list = ARGLIST(mount_setattr_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS_MOUNT,
-	.flags = KCOV_REMOTE_HEAVY,
+	.flags = KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_mount_setattr,
 	.cleanup = cleanup_mount_setattr,
 };

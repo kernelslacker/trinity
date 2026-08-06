@@ -250,6 +250,7 @@ struct syscallentry syscall_readlink = {
 #endif
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
+	.flags = REEXEC_SANITISE_OK,
 };
 
 
@@ -473,7 +474,7 @@ struct syscallentry syscall_readlinkat = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_NON_NULL_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "dfd", [1] = "pathname", [2] = "buf", [3] = "bufsiz" },
 	.sanitise = sanitise_readlinkat,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 #if defined(SYS_readlinkat) || defined(__NR_readlinkat)
 	.post = post_readlinkat,

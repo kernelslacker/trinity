@@ -66,4 +66,5 @@ struct syscallentry syscall_rseq = {
 	.sanitise = sanitise_rseq,
 	.group = GROUP_PROCESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

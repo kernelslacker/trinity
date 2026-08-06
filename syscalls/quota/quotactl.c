@@ -175,7 +175,7 @@ struct syscallentry syscall_quotactl = {
 	.num_args = 4,
 	.argname = { [0] = "cmd", [1] = "special", [2] = "id", [3] = "addr" },
 	.group = GROUP_VFS_MOUNT,
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_quotactl,
 	.rettype = RET_ZERO_SUCCESS,
 };

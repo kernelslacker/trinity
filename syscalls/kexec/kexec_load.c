@@ -94,6 +94,6 @@ struct syscallentry syscall_kexec_load = {
 	.arg_params[3].list = ARGLIST(kexec_load_flags),
 	.group = GROUP_PROCESS,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_kexec_load,
 };

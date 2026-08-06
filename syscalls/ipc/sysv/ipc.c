@@ -490,7 +490,7 @@ struct syscallentry syscall_ipc = {
 	.argtype = { [0] = ARG_OP, [4] = ARG_ADDRESS },
 	.argname = { [0] = "call", [1] = "first", [2] = "second", [3] = "third", [4] = "ptr", [5] = "fifth" },
 	.arg_params[0].list = ARGLIST(ipc_calls),
-	.flags = IGNORE_ENOSYS,
+	.flags = IGNORE_ENOSYS | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_ipc,
 	.post = post_ipc,
 	.arg_snapshot_mask = (1u << 0),

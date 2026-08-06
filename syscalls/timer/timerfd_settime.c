@@ -223,6 +223,6 @@ struct syscallentry syscall_timerfd_settime = {
 	.argname = { [0] = "ufd", [1] = "flags", [2] = "utmr", [3] = "otmr" },
 	.sanitise = sanitise_timerfd_settime,
 	.post = post_timerfd_settime,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.rettype = RET_ZERO_SUCCESS,
 };

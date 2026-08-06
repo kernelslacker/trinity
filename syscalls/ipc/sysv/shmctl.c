@@ -118,4 +118,5 @@ struct syscallentry syscall_shmctl = {
 	.sanitise = sanitise_shmctl,
 	.post = post_shmctl,
 	.rettype = RET_BORING,
+	.flags = REEXEC_SANITISE_OK,
 };
