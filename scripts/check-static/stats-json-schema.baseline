@@ -1431,6 +1431,13 @@ stats	object
     stats.hfs_mount_fuzz.mount_failed	u64
     stats.hfs_mount_fuzz.ns_unsupported	u64
     stats.hfs_mount_fuzz.hfs_unsupported	u64
+  stats.icmp_inject	object
+    stats.icmp_inject.errors_injected	u64
+    stats.icmp_inject.inject_failed	u64
+    stats.icmp_inject.selftest_runs	u64
+    stats.icmp_inject.selftest_ok	u64
+    stats.icmp_inject.selftest_fail	u64
+    stats.icmp_inject.init_failed	u64
   stats.veth_asymmetric_xdp	object
     stats.veth_asymmetric_xdp.iters	u64
     stats.veth_asymmetric_xdp.eperm	u64
