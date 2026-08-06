@@ -363,6 +363,9 @@ void json_emit_pidfd_fs_and_container_section(void)
 	stat_category_emit_json(&pidfd_storm_category);
 
 	printf(",");
+	stat_category_emit_json(&process_mrelease_race_category);
+
+	printf(",");
 	stat_category_emit_json(&madvise_cycler_category);
 
 	printf(",");

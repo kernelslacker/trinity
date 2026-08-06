@@ -828,6 +828,15 @@ stats	object
     stats.pidfd_storm.iters	u64
     stats.pidfd_storm.reap_slow	u64
     stats.pidfd_storm.reap_zombies	u64
+  stats.process_mrelease_race	object
+    stats.process_mrelease_race.runs	u64
+    stats.process_mrelease_race.kill_rounds	u64
+    stats.process_mrelease_race.success	u64
+    stats.process_mrelease_race.esrch	u64
+    stats.process_mrelease_race.einval	u64
+    stats.process_mrelease_race.eintr	u64
+    stats.process_mrelease_race.other_fail	u64
+    stats.process_mrelease_race.reap_slow	u64
   stats.madvise_cycler	object
     stats.madvise_cycler.runs	u64
     stats.madvise_cycler.calls	u64

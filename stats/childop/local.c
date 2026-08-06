@@ -67,6 +67,8 @@ void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&pidfd_storm_category);
 
+	stat_category_emit_text(&process_mrelease_race_category);
+
 	stat_category_emit_text(&madvise_cycler_category);
 
 	stat_category_emit_text(&keyring_spam_category);

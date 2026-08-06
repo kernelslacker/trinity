@@ -88,6 +88,7 @@ CHILDOP(CHILD_OP_CLOSE_RACER              , "close_racer"                , close
 CHILDOP(CHILD_OP_SOCKET_FAMILY_CHAIN      , "socket_family_chain"        , socket_family_chain        , true, 1)
 CHILDOP(CHILD_OP_XATTR_THRASH             , "xattr_thrash"               , xattr_thrash               , true, 1)
 CHILDOP(CHILD_OP_PIDFD_STORM              , "pidfd_storm"                , pidfd_storm                , true, 1)
+CHILDOP(CHILD_OP_PROCESS_MRELEASE_RACE   , "process_mrelease_race"      , process_mrelease_race      , true, 1)
 CHILDOP(CHILD_OP_MADVISE_CYCLER           , "madvise_cycler"             , madvise_cycler             , true, 1)
 CHILDOP(CHILD_OP_EPOLL_VOLATILITY         , "epoll_volatility"           , epoll_volatility           , true, 1)
 CHILDOP(CHILD_OP_EPOLL_NEST_RACE          , "epoll_nest_race"             , epoll_nest_race             , true, 1)

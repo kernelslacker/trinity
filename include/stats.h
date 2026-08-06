@@ -140,6 +140,7 @@
 #include "stats/subsys/perf_chains.h"
 #include "stats/subsys/pfkey_spd_walk.h"
 #include "stats/subsys/pidfd_storm.h"
+#include "stats/subsys/process_mrelease_race.h"
 #include "stats/subsys/pipe_thrash.h"
 #include "stats/subsys/picker_bandit.h"
 #include "stats/subsys/pipe_waker.h"
@@ -551,6 +552,9 @@ struct stats_s {
 
 	/* pidfd_storm accounting.  See stats/subsys/pidfd_storm.h. */
 	struct pidfd_storm_stats pidfd_storm __attribute__((aligned(64)));
+
+	/* process_mrelease_race accounting.  See stats/subsys/process_mrelease_race.h. */
+	struct process_mrelease_race_stats process_mrelease_race __attribute__((aligned(64)));
 
 	/* madvise_cycler childop counters.  See stats/subsys/madvise_cycler.h. */
 	struct madvise_cycler_stats madvise_cycler __attribute__((aligned(64)));
