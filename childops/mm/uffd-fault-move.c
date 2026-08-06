@@ -259,17 +259,34 @@ static void *v1_fault_thread(void *arg)
 		pg = (volatile uint32_t *)((char *)ctx->region +
 					   (size_t)i * (size_t)page_size);
 
-		/* Write to the page: triggers MISSING fault and blocks until
-		 * the main thread resolves it.  For POISON-resolved pages the
-		 * kernel delivers SIGBUS; the main thread marks stop and the
-		 * thread checks before each access -- but a race here is
-		 * acceptable: SIGBUS on a V1_RESOLVE_POISON page is benign
-		 * from a test perspective and is caught by the parent's
-		 * alarm(1) timeout. */
+		/* Write to word 1 of the page (offset sizeof(uint32_t)).
+		 * This triggers the MISSING fault and blocks until the main
+		 * thread resolves it via UFFDIO_COPY -- but deliberately avoids
+		 * touching word 0.  UFFDIO_COPY places the source sequence
+		 * number at word 0 (offset 0) of the destination page; by
+		 * storing our marker at word 1, COPY's payload at word 0
+		 * survives the re-execution of this store after the fault is
+		 * resolved.  We then read word 0 for the oracle compare, so
+		 * any content error in COPY (wrong src, zeroed page, etc.)
+		 * produces a mismatch.  If word 1 were used as the seqno
+		 * location, the re-executed store would overwrite it before the
+		 * read-back, making the oracle vacuous -- the exact tautology
+		 * this layout was changed to eliminate.
+		 *
+		 * For POISON-resolved pages the kernel delivers SIGBUS; the
+		 * main thread marks stop and the thread checks before each
+		 * access -- but a race here is acceptable: SIGBUS on a
+		 * POISON-resolved page is benign from a test perspective and
+		 * is caught by the parent's alarm(1) timeout. */
 		__atomic_store_n(&ctx->faulted_idx, i, __ATOMIC_RELEASE);
-		*pg = (uint32_t)(SEQNO_MAGIC | (uint32_t)(i + 1));
+		pg[1] = (uint32_t)(SEQNO_MAGIC | (uint32_t)(i + 1));
 
-		/* Read back and compare against what we expect for COPY. */
+		/* Read back word 0: COPY placed the src_pages seqno there.
+		 * If COPY wrote anything other than SEQNO_MAGIC|(i+1), this
+		 * diverges from the oracle's expected constant and
+		 * oracle_mismatch fires.  A deliberately-wrong cp.src (e.g.
+		 * a zero-filled buffer) would produce 0 here, not the magic
+		 * constant, so the oracle is no longer vacuous. */
 		ctx->observed_seqno[i] = *pg;
 		__atomic_store_n(&ctx->seqno_checked[i], 1, __ATOMIC_RELEASE);
 	}
@@ -422,15 +439,22 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 				__atomic_add_fetch(
 					&shm->stats.uffd_fault_move.v1_resolve_fail,
 					1, __ATOMIC_RELAXED);
-				/* Fault still pending; resolve with ZEROPAGE
-				 * so the thread can continue. */
-				struct uffdio_zeropage zp;
+				/* Fault still pending; unblock the thread.
+				 * Prefer UFFDIO_ZEROPAGE if the kernel advertised
+				 * it for this range (range_ioctls bitmap from
+				 * UFFDIO_REGISTER); fall back to an explicit WAKE
+				 * so we never issue an ioctl the range rejects. */
+				if (range_ioctls & (1ULL << _UFFDIO_ZEROPAGE)) {
+					struct uffdio_zeropage zp;
 
-				memset(&zp, 0, sizeof(zp));
-				zp.range.start = fault_addr;
-				zp.range.len   = (uint64_t)page_size;
-				zp.mode        = 0;
-				(void)ioctl(fd, UFFDIO_ZEROPAGE, &zp);
+					memset(&zp, 0, sizeof(zp));
+					zp.range.start = fault_addr;
+					zp.range.len   = (uint64_t)page_size;
+					zp.mode        = 0;
+					(void)ioctl(fd, UFFDIO_ZEROPAGE, &zp);
+				} else {
+					uffd_wake_page(fd, fault_addr);
+				}
 			}
 		}
 	}
