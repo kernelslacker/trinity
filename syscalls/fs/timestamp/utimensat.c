@@ -183,5 +183,5 @@ struct syscallentry syscall_utimensat = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "utimes", [3] = "flags" },
 	.sanitise = sanitise_utimensat,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 };

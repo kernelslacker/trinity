@@ -387,7 +387,7 @@ struct syscallentry syscall_lgetxattr = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_XATTR_NAME, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "pathname", [1] = "name", [2] = "value", [3] = "size" },
 	.rettype = RET_NUM_BYTES,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
 	.sanitise = sanitise_lgetxattr,
 #if defined(SYS_lgetxattr) || defined(__NR_lgetxattr)

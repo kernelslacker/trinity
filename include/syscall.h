@@ -902,6 +902,16 @@ struct syscalltable {
  * or a sanitise whose slot layout perturbs the RedQueen pin target
  * across runs.
  *
+ * NEEDS_ROOT does not disqualify on its own: the privilege requirement
+ * is orthogonal to the re-exec shape.  A .cleanup that issues an
+ * idempotent host-global teardown -- e.g. acct(NULL), which is a no-op
+ * when BSD accounting is already off -- is also acceptable: the teardown
+ * fires on every re-exec but a no-op teardown carries no new observable
+ * consequence.  The disqualifier is a one-shot enable without a
+ * matching teardown: a .cleanup (or .sanitise side effect) that enables
+ * a kernel feature or registers a resource without a deregister would
+ * compound across re-exec iterations and must not carry this flag.
+ *
  * The re-exec contract for a flagged entry is unchanged from the
  * sanitise-free path: generate_syscall_args() runs in full so the
  * re-exec gets FRESH OWNED pointers, the parent's a1..a6 pointer values
