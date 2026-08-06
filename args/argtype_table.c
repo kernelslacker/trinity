@@ -32,10 +32,52 @@ enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
  * would otherwise feed a non-malloc pointer to the side-set gate.
  * Unopted slots fall through to the live rec->aN, matching the
  * pre-change behaviour.
+ *
+ * Additionally frees the generator's original allocation when a
+ * sanitiser replaced the slot with a fresh zmalloc_tracked() buffer.
+ * The original pointer is recorded in rec->gen_orig[argnum-1] by
+ * gen_arg_pathname() at generate time; an identity mismatch between
+ * that original and the current post-sanitise pointer proves the slot
+ * was replaced.  See the no-double-free argument below.
  */
 static void cleanup_deferred_free(struct syscallrecord *rec, unsigned int argnum)
 {
-	deferred_free_enqueue((void *) get_arg_snapshot(rec, argnum));
+	unsigned long current = get_arg_snapshot(rec, argnum);
+	unsigned long original = rec->gen_orig[argnum - 1];
+
+	/*
+	 * Consume the generator-original record immediately.  Clearing
+	 * before any free() call means a signal or longjmp taken inside
+	 * deferred_free_enqueue() cannot leave a non-zero gen_orig to be
+	 * read again (by a second cleanup pass or a future dispatch).
+	 */
+	rec->gen_orig[argnum - 1] = 0;
+
+	/* Always free the post-sanitise pointer (what the kernel saw). */
+	deferred_free_enqueue((void *) current);
+
+	/*
+	 * Free the generator's original allocation if and only if the
+	 * slot was replaced by a sanitiser.  Proof of replacement:
+	 * identity mismatch (original != current).
+	 *
+	 * No-double-free argument:
+	 *
+	 *   original == 0: gen_arg_pathname was not called for this slot
+	 *   (ARG_SOCKADDR re-using this cleanup, or generate_pathname()
+	 *   returned NULL before zmalloc_tracked ran); nothing extra to
+	 *   free.  Also covers the reset-at-generate_syscall_args() path.
+	 *
+	 *   original == current: no replacement; the enqueue above covers
+	 *   the buffer.  A second enqueue of the same pointer would arm
+	 *   a double-free at ring drain.  Skip.
+	 *
+	 *   original != 0 && original != current: genuine replacement;
+	 *   two distinct zmalloc_tracked() allocations at different
+	 *   addresses, each enqueued exactly once here.  No double-free.
+	 */
+	if (original != 0 && original != current)
+		deferred_free_enqueue((void *) original);
 }
 
 /*

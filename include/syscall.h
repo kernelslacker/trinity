@@ -239,6 +239,29 @@ struct syscallrecord {
 	unsigned int	owned_count;
 
 	/*
+	 * Generator-original pointers for ARG_PATHNAME slots, indexed by
+	 * argnum-1.  Written by gen_arg_pathname() immediately after
+	 * zmalloc_tracked() allocates the buffer; read and cleared to zero
+	 * by cleanup_deferred_free() at the end of every dispatch.
+	 *
+	 * Purpose: detect when a per-syscall sanitiser replaced the slot
+	 * with a fresh zmalloc_tracked() buffer (e.g. sanitise_open()
+	 * calling get_testfile_path()).  Without this record, the
+	 * original generator buffer is orphaned: arg_shadow[] captures
+	 * only the post-sanitise pointer, so get_arg_snapshot() in
+	 * cleanup only sees the NEW buffer and the original 4 kB
+	 * allocation is never freed.
+	 *
+	 * Zero at BSS init.  cleanup_deferred_free() clears the slot
+	 * after each dispatch.  Also zeroed in generate_syscall_args()
+	 * before sanitise runs, for the same reason owned_count is reset
+	 * there: child-death-between-BEFORE-and-AFTER recovery (cleanup
+	 * did not run, rec is re-used after fork; a stale gen_orig value
+	 * from the dead child must not survive into the new dispatch).
+	 */
+	unsigned long	gen_orig[6];
+
+	/*
 	 * SHADOW per-arg-slot ownership/direction descriptor.  Seeded from
 	 * the slot's argtype at the tail of generate_syscall_args() before
 	 * blanket_address_scrub runs.  Telemetry only: no consumer reads
