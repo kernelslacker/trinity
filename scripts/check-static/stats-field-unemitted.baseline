@@ -35,3 +35,116 @@ UNEMITTED:stats/subsys/transition_edge.h:calls_at_window_start
 # activity metrics (mut_trials, mut_wins, xprop_*) in the minicorpus
 # section are the actionable observables.
 UNEMITTED:stats/subsys/minicorpus.h:last_snapshot_time
+
+# Fleet-election CAS latch: 0 -> 1 compare-exchange, not a counter.
+# Lives in stats struct so it shares the shm mapping and survives
+# across childdata recycles, but carries no per-call metric value.
+# The actionable signal is the runs / accept_total / reject_total
+# counters in the same struct, which are wired to the JSON emitter.
+UNEMITTED:stats/subsys/af_alg_probe.h:done
+
+# Adaptive-budget internal scheduler state.  budget_mult[] holds a
+# Q8.8 fixed-point multiplier per op type (256 == 1.0x) consumed by
+# the BUDGETED() macro inside opt-in childops; it is updated by
+# adapt_budget() after each dispatch and clamps to [MIN, MAX].
+# zero_streak[] counts consecutive invocations that did not clear the
+# edge threshold, resetting on the first productive invocation.  Both
+# arrays drive the inner-loop iteration count but carry no per-window
+# diagnostic value visible to an operator.
+UNEMITTED:stats/subsys/childop.h:budget_mult
+UNEMITTED:stats/subsys/childop.h:zero_streak
+
+# Per-op direct-syscall accumulator.  Filled by opt-in childops via
+# childop_direct_syscalls_add(); ops that do not opt in leave their
+# slot at zero.  The array is read by childop_outcome_snapshot() and
+# written to the per-op outcome struct, but the outcome struct itself
+# is not yet plumbed through a stats/ emitter.
+UNEMITTED:stats/subsys/childop.h:direct_syscalls
+
+# Per-op SIGALRM-timeout counters.  timeout_observed[op] bumps when
+# the watchdog alarm fired before the op returned; timeout_missed[op]
+# bumps when the op returned before the alarm fired.  Both populate
+# struct childop_outcome's slots but the outcome struct is not yet
+# plumbed through a stats/ emitter.
+UNEMITTED:stats/subsys/childop.h:timeout_observed
+UNEMITTED:stats/subsys/childop.h:timeout_missed
+
+# Per-op decaying edge+wall recency ring (NR_CHILD_OP_TYPES x
+# CHILDOP_DECAY_WINDOWS 2-D arrays).  Written by child-altop-budget.c
+# and rotated by childop_window_advance().  The CACHED running sums
+# (edge_recent_cached[], wall_recent_cached[]) ARE read by
+# dump_stats_childop_decay_recency() and wired to the shutdown text
+# dump, but the raw history ring arrays are not themselves emitted --
+# only the derived cached sums surface to operators.  Too wide for
+# flat JSON (NR_CHILD_OP_TYPES x CHILDOP_DECAY_WINDOWS entries each).
+UNEMITTED:stats/subsys/childop.h:edge_history
+UNEMITTED:stats/subsys/childop.h:wall_history
+
+# Per-syscall compare-exchange slot for the shadow errno-class gradient
+# predicate.  Stores the last observed gradient class (0/1/2) per
+# syscall nr; updated via CAS so only strictly-greater observations
+# win.  The comment in the header explicitly marks it as "NOT rendered,
+# INTERNAL to the gradient predicate."  The actionable counters
+# (crossings, to_permstate, to_success) are wired to the descriptor
+# table and emitted normally.
+UNEMITTED:stats/subsys/errno_gradient.h:last_class
+
+# SHADOW-ONLY per-syscall arrays in struct frontier_per_syscall_stats.
+# All three arrays are MAX_NR_SYSCALL slots wide -- too wide for the
+# flat JSON schema.  silent_streak_per_syscall[] carries the current
+# run-length of consecutive silent-regime picks per syscall since the
+# last productive-edge event.  silent_cmp_baseline[] and
+# silent_errno_success_baseline[] are per-syscall snapshots taken at
+# each streak reset so the picker can detect CMP or errno novelty
+# without a new collection path.  No live picker path reads them;
+# they are observability-only signals surfaced via the periodic dump's
+# top-N attribution path, not the JSON schema.
+UNEMITTED:stats/subsys/frontier.h:silent_streak_per_syscall
+UNEMITTED:stats/subsys/frontier.h:silent_cmp_baseline
+UNEMITTED:stats/subsys/frontier.h:silent_errno_success_baseline
+
+# SHADOW-ONLY per-syscall miss-streak array (MAX_NR_SYSCALL slots).
+# Carries the run-length of consecutive zero-edge LIVE-regime picks
+# per syscall.  Same shape and exclusion rationale as the silent-streak
+# sibling above: too wide for flat JSON, surfaced via the periodic
+# dump's top-N attribution only.
+UNEMITTED:stats/subsys/frontier.h:live_miss_streak_per_syscall
+
+# SHADOW-ONLY frseq per-syscall and per-group demote distribution
+# arrays.  frseq_would_skip_per_syscall[] is MAX_NR_SYSCALL slots;
+# frseq_would_skip_per_group[] is NR_GROUPS slots.  Both are too wide
+# for the flat JSON schema (the scalar frseq_would_skip IS emitted).
+# Surfaced via the periodic dump's top-N path only.
+UNEMITTED:stats/subsys/frontier.h:frseq_would_skip_per_syscall
+UNEMITTED:stats/subsys/frontier.h:frseq_would_skip_per_group
+
+# Per-recipe completion counters (MAX_IOURING_RECIPES / MAX_RECIPES
+# slots respectively).  Too wide for the flat JSON schema.  The scalar
+# completed total in each struct IS emitted; the per-slot breakdown
+# lives in the periodic dump's top-N path only.
+UNEMITTED:stats/subsys/iouring_recipes.h:completed_per
+UNEMITTED:stats/subsys/recipe.h:completed_per
+
+# oracle_inconclusive is bumped when the ambient environment (Yama,
+# non-dumpable binary, kernel without CONFIG_SECRETMEM) denied even
+# the anon positive-control read, making oracle attribution impossible.
+# The field is present in the header but not yet added to the
+# STAT_FIELD_SUB descriptor table in
+# stats/subsys/memfd_secret_lifecycle.c.
+UNEMITTED:stats/subsys/memfd_secret_lifecycle.h:oracle_inconclusive
+
+# Per-syscall errno-sourced corpus accounting (MAX_NR_SYSCALL arrays).
+# errno_saves[nr] counts corpus admits tagged CORPUS_SAVE_REASON_ERRNO
+# for syscall nr; errno_pcedge_wins[nr] counts PC-edge conversions from
+# errno-sourced replays.  Both are observability-only signals, not yet
+# wired to a dump path; too wide for flat JSON.
+UNEMITTED:stats/subsys/pc_edge_source.h:errno_saves
+UNEMITTED:stats/subsys/pc_edge_source.h:errno_pcedge_wins
+
+# Per-strategy transition accounting (NR_STRATEGIES arrays).  Both are
+# bandit reward inputs: calls_by_strategy[] and count_by_strategy[] are
+# read by bandit_record_pull() to compute per-window transition deltas.
+# Unlike the analogous pc_edge_count_at_window_start (in shm_s), these
+# NR_STRATEGIES-wide arrays are not yet wired to any dump emitter.
+UNEMITTED:stats/subsys/transition_edge.h:calls_by_strategy
+UNEMITTED:stats/subsys/transition_edge.h:count_by_strategy
