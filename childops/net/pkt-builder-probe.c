@@ -31,6 +31,7 @@
 
 #include "child.h"
 #include "childop-outcome.h"
+#include "childops-netlink.h"
 #include "childops-util.h"
 #include "pkt-builder.h"
 #include "random.h"
@@ -176,7 +177,8 @@ static bool recipe_needs_srh_ns(unsigned int pick)
  * predates the knob and the deliver attempt below will simply be
  * dropped; open/write failures are silently ignored.
  */
-static void pktb_probe_write_ipv6_sysctl(const char *knob)
+static void pktb_probe_write_ipv6_sysctl(const char *knob,
+					 unsigned long *direct_calls_p)
 {
 	char path[128];
 	static const char * const ifaces[] = { "all", "lo" };
@@ -189,9 +191,11 @@ static void pktb_probe_write_ipv6_sysctl(const char *knob)
 		snprintf(path, sizeof(path),
 			 "/proc/sys/net/ipv6/conf/%s/%s", ifaces[i], knob);
 		fd = open(path, O_WRONLY | O_CLOEXEC);
+		(*direct_calls_p)++;
 		if (fd < 0)
 			continue;
 		n = write(fd, "1", 1);
+		(*direct_calls_p)++;
 		(void)n;
 		close(fd);
 	}
@@ -203,7 +207,6 @@ static int probe_one_recipe(struct pktb_ctx *ctx,
 
 struct pktb_probe_srh_arg {
 	const struct pktb_probe_recipe *r;
-	unsigned int			pick;
 	enum child_op_type		op;
 };
 
@@ -227,15 +230,30 @@ static int pktb_probe_srh_in_ns(void *arg)
 	const struct pktb_probe_srh_arg *a =
 		(const struct pktb_probe_srh_arg *)arg;
 	const struct pktb_probe_recipe  *r = a->r;
+	struct nl_ctx nl = NL_CTX_INIT;
+	struct nl_open_opts nlopts = {
+		.proto        = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
+	bool nl_opened = false;
 	struct pktb_ctx ctx;
 	unsigned long dc = 0;
 	uint8_t li;
 
+	/*
+	 * Bring lo up in the private netns so AF_PACKET sendto() on lo
+	 * does not fail with -ENETDOWN at af_packet.c:1984.
+	 */
+	if (nl_open(&nl, &nlopts) == 0) {
+		nl_opened = true;
+		rtnl_bring_lo_up(&nl);
+	}
+
 	for (li = 0; li < r->n; li++) {
 		if (r->layers[li] == PKTB_LAYER_RPL_SRH)
-			pktb_probe_write_ipv6_sysctl("rpl_seg_enabled");
+			pktb_probe_write_ipv6_sysctl("rpl_seg_enabled", &dc);
 		else if (r->layers[li] == PKTB_LAYER_SEG6_SRH)
-			pktb_probe_write_ipv6_sysctl("seg6_enabled");
+			pktb_probe_write_ipv6_sysctl("seg6_enabled", &dc);
 	}
 
 	pktb_ctx_init(&ctx);
@@ -247,6 +265,13 @@ static int pktb_probe_srh_in_ns(void *arg)
 	if (ctx.raw_ipv6_fd >= 0)     dc++;
 	if (ctx.loopback_udp_fd >= 0) dc++;
 	pktb_ctx_close(&ctx);
+
+	/* Tally the netlink socket syscalls (open + rtnl RTM_NEWLINK
+	 * round-trip) and the close(2) nl_close() is about to issue. */
+	if (nl_opened) {
+		dc += nl.direct_syscalls + 1; /* +1 for close(2) in nl_close */
+		nl_close(&nl);
+	}
 
 	if ((int)a->op >= 0 && a->op < NR_CHILD_OP_TYPES)
 		childop_direct_syscalls_add(a->op, dc);
@@ -367,7 +392,6 @@ bool pkt_builder_probe(struct childdata *child)
 			if (!pktb_probe_srh_ns_unsupported) {
 				struct pktb_probe_srh_arg srh_arg = {
 					.r    = &probe_recipes[pick],
-					.pick = pick,
 					.op   = op,
 				};
 				int nsrc = userns_run_in_ns(CLONE_NEWNET,
