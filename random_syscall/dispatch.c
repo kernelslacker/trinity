@@ -156,7 +156,7 @@ classify_strategy_return_class(const struct syscallrecord *rec)
  * output_syscall_prefix forward is shared.
  */
 
-static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
+bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			  bool *found_new, unsigned long *new_cmp_out,
 			  unsigned long *new_transition_out)
 {
