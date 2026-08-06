@@ -449,6 +449,38 @@ stats	object
     stats.nftables_churn.rule_del_ok	u64
     stats.nftables_churn.table_del_ok	u64
     stats.nftables_churn.payload_expr_emit	u64
+    stats.nftables_churn.meta_expr_emit	u64
+    stats.nftables_churn.lookup_expr_emit	u64
+    stats.nftables_churn.log_expr_emit	u64
+    stats.nftables_churn.bitwise_expr_emit	u64
+    stats.nftables_churn.cmp_expr_emit	u64
+    stats.nftables_churn.range_expr_emit	u64
+    stats.nftables_churn.byteorder_expr_emit	u64
+    stats.nftables_churn.socket_expr_emit	u64
+    stats.nftables_churn.quota_expr_emit	u64
+    stats.nftables_churn.limit_expr_emit	u64
+    stats.nftables_churn.numgen_expr_emit	u64
+    stats.nftables_churn.hash_expr_emit	u64
+    stats.nftables_churn.synproxy_expr_emit	u64
+    stats.nftables_churn.counter_expr_emit	u64
+    stats.nftables_churn.connlimit_expr_emit	u64
+    stats.nftables_churn.masq_expr_emit	u64
+    stats.nftables_churn.redir_expr_emit	u64
+    stats.nftables_churn.tproxy_expr_emit	u64
+    stats.nftables_churn.xfrm_expr_emit	u64
+    stats.nftables_churn.dup_netdev_expr_emit	u64
+    stats.nftables_churn.dup_ipv4_expr_emit	u64
+    stats.nftables_churn.dup_ipv6_expr_emit	u64
+    stats.nftables_churn.fwd_netdev_expr_emit	u64
+    stats.nftables_churn.last_expr_emit	u64
+    stats.nftables_churn.rt_expr_emit	u64
+    stats.nftables_churn.fib_expr_emit	u64
+    stats.nftables_churn.exthdr_expr_emit	u64
+    stats.nftables_churn.osf_expr_emit	u64
+    stats.nftables_churn.queue_expr_emit	u64
+    stats.nftables_churn.immediate_expr_emit	u64
+    stats.nftables_churn.dynset_expr_emit	u64
+    stats.nftables_churn.ct_expr_emit	u64
     stats.nftables_churn.objref_expr_emit	u64
     stats.nftables_churn.compat_validate_install_ok	u64
     stats.nftables_churn.compat_validate_install_fail	u64

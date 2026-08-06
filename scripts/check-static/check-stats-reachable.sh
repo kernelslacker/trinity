@@ -329,9 +329,6 @@ ALLOWLIST_PATTERNS=(
 	'[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*_per_group'
 	'[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*\.[a-zA-Z_][a-zA-Z0-9_]*_history'
 
-	# --- nested: macro-concatenated dispatch (nft expr table) ---
-	'nftables_churn\.[a-zA-Z_][a-zA-Z0-9_]*_expr_emit'
-
 	# --- nested: ORACLE_ANOMALY_ROW bespoke emit ---
 	'diag\.statmount_setup_fail'
 
