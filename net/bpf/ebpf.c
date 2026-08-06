@@ -109,9 +109,8 @@ void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
  * handler in syscalls/bpf.c routes release through deferred_free_enqueue
  * under an alloc_track_lookup() ownership gate -- a shape-only gate on
  * attr->insns lets a sibling-scribbled value that aliases another
- * site's currently-inflight pointer slip through to plain free(), and
- * because plain free() does not update inflight_hash, the original
- * site's later TTL-expiry would re-free the same chunk.  Tracking the
+ * site's tracked pointer slip through to plain free(), racing the
+ * original site's TTL-expiry drain and double-freeing the chunk.  Tracking the
  * allocation here is what lets the post-handler ownership gate prove
  * the pointer is ours before handing it to the deferred-free ring.
  */

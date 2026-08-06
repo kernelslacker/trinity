@@ -228,9 +228,9 @@ not aesthetics.
 - **Gate correctness on the authoritative state, never a separately-maintained
   shadow.** Deciding ownership/presence from a value-keyed mirror (a hash) or a
   counter behind its own fallible `mprotect`, instead of the lock-step source it
-  summarizes (`ring[]` / `occupied_mask`), cost two fix rounds (`inflight_hash`,
-  then `ring_count`) plus a follow-up. Read the source of truth — shadows
-  desync under pressure.
+  summarizes (`ring[]` / `occupied_mask`), cost two fix rounds (a write-only
+  in-flight hash, then `ring_count`) plus a follow-up. Read the source of
+  truth — shadows desync under pressure.
 - **Guard unsigned subtraction:** ensure `b <= a` at the point of `a - b`;
   don't rely on an invariant that only held under a prior load/sample order
   (RELAXED or separately-loaded operands can violate it — `frontier_cold_weight`:

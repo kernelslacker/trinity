@@ -32,7 +32,7 @@ target -- `alloc_track_lookup` gates `cleanup_release_post_state` ->
 `tracked_free_now` -> `free()`, the deferred-free enqueue admission, AND the
 deferred-free free-time ownership check -- so the `PROT_READ` steady state is
 load-bearing for memory safety, not just a perf nicety.  Mirror the
-`ring[]`/`inflight_hash[]` armor pattern.
+`ring[]` armor pattern.
 
 Fibonacci hashing: `ptr>>4` strips the 4 always-zero low bits glibc malloc
 gives us on x86_64 (16-byte-aligned chunks on 64-bit), then multiplies by the
@@ -48,37 +48,6 @@ When the first array slot rotates out, the displaced ptr is `hash_remove()`d
 subsequent `deferred_free_enqueue` of that ptr is falsely rejected.  That is
 a `deferred_free_reject` leak, not a bad-free; per the opt-in vs.
 implicit-track design rationale, the safer direction to err.
-
-## In-flight pointer set
-
-Mirrors "currently admitted to the deferred ring" membership.  Populated at
-the tail of `deferred_free_enqueue` after the ring slot write succeeds;
-cleared at the tail of `free_ring_entry` / `ring_evict_oldest_safe` on the
-successful `free()` path.  Used by `inflight_gc_sweep()` to reconcile stomp
-orphans (set entries whose corresponding ring slot has been scribbled to a
-different value) so the set stays bounded over long runs.
-
-No longer the ownership gate at free time: the value-keyed shadow could
-desync from `ring[]` under stomp + unlock-window pressure (set said "present"
-when ptr was never admitted -- the `ring_evict_oldest_safe` ASAN bad-free
-root cause) or reject a clean free (set said "absent" when ptr was live).
-The authoritative gate is `alloc_track_lookup()`, which mirrors what
-`__zmalloc()` returned and is held populated through ring residency by design
-(see `deferred_free_enqueue_internal`'s lookup-not-consume gate and the
-matching free-time consume in `free_ring_entry` / `ring_evict_oldest_safe`).
-
-Storage shape mirrors `alloc_track_hash[]` (1024 slots, Fibonacci index,
-open-addressed with shift-back deletion).  Sized for the 64-slot ring plus
-headroom for stomp orphans accumulated between GC sweeps; an idle slot costs
-8 bytes of the mmap'd backing.
-
-Storage lives in an mmap'd region whose address range is registered with
-`shared_regions[]` via `track_shared_region()`, mirroring `ring[]`'s shape.
-Steady state is `PROT_READ`; writers (`inflight_hash_insert` /
-`inflight_hash_remove` / the dispose-time clear) bracket their mutations
-with `inflight_unlock()`/`inflight_lock()` so a sibling fuzzed value-result
-syscall that aliases the set's pages between writes hits the `PROT_READ`
-wall instead of silently flipping a membership bit.
 
 ## Three-result ring_unlock and the mprotect bracket
 
@@ -220,17 +189,7 @@ and untracked allocations on the same release path.
 Ring-ownership gate: scan `ring[]` directly to decide whether `@ptr` is
 currently pinned in the deferred-free ring.  `ring[]` is the source-of-truth
 (mprotect-armored AND registered with `shared_regions[]`, so neither
-scribble nor mprotect-failure can desync it from itself).  The previous
-shape used `inflight_hash_contains()` as a proxy, but `inflight_hash` is a
-value-keyed mirror that can desync from `ring[]` in two ways:
-(1) `inflight_hash_insert()` silently skips when its mprotect-unlock returns
--1 (ENOMEM under VMA pressure, the same class the ring's
-`RING_UNLOCK_ENOMEM` path defends against); (2) a sibling fuzzed
-value-result syscall that scribbles `inflight_hash` during a writer's
-`PROT_READ|PROT_WRITE` bracket can overwrite an entry.  Either lie returns
-false from `contains()` for a ring-resident `@ptr`, the fall-through runs
-`free()`, and a subsequent address-reuse re-admission re-arms `contains()`
-for the dangling slot -- eviction passes its guard and double-frees.  Direct
+scribble nor mprotect-failure can desync it from itself).  Direct
 `ring[]` scan trusts the stronger gate and is immune to both desync
 vectors.
 
@@ -264,11 +223,8 @@ more mprotect splits.
 Untrack the shared region BEFORE `munmap` so `range_overlaps_shared()` stops
 answering yes on a VA the kernel will reclaim out from under it -- the
 pairing rule the `check-static` script enforces for every other
-`track`/`munmap` site.  `inflight_hash[]` is cleared in lock-step with
-`ring_count` so the orphan-sweep at next tick (which won't run, since
-`ring_count` is now zero) doesn't have a stale picture to recover from if a
-future commit re-arms the ring; the heap chunks the hash entries pointed at
-are leaked alongside the queued ptrs themselves.
+`track`/`munmap` site.  The heap chunks held by queued ring entries are
+leaked alongside the ring slots themselves.
 
 Idempotent: a second caller (e.g. a flush after the enqueue path already
 disposed) sees `ring==NULL` and returns.  After dispose every
@@ -360,7 +316,5 @@ bumps the same counter so the alloc-track-miss class stays observable; no
 separate per-rejection log because the call site is unambiguous (only
 `free_ring_entry` routes through `TRACKED_FREE_SITE_RING_DRAIN`).
 
-On the clean-free path the entry is removed from `inflight_hash` so the GC
-sweep does not later mistake it for an orphan, and the `alloc_track` entry
-is consumed in lock-step with `free()` so the set stays in sync with the
-heap.
+On the clean-free path the `alloc_track` entry is consumed in lock-step
+with `free()`.
