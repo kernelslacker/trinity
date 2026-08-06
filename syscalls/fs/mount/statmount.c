@@ -11,6 +11,7 @@
 #include <asm/unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <string.h>
 #include "csfu.h"
 #include "deferred-free.h"
@@ -376,7 +377,9 @@ static void sanitise_statmount(struct syscallrecord *rec)
  * fresh private stack request and a fresh private stack buf (do NOT pass
  * the snapshot's req / buffer -- a sibling could mutate the user buffers
  * themselves mid-syscall and forge a clean compare).  The flags arg is
- * forced to zero on the re-call.
+ * carried from snap->flags on the re-call.  For STATMOUNT_BY_FD the fd
+ * in first_req is validated via fstat(2) before and after to guard
+ * against fd recycling between the original call and the re-issue.
  *
  * Per-audit note: only the FIXED prefix (sizeof(struct statmount)) is
  * compared.  The variable-length string area beyond the fixed struct is
@@ -426,24 +429,49 @@ static void post_statmount(struct syscallrecord *rec)
 		goto out_release;
 
 	/*
-	 * The original request used STATMOUNT_BY_FD, which forces
-	 * req->mnt_id = 0.  The re-issue below forces flags=0 (non-BY_FD
-	 * path), so the kernel rejects mnt_id=0 with -EINVAL and the
-	 * oracle silently exits via `if (rc < 0)` without comparing
-	 * anything.  Count every such skip so a reader can distinguish
-	 * 'oracle ran clean' from 'oracle never ran for this sample'.
+	 * For BY_FD requests, carry the original flags and fd into the
+	 * re-issue.  The fd may have been recycled between the original
+	 * call and now, so capture fstat(2) st_dev/st_ino before the
+	 * re-issue and verify they haven't changed after.  If the fd is
+	 * already gone, or shifts identity during the syscall, skip and
+	 * count rather than risk a false-positive anomaly report.
 	 */
 	if (snap->flags & STATMOUNT_BY_FD) {
-		__atomic_add_fetch(&shm->stats.oracle.statmount_oracle_skipped,
-				   1, __ATOMIC_RELAXED);
-		goto out_release;
-	}
+		struct stat st_pre, st_post;
+#ifdef HAVE_MNT_ID_REQ_MNT_NS_FD
+		int byfd = (int) first_req.mnt_ns_fd;
+#else
+		int byfd = (int) first_req.spare;
+#endif
+		if (byfd < 0 || fstat(byfd, &st_pre) < 0) {
+			__atomic_add_fetch(
+				&shm->stats.oracle.statmount_oracle_skipped,
+				1, __ATOMIC_RELAXED);
+			goto out_release;
+		}
 
-	{
+		{
+			struct mnt_id_req recheck_req = first_req;
+
+			rc = syscall(SYS_statmount, &recheck_req, &recheck_buf,
+				     sizeof(recheck_buf),
+				     (unsigned int) snap->flags);
+		}
+
+		if (fstat(byfd, &st_post) < 0 ||
+		    st_pre.st_dev != st_post.st_dev ||
+		    st_pre.st_ino != st_post.st_ino) {
+			/* fd recycled during the syscall — skip */
+			__atomic_add_fetch(
+				&shm->stats.oracle.statmount_oracle_skipped,
+				1, __ATOMIC_RELAXED);
+			goto out_release;
+		}
+	} else {
 		struct mnt_id_req recheck_req = first_req;
 
 		rc = syscall(SYS_statmount, &recheck_req, &recheck_buf,
-			     sizeof(recheck_buf), 0u);
+			     sizeof(recheck_buf), (unsigned int) snap->flags);
 	}
 
 	if (rc < 0)
