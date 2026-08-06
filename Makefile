@@ -155,6 +155,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard childops/net/xfrm/*.c) \
 		   $(wildcard childops/net/tc/*.c) \
 		   $(wildcard childops/misc/*.c) \
+		   $(wildcard childops/process/*.c) \
 		   $(wildcard childops/recipe/*.c) \
 		   $(wildcard childops/io_uring/*.c) \
 		   $(wildcard childops/mm/*.c) \
@@ -246,6 +247,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/net/xfrm/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/net/tc/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/misc/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard childops/process/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/recipe/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/io_uring/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/mm/*.c))) \
