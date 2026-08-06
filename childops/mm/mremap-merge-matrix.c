@@ -57,11 +57,19 @@
  *
  * Racing
  * ------
- * A fork helper runs a fault/COW loop against row-2 slots during the
- * mremap sequence: fork() forces dup_anon_vma on all live VMAs at that
- * instant, precisely reproducing the anon_vma chain duplication that
- * triggered past UAF bugs.  The helper exits without sleeping; we
- * waitpid immediately so the race window is narrow but real.
+ * One fork helper is spawned per invocation, before the move loop.
+ * At fork the kernel clones all live VMAs -- including the slot 0-7
+ * source/destination arena -- giving the child shared anon_vma and
+ * rmap references into those mappings.  The child faults COW pages
+ * in the racing region (slots 8-11) and then blocks on a sync pipe.
+ * Meanwhile the parent works through its mremap move iterations;
+ * the child's live anon_vma references to slots 0-7 overlap with
+ * every move_vma() call in the parent, creating genuine shared-
+ * metadata lifetime pressure.  After all moves complete the parent
+ * writes a byte to the pipe; the child reads it and calls _exit(0),
+ * tearing down its cloned VMAs concurrently with any in-progress
+ * rmap or anon_vma work in the parent.  The alarm(1) bound in
+ * child.c caps wall time; waitpid is matched 1:1 with the fork.
  *
  * Self-bounding
  * -------------
@@ -275,16 +283,18 @@ static void reset_src_slot(char *src, unsigned long slot_bytes,
  * Fork-racing COW helper
  *
  * The child faults one byte on each racing slot page to instantiate
- * COW entries, then exits.  fork() itself (in the parent) forces
- * dup_anon_vma on every live VMA at the fork instant, which is the
- * code path implicated in anon_vma UAF bugs when an mremap move races
- * with fork.
+ * COW entries, then blocks on sync_rd until the parent signals that
+ * all mremap moves for this invocation are done.  Holding cloned
+ * VMAs for slots 0-7 (via shared anon_vma references established at
+ * fork) while the parent's move_vma() calls are in flight is the
+ * actual teardown-vs-move race this helper creates.
  * ------------------------------------------------------------------ */
 
 static void __attribute__((noreturn))
-race_cow_helper(char *race_base, unsigned long slot_bytes)
+race_cow_helper(char *race_base, unsigned long slot_bytes, int sync_rd)
 {
 	unsigned int slot;
+	char dummy;
 
 	for (slot = 0; slot < 4; slot++) {
 		char *p = race_base + slot * slot_bytes;
@@ -293,6 +303,10 @@ race_cow_helper(char *race_base, unsigned long slot_bytes)
 		*vp = (char)(slot & 0xff);
 	}
 
+	/* Block until the parent finishes its moves (or closes the pipe). */
+	{
+		ssize_t _r __unused__ = read(sync_rd, &dummy, 1);
+	}
 	_exit(0);
 }
 
@@ -400,6 +414,11 @@ static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 		 * must be freed here; the arena munmap cannot reach it.
 		 */
 		if (ret != (void *)src) {
+			/*
+			 * ret now lives outside the arena; release it so
+			 * the final munmap(arena) does not miss it.
+			 */
+			(void)munmap(ret, slot_bytes);
 			(*direct_calls_out)++;
 			(void)munmap(ret, slot_bytes);
 			(*direct_calls_out)++;
@@ -514,6 +533,8 @@ bool mremap_merge_matrix(struct childdata *child)
 	char *arena;
 	unsigned int iter, iters;
 	unsigned long direct_calls = 0;
+	int sync_pipe[2];
+	pid_t race_pid = -1;
 
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
@@ -599,10 +620,36 @@ bool mremap_merge_matrix(struct childdata *child)
 
 	iters = JITTER_RANGE(MAX_ITERS);
 
+	/*
+	 * Spawn the racing helper once for this invocation.  The child
+	 * holds cloned VMAs (slots 0-7) via shared anon_vma references
+	 * and blocks on sync_pipe[0] until we signal it after the move
+	 * loop.  Its concurrent _exit() teardown races move_vma() in the
+	 * parent.  Close the read end in the parent; if fork fails, close
+	 * both ends so nothing leaks.
+	 */
+	sync_pipe[0] = sync_pipe[1] = -1;
+	if (pipe(sync_pipe) == 0) {
+		direct_calls++;
+		race_pid = fork();
+		if (race_pid == 0) {
+			char *race_base = slot_addr(arena,
+						    NR_SRC_SLOTS + NR_DST_SLOTS,
+						    slot_bytes);
+			close(sync_pipe[1]);
+			race_cow_helper(race_base, slot_bytes, sync_pipe[0]);
+			/* unreachable */
+		}
+		close(sync_pipe[0]);
+		if (race_pid < 0) {
+			close(sync_pipe[1]);
+			sync_pipe[1] = -1;
+		}
+	}
+
 	for (iter = 0; iter < iters; iter++) {
 		unsigned int src_slot, dst_slot;
 		enum merge_shape shape;
-		pid_t race_pid;
 
 		if (vma_pressure_is_high())
 			break;
@@ -610,20 +657,6 @@ bool mremap_merge_matrix(struct childdata *child)
 		src_slot = rnd_modulo_u32(NR_SRC_SLOTS);
 		dst_slot = NR_SRC_SLOTS + rnd_modulo_u32(NR_DST_SLOTS);
 		shape    = (enum merge_shape)rnd_modulo_u32(NR_MERGE_SHAPES);
-
-		/*
-		 * Fork the COW racer before the mremap so that dup_anon_vma
-		 * runs on the live VMAs at the same time as the move.
-		 */
-		direct_calls++;
-		race_pid = fork();
-		if (race_pid == 0) {
-			char *race_base = slot_addr(arena,
-						    NR_SRC_SLOTS + NR_DST_SLOTS,
-						    slot_bytes);
-			race_cow_helper(race_base, slot_bytes);
-			/* unreachable */
-		}
 
 		/* Issue the mremap move (src → dst, various shapes). */
 		{
@@ -645,14 +678,6 @@ bool mremap_merge_matrix(struct childdata *child)
 					  "src=%u dst=%u\n",
 					  (int)shape, src_slot, dst_slot);
 			}
-		}
-
-		/* Drain the racing helper. */
-		if (race_pid > 0) {
-			int status;
-
-			direct_calls++;
-			(void)waitpid_eintr(race_pid, &status, 0);
 		}
 
 		/*
@@ -680,6 +705,24 @@ bool mremap_merge_matrix(struct childdata *child)
 				   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
 				   -1, 0);
 		}
+	}
+
+	/*
+	 * Signal the racing helper that all moves are done, then reap it.
+	 * Closing sync_pipe[1] (write end) delivers EOF to the child if
+	 * we exited the loop early (vma_pressure bail), ensuring the child
+	 * is not left wedged.
+	 */
+	if (sync_pipe[1] >= 0) {
+		ssize_t _w __unused__ = write(sync_pipe[1], "x", 1);
+		close(sync_pipe[1]);
+		sync_pipe[1] = -1;
+	}
+	if (race_pid > 0) {
+		int status;
+
+		direct_calls++;
+		(void)waitpid_eintr(race_pid, &status, 0);
 	}
 
 	/* Release the entire arena unconditionally. */
