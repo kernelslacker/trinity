@@ -134,6 +134,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `scripts/check-static/childop-direct-syscall-uncounted.baseline` if
   their additional own-body calls are not yet wired; that list should
   shrink over time, never grow.
+- `childop-stats-writer-registered`: every `.c` file under `childops/`
+  that writes `shm->stats.*` counters must have a corresponding
+  `CHILD_OP_*` entry in `include/childop.def` whose dispatch function is
+  defined in that file, or be listed in
+  `scripts/check-static/childop-stats-writer-registered.baseline` as a
+  carve file (called from a sibling's registered dispatch entry point)
+  or shared infrastructure unit.  A file that writes stats counters but
+  defines no registered dispatch function and has no baseline exemption
+  is dead code -- its producers never execute and every counter stays
+  zero.  The baseline should shrink over time, never grow.
 - `cmp-hints-canonicalise-cmp-ip`: (i) `kcov_canon_cmp_ip()` in
   `kcov/collect.c` must subtract `kcov_kaslr_base`, and (ii) every
   function in `cmp_hints/cmp_hints.c` that calls

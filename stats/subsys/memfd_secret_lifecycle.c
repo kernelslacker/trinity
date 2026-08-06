@@ -11,6 +11,7 @@
 static const struct stat_field memfd_secret_lifecycle_fields[] = {
 	STAT_FIELD_SUB(memfd_secret_lifecycle, oracle_pass),
 	STAT_FIELD_SUB(memfd_secret_lifecycle, oracle_fired),
+	STAT_FIELD_SUB(memfd_secret_lifecycle, oracle_inconclusive),
 	STAT_FIELD_SUB(memfd_secret_lifecycle, conc_truncate_races),
 	STAT_FIELD_SUB(memfd_secret_lifecycle, setup_rejected),
 };

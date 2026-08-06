@@ -125,14 +125,6 @@ UNEMITTED:stats/subsys/frontier.h:frseq_would_skip_per_group
 UNEMITTED:stats/subsys/iouring_recipes.h:completed_per
 UNEMITTED:stats/subsys/recipe.h:completed_per
 
-# oracle_inconclusive is bumped when the ambient environment (Yama,
-# non-dumpable binary, kernel without CONFIG_SECRETMEM) denied even
-# the anon positive-control read, making oracle attribution impossible.
-# The field is present in the header but not yet added to the
-# STAT_FIELD_SUB descriptor table in
-# stats/subsys/memfd_secret_lifecycle.c.
-UNEMITTED:stats/subsys/memfd_secret_lifecycle.h:oracle_inconclusive
-
 # Per-syscall errno-sourced corpus accounting (MAX_NR_SYSCALL arrays).
 # errno_saves[nr] counts corpus admits tagged CORPUS_SAVE_REASON_ERRNO
 # for syscall nr; errno_pcedge_wins[nr] counts PC-edge conversions from
