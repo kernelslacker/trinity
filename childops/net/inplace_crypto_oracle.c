@@ -161,20 +161,32 @@ static void set_short_recv_timeout(int fd, unsigned long *n_calls)
  * Open the oracle source file (rotate /etc/hosts vs a self-owned
  * scratch-dir marker) and capture up to ORACLE_FILE_CAP baseline
  * bytes.  The scratch-dir variant is mkstemp + write + unlink +
- * reopen via /proc/self/fd so the inode is auto-reaped on child exit.
+ * reopen via /proc/self/fd/<wfd>.  wfd is held open (returned via
+ * *out_wfd) for the entire oracle window so the inode stays alive and
+ * the fd number cannot be recycled by target_fns[]; caller closes it
+ * after oracle_check_unchanged() returns.
  */
 static int open_oracle_file(char *out_path, size_t path_cap,
 			    unsigned char *out_baseline, size_t *out_size,
+			    int *out_wfd, bool *out_is_scratch,
 			    unsigned long *n_calls)
 {
 	int fd = -1;
 	ssize_t n;
 
+	*out_wfd      = -1;
+	*out_is_scratch = false;
+
 	if (RAND_BOOL()) {
 		fd = open("/etc/hosts", O_RDONLY | O_CLOEXEC);
 		(*n_calls)++;
-		if (fd >= 0)
+		if (fd >= 0) {
 			snprintf(out_path, path_cap, "/etc/hosts");
+			/* /etc/hosts has independent writers (nscd, dhclient,
+			 * etc.); mark it non-scratch so log_corruption() is
+			 * suppressed for this arm. */
+			*out_is_scratch = false;
+		}
 	}
 	if (fd < 0) {
 		char tmpl[PATH_MAX + 32];
@@ -202,10 +214,16 @@ static int open_oracle_file(char *out_path, size_t path_cap,
 		snprintf(out_path, path_cap, "/proc/self/fd/%d", wfd);
 		fd = open(out_path, O_RDONLY | O_CLOEXEC);
 		(*n_calls)++;
-		close(wfd);
-		(*n_calls)++;
-		if (fd < 0)
+		if (fd < 0) {
+			close(wfd);
+			(*n_calls)++;
 			return -1;
+		}
+		/* Hold wfd open: keeps the inode alive and the fd number
+		 * stable for the entire oracle window (through
+		 * oracle_check_unchanged()).  Caller owns the close. */
+		*out_wfd      = wfd;
+		*out_is_scratch = true;
 	}
 	n = read(fd, out_baseline, ORACLE_FILE_CAP);
 	(*n_calls)++;
@@ -754,6 +772,8 @@ bool inplace_crypto_oracle(struct childdata *child)
 	enum oracle_target chosen = TGT_NR;
 	unsigned int i;
 	int file_fd;
+	int wfd = -1;
+	bool is_scratch = false;
 
 	if (unsupported_inplace_crypto_oracle)
 		return true;
@@ -788,7 +808,8 @@ bool inplace_crypto_oracle(struct childdata *child)
 	}
 
 	file_fd = open_oracle_file(path, sizeof(path),
-				   baseline, &baseline_len, &direct_calls);
+				   baseline, &baseline_len,
+				   &wfd, &is_scratch, &direct_calls);
 	if (file_fd < 0) {
 		if (valid_op)
 			childop_direct_syscalls_add(op, direct_calls);
@@ -808,12 +829,22 @@ bool inplace_crypto_oracle(struct childdata *child)
 	if (!oracle_check_unchanged(path, baseline, baseline_len,
 				    &diff_off, after_window,
 				    &after_valid, &direct_calls)) {
-		dump_len = baseline_len - diff_off;
-		if (dump_len > after_valid)
-			dump_len = after_valid;
-		log_corruption(chosen, path, diff_off,
-			       baseline + diff_off, after_window,
-			       dump_len);
+		/* /etc/hosts has independent writers; only the self-owned
+		 * scratch-file arm is authoritative for corruption reports. */
+		if (is_scratch) {
+			dump_len = baseline_len - diff_off;
+			if (dump_len > after_valid)
+				dump_len = after_valid;
+			log_corruption(chosen, path, diff_off,
+				       baseline + diff_off, after_window,
+				       dump_len);
+		}
+	}
+	/* Close scratch wfd now: was held open to pin the inode and
+	 * prevent fd-number recycling during target_fns[] execution. */
+	if (wfd >= 0) {
+		close(wfd);
+		direct_calls++;
 	}
 	if (valid_op)
 		childop_direct_syscalls_add(op, direct_calls);
