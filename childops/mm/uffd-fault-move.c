@@ -19,15 +19,18 @@
  *   explicit UFFDIO_WAKE is sent, verifying the DONTWAKE+WAKE discipline.
  *
  * Variant 2 -- UFFDIO_MOVE / swap-cache race
- *   Create a shmem memfd, map it at src and dst.  Negotiate
- *   UFFD_FEATURE_MOVE; if the kernel does not support it the variant is
- *   skipped cleanly.  Fill src pages with per-page sequence numbers, then
- *   register dst with UFFDIO_REGISTER MISSING.  A racer thread issues
- *   MADV_PAGEOUT on src then re-reads it (causing a refault), racing
- *   UFFDIO_MOVE in the main thread.  Vary UFFDIO_MOVE_MODE_ALLOW_SRC_HOLES
- *   and destination occupancy per iteration.  Oracle: read dst pages after
- *   MOVE and verify sequence numbers.  Targets move_swap_pte() and the
- *   2025-26 swap-cache race fixes.
+ *   Create two distinct MAP_PRIVATE|MAP_ANONYMOUS mappings for src and dst.
+ *   Negotiate UFFD_FEATURE_MOVE; if the kernel does not support it the
+ *   variant is skipped cleanly.  Fill src pages with per-page sequence
+ *   numbers, then register dst with UFFDIO_REGISTER MISSING.  A racer
+ *   thread issues MADV_PAGEOUT on src then re-reads it (causing a refault),
+ *   racing UFFDIO_MOVE in the main thread.  MADV_PAGEOUT on anonymous
+ *   memory drives pages to swap (requires CONFIG_SWAP and a configured swap
+ *   device on the test machine), reaching move_swap_pte().  Vary
+ *   UFFDIO_MOVE_MODE_ALLOW_SRC_HOLES and destination occupancy per
+ *   iteration.  Oracle: read dst pages after MOVE and verify sequence
+ *   numbers.  Targets move_swap_pte() and the 2025-26 swap-cache race
+ *   fixes.
  *
  * Variant 3 -- teardown race
  *   With a fault pending (fault thread blocked inside the kernel), race
@@ -576,8 +579,8 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 	uint64_t feats;
 	void *src = MAP_FAILED, *dst = MAP_FAILED;
 	size_t len;
-	int memfd = -1;
 	int round;
+	bool move_attempted = false;
 	uint64_t req_features;
 	bool use_allow_src_holes;
 
@@ -607,41 +610,20 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 
 	len = (size_t)MAX_FM_PAGES * (size_t)page_size;
 
-#ifdef SYS_memfd_create
-	memfd = (int)trinity_raw_syscall(SYS_memfd_create,
-					 "uffd-fm-v2", O_CLOEXEC);
-	(*direct_calls_out)++;
-#endif
-
-	if (memfd < 0) {
-		close(fd);
-		return;
-	}
-
-	if (ftruncate(memfd, (off_t)len) < 0) {
-		close(memfd);
-		close(fd);
-		return;
-	}
-
 	src = mmap(NULL, len, PROT_READ | PROT_WRITE,
-		   MAP_SHARED, memfd, 0);
+		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (src == MAP_FAILED) {
-		close(memfd);
 		close(fd);
 		return;
 	}
 
 	dst = mmap(NULL, len, PROT_READ | PROT_WRITE,
-		   MAP_SHARED, memfd, 0);
+		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (dst == MAP_FAILED) {
 		munmap(src, len);
-		close(memfd);
 		close(fd);
 		return;
 	}
-	close(memfd);
-	memfd = -1;
 
 	/* Fill src with per-page sequence numbers. */
 	{
@@ -721,6 +703,7 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 			mv.len  = (uint64_t)page_size;
 			mv.mode = mode;
 
+			move_attempted = true;
 			if (ioctl(fd, UFFDIO_MOVE, &mv) == 0) {
 				__atomic_add_fetch(
 					&shm->stats.uffd_fault_move.v2_move_ok,
@@ -752,9 +735,14 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 					}
 				}
 			} else {
-				__atomic_add_fetch(
-					&shm->stats.uffd_fault_move.v2_move_fail,
-					1, __ATOMIC_RELAXED);
+				if (errno == EINVAL)
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v2_move_einval,
+						1, __ATOMIC_RELAXED);
+				else
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v2_move_fail,
+						1, __ATOMIC_RELAXED);
 				/* Fall back to COPY so the fault thread
 				 * doesn't stay blocked forever. */
 				struct uffdio_copy cp;
@@ -782,6 +770,11 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 #endif
 		}
 	}
+
+	if (!move_attempted)
+		__atomic_add_fetch(
+			&shm->stats.uffd_fault_move.v2_move_skipped,
+			1, __ATOMIC_RELAXED);
 
 	/* Teardown: stop threads, unregister, unmap. */
 	__atomic_store_n(&rctx.stop, 1, __ATOMIC_RELEASE);
