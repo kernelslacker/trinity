@@ -236,7 +236,7 @@ void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 		top_idx[i] = 0;
 		top_delta[i] = 0;
 	}
-	for (op = 0; op < KCOV_CHILDOP_NR_MAX && op < (unsigned int)NR_CHILD_OP_TYPES; op++) {
+	for (op = 0; op < (unsigned int)NR_CHILD_OP_TYPES; op++) {
 		unsigned long d;
 
 		if (now_childop[op] <= snap_childop[op])
