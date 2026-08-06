@@ -72,14 +72,42 @@ struct rds_bind_transport_refleak_stats {
 	unsigned long leaked_refs_hwm_growth;	/* total HWM growth above baseline */
 
 	/*
-	 * port_collision_skips: holder bind failed because another worker
-	 * child computed the same per-pid port (pids differing by a
-	 * multiple of 4096 map to the same 0xB000|(pid&0x0FFF) value).
-	 * When this fires the EADDRINUSE leak path is skipped for that
-	 * invocation.  Fleet visibility here prevents the silent
-	 * single-path degradation from going unnoticed.
+	 * port_collision_skips: holder bind() returned EADDRINUSE because
+	 * another worker child computed the same per-pid port (pids
+	 * differing by a multiple of 4096 map to the same
+	 * 0xB000|(pid&0x0FFF) value).  When this fires the EADDRINUSE
+	 * leak path is skipped for that invocation.  Fleet visibility
+	 * here prevents the silent single-path degradation from going
+	 * unnoticed.
 	 */
-	unsigned long port_collision_skips;	/* holder bind failed -- EADDRINUSE arm skipped */
+	unsigned long port_collision_skips;	/* holder bind EADDRINUSE -- pid-collision skip */
+
+	/*
+	 * holder_bind_other_errno: holder bind() failed with an errno
+	 * other than EADDRINUSE (e.g. EINVAL, EACCES, ENOMEM).  Counted
+	 * separately from port_collision_skips so a permanently broken
+	 * holder-bind path does not silently masquerade as pid-collision
+	 * traffic.  When this fires the EADDRINUSE leak path is also
+	 * skipped for that invocation.
+	 */
+	unsigned long holder_bind_other_errno;	/* holder bind failed -- non-EADDRINUSE errno */
+
+	/*
+	 * eaddrinuse_wall_cap_skip: the EADDRINUSE arm was skipped
+	 * entirely because RDSBTR_WALL_CAP_NS elapsed during the EINVAL
+	 * loop.  This is the dominant skip cause on a busy box and was
+	 * previously uncounted, making the arm look permanently dead.
+	 */
+	unsigned long eaddrinuse_wall_cap_skip;	/* wall-cap elapsed before EADDRINUSE arm */
+
+	/*
+	 * eaddrinuse_loopfd_setsockopt_fail: inside iter_eaddrinuse(),
+	 * the loop-fd setsockopt(SO_RDS_TRANSPORT) failed after the
+	 * holder socket was successfully established.  The function
+	 * returns 0 silently, indistinguishable from 'EADDRINUSE bind
+	 * not reached'.  This counter makes the silent-fail path visible.
+	 */
+	unsigned long eaddrinuse_loopfd_setsockopt_fail;	/* loop-fd setsockopt fail in iter_eaddrinuse */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_RDS_BIND_TRANSPORT_REFLEAK_H */
