@@ -151,6 +151,7 @@
 #include "stats/subsys/procfs_writer.h"
 #include "stats/subsys/psp_key_rotate.h"
 #include "stats/subsys/qrtr_bind_race.h"
+#include "stats/subsys/rds_bind_transport_refleak.h"
 #include "stats/subsys/rds_zcopy_crafted_send.h"
 #include "stats/subsys/recipe.h"
 #include "stats/subsys/remote_adaptive.h"
@@ -800,6 +801,9 @@ struct stats_s {
 
 	/* msg_zerocopy_churn accounting.  See stats/subsys/msg_zerocopy_churn.h. */
 	struct msg_zerocopy_churn_stats msg_zerocopy_churn __attribute__((aligned(64)));
+
+	/* rds_bind_transport_refleak accounting.  See stats/subsys/rds_bind_transport_refleak.h. */
+	struct rds_bind_transport_refleak_stats rds_bind_transport_refleak __attribute__((aligned(64)));
 
 	/* rds_zcopy_crafted_send accounting.  See stats/subsys/rds_zcopy_crafted_send.h. */
 	struct rds_zcopy_crafted_send_stats rds_zcopy_crafted_send __attribute__((aligned(64)));

@@ -1,0 +1,417 @@
+/*
+ * rds_bind_transport_refleak - expose live module-ref leak in rds_bind().
+ *
+ * Bug summary.  rds_bind() (net/rds/bind.c) calls rds_set_transport()
+ * which in turn calls rds_trans_get() -> try_module_get(trans->t_owner),
+ * incrementing the owning module's reference count by one.  On the
+ * failure path where rds_add_bound() returns an error -- either -EINVAL
+ * for the RDS_FLAG_PROBE_PORT sentinel (port == 1), or -EADDRINUSE for a
+ * port already held by another RDS socket -- the caller nulls
+ * rs->rs_transport WITHOUT calling the matching rds_trans_put().  One
+ * module reference is leaked per failed bind.
+ *
+ * The same-socket repetition vector.  Nulling rs->rs_transport re-opens
+ * the "if (rs->rs_transport) return -EOPNOTSUPP;" guard in
+ * rds_setsockopt() (net/rds/af_rds.c), so the SAME open socket fd can
+ * set-transport (incrementing the ref) and fail-bind (leaking the ref)
+ * indefinitely without opening a new socket.
+ *
+ * Two-syscall trigger per inner iteration:
+ *   setsockopt(fd, SOL_RDS, SO_RDS_TRANSPORT, &(int){RDS_TRANS_TCP}, 4)
+ *       -> rds_setsockopt -> rds_set_transport -> rds_trans_get
+ *          -> try_module_get(rds_tcp->t_owner): refcount +1
+ *   bind(fd, {AF_INET, 127.0.0.1, htons(1)}, sizeof(sockaddr_in))
+ *       -> rds_bind -> rds_add_bound: -EINVAL (port==1 ==
+ *          RDS_FLAG_PROBE_PORT); rs->rs_transport = NULL; ref NOT put.
+ *
+ * Oracle.  /proc/modules carries the live module refcount for each
+ * loaded module ("name size refcount ...").  Reading rds_tcp's refcount
+ * before and after N iterations and observing a delta of N is the
+ * finding.  proc_module_refcount() (include/childops-util.h) wraps this
+ * read and is reusable by future childops.
+ *
+ * Silent-dud checks.
+ *   - socket(AF_RDS) fails EAFNOSUPPORT / EPROTONOSUPPORT / ENOPROTOOPT:
+ *     CONFIG_RDS absent; latch CHILDOP_LATCH_UNSUPPORTED.
+ *   - setsockopt(SO_RDS_TRANSPORT) returns -EOPNOTSUPP: transport layer
+ *     absent; latch CHILDOP_LATCH_UNSUPPORTED.
+ *   - proc_module_refcount("rds_tcp") < 0: module not loaded; latch
+ *     CHILDOP_LATCH_UNSUPPORTED.
+ *
+ * EADDRINUSE secondary path.  A holder socket is bound to a per-pid
+ * ephemeral port; the loop fd then attempts setsockopt+bind on the same
+ * port.  The holder close path is clean (rds_release calls rds_trans_put
+ * for the holder's transport), so only the loop fd's EADDRINUSE-path ref
+ * leaks.
+ *
+ * Safety.  All fd resources are per-invocation; the holder socket is
+ * closed before the post-refcount read.  No netns manipulation, no
+ * module load, no privileged operations.  Wall-capped at
+ * RDSBTR_WALL_CAP_NS per invocation.
+ *
+ * Scope.  target: CONFIG_RDS=m, CONFIG_RDS_TCP=m, CONFIG_RDS_RDMA absent.
+ * Runs directly in the persistent child without a netns hop.
+ */
+
+#include <errno.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <netinet/in.h>
+
+#include "child.h"
+#include "childop-outcome.h"
+#include "childops-util.h"
+#include "shm.h"
+#include "trinity.h"
+
+#include "kernel/rds.h"
+#include "kernel/socket.h"
+
+#include "rds-bind-transport-refleak.h"
+
+/*
+ * Per-process latch.  AF_RDS / SO_RDS_TRANSPORT / rds_tcp availability
+ * is static across a child's lifetime.  Once the first probe fails we
+ * stop retrying and short-circuit every subsequent invocation.  Mirrors
+ * the rds_zcopy_crafted_send / qrtr_bind_race / netns_teardown_churn
+ * latch patterns.
+ */
+static bool rds_bind_refleak_unsupported;
+
+/*
+ * Set the per-process latch and the shared CHILDOP_LATCH_UNSUPPORTED
+ * reason code for the given op, if the op index is in range.
+ */
+static void latch_unsupported(const enum child_op_type op)
+{
+	rds_bind_refleak_unsupported = true;
+	if ((int)op >= 0 && op < NR_CHILD_OP_TYPES)
+		__atomic_store_n(&shm->stats.childop.latch_reason[op],
+				 CHILDOP_LATCH_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+}
+
+/*
+ * probe_rds_bind_transport - check AF_RDS + SO_RDS_TRANSPORT availability
+ * on this host.  Opens an AF_RDS socket, probes SO_RDS_TRANSPORT with
+ * RDS_TRANS_TCP, then closes.  The close path in rds_release() calls
+ * rds_trans_put() when rs->rs_transport is set, so the probe leaves no
+ * leaked ref.
+ *
+ * Returns true on success (transport usable); false if the feature is
+ * absent (latch already set, setup_failed bumped).
+ */
+static bool probe_rds_bind_transport(const enum child_op_type op)
+{
+	int fd;
+	int transport = RDS_TRANS_TCP;
+
+	fd = socket(AF_RDS, SOCK_SEQPACKET, 0);
+	if (fd < 0) {
+		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT ||
+		    errno == ENOPROTOOPT || errno == EACCES)
+			latch_unsupported(op);
+		__atomic_add_fetch(&shm->stats.rds_bind_transport_refleak.setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	if (setsockopt(fd, SOL_RDS, SO_RDS_TRANSPORT,
+		       &transport, sizeof(transport)) < 0) {
+		/* EOPNOTSUPP / ENOPROTOOPT: transport layer absent */
+		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT)
+			latch_unsupported(op);
+		__atomic_add_fetch(&shm->stats.rds_bind_transport_refleak.setup_failed,
+				   1, __ATOMIC_RELAXED);
+		close(fd);
+		return false;
+	}
+
+	/*
+	 * Probe succeeded.  Close fd: rds_release() sees rs->rs_transport
+	 * set and calls rds_trans_put(), so this probe contributes zero net
+	 * change to the module refcount.
+	 */
+	close(fd);
+
+	/*
+	 * Confirm rds_tcp appears in /proc/modules so the oracle reads will
+	 * work.  If rds_tcp is not listed the pre/post delta is meaningless.
+	 */
+	if (proc_module_refcount("rds_tcp") < 0) {
+		latch_unsupported(op);
+		__atomic_add_fetch(&shm->stats.rds_bind_transport_refleak.setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * iter_einval - one EINVAL-path leak iteration on loop_fd.
+ *
+ * Calls setsockopt(SO_RDS_TRANSPORT, RDS_TRANS_TCP) to increment the
+ * rds_tcp module refcount by one, then bind(127.0.0.1:1).  Port 1 is
+ * the RDS_FLAG_PROBE_PORT sentinel: rds_add_bound() rejects -EINVAL
+ * before inserting into the bind table, but AFTER rds_set_transport()
+ * has already called try_module_get().  The error path nulls
+ * rs->rs_transport without calling rds_trans_put(), leaking the ref.
+ * The null write re-opens the setsockopt guard so the same fd can be
+ * used on the next call.
+ *
+ * Returns 0 on success (bind path was reached), -1 if setsockopt itself
+ * failed (guard re-opened incorrectly, or racing concurrent transport
+ * change).
+ */
+static int iter_einval(int loop_fd)
+{
+	struct sockaddr_in addr;
+	int transport = RDS_TRANS_TCP;
+	int r;
+
+	r = setsockopt(loop_fd, SOL_RDS, SO_RDS_TRANSPORT,
+		       &transport, sizeof(transport));
+	if (r < 0)
+		return -1;
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family      = AF_INET;
+	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_port        = htons(1);	/* RDS_FLAG_PROBE_PORT == 1 */
+
+	r = bind(loop_fd, (struct sockaddr *)&addr, sizeof(addr));
+	__atomic_add_fetch(&shm->stats.rds_bind_transport_refleak.binds_tried,
+			   1, __ATOMIC_RELAXED);
+
+	if (r < 0) {
+		if (errno == EINVAL)
+			__atomic_add_fetch(
+				&shm->stats.rds_bind_transport_refleak.binds_einval,
+				1, __ATOMIC_RELAXED);
+		else if (errno == EADDRINUSE)
+			__atomic_add_fetch(
+				&shm->stats.rds_bind_transport_refleak.binds_eaddrinuse,
+				1, __ATOMIC_RELAXED);
+	}
+	return 0;
+}
+
+/*
+ * iter_eaddrinuse - EADDRINUSE secondary leak path (best-effort, one round).
+ *
+ * Opens a holder socket, explicitly sets its transport to RDS_TRANS_TCP,
+ * and binds it to a per-pid ephemeral port so the port is held while the
+ * loop fd attempts to bind the same port.  The holder bind + close path
+ * is clean: setsockopt increments rds_tcp's ref, the bind succeeds
+ * (rs->rs_transport stays set), and rds_release sees rs->rs_transport set
+ * on close, calling rds_trans_put -- net zero for the holder.
+ *
+ * The loop fd then does setsockopt(TCP) (+1 ref) followed by
+ * bind(holder_port) which returns -EADDRINUSE; the kernel nulls
+ * rs->rs_transport without calling rds_trans_put, leaking one ref.
+ *
+ * Returns 1 if the EADDRINUSE bind was reached, 0 otherwise.
+ */
+static int iter_eaddrinuse(int loop_fd, uint16_t holder_port)
+{
+	int holder_fd;
+	int transport = RDS_TRANS_TCP;
+	struct sockaddr_in haddr;
+	int r;
+	int ret = 0;
+
+	holder_fd = socket(AF_RDS, SOCK_SEQPACKET, 0);
+	if (holder_fd < 0)
+		return 0;
+
+	memset(&haddr, 0, sizeof(haddr));
+	haddr.sin_family      = AF_INET;
+	haddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	haddr.sin_port        = htons(holder_port);
+
+	/*
+	 * Set transport on holder explicitly so its ref/release accounting
+	 * uses the same module (rds_tcp) as the loop fd.
+	 */
+	if (setsockopt(holder_fd, SOL_RDS, SO_RDS_TRANSPORT,
+		       &transport, sizeof(transport)) < 0) {
+		/* If setsockopt fails, close and bail.  rds_release sees
+		 * rs->rs_transport == NULL and skips rds_trans_put. */
+		close(holder_fd);
+		return 0;
+	}
+
+	if (bind(holder_fd, (struct sockaddr *)&haddr, sizeof(haddr)) != 0) {
+		/* Port already held (another concurrent worker) or other
+		 * error.  Close holder; rds_release sees rs->rs_transport
+		 * set from setsockopt and calls rds_trans_put -- clean. */
+		close(holder_fd);
+		return 0;
+	}
+
+	/*
+	 * Holder established.  Loop fd: setsockopt(TCP) (+1 ref) then
+	 * bind(holder_port) expects -EADDRINUSE, which leaks the ref.
+	 */
+	r = setsockopt(loop_fd, SOL_RDS, SO_RDS_TRANSPORT,
+		       &transport, sizeof(transport));
+	if (r == 0) {
+		r = bind(loop_fd, (struct sockaddr *)&haddr, sizeof(haddr));
+		__atomic_add_fetch(&shm->stats.rds_bind_transport_refleak.binds_tried,
+				   1, __ATOMIC_RELAXED);
+		if (r < 0 && errno == EADDRINUSE) {
+			__atomic_add_fetch(
+				&shm->stats.rds_bind_transport_refleak.binds_eaddrinuse,
+				1, __ATOMIC_RELAXED);
+			ret = 1;
+		}
+	}
+
+	/*
+	 * Close holder.  rds_release sees rs->rs_transport set (the bind
+	 * succeeded so it was not nulled) and calls rds_trans_put, returning
+	 * the holder's ref cleanly.  The loop fd's leaked ref stays.
+	 */
+	close(holder_fd);
+	return ret;
+}
+
+bool rds_bind_transport_refleak(struct childdata *child)
+{
+	struct timespec t_outer;
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
+	unsigned int outer_iters, i;
+	int loop_fd;
+	long pre_refcount, post_refcount;
+	/*
+	 * Per-pid holder port in 0xB000..0xBFFF.  Keeps cross-worker
+	 * collision probability low while staying outside the privileged
+	 * range and away from common ephemeral ports.
+	 */
+	uint16_t holder_port = (uint16_t)(RDSBTR_HOLDER_PORT_BASE |
+					  ((uint16_t)getpid() & 0x0FFFU));
+
+	__atomic_add_fetch(&shm->stats.rds_bind_transport_refleak.runs,
+			   1, __ATOMIC_RELAXED);
+
+	if (rds_bind_refleak_unsupported) {
+		__atomic_add_fetch(&shm->stats.rds_bind_transport_refleak.setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	/*
+	 * Probe AF_RDS + SO_RDS_TRANSPORT availability once per child
+	 * lifetime.  The probe socket is opened, tested, and closed so it
+	 * contributes no ref delta.  Latch fires if the feature is absent.
+	 */
+	if (!probe_rds_bind_transport(op))
+		return true;
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+
+	/*
+	 * Read the baseline rds_tcp module refcount.  The probe socket was
+	 * closed before this point so its ref is already returned.  No RDS
+	 * socket is open at this instant, giving a clean floor reading.
+	 */
+	pre_refcount = proc_module_refcount("rds_tcp");
+
+	/*
+	 * Open the loop socket.  socket() alone does not increment the
+	 * rds_tcp module ref (that happens in rds_set_transport(), called
+	 * from either setsockopt(SO_RDS_TRANSPORT) or the first bind()).
+	 */
+	loop_fd = socket(AF_RDS, SOCK_SEQPACKET, 0);
+	if (loop_fd < 0) {
+		__atomic_add_fetch(&shm->stats.rds_bind_transport_refleak.setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
+		t_outer.tv_sec  = 0;
+		t_outer.tv_nsec = 0;
+	}
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
+				   1, __ATOMIC_RELAXED);
+
+	/*
+	 * EINVAL leak loop.  Each iteration issues one setsockopt
+	 * (try_module_get -> +1 ref) and one bind to port 1 (rds_add_bound
+	 * returns -EINVAL, nulls rs->rs_transport without rds_trans_put ->
+	 * ref leaked).  rs->rs_transport == NULL after each failed bind
+	 * re-opens the setsockopt guard so the cycle repeats on the same fd.
+	 */
+	outer_iters = BUDGETED(CHILD_OP_RDS_BIND_TRANSPORT_REFLEAK,
+			       RDSBTR_OUTER_BASE);
+	if (outer_iters == 0U)
+		outer_iters = 1U;
+	if (outer_iters > RDSBTR_OUTER_CAP)
+		outer_iters = RDSBTR_OUTER_CAP;
+
+	for (i = 0; i < outer_iters; i++) {
+		if (budget_elapsed_ns(&t_outer, (long)RDSBTR_WALL_CAP_NS))
+			break;
+		if (iter_einval(loop_fd) < 0)
+			break;
+	}
+
+	/*
+	 * EADDRINUSE secondary path.  Best-effort: bind a holder socket to
+	 * a per-pid port, then attempt setsockopt+bind on loop_fd to the
+	 * same port.  The holder close is properly accounted (rds_trans_put
+	 * fires), so only the loop_fd's EADDRINUSE-path ref is leaked.
+	 */
+	if (!budget_elapsed_ns(&t_outer, (long)RDSBTR_WALL_CAP_NS))
+		iter_eaddrinuse(loop_fd, holder_port);
+
+	/*
+	 * Post-loop oracle read.  loop_fd is still open but
+	 * rs->rs_transport == NULL (nulled by the last failed bind), so
+	 * rds_release will not call rds_trans_put when we close it below.
+	 * All leaked refs are already visible in the module refcount.
+	 */
+	post_refcount = proc_module_refcount("rds_tcp");
+
+	if (pre_refcount >= 0L && post_refcount >= 0L) {
+		if (post_refcount > pre_refcount)
+			__atomic_add_fetch(
+				&shm->stats.rds_bind_transport_refleak.leaked_refs,
+				(unsigned long)(post_refcount - pre_refcount),
+				__ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(
+			&shm->stats.rds_bind_transport_refleak.ref_read_failed,
+			1, __ATOMIC_RELAXED);
+	}
+
+	/*
+	 * Close loop_fd.  rs->rs_transport is NULL so rds_release skips
+	 * rds_trans_put -- the leaked refs remain in the module refcount
+	 * and are visible in the next invocation's pre-refcount read.
+	 */
+	close(loop_fd);
+
+	/*
+	 * Account for direct syscalls: outer_iters x (setsockopt + bind)
+	 * for the EINVAL loop, plus up to 4 more for the EADDRINUSE round
+	 * (socket, setsockopt, bind, close on holder + the loop-fd pair).
+	 */
+	if (valid_op)
+		childop_direct_syscalls_add(op,
+					    (unsigned long)(outer_iters * 2UL + 4UL));
+
+	return true;
+}
