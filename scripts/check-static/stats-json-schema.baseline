@@ -475,6 +475,7 @@ stats	object
     stats.nftables_churn.inet_ingress_reject_runs	u64
     stats.nftables_churn.inet_ingress_reject_setup_failed	u64
     stats.nftables_churn.inet_ingress_reject_probe_sent_ok	u64
+    stats.nftables_churn.inet_ingress_reject_ipcb_opt_armed	u64
     stats.nftables_churn.inet_ingress_reject_completed_ok	u64
   stats.tc_qdisc_churn	object
     stats.tc_qdisc_churn.runs	u64

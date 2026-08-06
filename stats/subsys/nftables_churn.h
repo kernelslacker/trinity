@@ -77,6 +77,7 @@ struct nftables_churn_stats {
 	unsigned long nft_inet_ingress_reject_runs;		/* inet NF_INET_INGRESS/nft_reject sub-mode invocations */
 	unsigned long nft_inet_ingress_reject_setup_failed;	/* NEWTABLE/NEWCHAIN/NEWRULE failed (CONFIG absent or transient) */
 	unsigned long nft_inet_ingress_reject_probe_sent_ok;	/* UDP sendto 127.0.0.1 returned >0 (probe walked ingress hook) */
+	unsigned long nft_inet_ingress_reject_ipcb_opt_armed;	/* setsockopt(IP_OPTIONS) succeeded: IPCB opt.optlen will be non-zero at ingress */
 	unsigned long nft_inet_ingress_reject_completed_ok;	/* full setup + chain + rule + probe completed without error */
 };
 
