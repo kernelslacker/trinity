@@ -214,9 +214,11 @@ static unsigned long pick_statmount_bufsize(void)
  * at the top of do_statmount().  Three-bucket draw:
  *   60%  flags == 0         -- standard mnt_id path
  *   25%  STATMOUNT_BY_FD    -- fd-based lookup; carry a real fd in
- *                              req->spare (offset-4 mnt_fd union slot)
- *                              and zero req->mnt_id (kernel rejects
- *                              BY_FD with a non-zero mnt_id)
+ *                              the reserved offset-4 __u32 (named spare
+ *                              or mnt_ns_fd by uapi version; selected
+ *                              via HAVE_MNT_ID_REQ_MNT_NS_FD) and zero
+ *                              req->mnt_id (kernel rejects BY_FD with a
+ *                              non-zero mnt_id)
  *   15%  invalid bit (2U)   -- keeps the -EINVAL reject arm warm
  */
 static unsigned long pick_statmount_flags(struct mnt_id_req *req)
@@ -227,7 +229,11 @@ static unsigned long pick_statmount_flags(struct mnt_id_req *req)
 		return 0;
 
 	if (bucket < 17) {		/* 25%: BY_FD fd-lookup path */
+#ifdef HAVE_MNT_ID_REQ_MNT_NS_FD
+		req->mnt_ns_fd = (unsigned int) get_random_fd();
+#else
 		req->spare = (unsigned int) get_random_fd();
+#endif
 		req->mnt_id = 0;
 		return STATMOUNT_BY_FD;
 	}

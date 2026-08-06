@@ -497,6 +497,33 @@ else
 fi
 
 #############################################################################################
+# struct mnt_id_req's reserved offset-4 __u32 is named `spare' on older
+# linux-libc-dev and `mnt_ns_fd' on newer headers (e.g. Debian 13).
+# Same slot, different name -- compile-test which one this host has so
+# statmount.c writes the STATMOUNT_BY_FD fd to the member that exists.
+#
+echo -n "[*] Checking mnt_id_req offset-4 field name.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/mount.h>
+
+int main(void)
+{
+	struct mnt_id_req r = { .mnt_ns_fd = 0 };
+	return (int) r.mnt_ns_fd;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo "[spare]"
+else
+	echo $GREEN "[mnt_ns_fd]" $COL_RESET
+	echo "#define HAVE_MNT_ID_REQ_MNT_NS_FD 1" >> $CONFIGH
+fi
+
+#############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP
 check_header linux/if_alg.h USE_IF_ALG
