@@ -290,6 +290,9 @@ bool rds_bind_transport_refleak(struct childdata *child)
 	unsigned int outer_iters, i;
 	int loop_fd;
 	long pre_refcount, post_refcount;
+	/* Per-invocation failed-bind counts for oracle calibration. */
+	unsigned long local_failed_binds;
+	int local_eaddrinuse_count;
 	/*
 	 * Per-pid holder port in 0xB000..0xBFFF.  Keeps cross-worker
 	 * collision probability low while staying outside the privileged
@@ -373,9 +376,23 @@ bool rds_bind_transport_refleak(struct childdata *child)
 	 * a per-pid port, then attempt setsockopt+bind on loop_fd to the
 	 * same port.  The holder close is properly accounted (rds_trans_put
 	 * fires), so only the loop_fd's EADDRINUSE-path ref is leaked.
+	 * Capture the return value: 1 if the EADDRINUSE bind was reached,
+	 * 0 otherwise.  This counts toward local_failed_binds.
 	 */
+	local_eaddrinuse_count = 0;
 	if (!budget_elapsed_ns(&t_outer, (long)RDSBTR_WALL_CAP_NS))
-		iter_eaddrinuse(loop_fd, holder_port);
+		local_eaddrinuse_count = iter_eaddrinuse(loop_fd, holder_port);
+
+	/*
+	 * local_failed_binds: number of failed binds THIS invocation.
+	 * i == number of successful iter_einval() calls (each producing
+	 * exactly one EINVAL-path bind).  Used to calibrate the delta
+	 * assertion: only attribute a leak when the /proc/modules delta is
+	 * at least this large, preventing sibling noise from inflating the
+	 * tally.  Binds are also accumulated into run-total shm counters
+	 * inside iter_einval / iter_eaddrinuse for long-run attribution.
+	 */
+	local_failed_binds = (unsigned long)i + (unsigned long)local_eaddrinuse_count;
 
 	/*
 	 * Post-loop oracle read.  loop_fd is still open but
@@ -386,11 +403,71 @@ bool rds_bind_transport_refleak(struct childdata *child)
 	post_refcount = proc_module_refcount("rds_tcp");
 
 	if (pre_refcount >= 0L && post_refcount >= 0L) {
-		if (post_refcount > pre_refcount)
-			__atomic_add_fetch(
-				&shm->stats.rds_bind_transport_refleak.leaked_refs,
-				(unsigned long)(post_refcount - pre_refcount),
+		long delta = post_refcount - pre_refcount;
+
+		if (local_failed_binds > 0UL) {
+			if (delta > 0L && (unsigned long)delta >= local_failed_binds) {
+				/*
+				 * Calibrated delta: only record when the
+				 * observed growth is at least as large as the
+				 * locally-caused leak count.  Sibling opens
+				 * can inflate the delta (over-count); sibling
+				 * closes can shrink it (under-count, caught
+				 * by ref_delta_nonpositive below).
+				 */
+				__atomic_add_fetch(
+					&shm->stats.rds_bind_transport_refleak.leaked_refs,
+					(unsigned long)delta, __ATOMIC_RELAXED);
+			} else if (delta <= 0L) {
+				/*
+				 * post_refcount <= pre_refcount: a sibling
+				 * closing sockets in the window drove the
+				 * delta to zero or negative.  The genuine
+				 * leak is masked.  Record so operators can
+				 * see how often the per-invocation oracle is
+				 * unreliable.  The HWM oracle below is immune
+				 * to this failure mode.
+				 */
+				__atomic_add_fetch(
+					&shm->stats.rds_bind_transport_refleak.ref_delta_nonpositive,
+					1, __ATOMIC_RELAXED);
+			}
+		}
+
+		/*
+		 * HWM oracle.  Update the shared high-water mark of the
+		 * absolute rds_tcp refcount.  Because the leak is monotone
+		 * and permanent, any increase in the HWM across invocations
+		 * is attributable to leaked refs regardless of sibling churn
+		 * within any individual invocation's pre/post window.
+		 *
+		 * Use a CAS loop so concurrent children converge on the
+		 * true maximum without races.  Growth accumulated into
+		 * leaked_refs_hwm_growth on each successful HWM advance.
+		 */
+		if (post_refcount > 0L) {
+			unsigned long new_hwm = (unsigned long)post_refcount;
+			unsigned long old_hwm = __atomic_load_n(
+				&shm->stats.rds_bind_transport_refleak.rds_tcp_refcount_hwm,
 				__ATOMIC_RELAXED);
+
+			while (new_hwm > old_hwm) {
+				unsigned long prev = old_hwm;
+
+				if (__atomic_compare_exchange_n(
+					    &shm->stats.rds_bind_transport_refleak.rds_tcp_refcount_hwm,
+					    &old_hwm, new_hwm,
+					    false,
+					    __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+					__atomic_add_fetch(
+						&shm->stats.rds_bind_transport_refleak.leaked_refs_hwm_growth,
+						new_hwm - prev,
+						__ATOMIC_RELAXED);
+					break;
+				}
+				/* old_hwm refreshed by CAS failure; retry */
+			}
+		}
 	} else {
 		__atomic_add_fetch(
 			&shm->stats.rds_bind_transport_refleak.ref_read_failed,
@@ -405,13 +482,15 @@ bool rds_bind_transport_refleak(struct childdata *child)
 	close(loop_fd);
 
 	/*
-	 * Account for direct syscalls: outer_iters x (setsockopt + bind)
-	 * for the EINVAL loop, plus up to 4 more for the EADDRINUSE round
-	 * (socket, setsockopt, bind, close on holder + the loop-fd pair).
+	 * Account for direct syscalls: i x (setsockopt + bind) for the
+	 * EINVAL loop (i is the achieved iteration count, not the planned
+	 * outer_iters, since the loop may break early on budget or
+	 * setsockopt failure), plus up to 4 more for the EADDRINUSE round
+	 * (socket, setsockopt, bind, close on holder + loop-fd pair).
 	 */
 	if (valid_op)
 		childop_direct_syscalls_add(op,
-					    (unsigned long)(outer_iters * 2UL + 4UL));
+					    (unsigned long)(i * 2UL + 4UL));
 
 	return true;
 }
