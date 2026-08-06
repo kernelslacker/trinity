@@ -65,7 +65,14 @@ struct syscallentry syscall_fchmodat = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_MODE_T },
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "mode" },
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	/*
+	 * REEXEC_SANITISE_OK: sanitise_fchmodat only rewrites the ARG_PATHNAME
+	 * slot (rec->a2) in place -- a testfile-path pointer on half the draws,
+	 * early return otherwise.  No nested pointer chains, no INOUT / output
+	 * buffers, no shared-buffer relocation, no post_state oracle -- safe
+	 * to keep on the CMP RedQueen re-exec path.
+	 */
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_fchmodat,
 };

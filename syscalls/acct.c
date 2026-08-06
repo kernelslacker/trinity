@@ -81,7 +81,15 @@ struct syscallentry syscall_acct = {
 	.argtype = { [0] = ARG_PATHNAME },
 	.argname = { [0] = "name" },
 	.group = GROUP_VFS_PATH,
-	.flags = NEEDS_ROOT,
+	/*
+	 * REEXEC_SANITISE_OK: sanitise_acct only rewrites rec->a1 in place
+	 * -- either a NULL scalar for the acct_off() arm, a testfile-path
+	 * pointer for the acct_on() arm, or an early return that leaves
+	 * the ARG_PATHNAME slot unchanged.  No nested pointer chains, no
+	 * INOUT / output buffers, no shared-buffer relocation, no
+	 * post_state oracle -- safe to keep on the CMP RedQueen re-exec path.
+	 */
+	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_acct,
 	.cleanup = cleanup_acct,

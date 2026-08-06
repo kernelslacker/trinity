@@ -37,6 +37,13 @@ struct syscallentry syscall_fsync = {
 	.argname = { [0] = "fd" },
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_fsync,
-	.flags = NEED_ALARM | EXPENSIVE,
+	/*
+	 * REEXEC_SANITISE_OK: sanitise_fsync only rewrites rec->a1 in place
+	 * -- a writeable pagecache fd on the majority of draws, early return
+	 * otherwise.  No nested pointer chains, no INOUT / output buffers,
+	 * no shared-buffer relocation, no post_state oracle -- safe to keep
+	 * on the CMP RedQueen re-exec path.
+	 */
+	.flags = NEED_ALARM | EXPENSIVE | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_SYNC,
 };

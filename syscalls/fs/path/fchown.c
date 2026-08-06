@@ -86,7 +86,14 @@ struct syscallentry syscall_fchownat = {
 	.arg_params[3].range.hi = 65535,
 	.arg_params[4].list = ARGLIST(fchownat_flags),
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	/*
+	 * REEXEC_SANITISE_OK: sanitise_fchownat only rewrites the ARG_PATHNAME
+	 * slot (rec->a2) in place -- a testfile-path pointer on half the draws,
+	 * early return otherwise.  No nested pointer chains, no INOUT / output
+	 * buffers, no shared-buffer relocation, no post_state oracle -- safe
+	 * to keep on the CMP RedQueen re-exec path.
+	 */
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_fchownat,
 };
