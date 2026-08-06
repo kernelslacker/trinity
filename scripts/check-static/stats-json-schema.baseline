@@ -249,6 +249,10 @@ stats	object
   stats.rpl_clone_fidelity	object
     stats.rpl_clone_fidelity.srh_mutated	u64
     stats.rpl_clone_fidelity.daddr_mutated	u64
+  stats.mremap_merge_matrix	object
+    stats.mremap_merge_matrix.checks_run	u64
+    stats.mremap_merge_matrix.tag_mismatch	u64
+    stats.mremap_merge_matrix.topology_unexpected	u64
   stats.fd_runtime_skipped	object
     stats.fd_runtime_skipped.stdio	u64
     stats.fd_runtime_skipped.already_registered	u64

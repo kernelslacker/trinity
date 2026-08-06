@@ -115,6 +115,7 @@
 #include "stats/subsys/memory_pressure.h"
 #include "stats/subsys/minicorpus.h"
 #include "stats/subsys/mount_churn.h"
+#include "stats/subsys/mremap_merge_matrix.h"
 #include "stats/subsys/nat_t_churn.h"
 #include "stats/subsys/mpls_label_stack_rx.h"
 #include "stats/subsys/mpls_route_churn.h"
@@ -987,6 +988,10 @@ struct stats_s {
 	/* ipv6_rpl_clone_fidelity oracle childop counters.
 	 * See stats/subsys/rpl_clone_fidelity.h. */
 	struct rpl_clone_fidelity_stats rpl_clone_fidelity __attribute__((aligned(64)));
+
+	/* mremap_merge_matrix oracle childop counters.
+	 * See stats/subsys/mremap_merge_matrix.h. */
+	struct mremap_merge_matrix_stats mremap_merge_matrix __attribute__((aligned(64)));
 
 	/* sock_diag_walker accounting.  See stats/subsys/sock_diag_walker.h. */
 	struct sock_diag_walker_stats sock_diag_walker;
