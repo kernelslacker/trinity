@@ -49,6 +49,33 @@ struct kvm_stats {
 	unsigned long gpc_memslot_race_runs;	/* memslot-race sub-mode invocations */
 	unsigned long gpc_memslot_race_deletes;	/* KVM_SET_USER_MEMORY_REGION{,2} delete ioctls issued by writer */
 	unsigned long gpc_memslot_race_unsupported; /* sub-mode latched off (cap absent or ENODEV/EOPNOTSUPP) */
+
+	/* kvm_mmu_reclaim_race childop ioctl accounting.
+	 * Counters are incremented from multiple threads via __atomic_add_fetch
+	 * directly into shm, so they accumulate across child respawns.
+	 *
+	 * KVM_PRE_FAULT_MEMORY (vcpu ioctl, Lane 1):
+	 *   returns 0 on success; -EOPNOTSUPP when the vCPU's page_fault handler
+	 *   is not kvm_tdp_page_fault (e.g. TDP MMU active, tdp_mmu=1) or when
+	 *   vcpu->arch.mmu->pre_fault_allowed is not set; other errors are rare.
+	 *   A nonzero reclaim_prefault_eopnotsupp-to-total ratio while
+	 *   reclaim_prefault_ok stays zero confirms the oracle is structurally
+	 *   inert on this kernel config (kvm.tdp_mmu not cleared at boot).
+	 *
+	 * KVM_SET_NR_MMU_PAGES (vm ioctl, Lane 2):
+	 *   returns 0 on success; -EINVAL if the value is below
+	 *   KVM_MIN_FREE_MMU_PAGES (10) or the VM is not x86.
+	 *
+	 * KVM_SET_USER_MEMORY_REGION (vm ioctl, setup / Lane 3 / teardown):
+	 *   returns 0 on success; errors here indicate a broken memslot
+	 *   state that would prevent the churn lane from opening the race
+	 *   window -- surfaced so a silent-failure harness is detectable. */
+	unsigned long reclaim_prefault_ok;		/* KVM_PRE_FAULT_MEMORY succeeded (rc == 0) */
+	unsigned long reclaim_prefault_eopnotsupp;	/* KVM_PRE_FAULT_MEMORY → -EOPNOTSUPP */
+	unsigned long reclaim_prefault_err;		/* KVM_PRE_FAULT_MEMORY → other error */
+	unsigned long reclaim_set_nr_mmu_ok;		/* KVM_SET_NR_MMU_PAGES succeeded */
+	unsigned long reclaim_set_nr_mmu_err;		/* KVM_SET_NR_MMU_PAGES failed */
+	unsigned long reclaim_memslot_ok;		/* KVM_SET_USER_MEMORY_REGION succeeded */
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_KVM_H */
