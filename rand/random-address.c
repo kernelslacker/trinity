@@ -762,7 +762,7 @@ void alloc_iovec_init(void)
 	 * Failure to allocate is fatal: without the buffer alloc_iovec()
 	 * cannot produce iov[] args at all, matching the fail-loud
 	 * posture of the other parent-side shared regions (deferred-
-	 * free ring, alloc_track[], inflight_hash, ...).
+	 * free ring, alloc_track[], ...).
 	 */
 	p = mmap(NULL, bytes, PROT_READ | PROT_WRITE,
 		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);

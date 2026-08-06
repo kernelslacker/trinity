@@ -203,16 +203,12 @@ struct deferred_free_stats {
 	unsigned long rec_owned_overflow_to_ring;
 
 	/* tracked_free_now() found @ptr already pinned in the deferred-
-	 * free ring (inflight_hash_contains() == true at entry) and
-	 * routed it through the ring-as-sole-owner path: alloc_track
-	 * drained, free() skipped, inflight membership left intact so
-	 * the TTL/evict path frees the chunk exactly once.  Non-zero
-	 * empirically proves the ring-as-sole-owner path is engaged and
-	 * the reuse-mediated double-free is closed off: an
-	 * inflight_hash_remove() + free() here would let address reuse
-	 * re-arm the value-keyed membership bit and
-	 * ring_evict_oldest_safe() free the same address a second time.
-	 * Rate-of-change is
+	 * free ring (ring[] direct scan at entry) and routed it through
+	 * the ring-as-sole-owner path: alloc_track drained, free()
+	 * skipped, ring slot left intact so the TTL/evict path frees the
+	 * chunk exactly once.  Non-zero empirically proves the
+	 * ring-as-sole-owner path is engaged and the reuse-mediated
+	 * double-free is closed off.  Rate-of-change is
 	 * the headline metric: a count proportional to ring throughput
 	 * is normal (any pointer admitted to the ring whose post-handler
 	 * cleanup also routes through tracked_free_now() lands here);
@@ -354,9 +350,6 @@ struct deferred_free_stats {
 	unsigned long alloc_track_rw_calls;
 	unsigned long alloc_track_ro_calls;
 	unsigned long alloc_track_rw_ns_total;
-	unsigned long inflight_rw_calls;
-	unsigned long inflight_ro_calls;
-	unsigned long inflight_rw_ns_total;
 	unsigned long ring_rw_calls;
 	unsigned long ring_ro_calls;
 	unsigned long ring_rw_ns_total;

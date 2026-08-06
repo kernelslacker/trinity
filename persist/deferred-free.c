@@ -143,8 +143,8 @@ static size_t *alloc_track_sizes;
 static void **alloc_track_hash;
 
 /*
- * Untraced cost accounting for the three protection-region mprotect
- * brackets (alloc_track, inflight, ring+ring_control).  Each unlock
+ * Untraced cost accounting for the per-region mprotect
+ * brackets (alloc_track, ring+ring_control).  Each unlock
  * records CLOCK_MONOTONIC before its mprotect and stashes it in the
  * per-region timestamp; the matching lock re-samples after its
  * mprotect and accumulates the elapsed nanoseconds into shm->stats.
@@ -160,7 +160,6 @@ static void **alloc_track_hash;
  * zero-init timestamp and CLOCK_MONOTONIC into *_rw_ns_total.
  */
 static struct timespec alloc_track_rw_open_at;
-static struct timespec inflight_rw_open_at;
 static struct timespec rc_rw_open_at;
 static struct timespec ring_rw_open_at;
 
@@ -178,7 +177,6 @@ static struct timespec ring_rw_open_at;
  * child by COW-at-fork and single-writer per region, so no locking.
  */
 static bool alloc_track_rw_open;
-static bool inflight_rw_open;
 static bool rc_rw_open;
 static bool ring_rw_open;
 
@@ -415,146 +413,6 @@ size_t alloc_track_lookup_size(void *ptr)
 		idx = (idx - 1) & (ALLOC_TRACK_SIZE - 1);
 	}
 	return 0;
-}
-
-/*
- * In-flight pointer set: mirrors ring residency for GC reconciliation
- * of stomp orphans.  1024-slot open-addressed hash sharing the
- * alloc_track_hash storage shape; steady state PROT_READ, writers
- * bracket with inflight_unlock/lock.  NOT the free-time ownership gate
- * -- that role belongs to alloc_track_lookup (this one desynced under
- * stomp + unlock-window pressure).  See Documentation/deferred-free.md
- * "In-flight pointer set" for the full history and desync analysis.
- */
-#define INFLIGHT_HASH_SHIFT	10
-#define INFLIGHT_HASH_SIZE	(1U << INFLIGHT_HASH_SHIFT)
-#define INFLIGHT_HASH_MASK	(INFLIGHT_HASH_SIZE - 1U)
-
-static void **inflight_hash;
-static size_t inflight_hash_bytes;
-
-static inline unsigned int inflight_hash_index(void *ptr)
-{
-	uint64_t key = (uint64_t)(uintptr_t)ptr >> 4;
-
-	return (unsigned int)((key * ALLOC_TRACK_FIB_MUL) >>
-			      (64 - INFLIGHT_HASH_SHIFT));
-}
-
-/*
- * Flip the inflight_hash backing to PROT_READ|PROT_WRITE for the
- * duration of a single mutation, then back to PROT_READ.  Reads do not
- * need the bracket -- they execute directly against the PROT_READ
- * steady state.  A failed unlock leaves the page PROT_READ and the
- * caller skips its write; the leaked-positive (insert miss) or
- * stale-positive (remove miss) is bounded by the gc-sweep cadence and
- * is the safer direction to err vs. silently scribbling a wrong
- * membership bit.
- */
-static int inflight_unlock(void)
-{
-	struct timespec begin;
-
-	if (deferred_free_batch && inflight_rw_open)
-		return 0;
-
-	clock_gettime(CLOCK_MONOTONIC, &begin);
-	if (mprotect(inflight_hash, inflight_hash_bytes,
-		     PROT_READ | PROT_WRITE) != 0) {
-		outputerr("deferred_free: inflight_hash unlock failed: "
-			  "errno=%d\n", errno);
-		return -1;
-	}
-	inflight_rw_open_at = begin;
-	inflight_rw_open = true;
-	__atomic_add_fetch(&shm->stats.deferred_free.inflight_rw_calls,
-			   1, __ATOMIC_RELAXED);
-	return 0;
-}
-
-static void inflight_lock(void)
-{
-	unsigned long ns;
-
-	if (deferred_free_batch)
-		return;
-
-	if (mprotect(inflight_hash, inflight_hash_bytes, PROT_READ) != 0)
-		outputerr("deferred_free: inflight_hash lock failed: "
-			  "errno=%d\n", errno);
-	inflight_rw_open = false;
-	if (df_ts_is_zero(&inflight_rw_open_at))
-		return;
-	ns = df_cost_elapsed_ns(&inflight_rw_open_at);
-	inflight_rw_open_at = (struct timespec){0};
-	__atomic_add_fetch(&shm->stats.deferred_free.inflight_ro_calls,
-			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.deferred_free.inflight_rw_ns_total,
-			   ns, __ATOMIC_RELAXED);
-}
-
-static void inflight_hash_insert(void *ptr)
-{
-	unsigned int idx = inflight_hash_index(ptr);
-	unsigned int probes;
-
-	if (inflight_unlock() != 0)
-		return;
-
-	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
-		if (inflight_hash[idx] == NULL) {
-			inflight_hash[idx] = ptr;
-			break;
-		}
-		if (inflight_hash[idx] == ptr)
-			break;
-		idx = (idx + 1) & INFLIGHT_HASH_MASK;
-	}
-
-	inflight_lock();
-}
-
-static void inflight_hash_remove(void *ptr)
-{
-	unsigned int idx = inflight_hash_index(ptr);
-	unsigned int hole;
-	unsigned int probes;
-
-	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
-		if (inflight_hash[idx] == NULL)
-			return;
-		if (inflight_hash[idx] == ptr)
-			break;
-		idx = (idx + 1) & INFLIGHT_HASH_MASK;
-	}
-	if (inflight_hash[idx] != ptr)
-		return;
-
-	if (inflight_unlock() != 0)
-		return;
-
-	hole = idx;
-	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
-		unsigned int natural;
-		unsigned int dist_to_hole;
-		unsigned int dist_to_natural;
-
-		idx = (idx + 1) & INFLIGHT_HASH_MASK;
-		if (inflight_hash[idx] == NULL) {
-			inflight_hash[hole] = NULL;
-			inflight_lock();
-			return;
-		}
-		natural = inflight_hash_index(inflight_hash[idx]);
-		dist_to_hole = (idx - hole) & INFLIGHT_HASH_MASK;
-		dist_to_natural = (idx - natural) & INFLIGHT_HASH_MASK;
-		if (dist_to_natural >= dist_to_hole) {
-			inflight_hash[hole] = inflight_hash[idx];
-			hole = idx;
-		}
-	}
-	inflight_hash[hole] = NULL;
-	inflight_lock();
 }
 
 void deferred_alloc_track(void *ptr, size_t size)
@@ -1246,7 +1104,7 @@ static void tracked_free_checked(void *ptr, enum tracked_free_site site)
  * Synchronously free a zmalloc_tracked() pointer, skipping when @ptr is
  * ring-resident (the ring owns the free-time consume).  Ring-ownership
  * check scans ring[] directly (source of truth); the previous
- * inflight_hash proxy desynced under ENOMEM and stomp pressure and
+ * value-keyed mirror desynced under ENOMEM and stomp pressure and
  * armed a reuse-mediated double-free.  ring_unlock ENOMEM -> leak @ptr
  * rather than risk it.  See Documentation/deferred-free.md
  * "tracked_free_now ring-residency check".
@@ -1518,10 +1376,6 @@ static void ring_dispose_after_enomem(void)
 		occupied_mask = 0;
 		rc_lock();
 	}
-	if (inflight_unlock() == 0) {
-		memset(inflight_hash, 0, inflight_hash_bytes);
-		inflight_lock();
-	}
 }
 
 static void deferred_free_read_max_map_count(void)
@@ -1579,9 +1433,9 @@ static void deferred_free_record_outstanding(unsigned int v)
 
 /*
  * Kernel-entry seal barrier for --deferred-free-batch.  Walk each of
- * the four protection regions; for any left rw_open by an earlier
+ * the protection regions; for any left rw_open by an earlier
  * lazy-open, mprotect it back to its steady state (READ for
- * alloc_track / inflight_hash / rc, NONE for ring) and clear the
+ * alloc_track / rc, NONE for ring) and clear the
  * flag.  Real close, so it bumps the *_ro_calls / *_rw_ns_total
  * counters the same way the pre-batch X_lock() would have -- the
  * A/B delta measured against the t372-a *_rw_calls totals stays
@@ -1620,24 +1474,6 @@ bool deferred_free_seal_all(void)
 			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_ro_calls,
 					   1, __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_rw_ns_total,
-					   ns, __ATOMIC_RELAXED);
-		}
-	}
-
-	if (inflight_rw_open) {
-		unsigned long ns;
-
-		if (mprotect(inflight_hash, inflight_hash_bytes,
-			     PROT_READ) != 0) {
-			outputerr("deferred_free: seal inflight_hash failed: "
-				  "errno=%d\n", errno);
-			sealed = false;
-		} else {
-			ns = df_cost_elapsed_ns(&inflight_rw_open_at);
-			inflight_rw_open = false;
-			__atomic_add_fetch(&shm->stats.deferred_free.inflight_ro_calls,
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.deferred_free.inflight_rw_ns_total,
 					   ns, __ATOMIC_RELAXED);
 		}
 	}
@@ -1708,7 +1544,6 @@ void deferred_free_debug_assert_sealed(void)
 	if (!deferred_free_batch)
 		return;
 	assert(!alloc_track_rw_open);
-	assert(!inflight_rw_open);
 	assert(!rc_rw_open);
 	assert(!ring_rw_open);
 	assert(!gen_rw_open);
@@ -1718,7 +1553,6 @@ void deferred_free_debug_assert_sealed(void)
 void deferred_free_init(void)
 {
 	const size_t raw = sizeof(struct deferred_entry) * DEFERRED_RING_SIZE;
-	const size_t inflight_raw = sizeof(void *) * INFLIGHT_HASH_SIZE;
 	const size_t at_raw = sizeof(void *) *
 		(ALLOC_TRACK_SIZE + ALLOC_TRACK_HASH_SIZE) +
 		sizeof(size_t) * ALLOC_TRACK_SIZE;
@@ -1755,29 +1589,6 @@ void deferred_free_init(void)
 	occupied_mask = 0;
 	ring_lock();
 	rc_lock();
-
-	/*
-	 * inflight_hash backing lives in its own mmap'd region so the
-	 * mm-syscall sanitisers refuse fuzzed pointers/lengths that would
-	 * alias the membership-set pages, and so writers can bracket the
-	 * RW window with mprotect() the same way ring[] does.  Steady
-	 * state is PROT_READ -- the contains() hot path reads directly
-	 * without an mprotect bracket.  See the storage comment above
-	 * INFLIGHT_HASH_SHIFT for the threat model.
-	 */
-	inflight_hash_bytes = ((inflight_raw + page_size - 1) / page_size) *
-			      page_size;
-	inflight_hash = mmap(NULL, inflight_hash_bytes,
-			     PROT_READ | PROT_WRITE,
-			     MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (inflight_hash == MAP_FAILED) {
-		outputerr("deferred_free_init: inflight_hash mmap %zu "
-			  "failed\n", inflight_hash_bytes);
-		exit(EXIT_FAILURE);
-	}
-	memset(inflight_hash, 0, inflight_hash_bytes);
-	track_shared_region((unsigned long)inflight_hash, inflight_hash_bytes);
-	inflight_lock();
 
 	/*
 	 * alloc_track[] and alloc_track_hash[] share one mmap'd region so a
@@ -1993,7 +1804,6 @@ static void ring_evict_oldest_safe(void)
 		else
 			parent_stats.ring_eviction_corrupt++;
 	} else {
-		inflight_hash_remove(evict_ptr);
 		if (!gen_arena_push(evict_ptr)) {
 			__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_pressure_leak,
 					   1, __ATOMIC_RELAXED);
@@ -2282,12 +2092,6 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 
 	ring_lock();
 
-	/*
-	 * Record this admission in the in-flight set.  Outside both the
-	 * ring_unlock bracket and the rc_unlock bracket -- inflight_hash
-	 * has its own armor page and its own RW window.
-	 */
-	inflight_hash_insert(ptr);
 }
 
 void deferred_free_enqueue(void *ptr)
@@ -2316,8 +2120,7 @@ void deferred_freeptr(unsigned long *p)
  * mid-free must not leave a freed ptr pending in the ring.  Re-runs the
  * enqueue-time stateless gates (shape / heap-bounds / shared-region);
  * binding ownership gate is alloc_track_consume via
- * tracked_free_checked.  Clean path removes from inflight_hash.  See
- * Documentation/deferred-free.md "free_ring_entry corruption gating".
+ * tracked_free_checked.  See Documentation/deferred-free.md "free_ring_entry corruption gating".
  */
 static void free_ring_entry(void *ptr, unsigned int slot)
 {
@@ -2344,79 +2147,12 @@ static void free_ring_entry(void *ptr, unsigned int slot)
 		return;
 	}
 
-	inflight_hash_remove(ptr);
 	tracked_free_checked(ptr, TRACKED_FREE_SITE_RING_DRAIN);
 }
-
-/*
- * Periodic garbage collection of orphaned in-flight entries.
- *
- * In-ring stomps can swap a ring slot's ptr to some other value before
- * the drain fires.  When the drain reaches that slot, free_ring_entry's
- * alloc-track ownership gate sees the stomped value (not the originally
- * admitted ptr), rejects it, and leaves the original ptr's entry in
- * inflight_hash[] -- we have no way to recover the original value to
- * call inflight_hash_remove on it.  The eviction path leaves the same
- * residue on a stomp.  Over a long run those orphans accumulate; left
- * unbounded they would saturate the 1024-slot set and degrade probe
- * length.  Two stomps per orphan are required (one to displace, one
- * never restored), so growth is slow -- prior runs observed ~1 stomp/h
- * -- but the sweep keeps the set bounded regardless.
- *
- * Two-pass to avoid iterating across the shift-back rearrangement that
- * inflight_hash_remove() performs: pass 1 collects ptrs whose presence
- * in the set does not match a slot in ring[]; pass 2 removes them.  The
- * stack-local orphans[] array is bounded by INFLIGHT_HASH_SIZE so the
- * collect pass cannot overflow.
- *
- * Caller must hold ring_unlock() because we read ring[i].ptr.  Cost is
- * O(N_inflight * DEFERRED_RING_SIZE) plus the removal walks -- ~65K
- * compares worst case, well under a millisecond on contemporary CPUs.
- */
-static void inflight_gc_sweep(void)
-{
-	void *orphans[INFLIGHT_HASH_SIZE];
-	unsigned int n_orphans = 0;
-	unsigned int idx, i;
-
-	for (idx = 0; idx < INFLIGHT_HASH_SIZE; idx++) {
-		void *ptr = inflight_hash[idx];
-		bool in_ring = false;
-
-		if (ptr == NULL)
-			continue;
-
-		for (i = 0; i < DEFERRED_RING_SIZE; i++) {
-			if (ring[i].ptr == ptr) {
-				in_ring = true;
-				break;
-			}
-		}
-		if (!in_ring)
-			orphans[n_orphans++] = ptr;
-	}
-
-	for (i = 0; i < n_orphans; i++)
-		inflight_hash_remove(orphans[i]);
-
-	if (n_orphans > 0)
-		outputerr("deferred_free: gc swept %u in-flight orphans\n",
-			  n_orphans);
-}
-
-/*
- * Run the GC sweep every INFLIGHT_GC_INTERVAL batched-tick bodies.
- * 1024 * DEFERRED_TICK_BATCH = ~16K syscalls between sweeps; with
- * stomps observed at ~1/h, the 1024-slot set has weeks of headroom,
- * but the bounded cadence keeps the growth rate independent of how
- * long a fuzz run actually runs.
- */
-#define INFLIGHT_GC_INTERVAL	1024
 
 void deferred_free_tick(void)
 {
 	static unsigned int tick_count;
-	static unsigned int gc_count;
 	unsigned int i;
 	enum ring_unlock_result r;
 
@@ -2537,9 +2273,6 @@ void deferred_free_tick(void)
 	}
 
 	rc_lock();
-
-	if ((++gc_count & (INFLIGHT_GC_INTERVAL - 1)) == 0)
-		inflight_gc_sweep();
 
 	ring_lock();
 }

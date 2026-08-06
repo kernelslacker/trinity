@@ -29,11 +29,11 @@ off.
 ## --deferred-free-batch
 
 Runtime A/B switch for per-iteration mprotect batching inside
-`persist/deferred-free.c`.  Each of the four protection regions
-(`alloc_track` + hash, `inflight_hash`, `ring_control`, `ring`) is
+`persist/deferred-free.c`.  Each protection region
+(`alloc_track` + hash, `ring_control`, `ring`) is
 normally flipped RW->write->RO/NONE by every metadata mutation:
-`deferred_alloc_track`, `alloc_track_consume`, `inflight_hash_insert`,
-`inflight_hash_remove`, ring enqueue/tick/evict, and every `rc_unlock`
+`deferred_alloc_track`, `alloc_track_consume`,
+ring enqueue/tick/evict, and every `rc_unlock`
 pair around `ring_count` / `occupied_mask` updates.  mprotect is
 ~half of trinity's child syscall traffic; the batch mode collapses the
 N per-mutation brackets within one iteration-phase into ~1 real flip

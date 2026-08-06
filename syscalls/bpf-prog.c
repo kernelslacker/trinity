@@ -220,15 +220,11 @@ void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
 	 * value-result syscall can scribble it between dispatch and here.
 	 * A shape-only gate would pass any heap-shaped scribble through
 	 * to plain free(); if the scribbled value aliases a pointer
-	 * already admitted to the deferred-free in-flight set by another
-	 * site, that plain free() bypasses inflight_hash_remove() and
-	 * the original site's later TTL-expiry double-frees the chunk
-	 * (free_ring_entry sees the value still in inflight_hash, passes
-	 * its in-flight-miss gate, and calls free() a second time).
+	 * tracked by another site, that plain free() races the original
+	 * site's TTL-expiry drain and can double-free the chunk.
 	 * Routing the proven-ours eBPF buffer through
 	 * deferred_free_enqueue() keeps the bookkeeping in lock-step:
-	 * enqueue consumes alloc_track and admits to inflight_hash, and
-	 * the TTL-expiry free clears inflight_hash.
+	 * enqueue consumes alloc_track and the TTL-expiry free releases it.
 	 *
 	 * Outer attr_readable gates the attr->insns load itself: an
 	 * unmapped attr would fault before alloc_track_lookup ever ran

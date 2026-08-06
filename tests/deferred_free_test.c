@@ -600,8 +600,8 @@ static void open_all_five_regions(void **ptr_out, void **ptr2_out)
 	/* Open alloc_track (alloc_track_rw_open=true). */
 	deferred_alloc_track(ptr1, 8);
 
-	/* Enqueue ptr1: opens ring, rc, inflight (ring_rw_open,
-	 * rc_rw_open, inflight_rw_open = true). */
+	/* Enqueue ptr1: opens ring and rc (ring_rw_open,
+	 * rc_rw_open = true). */
 	deferred_free_enqueue(ptr1);
 
 	/*
