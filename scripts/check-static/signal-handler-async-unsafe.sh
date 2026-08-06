@@ -13,11 +13,11 @@
 # child_fault_handler was recently caught calling snprintf() at two
 # sites; the fix (route via sigsafe_* helpers + a single write()) just
 # landed.  This check stops that class of regression by greping the
-# body of each known signal handler in health/signals.c for an unsafe-libc
+# body of each known signal handler in health/signals-*.c for an unsafe-libc
 # denylist and failing the build if anything matches.
 #
 # Handler discovery: scrape sa_sigaction=<fn> and sa_handler=<fn>
-# assignments in health/signals.c.  Body extraction: find "void <fn>(" and
+# assignments in health/signals-policy.c.  Body extraction: find "void <fn>(" and
 # brace-count from the first '{' to the matching '}'.  Hits are
 # filtered through the same comment-line filter no-libc-rand.sh uses
 # (leading /*, *, //) to suppress false positives in doc comments.
@@ -27,7 +27,7 @@
 #   write, _exit, kill, raise, signal, sigaction, sigprocmask,
 #   pthread_sigmask, time, clock_gettime, getpid, umask, open, close,
 #   dup2, read, fcntl, ... (full set in POSIX 2024 §2.4.3)
-# and the trinity-internal sigsafe_* helpers in health/signals.c (no libc
+# and the trinity-internal sigsafe_* helpers in health/signals-*.c (no libc
 # state touched -- byte stores into a caller-owned stack buffer).
 #
 # If this check ever fires, either (a) a real bug was introduced, or
@@ -38,7 +38,11 @@ set -u
 
 NAME="signal-handler-async-unsafe"
 ROOT="${REPO_ROOT:-$(pwd)}"
-TARGET="health/signals.c"
+# Handler assignments live in the policy file; bodies are split across
+# the four signals-*.c files.  Discovery uses the policy file only;
+# body extraction searches all signals-*.c translation units.
+POLICY_FILE="health/signals-policy.c"
+BODY_FILES="health/signals-policy.c health/signals-fault-handler.c health/signals-async-safe.c health/signals-precrash.c"
 
 # Async-signal-UNSAFE libc functions.  Token list mirrors no-libc-rand.sh:
 # match the name on a word boundary followed by '(' so unrelated symbols
@@ -49,25 +53,25 @@ DENYLIST='\b(printf|fprintf|sprintf|snprintf|vprintf|vfprintf|vsprintf|vsnprintf
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
-if [ ! -f "$TARGET" ]; then
-	echo "FAIL: $NAME: $TARGET not found"
+if [ ! -f "$POLICY_FILE" ]; then
+	echo "FAIL: $NAME: $POLICY_FILE not found"
 	exit 1
 fi
 
 # Discover handler names: every function name assigned to either
-# sa_sigaction or sa_handler in health/signals.c.  SIG_DFL / SIG_IGN are
+# sa_sigaction or sa_handler in health/signals-policy.c.  SIG_DFL / SIG_IGN are
 # kernel sentinels, not functions, and are filtered out.
 handlers="$(
 	{
-		grep -hE 'sa_sigaction[[:space:]]*=' "$TARGET" \
+		grep -hE 'sa_sigaction[[:space:]]*=' "$POLICY_FILE" \
 			| sed -E 's/.*sa_sigaction[[:space:]]*=[[:space:]]*([A-Za-z_][A-Za-z0-9_]*).*/\1/'
-		grep -hE 'sa_handler[[:space:]]*=' "$TARGET" \
+		grep -hE 'sa_handler[[:space:]]*=' "$POLICY_FILE" \
 			| sed -E 's/.*sa_handler[[:space:]]*=[[:space:]]*([A-Za-z_][A-Za-z0-9_]*).*/\1/'
 	} | sort -u | grep -vE '^(SIG_DFL|SIG_IGN)$'
 )"
 
 if [ -z "$handlers" ]; then
-	echo "FAIL: $NAME: no signal handlers discovered in $TARGET"
+	echo "FAIL: $NAME: no signal handlers discovered in $POLICY_FILE"
 	exit 1
 fi
 
@@ -80,7 +84,7 @@ trap 'rm -f "$hits_tmp"' EXIT
 # brace-count from the first '{' to the matching '}'.  Pipe-delimited
 # so a ':' inside source content does not corrupt downstream splitting.
 for fn in $handlers; do
-	awk -v fn="$fn" -v file="$TARGET" '
+	awk -v fn="$fn" '
 		!found && $0 ~ ("(^|[[:space:]])void[[:space:]]+" fn "[[:space:]]*\\(") {
 			found = 1; started = 0; depth = 0
 		}
@@ -96,16 +100,16 @@ for fn in $handlers; do
 					if (started) {
 						depth--
 						if (depth == 0) {
-							print file "|" NR "|" fn "|" $0
+							print FILENAME "|" NR "|" fn "|" $0
 							found = 0; started = 0
 							next
 						}
 					}
 				}
 			}
-			if (started) print file "|" NR "|" fn "|" $0
+			if (started) print FILENAME "|" NR "|" fn "|" $0
 		}
-	' "$TARGET"
+	' $BODY_FILES
 done | grep -E "$DENYLIST" | \
 while IFS='|' read -r path lineno fnname content; do
 	# Trim leading whitespace.
@@ -133,7 +137,7 @@ if [ "$n" -gt 0 ]; then
 		echo "  $NAME: async-signal-unsafe libc call(s) inside signal handler(s):"
 		sed 's/^/    /' "$hits_tmp"
 		echo "  fix: emit diagnostics via the sigsafe_* helpers + write()"
-		echo "       (see health/signals.c::write_siginfo_safely for the pattern)."
+		echo "       (see health/signals-async-safe.c::write_siginfo_safely for the pattern)."
 		echo "       POSIX 2024 §2.4.3 lists the small set of safe libc"
 		echo "       calls; nothing outside that set is safe in a handler."
 	} >&2
