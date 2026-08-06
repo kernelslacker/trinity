@@ -148,15 +148,17 @@ static void stamp_pages(void *addr, unsigned long len, uint32_t cookie)
 /*
  * Verify every page in [addr, addr+len) starts with expected cookie.
  * Returns true if all match.  Tolerates unreadable slots (returns false
- * rather than crashing) by re-mapping readable first.
+ * rather than crashing) by re-mapping readable first.  If mprotect()
+ * fails the range remains unreadable; return false rather than faulting.
  */
 static bool verify_pages(void *addr, unsigned long len, uint32_t cookie)
 {
 	unsigned long pg;
 	unsigned long npages = len / page_size;
 
-	/* Ensure readable; ignore mprotect failure (PROT_NONE reservation). */
-	(void)mprotect(addr, len, PROT_READ | PROT_WRITE);
+	/* Ensure readable; bail cleanly if the upgrade is refused. */
+	if (mprotect(addr, len, PROT_READ | PROT_WRITE) != 0)
+		return false;
 
 	for (pg = 0; pg < npages; pg++) {
 		const uint32_t *p =
@@ -275,14 +277,15 @@ static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 		/* Page-tag oracle: cookie must be visible at dst. */
 		ok = verify_pages(dst, slot_bytes, cookie);
 
-		/* Topology oracle: after a successful move the source VMA
-		 * must be gone (the kernel unmapped src, no longer a VMA
-		 * there) and destination count should be 1 (or less if
-		 * merged with a neighbour). */
+		/* Topology oracle: a successful same-prot adjacent landing
+		 * must collapse or hold the VMA count (merge reduces it).
+		 * post_vmas > pre_vmas means the kernel spuriously split
+		 * something rather than merging. */
 		post_vmas = count_vmas_in_range((unsigned long)dst, slot_bytes);
-		/* A merge collapses dst VMA count; at worst it stays 1. */
-		(void)pre_vmas;
-		(void)post_vmas;
+		if (post_vmas > pre_vmas)
+			__atomic_add_fetch(
+				&shm->stats.mremap_merge_matrix.topology_unexpected,
+				1, __ATOMIC_RELAXED);
 
 		/* Re-stamp src region as PROT_NONE hole for next round. */
 		(*direct_calls_out)++;
@@ -361,6 +364,17 @@ static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 		(*direct_calls_out)++;
 		(void)mprotect(src + half, half, PROT_READ);
 
+		/* Topology oracle (MULTI_VMA): count VMAs at dst before and
+		 * after the move.  After mprotect the src has 2 sub-VMAs;
+		 * the destination (a PROT_NONE hole) should absorb both.
+		 * Afterwards dst must not have more VMAs than src had (2),
+		 * and merging with a same-prot neighbour may reduce that
+		 * further.  More VMAs at dst than src had means the move
+		 * introduced a spurious split. */
+		{
+		unsigned int pre_src_mv =
+			count_vmas_in_range((unsigned long)src, slot_bytes);
+
 		(*direct_calls_out)++;
 		ret = mremap(src, slot_bytes, slot_bytes,
 			     MREMAP_MAYMOVE | MREMAP_FIXED, dst);
@@ -376,6 +390,17 @@ static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 		(void)mmap(src, slot_bytes, PROT_NONE,
 			   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
 
+		{
+			unsigned int post_mv =
+				count_vmas_in_range((unsigned long)dst,
+						    slot_bytes);
+			if (post_mv > pre_src_mv)
+				__atomic_add_fetch(
+					&shm->stats.mremap_merge_matrix
+						.topology_unexpected,
+					1, __ATOMIC_RELAXED);
+		}
+		}
 		ok = verify_pages(dst, half, cookie);
 		break;
 
@@ -512,8 +537,25 @@ bool mremap_merge_matrix(struct childdata *child)
 		}
 
 		/* Issue the mremap move (src → dst, various shapes). */
-		(void)do_move(arena, src_slot, dst_slot, slot_bytes,
-			      shape, &direct_calls);
+		{
+			bool move_ok = do_move(arena, src_slot, dst_slot,
+					       slot_bytes, shape,
+					       &direct_calls);
+
+			__atomic_add_fetch(
+				&shm->stats.mremap_merge_matrix.checks_run,
+				1, __ATOMIC_RELAXED);
+			if (!move_ok) {
+				__atomic_add_fetch(
+					&shm->stats.mremap_merge_matrix
+						.tag_mismatch,
+					1, __ATOMIC_RELAXED);
+				outputerr("mremap_merge_matrix: BUG -- " /* check-static: child-output-ok */
+					  "page tag mismatch after shape %d "
+					  "src=%u dst=%u\n",
+					  (int)shape, src_slot, dst_slot);
+			}
+		}
 
 		/* Drain the racing helper. */
 		if (race_pid > 0) {
