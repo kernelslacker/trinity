@@ -112,6 +112,22 @@
  * slot so we can verify correct data movement after mremap. */
 #define SLOT_COOKIE(slot)	((uint32_t)(0xC0DE0000u | ((slot) & 0xFFu)))
 
+/*
+ * Per-slot profile: records the protection and fault state assigned at
+ * setup so that the per-iteration reset can faithfully restore it,
+ * preserving the four-way prot/fault asymmetry across iterations.
+ */
+enum slot_fault_level {
+	SLOT_FAULT_NONE = 0,	/* no pages faulted       (slot 3) */
+	SLOT_FAULT_HALF = 1,	/* first half faulted      (slot 1) */
+	SLOT_FAULT_FULL = 2,	/* all pages faulted (slot 0, slot 2) */
+};
+
+struct slot_profile {
+	int prot;
+	enum slot_fault_level fault_level;
+};
+
 /* ------------------------------------------------------------------
  * Helpers
  * ------------------------------------------------------------------ */
@@ -129,11 +145,12 @@ static inline char *slot_addr(char *arena, unsigned int slot,
 }
 
 /*
- * Stamp every page in [addr, addr+len) with a 4-byte cookie at the
- * page base.  Tolerates PROT_NONE or unreadable pages via a simple
- * mprotect-upgrade/downgrade wrapper.
+ * stamp_pages - write a 4-byte cookie to the base of every page in
+ * [addr, addr+len).  Temporarily upgrades protection to PROT_READ|PROT_WRITE
+ * to handle read-only or PROT_NONE slots, then restores orig_prot.
  */
-static void stamp_pages(void *addr, unsigned long len, uint32_t cookie)
+static void stamp_pages(void *addr, unsigned long len, uint32_t cookie,
+			int orig_prot)
 {
 	unsigned long pg;
 	unsigned long npages = len / page_size;
@@ -143,15 +160,18 @@ static void stamp_pages(void *addr, unsigned long len, uint32_t cookie)
 		uint32_t *p = (uint32_t *)((char *)addr + pg * page_size);
 		*p = cookie;
 	}
+	/* Restore the caller's intended protection. */
+	(void)mprotect(addr, len, orig_prot);
 }
 
 /*
- * Verify every page in [addr, addr+len) starts with expected cookie.
- * Returns true if all match.  Tolerates unreadable slots (returns false
- * rather than crashing) by re-mapping readable first.  If mprotect()
- * fails the range remains unreadable; return false rather than faulting.
+ * verify_pages - check that every page in [addr, addr+len) starts with
+ * the expected cookie.  Temporarily upgrades to PROT_READ|PROT_WRITE to
+ * tolerate read-only or PROT_NONE slots, then restores orig_prot.
+ * Returns false (without faulting) if the mprotect upgrade fails.
  */
-static bool verify_pages(void *addr, unsigned long len, uint32_t cookie)
+static bool verify_pages(void *addr, unsigned long len, uint32_t cookie,
+			 int orig_prot)
 {
 	unsigned long pg;
 	unsigned long npages = len / page_size;
@@ -163,9 +183,13 @@ static bool verify_pages(void *addr, unsigned long len, uint32_t cookie)
 	for (pg = 0; pg < npages; pg++) {
 		const uint32_t *p =
 			(const uint32_t *)((const char *)addr + pg * page_size);
-		if (*p != cookie)
+		if (*p != cookie) {
+			(void)mprotect(addr, len, orig_prot);
 			return false;
+		}
 	}
+	/* Restore the caller's intended protection. */
+	(void)mprotect(addr, len, orig_prot);
 	return true;
 }
 
@@ -200,6 +224,51 @@ static unsigned int count_vmas_in_range(unsigned long start,
 
 	fclose(f);
 	return count;
+}
+
+/*
+ * reset_src_slot - re-establish a source slot's prot/fault profile between
+ * iterations.  A fresh anonymous VMA is installed (handles the case where the
+ * previous shape unmapped src), then pages are stamped and protection is
+ * restored to match the original profile built at setup time.  This preserves
+ * the four-way asymmetry (slot 0: RW/fully-faulted, slot 1: RW/half-faulted,
+ * slot 2: RO/fully-faulted, slot 3: RW/clean) instead of collapsing all
+ * slots to RW+fully-faulted after the first reset.
+ */
+static void reset_src_slot(char *src, unsigned long slot_bytes,
+			   unsigned int slot_idx,
+			   const struct slot_profile *prof,
+			   unsigned long *dc)
+{
+	/*
+	 * Always establish RW first so stamp_pages can write without an
+	 * extra mprotect round-trip.  stamp_pages will restore orig_prot.
+	 */
+	(*dc)++;
+	(void)mmap(src, slot_bytes, PROT_READ | PROT_WRITE,
+		   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+
+	switch (prof->fault_level) {
+	case SLOT_FAULT_FULL:
+		/* stamp_pages restores to prof->prot (handles PROT_READ slots). */
+		stamp_pages(src, slot_bytes, SLOT_COOKIE(slot_idx), prof->prot);
+		break;
+	case SLOT_FAULT_HALF:
+		stamp_pages(src, slot_bytes / 2, SLOT_COOKIE(slot_idx), prof->prot);
+		/* Top half stays clean; set final prot on full slot. */
+		if (prof->prot != (PROT_READ | PROT_WRITE)) {
+			(*dc)++;
+			(void)mprotect(src, slot_bytes, prof->prot);
+		}
+		break;
+	case SLOT_FAULT_NONE:
+		/* No pages faulted; just set the correct protection. */
+		if (prof->prot != (PROT_READ | PROT_WRITE)) {
+			(*dc)++;
+			(void)mprotect(src, slot_bytes, prof->prot);
+		}
+		break;
+	}
 }
 
 /* ------------------------------------------------------------------
@@ -248,7 +317,7 @@ enum merge_shape {
  */
 static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 		    unsigned long slot_bytes, enum merge_shape shape,
-		    unsigned long *direct_calls_out)
+		    unsigned long *direct_calls_out, int src_prot)
 {
 	char *src  = slot_addr(arena, src_slot, slot_bytes);
 	char *dst  = slot_addr(arena, dst_slot, slot_bytes);
@@ -275,7 +344,7 @@ static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 			break;
 
 		/* Page-tag oracle: cookie must be visible at dst. */
-		ok = verify_pages(dst, slot_bytes, cookie);
+		ok = verify_pages(dst, slot_bytes, cookie, src_prot);
 
 		/* Topology oracle: a successful same-prot adjacent landing
 		 * must collapse or hold the VMA count (merge reduces it).
@@ -307,8 +376,8 @@ static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 			break;
 
 		/* Both src and dst should hold the original cookie. */
-		ok  = verify_pages(src, slot_bytes, cookie);
-		ok &= verify_pages(dst, slot_bytes, cookie);
+		ok  = verify_pages(src, slot_bytes, cookie, src_prot);
+		ok &= verify_pages(dst, slot_bytes, cookie, src_prot);
 		break;
 
 	case SHAPE_GROW:
@@ -318,15 +387,21 @@ static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 		 * MREMAP_MAYMOVE it may relocate.  If the tail lands
 		 * adjacent to a prior equal-prot VMA, vma_merge fires.
 		 */
-		stamp_pages(src, half, cookie);
+		stamp_pages(src, half, cookie, src_prot);
 		(*direct_calls_out)++;
 		ret = mremap(src, half, slot_bytes, MREMAP_MAYMOVE);
 		if (ret == MAP_FAILED)
 			break;
 
-		ok = verify_pages(ret, half, cookie);
-		/* Restore arena slot pointer: src may have moved. */
+		ok = verify_pages(ret, half, cookie, src_prot);
+		/*
+		 * Restore arena slot pointer: src may have moved.
+		 * If the kernel relocated, ret is outside the arena and
+		 * must be freed here; the arena munmap cannot reach it.
+		 */
 		if (ret != (void *)src) {
+			(*direct_calls_out)++;
+			(void)munmap(ret, slot_bytes);
 			(*direct_calls_out)++;
 			(void)mmap(src, slot_bytes, PROT_NONE,
 				   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
@@ -352,7 +427,7 @@ static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 		(*direct_calls_out)++;
 		(void)mmap(src + half, slot_bytes - half, PROT_NONE,
 			   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
-		ok = verify_pages(ret, half, cookie);
+		ok = verify_pages(ret, half, cookie, src_prot);
 		break;
 
 	case SHAPE_MULTI_VMA:
@@ -401,7 +476,7 @@ static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 					1, __ATOMIC_RELAXED);
 		}
 		}
-		ok = verify_pages(dst, half, cookie);
+		ok = verify_pages(dst, half, cookie, src_prot);
 		break;
 
 	case SHAPE_GROW_ZERO:
@@ -418,7 +493,7 @@ static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
 		if (ret == MAP_FAILED)
 			break;	/* EINVAL expected — not a fault */
 
-		ok = verify_pages(dst, slot_bytes, cookie);
+		ok = verify_pages(dst, slot_bytes, cookie, src_prot);
 		break;
 
 	case NR_MERGE_SHAPES:
@@ -469,27 +544,41 @@ bool mremap_merge_matrix(struct childdata *child)
 	 *   slot 1: PROT_READ|PROT_WRITE, half faulted
 	 *   slot 2: PROT_READ only
 	 *   slot 3: PROT_READ|PROT_WRITE, clean (unfaulted)
+	 *
+	 * Record each slot's profile in src_profiles[] so the per-iteration
+	 * reset can faithfully restore the asymmetry rather than collapsing
+	 * all slots to RW+fully-faulted.
 	 */
+	struct slot_profile src_profiles[NR_SRC_SLOTS] = {
+		[0] = { PROT_READ | PROT_WRITE, SLOT_FAULT_FULL },
+		[1] = { PROT_READ | PROT_WRITE, SLOT_FAULT_HALF },
+		[2] = { PROT_READ,              SLOT_FAULT_FULL },
+		[3] = { PROT_READ | PROT_WRITE, SLOT_FAULT_NONE },
+	};
+
 	for (unsigned int s = 0; s < NR_SRC_SLOTS; s++) {
 		char *p = slot_addr(arena, s, slot_bytes);
-		int prot = (s == 2) ? PROT_READ : (PROT_READ | PROT_WRITE);
+		int prot = src_profiles[s].prot;
 
 		direct_calls++;
 		(void)mprotect(p, slot_bytes, prot);
 
 		if (s == 0) {
-			/* Fully fault and stamp. */
-			stamp_pages(p, slot_bytes, SLOT_COOKIE(s));
+			/* Fully fault and stamp; orig_prot = RW, no-op restore. */
+			stamp_pages(p, slot_bytes, SLOT_COOKIE(s),
+				    PROT_READ | PROT_WRITE);
 		} else if (s == 1) {
 			/* Fault and stamp first half only. */
-			stamp_pages(p, slot_bytes / 2, SLOT_COOKIE(s));
+			stamp_pages(p, slot_bytes / 2, SLOT_COOKIE(s),
+				    PROT_READ | PROT_WRITE);
 		} else if (s == 2) {
-			/* Read-only stamp via temporary RW mprotect. */
-			stamp_pages(p, slot_bytes, SLOT_COOKIE(s));
-			direct_calls++;
-			(void)mprotect(p, slot_bytes, PROT_READ);
+			/*
+			 * Read-only slot: stamp_pages upgrades temporarily to
+			 * RW, writes cookies, then restores to PROT_READ.
+			 */
+			stamp_pages(p, slot_bytes, SLOT_COOKIE(s), PROT_READ);
 		}
-		/* slot 3: stay clean (no fault) */
+		/* slot 3: stay clean (no fault), prot already set above */
 	}
 
 	/*
@@ -540,7 +629,8 @@ bool mremap_merge_matrix(struct childdata *child)
 		{
 			bool move_ok = do_move(arena, src_slot, dst_slot,
 					       slot_bytes, shape,
-					       &direct_calls);
+					       &direct_calls,
+					       src_profiles[src_slot].prot);
 
 			__atomic_add_fetch(
 				&shm->stats.mremap_merge_matrix.checks_run,
@@ -566,19 +656,16 @@ bool mremap_merge_matrix(struct childdata *child)
 		}
 
 		/*
-		 * Re-prepare the source slot for the next iteration so
-		 * subsequent do_move() calls always find a valid stamp.
-		 * Use a single mmap to establish a fresh PROT_RW anon VMA
-		 * (handles the case where the previous move unmapped src).
+		 * Re-establish the source slot with its original prot/fault
+		 * profile so the asymmetry is preserved across iterations.
+		 * reset_src_slot() installs a fresh anon VMA, stamps the
+		 * appropriate pages, and restores the assigned protection.
 		 */
 		{
 			char *src = slot_addr(arena, src_slot, slot_bytes);
 
-			direct_calls++;
-			(void)mmap(src, slot_bytes, PROT_READ | PROT_WRITE,
-				   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
-				   -1, 0);
-			stamp_pages(src, slot_bytes, SLOT_COOKIE(src_slot));
+			reset_src_slot(src, slot_bytes, src_slot,
+				       &src_profiles[src_slot], &direct_calls);
 		}
 
 		/*
