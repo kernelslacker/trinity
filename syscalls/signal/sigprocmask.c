@@ -153,4 +153,5 @@ struct syscallentry syscall_sigprocmask = {
 	.sanitise = sanitise_sigprocmask,
 	.post = post_sigprocmask,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

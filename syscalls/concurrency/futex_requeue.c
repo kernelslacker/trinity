@@ -78,6 +78,6 @@ struct syscallentry syscall_futex_requeue = {
 	 * dispatcher chokepoint to cheaply enforce here.
 	 */
 	.rettype = RET_BORING,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_IPC,
 };

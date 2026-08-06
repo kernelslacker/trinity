@@ -217,4 +217,5 @@ struct syscallentry syscall_fanotify_init = {
 	.sanitise = sanitise_fanotify_init,
 	.post = post_fanotify_init,
 	.group = GROUP_VFS_IO,
+	.flags = REEXEC_SANITISE_OK,
 };

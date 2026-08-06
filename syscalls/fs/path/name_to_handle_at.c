@@ -221,7 +221,7 @@ struct syscallentry syscall_name_to_handle_at = {
 	.argname = { [0] = "fd", [1] = "name", [2] = "handle", [3] = "mnt_id", [4] = "flag" },
 	.arg_params[4].list = ARGLIST(name_to_handle_at_flags),
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_name_to_handle_at,
 	.post = post_name_to_handle_at,

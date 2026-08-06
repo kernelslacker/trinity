@@ -213,4 +213,5 @@ struct syscallentry syscall_sysfs = {
 	.post = post_sysfs,
 #endif
 	.rettype = RET_BORING,
+	.flags = REEXEC_SANITISE_OK,
 };

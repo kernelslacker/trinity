@@ -380,4 +380,5 @@ struct syscallentry syscall_sigaltstack = {
 	.post = post_sigaltstack,
 #endif
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

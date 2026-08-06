@@ -188,4 +188,5 @@ struct syscallentry syscall_ustat = {
 	.post = post_ustat,
 	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

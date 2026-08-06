@@ -189,4 +189,5 @@ struct syscallentry syscall_io_cancel = {
 	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_io_cancel,
 	.post = post_io_cancel,
+	.flags = REEXEC_SANITISE_OK,
 };

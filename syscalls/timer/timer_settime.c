@@ -227,4 +227,5 @@ struct syscallentry syscall_timer_settime = {
 	.sanitise = sanitise_timer_settime,
 	.post = post_timer_settime,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

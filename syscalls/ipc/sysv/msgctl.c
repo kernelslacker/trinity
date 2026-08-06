@@ -113,4 +113,5 @@ struct syscallentry syscall_msgctl = {
 	.sanitise = sanitise_msgctl,
 	.post = post_msgctl,
 	.rettype = RET_BORING,
+	.flags = REEXEC_SANITISE_OK,
 };

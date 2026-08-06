@@ -150,7 +150,7 @@ struct syscallentry syscall_init_module = {
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN, [2] = ARG_ADDRESS },
 	.argname = { [0] = "umod", [1] = "len", [2] = "uargs" },
 	.group = GROUP_PROCESS,
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_init_module,
 	.rettype = RET_ZERO_SUCCESS,
 };

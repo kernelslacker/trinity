@@ -64,6 +64,6 @@ struct syscallentry syscall_msgsnd = {
 	.argname = { [0] = "msqid", [1] = "msgp", [2] = "msgsz", [3] = "msgflg" },
 	.arg_params[3].list = ARGLIST(msgsnd_flags),
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_msgsnd,
 };

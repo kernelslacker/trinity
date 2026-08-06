@@ -153,6 +153,6 @@ struct syscallentry syscall_timerfd_gettime = {
 	.argname = { [0] = "ufd", [1] = "otmr" },
 	.sanitise = sanitise_timerfd_gettime,
 	.post = post_timerfd_gettime,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.rettype = RET_ZERO_SUCCESS,
 };

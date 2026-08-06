@@ -208,7 +208,7 @@ struct syscallentry syscall_newfstat = {
 	.argname = { [0] = "fd", [1] = "statbuf" },
 	.sanitise = sanitise_newfstat,
 	.post = post_newfstat,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 };
@@ -462,4 +462,5 @@ struct syscallentry syscall_newfstatat = {
 	.post = post_newfstatat,
 	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

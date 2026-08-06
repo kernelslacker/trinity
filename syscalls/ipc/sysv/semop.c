@@ -92,6 +92,6 @@ struct syscallentry syscall_semop = {
 	.argtype = { [0] = ARG_SEM_ID, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "semid", [1] = "tsops", [2] = "nsops" },
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_semop,
 };

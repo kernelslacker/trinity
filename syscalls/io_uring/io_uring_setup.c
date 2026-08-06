@@ -212,7 +212,7 @@ struct syscallentry syscall_io_uring_setup = {
 	.argname = { [0] = "entries", [1] = "params" },
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_IO_URING,
-	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
+	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_io_uring_setup,
 	.post = post_io_uring_setup,
 	.cleanup = cleanup_io_uring_setup,

@@ -89,7 +89,7 @@ static void post_alarm(struct syscallrecord *rec)
 }
 
 struct syscallentry syscall_alarm = {
-	.flags = AVOID_SYSCALL,	/* we rely on a useful alarm for every syscall. */
+	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,	/* we rely on a useful alarm for every syscall. */
 	.name = "alarm",
 	.group = GROUP_TIME,
 	.num_args = 1,

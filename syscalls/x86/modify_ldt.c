@@ -155,5 +155,6 @@ struct syscallentry syscall_modify_ldt = {
 	.post = post_modify_ldt,
 	.rettype = RET_BORING,
 	.group = GROUP_PROCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
 #endif

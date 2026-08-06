@@ -436,7 +436,7 @@ struct syscallentry syscall_getsockname = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_SOCKADDR, [2] = ARG_SOCKADDRLEN },
 	.argname = { [0] = "fd", [1] = "usockaddr", [2] = "usockaddr_len" },
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_getsockname,
 #ifdef HAVE_SYS_GETSOCKNAME

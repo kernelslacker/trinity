@@ -248,7 +248,7 @@ struct syscallentry syscall_io_pgetevents = {
 	.argname = { [0] = "ctx_id", [1] = "min_nr", [2] = "nr", [3] = "events", [4] = "timeout", [5] = "usig" },
 	.rettype = RET_NUM_BYTES,
 	.group = GROUP_VFS_IO,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_io_pgetevents,
 	.post = post_io_pgetevents,
 	.bound_arg = 3,

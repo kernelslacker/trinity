@@ -514,7 +514,7 @@ struct syscallentry syscall_io_uring_register = {
 	.argtype = { [0] = ARG_FD_IO_URING, [1] = ARG_OP, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "opcode", [2] = "arg", [3] = "nr_args" },
 	.arg_params[1].list = ARGLIST(io_uring_register_opcodes),
-	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
+	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_io_uring_register,
 	.post = post_io_uring_register,
 	/* a4 (nr_args) is the upper bound the post oracle compares retval

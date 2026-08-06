@@ -278,4 +278,5 @@ struct syscallentry syscall_munmap = {
 	.sanitise = sanitise_munmap,
 	.post = post_munmap,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

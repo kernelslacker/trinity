@@ -143,7 +143,7 @@ struct syscallentry syscall_rt_sigqueueinfo = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_PID },
 	.argname = { [0] = "pid", [1] = "sig", [2] = "uinfo" },
-	.flags = AVOID_SYSCALL,	/* can disrupt signal handling */
+	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,	/* can disrupt signal handling */
 	.sanitise = sanitise_rt_sigqueueinfo,
 	.rettype = RET_ZERO_SUCCESS,
 };

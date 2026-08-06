@@ -72,7 +72,7 @@ struct syscallentry syscall_clock_nanosleep = {
 	.arg_params[0].list = ARGLIST(clock_nanosleep_which),
 	.arg_params[1].list = ARGLIST(clock_nanosleep_flags),
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_clock_nanosleep,
 	.post = post_clock_nanosleep,
 };

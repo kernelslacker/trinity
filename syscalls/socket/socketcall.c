@@ -254,7 +254,7 @@ struct syscallentry syscall_socketcall = {
 	.argtype = { [1] = ARG_ADDRESS },
 	.argname = { [0] = "call", [1] = "args" },
 	.group = GROUP_NET,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_socketcall,
 	.post = post_socketcall,
 	/* a1 (call) drives post_socketcall's multiplexer switch: it selects

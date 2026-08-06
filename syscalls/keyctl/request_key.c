@@ -164,4 +164,5 @@ struct syscallentry syscall_request_key = {
 	.ret_objtype = OBJ_KEY_SERIAL,
 	.sanitise = sanitise_request_key,
 	.group = GROUP_IPC,
+	.flags = REEXEC_SANITISE_OK,
 };

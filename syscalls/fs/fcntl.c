@@ -793,7 +793,7 @@ struct syscallentry syscall_fcntl = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_OP, [2] = ARG_STRUCT_PTR_INOUT },
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg" },
 	.arg_params[1].list = ARGLIST(fcntl_flags),
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_fcntl,
 	.post = post_fcntl,

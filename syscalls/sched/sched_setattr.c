@@ -216,4 +216,5 @@ struct syscallentry syscall_sched_setattr = {
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_sched_setattr,
 	.cleanup = cleanup_sched_setattr,
+	.flags = REEXEC_SANITISE_OK,
 };

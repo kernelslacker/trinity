@@ -326,7 +326,7 @@ struct syscallentry syscall_perf_event_open = {
 	.post = post_perf_event_open,
 	.cleanup = cleanup_perf_event_open,
 	.init = init_pmus,
-	.flags = NEED_ALARM | IGNORE_ENOSYS,
+	.flags = NEED_ALARM | IGNORE_ENOSYS | REEXEC_SANITISE_OK,
 	.group = GROUP_PROCESS,
 	/* a5 (flags) gates the synchronous-teardown decision in
 	 * post_perf_event_open: PERF_FLAG_PID_CGROUP / FD_OUTPUT mark

@@ -454,7 +454,7 @@ struct syscallentry syscall_getpeername = {
 	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_SOCKADDR, [2] = ARG_SOCKADDRLEN },
 	.argname = { [0] = "fd", [1] = "usockaddr", [2] = "usockaddr_len" },
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_getpeername,
 #ifdef HAVE_SYS_GETPEERNAME

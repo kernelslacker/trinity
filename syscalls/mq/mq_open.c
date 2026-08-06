@@ -285,4 +285,5 @@ struct syscallentry syscall_mq_open = {
 	.sanitise = sanitise_mq_open,
 	.post = post_mq_open,
 	.cleanup = cleanup_mq_open,
+	.flags = REEXEC_SANITISE_OK,
 };

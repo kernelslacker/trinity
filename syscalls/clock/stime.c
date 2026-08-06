@@ -43,7 +43,7 @@ struct syscallentry syscall_stime = {
 	.num_args = 1,
 	.argname = { [0] = "tptr" },
 	.argtype = { [0] = ARG_ADDRESS },
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_stime,
 	.rettype = RET_ZERO_SUCCESS,
 };

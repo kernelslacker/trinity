@@ -456,4 +456,5 @@ struct syscallentry syscall_add_key = {
 	.sanitise = sanitise_add_key,
 	.post = post_add_key,
 	.group = GROUP_IPC,
+	.flags = REEXEC_SANITISE_OK,
 };

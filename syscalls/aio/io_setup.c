@@ -356,4 +356,5 @@ struct syscallentry syscall_io_setup = {
 	 * get_arg_snapshot() and the handlers still see the address the
 	 * kernel actually wrote, not the stomped value. */
 	.arg_snapshot_mask = (1u << 1),
+	.flags = REEXEC_SANITISE_OK,
 };

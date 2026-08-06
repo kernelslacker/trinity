@@ -149,4 +149,5 @@ struct syscallentry syscall_timerfd_create = {
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_TIMERFD,
 	.post = post_timerfd_create,
+	.flags = REEXEC_SANITISE_OK,
 };

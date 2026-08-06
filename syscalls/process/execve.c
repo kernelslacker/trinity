@@ -444,7 +444,7 @@ struct syscallentry syscall_execve = {
 	.sanitise = sanitise_execve,
 	.post = post_execve,
 	.group = GROUP_VFS_PATH,
-	.flags = AVOID_SYSCALL | EXTRA_FORK,
+	.flags = AVOID_SYSCALL | EXTRA_FORK | REEXEC_SANITISE_OK,
 	.rettype = RET_BORING,
 };
 
@@ -465,6 +465,6 @@ struct syscallentry syscall_execveat = {
 	.sanitise = sanitise_execve,
 	.post = post_execveat,
 	.group = GROUP_VFS_PATH,
-	.flags = AVOID_SYSCALL | EXTRA_FORK,
+	.flags = AVOID_SYSCALL | EXTRA_FORK | REEXEC_SANITISE_OK,
 	.rettype = RET_BORING,
 };

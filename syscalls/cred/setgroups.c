@@ -319,6 +319,7 @@ struct syscallentry syscall_setgroups = {
 	.post = post_setgroups,
 	.group = GROUP_CRED,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
 
 
