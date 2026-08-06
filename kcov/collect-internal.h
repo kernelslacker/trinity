@@ -2,14 +2,21 @@
 #pragma once
 
 /*
- * collect-internal.h — pure-computation inline helpers shared across
- * the kcov/collect*.c translation units.
+ * collect-internal.h — pure-computation static inline helpers shared
+ * across the kcov/collect*.c translation units.
  *
- * All helpers in this header are either static inline (zero out-of-line
- * instantiation) or plain static (one instantiation per including TU;
- * any unused copy is dead-code-eliminated by the compiler).  Nothing
- * here touches mutable shared state, holds locks, or has observable
+ * All helpers here are static inline (zero out-of-line instantiation).
+ * Nothing touches mutable shared state, holds locks, or has observable
  * side-effects outside the return value.
+ *
+ * Contents: kcov_canon_pc (KASLR-strip a PC), pc_canon_to_edge (Murmur3
+ * finalizer edge hash), kcov_entry_sentinel (per-call sentinel seed for
+ * the transition map), pair_to_transition (prev/cur PC pair hash).
+ *
+ * bucket_for_count (AFL hit-count bucket classifier) is private to
+ * collect.c — not shared here — because collect-fanout.c does not use
+ * it and a static definition in a widely-included header would produce
+ * -Wunused-function warnings.
  *
  * Consumers: kcov/collect.c (main hot path) and kcov/collect-fanout.c
  * (kcov_sample_new_edges read-only probe).
@@ -107,30 +114,4 @@ static inline unsigned int pair_to_transition(unsigned long prev,
 	h *= 0xc4ceb9fe1a85ec53UL;
 	h ^= h >> 33;
 	return (unsigned int)(h & (KCOV_NUM_TRANSITIONS - 1));
-}
-
-/*
- * AFL-style hit-count classification.  Returns the bucket index 0..7 for
- * a count >= 1.  Counts of 1, 2, 3 each get their own bucket (loops with
- * very small iteration counts are common and worth distinguishing); larger
- * counts collapse into geometric ranges so a 100-iteration loop and a
- * 90-iteration loop don't fight over distinct novelty events.
- */
-static unsigned int bucket_for_count(unsigned int n)
-{
-	if (n <= 1)
-		return 0;
-	if (n == 2)
-		return 1;
-	if (n == 3)
-		return 2;
-	if (n <= 7)
-		return 3;
-	if (n <= 15)
-		return 4;
-	if (n <= 31)
-		return 5;
-	if (n <= 127)
-		return 6;
-	return 7;
 }
