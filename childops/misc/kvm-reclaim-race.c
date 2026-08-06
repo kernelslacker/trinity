@@ -21,12 +21,7 @@
  *     invalidation ensures reclaim has an in-use root available to zap,
  *     reproducing the precondition that lets the reclaim zap an active root
  *     and put an invalid shadow page on the active_mmu_pages list.
- *     Note: KVM_SET_MEMORY_ATTRIBUTES is only present when the kernel is
- *     built with CONFIG_KVM_GENERIC_MEMORY_ATTRIBUTES (selected by
- *     KVM_SW_PROTECTED_VM / KVM_AMD_SEV / KVM_INTEL_TDX).  That config is
- *     not set in the test config, so the ioctl returns -ENOTTY there.  The arm has
- *     been dropped; memslot churn alone is sufficient to open the race
- *     window.
+ *     Memslot churn alone is sufficient to open the race window.
  *
  * Oracle: CONFIG_KVM_PROVE_MMU (enabled in the test config) + the existing
  * WARN_ON_ONCE(sp->role.invalid) guards at kvm_zap_obsolete_pages()
@@ -86,6 +81,13 @@
 #define RECLAIM_RACE_CHURN_ITERS	8
 
 /*
+ * Absolute upper bound on KVM_PRE_FAULT_MEMORY iterations in Lane 1.
+ * Prevents direct_calls from growing without bound when worker threads
+ * finish quickly, keeping the reported count meaningful.
+ */
+#define RECLAIM_RACE_MAX_PREFAULT_ITERS	65536U
+
+/*
  * GPA base for the wide fault storm window (sits above the
  * KVM_GUEST_MEMSLOT at GPA 0 installed by fds/kvm.c).
  */
@@ -111,15 +113,13 @@
 	((unsigned int)(RECLAIM_RACE_GPA_WINDOW / RECLAIM_RACE_CHUNK_SIZE))
 
 /*
- * Shared concurrency anchors.  Lane 1 (fault storm) loops until both
- * Lane 2 and Lane 3 have completed their fixed cycle counts, then sets
- * stop=1.  Lanes 2 and 3 check stop at the top of each iteration so
- * they can exit early if Lane 1 bails for any reason.  The two-way
- * signalling guarantees the three lanes overlap for the full lifetime
- * of the shorter-lived worker threads, regardless of host speed.
+ * Shared concurrency anchor.  Worker threads (Lanes 2 and 3) increment
+ * lanes_done when they complete their fixed cycle counts.  Lane 1 loops
+ * until lanes_done reaches the number of successfully spawned workers,
+ * guaranteeing the three lanes overlap for the full lifetime of the
+ * worker threads regardless of host speed.
  */
 struct reclaim_shared {
-	volatile int		stop;		/* Lane 1 → 2,3: exit now */
 	volatile int		lanes_done;	/* 2,3 → Lane 1: I finished */
 };
 
@@ -154,8 +154,7 @@ static void *squeeze_loop_thread(void *p)
 	struct squeeze_args *a = p;
 	int i;
 
-	for (i = 0; i < RECLAIM_RACE_SQUEEZE_ITERS &&
-	     !__atomic_load_n(&a->shared->stop, __ATOMIC_RELAXED); i++) {
+	for (i = 0; i < RECLAIM_RACE_SQUEEZE_ITERS; i++) {
 		int rc;
 
 		/* Squeeze toward KVM_MIN_FREE_MMU_PAGES so every subsequent
@@ -196,10 +195,7 @@ static void *squeeze_loop_thread(void *p)
 /*
  * Lane 3: delete and re-add the churn memslot.  Concurrent root
  * invalidation ensures reclaim has an in-use root available to zap -- the
- * precondition that opens the ZapScape race window.  The
- * KVM_SET_MEMORY_ATTRIBUTES arm was dropped: it requires
- * CONFIG_KVM_GENERIC_MEMORY_ATTRIBUTES (not set in the test config) and silently
- * returned -ENOTTY on every odd iteration.
+ * precondition that opens the ZapScape race window.
  */
 static void *churn_loop_thread(void *p)
 {
@@ -211,8 +207,7 @@ static void *churn_loop_thread(void *p)
 	 * of this thread, so there is always an active fault storm to race
 	 * against from the very first invalidation.
 	 */
-	for (i = 0; i < RECLAIM_RACE_CHURN_ITERS &&
-	     !__atomic_load_n(&a->shared->stop, __ATOMIC_RELAXED); i++) {
+	for (i = 0; i < RECLAIM_RACE_CHURN_ITERS; i++) {
 		struct kvm_userspace_memory_region del = {
 			.slot		 = RECLAIM_RACE_SLOT,
 			.flags		 = 0,
@@ -238,7 +233,7 @@ static void *churn_loop_thread(void *p)
 
 		/* Re-add: installs fresh roots.  The new generation triggers
 		 * shadow-page reuse, which is sufficient to open the race
-		 * window without KVM_SET_MEMORY_ATTRIBUTES. */
+		 * window. */
 		a->direct_calls++;
 		if (ioctl(a->vmfd, KVM_SET_USER_MEMORY_REGION, &add) == 0)
 			__atomic_add_fetch(&shm->stats.kvm.reclaim_memslot_ok,
@@ -256,7 +251,7 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 	struct object *vcpu_obj;
 	int vcpufd, vmfd;
 	void *ua = MAP_FAILED;
-	struct reclaim_shared shared = { .stop = 0, .lanes_done = 0 };
+	struct reclaim_shared shared = { .lanes_done = 0 };
 	struct squeeze_args sargs;
 	struct churn_args cargs;
 	pthread_t squeeze_tid, churn_tid;
@@ -337,10 +332,13 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 	 *
 	 * Walks chunks of RECLAIM_RACE_CHUNK_SIZE across the window in a
 	 * wrapping pattern, continuously cycling through all chunks for the
-	 * entire duration that Lanes 2 and 3 are alive.  The loop exits only
-	 * after both worker threads have signalled completion via
-	 * shared.lanes_done, guaranteeing that faulting overlaps with the
-	 * full squeeze and churn sequences regardless of host speed.
+	 * duration that the worker lanes are alive.  The loop exits once all
+	 * successfully spawned workers have signalled completion via
+	 * shared.lanes_done, or after RECLAIM_RACE_MAX_PREFAULT_ITERS
+	 * iterations — whichever comes first.
+	 *
+	 * If neither worker thread was spawned (expected == 0) the fault
+	 * storm is skipped: there is no squeeze or churn to race against.
 	 *
 	 * With kvm.tdp_mmu=0 (boot flag) this drives direct_page_fault() →
 	 * make_mmu_pages_available(), where the reclaim race window lives.
@@ -353,9 +351,14 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 	 */
 #ifdef KVM_PRE_FAULT_MEMORY
 	{
+		int expected = (int)squeeze_spawned +
+			       (int)churn_spawned;
 		unsigned int chunk_idx = 0;
+		unsigned int iters = 0;
 
-		while (__atomic_load_n(&shared.lanes_done, __ATOMIC_ACQUIRE) < 2) {
+		while (expected > 0 &&
+		       iters < RECLAIM_RACE_MAX_PREFAULT_ITERS &&
+		       __atomic_load_n(&shared.lanes_done, __ATOMIC_ACQUIRE) < expected) {
 			struct kvm_pre_fault_memory req = {
 				.gpa   = RECLAIM_RACE_GPA_BASE +
 					 ((__u64)(chunk_idx % RECLAIM_RACE_N_CHUNKS) *
@@ -380,10 +383,8 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 					&shm->stats.kvm.reclaim_prefault_err,
 					1, __ATOMIC_RELAXED);
 			chunk_idx++;
+			iters++;
 		}
-		/* Both worker lanes are done; signal early-exit to any
-		 * iteration still in its loop guard. */
-		__atomic_store_n(&shared.stop, 1, __ATOMIC_RELEASE);
 	}
 #else
 	(void)vcpufd;
