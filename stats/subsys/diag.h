@@ -397,6 +397,26 @@ struct diag_stats {
 	 * replace the static array with a growable registry.
 	 */
 	unsigned long heap_extra_regions_overflow;
+
+	/*
+	 * mseal_transition_matrix oracle counters.
+	 *
+	 * mseal_content_oracle_fail -- a per-page canary byte check
+	 * detected content corruption after an mseal(2)-prohibited
+	 * operation (munmap / MAP_FIXED / mprotect / mremap /
+	 * remap_file_pages / destructive madvise) was attempted against
+	 * a sealed VMA.  A non-zero value means either the prohibited
+	 * operation silently mutated memory it should have rejected, or
+	 * an unsealed mprotect spilled the sealed attribute across the
+	 * VMA boundary.  The childop also emits an output(0,...) line
+	 * for each incident.
+	 *
+	 * mseal_unexpected_success -- a prohibited operation returned 0
+	 * when mseal(2) should have caused it to return EACCES.  A
+	 * non-zero value is a direct mseal regression signal.
+	 */
+	unsigned long mseal_content_oracle_fail;
+	unsigned long mseal_unexpected_success;
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_DIAG_H */
