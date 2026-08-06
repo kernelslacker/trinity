@@ -33,6 +33,7 @@ UNCOUNTED:childops/fs/hfs-mount-fuzz.c
 UNCOUNTED:childops/net/bareudp-rx.c
 UNCOUNTED:childops/net/bridge-fdb-stp-traffic.c
 UNCOUNTED:childops/net/bridge-fdb-stp-vlan-mass.c
+UNCOUNTED:childops/net/crafted-icmp-rx.c
 UNCOUNTED:childops/net/esp-crafted-rx-frag.c
 UNCOUNTED:childops/net/esp-crafted-rx-stacked.c
 UNCOUNTED:childops/net/geneve-rx.c

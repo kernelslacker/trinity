@@ -83,6 +83,7 @@
 #include "stats/subsys/geneve_rx.h"
 #include "stats/subsys/handshake_req_abort.h"
 #include "stats/subsys/hfs_mount_fuzz.h"
+#include "stats/subsys/icmp_inject.h"
 #include "stats/subsys/igmp_mld_source_churn.h"
 #include "stats/subsys/inet_listener_rehash_race.h"
 #include "stats/subsys/inplace_crypto.h"
@@ -844,6 +845,9 @@ struct stats_s {
 
 	/* hfs_mount_fuzz accounting.  See stats/subsys/hfs_mount_fuzz.h. */
 	struct hfs_mount_fuzz_stats hfs_mount_fuzz __attribute__((aligned(64)));
+
+	/* icmp_inject accounting.  See stats/subsys/icmp_inject.h. */
+	struct icmp_inject_stats icmp_inject __attribute__((aligned(64)));
 
 	/* iscsi_target_probe accounting.  See stats/subsys/iscsi_target_probe.h. */
 	struct iscsi_target_probe_stats iscsi_target_probe __attribute__((aligned(64)));
