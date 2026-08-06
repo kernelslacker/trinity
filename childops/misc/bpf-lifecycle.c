@@ -463,8 +463,31 @@ static bool combo_cgroup_skb(struct childdata *child,
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
-	snprintf(path, sizeof(path), "/sys/fs/cgroup/trinity%u",
-		 rnd_modulo_u32(8));
+	{
+		int _slot = child_cgroup_slot();
+		unsigned int slot;
+
+		if (_slot < 0) {
+			/*
+			 * cgroup pool not pre-created; pick randomly.
+			 * Hook won't fire (no membership), but we still
+			 * exercise attach/detach machinery.
+			 */
+			slot = rnd_modulo_u32(8);
+		} else if (rnd_modulo_u32(8) == 0) {
+			/*
+			 * Deliberate 1-in-8 mismatch: attach to a cgroup
+			 * this child is NOT in.  Negative control — the
+			 * hook should not fire; exercises the zero-traffic
+			 * dispatch path without dominating the run.
+			 */
+			slot = ((unsigned int)_slot + 1 + rnd_modulo_u32(7)) % 8;
+		} else {
+			/* Common case: attach to our own cgroup. */
+			slot = (unsigned int)_slot;
+		}
+		snprintf(path, sizeof(path), "/sys/fs/cgroup/trinity%u", slot);
+	}
 	cgroup_fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (cgroup_fd < 0) {
 		cgroup_disabled = true;
