@@ -1,5 +1,5 @@
 /*
- * child-canary-state.c -- State transitions + init for the dormant-
+ * child-canary-state.c -- Canary slot state-machine for the dormant-
  * childop canary promotion queue.
  *
  * Design write-up: see Documentation/childop-canary-queue.md
@@ -11,37 +11,32 @@
  *   - the parent-private state cells (canary_ops[], the two-stage
  *     active/pending op cells, the parked/live flags, the setup-broken
  *     latch),
- *   - the shared helpers (monotonic_seconds, window_iters_resolved,
- *     edges_for_op, invocations_for_op, op_kcov_skip_reason),
  *   - the state-transition entry/exit hooks (enter_canarying,
  *     leave_canarying_promote/demote/setup_broken/wedged/ineligible,
  *     canary_health_verdict, close_window_and_decide),
- *   - the shadow recommended-state helpers,
- *   - the two-stage-commit respawn hook (canary_queue_on_child_respawn),
- *   - canary_queue_init.
+ *   - the shadow recommended-state helpers.
  *
- * The picker + tick loop, the summary/report/query surface, and the
- * static policy tables live in child-canary-picker.c,
- * child-canary-report.c, and child-canary-policy.c respectively; all
- * four TUs share child-canary-internal.h.
+ * Shared counter-read helpers (monotonic_seconds, window_iters_resolved,
+ * edges_for_op, invocations_for_op) live in child-canary-stats.c.
+ * The three-stage slot teardown (kill_canary_slot_children) lives in
+ * child-canary-liveness.c.  Queue init and the two-stage-commit respawn
+ * hook live in child-canary-grace.c.  The picker + tick loop, the
+ * summary/report/query surface, and the static policy tables live in
+ * child-canary-picker.c, child-canary-report.c, and
+ * child-canary-policy.c respectively; all seven TUs share
+ * child-canary-internal.h.
  */
-#include <errno.h>
-#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "child-canary-internal.h"
 #include "kcov.h"
-#include "params.h"
-#include "pids.h"
 #include "shm.h"
 #include "stats_ring.h"
 #include "trinity.h"
-#include "utils.h"
 
 /* --------------------------------------------------------------------
  * Concrete thresholds.  Kept as #defines rather than CLI flags so the
@@ -49,12 +44,6 @@
  * The two operator-tunable knobs (slot count, window iters) come in
  * through --canary-slots / --canary-window in main/params/.
  * -------------------------------------------------------------------- */
-
-/* Lower / upper clamps on --canary-window; the parser enforces both,
- * but we keep the constants here so a code-side read of the bound is
- * always in agreement with the CLI. */
-#define CANARY_WINDOW_ITERS_MIN		1000U
-#define CANARY_WINDOW_ITERS_MAX		1000000U
 
 /* New edges per window required to call a canary "productive".  Tight
  * enough to filter sibling-mediated KCOV noise and loose enough to
@@ -189,56 +178,12 @@ bool canary_op_setup_broken[NR_CHILD_OP_TYPES];
  * Helpers.
  * -------------------------------------------------------------------- */
 
-/* Wall-clock-skew-immune second counter for state-transition stamps and
- * the summary throttle.  CLOCK_MONOTONIC cannot fail on a supported
- * kernel, so the return is taken unconditionally. */
-time_t monotonic_seconds(void)
-{
-	struct timespec ts;
-	(void)clock_gettime(CLOCK_MONOTONIC, &ts);
-	return ts.tv_sec;
-}
+/* fork_pressure_should_suppress() and the op_is_in_table() dead-code
+ * helper moved to child-canary-policy.c alongside canary_pid_heavy_ops[]. */
 
-unsigned int window_iters_resolved(void)
-{
-	unsigned int w = canary_window_iters;
-
-	/* Plateau acceleration: when the fleet's KCOV new-edge rate has
-	 * dropped below threshold the plateau flag is raised in shared
-	 * memory.  Halve the effective canary window so each dormant op
-	 * gets fewer iters to prove itself, the FIFO moves faster, and
-	 * we sample more dormants per unit time.  The MIN/MAX clamp
-	 * below still applies, so a halved value cannot fall below
-	 * CANARY_WINDOW_ITERS_MIN. */
-	if (kcov_shm != NULL &&
-	    __atomic_load_n(&kcov_shm->plateau.plateau_active, __ATOMIC_ACQUIRE))
-		w /= 2;
-
-	if (w < CANARY_WINDOW_ITERS_MIN)
-		w = CANARY_WINDOW_ITERS_MIN;
-	if (w > CANARY_WINDOW_ITERS_MAX)
-		w = CANARY_WINDOW_ITERS_MAX;
-	return w;
-}
-
-/* Per-op edge counter consumed by the canary window's promote/demote
- * decision (CANARY_EDGE_THRESHOLD over a window of canary_window_iters
- * invocations).  Sourced from childop_edges_clean[], which is published
- * by the outer KCOV bracket in child_process() and reflects only the
- * edges attributable to this op's own dispatch -- no sibling traffic
- * mixed in.  Under --childop-kcov-attribution=off (default is dual) the
- * clean counter stays at zero and every window resolves to "zero_edges"
- * demote; that is the documented opt-out of the bracket path, matching
- * the no-KCOV degradation.  The noisier childop_edges_discovered[] is
- * still populated as a diagnostic comparator and surfaced in the stats
- * dump, but the scheduling decision now runs off the clean signal. */
-unsigned long edges_for_op(enum child_op_type op)
-{
-	if (op >= NR_CHILD_OP_TYPES)
-		return 0UL;
-	return __atomic_load_n(&shm->stats.childop.edges_clean[op],
-			       __ATOMIC_RELAXED);
-}
+/* Setup-failure reason table (struct canary_setup_reason_hint,
+ * canary_setup_reason_hints[], canary_setup_fail_reason_name(),
+ * canary_setup_fail_reason_for_op()) moved to child-canary-policy.c. */
 
 /* Returns a short static string naming the kcov_bracket_begin() reject
  * arm this op has hit at least once, or NULL if no skip reason applies.
@@ -268,99 +213,9 @@ static const char *op_kcov_skip_reason(enum child_op_type op)
 	return NULL;
 }
 
-/* Per-op invocation count, sourced from the shm-resident counter
- * bumped by every alt-op child in child_process()'s post-call block.
- * This is the canary window's clock: with one canary slot in a 16-
- * child fleet, the canary op's own invocation count grows roughly
- * 1/16 as fast as parent_stats.op_count, so sizing the window in
- * fleet-wide ops would close the window after only a fraction of the
- * intended sample.  Reading the per-op counter directly keeps the
- * CLI / log 'iters' label honest -- one iter == one canary-op call,
- * regardless of fleet size or canary-slot count. */
-unsigned long invocations_for_op(enum child_op_type op)
-{
-	if (op >= NR_CHILD_OP_TYPES)
-		return 0UL;
-	return __atomic_load_n(&shm->stats.childop.invocations[op],
-			       __ATOMIC_RELAXED);
-}
-
-/* fork_pressure_should_suppress() and the op_is_in_table() dead-code
- * helper moved to child-canary-policy.c alongside canary_pid_heavy_ops[]. */
-
-/* Setup-failure reason table (struct canary_setup_reason_hint,
- * canary_setup_reason_hints[], canary_setup_fail_reason_name(),
- * canary_setup_fail_reason_for_op()) moved to child-canary-policy.c. */
-
 /* --------------------------------------------------------------------
  * State transitions.
  * -------------------------------------------------------------------- */
-
-/*
- * Three-stage teardown: request graceful exit via SIGTERM, give slots a
- * brief grace window to drop locks / finish cleanup, then SIGKILL any
- * that ignored the request.  kill_pid() itself is SIGKILL-only by
- * contract, so stage 1 uses kill(pid, SIGTERM) directly; stage 3
- * routes through kill_pid() to inherit its mainpid / pid_is_valid
- * safety guards.  Slot pids are re-read on every pass because the
- * main reaper races us.
- */
-#define CANARY_SIGTERM_GRACE_ITERS	20
-#define CANARY_SIGTERM_GRACE_USLEEP	1000
-
-void kill_canary_slot_children(void)
-{
-	unsigned int i, iter;
-	unsigned int n = canary_slots;
-
-	if (n > max_children)
-		n = max_children;
-
-	/* Shutdown stage 1: request graceful exit. */
-	for (i = 0; i < n; i++) {
-		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_ACQUIRE);
-
-		if (pid == EMPTY_PIDSLOT || pid <= 0)
-			continue;
-		if (pid == mainpid)
-			continue;
-		kill(pid, SIGTERM);
-	}
-
-	/* Shutdown stage 2: ~20 ms grace window, polling for liveness only.  We
-	 * must NOT waitpid() the canary child here -- the parent's main
-	 * reaper owns that path and is what updates pids[]/running_childs
-	 * via reap_child().  A self-reap in this loop would race the main
-	 * reaper, which then sees ECHILD and leaves the slot parked in
-	 * the deferred-recovery window for ~30-40s.  kill(pid, 0) treats
-	 * a not-yet-reaped zombie as still alive, which is exactly what
-	 * we want: we keep waiting until the main reaper has fully torn
-	 * the task down. */
-	for (iter = 0; iter < CANARY_SIGTERM_GRACE_ITERS; iter++) {
-		bool any_alive = false;
-
-		for (i = 0; i < n; i++) {
-			pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_ACQUIRE);
-
-			if (pid == EMPTY_PIDSLOT || pid <= 0)
-				continue;
-			if (kill(pid, 0) == -1 && errno == ESRCH)
-				continue;
-			any_alive = true;
-		}
-		if (!any_alive)
-			return;
-		usleep(CANARY_SIGTERM_GRACE_USLEEP);
-	}
-
-	/* Shutdown stage 3: SIGKILL anything still alive. */
-	for (i = 0; i < n; i++) {
-		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_ACQUIRE);
-
-		if (pid != EMPTY_PIDSLOT && pid > 0)
-			kill_pid(pid);
-	}
-}
 
 void enter_canarying(enum child_op_type op)
 {
@@ -1117,235 +972,3 @@ void close_window_and_decide(enum child_op_type op)
 				       noisy_delta);
 	}
 }
-
-/* --------------------------------------------------------------------
- * Public entry points.
- * -------------------------------------------------------------------- */
-
-/* Backing storage for the default priority list: a per-epoch random
- * permutation of every canary-eligible op, rebuilt on each
- * canary_queue_init().  Replaces the old static priority-seed list so
- * the first-pass evaluation order differs every run and no hand-kept
- * list can go stale.  --canary-seed overrides this via
- * canary_seed_override_widened[] instead. */
-static enum child_op_type canary_priority_shuffle[NR_CHILD_OP_TYPES];
-
-void canary_queue_init(void)
-{
-	unsigned int i;
-	enum child_op_type seed;
-	unsigned int dormant_eligible = 0;
-	unsigned int config_blocked = 0;
-
-	memset(canary_ops, 0, sizeof(canary_ops));
-	memset(canary_op_setup_broken, 0, sizeof(canary_op_setup_broken));
-	for (i = 0; i < NR_CHILD_OP_TYPES; i++) {
-		canary_ops[i].op = (enum child_op_type)i;
-		canary_ops[i].name = alt_op_name((enum child_op_type)i);
-		canary_ops[i].state = CANARY_STATE_DORMANT;
-	}
-
-	/* CONFIG_BLOCKED set: terminal, never picked.  Also stamp the
-	 * static reason hint so the startup enumeration and any later
-	 * canary_queue_summary() consumer can report a label instead of
-	 * a bare "config-blocked" state. */
-	for (i = 0; i < canary_config_blocked_count; i++) {
-		enum child_op_type op = canary_config_blocked[i];
-		if (op < NR_CHILD_OP_TYPES) {
-			canary_ops[op].state = CANARY_STATE_CONFIG_BLOCKED;
-			canary_ops[op].blocked_reason =
-				CANARY_BLOCKED_REASON_CONFIG_ABSENT;
-			canary_ops[op].setup_fail_reason =
-				canary_setup_fail_reason_for_op(op);
-		}
-	}
-
-	/* Risky-defer set: stay DORMANT but the picker skips them via
-	 * the phase1_ineligible flag.  These ops need isolation that the
-	 * queue does not provide. */
-	for (i = 0; i < canary_risky_defer_count; i++) {
-		enum child_op_type op = canary_risky_defer[i];
-		if (op < NR_CHILD_OP_TYPES)
-			canary_ops[op].phase1_ineligible = true;
-	}
-
-	/* Synthetic PROMOTED state for every op currently active in the
-	 * dormant gate, so the queue's summary count agrees with reality
-	 * at t=0.  CHILD_OP_SYSCALL is not an alt-op and is skipped. */
-	for (i = (unsigned int)CHILD_OP_SYSCALL + 1; i < NR_CHILD_OP_TYPES; i++) {
-		if (dormant_op_is_active((enum child_op_type)i)) {
-			canary_ops[i].state = CANARY_STATE_PROMOTED;
-			canary_ops[i].total_promotions = 1;
-		}
-	}
-
-	/* Counters for the startup banner. */
-	for (i = (unsigned int)CHILD_OP_SYSCALL + 1; i < NR_CHILD_OP_TYPES; i++) {
-		switch (canary_ops[i].state) {
-		case CANARY_STATE_CONFIG_BLOCKED:
-			config_blocked++;
-			break;
-		case CANARY_STATE_DORMANT:
-			if (!canary_ops[i].phase1_ineligible)
-				dormant_eligible++;
-			break;
-		default:
-			break;
-		}
-	}
-
-	/* Priority list: operator override if --canary-seed was passed,
-	 * otherwise a fresh random permutation of every eligible op so
-	 * each run evaluates a different first-pass order. */
-	if (canary_seed_override_count > 0) {
-		for (i = 0; i < canary_seed_override_count; i++)
-			canary_seed_override_widened[i] =
-				(enum child_op_type)canary_seed_override[i];
-		canary_priority_list = canary_seed_override_widened;
-		canary_priority_list_count = canary_seed_override_count;
-	} else {
-		unsigned int n = 0, k;
-
-		/* Collect the ops the picker would actually consider --
-		 * skip SYSCALL, config-blocked terminals, risky-defer and
-		 * already-active (PROMOTED) ops -- then Fisher-Yates the
-		 * set into a uniform permutation. */
-		for (i = (unsigned int)CHILD_OP_SYSCALL + 1;
-		     i < NR_CHILD_OP_TYPES; i++) {
-			if (canary_ops[i].state == CANARY_STATE_CONFIG_BLOCKED)
-				continue;
-			if (canary_ops[i].phase1_ineligible)
-				continue;
-			if (canary_ops[i].state == CANARY_STATE_PROMOTED)
-				continue;
-			canary_priority_shuffle[n++] = (enum child_op_type)i;
-		}
-		for (k = n; k > 1; k--) {
-			unsigned int j = rnd_modulo_u32(k);
-			enum child_op_type tmp =
-				canary_priority_shuffle[k - 1];
-			canary_priority_shuffle[k - 1] =
-				canary_priority_shuffle[j];
-			canary_priority_shuffle[j] = tmp;
-		}
-		canary_priority_list = canary_priority_shuffle;
-		canary_priority_list_count = n;
-	}
-
-	canary_priority_cursor = 0;
-	canary_fifo_cursor = CHILD_OP_SYSCALL;
-	canary_active_op_cell = CHILD_OP_SYSCALL;
-	canary_pending_op = CHILD_OP_SYSCALL;
-	canary_active_op_set = false;
-	canary_pending_op_set = false;
-	canary_slots_parked = false;
-	canary_promotion_ring_count = 0;
-	canary_promotion_ring_head = 0;
-	canary_last_summary = monotonic_seconds();
-	canary_last_plateau = false;
-
-	/* Gate the live state on the operator flags AND on having at
-	 * least one slot to canary on.  Both kill switches map to the
-	 * same disabled-no-op behaviour.
-	 *
-	 * -c <syscall>, -r <num>, and -g <group> scope the run to a
-	 * specific syscall set for isolation / bisection.  The canary
-	 * queue would otherwise stage dormant alt-op childops onto its
-	 * dedicated slots and execute them (entering canarying windows
-	 * and promoting/demoting based on edges/crashes), bypassing the
-	 * syscall-table gate exactly like the picker-leak and
-	 * periodic-work paths that the child_process() / periodic_work()
-	 * gates already cover.  Stay dormant so the targeted-syscall
-	 * signal is not contaminated by canary-discovered edges / crashes
-	 * getting mis-credited to the target syscall. */
-	canary_queue_live = (!canary_queue_disabled) && (canary_slots > 0) &&
-		!do_specific_syscall && !random_selection &&
-		desired_group == GROUP_NONE;
-
-	if (!canary_queue_live) {
-		if (canary_queue_disabled) {
-			output(0, "canary queue: disabled (--no-canary-queue); dormant_op_disabled[] used as static gate\n");
-		} else if (do_specific_syscall || random_selection ||
-			   desired_group != GROUP_NONE) {
-			output(0, "canary queue: disabled (targeted-syscall mode -c/-r/-g); dormant_op_disabled[] used as static gate\n");
-		} else {
-			/* canary_slots == 0 -- either explicit
-			 * --canary-slots=0 or alt_op_children=0 collapsed
-			 * the auto-derived value to zero.  The boot log
-			 * above this line shows which. */
-			output(0, "canary queue: disabled (canary_slots=0); dormant_op_disabled[] used as static gate\n");
-		}
-		return;
-	}
-
-	output(0, "canary queue: enabled, slots=%u, window=%u iters, priority_ops=%u, dormant_eligible=%u, config_blocked=%u\n",
-		canary_slots, window_iters_resolved(),
-		canary_priority_list_count, dormant_eligible, config_blocked);
-
-	/* Startup CONFIG_BLOCKED table: enumerate each blocked op with the
-	 * missing host-feature reason so an operator reading the boot log
-	 * can tell which host features are absent without cross-
-	 * referencing the hint table in source.  Emitted only in enabled
-	 * mode -- the disabled bailout above already says the static gate
-	 * is in use, and per-op detail is not actionable there. */
-	for (i = (unsigned int)CHILD_OP_SYSCALL + 1; i < NR_CHILD_OP_TYPES; i++) {
-		if (canary_ops[i].state != CANARY_STATE_CONFIG_BLOCKED)
-			continue;
-		output(0, "canary queue: config-blocked op %s (subreason: %s, hint: %s)\n",
-			canary_ops[i].name,
-			canary_blocked_reason_name(
-				canary_ops[i].blocked_reason),
-			canary_setup_fail_reason_name(
-				canary_ops[i].setup_fail_reason));
-	}
-
-	/* Pick the first op and enter CANARYING immediately so the
-	 * fleet starts working it as soon as fork_children() runs. */
-	if (pick_next_canary(&seed))
-		enter_canarying(seed);
-
-	/* Silence compiler about input tables when build configs avoid
-	 * the picker (none today, but keeps the warning surface clean). */
-	(void)canary_config_blocked;
-	(void)canary_risky_defer;
-}
-
-/* retry_parked_slot(), stage_next_or_park(), close_window_or_park(),
- * log_plateau_edge() and canary_queue_tick() moved to
- * child-canary-picker.c.  canary_queue_summary() and canary_queue_on_crash()
- * moved to child-canary-report.c. */
-
-void canary_queue_on_child_respawn(int childno)
-{
-	if (!canary_queue_live)
-		return;
-	if (canary_slots == 0 || childno < 0)
-		return;
-	if ((unsigned int)childno >= canary_slots)
-		return;
-	if (!canary_pending_op_set)
-		return;
-
-	/* Commit the staged op as the active op.  The two-stage commit
-	 * means the new op only becomes the slot's running op once a
-	 * child has actually been forked with it stamped -- straggler
-	 * iterations of the OLD op (the previous canary, asked to die
-	 * via kill_pid) do not pollute the new op's counters.
-	 *
-	 * The caller (spawn_child) invokes us BEFORE
-	 * assign_dedicated_alt_op() so the dedicated stamp sees the
-	 * just-committed active op rather than the previous canary; if
-	 * we committed after the stamp, the freshly-spawned child would
-	 * have the old op stamped while the queue tracked the new op.
-	 *
-	 * Clear canary_pending_op_set once committed so that stale
-	 * pending state cannot influence later canary_active_op() reads
-	 * (e.g. the picker-exhausted path in canary_queue_tick() then
-	 * sees a clean slate). */
-	canary_active_op_cell = canary_pending_op;
-	canary_active_op_set = true;
-	canary_pending_op_set = false;
-}
-
-/* canary_slot_active(), canary_active_op(), and canary_op_is_promoted()
- * moved to child-canary-report.c. */

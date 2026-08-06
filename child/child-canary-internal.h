@@ -48,8 +48,8 @@
 
 /* --------------------------------------------------------------------
  * Per-op queue state.  Parent-private; indexed by child_op_type enum.
- * Owned by child-canary-state.c; the picker, policy, and report TUs
- * read/mutate it via this extern.
+ * Owned by child-canary-state.c; the picker, policy, report, and grace
+ * TUs read/mutate it via this extern.
  * -------------------------------------------------------------------- */
 extern struct canary_op_state canary_ops[NR_CHILD_OP_TYPES];
 
@@ -157,12 +157,16 @@ extern const unsigned int canary_risky_defer_count;
  * definition.  Grouped by the TU that owns the definition.
  * -------------------------------------------------------------------- */
 
-/* State TU (child-canary-state.c): shared helpers + cross-TU transitions. */
+/* Stats TU (child-canary-stats.c): shared counter-read helpers. */
 time_t monotonic_seconds(void);
 unsigned int window_iters_resolved(void);
 unsigned long edges_for_op(enum child_op_type op);
 unsigned long invocations_for_op(enum child_op_type op);
+
+/* Liveness TU (child-canary-liveness.c): pid-liveness probes + teardown. */
 void kill_canary_slot_children(void);
+
+/* State TU (child-canary-state.c): state-machine transitions. */
 void enter_canarying(enum child_op_type op);
 void leave_canarying_demote_setup_broken(enum child_op_type op,
 					 unsigned long window_iters,
