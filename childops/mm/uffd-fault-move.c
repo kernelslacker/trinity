@@ -845,6 +845,10 @@ struct v3_fault_ctx {
 	volatile int  blocked;		/* 1 while blocked on fault */
 	volatile int  escaped;		/* 1 if sigsetjmp was taken */
 	volatile int  stop;
+	/* Saved pre-V3 signal dispositions; restored by run_variant3() after
+	 * thread join.  Written by v3_fault_thread() before any fault access. */
+	struct sigaction old_sa_segv;
+	struct sigaction old_sa_bus;
 };
 
 static _Thread_local sigjmp_buf v3_escape_buf;
@@ -852,11 +856,20 @@ static _Thread_local volatile int v3_in_escape_zone;
 
 static void v3_sig_handler(int signo, siginfo_t *info, void *ctx)
 {
-	(void)signo;
 	(void)info;
 	(void)ctx;
-	if (v3_in_escape_zone)
+	if (v3_in_escape_zone) {
 		siglongjmp(v3_escape_buf, 1);
+	} else {
+		/*
+		 * Signal arrived outside the escape zone — not from a V3
+		 * teardown race.  SA_RESETHAND has already reset the disposition
+		 * to SIG_DFL; re-raise so the default action (core/terminate)
+		 * applies instead of silently returning, which would re-execute
+		 * the faulting instruction and spin indefinitely.
+		 */
+		raise(signo);
+	}
 }
 
 static void *v3_fault_thread(void *arg)
@@ -865,13 +878,15 @@ static void *v3_fault_thread(void *arg)
 	struct sigaction sa;
 	volatile uint32_t *pg;
 
-	/* Install SIGSEGV/SIGBUS handler for this thread. */
+	/* Install SIGSEGV/SIGBUS handler for this thread.
+	 * sigaction() is process-wide, not per-thread; save the previous
+	 * dispositions in fctx so run_variant3() can restore them after join. */
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_sigaction = v3_sig_handler;
 	sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
 	sigemptyset(&sa.sa_mask);
-	sigaction(SIGSEGV, &sa, NULL);
-	sigaction(SIGBUS, &sa, NULL);
+	sigaction(SIGSEGV, &sa, &fctx->old_sa_segv);
+	sigaction(SIGBUS,  &sa, &fctx->old_sa_bus);
 
 	pg = (volatile uint32_t *)fctx->region;
 
@@ -1070,6 +1085,15 @@ cleanup_v3:
 		}
 		if (spin >= V3_JOIN_LOOPS)
 			pthread_detach(tid);
+		/*
+		 * Restore signal dispositions — sigaction() is process-wide,
+		 * not per-thread; must be undone before this childop returns.
+		 * old_sa_segv/old_sa_bus were written by v3_fault_thread()
+		 * before any fault access, so they are safely readable here
+		 * even in the detach (timed-out) case.
+		 */
+		sigaction(SIGSEGV, &fctx.old_sa_segv, NULL);
+		sigaction(SIGBUS,  &fctx.old_sa_bus,  NULL);
 	}
 
 	/* Unconditional cleanup in case teardown action left things partial. */
