@@ -500,6 +500,16 @@ void generate_syscall_args(struct syscallrecord *rec)
 	 * entry and free a pointer the new caller never owned.  Hoisting
 	 * the reset here matches the post_state contract above. */
 	rec->owned_count = 0;
+	/* Same hoist for the generator-original tracking array: cleared by
+	 * cleanup_deferred_free() after each dispatch, but a child death
+	 * between BEFORE and AFTER bypasses that drain.  Zeroing here
+	 * prevents a stale gen_orig entry from surviving into the new
+	 * dispatch on the re-used rec and being mistaken for a live
+	 * allocation.  deferred_free_enqueue's alloc_track gate would
+	 * reject any stale pointer anyway (it is not in the new child's
+	 * alloc_track), but clearing here keeps the invariant explicit. */
+	rec->gen_orig[0] = rec->gen_orig[1] = rec->gen_orig[2] =
+		rec->gen_orig[3] = rec->gen_orig[4] = rec->gen_orig[5] = 0;
 	/* Drop any pending blob-corpus stash left over from a previous
 	 * dispatch that never reached the minicorpus_save promotion path
 	 * (no novelty signal fired).  Same rationale as the post_state /

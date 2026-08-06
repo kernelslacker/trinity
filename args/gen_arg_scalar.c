@@ -478,10 +478,21 @@ unsigned long gen_arg_numa_node(struct syscallentry *entry __unused__,
 }
 
 unsigned long gen_arg_pathname(struct syscallentry *entry __unused__,
-				      struct syscallrecord *rec __unused__,
-				      unsigned int argnum __unused__)
+				      struct syscallrecord *rec,
+				      unsigned int argnum)
 {
-	return (unsigned long) generate_pathname();
+	unsigned long ptr = (unsigned long) generate_pathname();
+
+	/*
+	 * Record the generator's original allocation so
+	 * cleanup_deferred_free() can detect when a sanitiser later
+	 * replaces this slot with a fresh zmalloc_tracked() buffer and
+	 * free the orphaned original.  If generate_pathname() returned
+	 * NULL (no pool entry found), we record zero; cleanup sees zero
+	 * and skips the orphan-free path.
+	 */
+	rec->gen_orig[argnum - 1] = ptr;
+	return ptr;
 }
 
 /*
