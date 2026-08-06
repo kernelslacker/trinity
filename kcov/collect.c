@@ -1,11 +1,16 @@
 /*
- * KCOV hot-path collection: PC and CMP-record canonicalisation,
- * edge / transition hashing, per-child dedup, the kcov_collect and
- * kcov_collect_cmp entry points, and the syscall cold-skip policy.
- * Carved out of kcov.c last because many strategy and stat counters
- * converge here; the extern for kcov_covjump_breadcrumb_maybe (still
- * in kcov.c, moving in the next step) is the only cross-cluster call
- * this file makes beyond the public kcov / cmp_hints APIs.
+ * KCOV hot-path collection: kcov_collect() PC-walk, per-child dedup,
+ * AFL-style hit-count bucketing, shadow transition-pair hashing, and
+ * per-syscall/mode/childop counter fan-out.  Supporting helpers
+ * (kcov_canon_pc, pc_canon_to_edge, kcov_entry_sentinel,
+ * pair_to_transition) live in collect-internal.h so collect-fanout.c
+ * can share them without duplicating definitions.
+ *
+ * CMP-record dispatch (kcov_collect_cmp, kcov_trace_pos,
+ * kcov_sample_new_edges) → collect-fanout.c
+ * Cold-skip policy (kcov_syscall_cold_skip_pct, kcov_syscall_is_cold)
+ * → cold-skip.c
+ * CMP-IP KASLR canonicalisation (kcov_canon_cmp_ip) → transition-hash.c
  */
 
 #include <errno.h>
@@ -17,7 +22,6 @@
 #include <unistd.h>
 
 #include "child.h"
-#include "cmp_hints.h"
 #include "kcov-internal.h"
 #include "params.h"		/* kcov_trace_size */
 #include "pids.h"
@@ -63,6 +67,32 @@ static inline bool kcov_local_stats_plausible(const struct kcov_child_local_stat
 
 
 
+
+/*
+ * AFL-style hit-count classification.  Returns the bucket index 0..7 for
+ * a count >= 1.  Counts of 1, 2, 3 each get their own bucket (loops with
+ * very small iteration counts are common and worth distinguishing); larger
+ * counts collapse into geometric ranges so a 100-iteration loop and a
+ * 90-iteration loop don't fight over distinct novelty events.
+ */
+static unsigned int bucket_for_count(unsigned int n)
+{
+	if (n <= 1)
+		return 0;
+	if (n == 2)
+		return 1;
+	if (n == 3)
+		return 2;
+	if (n <= 7)
+		return 3;
+	if (n <= 15)
+		return 4;
+	if (n <= 31)
+		return 5;
+	if (n <= 127)
+		return 6;
+	return 7;
+}
 
 /*
  * Publish a new maximum probe distance to the shared counter.  The
@@ -769,108 +799,4 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	return found_new;
 }
 
-/*
- * Read-only snapshot of the child's current PC-trace write position.
- * Mirrors the count-load-and-cap sequence at the head of kcov_collect()
- * so callers get the same "how many PCs have landed so far" value the
- * collect path would see, but does not touch bucket_seen, dedup, or any
- * shm counter -- it is safe to call from inside an outer bracket
- * without perturbing the authoritative kcov_bracket_end harvest that
- * childop_edges_clean (and thus the child canary) reads.
- */
-unsigned long kcov_trace_pos(struct kcov_child *kc)
-{
-	unsigned long count;
-
-	if (kc == NULL || kc->trace_buf == NULL || !kc->active)
-		return 0;
-	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
-	if (count >= (unsigned long)kcov_trace_size - 1)
-		count = (unsigned long)kcov_trace_size - 1;
-	return count;
-}
-
-/*
- * Read-only novelty probe over trace_buf[*cursor+1 .. trace_buf[0]].
- * Counts PCs whose canonicalised edge is currently unseen in
- * kcov_shm->bucket_seen[], then advances *cursor to the new trace end.
- * Intended for per-walk reward gates that live inside an outer
- * childop-attribution bracket: the outer kcov_bracket_end stays the
- * SOLE authoritative writer of bucket_seen, kc->dedup,
- * kc->current_generation, and kcov_shm->coverage.edges_found, so this probe
- * does not affect childop_edges_clean (the child canary signal) or
- * any dedup / generation state.  A brand-new edge that appears N
- * times in the sampled window contributes N to the returned count;
- * that hit-count weighting is accepted heuristic noise for the
- * reward path.
- */
-unsigned long kcov_sample_new_edges(struct kcov_child *kc, unsigned long *cursor)
-{
-	unsigned long end, idx, start, n = 0;
-
-	if (kc == NULL || cursor == NULL || kc->trace_buf == NULL || !kc->active)
-		return 0;
-	end = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
-	if (end >= (unsigned long)kcov_trace_size - 1)
-		end = (unsigned long)kcov_trace_size - 1;
-	start = *cursor;
-	if (start > end)
-		start = end;
-	for (idx = start; idx < end; idx++) {
-		unsigned long pc = __atomic_load_n(&kc->trace_buf[idx + 1],
-						   __ATOMIC_RELAXED);
-		unsigned int edge = pc_canon_to_edge(kcov_canon_pc(pc));
-
-		if (__atomic_load_n(&kcov_shm->bucket_seen[edge],
-				    __ATOMIC_RELAXED) == 0)
-			n++;
-	}
-	*cursor = end;
-	return n;
-}
-
-unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
-			       bool do32, bool is_explorer,
-			       int strategy_at_pick)
-{
-	unsigned long count;
-	unsigned long novel;
-
-	if (kc == NULL || !kc->cmp_capable || kc->cmp_trace_buf == NULL)
-		return 0;
-
-	count = __atomic_load_n(&kc->cmp_trace_buf[0], __ATOMIC_RELAXED);
-	if (count >= KCOV_CMP_RECORDS_MAX) {
-		/* Kernel wanted to record more comparisons than the cmp
-		 * buffer holds; the tail was dropped.  Mirrors the PC-side
-		 * trace_truncated counter. */
-		__atomic_fetch_add(&kcov_shm->cmp_records.cmp_trace_truncated, 1,
-			__ATOMIC_RELAXED);
-		if (nr < MAX_NR_SYSCALL)
-			__atomic_fetch_add(&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].cmp_trace_truncated,
-				1, __ATOMIC_RELAXED);
-		count = KCOV_CMP_RECORDS_MAX;
-	}
-
-	/* Reset the recover-on-EBADF attempt counter only when this call
-	 * actually harvested cmp records.  Mirrors the PC-side reset in
-	 * kcov_collect() -- a successful KCOV_ENABLE on cmp_fd that lands
-	 * on a syscall harvesting zero records is a no-op recovery, and
-	 * forgiving the attempt would let a close-race chain re-burn the
-	 * budget every iteration without ever making progress. */
-	if (count > 0 && kc->cmp_recovery_attempts != 0)
-		kc->cmp_recovery_attempts = 0;
-
-	if (count == 0)
-		return 0;
-
-	cmp_hints_collect(kc->cmp_trace_buf, nr, do32);
-	novel = bandit_cmp_observe(kc->cmp_trace_buf, nr, do32,
-				   is_explorer, strategy_at_pick);
-
-	__atomic_fetch_add(&kcov_shm->cmp_records.cmp_records_collected, count,
-		__ATOMIC_RELAXED);
-
-	return novel;
-}
 
