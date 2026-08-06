@@ -75,13 +75,26 @@
 #include "rds-bind-transport-refleak.h"
 
 /*
- * Per-process latch.  AF_RDS / SO_RDS_TRANSPORT / rds_tcp availability
- * is static across a child's lifetime.  Once the first probe fails we
- * stop retrying and short-circuit every subsequent invocation.  Mirrors
- * the rds_zcopy_crafted_send / qrtr_bind_race / netns_teardown_churn
- * latch patterns.
+ * Per-process latches.  AF_RDS / SO_RDS_TRANSPORT / rds_tcp availability
+ * is static across a child's lifetime.
+ *
+ * rds_bind_refleak_unsupported: set on the first probe FAILURE; every
+ * subsequent invocation short-circuits immediately.
+ *
+ * rds_probe_ok: set on the first probe SUCCESS; every subsequent
+ * invocation skips the probe entirely (re-opening a socket, calling
+ * setsockopt, and re-reading /proc/modules on every invocation is
+ * wasted syscalls that also adds churn to sibling oracle windows).
+ *
+ * Together the two latches ensure the probe runs exactly ONCE per child
+ * lifetime: first call always probes; later calls skip if the probe
+ * already succeeded OR already failed.
+ *
+ * Mirrors the rds_zcopy_crafted_send / qrtr_bind_race /
+ * netns_teardown_churn latch patterns.
  */
 static bool rds_bind_refleak_unsupported;
+static bool rds_probe_ok;
 
 /*
  * Set the per-process latch and the shared CHILDOP_LATCH_UNSUPPORTED
@@ -150,6 +163,11 @@ static bool probe_rds_bind_transport(const enum child_op_type op)
 		return false;
 	}
 
+	/*
+	 * Latch success so subsequent invocations skip the probe entirely.
+	 * See rds_probe_ok declaration above.
+	 */
+	rds_probe_ok = true;
 	return true;
 }
 
@@ -248,10 +266,17 @@ static int iter_eaddrinuse(int loop_fd, uint16_t holder_port)
 	}
 
 	if (bind(holder_fd, (struct sockaddr *)&haddr, sizeof(haddr)) != 0) {
-		/* Port already held (another concurrent worker) or other
-		 * error.  Close holder; rds_release sees rs->rs_transport
-		 * set from setsockopt and calls rds_trans_put -- clean. */
+		/* Port already held by another concurrent worker (likely a
+		 * pid-collision: two children whose pids differ by a
+		 * multiple of 4096 map to the same holder_port).  Close
+		 * holder; rds_release sees rs->rs_transport set from
+		 * setsockopt and calls rds_trans_put -- clean.  Count the
+		 * skip so fleet stats expose how often this path is missed
+		 * rather than silently exercising only the EINVAL arm. */
 		close(holder_fd);
+		__atomic_add_fetch(
+			&shm->stats.rds_bind_transport_refleak.port_collision_skips,
+			1, __ATOMIC_RELAXED);
 		return 0;
 	}
 
@@ -314,8 +339,13 @@ bool rds_bind_transport_refleak(struct childdata *child)
 	 * Probe AF_RDS + SO_RDS_TRANSPORT availability once per child
 	 * lifetime.  The probe socket is opened, tested, and closed so it
 	 * contributes no ref delta.  Latch fires if the feature is absent.
+	 *
+	 * rds_probe_ok is set on the FIRST successful probe; skip the probe
+	 * on all subsequent invocations to avoid the wasted socket()+
+	 * setsockopt()+/proc/modules overhead and the sibling oracle churn
+	 * it causes.
 	 */
-	if (!probe_rds_bind_transport(op))
+	if (!rds_probe_ok && !probe_rds_bind_transport(op))
 		return true;
 
 	if (valid_op)
