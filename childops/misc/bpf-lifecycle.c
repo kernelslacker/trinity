@@ -104,6 +104,12 @@
 #ifndef BPF_F_MMAPABLE
 #define BPF_F_MMAPABLE		(1U << 10)
 #endif
+#ifndef BPF_CGROUP_SETSOCKOPT
+#define BPF_CGROUP_SETSOCKOPT	22
+#endif
+#ifndef BPF_PROG_TYPE_CGROUP_SOCKOPT
+#define BPF_PROG_TYPE_CGROUP_SOCKOPT	25
+#endif
 
 #define MAP_ENTRIES		8
 
@@ -227,6 +233,7 @@ static void test_run(int prog_fd)
  */
 static bool socket_filter_disabled;
 static bool cgroup_disabled;
+static bool cgroup_sockopt_disabled;
 static bool arena_unsupported;
 
 /*
@@ -551,6 +558,183 @@ out:
 }
 
 /*
+ * Load a CGROUP_SETSOCKOPT program that unconditionally bumps ctx->optlen
+ * to a value above BPF_SOCKOPT_KERN_BUF_SIZE (32 bytes).  After the program
+ * returns, __cgroup_bpf_run_filter_setsockopt() observes optlen > max_optlen
+ * and returns -EFAULT to userspace.  Seeing EFAULT on a call that used a
+ * valid buffer + valid optname proves the hook actually ran.
+ *
+ * bpf_sockopt context offsets (uapi/linux/bpf.h):
+ *   0: sk, 8: optval, 16: optval_end, 24: level, 28: optname
+ *   32: optlen  <-- overwritten below
+ */
+static int load_sockopt_efault_probe(void)
+{
+	struct bpf_insn insns[] = {
+		/* r2 = 0x01000000 (16 MiB >> BPF_SOCKOPT_KERN_BUF_SIZE = 32) */
+		EBPF_MOV64_IMM(BPF_REG_2, 0x01000000),
+		/* *(u32 *)(r1 + 32) = r2 — overwrite ctx->optlen */
+		EBPF_STX_MEM(BPF_W, BPF_REG_1, BPF_REG_2, 32),
+		/* r0 = 1 (allow) */
+		EBPF_MOV64_IMM(BPF_REG_0, 1),
+		EBPF_EXIT(),
+	};
+	union bpf_attr attr;
+	char license[] = "GPL";
+
+	memset(&attr, 0, sizeof(attr));
+	attr.prog_type = BPF_PROG_TYPE_CGROUP_SOCKOPT;
+	attr.insn_cnt = ARRAY_SIZE(insns);
+	attr.insns = (uintptr_t)insns;
+	attr.license = (uintptr_t)license;
+	attr.expected_attach_type = BPF_CGROUP_SETSOCKOPT;
+
+	return sys_bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
+}
+
+/*
+ * Combo D — CGROUP_SETSOCKOPT lifecycle with EFAULT-based hook detection.
+ *
+ * The SOCKET_FILTER and CGROUP_SKB combos above verify that programs can
+ * be loaded and attached, but provide no way to confirm the hook actually
+ * fired: their triggered counter is bumped after a UDP packet is sent,
+ * regardless of whether the BPF dispatch array was live at that instant.
+ *
+ * This combo uses the kernel's own error path as a positive control:
+ * load a program that bumps ctx->optlen past BPF_SOCKOPT_KERN_BUF_SIZE;
+ * after the program returns, __cgroup_bpf_run_filter_setsockopt() sees
+ * optlen > max_optlen and returns -EFAULT.  A valid user buffer + valid
+ * optname can never produce EFAULT on its own, so each EFAULT observed
+ * here is proof the cgroup BPF dispatch ran.  Each confirmed EFAULT is
+ * counted in bpf_lifecycle.triggered, consistent with the other combos.
+ *
+ * Requires the same CAP_BPF + CAP_NET_ADMIN + writable cgroup directory
+ * as combo_cgroup_skb.  Latches off on EPERM/EACCES.
+ */
+static bool combo_cgroup_sockopt(struct childdata *child,
+				 unsigned long *direct_calls)
+{
+	static const struct {
+		int		level;
+		int		optname;
+		unsigned int	optlen;
+	} opts[] = {
+		{ SOL_SOCKET, SO_REUSEADDR, 4 },
+		{ SOL_SOCKET, SO_KEEPALIVE, 4 },
+		{ SOL_SOCKET, SO_RCVBUF,    4 },
+		{ SOL_SOCKET, SO_SNDBUF,    4 },
+	};
+	union bpf_attr attr;
+	char path[64];
+	int cgroup_fd = -1;
+	int prog_fd = -1;
+	bool attached = false;
+	unsigned long reached = 0;
+	unsigned int i;
+	int s = -1;
+
+	if (cgroup_sockopt_disabled)
+		return false;
+
+	/* Snapshot child->op_type once; see combo_socket_filter() for why. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+
+	snprintf(path, sizeof(path), "/sys/fs/cgroup/trinity%u",
+		 rnd_modulo_u32(8));
+	cgroup_fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (cgroup_fd < 0) {
+		cgroup_sockopt_disabled = true;
+		return false;
+	}
+
+	prog_fd = load_sockopt_efault_probe();
+	(*direct_calls)++;
+	if (prog_fd < 0) {
+		if (errno == EPERM || errno == EACCES) {
+			__atomic_add_fetch(&shm->stats.bpf_lifecycle.eperm,
+					   1, __ATOMIC_RELAXED);
+			cgroup_sockopt_disabled = true;
+		} else {
+			__atomic_add_fetch(&shm->stats.bpf_lifecycle.verifier_rejects,
+					   1, __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+	__atomic_add_fetch(&shm->stats.bpf_lifecycle.progs_loaded, 1,
+			   __ATOMIC_RELAXED);
+
+	memset(&attr, 0, sizeof(attr));
+	attr.target_fd = cgroup_fd;
+	attr.attach_bpf_fd = prog_fd;
+	attr.attach_type = BPF_CGROUP_SETSOCKOPT;
+	attr.attach_flags = 0;
+	(*direct_calls)++;
+	if (sys_bpf(BPF_PROG_ATTACH, &attr, sizeof(attr)) < 0) {
+		if (errno == EPERM || errno == EACCES) {
+			__atomic_add_fetch(&shm->stats.bpf_lifecycle.eperm,
+					   1, __ATOMIC_RELAXED);
+			cgroup_sockopt_disabled = true;
+		} else {
+			__atomic_add_fetch(&shm->stats.bpf_lifecycle.attach_failed,
+					   1, __ATOMIC_RELAXED);
+		}
+		goto out;
+	}
+	attached = true;
+	__atomic_add_fetch(&shm->stats.bpf_lifecycle.attached, 1,
+			   __ATOMIC_RELAXED);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
+				   1, __ATOMIC_RELAXED);
+
+	s = socket(AF_INET, SOCK_DGRAM, 0);
+	if (s < 0)
+		goto out;
+
+	for (i = 0; i < ARRAY_SIZE(opts); i++) {
+		uint8_t buf[4] = { 1, 0, 0, 0 };
+
+		/*
+		 * Each setsockopt call enters the CGROUP_SETSOCKOPT hook.
+		 * The EFAULT probe bumps ctx->optlen past max_optlen, so the
+		 * kernel returns EFAULT after the program runs.  EFAULT from
+		 * a valid buffer + valid optname is the positive control.
+		 */
+		if (setsockopt(s, opts[i].level, opts[i].optname,
+			       buf, (socklen_t)opts[i].optlen) < 0 &&
+			    errno == EFAULT)
+			reached++;
+	}
+
+	if (reached)
+		__atomic_add_fetch(&shm->stats.bpf_lifecycle.triggered,
+				   reached, __ATOMIC_RELAXED);
+
+out:
+	if (s >= 0)
+		close(s);
+	if (attached) {
+		memset(&attr, 0, sizeof(attr));
+		attr.target_fd = cgroup_fd;
+		attr.attach_bpf_fd = prog_fd;
+		attr.attach_type = BPF_CGROUP_SETSOCKOPT;
+		(void)sys_bpf(BPF_PROG_DETACH, &attr, sizeof(attr));
+		(*direct_calls)++;
+	}
+	if (prog_fd >= 0)
+		close(prog_fd);
+	if (cgroup_fd >= 0)
+		close(cgroup_fd);
+	return reached > 0;
+}
+
+/*
  * Combo C — exercise the BPF arena map mmap() teardown across two mms.
  *
  * Arena maps (BPF_MAP_TYPE_ARENA, added in v6.9) expose a sparse 4 GiB
@@ -723,6 +907,17 @@ bool bpf_lifecycle(struct childdata *child)
 	 */
 	if (!arena_unsupported && RAND_RANGE(0, 9) < 2) {
 		if (combo_arena_fork(child, &direct_calls))
+			goto publish;
+		/* fall through */
+	}
+
+	/*
+	 * 15% CGROUP_SETSOCKOPT lifecycle combo.  Uses an EFAULT probe
+	 * program so each confirmed EFAULT proves the hook ran — there is
+	 * no tautological counter here.
+	 */
+	if (!cgroup_sockopt_disabled && RAND_RANGE(0, 19) < 3) {
+		if (combo_cgroup_sockopt(child, &direct_calls))
 			goto publish;
 		/* fall through */
 	}

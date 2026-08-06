@@ -11,7 +11,8 @@ struct bpf_cgroup_attach_stats {
 	unsigned long packets_sent;		/* sendto/connect ops returned >=0 */
 	unsigned long detached;		/* PROG_DETACH accepted (mid-flow) */
 	unsigned long post_detach_sent;	/* sendto/connect after detach returned >=0 */
-	unsigned long sockopt_hook_calls;	/* setsockopt/getsockopt calls issued while attached */
+	unsigned long sockopt_hook_reach;	/* setsockopt/getsockopt calls that returned EFAULT — hook confirmed */
+	unsigned long post_detach_sockopt_reach;	/* same after PROG_DETACH; non-zero flags stale-array dispatch bug */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_BPF_CGROUP_ATTACH_H */
