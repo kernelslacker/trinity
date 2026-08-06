@@ -212,6 +212,7 @@ CHILDOP(CHILD_OP_IP6_TUNNEL_CHURN         , "ip6_tunnel_churn"           , ip6_t
 CHILDOP(CHILD_OP_IPV6_RPL_CLONE_FIDELITY  , "ipv6_rpl_clone_fidelity"    , ipv6_rpl_clone_fidelity    , true, 1)
 CHILDOP(CHILD_OP_SOCKMAP_CORK_RACE        , "sockmap_cork_race"          , sockmap_cork_race          , true, 1)
 CHILDOP(CHILD_OP_KVM_MMU_RECLAIM_RACE     , "kvm_mmu_reclaim_race"        , kvm_mmu_reclaim_race        , true, 0)
+CHILDOP(CHILD_OP_MSEAL_TRANSITION_MATRIX  , "mseal_transition_matrix"     , mseal_transition_matrix     , true, 0)
 
 #ifdef _CHILDOP_SENTINEL_DEFAULT
 #undef CHILDOP_SENTINEL
