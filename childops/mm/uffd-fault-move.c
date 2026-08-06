@@ -960,45 +960,102 @@ static void run_variant3(const enum child_op_type op, const bool valid_op,
 	teardown_action = (int)rnd_modulo_u32(4);
 
 	switch (teardown_action) {
-	case 0:
+	case 0: {
 		/* close(uffd): triggers userfaultfd_release which wakes
 		 * all pending faults with an error. */
-		close(fd);
-		fd = -1;
-		__atomic_add_fetch(&shm->stats.uffd_fault_move.v3_teardown_ok,
-				   1, __ATOMIC_RELAXED);
+		int saved_fd = fd;
+
+		fd = -1;			/* prevent double-close in cleanup */
+		if (close(saved_fd) == 0) {
+			__atomic_add_fetch(
+				&shm->stats.uffd_fault_move.v3_teardown_ok,
+				1, __ATOMIC_RELAXED);
+		} else {
+			__atomic_add_fetch(
+				&shm->stats.uffd_fault_move.v3_teardown_fail,
+				1, __ATOMIC_RELAXED);
+		}
 		break;
+	}
 	case 1:
 		/* UFFDIO_UNREGISTER: removes the VMA's UFFD registration;
-		 * pending faults are woken. */
-		uffd_unregister(fd, region, len);
-		__atomic_add_fetch(&shm->stats.uffd_fault_move.v3_teardown_ok,
-				   1, __ATOMIC_RELAXED);
+		 * pending faults are woken.  Inline the ioctl so we can
+		 * check the return value and route failures correctly. */
+		{
+			struct uffdio_range ur;
+
+			ur.start = (uintptr_t)region;
+			ur.len   = len;
+			if (ioctl(fd, UFFDIO_UNREGISTER, &ur) == 0) {
+				__atomic_add_fetch(
+					&shm->stats.uffd_fault_move.v3_teardown_ok,
+					1, __ATOMIC_RELAXED);
+			} else {
+				__atomic_add_fetch(
+					&shm->stats.uffd_fault_move.v3_teardown_fail,
+					1, __ATOMIC_RELAXED);
+			}
+		}
 		break;
 	case 2:
 		/* munmap: tears down the mapping; pending fault gets SIGSEGV
 		 * or SIGBUS in the faulting thread. */
-		munmap(region, len);
-		region = MAP_FAILED;		/* suppress double-unmap */
-		__atomic_add_fetch(&shm->stats.uffd_fault_move.v3_teardown_ok,
-				   1, __ATOMIC_RELAXED);
-		break;
-	case 3:
-		/* mremap with no new space: effectively removes the mapping. */
-		{
-			void *r = mremap(region, len, 0, 0);
-
-			(void)r;
-			if (r != MAP_FAILED)
-				region = MAP_FAILED;
+		if (munmap(region, len) == 0) {
+			region = MAP_FAILED;		/* suppress double-unmap */
 			__atomic_add_fetch(
 				&shm->stats.uffd_fault_move.v3_teardown_ok,
 				1, __ATOMIC_RELAXED);
+		} else {
+			region = MAP_FAILED;
+			__atomic_add_fetch(
+				&shm->stats.uffd_fault_move.v3_teardown_fail,
+				1, __ATOMIC_RELAXED);
 		}
 		break;
-	default:
-		__atomic_add_fetch(&shm->stats.uffd_fault_move.v3_teardown_fail,
-				   1, __ATOMIC_RELAXED);
+	case 3:
+		/*
+		 * mremap(MREMAP_MAYMOVE|MREMAP_FIXED) to a fresh anonymous
+		 * mapping: relocates the VMA out from under the pending fault,
+		 * racing the fault handler correctly.
+		 *
+		 * The previous code used mremap(region, len, 0, 0) — this
+		 * always fails: the kernel rejects new_len==0 with -EINVAL
+		 * (mm/mremap.c: "if (!vrm->new_len) return -EINVAL").  The
+		 * mapping was never torn down yet v3_teardown_ok was bumped
+		 * unconditionally, making ~25% of V3 runs silent no-ops.
+		 *
+		 * MREMAP_FIXED with a dest we own is the minimal legal fix:
+		 * new_len == old_len satisfies the kernel, MAYMOVE|FIXED
+		 * forces the relocation to dest (overwriting the placeholder
+		 * anonymous page there), and on success region is effectively
+		 * gone from its original address.
+		 */
+		{
+			void *dest = mmap(NULL, len, PROT_NONE,
+					  MAP_PRIVATE | MAP_ANONYMOUS |
+					  MAP_NORESERVE, -1, 0);
+			if (dest == MAP_FAILED) {
+				__atomic_add_fetch(
+					&shm->stats.uffd_fault_move.v3_teardown_fail,
+					1, __ATOMIC_RELAXED);
+				break;
+			}
+			void *r = mremap(region, len, len,
+					 MREMAP_MAYMOVE | MREMAP_FIXED, dest);
+			if (r == MAP_FAILED) {
+				munmap(dest, len);
+				__atomic_add_fetch(
+					&shm->stats.uffd_fault_move.v3_teardown_fail,
+					1, __ATOMIC_RELAXED);
+			} else {
+				/* region has been relocated to dest; mark it
+				 * consumed to suppress the cleanup double-unmap. */
+				region = MAP_FAILED;
+				__atomic_add_fetch(
+					&shm->stats.uffd_fault_move.v3_teardown_ok,
+					1, __ATOMIC_RELAXED);
+			}
+		}
 		break;
 	}
 
