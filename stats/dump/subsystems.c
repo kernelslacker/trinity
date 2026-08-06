@@ -336,6 +336,8 @@ void dump_stats_fuzzer_subsystems(void)
 
 	stat_category_emit_text(&rpl_clone_fidelity_category);
 
+	stat_category_emit_text(&memfd_secret_lifecycle_category);
+
 	stat_category_emit_text(&mremap_merge_matrix_category);
 
 	stat_category_emit_text(&uffd_fault_move_category);

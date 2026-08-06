@@ -250,6 +250,11 @@ stats	object
   stats.rpl_clone_fidelity	object
     stats.rpl_clone_fidelity.srh_mutated	u64
     stats.rpl_clone_fidelity.daddr_mutated	u64
+  stats.memfd_secret_lifecycle	object
+    stats.memfd_secret_lifecycle.oracle_pass	u64
+    stats.memfd_secret_lifecycle.oracle_fired	u64
+    stats.memfd_secret_lifecycle.conc_truncate_races	u64
+    stats.memfd_secret_lifecycle.setup_rejected	u64
   stats.mremap_merge_matrix	object
     stats.mremap_merge_matrix.checks_run	u64
     stats.mremap_merge_matrix.tag_mismatch	u64

@@ -215,6 +215,7 @@ CHILDOP(CHILD_OP_KVM_MMU_RECLAIM_RACE     , "kvm_mmu_reclaim_race"        , kvm_
 CHILDOP(CHILD_OP_MSEAL_TRANSITION_MATRIX  , "mseal_transition_matrix"     , mseal_transition_matrix     , true, 0)
 CHILDOP(CHILD_OP_THP_SPLIT_REF_RACE       , "thp_split_ref_race"          , thp_split_ref_race          , true, 1)
 CHILDOP(CHILD_OP_UFFD_FAULT_MOVE          , "uffd_fault_move"             , uffd_fault_move             , true, 1)
+CHILDOP(CHILD_OP_MEMFD_SECRET_LIFECYCLE   , "memfd_secret_lifecycle"      , memfd_secret_lifecycle      , true, 0)
 
 #ifdef _CHILDOP_SENTINEL_DEFAULT
 #undef CHILDOP_SENTINEL
