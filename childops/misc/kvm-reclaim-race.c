@@ -17,11 +17,16 @@
  *     without the squeeze, the reclaim path never runs and the race window
  *     never opens.
  *
- *   Lane 3 (churn thread): memslot delete/re-add plus
- *     KVM_SET_MEMORY_ATTRIBUTES role changes.  Concurrent root invalidation
- *     ensures reclaim has an in-use root available to zap, reproducing the
- *     precondition that lets the reclaim zap an active root and put an
- *     invalid shadow page on the active_mmu_pages list.
+ *   Lane 3 (churn thread): memslot delete/re-add loop.  Concurrent root
+ *     invalidation ensures reclaim has an in-use root available to zap,
+ *     reproducing the precondition that lets the reclaim zap an active root
+ *     and put an invalid shadow page on the active_mmu_pages list.
+ *     Note: KVM_SET_MEMORY_ATTRIBUTES is only present when the kernel is
+ *     built with CONFIG_KVM_GENERIC_MEMORY_ATTRIBUTES (selected by
+ *     KVM_SW_PROTECTED_VM / KVM_AMD_SEV / KVM_INTEL_TDX).  That config is
+ *     not set in the test config, so the ioctl returns -ENOTTY there.  The arm has
+ *     been dropped; memslot churn alone is sufficient to open the race
+ *     window.
  *
  * Oracle: CONFIG_KVM_PROVE_MMU (enabled in the test config) + the existing
  * WARN_ON_ONCE(sp->role.invalid) guards at kvm_zap_obsolete_pages()
@@ -176,10 +181,12 @@ static void *squeeze_loop_thread(void *p)
 }
 
 /*
- * Lane 3: delete and re-add the churn memslot, optionally followed by a
- * KVM_SET_MEMORY_ATTRIBUTES call to force a role change.  Concurrent root
+ * Lane 3: delete and re-add the churn memslot.  Concurrent root
  * invalidation ensures reclaim has an in-use root available to zap -- the
- * precondition that opens the ZapScape race window.
+ * precondition that opens the ZapScape race window.  The
+ * KVM_SET_MEMORY_ATTRIBUTES arm was dropped: it requires
+ * CONFIG_KVM_GENERIC_MEMORY_ATTRIBUTES (not set in the test config) and silently
+ * returned -ENOTTY on every odd iteration.
  */
 static void *churn_loop_thread(void *p)
 {
@@ -214,27 +221,11 @@ static void *churn_loop_thread(void *p)
 		a->direct_calls++;
 		(void)ioctl(a->vmfd, KVM_SET_USER_MEMORY_REGION, &del);
 
-		/* Re-add: installs fresh roots.  The role change on re-add
-		 * (new generation, different attributes) exercises the same
-		 * shadow-page reuse path januscape exploited. */
+		/* Re-add: installs fresh roots.  The new generation triggers
+		 * shadow-page reuse, which is sufficient to open the race
+		 * window without KVM_SET_MEMORY_ATTRIBUTES. */
 		a->direct_calls++;
 		(void)ioctl(a->vmfd, KVM_SET_USER_MEMORY_REGION, &add);
-
-#ifdef KVM_SET_MEMORY_ATTRIBUTES
-		/* Alternate KVM_SET_MEMORY_ATTRIBUTES (role/attribute change)
-		 * with plain memslot churn so the slot-mutation invalidation
-		 * path is exercised from two different call sites. */
-		if (i & 1) {
-			struct kvm_memory_attributes attrs = {
-				.address    = RECLAIM_RACE_GPA_BASE,
-				.size       = RECLAIM_RACE_GPA_WINDOW,
-				.attributes = 0,	/* clear to shared */
-				.flags      = 0,
-			};
-			a->direct_calls++;
-			(void)ioctl(a->vmfd, KVM_SET_MEMORY_ATTRIBUTES, &attrs);
-		}
-#endif
 	}
 
 	/* Signal Lane 1 that this lane has completed its cycle count. */
