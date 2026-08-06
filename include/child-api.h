@@ -442,6 +442,7 @@ struct canary_op_state {
 	unsigned long window_start_kcov_op_skipped_cmp;
 	unsigned long window_start_kcov_op_skipped_nested;
 	unsigned long window_start_kcov_op_skipped_inactive;
+	unsigned long window_start_kcov_op_skipped_sample;
 
 	/* Consecutive count of canary windows for this op that closed with
 	 * a non-zero bracket attempt count but zero opens (every dispatch

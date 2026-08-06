@@ -444,9 +444,11 @@ void enter_canarying(enum child_op_type op)
 	 * label the window by rejection reason: the CMP arm is retry-
 	 * eligible (re-drawing the kcov mode can land a PC-mode child
 	 * next window), the nested arm is a lifecycle-invariant violation
-	 * (caller-side bug -- retry cannot help; reported instead), and
-	 * the inactive arm reflects a run-wide config a retry cannot
-	 * turn on.  Only "skipped_cmp_delta == attempts_delta" windows
+	 * (caller-side bug -- retry cannot help; reported instead), the
+	 * inactive arm reflects a run-wide config a retry cannot turn on,
+	 * and the sample arm is the 1-of-N outer-bracket sampler (uniform
+	 * across all ops; not a mode artifact).  Only windows where
+	 * skipped_cmp_delta == eligible_delta (attempts minus sampled-out)
 	 * are eligible for the pre-demote PC-trial retry. */
 	s->window_start_kcov_op_skipped_cmp = kcov_shm
 		? __atomic_load_n(
@@ -461,6 +463,11 @@ void enter_canarying(enum child_op_type op)
 	s->window_start_kcov_op_skipped_inactive = kcov_shm
 		? __atomic_load_n(
 			&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
+			__ATOMIC_RELAXED)
+		: 0;
+	s->window_start_kcov_op_skipped_sample = kcov_shm
+		? __atomic_load_n(
+			&kcov_shm->childop_kcov.childop_kcov_op_skipped_sample[op],
 			__ATOMIC_RELAXED)
 		: 0;
 
@@ -1008,22 +1015,27 @@ void close_window_and_decide(enum child_op_type op)
 		 * (kcov attribution off run-wide; retry cannot turn it on).
 		 * The invariant
 		 *   attempts == bracketed + skipped_cmp + skipped_nested
-		 *             + skipped_inactive
-		 * means skipped_cmp_delta == attempts_delta is exactly the
-		 * shape "attempts > 0 AND every reject was CMP-mode" -- the
-		 * only shape a mode-redraw retry can improve.  Any other mix
+		 *             + skipped_inactive + skipped_sample
+		 * means skipped_cmp_delta == eligible_delta (where
+		 * eligible_delta = attempts_delta - skipped_sample_delta)
+		 * is exactly the shape "sampler-eligible attempts > 0 AND
+		 * every non-sampled reject was CMP-mode" -- the only shape a
+		 * mode-redraw retry can improve.  skipped_sample is excluded
+		 * from the denominator because sampling is uniform across ops
+		 * and is not a mode artifact a retry can fix.  Any other mix
 		 * falls through to the standard demote path so a productive
 		 * op is not demoted on a false zero-bracket signal from a
 		 * window whose rejects were dominated by a caller-side or
 		 * config-side confound.
 		 *
 		 * Guards:
-		 *   attempts_delta > 0          the outer bracket was actually
-		 *                               engaged this window; with 0
-		 *                               attempts childop-kcov attri-
-		 *                               bution is off run-wide.
-		 *   skipped_cmp_delta ==        ALL rejects were CMP-mode;
-		 *     attempts_delta            no nested / inactive noise.
+		 *   eligible_delta > 0          sampler-eligible attempts were
+		 *                               made this window; with 0
+		 *                               eligible attempts childop-kcov
+		 *                               attribution is off run-wide.
+		 *   skipped_cmp_delta ==        ALL eligible rejects were
+		 *     eligible_delta            CMP-mode; no nested / inactive
+		 *                               noise.
 		 *   retries < MAX               bounded so a pathological
 		 *                               all-CMP config terminates. */
 		unsigned long now_attempts = kcov_shm
@@ -1041,6 +1053,11 @@ void close_window_and_decide(enum child_op_type op)
 				&kcov_shm->childop_kcov.childop_kcov_op_skipped_nested[op],
 				__ATOMIC_RELAXED)
 			: 0;
+		unsigned long now_skipped_sample = kcov_shm
+			? __atomic_load_n(
+				&kcov_shm->childop_kcov.childop_kcov_op_skipped_sample[op],
+				__ATOMIC_RELAXED)
+			: 0;
 		unsigned long attempts_delta =
 			(now_attempts > s->window_start_kcov_op_attempts)
 			? (now_attempts - s->window_start_kcov_op_attempts) : 0;
@@ -1050,6 +1067,12 @@ void close_window_and_decide(enum child_op_type op)
 		unsigned long skipped_nested_delta =
 			(now_skipped_nested > s->window_start_kcov_op_skipped_nested)
 			? (now_skipped_nested - s->window_start_kcov_op_skipped_nested) : 0;
+		unsigned long skipped_sample_delta =
+			(now_skipped_sample > s->window_start_kcov_op_skipped_sample)
+			? (now_skipped_sample - s->window_start_kcov_op_skipped_sample) : 0;
+		unsigned long eligible_delta =
+			(attempts_delta > skipped_sample_delta)
+			? (attempts_delta - skipped_sample_delta) : 0;
 
 		/* Nested-rejection breadcrumb: a nested reject means an outer
 		 * bracket was already owned when the childop dispatch tried to
@@ -1066,13 +1089,13 @@ void close_window_and_decide(enum child_op_type op)
 				attempts_delta, iters);
 		}
 
-		if (attempts_delta > 0 && skipped_cmp_delta == attempts_delta &&
+		if (eligible_delta > 0 && skipped_cmp_delta == eligible_delta &&
 		    s->consecutive_no_pc_bracket < CANARY_PC_TRIAL_RETRIES_MAX) {
 			s->consecutive_no_pc_bracket++;
-			output(0, "canary: %s pre-demote PC-trial retry %u/%u: %lu bracket attempts opened 0 (kcov_mode_cmp children only; edges=%lu noisy_edges_seen=%lu in %lu iters); re-canarying to re-draw slot kcov mode\n",
+			output(0, "canary: %s pre-demote PC-trial retry %u/%u: %lu eligible attempts opened 0 (kcov_mode_cmp children only; skipped_sample=%lu edges=%lu noisy_edges_seen=%lu in %lu iters); re-canarying to re-draw slot kcov mode\n",
 				s->name, s->consecutive_no_pc_bracket,
 				(unsigned int)CANARY_PC_TRIAL_RETRIES_MAX,
-				attempts_delta, edges, noisy_delta, iters);
+				eligible_delta, skipped_sample_delta, edges, noisy_delta, iters);
 			enter_canarying(op);
 			return;
 		}
