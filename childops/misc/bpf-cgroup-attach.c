@@ -246,12 +246,14 @@ static bool is_sockopt_combo(const struct attach_combo *c)
  * setsockopt/getsockopt that returns -EFAULT proves the hook ran (the
  * probe bumps ctx->optlen past max_optlen; a valid buffer + optname
  * can never trigger that path on its own).  The count of EFAULTs is
- * returned through *efault_reach_out.  After PROG_DETACH the probe is
- * gone, so EFAULTs should drop to zero — a non-zero post-detach value
+ * returned through *set_reach_out (setsockopt) and *get_reach_out
+ * (getsockopt) independently.  After PROG_DETACH the probe is gone,
+ * so EFAULTs should drop to zero — a non-zero post-detach value
  * flags a stale-dispatch bug in the cgroup BPF plumbing.
  */
 static void setsockopt_burst(unsigned int *calls_out,
-			     unsigned long *efault_reach_out)
+			     unsigned long *set_reach_out,
+			     unsigned long *get_reach_out)
 {
 	/*
 	 * Level and optname pools are drawn independently on each
@@ -294,7 +296,8 @@ static void setsockopt_burst(unsigned int *calls_out,
 		{ UDP_CORK,      4  },
 	};
 	uint8_t buf[32];
-	unsigned long reach = 0;
+	unsigned long set_reach = 0;
+	unsigned long get_reach = 0;
 	unsigned int calls = 0;
 	unsigned int i;
 	int s;
@@ -324,14 +327,14 @@ static void setsockopt_burst(unsigned int *calls_out,
 		 */
 		if (setsockopt(s, level, optnames[i].optname,
 			       buf, optnames[i].optlen) < 0 && errno == EFAULT)
-			reach++;
+			set_reach++;
 		calls++;
 
 		/* getsockopt — separate CGROUP_GETSOCKOPT hook invocation */
 		len = (socklen_t)optnames[i].optlen;
 		if (getsockopt(s, level, optnames[i].optname,
 			       buf, &len) < 0 && errno == EFAULT)
-			reach++;
+			get_reach++;
 		calls++;
 	}
 
@@ -339,7 +342,8 @@ static void setsockopt_burst(unsigned int *calls_out,
 	calls++;
 out:
 	*calls_out = calls;
-	*efault_reach_out = reach;
+	*set_reach_out = set_reach;
+	*get_reach_out = get_reach;
 }
 
 /* Drive the hook with a UDP loopback burst.  For CONNECT we additionally
@@ -472,7 +476,8 @@ bool bpf_cgroup_attach(struct childdata *child)
 	 * probe to ~1-in-8 bursts for SETSOCKOPT so real setsockopt traffic
 	 * flows the rest of the time.  BPF_CGROUP_GETSOCKOPT runs after the
 	 * kernel handler and never blocks real traffic, so its probe fires
-	 * unconditionally.  sockopt_hook_reach is naturally keyed to
+	 * unconditionally.  setsockopt_hook_reach / getsockopt_hook_reach are
+ * naturally keyed to
 	 * probe-was-attached: the pass-through cannot produce EFAULT.
 	 */
 	bool use_efault_probe = is_sockopt_combo(c) &&
@@ -542,12 +547,15 @@ bool bpf_cgroup_attach(struct childdata *child)
 
 		for (r = 0; r < hold_rounds; r++) {
 			if (is_sockopt_combo(c)) {
-				unsigned long efault_reach = 0;
+				unsigned long set_reach = 0, get_reach = 0;
 
-				setsockopt_burst(&burst_calls, &efault_reach);
+				setsockopt_burst(&burst_calls, &set_reach, &get_reach);
 				__atomic_add_fetch(
-					&shm->stats.bpf_cgroup_attach.sockopt_hook_reach,
-					efault_reach, __ATOMIC_RELAXED);
+					&shm->stats.bpf_cgroup_attach.setsockopt_hook_reach,
+					set_reach, __ATOMIC_RELAXED);
+				__atomic_add_fetch(
+					&shm->stats.bpf_cgroup_attach.getsockopt_hook_reach,
+					get_reach, __ATOMIC_RELAXED);
 			} else {
 				sent = udp_burst(c->attach_type, &burst_calls);
 				__atomic_add_fetch(
@@ -577,11 +585,11 @@ bool bpf_cgroup_attach(struct childdata *child)
 	 * post_detach_sockopt_reach count signals that the cgroup BPF
 	 * dispatch array was not torn down correctly after PROG_DETACH. */
 	if (is_sockopt_combo(c)) {
-		unsigned long efault_reach = 0;
+		unsigned long set_reach = 0, get_reach = 0;
 
-		setsockopt_burst(&burst_calls, &efault_reach);
+		setsockopt_burst(&burst_calls, &set_reach, &get_reach);
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.post_detach_sockopt_reach,
-				   efault_reach, __ATOMIC_RELAXED);
+				   set_reach + get_reach, __ATOMIC_RELAXED);
 	} else {
 		sent = udp_burst(c->attach_type, &burst_calls);
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.post_detach_sent,
