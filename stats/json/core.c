@@ -249,6 +249,8 @@ void dump_stats_json_iouring_and_zombies(void)
 	putchar(',');
 	stat_category_emit_json(&rpl_clone_fidelity_category);
 	putchar(',');
+	stat_category_emit_json(&memfd_secret_lifecycle_category);
+	putchar(',');
 	stat_category_emit_json(&mremap_merge_matrix_category);
 	putchar(',');
 	stat_category_emit_json(&uffd_fault_move_category);

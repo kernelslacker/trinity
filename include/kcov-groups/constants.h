@@ -330,7 +330,7 @@
  * so the real enum count is asserted to fit inside this bound from
  * kcov.c at build time -- bump KCOV_CHILDOP_NR_MAX (and accept the
  * shm cost) if the assertion ever fires. */
-#define KCOV_CHILDOP_NR_MAX 160
+#define KCOV_CHILDOP_NR_MAX 192
 
 /* EINTR retry budget for KCOV_ENABLE / KCOV_REMOTE_ENABLE.  Eight is
  * generous enough to ride out a signal storm without turning a real

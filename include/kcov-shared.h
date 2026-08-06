@@ -310,21 +310,23 @@ static inline unsigned long per_syscall_calls_prior_total(unsigned int nr)
  * and offsetof for a set of load-bearing fields so an accidental
  * reorder or padding-introducing edit fails to compile instead of
  * silently shifting layout across a wide set of readers. */
-/* Adding coverage.trace_loss (+8) and childop_kcov.{skipped_sample,
- * op_skipped_sample[KCOV_CHILDOP_NR_MAX]} (+8 +1280 = +1288) shifts
- * every offset after each addition:
- *   - trace_loss lives at the tail of struct kcov_coverage_core, so
- *     every subsequent group offset shifts by +8.
- *   - childop_kcov new fields append to struct kcov_childop_kcov, so
- *     every group offset AFTER childop_kcov (per_syscall.., reexec_arms
- *     tail, sizeof) shifts by an additional +1288.
- * Absolute deltas:
- *   sizeof:                     25946080 + 8 + 1288 = 25947376
- *   cmp_records..:              8388672  + 8        = 8388680
- *   hints_flat..:               8388728  + 8        = 8388736
- *   per_syscall.per_syscall_edges: 8400280 + 8 + 1288 = 8401576
- *   reexec_arms..:              25946064 + 8 + 1288 = 25947360 */
-_Static_assert(sizeof(struct kcov_shared) == 25947376UL,
+/* KCOV_CHILDOP_NR_MAX bumped from 160 to 192 (+32 slots, 21 arrays
+ * total across childop_kcov / pc_ctx / covjump / reexec_gate /
+ * childop_cmp) to accommodate NR_CHILD_OP_TYPES growth beyond 160.
+ * Growth per group (32 extra slots x 8 bytes x N arrays in group):
+ *   childop_kcov (9 arrays):  +2304   -- per_syscall shifts by +2304
+ *   pc_ctx       (6 arrays):  +1536
+ *   covjump      (1 array):   +256
+ *   reexec_gate  (4 arrays):  +1024
+ *   childop_cmp  (1 array):   +256
+ *   total:                    +5376
+ * Absolute values after bump:
+ *   sizeof:                     25947376 + 5376 = 25952752
+ *   cmp_records..:              8388680  (unchanged, precedes childop_kcov)
+ *   hints_flat..:               8388736  (unchanged, precedes childop_kcov)
+ *   per_syscall.per_syscall_edges: 8401576 + 2304 = 8403880
+ *   reexec_arms..:              25947360 + 5376 = 25952736 */
+_Static_assert(sizeof(struct kcov_shared) == 25952752UL,
 	"struct kcov_shared sizeof drifted -- audit layout before updating this");
 _Static_assert(offsetof(struct kcov_shared, bucket_seen) == 0UL,
 	"kcov_shared.bucket_seen must remain the first field");
@@ -332,7 +334,7 @@ _Static_assert(offsetof(struct kcov_shared, cmp_records.cmp_records_collected) =
 	"kcov_shared.cmp_records.cmp_records_collected offset drifted");
 _Static_assert(offsetof(struct kcov_shared, hints_flat.cmp_hints_injected) == 8388736UL,
 	"kcov_shared.hints_flat.cmp_hints_injected offset drifted");
-_Static_assert(offsetof(struct kcov_shared, per_syscall.per_syscall_edges) == 8401576UL,
+_Static_assert(offsetof(struct kcov_shared, per_syscall.per_syscall_edges) == 8403880UL,
 	"kcov_shared.per_syscall.per_syscall_edges offset drifted");
-_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25947360UL,
+_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25952736UL,
 	"kcov_shared last-field offset drifted -- append-only tail broken");
