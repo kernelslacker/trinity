@@ -79,6 +79,23 @@
 #define THP_ROUNDS_BASE		8U
 #define THP_BUDGET_NS		200000000L	/* 200 ms */
 
+/*
+ * Per-round oracle tally, aggregated into shm->stats.thp_split_ref_race
+ * after each round in the main loop.
+ *
+ * ref_held:     process_vm_readv returned > 0 bytes (reference walker
+ *               reached folio_try_get() during the split window).
+ * content_bad:  pvreadv succeeded but returned bytes don't match the
+ *               pre-split cookie written to the arena (data corruption).
+ * no_race:      both mincore and pvreadv observed nothing useful (pages
+ *               absent; no meaningful concurrency this round).
+ */
+struct thp_round_tally {
+	bool ref_held;
+	bool content_bad;
+	bool no_race;
+};
+
 /* One-time THP unavailability latch and MADV_COLLAPSE feature probe. */
 static bool thp_unavail_latched;
 static int  latch_madv_collapse = -1;	/* -1=unknown, 0=absent, 1=present */
@@ -149,13 +166,33 @@ static bool thp_smaps_has_ahp(uintptr_t addr)
  *   process_vm_readv -- cross-process copy_page_to_iter races refcount
  *
  * Returns the number of direct syscall sites executed in this round.
+ * *tally is populated with oracle observations for this round.
  */
 static unsigned long thp_one_round(void *arena, unsigned int round,
-				   unsigned char *vec, size_t vec_sz)
+				   unsigned char *vec, size_t vec_sz,
+				   struct thp_round_tally *tally)
 {
 	uintptr_t base = (uintptr_t)arena;
 	size_t sub = THP_ARENA_SIZE / 4;
 	unsigned long calls = 0;
+	unsigned char cookie = (unsigned char)(0xa5 ^ (round & 0xffU));
+	bool check_content = false;
+	ssize_t pvreadv_bytes;
+	int mincore_ok;
+
+	/*
+	 * Content oracle: for the mprotect trigger (round%3==0) the arena
+	 * content survives the prot-change split, so a pre-split cookie can
+	 * be verified after a successful process_vm_readv.  Write the cookie
+	 * before the trigger fires so it is present during the race window.
+	 * MADV_DONTNEED (round%3==1) legitimately zeros pages; mremap
+	 * (round%3==2) relocates the first quarter, making pvreadv to the
+	 * original base likely fail -- skip the content check for both.
+	 */
+	if (round % 3U == 0) {
+		__builtin_memset(arena, cookie, vec_sz);
+		check_content = true;
+	}
 
 	switch (round % 3U) {
 	case 0:
@@ -181,7 +218,7 @@ static unsigned long thp_one_round(void *arena, unsigned int round,
 	}
 
 	/* mincore: races folio_try_get in the pagewalk path. */
-	(void)mincore(arena, THP_ARENA_SIZE, vec);
+	mincore_ok = mincore(arena, THP_ARENA_SIZE, vec);
 	calls++;
 
 	/* process_vm_readv: copy_page_to_iter under folio split. */
@@ -189,9 +226,17 @@ static unsigned long thp_one_round(void *arena, unsigned int round,
 		struct iovec lv = { vec, vec_sz };
 		struct iovec rv = { arena, vec_sz };
 
-		(void)process_vm_readv(getpid(), &lv, 1, &rv, 1, 0);
+		pvreadv_bytes = process_vm_readv(getpid(), &lv, 1, &rv, 1, 0);
 		calls++;
 	}
+
+	/* Oracle: classify this round. */
+	tally->ref_held     = (pvreadv_bytes > 0);
+	tally->content_bad  = false;
+	tally->no_race      = (mincore_ok != 0 && pvreadv_bytes <= 0);
+
+	if (tally->ref_held && check_content && vec[0] != cookie)
+		tally->content_bad = true;
 
 	/* Re-establish THP for the next round. */
 	(void)madvise(arena, THP_ARENA_SIZE, MADV_HUGEPAGE);
@@ -209,6 +254,10 @@ bool thp_split_ref_race(struct childdata *child)
 	volatile unsigned int rounds;
 	struct timespec start;
 	unsigned long direct_calls = 0;
+	unsigned long tally_rounds = 0;
+	unsigned long tally_ref_held = 0;
+	unsigned long tally_no_race = 0;
+	unsigned long tally_content_bad = 0;
 	void *arena;
 	uintptr_t base, al;
 	unsigned int i;
@@ -289,9 +338,18 @@ bool thp_split_ref_race(struct childdata *child)
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	for (i = 0; i < rounds; i++) {
+		struct thp_round_tally rt = { false, false, false };
+
 		if (vma_pressure_is_high())
 			break;
-		direct_calls += thp_one_round(arena, i, vec, sizeof(vec));
+		direct_calls += thp_one_round(arena, i, vec, sizeof(vec), &rt);
+		tally_rounds++;
+		if (rt.ref_held)
+			tally_ref_held++;
+		if (rt.no_race)
+			tally_no_race++;
+		if (rt.content_bad)
+			tally_content_bad++;
 		if (budget_elapsed_ns(&start, THP_BUDGET_NS))
 			break;
 	}
@@ -301,6 +359,23 @@ bool thp_split_ref_race(struct childdata *child)
 
 	if (valid_op)
 		childop_direct_syscalls_add(op, direct_calls);
+
+	if (tally_rounds) {
+		__atomic_add_fetch(&shm->stats.thp_split_ref_race.split_trigger_rounds,
+				   tally_rounds, __ATOMIC_RELAXED);
+		if (tally_ref_held)
+			__atomic_add_fetch(
+				&shm->stats.thp_split_ref_race.thp_split_while_ref_held,
+				tally_ref_held, __ATOMIC_RELAXED);
+		if (tally_no_race)
+			__atomic_add_fetch(
+				&shm->stats.thp_split_ref_race.thp_no_race,
+				tally_no_race, __ATOMIC_RELAXED);
+		if (tally_content_bad)
+			__atomic_add_fetch(
+				&shm->stats.thp_split_ref_race.content_mismatch,
+				tally_content_bad, __ATOMIC_RELAXED);
+	}
 
 	return true;
 }
