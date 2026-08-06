@@ -335,6 +335,19 @@ update this section to match `ls scripts/check-static/*.sh`.)
   publish brackets are a self-sufficient writer-side ordering anchor;
   re-adding the `rec->lock` pair around them reintroduces the very
   lock the strengthening commit set out to remove.
+- `stats-field-unemitted`: every field declared in `stats/subsys/*.h`
+  must be referenced by at least one emitter in `stats/` -- via a
+  direct struct member access in `stats/json/`, `stats/dump/`, or a
+  periodic / shutdown reporter under `stats/*/`, or a
+  `STAT_FIELD_SUB(subsys, field)` entry in the matching
+  `stats/subsys/*.c` descriptor table.  A field with a live producer
+  (atomic add in a childop or strategy file) but no emitter accrues
+  silently and is invisible to operators reading `--stats-json` or a
+  periodic dump.  Fields that are intentionally internal
+  (window-start snapshots, scheduler hysteresis state, per-syscall
+  arrays too wide for flat JSON) are grandfathered in
+  `scripts/check-static/stats-field-unemitted.baseline`; that list
+  should shrink over time, never grow.
 - `stats-json-schema`: pin the structural shape of the `--stats-json`
   document -- key-path + value-type in emission order, with
   descriptor-driven `STAT_FIELD*()` keys folded in and nested
