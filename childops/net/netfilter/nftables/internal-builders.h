@@ -41,4 +41,7 @@ bool nft_fwd_netdev_loop_unsupported(void);
 
 void nft_l4_aware_frag_sweep(struct nfnl_ctx *nfnl);
 
+void nft_inet_ingress_reject_sweep(struct nfnl_ctx *nfnl);
+bool nft_inet_ingress_reject_unsupported(void);
+
 #endif /* CHILDOPS_NFTABLES_CHURN_INTERNAL_BUILDERS_H */

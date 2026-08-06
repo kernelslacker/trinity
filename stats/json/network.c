@@ -117,6 +117,10 @@ static const struct stat_field nftables_churn_fields[] = {
 	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_rule_ok,     "l4frag_rule_ok"),
 	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_send_ok,     "l4frag_send_ok"),
 	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_send_failed, "l4frag_send_failed"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_inet_ingress_reject_runs,          "inet_ingress_reject_runs"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_inet_ingress_reject_setup_failed,  "inet_ingress_reject_setup_failed"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_inet_ingress_reject_probe_sent_ok, "inet_ingress_reject_probe_sent_ok"),
+	STAT_FIELD_JSON_SUB(nftables_churn, nft_inet_ingress_reject_completed_ok,  "inet_ingress_reject_completed_ok"),
 };
 
 const struct stat_category nftables_churn_category =

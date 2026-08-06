@@ -62,6 +62,12 @@
 #ifndef NF_INET_POST_ROUTING
 #define NF_INET_POST_ROUTING		4
 #endif
+#ifndef NF_INET_INGRESS
+/* NF_INET_INGRESS == NF_INET_NUMHOOKS == 5; added when inet-family
+ * gained an ingress hook (same hook point as NF_NETDEV_INGRESS but
+ * registered through nfproto_inet rather than nfproto_netdev). */
+#define NF_INET_INGRESS			5
+#endif
 
 #ifndef NFTA_TARGET_NAME
 #define NFTA_TARGET_NAME		1

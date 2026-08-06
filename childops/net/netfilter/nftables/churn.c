@@ -332,6 +332,16 @@ static int nftables_churn_iter_submode_dispatch(struct nftables_churn_iter_ctx *
 		return 1;
 	}
 
+	/* inet-family NF_INET_INGRESS / nft_reject sub-mode.  Targets
+	 * nf_send_unreach() with stale IPCB when reject fires before
+	 * ip_rcv_core() zeroes the control block (stale-IPCB class).
+	 * Latches ns_unsupported_nft_inet_ingress_reject on the first
+	 * CONFIG_NF_TABLES_INET=n or CONFIG_NFT_REJECT=n shape. */
+	if (ONE_IN(8) && !nft_inet_ingress_reject_unsupported()) {
+		nft_inet_ingress_reject_sweep(&ctx->nfnl);
+		return 1;
+	}
+
 	return 0;
 }
 
