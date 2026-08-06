@@ -70,6 +70,9 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <sys/wait.h>
 #include <linux/bpf.h>
 #include <fcntl.h>
@@ -109,6 +112,9 @@
 #endif
 #ifndef BPF_PROG_TYPE_CGROUP_SOCKOPT
 #define BPF_PROG_TYPE_CGROUP_SOCKOPT	25
+#endif
+#ifndef SOL_UDP
+#define SOL_UDP			17
 #endif
 
 #define MAP_ENTRIES		8
@@ -614,15 +620,36 @@ static int load_sockopt_efault_probe(void)
 static bool combo_cgroup_sockopt(struct childdata *child,
 				 unsigned long *direct_calls)
 {
+	/*
+	 * Level and optname are drawn independently in the loop below so
+	 * every cross-protocol (level, optname) pair can appear.  Most
+	 * combinations will be rejected by protocol-layer validation, but
+	 * the cgroup BPF hook runs before that check, so all combinations
+	 * contribute to hook-reach and to the KASAN surface.
+	 */
+	static const int levels[] = {
+		SOL_SOCKET,
+		IPPROTO_IP,
+		IPPROTO_TCP,
+		SOL_UDP,
+	};
 	static const struct {
-		int		level;
 		int		optname;
 		unsigned int	optlen;
 	} opts[] = {
-		{ SOL_SOCKET, SO_REUSEADDR, 4 },
-		{ SOL_SOCKET, SO_KEEPALIVE, 4 },
-		{ SOL_SOCKET, SO_RCVBUF,    4 },
-		{ SOL_SOCKET, SO_SNDBUF,    4 },
+		/* SOL_SOCKET */
+		{ SO_REUSEADDR, 4 },
+		{ SO_KEEPALIVE, 4 },
+		{ SO_RCVBUF,    4 },
+		{ SO_SNDBUF,    4 },
+		/* IPPROTO_IP */
+		{ IP_TTL,       4 },
+		{ IP_TOS,       4 },
+		/* IPPROTO_TCP */
+		{ TCP_NODELAY,  4 },
+		{ TCP_KEEPIDLE, 4 },
+		/* SOL_UDP */
+		{ UDP_CORK,     4 },
 	};
 	union bpf_attr attr;
 	char path[64];
@@ -699,14 +726,17 @@ static bool combo_cgroup_sockopt(struct childdata *child,
 
 	for (i = 0; i < ARRAY_SIZE(opts); i++) {
 		uint8_t buf[4] = { 1, 0, 0, 0 };
+		int level = levels[rnd_modulo_u32(ARRAY_SIZE(levels))];
 
 		/*
 		 * Each setsockopt call enters the CGROUP_SETSOCKOPT hook.
-		 * The EFAULT probe bumps ctx->optlen past max_optlen, so the
-		 * kernel returns EFAULT after the program runs.  EFAULT from
-		 * a valid buffer + valid optname is the positive control.
+		 * Level is drawn independently from the optname to exercise
+		 * cross-protocol combinations through the hook.  The EFAULT
+		 * probe bumps ctx->optlen past max_optlen, so the kernel
+		 * returns EFAULT after the program runs.  EFAULT from a
+		 * valid buffer + optname is the positive control.
 		 */
-		if (setsockopt(s, opts[i].level, opts[i].optname,
+		if (setsockopt(s, level, opts[i].optname,
 			       buf, (socklen_t)opts[i].optlen) < 0 &&
 			    errno == EFAULT)
 			reached++;
