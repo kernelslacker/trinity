@@ -35,7 +35,25 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 				  "entry\n");
 		/* Mark as kernel-never-entered so kcov_collect() skips
 		 * total_calls / per_syscall_calls[nr] and the arg-drain
-		 * in handle_syscall_ret() still runs on return. */
+		 * in handle_syscall_ret() still runs on return.
+		 * Also mirror the two stale-state clears from the sibling
+		 * kernel-never-entered paths in syscall-exec.c:
+		 *  - zero the kcov trace-buf header so kcov_collect_cmp() does
+		 *    not re-harvest the previous call's CMP records against this
+		 *    call's rec->nr (syscall-exec.c:264-270 / :381-387);
+		 *  - clear dispatch_args_valid so cmp_hints_collect() does not
+		 *    misattribute stale dispatch_args[] to this call's nr
+		 *    (syscall-exec.c:271-280 / :388-395). */
+		if (kc != NULL && kc->active) {
+			if (kc->mode == KCOV_MODE_PC && kc->trace_buf != NULL)
+				__atomic_store_n(&kc->trace_buf[0], 0,
+						 __ATOMIC_RELAXED);
+			else if (kc->mode == KCOV_MODE_CMP &&
+				 kc->cmp_trace_buf != NULL)
+				__atomic_store_n(&kc->cmp_trace_buf[0], 0,
+						 __ATOMIC_RELAXED);
+		}
+		rec->dispatch_args_valid = false;
 		rec->validator_rejected = true;
 		return;
 	}
