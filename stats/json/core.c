@@ -209,6 +209,43 @@ const struct stat_category bpf_fd_provider_category =
 	              ebpf_gen.maps_provided,
 	              bpf_fd_provider_fields);
 
+/*
+ * frseq (frequency-sequence) damper counters live two levels deep
+ * inside frontier.discriminator; spell out the offsetof path because
+ * STAT_FIELD_SUB only handles a single sub.field level.
+ */
+static const struct stat_field frontier_discriminator_fields[] = {
+	{ .name = "frseq_candidates",
+	  .offset = offsetof(struct stats_s,
+	                     frontier.discriminator.frseq_candidates) },
+	{ .name = "frseq_would_skip",
+	  .offset = offsetof(struct stats_s,
+	                     frontier.discriminator.frseq_would_skip) },
+};
+
+static const struct stat_category frontier_discriminator_category =
+	STAT_CATEGORY("frontier_discriminator",
+	              frontier.discriminator.frseq_candidates,
+	              frontier_discriminator_fields);
+
+static const struct stat_field childop_burst_fields[] = {
+	STAT_FIELD_SUB(childop, burst_alt_picks_window),
+};
+
+static const struct stat_category childop_burst_category =
+	STAT_CATEGORY("childop_burst",
+	              childop.burst_alt_picks_window,
+	              childop_burst_fields);
+
+static const struct stat_field corrupt_ptr_probe_fields[] = {
+	STAT_FIELD_SUB(corrupt_ptr, sample_seq),
+};
+
+static const struct stat_category corrupt_ptr_probe_category =
+	STAT_CATEGORY("corrupt_ptr_probe",
+	              corrupt_ptr.sample_seq,
+	              corrupt_ptr_probe_fields);
+
 void dump_stats_json_basic_subsystems(void)
 {
 	stat_category_emit_json(&vfs_writes_category);
@@ -228,6 +265,12 @@ void dump_stats_json_basic_subsystems(void)
 	stat_category_emit_json(&tracefs_fuzzer_category);
 	putchar(',');
 	stat_category_emit_json(&bpf_fd_provider_category);
+	putchar(',');
+	stat_category_emit_json(&frontier_discriminator_category);
+	putchar(',');
+	stat_category_emit_json(&childop_burst_category);
+	putchar(',');
+	stat_category_emit_json(&corrupt_ptr_probe_category);
 	putchar(',');
 }
 
@@ -287,6 +330,8 @@ void dump_stats_json_corruption_and_audit(void)
 			"\"retfd_blanket_reject\":%lu,"
 			"\"arena_ptr_stale_caught_arg\":%lu,"
 			"\"arena_ptr_stale_caught_post_state\":%lu,"
+			"\"read_walk_aborted\":%lu,"
+			"\"write_walk_aborted\":%lu,"
 			"\"sibling_mprotect_failed\":%lu,"
 			"\"destroy_object_idx\":%lu,"
 			"\"global_obj_uaf_caught\":%lu,"
@@ -366,6 +411,8 @@ void dump_stats_json_corruption_and_audit(void)
 		shm->stats.diag.retfd_blanket_reject,
 		shm->stats.diag.arena_ptr_stale_caught_arg,
 		shm->stats.diag.arena_ptr_stale_caught_post_state,
+		shm->stats.diag.read_walk_aborted,
+		shm->stats.diag.write_walk_aborted,
 		shm->stats.diag.sibling_mprotect_failed,
 		shm->stats.diag.destroy_object_idx_corrupt,
 		shm->stats.diag.global_obj_uaf_caught,

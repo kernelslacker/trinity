@@ -217,6 +217,13 @@ stats	object
   stats.bpf_fd_provider	object
     stats.bpf_fd_provider.maps_provided	u64
     stats.bpf_fd_provider.progs_provided	u64
+  stats.frontier_discriminator	object
+    stats.frontier_discriminator.frseq_candidates	u64
+    stats.frontier_discriminator.frseq_would_skip	u64
+  stats.childop_burst	object
+    stats.childop_burst.burst_alt_picks_window	u64
+  stats.corrupt_ptr_probe	object
+    stats.corrupt_ptr_probe.sample_seq	u64
   stats.recipe_runner	object
     stats.recipe_runner.runs	u64
     stats.recipe_runner.completed	u64
@@ -308,6 +315,8 @@ stats	object
     stats.corruption.retfd_blanket_reject	u64
     stats.corruption.arena_ptr_stale_caught_arg	u64
     stats.corruption.arena_ptr_stale_caught_post_state	u64
+    stats.corruption.read_walk_aborted	u64
+    stats.corruption.write_walk_aborted	u64
     stats.corruption.sibling_mprotect_failed	u64
     stats.corruption.destroy_object_idx	u64
     stats.corruption.global_obj_uaf_caught	u64
