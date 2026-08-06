@@ -10,6 +10,7 @@ static const struct stat_field process_mrelease_race_fields[] = {
 	STAT_FIELD_SUB(process_mrelease_race, eintr),
 	STAT_FIELD_SUB(process_mrelease_race, other_fail),
 	STAT_FIELD_SUB(process_mrelease_race, reap_slow),
+	STAT_FIELD_SUB(process_mrelease_race, racer_unreported),
 };
 
 const struct stat_category process_mrelease_race_category =

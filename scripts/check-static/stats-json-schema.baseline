@@ -841,6 +841,7 @@ stats	object
     stats.process_mrelease_race.eintr	u64
     stats.process_mrelease_race.other_fail	u64
     stats.process_mrelease_race.reap_slow	u64
+    stats.process_mrelease_race.racer_unreported	u64
   stats.madvise_cycler	object
     stats.madvise_cycler.runs	u64
     stats.madvise_cycler.calls	u64

@@ -32,6 +32,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <string.h>
@@ -396,6 +397,12 @@ static void run_kill_race(void *bg_map, size_t bg_size)
 		return;
 	memset(results, 0, page_size);
 
+	/* Initialise every racer slot to a sentinel so unwritten slots
+	 * (fork failure, PDEATHSIG early exit before store) are
+	 * distinguishable from a real rc==0 success. */
+	for (i = 0; i < NR_RACERS; i++)
+		results[i].rc = INT_MIN;
+
 	if (pipe(ready_pipe) < 0)
 		goto out_results;
 	if (pipe(release_pipe) < 0)
@@ -464,11 +471,22 @@ static void run_kill_race(void *bg_map, size_t bg_size)
 	for (i = 0; i < NR_RACERS; i++) {
 		int rc = results[i].rc;
 
-		if (rc <= 0) {
-			if (rc < 0)
-				errno = -rc;
-			tally_mrelease_result(rc < 0 ? -1 : 0);
+		/* INT_MIN means the child never wrote its result slot
+		 * (fork failure, PDEATHSIG early exit before store).
+		 * Count it separately so the invariant
+		 *   success + esrch + einval + eintr + other_fail +
+		 *   racer_unreported == kill_rounds * NR_RACERS
+		 * always holds, and skip tally_mrelease_result() which
+		 * would miscount the sentinel as a spurious success. */
+		if (rc == INT_MIN) {
+			__atomic_add_fetch(
+				&shm->stats.process_mrelease_race.racer_unreported,
+				1, __ATOMIC_RELAXED);
+			continue;
 		}
+		if (rc < 0)
+			errno = -rc;
+		tally_mrelease_result(rc < 0 ? -1 : 0);
 	}
 
 	/* Reap victim: non-blocking try first, then blocking. */
