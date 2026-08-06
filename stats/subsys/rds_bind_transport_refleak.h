@@ -44,19 +44,23 @@ struct rds_bind_transport_refleak_stats {
 	/*
 	 * HWM oracle.  rds_tcp_refcount_hwm is the largest absolute
 	 * /proc/modules refcount observed for rds_tcp across all
-	 * invocations in this run.  Because the leak is monotone and
-	 * permanent, any increase in the HWM from one invocation to the
-	 * next is attributable to leaked refs and is immune to sibling
-	 * churn.  leaked_refs_hwm_growth accumulates the total HWM growth
-	 * seen across the run.
+	 * invocations in this run.  baseline_refcount is seeded from the
+	 * first pre_refcount read so that leaked_refs_hwm_growth tracks
+	 * growth above the pre-existing system baseline, not from zero.
 	 *
-	 * rds_tcp_refcount_hwm is stored as a long (matching
-	 * proc_module_refcount()) so negative sentinel -1 is preserved;
-	 * the sign bit is safe because real module refcounts never exceed
-	 * LONG_MAX.
+	 * leaked_refs_hwm_growth is an upper-bound estimate: the absolute
+	 * refcount includes refs held by concurrently-open sibling sockets,
+	 * so HWM advances can reflect sibling pile-up as well as genuine
+	 * leaks.  The per-invocation leaked_refs delta provides a
+	 * calibrated complement.
+	 *
+	 * All three fields are unsigned long.  The proc_module_refcount()
+	 * sentinel (-1) is never stored here: the post_refcount > 0L guard
+	 * in the childop ensures only positive readings reach the HWM path.
 	 */
+	unsigned long baseline_refcount;	/* first pre_refcount seen; HWM floor */
 	unsigned long rds_tcp_refcount_hwm;	/* highest rds_tcp refcount seen this run */
-	unsigned long leaked_refs_hwm_growth;	/* total growth of HWM across the run */
+	unsigned long leaked_refs_hwm_growth;	/* total HWM growth above baseline */
 
 	/*
 	 * port_collision_skips: holder bind failed because another worker

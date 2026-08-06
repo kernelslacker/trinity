@@ -466,10 +466,17 @@ bool rds_bind_transport_refleak(struct childdata *child)
 
 		/*
 		 * HWM oracle.  Update the shared high-water mark of the
-		 * absolute rds_tcp refcount.  Because the leak is monotone
-		 * and permanent, any increase in the HWM across invocations
-		 * is attributable to leaked refs regardless of sibling churn
-		 * within any individual invocation's pre/post window.
+		 * absolute rds_tcp refcount.  baseline_refcount and
+		 * rds_tcp_refcount_hwm are both seeded from pre_refcount on
+		 * the first invocation so that leaked_refs_hwm_growth tracks
+		 * growth above the pre-existing system floor, not from zero.
+		 * Without this seed the first HWM advance would book the
+		 * entire absolute refcount as leaked refs.
+		 *
+		 * leaked_refs_hwm_growth is an upper-bound estimate: because
+		 * the absolute refcount includes refs held by concurrently-
+		 * open sibling sockets, HWM advances can reflect sibling
+		 * pile-up as well as genuine leaks.
 		 *
 		 * Use a CAS loop so concurrent children converge on the
 		 * true maximum without races.  Growth accumulated into
@@ -477,6 +484,31 @@ bool rds_bind_transport_refleak(struct childdata *child)
 		 */
 		if (post_refcount > 0L) {
 			unsigned long new_hwm = (unsigned long)post_refcount;
+			unsigned long zero;
+
+			/*
+			 * Seed baseline_refcount and rds_tcp_refcount_hwm from
+			 * pre_refcount on first use (CAS from zero).  Whichever
+			 * child wins sets the floor; losers proceed with the
+			 * winner's value already in place -- all concurrent
+			 * pre_refcounts are drawn from the same steady-state
+			 * baseline so any winner is equally representative.
+			 */
+			if (pre_refcount > 0L) {
+				unsigned long seed = (unsigned long)pre_refcount;
+
+				zero = 0UL;
+				(void)__atomic_compare_exchange_n(
+					&shm->stats.rds_bind_transport_refleak.baseline_refcount,
+					&zero, seed, false,
+					__ATOMIC_RELAXED, __ATOMIC_RELAXED);
+				zero = 0UL;
+				(void)__atomic_compare_exchange_n(
+					&shm->stats.rds_bind_transport_refleak.rds_tcp_refcount_hwm,
+					&zero, seed, false,
+					__ATOMIC_RELAXED, __ATOMIC_RELAXED);
+			}
+
 			unsigned long old_hwm = __atomic_load_n(
 				&shm->stats.rds_bind_transport_refleak.rds_tcp_refcount_hwm,
 				__ATOMIC_RELAXED);
