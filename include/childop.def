@@ -218,6 +218,7 @@ CHILDOP(CHILD_OP_MSEAL_TRANSITION_MATRIX  , "mseal_transition_matrix"     , msea
 CHILDOP(CHILD_OP_THP_SPLIT_REF_RACE       , "thp_split_ref_race"          , thp_split_ref_race          , true, 1)
 CHILDOP(CHILD_OP_UFFD_FAULT_MOVE          , "uffd_fault_move"             , uffd_fault_move             , true, 1)
 CHILDOP(CHILD_OP_MEMFD_SECRET_LIFECYCLE   , "memfd_secret_lifecycle"      , memfd_secret_lifecycle      , true, 0)
+CHILDOP(CHILD_OP_FNHE_PMTU_MTU_RACE      , "fnhe_pmtu_mtu_race"          , fnhe_pmtu_mtu_race          , true, 1)
 
 #ifdef _CHILDOP_SENTINEL_DEFAULT
 #undef CHILDOP_SENTINEL

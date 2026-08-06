@@ -593,6 +593,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&ipv6_pmtu_race_category);
 
+	stat_category_emit_text(&fnhe_pmtu_mtu_race_category);
+
 	stat_category_emit_text(&vrf_fib_churn_category);
 
 	stat_category_emit_text(&ip6_udp_cork_splice_category);

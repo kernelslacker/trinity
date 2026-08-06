@@ -73,6 +73,7 @@
 #include "stats/subsys/fdstress.h"
 #include "stats/subsys/flock_thrash.h"
 #include "stats/subsys/flowtable_vlan.h"
+#include "stats/subsys/fnhe_pmtu_mtu_race.h"
 #include "stats/subsys/fork_storm.h"
 #include "stats/subsys/fou_gue_mcast_rx.h"
 #include "stats/subsys/frontier.h"
@@ -866,6 +867,9 @@ struct stats_s {
 
 	/* flowtable_vlan accounting.  See stats/subsys/flowtable_vlan.h. */
 	struct flowtable_vlan_stats flowtable_vlan __attribute__((aligned(64)));
+
+	/* fnhe_pmtu_mtu_race accounting.  See stats/subsys/fnhe_pmtu_mtu_race.h. */
+	struct fnhe_pmtu_mtu_race_stats fnhe_pmtu_mtu_race __attribute__((aligned(64)));
 
 	/* slab_cache_thrash accounting.  See stats/subsys/slab_cache_thrash.h. */
 	struct slab_cache_thrash_stats slab_cache_thrash __attribute__((aligned(64)));

@@ -187,6 +187,7 @@ extern const struct stat_category fd_runtime_skipped_category;
 extern const struct stat_category fdstress_category;
 extern const struct stat_category flock_thrash_category;
 extern const struct stat_category flowtable_encap_vlan_category;
+extern const struct stat_category fnhe_pmtu_mtu_race_category;
 extern const struct stat_category fork_storm_category;
 extern const struct stat_category fou_gue_mcast_rx_category;
 extern const struct stat_category fs_lifecycle_category;

@@ -1088,6 +1088,15 @@ stats	object
     stats.ipv6_pmtu_race.ptb_sent_ok	u64
     stats.ipv6_pmtu_race.dellink_ok	u64
     stats.ipv6_pmtu_race.completed_ok	u64
+  stats.fnhe_pmtu_mtu_race	object
+    stats.fnhe_pmtu_mtu_race.runs	u64
+    stats.fnhe_pmtu_mtu_race.setup_failed	u64
+    stats.fnhe_pmtu_mtu_race.exceptions_installed	u64
+    stats.fnhe_pmtu_mtu_race.inject_failed	u64
+    stats.fnhe_pmtu_mtu_race.evictions_observed	u64
+    stats.fnhe_pmtu_mtu_race.mtu_flaps	u64
+    stats.fnhe_pmtu_mtu_race.negative_ctrl_runs	u64
+    stats.fnhe_pmtu_mtu_race.completed_ok	u64
   stats.vrf_fib_churn	object
     stats.vrf_fib_churn.runs	u64
     stats.vrf_fib_churn.setup_failed	u64
