@@ -112,6 +112,7 @@ stats	object
     stats.oracle.lsm_list_modules_anomalies	u64
     stats.oracle.listmount_anomalies	u64
     stats.oracle.statmount_anomalies	u64
+    stats.oracle.statmount_skipped	u64
     stats.oracle.getsockname_anomalies	u64
     stats.oracle.getpeername_anomalies	u64
     stats.oracle.file_getattr_anomalies	u64

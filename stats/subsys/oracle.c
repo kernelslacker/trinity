@@ -72,6 +72,7 @@ static const struct stat_field oracle_fields[] = {
 	STAT_FIELD_JSON_SUB(oracle, lsm_list_modules_oracle_anomalies,       "lsm_list_modules_anomalies"),
 	STAT_FIELD_JSON_SUB(oracle, listmount_oracle_anomalies,              "listmount_anomalies"),
 	STAT_FIELD_JSON_SUB(oracle, statmount_oracle_anomalies,              "statmount_anomalies"),
+	STAT_FIELD_JSON_SUB(oracle, statmount_oracle_skipped,                "statmount_skipped"),
 	STAT_FIELD_JSON_SUB(oracle, getsockname_oracle_anomalies,            "getsockname_anomalies"),
 	STAT_FIELD_JSON_SUB(oracle, getpeername_oracle_anomalies,            "getpeername_anomalies"),
 	STAT_FIELD_JSON_SUB(oracle, file_getattr_oracle_anomalies,           "file_getattr_anomalies"),
