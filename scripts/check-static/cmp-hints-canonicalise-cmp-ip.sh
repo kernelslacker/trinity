@@ -44,20 +44,21 @@ if ! ls cmp_hints/*.c >/dev/null 2>&1; then
 	echo "FAIL: $NAME: cmp_hints/*.c not found at $ROOT"
 	exit 1
 fi
-if [ ! -f kcov/collect.c ]; then
-	echo "FAIL: $NAME: kcov/collect.c not found at $ROOT"
+if [ ! -f kcov/transition-hash.c ]; then
+	echo "FAIL: $NAME: kcov/transition-hash.c not found at $ROOT"
 	exit 1
 fi
 
 # 1. kcov_canon_cmp_ip body must subtract kcov_kaslr_base.
+# Definition lives in kcov/transition-hash.c (carved from collect.c).
 canon_body="$(awk '
 	/^unsigned long kcov_canon_cmp_ip\(/ { in_body = 1 }
 	in_body { print }
 	in_body && /^}/ { exit }
-' kcov/collect.c)"
+' kcov/transition-hash.c)"
 
 if [ -z "$canon_body" ]; then
-	echo "FAIL: $NAME: kcov_canon_cmp_ip() definition not found in kcov/collect.c"
+	echo "FAIL: $NAME: kcov_canon_cmp_ip() definition not found in kcov/transition-hash.c"
 	exit 1
 fi
 
