@@ -241,7 +241,12 @@ static void post_pselect6(struct syscallrecord *rec)
 struct syscallentry syscall_pselect6 = {
 	.name = "pselect6",
 	.num_args = 6,
-	.flags = AVOID_SYSCALL | NEED_ALARM | REEXEC_SANITISE_OK, // Can cause the fuzzer to hang without timeout firing
+	/* Can cause the fuzzer to hang without timeout firing (AVOID_SYSCALL|
+	 * NEED_ALARM).  sanitise_pselect6 is re-exec clean (fd-set population
+	 * + zmalloc_tracked snap; stats counter increments are benign): keep
+	 * REEXEC_SANITISE_OK.  AVOID_REEXEC belt-and-braces alongside
+	 * AVOID_SYSCALL. */
+	.flags = AVOID_SYSCALL | NEED_ALARM | AVOID_REEXEC | REEXEC_SANITISE_OK,
 	.argtype = { [0] = ARG_LEN, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS, [5] = ARG_ADDRESS },
 	.argname = { [0] = "n", [1] = "inp", [2] = "outp", [3] = "exp", [4] = "tsp", [5] = "sig" },
 	.sanitise = sanitise_pselect6,

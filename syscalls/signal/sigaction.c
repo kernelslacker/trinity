@@ -415,6 +415,9 @@ struct syscallentry syscall_sigaction = {
 	.argname = { [0] = "sig", [1] = "act", [2] = "oact" },
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = _NSIG,
-	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,
+	/* sanitise_rt_sigaction is re-exec clean (heap allocs + post_state
+	 * only, no global side effects): keep REEXEC_SANITISE_OK.  AVOID_REEXEC
+	 * belt-and-braces alongside AVOID_SYSCALL. */
+	.flags = AVOID_SYSCALL | AVOID_REEXEC | REEXEC_SANITISE_OK,
 	.rettype = RET_ZERO_SUCCESS,
 };

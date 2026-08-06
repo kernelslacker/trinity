@@ -400,6 +400,11 @@ struct syscallentry syscall_ptrace = {
 	.sanitise = sanitise_ptrace,
 	.post = post_ptrace,
 
-	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,
+	/* sanitise_ptrace is re-exec clean (heap allocs + post_state_install
+	 * only, no global resource claims or process spawns): keep
+	 * REEXEC_SANITISE_OK.  AVOID_REEXEC belt-and-braces alongside
+	 * AVOID_SYSCALL so a future flag rework cannot silently expose
+	 * this entry to re-exec with the standing 'audited' attestation. */
+	.flags = AVOID_SYSCALL | AVOID_REEXEC | REEXEC_SANITISE_OK,
 	.rettype = RET_BORING,
 };

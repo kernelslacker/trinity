@@ -89,7 +89,12 @@ static void post_alarm(struct syscallrecord *rec)
 }
 
 struct syscallentry syscall_alarm = {
-	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,	/* we rely on a useful alarm for every syscall. */
+	/* We rely on a useful alarm for every syscall (AVOID_SYSCALL).
+	 * sanitise_alarm is re-exec clean (zmalloc_tracked snap only, no
+	 * global side effects): keep REEXEC_SANITISE_OK.  AVOID_REEXEC
+	 * belt-and-braces so a future flag rework cannot silently expose
+	 * this entry with the standing 'audited' attestation. */
+	.flags = AVOID_SYSCALL | AVOID_REEXEC | REEXEC_SANITISE_OK,
 	.name = "alarm",
 	.group = GROUP_TIME,
 	.num_args = 1,

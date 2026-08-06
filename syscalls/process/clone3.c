@@ -256,7 +256,11 @@ struct syscallentry syscall_clone3 = {
 	.name = "clone3",
 	.group = GROUP_PROCESS,
 	.num_args = 2,
-	.flags = AVOID_SYSCALL | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
+	/* sanitise_clone3 calls try_admit_newnet() which increments a global
+	 * in-flight counter; a re-exec would re-admit without the prior
+	 * post_clone3 release having fired, risking counter imbalance.
+	 * AVOID_REEXEC belt-and-braces alongside AVOID_SYSCALL. */
+	.flags = AVOID_SYSCALL | KCOV_REMOTE_HEAVY | AVOID_REEXEC,
 	.argtype = { [0] = ARG_STRUCT_PTR_IN, [1] = ARG_STRUCT_SIZE },
 	.argname = { [0] = "uargs", [1] = "size" },
 	.sanitise = sanitise_clone3,
