@@ -622,6 +622,31 @@ static int load_sockopt_efault_probe(void)
 }
 
 /*
+ * Load a minimal pass-through program for BPF_CGROUP_SETSOCKOPT.
+ * Returns 1 (allow) without touching ctx->optlen, so the kernel option
+ * handler runs normally.  expected_attach_type is required by the
+ * CGROUP_SOCKOPT verifier path.
+ */
+static int load_sockopt_passthrough(void)
+{
+	struct bpf_insn insns[] = {
+		EBPF_MOV64_IMM(BPF_REG_0, 1),
+		EBPF_EXIT(),
+	};
+	union bpf_attr attr;
+	char license[] = "GPL";
+
+	memset(&attr, 0, sizeof(attr));
+	attr.prog_type = BPF_PROG_TYPE_CGROUP_SOCKOPT;
+	attr.insn_cnt = ARRAY_SIZE(insns);
+	attr.insns = (uintptr_t)insns;
+	attr.license = (uintptr_t)license;
+	attr.expected_attach_type = BPF_CGROUP_SETSOCKOPT;
+
+	return sys_bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
+}
+
+/*
  * Combo D — CGROUP_SETSOCKOPT lifecycle with EFAULT-based hook detection.
  *
  * The SOCKET_FILTER and CGROUP_SKB combos above verify that programs can
@@ -702,7 +727,17 @@ static bool combo_cgroup_sockopt(struct childdata *child,
 		return false;
 	}
 
-	prog_fd = load_sockopt_efault_probe();
+	/*
+	 * BPF_CGROUP_SETSOCKOPT fires before the kernel option handler.
+	 * Always attaching the EFAULT probe blocks every setsockopt call
+	 * and kills real kernel-level option processing.  Use the probe on
+	 * ~1-in-8 bursts as a positive control and the pass-through
+	 * otherwise so the data path stays live most of the time.
+	 */
+	bool use_efault = (rnd_modulo_u32(8) == 0);
+
+	prog_fd = use_efault ? load_sockopt_efault_probe()
+			     : load_sockopt_passthrough();
 	(*direct_calls)++;
 	if (prog_fd < 0) {
 		if (errno == EPERM || errno == EACCES) {
@@ -765,7 +800,10 @@ static bool combo_cgroup_sockopt(struct childdata *child,
 			reached++;
 	}
 
-	if (reached)
+	/* Only count EFAULTs as confirmed hook reach when the probe was
+	 * actually attached this burst; pass-through runs cannot produce
+	 * EFAULT so there is nothing to count. */
+	if (use_efault && reached)
 		__atomic_add_fetch(&shm->stats.bpf_lifecycle.triggered,
 				   reached, __ATOMIC_RELAXED);
 
@@ -784,7 +822,7 @@ out:
 		close(prog_fd);
 	if (cgroup_fd >= 0)
 		close(cgroup_fd);
-	return reached > 0;
+	return attached;
 }
 
 /*

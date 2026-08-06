@@ -465,14 +465,22 @@ bool bpf_cgroup_attach(struct childdata *child)
 	c = &combos[rnd_modulo_u32(ARRAY_SIZE(combos))];
 
 	/*
-	 * For SOCKOPT combos load the EFAULT probe program instead of the
-	 * plain pass-through.  The probe bumps ctx->optlen past max_optlen
-	 * so every setsockopt/getsockopt call that returns EFAULT proves
-	 * the hook actually ran.  For all other attach types the
-	 * pass-through (r0 = 1; exit) is sufficient.
+	 * For SOCKOPT combos the EFAULT probe confirms hook reach.  However,
+	 * BPF_CGROUP_SETSOCKOPT runs *before* the kernel option handler, so
+	 * attaching the probe on every burst means every setsockopt call
+	 * returns EFAULT and the real handler never executes.  Limit the
+	 * probe to ~1-in-8 bursts for SETSOCKOPT so real setsockopt traffic
+	 * flows the rest of the time.  BPF_CGROUP_GETSOCKOPT runs after the
+	 * kernel handler and never blocks real traffic, so its probe fires
+	 * unconditionally.  sockopt_hook_reach is naturally keyed to
+	 * probe-was-attached: the pass-through cannot produce EFAULT.
 	 */
-	prog_fd = is_sockopt_combo(c) ? load_efault_probe_prog(c)
-				      : load_allow_prog(c);
+	bool use_efault_probe = is_sockopt_combo(c) &&
+		(c->attach_type != BPF_CGROUP_SETSOCKOPT ||
+		 rnd_modulo_u32(8) == 0);
+
+	prog_fd = use_efault_probe ? load_efault_probe_prog(c)
+				   : load_allow_prog(c);
 	direct_calls++;
 	if (prog_fd < 0) {
 		if (errno == EPERM || errno == EACCES) {
