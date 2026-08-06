@@ -102,6 +102,6 @@ struct syscallentry syscall_readahead = {
 	.argname = { [0] = "fd", [1] = "offset", [2] = "count" },
 	.sanitise = sanitise_readahead,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 };

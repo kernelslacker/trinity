@@ -72,5 +72,6 @@ struct syscallentry syscall_landlock_add_rule = {
 	.arg_params[1].list = ARGLIST(landlock_ruletypes),
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
+	.flags = REEXEC_SANITISE_OK,
 	.sanitise = sanitise_landlock_add_rule,
 };
