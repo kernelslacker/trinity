@@ -133,15 +133,10 @@ const struct netproto proto_rds = {
  *        RDS_CMSG_RDMA_STATUS notifications
  *     -> close()
  *
- * RDMA hardware reality.  A box with no IB or iWARP wired up uses
- * rds_tcp as its transport.  rds_rdma_map() checks
- * rs->rs_transport->get_mr early; TCP's transport ops leave get_mr
- * NULL and the call returns -EOPNOTSUPP without touching the user
- * buffer.  The cmsg parser (rds_cmsg_send → rds_cmsg_rdma_map /
- * rds_cmsg_rdma_args / rds_cmsg_atomic_*) has already dispatched by
- * then, which is the surface this grammar exists for.  All five arms
- * are reachable on any RDS-enabled kernel; the RDMA and atomic arms
- * gracefully degrade to parser-only walks on TCP-only boxes.
+ * Transport reality.  The grammar binds only loopback addresses; due to
+ * rds_tcp_transport.t_prefer_loopback = 1, __rds_conn_create() always
+ * overrides rs_transport to rds_loop_transport regardless of
+ * SO_RDS_TRANSPORT — net/rds/tcp*.c is structurally unreachable today.
  *
  * needs_listen_accept = false.  RDS has no listen()/accept() — the
  * SEQPACKET semantics are datagram-style on top of an in-kernel
@@ -213,7 +208,25 @@ static int rds_bind_or_connect(int fd, __unused__ struct socket_triplet *triplet
 		memset(&sin, 0, sizeof(sin));
 		sin.sin_family = AF_INET;
 		sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		sin.sin_port = 0;
+		/* 25%: use an explicit port to exercise bind error arms */
+		if (rnd_modulo_u32(4) == 0) {
+			switch (rnd_modulo_u32(3)) {
+			case 0:
+				/* RDS_FLAG_PROBE_PORT == 1: EINVAL arm */
+				sin.sin_port = htons(1);
+				break;
+			case 1:
+				/* random port — may collide with sibling: EADDRINUSE arm */
+				sin.sin_port = htons(rnd_modulo_u32(65536));
+				break;
+			default:
+				/* ordinary port in 1024–61023 */
+				sin.sin_port = htons(1024 + rnd_modulo_u32(60000));
+				break;
+			}
+		} else {
+			sin.sin_port = 0;
+		}
 		if (bind(fd, (struct sockaddr *) &sin, sizeof(sin)) < 0)
 			return -1;
 		rds_bound_family = AF_INET;
