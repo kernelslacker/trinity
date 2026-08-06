@@ -7,7 +7,9 @@ struct uffd_fault_move_stats {
 	unsigned long v1_resolve_fail;		/* resolve ioctl returned -1 */
 	/* variant 2: UFFDIO_MOVE / swap-cache race */
 	unsigned long v2_move_ok;		/* UFFDIO_MOVE completed */
-	unsigned long v2_move_fail;		/* UFFDIO_MOVE returned -1 */
+	unsigned long v2_move_fail;		/* UFFDIO_MOVE returned -1 (non-EINVAL) */
+	unsigned long v2_move_einval;		/* UFFDIO_MOVE returned -EINVAL */
+	unsigned long v2_move_skipped;		/* invocation: UFFDIO_MOVE never attempted */
 	/* variant 3: teardown race (close/UNREGISTER/munmap racing fault) */
 	unsigned long v3_teardown_ok;		/* teardown action issued */
 	unsigned long v3_teardown_fail;		/* teardown action failed */

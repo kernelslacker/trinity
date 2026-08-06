@@ -276,6 +276,8 @@ stats	object
     stats.uffd_fault_move.v1_resolve_fail	u64
     stats.uffd_fault_move.v2_move_ok	u64
     stats.uffd_fault_move.v2_move_fail	u64
+    stats.uffd_fault_move.v2_move_einval	u64
+    stats.uffd_fault_move.v2_move_skipped	u64
     stats.uffd_fault_move.v3_teardown_ok	u64
     stats.uffd_fault_move.v3_teardown_fail	u64
     stats.uffd_fault_move.oracle_checks_run	u64

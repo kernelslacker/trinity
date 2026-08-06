@@ -12,6 +12,8 @@ static const struct stat_field uffd_fault_move_fields[] = {
 	STAT_FIELD_SUB(uffd_fault_move, v1_resolve_fail),
 	STAT_FIELD_SUB(uffd_fault_move, v2_move_ok),
 	STAT_FIELD_SUB(uffd_fault_move, v2_move_fail),
+	STAT_FIELD_SUB(uffd_fault_move, v2_move_einval),
+	STAT_FIELD_SUB(uffd_fault_move, v2_move_skipped),
 	STAT_FIELD_SUB(uffd_fault_move, v3_teardown_ok),
 	STAT_FIELD_SUB(uffd_fault_move, v3_teardown_fail),
 	STAT_FIELD_SUB(uffd_fault_move, oracle_checks_run),
