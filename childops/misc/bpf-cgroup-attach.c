@@ -87,8 +87,8 @@
 #define BPF_F_ALLOW_MULTI	(1U << 1)
 #endif
 
-/* Older UAPI headers may lack the SOCK_ADDR attach types.  Provide the
- * canonical numeric values from include/uapi/linux/bpf.h so this builds
+/* Older UAPI headers may lack SOCK_ADDR and SOCKOPT attach types.  Provide
+ * the canonical numeric values from include/uapi/linux/bpf.h so this builds
  * on stale kernel headers (Trinity targets a wide kernel range). */
 #ifndef BPF_CGROUP_INET4_CONNECT
 #define BPF_CGROUP_INET4_CONNECT	8
@@ -99,8 +99,17 @@
 #ifndef BPF_CGROUP_UDP4_RECVMSG
 #define BPF_CGROUP_UDP4_RECVMSG		19
 #endif
+#ifndef BPF_CGROUP_GETSOCKOPT
+#define BPF_CGROUP_GETSOCKOPT		21
+#endif
+#ifndef BPF_CGROUP_SETSOCKOPT
+#define BPF_CGROUP_SETSOCKOPT		22
+#endif
 #ifndef BPF_PROG_TYPE_CGROUP_SOCK_ADDR
 #define BPF_PROG_TYPE_CGROUP_SOCK_ADDR	18
+#endif
+#ifndef BPF_PROG_TYPE_CGROUP_SOCKOPT
+#define BPF_PROG_TYPE_CGROUP_SOCKOPT	25
 #endif
 
 #define BURST		4
@@ -119,11 +128,21 @@ struct attach_combo {
 };
 
 static const struct attach_combo combos[] = {
-	{ BPF_PROG_TYPE_CGROUP_SKB,       BPF_CGROUP_INET_INGRESS,  false },
-	{ BPF_PROG_TYPE_CGROUP_SKB,       BPF_CGROUP_INET_EGRESS,   false },
+	{ BPF_PROG_TYPE_CGROUP_SKB,      BPF_CGROUP_INET_INGRESS,  false },
+	{ BPF_PROG_TYPE_CGROUP_SKB,      BPF_CGROUP_INET_EGRESS,   false },
 	{ BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_INET4_CONNECT, true  },
 	{ BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_UDP4_SENDMSG,  true  },
 	{ BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_UDP4_RECVMSG,  true  },
+	/*
+	 * CGROUP_SOCKOPT: the kernel substitutes a tight kmalloc(ctx.optlen)
+	 * heap buffer for the user pointer on BPF context export when
+	 * optlen <= BPF_SOCKOPT_KERN_BUF_SIZE (32 bytes).  A pass-through
+	 * program is sufficient — setsockopt_burst() biases toward optlen
+	 * <= 32 to stay in that heap-buffer path.  expected_attach_type is
+	 * required at PROG_LOAD time (same as SOCK_ADDR).
+	 */
+	{ BPF_PROG_TYPE_CGROUP_SOCKOPT,  BPF_CGROUP_SETSOCKOPT,    true  },
+	{ BPF_PROG_TYPE_CGROUP_SOCKOPT,  BPF_CGROUP_GETSOCKOPT,    true  },
 };
 
 /*
@@ -153,6 +172,82 @@ static int load_allow_prog(const struct attach_combo *c)
 		attr.expected_attach_type = c->attach_type;
 
 	return sys_bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
+}
+
+static bool is_sockopt_combo(const struct attach_combo *c)
+{
+	return c->attach_type == BPF_CGROUP_SETSOCKOPT ||
+	       c->attach_type == BPF_CGROUP_GETSOCKOPT;
+}
+
+/*
+ * Drive CGROUP_SETSOCKOPT / CGROUP_GETSOCKOPT hooks on a UDP socket
+ * already inside the cgroup.  Bias toward optlen <= 32 — that is the
+ * BPF_SOCKOPT_KERN_BUF_SIZE threshold where the kernel allocates a tight
+ * kmalloc(ctx.optlen) on BPF context export, making any over-read into
+ * that buffer immediately KASAN-visible.
+ *
+ * Both set and get are issued for every option so a single burst drives
+ * both attach types.  The pass-through program (r0 = 1; exit) lets every
+ * call complete normally; optlen rewriting and level/optname decoupling
+ * are follow-on variants.
+ *
+ * Returns the number of setsockopt/getsockopt calls that reached the
+ * kernel (hook_calls_out) and the total syscall count through *calls_out.
+ */
+static void setsockopt_burst(unsigned int *calls_out,
+			     unsigned long *hook_calls_out)
+{
+	static const struct {
+		int		level;
+		int		optname;
+		unsigned int	optlen;
+	} opts[] = {
+		{ SOL_SOCKET, SO_REUSEADDR,  4  },	/* 4 B — tight kmalloc */
+		{ SOL_SOCKET, SO_KEEPALIVE,  4  },
+		{ SOL_SOCKET, SO_RCVBUF,     4  },
+		{ SOL_SOCKET, SO_SNDBUF,     4  },
+		{ SOL_SOCKET, SO_PRIORITY,   4  },
+		{ SOL_SOCKET, SO_RCVBUF,     16 },	/* 16 B — still < 32 */
+		{ SOL_SOCKET, SO_SNDBUF,     16 },
+		{ SOL_SOCKET, SO_KEEPALIVE,  32 },	/* 32 B — at the threshold */
+	};
+	uint8_t buf[32];
+	unsigned long hook_calls = 0;
+	unsigned int calls = 0;
+	unsigned int i;
+	int s;
+
+	s = socket(AF_INET, SOCK_DGRAM, 0);
+	calls++;
+	if (s < 0)
+		goto out;
+
+	for (i = 0; i < ARRAY_SIZE(opts); i++) {
+		socklen_t len = (socklen_t)opts[i].optlen;
+
+		memset(buf, 0, sizeof(buf));
+		buf[0] = 1;	/* non-zero value for boolean options */
+
+		/* setsockopt — drives hook at kernel entry before validation */
+		(void)setsockopt(s, opts[i].level, opts[i].optname,
+				 buf, opts[i].optlen);
+		calls++;
+		hook_calls++;
+
+		/* getsockopt — separate hook invocation, same kmalloc path */
+		len = (socklen_t)opts[i].optlen;
+		(void)getsockopt(s, opts[i].level, opts[i].optname,
+				 buf, &len);
+		calls++;
+		hook_calls++;
+	}
+
+	close(s);
+	calls++;
+out:
+	*calls_out = calls;
+	*hook_calls_out = hook_calls;
 }
 
 /* Drive the hook with a UDP loopback burst.  For CONNECT we additionally
@@ -219,8 +314,8 @@ bool bpf_cgroup_attach(struct childdata *child)
 	int prog_fd = -1;
 	bool attached = false;
 	uint32_t attach_flags;
-	unsigned int sent;
-	unsigned int burst_calls;
+	unsigned int sent = 0;
+	unsigned int burst_calls = 0;
 	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.runs, 1,
@@ -304,10 +399,18 @@ bool bpf_cgroup_attach(struct childdata *child)
 	/* Drive the hook in-burst.  Sibling children fuzzing in the same
 	 * cgroup at the same time supply the cross-process concurrency
 	 * the dispatch-vs-detach race window needs. */
-	sent = udp_burst(c->attach_type, &burst_calls);
+	if (is_sockopt_combo(c)) {
+		unsigned long hook_calls = 0;
+
+		setsockopt_burst(&burst_calls, &hook_calls);
+		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.sockopt_hook_calls,
+				   hook_calls, __ATOMIC_RELAXED);
+	} else {
+		sent = udp_burst(c->attach_type, &burst_calls);
+		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.packets_sent,
+				   sent, __ATOMIC_RELAXED);
+	}
 	direct_calls += burst_calls;
-	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.packets_sent,
-			   sent, __ATOMIC_RELAXED);
 
 	/* Detach mid-stream — the bug window is "hook fires while
 	 * detach is mutating cgrp->bpf.effective[]". */
@@ -324,10 +427,18 @@ bool bpf_cgroup_attach(struct childdata *child)
 
 	/* Post-detach burst — exercises the immediately-after-detach
 	 * dispatch path; this is where stale-array UAFs surface. */
-	sent = udp_burst(c->attach_type, &burst_calls);
+	if (is_sockopt_combo(c)) {
+		unsigned long hook_calls = 0;
+
+		setsockopt_burst(&burst_calls, &hook_calls);
+		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.sockopt_hook_calls,
+				   hook_calls, __ATOMIC_RELAXED);
+	} else {
+		sent = udp_burst(c->attach_type, &burst_calls);
+		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.post_detach_sent,
+				   sent, __ATOMIC_RELAXED);
+	}
 	direct_calls += burst_calls;
-	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.post_detach_sent,
-			   sent, __ATOMIC_RELAXED);
 
 out:
 	if (attached) {
