@@ -475,6 +475,9 @@ void json_emit_tcp_ipv6_and_tunnels_section(void)
 	stat_category_emit_json(&ipv6_pmtu_race_category);
 
 	printf(",");
+	stat_category_emit_json(&fnhe_pmtu_mtu_race_category);
+
+	printf(",");
 	stat_category_emit_json(&vrf_fib_churn_category);
 
 	printf(",");
