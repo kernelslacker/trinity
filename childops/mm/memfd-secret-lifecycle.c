@@ -14,26 +14,37 @@
  *   3. mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0)
  *   4. Write canary byte to every page
  *   5. Start concurrent ftruncate thread (races steps 6-8)
- *   6. fork() oracle child -- attempts cross-process reads (see below),
- *      then exits; parent waits
+ *   6. fork() oracle child -- creates its own secret + anon mappings,
+ *      sets PR_SET_DUMPABLE so the parent can ptrace-read it, sends
+ *      both addresses back to the parent via a pipe, then sleeps;
+ *      parent attempts cross-process reads and waits for the child
  *   7. mremap(buf, size, size*2, MREMAP_MAYMOVE) -- extend
  *   8. mprotect(buf, PAGE_SIZE, PROT_READ) -- partial protection
  *   9. munmap + close(fd) -- teardown; stop concurrent thread
  *
- * Negative cross-process oracle (in the forked child):
- *   - process_vm_readv() targeting parent's secret mapping -- expect EPERM
- *   - open(/proc/<ppid>/mem, O_RDONLY|O_NONBLOCK) + pread into secret range
- *     -- expect EPERM or EIO
- *   If a read SUCCEEDS (returns >0) the oracle fires:
- *     outputerr("memfd_secret: content readable cross-process via <method>"
- *               " -- oracle fired")
- *   Correct denials bump oracle_pass; incorrect successes bump oracle_fired.
+ * Cross-process confidentiality oracle (run by the PARENT):
+ *
+ *   The oracle child creates a secretmem mapping and a plain anon
+ *   mapping in its own address space, marks itself dumpable, then
+ *   delivers both addresses to the parent via a pipe.  The parent
+ *   attempts cross-process reads via two independent paths:
+ *
+ *     Path A: process_vm_readv(oracle_pid, ...)
+ *     Path B: open(/proc/<oracle_pid>/mem) + pread
+ *
+ *   For each path a mandatory positive control is run first: the same
+ *   read is attempted against the plain anon mapping.  If the control
+ *   read fails the environment -- not secretmem -- is doing the
+ *   denying, and the result is counted as oracle_inconclusive.  Only
+ *   when the control read succeeds is the secretmem read meaningful:
+ *   success => oracle_fired (kernel bug); denial => oracle_pass.
  *
  * Counters in shm->stats.memfd_secret_lifecycle:
- *   oracle_pass        -- negative checks correctly denied
- *   oracle_fired       -- negative checks incorrectly allowed (bug signal)
- *   conc_truncate_races -- concurrent ftruncate completions
- *   setup_rejected     -- memfd_secret not available (ENOSYS/EINVAL)
+ *   oracle_pass           -- secretmem reads correctly denied
+ *   oracle_fired          -- secretmem reads incorrectly succeeded (bug)
+ *   oracle_inconclusive   -- positive-control or setup prevented oracle
+ *   conc_truncate_races   -- concurrent ftruncate completions
+ *   setup_rejected        -- memfd_secret not available (ENOSYS/EINVAL)
  *
  * Direct syscall count is wired so check-static passes.
  */
@@ -46,6 +57,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -72,6 +84,15 @@
 
 /* Concurrent truncate thread: bounded iteration count. */
 #define TRUNC_ITERS	50U
+
+/* Size of the secretmem probe region created by the oracle child. */
+#define ORACLE_PROBE_SIZE	64U
+
+/* ------------------------------------------------------------------ */
+/* Process-local latch: set once on ENOSYS/EINVAL; stops re-probing.  */
+/* ------------------------------------------------------------------ */
+
+static bool secret_unsupported;
 
 /* ------------------------------------------------------------------ */
 /* Raw memfd_secret(2) wrapper (glibc may not expose it yet)           */
@@ -120,7 +141,6 @@ static void *truncate_thread(void *arg)
 		__attribute__((unused)) int tr1 = ftruncate(ctx->fd, ctx->size);
 
 		sc++;
-		sc++;
 		__atomic_add_fetch(&shm->stats.memfd_secret_lifecycle.conc_truncate_races,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -129,70 +149,82 @@ static void *truncate_thread(void *arg)
 }
 
 /* ------------------------------------------------------------------ */
-/* Oracle child: attempt cross-process reads of parent's secret range  */
+/* Oracle message: child delivers its mapping addresses to the parent  */
 /* ------------------------------------------------------------------ */
 
-static void __attribute__((noreturn)) oracle_child_fn(pid_t ppid, void *secret_addr, enum child_op_type op)
+struct oracle_msg {
+	void *secret_addr;	/* secretmem mmap, or NULL on setup failure */
+	void *anon_addr;	/* plain anon mmap (positive-control target) */
+};
+
+/* ------------------------------------------------------------------ */
+/* Oracle child: create secret + anon mappings, hand addresses to      */
+/* parent for cross-process read attempts, then sleep.                 */
+/* ------------------------------------------------------------------ */
+
+static void __attribute__((noreturn))
+oracle_child_fn(int pipefd_wr, enum child_op_type op)
 {
-	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
+	struct oracle_msg msg = { NULL, NULL };
 	unsigned long direct_calls = 0;
-	char tmpbuf[64];
-	struct iovec local_iov, remote_iov;
-	char path[80];
-	int procmem_fd;
-	ssize_t r;
+	int sfd;
 
-	/* --- process_vm_readv oracle --------------------------------- */
-	local_iov.iov_base  = tmpbuf;
-	local_iov.iov_len   = sizeof(tmpbuf);
-	remote_iov.iov_base = secret_addr;
-	remote_iov.iov_len  = sizeof(tmpbuf);
-
+	/* Create a secretmem mapping owned by this child process. */
 	direct_calls++;
-	r = syscall(__NR_process_vm_readv, (long)ppid,
-		    &local_iov, 1UL, &remote_iov, 1UL, 0UL);
-	if (r > 0) {
-		/* check-static: child-output-ok */
-		outputerr("memfd_secret: content readable cross-process via "
-			  "process_vm_readv -- oracle fired\n");
-		if (valid_op)
-			__atomic_add_fetch(
-				&shm->stats.memfd_secret_lifecycle.oracle_fired,
-				1, __ATOMIC_RELAXED);
-	} else {
-		if (valid_op)
-			__atomic_add_fetch(
-				&shm->stats.memfd_secret_lifecycle.oracle_pass,
-				1, __ATOMIC_RELAXED);
-	}
-
-	/* --- /proc/<ppid>/mem oracle --------------------------------- */
-	(void)snprintf(path, sizeof(path), "/proc/%d/mem", (int)ppid);
-	direct_calls++;
-	procmem_fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-	if (procmem_fd >= 0) {
+	sfd = do_memfd_secret(O_CLOEXEC);
+	if (sfd >= 0) {
 		direct_calls++;
-		r = pread(procmem_fd, tmpbuf, sizeof(tmpbuf),
-			  (off_t)(uintptr_t)secret_addr);
-		if (r > 0) {
-			/* check-static: child-output-ok */
-			outputerr("memfd_secret: content readable cross-process"
-				  " via /proc/pid/mem -- oracle fired\n");
-			if (valid_op)
-				__atomic_add_fetch(
-					&shm->stats.memfd_secret_lifecycle.oracle_fired,
-					1, __ATOMIC_RELAXED);
-		} else {
-			if (valid_op)
-				__atomic_add_fetch(
-					&shm->stats.memfd_secret_lifecycle.oracle_pass,
-					1, __ATOMIC_RELAXED);
+		if (ftruncate(sfd, (off_t)ORACLE_PROBE_SIZE) == 0) {
+			void *sm;
+
+			direct_calls++;
+			sm = mmap(NULL, ORACLE_PROBE_SIZE,
+				  PROT_READ | PROT_WRITE,
+				  MAP_SHARED, sfd, 0);
+			if (sm != MAP_FAILED) {
+				memset(sm, CANARY_BYTE, ORACLE_PROBE_SIZE);
+				msg.secret_addr = sm;
+			}
 		}
-		direct_calls++;
-		close(procmem_fd);
+		close(sfd);
 	}
 
-	/* Wire direct-syscall telemetry before exit so check-static passes. */
+	/* Create a plain anon mapping as the positive-control target. */
+	{
+		void *am;
+
+		direct_calls++;
+		am = mmap(NULL, ORACLE_PROBE_SIZE,
+			  PROT_READ | PROT_WRITE,
+			  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (am != MAP_FAILED) {
+			memset(am, (unsigned char)(CANARY_BYTE ^ 0x55u),
+			       ORACLE_PROBE_SIZE);
+			msg.anon_addr = am;
+		}
+	}
+
+	/* Allow the parent to ptrace-read this process for the check.
+	 * The trinity harness has already called PR_SET_DUMPABLE(false)
+	 * on the parent; the child inherits that but overrides it here so
+	 * parent->child process_vm_readv / /proc/pid/mem can succeed. */
+	direct_calls++;
+	(void)prctl(PR_SET_DUMPABLE, 1);
+
+	/* Deliver both mapping addresses; keep them alive for the
+	 * duration of the parent's oracle reads. */
+	{
+		__attribute__((unused)) ssize_t wr =
+			write(pipefd_wr, &msg, sizeof(msg));
+	}
+	close(pipefd_wr);
+
+	{
+		struct timespec ts = { 0, (long)ORACLE_BUDGET_NS };
+
+		(void)nanosleep(&ts, NULL);
+	}
+
 	childop_direct_syscalls_add(op, direct_calls);
 	_exit(0);
 }
@@ -219,13 +251,18 @@ bool memfd_secret_lifecycle(struct childdata *child)
 	bool thread_started = false;
 	size_t p;
 
+	/* ---- fast exit if already latched as unsupported ----------- */
+	if (secret_unsupported)
+		return false;
+
 	/* ---- availability probe ------------------------------------ */
 	direct_calls++;
 	fd = do_memfd_secret(O_CLOEXEC);
 	if (fd < 0) {
 		if (errno == ENOSYS || errno == EINVAL) {
+			secret_unsupported = true;
 			if (valid_op) {
-				__atomic_add_fetch(
+				__atomic_store_n(
 					&shm->stats.childop.latch_reason[op],
 					CHILDOP_LATCH_UNSUPPORTED,
 					__ATOMIC_RELAXED);
@@ -241,6 +278,7 @@ bool memfd_secret_lifecycle(struct childdata *child)
 		return true;
 	}
 
+	direct_calls++;
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	/* ---- ftruncate: size to 2 pages --------------------------- */
@@ -282,38 +320,191 @@ bool memfd_secret_lifecycle(struct childdata *child)
 	}
 
 	/* ---- fork oracle child ------------------------------------ */
-	direct_calls++;
-	oracle_pid = fork();
-	if (oracle_pid == 0) {
-		/* Oracle child: stop the thread reference (inherited but
-		 * the thread itself doesn't survive across fork on Linux),
-		 * then run oracle and exit. */
-		oracle_child_fn(getppid(), buf, op);
-		/* NOTREACHED */
-	}
+	{
+		int pipefds[2];
+		struct oracle_msg omsg = { NULL, NULL };
+		struct timespec pipe_start;
+		bool got_msg = false;
 
-	/* ---- wait for oracle child, bounded ----------------------- */
-	if (oracle_pid > 0) {
-		while (1) {
-			pid_t r = waitpid_eintr(oracle_pid, &status, WNOHANG);
+		if (pipe2(pipefds, O_CLOEXEC) < 0)
+			pipefds[0] = pipefds[1] = -1;
 
-			direct_calls++;
-			if (r == oracle_pid)
-				break;
-			if (r < 0 && errno != EINTR) {
-				(void)kill(oracle_pid, SIGKILL);
-				(void)waitpid_eintr(oracle_pid, &status, 0);
-				break;
+		direct_calls++;
+		oracle_pid = fork();
+		if (oracle_pid == 0) {
+			/* Oracle child: close read end and hand off. */
+			if (pipefds[0] >= 0)
+				close(pipefds[0]);
+			oracle_child_fn(pipefds[1] >= 0 ? pipefds[1] : -1,
+					op);
+			/* NOTREACHED */
+		}
+
+		/* Parent: close write end, read address message. */
+		if (pipefds[1] >= 0)
+			close(pipefds[1]);
+
+		if (oracle_pid > 0 && pipefds[0] >= 0) {
+			ssize_t nr;
+
+			clock_gettime(CLOCK_MONOTONIC, &pipe_start);
+			fcntl(pipefds[0], F_SETFL, O_NONBLOCK);
+			do {
+				nr = read(pipefds[0], &omsg, sizeof(omsg));
+			} while (nr < 0 && errno == EAGAIN &&
+				 !budget_elapsed_ns(&pipe_start,
+						    ORACLE_BUDGET_NS / 4));
+			if (nr == (ssize_t)sizeof(omsg))
+				got_msg = true;
+		}
+		if (pipefds[0] >= 0)
+			close(pipefds[0]);
+
+		/* ---- positive-control + confidentiality oracle -------- */
+		if (oracle_pid > 0) {
+			if (!got_msg || !omsg.anon_addr || !omsg.secret_addr) {
+				/* Setup failed in child; cannot run oracle. */
+				if (valid_op)
+					__atomic_add_fetch(
+						&shm->stats.memfd_secret_lifecycle.oracle_inconclusive,
+						1, __ATOMIC_RELAXED);
+			} else {
+				char tbuf[ORACLE_PROBE_SIZE];
+				struct iovec liov, riov;
+				ssize_t r;
+
+				/* -- process_vm_readv arm -------------------- */
+				liov.iov_base = tbuf;
+				liov.iov_len  = sizeof(tbuf);
+
+				/* Positive control: anon page must be readable
+				 * before the secretmem result is meaningful. */
+				riov.iov_base = omsg.anon_addr;
+				riov.iov_len  = sizeof(tbuf);
+				direct_calls++;
+				r = syscall(__NR_process_vm_readv,
+					    (long)oracle_pid,
+					    &liov, 1UL, &riov, 1UL, 0UL);
+				if (r <= 0) {
+					/* Anon read denied: attribute to
+					 * ambient policy, not secretmem. */
+					if (valid_op)
+						__atomic_add_fetch(
+							&shm->stats.memfd_secret_lifecycle.oracle_inconclusive,
+							1, __ATOMIC_RELAXED);
+				} else {
+					/* Control passed: now probe secretmem. */
+					riov.iov_base = omsg.secret_addr;
+					riov.iov_len  = sizeof(tbuf);
+					direct_calls++;
+					r = syscall(__NR_process_vm_readv,
+						    (long)oracle_pid,
+						    &liov, 1UL,
+						    &riov, 1UL, 0UL);
+					if (r > 0) {
+						/* check-static: child-output-ok */
+						outputerr("memfd_secret: content"
+							  " readable cross-process"
+							  " via process_vm_readv"
+							  " -- oracle fired\n");
+						if (valid_op)
+							__atomic_add_fetch(
+								&shm->stats.memfd_secret_lifecycle.oracle_fired,
+								1, __ATOMIC_RELAXED);
+					} else {
+						if (valid_op)
+							__atomic_add_fetch(
+								&shm->stats.memfd_secret_lifecycle.oracle_pass,
+								1, __ATOMIC_RELAXED);
+					}
+				}
+
+				/* -- /proc/<pid>/mem arm --------------------- */
+				{
+					char path[80];
+					int pmfd;
+
+					(void)snprintf(path, sizeof(path),
+						       "/proc/%d/mem",
+						       (int)oracle_pid);
+					direct_calls++;
+					pmfd = open(path,
+						    O_RDONLY | O_NONBLOCK |
+						    O_CLOEXEC);
+					if (pmfd >= 0) {
+						/* Positive control: anon page. */
+						direct_calls++;
+						r = pread(pmfd, tbuf,
+							  sizeof(tbuf),
+							  (off_t)(uintptr_t)omsg.anon_addr);
+						if (r <= 0) {
+							/* Anon denied: inconclusive. */
+							if (valid_op)
+								__atomic_add_fetch(
+									&shm->stats.memfd_secret_lifecycle.oracle_inconclusive,
+									1, __ATOMIC_RELAXED);
+						} else {
+							/* Control passed: probe secretmem. */
+							direct_calls++;
+							r = pread(pmfd, tbuf,
+								  sizeof(tbuf),
+								  (off_t)(uintptr_t)omsg.secret_addr);
+							if (r > 0) {
+								/* check-static: child-output-ok */
+								outputerr("memfd_secret: content"
+									  " readable cross-process"
+									  " via /proc/pid/mem"
+									  " -- oracle fired\n");
+								if (valid_op)
+									__atomic_add_fetch(
+										&shm->stats.memfd_secret_lifecycle.oracle_fired,
+										1, __ATOMIC_RELAXED);
+							} else {
+								if (valid_op)
+									__atomic_add_fetch(
+										&shm->stats.memfd_secret_lifecycle.oracle_pass,
+										1, __ATOMIC_RELAXED);
+							}
+						}
+						direct_calls++;
+						close(pmfd);
+					} else {
+						/* /proc/pid/mem open failed:
+						 * cannot attribute to secretmem. */
+						if (valid_op)
+							__atomic_add_fetch(
+								&shm->stats.memfd_secret_lifecycle.oracle_inconclusive,
+								1, __ATOMIC_RELAXED);
+					}
+				}
 			}
-			if (budget_elapsed_ns(&start, ORACLE_BUDGET_NS)) {
-				(void)kill(oracle_pid, SIGKILL);
-				(void)waitpid_eintr(oracle_pid, &status, 0);
-				break;
-			}
-			{
-				struct timespec ts = { 0, 500000L }; /* 0.5 ms */
 
-				(void)nanosleep(&ts, NULL);
+			/* ---- wait for oracle child, bounded ----------- */
+			while (1) {
+				pid_t wr = waitpid_eintr(oracle_pid,
+							 &status, WNOHANG);
+
+				direct_calls++;
+				if (wr == oracle_pid)
+					break;
+				if (wr < 0 && errno != EINTR) {
+					(void)kill(oracle_pid, SIGKILL);
+					(void)waitpid_eintr(oracle_pid,
+							    &status, 0);
+					break;
+				}
+				if (budget_elapsed_ns(&start,
+						      ORACLE_BUDGET_NS)) {
+					(void)kill(oracle_pid, SIGKILL);
+					(void)waitpid_eintr(oracle_pid,
+							    &status, 0);
+					break;
+				}
+				{
+					struct timespec ts = { 0, 500000L };
+
+					(void)nanosleep(&ts, NULL);
+				}
 			}
 		}
 	}
