@@ -72,6 +72,28 @@
  */
 #define CHILD_MEMLOCK_CAP	(256UL << 20)	/* per-child locked-memory cap (see munge_process) */
 
+/*
+ * Index of the /sys/fs/cgroup/trinity{0..7} cgroup this child was
+ * placed in by munge_process().  -1 means the placement did not
+ * happen (cgroup pool not pre-created, or the open/write failed).
+ *
+ * Per-child file-static: each forked child gets its own copy.
+ * Exported via child_cgroup_slot() so BPF childops can attach to
+ * the same cgroup the child is actually a member of.
+ */
+static int child_cgroup_idx = -1;
+
+/*
+ * Return the cgroup index this child joined in munge_process(), or
+ * -1 if the join was skipped (pool not pre-created).  BPF childops
+ * use this to attach to the cgroup the running task is actually in
+ * so the hook fires correctly.
+ */
+int child_cgroup_slot(void)
+{
+	return child_cgroup_idx;
+}
+
 static void munge_process(void)
 {
 	static const int extra_ns_flags[] = {
@@ -138,17 +160,44 @@ static void munge_process(void)
 	/*
 	 * Best-effort cgroup migration.  Trinity can pre-create numbered
 	 * cgroups (/sys/fs/cgroup/trinity0..7) as writable directories;
-	 * if they don't exist we skip silently.
+	 * if they don't exist we skip silently but note it once so the
+	 * operator can see that BPF cgroup hooks will not fire.
+	 *
+	 * NOTE: nothing in-tree creates /sys/fs/cgroup/trinity0..7.
+	 * cgroup-churn.c uses trinity-<pid>-<seq> and the supervisor
+	 * uses trinity-kill-<pid>.  The numbered pool is a setup-time
+	 * requirement: create them before running Trinity if you want
+	 * BPF cgroup childops to fire.
 	 */
-	snprintf(cgpath, sizeof(cgpath), "/sys/fs/cgroup/trinity%u/cgroup.procs",
-		 rnd_modulo_u32(8));
-	fd = open(cgpath, O_WRONLY);
-	if (fd >= 0) {
-		char pidbuf[16];
-		int len = snprintf(pidbuf, sizeof(pidbuf), "%d", mypid());
-		ssize_t ret __attribute__((unused));
-		ret = write(fd, pidbuf, (size_t) len);
-		(void) close(fd);
+	{
+		static bool cgroup_pool_warned;
+		unsigned int cg_idx = rnd_modulo_u32(8);
+
+		snprintf(cgpath, sizeof(cgpath),
+			 "/sys/fs/cgroup/trinity%u/cgroup.procs", cg_idx);
+		fd = open(cgpath, O_WRONLY);
+		if (fd >= 0) {
+			char pidbuf[16];
+			int len = snprintf(pidbuf, sizeof(pidbuf), "%d", mypid());
+			ssize_t ret = write(fd, pidbuf, (size_t) len);
+
+			if (ret > 0)
+				child_cgroup_idx = (int) cg_idx;
+			(void) close(fd);
+		} else {
+			/*
+			 * Latch a one-shot warning so "cgroup pool absent"
+			 * is visible in logs rather than silently inferred
+			 * from zero BPF hook traffic.
+			 */
+			if (!__atomic_exchange_n(&cgroup_pool_warned, true,
+						 __ATOMIC_RELAXED))
+				outputerr("munge_process: /sys/fs/cgroup/trinity%u "
+					  "not accessible (errno=%d); "
+					  "/sys/fs/cgroup/trinity0..7 must be "
+					  "pre-created for BPF cgroup childops "
+					  "to fire\n", cg_idx, errno);
+		}
 	}
 
 	/* Randomly tighten a subset of resource limits. */
