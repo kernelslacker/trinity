@@ -45,7 +45,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
-#include <linux/userfaultfd.h>
+#include "kernel/userfaultfd.h"
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
@@ -161,7 +161,7 @@ bool uffd_churn(struct childdata *child)
 		 * (flags & ~UFFD_USER_VALID_FLAGS) rejection path which the
 		 * O_CLOEXEC|O_NONBLOCK pair above never reaches. */
 		fd = do_userfaultfd(
-			(int)RAND_NEGATIVE_OR(O_CLOEXEC | O_NONBLOCK));
+			(int)RAND_NEGATIVE_OR(O_CLOEXEC | O_NONBLOCK | UFFD_USER_MODE_ONLY));
 		direct_calls++;
 		if (fd < 0) {
 			/* EPERM: vm.unprivileged_userfaultfd=0 and we lack
