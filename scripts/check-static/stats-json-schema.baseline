@@ -259,6 +259,11 @@ stats	object
     stats.mremap_merge_matrix.checks_run	u64
     stats.mremap_merge_matrix.tag_mismatch	u64
     stats.mremap_merge_matrix.topology_unexpected	u64
+  stats.thp_split_ref_race	object
+    stats.thp_split_ref_race.split_trigger_rounds	u64
+    stats.thp_split_ref_race.thp_split_while_ref_held	u64
+    stats.thp_split_ref_race.thp_no_race	u64
+    stats.thp_split_ref_race.content_mismatch	u64
   stats.uffd_fault_move	object
     stats.uffd_fault_move.v1_resolve_ok	u64
     stats.uffd_fault_move.v1_resolve_fail	u64

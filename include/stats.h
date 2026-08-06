@@ -191,6 +191,7 @@
 #include "stats/subsys/tty_ldisc_churn.h"
 #include "stats/subsys/ublk_lifecycle.h"
 #include "stats/subsys/uffd.h"
+#include "stats/subsys/thp_split_ref_race.h"
 #include "stats/subsys/uffd_fault_move.h"
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/umount_race.h"
@@ -998,6 +999,10 @@ struct stats_s {
 	/* mremap_merge_matrix oracle childop counters.
 	 * See stats/subsys/mremap_merge_matrix.h. */
 	struct mremap_merge_matrix_stats mremap_merge_matrix __attribute__((aligned(64)));
+
+	/* thp_split_ref_race oracle and race-landing counters.
+	 * See stats/subsys/thp_split_ref_race.h. */
+	struct thp_split_ref_race_stats thp_split_ref_race __attribute__((aligned(64)));
 
 	/* uffd_fault_move childop counters (fault-resolve matrix, MOVE race,
 	 * teardown race).  See stats/subsys/uffd_fault_move.h. */

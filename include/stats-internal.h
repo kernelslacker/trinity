@@ -221,6 +221,7 @@ extern const struct stat_category map_shared_stress_category;
 extern const struct stat_category memory_pressure_category;
 extern const struct stat_category memfd_secret_lifecycle_category;
 extern const struct stat_category mremap_merge_matrix_category;
+extern const struct stat_category thp_split_ref_race_category;
 extern const struct stat_category uffd_fault_move_category;
 extern const struct stat_category mount_churn_category;
 extern const struct stat_category mpls_label_stack_rx_category;
