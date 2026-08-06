@@ -290,6 +290,8 @@ void dump_stats_json_corruption_and_audit(void)
 			"\"sibling_mprotect_failed\":%lu,"
 			"\"destroy_object_idx\":%lu,"
 			"\"global_obj_uaf_caught\":%lu,"
+			"\"mseal_content_oracle_fail\":%lu,"
+			"\"mseal_unexpected_success\":%lu,"
 			"\"maps_pool_draw_exhausted\":%lu,"
 			"\"maps_reject_pool_empty\":%lu,"
 			"\"maps_reject_bogus_obj_ptr\":%lu,"
@@ -327,6 +329,7 @@ void dump_stats_json_corruption_and_audit(void)
 			"\"deferred_free_rw_restore_enomem\":%lu,"
 			"\"deferred_free_pre_dispatch_leaked\":%lu,"
 			"\"ring_evict_leaked\":%lu,"
+			"\"deferred_free_tracked_free_unverified_leak\":%lu,"
 			"\"deferred_free_gen_arena_admitted\":%lu,"
 			"\"deferred_free_gen_arena_retired_ok\":%lu,"
 			"\"deferred_free_gen_arena_retire_reject\":%lu,"
@@ -366,6 +369,8 @@ void dump_stats_json_corruption_and_audit(void)
 		shm->stats.diag.sibling_mprotect_failed,
 		shm->stats.diag.destroy_object_idx_corrupt,
 		shm->stats.diag.global_obj_uaf_caught,
+		shm->stats.diag.mseal_content_oracle_fail,
+		shm->stats.diag.mseal_unexpected_success,
 		shm->stats.maps.pool_draw_exhausted,
 		shm->stats.maps.reject_pool_empty,
 		shm->stats.maps.reject_bogus_obj_ptr,
@@ -410,6 +415,7 @@ void dump_stats_json_corruption_and_audit(void)
 		shm->stats.deferred_free.rw_restore_enomem,
 		shm->stats.deferred_free.pre_dispatch_leaked,
 		shm->stats.deferred_free.ring_evict_leaked,
+		shm->stats.deferred_free.tracked_free_unverified_leak,
 		shm->stats.deferred_free.gen_arena_admitted,
 		shm->stats.deferred_free.gen_arena_retired_ok,
 		shm->stats.deferred_free.gen_arena_retire_reject,

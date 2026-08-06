@@ -342,7 +342,6 @@ ALLOWLIST_PATTERNS=(
 	'tracefs_fuzzer\.ftrace_subset_skipped'
 	'diag\.local_obj_num_entries_corrupted'
 	'corrupt_ptr\.sample_seq'
-	'deferred_free\.tracked_free_unverified_leak'
 	'diag\.read_walk_aborted'
 	'diag\.write_walk_aborted'
 	'transition_edge\.calls_at_window_start'
