@@ -79,13 +79,13 @@
  * worker: the kernel arms it only when (XFRMA_SA_DIR == OUT) coincides
  * with a non-zero XFRMA_NAT_KEEPALIVE_INTERVAL on an encap-bearing SA.
  * UAPI-stable IDs; shim so a stripped <linux/xfrm.h> still builds. */
-#ifndef XFRMA_SA_DIR
+#ifndef HAVE_XFRMA_SA_DIR
 #define XFRMA_SA_DIR			33
 #endif
-#ifndef XFRMA_NAT_KEEPALIVE_INTERVAL
+#ifndef HAVE_XFRMA_NAT_KEEPALIVE_INTERVAL
 #define XFRMA_NAT_KEEPALIVE_INTERVAL	34
 #endif
-#ifndef XFRM_SA_DIR_OUT
+#ifndef HAVE_XFRM_SA_DIR
 #define XFRM_SA_DIR_IN			1
 #define XFRM_SA_DIR_OUT			2
 #endif

@@ -524,6 +524,55 @@ else
 fi
 
 #############################################################################################
+# xfrm UAPI enum probes -- XFRMA_SA_DIR, XFRMA_NAT_KEEPALIVE_INTERVAL, and
+# XFRM_SA_DIR_{IN,OUT} are enumerators, not macros; #ifndef guards are always
+# true and the shim fires regardless.  Probe via compile-test so the xfrm
+# headers can switch to #ifndef HAVE_* guards that correctly reflect
+# whether the kernel UAPI headers already supply the values.
+#
+echo -n "[*] Checking for XFRM_SA_DIR_{IN,OUT} (enum xfrm_sa_dir).. "
+rm -f "$TMP" || exit 1
+cat >"$TMP.c" << EOF
+#include <linux/xfrm.h>
+int main(void) { int x = XFRM_SA_DIR_OUT; return x; }
+EOF
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo "[missing]"
+else
+	echo $GREEN "[present]" $COL_RESET
+	echo "#define HAVE_XFRM_SA_DIR 1" >> $CONFIGH
+fi
+
+echo -n "[*] Checking for XFRMA_SA_DIR (enum xfrm_attr_type_t).. "
+rm -f "$TMP" || exit 1
+cat >"$TMP.c" << EOF
+#include <linux/xfrm.h>
+int main(void) { int x = XFRMA_SA_DIR; return x; }
+EOF
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo "[missing]"
+else
+	echo $GREEN "[present]" $COL_RESET
+	echo "#define HAVE_XFRMA_SA_DIR 1" >> $CONFIGH
+fi
+
+echo -n "[*] Checking for XFRMA_NAT_KEEPALIVE_INTERVAL (enum xfrm_attr_type_t).. "
+rm -f "$TMP" || exit 1
+cat >"$TMP.c" << EOF
+#include <linux/xfrm.h>
+int main(void) { int x = XFRMA_NAT_KEEPALIVE_INTERVAL; return x; }
+EOF
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo "[missing]"
+else
+	echo $GREEN "[present]" $COL_RESET
+	echo "#define HAVE_XFRMA_NAT_KEEPALIVE_INTERVAL 1" >> $CONFIGH
+fi
+
+#############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP
 check_header linux/if_alg.h USE_IF_ALG
