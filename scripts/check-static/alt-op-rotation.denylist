@@ -31,6 +31,7 @@
 CHILD_OP_SYSCALL                 OMIT-FROM-PICKER: off-dispatcher fallthrough; sequence-chain fast path in child/child.c handles it directly and it must not be selectable by the random picker
 CHILD_OP_BLKDEV_LIFECYCLE_RACE   REASON: lifecycle race; destabilises runs
 CHILD_OP_KVM_RUN_CHURN           REASON: hardware-state heavy; not safe steady
+CHILD_OP_KVM_MMU_RECLAIM_RACE    REASON: hardware-state heavy; not safe steady
 CHILD_OP_UBLK_LIFECYCLE          REASON: device lifecycle race
 CHILD_OP_NETNS_TEARDOWN_CHURN    REASON: netns teardown race
 CHILD_OP_IPV6_PMTU_TEARDOWN_RACE REASON: PMTU teardown race
