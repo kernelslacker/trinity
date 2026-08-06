@@ -16,6 +16,8 @@ static const struct stat_field pkt_builder_fields[] = {
 	STAT_FIELD_SUB(pkt_builder, delivered_ok),
 	STAT_FIELD_SUB(pkt_builder, delivery_failed),
 	STAT_FIELD_SUB(pkt_builder, delivery_disabled),
+	STAT_FIELD_SUB(pkt_builder, srh_probe_inert),
+	STAT_FIELD_SUB(pkt_builder, srh_nl_open_failed),
 	{ .name = "recipe_vxlan_eth_ip4",
 	  .offset = offsetof(struct stats_s, pkt_builder.per_recipe[0]) },
 	{ .name = "recipe_gretap_eth_ip4",

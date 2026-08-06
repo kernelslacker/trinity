@@ -19,6 +19,18 @@ struct pkt_builder_stats {
 	unsigned long delivery_failed;		/* pktb_deliver returned -1 / -2 (send error / bad frame) */
 	unsigned long delivery_disabled;	/* CAP_NET_RAW absent — permanent per-child latch */
 	unsigned long per_recipe[10];		/* per-recipe successful deliveries */
+
+	/* SRH netns-path inertness counters.  The SRH callback
+	 * (pktb_probe_srh_in_ns) runs inside a CLONE_NEWNET grandchild;
+	 * its probe_one_recipe() return was previously discarded with
+	 * (void), hiding delivery failures in the namespace-nested path.
+	 * srh_probe_inert counts invocations where probe_one_recipe()
+	 * returned non-zero (send failure, build failure, or the
+	 * delivery-disabled latch).  srh_nl_open_failed counts the
+	 * nl_open() error path; when nl_open() fails lo stays down and
+	 * any subsequent sendto() will fail with -ENETDOWN. */
+	unsigned long srh_probe_inert;		/* probe_one_recipe() != 0 in SRH netns path */
+	unsigned long srh_nl_open_failed;	/* nl_open() failed in SRH netns callback */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_PKT_BUILDER_H */
