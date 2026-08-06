@@ -238,6 +238,6 @@ struct syscallentry syscall_fallocate = {
 	.sanitise = sanitise_fallocate,
 	.post = post_fallocate,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 };

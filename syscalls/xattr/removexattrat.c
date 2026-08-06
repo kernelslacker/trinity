@@ -134,7 +134,7 @@ struct syscallentry syscall_removexattrat = {
 	.argname = { [0] = "dfd", [1] = "pathname", [2] = "at_flags", [3] = "name" },
 	.arg_params[2].list = ARGLIST(xattrat_flags),
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
 	.sanitise = sanitise_removexattrat,
 };

@@ -97,7 +97,7 @@ struct syscallentry syscall_setxattr = {
 	.argname = { [0] = "pathname", [1] = "name", [2] = "value", [3] = "size", [4] = "flags" },
 	.arg_params[4].list = ARGLIST(xattr_set_flags),
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
 	.sanitise = sanitise_setxattr,
 };

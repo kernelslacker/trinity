@@ -133,5 +133,5 @@ struct syscallentry syscall_futimesat = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "utimes" },
 	.sanitise = sanitise_futimesat,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 };

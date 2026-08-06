@@ -211,7 +211,7 @@ struct syscallentry syscall_setxattrat = {
 	.argname = { [0] = "dfd", [1] = "pathname", [2] = "at_flags", [3] = "name", [4] = "uargs", [5] = "usize" },
 	.arg_params[2].list = ARGLIST(setxattrat_at_flags),
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
 	.sanitise = sanitise_setxattrat,
 #ifdef USE_XATTR_ARGS
