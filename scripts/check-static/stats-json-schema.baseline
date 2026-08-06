@@ -1125,6 +1125,8 @@ stats	object
     stats.pkt_builder.delivered_ok	u64
     stats.pkt_builder.delivery_failed	u64
     stats.pkt_builder.delivery_disabled	u64
+    stats.pkt_builder.srh_probe_inert	u64
+    stats.pkt_builder.srh_nl_open_failed	u64
     stats.pkt_builder.recipe_vxlan_eth_ip4	u64
     stats.pkt_builder.recipe_gretap_eth_ip4	u64
     stats.pkt_builder.recipe_raw_ip4_gretap_ip4	u64

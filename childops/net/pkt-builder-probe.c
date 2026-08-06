@@ -247,6 +247,9 @@ static int pktb_probe_srh_in_ns(void *arg)
 	if (nl_open(&nl, &nlopts) == 0) {
 		nl_opened = true;
 		rtnl_bring_lo_up(&nl);
+	} else {
+		__atomic_add_fetch(&shm->stats.pkt_builder.srh_nl_open_failed,
+				   1, __ATOMIC_RELAXED);
 	}
 
 	for (li = 0; li < r->n; li++) {
@@ -257,7 +260,9 @@ static int pktb_probe_srh_in_ns(void *arg)
 	}
 
 	pktb_ctx_init(&ctx);
-	(void)probe_one_recipe(&ctx, r);
+	if (probe_one_recipe(&ctx, r) != 0)
+		__atomic_add_fetch(&shm->stats.pkt_builder.srh_probe_inert,
+				   1, __ATOMIC_RELAXED);
 
 	/* Tally the close(2)s pktb_ctx_close is about to issue. */
 	if (ctx.af_packet_fd >= 0)    dc++;
