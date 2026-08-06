@@ -332,18 +332,13 @@ ALLOWLIST_PATTERNS=(
 	# --- nested: ORACLE_ANOMALY_ROW bespoke emit ---
 	'diag\.statmount_setup_fail'
 
-	# --- pre-existing dead-counter escrow (nested successors of the
-	#     old flat perf_event_chains_pmu_unsupported /
-	#     tracefs_ftrace_subset_skipped /
-	#     local_obj_num_entries_corrupted names, plus a handful of
-	#     producer-only diagnostics that never got wired to an emit
-	#     path) ---
-	'perf_chains\.pmu_unsupported'
+	# --- internal bookkeeping fields: not counters for external reports ---
+	# tracefs_fuzzer.ftrace_subset_skipped: declared as a forward-carved
+	#   slot for a future ftrace-subset dispatcher; no live producer.
+	# transition_edge.calls_at_window_start: per-strategy window-start
+	#   snapshot (atomic_store, not monotonic counter); internal bandit
+	#   bookkeeping, not an externally reportable metric.
 	'tracefs_fuzzer\.ftrace_subset_skipped'
-	'diag\.local_obj_num_entries_corrupted'
-	'corrupt_ptr\.sample_seq'
-	'diag\.read_walk_aborted'
-	'diag\.write_walk_aborted'
 	'transition_edge\.calls_at_window_start'
 )
 

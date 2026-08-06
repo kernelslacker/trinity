@@ -37,21 +37,6 @@ struct diag_stats {
 	unsigned long statmount_setup_fail;
 
 	/*
-	 * get_random_object_versioned() OBJ_LOCAL pick path or
-	 * add_object() pre-grow snapshot saw head->num_entries >
-	 * head->array_capacity and refused to deref head->array[idx]
-	 * / proceed with the slot write.  Mirrors the OBJ_GLOBAL
-	 * wild-stomp defences at objects/registry.c and 1088.
-	 * Non-zero means a wild value-result write has scribbled an
-	 * objhead's num_entries; the pick-side bumper converted what
-	 * would have been an OOB head->array[] read into a NULL
-	 * return; the write-side bumper converted what would have
-	 * been a doubling loop to satisfy a stomped target into an
-	 * early release_obj.
-	 */
-	unsigned long local_obj_num_entries_corrupted;
-
-	/*
 	 * handle_syscall_ret() found rec->_canary !=
 	 * REC_CANARY_MAGIC on entry -- the entire syscallrecord was
 	 * rewritten between BEFORE and AFTER, including bookkeeping
