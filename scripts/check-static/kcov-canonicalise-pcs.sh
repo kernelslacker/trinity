@@ -47,16 +47,21 @@ if [ ! -f kcov/collect.c ]; then
 	echo "FAIL: $NAME: kcov/collect.c not found at $ROOT"
 	exit 1
 fi
+if [ ! -f kcov/collect-internal.h ]; then
+	echo "FAIL: $NAME: kcov/collect-internal.h not found at $ROOT"
+	exit 1
+fi
 
 # 1. kcov_canon_pc body must subtract kcov_kaslr_base.
+# Definition lives in kcov/collect-internal.h (shared across collect*.c TUs).
 canon_body="$(awk '
 	/^static inline unsigned long kcov_canon_pc\(/ { in_body = 1 }
 	in_body { print }
 	in_body && /^}/ { exit }
-' kcov/collect.c)"
+' kcov/collect-internal.h)"
 
 if [ -z "$canon_body" ]; then
-	echo "FAIL: $NAME: kcov_canon_pc() definition not found in kcov/collect.c"
+	echo "FAIL: $NAME: kcov_canon_pc() definition not found in kcov/collect-internal.h"
 	exit 1
 fi
 
@@ -73,14 +78,15 @@ if ! grep -q 'kcov_kaslr_base' <<< "$canon_body"; then
 fi
 
 # 2. pc_canon_to_edge body must NOT invoke kcov_canon_pc.
+# Definition lives in kcov/collect-internal.h alongside kcov_canon_pc.
 edge_body="$(awk '
 	/^static inline unsigned int pc_canon_to_edge\(/ { in_body = 1 }
 	in_body { print }
 	in_body && /^}/ { exit }
-' kcov/collect.c)"
+' kcov/collect-internal.h)"
 
 if [ -z "$edge_body" ]; then
-	echo "FAIL: $NAME: pc_canon_to_edge() definition not found in kcov/collect.c"
+	echo "FAIL: $NAME: pc_canon_to_edge() definition not found in kcov/collect-internal.h"
 	exit 1
 fi
 
@@ -97,12 +103,13 @@ if grep -q 'kcov_canon_pc' <<< "$edge_body"; then
 	exit 1
 fi
 
-# 3. Every function in kcov/collect.c that calls pc_canon_to_edge()
-#    must also call kcov_canon_pc() somewhere in the same body.  Walks
-#    kcov/collect.c function-by-function: a function header is a line
-#    that starts at column 0 with a return type and a paren, and the
-#    matching close brace also starts at column 0.  Trinity follows
-#    that style throughout kcov/collect.c so the heuristic is reliable.
+# 3. Every function in kcov/collect.c or kcov/collect-fanout.c that
+#    calls pc_canon_to_edge() must also call kcov_canon_pc() somewhere
+#    in the same body.  Walks both files function-by-function: a
+#    function header is a line that starts at column 0 with a return
+#    type and a paren, and the matching close brace also starts at
+#    column 0.  Trinity follows that style throughout kcov/collect*.c
+#    so the heuristic is reliable.
 missing="$(awk '
 	/^[A-Za-z_][A-Za-z0-9_ *]*[A-Za-z0-9_*]\(/ && !in_body {
 		match($0, /[A-Za-z_][A-Za-z0-9_]*\(/)
@@ -127,7 +134,7 @@ missing="$(awk '
 		in_body = 0
 		want = 0
 	}
-' kcov/collect.c)"
+' kcov/collect.c kcov/collect-fanout.c)"
 
 if [ -n "$missing" ]; then
 	{
