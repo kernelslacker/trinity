@@ -311,6 +311,8 @@ stats	object
     stats.corruption.sibling_mprotect_failed	u64
     stats.corruption.destroy_object_idx	u64
     stats.corruption.global_obj_uaf_caught	u64
+    stats.corruption.mseal_content_oracle_fail	u64
+    stats.corruption.mseal_unexpected_success	u64
     stats.corruption.maps_pool_draw_exhausted	u64
     stats.corruption.maps_reject_pool_empty	u64
     stats.corruption.maps_reject_bogus_obj_ptr	u64
@@ -348,6 +350,7 @@ stats	object
     stats.corruption.deferred_free_rw_restore_enomem	u64
     stats.corruption.deferred_free_pre_dispatch_leaked	u64
     stats.corruption.ring_evict_leaked	u64
+    stats.corruption.deferred_free_tracked_free_unverified_leak	u64
     stats.corruption.deferred_free_gen_arena_admitted	u64
     stats.corruption.deferred_free_gen_arena_retired_ok	u64
     stats.corruption.deferred_free_gen_arena_retire_reject	u64
