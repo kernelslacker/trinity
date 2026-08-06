@@ -402,10 +402,7 @@ static void print_stats_pool_ratio(void)
 			count_quarantined_in_range(alt_op_children,
 						   alt_op_children +
 						   explorer_children);
-		unsigned int live_band =
-			live_child_slots -
-			count_quarantined_in_range(0, alt_op_children) -
-			live_expl;
+		unsigned int live_band = live_child_slots - live_expl;
 		static unsigned int last_eb_explorers;
 		static unsigned int last_eb_max;
 		static unsigned int last_eb_live;
@@ -435,9 +432,7 @@ static void print_stats_pool_ratio(void)
 		last_explorer_edges = e_cur;
 	} else {
 		/* No explorer pool: all live non-altop slots are bandit. */
-		unsigned int live_band_solo =
-			live_child_slots -
-			count_quarantined_in_range(0, alt_op_children);
+		unsigned int live_band_solo = live_child_slots;
 		if (b_delta > 0)
 			output(0, "bandit: %u/%u children, %lu edges (+%lu)\n",
 				live_band_solo, live_child_slots,
