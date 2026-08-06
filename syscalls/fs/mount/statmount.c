@@ -76,6 +76,7 @@ struct statmount_post_state {
 	unsigned long req;
 	unsigned long buffer;
 	unsigned long bufsize;
+	unsigned long flags;	/* original rec->a4 (STATMOUNT_BY_FD etc.) */
 	void *original_buf;
 };
 #endif
@@ -312,6 +313,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	snap->magic        = STATMOUNT_POST_STATE_MAGIC;
 	snap->original_buf = buf;
 	snap->bufsize      = rec->a3;
+	snap->flags        = rec->a4;
 #endif
 
 	avoid_shared_buffer_inout(&rec->a1, csfu.usize);
@@ -422,6 +424,20 @@ static void post_statmount(struct syscallrecord *rec)
 	if (!post_snapshot_or_skip(&first_buf, (void *) snap->buffer,
 				   sizeof(first_buf)))
 		goto out_release;
+
+	/*
+	 * The original request used STATMOUNT_BY_FD, which forces
+	 * req->mnt_id = 0.  The re-issue below forces flags=0 (non-BY_FD
+	 * path), so the kernel rejects mnt_id=0 with -EINVAL and the
+	 * oracle silently exits via `if (rc < 0)` without comparing
+	 * anything.  Count every such skip so a reader can distinguish
+	 * 'oracle ran clean' from 'oracle never ran for this sample'.
+	 */
+	if (snap->flags & STATMOUNT_BY_FD) {
+		__atomic_add_fetch(&shm->stats.oracle.statmount_oracle_skipped,
+				   1, __ATOMIC_RELAXED);
+		goto out_release;
+	}
 
 	{
 		struct mnt_id_req recheck_req = first_req;

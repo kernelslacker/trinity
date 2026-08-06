@@ -83,6 +83,18 @@ struct oracle_stats {
 	unsigned long lsm_list_modules_oracle_anomalies;
 	unsigned long listmount_oracle_anomalies;
 	unsigned long statmount_oracle_anomalies;
+	/*
+	 * Fired whenever post_statmount() exits without running the
+	 * byte-compare because the re-issue would be (or was) doomed:
+	 * either the original request used STATMOUNT_BY_FD and the
+	 * re-issue is forced to flags=0 (making mnt_id=0 trigger
+	 * -EINVAL on the non-BY_FD path), or the fd was already
+	 * closed / recycled at oracle time.  A non-zero value means
+	 * 'oracle never ran' for those samples, distinct from
+	 * statmount_oracle_anomalies which means 'oracle ran and
+	 * found a mismatch'.
+	 */
+	unsigned long statmount_oracle_skipped;
 	unsigned long getsockname_oracle_anomalies;
 	unsigned long getpeername_oracle_anomalies;
 	unsigned long file_getattr_oracle_anomalies;
