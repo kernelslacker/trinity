@@ -15,6 +15,9 @@ static const struct stat_field rds_bind_transport_refleak_fields[] = {
 	STAT_FIELD_SUB(rds_bind_transport_refleak, rds_tcp_refcount_hwm),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, leaked_refs_hwm_growth),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, port_collision_skips),
+	STAT_FIELD_SUB(rds_bind_transport_refleak, holder_bind_other_errno),
+	STAT_FIELD_SUB(rds_bind_transport_refleak, eaddrinuse_wall_cap_skip),
+	STAT_FIELD_SUB(rds_bind_transport_refleak, eaddrinuse_loopfd_setsockopt_fail),
 };
 
 const struct stat_category rds_bind_transport_refleak_category =

@@ -273,18 +273,24 @@ static int iter_eaddrinuse(int loop_fd, uint16_t holder_port,
 	}
 
 	if (bind(holder_fd, (struct sockaddr *)&haddr, sizeof(haddr)) != 0) {
-		/* Port already held by another concurrent worker (likely a
-		 * pid-collision: two children whose pids differ by a
-		 * multiple of 4096 map to the same holder_port).  Close
-		 * holder; rds_release sees rs->rs_transport set from
-		 * setsockopt and calls rds_trans_put -- clean.  Count the
-		 * skip so fleet stats expose how often this path is missed
-		 * rather than silently exercising only the EINVAL arm. */
+		/* Holder bind failed.  Distinguish pid-collision
+		 * (EADDRINUSE -- two children whose pids differ by a
+		 * multiple of 4096 map to the same holder_port) from
+		 * other errors (EINVAL, EACCES, ENOMEM, ...).  Counting
+		 * each separately prevents a permanently broken
+		 * holder-bind path from silently masquerading as
+		 * pid-collision traffic.  In both cases the EADDRINUSE
+		 * leak arm is skipped for this invocation. */
+		if (errno == EADDRINUSE)
+			__atomic_add_fetch(
+				&shm->stats.rds_bind_transport_refleak.port_collision_skips,
+				1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(
+				&shm->stats.rds_bind_transport_refleak.holder_bind_other_errno,
+				1, __ATOMIC_RELAXED);
 		close(holder_fd);
 		sc += 3;	/* setsockopt + bind + close */
-		__atomic_add_fetch(
-			&shm->stats.rds_bind_transport_refleak.port_collision_skips,
-			1, __ATOMIC_RELAXED);
 		*syscall_count_out = sc;
 		return 0;
 	}
@@ -307,6 +313,14 @@ static int iter_eaddrinuse(int loop_fd, uint16_t holder_port,
 				1, __ATOMIC_RELAXED);
 			ret = 1;
 		}
+	} else {
+		/* loop-fd setsockopt failed after the holder was
+		 * established.  The EADDRINUSE bind is silently not
+		 * reached; count it so the skip is visible in fleet
+		 * stats rather than looking like 'arm not reached'. */
+		__atomic_add_fetch(
+			&shm->stats.rds_bind_transport_refleak.eaddrinuse_loopfd_setsockopt_fail,
+			1, __ATOMIC_RELAXED);
 	}
 
 	/*
@@ -425,9 +439,18 @@ bool rds_bind_transport_refleak(struct childdata *child)
 	 */
 	local_eaddrinuse_count = 0;
 	unsigned long eaddrinuse_syscalls = 0;
-	if (!budget_elapsed_ns(&t_outer, (long)RDSBTR_WALL_CAP_NS))
+	if (!budget_elapsed_ns(&t_outer, (long)RDSBTR_WALL_CAP_NS)) {
 		local_eaddrinuse_count = iter_eaddrinuse(loop_fd, holder_port,
 						     &eaddrinuse_syscalls);
+	} else {
+		/* RDSBTR_WALL_CAP_NS elapsed during the EINVAL loop;
+		 * the entire EADDRINUSE arm is skipped.  This is the
+		 * dominant skip cause on a busy box and was previously
+		 * uncounted, making the arm look permanently dead. */
+		__atomic_add_fetch(
+			&shm->stats.rds_bind_transport_refleak.eaddrinuse_wall_cap_skip,
+			1, __ATOMIC_RELAXED);
+	}
 
 	/*
 	 * local_failed_binds: number of failed binds THIS invocation.
