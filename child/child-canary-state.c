@@ -444,10 +444,12 @@ void enter_canarying(enum child_op_type op)
 	 * label the window by rejection reason: the CMP arm is retry-
 	 * eligible (re-drawing the kcov mode can land a PC-mode child
 	 * next window), the nested arm is a lifecycle-invariant violation
-	 * (caller-side bug -- retry cannot help; reported instead), the
-	 * inactive arm reflects a run-wide config a retry cannot turn on,
-	 * and the sample arm is the 1-of-N outer-bracket sampler (uniform
-	 * across all ops; not a mode artifact).  Only windows where
+	 * (caller-side bug -- retry cannot help; reported instead), and
+	 * the sample arm is the 1-of-N outer-bracket sampler (uniform
+	 * across all ops; not a mode artifact).  The inactive arm (run-
+	 * wide kcov off) needs no snapshot: it makes skipped_cmp_delta
+	 * < eligible_delta so the skipped_cmp_delta == eligible_delta
+	 * equality gate falls through implicitly.  Only windows where
 	 * skipped_cmp_delta == eligible_delta (attempts minus sampled-out)
 	 * are eligible for the pre-demote PC-trial retry. */
 	s->window_start_kcov_op_skipped_cmp = kcov_shm
@@ -458,11 +460,6 @@ void enter_canarying(enum child_op_type op)
 	s->window_start_kcov_op_skipped_nested = kcov_shm
 		? __atomic_load_n(
 			&kcov_shm->childop_kcov.childop_kcov_op_skipped_nested[op],
-			__ATOMIC_RELAXED)
-		: 0;
-	s->window_start_kcov_op_skipped_inactive = kcov_shm
-		? __atomic_load_n(
-			&kcov_shm->childop_kcov.childop_kcov_op_skipped_inactive[op],
 			__ATOMIC_RELAXED)
 		: 0;
 	s->window_start_kcov_op_skipped_sample = kcov_shm
