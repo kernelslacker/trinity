@@ -84,6 +84,8 @@ struct racer_result {
 
 /* Latched: process_mrelease(2) returned ENOSYS -- kernel predates 5.15. */
 static bool ns_unsupported_process_mrelease;
+/* Latched: process_mrelease(2) confirmed present -- skip the support probe. */
+static bool ns_supported_process_mrelease;
 
 static int sys_process_mrelease(int pidfd, unsigned int flags)
 {
@@ -110,9 +112,37 @@ static int sys_pidfd_open(pid_t pid, unsigned int flags)
 }
 
 /*
+ * Bump the control-probe counter that matches the process_mrelease() outcome.
+ * Called only for the known-negative control probes; race results go to
+ * tally_mrelease_result() instead.
+ */
+static void tally_control_result(int rc)
+{
+	if (rc == 0) {
+		__atomic_add_fetch(
+			&shm->stats.process_mrelease_race.control_unexpected_success,
+			1, __ATOMIC_RELAXED);
+		return;
+	}
+	switch (errno) {
+	case ESRCH:
+		__atomic_add_fetch(
+			&shm->stats.process_mrelease_race.control_esrch,
+			1, __ATOMIC_RELAXED);
+		break;
+	case EINVAL:
+		__atomic_add_fetch(
+			&shm->stats.process_mrelease_race.control_einval,
+			1, __ATOMIC_RELAXED);
+		break;
+	default:
+		break;
+	}
+}
+
+/*
  * Translate a process_mrelease() return value into a stats bucket and
- * bump the matching counter.  Called for each racer result and for the
- * negative-control probe.
+ * bump the matching counter.  Called for each racer result.
  */
 static void tally_mrelease_result(int rc)
 {
@@ -491,7 +521,7 @@ static unsigned long run_kill_race(void *bg_map, size_t bg_size)
 		}
 		if (rc < 0)
 			errno = -rc;
-		tally_mrelease_result(rc < 0 ? -1 : 0);
+		tally_mrelease_result(rc);
 	}
 
 	/* Reap victim: non-blocking try first, then blocking. */
@@ -538,12 +568,18 @@ out_results:
 
 /*
  * Negative-control probe: fork a child that exits immediately (normal
- * exit), then call process_mrelease on the waited-and-reaped task.
- * Expected result: ESRCH or EINVAL.  A return of 0 would indicate
- * process_mrelease succeeded on an already-gone task, which would be
- * a kernel bug.  We call after waitpid so the pidfd has gone stale.
+ * exit), reap it via waitpid so the pidfd goes stale, then call
+ * process_mrelease on it.  Expected result: ESRCH or EINVAL; a return
+ * of 0 would be a kernel bug.
+ *
+ * Results go to the control counters, not the race-result counters.
+ * ENOSYS is not tallied here -- the caller handles the unsupported latch.
+ *
+ * Returns 0 on process_mrelease success, -1 on failure (errno set), or
+ * 1 if the probe was inconclusive (pidfd_open failed before the syscall
+ * was issued -- caller should not update support state or direct_calls).
  */
-static void run_exit_probe(void)
+static int run_exit_probe(void)
 {
 	int pfd;
 	pid_t pid;
@@ -554,7 +590,7 @@ static void run_exit_probe(void)
 	if (pid == 0)
 		_exit(0);
 	if (pid < 0)
-		return;
+		return 1;
 
 	pfd = sys_pidfd_open(pid, 0);
 
@@ -562,11 +598,21 @@ static void run_exit_probe(void)
 	(void)waitpid_eintr(pid, &status, 0);
 
 	if (pfd < 0)
-		return;
+		return 1;
 
 	rc = sys_process_mrelease(pfd, 0);
-	tally_mrelease_result(rc);
-	close(pfd);
+	{
+		int saved_errno = errno;
+
+		close(pfd);
+		errno = saved_errno;
+	}
+
+	/* Tally into control counters; leave ENOSYS for the caller. */
+	if (rc < 0 && errno == ENOSYS)
+		return rc;
+	tally_control_result(rc);
+	return rc;
 }
 
 bool process_mrelease_race(struct childdata *child)
@@ -584,38 +630,33 @@ bool process_mrelease_race(struct childdata *child)
 	if (ns_unsupported_process_mrelease)
 		return true;
 
-	/* Probe for ENOSYS on first call. */
-	{
-		int pfd;
-		pid_t pid = fork();
+	/*
+	 * Probe for ENOSYS / confirm support on the first call.
+	 * run_exit_probe() subsumes the old inline fork; once support is
+	 * confirmed, ns_supported_process_mrelease latches true and the
+	 * probe is skipped on every subsequent invocation.
+	 */
+	if (!ns_supported_process_mrelease) {
+		int probe_rc = run_exit_probe();
 
-		if (pid == 0)
-			_exit(0);
-		if (pid > 0) {
-			int st;
-
-			pfd = sys_pidfd_open(pid, 0);
-			(void)waitpid_eintr(pid, &st, 0);
-			if (pfd >= 0) {
-				int rc = sys_process_mrelease(pfd, 0);
-
-				if (rc < 0 && errno == ENOSYS) {
-					ns_unsupported_process_mrelease = true;
-					close(pfd);
-					if (valid_op) {
-						__atomic_store_n(
-							&shm->stats.childop.latch_reason[op],
-							CHILDOP_LATCH_NS_UNSUPPORTED,
-							__ATOMIC_RELAXED);
-					}
-					return true;
-				}
-				/* Count this probe call. */
-				tally_mrelease_result(rc);
-				direct_calls++;
-				close(pfd);
+		if (probe_rc < 0 && errno == ENOSYS) {
+			ns_unsupported_process_mrelease = true;
+			if (valid_op) {
+				__atomic_store_n(
+					&shm->stats.childop.latch_reason[op],
+					CHILDOP_LATCH_NS_UNSUPPORTED,
+					__ATOMIC_RELAXED);
 			}
+			return true;
 		}
+		if (probe_rc <= 0) {
+			/* Syscall confirmed present; latch to skip next time. */
+			ns_supported_process_mrelease = true;
+			direct_calls++;
+		}
+		/* probe_rc == 1: pidfd_open failed, probe inconclusive;
+		 * leave ns_supported_process_mrelease false and retry next
+		 * invocation. */
 	}
 
 	/* Background mapping for madvise pressure during race rounds. */
@@ -645,8 +686,8 @@ bool process_mrelease_race(struct childdata *child)
 		direct_calls += run_kill_race(bg_map, bg_size);
 	}
 
-	run_exit_probe();
-	direct_calls++;
+	/* Control probe already ran (and latched) on first invocation;
+	 * nothing extra to do here on subsequent calls. */
 
 	if (bg_map != MAP_FAILED)
 		(void)munmap(bg_map, bg_size);

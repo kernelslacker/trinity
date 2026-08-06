@@ -12,6 +12,10 @@ struct process_mrelease_race_stats {
 	unsigned long other_fail;	/* other errors from process_mrelease */
 	unsigned long reap_slow;	/* victim reap exceeded poll timeout */
 	unsigned long racer_unreported;	/* racer slots never written (fork failure / PDEATHSIG early exit) */
+	/* control-probe counters (separate from race-result counters) */
+	unsigned long control_esrch;              /* control probe returned ESRCH */
+	unsigned long control_einval;             /* control probe returned EINVAL */
+	unsigned long control_unexpected_success; /* control probe returned 0 (should not happen) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_PROCESS_MRELEASE_RACE_H */
