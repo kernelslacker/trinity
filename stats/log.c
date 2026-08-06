@@ -183,6 +183,7 @@ void stats_timeseries_close(void)
 {
 	unsigned long total_ops;
 	bool cross_check_ok;
+	int close_ret;
 
 	if (stats_timeseries_fp == NULL)
 		return;
@@ -213,8 +214,38 @@ void stats_timeseries_close(void)
 		outputerr("stats timeseries cross-check failed: total_ops=%lu < last_window_op_count=%lu\n",
 			  total_ops, stats_ts_last_emitted_op_count);
 
-	fclose(stats_timeseries_fp);
+	/* Mirror the error-transaction the window emitter uses: ferror() is
+	 * sticky so a single check here catches any failure in the fprintf or
+	 * fflush above.  On error write the truncation marker directly via
+	 * write(fileno()) -- bypassing the broken stdio buffer -- so a
+	 * downstream collector can distinguish a sink-disabled truncation
+	 * from a clean end-of-run, then surface the failure and bail out
+	 * without claiming the terminal record was written cleanly.
+	 * On the success path check fclose() because it flushes any
+	 * remaining buffered data and a full filesystem can fail there too. */
+	if (ferror(stats_timeseries_fp)) {
+		int saved_errno = errno;
+		const char *marker =
+			"\n{\"truncated\":true,\"reason\":\"write_error\"}\n";
+		int fd = fileno(stats_timeseries_fp);
+
+		if (fd >= 0) {
+			if (write(fd, marker, strlen(marker)) < 0) {
+				/* nothing to do -- sink is already dead */
+			}
+		}
+		outputerr("stats timeseries terminal record write failed: %s\n",
+			  strerror(saved_errno));
+		fclose(stats_timeseries_fp);
+		stats_timeseries_fp = NULL;
+		return;
+	}
+
+	close_ret = fclose(stats_timeseries_fp);
 	stats_timeseries_fp = NULL;
+	if (close_ret != 0)
+		outputerr("stats timeseries close failed: %s\n",
+			  strerror(errno));
 }
 
 void stats_timeseries_drop_in_child(void)
