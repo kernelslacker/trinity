@@ -40,6 +40,7 @@ UNCOUNTED:childops/net/ip_gre-churn.c
 UNCOUNTED:childops/net/netfilter/nfnl-util.c
 UNCOUNTED:childops/net/netfilter/nftables/fwd.c
 UNCOUNTED:childops/net/netfilter/nftables/l4frag.c
+UNCOUNTED:childops/net/netfilter/nftables/reject.c
 UNCOUNTED:childops/net/netlink/genl-util.c
 UNCOUNTED:childops/net/netlink/nl80211-churn-discovery.c
 UNCOUNTED:childops/net/psp-key-rotate-devlink-port.c

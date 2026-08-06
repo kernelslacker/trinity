@@ -74,6 +74,10 @@ struct nftables_churn_stats {
 	unsigned long nft_l4frag_rule_ok;		/* NEWRULE carrying socket/tproxy/exthdr/osf accepted */
 	unsigned long nft_l4frag_send_ok;		/* raw IPv4 fragment sendto returned >0 */
 	unsigned long nft_l4frag_send_failed;		/* raw IPv4 fragment sendto returned <=0 (incl. EPERM on raw open) */
+	unsigned long nft_inet_ingress_reject_runs;		/* inet NF_INET_INGRESS/nft_reject sub-mode invocations */
+	unsigned long nft_inet_ingress_reject_setup_failed;	/* NEWTABLE/NEWCHAIN/NEWRULE failed (CONFIG absent or transient) */
+	unsigned long nft_inet_ingress_reject_probe_sent_ok;	/* UDP sendto 127.0.0.1 returned >0 (probe walked ingress hook) */
+	unsigned long nft_inet_ingress_reject_completed_ok;	/* full setup + chain + rule + probe completed without error */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_NFTABLES_CHURN_H */
