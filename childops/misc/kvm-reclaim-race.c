@@ -74,9 +74,6 @@
  */
 #define KVM_MMU_RECLAIM_MAX_PAGES	512
 
-/* Number of KVM_PRE_FAULT_MEMORY ioctls issued per invocation (Lane 1). */
-#define RECLAIM_RACE_FAULT_ITERS	32
-
 /* Number of squeeze/restore cycles in the Lane 2 thread. */
 #define RECLAIM_RACE_SQUEEZE_ITERS	8
 
@@ -109,19 +106,35 @@
 	((unsigned int)(RECLAIM_RACE_GPA_WINDOW / RECLAIM_RACE_CHUNK_SIZE))
 
 /*
+ * Shared concurrency anchors.  Lane 1 (fault storm) loops until both
+ * Lane 2 and Lane 3 have completed their fixed cycle counts, then sets
+ * stop=1.  Lanes 2 and 3 check stop at the top of each iteration so
+ * they can exit early if Lane 1 bails for any reason.  The two-way
+ * signalling guarantees the three lanes overlap for the full lifetime
+ * of the shorter-lived worker threads, regardless of host speed.
+ */
+struct reclaim_shared {
+	volatile int		stop;		/* Lane 1 → 2,3: exit now */
+	volatile int		lanes_done;	/* 2,3 → Lane 1: I finished */
+};
+
+/*
  * Thread argument structs.  Each thread accumulates its own ioctl count
  * in a local counter; the main thread merges them after pthread_join()
- * (which provides the happens-before edge, so no atomic is needed).
+ * (which provides the happens-before edge, so no atomic is needed for
+ * direct_calls).  shared is written/read with __atomic builtins.
  */
 struct squeeze_args {
 	int			vmfd;
 	unsigned long		direct_calls;
+	struct reclaim_shared	*shared;
 };
 
 struct churn_args {
 	int			vmfd;
 	void			*ua;	/* backing region for the churn memslot */
 	unsigned long		direct_calls;
+	struct reclaim_shared	*shared;
 };
 
 /*
@@ -136,7 +149,8 @@ static void *squeeze_loop_thread(void *p)
 	struct squeeze_args *a = p;
 	int i;
 
-	for (i = 0; i < RECLAIM_RACE_SQUEEZE_ITERS; i++) {
+	for (i = 0; i < RECLAIM_RACE_SQUEEZE_ITERS &&
+	     !__atomic_load_n(&a->shared->stop, __ATOMIC_RELAXED); i++) {
 		/* Squeeze toward KVM_MIN_FREE_MMU_PAGES so every subsequent
 		 * fault calls make_mmu_pages_available() which in turn calls
 		 * kvm_mmu_zap_oldest_mmu_pages().  Ignore errors: -EINVAL if
@@ -155,6 +169,9 @@ static void *squeeze_loop_thread(void *p)
 			    (unsigned long)KVM_MMU_RECLAIM_MAX_PAGES);
 	}
 
+	/* Signal Lane 1 that this lane has completed its cycle count. */
+	__atomic_add_fetch(&a->shared->lanes_done, 1, __ATOMIC_RELEASE);
+
 	return NULL;
 }
 
@@ -169,12 +186,13 @@ static void *churn_loop_thread(void *p)
 	struct churn_args *a = p;
 	int i;
 
-	/* Startup delay: let the fault storm prime the shadow-page tree
-	 * before invalidation begins.  Without primed pages, concurrent
-	 * root invalidation has nothing in-use to zap. */
-	usleep(300);
-
-	for (i = 0; i < RECLAIM_RACE_CHURN_ITERS; i++) {
+	/*
+	 * No startup delay: Lane 1 loops continuously for the full lifetime
+	 * of this thread, so there is always an active fault storm to race
+	 * against from the very first invalidation.
+	 */
+	for (i = 0; i < RECLAIM_RACE_CHURN_ITERS &&
+	     !__atomic_load_n(&a->shared->stop, __ATOMIC_RELAXED); i++) {
 		struct kvm_userspace_memory_region del = {
 			.slot		 = RECLAIM_RACE_SLOT,
 			.flags		 = 0,
@@ -219,6 +237,9 @@ static void *churn_loop_thread(void *p)
 #endif
 	}
 
+	/* Signal Lane 1 that this lane has completed its cycle count. */
+	__atomic_add_fetch(&a->shared->lanes_done, 1, __ATOMIC_RELEASE);
+
 	return NULL;
 }
 
@@ -227,12 +248,12 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 	struct object *vcpu_obj;
 	int vcpufd, vmfd;
 	void *ua = MAP_FAILED;
+	struct reclaim_shared shared = { .stop = 0, .lanes_done = 0 };
 	struct squeeze_args sargs;
 	struct churn_args cargs;
 	pthread_t squeeze_tid, churn_tid;
 	bool squeeze_spawned = false, churn_spawned = false;
 	unsigned long direct_calls = 0;
-	int i;
 
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
@@ -289,6 +310,7 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 	/* Launch Lane 2: squeeze thread. */
 	sargs.vmfd	  = vmfd;
 	sargs.direct_calls = 0;
+	sargs.shared	  = &shared;
 	if (pthread_create(&squeeze_tid, NULL, squeeze_loop_thread, &sargs) == 0)
 		squeeze_spawned = true;
 
@@ -296,6 +318,7 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 	cargs.vmfd	  = vmfd;
 	cargs.ua	  = ua;
 	cargs.direct_calls = 0;
+	cargs.shared	  = &shared;
 	if (pthread_create(&churn_tid, NULL, churn_loop_thread, &cargs) == 0)
 		churn_spawned = true;
 
@@ -303,11 +326,14 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 	 * Lane 1: KVM_PRE_FAULT_MEMORY storm across the GPA window.
 	 *
 	 * Walks chunks of RECLAIM_RACE_CHUNK_SIZE across the window in a
-	 * wrapping pattern so the fault stream hits every part of the GPA
-	 * range repeatedly while the squeeze and churn threads run
-	 * concurrently.  With kvm.tdp_mmu=0 (boot flag) this drives
-	 * direct_page_fault() → make_mmu_pages_available(), where the
-	 * reclaim race window lives.
+	 * wrapping pattern, continuously cycling through all chunks for the
+	 * entire duration that Lanes 2 and 3 are alive.  The loop exits only
+	 * after both worker threads have signalled completion via
+	 * shared.lanes_done, guaranteeing that faulting overlaps with the
+	 * full squeeze and churn sequences regardless of host speed.
+	 *
+	 * With kvm.tdp_mmu=0 (boot flag) this drives direct_page_fault() →
+	 * make_mmu_pages_available(), where the reclaim race window lives.
 	 *
 	 * KVM_PRE_FAULT_MEMORY is a vCPU ioctl; we issue it on vcpufd.
 	 * It early-returns without side-effects if the kernel was built
@@ -316,16 +342,24 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 	 * not kvm_tdp_page_fault (e.g. with TDP enabled and tdp_mmu=1).
 	 */
 #ifdef KVM_PRE_FAULT_MEMORY
-	for (i = 0; i < RECLAIM_RACE_FAULT_ITERS; i++) {
-		struct kvm_pre_fault_memory req = {
-			.gpa   = RECLAIM_RACE_GPA_BASE +
-				 ((__u64)(i % RECLAIM_RACE_N_CHUNKS) *
-				  RECLAIM_RACE_CHUNK_SIZE),
-			.size  = RECLAIM_RACE_CHUNK_SIZE,
-			.flags = 0,
-		};
-		direct_calls++;
-		(void)ioctl(vcpufd, KVM_PRE_FAULT_MEMORY, &req);
+	{
+		unsigned int chunk_idx = 0;
+
+		while (__atomic_load_n(&shared.lanes_done, __ATOMIC_ACQUIRE) < 2) {
+			struct kvm_pre_fault_memory req = {
+				.gpa   = RECLAIM_RACE_GPA_BASE +
+					 ((__u64)(chunk_idx % RECLAIM_RACE_N_CHUNKS) *
+					  RECLAIM_RACE_CHUNK_SIZE),
+				.size  = RECLAIM_RACE_CHUNK_SIZE,
+				.flags = 0,
+			};
+			direct_calls++;
+			(void)ioctl(vcpufd, KVM_PRE_FAULT_MEMORY, &req);
+			chunk_idx++;
+		}
+		/* Both worker lanes are done; signal early-exit to any
+		 * iteration still in its loop guard. */
+		__atomic_store_n(&shared.stop, 1, __ATOMIC_RELEASE);
 	}
 #else
 	(void)vcpufd;
