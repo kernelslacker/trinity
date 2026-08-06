@@ -421,18 +421,20 @@ struct canary_op_state {
 	 * an op whose setup path is structurally missing a host prereq. */
 	unsigned int  consecutive_setup_broken;
 
-	/* Snapshots of the per-op PC-bracket attempt counter plus the
-	 * three outer-bracket reject arms (kcov_shm->childop_kcov.
+	/* Snapshots of the per-op PC-bracket attempt counter plus three
+	 * outer-bracket reject arms (kcov_shm->childop_kcov.
 	 * childop_kcov_op_{attempts,skipped_cmp,skipped_nested,
-	 * skipped_inactive}[op]).  Close-time deltas let close_window_
+	 * skipped_sample}[op]).  Close-time deltas let close_window_
 	 * and_decide()'s PC-trial retry gate label the window by
 	 * rejection reason: bracketed_delta == 0 alone conflates the
 	 * CMP-mode rejection (re-drawing the kcov mode has a real chance
 	 * of landing a PC-mode child next window) with the nested
 	 * rejection (lifecycle-invariant violation -- an outer bracket
 	 * was already owned when the childop dispatch attempted one; a
-	 * retry cannot fix a caller-side bug) and the inactive rejection
-	 * (kcov attribution is off run-wide; a retry cannot turn it on).
+	 * retry cannot fix a caller-side bug).  The inactive rejection
+	 * (kcov attribution is off run-wide) is handled implicitly: it
+	 * makes skipped_cmp_delta < eligible_delta so the equality gate
+	 * falls through without a separate snapshot field.
 	 * Retry-eligible windows have skipped_cmp_delta == attempts_
 	 * delta; anything else falls through to the standard demote path
 	 * so a productive op is not demoted on a false zero-bracket
@@ -441,7 +443,6 @@ struct canary_op_state {
 	unsigned long window_start_kcov_op_attempts;
 	unsigned long window_start_kcov_op_skipped_cmp;
 	unsigned long window_start_kcov_op_skipped_nested;
-	unsigned long window_start_kcov_op_skipped_inactive;
 	unsigned long window_start_kcov_op_skipped_sample;
 
 	/* Consecutive count of canary windows for this op that closed with
