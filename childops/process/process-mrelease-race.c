@@ -205,6 +205,12 @@ static void victim_body(int ready_wr, int release_rd,
 	close(ready_wr);
 	ncalls++;	/* close */
 
+	/* Flush the running count to the shared slot before blocking.
+	 * SIGKILL arrives during read() below; the done: label is
+	 * unreachable in normal flow, so this is the only live store. */
+	if (slot)
+		slot->direct_count = ncalls;
+
 	/* Block until parent closes the write end of release_pipe (EOF). */
 	{
 		ssize_t r;
@@ -223,8 +229,6 @@ static void victim_body(int ready_wr, int release_rd,
 		(void)munmap(shmem_region, 4 * 1024 * 1024);
 
 done:
-	if (slot)
-		slot->direct_count = ncalls;
 	_exit(0);
 }
 
@@ -378,7 +382,7 @@ static pid_t spawn_mrelease_racer(int pidfd, int release_rd,
  *   7. Collect all racer pids and tally results.
  *   8. Reap victim.
  */
-static void run_kill_race(void *bg_map, size_t bg_size)
+static unsigned long run_kill_race(void *bg_map, size_t bg_size)
 {
 	struct racer_result *results;
 	int ready_pipe[2];
@@ -386,15 +390,16 @@ static void run_kill_race(void *bg_map, size_t bg_size)
 	int victim_pidfd = -1;
 	pid_t victim_pid;
 	pid_t racer_pids[NR_RACERS];
-	pid_t waitid_pid;
+	pid_t waitid_pid = -1;
 	unsigned int i;
+	unsigned long direct_sum = 0;
 	char ready_byte;
 
 	results = mmap(NULL, page_size,
 		       PROT_READ | PROT_WRITE,
 		       MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if (results == MAP_FAILED)
-		return;
+		return 0;
 	memset(results, 0, page_size);
 
 	/* Initialise every racer slot to a sentinel so unwritten slots
@@ -504,8 +509,21 @@ static void run_kill_race(void *bg_map, size_t bg_size)
 	__atomic_add_fetch(&shm->stats.process_mrelease_race.kill_rounds,
 			   1, __ATOMIC_RELAXED);
 
+	/* Sum direct_count from slots that were actually written.
+	 * For mrelease racers: rc==INT_MIN means the child never stored a
+	 * result (fork failure, PDEATHSIG early exit).  For the waitid and
+	 * victim children use the fork-success pid as the guard. */
+	for (i = 0; i < NR_RACERS; i++) {
+		if (results[i].rc != INT_MIN)
+			direct_sum += results[i].direct_count;
+	}
+	if (waitid_pid > 0)
+		direct_sum += results[RESULT_IDX_WAITID].direct_count;
+	if (victim_pid > 0)
+		direct_sum += results[RESULT_IDX_VICTIM].direct_count;
+
 	(void)munmap(results, page_size);
-	return;
+	return direct_sum;
 
 out_pipes:
 	if (release_pipe[0] >= 0) close(release_pipe[0]);
@@ -515,6 +533,7 @@ out_ready:
 	if (ready_pipe[1] >= 0) close(ready_pipe[1]);
 out_results:
 	(void)munmap(results, page_size);
+	return 0;
 }
 
 /*
@@ -620,9 +639,10 @@ bool process_mrelease_race(struct childdata *child)
 			__atomic_add_fetch(
 				&shm->stats.childop.data_path[op],
 				1, __ATOMIC_RELAXED);
-		run_kill_race(bg_map, bg_size);
-		/* Each round dispatches NR_RACERS process_mrelease calls. */
-		direct_calls += NR_RACERS;
+		/* Accumulate direct-syscall counts from result slots that
+		 * were actually written; bail paths that issued zero
+		 * process_mrelease calls contribute zero. */
+		direct_calls += run_kill_race(bg_map, bg_size);
 	}
 
 	run_exit_probe();
