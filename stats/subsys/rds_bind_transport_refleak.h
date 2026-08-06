@@ -57,6 +57,16 @@ struct rds_bind_transport_refleak_stats {
 	 */
 	unsigned long rds_tcp_refcount_hwm;	/* highest rds_tcp refcount seen this run */
 	unsigned long leaked_refs_hwm_growth;	/* total growth of HWM across the run */
+
+	/*
+	 * port_collision_skips: holder bind failed because another worker
+	 * child computed the same per-pid port (pids differing by a
+	 * multiple of 4096 map to the same 0xB000|(pid&0x0FFF) value).
+	 * When this fires the EADDRINUSE leak path is skipped for that
+	 * invocation.  Fleet visibility here prevents the silent
+	 * single-path degradation from going unnoticed.
+	 */
+	unsigned long port_collision_skips;	/* holder bind failed -- EADDRINUSE arm skipped */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_RDS_BIND_TRANSPORT_REFLEAK_H */
