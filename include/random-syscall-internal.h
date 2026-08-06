@@ -121,4 +121,21 @@ void apply_chain_substitution(struct syscallrecord *rec,
  * remote-adaptive path.  Public API is declared in the cluster-local
  * header random_syscall/strategy-accounting-internal.h. */
 
+/*
+ * dispatch-step.c -- the dispatch_step coordinator and the greedy
+ * CMP RedQueen re-exec helpers (redqueen_reexec_step, pin helpers).
+ * dispatch_step is cluster-internal: its only callers are the four
+ * public wrappers in dispatch-wrappers.c and redqueen_reexec_step's
+ * recursive inner call, both within the random_syscall/ cluster.
+ * Not declared in include/child.h; not accessible outside the cluster.
+ *
+ * Recursion contract: redqueen_reexec_step() calls dispatch_step()
+ * with child->in_reexec set, gated by the !in_reexec check at the
+ * dispatch_step tail.  Both functions live in dispatch-step.c so the
+ * mutual call does not cross TU boundaries; the declaration here
+ * exists solely for dispatch-wrappers.c. */
+bool dispatch_step(struct childdata *child, struct syscallentry *entry,
+		   bool *found_new, unsigned long *new_cmp_out,
+		   unsigned long *new_transition_out);
+
 #endif /* _TRINITY_RANDOM_SYSCALL_INTERNAL_H */
