@@ -236,17 +236,22 @@ static int iter_einval(int loop_fd)
  *
  * Returns 1 if the EADDRINUSE bind was reached, 0 otherwise.
  */
-static int iter_eaddrinuse(int loop_fd, uint16_t holder_port)
+static int iter_eaddrinuse(int loop_fd, uint16_t holder_port,
+			   unsigned long *syscall_count_out)
 {
 	int holder_fd;
 	int transport = RDS_TRANS_TCP;
 	struct sockaddr_in haddr;
 	int r;
 	int ret = 0;
+	unsigned long sc = 0;
 
 	holder_fd = socket(AF_RDS, SOCK_SEQPACKET, 0);
-	if (holder_fd < 0)
+	sc++;	/* socket(AF_RDS) */
+	if (holder_fd < 0) {
+		*syscall_count_out = sc;
 		return 0;
+	}
 
 	memset(&haddr, 0, sizeof(haddr));
 	haddr.sin_family      = AF_INET;
@@ -262,6 +267,8 @@ static int iter_eaddrinuse(int loop_fd, uint16_t holder_port)
 		/* If setsockopt fails, close and bail.  rds_release sees
 		 * rs->rs_transport == NULL and skips rds_trans_put. */
 		close(holder_fd);
+		sc += 2;	/* setsockopt + close */
+		*syscall_count_out = sc;
 		return 0;
 	}
 
@@ -274,9 +281,11 @@ static int iter_eaddrinuse(int loop_fd, uint16_t holder_port)
 		 * skip so fleet stats expose how often this path is missed
 		 * rather than silently exercising only the EINVAL arm. */
 		close(holder_fd);
+		sc += 3;	/* setsockopt + bind + close */
 		__atomic_add_fetch(
 			&shm->stats.rds_bind_transport_refleak.port_collision_skips,
 			1, __ATOMIC_RELAXED);
+		*syscall_count_out = sc;
 		return 0;
 	}
 
@@ -286,8 +295,10 @@ static int iter_eaddrinuse(int loop_fd, uint16_t holder_port)
 	 */
 	r = setsockopt(loop_fd, SOL_RDS, SO_RDS_TRANSPORT,
 		       &transport, sizeof(transport));
+	sc++;	/* setsockopt(loop_fd) */
 	if (r == 0) {
 		r = bind(loop_fd, (struct sockaddr *)&haddr, sizeof(haddr));
+		sc++;	/* bind(loop_fd) */
 		__atomic_add_fetch(&shm->stats.rds_bind_transport_refleak.binds_tried,
 				   1, __ATOMIC_RELAXED);
 		if (r < 0 && errno == EADDRINUSE) {
@@ -304,6 +315,9 @@ static int iter_eaddrinuse(int loop_fd, uint16_t holder_port)
 	 * the holder's ref cleanly.  The loop fd's leaked ref stays.
 	 */
 	close(holder_fd);
+	sc++;	/* close(holder_fd) */
+
+	*syscall_count_out = sc;
 	return ret;
 }
 
@@ -410,8 +424,10 @@ bool rds_bind_transport_refleak(struct childdata *child)
 	 * 0 otherwise.  This counts toward local_failed_binds.
 	 */
 	local_eaddrinuse_count = 0;
+	unsigned long eaddrinuse_syscalls = 0;
 	if (!budget_elapsed_ns(&t_outer, (long)RDSBTR_WALL_CAP_NS))
-		local_eaddrinuse_count = iter_eaddrinuse(loop_fd, holder_port);
+		local_eaddrinuse_count = iter_eaddrinuse(loop_fd, holder_port,
+						     &eaddrinuse_syscalls);
 
 	/*
 	 * local_failed_binds: number of failed binds THIS invocation.
@@ -558,15 +574,21 @@ bool rds_bind_transport_refleak(struct childdata *child)
 	close(loop_fd);
 
 	/*
-	 * Account for direct syscalls: i x (setsockopt + bind) for the
-	 * EINVAL loop (i is the achieved iteration count, not the planned
-	 * outer_iters, since the loop may break early on budget or
-	 * setsockopt failure), plus up to 4 more for the EADDRINUSE round
-	 * (socket, setsockopt, bind, close on holder + loop-fd pair).
+	 * Account for direct syscalls issued this invocation:
+	 *   i * 2          -- EINVAL loop: setsockopt + bind per iteration
+	 *                     (i is the achieved count; loop may break early)
+	 *   eaddrinuse_syscalls -- EADDRINUSE path actual cost (0 if wall-cap
+	 *                     skipped the call; 1..6 depending on which
+	 *                     iter_eaddrinuse sub-path was reached)
+	 *   1              -- socket(AF_RDS) to open loop_fd
+	 *   1              -- close(loop_fd)
+	 *   6              -- 2 x proc_module_refcount() = 2 x (open+read+close
+	 *                     of /proc/modules)
 	 */
 	if (valid_op)
 		childop_direct_syscalls_add(op,
-					    (unsigned long)(i * 2UL + 4UL));
+					    (unsigned long)i * 2UL +
+					    eaddrinuse_syscalls + 8UL);
 
 	return true;
 }
