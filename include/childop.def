@@ -94,6 +94,7 @@ CHILDOP(CHILD_OP_EPOLL_VOLATILITY         , "epoll_volatility"           , epoll
 CHILDOP(CHILD_OP_EPOLL_NEST_RACE          , "epoll_nest_race"             , epoll_nest_race             , true, 1)
 CHILDOP(CHILD_OP_KEYRING_SPAM             , "keyring_spam"               , keyring_spam               , true, 1)
 CHILDOP(CHILD_OP_VDSO_MREMAP_RACE         , "vdso_mremap_race"           , vdso_mremap_race           , true, 1)
+CHILDOP(CHILD_OP_MREMAP_MERGE_MATRIX       , "mremap_merge_matrix"        , mremap_merge_matrix        , true, 1)
 CHILDOP(CHILD_OP_NUMA_MIGRATION           , "numa_migration"             , numa_migration_churn       , true, 1)
 CHILDOP(CHILD_OP_CPU_HOTPLUG_RIDER        , "cpu_hotplug_rider"          , cpu_hotplug_rider          , true, 1)
 CHILDOP(CHILD_OP_SLAB_CACHE_THRASH        , "slab_cache_thrash"          , slab_cache_thrash          , true, 0)

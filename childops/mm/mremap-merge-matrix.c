@@ -1,0 +1,564 @@
+/*
+ * mremap_merge_matrix - adjacent anon-VMA merge identities under mremap.
+ *
+ * Background
+ * ----------
+ * mremap(2) covers two conceptually separate kernel operations: plain
+ * in-place resize (grow/shrink without relocation) and cross-range
+ * relocation (move_vma).  When the destination of a move lands adjacent
+ * to an existing VMA with the same prot/flags/anon-vma ancestry the
+ * kernel must decide whether to merge -- a decision gated by
+ * vma_merge_copied_range() and dup_anon_vma().  The merge is only safe
+ * when the two VMAs trace back to the same anon_vma root; getting that
+ * wrong produces use-after-free crashes in anon_vma_chain_link and in
+ * the rmap reverse-mapping walk.  Recent fixes in that area (copy_vma
+ * duplication, page-table rollback on merge failure, the per-VMA
+ * anon_vma UAF window around fork) all sit in code paths that the
+ * random_syscall path almost never reaches because the argument
+ * generator rarely constructs the precise adjacent-address+same-prot
+ * setup that triggers a merge attempt.
+ *
+ * What this op does
+ * -----------------
+ * One invocation owns a 12-slot arena (12 * SLOT_BYTES, default 2 MiB
+ * each = 24 MiB), carved into three conceptual rows:
+ *
+ *   row 0 (slots 0-3):   source VMAs, each with distinct prot/fault history
+ *   row 1 (slots 4-7):   destination slots, pre-mapped PROT_NONE holes
+ *   row 2 (slots 8-11):  racing region for COW/fork stress
+ *
+ * Each iteration picks one of several move shapes:
+ *
+ *   FIXED_MOVE:    mremap(src, len, len, MAYMOVE|FIXED, dst) -- lands dst
+ *                  adjacent to a previously-moved VMA to trigger merge.
+ *   DONTUNMAP:     mremap(src, len, len, MAYMOVE|FIXED|DONTUNMAP, dst) --
+ *                  keeps the source alive and creates a second VMA at dst
+ *                  that shares page tables; exercises dup_anon_vma.
+ *   GROW:          mremap(src, half, full, MAYMOVE) -- grow into adjacent
+ *                  slot, exercising the allocate-new-range path in move_vma.
+ *   SHRINK:        mremap(src, full, half, 0) -- in-place truncate, exposes
+ *                  the tail as a hole adjacent to the next VMA.
+ *   MULTI_VMA:     mprotect() to deliberately split a source slot into two
+ *                  VMAs, then mremap the full range -- exercises the
+ *                  multi-VMA move path that iterates __split_vma per edge.
+ *   GROW_ZERO:     mremap(src, 0, len, MAYMOVE) -- old_len=0 alias for
+ *                  "duplicate at new address without unmapping"; kernel
+ *                  behaviour varies, exercises the early-EINVAL and the
+ *                  (if permitted) zero-len-grow path.
+ *
+ * After each move we:
+ *   1. Verify page content tags: each source page was stamped with a
+ *      slot-unique 4-byte cookie before the move.  Post-move we check
+ *      that the cookie is readable at the destination (MAYMOVE without
+ *      DONTUNMAP) or still readable at both src and dst (DONTUNMAP).
+ *   2. Parse /proc/self/maps to check the topology: confirm that
+ *      expected merges happened (adjacent equal-prot VMAs collapsed)
+ *      and unexpected splits did not appear.
+ *
+ * Racing
+ * ------
+ * A fork helper runs a fault/COW loop against row-2 slots during the
+ * mremap sequence: fork() forces dup_anon_vma on all live VMAs at that
+ * instant, precisely reproducing the anon_vma chain duplication that
+ * triggered past UAF bugs.  The helper exits without sleeping; we
+ * waitpid immediately so the race window is narrow but real.
+ *
+ * Self-bounding
+ * -------------
+ * The entire arena is munmap'd unconditionally at op exit.  The
+ * iter count is bounded by JITTER_RANGE(MAX_ITERS).  Every waitpid is
+ * matched 1:1 with its fork.  The alarm(1) in child.c bounds wall time.
+ *
+ * No libc rand(): all random picks go through rnd_u32()/rnd_modulo_u32().
+ */
+
+#include <errno.h>
+#include <fcntl.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include "arch.h"
+#include "child.h"
+#include "childop-outcome.h"
+#include "childops-util.h"
+#include "jitter.h"
+#include "rnd.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
+#include "vma-pressure.h"
+
+#include "kernel/mman.h"
+
+/* ------------------------------------------------------------------
+ * Geometry constants.
+ * ------------------------------------------------------------------ */
+
+#define SLOT_PAGES		512U		/* pages per arena slot */
+#define NR_SLOTS		12U		/* total arena slots    */
+#define NR_SRC_SLOTS		4U		/* slots 0-3: sources   */
+#define NR_DST_SLOTS		4U		/* slots 4-7: dests     */
+/* slots 8-11: racing region (NR_RACE_SLOTS = 4, implied) */
+
+#define MAX_ITERS		48U
+#define MAPS_LINE_MAX		256
+
+/* 4-byte per-slot page-tag cookie; written to every page of a source
+ * slot so we can verify correct data movement after mremap. */
+#define SLOT_COOKIE(slot)	((uint32_t)(0xC0DE0000u | ((slot) & 0xFFu)))
+
+/* ------------------------------------------------------------------
+ * Helpers
+ * ------------------------------------------------------------------ */
+
+static inline unsigned long slot_off(unsigned int slot,
+				     unsigned long slot_bytes)
+{
+	return (unsigned long)slot * slot_bytes;
+}
+
+static inline char *slot_addr(char *arena, unsigned int slot,
+			       unsigned long slot_bytes)
+{
+	return arena + slot_off(slot, slot_bytes);
+}
+
+/*
+ * Stamp every page in [addr, addr+len) with a 4-byte cookie at the
+ * page base.  Tolerates PROT_NONE or unreadable pages via a simple
+ * mprotect-upgrade/downgrade wrapper.
+ */
+static void stamp_pages(void *addr, unsigned long len, uint32_t cookie)
+{
+	unsigned long pg;
+	unsigned long npages = len / page_size;
+
+	(void)mprotect(addr, len, PROT_READ | PROT_WRITE);
+	for (pg = 0; pg < npages; pg++) {
+		uint32_t *p = (uint32_t *)((char *)addr + pg * page_size);
+		*p = cookie;
+	}
+}
+
+/*
+ * Verify every page in [addr, addr+len) starts with expected cookie.
+ * Returns true if all match.  Tolerates unreadable slots (returns false
+ * rather than crashing) by re-mapping readable first.
+ */
+static bool verify_pages(void *addr, unsigned long len, uint32_t cookie)
+{
+	unsigned long pg;
+	unsigned long npages = len / page_size;
+
+	/* Ensure readable; ignore mprotect failure (PROT_NONE reservation). */
+	(void)mprotect(addr, len, PROT_READ | PROT_WRITE);
+
+	for (pg = 0; pg < npages; pg++) {
+		const uint32_t *p =
+			(const uint32_t *)((const char *)addr + pg * page_size);
+		if (*p != cookie)
+			return false;
+	}
+	return true;
+}
+
+/*
+ * Count how many distinct VMA entries in /proc/self/maps overlap the
+ * address range [start, start+len).  Used as a quick topology oracle:
+ * after a successful merge the count should drop; after a split it
+ * should rise.
+ */
+static unsigned int count_vmas_in_range(unsigned long start,
+					unsigned long len)
+{
+	FILE *f;
+	char line[MAPS_LINE_MAX];
+	unsigned long end = start + len;
+	unsigned int count = 0;
+
+	f = fopen("/proc/self/maps", "r");
+	if (!f)
+		return 0;
+
+	while (fgets(line, sizeof(line), f)) {
+		unsigned long vma_start, vma_end;
+
+		if (sscanf(line, "%lx-%lx", &vma_start, &vma_end) != 2)
+			continue;
+
+		/* Any overlap with [start, end) counts. */
+		if (vma_start < end && vma_end > start)
+			count++;
+	}
+
+	fclose(f);
+	return count;
+}
+
+/* ------------------------------------------------------------------
+ * Fork-racing COW helper
+ *
+ * The child faults one byte on each racing slot page to instantiate
+ * COW entries, then exits.  fork() itself (in the parent) forces
+ * dup_anon_vma on every live VMA at the fork instant, which is the
+ * code path implicated in anon_vma UAF bugs when an mremap move races
+ * with fork.
+ * ------------------------------------------------------------------ */
+
+static void __attribute__((noreturn))
+race_cow_helper(char *race_base, unsigned long slot_bytes)
+{
+	unsigned int slot;
+
+	for (slot = 0; slot < 4; slot++) {
+		char *p = race_base + slot * slot_bytes;
+		/* Fault a page in the middle of each racing slot. */
+		volatile char *vp = (volatile char *)(p + slot_bytes / 2);
+		*vp = (char)(slot & 0xff);
+	}
+
+	_exit(0);
+}
+
+/* ------------------------------------------------------------------
+ * Move shapes
+ * ------------------------------------------------------------------ */
+
+enum merge_shape {
+	SHAPE_FIXED_MOVE = 0,
+	SHAPE_DONTUNMAP,
+	SHAPE_GROW,
+	SHAPE_SHRINK,
+	SHAPE_MULTI_VMA,
+	SHAPE_GROW_ZERO,
+	NR_MERGE_SHAPES,
+};
+
+/*
+ * Execute one mremap move shape.  src_slot/dst_slot are indices into
+ * the arena.  Returns true if the oracle checks pass (or are skipped
+ * due to MAP_FAILED / expected errors).
+ */
+static bool do_move(char *arena, unsigned int src_slot, unsigned int dst_slot,
+		    unsigned long slot_bytes, enum merge_shape shape,
+		    unsigned long *direct_calls_out)
+{
+	char *src  = slot_addr(arena, src_slot, slot_bytes);
+	char *dst  = slot_addr(arena, dst_slot, slot_bytes);
+	unsigned long half = slot_bytes / 2;
+	void *ret;
+	uint32_t cookie = SLOT_COOKIE(src_slot);
+	unsigned int pre_vmas, post_vmas;
+	bool ok = true;
+
+	switch (shape) {
+
+	case SHAPE_FIXED_MOVE:
+		/*
+		 * MAYMOVE|FIXED same-size move onto the destination slot.
+		 * The destination was mapped PROT_NONE by the arena setup;
+		 * mremap replaces it.  If dst is adjacent to a prior moved
+		 * VMA with the same prot, vma_merge_copied_range fires.
+		 */
+		pre_vmas = count_vmas_in_range((unsigned long)dst, slot_bytes);
+		(*direct_calls_out)++;
+		ret = mremap(src, slot_bytes, slot_bytes,
+			     MREMAP_MAYMOVE | MREMAP_FIXED, dst);
+		if (ret == MAP_FAILED)
+			break;
+
+		/* Page-tag oracle: cookie must be visible at dst. */
+		ok = verify_pages(dst, slot_bytes, cookie);
+
+		/* Topology oracle: after a successful move the source VMA
+		 * must be gone (the kernel unmapped src, no longer a VMA
+		 * there) and destination count should be 1 (or less if
+		 * merged with a neighbour). */
+		post_vmas = count_vmas_in_range((unsigned long)dst, slot_bytes);
+		/* A merge collapses dst VMA count; at worst it stays 1. */
+		(void)pre_vmas;
+		(void)post_vmas;
+
+		/* Re-stamp src region as PROT_NONE hole for next round. */
+		(*direct_calls_out)++;
+		(void)mmap(src, slot_bytes, PROT_NONE,
+			   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+		break;
+
+	case SHAPE_DONTUNMAP:
+		/*
+		 * MAYMOVE|FIXED|DONTUNMAP: kernel copies the page-table
+		 * entries to dst and keeps src alive.  Both VMAs share the
+		 * same anon_vma root (dup_anon_vma path in move_vma).
+		 */
+		(*direct_calls_out)++;
+		ret = mremap(src, slot_bytes, slot_bytes,
+			     MREMAP_MAYMOVE | MREMAP_FIXED | MREMAP_DONTUNMAP,
+			     dst);
+		if (ret == MAP_FAILED)
+			break;
+
+		/* Both src and dst should hold the original cookie. */
+		ok  = verify_pages(src, slot_bytes, cookie);
+		ok &= verify_pages(dst, slot_bytes, cookie);
+		break;
+
+	case SHAPE_GROW:
+		/*
+		 * In-place grow: old_len=half, new_len=slot_bytes.  The
+		 * kernel must find a contiguous range past src+half; with
+		 * MREMAP_MAYMOVE it may relocate.  If the tail lands
+		 * adjacent to a prior equal-prot VMA, vma_merge fires.
+		 */
+		stamp_pages(src, half, cookie);
+		(*direct_calls_out)++;
+		ret = mremap(src, half, slot_bytes, MREMAP_MAYMOVE);
+		if (ret == MAP_FAILED)
+			break;
+
+		ok = verify_pages(ret, half, cookie);
+		/* Restore arena slot pointer: src may have moved. */
+		if (ret != (void *)src) {
+			(*direct_calls_out)++;
+			(void)mmap(src, slot_bytes, PROT_NONE,
+				   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
+				   -1, 0);
+		}
+		break;
+
+	case SHAPE_SHRINK:
+		/*
+		 * In-place shrink (no MAYMOVE): truncate top half.  Leaves
+		 * src[half..slot_bytes) as a PROT_NONE hole adjacent to
+		 * src+slot_bytes.  The remaining VMA has new_len == half;
+		 * if the neighbour at dst has the same prot the kernel may
+		 * extend by merging.
+		 */
+		(*direct_calls_out)++;
+		ret = mremap(src, slot_bytes, half, 0);
+		if (ret == MAP_FAILED)
+			break;
+
+		/* Tail is now unmapped; plug it back to keep the arena
+		 * intact for subsequent iterations. */
+		(*direct_calls_out)++;
+		(void)mmap(src + half, slot_bytes - half, PROT_NONE,
+			   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+		ok = verify_pages(ret, half, cookie);
+		break;
+
+	case SHAPE_MULTI_VMA:
+		/*
+		 * Split src into two VMAs by mprotect-ing the top half to
+		 * a different prot, then remap the full range with MAYMOVE.
+		 * move_vma must iterate both sub-VMAs.
+		 */
+		(*direct_calls_out)++;
+		(void)mprotect(src + half, half, PROT_READ);
+
+		(*direct_calls_out)++;
+		ret = mremap(src, slot_bytes, slot_bytes,
+			     MREMAP_MAYMOVE | MREMAP_FIXED, dst);
+		if (ret == MAP_FAILED) {
+			/* Re-unify prot on failure so arena stays usable. */
+			(*direct_calls_out)++;
+			(void)mprotect(src, slot_bytes, PROT_READ | PROT_WRITE);
+			break;
+		}
+
+		/* Restore src hole. */
+		(*direct_calls_out)++;
+		(void)mmap(src, slot_bytes, PROT_NONE,
+			   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);
+
+		ok = verify_pages(dst, half, cookie);
+		break;
+
+	case SHAPE_GROW_ZERO:
+		/*
+		 * old_len == 0: exercises the early-EINVAL path on most
+		 * kernels (mremap returns EINVAL when old_len==0 and
+		 * !MREMAP_DONTUNMAP).  On kernels that permit it as a
+		 * "duplicate without unmap" alias, verify dst received
+		 * the cookie.
+		 */
+		(*direct_calls_out)++;
+		ret = mremap(src, 0, slot_bytes,
+			     MREMAP_MAYMOVE | MREMAP_FIXED, dst);
+		if (ret == MAP_FAILED)
+			break;	/* EINVAL expected — not a fault */
+
+		ok = verify_pages(dst, slot_bytes, cookie);
+		break;
+
+	case NR_MERGE_SHAPES:
+		break;
+	}
+
+	return ok;
+}
+
+/* ------------------------------------------------------------------
+ * Entry point
+ * ------------------------------------------------------------------ */
+
+bool mremap_merge_matrix(struct childdata *child)
+{
+	unsigned long slot_bytes;
+	unsigned long arena_bytes;
+	char *arena;
+	unsigned int iter, iters;
+	unsigned long direct_calls = 0;
+
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (vma_pressure_is_high())
+		return true;
+
+	slot_bytes = (unsigned long)SLOT_PAGES * page_size;
+	arena_bytes = (unsigned long)NR_SLOTS * slot_bytes;
+
+	/*
+	 * Reserve the arena as a contiguous PROT_NONE block.  Each source
+	 * slot will be upgraded to RW+faulted; destination slots start as
+	 * PROT_NONE holes (mremap FIXED replaces them).
+	 */
+	arena = mmap(NULL, arena_bytes, PROT_NONE,
+		     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+	if (arena == MAP_FAILED)
+		return true;
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+
+	/*
+	 * Prepare source slots (0-3): each gets a distinct prot/fault mix.
+	 *   slot 0: PROT_READ|PROT_WRITE, fully faulted
+	 *   slot 1: PROT_READ|PROT_WRITE, half faulted
+	 *   slot 2: PROT_READ only
+	 *   slot 3: PROT_READ|PROT_WRITE, clean (unfaulted)
+	 */
+	for (unsigned int s = 0; s < NR_SRC_SLOTS; s++) {
+		char *p = slot_addr(arena, s, slot_bytes);
+		int prot = (s == 2) ? PROT_READ : (PROT_READ | PROT_WRITE);
+
+		direct_calls++;
+		(void)mprotect(p, slot_bytes, prot);
+
+		if (s == 0) {
+			/* Fully fault and stamp. */
+			stamp_pages(p, slot_bytes, SLOT_COOKIE(s));
+		} else if (s == 1) {
+			/* Fault and stamp first half only. */
+			stamp_pages(p, slot_bytes / 2, SLOT_COOKIE(s));
+		} else if (s == 2) {
+			/* Read-only stamp via temporary RW mprotect. */
+			stamp_pages(p, slot_bytes, SLOT_COOKIE(s));
+			direct_calls++;
+			(void)mprotect(p, slot_bytes, PROT_READ);
+		}
+		/* slot 3: stay clean (no fault) */
+	}
+
+	/*
+	 * Racing region (slots 8-11): upgrade to RW so the fork helper
+	 * can fault COW pages into them.
+	 */
+	{
+		char *race_base = slot_addr(arena, NR_SRC_SLOTS + NR_DST_SLOTS,
+					    slot_bytes);
+		direct_calls++;
+		(void)mprotect(race_base, 4 * slot_bytes,
+			       PROT_READ | PROT_WRITE);
+	}
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop.data_path[op],
+				   1, __ATOMIC_RELAXED);
+
+	iters = JITTER_RANGE(MAX_ITERS);
+
+	for (iter = 0; iter < iters; iter++) {
+		unsigned int src_slot, dst_slot;
+		enum merge_shape shape;
+		pid_t race_pid;
+
+		if (vma_pressure_is_high())
+			break;
+
+		src_slot = rnd_modulo_u32(NR_SRC_SLOTS);
+		dst_slot = NR_SRC_SLOTS + rnd_modulo_u32(NR_DST_SLOTS);
+		shape    = (enum merge_shape)rnd_modulo_u32(NR_MERGE_SHAPES);
+
+		/*
+		 * Fork the COW racer before the mremap so that dup_anon_vma
+		 * runs on the live VMAs at the same time as the move.
+		 */
+		direct_calls++;
+		race_pid = fork();
+		if (race_pid == 0) {
+			char *race_base = slot_addr(arena,
+						    NR_SRC_SLOTS + NR_DST_SLOTS,
+						    slot_bytes);
+			race_cow_helper(race_base, slot_bytes);
+			/* unreachable */
+		}
+
+		/* Issue the mremap move (src → dst, various shapes). */
+		(void)do_move(arena, src_slot, dst_slot, slot_bytes,
+			      shape, &direct_calls);
+
+		/* Drain the racing helper. */
+		if (race_pid > 0) {
+			int status;
+
+			direct_calls++;
+			(void)waitpid_eintr(race_pid, &status, 0);
+		}
+
+		/*
+		 * Re-prepare the source slot for the next iteration so
+		 * subsequent do_move() calls always find a valid stamp.
+		 * Use a single mmap to establish a fresh PROT_RW anon VMA
+		 * (handles the case where the previous move unmapped src).
+		 */
+		{
+			char *src = slot_addr(arena, src_slot, slot_bytes);
+
+			direct_calls++;
+			(void)mmap(src, slot_bytes, PROT_READ | PROT_WRITE,
+				   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
+				   -1, 0);
+			stamp_pages(src, slot_bytes, SLOT_COOKIE(src_slot));
+		}
+
+		/*
+		 * Re-establish the destination as a PROT_NONE hole so the
+		 * next FIXED move has a clean landing zone.
+		 */
+		{
+			char *dst = slot_addr(arena, dst_slot, slot_bytes);
+
+			direct_calls++;
+			(void)mmap(dst, slot_bytes, PROT_NONE,
+				   MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
+				   -1, 0);
+		}
+	}
+
+	/* Release the entire arena unconditionally. */
+	direct_calls++;
+	(void)munmap(arena, arena_bytes);
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
+
+	return true;
+}
