@@ -42,6 +42,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <poll.h>
+#include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -49,8 +50,14 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <linux/netlink.h>
+
+#include "child.h"
+#include "childop-outcome.h"
+#include "childops-netlink.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #include "childops/net/crafted-icmp-rx.h"
 
@@ -295,6 +302,83 @@ void icmp_inject_cleanup(struct icmp_inject_ctx *ctx)
  * Returns 1 on pass, 0 on fail, -1 on cap-absent skip (EPERM opening
  * the raw socket — not a test failure, just capability absent).
  */
+/*
+ * Per-child master latch.  Set when userns_run_in_ns() returns -EPERM
+ * (kernel policy has disabled unprivileged user namespaces: either
+ * user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ * Without a private netns we cannot obtain CAP_NET_RAW for the raw
+ * socket, so the op stays disabled for this child's lifetime.
+ */
+static bool ns_unsupported_crafted_icmp_rx;
+
+/*
+ * crafted_icmp_rx_in_ns — body executed inside the transient grandchild
+ * forked by userns_run_in_ns().  The grandchild has CLONE_NEWUSER +
+ * CLONE_NEWNET, so it holds CAP_NET_RAW inside its own userns and the
+ * raw socket open in icmp_inject_init() will succeed.  Lo is brought up
+ * so that 127.0.0.1 is a valid loopback address in the fresh netns.
+ */
+static int crafted_icmp_rx_in_ns(void *arg)
+{
+	struct nl_ctx nl = { .fd = -1 };
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
+
+	(void)arg;
+
+	if (nl_open(&nl, &opts) == 0) {
+		rtnl_bring_lo_up(&nl);
+		nl_close(&nl);
+	}
+
+	selftest_icmp_inject();
+	return 0;
+}
+
+/*
+ * crafted_icmp_rx — childop entry point (registered in childop.def).
+ *
+ * Forks a transient grandchild with an identity user namespace and a
+ * private net namespace via userns_run_in_ns(CLONE_NEWNET, ...).  Inside
+ * the grandchild, CAP_NET_RAW is available and 127.0.0.1 is a valid
+ * loopback address, so the raw-socket open in icmp_inject_init() and
+ * the selftest inject/observe sequence can both complete without
+ * EPERM.
+ *
+ * On hosts where unprivileged user namespaces are disabled the first
+ * userns_run_in_ns() call returns -EPERM; the op is then latched off
+ * for the remainder of this persistent child's lifetime.
+ */
+bool crafted_icmp_rx(struct childdata *child)
+{
+	const enum child_op_type op = child->op_type;
+	int rc;
+
+	if (ns_unsupported_crafted_icmp_rx)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, crafted_icmp_rx_in_ns, child);
+	if (rc == -EPERM) {
+		ns_unsupported_crafted_icmp_rx = true;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			__atomic_store_n(&shm->stats.childop.latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.icmp_inject.init_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		__atomic_add_fetch(&shm->stats.icmp_inject.init_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	return true;
+}
+
 int selftest_icmp_inject(void)
 {
 	int server_fd = -1, client_fd = -1, rc = 0;
