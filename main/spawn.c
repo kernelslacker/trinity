@@ -648,7 +648,7 @@ void fork_children(void)
 	unsigned int total_backoff_us = 0;
 	const unsigned int max_total_backoff_us = 2000000u;
 
-	while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < max_children) {
+	while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < live_child_slots) {
 		int childno;
 
 		if (__atomic_load_n(&shm->spawn_no_more, __ATOMIC_ACQUIRE))
