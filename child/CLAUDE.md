@@ -2,7 +2,7 @@
 
 Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop that runs one workload per iteration — either a random syscall (`random_syscall/`) or a scripted childop (`childops/`) via the alt-op picker — under an `alarm()` backstop and a set of self-integrity oracles. Distinct from `childops/`: those are the scripted *workloads*; this is the runtime *infrastructure* that drives them.
 
-## Files (19 files, ~6,400 LOC)
+## Files (22 files, ~6,400 LOC)
 
 | File | Role |
 |---|---|
@@ -17,7 +17,10 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 | child-altop-table.c | Alt-op string names + indirect-call dispatch: `op_dispatch[]` / `alt_op_name()` / `alt_op_lookup_by_name()` / `op_uses_outer_bracket()` (gated by `scripts/check-static/check-alt-op-rotation.sh`). |
 | child-altop-budget.c | Adaptive per-op budget multiplier + decaying-recency edge/wall ring: `adapt_budget()` / `childop_decay_record_*()` / `childop_window_advance()`. |
 | child-altop-score.c | Per-op outcome snapshot + ranked score-dump tables emitted at shutdown: `childop_outcome_snapshot()` / `childop_outcome_window_dump()` / `childop_score_dump()`. Telemetry-only. |
-| child-canary-state.c | Dormant-childop canary promotion queue: state transitions (`enter_canarying` / `leave_canarying_*` / `close_window_and_decide`) + `canary_queue_init` + the two-stage commit-on-respawn hook. |
+| child-canary-state.c | Canary slot state-machine: parent-private state cells + state transitions (`enter_canarying` / `leave_canarying_*` / `close_window_and_decide`) + shadow recommendation helpers. |
+| child-canary-stats.c | Shared counter-read helpers: `monotonic_seconds` / `window_iters_resolved` / `edges_for_op` / `invocations_for_op`. |
+| child-canary-liveness.c | Pid-liveness probes + three-stage slot teardown (`kill_canary_slot_children`): SIGTERM → grace window → SIGKILL. |
+| child-canary-grace.c | Grace-window scheduling + init: `canary_queue_init` (priority-shuffle, CONFIG_BLOCKED stamping, first-op staging) + `canary_queue_on_child_respawn` (two-stage commit hook). |
 | child-canary-picker.c | Canary picker (`pick_next_canary`) + `~1-s` tick loop (`canary_queue_tick`), including early-bail SETUP_BROKEN and wedge-stall demotes and the plateau-edge log. |
 | child-canary-policy.c | Canary static policy tables: priority seeds, config-blocked terminals, risky-defer skip set, pid-heavy drain set, and the op → setup-failure reason hint table. |
 | child-canary-report.c | Canary summary/log emitters (`canary_queue_summary`, `canary_queue_on_crash`) + the read-only public queries (`canary_slot_active`, `canary_active_op`, `canary_op_is_promoted`) called on every fork. |
