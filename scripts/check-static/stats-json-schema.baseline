@@ -274,6 +274,10 @@ stats	object
   stats.uffd_fault_move	object
     stats.uffd_fault_move.v1_resolve_ok	u64
     stats.uffd_fault_move.v1_resolve_fail	u64
+    stats.uffd_fault_move.v1_wp_faults_resolved	u64
+    stats.uffd_fault_move.v1_poison_faults_resolved	u64
+    stats.uffd_fault_move.v1_dontwake_still_blocked	u64
+    stats.uffd_fault_move.v1_dontwake_woke_early	u64
     stats.uffd_fault_move.v2_move_ok	u64
     stats.uffd_fault_move.v2_move_fail	u64
     stats.uffd_fault_move.v2_move_einval	u64

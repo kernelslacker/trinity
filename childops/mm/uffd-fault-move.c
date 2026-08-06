@@ -9,14 +9,25 @@
  * the random picker barely reaches:
  *
  * Variant 1 -- fault-resolve matrix
- *   Register an anonymous VMA MISSING|WP.  A fault thread accesses one
+ *   Register an anonymous VMA MISSING|WP (WP registration falls back to
+ *   MISSING-only on kernels that reject it).  A fault thread accesses one
  *   page at a time, blocking inside the kernel until the main thread
- *   resolves the fault.  Resolution rotates through UFFDIO_COPY (with a
- *   per-page sequence number in the source page so the oracle can verify
- *   content), UFFDIO_ZEROPAGE, UFFDIO_POISON, and UFFDIO_WP (re-write-
- *   protect after initial COPY).  The DONTWAKE flag is exercised on
- *   every COPY/ZEROPAGE: the fault thread stays blocked until an
- *   explicit UFFDIO_WAKE is sent, verifying the DONTWAKE+WAKE discipline.
+ *   resolves the fault.  Resolution rotates per page index (mod 4),
+ *   gated on the range_ioctls bitmap returned by UFFDIO_REGISTER:
+ *     page%4==0  UFFDIO_COPY (always available; oracle verifies seqno)
+ *     page%4==1  UFFDIO_ZEROPAGE if gated, else COPY fallback
+ *     page%4==2  UFFDIO_POISON if gated; subsequent access delivers
+ *                SIGBUS (caught by fault thread via sigsetjmp)
+ *     page%4==3  UFFDIO_COPY|WP if WP is registered and gated, else
+ *                COPY fallback; write-protecting the resolved page
+ *                causes the thread's re-executed write to generate a
+ *                second WP fault, which is resolved with
+ *                UFFDIO_WRITEPROTECT (unprotect).
+ *   DONTWAKE is exercised on COPY, ZEROPAGE and COPY|WP resolutions;
+ *   the fault thread's progress is measured before the explicit WAKE
+ *   to distinguish "thread stayed blocked" from "kernel woke early".
+ *   Stat fields: v1_wp_faults_resolved, v1_poison_faults_resolved,
+ *   v1_dontwake_still_blocked, v1_dontwake_woke_early.
  *
  * Variant 2 -- UFFDIO_MOVE / swap-cache race
  *   Create two distinct MAP_PRIVATE|MAP_ANONYMOUS mappings for src and dst.
@@ -246,12 +257,52 @@ struct v1_ctx {
 	volatile int faulted_idx;	/* last page index the thread faulted */
 	volatile uint32_t observed_seqno[MAX_FM_PAGES]; /* read-back from thread */
 	volatile int seqno_checked[MAX_FM_PAGES]; /* 1 once thread has checked */
+	/* POISON resolution: main sets poison_resolved[i]=1 before waking;
+	 * fault thread sees SIGBUS on the re-executed access and escapes via
+	 * sigsetjmp; sigbus_escaped[i] is set inside the handler to confirm
+	 * the SIGBUS was from a POISON page rather than a stray signal. */
+	volatile int poison_resolved[MAX_FM_PAGES];
+	volatile int sigbus_escaped[MAX_FM_PAGES];
+	/* Saved signal dispositions — installed by fault thread, restored
+	 * by run_variant1() after join so the process-wide state is clean. */
+	struct sigaction old_sa_segv;
+	struct sigaction old_sa_bus;
 };
+
+/* Per-thread escape state for SIGBUS (POISON) in the v1 fault thread. */
+static _Thread_local sigjmp_buf v1_escape_buf;
+static _Thread_local volatile int v1_in_escape_zone;
+static _Thread_local volatile int v1_escape_page_idx;
+static _Thread_local struct v1_ctx *v1_thread_ctx;
+
+static void v1_sigbus_handler(int signo, siginfo_t *info, void *uctx)
+{
+	(void)info;
+	(void)uctx;
+	if (v1_in_escape_zone) {
+		siglongjmp(v1_escape_buf, 1);
+	} else {
+		/* SIGBUS outside escape zone — not ours; reset and re-raise. */
+		raise(signo);
+	}
+}
 
 static void *v1_fault_thread(void *arg)
 {
 	struct v1_ctx *ctx = (struct v1_ctx *)arg;
+	struct sigaction sa;
 	int i;
+
+	/* Install SIGBUS handler for POISON-resolved pages.  sigaction() is
+	 * process-wide; save old dispositions in ctx so run_variant1() can
+	 * restore them after the thread is joined. */
+	v1_thread_ctx = ctx;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_sigaction = v1_sigbus_handler;
+	sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGBUS, &sa, &ctx->old_sa_bus);
+	sigaction(SIGSEGV, &sa, &ctx->old_sa_segv);
 
 	for (i = 0; i < MAX_FM_PAGES; i++) {
 		volatile uint32_t *pg;
@@ -262,38 +313,85 @@ static void *v1_fault_thread(void *arg)
 		pg = (volatile uint32_t *)((char *)ctx->region +
 					   (size_t)i * (size_t)page_size);
 
+		/* Arm sigsetjmp escape zone around the fault-triggering access.
+		 * If this page is POISON-resolved, the re-executed write below
+		 * delivers SIGBUS; v1_sigbus_handler() siglongjmp()s back here
+		 * with value 1 so we record the escape and continue to the
+		 * next page rather than spinning or crashing. */
+		v1_escape_page_idx = i;
+		v1_in_escape_zone = 1;
+		if (sigsetjmp(v1_escape_buf, 1) != 0) {
+			/* Escaped SIGBUS from a POISON-resolved page. */
+			v1_in_escape_zone = 0;
+			__atomic_store_n(&ctx->sigbus_escaped[i], 1,
+					 __ATOMIC_RELEASE);
+			/* Re-install handler: SA_RESETHAND cleared it. */
+			sigaction(SIGBUS,  &sa, NULL);
+			sigaction(SIGSEGV, &sa, NULL);
+			continue;
+		}
+
 		/* Write to word 1 of the page (offset sizeof(uint32_t)).
 		 * This triggers the MISSING fault and blocks until the main
-		 * thread resolves it via UFFDIO_COPY -- but deliberately avoids
-		 * touching word 0.  UFFDIO_COPY places the source sequence
-		 * number at word 0 (offset 0) of the destination page; by
-		 * storing our marker at word 1, COPY's payload at word 0
-		 * survives the re-execution of this store after the fault is
-		 * resolved.  We then read word 0 for the oracle compare, so
-		 * any content error in COPY (wrong src, zeroed page, etc.)
-		 * produces a mismatch.  If word 1 were used as the seqno
-		 * location, the re-executed store would overwrite it before the
-		 * read-back, making the oracle vacuous -- the exact tautology
-		 * this layout was changed to eliminate.
+		 * thread resolves it.  Deliberately avoids word 0 so that
+		 * UFFDIO_COPY's payload at word 0 survives the re-execution
+		 * of this store.  The oracle reads word 0; if COPY wrote
+		 * anything other than SEQNO_MAGIC|(i+1), oracle_mismatch
+		 * fires — the oracle is no longer vacuous.
 		 *
-		 * For POISON-resolved pages the kernel delivers SIGBUS; the
-		 * main thread marks stop and the thread checks before each
-		 * access -- but a race here is acceptable: SIGBUS on a
-		 * POISON-resolved page is benign from a test perspective and
-		 * is caught by the parent's alarm(1) timeout. */
+		 * For COPY|WP-resolved pages (WP arm), this re-executed write
+		 * triggers a WP fault; the main thread handles it separately
+		 * with UFFDIO_WRITEPROTECT (unprotect) before this write
+		 * finally completes. */
 		__atomic_store_n(&ctx->faulted_idx, i, __ATOMIC_RELEASE);
 		pg[1] = (uint32_t)(SEQNO_MAGIC | (uint32_t)(i + 1));
+		v1_in_escape_zone = 0;
 
-		/* Read back word 0: COPY placed the src_pages seqno there.
-		 * If COPY wrote anything other than SEQNO_MAGIC|(i+1), this
-		 * diverges from the oracle's expected constant and
-		 * oracle_mismatch fires.  A deliberately-wrong cp.src (e.g.
-		 * a zero-filled buffer) would produce 0 here, not the magic
-		 * constant, so the oracle is no longer vacuous. */
+		/* Read back word 0: COPY placed the src_pages seqno there. */
 		ctx->observed_seqno[i] = *pg;
 		__atomic_store_n(&ctx->seqno_checked[i], 1, __ATOMIC_RELEASE);
 	}
 	return NULL;
+}
+
+/*
+ * After COPY+DONTWAKE, spin briefly to check whether the fault thread
+ * unblocked before we issue an explicit WAKE.  A well-behaved kernel
+ * should leave the thread sleeping; if seqno_checked[idx] is already
+ * set the kernel woke the thread early (woke_early counter).
+ * DONTWAKE_SPIN_MS * DONTWAKE_SPIN_ITERS sets the measurement window
+ * to ~5 ms — enough to detect an inadvertent wake-up without consuming
+ * significant wall time.
+ */
+#define DONTWAKE_SPIN_ITERS	5
+#define DONTWAKE_SPIN_NS	1000000L	/* 1 ms per spin */
+
+static void v1_measure_dontwake(const struct v1_ctx *ctx, int page_idx,
+				int fd, uintptr_t fault_addr)
+{
+	struct timespec ts = { .tv_sec = 0, .tv_nsec = DONTWAKE_SPIN_NS };
+	int s;
+
+	for (s = 0; s < DONTWAKE_SPIN_ITERS; s++) {
+		if (__atomic_load_n(&ctx->seqno_checked[page_idx],
+				    __ATOMIC_ACQUIRE))
+			break;
+		nanosleep(&ts, NULL);
+	}
+
+	if (__atomic_load_n(&ctx->seqno_checked[page_idx], __ATOMIC_ACQUIRE)) {
+		/* Thread unblocked before explicit WAKE. */
+		__atomic_add_fetch(
+			&shm->stats.uffd_fault_move.v1_dontwake_woke_early,
+			1, __ATOMIC_RELAXED);
+	} else {
+		/* Thread correctly stayed blocked. */
+		__atomic_add_fetch(
+			&shm->stats.uffd_fault_move.v1_dontwake_still_blocked,
+			1, __ATOMIC_RELAXED);
+	}
+	/* Now explicitly wake the thread. */
+	uffd_wake_page(fd, fault_addr);
 }
 
 static void run_variant1(const enum child_op_type op, const bool valid_op,
@@ -302,12 +400,18 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 	struct v1_ctx ctx;
 	pthread_t tid;
 	int fd;
-	uint64_t feats, range_ioctls;
+	uint64_t feats;
+	uint64_t range_ioctls;
 	size_t len;
 	void *region;
 	void *src_pages;
 	int round;
+	int missing_handled;
 	bool thread_started = false;
+	bool wp_registered;
+	bool wp_ioctl_avail;
+	bool poison_avail;
+	bool zeropage_avail;
 
 	len = (size_t)MAX_FM_PAGES * (size_t)page_size;
 
@@ -315,6 +419,7 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 	(*direct_calls_out)++;
 	if (fd < 0)
 		return;
+	(void)feats;	/* negotiated for future feature gates; unused in V1 */
 
 	region = mmap(NULL, len, PROT_READ | PROT_WRITE,
 		      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -324,7 +429,9 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 	}
 
 	/* Source buffer for COPY resolutions — plain malloc-style mmap.
-	 * Pre-fill each page with its sequence number. */
+	 * Pre-fill each page with its sequence number at word 0 (offset 0);
+	 * the fault thread writes its marker to word 1, so COPY's payload
+	 * at word 0 is never overwritten and the oracle is non-vacuous. */
 	src_pages = mmap(NULL, len, PROT_READ | PROT_WRITE,
 			 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (src_pages == MAP_FAILED) {
@@ -343,14 +450,36 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 		}
 	}
 
-	if (!uffd_register(fd, region, len,
-			   UFFDIO_REGISTER_MODE_MISSING,
-			   &range_ioctls)) {
-		munmap(src_pages, len);
-		munmap(region, len);
-		close(fd);
-		return;
+	/*
+	 * Attempt MISSING|WP registration.  WP registration allows the
+	 * UFFDIO_COPY_MODE_WP arm to write-protect a resolved page so
+	 * that the thread's re-executed write triggers a WP fault, which
+	 * we then unprotect with UFFDIO_WRITEPROTECT.  Fall back to
+	 * MISSING-only on kernels that reject WP for anon VMAs.
+	 */
+	wp_registered = uffd_register(fd, region, len,
+				      UFFDIO_REGISTER_MODE_MISSING |
+				      UFFDIO_REGISTER_MODE_WP,
+				      &range_ioctls);
+	if (!wp_registered) {
+		if (!uffd_register(fd, region, len,
+				   UFFDIO_REGISTER_MODE_MISSING,
+				   &range_ioctls)) {
+			munmap(src_pages, len);
+			munmap(region, len);
+			close(fd);
+			return;
+		}
 	}
+
+	/* Gate each resolution arm on the range_ioctls bitmap returned by
+	 * UFFDIO_REGISTER: the kernel only advertises ioctls that are
+	 * actually legal for the registered range, so we never issue a
+	 * resolution that the kernel will reject with -EINVAL. */
+	wp_ioctl_avail  = wp_registered &&
+			  (range_ioctls & (1ULL << _UFFDIO_WRITEPROTECT)) != 0;
+	poison_avail	= (range_ioctls & (1ULL << _UFFDIO_POISON)) != 0;
+	zeropage_avail	= (range_ioctls & (1ULL << _UFFDIO_ZEROPAGE)) != 0;
 
 	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
@@ -369,11 +498,28 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 		goto cleanup_v1;
 	thread_started = true;
 
-	for (round = 0; round < MAX_FM_ROUNDS; round++) {
+	/*
+	 * Main resolve loop.  Each iteration handles one fault event.
+	 * WP faults (flag UFFD_PAGEFAULT_FLAG_WP) come in addition to
+	 * MISSING faults when the COPY|WP arm is used, so we run up to
+	 * MAX_FM_ROUNDS * 2 iterations to accommodate both, stopping once
+	 * all MAX_FM_PAGES MISSING faults have been resolved.
+	 *
+	 * Resolution is chosen by (page_idx % 4) for MISSING faults:
+	 *   0: UFFDIO_COPY (always available; oracle check)
+	 *   1: UFFDIO_ZEROPAGE if gated, else COPY fallback
+	 *   2: UFFDIO_POISON if gated, else COPY fallback
+	 *   3: UFFDIO_COPY|WP if WP gated, else COPY fallback; causes a
+	 *      follow-up WP fault on the same page
+	 */
+	missing_handled = 0;
+	for (round = 0;
+	     round < MAX_FM_ROUNDS * 2 && missing_handled < MAX_FM_PAGES;
+	     round++) {
 		struct uffd_msg msg;
 		uintptr_t fault_addr;
 		int page_idx;
-		bool use_dontwake;
+		bool is_wp_fault;
 
 		if (!uffd_poll_one(fd, POLL_TIMEOUT_MS, &msg))
 			break;
@@ -388,38 +534,63 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 		if (page_idx < 0 || page_idx >= MAX_FM_PAGES)
 			continue;
 
-		use_dontwake = (rnd_u32() & 1) != 0;
+		is_wp_fault = (msg.arg.pagefault.flags & UFFD_PAGEFAULT_FLAG_WP) != 0;
 
-		{
-			/* Use COPY so the oracle can verify the seqno. */
+		if (is_wp_fault) {
+			/*
+			 * WP fault: thread's re-executed write hit a
+			 * write-protected page (set by the COPY|WP arm).
+			 * Unprotect the page so the write can complete.
+			 */
+			struct uffdio_writeprotect wp;
+
+			memset(&wp, 0, sizeof(wp));
+			wp.range.start = fault_addr;
+			wp.range.len   = (uint64_t)page_size;
+			wp.mode        = 0;	/* MODE_WP=0 ⇒ unprotect */
+			if (ioctl(fd, UFFDIO_WRITEPROTECT, &wp) == 0) {
+				__atomic_add_fetch(
+					&shm->stats.uffd_fault_move.v1_wp_faults_resolved,
+					1, __ATOMIC_RELAXED);
+			} else {
+				/* Unprotect failed; unblock thread with WAKE. */
+				uffd_wake_page(fd, fault_addr);
+			}
+			continue;
+		}
+
+		/* MISSING fault — choose resolution by page_idx % 4. */
+		missing_handled++;
+
+		switch (page_idx % 4) {
+		case 0: {
+			/*
+			 * UFFDIO_COPY: resolve with seqno content so the
+			 * oracle can verify word 0.  Use DONTWAKE randomly
+			 * and measure whether the thread stayed blocked.
+			 */
 			struct uffdio_copy cp;
-			uint64_t mode = 0;
-			int rc;
-
-			if (use_dontwake)
-				mode |= UFFDIO_COPY_MODE_DONTWAKE;
+			bool use_dontwake = (rnd_u32() & 1) != 0;
+			uint64_t cmode = use_dontwake ? UFFDIO_COPY_MODE_DONTWAKE : 0;
 
 			memset(&cp, 0, sizeof(cp));
 			cp.dst  = fault_addr;
 			cp.src  = (uintptr_t)src_pages +
 				  (uintptr_t)(page_idx * (int)page_size);
 			cp.len  = (uint64_t)page_size;
-			cp.mode = mode;
-
-			rc = ioctl(fd, UFFDIO_COPY, &cp);
-			if (rc == 0) {
+			cp.mode = cmode;
+			if (ioctl(fd, UFFDIO_COPY, &cp) == 0) {
 				__atomic_add_fetch(
 					&shm->stats.uffd_fault_move.v1_resolve_ok,
 					1, __ATOMIC_RELAXED);
 				if (use_dontwake)
-					uffd_wake_page(fd, fault_addr);
-				/* Oracle: wait for thread seqno_checked[page_idx]. */
+					v1_measure_dontwake(&ctx, page_idx,
+							    fd, fault_addr);
+				/* Oracle: wait for thread to read back word 0. */
 				{
+					struct timespec ts = { 0, 1000000L };
 					int spin = 0;
-					struct timespec ts = {
-						.tv_sec  = 0,
-						.tv_nsec = 1000000L, /* 1 ms */
-					};
+
 					while (!__atomic_load_n(
 						&ctx.seqno_checked[page_idx],
 						__ATOMIC_ACQUIRE) && spin++ < 200)
@@ -442,46 +613,209 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 				__atomic_add_fetch(
 					&shm->stats.uffd_fault_move.v1_resolve_fail,
 					1, __ATOMIC_RELAXED);
-				/* Fault still pending; unblock the thread.
-				 * Prefer UFFDIO_ZEROPAGE if the kernel advertised
-				 * it for this range (range_ioctls bitmap from
-				 * UFFDIO_REGISTER); fall back to an explicit WAKE
-				 * so we never issue an ioctl the range rejects. */
-				if (range_ioctls & (1ULL << _UFFDIO_ZEROPAGE)) {
-					struct uffdio_zeropage zp;
+				uffd_wake_page(fd, fault_addr);
+			}
+			break;
+		}
+		case 1: {
+			/*
+			 * UFFDIO_ZEROPAGE: zero-fills the page; no oracle
+			 * (zeroed content is expected, not seqno).  Fall
+			 * back to COPY if ZEROPAGE is not in range_ioctls.
+			 * Apply DONTWAKE randomly and measure it.
+			 */
+			if (zeropage_avail) {
+				struct uffdio_zeropage zp;
+				bool use_dontwake = (rnd_u32() & 1) != 0;
+				uint64_t zmode = use_dontwake ?
+					UFFDIO_ZEROPAGE_MODE_DONTWAKE : 0;
 
-					memset(&zp, 0, sizeof(zp));
-					zp.range.start = fault_addr;
-					zp.range.len   = (uint64_t)page_size;
-					zp.mode        = 0;
-					(void)ioctl(fd, UFFDIO_ZEROPAGE, &zp);
+				memset(&zp, 0, sizeof(zp));
+				zp.range.start = fault_addr;
+				zp.range.len   = (uint64_t)page_size;
+				zp.mode        = zmode;
+				if (ioctl(fd, UFFDIO_ZEROPAGE, &zp) == 0) {
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v1_resolve_ok,
+						1, __ATOMIC_RELAXED);
+					if (use_dontwake)
+						v1_measure_dontwake(&ctx, page_idx,
+								    fd, fault_addr);
 				} else {
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v1_resolve_fail,
+						1, __ATOMIC_RELAXED);
+					uffd_wake_page(fd, fault_addr);
+				}
+			} else {
+				/* ZEROPAGE not available: use COPY as fallback. */
+				struct uffdio_copy cp;
+
+				memset(&cp, 0, sizeof(cp));
+				cp.dst  = fault_addr;
+				cp.src  = (uintptr_t)src_pages +
+					  (uintptr_t)(page_idx * (int)page_size);
+				cp.len  = (uint64_t)page_size;
+				cp.mode = 0;
+				if (ioctl(fd, UFFDIO_COPY, &cp) == 0)
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v1_resolve_ok,
+						1, __ATOMIC_RELAXED);
+				else {
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v1_resolve_fail,
+						1, __ATOMIC_RELAXED);
 					uffd_wake_page(fd, fault_addr);
 				}
 			}
+			break;
 		}
+		case 2: {
+			/*
+			 * UFFDIO_POISON: marks the page as poisoned; the
+			 * thread's re-executed write delivers SIGBUS, which
+			 * v1_fault_thread catches via sigsetjmp and records
+			 * as sigbus_escaped[page_idx].  Set poison_resolved
+			 * in ctx before issuing the ioctl so the thread
+			 * knows an expected SIGBUS is coming.
+			 * Fall back to COPY if POISON is not in range_ioctls.
+			 */
+			if (poison_avail) {
+				struct uffdio_poison pp;
+
+				__atomic_store_n(&ctx.poison_resolved[page_idx],
+						 1, __ATOMIC_RELEASE);
+				memset(&pp, 0, sizeof(pp));
+				pp.range.start = fault_addr;
+				pp.range.len   = (uint64_t)page_size;
+				pp.mode        = 0;
+				if (ioctl(fd, UFFDIO_POISON, &pp) == 0) {
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v1_resolve_ok,
+						1, __ATOMIC_RELAXED);
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v1_poison_faults_resolved,
+						1, __ATOMIC_RELAXED);
+				} else {
+					/* POISON failed; clear flag and wake. */
+					__atomic_store_n(
+						&ctx.poison_resolved[page_idx],
+						0, __ATOMIC_RELEASE);
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v1_resolve_fail,
+						1, __ATOMIC_RELAXED);
+					uffd_wake_page(fd, fault_addr);
+				}
+			} else {
+				/* POISON not available: use COPY as fallback. */
+				struct uffdio_copy cp;
+
+				memset(&cp, 0, sizeof(cp));
+				cp.dst  = fault_addr;
+				cp.src  = (uintptr_t)src_pages +
+					  (uintptr_t)(page_idx * (int)page_size);
+				cp.len  = (uint64_t)page_size;
+				cp.mode = 0;
+				if (ioctl(fd, UFFDIO_COPY, &cp) == 0)
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v1_resolve_ok,
+						1, __ATOMIC_RELAXED);
+				else {
+					__atomic_add_fetch(
+						&shm->stats.uffd_fault_move.v1_resolve_fail,
+						1, __ATOMIC_RELAXED);
+					uffd_wake_page(fd, fault_addr);
+				}
+			}
+			break;
+		}
+		default: {
+			/*
+			 * UFFDIO_COPY|WP: fill the page AND write-protect it.
+			 * After this resolves the MISSING fault, the thread's
+			 * re-executed write triggers a WP fault on the same
+			 * page, handled above in the is_wp_fault branch.
+			 * DONTWAKE is always used here to decouple MISSING
+			 * resolution from the WAKE and to demonstrate that the
+			 * thread stays blocked until the explicit WAKE even
+			 * though the MISSING fault is resolved.
+			 * Fall back to plain COPY if WP is not gated.
+			 */
+			struct uffdio_copy cp;
+			uint64_t cmode;
+
+			cmode = wp_ioctl_avail ?
+				(UFFDIO_COPY_MODE_WP | UFFDIO_COPY_MODE_DONTWAKE) :
+				0;
+
+			memset(&cp, 0, sizeof(cp));
+			cp.dst  = fault_addr;
+			cp.src  = (uintptr_t)src_pages +
+				  (uintptr_t)(page_idx * (int)page_size);
+			cp.len  = (uint64_t)page_size;
+			cp.mode = cmode;
+			if (ioctl(fd, UFFDIO_COPY, &cp) == 0) {
+				__atomic_add_fetch(
+					&shm->stats.uffd_fault_move.v1_resolve_ok,
+					1, __ATOMIC_RELAXED);
+				if (wp_ioctl_avail) {
+					/* DONTWAKE was set; measure before WAKE. */
+					v1_measure_dontwake(&ctx, page_idx,
+							    fd, fault_addr);
+					/* After WAKE, thread re-executes write →
+					 * WP fault → handled in is_wp_fault branch
+					 * on the next loop iteration. */
+				}
+				/* Also run oracle (seqno is in word 0 from COPY). */
+				{
+					struct timespec ts = { 0, 1000000L };
+					int spin = 0;
+
+					while (!__atomic_load_n(
+						&ctx.seqno_checked[page_idx],
+						__ATOMIC_ACQUIRE) && spin++ < 200)
+						nanosleep(&ts, NULL);
+
+					if (__atomic_load_n(
+						&ctx.seqno_checked[page_idx],
+						__ATOMIC_ACQUIRE)) {
+						__atomic_add_fetch(
+							&shm->stats.uffd_fault_move.oracle_checks_run,
+							1, __ATOMIC_RELAXED);
+						if (__atomic_load_n(
+							&ctx.observed_seqno[page_idx],
+							__ATOMIC_RELAXED) !=
+						    (uint32_t)(SEQNO_MAGIC |
+							       (uint32_t)(page_idx + 1))) {
+							__atomic_add_fetch(
+								&shm->stats.uffd_fault_move.oracle_mismatch,
+								1, __ATOMIC_RELAXED);
+						}
+					}
+				}
+			} else {
+				__atomic_add_fetch(
+					&shm->stats.uffd_fault_move.v1_resolve_fail,
+					1, __ATOMIC_RELAXED);
+				uffd_wake_page(fd, fault_addr);
+			}
+			break;
+		}
+		} /* switch */
 	}
 
 cleanup_v1:
 	__atomic_store_n(&ctx.stop, 1, __ATOMIC_RELEASE);
-	/* Ensure the thread exits: unregister first (wakes any pending fault
-	 * with an error so the thread doesn't stay blocked forever), then
-	 * resolve any remaining pending faults via ZEROPAGE with no-wait. */
+	/* Unregister wakes any pending fault with an error, allowing the
+	 * fault thread to unblock regardless of which page it is on. */
 	uffd_unregister(fd, region, len);
 
-	/*
-	 * Drain any remaining fault events so the thread can unblock.
-	 * After UNREGISTER, pending faults in the kernel are woken with
-	 * an error; however, if the thread has not yet triggered its
-	 * next fault access, it will simply find the page already mapped
-	 * (no-fault path) and exit cleanly.  Either way, a bounded
-	 * poll drain is sufficient.
-	 */
+	/* Drain remaining fault events (bounded). */
 	{
 		struct uffd_msg discard;
 		int drain;
 
-		for (drain = 0; drain < MAX_FM_PAGES + 2; drain++) {
+		for (drain = 0; drain < MAX_FM_PAGES + 4; drain++) {
 			if (!uffd_poll_one(fd, 20, &discard))
 				break;
 		}
@@ -496,10 +830,13 @@ cleanup_v1:
 				break;
 			nanosleep(&ts, NULL);
 		}
-		/* If the thread is still stuck (should not happen after
-		 * UNREGISTER), detach and let the alarm(1) reap the child. */
 		if (spin >= V3_JOIN_LOOPS)
 			pthread_detach(tid);
+		/* Restore signal dispositions installed by v1_fault_thread.
+		 * sigaction() is process-wide; must be undone here so the next
+		 * childop invocation sees the expected disposition. */
+		sigaction(SIGBUS,  &ctx.old_sa_bus,  NULL);
+		sigaction(SIGSEGV, &ctx.old_sa_segv, NULL);
 	}
 
 	munmap(src_pages, len);
@@ -926,6 +1263,7 @@ static void run_variant3(const enum child_op_type op, const bool valid_op,
 	(*direct_calls_out)++;
 	if (fd < 0)
 		return;
+	(void)feats;	/* negotiated for future feature gates; unused in V3 */
 
 	region = mmap(NULL, len, PROT_READ | PROT_WRITE,
 		      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);

@@ -10,6 +10,10 @@
 static const struct stat_field uffd_fault_move_fields[] = {
 	STAT_FIELD_SUB(uffd_fault_move, v1_resolve_ok),
 	STAT_FIELD_SUB(uffd_fault_move, v1_resolve_fail),
+	STAT_FIELD_SUB(uffd_fault_move, v1_wp_faults_resolved),
+	STAT_FIELD_SUB(uffd_fault_move, v1_poison_faults_resolved),
+	STAT_FIELD_SUB(uffd_fault_move, v1_dontwake_still_blocked),
+	STAT_FIELD_SUB(uffd_fault_move, v1_dontwake_woke_early),
 	STAT_FIELD_SUB(uffd_fault_move, v2_move_ok),
 	STAT_FIELD_SUB(uffd_fault_move, v2_move_fail),
 	STAT_FIELD_SUB(uffd_fault_move, v2_move_einval),
