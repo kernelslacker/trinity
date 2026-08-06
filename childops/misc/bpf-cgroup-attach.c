@@ -67,6 +67,9 @@
 #include <stdint.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <linux/bpf.h>
 #include <fcntl.h>
 #include <string.h>
@@ -110,6 +113,9 @@
 #endif
 #ifndef BPF_PROG_TYPE_CGROUP_SOCKOPT
 #define BPF_PROG_TYPE_CGROUP_SOCKOPT	25
+#endif
+#ifndef SOL_UDP
+#define SOL_UDP			17
 #endif
 
 #define BURST		4
@@ -247,19 +253,45 @@ static bool is_sockopt_combo(const struct attach_combo *c)
 static void setsockopt_burst(unsigned int *calls_out,
 			     unsigned long *efault_reach_out)
 {
+	/*
+	 * Level and optname pools are drawn independently on each
+	 * iteration so every (level, optname) cross-product is reachable.
+	 * Most cross-protocol combinations are rejected by the kernel's
+	 * protocol-layer validation (ENOPROTOOPT / EINVAL) after the
+	 * cgroup BPF hook has already run, so each call still reaches the
+	 * hook and contributes to the KASAN surface regardless of whether
+	 * the optname is valid for the chosen level.
+	 */
+	static const int levels[] = {
+		SOL_SOCKET,
+		IPPROTO_IP,
+		IPPROTO_TCP,
+		SOL_UDP,
+	};
 	static const struct {
-		int		level;
 		int		optname;
 		unsigned int	optlen;
-	} opts[] = {
-		{ SOL_SOCKET, SO_REUSEADDR,  4  },	/* 4 B — tight kmalloc */
-		{ SOL_SOCKET, SO_KEEPALIVE,  4  },
-		{ SOL_SOCKET, SO_RCVBUF,     4  },
-		{ SOL_SOCKET, SO_SNDBUF,     4  },
-		{ SOL_SOCKET, SO_PRIORITY,   4  },
-		{ SOL_SOCKET, SO_RCVBUF,     16 },	/* 16 B — still < 32 */
-		{ SOL_SOCKET, SO_SNDBUF,     16 },
-		{ SOL_SOCKET, SO_KEEPALIVE,  32 },	/* 32 B — at the threshold */
+	} optnames[] = {
+		/* SOL_SOCKET options — original private table */
+		{ SO_REUSEADDR,  4  },	/* 4 B — tight kmalloc path */
+		{ SO_KEEPALIVE,  4  },
+		{ SO_RCVBUF,     4  },
+		{ SO_SNDBUF,     4  },
+		{ SO_PRIORITY,   4  },
+		{ SO_RCVBUF,     16 },	/* 16 B — still < 32 */
+		{ SO_SNDBUF,     16 },
+		{ SO_KEEPALIVE,  32 },	/* 32 B — at the threshold */
+		/* IPPROTO_IP options */
+		{ IP_TTL,        4  },
+		{ IP_TOS,        4  },
+		{ IP_RECVTTL,    4  },
+		/* IPPROTO_TCP options */
+		{ TCP_NODELAY,   4  },
+		{ TCP_KEEPIDLE,  4  },
+		{ TCP_KEEPINTVL, 4  },
+		{ TCP_MAXSEG,    4  },
+		/* SOL_UDP options */
+		{ UDP_CORK,      4  },
 	};
 	uint8_t buf[32];
 	unsigned long reach = 0;
@@ -272,8 +304,13 @@ static void setsockopt_burst(unsigned int *calls_out,
 	if (s < 0)
 		goto out;
 
-	for (i = 0; i < ARRAY_SIZE(opts); i++) {
-		socklen_t len = (socklen_t)opts[i].optlen;
+	for (i = 0; i < ARRAY_SIZE(optnames); i++) {
+		socklen_t len;
+		/*
+		 * Pick level independently of optname to exercise the full
+		 * cross-protocol combination space through the hook.
+		 */
+		int level = levels[rnd_modulo_u32(ARRAY_SIZE(levels))];
 
 		memset(buf, 0, sizeof(buf));
 		buf[0] = 1;	/* non-zero value for boolean options */
@@ -285,14 +322,14 @@ static void setsockopt_burst(unsigned int *calls_out,
 		 * value and the kernel returns EFAULT; count it as
 		 * confirmed hook reach.
 		 */
-		if (setsockopt(s, opts[i].level, opts[i].optname,
-			       buf, opts[i].optlen) < 0 && errno == EFAULT)
+		if (setsockopt(s, level, optnames[i].optname,
+			       buf, optnames[i].optlen) < 0 && errno == EFAULT)
 			reach++;
 		calls++;
 
 		/* getsockopt — separate CGROUP_GETSOCKOPT hook invocation */
-		len = (socklen_t)opts[i].optlen;
-		if (getsockopt(s, opts[i].level, opts[i].optname,
+		len = (socklen_t)optnames[i].optlen;
+		if (getsockopt(s, level, optnames[i].optname,
 			       buf, &len) < 0 && errno == EFAULT)
 			reach++;
 		calls++;
@@ -459,27 +496,36 @@ bool bpf_cgroup_attach(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 
-	/* Drive the hook in-burst.  Sibling children fuzzing in the same
-	 * cgroup at the same time supply the cross-process concurrency
-	 * the dispatch-vs-detach race window needs.
-	 *
-	 * For SOCKOPT combos the EFAULT probe program is attached, so every
-	 * setsockopt/getsockopt call that returns EFAULT confirms the hook
-	 * actually fired.  EFAULTs from a valid buffer + optname are
-	 * impossible without the probe, making the count a trustworthy
-	 * hook-reach signal (not an unconditional increment). */
-	if (is_sockopt_combo(c)) {
-		unsigned long efault_reach = 0;
+	/*
+	 * Drive the hook for one or more burst rounds while the program
+	 * remains attached.  On ~1-in-4 invocations stay attached for a
+	 * bounded slice of extra rounds (4–16) so that sibling children's
+	 * concurrent setsockopt corpus traffic passes through the hook for
+	 * a meaningful fraction of the run rather than a single-burst
+	 * point-in-time window.  The burst logic is otherwise unchanged.
+	 */
+	{
+		unsigned int hold_rounds = (rnd_modulo_u32(4) == 0)
+			? (unsigned int)(RAND_RANGE(4, 16)) : 1u;
+		unsigned int r;
 
-		setsockopt_burst(&burst_calls, &efault_reach);
-		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.sockopt_hook_reach,
-				   efault_reach, __ATOMIC_RELAXED);
-	} else {
-		sent = udp_burst(c->attach_type, &burst_calls);
-		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.packets_sent,
-				   sent, __ATOMIC_RELAXED);
+		for (r = 0; r < hold_rounds; r++) {
+			if (is_sockopt_combo(c)) {
+				unsigned long efault_reach = 0;
+
+				setsockopt_burst(&burst_calls, &efault_reach);
+				__atomic_add_fetch(
+					&shm->stats.bpf_cgroup_attach.sockopt_hook_reach,
+					efault_reach, __ATOMIC_RELAXED);
+			} else {
+				sent = udp_burst(c->attach_type, &burst_calls);
+				__atomic_add_fetch(
+					&shm->stats.bpf_cgroup_attach.packets_sent,
+					sent, __ATOMIC_RELAXED);
+			}
+			direct_calls += burst_calls;
+		}
 	}
-	direct_calls += burst_calls;
 
 	/* Detach mid-stream — the bug window is "hook fires while
 	 * detach is mutating cgrp->bpf.effective[]". */
