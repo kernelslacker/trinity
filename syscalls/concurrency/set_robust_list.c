@@ -28,4 +28,14 @@ struct syscallentry syscall_set_robust_list = {
 	.argname = { [0] = "head", [1] = "len" },
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
+	/*
+	 * REEXEC_SANITISE_OK: sanitise_set_robust_list allocates a
+	 * robust_list_head via zmalloc_tracked, initialises its three
+	 * internal fields (self-referential next pointer, zero
+	 * futex_offset, NULL list_op_pending) within the allocation,
+	 * and assigns the result to rec->a1.  No open/socket/fork,
+	 * no post_state, no rec_own, no avoid_shared_buffer, no
+	 * global registration -- pure buffer-filler.
+	 */
+	.flags = REEXEC_SANITISE_OK,
 };
