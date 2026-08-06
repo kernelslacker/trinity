@@ -156,13 +156,20 @@ static void *squeeze_loop_thread(void *p)
 
 	for (i = 0; i < RECLAIM_RACE_SQUEEZE_ITERS &&
 	     !__atomic_load_n(&a->shared->stop, __ATOMIC_RELAXED); i++) {
+		int rc;
+
 		/* Squeeze toward KVM_MIN_FREE_MMU_PAGES so every subsequent
 		 * fault calls make_mmu_pages_available() which in turn calls
-		 * kvm_mmu_zap_oldest_mmu_pages().  Ignore errors: -EINVAL if
-		 * the VM is not x86, -ENOTTY if the host does not have KVM. */
+		 * kvm_mmu_zap_oldest_mmu_pages(). */
 		a->direct_calls++;
-		(void)ioctl(a->vmfd, KVM_SET_NR_MMU_PAGES,
-			    (unsigned long)KVM_MMU_RECLAIM_MIN_PAGES);
+		rc = ioctl(a->vmfd, KVM_SET_NR_MMU_PAGES,
+			   (unsigned long)KVM_MMU_RECLAIM_MIN_PAGES);
+		if (rc == 0)
+			__atomic_add_fetch(&shm->stats.kvm.reclaim_set_nr_mmu_ok,
+					   1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(&shm->stats.kvm.reclaim_set_nr_mmu_err,
+					   1, __ATOMIC_RELAXED);
 
 		/* Hold the squeeze briefly so the fault storm runs into
 		 * make_mmu_pages_available() while n_max is still tight. */
@@ -170,8 +177,14 @@ static void *squeeze_loop_thread(void *p)
 
 		/* Restore generous headroom before the next cycle. */
 		a->direct_calls++;
-		(void)ioctl(a->vmfd, KVM_SET_NR_MMU_PAGES,
-			    (unsigned long)KVM_MMU_RECLAIM_MAX_PAGES);
+		rc = ioctl(a->vmfd, KVM_SET_NR_MMU_PAGES,
+			   (unsigned long)KVM_MMU_RECLAIM_MAX_PAGES);
+		if (rc == 0)
+			__atomic_add_fetch(&shm->stats.kvm.reclaim_set_nr_mmu_ok,
+					   1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(&shm->stats.kvm.reclaim_set_nr_mmu_err,
+					   1, __ATOMIC_RELAXED);
 	}
 
 	/* Signal Lane 1 that this lane has completed its cycle count. */
@@ -219,13 +232,17 @@ static void *churn_loop_thread(void *p)
 		 * This is the concurrent root invalidation that provides
 		 * in-use roots for the reclaim path to zap. */
 		a->direct_calls++;
-		(void)ioctl(a->vmfd, KVM_SET_USER_MEMORY_REGION, &del);
+		if (ioctl(a->vmfd, KVM_SET_USER_MEMORY_REGION, &del) == 0)
+			__atomic_add_fetch(&shm->stats.kvm.reclaim_memslot_ok,
+					   1, __ATOMIC_RELAXED);
 
 		/* Re-add: installs fresh roots.  The new generation triggers
 		 * shadow-page reuse, which is sufficient to open the race
 		 * window without KVM_SET_MEMORY_ATTRIBUTES. */
 		a->direct_calls++;
-		(void)ioctl(a->vmfd, KVM_SET_USER_MEMORY_REGION, &add);
+		if (ioctl(a->vmfd, KVM_SET_USER_MEMORY_REGION, &add) == 0)
+			__atomic_add_fetch(&shm->stats.kvm.reclaim_memslot_ok,
+					   1, __ATOMIC_RELAXED);
 	}
 
 	/* Signal Lane 1 that this lane has completed its cycle count. */
@@ -295,7 +312,9 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 			.userspace_addr	 = (__u64)(unsigned long)ua,
 		};
 		direct_calls++;
-		(void)ioctl(vmfd, KVM_SET_USER_MEMORY_REGION, &region);
+		if (ioctl(vmfd, KVM_SET_USER_MEMORY_REGION, &region) == 0)
+			__atomic_add_fetch(&shm->stats.kvm.reclaim_memslot_ok,
+					   1, __ATOMIC_RELAXED);
 	}
 
 	/* Launch Lane 2: squeeze thread. */
@@ -344,8 +363,22 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 				.size  = RECLAIM_RACE_CHUNK_SIZE,
 				.flags = 0,
 			};
+			int rc;
+
 			direct_calls++;
-			(void)ioctl(vcpufd, KVM_PRE_FAULT_MEMORY, &req);
+			rc = ioctl(vcpufd, KVM_PRE_FAULT_MEMORY, &req);
+			if (rc == 0)
+				__atomic_add_fetch(
+					&shm->stats.kvm.reclaim_prefault_ok,
+					1, __ATOMIC_RELAXED);
+			else if (errno == EOPNOTSUPP)
+				__atomic_add_fetch(
+					&shm->stats.kvm.reclaim_prefault_eopnotsupp,
+					1, __ATOMIC_RELAXED);
+			else
+				__atomic_add_fetch(
+					&shm->stats.kvm.reclaim_prefault_err,
+					1, __ATOMIC_RELAXED);
 			chunk_idx++;
 		}
 		/* Both worker lanes are done; signal early-exit to any
@@ -379,7 +412,9 @@ bool kvm_mmu_reclaim_race(struct childdata *child)
 			.userspace_addr	 = 0,
 		};
 		direct_calls++;
-		(void)ioctl(vmfd, KVM_SET_USER_MEMORY_REGION, &del);
+		if (ioctl(vmfd, KVM_SET_USER_MEMORY_REGION, &del) == 0)
+			__atomic_add_fetch(&shm->stats.kvm.reclaim_memslot_ok,
+					   1, __ATOMIC_RELAXED);
 	}
 
 out:

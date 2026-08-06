@@ -51,6 +51,20 @@ static const struct stat_category kvm_run_churn_category =
 	              kvm.invocations,
 	              kvm_run_churn_fields);
 
+static const struct stat_field kvm_reclaim_race_fields[] = {
+	STAT_FIELD_SUB(kvm, reclaim_prefault_ok),
+	STAT_FIELD_SUB(kvm, reclaim_prefault_eopnotsupp),
+	STAT_FIELD_SUB(kvm, reclaim_prefault_err),
+	STAT_FIELD_SUB(kvm, reclaim_set_nr_mmu_ok),
+	STAT_FIELD_SUB(kvm, reclaim_set_nr_mmu_err),
+	STAT_FIELD_SUB(kvm, reclaim_memslot_ok),
+};
+
+static const struct stat_category kvm_reclaim_race_category =
+	STAT_CATEGORY("kvm_reclaim_race",
+	              kvm.reclaim_prefault_ok,
+	              kvm_reclaim_race_fields);
+
 static const struct stat_field nl80211_fields[] = {
 	STAT_FIELD_SUB(nl80211, runs),
 	STAT_FIELD_SUB(nl80211, setup_failed),
@@ -86,6 +100,8 @@ void dump_stats_json_iouring_zc_and_kvm(void)
 	stat_category_emit_json(&kvm_category);
 	putchar(',');
 	stat_category_emit_json(&kvm_run_churn_category);
+	putchar(',');
+	stat_category_emit_json(&kvm_reclaim_race_category);
 	putchar(',');
 	stat_category_emit_json(&nl80211_category);
 	putchar(',');

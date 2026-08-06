@@ -1474,6 +1474,13 @@ stats	object
     stats.kvm_run_churn.gpc_memslot_race_runs	u64
     stats.kvm_run_churn.gpc_memslot_race_deletes	u64
     stats.kvm_run_churn.gpc_memslot_race_unsupported	u64
+  stats.kvm_reclaim_race	object
+    stats.kvm_reclaim_race.reclaim_prefault_ok	u64
+    stats.kvm_reclaim_race.reclaim_prefault_eopnotsupp	u64
+    stats.kvm_reclaim_race.reclaim_prefault_err	u64
+    stats.kvm_reclaim_race.reclaim_set_nr_mmu_ok	u64
+    stats.kvm_reclaim_race.reclaim_set_nr_mmu_err	u64
+    stats.kvm_reclaim_race.reclaim_memslot_ok	u64
   stats.nl80211	object
     stats.nl80211.runs	u64
     stats.nl80211.setup_failed	u64
