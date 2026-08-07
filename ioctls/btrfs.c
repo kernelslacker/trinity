@@ -573,11 +573,18 @@ static void sanitise_btrfs_encoded_write_args(struct syscallrecord *rec)
 
 	/* len / unencoded_len / unencoded_offset -- keep mostly consistent */
 	if (rnd_u32() & 1) {
-		/* legal envelope */
+		/*
+		 * Legal envelope: kernel requires
+		 *   unencoded_offset <= unencoded_len - len
+		 * i.e. offset <= r (the slack).  Save r first, then draw
+		 * offset from [0, r] so both kernel checks pass by
+		 * construction.
+		 */
 		unsigned long len = rnd_modulo_u32(65536) + 1;
-		args->len = len;
-		args->unencoded_len = len + rnd_modulo_u32(4096);
-		args->unencoded_offset = rnd_modulo_u32((unsigned int)args->unencoded_len);
+		unsigned long r   = rnd_modulo_u32(4096);
+		args->len             = len;
+		args->unencoded_len   = len + r;
+		args->unencoded_offset = rnd_modulo_u32(r + 1);
 	} else {
 		/* deliberate skew to exercise reject paths */
 		args->len = rnd_u64();
