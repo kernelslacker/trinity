@@ -57,11 +57,22 @@ struct syscall_dispatch_stats {
 	 *     (pipe_thrash averages ~28 pipe2/close per outer alarm),
 	 *     so an iteration count alone cannot price the loop --
 	 *     pairing it with the syscall and childop denominators
-	 *     lets the operator see the true call-per-iteration ratio. */
+	 *     lets the operator see the true call-per-iteration ratio.
+	 *
+	 *   seal_fail_ops:
+	 *     Bumped at dispatch/syscall.c when deferred_free_seal_all()
+	 *     returns false (mprotect sweep failed, usually vma
+	 *     exhaustion).  Distinct from the arg-validator counter
+	 *     (validator_rejected in stats_aggregate) which is a
+	 *     normal, high-volume infrastructure counter.  A non-zero
+	 *     seal_fail_ops rate flags a fuzzer-infrastructure fault
+	 *     (persistent mprotect failures) that would otherwise be
+	 *     invisible in fleet throughput stats. */
 	unsigned long random_syscall_attempts;
 	unsigned long random_syscall_completions;
 	unsigned long childop_dispatches;
 	unsigned long childop_iterations;
+	unsigned long seal_fail_ops;
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_SYSCALL_DISPATCH_H */

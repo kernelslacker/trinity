@@ -73,14 +73,19 @@ bool random_syscall_step(struct childdata *child,
 
 	/* dispatch_step returning here normally means do_syscall() ran
 	 * (regardless of the syscall's own success/failure); count as one
-	 * completed random-syscall dispatch.  Exception: a seal failure
-	 * inside do_syscall() returns early with rec->validator_rejected
-	 * set -- the kernel was never entered, but handle_syscall_ret()
-	 * still ran the arg drain.  A pre-dispatch bail (set_syscall_nr
-	 * FAIL above) leaves the completion counter untouched, so the
-	 * attempts vs completions delta is the pre-dispatch reject rate. */
-	__atomic_add_fetch(&shm->stats.syscall_dispatch.random_syscall_completions,
-			   1, __ATOMIC_RELAXED);
+	 * completed random-syscall dispatch.  A pre-dispatch bail
+	 * (set_syscall_nr FAIL above) leaves this counter untouched, so
+	 * the attempts vs completions delta is the pre-dispatch reject
+	 * rate.  Gate on !rec->validator_rejected: a seal failure inside
+	 * do_syscall() sets that flag and returns early before the kernel
+	 * is entered -- handle_syscall_ret() still ran the arg drain, but
+	 * the kernel was never reached.  Counting it as a completion would
+	 * inflate the throughput metric and mask the failure signal that
+	 * seal_fail_ops already captures. */
+	if (!rec->validator_rejected)
+		__atomic_add_fetch(
+			&shm->stats.syscall_dispatch.random_syscall_completions,
+			1, __ATOMIC_RELAXED);
 
 	return ok;
 }

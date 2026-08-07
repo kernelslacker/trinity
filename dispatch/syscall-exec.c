@@ -259,25 +259,7 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * previous syscall's PCs against this slot. */
 	if (validate_arg_coupling(rec) != 0) {
 		validator_rejected_bump();
-		if (kc != NULL && kc->active) {
-			if (kc->mode == KCOV_MODE_PC && kc->trace_buf != NULL)
-				__atomic_store_n(&kc->trace_buf[0], 0,
-						 __ATOMIC_RELAXED);
-			else if (kc->mode == KCOV_MODE_CMP &&
-				 kc->cmp_trace_buf != NULL)
-				__atomic_store_n(&kc->cmp_trace_buf[0], 0,
-						 __ATOMIC_RELAXED);
-		}
-		/* Clear dispatch_args_valid so cmp_hints_collect()'s RedQueen
-		 * attribution scan (and the field-scoped scan) does not read
-		 * the PREVIOUS successful call's dispatch_args[] against this
-		 * call's rec->nr / entry->num_args.  Belt-and-braces alongside
-		 * the trace-buf header clear above: the header clear alone is
-		 * enough on the happy kc->active path, but any consumer that
-		 * inspects dispatch_args_valid without also gating on the
-		 * per-call trace-buf count would otherwise misattribute
-		 * constants to the wrong (nr, aN). */
-		rec->dispatch_args_valid = false;
+		clear_stale_kcov_state(kc, rec);  /* header zero + dispatch_args_valid clear */
 		srec_publish_begin(rec);
 		rec->errno_post = EINVAL;
 		rec->retval = (unsigned long) -1L;
@@ -376,23 +358,7 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * generators on any host without firing a fuzzed syscall.
 	 */
 	if (dry_run) {
-		if (kc != NULL && kc->active) {
-			if (kc->mode == KCOV_MODE_PC && kc->trace_buf != NULL)
-				__atomic_store_n(&kc->trace_buf[0], 0,
-						 __ATOMIC_RELAXED);
-			else if (kc->mode == KCOV_MODE_CMP &&
-				 kc->cmp_trace_buf != NULL)
-				__atomic_store_n(&kc->cmp_trace_buf[0], 0,
-						 __ATOMIC_RELAXED);
-		}
-		/* Clear dispatch_args_valid: the snapshot above populated
-		 * dispatch_args[] with this call's args, but the syscall
-		 * never entered the kernel and generated no CMP records for
-		 * cmp_hints_collect() to attribute against those slots.
-		 * Leaving the flag true would let a stale trace-buf count
-		 * (if the kc->active clear above was skipped) drive the
-		 * RedQueen attribution scan into a syscall that never ran. */
-		rec->dispatch_args_valid = false;
+		clear_stale_kcov_state(kc, rec);  /* header zero + dispatch_args_valid clear */
 		srec_publish_begin(rec);
 		rec->errno_post = ENOSYS;
 		rec->retval = (unsigned long) -1L;

@@ -9,6 +9,7 @@
 #include "child.h"
 #include "deferred-free.h"
 #include "kcov.h"
+#include "shm.h"
 #include "signals.h"
 #include "syscall.h"
 #include "syscall-internal.h"
@@ -36,25 +37,23 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		/* Mark as kernel-never-entered so kcov_collect() skips
 		 * total_calls / per_syscall_calls[nr] and the arg-drain
 		 * in handle_syscall_ret() still runs on return.
-		 * Also mirror the two stale-state clears from the sibling
-		 * kernel-never-entered paths in syscall-exec.c:
-		 *  - zero the kcov trace-buf header so kcov_collect_cmp() does
-		 *    not re-harvest the previous call's CMP records against this
-		 *    call's rec->nr (syscall-exec.c:264-270 / :381-387);
-		 *  - clear dispatch_args_valid so cmp_hints_collect() does not
-		 *    misattribute stale dispatch_args[] to this call's nr
-		 *    (syscall-exec.c:271-280 / :388-395). */
-		if (kc != NULL && kc->active) {
-			if (kc->mode == KCOV_MODE_PC && kc->trace_buf != NULL)
-				__atomic_store_n(&kc->trace_buf[0], 0,
-						 __ATOMIC_RELAXED);
-			else if (kc->mode == KCOV_MODE_CMP &&
-				 kc->cmp_trace_buf != NULL)
-				__atomic_store_n(&kc->cmp_trace_buf[0], 0,
-						 __ATOMIC_RELAXED);
-		}
-		rec->dispatch_args_valid = false;
+		 *
+		 * Deliberately softer than the two child/child.c chokepoints
+		 * (loop-top :299 and childop-dispatch :736) which abort the
+		 * child on any seal failure.  A mprotect failure at this site
+		 * lets the iteration complete so handle_syscall_ret() drains
+		 * the arg state cleanly; the loop-top seal at the next
+		 * iteration will catch a persistent failure and abort then.
+		 * This bounds the impact to at most one miscounted op per
+		 * child cycle while avoiding a mid-iteration teardown that
+		 * would leak post_state.  The softer behaviour is intentional
+		 * -- do not silently harden to abort without updating the
+		 * loop-top comments and the rationale in the commit log. */
+		clear_stale_kcov_state(kc, rec);
 		rec->validator_rejected = true;
+		__atomic_add_fetch(
+			&shm->stats.syscall_dispatch.seal_fail_ops,
+			1, __ATOMIC_RELAXED);
 		return;
 	}
 	deferred_free_debug_assert_sealed();
