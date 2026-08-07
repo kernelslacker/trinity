@@ -17,6 +17,7 @@ struct fnhe_pmtu_mtu_race_stats {
 	unsigned long exceptions_installed;	/* RTM_GETROUTE confirmed fnhe pmtu=1280 */
 	unsigned long inject_failed;		/* ICMP inject sendto failed */
 	unsigned long evictions_observed;	/* bucket overflow detected (estimated) */
+	unsigned long observed_entries;		/* RTM_GETROUTE-sampled fnhe entries (worker B end-of-run probe) */
 	unsigned long mtu_flaps;		/* SIOCSIFMTU ioctl calls issued */
 	unsigned long negative_ctrl_runs;	/* runs with no injection (empty table) */
 	unsigned long completed_ok;		/* iter reached clean teardown */
