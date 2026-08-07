@@ -251,6 +251,7 @@ extern const struct stat_category afxdp_churn_category;
 extern const struct stat_category bridge_fdb_stp_category;
 extern const struct stat_category iouring_net_multishot_category;
 extern const struct stat_category packet_fanout_thrash_category;
+extern const struct stat_category packet_qdisc_bypass_unanchored_l2_category;
 extern const struct stat_category psp_key_rotate_category;
 extern const struct stat_category vsock_transport_churn_category;
 extern const struct stat_category pci_bind_category;
