@@ -139,6 +139,7 @@ struct syscallentry syscall_lsm_set_self_attr = {
 	.argname = { [0] = "attr", [1] = "ctx", [2] = "size", [3] = "flags" },
 	.arg_params[0].list = ARGLIST(lsm_attrs),
 	.rettype = RET_ZERO_SUCCESS,
+	/* Not REEXEC_SANITISE_OK: calls get_writable_struct() to allocate lsm_ctx. */
 	.sanitise = sanitise_lsm_set_self_attr,
 	.group = GROUP_PROCESS,
 };

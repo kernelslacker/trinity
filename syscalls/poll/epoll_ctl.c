@@ -107,6 +107,7 @@ struct syscallentry syscall_epoll_ctl = {
 	.argname = { [0] = "epfd", [1] = "op", [2] = "fd", [3] = "event" },
 	.arg_params[1].list = ARGLIST(epoll_ctl_ops),
 	.rettype = RET_ZERO_SUCCESS,
+	/* Not REEXEC_SANITISE_OK: calls avoid_shared_buffer_inout() on the epoll_event pointer. */
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_epoll_ctl,
 	.group = GROUP_VFS_IO,

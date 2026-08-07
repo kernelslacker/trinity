@@ -41,5 +41,6 @@ struct syscallentry syscall_timer_delete = {
 	.argtype = { [0] = ARG_TIMERID },
 	.argname = { [0] = "timer_id" },
 	.sanitise = sanitise_timer_delete,
+	.flags = REEXEC_SANITISE_OK,
 	.rettype = RET_ZERO_SUCCESS,
 };

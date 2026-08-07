@@ -131,7 +131,7 @@ struct syscallentry syscall_linkat = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_FD, [3] = ARG_PATHNAME },
 	.argname = { [0] = "olddfd", [1] = "oldname", [2] = "newdfd", [3] = "newname", [4] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_linkat,
 };

@@ -29,6 +29,7 @@ struct syscallentry syscall_reboot = {
 	.arg_params[1].list = ARGLIST(reboot_magic2_vals),
 	.arg_params[2].list = ARGLIST(reboot_cmds),
 	.sanitise = sanitise_reboot,
+	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_PROCESS,
 	.rettype = RET_BORING,
 };

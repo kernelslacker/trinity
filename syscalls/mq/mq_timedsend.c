@@ -51,6 +51,6 @@ struct syscallentry syscall_mq_timedsend = {
 	.arg_params[3].range.low = 0,
 	.arg_params[3].range.hi = 32768,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_mq_timedsend,
 };

@@ -56,6 +56,7 @@ struct syscallentry syscall_shmat = {
 	.argname = { [0] = "shmid", [1] = "shmaddr", [2] = "shmflg" },
 	.arg_params[2].list = ARGLIST(shmat_flags),
 	.sanitise = sanitise_shmat,
+	.flags = REEXEC_SANITISE_OK,
 	.post = post_shmat,
 	.rettype = RET_ADDRESS,
 };

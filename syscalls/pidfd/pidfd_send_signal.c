@@ -74,4 +74,5 @@ struct syscallentry syscall_pidfd_send_signal = {
 	.argname = { [0] = "pidfd", [1] = "sig", [2] = "info", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(pidfd_send_signal_flags),
 	.sanitise = sanitise_pidfd_send_signal,
+	.flags = REEXEC_SANITISE_OK,
 };
