@@ -660,7 +660,7 @@ injection_worker_body(int op_type, unsigned long start_idx)
 		memset(&zero_override, 0, sizeof(zero_override));
 		rc = icmp_inject_error(&ctx,
 				       ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED,
-				       1280,
+				       (rnd_u32() % 4 == 0) ? 500 + rnd_modulo_u32(52) : 1280,
 				       zero_override);
 		if (rc == 0) {
 			installed++;
@@ -760,10 +760,11 @@ out:
  *   1400 — intermediate value         → forces repeated comparisons
  *   1500 — standard Ethernet MTU      → "orig == fnhe_pmtu" arm
  *
- * Note: the genuinely uncovered arm of fib_nhc_update_mtu() is
- * fnhe_mtu_locked == true; reaching it requires a locked FNHE installed
- * via ICMP FRAG_NEEDED with an MTU below ip_rt_min_pmtu -- ICMP
- * injection work outside the scope of this commit.
+ * Note: 25% of injections use an MTU in [500,551] (below ip_rt_min_pmtu
+ * default 552), causing __ip_rt_update_pmtu() to set lock=true and
+ * install a locked FNHE.  This exercises the fnhe_mtu_locked==true arm
+ * of fib_nhc_update_mtu().  The remaining 75% keep the original 1280 to
+ * preserve coverage of the unlocked path.
  *
  * Self-bounded at FNHE_WORKER_WALL_NS.
  */
