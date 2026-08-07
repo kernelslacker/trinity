@@ -452,6 +452,41 @@ static bool anchored_patterns_overlap(const char *a, const char *b)
 	return strncmp(a, b, min_len) == 0;
 }
 
+/*
+ * Init-time invariant check: every prefilter_rules[] entry must also
+ * appear in deny_rules[] (same pattern string and same kind) so that
+ * procfs_writer_deny_policy_summary() and the overlap checker both see
+ * it.  A prefilter entry missing from deny_rules[] would silently drop
+ * the blocked knob from the policy dump, making a denied path invisible
+ * during crash triage.  The baseline is clean (every current prefilter
+ * entry is in deny_rules[]), so this gate lands green immediately and
+ * just prevents future regressions.
+ */
+static void check_prefilter_subset_of_deny(void)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < ARRAY_SIZE(prefilter_rules); i++) {
+		const struct path_rule *p = &prefilter_rules[i];
+		bool found = false;
+
+		for (j = 0; j < ARRAY_SIZE(deny_rules); j++) {
+			const struct path_rule *d = &deny_rules[j];
+
+			if (d->kind == p->kind &&
+			    strcmp(d->pattern, p->pattern) == 0) {
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			/* check-static: child-output-ok */
+			outputerr("procfs_writer: BUG: prefilter entry '%s' [%s] has no matching entry in deny_rules[]; it will be invisible in procfs_writer_deny_policy_summary() and crash-triage policy dumps\n",
+				  p->pattern, p->class);
+		}
+	}
+}
+
 static void warn_allow_deny_overlap(void)
 {
 	unsigned int i, j;
@@ -815,6 +850,7 @@ void procfs_writer_init(void)
 {
 	if (discovery_done == false) {
 		warn_allow_deny_overlap();
+		check_prefilter_subset_of_deny();
 		discover_targets();
 		discovery_done = true;
 	}
