@@ -425,8 +425,6 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name,
 	rc = build_newqdisc_opts(ctx, ifindex, p_handle, TC_H_ROOT,
 				 p->name, p->enc, p->inner_type,
 				 NLM_F_CREATE | NLM_F_EXCL);
-	/* build_newqdisc_opts wraps one nl_send_recv (sendmsg + recv). */
-	*direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[p_kind_idx] = true;
@@ -437,16 +435,12 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name,
 
 	rc = build_newqdisc(ctx, ifindex, c_handle, c_parent,
 			    child_name, NLM_F_CREATE | NLM_F_EXCL);
-	/* build_newqdisc wraps one nl_send_recv (sendmsg + recv). */
-	*direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[c_kind_idx] = true;
 		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.peek_stack_install_fail,
 				   1, __ATOMIC_RELAXED);
 		(void)build_delqdisc(ctx, ifindex, p_handle, TC_H_ROOT);
-		/* build_delqdisc: sendmsg + recv. */
-		*direct_calls += 2;
 		return;
 	}
 
@@ -467,9 +461,6 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name,
 		(void)build_qfq_class(ctx, ifindex, qfq_class, c_handle,
 				      1, 0, NLM_F_CREATE | NLM_F_EXCL);
 		(void)build_newtfilter(ctx, ifindex, c_handle, "matchall");
-		/* build_qfq_class + build_newtfilter: two nl_send_recv
-		 * calls (sendmsg + recv each). */
-		*direct_calls += 4;
 	}
 
 	if (!ns_unsupported_inet()) {
@@ -597,7 +588,6 @@ static void do_qfq_traffic_churn(struct nl_ctx *ctx, int ifindex,
 
 	rc = build_newqdisc(ctx, ifindex, handle, TC_H_ROOT, "qfq",
 			    NLM_F_CREATE | NLM_F_EXCL);
-	*direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[q_kidx] = true;
@@ -610,11 +600,9 @@ static void do_qfq_traffic_churn(struct nl_ctx *ctx, int ifindex,
 				      qfq_shapes[i].weight,
 				      qfq_shapes[i].lmax,
 				      NLM_F_CREATE | NLM_F_EXCL);
-		*direct_calls += 2;
 	}
 
 	(void)build_newtfilter(ctx, ifindex, handle, "matchall");
-	*direct_calls += 2;
 
 	if (ns_unsupported_inet())
 		goto teardown;
@@ -665,7 +653,6 @@ static void do_qfq_traffic_churn(struct nl_ctx *ctx, int ifindex,
 		rc = build_qfq_class(ctx, ifindex, classes[0], handle,
 				     qfq_shapes[j].weight,
 				     qfq_shapes[j].lmax, 0);
-		*direct_calls += 2;
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qfq_traffic_change_ok,
 					   1, __ATOMIC_RELAXED);
@@ -677,9 +664,7 @@ teardown:
 		*direct_calls += 1;
 	}
 	(void)build_deltfilter(ctx, ifindex, handle);
-	*direct_calls += 2;
 	(void)build_delqdisc(ctx, ifindex, handle, TC_H_ROOT);
-	*direct_calls += 2;
 }
 
 /*
@@ -705,19 +690,14 @@ struct tc_qdisc_iter_ctx {
 	__u32		class1;
 	__u32		class2;
 	struct childdata *child;
-	/* Direct-syscall tally accumulated across the setup / churn /
-	 * teardown helpers.  Every helper bumps this counter by the
-	 * number of raw kernel calls it just issued: nl_open success ==
-	 * 3 (socket + bind + setsockopt for recv_timeo_s), each
-	 * nl_send_recv wrapper (build_newqdisc / rtnl_dellink / ...) ==
-	 * 2 (sendmsg + recv), each AF_INET socket()/setsockopt/close ==
-	 * 1, each sendto() in the burst loops == 1, nl_close == 1.
-	 * Published once in tc_qdisc_churn_in_ns() via
-	 * childop_direct_syscalls_add() so the hot path pays one atomic
-	 * add per invocation instead of per-syscall.  Setup-latched
-	 * short-circuit paths publish whatever they issued before
-	 * bailing, which correctly attributes no data-path work to
-	 * those exits. */
+	/* Direct-syscall tally for non-netlink calls: each AF_INET
+	 * socket()/setsockopt/close == 1, each sendto() in burst loops
+	 * == 1, rtnl_bring_lo_up if_nametoindex (socket+ioctl+close)
+	 * == 3.  The netlink transport (nl_open socket+bind+setsockopt,
+	 * every nl_send_recv wrapper, nl_close) is credited
+	 * automatically by nl_close() via opts.caller_op and is NOT
+	 * duplicated here.  Published once via childop_direct_syscalls_add()
+	 * so the hot path pays one atomic add per invocation. */
 	unsigned long	direct_calls;
 };
 
@@ -745,8 +725,6 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 			 (unsigned int)(rand32() & 0xffffu));
 
 		rc = build_bridge_create(&it->nl, it->bridge_name);
-		/* build_bridge_create: sendmsg + recv. */
-		it->direct_calls += 2;
 		if (rc != 0) {
 			if (is_unsupported_err(rc))
 				mark_ns_unsupported_bridge();
@@ -754,13 +732,9 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 		} else {
 			it->bridge_idx = (int)if_nametoindex(it->bridge_name);
 			rc = build_veth_pair(&it->nl, it->dummy_name, it->peer_name);
-			/* build_veth_pair: sendmsg + recv. */
-			it->direct_calls += 2;
 			if (rc != 0) {
 				if (it->bridge_idx > 0) {
 					(void)rtnl_dellink(&it->nl, it->bridge_idx);
-					/* rtnl_dellink: sendmsg + recv. */
-					it->direct_calls += 2;
 				}
 				it->bridge_idx = 0;
 				it->bridge_mode = false;
@@ -769,18 +743,12 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 				if (it->dummy_idx > 0 && it->bridge_idx > 0) {
 					(void)build_setlink_master(&it->nl, it->dummy_idx,
 								   it->bridge_idx);
-					/* build_setlink_master: sendmsg + recv. */
-					it->direct_calls += 2;
 				}
 				if (it->bridge_idx > 0) {
 					(void)rtnl_setlink_up(&it->nl, it->bridge_idx);
-					/* rtnl_setlink_up: sendmsg + recv. */
-					it->direct_calls += 2;
 				}
 				if (it->dummy_idx > 0) {
 					(void)rtnl_setlink_up(&it->nl, it->dummy_idx);
-					/* rtnl_setlink_up: sendmsg + recv. */
-					it->direct_calls += 2;
 				}
 				it->dummy_added = true;
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.link_create_ok,
@@ -796,8 +764,6 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 			 (unsigned int)(rand32() & 0xffffu));
 
 		rc = build_dummy_create(&it->nl, it->dummy_name);
-		/* build_dummy_create: sendmsg + recv. */
-		it->direct_calls += 2;
 		if (rc != 0) {
 			if (is_unsupported_err(rc))
 				mark_ns_unsupported_dummy();
@@ -812,8 +778,6 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 			return -1;
 
 		(void)rtnl_setlink_up(&it->nl, it->dummy_idx);
-		/* rtnl_setlink_up: sendmsg + recv. */
-		it->direct_calls += 2;
 	}
 
 	if (it->dummy_idx <= 0)
@@ -859,8 +823,6 @@ static int tc_qdisc_add_qdisc(struct tc_qdisc_iter_ctx *it)
 	rc = build_newqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT,
 			    qdisc_kinds[it->qidx].name,
 			    NLM_F_CREATE | NLM_F_EXCL);
-	/* build_newqdisc: sendmsg + recv. */
-	it->direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[it->qidx] = true;
@@ -888,14 +850,10 @@ static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
 				    qdisc_kinds[it->qidx].name) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tclass_create_ok,
 					   1, __ATOMIC_RELAXED);
-		/* build_newtclass: sendmsg + recv. */
-		it->direct_calls += 2;
 		if (build_newtclass(&it->nl, it->dummy_idx, it->class2, TC_H_ROOT,
 				    qdisc_kinds[it->qidx].name) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tclass_create_ok,
 					   1, __ATOMIC_RELAXED);
-		/* build_newtclass: sendmsg + recv. */
-		it->direct_calls += 2;
 	}
 
 	cidx = pick_cls_idx();
@@ -903,8 +861,6 @@ static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
 		modprobe_cls(cidx);
 		rc = build_newtfilter(&it->nl, it->dummy_idx, it->handle,
 				      cls_kinds[cidx]);
-		/* build_newtfilter: sendmsg + recv. */
-		it->direct_calls += 2;
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tfilter_create_ok,
 					   1, __ATOMIC_RELAXED);
@@ -1052,8 +1008,6 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 		rc = build_newqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT,
 				    qdisc_kinds[qidx2].name,
 				    NLM_F_CREATE | NLM_F_REPLACE);
-		/* build_newqdisc: sendmsg + recv. */
-		it->direct_calls += 2;
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qdisc_replace_ok,
 					   1, __ATOMIC_RELAXED);
@@ -1066,14 +1020,10 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 		if (build_deltfilter(&it->nl, it->dummy_idx, it->handle) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tfilter_del_ok,
 					   1, __ATOMIC_RELAXED);
-		/* build_deltfilter: sendmsg + recv. */
-		it->direct_calls += 2;
 
 		if (build_delqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT) == 0)
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.qdisc_del_ok,
 					   1, __ATOMIC_RELAXED);
-		/* build_delqdisc: sendmsg + recv. */
-		it->direct_calls += 2;
 	} else if (it->udp >= 0 && it->dummy_idx > 0) {
 		struct sockaddr_in dst;
 		unsigned char payload[64];
@@ -1099,8 +1049,6 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 					   1, __ATOMIC_RELAXED);
 			it->slave_dellinked = true;
 		}
-		/* rtnl_dellink: sendmsg + recv. */
-		it->direct_calls += 2;
 		for (j = 0; j < 8; j++) {
 			generate_rand_bytes(payload, sizeof(payload));
 			(void)sendto(it->udp, payload, sizeof(payload),
@@ -1136,8 +1084,9 @@ static int tc_qdisc_churn_in_ns(void *arg)
 	struct tc_qdisc_iter_ctx *it = (struct tc_qdisc_iter_ctx *)arg;
 	struct childdata *child = it->child;
 	struct nl_open_opts nl_opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_TC_QDISC_CHURN,
 	};
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -1160,17 +1109,12 @@ static int tc_qdisc_churn_in_ns(void *arg)
 			childop_direct_syscalls_add(op, it->direct_calls);
 		return 0;
 	}
-	/* nl_open success path issued socket + bind + setsockopt
-	 * (recv_timeo_s > 0 above). */
-	it->direct_calls += 3;
-
 	if (!lo_brought_up()) {
 		rtnl_bring_lo_up(&it->nl);
-		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
-		 * when the lo lookup succeeds; the if_nametoindex libc
-		 * probe stays unattributed to match the surrounding
-		 * per-childop convention. */
-		it->direct_calls += 2;
+		/* rtnl_bring_lo_up: if_nametoindex (socket+ioctl+close).
+		 * The nl_send_recv portion is credited automatically via
+		 * opts.caller_op (nl_close publishes netlink transport). */
+		it->direct_calls += 3;
 		mark_lo_brought_up();
 	}
 
@@ -1230,26 +1174,19 @@ out:
 			if (rtnl_dellink(&it->nl, it->dummy_idx) == 0)
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn.link_del_ok,
 						   1, __ATOMIC_RELAXED);
-			/* rtnl_dellink: sendmsg + recv. */
-			it->direct_calls += 2;
 		}
 		if (it->bridge_idx > 0) {
 			(void)rtnl_dellink(&it->nl, it->bridge_idx);
-			/* rtnl_dellink: sendmsg + recv. */
-			it->direct_calls += 2;
 		}
 		nl_close(&it->nl);
-		/* nl_close: one close() on the netlink fd. */
-		it->direct_calls += 1;
 	}
 
-	/* Publish this invocation's direct-syscall load in ONE
-	 * RELAXED atomic add.  Tally was accumulated across the
-	 * setup / churn / teardown helpers via it->direct_calls;
-	 * the grandchild's write on the shm slot is visible to the
-	 * parent (and to sibling children) after _exit() because
-	 * shm is a shared mapping.  Gated on valid_op to match the
-	 * surrounding per-op stats bumps. */
+	/* Publish the non-netlink direct-syscall tally.  The netlink
+	 * transport (nl_open + all nl_send_recv wrappers + nl_close)
+	 * was already published by nl_close() above via opts.caller_op.
+	 * it->direct_calls holds only non-netlink calls: socket/
+	 * setsockopt/close for the UDP fd, sendto() bursts, and
+	 * rtnl_bring_lo_up if_nametoindex.  Gated on valid_op. */
 	if (valid_op)
 		childop_direct_syscalls_add(op, it->direct_calls);
 
