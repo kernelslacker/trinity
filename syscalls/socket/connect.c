@@ -18,7 +18,7 @@ struct syscallentry syscall_connect = {
 	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_SOCKADDR, [2] = ARG_SOCKADDRLEN },
 	.argname = { [0] = "fd", [1] = "uservaddr", [2] = "addrlen" },
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
+	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_connect,
 };

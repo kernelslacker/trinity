@@ -93,6 +93,7 @@ struct syscallentry syscall_futex_wait = {
 	.argtype = { [0] = ARG_ADDRESS, [4] = ARG_ADDRESS, [5] = ARG_OP },
 	.argname = { [0] = "uaddr", [1] = "val", [2] = "mask", [3] = "flags", [4] = "timeout", [5] = "clockid" },
 	.arg_params[5].list = ARGLIST(futex_wait_clockids),
+	/* Not REEXEC_SANITISE_OK: calls get_writable_struct() to allocate and populate the futex word. */
 	.sanitise = sanitise_futex_wait,
 	.rettype = RET_ZERO_SUCCESS,
 	/*

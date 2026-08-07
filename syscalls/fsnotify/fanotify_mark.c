@@ -152,6 +152,6 @@ struct syscallentry syscall_fanotify_mark = {
 	.sanitise = sanitise_fanotify_mark,
 	.post = post_fanotify_mark,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 };

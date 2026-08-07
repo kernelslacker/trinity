@@ -47,6 +47,7 @@ struct syscallentry syscall_timer_getoverrun = {
 	.argtype = { [0] = ARG_TIMERID },
 	.argname = { [0] = "timer_id" },
 	.sanitise = sanitise_timer_getoverrun,
+	.flags = REEXEC_SANITISE_OK,
 	.post = post_timer_getoverrun,
 	.rettype = RET_BORING,
 };

@@ -254,6 +254,7 @@ struct syscallentry syscall_io_uring_enter = {
 	.arg_params[2].range.low = 1,
 	.arg_params[2].range.hi = 128,
 	.arg_params[3].list = ARGLIST(io_uring_enter_flags),
+	/* Not REEXEC_SANITISE_OK: advances SQ ring tail in kernel-visible shared mmap; re-exec double-advances. */
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_io_uring_enter,
 	.bound_arg = 2,

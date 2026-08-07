@@ -563,6 +563,7 @@ struct syscallentry syscall_futex = {
 	 * disabled, and the per-child private OBJ_FUTEX path is broken in
 	 * the same way.
 	 */
+	/* Not REEXEC_SANITISE_OK: calls setpriority() + may acquire a futex lock (futex_trylock_or_wait). */
 	.flags = NEED_ALARM | IGNORE_ENOSYS | SKIP_BLANKET_SCRUB,
 	.sanitise = sanitise_futex,
 	.post = post_futex,

@@ -38,6 +38,7 @@ struct syscallentry syscall_shmdt = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_ADDRESS },
 	.argname = { [0] = "shmaddr" },
+	/* Not REEXEC_SANITISE_OK: calls shmat() in sanitise to acquire an address; leaks on re-exec. */
 	.sanitise = sanitise_shmdt,
 	.post = post_shmdt,
 	.rettype = RET_ZERO_SUCCESS,

@@ -60,6 +60,6 @@ struct syscallentry syscall_fsmount = {
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_MOUNT,
 	.group = GROUP_VFS_MOUNT,
-	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY,
+	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.post = post_mount_fd,
 };

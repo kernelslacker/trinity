@@ -78,6 +78,7 @@ struct syscallentry syscall_futex_wake = {
 	.arg_params[2].range.low = 1,
 	.arg_params[2].range.hi = 128,
 	.sanitise = sanitise_futex_wake,
+	.flags = REEXEC_SANITISE_OK,
 	.post = post_futex_wake,
 	.group = GROUP_IPC,
 	/* a3 (nr) drives post_futex_wake's retval bound: the kernel ABI
