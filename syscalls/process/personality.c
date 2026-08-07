@@ -95,6 +95,7 @@ struct syscallentry syscall_personality = {
 	.num_args = 1,
 	.argname = { [0] = "personality" },
 	.sanitise = sanitise_personality,
+	.flags = REEXEC_SANITISE_OK,
 	.post = post_personality,
 	.rettype = RET_BORING,
 };

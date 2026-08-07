@@ -51,4 +51,5 @@ struct syscallentry syscall_sched_setaffinity = {
 	.argtype = { [0] = ARG_PID, [1] = ARG_LEN, [2] = ARG_CPUMASK },
 	.argname = { [0] = "pid", [1] = "len", [2] = "user_mask_ptr" },
 	.sanitise = sanitise_sched_setaffinity,
+	.flags = REEXEC_SANITISE_OK,
 };
