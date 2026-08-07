@@ -185,7 +185,7 @@ CHILDOP(CHILD_OP_VLAN_FILTER_CHURN        , "vlan_filter_churn"          , vlan_
 CHILDOP(CHILD_OP_SCTP_CHUNK_RX            , "sctp_chunk_rx"              , sctp_chunk_rx              , true, 1)
 CHILDOP(CHILD_OP_PKT_BUILDER_PROBE        , "pkt_builder_probe"          , pkt_builder_probe          , true, 0)
 CHILDOP(CHILD_OP_ESP_CRAFTED_RX           , "esp_crafted_rx"             , esp_crafted_rx             , true, 1)
-CHILDOP(CHILD_OP_CRAFTED_ICMP_RX         , "crafted_icmp_rx"            , crafted_icmp_rx            , true, 1)
+CHILDOP(CHILD_OP_CRAFTED_ICMP_RX          , "crafted_icmp_rx"            , crafted_icmp_rx            , true, 1)
 CHILDOP(CHILD_OP_FOU_GUE_MCAST_RX         , "fou_gue_mcast_rx"           , fou_gue_mcast_rx           , true, 1)
 CHILDOP(CHILD_OP_GENEVE_RX                , "geneve_rx"                  , geneve_rx                  , true, 1)
 CHILDOP(CHILD_OP_NETNS_MOUNTNS_SETUP_PROBE, "netns_mountns_setup_probe"  , netns_mountns_setup_probe  , true, 1)
