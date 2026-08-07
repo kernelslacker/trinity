@@ -459,6 +459,60 @@ static void sanitise_btrfs_vol_args_v2(struct syscallrecord *rec)
 	rec->a3 = (unsigned long)args;
 }
 
+#ifdef BTRFS_IOC_ENCODED_READ
+/*
+ * sanitise_btrfs_encoded_io_args -- seed a struct btrfs_ioctl_encoded_io_args
+ * for BTRFS_IOC_ENCODED_READ / BTRFS_IOC_ENCODED_WRITE.
+ *
+ * Note: the leak path requires qgroups enabled at runtime
+ * (btrfs quota enable); CONFIG_DEBUG_KMEMLEAK=n so the leak is
+ * not directly observable, but this makes the encoded-I/O validation path
+ * reachable for general memory-safety coverage.
+ */
+static void sanitise_btrfs_encoded_io_args(struct syscallrecord *rec)
+{
+	struct btrfs_ioctl_encoded_io_args *args;
+
+	args = get_writable_address(sizeof(*args));
+	if (args == NULL)
+		return;
+
+	generate_rand_bytes((unsigned char *)args, sizeof(*args));
+
+	/* compression: 0=none, 1=zlib, 2=lzo, 3=zstd; plus occasional out-of-range */
+	if (rnd_u32() & 1)
+		args->compression = rnd_modulo_u32(4);
+	else
+		args->compression = rnd_modulo_u32(8); /* sometimes invalid */
+
+	/* encryption: 0=none only currently */
+	args->encryption = (rnd_u32() & 1) ? 0 : rnd_modulo_u32(4);
+
+	/* len / unencoded_len / unencoded_offset -- keep mostly consistent */
+	if (rnd_u32() & 1) {
+		/* legal envelope */
+		unsigned long len = rnd_modulo_u32(65536) + 1;
+		args->len = len;
+		args->unencoded_len = len + rnd_modulo_u32(4096);
+		args->unencoded_offset = rnd_modulo_u32((unsigned int)args->unencoded_len);
+	} else {
+		/* deliberate skew to exercise reject paths */
+		args->len = rnd_u64();
+		args->unencoded_len = rnd_u64();
+		args->unencoded_offset = rnd_u64();
+	}
+
+	/* num_pages and iov/iovec: let the kernel validate; leave iovcount as-is */
+	/* flags: reserved, must be zero for now (but skew occasionally) */
+	args->flags = (rnd_u32() & 1) ? 0 : rnd_u64();
+
+	/* reserved: must be zero for writes; zero for safety on reads too */
+	memset(args->reserved, 0, sizeof(args->reserved));
+
+	rec->a3 = (unsigned long)args;
+}
+#endif
+
 /*
  * btrfs_sanitise -- seed the leading discriminator fields of the
  * struct args expected by the non-destructive parse/grammar ioctls so
@@ -544,6 +598,16 @@ static void btrfs_sanitise(const struct ioctl_group *grp,
 	case BTRFS_IOC_SUBVOL_CREATE_V2:
 		sanitise_btrfs_vol_args_v2(rec);
 		break;
+#ifdef BTRFS_IOC_ENCODED_READ
+	case BTRFS_IOC_ENCODED_READ:
+		sanitise_btrfs_encoded_io_args(rec);
+		break;
+#endif
+#ifdef BTRFS_IOC_ENCODED_WRITE
+	case BTRFS_IOC_ENCODED_WRITE:
+		sanitise_btrfs_encoded_io_args(rec);
+		break;
+#endif
 	default:
 		break;
 	}
