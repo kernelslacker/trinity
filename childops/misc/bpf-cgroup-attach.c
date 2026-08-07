@@ -331,7 +331,7 @@ static void setsockopt_burst(bool probe_active,
 			set_reach++;
 		if (probe_active)
 			__atomic_add_fetch(
-				&shm->stats.bpf_cgroup_attach.sockopt_probe_calls,
+				&shm->stats.bpf_cgroup_attach.setsockopt_probe_calls,
 				1, __ATOMIC_RELAXED);
 		calls++;
 
@@ -340,6 +340,10 @@ static void setsockopt_burst(bool probe_active,
 		if (getsockopt(s, level, optnames[i].optname,
 			       buf, &len) < 0 && errno == EFAULT)
 			get_reach++;
+		if (probe_active)
+			__atomic_add_fetch(
+				&shm->stats.bpf_cgroup_attach.getsockopt_probe_calls,
+				1, __ATOMIC_RELAXED);
 		calls++;
 	}
 
@@ -554,10 +558,14 @@ bool bpf_cgroup_attach(struct childdata *child)
 			if (is_sockopt_combo(c)) {
 				unsigned long set_reach = 0, get_reach = 0;
 
-				if (use_efault_probe)
+				if (use_efault_probe) {
 					__atomic_add_fetch(
-						&shm->stats.bpf_cgroup_attach.sockopt_probe_bursts,
+						&shm->stats.bpf_cgroup_attach.setsockopt_probe_bursts,
 						1, __ATOMIC_RELAXED);
+					__atomic_add_fetch(
+						&shm->stats.bpf_cgroup_attach.getsockopt_probe_bursts,
+						1, __ATOMIC_RELAXED);
+				}
 				setsockopt_burst(use_efault_probe, &burst_calls, &set_reach, &get_reach);
 				__atomic_add_fetch(
 					&shm->stats.bpf_cgroup_attach.setsockopt_hook_reach,
@@ -591,14 +599,17 @@ bool bpf_cgroup_attach(struct childdata *child)
 	/* Post-detach burst — exercises the immediately-after-detach
 	 * dispatch path; stale-array UAFs surface here.  With the probe
 	 * gone, EFAULTs should drop to zero.  Any non-zero
-	 * post_detach_sockopt_reach count signals that the cgroup BPF
-	 * dispatch array was not torn down correctly after PROG_DETACH. */
+	 * setsockopt_post_detach_reach / getsockopt_post_detach_reach counts
+	 * signal that the cgroup BPF dispatch array was not torn down correctly
+	 * after PROG_DETACH. */
 	if (is_sockopt_combo(c)) {
 		unsigned long set_reach = 0, get_reach = 0;
 
 		setsockopt_burst(false, &burst_calls, &set_reach, &get_reach);
-		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.post_detach_sockopt_reach,
-				   set_reach + get_reach, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.setsockopt_post_detach_reach,
+				   set_reach, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.getsockopt_post_detach_reach,
+				   get_reach, __ATOMIC_RELAXED);
 	} else {
 		sent = udp_burst(c->attach_type, &burst_calls);
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.post_detach_sent,
