@@ -24,6 +24,7 @@
 struct packet_qdisc_bypass_unanchored_l2_stats {
 	unsigned long runs;		/* total invocations */
 	unsigned long setup_failed;	/* netns/veth/macsec/ring setup error */
+	unsigned long setup_enodev;	/* transient -ENODEV on macsec create (skipped, not latched) */
 	unsigned long lane_a_sends;	/* AF_PACKET sendto() calls issued */
 	unsigned long lane_b_sends;	/* AF_XDP sendto() kick calls issued */
 	unsigned long lane_a_errors;	/* AF_PACKET sendto() returned < 0 */
