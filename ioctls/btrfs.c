@@ -563,14 +563,27 @@ static void sanitise_btrfs_encoded_write_args(struct syscallrecord *rec)
 	generate_rand_bytes((unsigned char *)args, sizeof(*args));
 
 	/*
+	 * offset: __s64, must be >= 0 AND sector-aligned (inode.c:9779).
+	 * generate_rand_bytes() leaves a random bit pattern -- override it
+	 * with a non-negative multiple of 4096 so the sector-alignment check
+	 * is satisfied.
+	 */
+	args->offset = (__s64)((__u64)rnd_modulo_u32(256) * 4096);
+
+	/*
 	 * compression: NONE=0 ZLIB=1 ZSTD=2 LZO_4K=3 LZO_8K=4 LZO_16K=5
 	 * LZO_32K=6 LZO_64K=7 TYPES=8.  Kernel rejects values >=
 	 * BTRFS_ENCODED_IO_COMPRESSION_TYPES, so the invalid arm must
 	 * produce a value >= TYPES; adding a small random offset achieves
 	 * that while still exercising a range of OOB values.
+	 *
+	 * In the valid arm, restrict to {ZLIB=1, ZSTD=2, LZO_4K=3}.
+	 * LZO_8K/16K/32K/64K (values 4-7) require a matching sector size;
+	 * on a 4096-byte-sector fs only LZO_4K passes (inode.c:9740), so
+	 * drawing from the full [0, TYPES) range wastes 5/8 of attempts.
 	 */
 	if (rnd_u32() & 1)
-		args->compression = rnd_modulo_u32(BTRFS_ENCODED_IO_COMPRESSION_TYPES);
+		args->compression = rnd_modulo_u32(3) + 1; /* ZLIB/ZSTD/LZO_4K */
 	else
 		args->compression = BTRFS_ENCODED_IO_COMPRESSION_TYPES +
 				    rnd_modulo_u32(8); /* invalid */
@@ -582,16 +595,17 @@ static void sanitise_btrfs_encoded_write_args(struct syscallrecord *rec)
 	if (rnd_u32() & 1) {
 		/*
 		 * Legal envelope: kernel requires
-		 *   unencoded_offset <= unencoded_len - len
-		 * i.e. offset <= r (the slack).  Save r first, then draw
-		 * offset from [0, r] so both kernel checks pass by
-		 * construction.
+		 *   unencoded_offset <= unencoded_len - len (inode.c:9800)
+		 * AND unencoded_offset must be sector-aligned (inode.c:9800).
+		 * Draw uoff in sector units first, then set r >= uoff so
+		 * both the sector-alignment and the range invariant hold.
 		 */
 		unsigned long len = rnd_modulo_u32(65536) + 1;
-		unsigned long r   = rnd_modulo_u32(4096);
+		__u64 uoff        = (__u64)rnd_modulo_u32(256) * 4096;
+		unsigned long r   = (unsigned long)uoff + rnd_modulo_u32(4096);
 		args->len             = len;
 		args->unencoded_len   = len + r;
-		args->unencoded_offset = rnd_modulo_u32(r + 1);
+		args->unencoded_offset = uoff;
 	} else {
 		/* deliberate skew to exercise reject paths */
 		args->len = rnd_u64();
