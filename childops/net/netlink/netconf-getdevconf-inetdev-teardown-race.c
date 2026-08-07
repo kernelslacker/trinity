@@ -433,7 +433,7 @@ static void worker_poller(int ifindex, int op_type)
 		 * are never recycled by the kernel so a stale probe returns
 		 * ENODEV without reaching in_dev_get(). */
 		fresh = if_nametoindex("vnci0");
-		ctx.direct_syscalls++; /* if_nametoindex -> SIOCGIFINDEX */
+		ctx.direct_syscalls += 3; /* if_nametoindex: socket + ioctl(SIOCGIFINDEX) + close */
 		if (fresh > 0)
 			ifindex = (int)fresh;
 
