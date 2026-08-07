@@ -648,55 +648,48 @@ static int fnhe_pmtu_mtu_race_in_ns(void *arg)
 {
 	struct fnhe_pmtu_race_ctx *rctx = (struct fnhe_pmtu_race_ctx *)arg;
 	struct nl_ctx nl = { .fd = -1 };
+	const int op_type = rctx->op_type;
+	const bool valid_op = (op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 	struct nl_open_opts opts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = op_type,
 	};
-	const int op_type = rctx->op_type;
-	const bool valid_op = (op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 	bool neg_ctrl = ((rctx->iter % FNHE_NEG_CTRL_PERIOD) == (FNHE_NEG_CTRL_PERIOD - 1));
 	int fhv0_idx;
 	pid_t wa = -1, wb = -1;
 
 	/* (b) Open rtnl and bring lo up */
-	rctx->direct_calls += 3; /* nl_open: socket+bind+setsockopt(SO_RCVTIMEO) */
 	if (nl_open(&nl, &opts) < 0)
 		goto out_fail;
-	rctx->direct_calls++; /* rtnl_bring_lo_up: nl_send_recv */
 	fnhe_bring_lo_up(&nl);
 
 	/* Create veth pair fhv0/fhv1 */
-	rctx->direct_calls++; /* fnhe_create_veth: nl_send_recv */
 	if (fnhe_create_veth(&nl) != 0)
 		goto out_nl;
 
 	/* Bring both ends up */
-	rctx->direct_calls++; /* fnhe_set_link_up(fhv0): nl_send_recv */
 	if (fnhe_set_link_up(&nl, FNHE_VETH_A) != 0)
 		goto out_nl;
-	rctx->direct_calls++; /* fnhe_set_link_up(fhv1): nl_send_recv */
 	if (fnhe_set_link_up(&nl, FNHE_VETH_B) != 0)
 		goto out_nl;
 
 	/* Assign addresses */
-	rctx->direct_calls++; /* fnhe_add_addr(fhv0): nl_send_recv */
 	if (fnhe_add_addr(&nl, FNHE_VETH_A, FNHE_ADDR_A, FNHE_PREFIX) != 0)
 		goto out_nl;
-	rctx->direct_calls++; /* fnhe_add_addr(fhv1): nl_send_recv */
 	if (fnhe_add_addr(&nl, FNHE_VETH_B, FNHE_ADDR_B, FNHE_PREFIX) != 0)
 		goto out_nl;
 
 	/* Install default route via 192.168.42.2 (fhv1) out fhv0.
-	 * if_nametoindex() issues socket()+ioctl()+close() internally. */
-	rctx->direct_calls += 3; /* if_nametoindex(fhv0): socket+ioctl+close */
+	 * if_nametoindex() issues socket()+ioctl()+close() internally.
+	 * nl_close() publishes all netlink direct-syscall counts via
+	 * childop_direct_syscalls_add() because opts.caller_op is set. */
 	fhv0_idx = (int)if_nametoindex(FNHE_VETH_A);
 	if (fhv0_idx <= 0)
 		goto out_nl;
-	rctx->direct_calls++; /* fnhe_add_default_route: nl_send_recv */
 	if (fnhe_add_default_route(&nl, FNHE_GW, fhv0_idx) != 0)
 		goto out_nl;
 
-	rctx->direct_calls++; /* nl_close */
 	nl_close(&nl);
 	nl.fd = -1;
 
