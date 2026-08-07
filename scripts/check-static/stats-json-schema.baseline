@@ -1349,6 +1349,8 @@ stats	object
     stats.bpf_cgroup_attach.setsockopt_hook_reach	u64
     stats.bpf_cgroup_attach.getsockopt_hook_reach	u64
     stats.bpf_cgroup_attach.post_detach_sockopt_reach	u64
+    stats.bpf_cgroup_attach.sockopt_probe_bursts	u64
+    stats.bpf_cgroup_attach.sockopt_probe_calls	u64
   stats.iouring_flood	object
     stats.iouring_flood.runs	u64
     stats.iouring_flood.submits	u64

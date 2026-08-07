@@ -251,7 +251,8 @@ static bool is_sockopt_combo(const struct attach_combo *c)
  * so EFAULTs should drop to zero — a non-zero post-detach value
  * flags a stale-dispatch bug in the cgroup BPF plumbing.
  */
-static void setsockopt_burst(unsigned int *calls_out,
+static void setsockopt_burst(bool probe_active,
+			     unsigned int *calls_out,
 			     unsigned long *set_reach_out,
 			     unsigned long *get_reach_out)
 {
@@ -328,6 +329,10 @@ static void setsockopt_burst(unsigned int *calls_out,
 		if (setsockopt(s, level, optnames[i].optname,
 			       buf, optnames[i].optlen) < 0 && errno == EFAULT)
 			set_reach++;
+		if (probe_active)
+			__atomic_add_fetch(
+				&shm->stats.bpf_cgroup_attach.sockopt_probe_calls,
+				1, __ATOMIC_RELAXED);
 		calls++;
 
 		/* getsockopt — separate CGROUP_GETSOCKOPT hook invocation */
@@ -549,7 +554,11 @@ bool bpf_cgroup_attach(struct childdata *child)
 			if (is_sockopt_combo(c)) {
 				unsigned long set_reach = 0, get_reach = 0;
 
-				setsockopt_burst(&burst_calls, &set_reach, &get_reach);
+				if (use_efault_probe)
+					__atomic_add_fetch(
+						&shm->stats.bpf_cgroup_attach.sockopt_probe_bursts,
+						1, __ATOMIC_RELAXED);
+				setsockopt_burst(use_efault_probe, &burst_calls, &set_reach, &get_reach);
 				__atomic_add_fetch(
 					&shm->stats.bpf_cgroup_attach.setsockopt_hook_reach,
 					set_reach, __ATOMIC_RELAXED);
@@ -587,7 +596,7 @@ bool bpf_cgroup_attach(struct childdata *child)
 	if (is_sockopt_combo(c)) {
 		unsigned long set_reach = 0, get_reach = 0;
 
-		setsockopt_burst(&burst_calls, &set_reach, &get_reach);
+		setsockopt_burst(false, &burst_calls, &set_reach, &get_reach);
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach.post_detach_sockopt_reach,
 				   set_reach + get_reach, __ATOMIC_RELAXED);
 	} else {
