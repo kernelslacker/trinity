@@ -158,7 +158,12 @@ static void inner_child_main(unsigned long *dc)
 
 	/* Lane A: shrink the per-userns IPC namespace quota. */
 	snprintf(buf, sizeof(buf), "%d\n", IPCNS_LIMIT);
-	(void)ipcns_write_str("/proc/sys/user/max_ipc_namespaces", buf, dc);
+	if (!ipcns_write_str("/proc/sys/user/max_ipc_namespaces", buf, dc)) {
+		__atomic_add_fetch(
+			&shm->stats.ipcns_ucount_exhaustion.limit_install_failed,
+			1, __ATOMIC_RELAXED);
+		_exit(3);
+	}
 
 	/* Lane B: hammer workers. */
 	for (i = 0; i < HAMMER_NR; i++) {

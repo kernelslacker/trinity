@@ -4,6 +4,7 @@
 static const struct stat_field ipcns_ucount_exhaustion_fields[] = {
 	STAT_FIELD_SUB(ipcns_ucount_exhaustion, runs),
 	STAT_FIELD_SUB(ipcns_ucount_exhaustion, inner_crashed),
+	STAT_FIELD_SUB(ipcns_ucount_exhaustion, limit_install_failed),
 };
 
 const struct stat_category ipcns_ucount_exhaustion_category =

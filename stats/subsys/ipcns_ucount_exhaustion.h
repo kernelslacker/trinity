@@ -6,6 +6,8 @@ struct ipcns_ucount_exhaustion_stats {
 	unsigned long runs;
 	/* Inner child died by signal (unexpected crash inside userns). */
 	unsigned long inner_crashed;
+	/* Writing IPCNS_LIMIT to /proc/sys/user/max_ipc_namespaces failed. */
+	unsigned long limit_install_failed;
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_IPCNS_UCOUNT_EXHAUSTION_H */

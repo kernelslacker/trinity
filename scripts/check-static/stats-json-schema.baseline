@@ -851,6 +851,7 @@ stats	object
   stats.ipcns_ucount_exhaustion	object
     stats.ipcns_ucount_exhaustion.runs	u64
     stats.ipcns_ucount_exhaustion.inner_crashed	u64
+    stats.ipcns_ucount_exhaustion.limit_install_failed	u64
   stats.userns_bootstrap	object
     stats.userns_bootstrap.runs	u64
     stats.userns_bootstrap.ran	u64
