@@ -4,6 +4,7 @@
 static const struct stat_field packet_qdisc_bypass_unanchored_l2_fields[] = {
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, runs),
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, setup_failed),
+	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, setup_enodev),
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, lane_a_sends),
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, lane_b_sends),
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, lane_a_errors),

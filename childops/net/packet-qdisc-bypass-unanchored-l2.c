@@ -40,8 +40,11 @@
  *
  * Latches:
  *   ns_unsupported_bypass_l2 — set on EPERM from userns_run_in_ns() or
- *   on EOPNOTSUPP/EAFNOSUPPORT from the AF_XDP / macsec create path so
- *   the op stays off for the remainder of this child's lifetime.
+ *   on EOPNOTSUPP/EAFNOSUPPORT from the AF_XDP / macsec create path
+ *   (CONFIG_MACSEC=m not loaded, or AF_XDP unavailable).  -ENODEV from
+ *   RTM_NEWLINK kind=macsec is a transient parent-link lookup failure
+ *   (veth0 ifindex racing or transiently absent), NOT CONFIG_MACSEC
+ *   absent; it is counted in setup_enodev and skipped, not latched.
  *
  * Syscall smoke gate: sendto.
  */
@@ -151,8 +154,9 @@
 /* ------------------------------------------------------------------ */
 
 /* Latch: userns_run_in_ns() returned -EPERM, or AF_XDP/macsec probes
- * returned EOPNOTSUPP/EAFNOSUPPORT — leave the op off for the remainder
- * of this child's lifetime. */
+ * returned EOPNOTSUPP/EAFNOSUPPORT (CONFIG_MACSEC=m not loaded or AF_XDP
+ * unavailable) — leave the op off for the remainder of this child's
+ * lifetime.  -ENODEV (transient veth ifindex race) does NOT latch. */
 static bool ns_unsupported_bypass_l2;
 
 #define BYPASS_OUTER_BASE		1U
@@ -244,7 +248,9 @@ static int bypass_create_veth(struct nl_ctx *ctx,
  * Creates a minimal macsec device with default SCI/key settings.
  * Sets encoding_sa=0 so the TX SA installed by bypass_install_macsec_txsa()
  * (AN=0) is selected immediately without further configuration.
- * EOPNOTSUPP means CONFIG_MACSEC is not loaded; the caller latches.
+ * EOPNOTSUPP means CONFIG_MACSEC is not loaded; caller latches the op.
+ * ENODEV means the parent ifindex (veth0) was not found — a transient
+ * race; caller counts and skips without latching.
  */
 static int bypass_create_macsec(struct nl_ctx *ctx,
 				const char *name, int parent_ifindex)
@@ -1016,12 +1022,21 @@ static int iter_one_in_ns(void *arg)
 	/* Create macsec device mst0 over veth0 */
 	rc = bypass_create_macsec(&nl, "mst0", (int)veth0_ifx);
 	if (rc != 0) {
-		/* EOPNOTSUPP → CONFIG_MACSEC not loaded; latch the op. */
 		__atomic_add_fetch(
 			&shm->stats.packet_qdisc_bypass_unanchored_l2.setup_failed,
 			1, __ATOMIC_RELAXED);
-		if (rc == -EOPNOTSUPP || rc == -ENODEV) {
+		if (rc == -EOPNOTSUPP) {
+			/* CONFIG_MACSEC=m not loaded; latch the op. */
 			ctx->latch_errno = EOPNOTSUPP;
+			goto out_nl;
+		}
+		if (rc == -ENODEV) {
+			/* Transient parent-link lookup failure (veth0 ifindex
+			 * not yet visible or racing with netns teardown).
+			 * Skip this iteration; do not disable the op. */
+			__atomic_add_fetch(
+				&shm->stats.packet_qdisc_bypass_unanchored_l2.setup_enodev,
+				1, __ATOMIC_RELAXED);
 			goto out_nl;
 		}
 		goto out_nl;
