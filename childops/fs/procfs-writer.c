@@ -207,10 +207,19 @@ static const struct path_rule deny_rules[] = {
 	 * /proc/self/ and /proc/<pid>/ siblings via the /proc-anchored
 	 * suffix.  core_pattern and core_uses_pid rewrite the system-wide
 	 * dump handler that kdump and bandicoot rely on.
+	 *
+	 * suid_dumpable controls where the kernel writes coredumps when a
+	 * setuid binary crashes.  Writing 2 enables suidsafe mode: the
+	 * kernel silences coredumps unless core_pattern is a pipe handler
+	 * or a fully-qualified path.  A stray write silently breaks crash
+	 * observability — same failure mode as core_pattern itself.
+	 * The /proc/sys/fs/ allow prefix would shadow this entry in the
+	 * standard deny check; see prefilter_rules[] and add_entry().
 	 */
-	{ "/proc/sys/kernel/core_", MATCH_PREFIX,      "core" },
-	{ "/mem",                   MATCH_SUFFIX, "core" },
-	{ "/coredump_filter",       MATCH_SUFFIX, "core" },
+	{ "/proc/sys/kernel/core_",    MATCH_PREFIX, "core" },
+	{ "/proc/sys/fs/suid_dumpable", MATCH_EXACT,  "core" },
+	{ "/mem",                       MATCH_SUFFIX, "core" },
+	{ "/coredump_filter",           MATCH_SUFFIX, "core" },
 
 	/*
 	 * kexec — a mutated crashkernel image or load-limit is either an
@@ -281,6 +290,23 @@ static const struct path_rule allow_rules[] = {
 };
 
 /*
+ * Exact paths carved out of an allow prefix before path_allowed() is
+ * consulted.  An entry here means the deny intent is honoured even when
+ * a broader allow prefix would otherwise shadow it; --dangerous still
+ * lifts the block as usual.  Every entry here must also appear in
+ * deny_rules[] so the class summary and the overlap checker see it.
+ */
+static const struct path_rule prefilter_rules[] = {
+	/*
+	 * suid_dumpable — already described in deny_rules[].  The
+	 * /proc/sys/fs/ allow prefix is broader than this node, so the
+	 * deny-table entry alone is silently shadowed; this prefilter
+	 * ensures add_entry() sees the block before allow-wins fires.
+	 */
+	{ "/proc/sys/fs/suid_dumpable", MATCH_EXACT, "core" },
+};
+
+/*
  * MATCH_SUFFIX fires when the path lives under a discovery root — cgroup
  * v2 controls sit under /sys/fs/cgroup and per-pid /mem / coredump_filter
  * under /proc/, so the reachable set spans both trees.
@@ -333,6 +359,12 @@ static bool path_denied(const char *path)
 static bool path_allowed(const char *path)
 {
 	return path_matches_table(allow_rules, ARRAY_SIZE(allow_rules), path);
+}
+
+static bool path_prefiltered(const char *path)
+{
+	return path_matches_table(prefilter_rules, ARRAY_SIZE(prefilter_rules),
+				  path);
 }
 
 /*
@@ -391,7 +423,15 @@ static void warn_allow_deny_overlap(void)
 			 * in the parent before fork_children -- this is
 			 * a startup-time policy check, not a child-side
 			 * diagnostic.
+			 *
+			 * If this deny pattern is also in prefilter_rules[]
+			 * the overlap is intentionally resolved by the
+			 * pre-allow check in add_entry() — no warning needed.
 			 */
+			if (path_matches_table(prefilter_rules,
+					       ARRAY_SIZE(prefilter_rules),
+					       d->pattern))
+				continue;
 			/* check-static: child-output-ok */
 			outputerr("procfs_writer: WARNING: allow rule '%s' [%s] overlaps deny rule '%s' [%s]; allow wins by design -- the deny is silently ignored on the overlap\n",
 				  a->pattern, a->class,
@@ -501,6 +541,13 @@ static void add_entry(const char *path)
 		return;
 	len = strlen(path);
 	if (len >= PROCFS_MAX_PATH)
+		return;
+	/*
+	 * Prefilter: exact nodes carved out of an allow prefix.  Check
+	 * before path_allowed() so the deny intent is honoured even though
+	 * allow-wins is still the rule for everything else.
+	 */
+	if (path_prefiltered(path) && !dangerous)
 		return;
 	/*
 	 * Allow-list wins: a positively-classified parser family is
