@@ -480,9 +480,17 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	if (installed == 0) {
 		/* check-static: child-output-ok */
 		outputerr("[fnhe-pmtu-mtu-race] WARNING: "
-			  "evictions_observed=0 this invocation — "
-			  "fnhe table may be empty; "
-			  "see fnhe-pmtu-mtu-race childop notes\n");
+			  "zero injections installed -- "
+			  "check inject_failed counter\n");
+	} else if (!eviction_seen) {
+		/* check-static: child-output-ok */
+		outputerr("[fnhe-pmtu-mtu-race] WARNING: "
+			  "evictions_observed=0 this invocation, "
+			  "installed=%lu below threshold %lu -- "
+			  "fnhe table may be too small; "
+			  "see fnhe-pmtu-mtu-race childop notes\n",
+			  installed,
+			  (unsigned long)FNHE_EVICTION_THRESHOLD);
 	}
 
 	worker_dc++; /* icmp_inject_cleanup: close(raw_fd) */
