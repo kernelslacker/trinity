@@ -37,5 +37,5 @@ struct syscallentry syscall_tkill = {
 	.argname = { [0] = "pid", [1] = "sig" },
 	.sanitise = sanitise_tkill,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,
 };

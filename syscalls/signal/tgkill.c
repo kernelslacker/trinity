@@ -72,5 +72,5 @@ struct syscallentry syscall_tgkill = {
 	.argname = { [0] = "tgid", [1] = "pid", [2] = "sig" },
 	.sanitise = sanitise_tgkill,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = AVOID_SYSCALL,
+	.flags = AVOID_SYSCALL | REEXEC_SANITISE_OK,
 };
