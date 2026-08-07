@@ -106,7 +106,7 @@ static void fail(const char *msg, size_t alloc_size, void *expected,
 /* =====================================================================
  * Cases 1-4 below are additional free_shared_str() fixtures.
  *
- * Cases 1-3 are regression assertions for the 374·A fix: they verify
+ * Cases 1-3 are regression assertions for the shared-str provenance fix: they verify
  * that free_shared_str() range/alignment/slot_state-gates the pointer
  * and skips any memset for non-LIVE slots.  Case 4 is a full
  * alloc/free/realloc round-trip across every size bucket.
@@ -398,7 +398,7 @@ void shared_str_heap_free_size_check(void)
 
 	/* === four additional free_shared_str() corruption cases === */
 
-	/* Cases 1-3: regression assertions for the 374·A fix. */
+	/* Cases 1-3: regression assertions for the shared-str provenance fix. */
 	xfail_double_free_chain();
 	xfail_interior_ptr_corruption();
 	xfail_uncarved_ptr_write();

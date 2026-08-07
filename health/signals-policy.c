@@ -14,7 +14,7 @@
  * reorder the sigaction() calls without a careful review of the
  * window between sigprocmask(SIG_BLOCK) and sigprocmask(SIG_SETMASK).
  *
- * SERIALIZE with 365·M6 — the signal() → sigaction() migrations for
+ * SERIALIZE with the signal() → sigaction() migrations for
  * the signal(sig, SIG_DFL) calls in sighandler() and main_fault_handler()
  * are that task's territory; do not modify those call sites here.
  *
