@@ -179,8 +179,9 @@ struct ipmr_cache_report_ctx {
 static int open_mroute_listener(struct nl_ctx *ctx)
 {
 	struct nl_open_opts opts = {
-		.proto  = NETLINK_ROUTE,
-		.groups = 1U << (RTNLGRP_IPV4_MROUTE_R - 1),
+		.proto     = NETLINK_ROUTE,
+		.groups    = 1U << (RTNLGRP_IPV4_MROUTE_R - 1),
+		.caller_op = CHILD_OP_IPMR_CACHE_REPORT,
 	};
 
 	if (nl_open(ctx, &opts) == 0)
@@ -188,49 +189,6 @@ static int open_mroute_listener(struct nl_ctx *ctx)
 
 	opts.groups = 0;
 	return nl_open(ctx, &opts);
-}
-
-/*
- * Bring lo up so 127.0.0.1 is a valid vifc_lcl_addr and so the
- * multicast send egresses an interface.  Best-effort: failures are
- * ignored, the rest of the sequence will fail visibly if rtnl is
- * genuinely broken.
- */
-static void bring_lo_up(void)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	struct nl_ctx ctx = { .fd = -1 };
-	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
-		.recv_timeo_s = 1,
-	};
-	int lo_idx = (int)if_nametoindex("lo");
-	size_t off;
-
-	if (lo_idx <= 0)
-		return;
-
-	if (nl_open(&ctx, &opts) < 0)
-		return;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_NEWLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(&ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = lo_idx;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	(void)nl_send_recv(&ctx, buf, off);
-	nl_close(&ctx);
 }
 
 /*
@@ -275,7 +233,7 @@ static int ipmr_cache_report_in_ns(void *arg)
 	struct vifctl vc;
 	struct sockaddr_in dst;
 	struct in_addr lcl;
-	struct nl_ctx nl = { .fd = -1 };
+	struct nl_ctx nl = NL_CTX_INIT;
 	int raw = -1;
 	int udp = -1;
 	int one = 1;
@@ -291,24 +249,24 @@ static int ipmr_cache_report_in_ns(void *arg)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-	/* Count raw kernel entries this file issues directly (socket,
-	 * setsockopt on the raw IGMP socket, sendto on the multicast UDP
-	 * socket).  The RTM_NEWLINK/mroute netlink listener traffic goes
-	 * through nl_open/nl_send_recv/nl_close (both in bring_lo_up()
-	 * and open_mroute_listener()) which publish their own
-	 * direct-syscall count at nl_close(), so we do not double-count
-	 * them here.  Published once at exit via
-	 * childop_direct_syscalls_add() -- bumping shm from this
-	 * userns_run_in_ns() grandchild is safe because shm is shared. */
+	/* Count raw kernel entries not covered by the netlink transport:
+	 * socket(), setsockopt() on the raw IGMP socket, sendto() on the
+	 * multicast UDP socket, and if_nametoindex("lo") inside
+	 * rtnl_bring_lo_up().  The RTM_NEWLINK/mroute netlink transport
+	 * (open_mroute_listener via nl_open/nl_send_recv/nl_close and
+	 * rtnl_bring_lo_up via nl_send_recv) is published by nl_close()
+	 * via opts.caller_op; those counts are not duplicated here.
+	 * Published once at exit via childop_direct_syscalls_add(). */
 	unsigned long direct_calls = 0;
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
-	bring_lo_up();
-
 	(void)open_mroute_listener(&nl);		/* best-effort */
+	rtnl_bring_lo_up(&nl);
+	/* if_nametoindex("lo"): socket + ioctl + close. */
+	direct_calls += 3;
 
 	raw = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_IGMP);
 	direct_calls++;
@@ -520,10 +478,11 @@ static int ipmr_getroute_pktinfo_in_ns(void *arg)
 	struct vifctl vc;
 	struct sockaddr_in dst;
 	struct in_addr lcl;
-	struct nl_ctx nl = { .fd = -1 };
+	struct nl_ctx nl = NL_CTX_INIT;
 	struct nl_open_opts nl_opts = {
-		.proto = NETLINK_ROUTE,
+		.proto     = NETLINK_ROUTE,
 		.recv_timeo_s = 0,	/* non-blocking drain only */
+		.caller_op = CHILD_OP_IPMR_GETROUTE_PKTINFO,
 	};
 	int raw = -1;
 	int udp = -1;
@@ -540,13 +499,14 @@ static int ipmr_getroute_pktinfo_in_ns(void *arg)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
-	bring_lo_up();
-
 	if (nl_open(&nl, &nl_opts) < 0) {
 		/* NETLINK_ROUTE unavailable — still attempt the rest so we
 		 * cover the IP_PKTINFO path even without RTM_GETROUTE. */
 		nl.fd = -1;
 	}
+	rtnl_bring_lo_up(&nl);
+	/* if_nametoindex("lo"): socket + ioctl + close. */
+	direct_calls += 3;
 
 	raw = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_IGMP);
 	direct_calls++;
