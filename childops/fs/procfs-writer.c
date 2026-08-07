@@ -222,6 +222,34 @@ static const struct path_rule deny_rules[] = {
 	{ "/coredump_filter",           MATCH_SUFFIX, "core" },
 
 	/*
+	 * host-global fs sysctls — writing file-max or nr_open drives
+	 * system-wide ENFILE/EMFILE for every process on the box; mount-max
+	 * and aio-max-nr cap matching host-wide limits; pipe-user-pages-*
+	 * sets per-user quota that persists across runs; protected_* nodes
+	 * carry hardlink/FIFO/symlink security policy that later runs
+	 * inherit.  inotify/, epoll/ and fanotify/ hold max_user_watches
+	 * and similar system-wide limit knobs with no namespace isolation.
+	 * All share the same failure class as suid_dumpable: a stray write
+	 * silently mutates host policy.  The /proc/sys/fs/ allow prefix
+	 * shadows deny_rules[] for the whole subtree; see prefilter_rules[].
+	 */
+	{ "/proc/sys/fs/file-max",             MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/nr_open",              MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/mount-max",            MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/aio-max-nr",           MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/pipe-max-size",        MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/pipe-user-pages-hard", MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/pipe-user-pages-soft", MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/dentry-negative",      MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/leases-enable",        MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/lease-break-time",     MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/dir-notify-enable",    MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/protected_",           MATCH_PREFIX, "fs-global" },
+	{ "/proc/sys/fs/inotify/",            MATCH_PREFIX, "fs-global" },
+	{ "/proc/sys/fs/epoll/",              MATCH_PREFIX, "fs-global" },
+	{ "/proc/sys/fs/fanotify/",           MATCH_PREFIX, "fs-global" },
+
+	/*
 	 * kexec — a mutated crashkernel image or load-limit is either an
 	 * unreproducible boot at the next reset or a silent regression of
 	 * the crash-dump path.
@@ -304,6 +332,30 @@ static const struct path_rule prefilter_rules[] = {
 	 * ensures add_entry() sees the block before allow-wins fires.
 	 */
 	{ "/proc/sys/fs/suid_dumpable", MATCH_EXACT, "core" },
+
+	/*
+	 * fs-global siblings — all described in deny_rules[] (c830cc386bda
+	 * added suid_dumpable; the same failure class applies to every
+	 * host-global /proc/sys/fs/ knob listed below).  The /proc/sys/fs/
+	 * allow prefix shadows deny_rules[] for this entire subtree, so
+	 * each node must be listed here too so add_entry() blocks it before
+	 * allow-wins fires.
+	 */
+	{ "/proc/sys/fs/file-max",             MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/nr_open",              MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/mount-max",            MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/aio-max-nr",           MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/pipe-max-size",        MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/pipe-user-pages-hard", MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/pipe-user-pages-soft", MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/dentry-negative",      MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/leases-enable",        MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/lease-break-time",     MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/dir-notify-enable",    MATCH_EXACT,  "fs-global" },
+	{ "/proc/sys/fs/protected_",           MATCH_PREFIX, "fs-global" },
+	{ "/proc/sys/fs/inotify/",            MATCH_PREFIX, "fs-global" },
+	{ "/proc/sys/fs/epoll/",              MATCH_PREFIX, "fs-global" },
+	{ "/proc/sys/fs/fanotify/",           MATCH_PREFIX, "fs-global" },
 };
 
 /*
