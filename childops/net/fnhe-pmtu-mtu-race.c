@@ -488,10 +488,30 @@ out:
 /* ------------------------------------------------------------------ */
 
 /*
- * mtu_flap_worker_body — tight-loop SIOCSIFMTU on fhv0.
- * Alternates between 1280 and 1500 byte MTU.  Each successful ioctl
- * drives dev_set_mtu() → fib_sync_mtu() → fib_nhc_update_mtu(), which
- * walks nhc->nhc_exceptions (the fnhe table) without fnhe_lock.
+ * mtu_flap_worker_body — throttled SIOCSIFMTU flap loop on fhv0.
+ * Each successful ioctl drives dev_set_mtu() → fib_sync_mtu() →
+ * fib_nhc_update_mtu(), which walks nhc->nhc_exceptions (the fnhe
+ * table) without fnhe_lock.
+ *
+ * Throttling rationale: the original tight loop checked the clock only
+ * every 64 iterations, so it acquired the box-wide RTNL mutex O(200 ms /
+ * ioctl_latency) times in a burst, serialising every netlink-driven
+ * childop fleet-wide (tc_qdisc_churn, xfrm_churn, vlan_filter_churn,
+ * seg6 ops, nftables/churn …) behind tens of thousands of global-lock
+ * acquisitions.  The race needs *concurrency* with worker A, not maximum
+ * lock throughput.  We now check the deadline every iteration and sleep
+ * 100 µs between flaps, reducing RTNL acquisitions by ~1000×.
+ *
+ * MTU ladder: three rungs exercise more arms of fib_nhc_update_mtu():
+ *   1280 — below a typical FNHE pmtu  → "new < fnhe_pmtu" arm
+ *   1400 — intermediate value         → forces repeated comparisons
+ *   1500 — standard Ethernet MTU      → "orig == fnhe_pmtu" arm
+ *
+ * TODO (prerequisite): add a sub-552 rung (e.g. 552) to hit the
+ * fib_nhc_update_mtu() arm where new_mtu < IP_MIN_MTU.  Requires the
+ * fnhe table to be non-empty (pigeonhole from the injection fix) so the walk finds
+ * at least one entry; unreachable with an empty table.
+ *
  * Self-bounded at FNHE_WORKER_WALL_NS.
  */
 static void __attribute__((noreturn)) mtu_flap_worker_body(void)
@@ -500,7 +520,7 @@ static void __attribute__((noreturn)) mtu_flap_worker_body(void)
 	struct ifreq ifr;
 	struct timespec deadline;
 	unsigned long flaps = 0;
-	static const unsigned int mtu_ladder[] = { 1280, 1500 };
+	static const unsigned int mtu_ladder[] = { 1280, 1400, 1500 };
 	unsigned int mi = 0;
 
 	if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) {
@@ -523,19 +543,23 @@ static void __attribute__((noreturn)) mtu_flap_worker_body(void)
 	for (;;) {
 		struct timespec now;
 
-		if ((flaps & 0x3fU) == 0) {
-			if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
-				if (now.tv_sec > deadline.tv_sec ||
-				    (now.tv_sec == deadline.tv_sec &&
-				     now.tv_nsec >= deadline.tv_nsec))
-					break;
-			}
+		/* Check deadline every iteration — not every 64 — so we
+		 * don't over-shoot the budget and amplify RTNL contention. */
+		if (clock_gettime(CLOCK_MONOTONIC, &now) == 0) {
+			if (now.tv_sec > deadline.tv_sec ||
+			    (now.tv_sec == deadline.tv_sec &&
+			     now.tv_nsec >= deadline.tv_nsec))
+				break;
 		}
 
-		ifr.ifr_mtu = (int)mtu_ladder[mi & 1U];
+		ifr.ifr_mtu = (int)mtu_ladder[mi % 3U];
 		if (ioctl(sock_fd, SIOCSIFMTU, &ifr) == 0)
 			flaps++;
 		mi++;
+
+		/* 100 µs between flaps: keeps the UAF race live while
+		 * reducing global RTNL acquisitions by ~1000× vs busy-loop. */
+		nanosleep(&(struct timespec){0, 100000}, NULL);
 	}
 
 	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.mtu_flaps,
