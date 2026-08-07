@@ -1,2 +1,0 @@
-2026-08-06T11:33:22,542630-07:00 coredump: 1791838(trinity): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable.
-2026-08-06T11:33:22,581435-07:00 coredump: 1791838(trinity): Unsafe core_pattern used with fs.suid_dumpable=2: pipe handler or fully qualified core dump path required. Set kernel.core_pattern before fs.suid_dumpable.

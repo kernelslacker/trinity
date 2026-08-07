@@ -22,3 +22,4 @@ trinity-coverity.tar.xz
 stats-timeseries-*.jsonl
 *.pyc
 __pycache__/
+dmesg.log
