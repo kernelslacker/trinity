@@ -370,6 +370,9 @@ void json_emit_net_churn_and_early_storms_section(void)
 	stat_category_emit_json(&userns_fuzzer_category);
 
 	printf(",");
+	stat_category_emit_json(&ipcns_ucount_exhaustion_category);
+
+	printf(",");
 	stat_category_emit_json(&userns_bootstrap_category);
 
 	printf(",");

@@ -202,6 +202,7 @@
 #include "stats/subsys/umount_race.h"
 #include "stats/subsys/userns_bootstrap.h"
 #include "stats/subsys/userns_fuzzer.h"
+#include "stats/subsys/ipcns_ucount_exhaustion.h"
 #include "stats/subsys/vdso_race.h"
 #include "stats/subsys/veth_asymmetric_xdp.h"
 #include "stats/subsys/vlan_filter_churn.h"
@@ -423,6 +424,10 @@ struct stats_s {
 
 	/* userns_fuzzer accounting.  See stats/subsys/userns_fuzzer.h. */
 	struct userns_fuzzer_stats userns_fuzzer __attribute__((aligned(64)));
+
+	/* ipcns_ucount_exhaustion accounting.
+	 * See stats/subsys/ipcns_ucount_exhaustion.h. */
+	struct ipcns_ucount_exhaustion_stats ipcns_ucount_exhaustion __attribute__((aligned(64)));
 
 	/* barrier_racer accounting.  See stats/subsys/barrier_racer.h. */
 	struct barrier_racer_stats barrier_racer __attribute__((aligned(64)));

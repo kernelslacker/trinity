@@ -63,6 +63,7 @@ CHILDOP(CHILD_OP_INODE_SPEWER             , "inode_spewer"               , inode
 CHILDOP(CHILD_OP_PROCFS_WRITER            , "procfs_writer"              , procfs_writer              , true, 0)
 CHILDOP(CHILD_OP_MEMORY_PRESSURE          , "memory_pressure"            , memory_pressure            , true, 0)
 CHILDOP(CHILD_OP_USERNS_FUZZER            , "userns_fuzzer"              , userns_fuzzer              , true, 1)
+CHILDOP(CHILD_OP_IPCNS_UCOUNT_EXHAUSTION , "ipcns_ucount_exhaustion"     , ipcns_ucount_exhaustion    , true, 1)
 CHILDOP(CHILD_OP_SCHED_CYCLER             , "sched_cycler"               , sched_cycler               , false, 1)
 CHILDOP(CHILD_OP_BARRIER_RACER            , "barrier_racer"              , barrier_racer              , true, 1)
 CHILDOP(CHILD_OP_GENETLINK_FUZZER         , "genetlink_fuzzer"           , genetlink_fuzzer           , true, 1)

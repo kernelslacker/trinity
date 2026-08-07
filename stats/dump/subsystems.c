@@ -298,6 +298,8 @@ void dump_stats_fuzzer_subsystems(void)
 
 	stat_category_emit_text(&userns_fuzzer_category);
 
+	stat_category_emit_text(&ipcns_ucount_exhaustion_category);
+
 	stat_category_emit_text(&userns_bootstrap_category);
 
 	stat_category_emit_text(&barrier_racer_category);
