@@ -64,7 +64,7 @@ struct topo_pair_stats {
 	 * stats/childop/local.c's dump_stats_topo_pair_shadow() at shutdown.
 	 * It aggregates the surviving ring entries into per-setup_op (count,
 	 * mean-age, reason
-	 * split) summaries.  This render enables the 103·B go/no-go on a
+	 * split) summaries.  This render enables the go/no-go on a
 	 * LIVE topology-pair experiment that would actually save seeds /
 	 * replay pairs -- it is not a cosmetic surface. */
 	uint64_t ring[TOPO_PAIR_RING_SIZE];

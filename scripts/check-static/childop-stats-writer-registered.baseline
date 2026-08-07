@@ -15,8 +15,8 @@
 #
 # NOTE: childops/net/crafted-icmp-rx.c is intentionally ABSENT.
 # It writes shm->stats.icmp_inject.* but has no CHILD_OP_* entry and
-# no callers in the tree -- a dead-code registration gap (455·D).
-# Leave it flagging so the 455·D fix is not silently buried.
+# no callers in the tree -- a dead-code registration gap.
+# Leave it flagging so the gap is not silently buried.
 
 # --- io_uring recipe carves ---
 # These four files implement the iouring_recipes childop (registered as
