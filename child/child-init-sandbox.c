@@ -37,6 +37,7 @@
 #include "arch.h"
 #include "child.h"
 #include "child-internal.h"
+#include "tables.h"
 #include "fd.h"
 #include "futex.h"
 #include "fd-event.h"
@@ -61,6 +62,182 @@
 #include "utils.h"	// zmalloc
 
 #include "kernel/sched.h"
+
+/*
+ * Check whether any active syscall entry requests the userns-admin lane.
+ * Returns the first matching entry, or NULL if none does.  Used at child
+ * setup time to decide whether to unshare into a private user+net namespace
+ * before the capset(empty) drop.
+ *
+ * Only the shm-level active_syscalls array is consulted because
+ * child->active_syscalls is not yet assigned when init_child_setup_sandbox
+ * runs (that assignment happens in init_child_setup_runtime, which is called
+ * after the sandbox phase).
+ */
+static struct syscallentry *find_userns_lane_entry(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < shm->nr_active_syscalls; i++) {
+		struct syscallentry *e =
+			get_syscall_entry((unsigned int)shm->active_syscalls[i],
+					  false);
+		if (e != NULL && e->userns_admin_lane)
+			return e;
+	}
+	return NULL;
+}
+
+/*
+ * Write a short line to a proc file.  Returns 0 on success, -errno on
+ * failure.  Used by maybe_enter_userns_admin_lane() to install the identity
+ * uid/gid maps after unshare(CLONE_NEWUSER).
+ */
+static int userns_lane_write_proc(const char *path, const char *line)
+{
+	ssize_t wlen;
+	size_t len = strlen(line);
+	int fd, saved;
+
+	fd = open(path, O_WRONLY);
+	if (fd < 0)
+		return -errno;
+	wlen = write(fd, line, len);
+	saved = errno;
+	(void)close(fd);
+	if (wlen == (ssize_t)len)
+		return 0;
+	if (wlen < 0)
+		return -(saved ? saved : EIO);
+	return -EIO;
+}
+
+/*
+ * Enter the userns-admin lane for the current persistent child.
+ *
+ * Preconditions (verified by caller):
+ *   - shm->no_userns_lane is false.
+ *   - At least one active syscallentry has userns_admin_lane set.
+ *
+ * Sequence:
+ *   1. Read /proc/sys/user/max_user_namespaces; if the value is <= 0 or
+ *      unreadable, latch shm->no_userns_lane and return.
+ *   2. Capture euid/egid before the unshare (kernel checks the pre-unshare
+ *      euid when validating the single-line identity idmap write).
+ *   3. unshare(CLONE_NEWUSER | CLONE_NEWNET).
+ *      On EPERM: latch shm->no_userns_lane and return (policy denial).
+ *      On other failure: return without latching (transient, may not recur).
+ *   4. Write uid_map, setgroups=deny, gid_map.
+ *      Failure here is logged but does not latch; the cap-drop that follows
+ *      still fires and the child fuzz loop runs without userns-lane caps.
+ *
+ * After a successful return the child holds a full capability set inside its
+ * own user namespace.  capset(empty) runs next in the caller; that drops
+ * all capabilities in init_user_ns.  The child then holds caps only in its
+ * private user namespace, never in init_user_ns, so:
+ *   - capable(CAP_*)   -> ns_capable(&init_user_ns, cap) -> false
+ *   - ns_capable(child_userns, cap)                      -> true
+ * The cap-drop oracle probes (bpf/mount/net_admin/capget) all gate on
+ * init_user_ns-scoped paths and remain correct.
+ */
+static void maybe_enter_userns_admin_lane(int childno)
+{
+	char buf[64];
+	uid_t uid;
+	gid_t gid;
+	int fd, ret;
+	long max_ns;
+
+	if (__atomic_load_n(&shm->no_userns_lane, __ATOMIC_RELAXED))
+		return;
+
+	/*
+	 * Check /proc/sys/user/max_user_namespaces before attempting the
+	 * unshare.  A zero or negative value means the kernel will reject
+	 * CLONE_NEWUSER unconditionally; read-failure (ENOENT on CONFIG_
+	 * USER_NS=n) is treated the same way.  Latch and return in either
+	 * case so we don't spam EPERM probes.
+	 */
+	fd = open("/proc/sys/user/max_user_namespaces", O_RDONLY);
+	if (fd < 0) {
+		__atomic_store_n(&shm->no_userns_lane, true, __ATOMIC_RELAXED);
+		return;
+	}
+	{
+		ssize_t n = read(fd, buf, sizeof(buf) - 1);
+		(void)close(fd);
+		if (n <= 0) {
+			__atomic_store_n(&shm->no_userns_lane, true,
+					 __ATOMIC_RELAXED);
+			return;
+		}
+		buf[n] = '\0';
+		max_ns = strtol(buf, NULL, 10);
+	}
+	if (max_ns <= 0) {
+		__atomic_store_n(&shm->no_userns_lane, true, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/*
+	 * Capture euid/egid before the unshare.  After unshare(CLONE_NEWUSER)
+	 * but before the id maps are written, geteuid()/getegid() return the
+	 * overflow id (65534).  The kernel validates that the mapped-outside
+	 * id in the single-line idmap equals the opener's pre-unshare euid,
+	 * so we must read it now.
+	 */
+	uid = geteuid();
+	gid = getegid();
+
+	if (unshare(CLONE_NEWUSER | CLONE_NEWNET) != 0) {
+		if (errno == EPERM) {
+			if (!__atomic_exchange_n(&shm->no_userns_lane, true,
+						 __ATOMIC_RELAXED))
+				outputerr("child %d: userns-admin lane: "
+					  "unshare(CLONE_NEWUSER|CLONE_NEWNET) "
+					  "EPERM (policy); latching off\n",
+					  childno);
+		} else {
+			outputerr("child %d: userns-admin lane: "
+				  "unshare(CLONE_NEWUSER|CLONE_NEWNET) "
+				  "failed (errno=%d); skipping\n",
+				  childno, errno);
+		}
+		return;
+	}
+
+	/*
+	 * Write identity uid/gid maps.  uid_map first, then setgroups=deny
+	 * (required before an unprivileged writer can set gid_map), then
+	 * gid_map.  Failure here is soft: the child continues to the
+	 * capset(empty) drop and fuzz loop without userns-lane caps.
+	 */
+	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)uid);
+	ret = userns_lane_write_proc("/proc/self/uid_map", buf);
+	if (ret != 0) {
+		outputerr("child %d: userns-admin lane: uid_map write "
+			  "failed (errno=%d); lane inactive\n",
+			  childno, -ret);
+		return;
+	}
+
+	ret = userns_lane_write_proc("/proc/self/setgroups", "deny\n");
+	if (ret != 0) {
+		outputerr("child %d: userns-admin lane: setgroups write "
+			  "failed (errno=%d); lane inactive\n",
+			  childno, -ret);
+		return;
+	}
+
+	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)gid);
+	ret = userns_lane_write_proc("/proc/self/gid_map", buf);
+	if (ret != 0) {
+		outputerr("child %d: userns-admin lane: gid_map write "
+			  "failed (errno=%d); lane inactive\n",
+			  childno, -ret);
+		return;
+	}
+}
 
 /*
  * Randomise process context before the child starts fuzzing syscalls.
@@ -326,6 +503,23 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 		}
 	}
 #endif
+
+	/*
+	 * Userns-admin lane: unshare into a private user+net namespace and
+	 * install an identity uid/gid map so ns_capable(net->user_ns, cap)
+	 * gates are reachable for GENL_UNS_ADMIN_PERM surfaces.  Must run
+	 * after the random namespace unshare block above (so the ordinary
+	 * per-child netns/mntns decisions have already been made) and before
+	 * drop_privs() / capset(empty) (so the map write still runs with
+	 * the child's original euid/egid).
+	 *
+	 * Only engaged when at least one active syscallentry has
+	 * userns_admin_lane set and the kernel permits unprivileged user
+	 * namespaces.  No entry currently sets the flag; this is a no-op
+	 * for all baseline runs.
+	 */
+	if (find_userns_lane_entry() != NULL)
+		maybe_enter_userns_admin_lane(childno);
 
 	if (orig_uid == 0)
 		drop_privs();
