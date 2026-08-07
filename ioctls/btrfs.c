@@ -492,12 +492,12 @@ static void build_encoded_iovec(struct btrfs_ioctl_encoded_io_args *args)
 		return;
 	}
 
-	n = rnd_modulo_u32(UIO_FASTIOV * 2);	/* 0..15 */
-	iov = get_writable_address(sizeof(*iov) * (n ? n : 1));
+	n = rnd_modulo_u32(UIO_FASTIOV * 2) + 1;	/* 1..16 */
+	iov = get_writable_address(sizeof(*iov) * n);
 	if (iov != NULL) {
 		for (i = 0; i < n; i++) {
-			iov[i].iov_base = get_writable_address(1);
-			iov[i].iov_len = rnd_modulo_u32(4096) + 1;
+			iov[i].iov_len  = rnd_modulo_u32(4096) + 1;
+			iov[i].iov_base = get_writable_address(iov[i].iov_len);
 		}
 		args->iov = iov;
 		args->iovcnt = n;
