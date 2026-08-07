@@ -12,9 +12,12 @@ static const struct stat_field bpf_cgroup_attach_fields[] = {
 	STAT_FIELD_SUB(bpf_cgroup_attach, post_detach_sent),
 	STAT_FIELD_SUB(bpf_cgroup_attach, setsockopt_hook_reach),
 	STAT_FIELD_SUB(bpf_cgroup_attach, getsockopt_hook_reach),
-	STAT_FIELD_SUB(bpf_cgroup_attach, post_detach_sockopt_reach),
-	STAT_FIELD_SUB(bpf_cgroup_attach, sockopt_probe_bursts),
-	STAT_FIELD_SUB(bpf_cgroup_attach, sockopt_probe_calls),
+	STAT_FIELD_SUB(bpf_cgroup_attach, setsockopt_post_detach_reach),
+	STAT_FIELD_SUB(bpf_cgroup_attach, getsockopt_post_detach_reach),
+	STAT_FIELD_SUB(bpf_cgroup_attach, setsockopt_probe_bursts),
+	STAT_FIELD_SUB(bpf_cgroup_attach, getsockopt_probe_bursts),
+	STAT_FIELD_SUB(bpf_cgroup_attach, setsockopt_probe_calls),
+	STAT_FIELD_SUB(bpf_cgroup_attach, getsockopt_probe_calls),
 };
 
 const struct stat_category bpf_cgroup_attach_category =
