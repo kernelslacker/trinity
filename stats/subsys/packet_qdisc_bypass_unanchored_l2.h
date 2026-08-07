@@ -27,7 +27,8 @@ struct packet_qdisc_bypass_unanchored_l2_stats {
 	unsigned long lane_a_sends;	/* AF_PACKET sendto() calls issued */
 	unsigned long lane_b_sends;	/* AF_XDP sendto() kick calls issued */
 	unsigned long lane_a_errors;	/* AF_PACKET sendto() returned < 0 */
-	unsigned long lane_b_errors;	/* AF_XDP sendto() kick returned < 0 */
+	unsigned long lane_b_errors;	/* AF_XDP sendto() kick returned non-EAGAIN < 0 */
+	unsigned long lane_b_eagain;	/* AF_XDP sendto() returned -EAGAIN (CQ full) */
 	unsigned long completed_ok;	/* iter reached clean teardown */
 };
 
