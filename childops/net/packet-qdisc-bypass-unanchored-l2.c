@@ -518,15 +518,25 @@ struct xsk_bypass_state {
 	void  *tx_ring;
 	size_t tx_ring_sz;
 
+	/* CQ (completion) ring mapped region */
+	void  *cq_ring;
+	size_t cq_ring_sz;
+
 	/* Ring member offsets from XDP_MMAP_OFFSETS */
 	__u64  tx_producer_off;
 	__u64  tx_consumer_off;
 	__u64  tx_desc_off;
 	__u32  tx_ring_size;	/* number of slots */
+
+	/* CQ consumer and producer offsets (userspace owns the consumer) */
+	__u64  cq_consumer_off;
+	__u64  cq_producer_off;
 };
 
 static void xsk_bypass_teardown(struct xsk_bypass_state *s)
 {
+	if (s->cq_ring != MAP_FAILED && s->cq_ring != NULL)
+		(void)munmap(s->cq_ring, s->cq_ring_sz);
 	if (s->tx_ring != MAP_FAILED && s->tx_ring != NULL)
 		(void)munmap(s->tx_ring, s->tx_ring_sz);
 	if (s->umem_area != MAP_FAILED && s->umem_area != NULL)
@@ -599,6 +609,8 @@ static int xsk_bypass_setup(struct xsk_bypass_state *s, unsigned int ifindex)
 	s->tx_consumer_off = off.tx.consumer;
 	s->tx_desc_off     = off.tx.desc;
 	s->tx_ring_size    = BYPASS_RING_ENTRIES;
+	s->cq_consumer_off = off.cr.consumer;
+	s->cq_producer_off = off.cr.producer;
 
 	/* TX ring size: desc_offset + entries * sizeof(struct xdp_desc) */
 	s->tx_ring_sz = (size_t)off.tx.desc +
@@ -620,6 +632,29 @@ static int xsk_bypass_setup(struct xsk_bypass_state *s, unsigned int ifindex)
 			  s->xsk_fd, (off_t)XDP_PGOFF_TX_RING);
 	if (s->tx_ring == MAP_FAILED) {
 		s->tx_ring = NULL;
+		return -1;
+	}
+
+	/* --- mmap CQ (completion) ring --- */
+	{
+		long pgsz = sysconf(_SC_PAGESIZE);
+		size_t cq_sz;
+
+		if (pgsz <= 0)
+			pgsz = 4096;
+		cq_sz = (size_t)off.cr.desc +
+			(size_t)BYPASS_RING_ENTRIES * sizeof(__u64);
+		cq_sz = ((cq_sz + (size_t)pgsz - 1) /
+			 (size_t)pgsz) * (size_t)pgsz;
+		s->cq_ring_sz = cq_sz;
+	}
+	s->cq_ring = mmap(NULL, s->cq_ring_sz,
+			  PROT_READ | PROT_WRITE,
+			  MAP_SHARED | MAP_POPULATE,
+			  s->xsk_fd,
+			  (off_t)XDP_UMEM_PGOFF_COMPLETION_RING);
+	if (s->cq_ring == MAP_FAILED) {
+		s->cq_ring = NULL;
 		return -1;
 	}
 
@@ -649,18 +684,31 @@ static int xsk_bypass_setup(struct xsk_bypass_state *s, unsigned int ifindex)
 static void xsk_bypass_tx_kick(struct xsk_bypass_state *s, int xsk_fd)
 {
 	volatile uint32_t *prod;
+	volatile uint32_t *cons;
 	struct xdp_desc *desc;
-	uint32_t idx;
+	uint32_t prod_idx, cons_idx, used;
 	ssize_t r;
 
 	prod = (volatile uint32_t *)
 		((char *)s->tx_ring + s->tx_producer_off);
+	cons = (volatile uint32_t *)
+		((char *)s->tx_ring + s->tx_consumer_off);
 	desc = (struct xdp_desc *)
 		((char *)s->tx_ring + s->tx_desc_off);
 
-	/* Grab next producer slot (single-threaded TX ring) */
-	idx   = *prod & (s->tx_ring_size - 1U);
-	desc += idx;
+	/*
+	 * Check how many TX slots the kernel has consumed.  If the ring
+	 * is full (all BYPASS_RING_ENTRIES outstanding) we cannot safely
+	 * publish another descriptor — skip this kick instead of
+	 * overrunning the ring.
+	 */
+	prod_idx = __atomic_load_n(prod, __ATOMIC_RELAXED);
+	cons_idx = __atomic_load_n(cons, __ATOMIC_ACQUIRE);
+	used = prod_idx - cons_idx;
+	if (used >= s->tx_ring_size)
+		return;
+
+	desc += prod_idx & (s->tx_ring_size - 1U);
 
 	/* Point descriptor at UMEM chunk 0.  Fill it with a minimal
 	 * Ethernet frame: dst=broadcast, src=zero, type=IPv4. */
@@ -677,8 +725,10 @@ static void xsk_bypass_tx_kick(struct xsk_bypass_state *s, int xsk_fd)
 	desc->len     = BYPASS_FRAME_LEN;
 	desc->options = 0;
 
-	/* Advance producer ring pointer to expose the descriptor */
-	*prod = *prod + 1U;
+	/* Publish the descriptor with a release barrier so the descriptor
+	 * store is visible to the kernel before the producer index update
+	 * (libbpf uses __ATOMIC_RELEASE; required on non-x86 architectures). */
+	__atomic_store_n(prod, prod_idx + 1U, __ATOMIC_RELEASE);
 
 	/* Kick the kernel: xsk_sendmsg → xsk_generic_xmit */
 	r = sendto(xsk_fd, NULL, 0, MSG_DONTWAIT, NULL, 0);
@@ -686,10 +736,16 @@ static void xsk_bypass_tx_kick(struct xsk_bypass_state *s, int xsk_fd)
 	__atomic_add_fetch(
 		&shm->stats.packet_qdisc_bypass_unanchored_l2.lane_b_sends,
 		1, __ATOMIC_RELAXED);
-	if (r < 0)
-		__atomic_add_fetch(
-			&shm->stats.packet_qdisc_bypass_unanchored_l2.lane_b_errors,
-			1, __ATOMIC_RELAXED);
+	if (r < 0) {
+		if (errno == EAGAIN)
+			__atomic_add_fetch(
+				&shm->stats.packet_qdisc_bypass_unanchored_l2.lane_b_eagain,
+				1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(
+				&shm->stats.packet_qdisc_bypass_unanchored_l2.lane_b_errors,
+				1, __ATOMIC_RELAXED);
+	}
 }
 
 /*
@@ -737,6 +793,26 @@ static void lane_b_worker(unsigned int mst_ifindex, int op_type)
 		}
 		xsk_bypass_tx_kick(&s, s.xsk_fd);
 		dc++;
+
+		/* Drain the CQ so the kernel can recycle TX descriptors.
+		 * Userspace owns the CQ consumer; the kernel only produces.
+		 * Without draining, the 32-entry CQ fills after 32 sends
+		 * and xsk_cq_reserve_locked() blocks every subsequent kick
+		 * with -EAGAIN for the socket's lifetime. */
+		if (s.cq_ring != NULL && s.cq_ring != MAP_FAILED) {
+			volatile uint32_t *cq_prod;
+			volatile uint32_t *cq_cons;
+			uint32_t cp, cc;
+
+			cq_prod = (volatile uint32_t *)
+				((char *)s.cq_ring + s.cq_producer_off);
+			cq_cons = (volatile uint32_t *)
+				((char *)s.cq_ring + s.cq_consumer_off);
+			cp = __atomic_load_n(cq_prod, __ATOMIC_ACQUIRE);
+			cc = __atomic_load_n(cq_cons, __ATOMIC_RELAXED);
+			if (cp != cc)
+				__atomic_store_n(cq_cons, cp, __ATOMIC_RELEASE);
+		}
 	}
 
 out:
