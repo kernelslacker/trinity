@@ -532,10 +532,10 @@ out:
  *   1400 — intermediate value         → forces repeated comparisons
  *   1500 — standard Ethernet MTU      → "orig == fnhe_pmtu" arm
  *
- * TODO (prerequisite): add a sub-552 rung (e.g. 552) to hit the
- * fib_nhc_update_mtu() arm where new_mtu < IP_MIN_MTU.  Requires the
- * fnhe table to be non-empty (pigeonhole from the injection fix) so the walk finds
- * at least one entry; unreachable with an empty table.
+ * Note: the genuinely uncovered arm of fib_nhc_update_mtu() is
+ * fnhe_mtu_locked == true; reaching it requires a locked FNHE installed
+ * via ICMP FRAG_NEEDED with an MTU below ip_rt_min_pmtu -- ICMP
+ * injection work outside the scope of this commit.
  *
  * Self-bounded at FNHE_WORKER_WALL_NS.
  */
