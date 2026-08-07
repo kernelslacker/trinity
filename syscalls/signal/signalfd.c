@@ -81,6 +81,7 @@ struct syscallentry syscall_signalfd = {
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD_SIGNALFD, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask" },
+	/* Not REEXEC_SANITISE_OK: calls get_writable_struct + avoid_shared_buffer_inout. */
 	.sanitise = sanitise_signalfd,
 	.post = post_signalfd,
 	.rettype = RET_FD,
@@ -142,6 +143,7 @@ struct syscallentry syscall_signalfd4 = {
 	.num_args = 4,
 	.argtype = { [0] = ARG_FD_SIGNALFD, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask", [3] = "flags" },
+	/* Not REEXEC_SANITISE_OK: calls get_writable_struct + avoid_shared_buffer_inout. */
 	.sanitise = sanitise_signalfd4,
 	.post = post_signalfd,
 	.rettype = RET_FD,
