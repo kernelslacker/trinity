@@ -138,6 +138,7 @@
 #include "stats/subsys/obscure_af_churn.h"
 #include "stats/subsys/oracle.h"
 #include "stats/subsys/packet_fanout_thrash.h"
+#include "stats/subsys/packet_qdisc_bypass_unanchored_l2.h"
 #include "stats/subsys/ovs_tunnel_vport_churn.h"
 #include "stats/subsys/pci_bind.h"
 #include "stats/subsys/pc_edge_source.h"
@@ -609,6 +610,10 @@ struct stats_s {
 
 	/* packet_fanout_thrash accounting.  See stats/subsys/packet_fanout_thrash.h. */
 	struct packet_fanout_thrash_stats packet_fanout_thrash __attribute__((aligned(64)));
+
+	/* packet_qdisc_bypass_unanchored_l2 accounting.
+	 * See stats/subsys/packet_qdisc_bypass_unanchored_l2.h. */
+	struct packet_qdisc_bypass_unanchored_l2_stats packet_qdisc_bypass_unanchored_l2 __attribute__((aligned(64)));
 
 	/* eth_emitter accounting.  See stats/subsys/eth_emitter.h. */
 	struct eth_emitter_stats eth_emitter __attribute__((aligned(64)));
