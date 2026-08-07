@@ -8,6 +8,7 @@ static const struct stat_field fnhe_pmtu_mtu_race_fields[] = {
 	STAT_FIELD_SUB(fnhe_pmtu_mtu_race, exceptions_installed),
 	STAT_FIELD_SUB(fnhe_pmtu_mtu_race, inject_failed),
 	STAT_FIELD_SUB(fnhe_pmtu_mtu_race, evictions_observed),
+	STAT_FIELD_SUB(fnhe_pmtu_mtu_race, observed_entries),
 	STAT_FIELD_SUB(fnhe_pmtu_mtu_race, mtu_flaps),
 	STAT_FIELD_SUB(fnhe_pmtu_mtu_race, negative_ctrl_runs),
 	STAT_FIELD_SUB(fnhe_pmtu_mtu_race, completed_ok),

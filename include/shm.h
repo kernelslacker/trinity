@@ -529,6 +529,12 @@ struct shm_s {
 	bool flowtable_vlan_ns_unsupported;
 	bool flowtable_vlan_ip_forward_set;
 
+	/* fnhe-pmtu-mtu-race: once-flag so injection-quality warnings fire
+	 * at most once per run regardless of how many child/invocation pairs
+	 * trigger the condition.  Set with __atomic_exchange_n(,true,) before
+	 * any outputerr() call.  See childops/net/fnhe-pmtu-mtu-race.c. */
+	bool fnhe_pmtu_warn_fired;
+
 	/* bridge-fdb-stp per-grandchild setup latch (childops/net/
 	 * bridge-fdb-stp.c).  "lo up" write site sits inside the
 	 * userns_run_in_ns() grandchild body; a process-local static

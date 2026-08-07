@@ -175,6 +175,14 @@
 
 #define FNHE_RTNL_BUF		512U
 
+/*
+ * Number of 10.x.x.x addresses worker B probes via RTM_GETROUTE at the
+ * end of its run to count kernel-visible fnhe entries.  64 probes gives
+ * good coverage without measurable overhead; each probe takes one
+ * NETLINK_ROUTE send+recv round-trip.
+ */
+#define FNHE_OBS_PROBE_COUNT	64U
+
 /* ------------------------------------------------------------------ */
 /* netlink helpers: lo up, veth pair, address, route                    */
 /* ------------------------------------------------------------------ */
@@ -705,22 +713,6 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.inject_failed,
 			   failed, __ATOMIC_RELAXED);
 
-	if (installed == 0) {
-		/* check-static: child-output-ok */
-		outputerr("[fnhe-pmtu-mtu-race] WARNING: "
-			  "zero injections sent -- "
-			  "check inject_failed counter\n");
-	} else if (!eviction_seen) {
-		/* check-static: child-output-ok */
-		outputerr("[fnhe-pmtu-mtu-race] WARNING: "
-			  "evictions_observed=0 this invocation, "
-			  "installed=%lu below threshold %lu -- "
-			  "fnhe table may be too small; "
-			  "see fnhe-pmtu-mtu-race childop notes\n",
-			  installed,
-			  (unsigned long)FNHE_EVICTION_THRESHOLD);
-	}
-
 	worker_dc++; /* icmp_inject_cleanup: close(raw_fd) */
 	icmp_inject_cleanup(&ctx);
 out:
@@ -826,6 +818,43 @@ static void __attribute__((noreturn)) mtu_flap_worker_body(int op_type)
 			   flaps, __ATOMIC_RELAXED);
 	close(sock_fd);
 	worker_dc++; /* close(sock_fd) */
+
+	/*
+	 * End-of-run RTM_GETROUTE probe: sample FNHE_OBS_PROBE_COUNT
+	 * addresses from the 10.x.x.x injection space and count how many
+	 * have an fnhe entry with RTAX_MTU == 1280.  This is kernel-visible
+	 * evidence that update_or_create_fnhe() actually ran — independent
+	 * of whether worker A's sendto() loop succeeded.  The count is
+	 * accumulated into observed_entries in shm so the parent can use it
+	 * to key the injection-quality warnings.
+	 */
+	{
+		int obs_nl = fnhe_nl_open();
+
+		worker_dc += 3; /* socket + bind + setsockopt inside fnhe_nl_open */
+		if (obs_nl >= 0) {
+			unsigned int pi;
+			unsigned long obs_count = 0;
+
+			for (pi = 0; pi < FNHE_OBS_PROBE_COUNT; pi++) {
+				__u32 probe_he = FNHE_DST_BASE |
+						 ((pi + 1U) & 0x00ffffffU);
+
+				if (fnhe_check_rtm_getroute(obs_nl,
+							    htonl(probe_he),
+							    pi))
+					obs_count++;
+				worker_dc += 2; /* send + recv inside probe */
+			}
+			if (obs_count > 0)
+				__atomic_add_fetch(
+					&shm->stats.fnhe_pmtu_mtu_race.observed_entries,
+					obs_count, __ATOMIC_RELAXED);
+			close(obs_nl);
+			worker_dc++; /* close(obs_nl) */
+		}
+	}
+
 	childop_direct_syscalls_add(op_type, worker_dc);
 	_exit(0);
 }
@@ -871,6 +900,10 @@ struct fnhe_pmtu_race_ctx {
 	int		op_type;
 	unsigned long	iter;		/* global iter counter for daddr rotation */
 	unsigned long	direct_calls;
+	/* snapshots taken just before forking workers, used post-reap to
+	 * compute per-invocation deltas for the injection-quality warnings */
+	unsigned long	exc_installed_before;
+	unsigned long	obs_entries_before;
 };
 
 static int fnhe_pmtu_mtu_race_in_ns(void *arg)
@@ -934,6 +967,19 @@ static int fnhe_pmtu_mtu_race_in_ns(void *arg)
 	}
 
 	/*
+	 * Snapshot run-global counters before forking workers so the
+	 * post-reap warning logic can compute per-invocation deltas.
+	 * Both counters accumulate across all invocations and children;
+	 * subtracting the before-snapshot isolates this invocation.
+	 */
+	rctx->exc_installed_before = __atomic_load_n(
+		&shm->stats.fnhe_pmtu_mtu_race.exceptions_installed,
+		__ATOMIC_RELAXED);
+	rctx->obs_entries_before = __atomic_load_n(
+		&shm->stats.fnhe_pmtu_mtu_race.observed_entries,
+		__ATOMIC_RELAXED);
+
+	/*
 	 * Fork worker A (injection) — skip in negative control mode.
 	 * Fork worker B (MTU flap) — always.
 	 */
@@ -993,6 +1039,70 @@ out_reap:
 
 	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.completed_ok,
 			   1, __ATOMIC_RELAXED);
+
+	/*
+	 * Injection-quality warnings — keyed on kernel-visible evidence.
+	 *
+	 * observed_entries (delta): RTM_GETROUTE probe by worker B at end
+	 * of its run; each count is a kernel-confirmed fnhe entry
+	 * (RTAX_MTU == 1280).  Zero means update_or_create_fnhe() did
+	 * not run at all, regardless of how many sendto()s succeeded.
+	 *
+	 * exceptions_installed (delta): worker A's periodic RTM_GETROUTE
+	 * oracle; scaled by FNHE_GETROUTE_SAMPLE_PERIOD gives an estimate
+	 * of the total confirmed installs.  If this scaled value stays
+	 * below FNHE_EVICTION_THRESHOLD the pigeonhole eviction guarantee
+	 * did not hold — the injection volume was too low.
+	 *
+	 * Skipped for negative-control invocations (empty table is
+	 * expected there).  The run-global latch (fnhe_pmtu_warn_fired in
+	 * shm) ensures the warning fires at most once per run regardless
+	 * of how many children or invocations see the condition.
+	 */
+	if (!neg_ctrl) {
+		unsigned long delta_obs, delta_exc;
+		bool fire_w1, fire_w2;
+
+		delta_obs = __atomic_load_n(
+			&shm->stats.fnhe_pmtu_mtu_race.observed_entries,
+			__ATOMIC_RELAXED) - rctx->obs_entries_before;
+		delta_exc = __atomic_load_n(
+			&shm->stats.fnhe_pmtu_mtu_race.exceptions_installed,
+			__ATOMIC_RELAXED) - rctx->exc_installed_before;
+
+		fire_w1 = (delta_obs == 0);
+		fire_w2 = (!fire_w1 &&
+			   delta_exc * FNHE_GETROUTE_SAMPLE_PERIOD <
+			   FNHE_EVICTION_THRESHOLD);
+
+		if ((fire_w1 || fire_w2) &&
+		    !__atomic_exchange_n(&shm->fnhe_pmtu_warn_fired,
+					 true, __ATOMIC_RELAXED)) {
+			if (fire_w1) {
+				/* check-static: child-output-ok */
+				outputerr("[fnhe-pmtu-mtu-race] WARNING: "
+					  "observed_entries=0 this invocation "
+					  "-- kernel did not install any fnhe "
+					  "entries; check inject_failed "
+					  "counter\n");
+			} else {
+				/* check-static: child-output-ok */
+				outputerr("[fnhe-pmtu-mtu-race] WARNING: "
+					  "observed_entries=%lu but "
+					  "RTM_GETROUTE-confirmed installs "
+					  "(%lu x %u = %lu) below eviction "
+					  "threshold %lu -- fnhe table may "
+					  "be too small; see fnhe-pmtu-mtu-"
+					  "race childop notes\n",
+					  delta_obs,
+					  delta_exc,
+					  (unsigned int)FNHE_GETROUTE_SAMPLE_PERIOD,
+					  delta_exc * FNHE_GETROUTE_SAMPLE_PERIOD,
+					  (unsigned long)FNHE_EVICTION_THRESHOLD);
+			}
+		}
+	}
+
 	if (valid_op)
 		childop_direct_syscalls_add(op_type, rctx->direct_calls);
 	return 0;
