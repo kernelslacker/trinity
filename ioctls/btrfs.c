@@ -461,6 +461,17 @@ static void sanitise_btrfs_vol_args_v2(struct syscallrecord *rec)
 
 #ifdef BTRFS_IOC_ENCODED_READ
 /*
+ * UIO_FASTIOV / UIO_MAXIOV: local fallback mirrors handle_arg.c so the
+ * file builds against any uapi header vintage without extra includes.
+ */
+#ifndef UIO_FASTIOV
+# define UIO_FASTIOV 8
+#endif
+#ifndef UIO_MAXIOV
+# define UIO_MAXIOV 1024
+#endif
+
+/*
  * sanitise_btrfs_encoded_io_args -- seed a struct btrfs_ioctl_encoded_io_args
  * for BTRFS_IOC_ENCODED_READ / BTRFS_IOC_ENCODED_WRITE.
  *
@@ -472,6 +483,9 @@ static void sanitise_btrfs_vol_args_v2(struct syscallrecord *rec)
 static void sanitise_btrfs_encoded_io_args(struct syscallrecord *rec)
 {
 	struct btrfs_ioctl_encoded_io_args *args;
+	struct iovec *iov;
+	unsigned long n;
+	unsigned long i;
 
 	args = get_writable_address(sizeof(*args));
 	if (args == NULL)
@@ -502,7 +516,37 @@ static void sanitise_btrfs_encoded_io_args(struct syscallrecord *rec)
 		args->unencoded_offset = rnd_u64();
 	}
 
-	/* num_pages and iov/iovec: let the kernel validate; leave iovcount as-is */
+	/*
+	 * Build a real iovec array so import_iovec() inside the kernel can
+	 * proceed past its nr_segs > UIO_MAXIOV guard.  A random 64-bit
+	 * iovcnt value would be rejected by import_iovec() with -EINVAL on
+	 * virtually every call, making all encoded-I/O coverage unreachable.
+	 *
+	 * Use UIO_FASTIOV * 2 (0..15) as the normal range, straddling the
+	 * stack-vs-heap boundary that import_iovec() pivots on at
+	 * UIO_FASTIOV (8).  A 1-in-8 minority arm intentionally sets iovcnt
+	 * above UIO_MAXIOV to exercise the EINVAL reject path.
+	 */
+	if (rnd_u32() % 8 == 0) {
+		/* reject arm: iovcnt > UIO_MAXIOV → -EINVAL from import_iovec */
+		args->iov = NULL;
+		args->iovcnt = (unsigned long)UIO_MAXIOV + 1 + rnd_modulo_u32(64);
+	} else {
+		n = rnd_modulo_u32(UIO_FASTIOV * 2);	/* 0..15 */
+		iov = get_writable_address(sizeof(*iov) * (n ? n : 1));
+		if (iov != NULL) {
+			for (i = 0; i < n; i++) {
+				iov[i].iov_base = get_writable_address(1);
+				iov[i].iov_len = rnd_modulo_u32(4096) + 1;
+			}
+			args->iov = iov;
+			args->iovcnt = n;
+		} else {
+			args->iov = NULL;
+			args->iovcnt = 0;
+		}
+	}
+
 	/* flags: reserved, must be zero for now (but skew occasionally) */
 	args->flags = (rnd_u32() & 1) ? 0 : rnd_u64();
 
