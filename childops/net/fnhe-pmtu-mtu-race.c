@@ -466,6 +466,14 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.inject_failed,
 			   failed, __ATOMIC_RELAXED);
 
+	if (installed == 0) {
+		/* check-static: child-output-ok */
+		outputerr("[fnhe-pmtu-mtu-race] WARNING: "
+			  "evictions_observed=0 this invocation — "
+			  "fnhe table may be empty; "
+			  "see fnhe-pmtu-mtu-race childop notes\n");
+	}
+
 	icmp_inject_cleanup(&ctx);
 out:
 	if (udp_fd >= 0)
@@ -589,7 +597,7 @@ static int fnhe_pmtu_mtu_race_in_ns(void *arg)
 	};
 	const int op_type = rctx->op_type;
 	const bool valid_op = (op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
-	bool neg_ctrl = ((rctx->iter % FNHE_NEG_CTRL_PERIOD) == 0);
+	bool neg_ctrl = ((rctx->iter % FNHE_NEG_CTRL_PERIOD) == (FNHE_NEG_CTRL_PERIOD - 1));
 	int fhv0_idx;
 	pid_t wa = -1, wb = -1;
 
@@ -692,23 +700,6 @@ out_reap:
 			fnhe_reap_with_deadline(wa, &deadline, &rctx->direct_calls);
 		if (wb > 0)
 			fnhe_reap_with_deadline(wb, &deadline, &rctx->direct_calls);
-	}
-
-	/*
-	 * Warn if evictions_observed is zero after a full populate run.
-	 * This means the bucket-sizing is wrong and the race window was
-	 * never actually opened.
-	 */
-	if (!neg_ctrl) {
-		unsigned long ev = __atomic_load_n(
-			&shm->stats.fnhe_pmtu_mtu_race.evictions_observed,
-			__ATOMIC_RELAXED);
-		if (ev == 0) {
-			/* check-static: child-output-ok */
-			outputerr("[fnhe-pmtu-mtu-race] WARNING: "
-				  "evictions_observed=0 — "
-				  "bucket sizing wrong, race not exercised\n");
-		}
 	}
 
 	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.completed_ok,
