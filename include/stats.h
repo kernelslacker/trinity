@@ -160,6 +160,7 @@
 #include "stats/subsys/refcount_audit.h"
 #include "stats/subsys/rpl_clone_fidelity.h"
 #include "stats/subsys/rtnl_vf_broadcast.h"
+#include "stats/subsys/netconf_inetdev_race.h"
 #include "stats/subsys/rxrpc_key_install.h"
 #include "stats/subsys/rxrpc_sendmsg_cmsg.h"
 #include "stats/subsys/sched_cycler.h"
@@ -635,6 +636,10 @@ struct stats_s {
 
 	/* rtnl_vf_broadcast_getlink accounting.  See stats/subsys/rtnl_vf_broadcast.h. */
 	struct rtnl_vf_broadcast_stats rtnl_vf_broadcast __attribute__((aligned(64)));
+
+	/* netconf_getdevconf_inetdev_teardown_race accounting.
+	 * See stats/subsys/netconf_inetdev_race.h. */
+	struct netconf_inetdev_race_stats netconf_inetdev_race __attribute__((aligned(64)));
 
 	/* obscure_af_churn accounting.  See stats/subsys/obscure_af_churn.h. */
 	struct obscure_af_churn_stats obscure_af_churn __attribute__((aligned(64)));

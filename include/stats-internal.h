@@ -267,6 +267,7 @@ extern const struct stat_category recipe_runner_category;
 extern const struct stat_category refcount_audit_category;
 extern const struct stat_category rpl_clone_fidelity_category;
 extern const struct stat_category rtnl_vf_broadcast_getlink_category;
+extern const struct stat_category netconf_getdevconf_inetdev_teardown_race_category;
 extern const struct stat_category rxrpc_key_install_category;
 extern const struct stat_category sched_cycler_category;
 extern const struct stat_category sctp_assoc_churn_category;

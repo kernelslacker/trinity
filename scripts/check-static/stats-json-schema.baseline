@@ -1517,6 +1517,13 @@ stats	object
     stats.rtnl_vf_broadcast_getlink.setup_ok	u64
     stats.rtnl_vf_broadcast_getlink.setup_failed	u64
     stats.rtnl_vf_broadcast_getlink.getlink_ok	u64
+  stats.netconf_getdevconf_inetdev_teardown_race	object
+    stats.netconf_getdevconf_inetdev_teardown_race.runs	u64
+    stats.netconf_getdevconf_inetdev_teardown_race.setup_failed	u64
+    stats.netconf_getdevconf_inetdev_teardown_race.getconf_v4_ok	u64
+    stats.netconf_getdevconf_inetdev_teardown_race.getconf_v6_ok	u64
+    stats.netconf_getdevconf_inetdev_teardown_race.dellink_ok	u64
+    stats.netconf_getdevconf_inetdev_teardown_race.completed_ok	u64
   stats.fdstress	object
     stats.fdstress.close_reopen	u64
     stats.fdstress.dup2_replace	u64

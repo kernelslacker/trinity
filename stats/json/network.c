@@ -628,5 +628,8 @@ void json_emit_iouring_iscsi_and_net_tail_section(void)
 	stat_category_emit_json(&rtnl_vf_broadcast_getlink_category);
 
 	printf(",");
+	stat_category_emit_json(&netconf_getdevconf_inetdev_teardown_race_category);
+
+	printf(",");
 	stat_category_emit_json(&fdstress_category);
 }
