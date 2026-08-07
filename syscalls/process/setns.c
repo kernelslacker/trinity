@@ -62,6 +62,7 @@ struct syscallentry syscall_setns= {
 	.argtype = { [0] = ARG_FD, [1] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "nstype" },
 	.arg_params[1].list = ARGLIST(setns_types),
+	/* Not REEXEC_SANITISE_OK: sanitise_setns opens a /proc fd; leaks on re-exec. */
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_setns,
 	.post = post_setns,

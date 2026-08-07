@@ -91,6 +91,7 @@ struct syscallentry syscall_kcmp = {
 	.argtype = { [0] = ARG_PID, [1] = ARG_PID, [2] = ARG_OP },
 	.argname = { [0] = "pid1", [1] = "pid2", [2] = "type", [3] = "idx1", [4] = "idx2" },
 	.arg_params[2].list = ARGLIST(kcmp_types),
+	/* Not REEXEC_SANITISE_OK: KCMP_EPOLL_TFD arm calls get_writable_struct(); pointer invalid on re-exec. */
 	.sanitise = sanitise_kcmp,
 	.post = post_kcmp,
 	.rettype = RET_BORING,

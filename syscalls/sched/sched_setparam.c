@@ -48,5 +48,6 @@ struct syscallentry syscall_sched_setparam = {
 	.argtype = { [0] = ARG_PID, [1] = ARG_ADDRESS },
 	.argname = { [0] = "pid", [1] = "param" },
 	.rettype = RET_ZERO_SUCCESS,
+	/* Not REEXEC_SANITISE_OK: calls get_writable_struct() + avoid_shared_buffer_inout(). */
 	.sanitise = sanitise_sched_setparam,
 };
