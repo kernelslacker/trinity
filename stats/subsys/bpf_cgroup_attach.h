@@ -18,9 +18,9 @@ struct bpf_cgroup_attach_stats {
 	unsigned long setsockopt_probe_bursts;	/* SETSOCKOPT bursts where the EFAULT probe was active (~1-in-8);
 					 * denominator for setsockopt_hook_reach — a zero reach is
 					 * expected when this is also zero (7/8 bursts have no probe). */
-	unsigned long getsockopt_probe_bursts;	/* GETSOCKOPT bursts where the EFAULT probe was active (~1-in-8);
-					 * denominator for getsockopt_hook_reach — a zero reach is
-					 * expected when this is also zero (7/8 bursts have no probe). */
+	unsigned long getsockopt_probe_bursts;	/* GETSOCKOPT bursts where the EFAULT probe was active (unconditional —
+					 * the getsockopt probe fires on every GETSOCKOPT combo burst);
+					 * denominator for getsockopt_hook_reach. */
 	unsigned long setsockopt_probe_calls;	/* individual setsockopt calls issued while the EFAULT probe was
 					 * active; per-call denominator for setsockopt_hook_reach. */
 	unsigned long getsockopt_probe_calls;	/* individual getsockopt calls issued while the EFAULT probe was
