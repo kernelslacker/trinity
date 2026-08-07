@@ -6,6 +6,7 @@ static const struct stat_field netconf_inetdev_race_fields[] = {
 	STAT_FIELD_SUB(netconf_inetdev_race, setup_failed),
 	STAT_FIELD_SUB(netconf_inetdev_race, getconf_v4_ok),
 	STAT_FIELD_SUB(netconf_inetdev_race, getconf_v6_ok),
+	STAT_FIELD_SUB(netconf_inetdev_race, getconf_enodev),
 	STAT_FIELD_SUB(netconf_inetdev_race, dellink_ok),
 	STAT_FIELD_SUB(netconf_inetdev_race, completed_ok),
 };

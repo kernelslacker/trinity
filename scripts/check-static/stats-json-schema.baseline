@@ -1528,6 +1528,7 @@ stats	object
     stats.netconf_getdevconf_inetdev_teardown_race.setup_failed	u64
     stats.netconf_getdevconf_inetdev_teardown_race.getconf_v4_ok	u64
     stats.netconf_getdevconf_inetdev_teardown_race.getconf_v6_ok	u64
+    stats.netconf_getdevconf_inetdev_teardown_race.getconf_enodev	u64
     stats.netconf_getdevconf_inetdev_teardown_race.dellink_ok	u64
     stats.netconf_getdevconf_inetdev_teardown_race.completed_ok	u64
   stats.fdstress	object

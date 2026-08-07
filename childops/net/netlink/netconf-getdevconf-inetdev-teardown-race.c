@@ -401,10 +401,12 @@ static void worker_destructor(int op_type)
  * Worker B (Poller).  Tight RTM_GETNETCONF loop on the saved ifindex,
  * alternating AF_INET (live bug) and AF_INET6 (0e243671bc7b regression
  * test).  Uses a separate NETLINK_ROUTE socket so Worker A's DELLINK /
- * NEWLINK traffic does not interleave with our recv path.  The saved
- * ifindex is the value assigned at setup time; after DELLINK the kernel
- * may recycle it, but the race window of interest is while the old
- * in_device is mid-teardown.  Self-bounded by NCID_WORKER_WALL_NS.
+ * NEWLINK traffic does not interleave with our recv path.  dev_index_reserve()
+ * allocates ifindices via xa_alloc_cyclic() -- monotonically increasing with
+ * no immediate reuse -- so a DELLINK/NEWLINK cycle always produces a fresh
+ * index; probing a stale index returns ENODEV and never reaches in_dev_get().
+ * Re-resolve the ifindex each iteration so both AF_INET and AF_INET6 probes
+ * always target the live device.  Self-bounded by NCID_WORKER_WALL_NS.
  */
 static void worker_poller(int ifindex, int op_type)
 {
@@ -424,7 +426,16 @@ static void worker_poller(int ifindex, int op_type)
 		start.tv_sec = 0;
 
 	for (;; i++) {
+		unsigned int fresh;
 		int rc;
+
+		/* Re-resolve to track the current live device; stale ifindices
+		 * are never recycled by the kernel so a stale probe returns
+		 * ENODEV without reaching in_dev_get(). */
+		fresh = if_nametoindex("vnci0");
+		ctx.direct_syscalls++; /* if_nametoindex -> SIOCGIFINDEX */
+		if (fresh > 0)
+			ifindex = (int)fresh;
 
 		/* AF_INET: live bug lane (in_dev_get bare refcount_inc) */
 		rc = ncid_build_getnetconf(&ctx, AF_INET, ifindex);
@@ -432,12 +443,20 @@ static void worker_poller(int ifindex, int op_type)
 			__atomic_add_fetch(
 				&shm->stats.netconf_inetdev_race.getconf_v4_ok,
 				1, __ATOMIC_RELAXED);
+		else if (rc == -ENODEV)
+			__atomic_add_fetch(
+				&shm->stats.netconf_inetdev_race.getconf_enodev,
+				1, __ATOMIC_RELAXED);
 
 		/* AF_INET6: regression test for 0e243671bc7b */
 		rc = ncid_build_getnetconf(&ctx, AF_INET6, ifindex);
 		if (rc == 0)
 			__atomic_add_fetch(
 				&shm->stats.netconf_inetdev_race.getconf_v6_ok,
+				1, __ATOMIC_RELAXED);
+		else if (rc == -ENODEV)
+			__atomic_add_fetch(
+				&shm->stats.netconf_inetdev_race.getconf_enodev,
 				1, __ATOMIC_RELAXED);
 
 		if ((i & 0x1fU) == 0U &&
