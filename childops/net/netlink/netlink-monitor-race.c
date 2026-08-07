@@ -259,14 +259,17 @@ struct netlink_monitor_race_iter_ctx {
 	__u32		addr;
 	bool		link_added;
 	bool		addr_added;
-	/* Direct-syscall tally accumulated across the open / burst /
-	 * teardown helpers.  nl_open success == 3 (socket + bind +
-	 * setsockopt), each nl_send_recv wrapper == 2 (sendmsg + recv),
-	 * nl_close == 1 (close).  Additional setsockopt calls for
+	/* Direct-syscall tally for non-netlink-transport calls.  The
+	 * netlink transport (socket+bind+setsockopt from nl_open,
+	 * sendmsg+recv from each nl_send_recv, close from nl_close) is
+	 * credited automatically by nl_close() via opts.caller_op on
+	 * both the mon and mut nl_ctx objects.  This field covers the
+	 * remaining raw kernel entries: setsockopt calls for
 	 * NETLINK_LISTEN_ALL_NSID / NETLINK_BROADCAST_ERROR / membership
-	 * churn each count as 1.  drain_monitor() recv calls are counted
-	 * from the returned success count.  Published once in
-	 * netlink_monitor_race_in_ns() via childop_direct_syscalls_add(). */
+	 * churn, drain_monitor() recv calls, and if_nametoindex().
+	 * Published once in netlink_monitor_race_in_ns() via
+	 * childop_direct_syscalls_add(); nl_close() on each ctx publishes
+	 * its own transport count independently. */
 	unsigned long	direct_calls;
 };
 
@@ -283,6 +286,7 @@ static int netlink_monitor_race_iter_open_monitor(struct netlink_monitor_race_it
 	struct nl_open_opts mon_opts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = RTNL_RECV_TIMEO_S,
+		.caller_op    = CHILD_OP_NETLINK_MONITOR_RACE,
 	};
 	int one = 1;
 
@@ -299,8 +303,6 @@ static int netlink_monitor_race_iter_open_monitor(struct netlink_monitor_race_it
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	/* nl_open success: socket + bind + setsockopt (SO_RCVTIMEO). */
-	ctx->direct_calls += 3;
 	__atomic_add_fetch(&shm->stats.netlink_monitor_race.mon_open,
 			   1, __ATOMIC_RELAXED);
 
@@ -332,6 +334,7 @@ static int netlink_monitor_race_iter_open_mutator(struct netlink_monitor_race_it
 	struct nl_open_opts mut_opts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = RTNL_RECV_TIMEO_S,
+		.caller_op    = CHILD_OP_NETLINK_MONITOR_RACE,
 	};
 	char dev_name[IFNAMSIZ];
 
@@ -340,8 +343,6 @@ static int netlink_monitor_race_iter_open_mutator(struct netlink_monitor_race_it
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	/* nl_open success: socket + bind + setsockopt (SO_RCVTIMEO). */
-	ctx->direct_calls += 3;
 	__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_open,
 			   1, __ATOMIC_RELAXED);
 
@@ -350,13 +351,13 @@ static int netlink_monitor_race_iter_open_mutator(struct netlink_monitor_race_it
 
 	if (build_dummy_link(&ctx->mut, dev_name) != 0)
 		return -1;
-	/* build_dummy_link wraps one nl_send_recv: sendmsg + recv. */
-	ctx->direct_calls += 2;
 	ctx->link_added = true;
 	__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 			   1, __ATOMIC_RELAXED);
 
 	ctx->ifindex = (int)if_nametoindex(dev_name);
+	/* if_nametoindex: socket + ioctl + close. */
+	ctx->direct_calls += 3;
 	if (ctx->ifindex == 0)
 		return -1;
 
@@ -389,8 +390,6 @@ static void netlink_monitor_race_iter_address_burst(struct netlink_monitor_race_
 			__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 					   1, __ATOMIC_RELAXED);
 		}
-		/* build_addr wraps one nl_send_recv: sendmsg + recv. */
-		ctx->direct_calls += 2;
 
 		drained = drain_monitor(&ctx->mon);
 		if (drained)
@@ -405,8 +404,6 @@ static void netlink_monitor_race_iter_address_burst(struct netlink_monitor_race_
 				__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 						   1, __ATOMIC_RELAXED);
 			}
-			/* build_addr wraps one nl_send_recv: sendmsg + recv. */
-			ctx->direct_calls += 2;
 		}
 
 		drained = drain_monitor(&ctx->mon);
@@ -460,8 +457,6 @@ static void netlink_monitor_race_iter_final_burst(struct netlink_monitor_race_it
 		__atomic_add_fetch(&shm->stats.netlink_monitor_race.mut_op_ok,
 				   1, __ATOMIC_RELAXED);
 	}
-	/* build_addr wraps one nl_send_recv: sendmsg + recv. */
-	ctx->direct_calls += 2;
 
 	drained = drain_monitor(&ctx->mon);
 	if (drained)
@@ -492,8 +487,8 @@ static int netlink_monitor_race_in_ns(void *arg)
 	struct netlink_monitor_race_ctx *cctx = arg;
 	struct childdata *child = cctx->child;
 	struct netlink_monitor_race_iter_ctx ctx = {
-		.mon = { .fd = -1 },
-		.mut = { .fd = -1 },
+		.mon = NL_CTX_INIT,
+		.mut = NL_CTX_INIT,
 	};
 
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -522,31 +517,20 @@ static int netlink_monitor_race_in_ns(void *arg)
 
 out:
 	if (ctx.mut.fd >= 0) {
-		if (ctx.addr_added) {
+		if (ctx.addr_added)
 			(void)build_addr(&ctx.mut, RTM_DELADDR, ctx.ifindex, ctx.addr);
-			/* nl_send_recv: sendmsg + recv. */
-			ctx.direct_calls += 2;
-		}
-		if (ctx.link_added && ctx.ifindex > 0) {
+		if (ctx.link_added && ctx.ifindex > 0)
 			(void)rtnl_dellink(&ctx.mut, ctx.ifindex);
-			/* nl_send_recv: sendmsg + recv. */
-			ctx.direct_calls += 2;
-		}
 		nl_close(&ctx.mut);
-		/* nl_close: close(). */
-		ctx.direct_calls += 1;
 	}
 	nl_close(&ctx.mon);
-	/* nl_close: close(). */
-	ctx.direct_calls += 1;
 
-	/* Publish this invocation's direct-syscall load in one RELAXED
-	 * atomic add.  Tally accumulated across setup / burst / teardown
-	 * helpers via ctx.direct_calls; the grandchild's write is visible
-	 * to the parent after _exit() because shm is a shared mapping.
-	 * Gated on valid_op to match the surrounding per-op stats bumps.
-	 * Setup-latched paths publish whatever they issued before bailing,
-	 * correctly attributing no burst-phase work to those exits. */
+	/* Publish non-netlink-transport direct-syscall load: setsockopt
+	 * calls for LISTEN_ALL_NSID / BROADCAST_ERROR / membership churn,
+	 * drain_monitor() recv calls, and if_nametoindex().  The netlink
+	 * transport (nl_open + nl_send_recv + nl_close) is published
+	 * separately by nl_close() on each ctx via opts.caller_op, so
+	 * the atomic_add here is a pure residual accumulation. */
 	if (valid_op)
 		childop_direct_syscalls_add(op, ctx.direct_calls);
 	return 0;
