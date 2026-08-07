@@ -347,12 +347,13 @@ static int ncid_build_getnetconf(struct nl_ctx *ctx, __u8 family, int ifindex)
  * recreates the pair so the next iteration has something to destroy.
  * Self-bounded by NCID_WORKER_WALL_NS.
  */
-static void worker_destructor(void)
+static void worker_destructor(int op_type)
 {
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
-		.recv_timeo_s = 1,
+		.proto         = NETLINK_ROUTE,
+		.recv_timeo_s  = 1,
+		.caller_op     = (enum child_op_type)op_type,
 	};
 	struct timespec start, now;
 	unsigned int i = 0;
@@ -409,16 +410,15 @@ static void worker_poller(int ifindex, int op_type)
 {
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
-		.recv_timeo_s = 1,
+		.proto         = NETLINK_ROUTE,
+		.recv_timeo_s  = 1,
+		.caller_op     = (enum child_op_type)op_type,
 	};
 	struct timespec start, now;
 	unsigned int i = 0;
-	unsigned long direct_calls = 0;
 
 	if (nl_open(&ctx, &opts) < 0)
 		_exit(0);
-	direct_calls += 3; /* socket + bind + setsockopt */
 
 	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0)
 		start.tv_sec = 0;
@@ -428,7 +428,6 @@ static void worker_poller(int ifindex, int op_type)
 
 		/* AF_INET: live bug lane (in_dev_get bare refcount_inc) */
 		rc = ncid_build_getnetconf(&ctx, AF_INET, ifindex);
-		direct_calls += 2; /* sendmsg + recv */
 		if (rc == 0)
 			__atomic_add_fetch(
 				&shm->stats.netconf_inetdev_race.getconf_v4_ok,
@@ -436,7 +435,6 @@ static void worker_poller(int ifindex, int op_type)
 
 		/* AF_INET6: regression test for 0e243671bc7b */
 		rc = ncid_build_getnetconf(&ctx, AF_INET6, ifindex);
-		direct_calls += 2; /* sendmsg + recv */
 		if (rc == 0)
 			__atomic_add_fetch(
 				&shm->stats.netconf_inetdev_race.getconf_v6_ok,
@@ -454,10 +452,6 @@ static void worker_poller(int ifindex, int op_type)
 	}
 
 	nl_close(&ctx);
-	direct_calls += 1; /* close */
-	if (op_type >= 0 && op_type < NR_CHILD_OP_TYPES)
-		childop_direct_syscalls_add((enum child_op_type)op_type,
-					    direct_calls);
 	_exit(0);
 }
 
@@ -571,7 +565,7 @@ static int iter_one_in_ns(void *arg)
 		return 0;
 	}
 	if (pa == 0)
-		worker_destructor();
+		worker_destructor(op_type);
 
 	/* Fork Worker B (Poller). */
 	pb = fork();
