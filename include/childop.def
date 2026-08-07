@@ -158,6 +158,7 @@ CHILDOP(CHILD_OP_ATM_VCC_CHURN            , "atm_vcc_churn"              , atm_v
 CHILDOP(CHILD_OP_IP6GRE_BOND_LAPB_STACK   , "ip6gre_bond_lapb_stack"     , ip6gre_bond_lapb_stack     , true, 1)
 CHILDOP(CHILD_OP_FLOWTABLE_ENCAP_VLAN     , "flowtable_encap_vlan"       , flowtable_encap_vlan       , true, 1)
 CHILDOP(CHILD_OP_IPV6_PMTU_TEARDOWN_RACE  , "ipv6_pmtu_teardown_race"    , ipv6_pmtu_teardown_race    , true, 1)
+CHILDOP(CHILD_OP_NETCONF_GETDEVCONF_INETDEV_TEARDOWN_RACE, "netconf_getdevconf_inetdev_teardown_race", netconf_getdevconf_inetdev_teardown_race, true, 1)
 CHILDOP(CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN , "rxrpc_sendmsg_cmsg_churn"   , rxrpc_sendmsg_cmsg_churn   , true, 1)
 CHILDOP(CHILD_OP_OVS_TUNNEL_VPORT_CHURN   , "ovs_tunnel_vport_churn"     , ovs_tunnel_vport_churn     , true, 1)
 CHILDOP(CHILD_OP_TTY_LDISC_CHURN          , "tty_ldisc_churn"            , tty_ldisc_churn            , true, 1)

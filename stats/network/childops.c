@@ -753,6 +753,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&rtnl_vf_broadcast_getlink_category);
 
+	stat_category_emit_text(&netconf_getdevconf_inetdev_teardown_race_category);
+
 	dump_stats_render_obscure_af_churn();
 
 	stat_category_emit_text(&flowtable_encap_vlan_category);
