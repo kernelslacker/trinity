@@ -345,8 +345,8 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	struct timespec deadline;
 	unsigned long i;
 	unsigned long installed = 0, failed = 0;
+	unsigned long worker_dc = 0;
 	bool eviction_seen = false;
-	(void)op_type;
 
 	/* Compute deadline */
 	if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) {
@@ -371,6 +371,7 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	 * provides the nexthop whose fnhe table we populate.
 	 */
 	srv_fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	worker_dc++;
 	if (srv_fd < 0)
 		goto out;
 
@@ -378,15 +379,18 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	remote.sin_family      = AF_INET;
 	remote.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	remote.sin_port        = 0;
+	worker_dc++; /* bind(srv_fd) */
 	if (bind(srv_fd, (struct sockaddr *)&remote, sizeof(remote)) < 0)
 		goto out;
 	{
 		socklen_t sl = sizeof(remote);
+		worker_dc++; /* getsockname(srv_fd) */
 		if (getsockname(srv_fd, (struct sockaddr *)&remote, &sl) < 0)
 			goto out;
 	}
 
 	udp_fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	worker_dc++;
 	if (udp_fd < 0)
 		goto out;
 
@@ -394,16 +398,20 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	local.sin_family      = AF_INET;
 	local.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	local.sin_port        = 0;
+	worker_dc++; /* bind(udp_fd) */
 	if (bind(udp_fd, (struct sockaddr *)&local, sizeof(local)) < 0)
 		goto out;
+	worker_dc++; /* connect(udp_fd) */
 	if (connect(udp_fd, (struct sockaddr *)&remote, sizeof(remote)) < 0)
 		goto out;
 	{
 		socklen_t sl = sizeof(local);
+		worker_dc++; /* getsockname(udp_fd) */
 		if (getsockname(udp_fd, (struct sockaddr *)&local, &sl) < 0)
 			goto out;
 	}
 
+	worker_dc++; /* icmp_inject_init: socket(AF_INET,SOCK_RAW,IPPROTO_RAW) */
 	if (icmp_inject_init(&ctx, udp_fd, &local, &remote) < 0)
 		goto out;
 
@@ -461,6 +469,9 @@ injection_worker_body(int op_type, unsigned long start_idx)
 		}
 	}
 
+	/* Each icmp_inject_error() call issues one sendto(). */
+	worker_dc += installed + failed;
+
 	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.exceptions_installed,
 			   installed, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.inject_failed,
@@ -474,12 +485,18 @@ injection_worker_body(int op_type, unsigned long start_idx)
 			  "see fnhe-pmtu-mtu-race childop notes\n");
 	}
 
+	worker_dc++; /* icmp_inject_cleanup: close(raw_fd) */
 	icmp_inject_cleanup(&ctx);
 out:
-	if (udp_fd >= 0)
+	if (udp_fd >= 0) {
 		close(udp_fd);
-	if (srv_fd >= 0)
+		worker_dc++;
+	}
+	if (srv_fd >= 0) {
 		close(srv_fd);
+		worker_dc++;
+	}
+	childop_direct_syscalls_add(op_type, worker_dc);
 	_exit(0);
 }
 
@@ -514,12 +531,13 @@ out:
  *
  * Self-bounded at FNHE_WORKER_WALL_NS.
  */
-static void __attribute__((noreturn)) mtu_flap_worker_body(void)
+static void __attribute__((noreturn)) mtu_flap_worker_body(int op_type)
 {
 	int sock_fd;
 	struct ifreq ifr;
 	struct timespec deadline;
 	unsigned long flaps = 0;
+	unsigned long worker_dc = 0;
 	static const unsigned int mtu_ladder[] = { 1280, 1400, 1500 };
 	unsigned int mi = 0;
 
@@ -534,8 +552,11 @@ static void __attribute__((noreturn)) mtu_flap_worker_body(void)
 	}
 
 	sock_fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	if (sock_fd < 0)
+	worker_dc++;
+	if (sock_fd < 0) {
+		childop_direct_syscalls_add(op_type, worker_dc);
 		_exit(1);
+	}
 
 	memset(&ifr, 0, sizeof(ifr));
 	strncpy(ifr.ifr_name, FNHE_VETH_A, IFNAMSIZ - 1);
@@ -555,16 +576,20 @@ static void __attribute__((noreturn)) mtu_flap_worker_body(void)
 		ifr.ifr_mtu = (int)mtu_ladder[mi % 3U];
 		if (ioctl(sock_fd, SIOCSIFMTU, &ifr) == 0)
 			flaps++;
+		worker_dc++; /* ioctl(SIOCSIFMTU) */
 		mi++;
 
 		/* 100 µs between flaps: keeps the UAF race live while
 		 * reducing global RTNL acquisitions by ~1000× vs busy-loop. */
 		nanosleep(&(struct timespec){0, 100000}, NULL);
+		worker_dc++; /* nanosleep */
 	}
 
 	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.mtu_flaps,
 			   flaps, __ATOMIC_RELAXED);
 	close(sock_fd);
+	worker_dc++; /* close(sock_fd) */
+	childop_direct_syscalls_add(op_type, worker_dc);
 	_exit(0);
 }
 
@@ -626,34 +651,44 @@ static int fnhe_pmtu_mtu_race_in_ns(void *arg)
 	pid_t wa = -1, wb = -1;
 
 	/* (b) Open rtnl and bring lo up */
+	rctx->direct_calls++; /* nl_open: socket(AF_NETLINK) */
 	if (nl_open(&nl, &opts) < 0)
 		goto out_fail;
+	rctx->direct_calls++; /* rtnl_bring_lo_up: nl_send_recv */
 	fnhe_bring_lo_up(&nl);
 
 	/* Create veth pair fhv0/fhv1 */
-	rctx->direct_calls++;
+	rctx->direct_calls++; /* fnhe_create_veth: nl_send_recv */
 	if (fnhe_create_veth(&nl) != 0)
 		goto out_nl;
 
 	/* Bring both ends up */
+	rctx->direct_calls++; /* fnhe_set_link_up(fhv0): nl_send_recv */
 	if (fnhe_set_link_up(&nl, FNHE_VETH_A) != 0)
 		goto out_nl;
+	rctx->direct_calls++; /* fnhe_set_link_up(fhv1): nl_send_recv */
 	if (fnhe_set_link_up(&nl, FNHE_VETH_B) != 0)
 		goto out_nl;
 
 	/* Assign addresses */
+	rctx->direct_calls++; /* fnhe_add_addr(fhv0): nl_send_recv */
 	if (fnhe_add_addr(&nl, FNHE_VETH_A, FNHE_ADDR_A, FNHE_PREFIX) != 0)
 		goto out_nl;
+	rctx->direct_calls++; /* fnhe_add_addr(fhv1): nl_send_recv */
 	if (fnhe_add_addr(&nl, FNHE_VETH_B, FNHE_ADDR_B, FNHE_PREFIX) != 0)
 		goto out_nl;
 
-	/* Install default route via 192.168.42.2 (fhv1) out fhv0 */
+	/* Install default route via 192.168.42.2 (fhv1) out fhv0.
+	 * if_nametoindex() issues socket()+ioctl() internally. */
+	rctx->direct_calls += 2; /* if_nametoindex(fhv0): socket+ioctl */
 	fhv0_idx = (int)if_nametoindex(FNHE_VETH_A);
 	if (fhv0_idx <= 0)
 		goto out_nl;
+	rctx->direct_calls++; /* fnhe_add_default_route: nl_send_recv */
 	if (fnhe_add_default_route(&nl, FNHE_GW, fhv0_idx) != 0)
 		goto out_nl;
 
+	rctx->direct_calls++; /* nl_close */
 	nl_close(&nl);
 	nl.fd = -1;
 
@@ -697,7 +732,7 @@ static int fnhe_pmtu_mtu_race_in_ns(void *arg)
 		goto out_reap;
 	}
 	if (wb == 0) {
-		mtu_flap_worker_body();
+		mtu_flap_worker_body(op_type);
 		/* noreturn */
 	}
 
