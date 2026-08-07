@@ -526,6 +526,15 @@ bool rds_bind_transport_refleak(struct childdata *child)
 		 * Without this seed the first HWM advance would book the
 		 * entire absolute refcount as leaked refs.
 		 *
+		 * The first-sample seed can be inflated when concurrent sibling
+		 * sockets happen to hold transient refs at sample time.  To
+		 * correct for this, pre_refcount_floor tracks the running
+		 * minimum of all pre_refcount samples via a downward CAS loop.
+		 * Each time the floor is revised downward, baseline_floor_revised
+		 * is incremented so a bad initial seed is visible in the stats.
+		 * baseline_refcount retains the first-sample value for
+		 * provenance.
+		 *
 		 * leaked_refs_hwm_growth is an upper-bound estimate: because
 		 * the absolute refcount includes refs held by concurrently-
 		 * open sibling sockets, HWM advances can reflect sibling
@@ -540,12 +549,11 @@ bool rds_bind_transport_refleak(struct childdata *child)
 			unsigned long zero;
 
 			/*
-			 * Seed baseline_refcount and rds_tcp_refcount_hwm from
-			 * pre_refcount on first use (CAS from zero).  Whichever
-			 * child wins sets the floor; losers proceed with the
-			 * winner's value already in place -- all concurrent
-			 * pre_refcounts are drawn from the same steady-state
-			 * baseline so any winner is equally representative.
+			 * Seed baseline_refcount, pre_refcount_floor, and
+			 * rds_tcp_refcount_hwm from pre_refcount on first use
+			 * (CAS from zero).  Whichever child wins sets the initial
+			 * values; losers proceed with the winner's values already
+			 * in place.
 			 */
 			if (pre_refcount > 0L) {
 				unsigned long seed = (unsigned long)pre_refcount;
@@ -557,9 +565,38 @@ bool rds_bind_transport_refleak(struct childdata *child)
 					__ATOMIC_RELAXED, __ATOMIC_RELAXED);
 				zero = 0UL;
 				(void)__atomic_compare_exchange_n(
+					&shm->stats.rds_bind_transport_refleak.pre_refcount_floor,
+					&zero, seed, false,
+					__ATOMIC_RELAXED, __ATOMIC_RELAXED);
+				zero = 0UL;
+				(void)__atomic_compare_exchange_n(
 					&shm->stats.rds_bind_transport_refleak.rds_tcp_refcount_hwm,
 					&zero, seed, false,
 					__ATOMIC_RELAXED, __ATOMIC_RELAXED);
+
+				/*
+				 * Downward CAS loop: revise the floor if this
+				 * sample is lower than the current minimum.
+				 * Bumps baseline_floor_revised on each downward
+				 * revision so a bad initial seed is observable.
+				 */
+				unsigned long cur_floor = __atomic_load_n(
+					&shm->stats.rds_bind_transport_refleak.pre_refcount_floor,
+					__ATOMIC_RELAXED);
+
+				while (seed < cur_floor) {
+					if (__atomic_compare_exchange_n(
+						    &shm->stats.rds_bind_transport_refleak.pre_refcount_floor,
+						    &cur_floor, seed,
+						    false,
+						    __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+						__atomic_add_fetch(
+							&shm->stats.rds_bind_transport_refleak.baseline_floor_revised,
+							1, __ATOMIC_RELAXED);
+						break;
+					}
+					/* cur_floor refreshed by CAS failure; retry */
+				}
 			}
 
 			unsigned long old_hwm = __atomic_load_n(

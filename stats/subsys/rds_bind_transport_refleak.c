@@ -12,6 +12,8 @@ static const struct stat_field rds_bind_transport_refleak_fields[] = {
 	STAT_FIELD_SUB(rds_bind_transport_refleak, ref_delta_nonpositive),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, ref_delta_undercount),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, baseline_refcount),
+	STAT_FIELD_SUB(rds_bind_transport_refleak, pre_refcount_floor),
+	STAT_FIELD_SUB(rds_bind_transport_refleak, baseline_floor_revised),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, rds_tcp_refcount_hwm),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, leaked_refs_hwm_growth),
 	STAT_FIELD_SUB(rds_bind_transport_refleak, port_collision_skips),
