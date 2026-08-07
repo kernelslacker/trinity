@@ -659,7 +659,7 @@ static int fnhe_pmtu_mtu_race_in_ns(void *arg)
 	pid_t wa = -1, wb = -1;
 
 	/* (b) Open rtnl and bring lo up */
-	rctx->direct_calls++; /* nl_open: socket(AF_NETLINK) */
+	rctx->direct_calls += 3; /* nl_open: socket+bind+setsockopt(SO_RCVTIMEO) */
 	if (nl_open(&nl, &opts) < 0)
 		goto out_fail;
 	rctx->direct_calls++; /* rtnl_bring_lo_up: nl_send_recv */
@@ -687,8 +687,8 @@ static int fnhe_pmtu_mtu_race_in_ns(void *arg)
 		goto out_nl;
 
 	/* Install default route via 192.168.42.2 (fhv1) out fhv0.
-	 * if_nametoindex() issues socket()+ioctl() internally. */
-	rctx->direct_calls += 2; /* if_nametoindex(fhv0): socket+ioctl */
+	 * if_nametoindex() issues socket()+ioctl()+close() internally. */
+	rctx->direct_calls += 3; /* if_nametoindex(fhv0): socket+ioctl+close */
 	fhv0_idx = (int)if_nametoindex(FNHE_VETH_A);
 	if (fhv0_idx <= 0)
 		goto out_nl;
