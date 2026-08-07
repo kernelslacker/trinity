@@ -36,7 +36,7 @@
  *       FNHE_HASH_SIZE = 2048 and FNHE_INJECT_COUNT = 14336 (7 × 2048),
  *       by birthday-paradox several buckets accumulate > 9 entries,
  *       forcing repeated fnhe_remove_oldest() calls.  evictions_observed
- *       is set when exceptions_installed exceeds FNHE_EVICTION_THRESHOLD
+ *       is set when injections_sent exceeds FNHE_EVICTION_THRESHOLD
  *       (= FNHE_HASH_SIZE × FNHE_RECLAIM_DEPTH = 2048 × 5 = 10240), at
  *       which point fnhe_remove_oldest() MUST have fired (pigeonhole).
  *   (d) Race side (worker B, concurrent with A): tight-loop SIOCSIFMTU on
@@ -68,6 +68,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -156,6 +157,21 @@
  * control: empty table + MTU flap should be harmless).
  */
 #define FNHE_NEG_CTRL_PERIOD	5U
+
+/*
+ * Fixed remote port used for all UDP re-connects in injection_worker_body.
+ * Any ephemeral port works; 12345 is arbitrary but memorable.
+ */
+#define FNHE_PEER_PORT		12345U
+
+/*
+ * Sample interval for the RTM_GETROUTE positive-control oracle.
+ * Every FNHE_GETROUTE_SAMPLE_PERIOD successful sendto()s we verify
+ * the kernel actually installed an fnhe entry by querying
+ * RTM_GETROUTE and checking RTA_METRICS/RTAX_MTU == 1280.
+ * With FNHE_INJECT_COUNT=14336 this yields up to 56 checks per invocation.
+ */
+#define FNHE_GETROUTE_SAMPLE_PERIOD	256U
 
 #define FNHE_RTNL_BUF		512U
 
@@ -325,28 +341,172 @@ static int fnhe_add_default_route(struct nl_ctx *nl, __u32 gw_he, int oif)
 }
 
 /* ------------------------------------------------------------------ */
+/* RTM_GETROUTE oracle helpers (positive control for fnhe install)     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * fnhe_nl_open — open a private NETLINK_ROUTE socket for RTM_GETROUTE
+ * queries inside the grandchild's netns.  Sets a 100 ms receive timeout
+ * so we never block if the kernel is slow.  Returns the fd on success,
+ * -1 on failure (best-effort; oracle is skipped if this fails).
+ */
+static int fnhe_nl_open(void)
+{
+	int fd;
+	struct sockaddr_nl sa;
+	struct timeval tv;
+
+	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
+	if (fd < 0)
+		return -1;
+
+	memset(&sa, 0, sizeof(sa));
+	sa.nl_family = AF_NETLINK;
+	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+		close(fd);
+		return -1;
+	}
+
+	/* 100 ms receive timeout — fnhe_check_rtm_getroute() must not block */
+	tv.tv_sec  = 0;
+	tv.tv_usec = 100000;
+	(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+	return fd;
+}
+
+/*
+ * fnhe_check_rtm_getroute — send RTM_GETROUTE for dst_be and inspect
+ * the RTM_NEWROUTE reply for RTA_METRICS / RTAX_MTU == 1280.
+ *
+ * Returns 1 if the kernel reports an fnhe entry with pmtu=1280
+ * (positive evidence that update_or_create_fnhe() ran for this daddr),
+ * 0 otherwise (no fnhe, different MTU, or kernel error).
+ *
+ * This is the Fix-2 oracle: unlike the sendto() success counter it
+ * was replacing, a RTM_GETROUTE response with RTAX_MTU is kernel-side
+ * evidence that the fnhe table actually holds the entry.
+ */
+static int fnhe_check_rtm_getroute(int nl_fd, __u32 dst_be, __u32 seq)
+{
+	struct {
+		struct nlmsghdr	nlh;
+		struct rtmsg	rtm;
+		unsigned char	attrs[RTA_LENGTH(4)];
+	} req;
+	unsigned char reply[512];
+	struct nlmsghdr *rnlh;
+	struct rtmsg    *rrtm;
+	struct rtattr   *rta;
+	int rta_len;
+	ssize_t n;
+
+	if (nl_fd < 0)
+		return 0;
+
+	memset(&req, 0, sizeof(req));
+	req.nlh.nlmsg_type  = RTM_GETROUTE;
+	req.nlh.nlmsg_flags = NLM_F_REQUEST;
+	req.nlh.nlmsg_seq   = seq;
+	req.rtm.rtm_family  = AF_INET;
+	req.rtm.rtm_dst_len = 32;
+
+	{
+		struct rtattr *a = (struct rtattr *)req.attrs;
+
+		a->rta_type = RTA_DST;
+		a->rta_len  = (__u16)RTA_LENGTH(4);
+		memcpy(RTA_DATA(a), &dst_be, 4);
+	}
+	req.nlh.nlmsg_len = (__u32)(NLMSG_ALIGN(NLMSG_HDRLEN +
+					    sizeof(req.rtm)) +
+				   RTA_ALIGN(RTA_LENGTH(4)));
+
+	if (send(nl_fd, &req, req.nlh.nlmsg_len, MSG_DONTWAIT) < 0)
+		return 0;
+
+	n = recv(nl_fd, reply, sizeof(reply), 0);
+	if (n < (ssize_t)sizeof(struct nlmsghdr))
+		return 0;
+
+	rnlh = (struct nlmsghdr *)reply;
+	if (!NLMSG_OK(rnlh, (unsigned int)n))
+		return 0;
+	if (rnlh->nlmsg_type != RTM_NEWROUTE)
+		return 0;
+
+	rrtm   = (struct rtmsg *)NLMSG_DATA(rnlh);
+	rta     = RTM_RTA(rrtm);
+	rta_len = (int)RTM_PAYLOAD(rnlh);
+
+	while (RTA_OK(rta, rta_len)) {
+		if (rta->rta_type == RTA_METRICS) {
+			struct rtattr *mrta = (struct rtattr *)RTA_DATA(rta);
+			int mlen = (int)RTA_PAYLOAD(rta);
+
+			while (RTA_OK(mrta, mlen)) {
+				if (mrta->rta_type == RTAX_MTU) {
+					__u32 mtu = 0;
+
+					memcpy(&mtu, RTA_DATA(mrta),
+					       sizeof(mtu));
+					if (mtu == 1280U)
+						return 1;
+				}
+				mrta = RTA_NEXT(mrta, mlen);
+			}
+		}
+		rta = RTA_NEXT(rta, rta_len);
+	}
+	return 0;
+}
+
+/* ------------------------------------------------------------------ */
 /* Worker A: inject ICMP frag-needed for N distinct daddrs             */
 /* ------------------------------------------------------------------ */
 
 /*
  * injection_worker_body — run inside a forked grandchild-worker.
- * Injects FNHE_INJECT_COUNT ICMP frag-needed packets, one per
- * distinct destination address starting at FNHE_DST_BASE, walking
- * sequentially through the 10.x.x.x space.  Each injection drives
- * ip_rt_frag_needed() → update_or_create_fnhe() for the default-route
- * nexthop (192.168.42.2 via fhv0).  Self-bounded at FNHE_WORKER_WALL_NS.
+ * Injects FNHE_INJECT_COUNT ICMP frag-needed packets, one per distinct
+ * destination address starting at FNHE_DST_BASE, walking sequentially
+ * through the 10.x.x.x space.  Each injection drives:
+ *   ip_rt_frag_needed() → update_or_create_fnhe()
+ * for the default-route nexthop (192.168.42.2 via fhv0).
+ *
+ * Fix-1 (dead-injection repair):
+ *   The UDP socket is bound to INADDR_ANY:0 and re-connect()ed to each
+ *   new 10.x.x.x peer before every injection.  After reconnect,
+ *   getsockname() yields the kernel-selected source address (192.168.42.1
+ *   via the default route over fhv0).  icmp_inject_error() is then called
+ *   with dst_override=0, so the inner header carries the actual 4-tuple
+ *   (saddr=192.168.42.1, daddr=10.x.x.x, sport=local_port,
+ *    dport=FNHE_PEER_PORT) and the kernel's __udp4_lib_err() lookup finds
+ *   the connected socket by that exact tuple — the precondition for
+ *   ipv4_sk_update_pmtu() → update_or_create_fnhe() to fire.
+ *
+ * Fix-2 (RTM_GETROUTE positive-control oracle):
+ *   Every FNHE_GETROUTE_SAMPLE_PERIOD successful sendto()s a RTM_GETROUTE
+ *   query is issued for the target 10.x.x.x address on a private nl
+ *   socket.  If the reply's RTA_METRICS/RTAX_MTU == 1280 the kernel
+ *   confirms the fnhe entry is in place; that counts as
+ *   exceptions_installed, which is the real metric.
+ *   The raw sendto() success count is reported separately as
+ *   injections_sent.
+ *
+ * Self-bounded at FNHE_WORKER_WALL_NS.
  */
 static void __attribute__((noreturn))
 injection_worker_body(int op_type, unsigned long start_idx)
 {
 	struct icmp_inject_ctx ctx;
-	struct sockaddr_in local, remote;
-	int udp_fd = -1, srv_fd = -1;
+	struct sockaddr_in local_addr;
+	int udp_fd = -1, nl_fd = -1;
 	struct timespec deadline;
 	unsigned long i;
 	unsigned long installed = 0, failed = 0;
 	unsigned long worker_dc = 0;
 	bool eviction_seen = false;
+	bool got_local = false;
 
 	/* Compute deadline */
 	if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0) {
@@ -360,72 +520,83 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	}
 
 	/*
-	 * Open a UDP socket pair on 127.0.0.1 for the icmp_inject_ctx.
-	 * The raw socket inside icmp_inject_ctx sends crafted ICMPs to
-	 * 127.0.0.1 (outer daddr), but we override dst_override to
-	 * vary inner_dst across the 10.x.x.x range so each injection
-	 * installs a distinct fnhe entry.
-	 *
-	 * Note: ip_rt_frag_needed() resolves inner_dst (10.x.x.x) via
-	 * the route table; the default route via fhv0 → 192.168.42.2
-	 * provides the nexthop whose fnhe table we populate.
+	 * UDP socket bound to INADDR_ANY:0.
+	 * Binding to INADDR_ANY (not 127.0.0.1) is essential so that when
+	 * we connect() to a 10.x.x.x destination the kernel selects
+	 * 192.168.42.1 (fhv0) as the source — the address the connected
+	 * socket will be known by, and the inner-header saddr that
+	 * __udp4_lib_err() must match to find the socket.
+	 * A socket pre-bound to 127.0.0.1 cannot be reconnected this way
+	 * (source stays loopback, lookup fails).
 	 */
-	srv_fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	worker_dc++;
-	if (srv_fd < 0)
-		goto out;
-
-	memset(&remote, 0, sizeof(remote));
-	remote.sin_family      = AF_INET;
-	remote.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	remote.sin_port        = 0;
-	worker_dc++; /* bind(srv_fd) */
-	if (bind(srv_fd, (struct sockaddr *)&remote, sizeof(remote)) < 0)
-		goto out;
-	{
-		socklen_t sl = sizeof(remote);
-		worker_dc++; /* getsockname(srv_fd) */
-		if (getsockname(srv_fd, (struct sockaddr *)&remote, &sl) < 0)
-			goto out;
-	}
-
 	udp_fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	worker_dc++;
 	if (udp_fd < 0)
 		goto out;
 
-	memset(&local, 0, sizeof(local));
-	local.sin_family      = AF_INET;
-	local.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	local.sin_port        = 0;
-	worker_dc++; /* bind(udp_fd) */
-	if (bind(udp_fd, (struct sockaddr *)&local, sizeof(local)) < 0)
-		goto out;
-	worker_dc++; /* connect(udp_fd) */
-	if (connect(udp_fd, (struct sockaddr *)&remote, sizeof(remote)) < 0)
-		goto out;
 	{
-		socklen_t sl = sizeof(local);
-		worker_dc++; /* getsockname(udp_fd) */
-		if (getsockname(udp_fd, (struct sockaddr *)&local, &sl) < 0)
+		struct sockaddr_in sa;
+
+		memset(&sa, 0, sizeof(sa));
+		sa.sin_family      = AF_INET;
+		sa.sin_addr.s_addr = htonl(INADDR_ANY);
+		sa.sin_port        = 0;
+		worker_dc++; /* bind(udp_fd) */
+		if (bind(udp_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0)
 			goto out;
 	}
 
-	worker_dc++; /* icmp_inject_init: socket(AF_INET,SOCK_RAW,IPPROTO_RAW) */
-	if (icmp_inject_init(&ctx, udp_fd, &local, &remote) < 0)
-		goto out;
+	/* Netlink socket for RTM_GETROUTE oracle (Fix-2).  Best-effort:
+	 * if this open fails the RTM_GETROUTE checks are skipped but
+	 * injection still runs. */
+	nl_fd = fnhe_nl_open();
+	worker_dc += 3; /* socket + bind + setsockopt inside fnhe_nl_open */
+
+	/* Initialise icmp_inject_ctx (opens the raw socket).
+	 * ctx.local and ctx.remote are placeholders; they are overwritten
+	 * with the real per-iteration 4-tuple inside the loop below. */
+	{
+		struct sockaddr_in ph_local, ph_remote;
+
+		memset(&ph_local,  0, sizeof(ph_local));
+		memset(&ph_remote, 0, sizeof(ph_remote));
+		ph_local.sin_family       = AF_INET;
+		ph_local.sin_addr.s_addr  = htonl(FNHE_ADDR_A);
+		ph_remote.sin_family      = AF_INET;
+		ph_remote.sin_addr.s_addr = htonl(FNHE_DST_BASE + 1U);
+		ph_remote.sin_port        = htons((uint16_t)FNHE_PEER_PORT);
+		worker_dc++; /* icmp_inject_init: socket(AF_INET,SOCK_RAW,IPPROTO_RAW) */
+		if (icmp_inject_init(&ctx, udp_fd, &ph_local, &ph_remote) < 0)
+			goto out;
+	}
+
+	memset(&local_addr, 0, sizeof(local_addr));
 
 	/*
-	 * Main injection loop.  Each iteration targets a different
-	 * daddr (inner IP destination) in 10.0.0.0/8.  The fnhe hash
-	 * function (siphash_1u32 with a kernel-private key) distributes
-	 * these uniformly across 2048 buckets.  With FNHE_INJECT_COUNT =
-	 * 14336 (7 × 2048), expected max bucket depth ≈ 14, ensuring
-	 * eviction fires on many insertions.
+	 * Main injection loop.
+	 *
+	 * For each iteration:
+	 *   1. Re-connect the UDP socket to the next 10.x.x.x:FNHE_PEER_PORT.
+	 *      Re-connect on a connected UDP socket is legal and sends nothing;
+	 *      the kernel updates the socket's routing and selects 192.168.42.1
+	 *      as the source (via the default route over fhv0).
+	 *   2. On the first reconnect, snapshot the source address via
+	 *      getsockname() — it stays constant for all subsequent iterations
+	 *      (same outgoing interface, same local port).
+	 *   3. Update ctx.local / ctx.remote with the current 4-tuple so
+	 *      icmp_inject_error() builds an inner header that matches the
+	 *      connected socket exactly.
+	 *   4. Call icmp_inject_error() with dst_override=0 (uses ctx.remote).
+	 *      The outer ICMP destination is ctx.local.sin_addr = 192.168.42.1,
+	 *      so the packet is received on fhv0 and processed locally.
+	 *   5. Every FNHE_GETROUTE_SAMPLE_PERIOD successful injections, issue
+	 *      a RTM_GETROUTE for the same daddr and count confirmed fnhe
+	 *      entries (RTAX_MTU == 1280) as exceptions_installed.
 	 */
 	for (i = 0; i < FNHE_INJECT_COUNT; i++) {
-		struct in_addr dst_override;
 		__u32 daddr_he;
+		struct sockaddr_in peer;
+		struct in_addr zero_override;
 		struct timespec now;
 		int rc;
 
@@ -446,12 +617,51 @@ injection_worker_body(int op_type, unsigned long start_idx)
 		if ((daddr_he & 0xffffffU) == 0)
 			daddr_he++;
 
-		dst_override.s_addr = htonl(daddr_he);
+		/* Re-connect to new peer — sends nothing, updates routing */
+		memset(&peer, 0, sizeof(peer));
+		peer.sin_family      = AF_INET;
+		peer.sin_addr.s_addr = htonl(daddr_he);
+		peer.sin_port        = htons((uint16_t)FNHE_PEER_PORT);
+		worker_dc++; /* connect(udp_fd) */
+		if (connect(udp_fd, (struct sockaddr *)&peer,
+			    sizeof(peer)) < 0) {
+			failed++;
+			continue;
+		}
 
+		/* Snapshot local address after first successful reconnect.
+		 * The source address (192.168.42.1) and port remain constant
+		 * across all reconnects to 10.x.x.x destinations (same
+		 * default route / same outgoing interface). */
+		if (!got_local) {
+			socklen_t sl = sizeof(local_addr);
+
+			worker_dc++; /* getsockname(udp_fd) */
+			if (getsockname(udp_fd,
+					(struct sockaddr *)&local_addr,
+					&sl) < 0) {
+				failed++;
+				continue;
+			}
+			got_local = true;
+		}
+
+		/* Update ctx with the current 4-tuple.
+		 * local_addr = 192.168.42.1:X (constant after first connect)
+		 * peer       = 10.x.x.x:FNHE_PEER_PORT (changes each iter)
+		 * The outer ICMP will be sent to ctx.local.sin_addr = 192.168.42.1.
+		 * The inner header carries saddr=192.168.42.1, daddr=10.x.x.x —
+		 * exactly what __udp4_lib_err() needs to find the connected
+		 * socket and call ipv4_sk_update_pmtu(). */
+		ctx.local  = local_addr;
+		ctx.remote = peer;
+
+		/* Inject with dst_override=0 — use ctx.remote directly */
+		memset(&zero_override, 0, sizeof(zero_override));
 		rc = icmp_inject_error(&ctx,
 				       ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED,
 				       1280,
-				       dst_override);
+				       zero_override);
 		if (rc == 0) {
 			installed++;
 			/* Pigeonhole: once installed > FNHE_HASH_SIZE *
@@ -464,6 +674,24 @@ injection_worker_body(int op_type, unsigned long start_idx)
 					&shm->stats.fnhe_pmtu_mtu_race.evictions_observed,
 					1, __ATOMIC_RELAXED);
 			}
+
+			/* Fix-2 RTM_GETROUTE oracle: every
+			 * FNHE_GETROUTE_SAMPLE_PERIOD injections, ask the
+			 * kernel whether the fnhe entry for this destination
+			 * carries RTAX_MTU == 1280.  Count each confirmed hit
+			 * as exceptions_installed (real kernel-side evidence
+			 * that update_or_create_fnhe() ran for this daddr). */
+			if (nl_fd >= 0 &&
+			    (installed % FNHE_GETROUTE_SAMPLE_PERIOD) == 0) {
+				if (fnhe_check_rtm_getroute(
+						nl_fd,
+						htonl(daddr_he),
+						(__u32)i)) {
+					__atomic_add_fetch(
+						&shm->stats.fnhe_pmtu_mtu_race.exceptions_installed,
+						1, __ATOMIC_RELAXED);
+				}
+			}
 		} else {
 			failed++;
 		}
@@ -472,7 +700,7 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	/* Each icmp_inject_error() call issues one sendto(). */
 	worker_dc += installed + failed;
 
-	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.exceptions_installed,
+	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.injections_sent,
 			   installed, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.fnhe_pmtu_mtu_race.inject_failed,
 			   failed, __ATOMIC_RELAXED);
@@ -480,7 +708,7 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	if (installed == 0) {
 		/* check-static: child-output-ok */
 		outputerr("[fnhe-pmtu-mtu-race] WARNING: "
-			  "zero injections installed -- "
+			  "zero injections sent -- "
 			  "check inject_failed counter\n");
 	} else if (!eviction_seen) {
 		/* check-static: child-output-ok */
@@ -496,12 +724,12 @@ injection_worker_body(int op_type, unsigned long start_idx)
 	worker_dc++; /* icmp_inject_cleanup: close(raw_fd) */
 	icmp_inject_cleanup(&ctx);
 out:
-	if (udp_fd >= 0) {
-		close(udp_fd);
+	if (nl_fd >= 0) {
+		close(nl_fd);
 		worker_dc++;
 	}
-	if (srv_fd >= 0) {
-		close(srv_fd);
+	if (udp_fd >= 0) {
+		close(udp_fd);
 		worker_dc++;
 	}
 	childop_direct_syscalls_add(op_type, worker_dc);

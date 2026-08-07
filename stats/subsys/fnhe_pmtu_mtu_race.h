@@ -13,7 +13,8 @@
 struct fnhe_pmtu_mtu_race_stats {
 	unsigned long runs;			/* total invocations */
 	unsigned long setup_failed;		/* netns/veth/addr/route setup error */
-	unsigned long exceptions_installed;	/* ICMP inject sendto succeeded */
+	unsigned long injections_sent;		/* ICMP inject sendto() succeeded */
+	unsigned long exceptions_installed;	/* RTM_GETROUTE confirmed fnhe pmtu=1280 */
 	unsigned long inject_failed;		/* ICMP inject sendto failed */
 	unsigned long evictions_observed;	/* bucket overflow detected (estimated) */
 	unsigned long mtu_flaps;		/* SIOCSIFMTU ioctl calls issued */

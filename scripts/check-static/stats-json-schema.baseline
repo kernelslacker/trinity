@@ -1091,6 +1091,7 @@ stats	object
   stats.fnhe_pmtu_mtu_race	object
     stats.fnhe_pmtu_mtu_race.runs	u64
     stats.fnhe_pmtu_mtu_race.setup_failed	u64
+    stats.fnhe_pmtu_mtu_race.injections_sent	u64
     stats.fnhe_pmtu_mtu_race.exceptions_installed	u64
     stats.fnhe_pmtu_mtu_race.inject_failed	u64
     stats.fnhe_pmtu_mtu_race.evictions_observed	u64
