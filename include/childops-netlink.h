@@ -336,3 +336,15 @@ int rtnl_setlink_up(struct nl_ctx *ctx, int ifindex);
  * sequence latches on a missing lo naturally.
  */
 void rtnl_bring_lo_up(struct nl_ctx *ctx);
+
+/*
+ * Direct-syscall count for one rtnl_bring_lo_up() call when lo is
+ * present.  5 = if_nametoindex(socket+ioctl+close) +
+ * nl_send_recv(sendmsg+recv).  Callers that set opts.caller_op on the
+ * nl_ctx passed to rtnl_bring_lo_up() have the nl_send_recv portion
+ * (2) credited automatically by nl_close(); those callers should add
+ * only the if_nametoindex component (3) to their own tally.  Callers
+ * that hand-tally without opts.caller_op should add this whole
+ * constant to account for all five kernel entries.
+ */
+#define RTNL_BRING_LO_UP_DIRECT_CALLS	5
