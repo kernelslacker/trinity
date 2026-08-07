@@ -3,8 +3,9 @@
 
 /*
  * Counters for the crafted-ICMP-error inject primitive
- * (childops/net/crafted-icmp-rx.c).  Two runtime counters plus four
- * selftest-path counters; all updated via __atomic_add_fetch RELAXED.
+ * (childops/net/crafted-icmp-rx.c).  Two runtime counters, four
+ * selftest-path counters, and two failure-mode counters; all updated
+ * via __atomic_add_fetch RELAXED.
  */
 struct icmp_inject_stats {
 	unsigned long errors_injected;	/* icmp_inject_error(): sendto returned >0 */
@@ -13,6 +14,7 @@ struct icmp_inject_stats {
 	unsigned long selftest_ok;	/* selftest passed (error delivered as expected) */
 	unsigned long selftest_fail;	/* selftest failed (unexpected errno or no error) */
 	unsigned long init_failed;	/* icmp_inject_init() raw socket open failed */
+	unsigned long ns_unsupported;	/* userns_run_in_ns() returned -EPERM (no userns) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_ICMP_INJECT_H */

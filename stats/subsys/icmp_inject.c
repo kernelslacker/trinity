@@ -8,6 +8,7 @@ static const struct stat_field icmp_inject_fields[] = {
 	STAT_FIELD_SUB(icmp_inject, selftest_ok),
 	STAT_FIELD_SUB(icmp_inject, selftest_fail),
 	STAT_FIELD_SUB(icmp_inject, init_failed),
+	STAT_FIELD_SUB(icmp_inject, ns_unsupported),
 };
 
 const struct stat_category icmp_inject_category =

@@ -1456,6 +1456,7 @@ stats	object
     stats.icmp_inject.selftest_ok	u64
     stats.icmp_inject.selftest_fail	u64
     stats.icmp_inject.init_failed	u64
+    stats.icmp_inject.ns_unsupported	u64
   stats.veth_asymmetric_xdp	object
     stats.veth_asymmetric_xdp.iters	u64
     stats.veth_asymmetric_xdp.eperm	u64
