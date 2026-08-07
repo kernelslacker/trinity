@@ -52,6 +52,7 @@
     __has_include(<linux/netlink.h>) && \
     __has_include(<linux/rtnetlink.h>) && \
     __has_include(<linux/if_packet.h>) && \
+    __has_include(<linux/if_macsec.h>) && \
     __has_include(<linux/veth.h>)
 
 #include <errno.h>
@@ -83,10 +84,12 @@
 #include "bpf.h"
 #include "child.h"
 #include "childop-outcome.h"
+#include "childops-genl.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "kernel/if_xdp.h"
+#include "kernel/macsec.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -173,6 +176,7 @@ static bool ns_unsupported_bypass_l2;
 #define BYPASS_FRAME_LEN		64U
 
 #define BYPASS_RTNL_BUF			512U
+#define BYPASS_GENL_BUF			256U
 
 /* ------------------------------------------------------------------ */
 /* Netlink helpers                                                       */
@@ -238,6 +242,8 @@ static int bypass_create_veth(struct nl_ctx *ctx,
 /*
  * RTM_NEWLINK type=macsec name=<name> parent=<parent_ifindex>.
  * Creates a minimal macsec device with default SCI/key settings.
+ * Sets encoding_sa=0 so the TX SA installed by bypass_install_macsec_txsa()
+ * (AN=0) is selected immediately without further configuration.
  * EOPNOTSUPP means CONFIG_MACSEC is not loaded; the caller latches.
  */
 static int bypass_create_macsec(struct nl_ctx *ctx,
@@ -246,7 +252,8 @@ static int bypass_create_macsec(struct nl_ctx *ctx,
 	unsigned char buf[BYPASS_RTNL_BUF];
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
-	size_t off, li_off;
+	size_t off, li_off, id_off;
+	__u8 encoding_sa = 0;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
@@ -272,10 +279,104 @@ static int bypass_create_macsec(struct nl_ctx *ctx,
 	if (!off) return -EIO;
 	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "macsec");
 	if (!off) return -EIO;
+
+	/* Point encoding_sa at AN=0 so the TX SA installed via genl is
+	 * used immediately; the kernel default is also 0, but setting it
+	 * explicitly avoids any ambiguity on future kernel versions. */
+	id_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+	if (!off) return -EIO;
+	off = nla_put_u8(buf, off, sizeof(buf),
+			 IFLA_MACSEC_ENCODING_SA, encoding_sa);
+	if (!off) return -EIO;
+	nla_nest_end(buf, id_off, off);
+
 	nla_nest_end(buf, li_off, off);
 
 	nlh->nlmsg_len = (__u32)off;
 	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * Install a TX security association on a macsec interface via the
+ * MACSEC generic-netlink family (MACSEC_CMD_ADD_TXSA).
+ *
+ * Without a TX SA, macsec_encrypt() returns -EINVAL at the SA-lookup
+ * gate and sets secy->operational=false as a side effect, so neither
+ * lane can reach the OOB-read target regardless of how many frames
+ * are sent.  Installing AN=0 with ACTIVE=1 before driving the lanes
+ * lets macsec_encrypt() proceed past the gate and enter the encrypt
+ * path where skb_eth_hdr() is called.
+ *
+ * Returns 0 on success.  -ENOENT means the "macsec" genl family is
+ * not registered (CONFIG_MACSEC=n or module not loaded) — caller
+ * should treat this the same as EOPNOTSUPP from bypass_create_macsec.
+ * Other errors are counted but non-fatal (lane A/B will still send;
+ * frames will be dropped at the SA gate).
+ */
+static int bypass_install_macsec_txsa(unsigned int mst_ifindex)
+{
+	struct genl_ctx gctx = GENL_CTX_INIT;
+	struct genl_open_opts opts = {
+		.family_name  = MACSEC_GENL_NAME,
+		.version      = 1,
+		.recv_timeo_s = 1,
+	};
+	unsigned char buf[BYPASS_GENL_BUF];
+	/* Fixed 16-byte AES-128 key and key-id (all-zeros is accepted by
+	 * macsec_genl_sa_policy; the key content does not matter for the
+	 * transmit-path coverage goal). */
+	const unsigned char tx_key[16]   = { 0 };
+	const unsigned char tx_keyid[MACSEC_KEYID_LEN] = { 0 };
+	__u8   an = 0, active = 1;
+	__u32  pn = 1;
+	struct nlmsghdr *nlh;
+	size_t off, sa_off;
+	int rc;
+
+	rc = genl_open(&gctx, &opts);
+	if (rc != 0)
+		return rc;
+
+	memset(buf, 0, sizeof(buf));
+	off = genl_msg_put(buf, 0, sizeof(buf), &gctx,
+			   nl_seq_next(&gctx.nl),
+			   MACSEC_CMD_ADD_TXSA, 0);
+	if (!off) { genl_close(&gctx); return -EIO; }
+
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  MACSEC_ATTR_IFINDEX, (__u32)mst_ifindex);
+	if (!off) { genl_close(&gctx); return -EIO; }
+
+	sa_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), MACSEC_ATTR_SA_CONFIG);
+	if (!off) { genl_close(&gctx); return -EIO; }
+
+	off = nla_put_u8(buf, off, sizeof(buf), MACSEC_SA_ATTR_AN, an);
+	if (!off) { genl_close(&gctx); return -EIO; }
+
+	off = nla_put(buf, off, sizeof(buf), MACSEC_SA_ATTR_PN, &pn, sizeof(pn));
+	if (!off) { genl_close(&gctx); return -EIO; }
+
+	off = nla_put(buf, off, sizeof(buf), MACSEC_SA_ATTR_KEY,
+		      tx_key, sizeof(tx_key));
+	if (!off) { genl_close(&gctx); return -EIO; }
+
+	off = nla_put(buf, off, sizeof(buf), MACSEC_SA_ATTR_KEYID,
+		      tx_keyid, sizeof(tx_keyid));
+	if (!off) { genl_close(&gctx); return -EIO; }
+
+	off = nla_put_u8(buf, off, sizeof(buf), MACSEC_SA_ATTR_ACTIVE, active);
+	if (!off) { genl_close(&gctx); return -EIO; }
+
+	nla_nest_end(buf, sa_off, off);
+
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_len = (__u32)off;
+
+	rc = genl_send_recv(&gctx, buf, off);
+	genl_close(&gctx);
+	return rc;
 }
 
 /*
@@ -948,6 +1049,24 @@ static int iter_one_in_ns(void *arg)
 
 	nl_close(&nl);
 	nl.fd = -1;
+
+	/*
+	 * Install a TX SA via the macsec genl family so that
+	 * macsec_encrypt() can proceed past the SA-lookup gate.
+	 * Without this, every frame is dropped at:
+	 *   tx_sa = macsec_txsa_get(tx_sc->sa[tx_sc->encoding_sa]);
+	 *   if (!tx_sa) { secy->operational = false; return ERR_PTR(-EINVAL); }
+	 * and the skb_eth_hdr() OOB-read target 29 lines below is
+	 * structurally unreachable.
+	 */
+	{
+		int sa_rc = bypass_install_macsec_txsa(mst_ifx);
+
+		if (sa_rc == 0)
+			__atomic_add_fetch(
+				&shm->stats.packet_qdisc_bypass_unanchored_l2.macsec_sa_installed,
+				1, __ATOMIC_RELAXED);
+	}
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op_type],
