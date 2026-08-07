@@ -676,6 +676,25 @@ struct syscallentry {
 	bool is_epoll_wait_family;
 
 	/*
+	 * Opt-in flag for the userns-admin lane.  When true,
+	 * init_child_setup_sandbox() performs
+	 * unshare(CLONE_NEWUSER|CLONE_NEWNET) and writes an identity
+	 * uid/gid map before the capset(empty) drop.  The child then
+	 * holds full capabilities inside its own user namespace, making
+	 * ns_capable(net->user_ns, cap) gates reachable for GENL_UNS_
+	 * ADMIN_PERM commands sent on sockets opened in the child's
+	 * private netns.  The capset(empty) drop still runs; the child
+	 * holds no capabilities in init_user_ns.  Gated on
+	 * /proc/sys/user/max_user_namespaces > 0 via shm->no_userns_lane.
+	 *
+	 * Default false for all entries.  Set explicitly on per-childop
+	 * syscallentry descriptors after the stray-namespace audit has
+	 * been completed for that surface.  The generic random-fuzz path
+	 * never activates this lane.
+	 */
+	bool userns_admin_lane;
+
+	/*
 	 * Cached bitmap of arg slots (1..6) whose argtype legitimately
 	 * accepts a numeric substitute -- bit k set means slot (k+1) is a
 	 * legal target for the sequence-chain executor's retval-substitute

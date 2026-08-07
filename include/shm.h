@@ -259,6 +259,17 @@ struct shm_s {
 	 * dance once we know it can't be made private. */
 	bool no_private_ns;
 
+	/* set to true when the kernel refuses unshare(CLONE_NEWUSER) for
+	 * the userns-admin lane — either because the first attempt returned
+	 * EPERM (user.max_user_namespaces=0 or
+	 * kernel.unprivileged_userns_clone=0) or because
+	 * /proc/sys/user/max_user_namespaces read as <= 0.  Stored in shm
+	 * so all children latch off the lane without repeated EPERM
+	 * probes.  The latch is consulted only when at least one active
+	 * syscallentry has userns_admin_lane set; baseline runs are
+	 * unaffected. */
+	bool no_userns_lane;
+
 	/*
 	 * Parent-provisioned startup-isolation latches.  Written once by
 	 * setup_startup_isolation() in the parent's pre-fork window;
