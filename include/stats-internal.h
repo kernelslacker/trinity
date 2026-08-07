@@ -301,6 +301,7 @@ extern const struct stat_category uid_change_category;
 extern const struct stat_category umount_race_category;
 extern const struct stat_category userns_bootstrap_category;
 extern const struct stat_category userns_fuzzer_category;
+extern const struct stat_category ipcns_ucount_exhaustion_category;
 extern const struct stat_category vdso_mremap_race_category;
 extern const struct stat_category veth_asymmetric_xdp_category;
 extern const struct stat_category vfs_writes_category;
