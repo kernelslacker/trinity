@@ -54,8 +54,15 @@ struct rds_bind_transport_refleak_stats {
 	 * HWM oracle.  rds_tcp_refcount_hwm is the largest absolute
 	 * /proc/modules refcount observed for rds_tcp across all
 	 * invocations in this run.  baseline_refcount is seeded from the
-	 * first pre_refcount read so that leaked_refs_hwm_growth tracks
-	 * growth above the pre-existing system baseline, not from zero.
+	 * first pre_refcount read (provenance record); pre_refcount_floor
+	 * is the running minimum of all pre_refcount samples and serves as
+	 * the steady-state floor for HWM accounting.
+	 *
+	 * A first-sample baseline_refcount may be inflated by concurrent
+	 * sibling sockets holding transient refs.  pre_refcount_floor is
+	 * revised downward via a CAS loop each time a quieter sample is
+	 * observed; baseline_floor_revised counts how many times the floor
+	 * moved down so a bad initial seed is visible in the stats.
 	 *
 	 * leaked_refs_hwm_growth is an upper-bound estimate: the absolute
 	 * refcount includes refs held by concurrently-open sibling sockets,
@@ -63,11 +70,13 @@ struct rds_bind_transport_refleak_stats {
 	 * leaks.  The per-invocation leaked_refs delta provides a
 	 * calibrated complement.
 	 *
-	 * All three fields are unsigned long.  The proc_module_refcount()
+	 * All fields are unsigned long.  The proc_module_refcount()
 	 * sentinel (-1) is never stored here: the post_refcount > 0L guard
 	 * in the childop ensures only positive readings reach the HWM path.
 	 */
-	unsigned long baseline_refcount;	/* first pre_refcount seen; HWM floor */
+	unsigned long baseline_refcount;	/* first pre_refcount seen; provenance */
+	unsigned long pre_refcount_floor;	/* running minimum of pre_refcount samples */
+	unsigned long baseline_floor_revised;	/* times floor was revised downward */
 	unsigned long rds_tcp_refcount_hwm;	/* highest rds_tcp refcount seen this run */
 	unsigned long leaked_refs_hwm_growth;	/* total HWM growth above baseline */
 
