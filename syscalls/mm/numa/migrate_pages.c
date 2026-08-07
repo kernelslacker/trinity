@@ -23,5 +23,6 @@ struct syscallentry syscall_migrate_pages = {
 	.argname = { [0] = "pid", [1] = "maxnode", [2] = "old_nodes", [3] = "new_nodes" },
 	.group = GROUP_VM,
 	.sanitise = sanitise_migrate_pages,
+	.flags = REEXEC_SANITISE_OK,
 	.rettype = RET_BORING,
 };

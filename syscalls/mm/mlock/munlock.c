@@ -76,5 +76,6 @@ struct syscallentry syscall_munlock = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VM,
 	.sanitise = sanitise_munlock,
+	.flags = REEXEC_SANITISE_OK,
 	.post = post_munlock,
 };

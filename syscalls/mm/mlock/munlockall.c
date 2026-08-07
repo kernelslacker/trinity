@@ -52,6 +52,7 @@ struct syscallentry syscall_munlockall = {
 	.num_args = 0,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VM,
+	/* Not REEXEC_SANITISE_OK: sanitise calls mlock() to plant a locked VMA; re-exec would re-plant. */
 	.sanitise = sanitise_munlockall,
 	.post = post_munlockall,
 };
