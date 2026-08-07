@@ -128,5 +128,6 @@ struct syscallentry syscall_process_madvise = {
 	.arg_params[4].list = ARGLIST(process_madvise_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_process_madvise,
+	.flags = REEXEC_SANITISE_OK,
 	.rettype = RET_NUM_BYTES,
 };

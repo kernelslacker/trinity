@@ -553,7 +553,7 @@ struct syscallentry syscall_mmap = {
 	.arg_params[3].list = ARGLIST(mmap_excl_flags),
 
 	.group = GROUP_VM,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.rettype = RET_ADDRESS,
 };
 
@@ -571,6 +571,6 @@ struct syscallentry syscall_mmap2 = {
 	.arg_params[3].list = ARGLIST(mmap_excl_flags),
 
 	.group = GROUP_VM,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.rettype = RET_ADDRESS,
 };

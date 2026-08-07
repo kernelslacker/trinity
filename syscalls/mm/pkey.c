@@ -140,6 +140,7 @@ struct syscallentry syscall_pkey_alloc = {
 	.argname = { [0] = "flags", [1] = "init_val" },
 	.arg_params[1].list = ARGLIST(pkey_alloc_initvals),
 	.sanitise = sanitise_pkey_alloc,
+	.flags = REEXEC_SANITISE_OK,
 	.post = post_pkey_alloc,
 	.group = GROUP_VM,
 	.rettype = RET_BORING,
@@ -175,6 +176,7 @@ struct syscallentry syscall_pkey_free = {
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 15,
 	.sanitise = sanitise_pkey_free,
+	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_VM,
 	.rettype = RET_ZERO_SUCCESS,
 };

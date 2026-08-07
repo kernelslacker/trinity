@@ -46,4 +46,5 @@ struct syscallentry syscall_set_mempolicy = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VM,
 	.sanitise = sanitise_set_mempolicy,
+	.flags = REEXEC_SANITISE_OK,
 };

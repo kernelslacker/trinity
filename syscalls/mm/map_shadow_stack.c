@@ -59,6 +59,7 @@ struct syscallentry syscall_map_shadow_stack = {
 	.argname = { [0] = "addr", [1] = "size", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(map_shadow_stack_flags),
 	.sanitise = sanitise_map_shadow_stack,
+	.flags = REEXEC_SANITISE_OK,
 	.post = post_map_shadow_stack,
 	.group = GROUP_VM,
 	.rettype = RET_ADDRESS,
