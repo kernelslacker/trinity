@@ -542,8 +542,9 @@ static bool is_unsupported_err(int rc)
 static int tc_mirred_setup_netns(struct nl_ctx *ctx, unsigned long *direct_calls)
 {
 	struct nl_open_opts nl_opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_TC_MIRRED_BLOCKCAST,
 	};
 
 	if (nl_open(ctx, &nl_opts) < 0) {
@@ -553,9 +554,6 @@ static int tc_mirred_setup_netns(struct nl_ctx *ctx, unsigned long *direct_calls
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	/* nl_open success issued socket + bind + setsockopt (recv_timeo_s
-	 * > 0 above). */
-	*direct_calls += 3;
 
 	if (!modprobe_tried_ingress()) {
 		mark_modprobe_tried_ingress();
@@ -572,11 +570,9 @@ static int tc_mirred_setup_netns(struct nl_ctx *ctx, unsigned long *direct_calls
 
 	if (!lo_brought_up()) {
 		rtnl_bring_lo_up(ctx);
-		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
-		 * when the lo lookup succeeds; the if_nametoindex libc probe
-		 * stays unattributed to match the surrounding per-childop
-		 * convention. */
-		*direct_calls += 2;
+		/* if_nametoindex("lo"): socket+ioctl+close; the
+		 * nl_send_recv portion is credited to ctx via caller_op. */
+		*direct_calls += 3;
 		mark_lo_brought_up();
 	}
 	return 0;
@@ -600,7 +596,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 {
 	struct tc_mirred_blockcast_iter_ctx *ctx = arg;
 	struct childdata *child = ctx->child;
-	struct nl_ctx nl = { .fd = -1 };
+	struct nl_ctx nl = NL_CTX_INIT;
 	char a_name[IFNAMSIZ];
 	char b_name[IFNAMSIZ];
 	int a_idx = 0, b_idx = 0;
@@ -609,20 +605,16 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	int udp = -1;
 	int rc;
 	int eaction;
-	/* Direct-syscall tally accumulated across the setup / build /
-	 * teardown call sites.  Every raw kernel call site bumps this by
-	 * the number of syscalls it just issued: nl_open success == 3
-	 * (socket + bind + setsockopt for recv_timeo_s > 0), each
-	 * nl_send_recv{_retry} wrapper (build_dummy_create /
-	 * rtnl_setlink_up / build_clsact_with_egress_block /
-	 * build_mirred_blockcast_filter / rtnl_dellink / rtnl_bring_lo_up)
-	 * == 2 (sendmsg + recv), each AF_INET socket() / setsockopt / close
-	 * == 1, each sendto() in the burst loop == 1, nl_close == 1.
-	 * try_modprobe is harness plumbing (fork+exec of /sbin/modprobe)
-	 * and stays unattributed; if_nametoindex libc probes stay
-	 * unattributed to match the surrounding per-childop convention.
-	 * Published once via childop_direct_syscalls_add() at the out:
-	 * label so the hot path pays one atomic add per invocation. */
+	/* Direct-syscall tally for non-netlink-transport calls.  The
+	 * netlink transport (socket+bind+setsockopt from nl_open,
+	 * sendmsg+recv from each nl_send_recv{_retry} wrapper, close from
+	 * nl_close) is credited automatically by nl_close() via
+	 * opts.caller_op set in tc_mirred_setup_netns().  This field
+	 * covers: if_nametoindex() for lo, a_name and b_name
+	 * (socket+ioctl+close each), AF_INET socket(), setsockopt(), each
+	 * sendto() in the burst loop, and close() on the UDP fd.
+	 * try_modprobe is harness plumbing and stays unattributed.
+	 * Published once via childop_direct_syscalls_add() at out:. */
 	unsigned long direct_calls = 0;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -653,8 +645,6 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 		 (unsigned int)(rand32() & 0xffffu));
 
 	rc = build_dummy_create(&nl, a_name);
-	/* build_dummy_create wraps one nl_send_recv_retry (sendmsg + recv). */
-	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			mark_ns_unsupported_dummy();
@@ -662,6 +652,8 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	}
 	a_added = true;
 	a_idx = (int)if_nametoindex(a_name);
+	/* if_nametoindex: socket + ioctl + close. */
+	direct_calls += 3;
 	if (a_idx <= 0)
 		goto out;
 
@@ -675,8 +667,6 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	name_pool_record(NAME_KIND_NETDEV, a_name, strlen(a_name));
 
 	rc = build_dummy_create(&nl, b_name);
-	/* build_dummy_create wraps one nl_send_recv_retry (sendmsg + recv). */
-	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			mark_ns_unsupported_dummy();
@@ -684,14 +674,13 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	}
 	b_added = true;
 	b_idx = (int)if_nametoindex(b_name);
+	/* if_nametoindex: socket + ioctl + close. */
+	direct_calls += 3;
 	if (b_idx <= 0)
 		goto out;
 
 	(void)rtnl_setlink_up(&nl, a_idx);
 	(void)rtnl_setlink_up(&nl, b_idx);
-	/* Two rtnl_setlink_up wrappers, each one nl_send_recv (sendmsg +
-	 * recv). */
-	direct_calls += 4;
 
 	/* Block index range: avoid 0 (invalid) and 1 (kernel-reserved
 	 * shared-block seed in some configs).  Upper bound keeps us
@@ -700,9 +689,6 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	block_idx = (__u32)(rnd_modulo_u32(0xfef0U) + 0x10U);
 
 	rc = build_clsact_with_egress_block(&nl, a_idx, block_idx);
-	/* build_clsact_with_egress_block wraps one nl_send_recv_retry
-	 * (sendmsg + recv). */
-	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			mark_ns_unsupported_clsact();
@@ -714,9 +700,6 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 			   1, __ATOMIC_RELAXED);
 
 	rc = build_clsact_with_egress_block(&nl, b_idx, block_idx);
-	/* build_clsact_with_egress_block wraps one nl_send_recv_retry
-	 * (sendmsg + recv). */
-	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			mark_ns_unsupported_clsact();
@@ -730,9 +713,6 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	eaction = ONE_IN(2) ? TCA_EGRESS_REDIR : TCA_EGRESS_MIRROR;
 
 	rc = build_mirred_blockcast_filter(&nl, block_idx, eaction);
-	/* build_mirred_blockcast_filter wraps one nl_send_recv_retry
-	 * (sendmsg + recv). */
-	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
 			mark_ns_unsupported_matchall();
@@ -811,33 +791,19 @@ out:
 	}
 
 	if (nl.fd >= 0) {
-		if (a_added && a_idx > 0) {
+		if (a_added && a_idx > 0)
 			(void)rtnl_dellink(&nl, a_idx);
-			/* rtnl_dellink wraps one nl_send_recv (sendmsg +
-			 * recv). */
-			direct_calls += 2;
-		}
-		if (b_added && b_idx > 0) {
+		if (b_added && b_idx > 0)
 			(void)rtnl_dellink(&nl, b_idx);
-			/* rtnl_dellink wraps one nl_send_recv (sendmsg +
-			 * recv). */
-			direct_calls += 2;
-		}
 		nl_close(&nl);
-		/* nl_close: one close() on the netlink fd. */
-		direct_calls += 1;
 	}
 
-	/* Publish this invocation's direct-syscall load in ONE RELAXED
-	 * atomic add.  Tally was accumulated across the setup / build /
-	 * burst / teardown call sites via direct_calls; the grandchild's
-	 * write on the shm slot is visible to the parent (and to sibling
-	 * children) after _exit() because shm is a shared mapping.  Gated
-	 * on valid_op to match the surrounding per-op stats bumps.  The
-	 * ns_unsupported gate-hit and setup-failure paths (which jumped
-	 * to out before any syscall was issued) publish zero, which is a
-	 * no-op atomic add but preserves the "publish once per
-	 * invocation" invariant shared with the sibling reporters. */
+	/* Publish non-netlink-transport direct-syscall load: if_nametoindex
+	 * calls (3 each for lo, a_name, b_name), AF_INET socket, setsockopt,
+	 * sendto loop, UDP close.  The netlink transport (nl_open + all
+	 * nl_send_recv{_retry} wrappers + nl_close) is published by
+	 * nl_close() via opts.caller_op in tc_mirred_setup_netns(), so
+	 * those counts are not included here. */
 	if (valid_op)
 		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
