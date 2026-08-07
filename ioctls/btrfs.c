@@ -562,11 +562,18 @@ static void sanitise_btrfs_encoded_write_args(struct syscallrecord *rec)
 
 	generate_rand_bytes((unsigned char *)args, sizeof(*args));
 
-	/* compression: 0=none, 1=zlib, 2=lzo, 3=zstd; plus occasional out-of-range */
+	/*
+	 * compression: NONE=0 ZLIB=1 ZSTD=2 LZO_4K=3 LZO_8K=4 LZO_16K=5
+	 * LZO_32K=6 LZO_64K=7 TYPES=8.  Kernel rejects values >=
+	 * BTRFS_ENCODED_IO_COMPRESSION_TYPES, so the invalid arm must
+	 * produce a value >= TYPES; adding a small random offset achieves
+	 * that while still exercising a range of OOB values.
+	 */
 	if (rnd_u32() & 1)
-		args->compression = rnd_modulo_u32(4);
+		args->compression = rnd_modulo_u32(BTRFS_ENCODED_IO_COMPRESSION_TYPES);
 	else
-		args->compression = rnd_modulo_u32(8); /* sometimes invalid */
+		args->compression = BTRFS_ENCODED_IO_COMPRESSION_TYPES +
+				    rnd_modulo_u32(8); /* invalid */
 
 	/* encryption: 0=none only currently */
 	args->encryption = (rnd_u32() & 1) ? 0 : rnd_modulo_u32(4);
