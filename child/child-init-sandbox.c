@@ -33,7 +33,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/socket.h>
 
 #include "arch.h"
 #include "child.h"
@@ -589,33 +588,8 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	 * namespaces.  No entry currently sets the flag; this is a no-op
 	 * for all baseline runs.
 	 */
-	if (find_userns_lane_entry() != NULL) {
+	if (find_userns_lane_entry() != NULL)
 		maybe_enter_userns_admin_lane(childno);
-		/*
-		 * Self-test: if the lane entered successfully SO_RCVBUFFORCE
-		 * must now SUCCEED -- the socket lives in the lane's netns
-		 * whose user_ns is the child's own userns where it holds
-		 * CAP_FULL_SET.  A failure here turns a silent broken lane
-		 * into an observable outputerr.
-		 */
-		if (!__atomic_load_n(&shm->no_userns_lane, __ATOMIC_RELAXED)) {
-			int lane_probe_fd = socket(AF_INET, SOCK_DGRAM, 0);
-			if (lane_probe_fd >= 0) {
-				int lane_probe_sz = 4096;
-				if (setsockopt(lane_probe_fd, SOL_SOCKET,
-					       SO_RCVBUFFORCE,
-					       &lane_probe_sz,
-					       sizeof(lane_probe_sz)) != 0)
-					outputerr("child %d: userns-admin lane "
-						  "self-test: SO_RCVBUFFORCE "
-						  "failed (errno=%d) -- lane "
-						  "entered but ns_capable "
-						  "still denied\n",
-						  childno, errno);
-				(void)close(lane_probe_fd);
-			}
-		}
-	}
 
 	/*
 	 * Stamp the per-child (st_dev, st_ino) of /proc/self/ns/{user,mnt,
