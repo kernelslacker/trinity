@@ -52,6 +52,7 @@
  */
 struct timerfd_xclose_racer_arg {
 	int tfd;
+	long local_syscalls;	/* syscalls issued in this racer, folded at join */
 };
 
 static void *timerfd_xclose_racer_thread(void *arg)
@@ -61,12 +62,15 @@ static void *timerfd_xclose_racer_thread(void *arg)
 	uint64_t expirations;
 	ssize_t r __unused__;
 
+	ra->local_syscalls = 0;
 	pfd.fd = ra->tfd;
 	pfd.events = POLLIN;
 	pfd.revents = 0;
 	(void)poll(&pfd, 1, RECIPE_RACER_TIMEOUT_MS);
+	ra->local_syscalls++;	/* poll */
 
 	r = read(ra->tfd, &expirations, sizeof(expirations));
+	ra->local_syscalls++;	/* read */
 	return NULL;
 }
 
@@ -179,6 +183,9 @@ bool recipe_timerfd_xclose(bool *unsupported)
 		(void)close(tfd);
 
 		(void)pthread_join(tid, NULL);
+		if (valid_op)
+			childop_direct_syscalls_add(op,
+				(unsigned long)ra.local_syscalls);
 
 		completed++;
 	}
@@ -188,9 +195,6 @@ bool recipe_timerfd_xclose(bool *unsupported)
 	 * a recipe failure.  Skip rather than score a partial, which would
 	 * keep the picker re-selecting us against a kernel path we never
 	 * actually exercised. */
-	if (valid_op)
-		childop_direct_syscalls_add(op, 1);
-
 	if (completed == 0 && spawn_latched)
 		return true;
 

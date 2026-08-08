@@ -146,6 +146,7 @@ enum racer_op {
 struct racer_arg {
 	int fd;			/* the fd we race close() against */
 	enum racer_op op;
+	long local_syscalls;	/* syscalls issued by this racer, folded at join */
 };
 
 static void *racer_thread(void *arg)
@@ -158,12 +159,14 @@ static void *racer_thread(void *arg)
 	int epfd;
 	int val;
 
+	ra->local_syscalls = 0;
 	switch (ra->op) {
 	case RACER_POLL:
 		pfd.fd = ra->fd;
 		pfd.events = POLLIN;
 		pfd.revents = 0;
 		(void)poll(&pfd, 1, RACER_TIMEOUT_MS);
+		ra->local_syscalls = 1;
 		break;
 
 	case RACER_PPOLL:
@@ -173,18 +176,23 @@ static void *racer_thread(void *arg)
 		ts.tv_sec = 0;
 		ts.tv_nsec = (long)RACER_TIMEOUT_MS * 1000000L;
 		(void)ppoll(&pfd, 1, &ts, NULL);
+		ra->local_syscalls = 1;
 		break;
 
 	case RACER_EPOLL_WAIT:
 		epfd = epoll_create1(EPOLL_CLOEXEC);
+		ra->local_syscalls = 1;	/* epoll_create1 */
 		if (epfd >= 0) {
 			ev.events = EPOLLIN;
 			ev.data.fd = ra->fd;
 			/* EPOLL_CTL_ADD may race close() too — that's fine,
 			 * EBADF/EINVAL is still a valid lookup outcome. */
 			(void)epoll_ctl(epfd, EPOLL_CTL_ADD, ra->fd, &ev);
+			ra->local_syscalls++;	/* epoll_ctl */
 			(void)epoll_wait(epfd, &ev, 1, RACER_TIMEOUT_MS);
+			ra->local_syscalls++;	/* epoll_wait */
 			close(epfd);
+			ra->local_syscalls++;	/* close(epfd) */
 		}
 		break;
 
@@ -193,10 +201,12 @@ static void *racer_thread(void *arg)
 		 * the main thread) or until close(sv[0]) races us in fdget
 		 * and the syscall returns EBADF. */
 		(void)recv(ra->fd, buf, sizeof(buf), 0);
+		ra->local_syscalls = 1;
 		break;
 
 	case RACER_IOCTL_FIONREAD:
 		(void)ioctl(ra->fd, FIONREAD, &val);
+		ra->local_syscalls = 1;
 		break;
 
 	case RACER_OP_NR:
@@ -381,14 +391,19 @@ static void close_racer_iter_close_phase(struct close_racer_iter_ctx *ctx,
  * by construction, so plain pthread_join returns within
  * RACER_TIMEOUT_MS regardless of whether close() fired before, during,
  * or after the lookup -- no need for pthread_cancel / pthread_kill
- * here. */
-static void close_racer_iter_join_racers(struct close_racer_iter_ctx *ctx)
+ * here.  Folds each racer's local_syscalls tally into *direct_calls
+ * after join so the per-worker syscall budget is attributed to the
+ * parent op in a single atomic add at invocation exit. */
+static void close_racer_iter_join_racers(struct close_racer_iter_ctx *ctx,
+					 unsigned long *direct_calls)
 {
 	unsigned int j;
 
 	for (j = 0; j < ctx->k; j++) {
-		if (ctx->spawned[j])
+		if (ctx->spawned[j]) {
 			(void)pthread_join(ctx->tid[j], NULL);
+			*direct_calls += (unsigned long)ctx->ra[j].local_syscalls;
+		}
 	}
 
 	__atomic_add_fetch(&shm->stats.close_racer.pairs,
@@ -419,14 +434,12 @@ bool close_racer(struct childdata *child)
 	unsigned int deferred_n = 0;
 	/* Local direct-syscall tally.  Bumped by make_fd_pair (1 per
 	 * pipe2/socketpair actually issued, 2 when pipe2 fails and we
-	 * fall through to socketpair) and by each close() in the
-	 * open-pairs spawn-fail path, the per-mode close phase, and the
-	 * deferred-close cleanup.  The racer thread's syscalls are
-	 * intentionally excluded -- it's a same-process pthread, so those
-	 * are counted on the persistent child itself outside this helper.
-	 * Published once via childop_direct_syscalls_add() at exit so the
-	 * hot path pays one atomic add per invocation instead of per-
-	 * syscall. */
+	 * fall through to socketpair), by each close() in the open-pairs
+	 * spawn-fail path and per-mode close phase, by the deferred-close
+	 * cleanup, and by each racer thread's local_syscalls count folded
+	 * in close_racer_iter_join_racers() after join.  Published once
+	 * via childop_direct_syscalls_add() at exit so the hot path pays
+	 * one atomic add per invocation instead of per-syscall. */
 	unsigned long direct_calls = 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -470,7 +483,7 @@ bool close_racer(struct childdata *child)
 		}
 		close_racer_iter_close_phase(&ctx, deferred_fds, &deferred_n,
 					     &direct_calls);
-		close_racer_iter_join_racers(&ctx);
+		close_racer_iter_join_racers(&ctx, &direct_calls);
 	}
 
 	close_racer_iter_cleanup_deferred(deferred_fds, deferred_n,

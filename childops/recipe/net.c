@@ -186,6 +186,7 @@ out:
  */
 struct tcp_racer_arg {
 	int listen_fd;
+	long local_syscalls;	/* poll+accept+close calls issued, folded at join */
 };
 
 static void *tcp_racer_thread(void *arg)
@@ -196,14 +197,19 @@ static void *tcp_racer_thread(void *arg)
 	struct pollfd pfd;
 	int conn;
 
+	ra->local_syscalls = 0;
 	pfd.fd = ra->listen_fd;
 	pfd.events = POLLIN;
 	pfd.revents = 0;
 	(void)poll(&pfd, 1, RECIPE_RACER_TIMEOUT_MS);
+	ra->local_syscalls++;	/* poll */
 
 	conn = accept(ra->listen_fd, (struct sockaddr *)&sin, &slen);
-	if (conn >= 0)
+	ra->local_syscalls++;	/* accept */
+	if (conn >= 0) {
 		close(conn);
+		ra->local_syscalls++;	/* close(conn) */
+	}
 	return NULL;
 }
 
@@ -245,16 +251,6 @@ static void *tcp_racer_thread(void *arg)
 
 bool recipe_net_tcp(bool *unsupported __unused__)
 {
-	{
-		struct childdata *tc = this_child();
-		const enum child_op_type op = tc ? tc->op_type :
-			NR_CHILD_OP_TYPES;
-		const bool valid_op = ((int) op >= 0 &&
-				       op < NR_CHILD_OP_TYPES);
-
-		if (valid_op)
-			childop_direct_syscalls_add(op, 1);
-	}
 	unsigned int cycles;
 	unsigned int i;
 	unsigned int spawn_fail_streak = 0;
@@ -317,6 +313,19 @@ bool recipe_net_tcp(bool *unsupported __unused__)
 		(void)close(s);
 
 		(void)pthread_join(tid, NULL);
+		/* Fold the racer's per-cycle poll+accept count now that
+		 * the thread is joined and ra.local_syscalls is stable. */
+		{
+			struct childdata *tc = this_child();
+			const enum child_op_type op = tc ? tc->op_type :
+				NR_CHILD_OP_TYPES;
+			const bool valid_op = ((int) op >= 0 &&
+					       op < NR_CHILD_OP_TYPES);
+
+			if (valid_op)
+				childop_direct_syscalls_add(op,
+					(unsigned long)ra.local_syscalls);
+		}
 
 		completed++;
 	}

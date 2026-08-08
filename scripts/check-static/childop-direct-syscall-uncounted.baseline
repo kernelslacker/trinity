@@ -50,9 +50,6 @@ UNCOUNTED:childops/net/veth-asymmetric-xdp.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-compat-sweep.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-pfkey.c
 UNCOUNTED:childops/net/xfrm/xfrm-churn-traffic.c
-THREAD_UNCOUNTED:childops/misc/close-racer.c#racer_thread
-THREAD_UNCOUNTED:childops/recipe/close-race.c#timerfd_xclose_racer_thread
-THREAD_UNCOUNTED:childops/recipe/net.c#tcp_racer_thread
 FORK_UNCOUNTED:childops/net/espintcp-coalesce-churn.c#noing_helper # fork-child body; syscalls via bump_direct wrapper but not visible to scanner
 FORK_UNCOUNTED:childops/recipe/supervisor.c#cgroup_kill_inner # open+write+close+prctl before _exit; parent accounts separately
 FORK_UNCOUNTED:childops/recipe/supervisor.c#seccomp_listener_inner # trinity_raw_syscall(__NR_uname) before _exit; parent accounts separately
