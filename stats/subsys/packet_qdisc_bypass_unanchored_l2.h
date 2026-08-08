@@ -30,7 +30,9 @@ struct packet_qdisc_bypass_unanchored_l2_stats {
 	unsigned long lane_a_errors;	/* AF_PACKET sendto() returned < 0 */
 	unsigned long lane_b_errors;	/* AF_XDP sendto() kick returned non-EAGAIN < 0 */
 	unsigned long lane_b_eagain;	/* AF_XDP sendto() returned -EAGAIN (CQ full) */
-	unsigned long macsec_sa_installed; /* TX SA installed via genl before driving lanes */
+	unsigned long macsec_sa_installed;      /* TX SA installed via genl before driving lanes */
+	unsigned long macsec_sa_install_eperm;  /* TX SA add refused: GENL_ADMIN_PERM / init_user_ns */
+	unsigned long macsec_sa_install_failed; /* TX SA add failed: other non-zero error */
 	unsigned long completed_ok;	/* iter reached clean teardown */
 };
 

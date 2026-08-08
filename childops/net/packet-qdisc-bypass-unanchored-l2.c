@@ -34,9 +34,20 @@
  *     skb->head + 65535.
  *
  *   Oracle: KASAN slab-out-of-bounds read in macsec_encrypt / eth_hdr.
+ *   NOTE: the macsec-encrypt path is structurally unreachable from a child
+ *   userns.  MACSEC_CMD_ADD_TXSA is gated on GENL_ADMIN_PERM, which calls
+ *   netlink_capable(skb, CAP_NET_ADMIN) hardcoded to &init_user_ns
+ *   (af_netlink.c).  The child holds CAP_NET_ADMIN only in its own userns;
+ *   GENL_UNS_ADMIN_PERM (the userns-aware variant) is not used by the macsec
+ *   family.  Every SA-install attempt returns -EPERM; macsec_encrypt() then
+ *   sets secy->operational=false on the first frame, and skb_eth_hdr() is
+ *   never reached.  This op exercises the packet-qdisc-bypass transmit path
+ *   (Lane A + Lane B) only.  macsec_sa_install_eperm counts the structural
+ *   failure so it is visible rather than silent.
  *
  *   Stats: lane_a_sends / lane_b_sends / lane_a_errors / lane_b_errors
- *   show coverage even on non-KASAN builds.
+ *   macsec_sa_install_eperm / macsec_sa_install_failed show coverage even
+ *   on non-KASAN builds.
  *
  * Latches:
  *   ns_unsupported_bypass_l2 — set on EPERM from userns_run_in_ns() or
@@ -317,8 +328,17 @@ static int bypass_create_macsec(struct nl_ctx *ctx,
  * Returns 0 on success.  -ENOENT means the "macsec" genl family is
  * not registered (CONFIG_MACSEC=n or module not loaded) — caller
  * should treat this the same as EOPNOTSUPP from bypass_create_macsec.
- * Other errors are counted but non-fatal (lane A/B will still send;
- * frames will be dropped at the SA gate).
+ * Failures are counted: -EPERM increments macsec_sa_install_eperm;
+ * any other non-zero error increments macsec_sa_install_failed.  Both
+ * are non-fatal — lane A/B will still send; frames will be dropped at
+ * the SA gate.
+ *
+ * Note: MACSEC_CMD_ADD_TXSA is gated on GENL_ADMIN_PERM, which calls
+ * netlink_capable(skb, CAP_NET_ADMIN) hardcoded to &init_user_ns
+ * (af_netlink.c).  A child userns holds CAP_NET_ADMIN only for its own
+ * namespace; GENL_UNS_ADMIN_PERM (the userns-aware variant) is not
+ * used by the macsec genl family.  This function therefore always
+ * returns -EPERM when called from userns_run_in_ns().
  */
 static int bypass_install_macsec_txsa(unsigned int mst_ifindex)
 {
@@ -1066,13 +1086,20 @@ static int iter_one_in_ns(void *arg)
 	nl.fd = -1;
 
 	/*
-	 * Install a TX SA via the macsec genl family so that
-	 * macsec_encrypt() can proceed past the SA-lookup gate.
-	 * Without this, every frame is dropped at:
-	 *   tx_sa = macsec_txsa_get(tx_sc->sa[tx_sc->encoding_sa]);
-	 *   if (!tx_sa) { secy->operational = false; return ERR_PTR(-EINVAL); }
-	 * and the skb_eth_hdr() OOB-read target 29 lines below is
-	 * structurally unreachable.
+	 * Attempt TX SA install via the macsec genl family.
+	 *
+	 * MACSEC_CMD_ADD_TXSA is gated on GENL_ADMIN_PERM, which calls
+	 * netlink_capable(skb, CAP_NET_ADMIN) hardcoded to &init_user_ns.
+	 * This process holds CAP_NET_ADMIN only in its own child userns, not
+	 * in init_user_ns.  GENL_UNS_ADMIN_PERM (the userns-aware variant)
+	 * is not used by the macsec genl family, so there is no capability
+	 * the child can acquire to satisfy the check.
+	 *
+	 * The call therefore always returns -EPERM.  Without a TX SA,
+	 * macsec_encrypt() sets secy->operational=false at the SA-lookup
+	 * gate and the skb_eth_hdr() OOB-read target is structurally
+	 * unreachable.  Count the failure explicitly so it is visible in
+	 * stats rather than silently discarded.
 	 */
 	{
 		int sa_rc = bypass_install_macsec_txsa(mst_ifx);
@@ -1080,6 +1107,14 @@ static int iter_one_in_ns(void *arg)
 		if (sa_rc == 0)
 			__atomic_add_fetch(
 				&shm->stats.packet_qdisc_bypass_unanchored_l2.macsec_sa_installed,
+				1, __ATOMIC_RELAXED);
+		else if (sa_rc == -EPERM)
+			__atomic_add_fetch(
+				&shm->stats.packet_qdisc_bypass_unanchored_l2.macsec_sa_install_eperm,
+				1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(
+				&shm->stats.packet_qdisc_bypass_unanchored_l2.macsec_sa_install_failed,
 				1, __ATOMIC_RELAXED);
 	}
 
