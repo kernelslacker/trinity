@@ -26,7 +26,7 @@
 # then review the resulting diffs and commit them alongside the code change.
 #
 # Scope fence (already landed -- do NOT redo):
-#   db78e919baed  periodic-JSONL checked-write/ferror latch
+#   fa70568f8e3e  periodic-JSONL checked-write/ferror latch
 #   1f703a8efc43  terminal record + shutdown-total cross-check
 #   7d153f5c7f72  monotonic-counter fix
 # This fixture exercises those paths; it does not rebuild the mechanisms.
@@ -111,7 +111,7 @@ _run_trinity() {
 	      TRINITY_NO_DMESG=1 \
 	      TRINITY_NO_CGROUP=1 \
 	      "$ROOT/scripts/run-trinity.sh" \
-	      --dry-run -C 4 $extra_args --stats --stats-json --max-runtime=2 \
+	      --dry-run -C 4 $extra_args --stats --stats-json \
 	      >"$stdout_file" 2>"$stderr_file" )
 }
 
@@ -120,7 +120,7 @@ _run_trinity() {
 # ---------------------------------------------------------------------------
 
 echo "--- $NAME: spawning trinity (--dry-run -N 100) ---"
-_run_trinity "-N 100"
+_run_trinity "-N 100 --max-runtime=2"
 TRINITY_RC=$?
 
 if [ "$TRINITY_RC" -ne 0 ]; then
@@ -130,6 +130,9 @@ if [ "$TRINITY_RC" -ne 0 ]; then
 else
 	pass
 fi
+
+# Save the stats-JSON stdout before the window-record spawn wipes it.
+cp "$WORK/trinity.stdout" "$WORK/trinity.stdout.json"
 
 # ---------------------------------------------------------------------------
 # 2. Validate final stats JSON against the static baseline.
@@ -156,7 +159,7 @@ fi
 # the baseline placeholder used by the static extractor.
 # ---------------------------------------------------------------------------
 
-python3 - "$WORK/trinity.stdout" "$BASELINE_JSON" "$MODE" "$WORK/stats_json_check.result" <<'PYEOF'
+python3 - "$WORK/trinity.stdout.json" "$BASELINE_JSON" "$MODE" "$WORK/stats_json_check.result" <<'PYEOF'
 import sys
 import json
 import re
@@ -375,14 +378,39 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Validate the timeseries JSONL terminal record.
+# 1b. Second spawn: higher -N to reach the window-emit threshold.
+#
+# stats_timeseries_emit_window fires when (op_count - lastcount) > 10000
+# (main/stats.c).  The -N 100 run above produces only a terminal record;
+# no window records are written until op_count exceeds 10000.  This second
+# spawn uses -N 15000 so at least one window record lands in the JSONL,
+# letting section 3 validate the [window] baseline section.  The JSONL
+# files from the -N 100 run are wiped; the stats-JSON stdout was already
+# saved above.
+# ---------------------------------------------------------------------------
+
+echo "--- $NAME: spawning trinity (--dry-run -N 15000, window-record run) ---"
+_run_trinity "-N 15000 --max-runtime=30"
+TRINITY_RC_WINDOW=$?
+
+if [ "$TRINITY_RC_WINDOW" -ne 0 ]; then
+	fail "trinity (window-record run) exited $TRINITY_RC_WINDOW"
+	tail -5 "$WORK/trinity.stderr" >&2
+else
+	pass
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Validate the timeseries JSONL: terminal record and window record.
 #
 # Every run with --stats emits a terminal record on close:
 #   {"type":"terminal","total_ops":N,"last_window_op_count":M,"cross_check_ok":true}
-# Pin these field names in the periodic JSONL baseline.
+# The -N 15000 run above also produces at least one window record (the
+# per-10001-op periodic snapshot).  Both record types are pinned in the
+# periodic JSONL baseline.
 # ---------------------------------------------------------------------------
 
-# Collect the timeseries JSONL produced by the -N 100 run above.
+# Collect the timeseries JSONL produced by the -N 15000 window-record run.
 TSERIES_FILE="$(ls "$WORK"/stats-timeseries-*.jsonl 2>/dev/null | head -1)"
 
 if [ -z "$TSERIES_FILE" ]; then
@@ -498,6 +526,11 @@ if terminal_keys:
         check_errors.append("terminal record: missing fields: " +
                              ", ".join(sorted(missing)))
 
+if bl_window and not window_keys:
+    check_errors.append(
+        "window section: baseline has %d fields but the -N 15000 run "
+        "produced no window records (threshold not reached?)" % len(bl_window))
+
 if window_keys and bl_window:
     rt_window = set(window_keys)
     extra = rt_window - bl_window
@@ -539,11 +572,14 @@ fi
 # ---------------------------------------------------------------------------
 # 4. Validate the rotation-event JSONL shape.
 #
-# Rotation events are only emitted by a CAS-winning child on strategy rotation.
-# A quick dry-run rarely triggers a rotation (requires KCOV and many ops).
-# The baseline is seeded from the source (stats/rotation_event.c) rather than
-# from a live run.  If the current run produced any rotation records, we
-# validate them; otherwise we confirm the file opened cleanly (size=0 is fine).
+# Rotation events are emitted by the CAS-winning child in maybe_rotate_strategy()
+# (random_syscall/strategy-rotate.c) after STRATEGY_WINDOW = 131072 ops.
+# That threshold is unreachable under the fixture's time and -N cap, so no live
+# rotation records are produced.  The baseline is seeded from the source snprintf
+# format string in stats_rotation_event_emit() so a field rename in the source
+# still trips this gate.  If a future run does produce live records (e.g. the
+# cap is raised), they are validated against the baseline.  When no live records
+# are present the fixture emits SKIP -- never a silent PASS.
 # ---------------------------------------------------------------------------
 
 ROTATION_FILE="$(ls "$WORK"/rotation-events-*.jsonl 2>/dev/null | head -1)"
@@ -686,12 +722,20 @@ with open(result_path, "w") as f:
     if check_errors:
         f.write("error\n")
         f.write("\n".join(check_errors) + "\n")
+    elif live_fields is None:
+        # No live records: strategy rotation requires STRATEGY_WINDOW (131072)
+        # ops -- unreachable under the fixture cap.  Report SKIP so the caller
+        # can distinguish "validated against live output" from "not exercised".
+        f.write("skip\n")
+        f.write(f"source_fields={len(src_fields)} "
+                f"baseline_fields={len(bl_fields)} "
+                f"live_records=none(not-exercised)\n")
     else:
-        n_live = len(live_fields) if live_fields is not None else 0
+        n_live = len(live_fields)
         f.write("ok\n")
         f.write(f"source_fields={len(src_fields)} "
                 f"baseline_fields={len(bl_fields)} "
-                f"live_records={'yes('+str(n_live)+'fields)' if live_fields is not None else 'none(ok)'}\n")
+                f"live_records=yes({n_live}fields)\n")
 
 sys.exit(1 if check_errors else 0)
 PYEOF
@@ -700,9 +744,13 @@ ROTATION_RESULT="$(cat "$WORK/rotation_check.result" 2>/dev/null | head -1)"
 
 if [ "$MODE" = "regen" ]; then
 	echo "REGEN: $NAME: rotation-event JSONL baseline written"
-elif [ "$ROTATION_PY_RC" -ne 0 ] || [ "$ROTATION_RESULT" != "ok" ]; then
+elif [ "$ROTATION_PY_RC" -ne 0 ] || [ "$ROTATION_RESULT" = "error" ]; then
 	fail "rotation-event JSONL shape check failed"
 	cat "$WORK/rotation_check.result" >&2
+elif [ "$ROTATION_RESULT" = "skip" ]; then
+	DETAIL="$(grep -v '^skip' "$WORK/rotation_check.result" | head -1)"
+	echo "SKIP: $NAME: rotation-event JSONL: no live records (STRATEGY_WINDOW=131072 unreachable; source-vs-baseline validated)"
+	# SKIP: not counted as PASS or FAIL in the summary
 else
 	DETAIL="$(grep -v '^ok' "$WORK/rotation_check.result" | head -1)"
 	echo "PASS: $NAME: rotation-event JSONL shape: $DETAIL"
@@ -726,7 +774,7 @@ fi
 #       Expected exit:   0 (run completes normally without the JSONL sinks)
 #
 # These exercises confirm that the open-failure error-transaction paths in
-# stats/log.c and stats/rotation_event.c are live (db78e919baed).
+# stats/log.c and stats/rotation_event.c are live (fa70568f8e3e).
 # ---------------------------------------------------------------------------
 
 echo "--- $NAME: sink-failure: bad --stats-log-file path ---"

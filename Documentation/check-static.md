@@ -107,12 +107,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
   by `stats-json-schema.sh` — a source-reconstruction error and a
   binary-emission error produce different failures; (2) periodic
   JSONL terminal-record field names versus
-  `stats-periodic-jsonl-schema.baseline`; (3) rotation-event JSONL
-  field names against the source-derived
-  `stats-rotation-jsonl-schema.baseline`.  Also exercises sink-failure
-  end-to-end: open failures for `--stats-log-file` and the
-  auto-named timeseries/rotation files are verified to surface in
-  stderr with exit 0.
+  `stats-periodic-jsonl-schema.baseline` (the -N 15000 run crosses
+  the >10000-op window-emit threshold so both terminal and window
+  records are validated); (3) rotation-event JSONL field names against
+  the source-derived `stats-rotation-jsonl-schema.baseline`
+  (source-vs-baseline agreement only — live rotation events require
+  STRATEGY_WINDOW = 131072 ops, which is unreachable under the fixture
+  cap; a run that produces no records emits SKIP, never a silent PASS).
+  Also exercises sink-failure end-to-end: open failures for
+  `--stats-log-file` and the auto-named timeseries/rotation files are
+  verified to surface in stderr with exit 0.
 - `check-static-doc-parity`: every script in `scripts/check-static/`
   must have a matching row in this file, and every row here must
   correspond to a real script.  A new check landing with no doc row
