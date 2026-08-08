@@ -206,6 +206,18 @@ update this section to match `ls scripts/check-static/*.sh`.)
   masquerading as kernel signal.  Anonymous / primitive allocations
   are skipped; genuine field-by-field-writes exceptions go on the
   `IGNORE` list with a justification.
+- `json-separator-adjacency`: detect missing `putchar(',')` separators
+  between adjacent `stat_category_emit_json()` calls within a function
+  in `stats/json/*.c`.  A missing comma produces a malformed-JSON
+  document that silently passes the static schema gate (which
+  reconstructs from source without parsing binary output) and every
+  runtime gate that does not exercise the affected path.  The detector
+  tracks the last `stat_category_emit_json()` call per function, resets
+  on any comma-separator emit (`putchar(',')` / `fputc(',` /
+  `printf(",`), and flags a second emit reached with no separator
+  between.  Regression fixture: the pre-fix pre-image of
+  `dump_stats_json_netfilter_and_xfrm()` (331e499fdb5c^) is replayed
+  inline as a known-bad input and must produce exactly one hit.
 - `kcov-canonicalise-pcs`: (i) `kcov_canon_pc()` in `kcov/collect.c`
   must subtract `kcov_kaslr_base`, (ii) `pc_canon_to_edge()` must
   NOT re-invoke `kcov_canon_pc()` (a canon-in helper that
