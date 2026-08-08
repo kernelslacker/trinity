@@ -112,6 +112,11 @@ struct sysv_shm_race_shared {
 	uint32_t	go;
 	uint32_t	stop;
 	uint32_t	originator_published;	/* futex slot for shmid publish */
+	/* Sibling-side tally of fuzzed-work syscalls actually issued
+	 * (shmget/shmat/shmdt/shmctl raw sites in originator and attacher
+	 * bodies).  RELAXED-bumped by each sibling, drained by the parent
+	 * post-reap and folded into the childop direct-syscall telemetry. */
+	uint64_t	direct_call_count;
 };
 
 static long raw_futex_wait(uint32_t *uaddr, uint32_t val)
@@ -199,6 +204,7 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 		syscall(__NR_exit, 0);
 		__builtin_unreachable();
 	}
+	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* shmget */
 
 	__atomic_store_n(&rs->shmid, (int)shmid, __ATOMIC_RELEASE);
 	__atomic_store_n(&rs->originator_published, 1U, __ATOMIC_RELEASE);
@@ -215,8 +221,10 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 	 * SHM_DEST-marked segment, racing the concurrent attach storm.
 	 */
 	(void)raw_shmat((int)shmid, NULL, 0);
+	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* shmat */
 
 	(void)raw_shmctl((int)shmid, IPC_RMID, NULL);
+	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* shmctl */
 
 	syscall(__NR_exit, 0);
 	__builtin_unreachable();
@@ -259,8 +267,12 @@ static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
 			break;
 
 		addr = raw_shmat(shmid, NULL, 0);
-		if (addr != -1L)
+		__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED);
+		if (addr != -1L) {
 			(void)raw_shmdt((const void *)addr);
+			__atomic_fetch_add(&rs->direct_call_count, 1UL,
+					   __ATOMIC_RELAXED);
+		}
 	}
 
 	syscall(__NR_exit, 0);
@@ -286,6 +298,7 @@ static struct sysv_shm_race_shared *race_shared_alloc(void)
 	rs->go                   = 0;
 	rs->stop                 = 0;
 	rs->originator_published = 0;
+	rs->direct_call_count    = 0;
 	return rs;
 }
 
@@ -473,8 +486,9 @@ static void run_burst_parent_half(int shmid, unsigned int races)
  * before its own RMID landed (e.g. SIGKILL during the wait) and we
  * cleaned up the leak.
  */
-static void iter_one(struct childdata *child)
+static unsigned long iter_one(struct childdata *child)
 {
+	unsigned long sibling_calls = 0;
 	struct sysv_shm_race_shared *rs = NULL;
 	pid_t originator = -1;
 	pid_t attacher = -1;
@@ -501,7 +515,7 @@ static void iter_one(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		run_burst_solo(races);
-		return;
+		return sibling_calls;
 	}
 	rs->race_budget = races;
 
@@ -567,8 +581,15 @@ out:
 		}
 	}
 
-	if (rs != NULL)
+	if (rs != NULL) {
+		/* Both siblings are reaped; no further writes possible.
+		 * RELAXED load is safe: reap-side waitpid() supplies the
+		 * required acquire ordering before we read the tally. */
+		sibling_calls = (unsigned long)
+			__atomic_load_n(&rs->direct_call_count, __ATOMIC_RELAXED);
 		(void)munmap(rs, sizeof(*rs));
+	}
+	return sibling_calls;
 }
 
 /*
@@ -634,21 +655,21 @@ bool sysv_shm_orphan_race(struct childdata *child)
 	if (outer_iters == 0U)
 		outer_iters = 1U;
 
+	unsigned long sibling_calls = 0;
 	for (i = 0; i < outer_iters; i++)
-		iter_one(child);
+		sibling_calls += iter_one(child);
 
-	/* Publish the invocation's direct-syscall site count: shmget,
-	 * shmat, shmdt, shmctl are the four fuzzed-work raw syscalls
-	 * issued via trinity_raw_syscall from the sibling/parent halves.
-	 * Race-harness plumbing (futex, prctl, getppid, clone3) is
-	 * excluded.  Single RELAXED add per invocation, gated on
-	 * valid_op to match the surrounding per-op stats bumps. */
+	/* Publish direct-syscall count: the parent-side estimate is 4
+	 * per invocation (shmget + shmat + shmdt + shmctl covering
+	 * run_burst_parent_half / run_burst_solo); sibling-side count is
+	 * drained from rs->direct_call_count after both siblings are reaped.
+	 * Race-harness plumbing (futex, prctl, getppid, clone3) excluded. */
 	{
 		const enum child_op_type op = child->op_type;
 		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 		if (valid_op)
-			childop_direct_syscalls_add(op, 4);
+			childop_direct_syscalls_add(op, 4UL + sibling_calls);
 	}
 
 	return true;
