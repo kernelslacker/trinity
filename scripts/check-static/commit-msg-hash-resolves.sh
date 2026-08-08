@@ -47,7 +47,14 @@ ROOT="${REPO_ROOT:-$(pwd)}"
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
-RANGE="${1:-HEAD~200..HEAD}"
+# Accept either a single git-log range or two <since> <until> args.
+if [ $# -ge 2 ]; then
+	RANGE="${1}..${2}"
+elif [ $# -eq 1 ]; then
+	RANGE="$1"
+else
+	RANGE="HEAD~200..HEAD"
+fi
 
 fail() {
 	echo "FAIL: $NAME: $*"
@@ -76,20 +83,23 @@ if [ -z "$hex_tokens" ]; then
 fi
 
 checked=0
+skipped=0
 unreachable=0
 unreachable_detail=""
 
 while IFS= read -r tok; do
 	[ -n "$tok" ] || continue
 
+	# Count every token evaluated, regardless of what follows.
+	checked=$((checked + 1))
+
 	# Step 1: does the object exist at all?
 	if ! git cat-file -t "$tok" >/dev/null 2>&1; then
 		# Not an object in this repo (stale external reference,
-		# Linux kernel hash, etc.).  Not our problem; skip.
+		# Linux kernel hash, or pruned by GC).  Count as skipped.
+		skipped=$((skipped + 1))
 		continue
 	fi
-
-	checked=$((checked + 1))
 
 	# Step 2: is it reachable from HEAD?
 	if ! git merge-base --is-ancestor "$tok" HEAD 2>/dev/null; then
@@ -118,4 +128,4 @@ if [ "$unreachable" -gt 0 ]; then
 	fail "$unreachable unreachable hash citation(s) in range $RANGE ($checked object-hashes checked)"
 fi
 
-pass "range $RANGE: $checked object-hashes checked, 0 unreachable"
+pass "range $RANGE: $checked hashes checked, $skipped skipped-not-object, 0 unreachable"
