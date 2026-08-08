@@ -180,6 +180,20 @@ update this section to match `ls scripts/check-static/*.sh`.)
   build.  Companion to `kcov-canonicalise-pcs` on the PC side;
   `cmp_hints_flush_pending()` is the one whitelisted transitive
   caller because its inputs are already canonical.
+- `commit-msg-hash-resolves`: every hex-hash citation (12–40 hex
+  chars, not pure decimal) appearing in commit messages within the
+  scanned range must either (a) not be a git object at all (stale
+  external reference, Linux kernel hash -- benign, skipped) or (b)
+  exist as a git object AND be reachable from HEAD via
+  `git merge-base --is-ancestor`.  A hash that passes `git cat-file
+  -t` but fails the reachability check is a dangling cherry-pick
+  object -- the cherry-pick flow rewrites SHAs, so the citation
+  points at the wrong commit context without being obviously broken.
+  The gate scans a configurable log range (default: last 200
+  commits); it does not scan all of history, where thousands of
+  external kernel hashes would all fail the object-existence check.
+  Invoke with a range argument to widen or narrow the scope:
+  `commit-msg-hash-resolves.sh HEAD~500..HEAD`.
 - `doc-pointer-exists`: every flat `Documentation/<name>.md` path named
   in a code comment must resolve to a real file, so the one-line
   pointers that replaced carved-out design essays never dangle.

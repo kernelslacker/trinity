@@ -26,7 +26,7 @@
 # then review the resulting diffs and commit them alongside the code change.
 #
 # Scope fence (already landed -- do NOT redo):
-#   fa70568f8e3e  periodic-JSONL checked-write/ferror latch
+#   726c4417688b  periodic-JSONL checked-write/ferror latch
 #   1f703a8efc43  terminal record + shutdown-total cross-check
 #   7d153f5c7f72  monotonic-counter fix
 # This fixture exercises those paths; it does not rebuild the mechanisms.
@@ -774,7 +774,7 @@ fi
 #       Expected exit:   0 (run completes normally without the JSONL sinks)
 #
 # These exercises confirm that the open-failure error-transaction paths in
-# stats/log.c and stats/rotation_event.c are live (fa70568f8e3e).
+# stats/log.c and stats/rotation_event.c are live (726c4417688b).
 # ---------------------------------------------------------------------------
 
 echo "--- $NAME: sink-failure: bad --stats-log-file path ---"
