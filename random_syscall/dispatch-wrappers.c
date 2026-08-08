@@ -71,18 +71,20 @@ bool random_syscall_step(struct childdata *child,
 	ok = dispatch_step(child, entry, found_new, new_cmp_out,
 			   new_transition_out);
 
-	/* dispatch_step returning here normally means do_syscall() ran
-	 * (regardless of the syscall's own success/failure); count as one
-	 * completed random-syscall dispatch.  A pre-dispatch bail
-	 * (set_syscall_nr FAIL above) leaves this counter untouched, so
-	 * the attempts vs completions delta is the pre-dispatch reject
-	 * rate.  Gate on !rec->validator_rejected: a seal failure inside
-	 * do_syscall() sets that flag and returns early before the kernel
-	 * is entered -- handle_syscall_ret() still ran the arg drain, but
-	 * the kernel was never reached.  Counting it as a completion would
-	 * inflate the throughput metric and mask the failure signal that
-	 * seal_fail_ops already captures. */
-	if (!rec->validator_rejected)
+	/* dispatch_step returning here normally means do_syscall() entered
+	 * the kernel (regardless of the syscall's own success/failure); count
+	 * as one completed random-syscall dispatch.  The attempts vs
+	 * completions delta decomposes into four terms: (1) set_syscall_nr
+	 * picker rejects (FAIL return above, counter never reached);
+	 * (2) seal-fail / validate_arg_coupling rejects inside do_syscall()
+	 * (set rec->validator_rejected=true and return before kernel entry);
+	 * (3) --dry-run dispatches (return before kernel entry with synthetic
+	 * -1/ENOSYS, kernel_entered stays false); (4) any other pre-kernel
+	 * exit paths added in the future.  Gate on rec->kernel_entered
+	 * (set by do_syscall() just before syscall() is invoked) rather than
+	 * !rec->validator_rejected so that all pre-kernel exit paths are
+	 * excluded by a single authoritative flag whose name matches its role. */
+	if (rec->kernel_entered)
 		__atomic_add_fetch(
 			&shm->stats.syscall_dispatch.random_syscall_completions,
 			1, __ATOMIC_RELAXED);

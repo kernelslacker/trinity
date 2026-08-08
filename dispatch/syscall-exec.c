@@ -413,6 +413,12 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	if (rec->nr < MAX_NR_SYSCALL)
 		noisy_sampled = syscall_noisy_sample_begin(&noisy_before);
 
+	/* Mark kernel entry committed.  Both early-return paths above
+	 * (validate_arg_coupling reject and --dry-run) return before
+	 * this point, so kernel_entered is false on those paths and
+	 * true only when syscall() is about to be invoked. */
+	rec->kernel_entered = true;
+
 	if (rec->do32bit == false) {
 		if (kc != NULL && kc->mode == KCOV_MODE_CMP) {
 			kcov_enable_cmp(kc);

@@ -183,6 +183,7 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * total_calls / per_syscall_calls[nr] bumps that would otherwise
 	 * poison kcov_syscall_cold_skip_pct() for strict-validator syscalls. */
 	rec->validator_rejected = false;
+	rec->kernel_entered = false;
 
 	output_syscall_prefix(rec, entry);
 
@@ -342,13 +343,17 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	if (child->kcov.mode == KCOV_MODE_PC) {
 		rescue_cold_skip_pct_before =
 			kcov_syscall_cold_skip_pct(rec->nr);
-		/* Pre-validation reject in do_syscall() -- the kernel was never
-		 * entered, so there is no coverage to collect and bumping
-		 * total_calls / per_syscall_calls[nr] inside kcov_collect()
-		 * would poison kcov_syscall_cold_skip_pct() on syscalls whose
-		 * validators are strict.  last_edge_at[] only moves on the
-		 * found_new branch and stays correctly frozen here. */
-		if (rec->validator_rejected)
+		/* Kernel was never entered (pre-validation reject or --dry-run
+		 * skip): kcov_enable never ran, so there is no coverage to
+		 * collect.  Bumping total_calls / per_syscall_calls[nr] inside
+		 * kcov_collect() would poison kcov_syscall_cold_skip_pct() on
+		 * syscalls whose validators are strict.  last_edge_at[] only
+		 * moves on the found_new branch and stays correctly frozen here.
+		 * Use kernel_entered (set by do_syscall() just before the
+		 * syscall() invocation) rather than validator_rejected so that
+		 * dry-run dispatches are also suppressed -- both paths skip
+		 * kcov_enable and produce no coverage. */
+		if (!rec->kernel_entered)
 			new_edges = false;
 		else
 			/* Pass &pcres (not NULL) so the per-strategy

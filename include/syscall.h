@@ -109,6 +109,17 @@ struct syscallrecord {
 	 * dispatch_step() alongside rec->entry.
 	 */
 	bool validator_rejected;
+	/*
+	 * Set true by do_syscall() immediately before kcov_enable and the
+	 * actual syscall() invocation.  Remains false on the two pre-kernel
+	 * exit paths: the validate_arg_coupling() reject (validator_rejected)
+	 * and the --dry-run skip.  Read by dispatch_step() to gate both
+	 * kcov_collect() (no coverage was recorded if the kernel was never
+	 * entered) and the random_syscall_completions counter in
+	 * random_syscall_step() (a dry-run dispatch is not a completion).
+	 * Cleared per-call at the top of dispatch_step().
+	 */
+	bool kernel_entered;
 	enum syscallstate state;
 	char prebuffer[PREBUFFER_LEN];
 	char postbuffer[POSTBUFFER_LEN];
