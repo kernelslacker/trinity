@@ -450,3 +450,35 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `perf_event_attr.bp_addr` on the BREAKPOINT arm) is invisible to
   the scrub and can alias a shared sibling buffer -- the exact
   heap-corruption class the scrub exists to close.
+
+## Tools
+
+These scripts live under `scripts/` (not `scripts/check-static/`) and are
+informational aids, not build gates.  They exit 0 always and produce no
+PASS/FAIL lines.
+
+- `scripts/hash-subject-resolver.sh`: given one or more files, extract every
+  12–40 char lowercase hex token and attempt to resolve each to a reachable
+  commit twin.  Reports FOUND, DANGLING (with/without twin), and
+  NOT-AN-OBJECT (with/without twin) categories plus a summary count.  Useful
+  after a rebase or cherry-pick wave to locate stale citations before filing
+  them as queue fixes.  Run it read-only over any document; it never writes
+  to its inputs.
+
+## Hash citation convention
+
+Every hash cited in a commit message, queue row, or review document **must**
+be accompanied by its commit subject in the form:
+
+    abc123def456 ("subsystem: brief subject line")
+
+The subject line survives a cherry-pick rewrite; the bare hash does not.
+When the cherry-pick wave rewrites ancestors, a reader holding only the hash
+has no way to know what the citation meant; a reader holding the subject can
+search for the live twin with `git log --oneline --grep "<subject>"` or
+`scripts/hash-subject-resolver.sh`.
+
+External hashes (Linux kernel commits, upstream projects) should be prefixed
+with `upstream:` so it is clear they are not expected to resolve locally:
+
+    upstream:abc123def456 ("mm: fix some page fault bug")
