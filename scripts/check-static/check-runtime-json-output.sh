@@ -26,9 +26,9 @@
 # then review the resulting diffs and commit them alongside the code change.
 #
 # Scope fence (already landed -- do NOT redo):
-#   726c4417688b  periodic-JSONL checked-write/ferror latch
-#   1f703a8efc43  terminal record + shutdown-total cross-check
-#   7d153f5c7f72  monotonic-counter fix
+#   fa70568f8e3e ("stats: latch ferror and disable timeseries sink on write failure")
+#   68677eaa3211 ("stats: emit terminal JSONL record at shutdown with total cross-check")
+#   52e845a6381f ("stats: terminal cross-check must read the monotonic total_op_count")
 # This fixture exercises those paths; it does not rebuild the mechanisms.
 
 set -u
