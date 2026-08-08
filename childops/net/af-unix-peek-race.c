@@ -165,10 +165,10 @@ struct af_unix_peek_race_shared {
 	uint32_t	done;		/* sibling sets 1 on exit */
 	/* Sibling-side tally of fuzzed-work recvfrom syscalls actually
 	 * issued (MSG_PEEK + plain-recv drain sites in the sibling loop).
-	 * RELAXED-bumped by the sibling per successful call attempt, drained
-	 * by the parent post-reap and folded into the childop's direct-
-	 * syscall telemetry via childop_direct_syscalls_add(). */
-	uint64_t	direct_calls;
+	 * RELAXED-bumped by the sibling per call attempt, drained by the
+	 * parent post-reap and folded into the childop direct-syscall
+	 * telemetry via childop_direct_syscalls_add(). */
+	uint64_t	direct_call_count;
 };
 
 static long raw_futex_wait(uint32_t *uaddr, uint32_t val)
@@ -248,7 +248,7 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 			    (long)sizeof(buf), (long)(MSG_PEEK | MSG_DONTWAIT),
 			    0L, 0L);
 		(void)r;
-		__atomic_add_fetch(&rs->direct_calls, 1U, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&rs->direct_call_count, 1U, __ATOMIC_RELAXED);
 
 		read_fd = __atomic_load_n(&rs->read_fd, __ATOMIC_ACQUIRE);
 		if (read_fd < 0)
@@ -258,7 +258,7 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 			    (long)sizeof(buf), (long)MSG_DONTWAIT,
 			    0L, 0L);
 		(void)r;
-		__atomic_add_fetch(&rs->direct_calls, 1U, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&rs->direct_call_count, 1U, __ATOMIC_RELAXED);
 	}
 
 	__atomic_store_n(&rs->done, 1U, __ATOMIC_RELEASE);
@@ -287,7 +287,7 @@ static struct af_unix_peek_race_shared *race_shared_alloc(void)
 	rs->go           = 0;
 	rs->stop         = 0;
 	rs->done         = 0;
-	rs->direct_calls = 0;
+	rs->direct_call_count = 0;
 	return rs;
 }
 
@@ -526,10 +526,10 @@ static unsigned long iter_one(struct childdata *child)
 out:
 	if (rs != NULL) {
 		/* Sibling has been reaped by reap_race_sibling() (or was
-		 * never spawned), so no further writes to rs->direct_calls
+		 * never spawned), so no further writes to rs->direct_call_count
 		 * can race this load.  RELAXED is sufficient: the reap-side
 		 * waitpid() supplies the required memory ordering. */
-		direct_calls = (unsigned long)__atomic_load_n(&rs->direct_calls,
+		direct_calls = (unsigned long)__atomic_load_n(&rs->direct_call_count,
 							      __ATOMIC_RELAXED);
 		(void)munmap(rs, sizeof(*rs));
 	}

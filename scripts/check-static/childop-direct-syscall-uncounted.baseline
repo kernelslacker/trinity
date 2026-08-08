@@ -59,7 +59,6 @@ FORK_UNCOUNTED:childops/recipe/supervisor.c#seccomp_listener_inner # trinity_raw
 # invisible to the previous _exit()-only predicate. All files are wired at
 # the op-body level; the fork-child raw-syscall budget is not yet propagated
 # back into the parent's direct_calls tally. Wiring is a separate concern.
-FORK_UNCOUNTED:childops/net/af-unix-peek-race.c#af_unix_peek_sibling_main # noreturn preceding line + syscall(__NR_exit,0); AF_UNIX peek-race sibling; parent tally wiring needed
 FORK_UNCOUNTED:childops/net/af-unix-scm-rights-gc.c#af_unix_sibling_main # motivating case for this commit: noreturn preceding line + syscall(__NR_exit,0); AF_UNIX gc-race sibling; parent tally wiring needed
 FORK_UNCOUNTED:childops/net/inet-listener-rehash-race.c#twseed_worker # static __attribute__((noreturn)) void (same line); _exit(); inet listener rehash tw-seed worker; parent tally wiring needed
 FORK_UNCOUNTED:childops/net/inet-listener-rehash-race.c#churn_worker # static __attribute__((noreturn)) void (same line); _exit(); inet listener rehash churn worker; parent tally wiring needed
