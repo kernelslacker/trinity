@@ -115,6 +115,7 @@ for path in sys.argv[1:]:
             last_emit = sym_short
             last_line = lineno
 
+print(f"funcs={funcs_checked}")
 sys.exit(0 if violations == 0 else 1)
 PYEOF
 }
@@ -162,31 +163,7 @@ trap 'rm -f "$FIXTURE_FILE" "$hits_tmp"' EXIT
 _scan "$ROOT"/stats/json/*.c > "$hits_tmp" 2>&1 || true
 
 violations="$(grep 'NO SEPARATOR' "$hits_tmp" 2>/dev/null | wc -l | tr -d ' ')"
-funcs_checked="$(python3 - "$ROOT"/stats/json/*.c <<'PYEOF'
-import sys, re
-count = 0
-for path in sys.argv[1:]:
-    with open(path) as f:
-        lines = f.readlines()
-    saw_sig = False
-    for line in lines:
-        if (line and line[0] not in (' ', '\t', '#', '}', '{')
-                and '(' in line
-                and not re.match(r'static\s+(const|struct)\b', line)
-                and not line.startswith('typedef')):
-            m = re.match(r'.*?([A-Za-z_][A-Za-z0-9_]*)\s*\(', line)
-            if m:
-                saw_sig = True
-            continue
-        if line.rstrip() == '{' and saw_sig:
-            count += 1
-            saw_sig = False
-            continue
-        if line.strip():
-            saw_sig = False
-print(count)
-PYEOF
-)"
+funcs_checked="$(grep '^funcs=' "$hits_tmp" | cut -d= -f2)"
 
 if [ "$violations" -gt 0 ]; then
 	{
