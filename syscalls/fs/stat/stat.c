@@ -745,4 +745,5 @@ struct syscallentry syscall_statx = {
 	.post = post_statx,
 	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };

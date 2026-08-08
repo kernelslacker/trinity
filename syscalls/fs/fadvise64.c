@@ -160,7 +160,7 @@ struct syscallentry syscall_arm_fadvise64_64 = {
 	.arg_params[1].list = ARGLIST(fadvise_flags),
 	.sanitise = sanitise_arm_fadvise64_64,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 };
 #endif
