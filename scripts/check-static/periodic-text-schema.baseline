@@ -190,6 +190,8 @@ fd_live_remove_scan_hist_32_63
 fd_live_remove_scan_hist_4_7
 fd_live_remove_scan_hist_8_15
 fd_live_remove_scan_hist_ge64
+fd_probe_calls
+fd_probe_ns_total
 frontier_barren_candidates
 frontier_barren_would_skip
 frontier_blend_new_equal

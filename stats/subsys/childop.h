@@ -327,6 +327,31 @@ struct childop_stats {
 	 * hits taken because the table was already full. */
 	unsigned long fd_leak_at_ceiling[NR_CHILD_OP_TYPES];
 
+	/* Untraced cost accounting for the per-alt-op fd-leak probe.
+	 * probe_lowest_free_fd() is called twice per alt-op dispatch
+	 * (before and after op_fn) to detect fd leaks: each call does
+	 * open("/dev/null", O_RDONLY|O_CLOEXEC) + close(), i.e. 2
+	 * syscalls.  These counters measure the real wall cost of those
+	 * probe calls without ptrace distortion, so a follow-on
+	 * optimization (sampling, batching, or removal) can be priced
+	 * against measured overhead rather than strace-inflated guesses.
+	 *
+	 * fd_probe_calls: fleet-total count of probe_lowest_free_fd()
+	 * calls made from the alt-op dispatch bracket in child.c.  Each
+	 * call (before-probe + after-probe) bumps by 1 independently, so
+	 * a fully-exercised alt-op dispatch contributes 2 per iteration
+	 * (after-probe is skipped when fd_probe_before < 0 or !valid_op).
+	 *
+	 * fd_probe_ns_total: cumulative CLOCK_MONOTONIC nanoseconds
+	 * spent inside all probe_lowest_free_fd() brackets (call entry
+	 * to call return).  Both open+close syscalls fall inside each
+	 * window.  ns-per-call is derivable as fd_probe_ns_total /
+	 * fd_probe_calls.  RELAXED add-fetch: cumulative diagnostic,
+	 * multi-producer (one writer per child), lost-update races
+	 * tolerated and bounded by per-tick child counts. */
+	unsigned long fd_probe_calls;
+	unsigned long fd_probe_ns_total;
+
 	/* SHADOW-ONLY per-childop stuck-child accounting.  Sister of the
 	 * syscall_wedge_* pair above but keyed by enum child_op_type
 	 * (childdata.op_type captured at latch time) instead of by syscall

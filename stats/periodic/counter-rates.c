@@ -491,6 +491,18 @@ static const struct {
 	  offsetof(struct stats_s, syscall_dispatch.childop_dispatches) },
 	{ "childop_iterations",
 	  offsetof(struct stats_s, syscall_dispatch.childop_iterations) },
+	/* Untraced fd-probe cost counters.  probe_lowest_free_fd() is
+	 * called before and after every alt-op dispatch (is_alt_op gate);
+	 * each call issues open("/dev/null", O_RDONLY|O_CLOEXEC) + close()
+	 * (2 syscalls).  These counters measure the wall cost of those
+	 * calls without ptrace distortion so a follow-on optimization can
+	 * be priced against real numbers.  ns-per-call is fd_probe_ns_total
+	 * delta / fd_probe_calls delta.  See stats/subsys/childop.h for
+	 * the bucket semantics. */
+	{ "fd_probe_calls",
+	  offsetof(struct stats_s, childop.fd_probe_calls) },
+	{ "fd_probe_ns_total",
+	  offsetof(struct stats_s, childop.fd_probe_ns_total) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, diag.pagecache_canary_corrupt_caught) },
 	{ "objpool_array_stale_caught",

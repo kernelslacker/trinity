@@ -729,8 +729,30 @@ void child_process(struct childdata *child, int childno)
 		 * IS accounted for at fd-exhaustion time -- see
 		 * probe_lowest_free_fd(). */
 		bool fd_probe_at_ceiling = false;
+		/* Timing temporaries for the fd-probe cost counters.
+		 * Re-used for both the before- and after-probe brackets;
+		 * declared here so the after-probe site below can
+		 * share them without a second declaration inside the
+		 * nested is_alt_op block. */
+		struct timespec fd_probe_t0, fd_probe_t1;
+		if (is_alt_op)
+			clock_gettime(CLOCK_MONOTONIC, &fd_probe_t0);
 		int fd_probe_before = is_alt_op ?
 			probe_lowest_free_fd(&fd_probe_at_ceiling) : -1;
+		if (is_alt_op) {
+			clock_gettime(CLOCK_MONOTONIC, &fd_probe_t1);
+			__atomic_add_fetch(
+				&shm->stats.childop.fd_probe_calls,
+				1UL, __ATOMIC_RELAXED);
+			__atomic_add_fetch(
+				&shm->stats.childop.fd_probe_ns_total,
+				(unsigned long)((fd_probe_t1.tv_sec
+						 - fd_probe_t0.tv_sec)
+					       * 1000000000UL
+					       + (unsigned long)(fd_probe_t1.tv_nsec
+								 - fd_probe_t0.tv_nsec)),
+				__ATOMIC_RELAXED);
+		}
 		clock_gettime(CLOCK_MONOTONIC, &split_t0);
 		child->in_childop = is_alt_op;
 
@@ -758,8 +780,21 @@ void child_process(struct childdata *child, int childno)
 		if (is_alt_op)
 			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_t1);
 		if (is_alt_op && fd_probe_before >= 0 && valid_op) {
+			clock_gettime(CLOCK_MONOTONIC, &fd_probe_t0);
 			int fd_probe_after =
 				probe_lowest_free_fd(&fd_probe_at_ceiling);
+			clock_gettime(CLOCK_MONOTONIC, &fd_probe_t1);
+			__atomic_add_fetch(
+				&shm->stats.childop.fd_probe_calls,
+				1UL, __ATOMIC_RELAXED);
+			__atomic_add_fetch(
+				&shm->stats.childop.fd_probe_ns_total,
+				(unsigned long)((fd_probe_t1.tv_sec
+						 - fd_probe_t0.tv_sec)
+					       * 1000000000UL
+					       + (unsigned long)(fd_probe_t1.tv_nsec
+								 - fd_probe_t0.tv_nsec)),
+				__ATOMIC_RELAXED);
 
 			if (fd_probe_after > fd_probe_before) {
 				/* At the RLIMIT_NOFILE ceiling the ceiling
