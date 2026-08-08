@@ -165,16 +165,21 @@ static __attribute__((noreturn)) void twseed_worker(uint16_t port)
 	struct sockaddr_in sin;
 	int listener;
 	unsigned int i;
+	unsigned long n = 0;
 
 	addr_v4(&sin, port);
 	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+	n++;
 	if (listener < 0)
 		_exit(0);
 	set_reuse(listener);
+	n += 2; /* two setsockopt calls in set_reuse() */
 	if (bind(listener, (struct sockaddr *)&sin, sizeof(sin)) < 0)
 		goto out;
+	n++;
 	if (listen(listener, 64) < 0)
 		goto out;
+	n++;
 	__atomic_add_fetch(&shm->stats.inet_listener_rehash_race.twseed_listener_ok,
 			   1, __ATOMIC_RELAXED);
 
@@ -183,24 +188,37 @@ static __attribute__((noreturn)) void twseed_worker(uint16_t port)
 		int c = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 		int a;
 
+		n++;
 		if (c < 0)
 			continue;
 		(void)setsockopt(c, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+		n++;
 		if (connect(c, (struct sockaddr *)&sin, sizeof(sin)) == 0 ||
 		    errno == EINPROGRESS)
 			__atomic_add_fetch(&shm->stats.inet_listener_rehash_race.twseed_ok,
 					   1, __ATOMIC_RELAXED);
+		n++; /* connect attempt */
 
 		/* Drain any pending accepts so the RST close on the client
 		 * side actually flushes an established sock into TIME_WAIT
 		 * instead of dropping the SYN.  Non-blocking, so EAGAIN is
 		 * expected on empty. */
-		while ((a = accept4(listener, NULL, NULL, SOCK_NONBLOCK)) >= 0)
+		while ((a = accept4(listener, NULL, NULL, SOCK_NONBLOCK)) >= 0) {
 			close(a);
+			n += 2; /* accept4 + close */
+		}
 		close(c);
+		n++;
 	}
 out:
 	close(listener);
+	n++;
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, n);
+	}
 	_exit(0);
 }
 
@@ -215,19 +233,23 @@ static __attribute__((noreturn)) void churn_worker(int family, uint16_t port)
 {
 	struct timespec t0;
 	unsigned long cycles = 0;
+	unsigned long n = 0;
 
 	clock_gettime(CLOCK_MONOTONIC, &t0);
 	while (!budget_elapsed_ns(&t0, IRR_WORKER_WALL_CAP_NS)) {
 		int s = socket(family, SOCK_STREAM | SOCK_CLOEXEC, 0);
 
+		n++;
 		if (s < 0)
 			break;
 		set_reuse(s);
+		n += 2; /* two setsockopt calls in set_reuse() */
 		if (family == AF_INET) {
 			struct sockaddr_in sin;
 			addr_v4(&sin, port);
 			if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
 				close(s);
+				n += 2; /* bind + close */
 				continue;
 			}
 		} else {
@@ -235,14 +257,18 @@ static __attribute__((noreturn)) void churn_worker(int family, uint16_t port)
 			addr_v6(&sin6, port);
 			if (bind(s, (struct sockaddr *)&sin6, sizeof(sin6)) < 0) {
 				close(s);
+				n += 2; /* bind + close */
 				continue;
 			}
 		}
+		n++; /* bind succeeded */
 		if (listen(s, 64) == 0)
 			cycles++;
+		n++; /* listen attempt */
 		/* close() -> inet_unhash().  The lhash2 removal window is
 		 * the RCU walker's dereference target. */
 		close(s);
+		n++;
 	}
 	if (family == AF_INET)
 		__atomic_add_fetch(&shm->stats.inet_listener_rehash_race.churn_v4_cycles,
@@ -250,6 +276,12 @@ static __attribute__((noreturn)) void churn_worker(int family, uint16_t port)
 	else
 		__atomic_add_fetch(&shm->stats.inet_listener_rehash_race.churn_v6_cycles,
 				   cycles, __ATOMIC_RELAXED);
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, n);
+	}
 	_exit(0);
 }
 
@@ -266,6 +298,7 @@ static __attribute__((noreturn)) void syn_worker(uint16_t port)
 	struct sockaddr_in6 sin6;
 	struct timespec t0;
 	unsigned long sent = 0;
+	unsigned long n = 0;
 
 	addr_v4(&sin, port);
 	addr_v6(&sin6, port);
@@ -277,9 +310,11 @@ static __attribute__((noreturn)) void syn_worker(uint16_t port)
 
 		c = socket(v6 ? AF_INET6 : AF_INET,
 			   SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+		n++;
 		if (c < 0)
 			continue;
 		(void)setsockopt(c, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+		n++;
 		if (v6) {
 			if (connect(c, (struct sockaddr *)&sin6, sizeof(sin6)) == 0 ||
 			    errno == EINPROGRESS)
@@ -289,10 +324,18 @@ static __attribute__((noreturn)) void syn_worker(uint16_t port)
 			    errno == EINPROGRESS)
 				sent++;
 		}
+		n++; /* connect attempt */
 		close(c);
+		n++;
 	}
 	__atomic_add_fetch(&shm->stats.inet_listener_rehash_race.syn_sent,
 			   sent, __ATOMIC_RELAXED);
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, n);
+	}
 	_exit(0);
 }
 
@@ -311,6 +354,7 @@ static __attribute__((noreturn)) void rehash_worker(uint16_t port)
 	struct sockaddr_in sin_bind, sin_peer;
 	struct timespec t0;
 	unsigned long cycles = 0;
+	unsigned long n = 0;
 
 	addr_v4(&sin_bind, port);
 	/* Scratch peer port: unlikely to be listened on; connect will fail
@@ -323,21 +367,32 @@ static __attribute__((noreturn)) void rehash_worker(uint16_t port)
 		int s = socket(AF_INET,
 			       SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 
+		n++;
 		if (s < 0)
 			break;
 		set_reuse(s);
+		n += 2; /* two setsockopt calls in set_reuse() */
+		n++; /* bind attempt */
 		if (bind(s, (struct sockaddr *)&sin_bind, sizeof(sin_bind)) == 0) {
 			/* Non-blocking connect on refused peer completes
 			 * synchronously with ECONNREFUSED; either way the
 			 * inet_hash_connect path runs. */
 			(void)connect(s, (struct sockaddr *)&sin_peer,
 				      sizeof(sin_peer));
+			n++; /* connect attempt */
 			cycles++;
 		}
 		close(s);
+		n++;
 	}
 	__atomic_add_fetch(&shm->stats.inet_listener_rehash_race.rehash_cycles,
 			   cycles, __ATOMIC_RELAXED);
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, n);
+	}
 	_exit(0);
 }
 
