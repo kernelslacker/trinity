@@ -59,7 +59,6 @@ FORK_UNCOUNTED:childops/recipe/supervisor.c#seccomp_listener_inner # trinity_raw
 # invisible to the previous _exit()-only predicate. All files are wired at
 # the op-body level; the fork-child raw-syscall budget is not yet propagated
 # back into the parent's direct_calls tally. Wiring is a separate concern.
-FORK_UNCOUNTED:childops/fs/statmount-idmap-overflow.c#carrier_child # static __attribute__((noreturn)) void (noreturn+static on same line); socket/setsockopt in carrier userns setup; parent tally wiring needed
 FORK_UNCOUNTED:childops/misc/sysv-shm-orphan-race.c#sysv_shm_originator_main # noreturn preceding line + syscall(__NR_exit,0); SysV shm orphan race loop; parent tally wiring needed
 FORK_UNCOUNTED:childops/misc/sysv-shm-orphan-race.c#sysv_shm_attacher_main # noreturn preceding line + syscall(__NR_exit,0); SysV shm attach race loop; parent tally wiring needed
 FORK_UNCOUNTED:childops/net/af-unix-peek-race.c#af_unix_peek_sibling_main # noreturn preceding line + syscall(__NR_exit,0); AF_UNIX peek-race sibling; parent tally wiring needed

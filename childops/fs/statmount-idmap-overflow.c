@@ -303,6 +303,18 @@ static __attribute__((noreturn)) void carrier_child(int ready_fd)
 	} while (w < 0 && errno == EINTR);
 	close(ready_fd);
 
+	/* Publish the three carrier-setup kernel entries (unshare +
+	 * write + close) so the direct-syscall telemetry correctly
+	 * accounts for them.  this_child() is inherited across fork();
+	 * the shm atomic is visible to the parent via MAP_SHARED. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op =
+			tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, 3UL);
+	}
+
 	/* Pause until SIGTERM.  pause() returns -1/EINTR on any
 	 * signal; an unexpected EINTR (SIGALRM bleed-through from
 	 * the trinity outer alarm) just loops back. */
