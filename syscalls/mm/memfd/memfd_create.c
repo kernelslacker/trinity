@@ -144,7 +144,7 @@ struct syscallentry syscall_memfd_create = {
 	.arg_params[1].list = ARGLIST(memfd_create_flags),
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_MEMFD,
-	/* Not REEXEC_SANITISE_OK: calls avoid_shared_buffer_inout() to relocate the uname pointer. */
+	.flags = REEXEC_SANITISE_OK,
 	.sanitise = sanitise_memfd_create,
 	.post = post_memfd_create,
 	.group = GROUP_VFS_IO,
