@@ -149,7 +149,7 @@ done
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
-printf '--- summary ---\n'
+printf '%s\n' '--- summary ---'
 printf 'total tokens:             %d\n' "$total"
 printf 'FOUND (reachable):        %d\n' "$found"
 printf 'DANGLING with twin:       %d\n' "$dangling_twin"
