@@ -52,7 +52,7 @@
 #include "bpf.h"
 #endif
 
-#include "child-api.h"
+#include "child-internal.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -237,11 +237,39 @@ static void capdrop_probe_net_admin(void)
 	 * SO_RCVBUFFORCE is the CAP_NET_ADMIN-gated sibling of SO_RCVBUF;
 	 * sock_setsockopt() rejects it at the top of the case branch when
 	 * the caller lacks CAP_NET_ADMIN in the net namespace.
+	 *
+	 * Expectation depends on whether the userns-admin lane is active:
+	 *
+	 *   Lane NOT active: socket is in init_user_ns netns, child holds no
+	 *     caps in init_user_ns -> SO_RCVBUFFORCE must FAIL (EPERM/EACCES).
+	 *     Success is the anomaly (original behaviour).
+	 *
+	 *   Lane active: socket is in the lane's netns whose user_ns is the
+	 *     child's own userns where it holds CAP_FULL_SET.  ns_capable
+	 *     resolves against that userns -> SO_RCVBUFFORCE must SUCCEED.
+	 *     Failure is the anomaly: it proves the lane entered but
+	 *     ns_capable is still denied.  Do NOT skip when the lane is
+	 *     active -- a successful probe here is the one reliable
+	 *     observable that confirms the lane is live.
 	 */
 	ret = setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &sz, sizeof(sz));
 	saved_errno = errno;
 	(void) close(fd);
 
+	if (child_userns_lane_is_active()) {
+		/* Lane active: expect SUCCESS; failure is the anomaly. */
+		if (ret != 0) {
+			output(0,
+			       "capdrop oracle anomaly: userns-admin lane active "
+			       "but setsockopt(SO_RCVBUFFORCE) failed (errno=%d) "
+			       "-- ns_capable denied in lane netns\n",
+			       saved_errno);
+			capdrop_bump_anomaly();
+		}
+		return;
+	}
+
+	/* Lane NOT active: expect FAIL; success is the anomaly. */
 	if (ret == 0) {
 		output(0,
 		       "capdrop oracle anomaly: setsockopt(SO_RCVBUFFORCE) "

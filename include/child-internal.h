@@ -63,8 +63,12 @@ void init_child_rendezvous_parent(struct childdata *child, int childno);
  * signal mask, per-child unshare()s, root-only drop_privs,
  * capset()-to-empty + oracle anchor capture, and the random rlimit
  * / cgroup / umask sweep in munge_process.  init_child (in
- * child-init-core.c) calls this across the TU boundary. */
+ * child-init-core.c) calls this across the TU boundary.
+ * child_userns_lane_is_active() returns true iff this child entered
+ * the userns-admin lane (used by the cap-drop oracle to select the
+ * correct SO_RCVBUFFORCE probe direction). */
 void init_child_setup_sandbox(struct childdata *child, int childno);
+bool child_userns_lane_is_active(void);
 
 /* child-init-runtime.c -- kcov bring-up, uniarch active-syscalls
  * pin, explorer-pool slot flag, the A/B-comparison cohort stamps,

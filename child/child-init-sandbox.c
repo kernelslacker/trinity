@@ -114,6 +114,16 @@ static int userns_lane_write_proc(const char *path, const char *line)
 }
 
 /*
+ * Set to true after maybe_enter_userns_admin_lane() completes all
+ * three idmap writes successfully.  Consulted by the cap-drop oracle
+ * to invert the SO_RCVBUFFORCE probe expectation: with the lane active
+ * the socket lives in the lane's netns where the child holds
+ * CAP_NET_ADMIN, so SO_RCVBUFFORCE must SUCCEED rather than fail.
+ * Process-local: each forked child gets its own copy.
+ */
+static bool child_userns_lane_active;
+
+/*
  * Enter the userns-admin lane for the current persistent child.
  *
  * Preconditions (verified by caller):
@@ -243,6 +253,17 @@ static void maybe_enter_userns_admin_lane(int childno)
 			  childno, -ret);
 		return;
 	}
+	child_userns_lane_active = true;
+}
+
+/*
+ * Returns true iff this child successfully entered the userns-admin
+ * lane (unshare + all three idmap writes completed).  Consumed by the
+ * cap-drop oracle to select the correct SO_RCVBUFFORCE probe direction.
+ */
+bool child_userns_lane_is_active(void)
+{
+	return child_userns_lane_active;
 }
 
 /*
