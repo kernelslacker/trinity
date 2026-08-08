@@ -3,7 +3,8 @@
 # json-separator-adjacency: detect missing putchar(',') separators between
 # adjacent stat_category_emit_json() calls within a function in stats/json/*.c.
 #
-# Background: 331e499fdb5c fixed a real malformed-JSON bug in
+# Background: a79d41c36e2b ("stats/json: fix missing comma before ip6mr_churn
+# in network section") fixed a real malformed-JSON bug in
 # dump_stats_json_netfilter_and_xfrm() (network.c:329-332) where the
 # putchar(',') between ipmr_getroute_pktinfo_category and ip6mr_churn_category
 # was missing.  The static schema gate reconstructs from source and never
@@ -123,7 +124,7 @@ PYEOF
 # ---------------------------------------------------------------------------
 # Regression fixture: replay the pre-fix pre-image of
 # dump_stats_json_netfilter_and_xfrm to verify the detector catches the
-# historical missing-separator bug (331e499fdb5c^).
+# historical missing-separator bug (a79d41c36e2b^).
 #
 # The snippet reproduces the offending function tail verbatim, omitting the
 # putchar(',') that was added between ipmr_getroute_pktinfo_category and

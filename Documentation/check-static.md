@@ -69,6 +69,20 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `check-alt-op-rotation`: every `CHILD_OP_*` referenced from
   `pick_op_type_table[]` must be reachable via `alt_op_rotation[]` or
   explicitly listed in `alt-op-rotation.denylist` with a reason.
+- `check-file-content-hash-citations`: scan every tracked
+  `Documentation/*.md` and `scripts/**/*.sh` file for bare hex tokens
+  (12–40 chars, at least one `[a-f]` digit) and classify each as FOUND
+  (reachable from HEAD, silent), DANGLING (exists as a git object but
+  not reachable — the dangerous cherry-pick-orphan class, exit 1), or
+  SKIP (not an object in this repo — stale external reference or example
+  token, counted for auditing but not a failure).  For each DANGLING
+  token the gate extracts an adjacent `("subject")` annotation from the
+  same line and tries to find a reachable twin via subject match;
+  fallback resolution uses `scripts/hash-subject-resolver.sh`.  The
+  gate never scans itself or `hash-subject-resolver.sh` to avoid
+  false positives from the hex tokens those scripts legitimately
+  contain.  Complements `commit-msg-hash-resolves` (which checks commit
+  messages) by covering the file-content half of the citation convention.
 - `check-option-off-branch-inert`: every long option in
   `main/params/*.c` whose parser accepts `"off"` must have an inert
   off-branch body -- a direct assignment to an `*_OFF` enum whose
@@ -220,7 +234,7 @@ update this section to match `ls scripts/check-static/*.sh`.)
   on any comma-separator emit (`putchar(',')` / `fputc(',` /
   `printf(",`), and flags a second emit reached with no separator
   between.  Regression fixture: the pre-fix pre-image of
-  `dump_stats_json_netfilter_and_xfrm()` (331e499fdb5c^) is replayed
+  `dump_stats_json_netfilter_and_xfrm()` (a79d41c36e2b^) is replayed
   inline as a known-bad input and must produce exactly one hit.
 - `kcov-canonicalise-pcs`: (i) `kcov_canon_pc()` in `kcov/collect.c`
   must subtract `kcov_kaslr_base`, (ii) `pc_canon_to_edge()` must

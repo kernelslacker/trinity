@@ -805,7 +805,8 @@ fi
 #       Expected exit:   0 (run completes normally without the JSONL sinks)
 #
 # These exercises confirm that the open-failure error-transaction paths in
-# stats/log.c and stats/rotation_event.c are live (726c4417688b).
+# stats/log.c and stats/rotation_event.c are live (fa70568f8e3e
+# ("stats: latch ferror and disable timeseries sink on write failure")).
 # ---------------------------------------------------------------------------
 
 echo "--- $NAME: sink-failure: bad --stats-log-file path ---"

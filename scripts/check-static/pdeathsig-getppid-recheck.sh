@@ -10,8 +10,8 @@
 # in the child and the prctl call landing, PDEATHSIG was set too late
 # to ever fire.  The kernel reparents the child to PID 1 and it
 # blocks forever -- a sibling leak that survives the whole fuzz run.
-# The fix shape (see commit 53a4b05beea8 "childops/af-unix-scm-rights
-# -gc: re-check getppid after PDEATHSIG") is a getppid()==1 test
+# The fix shape (see e8f741787a65 ("childops/af-unix-scm-rights-gc:
+# re-check getppid after PDEATHSIG")) is a getppid()==1 test
 # immediately after the prctl; if true, the parent is already gone
 # and the child should _exit instead of blocking.
 #
@@ -152,7 +152,7 @@ if [ "$flagged" -gt 0 ]; then
 		echo "  fix: add 'if (getppid() == 1) _exit(0);' (or the raw"
 		echo "       syscall(__NR_getppid) equivalent) immediately after"
 		echo "       the prctl, before the next blocking call.  See commit"
-		echo "       53a4b05beea8 for the canonical fix shape.  If the"
+		echo "       e8f741787a65 for the canonical fix shape.  If the"
 		echo "       callsite is genuinely safe without a recheck, pin it"
 		echo "       in scripts/check-static/pdeathsig-getppid-recheck.baseline"
 		echo "       with a reason."
