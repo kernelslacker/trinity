@@ -329,6 +329,7 @@ void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&ipmr_cache_report_category);
 	putchar(',');
 	stat_category_emit_json(&ipmr_getroute_pktinfo_category);
+	putchar(',');
 	stat_category_emit_json(&ip6mr_churn_category);
 }
 
