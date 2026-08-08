@@ -300,14 +300,18 @@ static size_t build_spdget(uint8_t *buf, size_t cap, uint8_t dir,
  * counters so a 0% resolved rate is visible in the stats dump even
  * though the racer keeps blasting unresolved SPDGETs to no effect.
  */
-static void drain_replies(int fd)
+static unsigned long drain_replies(int fd)
 {
 	uint8_t buf[2048];
+	unsigned long cnt = 0;
 	unsigned int i;
 
 	for (i = 0; i < 16U; i++) {
-		ssize_t r = recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
+		ssize_t r;
 		const struct sadb_msg *m;
+
+		cnt++;
+		r = recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
 
 		if (r < 0)
 			break;
@@ -323,6 +327,7 @@ static void drain_replies(int fd)
 			__atomic_add_fetch(&shm->stats.pfkey_spd_walk.spdget_missed,
 					   1, __ATOMIC_RELAXED);
 	}
+	return cnt;
 }
 
 /*
@@ -344,8 +349,13 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base)
 
 	fd = socket(AF_KEY, SOCK_RAW, PF_KEY_V2);
 	n++;
-	if (fd < 0)
+	if (fd < 0) {
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, n);
 		_exit(0);
+	}
 
 	pid = (uint32_t)getpid();
 	v = base;
@@ -371,7 +381,7 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base)
 			break;
 		(void)send(fd, buf, len, 0);
 		n++;
-		drain_replies(fd);
+		n += drain_replies(fd);
 
 		if (budget_elapsed_ns(&t0, (long)PFKEY_INNER_WALL_NS))
 			break;
@@ -406,8 +416,13 @@ static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir)
 
 	fd = socket(AF_KEY, SOCK_RAW, PF_KEY_V2);
 	n++;
-	if (fd < 0)
+	if (fd < 0) {
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, n);
 		_exit(0);
+	}
 
 	pid = (uint32_t)getpid();
 
@@ -436,7 +451,7 @@ static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir)
 			break;
 		(void)send(fd, buf, len, 0);
 		n++;
-		drain_replies(fd);
+		n += drain_replies(fd);
 
 		if (budget_elapsed_ns(&t0, (long)PFKEY_INNER_WALL_NS))
 			break;
@@ -494,7 +509,13 @@ static void spdflush_best_effort(void)
 				1U, (uint32_t)getpid());
 	if (len > 0)
 		(void)send(fd, buf, len, 0);
-	drain_replies(fd);
+	{
+		unsigned long recv_n = drain_replies(fd);
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, recv_n);
+	}
 	close(fd);
 }
 
