@@ -42,6 +42,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -200,6 +201,7 @@ static void inner_child_main(unsigned long *dc)
 bool ipcns_ucount_exhaustion(struct childdata *child)
 {
 	unsigned long direct_calls = 0;
+	unsigned long *shared_dc;
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
 	int status;
@@ -212,21 +214,44 @@ bool ipcns_ucount_exhaustion(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 
+	/*
+	 * Map one shared word so inner_child_main() can relay its syscall
+	 * tally back to the parent: the forked child has its own address
+	 * space copy, so &direct_calls would be inaccessible to the parent
+	 * after the fork.
+	 */
+	direct_calls++;
+	shared_dc = mmap(NULL, sizeof(*shared_dc),
+			 PROT_READ | PROT_WRITE,
+			 MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	if (shared_dc == MAP_FAILED) {
+		if (valid_op)
+			childop_direct_syscalls_add(op, direct_calls);
+		return true;
+	}
+	*shared_dc = 0;
+
 	direct_calls++;
 	pid = fork();
 	if (pid < 0) {
+		direct_calls++;
+		munmap(shared_dc, sizeof(*shared_dc));
 		if (valid_op)
 			childop_direct_syscalls_add(op, direct_calls);
 		return true;
 	}
 
 	if (pid == 0) {
-		inner_child_main(&direct_calls);
+		inner_child_main(shared_dc);
 		_exit(0); /* unreachable */
 	}
 
 	direct_calls++;
 	waitpid_eintr(pid, &status, 0);
+
+	direct_calls += *shared_dc;   /* fold inner-child syscall tally */
+	direct_calls++;               /* munmap */
+	munmap(shared_dc, sizeof(*shared_dc));
 
 	if (WIFSIGNALED(status))
 		__atomic_add_fetch(
