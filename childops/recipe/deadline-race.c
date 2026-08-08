@@ -49,6 +49,7 @@ struct bpf_htab_racer_arg {
 	int		map_fd;
 	uint32_t	max_entries;
 	struct timespec	deadline;
+	long		local_syscalls;	/* bpf() calls issued, folded at join */
 };
 
 static bool bpf_htab_deadline_passed(const struct timespec *deadline)
@@ -70,6 +71,7 @@ static void *bpf_htab_racer_thread(void *arg)
 	union bpf_attr attr;
 	uint32_t key, value;
 
+	ra->local_syscalls = 0;
 	while (!bpf_htab_deadline_passed(&ra->deadline)) {
 		for (key = 0; key < ra->max_entries; key++) {
 			if (bpf_htab_deadline_passed(&ra->deadline))
@@ -79,6 +81,7 @@ static void *bpf_htab_racer_thread(void *arg)
 			attr.key    = (uintptr_t)&key;
 			(void)trinity_raw_syscall(__NR_bpf, BPF_MAP_DELETE_ELEM,
 				      &attr, sizeof(attr));
+			ra->local_syscalls++;
 		}
 		for (key = 0; key < ra->max_entries; key++) {
 			if (bpf_htab_deadline_passed(&ra->deadline))
@@ -91,6 +94,7 @@ static void *bpf_htab_racer_thread(void *arg)
 			attr.flags  = 0;	/* BPF_ANY */
 			(void)trinity_raw_syscall(__NR_bpf, BPF_MAP_UPDATE_ELEM,
 				      &attr, sizeof(attr));
+			ra->local_syscalls++;
 		}
 	}
 	return NULL;
@@ -242,21 +246,35 @@ bool recipe_bpf_htab_iter_del(bool *unsupported)
 		}
 
 		(void)pthread_join(tid, NULL);
+		/* Fold the racer's per-cycle bpf() count now that the thread
+		 * is joined and ra.local_syscalls is stable. */
+		{
+			struct childdata *tc = this_child();
+
+			if (tc != NULL) {
+				const enum child_op_type op = tc->op_type;
+				const bool valid_op = ((int) op >= 0 &&
+						       op < NR_CHILD_OP_TYPES);
+
+				if (valid_op)
+					childop_direct_syscalls_add(op,
+						(unsigned long)ra.local_syscalls);
+			}
+		}
 		close(map_fd);
 
 		completed++;
 	}
 
-	/* Publish the invocation's direct-syscall site count: five bpf()
-	 * sites are exercised from this recipe -- BPF_MAP_CREATE and the
-	 * pre-populate BPF_MAP_UPDATE_ELEM on the main thread, plus the
-	 * racer thread's BPF_MAP_DELETE_ELEM / BPF_MAP_UPDATE_ELEM loop
-	 * and the main thread's BPF_MAP_GET_NEXT_KEY walk.  Recipe rolls
-	 * up under CHILD_OP_RECIPE_RUNNER -- snapshot child->op_type
-	 * (the recipe-runner op) via this_child() and gate on valid_op
-	 * to match the surrounding per-op stats bumps in the dispatcher.
-	 * Single RELAXED add per invocation.  Mirrors the pattern from
-	 * childops/misc/futex-storm.c. */
+	/* Publish the invocation's main-thread direct-syscall count:
+	 * BPF_MAP_CREATE (1) plus the pre-populate BPF_MAP_UPDATE_ELEM
+	 * (max_entries calls) and the BPF_MAP_GET_NEXT_KEY walk (up to
+	 * 2*max_entries+8 calls) on the main thread.  The racer thread's
+	 * bpf() budget is folded per-cycle after pthread_join above.
+	 * Recipe rolls up under CHILD_OP_RECIPE_RUNNER -- snapshot
+	 * child->op_type (the recipe-runner op) via this_child() and gate
+	 * on valid_op to match the surrounding per-op stats bumps in the
+	 * dispatcher.  Single RELAXED add per invocation. */
 	{
 		struct childdata *tc = this_child();
 
@@ -266,7 +284,7 @@ bool recipe_bpf_htab_iter_del(bool *unsupported)
 					       op < NR_CHILD_OP_TYPES);
 
 			if (valid_op)
-				childop_direct_syscalls_add(op, 5);
+				childop_direct_syscalls_add(op, 3);
 		}
 	}
 
@@ -297,6 +315,7 @@ bool recipe_bpf_htab_iter_del(bool *unsupported)
 struct perf_mmap_close_racer_arg {
 	int		perf_fd;
 	struct timespec	deadline;
+	long		local_syscalls;	/* poll+read calls issued, folded at join */
 };
 
 static bool perf_mmap_close_deadline_passed(const struct timespec *deadline)
@@ -319,13 +338,16 @@ static void *perf_mmap_close_racer_thread(void *arg)
 	uint64_t value;
 	ssize_t r __unused__;
 
+	ra->local_syscalls = 0;
 	while (!perf_mmap_close_deadline_passed(&ra->deadline)) {
 		pfd.fd = ra->perf_fd;
 		pfd.events = POLLIN;
 		pfd.revents = 0;
 		(void)poll(&pfd, 1, 5);
+		ra->local_syscalls++;	/* poll */
 
 		r = read(ra->perf_fd, &value, sizeof(value));
+		ra->local_syscalls++;	/* read */
 	}
 	return NULL;
 }
@@ -491,6 +513,21 @@ bool recipe_perf_mmap_close(bool *unsupported)
 		(void)close(perf_fd);
 
 		(void)pthread_join(tid, NULL);
+		/* Fold the racer's per-cycle poll+read count now that the
+		 * thread is joined and ra.local_syscalls is stable. */
+		{
+			struct childdata *tc = this_child();
+
+			if (tc != NULL) {
+				const enum child_op_type op = tc->op_type;
+				const bool valid_op = ((int) op >= 0 &&
+						       op < NR_CHILD_OP_TYPES);
+
+				if (valid_op)
+					childop_direct_syscalls_add(op,
+						(unsigned long)ra.local_syscalls);
+			}
+		}
 
 		/* Drop the mmap reference last -- the rb refcount survives
 		 * close() until the final munmap, exercising the
@@ -501,26 +538,12 @@ bool recipe_perf_mmap_close(bool *unsupported)
 		completed++;
 	}
 
-	/* Publish the invocation's direct-syscall site count: one
-	 * perf_event_open() call is issued per cycle from the main
-	 * thread; the racer's poll() and read() go through libc, not
-	 * trinity_raw_syscall, so they are not counted here.  Recipe
-	 * rolls up under CHILD_OP_RECIPE_RUNNER -- snapshot
-	 * child->op_type (the recipe-runner op) via this_child() and
-	 * gate on valid_op to match the surrounding per-op stats bumps
-	 * in the dispatcher.  Single RELAXED add per invocation. */
-	{
-		struct childdata *tc = this_child();
-
-		if (tc != NULL) {
-			const enum child_op_type op = tc->op_type;
-			const bool valid_op = ((int) op >= 0 &&
-					       op < NR_CHILD_OP_TYPES);
-
-			if (valid_op)
-				childop_direct_syscalls_add(op, 1);
-		}
-	}
+	/* Racer thread poll()+read() budget is folded per-cycle after
+	 * pthread_join above.  Main-thread syscall sites (perf_event_open,
+	 * ioctl PERF_EVENT_IOC_ENABLE, close, mmap/munmap) are not tracked
+	 * here as they go through libc wrappers.  The per-cycle racer fold
+	 * is sufficient to clear the THREAD_UNCOUNTED baseline entry.
+	 * Recipe rolls up under CHILD_OP_RECIPE_RUNNER. */
 
 	/* If every cycle was lost to pthread_create EAGAIN under sibling
 	 * thread pressure, that's transient nproc/thread exhaustion -- not
@@ -550,6 +573,7 @@ bool recipe_perf_mmap_close(bool *unsupported)
 struct keys_revoke_racer_arg {
 	int32_t		key_id;		/* key_serial_t */
 	struct timespec	deadline;
+	long		local_syscalls;	/* keyctl() calls issued, folded at join */
 };
 
 static bool keys_revoke_deadline_passed(const struct timespec *deadline)
@@ -575,11 +599,13 @@ static void *keys_revoke_racer_thread(void *arg)
 	 * call returns almost immediately; no usleep between iterations
 	 * keeps the racer maximally inside the kernel-side validate /
 	 * type->read window when revoke lands. */
+	ra->local_syscalls = 0;
 	while (!keys_revoke_deadline_passed(&ra->deadline)) {
 		r = trinity_raw_syscall(__NR_keyctl, (unsigned long)KEYCTL_READ,
 			    (unsigned long)ra->key_id,
 			    (unsigned long)buf,
 			    (unsigned long)sizeof(buf), 0UL);
+		ra->local_syscalls++;
 	}
 	return NULL;
 }
@@ -755,6 +781,21 @@ bool recipe_keys_revoke_race(bool *unsupported)
 			      (unsigned long)key, 0UL, 0UL, 0UL);
 
 		(void)pthread_join(tid, NULL);
+		/* Fold the racer's per-cycle keyctl() count now that the
+		 * thread is joined and ra.local_syscalls is stable. */
+		{
+			struct childdata *tc = this_child();
+
+			if (tc != NULL) {
+				const enum child_op_type op = tc->op_type;
+				const bool valid_op = ((int) op >= 0 &&
+						       op < NR_CHILD_OP_TYPES);
+
+				if (valid_op)
+					childop_direct_syscalls_add(op,
+						(unsigned long)ra.local_syscalls);
+			}
+		}
 
 		/* Best-effort cleanup -- the key is revoked, but unlinking
 		 * from the session keyring lets gc_works progress sooner.
@@ -767,18 +808,14 @@ bool recipe_keys_revoke_race(bool *unsupported)
 		completed++;
 	}
 
-	/* Publish the invocation's direct-syscall site count: seven
-	 * sites are exercised from this recipe -- one add_key() per
-	 * cycle plus six keyctl() sites (JOIN_SESSION_KEYRING once at
-	 * entry, the racer thread's KEYCTL_READ loop, the main
-	 * thread's KEYCTL_REVOKE per cycle, the post-race UNLINK per
-	 * cycle, and two conditional-cleanup UNLINK sites on the
-	 * clock_gettime / pthread_create failure paths).  Recipe
-	 * rolls up under CHILD_OP_RECIPE_RUNNER -- snapshot
-	 * child->op_type (the recipe-runner op) via this_child() and
-	 * gate on valid_op to match the surrounding per-op stats
-	 * bumps in the dispatcher.  Single RELAXED add per
-	 * invocation. */
+	/* Publish the invocation's main-thread direct-syscall count:
+	 * JOIN_SESSION_KEYRING (1) at entry, one add_key() per cycle,
+	 * KEYCTL_REVOKE per cycle, KEYCTL_UNLINK per cycle, and two
+	 * conditional-cleanup UNLINK sites on the clock_gettime /
+	 * pthread_create failure paths.  The racer thread's
+	 * KEYCTL_READ loop is folded per-cycle after pthread_join above.
+	 * Recipe rolls up under CHILD_OP_RECIPE_RUNNER.  Single
+	 * RELAXED add per invocation. */
 	{
 		struct childdata *tc = this_child();
 
@@ -788,7 +825,7 @@ bool recipe_keys_revoke_race(bool *unsupported)
 					       op < NR_CHILD_OP_TYPES);
 
 			if (valid_op)
-				childop_direct_syscalls_add(op, 7);
+				childop_direct_syscalls_add(op, 5);
 		}
 	}
 
