@@ -383,8 +383,9 @@ fi
 # stats_timeseries_emit_window fires when (op_count - lastcount) > 10000
 # (main/stats.c).  The -N 100 run above produces only a terminal record;
 # no window records are written until op_count exceeds 10000.  This second
-# spawn uses -N 15000 so at least one window record lands in the JSONL,
-# letting section 3 validate the [window] baseline section.  The JSONL
+# spawn uses -N 15000 to try to reach the window-emit threshold; the
+# window record may NOT land (load-dependent -- total_ops in the terminal
+# record discriminates emitter-bug from slow-box, section 3).  The JSONL
 # files from the -N 100 run are wiped; the stats-JSON stdout was already
 # saved above.
 # ---------------------------------------------------------------------------
@@ -405,8 +406,9 @@ fi
 #
 # Every run with --stats emits a terminal record on close:
 #   {"type":"terminal","total_ops":N,"last_window_op_count":M,"cross_check_ok":true}
-# The -N 15000 run above also produces at least one window record (the
-# per-10001-op periodic snapshot).  Both record types are pinned in the
+# The -N 15000 run above may also produce a window record (load-dependent;
+# may NOT land -- total_ops in the terminal record discriminates).
+# Both record types are pinned in the
 # periodic JSONL baseline.
 # ---------------------------------------------------------------------------
 
@@ -428,6 +430,7 @@ result_path   = sys.argv[4]
 errors = []
 terminal_keys = None
 window_keys   = None
+total_ops     = None
 
 with open(ts_path) as f:
     for lineno, raw in enumerate(f, 1):
@@ -442,6 +445,7 @@ with open(ts_path) as f:
         rtype = rec.get("type")
         if rtype == "terminal":
             terminal_keys = sorted(rec.keys())
+            total_ops = rec.get("total_ops")
         else:
             # periodic window record
             if window_keys is None:
@@ -528,10 +532,16 @@ if terminal_keys:
                              ", ".join(sorted(missing)))
 
 if bl_window and not window_keys:
-    # Threshold not reached: the -N 15000 run produced no window records.
-    # This is load-dependent (op_count - lastcount > 10000 plus a stats tick).
-    # Emit SKIP -- never FAIL -- matching the rotation surface treatment.
-    window_skip = True
+    # No window records produced.  Discriminate using total_ops from the
+    # terminal record: if the run did not reach 10001 ops the threshold
+    # was never crossed (load-dependent) -- SKIP.  If total_ops >= 10001
+    # the emitter should have fired; silence is a real bug -- FAIL.
+    if total_ops is not None and total_ops >= 10001:
+        check_errors.append(
+            f"window record: emitter silent despite total_ops={total_ops} (>= 10001)"
+        )
+    else:
+        window_skip = True
 
 if window_keys and bl_window:
     rt_window = set(window_keys)
@@ -565,17 +575,28 @@ PYEOF
 
 	if [ "$MODE" = "regen" ]; then
 		echo "REGEN: $NAME: periodic-JSONL baseline written"
-	elif [ "$PERIODIC_PY_RC" -ne 0 ] || [ "$PERIODIC_RESULT" = "error" ]; then
-		fail "periodic-JSONL shape check failed"
+	elif [ "$PERIODIC_PY_RC" -ne 0 ]; then
+		fail "periodic-JSONL shape check failed (python error)"
 		cat "$WORK/periodic_check.result" >&2
-	elif [ "$PERIODIC_RESULT" = "skip" ]; then
-		DETAIL="$(grep -v '^skip' "$WORK/periodic_check.result" | head -1)"
-		echo "SKIP: $NAME: periodic-JSONL window section -- no window records produced (threshold not reached under -N 15000)"
-		# SKIP: not counted as PASS or FAIL in the summary
 	else
-		DETAIL="$(grep -v '^ok' "$WORK/periodic_check.result" | head -1)"
-		echo "PASS: $NAME: periodic-JSONL shape: $DETAIL"
-		pass
+		case "$PERIODIC_RESULT" in
+		error)
+			fail "periodic-JSONL shape check failed"
+			cat "$WORK/periodic_check.result" >&2
+			;;
+		skip)
+			echo "SKIP: $NAME: periodic-JSONL window section -- no window records produced (total_ops < 10001)"
+			;;
+		ok)
+			DETAIL="$(grep -v '^ok' "$WORK/periodic_check.result" | head -1)"
+			echo "PASS: $NAME: periodic-JSONL shape: $DETAIL"
+			pass
+			;;
+		*)
+			fail "periodic-JSONL check: unexpected result '${PERIODIC_RESULT}'"
+			cat "$WORK/periodic_check.result" >&2
+			;;
+		esac
 	fi
 fi
 
