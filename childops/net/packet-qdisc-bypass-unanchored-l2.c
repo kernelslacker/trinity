@@ -47,7 +47,10 @@
  *
  *   Stats: lane_a_sends / lane_b_sends / lane_a_errors / lane_b_errors
  *   macsec_sa_install_eperm / macsec_sa_install_failed show coverage even
- *   on non-KASAN builds.
+ *   on non-KASAN builds.  macsec_sa_install_eperm doubles as a structural-
+ *   assumption detector: 100% EPERM is the invariant, so zero (after any
+ *   completed iteration) means the assumption changed — the stats-dump
+ *   oracle fires on this condition.
  *
  * Latches:
  *   ns_unsupported_bypass_l2 — set on EPERM from userns_run_in_ns() or
@@ -1099,7 +1102,10 @@ static int iter_one_in_ns(void *arg)
 	 * macsec_encrypt() sets secy->operational=false at the SA-lookup
 	 * gate and the skb_eth_hdr() OOB-read target is structurally
 	 * unreachable.  Count the failure explicitly so it is visible in
-	 * stats rather than silently discarded.
+	 * stats rather than silently discarded.  Because 100% EPERM is the
+	 * invariant, macsec_sa_install_eperm doubles as a structural-assumption
+	 * detector: a zero count after completed iterations means the assumption
+	 * broke (see dump_stats_render_packet_qdisc_bypass_unanchored_l2()).
 	 */
 	{
 		int sa_rc = bypass_install_macsec_txsa(mst_ifx);

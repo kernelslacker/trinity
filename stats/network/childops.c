@@ -71,6 +71,29 @@ static void dump_stats_render_blob_fills_by_group(void)
 	}
 }
 
+static void dump_stats_render_packet_qdisc_bypass_unanchored_l2(void)
+{
+	if (!shm->stats.packet_qdisc_bypass_unanchored_l2.runs)
+		return;
+
+	stat_category_emit_text(&packet_qdisc_bypass_unanchored_l2_category);
+
+	/*
+	 * Structural-assumption oracle: bypass_install_macsec_txsa() is gated
+	 * on GENL_ADMIN_PERM (init_user_ns), so every call from a child userns
+	 * returns -EPERM.  aa572518c2bf added macsec_sa_install_eperm to make
+	 * that visible.  Because 100% EPERM is the invariant, zero is the
+	 * impossible case: it means the macsec genl family gained
+	 * GENL_UNS_ADMIN_PERM upstream, the op is no longer called, or the
+	 * lane is disabled.  Warn so the change is not silently missed.
+	 */
+	if (shm->stats.packet_qdisc_bypass_unanchored_l2.completed_ok > 0 &&
+	    shm->stats.packet_qdisc_bypass_unanchored_l2.macsec_sa_install_eperm == 0)
+		outputerr("macsec_sa_install_eperm == 0 after %lu completed iters: "
+			  "structural assumption may have changed\n",
+			  shm->stats.packet_qdisc_bypass_unanchored_l2.completed_ok);
+}
+
 static void dump_stats_render_packet_fanout_thrash(void)
 {
 	if (shm->stats.packet_fanout_thrash.runs) {
@@ -595,7 +618,7 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&fnhe_pmtu_mtu_race_category);
 
-	stat_category_emit_text(&packet_qdisc_bypass_unanchored_l2_category);
+	dump_stats_render_packet_qdisc_bypass_unanchored_l2();
 
 	stat_category_emit_text(&vrf_fib_churn_category);
 
