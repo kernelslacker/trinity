@@ -598,14 +598,18 @@ void reset_epoch_state(void)
 	parent_stats.op_count = 0;
 	parent_stats.previous_op_count = 0;
 	/*
-	 * total_op_count is the run-wide monotonic counter; snapshot it
-	 * here so check_main_loop_stops() can enforce the epoch iteration
-	 * limit as (total_op_count - epoch_start_op_count).  Do NOT zero
-	 * total_op_count itself -- rate reporting, per-window timeseries
-	 * and shadow_sat sampling read it as a monotonic clock across
-	 * epoch boundaries.
+	 * Snapshot epoch_start_op_count from the lossless atomic so the
+	 * value is immune to in-flight ring slots that have not yet been
+	 * drained.  total_op_count is aligned to the same snapshot so the
+	 * first drain of the new epoch sees a zero delta and does not
+	 * spuriously count carried-over ring slots as new-epoch ops.
+	 * Neither field is zeroed: they are run-monotonic and rate
+	 * reporting / per-window timeseries / shadow_sat sampling all
+	 * read total_op_count as a monotonic clock across epoch boundaries.
 	 */
-	parent_stats.epoch_start_op_count = parent_stats.total_op_count;
+	parent_stats.epoch_start_op_count = __atomic_load_n(
+		&shm->stats.lossless_op_total, __ATOMIC_RELAXED);
+	parent_stats.total_op_count = parent_stats.epoch_start_op_count;
 
 	if (shm_published != NULL)
 		__atomic_store_n(&shm_published->fleet_op_count, 0UL,
