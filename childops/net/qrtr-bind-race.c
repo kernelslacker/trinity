@@ -157,12 +157,21 @@ static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 {
 	struct sockaddr_qrtr sq, local;
 	socklen_t slen = sizeof(local);
+	unsigned long n = 0;
 	int fd;
 
 	fd = socket(AF_QRTR, SOCK_DGRAM, 0);
+	n++;
 	if (fd < 0) {
 		__atomic_add_fetch(&shm->stats.qrtr_bind_race.setup_fail,
 				   1, __ATOMIC_RELAXED);
+		{
+			struct childdata *tc = this_child();
+			const enum child_op_type op =
+				tc ? tc->op_type : NR_CHILD_OP_TYPES;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				childop_direct_syscalls_add(op, n);
+		}
 		_exit(0);
 	}
 
@@ -176,19 +185,35 @@ static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 	if (getsockname(fd, (struct sockaddr *)&local, &slen) < 0) {
 		__atomic_add_fetch(&shm->stats.qrtr_bind_race.setup_fail,
 				   1, __ATOMIC_RELAXED);
+		n++; /* getsockname */
+		{
+			struct childdata *tc = this_child();
+			const enum child_op_type op =
+				tc ? tc->op_type : NR_CHILD_OP_TYPES;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				childop_direct_syscalls_add(op, n);
+		}
 		_exit(0);
 	}
+	n++; /* getsockname */
 
 	memset(&sq, 0, sizeof(sq));
 	sq.sq_family = AF_QRTR;
 	sq.sq_node = local.sq_node;
 	sq.sq_port = port;
 	(void)bind(fd, (struct sockaddr *)&sq, sizeof(sq));
+	n++;
 
 	/* No explicit close(): _exit closes every fd via the kernel's
 	 * do_exit -> exit_files path, which is the teardown that runs
 	 * qrtr_release.  Letting two children reach this at once is the
 	 * whole point of the op. */
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, n);
+	}
 	_exit(0);
 }
 
