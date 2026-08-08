@@ -67,6 +67,17 @@
 #define HAMMER_LOOPS	64
 
 /*
+ * Wall-clock budget for the outer waitpid() on the inner fork child.
+ * If the inner child stalls in D-state (e.g. inside synchronize_rcu()
+ * triggered by flush_work(&free_ipc_work)), we stop waiting after this
+ * interval, emit the inner_timeout counter, and return.  A D-state
+ * process cannot be killed, so we leave it alone and move on.
+ * Note: the per-worker waitpid_eintr() calls inside inner_child_main()
+ * are not yet bounded; that is left as a follow-up.
+ */
+#define IPCNS_OUTER_WAIT_NS	500000000L   /* 500 ms */
+
+/*
  * Write one line to a file.  Returns true on success.
  */
 static bool ipcns_write_str(const char *path, const char *val,
@@ -246,8 +257,45 @@ bool ipcns_ucount_exhaustion(struct childdata *child)
 		_exit(0); /* unreachable */
 	}
 
-	direct_calls++;
-	waitpid_eintr(pid, &status, 0);
+	/*
+	 * Poll with WNOHANG so a D-state inner child can't hold this
+	 * child slot forever.  On timeout, emit inner_timeout and skip
+	 * folding the shared tally (the child may still be running).
+	 */
+	direct_calls++;   /* outer wait, modeled as one logical syscall */
+	{
+		struct timespec t_start;
+		bool inner_reaped = true;
+
+		clock_gettime(CLOCK_MONOTONIC, &t_start);
+		for (;;) {
+			pid_t r = waitpid_eintr(pid, &status, WNOHANG);
+
+			if (r == pid || r < 0)
+				break;
+			if (budget_elapsed_ns(&t_start, IPCNS_OUTER_WAIT_NS)) {
+				__atomic_add_fetch(
+					&shm->stats.ipcns_ucount_exhaustion.inner_timeout,
+					1, __ATOMIC_RELAXED);
+				(void)waitpid_eintr(pid, &status, WNOHANG);
+				inner_reaped = false;
+				break;
+			}
+			{
+				struct timespec nap = { 0, 2000000L }; /* 2 ms */
+
+				nanosleep(&nap, NULL);
+			}
+		}
+
+		if (!inner_reaped) {
+			direct_calls++; /* munmap */
+			munmap(shared_dc, sizeof(*shared_dc));
+			if (valid_op)
+				childop_direct_syscalls_add(op, direct_calls);
+			return true;
+		}
+	}
 
 	direct_calls += *shared_dc;   /* fold inner-child syscall tally */
 	direct_calls++;               /* munmap */
