@@ -313,10 +313,21 @@ void child_process(struct childdata *child, int childno)
 		unsigned int gen = __atomic_load_n(&shm->sibling_freeze_gen,
 						   __ATOMIC_ACQUIRE);
 		if (gen != child->last_seen_freeze_gen) {
+			struct timespec _rf0, _rf1;
+			long _rfns;
+
+			clock_gettime(CLOCK_MONOTONIC, &_rf0);
 			freeze_sibling_childdata(childno);
+			clock_gettime(CLOCK_MONOTONIC, &_rf1);
 			child->last_seen_freeze_gen = gen;
+			_rfns = (_rf1.tv_sec - _rf0.tv_sec) * 1000000000L
+				+ (_rf1.tv_nsec - _rf0.tv_nsec);
 			__atomic_add_fetch(&shm->stats.diag.sibling_refreeze_count, 1,
 					   __ATOMIC_RELAXED);
+			if (_rfns > 0)
+				__atomic_add_fetch(&shm->stats.diag.sibling_refreeze_ns,
+						   (unsigned long)_rfns,
+						   __ATOMIC_RELAXED);
 		}
 
 		if (ctrlc_pending) {

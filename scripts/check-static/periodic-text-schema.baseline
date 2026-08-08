@@ -318,11 +318,14 @@ seal_fail_ops
 shared_buffer_redirected
 sibling_mprotect_failed
 sibling_refreeze_count
+sibling_refreeze_ns
 snapshot_non_heap_reject
 srec_snapshot_giveups
 stats_ring_corrupted
 stats_ring_overwritten
 strategy_explorer_picks
+taint_check_calls
+taint_check_ns
 validator_rejected
 wall_lever_eligible_total
 wall_lever_would_suppress_total

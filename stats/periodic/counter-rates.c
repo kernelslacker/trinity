@@ -129,6 +129,17 @@ static const struct {
 	  offsetof(struct stats_s, diag.sibling_mprotect_failed) },
 	{ "sibling_refreeze_count",
 	  offsetof(struct stats_s, diag.sibling_refreeze_count) },
+	{ "sibling_refreeze_ns",
+	  offsetof(struct stats_s, diag.sibling_refreeze_ns) },
+	/* Taint-check cost: one call and ns-total per dispatch-path
+	 * is_tainted() invocation.  The child-context path pays three
+	 * raw syscalls (open/read/close on /proc/sys/kernel/tainted) per
+	 * call by design.  The per-call mean is taint_check_ns /
+	 * taint_check_calls. */
+	{ "taint_check_calls",
+	  offsetof(struct stats_s, diag.taint_check_calls) },
+	{ "taint_check_ns",
+	  offsetof(struct stats_s, diag.taint_check_ns) },
 	/* divergence-sentinel anomaly counter, sharded by enum
 	 * sentinel_field.  One row per active field id so the periodic
 	 * rate dump shows which monitored field is drifting rather than

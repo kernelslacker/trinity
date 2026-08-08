@@ -402,6 +402,31 @@ struct diag_stats {
 	 */
 	unsigned long mseal_content_oracle_fail;
 	unsigned long mseal_unexpected_success;
+
+	/*
+	 * Taint-check cost counters.  is_tainted() is called after
+	 * every random-syscall dispatch (~95% hot path).  In the child
+	 * context it calls read_taint_uncached() which does
+	 * open + read + close on /proc/sys/kernel/tainted -- three raw
+	 * syscalls per dispatch -- by design (cached fd would be
+	 * reachable from fuzzed dup2/close_range and could be rewired).
+	 * taint_check_calls is the cumulative call count;
+	 * taint_check_ns is the cumulative nanoseconds spent inside
+	 * is_tainted() across all dispatching children.
+	 */
+	unsigned long taint_check_calls;
+	unsigned long taint_check_ns;
+
+	/*
+	 * Sibling-refreeze sweep cost.  When a new sibling bumps
+	 * shm->sibling_freeze_gen, each other child re-runs the
+	 * mprotect sweep at the top of its child_process loop.
+	 * sibling_refreeze_count (above) ticks once per sweep;
+	 * sibling_refreeze_ns accumulates the cumulative nanoseconds
+	 * spent inside freeze_sibling_childdata() across all children.
+	 * The ns-per-sweep ratio is derivable from the two counters.
+	 */
+	unsigned long sibling_refreeze_ns;
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_DIAG_H */

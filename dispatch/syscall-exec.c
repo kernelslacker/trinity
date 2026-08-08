@@ -461,9 +461,26 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	}
 
 	/* If we became tainted, get out as fast as we can. */
-	if (is_tainted() == true) {
-		panic(EXIT_KERNEL_TAINTED);
-		_exit(EXIT_KERNEL_TAINTED);
+	{
+		struct timespec _tc0, _tc1;
+		bool _tainted;
+		long _ns;
+
+		clock_gettime(CLOCK_MONOTONIC, &_tc0);
+		_tainted = is_tainted();
+		clock_gettime(CLOCK_MONOTONIC, &_tc1);
+		_ns = (_tc1.tv_sec - _tc0.tv_sec) * 1000000000L
+		      + (_tc1.tv_nsec - _tc0.tv_nsec);
+		__atomic_add_fetch(&shm->stats.diag.taint_check_calls,
+				   1, __ATOMIC_RELAXED);
+		if (_ns > 0)
+			__atomic_add_fetch(&shm->stats.diag.taint_check_ns,
+					   (unsigned long)_ns,
+					   __ATOMIC_RELAXED);
+		if (_tainted) {
+			panic(EXIT_KERNEL_TAINTED);
+			_exit(EXIT_KERNEL_TAINTED);
+		}
 	}
 
 	if (needalarm)
