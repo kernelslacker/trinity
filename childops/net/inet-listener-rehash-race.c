@@ -174,12 +174,12 @@ static __attribute__((noreturn)) void twseed_worker(uint16_t port)
 		_exit(0);
 	set_reuse(listener);
 	n += 2; /* two setsockopt calls in set_reuse() */
+	n++; /* bind attempt */
 	if (bind(listener, (struct sockaddr *)&sin, sizeof(sin)) < 0)
 		goto out;
-	n++;
+	n++; /* listen attempt */
 	if (listen(listener, 64) < 0)
 		goto out;
-	n++;
 	__atomic_add_fetch(&shm->stats.inet_listener_rehash_race.twseed_listener_ok,
 			   1, __ATOMIC_RELAXED);
 
@@ -484,10 +484,13 @@ static unsigned long run_one_round(void)
 	 * self-bounded on CLOCK_MONOTONIC (IRR_WORKER_WALL_CAP_NS) so
 	 * the outer waitpid can't hang. */
 	reap_worker(p_v4);
+	if (p_v4 > 0) calls++;
 	reap_worker(p_v6);
+	if (p_v6 > 0) calls++;
 	reap_worker(p_syn);
+	if (p_syn > 0) calls++;
 	reap_worker(p_rehash);
-	calls += 4;
+	if (p_rehash > 0) calls++;
 
 	return calls;
 }

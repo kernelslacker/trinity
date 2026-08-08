@@ -228,6 +228,9 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
+	/* Count the preamble now that we have passed the go gate:
+	 * prctl + alarm + getppid + futex_wait(go) = 4. */
+	__atomic_fetch_add(&rs->direct_call_count, 4UL, __ATOMIC_RELAXED);
 
 	budget = rs->race_budget;
 	for (i = 0; i < budget; i++) {
@@ -262,6 +265,7 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 	}
 
 	__atomic_store_n(&rs->done, 1U, __ATOMIC_RELEASE);
+	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* futex_wake(done) */
 	(void)raw_futex_wake(&rs->done, 1);
 
 	syscall(__NR_exit, 0);
@@ -601,11 +605,12 @@ bool af_unix_peek_race(struct childdata *child)
 
 	/* Accumulate the invocation's direct-syscall load across every
 	 * iter_one() burst: the fuzzed-work recvfrom MSG_PEEK + plain-recv
-	 * drain sites in af_unix_peek_sibling_main().  Harness plumbing
-	 * (sched_yield, futex, prctl, getppid, clone3) is intentionally
-	 * excluded so the tally reflects only race-target syscalls.  One
-	 * RELAXED atomic add per invocation, gated on valid_op to mirror
-	 * the surrounding per-op stats bumps. */
+	 * drain sites in af_unix_peek_sibling_main(), plus the per-sibling
+	 * preamble (prctl + alarm + getppid + futex_wait(go) + futex_wake(done)
+	 * = 5) now counted inline in the sibling body.  clone3, sched_yield,
+	 * and exit remain excluded as pure harness plumbing.  One RELAXED
+	 * atomic add per invocation, gated on valid_op to mirror the
+	 * surrounding per-op stats bumps. */
 	unsigned long direct_calls = 0;
 
 	for (i = 0; i < outer_iters; i++)

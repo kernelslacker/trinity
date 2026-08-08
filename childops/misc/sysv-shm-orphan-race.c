@@ -194,24 +194,29 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 
 	if (trinity_raw_syscall(__NR_getppid) == 1)
 		(void)syscall(__NR_exit, 0);
+	/* Count the preamble: prctl + alarm + getppid = 3. */
+	__atomic_fetch_add(&rs->direct_call_count, 3UL, __ATOMIC_RELAXED);
 
 	shmid = raw_shmget(IPC_PRIVATE, SYSV_SHM_SEG_BYTES, IPC_CREAT | 0600);
+	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* shmget */
 	if (shmid < 0) {
 		__atomic_store_n(&rs->shmid, SYSV_SHM_ID_PUBLISH_FAILED,
 				 __ATOMIC_RELEASE);
 		__atomic_store_n(&rs->originator_published, 1U, __ATOMIC_RELEASE);
+		__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* futex_wake */
 		(void)raw_futex_wake(&rs->originator_published, 1);
 		syscall(__NR_exit, 0);
 		__builtin_unreachable();
 	}
-	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* shmget */
 
 	__atomic_store_n(&rs->shmid, (int)shmid, __ATOMIC_RELEASE);
 	__atomic_store_n(&rs->originator_published, 1U, __ATOMIC_RELEASE);
+	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* futex_wake(originator_published) */
 	(void)raw_futex_wake(&rs->originator_published, 1);
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
+	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* futex_wait(go) */
 
 	/*
 	 * Stay attached through IPC_RMID so the kernel sees nattch > 0
@@ -251,9 +256,12 @@ static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
 
 	if (trinity_raw_syscall(__NR_getppid) == 1)
 		(void)syscall(__NR_exit, 0);
+	/* Count the preamble: prctl + alarm + getppid = 3. */
+	__atomic_fetch_add(&rs->direct_call_count, 3UL, __ATOMIC_RELAXED);
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
+	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* futex_wait(go) */
 
 	shmid = __atomic_load_n(&rs->shmid, __ATOMIC_ACQUIRE);
 	if (shmid < 0)
@@ -663,7 +671,8 @@ bool sysv_shm_orphan_race(struct childdata *child)
 	 * per invocation (shmget + shmat + shmdt + shmctl covering
 	 * run_burst_parent_half / run_burst_solo); sibling-side count is
 	 * drained from rs->direct_call_count after both siblings are reaped.
-	 * Race-harness plumbing (futex, prctl, getppid, clone3) excluded. */
+	 * Preamble syscalls (prctl/alarm/getppid/futex) counted inline in
+	 * each sibling body.  clone3 excluded (harness plumbing). */
 	{
 		const enum child_op_type op = child->op_type;
 		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);

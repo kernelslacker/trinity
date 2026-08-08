@@ -292,6 +292,7 @@ static __attribute__((noreturn)) void carrier_child(int ready_fd)
 {
 	char ready = 1;
 	ssize_t w;
+	unsigned long write_calls = 0;
 
 	if (unshare(CLONE_NEWUSER) < 0) {
 		close(ready_fd);
@@ -300,24 +301,30 @@ static __attribute__((noreturn)) void carrier_child(int ready_fd)
 
 	do {
 		w = write(ready_fd, &ready, 1);
+		write_calls++;
 	} while (w < 0 && errno == EINTR);
 	close(ready_fd);
 
-	/* Publish the three carrier-setup kernel entries (unshare +
-	 * write + close) so the direct-syscall telemetry correctly
-	 * accounts for them.  this_child() is inherited across fork();
-	 * the shm atomic is visible to the parent via MAP_SHARED. */
+	/* Publish carrier-setup kernel entries: unshare (1) + each
+	 * write() attempt (write_calls; typically 1, retried on EINTR)
+	 * + close (1).  write_calls captures all retries so EINTR
+	 * spin-cost is not silently dropped from the tally.
+	 * this_child() is inherited across fork(); the shm stats are
+	 * visible to the parent via MAP_SHARED. */
 	{
 		struct childdata *tc = this_child();
 		const enum child_op_type op =
 			tc ? tc->op_type : NR_CHILD_OP_TYPES;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			childop_direct_syscalls_add(op, 3UL);
+			childop_direct_syscalls_add(op, 1UL + write_calls + 1UL);
 	}
 
-	/* Pause until SIGTERM.  pause() returns -1/EINTR on any
-	 * signal; an unexpected EINTR (SIGALRM bleed-through from
-	 * the trinity outer alarm) just loops back. */
+	/* Pause until SIGTERM.  pause() returns -1/EINTR on any signal;
+	 * an unexpected EINTR (SIGALRM bleed-through from the trinity
+	 * outer alarm) just loops back.  Deliberately excluded from
+	 * direct-syscall accounting: pause() is a timer-wait primitive,
+	 * not a fuzzed-work syscall (same discipline as usleep(0) in
+	 * af-unix-scm-rights-gc). */
 	for (;;)
 		(void)pause();
 }

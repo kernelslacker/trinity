@@ -417,6 +417,9 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
+	/* Count the preamble now that we have passed the go gate:
+	 * prctl + alarm + getppid + futex_wait(go) = 4. */
+	__atomic_fetch_add(&rs->direct_call_count, 4UL, __ATOMIC_RELAXED);
 
 	budget = rs->race_budget;
 	for (i = 0; i < budget; i++) {
@@ -471,6 +474,7 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 	}
 
 	__atomic_store_n(&rs->done, 1U, __ATOMIC_RELEASE);
+	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* futex_wake(done) */
 	(void)raw_futex_wake(&rs->done, 1);
 
 	syscall(__NR_exit, 0);
@@ -676,9 +680,10 @@ struct af_unix_scm_rights_gc_iter_ctx {
 	 * io_uring_setup for the multi-hop variant.  Sibling-side raw
 	 * syscalls (recvmsg PEEK per race iter) are estimated as
 	 * race_burst's `races` since the sibling never touches shm.
-	 * Deliberately excludes clone3 / prctl / futex / getppid / exit
-	 * (harness plumbing) and usleep(0) (workqueue-tick yield, not
-	 * fuzzed work) -- same discipline as futex-storm and pipe-thrash.
+	 * Includes the per-sibling preamble (prctl + alarm + getppid +
+	 * futex_wait(go) + futex_wake(done) = 5) counted inline in the
+	 * sibling body.  Deliberately excludes clone3 / exit (harness
+	 * plumbing) and usleep(0) (workqueue-tick yield, not fuzzed work).
 	 * Published once via childop_direct_syscalls_add() at the outer
 	 * op-exit so the hot inner loop pays no per-syscall atomic. */
 	unsigned long	direct_calls;
@@ -882,8 +887,9 @@ static void af_unix_scm_rights_gc_race_burst(struct af_unix_scm_rights_gc_iter_c
 		 * drained from rs->direct_call_count (actual recvmsg PEEK +
 		 * close per installed SCM_RIGHTS fd).  waitpid() inside
 		 * reap_race_sibling() is the required acquire barrier before
-		 * the RELAXED load below.  clone3, futex, prctl, getppid, and
-		 * waitpid are harness plumbing and stay uncounted. */
+		 * the RELAXED load below.  clone3, waitpid, and exit are
+		 * harness plumbing and stay uncounted; preamble syscalls
+		 * (prctl/alarm/getppid/futex) are counted in the sibling body. */
 		it->direct_calls += (unsigned long)races * 2UL + 2UL;
 		it->direct_calls += (unsigned long)
 			__atomic_load_n(&rs->direct_call_count, __ATOMIC_RELAXED);
