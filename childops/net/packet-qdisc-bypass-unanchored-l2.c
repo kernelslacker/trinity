@@ -1220,6 +1220,7 @@ bool packet_qdisc_bypass_unanchored_l2(struct childdata *child)
 		.latch_errno  = 0,
 	};
 	unsigned int outer, i;
+	unsigned long eperm_snap;
 
 	__atomic_add_fetch(
 		&shm->stats.packet_qdisc_bypass_unanchored_l2.runs,
@@ -1238,6 +1239,10 @@ bool packet_qdisc_bypass_unanchored_l2(struct childdata *child)
 		outer = BYPASS_OUTER_CAP;
 	if (outer == 0U)
 		outer = 1U;
+
+	eperm_snap = __atomic_load_n(
+		&shm->stats.packet_qdisc_bypass_unanchored_l2.macsec_sa_install_eperm,
+		__ATOMIC_RELAXED);
 
 	for (i = 0; i < outer; i++) {
 		int rc;
@@ -1281,6 +1286,21 @@ bool packet_qdisc_bypass_unanchored_l2(struct childdata *child)
 				1, __ATOMIC_RELAXED);
 		}
 	}
+
+	/*
+	 * Oracle: every iter_one_in_ns() call attempts bypass_install_macsec_txsa();
+	 * GENL_ADMIN_PERM guarantees 100% EPERM from a child userns.  A zero delta
+	 * after i completed iterations means the structural assumption changed —
+	 * macsec gained GENL_UNS_ADMIN_PERM, the install call was removed, or the
+	 * lane was disconnected from this op.  Counter added by aa572518c2bf;
+	 * userns-admin lane added by fed6db19d692.
+	 */
+	if (__atomic_load_n(
+		    &shm->stats.packet_qdisc_bypass_unanchored_l2.macsec_sa_install_eperm,
+		    __ATOMIC_RELAXED) == eperm_snap)
+		outputerr("packet_qdisc_bypass_l2: STRUCTURAL ASSUMPTION BROKEN -- " /* check-static: child-output-ok */
+			  "macsec_sa_install_eperm unchanged after %u iteration(s); "
+			  "GENL_ADMIN_PERM may have changed\n", i);
 
 	return true;
 }
