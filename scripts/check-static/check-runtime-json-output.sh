@@ -127,6 +127,7 @@ if [ "$TRINITY_RC" -ne 0 ]; then
 	fail "trinity exited $TRINITY_RC (see $WORK/trinity.stderr)"
 	# Surface the last few stderr lines to help triage.
 	tail -5 "$WORK/trinity.stderr" >&2
+	exit 1
 else
 	pass
 fi
@@ -397,6 +398,7 @@ TRINITY_RC_WINDOW=$?
 if [ "$TRINITY_RC_WINDOW" -ne 0 ]; then
 	fail "trinity (window-record run) exited $TRINITY_RC_WINDOW"
 	tail -5 "$WORK/trinity.stderr" >&2
+	exit 1
 else
 	pass
 fi
@@ -417,6 +419,7 @@ TSERIES_FILE="$(ls "$WORK"/stats-timeseries-*.jsonl 2>/dev/null | head -1)"
 
 if [ -z "$TSERIES_FILE" ]; then
 	fail "no stats-timeseries-*.jsonl found after trinity run"
+	exit 1
 else
 	python3 - "$TSERIES_FILE" "$BASELINE_PERIODIC" "$MODE" \
 	    "$WORK/periodic_check.result" <<'PYEOF'
@@ -779,13 +782,15 @@ elif [ "$ROTATION_PY_RC" -ne 0 ] || [ "$ROTATION_RESULT" = "error" ]; then
 	fail "rotation-event JSONL shape check failed"
 	cat "$WORK/rotation_check.result" >&2
 elif [ "$ROTATION_RESULT" = "skip" ]; then
-	DETAIL="$(grep -v '^skip' "$WORK/rotation_check.result" | head -1)"
 	echo "SKIP: $NAME: rotation-event JSONL: no live records (STRATEGY_WINDOW=131072 unreachable; source-vs-baseline validated)"
 	# SKIP: not counted as PASS or FAIL in the summary
-else
+elif [ "$ROTATION_RESULT" = "ok" ]; then
 	DETAIL="$(grep -v '^ok' "$WORK/rotation_check.result" | head -1)"
 	echo "PASS: $NAME: rotation-event JSONL shape: $DETAIL"
 	pass
+else
+	fail "rotation-event JSONL check: unexpected result '${ROTATION_RESULT}'"
+	cat "$WORK/rotation_check.result" >&2
 fi
 
 # ---------------------------------------------------------------------------
