@@ -344,6 +344,11 @@ struct af_unix_race_shared {
 	uint32_t	race_budget;	/* iterations sibling should run */
 	uint32_t	go;		/* futex word: 0 = wait, 1 = start */
 	uint32_t	done;		/* futex word: sibling sets 1 on exit */
+	/* Sibling-side tally of fuzzed-work raw syscalls (recvmsg PEEK
+	 * per iter plus close for each SCM_RIGHTS fd installed).  Bumped
+	 * RELAXED by the sibling, drained by the parent post-reap and
+	 * folded into the childop direct-syscall telemetry. */
+	uint64_t	direct_call_count;
 };
 
 static long raw_futex_wait(uint32_t *uaddr, uint32_t val)
@@ -439,6 +444,7 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 
 		r = trinity_raw_syscall(__NR_recvmsg, (long)recv_fd, (long)&mh,
 			    (long)(MSG_PEEK | MSG_DONTWAIT));
+		__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED);
 		if (r < 0)
 			continue;
 
@@ -455,8 +461,11 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 			n = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
 			fds = (int *)CMSG_DATA(cmsg);
 			for (j = 0; j < n; j++) {
-				if (fds[j] >= 0)
+				if (fds[j] >= 0) {
 					(void)trinity_raw_syscall(__NR_close, (long)fds[j]);
+					__atomic_fetch_add(&rs->direct_call_count,
+							   1UL, __ATOMIC_RELAXED);
+				}
 			}
 		}
 	}
@@ -482,10 +491,11 @@ static struct af_unix_race_shared *race_shared_alloc(void)
 	if (rs == MAP_FAILED)
 		return NULL;
 
-	rs->sv2_recv_fd = -1;
-	rs->race_budget = 0;
-	rs->go   = 0;
-	rs->done = 0;
+	rs->sv2_recv_fd      = -1;
+	rs->race_budget      = 0;
+	rs->go               = 0;
+	rs->done             = 0;
+	rs->direct_call_count = 0;
 	return rs;
 }
 
@@ -867,16 +877,16 @@ static void af_unix_scm_rights_gc_race_burst(struct af_unix_scm_rights_gc_iter_c
 		run_race_burst_parent_half(it->sv2[1], it->sv4[1], races);
 
 		reap_race_sibling(sibling);
-		/* Cross-task path per iter: parent issues recvmsg(drain)
-		 * + sendmsg(attach) = 2; sibling issues raw recvmsg(PEEK)
-		 * = 1 (estimate -- sibling never touches shm, so we lean
-		 * on the budget bound: actual sibling count is at most
-		 * `races`, shortfall from alarm(2) / PDEATHSIG ignored,
-		 * same discipline as futex-storm's ctx.s->iters estimate).
-		 * Plus one open() + one close() for extra_fd.  clone3,
-		 * futex wake/wait, prctl, getppid, and reap-side waitpid
-		 * are harness plumbing and stay uncounted. */
-		it->direct_calls += (unsigned long)races * 3UL + 2UL;
+		/* Parent share per iter: recvmsg(drain) + sendmsg(attach) = 2,
+		 * plus one open() + one close() for extra_fd.  Sibling share is
+		 * drained from rs->direct_call_count (actual recvmsg PEEK +
+		 * close per installed SCM_RIGHTS fd).  waitpid() inside
+		 * reap_race_sibling() is the required acquire barrier before
+		 * the RELAXED load below.  clone3, futex, prctl, getppid, and
+		 * waitpid are harness plumbing and stay uncounted. */
+		it->direct_calls += (unsigned long)races * 2UL + 2UL;
+		it->direct_calls += (unsigned long)
+			__atomic_load_n(&rs->direct_call_count, __ATOMIC_RELAXED);
 	}
 
 	if (rs != NULL)
