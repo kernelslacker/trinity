@@ -1,0 +1,36 @@
+# stats-rotation-jsonl-schema.baseline
+#
+# Field names for rotation-event JSONL records emitted by
+# stats/rotation_event.c::stats_rotation_event_emit().
+#
+# Seeded from the source snprintf format string; a quick
+# dry-run rarely produces live rotation events.
+#
+# Regenerate after a field-name change with:
+#   scripts/check-static/check-runtime-json-output.sh --regen
+# and commit the diff alongside the code change.
+
+[rotation]
+cmp_wins_in_window
+distinct_edges_now
+op_count_end
+op_count_start
+pc_edge_calls_in_window
+pc_edges_in_window
+pim_mode
+pim_mode_name
+plateau_active
+selection_reason_next
+selection_reason_next_name
+selection_reason_prev
+selection_reason_prev_name
+start_mono_ns
+strategy_next
+strategy_next_name
+strategy_prev
+strategy_prev_name
+syscalls_in_window
+t_close_mono_ns
+warn_fires_in_window
+was_chaos
+

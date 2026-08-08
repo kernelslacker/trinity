@@ -20,6 +20,7 @@ ncscope.*
 cov-int
 trinity-coverity.tar.xz
 stats-timeseries-*.jsonl
+rotation-events-*.jsonl
 *.pyc
 __pycache__/
 dmesg.log

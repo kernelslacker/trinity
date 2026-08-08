@@ -99,6 +99,20 @@ update this section to match `ls scripts/check-static/*.sh`.)
   publishes `REEXEC_OK` per-invocation.  Catches a new sanitise-bearing
   entry added without annotation — a gap the existing file-level grep
   cannot see.
+- `check-runtime-json-output`: spawn the binary under the sanctioned
+  capped form (`timeout`/`TRINITY_NO_DMESG`/`--dry-run`), then
+  cross-check all three machine-readable output surfaces against
+  their baselines: (1) final stats JSON (`--stats-json`) key-paths
+  and value-types versus the source-reconstruction baseline produced
+  by `stats-json-schema.sh` — a source-reconstruction error and a
+  binary-emission error produce different failures; (2) periodic
+  JSONL terminal-record field names versus
+  `stats-periodic-jsonl-schema.baseline`; (3) rotation-event JSONL
+  field names against the source-derived
+  `stats-rotation-jsonl-schema.baseline`.  Also exercises sink-failure
+  end-to-end: open failures for `--stats-log-file` and the
+  auto-named timeseries/rotation files are verified to surface in
+  stderr with exit 0.
 - `check-static-doc-parity`: every script in `scripts/check-static/`
   must have a matching row in this file, and every row here must
   correspond to a real script.  A new check landing with no doc row

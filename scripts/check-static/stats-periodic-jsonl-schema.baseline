@@ -1,0 +1,21 @@
+# stats-periodic-jsonl-schema.baseline
+#
+# Field names for the periodic JSONL surfaces emitted by
+# stats/log.c (stats_timeseries_emit_window) and the terminal
+# record written by stats_timeseries_close().
+#
+# Two sections:
+#   [terminal]  -- fields in the shutdown terminal record
+#   [window]    -- fields in a periodic window record
+#                  (only present when >= 10001 ops were run)
+#
+# Regenerate after a field-name change with:
+#   scripts/check-static/check-runtime-json-output.sh --regen
+# and commit the diff alongside the code change.
+
+[terminal]
+cross_check_ok
+last_window_op_count
+total_ops
+type
+
