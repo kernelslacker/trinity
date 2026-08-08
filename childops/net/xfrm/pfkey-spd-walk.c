@@ -337,11 +337,13 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base)
 	uint8_t buf[256];
 	struct spd_variant v;
 	struct timespec t0;
+	unsigned long n = 0;
 	int fd;
 	uint32_t pid;
 	unsigned int i;
 
 	fd = socket(AF_KEY, SOCK_RAW, PF_KEY_V2);
+	n++;
 	if (fd < 0)
 		_exit(0);
 
@@ -368,6 +370,7 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base)
 		if (len == 0)
 			break;
 		(void)send(fd, buf, len, 0);
+		n++;
 		drain_replies(fd);
 
 		if (budget_elapsed_ns(&t0, (long)PFKEY_INNER_WALL_NS))
@@ -375,6 +378,13 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base)
 	}
 
 	close(fd);
+	n++;
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, n);
+	}
 	_exit(0);
 }
 
@@ -389,11 +399,13 @@ static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir)
 {
 	uint8_t buf[256];
 	struct timespec t0;
+	unsigned long n = 0;
 	int fd;
 	uint32_t pid;
 	unsigned int i;
 
 	fd = socket(AF_KEY, SOCK_RAW, PF_KEY_V2);
+	n++;
 	if (fd < 0)
 		_exit(0);
 
@@ -423,6 +435,7 @@ static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir)
 		if (len == 0)
 			break;
 		(void)send(fd, buf, len, 0);
+		n++;
 		drain_replies(fd);
 
 		if (budget_elapsed_ns(&t0, (long)PFKEY_INNER_WALL_NS))
@@ -430,6 +443,13 @@ static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir)
 	}
 
 	close(fd);
+	n++;
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			childop_direct_syscalls_add(op, n);
+	}
 	_exit(0);
 }
 
@@ -618,14 +638,11 @@ bool pfkey_spd_walk(struct childdata *child)
 		}
 	}
 
-	/* Publish per-invocation direct-syscall attribution before the
-	 * userns_run_in_ns dispatch commits.  All the real kernel entries
-	 * live inside pfkey_spd_walk_in_ns (walker/racer AF_KEY sockets,
-	 * SADB_X_SPDADD/SPDDUMP sendtos, SPDDELETE burst); posting the
-	 * bump here on the setup-passed path attributes the invocation to
-	 * this childop without adding a per-syscall-site instrumentation
-	 * surface across the walker/racer forks.  Matches the surrounding
-	 * per-childop bump sites in child.c. */
+	/* Minimum parent-side attribution: 1 for the userns_run_in_ns
+	 * dispatch fork.  The walker and racer children publish their own
+	 * per-send and per-close tallies via childop_direct_syscalls_add()
+	 * before _exit(), so the full invocation count accumulates correctly
+	 * across all contributors. */
 	if (valid_op)
 		childop_direct_syscalls_add(op, 1);
 
