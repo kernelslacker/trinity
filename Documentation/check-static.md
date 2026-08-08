@@ -91,6 +91,14 @@ update this section to match `ls scripts/check-static/*.sh`.)
   against a golden baseline, so rename / removal / reorder never
   silently reshapes the surface downstream operator tooling greps.
   Regenerate with `--regen` and review the baseline diff.
+- `check-reexec-coverage`: every `struct syscallentry` block in
+  `syscalls/**/*.c` that has a `.sanitise =` field must carry one of:
+  `REEXEC_SANITISE_OK` (static flag), a `/* Not REEXEC_SANITISE_OK: */`
+  rejection comment, `AVOID_REEXEC`, or be listed in
+  `check-reexec-coverage.baseline` as a known-dynamic entry that
+  publishes `REEXEC_OK` per-invocation.  Catches a new sanitise-bearing
+  entry added without annotation — a gap the existing file-level grep
+  cannot see.
 - `check-static-doc-parity`: every script in `scripts/check-static/`
   must have a matching row in this file, and every row here must
   correspond to a real script.  A new check landing with no doc row
