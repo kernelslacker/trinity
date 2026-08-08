@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/socket.h>
 
 #include "arch.h"
 #include "child.h"
@@ -132,8 +133,13 @@ static int userns_lane_write_proc(const char *path, const char *line)
  *      still fires and the child fuzz loop runs without userns-lane caps.
  *
  * After a successful return the child holds a full capability set inside its
- * own user namespace.  capset(empty) runs next in the caller; that drops
- * all capabilities in init_user_ns.  The child then holds caps only in its
+ * own user namespace.  capset(empty) has already run in the caller; that
+ * dropped all capabilities in init_user_ns.  Issuing unshare(CLONE_NEWUSER)
+ * AFTER capset means create_user_ns() sets cap_effective = CAP_FULL_SET in
+ * the new userns unconditionally -- the kernel grants full caps in a newly
+ * created userns regardless of the caller's effective caps.  capset does not
+ * alter euid/egid, so the identity idmap write still runs with the process's
+ * current effective uid/gid.  The child then holds caps only in its
  * private user namespace, never in init_user_ns, so:
  *   - capable(CAP_*)   -> ns_capable(&init_user_ns, cap) -> false
  *   - ns_capable(child_userns, cap)                      -> true
@@ -504,23 +510,6 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	}
 #endif
 
-	/*
-	 * Userns-admin lane: unshare into a private user+net namespace and
-	 * install an identity uid/gid map so ns_capable(net->user_ns, cap)
-	 * gates are reachable for GENL_UNS_ADMIN_PERM surfaces.  Must run
-	 * after the random namespace unshare block above (so the ordinary
-	 * per-child netns/mntns decisions have already been made) and before
-	 * drop_privs() / capset(empty) (so the map write still runs with
-	 * the child's original euid/egid).
-	 *
-	 * Only engaged when at least one active syscallentry has
-	 * userns_admin_lane set and the kernel permits unprivileged user
-	 * namespaces.  No entry currently sets the flag; this is a no-op
-	 * for all baseline runs.
-	 */
-	if (find_userns_lane_entry() != NULL)
-		maybe_enter_userns_admin_lane(childno);
-
 	if (orig_uid == 0)
 		drop_privs();
 
@@ -561,6 +550,49 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 			}
 			outputerr("child: capset(empty) failed (non-root, continuing): %s\n",
 				  strerror(saved_errno));
+		}
+	}
+
+	/*
+	 * Userns-admin lane: runs here, AFTER capset(empty), so that
+	 * unshare(CLONE_NEWUSER) creates a new userns in which create_user_ns()
+	 * sets cap_effective = CAP_FULL_SET unconditionally.  The pre-move
+	 * placement (before capset) caused the new userns to mirror the empty
+	 * effective set, making every ns_capable() check return -EPERM.
+	 * capset does not alter euid/egid; the identity idmap write is valid
+	 * here.  Must run after the random namespace unshare block above and
+	 * before the oracle anchor capture below.
+	 *
+	 * Only engaged when at least one active syscallentry has
+	 * userns_admin_lane set and the kernel permits unprivileged user
+	 * namespaces.  No entry currently sets the flag; this is a no-op
+	 * for all baseline runs.
+	 */
+	if (find_userns_lane_entry() != NULL) {
+		maybe_enter_userns_admin_lane(childno);
+		/*
+		 * Self-test: if the lane entered successfully SO_RCVBUFFORCE
+		 * must now SUCCEED -- the socket lives in the lane's netns
+		 * whose user_ns is the child's own userns where it holds
+		 * CAP_FULL_SET.  A failure here turns a silent broken lane
+		 * into an observable outputerr.
+		 */
+		if (!__atomic_load_n(&shm->no_userns_lane, __ATOMIC_RELAXED)) {
+			int lane_probe_fd = socket(AF_INET, SOCK_DGRAM, 0);
+			if (lane_probe_fd >= 0) {
+				int lane_probe_sz = 4096;
+				if (setsockopt(lane_probe_fd, SOL_SOCKET,
+					       SO_RCVBUFFORCE,
+					       &lane_probe_sz,
+					       sizeof(lane_probe_sz)) != 0)
+					outputerr("child %d: userns-admin lane "
+						  "self-test: SO_RCVBUFFORCE "
+						  "failed (errno=%d) -- lane "
+						  "entered but ns_capable "
+						  "still denied\n",
+						  childno, errno);
+				(void)close(lane_probe_fd);
+			}
 		}
 	}
 
