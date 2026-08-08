@@ -11,6 +11,8 @@ static const struct stat_field packet_qdisc_bypass_unanchored_l2_fields[] = {
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, lane_b_errors),
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, lane_b_eagain),
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, macsec_sa_installed),
+	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, macsec_sa_install_eperm),
+	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, macsec_sa_install_failed),
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, completed_ok),
 };
 
