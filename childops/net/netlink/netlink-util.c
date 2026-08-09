@@ -142,11 +142,16 @@ out_report:
 	 * this_child()->op_type so ordinary childop dispatch fns get
 	 * automatic attribution without any per-file wiring.  Fork()'d
 	 * grandchildren (nexthop-replace-churn's route worker et al.)
-	 * whose pid isn't in pids[] see this_child() == NULL; they
-	 * naturally skip the fallback and either stay unattributed or
-	 * publish via an explicit opts->caller_op the parent set before
-	 * fork.  Out-of-range values are silently ignored -- the publish
-	 * in nl_close() bounds-checks before adding.
+	 * inherit the parent's COW slot via this_child() -- the slot is
+	 * non-NULL, pointing at the parent's childdata.  The fallback
+	 * therefore fires in grandchildren and sets ctx->caller_op from
+	 * the parent's op_type.  Callers that fork grandchildren and
+	 * need precise attribution must set opts->caller_op explicitly
+	 * before calling nl_open(); that explicit value wins via the
+	 * early-exit above and prevents any mismatch from the COW-
+	 * inherited parent slot.  Out-of-range values are silently
+	 * ignored -- the publish in nl_close() bounds-checks before
+	 * adding.
 	 */
 	if (opts->caller_op != CHILD_OP_SYSCALL &&
 	    opts->caller_op < NR_CHILD_OP_TYPES) {
