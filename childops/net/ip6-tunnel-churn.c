@@ -410,6 +410,7 @@ static int ip6t_iter_setup(struct ip6t_iter_ctx *ctx)
 	struct nl_open_opts rtnl_opts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_IP6_TUNNEL_CHURN,
 	};
 	unsigned int rng;
 
