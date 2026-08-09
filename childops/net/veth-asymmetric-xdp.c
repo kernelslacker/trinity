@@ -743,8 +743,9 @@ static int veth_asymmetric_xdp_in_ns(void *arg)
 {
 	struct veth_xdp_iter_ctx *ictx = (struct veth_xdp_iter_ctx *)arg;
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_VETH_ASYMMETRIC_XDP,
 	};
 	const enum child_op_type op = ictx->child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
