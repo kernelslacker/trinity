@@ -109,7 +109,8 @@ const size_t audit_types_n = ARRAY_SIZE(audit_types);
  * exactly 4 bytes (u32).
  */
 const struct nlattr_width rtax_attrs[] = {
-	{ RTAX_MTU,        4 }, { RTAX_WINDOW,    4 },
+	{ RTAX_MTU,        4, 68 }, /* min IPV4_MIN_MTU (68): value < 68 -> ip_do_fragment softlockup */
+	{ RTAX_WINDOW,    4 },
 	{ RTAX_RTT,        4 }, { RTAX_RTTVAR,    4 },
 	{ RTAX_SSTHRESH,   4 }, { RTAX_CWND,      4 },
 	{ RTAX_ADVMSS,     4 }, { RTAX_REORDERING,4 },

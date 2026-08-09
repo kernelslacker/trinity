@@ -11,6 +11,7 @@
  */
 #include <sys/socket.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <netinet/in.h>
 #include <string.h>
 #include <linux/netlink.h>
@@ -106,7 +107,8 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 		 * to exercise the strict-length validation path.
 		 * 31/32: emit the exact kernel-expected width.
 		 */
-		if (ONE_IN(32))
+		int exact_width = !ONE_IN(32);
+		if (!exact_width)
 			payload_len = RAND_RANGE(4, 32);
 		else
 			payload_len = aw->width;
@@ -125,6 +127,21 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 		if (!start_nlattr(buf, offset, buflen, atype, payload_len))
 			break;
 		generate_rand_bytes(buf + offset + NLA_HDRLEN, payload_len);
+		/*
+		 * min_val guard: on the exact-width path, if the attribute
+		 * has a minimum-value constraint and the payload is exactly
+		 * 4 bytes (u32), clamp the generated value up to min_val.
+		 * Prevents e.g. RTAX_MTU < IPV4_MIN_MTU (68) reaching the
+		 * kernel and triggering an ip_do_fragment softlockup.
+		 */
+		if (exact_width && aw->min_val > 0 &&
+		    payload_len == sizeof(uint32_t)) {
+			uint32_t v;
+			memcpy(&v, buf + offset + NLA_HDRLEN, sizeof(v));
+			if (v < aw->min_val)
+				v = aw->min_val;
+			memcpy(buf + offset + NLA_HDRLEN, &v, sizeof(v));
+		}
 		offset += total;
 	}
 	return offset;

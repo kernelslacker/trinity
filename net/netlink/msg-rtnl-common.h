@@ -51,6 +51,7 @@ struct nlattr *start_nlattr(unsigned char *buf, size_t offset,
 struct nlattr_width {
 	unsigned short type;
 	unsigned short width;   /* exact kernel-expected payload bytes */
+	unsigned int   min_val; /* if > 0, clamp u32 payload to >= min_val */
 };
 
 /*
