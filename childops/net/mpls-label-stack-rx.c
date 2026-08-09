@@ -428,15 +428,16 @@ struct mpls_label_stack_rx_iter_ctx {
 	bool		nl_opened;
 	bool		mpls_enabled;
 	struct childdata *child;
-	/* Direct-syscall tally accumulated across setup / burst / teardown.
-	 * nl_open success: socket + bind + setsockopt == 3;
+	/* Direct-syscall tally for non-netlink calls:
 	 * mlr_enable_mpls_on_lo success: open+write+close x2 == 6;
 	 * rtnl_setlink_up success: sendmsg + recv == 2;
-	 * socket(AF_PACKET): 1; bind: 1; sendto: 1 each;
-	 * close(raw): 1; nl_close: 1.
-	 * Published once in mpls_label_stack_rx_in_ns() via
-	 * childop_direct_syscalls_add() so the hot path pays one atomic
-	 * add per invocation instead of per syscall. */
+	 * socket(AF_PACKET): 1; bind: 1; sendto: 1 each; close(raw): 1.
+	 * Netlink calls (socket + bind + setsockopt from nl_open,
+	 * close from nl_close) are tracked internally by the nl_ctx and
+	 * published automatically by nl_close() via opts.caller_op.
+	 * Published once per invocation via childop_direct_syscalls_add()
+	 * at the end of mpls_label_stack_rx_in_ns() for the non-netlink
+	 * portion. */
 	unsigned long	direct_calls;
 };
 
@@ -450,6 +451,7 @@ static int mpls_label_stack_rx_iter_open_ctx(struct mpls_label_stack_rx_iter_ctx
 	struct nl_open_opts opts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_MPLS_LABEL_STACK_RX,
 	};
 
 	if (nl_open(&ctx->nl, &opts) < 0) {
@@ -457,8 +459,6 @@ static int mpls_label_stack_rx_iter_open_ctx(struct mpls_label_stack_rx_iter_ctx
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	/* nl_open success: socket + bind + setsockopt. */
-	ctx->direct_calls += 3;
 	ctx->nl_opened = true;
 
 	if (!lo_brought_up()) {
@@ -589,10 +589,8 @@ static void mpls_label_stack_rx_iter_teardown(struct mpls_label_stack_rx_iter_ct
 		close(ctx->raw);
 	}
 
-	if (ctx->nl_opened) {
-		ctx->direct_calls++;	/* nl_close -> close() */
+	if (ctx->nl_opened)
 		nl_close(&ctx->nl);
-	}
 }
 
 struct mpls_label_stack_rx_ctx {
