@@ -54,8 +54,9 @@ static int nat_t_churn_in_ns(void *arg)
 	struct childdata *child = cctx->child;
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_XFRM,
+		.proto        = NETLINK_XFRM,
 		.recv_timeo_s = NAT_T_RECV_TIMEO_S,
+		.caller_op    = CHILD_OP_NAT_T_CHURN,
 	};
 	int udp = -1;
 	__be32 spi;
