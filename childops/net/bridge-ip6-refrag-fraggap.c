@@ -744,6 +744,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 	struct nl_open_opts rtnl_opts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_BRIDGE_IP6_REFRAG_FRAGGAP,
 	};
 	struct nfnl_open_opts nfnl_opts = {
 		.recv_timeo_s = 1,
@@ -837,6 +838,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 
 	if (nfnl_open(&nfnl_nft, &nfnl_opts) < 0)
 		goto out;
+	nfnl_nft.nl.caller_op = CHILD_OP_BRIDGE_IP6_REFRAG_FRAGGAP;
 	rc = bif_nft_install_bridge_ct(&nfnl_nft, "br_ip6_frag", "in");
 	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
