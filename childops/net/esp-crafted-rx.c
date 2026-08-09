@@ -170,6 +170,7 @@ static int esp_crafted_rx_iter_open_ctx(struct esp_crafted_rx_iter_ctx *ctx)
 	struct nl_open_opts opts = {
 		.proto        = NETLINK_XFRM,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_ESP_CRAFTED_RX,
 	};
 	const enum child_op_type op = ctx->child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
@@ -179,6 +180,7 @@ static int esp_crafted_rx_iter_open_ctx(struct esp_crafted_rx_iter_ctx *ctx)
 		struct nl_open_opts rtnl_opts = {
 			.proto        = NETLINK_ROUTE,
 			.recv_timeo_s = 1,
+			.caller_op    = CHILD_OP_ESP_CRAFTED_RX,
 		};
 
 		if (nl_open(&rtnl, &rtnl_opts) == 0) {
