@@ -432,6 +432,7 @@ result_path   = sys.argv[4]
 
 errors = []
 terminal_keys = None
+terminal_rec  = None
 window_keys   = None
 total_ops     = None
 
@@ -448,6 +449,7 @@ with open(ts_path) as f:
         rtype = rec.get("type")
         if rtype == "terminal":
             terminal_keys = sorted(rec.keys())
+            terminal_rec  = rec
             total_ops = rec.get("total_ops")
         else:
             # periodic window record
@@ -533,6 +535,9 @@ if terminal_keys:
     if missing:
         check_errors.append("terminal record: missing fields: " +
                              ", ".join(sorted(missing)))
+    cross_check = terminal_rec.get('cross_check_ok') if terminal_rec else None
+    if cross_check is not True:
+        check_errors.append(f'terminal record: cross_check_ok={cross_check!r}, expected True (shutdown invariant failed)')
 
 if bl_window and not window_keys:
     # No window records produced.  Discriminate using total_ops from the
