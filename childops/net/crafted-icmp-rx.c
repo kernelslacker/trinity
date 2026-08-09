@@ -499,8 +499,9 @@ static int crafted_icmp_rx_in_ns(void *arg)
 	struct crafted_icmp_rx_arg *rx_arg = (struct crafted_icmp_rx_arg *)arg;
 	struct nl_ctx nl = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_CRAFTED_ICMP_RX,
 	};
 
 	if (nl_open(&nl, &opts) == 0) {
