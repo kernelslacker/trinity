@@ -800,6 +800,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
 	struct nl_open_opts rtnl_opts = {
 		.proto         = NETLINK_ROUTE,
 		.recv_timeo_s  = FEV_NL_TIMEO_S,
+		.caller_op     = CHILD_OP_FLOWTABLE_ENCAP_VLAN,
 	};
 	struct nfnl_open_opts nf_opts = {
 		.recv_timeo_s  = FEV_NL_TIMEO_S,
