@@ -1,7 +1,7 @@
 /*
  * Per-family grammar table dispatcher.  Generalises the v1
- * socket_family_chain childop (84b298906961, AF_ALG only) and v3's
- * splice-substitution data leg (ef5622b4ac38) into a table-driven
+ * socket_family_chain childop (296466cb1845 ("[childops] add socket-family-chain childop (AF_ALG)")) and v3's
+ * splice-substitution data leg (6adbd3a6bbf2 ("[childops] socket-family-chain: splice-substitution data leg")) into a table-driven
  * walker that drives arbitrary AF_* families through coherent
  * setsockopt/bind/listen/accept/sendmsg sequences using one struct
  * socket_family_grammar entry per family.

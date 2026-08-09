@@ -11,7 +11,7 @@
  * pool (whose word is per-child private-COW) cannot reach.
  *
  * Keeping the obj wrapper in private heap preserves the structural
- * fix from d7836fef66c8 ("objects: remove shm-resident OBJ_GLOBAL
+ * fix from f8ccdb6d76dc ("objects: remove shm-resident OBJ_GLOBAL
  * pool and snapshot defences"): sibling writes can no longer alias
  * objhead / slot-version metadata and steer derefs past the live
  * allocation.  Only the value-only futex word -- whose racy

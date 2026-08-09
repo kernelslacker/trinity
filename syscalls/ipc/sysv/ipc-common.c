@@ -6,7 +6,7 @@
  *
  *   1. *get: bound-check retval against 0..INT_MAX, then publish the
  *      id into the per-child OBJ_LOCAL pool.  The bound check is the
- *      anti-wild-write guard documented in 23d92a7b27fa for the
+ *      anti-wild-write guard documented in bdd493d138a7 ("ipc: snapshot retval in post_ipc") for the
  *      sysvipc multiplexer; the per-direct-syscall sites had the same
  *      shape with only the oracle prefix and the register hook
  *      differing.

@@ -46,7 +46,7 @@
  *                        between consecutive iterations.
  *
  * Mirrors the per-invocation variety pattern in 03d9df8c0f72
- * (vdso-mremap-race shape) and 4eb7e650afe5 (flock-thrash ordering).
+ * (vdso-mremap-race shape) and b5d0e2e315a8 ("flock-thrash: randomise per-invocation acquire/release ordering").
  */
 enum prot_mode {
 	PROT_MODE_NONE_BURST = 0,

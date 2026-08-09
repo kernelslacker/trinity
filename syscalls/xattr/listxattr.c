@@ -72,7 +72,7 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
 	 * and corrupts glibc chunk metadata, with the abort surfacing far
 	 * downstream (deferred_free_flush, _int_malloc on a corrupted
 	 * tcache, etc.).  Same shape as the sched_getattr clamp
-	 * (862ee5c6ae3a), applied here to the pool-backed ARG_ADDRESS
+	 * (6a4fd0a95f4e ("sched_getattr: clamp user_size argument to buffer allocation size")), applied here to the pool-backed ARG_ADDRESS
 	 * buffer family.
 	 *
 	 *   - If avoid_shared_buffer_out() redirected (pointer changed),
@@ -300,7 +300,7 @@ static void sanitise_listxattr(struct syscallrecord *rec)
 	/*
 	 * Clamp rec->a3 (size) to the actual allocation backing rec->a2.
 	 * See sanitise_flistxattr above for the full rationale and the
-	 * 862ee5c6ae3a (sched_getattr) precedent -- identical pattern.
+	 * 6a4fd0a95f4e ("sched_getattr: clamp user_size argument to buffer allocation size") precedent -- identical pattern.
 	 */
 	if (rec->a2 != pre_a2)
 		buf_alloc_size = rec->a3 > (unsigned long) page_size
@@ -578,7 +578,7 @@ static void sanitise_llistxattr_plant_pathname(struct syscallrecord *rec)
  *
  * Clamp rec->a3 (size) to the actual allocation backing rec->a2.
  * See sanitise_flistxattr above for the full rationale and the
- * 862ee5c6ae3a (sched_getattr) precedent -- identical pattern.
+ * 6a4fd0a95f4e ("sched_getattr: clamp user_size argument to buffer allocation size") precedent -- identical pattern.
  */
 static size_t sanitise_llistxattr_size_buffer(struct syscallrecord *rec)
 {

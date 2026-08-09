@@ -62,7 +62,7 @@
  * Probability (out of 100) that the ALG_SEND_MORE phase substitutes a
  * single splice(tagged_fd -> pipe -> child_fd) pull-from-pagecache for
  * the default N × sendmsg(MSG_MORE) buffer sends.  Re-added from the
- * retired v3 run_alg_chain data leg (ef5622b4ac38 / 1c7259d88947): the
+ * retired v3 run_alg_chain data leg (6adbd3a6bbf2 ("[childops] socket-family-chain: splice-substitution data leg") / 1c7259d88947): the
  * splice path reaches alg_sendpage via splice_read_to_pipe, coverage
  * the buffer-sendmsg walk never lands.  Rate matches v3.  On any setup
  * miss (no pagecache fd, pipe2 ENFILE, splice returning <= 0 in

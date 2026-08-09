@@ -132,7 +132,7 @@ static void post_time(struct syscallrecord *rec)
 	 * non-errno value that survives the syscall_t <= 0 check, producing
 	 * a false oracle fire on a memory-corruption shape rather than a
 	 * real kernel ABI break.  Same multi-read shape the epoll
-	 * post-handlers had (commit 48279ed126bb).
+	 * post-handlers had (commit 2dfe2b603dc8 ("epoll: snapshot maxevents in wait post handlers")).
 	 */
 	retval = rec->retval;
 	syscall_t = (long) retval;

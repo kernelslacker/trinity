@@ -244,9 +244,9 @@ struct socket_ctx {
  * net/socket-family-grammar-core.c) walks one of these end-to-end inside
  * a single childop, with the same fd flowing through every step.
  *
- * Generalises the v1 socket_family_chain childop (84b298906961) which
+ * Generalises the v1 socket_family_chain childop (296466cb1845 ("[childops] add socket-family-chain childop (AF_ALG)")) which
  * walked a hardcoded AF_ALG lifecycle, plus v3's splice-substitution
- * data leg (ef5622b4ac38) which stays inside the AF_ALG-specific
+ * data leg (6adbd3a6bbf2 ("[childops] socket-family-chain: splice-substitution data leg")) which stays inside the AF_ALG-specific
  * path (run_alg_chain).  The grammar table drives arbitrary AF_*
  * families through coherent setsockopt/bind/listen/accept/sendmsg
  * sequences without rebuilding the dispatcher per family.

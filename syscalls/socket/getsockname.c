@@ -96,8 +96,8 @@ static void sanitise_getsockname(struct syscallrecord *rec)
 	 * was effectively never reachable. Route the addrlen slot through
 	 * valresult_alloc() so the shape catalogue (EXACT / UNDER /
 	 * EXACT_PLUS_ONE / HUGE / ZERO) mutates *lenp around the natural
-	 * sockaddr_storage capacity. Mirrors recv.c (81a1271bc2a1) and
-	 * getsockopt.c (38e1b000092d). EXACT (~88%) preserves the
+	 * sockaddr_storage capacity. Mirrors recv.c (e694cc51e548 ("recv: route recvfrom addrlen through valresult")) and
+	 * getsockopt.c (85a13cbe8f22 ("valresult: add value-result helper, migrate getsockopt")). EXACT (~88%) preserves the
 	 * stable-equality oracle for the happy path; the other shapes are
 	 * new fuzz coverage that the oracle will mostly short-circuit via
 	 * the retval and recheck_len != first_len gates.

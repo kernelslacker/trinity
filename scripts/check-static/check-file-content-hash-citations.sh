@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # check-file-content-hash-citations.sh -- detect dangling git-hash citations
-# in tracked Documentation/*.md and scripts/**/*.sh files.
+# in tracked *.c, *.h, Documentation/*, scripts/*.sh and scripts/**/*.sh files.
 #
 # The hash citation convention (extended from commit-msg-hash-resolves to
 # cover file content) requires that every bare hex token embedded in a source
@@ -102,7 +102,7 @@ extract_adjacent_subject() {
 # ---------------------------------------------------------------------------
 
 mapfile -t tracked_files < <(
-	git ls-files 'Documentation/*.md' 'scripts/**/*.sh' 2>/dev/null \
+	git ls-files '*.c' '*.h' 'Documentation/*' 'scripts/*.sh' 'scripts/**/*.sh' 2>/dev/null \
 		| grep -v "^${SELF}$" \
 		| grep -v "^${RESOLVER_REL}$"
 )
@@ -123,9 +123,13 @@ skip_detail=""
 for file in "${tracked_files[@]}"; do
 	[ -f "$file" ] || continue
 
-	lineno=0
-	while IFS= read -r line; do
-		lineno=$((lineno + 1))
+	# Pre-filter: only process lines that contain at least one potential hex
+	# token.  This avoids spawning a grep subprocess for every line in large
+	# C/H source files (419k lines total) -- only the ~handful of matching
+	# lines are processed.
+	while IFS= read -r grepline; do
+		lineno="${grepline%%:*}"
+		line="${grepline#*:}"
 
 		# Extract hex tokens: 12-40 chars, must contain at least one [a-f].
 		# Read all matches on this line.
@@ -171,7 +175,7 @@ for file in "${tracked_files[@]}"; do
 
 		done < <(printf '%s\n' "$line" | grep -oE '[0-9a-f]{12,40}' | grep '[a-f]' | sort -u)
 
-	done < "$file"
+	done < <(grep -n -E '[0-9a-f]{12,40}' "$file" 2>/dev/null)
 done
 
 # ---------------------------------------------------------------------------

@@ -955,7 +955,7 @@ static void post_setsockopt(struct syscallrecord *rec)
 		 * holds, skip the inner-free dispatch and fall back to outer-
 		 * only enqueue (same path as the non-ATTACH_FILTER branch);
 		 * mirrors the bpf_free_filter() inner-filter gate added in
-		 * 64f659289041.
+		 * 0f3498521933 ("bpf: gate sock_fprog inner-filter free on tracked-or-readable").
 		 */
 		struct sock_fprog *bpf = (struct sock_fprog *) snap->optval;
 

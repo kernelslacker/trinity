@@ -559,7 +559,7 @@ struct syscallentry syscall_futex = {
 	 * Without this opt-out, blanket_address_scrub() relocates the
 	 * curated VA to a fresh page underneath the kernel: the FUTEX_WAIT
 	 * comparison reads pool garbage and returns -EAGAIN, the new
-	 * cross-child shared word pool (commit c9124ba765f8) is silently
+	 * cross-child shared word pool (commit 5f3ab43a021e ("futex-shared: back word storage with alloc_shared()")) is silently
 	 * disabled, and the per-child private OBJ_FUTEX path is broken in
 	 * the same way.
 	 */

@@ -590,7 +590,7 @@ static void post_statx(struct syscallrecord *rec)
 	 * buffer for an mxsk check on a call that actually failed,
 	 * driving statx_oracle_anomalies on a memory-corruption shape
 	 * rather than a real ABI break.  Same multi-read race the
-	 * epoll post handlers had (commit 48279ed126bb).
+	 * epoll post handlers had (commit 2dfe2b603dc8 ("epoll: snapshot maxevents in wait post handlers")).
 	 */
 	retval = rec->retval;
 

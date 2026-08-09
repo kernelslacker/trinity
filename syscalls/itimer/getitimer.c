@@ -98,8 +98,8 @@ static void sanitise_getitimer(struct syscallrecord *rec)
  * returned struct is a smoking-gun normalisation bug and must never
  * reach userspace.
  *
- * Snapshot pattern matches ce5cb5f6cbc9 (statmount) and e7a5218fee4b
- * (prlimit64): the user out-pointer is captured at sanitise time into a
+ * Snapshot pattern matches a086e3d932f7 ("statmount: snapshot input args in post_state for the oracle") and
+ * 73e773d030fe ("prlimit64: snapshot input args in post_state for the oracle"): the user out-pointer is captured at sanitise time into a
  * heap struct in rec->post_state.  post_state_install() registers the
  * snapshot in the ownership table in the same step; post_state_claim_owned()
  * then runs the canonical shape -> ownership -> magic gate before any

@@ -412,7 +412,7 @@ unsigned long find_previous_arg_address(struct syscallentry *entry, struct sysca
  * scribbled iov_base would still let the kernel touch the wrong page).
  *
  * alloc_iovec() already runs avoid_shared_buffer() per iov_base at
- * build time (which post c4f1c69cdb08 covers both alloc_shared regions
+ * build time (which post 44642513f05d ("random-address: redirect syscall arg pointers landing in the libc heap") covers both alloc_shared regions
  * and the libc brk arena), but the iovec array lives in the per-child
  * heap as a vlen * sizeof(struct iovec) zmalloc().  A sibling syscall
  * that scribbles bytes into that allocation between the sanitiser

@@ -117,7 +117,7 @@ static void post_timerfd_create(struct syscallrecord *rec)
 	 * OBJ_FD_TIMERFD with an fd the kernel never gave us -- or
 	 * conversely let the guard see a negative stomp while a real
 	 * fd is silently dropped.  Same multi-read race the epoll
-	 * post handlers had (commit 48279ed126bb).
+	 * post handlers had (commit 2dfe2b603dc8 ("epoll: snapshot maxevents in wait post handlers")).
 	 */
 	retval = rec->retval;
 	fd = (int) retval;

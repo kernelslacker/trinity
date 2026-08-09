@@ -48,8 +48,7 @@
  * Per-op alarm contract: parent arms alarm(1) per invocation; this
  * op never extends the budget.  Every recv carries SO_RCVTIMEO of
  * 50 ms so a wedged kernel-side path can't burn the slot's full
- * second.  Mirrors commit 72a4eff318f3 (drop in-op alarm()
- * overrides).
+ * second.  Mirrors commit 9337086e6b7c ("[childops] drop in-op alarm() overrides — respect parent's per-op alarm(1) contract").
  *
  * DORMANT in dormant_op_disabled[].  Smoke-test before fleet enable.
  *

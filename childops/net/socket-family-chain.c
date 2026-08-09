@@ -9,13 +9,13 @@
  * lifecycle stay cold.  This childop walks one such lifecycle end-to-end
  * with the same fd flowing through every step.
  *
- * v1 (84b298906961): AF_ALG only.  socket() -> bind(salg_type/salg_name)
+ * v1 (296466cb1845 ("[childops] add socket-family-chain childop (AF_ALG)")): AF_ALG only.  socket() -> bind(salg_type/salg_name)
  * -> setsockopt(ALG_SET_KEY) -> [aead only] setsockopt(ALG_SET_AEAD_AUTHSIZE)
  * -> accept() -> sendmsg() -> recv() -> close.  The bound parent_fd and
  * accepted child_fd are private to one invocation and never enter the
  * global socket pool -- coherence is the entire point.
  *
- * v3 (ef5622b4ac38): added a splice(tagged_fd -> pipe -> child_fd) data
+ * v3 (6adbd3a6bbf2 ("[childops] socket-family-chain: splice-substitution data leg")): added a splice(tagged_fd -> pipe -> child_fd) data
  * leg substitution to the AF_ALG path so the chain reached alg_sendpage
  * via splice_read_to_pipe instead of only the userspace-buffer sendmsg
  * route.

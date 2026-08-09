@@ -137,7 +137,7 @@ static void sanitise_listxattrat_plant_pathname(struct syscallrecord *rec)
  * and corrupts glibc chunk metadata, with the abort surfacing far
  * downstream (deferred_free_flush, _int_malloc on a corrupted
  * tcache, etc.).  Same shape as the sched_getattr clamp
- * (862ee5c6ae3a), applied here to the pool-backed ARG_ADDRESS
+ * (6a4fd0a95f4e ("sched_getattr: clamp user_size argument to buffer allocation size")), applied here to the pool-backed ARG_ADDRESS
  * buffer family.
  *
  *   - If avoid_shared_buffer_out() redirected (pointer changed),

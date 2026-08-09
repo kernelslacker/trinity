@@ -158,7 +158,7 @@ static void post_times(struct syscallrecord *rec)
 	 * original value, then drive the monotonicity check against a
 	 * stomped value and log mismatched values that were never
 	 * actually returned by the syscall.  Same multi-read race the
-	 * epoll post handlers had (commit 48279ed126bb).
+	 * epoll post handlers had (commit 2dfe2b603dc8 ("epoll: snapshot maxevents in wait post handlers")).
 	 */
 	retval = rec->retval;
 	syscall_r = (clock_t) retval;
