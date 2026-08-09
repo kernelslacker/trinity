@@ -124,6 +124,33 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 22:
 	case 25: return gen_rta_nexthop_payload(p, avail, nla_type);
 	case 26: return gen_rta_tunnel_payload(p, avail, nla_type);
+
+	/*
+	 * Groups 10, 11 and 13 have no user-settable attribute surface:
+	 *
+	 * Group 10: RTM_GETMULTICAST (RTM_NEWMULTICAST=56).  Registered
+	 * with only a .dumpit handler in both IPv4 (net/ipv4/devinet.c,
+	 * inet_dump_ifmcaddr) and IPv6 (net/ipv6/addrconf.c,
+	 * inet6_dump_ifmcaddr).  The kernel enumerates multicast group
+	 * memberships; the user supplies only a netlink dump request with
+	 * no RTAs.
+	 *
+	 * Group 11: RTM_GETANYCAST (RTM_NEWANYCAST=60).  IPv6-only,
+	 * registered with only .dumpit (net/ipv6/addrconf.c,
+	 * inet6_dump_ifacaddr).  Same pattern as GETMULTICAST: dump-only,
+	 * no user-writable RTA payload.
+	 *
+	 * Group 13: RTM_NEWNDUSEROPT (=68).  Purely a kernel-to-user
+	 * notification; the kernel sends it when Neighbor Discovery
+	 * processes Router Advertisement user options
+	 * (net/ipv6/ndisc.c, ndisc_send_nduseropt).  No userspace .doit
+	 * or .dumpit handler is registered; a sendmsg from userspace
+	 * would be rejected by rtnetlink before any RTA is parsed.
+	 */
+	case 10: /* RTM_GETMULTICAST - dump-only, no user-settable RTAs */
+	case 11: /* RTM_GETANYCAST  - dump-only, no user-settable RTAs */
+	case 13: /* RTM_NEWNDUSEROPT - kernel-to-user notify only */
+		/* fall through */
 	default: return 0;
 	}
 }
