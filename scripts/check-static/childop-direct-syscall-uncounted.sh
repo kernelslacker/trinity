@@ -202,6 +202,40 @@ while IFS= read -r srcfile; do
 			match(tmp, /^[a-zA-Z][a-zA-Z0-9_]*/)
 			fn_name = substr(tmp, RSTART, RLENGTH)
 		}
+		# Childop entry functions: bool NAME(struct childdata *child).
+		# These are the primary per-childop entry points; they run in the
+		# child context and must account for every raw syscall they issue.
+		# No fork/exit detection is needed -- they return normally.
+		if (!in_fn && match(code,
+		    /bool[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\([[:space:]]*struct[[:space:]]+childdata[[:space:]]*\*/)) {
+			in_fn = 1
+			is_fork_fn = 0
+			brace_depth = 0
+			fn_raw_sites = 0
+			fn_tally_count = 0
+			delete fn_acc_incr
+			tmp = substr(code, RSTART)
+			sub(/bool[[:space:]]+/, "", tmp)
+			match(tmp, /^[a-zA-Z_][a-zA-Z0-9_]*/)
+			fn_name = substr(tmp, RSTART, RLENGTH)
+		}
+		# Clone body (_in_ns pattern): static int NAME(void *arg).
+		# Used for clone(2) grandchild bodies that must return int.  The
+		# int return type excluded them from the void/void* patterns above
+		# by construction; they are treated as thread workers here.
+		if (!in_fn && match(code,
+		    /static[[:space:]]+int[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\([[:space:]]*void[[:space:]]*\*[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\)/)) {
+			in_fn = 1
+			is_fork_fn = 0
+			brace_depth = 0
+			fn_raw_sites = 0
+			fn_tally_count = 0
+			delete fn_acc_incr
+			tmp = substr(code, RSTART)
+			sub(/static[[:space:]]+int[[:space:]]+/, "", tmp)
+			match(tmp, /^[a-zA-Z_][a-zA-Z0-9_]*/)
+			fn_name = substr(tmp, RSTART, RLENGTH)
+		}
 
 		if (in_fn) {
 			# Track brace depth to find function body bounds.

@@ -68,6 +68,38 @@ FORK_UNCOUNTED:childops/recipe/supervisor.c#seccomp_listener_inner # trinity_raw
 FORK_UNCOUNTED:childops/misc/futex-pi-requeue-rollback.c#fpr_owner_main
 FORK_UNCOUNTED:childops/misc/futex-pi-requeue-rollback.c#fpr_waiter_main
 THREAD_UNCOUNTED:childops/net/sockmap-cork-race.c#sender_thread
+# Newly surfaced by widened function-entry detection (bool NAME(struct childdata *child)
+# and static int NAME(void *arg) shapes): 28 entries previously invisible to the scanner.
+# These are the primary childop entry functions and _in_ns clone bodies; all files are
+# wired at op-body level or unwired. Per-function tally coverage is the outstanding gap.
+THREAD_UNCOUNTED:childops/fs/hfs-mount-fuzz.c#hfs_mount_in_ns
+THREAD_UNCOUNTED:childops/fs/hfs-mount-fuzz.c#hfs_mount_fuzz
+THREAD_UNCOUNTED:childops/fs/statmount-idmap-overflow.c#statmount_idmap_loop_in_ns
+THREAD_UNCOUNTED:childops/io_uring/flood.c#iouring_flood
+THREAD_UNCOUNTED:childops/io_uring/net-multishot.c#iouring_net_multishot
+THREAD_UNCOUNTED:childops/misc/bpf-lifecycle.c#combo_socket_filter
+THREAD_UNCOUNTED:childops/misc/bpf-lifecycle.c#combo_cgroup_skb
+THREAD_UNCOUNTED:childops/misc/bpf-lifecycle.c#combo_cgroup_sockopt
+THREAD_UNCOUNTED:childops/misc/bpf-lifecycle.c#combo_arena_fork
+THREAD_UNCOUNTED:childops/mm/mremap-merge-matrix.c#mremap_merge_matrix
+THREAD_UNCOUNTED:childops/mm/uffd-churn.c#uffd_churn
+THREAD_UNCOUNTED:childops/net/af-alg-template-probe.c#af_alg_template_probe
+THREAD_UNCOUNTED:childops/net/bridge-ip6-refrag-fraggap.c#bridge_ip6_refrag_fraggap_in_ns
+THREAD_UNCOUNTED:childops/net/espintcp-coalesce-churn.c#espintcp_coalesce_in_ns
+THREAD_UNCOUNTED:childops/net/eth-emitter.c#ensure_socket
+THREAD_UNCOUNTED:childops/net/ip4-udp-cork-splice.c#ip4_udp_cork_splice_in_ns
+THREAD_UNCOUNTED:childops/net/ip6-udp-cork-splice.c#ip6_udp_cork_splice_in_ns
+THREAD_UNCOUNTED:childops/net/ipfrag-source-churn.c#ipfrag_source_churn_in_ns
+THREAD_UNCOUNTED:childops/net/ipvs-sysctl-writer.c#ipvs_sysctl_writer_in_ns
+THREAD_UNCOUNTED:childops/net/packet-qdisc-bypass-unanchored-l2.c#iter_one_in_ns
+THREAD_UNCOUNTED:childops/net/rds-bind-transport-refleak.c#rds_bind_transport_refleak
+THREAD_UNCOUNTED:childops/net/rxrpc-sendmsg-cmsg-churn.c#rxrpc_sendmsg_cmsg_churn
+THREAD_UNCOUNTED:childops/net/sit-proto41-rx.c#ensure_socket
+THREAD_UNCOUNTED:childops/net/tc/qdisc-churn.c#tc_qdisc_churn_in_ns
+THREAD_UNCOUNTED:childops/net/tcp-ulp-swap-churn.c#tcp_ulp_swap_churn
+THREAD_UNCOUNTED:childops/net/tls-ulp-churn.c#tls_ulp_churn
+THREAD_UNCOUNTED:childops/net/xfrm/nat-t-churn.c#nat_t_churn_in_ns
+THREAD_UNCOUNTED:childops/net/xfrm/xfrm-churn.c#xfrm_churn_in_ns
 FORK_UNCOUNTED:childops/process/process-mrelease-race.c#victim_body
 FORK_UNCOUNTED:childops/process/process-mrelease-race.c#racer_body
 FORK_UNCOUNTED:childops/process/process-mrelease-race.c#waitid_racer_body
