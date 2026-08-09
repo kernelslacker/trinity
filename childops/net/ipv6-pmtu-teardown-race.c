@@ -493,8 +493,9 @@ static int v6pmtu_iter_setup_network(char names[V6PMTU_NUM_PAIRS][8])
 {
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_IPV6_PMTU_TEARDOWN_RACE,
 	};
 
 	if (nl_open(&ctx, &opts) < 0) {
