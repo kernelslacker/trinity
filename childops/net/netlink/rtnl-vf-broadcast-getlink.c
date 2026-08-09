@@ -113,12 +113,14 @@ struct rtnl_vf_iter_ctx {
 	int port_ifindex;
 	__u32 bus_id;
 	bool bus_id_owned;
-	/* Direct-syscall tally accumulated across setup / burst / teardown.
-	 * sysfs_write_str: open + write + close == 3; nl_open success: socket
-	 * + bind + setsockopt == 3; nl_send_recv_dump: sendmsg + recv == 2;
-	 * nl_close: close == 1.  Published once in rtnl_vf_broadcast_in_ns()
-	 * via childop_direct_syscalls_add() so the hot path pays one atomic
-	 * add per invocation instead of per syscall. */
+	/* Direct-syscall tally for non-netlink calls: sysfs_write_str
+	 * (open + write + close == 3 per call).  Netlink calls (socket +
+	 * bind + setsockopt from nl_open, sendmsg + recv from
+	 * nl_send_recv_dump, close from nl_close) are tracked internally
+	 * by the nl_ctx and published automatically by nl_close() via
+	 * opts.caller_op.  Published once per invocation via
+	 * childop_direct_syscalls_add() at the end of
+	 * rtnl_vf_broadcast_in_ns() for the sysfs portion. */
 	unsigned long direct_calls;
 };
 
@@ -172,6 +174,7 @@ static bool do_setup(struct rtnl_vf_iter_ctx *ctx)
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op = CHILD_OP_RTNL_VF_BROADCAST_GETLINK,
 	};
 
 	ctx->bus_id = rand32() & 0x3fffU;	/* 14-bit bus id avoids collisions */
@@ -197,8 +200,6 @@ static bool do_setup(struct rtnl_vf_iter_ctx *ctx)
 
 	if (nl_open(&ctx->nl, &opts) < 0)
 		return false;
-	/* nl_open success: socket + bind + setsockopt (SO_RCVTIMEO). */
-	ctx->direct_calls += 3;
 
 	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast.setup_ok, 1,
 			   __ATOMIC_RELAXED);
@@ -217,8 +218,6 @@ static void do_teardown(struct rtnl_vf_iter_ctx *ctx)
 {
 	char payload[32];
 
-	/* nl_close: close(). */
-	ctx->direct_calls += 1;
 	nl_close(&ctx->nl);
 
 	if (!ctx->bus_id_owned)
@@ -256,11 +255,6 @@ static bool issue_getlink_with_vf_filter(struct rtnl_vf_iter_ctx *ctx)
 		return false;
 	nlh->nlmsg_len = (__u32)off;
 
-	/* nl_send_recv_dump: sendmsg + recv (dump drain, at minimum one
-	 * recv per multipart batch).  Count as 2 to match the nl_send_recv
-	 * baseline; a deep dump adds further recv calls already tracked in
-	 * ctx->nl.direct_syscalls via the netlink-util accounting. */
-	ctx->direct_calls += 2;
 	return nl_send_recv_dump(&ctx->nl, buf, off) == 0;
 }
 
@@ -319,14 +313,12 @@ static int rtnl_vf_broadcast_in_ns(void *arg)
 
 	do_teardown(ctx);
 
-	/* Publish this invocation's direct-syscall load in one RELAXED
-	 * atomic add.  Tally accumulated across setup / getlink burst /
-	 * teardown helpers via ctx->direct_calls; the grandchild's write is
-	 * visible to the parent after _exit() because shm is a shared
-	 * mapping.  Gated on valid_op to match the surrounding per-op stats
-	 * bumps.  Setup-fail paths publish whatever they issued before
-	 * bailing (sysfs writes + possibly nl_open), correctly attributing
-	 * no burst-phase work to those exits. */
+	/* Publish this invocation's non-netlink direct-syscall load in one
+	 * RELAXED atomic add.  ctx->direct_calls holds the sysfs_write_str
+	 * tally (open+write+close, three calls per sysfs op); the netlink
+	 * portion (nl_open socket/bind/setsockopt, nl_send_recv_dump
+	 * sendmsg/recv, nl_close) is published automatically by nl_close()
+	 * via opts.caller_op = CHILD_OP_RTNL_VF_BROADCAST_GETLINK above. */
 	if (valid_op)
 		childop_direct_syscalls_add(op, ctx->direct_calls);
 	return 0;
