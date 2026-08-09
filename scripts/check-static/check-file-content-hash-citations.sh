@@ -383,6 +383,13 @@ if [ "$bare_fail_count" -gt 0 ]; then
 	} >&2
 fi
 
+SCRIPT_DIR="$ROOT/scripts/check-static"
+advisory_baseline_file="$SCRIPT_DIR/check-file-content-hash-citations-advisory.baseline"
+if [ ! -r "$advisory_baseline_file" ]; then
+	fail "advisory baseline file not found: $advisory_baseline_file"
+fi
+advisory_baseline=$(< "$advisory_baseline_file")
+
 if [ "$dangling_count" -gt 0 ] || [ "$bare_fail_count" -gt 0 ]; then
 	if [ "$dangling_count" -gt 0 ]; then
 		{
@@ -397,4 +404,9 @@ if [ "$dangling_count" -gt 0 ] || [ "$bare_fail_count" -gt 0 ]; then
 	fail "${dangling_count} dangling + ${bare_fail_count} new-bare citation(s) (${skip_count} skipped, advisory: ${advisory_count} upstream-prefix, ${bare_advisory_count} baseline-bare)"
 fi
 
-pass "${#tracked_files[@]} files scanned, 0 dangling, 0 new-bare (${skip_count} not-an-object skipped, advisory: ${advisory_count} upstream-hash token(s) lack upstream: prefix, ${bare_advisory_count} baseline bare citation(s))"
+# Ratchet: advisory count must not grow beyond the frozen baseline.
+if [ "$advisory_count" -gt "$advisory_baseline" ]; then
+	fail "advisory upstream-hash tokens grew: ${advisory_count} > baseline ${advisory_baseline} — add upstream: prefix or update baseline"
+fi
+
+pass "${#tracked_files[@]} files scanned, 0 dangling, 0 new-bare (${skip_count} not-an-object skipped, advisory: ${advisory_count}/${advisory_baseline} upstream-hash token(s) lack upstream: prefix, ${bare_advisory_count} baseline bare citation(s))"
