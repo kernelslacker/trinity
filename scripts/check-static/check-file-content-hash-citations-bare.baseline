@@ -1,26 +1,25 @@
 # Baseline for bare internal hash citations lacking ("subject") annotation.
 # The gate reports ADVISORY for entries listed here; any new bare citation
 # not present in this file is a FAIL.  This is a descend-only ratchet:
-# removing a bare citation removes its line; adding one fails immediately.
+# removing a bare citation removes its entry; adding one fails immediately.
+#
+# Format: file:hashtoken (NOT file:lineno -- hash tokens are stable under
+# ordinary editing; line numbers are not).
 #
 # To clear an entry: add the ("subject") annotation to the cited line and
 # remove the corresponding line from this file in the same commit.
-childops/fs/procfs-writer.c:337
-childops/fs/ublk-lifecycle.c:212
-childops/fs/ublk-lifecycle.c:416
-childops/io_uring/send-zc-churn.c:380
-childops/io_uring/send-zc-churn.c:451
-childops/io_uring/send-zc-churn.c:624
-childops/io_uring/send-zc-churn.c:668
-childops/net/packet-qdisc-bypass-unanchored-l2.c:1295
-childops/net/packet-qdisc-bypass-unanchored-l2.c:1296
-include/child.h:619
-net/socket-family-grammar-alg.c:65
-scripts/check-static/check-runtime-json-output.sh:813
-scripts/check-static/json-separator-adjacency.sh:127
-scripts/check-static/pdeathsig-getppid-recheck.sh:155
-stats/network/childops.c:84
-syscalls/fs/ftruncate.c:36
-syscalls/signal/signal.c:15
-syscalls/xattr/lremovexattr.c:48
-syscalls/xattr/removexattr.c:48
+childops/fs/procfs-writer.c:c830cc386bda
+childops/fs/ublk-lifecycle.c:825305aed33d
+childops/io_uring/send-zc-churn.c:825305aed33d
+childops/net/packet-qdisc-bypass-unanchored-l2.c:aa572518c2bf
+childops/net/packet-qdisc-bypass-unanchored-l2.c:fed6db19d692
+include/child.h:b86f2e77a846
+net/socket-family-grammar-alg.c:1c7259d88947
+scripts/check-static/check-runtime-json-output.sh:fa70568f8e3e
+scripts/check-static/json-separator-adjacency.sh:a79d41c36e2b
+scripts/check-static/pdeathsig-getppid-recheck.sh:e8f741787a65
+stats/network/childops.c:aa572518c2bf
+syscalls/fs/ftruncate.c:5104a97f6dea
+syscalls/signal/signal.c:f4a04186fa66
+syscalls/xattr/lremovexattr.c:f0d5ab520c00
+syscalls/xattr/removexattr.c:f0d5ab520c00

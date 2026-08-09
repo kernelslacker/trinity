@@ -58,8 +58,10 @@ set -u
 # so -u applies inside the function body; the array itself is global).
 declare -A _notanobj_cls_cache
 
-# Baseline set for bare internal citations (file:line -> 1).
+# Baseline set for bare internal citations (file:hashtoken -> 1).
 declare -A _bare_baseline
+# Tracks which baseline entries were matched during this scan (for stale detection).
+declare -A _bare_baseline_seen
 
 NAME="file-content-hash-citations"
 ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
@@ -300,9 +302,10 @@ for file in "${tracked_files[@]}"; do
 					# ("subject") annotation on the same line within 80 chars
 					# after the hash token.
 					if ! printf '%s\n' "$line" | grep -qE "${tok}.{0,80}\\(\""; then
-						_filelineno="${file}:${lineno}"
-						if [[ -v _bare_baseline["$_filelineno"] ]]; then
+						_filehash="${file}:${tok}"
+						if [[ -v _bare_baseline["$_filehash"] ]]; then
 							bare_advisory_count=$((bare_advisory_count + 1))
+							_bare_baseline_seen["$_filehash"]=1
 						else
 							bare_fail_count=$((bare_fail_count + 1))
 							bare_fail_detail="${bare_fail_detail}
@@ -366,6 +369,29 @@ for file in "${tracked_files[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
+# Stale baseline entries: entries in the baseline whose file:hash no longer
+# appears anywhere in the scanned tree.
+# ---------------------------------------------------------------------------
+
+stale_count=0
+stale_detail=""
+for _bkey in "${!_bare_baseline[@]}"; do
+	if [[ ! -v _bare_baseline_seen["$_bkey"] ]]; then
+		stale_count=$((stale_count + 1))
+		stale_detail="${stale_detail}
+  STALE bare baseline entry (file+hash no longer in tree): ${_bkey}"
+	fi
+done
+
+if [ "$stale_count" -gt 0 ]; then
+	{
+		echo "  $NAME: ${stale_count} stale/orphaned bare-baseline entry(ies) -- hash token no longer present in tree"
+		echo "  Remove the corresponding line(s) from check-file-content-hash-citations-bare.baseline."
+		printf '%s\n' "${stale_detail}"
+	} >&2
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 
@@ -401,7 +427,7 @@ if [ "$dangling_count" -gt 0 ] || [ "$bare_fail_count" -gt 0 ]; then
 			printf '%s\n' "${dangling_detail}"
 		} >&2
 	fi
-	fail "${dangling_count} dangling + ${bare_fail_count} new-bare citation(s) (${skip_count} skipped, advisory: ${advisory_count} upstream-prefix, ${bare_advisory_count} baseline-bare)"
+	fail "${dangling_count} dangling + ${bare_fail_count} new-bare citation(s) (${skip_count} skipped, advisory: ${advisory_count} upstream-prefix, ${bare_advisory_count} baseline-bare, ${stale_count} stale-baseline)"
 fi
 
 # Ratchet: advisory count must not grow beyond the frozen baseline.
@@ -409,4 +435,4 @@ if [ "$advisory_count" -gt "$advisory_baseline" ]; then
 	fail "advisory upstream-hash tokens grew: ${advisory_count} > baseline ${advisory_baseline} — add upstream: prefix or update baseline"
 fi
 
-pass "${#tracked_files[@]} files scanned, 0 dangling, 0 new-bare (${skip_count} not-an-object skipped, advisory: ${advisory_count}/${advisory_baseline} upstream-hash token(s) lack upstream: prefix, ${bare_advisory_count} baseline bare citation(s))"
+pass "${#tracked_files[@]} files scanned, 0 dangling, 0 new-bare (${skip_count} not-an-object skipped, advisory: ${advisory_count}/${advisory_baseline} upstream-hash token(s) lack upstream: prefix, ${bare_advisory_count} baseline bare citation(s), ${stale_count} stale-baseline)"
