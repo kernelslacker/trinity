@@ -654,6 +654,7 @@ static int b6r_iter_setup_names(struct b6r_iter_ctx *ctx)
 	struct nl_open_opts rtnl_opts = {
 		.proto         = NETLINK_ROUTE,
 		.recv_timeo_s  = 1,
+		.caller_op     = CHILD_OP_BRIDGE_IP6FRAG_REFRAG,
 	};
 	unsigned int rng;
 
