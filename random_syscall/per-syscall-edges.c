@@ -131,12 +131,13 @@ void account_reexec_ab_cohort(struct childdata *child, unsigned long new_cmp)
  *   ADDITIVE / SHADOW: no live-path code reads any of the per-syscall
  *   frontier yield arrays; the bumps run strictly AFTER the per-call
  *   new-edge attribution decision and the picker accept/retry math is
- *   byte-identical to the pre-row baseline.  Validator-rejected calls
- *   (rec->validator_rejected = true, kcov never ran) reach here with
- *   new_edge_count = 0 forced above; treating those as live_misses
- *   would over-count the kill-list signal with picks the kernel never
- *   actually saw, so the live_miss branch additionally gates on
- *   !rec->validator_rejected.  Same MAX_NR_SYSCALL bound the sibling
+ *   byte-identical to the pre-row baseline.  Pre-kernel-exit dispatches
+ *   (validator-rejected early-EINVAL skip and --dry-run) reach here with
+ *   new_edge_count = 0 forced above; treating those as live_misses would
+ *   over-count the kill-list signal with picks the kernel never actually
+ *   saw, so the live_miss branch additionally gates on
+ *   rec->kernel_entered (the canonical flag for this distinction).
+ *   Same MAX_NR_SYSCALL bound the sibling
  *   edges_per_syscall_bandit[] block above uses. */
 void account_per_syscall_new_edges(struct childdata *child,
 					  struct syscallrecord *rec,
@@ -162,7 +163,7 @@ void account_per_syscall_new_edges(struct childdata *child,
 						__ATOMIC_RELAXED),
 				__ATOMIC_RELAXED);
 		} else if (child->frontier_pick_regime == FRONTIER_PICK_LIVE &&
-			   !rec->validator_rejected) {
+			   rec->kernel_entered) {
 			unsigned long streak;
 
 			__atomic_fetch_add(

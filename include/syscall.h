@@ -213,8 +213,9 @@ struct syscallrecord {
 	 * struct fills) appends to via rec_own(); the dispatcher's
 	 * cleanup phase drains it via rec_owned_drain() exactly once
 	 * per dispatched call, unconditionally -- on success, on
-	 * failure, on the validator_rejected early-EINVAL skip, on the
-	 * --dry-run synthesised ENOSYS path, and on the EXTRA_FORK
+	 * failure, on either pre-kernel-exit path (validator_rejected
+	 * early-EINVAL skip or --dry-run; rec->kernel_entered is the
+	 * canonical flag for this distinction), and on the EXTRA_FORK
 	 * grandchild that died before AFTER.  Lets a sanitiser register
 	 * ownership of a heap buffer at allocation time without having
 	 * to enqueue it onto the deferred-free ring before the kernel
@@ -539,8 +540,9 @@ struct syscallentry {
 	 * .post and BEFORE generic_free_arg() recycles the argtype-owned
 	 * buffers.  Unlike .post, .cleanup does NOT gate on state == AFTER
 	 * or on the retfd / rzs rejection flags: it fires on success, on
-	 * failure, on the validator_rejected early-EINVAL skip, on the
-	 * --dry-run synthesised ENOSYS path, and on the EXTRA_FORK
+	 * failure, on either pre-kernel-exit path (validator_rejected
+	 * early-EINVAL skip or --dry-run; rec->kernel_entered is the
+	 * canonical flag for this distinction), and on the EXTRA_FORK
 	 * grandchild that died before reaching AFTER.  This is the home for
 	 * sanitiser-owned frees -- buffers the sanitiser allocated and
 	 * stashed in rec (typically via rec->post_state, which is private
