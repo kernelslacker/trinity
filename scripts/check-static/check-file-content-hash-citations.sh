@@ -216,12 +216,45 @@ find_twin() {
 	fi
 }
 
-# Extract adjacent ("subject") annotation from a line: TOKEN ("subject text")
+# Extract adjacent ("subject") annotation from a source line.
+#
+# Usage: extract_adjacent_subject TOKEN LINE [FILE LINENO]
+#
+# First attempts single-line extraction for the canonical form:
+#   TOKEN ("subject text")
+# If that fails and an unclosed (" is present after TOKEN, reads the next
+# source line (FILE:LINENO+1), strips its comment leader, joins the two lines,
+# and retries.  This handles wrapped annotations where the close-quote sits on
+# a continuation line.
 extract_adjacent_subject() {
-	local token="$1" line="$2"
-	printf '%s\n' "$line" \
+	local token="$1" line="$2" file="${3:-}" lineno="${4:-}"
+	# Try single-line extraction first.
+	local subj
+	subj=$(printf '%s\n' "$line" \
 		| sed -n "s/.*${token} (\"\\([^\"]*\\)\").*/\\1/p" \
-		| head -1
+		| head -1)
+	if [ -n "$subj" ]; then
+		printf '%s' "$subj"
+		return
+	fi
+	# If FILE and LINENO are available and the line has an unclosed annotation
+	# (open-paren + open-quote after TOKEN but no matching close-quote), try
+	# joining with the next source line.
+	if [ -n "$file" ] && [ -n "$lineno" ] && \
+			printf '%s\n' "$line" | grep -qE "${token}.{0,80}\(\"[^\"]*$"; then
+		local nextline
+		nextline=$(sed -n "$((lineno + 1))p" "$file" 2>/dev/null)
+		# Strip comment leaders: ' * ', '# ', '//', etc.
+		nextline=$(printf '%s\n' "$nextline" \
+			| sed 's/^[[:space:]]*[*#/]\{1,2\}[[:space:]]*//')
+		# Join and retry extraction; normalise runs of whitespace to a single space.
+		subj=$(printf '%s %s\n' "$line" "$nextline" \
+			| sed -n "s/.*${token} (\"\\([^\"]*\\)\").*/\\1/p" \
+			| head -1 \
+			| tr -s ' ')
+		printf '%s' "$subj"
+		return
+	fi
 }
 
 # ---------------------------------------------------------------------------
@@ -249,6 +282,7 @@ bare_advisory_count=0
 bare_fail_count=0
 subject_mismatch_count=0
 subject_mismatch_advisory_count=0
+subject_unvalidated_count=0
 dangling_detail=""
 skip_detail=""
 bare_fail_detail=""
@@ -292,8 +326,8 @@ for file in "${tracked_files[@]}"; do
 					dangling_count=$((dangling_count + 1))
 
 					# Try to resolve subject for informative output.
-					# Step 1: adjacent annotation on the same line.
-					subject=$(extract_adjacent_subject "$tok" "$line")
+					# Step 1: adjacent annotation (single-line or wrapped).
+					subject=$(extract_adjacent_subject "$tok" "$line" "$file" "$lineno")
 					# Step 2: fallback to dangling object's own subject.
 					if [ -z "$subject" ] && [ -x "$RESOLVER" ]; then
 						subject=$(commit_subject "$tok")
@@ -331,10 +365,14 @@ for file in "${tracked_files[@]}"; do
 					else
 						# Annotation present: validate the annotated subject against
 						# the real commit subject via git log.
-						annotated_subj=$(extract_adjacent_subject "$tok" "$line")
+						annotated_subj=$(extract_adjacent_subject "$tok" "$line" "$file" "$lineno")
 						if [ -n "$annotated_subj" ]; then
 							real_subj=$(git log -1 --pretty=%s "$tok" 2>/dev/null)
-							if [ "$annotated_subj" != "$real_subj" ]; then
+							# Normalise runs of whitespace before comparing (wrapped
+							# annotations may reconstruct with extra internal spaces).
+							norm_ann=$(printf '%s' "$annotated_subj" | tr -s ' ')
+							norm_real=$(printf '%s' "$real_subj" | tr -s ' ')
+							if [ "$norm_ann" != "$norm_real" ]; then
 								_filehash="${file}:${tok}"
 								if [[ -v _subject_baseline["$_filehash"] ]]; then
 									subject_mismatch_advisory_count=$((subject_mismatch_advisory_count + 1))
@@ -348,6 +386,12 @@ for file in "${tracked_files[@]}"; do
 								fi
 							fi
 							# else: annotation matches real subject -- silent pass
+						else
+							# Presence check passed but extraction returned empty --
+							# subject could not be recovered even after trying to join
+							# a continuation line.  Count so the pass line never
+							# silently claims full coverage.
+							subject_unvalidated_count=$((subject_unvalidated_count + 1))
 						fi
 					fi
 				fi
@@ -482,7 +526,7 @@ if [ "$dangling_count" -gt 0 ] || [ "$bare_fail_count" -gt 0 ] || [ "$subject_mi
 			printf '%s\n' "${dangling_detail}"
 		} >&2
 	fi
-	fail "${dangling_count} dangling + ${bare_fail_count} new-bare + ${subject_mismatch_count} subject-mismatch citation(s) (${skip_count} skipped, advisory: ${advisory_count} upstream-prefix, ${bare_advisory_count} baseline-bare, ${subject_mismatch_advisory_count} baseline-subject-mismatch, ${stale_count} stale-baseline)"
+	fail "${dangling_count} dangling + ${bare_fail_count} new-bare + ${subject_mismatch_count} subject-mismatch citation(s) (subject-unvalidated=${subject_unvalidated_count}, ${skip_count} skipped, advisory: ${advisory_count} upstream-prefix, ${bare_advisory_count} baseline-bare, ${subject_mismatch_advisory_count} baseline-subject-mismatch, ${stale_count} stale-baseline)"
 fi
 
 # Ratchet: advisory count must not grow beyond the frozen baseline.
@@ -490,4 +534,4 @@ if [ "$advisory_count" -gt "$advisory_baseline" ]; then
 	fail "advisory upstream-hash tokens grew: ${advisory_count} > baseline ${advisory_baseline} — add upstream: prefix or update baseline"
 fi
 
-pass "${#tracked_files[@]} files scanned, 0 dangling, 0 new-bare, 0 subject-mismatch (${skip_count} not-an-object skipped, advisory: ${advisory_count}/${advisory_baseline} upstream-hash token(s) lack upstream: prefix, ${bare_advisory_count} baseline bare citation(s), ${subject_mismatch_advisory_count} baseline subject-mismatch(es), ${stale_count} stale-baseline)"
+pass "${#tracked_files[@]} files scanned, 0 dangling, 0 new-bare, 0 subject-mismatch, subject-unvalidated=${subject_unvalidated_count} (${skip_count} not-an-object skipped, advisory: ${advisory_count}/${advisory_baseline} upstream-hash token(s) lack upstream: prefix, ${bare_advisory_count} baseline bare citation(s), ${subject_mismatch_advisory_count} baseline subject-mismatch(es), ${stale_count} stale-baseline)"
