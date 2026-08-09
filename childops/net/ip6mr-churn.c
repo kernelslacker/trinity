@@ -266,8 +266,9 @@ static int ip6mr_churn_in_ns(void *arg)
 	 * Fall back to an unsubscribed socket on older kernels. */
 	{
 		struct nl_open_opts opts = {
-			.proto  = NETLINK_ROUTE,
-			.groups = 1U << (RTNLGRP_IPV6_MROUTE_R - 1),
+			.proto      = NETLINK_ROUTE,
+			.groups     = 1U << (RTNLGRP_IPV6_MROUTE_R - 1),
+			.caller_op  = child->op_type,
 		};
 		if (nl_open(&nl, &opts) < 0) {
 			opts.groups = 0;
