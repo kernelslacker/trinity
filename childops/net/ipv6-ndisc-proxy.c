@@ -422,8 +422,9 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 	struct childdata *child = cctx->child;
 	struct nl_ctx ctx = NL_CTX_INIT;
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_IPV6_NDISC_PROXY,
 	};
 	struct in6_addr a1, a2, target;
 	struct timespec t0;
