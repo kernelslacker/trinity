@@ -139,6 +139,60 @@ while IFS= read -r srcfile; do
 	rel="${srcfile#"$ROOT"/}"
 
 	awk -v file="$rel" '
+	# Reset block-comment state at each file boundary (two-pass mode).
+	FNR == 1 { in_block = 0 }
+	# -------------------------------------------------------------------
+	# FIRST PASS: build a map of file-local raw_* wrapper functions and
+	# classify each as self-counting (wrapper body bumps direct_calls tally
+	# via childop_direct_syscalls_add or ->...count/tally/syscall) or not.
+	# A per-function worker-body scan in the second pass uses this map to
+	# credit fn_raw_sites for every call to a known raw_* wrapper, and
+	# fn_tally_count only when that wrapper is itself self-counting.
+	# -------------------------------------------------------------------
+	FNR == NR {
+		code = strip_comments($0)
+		# Detect: static <type> raw_NAME(
+		# Word boundary on raw_ is ensured by the fixed static prefix and
+		# the requirement that the char before raw_ is whitespace/*).
+		if (!in_raw_fn &&
+		    match(code, /static[[:space:]]+[a-zA-Z_][a-zA-Z0-9_*[:space:]]*raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/)) {
+			tmp = substr(code, RSTART)
+			if (match(tmp, /raw_[a-zA-Z_][a-zA-Z0-9_]*/)) {
+				cur_raw_fn_name = substr(tmp, RSTART, RLENGTH)
+				in_raw_fn = 1
+				raw_fn_brace_depth = 0
+				raw_fn_brace_opened = 0
+				raw_fn_self_counting = 0
+			}
+		}
+		if (in_raw_fn) {
+			# Self-counting check.
+			if (index(code, "childop_direct_syscalls_add") > 0)
+				raw_fn_self_counting = 1
+			if (!raw_fn_self_counting &&
+			    match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/))
+				raw_fn_self_counting = 1
+			# Track brace depth to find function body end.
+			n = length(code)
+			for (j = 1; j <= n; j++) {
+				c = substr(code, j, 1)
+				if (c == "{") {
+					raw_fn_brace_depth++
+					raw_fn_brace_opened = 1
+				} else if (c == "}") {
+					raw_fn_brace_depth--
+					if (raw_fn_brace_opened && raw_fn_brace_depth == 0) {
+						raw_wrapper_known[cur_raw_fn_name] = 1
+						raw_wrapper_self_counting[cur_raw_fn_name] = raw_fn_self_counting
+						in_raw_fn = 0
+						cur_raw_fn_name = ""
+						raw_fn_brace_opened = 0
+					}
+				}
+			}
+		}
+		next
+	}
 	function strip_comments(s,    idx, tail, cidx) {
 		# Continuation of a block comment from a previous line.
 		if (in_block) {
@@ -323,6 +377,32 @@ while IFS= read -r srcfile; do
 			    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall|close|open|recv|send|read|write)[[:space:]]*\(/)) {
 				fn_raw_sites++
 				tscan = substr(tscan, RSTART + RLENGTH - 1)
+			}
+			# Detect calls to file-local raw_* wrapper functions.
+			# These wrappers delegate to trinity_raw_syscall (or similar)
+			# but were invisible to the per-function scanner after the
+			# direct raw_ alternation was removed at file scope.  The
+			# first pass above classified each known wrapper; here we
+			# credit fn_raw_sites for every call to a known wrapper, and
+			# fn_tally_count only when that wrapper is itself self-counting
+			# (i.e. the wrapper body bumps the tally on behalf of callers).
+			{
+				wscan = code
+				while (match(wscan,
+				    /(^|[^a-zA-Z0-9_])raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/)) {
+					wm = substr(wscan, RSTART, RLENGTH)
+					# Strip leading word-boundary guard char.
+					if (substr(wm, 1, 1) !~ /[a-zA-Z_]/)
+						wm = substr(wm, 2)
+					# Strip trailing whitespace and open-paren.
+					sub(/[[:space:]]*\(.*$/, "", wm)
+					if (wm in raw_wrapper_known) {
+						fn_raw_sites++
+						if (raw_wrapper_self_counting[wm])
+							fn_tally_count++
+					}
+					wscan = substr(wscan, RSTART + RLENGTH - 1)
+				}
 			}
 			# Option-b accumulator-increment tracking: scan for <var>++ and
 			# <var> += N on plain local scalars (not ->member accesses).
@@ -518,7 +598,7 @@ while IFS= read -r srcfile; do
 				print fork_uncounted[i]
 		}
 	}
-	' "$srcfile"
+	' "$srcfile" "$srcfile"
 done < <(find "$CHILDOPS_DIR" -name '*.c' | LC_ALL=C sort) > "$RESULTS_FILE"
 
 new_unbaselined=()
