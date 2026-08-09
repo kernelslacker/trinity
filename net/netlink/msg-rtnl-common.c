@@ -96,6 +96,16 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 	if (max_depth <= 0)
 		count = RAND_RANGE(1, 2);
 
+	/*
+	 * Loop entry gate: offset + NLA_HDRLEN + 1 <= buflen is the
+	 * minimum that lets the clamp path below be reached with at
+	 * least one payload byte.  Do not relax this further — doing so
+	 * would allow the clamp to produce a zero-byte payload, which the
+	 * break-on-zero guard below relies on never seeing here.  If you
+	 * need to tighten it (e.g. to NLA_HDRLEN + max_width_in_table)
+	 * remove the skip-on-clamp guard below instead; see the commit
+	 * message for the tradeoff discussion.
+	 */
 	while (count-- > 0 && offset + NLA_HDRLEN + 1 <= buflen) {
 		const struct nlattr_width *aw = &attrs[rnd_modulo_u32(nr_types)];
 		unsigned short atype = aw->type;
@@ -117,6 +127,21 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 			payload_len = 4;
 		if (payload_len > buflen - offset - NLA_HDRLEN)
 			payload_len = buflen - offset - NLA_HDRLEN;
+		/*
+		 * Skip-on-clamp: if exact_width was requested but the buffer
+		 * doesn't have room for aw->width bytes, the clamp above
+		 * produced a shorter payload.  Emitting it would send a
+		 * wrong-width attribute while exact_width is still true —
+		 * the kernel policy rejects it, reintroducing the silent
+		 * truncation that the exact-width path was introduced to
+		 * prevent.  Skip this type and try another; a different
+		 * table entry may have a smaller width that fits.  We do
+		 * NOT raise the loop-entry gate to max_width_in_table
+		 * because that would discard valid smaller attrs when only
+		 * a large-width type happened to be picked.
+		 */
+		if (exact_width && payload_len < aw->width)
+			continue;
 		if (payload_len == 0)
 			break;
 
