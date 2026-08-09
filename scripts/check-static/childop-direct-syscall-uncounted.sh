@@ -19,8 +19,8 @@
 # Heuristic: for every childops/*.c (or subdirectory .c) file that does
 # not contain a call to childop_direct_syscalls_add(), scan the
 # comment-stripped code for raw-syscall invocations from the set:
-#   trinity_raw_syscall, trinity_cmp_syscall, socket, sendmsg, sendto,
-#   setsockopt, mmap, syscall
+#   trinity_raw_syscall, trinity_cmp_syscall, raw_<name> (file-local
+#   syscall wrappers), socket, sendmsg, sendto, setsockopt, mmap, syscall
 # Any such file is classified as an uncounted direct-syscall producer.
 # Files in the baseline are grandfathered; anything not listed there
 # fails the gate.
@@ -133,7 +133,7 @@ while IFS= read -r srcfile; do
 		fork_fn_has_fork = 0
 		brace_depth = 0
 		fn_raw_sites = 0
-		fn_has_tally = 0
+		fn_tally_count = 0
 		fn_name = ""
 		fork_uncounted_n = 0
 	}
@@ -152,7 +152,7 @@ while IFS= read -r srcfile; do
 		# [[:space:]]*\( anchors to a call site rather than a
 		# declaration reference.
 		while (match(scan,
-		    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall)[[:space:]]*\(/)) {
+		    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])raw_[a-z_]+[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall)[[:space:]]*\(/)) {
 			raw_sites++
 			scan = substr(scan, RSTART + RLENGTH - 1)
 		}
@@ -167,7 +167,7 @@ while IFS= read -r srcfile; do
 			fork_fn_exit_seen = 0
 			brace_depth = 0
 			fn_raw_sites = 0
-			fn_has_tally = 0
+			fn_tally_count = 0
 			# Extract the function name.
 			tmp = substr(code, RSTART)
 			sub(/static[[:space:]]+void[[:space:]]*\*[[:space:]]*/, "", tmp)
@@ -192,7 +192,7 @@ while IFS= read -r srcfile; do
 			fork_fn_has_fork = 0
 			brace_depth = 0
 			fn_raw_sites = 0
-			fn_has_tally = 0
+			fn_tally_count = 0
 			tmp = substr(code, RSTART)
 			# Strip any leading __attribute__ and/or static void prefix
 			# before extracting the function name.
@@ -217,12 +217,12 @@ while IFS= read -r srcfile; do
 							# (which would make it a parent wrapper
 							# with an inline child branch, not a pure
 							# fork-child body).  Buffer for END.
-							if (fork_fn_exit_seen && !fork_fn_has_fork && fn_raw_sites > 0 && !fn_has_tally)
+							if (fork_fn_exit_seen && !fork_fn_has_fork && fn_raw_sites > 0 && fn_tally_count < fn_raw_sites)
 								fork_uncounted[fork_uncounted_n++] = \
 									"FORK_UNCOUNTED " file " fn=" fn_name " raw_sites=" fn_raw_sites
 							is_fork_fn = 0
 						} else {
-							if (fn_raw_sites > 0 && !fn_has_tally)
+							if (fn_raw_sites > 0 && fn_tally_count < fn_raw_sites)
 								print "THREAD_UNCOUNTED " file " fn=" fn_name " raw_sites=" fn_raw_sites
 						}
 						in_fn = 0
@@ -235,7 +235,7 @@ while IFS= read -r srcfile; do
 			# the standard set used for the file-level check.
 			tscan = code
 			while (match(tscan,
-			    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall|close|open|recv|send|read|write)[[:space:]]*\(/)) {
+			    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])raw_[a-z_]+[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall|close|open|recv|send|read|write)[[:space:]]*\(/)) {
 				fn_raw_sites++
 				tscan = substr(tscan, RSTART + RLENGTH - 1)
 			}
@@ -268,18 +268,17 @@ while IFS= read -r srcfile; do
 			if (is_fork_fn && !fork_fn_has_fork &&
 			    match(code, /(^|[^a-zA-Z0-9_])fork[[:space:]]*\(/))
 				fork_fn_has_fork = 1
-			# Tally-accumulation heuristic (tightened): require the struct
-			# member name accessed via -> to contain "syscall", "tally",
-			# or "count", OR a direct childop_direct_syscalls_add() call
-			# inside the worker body.  Bare __atomic_add_fetch /
-			# __atomic_fetch_add calls are NOT treated as tally evidence --
-			# they are used pervasively for stats counters unrelated to
-			# syscall tallying and would suppress legitimate detections.
-			if (!fn_has_tally) {
-				if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
-				    index(code, "childop_direct_syscalls_add(") > 0)
-					fn_has_tally = 1
-			}
+			# Tally-accumulation heuristic (quantitative): count tally sites
+			# in the worker body; each line matching a struct member whose
+			# name contains "syscall", "tally", or "count" accessed via ->
+			# OR a direct childop_direct_syscalls_add() call increments
+			# fn_tally_count.  The worker passes only when
+			# fn_tally_count >= fn_raw_sites, so a single tally reference
+			# can no longer silence multiple raw-syscall sites.  Bare
+			# __atomic_add_fetch / __atomic_fetch_add calls are NOT counted.
+			if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
+			    index(code, "childop_direct_syscalls_add(") > 0)
+				fn_tally_count++
 		}
 	}
 	END {
@@ -331,7 +330,7 @@ while IFS=' ' read -r kind key rest; do
 done < "$RESULTS_FILE"
 
 # Stale baseline entries: listed but no longer have uncounted syscall
-# sites (wired up or removed).  Advisory, not fatal.
+# sites (wired up or removed).  Fatal: exits 1 to enforce baseline hygiene.
 stale_baseline=()
 for gf_entry in "${!GRANDFATHERED[@]}"; do
 	case "$gf_entry" in
