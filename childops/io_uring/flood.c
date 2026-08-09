@@ -330,12 +330,15 @@ bool iouring_flood(struct childdata *child)
 	unsigned int i;
 	int dev_null_rd = -1;
 	int dev_null_wr = -1;
-	/* Local direct-syscall tally.  Bumped once per iouring_flood_iter_reap_cqes
-	 * call — that is the sole trinity_raw_syscall(__NR_io_uring_enter) site in
-	 * this op, and it issues exactly one raw syscall regardless of the kernel's
-	 * return value.  Published once to shm at op-exit via
-	 * childop_direct_syscalls_add() so the hot path pays one atomic add per
-	 * invocation instead of per-syscall. */
+	/* Local direct-syscall tally.  Accounts for every raw syscall this
+	 * function body issues on the success path:
+	 *   +1 per iteration  -- trinity_raw_syscall(__NR_io_uring_enter)
+	 *                        inside iouring_flood_iter_reap_cqes()
+	 *   +2 on success     -- open(O_RDONLY) + open(O_WRONLY) for /dev/null
+	 *   +2 on success     -- close(dev_null_rd) + close(dev_null_wr)
+	 * Published once to shm at op-exit via childop_direct_syscalls_add()
+	 * so the hot path pays one atomic add per invocation instead of
+	 * per-syscall. */
 	unsigned long direct_calls = 0;
 
 	__atomic_add_fetch(&shm->stats.iouring.runs, 1, __ATOMIC_RELAXED);
@@ -385,6 +388,8 @@ bool iouring_flood(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
+	/* Both opens succeeded: credit the two raw open() syscalls. */
+	direct_calls += 2;
 
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
@@ -431,6 +436,8 @@ bool iouring_flood(struct childdata *child)
 		iour_ring_teardown(&ctx);
 	}
 
+	/* Credit the two close() syscalls on the success exit path. */
+	direct_calls += 2;
 	close(dev_null_rd);
 	close(dev_null_wr);
 

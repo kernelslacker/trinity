@@ -606,11 +606,12 @@ static void lane_a_worker(unsigned int mst_ifindex, const char *mst_name,
 				sizeof(sa.sa_data) - 1);
 			r = sendto(fd, frame, sizeof(frame), MSG_DONTWAIT,
 				   &sa, sizeof(sa));
+			dc++; /* credit SOCK_PACKET sendto() */
 		} else {
 			r = sendto(fd, frame, sizeof(frame), MSG_DONTWAIT,
 				   (struct sockaddr *)&sll, sizeof(sll));
+			dc++; /* credit SOCK_DGRAM / SOCK_RAW sendto() */
 		}
-		dc++;
 
 		__atomic_add_fetch(
 			&shm->stats.packet_qdisc_bypass_unanchored_l2.lane_a_sends,

@@ -168,6 +168,7 @@ while IFS= read -r srcfile; do
 			brace_depth = 0
 			fn_raw_sites = 0
 			fn_tally_count = 0
+			delete fn_acc_incr
 			# Extract the function name.
 			tmp = substr(code, RSTART)
 			sub(/static[[:space:]]+void[[:space:]]*\*[[:space:]]*/, "", tmp)
@@ -193,6 +194,7 @@ while IFS= read -r srcfile; do
 			brace_depth = 0
 			fn_raw_sites = 0
 			fn_tally_count = 0
+			delete fn_acc_incr
 			tmp = substr(code, RSTART)
 			# Strip any leading __attribute__ and/or static void prefix
 			# before extracting the function name.
@@ -227,6 +229,7 @@ while IFS= read -r srcfile; do
 						}
 						in_fn = 0
 						fn_name = ""
+						delete fn_acc_incr
 					}
 				}
 			}
@@ -243,6 +246,31 @@ while IFS= read -r srcfile; do
 			    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])raw_[a-z_]+[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall|close|open|recv|send|read|write)[[:space:]]*\(/)) {
 				fn_raw_sites++
 				tscan = substr(tscan, RSTART + RLENGTH - 1)
+			}
+			# Option-b accumulator-increment tracking: scan for <var>++ and
+			# <var> += N on plain local scalars (not ->member accesses).
+			# Strip pointer-member dereferences first so struct-field
+			# increments are not mistaken for local accumulator bumps.
+			{
+				incr_scan = code
+				gsub(/->[a-zA-Z_][a-zA-Z0-9_]*/, "_MEMBR_", incr_scan)
+				tmp2 = incr_scan
+				while (match(tmp2, /[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\+\+/)) {
+					vn = substr(tmp2, RSTART, RLENGTH)
+					sub(/[[:space:]]*\+\+/, "", vn)
+					fn_acc_incr[vn] += 1
+					tmp2 = substr(tmp2, RSTART + RLENGTH)
+				}
+				tmp2 = incr_scan
+				while (match(tmp2, /[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\+=[[:space:]]*[0-9]+[UuLl]*/)) {
+					vn = substr(tmp2, RSTART, RLENGTH)
+					av = vn
+					sub(/[[:space:]]*\+=.*$/, "", vn)
+					sub(/^[^=]*=[[:space:]]*/, "", av)
+					gsub(/[UuLl]/, "", av)
+					fn_acc_incr[vn] += av + 0
+					tmp2 = substr(tmp2, RSTART + RLENGTH)
+				}
 			}
 			# Fork-child body terminator detection.  ANY one of the following
 			# is sufficient to mark this function as a fork-child body:
@@ -301,8 +329,35 @@ while IFS= read -r srcfile; do
 					if (tline ~ /^[0-9]+[UuLl]*$/) {
 						fn_tally_count += tline + 0
 					} else if (length(tline) > 0) {
-						# Runtime accumulator: cannot statically verify sum; treat as covering all fn_raw_sites.
-						fn_tally_count = fn_raw_sites
+						# Runtime accumulator (option b): parse the second
+						# arg as a sum of literal addends and identifier
+						# addends.  For each identifier look up its tracked
+						# ++ / += increment count within this function body.
+						# The old sentinel fn_tally_count = fn_raw_sites was
+						# always equal, making the < test always false --
+						# tail-publish functions whose accumulator did not
+						# cover every raw-syscall site were invisible to the
+						# gate.  Mixed expressions like "1UL + write_calls +
+						# 1UL" parse as literal(1) + incr_count(write_calls)
+						# + literal(1), correctly matching fn_raw_sites.
+						{
+							mixed_sum = 0
+							etmp = tline
+							while (length(etmp) > 0) {
+								if (match(etmp, /^[0-9]+[UuLl]*/)) {
+									mixed_sum += substr(etmp, RSTART, RLENGTH) + 0
+									etmp = substr(etmp, RSTART + RLENGTH)
+								} else if (match(etmp, /^[a-zA-Z_][a-zA-Z0-9_]*/)) {
+									vn = substr(etmp, RSTART, RLENGTH)
+									if (vn in fn_acc_incr)
+										mixed_sum += fn_acc_incr[vn]
+									etmp = substr(etmp, RSTART + RLENGTH)
+								} else {
+									etmp = substr(etmp, 2)
+								}
+							}
+							fn_tally_count += mixed_sum
+						}
 					} else {
 						fn_tally_count++
 					}
