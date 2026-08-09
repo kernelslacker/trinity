@@ -150,6 +150,18 @@ void account_reexec_ab_cohort(struct childdata *child, unsigned long new_cmp)
  *         branch therefore also gates on child->kcov.mode == KCOV_MODE_PC;
  *         CMP children fall through without touching the counters.
  *
+ *     (3) Uninitialised-kcov children (no CONFIG_KCOV, debugfs
+ *         unmounted, or open()/mmap() failure): mode is left at
+ *         KCOV_MODE_PC (the zero default) but fd == -1 and
+ *         trace_buf == NULL.  Without a buffer guard these children
+ *         would pass the mode check above and spray misses with no
+ *         possibility of a win or streak reset -- identical to the
+ *         CMP-mode problem in (2) but affecting 100 % of children
+ *         on any host where kcov never came up.  The guard therefore
+ *         requires child->kcov.trace_buf != NULL in addition to the
+ *         mode check; see the canonical pattern in
+ *         include/syscall-internal.h:clear_stale_kcov_state().
+ *
  *   Same MAX_NR_SYSCALL bound the sibling
  *   edges_per_syscall_bandit[] block above uses. */
 void account_per_syscall_new_edges(struct childdata *child,
@@ -177,7 +189,8 @@ void account_per_syscall_new_edges(struct childdata *child,
 				__ATOMIC_RELAXED);
 		} else if (child->frontier_pick_regime == FRONTIER_PICK_LIVE &&
 			   rec->kernel_entered &&
-			   child->kcov.mode == KCOV_MODE_PC) {
+			   child->kcov.mode == KCOV_MODE_PC &&
+			   child->kcov.trace_buf != NULL) {
 			unsigned long streak;
 
 			__atomic_fetch_add(
