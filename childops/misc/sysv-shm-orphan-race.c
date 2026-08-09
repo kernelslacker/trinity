@@ -214,9 +214,11 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* futex_wake(originator_published) */
 	(void)raw_futex_wake(&rs->originator_published, 1);
 
-	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
+	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U) {
+		/* per-attempt: the loop may spin zero or many times */
+		__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED);
 		(void)raw_futex_wait(&rs->go, 0U);
-	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* futex_wait(go) */
+	}
 
 	/*
 	 * Stay attached through IPC_RMID so the kernel sees nattch > 0
@@ -259,9 +261,11 @@ static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
 	/* Count the preamble: prctl + alarm + getppid = 3. */
 	__atomic_fetch_add(&rs->direct_call_count, 3UL, __ATOMIC_RELAXED);
 
-	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
+	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U) {
+		/* per-attempt: the loop may spin zero or many times */
+		__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED);
 		(void)raw_futex_wait(&rs->go, 0U);
-	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* futex_wait(go) */
+	}
 
 	shmid = __atomic_load_n(&rs->shmid, __ATOMIC_ACQUIRE);
 	if (shmid < 0)

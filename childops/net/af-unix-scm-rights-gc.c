@@ -415,11 +415,16 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 	if (trinity_raw_syscall(__NR_getppid) == 1)
 		(void)syscall(__NR_exit, 0);
 
-	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
+	/* Count prctl + alarm + getppid = 3.  futex_wait(go) is counted
+	 * per attempt inside the loop below: the loop may spin zero times
+	 * (parent set go before we reached it) or many (spurious wakes /
+	 * EAGAIN), so a fixed post-loop credit would not match the number
+	 * of futex syscalls actually issued. */
+	__atomic_fetch_add(&rs->direct_call_count, 3UL, __ATOMIC_RELAXED);
+	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U) {
+		__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED);
 		(void)raw_futex_wait(&rs->go, 0U);
-	/* Count the preamble now that we have passed the go gate:
-	 * prctl + alarm + getppid + futex_wait(go) = 4. */
-	__atomic_fetch_add(&rs->direct_call_count, 4UL, __ATOMIC_RELAXED);
+	}
 
 	budget = rs->race_budget;
 	for (i = 0; i < budget; i++) {
