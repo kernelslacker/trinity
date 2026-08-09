@@ -131,12 +131,25 @@ void account_reexec_ab_cohort(struct childdata *child, unsigned long new_cmp)
  *   ADDITIVE / SHADOW: no live-path code reads any of the per-syscall
  *   frontier yield arrays; the bumps run strictly AFTER the per-call
  *   new-edge attribution decision and the picker accept/retry math is
- *   byte-identical to the pre-row baseline.  Pre-kernel-exit dispatches
- *   (validator-rejected early-EINVAL skip and --dry-run) reach here with
- *   new_edge_count = 0 forced above; treating those as live_misses would
- *   over-count the kill-list signal with picks the kernel never actually
- *   saw, so the live_miss branch additionally gates on
- *   rec->kernel_entered (the canonical flag for this distinction).
+ *   byte-identical to the pre-row baseline.  Two pre-kernel-exit paths
+ *   must be excluded from the live_miss arm to avoid over-counting:
+ *
+ *     (1) Dry-run / early-EINVAL: dispatches that never entered the
+ *         kernel reach here with new_edge_count = 0 forced at
+ *         dispatch-step; the live_miss branch gates on
+ *         rec->kernel_entered so those picks are not charged as misses.
+ *
+ *     (2) CMP-mode children: pick-frontier.c sets frontier_pick_regime
+ *         = FRONTIER_PICK_LIVE regardless of kcov mode, but
+ *         new_edge_count is initialised to 0 at dispatch-step and only
+ *         written inside the PC-collect path -- it is structurally
+ *         always 0 for CMP children.  Without a mode guard, ~1 in
+ *         KCOV_CMP_CHILD_RECIPROCAL children would spray misses into
+ *         the fleet-global per_syscall arrays on every dispatch with
+ *         no possibility of a win or streak reset.  The live_miss
+ *         branch therefore also gates on child->kcov.mode == KCOV_MODE_PC;
+ *         CMP children fall through without touching the counters.
+ *
  *   Same MAX_NR_SYSCALL bound the sibling
  *   edges_per_syscall_bandit[] block above uses. */
 void account_per_syscall_new_edges(struct childdata *child,
@@ -163,7 +176,8 @@ void account_per_syscall_new_edges(struct childdata *child,
 						__ATOMIC_RELAXED),
 				__ATOMIC_RELAXED);
 		} else if (child->frontier_pick_regime == FRONTIER_PICK_LIVE &&
-			   rec->kernel_entered) {
+			   rec->kernel_entered &&
+			   child->kcov.mode == KCOV_MODE_PC) {
 			unsigned long streak;
 
 			__atomic_fetch_add(
