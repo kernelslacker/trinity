@@ -294,8 +294,9 @@ static int vrf_fib_churn_in_ns(void *arg)
 	char vrf_name[IFNAMSIZ];
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_VRF_FIB_CHURN,
 	};
 	int udp = -1;
 	int ifindex = 0;
