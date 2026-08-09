@@ -378,11 +378,11 @@ static unsigned int churn_sendto_burst(int sock)
  * device was successfully created (caller bumps iterations), false if
  * we couldn't even create the device — the latter is a transient that
  * shouldn't burn the iter counter but isn't worth latching.  Bumps
- * `*direct_calls` for every kernel syscall issued along the cycle
- * (sysfs open/write/close ×2, PORT_GET / SPLIT / RELOAD / UNSPLIT genl
- * round-trips counted as sendmsg+recvmsg pairs, socket/fcntl/setsockopt,
+ * `*direct_calls` for every non-genl kernel syscall issued along the
+ * cycle (sysfs open/write/close ×2, socket/fcntl/setsockopt,
  * per-burst sendto fan-out, and the residual close) so the caller can
- * publish a single childop_direct_syscalls_add() at op-exit.
+ * publish a single childop_direct_syscalls_add() at op-exit.  Genl
+ * transport syscalls are published by genl_close() via caller_op.
  */
 static bool devlink_port_churn_one(struct genl_ctx *ctx,
 				   struct childdata *child, __u32 bus_id,
@@ -429,7 +429,6 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx,
 	 * the kernel side — reply parsing is intentionally skipped
 	 * (we use port_index 0, the netdevsim default). */
 	(void)devlink_dev_cmd(ctx, DEVLINK_CMD_PORT_GET, dev_name);
-	*direct_calls += 2;	/* sendmsg + recvmsg */
 
 	sock = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
 	(*direct_calls)++;
@@ -443,7 +442,6 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx,
 	/* g) Bug window 1: PORT_SPLIT mid-flow. */
 	rc = devlink_port_split(ctx, dev_name, 0U,
 				DEVLINK_PORT_SPLIT_COUNT);
-	*direct_calls += 2;
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.devlink_port_churn.split_ok,
 				   1, __ATOMIC_RELAXED);
@@ -458,7 +456,6 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx,
 	/* h) Bug window 2: DRIVER_REINIT while bound socket alive.
 	 * Bus name is HARDCODED to netdevsim — see file header. */
 	rc = devlink_reload_driver_reinit(ctx, dev_name);
-	*direct_calls += 2;
 	if (rc == 0)
 		__atomic_add_fetch(&shm->stats.devlink_port_churn.reload_ok,
 				   1, __ATOMIC_RELAXED);
@@ -468,7 +465,6 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx,
 
 	/* i) Undo the split so del_device sees a clean port topology. */
 	(void)devlink_port_unsplit(ctx, dev_name, 0U);
-	*direct_calls += 2;
 
 	if (sock >= 0) {
 		close(sock);
@@ -491,10 +487,14 @@ bool devlink_port_churn(struct childdata *child)
 	unsigned int budget;
 	unsigned int i;
 	int rc;
-	/* Running per-invocation tally of direct kernel syscalls issued
-	 * across every cycle (sysfs open/write/close, four genl round-
-	 * trips, socket/fcntl/setsockopt, two sendto bursts, residual
-	 * close, sysfs del_device).  Published once at op-exit via
+	/* Running per-invocation tally of non-genl direct kernel syscalls
+	 * issued across every cycle (sysfs open/write/close, socket,
+	 * fcntl, setsockopt via try_bindtodevice, sendto via
+	 * churn_sendto_burst, residual close, sysfs del_device).
+	 * Genl transport syscalls (socket+bind+setsockopt from genl_open
+	 * via nl_open, sendmsg+recv per genl_send_recv, close from
+	 * genl_close via nl_close) are published by genl_close() via
+	 * ctx.nl.caller_op.  Published once at op-exit via
 	 * childop_direct_syscalls_add() so the hot path pays one atomic
 	 * add per invocation instead of per-syscall. */
 	unsigned long direct_calls = 0;
@@ -531,6 +531,12 @@ bool devlink_port_churn(struct childdata *child)
 		}
 		return true;
 	}
+
+	/* Set caller_op so genl_close() -> nl_close() auto-publishes the
+	 * genl transport syscalls for this op.  Explicit attribution
+	 * shadows the this_child() fallback that genl_open/nl_open would
+	 * otherwise use. */
+	ctx.nl.caller_op = CHILD_OP_DEVLINK_PORT_CHURN;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
