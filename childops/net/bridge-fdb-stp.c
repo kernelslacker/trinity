@@ -298,8 +298,9 @@ static int bridge_fdb_stp_in_ns(void *arg)
 		.raw = -1,
 	};
 	struct nl_open_opts nl_opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_BRIDGE_FDB_STP,
 	};
 
 	if (nl_open(&ictx.ctx, &nl_opts) < 0) {
