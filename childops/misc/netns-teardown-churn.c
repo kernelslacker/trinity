@@ -199,8 +199,9 @@ static int bring_up_loopback(void)
 {
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_NETNS_TEARDOWN_CHURN,
 	};
 	const int lo_ifindex = 1;	/* lo is always ifindex 1 in a fresh net ns */
 
@@ -226,7 +227,10 @@ static void open_extras(int *raw_fd, int *xfrm_fd)
 {
 	int fd;
 	struct nl_ctx ctx;
-	struct nl_open_opts opts = { .proto = NETLINK_XFRM };
+	struct nl_open_opts opts = {
+		.proto     = NETLINK_XFRM,
+		.caller_op = CHILD_OP_NETNS_TEARDOWN_CHURN,
+	};
 
 	*raw_fd = -1;
 	*xfrm_fd = -1;
@@ -318,14 +322,14 @@ struct netns_teardown_iter_ctx {
 	int	s_accept;
 	pid_t	pid;
 	struct childdata *child;
-	/* Direct-syscall tally accumulated across every phase helper of
-	 * this iteration.  Bumped at each raw syscall site: open (1),
-	 * unshare (1), bring_up_loopback (nl_open == 3 socket+bind+
-	 * setsockopt for recv_timeo_s > 0, two nl_send_recv wrappers == 2
-	 * sendmsg+recv each, nl_close == 1), each socket / bind / listen /
-	 * getsockname / connect / accept / setns / close in the sock-pair
-	 * and setns-back phases, fork (1), kill (1), waitpid (1).  The
-	 * child_pump body runs in a forked great-grandchild -- its
+	/* Direct-syscall tally for non-netlink raw syscalls: open (1),
+	 * unshare (1), each socket / bind / listen / getsockname / connect /
+	 * accept / setns / close in the sock-pair and setns-back phases,
+	 * fork (1), kill (1), waitpid (1).  Netlink transport syscalls
+	 * (socket+bind+setsockopt from nl_open, sendmsg+recv per
+	 * nl_send_recv, close from nl_close) are published automatically by
+	 * nl_close() via opts.caller_op = CHILD_OP_NETNS_TEARDOWN_CHURN.
+	 * The child_pump body runs in a forked great-grandchild -- its
 	 * send/recv/fcntl calls are separate PIDs and are NOT counted here.
 	 * The caller in netns_teardown_churn_in_ns() folds this per-iter
 	 * tally into its own accumulator across the outer loop and
@@ -363,17 +367,7 @@ static int netns_teardown_iter_setup_ns(struct netns_teardown_iter_ctx *it)
 	__atomic_add_fetch(&shm->stats.netns_teardown.unshare_ok,
 			   1, __ATOMIC_RELAXED);
 
-	/* bring_up_loopback(): on success drives nl_open (socket + bind +
-	 * setsockopt for recv_timeo_s == 3), two nl_send_recv wrappers
-	 * (sendmsg + recv each == 2 apiece for the RTM_NEWADDR and
-	 * RTM_NEWLINK), and nl_close (== 1) -- 8 total.  On nl_open failure
-	 * we still paid the socket/bind attempts; approximate that with a
-	 * conservative 3.  Small over/underestimate at this granularity is
-	 * fine and matches the level bridge-conntrack-churn accounts at. */
-	if (bring_up_loopback() == 0)
-		it->direct_calls += 8;
-	else
-		it->direct_calls += 3;
+	(void)bring_up_loopback();
 	return 0;
 }
 
