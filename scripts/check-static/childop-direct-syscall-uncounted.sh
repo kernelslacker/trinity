@@ -322,14 +322,6 @@ while IFS= read -r srcfile; do
 			while (match(tscan,
 			    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall|close|open|recv|send|read|write)[[:space:]]*\(/)) {
 				fn_raw_sites++
-				# raw_<name>() wrapper calls self-count: the wrapper
-				# bumps a direct_syscalls accumulator before issuing
-				# the underlying syscall, so each call site is already
-				# accounted.  Credit one tally hit per wrapper call so
-				# the gap stays zero for wrapper-only bodies.
-				if (substr(tscan, RSTART, RLENGTH) ~ \
-				    /(^|[^a-zA-Z0-9_])raw_[a-z_]+[[:space:]]*\(/)
-					fn_tally_count++
 				tscan = substr(tscan, RSTART + RLENGTH - 1)
 			}
 			# Option-b accumulator-increment tracking: scan for <var>++ and
