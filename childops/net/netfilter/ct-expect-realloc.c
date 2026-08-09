@@ -542,7 +542,7 @@ struct cer_ctx {
  * All bookkeeping is per-step (any single failure aborts the rest of
  * the sequence but the earlier steps still contribute stats).
  */
-static void cer_one_cycle(struct nfnl_ctx *nfnl, struct cer_ctx *cctx)
+static void cer_one_cycle(struct nfnl_ctx *nfnl)
 {
 	int helper_idx = pick_helper();
 	const char *helper_name;
@@ -566,7 +566,6 @@ static void cer_one_cycle(struct nfnl_ctx *nfnl, struct cer_ctx *cctx)
 
 	/* Step 4: attach helper ext to freshly-inserted master ct. */
 	rc = send_ct_master(nfnl, l4proto, master_sport, master_dport, helper_name);
-	cctx->direct_calls += 2;
 	update_helper_mask(helper_idx, rc);
 	if (rc == 0) {
 		master_ok = true;
@@ -579,7 +578,6 @@ static void cer_one_cycle(struct nfnl_ctx *nfnl, struct cer_ctx *cctx)
 	/* Step 5: insert expectation onto help->expectations. */
 	rc = send_exp_new(nfnl, l4proto, master_sport, master_dport,
 			  child_sport, child_dport, helper_name);
-	cctx->direct_calls += 2;
 	if (rc == 0) {
 		expect_ok = true;
 		__atomic_add_fetch(&shm->stats.ct_expect_realloc.expect_ok,
@@ -590,7 +588,6 @@ static void cer_one_cycle(struct nfnl_ctx *nfnl, struct cer_ctx *cctx)
 	 * if step 5 failed, still drive the realloc for coverage of the
 	 * label-attach path; only the unlink correlates. */
 	rc = send_ct_realloc(nfnl, l4proto, master_sport, master_dport);
-	cctx->direct_calls += 2;
 	if (rc == 0) {
 		realloc_ok = true;
 		__atomic_add_fetch(&shm->stats.ct_expect_realloc.realloc_ok,
@@ -600,7 +597,6 @@ static void cer_one_cycle(struct nfnl_ctx *nfnl, struct cer_ctx *cctx)
 	/* Step 7: unlink -- the write through the stranded pprev. */
 	if (expect_ok) {
 		rc = send_exp_delete(nfnl, l4proto, child_sport, child_dport);
-		cctx->direct_calls += 2;
 		if (rc == 0) {
 			unlink_ok = true;
 			__atomic_add_fetch(&shm->stats.ct_expect_realloc.unlink_ok,
@@ -610,7 +606,6 @@ static void cer_one_cycle(struct nfnl_ctx *nfnl, struct cer_ctx *cctx)
 
 	/* Step 8: best-effort master delete for accounting. */
 	(void)send_ct_delete(nfnl, l4proto, master_sport, master_dport);
-	cctx->direct_calls += 2;
 
 	if (master_ok && expect_ok && realloc_ok && unlink_ok)
 		__atomic_add_fetch(&shm->stats.ct_expect_realloc.full_cycle,
@@ -631,14 +626,19 @@ static int cer_in_ns(void *arg)
 	struct nl_ctx rtnl = { .fd = -1 };
 	const enum child_op_type op = cctx->child->op_type;
 	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
-	struct nl_open_opts rtnl_opts = { .proto = NETLINK_ROUTE };
+	struct nl_open_opts rtnl_opts = {
+		.proto     = NETLINK_ROUTE,
+		.caller_op = CHILD_OP_CT_EXPECT_REALLOC,
+	};
 
 	if (nl_open(&rtnl, &rtnl_opts) == 0) {
-		cctx->direct_calls += 3;	/* socket + bind + setsockopt */
 		rtnl_bring_lo_up(&rtnl);
-		cctx->direct_calls += 2;	/* sendmsg + recv */
+		/* if_nametoindex component of RTNL_BRING_LO_UP_DIRECT_CALLS
+		 * (socket+ioctl+close = 3); nl_open socket+bind, rtnl_bring_lo_up
+		 * nl_send_recv (sendmsg+recv), and nl_close (close) are all
+		 * published by nl_close() via rtnl_opts.caller_op. */
+		cctx->direct_calls += 3;
 		nl_close(&rtnl);
-		cctx->direct_calls += 1;
 	}
 
 	if (nfnl_open(&nfnl, &opts) < 0) {
@@ -648,7 +648,7 @@ static int cer_in_ns(void *arg)
 			childop_direct_syscalls_add(op, cctx->direct_calls);
 		return 0;
 	}
-	cctx->direct_calls += 3;
+	nfnl.nl.caller_op = CHILD_OP_CT_EXPECT_REALLOC;
 
 	/* Cheap CTNETLINK probe: an EXP_DELETE for a bogus tuple in the
 	 * fresh netns.  A hard EPROTONOSUPPORT / EOPNOTSUPP flags a
@@ -658,7 +658,6 @@ static int cer_in_ns(void *arg)
 		int rc = send_exp_delete(&nfnl, IPPROTO_UDP,
 					 (__u16)(40000 + (rand32() & 0x3ff)),
 					 (__u16)(50000 + (rand32() & 0x3ff)));
-		cctx->direct_calls += 2;
 		if (rc == -EPROTONOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -EAFNOSUPPORT) {
 			ns_unsupported_nf_conntrack = true;
@@ -669,7 +668,6 @@ static int cer_in_ns(void *arg)
 			__atomic_add_fetch(&shm->stats.ct_expect_realloc.ct_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			nfnl_close(&nfnl);
-			cctx->direct_calls += 1;
 			if (valid_op)
 				childop_direct_syscalls_add(op, cctx->direct_calls);
 			return 0;
@@ -683,10 +681,9 @@ static int cer_in_ns(void *arg)
 				   1, __ATOMIC_RELAXED);
 	}
 
-	cer_one_cycle(&nfnl, cctx);
+	cer_one_cycle(&nfnl);
 
 	nfnl_close(&nfnl);
-	cctx->direct_calls += 1;
 
 	if (valid_op)
 		childop_direct_syscalls_add(op, cctx->direct_calls);
