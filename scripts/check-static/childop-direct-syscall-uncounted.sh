@@ -483,16 +483,19 @@ if [ "${#new_unbaselined[@]}" -gt 0 ]; then
 	exit 1
 fi
 
-baseline_size=${#GRANDFATHERED[@]}
-total=${#SEEN_KEY[@]}
-
-# Ratchet: fail if uncounted count exceeds the frozen baseline.
-# The baseline reflects the post-477-A state (30 entries); any new
-# uncounted file means a regression, even if individually grandfathered.
-if [ "$total" -gt "$baseline_size" ]; then
-	echo "FAIL: uncounted worker count regressed: $total > baseline $baseline_size"
+COUNT_BASELINE="$ROOT/scripts/check-static/childop-direct-syscall-uncounted.count.baseline"
+frozen=$(cat "$COUNT_BASELINE" 2>/dev/null | tr -d '[:space:]')
+if [ -z "$frozen" ] || ! [ "$frozen" -ge 0 ] 2>/dev/null; then
+	echo "FAIL: $NAME: cannot read frozen ceiling from $COUNT_BASELINE" >&2
 	exit 1
 fi
 
-echo "PASS: $NAME (uncounted=$total, grandfathered=$baseline_size)"
+total=${#SEEN_KEY[@]}
+
+if [ "$total" -gt "$frozen" ]; then
+	echo "FAIL: uncounted worker count regressed: $total > frozen ceiling $frozen"
+	exit 1
+fi
+
+echo "PASS: $NAME (uncounted=$total, ceiling=$frozen)"
 exit 0
