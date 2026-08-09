@@ -337,7 +337,8 @@ static unsigned long drain_replies(int fd)
  * small offset to further diffuse bucket pressure.  Sends are
  * blocking; the inner loop is capped by wall clock + burst count.
  */
-static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base)
+static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base,
+						       enum child_op_type op)
 {
 	uint8_t buf[256];
 	struct spd_variant v;
@@ -350,10 +351,10 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base)
 	fd = socket(AF_KEY, SOCK_RAW, PF_KEY_V2);
 	n++;
 	if (fd < 0) {
-		struct childdata *tc = this_child();
-		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			childop_direct_syscalls_add(op, n);
+		/* op is threaded from pfkey_spd_walk_in_ns: this_child()
+		 * returns NULL in this fork, so it cannot be recovered here.
+		 * childop_direct_syscalls_add bounds-checks op internally. */
+		childop_direct_syscalls_add(op, n);
 		_exit(0);
 	}
 
@@ -390,10 +391,10 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base)
 	close(fd);
 	n++;
 	{
-		struct childdata *tc = this_child();
-		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			childop_direct_syscalls_add(op, n);
+		/* op is threaded from pfkey_spd_walk_in_ns: this_child()
+		 * returns NULL in this fork, so it cannot be recovered here.
+		 * childop_direct_syscalls_add bounds-checks op internally. */
+		childop_direct_syscalls_add(op, n);
 	}
 	_exit(0);
 }
@@ -405,7 +406,8 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base)
  * lists the walker is mutating; the bug surface is precisely the
  * mid-walk reshape.
  */
-static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir)
+static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir,
+						      enum child_op_type op)
 {
 	uint8_t buf[256];
 	struct timespec t0;
@@ -417,10 +419,10 @@ static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir)
 	fd = socket(AF_KEY, SOCK_RAW, PF_KEY_V2);
 	n++;
 	if (fd < 0) {
-		struct childdata *tc = this_child();
-		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			childop_direct_syscalls_add(op, n);
+		/* op is threaded from pfkey_spd_walk_in_ns: this_child()
+		 * returns NULL in this fork, so it cannot be recovered here.
+		 * childop_direct_syscalls_add bounds-checks op internally. */
+		childop_direct_syscalls_add(op, n);
 		_exit(0);
 	}
 
@@ -460,10 +462,10 @@ static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir)
 	close(fd);
 	n++;
 	{
-		struct childdata *tc = this_child();
-		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			childop_direct_syscalls_add(op, n);
+		/* op is threaded from pfkey_spd_walk_in_ns: this_child()
+		 * returns NULL in this fork, so it cannot be recovered here.
+		 * childop_direct_syscalls_add bounds-checks op internally. */
+		childop_direct_syscalls_add(op, n);
 	}
 	_exit(0);
 }
@@ -496,27 +498,30 @@ static void reap_sibling(pid_t pid)
  * refusal) is benign -- the netns itself is reaped when this
  * trinity child exits.
  */
-static void spdflush_best_effort(void)
+static void spdflush_best_effort(enum child_op_type op)
 {
 	uint8_t buf[64];
 	size_t len;
 	int fd;
+	unsigned long n = 0;
 
 	fd = socket(AF_KEY, SOCK_RAW, PF_KEY_V2);
-	if (fd < 0)
+	n++;
+	if (fd < 0) {
+		childop_direct_syscalls_add(op, n);
 		return;
+	}
 	len = build_header_only(buf, sizeof(buf), SADB_X_SPDFLUSH,
 				1U, (uint32_t)getpid());
-	if (len > 0)
+	if (len > 0) {
 		(void)send(fd, buf, len, 0);
-	{
-		unsigned long recv_n = drain_replies(fd);
-		struct childdata *tc = this_child();
-		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			childop_direct_syscalls_add(op, recv_n);
+		n++;
 	}
+	n += drain_replies(fd);
 	close(fd);
+	n++;
+	/* op threaded in: this_child() is NULL in the grandchild too. */
+	childop_direct_syscalls_add(op, n);
 }
 
 /*
@@ -525,7 +530,7 @@ static void spdflush_best_effort(void)
  * step so a child that latches off mid-run still leaves a forensic
  * trail in the per-op stats.
  */
-static void iter_one(void)
+static void iter_one(enum child_op_type op)
 {
 	struct spd_variant v;
 	pid_t walker, racer;
@@ -542,7 +547,7 @@ static void iter_one(void)
 		return;
 	}
 	if (walker == 0)
-		spd_walker_child(v);
+		spd_walker_child(v, op);
 
 	racer = fork();
 	if (racer < 0) {
@@ -554,7 +559,7 @@ static void iter_one(void)
 		return;
 	}
 	if (racer == 0)
-		spd_racer_child(v.dir);
+		spd_racer_child(v.dir, op);
 
 	__atomic_add_fetch(&shm->stats.pfkey_spd_walk.spawn_pair_ok,
 			   1, __ATOMIC_RELAXED);
@@ -562,7 +567,7 @@ static void iter_one(void)
 	reap_sibling(walker);
 	reap_sibling(racer);
 
-	spdflush_best_effort();
+	spdflush_best_effort(op);
 }
 
 /*
@@ -618,7 +623,7 @@ static int pfkey_spd_walk_in_ns(void *arg)
 	for (i = 0; i < outer_iters; i++) {
 		if (budget_elapsed_ns(&t_outer, (long)PFKEY_SPD_WALL_CAP_NS))
 			break;
-		iter_one();
+		iter_one(op);
 	}
 
 	return 0;
