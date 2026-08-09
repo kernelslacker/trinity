@@ -789,6 +789,7 @@ static int tc_live_in_ns(void *arg)
 	struct nl_open_opts nl_opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op = CHILD_OP_TC_LIVE_TRAFFIC,
 	};
 	char a_name[IFNAMSIZ];
 	char b_name[IFNAMSIZ];
@@ -801,19 +802,15 @@ static int tc_live_in_ns(void *arg)
 	int udp = -1;
 	__u32 prio;
 	int rc;
-	/* Direct-syscall tally accumulated across the setup / burst /
-	 * teardown paths.  Every helper site bumps this counter by the
-	 * number of raw kernel calls it just issued: nl_open success ==
-	 * 3 (socket + bind + setsockopt for recv_timeo_s), each
-	 * nl_send_recv wrapper (build_veth_pair / build_clsact /
-	 * build_matchall_mirred / build_delfilter / xdp_netlink_attach /
-	 * rtnl_setlink_up / rtnl_dellink / rtnl_bring_lo_up) == 2
-	 * (sendmsg + recv), each bpf(BPF_PROG_LOAD) == 1, AF_INET
-	 * socket()/setsockopt/close == 1, sendto() in the burst loop == 1
-	 * per attempt, nl_close == 1.  Published once via
-	 * childop_direct_syscalls_add() gated on valid_op so the setup-
-	 * latched short-circuit paths attribute only the syscalls they
-	 * actually issued. */
+	/* Non-netlink direct-syscall tally: bpf(BPF_PROG_LOAD) (xdp and
+	 * cls_bpf loads == 1 each), AF_INET socket()/setsockopt()/close()
+	 * == 1 each, sendto() in the burst loop == 1 per attempt,
+	 * close() on udp/cls_bpf/xdp fds == 1 each.  Netlink calls
+	 * (socket+bind+setsockopt from nl_open, sendmsg+recv from each
+	 * nl_send_recv wrapper, close from nl_close) are tracked internally
+	 * by the nl_ctx and auto-published by nl_close() via
+	 * opts.caller_op = CHILD_OP_TC_LIVE_TRAFFIC above.  Published once
+	 * via childop_direct_syscalls_add() gated on valid_op. */
 	unsigned long direct_calls = 0;
 
 	const enum child_op_type op = child->op_type;
@@ -830,10 +827,6 @@ static int tc_live_in_ns(void *arg)
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	/* nl_open success path issued socket + bind + setsockopt
-	 * (recv_timeo_s > 0 above). */
-	direct_calls += 3;
-
 	if (!modprobe_tried_ingress()) {
 		mark_modprobe_tried_ingress();
 		try_modprobe("sch_ingress");
@@ -857,11 +850,6 @@ static int tc_live_in_ns(void *arg)
 
 	if (!lo_brought_up()) {
 		rtnl_bring_lo_up(&nl);
-		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
-		 * when the lo lookup succeeds; the if_nametoindex libc
-		 * probe stays unattributed to match the surrounding per-
-		 * childop convention. */
-		direct_calls += 2;
 		mark_lo_brought_up();
 	}
 
@@ -877,8 +865,6 @@ static int tc_live_in_ns(void *arg)
 		 (unsigned int)(rand32() & 0xffffu));
 
 	rc = build_veth_pair(&nl, a_name, b_name);
-	/* build_veth_pair: sendmsg + recv. */
-	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			mark_ns_unsupported_veth();
@@ -897,12 +883,8 @@ static int tc_live_in_ns(void *arg)
 
 	(void)rtnl_setlink_up(&nl, a_idx);
 	(void)rtnl_setlink_up(&nl, b_idx);
-	/* rtnl_setlink_up (x2): sendmsg + recv each. */
-	direct_calls += 4;
 
 	rc = build_clsact(&nl, a_idx);
-	/* build_clsact: sendmsg + recv. */
-	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			mark_ns_unsupported_clsact();
@@ -917,8 +899,6 @@ static int tc_live_in_ns(void *arg)
 	prio = (rand32() & 0x1fU) + 1U;
 
 	rc = build_matchall_mirred(&nl, a_idx, b_idx, prio, false);
-	/* build_matchall_mirred: sendmsg + recv. */
-	direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
 			mark_ns_unsupported_matchall();
@@ -948,8 +928,6 @@ static int tc_live_in_ns(void *arg)
 					   1, __ATOMIC_RELAXED);
 			rc = xdp_netlink_attach(&nl, (unsigned int)a_idx,
 						xdp_fd);
-			/* xdp_netlink_attach: sendmsg + recv. */
-			direct_calls += 2;
 			if (rc == 0) {
 				xdp_attached = true;
 				__atomic_add_fetch(&shm->stats.tc_live_traffic.xdp_attach_ok,
@@ -1030,8 +1008,6 @@ static int tc_live_in_ns(void *arg)
 						    false) == 0)
 					__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_del_ok,
 							   1, __ATOMIC_RELAXED);
-				/* build_delfilter: sendmsg + recv. */
-				direct_calls += 2;
 
 				if (build_matchall_mirred(&nl, a_idx, b_idx,
 							  new_prio,
@@ -1040,8 +1016,6 @@ static int tc_live_in_ns(void *arg)
 					__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_replace_ok,
 							   1, __ATOMIC_RELAXED);
 				}
-				/* build_matchall_mirred: sendmsg + recv. */
-				direct_calls += 2;
 			}
 		}
 	}
@@ -1075,11 +1049,8 @@ out:
 		direct_calls += 1;
 	}
 	if (xdp_fd >= 0) {
-		if (xdp_attached && a_idx > 0) {
+		if (xdp_attached && a_idx > 0)
 			(void)xdp_netlink_attach(&nl, (unsigned int)a_idx, -1);
-			/* xdp_netlink_attach detach: sendmsg + recv. */
-			direct_calls += 2;
-		}
 		close(xdp_fd);
 		/* close() is a raw kernel call. */
 		direct_calls += 1;
@@ -1090,22 +1061,16 @@ out:
 			if (rtnl_dellink(&nl, a_idx) == 0)
 				__atomic_add_fetch(&shm->stats.tc_live_traffic.link_del_ok,
 						   1, __ATOMIC_RELAXED);
-			/* rtnl_dellink: sendmsg + recv. */
-			direct_calls += 2;
 		}
 		nl_close(&nl);
-		/* nl_close: one close() on the netlink fd. */
-		direct_calls += 1;
 	}
 
-	/* Publish this invocation's direct-syscall load in ONE
-	 * RELAXED atomic add.  Tally was accumulated across the
-	 * setup / burst / teardown paths via direct_calls; the
-	 * grandchild's write on the shm slot is visible to the parent
-	 * (and to sibling children) after _exit() because shm is a
-	 * shared mapping.  Gated on valid_op to match the surrounding
-	 * per-op stats bumps -- setup-latched short-circuit exits
-	 * publish only the syscalls they actually issued. */
+	/* Publish this invocation's non-netlink direct-syscall load.
+	 * direct_calls holds bpf(BPF_PROG_LOAD), AF_INET socket(),
+	 * setsockopt(), sendto(), and close() tallies; the netlink
+	 * portion is published automatically by nl_close() above via
+	 * opts.caller_op = CHILD_OP_TC_LIVE_TRAFFIC.  Gated on valid_op
+	 * to match the surrounding per-op stats bumps. */
 	if (valid_op)
 		childop_direct_syscalls_add(op, direct_calls);
 	return 0;
