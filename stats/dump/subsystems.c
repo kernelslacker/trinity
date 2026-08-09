@@ -143,6 +143,8 @@ static void dump_stats_render_netlink_generator(void)
 {
 	if (shm->stats.netlink_nested_attrs_emitted)
 		stat_row("netlink_generator", "nested_attrs_emitted", shm->stats.netlink_nested_attrs_emitted);
+	if (shm->stats.netlink_nested_attr_skipped_width)
+		stat_row("netlink_generator", "nested_attr_skipped_width", shm->stats.netlink_nested_attr_skipped_width);
 }
 
 static void dump_stats_render_kvm(void)

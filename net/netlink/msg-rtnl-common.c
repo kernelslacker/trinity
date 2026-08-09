@@ -17,6 +17,7 @@
 #include <linux/netlink.h>
 #include "msg-rtnl-common.h"
 #include "random.h"
+#include "shm.h"
 #include "trinity.h"
 #include "rnd.h"
 
@@ -134,14 +135,19 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 		 * wrong-width attribute while exact_width is still true —
 		 * the kernel policy rejects it, reintroducing the silent
 		 * truncation that the exact-width path was introduced to
-		 * prevent.  Skip this type and try another; a different
-		 * table entry may have a smaller width that fits.  We do
-		 * NOT raise the loop-entry gate to max_width_in_table
-		 * because that would discard valid smaller attrs when only
-		 * a large-width type happened to be picked.
+		 * prevent.  We skip this pick and move to the next iteration;
+		 * note that the while-condition already decremented count, so
+		 * this skip consumes one slot — a message that skips every
+		 * remaining pick emits fewer attrs than requested.  We do NOT
+		 * raise the loop-entry gate to max_width_in_table because
+		 * that would discard valid smaller attrs when only a
+		 * large-width type happened to be picked.
 		 */
-		if (exact_width && payload_len < aw->width)
+		if (exact_width && payload_len < aw->width) {
+			__atomic_add_fetch(&shm->stats.netlink_nested_attr_skipped_width,
+					   1, __ATOMIC_RELAXED);
 			continue;
+		}
 		if (payload_len == 0)
 			break;
 

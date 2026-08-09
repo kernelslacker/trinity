@@ -509,6 +509,13 @@ static const struct {
 	  offsetof(struct stats_s, diag.pagecache_canary_corrupt_caught) },
 	{ "objpool_array_stale_caught",
 	  offsetof(struct stats_s, diag.objpool_array_stale_caught) },
+	/* build_nested_attrs: exact-width attr picks skipped because the
+	 * buffer clamp would have truncated the payload below aw->width.
+	 * A non-zero rate with a simultaneously low nested_attrs_emitted
+	 * rate indicates that the message buffer budget is too tight to
+	 * accommodate most attr-table entries, narrowing coverage. */
+	{ "netlink_nested_attr_skipped_width",
+	  offsetof(struct stats_s, netlink_nested_attr_skipped_width) },
 	/* genetlink registry per-family dispatch counters; rate-of-change
 	 * surfaces the live family selection mix without waiting for the
 	 * end-of-run summary.  A counter that stays at zero across an

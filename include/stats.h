@@ -437,6 +437,12 @@ struct stats_s {
 
 	/* netlink message generator: NLA_F_NESTED containers emitted */
 	unsigned long netlink_nested_attrs_emitted;
+	/* build_nested_attrs: exact-width attr skipped because buffer clamp
+	 * would have truncated it to fewer bytes than aw->width requires.
+	 * A persistent non-zero rate with a low netlink_nested_attrs_emitted
+	 * rate indicates that the msg buffer is too tight to fit most of the
+	 * attr table's widths, shrinking effective nested coverage. */
+	unsigned long netlink_nested_attr_skipped_width;
 
 	/* setsockopt pairing accounting.  See stats/subsys/setsockopt_pairing.h. */
 	struct setsockopt_pairing_stats setsockopt_pairing __attribute__((aligned(64)));
