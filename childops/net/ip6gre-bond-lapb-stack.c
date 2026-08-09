@@ -359,8 +359,9 @@ struct ip6gre_lapb_iter_ctx {
 static int ip6gre_lapb_iter_open_netlink(struct ip6gre_lapb_iter_ctx *ctx)
 {
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_IP6GRE_BOND_LAPB_STACK,
 	};
 
 	if (nl_open(&ctx->ctx, &opts) < 0) {
