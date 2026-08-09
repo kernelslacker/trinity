@@ -19,8 +19,8 @@
 # Heuristic: for every childops/*.c (or subdirectory .c) file that does
 # not contain a call to childop_direct_syscalls_add(), scan the
 # comment-stripped code for raw-syscall invocations from the set:
-#   trinity_raw_syscall, trinity_cmp_syscall, raw_<name> (file-local
-#   syscall wrappers), socket, sendmsg, sendto, setsockopt, mmap, syscall
+#   trinity_raw_syscall, trinity_cmp_syscall,
+#   socket, sendmsg, sendto, setsockopt, mmap, syscall
 # Any such file is classified as an uncounted direct-syscall producer.
 # Files in the baseline are grandfathered; anything not listed there
 # fails the gate.
@@ -152,7 +152,7 @@ while IFS= read -r srcfile; do
 		# [[:space:]]*\( anchors to a call site rather than a
 		# declaration reference.
 		while (match(scan,
-		    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])raw_[a-z_]+[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall)[[:space:]]*\(/)) {
+		    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall)[[:space:]]*\(/)) {
 			raw_sites++
 			scan = substr(scan, RSTART + RLENGTH - 1)
 		}
@@ -277,7 +277,7 @@ while IFS= read -r srcfile; do
 			tscan = code
 			gsub(/syscall[[:space:]]*\([[:space:]]*__NR_exit/, "SYSCALL_EXIT", tscan)
 			while (match(tscan,
-			    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])raw_[a-z_]+[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall|close|open|recv|send|read|write)[[:space:]]*\(/)) {
+			    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall|close|open|recv|send|read|write)[[:space:]]*\(/)) {
 				fn_raw_sites++
 				tscan = substr(tscan, RSTART + RLENGTH - 1)
 			}

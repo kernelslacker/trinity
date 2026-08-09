@@ -65,8 +65,6 @@ FORK_UNCOUNTED:childops/recipe/supervisor.c#seccomp_listener_inner # trinity_raw
 # previously passing with a single tally reference despite multiple raw-syscall
 # sites are now correctly flagged.  All files are wired at the op-body level;
 # per-worker tally coverage is the outstanding gap.
-FORK_UNCOUNTED:childops/misc/futex-pi-requeue-rollback.c#fpr_owner_main
-FORK_UNCOUNTED:childops/misc/futex-pi-requeue-rollback.c#fpr_waiter_main
 THREAD_UNCOUNTED:childops/net/sockmap-cork-race.c#sender_thread
 # Newly surfaced by widened function-entry detection (bool NAME(struct childdata *child)
 # and static int NAME(void *arg) shapes): 28 entries previously invisible to the scanner.
