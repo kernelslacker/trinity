@@ -414,6 +414,7 @@ static int rpl_cf_open_nl(struct rpl_cf_iter_ctx *ctx)
 	struct nl_open_opts opts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_IPV6_RPL_CLONE_FIDELITY,
 	};
 
 	if (nl_open(&ctx->nl, &opts) < 0)
