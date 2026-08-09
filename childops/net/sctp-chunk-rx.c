@@ -758,8 +758,9 @@ static int sctp_chunk_rx_in_ns(void *arg)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	struct nl_ctx nl = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_SCTP_CHUNK_RX,
 	};
 
 	if (kind_unsupported())
