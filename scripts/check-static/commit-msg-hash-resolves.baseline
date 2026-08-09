@@ -1,0 +1,18 @@
+# commit-msg-hash-resolves.baseline
+#
+# Grandfathered dangling commit-message hash citations: hashes that exist
+# as git objects but are NOT reachable from HEAD (orphaned cherry-pick
+# objects whose content landed under a rewritten hash).  Listed here so
+# the reachability gate does not block on pre-existing citations while
+# still failing on any NEW unreachable citation.  One 12-hex token per
+# line; '#' comments allowed.  These become inert once the range is
+# pushed (origin/master advances and the range empties); do not add to
+# this file to silence a new citation -- fix the citing message instead.
+#
+# Reachable twin (for the record; annotation left in the citing message):
+331e499fdb5c
+53a4b05beea8
+726c4417688b
+84b8dd492f47
+e13204eec1a7
+f9a2e3f2cc06

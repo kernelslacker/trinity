@@ -213,6 +213,17 @@ update this section to match `ls scripts/check-static/*.sh`.)
   citation in a commit not listed in the baseline is a FAIL.
   Complements `check-file-content-hash-citations` (which covers the
   file-content half of the citation convention).
+- `commit-msg-hash-resolves`: scan commit messages in
+  `origin/master..HEAD` (skipping when there is no unpushed range)
+  and FAIL on any hex-hash citation that exists as a git object but is
+  NOT reachable
+  from HEAD -- a dangling cherry-pick orphan pointing at the wrong
+  context.  This is the reachability half of the citation convention,
+  complementing the form check in `commit-msg-hash-citations-informal`.
+  Pre-existing dangling citations are grandfathered in
+  `commit-msg-hash-resolves.baseline`; only a new unreachable citation
+  fails.  The gate logic lives in `scripts/commit-msg-hash-resolves.sh`
+  (also runnable standalone with an explicit range for manual audits).
 - `doc-pointer-exists`: every flat `Documentation/<name>.md` path named
   in a code comment must resolve to a real file, so the one-line
   pointers that replaced carved-out design essays never dangle.

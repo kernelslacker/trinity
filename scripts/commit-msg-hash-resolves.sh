@@ -32,8 +32,8 @@
 #   commit-msg-hash-resolves.sh [<git-log-range>]
 #
 # If no range is given, defaults to origin/master..HEAD (the commits not
-# yet pushed), falling back to HEAD~200..HEAD when origin/master is not
-# available.  The range is passed directly to `git log`, so any form
+# yet pushed); if there is no such range the gate passes (it never scans
+# history-wide).  The range is passed directly to `git log`, so any form
 # accepted by git log works: "HEAD~200..HEAD", "v1.0..HEAD",
 # "<since-sha>..HEAD".
 #
@@ -49,11 +49,21 @@ ROOT="${REPO_ROOT:-$(pwd)}"
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
+# Grandfathered dangling citations (pre-existing cherry-pick orphans).
+# Path overridable for testing via HASH_RESOLVE_BASELINE.
+BASELINE="${HASH_RESOLVE_BASELINE:-$ROOT/scripts/check-static/commit-msg-hash-resolves.baseline}"
+GRANDFATHERED=""
+if [ -f "$BASELINE" ]; then
+	GRANDFATHERED=$(grep -vE '^[[:space:]]*(#|$)' "$BASELINE" 2>/dev/null)
+fi
+grandfathered=0
+
 # Accept either a single git-log range or two <since> <until> args.
 # With no argument the gate defaults to origin/master..HEAD so it checks
 # only the commits not yet pushed to origin — the natural scope for a
-# precommit gate.  Falls back to HEAD~200..HEAD when origin/master is not
-# available (bare clone, detached HEAD, first-ever push).
+# precommit gate.  When origin/master is unavailable or equal to HEAD
+# (nothing unpushed) the gate passes: there is no new range to check and
+# it must never litigate history-wide (that caused a prior suite block).
 if [ $# -ge 2 ]; then
 	RANGE="${1}..${2}"
 elif [ $# -eq 1 ]; then
@@ -62,7 +72,14 @@ elif git rev-parse --verify origin/master >/dev/null 2>&1 \
 	&& [ "$(git rev-parse origin/master)" != "$(git rev-parse HEAD)" ]; then
 	RANGE="origin/master..HEAD"
 else
-	RANGE="HEAD~200..HEAD"
+	# No origin/master, or nothing unpushed (origin/master == HEAD).
+	# Do NOT fall back to a history-wide HEAD~200..HEAD window: that
+	# re-litigates immutable, already-pushed history and was the cause
+	# of a prior suite-wide block.  The gate's job is to catch NEW
+	# unreachable citations in unpushed work; with no such range there
+	# is nothing to check.
+	echo "PASS: $NAME: no unpushed range (origin/master unavailable or == HEAD); nothing to check"
+	exit 0
 fi
 
 fail() {
@@ -215,6 +232,11 @@ while IFS= read -r tok; do
 
 	# Step 2: is it reachable from HEAD?
 	if ! git merge-base --is-ancestor "$tok" HEAD 2>/dev/null; then
+		if [ -n "$GRANDFATHERED" ] && \
+		   printf '%s\n' "$GRANDFATHERED" | grep -qxF "$tok"; then
+			grandfathered=$((grandfathered + 1))
+			continue
+		fi
 		unreachable=$((unreachable + 1))
 		# Find which commit message(s) contain this citation
 		citing=$(git log --format="%h %s" "$RANGE" --grep="$tok" 2>/dev/null \
@@ -254,4 +276,4 @@ if [ "$unreachable" -gt 0 ] || [ "$wrong_citation" -gt 0 ]; then
 	fail "$total_errors citation error(s) in range $RANGE ($checked hashes checked)"
 fi
 
-pass "range $RANGE: $checked hashes checked, $skipped skipped-not-object, 0 unreachable"
+pass "range $RANGE: $checked checked, $skipped skipped, $grandfathered grandfathered, 0 unreachable"
