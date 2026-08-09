@@ -666,14 +666,16 @@ static int l2tp_ifname_race_in_ns(void *arg)
 		return 0;
 	}
 	/*
-	 * userns_run_in_ns() forks a grandchild whose PID is not in the
-	 * parent's pids[] table, so this_child() returns NULL here and
-	 * nl_open()'s this_child() fallback never fires.  Set caller_op
-	 * explicitly so genl_close() → nl_close() auto-publishes the
-	 * netlink transport calls (socket + bind + setsockopt from
-	 * nl_open, sendmsg + recv per genl_send_recv, close from
-	 * nl_close) for this op.  Non-netlink calls are accumulated
-	 * in cctx->direct_calls and published below.
+	 * userns_run_in_ns() forks a grandchild; inside that grandchild
+	 * this_child() returns the COW-inherited parent slot (non-NULL).
+	 * genl_open()'s this_child() fallback therefore fires and would
+	 * attribute transport calls to the parent's op_type, which may
+	 * not be CHILD_OP_L2TP_IFNAME_RACE.  Override caller_op
+	 * explicitly after genl_open() so genl_close() → nl_close()
+	 * auto-publishes the netlink transport calls (socket + bind +
+	 * setsockopt from nl_open, sendmsg + recv per genl_send_recv,
+	 * close from nl_close) for this op.  Non-netlink calls are
+	 * accumulated in cctx->direct_calls and published below.
 	 */
 	parent_gctx.nl.caller_op = CHILD_OP_L2TP_IFNAME_RACE;
 	if (valid_op)

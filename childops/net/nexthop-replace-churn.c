@@ -295,13 +295,15 @@ static void nhrc_route_worker(void)
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 		/*
-		 * Grandchild after fork(): this_child() is NULL here
-		 * because pids[] only tracks the top-level trinity
-		 * children.  Set caller_op explicitly so the worker's
-		 * RTM_NEWROUTE / RTM_DELROUTE burst is attributed via
-		 * nl_close() -- otherwise the grandchild's transport
-		 * work would silently drop off the per-childop
-		 * direct-syscall accounting.
+		 * Grandchild after fork(): this_child() returns the
+		 * COW-inherited parent slot (non-NULL), so nl_open()'s
+		 * this_child() fallback would fire and attribute
+		 * transport calls to the parent's op_type.  Set
+		 * caller_op explicitly so the worker's RTM_NEWROUTE /
+		 * RTM_DELROUTE burst is attributed correctly via
+		 * nl_close() -- the explicit value wins the early-exit
+		 * in nl_open() and prevents any mismatch from the
+		 * COW-inherited parent slot.
 		 */
 		.caller_op = CHILD_OP_NEXTHOP_REPLACE_CHURN,
 	};
