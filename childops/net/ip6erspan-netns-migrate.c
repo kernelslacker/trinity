@@ -713,8 +713,9 @@ static int ip6erspan_netns_migrate_in_ns(void *arg)
 		.child = child,
 	};
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_IP6ERSPAN_NETNS_MIGRATE,
 	};
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
