@@ -206,8 +206,12 @@ while IFS= read -r srcfile; do
 		# These are the primary per-childop entry points; they run in the
 		# child context and must account for every raw syscall they issue.
 		# No fork/exit detection is needed -- they return normally.
+		# Exclude "static bool" helpers: a static qualifier means the
+		# function is an internal helper (e.g. a sub-combo or probe
+		# predicate), not a top-level childop entry point.
 		if (!in_fn && match(code,
 		    /bool[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\([[:space:]]*struct[[:space:]]+childdata[[:space:]]*\*/)) {
+			if (!(substr(code, 1, RSTART - 1) ~ /static[[:space:]]*$/)) {
 			in_fn = 1
 			is_fork_fn = 0
 			brace_depth = 0
@@ -218,6 +222,7 @@ while IFS= read -r srcfile; do
 			sub(/bool[[:space:]]+/, "", tmp)
 			match(tmp, /^[a-zA-Z_][a-zA-Z0-9_]*/)
 			fn_name = substr(tmp, RSTART, RLENGTH)
+			}
 		}
 		# Clone body (_in_ns pattern): static int NAME(void *arg).
 		# Used for clone(2) grandchild bodies that must return int.  The
@@ -279,12 +284,23 @@ while IFS= read -r srcfile; do
 			while (match(tscan,
 			    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall|close|open|recv|send|read|write)[[:space:]]*\(/)) {
 				fn_raw_sites++
+				# raw_<name>() wrapper calls self-count: the wrapper
+				# bumps a direct_syscalls accumulator before issuing
+				# the underlying syscall, so each call site is already
+				# accounted.  Credit one tally hit per wrapper call so
+				# the gap stays zero for wrapper-only bodies.
+				if (substr(tscan, RSTART, RLENGTH) ~ \
+				    /(^|[^a-zA-Z0-9_])raw_[a-z_]+[[:space:]]*\(/)
+					fn_tally_count++
 				tscan = substr(tscan, RSTART + RLENGTH - 1)
 			}
 			# Option-b accumulator-increment tracking: scan for <var>++ and
 			# <var> += N on plain local scalars (not ->member accesses).
 			# Strip pointer-member dereferences first so struct-field
 			# increments are not mistaken for local accumulator bumps.
+			# Also detect the out-param pointer-deref form (*var)++ and
+			# (*var) += N used by sub-combo helpers that receive a
+			# direct_calls pointer from the caller.
 			{
 				incr_scan = code
 				gsub(/->[a-zA-Z_][a-zA-Z0-9_]*/, "_MEMBR_", incr_scan)
@@ -300,6 +316,26 @@ while IFS= read -r srcfile; do
 					vn = substr(tmp2, RSTART, RLENGTH)
 					av = vn
 					sub(/[[:space:]]*\+=.*$/, "", vn)
+					sub(/^[^=]*=[[:space:]]*/, "", av)
+					gsub(/[UuLl]/, "", av)
+					fn_acc_incr[vn] += av + 0
+					tmp2 = substr(tmp2, RSTART + RLENGTH)
+				}
+				# Out-param pointer-deref form: (*var)++ and (*var) += N.
+				tmp2 = incr_scan
+				while (match(tmp2, /\(\*[a-zA-Z_][a-zA-Z0-9_]*\)[[:space:]]*\+\+/)) {
+					vn = substr(tmp2, RSTART, RLENGTH)
+					sub(/\(\*/, "", vn)
+					sub(/\)[[:space:]]*\+\+/, "", vn)
+					fn_acc_incr[vn] += 1
+					tmp2 = substr(tmp2, RSTART + RLENGTH)
+				}
+				tmp2 = incr_scan
+				while (match(tmp2, /\(\*[a-zA-Z_][a-zA-Z0-9_]*\)[[:space:]]*\+=[[:space:]]*[0-9]+[UuLl]*/)) {
+					vn = substr(tmp2, RSTART, RLENGTH)
+					av = vn
+					sub(/\(\*/, "", vn)
+					sub(/\)[[:space:]]*\+=.*$/, "", vn)
 					sub(/^[^=]*=[[:space:]]*/, "", av)
 					gsub(/[UuLl]/, "", av)
 					fn_acc_incr[vn] += av + 0
@@ -413,7 +449,32 @@ while IFS= read -r srcfile; do
 					fn_tally_count++
 				}
 			} else if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) {
-				fn_tally_count++
+				# Assignment form ->member = N: parse the literal value
+				# or look up a tracked accumulator (e.g. ncalls) rather
+				# than always crediting just +1.  This covers patterns
+				# such as slot->direct_count = 3 (literal) and
+				# slot->direct_count = ncalls (tracked variable).
+				{
+					assign_scan = code
+					if (match(assign_scan, \
+					    /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[ \t]*=[ \t]*/)) {
+						tline = substr(assign_scan, RSTART + RLENGTH)
+						sub(/[;,)[:space:]].*$/, "", tline)
+						if (tline ~ /^[0-9]+[UuLl]*$/) {
+							fn_tally_count += tline + 0
+						} else if (match(tline, /^[a-zA-Z_][a-zA-Z0-9_]*$/)) {
+							vn = substr(tline, RSTART, RLENGTH)
+							if (vn in fn_acc_incr)
+								fn_tally_count += fn_acc_incr[vn]
+							else
+								fn_tally_count++
+						} else {
+							fn_tally_count++
+						}
+					} else {
+						fn_tally_count++
+					}
+				}
 			}
 		}
 	}
