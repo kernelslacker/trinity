@@ -571,8 +571,9 @@ static int mpls_route_churn_in_ns(void *arg)
 	unsigned int outer_iters, i;
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_MPLS_ROUTE_CHURN,
 	};
 	int lo_ifindex;
 	/* Snapshot child->op_type once and bounds-check before indexing
