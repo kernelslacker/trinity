@@ -566,6 +566,7 @@ static int fou_gue_iter_open_ctx(struct fou_gue_iter_ctx *ctx)
 		struct nl_open_opts rtnl_opts = {
 			.proto        = NETLINK_ROUTE,
 			.recv_timeo_s = 1,
+			.caller_op    = CHILD_OP_FOU_GUE_MCAST_RX,
 		};
 
 		if (nl_open(&rtnl, &rtnl_opts) == 0) {
@@ -589,6 +590,7 @@ static int fou_gue_iter_open_ctx(struct fou_gue_iter_ctx *ctx)
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
+	ctx->genl.nl.caller_op = CHILD_OP_FOU_GUE_MCAST_RX;
 	ctx->ctx_open = true;
 	return 0;
 }
