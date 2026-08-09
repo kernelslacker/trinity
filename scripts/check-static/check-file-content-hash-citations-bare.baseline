@@ -1,0 +1,26 @@
+# Baseline for bare internal hash citations lacking ("subject") annotation.
+# The gate reports ADVISORY for entries listed here; any new bare citation
+# not present in this file is a FAIL.  This is a descend-only ratchet:
+# removing a bare citation removes its line; adding one fails immediately.
+#
+# To clear an entry: add the ("subject") annotation to the cited line and
+# remove the corresponding line from this file in the same commit.
+childops/fs/procfs-writer.c:337
+childops/fs/ublk-lifecycle.c:212
+childops/fs/ublk-lifecycle.c:416
+childops/io_uring/send-zc-churn.c:380
+childops/io_uring/send-zc-churn.c:451
+childops/io_uring/send-zc-churn.c:624
+childops/io_uring/send-zc-churn.c:668
+childops/net/packet-qdisc-bypass-unanchored-l2.c:1295
+childops/net/packet-qdisc-bypass-unanchored-l2.c:1296
+include/child.h:619
+net/socket-family-grammar-alg.c:65
+scripts/check-static/check-runtime-json-output.sh:813
+scripts/check-static/json-separator-adjacency.sh:127
+scripts/check-static/pdeathsig-getppid-recheck.sh:155
+stats/network/childops.c:84
+syscalls/fs/ftruncate.c:36
+syscalls/signal/signal.c:15
+syscalls/xattr/lremovexattr.c:48
+syscalls/xattr/removexattr.c:48

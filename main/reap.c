@@ -152,7 +152,7 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	 * explicitly -- captured from pids[childno] above -- so the zombie-
 	 * deferred path in process_zombie_pending() can also call with the
 	 * original pid after pids[childno] is already EMPTY_PIDSLOT (see
-	 * b5bfac7d77d9 which moved bug-log path building into this function).
+	 * b5bfac7d77d9 ("health: fix partial-buglog misclassification (unreadable + poll race)") which moved bug-log path building into this function).
 	 * Skip when child_dead is false: the child may still be writing its
 	 * log; process_zombie_pending() calls classify_child_buglog() once
 	 * waitpid confirms the task is gone (the authoritative deferred site).

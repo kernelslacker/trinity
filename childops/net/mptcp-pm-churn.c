@@ -241,7 +241,7 @@ static void churn_send(int fd)
  * Best-effort TFO + SO_TIMESTAMPING enable on a TCP/MPTCP fd.  Both
  * options ignore errors — older kernels / missing HW return
  * EOPNOTSUPP and we don't care.  Goal is to drive the TFO +
- * timestamping combo path (upstream: 6254a16d6f0c) on both
+ * timestamping combo path (upstream: 6254a16d6f0c ("mptcp: fix rx timestamp corruption on fastopen")) on both
  * listener and connector before the pm churn loop starts pushing
  * subflow add/remove against the live socket.
  */
@@ -261,7 +261,7 @@ static void mptcp_enable_tfo_ts(int fd)
 /*
  * Static table of TCP-level sockopts that mptcp's setsockopt_all_sf()
  * propagates from the master mptcp socket to every current and future
- * subflow.  upstream: 70ece9d7021c restored a missing
+ * subflow.  upstream: 70ece9d7021c ("mptcp: sockopt: increase seq in mptcp_setsockopt_all_sf") restored a missing
  * sockopt_seq_inc() in that propagation path: without the seq bump,
  * subflows created AFTER the master setsockopt() inherit stale state.
  *
@@ -298,7 +298,7 @@ static const struct mptcp_sf_optspec mptcp_sf_opts[] = {
  * Curated sweep table for the sockopt-inheritance sub-mode below.
  * Each entry is a TCP-level option that mptcp_setsockopt_all_sf()
  * propagates from the master to every existing AND future subflow.
- * upstream: 70ece9d7021c restored a missing sockopt_seq_inc()
+ * upstream: 70ece9d7021c ("mptcp: sockopt: increase seq in mptcp_setsockopt_all_sf") restored a missing sockopt_seq_inc()
  * in that path: without it, subflows added AFTER a master setsockopt
  * silently inherited the pre-set value.  Wider value ranges than the
  * sibling all_sf_recipe — this sweep is specifically poking the
@@ -387,7 +387,7 @@ static unsigned int sweep_get_subflow_count(int sk)
  * place.  Bounded poll on MPTCP_INFO num_subflows confirms the new
  * subflow actually came up before we readback.  A readback drift on
  * the master is the bug-signal counter — collected, not asserted;
- * upstream: 70ece9d7021c is the fix shape.
+ * upstream: 70ece9d7021c ("mptcp: sockopt: increase seq in mptcp_setsockopt_all_sf") is the fix shape.
  */
 static unsigned long mptcp_sockopt_inheritance_sweep(int cli,
 						     struct genl_ctx *ctx)

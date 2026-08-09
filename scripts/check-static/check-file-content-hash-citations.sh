@@ -35,10 +35,18 @@
 #                in history or source line) or is properly prefixed with
 #                upstream:.  Counted and printed to stderr so the baseline
 #                population is auditable.
-#   (silent)  -- token exists and is reachable from HEAD.  No output.
+#   (silent)  -- token exists and is reachable from HEAD AND carries an
+#                adjacent ("subject") annotation.  No output.
+#   BARE      -- token exists and is reachable from HEAD but lacks an adjacent
+#                ("subject") annotation within 80 chars.  Entries listed in
+#                check-file-content-hash-citations-bare.baseline are reported
+#                ADVISORY only; any bare internal citation not in the baseline
+#                is a FAIL.  This is a descend-only ratchet: fixing a citation
+#                removes its line from the baseline; adding a new bare one
+#                fails immediately.
 #
-# Exit 1 if any DANGLING tokens are found; exit 0 otherwise.
-# Advisory warnings are non-fatal; the gate passes with advisory > 0.
+# Exit 1 if any DANGLING or new-BARE tokens are found; exit 0 otherwise.
+# Advisory warnings (upstream-prefix and baseline bare) are non-fatal.
 #
 # Self-exclusion: this script and scripts/hash-subject-resolver.sh are never
 # scanned (they legitimately contain hex tokens that exercise these code paths
@@ -50,9 +58,13 @@ set -u
 # so -u applies inside the function body; the array itself is global).
 declare -A _notanobj_cls_cache
 
+# Baseline set for bare internal citations (file:line -> 1).
+declare -A _bare_baseline
+
 NAME="file-content-hash-citations"
 ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 RESOLVER="$ROOT/scripts/hash-subject-resolver.sh"
+BARE_BASELINE="$ROOT/scripts/check-static/check-file-content-hash-citations-bare.baseline"
 
 # Self-exclusion: canonical paths of files never scanned.
 SELF="scripts/check-static/check-file-content-hash-citations.sh"
@@ -225,8 +237,19 @@ fi
 dangling_count=0
 skip_count=0
 advisory_count=0
+bare_advisory_count=0
+bare_fail_count=0
 dangling_detail=""
 skip_detail=""
+bare_fail_detail=""
+
+# Load bare-citation baseline.
+if [ -f "$BARE_BASELINE" ]; then
+	while IFS= read -r _bline; do
+		[[ -z "$_bline" || "$_bline" == \#* ]] && continue
+		_bare_baseline["$_bline"]=1
+	done < "$BARE_BASELINE"
+fi
 
 for file in "${tracked_files[@]}"; do
 	[ -f "$file" ] || continue
@@ -272,8 +295,22 @@ for file in "${tracked_files[@]}"; do
 
 					dangling_detail="${dangling_detail}
   DANGLING citation in ${file}:${lineno}: ${tok}${twin_info}"
+				else
+					# Reachable internal hash.  Convention requires an adjacent
+					# ("subject") annotation on the same line within 80 chars
+					# after the hash token.
+					if ! printf '%s\n' "$line" | grep -qE "${tok}.{0,80}\\(\""; then
+						_filelineno="${file}:${lineno}"
+						if [[ -v _bare_baseline["$_filelineno"] ]]; then
+							bare_advisory_count=$((bare_advisory_count + 1))
+						else
+							bare_fail_count=$((bare_fail_count + 1))
+							bare_fail_detail="${bare_fail_detail}
+  BARE (no subject) citation in ${file}:${lineno}: ${tok}"
+						fi
+					fi
+					# else: reachable with subject -- silent pass
 				fi
-				# else: reachable -- silent pass
 			else
 				# NOT-AN-OBJECT: not a git object in this repo.
 				# Split into three buckets by token shape and git-log context.
@@ -336,16 +373,28 @@ if [ "$skip_count" -gt 0 ]; then
 	printf '%s\n' "  not-an-object baseline (skip_count=${skip_count}):${skip_detail}" >&2
 fi
 
-if [ "$dangling_count" -gt 0 ]; then
+if [ "$bare_fail_count" -gt 0 ]; then
 	{
-		echo "  $NAME: ${dangling_count} dangling hash citation(s) in file content"
-		echo "  These hashes include live-dangling objects (unreachable from HEAD)"
-		echo "  and GC'd orphans identified by a unique subject-resolvable twin."
-		echo "  Update each citation to the reachable twin and annotate:"
+		echo "  $NAME: ${bare_fail_count} new bare internal citation(s) lack (\"subject\") annotation"
+		echo "  Add a subject annotation on the same line within 80 chars after the hash:"
 		echo "    HASH (\"subsystem: brief subject\")"
-		printf '%s\n' "${dangling_detail}"
+		echo "  Or add the entry to the bare baseline if this is an intentional exception."
+		printf '%s\n' "${bare_fail_detail}"
 	} >&2
-	fail "${dangling_count} dangling hash citation(s) in file content (${skip_count} not-an-object skipped, advisory: ${advisory_count} upstream-hash token(s) lack upstream: prefix)"
 fi
 
-pass "${#tracked_files[@]} files scanned, 0 dangling (${skip_count} not-an-object skipped, advisory: ${advisory_count} upstream-hash token(s) lack upstream: prefix)"
+if [ "$dangling_count" -gt 0 ] || [ "$bare_fail_count" -gt 0 ]; then
+	if [ "$dangling_count" -gt 0 ]; then
+		{
+			echo "  $NAME: ${dangling_count} dangling hash citation(s) in file content"
+			echo "  These hashes include live-dangling objects (unreachable from HEAD)"
+			echo "  and GC'd orphans identified by a unique subject-resolvable twin."
+			echo "  Update each citation to the reachable twin and annotate:"
+			echo "    HASH (\"subsystem: brief subject\")"
+			printf '%s\n' "${dangling_detail}"
+		} >&2
+	fi
+	fail "${dangling_count} dangling + ${bare_fail_count} new-bare citation(s) (${skip_count} skipped, advisory: ${advisory_count} upstream-prefix, ${bare_advisory_count} baseline-bare)"
+fi
+
+pass "${#tracked_files[@]} files scanned, 0 dangling, 0 new-bare (${skip_count} not-an-object skipped, advisory: ${advisory_count} upstream-hash token(s) lack upstream: prefix, ${bare_advisory_count} baseline bare citation(s))"
