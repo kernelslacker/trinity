@@ -301,8 +301,8 @@ while IFS= read -r srcfile; do
 					if (tline ~ /^[0-9]+[UuLl]*$/) {
 						fn_tally_count += tline + 0
 					} else if (length(tline) > 0) {
-						# Non-literal runtime accumulator: fully accounted
-						fn_tally_count = fn_raw_sites + 1000000
+						# Runtime accumulator: cannot statically verify sum; treat as covering all fn_raw_sites.
+						fn_tally_count = fn_raw_sites
 					} else {
 						fn_tally_count++
 					}
