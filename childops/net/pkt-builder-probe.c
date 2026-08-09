@@ -234,6 +234,7 @@ static int pktb_probe_srh_in_ns(void *arg)
 	struct nl_open_opts nlopts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_PKT_BUILDER_PROBE,
 	};
 	bool nl_opened = false;
 	struct pktb_ctx ctx;
