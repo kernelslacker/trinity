@@ -142,7 +142,46 @@ static void dump_stats_render_nfnl_subsys(void)
 static void dump_stats_render_netlink_generator(void)
 {
 	if (shm->stats.netlink_nested_attrs_emitted)
-		stat_row("netlink_generator", "nested_attrs_emitted", shm->stats.netlink_nested_attrs_emitted);
+		stat_row("netlink_generator", "nested_attrs_emitted",
+			 shm->stats.netlink_nested_attrs_emitted);
+	if (shm->stats.netlink_nested_attrs_accepted)
+		stat_row("netlink_generator", "nested_attrs_accepted",
+			 shm->stats.netlink_nested_attrs_accepted);
+}
+
+static void dump_stats_render_rtnl_ack_oracle(void)
+{
+	const struct rtnl_ack_oracle_stats *o = &shm->stats.rtnl_ack_oracle;
+	unsigned int i;
+
+	if (!o->accepted && !o->einval && !o->erange &&
+	    !o->eopnotsupp && !o->eperm && !o->other &&
+	    !o->send_fail && !o->no_reply)
+		return;
+
+	stat_row("rtnl_ack_oracle", "accepted",   o->accepted);
+	stat_row("rtnl_ack_oracle", "einval",     o->einval);
+	stat_row("rtnl_ack_oracle", "erange",     o->erange);
+	stat_row("rtnl_ack_oracle", "eopnotsupp", o->eopnotsupp);
+	stat_row("rtnl_ack_oracle", "eperm",      o->eperm);
+	stat_row("rtnl_ack_oracle", "other",      o->other);
+	stat_row("rtnl_ack_oracle", "send_fail",  o->send_fail);
+	stat_row("rtnl_ack_oracle", "no_reply",   o->no_reply);
+
+	/* Per-RTM-group accepted counts: emit only non-zero entries.
+	 * group 0 = RTM_NEW/DEL/GET/SETLINK, group 1 = *ADDR, etc. */
+	{
+		char key[32];
+
+		for (i = 0; i < RTNL_ACK_ORACLE_MAX_GROUPS; i++) {
+			if (!o->type_accepted_per_group[i])
+				continue;
+			(void)snprintf(key, sizeof(key),
+				       "accepted_rtm_grp%u", i);
+			stat_row("rtnl_ack_oracle", key,
+				 o->type_accepted_per_group[i]);
+		}
+	}
 }
 
 static void dump_stats_render_kvm(void)
@@ -311,6 +350,8 @@ void dump_stats_fuzzer_subsystems(void)
 	dump_stats_render_nfnl_subsys();
 
 	dump_stats_render_netlink_generator();
+
+	dump_stats_render_rtnl_ack_oracle();
 
 	dump_stats_render_kvm();
 
