@@ -487,6 +487,8 @@ static const struct {
 	  offsetof(struct stats_s, syscall_dispatch.random_syscall_completions) },
 	{ "seal_fail_ops",
 	  offsetof(struct stats_s, syscall_dispatch.seal_fail_ops) },
+	{ "seal_fail_aborts",
+	  offsetof(struct stats_s, syscall_dispatch.seal_fail_aborts) },
 	{ "childop_dispatches",
 	  offsetof(struct stats_s, syscall_dispatch.childop_dispatches) },
 	{ "childop_iterations",

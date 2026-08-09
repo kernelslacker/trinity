@@ -316,6 +316,7 @@ remote_adaptive_would_promote
 retfd_blanket_reject
 ring_evict_leaked
 rzs_blanket_reject
+seal_fail_aborts
 seal_fail_ops
 shared_buffer_redirected
 sibling_mprotect_failed

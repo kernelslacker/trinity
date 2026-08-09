@@ -67,12 +67,25 @@ struct syscall_dispatch_stats {
 	 *     normal, high-volume infrastructure counter.  A non-zero
 	 *     seal_fail_ops rate flags a fuzzer-infrastructure fault
 	 *     (persistent mprotect failures) that would otherwise be
-	 *     invisible in fleet throughput stats. */
+	 *     invisible in fleet throughput stats.
+	 *
+	 *   seal_fail_aborts:
+	 *     Bumped at the two child/child.c chokepoints (loop-top
+	 *     :299 and childop-dispatch) when deferred_free_seal_all()
+	 *     returns false and the child is about to abort.  These
+	 *     are hard failures: the child tears down immediately via
+	 *     goto out rather than completing the current iteration.
+	 *     Kept separate from seal_fail_ops (the softer
+	 *     dispatch/syscall.c site) so a fleet-wide vma-exhaustion
+	 *     event that kills children at loop-top shows a non-zero
+	 *     rate in telemetry instead of the silent seal_fail_ops==0
+	 *     outcome the original single-counter design produced. */
 	unsigned long random_syscall_attempts;
 	unsigned long random_syscall_completions;
 	unsigned long childop_dispatches;
 	unsigned long childop_iterations;
 	unsigned long seal_fail_ops;
+	unsigned long seal_fail_aborts;
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_SYSCALL_DISPATCH_H */

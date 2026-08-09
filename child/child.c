@@ -297,6 +297,9 @@ void child_process(struct childdata *child, int childno)
 		 * entry cannot see a stale window.  No-op with the flag
 		 * OFF. */
 		if (!deferred_free_seal_all()) {
+			__atomic_add_fetch(
+				&shm->stats.syscall_dispatch.seal_fail_aborts,
+				1, __ATOMIC_RELAXED);
 			outputerr("deferred_free: seal failed at loop-top "
 				  "chokepoint; aborting child\n");
 			goto out;
@@ -767,6 +770,9 @@ void child_process(struct childdata *child, int childno)
 		 * faulting on the PROT_READ/PROT_NONE tripwire.  No-op
 		 * with --deferred-free-batch OFF. */
 		if (!deferred_free_seal_all()) {
+			__atomic_add_fetch(
+				&shm->stats.syscall_dispatch.seal_fail_aborts,
+				1, __ATOMIC_RELAXED);
 			outputerr("deferred_free: seal failed at childop "
 				  "dispatch chokepoint; aborting child\n");
 			goto out;
