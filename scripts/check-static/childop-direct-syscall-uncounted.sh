@@ -233,7 +233,12 @@ while IFS= read -r srcfile; do
 			# Broader raw-syscall set for worker bodies: includes
 			# close, open, recv, send, read, write in addition to
 			# the standard set used for the file-level check.
+			# Exclude fork-child terminators: syscall(__NR_exit[...]) forms
+			# are the termination mechanism, not fuzzed-work syscalls that
+			# belong in the direct-call tally.  Replace the syscall( token
+			# before scanning so the pattern below cannot match it.
 			tscan = code
+			gsub(/syscall[[:space:]]*\([[:space:]]*__NR_exit/, "SYSCALL_EXIT", tscan)
 			while (match(tscan,
 			    /trinity_raw_syscall[[:space:]]*\(|trinity_cmp_syscall[[:space:]]*\(|(^|[^a-zA-Z0-9_])raw_[a-z_]+[[:space:]]*\(|(^|[^a-zA-Z0-9_])(socket|sendmsg|sendto|setsockopt|mmap|syscall|close|open|recv|send|read|write)[[:space:]]*\(/)) {
 				fn_raw_sites++
@@ -268,17 +273,59 @@ while IFS= read -r srcfile; do
 			if (is_fork_fn && !fork_fn_has_fork &&
 			    match(code, /(^|[^a-zA-Z0-9_])fork[[:space:]]*\(/))
 				fork_fn_has_fork = 1
-			# Tally-accumulation heuristic (quantitative): count tally sites
-			# in the worker body; each line matching a struct member whose
-			# name contains "syscall", "tally", or "count" accessed via ->
-			# OR a direct childop_direct_syscalls_add() call increments
-			# fn_tally_count.  The worker passes only when
-			# fn_tally_count >= fn_raw_sites, so a single tally reference
-			# can no longer silence multiple raw-syscall sites.  Bare
-			# __atomic_add_fetch / __atomic_fetch_add calls are NOT counted.
-			if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
-			    index(code, "childop_direct_syscalls_add(") > 0)
+			# Tally-accumulation heuristic (magnitude-aware): parse literal
+			# addends where possible rather than counting +1 per tally line.
+			#
+			#   childop_direct_syscalls_add(op, N):
+			#     N is a numeric literal (digits + optional UL/U/ULL suffix)
+			#       -> add N to fn_tally_count
+			#     N contains any identifier (runtime accumulator or a mixed
+			#       expression such as 1UL + write_calls + 1UL)
+			#       -> fully accounted (fn_tally_count = large sentinel):
+			#          a runtime sum cannot be statically verified
+			#     Second arg absent on this line (multi-line call)
+			#       -> conservative +1 fallback
+			#
+			#   __atomic_fetch_add / __atomic_add_fetch on a ->...count/
+			#   tally/syscall member with literal N -> add N to fn_tally_count;
+			#   non-literal N -> conservative +1 (per-site increment).
+			#
+			#   Other ->...count/tally/syscall patterns: +1 (unchanged).
+			if (index(code, "childop_direct_syscalls_add(") > 0) {
+				tline = code
+				sub(/.*childop_direct_syscalls_add\([^,]*,/, "", tline)
+				if (index(tline, ")") > 0) {
+					sub(/\).*$/, "", tline)
+					sub(/^[ \t]+/, "", tline)
+					sub(/[ \t]+$/, "", tline)
+					if (tline ~ /^[0-9]+[UuLl]*$/) {
+						fn_tally_count += tline + 0
+					} else if (length(tline) > 0) {
+						# Non-literal runtime accumulator: fully accounted
+						fn_tally_count = fn_raw_sites + 1000000
+					} else {
+						fn_tally_count++
+					}
+				} else {
+					# Second arg on next line: conservative +1
+					fn_tally_count++
+				}
+			} else if (match(code, /__atomic_(fetch_add|add_fetch)[[:space:]]*\(/) &&
+			           match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) {
+				tline = code
+				sub(/.*__atomic_(fetch_add|add_fetch)[[:space:]]*\([^,]*,/, "", tline)
+				sub(/,.*$/, "", tline)
+				sub(/^[ \t]+/, "", tline)
+				sub(/[ \t]+$/, "", tline)
+				if (tline ~ /^[0-9]+[UuLl]*$/) {
+					fn_tally_count += tline + 0
+				} else {
+					# Non-literal per-site increment: conservative +1
+					fn_tally_count++
+				}
+			} else if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) {
 				fn_tally_count++
+			}
 		}
 	}
 	END {

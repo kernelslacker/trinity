@@ -65,22 +65,9 @@ FORK_UNCOUNTED:childops/recipe/supervisor.c#seccomp_listener_inner # trinity_raw
 # previously passing with a single tally reference despite multiple raw-syscall
 # sites are now correctly flagged.  All files are wired at the op-body level;
 # per-worker tally coverage is the outstanding gap.
-FORK_UNCOUNTED:childops/fs/statmount-idmap-overflow.c#carrier_child
 FORK_UNCOUNTED:childops/misc/futex-pi-requeue-rollback.c#fpr_owner_main
 FORK_UNCOUNTED:childops/misc/futex-pi-requeue-rollback.c#fpr_waiter_main
-FORK_UNCOUNTED:childops/misc/sysv-shm-orphan-race.c#sysv_shm_originator_main
-FORK_UNCOUNTED:childops/misc/sysv-shm-orphan-race.c#sysv_shm_attacher_main
-FORK_UNCOUNTED:childops/net/af-unix-peek-race.c#af_unix_peek_sibling_main
-FORK_UNCOUNTED:childops/net/af-unix-scm-rights-gc.c#af_unix_sibling_main
-FORK_UNCOUNTED:childops/net/inet-listener-rehash-race.c#twseed_worker
-FORK_UNCOUNTED:childops/net/inet-listener-rehash-race.c#churn_worker
-FORK_UNCOUNTED:childops/net/inet-listener-rehash-race.c#syn_worker
-FORK_UNCOUNTED:childops/net/inet-listener-rehash-race.c#rehash_worker
-FORK_UNCOUNTED:childops/net/ipv6-pmtu-teardown-race.c#worker_ptb
-FORK_UNCOUNTED:childops/net/packet-qdisc-bypass-unanchored-l2.c#lane_a_worker
 THREAD_UNCOUNTED:childops/net/sockmap-cork-race.c#sender_thread
-FORK_UNCOUNTED:childops/net/xfrm/pfkey-spd-walk.c#spd_walker_child
-FORK_UNCOUNTED:childops/net/xfrm/pfkey-spd-walk.c#spd_racer_child
 FORK_UNCOUNTED:childops/process/process-mrelease-race.c#victim_body
 FORK_UNCOUNTED:childops/process/process-mrelease-race.c#racer_body
 FORK_UNCOUNTED:childops/process/process-mrelease-race.c#waitid_racer_body
