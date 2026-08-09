@@ -351,17 +351,11 @@ struct altname_iter_ctx {
 	int dummy_idx;
 	bool nl_opened;
 	bool dummy_added;
-	/* Direct-syscall tally accumulated across the setup / burst /
-	 * teardown helpers.  Every helper bumps this counter by the
-	 * number of raw kernel calls it just issued: nl_open success ==
-	 * 3 (socket + bind + setsockopt for recv_timeo_s), each
-	 * nl_send_recv wrapper == 2 (sendmsg + recv), nl_close == 1
-	 * (close).  Published once in altname_thrash_in_ns() via
-	 * childop_direct_syscalls_add() so the hot path pays one atomic
-	 * add per invocation instead of per-syscall.  Setup-latched
-	 * short-circuit paths publish whatever they issued before
-	 * bailing (0 when socket() itself failed), which correctly
-	 * attributes no data-path work to those exits. */
+	/* Direct-syscall tally for non-netlink raw kernel calls.  Netlink
+	 * transport syscalls (socket+bind+setsockopt from nl_open, sendmsg+recv
+	 * per nl_send_recv, close from nl_close) are published automatically by
+	 * nl_close() via opts.caller_op = CHILD_OP_ALTNAME_THRASH.  Published
+	 * once in altname_thrash_in_ns() via childop_direct_syscalls_add(). */
 	unsigned long direct_calls;
 };
 
@@ -382,8 +376,9 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 {
 	struct childdata *child = ctx->child;
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = RTNL_RECV_TIMEO_S,
+		.caller_op    = CHILD_OP_ALTNAME_THRASH,
 	};
 	int rc;
 
@@ -406,18 +401,11 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 		return -1;
 	}
 	ctx->nl_opened = true;
-	/* nl_open success path issued socket + bind + setsockopt
-	 * (recv_timeo_s > 0 above). */
-	ctx->direct_calls += 3;
 
 	(void)snprintf(ctx->dummy_name, sizeof(ctx->dummy_name), "tralt%u",
 		       (unsigned int)(rand32() & 0xffffu));
 
 	rc = build_dummy_create(&ctx->nl, ctx->dummy_name);
-	/* build_dummy_create wraps one nl_send_recv (sendmsg + recv).
-	 * Count the call attempt; a sendmsg early-fail overcounts by 1
-	 * on rare paths, negligible against burst dominance. */
-	ctx->direct_calls += 2;
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
 			if (valid_op)
@@ -438,7 +426,6 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 		return -1;
 
 	(void)rtnl_setlink_up(&ctx->nl, ctx->dummy_idx);
-	ctx->direct_calls += 2;
 	return 0;
 }
 
@@ -485,16 +472,10 @@ static void altname_thrash_iter_burst(struct altname_iter_ctx *ctx)
 			__atomic_add_fetch(&shm->stats.altname_thrash.addprop_done,
 					   1, __ATOMIC_RELAXED);
 		}
-		/* nl_send_recv: sendmsg + recv. */
-		ctx->direct_calls += 2;
-
 		if (build_getlink(&ctx->nl, ctx->dummy_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.altname_thrash.getlink_done,
 					   1, __ATOMIC_RELAXED);
 		}
-		/* nl_send_recv_any: sendmsg + recv. */
-		ctx->direct_calls += 2;
-
 		/* Pick victims for the del side from the ring of
 		 * recently-added names.  This keeps the kernel-side
 		 * lookup successful so the prop_list walker is actually
@@ -516,8 +497,6 @@ static void altname_thrash_iter_burst(struct altname_iter_ctx *ctx)
 			__atomic_add_fetch(&shm->stats.altname_thrash.delprop_done,
 					   1, __ATOMIC_RELAXED);
 		}
-		/* nl_send_recv: sendmsg + recv. */
-		ctx->direct_calls += 2;
 	}
 }
 
@@ -537,12 +516,8 @@ static void altname_thrash_iter_teardown(struct altname_iter_ctx *ctx)
 		return;
 	if (ctx->dummy_added && ctx->dummy_idx > 0) {
 		(void)rtnl_dellink(&ctx->nl, ctx->dummy_idx);
-		/* nl_send_recv: sendmsg + recv. */
-		ctx->direct_calls += 2;
 	}
 	nl_close(&ctx->nl);
-	/* nl_close: one close() on the netlink fd. */
-	ctx->direct_calls += 1;
 }
 
 /*
