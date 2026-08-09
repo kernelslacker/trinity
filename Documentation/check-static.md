@@ -180,6 +180,26 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `scripts/check-static/childop-direct-syscall-uncounted.baseline` if
   their additional own-body calls are not yet wired; that list should
   shrink over time, never grow.
+
+  **Bucket definition** — the tally covers only syscalls that (a) are
+  issued directly in the childop body or a local non-netlink wrapper, and
+  (b) represent fuzz surface the childop is exercising as its primary job.
+  Three categories are explicitly excluded:
+
+  - *Teardown / cleanup `close()` calls*: resource teardown on error or
+    exit paths is infrastructure, not dispatch surface; no childop should
+    count it (the convention is dispatch-surface only).
+  - *Harness-handshake syscalls* (`pipe`/`read`/`write` used only to
+    sequence workers between fork parent and child, or to synchronise
+    cooperating threads before the actual work begins): these are
+    synchronisation plumbing, not kernel interfaces being fuzzed.
+  - *Netlink-proxied syscalls via `caller_op` / `nl_close()`*:
+    `nl_close()` already calls `childop_direct_syscalls_add()` internally
+    for the netlink transport path; counting those syscalls again in the
+    childop body would double-count them in the telemetry.
+
+  The full rationale and authoritative wording live in the header comment
+  of `scripts/check-static/childop-direct-syscall-uncounted.sh`.
 - `childop-stats-writer-registered`: every `.c` file under `childops/`
   that writes `shm->stats.*` counters must have a corresponding
   `CHILD_OP_*` entry in `include/childop.def` whose dispatch function is

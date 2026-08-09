@@ -16,6 +16,44 @@
 #      the netlink path, but own-body calls outside the nl_* transport
 #      still need a manual publish.
 #
+# -----------------------------------------------------------------------
+# Bucket definition: what belongs in the direct-syscall tally
+# -----------------------------------------------------------------------
+#
+# The direct-syscall bucket counts syscalls that:
+#   (a) are issued directly in the childop body (or a local non-netlink
+#       wrapper function called exclusively from that body), AND
+#   (b) represent fuzz surface the childop is exercising as its primary
+#       job -- i.e. the kernel interfaces being explored by the op.
+#
+# Three categories are explicitly OUT of the bucket:
+#
+#   1. Teardown / cleanup close() calls (and similar fd-release calls on
+#      error paths).  Convention: the dispatch surface ends at the last
+#      meaningful kernel interaction; resource teardown is infrastructure.
+#      No childop in the tree counts cleanup close() calls.  The one
+#      exception (sockmap-cork-race.c) counts close() only in a setup
+#      helper where the socket pair creation is itself the fuzz surface;
+#      both forms pass because the gate tests only for a non-negative gap,
+#      not for an exact match.  The safe rule for new ops: do NOT count
+#      close() on the error / cleanup path.
+#
+#   2. Harness-handshake syscalls (pipe/read/write used only to sequence
+#      workers between the fork parent and child, or to synchronise
+#      cooperating child threads before the actual work begins).  These
+#      are synchronisation infrastructure, not kernel interfaces being
+#      fuzzed.  They must not appear in the fuzz-surface tally.
+#
+#   3. Netlink-proxied syscalls routed through the nl_* transport
+#      (nl_open / nl_send_recv / nl_close with a valid caller_op).
+#      nl_close() calls childop_direct_syscalls_add() internally on
+#      behalf of those calls; counting them again in the childop body
+#      would double-count them in the telemetry.  If a childop uses
+#      ONLY the nl_* path (no own-body socket/sendmsg/etc.), it needs
+#      no manual publish -- but it should be grandfathered in the
+#      baseline until confirmed; see the note on nl_*-routed files below.
+#
+# -----------------------------------------------------------------------
 # Heuristic: for every childops/*.c (or subdirectory .c) file that does
 # not contain a call to childop_direct_syscalls_add(), scan the
 # comment-stripped code for raw-syscall invocations from the set:
