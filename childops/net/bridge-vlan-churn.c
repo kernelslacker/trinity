@@ -535,8 +535,9 @@ static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
 				  struct childdata *child)
 {
 	struct nl_open_opts nl_opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_BRIDGE_VLAN_CHURN,
 	};
 	__u16 vid_bases[3] = { 10, 100, 4000 };
 	unsigned int rng;
