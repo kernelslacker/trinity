@@ -1,0 +1,20 @@
+# Baseline for subject-annotation mismatches in internal hash citations.
+# The gate reports ADVISORY for entries listed here; any new subject mismatch
+# not present in this file is a FAIL.  This is a descend-only ratchet:
+# removing a mismatch (by correcting the annotation) removes its entry;
+# adding a new wrong annotation fails immediately.
+#
+# Format: file:hashtoken
+#
+# The annotated subject must match `git log -1 --pretty=%s <hash>` exactly.
+# To clear an entry: correct the ("annotation") in the cited line to the
+# real commit subject and remove the corresponding line from this file in
+# the same commit.
+#
+# --- current known mismatches ---
+#
+# include/cmp_hints/redqueen.h:90
+#   annotated: "drain all staged reexec_pending entries per dispatch"
+#   real:      "random-syscall: drain all staged reexec_pending entries per dispatch"
+#   (annotation is missing the "random-syscall:" subsystem prefix)
+include/cmp_hints/redqueen.h:b86f2e77a846

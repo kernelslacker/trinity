@@ -63,10 +63,16 @@ declare -A _bare_baseline
 # Tracks which baseline entries were matched during this scan (for stale detection).
 declare -A _bare_baseline_seen
 
+# Baseline set for subject-annotation mismatches (file:hashtoken -> 1).
+declare -A _subject_baseline
+# Tracks which subject baseline entries were matched during this scan.
+declare -A _subject_baseline_seen
+
 NAME="file-content-hash-citations"
 ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 RESOLVER="$ROOT/scripts/hash-subject-resolver.sh"
 BARE_BASELINE="$ROOT/scripts/check-static/check-file-content-hash-citations-bare.baseline"
+SUBJECT_BASELINE="$ROOT/scripts/check-static/check-file-content-hash-citations-subject.baseline"
 
 # Self-exclusion: canonical paths of files never scanned.
 SELF="scripts/check-static/check-file-content-hash-citations.sh"
@@ -241,9 +247,12 @@ skip_count=0
 advisory_count=0
 bare_advisory_count=0
 bare_fail_count=0
+subject_mismatch_count=0
+subject_mismatch_advisory_count=0
 dangling_detail=""
 skip_detail=""
 bare_fail_detail=""
+subject_mismatch_detail=""
 
 # Load bare-citation baseline.
 if [ -f "$BARE_BASELINE" ]; then
@@ -251,6 +260,14 @@ if [ -f "$BARE_BASELINE" ]; then
 		[[ -z "$_bline" || "$_bline" == \#* ]] && continue
 		_bare_baseline["$_bline"]=1
 	done < "$BARE_BASELINE"
+fi
+
+# Load subject-mismatch baseline.
+if [ -f "$SUBJECT_BASELINE" ]; then
+	while IFS= read -r _sline; do
+		[[ -z "$_sline" || "$_sline" == \#* ]] && continue
+		_subject_baseline["$_sline"]=1
+	done < "$SUBJECT_BASELINE"
 fi
 
 for file in "${tracked_files[@]}"; do
@@ -311,8 +328,28 @@ for file in "${tracked_files[@]}"; do
 							bare_fail_detail="${bare_fail_detail}
   BARE (no subject) citation in ${file}:${lineno}: ${tok}"
 						fi
+					else
+						# Annotation present: validate the annotated subject against
+						# the real commit subject via git log.
+						annotated_subj=$(extract_adjacent_subject "$tok" "$line")
+						if [ -n "$annotated_subj" ]; then
+							real_subj=$(git log -1 --pretty=%s "$tok" 2>/dev/null)
+							if [ "$annotated_subj" != "$real_subj" ]; then
+								_filehash="${file}:${tok}"
+								if [[ -v _subject_baseline["$_filehash"] ]]; then
+									subject_mismatch_advisory_count=$((subject_mismatch_advisory_count + 1))
+									_subject_baseline_seen["$_filehash"]=1
+								else
+									subject_mismatch_count=$((subject_mismatch_count + 1))
+									subject_mismatch_detail="${subject_mismatch_detail}
+  SUBJECT MISMATCH in ${file}:${lineno}: ${tok}
+    annotated: \"${annotated_subj}\"
+    real:      \"${real_subj}\""
+								fi
+							fi
+							# else: annotation matches real subject -- silent pass
+						fi
 					fi
-					# else: reachable with subject -- silent pass
 				fi
 			else
 				# NOT-AN-OBJECT: not a git object in this repo.
@@ -383,10 +420,18 @@ for _bkey in "${!_bare_baseline[@]}"; do
 	fi
 done
 
+for _bkey in "${!_subject_baseline[@]}"; do
+	if [[ ! -v _subject_baseline_seen["$_bkey"] ]]; then
+		stale_count=$((stale_count + 1))
+		stale_detail="${stale_detail}
+  STALE subject-mismatch baseline entry (file+hash no longer in tree): ${_bkey}"
+	fi
+done
+
 if [ "$stale_count" -gt 0 ]; then
 	{
-		echo "  $NAME: ${stale_count} stale/orphaned bare-baseline entry(ies) -- hash token no longer present in tree"
-		echo "  Remove the corresponding line(s) from check-file-content-hash-citations-bare.baseline."
+		echo "  $NAME: ${stale_count} stale/orphaned baseline entry(ies) -- hash token no longer present in tree"
+		echo "  Remove the corresponding line(s) from the relevant baseline file."
 		printf '%s\n' "${stale_detail}"
 	} >&2
 fi
@@ -409,6 +454,16 @@ if [ "$bare_fail_count" -gt 0 ]; then
 	} >&2
 fi
 
+if [ "$subject_mismatch_count" -gt 0 ]; then
+	{
+		echo "  $NAME: ${subject_mismatch_count} subject annotation(s) do not match the real commit subject"
+		echo "  Fix the annotation to match \`git log -1 --pretty=%s <hash>\`:"
+		echo "    HASH (\"subsystem: exact commit subject\")"
+		echo "  Or add the entry to check-file-content-hash-citations-subject.baseline."
+		printf '%s\n' "${subject_mismatch_detail}"
+	} >&2
+fi
+
 SCRIPT_DIR="$ROOT/scripts/check-static"
 advisory_baseline_file="$SCRIPT_DIR/check-file-content-hash-citations-advisory.baseline"
 if [ ! -r "$advisory_baseline_file" ]; then
@@ -416,7 +471,7 @@ if [ ! -r "$advisory_baseline_file" ]; then
 fi
 advisory_baseline=$(< "$advisory_baseline_file")
 
-if [ "$dangling_count" -gt 0 ] || [ "$bare_fail_count" -gt 0 ]; then
+if [ "$dangling_count" -gt 0 ] || [ "$bare_fail_count" -gt 0 ] || [ "$subject_mismatch_count" -gt 0 ]; then
 	if [ "$dangling_count" -gt 0 ]; then
 		{
 			echo "  $NAME: ${dangling_count} dangling hash citation(s) in file content"
@@ -427,7 +482,7 @@ if [ "$dangling_count" -gt 0 ] || [ "$bare_fail_count" -gt 0 ]; then
 			printf '%s\n' "${dangling_detail}"
 		} >&2
 	fi
-	fail "${dangling_count} dangling + ${bare_fail_count} new-bare citation(s) (${skip_count} skipped, advisory: ${advisory_count} upstream-prefix, ${bare_advisory_count} baseline-bare, ${stale_count} stale-baseline)"
+	fail "${dangling_count} dangling + ${bare_fail_count} new-bare + ${subject_mismatch_count} subject-mismatch citation(s) (${skip_count} skipped, advisory: ${advisory_count} upstream-prefix, ${bare_advisory_count} baseline-bare, ${subject_mismatch_advisory_count} baseline-subject-mismatch, ${stale_count} stale-baseline)"
 fi
 
 # Ratchet: advisory count must not grow beyond the frozen baseline.
@@ -435,4 +490,4 @@ if [ "$advisory_count" -gt "$advisory_baseline" ]; then
 	fail "advisory upstream-hash tokens grew: ${advisory_count} > baseline ${advisory_baseline} — add upstream: prefix or update baseline"
 fi
 
-pass "${#tracked_files[@]} files scanned, 0 dangling, 0 new-bare (${skip_count} not-an-object skipped, advisory: ${advisory_count}/${advisory_baseline} upstream-hash token(s) lack upstream: prefix, ${bare_advisory_count} baseline bare citation(s), ${stale_count} stale-baseline)"
+pass "${#tracked_files[@]} files scanned, 0 dangling, 0 new-bare, 0 subject-mismatch (${skip_count} not-an-object skipped, advisory: ${advisory_count}/${advisory_baseline} upstream-hash token(s) lack upstream: prefix, ${bare_advisory_count} baseline bare citation(s), ${subject_mismatch_advisory_count} baseline subject-mismatch(es), ${stale_count} stale-baseline)"
