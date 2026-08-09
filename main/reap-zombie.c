@@ -306,7 +306,7 @@ void process_zombie_pending(void)
 		 * local variable captured above; pids[i] is already
 		 * EMPTY_PIDSLOT (cleared by reap_child at the deferral
 		 * point) so the function cannot reconstruct it from
-		 * pids[child->num] (8cce4ee57d0e moved bug-log path
+		 * pids[child->num] (b5bfac7d77d9 moved bug-log path
 		 * building into this function for exactly this reason).
 		 * reap_child() did NOT zero fault_beacon.written on the
 		 * child_dead=false path (that store is now gated), so

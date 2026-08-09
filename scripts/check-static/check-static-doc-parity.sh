@@ -9,7 +9,7 @@
 # Without a gate, the list drifts silently: a new check lands with no
 # doc row, and by the time a reader notices, half a dozen scripts have
 # no explanation of what they enforce.  That is exactly the state
-# 7f68e0c25768 uncovered when it added the sfg-phase-order-invariants
+# 4b5e17517772 uncovered when it added the sfg-phase-order-invariants
 # row -- 22 earlier scripts had no row at all.
 #
 # The check reads both sides symbolically:

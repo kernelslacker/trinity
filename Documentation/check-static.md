@@ -138,7 +138,7 @@ update this section to match `ls scripts/check-static/*.sh`.)
   other direction.  This gate exists because the "What today's checks
   enforce" list is hand-maintained -- without enforcement, it drifted
   silently until 22 scripts were undocumented at once (the state
-  7f68e0c25768 exposed).
+  4b5e17517772 exposed).
 - `check-stats-reachable`: every scalar counter reachable from
   `struct stats_s` (flat leaves plus recursively-descended
   `stats/subsys/*_stats` sub-structs) must be surfaced by a
