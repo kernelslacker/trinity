@@ -38,6 +38,7 @@
  * structs from include/kernel/pfkeyv2.h.
  */
 
+#include <assert.h>
 #include <errno.h>
 #include <sched.h>
 #include <signal.h>
@@ -351,8 +352,9 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base,
 	fd = socket(AF_KEY, SOCK_RAW, PF_KEY_V2);
 	n++;
 	if (fd < 0) {
-		/* op is threaded from pfkey_spd_walk_in_ns: this_child()
-		 * returns NULL in this fork, so it cannot be recovered here.
+		/* op is threaded from pfkey_spd_walk_in_ns: this_child() in
+		 * the grandchild returns the parent's slot (COW-inherited);
+		 * using it would mis-attribute — thread op explicitly instead.
 		 * childop_direct_syscalls_add bounds-checks op internally. */
 		childop_direct_syscalls_add(op, n);
 		_exit(0);
@@ -391,8 +393,9 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base,
 	close(fd);
 	n++;
 	{
-		/* op is threaded from pfkey_spd_walk_in_ns: this_child()
-		 * returns NULL in this fork, so it cannot be recovered here.
+		/* op is threaded from pfkey_spd_walk_in_ns: this_child() in
+		 * the grandchild returns the parent's slot (COW-inherited);
+		 * using it would mis-attribute — thread op explicitly instead.
 		 * childop_direct_syscalls_add bounds-checks op internally. */
 		childop_direct_syscalls_add(op, n);
 	}
@@ -419,8 +422,9 @@ static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir,
 	fd = socket(AF_KEY, SOCK_RAW, PF_KEY_V2);
 	n++;
 	if (fd < 0) {
-		/* op is threaded from pfkey_spd_walk_in_ns: this_child()
-		 * returns NULL in this fork, so it cannot be recovered here.
+		/* op is threaded from pfkey_spd_walk_in_ns: this_child() in
+		 * the grandchild returns the parent's slot (COW-inherited);
+		 * using it would mis-attribute — thread op explicitly instead.
 		 * childop_direct_syscalls_add bounds-checks op internally. */
 		childop_direct_syscalls_add(op, n);
 		_exit(0);
@@ -462,8 +466,9 @@ static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir,
 	close(fd);
 	n++;
 	{
-		/* op is threaded from pfkey_spd_walk_in_ns: this_child()
-		 * returns NULL in this fork, so it cannot be recovered here.
+		/* op is threaded from pfkey_spd_walk_in_ns: this_child() in
+		 * the grandchild returns the parent's slot (COW-inherited);
+		 * using it would mis-attribute — thread op explicitly instead.
 		 * childop_direct_syscalls_add bounds-checks op internally. */
 		childop_direct_syscalls_add(op, n);
 	}
@@ -520,7 +525,8 @@ static void spdflush_best_effort(enum child_op_type op)
 	n += drain_replies(fd);
 	close(fd);
 	n++;
-	/* op threaded in: this_child() is NULL in the grandchild too. */
+	/* op threaded in: this_child() in the grandchild returns the
+	 * parent's slot (COW-inherited); using it would mis-attribute. */
 	childop_direct_syscalls_add(op, n);
 }
 
@@ -672,6 +678,10 @@ bool pfkey_spd_walk(struct childdata *child)
 	if (valid_op)
 		childop_direct_syscalls_add(op, 1);
 
+	/* this_child() is valid here in the parent (persistent fuzz child);
+	 * op is threaded explicitly so grandchildren don't inherit the
+	 * parent's COW-copied slot and mis-attribute their syscalls. */
+	assert(this_child() != NULL);
 	rc = userns_run_in_ns(CLONE_NEWNET, pfkey_spd_walk_in_ns, &cctx);
 	if (rc == -EPERM) {
 		if (valid_op)
