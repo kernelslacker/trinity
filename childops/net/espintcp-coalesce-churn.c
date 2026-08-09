@@ -570,6 +570,7 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 	struct nl_open_opts opts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_ESPINTCP_COALESCE_CHURN,
 	};
 	struct sockaddr_in server;
 	unsigned char buf[ESPINTCP_FRAME_MAX + 2];
@@ -666,6 +667,7 @@ static void run_no_ingress_dev_arm(struct childdata *child,
 	struct nl_open_opts opts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_ESPINTCP_COALESCE_CHURN,
 	};
 	struct sockaddr_in addr;
 	struct timeval tv;
@@ -857,6 +859,7 @@ static int espintcp_coalesce_in_ns(void *arg)
 		struct nl_open_opts rtnl_opts = {
 			.proto        = NETLINK_ROUTE,
 			.recv_timeo_s = 1,
+			.caller_op    = CHILD_OP_ESPINTCP_COALESCE_CHURN,
 		};
 
 		if (nl_open(&rtnl, &rtnl_opts) == 0) {
