@@ -232,8 +232,7 @@ static void nl80211_iter_scan_connect(struct genl_ctx *ctx, int ifindex,
 	/* wait_scan_results reports poll + conditional recv via direct_calls. */
 	(void)wait_scan_results(ctx, direct_calls);
 
-	/* connect_iface reports its genl_send_recv_retry tally via direct_calls. */
-	rc = connect_iface(ctx, ifindex, direct_calls);
+	rc = connect_iface(ctx, ifindex);
 	__atomic_add_fetch(&shm->stats.nl80211.connect_attempted,
 			   1, __ATOMIC_RELAXED);
 	if (rc == 0)
@@ -283,8 +282,7 @@ static void nl80211_iter_submodes(struct genl_ctx *ctx, int ifindex,
 {
 	int rc;
 
-	/* disconnect_iface reports its genl_send_recv_retry tally via direct_calls. */
-	rc = disconnect_iface(ctx, ifindex, direct_calls);
+	rc = disconnect_iface(ctx, ifindex);
 	__atomic_add_fetch(&shm->stats.nl80211.disconnect_attempted,
 			   1, __ATOMIC_RELAXED);
 	(void)rc;
@@ -297,10 +295,8 @@ static void nl80211_iter_submodes(struct genl_ctx *ctx, int ifindex,
 		if (target > 0) {
 			__atomic_add_fetch(&shm->stats.nl80211.pmsr_runs,
 					   1, __ATOMIC_RELAXED);
-			/* build_pmsr_ftm_req reports its genl_send_recv_retry
-			 * tally via direct_calls. */
 			if (build_pmsr_ftm_req(ctx, (uint32_t)target,
-					       as_u32, direct_calls) == 0)
+					       as_u32) == 0)
 				__atomic_add_fetch(&shm->stats.nl80211.pmsr_ok,
 						   1, __ATOMIC_RELAXED);
 		}
@@ -384,20 +380,19 @@ struct nl80211_churn_in_ns_ctx {
 	struct childdata *child;
 	enum child_op_type op;
 	bool valid_op;
-	/* Direct-syscall tally accumulated across the setup / outer-loop /
-	 * teardown helpers.  Every helper bumps this counter by the number
-	 * of raw kernel calls it just issued: genl_open success == 5
-	 * (socket + bind + setsockopt from nl_open, sendmsg + recv from
-	 * the family-id resolve); genl_close == 1 (close); hwsim_present
-	 * reports its own tally (stat + genl_dump send/recv) via the
-	 * direct_calls pointer; each phase-helper genl wrap
-	 * == 2 (sendmsg + recv); send_inner_burst == 3 + n_sendto
-	 * (socket + setsockopt + n * sendto + close).  Published once in
-	 * nl80211_churn_in_ns() via childop_direct_syscalls_add() so the
-	 * hot path pays one atomic add per invocation instead of per
-	 * syscall.  Setup-latched short-circuit paths publish whatever
-	 * they issued before bailing, which correctly attributes no
-	 * outer-loop work to those exits. */
+	/* Non-netlink direct-syscall tally accumulated across the outer-loop
+	 * helpers.  hwsim_present reports its own tally (stat calls) via
+	 * the direct_calls pointer; send_inner_burst == 3 + n_sendto
+	 * (socket + setsockopt + n * sendto + close); nl80211_admin_gate_probe
+	 * == 2 (fork + waitpid).  Netlink transport syscalls (socket + bind +
+	 * setsockopt from genl_open/nl_open, sendmsg + recv per nl_send_recv,
+	 * close from genl_close/nl_close) are published automatically by
+	 * nl_close() via ctx.nl.caller_op = CHILD_OP_NL80211_CHURN.
+	 * Published once in nl80211_churn_in_ns() via
+	 * childop_direct_syscalls_add() so the hot path pays one atomic add
+	 * per invocation instead of per syscall.  Setup-latched short-circuit
+	 * paths publish whatever they issued before bailing, which correctly
+	 * attributes no outer-loop work to those exits. */
 	unsigned long direct_calls;
 };
 
@@ -448,10 +443,11 @@ static int nl80211_churn_in_ns(void *arg)
 		return 0;
 	}
 	ctx_open = true;
-	/* genl_open success path: nl_open (socket + bind + setsockopt for
-	 * recv_timeo_s > 0) + resolve_family_id (one nl_send_recv wrapper:
-	 * sendmsg + recv). */
-	cctx->direct_calls += 5;
+	/* Set caller_op so genl_close() -> nl_close() auto-publishes the
+	 * netlink transport syscalls for this op.  Explicit attribution
+	 * shadows the this_child() fallback that genl_open/nl_open would
+	 * otherwise use. */
+	ctx.nl.caller_op = CHILD_OP_NL80211_CHURN;
 
 	if (!nl80211_phy0_cached()) {
 		if (!hwsim_present(&ctx, &cctx->direct_calls)) {
@@ -496,11 +492,8 @@ static int nl80211_churn_in_ns(void *arg)
 	cleanup_ifaces(&ctx, &cctx->direct_calls);
 
 out:
-	if (ctx_open) {
+	if (ctx_open)
 		genl_close(&ctx);
-		/* genl_close: nl_close issues one close() on the netlink fd. */
-		cctx->direct_calls += 1;
-	}
 
 	/* Publish this invocation's direct-syscall load in ONE RELAXED
 	 * atomic add.  Tally was accumulated across genl_open, hwsim_present,

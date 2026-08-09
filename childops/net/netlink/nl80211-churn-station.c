@@ -63,7 +63,7 @@ static void random_bssid(unsigned char mac[6]);
  * socket close.  Tolerates any errno.
  */
 int build_pmsr_ftm_req(struct genl_ctx *ctx, uint32_t ifindex,
-		       bool ftms_as_u32, unsigned long *direct_calls)
+		       bool ftms_as_u32)
 {
 	unsigned char buf[1024];
 	struct nlmsghdr *nlh;
@@ -179,8 +179,6 @@ int build_pmsr_ftm_req(struct genl_ctx *ctx, uint32_t ifindex,
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
-	/* genl_send_recv_retry: sendmsg + recv. */
-	*direct_calls += 2;
 	return genl_send_recv_retry(ctx, buf, off);
 }
 
@@ -202,8 +200,7 @@ static void random_bssid(unsigned char mac[6])
  * suites; the bug surface lives in cfg80211_connect_result /
  * cfg80211_disconnect, not in the per-suite key install path.
  */
-int connect_iface(struct genl_ctx *ctx, int ifindex,
-		  unsigned long *direct_calls)
+int connect_iface(struct genl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[512];
 	struct nlmsghdr *nlh;
@@ -234,13 +231,10 @@ int connect_iface(struct genl_ctx *ctx, int ifindex,
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
-	/* genl_send_recv_retry: sendmsg + recv. */
-	*direct_calls += 2;
 	return genl_send_recv_retry(ctx, buf, off);
 }
 
-int disconnect_iface(struct genl_ctx *ctx, int ifindex,
-		     unsigned long *direct_calls)
+int disconnect_iface(struct genl_ctx *ctx, int ifindex)
 {
 	unsigned char buf[128];
 	struct nlmsghdr *nlh;
@@ -257,8 +251,6 @@ int disconnect_iface(struct genl_ctx *ctx, int ifindex,
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (uint32_t)off;
-	/* genl_send_recv_retry: sendmsg + recv. */
-	*direct_calls += 2;
 	return genl_send_recv_retry(ctx, buf, off);
 }
 
