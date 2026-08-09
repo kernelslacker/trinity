@@ -202,8 +202,9 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 	struct childdata *child = cctx->child;
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_IP6_UDP_CORK_SPLICE,
 	};
 	unsigned char *region = MAP_FAILED;
 	struct sockaddr_in6 sin_rx;
