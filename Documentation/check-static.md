@@ -200,6 +200,19 @@ update this section to match `ls scripts/check-static/*.sh`.)
   build.  Companion to `kcov-canonicalise-pcs` on the PC side;
   `cmp_hints_flush_pending()` is the one whitelisted transitive
   caller because its inputs are already canonical.
+- `commit-msg-hash-citations-informal`: scan commit messages of commits
+  in `origin/master..HEAD` (falling back to `HEAD~200..HEAD`) and flag
+  every hex-hash citation that uses the bare-informal form
+  `hash (description text without quotes)` instead of the required
+  `hash ("exact commit subject")` form.  Bare-informal citations
+  carry wrong attributions when the description is not the real commit
+  subject and are invisible to subject-match resolution after a
+  cherry-pick rewrite.  Pre-existing violations that cannot be amended
+  are baselined by commit SHA in
+  `commit-msg-hash-citations-informal.baseline`; any new bare-informal
+  citation in a commit not listed in the baseline is a FAIL.
+  Complements `check-file-content-hash-citations` (which covers the
+  file-content half of the citation convention).
 - `doc-pointer-exists`: every flat `Documentation/<name>.md` path named
   in a code comment must resolve to a real file, so the one-line
   pointers that replaced carved-out design essays never dangle.
