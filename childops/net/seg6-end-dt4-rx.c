@@ -513,6 +513,7 @@ static int sed_open_ctx(struct sed_iter_ctx *ctx)
 	struct nl_open_opts opts = {
 		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_SEG6_END_DT4_RX,
 	};
 
 	if (nl_open(&ctx->nl, &opts) < 0)
