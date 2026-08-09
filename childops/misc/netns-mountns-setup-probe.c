@@ -167,8 +167,9 @@ static int bring_up_loopback(void)
 {
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_NETNS_MOUNTNS_SETUP_PROBE,
 	};
 	const int lo_ifindex = 1;	/* lo is always ifindex 1 in a fresh net ns */
 
