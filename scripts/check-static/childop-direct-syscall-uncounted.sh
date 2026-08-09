@@ -430,5 +430,14 @@ fi
 
 baseline_size=${#GRANDFATHERED[@]}
 total=${#SEEN_KEY[@]}
+
+# Ratchet: fail if uncounted count exceeds the frozen baseline.
+# The baseline reflects the post-477-A state (30 entries); any new
+# uncounted file means a regression, even if individually grandfathered.
+if [ "$total" -gt "$baseline_size" ]; then
+	echo "FAIL: uncounted worker count regressed: $total > baseline $baseline_size"
+	exit 1
+fi
+
 echo "PASS: $NAME (uncounted=$total, grandfathered=$baseline_size)"
 exit 0
