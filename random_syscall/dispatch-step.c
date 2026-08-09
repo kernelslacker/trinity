@@ -579,11 +579,6 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		else
 			result = STATS_RESULT_SUCCESS;
 
-		/* Lossless op-count: bump the shared atomic BEFORE
-		 * the ring enqueue so a ring-full drop cannot
-		 * silently lose this syscall completion. */
-		__atomic_add_fetch(&shm->stats.lossless_op_total,
-				   1, __ATOMIC_RELAXED);
 		stats_ring_enqueue_call_complete(child->stats_ring,
 						 (uint16_t)entry->syscall_category,
 						 result);

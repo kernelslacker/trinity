@@ -919,11 +919,6 @@ void child_process(struct childdata *child, int childno)
 					&shm->stats.childop.timeout_missed[op],
 					1, __ATOMIC_RELAXED);
 			alarm(0);
-			/* Lossless op-count: bump the shared atomic BEFORE
-			 * the ring enqueue so a ring-full drop cannot
-			 * silently lose this alt-op increment. */
-			__atomic_add_fetch(&shm->stats.lossless_op_total,
-					   1, __ATOMIC_RELAXED);
 			stats_ring_enqueue(child->stats_ring,
 					   STATS_FIELD_OP_COUNT, 0, 1);
 		}
