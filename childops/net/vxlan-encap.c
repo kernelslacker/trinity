@@ -546,8 +546,9 @@ struct vxlan_encap_iter_ctx {
 static int vxlan_encap_iter_open_ctx(struct vxlan_encap_iter_ctx *ctx)
 {
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_VXLAN_ENCAP_CHURN,
 	};
 
 	if (nl_open(&ctx->nl, &opts) < 0) {
