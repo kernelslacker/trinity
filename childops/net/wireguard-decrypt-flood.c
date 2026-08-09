@@ -408,6 +408,7 @@ static bool wgdf_setup(struct childdata *child)
 	memset(&rtnl_opts, 0, sizeof(rtnl_opts));
 	rtnl_opts.proto         = NETLINK_ROUTE;
 	rtnl_opts.recv_timeo_us = WGDF_RECV_TIMEO_MS * 1000;
+	rtnl_opts.caller_op     = CHILD_OP_WIREGUARD_DECRYPT_FLOOD;
 	if (nl_open(&wgdf_rtnl, &rtnl_opts) < 0)
 		return false;
 
