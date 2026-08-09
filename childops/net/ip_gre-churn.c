@@ -374,8 +374,9 @@ struct ip_gre_iter_ctx {
 static int ip_gre_iter_open_ctx(struct ip_gre_iter_ctx *ctx)
 {
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_IP_GRE_CHURN,
 	};
 
 	if (nl_open(&ctx->nl, &opts) < 0) {
