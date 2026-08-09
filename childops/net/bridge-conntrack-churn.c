@@ -517,17 +517,17 @@ struct bridge_conntrack_iter_ctx {
 	bool			veth_added;
 	bool			sender_started;
 	struct childdata	*child;
-	/* Direct-syscall tally accumulated across the setup / nft / traffic
-	 * / teardown phase helpers.  Every helper bumps this counter by the
-	 * number of raw kernel calls it just issued: nl_open / nfnl_open
-	 * success == 3 (socket + bind + setsockopt for recv_timeo_s > 0),
-	 * each nl_send_recv wrapper (rtnl_create_bridge / rtnl_setlink_up /
+	/* Direct-syscall tally for non-netlink raw syscalls: each
+	 * nl_send_recv wrapper (rtnl_create_bridge / rtnl_setlink_up /
 	 * rtnl_dellink / ...) == 2 (sendmsg + recv), each
 	 * nfnl_send_recv_batched / _dump == 3 (sendmsg + blocking recv +
 	 * one MSG_DONTWAIT drain recv), each AF_PACKET socket / bind /
-	 * close == 1, each recv() in the drain loop == 1, nl_close /
-	 * nfnl_close == 1.  The pthread sender's tally is folded in from
-	 * ctx->sa.direct_syscalls after pthread_join().  Published once in
+	 * close == 1, each recv() in the drain loop == 1.  The pthread
+	 * sender's tally is folded in from ctx->sa.direct_syscalls after
+	 * pthread_join().  Netlink transport syscalls (socket + bind +
+	 * setsockopt from nl_open / nfnl_open, close from nl_close /
+	 * nfnl_close) are tracked internally by each nl_ctx and published
+	 * automatically by nl_close() via caller_op.  Published once in
 	 * bridge_conntrack_churn_in_ns() via childop_direct_syscalls_add()
 	 * so the hot path pays one atomic add per invocation instead of
 	 * per-syscall.  Setup-latched short-circuit paths publish whatever
@@ -618,14 +618,12 @@ static int bridge_conntrack_iter_setup_names(struct bridge_conntrack_iter_ctx *c
 	struct nl_open_opts rtnl_opts = {
 		.proto         = NETLINK_ROUTE,
 		.recv_timeo_s  = 1,
+		.caller_op     = CHILD_OP_BRIDGE_CT_CHURN,
 	};
 	unsigned int rng;
 
 	if (nl_open(&ctx->rtnl, &rtnl_opts) < 0)
 		return -1;
-	/* nl_open success issued socket + bind + setsockopt (recv_timeo_s
-	 * > 0 above). */
-	ctx->direct_syscalls += 3;
 	if (!lo_up_done()) {
 		rtnl_bring_lo_up(&ctx->rtnl);
 		/* rtnl_bring_lo_up wraps one nl_send_recv (sendmsg + recv)
@@ -760,9 +758,10 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
 
 	if (nfnl_open(&ctx->nfnl_nft, &nfnl_opts) < 0)
 		return -1;
-	/* nfnl_open success issued socket + bind + setsockopt (via nl_open
-	 * with recv_timeo_s > 0 above). */
-	ctx->direct_syscalls += 3;
+	/* Set caller_op so nfnl_close() -> nl_close() auto-publishes the
+	 * netlink transport syscalls (socket + bind + setsockopt from
+	 * nfnl_open, all send/recv calls, close from nfnl_close). */
+	ctx->nfnl_nft.nl.caller_op = CHILD_OP_BRIDGE_CT_CHURN;
 	rc = nft_install_bridge_ct(&ctx->nfnl_nft, "br_ct", "in");
 	/* nft_install_bridge_ct wraps one nfnl_send_recv_batched: one
 	 * sendmsg for the coalesced batch + one blocking recv + one
@@ -839,9 +838,10 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 	if (nfnl_open(&ctx->nfnl_ct, &nfnl_opts) == 0) {
 		struct timespec t0;
 
-		/* nfnl_open success issued socket + bind + setsockopt (via
-		 * nl_open with recv_timeo_s > 0 above). */
-		ctx->direct_syscalls += 3;
+		/* Set caller_op so nfnl_close() -> nl_close() auto-publishes
+		 * the netlink transport syscalls (socket + bind + setsockopt
+		 * from nfnl_open, all send/recv calls, close from nfnl_close). */
+		ctx->nfnl_ct.nl.caller_op = CHILD_OP_BRIDGE_CT_CHURN;
 
 		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 		iters = BUDGETED(CHILD_OP_BRIDGE_CT_CHURN,
@@ -912,15 +912,10 @@ static void bridge_conntrack_iter_teardown(struct bridge_conntrack_iter_ctx *ctx
 		/* close() is a raw kernel call. */
 		ctx->direct_syscalls += 1;
 	}
-	/* nfnl_close wraps nl_close: only issues close() when the wrapped
-	 * fd is >= 0.  Attribute one syscall to teardown only when the fd
-	 * was actually open; a nfnl_open() that failed left fd == -1 and
-	 * paid no close(). */
-	if (ctx->nfnl_ct.nl.fd >= 0)
-		ctx->direct_syscalls += 1;
+	/* nfnl_close wraps nl_close: caller_op is set on each nfnl_ct and
+	 * nfnl_nft context so nl_close() auto-publishes their transport
+	 * syscalls (including close()).  No manual tally needed here. */
 	nfnl_close(&ctx->nfnl_ct);
-	if (ctx->nfnl_nft.nl.fd >= 0)
-		ctx->direct_syscalls += 1;
 	nfnl_close(&ctx->nfnl_nft);
 	if (ctx->rtnl.fd >= 0) {
 		if (ctx->bridge_added && ctx->br_idx > 0) {
@@ -935,9 +930,9 @@ static void bridge_conntrack_iter_teardown(struct bridge_conntrack_iter_ctx *ctx
 			 * recv). */
 			ctx->direct_syscalls += 2;
 		}
+		/* nl_close auto-publishes via caller_op = CHILD_OP_BRIDGE_CT_CHURN;
+		 * close() is included in the nl_ctx direct_syscalls tally. */
 		nl_close(&ctx->rtnl);
-		/* nl_close: one close() on the netlink fd. */
-		ctx->direct_syscalls += 1;
 	}
 }
 
@@ -992,14 +987,18 @@ static int bridge_conntrack_churn_in_ns(void *arg)
 out:
 	bridge_conntrack_iter_teardown(&ctx);
 
-	/* Publish this invocation's direct-syscall load in ONE RELAXED
-	 * atomic add.  Tally was accumulated across the setup / bridge /
-	 * veth / nft / traffic / teardown helpers via ctx.direct_syscalls
-	 * (with the pthread sender's contribution folded in from
-	 * ctx.sa.direct_syscalls after pthread_join); the grandchild's write
-	 * on the shm slot is visible to the parent (and to sibling
-	 * children) after _exit() because shm is a shared mapping.  Gated
-	 * on valid_op to match the surrounding per-op stats bumps. */
+	/* Publish this invocation's non-netlink direct-syscall load in ONE
+	 * RELAXED atomic add.  ctx.direct_syscalls covers nl_send_recv
+	 * wrappers (rtnl_create_bridge / rtnl_setlink_* / rtnl_dellink /
+	 * nft_install / ctnetlink_flush), the AF_PACKET socket / bind /
+	 * close, the raw-socket drain recvs, and the pthread sender's
+	 * sendto tally (folded in from ctx.sa.direct_syscalls after
+	 * pthread_join).  Netlink open / close syscalls (socket + bind +
+	 * setsockopt + close) are published automatically by nl_close() /
+	 * nfnl_close() via caller_op = CHILD_OP_BRIDGE_CT_CHURN set on
+	 * each nl_ctx.  The grandchild's write on the shm slot is visible
+	 * to the parent after _exit() because shm is a shared mapping.
+	 * Gated on valid_op to match the surrounding per-op stats bumps. */
 	if (valid_op)
 		childop_direct_syscalls_add(op, ctx.direct_syscalls);
 	return 0;
