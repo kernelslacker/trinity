@@ -525,7 +525,16 @@ bl_window   = set(bl_sections.get("window", []))
 check_errors = []
 window_skip = False
 
-if terminal_keys:
+if terminal_keys is None:
+    # A run MUST emit the shutdown terminal record (stats_timeseries_close).
+    # Its absence -- an empty stream, or one carrying only window records --
+    # means the run never cleanly shut down; that is a real failure, not a
+    # load-dependent skip.  Without this branch the whole terminal check
+    # (including the cross_check_ok shutdown invariant) was silently skipped.
+    check_errors.append(
+        "terminal record: absent -- no shutdown terminal record emitted "
+        "(empty or window-only JSONL stream)")
+else:
     rt_terminal = set(terminal_keys)
     extra = rt_terminal - bl_terminal
     missing = bl_terminal - rt_terminal
