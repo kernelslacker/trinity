@@ -285,8 +285,9 @@ static int vlan_filter_iter_setup(struct vlan_filter_iter_ctx *it,
 				  unsigned int iter_idx)
 {
 	struct nl_open_opts nl_opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_VLAN_FILTER_CHURN,
 	};
 	__u16 vid_bases[3] = { 10, 100, 3900 };
 	int rc;
