@@ -31,7 +31,6 @@
 #include "netlink-attrs.h"
 #include "netlink-genl-families.h"
 #include "msg-internal.h"
-#include "rtnl-ack-oracle.h"
 #include "netlink-nfnl-subsystems.h"
 #include "random.h"
 #include "shm.h"
@@ -278,15 +277,6 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	nlh = (struct nlmsghdr *) (msg + offset);
 	nlh->nlmsg_type = nlmsg_type;
 	nlh->nlmsg_flags = gen_nlmsg_flags();
-	/*
-	 * rtnl: always request an ACK so the kernel's reply path is
-	 * exercised on every generated NETLINK_ROUTE message and the
-	 * ACK oracle (rtnl_ack_oracle_probe) always has a reply to
-	 * read.  gen_nlmsg_flags() already sets NLM_F_ACK about half
-	 * the time; OR it in unconditionally for rtnl to guarantee it.
-	 */
-	if (triplet->protocol == NETLINK_ROUTE)
-		nlh->nlmsg_flags |= (unsigned short)NLM_F_ACK;
 	nlh->nlmsg_seq = rand32();
 	nlh->nlmsg_pid = RAND_BOOL() ? 0 : rand32();
 
@@ -371,7 +361,6 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 	size_t offset;
 	unsigned char *msg;
 	int num_msgs;
-	int is_single;
 
 	/* Total buffer: room for messages with protocol body + attrs.
 	 * XFRM bodies can be up to 280 bytes, audit_rule_data is 1040 bytes,
@@ -384,7 +373,6 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 	} else {
 		num_msgs = 1;
 	}
-	is_single = (num_msgs == 1);
 	if (total_len > 8192)
 		total_len = 8192;
 
@@ -393,19 +381,6 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 	offset = 0;
 	while (num_msgs-- > 0 && offset < total_len)
 		offset = build_one_nlmsg(msg, offset, total_len, triplet);
-
-	/*
-	 * ACK oracle: for single-message NETLINK_ROUTE packets, open a
-	 * private socket, send the generated message with NLM_F_ACK
-	 * forced, read the NLMSG_ERROR reply, and record the outcome in
-	 * the per-RTM-group histogram.  Multi-message batches are skipped
-	 * (each message in the batch has a distinct nlmsg_type; per-type
-	 * accounting would require parsing the full chain).
-	 */
-	if (is_single && triplet->protocol == NETLINK_ROUTE &&
-	    offset >= NLMSG_HDRLEN)
-		rtnl_ack_oracle_probe(
-			((struct nlmsghdr *)msg)->nlmsg_type, msg, offset);
 
 	*buf = msg;
 	*len = offset;
