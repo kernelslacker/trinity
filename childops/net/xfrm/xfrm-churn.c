@@ -282,6 +282,7 @@ static bool xfrm_burn_netns(unsigned long *direct_calls_p)
 	struct nl_open_opts burn_opts = {
 		.proto        = NETLINK_XFRM,
 		.recv_timeo_s = XFRM_RECV_TIMEO_S,
+		.caller_op    = CHILD_OP_XFRM_CHURN,
 	};
 	int anchor = -1;
 	unsigned int aidx;
@@ -386,6 +387,7 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 	struct nl_open_opts opts = {
 		.proto        = NETLINK_XFRM,
 		.recv_timeo_s = XFRM_RECV_TIMEO_S,
+		.caller_op    = CHILD_OP_XFRM_CHURN,
 	};
 
 	/* Snapshot ctx->child->op_type once and bounds-check before
@@ -402,6 +404,7 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 		struct nl_open_opts rtnl_opts = {
 			.proto        = NETLINK_ROUTE,
 			.recv_timeo_s = XFRM_RECV_TIMEO_S,
+			.caller_op    = CHILD_OP_XFRM_CHURN,
 		};
 
 		if (nl_open(&rtnl, &rtnl_opts) == 0) {
