@@ -1005,8 +1005,9 @@ static int iter_one_in_ns(void *arg)
 	const bool valid_op = (op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 	struct nl_ctx nl = { .fd = -1 };
 	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
+		.proto        = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_PACKET_QDISC_BYPASS_L2,
 	};
 	unsigned int veth0_ifx, veth1_ifx, mst_ifx;
 	int prog_fd = -1;
