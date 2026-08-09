@@ -79,9 +79,14 @@ struct nlattr *start_nlattr(unsigned char *buf, size_t offset,
  * Build a chain of nested sub-attributes inside a buffer.
  * Returns the total length of the nested chain (unaligned).
  * This is used for containers like RTA_METRICS, IFLA_LINKINFO, IFLA_AF_SPEC.
+ *
+ * Each attr is emitted at its kernel-policy-mandated exact width 31/32 of
+ * the time.  The remaining 1/32 deliberately uses a random width to exercise
+ * the strict-length validation path in validate_nla() — the goal is that
+ * malformed is the exception (1/32), not the default (was ~98% before).
  */
 size_t build_nested_attrs(unsigned char *buf, size_t buflen,
-			  const unsigned short *attr_types,
+			  const struct nlattr_width *attrs,
 			  size_t nr_types, int max_depth)
 {
 	size_t offset = 0;
@@ -90,15 +95,28 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 	if (max_depth <= 0)
 		count = RAND_RANGE(1, 2);
 
-	while (count-- > 0 && offset + NLA_HDRLEN + 4 <= buflen) {
-		unsigned short atype = attr_types[rnd_modulo_u32(nr_types)];
+	while (count-- > 0 && offset + NLA_HDRLEN + 1 <= buflen) {
+		const struct nlattr_width *aw = &attrs[rnd_modulo_u32(nr_types)];
+		unsigned short atype = aw->type;
 		size_t payload_len;
 		size_t total;
 
-		/* Random payload 4-32 bytes */
-		payload_len = RAND_RANGE(4, 32);
+		/*
+		 * 1/32: deliberate fault injection — wrong-width payload
+		 * to exercise the strict-length validation path.
+		 * 31/32: emit the exact kernel-expected width.
+		 */
+		if (ONE_IN(32))
+			payload_len = RAND_RANGE(4, 32);
+		else
+			payload_len = aw->width;
+
+		if (payload_len == 0)
+			payload_len = 4;
 		if (payload_len > buflen - offset - NLA_HDRLEN)
 			payload_len = buflen - offset - NLA_HDRLEN;
+		if (payload_len == 0)
+			break;
 
 		total = NLA_ALIGN(NLA_HDRLEN + payload_len);
 		if (offset + total > buflen)

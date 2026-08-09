@@ -31,6 +31,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/xfrm.h>
 #include "netlink-attrs.h"
+#include "msg-rtnl-common.h"	/* struct nlattr_width */
 
 /* DCB rtnetlink attributes — older uapi headers may not expose every
  * symbol (DCB grew incrementally), so guard each constant we touch. */
@@ -80,13 +81,13 @@ extern const size_t xfrm_types_n;
 extern const unsigned short audit_types[];
 extern const size_t audit_types_n;
 
-extern const unsigned short rtax_attrs[];
+extern const struct nlattr_width rtax_attrs[];
 extern const size_t rtax_attrs_n;
 
 extern const unsigned short dcb_attrs[];
 extern const size_t dcb_attrs_n;
 
-extern const unsigned short dcb_ieee_attrs[];
+extern const struct nlattr_width dcb_ieee_attrs[];
 extern const size_t dcb_ieee_attrs_n;
 
 extern const char *link_kinds[];
@@ -107,7 +108,7 @@ extern const size_t nda_attrs_n;
 extern const unsigned short fra_attrs[];
 extern const size_t fra_attrs_n;
 
-extern const unsigned short tca_attrs[];
+extern const struct nlattr_width tca_attrs[];
 extern const size_t tca_attrs_n;
 
 extern const unsigned short nha_attrs[];

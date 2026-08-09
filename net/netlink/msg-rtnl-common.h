@@ -41,12 +41,25 @@ struct nlattr *start_nlattr(unsigned char *buf, size_t offset,
 			    size_t payload_len);
 
 /*
+ * Per-attribute descriptor used by build_nested_attrs().  Each entry
+ * pairs an nlattr type with the exact payload width the kernel's
+ * nla_policy for that attribute expects.  build_nested_attrs() emits
+ * that exact width 31/32 of the time; the remaining 1/32 deliberately
+ * uses a random width to exercise the strict-length validation path in
+ * validate_nla().
+ */
+struct nlattr_width {
+	unsigned short type;
+	unsigned short width;   /* exact kernel-expected payload bytes */
+};
+
+/*
  * Build a chain of nested sub-attributes inside a buffer.
  * Returns the total length of the nested chain (unaligned).
  * This is used for containers like RTA_METRICS, IFLA_LINKINFO, IFLA_AF_SPEC.
  */
 size_t build_nested_attrs(unsigned char *buf, size_t buflen,
-			  const unsigned short *attr_types,
+			  const struct nlattr_width *attrs,
 			  size_t nr_types, int max_depth);
 
 #endif /* NET_NETLINK_MSG_RTNL_COMMON_H */

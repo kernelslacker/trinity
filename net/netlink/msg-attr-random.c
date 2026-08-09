@@ -340,7 +340,7 @@ unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 4: return fra_attrs[rnd_modulo_u32(fra_attrs_n)];
 	case 5:
 	case 6:
-	case 7: return tca_attrs[rnd_modulo_u32(tca_attrs_n)];
+	case 7: return tca_attrs[rnd_modulo_u32(tca_attrs_n)].type;
 	case 12: return RAND_ARRAY(ndtbl_attrs);
 	case 14: return ifal_attrs[rnd_modulo_u32(ifal_attrs_n)];
 	case 15: return dcb_attrs[rnd_modulo_u32(dcb_attrs_n)];

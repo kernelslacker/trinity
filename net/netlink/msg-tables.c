@@ -35,6 +35,7 @@
 #include <linux/audit.h>
 #include <linux/inet_diag.h>
 #include "msg-internal.h"
+#include "msg-rtnl-common.h"
 #include "utils.h"
 
 #include "kernel/netlink.h"
@@ -99,12 +100,22 @@ const unsigned short audit_types[] = {
 };
 const size_t audit_types_n = ARRAY_SIZE(audit_types);
 
-/* RTAX_* metrics sub-attributes for RTA_METRICS nested container */
-const unsigned short rtax_attrs[] = {
-	RTAX_MTU, RTAX_WINDOW, RTAX_RTT, RTAX_RTTVAR,
-	RTAX_SSTHRESH, RTAX_CWND, RTAX_ADVMSS, RTAX_REORDERING,
-	RTAX_HOPLIMIT, RTAX_INITCWND, RTAX_FEATURES, RTAX_RTO_MIN,
-	RTAX_INITRWND, RTAX_QUICKACK,
+/*
+ * RTAX_* metrics sub-attributes for RTA_METRICS nested container.
+ * ip_metrics_convert() in net/ipv4/metrics.c requires nla_len == sizeof(u32)
+ * for every type except RTAX_CC_ALGO (which expects a NUL-terminated string
+ * and is deliberately excluded here — any random-byte payload would be
+ * rejected by tcp_ca_get_key_by_name).  All remaining RTAX_* slots are
+ * exactly 4 bytes (u32).
+ */
+const struct nlattr_width rtax_attrs[] = {
+	{ RTAX_MTU,        4 }, { RTAX_WINDOW,    4 },
+	{ RTAX_RTT,        4 }, { RTAX_RTTVAR,    4 },
+	{ RTAX_SSTHRESH,   4 }, { RTAX_CWND,      4 },
+	{ RTAX_ADVMSS,     4 }, { RTAX_REORDERING,4 },
+	{ RTAX_HOPLIMIT,   4 }, { RTAX_INITCWND,  4 },
+	{ RTAX_FEATURES,   4 }, { RTAX_RTO_MIN,   4 },
+	{ RTAX_INITRWND,   4 }, { RTAX_QUICKACK,  4 },
 };
 const size_t rtax_attrs_n = ARRAY_SIZE(rtax_attrs);
 
@@ -117,9 +128,17 @@ const unsigned short dcb_attrs[] = {
 };
 const size_t dcb_attrs_n = ARRAY_SIZE(dcb_attrs);
 
-/* DCB_ATTR_IEEE_* children for the DCB_ATTR_IEEE nested container. */
-const unsigned short dcb_ieee_attrs[] = {
-	DCB_ATTR_IEEE_ETS, DCB_ATTR_IEEE_PFC, DCB_ATTR_IEEE_APP_TABLE,
+/*
+ * DCB_ATTR_IEEE_* children for the DCB_ATTR_IEEE nested container.
+ * dcbnl_ieee_policy in net/dcb/dcbnl.c enforces exact lengths:
+ *   DCB_ATTR_IEEE_ETS       .len = sizeof(struct ieee_ets)   = 59 bytes
+ *   DCB_ATTR_IEEE_PFC       .len = sizeof(struct ieee_pfc)   = 136 bytes
+ *   DCB_ATTR_IEEE_APP_TABLE NLA_NESTED (variable; use 8 bytes)
+ */
+const struct nlattr_width dcb_ieee_attrs[] = {
+	{ DCB_ATTR_IEEE_ETS,       59  },
+	{ DCB_ATTR_IEEE_PFC,       136 },
+	{ DCB_ATTR_IEEE_APP_TABLE, 8   },
 };
 const size_t dcb_ieee_attrs_n = ARRAY_SIZE(dcb_ieee_attrs);
 
@@ -295,10 +314,37 @@ const unsigned short fra_attrs[] = {
 };
 const size_t fra_attrs_n = ARRAY_SIZE(fra_attrs);
 
-const unsigned short tca_attrs[] = {
-	TCA_KIND, TCA_OPTIONS, TCA_STATS, TCA_XSTATS, TCA_RATE,
-	TCA_FCNT, TCA_STATS2, TCA_STAB, TCA_CHAIN, TCA_HW_OFFLOAD,
-	TCA_INGRESS_BLOCK, TCA_EXT_WARN_MSG,
+/*
+ * TCA_* sub-attribute types used when building nested TCA_OPTIONS /
+ * TCA_STAB / TCA_STATS2 containers via build_nested_attrs().  Widths
+ * follow rtm_tca_policy (net/sched/sch_api.c) and the legacy struct
+ * sizes that hand-rolled parsers enforce:
+ *   TCA_KIND         NLA_STRING        8  (short kind name)
+ *   TCA_OPTIONS      NLA_UNSPEC        8  (per-kind blob, no outer policy)
+ *   TCA_STATS        NLA_UNSPEC       40  (sizeof(struct tc_stats))
+ *   TCA_XSTATS       NLA_UNSPEC        8  (per-qdisc stats blob)
+ *   TCA_RATE         NLA_BINARY        2  (sizeof(struct tc_estimator))
+ *   TCA_FCNT         NLA_UNSPEC        4
+ *   TCA_STATS2       NLA_NESTED        8
+ *   TCA_STAB         NLA_NESTED        8
+ *   TCA_CHAIN        NLA_U32           4
+ *   TCA_HW_OFFLOAD   NLA_U8            1
+ *   TCA_INGRESS_BLOCK NLA_U32          4
+ *   TCA_EXT_WARN_MSG NLA_STRING        8
+ */
+const struct nlattr_width tca_attrs[] = {
+	{ TCA_KIND,          8  },
+	{ TCA_OPTIONS,       8  },
+	{ TCA_STATS,         40 },
+	{ TCA_XSTATS,        8  },
+	{ TCA_RATE,          2  },
+	{ TCA_FCNT,          4  },
+	{ TCA_STATS2,        8  },
+	{ TCA_STAB,          8  },
+	{ TCA_CHAIN,         4  },
+	{ TCA_HW_OFFLOAD,    1  },
+	{ TCA_INGRESS_BLOCK, 4  },
+	{ TCA_EXT_WARN_MSG,  8  },
 };
 const size_t tca_attrs_n = ARRAY_SIZE(tca_attrs);
 

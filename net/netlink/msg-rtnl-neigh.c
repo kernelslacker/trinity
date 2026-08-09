@@ -158,11 +158,28 @@ static void fill_mdb_entry(struct br_mdb_entry *e)
  */
 static size_t build_mdba_mdb_nested(unsigned char *p, size_t avail)
 {
-	static const unsigned short eattrs[] = {
-		MDBA_MDB_EATTR_TIMER,    MDBA_MDB_EATTR_GROUP_MODE,
-		MDBA_MDB_EATTR_RTPROT,   MDBA_MDB_EATTR_SOURCE,
-		MDBA_MDB_EATTR_VNI,      MDBA_MDB_EATTR_SRC_VNI,
-		MDBA_MDB_EATTR_IFINDEX,  MDBA_MDB_EATTR_DST_PORT,
+	/*
+	 * MDBA_MDB_EATTR_* are dump-only (emitted by kernel; no parse
+	 * policy on input).  Widths match the nla_put_* calls in
+	 * br_mdb_fill_info / vxlan_mdb_fill_info:
+	 *   TIMER        nla_put_u32   4
+	 *   GROUP_MODE   nla_put_u8    1
+	 *   RTPROT       nla_put_u8    1
+	 *   SOURCE       nla_put_in_addr (IPv4)  4
+	 *   VNI          nla_put_u32   4
+	 *   SRC_VNI      nla_put_u32   4
+	 *   IFINDEX      nla_put_u32   4
+	 *   DST_PORT     nla_put_u16   2
+	 */
+	static const struct nlattr_width eattrs[] = {
+		{ MDBA_MDB_EATTR_TIMER,    4 },
+		{ MDBA_MDB_EATTR_GROUP_MODE, 1 },
+		{ MDBA_MDB_EATTR_RTPROT,   1 },
+		{ MDBA_MDB_EATTR_SOURCE,   4 },
+		{ MDBA_MDB_EATTR_VNI,      4 },
+		{ MDBA_MDB_EATTR_SRC_VNI,  4 },
+		{ MDBA_MDB_EATTR_IFINDEX,  4 },
+		{ MDBA_MDB_EATTR_DST_PORT, 2 },
 	};
 	struct br_mdb_entry entry;
 	struct nlattr mid, info;
@@ -209,11 +226,20 @@ static size_t build_mdba_mdb_nested(unsigned char *p, size_t avail)
  */
 static size_t build_mdba_router_nested(unsigned char *p, size_t avail)
 {
-	static const unsigned short pattrs[] = {
-		MDBA_ROUTER_PATTR_TIMER, MDBA_ROUTER_PATTR_TYPE,
-		MDBA_ROUTER_PATTR_INET_TIMER,
-		MDBA_ROUTER_PATTR_INET6_TIMER,
-		MDBA_ROUTER_PATTR_VID,
+	/*
+	 * MDBA_ROUTER_PATTR_* are dump-only.  Widths from br_mdb_fill_info:
+	 *   TIMER         nla_put_u32   4
+	 *   TYPE          nla_put_u8    1
+	 *   INET_TIMER    nla_put_u32   4
+	 *   INET6_TIMER   nla_put_u32   4
+	 *   VID           nla_put_u16   2
+	 */
+	static const struct nlattr_width pattrs[] = {
+		{ MDBA_ROUTER_PATTR_TIMER,       4 },
+		{ MDBA_ROUTER_PATTR_TYPE,        1 },
+		{ MDBA_ROUTER_PATTR_INET_TIMER,  4 },
+		{ MDBA_ROUTER_PATTR_INET6_TIMER, 4 },
+		{ MDBA_ROUTER_PATTR_VID,         2 },
 	};
 	struct nlattr port;
 	unsigned char *port_payload;
@@ -287,12 +313,31 @@ size_t gen_rta_mdba_payload(unsigned char *p, size_t avail,
 		 * length-reject some sub-attrs, but the parse reaches the
 		 * inner walker instead of bouncing on the outer nlattr. */
 		if (avail >= NLA_HDRLEN + 4) {
-			static const unsigned short mdbe_attrs[] = {
-				MDBE_ATTR_SOURCE,    MDBE_ATTR_SRC_LIST,
-				MDBE_ATTR_GROUP_MODE, MDBE_ATTR_RTPROT,
-				MDBE_ATTR_DST,       MDBE_ATTR_DST_PORT,
-				MDBE_ATTR_VNI,       MDBE_ATTR_IFINDEX,
-				MDBE_ATTR_SRC_VNI,   MDBE_ATTR_STATE_MASK,
+			/*
+			 * MDBE_ATTR_* widths from br_mdbe_attrs_pol and
+			 * vxlan_mdbe_attrs_pol (both validate these attrs):
+			 *   SOURCE       NLA_BINARY [4,16] use 4 (IPv4 in_addr)
+			 *   SRC_LIST     NLA_NESTED         8
+			 *   GROUP_MODE   NLA_U8             1
+			 *   RTPROT       NLA_U8             1
+			 *   DST          NLA_BINARY [4,16] use 4
+			 *   DST_PORT     NLA_U16            2
+			 *   VNI          NLA_U32            4
+			 *   IFINDEX      NLA_S32            4
+			 *   SRC_VNI      NLA_U32            4
+			 *   STATE_MASK   NLA_U8             1
+			 */
+			static const struct nlattr_width mdbe_attrs[] = {
+				{ MDBE_ATTR_SOURCE,     4 },
+				{ MDBE_ATTR_SRC_LIST,   8 },
+				{ MDBE_ATTR_GROUP_MODE, 1 },
+				{ MDBE_ATTR_RTPROT,     1 },
+				{ MDBE_ATTR_DST,        4 },
+				{ MDBE_ATTR_DST_PORT,   2 },
+				{ MDBE_ATTR_VNI,        4 },
+				{ MDBE_ATTR_IFINDEX,    4 },
+				{ MDBE_ATTR_SRC_VNI,    4 },
+				{ MDBE_ATTR_STATE_MASK, 1 },
 			};
 			return build_nested_attrs(p, avail, mdbe_attrs,
 						  ARRAY_SIZE(mdbe_attrs), 0);
@@ -339,15 +384,26 @@ static void fill_bridge_vlan_info(struct bridge_vlan_info *info)
  */
 static size_t build_vlandb_entry_nested(unsigned char *p, size_t avail)
 {
-	static const unsigned short entry_attrs[] = {
-		BRIDGE_VLANDB_ENTRY_RANGE,
-		BRIDGE_VLANDB_ENTRY_STATE,
-		BRIDGE_VLANDB_ENTRY_TUNNEL_INFO,
-		BRIDGE_VLANDB_ENTRY_STATS,
-		BRIDGE_VLANDB_ENTRY_MCAST_ROUTER,
-		BRIDGE_VLANDB_ENTRY_MCAST_N_GROUPS,
-		BRIDGE_VLANDB_ENTRY_MCAST_MAX_GROUPS,
-		BRIDGE_VLANDB_ENTRY_NEIGH_SUPPRESS,
+	/*
+	 * BRIDGE_VLANDB_ENTRY_* widths from br_vlan_db_policy
+	 * (net/bridge/br_vlan.c):
+	 *   RANGE             NLA_U16      2
+	 *   STATE             NLA_U8       1
+	 *   TUNNEL_INFO       NLA_NESTED   8
+	 *   STATS             NLA_NESTED   8
+	 *   MCAST_ROUTER      NLA_U8       1
+	 *   MCAST_N_GROUPS    NLA_REJECT — excluded (kernel rejects it)
+	 *   MCAST_MAX_GROUPS  NLA_U32      4
+	 *   NEIGH_SUPPRESS    NLA_U8       1
+	 */
+	static const struct nlattr_width entry_attrs[] = {
+		{ BRIDGE_VLANDB_ENTRY_RANGE,            2 },
+		{ BRIDGE_VLANDB_ENTRY_STATE,            1 },
+		{ BRIDGE_VLANDB_ENTRY_TUNNEL_INFO,      8 },
+		{ BRIDGE_VLANDB_ENTRY_STATS,            8 },
+		{ BRIDGE_VLANDB_ENTRY_MCAST_ROUTER,     1 },
+		{ BRIDGE_VLANDB_ENTRY_MCAST_MAX_GROUPS, 4 },
+		{ BRIDGE_VLANDB_ENTRY_NEIGH_SUPPRESS,   1 },
 	};
 	struct bridge_vlan_info info;
 	size_t off = 0;
@@ -384,22 +440,41 @@ static size_t build_vlandb_entry_nested(unsigned char *p, size_t avail)
  */
 static size_t build_vlandb_gopts_nested(unsigned char *p, size_t avail)
 {
-	static const unsigned short gopts_attrs[] = {
-		BRIDGE_VLANDB_GOPTS_RANGE,
-		BRIDGE_VLANDB_GOPTS_MCAST_SNOOPING,
-		BRIDGE_VLANDB_GOPTS_MCAST_IGMP_VERSION,
-		BRIDGE_VLANDB_GOPTS_MCAST_MLD_VERSION,
-		BRIDGE_VLANDB_GOPTS_MCAST_LAST_MEMBER_CNT,
-		BRIDGE_VLANDB_GOPTS_MCAST_STARTUP_QUERY_CNT,
-		BRIDGE_VLANDB_GOPTS_MCAST_LAST_MEMBER_INTVL,
-		BRIDGE_VLANDB_GOPTS_MCAST_MEMBERSHIP_INTVL,
-		BRIDGE_VLANDB_GOPTS_MCAST_QUERIER_INTVL,
-		BRIDGE_VLANDB_GOPTS_MCAST_QUERY_INTVL,
-		BRIDGE_VLANDB_GOPTS_MCAST_QUERY_RESPONSE_INTVL,
-		BRIDGE_VLANDB_GOPTS_MCAST_STARTUP_QUERY_INTVL,
-		BRIDGE_VLANDB_GOPTS_MCAST_QUERIER,
-		BRIDGE_VLANDB_GOPTS_MCAST_ROUTER_PORTS,
-		BRIDGE_VLANDB_GOPTS_MSTI,
+	/*
+	 * BRIDGE_VLANDB_GOPTS_* widths from br_vlan_global_options_policy
+	 * (net/bridge/br_vlan_options.c):
+	 *   RANGE                    NLA_U16    2
+	 *   MCAST_SNOOPING           NLA_U8     1
+	 *   MCAST_IGMP_VERSION       NLA_U8     1
+	 *   MCAST_MLD_VERSION        NLA_U8     1
+	 *   MCAST_LAST_MEMBER_CNT    NLA_U32    4
+	 *   MCAST_STARTUP_QUERY_CNT  NLA_U32    4
+	 *   MCAST_LAST_MEMBER_INTVL  NLA_U64    8
+	 *   MCAST_MEMBERSHIP_INTVL   NLA_U64    8
+	 *   MCAST_QUERIER_INTVL      NLA_U64    8
+	 *   MCAST_QUERY_INTVL        NLA_U64    8
+	 *   MCAST_QUERY_RESPONSE_INTVL NLA_U64  8
+	 *   MCAST_STARTUP_QUERY_INTVL NLA_U64   8
+	 *   MCAST_QUERIER            NLA_U8     1
+	 *   MCAST_ROUTER_PORTS       NLA_NESTED 8
+	 *   MSTI                     NLA_U16    2
+	 */
+	static const struct nlattr_width gopts_attrs[] = {
+		{ BRIDGE_VLANDB_GOPTS_RANGE,                    2 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_SNOOPING,           1 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_IGMP_VERSION,       1 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_MLD_VERSION,        1 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_LAST_MEMBER_CNT,    4 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_STARTUP_QUERY_CNT,  4 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_LAST_MEMBER_INTVL,  8 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_MEMBERSHIP_INTVL,   8 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_QUERIER_INTVL,      8 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_QUERY_INTVL,        8 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_QUERY_RESPONSE_INTVL, 8 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_STARTUP_QUERY_INTVL, 8 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_QUERIER,            1 },
+		{ BRIDGE_VLANDB_GOPTS_MCAST_ROUTER_PORTS,       8 },
+		{ BRIDGE_VLANDB_GOPTS_MSTI,                     2 },
 	};
 	__u16 vid;
 	size_t off = 0;
