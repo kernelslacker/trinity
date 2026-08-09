@@ -328,6 +328,14 @@ static void capdrop_probe_capget_self(void)
  * are skipped when the child has left its sandbox-time user / mnt / net
  * namespace respectively, because each then legitimately succeeds in
  * the new ns and would false-fire.
+ *
+ * Exception for net_admin: when the userns-admin lane is active the
+ * child has unshared its net namespace (CLONE_NEWUSER | CLONE_NEWNET),
+ * so capdrop_still_in_init_ns() returns false -- but the probe is still
+ * meaningful.  capdrop_probe_net_admin() already handles the lane case
+ * internally (flipped polarity: success is expected, failure is the
+ * anomaly).  The extra || child_userns_lane_is_active() arm below
+ * re-enables the probe in that context.
  */
 void capdrop_oracle_tick(void)
 {
@@ -339,6 +347,7 @@ void capdrop_oracle_tick(void)
 	capdrop_probe_bpf();
 	if (capdrop_still_in_init_ns(&anchor_mnt, "/proc/self/ns/mnt"))
 		capdrop_probe_mount();
-	if (capdrop_still_in_init_ns(&anchor_net, "/proc/self/ns/net"))
+	if (capdrop_still_in_init_ns(&anchor_net, "/proc/self/ns/net") ||
+	    child_userns_lane_is_active())
 		capdrop_probe_net_admin();
 }
