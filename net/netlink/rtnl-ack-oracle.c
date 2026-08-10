@@ -62,12 +62,22 @@
  *
  * DRAIN LOOP
  *
- * Dump requests (NLM_F_DUMP set in the original flags) produce data
- * messages before the ACK.  RTNL_ACK_ORACLE_DRAIN_MAX caps the drain
- * loop: we read up to that many messages with MSG_DONTWAIT, stop when we
- * see NLMSG_ERROR or exhaust the cap, and count anything else as
- * no_reply.  Eight iterations is well above the typical dump response
- * depth while keeping the fast path cheap.
+ * Dump requests (NLM_F_DUMP set in the original flags) are excluded from
+ * sampling.  __netlink_dump_start() returns -EINTR to suppress the ACK
+ * regardless of NLM_F_ACK (af_netlink.c: "We successfully started a dump,
+ * by returning -EINTR we signal not to send ACK even if it was requested").
+ * A sampled dump therefore never produces NLMSG_ERROR; it produces data
+ * messages followed by NLMSG_DONE.  Excluding NLM_F_DUMP messages from
+ * sampling avoids two problems: (1) every successful dump being filed as
+ * no_reply, corrupting the accepted-rate signal; (2) up to DRAIN_MAX recvs
+ * on a socket with a running dump advancing cb_running state so the next
+ * recv on that fd continues the stale dump.
+ *
+ * RTNL_ACK_ORACLE_DRAIN_MAX caps the drain loop for non-dump probes.  We
+ * read up to that many messages with MSG_DONTWAIT and stop on NLMSG_ERROR
+ * (the explicit ACK path) or NLMSG_DONE (dump end -- should not appear
+ * since NLM_F_DUMP is excluded, handled defensively).  Anything else is
+ * counted as no_reply.
  */
 #include <errno.h>
 #include <sys/socket.h>
@@ -83,8 +93,8 @@
 #define RTNL_ACK_ORACLE_SAMPLE_RATE	32
 
 /*
- * Maximum MSG_DONTWAIT recvs per probe.  Needed to drain data messages
- * that arrive before the NLMSG_ERROR ACK on dump requests.
+ * Maximum MSG_DONTWAIT recvs per probe.  Non-dump probes should see their
+ * NLMSG_ERROR in at most one or two recvs; the cap exists as a safety bound.
  */
 #define RTNL_ACK_ORACLE_DRAIN_MAX	8
 
@@ -128,6 +138,16 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 
 	oracle_state.counter++;
 	if ((oracle_state.counter % RTNL_ACK_ORACLE_SAMPLE_RATE) != 0)
+		return;
+
+	/*
+	 * Dump requests produce NLMSG_DONE on success, not NLMSG_ERROR.
+	 * __netlink_dump_start() returns -EINTR to suppress the ACK even
+	 * when NLM_F_ACK is set, so sampling a dump yields no drainable
+	 * reply and leaves cb_running advanced across drain iterations.
+	 * Skip NLM_F_DUMP messages entirely.
+	 */
+	if (nlh->nlmsg_flags & NLM_F_DUMP)
 		return;
 
 	/*
@@ -207,11 +227,13 @@ void rtnl_oracle_drain(int fd)
 	oracle_state.sampled_nlh = NULL;
 
 	/*
-	 * Drain up to DRAIN_MAX messages with MSG_DONTWAIT.  Data messages
-	 * from dump replies arrive before the NLMSG_ERROR ACK; we consume
-	 * them and keep looking.  EAGAIN means the kernel hasn't enqueued
-	 * anything yet (e.g. nlmsg_len was corrupted and the kernel
-	 * silently dropped the message), so we count that as no_reply.
+	 * Drain up to DRAIN_MAX messages with MSG_DONTWAIT.  Stop on
+	 * NLMSG_ERROR (the ACK path for non-dump probes) or NLMSG_DONE
+	 * (dump end -- NLM_F_DUMP is excluded from sampling, so NLMSG_DONE
+	 * should not appear here; handled defensively and counted as
+	 * accepted since a completed dump is a strong positive signal).
+	 * EAGAIN means the kernel dropped the message without reply;
+	 * count that as no_reply.
 	 */
 	for (i = 0; i < RTNL_ACK_ORACLE_DRAIN_MAX; i++) {
 		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
@@ -222,6 +244,17 @@ void rtnl_oracle_drain(int fd)
 			continue; /* undersized — skip, keep draining */
 
 		nlh = (struct nlmsghdr *)(void *)rbuf;
+
+		if (nlh->nlmsg_type == NLMSG_DONE) {
+			/*
+			 * Dump completed successfully.  A started dump is the
+			 * strongest positive signal the oracle can observe;
+			 * classify as accepted.  e = 0 reuses the got_ack path.
+			 */
+			e = 0;
+			goto got_ack;
+		}
+
 		if (nlh->nlmsg_type != NLMSG_ERROR)
 			continue; /* data or multipart — keep draining */
 
