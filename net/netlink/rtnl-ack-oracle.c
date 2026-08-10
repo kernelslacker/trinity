@@ -204,11 +204,17 @@ void rtnl_oracle_abort(void)
  * the sendmsg() syscall has returned.  Returns immediately if this
  * message was not sampled (oracle_state.active == 0).
  *
+ * send_ok is 1 when sendmsg() returned a non-negative byte count (the
+ * message reached the kernel) and 0 when sendmsg() returned -1 (the
+ * message never left userspace).  On a failed send the NLM_F_ACK flag
+ * we ORed in is moot; the oracle counts the event as send_fail rather
+ * than draining the socket.
+ *
  * MSG_DONTWAIT is used throughout: a corrupted nlmsg_len that causes the
  * kernel to drop the message (and emit no reply) produces EAGAIN in
  * microseconds rather than blocking for a timeout.
  */
-void rtnl_oracle_drain(int fd)
+void rtnl_oracle_drain(int fd, int send_ok)
 {
 	unsigned char rbuf[512];
 	struct nlmsghdr *nlh;
@@ -225,6 +231,17 @@ void rtnl_oracle_drain(int fd)
 	 */
 	oracle_state.active = 0;
 	oracle_state.sampled_nlh = NULL;
+
+	/*
+	 * The message never reached the kernel: sendmsg() itself failed.
+	 * Count as send_fail so the caller can distinguish 'kernel dropped'
+	 * (no_reply) from 'never sent' (send_fail).  No recv to drain.
+	 */
+	if (!send_ok) {
+		__atomic_add_fetch(&shm->stats.rtnl_ack_oracle.send_fail,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
 
 	/*
 	 * Drain up to DRAIN_MAX messages with MSG_DONTWAIT.  Stop on

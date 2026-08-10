@@ -457,7 +457,7 @@ skip_bound:
 		const struct netproto *proto = net_protocols[snap->family].proto;
 
 		if (proto != NULL && proto->post_send != NULL)
-			proto->post_send((int) rec->a1);
+			proto->post_send((int) rec->a1, (long) retval);
 	}
 
 	/*

@@ -39,8 +39,11 @@ void rtnl_oracle_abort(void);
  * histogram in shm->stats.rtnl_ack_oracle.  Returns immediately (< 1 us)
  * if the message was not sampled.
  *
- * @fd: the fuzz socket file descriptor on which sendmsg was just called.
+ * @fd:      the fuzz socket fd on which sendmsg was just called.
+ * @send_ok: 1 if sendmsg returned >= 0 (message reached kernel),
+ *           0 if sendmsg returned -1 (failure before the message left
+ *           userspace); the latter increments send_fail without recv.
  */
-void rtnl_oracle_drain(int fd);
+void rtnl_oracle_drain(int fd, int send_ok);
 
 #endif /* NET_NETLINK_RTNL_ACK_ORACLE_H */

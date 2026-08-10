@@ -62,10 +62,12 @@ struct netproto {
 	/*
 	 * post_send: optional hook called from post_sendmsg() after the real
 	 * sendmsg() syscall returns, when the gen_msg path was taken.
-	 * Receives the fuzz socket fd so per-protocol observers (e.g. the
-	 * rtnl ACK oracle) can drain pending replies without blocking.
+	 * Receives the fuzz socket fd and the raw syscall retval so
+	 * per-protocol observers (e.g. the rtnl ACK oracle) can distinguish
+	 * a failed send from a kernel-side reject and drain accordingly.
+	 * retval is -1L on sendmsg failure, or the byte count on success.
 	 */
-	void (*post_send)(int fd);
+	void (*post_send)(int fd, long retval);
 	unsigned int nr_triplets;
 	unsigned int nr_privileged_triplets;
 };

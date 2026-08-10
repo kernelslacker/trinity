@@ -122,9 +122,9 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
  * which no-ops immediately unless rtnl_oracle_sample() marked this
  * message for sampling.
  */
-static void netlink_post_send(int fd)
+static void netlink_post_send(int fd, long retval)
 {
-	rtnl_oracle_drain(fd);
+	rtnl_oracle_drain(fd, retval != -1L);
 }
 
 const struct netproto proto_netlink = {
