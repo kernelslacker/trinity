@@ -100,28 +100,45 @@ RESULTS_FILE="$(mktemp)"
 trap 'rm -f "$RESULTS_FILE" 2>/dev/null' EXIT
 
 # ---------------------------------------------------------------------------
-# Self-test: verify that forward declarations (prototypes) are not mistaken
-# for function definitions in the first-pass raw_* wrapper classifier.
-# Run before the live scan so a detector regression fails fast.
+# Self-test: drive the REAL scanner against fixture childops/ files laid out
+# under a temporary REPO_ROOT.  Three fixtures exercise the pass-1 wrapper
+# classifier; the live scanner is invoked for each assertion rather than a
+# duplicate inline awk (which was testing a copy of the classifier, not the
+# live code path -- divergence introduced by e42e11dc9d47 ("check-static:
+# skip raw_* forward declarations in wrapper classifier"), anchoring
+# fixed in the self-test copy by 0766c926be65 ("check-static: anchor
+# pass-1 wrapper self-count to atomic-arg member") but not the live block).
 #
-# Fixture A: static void raw_x(int); (prototype, no body) followed by an
-#   unrelated function that bumps a direct_syscalls counter.  raw_x must NOT
-#   be recorded in raw_wrapper_known; the counter bump belongs to the
-#   unrelated function's body, not to raw_x.
+# Fixture A: raw_x prototype (static void raw_x(int);) must NOT register in
+#   raw_wrapper_known.  A childop calling socket() must still be UNCOUNTED.
 #
-# Fixture B: static void raw_y(int a) { __atomic_add_fetch(...); } (full
-#   definition with a self-counting body).  raw_y MUST be recorded as
-#   self-counting.
+# Fixture B: raw_y definition with __atomic_add_fetch on ->member (anchored,
+#   non-zero).  A childop calling only raw_y() must PASS (raw_y self=1
+#   means fn_tally_count == fn_raw_sites for its callers).
 #
-# Fixture C: static void raw_z(...) { __atomic_store_n(&rs->thread_tally, 0, ...); }
-#   zero-store (reset) must NOT be classified as self-counting.
+# Fixture C: raw_z definition with __atomic_store_n storing 0 (a counter
+#   reset, not an increment).  A childop calling only raw_z() must be
+#   THREAD_UNCOUNTED -- the zero-store is rejected by the anchored pattern.
 # ---------------------------------------------------------------------------
-_st_fwd="$(mktemp /tmp/csc-rawfn-st-fwd.XXXXXX.c)"
-_st_def="$(mktemp /tmp/csc-rawfn-st-def.XXXXXX.c)"
-_st_storen="$(mktemp /tmp/csc-rawfn-st-storen.XXXXXX.c)"
-trap 'rm -f "$RESULTS_FILE" "$_st_fwd" "$_st_def" "$_st_storen" 2>/dev/null' EXIT
+# Recursion guard: skip the self-test when the script is called by its own
+# sub-tests (which set REPO_ROOT to a temp dir for isolation).  Without this
+# each sub-test invocation would re-enter the self-test, creating a cascade
+# that fails when the recursive child tries to load the script from the
+# temp dir's scripts/check-static/ (which does not exist there).
+if [ -z "${_CSC_SELFTEST_RECURSE:-}" ]; then
+# Resolve the script's real path before any REPO_ROOT manipulation so the
+# sub-test invocations always find the correct file.
+_st_self="$(readlink -f "$0")"
+_st_root="$(mktemp -d /tmp/csc-selftest-root.XXXXXX)"
+trap 'rm -f "$RESULTS_FILE" 2>/dev/null; [ -d "${_st_root:-}" ] && rm -rf "$_st_root" 2>/dev/null' EXIT
+mkdir -p "$_st_root/childops" "$_st_root/scripts/check-static"
+# Empty baseline; count ceiling large enough not to interfere with sub-tests.
+> "$_st_root/scripts/check-static/$NAME.baseline"
+echo "99" > "$_st_root/scripts/check-static/$NAME.count.baseline"
 
-cat > "$_st_fwd" <<'__FIXTURE_A__'
+# Fixture A: prototype raw_x must not register as self-counting.
+# A childop that calls socket() should still be flagged UNCOUNTED.
+cat > "$_st_root/childops/st_raw_x_proto.c" <<'__FIXTURE_A__'
 static void raw_x(int);
 
 static int do_other(struct rs *rs)
@@ -129,77 +146,92 @@ static int do_other(struct rs *rs)
 	__atomic_add_fetch(&rs->direct_syscalls, 1, __ATOMIC_RELAXED);
 	return 0;
 }
+
+bool st_childop_raw_x(struct childdata *child)
+{
+	socket(AF_INET, SOCK_STREAM, 0);
+	return true;
+}
 __FIXTURE_A__
 
-cat > "$_st_def" <<'__FIXTURE_B__'
+# Fixture B: raw_y with atomic add_fetch on ->member is self-counting.
+# Calling raw_y() from a childop entry must satisfy fn_tally_count == fn_raw_sites.
+cat > "$_st_root/childops/st_raw_y_def.c" <<'__FIXTURE_B__'
 static void raw_y(int a)
 {
 	__atomic_add_fetch(&rs->direct_syscalls, 1, __ATOMIC_RELAXED);
 }
+
+bool st_childop_raw_y(struct childdata *child)
+{
+	raw_y(1);
+	return true;
+}
 __FIXTURE_B__
 
-cat > "$_st_storen" <<'__FIXTURE_C__'
+# Fixture C: raw_z zero-store must NOT be classified as self-counting.
+# Calling raw_z() from a childop entry must still produce THREAD_UNCOUNTED.
+cat > "$_st_root/childops/st_raw_z_storen.c" <<'__FIXTURE_C__'
 static void raw_z(struct rs *rs)
 {
 	__atomic_store_n(&rs->thread_tally, 0, __ATOMIC_RELEASE);
 }
+
+bool st_childop_raw_z(struct childdata *child)
+{
+	raw_z(NULL);
+	return true;
+}
 __FIXTURE_C__
 
-_st_result=$(awk '
-FNR == 1 { in_block = 0 }
-{
-	code = $0
-	sub(/\/\/.*$/, "", code)
-	if (!in_raw_fn &&
-	    match(code, /static[[:space:]]+[a-zA-Z_][a-zA-Z0-9_*[:space:]]*[^a-zA-Z0-9_]raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/) &&
-	    !(code ~ /\);[[:space:]]*$/ && index(code, "{") == 0)) {
-		tmp = substr(code, RSTART)
-		if (match(tmp, /raw_[a-zA-Z_][a-zA-Z0-9_]*/)) {
-			cur_raw_fn_name = substr(tmp, RSTART, RLENGTH)
-			in_raw_fn = 1
-			raw_fn_brace_depth = 0
-			raw_fn_brace_opened = 0
-			raw_fn_self_counting = 0
-		}
-	}
-	if (in_raw_fn) {
-		if (match(code, /__atomic_(add_fetch|fetch_add)[[:space:]]*\([[:space:]]*&[^,]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
-		    match(code, /__atomic_store_n[[:space:]]*\([^,]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[^,]*,[[:space:]]*[^0 \t,]/) ||
-		    match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[ \t]*(\+\+|\+=)/) ||
-		    match(code, /\+\+[ \t]*[a-zA-Z_][a-zA-Z0-9_]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/))
-			raw_fn_self_counting = 1
-		n = length(code)
-		for (j = 1; j <= n; j++) {
-			c = substr(code, j, 1)
-			if (c == "{") { raw_fn_brace_depth++; raw_fn_brace_opened = 1 }
-			else if (c == "}") {
-				raw_fn_brace_depth--
-				if (raw_fn_brace_opened && raw_fn_brace_depth == 0) {
-					print "KNOWN " cur_raw_fn_name " self=" raw_fn_self_counting
-					in_raw_fn = 0; cur_raw_fn_name = ""; raw_fn_brace_opened = 0
-				}
-			}
-		}
-	}
-}
-' "$_st_fwd" "$_st_def" "$_st_storen")
+# Baseline keys for fixture A findings (used to isolate sub-tests B and C).
+_st_bl_a='UNCOUNTED:childops/st_raw_x_proto.c
+THREAD_UNCOUNTED:childops/st_raw_x_proto.c#st_childop_raw_x'
+# Baseline key for fixture C finding (used to isolate sub-test B).
+_st_bl_c='THREAD_UNCOUNTED:childops/st_raw_z_storen.c#st_childop_raw_z'
 
-if echo "$_st_result" | grep -q "^KNOWN raw_x "; then
-	echo "FAIL: $NAME selftest: prototype raw_x wrongly classified as a definition (got: $_st_result)" >&2
+# Sub-test A: fixture_a must be UNCOUNTED (socket uncounted, raw_x not wired).
+> "$_st_root/scripts/check-static/$NAME.baseline"
+_st_out_a=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_a=$?
+if [ $_st_rc_a -eq 0 ]; then
+	echo "FAIL: $NAME selftest A: expected UNCOUNTED for raw_x-proto childop (got PASS; output: $_st_out_a)" >&2
 	exit 1
 fi
-if ! echo "$_st_result" | grep -q "^KNOWN raw_y self=1$"; then
-	echo "FAIL: $NAME selftest: raw_y definition not classified as self-counting (got: $_st_result)" >&2
+if ! echo "$_st_out_a" | grep -q 'st_raw_x_proto'; then
+	echo "FAIL: $NAME selftest A: st_raw_x_proto.c not flagged (output: $_st_out_a)" >&2
 	exit 1
 fi
-if echo "$_st_result" | grep -q "^KNOWN raw_z self=1$"; then
-	echo "FAIL: $NAME selftest: zero-store raw_z wrongly classified as self-counting (got: $_st_result)" >&2
+
+# Sub-test B: fixture_b must PASS (raw_y self=1); baseline A and C findings.
+printf '%s\n%s\n' "$_st_bl_a" "$_st_bl_c" \
+	> "$_st_root/scripts/check-static/$NAME.baseline"
+_st_out_b=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_b=$?
+if [ $_st_rc_b -ne 0 ]; then
+	echo "FAIL: $NAME selftest B: raw_y should be self-counting (exit=$_st_rc_b; output: $_st_out_b)" >&2
 	exit 1
 fi
-if ! echo "$_st_result" | grep -q "^KNOWN raw_z self=0$"; then
-	echo "FAIL: $NAME selftest: zero-store raw_z not recorded as not-self-counting (got: $_st_result)" >&2
+if echo "$_st_out_b" | grep -q 'st_raw_y'; then
+	echo "FAIL: $NAME selftest B: raw_y childop wrongly flagged as uncounted (output: $_st_out_b)" >&2
 	exit 1
 fi
+
+# Sub-test C: fixture_c must be THREAD_UNCOUNTED (zero-store rejected); baseline A only.
+printf '%s\n' "$_st_bl_a" \
+	> "$_st_root/scripts/check-static/$NAME.baseline"
+_st_out_c=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_c=$?
+if [ $_st_rc_c -eq 0 ]; then
+	echo "FAIL: $NAME selftest C: zero-store raw_z must be rejected (expected THREAD_UNCOUNTED, got PASS; output: $_st_out_c)" >&2
+	exit 1
+fi
+if ! echo "$_st_out_c" | grep -q 'st_raw_z_storen'; then
+	echo "FAIL: $NAME selftest C: st_raw_z_storen.c not flagged (output: $_st_out_c)" >&2
+	exit 1
+fi
+> "$_st_root/scripts/check-static/$NAME.baseline"
+fi # end _CSC_SELFTEST_RECURSE guard
 
 # Walk every .c file under childops/.  For each file that has no
 # childop_direct_syscalls_add() call in its own body (comment-stripped),
@@ -279,14 +311,21 @@ while IFS= read -r srcfile; do
 			if (index(code, "childop_direct_syscalls_add") > 0)
 				raw_fn_self_counting = 1
 			if (!raw_fn_self_counting) {
-				# Require an actual increment or publish form:
-				#   __atomic_add_fetch / __atomic_fetch_add on the member,
-				#   __atomic_store_n (thread-publish: store accumulated count),
-				#   post/pre ++ or compound +=.
-				# Plain reads and comparisons (e.g. if (rs->count > 8)) do
-				# NOT qualify and must not silently mask a real gap entry.
-				if ((match(code, /__atomic_(add_fetch|fetch_add|store_n)[[:space:]]*\(/) &&
-				     match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) ||
+				# Require an actual increment or publish form, anchored
+				# so the member appears INSIDE the atomic call arguments.
+				# Two independent match() calls (one for the atomic op,
+				# one for the ->member) are insufficient: a zero-store
+				# __atomic_store_n(&rs->thread_tally, 0, __ATOMIC_RELEASE)
+				# satisfies both separately despite storing 0 (a counter
+				# reset, not an increment).  Use single-match anchored
+				# patterns: for add_fetch/fetch_add require the member
+				# inside the first arg; for store_n require the stored
+				# value (second arg) to be non-zero.  Mirrors the
+				# self-test classifier; live block diverged from the
+				# self-test copy anchored by 0766c926be65 ("check-static: anchor
+				# pass-1 wrapper self-count to atomic-arg member").
+				if (match(code, /__atomic_(add_fetch|fetch_add)[[:space:]]*\([[:space:]]*&[^,]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
+				    match(code, /__atomic_store_n[[:space:]]*\([^,]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[^,]*,[[:space:]]*[^0 \t,]/) ||
 				    match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[ \t]*(\+\+|\+=)/) ||
 				    match(code, /\+\+[ \t]*[a-zA-Z_][a-zA-Z0-9_]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) 
 					raw_fn_self_counting = 1
