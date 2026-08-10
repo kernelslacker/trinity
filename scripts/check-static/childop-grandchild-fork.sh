@@ -14,18 +14,36 @@
 #
 # What is flagged:
 #   Any fork() call in a childops/*.c file whose associated child branch
-#   (if (VAR == 0) or if (!VAR) following the fork) satisfies NEITHER:
+#   satisfies NEITHER:
 #     a. The child branch body (braced block or single statement) contains
 #        CHILDOP_GRANDCHILD_ENTER() directly, nor
 #     b. The child branch body consists of a call to a function defined
 #        in the same file whose body starts with CHILDOP_GRANDCHILD_ENTER().
 #
-# Output: one "file:line" per uncovered fork child branch.
+# Call-site forms scanned (outer pass):
+#   (a) VAR = fork()              -- assignment form (original)
+#   (b) if (fork() == 0) { ... } -- direct conditional form (now covered)
+#   (c) if (!fork()) { ... }      -- negation conditional form (now covered)
 #
-# Ceiling baseline: scripts/check-static/childop-grandchild-fork.count.baseline
-# The gate fails if the current count EXCEEDS the ceiling (no new regressions).
-# The ceiling should shrink toward 0 as remaining sites are fixed; it must
-# never grow.
+# Remaining unscanned forms (out of scope; see future work):
+#   - fork() used as switch() argument or inside else-branch condition
+#   - Assignment-form fork() whose child branch appears beyond the 40-line
+#     scan window (window miss)
+#   - fork() in macro arguments or multi-statement comma expressions
+# These are rare in the childops/ tree; the gate emits UNPARSED:<file>:<line>
+# for any assignment-form fork() whose child branch it cannot locate, so they
+# are visible rather than silently skipped.
+#
+# Output format (one line per finding, fed into the keyed baseline):
+#   file:line          -- uncovered child branch (line is the if-branch line)
+#   UNPARSED:file:line -- fork() site whose child branch the scanner could not
+#                         locate (unrecognised pattern or window miss)
+#
+# Keyed baseline: scripts/check-static/childop-grandchild-fork.baseline
+# Each entry is one "file:line" or "UNPARSED:file:line" string.  Any result
+# not present in the baseline fails the gate.  Stale baseline entries (listed
+# but no longer produced by the scanner) also fail, to enforce hygiene.
+# To regenerate after an intentional change: run with --regen.
 #
 # Note: the _exit() heuristic used by childop-grandchild-this-child.sh is not
 # used here; we do not attempt to determine grandchild intent -- we flag any
@@ -35,7 +53,15 @@ set -u
 
 NAME="childop-grandchild-fork"
 ROOT="${REPO_ROOT:-$(pwd)}"
+BASELINE="$ROOT/scripts/check-static/childop-grandchild-fork.baseline"
+
+# Legacy count baseline kept for reference; no longer used for comparison.
 COUNT_BASELINE="$ROOT/scripts/check-static/childop-grandchild-fork.count.baseline"
+
+MODE="check"
+case "${1:-}" in
+	--regen) MODE="regen" ;;
+esac
 
 if [ ! -d "$ROOT/childops" ]; then
 	echo "PASS: $NAME (no childops/ directory)"
@@ -52,10 +78,16 @@ trap 'rm -f "$tmp_out"' EXIT
 #           top-level opening brace) is CHILDOP_GRANDCHILD_ENTER() --
 #           these are "covered functions".
 #
-#   Pass 2: find fork() call sites, locate the associated child branch
-#           (if (VAR == 0) / if (!VAR)), and check whether it is covered
-#           by the macro either directly in the branch body or via a call
-#           to a covered function.
+#   Pass 2: find fork() call sites, locate the associated child branch,
+#           and check whether it is covered by the macro either directly
+#           in the branch body or via a call to a covered function.
+#
+#           Three call-site forms are recognised:
+#             (a) VAR = fork()             -- assignment form
+#             (b) if (fork() == 0) { ... } -- direct conditional
+#             (c) if (!fork()) { ... }      -- negation conditional
+#           For assignment form, UNPARSED:<file>:<line> is emitted if the
+#           inner scan cannot locate a child branch within 40 lines.
 
 while IFS= read -r srcfile; do
 	relfile="${srcfile#"$ROOT"/}"
@@ -137,6 +169,88 @@ while IFS= read -r srcfile; do
 		return 0
 	}
 
+	# ----------------------------------------------------------------
+	# check_if_body: given that an "if (...)" starts at if_line_idx,
+	# determine whether the body of that branch is covered by
+	# CHILDOP_GRANDCHILD_ENTER() (directly or via a covered function).
+	# Returns 1 if covered, 0 if not.
+	#
+	# if_sl is the already-comment-stripped text of lines[if_line_idx].
+	# n     is the total number of lines.
+	# ----------------------------------------------------------------
+	function check_if_body(if_line_idx, if_sl, n,
+	                        rest, is_braced, k, brace_line,
+	                        d, sl3, tmp3, arr4, t3,
+	                        covered) {
+		covered = 0
+
+		# Strip the "if (...)" prefix to get what follows on this line.
+		rest = if_sl
+		sub(/if[[:space:]]*\([^)]*\)[[:space:]]*/, "", rest)
+		rest = trim(rest)
+
+		# Determine if body is braced or single-statement.
+		is_braced = (rest ~ /^\{/)
+
+		if (!is_braced && rest == "") {
+			# Body is on the next non-empty line.
+			for (k = if_line_idx + 1; k <= n && k <= if_line_idx + 3; k++) {
+				t3 = trim(strip_comment(lines[k]))
+				if (t3 == "") continue
+				rest = t3
+				break
+			}
+			is_braced = (rest ~ /^\{/)
+		}
+
+		if (is_braced) {
+			# Braced block: scan it for CHILDOP_GRANDCHILD_ENTER
+			# or a call to any covered function.
+			# Find which line has the opening {.
+			brace_line = if_line_idx
+			if (strip_comment(lines[if_line_idx]) !~ /\{/) {
+				for (k = if_line_idx + 1; k <= n && k <= if_line_idx + 3; k++) {
+					if (strip_comment(lines[k]) ~ /\{/) {
+						brace_line = k; break
+					}
+				}
+			}
+			# Scan the block.
+			d = brace_delta(strip_comment(lines[brace_line]))
+			if (strip_comment(lines[brace_line]) ~ /CHILDOP_GRANDCHILD_ENTER/)
+				covered = 1
+			for (k = brace_line + 1; k <= n && d > 0 && !covered; k++) {
+				sl3 = strip_comment(lines[k])
+				if (sl3 ~ /CHILDOP_GRANDCHILD_ENTER/) { covered = 1; break }
+				# Check for a call to any covered function.
+				tmp3 = sl3
+				while (match(tmp3, /([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(/, arr4)) {
+					if (arr4[1] in covered_funcs) { covered = 1; break }
+					tmp3 = substr(tmp3, RSTART + RLENGTH - 1)
+				}
+				d += brace_delta(sl3)
+			}
+		} else {
+			# Single-statement body (no braces).
+			# Check for CHILDOP_GRANDCHILD_ENTER directly, or
+			# any call to a covered function (including patterns
+			# like _exit(covered_func()) ).
+			if (rest ~ /CHILDOP_GRANDCHILD_ENTER/) {
+				covered = 1
+			} else {
+				tmp3 = rest
+				while (match(tmp3,
+				    /([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(/,
+				    arr4)) {
+					if (arr4[1] in covered_funcs) { covered = 1; break }
+					tmp3 = substr(tmp3, RSTART + RLENGTH - 1)
+				}
+			}
+		}
+
+		return covered
+	}
+
 	# ================================================================
 	# Main: read all lines, then run the two passes.
 	# ================================================================
@@ -188,21 +302,50 @@ while IFS= read -r srcfile; do
 		# ============================================================
 		# Pass 2: find fork() call sites and their child branches.
 		#
-		# We scan ahead from each "VAR = fork()" line, tracking brace
-		# depth so that return/goto inside error blocks do not cause a
-		# premature stop.  The child branch is the first "if (VAR == 0)"
-		# or "if (!VAR)" encountered at the SAME brace depth as the
-		# fork() call (depth 0 relative to the fork() line).
+		# Three call-site forms are recognised:
+		#
+		#   (a) VAR = fork()             -- assignment form
+		#       Scan ahead (up to 40 lines) for if (VAR == 0) / if (!VAR)
+		#       at the same relative brace depth.  If not found, emit
+		#       UNPARSED:<file>:<forkline>.
+		#
+		#   (b) if (fork() == 0) { ... } -- direct conditional
+		#   (c) if (!fork()) { ... }      -- negation conditional
+		#       The fork site IS the child branch; check its body
+		#       immediately.
+		#
+		# For the assignment form the child branch is the first
+		# "if (VAR == 0)" or "if (!VAR)" encountered at the SAME brace
+		# depth as the fork() call (depth 0 relative to the fork() line).
 		# ============================================================
 		for (i = 1; i <= n; i++) {
 			sl = strip_comment(lines[i])
 
-			# Require a fork() call on the RHS of an assignment.
-			if (sl !~ /=[[:space:]]*fork[[:space:]]*\(\)/)
+			# --------------------------------------------------------
+			# Classify the line: assignment form, direct conditional,
+			# or neither.
+			# --------------------------------------------------------
+			is_assign = (sl ~ /=[[:space:]]*fork[[:space:]]*\(\)/)
+			is_cond   = (sl ~ /if[[:space:]]*\([[:space:]]*fork[[:space:]]*\(\)[[:space:]]*==[[:space:]]*0/ ||
+			             sl ~ /if[[:space:]]*\([[:space:]]*!fork[[:space:]]*\(\)/)
+
+			if (!is_assign && !is_cond)
 				continue
 
-			# Extract the pid variable name: strip everything from
-			# "= fork()" onward, then take the last identifier.
+			# --------------------------------------------------------
+			# Direct conditional: if (fork() == 0) or if (!fork()).
+			# The fork site IS the child branch at line i.
+			# --------------------------------------------------------
+			if (is_cond) {
+				if (!check_if_body(i, sl, n))
+					print file ":" i
+				continue
+			}
+
+			# --------------------------------------------------------
+			# Assignment form: VAR = fork()
+			# Extract the pid variable name, then scan ahead.
+			# --------------------------------------------------------
 			pid_var = ""
 			tmp_sl  = sl
 			sub(/[[:space:]]*=[[:space:]]*fork[[:space:]]*\(\).*/, "", tmp_sl)
@@ -225,7 +368,10 @@ while IFS= read -r srcfile; do
 			#      (this fork() is unrelated; its own branch will be
 			#      processed in a later outer-loop iteration).
 			#   c. We exceed the scan window (40 lines).
-			rel_depth = 0
+			# If we exhaust the window without finding a child branch,
+			# emit UNPARSED:<file>:<forkline>.
+			rel_depth   = 0
+			child_found = 0
 			for (j = i + 1; j <= n && j <= i + 40; j++) {
 				sl2 = strip_comment(lines[j])
 				t2  = trim(sl2)
@@ -250,78 +396,10 @@ while IFS= read -r srcfile; do
 				is_child = (sl2 ~ cond_zero || sl2 ~ cond_not)
 
 				if (is_child) {
-					child_if_line = j
-					covered = 0
-
-					# Strip the "if (...)" prefix to get what follows.
-					rest = sl2
-					sub(/if[[:space:]]*\([^)]*\)[[:space:]]*/, "", rest)
-					rest = trim(rest)
-
-					# Determine if body is braced or single-statement.
-					is_braced = (rest ~ /^\{/)
-
-					if (!is_braced && rest == "") {
-						# Body is on the next non-empty line.
-						for (k = j + 1; k <= n && k <= j + 3; k++) {
-							t3 = trim(strip_comment(lines[k]))
-							if (t3 == "") continue
-							rest = t3
-							break
-						}
-						is_braced = (rest ~ /^\{/)
-					}
-
-					if (is_braced) {
-						# Braced block: scan it for CHILDOP_GRANDCHILD_ENTER
-						# or a call to any covered function (which itself
-						# starts with the macro).
-						# Find which line has the opening {.
-						brace_line = j
-						if (strip_comment(lines[j]) !~ /\{/) {
-							for (k = j+1; k <= n && k <= j+3; k++) {
-								if (strip_comment(lines[k]) ~ /\{/) {
-									brace_line = k; break
-								}
-							}
-						}
-						# Scan the block.
-						d = brace_delta(strip_comment(lines[brace_line]))
-						if (strip_comment(lines[brace_line]) ~ /CHILDOP_GRANDCHILD_ENTER/)
-							covered = 1
-						for (k = brace_line + 1; k <= n && d > 0 && !covered; k++) {
-							sl3 = strip_comment(lines[k])
-							if (sl3 ~ /CHILDOP_GRANDCHILD_ENTER/) { covered = 1; break }
-							# Check for a call to any covered function.
-							tmp3 = sl3
-							while (match(tmp3, /([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(/, arr4)) {
-								if (arr4[1] in covered_funcs) { covered = 1; break }
-								tmp3 = substr(tmp3, RSTART + RLENGTH - 1)
-							}
-							d += brace_delta(sl3)
-						}
-					} else {
-						# Single-statement body (no braces).
-						# Check for CHILDOP_GRANDCHILD_ENTER directly, or
-						# any call to a covered function (including patterns
-						# like _exit(covered_func()) ).
-						if (rest ~ /CHILDOP_GRANDCHILD_ENTER/) {
-							covered = 1
-						} else {
-							tmp_rest = rest
-							while (match(tmp_rest,
-							    /([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(/,
-							    arr3)) {
-								if (arr3[1] in covered_funcs) { covered = 1; break }
-								tmp_rest = substr(tmp_rest, RSTART + RLENGTH - 1)
-							}
-						}
-					}
-
-					if (!covered)
-						print file ":" child_if_line
-
-					break   # one child branch per fork() call
+					child_found = 1
+					if (!check_if_body(j, sl2, n))
+						print file ":" j
+					break
 				}
 
 				# Stop if we encounter a new fork() at depth 0.
@@ -330,6 +408,12 @@ while IFS= read -r srcfile; do
 				# Track brace depth for the next iteration.
 				rel_depth += brace_delta(sl2)
 			}
+
+			# If no child branch was found in the scan window, report
+			# the fork site as unparsed so it is visible rather than
+			# silently skipped.
+			if (!child_found)
+				print "UNPARSED:" file ":" i
 		}
 	}
 	' "$srcfile" >> "$tmp_out"
@@ -337,36 +421,93 @@ while IFS= read -r srcfile; do
 done < <(find "$ROOT/childops" -name '*.c' | sort)
 
 # -----------------------------------------------------------------------
-# Count results and enforce ceiling.
+# Regen mode: write the current output as the new baseline.
 # -----------------------------------------------------------------------
-if [ -s "$tmp_out" ]; then
-	total=$(wc -l < "$tmp_out")
-else
-	total=0
-fi
-
-if [ ! -r "$COUNT_BASELINE" ]; then
-	echo "FAIL: $NAME: cannot read count ceiling from $COUNT_BASELINE" >&2
-	exit 1
-fi
-
-frozen=$(tr -d '[:space:]' < "$COUNT_BASELINE")
-if ! [[ "$frozen" =~ ^[0-9]+$ ]]; then
-	echo "FAIL: $NAME: malformed ceiling in $COUNT_BASELINE (got: $frozen)" >&2
-	exit 1
-fi
-
-if [ "$total" -gt "$frozen" ]; then
+if [ "$MODE" = "regen" ]; then
 	{
-		echo "  $NAME: $total uncovered fork child branch(es) (ceiling: $frozen):"
-		sed 's/^/    /' "$tmp_out"
-		echo "  To fix: insert CHILDOP_GRANDCHILD_ENTER() as first statement of each"
-		echo "  child branch body (or at the top of the called worker function)."
-		echo "  See the existing propagation commits for the pattern."
-	} >&2
-	echo "FAIL: $NAME: count regressed ($total > ceiling $frozen)"
+		printf '# childop-grandchild-fork keyed baseline\n'
+		printf '# Each entry is "file:line" (uncovered child branch) or\n'
+		printf '# "UNPARSED:file:line" (fork() site whose child branch the scanner\n'
+		printf '# could not locate).  Regenerated by: %s --regen\n' \
+		       "$(basename "$0")"
+		if [ -s "$tmp_out" ]; then
+			cat "$tmp_out"
+		fi
+	} > "$BASELINE"
+	line_count=$(wc -l < "$BASELINE")
+	echo "REGEN: $NAME: wrote $line_count line(s) to ${BASELINE#"$ROOT"/}"
+	exit 0
+fi
+
+# -----------------------------------------------------------------------
+# Check mode: load keyed baseline and compare.
+# -----------------------------------------------------------------------
+if [ ! -r "$BASELINE" ]; then
+	echo "FAIL: $NAME: cannot read keyed baseline from $BASELINE" >&2
+	echo "  run: bash scripts/check-static/childop-grandchild-fork.sh --regen" >&2
 	exit 1
 fi
 
-echo "PASS: $NAME (uncovered=$total, ceiling=$frozen)"
+declare -A BASELINE_KEYS=()
+while IFS= read -r entry; do
+	[ -z "$entry" ] && continue
+	case "$entry" in \#*) continue ;; esac
+	BASELINE_KEYS["$entry"]=1
+done < "$BASELINE"
+
+# Collect results, classify as new (not in baseline) or seen.
+declare -A SEEN_KEYS=()
+new_findings=()
+
+while IFS= read -r line; do
+	[ -z "$line" ] && continue
+	SEEN_KEYS["$line"]=1
+	if [ -z "${BASELINE_KEYS[$line]+x}" ]; then
+		new_findings+=("$line")
+	fi
+done < "$tmp_out"
+
+# Stale baseline entries: listed but no longer produced by the scanner.
+stale_baseline=()
+for key in "${!BASELINE_KEYS[@]}"; do
+	if [ -z "${SEEN_KEYS[$key]+x}" ]; then
+		stale_baseline+=("$key")
+	fi
+done
+
+if [ "${#stale_baseline[@]}" -gt 0 ]; then
+	{
+		echo "  $NAME: ${#stale_baseline[@]} stale baseline entry/entries"
+		echo "  (listed in baseline but no longer produced by the scanner):"
+		for e in "${stale_baseline[@]}"; do echo "    $e"; done
+		echo "  fix: run  bash scripts/check-static/childop-grandchild-fork.sh --regen"
+		echo "  and commit the updated baseline alongside the code change."
+	} >&2
+	echo "FAIL: $NAME: ${#stale_baseline[@]} stale baseline entry/entries"
+	exit 1
+fi
+
+if [ "${#new_findings[@]}" -gt 0 ]; then
+	{
+		echo "  $NAME: ${#new_findings[@]} new finding(s) not in baseline:"
+		for e in "${new_findings[@]}"; do echo "    $e"; done
+		echo "  For 'file:line' entries:"
+		echo "    insert CHILDOP_GRANDCHILD_ENTER() as the first statement of"
+		echo "    each child branch body (or at the top of the called worker"
+		echo "    function).  See existing propagation commits for the pattern."
+		echo "  For 'UNPARSED:file:line' entries:"
+		echo "    the scanner could not locate a child branch; inspect the"
+		echo "    fork() site and either fix the pattern (assignment form with"
+		echo "    VAR == 0 / !VAR check within 40 lines) or add the entry to"
+		echo "    the baseline if the site is intentionally unscanned."
+		echo "  After resolving or grandfathering all entries, run:"
+		echo "    bash scripts/check-static/childop-grandchild-fork.sh --regen"
+	} >&2
+	echo "FAIL: $NAME: ${#new_findings[@]} new finding(s) not in baseline"
+	exit 1
+fi
+
+total=${#SEEN_KEYS[@]}
+baselined=${#BASELINE_KEYS[@]}
+echo "PASS: $NAME (findings=$total, baselined=$baselined)"
 exit 0
