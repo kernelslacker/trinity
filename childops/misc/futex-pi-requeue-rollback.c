@@ -114,6 +114,7 @@ struct fpr_shared {
 	int requeue_nr;		/* val2 (nr_requeue) for CMP_REQUEUE_PI */
 	pid_t foreign_tid;	/* waiter's tid stored as lock-word owner in privhash arm */
 	unsigned int use_privhash;	/* 1 -> prctl per-mm hash + foreign-tid lock word */
+	unsigned int slot_count;	/* PR_FUTEX_HASH_SET_SLOTS argument drawn by fpr_pick_axes */
 	/* Direct-syscall accumulator: every raw_futex() bumps this
 	 * before entering the kernel, plus the consumer's sched_setattr
 	 * trinity_raw_syscall and the waiter's syscall(__NR_gettid).
@@ -224,13 +225,21 @@ static void fpr_waiter_main(struct fpr_shared *s)
 
 	if (s->use_privhash) {
 		/*
-		 * Allocate a per-mm private hash table; the small slot count
-		 * exercises futex_hash_free() on exit without ballooning
-		 * memory.  Failure is non-fatal: the arm degrades gracefully
-		 * to the shared-hash path.
+		 * Allocate a per-mm private hash table using the pre-drawn
+		 * slot count.  Slot count 0 pivots this mm to the global hash
+		 * (one-way door); other values exercise futex_hash_free() at
+		 * different table sizes without ballooning memory.  Slot count
+		 * 1 is a deliberate -EINVAL probe.  Failure is non-fatal: the
+		 * arm degrades gracefully to the shared-hash path.  -EBUSY
+		 * (mm already pivot-locked) is counted in slots_ebusy so the
+		 * loss is visible in stats rather than silently degrading.
 		 */
 		__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
-		(void)prctl(PR_FUTEX_HASH, PR_FUTEX_HASH_SET_SLOTS, 4);
+		if (prctl(PR_FUTEX_HASH, PR_FUTEX_HASH_SET_SLOTS,
+			  s->slot_count) < 0 && errno == EBUSY)
+			__atomic_add_fetch(
+				&shm->stats.futex_pi_requeue_rollback.slots_ebusy,
+				1, __ATOMIC_RELAXED);
 		/*
 		 * Publish TID so the owner can write it into the lock word
 		 * before calling FUTEX_LOCK_PI.  The owner is in a separate
@@ -304,6 +313,38 @@ static void fpr_consumer_main(struct fpr_shared *s)
 }
 
 /*
+ * Draw PR_FUTEX_HASH_SET_SLOTS argument.
+ *
+ * Value space: {0} ∪ {2, 4, 8, 16, 32, 64, 128, 256} (valid values) plus 1
+ * as a rare deliberate -EINVAL probe.
+ *
+ * Using a 16-outcome draw:
+ *   r == 15        -> 1   (EINVAL probe, ~1/16 of calls)
+ *   r == 13 or 14 -> 0   (global-hash-to-private pivot, ~1/8 of valid draws)
+ *   r in [0,12]   -> valid_slots[r % 8]
+ *
+ * The 0 one-way door: once a mm calls SET_SLOTS(0) it is permanently pinned
+ * to the global hash and every subsequent SET_SLOTS returns -EBUSY.  We
+ * handle this by (a) drawing 0 only ~1/8 of valid use_privhash invocations
+ * so the worker usually retains further hash coverage, and (b) counting
+ * each -EBUSY in shm->stats.futex_pi_requeue_rollback.slots_ebusy so the
+ * loss is visible in the stats output if the door is hit more than expected.
+ */
+static unsigned int fpr_pick_slot_count(void)
+{
+	static const unsigned int valid_slots[] = {
+		2, 4, 8, 16, 32, 64, 128, 256
+	};
+	unsigned int r = rnd_modulo_u32(16);
+
+	if (r == 15)
+		return 1;   /* deliberate -EINVAL probe */
+	if (r >= 13)
+		return 0;   /* global-hash-to-private pivot */
+	return valid_slots[r % ARRAY_SIZE(valid_slots)];
+}
+
+/*
  * Pick per-invocation churn parameters.  Kept in one place so the axes
  * documented at the top of the file all mutate together and the reader
  * can eyeball the value range on a single screen.
@@ -314,6 +355,7 @@ static void fpr_pick_axes(struct fpr_shared *s)
 
 	s->use_private     = rnd_u32() & 1U;
 	s->use_privhash    = s->use_private && (rnd_u32() & 1U) ? 1U : 0U;
+	s->slot_count      = s->use_privhash ? fpr_pick_slot_count() : 0U;
 	s->wait_timeout_ns = (long)(100000 + rnd_modulo_u32(900000));	/* 100us..1ms */
 	s->consumer_policy = policies[rnd_modulo_u32(ARRAY_SIZE(policies))];
 	s->consumer_priority = 1 + (int)rnd_modulo_u32(20);
