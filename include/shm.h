@@ -528,6 +528,9 @@ struct shm_s {
 	bool ip6_tunnel_churn_ns_unsupported;
 	bool ip6_tunnel_churn_ns_unsupported_ip6tnl;
 	bool ip6_tunnel_churn_ns_unsupported_af_packet;
+	/* Latches when RTM_NEWLINK changelink with IFLA_IPTUN_ENCAP_TYPE
+	 * (FOU/GUE) is rejected -- kernel built without CONFIG_NET_FOU. */
+	bool ip6_tunnel_churn_ns_unsupported_fou;
 
 	/* flowtable-encap-vlan grandchild latches (childops/net/netfilter/
 	 * flowtable-encap-vlan.c).  ns_unsupported latches on NEWFLOWTABLE

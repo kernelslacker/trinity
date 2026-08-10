@@ -44,6 +44,17 @@
  *   the shape reliably so a future shared-write detector has
  *   something to observe; today it is coverage-only.
  *
+ * Lane 3 (ip6_tnl_changelink(): encap-hlen/encap TOCTOU vs xmit).
+ *   FOU or GUE encapsulation is installed on the tunnel via RTM_NEWLINK
+ *   changelink with IFLA_IPTUN_ENCAP_TYPE / _FLAGS / _SPORT / _DPORT.
+ *   ip6_tnl_xmit() sizes the outer headroom from t->encap_hlen and
+ *   later builds the encap header from the live t->encap; a concurrent
+ *   ip6_tnl_changelink() writing both fields non-atomically can make
+ *   skb_push() underflow the skb head if the size read is stale by the
+ *   time the build runs.  The arm interleaves changelink calls (varying
+ *   type, sport, dport) with UDPv6 sendmsg bursts through the same
+ *   tunnel so the two code paths race on the encap state.
+ *
  * Config-gated / degrade-to-noop latches (all in shm, all
  * false -> true only, RELAXED atomic load/store idempotent):
  *   ip6_tunnel_churn_ns_unsupported          userns_run_in_ns()
@@ -58,6 +69,10 @@
  *                                            without CONFIG_IPV6_TUNNEL).
  *   ip6_tunnel_churn_ns_unsupported_af_packet  AF_PACKET socket()
  *                                            refused (no CONFIG_PACKET).
+ *   ip6_tunnel_churn_ns_unsupported_fou      RTM_NEWLINK changelink
+ *                                            with IFLA_IPTUN_ENCAP_TYPE
+ *                                            rejected (kernel built
+ *                                            without CONFIG_NET_FOU).
  *
  * Self-bounding: one create + two-lane drive + teardown per outer
  * invocation.  ONE_IN(8) gate keeps per-child cost low.  All I/O is
@@ -112,13 +127,24 @@
 #define IPPROTO_IPV6			41
 #endif
 
-/* Internal lane picker.  One iteration drives both lanes back to back
- * so a single ip6tnl create + teardown covers both bug shapes; the
- * error-lane sender and the xmit-lane listener share the tunnel and
- * the netns via the outer setup helpers. */
+/*
+ * UAPI fallbacks for FOU/GUE encap type constants.  linux/if_tunnel.h
+ * ships the enum on sysroots trinity targets, but a stripped build host
+ * may define only TUNNEL_ENCAP_NONE.  Numeric values match upstream UAPI
+ * (include/uapi/linux/if_tunnel.h, enum tunnel_encap_types).
+ */
+#ifndef TUNNEL_ENCAP_FOU
+#define TUNNEL_ENCAP_FOU		1
+#define TUNNEL_ENCAP_GUE		2
+#endif
+
+/* Internal lane picker.  One iteration drives all lanes back to back
+ * so a single ip6tnl create + teardown covers all bug shapes; each
+ * lane shares the tunnel and the netns via the outer setup helpers. */
 enum ip6_tunnel_lane {
 	CHILDOP_IP6_TUNNEL_LANE_ERR,
 	CHILDOP_IP6_TUNNEL_LANE_XMIT,
+	CHILDOP_IP6_TUNNEL_LANE_ENCAP_CHANGELINK,
 	CHILDOP_IP6_TUNNEL_LANE_NR,
 };
 
@@ -195,6 +221,18 @@ static void mark_ns_unsupported_af_packet(void)
 			 __ATOMIC_RELAXED);
 }
 
+static bool ns_unsupported_fou(void)
+{
+	return __atomic_load_n(&shm->ip6_tunnel_churn_ns_unsupported_fou,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_fou(void)
+{
+	__atomic_store_n(&shm->ip6_tunnel_churn_ns_unsupported_fou, true,
+			 __ATOMIC_RELAXED);
+}
+
 /*
  * RTM_NEWLINK "ip6tnl" carrying IFLA_IPTUN_PROTO=IPPROTO_IPV6
  * (ip6ip6 mode), IFLA_IPTUN_LOCAL/REMOTE = fdaa:6:1::1/::2, and
@@ -239,6 +277,60 @@ static int ip6t_rtnl_create_ip6tnl(struct nl_ctx *rtnl, const char *ifname,
 	if (!off) return -EIO;
 	off = nla_put(buf, off, sizeof(buf), IFLA_IPTUN_PROTO,
 		      &proto, sizeof(proto));
+	if (!off) return -EIO;
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(rtnl, buf, off);
+}
+
+/*
+ * RTM_NEWLINK changelink: update IFLA_IPTUN_ENCAP_TYPE /
+ * IFLA_IPTUN_ENCAP_FLAGS / IFLA_IPTUN_ENCAP_SPORT /
+ * IFLA_IPTUN_ENCAP_DPORT on the live ip6tnl.  Used both to install
+ * encap initially and to race changelink updates against an in-flight
+ * xmit burst.
+ */
+static int ip6t_rtnl_set_encap(struct nl_ctx *rtnl, int tnl_idx,
+			       const char *ifname,
+			       __u16 encap_type, __u16 encap_flags,
+			       __u16 sport, __u16 dport)
+{
+	unsigned char buf[IP6T_BUF];
+	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
+	struct ifinfomsg *ifi;
+	size_t off, li_off, id_off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(rtnl);
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = tnl_idx;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, ifname);
+	if (!off) return -EIO;
+	li_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
+	if (!off) return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "ip6tnl");
+	if (!off) return -EIO;
+	id_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+	if (!off) return -EIO;
+	off = nla_put_u16(buf, off, sizeof(buf), IFLA_IPTUN_ENCAP_TYPE,
+			  encap_type);
+	if (!off) return -EIO;
+	off = nla_put_u16(buf, off, sizeof(buf), IFLA_IPTUN_ENCAP_FLAGS,
+			  encap_flags);
+	if (!off) return -EIO;
+	off = nla_put_u16(buf, off, sizeof(buf), IFLA_IPTUN_ENCAP_SPORT,
+			  sport);
+	if (!off) return -EIO;
+	off = nla_put_u16(buf, off, sizeof(buf), IFLA_IPTUN_ENCAP_DPORT,
+			  dport);
 	if (!off) return -EIO;
 	nla_nest_end(buf, id_off, off);
 	nla_nest_end(buf, li_off, off);
@@ -393,6 +485,7 @@ struct ip6t_iter_ctx {
 	int			tap_fd;
 	int			icmp_fd;
 	int			udp_fd;
+	int			encap_udp_fd;	/* lane 3 UDP socket */
 	bool			tnl_added;
 	struct childdata	*child;
 	/* Accumulates own-body raw-syscall count; published once via
@@ -575,6 +668,100 @@ static void ip6t_iter_lane_xmit(struct ip6t_iter_ctx *ctx)
 }
 
 /*
+ * Phase 4b (lane 3): install FOU/GUE encapsulation on the tunnel via
+ * RTM_NEWLINK changelink, then interleave changelink calls (varying
+ * encap type, sport, dport) with a UDPv6 sendmsg burst through the
+ * tunnel.  This exercises the TOCTOU window in ip6_tnl_xmit() between
+ * the headroom-sizing read of t->encap_hlen (sized by ip6_tnl_changelink
+ * from the new encap) and the header-build read of t->encap: a
+ * concurrent changelink writing both fields non-atomically can make
+ * skb_push() underflow if the size read is stale relative to the
+ * encap that gets built.
+ *
+ * Latches ns_unsupported_fou if the kernel rejects the encap changelink
+ * (CONFIG_NET_FOU not enabled) so subsequent invocations skip the arm.
+ * Gate is independent of the af_packet gate; lane 3 has its own UDP
+ * socket (ctx->encap_udp_fd) so it does not conflict with lane 2.
+ */
+static void ip6t_iter_lane_encap_changelink(struct ip6t_iter_ctx *ctx)
+{
+	struct sockaddr_in6 peer;
+	unsigned char payload[IP6T_XMIT_PAYLOAD_MAX];
+	unsigned int iters, i;
+	__u32 rng;
+	__u16 encap_type, sport, dport;
+	int rc;
+
+	if (ns_unsupported_fou())
+		return;
+
+	/* Choose FOU or GUE randomly for the initial install. */
+	rng = rand32();
+	encap_type = (rng & 1U) ? (__u16)TUNNEL_ENCAP_GUE
+				 : (__u16)TUNNEL_ENCAP_FOU;
+	/* Ports in network byte order; sweep a range so the sport/dport
+	 * combination varies across invocations. */
+	sport = htons(4789U + ((__u16)(rng >>  8) & 0x0fffU));
+	dport = htons(4790U + ((__u16)(rng >> 20) & 0x0fffU));
+
+	/* Install encap on the tunnel before traffic flows through it. */
+	rc = ip6t_rtnl_set_encap(&ctx->rtnl, ctx->tnl_idx, ctx->ifname,
+				  encap_type, 0, sport, dport);
+	ctx->direct_calls++;
+	if (rc != 0) {
+		if (rc == -EOPNOTSUPP  || rc == -EAFNOSUPPORT ||
+		    rc == -EPROTONOSUPPORT || rc == -ENOENT ||
+		    rc == -ENOTSUP)
+			mark_ns_unsupported_fou();
+		return;
+	}
+
+	ctx->encap_udp_fd = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC,
+				   IPPROTO_UDP);
+	ctx->direct_calls++;
+	if (ctx->encap_udp_fd < 0)
+		return;
+
+	memset(&peer, 0, sizeof(peer));
+	peer.sin6_family = AF_INET6;
+	peer.sin6_port   = htons(9);			/* discard */
+	memcpy(&peer.sin6_addr, ip6t_inner_remote, 16);
+
+	iters = IP6T_XMIT_BURST_BASE +
+		rnd_modulo_u32(IP6T_XMIT_BURST_CAP -
+			       IP6T_XMIT_BURST_BASE + 1U);
+	for (i = 0; i < iters; i++) {
+		size_t payload_len;
+		__u32 r2;
+
+		payload_len = 64U + rnd_modulo_u32(
+				IP6T_XMIT_PAYLOAD_MAX - 64U);
+		generate_rand_bytes(payload, payload_len);
+		(void)sendto(ctx->encap_udp_fd, payload, payload_len,
+			     MSG_DONTWAIT,
+			     (struct sockaddr *)&peer, sizeof(peer));
+		ctx->direct_calls++;
+
+		/* Issue a changelink after every other send to race
+		 * ip6_tnl_changelink() against the concurrent
+		 * ip6_tnl_xmit() -- exercises the encap_hlen / encap
+		 * TOCTOU window.  Vary type and ports so the headroom
+		 * delta differs across updates, widening the race. */
+		if ((i & 1U) == 0U) {
+			r2 = rand32();
+			encap_type = (r2 & 1U) ? (__u16)TUNNEL_ENCAP_GUE
+						 : (__u16)TUNNEL_ENCAP_FOU;
+			sport = htons(4789U + ((__u16)(r2 >>  8) & 0x0fffU));
+			dport = htons(4790U + ((__u16)(r2 >> 20) & 0x0fffU));
+			(void)ip6t_rtnl_set_encap(&ctx->rtnl, ctx->tnl_idx,
+						   ctx->ifname, encap_type,
+						   0, sport, dport);
+			ctx->direct_calls++;
+		}
+	}
+}
+
+/*
  * Phase 5: unified teardown.  Runs on every exit path; all fds
  * default to -1 via the designated initialiser.  RTM_DELLINK the
  * tunnel while the rtnl socket is still open so cleanup_net's
@@ -599,6 +786,10 @@ static void ip6t_iter_teardown(struct ip6t_iter_ctx *ctx)
 		ctx->direct_calls++;
 		close(ctx->icmp_fd);
 	}
+	if (ctx->encap_udp_fd >= 0) {
+		ctx->direct_calls++;
+		close(ctx->encap_udp_fd);
+	}
 	if (ctx->rtnl.fd >= 0) {
 		if (ctx->tnl_added && ctx->tnl_idx > 0)
 			(void)rtnl_dellink(&ctx->rtnl, ctx->tnl_idx);
@@ -619,11 +810,12 @@ static int ip6_tunnel_churn_in_ns(void *arg)
 {
 	struct childdata *child = (struct childdata *)arg;
 	struct ip6t_iter_ctx ctx = {
-		.rtnl    = { .fd = -1 },
-		.tap_fd  = -1,
-		.icmp_fd = -1,
-		.udp_fd  = -1,
-		.child   = child,
+		.rtnl         = { .fd = -1 },
+		.tap_fd       = -1,
+		.icmp_fd      = -1,
+		.udp_fd       = -1,
+		.encap_udp_fd = -1,
+		.child        = child,
 	};
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
@@ -640,12 +832,13 @@ static int ip6_tunnel_churn_in_ns(void *arg)
 				   1, __ATOMIC_RELAXED);
 	}
 
-	/* Lane 1 stands alone -- a lane-2 setup failure does not gate
-	 * lane 1, and vice versa.  Both lanes share ctx->rtnl / the
-	 * netns / the tunnel; each lane's fds live in ctx and are
-	 * dropped in the unified teardown regardless of ordering. */
+	/* Lanes are independent -- a failure in one does not gate the
+	 * others.  All lanes share ctx->rtnl / the netns / the tunnel;
+	 * each lane's fds live in ctx and are dropped in the unified
+	 * teardown regardless of ordering. */
 	ip6t_iter_lane_err(&ctx);
 	ip6t_iter_lane_xmit(&ctx);
+	ip6t_iter_lane_encap_changelink(&ctx);
 
 out:
 	ip6t_iter_teardown(&ctx);

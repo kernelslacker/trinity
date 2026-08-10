@@ -16,6 +16,7 @@ childops/net/packet-qdisc-bypass-unanchored-l2.c:fed6db19d692
 include/child.h:b86f2e77a846
 net/socket-family-grammar-alg.c:1c7259d88947
 scripts/check-static/check-runtime-json-output.sh:fa70568f8e3e
+scripts/check-static/childop-grandchild-fork.sh:9add45f15030
 scripts/check-static/json-separator-adjacency.sh:a79d41c36e2b
 scripts/check-static/pdeathsig-getppid-recheck.sh:e8f741787a65
 stats/network/childops.c:aa572518c2bf
