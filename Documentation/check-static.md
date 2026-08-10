@@ -200,6 +200,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
 
   The full rationale and authoritative wording live in the header comment
   of `scripts/check-static/childop-direct-syscall-uncounted.sh`.
+- `childop-grandchild-this-child`: scan every `.c` file under `childops/`
+  for function bodies that (a) assign a local variable from `this_child()`,
+  (b) call `_exit(` — the marker of a grandchild-capable worker — and
+  (c) access a per-process member (`->MEMBER` where MEMBER is not in the
+  fork-invariant set `{op_type, op_nr}`) through that variable.  In a
+  fork()'d grandchild `this_child()` returns the COW-inherited parent
+  slot; reading or writing per-process state through it corrupts the
+  parent's bookkeeping.  See
+  `Documentation/this-child-grandchild-reachability.md` for the full
+  member classification and the safe/unsafe patterns.
 - `childop-stats-writer-registered`: every `.c` file under `childops/`
   that writes `shm->stats.*` counters must have a corresponding
   `CHILD_OP_*` entry in `include/childop.def` whose dispatch function is
