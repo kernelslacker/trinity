@@ -203,12 +203,18 @@ static int fpr_pivot_racer_fn(void *arg)
 		(void)nanosleep(&nap, NULL);
 	}
 
-	__atomic_add_fetch(&ps->direct_syscalls, 1, __ATOMIC_RELAXED);
-	if (prctl(PR_FUTEX_HASH, PR_FUTEX_HASH_SET_SLOTS,
-		  (int)ps->race_slots) < 0 && errno == EBUSY)
-		__atomic_add_fetch(
-			&shm->stats.futex_pi_requeue_rollback.slots_ebusy,
-			1, __ATOMIC_RELAXED);
+	{
+		long ret;
+
+		__atomic_add_fetch(&ps->direct_syscalls, 1, __ATOMIC_RELAXED);
+		ret = trinity_raw_syscall(__NR_prctl, PR_FUTEX_HASH,
+					 PR_FUTEX_HASH_SET_SLOTS,
+					 (long)ps->race_slots, 0L, 0L);
+		if (ret == -EBUSY)
+			__atomic_add_fetch(
+				&shm->stats.futex_pi_requeue_rollback.slots_ebusy,
+				1, __ATOMIC_RELAXED);
+	}
 	_exit(0);
 }
 
