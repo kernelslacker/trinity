@@ -169,9 +169,19 @@ while IFS= read -r srcfile; do
 			# Self-counting check.
 			if (index(code, "childop_direct_syscalls_add") > 0)
 				raw_fn_self_counting = 1
-			if (!raw_fn_self_counting &&
-			    match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/))
-				raw_fn_self_counting = 1
+			if (!raw_fn_self_counting) {
+				# Require an actual increment or publish form:
+				#   __atomic_add_fetch / __atomic_fetch_add on the member,
+				#   __atomic_store_n (thread-publish: store accumulated count),
+				#   post/pre ++ or compound +=.
+				# Plain reads and comparisons (e.g. if (rs->count > 8)) do
+				# NOT qualify and must not silently mask a real gap entry.
+				if ((match(code, /__atomic_(add_fetch|fetch_add|store_n)[[:space:]]*\(/) &&
+				     match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) ||
+				    match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[ \t]*(\+\+|\+=)/) ||
+				    match(code, /\+\+[ \t]*[a-zA-Z_][a-zA-Z0-9_]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) 
+					raw_fn_self_counting = 1
+			}
 			# Track brace depth to find function body end.
 			n = length(code)
 			for (j = 1; j <= n; j++) {
@@ -558,7 +568,49 @@ while IFS= read -r srcfile; do
 					# Non-literal per-site increment: conservative +1
 					fn_tally_count++
 				}
-			} else if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) {
+			} else if (match(code, /__atomic_store_n[[:space:]]*\(/) &&
+			           match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) {
+				# Thread-publish form: __atomic_store_n(&ptr->tally, expr, order).
+				# Used when a pthread worker accumulates into a local counter
+				# and stores the total into a shared struct field for the parent
+				# thread to read after pthread_join().  Parse the second arg
+				# (the stored value) as a mixed literal/accumulator expression,
+				# the same way childop_direct_syscalls_add() is parsed.
+				{
+					tline = code
+					sub(/.*__atomic_store_n[[:space:]]*\([^,]*,/, "", tline)
+					sub(/,[^,]*$/, "", tline)
+					sub(/^[ \t]+/, "", tline)
+					sub(/[ \t]+$/, "", tline)
+					if (tline ~ /^[0-9]+[UuLl]*$/) {
+						fn_tally_count += tline + 0
+					} else if (length(tline) > 0) {
+						mixed_sum = 0
+						etmp = tline
+						while (length(etmp) > 0) {
+							if (match(etmp, /^[0-9]+[UuLl]*/)) {
+								mixed_sum += substr(etmp, RSTART, RLENGTH) + 0
+								etmp = substr(etmp, RSTART + RLENGTH)
+							} else if (match(etmp, /^[a-zA-Z_][a-zA-Z0-9_]*/)) {
+								vn = substr(etmp, RSTART, RLENGTH)
+								if (vn in fn_acc_incr)
+									mixed_sum += fn_acc_incr[vn]
+								etmp = substr(etmp, RSTART + RLENGTH)
+							} else {
+								etmp = substr(etmp, 2)
+							}
+						}
+						fn_tally_count += mixed_sum
+					} else {
+						fn_tally_count++
+					}
+				}
+			} else if (match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[ \t]*(\+\+|\+=|=[^=])/) ||
+			           match(code, /\+\+[ \t]*[a-zA-Z_][a-zA-Z0-9_]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) {
+				# Increment/assignment form only: ->member++, ->member +=,
+				# ->member = N (literal or tracked accumulator), or ++ptr->member.
+				# Plain reads and comparisons (e.g. if (rs->count > 8)) do NOT
+				# qualify and must not silently inflate the tally credit.
 				# Assignment form ->member = N: parse the literal value
 				# or look up a tracked accumulator (e.g. ncalls) rather
 				# than always crediting just +1.  This covers patterns
