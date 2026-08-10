@@ -84,14 +84,16 @@
  * documented 1-in-32.  Each skipped dump is counted into dump_skipped.
  *
  * RTNL_ACK_ORACLE_DRAIN_MAX caps the drain loop for non-dump probes.  We
- * read up to that many messages with MSG_DONTWAIT and stop on NLMSG_ERROR
- * (the explicit ACK path).  NLMSG_DONE cannot belong to our probe because
- * NLM_F_DUMP is excluded from sampling; each DONE terminator is queue
- * pollution from concurrent dump traffic, counted into stale_done.  Ordinary
- * data/multipart messages before a DONE (the payload messages that consume
- * the drain budget) are counted into stale_other.  If the budget is exhausted
- * before NLMSG_ERROR surfaces, the probe books no_reply_exhausted; an early
- * EAGAIN before the budget is consumed books no_reply_clean.
+ * perform up to that many MSG_DONTWAIT recv() calls (datagrams) and stop on
+ * NLMSG_ERROR (the explicit ACK path).  Each datagram may pack multiple
+ * messages; rtnl_oracle_drain() iterates them all with NLMSG_OK/NLMSG_NEXT.
+ * NLMSG_DONE cannot belong to our probe because NLM_F_DUMP is excluded from
+ * sampling; each DONE terminator is queue pollution from concurrent dump
+ * traffic, counted into stale_done.  Ordinary data/multipart messages are
+ * counted into stale_other (per-message, not per-datagram).  If the budget
+ * is exhausted before NLMSG_ERROR surfaces, the probe books
+ * no_reply_exhausted; an early EAGAIN before the budget is consumed books
+ * no_reply_clean.
  */
 #include <errno.h>
 #include <sys/socket.h>
@@ -107,8 +109,13 @@
 #define RTNL_ACK_ORACLE_SAMPLE_RATE	32
 
 /*
- * Maximum MSG_DONTWAIT recvs per probe.  Non-dump probes should see their
- * NLMSG_ERROR in at most one or two recvs; the cap exists as a safety bound.
+ * Maximum MSG_DONTWAIT recvs (datagrams) per probe.  Each recv() may carry
+ * more than one nlmsghdr; the inner NLMSG_OK/NLMSG_NEXT loop classifies
+ * every message in the datagram before the outer loop moves to the next
+ * recv().  DRAIN_MAX therefore caps datagrams, not individual messages.
+ * Non-dump probes should see their NLMSG_ERROR in at most one or two
+ * datagrams; the cap exists as a safety bound against spinning on a
+ * socket with a long queue of stale replies from earlier dump traffic.
  */
 #define RTNL_ACK_ORACLE_DRAIN_MAX	8
 
@@ -240,9 +247,10 @@ void rtnl_oracle_abort(void)
  */
 void rtnl_oracle_drain(int fd, int send_ok)
 {
-	unsigned char rbuf[512];
+	unsigned char rbuf[4096];
 	struct nlmsghdr *nlh;
 	struct nlmsgerr *err;
+	unsigned int nleft;
 	ssize_t n;
 	int e, grp, i;
 
@@ -268,65 +276,97 @@ void rtnl_oracle_drain(int fd, int send_ok)
 	}
 
 	/*
-	 * Drain up to DRAIN_MAX messages with MSG_DONTWAIT.  Stop on
-	 * NLMSG_ERROR (the ACK path for non-dump probes).  NLMSG_DONE
-	 * cannot be attributed to our probe because NLM_F_DUMP is excluded
-	 * from sampling (see rtnl_oracle_sample()); each DONE terminator is
-	 * counted into stale_done.  Ordinary data/multipart payload messages
-	 * that appear before the DONE are counted into stale_other — these
-	 * are the messages that actually consume the drain budget.  If the
-	 * budget is exhausted without seeing NLMSG_ERROR the probe books
-	 * no_reply_exhausted; an early EAGAIN books no_reply_clean.
+	 * Drain up to DRAIN_MAX datagrams (recv() calls) with MSG_DONTWAIT.
+	 * Each recv() may return a datagram containing multiple nlmsghdr
+	 * messages packed end-to-end; the inner NLMSG_OK/NLMSG_NEXT loop
+	 * classifies every message in the datagram before the outer loop
+	 * moves on to the next recv().
+	 *
+	 * DRAIN_MAX therefore caps recv() calls (datagrams), not individual
+	 * messages.  This avoids silently discarding an NLMSG_ERROR ACK that
+	 * happens to be packed behind a data message in the same datagram
+	 * — a situation that caused the outer loop to classify by the first
+	 * header only, drop the ACK, and book no_reply instead.
+	 *
+	 * MSG_TRUNC is added so that datagrams larger than rbuf are flagged:
+	 * recv() returns the wire length rather than sizeof(rbuf) when the
+	 * datagram was clipped.  We do not act on truncation beyond detecting
+	 * it; the NLMSG_OK/NLMSG_NEXT walk naturally stops at the last
+	 * complete header within the received bytes.
+	 *
+	 * Stop on NLMSG_ERROR (the ACK path for non-dump probes).
+	 * NLMSG_DONE cannot be attributed to our probe because NLM_F_DUMP is
+	 * excluded from sampling (see rtnl_oracle_sample()); each DONE
+	 * terminator is counted into stale_done.  Ordinary data/multipart
+	 * payload messages are counted into stale_other — per-message, not
+	 * per-datagram.  If the budget is exhausted without seeing NLMSG_ERROR
+	 * the probe books no_reply_exhausted; an early EAGAIN books
+	 * no_reply_clean.
 	 */
 	for (i = 0; i < RTNL_ACK_ORACLE_DRAIN_MAX; i++) {
-		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
+		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT | MSG_TRUNC);
 		if (n < 0)
 			goto out_noreply; /* EAGAIN or real error */
 
 		if ((size_t)n < NLMSG_HDRLEN)
-			continue; /* undersized — skip, keep draining */
+			continue; /* undersized datagram — skip, keep draining */
 
-		nlh = (struct nlmsghdr *)(void *)rbuf;
-
-		if (nlh->nlmsg_type == NLMSG_DONE) {
-			/*
-			 * NLMSG_DONE from an unsampled dump in the queue.
-			 * NLM_F_DUMP is excluded from sampling so this message
-			 * cannot belong to our probe; correlating it by
-			 * nlh->nlmsg_seq would be meaningless.  Track the queue
-			 * pollution and continue looking for our NLMSG_ERROR.
-			 */
-			__atomic_add_fetch(
-				&shm->stats.rtnl_ack_oracle.stale_done,
-				1, __ATOMIC_RELAXED);
-			continue;
-		}
-
-		if (nlh->nlmsg_type != NLMSG_ERROR) {
-			/* data or multipart payload — consumes drain budget */
-			__atomic_add_fetch(
-				&shm->stats.rtnl_ack_oracle.stale_other,
-				1, __ATOMIC_RELAXED);
-			continue;
-		}
-
-		/* Found NLMSG_ERROR: extract error code */
-		if ((size_t)n < NLMSG_HDRLEN + sizeof(struct nlmsgerr))
-			goto out_noreply; /* truncated ACK */
-
-		err = (struct nlmsgerr *)NLMSG_DATA(nlh);
 		/*
-		 * Correlate by sequence number: the NLMSG_ERROR payload
-		 * echoes the original nlmsghdr, whose nlmsg_seq must match
-		 * the one we recorded at sample time.  A mismatch means
-		 * this reply belongs to a different (unsampled) message
-		 * that happened to have NLM_F_ACK set; treat it as stale
-		 * and keep draining.
+		 * Clamp nleft to the bytes we actually received (sizeof(rbuf)
+		 * at most).  When MSG_TRUNC causes recv() to return the wire
+		 * length (n > sizeof(rbuf)) we must not walk beyond the buffer;
+		 * the inner NLMSG_OK check naturally stops at the last complete
+		 * header within the received bytes.
 		 */
-		if (err->msg.nlmsg_seq != oracle_state.nlmsg_seq)
-			continue; /* stale — drain and look for our reply */
-		e   = err->error; /* 0 on success, negated errno on failure */
-		goto got_ack;
+		nleft = (unsigned int)((size_t)n <= sizeof(rbuf)
+				       ? (size_t)n : sizeof(rbuf));
+
+		/*
+		 * Walk every message packed into this datagram.
+		 */
+		for (nlh = (struct nlmsghdr *)(void *)rbuf;
+		     NLMSG_OK(nlh, nleft);
+		     nlh = NLMSG_NEXT(nlh, nleft)) {
+
+			if (nlh->nlmsg_type == NLMSG_DONE) {
+				/*
+				 * NLMSG_DONE from an unsampled dump in the
+				 * queue.  NLM_F_DUMP is excluded from sampling
+				 * so this cannot belong to our probe.
+				 */
+				__atomic_add_fetch(
+					&shm->stats.rtnl_ack_oracle.stale_done,
+					1, __ATOMIC_RELAXED);
+				continue;
+			}
+
+			if (nlh->nlmsg_type != NLMSG_ERROR) {
+				/* data or multipart payload message */
+				__atomic_add_fetch(
+					&shm->stats.rtnl_ack_oracle.stale_other,
+					1, __ATOMIC_RELAXED);
+				continue;
+			}
+
+			/* Found NLMSG_ERROR: check payload is intact */
+			if (nlh->nlmsg_len < NLMSG_HDRLEN + sizeof(struct nlmsgerr))
+				goto out_noreply; /* truncated ACK */
+
+			err = (struct nlmsgerr *)NLMSG_DATA(nlh);
+			/*
+			 * Correlate by sequence number: the NLMSG_ERROR
+			 * payload echoes the original nlmsghdr, whose
+			 * nlmsg_seq must match the one we recorded at sample
+			 * time.  A mismatch means this reply belongs to a
+			 * different (unsampled) message that happened to have
+			 * NLM_F_ACK set; treat it as stale and keep draining.
+			 */
+			if (err->msg.nlmsg_seq != oracle_state.nlmsg_seq)
+				continue; /* stale — keep looking */
+
+			e = err->error; /* 0 on success, negated errno on failure */
+			goto got_ack;
+		}
 	}
 	/* Exhausted the drain limit without seeing NLMSG_ERROR */
 	goto out_noreply;

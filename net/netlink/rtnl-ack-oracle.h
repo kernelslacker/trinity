@@ -34,10 +34,12 @@ void rtnl_oracle_abort(void);
  * real sendmsg syscall has returned.
  *
  * If rtnl_oracle_sample() marked this message for sampling it performs
- * up to RTNL_ACK_ORACLE_DRAIN_MAX MSG_DONTWAIT recvs on @fd looking for
- * NLMSG_ERROR, then classifies the kernel's verdict into the per-outcome
- * histogram in shm->stats.rtnl_ack_oracle.  Returns immediately (< 1 us)
- * if the message was not sampled.
+ * up to RTNL_ACK_ORACLE_DRAIN_MAX MSG_DONTWAIT|MSG_TRUNC recv() calls on
+ * @fd.  Each datagram may contain multiple messages; every message is
+ * walked with NLMSG_OK/NLMSG_NEXT looking for NLMSG_ERROR, then the
+ * kernel's verdict is classified into the per-outcome histogram in
+ * shm->stats.rtnl_ack_oracle.  Returns immediately (< 1 us) if the
+ * message was not sampled.
  *
  * @fd:      the fuzz socket fd on which sendmsg was just called.
  * @send_ok: 1 if sendmsg returned >= 0 (message reached kernel),
