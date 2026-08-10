@@ -73,6 +73,16 @@
  * on a socket with a running dump advancing cb_running state so the next
  * recv on that fd continues the stale dump.
  *
+ * Crucially, rtnl_oracle_sample() rolls counter back by one on the
+ * NLM_F_DUMP return so the budget slot is not consumed: the next eligible
+ * (non-dump) message fires the gate.  Without this correction, counter
+ * sits at a multiple of SAMPLE_RATE after the return; the next increment
+ * moves it off zero, and no probe fires for the full following period.
+ * gen_nlmsg_flags() sets NLM_F_DUMP on a bare RAND_BOOL(), so roughly
+ * half of every period's single slot would be silently lost — halving the
+ * effective rate to ~1-in-64.  The correction keeps the rate at the
+ * documented 1-in-32.  Each skipped dump is counted into dump_skipped.
+ *
  * RTNL_ACK_ORACLE_DRAIN_MAX caps the drain loop for non-dump probes.  We
  * read up to that many messages with MSG_DONTWAIT and stop on NLMSG_ERROR
  * (the explicit ACK path).  NLMSG_DONE cannot belong to our probe because
@@ -146,10 +156,20 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 	 * __netlink_dump_start() returns -EINTR to suppress the ACK even
 	 * when NLM_F_ACK is set, so sampling a dump yields no drainable
 	 * reply and leaves cb_running advanced across drain iterations.
-	 * Skip NLM_F_DUMP messages entirely.
+	 *
+	 * Roll the counter back before returning so the budget slot is not
+	 * wasted: counter-- leaves it at (SAMPLE_RATE-1) mod SAMPLE_RATE,
+	 * and the next non-dump increment brings it to 0 mod SAMPLE_RATE,
+	 * firing the gate for the next eligible message.  Identical to the
+	 * counter correction in rtnl_oracle_abort();
+	 * bc919ef76769 ("net/netlink: rtnl_oracle_abort steps sample counter back by one").
 	 */
-	if (nlh->nlmsg_flags & NLM_F_DUMP)
+	if (nlh->nlmsg_flags & NLM_F_DUMP) {
+		oracle_state.counter--;
+		__atomic_add_fetch(&shm->stats.rtnl_ack_oracle.dump_skipped,
+				   1, __ATOMIC_RELAXED);
 		return;
+	}
 
 	/*
 	 * Request an ACK from the kernel.  OR-in rather than assign so

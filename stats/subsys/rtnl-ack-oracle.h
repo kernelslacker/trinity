@@ -29,6 +29,7 @@ struct rtnl_ack_oracle_stats {
 	unsigned long send_fail;    /* sendmsg() returned -1: message never left userspace */
 	unsigned long no_reply;	    /* recv returned EAGAIN or bad framing  */
 	unsigned long stale_drained; /* NLMSG_DONE seen from unsampled dump traffic; drained and skipped */
+	unsigned long dump_skipped;  /* NLM_F_DUMP set; sampling skipped, slot returned to next eligible message */
 	/*
 	 * Per-RTM-group accepted counter.
 	 * index = (nlmsg_type - RTM_BASE) / 4; index in [0, MAX_GROUPS).

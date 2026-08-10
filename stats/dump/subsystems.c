@@ -165,7 +165,7 @@ static void dump_stats_render_rtnl_ack_oracle(void)
 
 	if (!o->accepted && !o->einval && !o->erange &&
 	    !o->eopnotsupp && !o->eperm && !o->other &&
-	    !o->send_fail && !o->no_reply && !o->stale_drained)
+	    !o->send_fail && !o->no_reply && !o->stale_drained && !o->dump_skipped)
 		return;
 
 	stat_row("rtnl_ack_oracle", "accepted",      o->accepted);
@@ -177,6 +177,7 @@ static void dump_stats_render_rtnl_ack_oracle(void)
 	stat_row("rtnl_ack_oracle", "send_fail",     o->send_fail);
 	stat_row("rtnl_ack_oracle", "no_reply",      o->no_reply);
 	stat_row("rtnl_ack_oracle", "stale_drained", o->stale_drained);
+	stat_row("rtnl_ack_oracle", "dump_skipped",  o->dump_skipped);
 
 	/* Per-RTM-group accepted counts: emit only non-zero entries.
 	 * group 0 = RTM_NEW/DEL/GET/SETLINK, group 1 = *ADDR, etc. */
