@@ -114,7 +114,7 @@
  * freshly created mm so -EBUSY cannot occur there.  The racers may still
  * see -EBUSY from each other (one wins, the other is then -EBUSY on the
  * same child mm); those are counted in slots_ebusy for visibility.
- * fpr_pick_slot_count() still draws 0 with ~1/8 probability to exercise
+ * fpr_pick_slot_count() still draws 0 with ~1/9 probability to exercise
  * the global-hash pivot path inside the throwaway mm.
  *
  * Structural note: this arm is self-contained and mutually exclusive with
@@ -546,34 +546,27 @@ child_out:
 /*
  * Draw PR_FUTEX_HASH_SET_SLOTS argument.
  *
- * Value space: {0} ∪ {2, 4, 8, 16, 32, 64, 128, 256} (valid values) plus 1
- * as a rare deliberate -EINVAL probe.
+ * Value space: {0} ∪ {2, 4, 8, 16, 32, 64, 128, 256}.
  *
- * Using a 16-outcome draw:
- *   r == 15        -> 1   (EINVAL probe, ~1/16 of calls)
- *   r == 13 or 14 -> 0   (global-hash-to-private pivot, ~1/8 of valid draws)
- *   r in [0,12]   -> valid_slots[r % 8]
+ * Using a 9-outcome draw (r in [0,8]):
+ *   r == 0       -> 0       (global-hash-to-private pivot, ~1/9 of calls)
+ *   r in [1,8]   -> 1u<<r  (valid power-of-two: 2..256)
  *
  * The 0 one-way door: once a mm calls SET_SLOTS(0) it is permanently pinned
  * to the global hash and every subsequent SET_SLOTS returns -EBUSY.  Because
  * fpr_run_pivot_race() now forks a throwaway orchestrator, the door closes
  * only in the disposable mm so subsequent invocations start with a virgin
- * mm->futex.phash.  Drawing 0 with ~1/8 probability still exercises the
+ * mm->futex.phash.  Drawing 0 with ~1/9 probability still exercises the
  * global-hash pivot path; -EBUSY from racer siblings racing on the same
  * child mm is counted in slots_ebusy for visibility.
  */
 static unsigned int fpr_pick_slot_count(void)
 {
-	static const unsigned int valid_slots[] = {
-		2, 4, 8, 16, 32, 64, 128, 256
-	};
-	unsigned int r = rnd_modulo_u32(16);
+	unsigned int r = rnd_modulo_u32(9);
 
-	if (r == 15)
-		return 1;   /* deliberate -EINVAL probe */
-	if (r >= 13)
-		return 0;   /* global-hash-to-private pivot */
-	return valid_slots[r % ARRAY_SIZE(valid_slots)];
+	if (r == 0)
+		return 0U;  /* global-hash-to-private pivot */
+	return 1U << r; /* valid power-of-two: {2, 4, 8, 16, 32, 64, 128, 256} */
 }
 
 /*
@@ -586,10 +579,10 @@ static void fpr_pick_axes(struct fpr_shared *s)
 	static const int policies[] = { SCHED_FIFO, SCHED_RR, SCHED_OTHER };
 
 	s->use_private     = rnd_u32() & 1U;
-	s->use_privhash    = s->use_private && (rnd_u32() & 1U) ? 1U : 0U;
+	s->use_privhash    = (rnd_u32() & 1U) ? 1U : 0U;
 	/*
 	 * slot_count is the prctl argument the CLONE_VM racers use.  Drawn via
-	 * fpr_pick_slot_count() which returns 0 (~1/8 probability) for the
+	 * fpr_pick_slot_count() which returns 0 (~1/9 probability) for the
 	 * global-hash pivot path and a valid power-of-two otherwise.  Only
 	 * meaningful when use_privhash is set.
 	 */
