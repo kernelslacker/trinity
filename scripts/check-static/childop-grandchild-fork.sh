@@ -296,6 +296,9 @@ while IFS= read -r srcfile; do
 	END {
 		n = NR
 		delete covered_funcs
+		scanned  = 0
+		located  = 0
+		unparsed = 0
 
 		# ============================================================
 		# Pass 1: find functions whose first real statement is the
@@ -369,11 +372,14 @@ while IFS= read -r srcfile; do
 			if (!is_assign && !is_cond)
 				continue
 
+			scanned++
+
 			# --------------------------------------------------------
 			# Direct conditional: if (fork() == 0) or if (!fork()).
 			# The fork site IS the child branch at line i.
 			# --------------------------------------------------------
 			if (is_cond) {
+				located++
 				if (!check_if_body(i, sl, n))
 					print file ":" i
 				continue
@@ -434,6 +440,7 @@ while IFS= read -r srcfile; do
 
 				if (is_child) {
 					child_found = 1
+					located++
 					if (!check_if_body(j, sl2, n))
 						print file ":" j
 					break
@@ -449,13 +456,29 @@ while IFS= read -r srcfile; do
 			# If no child branch was found in the scan window, report
 			# the fork site as unparsed so it is visible rather than
 			# silently skipped.
-			if (!child_found)
+			if (!child_found) {
+				unparsed++
 				print "UNPARSED:" file ":" i
+			}
 		}
+
+		# Emit per-file census for shell aggregation.
+		printf "__CENSUS__ %d %d %d\n", scanned, located, unparsed
 	}
 	' "$srcfile" >> "$tmp_out"
 
 done < <(find "$ROOT" -name '*.c' | sort)
+
+# Aggregate per-file census lines emitted by gawk (__CENSUS__ scanned located unparsed).
+total_scanned=0; total_located=0; total_unparsed=0
+while IFS=' ' read -r _tag _s _l _u; do
+	[[ "$_tag" == "__CENSUS__" ]] || continue
+	(( total_scanned  += _s )) || true
+	(( total_located  += _l )) || true
+	(( total_unparsed += _u )) || true
+done < "$tmp_out"
+# Strip census lines before further processing.
+grep -v '^__CENSUS__ ' "$tmp_out" > "${tmp_out}.nc" && mv "${tmp_out}.nc" "$tmp_out"
 
 # Filter out allowlisted findings (audited non-grandchild sites).
 # For UNPARSED entries strip the "UNPARSED:" prefix before lookup --
@@ -558,5 +581,22 @@ fi
 
 total=${#SEEN_KEYS[@]}
 baselined=${#BASELINE_KEYS[@]}
-echo "PASS: $NAME (findings=$total, baselined=$baselined)"
+
+# Census invariant: every scanned fork() site must be either located
+# (inner scan found the child branch) or unparsed (emitted UNPARSED:).
+# A mismatch means the scanner encountered a fork() form it could
+# neither classify nor report, silently dropping coverage.
+if (( total_located + total_unparsed != total_scanned )); then
+	{
+		echo "  $NAME: census invariant violated"
+		echo "    scanned=$total_scanned located=$total_located unparsed=$total_unparsed"
+		echo "    unaccounted=$(( total_scanned - total_located - total_unparsed )) site(s)"
+		echo "  A new unrecognised fork() form may have been introduced."
+		echo "  Check pass-2 fork-site classification in the gawk block."
+	} >&2
+	echo "FAIL: $NAME: census invariant violated (scanned=$total_scanned located=$total_located unparsed=$total_unparsed)"
+	exit 1
+fi
+
+echo "PASS: $NAME (findings=$total, baselined=$baselined, scanned=$total_scanned, located=$total_located, unparsed=$total_unparsed)"
 exit 0
