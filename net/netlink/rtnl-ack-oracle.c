@@ -305,8 +305,17 @@ void rtnl_oracle_drain(int fd, int send_ok)
 	 * no_reply_clean.  A truncated NLMSG_ERROR (framing failure) is counted
 	 * into bad_framing and does not touch no_reply_clean.
 	 */
-	/* All recv() arms that consume a budget slot increment at least one
-	 * stale_* counter; no drain-loop path is deliberately uncounted. */
+	/*
+	 * Every recv() that consumes a budget slot now increments at least
+	 * one counter: stale_truncated records MSG_TRUNC clips, stale_unparsed
+	 * catches datagrams whose first NLMSG_OK fails (e.g. oversized
+	 * single-message RTM_NEWLINK with IFLA_VFINFO_LIST clipped to 4096
+	 * bytes), and the remaining stale_* counters cover the inner-loop
+	 * paths.  A slot that reaches the end of the outer body without any
+	 * stale_* increment means the inner loop ran but every message fell
+	 * through to got_ack — which terminates the function before the
+	 * outer loop continues.
+	 */
 	for (i = 0; i < RTNL_ACK_ORACLE_DRAIN_MAX; i++) {
 		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT | MSG_TRUNC);
 		if (n < 0)
@@ -325,6 +334,19 @@ void rtnl_oracle_drain(int fd, int send_ok)
 		}
 
 		/*
+		 * MSG_TRUNC: recv() returned the wire length rather than the
+		 * number of bytes copied.  Count it so the flag is visible in
+		 * stats; we still attempt the NLMSG_OK walk over the received
+		 * bytes (clamped below) because a partial datagram may still
+		 * contain a complete NLMSG_ERROR if the probe reply arrived
+		 * with other messages appended after the ACK payload.
+		 */
+		if ((size_t)n > sizeof(rbuf))
+			__atomic_add_fetch(
+				&shm->stats.rtnl_ack_oracle.stale_truncated,
+				1, __ATOMIC_RELAXED);
+
+		/*
 		 * Clamp nleft to the bytes we actually received (sizeof(rbuf)
 		 * at most).  When MSG_TRUNC causes recv() to return the wire
 		 * length (n > sizeof(rbuf)) we must not walk beyond the buffer;
@@ -338,10 +360,18 @@ void rtnl_oracle_drain(int fd, int send_ok)
 
 		/*
 		 * Walk every message packed into this datagram.
+		 * inner_loop_ran is set to 1 on the first iteration so we can
+		 * detect the case where NLMSG_OK fails immediately (e.g. an
+		 * oversized single message clipped to 4096 bytes whose header
+		 * indicates a longer payload) and count that uncounted budget
+		 * slot into stale_unparsed.
 		 */
+		{
+		int inner_loop_ran = 0;
 		for (nlh = (struct nlmsghdr *)(void *)rbuf;
 		     NLMSG_OK(nlh, nleft);
 		     nlh = NLMSG_NEXT(nlh, nleft)) {
+			inner_loop_ran = 1;
 
 			if (nlh->nlmsg_type == NLMSG_DONE) {
 				/*
@@ -394,6 +424,11 @@ void rtnl_oracle_drain(int fd, int send_ok)
 			e = err->error; /* 0 on success, negated errno on failure */
 			goto got_ack;
 		}
+		if (!inner_loop_ran)
+			__atomic_add_fetch(
+				&shm->stats.rtnl_ack_oracle.stale_unparsed,
+				1, __ATOMIC_RELAXED);
+		} /* end inner block */
 	}
 	/* Exhausted the drain limit without seeing NLMSG_ERROR */
 	goto out_noreply;

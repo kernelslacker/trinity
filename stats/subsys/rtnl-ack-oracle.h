@@ -36,6 +36,10 @@ struct rtnl_ack_oracle_stats {
 	unsigned long stale_foreign_ack; /* NLMSG_ERROR whose nlmsg_seq does not match our probe;       */
 				   /* a rising rate signals another fd path is requesting NLM_F_ACK */
 	unsigned long stale_undersized;  /* datagram shorter than NLMSG_HDRLEN; cannot begin parsing    */
+	unsigned long stale_truncated;   /* datagram wire length > rbuf (MSG_TRUNC clipped); counted     */
+				  /* before the NLMSG_OK walk; walk still attempts the received bytes */
+	unsigned long stale_unparsed;    /* recv() succeeded but first NLMSG_OK failed; budget slot      */
+				  /* consumed without any stale_* inner-loop counter firing          */
 	unsigned long dump_skipped;  /* NLM_F_DUMP set; sampling skipped, slot returned to next eligible message */
 	/*
 	 * Per-RTM-group accepted counter.

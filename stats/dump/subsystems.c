@@ -172,6 +172,7 @@ static void dump_stats_render_rtnl_ack_oracle(void)
 	    !o->bad_framing &&
 	    !o->stale_done && !o->stale_other &&
 	    !o->stale_foreign_ack && !o->stale_undersized &&
+	    !o->stale_truncated && !o->stale_unparsed &&
 	    !o->dump_skipped)
 		return;
 
@@ -189,6 +190,8 @@ static void dump_stats_render_rtnl_ack_oracle(void)
 	stat_row("rtnl_ack_oracle", "stale_other",        o->stale_other);
 	stat_row("rtnl_ack_oracle", "stale_foreign_ack",  o->stale_foreign_ack);
 	stat_row("rtnl_ack_oracle", "stale_undersized",   o->stale_undersized);
+	stat_row("rtnl_ack_oracle", "stale_truncated",    o->stale_truncated);
+	stat_row("rtnl_ack_oracle", "stale_unparsed",     o->stale_unparsed);
 	stat_row("rtnl_ack_oracle", "dump_skipped",       o->dump_skipped);
 
 	/* Per-RTM-group accepted counts: emit only non-zero entries.

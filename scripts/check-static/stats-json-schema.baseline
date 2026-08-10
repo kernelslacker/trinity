@@ -214,6 +214,8 @@ stats	object
     stats.rtnl_ack_oracle.stale_other	u64
     stats.rtnl_ack_oracle.stale_foreign_ack	u64
     stats.rtnl_ack_oracle.stale_undersized	u64
+    stats.rtnl_ack_oracle.stale_truncated	u64
+    stats.rtnl_ack_oracle.stale_unparsed	u64
     stats.rtnl_ack_oracle.bad_framing	u64
     stats.rtnl_ack_oracle.dump_skipped	u64
   stats.tracefs_fuzzer	object
