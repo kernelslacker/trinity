@@ -251,7 +251,7 @@ void rtnl_oracle_drain(int fd, int send_ok)
 	unsigned char rbuf[4096];
 	struct nlmsghdr *nlh;
 	struct nlmsgerr *err;
-	unsigned int nleft;
+	int nleft;
 	ssize_t n;
 	int e, grp, i;
 
@@ -328,11 +328,13 @@ void rtnl_oracle_drain(int fd, int send_ok)
 		 * Clamp nleft to the bytes we actually received (sizeof(rbuf)
 		 * at most).  When MSG_TRUNC causes recv() to return the wire
 		 * length (n > sizeof(rbuf)) we must not walk beyond the buffer;
-		 * the inner NLMSG_OK check naturally stops at the last complete
-		 * header within the received bytes.
+		 * the walk stays safe because kernel netlink messages are
+		 * 4-byte aligned (__nlmsg_put() uses NLMSG_ALIGN), so nleft
+		 * stays ≡ 0 mod 4 and NLMSG_ALIGN(nlmsg_len) <= nleft whenever
+		 * nlmsg_len <= nleft — NLMSG_NEXT never overshoots.
 		 */
-		nleft = (unsigned int)((size_t)n <= sizeof(rbuf)
-				       ? (size_t)n : sizeof(rbuf));
+		nleft = (int)((size_t)n <= sizeof(rbuf)
+			      ? (size_t)n : sizeof(rbuf));
 
 		/*
 		 * Walk every message packed into this datagram.
