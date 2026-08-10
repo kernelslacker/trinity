@@ -119,7 +119,7 @@
 /* Magic ORed into sequence numbers to distinguish "never written" (0). */
 #define SEQNO_MAGIC		0xA5A50000U
 /* Maximum busy-poll loops when joining variant-3 thread. */
-#define V3_JOIN_LOOPS		200
+#define V3_JOIN_LOOPS		20	/* 20 × 5 ms = 100 ms, well inside alarm(1) */
 /* Nanoseconds between V3 join polls. */
 #define V3_JOIN_SLEEP_NS	5000000L	/* 5 ms */
 
