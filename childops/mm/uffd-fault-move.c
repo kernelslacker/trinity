@@ -846,14 +846,17 @@ cleanup_v1:
 				break;
 			nanosleep(&ts, NULL);
 		}
+		if (spin >= V3_JOIN_LOOPS)
+			return; /* worker still live: leak mappings, skip munmap */
 		/* Restore signal dispositions installed by v1_fault_thread.
 		 * sigaction() is process-wide; must be undone here so the next
 		 * childop invocation sees the expected disposition.
-		 * ctx is static storage so old_sa_* are always readable. */
+		 * ctx is static storage so old_sa_* are always readable.
+		 * Must come AFTER the leak-path check above: on the leak path
+		 * the worker is still live and its sigsetjmp escape depends on
+		 * the handler remaining installed. */
 		sigaction(SIGBUS,  &ctx.old_sa_bus,  NULL);
 		sigaction(SIGSEGV, &ctx.old_sa_segv, NULL);
-		if (spin >= V3_JOIN_LOOPS)
-			return; /* worker still live: leak mappings, skip munmap */
 	}
 
 	munmap(src_pages, len);
@@ -1465,15 +1468,18 @@ cleanup_v3:
 				break;
 			nanosleep(&ts, NULL);
 		}
+		if (spin >= V3_JOIN_LOOPS)
+			return; /* worker still live: leak mappings, skip cleanup */
 		/*
 		 * Restore signal dispositions — sigaction() is process-wide,
 		 * not per-thread; must be undone before this childop returns.
 		 * fctx is static storage so old_sa_* are always readable.
+		 * Must come AFTER the leak-path check above: on the leak path
+		 * the worker is still live and its sigsetjmp escape depends on
+		 * the handler remaining installed.
 		 */
 		sigaction(SIGSEGV, &fctx.old_sa_segv, NULL);
 		sigaction(SIGBUS,  &fctx.old_sa_bus,  NULL);
-		if (spin >= V3_JOIN_LOOPS)
-			return; /* worker still live: leak mappings, skip cleanup */
 	}
 
 	/* Unconditional cleanup in case teardown action left things partial. */
