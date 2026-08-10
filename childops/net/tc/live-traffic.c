@@ -116,6 +116,17 @@
 #define TCA_MATCHALL_FLAGS	3
 #endif
 
+/* TCA_CHAIN selects a non-zero chain on RTM_NEWTFILTER.  Kernel UAPI
+ * value is stable at 11 across all supported kernel versions. */
+#ifndef TCA_CHAIN
+#define TCA_CHAIN		11
+#endif
+
+/* Index of the secondary TC chain installed to give TC_ACT_GOTO_CHAIN
+ * a real target.  The chain is auto-created by the kernel when the
+ * first filter referencing it is installed; no RTM_NEWCHAIN needed. */
+#define GOTO_CHAIN_IDX		1U
+
 #ifndef TCA_BPF_UNSPEC
 #define TCA_BPF_UNSPEC		0
 #define TCA_BPF_ACT		1
@@ -156,6 +167,13 @@
 #ifndef TC_ACT_PIPE
 #define TC_ACT_PIPE		3
 #define TC_ACT_STOLEN		4
+#endif
+#ifndef TC_ACT_EXT_SHIFT
+#define TC_ACT_EXT_SHIFT	28
+#endif
+#ifndef TC_ACT_GOTO_CHAIN
+/* Bit 29 marks the goto-chain ext family; lower 28 bits carry chain index. */
+#define TC_ACT_GOTO_CHAIN	0x20000000U
 #endif
 
 /* IFLA_XDP nested attribute + SKB-mode flag; matches the definitions
@@ -561,18 +579,30 @@ static size_t emit_action_nest(unsigned char *buf, size_t off, size_t cap,
  * classifier walk against the delete-on-replace behaviour that fires
  * when tcm_info matches an installed filter.
  */
-static int build_matchall_mirred(struct nl_ctx *ctx, int ifindex,
-				 int peer_ifindex, __u32 prio,
-				 bool egress)
+
+/*
+ * RTM_NEWTFILTER matchall on ingress chain GOTO_CHAIN_IDX with a single
+ * gact action whose verdict is TC_ACT_GOTO_CHAIN|GOTO_CHAIN_IDX.  Installing
+ * this action causes the kernel to resolve and stash a goto_chain pointer on
+ * the action struct (a->goto_chain).  The concurrent replace churn
+ * (build_delfilter + build_matchall_gotochain) clears that pointer from under
+ * the two independent reads in tcf_action_exec(), which is exactly the TOCTOU
+ * window targeted by the upstream fix.
+ *
+ * The second chain (GOTO_CHAIN_IDX) is implicitly created by the kernel on
+ * first reference inside tcf_action_load_params(); no RTM_NEWCHAIN message is
+ * required.  An empty chain is sufficient -- what matters is that the
+ * goto-chain verdict is evaluated while the replace worker is active.
+ */
+static int build_matchall_gotochain(struct nl_ctx *ctx, int ifindex,
+				    __u32 prio, __u32 chain_idx)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
 	struct tcmsg *tcm;
 	struct fallback_tc_gact gact;
-	struct fallback_tc_mirred mirred;
 	size_t off, opts_off, act_off;
 	__u32 prio_proto;
-	__u32 parent;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
@@ -581,14 +611,11 @@ static int build_matchall_mirred(struct nl_ctx *ctx, int ifindex,
 			   NLM_F_CREATE;
 	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
-	parent = 0xFFFF0000U |
-		 (egress ? TC_H_MIN_EGRESS : TC_H_MIN_INGRESS);
-
 	tcm = (struct tcmsg *)NLMSG_DATA(nlh);
 	tcm->tcm_family  = AF_UNSPEC;
 	tcm->tcm_ifindex = ifindex;
 	tcm->tcm_handle  = 0;
-	tcm->tcm_parent  = parent;
+	tcm->tcm_parent  = 0xFFFF0000U | TC_H_MIN_INGRESS;
 	prio_proto = (prio << 16) | (__u32)htons(ETH_P_ALL);
 	tcm->tcm_info    = prio_proto;
 
@@ -608,19 +635,17 @@ static int build_matchall_mirred(struct nl_ctx *ctx, int ifindex,
 	if (!off)
 		return -EIO;
 
+	/* TC_ACT_GOTO_CHAIN: upper 4 bits identify the ext family (0x2);
+	 * lower 28 bits carry the target chain index.  The kernel's
+	 * tcf_action_load_params() resolves the chain pointer and stores
+	 * it in a->goto_chain.  The race we stress here runs that pointer
+	 * read against a concurrent replace that drops and reinstalls the
+	 * filter slot, clearing goto_chain between the two reads. */
 	memset(&gact, 0, sizeof(gact));
-	gact.action = TC_ACT_PIPE;
+	gact.action = TC_ACT_GOTO_CHAIN |
+		      (chain_idx & ((1U << TC_ACT_EXT_SHIFT) - 1U));
 	off = emit_action_nest(buf, off, sizeof(buf), 1, "gact",
 			       &gact, sizeof(gact), 1 /* TCA_GACT_PARMS */);
-	if (!off)
-		return -EIO;
-
-	memset(&mirred, 0, sizeof(mirred));
-	mirred.action  = TC_ACT_STOLEN;
-	mirred.eaction = TCA_EGRESS_REDIR;
-	mirred.ifindex = (__u32)peer_ifindex;
-	off = emit_action_nest(buf, off, sizeof(buf), 2, "mirred",
-			       &mirred, sizeof(mirred), TCA_MIRRED_PARMS);
 	if (!off)
 		return -EIO;
 
@@ -898,7 +923,13 @@ static int tc_live_in_ns(void *arg)
 
 	prio = (rand32() & 0x1fU) + 1U;
 
-	rc = build_matchall_mirred(&nl, a_idx, b_idx, prio, false);
+	/* Install a matchall filter whose gact verdict is TC_ACT_GOTO_CHAIN
+	 * so every packet in the burst crosses the goto-chain arm of
+	 * tcf_action_exec().  The replace churn below (replace_at_a /
+	 * replace_at_b) races a->goto_chain reads against the concurrent
+	 * tcf_action_set_ctrlact() clear.  Chain GOTO_CHAIN_IDX is
+	 * auto-created by the kernel on first reference. */
+	rc = build_matchall_gotochain(&nl, a_idx, prio, GOTO_CHAIN_IDX);
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
 			mark_ns_unsupported_matchall();
@@ -1009,9 +1040,9 @@ static int tc_live_in_ns(void *arg)
 					__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_del_ok,
 							   1, __ATOMIC_RELAXED);
 
-				if (build_matchall_mirred(&nl, a_idx, b_idx,
-							  new_prio,
-							  false) == 0) {
+				if (build_matchall_gotochain(&nl, a_idx,
+							     new_prio,
+							     GOTO_CHAIN_IDX) == 0) {
 					prio = new_prio;
 					__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_replace_ok,
 							   1, __ATOMIC_RELAXED);
