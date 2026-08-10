@@ -402,9 +402,7 @@ static void v1_measure_dontwake(const struct v1_ctx *ctx, int page_idx,
 static void run_variant1(const enum child_op_type op, const bool valid_op,
 			 unsigned long *direct_calls_out)
 {
-	/* Static storage so a worker that outlives the frame (leak path) can
-	 * still dereference its ctx pointer without hitting a dead stack frame. */
-	static struct v1_ctx ctx;
+	struct v1_ctx *ctx;
 	pthread_t tid;
 	int fd;
 	uint64_t feats;
@@ -495,13 +493,21 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 				   1, __ATOMIC_RELAXED);
 	}
 
-	memset(&ctx, 0, sizeof(ctx));
-	ctx.uffd      = fd;
-	ctx.region    = region;
-	ctx.len       = len;
-	ctx.src_pages = (uint32_t *)src_pages;
+	ctx = mmap(NULL, sizeof(*ctx), PROT_READ|PROT_WRITE,
+		   MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	if (ctx == MAP_FAILED) {
+		munmap(src_pages, len);
+		munmap(region, len);
+		close(fd);
+		return;
+	}
 
-	if (pthread_create(&tid, NULL, v1_fault_thread, &ctx) != 0)
+	ctx->uffd      = fd;
+	ctx->region    = region;
+	ctx->len       = len;
+	ctx->src_pages = (uint32_t *)src_pages;
+
+	if (pthread_create(&tid, NULL, v1_fault_thread, ctx) != 0)
 		goto cleanup_v1;
 	thread_started = true;
 
@@ -591,7 +597,7 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 					&shm->stats.uffd_fault_move.v1_resolve_ok,
 					1, __ATOMIC_RELAXED);
 				if (use_dontwake)
-					v1_measure_dontwake(&ctx, page_idx,
+					v1_measure_dontwake(ctx, page_idx,
 							    fd, fault_addr);
 				/* Oracle: wait for thread to read back word 0. */
 				{
@@ -599,7 +605,7 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 					int spin = 0;
 
 					while (!__atomic_load_n(
-						&ctx.seqno_checked[page_idx],
+						&ctx->seqno_checked[page_idx],
 						__ATOMIC_ACQUIRE) && spin++ < 200)
 						nanosleep(&ts, NULL);
 
@@ -607,7 +613,7 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 						&shm->stats.uffd_fault_move.oracle_checks_run,
 						1, __ATOMIC_RELAXED);
 					if (__atomic_load_n(
-						&ctx.observed_seqno[page_idx],
+						&ctx->observed_seqno[page_idx],
 						__ATOMIC_RELAXED) !=
 					    (uint32_t)(SEQNO_MAGIC |
 						       (uint32_t)(page_idx + 1))) {
@@ -646,7 +652,7 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 						&shm->stats.uffd_fault_move.v1_resolve_ok,
 						1, __ATOMIC_RELAXED);
 					if (use_dontwake)
-						v1_measure_dontwake(&ctx, page_idx,
+						v1_measure_dontwake(ctx, page_idx,
 								    fd, fault_addr);
 				} else {
 					__atomic_add_fetch(
@@ -690,7 +696,7 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 			if (poison_avail) {
 				struct uffdio_poison pp;
 
-				__atomic_store_n(&ctx.poison_resolved[page_idx],
+				__atomic_store_n(&ctx->poison_resolved[page_idx],
 						 1, __ATOMIC_RELEASE);
 				memset(&pp, 0, sizeof(pp));
 				pp.range.start = fault_addr;
@@ -706,7 +712,7 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 				} else {
 					/* POISON failed; clear flag and wake. */
 					__atomic_store_n(
-						&ctx.poison_resolved[page_idx],
+						&ctx->poison_resolved[page_idx],
 						0, __ATOMIC_RELEASE);
 					__atomic_add_fetch(
 						&shm->stats.uffd_fault_move.v1_resolve_fail,
@@ -767,7 +773,7 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 					1, __ATOMIC_RELAXED);
 				if (wp_ioctl_avail) {
 					/* DONTWAKE was set; measure before WAKE. */
-					v1_measure_dontwake(&ctx, page_idx,
+					v1_measure_dontwake(ctx, page_idx,
 							    fd, fault_addr);
 					/* After WAKE, thread re-executes write →
 					 * WP fault → handled in is_wp_fault branch
@@ -779,18 +785,18 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 					int spin = 0;
 
 					while (!__atomic_load_n(
-						&ctx.seqno_checked[page_idx],
+						&ctx->seqno_checked[page_idx],
 						__ATOMIC_ACQUIRE) && spin++ < 200)
 						nanosleep(&ts, NULL);
 
 					if (__atomic_load_n(
-						&ctx.seqno_checked[page_idx],
+						&ctx->seqno_checked[page_idx],
 						__ATOMIC_ACQUIRE)) {
 						__atomic_add_fetch(
 							&shm->stats.uffd_fault_move.oracle_checks_run,
 							1, __ATOMIC_RELAXED);
 						if (__atomic_load_n(
-							&ctx.observed_seqno[page_idx],
+							&ctx->observed_seqno[page_idx],
 							__ATOMIC_RELAXED) !=
 						    (uint32_t)(SEQNO_MAGIC |
 							       (uint32_t)(page_idx + 1))) {
@@ -812,7 +818,7 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 	}
 
 cleanup_v1:
-	__atomic_store_n(&ctx.stop, 1, __ATOMIC_RELEASE);
+	__atomic_store_n(&ctx->stop, 1, __ATOMIC_RELEASE);
 	/* Unregister wakes any pending fault with an error, allowing the
 	 * fault thread to unblock regardless of which page it is on. */
 	uffd_unregister(fd, region, len);
@@ -847,16 +853,16 @@ cleanup_v1:
 			nanosleep(&ts, NULL);
 		}
 		if (spin >= V3_JOIN_LOOPS)
-			return; /* worker still live: leak mappings, skip munmap */
+			return; /* worker still live: leak ctx and mappings, skip munmap */
 		/* Restore signal dispositions installed by v1_fault_thread.
 		 * sigaction() is process-wide; must be undone here so the next
 		 * childop invocation sees the expected disposition.
-		 * ctx is static storage so old_sa_* are always readable.
 		 * Must come AFTER the leak-path check above: on the leak path
 		 * the worker is still live and its sigsetjmp escape depends on
 		 * the handler remaining installed. */
-		sigaction(SIGBUS,  &ctx.old_sa_bus,  NULL);
-		sigaction(SIGSEGV, &ctx.old_sa_segv, NULL);
+		sigaction(SIGBUS,  &ctx->old_sa_bus,  NULL);
+		sigaction(SIGSEGV, &ctx->old_sa_segv, NULL);
+		munmap(ctx, sizeof(*ctx));
 	}
 
 	munmap(src_pages, len);
@@ -928,10 +934,8 @@ static void *v2_fault_thread(void *arg)
 static void run_variant2(const enum child_op_type op, const bool valid_op,
 			 unsigned long *direct_calls_out)
 {
-	/* Static storage so workers that outlive the frame (leak path) can
-	 * still dereference their ctx pointers safely. */
-	static struct v2_racer_ctx rctx;
-	static struct v2_fault_ctx fctx;
+	struct v2_racer_ctx *rctx;
+	struct v2_fault_ctx *fctx;
 	pthread_t racer_tid, fault_tid;
 	bool racer_started = false, fault_started = false;
 	int fd;
@@ -1014,18 +1018,35 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 				   1, __ATOMIC_RELAXED);
 	}
 
+	/* Allocate per-invocation ctx objects from anonymous mappings. */
+	rctx = mmap(NULL, sizeof(*rctx), PROT_READ|PROT_WRITE,
+		    MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	if (rctx == MAP_FAILED) {
+		munmap(dst, len);
+		munmap(src, len);
+		close(fd);
+		return;
+	}
+	fctx = mmap(NULL, sizeof(*fctx), PROT_READ|PROT_WRITE,
+		    MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	if (fctx == MAP_FAILED) {
+		munmap(rctx, sizeof(*rctx));
+		munmap(dst, len);
+		munmap(src, len);
+		close(fd);
+		return;
+	}
+
 	/* Start racer thread (MADV_PAGEOUT + refault src). */
-	memset(&rctx, 0, sizeof(rctx));
-	rctx.src = src;
-	rctx.len = len;
-	if (pthread_create(&racer_tid, NULL, v2_racer_thread, &rctx) == 0)
+	rctx->src = src;
+	rctx->len = len;
+	if (pthread_create(&racer_tid, NULL, v2_racer_thread, rctx) == 0)
 		racer_started = true;
 
 	/* Start fault thread (reads dst → MISSING faults). */
-	memset(&fctx, 0, sizeof(fctx));
-	fctx.dst = dst;
-	fctx.len = len;
-	if (pthread_create(&fault_tid, NULL, v2_fault_thread, &fctx) == 0)
+	fctx->dst = dst;
+	fctx->len = len;
+	if (pthread_create(&fault_tid, NULL, v2_fault_thread, fctx) == 0)
 		fault_started = true;
 
 	use_allow_src_holes = (rnd_u32() & 1) != 0;
@@ -1076,7 +1097,7 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 					int spin = 0;
 
 					while (!__atomic_load_n(
-						&fctx.seqno_checked[page_idx],
+						&fctx->seqno_checked[page_idx],
 						__ATOMIC_ACQUIRE) && spin++ < 200)
 						nanosleep(&ts, NULL);
 
@@ -1084,7 +1105,7 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 						&shm->stats.uffd_fault_move.oracle_checks_run,
 						1, __ATOMIC_RELAXED);
 					if (__atomic_load_n(
-						&fctx.observed_seqno[page_idx],
+						&fctx->observed_seqno[page_idx],
 						__ATOMIC_RELAXED) !=
 					    (uint32_t)(SEQNO_MAGIC |
 						       (uint32_t)(page_idx + 1))) {
@@ -1136,8 +1157,8 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 			1, __ATOMIC_RELAXED);
 
 	/* Teardown: stop threads, unregister, unmap. */
-	__atomic_store_n(&rctx.stop, 1, __ATOMIC_RELEASE);
-	__atomic_store_n(&fctx.stop, 1, __ATOMIC_RELEASE);
+	__atomic_store_n(&rctx->stop, 1, __ATOMIC_RELEASE);
+	__atomic_store_n(&fctx->stop, 1, __ATOMIC_RELEASE);
 
 	uffd_unregister(fd, dst, len);
 
@@ -1198,7 +1219,9 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 				leaked = true; /* worker live: leak, skip munmap */
 		}
 		if (leaked)
-			return; /* mappings deliberately leaked; child exit reclaims */
+			return; /* ctx and mappings deliberately leaked; child exit reclaims */
+		munmap(rctx, sizeof(*rctx));
+		munmap(fctx, sizeof(*fctx));
 	}
 
 	munmap(dst, len);
@@ -1281,9 +1304,7 @@ static void *v3_fault_thread(void *arg)
 static void run_variant3(const enum child_op_type op, const bool valid_op,
 			 unsigned long *direct_calls_out)
 {
-	/* Static storage so a worker that outlives the frame (leak path) can
-	 * still dereference its fctx pointer without hitting a dead stack frame. */
-	static struct v3_fault_ctx fctx;
+	struct v3_fault_ctx *fctx;
 	pthread_t tid;
 	bool thread_started = false;
 	int fd;
@@ -1323,11 +1344,17 @@ static void run_variant3(const enum child_op_type op, const bool valid_op,
 				   1, __ATOMIC_RELAXED);
 	}
 
-	memset(&fctx, 0, sizeof(fctx));
-	fctx.region = region;
-	fctx.len    = len;
+	fctx = mmap(NULL, sizeof(*fctx), PROT_READ|PROT_WRITE,
+		    MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+	if (fctx == MAP_FAILED) {
+		munmap(region, len);
+		close(fd);
+		return;
+	}
+	fctx->region = region;
+	fctx->len    = len;
 
-	if (pthread_create(&tid, NULL, v3_fault_thread, &fctx) != 0)
+	if (pthread_create(&tid, NULL, v3_fault_thread, fctx) != 0)
 		goto cleanup_v3;
 	thread_started = true;
 
@@ -1469,17 +1496,17 @@ cleanup_v3:
 			nanosleep(&ts, NULL);
 		}
 		if (spin >= V3_JOIN_LOOPS)
-			return; /* worker still live: leak mappings, skip cleanup */
+			return; /* worker still live: leak fctx and mappings, skip cleanup */
 		/*
 		 * Restore signal dispositions — sigaction() is process-wide,
 		 * not per-thread; must be undone before this childop returns.
-		 * fctx is static storage so old_sa_* are always readable.
 		 * Must come AFTER the leak-path check above: on the leak path
 		 * the worker is still live and its sigsetjmp escape depends on
 		 * the handler remaining installed.
 		 */
-		sigaction(SIGSEGV, &fctx.old_sa_segv, NULL);
-		sigaction(SIGBUS,  &fctx.old_sa_bus,  NULL);
+		sigaction(SIGSEGV, &fctx->old_sa_segv, NULL);
+		sigaction(SIGBUS,  &fctx->old_sa_bus,  NULL);
+		munmap(fctx, sizeof(*fctx));
 	}
 
 	/* Unconditional cleanup in case teardown action left things partial. */
