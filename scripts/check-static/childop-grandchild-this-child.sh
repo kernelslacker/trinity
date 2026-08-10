@@ -13,8 +13,10 @@
 #   A C function body (tracked by brace depth) that contains ALL of:
 #     1. a variable assigned from this_child(), or a direct this_child()->
 #        dereference
-#     2. a call to an exit marker (_exit(, _Exit(, do_exit_as() in the same
-#        function body — note: cross-function reachability is not analysed
+#     2. a grandchild body marker in the same function body: CHILDOP_GRANDCHILD_ENTER()
+#        (the explicit machine-checkable marker used by the fork gate), or one of
+#        the exit wrappers _exit(, _Exit(, do_exit_as() — note: cross-function
+#        reachability is not analysed
 #     3. an access VAR->MEMBER on that variable where MEMBER is not in
 #        the fork-invariant set {op_type, op_nr}
 #
@@ -107,8 +109,16 @@ while IFS= read -r srcfile; do
 		if (match(code, /([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*this_child\(\)/, arr))
 			tc_vars[arr[1]] = 1
 
-		# Detect exit markers — marks grandchild-capable function
-		if (code ~ /_exit\(/ || code ~ /_Exit\(/ || code ~ /do_exit_as\(/)
+		# Detect grandchild-capable function markers.
+		# CHILDOP_GRANDCHILD_ENTER() is the explicit machine-checkable marker
+		# used by the fork gate; treat it as equivalent so both gates agree on
+		# which function bodies are in scope.
+		# /(^|[^h])_exit\(/ excludes pthread_exit() (a thread exit, not a
+		# grandchild-capable worker body).
+		if (code ~ /CHILDOP_GRANDCHILD_ENTER/ || \
+		    code ~ /(^|[^h])_exit\(/ || \
+		    code ~ /_Exit\(/ || \
+		    code ~ /do_exit_as\(/)
 			has_exit = 1
 
 		# Detect direct-deref: this_child()->MEMBER (no assigned variable needed)
