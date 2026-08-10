@@ -15,7 +15,9 @@
 # (audited in 96e7cd26ef56 ("locks: document cached_pid COW-fork caveat at bust_lock()")
 # and 60b11ae678b5 ("check-static: flag childop lock() calls for grandchild review")).
 # utils/locks.c (implementation) and main/reap.c (force_bust_lock recovery)
-# are excluded by name.
+# are excluded by name.  All other audited sites are listed in
+# childop-lock-call.allowlist by exact file:line so that a new lock() call
+# added to a previously-audited file is not silently passed.
 # No other code in the whole tree reaches lock(), bust_lock(), or
 # force_bust_lock().  This check ensures that invariant is not silently broken
 # by a future patch.
@@ -26,24 +28,21 @@ set -u
 
 NAME="childop-lock-call"
 ROOT="${REPO_ROOT:-$(pwd)}"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
+
+declare -A allowlist
+while IFS= read -r entry; do
+	[[ -z "$entry" || "$entry" == \#* ]] && continue
+	allowlist["$entry"]=1
+done < "$SCRIPT_DIR/childop-lock-call.allowlist"
 
 warn_count=0
 
 while IFS= read -r srcfile; do
-	# Skip known-audited dispatch-path sites and the lock implementation itself.
+	# Skip the lock implementation and the force_bust_lock recovery loop.
 	case "${srcfile#./}" in
-		cmp_hints/field.c|\
-		cmp_hints/pool.c|\
-		random_syscall/chain-persist.c|\
-		random_syscall/chain-corpus.c|\
-		args/pools/blob_corpus.c|\
-		tables/table-activate.c|\
-		persist/minicorpus-core.c|\
-		dispatch/syscall-exec.c|\
-		dispatch/syscall-post.c|\
-		child/child-periodic.c|\
 		utils/locks.c|\
 		main/reap.c)
 			continue ;;
@@ -61,6 +60,10 @@ while IFS= read -r srcfile; do
 			//*)  continue ;;
 		esac
 
+		# Skip known-audited call sites listed in the allowlist.
+		key="${srcfile#./}:$lineno"
+		[ "${allowlist[$key]+set}" ] && continue
+
 		echo "WARN: ${srcfile#./}:${lineno}: lock/bust_lock/force_bust_lock called -- verify grandchild-unreachability (see utils/locks.c bust_lock() note)"
 		warn_count=$((warn_count + 1))
 	done < <(grep -En '\b(lock|bust_lock|force_bust_lock)\s*\(' "$srcfile" 2>/dev/null)
@@ -71,7 +74,8 @@ if [ "$warn_count" -gt 0 ]; then
 		echo "  $NAME: $warn_count lock/bust_lock/force_bust_lock call(s) found in the whole tree"
 		echo "  cached_pid is COW-inherited and not process-unique in grandchildren."
 		echo "  Confirm the call site is unreachable from any fork()'d grandchild,"
-		echo "  then update the audit note in utils/locks.c bust_lock()."
+		echo "  then update the audit note in utils/locks.c bust_lock() and"
+		echo "  add the new site to scripts/check-static/childop-lock-call.allowlist."
 	} >&2
 	exit 1
 fi
