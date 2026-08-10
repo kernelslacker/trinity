@@ -345,12 +345,16 @@ static void *v1_fault_thread(void *arg)
 		 * with UFFDIO_WRITEPROTECT (unprotect) before this write
 		 * finally completes. */
 		__atomic_store_n(&ctx->faulted_idx, i, __ATOMIC_RELEASE);
+		/* Keep the escape zone open across both the fault-inducing write
+		 * (pg[1]) and the subsequent read-back (*pg): a SIGBUS/SIGSEGV on
+		 * either must be caught by v1_sigbus_handler via sigsetjmp, not
+		 * treated as fatal. */
 		pg[1] = (uint32_t)(SEQNO_MAGIC | (uint32_t)(i + 1));
-		v1_in_escape_zone = 0;
 
 		/* Read back word 0: COPY placed the src_pages seqno there. */
 		ctx->observed_seqno[i] = *pg;
 		__atomic_store_n(&ctx->seqno_checked[i], 1, __ATOMIC_RELEASE);
+		v1_in_escape_zone = 0;
 	}
 	return NULL;
 }
