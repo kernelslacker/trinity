@@ -59,6 +59,13 @@ struct netproto {
 	void (*setsockopt)(struct sockopt *so, struct socket_triplet *triplet);
 	void (*gen_sockaddr)(struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen);
 	void (*gen_msg)(struct socket_triplet *triplet, void **buf, size_t *len);
+	/*
+	 * post_send: optional hook called from post_sendmsg() after the real
+	 * sendmsg() syscall returns, when the gen_msg path was taken.
+	 * Receives the fuzz socket fd so per-protocol observers (e.g. the
+	 * rtnl ACK oracle) can drain pending replies without blocking.
+	 */
+	void (*post_send)(int fd);
 	unsigned int nr_triplets;
 	unsigned int nr_privileged_triplets;
 };

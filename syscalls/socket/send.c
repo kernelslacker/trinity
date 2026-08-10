@@ -159,6 +159,11 @@ struct sendmsg_post_state {
 	struct msghdr *msg;
 	unsigned long iov_len_sum;
 	void *name;
+	/* si->triplet.family at sanitise time; used by the post handler to
+	 * call the per-protocol post_send hook when the gen_msg path was
+	 * taken (rec->a4 == 1).  0 when si is NULL. */
+	unsigned int family;
+	unsigned int _pad;
 };
 
 static void sanitise_sendmsg(struct syscallrecord *rec)
@@ -344,6 +349,8 @@ set_control:
 	snap->msg = msg;
 	snap->iov_len_sum = iov_len_sum;
 	snap->name = msg->msg_name;
+	snap->family = (si != NULL) ? (unsigned int) si->triplet.family : 0u;
+	snap->_pad = 0;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
 }
@@ -438,6 +445,20 @@ static void post_sendmsg(struct syscallrecord *rec)
 		goto out_free;
 	}
 skip_bound:
+	/*
+	 * Per-protocol post-send hook: called when the gen_msg path was
+	 * taken (rec->a4 == 1) so protocol observers can drain pending
+	 * replies from the fuzz socket without blocking.  The fd is still
+	 * in rec->a1 (set by fd_from_socketinfo at sanitise time; not
+	 * cleared until the framework drains args after .post returns).
+	 * snap->family carries si->triplet.family from sanitise time.
+	 */
+	if (rec->a4 == 1 && snap->family < TRINITY_PF_MAX) {
+		const struct netproto *proto = net_protocols[snap->family].proto;
+
+		if (proto != NULL && proto->post_send != NULL)
+			proto->post_send((int) rec->a1);
+	}
 
 	/*
 	 * Free msg_name from the trusted snap, not from the live

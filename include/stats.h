@@ -160,6 +160,7 @@
 #include "stats/subsys/remote_adaptive.h"
 #include "stats/subsys/refcount_audit.h"
 #include "stats/subsys/rpl_clone_fidelity.h"
+#include "stats/subsys/rtnl-ack-oracle.h"
 #include "stats/subsys/rtnl_vf_broadcast.h"
 #include "stats/subsys/netconf_inetdev_race.h"
 #include "stats/subsys/rxrpc_key_install.h"
@@ -435,14 +436,27 @@ struct stats_s {
 	/* genetlink_fuzzer accounting.  See stats/subsys/genetlink_fuzzer.h. */
 	struct genetlink_fuzzer_stats genetlink_fuzzer __attribute__((aligned(64)));
 
-	/* netlink message generator: NLA_F_NESTED containers emitted */
+	/* netlink message generator: NLA_F_NESTED containers emitted/accepted.
+	 * netlink_nested_attrs_emitted is bumped for every nested-attr
+	 * container written into the message buffer, regardless of whether
+	 * the kernel accepts the message.  netlink_nested_attrs_accepted is
+	 * bumped by the rtnl ACK oracle each time a sampled NETLINK_ROUTE
+	 * message returns a positive ACK (err->error == 0).  If accepted <<
+	 * emitted the kernel is silently discarding most of the nested-attr
+	 * traffic.  See net/netlink/rtnl-ack-oracle.c for oracle details. */
 	unsigned long netlink_nested_attrs_emitted;
+	unsigned long netlink_nested_attrs_accepted;
 	/* build_nested_attrs: exact-width attr skipped because buffer clamp
 	 * would have truncated it to fewer bytes than aw->width requires.
 	 * A persistent non-zero rate with a low netlink_nested_attrs_emitted
 	 * rate indicates that the msg buffer is too tight to fit most of the
 	 * attr table's widths, shrinking effective nested coverage. */
 	unsigned long netlink_nested_attr_skipped_width;
+
+	/* rtnl ACK oracle: per-outcome histogram + per-RTM-group accepted
+	 * counters.  See stats/subsys/rtnl-ack-oracle.h for field details.
+	 * Populated by rtnl_oracle_drain() on 1-in-32 sampled messages. */
+	struct rtnl_ack_oracle_stats rtnl_ack_oracle __attribute__((aligned(64)));
 
 	/* setsockopt pairing accounting.  See stats/subsys/setsockopt_pairing.h. */
 	struct setsockopt_pairing_stats setsockopt_pairing __attribute__((aligned(64)));

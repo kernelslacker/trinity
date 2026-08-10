@@ -166,6 +166,7 @@ const struct stat_category nfnl_subsys_calls_category =
 
 static const struct stat_field netlink_generator_fields[] = {
 	STAT_FIELD(netlink, nested_attrs_emitted),
+	STAT_FIELD(netlink, nested_attrs_accepted),
 	STAT_FIELD(netlink, nested_attr_skipped_width),
 };
 
@@ -173,6 +174,22 @@ const struct stat_category netlink_generator_category =
 	STAT_CATEGORY("netlink_generator",
 	              netlink_nested_attrs_emitted,
 	              netlink_generator_fields);
+
+static const struct stat_field rtnl_ack_oracle_fields[] = {
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, accepted,   "accepted"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, einval,     "einval"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, erange,     "erange"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, eopnotsupp, "eopnotsupp"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, eperm,      "eperm"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, other,      "other"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, send_fail,  "send_fail"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, no_reply,   "no_reply"),
+};
+
+const struct stat_category rtnl_ack_oracle_category =
+	STAT_CATEGORY("rtnl_ack_oracle",
+	              rtnl_ack_oracle.accepted,
+	              rtnl_ack_oracle_fields);
 
 static const struct stat_field tracefs_fuzzer_fields[] = {
 	STAT_FIELD_JSON_SUB(tracefs_fuzzer, kprobe_open_fail,        "kprobe_open_fail"),
@@ -262,6 +279,8 @@ void dump_stats_json_basic_subsystems(void)
 	stat_category_emit_json(&nfnl_subsys_calls_category);
 	putchar(',');
 	stat_category_emit_json(&netlink_generator_category);
+	putchar(',');
+	stat_category_emit_json(&rtnl_ack_oracle_category);
 	putchar(',');
 	stat_category_emit_json(&tracefs_fuzzer_category);
 	putchar(',');

@@ -31,6 +31,7 @@
 #include "netlink-attrs.h"
 #include "netlink-genl-families.h"
 #include "msg-internal.h"
+#include "rtnl-ack-oracle.h"
 #include "netlink-nfnl-subsystems.h"
 #include "random.h"
 #include "shm.h"
@@ -361,6 +362,7 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 	size_t offset;
 	unsigned char *msg;
 	int num_msgs;
+	int is_single;
 
 	/* Total buffer: room for messages with protocol body + attrs.
 	 * XFRM bodies can be up to 280 bytes, audit_rule_data is 1040 bytes,
@@ -373,6 +375,7 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 	} else {
 		num_msgs = 1;
 	}
+	is_single = (num_msgs == 1);
 	if (total_len > 8192)
 		total_len = 8192;
 
@@ -381,6 +384,21 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 	offset = 0;
 	while (num_msgs-- > 0 && offset < total_len)
 		offset = build_one_nlmsg(msg, offset, total_len, triplet);
+
+	/*
+	 * ACK oracle: for 1-in-32 single-message NETLINK_ROUTE packets,
+	 * OR NLM_F_ACK into the already-built nlmsghdr flags and record
+	 * the message type so rtnl_oracle_drain() can classify the reply
+	 * after the real sendmsg() returns.
+	 *
+	 * Called AFTER build_one_nlmsg() has finalised the buffer (including
+	 * any nlmsg_len corruption arm) so generation stays side-effect free:
+	 * no private socket is opened and no send occurs here.
+	 */
+	if (is_single && triplet->protocol == NETLINK_ROUTE &&
+	    offset >= NLMSG_HDRLEN)
+		rtnl_oracle_sample(
+			((struct nlmsghdr *)(void *)msg)->nlmsg_type, msg);
 
 	*buf = msg;
 	*len = offset;

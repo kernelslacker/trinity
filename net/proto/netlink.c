@@ -11,6 +11,7 @@
 #include "rnd.h"
 
 #include "kernel/netlink.h"
+#include "net/netlink/rtnl-ack-oracle.h"
 static void netlink_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_nl *nl;
@@ -113,11 +114,25 @@ static struct socket_triplet netlink_triplets[] = {
 /* defined in net/netlink/msg.c */
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 
+/*
+ * netlink_post_send - proto->post_send hook for AF_NETLINK.
+ *
+ * Called by post_sendmsg() after the real sendmsg() syscall completes
+ * when the gen_msg path was taken.  Delegates to rtnl_oracle_drain()
+ * which no-ops immediately unless rtnl_oracle_sample() marked this
+ * message for sampling.
+ */
+static void netlink_post_send(int fd)
+{
+	rtnl_oracle_drain(fd);
+}
+
 const struct netproto proto_netlink = {
 	.name = "netlink",
 	.setsockopt = netlink_setsockopt,
 	.gen_sockaddr = netlink_gen_sockaddr,
 	.gen_msg = netlink_gen_msg,
+	.post_send = netlink_post_send,
 	.valid_triplets = netlink_triplets,
 	.nr_triplets = ARRAY_SIZE(netlink_triplets),
 };

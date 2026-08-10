@@ -195,7 +195,17 @@ stats	object
     stats.nfnl_subsys_calls.ipset	u64
   stats.netlink_generator	object
     stats.netlink_generator.nested_attrs_emitted	u64
+    stats.netlink_generator.nested_attrs_accepted	u64
     stats.netlink_generator.nested_attr_skipped_width	u64
+  stats.rtnl_ack_oracle	object
+    stats.rtnl_ack_oracle.accepted	u64
+    stats.rtnl_ack_oracle.einval	u64
+    stats.rtnl_ack_oracle.erange	u64
+    stats.rtnl_ack_oracle.eopnotsupp	u64
+    stats.rtnl_ack_oracle.eperm	u64
+    stats.rtnl_ack_oracle.other	u64
+    stats.rtnl_ack_oracle.send_fail	u64
+    stats.rtnl_ack_oracle.no_reply	u64
   stats.tracefs_fuzzer	object
     stats.tracefs_fuzzer.kprobe_open_fail	u64
     stats.tracefs_fuzzer.kprobe_write_fail	u64
