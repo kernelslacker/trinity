@@ -518,6 +518,12 @@ static const struct {
 	  offsetof(struct stats_s, netlink_nested_attr_skipped_width) },
 	{ "netlink_nested_attr_built_width",
 	  offsetof(struct stats_s, netlink_nested_attr_built_width) },
+	/* build_nested_attrs call count — per-message denominator for
+	 * netlink_nested_attr_lost_align.  Do not divide lost_align by the
+	 * per-attr counters (skipped_width, built_width) above; use
+	 * build_calls instead: truncation_rate = lost_align / build_calls. */
+	{ "netlink_nested_attr_build_calls",
+	  offsetof(struct stats_s, netlink_nested_attr_build_calls) },
 	{ "netlink_nested_attr_lost_align",
 	  offsetof(struct stats_s, netlink_nested_attr_lost_align) },
 	/* genetlink registry per-family dispatch counters; rate-of-change

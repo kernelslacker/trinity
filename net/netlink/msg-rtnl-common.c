@@ -94,6 +94,9 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 	size_t offset = 0;
 	int count = RAND_RANGE(1, 4);
 
+	__atomic_add_fetch(&shm->stats.netlink_nested_attr_build_calls,
+			   1, __ATOMIC_RELAXED);
+
 	if (max_depth <= 0)
 		count = RAND_RANGE(1, 2);
 
