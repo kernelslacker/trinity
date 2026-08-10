@@ -1,0 +1,14 @@
+# Audited non-grandchild fork() sites excluded from the grandchild-fork gate.
+#
+# Format: file:line  # rationale
+#   file:line is the repo-relative path and the line number as reported by the
+#   scanner: for recognised if(pid==0) / if(!pid) child branches the key is the
+#   child-branch line; for UNPARSED sites (assignment-form fork() with no
+#   locatable child branch) the key is the fork() call line (the UNPARSED:
+#   prefix is stripped before the lookup).
+#
+# A new fork() call added anywhere else in one of these files is still caught.
+fds/scratch_block.c:123        # exec-helper: fork/execlp to run mkfs.ext4; child execs immediately, no grandchild context
+health/kmsg-monitor.c:435      # infrastructure daemon: forked once at early init before the child fleet exists; not a grandchild producer
+utils/pc_format.c:230          # exec-helper: fork/execlp for addr2line; child execs, no child branch reachable
+utils/self_cgroup_fork.c:74    # produces first-generation child, not a grandchild; UNPARSED -- no if(pid==0) branch, child path returns to caller

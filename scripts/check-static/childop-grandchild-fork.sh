@@ -6,8 +6,8 @@
 #
 # Scope: the whole source tree (not just childops/).  Sites outside childops/
 # that have been audited and determined NOT to be grandchild-capable are
-# listed in the AUDITED_NON_GRANDCHILD exclusion block below.  The rationale
-# mirrors 9add45f15030 which widened the lock gate for the same reason:
+# listed by exact file:line in childop-grandchild-fork.allowlist (same
+# mechanism used by the lock gate, see 9add45f15030 for the rationale):
 # userns throwaway grandchild callbacks and exec-fork helpers can live
 # anywhere in the tree.
 #
@@ -60,6 +60,7 @@ set -u
 
 NAME="childop-grandchild-fork"
 ROOT="${REPO_ROOT:-$(pwd)}"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 BASELINE="$ROOT/scripts/check-static/childop-grandchild-fork.baseline"
 
 # Legacy count baseline kept for reference; no longer used for comparison.
@@ -77,6 +78,14 @@ fi
 
 tmp_out=$(mktemp)
 trap 'rm -f "$tmp_out"' EXIT
+
+# Load file:line allowlist of audited non-grandchild fork() sites.
+declare -A allowlist
+while IFS= read -r _entry; do
+	[[ -z "$_entry" || "$_entry" == \#* ]] && continue
+	_key="${_entry%%[[:space:]]*}"
+	allowlist["$_key"]=1
+done < "$SCRIPT_DIR/childop-grandchild-fork.allowlist"
 
 # Process each childops .c file with a per-file gawk invocation.
 # gawk runs two logical passes over the file content loaded into lines[]:
@@ -97,51 +106,14 @@ trap 'rm -f "$tmp_out"' EXIT
 #           inner scan cannot locate a child branch within 40 lines.
 
 # -----------------------------------------------------------------------
-# AUDITED_NON_GRANDCHILD: fork() sites outside childops/ that have been
-# reviewed and confirmed NOT to produce a grandchild worker in the beacon
-# sense (i.e. the fork child does not run syscalls as trinity's grandchild
-# and does not need CHILDOP_GRANDCHILD_ENTER).
-#
-# Each entry is a repo-relative file path.  Rationale per file:
-#
-#   fds/scratch_block.c
-#     run_mkfs_ext4(): one-shot exec helper.  Forks to run mkfs.ext4 against
-#     a scratch device during pre-fork single-threaded setup.  The child
-#     immediately exec()s an external binary; it is not a trinity grandchild
-#     worker and carries no beacon state.
-#
-#   health/kmsg-monitor.c
-#     kmsg_monitor_start(): infrastructure daemon fork.  The comment in that
-#     file notes it is "intentionally NOT registered in pids[]/
-#     running_childs/childdata -- it is infrastructure, not a fuzz child".
-#     The child runs the kmsg polling helper loop, never syscall fuzzing;
-#     it is not a trinity grandchild worker.
-#
-#   utils/pc_format.c
-#     pc_symbolize_fork(): addr2line exec helper.  Forks a short-lived
-#     subprocess that exec()s addr2line to resolve a PC address and pipes
-#     the result back.  The child is not a trinity grandchild worker.
-#
-#   utils/self_cgroup_fork.c
-#     self_cgroup_fork_into_workload(): produces the regular trinity CHILD
-#     process (pid returned to spawn_child()).  The fork()d process becomes
-#     a first-generation child, not a grandchild; CHILDOP_GRANDCHILD_ENTER
-#     is inapplicable here.  The scanner emits UNPARSED for this site
-#     because there is no if (pid == 0) branch -- the child falls through
-#     and the function returns pid (0) to the caller.
+# Audited non-grandchild fork() sites are listed by exact file:line in
+# scripts/check-static/childop-grandchild-fork.allowlist so that a new
+# fork() call added anywhere else in a previously-audited file is still
+# caught.  Per-site rationale is in the allowlist file.
 # -----------------------------------------------------------------------
 
 while IFS= read -r srcfile; do
 	relfile="${srcfile#"$ROOT"/}"
-
-	# Skip audited non-grandchild sites (see AUDITED_NON_GRANDCHILD above).
-	case "$relfile" in
-		fds/scratch_block.c|\
-		health/kmsg-monitor.c|\
-		utils/pc_format.c|\
-		utils/self_cgroup_fork.c)
-			continue ;;
-	esac
 
 	gawk -v file="$relfile" '
 
@@ -484,6 +456,18 @@ while IFS= read -r srcfile; do
 	' "$srcfile" >> "$tmp_out"
 
 done < <(find "$ROOT" -name '*.c' | sort)
+
+# Filter out allowlisted findings (audited non-grandchild sites).
+# For UNPARSED entries strip the "UNPARSED:" prefix before lookup --
+# the allowlist uses plain file:line for all entries.
+{
+	while IFS= read -r _line; do
+		[ -z "$_line" ] && continue
+		_key="${_line#UNPARSED:}"
+		[ "${allowlist[$_key]+set}" ] && continue
+		printf '%s\n' "$_line"
+	done < "$tmp_out"
+} > "${tmp_out}.filtered" && mv "${tmp_out}.filtered" "$tmp_out"
 
 # -----------------------------------------------------------------------
 # Regen mode: write the current output as the new baseline.
