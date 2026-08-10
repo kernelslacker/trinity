@@ -94,9 +94,6 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 	size_t offset = 0;
 	int count = RAND_RANGE(1, 4);
 
-	__atomic_add_fetch(&shm->stats.netlink_nested_attr_build_calls,
-			   1, __ATOMIC_RELAXED);
-
 	if (max_depth <= 0)
 		count = RAND_RANGE(1, 2);
 
@@ -109,7 +106,14 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 	 * need to tighten it (e.g. to NLA_HDRLEN + max_width_in_table)
 	 * remove the skip-on-clamp guard below instead; see the commit
 	 * message for the tradeoff discussion.
+	 *
+	 * Only count this call if the loop body is actually reachable;
+	 * calls with buflen <= NLA_HDRLEN can never emit or truncate an
+	 * attr and would dilute the lost_align / build_calls ratio.
 	 */
+	if (offset + NLA_HDRLEN + 1 <= buflen)
+		__atomic_add_fetch(&shm->stats.netlink_nested_attr_build_calls,
+				   1, __ATOMIC_RELAXED);
 	while (count-- > 0 && offset + NLA_HDRLEN + 1 <= buflen) {
 		const struct nlattr_width *aw = &attrs[rnd_modulo_u32(nr_types)];
 		unsigned short atype = aw->type;
