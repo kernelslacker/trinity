@@ -421,6 +421,15 @@ void unlock(lock_t *lk)
  * as returning from a signal handler with a lock held.  Cross-pid orphan
  * recovery must use force_bust_lock() because the owner check below only
  * admits cached_pid.
+ *
+ * Note: cached_pid is stamped at init time and COW-inherited across fork()
+ * without being refreshed, so it is NOT process-unique in a grandchild.
+ * A grandchild's lock() call would record the parent's pid as owner, which
+ * would misfire the self-deadlock guard (locks.c:358), prevent force_bust_lock()
+ * from recovering an orphan held by a dead grandchild, and admit an incorrect
+ * bust_lock() release here.  Audited: no grandchild (forked via
+ * userns_run_in_ns) currently reaches lock() -- all call sites are on the
+ * child_process() dispatch path, which grandchildren never enter.
  */
 void bust_lock(lock_t *lk)
 {
