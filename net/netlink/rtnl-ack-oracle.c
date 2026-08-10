@@ -93,7 +93,8 @@
  * counted into stale_other (per-message, not per-datagram).  If the budget
  * is exhausted before NLMSG_ERROR surfaces, the probe books
  * no_reply_exhausted; an early EAGAIN before the budget is consumed books
- * no_reply_clean.
+ * no_reply_clean.  A truncated NLMSG_ERROR (framing failure) is counted
+ * separately into bad_framing and does not touch no_reply_clean.
  */
 #include <errno.h>
 #include <sys/socket.h>
@@ -301,7 +302,8 @@ void rtnl_oracle_drain(int fd, int send_ok)
 	 * payload messages are counted into stale_other — per-message, not
 	 * per-datagram.  If the budget is exhausted without seeing NLMSG_ERROR
 	 * the probe books no_reply_exhausted; an early EAGAIN books
-	 * no_reply_clean.
+	 * no_reply_clean.  A truncated NLMSG_ERROR (framing failure) is counted
+	 * into bad_framing and does not touch no_reply_clean.
 	 */
 	for (i = 0; i < RTNL_ACK_ORACLE_DRAIN_MAX; i++) {
 		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT | MSG_TRUNC);
@@ -349,8 +351,12 @@ void rtnl_oracle_drain(int fd, int send_ok)
 			}
 
 			/* Found NLMSG_ERROR: check payload is intact */
-			if (nlh->nlmsg_len < NLMSG_HDRLEN + sizeof(struct nlmsgerr))
-				goto out_noreply; /* truncated ACK */
+			if (nlh->nlmsg_len < NLMSG_HDRLEN + sizeof(struct nlmsgerr)) {
+				__atomic_add_fetch(
+					&shm->stats.rtnl_ack_oracle.bad_framing,
+					1, __ATOMIC_RELAXED);
+				return; /* truncated ACK -- framing failure, not a dropped probe */
+			}
 
 			err = (struct nlmsgerr *)NLMSG_DATA(nlh);
 			/*

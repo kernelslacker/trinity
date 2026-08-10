@@ -28,7 +28,9 @@ struct rtnl_ack_oracle_stats {
 	unsigned long other;	  /* any other non-zero errno             */
 	unsigned long send_fail;    /* sendmsg() returned -1: message never left userspace */
 	unsigned long no_reply_exhausted; /* drain budget (DRAIN_MAX) hit before NLMSG_ERROR surfaced */
-	unsigned long no_reply_clean;     /* recv returned EAGAIN/error before budget was exhausted     */
+	unsigned long no_reply_clean;     /* recv returned EAGAIN/error before budget was exhausted;    */
+					  /* does NOT include the truncated-NLMSG_ERROR framing case  */
+	unsigned long bad_framing;        /* truncated NLMSG_ERROR -- framing failure, not a dropped probe */
 	unsigned long stale_done;  /* NLMSG_DONE terminators drained from concurrent dump traffic      */
 	unsigned long stale_other; /* non-ERROR data/multipart messages drained before our ACK found  */
 	unsigned long dump_skipped;  /* NLM_F_DUMP set; sampling skipped, slot returned to next eligible message */

@@ -169,6 +169,7 @@ static void dump_stats_render_rtnl_ack_oracle(void)
 	if (!o->accepted && !o->einval && !o->erange &&
 	    !o->eopnotsupp && !o->eperm && !o->other &&
 	    !o->send_fail && !o->no_reply_exhausted && !o->no_reply_clean &&
+	    !o->bad_framing &&
 	    !o->stale_done && !o->stale_other && !o->dump_skipped)
 		return;
 
@@ -181,6 +182,7 @@ static void dump_stats_render_rtnl_ack_oracle(void)
 	stat_row("rtnl_ack_oracle", "send_fail",          o->send_fail);
 	stat_row("rtnl_ack_oracle", "no_reply_exhausted", o->no_reply_exhausted);
 	stat_row("rtnl_ack_oracle", "no_reply_clean",     o->no_reply_clean);
+	stat_row("rtnl_ack_oracle", "bad_framing",        o->bad_framing);
 	stat_row("rtnl_ack_oracle", "stale_done",         o->stale_done);
 	stat_row("rtnl_ack_oracle", "stale_other",        o->stale_other);
 	stat_row("rtnl_ack_oracle", "dump_skipped",       o->dump_skipped);
