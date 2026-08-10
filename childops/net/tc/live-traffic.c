@@ -7,7 +7,7 @@
  * through the freshly-installed chain during the mutation window.  This
  * op stands up a private veth pair inside a fresh CLONE_NEWUSER +
  * CLONE_NEWNET grandchild, installs a clsact ingress filter chain
- * (matchall + bpf + police + mirred), starts a UDP loopback burst
+ * (matchall + bpf + police + mirred + goto-chain), starts a UDP loopback burst
  * through the ingress path, and REPLACES the filter chain WHILE traffic
  * is in flight -- racing tcf_classify() and its action-chain walkers
  * against the classifier update.
@@ -114,12 +114,6 @@
 #define TCA_MATCHALL_CLASSID	1
 #define TCA_MATCHALL_ACT	2
 #define TCA_MATCHALL_FLAGS	3
-#endif
-
-/* TCA_CHAIN selects a non-zero chain on RTM_NEWTFILTER.  Kernel UAPI
- * value is stable at 11 across all supported kernel versions. */
-#ifndef TCA_CHAIN
-#define TCA_CHAIN		11
 #endif
 
 /* Index of the secondary TC chain installed to give TC_ACT_GOTO_CHAIN
@@ -579,11 +573,80 @@ static size_t emit_action_nest(unsigned char *buf, size_t off, size_t cap,
  * classifier walk against the delete-on-replace behaviour that fires
  * when tcm_info matches an installed filter.
  */
+static int build_matchall_mirred(struct nl_ctx *ctx, int ifindex,
+				 int peer_ifindex, __u32 prio,
+				 bool egress)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct tcmsg *tcm;
+	struct fallback_tc_gact gact;
+	struct fallback_tc_mirred mirred;
+	size_t off, opts_off, act_off;
+	__u32 prio_proto;
+	__u32 parent;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWTFILTER;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	parent = 0xFFFF0000U |
+		 (egress ? TC_H_MIN_EGRESS : TC_H_MIN_INGRESS);
+
+	tcm = (struct tcmsg *)NLMSG_DATA(nlh);
+	tcm->tcm_family  = AF_UNSPEC;
+	tcm->tcm_ifindex = ifindex;
+	tcm->tcm_handle  = 0;
+	tcm->tcm_parent  = parent;
+	prio_proto = (prio << 16) | (__u32)htons(ETH_P_ALL);
+	tcm->tcm_info    = prio_proto;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*tcm));
+
+	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, "matchall");
+	if (!off)
+		return -EIO;
+
+	opts_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_OPTIONS);
+	if (!off)
+		return -EIO;
+
+	act_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_MATCHALL_ACT);
+	if (!off)
+		return -EIO;
+
+	memset(&gact, 0, sizeof(gact));
+	gact.action = TC_ACT_PIPE;
+	off = emit_action_nest(buf, off, sizeof(buf), 1, "gact",
+			       &gact, sizeof(gact), 1 /* TCA_GACT_PARMS */);
+	if (!off)
+		return -EIO;
+
+	memset(&mirred, 0, sizeof(mirred));
+	mirred.action  = TC_ACT_STOLEN;
+	mirred.eaction = TCA_EGRESS_REDIR;
+	mirred.ifindex = (__u32)peer_ifindex;
+	off = emit_action_nest(buf, off, sizeof(buf), 2, "mirred",
+			       &mirred, sizeof(mirred), TCA_MIRRED_PARMS);
+	if (!off)
+		return -EIO;
+
+	nla_nest_end(buf, act_off, off);
+	nla_nest_end(buf, opts_off, off);
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv_retry(ctx, buf, off);
+}
 
 /*
- * RTM_NEWTFILTER matchall on ingress chain GOTO_CHAIN_IDX with a single
- * gact action whose verdict is TC_ACT_GOTO_CHAIN|GOTO_CHAIN_IDX.  Installing
- * this action causes the kernel to resolve and stash a goto_chain pointer on
+ * RTM_NEWTFILTER matchall on ingress chain 0 with a single gact action
+ * whose verdict is TC_ACT_GOTO_CHAIN|GOTO_CHAIN_IDX.  Installing this
+ * action causes the kernel to resolve and stash a goto_chain pointer on
  * the action struct (a->goto_chain).  The concurrent replace churn
  * (build_delfilter + build_matchall_gotochain) clears that pointer from under
  * the two independent reads in tcf_action_exec(), which is exactly the TOCTOU
@@ -923,17 +986,22 @@ static int tc_live_in_ns(void *arg)
 
 	prio = (rand32() & 0x1fU) + 1U;
 
-	/* Install a matchall filter whose gact verdict is TC_ACT_GOTO_CHAIN
-	 * so every packet in the burst crosses the goto-chain arm of
-	 * tcf_action_exec().  The replace churn below (replace_at_a /
-	 * replace_at_b) races a->goto_chain reads against the concurrent
-	 * tcf_action_set_ctrlact() clear.  Chain GOTO_CHAIN_IDX is
-	 * auto-created by the kernel on first reference. */
-	rc = build_matchall_gotochain(&nl, a_idx, prio, GOTO_CHAIN_IDX);
+	/* Install matchall+mirred at prio P and matchall+goto-chain at P+1
+	 * so every packet crosses both the mirred egress-redir path and the
+	 * goto-chain arm of tcf_action_exec().  The replace churn below races
+	 * both filters against concurrent classifier reads. */
+	rc = build_matchall_mirred(&nl, a_idx, b_idx, prio, false);
 	if (rc != 0) {
-		if (is_unsupported_err(rc)) {
+		if (is_unsupported_err(rc))
 			mark_ns_unsupported_matchall();
-		}
+		__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_fail,
+				   1, __ATOMIC_RELAXED);
+		goto out;
+	}
+	__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_ok,
+			   1, __ATOMIC_RELAXED);
+	rc = build_matchall_gotochain(&nl, a_idx, prio + 1U, GOTO_CHAIN_IDX);
+	if (rc != 0) {
 		__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_fail,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -1039,10 +1107,15 @@ static int tc_live_in_ns(void *arg)
 						    false) == 0)
 					__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_del_ok,
 							   1, __ATOMIC_RELAXED);
+				(void)build_delfilter(&nl, a_idx, prio + 1U,
+						     false);
 
-				if (build_matchall_gotochain(&nl, a_idx,
-							     new_prio,
-							     GOTO_CHAIN_IDX) == 0) {
+				if (build_matchall_mirred(&nl, a_idx, b_idx,
+							  new_prio,
+							  false) == 0 &&
+				    build_matchall_gotochain(&nl, a_idx,
+								 new_prio + 1U,
+								 GOTO_CHAIN_IDX) == 0) {
 					prio = new_prio;
 					__atomic_add_fetch(&shm->stats.tc_live_traffic.filter_replace_ok,
 							   1, __ATOMIC_RELAXED);
