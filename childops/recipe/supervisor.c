@@ -431,6 +431,7 @@ static int seccomp_listener_install(void)
 
 static int recipe_seccomp_listener_supervisor(void)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	struct seccomp_notif req;
 	struct seccomp_notif_resp resp;
 	struct pollfd pfd;
@@ -578,6 +579,7 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
 	__attribute__((noreturn));
 static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	char procs_path[128];
 	char pidbuf[16];
 	ssize_t w __unused__;
@@ -770,6 +772,7 @@ static void cgroup_kill_teardown(const char *cgroup_path,
 
 static int recipe_cgroup_kill_supervisor(void)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	char cgroup_path[64];
 	int events_fd = -1;
 	int kill_fd = -1;
