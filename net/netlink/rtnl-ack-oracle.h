@@ -20,6 +20,16 @@
 void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg);
 
 /*
+ * rtnl_oracle_abort - cancel a pending sample on a path that cannot drain.
+ *
+ * Called when gen_msg was taken but post_send will never run (e.g. the
+ * grammar-path bare sendmsg in sfg_default_data_leg).  Undoes the in-place
+ * NLM_F_ACK annotation and rolls the sampling counter back so the budget
+ * slot is not wasted on a non-drainable path.  No-ops if not active.
+ */
+void rtnl_oracle_abort(void);
+
+/*
  * rtnl_oracle_drain - called from the proto->post_send hook after the
  * real sendmsg syscall has returned.
  *

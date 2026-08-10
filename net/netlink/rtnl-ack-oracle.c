@@ -100,10 +100,11 @@
  *             not to a stale earlier message still in the receive queue.
  */
 static struct {
-	unsigned int   counter;
-	int            active;
-	unsigned short nlmsg_type;
-	__u32          nlmsg_seq;
+	unsigned int      counter;
+	int               active;
+	unsigned short    nlmsg_type;
+	__u32             nlmsg_seq;
+	struct nlmsghdr  *sampled_nlh; /* message buffer that had NLM_F_ACK ORed in */
 } oracle_state;
 
 /*
@@ -123,6 +124,7 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 	struct nlmsghdr *nlh = (struct nlmsghdr *)(void *)msg;
 
 	oracle_state.active = 0;
+	oracle_state.sampled_nlh = NULL;
 
 	oracle_state.counter++;
 	if ((oracle_state.counter % RTNL_ACK_ORACLE_SAMPLE_RATE) != 0)
@@ -135,9 +137,44 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 	 * whether the operation succeeds or fails.
 	 */
 	nlh->nlmsg_flags |= (unsigned short)NLM_F_ACK;
-	oracle_state.nlmsg_type = nlmsg_type;
-	oracle_state.nlmsg_seq  = nlh->nlmsg_seq;
+	oracle_state.nlmsg_type  = nlmsg_type;
+	oracle_state.nlmsg_seq   = nlh->nlmsg_seq;
+	oracle_state.sampled_nlh = nlh;
 	oracle_state.active = 1;
+}
+
+/*
+ * rtnl_oracle_abort - cancel a pending sample without draining.
+ *
+ * Called when gen_msg was taken on a path that cannot call rtnl_oracle_drain()
+ * (e.g. the grammar-path bare sendmsg in sfg_default_data_leg).  Undoes the
+ * in-place NLM_F_ACK annotation and rolls the counter back so the budget slot
+ * is not consumed on a path where draining is impossible.  No-ops immediately
+ * when the oracle is not active.
+ */
+void rtnl_oracle_abort(void)
+{
+	if (!oracle_state.active)
+		return;
+
+	/*
+	 * Undo the NLM_F_ACK flag we ORed into the buffer so the message goes
+	 * out without requesting an ACK and the socket receive queue stays clean.
+	 */
+	if (oracle_state.sampled_nlh != NULL)
+		oracle_state.sampled_nlh->nlmsg_flags &=
+			(unsigned short)~NLM_F_ACK;
+
+	/*
+	 * Roll the counter back by one sample period so the next eligible
+	 * message on a drainable path takes the slot we just surrendered.
+	 * Unsigned wraparound is harmless — the modular test still fires at
+	 * the right interval.
+	 */
+	oracle_state.counter -= RTNL_ACK_ORACLE_SAMPLE_RATE;
+
+	oracle_state.active = 0;
+	oracle_state.sampled_nlh = NULL;
 }
 
 /*
@@ -167,6 +204,7 @@ void rtnl_oracle_drain(int fd)
 	 * during draining cannot double-count this probe.
 	 */
 	oracle_state.active = 0;
+	oracle_state.sampled_nlh = NULL;
 
 	/*
 	 * Drain up to DRAIN_MAX messages with MSG_DONTWAIT.  Data messages

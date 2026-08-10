@@ -38,6 +38,7 @@
 		/* keep last — matches net/proto-*.c order */
 #include "rnd.h"
 #include "xdp-umem-track.h"
+#include "net/netlink/rtnl-ack-oracle.h"
 
 /*
  * Registry filled in by per-family commits.  The trailing NULL is a
@@ -265,6 +266,14 @@ void sfg_default_data_leg(int data_fd,
 	proto = net_protocols[triplet->family].proto;
 	if (proto != NULL && proto->gen_msg != NULL) {
 		proto->gen_msg(triplet, &payload, &payload_len);
+		/*
+		 * This path does a bare sendmsg() and never calls
+		 * proto->post_send, so rtnl_oracle_drain() will not run.
+		 * Cancel any pending sample: undo the NLM_F_ACK annotation
+		 * and roll the counter back so the budget slot is not wasted
+		 * on a path where draining is impossible.
+		 */
+		rtnl_oracle_abort();
 	} else {
 		payload_len = 16 + (rnd_modulo_u32(64));
 		payload = zmalloc(payload_len);
