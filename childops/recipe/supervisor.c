@@ -30,6 +30,7 @@
 #include "childops-util.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -88,6 +89,7 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
 		fork_fail_streak = 0;
 
 		if (pid == 0) {
+			CHILDOP_GRANDCHILD_ENTER();
 			/* Inner tracee: block in pause() so the parent has
 			 * a deterministic stop point to SEIZE+INTERRUPT.
 			 * Any SIGKILL from the parent reaps us cleanly.
@@ -229,6 +231,7 @@ static bool mount_userns_write_one_line(const char *path, const char *line)
 static void mount_userns_dance_inner(void) __attribute__((noreturn));
 static void mount_userns_dance_inner(void)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	char buf[64];
 	uid_t uid = geteuid();
 	gid_t gid = getegid();
@@ -369,6 +372,7 @@ bool recipe_mount_userns_dance(bool *unsupported)
 static void seccomp_listener_inner(void) __attribute__((noreturn));
 static void seccomp_listener_inner(void)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	struct utsname u;
 
 	(void)trinity_raw_syscall(__NR_uname, &u);

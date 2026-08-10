@@ -587,7 +587,7 @@ void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		 * Set before __do_syscall so any synchronous fault inside
 		 * the throwaway syscall is covered.
 		 */
-		in_extrafork_grandchild = 1;
+		CHILDOP_GRANDCHILD_ENTER();
 
 		__do_syscall(rec, entry, GOING_AWAY, NULL, child);
 		/* if this was for eg. an successful execve, we should never get here.

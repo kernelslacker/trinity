@@ -108,6 +108,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
@@ -279,6 +280,7 @@ static int open_loopback_pair(pid_t *out_pid)
 	if (pid < 0)
 		goto fail;
 	if (pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		int s = accept(listener, NULL, NULL);
 
 		if (s >= 0) {
@@ -694,6 +696,7 @@ static void run_no_ingress_dev_arm(struct childdata *child,
 		goto out_setup_fail;
 	}
 	if (helper == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		int un_rc;
 
 		close(sv[0]);

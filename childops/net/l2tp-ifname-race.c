@@ -62,6 +62,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
@@ -382,6 +383,7 @@ static void pick_variant(struct l2tp_variant *v)
  */
 static __attribute__((noreturn)) void l2tp_creator_child(struct l2tp_variant v)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	unsigned char buf[512];
 	struct genl_ctx gctx = GENL_CTX_INIT;
 	struct genl_open_opts opts = {
@@ -435,6 +437,7 @@ static __attribute__((noreturn)) void l2tp_creator_child(struct l2tp_variant v)
  */
 static __attribute__((noreturn)) void l2tp_racer_child(struct l2tp_variant v)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	unsigned char buf[512];
 	struct genl_ctx gctx = GENL_CTX_INIT;
 	struct genl_open_opts opts = {

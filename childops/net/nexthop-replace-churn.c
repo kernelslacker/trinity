@@ -53,6 +53,7 @@
 #include "childops-netlink.h"
 #include "random.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
 #include "utils.h"
@@ -290,6 +291,7 @@ static void nhrc_pick_ula(struct in6_addr *out)
  */
 static void nhrc_route_worker(void)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,

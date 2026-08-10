@@ -109,7 +109,7 @@ volatile sig_atomic_t kcov_protect_active;
  * was somewhere else (flag clear -- treat as a real bug, log it).
  */
 volatile sig_atomic_t in_do_syscall;
-volatile sig_atomic_t in_extrafork_grandchild;
+volatile sig_atomic_t in_grandchild;
 
 /*
  * Stamp the per-child fault beacon (see include/bug_backtrace.h::
@@ -513,7 +513,7 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 * into and the kernel-side crash artefacts still surface the
 	 * death.
 	 */
-	if (in_extrafork_grandchild) {
+	if (in_grandchild) {
 		/*
 		 * Redirect this grandchild's STDERR_FILENO to /dev/null
 		 * before the shared post-skip_buglog diagnostics

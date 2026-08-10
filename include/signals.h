@@ -9,23 +9,25 @@ extern volatile sig_atomic_t ctrlc_pending;
 extern volatile sig_atomic_t in_do_syscall;
 
 /*
- * Set by do_extrafork() in the grand-child branch immediately after
- * fork(), before the grand-child enters __do_syscall().  Read by
- * child_fault_handler() to skip the fault-beacon stamp on the grand-
- * child's crash: this_child() in the grand-child returns the parent
- * worker's childdata (cached_pid is COW-inherited and never updated
- * across the throwaway fork), so without this gate a grand-child
- * SIGSEGV would publish a fault beacon attributed to the parent worker
- * -- the canary queue then bills the crash to the wrong op_nr and the
- * worker gets needlessly retired.
+ * Set at the top of every fork()d grandchild worker body immediately
+ * after the fork(), before any childop logic runs.  Read by
+ * child_fault_handler() to skip the fault-beacon stamp and buglog
+ * open on a grandchild crash: this_child() in the grandchild returns
+ * the parent worker's childdata (cached_pid is COW-inherited and never
+ * updated across the throwaway fork), so a beacon stamp would publish
+ * a fault attributed to the wrong worker, and the buglog open +
+ * memfd lseek+drain would corrupt the worker's on-disk forensic
+ * record.  Skip straight to the in-handler stderr writes; the
+ * grandchild has no childdata of its own to stamp into and the
+ * kernel-side crash artefacts still surface the death.
  *
- * The grand-child is a throwaway (~1s wall clock max, killed by the
- * parent's waitpid timeout in do_extrafork) and has no childdata of
- * its own to stamp into, so the correct action is to skip the beacon
- * entirely.  The kernel-side coredump and the regular crash log path
- * still surface the death.
+ * Use CHILDOP_GRANDCHILD_ENTER() as the first statement in every
+ * fork()d grandchild body so the flag is set before any other code
+ * runs in that process image.
  */
-extern volatile sig_atomic_t in_extrafork_grandchild;
+extern volatile sig_atomic_t in_grandchild;
+
+#define CHILDOP_GRANDCHILD_ENTER() do { in_grandchild = 1; } while (0)
 
 /*
  * Per-child recovery point for asb_relocate()'s best-effort source copy.
