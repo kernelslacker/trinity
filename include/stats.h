@@ -462,9 +462,11 @@ struct stats_s {
 	 * Skip ratio = skipped / (skipped + built); a ratio near 1.0 means
 	 * the buffer is too small to accommodate most of the attr table. */
 	unsigned long netlink_nested_attr_built_width;
-	/* build_nested_attrs: total number of calls (one per nested-attr
-	 * container built, regardless of how many individual attrs were
-	 * written into it).  This is the per-container denominator for
+	/* build_nested_attrs: number of calls whose attr loop was reachable
+	 * (`offset + NLA_HDRLEN + 1 <= buflen`); calls too small to emit or
+	 * truncate an attr are excluded so they do not dilute the ratio.
+	 * One count per nested-attr container that entered the loop.
+	 * This is the per-container denominator for
 	 * netlink_nested_attr_lost_align; skipped_width and built_width are
 	 * per-attr and must NOT be used as denominators for lost_align.
 	 * Truncation rate (per container) = lost_align / build_calls. */
