@@ -190,6 +190,8 @@ static const struct stat_field rtnl_ack_oracle_fields[] = {
 	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, no_reply_clean,     "no_reply_clean"),
 	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, stale_done,         "stale_done"),
 	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, stale_other,        "stale_other"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, stale_foreign_ack,  "stale_foreign_ack"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, stale_undersized,   "stale_undersized"),
 	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, dump_skipped,       "dump_skipped"),
 };
 

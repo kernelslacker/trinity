@@ -33,6 +33,9 @@ struct rtnl_ack_oracle_stats {
 	unsigned long bad_framing;        /* truncated NLMSG_ERROR -- framing failure, not a dropped probe */
 	unsigned long stale_done;  /* NLMSG_DONE terminators drained from concurrent dump traffic      */
 	unsigned long stale_other; /* non-ERROR data/multipart messages drained before our ACK found  */
+	unsigned long stale_foreign_ack; /* NLMSG_ERROR whose nlmsg_seq does not match our probe;       */
+				   /* a rising rate signals another fd path is requesting NLM_F_ACK */
+	unsigned long stale_undersized;  /* datagram shorter than NLMSG_HDRLEN; cannot begin parsing    */
 	unsigned long dump_skipped;  /* NLM_F_DUMP set; sampling skipped, slot returned to next eligible message */
 	/*
 	 * Per-RTM-group accepted counter.

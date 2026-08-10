@@ -305,13 +305,24 @@ void rtnl_oracle_drain(int fd, int send_ok)
 	 * no_reply_clean.  A truncated NLMSG_ERROR (framing failure) is counted
 	 * into bad_framing and does not touch no_reply_clean.
 	 */
+	/* All recv() arms that consume a budget slot increment at least one
+	 * stale_* counter; no drain-loop path is deliberately uncounted. */
 	for (i = 0; i < RTNL_ACK_ORACLE_DRAIN_MAX; i++) {
 		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT | MSG_TRUNC);
 		if (n < 0)
 			goto out_noreply; /* EAGAIN or real error */
 
-		if ((size_t)n < NLMSG_HDRLEN)
-			continue; /* undersized datagram — skip, keep draining */
+		if ((size_t)n < NLMSG_HDRLEN) {
+			/* Too short to hold even one nlmsghdr; skip but count.
+			 * Kept separate from stale_other (data/multipart messages
+			 * classified inside the NLMSG_OK walk) so that stale_other
+			 * remains strictly per-message while stale_undersized flags
+			 * a distinct recv-level anomaly. */
+			__atomic_add_fetch(
+				&shm->stats.rtnl_ack_oracle.stale_undersized,
+				1, __ATOMIC_RELAXED);
+			continue;
+		}
 
 		/*
 		 * Clamp nleft to the bytes we actually received (sizeof(rbuf)
@@ -367,8 +378,16 @@ void rtnl_oracle_drain(int fd, int send_ok)
 			 * different (unsampled) message that happened to have
 			 * NLM_F_ACK set; treat it as stale and keep draining.
 			 */
-			if (err->msg.nlmsg_seq != oracle_state.nlmsg_seq)
-				continue; /* stale — keep looking */
+			if (err->msg.nlmsg_seq != oracle_state.nlmsg_seq) {
+				/* NLMSG_ERROR for a different probe: another path
+				 * in this process used NLM_F_ACK.  Count into
+				 * stale_foreign_ack; a rising rate confirms foreign
+				 * NLM_F_ACK traffic is polluting the receive queue. */
+				__atomic_add_fetch(
+					&shm->stats.rtnl_ack_oracle.stale_foreign_ack,
+					1, __ATOMIC_RELAXED);
+				continue;
+			}
 
 			e = err->error; /* 0 on success, negated errno on failure */
 			goto got_ack;

@@ -212,6 +212,8 @@ stats	object
     stats.rtnl_ack_oracle.no_reply_clean	u64
     stats.rtnl_ack_oracle.stale_done	u64
     stats.rtnl_ack_oracle.stale_other	u64
+    stats.rtnl_ack_oracle.stale_foreign_ack	u64
+    stats.rtnl_ack_oracle.stale_undersized	u64
     stats.rtnl_ack_oracle.dump_skipped	u64
   stats.tracefs_fuzzer	object
     stats.tracefs_fuzzer.kprobe_open_fail	u64
