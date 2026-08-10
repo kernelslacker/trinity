@@ -220,6 +220,14 @@ update this section to match `ls scripts/check-static/*.sh`.)
   defines no registered dispatch function and has no baseline exemption
   is dead code -- its producers never execute and every counter stays
   zero.  The baseline should shrink over time, never grow.
+- `childop-lock-call`: no `.c` file under `childops/` may call `lock()`
+  directly.  `cached_pid` is COW-inherited across `fork()` and never
+  refreshed, so it is not process-unique in a grandchild; a grandchild
+  that called `lock()` would encode the parent's pid as the lock owner,
+  misfire the self-deadlock guard, and block `force_bust_lock()` from
+  recovering an orphan.  All 14 `lock()` call sites are on the
+  `child_process()` dispatch path and must remain there.  See the
+  `bust_lock()` note in `utils/locks.c` for the full audit rationale.
 - `cmp-hints-canonicalise-cmp-ip`: (i) `kcov_canon_cmp_ip()` in
   `kcov/collect.c` must subtract `kcov_kaslr_base`, and (ii) every
   function in `cmp_hints/cmp_hints.c` that calls
