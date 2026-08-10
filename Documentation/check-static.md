@@ -89,6 +89,19 @@ update this section to match `ls scripts/check-static/*.sh`.)
   positives from the hex tokens those scripts legitimately contain.
   Complements `commit-msg-hash-resolves` (which checks commit messages)
   by covering the file-content half of the citation convention.
+- `check-json-sub-completeness`: for every struct that is JSON-emitted
+  via a `stat_category` descriptor table (`STAT_FIELD_SUB` /
+  `STAT_FIELD_JSON_SUB` rows), every scalar (non-array) field of that
+  struct must appear in at least one descriptor row or bespoke
+  `offsetof()` entry.  Closes the gap where a field added to a
+  stats/subsys struct and wired to text output silently vanishes from
+  the JSON schema; `check-stats-reachable` and `stats-field-unemitted`
+  both pass (text consumer counts as reachable) while JSON output is
+  incomplete (the failure mode that hid `rtnl_ack_oracle.bad_framing`
+  until t489).  Pre-existing gaps are baselined in
+  `check-json-sub-completeness.baseline`; that list must shrink, never
+  grow.  Array-walked fields and internal bookkeeping are in the script
+  static allowlist.
 - `check-option-off-branch-inert`: every long option in
   `main/params/*.c` whose parser accepts `"off"` must have an inert
   off-branch body -- a direct assignment to an `*_OFF` enum whose
