@@ -112,10 +112,14 @@ trap 'rm -f "$RESULTS_FILE" 2>/dev/null' EXIT
 # Fixture B: static void raw_y(int a) { __atomic_add_fetch(...); } (full
 #   definition with a self-counting body).  raw_y MUST be recorded as
 #   self-counting.
+#
+# Fixture C: static void raw_z(...) { __atomic_store_n(&rs->thread_tally, 0, ...); }
+#   zero-store (reset) must NOT be classified as self-counting.
 # ---------------------------------------------------------------------------
 _st_fwd="$(mktemp /tmp/csc-rawfn-st-fwd.XXXXXX.c)"
 _st_def="$(mktemp /tmp/csc-rawfn-st-def.XXXXXX.c)"
-trap 'rm -f "$RESULTS_FILE" "$_st_fwd" "$_st_def" 2>/dev/null' EXIT
+_st_storen="$(mktemp /tmp/csc-rawfn-st-storen.XXXXXX.c)"
+trap 'rm -f "$RESULTS_FILE" "$_st_fwd" "$_st_def" "$_st_storen" 2>/dev/null' EXIT
 
 cat > "$_st_fwd" <<'__FIXTURE_A__'
 static void raw_x(int);
@@ -133,6 +137,13 @@ static void raw_y(int a)
 	__atomic_add_fetch(&rs->direct_syscalls, 1, __ATOMIC_RELAXED);
 }
 __FIXTURE_B__
+
+cat > "$_st_storen" <<'__FIXTURE_C__'
+static void raw_z(struct rs *rs)
+{
+	__atomic_store_n(&rs->thread_tally, 0, __ATOMIC_RELEASE);
+}
+__FIXTURE_C__
 
 _st_result=$(awk '
 FNR == 1 { in_block = 0 }
@@ -152,8 +163,8 @@ FNR == 1 { in_block = 0 }
 		}
 	}
 	if (in_raw_fn) {
-		if ((match(code, /__atomic_(add_fetch|fetch_add|store_n)[[:space:]]*\(/) &&
-		     match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) ||
+		if (match(code, /__atomic_(add_fetch|fetch_add)[[:space:]]*\([[:space:]]*&[^,]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
+		    match(code, /__atomic_store_n[[:space:]]*\([^,]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[^,]*,[[:space:]]*[^0 \t,]/) ||
 		    match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[ \t]*(\+\+|\+=)/) ||
 		    match(code, /\+\+[ \t]*[a-zA-Z_][a-zA-Z0-9_]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/))
 			raw_fn_self_counting = 1
@@ -171,7 +182,7 @@ FNR == 1 { in_block = 0 }
 		}
 	}
 }
-' "$_st_fwd" "$_st_def")
+' "$_st_fwd" "$_st_def" "$_st_storen")
 
 if echo "$_st_result" | grep -q "^KNOWN raw_x "; then
 	echo "FAIL: $NAME selftest: prototype raw_x wrongly classified as a definition (got: $_st_result)" >&2
@@ -179,6 +190,14 @@ if echo "$_st_result" | grep -q "^KNOWN raw_x "; then
 fi
 if ! echo "$_st_result" | grep -q "^KNOWN raw_y self=1$"; then
 	echo "FAIL: $NAME selftest: raw_y definition not classified as self-counting (got: $_st_result)" >&2
+	exit 1
+fi
+if echo "$_st_result" | grep -q "^KNOWN raw_z self=1$"; then
+	echo "FAIL: $NAME selftest: zero-store raw_z wrongly classified as self-counting (got: $_st_result)" >&2
+	exit 1
+fi
+if ! echo "$_st_result" | grep -q "^KNOWN raw_z self=0$"; then
+	echo "FAIL: $NAME selftest: zero-store raw_z not recorded as not-self-counting (got: $_st_result)" >&2
 	exit 1
 fi
 
