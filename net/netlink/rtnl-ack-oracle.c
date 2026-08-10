@@ -95,11 +95,15 @@
  * counter:    modular send counter; active when counter % SAMPLE_RATE == 0.
  * active:     1 when the current message was sampled and a drain is due.
  * nlmsg_type: RTM_* type of the sampled message, captured for group accounting.
+ * nlmsg_seq:  sequence number of the sampled message; used in the drain loop
+ *             to verify that an NLMSG_ERROR reply belongs to this probe and
+ *             not to a stale earlier message still in the receive queue.
  */
 static struct {
 	unsigned int   counter;
 	int            active;
 	unsigned short nlmsg_type;
+	__u32          nlmsg_seq;
 } oracle_state;
 
 /*
@@ -132,6 +136,7 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 	 */
 	nlh->nlmsg_flags |= (unsigned short)NLM_F_ACK;
 	oracle_state.nlmsg_type = nlmsg_type;
+	oracle_state.nlmsg_seq  = nlh->nlmsg_seq;
 	oracle_state.active = 1;
 }
 
@@ -187,6 +192,16 @@ void rtnl_oracle_drain(int fd)
 			goto out_noreply; /* truncated ACK */
 
 		err = (struct nlmsgerr *)NLMSG_DATA(nlh);
+		/*
+		 * Correlate by sequence number: the NLMSG_ERROR payload
+		 * echoes the original nlmsghdr, whose nlmsg_seq must match
+		 * the one we recorded at sample time.  A mismatch means
+		 * this reply belongs to a different (unsampled) message
+		 * that happened to have NLM_F_ACK set; treat it as stale
+		 * and keep draining.
+		 */
+		if (err->msg.nlmsg_seq != oracle_state.nlmsg_seq)
+			continue; /* stale — drain and look for our reply */
 		e   = err->error; /* 0 on success, negated errno on failure */
 		goto got_ack;
 	}
