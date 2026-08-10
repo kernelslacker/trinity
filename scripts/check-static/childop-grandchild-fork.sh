@@ -81,6 +81,7 @@ trap 'rm -f "$tmp_out"' EXIT
 
 # Load file:line allowlist of audited non-grandchild fork() sites.
 declare -A allowlist
+declare -A allowlist_matched
 while IFS= read -r _entry; do
 	[[ -z "$_entry" || "$_entry" == \#* ]] && continue
 	_key="${_entry%%[[:space:]]*}"
@@ -487,7 +488,7 @@ grep -v '^__CENSUS__ ' "$tmp_out" > "${tmp_out}.nc" && mv "${tmp_out}.nc" "$tmp_
 	while IFS= read -r _line; do
 		[ -z "$_line" ] && continue
 		_key="${_line#UNPARSED:}"
-		[ "${allowlist[$_key]+set}" ] && continue
+		if [ "${allowlist[$_key]+set}" ]; then allowlist_matched[$_key]=1; continue; fi
 		printf '%s\n' "$_line"
 	done < "$tmp_out"
 } > "${tmp_out}.filtered" && mv "${tmp_out}.filtered" "$tmp_out"
@@ -595,6 +596,28 @@ if (( total_located + total_unparsed != total_scanned )); then
 		echo "  Check pass-2 fork-site classification in the gawk block."
 	} >&2
 	echo "FAIL: $NAME: census invariant violated (scanned=$total_scanned located=$total_located unparsed=$total_unparsed)"
+	exit 1
+fi
+
+# Dead-allowlist check: every key that was loaded must have matched at least
+# one scanner output.  A key that never matched means the site drifted (line
+# number changed) or was removed; the entry is now a dead suppression.
+dead_allowlist=()
+for _k in "${!allowlist[@]}"; do
+	if [ -z "${allowlist_matched[$_k]+x}" ]; then
+		dead_allowlist+=("$_k")
+	fi
+done
+
+if [ "${#dead_allowlist[@]}" -gt 0 ]; then
+	{
+		echo "  $NAME: ${#dead_allowlist[@]} dead allowlist entry/entries (never matched by scanner):"
+		for _e in "${dead_allowlist[@]}"; do echo "    DEAD ALLOWLIST ENTRY: $_e"; done
+		echo "  The file:line key drifted (source edited above the site) or the site was removed."
+		echo "  Update the entry to the current line number or remove it from:"
+		echo "    scripts/check-static/childop-grandchild-fork.allowlist"
+	} >&2
+	echo "FAIL: $NAME: ${#dead_allowlist[@]} dead allowlist entry/entries"
 	exit 1
 fi
 

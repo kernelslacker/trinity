@@ -33,9 +33,11 @@ SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
 declare -A allowlist
+declare -A allowlist_matched
 while IFS= read -r entry; do
 	[[ -z "$entry" || "$entry" == \#* ]] && continue
-	allowlist["$entry"]=1
+	_key="${entry%%[[:space:]]*}"
+	allowlist["$_key"]=1
 done < "$SCRIPT_DIR/childop-lock-call.allowlist"
 
 warn_count=0
@@ -62,12 +64,34 @@ while IFS= read -r srcfile; do
 
 		# Skip known-audited call sites listed in the allowlist.
 		key="${srcfile#./}:$lineno"
-		[ "${allowlist[$key]+set}" ] && continue
+		if [ "${allowlist[$key]+set}" ]; then allowlist_matched[$key]=1; continue; fi
 
 		echo "WARN: ${srcfile#./}:${lineno}: lock/bust_lock/force_bust_lock called -- verify grandchild-unreachability (see utils/locks.c bust_lock() note)"
 		warn_count=$((warn_count + 1))
 	done < <(grep -En '\b(lock|bust_lock|force_bust_lock)\s*\(' "$srcfile" 2>/dev/null)
 done < <(find . -name '*.c' -type f | sort)
+
+# Dead-allowlist check: every key loaded from the allowlist must have matched
+# at least one grep hit.  A key that never matched means the site drifted
+# (source edited above the site) or was removed; the entry is now a dead
+# suppression and could silently pass a new unaudited site at the same line.
+dead_count=0
+for _k in "${!allowlist[@]}"; do
+	if [ -z "${allowlist_matched[$_k]+x}" ]; then
+		echo "DEAD ALLOWLIST ENTRY: $_k" >&2
+		dead_count=$((dead_count + 1))
+	fi
+done
+if [ "$dead_count" -gt 0 ]; then
+	{
+		echo "  $NAME: $dead_count dead allowlist entry/entries (never matched by scanner)"
+		echo "  The file:line key drifted (source edited above the site) or the site was removed."
+		echo "  Update the entry to the current line number or remove it from:"
+		echo "    scripts/check-static/childop-lock-call.allowlist"
+	} >&2
+	echo "FAIL: $NAME: $dead_count dead allowlist entry/entries"
+	exit 1
+fi
 
 if [ "$warn_count" -gt 0 ]; then
 	{
