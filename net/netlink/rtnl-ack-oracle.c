@@ -318,8 +318,40 @@ void rtnl_oracle_drain(int fd, int send_ok)
 	 */
 	for (i = 0; i < RTNL_ACK_ORACLE_DRAIN_MAX; i++) {
 		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT | MSG_TRUNC);
-		if (n < 0)
-			goto out_noreply; /* EAGAIN or real error */
+		if (n < 0) {
+			int saved_errno = errno;
+
+			if (saved_errno == EAGAIN)
+				goto out_noreply; /* queue empty: probe not replied */
+			if (saved_errno == ENOBUFS) {
+				/*
+				 * Receive-queue overflow: sk_err is self-clearing.
+				 * The ACK may be sitting behind the overflow marker;
+				 * consume this budget slot and keep draining rather
+				 * than laundering ENOBUFS into no_reply_clean.
+				 */
+				__atomic_add_fetch(
+					&shm->stats.rtnl_ack_oracle.recv_enobufs,
+					1, __ATOMIC_RELAXED);
+				continue;
+			}
+			if (saved_errno == EINTR) {
+				/*
+				 * Signal interrupted recv(); do not consume a
+				 * budget slot — retry this iteration.
+				 */
+				__atomic_add_fetch(
+					&shm->stats.rtnl_ack_oracle.recv_eintr,
+					1, __ATOMIC_RELAXED);
+				i--;
+				continue;
+			}
+			/* Real socket error: give up on this probe. */
+			__atomic_add_fetch(
+				&shm->stats.rtnl_ack_oracle.recv_error,
+				1, __ATOMIC_RELAXED);
+			goto out_noreply;
+		}
 
 		if ((size_t)n < NLMSG_HDRLEN) {
 			/* Too short to hold even one nlmsghdr; skip but count.

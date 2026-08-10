@@ -173,7 +173,8 @@ static void dump_stats_render_rtnl_ack_oracle(void)
 	    !o->stale_done && !o->stale_other &&
 	    !o->stale_foreign_ack && !o->stale_undersized &&
 	    !o->stale_truncated && !o->stale_unparsed &&
-	    !o->dump_skipped)
+	    !o->dump_skipped &&
+	    !o->recv_enobufs && !o->recv_eintr && !o->recv_error)
 		return;
 
 	stat_row("rtnl_ack_oracle", "accepted",      o->accepted);
@@ -193,6 +194,9 @@ static void dump_stats_render_rtnl_ack_oracle(void)
 	stat_row("rtnl_ack_oracle", "stale_truncated",    o->stale_truncated);
 	stat_row("rtnl_ack_oracle", "stale_unparsed",     o->stale_unparsed);
 	stat_row("rtnl_ack_oracle", "dump_skipped",       o->dump_skipped);
+	stat_row("rtnl_ack_oracle", "recv_enobufs",       o->recv_enobufs);
+	stat_row("rtnl_ack_oracle", "recv_eintr",         o->recv_eintr);
+	stat_row("rtnl_ack_oracle", "recv_error",         o->recv_error);
 
 	/* Per-RTM-group accepted counts: emit only non-zero entries.
 	 * group 0 = RTM_NEW/DEL/GET/SETLINK, group 1 = *ADDR, etc. */

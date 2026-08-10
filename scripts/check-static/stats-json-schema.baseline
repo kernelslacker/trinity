@@ -218,6 +218,9 @@ stats	object
     stats.rtnl_ack_oracle.stale_unparsed	u64
     stats.rtnl_ack_oracle.bad_framing	u64
     stats.rtnl_ack_oracle.dump_skipped	u64
+    stats.rtnl_ack_oracle.recv_enobufs	u64
+    stats.rtnl_ack_oracle.recv_eintr	u64
+    stats.rtnl_ack_oracle.recv_error	u64
   stats.tracefs_fuzzer	object
     stats.tracefs_fuzzer.kprobe_open_fail	u64
     stats.tracefs_fuzzer.kprobe_write_fail	u64
