@@ -37,6 +37,7 @@
 
 #include "childops-util.h"
 #include "shm.h"
+#include "signals.h"
 #include "userns-bootstrap.h"
 
 /*
@@ -198,6 +199,7 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 	}
 
 	if (pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		grandchild_body(target_ns_flags, fn, arg);
 		_exit(UBS_EXIT_USERNS_OTHER);	/* unreachable */
 	}

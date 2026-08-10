@@ -1,8 +1,15 @@
 #!/bin/bash
 #
-# childop-grandchild-fork: flag fork() child branches in childops/ .c files
-# whose child body does NOT contain CHILDOP_GRANDCHILD_ENTER(), either directly
-# or via a call to a function that starts with CHILDOP_GRANDCHILD_ENTER().
+# childop-grandchild-fork: flag fork() child branches in .c files whose child
+# body does NOT contain CHILDOP_GRANDCHILD_ENTER(), either directly or via a
+# call to a function that starts with CHILDOP_GRANDCHILD_ENTER().
+#
+# Scope: the whole source tree (not just childops/).  Sites outside childops/
+# that have been audited and determined NOT to be grandchild-capable are
+# listed in the AUDITED_NON_GRANDCHILD exclusion block below.  The rationale
+# mirrors 9add45f15030 which widened the lock gate for the same reason:
+# userns throwaway grandchild callbacks and exec-fork helpers can live
+# anywhere in the tree.
 #
 # Background: b2a7eda686e8 ("health: propagate grandchild beacon-gate to all
 # fork sites") introduced CHILDOP_GRANDCHILD_ENTER() and propagated it to 8 of
@@ -89,8 +96,52 @@ trap 'rm -f "$tmp_out"' EXIT
 #           For assignment form, UNPARSED:<file>:<line> is emitted if the
 #           inner scan cannot locate a child branch within 40 lines.
 
+# -----------------------------------------------------------------------
+# AUDITED_NON_GRANDCHILD: fork() sites outside childops/ that have been
+# reviewed and confirmed NOT to produce a grandchild worker in the beacon
+# sense (i.e. the fork child does not run syscalls as trinity's grandchild
+# and does not need CHILDOP_GRANDCHILD_ENTER).
+#
+# Each entry is a repo-relative file path.  Rationale per file:
+#
+#   fds/scratch_block.c
+#     run_mkfs_ext4(): one-shot exec helper.  Forks to run mkfs.ext4 against
+#     a scratch device during pre-fork single-threaded setup.  The child
+#     immediately exec()s an external binary; it is not a trinity grandchild
+#     worker and carries no beacon state.
+#
+#   health/kmsg-monitor.c
+#     kmsg_monitor_start(): infrastructure daemon fork.  The comment in that
+#     file notes it is "intentionally NOT registered in pids[]/
+#     running_childs/childdata -- it is infrastructure, not a fuzz child".
+#     The child runs the kmsg polling helper loop, never syscall fuzzing;
+#     it is not a trinity grandchild worker.
+#
+#   utils/pc_format.c
+#     pc_symbolize_fork(): addr2line exec helper.  Forks a short-lived
+#     subprocess that exec()s addr2line to resolve a PC address and pipes
+#     the result back.  The child is not a trinity grandchild worker.
+#
+#   utils/self_cgroup_fork.c
+#     self_cgroup_fork_into_workload(): produces the regular trinity CHILD
+#     process (pid returned to spawn_child()).  The fork()d process becomes
+#     a first-generation child, not a grandchild; CHILDOP_GRANDCHILD_ENTER
+#     is inapplicable here.  The scanner emits UNPARSED for this site
+#     because there is no if (pid == 0) branch -- the child falls through
+#     and the function returns pid (0) to the caller.
+# -----------------------------------------------------------------------
+
 while IFS= read -r srcfile; do
 	relfile="${srcfile#"$ROOT"/}"
+
+	# Skip audited non-grandchild sites (see AUDITED_NON_GRANDCHILD above).
+	case "$relfile" in
+		fds/scratch_block.c|\
+		health/kmsg-monitor.c|\
+		utils/pc_format.c|\
+		utils/self_cgroup_fork.c)
+			continue ;;
+	esac
 
 	gawk -v file="$relfile" '
 
@@ -418,7 +469,7 @@ while IFS= read -r srcfile; do
 	}
 	' "$srcfile" >> "$tmp_out"
 
-done < <(find "$ROOT/childops" -name '*.c' | sort)
+done < <(find "$ROOT" -name '*.c' | sort)
 
 # -----------------------------------------------------------------------
 # Regen mode: write the current output as the new baseline.
