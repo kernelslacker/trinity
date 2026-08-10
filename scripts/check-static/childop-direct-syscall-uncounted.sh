@@ -152,10 +152,14 @@ while IFS= read -r srcfile; do
 	FNR == NR {
 		code = strip_comments($0)
 		# Detect: static <type> raw_NAME(
-		# Word boundary on raw_ is ensured by the fixed static prefix and
-		# the requirement that the char before raw_ is whitespace/*).
-		if (!in_raw_fn &&
-		    match(code, /static[[:space:]]+[a-zA-Z_][a-zA-Z0-9_*[:space:]]*raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/)) {
+		# A true word boundary before raw_ is enforced by requiring that the
+		# character immediately preceding raw_ is not [a-zA-Z0-9_], matching
+		# the same guard used by the call-site scanner at the second pass.
+		# If in_raw_fn is already set but no opening brace has been seen yet
+		# (i.e. the previous match was a forward declaration), reset state
+		# so the new definition is not misclassified under the old name.
+		if ((!in_raw_fn || !raw_fn_brace_opened) &&
+		    match(code, /static[[:space:]]+[a-zA-Z_][a-zA-Z0-9_*[:space:]]*[^a-zA-Z0-9_]raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/)) {
 			tmp = substr(code, RSTART)
 			if (match(tmp, /raw_[a-zA-Z_][a-zA-Z0-9_]*/)) {
 				cur_raw_fn_name = substr(tmp, RSTART, RLENGTH)
