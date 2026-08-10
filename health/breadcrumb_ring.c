@@ -35,6 +35,7 @@ void corrupt_ptr_breadcrumb_push(const struct syscallrecord *rec,
 				 unsigned long bad_ptr,
 				 const char *site_tag)
 {
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	struct childdata *child = this_child();
 	struct corrupt_ptr_breadcrumb_ring *ring;
 	struct corrupt_ptr_breadcrumb *slot;

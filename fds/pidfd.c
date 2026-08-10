@@ -121,6 +121,7 @@ static int get_rand_pidfd(void)
 			continue;
 
 		if (fcntl(fd, F_GETFD) < 0) {
+			/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 			struct childdata *child = this_child();
 
 			/* Publish the stale fd to the parent and drop the

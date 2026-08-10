@@ -50,6 +50,7 @@
 #define trinity_cmp_syscall(nr, ...) \
 	__extension__ ({ \
 		long _tcsr; \
+		/* Not reached from fork grandchildren; this_child() returns the child's own slot. */ \
 		struct childdata *_tcsc = this_child(); \
 		struct kcov_child *_tcsk = (_tcsc != NULL) ? &_tcsc->kcov : NULL; \
 		childop_cmp_reset(_tcsk); \

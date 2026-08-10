@@ -170,6 +170,7 @@ static int get_rand_watch_queue_fd(void)
  */
 static void watch_queue_try_replenish(unsigned int budget)
 {
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	struct childdata *child = this_child();
 	unsigned int i;
 	/*

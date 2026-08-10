@@ -57,6 +57,7 @@ struct corrupt_ptr_breadcrumb_ring {
  * process) are dropped -- per-child storage has no parent fallback and
  * those callers are vanishingly rare relative to per-child fire volume.
  * site_tag may be NULL; empty string is recorded in that case.
+ * Not reached from fork grandchildren; this_child() returns the child's own slot.
  */
 void corrupt_ptr_breadcrumb_push(const struct syscallrecord *rec,
 				 unsigned int arg_idx,

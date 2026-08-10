@@ -83,6 +83,7 @@ void prop_ring_push(struct childdata *child,
  * and which can safely be replayed.  Looks up the owning child via
  * this_child(); no-op if called outside a child context.  KIND must
  * be a typed bucket (not SCALAR_UNTYPED, not SCALAR_NR_KINDS).
+ * Not reached from fork grandchildren; this_child() returns the child's own slot.
  */
 void prop_ring_push_scalar(unsigned int nr, long scalar_val,
 			   enum scalar_kind kind);

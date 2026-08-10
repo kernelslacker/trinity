@@ -116,6 +116,7 @@ retry:
 
 int get_random_fd(void)
 {
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	struct childdata *child = this_child();
 	unsigned int retries = 0;
 	unsigned int outer_retries = 0;

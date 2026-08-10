@@ -184,6 +184,7 @@ static int get_rand_timerfd_fd(void)
  */
 static void timerfd_try_replenish(unsigned int budget)
 {
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	struct childdata *child = this_child();
 	unsigned int i;
 	static const int clockids[] = {

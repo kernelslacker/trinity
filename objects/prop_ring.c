@@ -167,6 +167,7 @@ void prop_ring_push(struct childdata *child,
 void prop_ring_push_scalar(unsigned int nr, long scalar_val,
 			   enum scalar_kind kind)
 {
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	struct childdata *child = this_child();
 
 	if (child == NULL)

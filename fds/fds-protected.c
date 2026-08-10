@@ -99,6 +99,7 @@ bool fd_is_protected(int fd)
 	taintfd = trinity_tainted_fd_cached();
 	if (taintfd >= 0 && fd == taintfd)
 		return true;
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	child = this_child();
 	if (child == NULL)
 		return false;
@@ -152,6 +153,7 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 		if (lowest < 0 || taintfd < lowest)
 			lowest = taintfd;
 
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	child = this_child();
 	if (child != NULL) {
 		if (child->kcov.fd >= 0 &&

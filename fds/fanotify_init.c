@@ -131,6 +131,7 @@ static int get_rand_fanotifyfd(void)
  */
 static void fanotify_try_replenish(unsigned int budget)
 {
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	struct childdata *child = this_child();
 	unsigned int i;
 	/*

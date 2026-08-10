@@ -175,6 +175,7 @@ static void inotify_try_replenish(unsigned int budget)
 		IN_CLOEXEC,
 		IN_NONBLOCK | IN_CLOEXEC,
 	};
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	struct childdata *child = this_child();
 	unsigned int i;
 	/*

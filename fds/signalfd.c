@@ -123,6 +123,7 @@ static int get_rand_signalfd_fd(void)
  */
 static void signalfd_try_replenish(unsigned int budget)
 {
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	struct childdata *child = this_child();
 	unsigned int i;
 	/*

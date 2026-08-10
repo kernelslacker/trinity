@@ -190,6 +190,7 @@ static int get_rand_memfd_fd(void)
  */
 static void memfd_try_replenish(unsigned int budget)
 {
+	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	struct childdata *child = this_child();
 	unsigned int i;
 	static const unsigned int flags[] = {
