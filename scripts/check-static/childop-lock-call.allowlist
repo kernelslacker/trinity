@@ -1,24 +1,30 @@
 # Audited lock()/bust_lock()/force_bust_lock() call sites excluded from the
 # lock-call gate.
 #
-# Format: file:line  # rationale
-#   file:line is the repo-relative path and the line number of the lock() call
-#   as reported by the grep scan.  A new lock() call added anywhere else in one
-#   of these files is still caught by the gate.
+# Format: file:line:hash  # rationale
+#   file    = repo-relative path
+#   line    = line number of the lock() call as reported by the grep scan
+#   hash    = first 8 hex chars of sha256 of the trimmed line content
+#
+# Keying on file:line:hash rather than plain file:line means that both the
+# line number AND the site content must match.  Updating a line number in
+# the allowlist without re-auditing (bulk-renumber) fails on hash mismatch.
+#
+# A new lock() call added anywhere else in one of these files is still caught.
 #
 # All 14 sites are on the child_process() dispatch path and are grandchild-
 # unreachable (audited in 96e7cd26ef56 and 60b11ae678b5).
-cmp_hints/field.c:185          # cmp_hints_field_record(): per-pool claim-and-insert on child dispatch path; grandchildren skip child_process() so this is unreachable from a grandchild
-cmp_hints/pool.c:28            # pool_lock() helper wrapper; called only from cmp-hints routines on child_process() dispatch path; grandchild-unreachable
-cmp_hints/pool.c:635           # shared_tier insert path called from child dispatch; lock held only for the linear-probe insert; no fork() on this call chain
-cmp_hints/pool.c:948           # shared_tier read-sample path called from child dispatch; symmetric with the insert path above; no fork() on this call chain
-random_syscall/chain-persist.c:191  # chain_corpus_persist(): snapshots ring under lock before unlocked disk write; called from child_process() persist path; no fork() on path
-random_syscall/chain-persist.c:455  # chain_corpus_load(): ring slot write during corpus restore at startup/child init; no fork() between corpus load and this lock site
-random_syscall/chain-corpus.c:237   # chain_corpus_save(): ring slot write on child dispatch; called from child_process() post-exec path; grandchild-unreachable
-args/pools/blob_corpus.c:99    # blob_corpus_try_get_base(): lock around slot scan for buf fetch; called from child_process() arg-setup path; no fork() on this chain
-args/pools/blob_corpus.c:178   # blob_corpus_promote_pending(): lock around pending-slot promotion after child dispatch; child_process() post-exec only; grandchild-unreachable
-tables/table-activate.c:219    # deactivate_syscall_locked(): holds syscalltable_lock for deactivation; called only from child deactivation paths; no fork() on call chain
-persist/minicorpus-core.c:102  # minicorpus_ring_lock() wrapper; called only from child_process() minicorpus persist path; grandchild-unreachable
-dispatch/syscall-exec.c:64     # auto-disable 32-bit syscalls path inside do_syscall(); child_process() dispatch; no fork() between here and the lock acquire
-dispatch/syscall-post.c:160    # deactivate_enosys(): post-exec ENOSYS deactivation; child_process() dispatch path only; grandchild-unreachable
-child/child-periodic.c:61      # check_parent_pid(): buglock acquired to write reparent BUG message; child periodic handler called from child_process() maintenance loop; no fork() on path
+cmp_hints/field.c:185:f7a543ac          # cmp_hints_field_record(): per-pool claim-and-insert on child dispatch path; grandchildren skip child_process() so this is unreachable from a grandchild
+cmp_hints/pool.c:28:f7a543ac            # pool_lock() helper wrapper; called only from cmp-hints routines on child_process() dispatch path; grandchild-unreachable
+cmp_hints/pool.c:635:ddb806b6           # shared_tier insert path called from child dispatch; lock held only for the linear-probe insert; no fork() on this call chain
+cmp_hints/pool.c:948:ddb806b6           # shared_tier read-sample path called from child dispatch; symmetric with the insert path above; no fork() on this call chain
+random_syscall/chain-persist.c:191:4ad63a81  # chain_corpus_persist(): snapshots ring under lock before unlocked disk write; called from child_process() persist path; no fork() on path
+random_syscall/chain-persist.c:455:4ad63a81  # chain_corpus_load(): ring slot write during corpus restore at startup/child init; no fork() between corpus load and this lock site
+random_syscall/chain-corpus.c:237:4ad63a81   # chain_corpus_save(): ring slot write on child dispatch; called from child_process() post-exec path; grandchild-unreachable
+args/pools/blob_corpus.c:99:ecc9b7f9    # blob_corpus_try_get_base(): lock around slot scan for buf fetch; called from child_process() arg-setup path; no fork() on this chain
+args/pools/blob_corpus.c:178:ecc9b7f9   # blob_corpus_promote_pending(): lock around pending-slot promotion after child dispatch; child_process() post-exec only; grandchild-unreachable
+tables/table-activate.c:219:cdf94f96    # deactivate_syscall_locked(): holds syscalltable_lock for deactivation; called only from child deactivation paths; no fork() on call chain
+persist/minicorpus-core.c:102:4ad63a81  # minicorpus_ring_lock() wrapper; called only from child_process() minicorpus persist path; grandchild-unreachable
+dispatch/syscall-exec.c:64:cdf94f96     # auto-disable 32-bit syscalls path inside do_syscall(); child_process() dispatch; no fork() between here and the lock acquire
+dispatch/syscall-post.c:160:cdf94f96    # deactivate_enosys(): post-exec ENOSYS deactivation; child_process() dispatch path only; grandchild-unreachable
+child/child-periodic.c:61:8d0e5bfc      # check_parent_pid(): buglock acquired to write reparent BUG message; child periodic handler called from child_process() maintenance loop; no fork() on path

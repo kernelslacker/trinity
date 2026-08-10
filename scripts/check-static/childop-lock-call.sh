@@ -16,8 +16,9 @@
 # and 60b11ae678b5 ("check-static: flag childop lock() calls for grandchild review")).
 # utils/locks.c (implementation) and main/reap.c (force_bust_lock recovery)
 # are excluded by name.  All other audited sites are listed in
-# childop-lock-call.allowlist by exact file:line so that a new lock() call
-# added to a previously-audited file is not silently passed.
+# childop-lock-call.allowlist by file:line:hash so that a new lock() call
+# added to a previously-audited file is not silently passed, and so that
+# updating a line number without re-auditing fails on hash mismatch.
 # No other code in the whole tree reaches lock(), bust_lock(), or
 # force_bust_lock().  This check ensures that invariant is not silently broken
 # by a future patch.
@@ -63,7 +64,12 @@ while IFS= read -r srcfile; do
 		esac
 
 		# Skip known-audited call sites listed in the allowlist.
-		key="${srcfile#./}:$lineno"
+		# Key format is file:line:hash where hash is the first 8 hex chars
+		# of sha256 of the trimmed line content.  Both the line number and
+		# the content must match; updating a line number without re-auditing
+		# will fail on hash mismatch.
+		hash=$(printf '%s' "$trimmed" | sha256sum | cut -c1-8)
+		key="${srcfile#./}:$lineno:$hash"
 		if [ "${allowlist[$key]+set}" ]; then allowlist_matched[$key]=1; continue; fi
 
 		echo "WARN: ${srcfile#./}:${lineno}: lock/bust_lock/force_bust_lock called -- verify grandchild-unreachability (see utils/locks.c bust_lock() note)"
@@ -85,8 +91,8 @@ done
 if [ "$dead_count" -gt 0 ]; then
 	{
 		echo "  $NAME: $dead_count dead allowlist entry/entries (never matched by scanner)"
-		echo "  The file:line key drifted (source edited above the site) or the site was removed."
-		echo "  Update the entry to the current line number or remove it from:"
+		echo "  The file:line:hash key did not match: line number changed, site text changed,"
+		echo "  or the site was removed.  Re-derive the correct key or remove the stale entry from:"
 		echo "    scripts/check-static/childop-lock-call.allowlist"
 	} >&2
 	echo "FAIL: $NAME: $dead_count dead allowlist entry/entries"

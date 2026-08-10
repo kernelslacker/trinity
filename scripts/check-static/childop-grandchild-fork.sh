@@ -6,7 +6,7 @@
 #
 # Scope: the whole source tree (not just childops/).  Sites outside childops/
 # that have been audited and determined NOT to be grandchild-capable are
-# listed by exact file:line in childop-grandchild-fork.allowlist (same
+# listed by file:line:hash in childop-grandchild-fork.allowlist (same
 # mechanism used by the lock gate, see 9add45f15030 for the rationale):
 # userns throwaway grandchild callbacks and exec-fork helpers can live
 # anywhere in the tree.
@@ -482,13 +482,22 @@ done < "$tmp_out"
 grep -v '^__CENSUS__ ' "$tmp_out" > "${tmp_out}.nc" && mv "${tmp_out}.nc" "$tmp_out"
 
 # Filter out allowlisted findings (audited non-grandchild sites).
-# For UNPARSED entries strip the "UNPARSED:" prefix before lookup --
-# the allowlist uses plain file:line for all entries.
+# For UNPARSED entries strip the "UNPARSED:" prefix before lookup.
+# Allowlist keys are file:line:hash; hash is the first 8 hex chars of
+# sha256 of the trimmed line content.  Both the line number and the
+# content must match; updating a line number without re-auditing will
+# fail on hash mismatch.
 {
 	while IFS= read -r _line; do
 		[ -z "$_line" ] && continue
-		_key="${_line#UNPARSED:}"
-		if [ "${allowlist[$_key]+set}" ]; then allowlist_matched[$_key]=1; continue; fi
+		_filecolon="${_line#UNPARSED:}"
+		_file="${_filecolon%%:*}"
+		_lno="${_filecolon##*:}"
+		_raw=$(sed -n "${_lno}p" "$ROOT/$_file" 2>/dev/null)
+		_trim="${_raw#"${_raw%%[![:space:]]*}"}"
+		_hash=$(printf '%s' "$_trim" | sha256sum | cut -c1-8)
+		_hkey="$_file:$_lno:$_hash"
+		if [ "${allowlist[$_hkey]+set}" ]; then allowlist_matched[$_hkey]=1; continue; fi
 		printf '%s\n' "$_line"
 	done < "$tmp_out"
 } > "${tmp_out}.filtered" && mv "${tmp_out}.filtered" "$tmp_out"
@@ -600,8 +609,9 @@ if (( total_located + total_unparsed != total_scanned )); then
 fi
 
 # Dead-allowlist check: every key that was loaded must have matched at least
-# one scanner output.  A key that never matched means the site drifted (line
-# number changed) or was removed; the entry is now a dead suppression.
+# one scanner output.  A key that never matched means the file:line:hash did
+# not match any current finding (line number changed, site text changed, or
+# the site was removed); the entry is now a dead suppression.
 dead_allowlist=()
 for _k in "${!allowlist[@]}"; do
 	if [ -z "${allowlist_matched[$_k]+x}" ]; then
@@ -613,8 +623,8 @@ if [ "${#dead_allowlist[@]}" -gt 0 ]; then
 	{
 		echo "  $NAME: ${#dead_allowlist[@]} dead allowlist entry/entries (never matched by scanner):"
 		for _e in "${dead_allowlist[@]}"; do echo "    DEAD ALLOWLIST ENTRY: $_e"; done
-		echo "  The file:line key drifted (source edited above the site) or the site was removed."
-		echo "  Update the entry to the current line number or remove it from:"
+		echo "  The file:line:hash key did not match: line number changed, site text changed,"
+		echo "  or the site was removed.  Re-derive the correct key or remove the stale entry from:"
 		echo "    scripts/check-static/childop-grandchild-fork.allowlist"
 	} >&2
 	echo "FAIL: $NAME: ${#dead_allowlist[@]} dead allowlist entry/entries"

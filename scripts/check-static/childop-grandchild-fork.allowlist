@@ -1,14 +1,18 @@
 # Audited non-grandchild fork() sites excluded from the grandchild-fork gate.
 #
-# Format: file:line  # rationale
-#   file:line is the repo-relative path and the line number as reported by the
-#   scanner: for recognised if(pid==0) / if(!pid) child branches the key is the
-#   child-branch line; for UNPARSED sites (assignment-form fork() with no
-#   locatable child branch) the key is the fork() call line (the UNPARSED:
-#   prefix is stripped before the lookup).
+# Format: file:line:hash  # rationale
+#   file    = repo-relative path
+#   line    = line number as reported by the scanner (child-branch line for
+#             recognised if(pid==0)/if(!pid) forms; fork() call line for
+#             UNPARSED sites)
+#   hash    = first 8 hex chars of sha256 of the trimmed line content
+#
+# Keying on file:line:hash rather than plain file:line means that both the
+# line number AND the site content must match.  Updating a line number in
+# the allowlist without re-auditing (bulk-renumber) fails on hash mismatch.
 #
 # A new fork() call added anywhere else in one of these files is still caught.
-fds/scratch_block.c:123        # exec-helper: fork/execlp to run mkfs.ext4; child execs immediately, no grandchild context
-health/kmsg-monitor.c:435      # infrastructure daemon: forked once at early init before the child fleet exists; not a grandchild producer
-utils/pc_format.c:230          # exec-helper: fork/execlp for addr2line; child execs, no child branch reachable
-utils/self_cgroup_fork.c:74    # produces first-generation child, not a grandchild; UNPARSED -- no if(pid==0) branch, child path returns to caller
+fds/scratch_block.c:123:22958d17        # exec-helper: fork/execlp to run mkfs.ext4; child execs immediately, no grandchild context
+health/kmsg-monitor.c:435:cf01f487      # infrastructure daemon: forked once at early init before the child fleet exists; not a grandchild producer
+utils/pc_format.c:230:22958d17          # exec-helper: fork/execlp for addr2line; child execs, no child branch reachable
+utils/self_cgroup_fork.c:74:f3c50ad0    # produces first-generation child, not a grandchild; UNPARSED -- no if(pid==0) branch, child path returns to caller
