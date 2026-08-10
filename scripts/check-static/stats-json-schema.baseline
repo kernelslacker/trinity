@@ -197,6 +197,7 @@ stats	object
     stats.netlink_generator.nested_attrs_emitted	u64
     stats.netlink_generator.nested_attrs_accepted	u64
     stats.netlink_generator.nested_attr_skipped_width	u64
+    stats.netlink_generator.nested_attr_built_width	u64
   stats.rtnl_ack_oracle	object
     stats.rtnl_ack_oracle.accepted	u64
     stats.rtnl_ack_oracle.einval	u64

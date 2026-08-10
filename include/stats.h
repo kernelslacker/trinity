@@ -448,10 +448,17 @@ struct stats_s {
 	unsigned long netlink_nested_attrs_accepted;
 	/* build_nested_attrs: exact-width attr skipped because buffer clamp
 	 * would have truncated it to fewer bytes than aw->width requires.
-	 * A persistent non-zero rate with a low netlink_nested_attrs_emitted
+	 * A persistent non-zero rate with a low netlink_nested_attr_built_width
 	 * rate indicates that the msg buffer is too tight to fit most of the
-	 * attr table's widths, shrinking effective nested coverage. */
+	 * attr table's widths, shrinking effective nested coverage.
+	 * Skip ratio: skipped / (skipped + netlink_nested_attr_built_width). */
 	unsigned long netlink_nested_attr_skipped_width;
+	/* build_nested_attrs: exact-width attr successfully emitted (the
+	 * success denominator paired with netlink_nested_attr_skipped_width).
+	 * Bumped on the offset+=total path, once per attribute written.
+	 * Skip ratio = skipped / (skipped + built); a ratio near 1.0 means
+	 * the buffer is too small to accommodate most of the attr table. */
+	unsigned long netlink_nested_attr_built_width;
 
 	/* rtnl ACK oracle: per-outcome histogram + per-RTM-group accepted
 	 * counters.  See stats/subsys/rtnl-ack-oracle.h for field details.

@@ -150,6 +150,9 @@ static void dump_stats_render_netlink_generator(void)
 	if (shm->stats.netlink_nested_attr_skipped_width)
 		stat_row("netlink_generator", "nested_attr_skipped_width",
 			 shm->stats.netlink_nested_attr_skipped_width);
+	if (shm->stats.netlink_nested_attr_built_width)
+		stat_row("netlink_generator", "nested_attr_built_width",
+			 shm->stats.netlink_nested_attr_built_width);
 }
 
 static void dump_stats_render_rtnl_ack_oracle(void)
