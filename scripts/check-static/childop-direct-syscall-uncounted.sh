@@ -101,7 +101,7 @@ trap 'rm -f "$RESULTS_FILE" 2>/dev/null' EXIT
 
 # ---------------------------------------------------------------------------
 # Self-test: drive the REAL scanner against fixture childops/ files laid out
-# under a temporary REPO_ROOT.  Three fixtures exercise the pass-1 wrapper
+# under a temporary REPO_ROOT.  Four fixtures exercise the pass-1 wrapper
 # classifier; the live scanner is invoked for each assertion rather than a
 # duplicate inline awk (which was testing a copy of the classifier, not the
 # live code path -- divergence introduced by e42e11dc9d47 ("check-static:
@@ -119,6 +119,10 @@ trap 'rm -f "$RESULTS_FILE" 2>/dev/null' EXIT
 # Fixture C: raw_z definition with __atomic_store_n storing 0 (a counter
 #   reset, not an increment).  A childop calling only raw_z() must be
 #   THREAD_UNCOUNTED -- the zero-store is rejected by the anchored pattern.
+#
+# Fixture D: raw_x prototype wrapped across two lines (raw_x(int a,\n    int b);)
+#   must NOT register raw_x in raw_wrapper_known.  A worker thread calling
+#   raw_x() must PASS (fn_raw_sites == 0, no spurious THREAD_UNCOUNTED).
 # ---------------------------------------------------------------------------
 # Recursion guard: skip the self-test when the script is called by its own
 # sub-tests (which set REPO_ROOT to a temp dir for isolation).  Without this
@@ -184,10 +188,36 @@ bool st_childop_raw_z(struct childdata *child)
 }
 __FIXTURE_C__
 
-# Baseline keys for fixture A findings (used to isolate sub-tests B and C).
+# Fixture D: wrapped raw_x prototype (split across two lines) must NOT
+# register raw_x in raw_wrapper_known.  A worker thread calling raw_x()
+# must PASS (fn_raw_sites == 0 because raw_x is absent from the wrapper
+# map), not be THREAD_UNCOUNTED as the buggy single-line guard would
+# cause by promoting raw_x via the following do_other body.
+cat > "$_st_root/childops/st_raw_x_wrapped_proto.c" <<'__FIXTURE_D__'
+static void raw_x(int a,
+    int b);
+
+static int do_other(void)
+{
+	return 0;
+}
+
+static void *proto_thread_worker(void *arg)
+{
+	raw_x(1, 2);
+	return NULL;
+}
+
+bool st_childop_raw_x_wrapped(struct childdata *child)
+{
+	return true;
+}
+__FIXTURE_D__
+
+# Baseline keys for fixture A findings (used to isolate sub-tests B, C, D).
 _st_bl_a='UNCOUNTED:childops/st_raw_x_proto.c
 THREAD_UNCOUNTED:childops/st_raw_x_proto.c#st_childop_raw_x'
-# Baseline key for fixture C finding (used to isolate sub-test B).
+# Baseline key for fixture C finding (used to isolate sub-tests B and D).
 _st_bl_c='THREAD_UNCOUNTED:childops/st_raw_z_storen.c#st_childop_raw_z'
 
 # Sub-test A: fixture_a must be UNCOUNTED (socket uncounted, raw_x not wired).
@@ -228,6 +258,21 @@ if [ $_st_rc_c -eq 0 ]; then
 fi
 if ! echo "$_st_out_c" | grep -q 'st_raw_z_storen'; then
 	echo "FAIL: $NAME selftest C: st_raw_z_storen.c not flagged (output: $_st_out_c)" >&2
+	exit 1
+fi
+# Sub-test D: fixture_d must PASS — wrapped raw_x prototype must not register
+# in raw_wrapper_known, so raw_x_wrapped_worker calling raw_x() produces no
+# THREAD_UNCOUNTED finding.  Baseline A and C findings to isolate D.
+printf '%s\n%s\n' "$_st_bl_a" "$_st_bl_c" \
+	> "$_st_root/scripts/check-static/$NAME.baseline"
+_st_out_d=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_d=$?
+if [ $_st_rc_d -ne 0 ]; then
+	echo "FAIL: $NAME selftest D: wrapped raw_x proto must not produce THREAD_UNCOUNTED (exit=$_st_rc_d; output: $_st_out_d)" >&2
+	exit 1
+fi
+if echo "$_st_out_d" | grep -q 'st_raw_x_wrapped_proto'; then
+	echo "FAIL: $NAME selftest D: st_raw_x_wrapped_proto.c wrongly flagged (output: $_st_out_d)" >&2
 	exit 1
 fi
 > "$_st_root/scripts/check-static/$NAME.baseline"
@@ -289,21 +334,69 @@ while IFS= read -r srcfile; do
 		# A true word boundary before raw_ is enforced by requiring that the
 		# character immediately preceding raw_ is not [a-zA-Z0-9_], matching
 		# the same guard used by the call-site scanner at the second pass.
-		# Forward declarations (prototypes) are excluded: a line that matches
-		# the definition regex but ends with ); and contains no { is a
-		# prototype with no body to scan.  Setting in_raw_fn on a prototype
-		# causes subsequent unrelated code to accumulate self-counting
-		# evidence under the wrong wrapper name.
-		if (!in_raw_fn &&
-		    match(code, /static[[:space:]]+[a-zA-Z_][a-zA-Z0-9_*[:space:]]*[^a-zA-Z0-9_]raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/) &&
-		    !(code ~ /\);[[:space:]]*$/ && index(code, "{") == 0)) {
+		# Prototype exclusion uses statement-level accumulation to handle
+		# both single-line (static void raw_x(int);) and wrapped declarations
+		# split across multiple lines (e.g. raw_x(int a,\n    int b);).
+		# raw_fn_pending tracks paren depth across continuation lines; only
+		# when { is reached at paren-depth 0 does in_raw_fn become 1.
+		# The old single-line ); guard is replaced by this accumulation.
+
+		# Handle continuation lines of a pending multi-line raw_* signature.
+		if (raw_fn_pending) {
+			if (match(code, /static[[:space:]]+[a-zA-Z_][a-zA-Z0-9_*[:space:]]*[^a-zA-Z0-9_]raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/)) {
+				# New raw_* signature line — reset pending and fall through.
+				raw_fn_pending = 0
+			} else {
+				_n = length(code); _done = 0
+				for (_j = 1; _j <= _n && !_done; _j++) {
+					_c = substr(code, _j, 1)
+					if      (_c == "(") raw_fn_pending_depth++
+					else if (_c == ")") raw_fn_pending_depth--
+					else if (_c == ";" && raw_fn_pending_depth == 0) {
+						# Statement ends with ; — prototype, discard.
+						raw_fn_pending = 0; _done = 1
+					} else if (_c == "{" && raw_fn_pending_depth == 0) {
+						# Definition body begins — promote to in_raw_fn.
+						cur_raw_fn_name = raw_fn_pending_name
+						in_raw_fn = 1
+						raw_fn_brace_depth = 0
+						raw_fn_brace_opened = 0
+						raw_fn_self_counting = 0
+						raw_fn_pending = 0; _done = 1
+					}
+				}
+				if (raw_fn_pending) next
+			}
+		}
+		if (!in_raw_fn && !raw_fn_pending &&
+		    match(code, /static[[:space:]]+[a-zA-Z_][a-zA-Z0-9_*[:space:]]*[^a-zA-Z0-9_]raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/)) {
 			tmp = substr(code, RSTART)
 			if (match(tmp, /raw_[a-zA-Z_][a-zA-Z0-9_]*/)) {
-				cur_raw_fn_name = substr(tmp, RSTART, RLENGTH)
-				in_raw_fn = 1
-				raw_fn_brace_depth = 0
-				raw_fn_brace_opened = 0
-				raw_fn_self_counting = 0
+				_pname = substr(tmp, RSTART, RLENGTH)
+				if (index(code, "{") > 0) {
+					# Definition with { on same line.
+					cur_raw_fn_name = _pname
+					in_raw_fn = 1
+					raw_fn_brace_depth = 0
+					raw_fn_brace_opened = 0
+					raw_fn_self_counting = 0
+				} else if (code ~ /\);[[:space:]]*$/) {
+					# Single-line prototype — skip, no state change.
+				} else {
+					# Multi-line signature — enter pending state and
+					# accumulate continuation lines until ; or {.
+					raw_fn_pending = 1
+					raw_fn_pending_name = _pname
+					# Compute paren depth from the match position
+					# (tmp begins at the raw_* definition start).
+					raw_fn_pending_depth = 0
+					_n = length(tmp)
+					for (_j = 1; _j <= _n; _j++) {
+						_c = substr(tmp, _j, 1)
+						if      (_c == "(") raw_fn_pending_depth++
+						else if (_c == ")") raw_fn_pending_depth--
+					}
+				}
 			}
 		}
 		if (in_raw_fn) {
