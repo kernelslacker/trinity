@@ -210,6 +210,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
   parent's bookkeeping.  See
   `Documentation/this-child-grandchild-reachability.md` for the full
   member classification and the safe/unsafe patterns.
+- `childop-grandchild-fork`: scan every `fork()` call site under `childops/`
+  and verify that the associated child branch (`if (VAR == 0)` / `if (!VAR)`)
+  is covered by `CHILDOP_GRANDCHILD_ENTER()` — either as the first statement of
+  the child-branch body, or as the first statement of a worker function called
+  from the branch.  A child branch without this macro means the forked worker
+  runs with `in_grandchild == 0`, which causes `child_fault_handler()` to
+  stamp the PARENT worker's crash beacon, write to the parent's buglog, and
+  race the parent's memfd.  The check uses a count ceiling baseline
+  (`childop-grandchild-fork.count.baseline`): new uncovered sites fail; the
+  ceiling must shrink over time.
 - `childop-stats-writer-registered`: every `.c` file under `childops/`
   that writes `shm->stats.*` counters must have a corresponding
   `CHILD_OP_*` entry in `include/childop.def` whose dispatch function is
