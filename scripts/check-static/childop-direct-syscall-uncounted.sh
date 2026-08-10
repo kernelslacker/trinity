@@ -99,6 +99,89 @@ fi
 RESULTS_FILE="$(mktemp)"
 trap 'rm -f "$RESULTS_FILE" 2>/dev/null' EXIT
 
+# ---------------------------------------------------------------------------
+# Self-test: verify that forward declarations (prototypes) are not mistaken
+# for function definitions in the first-pass raw_* wrapper classifier.
+# Run before the live scan so a detector regression fails fast.
+#
+# Fixture A: static void raw_x(int); (prototype, no body) followed by an
+#   unrelated function that bumps a direct_syscalls counter.  raw_x must NOT
+#   be recorded in raw_wrapper_known; the counter bump belongs to the
+#   unrelated function's body, not to raw_x.
+#
+# Fixture B: static void raw_y(int a) { __atomic_add_fetch(...); } (full
+#   definition with a self-counting body).  raw_y MUST be recorded as
+#   self-counting.
+# ---------------------------------------------------------------------------
+_st_fwd="$(mktemp /tmp/csc-rawfn-st-fwd.XXXXXX.c)"
+_st_def="$(mktemp /tmp/csc-rawfn-st-def.XXXXXX.c)"
+trap 'rm -f "$RESULTS_FILE" "$_st_fwd" "$_st_def" 2>/dev/null' EXIT
+
+cat > "$_st_fwd" <<'__FIXTURE_A__'
+static void raw_x(int);
+
+static int do_other(struct rs *rs)
+{
+	__atomic_add_fetch(&rs->direct_syscalls, 1, __ATOMIC_RELAXED);
+	return 0;
+}
+__FIXTURE_A__
+
+cat > "$_st_def" <<'__FIXTURE_B__'
+static void raw_y(int a)
+{
+	__atomic_add_fetch(&rs->direct_syscalls, 1, __ATOMIC_RELAXED);
+}
+__FIXTURE_B__
+
+_st_result=$(awk '
+FNR == 1 { in_block = 0 }
+{
+	code = $0
+	sub(/\/\/.*$/, "", code)
+	if (!in_raw_fn &&
+	    match(code, /static[[:space:]]+[a-zA-Z_][a-zA-Z0-9_*[:space:]]*[^a-zA-Z0-9_]raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/) &&
+	    !(code ~ /\);[[:space:]]*$/ && index(code, "{") == 0)) {
+		tmp = substr(code, RSTART)
+		if (match(tmp, /raw_[a-zA-Z_][a-zA-Z0-9_]*/)) {
+			cur_raw_fn_name = substr(tmp, RSTART, RLENGTH)
+			in_raw_fn = 1
+			raw_fn_brace_depth = 0
+			raw_fn_brace_opened = 0
+			raw_fn_self_counting = 0
+		}
+	}
+	if (in_raw_fn) {
+		if ((match(code, /__atomic_(add_fetch|fetch_add|store_n)[[:space:]]*\(/) &&
+		     match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/)) ||
+		    match(code, /->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[ \t]*(\+\+|\+=)/) ||
+		    match(code, /\+\+[ \t]*[a-zA-Z_][a-zA-Z0-9_]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/))
+			raw_fn_self_counting = 1
+		n = length(code)
+		for (j = 1; j <= n; j++) {
+			c = substr(code, j, 1)
+			if (c == "{") { raw_fn_brace_depth++; raw_fn_brace_opened = 1 }
+			else if (c == "}") {
+				raw_fn_brace_depth--
+				if (raw_fn_brace_opened && raw_fn_brace_depth == 0) {
+					print "KNOWN " cur_raw_fn_name " self=" raw_fn_self_counting
+					in_raw_fn = 0; cur_raw_fn_name = ""; raw_fn_brace_opened = 0
+				}
+			}
+		}
+	}
+}
+' "$_st_fwd" "$_st_def")
+
+if echo "$_st_result" | grep -q "^KNOWN raw_x "; then
+	echo "FAIL: $NAME selftest: prototype raw_x wrongly classified as a definition (got: $_st_result)" >&2
+	exit 1
+fi
+if ! echo "$_st_result" | grep -q "^KNOWN raw_y self=1$"; then
+	echo "FAIL: $NAME selftest: raw_y definition not classified as self-counting (got: $_st_result)" >&2
+	exit 1
+fi
+
 # Walk every .c file under childops/.  For each file that has no
 # childop_direct_syscalls_add() call in its own body (comment-stripped),
 # scan for raw-syscall invocations.  A non-zero count means the file
@@ -155,11 +238,14 @@ while IFS= read -r srcfile; do
 		# A true word boundary before raw_ is enforced by requiring that the
 		# character immediately preceding raw_ is not [a-zA-Z0-9_], matching
 		# the same guard used by the call-site scanner at the second pass.
-		# If in_raw_fn is already set but no opening brace has been seen yet
-		# (i.e. the previous match was a forward declaration), reset state
-		# so the new definition is not misclassified under the old name.
-		if ((!in_raw_fn || !raw_fn_brace_opened) &&
-		    match(code, /static[[:space:]]+[a-zA-Z_][a-zA-Z0-9_*[:space:]]*[^a-zA-Z0-9_]raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/)) {
+		# Forward declarations (prototypes) are excluded: a line that matches
+		# the definition regex but ends with ); and contains no { is a
+		# prototype with no body to scan.  Setting in_raw_fn on a prototype
+		# causes subsequent unrelated code to accumulate self-counting
+		# evidence under the wrong wrapper name.
+		if (!in_raw_fn &&
+		    match(code, /static[[:space:]]+[a-zA-Z_][a-zA-Z0-9_*[:space:]]*[^a-zA-Z0-9_]raw_[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(/) &&
+		    !(code ~ /\);[[:space:]]*$/ && index(code, "{") == 0)) {
 			tmp = substr(code, RSTART)
 			if (match(tmp, /raw_[a-zA-Z_][a-zA-Z0-9_]*/)) {
 				cur_raw_fn_name = substr(tmp, RSTART, RLENGTH)
