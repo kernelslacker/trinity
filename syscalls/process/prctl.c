@@ -476,12 +476,12 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		 * arg3-arg5 zero.  Per 4f56302c4d6d.
 		 */
 		static const unsigned long rseq_ext_cmds[] = {
-			PR_RSEQ_SLICE_EXT_GET, PR_RSEQ_SLICE_EXT_SET, 3,
+			PR_RSEQ_SLICE_EXTENSION_GET, PR_RSEQ_SLICE_EXTENSION_SET, 3,
 		};
 		unsigned long rseq_cmd = RAND_ARRAY(rseq_ext_cmds);
 
 		rec->a2 = rseq_cmd;
-		rec->a3 = (rseq_cmd == PR_RSEQ_SLICE_EXT_SET)
+		rec->a3 = (rseq_cmd == PR_RSEQ_SLICE_EXTENSION_SET)
 			? (RAND_BOOL() ? PR_RSEQ_SLICE_EXT_ENABLE : 0)
 			: 0;
 		rec->a4 = 0;
