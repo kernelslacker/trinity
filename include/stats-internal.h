@@ -193,6 +193,7 @@ extern const struct stat_category fou_gue_mcast_rx_category;
 extern const struct stat_category fs_lifecycle_category;
 extern const struct stat_category futex_pi_requeue_rollback_category;
 extern const struct stat_category futex_storm_category;
+extern const struct stat_category prctl_futex_hash_category;
 extern const struct stat_category genetlink_fuzzer_category;
 extern const struct stat_category geneve_rx_category;
 extern const struct stat_category genl_family_calls_category;

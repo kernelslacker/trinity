@@ -523,4 +523,6 @@ void dump_stats_json_lifecycle_and_storms(void)
 	putchar(',');
 	stat_category_emit_json(&futex_pi_requeue_rollback_category);
 	putchar(',');
+	stat_category_emit_json(&prctl_futex_hash_category);
+	putchar(',');
 }

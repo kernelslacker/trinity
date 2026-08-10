@@ -429,6 +429,8 @@ stats	object
     stats.futex_pi_requeue_rollback.requeue_ok	u64
     stats.futex_pi_requeue_rollback.requeue_failed	u64
     stats.futex_pi_requeue_rollback.slots_ebusy	u64
+  stats.prctl_futex_hash	object
+    stats.prctl_futex_hash.set_slots_ebusy	u64
   stats.socket_family_grammar	object
     stats.socket_family_grammar.runs	u64
     stats.socket_family_grammar.completed	u64

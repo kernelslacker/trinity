@@ -80,6 +80,7 @@
 #include "stats/subsys/fs_lifecycle.h"
 #include "stats/subsys/futex_pi_requeue_rollback.h"
 #include "stats/subsys/futex_storm.h"
+#include "stats/subsys/prctl_futex_hash.h"
 #include "stats/subsys/genetlink_fuzzer.h"
 #include "stats/subsys/geneve_rx.h"
 #include "stats/subsys/handshake_req_abort.h"
@@ -582,6 +583,10 @@ struct stats_s {
 	/* futex_pi_requeue_rollback childop counters.
 	 * See stats/subsys/futex_pi_requeue_rollback.h. */
 	struct futex_pi_requeue_rollback_stats futex_pi_requeue_rollback __attribute__((aligned(64)));
+
+	/* prctl PR_FUTEX_HASH sanitiser counters.
+	 * See stats/subsys/prctl_futex_hash.h. */
+	struct prctl_futex_hash_stats prctl_futex_hash __attribute__((aligned(64)));
 
 	/* pipe_thrash childop counters.  See stats/subsys/pipe_thrash.h. */
 	struct pipe_thrash_stats pipe_thrash __attribute__((aligned(64)));

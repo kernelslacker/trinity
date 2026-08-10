@@ -456,8 +456,8 @@ static void sanitise_prctl(struct syscallrecord *rec)
 			rec->a3 = 0;
 		} else {
 			rec->a2 = PR_FUTEX_HASH_SET_SLOTS;
-			if (ONE_IN(8))
-				rec->a3 = 0;                              /* global-hash (absorbing: rare) */
+			if (ONE_IN(256))
+				rec->a3 = 0;                              /* global-hash: absorbing/irreversible per-mm; ONE_IN(256) keeps private-hash machinery alive */
 			else if (ONE_IN(32))
 				rec->a3 = 1;                              /* deliberate -EINVAL probe */
 			else
@@ -554,6 +554,7 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	 * returns early on snap == NULL.
 	 */
 	switch (option) {
+	case PR_FUTEX_HASH:
 	case PR_SET_SECCOMP:
 	case PR_SET_NO_NEW_PRIVS:
 	case PR_SET_NAME:
@@ -1062,6 +1063,23 @@ static void post_get_seccomp(struct syscallrecord *rec, unsigned long retval)
 	}
 }
 
+static void post_futex_hash(const struct prctl_post_state *snap,
+			    unsigned long retval)
+{
+	/*
+	 * PR_FUTEX_HASH_SET_SLOTS(0) pivots the mm to the global
+	 * hash — an absorbing, irreversible per-mm state.  Once
+	 * landed, every subsequent SET_SLOTS from this mm returns
+	 * -EBUSY (kernel/futex/core.c:1832-1841).  Count those hits
+	 * so the absorbing-state cliff shows up in run stats.
+	 */
+	if (snap->set_arg == PR_FUTEX_HASH_SET_SLOTS &&
+	    (long)retval == -EBUSY)
+		__atomic_add_fetch(
+			&shm->stats.prctl_futex_hash.set_slots_ebusy,
+			1, __ATOMIC_RELAXED);
+}
+
 static void post_prctl(struct syscallrecord *rec)
 {
 	struct prctl_post_state *snap = (struct prctl_post_state *) rec->post_state;
@@ -1143,6 +1161,9 @@ static void post_prctl(struct syscallrecord *rec)
 	retval = rec->retval;
 
 	switch (snap->option) {
+	case PR_FUTEX_HASH:
+		post_futex_hash(snap, retval);
+		break;
 	case PR_SET_SECCOMP:
 		post_set_seccomp(snap);
 		break;
