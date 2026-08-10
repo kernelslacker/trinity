@@ -152,8 +152,11 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 			break;
 
 		total = NLA_ALIGN(NLA_HDRLEN + payload_len);
-		if (offset + total > buflen)
+		if (offset + total > buflen) {
+			__atomic_add_fetch(&shm->stats.netlink_nested_attr_lost_align,
+					   1, __ATOMIC_RELAXED);
 			break;
+		}
 
 		if (!start_nlattr(buf, offset, buflen, atype, payload_len))
 			break;
@@ -176,8 +179,9 @@ size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 			memcpy(buf + offset + NLA_HDRLEN, &v, sizeof(v));
 		}
 		offset += total;
-		__atomic_add_fetch(&shm->stats.netlink_nested_attr_built_width,
-				   1, __ATOMIC_RELAXED);
+		if (exact_width)
+			__atomic_add_fetch(&shm->stats.netlink_nested_attr_built_width,
+					   1, __ATOMIC_RELAXED);
 	}
 	return offset;
 }

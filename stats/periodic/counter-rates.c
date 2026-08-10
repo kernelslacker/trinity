@@ -518,6 +518,8 @@ static const struct {
 	  offsetof(struct stats_s, netlink_nested_attr_skipped_width) },
 	{ "netlink_nested_attr_built_width",
 	  offsetof(struct stats_s, netlink_nested_attr_built_width) },
+	{ "netlink_nested_attr_lost_align",
+	  offsetof(struct stats_s, netlink_nested_attr_lost_align) },
 	/* genetlink registry per-family dispatch counters; rate-of-change
 	 * surfaces the live family selection mix without waiting for the
 	 * end-of-run summary.  A counter that stays at zero across an

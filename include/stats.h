@@ -453,12 +453,21 @@ struct stats_s {
 	 * attr table's widths, shrinking effective nested coverage.
 	 * Skip ratio: skipped / (skipped + netlink_nested_attr_built_width). */
 	unsigned long netlink_nested_attr_skipped_width;
-	/* build_nested_attrs: exact-width attr successfully emitted (the
-	 * success denominator paired with netlink_nested_attr_skipped_width).
-	 * Bumped on the offset+=total path, once per attribute written.
+	/* build_nested_attrs: exact-width pick successfully written (the
+	 * denominator paired with netlink_nested_attr_skipped_width).
+	 * Bumped only for exact_width==true picks on the offset+=total path,
+	 * once per attribute written.  Fault-injection picks (1/32, random
+	 * width) are excluded so that both skipped and built draw from the
+	 * same exact-width population.
 	 * Skip ratio = skipped / (skipped + built); a ratio near 1.0 means
 	 * the buffer is too small to accommodate most of the attr table. */
 	unsigned long netlink_nested_attr_built_width;
+	/* build_nested_attrs: attrs whose NLA_ALIGN(NLA_HDRLEN+payload_len)
+	 * total exceeded the remaining buffer space after all clamping and
+	 * skip-on-clamp logic ran.  The loop breaks here so these are
+	 * invisible to both skipped_width and built_width; a non-zero rate
+	 * indicates buffer pressure is silently truncating the attr chain. */
+	unsigned long netlink_nested_attr_lost_align;
 
 	/* rtnl ACK oracle: per-outcome histogram + per-RTM-group accepted
 	 * counters.  See stats/subsys/rtnl-ack-oracle.h for field details.
