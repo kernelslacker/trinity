@@ -113,10 +113,11 @@ while IFS= read -r srcfile; do
 		# CHILDOP_GRANDCHILD_ENTER() is the explicit machine-checkable marker
 		# used by the fork gate; treat it as equivalent so both gates agree on
 		# which function bodies are in scope.
-		# /(^|[^h])_exit\(/ excludes pthread_exit() (a thread exit, not a
-		# grandchild-capable worker body).
+		# /(^|[^A-Za-z0-9_])_exit\(/ excludes any identifier-adjoined call
+		# such as pthread_exit() (a thread exit, not a grandchild-capable
+		# worker body).
 		if (code ~ /CHILDOP_GRANDCHILD_ENTER/ || \
-		    code ~ /(^|[^h])_exit\(/ || \
+		    code ~ /(^|[^A-Za-z0-9_])_exit\(/ || \
 		    code ~ /_Exit\(/ || \
 		    code ~ /do_exit_as\(/)
 			has_exit = 1
@@ -155,6 +156,10 @@ if [ -s "$tmp_out" ]; then
 	echo "FAIL: $NAME"
 	exit 1
 fi
+
+# Self-test: verify exit anchor correctly rejects pthread_exit and accepts _exit.
+printf 'pthread_exit(NULL);\n' | gawk '/(^|[^A-Za-z0-9_])_exit\(/{found=1} END{exit found}' || { echo "FAIL: $NAME selftest: pthread_exit matched exit anchor" >&2; exit 1; }
+printf '\t_exit(0);\n' | gawk '/(^|[^A-Za-z0-9_])_exit\(/{found=1} END{exit !found}' || { echo "FAIL: $NAME selftest: bare _exit did not match exit anchor" >&2; exit 1; }
 
 echo "PASS: $NAME"
 exit 0
