@@ -456,8 +456,13 @@ static void sanitise_prctl(struct syscallrecord *rec)
 			rec->a3 = 0;
 		} else {
 			rec->a2 = PR_FUTEX_HASH_SET_SLOTS;
-			rec->a3 = 1u << rnd_modulo_u32(9); /* power-of-2 slot count */
-			rec->a4 = 0;                        /* required to be 0 */
+			if (ONE_IN(8))
+				rec->a3 = 0;                              /* global-hash (absorbing: rare) */
+			else if (ONE_IN(32))
+				rec->a3 = 1;                              /* deliberate -EINVAL probe */
+			else
+				rec->a3 = 1u << (rnd_modulo_u32(8) + 1); /* valid: {2,4,...,256} */
+			rec->a4 = 0;                              /* required to be 0 */
 		}
 		break;
 
