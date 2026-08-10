@@ -183,8 +183,9 @@ static const struct stat_field rtnl_ack_oracle_fields[] = {
 	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, eopnotsupp, "eopnotsupp"),
 	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, eperm,      "eperm"),
 	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, other,      "other"),
-	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, send_fail,  "send_fail"),
-	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, no_reply,   "no_reply"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, send_fail,     "send_fail"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, no_reply,      "no_reply"),
+	STAT_FIELD_JSON_SUB(rtnl_ack_oracle, stale_drained, "stale_drained"),
 };
 
 const struct stat_category rtnl_ack_oracle_category =

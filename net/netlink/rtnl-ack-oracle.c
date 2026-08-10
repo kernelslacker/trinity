@@ -75,9 +75,10 @@
  *
  * RTNL_ACK_ORACLE_DRAIN_MAX caps the drain loop for non-dump probes.  We
  * read up to that many messages with MSG_DONTWAIT and stop on NLMSG_ERROR
- * (the explicit ACK path) or NLMSG_DONE (dump end -- should not appear
- * since NLM_F_DUMP is excluded, handled defensively).  Anything else is
- * counted as no_reply.
+ * (the explicit ACK path).  NLMSG_DONE cannot belong to our probe because
+ * NLM_F_DUMP is excluded from sampling; when DONE is seen it is queue
+ * pollution from concurrent dump traffic and is counted into stale_drained
+ * before continuing the drain.  Anything else is counted as no_reply.
  */
 #include <errno.h>
 #include <sys/socket.h>
@@ -245,12 +246,13 @@ void rtnl_oracle_drain(int fd, int send_ok)
 
 	/*
 	 * Drain up to DRAIN_MAX messages with MSG_DONTWAIT.  Stop on
-	 * NLMSG_ERROR (the ACK path for non-dump probes) or NLMSG_DONE
-	 * (dump end -- NLM_F_DUMP is excluded from sampling, so NLMSG_DONE
-	 * should not appear here; handled defensively and counted as
-	 * accepted since a completed dump is a strong positive signal).
-	 * EAGAIN means the kernel dropped the message without reply;
-	 * count that as no_reply.
+	 * NLMSG_ERROR (the ACK path for non-dump probes).  NLMSG_DONE
+	 * cannot be attributed to our probe because NLM_F_DUMP is excluded
+	 * from sampling (see rtnl_oracle_sample()); DONE messages in the
+	 * queue are completions from concurrent unsampled dump traffic.
+	 * Count each into stale_drained and continue draining.  EAGAIN
+	 * means the kernel dropped the message without reply; count that
+	 * as no_reply.
 	 */
 	for (i = 0; i < RTNL_ACK_ORACLE_DRAIN_MAX; i++) {
 		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
@@ -264,12 +266,16 @@ void rtnl_oracle_drain(int fd, int send_ok)
 
 		if (nlh->nlmsg_type == NLMSG_DONE) {
 			/*
-			 * Dump completed successfully.  A started dump is the
-			 * strongest positive signal the oracle can observe;
-			 * classify as accepted.  e = 0 reuses the got_ack path.
+			 * NLMSG_DONE from an unsampled dump in the queue.
+			 * NLM_F_DUMP is excluded from sampling so this message
+			 * cannot belong to our probe; correlating it by
+			 * nlh->nlmsg_seq would be meaningless.  Track the queue
+			 * pollution and continue looking for our NLMSG_ERROR.
 			 */
-			e = 0;
-			goto got_ack;
+			__atomic_add_fetch(
+				&shm->stats.rtnl_ack_oracle.stale_drained,
+				1, __ATOMIC_RELAXED);
+			continue;
 		}
 
 		if (nlh->nlmsg_type != NLMSG_ERROR)
