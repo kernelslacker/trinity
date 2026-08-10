@@ -1,8 +1,8 @@
 #!/bin/bash
 #
 # childop-grandchild-this-child: flag this_child() result variables accessed
-# with per-process members in a function that also calls _exit(), which is
-# the reliable marker of a grandchild-capable worker body.
+# with per-process members in a function that also calls an exit wrapper,
+# which is the reliable marker of a grandchild-capable worker body.
 #
 # Background: in a fork()'d grandchild this_child() returns the parent's
 # COW-inherited childdata slot (non-NULL).  Reading fork-invariant members
@@ -11,8 +11,10 @@
 #
 # What is flagged:
 #   A C function body (tracked by brace depth) that contains ALL of:
-#     1. a variable assigned from this_child() (e.g. tc = this_child())
-#     2. a call to _exit(
+#     1. a variable assigned from this_child(), or a direct this_child()->
+#        dereference
+#     2. a call to an exit marker (_exit(, _Exit(, do_exit_as() in the same
+#        function body — note: cross-function reachability is not analysed
 #     3. an access VAR->MEMBER on that variable where MEMBER is not in
 #        the fork-invariant set {op_type, op_nr}
 #
@@ -20,6 +22,7 @@
 #   - Functions that only access op_type or op_nr through the childdata ptr
 #   - Member accesses on unrelated variables (shm->stats, opts->foo, etc.)
 #   - Files outside childops/
+#   - Patterns that only appear in comments
 #
 # Exit 0 if no warnings, exit 1 if any.
 
@@ -38,7 +41,30 @@ trap 'rm -f "$tmp_out"' EXIT
 
 while IFS= read -r srcfile; do
 	gawk -v file="${srcfile#"$ROOT"/}" '
+	function strip_comments(s,    idx, tail, cidx) {
+		# Continuation of a block comment from a previous line.
+		if (in_block) {
+			idx = index(s, "*/")
+			if (idx == 0) return ""
+			s = substr(s, idx + 2)
+			in_block = 0
+		}
+		# Inline block comments on this line.
+		while ((idx = index(s, "/*")) > 0) {
+			tail = substr(s, idx + 2)
+			cidx = index(tail, "*/")
+			if (cidx == 0) {
+				in_block = 1
+				s = substr(s, 1, idx - 1)
+				break
+			}
+			s = substr(s, 1, idx - 1) " " substr(tail, cidx + 2)
+		}
+		sub(/\/\/.*$/, "", s)
+		return s
+	}
 	BEGIN {
+		in_block   = 0
 		depth      = 0
 		has_exit   = 0
 		bad_member = ""
@@ -47,8 +73,10 @@ while IFS= read -r srcfile; do
 	}
 
 	{
+		code = strip_comments($0)
+
 		# Track brace depth character by character (skip string literals)
-		n = split($0, chars, "")
+		n = split(code, chars, "")
 		in_str = 0
 		for (i = 1; i <= n; i++) {
 			c = chars[i]
@@ -76,16 +104,25 @@ while IFS= read -r srcfile; do
 
 	depth > 0 {
 		# Detect: VARNAME = this_child()
-		if (match($0, /([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*this_child\(\)/, arr))
+		if (match(code, /([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*this_child\(\)/, arr))
 			tc_vars[arr[1]] = 1
 
-		# Detect _exit() — marks grandchild-capable function
-		if ($0 ~ /_exit\(/)
+		# Detect exit markers — marks grandchild-capable function
+		if (code ~ /_exit\(/ || code ~ /_Exit\(/ || code ~ /do_exit_as\(/)
 			has_exit = 1
+
+		# Detect direct-deref: this_child()->MEMBER (no assigned variable needed)
+		if (bad_member == "" && match(code, /this_child\(\)->([A-Za-z_][A-Za-z0-9_]*)/, arr)) {
+			member = arr[1]
+			if (member != "op_type" && member != "op_nr") {
+				bad_member = member
+				bad_line   = NR
+			}
+		}
 
 		# Detect VAR->MEMBER where VAR came from this_child() and MEMBER is per-process
 		if (bad_member == "" && length(tc_vars) > 0) {
-			tmp = $0
+			tmp = code
 			while (match(tmp, /([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)/, arr)) {
 				varname = arr[1]
 				member  = arr[2]
