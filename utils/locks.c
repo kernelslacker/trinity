@@ -357,6 +357,7 @@ void lock(lock_t *lk)
 
 		if (LOCK_OWNER(s) == pid) {
 			debugf("lol, already have lock!\n");
+			/* cached_pid is not process-unique across fork(); see bust_lock() note below */
 			show_backtrace();
 			panic(EXIT_LOCKING_CATASTROPHE);
 			_exit(EXIT_LOCKING_CATASTROPHE);
@@ -427,9 +428,10 @@ void unlock(lock_t *lk)
  * A grandchild's lock() call would record the parent's pid as owner, which
  * would misfire the self-deadlock guard (locks.c:358), prevent force_bust_lock()
  * from recovering an orphan held by a dead grandchild, and admit an incorrect
- * bust_lock() release here.  Audited: no grandchild (forked via
- * userns_run_in_ns) currently reaches lock() -- all call sites are on the
- * child_process() dispatch path, which grandchildren never enter.
+ * bust_lock() release here.  Audited: no grandchild currently reaches lock() --
+ * neither userns_run_in_ns() throwaway grandchildren (dispatch/syscall-exec.c)
+ * nor bare-fork() race childops (childops/net/<name>-race.c, recipe/supervisor.c,
+ * etc.) have lock() call sites in their worker bodies.
  */
 void bust_lock(lock_t *lk)
 {
@@ -487,6 +489,7 @@ void force_bust_lock(lock_t *lk)
 
 	owner = LOCK_OWNER(s);
 	stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
+	/* cached_pid COW caveat: see bust_lock() note above */
 	if (!is_dead_holder(owner, stored_start)) {
 		static bool warned;
 		if (!warned) {
