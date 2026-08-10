@@ -112,6 +112,8 @@ struct fpr_shared {
 	int consumer_nice;	/* nice value when policy is OTHER */
 	int requeue_nr_wake;	/* val (nr_wake) for CMP_REQUEUE_PI */
 	int requeue_nr;		/* val2 (nr_requeue) for CMP_REQUEUE_PI */
+	pid_t foreign_tid;	/* waiter's tid stored as lock-word owner in privhash arm */
+	unsigned int use_privhash;	/* 1 -> prctl per-mm hash + foreign-tid lock word */
 	/* Direct-syscall accumulator: every raw_futex() bumps this
 	 * before entering the kernel, plus the consumer's sched_setattr
 	 * trinity_raw_syscall and the waiter's syscall(__NR_gettid).
@@ -176,6 +178,27 @@ static void fpr_owner_main(struct fpr_shared *s)
 	if (getppid() == 1)
 		_exit(0);
 
+	if (s->use_privhash) {
+		/*
+		 * Poll for the waiter's TID then install it as the lock-word
+		 * owner.  FUTEX_LOCK_PI on a word containing a foreign mm's
+		 * TID drives the attach_to_pi_owner cross-mm verification
+		 * path that the ordinary same-TID owner case never reaches.
+		 */
+		struct timespec nap = { .tv_sec = 0, .tv_nsec = 2000000L };
+		pid_t ftid = 0;
+		int polls;
+
+		for (polls = 0; polls < 20 && ftid == 0; polls++) {
+			ftid = __atomic_load_n(&s->foreign_tid, __ATOMIC_ACQUIRE);
+			if (ftid == 0)
+				(void)nanosleep(&nap, NULL);
+		}
+		if (ftid > 0)
+			__atomic_store_n(&s->futex_target_pi, (int)ftid,
+					 __ATOMIC_RELEASE);
+	}
+
 	if (raw_futex(s, &s->futex_target_pi, FUTEX_LOCK_PI, flag, 0, NULL, NULL, 0) < 0)
 		_exit(0);
 	publish_state(s, FPR_STATE_OWNER_READY);
@@ -198,6 +221,25 @@ static void fpr_waiter_main(struct fpr_shared *s)
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 	if (getppid() == 1)
 		_exit(0);
+
+	if (s->use_privhash) {
+		/*
+		 * Allocate a per-mm private hash table; the small slot count
+		 * exercises futex_hash_free() on exit without ballooning
+		 * memory.  Failure is non-fatal: the arm degrades gracefully
+		 * to the shared-hash path.
+		 */
+		__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
+		(void)prctl(PR_FUTEX_HASH, PR_FUTEX_HASH_SET_SLOTS, 4);
+		/*
+		 * Publish TID so the owner can write it into the lock word
+		 * before calling FUTEX_LOCK_PI.  The owner is in a separate
+		 * mm (fork), so this is the foreign-mm TID scenario.
+		 */
+		__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
+		__atomic_store_n(&s->foreign_tid,
+				 (pid_t)syscall(__NR_gettid), __ATOMIC_RELEASE);
+	}
 
 	__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
 	__atomic_store_n(&s->waiter_tid, (pid_t)syscall(__NR_gettid),
@@ -271,6 +313,7 @@ static void fpr_pick_axes(struct fpr_shared *s)
 	static const int policies[] = { SCHED_FIFO, SCHED_RR, SCHED_OTHER };
 
 	s->use_private     = rnd_u32() & 1U;
+	s->use_privhash    = s->use_private && (rnd_u32() & 1U) ? 1U : 0U;
 	s->wait_timeout_ns = (long)(100000 + rnd_modulo_u32(900000));	/* 100us..1ms */
 	s->consumer_policy = policies[rnd_modulo_u32(ARRAY_SIZE(policies))];
 	s->consumer_priority = 1 + (int)rnd_modulo_u32(20);
@@ -358,15 +401,29 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 	owner_pid = fpr_spawn_worker(s, fpr_owner_main);
 	if (owner_pid < 0)
 		goto out;
+
+	/*
+	 * For the privhash arm the owner spins waiting for foreign_tid
+	 * before it can call FUTEX_LOCK_PI; spawn the waiter ahead of the
+	 * OWNER_READY gate so both sides can make progress concurrently.
+	 */
+	if (s->use_privhash) {
+		waiter_pid = fpr_spawn_worker(s, fpr_waiter_main);
+		if (waiter_pid < 0)
+			goto out;
+	}
+
 	if (!wait_for_state(s, FPR_STATE_OWNER_READY)) {
 		__atomic_add_fetch(&shm->stats.futex_pi_requeue_rollback.setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 
-	waiter_pid = fpr_spawn_worker(s, fpr_waiter_main);
-	if (waiter_pid < 0)
-		goto out;
+	if (!s->use_privhash) {
+		waiter_pid = fpr_spawn_worker(s, fpr_waiter_main);
+		if (waiter_pid < 0)
+			goto out;
+	}
 	consumer_pid = fpr_spawn_worker(s, fpr_consumer_main);
 	if (consumer_pid < 0)
 		goto out;
