@@ -146,18 +146,30 @@ while IFS= read -r srcfile; do
 	gawk -v file="$relfile" '
 
 	# ----------------------------------------------------------------
-	# strip_comment: remove // comments (enough for our patterns).
+	# strip_comment: remove block and line comments.
+	# in_block is an AWK global tracking /* ... */ continuation.
 	# ----------------------------------------------------------------
-	function strip_comment(line,    i, c, in_str) {
-		in_str = 0
-		for (i = 1; i <= length(line); i++) {
-			c = substr(line, i, 1)
-			if (c == "\"") { in_str = !in_str; continue }
-			if (in_str) continue
-			if (c == "/" && substr(line, i+1, 1) == "/")
-				return substr(line, 1, i-1)
+	function strip_comment(s,    idx, tail, cidx) {
+		# Continuation of a block comment from a previous line.
+		if (in_block) {
+			idx = index(s, "*/")
+			if (idx == 0) return ""
+			s = substr(s, idx + 2)
+			in_block = 0
 		}
-		return line
+		# Inline block comments on this line.
+		while ((idx = index(s, "/*")) > 0) {
+			tail = substr(s, idx + 2)
+			cidx = index(tail, "*/")
+			if (cidx == 0) {
+				in_block = 1
+				s = substr(s, 1, idx - 1)
+				break
+			}
+			s = substr(s, 1, idx - 1) " " substr(tail, cidx + 2)
+		}
+		sub(/\/\/.*$/, "", s)
+		return s
 	}
 
 	# ----------------------------------------------------------------
@@ -301,6 +313,8 @@ while IFS= read -r srcfile; do
 
 		return covered
 	}
+
+	BEGIN { in_block = 0 }
 
 	# ================================================================
 	# Main: read all lines, then run the two passes.
