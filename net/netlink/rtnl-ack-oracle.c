@@ -187,12 +187,12 @@ void rtnl_oracle_abort(void)
 			(unsigned short)~NLM_F_ACK;
 
 	/*
-	 * Roll the counter back by one sample period so the next eligible
-	 * message on a drainable path takes the slot we just surrendered.
-	 * Unsigned wraparound is harmless — the modular test still fires at
-	 * the right interval.
+	 * Step the counter back by one so it sits at (SAMPLE_RATE - 1) mod
+	 * SAMPLE_RATE.  The next increment brings it to 0 mod SAMPLE_RATE,
+	 * which fires the sample — giving the slot to the next message on a
+	 * drainable path rather than wasting a full period.
 	 */
-	oracle_state.counter -= RTNL_ACK_ORACLE_SAMPLE_RATE;
+	oracle_state.counter--;
 
 	oracle_state.active = 0;
 	oracle_state.sampled_nlh = NULL;
