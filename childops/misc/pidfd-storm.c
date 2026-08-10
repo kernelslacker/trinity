@@ -79,6 +79,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -238,6 +239,7 @@ static unsigned int pidfd_storm_iter_spawn(struct pidfd_slot *slots,
 		pid_t pid = fork();
 
 		if (pid == 0) {
+			CHILDOP_GRANDCHILD_ENTER();
 			/* Child: just sit here until the parent SIGKILLs us
 			 * at teardown.  Don't do anything else — we don't
 			 * want sibling fuzz behaviour leaking out of this

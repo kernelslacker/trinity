@@ -65,6 +65,7 @@
 #include "childop-outcome.h"
 #include "childops-util.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
@@ -442,6 +443,7 @@ static int netns_teardown_iter_fork_child(struct netns_teardown_iter_ctx *it)
 		return -1;
 
 	if (it->pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		int raw_fd = -1, xfrm_fd = -1;
 
 		(void)close(it->nsfd);

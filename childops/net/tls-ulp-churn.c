@@ -75,6 +75,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "tls.h"
+#include "signals.h"
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
@@ -214,6 +215,7 @@ static int open_loopback_pair(pid_t *out_pid, unsigned long *calls)
 	if (pid < 0)
 		goto fail;
 	if (pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		/* Acceptor child.  accept() one connection, drain a small
 		 * amount of data so the parent's sends don't all go to the
 		 * receive queue and stall on watermarks, then exit.

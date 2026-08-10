@@ -55,6 +55,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "utils.h"
 #include "utils-mem.h"
@@ -522,6 +523,7 @@ bool mseal_transition_matrix(struct childdata *child)
 	}
 
 	if (helper == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		/* Inside the forked helper -- never returns */
 		run_helper(op);
 		/* NOTREACHED */

@@ -44,6 +44,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "text-payloads.h"
+#include "signals.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
@@ -138,6 +139,7 @@ static void try_ipvsadm(const char *const argv[])
 	if (pid < 0)
 		return;
 	if (pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		int devnull = open("/dev/null", O_RDWR | O_CLOEXEC);
 		if (devnull >= 0) {
 			(void)dup2(devnull, 0);

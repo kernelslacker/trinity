@@ -90,6 +90,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
@@ -928,6 +929,7 @@ static bool combo_arena_fork(struct childdata *child,
 		return false;
 	}
 	if (pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		/*
 		 * Grandchild: arena VMAs are VM_DONTCOPY, so the parent's
 		 * mapping is absent here.  Re-mmap the inherited fd at the

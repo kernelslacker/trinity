@@ -97,6 +97,7 @@
 #include "random.h"
 #include "shm.h"
 #include "tls.h"
+#include "signals.h"
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
@@ -551,6 +552,7 @@ static int open_loopback_pair(pid_t *out_pid, unsigned long *n_calls)
 		return -1;
 	}
 	if (pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		/* Forked child: accept/recv/close/close/_exit run OUTSIDE
 		 * the counted parent body and must NOT contribute to the
 		 * per-invocation direct-syscall tally.  Do not touch

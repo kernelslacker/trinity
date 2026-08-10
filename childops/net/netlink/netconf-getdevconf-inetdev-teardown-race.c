@@ -72,6 +72,7 @@
 #include "child.h"
 #include "childops-util.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 
 #if __has_include(<sched.h>) && __has_include(<linux/netlink.h>) && \
@@ -349,6 +350,7 @@ static int ncid_build_getnetconf(struct nl_ctx *ctx, __u8 family, int ifindex)
  */
 static void worker_destructor(int op_type)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
 		.proto         = NETLINK_ROUTE,
@@ -410,6 +412,7 @@ static void worker_destructor(int op_type)
  */
 static void worker_poller(int ifindex, int op_type)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
 		.proto         = NETLINK_ROUTE,

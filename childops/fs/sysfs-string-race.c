@@ -50,6 +50,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -207,6 +208,7 @@ static unsigned int pick_writable_target(void)
 __attribute__((noreturn))
 static void writer_child(int fd, const char *cand, unsigned int iters)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	size_t len = strlen(cand);
 	unsigned int i;
 

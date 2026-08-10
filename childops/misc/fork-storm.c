@@ -54,6 +54,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -141,6 +142,7 @@ static void __attribute__((noreturn)) do_exit_as(enum exit_mode mode)
  */
 static void __attribute__((noreturn)) great_grandchild(void)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	do_exit_as(pick_exit_mode());
 }
 
@@ -152,6 +154,7 @@ static void __attribute__((noreturn)) great_grandchild(void)
  */
 static void __attribute__((noreturn)) grandchild(void)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	if (ONE_IN(NEST_ONE_IN)) {
 		pid_t pid = fork();
 		int status;

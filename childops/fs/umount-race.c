@@ -76,6 +76,7 @@
 #include "rnd.h"
 #include "scratch_block.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
@@ -226,6 +227,7 @@ static void one_cycle(unsigned long *direct_calls)
 	}
 
 	if (pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		accessor_loop(path);
 		_exit(0);
 	}

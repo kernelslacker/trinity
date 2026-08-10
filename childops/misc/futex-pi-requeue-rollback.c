@@ -83,6 +83,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 
 /*
@@ -297,6 +298,7 @@ static pid_t fpr_spawn_worker(struct fpr_shared *s, fpr_worker_entry entry)
 	pid_t pid = fork();
 
 	if (pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		entry(s);
 		_exit(0);
 	}

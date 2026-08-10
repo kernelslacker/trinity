@@ -69,6 +69,7 @@
 #include "childop-outcome.h"
 #include "childops-util.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -332,6 +333,7 @@ bool memfd_secret_lifecycle(struct childdata *child)
 		direct_calls++;
 		oracle_pid = fork();
 		if (oracle_pid == 0) {
+			CHILDOP_GRANDCHILD_ENTER();
 			/* Oracle child: close read end and hand off. */
 			if (pipefds[0] >= 0)
 				close(pipefds[0]);

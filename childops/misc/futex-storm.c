@@ -49,6 +49,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 
 #define NR_FUTEX_WORDS	8	/* small enough that workers collide hard */
@@ -392,6 +393,7 @@ static int futex_storm_iter_spawn_workers(struct futex_storm_iter_ctx *ctx)
 		if (pid < 0)
 			break;
 		if (pid == 0) {
+			CHILDOP_GRANDCHILD_ENTER();
 			inner_worker(ctx->s);
 			_exit(0);	/* unreachable */
 		}

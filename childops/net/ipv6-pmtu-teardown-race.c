@@ -43,6 +43,7 @@
 #include "child.h"
 #include "childops-util.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 
 #if __has_include(<sched.h>) && __has_include(<linux/netlink.h>) && \
@@ -337,6 +338,7 @@ static void setup_pairs(struct nl_ctx *ctx, char names[V6PMTU_NUM_PAIRS][8])
  */
 static void worker_ptb(int op_type)
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	int sfd;
 	struct timespec start, now;
 	struct sockaddr_in6 dst;
@@ -406,6 +408,7 @@ static void worker_ptb(int op_type)
  */
 static void worker_dellink(char names[V6PMTU_NUM_PAIRS][8])
 {
+	CHILDOP_GRANDCHILD_ENTER();
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,

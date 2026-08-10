@@ -86,6 +86,7 @@
 #include "child.h"
 #include "childops-util.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 
 #if __has_include(<linux/tipc.h>) && __has_include(<linux/tipc_netlink.h>)
@@ -155,6 +156,7 @@ static void try_modprobe_tipc(void)
 	if (pid < 0)
 		return;
 	if (pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		/* Child: silence stdout/stderr so a missing modprobe doesn't
 		 * spew into the trinity log on every iteration in distros
 		 * without /sbin/modprobe. */

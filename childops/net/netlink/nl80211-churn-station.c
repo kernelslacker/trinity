@@ -45,6 +45,7 @@
 #include "nl80211-churn-internal.h"
 #include "random.h"
 #include "shm.h"
+#include "signals.h"
 
 static void random_bssid(unsigned char mac[6]);
 
@@ -304,6 +305,7 @@ void nl80211_admin_gate_probe(uint32_t wiphy_idx, unsigned long *direct_calls)
 		return;
 
 	if (pid == 0) {
+		CHILDOP_GRANDCHILD_ENTER();
 		struct genl_ctx cctx;
 		struct genl_open_opts opts;
 		unsigned int i;
