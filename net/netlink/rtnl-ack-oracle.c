@@ -86,9 +86,12 @@
  * RTNL_ACK_ORACLE_DRAIN_MAX caps the drain loop for non-dump probes.  We
  * read up to that many messages with MSG_DONTWAIT and stop on NLMSG_ERROR
  * (the explicit ACK path).  NLMSG_DONE cannot belong to our probe because
- * NLM_F_DUMP is excluded from sampling; when DONE is seen it is queue
- * pollution from concurrent dump traffic and is counted into stale_drained
- * before continuing the drain.  Anything else is counted as no_reply.
+ * NLM_F_DUMP is excluded from sampling; each DONE terminator is queue
+ * pollution from concurrent dump traffic, counted into stale_done.  Ordinary
+ * data/multipart messages before a DONE (the payload messages that consume
+ * the drain budget) are counted into stale_other.  If the budget is exhausted
+ * before NLMSG_ERROR surfaces, the probe books no_reply_exhausted; an early
+ * EAGAIN before the budget is consumed books no_reply_clean.
  */
 #include <errno.h>
 #include <sys/socket.h>
@@ -268,11 +271,12 @@ void rtnl_oracle_drain(int fd, int send_ok)
 	 * Drain up to DRAIN_MAX messages with MSG_DONTWAIT.  Stop on
 	 * NLMSG_ERROR (the ACK path for non-dump probes).  NLMSG_DONE
 	 * cannot be attributed to our probe because NLM_F_DUMP is excluded
-	 * from sampling (see rtnl_oracle_sample()); DONE messages in the
-	 * queue are completions from concurrent unsampled dump traffic.
-	 * Count each into stale_drained and continue draining.  EAGAIN
-	 * means the kernel dropped the message without reply; count that
-	 * as no_reply.
+	 * from sampling (see rtnl_oracle_sample()); each DONE terminator is
+	 * counted into stale_done.  Ordinary data/multipart payload messages
+	 * that appear before the DONE are counted into stale_other — these
+	 * are the messages that actually consume the drain budget.  If the
+	 * budget is exhausted without seeing NLMSG_ERROR the probe books
+	 * no_reply_exhausted; an early EAGAIN books no_reply_clean.
 	 */
 	for (i = 0; i < RTNL_ACK_ORACLE_DRAIN_MAX; i++) {
 		n = recv(fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
@@ -293,13 +297,18 @@ void rtnl_oracle_drain(int fd, int send_ok)
 			 * pollution and continue looking for our NLMSG_ERROR.
 			 */
 			__atomic_add_fetch(
-				&shm->stats.rtnl_ack_oracle.stale_drained,
+				&shm->stats.rtnl_ack_oracle.stale_done,
 				1, __ATOMIC_RELAXED);
 			continue;
 		}
 
-		if (nlh->nlmsg_type != NLMSG_ERROR)
-			continue; /* data or multipart — keep draining */
+		if (nlh->nlmsg_type != NLMSG_ERROR) {
+			/* data or multipart payload — consumes drain budget */
+			__atomic_add_fetch(
+				&shm->stats.rtnl_ack_oracle.stale_other,
+				1, __ATOMIC_RELAXED);
+			continue;
+		}
 
 		/* Found NLMSG_ERROR: extract error code */
 		if ((size_t)n < NLMSG_HDRLEN + sizeof(struct nlmsgerr))
@@ -361,6 +370,12 @@ got_ack:
 	return;
 
 out_noreply:
-	__atomic_add_fetch(&shm->stats.rtnl_ack_oracle.no_reply,
-			   1, __ATOMIC_RELAXED);
+	if (i == RTNL_ACK_ORACLE_DRAIN_MAX)
+		__atomic_add_fetch(
+			&shm->stats.rtnl_ack_oracle.no_reply_exhausted,
+			1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(
+			&shm->stats.rtnl_ack_oracle.no_reply_clean,
+			1, __ATOMIC_RELAXED);
 }
