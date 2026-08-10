@@ -577,16 +577,7 @@ void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		char childname[]="trinity-subchild";
 		prctl(PR_SET_NAME, (unsigned long) &childname);
 
-		/*
-		 * Flag ourselves so child_fault_handler() skips the fault
-		 * beacon stamp on a grand-child crash.  this_child() in the
-		 * grand-child returns the parent worker's childdata (cached
-		 * via COW-inherited cached_pid that no one updated across
-		 * this fork), so without the gate a SIGSEGV here would mis-
-		 * attribute the death to the parent worker and retire it.
-		 * Set before __do_syscall so any synchronous fault inside
-		 * the throwaway syscall is covered.
-		 */
+		/* this_child() grandchild rule: see Documentation/this-child-grandchild-reachability.md */
 		CHILDOP_GRANDCHILD_ENTER();
 
 		__do_syscall(rec, entry, GOING_AWAY, NULL, child);

@@ -307,12 +307,7 @@ static __attribute__((noreturn)) void carrier_child(int ready_fd)
 	} while (w < 0 && errno == EINTR);
 	close(ready_fd);
 
-	/* Publish carrier-setup kernel entries: unshare (1) + each
-	 * write() attempt (write_calls; typically 1, retried on EINTR)
-	 * + close (1).  write_calls captures all retries so EINTR
-	 * spin-cost is not silently dropped from the tally.
-	 * this_child() is inherited across fork(); the shm stats are
-	 * visible to the parent via MAP_SHARED. */
+	/* this_child() grandchild rule: see Documentation/this-child-grandchild-reachability.md */
 	{
 		struct childdata *tc = this_child();
 		const enum child_op_type op =

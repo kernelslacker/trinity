@@ -528,8 +528,7 @@ static void spdflush_best_effort(enum child_op_type op)
 	n += drain_replies(fd);
 	close(fd);
 	n++;
-	/* op threaded in: this_child() in the grandchild returns the
-	 * parent's slot (COW-inherited); using it would mis-attribute. */
+	/* this_child() grandchild rule: see Documentation/this-child-grandchild-reachability.md */
 	childop_direct_syscalls_add(op, n);
 }
 

@@ -173,16 +173,7 @@ static void mark_kind_unsupported(void)
 			 __ATOMIC_RELAXED);
 }
 
-/* Publish n direct kernel entries against this childdata's op via
- * childop_direct_syscalls_add().  Snapshot the caller's op through
- * this_child() -- the espintcp coalesce path fans out across the
- * userns_run_in_ns() grandchild, the open_loopback_pair() acceptor
- * fork, and the run_no_ingress_dev_arm() helper fork; each of those
- * subprocesses inherits the parent's this_child() handle and writes
- * to the shared shm, so per-site publish from any of them attributes
- * correctly to CHILD_OP_ESPINTCP_COALESCE.  The netlink RTM_* traffic
- * on these ctxes already publishes at nl_close(), so we deliberately
- * do not double-count it here. */
+/* this_child() grandchild rule: see Documentation/this-child-grandchild-reachability.md */
 static void bump_direct(unsigned long n)
 {
 	struct childdata *tc = this_child();

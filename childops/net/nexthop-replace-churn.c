@@ -296,17 +296,7 @@ static void nhrc_route_worker(void)
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
-		/*
-		 * Grandchild after fork(): this_child() returns the
-		 * COW-inherited parent slot (non-NULL), so nl_open()'s
-		 * this_child() fallback would fire and attribute
-		 * transport calls to the parent's op_type.  Set
-		 * caller_op explicitly so the worker's RTM_NEWROUTE /
-		 * RTM_DELROUTE burst is attributed correctly via
-		 * nl_close() -- the explicit value wins the early-exit
-		 * in nl_open() and prevents any mismatch from the
-		 * COW-inherited parent slot.
-		 */
+		/* this_child() grandchild rule: see Documentation/this-child-grandchild-reachability.md */
 		.caller_op = CHILD_OP_NEXTHOP_REPLACE_CHURN,
 	};
 	struct timespec t0;
