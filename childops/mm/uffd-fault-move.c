@@ -58,9 +58,10 @@
  *     (unlikely) just wastes one poll slot and the loop continues.
  *   - Every munmap/close runs in the same child process; cleanup is
  *     unconditional on all exit paths.
- *   - Variant 3 fault thread uses sigsetjmp to escape teardown signals;
- *     pthread_join is bounded by a busy-poll with WNOHANG-equivalent
- *     pthread_tryjoin_np.
+ *   - All variant fault/racer threads are joined with a bounded busy-poll
+ *     (pthread_tryjoin_np).  On timeout the mapping is deliberately leaked
+ *     (munmap/close skipped) so the child-process exit reclaims it — safer
+ *     than pthread_detach followed by munmap under a live thread.
  *
  * Oracle:
  *   After COPY or MOVE, the target page contains the source sequence number
@@ -397,7 +398,9 @@ static void v1_measure_dontwake(const struct v1_ctx *ctx, int page_idx,
 static void run_variant1(const enum child_op_type op, const bool valid_op,
 			 unsigned long *direct_calls_out)
 {
-	struct v1_ctx ctx;
+	/* Static storage so a worker that outlives the frame (leak path) can
+	 * still dereference its ctx pointer without hitting a dead stack frame. */
+	static struct v1_ctx ctx;
 	pthread_t tid;
 	int fd;
 	uint64_t feats;
@@ -809,6 +812,15 @@ cleanup_v1:
 	/* Unregister wakes any pending fault with an error, allowing the
 	 * fault thread to unblock regardless of which page it is on. */
 	uffd_unregister(fd, region, len);
+	/* Belt-and-suspenders: WAKE the whole registered range so any fault
+	 * still queued in the kernel is kicked out before we join. */
+	{
+		struct uffdio_range wr;
+
+		wr.start = (uintptr_t)region;
+		wr.len   = (uint64_t)len;
+		(void)ioctl(fd, UFFDIO_WAKE, &wr);
+	}
 
 	/* Drain remaining fault events (bounded). */
 	{
@@ -830,13 +842,14 @@ cleanup_v1:
 				break;
 			nanosleep(&ts, NULL);
 		}
-		if (spin >= V3_JOIN_LOOPS)
-			pthread_detach(tid);
 		/* Restore signal dispositions installed by v1_fault_thread.
 		 * sigaction() is process-wide; must be undone here so the next
-		 * childop invocation sees the expected disposition. */
+		 * childop invocation sees the expected disposition.
+		 * ctx is static storage so old_sa_* are always readable. */
 		sigaction(SIGBUS,  &ctx.old_sa_bus,  NULL);
 		sigaction(SIGSEGV, &ctx.old_sa_segv, NULL);
+		if (spin >= V3_JOIN_LOOPS)
+			return; /* worker still live: leak mappings, skip munmap */
 	}
 
 	munmap(src_pages, len);
@@ -908,8 +921,10 @@ static void *v2_fault_thread(void *arg)
 static void run_variant2(const enum child_op_type op, const bool valid_op,
 			 unsigned long *direct_calls_out)
 {
-	struct v2_racer_ctx rctx;
-	struct v2_fault_ctx fctx;
+	/* Static storage so workers that outlive the frame (leak path) can
+	 * still dereference their ctx pointers safely. */
+	static struct v2_racer_ctx rctx;
+	static struct v2_fault_ctx fctx;
 	pthread_t racer_tid, fault_tid;
 	bool racer_started = false, fault_started = false;
 	int fd;
@@ -1142,9 +1157,20 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 		}
 	}
 
+	/* Belt-and-suspenders: WAKE the registered dst range to kick any
+	 * fault still pending in the kernel before we join the threads. */
+	{
+		struct uffdio_range wr;
+
+		wr.start = (uintptr_t)dst;
+		wr.len   = (uint64_t)len;
+		(void)ioctl(fd, UFFDIO_WAKE, &wr);
+	}
+
 	{
 		struct timespec ts = { .tv_sec = 0, .tv_nsec = V3_JOIN_SLEEP_NS };
 		int spin;
+		bool leaked = false;
 
 		if (racer_started) {
 			for (spin = 0; spin < V3_JOIN_LOOPS; spin++) {
@@ -1153,7 +1179,7 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 				nanosleep(&ts, NULL);
 			}
 			if (spin >= V3_JOIN_LOOPS)
-				pthread_detach(racer_tid);
+				leaked = true; /* worker live: leak, skip munmap */
 		}
 		if (fault_started) {
 			for (spin = 0; spin < V3_JOIN_LOOPS; spin++) {
@@ -1162,8 +1188,10 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 				nanosleep(&ts, NULL);
 			}
 			if (spin >= V3_JOIN_LOOPS)
-				pthread_detach(fault_tid);
+				leaked = true; /* worker live: leak, skip munmap */
 		}
+		if (leaked)
+			return; /* mappings deliberately leaked; child exit reclaims */
 	}
 
 	munmap(dst, len);
@@ -1246,7 +1274,9 @@ static void *v3_fault_thread(void *arg)
 static void run_variant3(const enum child_op_type op, const bool valid_op,
 			 unsigned long *direct_calls_out)
 {
-	struct v3_fault_ctx fctx;
+	/* Static storage so a worker that outlives the frame (leak path) can
+	 * still dereference its fctx pointer without hitting a dead stack frame. */
+	static struct v3_fault_ctx fctx;
 	pthread_t tid;
 	bool thread_started = false;
 	int fd;
@@ -1414,6 +1444,16 @@ static void run_variant3(const enum child_op_type op, const bool valid_op,
 
 cleanup_v3:
 	if (thread_started) {
+		/* Best-effort WAKE to kick any fault still pending in the kernel;
+		 * the teardown action may have already unblocked the thread via
+		 * SIGSEGV/SIGBUS, so errors here are ignored. */
+		if (fd >= 0 && region != MAP_FAILED) {
+			struct uffdio_range wr;
+
+			wr.start = (uintptr_t)region;
+			wr.len   = (uint64_t)len;
+			(void)ioctl(fd, UFFDIO_WAKE, &wr);
+		}
 		ts.tv_sec  = 0;
 		ts.tv_nsec = V3_JOIN_SLEEP_NS;
 		for (spin = 0; spin < V3_JOIN_LOOPS; spin++) {
@@ -1421,17 +1461,15 @@ cleanup_v3:
 				break;
 			nanosleep(&ts, NULL);
 		}
-		if (spin >= V3_JOIN_LOOPS)
-			pthread_detach(tid);
 		/*
 		 * Restore signal dispositions — sigaction() is process-wide,
 		 * not per-thread; must be undone before this childop returns.
-		 * old_sa_segv/old_sa_bus were written by v3_fault_thread()
-		 * before any fault access, so they are safely readable here
-		 * even in the detach (timed-out) case.
+		 * fctx is static storage so old_sa_* are always readable.
 		 */
 		sigaction(SIGSEGV, &fctx.old_sa_segv, NULL);
 		sigaction(SIGBUS,  &fctx.old_sa_bus,  NULL);
+		if (spin >= V3_JOIN_LOOPS)
+			return; /* worker still live: leak mappings, skip cleanup */
 	}
 
 	/* Unconditional cleanup in case teardown action left things partial. */
