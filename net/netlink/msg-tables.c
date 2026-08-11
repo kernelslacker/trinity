@@ -419,28 +419,28 @@ const size_t ctrl_specs_n = ARRAY_SIZE(ctrl_specs);
 
 /* Newer XFRMA_* attrs may be missing from older system headers. */
 #ifndef XFRMA_NAT_KEEPALIVE_INTERVAL
-#define XFRMA_NAT_KEEPALIVE_INTERVAL	35
+#define XFRMA_NAT_KEEPALIVE_INTERVAL	34
 #endif
 #ifndef XFRMA_SA_PCPU
-#define XFRMA_SA_PCPU			36
+#define XFRMA_SA_PCPU			35
 #endif
 #ifndef XFRMA_IPTFS_DROP_TIME
-#define XFRMA_IPTFS_DROP_TIME		37
+#define XFRMA_IPTFS_DROP_TIME		36
 #endif
 #ifndef XFRMA_IPTFS_REORDER_WINDOW
-#define XFRMA_IPTFS_REORDER_WINDOW	38
+#define XFRMA_IPTFS_REORDER_WINDOW	37
 #endif
 #ifndef XFRMA_IPTFS_DONT_FRAG
-#define XFRMA_IPTFS_DONT_FRAG		39
+#define XFRMA_IPTFS_DONT_FRAG		38
 #endif
 #ifndef XFRMA_IPTFS_INIT_DELAY
-#define XFRMA_IPTFS_INIT_DELAY		40
+#define XFRMA_IPTFS_INIT_DELAY		39
 #endif
 #ifndef XFRMA_IPTFS_MAX_QSIZE
-#define XFRMA_IPTFS_MAX_QSIZE		41
+#define XFRMA_IPTFS_MAX_QSIZE		40
 #endif
 #ifndef XFRMA_IPTFS_PKT_SIZE
-#define XFRMA_IPTFS_PKT_SIZE		42
+#define XFRMA_IPTFS_PKT_SIZE		41
 #endif
 
 /* XFRM attribute spec table (XFRMA_*) */
