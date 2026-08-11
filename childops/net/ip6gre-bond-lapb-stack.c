@@ -95,8 +95,8 @@
 
 #ifndef IFLA_GRE_LINK
 #define IFLA_GRE_LINK		1
-#define IFLA_GRE_LOCAL		5
-#define IFLA_GRE_REMOTE		6
+#define IFLA_GRE_LOCAL		6
+#define IFLA_GRE_REMOTE		7
 #endif
 
 #define IBLS_BUF_BYTES		1024

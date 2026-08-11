@@ -354,7 +354,9 @@ update this section to match `ls scripts/check-static/*.sh`.)
   attribute with no fallback builds against a new-enough
   `<linux/xfrm.h>` and breaks against an older one; the local header
   is the ownership boundary because trusting the system header is
-  what hides the bug.
+  what hides the bug.  Also verifies that each shimmed `XFRMA_*`
+  `#define` carries the correct numeric value (the shims are always
+  active since `#ifndef` is unconditionally true for enum constants).
 - `no-bare-waitpid`: reject bare `waitpid()` callsites outside the
   `waitpid_eintr()` wrapper (`include/utils.h`) and the wait-family
   syscall definitions (`syscalls/process/wait4.c`, `waitpid.c`,
@@ -536,6 +538,13 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `track-shared-region-pairing`: every `track_shared_region()` must
   have a matching `untrack_shared_region()` on every cleanup-goto exit
   path that can free or recycle the backing mapping.
+- `uapi-shim-values`: every `#define` shim for an enum-backed UAPI constant
+  (families: `IFLA_GRE_*`, `IFLA_IPTUN_*`, `NDA_*`) must carry the correct
+  decimal value as recorded in `scripts/check-static/uapi-shim-values.baseline`.
+  `#ifndef` guards on enum values are always taken — enums are not macros, so
+  the shim is the definition, not a fallback.  A miscounted or typo'd value
+  compiles silently and sends the wrong netlink attribute to the kernel.
+  `XFRMA_*` value correctness is checked in `netlink-xfrm-attr-shim`.
 - `valid-op-stat-guards`: flag two adjacent `if (valid_op)` guards
   in `childops/*.c` where the first body writes
   `childop_setup_accepted[op]` and the second writes

@@ -102,8 +102,8 @@
 
 #ifndef IFLA_GRE_LINK
 #define IFLA_GRE_LINK			1
-#define IFLA_GRE_LOCAL			5
-#define IFLA_GRE_REMOTE			6
+#define IFLA_GRE_LOCAL			6
+#define IFLA_GRE_REMOTE			7
 #endif
 
 #ifndef IFLA_VXLAN_ID

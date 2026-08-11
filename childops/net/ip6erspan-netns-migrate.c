@@ -118,15 +118,15 @@
 
 #ifndef IFLA_GRE_LINK
 #define IFLA_GRE_LINK			1
-#define IFLA_GRE_LOCAL			5
-#define IFLA_GRE_REMOTE			6
+#define IFLA_GRE_LOCAL			6
+#define IFLA_GRE_REMOTE			7
 #endif
 
 #ifndef IFLA_GRE_ERSPAN_INDEX
-#define IFLA_GRE_ERSPAN_INDEX		16
-#define IFLA_GRE_ERSPAN_VER		17
-#define IFLA_GRE_ERSPAN_DIR		18
-#define IFLA_GRE_ERSPAN_HWID		19
+#define IFLA_GRE_ERSPAN_INDEX		21
+#define IFLA_GRE_ERSPAN_VER		22
+#define IFLA_GRE_ERSPAN_DIR		23
+#define IFLA_GRE_ERSPAN_HWID		24
 #endif
 
 #ifndef IFLA_VXLAN_ID

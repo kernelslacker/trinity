@@ -1,0 +1,57 @@
+# uapi-shim-values.baseline
+#
+# Verified-correct numeric values for the UAPI enum constants that trinity
+# re-#defines in its sysroot-independence shims.
+#
+# WHY THIS EXISTS: #ifndef guards on enum values are always taken (enums are
+# not macros; cpp #ifndef is always true for them).  The shim is therefore
+# not a fallback -- it IS the definition, always.  A wrong value here
+# compiles clean, links clean, and silently sends the wrong netlink attribute
+# to the kernel forever.
+#
+# Reference: ~/src/linux-linus/include/uapi/linux/ as of linux-linus
+# (verified 2026-08).  To re-verify run:
+#
+#   python3 - <<'EOF'
+#   import subprocess, sys
+#   # count enum positions for each family from the kernel header
+#   EOF
+# or simply open the header and count from 0.
+#
+# Format: <SYMBOL> <decimal_value>
+# One symbol per line; blank lines and #-comments are ignored.
+# XFRMA_* are checked in netlink-xfrm-attr-shim.sh (value section).
+#
+# Families NOT yet covered (272 shims total -- follow-up task):
+#   NFTA_*, CTA_*, TCA_*, NL80211_ATTR_*, ETHTOOL_A_*, MDBA_*, DCB_ATTR_*
+
+# ---------------------------------------------------------------------------
+# IFLA_GRE_* -- linux/if_tunnel.h
+#   enum: UNSPEC=0 LINK=1 IFLAGS=2 OFLAGS=3 IKEY=4 OKEY=5 LOCAL=6 REMOTE=7
+# ---------------------------------------------------------------------------
+IFLA_GRE_LINK          1
+IFLA_GRE_IKEY          4
+IFLA_GRE_OKEY          5
+IFLA_GRE_LOCAL         6
+IFLA_GRE_REMOTE        7
+IFLA_GRE_ERSPAN_INDEX  21
+IFLA_GRE_ERSPAN_VER    22
+IFLA_GRE_ERSPAN_DIR    23
+IFLA_GRE_ERSPAN_HWID   24
+
+# ---------------------------------------------------------------------------
+# IFLA_IPTUN_* -- linux/if_tunnel.h
+#   enum: UNSPEC=0 LINK=1 LOCAL=2 REMOTE=3
+# ---------------------------------------------------------------------------
+IFLA_IPTUN_LOCAL  2
+IFLA_IPTUN_REMOTE 3
+
+# ---------------------------------------------------------------------------
+# NDA_* -- linux/neighbour.h
+#   enum: UNSPEC=0 DST=1 LLADDR=2 CACHEINFO=3 PROBES=4 VLAN=5 PORT=6
+#         VNI=7 IFINDEX=8 MASTER=9 ...
+# ---------------------------------------------------------------------------
+NDA_DST    1
+NDA_LLADDR 2
+NDA_VNI    7
+NDA_MASTER 9

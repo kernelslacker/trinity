@@ -80,10 +80,10 @@
 
 #ifndef IFLA_GRE_LINK
 #define IFLA_GRE_LINK		1
-#define IFLA_GRE_IKEY		3
-#define IFLA_GRE_OKEY		4
-#define IFLA_GRE_LOCAL		5
-#define IFLA_GRE_REMOTE		6
+#define IFLA_GRE_IKEY		4
+#define IFLA_GRE_OKEY		5
+#define IFLA_GRE_LOCAL		6
+#define IFLA_GRE_REMOTE		7
 #endif
 
 #ifndef NDA_DST
