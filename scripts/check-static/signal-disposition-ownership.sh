@@ -20,6 +20,21 @@
 # for signal(…SIG_DFL…) calls and, for each hit, tests whether raise(
 # appears within 2 source lines.  Proximity of 2 lines catches the
 # canonical one-liner form and the common "blank line between" variant.
+# The 2-line window is a deliberate floor — cross-statement or
+# cross-function reset-then-raise (e.g. signal() in a loop body, raise()
+# in a separate function called later) is intentionally out of scope.
+# Files that contain whole-table SIG_DFL resets in grandchild sanitizers
+# with no raise() reachable within the window are inherently correct;
+# pre-emptive exemptions for the known sites are documented in the
+# allowlist.
+#
+# Check 1b — sigaction-expressed SIG_DFL + raise (beacon-drop via sa_handler)
+# -----------------------------------------------------------------------------
+# sa.sa_handler = SIG_DFL; sigaction(SIGX, &sa, NULL); raise(SIGX);
+# has identical semantics to the signal() form above and is the form
+# used by the prior 495-A defect sites.  The check scans for
+# sa_handler = SIG_DFL paired with a sigaction(SIG install in the same
+# file, then applies the same 2-line proximity test for raise(.
 #
 # Check 2 — sigaction disposition ownership (canonical-snapshot invariant)
 # ------------------------------------------------------------------------
@@ -84,10 +99,11 @@ while IFS= read -r srcfile; do
 			\**) continue ;; /\**) continue ;; //*) continue ;;
 		esac
 
-		# Check if raise( appears within 2 lines following this signal call.
+		# Check if raise( appears within 2 lines of this signal call
+		# (inclusive of the matched line itself — catches one-liner form).
 		end_line=$((lineno + 2))
 		has_raise=$(awk -v start="$lineno" -v end="$end_line" '
-			NR > start && NR <= end && /raise[[:space:]]*\(/ { print; exit }
+			NR >= start && NR <= end && /raise[[:space:]]*\(/ { print; exit }
 		' "$srcfile")
 		[ -z "$has_raise" ] && continue
 
@@ -102,6 +118,46 @@ while IFS= read -r srcfile; do
 		echo "FAIL: $NAME: check1: $key: signal(SIG_DFL)+raise() drops fault beacon"
 		fail_count=$((fail_count + 1))
 	done < <(grep -En 'signal[[:space:]]*\([^)]*SIG_DFL' "$srcfile" 2>/dev/null)
+done < <(find . -name '*.c' -type f \
+	-not -path './health/*' \
+	-not -path './scripts/check-static/*' \
+	| sort)
+
+# ---------------------------------------------------------------------------
+# Check 1b: sa_handler = SIG_DFL paired with sigaction(SIG install + raise().
+# Same beacon-drop hazard as check1, expressed via the sigaction(3) API.
+# ---------------------------------------------------------------------------
+while IFS= read -r srcfile; do
+	# Skip files that don't combine sa_handler=SIG_DFL with a sigaction install.
+	has_sadfl=$(grep -E 'sa_handler[[:space:]]*=[[:space:]]*SIG_DFL' "$srcfile" 2>/dev/null | head -1)
+	[ -z "$has_sadfl" ] && continue
+	has_sainstall=$(grep -E 'sigaction[[:space:]]*\(SIG' "$srcfile" 2>/dev/null | head -1)
+	[ -z "$has_sainstall" ] && continue
+
+	# For each sa_handler=SIG_DFL line test for raise() within 2 lines.
+	while IFS=: read -r lineno content; do
+		trimmed=$(printf '%s' "$content" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+		case "$trimmed" in
+			\**) continue ;; /\**) continue ;; //*) continue ;;
+		esac
+
+		end_line=$((lineno + 2))
+		has_raise=$(awk -v start="$lineno" -v end="$end_line" '
+			NR >= start && NR <= end && /raise[[:space:]]*\(/ { print; exit }
+		' "$srcfile")
+		[ -z "$has_raise" ] && continue
+
+		hash=$(printf '%s' "$trimmed" | sha256sum | cut -c1-8)
+		key="${srcfile#./}:$lineno:$hash"
+
+		if [ "${allowlist[$key]+set}" ]; then
+			allowlist_matched[$key]=1
+			continue
+		fi
+
+		echo "FAIL: $NAME: check1b: $key: sa_handler=SIG_DFL+sigaction+raise() drops fault beacon"
+		fail_count=$((fail_count + 1))
+	done < <(grep -En 'sa_handler[[:space:]]*=[[:space:]]*SIG_DFL' "$srcfile" 2>/dev/null)
 done < <(find . -name '*.c' -type f \
 	-not -path './health/*' \
 	-not -path './scripts/check-static/*' \
@@ -200,10 +256,12 @@ fi
 
 if [ "$fail_count" -gt 0 ]; then
 	{
-		echo "  $NAME: check1 flags signal(SIG_DFL)+raise() outside health/:"
+		echo "  $NAME: check1/check1b flags signal/sigaction(SIG_DFL)+raise() outside health/:"
 		echo "    that pattern resets disposition before delivery, silently"
 		echo "    bypassing the fault beacon.  Restore the beacon protocol or"
-		echo "    move the re-raise into health/."
+		echo "    move the re-raise into health/.  Cross-function reset-then-raise"
+		echo "    is out of scope (2-line window); see allowlist for pre-emptive"
+		echo "    exemptions already reviewed."
 		echo "  $NAME: check2 flags sigaction(SIGSEGV/SIGBUS) installs that lack"
 		echo "    a canonical-read call (sigaction(SIG, NULL, &saved)) or a"
 		echo "    saved-disposition variable (_sa_bus / _sa_segv).  Without the"
@@ -214,5 +272,5 @@ if [ "$fail_count" -gt 0 ]; then
 	exit 1
 fi
 
-echo "PASS: $NAME: 0 findings (check1: SIG_DFL+raise beacon-drop; check2: sigaction ownership)"
+echo "PASS: $NAME: 0 findings (check1/1b: SIG_DFL+raise beacon-drop; check2: sigaction ownership)"
 exit 0
