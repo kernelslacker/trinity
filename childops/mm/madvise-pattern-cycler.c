@@ -190,14 +190,20 @@ static void touch_subrange(volatile unsigned char *base, unsigned long len)
  * pool-drawn region between draw and the touch_subrange() write/read
  * inside the iter loop, but only when si_addr is inside the drawn
  * pool mapping range.  Faults outside the range — ASAN redzone hits,
- * setup-path bugs, genuine SIGBUS on an unrelated mmap — restore
- * SIG_DFL and re-raise so child_fault_handler diagnoses + exits and
- * the per-pid bug log path is preserved.  Volatile, ordering, and
- * re-raise rationale match the equivalent statics in
+ * setup-path bugs, genuine SIGBUS on an unrelated mmap — chain directly
+ * to trinity's canonical handler (child_fault_handler) so the shm
+ * fault-beacon stamp and the per-pid bug log path are preserved.
+ * Volatile and ordering rationale match the equivalent statics in
  * childops/mm/memory-pressure.c. */
 static sigjmp_buf madvise_cycler_pool_race_jmp;
 static volatile uintptr_t madvise_cycler_pool_race_addr_low;
 static volatile uintptr_t madvise_cycler_pool_race_addr_high;
+/* Trinity's canonical SIGBUS/SIGSEGV dispositions, captured once before the
+ * first handler install so the not-ours arm can chain directly to
+ * child_fault_handler and preserve the shm fault-beacon stamp. */
+static struct sigaction madvise_cycler_sa_segv;
+static struct sigaction madvise_cycler_sa_bus;
+static bool madvise_cycler_sa_saved;
 
 static __attribute__((no_sanitize("address")))
 void madvise_cycler_pool_race_handler(int sig, siginfo_t *info,
@@ -211,23 +217,42 @@ void madvise_cycler_pool_race_handler(int sig, siginfo_t *info,
 		return;
 	}
 	if (info->si_code <= 0) {
-		/* Self-sent (glibc abort etc.) — restore default and
-		 * re-raise so child_fault_handler diagnoses + exits.
-		 * siglongjmp here would orphan the allocator lock. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		/* Self-sent (glibc abort etc.) — chain to trinity's canonical
+		 * handler (child_fault_handler) directly to preserve the
+		 * shm fault-beacon stamp.  siglongjmp here would orphan the
+		 * allocator lock. */
+		{
+			const struct sigaction *saved =
+				(sig == SIGBUS) ? &madvise_cycler_sa_bus
+					       : &madvise_cycler_sa_segv;
+			if (madvise_cycler_sa_saved && (saved->sa_flags & SA_SIGINFO))
+				saved->sa_sigaction(sig, info, ctx);
+			else {
+				sigaction(sig, saved, NULL);
+				raise(sig);
+			}
+		}
 		return;
 	}
 
 	fault_addr = (uintptr_t)info->si_addr;
 	if (fault_addr < madvise_cycler_pool_race_addr_low ||
 	    fault_addr >= madvise_cycler_pool_race_addr_high) {
-		/* Real kernel fault but si_addr is outside the drawn
-		 * pool range — not the race we're guarding against.
-		 * Restore default and re-raise so child_fault_handler
-		 * diagnoses + exits and the bug log path is preserved. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		/* Real kernel fault but si_addr is outside the drawn pool
+		 * range — not the race we're guarding against.  Chain to
+		 * trinity's canonical handler directly so child_fault_handler
+		 * stamps the beacon and the bug log path is preserved. */
+		{
+			const struct sigaction *saved =
+				(sig == SIGBUS) ? &madvise_cycler_sa_bus
+					       : &madvise_cycler_sa_segv;
+			if (madvise_cycler_sa_saved && (saved->sa_flags & SA_SIGINFO))
+				saved->sa_sigaction(sig, info, ctx);
+			else {
+				sigaction(sig, saved, NULL);
+				raise(sig);
+			}
+		}
 		return;
 	}
 	siglongjmp(madvise_cycler_pool_race_jmp, 1);
@@ -319,6 +344,14 @@ static void madvise_cycler_iter_arm_guard(const struct madvise_cycler_iter_ctx *
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = SA_SIGINFO;
 	sa.sa_sigaction = madvise_cycler_pool_race_handler;
+	/* Capture trinity's canonical dispositions once before the first
+	 * install so the not-ours arm in the handler can chain directly to
+	 * child_fault_handler. */
+	if (!madvise_cycler_sa_saved) {
+		sigaction(SIGSEGV, NULL, &madvise_cycler_sa_segv);
+		sigaction(SIGBUS,  NULL, &madvise_cycler_sa_bus);
+		madvise_cycler_sa_saved = true;
+	}
 	sigaction(SIGSEGV, &sa, old_segv);
 	sigaction(SIGBUS,  &sa, old_bus);
 }
