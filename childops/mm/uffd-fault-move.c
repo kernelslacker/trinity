@@ -852,8 +852,16 @@ cleanup_v1:
 				break;
 			nanosleep(&ts, NULL);
 		}
-		if (spin >= V3_JOIN_LOOPS)
-			return; /* worker still live: leak ctx and mappings, skip munmap */
+		if (spin >= V3_JOIN_LOOPS) {
+			/* fd is safe to close: stranded worker holds no reference to
+			 * the fd number.  Mappings are deliberately leaked — the
+			 * worker is still faulting on them; child-process exit reclaims. */
+			close(fd);
+			__atomic_add_fetch(
+				&shm->stats.uffd_fault_move.leaked_workers,
+				1, __ATOMIC_RELAXED);
+			return;
+		}
 		/* Restore signal dispositions installed by v1_fault_thread.
 		 * sigaction() is process-wide; must be undone here so the next
 		 * childop invocation sees the expected disposition.
@@ -1218,8 +1226,16 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 			if (spin >= V3_JOIN_LOOPS)
 				leaked = true; /* worker live: leak, skip munmap */
 		}
-		if (leaked)
-			return; /* ctx and mappings deliberately leaked; child exit reclaims */
+		if (leaked) {
+			/* fd is safe to close: stranded worker holds no reference to
+			 * the fd number.  Mappings are deliberately leaked — the
+			 * worker is still live; child-process exit reclaims. */
+			close(fd);
+			__atomic_add_fetch(
+				&shm->stats.uffd_fault_move.leaked_workers,
+				1, __ATOMIC_RELAXED);
+			return;
+		}
 		munmap(rctx, sizeof(*rctx));
 		munmap(fctx, sizeof(*fctx));
 	}
@@ -1495,8 +1511,17 @@ cleanup_v3:
 				break;
 			nanosleep(&ts, NULL);
 		}
-		if (spin >= V3_JOIN_LOOPS)
-			return; /* worker still live: leak fctx and mappings, skip cleanup */
+		if (spin >= V3_JOIN_LOOPS) {
+			/* fd is safe to close: stranded worker holds no reference to
+			 * the fd number.  Mappings are deliberately leaked — the
+			 * worker is still faulting on them; child-process exit reclaims. */
+			if (fd >= 0)
+				close(fd);
+			__atomic_add_fetch(
+				&shm->stats.uffd_fault_move.leaked_workers,
+				1, __ATOMIC_RELAXED);
+			return;
+		}
 		/*
 		 * Restore signal dispositions — sigaction() is process-wide,
 		 * not per-thread; must be undone before this childop returns.

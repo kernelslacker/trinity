@@ -20,6 +20,8 @@ struct uffd_fault_move_stats {
 	/* oracle: per-page sequence-number check after MOVE/COPY */
 	unsigned long oracle_checks_run;	/* pages checked at destination */
 	unsigned long oracle_mismatch;		/* pages with wrong seqno */
+	/* leak accounting */
+	unsigned long leaked_workers;		/* join-timeout: worker left live, fd closed, mappings leaked */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_UFFD_FAULT_MOVE_H */

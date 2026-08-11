@@ -22,6 +22,7 @@ static const struct stat_field uffd_fault_move_fields[] = {
 	STAT_FIELD_SUB(uffd_fault_move, v3_teardown_fail),
 	STAT_FIELD_SUB(uffd_fault_move, oracle_checks_run),
 	STAT_FIELD_SUB(uffd_fault_move, oracle_mismatch),
+	STAT_FIELD_SUB(uffd_fault_move, leaked_workers),
 };
 
 const struct stat_category uffd_fault_move_category =
