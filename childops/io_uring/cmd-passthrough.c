@@ -284,6 +284,35 @@ static void ring_drain_cqes(struct iour_ring *ctx)
 }
 
 /*
+ * Drain all available CQEs and return the ->res of the first one (the
+ * one just submitted).  Returns 0 when no CQE arrived — should not
+ * happen after a min_complete=1 ring_enter, but is safe to handle.
+ */
+static int ring_drain_cqes_first_res(struct iour_ring *ctx)
+{
+	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
+	unsigned int tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
+	int res = 0;
+
+	if (head != tail) {
+		unsigned int mask = ring_u32(ctx->cq_ring, ctx->cq_off_mask);
+		volatile struct io_uring_cqe *cqes =
+			(volatile struct io_uring_cqe *)((char *)ctx->cq_ring +
+							 ctx->cq_off_cqes);
+		res = cqes[head & mask].res;
+	}
+
+	while (head != tail) {
+		head++;
+		tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
+	}
+
+	__sync_synchronize();
+	ring_store_u32(ctx->cq_ring, ctx->cq_off_head, head);
+	return res;
+}
+
+/*
  * Drain all available CQEs without blocking and return the number
  * consumed.  Used by variant_nulldev to detect the absence of a CQE
  * after a multishot URING_CMD submission.
@@ -309,20 +338,39 @@ static void sqe_clear(struct io_uring_sqe *s)
 /* ------------------------------------------------------------------ *
  * uring_cmd_flags rotation.
  *
- * Rotate sqe->uring_cmd_flags across the three exercisable values so
- * each submission stresses a different kernel branch:
+ * Two pickers exist because io_uring_cmd_prep() rejects
+ * IORING_URING_CMD_MULTISHOT unless the SQE also carries
+ * IOSQE_BUFFER_SELECT.  variant_socket and variant_blockdev build from
+ * sqe_clear() and never set IOSQE_BUFFER_SELECT, so supplying MULTISHOT
+ * there causes prep to fail with -EINVAL before reaching ->uring_cmd().
+ * That is coverage-negative: the rotation wastes half its slots on
+ * guaranteed prep rejects.
  *
- *   0                            - baseline; no flags (current behaviour)
+ * pick_uring_cmd_flags_no_mshot() — for socket / blockdev:
+ *   0                            - baseline; no flags
  *   IORING_URING_CMD_FIXED       - reaches io_uring_cmd_import_fixed()
- *                                  (fails -EINVAL on this ring because no
- *                                  buffer table is registered, but the
- *                                  validation switch is still exercised)
- *   IORING_URING_CMD_MULTISHOT   - exercises the multishot flag path;
- *                                  useful on socket/blockdev even though
- *                                  those handlers don't arm multishot
- *   FIXED|MULTISHOT              - mutual-exclusion check; kernel rejects
- *                                  with -EINVAL (uring_cmd.c validation)
+ *                                  (fails -EINVAL here: no buffer table
+ *                                  registered, but the validation path
+ *                                  is still exercised)
+ *
+ * pick_uring_cmd_flags() — for nulldev, which provisions IOSQE_BUFFER_SELECT
+ *                          and a buffer ring, so MULTISHOT is valid:
+ *   0                            - baseline
+ *   IORING_URING_CMD_FIXED       - import_fixed() validation
+ *   IORING_URING_CMD_MULTISHOT   - multishot flag path
+ *   FIXED|MULTISHOT              - mutual-exclusion check (-EINVAL)
  * ------------------------------------------------------------------ */
+
+static const __u32 uring_cmd_flag_variants_no_mshot[] = {
+	0,
+	IORING_URING_CMD_FIXED,
+};
+
+static __u32 pick_uring_cmd_flags_no_mshot(void)
+{
+	return uring_cmd_flag_variants_no_mshot[
+		rnd_modulo_u32(ARRAY_SIZE(uring_cmd_flag_variants_no_mshot))];
+}
 
 static const __u32 uring_cmd_flag_variants[] = {
 	0,
@@ -381,7 +429,7 @@ static bool variant_socket(struct iour_ring *ctx, unsigned long *direct_calls)
 	sqe.opcode          = IORING_OP_URING_CMD;
 	sqe.fd              = sock_fd;
 	sqe.cmd_op          = cmd_op;
-	sqe.uring_cmd_flags = pick_uring_cmd_flags();
+	sqe.uring_cmd_flags = pick_uring_cmd_flags_no_mshot();
 	sqe.user_data       = 0xc0d0;
 
 	if (cmd_op == SOCKET_URING_OP_SETSOCKOPT) {
@@ -406,8 +454,7 @@ static bool variant_socket(struct iour_ring *ctx, unsigned long *direct_calls)
 	if (r < 0)
 		goto out;
 
-	ring_drain_cqes(ctx);
-	ok = true;
+	ok = (ring_drain_cqes_first_res(ctx) >= 0);
 out:
 	if (sock_fd >= 0)
 		close(sock_fd);
@@ -493,7 +540,7 @@ static bool variant_blockdev(struct iour_ring *ctx, unsigned long *direct_calls)
 	sqe.cmd_op          = BLOCK_URING_CMD_DISCARD;
 	sqe.addr            = 0;		/* start offset */
 	sqe.addr3           = 4096;		/* length — one page */
-	sqe.uring_cmd_flags = pick_uring_cmd_flags();
+	sqe.uring_cmd_flags = pick_uring_cmd_flags_no_mshot();
 	sqe.user_data       = 0xc0d1;
 
 	if (!ring_submit_sqe(ctx, &sqe))
@@ -504,8 +551,7 @@ static bool variant_blockdev(struct iour_ring *ctx, unsigned long *direct_calls)
 	if (r < 0)
 		goto out;
 
-	ring_drain_cqes(ctx);
-	ok = true;
+	ok = (ring_drain_cqes_first_res(ctx) >= 0);
 out:
 	if (dev_fd >= 0)
 		close(dev_fd);
@@ -583,7 +629,7 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 	sqe.cmd_op          = 0;	/* any cmd_op; uring_cmd_null handles all */
 	sqe.flags           = IOSQE_BUFFER_SELECT;
 	sqe.buf_group       = NULLDEV_PBUF_GROUP_ID;
-	sqe.uring_cmd_flags = IORING_URING_CMD_MULTISHOT;
+	sqe.uring_cmd_flags = pick_uring_cmd_flags();
 	sqe.user_data       = 0xc0d2;
 
 	if (!ring_submit_sqe(ctx, &sqe))
