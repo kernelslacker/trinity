@@ -484,9 +484,13 @@ grep -v '^__CENSUS__ ' "$tmp_out" > "${tmp_out}.nc" && mv "${tmp_out}.nc" "$tmp_
 # Filter out allowlisted findings (audited non-grandchild sites).
 # For UNPARSED entries strip the "UNPARSED:" prefix before lookup.
 # Allowlist keys are file:line:hash; hash is the first 8 hex chars of
-# sha256 of the trimmed line content.  Both the line number and the
-# content must match; updating a line number without re-auditing will
-# fail on hash mismatch.
+# sha256 of the both-ends-trimmed line content.  Both the line number
+# and the content must match; updating a line number without re-auditing
+# will fail on hash mismatch.
+# Limitation: two sites with identical source text (e.g. both
+# `pid = fork();`) hash to the same value, so a bulk-renumber that
+# points an entry at a different same-text line in the same file passes
+# both the line-number and hash checks.
 {
 	while IFS= read -r _line; do
 		[ -z "$_line" ] && continue
@@ -494,11 +498,11 @@ grep -v '^__CENSUS__ ' "$tmp_out" > "${tmp_out}.nc" && mv "${tmp_out}.nc" "$tmp_
 		_file="${_filecolon%%:*}"
 		_lno="${_filecolon##*:}"
 		_raw=$(sed -n "${_lno}p" "$ROOT/$_file" 2>/dev/null)
-		_trim="${_raw#"${_raw%%[![:space:]]*}"}"
+		_trim=$(printf '%s' "$_raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 		_hash=$(printf '%s' "$_trim" | sha256sum | cut -c1-8)
 		_hkey="$_file:$_lno:$_hash"
 		if [ "${allowlist[$_hkey]+set}" ]; then allowlist_matched[$_hkey]=1; continue; fi
-		printf '%s\n' "$_line"
+		printf '%s\n' "$_hkey"
 	done < "$tmp_out"
 } > "${tmp_out}.filtered" && mv "${tmp_out}.filtered" "$tmp_out"
 

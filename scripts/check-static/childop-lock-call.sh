@@ -54,7 +54,7 @@ while IFS= read -r srcfile; do
 	while IFS= read -r match; do
 		lineno="${match%%:*}"
 		content="${match#*:}"
-		trimmed="${content#"${content%%[![:space:]]*}"}"
+		trimmed=$(printf '%s' "$content" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
 		# Skip comment lines (block-comment continuation, opening /* or //).
 		case "$trimmed" in
@@ -65,14 +65,17 @@ while IFS= read -r srcfile; do
 
 		# Skip known-audited call sites listed in the allowlist.
 		# Key format is file:line:hash where hash is the first 8 hex chars
-		# of sha256 of the trimmed line content.  Both the line number and
-		# the content must match; updating a line number without re-auditing
-		# will fail on hash mismatch.
+		# of sha256 of the both-ends-trimmed line content.  Both the line
+		# number and the content must match; updating a line number without
+		# re-auditing will fail on hash mismatch.
+		# Limitation: two sites with identical source text hash to the same
+		# value, so a bulk-renumber pointing an entry at a different
+		# same-text line in the same file passes both checks.
 		hash=$(printf '%s' "$trimmed" | sha256sum | cut -c1-8)
 		key="${srcfile#./}:$lineno:$hash"
 		if [ "${allowlist[$key]+set}" ]; then allowlist_matched[$key]=1; continue; fi
 
-		echo "WARN: ${srcfile#./}:${lineno}: lock/bust_lock/force_bust_lock called -- verify grandchild-unreachability (see utils/locks.c bust_lock() note)"
+		echo "WARN: $key: lock/bust_lock/force_bust_lock called -- verify grandchild-unreachability (see utils/locks.c bust_lock() note)"
 		warn_count=$((warn_count + 1))
 	done < <(grep -En '\b(lock|bust_lock|force_bust_lock)\s*\(' "$srcfile" 2>/dev/null)
 done < <(find . -name '*.c' -type f | sort)

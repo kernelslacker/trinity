@@ -5,11 +5,15 @@
 #   line    = line number as reported by the scanner (child-branch line for
 #             recognised if(pid==0)/if(!pid) forms; fork() call line for
 #             UNPARSED sites)
-#   hash    = first 8 hex chars of sha256 of the trimmed line content
+#   hash    = first 8 hex chars of sha256 of the both-ends-trimmed line
+#             content (leading and trailing whitespace stripped)
 #
 # Keying on file:line:hash rather than plain file:line means that both the
 # line number AND the site content must match.  Updating a line number in
 # the allowlist without re-auditing (bulk-renumber) fails on hash mismatch.
+# Limitation: two sites with identical source text (e.g. both `pid = fork();`)
+# hash to the same value, so a bulk-renumber pointing an entry at a different
+# same-text line in the same file passes both checks.
 #
 # A new fork() call added anywhere else in one of these files is still caught.
 fds/scratch_block.c:123:22958d17        # exec-helper: fork/execlp to run mkfs.ext4; child execs immediately, no grandchild context
