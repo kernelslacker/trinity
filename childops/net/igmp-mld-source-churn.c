@@ -40,6 +40,7 @@
 	__has_include(<linux/in.h>) && __has_include(<linux/in6.h>)
 
 #include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -113,6 +114,7 @@
 #define IMC_TIMEO_MS			100
 #define IMC_PORT			1234
 #define IMC_LARGE_SRCS			32U
+#define IMC_MAX_MSF_CAP			64U
 
 /* Guard-region constants for the MCAST_MSFILTER getsockopt oracle.
  * MCAST_GET_GUARD_BYTES bytes of MCAST_GET_GUARD_FILL canary are
@@ -126,14 +128,37 @@
 static bool ns_unsupported_igmp_mld_source_churn;
 
 /*
+ * Raise net.ipv4.igmp_max_msf in the current network namespace to at
+ * least @n so that a MCAST_MSFILTER setsockopt with @n sources does not
+ * fail with -ENOBUFS.  Both IPv4 (ip_mc_msfilter) and IPv6
+ * (ip6_mc_msfilter) gate on net->ipv4.sysctl_igmp_max_msf, so one
+ * write covers both families.  Silent on failure (sysctl may be
+ * read-only in a hardened ns; caller tolerates -ENOBUFS).
+ */
+static void raise_igmp_max_msf(unsigned int n)
+{
+	char buf[32];
+	int fd, len;
+
+	fd = open("/proc/sys/net/ipv4/igmp_max_msf", O_WRONLY);
+	if (fd < 0)
+		return;
+	len = snprintf(buf, sizeof(buf), "%u\n", n);
+	{ ssize_t wr = write(fd, buf, (size_t)len); (void)wr; }
+	close(fd);
+}
+
+/*
  * MCAST_MSFILTER getsockopt oracle (v4).  Called after a successful
  * setsockopt(MCAST_MSFILTER) on @s with @nsrc sources.  Probes the
- * read-back path with a rotated optlen so some iterations exercise the
- * header-only path and some the normal full-filter path:
+ * read-back path with a rotated optlen that is keyed on iter_idx/3
+ * (not iter_idx%3) so the optlen axis is decorrelated from the nsrc
+ * rotation in rotate_filter_size (which uses iter_idx%3).  Three
+ * distinct values covering the kernel-accepted range:
  *
- *   iter_idx % 3 == 0  ->  sizeof(struct group_filter)  [header only]
- *   iter_idx % 3 == 1  ->  GROUP_FILTER_SIZE(1)          [one source]
- *   iter_idx % 3 == 2  ->  GROUP_FILTER_SIZE(@nsrc)      [normal path]
+ *   (iter_idx/3) % 3 == 0  ->  GROUP_FILTER_SIZE(0)         [floor: 144 B]
+ *   (iter_idx/3) % 3 == 1  ->  GROUP_FILTER_SIZE(1)          [hdr+1 src]
+ *   (iter_idx/3) % 3 == 2  ->  GROUP_FILTER_SIZE(@nsrc)      [full fit]
  *
  * A poisoned guard region (MCAST_GET_GUARD_BYTES bytes of
  * MCAST_GET_GUARD_FILL) is placed immediately after the declared
@@ -160,12 +185,14 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 	 */
 	size_t max_write_sz = GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
 
-	switch (iter_idx % 3U) {
+	switch ((iter_idx / 3U) % 3U) {
 	case 0:
-		req_len = (socklen_t)sizeof(struct group_filter);
+		/* GROUP_FILTER_SIZE(0) = 144: the kernel-accepted floor
+		 * (ip_sockglue.c checks len >= GROUP_FILTER_SIZE(0)). */
+		req_len = (socklen_t)GROUP_FILTER_SIZE(0U);
 		break;
 	case 1:
-		req_len = (socklen_t)GROUP_FILTER_SIZE(1);
+		req_len = (socklen_t)GROUP_FILTER_SIZE(1U);
 		break;
 	default:
 		req_len = (socklen_t)GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
@@ -211,9 +238,11 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 
 /*
  * MCAST_MSFILTER getsockopt oracle (v6).  IPv6 mirror of
- * msfilter_getsockopt_oracle_v4 -- same guard-region logic and optlen
- * rotation, but uses IPPROTO_IPV6 and fills gf_group as a
- * sockaddr_in6 with @grp_v6.
+ * msfilter_getsockopt_oracle_v4 -- same guard-region logic and
+ * decorrelated optlen rotation (keyed on iter_idx/3, not iter_idx%3),
+ * but uses IPPROTO_IPV6 and fills gf_group as a sockaddr_in6 with
+ * @grp_v6.  ip6_mc_msfilter also gates on net->ipv4.sysctl_igmp_max_msf
+ * so the same raise_igmp_max_msf() write covers the v6 path too.
  */
 static void msfilter_getsockopt_oracle_v6(int s,
 					  const struct in6_addr *grp_v6,
@@ -230,12 +259,13 @@ static void msfilter_getsockopt_oracle_v6(int s,
 
 	size_t max_write_sz = GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
 
-	switch (iter_idx % 3U) {
+	switch ((iter_idx / 3U) % 3U) {
 	case 0:
-		req_len = (socklen_t)sizeof(struct group_filter);
+		/* GROUP_FILTER_SIZE(0) = 144: the kernel-accepted floor. */
+		req_len = (socklen_t)GROUP_FILTER_SIZE(0U);
 		break;
 	case 1:
-		req_len = (socklen_t)GROUP_FILTER_SIZE(1);
+		req_len = (socklen_t)GROUP_FILTER_SIZE(1U);
 		break;
 	default:
 		req_len = (socklen_t)GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
@@ -587,8 +617,13 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 		break;
 	case 2:
 		/* RACE C: bulk replace via MCAST_MSFILTER -- exercises the
-		 * ip_mc_msfilter realloc + rcu publish path. */
+		 * ip_mc_msfilter realloc + rcu publish path.
+		 * When nsrc exceeds the default igmp_max_msf (10), raise the
+		 * sysctl so the large-filter path is actually reachable
+		 * instead of failing with -ENOBUFS. */
 		nsrc = rotate_filter_size(it->iter_idx);
+		if (nsrc > 10U)
+			raise_igmp_max_msf(IMC_MAX_MSF_CAP);
 		it->gf = build_filter_v4(0U, it->grp_be, nsrc, it->salt);
 		if (it->gf) {
 			rc = setsockopt(it->recv_s, IPPROTO_IP, MCAST_MSFILTER,
@@ -890,7 +925,11 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
+		/* ip6_mc_msfilter gates on net->ipv4.sysctl_igmp_max_msf,
+		 * same as the v4 path; raise_igmp_max_msf() covers both. */
 		nsrc = rotate_filter_size(it->iter_idx);
+		if (nsrc > 10U)
+			raise_igmp_max_msf(IMC_MAX_MSF_CAP);
 		it->gf = build_filter_v6(0U, &it->grp_v6, nsrc, it->salt);
 		if (it->gf) {
 			rc = setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_MSFILTER,
