@@ -91,6 +91,9 @@
 #ifndef IPSET_FLAG_WITH_COMMENT
 #define IPSET_FLAG_WITH_COMMENT		(1U << 4)
 #endif
+#ifndef IPSET_FLAG_BEFORE
+#define IPSET_FLAG_BEFORE		(1U << 0)
+#endif
 
 #define IPSET_BUF_BYTES			512
 #define IPSET_RECV_TIMEO_S		1
@@ -125,6 +128,9 @@ enum ipset_kind {
 	IPSET_KIND_HASH_NET,
 	IPSET_KIND_HASH_IPPORT,
 	IPSET_KIND_BITMAP_IP,
+	/* Address-based kinds end here; iter_one() randomises over [0, ADDR_NR). */
+	IPSET_KIND_ADDR_NR,
+	IPSET_KIND_LIST_SET = IPSET_KIND_ADDR_NR,
 	IPSET_KIND_NR,
 };
 
@@ -159,6 +165,7 @@ static const struct ipset_type_desc ipset_types[IPSET_KIND_NR] = {
 	[IPSET_KIND_HASH_NET]    = { "hash:net",    1, false },
 	[IPSET_KIND_HASH_IPPORT] = { "hash:ip,port", 1, false },
 	[IPSET_KIND_BITMAP_IP]   = { "bitmap:ip",   1, true  },
+	[IPSET_KIND_LIST_SET]    = { "list:set",     0, false },
 };
 
 /* Per-invocation tracker: names we successfully created and must
@@ -309,6 +316,32 @@ static size_t put_bitmap_create_data(unsigned char *buf, size_t off, size_t cap,
 }
 
 /*
+ * DATA nest for list:set create.  list:set is sized by IPSET_ATTR_SIZE
+ * (max set references, kernel default 8) and armed with TIMEOUT so the
+ * GC timer (list_set_gc_init) starts immediately -- that timer is what
+ * the SWAP-vs-GC race races against.  No hash-sizing or bitmap-range
+ * attrs; those are rejected by the list:set policy validator.
+ */
+static size_t put_list_set_create_data(unsigned char *buf, size_t off,
+				       size_t cap)
+{
+	size_t nest = off;
+
+	off = nla_nest_start(buf, off, cap, IPSET_ATTR_DATA | NLA_F_NESTED);
+	if (!off)
+		return 0;
+	off = put_u32_be(buf, off, cap, IPSET_ATTR_SIZE, 8);
+	if (!off)
+		return 0;
+	off = put_u32_be(buf, off, cap, IPSET_ATTR_TIMEOUT,
+			 IPSET_DEFAULT_TIMEOUT);
+	if (!off)
+		return 0;
+	nla_nest_end(buf, nest, off);
+	return off;
+}
+
+/*
  * IPSET_CMD_CREATE for kind K with name N.  Sends the type-specific
  * DATA nest and returns the kernel ack: 0 / -EEXIST are treated as
  * "the set exists, safe to track"; anything else is a create failure
@@ -338,9 +371,12 @@ static int build_create(struct nfnl_ctx *ctx, const char *name,
 	off = nla_put_u8(buf, off, sizeof(buf), IPSET_ATTR_FAMILY, NFPROTO_IPV4);
 	if (!off)
 		return -EIO;
-	off = td->is_bitmap
-		? put_bitmap_create_data(buf, off, sizeof(buf), cadt)
-		: put_hash_create_data(buf, off, sizeof(buf), cadt);
+	if (kind == IPSET_KIND_LIST_SET)
+		off = put_list_set_create_data(buf, off, sizeof(buf));
+	else if (td->is_bitmap)
+		off = put_bitmap_create_data(buf, off, sizeof(buf), cadt);
+	else
+		off = put_hash_create_data(buf, off, sizeof(buf), cadt);
 	if (!off)
 		return -EIO;
 
@@ -477,6 +513,51 @@ static int build_swap(struct nfnl_ctx *ctx, const char *a, const char *b)
 	off = nla_put_str(buf, off, sizeof(buf), IPSET_ATTR_TYPENAME, b);
 	if (!off)
 		return -EIO;
+	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
+	return nfnl_send_recv(ctx, buf, off);
+}
+
+/*
+ * IPSET_CMD_{ADD,DEL,TEST} for a list:set element.  list:set entries
+ * are set names (IPSET_ATTR_NAME) rather than addresses.  The optional
+ * anchor_name + FLAG_BEFORE exercises the BEFORE-insert grammar in
+ * ip_set_list_set.c:list_set_uadd(); every successful ADD also drives
+ * ip_set_put_byindex() reference counting via ip_set_get_byname().
+ * anchor_name is only meaningful for IPSET_CMD_ADD.
+ */
+static int build_list_set_adt(struct nfnl_ctx *ctx, const char *name,
+			      __u8 cmd, const char *ref_name,
+			      const char *anchor_name, bool before)
+{
+	unsigned char buf[IPSET_BUF_BYTES];
+	size_t off, nest;
+
+	memset(buf, 0, sizeof(buf));
+	off = ipset_hdr_put(buf, sizeof(buf), ctx, cmd, 0, name);
+	if (!off)
+		return -EIO;
+	nest = off;
+	off = nla_nest_start(buf, off, sizeof(buf),
+			     IPSET_ATTR_DATA | NLA_F_NESTED);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf), IPSET_ATTR_NAME, ref_name);
+	if (!off)
+		return -EIO;
+	if (anchor_name && cmd == IPSET_CMD_ADD) {
+		off = nla_put_str(buf, off, sizeof(buf),
+				  IPSET_ATTR_NAMEREF, anchor_name);
+		if (!off)
+			return -EIO;
+		if (before) {
+			off = put_u32_be(buf, off, sizeof(buf),
+					 IPSET_ATTR_CADT_FLAGS,
+					 IPSET_FLAG_BEFORE);
+			if (!off)
+				return -EIO;
+		}
+	}
+	nla_nest_end(buf, nest, off);
 	((struct nlmsghdr *)buf)->nlmsg_len = (__u32)off;
 	return nfnl_send_recv(ctx, buf, off);
 }
@@ -890,6 +971,132 @@ static unsigned long iter_resize(struct nfnl_ctx *ctx)
 }
 
 /*
+ * list:set exercise cycle.  Creates two hash:ip member sets and a
+ * list:set pair, then exercises:
+ *
+ *   create with TIMEOUT  → arms list_set_gc_init() immediately;
+ *   ADD with NAMEREF     → BEFORE-insert grammar, ip_set_get_byname(),
+ *                          ip_set_put_byindex() reference counting;
+ *   SWAP while GC live   → the SWAP-vs-GC refcount race surface;
+ *   DEL / FLUSH / LIST   → element walker and set teardown paths.
+ *
+ * Kernel rejections (IPSET_ERR_NAME, IPSET_ERR_LOOP, -ENOENT) are
+ * benign coverage -- the policy parser walked regardless.
+ */
+static unsigned long iter_list_set_cycle(struct nfnl_ctx *ctx)
+{
+	struct ipset_tracker tr = { .count = 0 };
+	char lsa[IPSET_MAXNAMELEN], lsb[IPSET_MAXNAMELEN];
+	char hia[IPSET_MAXNAMELEN], hib[IPSET_MAXNAMELEN];
+	__u16 salt = (__u16)(rand32() & 0xffffU);
+	unsigned long direct_calls = 0;
+	int rc;
+
+	make_set_name(hia, sizeof(hia), (__u16)(salt + 0x10U), 0);
+	make_set_name(hib, sizeof(hib), (__u16)(salt + 0x11U), 1);
+	make_set_name(lsa, sizeof(lsa), (__u16)(salt + 0x20U), 2);
+	make_set_name(lsb, sizeof(lsb), (__u16)(salt + 0x21U), 3);
+
+	/* Member hash:ip sets to populate the list:sets. */
+	direct_calls += 2;
+	rc = build_create(ctx, hia, IPSET_KIND_HASH_IP);
+	if (rc == 0 || rc == -EEXIST) {
+		tracker_add(&tr, hia, IPSET_KIND_HASH_IP);
+		__atomic_add_fetch(&shm->stats.ipset_churn.create_ok, 1,
+				   __ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(&shm->stats.ipset_churn.create_fail, 1,
+				   __ATOMIC_RELAXED);
+	}
+
+	direct_calls += 2;
+	rc = build_create(ctx, hib, IPSET_KIND_HASH_IP);
+	if (rc == 0 || rc == -EEXIST) {
+		tracker_add(&tr, hib, IPSET_KIND_HASH_IP);
+		__atomic_add_fetch(&shm->stats.ipset_churn.create_ok, 1,
+				   __ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(&shm->stats.ipset_churn.create_fail, 1,
+				   __ATOMIC_RELAXED);
+	}
+
+	/* list:set pair -- TIMEOUT arms the GC timer on both. */
+	direct_calls += 2;
+	rc = build_create(ctx, lsa, IPSET_KIND_LIST_SET);
+	if (rc == 0 || rc == -EEXIST) {
+		tracker_add(&tr, lsa, IPSET_KIND_LIST_SET);
+		__atomic_add_fetch(&shm->stats.ipset_churn.create_ok, 1,
+				   __ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(&shm->stats.ipset_churn.create_fail, 1,
+				   __ATOMIC_RELAXED);
+		goto teardown;
+	}
+
+	direct_calls += 2;
+	rc = build_create(ctx, lsb, IPSET_KIND_LIST_SET);
+	if (rc == 0 || rc == -EEXIST) {
+		tracker_add(&tr, lsb, IPSET_KIND_LIST_SET);
+		__atomic_add_fetch(&shm->stats.ipset_churn.create_ok, 1,
+				   __ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(&shm->stats.ipset_churn.create_fail, 1,
+				   __ATOMIC_RELAXED);
+	}
+
+	/*
+	 * Populate lsa: append hia, then insert hib before hia via
+	 * NAMEREF + FLAG_BEFORE.  Each successful ADD calls
+	 * ip_set_get_byname() → ip_set_put_byindex() on the way out.
+	 */
+	direct_calls += 2;
+	if (build_list_set_adt(ctx, lsa, IPSET_CMD_ADD, hia, NULL, false) == 0)
+		__atomic_add_fetch(&shm->stats.ipset_churn.add_ok, 1,
+				   __ATOMIC_RELAXED);
+
+	direct_calls += 2;
+	if (build_list_set_adt(ctx, lsa, IPSET_CMD_ADD, hib, hia, true) == 0)
+		__atomic_add_fetch(&shm->stats.ipset_churn.add_ok, 1,
+				   __ATOMIC_RELAXED);
+
+	/* TEST both members. */
+	direct_calls += 2;
+	build_list_set_adt(ctx, lsa, IPSET_CMD_TEST, hia, NULL, false);
+	direct_calls += 2;
+	build_list_set_adt(ctx, lsa, IPSET_CMD_TEST, hib, NULL, false);
+
+	/* Give lsb at least one member so the SWAP has non-empty content. */
+	direct_calls += 2;
+	if (build_list_set_adt(ctx, lsb, IPSET_CMD_ADD, hia, NULL, false) == 0)
+		__atomic_add_fetch(&shm->stats.ipset_churn.add_ok, 1,
+				   __ATOMIC_RELAXED);
+
+	/* SWAP while both GC timers are live -- this is the race surface. */
+	direct_calls += 2;
+	if (build_swap(ctx, lsa, lsb) == 0)
+		__atomic_add_fetch(&shm->stats.ipset_churn.swap_ok, 1,
+				   __ATOMIC_RELAXED);
+
+	/* LIST and DEL exercise the element walker post-swap. */
+	direct_calls += 2;
+	if (build_list_dump(ctx, lsa) == 0)
+		__atomic_add_fetch(&shm->stats.ipset_churn.list_ok, 1,
+				   __ATOMIC_RELAXED);
+
+	direct_calls += 2;
+	build_list_set_adt(ctx, lsa, IPSET_CMD_DEL, hia, NULL, false);
+
+	direct_calls += 2;
+	if (build_setname_only(ctx, IPSET_CMD_FLUSH, lsb) == 0)
+		__atomic_add_fetch(&shm->stats.ipset_churn.flush_ok, 1,
+				   __ATOMIC_RELAXED);
+
+teardown:
+	direct_calls += teardown_all(ctx, &tr);
+	return direct_calls;
+}
+
+/*
  * One outer iteration: pick a set type, create a same-kind pair, run
  * the ADT burst, query via HEADER + LIST, swap + flush, destroy.  All
  * per-invocation tracker state stays local so the teardown always
@@ -902,7 +1109,7 @@ static unsigned long iter_one(struct nfnl_ctx *ctx)
 	__u16 salt;
 	unsigned long direct_calls = 0;
 
-	kind = (enum ipset_kind)(rand32() % (__u32)IPSET_KIND_NR);
+	kind = (enum ipset_kind)(rand32() % (__u32)IPSET_KIND_ADDR_NR);
 	salt = (__u16)(rand32() & 0xffffU);
 
 	direct_calls += iter_create_pair(ctx, &tr, kind, salt);
@@ -986,6 +1193,7 @@ bool ipset_churn(struct childdata *child)
 		for (i = 0; i < rz_iters; i++)
 			direct_calls += iter_resize(&nfnl);
 	}
+	direct_calls += iter_list_set_cycle(&nfnl);
 
 out:
 	nfnl_close(&nfnl);
