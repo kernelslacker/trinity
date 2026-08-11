@@ -86,6 +86,11 @@
 #include "kernel/fcntl.h"
 #include "kernel/netlink.h"
 #include "kernel/socket.h"
+
+#if __has_include(<linux/rxrpc.h>)
+#include <linux/rxrpc.h>
+#define HAVE_LINUX_RXRPC 1
+#endif
 /* Latch lives in shm (shm->netns_teardown_ns_unsupported).  Fires on
  * two paths:
  *   - userns_run_in_ns() returned -EPERM: outer wrapper (persists
@@ -107,6 +112,22 @@ static bool ns_unsupported_netns_teardown(void)
 static void mark_ns_unsupported_netns_teardown(void)
 {
 	__atomic_store_n(&shm->netns_teardown_ns_unsupported, true,
+			 __ATOMIC_RELAXED);
+}
+
+/* AF_RXRPC module-not-loaded latch.  Set on the first EAFNOSUPPORT from
+ * socket(AF_RXRPC,...) so subsequent grandchild iterations skip the arm
+ * instead of wasting a socket() call.  RELAXED atomic: idempotent
+ * false->true; no ordering dependency with other state. */
+static bool ns_unsupported_netns_teardown_rxrpc(void)
+{
+	return __atomic_load_n(&shm->netns_teardown_rxrpc_unsupported,
+			       __ATOMIC_RELAXED);
+}
+
+static void mark_ns_unsupported_netns_teardown_rxrpc(void)
+{
+	__atomic_store_n(&shm->netns_teardown_rxrpc_unsupported, true,
 			 __ATOMIC_RELAXED);
 }
 
@@ -216,15 +237,21 @@ static int bring_up_loopback(void)
 }
 
 /*
- * Inside the in-ns child, open a raw ICMP socket and an XFRM netlink
- * socket and let them sit open until SIGKILL.  Both fds (any fd of an
- * AF_INET / AF_NETLINK socket created in the doomed ns) hold a
+ * Inside the in-ns child, open a raw ICMP socket, an XFRM netlink
+ * socket, and an AF_RXRPC socket and let them sit open until SIGKILL.
+ * Every fd (any fd of a socket created in the doomed ns) holds a
  * sock_net reference that the child carries to its grave; when the
- * child dies, those refs drop simultaneously and pernet exit hooks
- * for the raw and xfrm subsystems run on the doomed net.  Failures
- * are benign coverage and silently ignored.
+ * child dies, those refs drop and pernet exit hooks for the raw, xfrm,
+ * and rxrpc subsystems run on the doomed net.  Failures are benign
+ * coverage and silently ignored.
+ *
+ * AF_RXRPC arm: socket(AF_RXRPC, SOCK_DGRAM, PF_INET) + bind() to a
+ * loopback sockaddr_rxrpc.  The bind allocates a local peer record in
+ * the doomed namespace so rxrpc_exit_net() has live state to tear down.
+ * EAFNOSUPPORT latches netns_teardown_rxrpc_unsupported so subsequent
+ * grandchild iterations skip the arm when CONFIG_AF_RXRPC=m is absent.
  */
-static void open_extras(int *raw_fd, int *xfrm_fd)
+static void open_extras(int *raw_fd, int *xfrm_fd, int *rxrpc_fd)
 {
 	int fd;
 	struct nl_ctx ctx;
@@ -235,6 +262,7 @@ static void open_extras(int *raw_fd, int *xfrm_fd)
 
 	*raw_fd = -1;
 	*xfrm_fd = -1;
+	*rxrpc_fd = -1;
 
 	fd = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_ICMP);
 	if (fd >= 0)
@@ -242,6 +270,31 @@ static void open_extras(int *raw_fd, int *xfrm_fd)
 
 	if (nl_open(&ctx, &opts) == 0)
 		*xfrm_fd = ctx.fd;
+
+#ifdef HAVE_LINUX_RXRPC
+	if (!ns_unsupported_netns_teardown_rxrpc()) {
+		fd = socket(AF_RXRPC, SOCK_DGRAM | SOCK_CLOEXEC, PF_INET);
+		if (fd >= 0) {
+			struct sockaddr_rxrpc srx;
+
+			memset(&srx, 0, sizeof(srx));
+			srx.srx_family      = AF_RXRPC;
+			srx.srx_service     = 0;
+			srx.transport_type  = SOCK_DGRAM;
+			srx.transport_len   = sizeof(struct sockaddr_in);
+			srx.transport.sin.sin_family      = AF_INET;
+			srx.transport.sin.sin_addr.s_addr = htonl(0x7f000001U);
+			srx.transport.sin.sin_port        = 0;
+
+			if (bind(fd, (struct sockaddr *)&srx, sizeof(srx)) == 0)
+				*rxrpc_fd = fd;
+			else
+				(void)close(fd);
+		} else if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
+			mark_ns_unsupported_netns_teardown_rxrpc();
+		}
+	}
+#endif /* HAVE_LINUX_RXRPC */
 }
 
 /*
@@ -444,14 +497,15 @@ static int netns_teardown_iter_fork_child(struct netns_teardown_iter_ctx *it)
 
 	if (it->pid == 0) {
 		CHILDOP_GRANDCHILD_ENTER();
-		int raw_fd = -1, xfrm_fd = -1;
+		int raw_fd = -1, xfrm_fd = -1, rxrpc_fd = -1;
 
 		(void)close(it->nsfd);
 		it->nsfd = -1;
-		open_extras(&raw_fd, &xfrm_fd);
+		open_extras(&raw_fd, &xfrm_fd, &rxrpc_fd);
 		child_pump(it->s_conn, it->s_accept);
 		(void)raw_fd;
 		(void)xfrm_fd;
+		(void)rxrpc_fd;
 		_exit(0);
 	}
 

@@ -623,6 +623,12 @@ struct shm_s {
 	 * would re-attempt the same broken setns. */
 	bool netns_teardown_ns_unsupported;
 
+	/* rxrpc module-not-loaded latch for the AF_RXRPC arm in
+	 * netns_teardown_churn.  Set when socket(AF_RXRPC,...) returns
+	 * EAFNOSUPPORT (CONFIG_AF_RXRPC=m not loaded).  RELAXED atomic;
+	 * idempotent false->true transition. */
+	bool netns_teardown_rxrpc_unsupported;
+
 	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
 	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
 	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC
