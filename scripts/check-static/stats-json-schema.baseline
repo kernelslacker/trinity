@@ -1373,6 +1373,7 @@ stats	object
     stats.l2tp_ifname_race.spawn_pair_ok	u64
     stats.l2tp_ifname_race.sibling_reaped_ok	u64
     stats.l2tp_ifname_race.sibling_crashed	u64
+    stats.l2tp_ifname_race.debugfs_read_done	u64
   stats.bpf_cgroup_attach	object
     stats.bpf_cgroup_attach.runs	u64
     stats.bpf_cgroup_attach.setup_failed	u64

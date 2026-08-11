@@ -11,6 +11,7 @@ static const struct stat_field l2tp_ifname_race_fields[] = {
 	STAT_FIELD_SUB(l2tp_ifname_race, spawn_pair_ok),
 	STAT_FIELD_SUB(l2tp_ifname_race, sibling_reaped_ok),
 	STAT_FIELD_SUB(l2tp_ifname_race, sibling_crashed),
+	STAT_FIELD_SUB(l2tp_ifname_race, debugfs_read_done),
 };
 
 const struct stat_category l2tp_ifname_race_category =

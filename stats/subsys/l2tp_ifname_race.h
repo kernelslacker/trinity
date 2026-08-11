@@ -12,6 +12,7 @@ struct l2tp_ifname_race_stats {
 	unsigned long spawn_pair_ok;		/* both creator + racer spawned for this round */
 	unsigned long sibling_reaped_ok;	/* worker exited normally and was reaped */
 	unsigned long sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
+	unsigned long debugfs_read_done;	/* debugfs tunnels early-close arm completed (open+read+close) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_L2TP_IFNAME_RACE_H */

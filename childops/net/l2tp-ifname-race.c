@@ -50,6 +50,7 @@
 #include <linux/netlink.h>
 #include <stdio.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -98,6 +99,7 @@ static bool l2tp_family_probed;
 static __u16 l2tp_family_id;
 static bool ns_unsupported_l2tp_ifname_race;
 static bool ns_userns_unsupported_l2tp_ifname_race;
+static bool ns_unsupported_l2tp_debugfs;
 
 /*
  * Resolve the "l2tp" genl family id once per process.  Failure
@@ -606,6 +608,47 @@ static void iter_one(struct genl_ctx *parent_gctx, unsigned long *direct_calls)
 
 	__atomic_add_fetch(&shm->stats.l2tp_ifname_race.spawn_pair_ok,
 			   1, __ATOMIC_RELAXED);
+
+	/*
+	 * Debugfs early-close arm: open /sys/kernel/debug/l2tp/tunnels,
+	 * issue a short read while the tunnel and its sessions are live,
+	 * then close without reaching EOF.  This is the path that triggers
+	 * a tunnel/session refcount leak in l2tp_dfs_seq_release() when it
+	 * frees seq_file private data without dropping the references it
+	 * parks there during seq_open -- see the fix at
+	 * https://lore.kernel.org/r/20260810141125.1176545-1-edumazet@google.com
+	 *
+	 * Buffer size rotates across iterations so some runs read enough to
+	 * reach EOF (control arm) and others terminate early (trigger arm).
+	 * ENOENT or EACCES means CONFIG_L2TP_DEBUGFS is not built or debugfs
+	 * is not mounted; latch off and skip all future iterations.
+	 */
+	if (!ns_unsupported_l2tp_debugfs) {
+		static const int debugfs_bufsizes[3] = { 64, 128, 256 };
+		unsigned long iter_n = __atomic_load_n(
+			&shm->stats.l2tp_ifname_race.iter, __ATOMIC_RELAXED);
+		int dbufsz = debugfs_bufsizes[iter_n % 3];
+		char dbuf[256];
+		int dfd;
+
+		dfd = open("/sys/kernel/debug/l2tp/tunnels",
+			   O_RDONLY | O_CLOEXEC);
+		if (dfd < 0) {
+			if (errno == ENOENT || errno == EACCES) {
+				/* debugfs not available */
+				ns_unsupported_l2tp_debugfs = true;
+			}
+			/* other errors (EMFILE, etc.) are transient; skip quietly */
+		} else {
+			ssize_t nr = read(dfd, dbuf, (size_t)dbufsz);
+			(void)nr;
+			close(dfd);
+			*direct_calls += 3; /* open + read + close */
+			__atomic_add_fetch(
+				&shm->stats.l2tp_ifname_race.debugfs_read_done,
+				1, __ATOMIC_RELAXED);
+		}
+	}
 
 	reap_sibling(creator);
 	*direct_calls += 1;  /* waitpid */
