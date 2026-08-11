@@ -129,7 +129,25 @@ while IFS= read -r srcfile; do
 	has_saved_var=$(grep -E '(_sa_bus\b|_sa_segv\b)' "$srcfile" 2>/dev/null | head -1)
 
 	# If either proof is present the file satisfies the invariant.
-	if [ -n "$has_capture" ] || [ -n "$has_saved_var" ]; then continue; fi
+	# Still walk the allowlist for this file so those entries get marked
+	# matched — without this, a file that gains proof coverage would cause
+	# every allowlist entry pointing into it to be reported as dead.
+	if [ -n "$has_capture" ] || [ -n "$has_saved_var" ]; then
+		for match in "${install_matches[@]}"; do
+			lineno="${match%%:*}"
+			content="${match#*:}"
+			trimmed=$(printf '%s' "$content" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+			case "$trimmed" in
+				\**) continue ;; /\**) continue ;; //*) continue ;;
+			esac
+			hash=$(printf '%s' "$trimmed" | sha256sum | cut -c1-8)
+			key="${srcfile#./}:$lineno:$hash"
+			if [ "${allowlist[$key]+set}" ]; then
+				allowlist_matched[$key]=1
+			fi
+		done
+		continue
+	fi
 
 	# Flag each install line individually (so allowlist entries are site-specific).
 	for match in "${install_matches[@]}"; do
@@ -168,8 +186,12 @@ if [ "$dead_count" -gt 0 ]; then
 	{
 		echo "  $NAME: $dead_count dead allowlist entry/entries (never matched by scanner)"
 		echo "  The file:line:hash key did not match: line number changed, site text"
-		echo "  changed, or the site was removed.  Re-derive the correct key or"
-		echo "  remove the stale entry from:"
+		echo "  changed, or the site was removed; or the file now contains a"
+		echo "  canonical-capture proof (sigaction(SIG…, NULL, &…) or _sa_bus/"
+		echo "  _sa_segv variable) making the suppression unnecessary.  If the"
+		echo "  site is now compliant and no longer needs suppression, delete"
+		echo "  the entry.  Otherwise re-derive the correct key or remove the"
+		echo "  stale entry from:"
 		echo "    scripts/check-static/signal-disposition-ownership.allowlist"
 	} >&2
 	echo "FAIL: $NAME: $dead_count dead allowlist entry/entries"
