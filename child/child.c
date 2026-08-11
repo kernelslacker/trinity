@@ -1014,9 +1014,6 @@ void child_process(struct childdata *child, int childno)
 			}
 		}
 
-		if (shm->debug == true)
-			enable_coredumps();
-
 		__atomic_add_fetch(&child->op_nr, 1, __ATOMIC_RELAXED);
 
 		if (ret == FAIL)

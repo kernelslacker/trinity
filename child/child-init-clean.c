@@ -10,9 +10,8 @@
  * their `static` linkage here so init_child_setup_sandbox (now in
  * child-init-sandbox.c) can reach them across the TU boundary;
  * declarations are in include/child-internal.h.
- * disable_coredumps, enable_coredumps, read_tainted_mask, and
- * clean_childdata were already exposed via child-internal.h /
- * child-api.h.
+ * disable_coredumps, read_tainted_mask, and clean_childdata were
+ * already exposed via child-internal.h / child-api.h.
  */
 
 #include <errno.h>
@@ -102,20 +101,6 @@ void disable_coredumps(void)
 	prctl(PR_SET_DUMPABLE, false);
 }
 
-void enable_coredumps(void)
-{
-	struct rlimit limit = {
-		.rlim_cur = RLIM_INFINITY,
-		.rlim_max = RLIM_INFINITY
-	};
-
-	if (shm->debug == true)
-		return;
-
-	prctl(PR_SET_DUMPABLE, true);
-
-	(void) setrlimit(RLIMIT_CORE, &limit);
-}
 /*
  * Enable kernel fault injection for this child.  Caller must have completed
  * child setup and installed the expected procfs/debugfs context.

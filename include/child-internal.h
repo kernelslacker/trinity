@@ -41,7 +41,6 @@ void init_child(struct childdata *child, int childno);
  * boundary. */
 void freeze_sibling_childdata(int my_childno);
 void disable_coredumps(void);
-void enable_coredumps(void);
 unsigned long read_tainted_mask(int fd);
 void set_make_it_fail(void);
 void open_fail_nth(struct childdata *child);
