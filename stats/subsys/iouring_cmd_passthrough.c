@@ -4,6 +4,7 @@
 static const struct stat_field iouring_cmd_passthrough_fields[] = {
 	STAT_FIELD_SUB(iouring_cmd_passthrough, mshot_cmd_no_cqe),
 	STAT_FIELD_SUB(iouring_cmd_passthrough, cqe_rejected),
+	STAT_FIELD_SUB(iouring_cmd_passthrough, nulldev_cmd_rejected),
 };
 
 const struct stat_category iouring_cmd_passthrough_category =

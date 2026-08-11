@@ -301,18 +301,6 @@ static int ring_drain_cqes_first_res(struct iour_ring *ctx)
  * consumed.  Used by variant_nulldev to detect the absence of a CQE
  * after a multishot URING_CMD submission.
  */
-static unsigned int ring_drain_cqes_count(struct iour_ring *ctx)
-{
-	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
-	unsigned int tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
-	unsigned int consumed = tail - head;
-
-	if (consumed) {
-		__sync_synchronize();
-		ring_store_u32(ctx->cq_ring, ctx->cq_off_head, tail);
-	}
-	return consumed;
-}
 
 static void sqe_clear(struct io_uring_sqe *s)
 {
@@ -339,13 +327,12 @@ static void sqe_clear(struct io_uring_sqe *s)
  *
  * pick_uring_cmd_flags() — for nulldev, which sets IOSQE_BUFFER_SELECT
  *                          unconditionally.  io_uring_cmd_prep() enforces
- *                          a biconditional: MULTISHOT iff BUFFER_SELECT.
- *                          Only draws that carry MULTISHOT can pass prep:
- *   IORING_URING_CMD_MULTISHOT   - multishot flag path (passes prep)
- *   FIXED|MULTISHOT              - import_fixed() + multishot (passes prep)
- *
- *   0 and IORING_URING_CMD_FIXED fail unconditionally when BUFFER_SELECT
- *   is set — removing them avoids a silent 4x stat denominator inflation.
+ *                          a biconditional: prep passes if and only if
+ *                          MULTISHOT is set when BUFFER_SELECT is present.
+ *                          Both entries carry MULTISHOT, so every draw is
+ *                          guaranteed to reach ->uring_cmd():
+ *   IORING_URING_CMD_MULTISHOT   - multishot flag path
+ *   FIXED|MULTISHOT              - import_fixed() + multishot
  * ------------------------------------------------------------------ */
 
 static const __u32 uring_cmd_flag_variants_no_mshot[] = {
@@ -594,7 +581,6 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 	void *pbuf = NULL;
 	int null_fd = -1;
 	bool ok = false;
-	unsigned int ncqe;
 	int r;
 
 	null_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
@@ -647,17 +633,39 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 	if (r < 0)
 		goto out;
 
-	ncqe = ring_drain_cqes_count(ctx);
-	if (ncqe == 0) {
-		/* Expected on bug path: multishot cmd to /dev/null posts
-		 * no CQE.  Count so the absence is visible in telemetry. */
-		if (valid_op)
-			__atomic_add_fetch(
-				&shm->stats.iouring_cmd_passthrough.mshot_cmd_no_cqe,
-				1, __ATOMIC_RELAXED);
-	}
+	{
+		/* Peek head/tail before draining: ring_drain_cqes_first_res()
+		 * returns 0 both when no CQE is available and when a CQE
+		 * carries res=0.  Capture the presence of a CQE now so the
+		 * ncqe==0 oracle survives the switch to first_res. */
+		bool had_cqe = (ring_u32(ctx->cq_ring, ctx->cq_off_head) !=
+		                ring_u32(ctx->cq_ring, ctx->cq_off_tail));
+		int cqe_res = ring_drain_cqes_first_res(ctx);
 
-	ok = true;
+		if (!had_cqe) {
+			/* No CQE: /dev/null's uring_cmd did not post a
+			 * completion (IOU_ISSUE_SKIP_COMPLETE — req pinned).
+			 * The absence is the bug-probe signal; count it. */
+			if (valid_op)
+				__atomic_add_fetch(
+					&shm->stats.iouring_cmd_passthrough.mshot_cmd_no_cqe,
+					1, __ATOMIC_RELAXED);
+			ok = true;
+		} else if (cqe_res < 0) {
+			/* CQE arrived with negative result: prep rejected the
+			 * submission (-EINVAL: unsupported flag combination;
+			 * -EOPNOTSUPP: cmd_op not handled by uring_cmd_null).
+			 * The uring_cmd dispatch path was not reached. */
+			if (valid_op)
+				__atomic_add_fetch(
+					&shm->stats.iouring_cmd_passthrough.nulldev_cmd_rejected,
+					1, __ATOMIC_RELAXED);
+		} else {
+			/* CQE arrived with res >= 0: the cmd reached
+			 * uring_cmd_null() and completed normally. */
+			ok = true;
+		}
+	}
 out:
 	free(pbuf);
 	if (null_fd >= 0)

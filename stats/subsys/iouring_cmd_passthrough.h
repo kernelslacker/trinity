@@ -22,6 +22,16 @@ struct iouring_cmd_passthrough_stats {
 	 * the path was probed but not actually entered.
 	 */
 	unsigned long cqe_rejected;	/* socket/blockdev CQE returned errno (prep-time reject) */
+	/*
+	 * Nulldev URING_CMD rejection counter.  Incremented by
+	 * variant_nulldev() when the URING_CMD CQE arrives with a
+	 * negative result — the submission was rejected at prep time
+	 * (-EINVAL: unsupported flag combination; -EOPNOTSUPP: cmd_op not
+	 * handled) before reaching uring_cmd_null().  A non-zero count
+	 * here means the flag-rotation picker selected a combination that
+	 * did not survive io_uring_cmd_prep().
+	 */
+	unsigned long nulldev_cmd_rejected;	/* nulldev URING_CMD CQE returned errno */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_IOURING_CMD_PASSTHROUGH_H */
