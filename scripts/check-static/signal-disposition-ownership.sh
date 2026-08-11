@@ -38,6 +38,9 @@
 #
 # Check 2 — sigaction disposition ownership (canonical-snapshot invariant)
 # ------------------------------------------------------------------------
+# Polices SIGSEGV and SIGBUS only.  SIGABRT and SIGILL installs from
+# non-health/ code are currently unpoliced by this check.
+#
 # Any childop or mm translation unit that installs a new SIGSEGV or
 # SIGBUS handler must first read the canonical disposition that health/
 # established at startup.  The canonical read is:
@@ -52,10 +55,7 @@
 #   - contains a sigaction(SIGSEGV, …) or sigaction(SIGBUS, …) call
 #     where the second argument is non-NULL (i.e. it installs a handler), AND
 #   - does NOT contain a canonical-read pattern in the same file:
-#       sigaction(SIG…, NULL, &…)        (read-current-disposition call)
-#     OR a saved-disposition variable name ending in _sa_bus or _sa_segv
-#     (which implies the file participates in the canonical snapshot
-#     protocol already reviewed during the initial audit).
+#       sigaction(SIG(SEGV|BUS), NULL, &…)   (read-current-disposition call)
 #
 # Allowlist
 # ---------
@@ -176,19 +176,19 @@ while IFS= read -r srcfile; do
 	)
 	[ "${#install_matches[@]}" -eq 0 ] && continue
 
-	# Does the file have a canonical-read call: sigaction(SIG*, NULL, &…)?
+	# Does the file have a canonical-read call: sigaction(SIG(SEGV|BUS), NULL, &…)?
+	# Proof is file-scoped — per-function scoping (ensuring the read precedes
+	# the install in the same function) is a harder follow-up left for a
+	# future audit pass.
 	has_capture=$(grep -E \
-		'sigaction[[:space:]]*\([A-Z_]+[[:space:]]*,[[:space:]]*NULL[[:space:]]*,' \
+		'sigaction[[:space:]]*\(SIG(SEGV|BUS)[[:space:]]*,[[:space:]]*NULL[[:space:]]*,' \
 		"$srcfile" 2>/dev/null | head -1)
 
-	# Does the file reference a saved-disposition variable (_sa_bus / _sa_segv)?
-	has_saved_var=$(grep -E '(_sa_bus\b|_sa_segv\b)' "$srcfile" 2>/dev/null | head -1)
-
-	# If either proof is present the file satisfies the invariant.
+	# If proof is present the file satisfies the invariant.
 	# Still walk the allowlist for this file so those entries get marked
 	# matched — without this, a file that gains proof coverage would cause
 	# every allowlist entry pointing into it to be reported as dead.
-	if [ -n "$has_capture" ] || [ -n "$has_saved_var" ]; then
+	if [ -n "$has_capture" ]; then
 		for match in "${install_matches[@]}"; do
 			lineno="${match%%:*}"
 			content="${match#*:}"
@@ -243,8 +243,8 @@ if [ "$dead_count" -gt 0 ]; then
 		echo "  $NAME: $dead_count dead allowlist entry/entries (never matched by scanner)"
 		echo "  The file:line:hash key did not match: line number changed, site text"
 		echo "  changed, or the site was removed; or the file now contains a"
-		echo "  canonical-capture proof (sigaction(SIG…, NULL, &…) or _sa_bus/"
-		echo "  _sa_segv variable) making the suppression unnecessary.  If the"
+		echo "  canonical-capture proof (sigaction(SIG(SEGV|BUS), NULL, &…))"
+		echo "  making the suppression unnecessary.  If the"
 		echo "  site is now compliant and no longer needs suppression, delete"
 		echo "  the entry.  Otherwise re-derive the correct key or remove the"
 		echo "  stale entry from:"
@@ -263,11 +263,10 @@ if [ "$fail_count" -gt 0 ]; then
 		echo "    is out of scope (2-line window); see allowlist for pre-emptive"
 		echo "    exemptions already reviewed."
 		echo "  $NAME: check2 flags sigaction(SIGSEGV/SIGBUS) installs that lack"
-		echo "    a canonical-read call (sigaction(SIG, NULL, &saved)) or a"
-		echo "    saved-disposition variable (_sa_bus / _sa_segv).  Without the"
-		echo "    canonical snapshot the restore chain may chain to stale state"
-		echo "    left behind by a leaked uffd worker.  Add the snapshot or"
-		echo "    add the site to the allowlist with a rationale comment."
+		echo "    a canonical-read call (sigaction(SIG(SEGV|BUS), NULL, &saved))."
+		echo "    Without the canonical snapshot the restore chain may chain to"
+		echo "    stale state left behind by a leaked uffd worker.  Add the"
+		echo "    snapshot or add the site to the allowlist with a rationale comment."
 	} >&2
 	exit 1
 fi
