@@ -30,6 +30,10 @@ struct tracefs_fuzzer_stats {
 	unsigned long dynevent_write_fail;
 	unsigned long dynevent_write_ok;
 
+	unsigned long set_event_open_fail;	/* writes to set_event (top-level event selector) */
+	unsigned long set_event_write_fail;
+	unsigned long set_event_write_ok;
+
 	/* Number of dispatches inside tracefs_fuzzer that landed on a
 	 * function-tracer-subset op (set_ftrace_filter / set_ftrace_notrace /
 	 * set_graph_function / current_tracer) but were short-circuited

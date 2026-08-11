@@ -227,6 +227,7 @@ enum single_path_id {
 	SP_CURRENT_TRACER,
 	SP_TRACING_ON,
 	SP_BUFFER_SIZE_KB,
+	SP_SET_EVENT,
 	NR_SINGLE_PATHS,
 };
 static bool single_path_inaccessible[NR_SINGLE_PATHS];
@@ -394,6 +395,7 @@ enum tracefs_arm {
 	ARM_FILTER,
 	ARM_EVENT_ENABLE,
 	ARM_MISC,
+	ARM_SET_EVENT,
 	NR_TRACEFS_ARMS,
 };
 
@@ -438,6 +440,11 @@ static unsigned long bump_arm_counter(enum tracefs_arm arm, enum write_outcome o
 			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_fuzzer.misc_open_fail),
 			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_fuzzer.misc_write_fail),
 			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_fuzzer.misc_write_ok),
+		},
+		[ARM_SET_EVENT] = {
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_fuzzer.set_event_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_fuzzer.set_event_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_fuzzer.set_event_write_ok),
 		},
 	};
 	unsigned long *p = (unsigned long *)((char *)&shm->stats + offsets[arm][outcome]);
@@ -1138,6 +1145,178 @@ static unsigned long do_event_enable(void)
 					  &event_enable_inaccessible[idx]));
 }
 
+/*
+ * Write to set_event, the top-level event-selector file.  This surfaces
+ * ftrace_set_clr_event() and the :mod: module-filter cache in trace_events.c
+ * -- a path that ARM_EVENT_ENABLE (which writes per-event enable files and
+ * calls __ftrace_set_clr_event() instead) never reaches.
+ *
+ * Grammar covered:
+ *   <sys>:<evt>  <sys>:  :<evt>  *:<evt>  bare <name>  and !-prefixed forms
+ *   :mod:<modname> suffix with both existing and non-existent module names
+ *
+ * The crash pair for the NULL deref in __ftrace_set_clr_event_nolock
+ * (kernel upstream: d58772d8520c): writing "*:mod:nosuchmod" caches a mod-entry with
+ * match=NULL ('*' normalises to NULL in the parser); a subsequent
+ * "!sched:mod:nosuchmod" walks that entry in remove_cache_mod and dereferences
+ * the NULL match pointer.  Both writes are issued in sequence in one switch
+ * arm.  On kernels carrying this bug the resulting oops is the intended
+ * outcome; panic_on_oops=1 is assumed.
+ *
+ * Cached mod entries live on tr->mod_events and are released at tracefs
+ * instance teardown -- no resource leak across runs.
+ */
+static unsigned long do_set_event(void)
+{
+	static const char * const known_subsys[] = {
+		"sched", "irq", "net", "block", "ext4", "xfs",
+		"syscalls", "timer", "workqueue", "signal",
+	};
+	static const char * const known_events[] = {
+		"sched_switch", "sched_wakeup", "sched_process_exit",
+		"irq_handler_entry", "net_dev_xmit", "block_rq_insert",
+		"sys_enter_read", "timer_expire_entry",
+	};
+	/*
+	 * Module names: a mix of modules found on most kernel builds (so the
+	 * :mod: cache add-path runs) and names that won't resolve (so
+	 * remove_cache_mod runs on the stale entry -- the crash path).
+	 */
+	static const char * const mod_names[] = {
+		"ext4", "xfs", "nfs", "btrfs",		/* likely present */
+		"nosuchmod", "trinitymod", "zzz",	/* intentionally absent */
+	};
+
+	char path[TRACEFS_MAX_PATH];
+	char spec[128];
+	char evname[64];
+	char *colon_pos;
+	const char *evt_part;
+	bool *bad = &single_path_inaccessible[SP_SET_EVENT];
+	unsigned int syslen;
+	const char *mod;
+	int fd;
+	ssize_t ret;
+
+	if (*bad)
+		return 0;
+
+	snprintf(path, sizeof(path), "%s/set_event", tracefs_root);
+
+	/*
+	 * Build evname as "subsys:event".  avail_event_names stores entries as
+	 * "subsys.event" (dot-separated for eprobe specs); replace the dot with
+	 * a colon to recover the set_event grammar token.
+	 */
+	if (nr_avail_event_names > 0) {
+		char *dot;
+
+		snprintf(evname, sizeof(evname), "%s",
+			 avail_event_names[rnd_modulo_u32(nr_avail_event_names)]);
+		dot = strchr(evname, '.');
+		if (dot != NULL)
+			*dot = ':';
+	} else {
+		snprintf(evname, sizeof(evname), "%s:%s",
+			 RAND_ARRAY(known_subsys),
+			 RAND_ARRAY(known_events));
+	}
+
+	colon_pos = strchr(evname, ':');
+	evt_part = (colon_pos != NULL && *(colon_pos + 1) != '\0')
+		   ? colon_pos + 1 : evname;
+	syslen = (unsigned int)strcspn(evname, ":");
+
+	switch (rnd_modulo_u32(12)) {
+	case 0:
+		/* <sys>:<evt> -- enable one specific event */
+		snprintf(spec, sizeof(spec), "%s", evname);
+		break;
+	case 1:
+		/* <sys>: -- enable all events in subsystem */
+		snprintf(spec, sizeof(spec), "%.*s:", (int)syslen, evname);
+		break;
+	case 2:
+		/* :<evt> -- match event name across all subsystems */
+		snprintf(spec, sizeof(spec), ":%s", evt_part);
+		break;
+	case 3:
+		/* *:<evt> -- wildcard subsystem, named event */
+		snprintf(spec, sizeof(spec), "*:%s", evt_part);
+		break;
+	case 4:
+		/* bare event name -- treated as a glob across all events */
+		snprintf(spec, sizeof(spec), "%s", evt_part);
+		break;
+	case 5:
+		/* !<sys>:<evt> -- remove/disable one event */
+		snprintf(spec, sizeof(spec), "!%s", evname);
+		break;
+	case 6:
+		/* !<sys>: -- remove all events in subsystem */
+		snprintf(spec, sizeof(spec), "!%.*s:", (int)syslen, evname);
+		break;
+	case 7:
+		/* !:<evt> -- remove by event name */
+		snprintf(spec, sizeof(spec), "!:%s", evt_part);
+		break;
+	case 8:
+		/* <sys>:<evt>:mod:<modname> -- module-filtered enable */
+		mod = RAND_ARRAY(mod_names);
+		snprintf(spec, sizeof(spec), "%s:mod:%s", evname, mod);
+		break;
+	case 9:
+		/* !<sys>:<evt>:mod:<modname> -- module-filtered remove */
+		mod = RAND_ARRAY(mod_names);
+		snprintf(spec, sizeof(spec), "!%s:mod:%s", evname, mod);
+		break;
+	case 10:
+		/*
+		 * Two-write crash pair (kernel upstream: d58772d8520c).
+		 *
+		 * Write 1: "*:mod:nosuchmod" -- the '*' match is normalised to
+		 * NULL at parser line 1456, so the cached mod-event entry has
+		 * match==NULL.
+		 *
+		 * Write 2: "!sched:mod:nosuchmod" -- remove_cache_mod walks
+		 * tr->mod_events and calls strcmp(entry->match, "sched"); the
+		 * entry installed by write 1 has match==NULL, producing a NULL
+		 * deref.  Both writes are issued in a single arm invocation so
+		 * they land in adjacent kernel calls on the same trace instance.
+		 * Repeat writes are intentional: the parser restores the colon
+		 * at line 1462 specifically so the entry survives for re-removal.
+		 */
+		fd = open_write_target(path, bad);
+		if (fd < 0)
+			return bump_arm_counter(ARM_SET_EVENT,
+						OUTCOME_OPEN_FAIL);
+		ret = write(fd, "*:mod:nosuchmod", 15);
+		close(fd);
+		fd = open_write_target(path, bad);
+		if (fd < 0)
+			return bump_arm_counter(ARM_SET_EVENT,
+						OUTCOME_OPEN_FAIL);
+		ret = write(fd, "!sched:mod:nosuchmod", 20);
+		close(fd);
+		return bump_arm_counter(ARM_SET_EVENT,
+					ret < 0 ? OUTCOME_WRITE_FAIL
+						: OUTCOME_WRITE_OK);
+	default:
+		/* *:<evt>:mod:<modname> -- wide match with module filter */
+		mod = RAND_ARRAY(mod_names);
+		snprintf(spec, sizeof(spec), "*:%s:mod:%s", evt_part, mod);
+		break;
+	}
+
+	fd = open_write_target(path, bad);
+	if (fd < 0)
+		return bump_arm_counter(ARM_SET_EVENT, OUTCOME_OPEN_FAIL);
+	ret = write(fd, spec, strlen(spec));
+	close(fd);
+	return bump_arm_counter(ARM_SET_EVENT,
+				ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
+}
+
 /* Write a trace_option name (with optional "no" prefix) to trace_options. */
 static unsigned long do_trace_options(void)
 {
@@ -1243,6 +1422,7 @@ static const struct tracefs_op tracefs_ops[] = {
 	{ do_dynamic_events, REQ_EVENTS | REQ_DYNEVENT, 2 },
 	{ do_ftrace_filter,  REQ_FTRACE,               2 },
 	{ do_event_enable,   REQ_EVENTS,               1 },
+	{ do_set_event,      REQ_EVENTS,               2 },
 	{ do_trace_options,  0,                        1 },
 	{ do_current_tracer, REQ_FTRACE,               1 },
 	{ do_tracing_on,     0,                        1 },
@@ -1254,9 +1434,10 @@ static const struct tracefs_op tracefs_ops[] = {
  * the entries whose required-subset mask is satisfied by the kernel under
  * test.  Each op is pushed weight-times so rnd_modulo_u32(nr_picks) gives
  * weighted uniform selection without a separate weight-walk on every
- * dispatch.  Sized to comfortably hold the sum of all weights (currently 13
+ * dispatch.  Sized to comfortably hold the sum of all weights (currently 15
  * when all subsets present: kprobe*2 + uprobe*2 + dynevent*2 + filter*2 +
- * event_enable + trace_options + current_tracer + tracing_on + buffer_size).
+ * event_enable + set_event*2 + trace_options + current_tracer + tracing_on +
+ * buffer_size).
  */
 static const struct tracefs_op *pick_table[16];
 static unsigned int nr_picks;
