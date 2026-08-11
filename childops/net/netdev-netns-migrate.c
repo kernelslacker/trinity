@@ -110,6 +110,14 @@
 #define IFLA_VXLAN_ID			1
 #endif
 
+/* ipip (IPv4-over-IPv4) attribute fallbacks.  Numeric values match
+ * linux/if_tunnel.h enum ifla_iptun_attr; provided here for stripped
+ * sysroots that lack the enum definition. */
+#ifndef IFLA_IPTUN_LOCAL
+#define IFLA_IPTUN_LOCAL		2
+#define IFLA_IPTUN_REMOTE		3
+#endif
+
 #define NNM_BUF				1024
 #define NNM_OUTER_BASE			2U
 
@@ -117,6 +125,8 @@ enum nnm_kind {
 	NNM_KIND_VETH,
 	NNM_KIND_VXLAN,
 	NNM_KIND_GRETAP,
+	NNM_KIND_GRE,
+	NNM_KIND_IPIP,
 	NNM_KIND_NR,
 };
 
@@ -124,6 +134,8 @@ static const char * const nnm_kind_names[NNM_KIND_NR] = {
 	[NNM_KIND_VETH]		= "veth",
 	[NNM_KIND_VXLAN]	= "vxlan",
 	[NNM_KIND_GRETAP]	= "gretap",
+	[NNM_KIND_GRE]		= "gre",
+	[NNM_KIND_IPIP]		= "ipip",
 };
 
 /* Master and drive gates live in shm (shm->ns_unsupported_netdev_migrate
@@ -202,9 +214,11 @@ static void latch_master(struct childdata *child)
 
 /* Append the per-kind IFLA_INFO_DATA payload.  veth carries a nested
  * VETH_INFO_PEER holding a peer ifinfomsg + IFLA_IFNAME.  vxlan takes
- * a single u32 VNI.  gretap takes IFLA_GRE_LINK plus IPv4 local /
- * remote so the tunnel resolves against the loopback route the new
- * ns' pernet init installs.  Caller wraps this in the surrounding
+ * a single u32 VNI.  gretap and gre both take IFLA_GRE_LINK plus
+ * IPv4 local / remote so the tunnel resolves against the loopback
+ * route the new ns' pernet init installs.  ipip uses the parallel
+ * IFLA_IPTUN_LOCAL / IFLA_IPTUN_REMOTE attributes (same wire layout,
+ * different attribute namespace).  Caller wraps this in the surrounding
  * IFLA_INFO_DATA + IFLA_LINKINFO nest. */
 static size_t nnm_append_info_data(unsigned char *buf, size_t off, size_t cap,
 				   enum nnm_kind k, const char *peer_name)
@@ -232,8 +246,8 @@ static size_t nnm_append_info_data(unsigned char *buf, size_t off, size_t cap,
 				   (rand32() & 0xfffffU) + 1U);
 	}
 
-	/* gretap */
-	{
+	/* gretap and plain gre share the same IFLA_GRE_* attribute layout */
+	if (k == NNM_KIND_GRETAP || k == NNM_KIND_GRE) {
 		__u32 local  = htonl(0x7f000001U);
 		__u32 remote = htonl(0x7f000002U);
 
@@ -243,6 +257,20 @@ static size_t nnm_append_info_data(unsigned char *buf, size_t off, size_t cap,
 			      &local, sizeof(local));
 		if (!off) return 0;
 		off = nla_put(buf, off, cap, IFLA_GRE_REMOTE,
+			      &remote, sizeof(remote));
+		if (!off) return 0;
+		return off;
+	}
+
+	/* ipip: IFLA_IPTUN_LOCAL + IFLA_IPTUN_REMOTE (no LINK attr needed) */
+	{
+		__u32 local  = htonl(0x7f000001U);
+		__u32 remote = htonl(0x7f000002U);
+
+		off = nla_put(buf, off, cap, IFLA_IPTUN_LOCAL,
+			      &local, sizeof(local));
+		if (!off) return 0;
+		off = nla_put(buf, off, cap, IFLA_IPTUN_REMOTE,
 			      &remote, sizeof(remote));
 		if (!off) return 0;
 		return off;
