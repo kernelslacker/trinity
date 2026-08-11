@@ -281,6 +281,7 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 	       alloc_sz - (size_t)req_len);
 	gf = (struct group_filter *)buf;
 	gf->gf_interface = ifindex;
+	gf->gf_numsrc    = nsrc;
 	sg = (struct sockaddr_in *)&gf->gf_group;
 	sg->sin_family      = AF_INET;
 	sg->sin_addr.s_addr = grp_be;
@@ -417,6 +418,7 @@ static void msfilter_getsockopt_oracle_v6(int s,
 	       alloc_sz - (size_t)req_len);
 	gf = (struct group_filter *)buf;
 	gf->gf_interface = ifindex;
+	gf->gf_numsrc    = nsrc;
 	sg = (struct sockaddr_in6 *)&gf->gf_group;
 	sg->sin6_family = AF_INET6;
 	memcpy(&sg->sin6_addr, grp_v6, sizeof(*grp_v6));
