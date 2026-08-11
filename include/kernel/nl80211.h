@@ -53,7 +53,7 @@
 #define NL80211_CMD_DISCONNECT		48
 #endif
 #ifndef NL80211_CMD_REQ_SET_REG
-#define NL80211_CMD_REQ_SET_REG		26
+#define NL80211_CMD_REQ_SET_REG		27
 #endif
 
 #ifndef NL80211_ATTR_WIPHY
@@ -148,13 +148,13 @@
  * something probes from an unprivileged context.
  */
 #ifndef NL80211_CMD_SET_WIPHY_NETNS
-#define NL80211_CMD_SET_WIPHY_NETNS		78
+#define NL80211_CMD_SET_WIPHY_NETNS		49
 #endif
 #ifndef NL80211_CMD_SET_PMK
-#define NL80211_CMD_SET_PMK			122
+#define NL80211_CMD_SET_PMK			123
 #endif
 #ifndef NL80211_CMD_DEL_PMK
-#define NL80211_CMD_DEL_PMK			123
+#define NL80211_CMD_DEL_PMK			124
 #endif
 #ifndef NL80211_ATTR_NETNS_FD
 #define NL80211_ATTR_NETNS_FD			219
