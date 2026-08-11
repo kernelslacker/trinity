@@ -1015,6 +1015,11 @@ static void *v2_fault_thread(void *arg)
 static void run_variant2(const enum child_op_type op, const bool valid_op,
 			 unsigned long *direct_calls_out)
 {
+	/*
+	 * V2 does not call uffd_install_handler_once() or touch
+	 * uffd_outstanding_workers: v2_fault_thread arms no escape zone and
+	 * takes no SIGBUS/SIGSEGV, so no custom handler is needed.
+	 */
 	struct v2_racer_ctx *rctx;
 	struct v2_fault_ctx *fctx;
 	pthread_t racer_tid, fault_tid;
@@ -1279,7 +1284,7 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 	{
 		struct timespec ts = { .tv_sec = 0, .tv_nsec = V3_JOIN_SLEEP_NS };
 		int spin;
-		bool leaked = false;
+		int leaked_count = 0;
 
 		if (racer_started) {
 			for (spin = 0; spin < V3_JOIN_LOOPS; spin++) {
@@ -1288,7 +1293,7 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 				nanosleep(&ts, NULL);
 			}
 			if (spin >= V3_JOIN_LOOPS)
-				leaked = true; /* worker live: leak, skip munmap */
+				leaked_count++; /* racer live: leak, skip munmap */
 		}
 		if (fault_started) {
 			for (spin = 0; spin < V3_JOIN_LOOPS; spin++) {
@@ -1297,16 +1302,18 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 				nanosleep(&ts, NULL);
 			}
 			if (spin >= V3_JOIN_LOOPS)
-				leaked = true; /* worker live: leak, skip munmap */
+				leaked_count++; /* fault worker live: leak, skip munmap */
 		}
-		if (leaked) {
-			/* fd is safe to close: stranded worker holds no reference to
-			 * the fd number.  Mappings are deliberately leaked — the
-			 * worker is still live; child-process exit reclaims. */
+		if (leaked_count > 0) {
+			/* Close fd: userfaultfd_release() sets ctx->released,
+			 * wakes pending faults, and the kernel returns
+			 * VM_FAULT_RETRY so stranded workers resume and run
+			 * to completion; close() is safe because stranded
+			 * workers hold no reference to the fd number. */
 			close(fd);
 			__atomic_add_fetch(
 				&shm->stats.uffd_fault_move.leaked_workers,
-				1, __ATOMIC_RELAXED);
+				(unsigned long)leaked_count, __ATOMIC_RELAXED);
 			return;
 		}
 		munmap(rctx, sizeof(*rctx));
