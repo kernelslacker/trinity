@@ -142,10 +142,12 @@ static bool uffd_sa_saved;	/* true once the above are populated */
 
 /* Count of outstanding uffd fault/racer worker threads across all variants.
  * Incremented before pthread_create (so a fast worker never sees -1);
- * decremented on clean join only — leaked workers retain their count so
- * the installed handlers persist until the child exits.
- * When it drops to zero the childop's handlers are removed and trinity's
- * canonical dispositions are restored. */
+ * decremented on clean join only — leaked workers retain their count
+ * permanently.  When the counter drops to zero the childop's handlers are
+ * removed and trinity's canonical dispositions are restored.  After any
+ * leak the counter never reaches zero, so uffd_worker_post() will never
+ * restore the canonical dispositions in that child — the childop's handlers
+ * remain installed for the remainder of the child's life by design. */
 static _Atomic int uffd_outstanding_workers;
 
 /* --------------------------------------------------------------------
@@ -361,7 +363,7 @@ static void uffd_install_handler_once(void)
 }
 
 /*
- * Called after each worker thread exits (cleanly joined or leaked).
+ * Called after each cleanly joined worker thread exits.
  * When the last outstanding worker is gone, restore trinity's canonical
  * SIGBUS/SIGSEGV dispositions so subsequent childops see the expected state.
  */
@@ -932,9 +934,9 @@ cleanup_v1:
 			 * wakes the pending fault, and the kernel returns
 			 * VM_FAULT_RETRY so the stranded worker resumes and
 			 * runs to completion.  Do not call uffd_worker_post()
-			 * here; the invariant is that the *worker* must
-			 * decrement from its own exit path so the handler
-			 * stays installed until the worker is actually done.
+			 * here: the leaked worker's count is retained permanently
+			 * so the childop's handlers remain installed for the rest
+			 * of the child's life — decremented on clean join only.
 			 * See d128999b6950 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement").
 			 * ctx (heap) and the src_pages/region mappings are
 			 * intentionally not freed: the stranded worker is still
@@ -1571,9 +1573,9 @@ cleanup_v3:
 			 * wakes the pending fault, and the kernel returns
 			 * VM_FAULT_RETRY so the stranded worker resumes and
 			 * runs to completion.  Do not call uffd_worker_post()
-			 * here; the invariant is that the *worker* must
-			 * decrement from its own exit path so the handler
-			 * stays installed until the worker is actually done.
+			 * here: the leaked worker's count is retained permanently
+			 * so the childop's handlers remain installed for the rest
+			 * of the child's life — decremented on clean join only.
 			 * See d128999b6950 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement").
 			 * fctx (heap) and the region mapping are intentionally
 			 * not freed: the stranded worker is still running and
