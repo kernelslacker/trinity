@@ -473,6 +473,20 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `signal-handler-async-unsafe`: forbid async-signal-UNSAFE libc calls
   (`snprintf`, `malloc`, `fopen`, `syslog`, ...) inside known signal
   handlers discovered in `signals.c`.
+- `signal-disposition-ownership`: two checks that guard process-wide
+  signal-table state from mutation by childop and mm code.  Check 1
+  flags any `signal(sig, SIG_DFL)` call outside `health/` that is
+  followed within two source lines by `raise()` — that pattern resets
+  the per-signal disposition before delivery and silently bypasses the
+  trinity fault beacon (the health fault handler is never entered;
+  the child dies bare).  Check 2 flags any `sigaction(SIGSEGV, …)` or
+  `sigaction(SIGBUS, …)` install call outside `health/` whose
+  translation unit lacks a canonical-read call
+  (`sigaction(SIG, NULL, &saved)`) or a saved-disposition variable
+  (`_sa_bus` / `_sa_segv`); without the canonical snapshot the
+  restore chain may chain to stale state left by a leaked uffd worker.
+  Known-acceptable sites are listed in
+  `signal-disposition-ownership.allowlist`.
 - `sockaddr-af-catalog`: every `AF_*` value in
   `sockaddr_storage_af_vocab[]` (`struct_catalog/sockaddr-af.c`) must
   have a matching `.discrim_value` entry in

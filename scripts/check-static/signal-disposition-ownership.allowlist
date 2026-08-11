@@ -1,0 +1,24 @@
+# Accepted-risk signal-disposition sites excluded from the ownership gate.
+#
+# Format: file:line:hash  # rationale
+#   file    = repo-relative path
+#   line    = line number of the flagged call as reported by the scanner
+#   hash    = first 8 hex chars of sha256 of the both-ends-trimmed line
+#             content (leading and trailing whitespace stripped)
+#
+# Keying on file:line:hash means both the line number AND the site text
+# must match.  A renumber or text edit without re-auditing fails on hash
+# mismatch.  A new install call added elsewhere in an allowlisted file is
+# still caught.
+
+# child/child-init-clean.c: disable_coredumps() debug path.
+# Installs SIG_DFL for SIGSEGV so that the kernel generates a real core
+# dump when -D is active.  This is intentional: the call site is inside
+# the `if (shm->debug == true)` branch whose sole purpose is to undo the
+# no-core-dump posture for post-mortem debugging.  No raise() follows;
+# no beacon is bypassed.  No canonical snapshot is required because this
+# path deliberately drops back to the kernel default rather than chaining
+# to a trinity-managed handler.  Audited as locally-balanced: the call
+# has no restore counterpart (the child is already in its final setup
+# state) and is grandchild-unreachable.
+child/child-init-clean.c:83:c735e3c5
