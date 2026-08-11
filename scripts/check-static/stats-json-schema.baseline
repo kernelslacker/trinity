@@ -1242,6 +1242,7 @@ stats	object
     stats.igmp_mld_source_churn.send_ok	u64
     stats.igmp_mld_source_churn.msfilter_get_ok	u64
     stats.igmp_mld_source_churn.msfilter_get_overrun	u64
+    stats.igmp_mld_source_churn.msfilter_get_rejected	u64
   stats.bridge_vlan_churn	object
     stats.bridge_vlan_churn.runs	u64
     stats.bridge_vlan_churn.setup_failed	u64

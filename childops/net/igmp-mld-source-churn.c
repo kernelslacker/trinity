@@ -214,25 +214,47 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 	sg->sin_addr.s_addr = grp_be;
 
 	got_len = req_len;
-	(void)getsockopt(s, IPPROTO_IP, MCAST_MSFILTER, buf, &got_len);
+	{
+		int rc = getsockopt(s, IPPROTO_IP, MCAST_MSFILTER, buf, &got_len);
 
-	for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
-		if (buf[max_write_sz + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
+		if (rc < 0) {
 			/* check-static: child-output-ok */
 			output(0,
-			       "mcast_msfilter_oracle: v4 getsockopt guard "
-			       "overrun: req_len=%u guard_off=%u "
-			       "got_len=%u nsrc_set=%u iter=%u\n",
-			       (unsigned int)req_len, i,
-			       (unsigned int)got_len, nsrc, iter_idx);
+			       "mcast_msfilter_oracle: v4 getsockopt failed "
+			       "errno=%d req_len=%u nsrc_set=%u iter=%u\n",
+			       errno, (unsigned int)req_len, nsrc, iter_idx);
 			__atomic_add_fetch(
-				&shm->stats.igmp_mld_source_churn.msfilter_get_overrun,
+				&shm->stats.igmp_mld_source_churn.msfilter_get_rejected,
 				1, __ATOMIC_RELAXED);
-			break;
+			free(buf);
+			return;
 		}
+
+		for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
+			if (buf[max_write_sz + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
+				/* check-static: child-output-ok */
+				output(0,
+				       "mcast_msfilter_oracle: v4 getsockopt guard "
+				       "overrun: req_len=%u guard_off=%u "
+				       "got_len=%u nsrc_set=%u iter=%u\n",
+				       (unsigned int)req_len, i,
+				       (unsigned int)got_len, nsrc, iter_idx);
+				__atomic_add_fetch(
+					&shm->stats.igmp_mld_source_churn.msfilter_get_overrun,
+					1, __ATOMIC_RELAXED);
+				break;
+			}
+		}
+		if (got_len > req_len) {
+			/* check-static: child-output-ok */
+			output(0,
+			       "mcast_msfilter_oracle: v4 kernel reported "
+			       "got_len=%u > req_len=%u -- kernel wanted to write more\n",
+			       (unsigned int)got_len, (unsigned int)req_len);
+		}
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_get_ok,
+				   1, __ATOMIC_RELAXED);
 	}
-	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_get_ok,
-			   1, __ATOMIC_RELAXED);
 	free(buf);
 }
 
@@ -285,25 +307,47 @@ static void msfilter_getsockopt_oracle_v6(int s,
 	memcpy(&sg->sin6_addr, grp_v6, sizeof(*grp_v6));
 
 	got_len = req_len;
-	(void)getsockopt(s, IPPROTO_IPV6, MCAST_MSFILTER, buf, &got_len);
+	{
+		int rc = getsockopt(s, IPPROTO_IPV6, MCAST_MSFILTER, buf, &got_len);
 
-	for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
-		if (buf[max_write_sz + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
+		if (rc < 0) {
 			/* check-static: child-output-ok */
 			output(0,
-			       "mcast_msfilter_oracle: v6 getsockopt guard "
-			       "overrun: req_len=%u guard_off=%u "
-			       "got_len=%u nsrc_set=%u iter=%u\n",
-			       (unsigned int)req_len, i,
-			       (unsigned int)got_len, nsrc, iter_idx);
+			       "mcast_msfilter_oracle: v6 getsockopt failed "
+			       "errno=%d req_len=%u nsrc_set=%u iter=%u\n",
+			       errno, (unsigned int)req_len, nsrc, iter_idx);
 			__atomic_add_fetch(
-				&shm->stats.igmp_mld_source_churn.msfilter_get_overrun,
+				&shm->stats.igmp_mld_source_churn.msfilter_get_rejected,
 				1, __ATOMIC_RELAXED);
-			break;
+			free(buf);
+			return;
 		}
+
+		for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
+			if (buf[max_write_sz + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
+				/* check-static: child-output-ok */
+				output(0,
+				       "mcast_msfilter_oracle: v6 getsockopt guard "
+				       "overrun: req_len=%u guard_off=%u "
+				       "got_len=%u nsrc_set=%u iter=%u\n",
+				       (unsigned int)req_len, i,
+				       (unsigned int)got_len, nsrc, iter_idx);
+				__atomic_add_fetch(
+					&shm->stats.igmp_mld_source_churn.msfilter_get_overrun,
+					1, __ATOMIC_RELAXED);
+				break;
+			}
+		}
+		if (got_len > req_len) {
+			/* check-static: child-output-ok */
+			output(0,
+			       "mcast_msfilter_oracle: v6 kernel reported "
+			       "got_len=%u > req_len=%u -- kernel wanted to write more\n",
+			       (unsigned int)got_len, (unsigned int)req_len);
+		}
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_get_ok,
+				   1, __ATOMIC_RELAXED);
 	}
-	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_get_ok,
-			   1, __ATOMIC_RELAXED);
 	free(buf);
 }
 

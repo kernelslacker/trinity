@@ -13,6 +13,7 @@ struct igmp_mld_source_churn_stats {
 	unsigned long send_ok;		/* sender datagram returned >0 */
 	unsigned long msfilter_get_ok;	   /* MCAST_MSFILTER getsockopt oracle attempted */
 	unsigned long msfilter_get_overrun; /* getsockopt wrote past declared optlen (guard hit) */
+	unsigned long msfilter_get_rejected; /* getsockopt returned <0 (errno logged) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_IGMP_MLD_SOURCE_CHURN_H */
