@@ -1,0 +1,18 @@
+#ifndef _TRINITY_STATS_SUBSYS_IOURING_CMD_PASSTHROUGH_H
+#define _TRINITY_STATS_SUBSYS_IOURING_CMD_PASSTHROUGH_H
+
+struct iouring_cmd_passthrough_stats {
+	/*
+	 * Outcome counter for IORING_OP_URING_CMD with
+	 * IORING_URING_CMD_MULTISHOT submitted to /dev/null.
+	 *
+	 * /dev/null's uring_cmd_null() returns 0 for every cmd_op but
+	 * never calls io_cmd_poll_multishot() to set REQ_F_APOLL_MULTISHOT.
+	 * The kernel then issues IOU_ISSUE_SKIP_COMPLETE, so no CQE is
+	 * ever posted.  A non-zero count here means the bug-probe path
+	 * was reached; absence of a CQE is the failure signature.
+	 */
+	unsigned long mshot_cmd_no_cqe;	/* multishot URING_CMD to /dev/null: no CQE arrived */
+};
+
+#endif /* _TRINITY_STATS_SUBSYS_IOURING_CMD_PASSTHROUGH_H */

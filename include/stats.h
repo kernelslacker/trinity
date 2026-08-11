@@ -91,6 +91,7 @@
 #include "stats/subsys/inplace_crypto.h"
 #include "stats/subsys/iouring.h"
 #include "stats/subsys/iouring_eventfd.h"
+#include "stats/subsys/iouring_cmd_passthrough.h"
 #include "stats/subsys/iouring_net_multishot.h"
 #include "stats/subsys/iouring_recipes.h"
 #include "stats/subsys/iouring_send_zc_churn.h"
@@ -676,6 +677,9 @@ struct stats_s {
 
 	/* pkt_builder accounting.  See stats/subsys/pkt_builder.h. */
 	struct pkt_builder_stats pkt_builder __attribute__((aligned(64)));
+
+	/* iouring_cmd_passthrough accounting.  See stats/subsys/iouring_cmd_passthrough.h. */
+	struct iouring_cmd_passthrough_stats iouring_cmd_passthrough __attribute__((aligned(64)));
 
 	/* iouring_net_multishot accounting.  See stats/subsys/iouring_net_multishot.h. */
 	struct iouring_net_multishot_stats iouring_net_multishot __attribute__((aligned(64)));

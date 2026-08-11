@@ -38,6 +38,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -282,9 +283,58 @@ static void ring_drain_cqes(struct iour_ring *ctx)
 	ring_store_u32(ctx->cq_ring, ctx->cq_off_head, head);
 }
 
+/*
+ * Drain all available CQEs without blocking and return the number
+ * consumed.  Used by variant_nulldev to detect the absence of a CQE
+ * after a multishot URING_CMD submission.
+ */
+static unsigned int ring_drain_cqes_count(struct iour_ring *ctx)
+{
+	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
+	unsigned int tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
+	unsigned int consumed = tail - head;
+
+	if (consumed) {
+		__sync_synchronize();
+		ring_store_u32(ctx->cq_ring, ctx->cq_off_head, tail);
+	}
+	return consumed;
+}
+
 static void sqe_clear(struct io_uring_sqe *s)
 {
 	memset(s, 0, sizeof(*s));
+}
+
+/* ------------------------------------------------------------------ *
+ * uring_cmd_flags rotation.
+ *
+ * Rotate sqe->uring_cmd_flags across the three exercisable values so
+ * each submission stresses a different kernel branch:
+ *
+ *   0                            - baseline; no flags (current behaviour)
+ *   IORING_URING_CMD_FIXED       - reaches io_uring_cmd_import_fixed()
+ *                                  (fails -EINVAL on this ring because no
+ *                                  buffer table is registered, but the
+ *                                  validation switch is still exercised)
+ *   IORING_URING_CMD_MULTISHOT   - exercises the multishot flag path;
+ *                                  useful on socket/blockdev even though
+ *                                  those handlers don't arm multishot
+ *   FIXED|MULTISHOT              - mutual-exclusion check; kernel rejects
+ *                                  with -EINVAL (uring_cmd.c validation)
+ * ------------------------------------------------------------------ */
+
+static const __u32 uring_cmd_flag_variants[] = {
+	0,
+	IORING_URING_CMD_FIXED,
+	IORING_URING_CMD_MULTISHOT,
+	IORING_URING_CMD_FIXED | IORING_URING_CMD_MULTISHOT,
+};
+
+static __u32 pick_uring_cmd_flags(void)
+{
+	return uring_cmd_flag_variants[
+		rnd_modulo_u32(ARRAY_SIZE(uring_cmd_flag_variants))];
 }
 
 /* ------------------------------------------------------------------ *
@@ -328,10 +378,11 @@ static bool variant_socket(struct iour_ring *ctx, unsigned long *direct_calls)
 	cmd_op = sock_cmd_ops[rnd_modulo_u32(ARRAY_SIZE(sock_cmd_ops))];
 
 	sqe_clear(&sqe);
-	sqe.opcode    = IORING_OP_URING_CMD;
-	sqe.fd        = sock_fd;
-	sqe.cmd_op    = cmd_op;
-	sqe.user_data = 0xc0d0;
+	sqe.opcode          = IORING_OP_URING_CMD;
+	sqe.fd              = sock_fd;
+	sqe.cmd_op          = cmd_op;
+	sqe.uring_cmd_flags = pick_uring_cmd_flags();
+	sqe.user_data       = 0xc0d0;
 
 	if (cmd_op == SOCKET_URING_OP_SETSOCKOPT) {
 		/* level / optname overlay the addr union; optval / optlen
@@ -437,12 +488,13 @@ static bool variant_blockdev(struct iour_ring *ctx, unsigned long *direct_calls)
 		return false;
 
 	sqe_clear(&sqe);
-	sqe.opcode    = IORING_OP_URING_CMD;
-	sqe.fd        = dev_fd;
-	sqe.cmd_op    = BLOCK_URING_CMD_DISCARD;
-	sqe.addr      = 0;		/* start offset */
-	sqe.addr3     = 4096;		/* length — one page */
-	sqe.user_data = 0xc0d1;
+	sqe.opcode          = IORING_OP_URING_CMD;
+	sqe.fd              = dev_fd;
+	sqe.cmd_op          = BLOCK_URING_CMD_DISCARD;
+	sqe.addr            = 0;		/* start offset */
+	sqe.addr3           = 4096;		/* length — one page */
+	sqe.uring_cmd_flags = pick_uring_cmd_flags();
+	sqe.user_data       = 0xc0d1;
 
 	if (!ring_submit_sqe(ctx, &sqe))
 		goto out;
@@ -461,6 +513,109 @@ out:
 }
 
 /* ------------------------------------------------------------------ *
+ * Variant: nulldev
+ *
+ * Probes the IORING_URING_CMD_MULTISHOT flag path against /dev/null.
+ * /dev/null's uring_cmd handler returns 0 for every cmd_op without
+ * calling io_cmd_poll_multishot() to set REQ_F_APOLL_MULTISHOT, so the
+ * kernel issues IOU_ISSUE_SKIP_COMPLETE and no CQE is ever posted.
+ * This is the "unprivileged hang" bug surface this variant exists to
+ * exercise: IOSQE_BUFFER_SELECT + IORING_URING_CMD_MULTISHOT submitted
+ * against an fd whose uring_cmd handler ignores the multishot flag.
+ *
+ * Flow:
+ *   1. PROVIDE_BUFFERS: register a small buffer group so the kernel
+ *      accepts IOSQE_BUFFER_SELECT without -ENOBUFS.
+ *   2. URING_CMD to /dev/null with IOSQE_BUFFER_SELECT +
+ *      uring_cmd_flags = IORING_URING_CMD_MULTISHOT.
+ *   3. ring_enter with min_complete=0 (no blocking wait) then drain;
+ *      the CQE will not arrive because the req is pinned.
+ *   4. Count the CQEs.  A zero count books the mshot_cmd_no_cqe
+ *      outcome counter so the absence is visible in telemetry.
+ * ------------------------------------------------------------------ */
+
+#define NULLDEV_PBUF_GROUP_ID	7
+#define NULLDEV_PBUF_COUNT	2
+#define NULLDEV_PBUF_SIZE	64
+
+static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
+			    const bool valid_op)
+{
+	struct io_uring_sqe sqe;
+	void *pbuf = NULL;
+	int null_fd = -1;
+	bool ok = false;
+	unsigned int ncqe;
+	int r;
+
+	null_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
+	if (null_fd < 0)
+		return false;
+
+	pbuf = malloc((size_t)NULLDEV_PBUF_COUNT * NULLDEV_PBUF_SIZE);
+	if (!pbuf)
+		goto out;
+
+	/* PROVIDE_BUFFERS: hand the kernel a pool so IOSQE_BUFFER_SELECT
+	 * can succeed the buffer-lookup phase. */
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_PROVIDE_BUFFERS;
+	sqe.addr      = (__u64)(uintptr_t)pbuf;
+	sqe.len       = NULLDEV_PBUF_SIZE;
+	sqe.fd        = NULLDEV_PBUF_COUNT;
+	sqe.off       = 0;
+	sqe.buf_group = NULLDEV_PBUF_GROUP_ID;
+	sqe.user_data = 0xc0e0;
+
+	if (!ring_submit_sqe(ctx, &sqe))
+		goto out;
+
+	(*direct_calls)++;
+	r = ring_enter(ctx, 1, 1);
+	if (r < 0)
+		goto out;
+	ring_drain_cqes(ctx);
+
+	/* URING_CMD to /dev/null with MULTISHOT + BUFFER_SELECT. */
+	sqe_clear(&sqe);
+	sqe.opcode          = IORING_OP_URING_CMD;
+	sqe.fd              = null_fd;
+	sqe.cmd_op          = 0;	/* any cmd_op; uring_cmd_null handles all */
+	sqe.flags           = IOSQE_BUFFER_SELECT;
+	sqe.buf_group       = NULLDEV_PBUF_GROUP_ID;
+	sqe.uring_cmd_flags = IORING_URING_CMD_MULTISHOT;
+	sqe.user_data       = 0xc0d2;
+
+	if (!ring_submit_sqe(ctx, &sqe))
+		goto out;
+
+	(*direct_calls)++;
+	/* Submit with min_complete=0: do not block.  A blocking wait with
+	 * min_complete=1 would hang forever on the bug path because the
+	 * req is pinned (IOU_ISSUE_SKIP_COMPLETE) and no CQE will arrive. */
+	r = ring_enter(ctx, 1, 0);
+	if (r < 0)
+		goto out;
+
+	ncqe = ring_drain_cqes_count(ctx);
+	if (ncqe == 0) {
+		/* Expected on bug path: multishot cmd to /dev/null posts
+		 * no CQE.  Count so the absence is visible in telemetry. */
+		if (valid_op)
+			__atomic_add_fetch(
+				&shm->stats.iouring_cmd_passthrough.mshot_cmd_no_cqe,
+				1, __ATOMIC_RELAXED);
+	}
+
+	ok = true;
+out:
+	free(pbuf);
+	if (null_fd >= 0)
+		close(null_fd);
+	return ok;
+}
+
+/* ------------------------------------------------------------------ *
  * Variant dispatch.  Each variant is tried only when its cache flag
  * says it's available; variant_socket additionally compiles out on
  * stale-LTS hosts whose uapi headers lack the .level/.optname/.optval/
@@ -474,7 +629,7 @@ bool iouring_cmd_passthrough(struct childdata *child)
 	struct io_uring_params p;
 	enum iour_setup_status st;
 	bool ok = false;
-	enum { V_SOCKET, V_BLOCKDEV, V_MAX };
+	enum { V_SOCKET, V_BLOCKDEV, V_NULLDEV, V_MAX };
 	int avail[V_MAX];
 	int navail = 0;
 	/* Local direct-syscall tally.  Bumped once per ring_enter() call
@@ -506,6 +661,8 @@ bool iouring_cmd_passthrough(struct childdata *child)
 #endif
 	if (vcache.blockdev_ok)
 		avail[navail++] = V_BLOCKDEV;
+	/* /dev/null is always present; V_NULLDEV probes IORING_URING_CMD_MULTISHOT. */
+	avail[navail++] = V_NULLDEV;
 
 	if (navail == 0)
 		return true;
@@ -544,6 +701,9 @@ bool iouring_cmd_passthrough(struct childdata *child)
 #endif
 	case V_BLOCKDEV:
 		ok = variant_blockdev(&ctx, &direct_calls);
+		break;
+	case V_NULLDEV:
+		ok = variant_nulldev(&ctx, &direct_calls, valid_op);
 		break;
 	}
 

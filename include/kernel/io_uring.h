@@ -318,6 +318,13 @@ struct trinity_io_uring_zcrx_ctrl {
 #define IORING_OP_EPOLL_WAIT		59
 #endif
 
+#ifndef IORING_URING_CMD_MULTISHOT
+#define IORING_URING_CMD_MULTISHOT	(1U << 1)
+/* Updated mask reflecting both fixed and multishot flags. */
+#undef IORING_URING_CMD_MASK
+#define IORING_URING_CMD_MASK		(IORING_URING_CMD_FIXED | IORING_URING_CMD_MULTISHOT)
+#endif
+
 #ifndef SOCKET_URING_OP_SIOCINQ
 #define SOCKET_URING_OP_SIOCINQ		0
 #define SOCKET_URING_OP_SIOCOUTQ	1

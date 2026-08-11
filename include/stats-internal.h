@@ -203,6 +203,7 @@ extern const struct stat_category icmp_inject_category;
 extern const struct stat_category igmp_mld_source_churn_category;
 extern const struct stat_category inet_listener_rehash_race_category;
 extern const struct stat_category inplace_crypto_category;
+extern const struct stat_category iouring_cmd_passthrough_category;
 extern const struct stat_category iouring_eventfd_category;
 extern const struct stat_category iouring_flood_category;
 extern const struct stat_category iouring_recipes_category;

@@ -315,6 +315,8 @@ void dump_stats_json_iouring_and_zombies(void)
 	putchar(',');
 	stat_category_emit_json(&iouring_recipes_category);
 	putchar(',');
+	stat_category_emit_json(&iouring_cmd_passthrough_category);
+	putchar(',');
 	stat_category_emit_json(&iouring_eventfd_category);
 	putchar(',');
 	stat_category_emit_json(&aio_category);
