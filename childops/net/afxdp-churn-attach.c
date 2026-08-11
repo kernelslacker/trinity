@@ -287,7 +287,7 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 
 	memset(&sxdp, 0, sizeof(sxdp));
 	sxdp.sxdp_family       = AF_XDP;
-	sxdp.sxdp_flags        = XDP_USE_NEED_WAKEUP |
+	sxdp.sxdp_flags        = XDP_COPY | XDP_USE_NEED_WAKEUP |
 				 (want_sg ? XDP_USE_SG : 0);
 	sxdp.sxdp_ifindex      = target_ifindex;
 	sxdp.sxdp_queue_id     = 0;
@@ -310,12 +310,17 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 		if (want_tunnel)
 			__atomic_add_fetch(&shm->stats.afxdp_churn.tunnel_bind_iters,
 					   1, __ATOMIC_RELAXED);
-	} else if (want_sg && errno == EINVAL) {
-		/* Bind-time rejection of XDP_USE_SG (e.g. driver path).
-		 * Latch so subsequent iters don't ask for it again. */
-		ns_unsupported_xdp_sg = true;
-		__atomic_add_fetch(&shm->stats.afxdp_churn.xsg_bind_failed,
+	} else {
+		/* Count every bind failure for broad telemetry. */
+		__atomic_add_fetch(&shm->stats.afxdp_churn.bind_failed,
 				   1, __ATOMIC_RELAXED);
+		if (want_sg && errno == EINVAL) {
+			/* Bind-time rejection of XDP_USE_SG (e.g. driver path).
+			 * Latch so subsequent iters don't ask for it again. */
+			ns_unsupported_xdp_sg = true;
+			__atomic_add_fetch(&shm->stats.afxdp_churn.xsg_bind_failed,
+					   1, __ATOMIC_RELAXED);
+		}
 	}
 
 	*target_ifindex_out = target_ifindex;

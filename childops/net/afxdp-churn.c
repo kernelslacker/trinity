@@ -21,7 +21,7 @@
  * MAP_DELETE_ELEM on the bound key against the live redirect walker
  * and munmap a ring while still bound.
  *
- * Brick-safety: lo only, no external NICs; qid=0 (XDP_COPY implicit --
+ * Brick-safety: lo only, no external NICs; qid=0 (XDP_COPY explicit --
  * no zero-copy on lo).  Attach lifetime is bounded by the link fd
  * (auto-detaches on teardown / child crash) and the 200 ms wall cap
  * bounds any localhost disruption.  UMEM/ring memory is per-iter

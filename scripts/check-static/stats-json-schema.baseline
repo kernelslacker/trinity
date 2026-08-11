@@ -1629,6 +1629,7 @@ stats	object
     stats.afxdp_churn.tx_metadata_iters	u64
     stats.afxdp_churn.tun_bind_iters	u64
     stats.afxdp_churn.tunnel_bind_iters	u64
+    stats.afxdp_churn.bind_failed	u64
     stats.afxdp_churn.xsg_bind_failed	u64
     stats.afxdp_churn.tx_md_bind_failed	u64
     stats.afxdp_churn.tailroom_iters	u64
