@@ -141,7 +141,9 @@ static struct sigaction trinity_sa_segv;
 static bool uffd_sa_saved;	/* true once the above are populated */
 
 /* Count of outstanding uffd fault/racer worker threads across all variants.
- * Incremented after a successful pthread_create, decremented on join or leak.
+ * Incremented before pthread_create (so a fast worker never sees -1);
+ * decremented on clean join only — leaked workers retain their count so
+ * the installed handlers persist until the child exits.
  * When it drops to zero the childop's handlers are removed and trinity's
  * canonical dispositions are restored. */
 static _Atomic int uffd_outstanding_workers;
@@ -577,10 +579,12 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 	ctx->src_pages = (uint32_t *)src_pages;
 
 	uffd_install_handler_once();
-	if (pthread_create(&tid, NULL, v1_fault_thread, ctx) != 0)
-		goto cleanup_v1;
-	thread_started = true;
 	__atomic_add_fetch(&uffd_outstanding_workers, 1, __ATOMIC_RELAXED);
+	if (pthread_create(&tid, NULL, v1_fault_thread, ctx) != 0) {
+		uffd_worker_post();
+		goto cleanup_v1;
+	}
+	thread_started = true;
 
 	/*
 	 * Main resolve loop.  Each iteration handles one fault event.
@@ -924,14 +928,18 @@ cleanup_v1:
 			nanosleep(&ts, NULL);
 		}
 		if (spin >= V3_JOIN_LOOPS) {
-			/* fd is safe to close: stranded worker holds no reference to
-			 * the fd number.  Mappings are deliberately leaked — the
-			 * worker is still faulting on them; child-process exit reclaims. */
+			/* Close fd: userfaultfd_release() sets ctx->released,
+			 * wakes the pending fault, and the kernel returns
+			 * VM_FAULT_RETRY so the stranded worker resumes and
+			 * runs to completion.  Do not call uffd_worker_post()
+			 * here; the invariant is that the *worker* must
+			 * decrement from its own exit path so the handler
+			 * stays installed until the worker is actually done.
+			 * See d128999b6950 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement"). */
 			close(fd);
 			__atomic_add_fetch(
 				&shm->stats.uffd_fault_move.leaked_workers,
 				1, __ATOMIC_RELAXED);
-			uffd_worker_post();
 			return;
 		}
 		uffd_worker_post();
@@ -1400,10 +1408,12 @@ static void run_variant3(const enum child_op_type op, const bool valid_op,
 	fctx->len    = len;
 
 	uffd_install_handler_once();
-	if (pthread_create(&tid, NULL, v3_fault_thread, fctx) != 0)
-		goto cleanup_v3;
-	thread_started = true;
 	__atomic_add_fetch(&uffd_outstanding_workers, 1, __ATOMIC_RELAXED);
+	if (pthread_create(&tid, NULL, v3_fault_thread, fctx) != 0) {
+		uffd_worker_post();
+		goto cleanup_v3;
+	}
+	thread_started = true;
 
 	/* Wait for the thread to reach the faulting access and block.
 	 * Use a short poll on the uffd fd as the confirmation signal. */
@@ -1543,15 +1553,19 @@ cleanup_v3:
 			nanosleep(&ts, NULL);
 		}
 		if (spin >= V3_JOIN_LOOPS) {
-			/* fd is safe to close: stranded worker holds no reference to
-			 * the fd number.  Mappings are deliberately leaked — the
-			 * worker is still faulting on them; child-process exit reclaims. */
+			/* Close fd: userfaultfd_release() sets ctx->released,
+			 * wakes the pending fault, and the kernel returns
+			 * VM_FAULT_RETRY so the stranded worker resumes and
+			 * runs to completion.  Do not call uffd_worker_post()
+			 * here; the invariant is that the *worker* must
+			 * decrement from its own exit path so the handler
+			 * stays installed until the worker is actually done.
+			 * See d128999b6950 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement"). */
 			if (fd >= 0)
 				close(fd);
 			__atomic_add_fetch(
 				&shm->stats.uffd_fault_move.leaked_workers,
 				1, __ATOMIC_RELAXED);
-			uffd_worker_post();
 			return;
 		}
 		uffd_worker_post();
