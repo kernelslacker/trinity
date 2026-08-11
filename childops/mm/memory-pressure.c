@@ -43,14 +43,16 @@
  *     return silently — kernel already consumed the signal and we
  *     don't want to count spoof noise.
  *   - Self-sent fatal signals (si_code <= 0, si_pid == getpid, e.g.
- *     glibc abort) restore SIG_DFL and re-raise so child_fault_handler
- *     diagnoses + exits.  Don't siglongjmp here: glibc may hold the
- *     allocator lock and longjmping orphans it (see signals.c
- *     long-form rationale on the sigalrm_handler longjmp removal).
+ *     glibc abort) chain directly to trinity's canonical handler so
+ *     child_fault_handler stamps the beacon and exits.  Don't
+ *     siglongjmp here: glibc may hold the allocator lock and longjmping
+ *     orphans it (see signals.c long-form rationale on the
+ *     sigalrm_handler longjmp removal).
  *   - Real kernel faults whose si_addr is outside the drawn pool
  *     range (ASAN redzone hits, genuine SIGBUS on an unrelated mmap,
- *     a setup-path bug, etc.) restore SIG_DFL and re-raise so the
- *     bug log path is preserved.  This is the gate that the
+ *     a setup-path bug, etc.) chain directly to trinity's canonical
+ *     handler so the beacon fires and the bug log path is preserved.
+ *     This is the gate that the
  *     follow-up commit added: the prior wrap accepted any
  *     si_code > 0 as pool race, swallowing unrelated kernel faults.
  *   - Real kernel faults whose si_addr is inside the drawn pool
@@ -86,6 +88,12 @@ static uintptr_t memory_pressure_pool_race_addr_low;
 static uintptr_t memory_pressure_pool_race_addr_high;
 static struct sigaction memory_pressure_pool_race_old_segv;
 static struct sigaction memory_pressure_pool_race_old_bus;
+/* Trinity's canonical SIGBUS/SIGSEGV dispositions, captured once before the
+ * first handler install so the not-ours arm can chain directly to
+ * child_fault_handler and preserve the shm fault-beacon stamp. */
+static struct sigaction memory_pressure_trinity_sa_segv;
+static struct sigaction memory_pressure_trinity_sa_bus;
+static bool memory_pressure_trinity_sa_saved;
 
 static __attribute__((no_sanitize("address")))
 void memory_pressure_pool_race_handler(int sig, siginfo_t *info,
@@ -101,10 +109,21 @@ void memory_pressure_pool_race_handler(int sig, siginfo_t *info,
 		return;
 	}
 	if (info->si_code <= 0) {
-		/* Self-sent (glibc abort etc.) — restore default and
-		 * re-raise so child_fault_handler diagnoses + exits. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		/* Self-sent (glibc abort etc.) — chain to trinity's canonical
+		 * handler (child_fault_handler) directly to preserve the
+		 * shm fault-beacon stamp. */
+		{
+			const struct sigaction *saved =
+				(sig == SIGBUS) ? &memory_pressure_trinity_sa_bus
+					       : &memory_pressure_trinity_sa_segv;
+			if (memory_pressure_trinity_sa_saved &&
+			    (saved->sa_flags & SA_SIGINFO))
+				saved->sa_sigaction(sig, info, ctx);
+			else {
+				sigaction(sig, saved, NULL);
+				raise(sig);
+			}
+		}
 		return;
 	}
 
@@ -117,12 +136,22 @@ void memory_pressure_pool_race_handler(int sig, siginfo_t *info,
 	range_low = __atomic_load_n(&memory_pressure_pool_race_addr_low,
 				    __ATOMIC_RELAXED);
 	if (fault_addr < range_low || fault_addr >= range_high) {
-		/* Real kernel fault but si_addr is outside the drawn
-		 * pool range — not the race we're guarding against.
-		 * Restore default and re-raise so child_fault_handler
-		 * diagnoses + exits and the bug log path is preserved. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		/* Real kernel fault but si_addr is outside the drawn pool
+		 * range — not the race we're guarding against.  Chain to
+		 * trinity's canonical handler directly so child_fault_handler
+		 * stamps the beacon and the bug log path is preserved. */
+		{
+			const struct sigaction *saved =
+				(sig == SIGBUS) ? &memory_pressure_trinity_sa_bus
+					       : &memory_pressure_trinity_sa_segv;
+			if (memory_pressure_trinity_sa_saved &&
+			    (saved->sa_flags & SA_SIGINFO))
+				saved->sa_sigaction(sig, info, ctx);
+			else {
+				sigaction(sig, saved, NULL);
+				raise(sig);
+			}
+		}
 		return;
 	}
 	siglongjmp(memory_pressure_pool_race_jmp, 1);
@@ -217,6 +246,16 @@ bool memory_pressure(struct childdata *child)
 			sigaddset(&sa.sa_mask, SIGBUS);
 			sa.sa_flags = SA_SIGINFO;
 			sa.sa_sigaction = memory_pressure_pool_race_handler;
+			/* Capture trinity's canonical dispositions once before
+			 * the first install so the not-ours arm in the handler
+			 * can chain directly to child_fault_handler. */
+			if (!memory_pressure_trinity_sa_saved) {
+				sigaction(SIGSEGV, NULL,
+					  &memory_pressure_trinity_sa_segv);
+				sigaction(SIGBUS,  NULL,
+					  &memory_pressure_trinity_sa_bus);
+				memory_pressure_trinity_sa_saved = true;
+			}
 			sigaction(SIGSEGV, &sa,
 				  &memory_pressure_pool_race_old_segv);
 			sigaction(SIGBUS,  &sa,
