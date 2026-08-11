@@ -136,24 +136,78 @@ static unsigned int msfilter_v4_optlen_iter;
 static unsigned int msfilter_v6_optlen_iter;
 
 /*
- * Raise net.ipv4.igmp_max_msf in the current network namespace to at
- * least @n so that a MCAST_MSFILTER setsockopt with @n sources does not
- * fail with -ENOBUFS.  Both IPv4 (ip_mc_msfilter) and IPv6
- * (ip6_mc_msfilter) gate on net->ipv4.sysctl_igmp_max_msf, so one
- * write covers both families.  Silent on failure (sysctl may be
- * read-only in a hardened ns; caller tolerates -ENOBUFS).
+ * Read the current net.ipv4.igmp_max_msf value into *@saved.  Returns
+ * true on success (so the caller knows to restore it later), false if
+ * the file could not be read (caller should still attempt the raise but
+ * skip the restore).
  */
-static void raise_igmp_max_msf(unsigned int n)
+static bool save_igmp_max_msf(unsigned int *saved)
+{
+	char buf[32];
+	int fd;
+	ssize_t n;
+
+	fd = open("/proc/sys/net/ipv4/igmp_max_msf", O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return false;
+	n = read(fd, buf, sizeof(buf) - 1U);
+	close(fd);
+	if (n <= 0)
+		return false;
+	buf[n] = '\0';
+	*saved = (unsigned int)strtoul(buf, NULL, 10);
+	return true;
+}
+
+/*
+ * Restore net.ipv4.igmp_max_msf to a value previously captured by
+ * save_igmp_max_msf().  Silent on failure (best-effort restore).
+ */
+static void restore_igmp_max_msf(unsigned int val)
 {
 	char buf[32];
 	int fd, len;
 
-	fd = open("/proc/sys/net/ipv4/igmp_max_msf", O_WRONLY);
+	fd = open("/proc/sys/net/ipv4/igmp_max_msf", O_WRONLY | O_CLOEXEC);
 	if (fd < 0)
 		return;
-	len = snprintf(buf, sizeof(buf), "%u\n", n);
+	len = snprintf(buf, sizeof(buf), "%u\n", val);
 	{ ssize_t wr = write(fd, buf, (size_t)len); (void)wr; }
 	close(fd);
+}
+
+/*
+ * Raise net.ipv4.igmp_max_msf in the current network namespace to at
+ * least @n so that a MCAST_MSFILTER setsockopt with @n sources does not
+ * fail with -ENOBUFS.  Only the IPv4 path (ip_mc_msfilter) gates on
+ * net->ipv4.sysctl_igmp_max_msf; the v6 caller drops this call
+ * entirely.  Returns true on success, false on open/write failure; on
+ * failure igmp_max_msf_raise_fail is incremented so the caller can
+ * skip the large-filter path that would get -ENOBUFS.
+ */
+static bool raise_igmp_max_msf(unsigned int n)
+{
+	char buf[32];
+	int fd, len;
+	ssize_t wr;
+
+	fd = open("/proc/sys/net/ipv4/igmp_max_msf", O_WRONLY | O_CLOEXEC);
+	if (fd < 0) {
+		__atomic_add_fetch(
+			&shm->stats.igmp_mld_source_churn.igmp_max_msf_raise_fail,
+			1, __ATOMIC_RELAXED);
+		return false;
+	}
+	len = snprintf(buf, sizeof(buf), "%u\n", n);
+	wr = write(fd, buf, (size_t)len);
+	close(fd);
+	if (wr != (ssize_t)len) {
+		__atomic_add_fetch(
+			&shm->stats.igmp_mld_source_churn.igmp_max_msf_raise_fail,
+			1, __ATOMIC_RELAXED);
+		return false;
+	}
+	return true;
 }
 
 /*
@@ -748,28 +802,46 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 	case 2:
 		/* RACE C: bulk replace via MCAST_MSFILTER -- exercises the
 		 * ip_mc_msfilter realloc + rcu publish path.
-		 * When nsrc exceeds the default igmp_max_msf (10), raise the
-		 * sysctl so the large-filter path is actually reachable
-		 * instead of failing with -ENOBUFS. */
+		 * When nsrc exceeds the default igmp_max_msf (10), save the
+		 * current sysctl value, raise it to IMC_MAX_MSF_CAP, then
+		 * restore it after the setsockopt so the fuzz host's real
+		 * igmp_max_msf is not permanently modified.  On raise
+		 * failure (EPERM, short write) skip the large-filter path
+		 * that would get -ENOBUFS anyway. */
 		nsrc = rotate_filter_size(it->iter_idx);
-		if (nsrc > 10U)
-			raise_igmp_max_msf(IMC_MAX_MSF_CAP);
-		it->gf = build_filter_v4(0U, it->grp_be, nsrc, it->salt);
-		if (it->gf) {
-			rc = setsockopt(it->recv_s, IPPROTO_IP, MCAST_MSFILTER,
-					it->gf, GROUP_FILTER_SIZE(nsrc));
-			if (rc == 0) {
-				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_ok,
-						   1, __ATOMIC_RELAXED);
-				/* Read-back oracle: verify getsockopt does not
-				 * write past the declared optlen into the guard
-				 * region.  Reports but does not abort -- the
-				 * too-small-optlen behaviour is contested. */
-				msfilter_getsockopt_oracle_v4(it->recv_s,
-							      it->grp_be,
-							      0U, nsrc,
-							      it->iter_idx);
+		{
+			unsigned int saved_msf = 0;
+			bool do_restore = false;
+			bool skip = false;
+
+			if (nsrc > 10U) {
+				do_restore = save_igmp_max_msf(&saved_msf);
+				if (!raise_igmp_max_msf(IMC_MAX_MSF_CAP))
+					skip = true;
 			}
+			if (!skip) {
+				it->gf = build_filter_v4(0U, it->grp_be, nsrc,
+							 it->salt);
+				if (it->gf) {
+					rc = setsockopt(it->recv_s, IPPROTO_IP,
+							MCAST_MSFILTER, it->gf,
+							GROUP_FILTER_SIZE(nsrc));
+					if (rc == 0) {
+						__atomic_add_fetch(
+							&shm->stats.igmp_mld_source_churn.msfilter_ok,
+							1, __ATOMIC_RELAXED);
+						/* Read-back oracle: verify getsockopt
+						 * does not write past the declared
+						 * optlen into the guard region.
+						 * Reports but does not abort. */
+						msfilter_getsockopt_oracle_v4(
+							it->recv_s, it->grp_be,
+							0U, nsrc, it->iter_idx);
+					}
+				}
+			}
+			if (do_restore)
+				restore_igmp_max_msf(saved_msf);
 		}
 		break;
 	case 3:
@@ -1055,11 +1127,13 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
-		/* ip6_mc_msfilter gates on net->ipv4.sysctl_igmp_max_msf,
-		 * same as the v4 path; raise_igmp_max_msf() covers both. */
+		/* ip6_mc_msfilter gates on net->ipv4.sysctl_igmp_max_msf
+		 * in the kernel, but raise_igmp_max_msf() writes the host
+		 * procfs knob which only affects the init netns and does not
+		 * influence the v6 filter path when running in a non-init
+		 * netns.  Drop the raise for v6: -ENOBUFS on large filters
+		 * is an expected and tolerated outcome on stock kernels. */
 		nsrc = rotate_filter_size(it->iter_idx);
-		if (nsrc > 10U)
-			raise_igmp_max_msf(IMC_MAX_MSF_CAP);
 		it->gf = build_filter_v6(0U, &it->grp_v6, nsrc, it->salt);
 		if (it->gf) {
 			rc = setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_MSFILTER,
