@@ -10,6 +10,8 @@ static const struct stat_field igmp_mld_source_churn_fields[] = {
 	STAT_FIELD_SUB(igmp_mld_source_churn, msfilter_ok),
 	STAT_FIELD_SUB(igmp_mld_source_churn, drop_ok),
 	STAT_FIELD_SUB(igmp_mld_source_churn, send_ok),
+	STAT_FIELD_SUB(igmp_mld_source_churn, msfilter_get_ok),
+	STAT_FIELD_SUB(igmp_mld_source_churn, msfilter_get_overrun),
 };
 
 const struct stat_category igmp_mld_source_churn_category =

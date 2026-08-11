@@ -114,7 +114,158 @@
 #define IMC_PORT			1234
 #define IMC_LARGE_SRCS			32U
 
+/* Guard-region constants for the MCAST_MSFILTER getsockopt oracle.
+ * MCAST_GET_GUARD_BYTES bytes of MCAST_GET_GUARD_FILL canary are
+ * placed immediately after the declared getsockopt buffer.  An
+ * overrun into the guard region is reported (not asserted) because
+ * the kernel behaviour for a too-small optlen is contested upstream.
+ */
+#define MCAST_GET_GUARD_BYTES		16U
+#define MCAST_GET_GUARD_FILL		0xa5U
+
 static bool ns_unsupported_igmp_mld_source_churn;
+
+/*
+ * MCAST_MSFILTER getsockopt oracle (v4).  Called after a successful
+ * setsockopt(MCAST_MSFILTER) on @s with @nsrc sources.  Probes the
+ * read-back path with a rotated optlen so some iterations exercise the
+ * header-only path and some the normal full-filter path:
+ *
+ *   iter_idx % 3 == 0  ->  sizeof(struct group_filter)  [header only]
+ *   iter_idx % 3 == 1  ->  GROUP_FILTER_SIZE(1)          [one source]
+ *   iter_idx % 3 == 2  ->  GROUP_FILTER_SIZE(@nsrc)      [normal path]
+ *
+ * A poisoned guard region (MCAST_GET_GUARD_BYTES bytes of
+ * MCAST_GET_GUARD_FILL) is placed immediately after the declared
+ * buffer.  If the kernel writes past the requested optlen we report
+ * the first corrupted guard offset without aborting the iteration.
+ */
+static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
+					  unsigned int ifindex,
+					  unsigned int nsrc,
+					  unsigned int iter_idx)
+{
+	unsigned char *buf;
+	struct group_filter *gf;
+	struct sockaddr_in *sg;
+	socklen_t req_len, got_len;
+	size_t alloc_sz;
+	unsigned int i;
+
+	switch (iter_idx % 3U) {
+	case 0:
+		req_len = (socklen_t)sizeof(struct group_filter);
+		break;
+	case 1:
+		req_len = (socklen_t)GROUP_FILTER_SIZE(1);
+		break;
+	default:
+		req_len = (socklen_t)GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
+		break;
+	}
+
+	alloc_sz = (size_t)req_len + MCAST_GET_GUARD_BYTES;
+	buf = malloc(alloc_sz);
+	if (!buf)
+		return;
+
+	/* Poison the entire allocation, then fill the group-filter header
+	 * with the group identity so the kernel knows which filter to read. */
+	memset(buf, MCAST_GET_GUARD_FILL, alloc_sz);
+	gf = (struct group_filter *)buf;
+	gf->gf_interface = ifindex;
+	sg = (struct sockaddr_in *)&gf->gf_group;
+	sg->sin_family      = AF_INET;
+	sg->sin_addr.s_addr = grp_be;
+
+	got_len = req_len;
+	(void)getsockopt(s, IPPROTO_IP, MCAST_MSFILTER, buf, &got_len);
+
+	for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
+		if (buf[(size_t)req_len + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
+			/* check-static: child-output-ok */
+			output(0,
+			       "mcast_msfilter_oracle: v4 getsockopt guard "
+			       "overrun: req_len=%u guard_off=%u "
+			       "got_len=%u nsrc_set=%u iter=%u\n",
+			       (unsigned int)req_len, i,
+			       (unsigned int)got_len, nsrc, iter_idx);
+			__atomic_add_fetch(
+				&shm->stats.igmp_mld_source_churn.msfilter_get_overrun,
+				1, __ATOMIC_RELAXED);
+			break;
+		}
+	}
+	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_get_ok,
+			   1, __ATOMIC_RELAXED);
+	free(buf);
+}
+
+/*
+ * MCAST_MSFILTER getsockopt oracle (v6).  IPv6 mirror of
+ * msfilter_getsockopt_oracle_v4 -- same guard-region logic and optlen
+ * rotation, but uses IPPROTO_IPV6 and fills gf_group as a
+ * sockaddr_in6 with @grp_v6.
+ */
+static void msfilter_getsockopt_oracle_v6(int s,
+					  const struct in6_addr *grp_v6,
+					  unsigned int ifindex,
+					  unsigned int nsrc,
+					  unsigned int iter_idx)
+{
+	unsigned char *buf;
+	struct group_filter *gf;
+	struct sockaddr_in6 *sg;
+	socklen_t req_len, got_len;
+	size_t alloc_sz;
+	unsigned int i;
+
+	switch (iter_idx % 3U) {
+	case 0:
+		req_len = (socklen_t)sizeof(struct group_filter);
+		break;
+	case 1:
+		req_len = (socklen_t)GROUP_FILTER_SIZE(1);
+		break;
+	default:
+		req_len = (socklen_t)GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
+		break;
+	}
+
+	alloc_sz = (size_t)req_len + MCAST_GET_GUARD_BYTES;
+	buf = malloc(alloc_sz);
+	if (!buf)
+		return;
+
+	memset(buf, MCAST_GET_GUARD_FILL, alloc_sz);
+	gf = (struct group_filter *)buf;
+	gf->gf_interface = ifindex;
+	sg = (struct sockaddr_in6 *)&gf->gf_group;
+	sg->sin6_family = AF_INET6;
+	memcpy(&sg->sin6_addr, grp_v6, sizeof(*grp_v6));
+
+	got_len = req_len;
+	(void)getsockopt(s, IPPROTO_IPV6, MCAST_MSFILTER, buf, &got_len);
+
+	for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
+		if (buf[(size_t)req_len + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
+			/* check-static: child-output-ok */
+			output(0,
+			       "mcast_msfilter_oracle: v6 getsockopt guard "
+			       "overrun: req_len=%u guard_off=%u "
+			       "got_len=%u nsrc_set=%u iter=%u\n",
+			       (unsigned int)req_len, i,
+			       (unsigned int)got_len, nsrc, iter_idx);
+			__atomic_add_fetch(
+				&shm->stats.igmp_mld_source_churn.msfilter_get_overrun,
+				1, __ATOMIC_RELAXED);
+			break;
+		}
+	}
+	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_get_ok,
+			   1, __ATOMIC_RELAXED);
+	free(buf);
+}
 
 static void apply_timeouts(int s)
 {
@@ -432,9 +583,18 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 		if (it->gf) {
 			rc = setsockopt(it->recv_s, IPPROTO_IP, MCAST_MSFILTER,
 					it->gf, GROUP_FILTER_SIZE(nsrc));
-			if (rc == 0)
+			if (rc == 0) {
 				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_ok,
 						   1, __ATOMIC_RELAXED);
+				/* Read-back oracle: verify getsockopt does not
+				 * write past the declared optlen into the guard
+				 * region.  Reports but does not abort -- the
+				 * too-small-optlen behaviour is contested. */
+				msfilter_getsockopt_oracle_v4(it->recv_s,
+							      it->grp_be,
+							      0U, nsrc,
+							      it->iter_idx);
+			}
 		}
 		break;
 	case 3:
@@ -725,9 +885,16 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 		if (it->gf) {
 			rc = setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_MSFILTER,
 					it->gf, GROUP_FILTER_SIZE(nsrc));
-			if (rc == 0)
+			if (rc == 0) {
 				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_ok,
 						   1, __ATOMIC_RELAXED);
+				/* Read-back oracle: same guard-region check as
+				 * the v4 arm; IPPROTO_IPV6 level. */
+				msfilter_getsockopt_oracle_v6(it->recv_s,
+							      &it->grp_v6,
+							      0U, nsrc,
+							      it->iter_idx);
+			}
 		}
 		break;
 	case 3:
