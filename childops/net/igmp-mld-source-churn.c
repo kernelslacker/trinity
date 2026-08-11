@@ -217,9 +217,14 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 	if (!buf)
 		return;
 
-	/* Poison the entire allocation, then fill the group-filter header
-	 * with the group identity so the kernel knows which filter to read. */
-	memset(buf, MCAST_GET_GUARD_FILL, alloc_sz);
+	/* Zero the declared buffer so the kernel can parse the request
+	 * header correctly, then poison [req_len, alloc_sz): the
+	 * write-past-optlen zone [req_len, max_write_sz) is the primary
+	 * oracle window, and [max_write_sz, max_write_sz+GUARD_BYTES) is
+	 * the far guard for impossibly deep overruns. */
+	memset(buf, 0, (size_t)req_len);
+	memset(buf + req_len, MCAST_GET_GUARD_FILL,
+	       alloc_sz - (size_t)req_len);
 	gf = (struct group_filter *)buf;
 	gf->gf_interface = ifindex;
 	sg = (struct sockaddr_in *)&gf->gf_group;
@@ -243,12 +248,27 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 			return;
 		}
 
-		for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
-			if (buf[max_write_sz + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
+		/* Free oracle: kernel reported writing more than we declared. */
+		if (got_len > req_len) {
+			/* check-static: child-output-ok */
+			output(0,
+			       "mcast_msfilter_oracle: v4 got_len=%u > req_len=%u "
+			       "-- kernel wrote past declared optlen\n",
+			       (unsigned int)got_len, (unsigned int)req_len);
+			__atomic_add_fetch(
+				&shm->stats.igmp_mld_source_churn.msfilter_get_overrun,
+				1, __ATOMIC_RELAXED);
+		}
+
+		/* Primary oracle: [req_len, max_write_sz) -- kernel wrote past
+		 * the declared optlen into the safe over-allocation zone. */
+		for (i = 0; (size_t)req_len + i < max_write_sz; i++) {
+			if (buf[(size_t)req_len + i] !=
+			    (unsigned char)MCAST_GET_GUARD_FILL) {
 				/* check-static: child-output-ok */
 				output(0,
-				       "mcast_msfilter_oracle: v4 getsockopt guard "
-				       "overrun: req_len=%u guard_off=%u "
+				       "mcast_msfilter_oracle: v4 getsockopt overrun "
+				       "past optlen: req_len=%u off=%u "
 				       "got_len=%u nsrc_set=%u iter=%u\n",
 				       (unsigned int)req_len, i,
 				       (unsigned int)got_len, nsrc, iter_idx);
@@ -258,12 +278,24 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 				break;
 			}
 		}
-		if (got_len > req_len) {
-			/* check-static: child-output-ok */
-			output(0,
-			       "mcast_msfilter_oracle: v4 kernel reported "
-			       "got_len=%u > req_len=%u -- kernel wanted to write more\n",
-			       (unsigned int)got_len, (unsigned int)req_len);
+
+		/* Secondary oracle: [max_write_sz, max_write_sz+GUARD_BYTES)
+		 * -- kernel wrote past even the max-size allocation. */
+		for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
+			if (buf[max_write_sz + i] !=
+			    (unsigned char)MCAST_GET_GUARD_FILL) {
+				/* check-static: child-output-ok */
+				output(0,
+				       "mcast_msfilter_oracle: v4 getsockopt DEEP "
+				       "overrun past max_write_sz=%zu guard_off=%u "
+				       "got_len=%u nsrc_set=%u iter=%u\n",
+				       max_write_sz, i,
+				       (unsigned int)got_len, nsrc, iter_idx);
+				__atomic_add_fetch(
+					&shm->stats.igmp_mld_source_churn.msfilter_get_deep_overrun,
+					1, __ATOMIC_RELAXED);
+				break;
+			}
 		}
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_get_ok,
 				   1, __ATOMIC_RELAXED);
@@ -319,7 +351,14 @@ static void msfilter_getsockopt_oracle_v6(int s,
 	if (!buf)
 		return;
 
-	memset(buf, MCAST_GET_GUARD_FILL, alloc_sz);
+	/* Zero the declared buffer so the kernel can parse the request
+	 * header correctly, then poison [req_len, alloc_sz): the
+	 * write-past-optlen zone [req_len, max_write_sz) is the primary
+	 * oracle window, and [max_write_sz, max_write_sz+GUARD_BYTES) is
+	 * the far guard for impossibly deep overruns. */
+	memset(buf, 0, (size_t)req_len);
+	memset(buf + req_len, MCAST_GET_GUARD_FILL,
+	       alloc_sz - (size_t)req_len);
 	gf = (struct group_filter *)buf;
 	gf->gf_interface = ifindex;
 	sg = (struct sockaddr_in6 *)&gf->gf_group;
@@ -343,12 +382,27 @@ static void msfilter_getsockopt_oracle_v6(int s,
 			return;
 		}
 
-		for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
-			if (buf[max_write_sz + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
+		/* Free oracle: kernel reported writing more than we declared. */
+		if (got_len > req_len) {
+			/* check-static: child-output-ok */
+			output(0,
+			       "mcast_msfilter_oracle: v6 got_len=%u > req_len=%u "
+			       "-- kernel wrote past declared optlen\n",
+			       (unsigned int)got_len, (unsigned int)req_len);
+			__atomic_add_fetch(
+				&shm->stats.igmp_mld_source_churn.msfilter_get_overrun,
+				1, __ATOMIC_RELAXED);
+		}
+
+		/* Primary oracle: [req_len, max_write_sz) -- kernel wrote past
+		 * the declared optlen into the safe over-allocation zone. */
+		for (i = 0; (size_t)req_len + i < max_write_sz; i++) {
+			if (buf[(size_t)req_len + i] !=
+			    (unsigned char)MCAST_GET_GUARD_FILL) {
 				/* check-static: child-output-ok */
 				output(0,
-				       "mcast_msfilter_oracle: v6 getsockopt guard "
-				       "overrun: req_len=%u guard_off=%u "
+				       "mcast_msfilter_oracle: v6 getsockopt overrun "
+				       "past optlen: req_len=%u off=%u "
 				       "got_len=%u nsrc_set=%u iter=%u\n",
 				       (unsigned int)req_len, i,
 				       (unsigned int)got_len, nsrc, iter_idx);
@@ -358,12 +412,24 @@ static void msfilter_getsockopt_oracle_v6(int s,
 				break;
 			}
 		}
-		if (got_len > req_len) {
-			/* check-static: child-output-ok */
-			output(0,
-			       "mcast_msfilter_oracle: v6 kernel reported "
-			       "got_len=%u > req_len=%u -- kernel wanted to write more\n",
-			       (unsigned int)got_len, (unsigned int)req_len);
+
+		/* Secondary oracle: [max_write_sz, max_write_sz+GUARD_BYTES)
+		 * -- kernel wrote past even the max-size allocation. */
+		for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
+			if (buf[max_write_sz + i] !=
+			    (unsigned char)MCAST_GET_GUARD_FILL) {
+				/* check-static: child-output-ok */
+				output(0,
+				       "mcast_msfilter_oracle: v6 getsockopt DEEP "
+				       "overrun past max_write_sz=%zu guard_off=%u "
+				       "got_len=%u nsrc_set=%u iter=%u\n",
+				       max_write_sz, i,
+				       (unsigned int)got_len, nsrc, iter_idx);
+				__atomic_add_fetch(
+					&shm->stats.igmp_mld_source_churn.msfilter_get_deep_overrun,
+					1, __ATOMIC_RELAXED);
+				break;
+			}
 		}
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_get_ok,
 				   1, __ATOMIC_RELAXED);
