@@ -152,6 +152,14 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 	size_t alloc_sz;
 	unsigned int i;
 
+	/*
+	 * max_write_sz: the maximum bytes the kernel may write back for the
+	 * filter installed by setsockopt (GROUP_FILTER_SIZE(nsrc)).  This
+	 * can exceed req_len when iter_idx%3 is 0 or 1, which previously
+	 * caused a heap overrun before the guard could fire.
+	 */
+	size_t max_write_sz = GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
+
 	switch (iter_idx % 3U) {
 	case 0:
 		req_len = (socklen_t)sizeof(struct group_filter);
@@ -164,7 +172,7 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 		break;
 	}
 
-	alloc_sz = (size_t)req_len + MCAST_GET_GUARD_BYTES;
+	alloc_sz = max_write_sz + MCAST_GET_GUARD_BYTES;
 	buf = malloc(alloc_sz);
 	if (!buf)
 		return;
@@ -182,7 +190,7 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 	(void)getsockopt(s, IPPROTO_IP, MCAST_MSFILTER, buf, &got_len);
 
 	for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
-		if (buf[(size_t)req_len + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
+		if (buf[max_write_sz + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
 			/* check-static: child-output-ok */
 			output(0,
 			       "mcast_msfilter_oracle: v4 getsockopt guard "
@@ -220,6 +228,8 @@ static void msfilter_getsockopt_oracle_v6(int s,
 	size_t alloc_sz;
 	unsigned int i;
 
+	size_t max_write_sz = GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
+
 	switch (iter_idx % 3U) {
 	case 0:
 		req_len = (socklen_t)sizeof(struct group_filter);
@@ -232,7 +242,7 @@ static void msfilter_getsockopt_oracle_v6(int s,
 		break;
 	}
 
-	alloc_sz = (size_t)req_len + MCAST_GET_GUARD_BYTES;
+	alloc_sz = max_write_sz + MCAST_GET_GUARD_BYTES;
 	buf = malloc(alloc_sz);
 	if (!buf)
 		return;
@@ -248,7 +258,7 @@ static void msfilter_getsockopt_oracle_v6(int s,
 	(void)getsockopt(s, IPPROTO_IPV6, MCAST_MSFILTER, buf, &got_len);
 
 	for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
-		if (buf[(size_t)req_len + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
+		if (buf[max_write_sz + i] != (unsigned char)MCAST_GET_GUARD_FILL) {
 			/* check-static: child-output-ok */
 			output(0,
 			       "mcast_msfilter_oracle: v6 getsockopt guard "
