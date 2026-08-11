@@ -363,8 +363,10 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
  * independent optlen counter (msfilter_v6_optlen_iter) that cycles
  * unconditionally through {floor, hdr+1, full} on every call,
  * but uses IPPROTO_IPV6 and fills gf_group as a sockaddr_in6 with
- * @grp_v6.  ip6_mc_msfilter also gates on net->ipv4.sysctl_igmp_max_msf
- * so the same raise_igmp_max_msf() write covers the v6 path too.
+ * @grp_v6.  ip6_mc_msfilter gates on the global sysctl_mld_max_msf
+ * (/proc/sys/net/ipv6/mld_max_msf, not per-netns); the v6 raise was
+ * already dropped by 3fe3a7e7f01d ("Restore igmp_max_msf after raise; track
+ * write failures; drop v6 raise"), so raise_igmp_max_msf() only covers v4.
  */
 static void msfilter_getsockopt_oracle_v6(int s,
 					  const struct in6_addr *grp_v6,

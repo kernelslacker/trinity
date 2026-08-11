@@ -512,6 +512,7 @@ static void dump_stats_render_afxdp_churn(void)
 		stat_row("afxdp_churn", "xsg_iters",         shm->stats.afxdp_churn.xsg_iters);
 		stat_row("afxdp_churn", "tx_metadata_iters", shm->stats.afxdp_churn.tx_metadata_iters);
 		stat_row("afxdp_churn", "tun_bind_iters",    shm->stats.afxdp_churn.tun_bind_iters);
+		stat_row("afxdp_churn", "tunnel_bind_iters", shm->stats.afxdp_churn.tunnel_bind_iters);
 		stat_row("afxdp_churn", "xsg_bind_failed",   shm->stats.afxdp_churn.xsg_bind_failed);
 		stat_row("afxdp_churn", "tx_md_bind_failed", shm->stats.afxdp_churn.tx_md_bind_failed);
 		stat_row("afxdp_churn", "tailroom_iters",    shm->stats.afxdp_churn.tailroom_iters);

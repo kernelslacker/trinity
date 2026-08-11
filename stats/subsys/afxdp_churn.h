@@ -21,6 +21,7 @@ struct afxdp_churn_stats {
 	unsigned long xsg_iters;			/* per-iter knob enable_sg=1: USE_SG umem + XDP_USE_SG bind + chained TX desc */
 	unsigned long tx_metadata_iters;		/* per-iter knob enable_tx_md=1: tx_metadata_len umem + XDP_TX_METADATA stamp */
 	unsigned long tun_bind_iters;			/* per-iter knob: bound to tun (IFF_NAPI|IFF_NAPI_FRAGS) instead of lo */
+	unsigned long tunnel_bind_iters;		/* per-iter knob: bound to NNM-created gre/ipip/sit device (xsk_generic_xmit → tunnel ndo_start_xmit) */
 	unsigned long xsg_bind_failed;			/* UMEM_REG with XDP_UMEM_FLAGS_USE_SG rejected; latched off, retried without */
 	unsigned long tx_md_bind_failed;		/* UMEM_REG with tx_metadata_len rejected; latched off, retried without */
 	unsigned long tailroom_iters;			/* tailroom-probe TX desc sent (near-full-chunk len + AF_PACKET tap) */

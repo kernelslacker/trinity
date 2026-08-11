@@ -139,12 +139,87 @@ int xdp_netlink_set_fd(struct nl_ctx *rtnl, unsigned int ifindex,
 }
 
 /*
- * Phase 4: pick the bind target ifindex (tun-with-NAPI_FRAGS when the
- * per-iter knob fires and the tunN is reachable, otherwise lo) and run
- * bind() with bounded EAGAIN/EBUSY retry.  Clears *want_tun if the tun
- * path fell through to lo so downstream stats reflect what actually
- * bound.  Returns -1 only when no ifindex is reachable; bind() failure
- * leaves st->bound == false and the iteration continues into races.
+ * Enumerate netns-local interfaces and return the ifindex of the first
+ * one whose hardware type indicates an IP tunnel.  Covers ARPHRD_TUNNEL
+ * (ipip), ARPHRD_IPGRE (gre), and ARPHRD_SIT (sit) — exactly the
+ * kinds that NNM creates and migrates into this netns
+ * (7e165350bd48 ("netdev-netns-migrate: add gre and ipip to device kind rotation")).
+ * Returns 0 if no matching device is present.  The probe socket and
+ * ioctl syscalls are credited via *dc_out so the direct-syscall
+ * reporter sees them.
+ *
+ * ARPHRD fallbacks: values are ABI-stable since kernel 2.2 and defined
+ * in <linux/if_arp.h> (now included via afxdp-churn-internal.h), but
+ * guard them for extra-stripped sysroots.
+ */
+#ifndef ARPHRD_TUNNEL
+#define ARPHRD_TUNNEL	768	/* IPIP tunnel */
+#endif
+#ifndef ARPHRD_SIT
+#define ARPHRD_SIT	776	/* IPv6-in-IPv4 (sit) */
+#endif
+#ifndef ARPHRD_IPGRE
+#define ARPHRD_IPGRE	778	/* GRE over IP */
+#endif
+
+static unsigned int tunnel_pick_ifindex(unsigned long *dc_out)
+{
+	struct if_nameindex *ifaces, *p;
+	struct ifreq ifr;
+	unsigned int found = 0;
+	int probe;
+
+	ifaces = if_nameindex();
+	if (!ifaces)
+		return 0;
+
+	probe = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	(*dc_out)++;		/* socket() */
+	if (probe < 0) {
+		if_freenameindex(ifaces);
+		return 0;
+	}
+
+	for (p = ifaces; p->if_index != 0 && p->if_name; p++) {
+		memset(&ifr, 0, sizeof(ifr));
+		strncpy(ifr.ifr_name, p->if_name, IFNAMSIZ - 1);
+		if (ioctl(probe, SIOCGIFHWADDR, &ifr) < 0)
+			continue;
+		(*dc_out)++;		/* ioctl(SIOCGIFHWADDR) */
+		switch ((unsigned short)ifr.ifr_hwaddr.sa_family) {
+		case ARPHRD_TUNNEL:	/* ipip */
+		case ARPHRD_IPGRE:	/* gre  */
+		case ARPHRD_SIT:	/* sit  */
+			found = p->if_index;
+			break;
+		default:
+			break;
+		}
+		if (found)
+			break;
+	}
+
+	close(probe);
+	(*dc_out)++;		/* close() */
+	if_freenameindex(ifaces);
+	return found;
+}
+
+/*
+ * Phase 4: pick the bind target ifindex via a 3-arm rotation and run
+ * bind() with bounded EAGAIN/EBUSY retry:
+ *
+ *   arm 0 (tun):    tun-with-NAPI_FRAGS when the per-iter knob fires;
+ *                   IFF_TX_SKB_NO_LINEAR class; exposes d73a9a63f9f7.
+ *   arm 1 (tunnel): NNM-created gre/ipip/sit device, ~50% of non-tun
+ *                   iters; reaches xsk_generic_xmit → tunnel
+ *                   ndo_start_xmit (ipgre_xmit, ipip, sit).
+ *   arm 2 (lo):     fallback when tun and tunnel arms both miss.
+ *
+ * Clears *want_tun if the tun path fell through so downstream stats
+ * reflect what actually bound.  Returns -1 only when no ifindex is
+ * reachable; bind() failure leaves st->bound == false and the
+ * iteration continues into races.
  */
 int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 		    bool *want_tun, char *tun_name,
@@ -154,17 +229,17 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	unsigned int target_ifindex = 0;
 	unsigned int retry;
 	int rc;
+	bool want_tunnel = false;
 	/* Accumulate non-netlink raw syscall count for the direct-syscall
 	 * reporter.  The netlink open / close path (xdp_netlink_open +
 	 * nl_close via xsk_teardown) credits its own calls under
 	 * CHILD_OP_AFXDP_CHURN via opts.caller_op; only count the
-	 * non-netlink sites here: tun open/ioctl/close and bind(). */
+	 * non-netlink sites here: tun open/ioctl/close, tunnel probe
+	 * socket/ioctl/close, and bind(). */
 	unsigned long dc = 0;
 
-	/* Pick bind target: tun-with-NAPI_FRAGS when the per-iter knob fired
-	 * (and tun is reachable), else lo.  d73a9a63f9f7's bug surface is
-	 * the IFF_TX_SKB_NO_LINEAR class of netdev — tun in NAPI mode
-	 * exposes that path; lo does not. */
+	/* Arm 0 — tun-with-NAPI_FRAGS: per-iter knob selects ~25% of
+	 * iters.  d73a9a63f9f7's IFF_TX_SKB_NO_LINEAR bug surface. */
 	if (*want_tun) {
 		st->tun_fd = tun_open_napi_frags(tun_name);
 		/* tun_open_napi_frags issues open() and on success ioctl();
@@ -181,6 +256,19 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 			*want_tun = false;
 		}
 	}
+
+	/* Arm 1 — tunnel (gre/ipip/sit): when tun arm didn't fire, try a
+	 * NNM-created tunnel device ~50% of the time.  This exercises the
+	 * xsk_generic_xmit → tunnel ndo_start_xmit seam (ipgre_xmit,
+	 * ipip_tunnel_xmit, sit_tunnel_xmit) which tun and lo never reach.
+	 * Includes ipip and sit for free — same ARPHRD probe covers all
+	 * three tunnel kinds. */
+	if (target_ifindex == 0 && (rnd_u32() & 1U)) {
+		target_ifindex = tunnel_pick_ifindex(&dc);
+		want_tunnel = (target_ifindex != 0);
+	}
+
+	/* Arm 2 — lo: unconditional fallback. */
 	if (target_ifindex == 0)
 		target_ifindex = if_nametoindex("lo");
 	if (target_ifindex == 0) {
@@ -218,6 +306,9 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 				   1, __ATOMIC_RELAXED);
 		if (*want_tun)
 			__atomic_add_fetch(&shm->stats.afxdp_churn.tun_bind_iters,
+					   1, __ATOMIC_RELAXED);
+		if (want_tunnel)
+			__atomic_add_fetch(&shm->stats.afxdp_churn.tunnel_bind_iters,
 					   1, __ATOMIC_RELAXED);
 	} else if (want_sg && errno == EINVAL) {
 		/* Bind-time rejection of XDP_USE_SG (e.g. driver path).
