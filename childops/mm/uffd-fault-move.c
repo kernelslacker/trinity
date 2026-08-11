@@ -935,7 +935,11 @@ cleanup_v1:
 			 * here; the invariant is that the *worker* must
 			 * decrement from its own exit path so the handler
 			 * stays installed until the worker is actually done.
-			 * See d128999b6950 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement"). */
+			 * See d128999b6950 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement").
+			 * ctx (heap) and the src_pages/region mappings are
+			 * intentionally not freed: the stranded worker is still
+			 * running and may be touching them.  Child-process exit
+			 * reclaims all memory. */
 			close(fd);
 			__atomic_add_fetch(
 				&shm->stats.uffd_fault_move.leaked_workers,
@@ -1293,7 +1297,7 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 				nanosleep(&ts, NULL);
 			}
 			if (spin >= V3_JOIN_LOOPS)
-				leaked_count++; /* racer live: leak, skip munmap */
+				leaked_count++; /* racer still live, touching src/dst — skip munmap, exit reclaims */
 		}
 		if (fault_started) {
 			for (spin = 0; spin < V3_JOIN_LOOPS; spin++) {
@@ -1302,14 +1306,17 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 				nanosleep(&ts, NULL);
 			}
 			if (spin >= V3_JOIN_LOOPS)
-				leaked_count++; /* fault worker live: leak, skip munmap */
+				leaked_count++; /* fault worker still live, touching dst — skip munmap, exit reclaims */
 		}
 		if (leaked_count > 0) {
 			/* Close fd: userfaultfd_release() sets ctx->released,
 			 * wakes pending faults, and the kernel returns
 			 * VM_FAULT_RETRY so stranded workers resume and run
 			 * to completion; close() is safe because stranded
-			 * workers hold no reference to the fd number. */
+			 * workers hold no reference to the fd number.
+			 * rctx, fctx, dst, and src are intentionally not
+			 * freed: stranded workers are still accessing them;
+			 * child-process exit reclaims all memory. */
 			close(fd);
 			__atomic_add_fetch(
 				&shm->stats.uffd_fault_move.leaked_workers,
@@ -1567,7 +1574,12 @@ cleanup_v3:
 			 * here; the invariant is that the *worker* must
 			 * decrement from its own exit path so the handler
 			 * stays installed until the worker is actually done.
-			 * See d128999b6950 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement"). */
+			 * See d128999b6950 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement").
+			 * fctx (heap) and the region mapping are intentionally
+			 * not freed: the stranded worker is still running and
+			 * may be touching them.  Child-process exit reclaims
+			 * all memory; the munmap(fctx) below is deliberately
+			 * skipped. */
 			if (fd >= 0)
 				close(fd);
 			__atomic_add_fetch(
