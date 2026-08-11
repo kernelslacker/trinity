@@ -133,7 +133,29 @@
 #define BRCT_BUDGET_NS			200000000L
 #define BRCT_PACKET_CAP			32U
 #define BRCT_RTNL_BUF_BYTES		2048
-#define BRCT_NFT_BUF_BYTES		1024
+#define BRCT_NFT_BUF_BYTES		2048
+
+/* nf_tables object message type for NFT_MSG_NEWOBJ */
+#define BRCT_NFT_MSG_NEWOBJ		18
+/* NFTA_OBJ_* top-level attrs */
+#define BRCT_NFTA_OBJ_TABLE		1
+#define BRCT_NFTA_OBJ_NAME		2
+#define BRCT_NFTA_OBJ_TYPE		3
+#define BRCT_NFTA_OBJ_DATA		4
+/* CT_TIMEOUT object type id (NFT_OBJECT_CT_TIMEOUT) */
+#define BRCT_NFT_OBJECT_CT_TIMEOUT	7
+/* NFTA_CT_TIMEOUT_* attrs nested under NFTA_OBJ_DATA */
+#define BRCT_NFTA_CT_TIMEOUT_L4PROTO	2
+#define BRCT_NFTA_CT_TIMEOUT_DATA	3
+/* CTA_TIMEOUT_TCP_* state attrs nested under NFTA_CT_TIMEOUT_DATA */
+#define BRCT_CTA_TIMEOUT_TCP_SYN_SENT		1
+#define BRCT_CTA_TIMEOUT_TCP_ESTABLISHED	3
+/* nft_objref IMM-mode attrs nested under NFTA_EXPR_DATA */
+#define BRCT_NFTA_OBJREF_IMM_TYPE	1
+#define BRCT_NFTA_OBJREF_IMM_NAME	2
+/* Bridge-family priority after the conntrack PRE hook (-200+100 = -100) */
+#define BRCT_NF_BR_PRI_AFTER_CT_PRE	(NF_BR_PRI_CT_PRE + 100)
+#define BRCT_IPPROTO_TCP		6
 
 /* Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
  * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
@@ -441,6 +463,197 @@ static int nft_install_bridge_ct(struct nfnl_ctx *nf, const char *table,
 				   BRCT_NFTA_CT_KEY, BRCT_NFT_CT_STATE);
 		off = nla_put_be32(buf, off, sizeof(buf),
 				   BRCT_NFTA_CT_DREG, BRCT_NFT_REG_1);
+		if (!off)
+			return -EIO;
+		nla_nest_end(buf, expr_data_off, off);
+		nla_nest_end(buf, elem_off, off);
+		nla_nest_end(buf, exprs_off, off);
+		((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
+			(__u32)(off - msg_off);
+	}
+
+	off = nfnl_batch_end(buf, off, sizeof(buf),
+			     nl_seq_next(&nf->nl), NFNL_SUBSYS_NFTABLES);
+	if (!off)
+		return -EIO;
+
+	return nfnl_send_recv_batched(nf, buf, off);
+}
+
+/*
+ * Install a CT_TIMEOUT named object (for TCP) in the pre-existing
+ * br_ct table, then attach it to a hooked chain that runs after the
+ * bridge conntrack PRE hook (priority NF_BR_PRI_CT_PRE + 100 = -100).
+ * The objref IMM expression makes nft_ct_timeout_obj_eval() run on
+ * every bridged packet that already has a conntrack entry.
+ *
+ * This exercises the code path targeted by Kyle Zeng's 2026-08-10 patch
+ * (nft_ct: validate timeout object protocol against ct entry's l4proto).
+ * The mismatch that triggers the OOB read requires a payload set to
+ * rewrite pkt->tprot between conntrack and this chain; that arm is
+ * tracked separately.  Without the mangle, the early
+ * `priv->l4proto != pkt->tprot' guard will short-circuit for UDP
+ * traffic, but the NEWOBJ + NEWCHAIN + NEWRULE install path is still
+ * exercised end-to-end each invocation.
+ *
+ * Returns 0 when the batch is accepted; the caller treats non-zero
+ * as a soft failure (the conntrack-flush burst runs regardless).
+ */
+static int nft_install_ct_timeout(struct nfnl_ctx *nf, const char *table,
+				  const char *ct_chain, const char *obj_name)
+{
+	unsigned char buf[BRCT_NFT_BUF_BYTES];
+	size_t off = 0;
+	size_t msg_off, obj_data_off, l4_data_off;
+	size_t hook_off, exprs_off, elem_off, expr_data_off;
+	__u8 family = NFPROTO_BRIDGE;
+	__u32 prio = (__u32)(int)(BRCT_NF_BR_PRI_AFTER_CT_PRE);
+	__u8 l4proto = BRCT_IPPROTO_TCP;
+
+	memset(buf, 0, sizeof(buf));
+
+	off = nfnl_batch_begin(buf, off, sizeof(buf),
+			       nl_seq_next(&nf->nl), NFNL_SUBSYS_NFTABLES);
+	if (!off)
+		return -EIO;
+
+	/* NFT_MSG_NEWOBJ: CT_TIMEOUT for TCP.
+	 * L4PROTO=IPPROTO_TCP lets nft_ct_timeout_obj_eval() reach the
+	 * per-proto state-array access; NFTA_CT_TIMEOUT_DATA carries two
+	 * representative TCP state timeouts (seconds, big-endian u32). */
+	{
+		msg_off = off;
+		off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&nf->nl),
+				   NFNL_SUBSYS_NFTABLES, BRCT_NFT_MSG_NEWOBJ,
+				   NLM_F_CREATE, family);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_OBJ_TABLE, table);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_OBJ_NAME, obj_name);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_OBJ_TYPE, BRCT_NFT_OBJECT_CT_TIMEOUT);
+		if (!off)
+			return -EIO;
+		obj_data_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_OBJ_DATA | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_u8(buf, off, sizeof(buf),
+				 BRCT_NFTA_CT_TIMEOUT_L4PROTO, l4proto);
+		if (!off)
+			return -EIO;
+		l4_data_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_CT_TIMEOUT_DATA | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_CTA_TIMEOUT_TCP_SYN_SENT, 120);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_CTA_TIMEOUT_TCP_ESTABLISHED, 432000);
+		if (!off)
+			return -EIO;
+		nla_nest_end(buf, l4_data_off, off);
+		nla_nest_end(buf, obj_data_off, off);
+		((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
+			(__u32)(off - msg_off);
+	}
+
+	/* NFT_MSG_NEWCHAIN: base chain on NF_BR_PRE_ROUTING at priority
+	 * BRCT_NF_BR_PRI_AFTER_CT_PRE (-100), which fires after the
+	 * kernel bridge conntrack PRE hook (-200).  Traffic that crosses
+	 * this hook therefore already has a conntrack entry. */
+	{
+		msg_off = off;
+		off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&nf->nl),
+				   NFNL_SUBSYS_NFTABLES, BRCT_NFT_MSG_NEWCHAIN,
+				   NLM_F_CREATE, family);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_CHAIN_TABLE, table);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_CHAIN_NAME, ct_chain);
+		if (!off)
+			return -EIO;
+		hook_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_CHAIN_HOOK | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_HOOK_HOOKNUM, NF_BR_PRE_ROUTING);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_HOOK_PRIORITY, prio);
+		if (!off)
+			return -EIO;
+		nla_nest_end(buf, hook_off, off);
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_CHAIN_TYPE, "filter");
+		if (!off)
+			return -EIO;
+		((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
+			(__u32)(off - msg_off);
+	}
+
+	/* NFT_MSG_NEWRULE: objref IMM expression referencing the
+	 * CT_TIMEOUT object.  nft_objref with IMM mode calls
+	 * nft_obj_lookup() then nft_ct_timeout_obj_eval() on each skb
+	 * that reaches this chain with a non-confirmed conntrack entry. */
+	{
+		msg_off = off;
+		off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&nf->nl),
+				   NFNL_SUBSYS_NFTABLES, BRCT_NFT_MSG_NEWRULE,
+				   NLM_F_CREATE | NLM_F_APPEND, family);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_RULE_TABLE, table);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_RULE_CHAIN, ct_chain);
+		if (!off)
+			return -EIO;
+		exprs_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_RULE_EXPRESSIONS | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		elem_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_LIST_ELEM | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_EXPR_NAME, "objref");
+		if (!off)
+			return -EIO;
+		expr_data_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_EXPR_DATA | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_OBJREF_IMM_TYPE,
+				   BRCT_NFT_OBJECT_CT_TIMEOUT);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_OBJREF_IMM_NAME, obj_name);
 		if (!off)
 			return -EIO;
 		nla_nest_end(buf, expr_data_off, off);
@@ -774,7 +987,20 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
 			__atomic_store_n(&shm->stats.childop.latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
+		return 0;
 	}
+
+	/* Install the CT_TIMEOUT object + post-conntrack chain + objref
+	 * rule.  Best-effort: a rejection (e.g. CONFIG_NFT_CT=n) does
+	 * not abort the iteration - the conntrack-flush burst runs
+	 * regardless and the original NEWTABLE/NEWCHAIN/NEWRULE batch
+	 * has already committed.  Count as a separate
+	 * nfnl_send_recv_batched call (sendmsg + recv + drain recv). */
+	if (nft_install_ct_timeout(&ctx->nfnl_nft,
+				   "br_ct", "ct_to", "ct_tmo") == 0)
+		__atomic_add_fetch(&shm->stats.bridge_ct.ct_timeout_obj_ok,
+				   1, __ATOMIC_RELAXED);
+	ctx->direct_syscalls += 3;
 	return 0;
 }
 

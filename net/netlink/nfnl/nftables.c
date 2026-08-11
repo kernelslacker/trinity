@@ -142,6 +142,24 @@
 #define NFTA_OBJ_USERDATA		8
 #endif
 
+/*
+ * CT_TIMEOUT object data attrs (NFTA_CT_TIMEOUT_*, nested under
+ * NFTA_OBJ_DATA when NFTA_OBJ_TYPE == NFT_OBJECT_CT_TIMEOUT == 7).
+ * The per-l4proto timeout nest (NFTA_CT_TIMEOUT_DATA) carries
+ * CTA_TIMEOUT_TCP_* u32 values (seconds) for TCP or CTA_TIMEOUT_UDP_*
+ * for UDP - same policy namespace as nfnetlink_cttimeout.
+ * Values from include/uapi/linux/netfilter/nf_tables.h.
+ */
+#ifndef NFTA_CT_TIMEOUT_L3PROTO
+#define NFTA_CT_TIMEOUT_L3PROTO		1
+#endif
+#ifndef NFTA_CT_TIMEOUT_L4PROTO
+#define NFTA_CT_TIMEOUT_L4PROTO		2
+#endif
+#ifndef NFTA_CT_TIMEOUT_DATA
+#define NFTA_CT_TIMEOUT_DATA		3
+#endif
+
 #ifndef NFTA_FLOWTABLE_TABLE
 #define NFTA_FLOWTABLE_TABLE		1
 #endif
@@ -257,6 +275,16 @@ static const struct nla_attr_spec nftables_attrs[] = {
 	{ NFTA_OBJ_USE,              NLA_KIND_U32,    4 },
 	{ NFTA_OBJ_HANDLE,           NLA_KIND_U64,    8 },
 	{ NFTA_OBJ_USERDATA,         NLA_KIND_BINARY, 64 },
+	/*
+	 * CT_TIMEOUT object payload (nested under NFTA_OBJ_DATA when
+	 * NFTA_OBJ_TYPE == NFT_OBJECT_CT_TIMEOUT == 7).  The TCP-specific
+	 * timeout states (CTA_TIMEOUT_TCP_*) live in a further nested
+	 * NFTA_CT_TIMEOUT_DATA attr and are validated by the same
+	 * tcp_timeout_nla_policy[] used by nfnetlink_cttimeout.
+	 */
+	{ NFTA_CT_TIMEOUT_L3PROTO,   NLA_KIND_U16,    2 },
+	{ NFTA_CT_TIMEOUT_L4PROTO,   NLA_KIND_U8,     1 },
+	{ NFTA_CT_TIMEOUT_DATA,      NLA_KIND_NESTED, 0 },
 	/* NFT_MSG_*FLOWTABLE */
 	{ NFTA_FLOWTABLE_TABLE,      NLA_KIND_STRING, 32 },
 	{ NFTA_FLOWTABLE_NAME,       NLA_KIND_STRING, 32 },

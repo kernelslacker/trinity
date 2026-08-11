@@ -1475,6 +1475,7 @@ stats	object
     stats.bridge_conntrack_churn.runs	u64
     stats.bridge_conntrack_churn.flushes	u64
     stats.bridge_conntrack_churn.pkts_sent	u64
+    stats.bridge_conntrack_churn.ct_timeout_obj_ok	u64
   stats.bridge_ip6frag_refrag	object
     stats.bridge_ip6frag_refrag.runs	u64
     stats.bridge_ip6frag_refrag.pairs_sent	u64
