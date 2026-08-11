@@ -318,8 +318,9 @@ struct iour_recipe {
  * touch the statics, so the range stays at 0..0 (set by the wrap
  * site before sigsetjmp) and every si_addr falls outside.  An
  * outside-range fault — including any fault from a non-pool recipe —
- * restores SIG_DFL and re-raises so child_fault_handler diagnoses +
- * exits and the per-pid bug log path is preserved.
+ * chains directly to trinity's canonical handler (child_fault_handler)
+ * so the shm fault-beacon stamp and the per-pid bug log path are
+ * preserved.
  *
  * Volatile-qualified for the same reason as the equivalent statics
  * in memory-pressure: stop the compiler hoisting/coalescing reads
@@ -332,6 +333,12 @@ struct iour_recipe {
 static sigjmp_buf iouring_recipes_pool_race_jmp;
 volatile uintptr_t iouring_recipes_pool_race_addr_low;
 volatile uintptr_t iouring_recipes_pool_race_addr_high;
+/* Trinity's canonical SIGBUS/SIGSEGV dispositions, captured once before the
+ * first handler install so the not-ours arm can chain directly to
+ * child_fault_handler and preserve the shm fault-beacon stamp. */
+static struct sigaction iouring_sa_segv;
+static struct sigaction iouring_sa_bus;
+static bool iouring_sa_saved;
 
 static __attribute__((no_sanitize("address")))
 void iouring_recipes_pool_race_handler(int sig, siginfo_t *info,
@@ -345,25 +352,42 @@ void iouring_recipes_pool_race_handler(int sig, siginfo_t *info,
 		return;
 	}
 	if (info->si_code <= 0) {
-		/* Self-sent (glibc abort etc.) — restore default and
-		 * re-raise so child_fault_handler diagnoses + exits.
-		 * siglongjmp here would orphan the allocator lock. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		/* Self-sent (glibc abort etc.) — chain to trinity's canonical
+		 * handler (child_fault_handler) directly to preserve the
+		 * shm fault-beacon stamp.  siglongjmp here would orphan the
+		 * allocator lock. */
+		{
+			const struct sigaction *saved =
+				(sig == SIGBUS) ? &iouring_sa_bus : &iouring_sa_segv;
+			if (iouring_sa_saved && (saved->sa_flags & SA_SIGINFO))
+				saved->sa_sigaction(sig, info, ctx);
+			else {
+				sigaction(sig, saved, NULL);
+				raise(sig);
+			}
+		}
 		return;
 	}
 
 	fault_addr = (uintptr_t)info->si_addr;
 	if (fault_addr < iouring_recipes_pool_race_addr_low ||
 	    fault_addr >= iouring_recipes_pool_race_addr_high) {
-		/* Real kernel fault but si_addr is outside the drawn
-		 * pool range (including the range-empty case for the 12
+		/* Real kernel fault but si_addr is outside the drawn pool
+		 * range (including the range-empty case for the 12
 		 * non-pool-drawing recipes) — not the race we're guarding
-		 * against.  Restore default and re-raise so
-		 * child_fault_handler diagnoses + exits and the bug log
+		 * against.  Chain to trinity's canonical handler directly
+		 * so child_fault_handler stamps the beacon and the bug log
 		 * path is preserved. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		{
+			const struct sigaction *saved =
+				(sig == SIGBUS) ? &iouring_sa_bus : &iouring_sa_segv;
+			if (iouring_sa_saved && (saved->sa_flags & SA_SIGINFO))
+				saved->sa_sigaction(sig, info, ctx);
+			else {
+				sigaction(sig, saved, NULL);
+				raise(sig);
+			}
+		}
 		return;
 	}
 	siglongjmp(iouring_recipes_pool_race_jmp, 1);
@@ -617,6 +641,14 @@ bool iouring_recipes(struct childdata *child)
 		sigemptyset(&sa.sa_mask);
 		sa.sa_flags = SA_SIGINFO;
 		sa.sa_sigaction = iouring_recipes_pool_race_handler;
+		/* Capture trinity's canonical dispositions once before the
+		 * first install so the not-ours arm in the handler can chain
+		 * directly to child_fault_handler. */
+		if (!iouring_sa_saved) {
+			sigaction(SIGSEGV, NULL, &iouring_sa_segv);
+			sigaction(SIGBUS,  NULL, &iouring_sa_bus);
+			iouring_sa_saved = true;
+		}
 		sigaction(SIGSEGV, &sa, &old_segv);
 		sigaction(SIGBUS,  &sa, &old_bus);
 
