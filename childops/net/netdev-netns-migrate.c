@@ -263,7 +263,7 @@ static size_t nnm_append_info_data(unsigned char *buf, size_t off, size_t cap,
 	}
 
 	/* ipip: IFLA_IPTUN_LOCAL + IFLA_IPTUN_REMOTE (no LINK attr needed) */
-	{
+	if (k == NNM_KIND_IPIP) {
 		__u32 local  = htonl(0x7f000001U);
 		__u32 remote = htonl(0x7f000002U);
 
@@ -275,6 +275,8 @@ static size_t nnm_append_info_data(unsigned char *buf, size_t off, size_t cap,
 		if (!off) return 0;
 		return off;
 	}
+
+	return off;
 }
 
 static int nnm_create_link(struct nl_ctx *ctx, struct nnm_iter_ctx *ictx)
