@@ -267,22 +267,6 @@ static int ring_enter(struct iour_ring *ctx, unsigned int n,
 			    IORING_ENTER_GETEVENTS, NULL, 0);
 }
 
-static void ring_drain_cqes(struct iour_ring *ctx)
-{
-	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
-	unsigned int tail;
-
-	tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
-
-	while (head != tail) {
-		head++;
-		tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
-	}
-
-	__sync_synchronize();
-	ring_store_u32(ctx->cq_ring, ctx->cq_off_head, head);
-}
-
 /*
  * Drain all available CQEs and return the ->res of the first one (the
  * one just submitted).  Returns 0 when no CQE arrived — should not
@@ -410,7 +394,8 @@ static const __u32 sock_cmd_ops[] = {
 	SOCKET_URING_OP_SETSOCKOPT,
 };
 
-static bool variant_socket(struct iour_ring *ctx, unsigned long *direct_calls)
+static bool variant_socket(struct iour_ring *ctx, unsigned long *direct_calls,
+			   const bool valid_op)
 {
 	struct io_uring_sqe sqe;
 	int sock_fd = -1;
@@ -454,7 +439,15 @@ static bool variant_socket(struct iour_ring *ctx, unsigned long *direct_calls)
 	if (r < 0)
 		goto out;
 
-	ok = (ring_drain_cqes_first_res(ctx) >= 0);
+	{
+		int cqe_res = ring_drain_cqes_first_res(ctx);
+
+		ok = (cqe_res >= 0);
+		if (cqe_res < 0 && valid_op)
+			__atomic_add_fetch(
+				&shm->stats.iouring_cmd_passthrough.cqe_rejected,
+				1, __ATOMIC_RELAXED);
+	}
 out:
 	if (sock_fd >= 0)
 		close(sock_fd);
@@ -510,7 +503,8 @@ static bool loop_still_unbound(int minor)
 	return buf[0] == '\0';
 }
 
-static bool variant_blockdev(struct iour_ring *ctx, unsigned long *direct_calls)
+static bool variant_blockdev(struct iour_ring *ctx, unsigned long *direct_calls,
+			     const bool valid_op)
 {
 	struct io_uring_sqe sqe;
 	char devpath[PATH_MAX];
@@ -551,7 +545,15 @@ static bool variant_blockdev(struct iour_ring *ctx, unsigned long *direct_calls)
 	if (r < 0)
 		goto out;
 
-	ok = (ring_drain_cqes_first_res(ctx) >= 0);
+	{
+		int cqe_res = ring_drain_cqes_first_res(ctx);
+
+		ok = (cqe_res >= 0);
+		if (cqe_res < 0 && valid_op)
+			__atomic_add_fetch(
+				&shm->stats.iouring_cmd_passthrough.cqe_rejected,
+				1, __ATOMIC_RELAXED);
+	}
 out:
 	if (dev_fd >= 0)
 		close(dev_fd);
@@ -620,7 +622,8 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 	r = ring_enter(ctx, 1, 1);
 	if (r < 0)
 		goto out;
-	ring_drain_cqes(ctx);
+	if (ring_drain_cqes_first_res(ctx) < 0)
+		goto out;
 
 	/* URING_CMD to /dev/null with MULTISHOT + BUFFER_SELECT. */
 	sqe_clear(&sqe);
@@ -742,11 +745,11 @@ bool iouring_cmd_passthrough(struct childdata *child)
 	switch (avail[rnd_modulo_u32((unsigned int)navail)]) {
 #ifndef TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
 	case V_SOCKET:
-		ok = variant_socket(&ctx, &direct_calls);
+		ok = variant_socket(&ctx, &direct_calls, valid_op);
 		break;
 #endif
 	case V_BLOCKDEV:
-		ok = variant_blockdev(&ctx, &direct_calls);
+		ok = variant_blockdev(&ctx, &direct_calls, valid_op);
 		break;
 	case V_NULLDEV:
 		ok = variant_nulldev(&ctx, &direct_calls, valid_op);

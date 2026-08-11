@@ -262,6 +262,7 @@ stats	object
     stats.iouring_recipes.enosys	u64
   stats.iouring_cmd_passthrough	object
     stats.iouring_cmd_passthrough.mshot_cmd_no_cqe	u64
+    stats.iouring_cmd_passthrough.cqe_rejected	u64
   stats.iouring_eventfd	object
     stats.iouring_eventfd.register_ok	u64
     stats.iouring_eventfd.register_fail	u64
