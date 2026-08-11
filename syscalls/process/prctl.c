@@ -1064,7 +1064,7 @@ static void post_get_seccomp(struct syscallrecord *rec, unsigned long retval)
 }
 
 static void post_futex_hash(const struct prctl_post_state *snap,
-			    unsigned long retval)
+			    unsigned long retval, int errno_post)
 {
 	/*
 	 * PR_FUTEX_HASH_SET_SLOTS(0) pivots the mm to the global
@@ -1072,9 +1072,14 @@ static void post_futex_hash(const struct prctl_post_state *snap,
 	 * landed, every subsequent SET_SLOTS from this mm returns
 	 * -EBUSY (kernel/futex/core.c:1832-1841).  Count those hits
 	 * so the absorbing-state cliff shows up in run stats.
+	 *
+	 * Trinity uses glibc wrappers: on failure rec->retval is
+	 * (unsigned long)-1L and the errno lives in rec->errno_post.
+	 * The old check '(long)retval == -EBUSY' (== -16) could never
+	 * match, making this counter permanently zero.
 	 */
 	if (snap->set_arg == PR_FUTEX_HASH_SET_SLOTS &&
-	    (long)retval == -EBUSY)
+	    (long)retval == -1L && errno_post == EBUSY)
 		__atomic_add_fetch(
 			&shm->stats.prctl_futex_hash.set_slots_ebusy,
 			1, __ATOMIC_RELAXED);
@@ -1162,7 +1167,7 @@ static void post_prctl(struct syscallrecord *rec)
 
 	switch (snap->option) {
 	case PR_FUTEX_HASH:
-		post_futex_hash(snap, retval);
+		post_futex_hash(snap, retval, rec->errno_post);
 		break;
 	case PR_SET_SECCOMP:
 		post_set_seccomp(snap);
