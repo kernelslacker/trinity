@@ -337,12 +337,15 @@ static void sqe_clear(struct io_uring_sqe *s)
  *                                  registered, but the validation path
  *                                  is still exercised)
  *
- * pick_uring_cmd_flags() — for nulldev, which provisions IOSQE_BUFFER_SELECT
- *                          and a buffer ring, so MULTISHOT is valid:
- *   0                            - baseline
- *   IORING_URING_CMD_FIXED       - import_fixed() validation
- *   IORING_URING_CMD_MULTISHOT   - multishot flag path
- *   FIXED|MULTISHOT              - mutual-exclusion check (-EINVAL)
+ * pick_uring_cmd_flags() — for nulldev, which sets IOSQE_BUFFER_SELECT
+ *                          unconditionally.  io_uring_cmd_prep() enforces
+ *                          a biconditional: MULTISHOT iff BUFFER_SELECT.
+ *                          Only draws that carry MULTISHOT can pass prep:
+ *   IORING_URING_CMD_MULTISHOT   - multishot flag path (passes prep)
+ *   FIXED|MULTISHOT              - import_fixed() + multishot (passes prep)
+ *
+ *   0 and IORING_URING_CMD_FIXED fail unconditionally when BUFFER_SELECT
+ *   is set — removing them avoids a silent 4x stat denominator inflation.
  * ------------------------------------------------------------------ */
 
 static const __u32 uring_cmd_flag_variants_no_mshot[] = {
@@ -357,8 +360,6 @@ static __u32 pick_uring_cmd_flags_no_mshot(void)
 }
 
 static const __u32 uring_cmd_flag_variants[] = {
-	0,
-	IORING_URING_CMD_FIXED,
 	IORING_URING_CMD_MULTISHOT,
 	IORING_URING_CMD_FIXED | IORING_URING_CMD_MULTISHOT,
 };
