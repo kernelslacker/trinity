@@ -149,7 +149,11 @@ static bool uffd_sa_saved;	/* true once the above are populated */
  * removed and trinity's canonical dispositions are restored.  After any
  * leak the counter never reaches zero, so uffd_worker_post() will never
  * restore the canonical dispositions in that child — the childop's handlers
- * remain installed for the remainder of the child's life by design. */
+ * remain installed for the remainder of the child's life by design.
+ * This persistence (uffd_outstanding_workers staying elevated) applies to
+ * V1 and V3 leaks only; V2 never touches uffd_outstanding_workers (its
+ * faulting thread holds no escape-zone handler), so a V2-only leak does
+ * not imply displaced signal dispositions. */
 static _Atomic int uffd_outstanding_workers;
 
 /* --------------------------------------------------------------------
