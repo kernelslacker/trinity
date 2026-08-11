@@ -118,10 +118,12 @@
 #define POLL_TIMEOUT_MS		150
 /* Magic ORed into sequence numbers to distinguish "never written" (0). */
 #define SEQNO_MAGIC		0xA5A50000U
-/* Maximum busy-poll loops when joining variant-3 thread. */
-#define V3_JOIN_LOOPS		20	/* 20 × 5 ms = 100 ms, well inside alarm(1) */
-/* Nanoseconds between V3 join polls. */
-#define V3_JOIN_SLEEP_NS	5000000L	/* 5 ms */
+/* Maximum busy-poll iterations per join spin-loop (used by V1, V2, and V3). */
+#define UFFD_JOIN_LOOPS		20	/* 100 ms per join (20 × 5 ms); V2 runs two
+					 * back-to-back loops (200 ms worst case),
+					 * well inside alarm(1) headroom (~1 s). */
+/* Nanoseconds between join polls. */
+#define UFFD_JOIN_SLEEP_NS	5000000L	/* 5 ms */
 
 /* --------------------------------------------------------------------
  * Shared per-invocation availability latches
@@ -921,15 +923,15 @@ cleanup_v1:
 	}
 
 	if (thread_started) {
-		struct timespec ts = { .tv_sec = 0, .tv_nsec = V3_JOIN_SLEEP_NS };
+		struct timespec ts = { .tv_sec = 0, .tv_nsec = UFFD_JOIN_SLEEP_NS };
 		int spin;
 
-		for (spin = 0; spin < V3_JOIN_LOOPS; spin++) {
+		for (spin = 0; spin < UFFD_JOIN_LOOPS; spin++) {
 			if (pthread_tryjoin_np(tid, NULL) == 0)
 				break;
 			nanosleep(&ts, NULL);
 		}
-		if (spin >= V3_JOIN_LOOPS) {
+		if (spin >= UFFD_JOIN_LOOPS) {
 			/* Close fd: userfaultfd_release() sets ctx->released,
 			 * wakes the pending fault, and the kernel returns
 			 * VM_FAULT_RETRY so the stranded worker resumes and
@@ -1288,26 +1290,26 @@ static void run_variant2(const enum child_op_type op, const bool valid_op,
 	}
 
 	{
-		struct timespec ts = { .tv_sec = 0, .tv_nsec = V3_JOIN_SLEEP_NS };
+		struct timespec ts = { .tv_sec = 0, .tv_nsec = UFFD_JOIN_SLEEP_NS };
 		int spin;
 		int leaked_count = 0;
 
 		if (racer_started) {
-			for (spin = 0; spin < V3_JOIN_LOOPS; spin++) {
+			for (spin = 0; spin < UFFD_JOIN_LOOPS; spin++) {
 				if (pthread_tryjoin_np(racer_tid, NULL) == 0)
 					break;
 				nanosleep(&ts, NULL);
 			}
-			if (spin >= V3_JOIN_LOOPS)
+			if (spin >= UFFD_JOIN_LOOPS)
 				leaked_count++; /* racer still live, touching src/dst — skip munmap, exit reclaims */
 		}
 		if (fault_started) {
-			for (spin = 0; spin < V3_JOIN_LOOPS; spin++) {
+			for (spin = 0; spin < UFFD_JOIN_LOOPS; spin++) {
 				if (pthread_tryjoin_np(fault_tid, NULL) == 0)
 					break;
 				nanosleep(&ts, NULL);
 			}
-			if (spin >= V3_JOIN_LOOPS)
+			if (spin >= UFFD_JOIN_LOOPS)
 				leaked_count++; /* fault worker still live, touching dst — skip munmap, exit reclaims */
 		}
 		if (leaked_count > 0) {
@@ -1562,13 +1564,13 @@ cleanup_v3:
 			(void)ioctl(fd, UFFDIO_WAKE, &wr);
 		}
 		ts.tv_sec  = 0;
-		ts.tv_nsec = V3_JOIN_SLEEP_NS;
-		for (spin = 0; spin < V3_JOIN_LOOPS; spin++) {
+		ts.tv_nsec = UFFD_JOIN_SLEEP_NS;
+		for (spin = 0; spin < UFFD_JOIN_LOOPS; spin++) {
 			if (pthread_tryjoin_np(tid, NULL) == 0)
 				break;
 			nanosleep(&ts, NULL);
 		}
-		if (spin >= V3_JOIN_LOOPS) {
+		if (spin >= UFFD_JOIN_LOOPS) {
 			/* Close fd: userfaultfd_release() sets ctx->released,
 			 * wakes the pending fault, and the kernel returns
 			 * VM_FAULT_RETRY so the stranded worker resumes and
