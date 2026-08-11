@@ -133,6 +133,19 @@ static bool ns_unsupported;
 /* UFFD_FEATURE_MOVE probe: -1=unknown, 0=absent, 1=present. */
 static int v2_move_latch = -1;
 
+/* Process-wide snapshot of trinity's SIGBUS/SIGSEGV dispositions, captured
+ * once before the childop installs its own handlers.  Written from the child
+ * main thread before any worker is created; read-only thereafter. */
+static struct sigaction trinity_sa_bus;
+static struct sigaction trinity_sa_segv;
+static bool uffd_sa_saved;	/* true once the above are populated */
+
+/* Count of outstanding uffd fault/racer worker threads across all variants.
+ * Incremented after a successful pthread_create, decremented on join or leak.
+ * When it drops to zero the childop's handlers are removed and trinity's
+ * canonical dispositions are restored. */
+static _Atomic int uffd_outstanding_workers;
+
 /* --------------------------------------------------------------------
  * Low-level helpers
  * -------------------------------------------------------------------- */
@@ -264,46 +277,105 @@ struct v1_ctx {
 	 * the SIGBUS was from a POISON page rather than a stray signal. */
 	volatile int poison_resolved[MAX_FM_PAGES];
 	volatile int sigbus_escaped[MAX_FM_PAGES];
-	/* Saved signal dispositions — installed by fault thread, restored
-	 * by run_variant1() after join so the process-wide state is clean. */
-	struct sigaction old_sa_segv;
-	struct sigaction old_sa_bus;
 };
 
 /* Per-thread escape state for SIGBUS (POISON) in the v1 fault thread. */
 static _Thread_local sigjmp_buf v1_escape_buf;
 static _Thread_local volatile int v1_in_escape_zone;
 static _Thread_local volatile int v1_escape_page_idx;
-static _Thread_local struct v1_ctx *v1_thread_ctx;
 
-static void v1_sigbus_handler(int signo, siginfo_t *info, void *uctx)
+/* Per-thread escape buffer for SIGSEGV/SIGBUS during teardown race (V3). */
+static _Thread_local sigjmp_buf v3_escape_buf;
+static _Thread_local volatile int v3_in_escape_zone;
+
+/*
+ * Unified SIGBUS/SIGSEGV handler for all uffd-fault-move variants.
+ *
+ * Checks the V1 and V3 per-thread escape-zone flags.  If either is armed the
+ * signal is ours (poisoned-page SIGBUS or teardown-race SIGSEGV/SIGBUS) and
+ * we siglongjmp out of the faulting access.  Otherwise the signal is not
+ * ours: chain directly to trinity's canonical handler (child_fault_handler)
+ * which stamps the fault beacon, writes the buglog, and exits cleanly via
+ * escalate_fault().  This ensures a genuine kernel-induced fault that is not
+ * from a uffd escape zone reaches trinity's telemetry rather than dying
+ * silently through SIG_DFL.
+ *
+ * NOT installed with SA_RESETHAND: the handler must remain in place for as
+ * long as any uffd worker thread is alive (including leaked workers from a
+ * prior invocation that timed out at join).
+ */
+static void uffd_sig_handler(int signo, siginfo_t *info, void *uctx)
 {
-	(void)info;
-	(void)uctx;
-	if (v1_in_escape_zone) {
+	if (v1_in_escape_zone)
 		siglongjmp(v1_escape_buf, 1);
-	} else {
-		/* SIGBUS outside escape zone — not ours; reset and re-raise. */
-		raise(signo);
+	if (v3_in_escape_zone)
+		siglongjmp(v3_escape_buf, 1);
+	/*
+	 * Not our fault.  Chain to the canonical handler so the beacon fires.
+	 * trinity installs child_fault_handler with SA_SIGINFO for both
+	 * SIGBUS and SIGSEGV (health/signals-policy.c::mask_signals_child);
+	 * call it directly with the original siginfo so si_code is preserved
+	 * (a re-raise via raise() would produce SI_TKILL, si_code<=0, which
+	 * child_fault_handler silently drops as fuzzer noise).
+	 */
+	{
+		const struct sigaction *saved =
+			(signo == SIGBUS) ? &trinity_sa_bus : &trinity_sa_segv;
+		if (uffd_sa_saved && (saved->sa_flags & SA_SIGINFO))
+			saved->sa_sigaction(signo, info, uctx);
+		else {
+			/* Saved disposition is not SA_SIGINFO (unexpected, but
+			 * handle gracefully): restore and re-raise so the kernel
+			 * re-delivers under the canonical disposition. */
+			sigaction(signo, saved, NULL);
+			raise(signo);
+		}
+	}
+}
+
+/*
+ * Capture trinity's SIGBUS/SIGSEGV dispositions (once) and install the
+ * childop's unified uffd_sig_handler.  Must be called from the child main
+ * thread before pthread_create so the process-wide disposition is set before
+ * the fault thread executes its first faulting access.
+ */
+static void uffd_install_handler_once(void)
+{
+	struct sigaction sa;
+
+	/* Snapshot the canonical dispositions before the first install. */
+	if (!uffd_sa_saved) {
+		sigaction(SIGBUS,  NULL, &trinity_sa_bus);
+		sigaction(SIGSEGV, NULL, &trinity_sa_segv);
+		uffd_sa_saved = true;
+	}
+
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_sigaction = uffd_sig_handler;
+	sa.sa_flags = SA_SIGINFO;	/* no SA_RESETHAND */
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGBUS,  &sa, NULL);
+	sigaction(SIGSEGV, &sa, NULL);
+}
+
+/*
+ * Called after each worker thread exits (cleanly joined or leaked).
+ * When the last outstanding worker is gone, restore trinity's canonical
+ * SIGBUS/SIGSEGV dispositions so subsequent childops see the expected state.
+ */
+static void uffd_worker_post(void)
+{
+	if (__atomic_sub_fetch(&uffd_outstanding_workers, 1,
+			       __ATOMIC_ACQ_REL) == 0 && uffd_sa_saved) {
+		sigaction(SIGBUS,  &trinity_sa_bus,  NULL);
+		sigaction(SIGSEGV, &trinity_sa_segv, NULL);
 	}
 }
 
 static void *v1_fault_thread(void *arg)
 {
 	struct v1_ctx *ctx = (struct v1_ctx *)arg;
-	struct sigaction sa;
 	int i;
-
-	/* Install SIGBUS handler for POISON-resolved pages.  sigaction() is
-	 * process-wide; save old dispositions in ctx so run_variant1() can
-	 * restore them after the thread is joined. */
-	v1_thread_ctx = ctx;
-	memset(&sa, 0, sizeof(sa));
-	sa.sa_sigaction = v1_sigbus_handler;
-	sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
-	sigemptyset(&sa.sa_mask);
-	sigaction(SIGBUS, &sa, &ctx->old_sa_bus);
-	sigaction(SIGSEGV, &sa, &ctx->old_sa_segv);
 
 	for (i = 0; i < MAX_FM_PAGES; i++) {
 		volatile uint32_t *pg;
@@ -316,7 +388,7 @@ static void *v1_fault_thread(void *arg)
 
 		/* Arm sigsetjmp escape zone around the fault-triggering access.
 		 * If this page is POISON-resolved, the re-executed write below
-		 * delivers SIGBUS; v1_sigbus_handler() siglongjmp()s back here
+		 * delivers SIGBUS; uffd_sig_handler() siglongjmp()s back here
 		 * with value 1 so we record the escape and continue to the
 		 * next page rather than spinning or crashing. */
 		v1_escape_page_idx = i;
@@ -326,9 +398,6 @@ static void *v1_fault_thread(void *arg)
 			v1_in_escape_zone = 0;
 			__atomic_store_n(&ctx->sigbus_escaped[i], 1,
 					 __ATOMIC_RELEASE);
-			/* Re-install handler: SA_RESETHAND cleared it. */
-			sigaction(SIGBUS,  &sa, NULL);
-			sigaction(SIGSEGV, &sa, NULL);
 			continue;
 		}
 
@@ -347,7 +416,7 @@ static void *v1_fault_thread(void *arg)
 		__atomic_store_n(&ctx->faulted_idx, i, __ATOMIC_RELEASE);
 		/* Keep the escape zone open across both the fault-inducing write
 		 * (pg[1]) and the subsequent read-back (*pg): a SIGBUS/SIGSEGV on
-		 * either must be caught by v1_sigbus_handler via sigsetjmp, not
+		 * either must be caught by uffd_sig_handler via sigsetjmp, not
 		 * treated as fatal. */
 		pg[1] = (uint32_t)(SEQNO_MAGIC | (uint32_t)(i + 1));
 
@@ -507,9 +576,11 @@ static void run_variant1(const enum child_op_type op, const bool valid_op,
 	ctx->len       = len;
 	ctx->src_pages = (uint32_t *)src_pages;
 
+	uffd_install_handler_once();
 	if (pthread_create(&tid, NULL, v1_fault_thread, ctx) != 0)
 		goto cleanup_v1;
 	thread_started = true;
+	__atomic_add_fetch(&uffd_outstanding_workers, 1, __ATOMIC_RELAXED);
 
 	/*
 	 * Main resolve loop.  Each iteration handles one fault event.
@@ -860,16 +931,10 @@ cleanup_v1:
 			__atomic_add_fetch(
 				&shm->stats.uffd_fault_move.leaked_workers,
 				1, __ATOMIC_RELAXED);
+			uffd_worker_post();
 			return;
 		}
-		/* Restore signal dispositions installed by v1_fault_thread.
-		 * sigaction() is process-wide; must be undone here so the next
-		 * childop invocation sees the expected disposition.
-		 * Must come AFTER the leak-path check above: on the leak path
-		 * the worker is still live and its sigsetjmp escape depends on
-		 * the handler remaining installed. */
-		sigaction(SIGBUS,  &ctx->old_sa_bus,  NULL);
-		sigaction(SIGSEGV, &ctx->old_sa_segv, NULL);
+		uffd_worker_post();
 		munmap(ctx, sizeof(*ctx));
 	}
 
@@ -1256,48 +1321,12 @@ struct v3_fault_ctx {
 	volatile int  blocked;		/* 1 while blocked on fault */
 	volatile int  escaped;		/* 1 if sigsetjmp was taken */
 	volatile int  stop;
-	/* Saved pre-V3 signal dispositions; restored by run_variant3() after
-	 * thread join.  Written by v3_fault_thread() before any fault access. */
-	struct sigaction old_sa_segv;
-	struct sigaction old_sa_bus;
 };
-
-static _Thread_local sigjmp_buf v3_escape_buf;
-static _Thread_local volatile int v3_in_escape_zone;
-
-static void v3_sig_handler(int signo, siginfo_t *info, void *ctx)
-{
-	(void)info;
-	(void)ctx;
-	if (v3_in_escape_zone) {
-		siglongjmp(v3_escape_buf, 1);
-	} else {
-		/*
-		 * Signal arrived outside the escape zone — not from a V3
-		 * teardown race.  SA_RESETHAND has already reset the disposition
-		 * to SIG_DFL; re-raise so the default action (core/terminate)
-		 * applies instead of silently returning, which would re-execute
-		 * the faulting instruction and spin indefinitely.
-		 */
-		raise(signo);
-	}
-}
 
 static void *v3_fault_thread(void *arg)
 {
 	struct v3_fault_ctx *fctx = (struct v3_fault_ctx *)arg;
-	struct sigaction sa;
 	volatile uint32_t *pg;
-
-	/* Install SIGSEGV/SIGBUS handler for this thread.
-	 * sigaction() is process-wide, not per-thread; save the previous
-	 * dispositions in fctx so run_variant3() can restore them after join. */
-	memset(&sa, 0, sizeof(sa));
-	sa.sa_sigaction = v3_sig_handler;
-	sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
-	sigemptyset(&sa.sa_mask);
-	sigaction(SIGSEGV, &sa, &fctx->old_sa_segv);
-	sigaction(SIGBUS,  &sa, &fctx->old_sa_bus);
 
 	pg = (volatile uint32_t *)fctx->region;
 
@@ -1370,9 +1399,11 @@ static void run_variant3(const enum child_op_type op, const bool valid_op,
 	fctx->region = region;
 	fctx->len    = len;
 
+	uffd_install_handler_once();
 	if (pthread_create(&tid, NULL, v3_fault_thread, fctx) != 0)
 		goto cleanup_v3;
 	thread_started = true;
+	__atomic_add_fetch(&uffd_outstanding_workers, 1, __ATOMIC_RELAXED);
 
 	/* Wait for the thread to reach the faulting access and block.
 	 * Use a short poll on the uffd fd as the confirmation signal. */
@@ -1520,17 +1551,10 @@ cleanup_v3:
 			__atomic_add_fetch(
 				&shm->stats.uffd_fault_move.leaked_workers,
 				1, __ATOMIC_RELAXED);
+			uffd_worker_post();
 			return;
 		}
-		/*
-		 * Restore signal dispositions — sigaction() is process-wide,
-		 * not per-thread; must be undone before this childop returns.
-		 * Must come AFTER the leak-path check above: on the leak path
-		 * the worker is still live and its sigsetjmp escape depends on
-		 * the handler remaining installed.
-		 */
-		sigaction(SIGSEGV, &fctx->old_sa_segv, NULL);
-		sigaction(SIGBUS,  &fctx->old_sa_bus,  NULL);
+		uffd_worker_post();
 		munmap(fctx, sizeof(*fctx));
 	}
 
