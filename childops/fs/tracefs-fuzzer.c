@@ -1292,6 +1292,8 @@ static unsigned long do_set_event(void)
 						OUTCOME_OPEN_FAIL);
 		ret = write(fd, "*:mod:nosuchmod", 15);
 		close(fd);
+		if (ret < 0)
+			return bump_arm_counter(ARM_SET_EVENT, OUTCOME_WRITE_FAIL);
 		fd = open_write_target(path, bad);
 		if (fd < 0)
 			return bump_arm_counter(ARM_SET_EVENT,
