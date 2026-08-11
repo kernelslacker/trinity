@@ -11,14 +11,3 @@
 # mismatch.  A new install call added elsewhere in an allowlisted file is
 # still caught.
 
-# child/child-init-clean.c: disable_coredumps() debug path.
-# Installs SIG_DFL for SIGSEGV so that the kernel generates a real core
-# dump when -D is active.  This is intentional: the call site is inside
-# the `if (shm->debug == true)` branch whose sole purpose is to undo the
-# no-core-dump posture for post-mortem debugging.  No raise() follows;
-# no beacon is bypassed.  No canonical snapshot is required because this
-# path deliberately drops back to the kernel default rather than chaining
-# to a trinity-managed handler.  Audited as locally-balanced: the call
-# has no restore counterpart (the child is already in its final setup
-# state) and is grandchild-unreachable.
-child/child-init-clean.c:83:c735e3c5

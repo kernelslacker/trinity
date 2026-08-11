@@ -70,17 +70,18 @@ void disable_coredumps(void)
 	struct rlimit limit = { .rlim_cur = 0, .rlim_max = 0 };
 
 	if (shm->debug == true) {
-		struct sigaction sa;
 		struct rlimit unlim = {
 			.rlim_cur = RLIM_INFINITY,
 			.rlim_max = RLIM_INFINITY
 		};
 
-		sa.sa_handler = SIG_DFL;
-		sa.sa_flags = 0;
-		sigemptyset(&sa.sa_mask);
-		(void)sigaction(SIGABRT, &sa, NULL);
-		(void)sigaction(SIGSEGV, &sa, NULL);
+		/*
+		 * child_fault_handler (installed via health/signals-policy.c) already
+		 * handles the debug-mode re-raise with inline backtrace, shm fault
+		 * beacon, psiginfo, and per-pid bug log before re-raising to produce
+		 * a core.  No sigaction override to SIG_DFL is needed here; adding
+		 * one would silently displace the handler and drop the beacon under -D.
+		 */
 
 		/*
 		 * Force core dumps on regardless of inherited RLIMIT_CORE.
