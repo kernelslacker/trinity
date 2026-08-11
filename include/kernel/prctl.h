@@ -81,6 +81,8 @@
 #endif
 #ifndef PR_FUTEX_HASH
 #define PR_FUTEX_HASH			78
+#define PR_FUTEX_HASH_SET_SLOTS		1
+#define PR_FUTEX_HASH_GET_SLOTS		2
 #endif
 #ifndef PR_RSEQ_SLICE_EXTENSION
 #define PR_RSEQ_SLICE_EXTENSION		79

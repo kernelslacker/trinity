@@ -78,6 +78,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "kernel/prctl.h"
 #include "childop-outcome.h"
 #include "syscall-gate.h"
 #include "childops-util.h"

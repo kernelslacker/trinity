@@ -65,11 +65,6 @@
 #define PR_SCHED_CORE_SCOPE_THREAD_GROUP	1
 #define PR_SCHED_CORE_SCOPE_PROCESS_GROUP	2
 #endif
-/* PR_FUTEX_HASH sub-commands (added in 6.14) */
-#ifndef PR_FUTEX_HASH_SET_SLOTS
-#define PR_FUTEX_HASH_SET_SLOTS		1
-#define PR_FUTEX_HASH_GET_SLOTS		2
-#endif
 
 /* Capabilities added after Linux 5.8/5.9 — guard for older build systems. */
 #ifndef CAP_PERFMON
