@@ -95,6 +95,11 @@ static sigjmp_buf canary_sigbus_jmp;
 static volatile uintptr_t canary_sigbus_lo;
 static volatile uintptr_t canary_sigbus_hi;
 static volatile sig_atomic_t canary_sigbus_armed;
+/* Trinity's canonical SIGBUS disposition, captured once before the first
+ * handler install so the not-ours arm can chain directly to
+ * child_fault_handler and preserve the shm fault-beacon stamp. */
+static struct sigaction canary_trinity_sa_bus;
+static bool canary_trinity_sa_saved;
 
 static __attribute__((no_sanitize("address")))
 void canary_sigbus_handler(int sig, siginfo_t *info, void *ctx)
@@ -104,10 +109,16 @@ void canary_sigbus_handler(int sig, siginfo_t *info, void *ctx)
 	(void)ctx;
 
 	if (!canary_sigbus_armed) {
-		/* Not in the guarded section — re-raise with default
-		 * disposition so child_fault_handler diagnoses it. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		/* Not in the guarded section — chain to trinity's canonical
+		 * handler (child_fault_handler) directly to preserve the
+		 * shm fault-beacon stamp. */
+		if (canary_trinity_sa_saved &&
+		    (canary_trinity_sa_bus.sa_flags & SA_SIGINFO))
+			canary_trinity_sa_bus.sa_sigaction(sig, info, ctx);
+		else {
+			sigaction(sig, &canary_trinity_sa_bus, NULL);
+			raise(sig);
+		}
 		return;
 	}
 	if (info->si_code <= 0 && info->si_pid != mypid()) {
@@ -115,18 +126,30 @@ void canary_sigbus_handler(int sig, siginfo_t *info, void *ctx)
 		return;
 	}
 	if (info->si_code <= 0) {
-		/* Self-sent — not the truncate-race we're guarding. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		/* Self-sent — not the truncate-race we're guarding.  Chain
+		 * to trinity's canonical handler to preserve the beacon. */
+		if (canary_trinity_sa_saved &&
+		    (canary_trinity_sa_bus.sa_flags & SA_SIGINFO))
+			canary_trinity_sa_bus.sa_sigaction(sig, info, ctx);
+		else {
+			sigaction(sig, &canary_trinity_sa_bus, NULL);
+			raise(sig);
+		}
 		return;
 	}
 
 	fault_addr = (uintptr_t)info->si_addr;
 	if (fault_addr < canary_sigbus_lo || fault_addr >= canary_sigbus_hi) {
-		/* Real fault outside the guarded mmap range — let the
-		 * global child fault handler take it. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		/* Real fault outside the guarded mmap range — chain to
+		 * trinity's canonical handler so child_fault_handler stamps
+		 * the beacon. */
+		if (canary_trinity_sa_saved &&
+		    (canary_trinity_sa_bus.sa_flags & SA_SIGINFO))
+			canary_trinity_sa_bus.sa_sigaction(sig, info, ctx);
+		else {
+			sigaction(sig, &canary_trinity_sa_bus, NULL);
+			raise(sig);
+		}
 		return;
 	}
 	siglongjmp(canary_sigbus_jmp, 1);
@@ -378,6 +401,13 @@ static void mode_mmap(int fd, unsigned int file_idx, size_t size,
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = SA_SIGINFO;
 	sa.sa_sigaction = canary_sigbus_handler;
+	/* Capture trinity's canonical SIGBUS disposition once before the
+	 * first install so the not-ours arm in the handler can chain
+	 * directly to child_fault_handler. */
+	if (!canary_trinity_sa_saved) {
+		sigaction(SIGBUS, NULL, &canary_trinity_sa_bus);
+		canary_trinity_sa_saved = true;
+	}
 	if (sigaction(SIGBUS, &sa, &old_bus) != 0) {
 		(*direct_calls)++;
 		(void)munmap(map, size);
