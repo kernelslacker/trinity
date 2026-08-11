@@ -501,7 +501,10 @@ grep -v '^__CENSUS__ ' "$tmp_out" > "${tmp_out}.nc" && mv "${tmp_out}.nc" "$tmp_
 		_trim=$(printf '%s' "$_raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 		_hash=$(printf '%s' "$_trim" | sha256sum | cut -c1-8)
 		_hkey="$_file:$_lno:$_hash"
-		if [ "${allowlist[$_hkey]+set}" ]; then allowlist_matched[$_hkey]=1; continue; fi
+		if [ "${allowlist[$_hkey]+set}" ] || [ "${allowlist[UNPARSED:$_hkey]+set}" ]; then
+			allowlist_matched[$_hkey]=1
+			continue
+		fi
 		if [[ "$_line" == UNPARSED:* ]]; then
 			printf 'UNPARSED:%s\n' "$_hkey"
 		else
