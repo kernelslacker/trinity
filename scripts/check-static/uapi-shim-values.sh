@@ -32,16 +32,16 @@ BASELINE="$ROOT/scripts/check-static/uapi-shim-values.baseline"
 
 [ -f "$BASELINE" ] || { echo "PASS: $NAME (no baseline)"; exit 0; }
 
-command -v perl >/dev/null 2>&1 || { echo "WARN: $NAME: perl unavailable, skipping"; exit 0; }
+command -v perl >/dev/null 2>&1 || { echo "ERROR: $NAME: perl unavailable, cannot verify shim values"; exit 1; }
 
-# Collect all trinity #define lines across childops/ and net/proto/ after
+# Collect all trinity #define lines across the whole source tree after
 # stripping C comments, so a commented-out stale value is not matched.
 #
 # Result format: one "SYMBOL VALUE" pair per line, for all defines that
 # have a purely numeric value (decimal, no parens/expressions).
 define_map=$(
-	find "$ROOT/childops" "$ROOT/net/proto" \
-		\( -name '*.c' -o -name '*.h' \) 2>/dev/null \
+	find "$ROOT" -path "$ROOT/scripts" -prune -o \
+		\( -name '*.c' -o -name '*.h' \) -print 2>/dev/null \
 	| sort \
 	| xargs perl -0777 -pe \
 		's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' \
@@ -69,9 +69,9 @@ while IFS= read -r line; do
 	actuals=$(awk -v n="$name" '$1==n{print $2}' <<< "$define_map" | sort -un)
 
 	if [ -z "$actuals" ]; then
-		# Symbol not found in shim sources -- it may only live in a header
-		# that was not covered by the glob, so warn rather than fail.
-		echo "WARN: $NAME: $name not found in childops/ or net/proto/ shims" >&2
+		# Symbol not found anywhere in the source tree -- it was likely
+		# deleted without updating the baseline.
+		echo "WARN: $NAME: $name not found in source tree shims" >&2
 		missing=$((missing + 1))
 		continue
 	fi
@@ -94,4 +94,5 @@ fi
 warn=""
 [ "$missing" -gt 0 ] && warn=", $missing symbol(s) not found (WARN)"
 echo "PASS: $NAME ($checked shim value(s) verified against baseline$warn)"
+[ "$missing" -gt 0 ] && exit 1
 exit 0
