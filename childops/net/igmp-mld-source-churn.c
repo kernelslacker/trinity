@@ -127,6 +127,14 @@
 
 static bool ns_unsupported_igmp_mld_source_churn;
 
+/* Independent optlen rotation counters for the MCAST_MSFILTER getsockopt
+ * oracles.  Incremented unconditionally on every oracle call so the three
+ * optlen cases (floor, hdr+1, full) rotate regardless of which iter_idx
+ * values happen to trigger race letter C.
+ */
+static unsigned int msfilter_v4_optlen_iter;
+static unsigned int msfilter_v6_optlen_iter;
+
 /*
  * Raise net.ipv4.igmp_max_msf in the current network namespace to at
  * least @n so that a MCAST_MSFILTER setsockopt with @n sources does not
@@ -151,14 +159,13 @@ static void raise_igmp_max_msf(unsigned int n)
 /*
  * MCAST_MSFILTER getsockopt oracle (v4).  Called after a successful
  * setsockopt(MCAST_MSFILTER) on @s with @nsrc sources.  Probes the
- * read-back path with a rotated optlen that is keyed on iter_idx/3
- * (not iter_idx%3) so the optlen axis is decorrelated from the nsrc
- * rotation in rotate_filter_size (which uses iter_idx%3).  Three
- * distinct values covering the kernel-accepted range:
+ * read-back path with a dedicated optlen counter (msfilter_v4_optlen_iter)
+ * that cycles unconditionally through three cases on every call,
+ * independent of iter_idx so the optlen axis is not stuck at one value:
  *
- *   (iter_idx/3) % 3 == 0  ->  GROUP_FILTER_SIZE(0)         [floor: 144 B]
- *   (iter_idx/3) % 3 == 1  ->  GROUP_FILTER_SIZE(1)          [hdr+1 src]
- *   (iter_idx/3) % 3 == 2  ->  GROUP_FILTER_SIZE(@nsrc)      [full fit]
+ *   msfilter_v4_optlen_iter % 3 == 0  ->  GROUP_FILTER_SIZE(0)    [floor: 144 B]
+ *   msfilter_v4_optlen_iter % 3 == 1  ->  GROUP_FILTER_SIZE(1)     [hdr+1 src]
+ *   msfilter_v4_optlen_iter % 3 == 2  ->  GROUP_FILTER_SIZE(@nsrc) [full fit]
  *
  * A poisoned guard region (MCAST_GET_GUARD_BYTES bytes of
  * MCAST_GET_GUARD_FILL) is placed immediately after the declared
@@ -185,18 +192,24 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 	 */
 	size_t max_write_sz = GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
 
-	switch ((iter_idx / 3U) % 3U) {
-	case 0:
-		/* GROUP_FILTER_SIZE(0) = 144: the kernel-accepted floor
-		 * (ip_sockglue.c checks len >= GROUP_FILTER_SIZE(0)). */
-		req_len = (socklen_t)GROUP_FILTER_SIZE(0U);
-		break;
-	case 1:
-		req_len = (socklen_t)GROUP_FILTER_SIZE(1U);
-		break;
-	default:
-		req_len = (socklen_t)GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
-		break;
+	{
+		unsigned int optlen_sel =
+			__atomic_fetch_add(&msfilter_v4_optlen_iter, 1U,
+					   __ATOMIC_RELAXED) % 3U;
+
+		switch (optlen_sel) {
+		case 0:
+			/* GROUP_FILTER_SIZE(0) = 144: the kernel-accepted floor
+			 * (ip_sockglue.c checks len >= GROUP_FILTER_SIZE(0)). */
+			req_len = (socklen_t)GROUP_FILTER_SIZE(0U);
+			break;
+		case 1:
+			req_len = (socklen_t)GROUP_FILTER_SIZE(1U);
+			break;
+		default:
+			req_len = (socklen_t)GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
+			break;
+		}
 	}
 
 	alloc_sz = max_write_sz + MCAST_GET_GUARD_BYTES;
@@ -261,7 +274,8 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 /*
  * MCAST_MSFILTER getsockopt oracle (v6).  IPv6 mirror of
  * msfilter_getsockopt_oracle_v4 -- same guard-region logic and
- * decorrelated optlen rotation (keyed on iter_idx/3, not iter_idx%3),
+ * independent optlen counter (msfilter_v6_optlen_iter) that cycles
+ * unconditionally through {floor, hdr+1, full} on every call,
  * but uses IPPROTO_IPV6 and fills gf_group as a sockaddr_in6 with
  * @grp_v6.  ip6_mc_msfilter also gates on net->ipv4.sysctl_igmp_max_msf
  * so the same raise_igmp_max_msf() write covers the v6 path too.
@@ -281,17 +295,23 @@ static void msfilter_getsockopt_oracle_v6(int s,
 
 	size_t max_write_sz = GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
 
-	switch ((iter_idx / 3U) % 3U) {
-	case 0:
-		/* GROUP_FILTER_SIZE(0) = 144: the kernel-accepted floor. */
-		req_len = (socklen_t)GROUP_FILTER_SIZE(0U);
-		break;
-	case 1:
-		req_len = (socklen_t)GROUP_FILTER_SIZE(1U);
-		break;
-	default:
-		req_len = (socklen_t)GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
-		break;
+	{
+		unsigned int optlen_sel =
+			__atomic_fetch_add(&msfilter_v6_optlen_iter, 1U,
+					   __ATOMIC_RELAXED) % 3U;
+
+		switch (optlen_sel) {
+		case 0:
+			/* GROUP_FILTER_SIZE(0) = 144: the kernel-accepted floor. */
+			req_len = (socklen_t)GROUP_FILTER_SIZE(0U);
+			break;
+		case 1:
+			req_len = (socklen_t)GROUP_FILTER_SIZE(1U);
+			break;
+		default:
+			req_len = (socklen_t)GROUP_FILTER_SIZE(nsrc > 0U ? nsrc : 1U);
+			break;
+		}
 	}
 
 	alloc_sz = max_write_sz + MCAST_GET_GUARD_BYTES;
