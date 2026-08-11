@@ -541,16 +541,70 @@ static void fill_gsr_v6(struct group_source_req *gsr, unsigned int ifindex,
 }
 
 /*
- * Pick the source-list size for this iteration: rotates 1, ~8, ~32 so
- * the realloc path inside ip_mc_msfilter actually fires across the
- * outer loop instead of always landing in the small-list short-circuit.
+ * Save, write, and restore /proc/sys/net/ipv6/mld_max_msf.  Used by
+ * the v6 arm to lower the cap below nsrc before probing -ENOBUFS from
+ * ip6_mc_msfilter(), then restore the original value.  All three
+ * helpers are silent on I/O failure (best-effort; the caller checks
+ * save_mld_max_msf() return value to decide whether to restore).
+ */
+static bool save_mld_max_msf(unsigned int *saved)
+{
+	char buf[32];
+	int fd;
+	ssize_t n;
+
+	fd = open("/proc/sys/net/ipv6/mld_max_msf", O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return false;
+	n = read(fd, buf, sizeof(buf) - 1U);
+	close(fd);
+	if (n <= 0)
+		return false;
+	buf[n] = '\0';
+	*saved = (unsigned int)strtoul(buf, NULL, 10);
+	return true;
+}
+
+static bool write_mld_max_msf(unsigned int n)
+{
+	char buf[32];
+	int fd, len;
+	ssize_t wr;
+
+	fd = open("/proc/sys/net/ipv6/mld_max_msf", O_WRONLY | O_CLOEXEC);
+	if (fd < 0)
+		return false;
+	len = snprintf(buf, sizeof(buf), "%u\n", n);
+	wr = write(fd, buf, (size_t)len);
+	close(fd);
+	return (wr == (ssize_t)len);
+}
+
+static void restore_mld_max_msf(unsigned int val)
+{
+	char buf[32];
+	int fd, len;
+
+	fd = open("/proc/sys/net/ipv6/mld_max_msf", O_WRONLY | O_CLOEXEC);
+	if (fd < 0)
+		return;
+	len = snprintf(buf, sizeof(buf), "%u\n", val);
+	{ ssize_t wr = write(fd, buf, (size_t)len); (void)wr; }
+	close(fd);
+}
+
+/*
+ * Pick the source-list size for this iteration: rotates 1, ~8, ~32,
+ * and IMC_MAX_MSF_CAP+1 so the cap-rejection path inside
+ * ip_mc_msfilter / ip6_mc_msfilter fires on one in four race-C iters.
  */
 static unsigned int rotate_filter_size(unsigned int iter_idx)
 {
-	switch (iter_idx % 3U) {
+	switch (iter_idx % 4U) {
 	case 0:  return 1U;
 	case 1:  return 8U;
-	default: return IMC_LARGE_SRCS;
+	case 2:  return IMC_LARGE_SRCS;
+	default: return IMC_MAX_MSF_CAP + 1U;
 	}
 }
 
@@ -806,14 +860,31 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 	case 2:
 		/* RACE C: bulk replace via MCAST_MSFILTER -- exercises the
 		 * ip_mc_msfilter realloc + rcu publish path.
-		 * When nsrc exceeds the default igmp_max_msf (10), save the
-		 * current sysctl value, raise it to IMC_MAX_MSF_CAP, then
-		 * restore it after the setsockopt so the fuzz host's real
-		 * igmp_max_msf is not permanently modified.  On raise
-		 * failure (EPERM, short write) skip the large-filter path
-		 * that would get -ENOBUFS anyway. */
+		 *
+		 * When nsrc > IMC_MAX_MSF_CAP: skip the raise so
+		 * sysctl_igmp_max_msf stays below nsrc, build the oversized
+		 * filter, and expect -ENOBUFS from ip_mc_msfilter().  Book
+		 * msfilter_enobufs_v4 so the rejection is visible in stats.
+		 *
+		 * Otherwise: when nsrc exceeds the default igmp_max_msf (10),
+		 * save the current sysctl value, raise it to IMC_MAX_MSF_CAP,
+		 * restore after the setsockopt.  On raise failure skip the
+		 * large-filter path that would get -ENOBUFS anyway. */
 		nsrc = rotate_filter_size(it->iter_idx);
-		{
+		if (nsrc > IMC_MAX_MSF_CAP) {
+			/* Oversized path: probe the -ENOBUFS boundary. */
+			it->gf = build_filter_v4(0U, it->grp_be, nsrc,
+						 it->salt);
+			if (it->gf) {
+				rc = setsockopt(it->recv_s, IPPROTO_IP,
+						MCAST_MSFILTER, it->gf,
+						GROUP_FILTER_SIZE(nsrc));
+				if (rc < 0 && errno == ENOBUFS)
+					__atomic_add_fetch(
+						&shm->stats.igmp_mld_source_churn.msfilter_enobufs_v4,
+						1, __ATOMIC_RELAXED);
+			}
+		} else {
 			unsigned int saved_msf = 0;
 			bool do_restore = false;
 			bool skip = false;
@@ -1131,26 +1202,55 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
-		/* ip6_mc_msfilter gates on net->ipv4.sysctl_igmp_max_msf
-		 * in the kernel, but raise_igmp_max_msf() writes the host
-		 * procfs knob which only affects the init netns and does not
-		 * influence the v6 filter path when running in a non-init
-		 * netns.  Drop the raise for v6: -ENOBUFS on large filters
-		 * is an expected and tolerated outcome on stock kernels. */
+		/* RACE C (v6): bulk replace via MCAST_MSFILTER -- exercises
+		 * the ip6_mc_msfilter realloc + rcu publish path.
+		 *
+		 * When nsrc > IMC_MAX_MSF_CAP: write mld_max_msf down to
+		 * nsrc-1 before the setsockopt so ip6_mc_msfilter() sees
+		 * numsrc > sysctl_mld_max_msf and returns -ENOBUFS.  This
+		 * also exercises the mld_max_msf sysctl write handler.
+		 * Book msfilter_enobufs_v6 on that errno; restore afterward.
+		 *
+		 * Otherwise: call setsockopt directly (no raise needed for
+		 * nsrc <= IMC_MAX_MSF_CAP against the default cap of 64). */
 		nsrc = rotate_filter_size(it->iter_idx);
-		it->gf = build_filter_v6(0U, &it->grp_v6, nsrc, it->salt);
-		if (it->gf) {
-			rc = setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_MSFILTER,
-					it->gf, GROUP_FILTER_SIZE(nsrc));
-			if (rc == 0) {
-				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_ok,
-						   1, __ATOMIC_RELAXED);
-				/* Read-back oracle: same guard-region check as
-				 * the v4 arm; IPPROTO_IPV6 level. */
-				msfilter_getsockopt_oracle_v6(it->recv_s,
-							      &it->grp_v6,
+		if (nsrc > IMC_MAX_MSF_CAP) {
+			/* Oversized path: lower cap to nsrc-1, probe -ENOBUFS. */
+			unsigned int saved_mld = 0;
+			bool do_restore_v6 = save_mld_max_msf(&saved_mld);
+
+			if (write_mld_max_msf(nsrc - 1U)) {
+				it->gf = build_filter_v6(0U, &it->grp_v6, nsrc,
+							 it->salt);
+				if (it->gf) {
+					rc = setsockopt(it->recv_s, IPPROTO_IPV6,
+							MCAST_MSFILTER, it->gf,
+							GROUP_FILTER_SIZE(nsrc));
+					if (rc < 0 && errno == ENOBUFS)
+						__atomic_add_fetch(
+							&shm->stats.igmp_mld_source_churn.msfilter_enobufs_v6,
+							1, __ATOMIC_RELAXED);
+				}
+			}
+			if (do_restore_v6)
+				restore_mld_max_msf(saved_mld);
+		} else {
+			it->gf = build_filter_v6(0U, &it->grp_v6, nsrc, it->salt);
+			if (it->gf) {
+				rc = setsockopt(it->recv_s, IPPROTO_IPV6,
+						MCAST_MSFILTER, it->gf,
+						GROUP_FILTER_SIZE(nsrc));
+				if (rc == 0) {
+					__atomic_add_fetch(
+						&shm->stats.igmp_mld_source_churn.msfilter_ok,
+						1, __ATOMIC_RELAXED);
+					/* Read-back oracle: same guard-region check
+					 * as the v4 arm; IPPROTO_IPV6 level. */
+					msfilter_getsockopt_oracle_v6(it->recv_s,
+								      &it->grp_v6,
 							      0U, nsrc,
 							      it->iter_idx);
+				}
 			}
 		}
 		break;
