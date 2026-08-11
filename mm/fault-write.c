@@ -222,10 +222,10 @@ static const struct faultfn write_faultfns[] = {
  *     the kernel raises SIGSEGV SEGV_MAPERR instead of SIGBUS.
  *
  * The handler longjmps back to random_map_writefn iff the fault
- * si_addr lands inside the active mapping range, otherwise it
- * restores SIG_DFL and re-raises so child_fault_handler diagnoses
- * + exits and the per-pid bug log path is preserved for genuine
- * unrelated faults.
+ * si_addr lands inside the active mapping range, otherwise it chains
+ * directly to trinity's canonical handler (child_fault_handler) so
+ * the shm fault-beacon stamp and per-pid bug log path are preserved
+ * for genuine unrelated faults.
  *
  * volatile / sigjmp_buf rationale matches the equivalent statics in
  * mm/fault-read.c and childops/mm/madvise-pattern-cycler.c: ISO C
@@ -237,6 +237,12 @@ static sigjmp_buf write_walk_jmp;
 static volatile uintptr_t write_walk_lo;
 static volatile uintptr_t write_walk_hi;
 static volatile sig_atomic_t write_walk_armed;
+/* Trinity's canonical SIGBUS/SIGSEGV dispositions, captured once before the
+ * first handler install so the not-ours arm can chain directly to
+ * child_fault_handler and preserve the shm fault-beacon stamp. */
+static struct sigaction write_walk_trinity_sa_segv;
+static struct sigaction write_walk_trinity_sa_bus;
+static bool write_walk_trinity_sa_saved;
 
 static __attribute__((no_sanitize("address")))
 void write_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
@@ -246,8 +252,21 @@ void write_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
 	(void)ctx;
 
 	if (!write_walk_armed) {
-		signal(sig, SIG_DFL);
-		raise(sig);
+		/* Not in the guarded section — chain to trinity's canonical
+		 * handler (child_fault_handler) directly to preserve the
+		 * shm fault-beacon stamp. */
+		{
+			const struct sigaction *saved =
+				(sig == SIGBUS) ? &write_walk_trinity_sa_bus
+					       : &write_walk_trinity_sa_segv;
+			if (write_walk_trinity_sa_saved &&
+			    (saved->sa_flags & SA_SIGINFO))
+				saved->sa_sigaction(sig, info, ctx);
+			else {
+				sigaction(sig, saved, NULL);
+				raise(sig);
+			}
+		}
 		return;
 	}
 	if (info->si_code <= 0 && info->si_pid != mypid()) {
@@ -255,11 +274,22 @@ void write_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
 		return;
 	}
 	if (info->si_code <= 0) {
-		/* Self-sent (glibc abort etc.) — restore default and
-		 * re-raise so child_fault_handler diagnoses + exits.
-		 * siglongjmp here would skip in-flight cleanup. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		/* Self-sent (glibc abort etc.) — chain to trinity's canonical
+		 * handler (child_fault_handler) directly to preserve the
+		 * shm fault-beacon stamp.  siglongjmp here would skip
+		 * in-flight cleanup. */
+		{
+			const struct sigaction *saved =
+				(sig == SIGBUS) ? &write_walk_trinity_sa_bus
+					       : &write_walk_trinity_sa_segv;
+			if (write_walk_trinity_sa_saved &&
+			    (saved->sa_flags & SA_SIGINFO))
+				saved->sa_sigaction(sig, info, ctx);
+			else {
+				sigaction(sig, saved, NULL);
+				raise(sig);
+			}
+		}
 		return;
 	}
 
@@ -267,10 +297,21 @@ void write_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
 	if (fault_addr < write_walk_lo || fault_addr >= write_walk_hi) {
 		/* Real kernel fault but si_addr is outside the active
 		 * mapping range — not the race we're guarding against.
-		 * Restore default and re-raise so child_fault_handler
-		 * diagnoses + exits and the bug log path is preserved. */
-		signal(sig, SIG_DFL);
-		raise(sig);
+		 * Chain to trinity's canonical handler directly so
+		 * child_fault_handler stamps the beacon and the bug log
+		 * path is preserved. */
+		{
+			const struct sigaction *saved =
+				(sig == SIGBUS) ? &write_walk_trinity_sa_bus
+					       : &write_walk_trinity_sa_segv;
+			if (write_walk_trinity_sa_saved &&
+			    (saved->sa_flags & SA_SIGINFO))
+				saved->sa_sigaction(sig, info, ctx);
+			else {
+				sigaction(sig, saved, NULL);
+				raise(sig);
+			}
+		}
 		return;
 	}
 	siglongjmp(write_walk_jmp, 1);
@@ -291,6 +332,14 @@ void random_map_writefn(struct map *map)
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = SA_SIGINFO;
 	sa.sa_sigaction = write_walk_signal_handler;
+	/* Capture trinity's canonical dispositions once before the first
+	 * install so the not-ours arm in the handler can chain directly
+	 * to child_fault_handler. */
+	if (!write_walk_trinity_sa_saved) {
+		sigaction(SIGBUS,  NULL, &write_walk_trinity_sa_bus);
+		sigaction(SIGSEGV, NULL, &write_walk_trinity_sa_segv);
+		write_walk_trinity_sa_saved = true;
+	}
 	if (sigaction(SIGBUS,  &sa, &old_bus) != 0)
 		return;
 	if (sigaction(SIGSEGV, &sa, &old_segv) != 0) {
