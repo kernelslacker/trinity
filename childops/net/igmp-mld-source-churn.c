@@ -847,7 +847,7 @@ static int igmp_source_iter_v4_join(struct igmp_source_iter_v4_ctx *it)
  * E = incremental IP_ADD_SOURCE_MEMBERSHIP walk to probe the
  * ip_mc_source() >= sysctl_igmp_max_msf (sl_count) cap boundary.
  */
-static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
+static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 {
 	unsigned int race_letter = rnd_modulo_u32(5U);
 	unsigned int nsrc;
@@ -862,7 +862,7 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 			       &it->gsr_a, sizeof(it->gsr_a)) == 0)
 			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.leave_ok,
 					   1, __ATOMIC_RELAXED);
-		break;
+		return 1;
 	case 1:
 		/* RACE B: INCLUDE -> EXCLUDE flip via BLOCK_SOURCE. */
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b,
@@ -871,7 +871,7 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 			       &it->gsr_b, sizeof(it->gsr_b)) == 0)
 			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.block_ok,
 					   1, __ATOMIC_RELAXED);
-		break;
+		return 1;
 	case 2:
 		/* RACE C: bulk replace via MCAST_MSFILTER -- exercises the
 		 * ip_mc_msfilter realloc + rcu publish path.
@@ -947,7 +947,7 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 			if (do_restore)
 				restore_igmp_max_msf(saved_msf);
 		}
-		break;
+		return 1;
 	case 3:
 		/* RACE D: full leave race vs in-flight sender. */
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d,
@@ -962,7 +962,7 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 				__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.drop_ok,
 						   1, __ATOMIC_RELAXED);
 		}
-		break;
+		return 1;
 	case 4:
 		/* RACE E: walk sl_count to the ip_mc_source() >=
 		 * sysctl_igmp_max_msf cap boundary via incremental
@@ -980,6 +980,7 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 		{
 			struct ip_mreq_source imr;
 			unsigned int k;
+			unsigned long e_calls = 0;
 			const unsigned int limit = 13U;
 
 			for (k = 4U; k <= limit; k++) {
@@ -993,6 +994,7 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 				rc = setsockopt(it->recv_s, IPPROTO_IP,
 						IP_ADD_SOURCE_MEMBERSHIP,
 						&imr, sizeof(imr));
+				e_calls++;
 				if (rc < 0) {
 					if (errno == ENOBUFS)
 						__atomic_add_fetch(
@@ -1001,9 +1003,10 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 					break;
 				}
 			}
+			return e_calls;
 		}
-		break;
 	}
+	return 1;
 }
 
 /*
@@ -1091,11 +1094,12 @@ static void iter_one_v4(int op_type, unsigned int iter_idx,
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
 		goto teardown;
 
-	igmp_source_iter_v4_race(&it);
-	direct_calls += 1;	/* one MCAST_* / IP_DROP_MEMBERSHIP setsockopt
-				 * on average (race E does up to 10 calls;
-				 * race C's calloc-fail edge elided -- per-case
-				 * undercounts are small). */
+	direct_calls += igmp_source_iter_v4_race(&it);	/* races A/B/D: one
+							 * setsockopt each; race C:
+							 * one MCAST_MSFILTER;
+							 * race E: up to 10
+							 * IP_ADD_SOURCE_MEMBERSHIP
+							 * calls, counted per-call. */
 
 	send_burst(it.send_s, 2);
 	direct_calls += 2;
