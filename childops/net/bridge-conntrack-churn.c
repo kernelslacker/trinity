@@ -1004,7 +1004,9 @@ static void *brct_packet_sender(void *arg)
 		frame[22] = 0x40;	/* ttl */
 		frame[23] = 0x11;	/* IPPROTO_UDP */
 		frame[26] = 10; frame[27] = 0;
-		frame[28] = 0; frame[29] = (unsigned char)(i & 0xff);
+		/* source address rotates every 4 iters so each flow sees >=2 packets;
+		 * required for ct-timeout probes that need the L4 handler invoked post-attach */
+		frame[28] = 0; frame[29] = (unsigned char)((i / 4) & 0xff);
 		frame[30] = 10; frame[31] = 0;
 		frame[32] = 0; frame[33] = 1;
 		frame[34] = 0x30; frame[35] = 0x39;	/* sport 12345 */
