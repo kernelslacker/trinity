@@ -473,7 +473,7 @@ int xfrm_emit_expire(int fd)
  * xfrm_unsupported below).
  */
 #ifndef XFRM_MSG_MIGRATE_STATE
-#define XFRM_MSG_MIGRATE_STATE 42
+#define XFRM_MSG_MIGRATE_STATE 41
 struct xfrm_user_migrate_state {
 	struct xfrm_usersa_id id;
 	xfrm_address_t new_daddr;
