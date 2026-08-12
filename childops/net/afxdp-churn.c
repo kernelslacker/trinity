@@ -174,7 +174,7 @@ bool afxdp_churn(struct childdata *child)
 {
 	(void)child;
 
-	__atomic_add_fetch(&shm->stats.afxdp_churn.runs,
+	__atomic_add_fetch(&shm->stats.afxdp_churn.runs_stubbed,
 			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 			   1, __ATOMIC_RELAXED);

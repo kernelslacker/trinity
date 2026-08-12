@@ -3,6 +3,7 @@
 
 static const struct stat_field afxdp_churn_fields[] = {
 	STAT_FIELD_SUB(afxdp_churn, runs),
+	STAT_FIELD_SUB(afxdp_churn, runs_stubbed),
 	STAT_FIELD_SUB(afxdp_churn, setup_failed),
 	STAT_FIELD_SUB(afxdp_churn, umem_reg_ok),
 	STAT_FIELD_SUB(afxdp_churn, rings_setup_ok),

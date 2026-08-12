@@ -1636,6 +1636,7 @@ stats	object
     stats.psp_key_rotate.devlink_port_churn_unsupported_latched	u64
   stats.afxdp_churn	object
     stats.afxdp_churn.runs	u64
+    stats.afxdp_churn.runs_stubbed	u64
     stats.afxdp_churn.setup_failed	u64
     stats.afxdp_churn.umem_reg_ok	u64
     stats.afxdp_churn.rings_setup_ok	u64

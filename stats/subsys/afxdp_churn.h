@@ -4,6 +4,7 @@
 struct afxdp_churn_stats {
 	/* afxdp_churn childop counters */
 	unsigned long runs;				/* total afxdp_churn invocations */
+	unsigned long runs_stubbed;			/* invocations from #else stub (XDP headers absent; not a real childop run) */
 	unsigned long setup_failed;			/* socket / mmap / setsockopt / cap-gate latched */
 	unsigned long umem_reg_ok;			/* setsockopt(XDP_UMEM_REG) accepted */
 	unsigned long rings_setup_ok;		/* all four XDP_*_RING setsockopts accepted */
