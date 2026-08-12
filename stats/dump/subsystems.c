@@ -469,15 +469,27 @@ static void dump_stats_dead_arm_check(void)
 	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm in dispatch_msg_kind() --
 	 * bumped before xfrm_emit_migrate_state() so a zero here means the
 	 * probabilistic picker never landed on XMK_MIGRATE_STATE.
-	 * Floor: 5 * 1 = 5 draws required; gate on runs (opportunity count),
-	 * not arm_entered_migrate_state -- same single-arm reasoning as above. */
-	if (shm->stats.xfrm_churn.runs > 0) {
-		if (shm->stats.xfrm_churn.runs < 5 * 1)
+	 * Floor: gate on msg_kind_draws (grammar pick_msg_kind() calls), not
+	 * on xfrm_churn.runs (childop invocations) -- the two counters come
+	 * from entirely separate execution paths.  Using runs as the floor
+	 * caused two failure modes: runs reaches >= 5 immediately (childop
+	 * bumps it before any early-return), producing false DEAD_ARM when
+	 * the grammar has not yet drawn XMK_MIGRATE_STATE; and when the
+	 * childop is absent from the op rotation runs == 0, skipping the
+	 * check entirely even if the grammar ran thousands of times and the
+	 * arm is genuinely dead.
+	 * With XMK_MIGRATE_STATE weight 2/120 (empty ring) to 4/138 (full
+	 * ring), p ≈ 1/60-1/34; 200 draws gives ~3-6 expected hits before
+	 * the dead-arm verdict fires. */
+	{
+		unsigned long draws = shm->stats.xfrm_churn.msg_kind_draws;
+
+		if (draws < 200)
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
 			       "xfrm-churn", "insufficient_samples");
 		else if (!shm->stats.xfrm_churn.arm_entered_migrate_state)
 			stat_row("DEAD_ARM", "xfrm-churn/migrate_state",
-				 shm->stats.xfrm_churn.runs);
+				 draws);
 		/* else: arm_entered_migrate_state >= 1, arm is live */
 	}
 }

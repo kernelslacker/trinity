@@ -549,6 +549,10 @@ static void xfrm_grammar_data_leg(int parent_fd, int child_fd,
 	xfrm_drain_async(parent_fd);
 	xfrm_drain_mcast();
 	k = pick_msg_kind();
+	/* Count every grammar draw so the dead-arm floor for
+	 * XMK_MIGRATE_STATE can gate on the number of opportunities the
+	 * picker had, not on xfrm_churn childop runs (a separate path). */
+	__atomic_add_fetch(&shm->stats.xfrm_churn.msg_kind_draws, 1, __ATOMIC_RELAXED);
 	dispatch_msg_kind(parent_fd, k);
 	xfrm_drain_async(parent_fd);
 	xfrm_drain_mcast();
