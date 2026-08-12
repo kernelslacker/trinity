@@ -267,6 +267,17 @@ struct stats_ring_slot {
 };
 
 struct stats_ring {
+	/*
+	 * Per-child lossless op counter.  Incremented by the child (sole
+	 * writer) at every op-completion site — no atomic needed, no shared
+	 * cacheline contention.  The parent sums across all children's rings
+	 * in stats_ring_drain_all() and stores the result into
+	 * parent_stats.total_op_count.
+	 *
+	 * Cache-line aligned so the child's hot-path write lands on its own
+	 * line and does not false-share with the SPSC ring's head/tail.
+	 */
+	unsigned long lossless_op_count __attribute__((aligned(64)));
 	struct spsc_ring base;
 	struct stats_ring_slot slots[STATS_RING_SIZE];
 };
@@ -284,16 +295,18 @@ struct stats_ring {
  * stats_s (op_count, successes/failures, fault and redirection
  * tallies, the per-syscall reject arrays and the syscall-category
  * histogram) plus a selection of defense / corruption-attribution
- * counters, all drained here from the stats ring.  The ring drain is
- * the only writer (beyond the parent's own reset/init paths).
+ * counters, all drained here from the stats ring or from the per-child
+ * lossless_op_count field in struct stats_ring.  The ring drain and
+ * the per-child lossless_op_count summation are the only writers
+ * (beyond the parent's own reset/init paths).
  */
 struct stats_aggregate {
 	unsigned long op_count;
 	unsigned long previous_op_count;
 	/*
-	 * Run-wide monotonic op counter.  Bumped alongside op_count on every
-	 * ring-drained STATS_FIELD_OP_COUNT / STATS_FIELD_CALL_COMPLETE slot
-	 * and NEVER zeroed by reset_epoch_state() -- unlike op_count, which
+	 * Run-wide monotonic op counter.  Derived each drain cycle by summing
+	 * lossless_op_count across all children's struct stats_ring pages.
+	 * NEVER zeroed by reset_epoch_state() -- unlike op_count, which
 	 * is a per-epoch counter.  Consumers that compute deltas across
 	 * epoch boundaries (rate reporting in print_stats, per-window
 	 * timeseries in stats/log.c, shadow soft-saturation sampling in

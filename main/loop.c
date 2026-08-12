@@ -598,18 +598,16 @@ void reset_epoch_state(void)
 	parent_stats.op_count = 0;
 	parent_stats.previous_op_count = 0;
 	/*
-	 * Snapshot epoch_start_op_count from the lossless atomic so the
-	 * value is immune to in-flight ring slots that have not yet been
-	 * drained.  total_op_count is aligned to the same snapshot so the
-	 * first drain of the new epoch sees a zero delta and does not
-	 * spuriously count carried-over ring slots as new-epoch ops.
+	 * Snapshot epoch_start_op_count from parent_stats.total_op_count,
+	 * which was last set by stats_ring_drain_all() summing the per-child
+	 * lossless_op_count fields.  Using the already-drained aggregate
+	 * avoids reading shared memory and keeps the snapshot immune to
+	 * ring-slot drops (lossless_op_count is never fed via ring slots).
 	 * Neither field is zeroed: they are run-monotonic and rate
 	 * reporting / per-window timeseries / shadow_sat sampling all
 	 * read total_op_count as a monotonic clock across epoch boundaries.
 	 */
-	parent_stats.epoch_start_op_count = __atomic_load_n(
-		&shm->stats.lossless_op_total, __ATOMIC_RELAXED);
-	parent_stats.total_op_count = parent_stats.epoch_start_op_count;
+	parent_stats.epoch_start_op_count = parent_stats.total_op_count;
 
 	if (shm_published != NULL)
 		__atomic_store_n(&shm_published->fleet_op_count, 0UL,

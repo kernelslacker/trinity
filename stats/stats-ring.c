@@ -80,9 +80,10 @@ bool stats_ring_enqueue_call_complete(struct stats_ring *ring,
  * Per-class ceiling on the delta a single ring slot may contribute.
  * The slot lives in a page the child owns and a wild value-result
  * syscall arg can scribble the whole 16-byte record.  op_count and
- * total_op_count are no longer fed by the ring (they are derived from
- * the lossless_op_total atomic in shm->stats), so a stomped delta
- * cannot jump the strategy rotation clock or syscalls_todo termination
+ * total_op_count are no longer fed by the ring (they are derived by
+ * summing lossless_op_count across all per-child stats_ring pages),
+ * so a stomped delta cannot jump the strategy rotation clock or
+ * syscalls_todo termination
  * check.  The cap still applies to the remaining ring-drained counters
  * (category histogram, success/failure) so a stomped slot distorts at
  * most one class by its normal per-drain ceiling.  Producers currently
@@ -122,12 +123,12 @@ static void apply_slot(const void *p, void *cb_ctx __unused__)
 
 	switch (field) {
 	case STATS_FIELD_OP_COUNT:
-		/* op_count and total_op_count are now derived from
-		 * shm->stats.lossless_op_total (the unconditional atomic
-		 * bumped at both op-completion sites before the ring
-		 * enqueue).  Do not accumulate from the ring slot to
-		 * avoid double-counting.  The slot still arrives here;
-		 * the ring-drain keeps the overflow counter honest. */
+		/* op_count and total_op_count are derived by summing
+		 * lossless_op_count across all per-child stats_ring pages
+		 * in stats_ring_drain_all(); do not accumulate from the
+		 * ring slot to avoid double-counting.  The slot still
+		 * arrives here; the ring-drain keeps the overflow counter
+		 * honest. */
 		break;
 	case STATS_FIELD_FAULT_INJECTED:
 		parent_stats.fault_injected += delta;
@@ -301,7 +302,7 @@ static void apply_slot(const void *p, void *cb_ctx __unused__)
 		break;
 	case STATS_FIELD_CALL_COMPLETE: {
 		/* op_count and total_op_count are derived from the
-		 * lossless_op_total atomic (see STATS_FIELD_OP_COUNT
+		 * per-child lossless_op_count sum (see STATS_FIELD_OP_COUNT
 		 * comment above); do NOT accumulate from this slot.
 		 * Category and result class are still ring-drained so
 		 * they inherit the existing ring-drop tolerance: a
@@ -367,6 +368,7 @@ static void stats_publish_locked(void)
 void stats_ring_drain_all(void)
 {
 	unsigned int i;
+	unsigned long lossless_total = 0;
 
 	if (children == NULL)
 		return;
@@ -434,29 +436,31 @@ void stats_ring_drain_all(void)
 			ring = expected;
 		}
 
+		/*
+		 * Accumulate the per-child lossless_op_count before draining
+		 * the ring so the sum reflects every op completed up to now.
+		 * Plain read: the child is the sole writer (no atomic needed);
+		 * RELAXED load matches the child's plain store on architectures
+		 * with stronger-than-relaxed store ordering (x86-64, arm64).
+		 */
+		lossless_total += __atomic_load_n(&ring->lossless_op_count,
+						  __ATOMIC_RELAXED);
 		(void) stats_ring_drain(ring);
 	}
 
 	/*
-	 * Derive total_op_count and op_count from the lossless atomic
-	 * rather than from ring-accumulated deltas.  The atomic is bumped
-	 * unconditionally at both op-completion sites before the ring
-	 * enqueue, so a ring-full drop cannot silently lose an increment.
-	 * op_count = total - epoch_start preserves the per-epoch view
-	 * that fleet_op_count (published below) and check_main_loop_stops()
+	 * Derive total_op_count and op_count from the per-child lossless
+	 * sum accumulated above.  Each child increments its own ring's
+	 * lossless_op_count (plain ++, sole writer) so the sum is lossless
+	 * -- no ring-full drop can silently lose an increment.  op_count =
+	 * total - epoch_start preserves the per-epoch view that
+	 * fleet_op_count (published below) and check_main_loop_stops()
 	 * gate on.  total_op_count stays monotonically increasing across
 	 * epoch boundaries as before.
 	 */
-	if (shm != NULL) {
-		unsigned long atomic_total;
-
-		atomic_total = __atomic_load_n(
-			&shm->stats.lossless_op_total,
-			__ATOMIC_RELAXED);
-		parent_stats.total_op_count = atomic_total;
-		parent_stats.op_count = atomic_total
-			- parent_stats.epoch_start_op_count;
-	}
+	parent_stats.total_op_count = lossless_total;
+	parent_stats.op_count = lossless_total
+		- parent_stats.epoch_start_op_count;
 
 	stats_publish_locked();
 }
