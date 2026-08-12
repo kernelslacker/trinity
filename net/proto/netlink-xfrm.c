@@ -79,6 +79,10 @@ static int mcast_fd = -2;	/* -2 = not yet tried, -1 = tried + failed */
 
 static __u32 g_xfrm_seq;
 
+/* MIGRATE_STATE outcome counters -- make mark-miss rate visible in logs. */
+static unsigned long migrate_state_ack_n;
+static unsigned long migrate_state_esrch_n;
+
 __u32 xfrm_next_seq(void)
 {
 	return ++g_xfrm_seq;
@@ -366,7 +370,19 @@ static void dispatch_msg_kind(int fd, enum xfrm_msg_kind k)
 	case XMK_NEWPOLICY:	rc = xfrm_emit_newpolicy(fd); break;
 	case XMK_DELPOLICY:	rc = xfrm_emit_delpolicy(fd); break;
 	case XMK_MIGRATE:	rc = xfrm_emit_migrate(fd); break;
-	case XMK_MIGRATE_STATE:	rc = xfrm_emit_migrate_state(fd); break;
+	case XMK_MIGRATE_STATE:
+		rc = xfrm_emit_migrate_state(fd);
+		if (rc == 0) {
+			migrate_state_ack_n++;
+		} else if (rc == -ESRCH) {
+			migrate_state_esrch_n++;
+			/* Log at powers of 2 so mark-miss rate is visible
+			 * without flooding; should be rare on sa_ring path. */
+			if ((migrate_state_esrch_n & (migrate_state_esrch_n - 1)) == 0)
+				outputerr("xfrm migrate-state: ESRCH %lu ack %lu (mark-miss)\n",
+					  migrate_state_esrch_n, migrate_state_ack_n);
+		}
+		break;
 	case XMK_ACQUIRE:	rc = xfrm_emit_acquire(fd); break;
 	case XMK_FLUSHSA:	rc = xfrm_emit_flushsa(fd); break;
 	case XMK_FLUSHPOLICY:	rc = xfrm_emit_flushpolicy(fd); break;

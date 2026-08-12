@@ -519,16 +519,23 @@ int xfrm_emit_migrate_state(int fd)
 		ums->id.spi         = t.spi;
 		ums->id.family      = family;
 		ums->id.proto       = t.proto;
+		/* Zero the mark so xfrm_state_lookup matches the installed
+		 * zero-mark SAs.  rand32() marks give (3/4)^32 ≈ 1e-4 hit
+		 * rate and defeat the purpose of the sa_ring_pick branch. */
+		ums->old_mark.v     = 0;
+		ums->old_mark.m     = 0;
 	} else {
 		family              = pick_family();
 		ums->id.family      = family;
 		ums->id.proto       = pick_sa_proto();
 		ums->id.spi         = htonl(0x100U + rnd_modulo_u32(0xff00U));
 		fill_addresses(family, &ums->new_saddr, &ums->id.daddr);
+		/* Synthetic path: random mark intentionally causes ESRCH to
+		 * exercise the parser rejection arm. */
+		ums->old_mark.v     = rand32();
+		ums->old_mark.m     = rand32();
 	}
 	fill_addresses(family, &ums->new_saddr, &ums->new_daddr);
-	ums->old_mark.v         = rand32();
-	ums->old_mark.m         = rand32();
 	fill_selector(&ums->new_sel, family);
 	ums->new_reqid          = (rand32() & 0xff) + 1U;
 	ums->flags              = rand32() & 0x3U;
