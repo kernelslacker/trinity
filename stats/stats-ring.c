@@ -459,8 +459,14 @@ void stats_ring_drain_all(void)
 	 * gate on.  total_op_count stays monotonically increasing across
 	 * epoch boundaries as before.
 	 */
-	parent_stats.total_op_count = lossless_total;
-	parent_stats.op_count = lossless_total
+	/* High-water clamp: a shrinking contributor set (child exit removes
+	 * its ring from the sum) can drop lossless_total below a prior drain.
+	 * Clamp total_op_count monotonically, and derive op_count from the
+	 * clamped total (NOT raw lossless_total) so the unsigned subtraction
+	 * cannot underflow to ~ULONG_MAX and fire the termination check. */
+	if (lossless_total > parent_stats.total_op_count)
+		parent_stats.total_op_count = lossless_total;
+	parent_stats.op_count = parent_stats.total_op_count
 		- parent_stats.epoch_start_op_count;
 
 	stats_publish_locked();
