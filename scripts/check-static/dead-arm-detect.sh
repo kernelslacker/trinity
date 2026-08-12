@@ -76,12 +76,11 @@ while IFS= read -r srcfile; do
 	# ---- (a) must reference rnd_modulo_u32 ----
 	grep -q 'rnd_modulo_u32' "$srcfile" 2>/dev/null || continue
 
-	# ---- opt-out annotation count: each /* dead-arm-detect: not a
-	#      multi-arm dispatch */ comment marks one rnd_modulo_u32 call
-	#      as a non-dispatch use (e.g. array indexing).  Count them and
-	#      subtract from the effective dispatch count rather than
-	#      exempting the whole file. ----
-	optout_count=$(grep -c 'dead-arm-detect: not a multi-arm dispatch' "$srcfile" 2>/dev/null); optout_count=${optout_count:-0}
+	# ---- opt-out annotation: /* dead-arm-detect: not a multi-arm dispatch */
+	#      placed on the same line as a rnd_modulo_u32() call marks that call
+	#      as a non-dispatch use (e.g. array indexing).  Lines carrying the
+	#      annotation are excluded before the N-sum below, so one annotation
+	#      suppresses exactly one call site. ----
 
 	# ---- (b) must have a dispatch that uses the result ----
 	#
@@ -108,16 +107,27 @@ while IFS= read -r srcfile; do
 	fi
 	[ "$has_switch" -eq 1 ] || continue
 
-	# ---- (c) skip if CHILDOP_ARM_ENTER count >= effective dispatch count.
-	#      Effective dispatch count = rnd_modulo_u32( occurrences minus
-	#      per-call opt-out annotations.  Files where arm_count < effective
-	#      dispatch count are partially instrumented and must not be silently
-	#      exempted as the old whole-file check would have done. ----
+	# ---- (c) skip if CHILDOP_ARM_ENTER count >= sum of literal arm counts.
+	#      For each rnd_modulo_u32(N) call with a literal integer N, the
+	#      selector covers N arms; sum those N values across all non-opted-out
+	#      call sites.  A fully-instrumented file must have at least one
+	#      CHILDOP_ARM_ENTER per arm.  Counting call sites (the old approach)
+	#      under-counted: a file with one rnd_modulo_u32(16) call and one
+	#      CHILDOP_ARM_ENTER would satisfy "1 >= 1" despite 15 un-tracked arms.
+	#
+	#      Limitation: rnd_modulo_u32(expr) calls where the argument is a
+	#      runtime variable or expression (e.g. weight-table pickers that
+	#      compute the modulus from a table cardinality) contribute 0 to N_sum
+	#      and are not checked here.  Detecting those patterns requires
+	#      cross-function data-flow analysis and is out of scope for this gate. ----
 	arm_count=$(grep -c 'CHILDOP_ARM_ENTER' "$srcfile" 2>/dev/null); arm_count=${arm_count:-0}
-	rnd_count=$(grep -c 'rnd_modulo_u32(' "$srcfile" 2>/dev/null); rnd_count=${rnd_count:-0}
-	effective_rnd=$(( rnd_count - optout_count ))
-	[ "$effective_rnd" -le 0 ] && continue   # all uses annotated non-dispatch
-	[ "$arm_count" -ge "$effective_rnd" ] && continue  # coverage looks complete
+	N_sum=$(grep -v 'dead-arm-detect: not a multi-arm dispatch' "$srcfile" 2>/dev/null | \
+	        grep -oE 'rnd_modulo_u32\([0-9]+' | \
+	        grep -oE '[0-9]+$' | \
+	        awk '{s+=$1} END {print s+0}')
+	N_sum=${N_sum:-0}
+	[ "$N_sum" -le 0 ] && continue   # no literal-N dispatch calls (all non-literal or all opted-out)
+	[ "$arm_count" -ge "$N_sum" ] && continue  # coverage looks complete
 
 	# ---- survivor: emit a warning entry ----
 	printf '%s\n' "${srcfile#./}" >> "$warn_list"
