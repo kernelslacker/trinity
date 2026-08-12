@@ -6,7 +6,11 @@ struct bridge_ct_stats {
 	unsigned long runs;			/* total bridge_conntrack_churn invocations */
 	unsigned long flushes;		/* IPCTNL_MSG_CT_FLUSH messages emitted */
 	unsigned long pkts_sent;		/* TCP packets pushed via veth peer end */
-	unsigned long pkts_conntracked;	/* pkts_sent frames for which a conntrack entry was created */
+	unsigned long pkts_conntracked;	/* confirmed conntrack entries seen in /proc/net/nf_conntrack
+					 * after the burst (sum of brct_count_conntrack_entries()
+					 * results); counts only tuples that actually reached the
+					 * bridge conntrack path and produced a confirmed entry,
+					 * independent of the send-side return code */
 	unsigned long ct_timeout_obj_ok;	/* NFT_MSG_NEWOBJ for CT_TIMEOUT accepted */
 	unsigned long ct_mangle_ok;		/* br_mangle payload-SET chain installed ok */
 };

@@ -1151,8 +1151,6 @@ static void *brct_packet_sender(void *arg)
 			   (struct sockaddr *)&sll, sizeof(sll)) > 0) {
 			__atomic_add_fetch(&shm->stats.bridge_ct.pkts_sent,
 					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.bridge_ct.pkts_conntracked,
-					   1, __ATOMIC_RELAXED);
 		}
 	}
 	a->direct_syscalls = calls;
@@ -1361,6 +1359,37 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
 }
 
 /*
+ * Count conntrack entries in the current netns that match the synthetic
+ * 10.0.0.x → 10.0.0.1 tuples injected by brct_packet_sender.  Called
+ * after pthread_join() has returned so the kernel has had an opportunity
+ * to confirm the entries; reads /proc/net/nf_conntrack, which reflects
+ * only the private CLONE_NEWNET namespace from a process already
+ * running inside it.  Only lines carrying both "src=10.0.0." and
+ * "dst=10.0.0.1 " (with a trailing space to avoid prefix-matching
+ * 10.0.0.10, 10.0.0.11, etc. in the reply-direction tuple) are counted
+ * — a conservative filter that skips flushed, expired, or unrelated
+ * entries.  Returns the observed count; returns 0 on any open/read
+ * failure (e.g. CONFIG_NF_CONNTRACK=n, procfs unavailable).
+ */
+static unsigned long brct_count_conntrack_entries(void)
+{
+	FILE *f;
+	char line[512];
+	unsigned long n = 0;
+
+	f = fopen("/proc/net/nf_conntrack", "r");
+	if (!f)
+		return 0;
+	while (fgets(line, sizeof(line), f)) {
+		if (strstr(line, "src=10.0.0.") &&
+		    strstr(line, "dst=10.0.0.1 "))
+			n++;
+	}
+	fclose(f);
+	return n;
+}
+
+/*
  * Phase 5: spin up the AF_PACKET sender on v1, open the ctnetlink
  * socket, and race a bounded burst of IPCTNL_MSG_CT_FLUSH against the
  * in-flight bridge traffic.  Each I/O side has its own wall-cap: the
@@ -1462,6 +1491,21 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 		 * sender's final ctx->sa.direct_syscalls store is visible
 		 * here without any explicit atomic barrier. */
 		ctx->direct_syscalls += ctx->sa.direct_syscalls;
+	}
+
+	/* Read back the actual conntrack state after the burst has
+	 * settled.  brct_count_conntrack_entries() scans
+	 * /proc/net/nf_conntrack for entries matching the synthetic
+	 * 10.0.0.x → 10.0.0.1 tuples; the result is the number of
+	 * frames that actually made it through the bridge conntrack path
+	 * and produced a confirmed entry, independent of the send-side
+	 * return code. */
+	{
+		unsigned long confirmed = brct_count_conntrack_entries();
+
+		if (confirmed)
+			__atomic_add_fetch(&shm->stats.bridge_ct.pkts_conntracked,
+					   confirmed, __ATOMIC_RELAXED);
 	}
 }
 
