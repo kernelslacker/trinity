@@ -29,17 +29,31 @@
 #
 # Call-site forms scanned (outer pass):
 #   (a) VAR = fork()              -- assignment form (original)
-#   (b) if (fork() == 0) { ... } -- direct conditional form (now covered)
-#   (c) if (!fork()) { ... }      -- negation conditional form (now covered)
+#   (b) if (fork() == 0) { ... } -- direct conditional form
+#   (c) if (!fork()) { ... }      -- negation conditional form
+#   (d) VAR = clone(fn, ...)      -- clone() with function-pointer child;
+#                                    child body is fn(); checked in covered_funcs
+#   (e) VAR = clone3(...)         -- clone3() assignment; child via if(VAR==0)
+#   (f) VAR = vfork()             -- vfork() assignment; child via if(VAR==0)
+#   (g) if (clone(...)==0) { ... } -- direct conditional for clone()
+#   (h) if (!clone(...)) { ... }   -- negation conditional for clone()
+#
+# For clone() (form d): the child runs in the function-pointer first argument.
+# Pass 1 collects all function names defined in the file (all_funcs) and the
+# subset whose first real statement is CHILDOP_GRANDCHILD_ENTER (covered_funcs).
+# If fn_ptr is in covered_funcs → covered; if in all_funcs but not covered →
+# uncovered finding at the clone() line; if fn_ptr cannot be resolved →
+# UNPARSED:<file>:<line>.
 #
 # Remaining unscanned forms (out of scope; see future work):
-#   - fork() used as switch() argument or inside else-branch condition
+#   - fork()/clone() used as switch() argument or inside else-branch condition
 #   - Assignment-form fork() whose child branch appears beyond the 40-line
 #     scan window (window miss)
-#   - fork() in macro arguments or multi-statement comma expressions
+#   - fork()/clone() in macro arguments or multi-statement comma expressions
+#   - clone3() invoked via trinity_raw_syscall(__NR_clone3, ...) wrapper
 # These are rare in the childops/ tree; the gate emits UNPARSED:<file>:<line>
-# for any assignment-form fork() whose child branch it cannot locate, so they
-# are visible rather than silently skipped.
+# for any call site whose child branch it cannot locate, so they are visible
+# rather than silently skipped.
 #
 # Output format (one line per finding, fed into the keyed baseline):
 #   file:line:hash          -- uncovered child branch (line is the if-branch line)
@@ -300,6 +314,8 @@ while IFS= read -r srcfile; do
 		scanned  = 0
 		located  = 0
 		unparsed = 0
+		delete all_funcs
+		delete clone_body_covered
 
 		# ============================================================
 		# Pass 1: find functions whose first real statement is the
@@ -319,6 +335,16 @@ while IFS= read -r srcfile; do
 					if (cand != "") { func_name = cand; break }
 				}
 
+				# Track all function names defined in this file
+				# (used by clone() fn-ptr child resolution in Pass 2).
+				if (func_name != "") all_funcs[func_name] = 1
+
+				# Record which function body we are entering so that
+				# the line-by-line depth walk below can attribute any
+				# CHILDOP_GRANDCHILD_ENTER found anywhere in the body
+				# to this function (used for clone() fn-ptr check).
+				current_func = func_name
+
 				# Scan ahead for first non-trivial statement.
 				d2 = delta
 				for (j = i + 1; j <= n && j <= i + 20; j++) {
@@ -336,8 +362,16 @@ while IFS= read -r srcfile; do
 				}
 			}
 
+			# Attribute CHILDOP_GRANDCHILD_ENTER anywhere in this
+			# line to the current top-level function body (for clone()
+			# fn-ptr coverage; depth > 0 means we are inside a body).
+			if (depth > 0 && sl ~ /CHILDOP_GRANDCHILD_ENTER/ &&
+			    current_func != "")
+				clone_body_covered[current_func] = 1
+
+			# Track when we leave the function (depth 1 -> 0).
 			depth += delta
-			if (depth < 0) depth = 0
+			if (depth <= 0) { depth = 0; current_func = "" }
 		}
 
 		# ============================================================
@@ -366,20 +400,30 @@ while IFS= read -r srcfile; do
 			# Classify the line: assignment form, direct conditional,
 			# or neither.
 			# --------------------------------------------------------
-			is_assign = (sl ~ /=[[:space:]]*fork[[:space:]]*\(\)/)
-			is_cond   = (sl ~ /if[[:space:]]*\([[:space:]]*fork[[:space:]]*\(\)[[:space:]]*==[[:space:]]*0/ ||
-			             sl ~ /if[[:space:]]*\([[:space:]]*!fork[[:space:]]*\(\)/)
+			is_assign        = (sl ~ /=[[:space:]]*fork[[:space:]]*\(\)/)
+			is_clone_assign  = (sl ~ /=[[:space:]]*clone[[:space:]]*\(/)
+			is_clone3_assign = (sl ~ /=[[:space:]]*clone3[[:space:]]*\(/)
+			is_vfork_assign  = (sl ~ /=[[:space:]]*vfork[[:space:]]*\(\)/)
+			is_cond          = (sl ~ /if[[:space:]]*\([[:space:]]*fork[[:space:]]*\(\)[[:space:]]*==[[:space:]]*0/ ||
+			                     sl ~ /if[[:space:]]*\([[:space:]]*!fork[[:space:]]*\(\)/)
+			is_clone_cond    = (sl ~ /if[[:space:]]*\([[:space:]]*clone[[:space:]]*\(/ ||
+			                     sl ~ /if[[:space:]]*\([[:space:]]*!clone[[:space:]]*\(/)
 
-			if (!is_assign && !is_cond)
+			# clone3() matches clone() prefix-regex; exclude it from is_clone_assign.
+			if (is_clone3_assign) is_clone_assign = 0
+
+			if (!is_assign && !is_cond && !is_clone_assign &&
+			    !is_clone3_assign && !is_vfork_assign && !is_clone_cond)
 				continue
 
 			scanned++
 
 			# --------------------------------------------------------
-			# Direct conditional: if (fork() == 0) or if (!fork()).
-			# The fork site IS the child branch at line i.
+			# Direct conditional: if (fork()==0) / if (!fork()) /
+			# if (clone(...)==0) / if (!clone(...)).
+			# The call site IS the child branch at line i.
 			# --------------------------------------------------------
-			if (is_cond) {
+			if (is_cond || is_clone_cond) {
 				located++
 				if (!check_if_body(i, sl, n))
 					print file ":" i
@@ -387,12 +431,49 @@ while IFS= read -r srcfile; do
 			}
 
 			# --------------------------------------------------------
-			# Assignment form: VAR = fork()
-			# Extract the pid variable name, then scan ahead.
+			# clone() assignment: VAR = clone(fn_ptr, stack, flags, arg)
+			# The child body is fn_ptr function, not an inline branch.
+			# Resolve fn_ptr via all_funcs / covered_funcs collected in
+			# Pass 1.  If fn_ptr is in covered_funcs → covered; if in
+			# all_funcs but not covered → uncovered finding; otherwise
+			# emit UNPARSED so the site is visible rather than silently
+			# skipped.
+			# --------------------------------------------------------
+			if (is_clone_assign) {
+				fn_ptr = ""
+				tmp_cl = sl
+				if (match(tmp_cl,
+				          /clone[[:space:]]*\([[:space:]]*([A-Za-z_][A-Za-z0-9_]*)/, arr_cl))
+					fn_ptr = arr_cl[1]
+
+				if (fn_ptr == "") {
+					# Cannot extract fn_ptr at all.
+					unparsed++
+					print "UNPARSED:" file ":" i
+				} else if (fn_ptr in clone_body_covered) {
+					# Child function contains CHILDOP_GRANDCHILD_ENTER.
+					located++
+				} else if (fn_ptr in all_funcs) {
+					# Child function defined in this file but not covered.
+					located++
+					print file ":" i
+				} else {
+					# fn_ptr not found in this file; cannot verify.
+					unparsed++
+					print "UNPARSED:" file ":" i
+				}
+				continue
+			}
+
+			# --------------------------------------------------------
+			# Assignment form: VAR = fork() / VAR = clone3(...) /
+			# VAR = vfork().
+			# Extract the pid variable name, then scan ahead for
+			# if (VAR == 0) / if (!VAR) at the same brace depth.
 			# --------------------------------------------------------
 			pid_var = ""
 			tmp_sl  = sl
-			sub(/[[:space:]]*=[[:space:]]*fork[[:space:]]*\(\).*/, "", tmp_sl)
+			sub(/[[:space:]]*=[[:space:]]*(fork|clone3|vfork)[[:space:]]*\(.*/, "", tmp_sl)
 			if (match(tmp_sl, /([A-Za-z_][A-Za-z0-9_]*)([[:space:]]*)$/, arr))
 				pid_var = arr[1]
 			if (pid_var == "" || pid_var == "return")
@@ -447,8 +528,8 @@ while IFS= read -r srcfile; do
 					break
 				}
 
-				# Stop if we encounter a new fork() at depth 0.
-				if (sl2 ~ /=[[:space:]]*fork[[:space:]]*\(\)/) break
+				# Stop if we encounter a new fork()/clone()/clone3()/vfork() at depth 0.
+				if (sl2 ~ /=[[:space:]]*(fork|clone3?|vfork)[[:space:]]*\(/) break
 
 				# Track brace depth for the next iteration.
 				rel_depth += brace_delta(sl2)
