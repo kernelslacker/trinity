@@ -66,9 +66,14 @@
 #include "psp-key-rotate-internal.h"
 
 /* devlink genl UAPI integers (mainlined long before 6.10).  Supplied as
- * fallbacks for stripped sysroots that omit <linux/devlink.h>; the
- * kernel returns -EOPNOTSUPP / -ENOPROTOOPT on unknown commands and the
- * sub-mode latches ns_unsupported_psp_devlink_port. */
+ * fallbacks for stripped sysroots that omit <linux/devlink.h>.  The
+ * #ifndef guards mean these shim values ARE the ones actually sent to
+ * the kernel on any host whose installed headers do not define the
+ * symbol — the header wins only where it already exists.  Wrong values
+ * in the valid enum range cause silent misbehaviour (no -EOPNOTSUPP),
+ * so each shim must carry the correct kernel value for old-header
+ * builds.  The sub-mode latches ns_unsupported_psp_devlink_port on
+ * persistent failures regardless. */
 #ifndef DEVLINK_FAMILY_NAME
 #define DEVLINK_FAMILY_NAME		"devlink"
 #endif
