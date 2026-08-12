@@ -524,7 +524,7 @@ static int nft_install_bridge_ct(struct nfnl_ctx *nf, const char *table,
  * memsets the proto union and the SYN-only frames never reach the
  * TCP_ACK_SET branch that assigns last_win, so the last_win==0 conjunct
  * at nf_conntrack_proto_tcp.c:1291-1294 is always true.
- * TCP_CONNTRACK_UNACK (index 13, 48 bytes past) is unreachable with
+ * TCP_CONNTRACK_UNACK (index 13, 44 bytes past) is unreachable with
  * these frames: IP_CT_TCP_FLAG_DATA_UNACKNOWLEDGED is only set when
  * after(end, sender->td_end), which is always false for byte-identical
  * SYN frames (same seq and length across a flow).  A future maintainer
@@ -733,7 +733,7 @@ static int nft_install_ct_mangle(struct nfnl_ctx *nf, const char *table,
  * timeouts[TCP_CONNTRACK_RETRANS] = index 12, 40 bytes past the end
  * of the 8-byte UDP array, via the last_win==0 branch in
  * nf_conntrack_proto_tcp.c:1291-1294.  TCP_CONNTRACK_UNACK (index 13,
- * 48 bytes past) is unreachable here: IP_CT_TCP_FLAG_DATA_UNACKNOWLEDGED
+ * 44 bytes past) is unreachable here: IP_CT_TCP_FLAG_DATA_UNACKNOWLEDGED
  * is set only when after(end, sender->td_end), which is always false
  * for byte-identical SYN frames (same seq and length per flow).
  * A future maintainer who wants to cover index 13 must send a second
