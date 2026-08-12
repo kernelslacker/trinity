@@ -91,18 +91,13 @@
  * (4096 pages) is the minimum size for the cursor to reach that boundary.
  * Keep PMD/THP alignment (multiple of 2 MiB).
  *
- * MINCORE_VEC_GUARD adds a 64-byte sentinel zone past the expected
- * boundary; if any sentinel byte changes after a mincore() call the
- * pagewalk wrote beyond the expected page-count range -- mincore_pagewalk_dup
- * is incremented as a measurable proxy for the dup-walk, with or without
- * a KASAN hit on the kernel side.
+ * MINCORE_VEC_BYTES is exactly MINCORE_ARENA_PAGES (4096) -- one byte per
+ * page.  KASAN is the oracle for OOB writes on the kernel side.
  */
 #define MINCORE_ARENA_SIZE	(16UL << 20)
 #define MINCORE_ARENA_PAGES	(MINCORE_ARENA_SIZE / 4096UL)
-#define MINCORE_VEC_GUARD	64UL
-#define MINCORE_VEC_BYTES	(MINCORE_ARENA_PAGES + MINCORE_VEC_GUARD)
+#define MINCORE_VEC_BYTES	MINCORE_ARENA_PAGES
 #define MINCORE_RACER_STACK	(64UL * 1024UL)		/* 64 KiB sibling stack */
-#define MINCORE_SENTINEL	0xCCU
 
 /*
  * Per-round oracle tally, aggregated into shm->stats.thp_split_ref_race
@@ -321,9 +316,9 @@ bool thp_split_ref_race(struct childdata *child)
 	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
 	/*
 	 * vec: mincore + vm_readv scratch buffer.  Must be MINCORE_VEC_BYTES
-	 * long so the 16 MiB mincore arm fits (4096 pages + 64-byte sentinel).
-	 * Moved off the stack: at 16 MiB arena the stack variant would be
-	 * 4160 bytes and blow the child stack; mmap'd instead.
+	 * long so the 16 MiB mincore arm fits (4096 pages = MINCORE_ARENA_PAGES).
+	 * Heap-allocated because the 16 MiB arena requires a 4096-entry vec;
+	 * a stack allocation of that size is unreasonable.
 	 */
 	unsigned char *vec;
 	volatile unsigned int rounds;
@@ -333,7 +328,6 @@ bool thp_split_ref_race(struct childdata *child)
 	unsigned long tally_ref_held = 0;
 	unsigned long tally_no_race = 0;
 	unsigned long tally_content_bad = 0;
-	unsigned long tally_mincore_dup = 0;
 	void *arena;
 	uintptr_t base, al;
 	unsigned int i;
@@ -346,8 +340,9 @@ bool thp_split_ref_race(struct childdata *child)
 
 	/*
 	 * Allocate the mincore/pvreadv scratch buffer on the heap.  At
-	 * MINCORE_VEC_BYTES = 4160 this is safe for both the 2 MiB THP rounds
-	 * (needing 576 bytes) and the 16 MiB mincore arm (needing 4160 bytes).
+	 * MINCORE_VEC_BYTES = MINCORE_ARENA_PAGES (4096) this covers both the
+	 * 2 MiB THP rounds (needing THP_ARENA_PAGES = 512 bytes) and the full
+	 * 16 MiB mincore arm (needing MINCORE_ARENA_PAGES = 4096 bytes).
 	 */
 	vec = mmap(NULL, MINCORE_VEC_BYTES, PROT_READ | PROT_WRITE,
 		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -430,7 +425,7 @@ bool thp_split_ref_race(struct childdata *child)
 		if (vma_pressure_is_high())
 			break;
 		direct_calls += thp_one_round(arena, i, vec,
-				      THP_ARENA_PAGES + 64, &rt);
+				      THP_ARENA_PAGES, &rt);
 		tally_rounds++;
 		if (rt.ref_held)
 			tally_ref_held++;
@@ -455,9 +450,7 @@ bool thp_split_ref_race(struct childdata *child)
 	 * walk_pud_range() then re-walks the PUD sub-range; mincore_pte_range()
 	 * advances its cursor unconditionally, pushing it past the 4096-byte
 	 * tmp buffer (OOB write into the adjacent kernel page).  KASAN catches
-	 * the overwrite.  tally_mincore_dup counts calls where the sentinel
-	 * bytes past MINCORE_ARENA_PAGES in vec were modified, confirming the
-	 * pagewalk wrote beyond the expected range.
+	 * the overwrite.
 	 *
 	 * CLONE_VM (not CLONE_VFORK) -- the sibling is a live concurrent task
 	 * in the same mm, not a blocked parent waiting for exec/exit.
@@ -545,26 +538,18 @@ bool thp_split_ref_race(struct childdata *child)
 
 		/*
 		 * Parent loops mincore() over the full 16 MiB.  Each call races
-		 * the sibling's MADV_COLLAPSE/MADV_DONTNEED.  Initialise the
-		 * sentinel zone before each call; check it after to detect
-		 * writes past MINCORE_ARENA_PAGES.
+		 * the sibling's MADV_COLLAPSE/MADV_DONTNEED.  Bounded by
+		 * THP_BUDGET_NS so the sibling cannot spin the full arm duration.
 		 */
 		mc_rounds = JITTER_RANGE(8U);
+		clock_gettime(CLOCK_MONOTONIC, &start);
 		for (unsigned int r = 0; r < mc_rounds; r++) {
-			__builtin_memset(vec + MINCORE_ARENA_PAGES,
-					 MINCORE_SENTINEL, MINCORE_VEC_GUARD);
 			(void)mincore(mc_arena, MINCORE_ARENA_SIZE, vec);
 			direct_calls++;
 
-			/* Sentinel check: dup-walk wrote past expected boundary? */
-			for (unsigned long b = 0; b < MINCORE_VEC_GUARD; b++) {
-				if (vec[MINCORE_ARENA_PAGES + b] != MINCORE_SENTINEL) {
-					tally_mincore_dup++;
-					break;
-				}
-			}
-
 			if (vma_pressure_is_high())
+				break;
+			if (budget_elapsed_ns(&start, THP_BUDGET_NS))
 				break;
 		}
 
@@ -611,10 +596,5 @@ mc_out:
 				&shm->stats.thp_split_ref_race.content_mismatch,
 				tally_content_bad, __ATOMIC_RELAXED);
 	}
-	if (tally_mincore_dup)
-		__atomic_add_fetch(
-			&shm->stats.thp_split_ref_race.mincore_pagewalk_dup,
-			tally_mincore_dup, __ATOMIC_RELAXED);
-
 	return true;
 }

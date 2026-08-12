@@ -25,21 +25,12 @@
  *                             fired -- indicates a kernel data-corruption
  *                             path through the folio split / ref-count
  *                             manipulation; any non-zero value is a bug).
- * mincore_pagewalk_dup     -- mincore() calls over the 16 MiB arena where
- *                             the byte written past the expected page-count
- *                             boundary changed from the sentinel value,
- *                             indicating the kernel's pagewalk cursor
- *                             advanced beyond the 4096-entry tmp buffer
- *                             (ACTION_AGAIN dup-walk).  Non-zero confirms
- *                             the race arm is live; KASAN catches the
- *                             actual OOB write on the adjacent kernel page.
  */
 struct thp_split_ref_race_stats {
 	unsigned long split_trigger_rounds;
 	unsigned long thp_split_while_ref_held;
 	unsigned long thp_no_race;
 	unsigned long content_mismatch;
-	unsigned long mincore_pagewalk_dup;
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_THP_SPLIT_REF_RACE_H */
