@@ -79,12 +79,14 @@ bool stats_ring_enqueue_call_complete(struct stats_ring *ring,
 /*
  * Per-class ceiling on the delta a single ring slot may contribute.
  * The slot lives in a page the child owns and a wild value-result
- * syscall arg can scribble the whole 16-byte record -- a delta of
- * 0xFFFFFFFF applied to op_count republishes into fleet_op_count and
- * jumps the strategy rotation clock / syscalls_todo termination check
- * by 4G in one drain.  Cap by plausible per-slot magnitude so a
- * stomped slot distorts at most one class by its normal per-drain
- * ceiling.  Producers currently emit +1 on every path except
+ * syscall arg can scribble the whole 16-byte record.  op_count and
+ * total_op_count are no longer fed by the ring (they are derived from
+ * the lossless_op_total atomic in shm->stats), so a stomped delta
+ * cannot jump the strategy rotation clock or syscalls_todo termination
+ * check.  The cap still applies to the remaining ring-drained counters
+ * (category histogram, success/failure) so a stomped slot distorts at
+ * most one class by its normal per-drain ceiling.  Producers currently
+ * emit +1 on every path except
  * TOTAL_PCS, which emits the per-drain kcov trace length; keep that
  * one at KCOV_TRACE_SIZE and hold everything else to ~1M, enough
  * headroom for any batched producer that might land later.
@@ -120,22 +122,12 @@ static void apply_slot(const void *p, void *cb_ctx __unused__)
 
 	switch (field) {
 	case STATS_FIELD_OP_COUNT:
-		/*
-		 * KNOWN LOSSY WINDOW: op_count and total_op_count are
-		 * accumulated only from drained ring slots.  When the
-		 * 1024-slot per-child stats ring is full, enqueue calls
-		 * silently discard the slot and this increment is lost.
-		 * Dropped counts under-bias op_count, causing call-limit,
-		 * epoch-limit, and strategy-rotation checks to fire late
-		 * or not at all under sustained load.
-		 * 438eaf8460c6 ("stats: make op-count clock lossless via MAP_SHARED atomic")
-		 * fixed this; that fix was reverted 2026-08-09 by
-		 * 51e8cd3d8f0d ("Revert "stats: make op-count clock lossless via MAP_SHARED atomic"")
-		 * with no rationale.  A fresh replacement approach is needed
-		 * -- see STATS_FIELD_CALL_COMPLETE below.
-		 */
-		parent_stats.op_count += delta;
-		parent_stats.total_op_count += delta;
+		/* op_count and total_op_count are now derived from
+		 * shm->stats.lossless_op_total (the unconditional atomic
+		 * bumped at both op-completion sites before the ring
+		 * enqueue).  Do not accumulate from the ring slot to
+		 * avoid double-counting.  The slot still arrives here;
+		 * the ring-drain keeps the overflow counter honest. */
 		break;
 	case STATS_FIELD_FAULT_INJECTED:
 		parent_stats.fault_injected += delta;
@@ -308,24 +300,16 @@ static void apply_slot(const void *p, void *cb_ctx __unused__)
 		parent_stats.mm_gate_post_slip += delta;
 		break;
 	case STATS_FIELD_CALL_COMPLETE: {
-		/* One slot, three logical bumps.  op_count is unconditional
-		 * (the SPSC slot wouldn't have made it past spsc_ring_drain
-		 * without head/tail ordering, so its arrival IS the proof
-		 * that a child dispatched a syscall).  category is gated on
-		 * aux < NR_SYSCAT; a scribbled aux loses just the category
-		 * bump for this slot.  successes/failures is gated on a
-		 * known result_class; any other byte value in _reserved is
-		 * treated as INCOMPLETE so a scribbled slot cannot fabricate
-		 * a success/failure attribution.
-		 *
-		 * NOTE: the op_count/total_op_count bumps here share the same
-		 * lossy window described in STATS_FIELD_OP_COUNT above.  A
-		 * ring-full drop at the dispatch-step.c site silently loses
-		 * this syscall completion from the op-count clocks too. */
+		/* op_count and total_op_count are derived from the
+		 * lossless_op_total atomic (see STATS_FIELD_OP_COUNT
+		 * comment above); do NOT accumulate from this slot.
+		 * Category and result class are still ring-drained so
+		 * they inherit the existing ring-drop tolerance: a
+		 * scribbled aux loses just the category bump; any
+		 * unknown result byte is treated as INCOMPLETE so a
+		 * stomped slot cannot fabricate a success/failure. */
 		uint8_t result = (uint8_t)s->_reserved;
 
-		parent_stats.op_count += delta;
-		parent_stats.total_op_count += delta;
 		if (aux < NR_SYSCAT)
 			parent_stats.syscall_category_count[aux] += delta;
 		if (result == STATS_RESULT_SUCCESS)
@@ -451,6 +435,27 @@ void stats_ring_drain_all(void)
 		}
 
 		(void) stats_ring_drain(ring);
+	}
+
+	/*
+	 * Derive total_op_count and op_count from the lossless atomic
+	 * rather than from ring-accumulated deltas.  The atomic is bumped
+	 * unconditionally at both op-completion sites before the ring
+	 * enqueue, so a ring-full drop cannot silently lose an increment.
+	 * op_count = total - epoch_start preserves the per-epoch view
+	 * that fleet_op_count (published below) and check_main_loop_stops()
+	 * gate on.  total_op_count stays monotonically increasing across
+	 * epoch boundaries as before.
+	 */
+	if (shm != NULL) {
+		unsigned long atomic_total;
+
+		atomic_total = __atomic_load_n(
+			&shm->stats.lossless_op_total,
+			__ATOMIC_RELAXED);
+		parent_stats.total_op_count = atomic_total;
+		parent_stats.op_count = atomic_total
+			- parent_stats.epoch_start_op_count;
 	}
 
 	stats_publish_locked();

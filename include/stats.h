@@ -365,6 +365,44 @@ enum syscall_category {
  */
 
 struct stats_s {
+	/* ---- Group A: hot per-syscall ---- */
+
+	/*
+	 * Lossless monotonic run-wide op counter.  Bumped with
+	 * __atomic_add_fetch(,1,__ATOMIC_RELAXED) at BOTH op-completion
+	 * sites before the stats-ring enqueue:
+	 *   - alt-op path (child/child.c): bumped for every childop
+	 *     completion, then STATS_FIELD_OP_COUNT is enqueued.
+	 *   - syscall path (random_syscall/dispatch-step.c): bumped for
+	 *     every dispatched syscall, then STATS_FIELD_CALL_COMPLETE
+	 *     is enqueued.
+	 * Because the bump is unconditional and precedes the ring enqueue,
+	 * a ring-full drop at either site does NOT silently lose the
+	 * increment — the atomic always reflects the true total.
+	 *
+	 * Lives in struct stats_s (MAP_SHARED shm->stats) so every child
+	 * can write to it directly without going through a ring.  The
+	 * parent reads it with __ATOMIC_RELAXED once per drain cycle in
+	 * stats_ring_drain_all() and stores the result into
+	 * parent_stats.total_op_count; op_count is derived as
+	 * (total_op_count - epoch_start_op_count) and published to
+	 * shm_published->fleet_op_count for the rotation clock.
+	 *
+	 * Never zeroed per epoch or per child respawn — monotonically
+	 * increasing for the full run.  Epoch semantics are preserved by
+	 * epoch_start_op_count in struct stats_aggregate, which is
+	 * snapshotted from this field in reset_epoch_state().
+	 *
+	 * Relationship to fleet_op_count (shm_published): fleet_op_count
+	 * is the per-epoch view children read for the strategy rotation
+	 * clock and the syscalls_todo termination check; it equals
+	 * (parent_stats.op_count) as published after each drain, which
+	 * itself equals (lossless_op_total - epoch_start_op_count).
+	 * lossless_op_total is the monotonic source of truth;
+	 * fleet_op_count is its per-epoch windowed view for children.
+	 */
+	unsigned long lossless_op_total __attribute__((aligned(64)));
+
 	/* ---- Group B: per-syscall, rare-condition ---- */
 
 	/* post-syscall oracle anomaly counts.  See stats/subsys/oracle.h. */

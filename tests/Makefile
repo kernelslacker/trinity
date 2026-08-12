@@ -96,6 +96,7 @@ FAKE_SRCS	:= \
 	shared_str_heap_selftest.c \
 	dispatch_stage_order_test.c \
 	deferred_free_test.c \
+	stats_opclock_lossless_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
