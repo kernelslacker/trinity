@@ -65,11 +65,11 @@
 
 #include "kernel/socket.h"
 #ifndef BPF_PROG_TYPE_SK_SKB
-# define BPF_PROG_TYPE_SK_SKB	17
+# define BPF_PROG_TYPE_SK_SKB	14
 #endif
 
 #ifndef BPF_SK_SKB_STREAM_VERDICT
-# define BPF_SK_SKB_STREAM_VERDICT 9
+# define BPF_SK_SKB_STREAM_VERDICT 5
 #endif
 
 #ifndef BPF_FUNC_sk_redirect_map

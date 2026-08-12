@@ -85,7 +85,7 @@
  * Stripped sysroots may predate it; the value is stable.
  */
 #ifndef RTNLGRP_IPV6_MROUTE_R
-#define RTNLGRP_IPV6_MROUTE_R	34
+#define RTNLGRP_IPV6_MROUTE_R	31
 #endif
 
 /*

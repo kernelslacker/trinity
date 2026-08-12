@@ -21,7 +21,7 @@
 #endif
 
 #ifndef IOPRIO_NR_HINTS
-#define IOPRIO_NR_HINTS		8
+#define IOPRIO_NR_HINTS		1024
 #endif
 
 #ifndef IOPRIO_HINT_NONE

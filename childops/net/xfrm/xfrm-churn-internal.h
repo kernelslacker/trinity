@@ -79,7 +79,7 @@
 #define XFRM_MSG_NEWPOLICY	0x13
 #define XFRM_MSG_DELPOLICY	0x14
 #define XFRM_MSG_ALLOCSPI	0x16
-#define XFRM_MSG_UPDSA		0x1f
+#define XFRM_MSG_UPDSA		0x1a
 #endif
 
 /* XFRM_MSG_MAPPING (0x21) was added to the UAPI without a matching entry
@@ -89,15 +89,15 @@
  * minimum payload size.  Fixed by upstream commit 28465227c80f.  Sysroot
  * shims so the sweep below compiles against older <linux/xfrm.h>. */
 #ifndef XFRM_MSG_MAPPING
-#define XFRM_MSG_MAPPING	0x21
+#define XFRM_MSG_MAPPING	0x26
 #endif
 
 #ifndef XFRM_MSG_SETDEFAULT
-#define XFRM_MSG_SETDEFAULT	0x22
+#define XFRM_MSG_SETDEFAULT	0x27
 #endif
 
 #ifndef XFRM_MSG_GETDEFAULT
-#define XFRM_MSG_GETDEFAULT	0x23
+#define XFRM_MSG_GETDEFAULT	0x28
 #endif
 
 /* End of the compat-table sweep range.  Covers MAPPING + the SETDEFAULT

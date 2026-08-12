@@ -1,28 +1,43 @@
 #!/bin/bash
 #
-# uapi-shim-values: verify that trinity's uapi-gap #define shims carry the
-# correct numeric values for enum-backed UAPI constants.
+# uapi-shim-values: compiler-authoritative whole-tree scan of uapi shim values.
 #
-# WHY THIS EXISTS: every shim of the form
+# WHY THIS EXISTS: every #define of the form
 #
-#   #ifndef IFLA_GRE_LOCAL
 #   #define IFLA_GRE_LOCAL  6
-#   #endif
 #
-# is unconditionally taken: cpp #ifndef is always true for enum values
-# because enums are not macros.  The shim is therefore not a fallback -- it
-# IS the definition on every build.  A typo or miscounted enum position
-# compiles clean, links clean, and silently encodes the wrong netlink
-# attribute forever.
+# (whether or not wrapped in #ifndef) is the EFFECTIVE definition on every
+# build -- enum constants are not macros, so a cpp #ifndef is unconditionally
+# true.  A typo or miscounted enum position compiles clean, links clean, and
+# silently encodes the wrong netlink attribute forever.
 #
-# The check parses trinity's shim #define lines and compares them against
-# scripts/check-static/uapi-shim-values.baseline, which was verified against
-# a pinned linux-linus sysroot.
+# HOW IT WORKS:
+#   1. Harvest  -- collect every "#define SYM <integer>" from the whole tree
+#                  (excluding scripts/), stripping C comments first.  Both
+#                  decimal and hex values are accepted; all are normalised to
+#                  decimal for comparison.
+#   2. Probe    -- build a precompiled header from a broad set of installed
+#                  linux uapi headers, then compile symbol-checking batches in
+#                  parallel to identify which symbols are compiler-resolvable.
+#                  Symbols the compiler cannot find (trinity-private defines)
+#                  are excluded.  The fixed-symbol final binary is then run to
+#                  obtain the authoritative integer value for each symbol.
+#   3. Compare  -- for every compiler-resolved symbol, every occurrence of
+#                  that symbol in trinity's source must carry the compiler's
+#                  value.  A mismatch is a FAIL.
+#   4. Baseline -- scripts/check-static/uapi-shim-values.baseline pins
+#                  specific symbol→value pairs.  Each baseline entry is an
+#                  additional cross-check:
+#                    * compiler can't resolve the symbol  →  FAIL
+#                      (baseline claimed it was a uapi constant)
+#                    * compiler value ≠ baseline value    →  FAIL
+#                      (kernel headers changed; baseline needs updating)
 #
-# Families covered: IFLA_GRE_*, IFLA_IPTUN_*, NDA_*, XFRMA_* (newer attrs),
-#                   NL80211_CMD_* (recently corrected subset)
-# NOT YET covered (272 shims total -- follow-up task):
-#   NFTA_*, CTA_*, TCA_*, ETHTOOL_A_*, MDBA_*, DCB_ATTR_*
+# OVERLAP with netlink-xfrm-attr-shim.sh:
+#   That gate checks that every XFRMA_ token *used* in the xfrm generators
+#   has a #define fallback.  This gate checks that every such fallback carries
+#   the *correct value*.  The two gates are complementary; neither is
+#   redundant.
 
 set -u
 
@@ -30,69 +45,303 @@ NAME="uapi-shim-values"
 ROOT="${REPO_ROOT:-$(pwd)}"
 BASELINE="$ROOT/scripts/check-static/uapi-shim-values.baseline"
 
-[ -f "$BASELINE" ] || { echo "PASS: $NAME (no baseline)"; exit 0; }
+# ---------------------------------------------------------------------------
+# Prerequisites
+# ---------------------------------------------------------------------------
+command -v gcc  >/dev/null 2>&1 || { echo "ERROR: $NAME: gcc unavailable"; exit 1; }
+command -v perl >/dev/null 2>&1 || { echo "ERROR: $NAME: perl unavailable"; exit 1; }
 
-command -v perl >/dev/null 2>&1 || { echo "ERROR: $NAME: perl unavailable, cannot verify shim values"; exit 1; }
+# ---------------------------------------------------------------------------
+# Temp workspace
+# ---------------------------------------------------------------------------
+WORKDIR=$(mktemp -d /tmp/shim-gate-XXXXXX)
+HARVEST="$WORKDIR/harvest.txt"
+SYMS_ALL="$WORKDIR/syms-all.txt"
+SYMS_BAD="$WORKDIR/syms-bad.txt"
+SYMS_GOOD="$WORKDIR/syms-good.txt"
+PCH_HDR="$WORKDIR/uapi-probe-headers.h"
+FINAL_C="$WORKDIR/final-probe.c"
+FINAL_BIN="$WORKDIR/final-probe"
+FINAL_ERR="$WORKDIR/final-probe.err"
+COMPILER_TABLE="$WORKDIR/compiler-table.txt"
+trap 'rm -rf "$WORKDIR"' EXIT
 
-# Collect all trinity #define lines across the whole source tree after
-# stripping C comments, so a commented-out stale value is not matched.
-#
-# Result format: one "SYMBOL VALUE" pair per line, for all defines that
-# have a purely numeric value (decimal, no parens/expressions).
-define_map=$(
-	find "$ROOT" -path "$ROOT/scripts" -prune -o \
-		\( -name '*.c' -o -name '*.h' \) -print 2>/dev/null \
-	| sort \
-	| xargs perl -0777 -pe \
-		's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' \
-		2>/dev/null \
-	| grep -oE '#[[:space:]]*define[[:space:]]+[A-Z][A-Z0-9_]+[[:space:]]+[0-9]+([[:space:]]|$)' \
-	| awk '{sub(/^#[[:space:]]*define[[:space:]]+/, ""); print $1, $2}'
-)
+# ---------------------------------------------------------------------------
+# Step 1: Harvest
+# Collect all "#define SYM <integer>" lines from the tree (excluding scripts/).
+# Strip C block/line comments first so commented-out stale values are ignored.
+# Decimal and hex values are both captured; stored as-is for normalization
+# at comparison time.
+# Output: "SYM VALUE" pairs, sorted and uniqued.
+# ---------------------------------------------------------------------------
+find "$ROOT" -path "$ROOT/scripts" -prune -o \
+    \( -name '*.c' -o -name '*.h' \) -print 2>/dev/null | sort | \
+  xargs perl -0777 -pe 's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' 2>/dev/null | \
+  grep -oE '#[[:space:]]*define[[:space:]]+[A-Z][A-Z0-9_]+[[:space:]]+(0[xX][0-9a-fA-F]+|[0-9]+)([[:space:]]|$)' | \
+  sed 's/#[[:space:]]*define[[:space:]]*//' | \
+  awk '{print $1, $2}' | sort -u > "$HARVEST"
 
-fail=0
-checked=0
-missing=0
-
-while IFS= read -r line; do
-	# Strip inline comments and skip blank/comment lines.
-	line="${line%%#*}"
-	[[ -z "${line//[[:space:]]/}" ]] && continue
-
-	name=$(awk '{print $1}' <<< "$line")
-	expected=$(awk '{print $2}' <<< "$line")
-	[ -z "$name" ] || [ -z "$expected" ] && continue
-
-	# Collect ALL define occurrences of this symbol across the source tree.
-	# Every occurrence must agree with the baseline: a wrong shim in any TU
-	# sends the wrong attribute to the kernel when that TU is compiled.
-	actuals=$(awk -v n="$name" '$1==n{print $2}' <<< "$define_map" | sort -un)
-
-	if [ -z "$actuals" ]; then
-		# Symbol not found anywhere in the source tree -- it was likely
-		# deleted without updating the baseline.
-		echo "WARN: $NAME: $name not found in source tree shims" >&2
-		missing=$((missing + 1))
-		continue
-	fi
-
-	checked=$((checked + 1))
-	while IFS= read -r actual; do
-		if [ "$actual" != "$expected" ]; then
-			echo "FAIL: $NAME: $name shim value wrong: have $actual, want $expected (baseline)" >&2
-			fail=$((fail + 1))
-		fi
-	done <<< "$actuals"
-done < "$BASELINE"
-
-if [ "$fail" -gt 0 ]; then
-	n=$(printf '%s\n' "$fail")
-	echo "FAIL: $NAME: $n shim value mismatch(es) -- wrong wire attribute(s) sent to kernel (see stderr)"
-	exit 1
+if [ ! -s "$HARVEST" ]; then
+    echo "PASS: $NAME (no shim defines found)"
+    exit 0
 fi
 
-warn=""
-[ "$missing" -gt 0 ] && warn=", $missing symbol(s) not found (WARN)"
-[ "$missing" -gt 0 ] && exit 1
-echo "PASS: $NAME ($checked shim value(s) verified against baseline$warn)"
+awk '{print $1}' "$HARVEST" | sort -u > "$SYMS_ALL"
+
+# ---------------------------------------------------------------------------
+# Step 2: Precompiled header
+# Build a PCH from a broad set of installed linux uapi system headers.
+# Using a PCH means each batch compilation only pays the header-parse cost
+# once, keeping each batch fast even when errors are generated.
+# The PCH is automatically selected by gcc when -include <hdr> is used and
+# <hdr>.gch exists alongside <hdr>.
+# ---------------------------------------------------------------------------
+
+# Build the probe header from all available linux system headers in our list.
+{
+  echo '#include <stdio.h>'
+  echo '#include <stdint.h>'
+  echo '#include <stdbool.h>'
+  for h in \
+      linux/xfrm.h linux/nl80211.h linux/neighbour.h linux/if_tunnel.h \
+      linux/if_link.h linux/if_addr.h linux/if_arp.h linux/if_bridge.h \
+      linux/if_ether.h linux/if_tun.h linux/socket.h linux/in.h linux/in6.h \
+      linux/ip.h linux/ipv6.h linux/tcp.h linux/udp.h linux/sctp.h \
+      linux/dccp.h linux/rtnetlink.h linux/genetlink.h linux/veth.h \
+      linux/netfilter/nf_tables.h linux/netfilter/nfnetlink_conntrack.h \
+      linux/netfilter/ipset/ip_set.h linux/prctl.h linux/capability.h \
+      linux/mman.h linux/futex.h linux/fcntl.h linux/sched.h \
+      linux/perf_event.h linux/io_uring.h linux/bpf.h linux/landlock.h \
+      linux/lsm.h linux/batman_adv.h linux/dpll.h linux/thermal.h \
+      linux/vdpa.h linux/ovpn.h linux/nbd-netlink.h linux/net_dropmon.h \
+      linux/net_shaper.h linux/nfsd_netlink.h linux/ioprio.h linux/nfc.h \
+      linux/psample.h linux/psp-dbc.h linux/psp-sev.h \
+      linux/ethtool_netlink.h linux/hw_breakpoint.h; do
+    [ -f "/usr/include/$h" ] && echo "#include <$h>"
+  done
+} > "$PCH_HDR"
+
+# Compile PCH (best-effort; if it fails we fall back to plain -include)
+gcc -w -x c-header -o "${PCH_HDR}.gch" "$PCH_HDR" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Step 3: Parallel batch probe
+# Split the symbol list into batches of 100 and compile all batches
+# concurrently.  Each batch generates a C file with one printf per symbol.
+# Symbols that gcc reports as "undeclared" are collected into $SYMS_BAD.
+#
+# IMPORTANT: gcc reports "did you mean X?" suggestions alongside undeclared
+# errors, and those suggestions look like quoted identifiers too.  We extract
+# only the identifier that appears directly after "error: " on the same line,
+# not the suggestion that may appear on the following "note:" line or in the
+# same-line suffix.
+# ---------------------------------------------------------------------------
+
+LQ=$(printf '\xe2\x80\x98')  # U+2018 LEFT SINGLE QUOTATION MARK (gcc uses these)
+RQ=$(printf '\xe2\x80\x99')  # U+2019 RIGHT SINGLE QUOTATION MARK
+
+extract_bad_syms() {
+    # Extract the undeclared identifier from gcc diagnostics.
+    # Format: "file:line:col: error: 'SYM' undeclared ..."
+    # We normalise the Unicode curly quotes to ASCII first, then pick only
+    # the identifier directly following "error: '" -- not any suggestion.
+    LC_ALL=C sed "s/${LQ}/'/g; s/${RQ}/'/g" "$@" 2>/dev/null | \
+        grep "error:.*undeclared" | \
+        grep -oE "error: '[A-Z][A-Z0-9_]+'" | \
+        grep -oE "'[A-Z][A-Z0-9_]+'" | \
+        tr -d "'" | sort -u
+}
+
+BATCH_DIR="$WORKDIR/batches"
+mkdir -p "$BATCH_DIR"
+split -l 100 "$SYMS_ALL" "$BATCH_DIR/batch-"
+
+# Compile all batches in parallel
+for batch in "$BATCH_DIR"/batch-*; do
+    bname=$(basename "$batch")
+    {
+        echo 'int main(void){'
+        awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$batch"
+        echo 'return 0;}'
+    } > "$BATCH_DIR/${bname}.c"
+    gcc -w -fmax-errors=200 -include "$PCH_HDR" \
+        -o "$BATCH_DIR/${bname}.out" "$BATCH_DIR/${bname}.c" \
+        2>"$BATCH_DIR/${bname}.err" &
+done
+wait
+
+# Collect all bad symbols from all batch error files
+extract_bad_syms "$BATCH_DIR"/*.err > "$SYMS_BAD" 2>/dev/null || touch "$SYMS_BAD"
+
+# Good symbols = all symbols minus bad ones
+comm -23 "$SYMS_ALL" "$SYMS_BAD" > "$SYMS_GOOD"
+
+# ---------------------------------------------------------------------------
+# Step 4: Final compile and run
+# Compile only the good symbols (those resolvable against uapi headers) into
+# a final binary and run it to get the authoritative compiler values.
+# This compilation should succeed cleanly.
+# ---------------------------------------------------------------------------
+{
+    echo 'int main(void){'
+    awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$SYMS_GOOD"
+    echo 'return 0;}'
+} > "$FINAL_C"
+
+if ! gcc -w -include "$PCH_HDR" -o "$FINAL_BIN" "$FINAL_C" 2>"$FINAL_ERR"; then
+    # A second pass may catch any stragglers that slipped through batch filtering
+    bad2=$(extract_bad_syms "$FINAL_ERR")
+    if [ -n "$bad2" ]; then
+        comm -23 "$SYMS_GOOD" <(printf '%s\n' "$bad2" | sort) > "$WORKDIR/syms-good2.txt"
+        SYMS_GOOD="$WORKDIR/syms-good2.txt"
+        {
+            echo 'int main(void){'
+            awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$SYMS_GOOD"
+            echo 'return 0;}'
+        } > "$FINAL_C"
+        gcc -w -include "$PCH_HDR" -o "$FINAL_BIN" "$FINAL_C" 2>"$FINAL_ERR" || true
+    fi
+fi
+
+if [ ! -x "$FINAL_BIN" ]; then
+    echo "WARN: $NAME: compiler probe binary could not be built; skipping value check"
+    exit 0
+fi
+
+"$FINAL_BIN" > "$COMPILER_TABLE" 2>/dev/null
+probed=$(wc -l < "$COMPILER_TABLE")
+
+if [ "$probed" -eq 0 ]; then
+    echo "WARN: $NAME: probe binary produced no output; skipping"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Step 5: Compare trinity values against compiler values
+# For each compiler-resolvable symbol, every occurrence in the harvest must
+# carry the compiler's authoritative value.
+#
+# Normalisation: both sides are converted to signed 32-bit integer to match
+# what the probe C code does ((int)SYM via printf("%d",...)).  This means:
+#   0x80000000 == -2147483648 (32-bit sign-extension)
+#   0xffffffffffffffff == -1 (upper 32 bits masked, lower 32 signed)
+#   02000000 (octal) == 524288 (octal parsed, decimal compared)
+#
+# Performance: a single awk pass over both files avoids O(N*M) shell overhead.
+# ---------------------------------------------------------------------------
+MISMATCH_FILE="$WORKDIR/mismatches.txt"
+
+# int32 normalisation: truncate to 32-bit signed to match C's (int) semantics.
+# Handles hex (0x...), octal (0...), and decimal integers.
+# For hex values longer than 8 digits, only the lower 32 bits are kept.
+awk '
+# Return numeric value of a single hex digit character (0-9, a-f, A-F)
+function hd(c) {
+    return (c >= "0" && c <= "9") ? (c + 0) : (index("0123456789abcdef", tolower(c)) - 1)
+}
+# Parse hex, octal, or decimal string; return signed 32-bit int.
+# For hex values wider than 32 bits, mask to lower 32 bits first.
+function int32(s,   v, i, c, n) {
+    if (s ~ /^0[xX]/) {
+        s = substr(s, 3)                          # strip 0x/0X
+        if (length(s) > 8) s = substr(s, length(s) - 7)  # keep lower 32 bits
+        v = 0
+        n = length(s)
+        for (i = 1; i <= n; i++) { c = substr(s, i, 1); v = v * 16 + hd(c) }
+    } else if (s ~ /^0[0-7]+$/) {
+        # octal literal
+        v = 0
+        n = length(s)
+        for (i = 2; i <= n; i++) v = v * 8 + (substr(s, i, 1) + 0)
+        v = v % 4294967296
+    } else {
+        # decimal (may carry sign from -1, etc.)
+        v = int(s) + 0
+        if (v < 0) v = (v % 4294967296) + 4294967296
+    }
+    # sign-extend to 32-bit signed
+    v = v % 4294967296
+    if (v >= 2147483648) v -= 4294967296
+    return v
+}
+BEGIN { fail = 0; checked = 0 }
+# Pass 1: load harvest into memory (SYM -> space-separated list of values)
+FNR == NR {
+    sym = $1; val = $2
+    harvest[sym] = (sym in harvest) ? harvest[sym] " " val : val
+    next
+}
+# Pass 2: process compiler table (format: DECIMAL_VALUE SYM)
+{
+    compiler_val = int($1)
+    sym = $2
+    if (!(sym in harvest)) next  # not a trinity shim -- skip
+    checked++
+    n = split(harvest[sym], tvals)
+    for (i = 1; i <= n; i++) {
+        tv = tvals[i]
+        trinity_val = int32(tv)
+        if (trinity_val != compiler_val) {
+            fail++
+            printf "FAIL: uapi-shim-values: %s shim wrong: have %s (=%d), want %d (compiler)\n",
+                sym, tv, trinity_val, compiler_val > "/dev/stderr"
+        }
+    }
+}
+END { print fail, checked }
+' "$HARVEST" "$COMPILER_TABLE" > "$MISMATCH_FILE"
+
+read fail checked < "$MISMATCH_FILE"
+fail=${fail:-0}
+checked=${checked:-0}
+
+# ---------------------------------------------------------------------------
+# Step 6: Baseline cross-check
+# Each baseline entry pins a (symbol, expected-compiler-value) record.
+# If the compiler now returns a different value, the baseline must be updated.
+# A symbol in the baseline that the compiler can't resolve is also a failure
+# (it may have been added without a corresponding uapi header constant).
+# ---------------------------------------------------------------------------
+baseline_fail=0
+
+if [ -f "$BASELINE" ]; then
+    while IFS= read -r bline; do
+        bline="${bline%%#*}"
+        [[ -z "${bline//[[:space:]]/}" ]] && continue
+        bsym=$(awk '{print $1}' <<< "$bline")
+        bval=$(awk '{print $2}' <<< "$bline")
+        [ -z "$bsym" ] || [ -z "$bval" ] && continue
+
+        compiler_dec=$(awk -v s="$bsym" '$2==s{print $1; exit}' "$COMPILER_TABLE")
+        if [ -z "$compiler_dec" ]; then
+            echo "FAIL: $NAME: baseline symbol $bsym not resolvable by compiler" \
+                 "(not in any uapi header -- baseline may be stale)" >&2
+            baseline_fail=$((baseline_fail + 1))
+            continue
+        fi
+        bval_dec=$(awk -v val="$bval" 'function hd(c){return (c>="0"&&c<="9")?(c+0):(index("0123456789abcdef",tolower(c))-1)} BEGIN{
+            s=val
+            if (s ~ /^0[xX]/) {
+                s=substr(s,3); if(length(s)>8) s=substr(s,length(s)-7); v=0
+                n=length(s); for(i=1;i<=n;i++){v=v*16+hd(substr(s,i,1))}
+            } else if (s ~ /^0[0-7]+$/) {
+                v=0; n=length(s); for(i=2;i<=n;i++)v=v*8+(substr(s,i,1)+0)
+                v=v%4294967296
+            } else { v=int(s)+0; if(v<0){v=(v%4294967296)+4294967296} }
+            v=v%4294967296; if(v>=2147483648)v-=4294967296; print v}')
+        if [ "$compiler_dec" != "$bval_dec" ]; then
+            echo "FAIL: $NAME: baseline $bsym: compiler says $compiler_dec," \
+                 "baseline says $bval (kernel headers changed? update the baseline)" >&2
+            baseline_fail=$((baseline_fail + 1))
+        fi
+    done < "$BASELINE"
+fi
+
+total_fail=$((fail + baseline_fail))
+if [ "$total_fail" -gt 0 ]; then
+    echo "FAIL: $NAME: $total_fail wrong shim value(s) -- see stderr for details"
+    exit 1
+fi
+
+echo "PASS: $NAME ($probed symbols probed via compiler, $checked trinity shim(s) verified correct)"
 exit 0

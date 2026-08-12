@@ -73,7 +73,7 @@
 /* RTA_NH_ID landed alongside NHA_ID; supply a stable value when a
  * sysroot pre-dates the rtnetlink.h refresh but does have nexthop.h. */
 #ifndef RTA_NH_ID
-#define RTA_NH_ID			27
+#define RTA_NH_ID			30
 #endif
 
 #define NHRC_BUF			2048

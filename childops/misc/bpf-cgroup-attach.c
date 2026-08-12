@@ -94,7 +94,7 @@
  * the canonical numeric values from include/uapi/linux/bpf.h so this builds
  * on stale kernel headers (Trinity targets a wide kernel range). */
 #ifndef BPF_CGROUP_INET4_CONNECT
-#define BPF_CGROUP_INET4_CONNECT	8
+#define BPF_CGROUP_INET4_CONNECT	10
 #endif
 #ifndef BPF_CGROUP_UDP4_SENDMSG
 #define BPF_CGROUP_UDP4_SENDMSG		14

@@ -35,7 +35,7 @@
 #endif
 
 #ifndef SKF_AD_MAX
-# define SKF_AD_MAX	56
+# define SKF_AD_MAX	64
 #endif
 
 #define syscall_nr	(offsetof(struct seccomp_data, nr))

@@ -10,7 +10,7 @@
 #define IP_LOCAL_PORT_RANGE	51
 #endif
 #ifndef IP_PROTOCOL
-#define IP_PROTOCOL		51
+#define IP_PROTOCOL		52
 #endif
 
 #ifndef MCAST_EXCLUDE

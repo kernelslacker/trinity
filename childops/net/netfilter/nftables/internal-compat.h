@@ -314,7 +314,8 @@
 #define NFTA_RULE_CHAIN			2
 #define NFTA_RULE_HANDLE		3
 #define NFTA_RULE_EXPRESSIONS		4
-#define NFTA_RULE_POSITION		5
+#define NFTA_RULE_COMPAT		5
+#define NFTA_RULE_POSITION		6
 #endif
 
 #ifndef NFTA_LIST_ELEM
@@ -396,9 +397,9 @@
 /* NFTA_LOG_* attribute identifiers (uapi/linux/netfilter/nf_tables.h).
  * Values match the kernel enum nft_log_attributes; guarded so the
  * build still works on older host headers that predate nft_log. */
-#ifndef NFTA_LOG_PREFIX
-#define NFTA_LOG_PREFIX			1
-#define NFTA_LOG_GROUP			2
+#ifndef NFTA_LOG_GROUP
+#define NFTA_LOG_GROUP			1
+#define NFTA_LOG_PREFIX			2
 #define NFTA_LOG_SNAPLEN		3
 #define NFTA_LOG_QTHRESHOLD		4
 #define NFTA_LOG_LEVEL			5
@@ -463,9 +464,9 @@
  * reversed bounds (memcmp(from, to) > 0) before any register check
  * runs.  Guarded so the build still works on older host headers that
  * predate nft_range's UAPI exposure. */
-#ifndef NFTA_RANGE_OP
-#define NFTA_RANGE_OP			1
-#define NFTA_RANGE_SREG			2
+#ifndef NFTA_RANGE_SREG
+#define NFTA_RANGE_SREG			1
+#define NFTA_RANGE_OP			2
 #define NFTA_RANGE_FROM_DATA		3
 #define NFTA_RANGE_TO_DATA		4
 #endif
@@ -555,7 +556,7 @@
 #define NFTA_QUOTA_FLAGS		2
 #endif
 #ifndef NFTA_QUOTA_CONSUMED
-#define NFTA_QUOTA_CONSUMED		3
+#define NFTA_QUOTA_CONSUMED		4
 #endif
 
 #ifndef NFT_QUOTA_F_INV
