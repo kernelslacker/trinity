@@ -333,7 +333,12 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
         cp "$SYMS_BAD2" "$SYMS_BAD"
 
         TIER2_RESOLVED=$(wc -l < "$SYMS_TIER2_GOOD" | tr -d ' ')
-        TIER2_STATUS="ran($TIER2_RESOLVED)"
+        LINUS_HASH=$(git -C "$HOME/src/linux-linus" rev-parse --short HEAD 2>/dev/null || true)
+        if [ -n "$LINUS_HASH" ]; then
+            TIER2_STATUS="ran($TIER2_RESOLVED,oracle=$LINUS_HASH)"
+        else
+            TIER2_STATUS="ran($TIER2_RESOLVED)"
+        fi
 
         if [ -s "$SYMS_TIER2_GOOD" ]; then
             # Build and run a final binary for Tier 2 symbols; append to compiler table
