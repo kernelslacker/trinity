@@ -1125,6 +1125,8 @@ stats	object
     stats.inet_listener_rehash_race.sibling_crashed	u64
     stats.inet_listener_rehash_race.sibling_reaped_ok	u64
     stats.inet_listener_rehash_race.completed_ok	u64
+    stats.inet_listener_rehash_race.addrform_returned_zero	u64
+    stats.inet_listener_rehash_race.addrform_child_accepted	u64
   stats.ipv6_pmtu_race	object
     stats.ipv6_pmtu_race.runs	u64
     stats.ipv6_pmtu_race.setup_failed	u64

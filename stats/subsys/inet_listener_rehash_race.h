@@ -17,6 +17,9 @@ struct inet_listener_rehash_race_stats {
 	unsigned long sibling_crashed;		/* worker exited on signal (bug surface) */
 	unsigned long sibling_reaped_ok;	/* worker exited normally */
 	unsigned long completed_ok;		/* invocations reaching teardown */
+	/* IPV6_ADDRFORM sequential arm */
+	unsigned long addrform_returned_zero;	/* setsockopt(IPV6_ADDRFORM,PF_INET)==0 */
+	unsigned long addrform_child_accepted;	/* accept() on addrform'd listener ok */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_INET_LISTENER_REHASH_RACE_H */

