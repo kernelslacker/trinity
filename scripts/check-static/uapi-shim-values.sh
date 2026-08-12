@@ -19,10 +19,10 @@
 # scripts/check-static/uapi-shim-values.baseline, which was verified against
 # a pinned linux-linus sysroot.
 #
-# Families covered: IFLA_GRE_*, IFLA_IPTUN_*, NDA_*
+# Families covered: IFLA_GRE_*, IFLA_IPTUN_*, NDA_*, XFRMA_* (newer attrs),
+#                   NL80211_CMD_* (recently corrected subset)
 # NOT YET covered (272 shims total -- follow-up task):
-#   NFTA_*, CTA_*, TCA_*, NL80211_ATTR_*, ETHTOOL_A_*, MDBA_*, DCB_ATTR_*
-# XFRMA_* values are checked in netlink-xfrm-attr-shim.sh.
+#   NFTA_*, CTA_*, TCA_*, ETHTOOL_A_*, MDBA_*, DCB_ATTR_*
 
 set -u
 
@@ -47,7 +47,7 @@ define_map=$(
 		's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' \
 		2>/dev/null \
 	| grep -oE '#[[:space:]]*define[[:space:]]+[A-Z][A-Z0-9_]+[[:space:]]+[0-9]+([[:space:]]|$)' \
-	| awk '{print $2, $3}'
+	| awk '{sub(/^#[[:space:]]*define[[:space:]]+/, ""); print $1, $2}'
 )
 
 fail=0
@@ -93,6 +93,6 @@ fi
 
 warn=""
 [ "$missing" -gt 0 ] && warn=", $missing symbol(s) not found (WARN)"
-echo "PASS: $NAME ($checked shim value(s) verified against baseline$warn)"
 [ "$missing" -gt 0 ] && exit 1
+echo "PASS: $NAME ($checked shim value(s) verified against baseline$warn)"
 exit 0

@@ -20,10 +20,11 @@
 #
 # Format: <SYMBOL> <decimal_value>
 # One symbol per line; blank lines and #-comments are ignored.
-# XFRMA_* are checked in netlink-xfrm-attr-shim.sh (value section).
+# XFRMA_* (newer attrs, msg-tables.c) and NL80211_CMD_* (recently
+# corrected) are now covered below.
 #
 # Families NOT yet covered (272 shims total -- follow-up task):
-#   NFTA_*, CTA_*, TCA_*, NL80211_ATTR_*, ETHTOOL_A_*, MDBA_*, DCB_ATTR_*
+#   NFTA_*, CTA_*, TCA_*, ETHTOOL_A_*, MDBA_*, DCB_ATTR_*
 
 # ---------------------------------------------------------------------------
 # IFLA_GRE_* -- linux/if_tunnel.h
@@ -55,3 +56,27 @@ NDA_DST    1
 NDA_LLADDR 2
 NDA_VNI    7
 NDA_MASTER 9
+
+# ---------------------------------------------------------------------------
+# XFRMA_* -- linux/xfrm.h (newer attrs shimmed in net/netlink/msg-tables.c)
+#   enum positions verified against linux-linus include/uapi/linux/xfrm.h
+#   (commit 053ee9424ae8 corrected these from an off-by-one)
+# ---------------------------------------------------------------------------
+XFRMA_NAT_KEEPALIVE_INTERVAL  34
+XFRMA_SA_PCPU                 35
+XFRMA_IPTFS_DROP_TIME         36
+XFRMA_IPTFS_REORDER_WINDOW    37
+XFRMA_IPTFS_DONT_FRAG         38
+XFRMA_IPTFS_INIT_DELAY        39
+XFRMA_IPTFS_MAX_QSIZE         40
+XFRMA_IPTFS_PKT_SIZE          41
+
+# ---------------------------------------------------------------------------
+# NL80211_CMD_* -- include/kernel/nl80211.h
+#   Four values corrected by commit 320404245dae; verified against
+#   include/uapi/linux/nl80211.h in linux-linus via compiler probe.
+# ---------------------------------------------------------------------------
+NL80211_CMD_REQ_SET_REG        27
+NL80211_CMD_SET_WIPHY_NETNS    49
+NL80211_CMD_SET_PMK           123
+NL80211_CMD_DEL_PMK           124
