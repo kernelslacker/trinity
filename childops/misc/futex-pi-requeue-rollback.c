@@ -89,161 +89,6 @@
 #include "trinity.h"
 
 /*
- * ---------------------------------------------------------------------------
- * CLONE_VM pivot-race sub-arm
- *
- * Two CLONE_VM siblings race prctl(PR_FUTEX_HASH_SET_SLOTS, slot_count) in
- * the same mm.  A third CLONE_VM sibling parks in FUTEX_WAIT|
- * FUTEX_PRIVATE_FLAG so futex_ref_is_dead(fph_old) stays false for the
- * losing racer, forcing it into wait_var_event (the WARNING path in
- * futex_hash_allocate / futex_pivot_pending).
- *
- * Prerequisite sequence:
- *   1. Orchestrator calls prctl(SET_SLOTS, N>0) to establish a non-zero
- *      per-mm private hash (fph_old) before any CLONE_VM siblings run.
- *   2. Holder sibling parks in FUTEX_WAIT | FUTEX_PRIVATE_FLAG on
- *      ps->futex_hold.  This grabs a reference to fph_old so
- *      futex_ref_is_dead(fph_old) returns false while the holder is parked.
- *   3. Racer siblings both call prctl(SET_SLOTS, slot_count).  The first
- *      one to enter futex_hash_allocate sets a pending state.  The second
- *      sees it, checks futex_ref_is_dead(fph_old) -- false because the
- *      holder is still parked -- and blocks in wait_var_event.
- *
- * One-way-door accounting: slot_count==0 permanently pivots a mm to the
- * global hash; further SET_SLOTS calls on that mm return -EBUSY.  Because
- * fpr_run_pivot_race() now forks an orchestrator, step 1 always runs on a
- * freshly created mm so -EBUSY cannot occur there.  The racers may still
- * see -EBUSY from each other (one wins, the other is then -EBUSY on the
- * same child mm); those are counted in slots_ebusy for visibility.
- * fpr_pick_slot_count() still draws 0 with ~1/9 probability to exercise
- * the global-hash pivot path inside the throwaway mm.
- *
- * Structural note: this arm is self-contained and mutually exclusive with
- * the fork()-based PI/foreign-TID arm.  The PI arm requires distinct mms;
- * this arm requires a shared mm.  fpr_pick_axes() sets use_privhash to
- * select which arm runs.
- * ---------------------------------------------------------------------------
- */
-
-#define FPR_PIVOT_STACK_SZ  (64U * 1024U)
-
-struct fpr_pivot_shared {
-	/* Private futex the holder parks on.  Initialised to 0. */
-	int		futex_hold;
-	/*
-	 * Set to 1 just before the holder enters FUTEX_WAIT.  Racers spin on
-	 * this and then sleep 1 ms to let the holder fully enter the kernel.
-	 */
-	uint32_t	holder_parked;
-	/*
-	 * Release latch: set to 1 after both racers are spawned so they
-	 * fire as simultaneously as possible.
-	 */
-	uint32_t	racers_go;
-	/* slot count the racers pass to SET_SLOTS (copied from s->slot_count) */
-	unsigned int	race_slots;
-	/* syscall accumulator; drained into s->direct_syscalls at teardown */
-	unsigned long	direct_syscalls;
-};
-
-/*
- * Holder body.  Parks in FUTEX_WAIT | FUTEX_PRIVATE_FLAG to hold a live
- * reference to the per-mm private hash so futex_ref_is_dead(fph_old)
- * returns false while the racers are running.
- */
-static int fpr_pivot_holder_fn(void *arg)
-{
-	struct fpr_pivot_shared *ps = arg;
-	struct timespec ts = { .tv_sec = 0, .tv_nsec = 120L * 1000000L };
-
-	CHILDOP_GRANDCHILD_ENTER();
-	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-	if (getppid() == 1)
-		_exit(0);
-
-	/*
-	 * Publish parked BEFORE calling FUTEX_WAIT.  There is a tiny window
-	 * between this store and the syscall; racers absorb it with a 1 ms
-	 * sleep after they observe holder_parked == 1.
-	 */
-	__atomic_store_n(&ps->holder_parked, 1U, __ATOMIC_RELEASE);
-	__atomic_add_fetch(&ps->direct_syscalls, 1, __ATOMIC_RELAXED);
-	(void)syscall(__NR_futex, &ps->futex_hold,
-		      FUTEX_WAIT | FUTEX_PRIVATE_FLAG, 0, &ts, NULL, 0);
-	_exit(0);
-}
-
-/*
- * Racer body.  Waits for holder_parked then fires prctl(SET_SLOTS, race_slots)
- * in a tight race with its sibling.
- */
-static int fpr_pivot_racer_fn(void *arg)
-{
-	struct fpr_pivot_shared *ps = arg;
-	struct timespec nap = { .tv_sec = 0, .tv_nsec = 1000000L }; /* 1 ms */
-	unsigned int spins;
-
-	CHILDOP_GRANDCHILD_ENTER();
-	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-	if (getppid() == 1)
-		_exit(0);
-
-	/* Spin until holder signals it is about to park. */
-	for (spins = 0; spins < 40; spins++) {
-		if (__atomic_load_n(&ps->holder_parked, __ATOMIC_ACQUIRE))
-			break;
-		(void)nanosleep(&nap, NULL);
-	}
-	/* 1 ms grace so holder is likely blocking in the kernel. */
-	(void)nanosleep(&nap, NULL);
-
-	/* Spin until orchestrator releases the go latch. */
-	for (spins = 0; spins < 40; spins++) {
-		if (__atomic_load_n(&ps->racers_go, __ATOMIC_ACQUIRE))
-			break;
-		(void)nanosleep(&nap, NULL);
-	}
-
-	{
-		long ret;
-
-		__atomic_add_fetch(&ps->direct_syscalls, 1, __ATOMIC_RELAXED);
-		ret = trinity_raw_syscall(__NR_prctl, PR_FUTEX_HASH,
-					 PR_FUTEX_HASH_SET_SLOTS,
-					 (long)ps->race_slots, 0L, 0L);
-		if (ret == -EBUSY)
-			__atomic_add_fetch(
-				&shm->stats.futex_pi_requeue_rollback.slots_ebusy,
-				1, __ATOMIC_RELAXED);
-	}
-	_exit(0);
-}
-
-static void fpr_pivot_free_stack(void *stack)
-{
-	if (stack && stack != MAP_FAILED)
-		(void)munmap(stack, FPR_PIVOT_STACK_SZ);
-}
-
-static void fpr_pivot_reap(pid_t pid)
-{
-	struct timespec grace = { .tv_sec = 0, .tv_nsec = 20L * 1000000L };
-	int status;
-	int spin;
-
-	if (pid <= 0)
-		return;
-	(void)kill(pid, SIGKILL);
-	for (spin = 0; spin < 5; spin++) {
-		if (waitpid_eintr(pid, &status, WNOHANG) == pid)
-			return;
-		(void)nanosleep(&grace, NULL);
-	}
-	(void)waitpid_eintr(pid, &status, 0);
-}
-
-
-/*
  * Handshake sequence numbers stored in the shared page.  Ordering matters:
  * waiter must not arm WAIT_REQUEUE_PI before owner has published its LOCK_PI
  * on target_pi, otherwise there is no proxy-lock chain to walk.
@@ -269,8 +114,6 @@ struct fpr_shared {
 	int consumer_nice;	/* nice value when policy is OTHER */
 	int requeue_nr_wake;	/* val (nr_wake) for CMP_REQUEUE_PI */
 	int requeue_nr;		/* val2 (nr_requeue) for CMP_REQUEUE_PI */
-	pid_t foreign_tid;	/* waiter's tid stored as lock-word owner in privhash arm */
-	unsigned int use_privhash;	/* 1 -> prctl per-mm hash + foreign-tid lock word */
 	unsigned int use_vfork_race;	/* 1 -> nested-vfork phash.ref NULL-race arm */
 	unsigned int slot_count;	/* PR_FUTEX_HASH_SET_SLOTS argument drawn by fpr_pick_axes */
 	/* Direct-syscall accumulator: every raw_futex() bumps this
@@ -420,129 +263,6 @@ static void fpr_consumer_main(struct fpr_shared *s)
 	__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
 	(void)trinity_raw_syscall(__NR_sched_setattr, waiter_tid, &attr, 0U);
 	_exit(0);
-}
-
-/*
- * fpr_run_pivot_race - orchestrate the CLONE_VM private-hash pivot race.
- *
- * Called from futex_pi_requeue_rollback() when s->use_privhash is set.
- *
- * We fork an orchestrator child so the step-1 prctl(SET_SLOTS) and all
- * CLONE_VM siblings execute in the *forked child's* mm, not the trinity
- * child's mm.  This matters because prctl(SET_SLOTS, 0) is a one-way door:
- * once a mm is pivoted to the global hash, every subsequent SET_SLOTS
- * returns -EBUSY, meaning the sub-arm can fire at most once per child
- * lifetime if it runs in the caller's own mm.  By running inside a
- * disposable fork the door closes only in the throwaway mm; the kernel
- * zeroes mm->futex.phash in futex_hash_init_mm() at fork time, so each
- * call to fpr_run_pivot_race() gets a virgin private hash regardless of
- * what the previous invocation drew.  The CLONE_VM requirement is still
- * satisfied within the fork; only the scope of the door changes.
- */
-static void fpr_run_pivot_race(struct fpr_shared *s)
-{
-	pid_t orch_pid;
-	int status;
-
-	orch_pid = fork();
-	if (orch_pid < 0)
-		return;
-
-	if (orch_pid == 0) {
-		/* ---- orchestrator child: throwaway mm ---- */
-		static const unsigned int init_slots[] = {
-			2, 4, 8, 16, 32, 64, 128, 256
-		};
-		struct fpr_pivot_shared *ps;
-		void *hstack = NULL, *rastack = NULL, *rbstack = NULL;
-		pid_t holder_pid = -1, racer_a_pid = -1, racer_b_pid = -1;
-		struct timespec nap = { .tv_sec = 0, .tv_nsec = 500000L };
-		unsigned int spins;
-
-		CHILDOP_GRANDCHILD_ENTER();
-		(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-		if (getppid() == 1)
-			_exit(0);
-
-		ps = mmap(NULL, sizeof(*ps), PROT_READ | PROT_WRITE,
-			  MAP_ANONYMOUS | MAP_SHARED, -1, 0);
-		if (ps == MAP_FAILED)
-			_exit(0);
-		memset(ps, 0, sizeof(*ps));
-		ps->race_slots = s->slot_count;
-
-		/*
-		 * Step 1: Establish a non-zero private hash in this mm so the
-		 * holder's FUTEX_WAIT | FUTEX_PRIVATE_FLAG attaches to fph_old
-		 * rather than the global hash.  EBUSY cannot occur here because
-		 * this is a freshly forked mm; any other error means the kernel
-		 * lacks per-mm hash support.
-		 */
-		__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
-		if (prctl(PR_FUTEX_HASH, PR_FUTEX_HASH_SET_SLOTS,
-			  (int)init_slots[rnd_modulo_u32(ARRAY_SIZE(init_slots))]) < 0)
-			goto child_out;
-
-		hstack  = mmap(NULL, FPR_PIVOT_STACK_SZ, PROT_READ | PROT_WRITE,
-			       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-		rastack = mmap(NULL, FPR_PIVOT_STACK_SZ, PROT_READ | PROT_WRITE,
-			       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-		rbstack = mmap(NULL, FPR_PIVOT_STACK_SZ, PROT_READ | PROT_WRITE,
-			       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-		if (hstack == MAP_FAILED || rastack == MAP_FAILED ||
-		    rbstack == MAP_FAILED)
-			goto child_out;
-
-		/*
-		 * Step 2: Spawn holder (CLONE_VM -- shares this child's mm and
-		 * its private hash).
-		 */
-		holder_pid = clone(fpr_pivot_holder_fn,
-				   (char *)hstack + FPR_PIVOT_STACK_SZ,
-				   CLONE_VM | SIGCHLD, ps);
-		if (holder_pid < 0)
-			goto child_out;
-
-		for (spins = 0; spins < 40; spins++) {
-			if (__atomic_load_n(&ps->holder_parked, __ATOMIC_ACQUIRE))
-				break;
-			(void)nanosleep(&nap, NULL);
-		}
-		if (!__atomic_load_n(&ps->holder_parked, __ATOMIC_ACQUIRE))
-			goto child_out;
-
-		/*
-		 * Step 3: Spawn both racers.  Set the go latch after both are
-		 * spawned so they fire as simultaneously as possible.
-		 */
-		racer_a_pid = clone(fpr_pivot_racer_fn,
-				    (char *)rastack + FPR_PIVOT_STACK_SZ,
-				    CLONE_VM | SIGCHLD, ps);
-		racer_b_pid = clone(fpr_pivot_racer_fn,
-				    (char *)rbstack + FPR_PIVOT_STACK_SZ,
-				    CLONE_VM | SIGCHLD, ps);
-		__atomic_store_n(&ps->racers_go, 1U, __ATOMIC_RELEASE);
-
-child_out:
-		fpr_pivot_reap(racer_a_pid);
-		fpr_pivot_reap(racer_b_pid);
-		fpr_pivot_reap(holder_pid);
-
-		/* Drain the pivot arm's syscall tally into the main counter. */
-		__atomic_add_fetch(&s->direct_syscalls,
-				   __atomic_load_n(&ps->direct_syscalls,
-						   __ATOMIC_RELAXED),
-				   __ATOMIC_RELAXED);
-
-		(void)munmap(ps, sizeof(*ps));
-		fpr_pivot_free_stack(hstack);
-		fpr_pivot_free_stack(rastack);
-		fpr_pivot_free_stack(rbstack);
-		_exit(0);
-	}
-
-	/* ---- trinity child waits for the throwaway orchestrator ---- */
-	(void)waitpid_eintr(orch_pid, &status, 0);
 }
 
 /*
@@ -698,7 +418,7 @@ static void fpr_vfork_free_stack(void *stack)
  * fpr_run_nested_vfork_race - orchestrate the nested-vfork phash.ref race.
  *
  * Forks a throwaway orchestrator so the one-way SET_SLOTS door closes only
- * in a disposable mm (same rationale as fpr_run_pivot_race).  Inside it:
+ * in a disposable mm.  Inside it:
  *
  *   1. Allocate a MAP_SHARED coordination page.
  *   2. Clone G1 with CLONE_VM|CLONE_VFORK|SIGCHLD.  P suspends in vfork.
@@ -834,11 +554,9 @@ vfork_child_out:
  *
  * The 0 one-way door: once a mm calls SET_SLOTS(0) it is permanently pinned
  * to the global hash and every subsequent SET_SLOTS returns -EBUSY.  Because
- * fpr_run_pivot_race() now forks a throwaway orchestrator, the door closes
+ * fpr_run_nested_vfork_race() forks a throwaway orchestrator, the door closes
  * only in the disposable mm so subsequent invocations start with a virgin
- * mm->futex.phash.  Drawing 0 with ~1/9 probability still exercises the
- * global-hash pivot path; -EBUSY from racer siblings racing on the same
- * child mm is counted in slots_ebusy for visibility.
+ * mm->futex.phash.
  */
 static unsigned int fpr_pick_slot_count(void)
 {
@@ -860,25 +578,28 @@ static void fpr_pick_axes(struct fpr_shared *s)
 
 	s->use_private     = rnd_u32() & 1U;
 	/*
-	 * Three-way arm selection (uniform over {0, 1, 2}):
+	 * Two-way arm selection (uniform over {0, 1}):
 	 *   0 -> PI/foreign-TID arm (distinct mms, fork())
-	 *   1 -> CLONE_VM pivot-race arm (use_privhash)
-	 *   2 -> nested-vfork phash.ref NULL-race arm (use_vfork_race)
+	 *   1 -> nested-vfork phash.ref NULL-race arm (use_vfork_race)
+	 *
+	 * The former CLONE_VM pivot-race arm (arm 1 in the original three-way
+	 * draw) has been dropped: both copy_process() calling
+	 * futex_hash_allocate_default() and the orchestrator's step-1
+	 * prctl(SET_SLOTS, N>0) guarantee phash.ref is non-NULL before any
+	 * sibling executes, making the kernel/futex/core.c:1844 phash.ref race
+	 * unreachable from that arm.
 	 */
 	{
-		unsigned int arm = rnd_modulo_u32(3);
+		unsigned int arm = rnd_modulo_u32(2);
 
-		s->use_privhash   = (arm == 1) ? 1U : 0U;
-		s->use_vfork_race = (arm == 2) ? 1U : 0U;
+		s->use_vfork_race = (arm == 1) ? 1U : 0U;
 	}
 	/*
-	 * slot_count is the prctl argument the CLONE_VM racers use.  Drawn via
-	 * fpr_pick_slot_count() which returns 0 (~1/9 probability) for the
-	 * global-hash pivot path and a valid power-of-two otherwise.  Used by
-	 * both use_privhash and use_vfork_race arms.
+	 * slot_count is the prctl argument the nested-vfork racers use.  Drawn
+	 * via fpr_pick_slot_count() which returns 0 (~1/9 probability) for the
+	 * global-hash pivot path and a valid power-of-two otherwise.
 	 */
-	s->slot_count      = (s->use_privhash || s->use_vfork_race) ?
-				fpr_pick_slot_count() : 0U;
+	s->slot_count      = s->use_vfork_race ? fpr_pick_slot_count() : 0U;
 	s->wait_timeout_ns = (long)(100000 + rnd_modulo_u32(900000));	/* 100us..1ms */
 	s->consumer_policy = policies[rnd_modulo_u32(ARRAY_SIZE(policies))];
 	s->consumer_priority = 1 + (int)rnd_modulo_u32(20);
@@ -963,23 +684,6 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 	fpr_pick_axes(s);
 	flag = s->use_private ? FUTEX_PRIVATE_FLAG : 0U;
 
-	if (s->use_privhash) {
-		/*
-		 * CLONE_VM sub-arm: races two mm-sharing siblings on
-		 * prctl(PR_FUTEX_HASH_SET_SLOTS, slot_count) to reach the
-		 * futex_hash_allocate / futex_pivot_pending / wait_var_event
-		 * WARNING path.  Self-contained; does not use fork() workers.
-		 */
-		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop.data_path[op],
-					   1, __ATOMIC_RELAXED);
-		}
-		fpr_run_pivot_race(s);
-		goto out;
-	}
-
 	if (s->use_vfork_race) {
 		/*
 		 * Nested-vfork arm: puts two mm-sharing tasks into the same mm
@@ -999,7 +703,7 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 
 	/*
 	 * fork()-based PI/foreign-TID arm (distinct mms required).
-	 * Kept intact; do not add use_privhash or use_vfork_race logic here.
+	 * Kept intact; do not add use_vfork_race logic here.
 	 */
 	owner_pid = fpr_spawn_worker(s, fpr_owner_main);
 	if (owner_pid < 0)

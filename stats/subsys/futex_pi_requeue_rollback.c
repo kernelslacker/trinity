@@ -6,7 +6,6 @@ static const struct stat_field futex_pi_requeue_rollback_fields[] = {
 	STAT_FIELD_SUB(futex_pi_requeue_rollback, setup_failed),
 	STAT_FIELD_SUB(futex_pi_requeue_rollback, requeue_ok),
 	STAT_FIELD_SUB(futex_pi_requeue_rollback, requeue_failed),
-	STAT_FIELD_SUB(futex_pi_requeue_rollback, slots_ebusy),
 	STAT_FIELD_SUB(futex_pi_requeue_rollback, vfork_runs),
 	STAT_FIELD_SUB(futex_pi_requeue_rollback, vfork_slotmismatch),
 };
