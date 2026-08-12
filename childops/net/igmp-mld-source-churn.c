@@ -849,7 +849,7 @@ static int igmp_source_iter_v4_join(struct igmp_source_iter_v4_ctx *it)
  */
 static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 {
-	unsigned int race_letter = (it->iter_idx >> 1) % 5U;
+	unsigned int race_letter = rnd_modulo_u32(5U);
 	unsigned int nsrc;
 	int rc;
 
