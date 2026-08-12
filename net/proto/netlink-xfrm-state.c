@@ -56,6 +56,20 @@ int xfrm_emit_newsa(int fd)
 	sa->replay_window = (__u8)rnd_modulo_u32(64);
 	sa->flags         = (__u8)(rand32() & 0x7f);
 
+	/* Single-host selector: 1-in-4 SAs get prefixlen == 32/128 and
+	 * selector addresses copied from the SA id/props so that the
+	 * XFRM_MIGRATE_STATE UPDATE_H2H_SEL kernel check can pass.  The
+	 * remaining 3/4 keep random prefixlens for the EINVAL arm. */
+	bool single_host = (rnd_modulo_u32(4U) == 0);
+	if (single_host) {
+		__u8 pfx = (family == AF_INET6) ? 128U : 32U;
+
+		sa->sel.prefixlen_s = pfx;
+		sa->sel.prefixlen_d = pfx;
+		sa->sel.saddr       = sa->saddr;
+		sa->sel.daddr       = sa->id.daddr;
+	}
+
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*sa));
 
 	/* Algorithm choice -- AEAD only on ESP, AUTH-only on AH, COMP
@@ -102,11 +116,12 @@ int xfrm_emit_newsa(int fd)
 	}
 
 	memset(&entry, 0, sizeof(entry));
-	entry.family = family;
-	entry.proto  = proto;
-	entry.daddr  = sa->id.daddr;
-	entry.spi    = spi;
-	entry.reqid  = reqid;
+	entry.family      = family;
+	entry.proto       = proto;
+	entry.daddr       = sa->id.daddr;
+	entry.spi         = spi;
+	entry.reqid       = reqid;
+	entry.single_host = single_host;
 	/* On sa_ring_push failure the slot still tracks the prior SA;
 	 * the new SA reached the kernel but stays untracked here.  Do
 	 * not retry inline -- the next push to this slot retries the
@@ -486,6 +501,9 @@ struct xfrm_user_migrate_state {
 	__u16 reserved;
 };
 #endif
+#ifndef XFRM_MIGRATE_STATE_UPDATE_H2H_SEL
+#define XFRM_MIGRATE_STATE_UPDATE_H2H_SEL 2U
+#endif
 
 /*
  * Build XFRM_MSG_MIGRATE_STATE (v7.1).  Body is xfrm_user_migrate_state
@@ -493,9 +511,10 @@ struct xfrm_user_migrate_state {
  * flags + new_family.  When the SA ring is populated, target a real
  * entry so xfrm_migrate_state_find hits an installed SA; otherwise
  * synthesise a coherent (family, proto, daddr, spi) shell and let the
- * kernel bounce on ESRCH -- still walks the parser arms.  flags is
- * masked to the two known bits with a 1-in-8 unknown-bit rotation so
- * both KNOWN_FLAGS and reject-unknown-bits paths get coverage.
+ * kernel bounce on ESRCH -- still walks the parser arms.  Bit 0 of flags
+ * (UPDATE_MARK) is random; bit 1 (UPDATE_H2H_SEL) is set only when the
+ * picked SA has a single-host selector so the kernel's prefixlen check
+ * can actually pass.  1-in-8: unknown bit rotation for the reject path.
  *
  * After the fixed body, rotate 0–2 XFRMA attributes from the
  * XFRM_MSG_MIGRATE_STATE allowlist (xfrm_reject_unused_attr): ENCAP,
@@ -513,6 +532,7 @@ int xfrm_emit_migrate_state(int fd)
 	__u16 family;
 	size_t off;
 	bool encap_valid = false;
+	bool sa_hit;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
@@ -521,7 +541,8 @@ int xfrm_emit_migrate_state(int fd)
 	nlh->nlmsg_seq   = xfrm_next_seq();
 
 	ums = (struct xfrm_user_migrate_state *)NLMSG_DATA(nlh);
-	if (sa_ring_pick(&t, NULL)) {
+	sa_hit = sa_ring_pick(&t, NULL);
+	if (sa_hit) {
 		family              = t.family;
 		ums->id.daddr       = t.daddr;
 		ums->id.spi         = t.spi;
@@ -546,7 +567,13 @@ int xfrm_emit_migrate_state(int fd)
 	fill_addresses(family, &ums->new_saddr, &ums->new_daddr);
 	fill_selector(&ums->new_sel, family);
 	ums->new_reqid          = (rand32() & 0xff) + 1U;
-	ums->flags              = rand32() & 0x3U;
+	/* Bit 0 (UPDATE_MARK): random.  Bit 1 (UPDATE_H2H_SEL): only set
+	 * when the picked SA has a host-specific selector; without that
+	 * the kernel's prefixlen_s/d == 32/128 check is statistically
+	 * unreachable (~4e-7) and the arm is dead in practice. */
+	ums->flags              = rand32() & 0x1U;
+	if (sa_hit && t.single_host)
+		ums->flags |= XFRM_MIGRATE_STATE_UPDATE_H2H_SEL;
 	if (rnd_modulo_u32(8) == 0)
 		ums->flags |= 1U << (2 + rnd_modulo_u32(30));
 	ums->new_family         = family;

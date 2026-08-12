@@ -374,6 +374,7 @@ struct xfrm_sa_track {
 	__u8			evict_fail;	/* consecutive DELSA failures */
 	__u16			family;		/* AF_INET / AF_INET6 */
 	__u8			proto;		/* IPPROTO_ESP / AH / COMP */
+	bool			single_host;	/* sel has host prefixlen (32/128) */
 	xfrm_address_t		daddr;
 	__be32			spi;
 	__u32			reqid;
