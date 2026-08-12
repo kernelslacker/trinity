@@ -373,51 +373,92 @@ static void dump_stats_render_zombie_slots(void)
  * parent's runs count so the operator can see how many invocations
  * the dead arm survived undetected.
  *
+ * Sample floor: before emitting DEAD_ARM for a group, require
+ * sum(arm_entered_*) >= 5 * nr_arms for that group.  Short runs (smoke,
+ * -C 4, N~200) cannot accumulate enough draws across a multi-way
+ * selector to guarantee every arm fires, so checking without this
+ * floor produces spurious DEAD_ARM on every smoke invocation.  When
+ * the floor is not met, emit one DEAD_ARM_SKIP line so absence is
+ * explicit and grep-able.
+ *
  * Model: stat_row("DEAD_ARM", "<childop>/<arm>", <parent_runs>).
+ *        output "DEAD_ARM_SKIP <group> insufficient-samples" when below floor.
  * Pairs with dump_stats_render_childop_missing_producer() which catches
  * ops that never set up a setup_accepted producer.
  */
 static void dump_stats_dead_arm_check(void)
 {
 	/* igmp-mld-source-churn: five v4 race arms (A-E, rnd_modulo_u32(5))
-	 * and four v6 race arms (A-D, iter_idx-derived 4-way modulo). */
+	 * and four v6 race arms (A-D, iter_idx-derived 4-way modulo).
+	 * Floor: v4 requires 5*5=25 total draws; v6 requires 5*4=20. */
 	if (shm->stats.igmp_mld_source_churn.runs > 0) {
 		const unsigned long pr = shm->stats.igmp_mld_source_churn.runs;
+		unsigned long v4_draws, v6_draws;
 
-		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_a)
-			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_a", pr);
-		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b)
-			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_b", pr);
-		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c)
-			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_c", pr);
-		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d)
-			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_d", pr);
-		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_e)
-			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_e", pr);
-		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_a)
-			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_a", pr);
-		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_b)
-			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_b", pr);
-		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_c)
-			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_c", pr);
-		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_d)
-			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_d", pr);
+		v4_draws =
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_a +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_e;
+		if (v4_draws >= 5 * 5) {
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_a)
+				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_a", pr);
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b)
+				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_b", pr);
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c)
+				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_c", pr);
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d)
+				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_d", pr);
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_e)
+				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_e", pr);
+		} else {
+			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
+			       "igmp-mld-source-churn/v4", "insufficient-samples");
+		}
+
+		v6_draws =
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v6_a +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v6_b +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v6_c +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v6_d;
+		if (v6_draws >= 5 * 4) {
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_a)
+				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_a", pr);
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_b)
+				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_b", pr);
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_c)
+				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_c", pr);
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_d)
+				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_d", pr);
+		} else {
+			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
+			       "igmp-mld-source-churn/v6", "insufficient-samples");
+		}
 	}
 
 	/* afxdp-churn: XDP_COPY bind arm -- bumped before bind() so a zero
-	 * here means setup always bailed before reaching the bind block. */
-	if (shm->stats.afxdp_churn.runs > 0 &&
-	    !shm->stats.afxdp_churn.arm_entered_bind)
-		stat_row("DEAD_ARM", "afxdp-churn/bind",
-			 shm->stats.afxdp_churn.runs);
+	 * here means setup always bailed before reaching the bind block.
+	 * Floor: 5 * 1 = 5 draws required (arm_entered_bind is the only arm).
+	 * If floor is met the arm was entered >= 5 times and is by definition
+	 * not dead; if below the floor, insufficient samples to decide. */
+	if (shm->stats.afxdp_churn.runs > 0) {
+		if (shm->stats.afxdp_churn.arm_entered_bind < 5 * 1)
+			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
+			       "afxdp-churn", "insufficient-samples");
+		/* else: arm_entered_bind >= 5 implies arm is live */
+	}
 
 	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm in dispatch_msg_kind() --
 	 * bumped before xfrm_emit_migrate_state() so a zero here means the
-	 * probabilistic picker never landed on XMK_MIGRATE_STATE. */
-	if (shm->stats.xfrm_churn.runs > 0 &&
-	    !shm->stats.xfrm_churn.arm_entered_migrate_state)
-		stat_row("DEAD_ARM", "xfrm-churn/migrate_state",
-			 shm->stats.xfrm_churn.runs);
+	 * probabilistic picker never landed on XMK_MIGRATE_STATE.
+	 * Floor: 5 * 1 = 5 draws required; same single-arm reasoning applies. */
+	if (shm->stats.xfrm_churn.runs > 0) {
+		if (shm->stats.xfrm_churn.arm_entered_migrate_state < 5 * 1)
+			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
+			       "xfrm-churn", "insufficient-samples");
+		/* else: arm_entered_migrate_state >= 5 implies arm is live */
+	}
 }
 
 void dump_stats_fuzzer_subsystems(void)
