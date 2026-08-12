@@ -594,13 +594,22 @@ static void restore_mld_max_msf(unsigned int val)
 }
 
 /*
- * Pick the source-list size for this iteration: rotates 1, ~8, ~32,
- * and IMC_MAX_MSF_CAP+1 so the cap-rejection path inside
- * ip_mc_msfilter / ip6_mc_msfilter fires on one in four race-C iters.
+ * Pick the source-list size for this race-C invocation: draws from an
+ * independent rnd_modulo_u32(4) so all four cases are reachable on
+ * every call regardless of which iter_idx values trigger race C.
+ *
+ *   0 -> 1              (small filter)
+ *   1 -> 8              (medium filter; exercises grow path)
+ *   2 -> IMC_LARGE_SRCS (32; exercises ip_mc_msfilter realloc)
+ *   3 -> IMC_MAX_MSF_CAP+1 (65; probes the -ENOBUFS cap boundary)
+ *
+ * Keying on iter_idx % 4 was broken: race C only fires at
+ * iter_idx ∈ {4,5,12,13}, all of which are % 4 ∈ {0,1}, leaving
+ * IMC_LARGE_SRCS and the cap-boundary probe permanently unreachable.
  */
-static unsigned int rotate_filter_size(unsigned int iter_idx)
+static unsigned int rotate_filter_size(void)
 {
-	switch (iter_idx % 4U) {
+	switch (rnd_modulo_u32(4U)) {
 	case 0:  return 1U;
 	case 1:  return 8U;
 	case 2:  return IMC_LARGE_SRCS;
@@ -870,7 +879,7 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 		 * save the current sysctl value, raise it to IMC_MAX_MSF_CAP,
 		 * restore after the setsockopt.  On raise failure skip the
 		 * large-filter path that would get -ENOBUFS anyway. */
-		nsrc = rotate_filter_size(it->iter_idx);
+		nsrc = rotate_filter_size();
 		if (nsrc > IMC_MAX_MSF_CAP) {
 			/* Oversized path: probe the -ENOBUFS boundary. */
 			it->gf = build_filter_v4(0U, it->grp_be, nsrc,
@@ -1213,12 +1222,20 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 		 *
 		 * Otherwise: call setsockopt directly (no raise needed for
 		 * nsrc <= IMC_MAX_MSF_CAP against the default cap of 64). */
-		nsrc = rotate_filter_size(it->iter_idx);
+		nsrc = rotate_filter_size();
 		if (nsrc > IMC_MAX_MSF_CAP) {
-			/* Oversized path: lower cap to nsrc-1, probe -ENOBUFS. */
+			/* Oversized path: nsrc = IMC_MAX_MSF_CAP+1 = 65.
+			 * write_mld_max_msf(nsrc-1) = write_mld_max_msf(64):
+			 * 64 is already the default sysctl_mld_max_msf, so
+			 * the write is a sysctl-handler exercise, NOT a
+			 * precondition for the -ENOBUFS boundary (65 > 64
+			 * is true at the default value).  save + restore
+			 * discipline (do_restore_v6 gate) mirrors the v4
+			 * save/raise/restore pattern for igmp_max_msf. */
 			unsigned int saved_mld = 0;
 			bool do_restore_v6 = save_mld_max_msf(&saved_mld);
 
+			/* Exercise the mld_max_msf sysctl write handler. */
 			if (write_mld_max_msf(nsrc - 1U)) {
 				it->gf = build_filter_v6(0U, &it->grp_v6, nsrc,
 							 it->salt);
