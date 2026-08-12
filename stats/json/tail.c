@@ -357,27 +357,33 @@ void json_emit_dead_arms_section(void)
 	}
 
 	/* afxdp-churn: single XDP_COPY bind arm, floor = 5*1 = 5 draws.
-	 * arm_entered_bind < 5 means we cannot distinguish dead from unvisited;
-	 * emit insufficient_samples (the text path never reaches "dead" here
-	 * because arm_entered_bind==0 is always inside the floor). */
+	 * Floor gates on runs (group opportunity count), not arm_entered_bind --
+	 * for a single-arm group arm_entered_bind==0 IS the dead state, so
+	 * gating on it is a tautology (always insufficient_samples, never dead). */
 	if (shm->stats.afxdp_churn.runs > 0) {
+		unsigned long runs = shm->stats.afxdp_churn.runs;
 		unsigned long ae = shm->stats.afxdp_churn.arm_entered_bind;
 
-		if (ae < 5 * 1)
+		if (runs < 5 * 1)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
-						    ae, shm->stats.afxdp_churn.runs,
-						    "insufficient_samples");
+						    ae, runs, "insufficient_samples");
+		else if (!ae)
+			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
+						    ae, runs, "dead");
 	}
 
 	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm, floor = 5*1 = 5 draws.
-	 * Same single-arm reasoning as afxdp-churn above. */
+	 * Same single-arm reasoning as afxdp-churn above: gate on runs. */
 	if (shm->stats.xfrm_churn.runs > 0) {
+		unsigned long runs = shm->stats.xfrm_churn.runs;
 		unsigned long ae = shm->stats.xfrm_churn.arm_entered_migrate_state;
 
-		if (ae < 5 * 1)
+		if (runs < 5 * 1)
 			json_emit_dead_arms_element(&first, "xfrm-churn", "migrate_state",
-						    ae, shm->stats.xfrm_churn.runs,
-						    "insufficient_samples");
+						    ae, runs, "insufficient_samples");
+		else if (!ae)
+			json_emit_dead_arms_element(&first, "xfrm-churn", "migrate_state",
+						    ae, runs, "dead");
 	}
 
 	fputs("]", stdout);

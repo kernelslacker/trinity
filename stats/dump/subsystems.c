@@ -381,8 +381,13 @@ static void dump_stats_render_zombie_slots(void)
  * the floor is not met, emit one DEAD_ARM_SKIP line so absence is
  * explicit and grep-able.
  *
+ * For single-arm groups the floor must gate on the group's opportunity
+ * count (runs), NOT on the arm's own entry count.  arm_entered==0 IS the
+ * dead state for a single-arm group; gating on it makes the floor a
+ * tautology that always fires, permanently masking the dead verdict.
+ *
  * Model: stat_row("DEAD_ARM", "<childop>/<arm>", <parent_runs>).
- *        output "DEAD_ARM_SKIP <group> insufficient-samples" when below floor.
+ *        output "DEAD_ARM_SKIP <group> insufficient_samples" when below floor.
  * Pairs with dump_stats_render_childop_missing_producer() which catches
  * ops that never set up a setup_accepted producer.
  */
@@ -439,25 +444,32 @@ static void dump_stats_dead_arm_check(void)
 
 	/* afxdp-churn: XDP_COPY bind arm -- bumped before bind() so a zero
 	 * here means setup always bailed before reaching the bind block.
-	 * Floor: 5 * 1 = 5 draws required (arm_entered_bind is the only arm).
-	 * If floor is met the arm was entered >= 5 times and is by definition
-	 * not dead; if below the floor, insufficient samples to decide. */
+	 * Floor: 5 * 1 = 5 draws required (runs is the opportunity count).
+	 * For this single-arm group the floor gates on runs, not arm_entered_bind
+	 * -- arm_entered_bind==0 IS the dead state, not an ambiguous sample. */
 	if (shm->stats.afxdp_churn.runs > 0) {
-		if (shm->stats.afxdp_churn.arm_entered_bind < 5 * 1)
+		if (shm->stats.afxdp_churn.runs < 5 * 1)
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "afxdp-churn", "insufficient-samples");
-		/* else: arm_entered_bind >= 5 implies arm is live */
+			       "afxdp-churn", "insufficient_samples");
+		else if (!shm->stats.afxdp_churn.arm_entered_bind)
+			stat_row("DEAD_ARM", "afxdp-churn/bind",
+				 shm->stats.afxdp_churn.runs);
+		/* else: arm_entered_bind >= 1, arm is live */
 	}
 
 	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm in dispatch_msg_kind() --
 	 * bumped before xfrm_emit_migrate_state() so a zero here means the
 	 * probabilistic picker never landed on XMK_MIGRATE_STATE.
-	 * Floor: 5 * 1 = 5 draws required; same single-arm reasoning applies. */
+	 * Floor: 5 * 1 = 5 draws required; gate on runs (opportunity count),
+	 * not arm_entered_migrate_state -- same single-arm reasoning as above. */
 	if (shm->stats.xfrm_churn.runs > 0) {
-		if (shm->stats.xfrm_churn.arm_entered_migrate_state < 5 * 1)
+		if (shm->stats.xfrm_churn.runs < 5 * 1)
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "xfrm-churn", "insufficient-samples");
-		/* else: arm_entered_migrate_state >= 5 implies arm is live */
+			       "xfrm-churn", "insufficient_samples");
+		else if (!shm->stats.xfrm_churn.arm_entered_migrate_state)
+			stat_row("DEAD_ARM", "xfrm-churn/migrate_state",
+				 shm->stats.xfrm_churn.runs);
+		/* else: arm_entered_migrate_state >= 1, arm is live */
 	}
 }
 
