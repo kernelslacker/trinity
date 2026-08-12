@@ -61,6 +61,7 @@
 #include "jitter.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "utils.h"
 #include "vma-pressure.h"
@@ -147,6 +148,7 @@ static int mincore_vm_racer_fn(void *arg)
 	void *ar = rs->arena;
 	unsigned long calls = 0;
 
+	CHILDOP_GRANDCHILD_ENTER();
 	while (!__atomic_load_n(&rs->stop, __ATOMIC_ACQUIRE)) {
 		(void)madvise(ar, MINCORE_ARENA_SIZE, MADV_COLLAPSE);
 		(void)madvise(ar, MINCORE_ARENA_SIZE, MADV_DONTNEED);
