@@ -25,6 +25,7 @@ static const struct stat_field afxdp_churn_fields[] = {
 	STAT_FIELD_SUB(afxdp_churn, xsg_bind_failed),
 	STAT_FIELD_SUB(afxdp_churn, tx_md_bind_failed),
 	STAT_FIELD_SUB(afxdp_churn, tailroom_iters),
+	STAT_FIELD_SUB(afxdp_churn, arm_entered_bind),
 };
 
 const struct stat_category afxdp_churn_category =

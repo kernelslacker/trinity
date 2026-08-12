@@ -26,6 +26,17 @@ struct afxdp_churn_stats {
 	unsigned long xsg_bind_failed;			/* UMEM_REG with XDP_UMEM_FLAGS_USE_SG rejected; latched off, retried without */
 	unsigned long tx_md_bind_failed;		/* UMEM_REG with tx_metadata_len rejected; latched off, retried without */
 	unsigned long tailroom_iters;			/* tailroom-probe TX desc sent (near-full-chunk len + AF_PACKET tap) */
+
+	/* Per-arm entry tally for dead-arm detection.  Bumped at the top
+	 * of the XDP_COPY bind arm (the memset+sxdp+bind block in
+	 * afxdp_iter_bind()) before the bind() retry loop, independent
+	 * of bind() success or failure.  When arm_entered_bind == 0 and
+	 * runs > 0 the entire bind+attach+io phase was never reached
+	 * (e.g. setup always bailed before bind was attempted); when
+	 * arm_entered_bind > 0 and bind_ok == 0 the arm was reached but
+	 * always failed (the class of bug fixed by adding XDP_COPY to the
+	 * bind flags). */
+	unsigned long arm_entered_bind; /* XDP_COPY bind arm entered */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_AFXDP_CHURN_H */

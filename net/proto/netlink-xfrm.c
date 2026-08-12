@@ -371,6 +371,13 @@ static void dispatch_msg_kind(int fd, enum xfrm_msg_kind k)
 	case XMK_DELPOLICY:	rc = xfrm_emit_delpolicy(fd); break;
 	case XMK_MIGRATE:	rc = xfrm_emit_migrate(fd); break;
 	case XMK_MIGRATE_STATE:
+		/* Arm-entered tally: bumped before xfrm_emit_migrate_state()
+		 * so drain-time dead-arm detection sees whether this arm was
+		 * ever reached by the picker (arm_entered == 0 = structural
+		 * bug) vs reached but always failing (arm_entered > 0,
+		 * migrate_state_ack_n == 0 = emitter bug class). */
+		__atomic_add_fetch(&shm->stats.xfrm_churn.arm_entered_migrate_state,
+				   1, __ATOMIC_RELAXED);
 		rc = xfrm_emit_migrate_state(fd);
 		if (rc == 0) {
 			migrate_state_ack_n++;

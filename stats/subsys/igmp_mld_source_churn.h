@@ -19,6 +19,22 @@ struct igmp_mld_source_churn_stats {
 	unsigned long msfilter_enobufs_v4;	 /* ip_mc_msfilter rejected oversized filter (-ENOBUFS, v4) */
 	unsigned long msfilter_enobufs_v6;	 /* ip6_mc_msfilter rejected oversized filter (-ENOBUFS, v6) */
 	unsigned long add_source_enobufs;	 /* ip_mc_source sl_count cap hit via IP_ADD_SOURCE_MEMBERSHIP */
+
+	/* Per-arm entry tallies for dead-arm detection (arm_entered == 0
+	 * over a full run => drain reports DEAD-ARM: <childop>/<arm>).
+	 * Bumped at the very top of each switch-case arm in
+	 * igmp_source_iter_v4_race() / mld_source_iter_v6_race(),
+	 * before any early-return or outcome path.  Five v4 arms (A-E,
+	 * rnd_modulo_u32(5)) and four v6 arms (A-D, iter_idx-derived). */
+	unsigned long arm_entered_race_v4_a; /* RACE A: MCAST_LEAVE_SOURCE_GROUP shrink */
+	unsigned long arm_entered_race_v4_b; /* RACE B: MCAST_BLOCK_SOURCE INCLUDE->EXCLUDE */
+	unsigned long arm_entered_race_v4_c; /* RACE C: MCAST_MSFILTER bulk replace */
+	unsigned long arm_entered_race_v4_d; /* RACE D: IP_DROP_MEMBERSHIP full leave */
+	unsigned long arm_entered_race_v4_e; /* RACE E: IP_ADD_SOURCE_MEMBERSHIP sl_count walk */
+	unsigned long arm_entered_race_v6_a; /* RACE A (v6): MCAST_LEAVE_SOURCE_GROUP shrink */
+	unsigned long arm_entered_race_v6_b; /* RACE B (v6): MCAST_BLOCK_SOURCE flip */
+	unsigned long arm_entered_race_v6_c; /* RACE C (v6): MCAST_MSFILTER bulk replace */
+	unsigned long arm_entered_race_v6_d; /* RACE D (v6): IPV6_DROP_MEMBERSHIP */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_IGMP_MLD_SOURCE_CHURN_H */

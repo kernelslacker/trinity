@@ -18,6 +18,7 @@ static const struct stat_field xfrm_churn_fields[] = {
 	STAT_FIELD_SUB(xfrm_churn, burn_runs),
 	STAT_FIELD_SUB(xfrm_churn, burn_throttled),
 	STAT_FIELD_SUB(xfrm_churn, burn_completed),
+	STAT_FIELD_SUB(xfrm_churn, arm_entered_migrate_state),
 };
 
 const struct stat_category xfrm_churn_category =

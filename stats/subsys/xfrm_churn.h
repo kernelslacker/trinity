@@ -19,6 +19,16 @@ struct xfrm_churn_stats {
 	unsigned long burn_runs;		/* burn-this-netns branch attempted */
 	unsigned long burn_throttled;		/* burn-this-netns skipped: MAX_CONCURRENT_NEWNET cap reached */
 	unsigned long burn_completed;		/* burn-this-netns reached the readers + larval insert */
+
+	/* Per-arm entry tally for dead-arm detection.  Bumped at the top
+	 * of the XMK_MIGRATE_STATE case in dispatch_msg_kind() before
+	 * xfrm_emit_migrate_state() is called, independent of outcome.
+	 * When arm_entered_migrate_state == 0 and runs > 0 the arm was
+	 * never selected by the probabilistic picker (structural bug);
+	 * when arm_entered_migrate_state > 0 and migrate_state_ack_n == 0
+	 * the arm fired but the emitter never produced a kernel ACK
+	 * (the class of bug fixed by the msg-type and old_mark corrections). */
+	unsigned long arm_entered_migrate_state; /* XMK_MIGRATE_STATE arm entered */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_XFRM_CHURN_H */

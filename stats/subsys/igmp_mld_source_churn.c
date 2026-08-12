@@ -18,6 +18,15 @@ static const struct stat_field igmp_mld_source_churn_fields[] = {
 	STAT_FIELD_SUB(igmp_mld_source_churn, msfilter_enobufs_v4),
 	STAT_FIELD_SUB(igmp_mld_source_churn, msfilter_enobufs_v6),
 	STAT_FIELD_SUB(igmp_mld_source_churn, add_source_enobufs),
+	STAT_FIELD_SUB(igmp_mld_source_churn, arm_entered_race_v4_a),
+	STAT_FIELD_SUB(igmp_mld_source_churn, arm_entered_race_v4_b),
+	STAT_FIELD_SUB(igmp_mld_source_churn, arm_entered_race_v4_c),
+	STAT_FIELD_SUB(igmp_mld_source_churn, arm_entered_race_v4_d),
+	STAT_FIELD_SUB(igmp_mld_source_churn, arm_entered_race_v4_e),
+	STAT_FIELD_SUB(igmp_mld_source_churn, arm_entered_race_v6_a),
+	STAT_FIELD_SUB(igmp_mld_source_churn, arm_entered_race_v6_b),
+	STAT_FIELD_SUB(igmp_mld_source_churn, arm_entered_race_v6_c),
+	STAT_FIELD_SUB(igmp_mld_source_churn, arm_entered_race_v6_d),
 };
 
 const struct stat_category igmp_mld_source_churn_category =

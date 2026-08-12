@@ -358,6 +358,64 @@ static void dump_stats_render_zombie_slots(void)
 	}
 }
 
+/*
+ * Dead-arm detection: for each childop arm that books an arm_entered
+ * tally at its top, report any arm whose counter is still 0 over a
+ * full run while its parent childop ran at least once.  An arm with
+ * arm_entered == 0 is either structurally unreachable on this kernel
+ * (config-dead), permanently gate-rejected (cap-gate latched before
+ * the arm), or unreachable from the dispatch path (modulo-routing bug
+ * like igmp RACE E before the iter_idx-bias fix).  The value rendered is the
+ * parent's runs count so the operator can see how many invocations
+ * the dead arm survived undetected.
+ *
+ * Model: stat_row("DEAD_ARM", "<childop>/<arm>", <parent_runs>).
+ * Pairs with dump_stats_render_childop_missing_producer() which catches
+ * ops that never set up a setup_accepted producer.
+ */
+static void dump_stats_dead_arm_check(void)
+{
+	/* igmp-mld-source-churn: five v4 race arms (A-E, rnd_modulo_u32(5))
+	 * and four v6 race arms (A-D, iter_idx-derived 4-way modulo). */
+	if (shm->stats.igmp_mld_source_churn.runs > 0) {
+		const unsigned long pr = shm->stats.igmp_mld_source_churn.runs;
+
+		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_a)
+			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_a", pr);
+		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b)
+			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_b", pr);
+		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c)
+			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_c", pr);
+		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d)
+			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_d", pr);
+		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_e)
+			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_e", pr);
+		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_a)
+			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_a", pr);
+		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_b)
+			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_b", pr);
+		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_c)
+			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_c", pr);
+		if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_d)
+			stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_d", pr);
+	}
+
+	/* afxdp-churn: XDP_COPY bind arm -- bumped before bind() so a zero
+	 * here means setup always bailed before reaching the bind block. */
+	if (shm->stats.afxdp_churn.runs > 0 &&
+	    !shm->stats.afxdp_churn.arm_entered_bind)
+		stat_row("DEAD_ARM", "afxdp-churn/bind",
+			 shm->stats.afxdp_churn.runs);
+
+	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm in dispatch_msg_kind() --
+	 * bumped before xfrm_emit_migrate_state() so a zero here means the
+	 * probabilistic picker never landed on XMK_MIGRATE_STATE. */
+	if (shm->stats.xfrm_churn.runs > 0 &&
+	    !shm->stats.xfrm_churn.arm_entered_migrate_state)
+		stat_row("DEAD_ARM", "xfrm-churn/migrate_state",
+			 shm->stats.xfrm_churn.runs);
+}
+
 void dump_stats_fuzzer_subsystems(void)
 {
 	dump_stats_render_vfs_writes();
@@ -458,4 +516,6 @@ void dump_stats_fuzzer_subsystems(void)
 	if (shm->stats.diag.heap_extra_regions_overflow)
 		stat_row("heap", "heap_extra_regions_overflow",
 			 shm->stats.diag.heap_extra_regions_overflow);
+
+	dump_stats_dead_arm_check();
 }
