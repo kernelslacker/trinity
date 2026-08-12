@@ -969,9 +969,10 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 		 * IP_ADD_SOURCE_MEMBERSHIP calls.  The default cap is 10
 		 * (net->ipv4.sysctl_igmp_max_msf); no raise is needed.
 		 * The priming phase contributed 2 sources (src_a + src_b)
-		 * via MCAST_JOIN_SOURCE_GROUP, so 8 more fills the default
-		 * cap and the 11th call triggers -ENOBUFS from ip_mc_source()
-		 * at igmp.c (psl->sl_count >= sysctl_igmp_max_msf).  Sources
+		 * via MCAST_JOIN_SOURCE_GROUP, so 8 more calls (k=4..11)
+		 * fill sl_count 2->10 and the 9th call (k=12) triggers
+		 * -ENOBUFS from ip_mc_source() at igmp.c
+		 * (psl->sl_count >= sysctl_igmp_max_msf).  Sources
 		 * start at index 4 to avoid colliding with src_a (index 2)
 		 * and src_b (index 3).  Limit is cap+3 to stay bounded if
 		 * sysctl was raised by an outside agent. */
