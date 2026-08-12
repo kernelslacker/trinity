@@ -20,6 +20,7 @@ struct inet_listener_rehash_race_stats {
 	/* IPV6_ADDRFORM sequential arm */
 	unsigned long addrform_returned_zero;	/* setsockopt(IPV6_ADDRFORM,PF_INET)==0 */
 	unsigned long addrform_child_accepted;	/* accept() on addrform'd listener ok */
+	unsigned long addrform_setup_failed;	/* goto out before step 3 (setup failure) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_INET_LISTENER_REHASH_RACE_H */

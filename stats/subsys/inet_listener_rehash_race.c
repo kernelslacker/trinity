@@ -18,6 +18,7 @@ static const struct stat_field inet_listener_rehash_race_fields[] = {
 	STAT_FIELD_SUB(inet_listener_rehash_race, completed_ok),
 	STAT_FIELD_SUB(inet_listener_rehash_race, addrform_returned_zero),
 	STAT_FIELD_SUB(inet_listener_rehash_race, addrform_child_accepted),
+	STAT_FIELD_SUB(inet_listener_rehash_race, addrform_setup_failed),
 };
 
 const struct stat_category inet_listener_rehash_race_category =

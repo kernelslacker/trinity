@@ -443,15 +443,29 @@ static unsigned long run_addrform_arm(void)
 	addr_v4(&helper_sin, (uint16_t)IRR_ADDRFORM_HELPER_PORT);
 	helper = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	n++;
-	if (helper < 0)
+	if (helper < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.addrform_setup_failed,
+			1, __ATOMIC_RELAXED);
 		goto out;
+	}
 	(void)setsockopt(helper, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 	n++;
-	if (bind(helper, (struct sockaddr *)&helper_sin, sizeof(helper_sin)) < 0)
-		goto out;
+	(void)setsockopt(helper, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
 	n++;
-	if (listen(helper, 64) < 0)
+	if (bind(helper, (struct sockaddr *)&helper_sin, sizeof(helper_sin)) < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.addrform_setup_failed,
+			1, __ATOMIC_RELAXED);
 		goto out;
+	}
+	n++;
+	if (listen(helper, 64) < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.addrform_setup_failed,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
 	n++;
 
 	/* Step 1: socket(AF_INET6, SOCK_STREAM) -- deliberately no IPV6_V6ONLY
@@ -459,8 +473,12 @@ static unsigned long run_addrform_arm(void)
 	 * sk_v6_daddr to the v4-mapped form on connect(). */
 	addrfd = socket(AF_INET6, SOCK_STREAM | SOCK_CLOEXEC, 0);
 	n++;
-	if (addrfd < 0)
+	if (addrfd < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.addrform_setup_failed,
+			1, __ATOMIC_RELAXED);
 		goto out;
+	}
 
 	/* Step 2: connect() to ::ffff:127.0.0.1:HELPER_PORT.  This reaches
 	 * TCP_ESTABLISHED with a v4-mapped sk_v6_daddr, satisfying the
@@ -474,8 +492,12 @@ static unsigned long run_addrform_arm(void)
 	mapped_sin6.sin6_addr.s6_addr[12] = 127;
 	mapped_sin6.sin6_addr.s6_addr[15] = 1;
 	if (connect(addrfd, (struct sockaddr *)&mapped_sin6,
-		    sizeof(mapped_sin6)) < 0)
+		    sizeof(mapped_sin6)) < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.addrform_setup_failed,
+			1, __ATOMIC_RELAXED);
 		goto out;
+	}
 	n++;
 
 	/* Step 3: setsockopt(IPPROTO_IPV6, IPV6_ADDRFORM, PF_INET).
