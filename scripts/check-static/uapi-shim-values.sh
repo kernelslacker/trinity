@@ -213,6 +213,136 @@ if [ ! -x "$FINAL_BIN" ]; then
 fi
 
 "$FINAL_BIN" > "$COMPILER_TABLE" 2>/dev/null
+
+# ---------------------------------------------------------------------------
+# Step 4b: Tier 2 fallback — linux-linus source tree (read-only)
+# For symbols that failed to resolve against installed system headers, attempt
+# a second compile-probe using ~/src/linux-linus/include/uapi prepended.
+# This catches symbols too new for the build host's installed headers — exactly
+# the highest-risk class (freshly-added shims where an off-by-one is most
+# likely).
+#
+# Motivating example: XFRM_MSG_MIGRATE_STATE sat at wrong value 42 (should be
+# 41) from its first commit.  The installed-headers-only Tier 1 probe silently
+# skipped it, reporting "1704/1704 verified correct" without touching the
+# symbol at all.  The wrong value was live for multiple ticks before manual
+# review caught it.
+#
+# Tier 2 is purely additive and uses the linus tree read-only.
+# If ~/src/linux-linus does not exist the block is skipped silently.
+# ---------------------------------------------------------------------------
+LINUS_UAPI="$HOME/src/linux-linus/include/uapi"
+LINUS_INC="$HOME/src/linux-linus/include"
+SYMS_TIER2_GOOD="$WORKDIR/syms-tier2-good.txt"
+touch "$SYMS_TIER2_GOOD"
+
+if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
+    # Build a PCH using the linus tree headers (read-only).
+    # The linus tree paths are prepended so we see the newest definitions.
+    PCH_HDR2="$WORKDIR/uapi-probe-linus.h"
+    {
+        echo '#include <stdio.h>'
+        echo '#include <stdint.h>'
+        echo '#include <stdbool.h>'
+        for h in \
+            linux/xfrm.h linux/nl80211.h linux/neighbour.h linux/if_tunnel.h \
+            linux/if_link.h linux/if_addr.h linux/if_arp.h linux/if_bridge.h \
+            linux/if_ether.h linux/if_tun.h linux/socket.h linux/in.h linux/in6.h \
+            linux/ip.h linux/ipv6.h linux/tcp.h linux/udp.h linux/sctp.h \
+            linux/dccp.h linux/rtnetlink.h linux/genetlink.h linux/veth.h \
+            linux/netfilter/nf_tables.h linux/netfilter/nfnetlink_conntrack.h \
+            linux/netfilter/ipset/ip_set.h linux/prctl.h linux/capability.h \
+            linux/mman.h linux/futex.h linux/fcntl.h linux/sched.h \
+            linux/perf_event.h linux/io_uring.h linux/bpf.h linux/landlock.h \
+            linux/lsm.h linux/batman_adv.h linux/dpll.h linux/thermal.h \
+            linux/vdpa.h linux/ovpn.h linux/nbd-netlink.h linux/net_dropmon.h \
+            linux/net_shaper.h linux/nfsd_netlink.h linux/ioprio.h linux/nfc.h \
+            linux/psample.h linux/psp-dbc.h linux/psp-sev.h \
+            linux/ethtool_netlink.h linux/hw_breakpoint.h \
+            linux/pkt_sched.h linux/pkt_cls.h linux/fib_rules.h linux/devlink.h \
+            linux/dcbnl.h linux/netlink.h linux/netfilter/nfnetlink_log.h \
+            linux/netfilter/nfnetlink_queue.h linux/tc_act/tc_mirred.h \
+            linux/netfilter/nf_tables_compat.h; do
+            if [ -f "$LINUS_UAPI/$h" ] || [ -f "$LINUS_INC/$h" ] || \
+               [ -f "/usr/include/$h" ]; then
+                echo "#include <$h>"
+            fi
+        done
+    } > "$PCH_HDR2"
+    # Compile PCH with linus tree prepended (best-effort; fall through if it fails)
+    gcc -w -x c-header \
+        -I"$LINUS_UAPI" -I"$LINUS_INC" \
+        -o "${PCH_HDR2}.gch" "$PCH_HDR2" 2>/dev/null || true
+
+    BATCH2_DIR="$WORKDIR/batches2"
+    mkdir -p "$BATCH2_DIR"
+    split -l 100 "$SYMS_BAD" "$BATCH2_DIR/batch-"
+
+    for batch in "$BATCH2_DIR"/batch-*; do
+        [ -f "$batch" ] || continue
+        bname=$(basename "$batch")
+        {
+            echo 'int main(void){'
+            awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$batch"
+            echo 'return 0;}'
+        } > "$BATCH2_DIR/${bname}.c"
+        gcc -w -fmax-errors=200 \
+            -I"$LINUS_UAPI" -I"$LINUS_INC" \
+            -include "$PCH_HDR2" \
+            -o "$BATCH2_DIR/${bname}.out" "$BATCH2_DIR/${bname}.c" \
+            2>"$BATCH2_DIR/${bname}.err" &
+    done
+    wait
+
+    # Collect symbols still unresolvable after Tier 2
+    SYMS_BAD2="$WORKDIR/syms-bad2.txt"
+    extract_bad_syms "$BATCH2_DIR"/*.err > "$SYMS_BAD2" 2>/dev/null || touch "$SYMS_BAD2"
+
+    # Tier 2 good = previously bad minus still-bad (both files are sorted)
+    comm -23 "$SYMS_BAD" "$SYMS_BAD2" > "$SYMS_TIER2_GOOD"
+
+    # Update SYMS_BAD to the final unresolved set
+    cp "$SYMS_BAD2" "$SYMS_BAD"
+
+    if [ -s "$SYMS_TIER2_GOOD" ]; then
+        # Build and run a final binary for Tier 2 symbols; append to compiler table
+        FINAL_C2="$WORKDIR/final-probe2.c"
+        FINAL_BIN2="$WORKDIR/final-probe2"
+        FINAL_ERR2="$WORKDIR/final-probe2.err"
+        {
+            echo 'int main(void){'
+            awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$SYMS_TIER2_GOOD"
+            echo 'return 0;}'
+        } > "$FINAL_C2"
+        if gcc -w -I"$LINUS_UAPI" -I"$LINUS_INC" \
+               -include "$PCH_HDR2" \
+               -o "$FINAL_BIN2" "$FINAL_C2" 2>"$FINAL_ERR2"; then
+            # Append Tier 2 authoritative values to the shared compiler table
+            "$FINAL_BIN2" >> "$COMPILER_TABLE" 2>/dev/null
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Unresolved-uapi reporting
+# After both tiers, any symbol still unresolved that carries a recognizable
+# uapi-shaped prefix (ALL_CAPS with underscore, common in kernel headers) is
+# reported as a WARN.  This is not a FAIL — trinity-private macros legitimately
+# live in the unresolved set.  Known-private prefixes are excluded.
+# ---------------------------------------------------------------------------
+KNOWN_MISSING_RE='^(TRINITY_|NR_|MAX_|MIN_|DEFAULT_|__NR_)'
+unresolved_uapi_count=0
+if [ -s "$SYMS_BAD" ]; then
+    unresolved_uapi=$(grep -E '_' "$SYMS_BAD" | grep -vE "$KNOWN_MISSING_RE" || true)
+    if [ -n "$unresolved_uapi" ]; then
+        unresolved_uapi_count=$(printf '%s\n' "$unresolved_uapi" | wc -l | tr -d ' ')
+        printf '%s\n' "$unresolved_uapi" | \
+            while IFS= read -r sym; do
+                echo "WARN: $NAME: unresolved uapi-shaped symbol: $sym" >&2
+            done
+    fi
+fi
+
 harvested=$(wc -l < "$SYMS_ALL")
 probed=$(wc -l < "$COMPILER_TABLE")
 
@@ -348,5 +478,5 @@ if [ "$total_fail" -gt 0 ]; then
     exit 1
 fi
 
-echo "PASS: $NAME (harvested $harvested, resolvable $probed, verified $checked)"
+echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / unresolved-uapi $unresolved_uapi_count)"
 exit 0
