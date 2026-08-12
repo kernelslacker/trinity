@@ -987,6 +987,47 @@ static long brct_ns_since(const struct timespec *t0)
 	       (now.tv_nsec - t0->tv_nsec);
 }
 
+/*
+ * Compute the IPv4 TCP checksum for a frame that has already been
+ * populated.  Covers the pseudo-header (src-IP at frame[26..29],
+ * dst-IP at frame[30..33], zero, protocol=6, tcp_len) plus the
+ * TCP segment starting at frame[34].  The checksum field at
+ * frame[50..51] must be zero on entry (guaranteed by the preceding
+ * memset); tcp_len is the byte count of the TCP segment (20 when
+ * there is no data payload).
+ */
+static uint16_t brct_tcp_checksum(const unsigned char *frame, uint16_t tcp_len)
+{
+	uint32_t sum = 0;
+	const unsigned char *p;
+	uint16_t n;
+
+	/* pseudo-header: src-IP */
+	sum += (uint32_t)((frame[26] << 8) | frame[27]);
+	sum += (uint32_t)((frame[28] << 8) | frame[29]);
+	/* pseudo-header: dst-IP */
+	sum += (uint32_t)((frame[30] << 8) | frame[31]);
+	sum += (uint32_t)((frame[32] << 8) | frame[33]);
+	/* pseudo-header: zero + protocol */
+	sum += (uint32_t)0x0006;
+	/* pseudo-header: TCP length */
+	sum += (uint32_t)tcp_len;
+	/* TCP segment: tcp_len bytes starting at frame[34] */
+	p = frame + 34;
+	n = tcp_len;
+	while (n > 1) {
+		sum += (uint32_t)((p[0] << 8) | p[1]);
+		p += 2;
+		n -= 2;
+	}
+	if (n)
+		sum += (uint32_t)(p[0] << 8);
+	/* fold carries */
+	while (sum >> 16)
+		sum = (sum & 0xffff) + (sum >> 16);
+	return (uint16_t)(~sum & 0xffff);
+}
+
 static void *brct_packet_sender(void *arg)
 {
 	struct sender_args *a = arg;
@@ -995,7 +1036,7 @@ static void *brct_packet_sender(void *arg)
 
 	for (i = 0; i < BRCT_PACKET_CAP; i++) {
 		struct sockaddr_ll sll;
-		unsigned char frame[64];
+		unsigned char frame[54];
 		unsigned char src_mac[6];
 
 		if (brct_ns_since(&a->t0) >= BRCT_BUDGET_NS)
@@ -1013,7 +1054,7 @@ static void *brct_packet_sender(void *arg)
 		 * TCP conntrack entry; the mangle chain rewrites proto to
 		 * UDP before the ct-timeout chain runs. */
 		frame[14] = 0x45;	/* IPv4, ihl=5 */
-		frame[16] = 0x00; frame[17] = 0x2c;	/* tot_len = 44 */
+		frame[16] = 0x00; frame[17] = 0x28;	/* tot_len = 40: 20 IP + 20 TCP */
 		frame[22] = 0x40;	/* ttl */
 		frame[23] = 0x06;	/* IPPROTO_TCP */
 		frame[26] = 10; frame[27] = 0;
@@ -1027,6 +1068,16 @@ static void *brct_packet_sender(void *arg)
 		/* TCP seq/ack (frames[38..45]) stay zero from memset. */
 		frame[46] = 0x50;			/* TCP data offset = 5 (20 bytes) */
 		frame[47] = 0x02;			/* TCP flags: SYN */
+		/* TCP frames must carry a valid checksum — tcp_error() has no
+		 * zero-csum exemption unlike udp_error(); a zero checksum is
+		 * rejected by nf_checksum(), preventing conntrack entry creation.
+		 * frame[50..51] is still zero here (memset), so the helper
+		 * reads the correct cleared field. */
+		{
+			uint16_t cksum = brct_tcp_checksum(frame, 20);
+			frame[50] = (unsigned char)(cksum >> 8);
+			frame[51] = (unsigned char)(cksum & 0xff);
+		}
 
 		memset(&sll, 0, sizeof(sll));
 		sll.sll_family   = AF_PACKET;
@@ -1040,9 +1091,12 @@ static void *brct_packet_sender(void *arg)
 		 * entry. */
 		calls++;
 		if (sendto(a->raw_fd, frame, sizeof(frame), MSG_DONTWAIT,
-			   (struct sockaddr *)&sll, sizeof(sll)) > 0)
+			   (struct sockaddr *)&sll, sizeof(sll)) > 0) {
 			__atomic_add_fetch(&shm->stats.bridge_ct.pkts_sent,
 					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.bridge_ct.pkts_conntracked,
+					   1, __ATOMIC_RELAXED);
+		}
 	}
 	a->direct_syscalls = calls;
 	return NULL;
