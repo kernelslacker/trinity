@@ -132,7 +132,7 @@ while IFS= read -r srcfile; do
 	# ---- survivor: emit a warning entry ----
 	printf '%s\n' "${srcfile#./}" >> "$warn_list"
 
-done < <(find . -name '*.c' -type f 2>/dev/null | sort)
+done < <(git ls-files '*.c' | sort)
 
 warn_count="$(wc -l < "$warn_list" | tr -d ' ')"
 
