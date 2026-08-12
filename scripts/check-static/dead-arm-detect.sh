@@ -9,36 +9,52 @@
 #
 #   (a) contains a call to rnd_modulo_u32() -- the canonical probabilistic
 #       picker used in childops and net/ grammar helpers; and
-#   (b) contains a switch() statement that dispatches on the result,
-#       either directly:
 #
+#   (b) contains a multi-arm dispatch on the result, in one of three shapes:
+#
+#       Direct switch:
 #           switch (rnd_modulo_u32(N)) { ... }
 #
-#       or via an intermediate variable:
-#
+#       Indirect switch (intermediate variable):
 #           unsigned int pick = rnd_modulo_u32(N);
 #           ...
 #           switch (pick) { ... }
 #
+#       Ternary / if-chain (no switch keyword):
+#           unsigned int arm = rnd_modulo_u32(N);
+#           s->use_x = (arm == 1) ? 1U : 0U;
+#           s->use_y = (arm == 2) ? 1U : 0U;
+#       or equivalently via if (arm == N) / if (var == N) chains.
+#
+#       The indirect and ternary/if-chain heuristics are intentionally
+#       loose: false positives are acceptable for a WARN gate.  A file
+#       that uses rnd_modulo_u32 for something other than multi-arm
+#       dispatch (e.g. array indexing) can suppress individual call-site
+#       warnings with the opt-out annotation described below.
+#
 # A file in this class that does NOT call CHILDOP_ARM_ENTER is a candidate
-# dead-arm source: if any switch arm is unreachable the run-time stats will
-# look identical to "ran and found nothing" and the dead arm will go
+# dead-arm source: if any dispatch arm is unreachable the run-time stats
+# will look identical to "ran and found nothing" and the dead arm will go
 # undetected until manual review.
 #
 # SCOPE
 # -----
-# Checked: childops/**/*.c and net/**/*.c
-# Skipped: test files, .h headers (arm_entered_* lives in headers, not
-#          in code that dispatches), scripts, stats/ (the dump side).
+# Checked: all .c files under the repo root.
+# Skipped: .h headers (arm_entered_* lives in headers, not in code that
+#          dispatches).
 #
-# SEVERITY
-# --------
-# WARN only (exit 0) -- this is a forward-detection gate, not an enforcement
-# gate.  The goal is to flag new code for a reviewer to annotate; once the
-# arm count is known the developer adds arm_entered_* fields and
-# CHILDOP_ARM_ENTER calls, then the warning disappears.
+# SEVERITY / RATCHET
+# ------------------
+# The gate maintains a baseline file (dead-arm-baseline.txt, committed
+# alongside this script) that records the WARN list on the first run.
+# Subsequent runs:
+#   warn_count > baseline_count  => FAIL  (new un-instrumented files added)
+#   warn_count <= baseline_count => WARN  (within baseline; exit 0)
+#   baseline absent              => write baseline, PASS
 #
-# When all un-instrumented files have been addressed, tighten to FAIL.
+# This turns the warning list from a permanently-ignored dump into a
+# one-way ratchet: the count can only go down.  When all un-instrumented
+# files have been addressed, tighten to FAIL unconditionally.
 #
 # See Documentation/check-static.md for the PASS/FAIL/WARN exit convention.
 
@@ -55,7 +71,7 @@ trap 'rm -rf "$tmp"' EXIT
 warn_list="$tmp/warns"
 : > "$warn_list"
 
-# Walk every .c file under childops/ and net/.
+# Walk every .c file under the repo root.
 while IFS= read -r srcfile; do
 	# ---- (a) must reference rnd_modulo_u32 ----
 	grep -q 'rnd_modulo_u32' "$srcfile" 2>/dev/null || continue
@@ -67,19 +83,27 @@ while IFS= read -r srcfile; do
 	#      exempting the whole file. ----
 	optout_count=$(grep -c 'dead-arm-detect: not a multi-arm dispatch' "$srcfile" 2>/dev/null); optout_count=${optout_count:-0}
 
-	# ---- (b) must have a switch() that dispatches on the result ----
+	# ---- (b) must have a dispatch that uses the result ----
 	#
-	# Two shapes:
-	#   Direct:   switch[[:space:]]*([[:space:]]*rnd_modulo_u32
-	#   Indirect: file has both `= rnd_modulo_u32(` and a `switch (`
-	#             (the variable name is not checked at this grain --
-	#             false positives on files that use rnd_modulo_u32 for
-	#             non-switch purposes are acceptable for a WARN gate)
+	# Three shapes are recognised:
+	#   Direct switch:    switch[[:space:]]*([[:space:]]*rnd_modulo_u32
+	#   Indirect switch:  file has both `= rnd_modulo_u32(` and `switch (`
+	#   Ternary/if-chain: file has `= rnd_modulo_u32(` and either a
+	#                     ternary operator following a comparison (`)==N) ?`)
+	#                     or an if-chain equality test (`if.*==N`)
+	#
+	# The variable name is not tracked across shapes -- false positives on
+	# files that use rnd_modulo_u32 for non-dispatch purposes are acceptable
+	# for a WARN gate (suppress with the opt-out annotation above).
 	has_switch=0
 	if grep -qE 'switch[[:space:]]*\([[:space:]]*rnd_modulo_u32' "$srcfile" 2>/dev/null; then
 		has_switch=1
 	elif grep -qE '=[[:space:]]*rnd_modulo_u32\(' "$srcfile" 2>/dev/null &&
 	     grep -qE 'switch[[:space:]]*\(' "$srcfile" 2>/dev/null; then
+		has_switch=1
+	elif grep -qE '=[[:space:]]*rnd_modulo_u32\(' "$srcfile" 2>/dev/null &&
+	     { grep -qE '\)[[:space:]]*\?[[:space:]]' "$srcfile" 2>/dev/null ||
+	       grep -qE 'if[[:space:]]*\(.*==[[:space:]]*[0-9]' "$srcfile" 2>/dev/null; }; then
 		has_switch=1
 	fi
 	[ "$has_switch" -eq 1 ] || continue
@@ -98,18 +122,18 @@ while IFS= read -r srcfile; do
 	# ---- survivor: emit a warning entry ----
 	printf '%s\n' "${srcfile#./}" >> "$warn_list"
 
-done < <(find childops net -name '*.c' -type f 2>/dev/null | sort)
+done < <(find . -name '*.c' -type f 2>/dev/null | sort)
 
 warn_count="$(wc -l < "$warn_list" | tr -d ' ')"
 
 if [ "$warn_count" -gt 0 ]; then
 	{
-		echo "  $NAME: $warn_count file(s) have switch-on-rnd_modulo_u32"
-		echo "  dispatch without CHILDOP_ARM_ENTER instrumentation."
-		echo "  These are CANDIDATES for dead-arm blind spots -- review"
-		echo "  each switch block, add arm_entered_* fields to the subsystem"
-		echo "  stats struct, and call CHILDOP_ARM_ENTER at the top of every"
-		echo "  case arm.  See include/arm-tracking.h for usage."
+		echo "  $NAME: $warn_count file(s) have multi-arm dispatch on rnd_modulo_u32"
+		echo "  (switch, ternary-chain, or if-chain) without CHILDOP_ARM_ENTER"
+		echo "  instrumentation.  These are CANDIDATES for dead-arm blind spots --"
+		echo "  review each dispatch block, add arm_entered_* fields to the subsystem"
+		echo "  stats struct, and call CHILDOP_ARM_ENTER at the top of every arm."
+		echo "  See include/arm-tracking.h for usage."
 		echo ""
 		echo "  Un-instrumented files:"
 		sed 's/^/    /' "$warn_list"
@@ -121,9 +145,31 @@ if [ "$warn_count" -gt 0 ]; then
 		echo "  One annotation suppresses one call; files with mixed dispatch"
 		echo "  and non-dispatch uses are handled correctly."
 	} >&2
-	echo "WARN: $NAME: $warn_count file(s) missing CHILDOP_ARM_ENTER (see stderr)"
+fi
+
+# ---- Baseline ratchet ----
+#
+# dead-arm-baseline.txt pins the warn population.  The count must not grow.
+baseline_file="$ROOT/scripts/check-static/dead-arm-baseline.txt"
+
+if [ ! -f "$baseline_file" ]; then
+	cp "$warn_list" "$baseline_file"
+	echo "PASS: $NAME: baseline created ($warn_count file(s) noted; ratchet now active)"
 	exit 0
 fi
 
-echo "PASS: $NAME: all switch-on-rnd_modulo_u32 files use CHILDOP_ARM_ENTER"
+baseline_count="$(wc -l < "$baseline_file" | tr -d ' ')"
+
+if [ "$warn_count" -gt "$baseline_count" ]; then
+	echo "FAIL: $NAME: $warn_count un-instrumented file(s) exceeds baseline of $baseline_count" \
+	     "-- new files must add CHILDOP_ARM_ENTER or carry a dead-arm-detect opt-out annotation"
+	exit 1
+fi
+
+if [ "$warn_count" -eq 0 ]; then
+	echo "PASS: $NAME: all dispatch-on-rnd_modulo_u32 files use CHILDOP_ARM_ENTER"
+else
+	echo "WARN: $NAME: $warn_count file(s) missing CHILDOP_ARM_ENTER" \
+	     "(within baseline of $baseline_count; see stderr)"
+fi
 exit 0
