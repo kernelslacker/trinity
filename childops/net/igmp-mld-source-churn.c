@@ -134,6 +134,7 @@ static bool ns_unsupported_igmp_mld_source_churn;
  */
 static unsigned int msfilter_v4_optlen_iter;
 static unsigned int msfilter_v6_optlen_iter;
+static unsigned int msfilter41_optlen_iter;
 
 /*
  * Read the current net.ipv4.igmp_max_msf value into *@saved.  Returns
@@ -363,6 +364,152 @@ static void msfilter_getsockopt_oracle_v4(int s, __u32 grp_be,
 			}
 		}
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter_get_ok,
+				   1, __ATOMIC_RELAXED);
+	}
+	free(buf);
+}
+
+/*
+ * IP_MSFILTER getsockopt oracle (opt 41, v4).  Called after a successful
+ * setsockopt(MCAST_MSFILTER) on @s with @nsrc sources installed.  Routes
+ * through ip_mc_msfget() in net/ipv4/igmp.c, which differs from the
+ * MCAST_MSFILTER path in two key ways: source entries are 4-byte __be32
+ * (not 128-byte struct sockaddr_storage), and imsf_numsrc is set to the
+ * full installed count while the returned data is bounded by the
+ * caller-supplied optlen.
+ *
+ * An independent optlen counter (msfilter41_optlen_iter) cycles through
+ * three cases on every call, decoupled from iter_idx:
+ *
+ *   msfilter41_optlen_iter % 3 == 0  ->  IP_MSFILTER_SIZE(0)    [floor: 16 B]
+ *   msfilter41_optlen_iter % 3 == 1  ->  IP_MSFILTER_SIZE(1)    [hdr+1 src]
+ *   msfilter41_optlen_iter % 3 == 2  ->  IP_MSFILTER_SIZE(@nsrc) [full fit]
+ *
+ * A MCAST_GET_GUARD_BYTES guard region (0xa5 bytes) is placed immediately
+ * after the declared buffer.  Overruns are reported but do not abort.
+ */
+static void msfilter_getsockopt_oracle_v4_opt41(int s, __u32 grp_be,
+						unsigned int nsrc,
+						unsigned int iter_idx)
+{
+	unsigned char *buf;
+	struct ip_msfilter *imsf;
+	socklen_t req_len, got_len;
+	size_t alloc_sz;
+	unsigned int i;
+
+	/*
+	 * max_write_sz: the maximum bytes the kernel may write back for the
+	 * filter installed by setsockopt (IP_MSFILTER_SIZE(nsrc)).  This can
+	 * exceed req_len when the optlen selector is 0 or 1.
+	 */
+	size_t max_write_sz = IP_MSFILTER_SIZE(nsrc > 0U ? nsrc : 1U);
+
+	{
+		unsigned int optlen_sel =
+			__atomic_fetch_add(&msfilter41_optlen_iter, 1U,
+					   __ATOMIC_RELAXED) % 3U;
+
+		switch (optlen_sel) {
+		case 0:
+			/* IP_MSFILTER_SIZE(0) = 16: the kernel-accepted floor
+			 * (ip_sockglue.c gates on len >= IP_MSFILTER_SIZE(0)). */
+			req_len = (socklen_t)IP_MSFILTER_SIZE(0U);
+			break;
+		case 1:
+			req_len = (socklen_t)IP_MSFILTER_SIZE(1U);
+			break;
+		default:
+			req_len = (socklen_t)IP_MSFILTER_SIZE(nsrc > 0U ? nsrc : 1U);
+			break;
+		}
+	}
+
+	alloc_sz = max_write_sz + MCAST_GET_GUARD_BYTES;
+	buf = malloc(alloc_sz);
+	if (!buf)
+		return;
+
+	/* Zero the declared buffer so the kernel can parse the request
+	 * header (imsf_multiaddr, imsf_numsrc) correctly, then poison
+	 * [req_len, alloc_sz): the write-past-optlen zone [req_len,
+	 * max_write_sz) is the primary oracle window, and
+	 * [max_write_sz, max_write_sz+GUARD_BYTES) is the far guard. */
+	memset(buf, 0, (size_t)req_len);
+	memset(buf + req_len, MCAST_GET_GUARD_FILL,
+	       alloc_sz - (size_t)req_len);
+	imsf = (struct ip_msfilter *)buf;
+	imsf->imsf_multiaddr.s_addr = grp_be;
+	imsf->imsf_interface.s_addr = 0U;  /* INADDR_ANY */
+	imsf->imsf_numsrc            = nsrc;
+
+	got_len = req_len;
+	{
+		int rc = getsockopt(s, IPPROTO_IP, IP_MSFILTER, buf, &got_len);
+
+		if (rc < 0) {
+			/* check-static: child-output-ok */
+			output(0,
+			       "msfilter41_oracle: v4 getsockopt failed "
+			       "errno=%d req_len=%u nsrc_set=%u iter=%u\n",
+			       errno, (unsigned int)req_len, nsrc, iter_idx);
+			__atomic_add_fetch(
+				&shm->stats.igmp_mld_source_churn.msfilter41_get_rejected,
+				1, __ATOMIC_RELAXED);
+			free(buf);
+			return;
+		}
+
+		/* Free oracle: kernel reported writing more than we declared. */
+		if (got_len > req_len) {
+			/* check-static: child-output-ok */
+			output(0,
+			       "msfilter41_oracle: v4 got_len=%u > req_len=%u "
+			       "-- kernel wrote past declared optlen\n",
+			       (unsigned int)got_len, (unsigned int)req_len);
+			__atomic_add_fetch(
+				&shm->stats.igmp_mld_source_churn.msfilter41_get_overrun,
+				1, __ATOMIC_RELAXED);
+		}
+
+		/* Primary oracle: [req_len, max_write_sz) -- kernel wrote past
+		 * the declared optlen into the safe over-allocation zone. */
+		for (i = 0; (size_t)req_len + i < max_write_sz; i++) {
+			if (buf[(size_t)req_len + i] !=
+			    (unsigned char)MCAST_GET_GUARD_FILL) {
+				/* check-static: child-output-ok */
+				output(0,
+				       "msfilter41_oracle: v4 getsockopt overrun "
+				       "past optlen: req_len=%u off=%u "
+				       "got_len=%u nsrc_set=%u iter=%u\n",
+				       (unsigned int)req_len, i,
+				       (unsigned int)got_len, nsrc, iter_idx);
+				__atomic_add_fetch(
+					&shm->stats.igmp_mld_source_churn.msfilter41_get_overrun,
+					1, __ATOMIC_RELAXED);
+				break;
+			}
+		}
+
+		/* Secondary oracle: [max_write_sz, max_write_sz+GUARD_BYTES)
+		 * -- kernel wrote past even the max-size allocation. */
+		for (i = 0; i < MCAST_GET_GUARD_BYTES; i++) {
+			if (buf[max_write_sz + i] !=
+			    (unsigned char)MCAST_GET_GUARD_FILL) {
+				/* check-static: child-output-ok */
+				output(0,
+				       "msfilter41_oracle: v4 getsockopt DEEP "
+				       "overrun past max_write_sz=%zu guard_off=%u "
+				       "got_len=%u nsrc_set=%u iter=%u\n",
+				       max_write_sz, i,
+				       (unsigned int)got_len, nsrc, iter_idx);
+				__atomic_add_fetch(
+					&shm->stats.igmp_mld_source_churn.msfilter41_get_overrun,
+					1, __ATOMIC_RELAXED);
+				break;
+			}
+		}
+		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.msfilter41_get_ok,
 				   1, __ATOMIC_RELAXED);
 	}
 	free(buf);
@@ -959,6 +1106,12 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 						msfilter_getsockopt_oracle_v4(
 							it->recv_s, it->grp_be,
 							0U, nsrc, it->iter_idx);
+						/* IP_MSFILTER (opt 41) oracle: same confirmed-
+						 * installed filter, different kernel path
+						 * (ip_mc_msfget, 4-byte __be32 src entries). */
+						msfilter_getsockopt_oracle_v4_opt41(
+							it->recv_s, it->grp_be,
+							nsrc, it->iter_idx);
 					}
 				}
 			}

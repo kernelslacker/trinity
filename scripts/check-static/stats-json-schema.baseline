@@ -1250,6 +1250,9 @@ stats	object
     stats.igmp_mld_source_churn.msfilter_get_overrun	u64
     stats.igmp_mld_source_churn.msfilter_get_deep_overrun	u64
     stats.igmp_mld_source_churn.msfilter_get_rejected	u64
+    stats.igmp_mld_source_churn.msfilter41_get_ok	u64
+    stats.igmp_mld_source_churn.msfilter41_get_overrun	u64
+    stats.igmp_mld_source_churn.msfilter41_get_rejected	u64
     stats.igmp_mld_source_churn.igmp_max_msf_raise_fail	u64
     stats.igmp_mld_source_churn.msfilter_enobufs_v4	u64
     stats.igmp_mld_source_churn.msfilter_enobufs_v6	u64
