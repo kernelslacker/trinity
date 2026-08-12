@@ -277,6 +277,7 @@ struct stats_ring {
 	 * Cache-line aligned so the child's hot-path write lands on its own
 	 * line and does not false-share with the SPSC ring's head/tail.
 	 */
+	/* Run-monotonic op clock. NOT reset on respawn — see stats_ring_init(). */
 	unsigned long lossless_op_count __attribute__((aligned(64)));
 	struct spsc_ring base;
 	struct stats_ring_slot slots[STATS_RING_SIZE];

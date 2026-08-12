@@ -37,6 +37,8 @@ struct stats_published *shm_published;
 
 void stats_ring_init(struct stats_ring *ring)
 {
+	/* Do NOT zero lossless_op_count here — it is the run-monotonic op clock and must
+	   survive child respawn; see stats_ring_drain_all(). */
 	memset(ring->slots, 0, sizeof(ring->slots));
 	spsc_ring_init(&ring->base);
 }
@@ -83,8 +85,7 @@ bool stats_ring_enqueue_call_complete(struct stats_ring *ring,
  * total_op_count are no longer fed by the ring (they are derived by
  * summing lossless_op_count across all per-child stats_ring pages),
  * so a stomped delta cannot jump the strategy rotation clock or
- * syscalls_todo termination
- * check.  The cap still applies to the remaining ring-drained counters
+ * syscalls_todo termination check.  The cap still applies to the remaining ring-drained counters
  * (category histogram, success/failure) so a stomped slot distorts at
  * most one class by its normal per-drain ceiling.  Producers currently
  * emit +1 on every path except
