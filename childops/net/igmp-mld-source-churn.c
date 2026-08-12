@@ -870,10 +870,12 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 		/* RACE C: bulk replace via MCAST_MSFILTER -- exercises the
 		 * ip_mc_msfilter realloc + rcu publish path.
 		 *
-		 * When nsrc > IMC_MAX_MSF_CAP: skip the raise so
-		 * sysctl_igmp_max_msf stays below nsrc, build the oversized
-		 * filter, and expect -ENOBUFS from ip_mc_msfilter().  Book
-		 * msfilter_enobufs_v4 so the rejection is visible in stats.
+		 * When nsrc > IMC_MAX_MSF_CAP: save igmp_max_msf, raise to
+		 * IMC_MAX_MSF_CAP (= nsrc-1 = 64) so sysctl_igmp_max_msf
+		 * sits exactly at cap, build the nsrc=65 filter, and expect
+		 * -ENOBUFS from ip_mc_msfilter() at the cap+1 boundary.
+		 * Book msfilter_enobufs_v4 so the rejection is visible in
+		 * stats; restore afterward.
 		 *
 		 * Otherwise: when nsrc exceeds the default igmp_max_msf (10),
 		 * save the current sysctl value, raise it to IMC_MAX_MSF_CAP,
@@ -881,18 +883,26 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 		 * large-filter path that would get -ENOBUFS anyway. */
 		nsrc = rotate_filter_size();
 		if (nsrc > IMC_MAX_MSF_CAP) {
-			/* Oversized path: probe the -ENOBUFS boundary. */
-			it->gf = build_filter_v4(0U, it->grp_be, nsrc,
-						 it->salt);
-			if (it->gf) {
-				rc = setsockopt(it->recv_s, IPPROTO_IP,
-						MCAST_MSFILTER, it->gf,
-						GROUP_FILTER_SIZE(nsrc));
-				if (rc < 0 && errno == ENOBUFS)
-					__atomic_add_fetch(
-						&shm->stats.igmp_mld_source_churn.msfilter_enobufs_v4,
-						1, __ATOMIC_RELAXED);
+			/* Oversized path: probe the cap+1 (65 vs cap 64)
+			 * -ENOBUFS boundary. */
+			unsigned int saved_msf = 0;
+			bool do_restore = save_igmp_max_msf(&saved_msf);
+
+			if (raise_igmp_max_msf(IMC_MAX_MSF_CAP)) {
+				it->gf = build_filter_v4(0U, it->grp_be, nsrc,
+							 it->salt);
+				if (it->gf) {
+					rc = setsockopt(it->recv_s, IPPROTO_IP,
+							MCAST_MSFILTER, it->gf,
+							GROUP_FILTER_SIZE(nsrc));
+					if (rc < 0 && errno == ENOBUFS)
+						__atomic_add_fetch(
+							&shm->stats.igmp_mld_source_churn.msfilter_enobufs_v4,
+							1, __ATOMIC_RELAXED);
+				}
 			}
+			if (do_restore)
+				restore_igmp_max_msf(saved_msf);
 		} else {
 			unsigned int saved_msf = 0;
 			bool do_restore = false;
