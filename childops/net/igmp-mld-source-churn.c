@@ -873,9 +873,11 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 		 * When nsrc > IMC_MAX_MSF_CAP: save igmp_max_msf, raise to
 		 * IMC_MAX_MSF_CAP (= nsrc-1 = 64) so sysctl_igmp_max_msf
 		 * sits exactly at cap, build the nsrc=65 filter, and expect
-		 * -ENOBUFS from ip_mc_msfilter() at the cap+1 boundary.
-		 * Book msfilter_enobufs_v4 so the rejection is visible in
-		 * stats; restore afterward.
+		 * -ENOBUFS at the cap+1 boundary.  The rejection is caught
+		 * by the setsockopt handler in ip_sockglue.c (gsf->gf_numsrc
+		 * > sysctl_igmp_max_msf check) before ip_mc_msfilter() is
+		 * ever called.  Book msfilter_enobufs_v4 so the rejection is
+		 * visible in stats; restore afterward.
 		 *
 		 * Otherwise: when nsrc exceeds the default igmp_max_msf (10),
 		 * save the current sysctl value, raise it to IMC_MAX_MSF_CAP,
