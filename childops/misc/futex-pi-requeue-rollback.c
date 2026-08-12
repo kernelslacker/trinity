@@ -271,6 +271,7 @@ struct fpr_shared {
 	int requeue_nr;		/* val2 (nr_requeue) for CMP_REQUEUE_PI */
 	pid_t foreign_tid;	/* waiter's tid stored as lock-word owner in privhash arm */
 	unsigned int use_privhash;	/* 1 -> prctl per-mm hash + foreign-tid lock word */
+	unsigned int use_vfork_race;	/* 1 -> nested-vfork phash.ref NULL-race arm */
 	unsigned int slot_count;	/* PR_FUTEX_HASH_SET_SLOTS argument drawn by fpr_pick_axes */
 	/* Direct-syscall accumulator: every raw_futex() bumps this
 	 * before entering the kernel, plus the consumer's sched_setattr
@@ -545,6 +546,284 @@ child_out:
 }
 
 /*
+ * ---------------------------------------------------------------------------
+ * Nested-vfork phash.ref NULL-race arm
+ *
+ * CLONE_VM|CLONE_VFORK skips futex_hash_allocate_default(): the kernel gate
+ * in copy_process() is `need_futex_hash_allocate_default()` which returns
+ * `(clone_flags & (CLONE_VM|CLONE_VFORK)) == CLONE_VM`.  Adding CLONE_VFORK
+ * makes it return false, so phash.ref stays NULL after cloning.
+ *
+ * Sequence (all within a throwaway orchestrator fork so the SET_SLOTS
+ * one-way door closes only in the disposable mm):
+ *
+ *   P  = orchestrator (throwaway fork, fresh mm)
+ *   G1 = clone(CLONE_VM|CLONE_VFORK|SIGCHLD) of P  -> P suspends in vfork
+ *   G2 = clone(CLONE_VM|CLONE_VFORK|SIGCHLD) of G1 -> G1 suspends in vfork
+ *   G2 kills G1 via kill(getppid(), SIGKILL) -> G1 dies -> P is released
+ *   P and G2 are now both runnable in one mm with phash.ref still NULL
+ *   Both race prctl(PR_FUTEX_HASH_SET_SLOTS, n) on a rendezvous barrier
+ *   P does a GET_SLOTS readback after both racers finish as oracle check
+ *
+ * Stack safety: G1 and G2 each get a separately mmap'd stack.  G1's stack
+ * is allocated by P (stored in the shared page); G2's stack is allocated by
+ * G1.  CLONE_VFORK siblings MUST NOT share a stack.
+ *
+ * this_child() note: G2 inherits the parent's childdata pointer.  op_type
+ * and op_nr are safe reads; per-process fields must not be written from G2.
+ * ---------------------------------------------------------------------------
+ */
+
+#define FPR_VFORK_STACK_SZ  (64U * 1024U)
+
+struct fpr_vfork_shared {
+	/* G2 publishes its PID here so P knows G2 is alive */
+	pid_t		g2_pid;
+	/* Slot count both racers will pass to SET_SLOTS */
+	unsigned int	slot_count;
+	/* Rendezvous: P sets p_ready=1 after G1 is reaped, before its SET_SLOTS */
+	uint32_t	p_ready;
+	/* G2 sets g2_done=1 after its SET_SLOTS returns */
+	uint32_t	g2_done;
+	/* G2's SET_SLOTS return value (for oracle) */
+	long		g2_ret;
+	/* Stack for G2, allocated by G1; pointer stored here so P can munmap */
+	void		*g2_stack;
+	/* Direct-syscall accumulator (RELAXED atomic, same as pivot arm) */
+	unsigned long	direct_syscalls;
+};
+
+/*
+ * G2 body.  Runs after G1 clones it via CLONE_VM|CLONE_VFORK|SIGCHLD.
+ * Must NOT set PDEATHSIG -- we intentionally outlive G1 (which we kill).
+ */
+static int fpr_vfork_g2_fn(void *arg)
+{
+	struct fpr_vfork_shared *vs = arg;
+	struct timespec nap = { .tv_sec = 0, .tv_nsec = 1000000L }; /* 1 ms */
+	unsigned int spins;
+
+	CHILDOP_GRANDCHILD_ENTER();
+	/*
+	 * Do NOT set PDEATHSIG.  G2 must survive G1's death because G2 is the
+	 * one that kills G1 and then races with P.  If P dies unexpectedly the
+	 * spin below times out and G2 exits cleanly.
+	 */
+
+	/* Publish PID so P can see G2 is live. */
+	__atomic_store_n(&vs->g2_pid, (pid_t)getpid(), __ATOMIC_RELEASE);
+
+	/*
+	 * Kill G1 (our vfork parent).  SIGKILL is unblockable and is delivered
+	 * even to a process suspended in a vfork wait.  G1's death releases P
+	 * from its own vfork wait on G1.
+	 */
+	(void)kill(getppid(), SIGKILL);
+
+	/*
+	 * Spin until P signals it is running and ready to race.  P sets
+	 * p_ready immediately after reaping G1 and just before its own
+	 * SET_SLOTS call, creating a symmetric concurrent window.
+	 */
+	for (spins = 0; spins < 200; spins++) {
+		if (__atomic_load_n(&vs->p_ready, __ATOMIC_ACQUIRE))
+			break;
+		(void)nanosleep(&nap, NULL);
+	}
+	if (!__atomic_load_n(&vs->p_ready, __ATOMIC_ACQUIRE))
+		_exit(0);
+
+	/* Race: SET_SLOTS on the mm whose phash.ref is still NULL. */
+	__atomic_add_fetch(&vs->direct_syscalls, 1, __ATOMIC_RELAXED);
+	vs->g2_ret = prctl(PR_FUTEX_HASH, PR_FUTEX_HASH_SET_SLOTS,
+			   (int)vs->slot_count, 0, 0);
+
+	__atomic_store_n(&vs->g2_done, 1U, __ATOMIC_RELEASE);
+	_exit(0);
+}
+
+/*
+ * G1 body.  Clones G2 via CLONE_VM|CLONE_VFORK|SIGCHLD then suspends in the
+ * kernel's vfork wait.  G2 will SIGKILL G1 to break the vfork chain and
+ * release P.  After G2 calls _exit(), G1 is also released and exits.
+ */
+static int fpr_vfork_g1_fn(void *arg)
+{
+	struct fpr_vfork_shared *vs = arg;
+	pid_t g2_pid;
+
+	CHILDOP_GRANDCHILD_ENTER();
+	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
+	if (getppid() == 1)
+		_exit(0);
+
+	/*
+	 * Allocate G2's stack independently.  CLONE_VFORK with a shared stack
+	 * is a classic corruption path: G2 writes its own frame over G1's
+	 * locals while G1 is suspended.  Store the pointer in the shared page
+	 * so P can munmap it at teardown after G2 has exited.
+	 */
+	__atomic_add_fetch(&vs->direct_syscalls, 1, __ATOMIC_RELAXED);
+	vs->g2_stack = mmap(NULL, FPR_VFORK_STACK_SZ, PROT_READ | PROT_WRITE,
+			    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (vs->g2_stack == MAP_FAILED) {
+		vs->g2_stack = NULL;
+		_exit(0);
+	}
+
+	/*
+	 * Clone G2 with CLONE_VM|CLONE_VFORK|SIGCHLD.  G1 suspends here until
+	 * G2 exits.  G2 will kill us to release P from its vfork wait, then
+	 * G2 calls _exit() which releases G1 (already dead via SIGKILL, so
+	 * this is a no-op from the kernel's perspective).
+	 */
+	g2_pid = clone(fpr_vfork_g2_fn,
+		       (char *)vs->g2_stack + FPR_VFORK_STACK_SZ,
+		       CLONE_VM | CLONE_VFORK | SIGCHLD, vs);
+	if (g2_pid < 0) {
+		(void)munmap(vs->g2_stack, FPR_VFORK_STACK_SZ);
+		vs->g2_stack = NULL;
+	}
+	/* Released from vfork (by G2's _exit or SIGKILL); exit now. */
+	_exit(0);
+}
+
+static void fpr_vfork_free_stack(void *stack)
+{
+	if (stack && stack != MAP_FAILED)
+		(void)munmap(stack, FPR_VFORK_STACK_SZ);
+}
+
+/*
+ * fpr_run_nested_vfork_race - orchestrate the nested-vfork phash.ref race.
+ *
+ * Forks a throwaway orchestrator so the one-way SET_SLOTS door closes only
+ * in a disposable mm (same rationale as fpr_run_pivot_race).  Inside it:
+ *
+ *   1. Allocate a MAP_SHARED coordination page.
+ *   2. Clone G1 with CLONE_VM|CLONE_VFORK|SIGCHLD.  P suspends in vfork.
+ *   3. G1 clones G2 with CLONE_VM|CLONE_VFORK|SIGCHLD.  G1 suspends.
+ *   4. G2 kills G1.  G1 dies.  P is released from its vfork wait.
+ *   5. P reaps G1, sets p_ready=1, then calls SET_SLOTS.
+ *   6. G2 sees p_ready, calls SET_SLOTS concurrently in the same mm.
+ *   7. P waits briefly for G2's g2_done flag, then does GET_SLOTS readback.
+ *   8. A negative readback bumps vfork_slotmismatch as an oracle signal.
+ */
+static void fpr_run_nested_vfork_race(struct fpr_shared *s)
+{
+	pid_t orch_pid;
+	int status;
+
+	orch_pid = fork();
+	if (orch_pid < 0)
+		return;
+
+	if (orch_pid == 0) {
+		/* ---- throwaway orchestrator (P): fresh mm ---- */
+		struct fpr_vfork_shared *vs;
+		void *g1stack = NULL;
+		pid_t g1_pid = -1;
+		struct timespec nap = { .tv_sec = 0, .tv_nsec = 2000000L }; /* 2 ms */
+		unsigned int spins;
+		long readback;
+
+		CHILDOP_GRANDCHILD_ENTER();
+		(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
+		if (getppid() == 1)
+			_exit(0);
+
+		vs = mmap(NULL, sizeof(*vs), PROT_READ | PROT_WRITE,
+			  MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+		if (vs == MAP_FAILED)
+			_exit(0);
+		memset(vs, 0, sizeof(*vs));
+		/*
+		 * Use a non-zero slot count for the vfork arm.  The one-way door
+		 * fires on SET_SLOTS(0) too, but a non-zero count is the common
+		 * case and avoids trivially bypassing the per-mm alloc path.
+		 */
+		vs->slot_count = s->slot_count ? s->slot_count : 4U;
+
+		/* Allocate G1's stack (G1 separately allocates G2's). */
+		g1stack = mmap(NULL, FPR_VFORK_STACK_SZ, PROT_READ | PROT_WRITE,
+			       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (g1stack == MAP_FAILED)
+			goto vfork_child_out;
+
+		/*
+		 * Clone G1 with CLONE_VM|CLONE_VFORK|SIGCHLD.  P suspends here.
+		 * CLONE_VFORK is the key: need_futex_hash_allocate_default()
+		 * returns false for (CLONE_VM|CLONE_VFORK), so copy_process()
+		 * skips futex_hash_allocate_default() and phash.ref stays NULL.
+		 */
+		g1_pid = clone(fpr_vfork_g1_fn,
+			       (char *)g1stack + FPR_VFORK_STACK_SZ,
+			       CLONE_VM | CLONE_VFORK | SIGCHLD, vs);
+		if (g1_pid < 0)
+			goto vfork_child_out;
+
+		/*
+		 * P was released (G1 killed by G2).  Reap G1 before signalling G2
+		 * so the waitpid doesn't race with our SET_SLOTS call.
+		 */
+		(void)waitpid_eintr(g1_pid, &status, 0);
+		g1_pid = -1;
+
+		/*
+		 * Set p_ready then call SET_SLOTS immediately.  G2 is spinning on
+		 * p_ready; the moment it observes 1 it fires its own SET_SLOTS.
+		 * Both tasks are in the same mm with phash.ref == NULL, which is
+		 * the exact condition that triggers the kernel defect.
+		 */
+		__atomic_store_n(&vs->p_ready, 1U, __ATOMIC_RELEASE);
+		__atomic_add_fetch(&vs->direct_syscalls, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
+		(void)prctl(PR_FUTEX_HASH, PR_FUTEX_HASH_SET_SLOTS,
+			    (int)vs->slot_count, 0, 0);
+
+		/* Wait briefly for G2 to finish its SET_SLOTS. */
+		for (spins = 0; spins < 50; spins++) {
+			if (__atomic_load_n(&vs->g2_done, __ATOMIC_ACQUIRE))
+				break;
+			(void)nanosleep(&nap, NULL);
+		}
+
+		/*
+		 * GET_SLOTS readback as oracle.  After both racers, the mm's
+		 * slot count must be readable.  A negative return means something
+		 * went wrong (possible use-after-free or double-free triggered
+		 * the KASAN trap in futex_q_lock()).
+		 */
+		__atomic_add_fetch(&vs->direct_syscalls, 1, __ATOMIC_RELAXED);
+		readback = prctl(PR_FUTEX_HASH, PR_FUTEX_HASH_GET_SLOTS, 0, 0, 0);
+		if (readback < 0)
+			__atomic_add_fetch(
+				&shm->stats.futex_pi_requeue_rollback.vfork_slotmismatch,
+				1, __ATOMIC_RELAXED);
+
+		__atomic_add_fetch(
+			&shm->stats.futex_pi_requeue_rollback.vfork_runs,
+			1, __ATOMIC_RELAXED);
+
+vfork_child_out:
+		/* Drain the vfork arm's direct_syscalls into the main counter. */
+		__atomic_add_fetch(&s->direct_syscalls,
+				   __atomic_load_n(&vs->direct_syscalls,
+						   __ATOMIC_RELAXED),
+				   __ATOMIC_RELAXED);
+
+		fpr_vfork_free_stack(g1stack);
+		if (vs->g2_stack)
+			fpr_vfork_free_stack(vs->g2_stack);
+		(void)munmap(vs, sizeof(*vs));
+		_exit(0);
+	}
+
+	/* ---- trinity child waits for the throwaway orchestrator ---- */
+	(void)waitpid_eintr(orch_pid, &status, 0);
+}
+
+/*
  * Draw PR_FUTEX_HASH_SET_SLOTS argument.
  *
  * Value space: {0} ∪ {2, 4, 8, 16, 32, 64, 128, 256}.
@@ -580,14 +859,26 @@ static void fpr_pick_axes(struct fpr_shared *s)
 	static const int policies[] = { SCHED_FIFO, SCHED_RR, SCHED_OTHER };
 
 	s->use_private     = rnd_u32() & 1U;
-	s->use_privhash    = (rnd_u32() & 1U) ? 1U : 0U;
+	/*
+	 * Three-way arm selection (uniform over {0, 1, 2}):
+	 *   0 -> PI/foreign-TID arm (distinct mms, fork())
+	 *   1 -> CLONE_VM pivot-race arm (use_privhash)
+	 *   2 -> nested-vfork phash.ref NULL-race arm (use_vfork_race)
+	 */
+	{
+		unsigned int arm = rnd_modulo_u32(3);
+
+		s->use_privhash   = (arm == 1) ? 1U : 0U;
+		s->use_vfork_race = (arm == 2) ? 1U : 0U;
+	}
 	/*
 	 * slot_count is the prctl argument the CLONE_VM racers use.  Drawn via
 	 * fpr_pick_slot_count() which returns 0 (~1/9 probability) for the
-	 * global-hash pivot path and a valid power-of-two otherwise.  Only
-	 * meaningful when use_privhash is set.
+	 * global-hash pivot path and a valid power-of-two otherwise.  Used by
+	 * both use_privhash and use_vfork_race arms.
 	 */
-	s->slot_count      = s->use_privhash ? fpr_pick_slot_count() : 0U;
+	s->slot_count      = (s->use_privhash || s->use_vfork_race) ?
+				fpr_pick_slot_count() : 0U;
 	s->wait_timeout_ns = (long)(100000 + rnd_modulo_u32(900000));	/* 100us..1ms */
 	s->consumer_policy = policies[rnd_modulo_u32(ARRAY_SIZE(policies))];
 	s->consumer_priority = 1 + (int)rnd_modulo_u32(20);
@@ -689,9 +980,26 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 		goto out;
 	}
 
+	if (s->use_vfork_race) {
+		/*
+		 * Nested-vfork arm: puts two mm-sharing tasks into the same mm
+		 * with phash.ref == NULL, then races them on SET_SLOTS to reach
+		 * the double-alloc defect at kernel/futex/core.c:1844.
+		 * Oracle: KASAN in futex_q_lock() + GET_SLOTS readback.
+		 */
+		if (valid_op) {
+			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.childop.data_path[op],
+					   1, __ATOMIC_RELAXED);
+		}
+		fpr_run_nested_vfork_race(s);
+		goto out;
+	}
+
 	/*
 	 * fork()-based PI/foreign-TID arm (distinct mms required).
-	 * Kept intact; do not add use_privhash logic here.
+	 * Kept intact; do not add use_privhash or use_vfork_race logic here.
 	 */
 	owner_pid = fpr_spawn_worker(s, fpr_owner_main);
 	if (owner_pid < 0)
