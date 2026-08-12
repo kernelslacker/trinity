@@ -60,9 +60,12 @@ while IFS= read -r srcfile; do
 	# ---- (a) must reference rnd_modulo_u32 ----
 	grep -q 'rnd_modulo_u32' "$srcfile" 2>/dev/null || continue
 
-	# ---- opt-out annotation: reviewer has confirmed the rnd_modulo_u32
-	#      use is not a multi-arm dispatch (e.g. array indexing). ----
-	grep -q 'dead-arm-detect: not a multi-arm dispatch' "$srcfile" 2>/dev/null && continue
+	# ---- opt-out annotation count: each /* dead-arm-detect: not a
+	#      multi-arm dispatch */ comment marks one rnd_modulo_u32 call
+	#      as a non-dispatch use (e.g. array indexing).  Count them and
+	#      subtract from the effective dispatch count rather than
+	#      exempting the whole file. ----
+	optout_count=$(grep -c 'dead-arm-detect: not a multi-arm dispatch' "$srcfile" 2>/dev/null); optout_count=${optout_count:-0}
 
 	# ---- (b) must have a switch() that dispatches on the result ----
 	#
@@ -81,8 +84,16 @@ while IFS= read -r srcfile; do
 	fi
 	[ "$has_switch" -eq 1 ] || continue
 
-	# ---- (c) must be missing CHILDOP_ARM_ENTER ----
-	grep -q 'CHILDOP_ARM_ENTER' "$srcfile" 2>/dev/null && continue
+	# ---- (c) skip if CHILDOP_ARM_ENTER count >= effective dispatch count.
+	#      Effective dispatch count = rnd_modulo_u32( occurrences minus
+	#      per-call opt-out annotations.  Files where arm_count < effective
+	#      dispatch count are partially instrumented and must not be silently
+	#      exempted as the old whole-file check would have done. ----
+	arm_count=$(grep -c 'CHILDOP_ARM_ENTER' "$srcfile" 2>/dev/null); arm_count=${arm_count:-0}
+	rnd_count=$(grep -c 'rnd_modulo_u32(' "$srcfile" 2>/dev/null); rnd_count=${rnd_count:-0}
+	effective_rnd=$(( rnd_count - optout_count ))
+	[ "$effective_rnd" -le 0 ] && continue   # all uses annotated non-dispatch
+	[ "$arm_count" -ge "$effective_rnd" ] && continue  # coverage looks complete
 
 	# ---- survivor: emit a warning entry ----
 	printf '%s\n' "${srcfile#./}" >> "$warn_list"
@@ -106,8 +117,9 @@ if [ "$warn_count" -gt 0 ]; then
 		echo "  To silence a legitimate false positive (e.g. rnd_modulo_u32"
 		echo "  used for array indexing, not multi-arm dispatch): add a"
 		echo "  /* dead-arm-detect: not a multi-arm dispatch */ comment"
-		echo "  adjacent to the rnd_modulo_u32 call and the file will be"
-		echo "  excluded from future runs of this check."
+		echo "  on the same line as each non-dispatch rnd_modulo_u32 call."
+		echo "  One annotation suppresses one call; files with mixed dispatch"
+		echo "  and non-dispatch uses are handled correctly."
 	} >&2
 	echo "WARN: $NAME: $warn_count file(s) missing CHILDOP_ARM_ENTER (see stderr)"
 	exit 0
