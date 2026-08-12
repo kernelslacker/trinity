@@ -1006,6 +1006,38 @@ static long brct_ns_since(const struct timespec *t0)
 }
 
 /*
+ * Compute the standard one-complement IPv4 header checksum over the
+ * 20-byte IP header at frame[14..33].  The checksum field at
+ * frame[24..25] must be zero on entry (guaranteed by the preceding
+ * memset).  Writes the result back to frame[24..25].
+ *
+ * nf_ct_bridge_pre() calls pskb_trim_rcsum() then nf_ct_br_ip_check()
+ * before nf_conntrack_in().  nf_ip_checksum() (called from
+ * tcp_error() via nf_checksum()) runs __skb_checksum_complete() over
+ * the full skb from offset 0, spanning IP header + TCP segment.
+ * A valid IPv4 header folds to 0xFFFF, contributing 0x0000 to the
+ * combined checksum; a zeroed checksum field leaves a non-zero IP
+ * contribution that corrupts the TCP pseudo-header check and causes
+ * tcp_error() to drop the frame before conntrack entry creation.
+ */
+static void brct_ip_checksum(unsigned char *frame)
+{
+	uint32_t sum = 0;
+	const unsigned char *p = frame + 14;  /* start of IP header */
+	int i;
+
+	for (i = 0; i < 10; i++) {  /* 10 × 2-byte words = 20 bytes */
+		sum += (uint32_t)((p[0] << 8) | p[1]);
+		p += 2;
+	}
+	while (sum >> 16)
+		sum = (sum & 0xffff) + (sum >> 16);
+	sum = (uint16_t)(~sum & 0xffff);
+	frame[24] = (unsigned char)(sum >> 8);
+	frame[25] = (unsigned char)(sum & 0xff);
+}
+
+/*
  * Compute the IPv4 TCP checksum for a frame that has already been
  * populated.  Covers the pseudo-header (src-IP at frame[26..29],
  * dst-IP at frame[30..33], zero, protocol=6, tcp_len) plus the
@@ -1096,6 +1128,13 @@ static void *brct_packet_sender(void *arg)
 			frame[50] = (unsigned char)(cksum >> 8);
 			frame[51] = (unsigned char)(cksum & 0xff);
 		}
+		/* IPv4 header checksum (frame[24..25]).  Must be computed
+		 * after all IP header fields are final.  nf_ip_checksum()
+		 * folds the IP header into the TCP checksum over the full
+		 * skb; a valid header sums to 0xFFFF (contributes 0x0000),
+		 * so leaving frame[24..25]=0 makes the combined check fail
+		 * in tcp_error() and prevents conntrack entry creation. */
+		brct_ip_checksum(frame);
 
 		memset(&sll, 0, sizeof(sll));
 		sll.sll_family   = AF_PACKET;
