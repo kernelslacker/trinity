@@ -17,6 +17,7 @@ static const struct stat_field igmp_mld_source_churn_fields[] = {
 	STAT_FIELD_SUB(igmp_mld_source_churn, igmp_max_msf_raise_fail),
 	STAT_FIELD_SUB(igmp_mld_source_churn, msfilter_enobufs_v4),
 	STAT_FIELD_SUB(igmp_mld_source_churn, msfilter_enobufs_v6),
+	STAT_FIELD_SUB(igmp_mld_source_churn, add_source_enobufs),
 };
 
 const struct stat_category igmp_mld_source_churn_category =

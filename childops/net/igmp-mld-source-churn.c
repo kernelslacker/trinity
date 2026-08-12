@@ -838,16 +838,18 @@ static int igmp_source_iter_v4_join(struct igmp_source_iter_v4_ctx *it)
 }
 
 /*
- * Phase 4 (v4): one of the four race-letter mutations against the
- * recv_s filter while the sender's burst is in flight.  A = shrink
+ * Phase 4 (v4): one of five race-letter mutations against the recv_s
+ * filter while the sender's burst is in flight.  A = shrink
  * (MCAST_LEAVE_SOURCE_GROUP), B = INCLUDE->EXCLUDE flip
  * (MCAST_BLOCK_SOURCE), C = bulk replace (MCAST_MSFILTER, exercises
  * the ip_mc_msfilter realloc + rcu publish path; allocates ctx->gf
- * which the teardown phase frees), D = full leave (IP_DROP_MEMBERSHIP).
+ * which the teardown phase frees), D = full leave (IP_DROP_MEMBERSHIP),
+ * E = incremental IP_ADD_SOURCE_MEMBERSHIP walk to probe the
+ * ip_mc_source() >= sysctl_igmp_max_msf (sl_count) cap boundary.
  */
 static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 {
-	unsigned int race_letter = (it->iter_idx >> 1) & 3U;
+	unsigned int race_letter = (it->iter_idx >> 1) % 5U;
 	unsigned int nsrc;
 	int rc;
 
@@ -953,6 +955,44 @@ static void igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it)
 						   1, __ATOMIC_RELAXED);
 		}
 		break;
+	case 4:
+		/* RACE E: walk sl_count to the ip_mc_source() >=
+		 * sysctl_igmp_max_msf cap boundary via incremental
+		 * IP_ADD_SOURCE_MEMBERSHIP calls.  The default cap is 10
+		 * (net->ipv4.sysctl_igmp_max_msf); no raise is needed.
+		 * The priming phase contributed 2 sources (src_a + src_b)
+		 * via MCAST_JOIN_SOURCE_GROUP, so 8 more fills the default
+		 * cap and the 11th call triggers -ENOBUFS from ip_mc_source()
+		 * at igmp.c (psl->sl_count >= sysctl_igmp_max_msf).  Sources
+		 * start at index 4 to avoid colliding with src_a (index 2)
+		 * and src_b (index 3).  Limit is cap+3 to stay bounded if
+		 * sysctl was raised by an outside agent. */
+		{
+			struct ip_mreq_source imr;
+			unsigned int k;
+			const unsigned int limit = 13U;
+
+			for (k = 4U; k <= limit; k++) {
+				__u32 src_k = htonl(0x0a000000U |
+						    ((it->salt & 0xff) << 8) |
+						    (k & 0xff));
+				memset(&imr, 0, sizeof(imr));
+				imr.imr_multiaddr.s_addr  = it->grp_be;
+				imr.imr_interface.s_addr  = 0U;
+				imr.imr_sourceaddr.s_addr = src_k;
+				rc = setsockopt(it->recv_s, IPPROTO_IP,
+						IP_ADD_SOURCE_MEMBERSHIP,
+						&imr, sizeof(imr));
+				if (rc < 0) {
+					if (errno == ENOBUFS)
+						__atomic_add_fetch(
+							&shm->stats.igmp_mld_source_churn.add_source_enobufs,
+							1, __ATOMIC_RELAXED);
+					break;
+				}
+			}
+		}
+		break;
 	}
 }
 
@@ -1043,8 +1083,9 @@ static void iter_one_v4(int op_type, unsigned int iter_idx,
 
 	igmp_source_iter_v4_race(&it);
 	direct_calls += 1;	/* one MCAST_* / IP_DROP_MEMBERSHIP setsockopt
-				 * (race case C's rare calloc-fail edge elided
-				 * -- undercount is <1 syscall per iter). */
+				 * on average (race E does up to 10 calls;
+				 * race C's calloc-fail edge elided -- per-case
+				 * undercounts are small). */
 
 	send_burst(it.send_s, 2);
 	direct_calls += 2;

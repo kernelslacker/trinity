@@ -18,6 +18,7 @@ struct igmp_mld_source_churn_stats {
 	unsigned long igmp_max_msf_raise_fail;	 /* open/write of igmp_max_msf procfs failed */
 	unsigned long msfilter_enobufs_v4;	 /* ip_mc_msfilter rejected oversized filter (-ENOBUFS, v4) */
 	unsigned long msfilter_enobufs_v6;	 /* ip6_mc_msfilter rejected oversized filter (-ENOBUFS, v6) */
+	unsigned long add_source_enobufs;	 /* ip_mc_source sl_count cap hit via IP_ADD_SOURCE_MEMBERSHIP */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_IGMP_MLD_SOURCE_CHURN_H */
