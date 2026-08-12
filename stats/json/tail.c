@@ -12,6 +12,7 @@
  * cluster.
  */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include "shm.h"
 #include "stats-internal.h"
@@ -235,4 +236,149 @@ void dump_stats_json_probes_misuse_and_tail(void)
 		shm->stats.tty_ldisc_churn.ldisc_set_ok_per_disc[22],
 		shm->stats.tty_ldisc_churn.ldisc_set_ok_per_disc[23],
 		shm->stats.tty_ldisc_churn.ldisc_set_ok_per_disc[24]);
+}
+
+/*
+ * Single-element printer for json_emit_dead_arms_section().  Named with
+ * the json_emit_ prefix so the stats-json-schema checker follows it when
+ * resolving the dead_arms array element shape.
+ *
+ * All five fields are always emitted so the array element schema is
+ * uniform regardless of which entry type (dead vs insufficient_samples)
+ * appears first in the output.
+ *
+ * status values:
+ *   "dead"                 -- arm_entered==0, sampling floor met
+ *   "insufficient_samples" -- too few draws to distinguish dead from live
+ */
+static void json_emit_dead_arms_element(bool *first, const char *group,
+					const char *arm,
+					unsigned long arm_entered,
+					unsigned long parent_runs,
+					const char *status)
+{
+	printf("%s{\"group\":\"%s\",\"arm\":\"%s\","
+	       "\"arm_entered\":%lu,\"parent_runs\":%lu,\"status\":\"%s\"}",
+	       *first ? "" : ",",
+	       group, arm, arm_entered, parent_runs, status);
+	*first = false;
+}
+
+/*
+ * Emit the dead-arm verdict as a top-level "dead_arms" JSON array,
+ * parallel to "kcov" / "minicorpus" / "cmp_hints" / "type_graph".
+ *
+ * Applies the same sampling-floor logic as dump_stats_dead_arm_check()
+ * on the text path but produces structured objects so the run-analysis
+ * fleet tooling (e.g. extractors/strategy.py) can ingest the verdict
+ * without re-implementing the floor logic itself.
+ *
+ * An empty array ("dead_arms":[]) is emitted when no instrumented
+ * subsystem ran during this invocation.
+ *
+ * NOTE: do NOT merge this with dump_stats_dead_arm_check() -- the text
+ * and JSON paths are intentionally independent and evolve separately.
+ */
+void json_emit_dead_arms_section(void)
+{
+	bool first = true;
+
+	fputs(",\"dead_arms\":[", stdout);
+
+	/* igmp-mld-source-churn: five v4 arms (race_v4_a through race_v4_e)
+	 * and four v6 arms (race_v6_a through race_v6_d).
+	 * Floors: v4 requires 5*5=25 total draws; v6 requires 5*4=20. */
+	if (shm->stats.igmp_mld_source_churn.runs > 0) {
+		const unsigned long pr = shm->stats.igmp_mld_source_churn.runs;
+		unsigned long v4_draws =
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_a +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d +
+			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_e;
+
+		if (v4_draws >= 5 * 5) {
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_a)
+				json_emit_dead_arms_element(&first,
+					"igmp-mld-source-churn", "race_v4_a",
+					0, pr, "dead");
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b)
+				json_emit_dead_arms_element(&first,
+					"igmp-mld-source-churn", "race_v4_b",
+					0, pr, "dead");
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c)
+				json_emit_dead_arms_element(&first,
+					"igmp-mld-source-churn", "race_v4_c",
+					0, pr, "dead");
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d)
+				json_emit_dead_arms_element(&first,
+					"igmp-mld-source-churn", "race_v4_d",
+					0, pr, "dead");
+			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_e)
+				json_emit_dead_arms_element(&first,
+					"igmp-mld-source-churn", "race_v4_e",
+					0, pr, "dead");
+		} else {
+			json_emit_dead_arms_element(&first,
+				"igmp-mld-source-churn", "v4",
+				v4_draws, pr, "insufficient_samples");
+		}
+
+		{
+			unsigned long v6_draws =
+				shm->stats.igmp_mld_source_churn.arm_entered_race_v6_a +
+				shm->stats.igmp_mld_source_churn.arm_entered_race_v6_b +
+				shm->stats.igmp_mld_source_churn.arm_entered_race_v6_c +
+				shm->stats.igmp_mld_source_churn.arm_entered_race_v6_d;
+
+			if (v6_draws >= 5 * 4) {
+				if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_a)
+					json_emit_dead_arms_element(&first,
+						"igmp-mld-source-churn", "race_v6_a",
+						0, pr, "dead");
+				if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_b)
+					json_emit_dead_arms_element(&first,
+						"igmp-mld-source-churn", "race_v6_b",
+						0, pr, "dead");
+				if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_c)
+					json_emit_dead_arms_element(&first,
+						"igmp-mld-source-churn", "race_v6_c",
+						0, pr, "dead");
+				if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_d)
+					json_emit_dead_arms_element(&first,
+						"igmp-mld-source-churn", "race_v6_d",
+						0, pr, "dead");
+			} else {
+				json_emit_dead_arms_element(&first,
+					"igmp-mld-source-churn", "v6",
+					v6_draws, pr, "insufficient_samples");
+			}
+		}
+	}
+
+	/* afxdp-churn: single XDP_COPY bind arm, floor = 5*1 = 5 draws.
+	 * arm_entered_bind < 5 means we cannot distinguish dead from unvisited;
+	 * emit insufficient_samples (the text path never reaches "dead" here
+	 * because arm_entered_bind==0 is always inside the floor). */
+	if (shm->stats.afxdp_churn.runs > 0) {
+		unsigned long ae = shm->stats.afxdp_churn.arm_entered_bind;
+
+		if (ae < 5 * 1)
+			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
+						    ae, shm->stats.afxdp_churn.runs,
+						    "insufficient_samples");
+	}
+
+	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm, floor = 5*1 = 5 draws.
+	 * Same single-arm reasoning as afxdp-churn above. */
+	if (shm->stats.xfrm_churn.runs > 0) {
+		unsigned long ae = shm->stats.xfrm_churn.arm_entered_migrate_state;
+
+		if (ae < 5 * 1)
+			json_emit_dead_arms_element(&first, "xfrm-churn", "migrate_state",
+						    ae, shm->stats.xfrm_churn.runs,
+						    "insufficient_samples");
+	}
+
+	fputs("]", stdout);
 }

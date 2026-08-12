@@ -51,6 +51,7 @@ void json_emit_iouring_iscsi_and_net_tail_section(void);
 void dump_stats_json_iouring_zc_and_kvm(void);
 void dump_stats_json_rxrpc_alg_ublk_block(void);
 void dump_stats_json_probes_misuse_and_tail(void);
+void json_emit_dead_arms_section(void);
 
 /* stats/json/type_graph.c */
 void type_graph_json_emit_top_handoffs(void);

@@ -1878,3 +1878,9 @@ type_graph	object?
     type_graph.top_handoffs.total_ema	u32
     type_graph.top_handoffs.success_ema	u32
     type_graph.top_handoffs.novel_ema	u32
+dead_arms	array
+  dead_arms.group	str
+  dead_arms.arm	str
+  dead_arms.arm_entered	u64
+  dead_arms.parent_runs	u64
+  dead_arms.status	str

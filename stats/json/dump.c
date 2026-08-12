@@ -57,6 +57,7 @@ void __cold dump_stats_json(void)
 	json_emit_minicorpus_section();
 	json_emit_cmp_hints_section();
 	type_graph_json_emit_top_handoffs();
+	json_emit_dead_arms_section();
 
 	fputs("}\n", stdout);
 	fflush(stdout);
