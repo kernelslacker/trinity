@@ -518,8 +518,18 @@ static int nft_install_bridge_ct(struct nfnl_ctx *nf, const char *table,
  * and also passes the new guard `priv->l4proto != nf_ct_protonum(ct)`
  * added by Kyle Zeng's 2026-08-10 patch because ct is TCP.  Without
  * the fix the code proceeds to index the 8-byte UDP state array with a
- * TCP conntrack entry: timeouts[TCP_CONNTRACK_UNACK] = index 13, which
- * is 48 bytes past the end of the 8-byte array, producing the OOB read.
+ * TCP conntrack entry.  The runtime path reaches
+ * timeouts[TCP_CONNTRACK_RETRANS] = index 12, 40 bytes past the end
+ * of the 8-byte array: ct->proto.tcp.last_win stays 0 because tcp_new()
+ * memsets the proto union and the SYN-only frames never reach the
+ * TCP_ACK_SET branch that assigns last_win, so the last_win==0 conjunct
+ * at nf_conntrack_proto_tcp.c:1291-1294 is always true.
+ * TCP_CONNTRACK_UNACK (index 13, 48 bytes past) is unreachable with
+ * these frames: IP_CT_TCP_FLAG_DATA_UNACKNOWLEDGED is only set when
+ * after(end, sender->td_end), which is always false for byte-identical
+ * SYN frames (same seq and length across a flow).  A future maintainer
+ * who wants to cover index 13 must send a second packet in the same
+ * flow that advances end past td_end (varying seq or payload length).
  *
  * Caller must have already committed the br_ct NEWTABLE batch.
  * Returns 0 on batch acceptance; non-zero is a soft failure (the
@@ -719,10 +729,18 @@ static int nft_install_ct_mangle(struct nfnl_ctx *nf, const char *table,
  * (priv->l4proto=UDP, 8-byte state array) passes the
  * `priv->l4proto != pkt->tprot' guard (both UDP) and reaches the
  * timeouts[] array indexing.  The TCP conntrack entry then drives
- * nf_ct_protonum(ct)=TCP, causing the engine to walk TCP state indices
- * (e.g. TCP_CONNTRACK_UNACK=13) into the 8-byte UDP array -- 48 bytes
- * out of bounds.  The inverse direction (TCP timeout + UDP conntrack)
- * is harmless: UDP indices 0 and 1 lie within the 56-byte TCP array.
+ * nf_ct_protonum(ct)=TCP.  The runtime path reaches
+ * timeouts[TCP_CONNTRACK_RETRANS] = index 12, 40 bytes past the end
+ * of the 8-byte UDP array, via the last_win==0 branch in
+ * nf_conntrack_proto_tcp.c:1291-1294.  TCP_CONNTRACK_UNACK (index 13,
+ * 48 bytes past) is unreachable here: IP_CT_TCP_FLAG_DATA_UNACKNOWLEDGED
+ * is set only when after(end, sender->td_end), which is always false
+ * for byte-identical SYN frames (same seq and length per flow).
+ * A future maintainer who wants to cover index 13 must send a second
+ * packet in the same flow that advances end past td_end (varying seq
+ * or payload length across the packets of a flow).
+ * The inverse direction (TCP timeout + UDP conntrack) is harmless:
+ * UDP indices 0 and 1 lie within the 56-byte TCP array.
  *
  * Returns 0 when the batch is accepted; the caller treats non-zero
  * as a soft failure (the conntrack-flush burst runs regardless).
