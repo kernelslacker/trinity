@@ -329,10 +329,16 @@ static void sqe_clear(struct io_uring_sqe *s)
  *                          unconditionally.  io_uring_cmd_prep() enforces
  *                          a biconditional: prep passes if and only if
  *                          MULTISHOT is set when BUFFER_SELECT is present.
- *                          Both entries carry MULTISHOT, so every draw is
- *                          guaranteed to reach ->uring_cmd():
- *   IORING_URING_CMD_MULTISHOT   - multishot flag path
- *   FIXED|MULTISHOT              - import_fixed() + multishot
+ *   IORING_URING_CMD_MULTISHOT   - passes the biconditional; reaches
+ *                                  ->uring_cmd() (uring_cmd_null).
+ *   FIXED|MULTISHOT              - rejected by the mutual-exclusion check
+ *                                  in io_uring_cmd_prep() before the
+ *                                  biconditional (-EINVAL), so it never
+ *                                  reaches ->uring_cmd().  Kept as a
+ *                                  deliberate negative probe: fires
+ *                                  nulldev_cmd_rejected on 50% of draws,
+ *                                  providing a standing assertion that
+ *                                  the mutual-exclusion check still exists.
  * ------------------------------------------------------------------ */
 
 static const __u32 uring_cmd_flag_variants_no_mshot[] = {
@@ -580,7 +586,6 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 	struct io_uring_sqe sqe;
 	void *pbuf = NULL;
 	int null_fd = -1;
-	bool ok = false;
 	int r;
 
 	null_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
@@ -650,7 +655,6 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 				__atomic_add_fetch(
 					&shm->stats.iouring_cmd_passthrough.mshot_cmd_no_cqe,
 					1, __ATOMIC_RELAXED);
-			ok = true;
 		} else if (cqe_res < 0) {
 			/* CQE arrived with negative result: prep rejected the
 			 * submission (-EINVAL: unsupported flag combination;
@@ -660,17 +664,13 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 				__atomic_add_fetch(
 					&shm->stats.iouring_cmd_passthrough.nulldev_cmd_rejected,
 					1, __ATOMIC_RELAXED);
-		} else {
-			/* CQE arrived with res >= 0: the cmd reached
-			 * uring_cmd_null() and completed normally. */
-			ok = true;
 		}
 	}
 out:
 	free(pbuf);
 	if (null_fd >= 0)
 		close(null_fd);
-	return ok;
+	return true;
 }
 
 /* ------------------------------------------------------------------ *
@@ -686,7 +686,6 @@ bool iouring_cmd_passthrough(struct childdata *child)
 	struct iour_ring ctx;
 	struct io_uring_params p;
 	enum iour_setup_status st;
-	bool ok = false;
 	enum { V_SOCKET, V_BLOCKDEV, V_NULLDEV, V_MAX };
 	int avail[V_MAX];
 	int navail = 0;
@@ -754,20 +753,18 @@ bool iouring_cmd_passthrough(struct childdata *child)
 	switch (avail[rnd_modulo_u32((unsigned int)navail)]) {
 #ifndef TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
 	case V_SOCKET:
-		ok = variant_socket(&ctx, &direct_calls, valid_op);
+		variant_socket(&ctx, &direct_calls, valid_op);
 		break;
 #endif
 	case V_BLOCKDEV:
-		ok = variant_blockdev(&ctx, &direct_calls, valid_op);
+		variant_blockdev(&ctx, &direct_calls, valid_op);
 		break;
 	case V_NULLDEV:
-		ok = variant_nulldev(&ctx, &direct_calls, valid_op);
+		variant_nulldev(&ctx, &direct_calls, valid_op);
 		break;
 	}
 
 	iour_ring_teardown(&ctx);
-
-	(void)ok;
 
 	if (valid_op)
 		childop_direct_syscalls_add(op, direct_calls);
