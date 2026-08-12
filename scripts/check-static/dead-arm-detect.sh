@@ -20,17 +20,24 @@
 #           ...
 #           switch (pick) { ... }
 #
-#       Ternary / if-chain (no switch keyword):
+#       Ternary-chain (no switch keyword):
 #           unsigned int arm = rnd_modulo_u32(N);
 #           s->use_x = (arm == 1) ? 1U : 0U;
 #           s->use_y = (arm == 2) ? 1U : 0U;
-#       or equivalently via if (arm == N) / if (var == N) chains.
 #
-#       The indirect and ternary/if-chain heuristics are intentionally
-#       loose: false positives are acceptable for a WARN gate.  A file
-#       that uses rnd_modulo_u32 for something other than multi-arm
-#       dispatch (e.g. array indexing) can suppress individual call-site
-#       warnings with the opt-out annotation described below.
+#       Note: the "if (var == N)" shape was removed because the pattern
+#       "if (.*== <digit>)" matches "if (ret == 0)" which appears in
+#       nearly every C file, producing a near-tautological criterion.
+#       Only the ternary form (" ? ") is retained for this shape; it is a
+#       tighter true-positive set.  Files that use if-chains exclusively
+#       (no ternary) are caught by the indirect-switch path if they have a
+#       switch, or will require annotation if they do not.
+#
+#       The indirect and ternary heuristics are intentionally loose:
+#       false positives are acceptable for a WARN gate.  A file that uses
+#       rnd_modulo_u32 for something other than multi-arm dispatch (e.g.
+#       array indexing) can suppress individual call-site warnings with the
+#       opt-out annotation described below.
 #
 # A file in this class that does NOT call CHILDOP_ARM_ENTER is a candidate
 # dead-arm source: if any dispatch arm is unreachable the run-time stats
@@ -101,8 +108,7 @@ while IFS= read -r srcfile; do
 	     grep -qE 'switch[[:space:]]*\(' "$srcfile" 2>/dev/null; then
 		has_switch=1
 	elif grep -qE '=[[:space:]]*rnd_modulo_u32\(' "$srcfile" 2>/dev/null &&
-	     { grep -qE '\)[[:space:]]*\?[[:space:]]' "$srcfile" 2>/dev/null ||
-	       grep -qE 'if[[:space:]]*\(.*==[[:space:]]*[0-9]' "$srcfile" 2>/dev/null; }; then
+	     grep -qE '\)[[:space:]]*\?[[:space:]]' "$srcfile" 2>/dev/null; then
 		has_switch=1
 	fi
 	[ "$has_switch" -eq 1 ] || continue
@@ -159,26 +165,39 @@ fi
 
 # ---- Baseline ratchet ----
 #
-# dead-arm-baseline.txt pins the warn population.  The count must not grow.
+# dead-arm-baseline.txt pins the warn population as a SORTED LIST of file
+# paths (one per line).  The comparison is set-based: any file in the
+# current warn list that does not appear in the baseline causes a FAIL.
+# This prevents the "instrument one, add another" swap from slipping through
+# a cardinality-only check.
 baseline_file="$ROOT/scripts/check-static/dead-arm-baseline.txt"
 
 if [ ! -f "$baseline_file" ]; then
-	cp "$warn_list" "$baseline_file"
+	sort "$warn_list" > "$baseline_file"
 	echo "PASS: $NAME: baseline created ($warn_count file(s) noted; ratchet now active)"
 	exit 0
 fi
 
-baseline_count="$(wc -l < "$baseline_file" | tr -d ' ')"
+# Sort current warn list; diff against baseline using comm(1).
+# comm -13 prints lines that are in the new set but NOT in the baseline.
+sort "$warn_list" > "$tmp/warn_sorted"
+new_files="$(comm -13 "$baseline_file" "$tmp/warn_sorted")"
 
-if [ "$warn_count" -gt "$baseline_count" ]; then
-	echo "FAIL: $NAME: $warn_count un-instrumented file(s) exceeds baseline of $baseline_count" \
-	     "-- new files must add CHILDOP_ARM_ENTER or carry a dead-arm-detect opt-out annotation"
+if [ -n "$new_files" ]; then
+	{
+		echo "FAIL: $NAME: the following file(s) are newly un-instrumented (not in baseline):"
+		echo "$new_files" | sed 's/^/    /'
+		echo "  Add CHILDOP_ARM_ENTER instrumentation or a dead-arm-detect opt-out annotation,"
+		echo "  then update scripts/check-static/dead-arm-baseline.txt if appropriate."
+	} >&2
+	echo "FAIL: $NAME: new un-instrumented file(s) detected -- see stderr"
 	exit 1
 fi
 
 if [ "$warn_count" -eq 0 ]; then
 	echo "PASS: $NAME: all dispatch-on-rnd_modulo_u32 files use CHILDOP_ARM_ENTER"
 else
+	baseline_count="$(wc -l < "$baseline_file" | tr -d ' ')"
 	echo "WARN: $NAME: $warn_count file(s) missing CHILDOP_ARM_ENTER" \
 	     "(within baseline of $baseline_count; see stderr)"
 fi
