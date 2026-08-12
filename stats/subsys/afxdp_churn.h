@@ -37,6 +37,14 @@ struct afxdp_churn_stats {
 	 * always failed (the class of bug fixed by adding XDP_COPY to the
 	 * bind flags). */
 	unsigned long arm_entered_bind; /* XDP_COPY bind arm entered */
+
+	/* arm_effective_bind: incremented when the bind arm produces
+	 * detectable output (bind_ok and at least one I/O or stats
+	 * operation completed).  A run where arm_entered_bind > 0 but
+	 * arm_effective_bind == 0 means the arm entered but produced no
+	 * observable output -- typically a uapi-value-wrong or a silent
+	 * kernel-side rejection past the bind() call itself. */
+	unsigned long arm_effective_bind; /* XDP_COPY bind arm produced output */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_AFXDP_CHURN_H */

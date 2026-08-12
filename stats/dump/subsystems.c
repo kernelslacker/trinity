@@ -446,7 +446,13 @@ static void dump_stats_dead_arm_check(void)
 	 * here means setup always bailed before reaching the bind block.
 	 * Floor: 5 * 1 = 5 draws required (runs is the opportunity count).
 	 * For this single-arm group the floor gates on runs, not arm_entered_bind
-	 * -- arm_entered_bind==0 IS the dead state, not an ambiguous sample. */
+	 * -- arm_entered_bind==0 IS the dead state, not an ambiguous sample.
+	 *
+	 * RAN_NO_EFFECT: arm_entered_bind > 0 but arm_effective_bind == 0
+	 * means the bind arm was reached on every draw but never produced
+	 * detectable output (bind() always failed, or the follow-on I/O was
+	 * silently dropped).  This is the 510-H class: config-dead past the
+	 * entry point, or uapi-value-wrong on the bind flags/ifindex. */
 	if (shm->stats.afxdp_churn.runs > 0) {
 		if (shm->stats.afxdp_churn.runs < 5 * 1)
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
@@ -454,7 +460,10 @@ static void dump_stats_dead_arm_check(void)
 		else if (!shm->stats.afxdp_churn.arm_entered_bind)
 			stat_row("DEAD_ARM", "afxdp-churn/bind",
 				 shm->stats.afxdp_churn.runs);
-		/* else: arm_entered_bind >= 1, arm is live */
+		else if (!shm->stats.afxdp_churn.arm_effective_bind)
+			stat_row("RAN_NO_EFFECT", "afxdp-churn/bind",
+				 shm->stats.afxdp_churn.arm_entered_bind);
+		/* else: arm_entered_bind >= 1, arm_effective_bind >= 1: fully live */
 	}
 
 	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm in dispatch_msg_kind() --

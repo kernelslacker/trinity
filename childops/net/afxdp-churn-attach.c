@@ -22,6 +22,7 @@
 #if __has_include(<linux/if_xdp.h>) && __has_include(<linux/bpf.h>)
 
 #include "afxdp-churn-internal.h"
+#include "pids.h"
 
 /*
  * Open /dev/net/tun and create a tunN device with IFF_NAPI_FRAGS so the
@@ -307,6 +308,12 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	}
 	if (rc == 0) {
 		st->bound = true;
+		/* Arm produced detectable output: the socket is now bound and
+		 * the AF_XDP race window is open.  Bump arm_effective_bind so
+		 * drain-time analysis can distinguish "bind entered but always
+		 * failed" (arm_entered > 0, arm_effective == 0) from a live
+		 * arm (arm_effective > 0). */
+		CHILDOP_ARM_EFFECTIVE(afxdp_churn, bind);
 		__atomic_add_fetch(&shm->stats.afxdp_churn.bind_ok,
 				   1, __ATOMIC_RELAXED);
 		if (*want_tun)
