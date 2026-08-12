@@ -162,18 +162,22 @@ static bool save_igmp_max_msf(unsigned int *saved)
 /*
  * Restore net.ipv4.igmp_max_msf to a value previously captured by
  * save_igmp_max_msf().  Silent on failure (best-effort restore).
+ * Returns the number of kernel syscalls issued: 1 when open() fails
+ * (only the open() was attempted), 3 on the taken path (open() +
+ * write() + close()).
  */
-static void restore_igmp_max_msf(unsigned int val)
+static unsigned int restore_igmp_max_msf(unsigned int val)
 {
 	char buf[32];
 	int fd, len;
 
 	fd = open("/proc/sys/net/ipv4/igmp_max_msf", O_WRONLY | O_CLOEXEC);
 	if (fd < 0)
-		return;
+		return 1;	/* open(): 1 syscall */
 	len = snprintf(buf, sizeof(buf), "%u\n", val);
 	{ ssize_t wr = write(fd, buf, (size_t)len); (void)wr; }
 	close(fd);
+	return 3;		/* open() + write() + close(): 3 syscalls */
 }
 
 /*
@@ -184,8 +188,12 @@ static void restore_igmp_max_msf(unsigned int val)
  * entirely.  Returns true on success, false on open/write failure; on
  * failure igmp_max_msf_raise_fail is incremented so the caller can
  * skip the large-filter path that would get -ENOBUFS.
+ *
+ * *@cost is set to the number of kernel syscalls issued regardless of
+ * success: 1 when open() fails (only the open() was attempted), 3
+ * when open() succeeds (open() + write() + close()).
  */
-static bool raise_igmp_max_msf(unsigned int n)
+static bool raise_igmp_max_msf(unsigned int n, unsigned int *cost)
 {
 	char buf[32];
 	int fd, len;
@@ -196,11 +204,13 @@ static bool raise_igmp_max_msf(unsigned int n)
 		__atomic_add_fetch(
 			&shm->stats.igmp_mld_source_churn.igmp_max_msf_raise_fail,
 			1, __ATOMIC_RELAXED);
+		*cost = 1;	/* open(): 1 syscall */
 		return false;
 	}
 	len = snprintf(buf, sizeof(buf), "%u\n", n);
 	wr = write(fd, buf, (size_t)len);
 	close(fd);
+	*cost = 3;		/* open() + write() + close(): 3 syscalls */
 	if (wr != (ssize_t)len) {
 		__atomic_add_fetch(
 			&shm->stats.igmp_mld_source_churn.igmp_max_msf_raise_fail,
@@ -892,13 +902,17 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c,
 				   1, __ATOMIC_RELAXED);
 		nsrc = rotate_filter_size();
+		/* sc starts at 1 for the MCAST_MSFILTER setsockopt; raise and
+		 * restore each contribute 1 (open failure) or 3 (open+write+close). */
+		unsigned long sc = 1;
 		if (nsrc > IMC_MAX_MSF_CAP) {
 			/* Oversized path: probe the cap+1 (65 vs cap 64)
 			 * -ENOBUFS boundary. */
 			unsigned int saved_msf = 0;
 			bool do_restore = save_igmp_max_msf(&saved_msf);
+			unsigned int raise_cost = 0;
 
-			if (raise_igmp_max_msf(IMC_MAX_MSF_CAP)) {
+			if (raise_igmp_max_msf(IMC_MAX_MSF_CAP, &raise_cost)) {
 				it->gf = build_filter_v4(0U, it->grp_be, nsrc,
 							 it->salt);
 				if (it->gf) {
@@ -911,17 +925,21 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 							1, __ATOMIC_RELAXED);
 				}
 			}
+			sc += raise_cost;
 			if (do_restore)
-				restore_igmp_max_msf(saved_msf);
+				sc += restore_igmp_max_msf(saved_msf);
 		} else {
 			unsigned int saved_msf = 0;
 			bool do_restore = false;
 			bool skip = false;
 
 			if (nsrc > 10U) {
+				unsigned int raise_cost = 0;
+
 				do_restore = save_igmp_max_msf(&saved_msf);
-				if (!raise_igmp_max_msf(IMC_MAX_MSF_CAP))
+				if (!raise_igmp_max_msf(IMC_MAX_MSF_CAP, &raise_cost))
 					skip = true;
+				sc += raise_cost;
 			}
 			if (!skip) {
 				it->gf = build_filter_v4(0U, it->grp_be, nsrc,
@@ -945,9 +963,9 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 				}
 			}
 			if (do_restore)
-				restore_igmp_max_msf(saved_msf);
+				sc += restore_igmp_max_msf(saved_msf);
 		}
-		return 1;
+		return sc;
 	case 3:
 		/* RACE D: full leave race vs in-flight sender. */
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d,
@@ -1097,7 +1115,11 @@ static void iter_one_v4(int op_type, unsigned int iter_idx,
 
 	direct_calls += igmp_source_iter_v4_race(&it);	/* races A/B/D: one
 							 * setsockopt each; race C:
-							 * one MCAST_MSFILTER;
+							 * 1–7 (1 MCAST_MSFILTER +
+							 * raise open+write+close
+							 * + restore open+write+close,
+							 * each 1 on open fail or 3
+							 * on taken path);
 							 * race E: up to 10
 							 * IP_ADD_SOURCE_MEMBERSHIP
 							 * calls, counted per-call. */
