@@ -966,6 +966,8 @@ struct childdata {
 	_m ? ((_b * (unsigned int)_m) >> 8) : _b;			\
 })
 
+#include "arm-tracking.h"
+
 /*
  * Index of the /sys/fs/cgroup/trinity{0..7} cgroup this child was
  * placed in by munge_process() in child-init-sandbox.c, or -1 if

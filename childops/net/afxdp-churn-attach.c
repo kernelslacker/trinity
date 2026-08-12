@@ -289,8 +289,7 @@ int afxdp_iter_bind(struct xsk_state *st, bool want_sg,
 	 * drain-time dead-arm detection can distinguish "bind never
 	 * attempted" (arm_entered_bind == 0) from "bind always failed"
 	 * (arm_entered_bind > 0 && bind_ok == 0). */
-	__atomic_add_fetch(&shm->stats.afxdp_churn.arm_entered_bind,
-			   1, __ATOMIC_RELAXED);
+	CHILDOP_ARM_ENTER(afxdp_churn, bind);
 	memset(&sxdp, 0, sizeof(sxdp));
 	sxdp.sxdp_family       = AF_XDP;
 	sxdp.sxdp_flags        = XDP_COPY | XDP_USE_NEED_WAKEUP |

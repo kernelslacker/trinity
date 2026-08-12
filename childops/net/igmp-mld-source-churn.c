@@ -1013,8 +1013,7 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 	switch (race_letter) {
 	case 0:
 		/* RACE A: filter shrink mid-stream. */
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v4_a,
-				   1, __ATOMIC_RELAXED);
+		CHILDOP_ARM_ENTER(igmp_mld_source_churn, race_v4_a);
 		if (setsockopt(it->recv_s, IPPROTO_IP, MCAST_LEAVE_SOURCE_GROUP,
 			       &it->gsr_a, sizeof(it->gsr_a)) == 0)
 			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.leave_ok,
@@ -1022,8 +1021,7 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 		return 1;
 	case 1:
 		/* RACE B: INCLUDE -> EXCLUDE flip via BLOCK_SOURCE. */
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b,
-				   1, __ATOMIC_RELAXED);
+		CHILDOP_ARM_ENTER(igmp_mld_source_churn, race_v4_b);
 		if (setsockopt(it->recv_s, IPPROTO_IP, MCAST_BLOCK_SOURCE,
 			       &it->gsr_b, sizeof(it->gsr_b)) == 0)
 			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.block_ok,
@@ -1046,8 +1044,7 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 		 * save the current sysctl value, raise it to IMC_MAX_MSF_CAP,
 		 * restore after the setsockopt.  On raise failure skip the
 		 * large-filter path that would get -ENOBUFS anyway. */
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c,
-				   1, __ATOMIC_RELAXED);
+		CHILDOP_ARM_ENTER(igmp_mld_source_churn, race_v4_c);
 		nsrc = rotate_filter_size();
 		/* sc starts at 1 for the MCAST_MSFILTER setsockopt; raise and
 		 * restore each contribute 1 (open failure) or 3 (open+write+close). */
@@ -1121,8 +1118,7 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 		return sc;
 	case 3:
 		/* RACE D: full leave race vs in-flight sender. */
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d,
-				   1, __ATOMIC_RELAXED);
+		CHILDOP_ARM_ENTER(igmp_mld_source_churn, race_v4_d);
 		{
 			struct ip_mreqn mreq;
 
@@ -1147,8 +1143,7 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 		 * start at index 4 to avoid colliding with src_a (index 2)
 		 * and src_b (index 3).  Limit is cap+3 to stay bounded if
 		 * sysctl was raised by an outside agent. */
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v4_e,
-				   1, __ATOMIC_RELAXED);
+		CHILDOP_ARM_ENTER(igmp_mld_source_churn, race_v4_e);
 		{
 			struct ip_mreq_source imr;
 			unsigned int k;
@@ -1442,24 +1437,21 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 
 	switch (race_letter) {
 	case 0:
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v6_a,
-				   1, __ATOMIC_RELAXED);
+		CHILDOP_ARM_ENTER(igmp_mld_source_churn, race_v6_a);
 		if (setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_LEAVE_SOURCE_GROUP,
 			       &it->gsr_a, sizeof(it->gsr_a)) == 0)
 			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.leave_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 1:
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v6_b,
-				   1, __ATOMIC_RELAXED);
+		CHILDOP_ARM_ENTER(igmp_mld_source_churn, race_v6_b);
 		if (setsockopt(it->recv_s, IPPROTO_IPV6, MCAST_BLOCK_SOURCE,
 			       &it->gsr_b, sizeof(it->gsr_b)) == 0)
 			__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.block_ok,
 					   1, __ATOMIC_RELAXED);
 		break;
 	case 2:
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v6_c,
-				   1, __ATOMIC_RELAXED);
+		CHILDOP_ARM_ENTER(igmp_mld_source_churn, race_v6_c);
 		/* RACE C (v6): bulk replace via MCAST_MSFILTER -- exercises
 		 * the ip6_mc_msfilter realloc + rcu publish path.
 		 *
@@ -1521,8 +1513,7 @@ static void mld_source_iter_v6_race(struct mld_source_iter_v6_ctx *it)
 		}
 		break;
 	case 3:
-		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn.arm_entered_race_v6_d,
-				   1, __ATOMIC_RELAXED);
+		CHILDOP_ARM_ENTER(igmp_mld_source_churn, race_v6_d);
 		{
 			struct ipv6_mreq mreq;
 

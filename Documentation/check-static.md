@@ -285,6 +285,17 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `commit-msg-hash-resolves.baseline`; only a new unreachable citation
   fails.  The gate logic lives in `scripts/commit-msg-hash-resolves.sh`
   (also runnable standalone with an explicit range for manual audits).
+- `dead-arm-detect`: warn (WARN, not FAIL) about `.c` files under
+  `childops/` and `net/` that use `rnd_modulo_u32()` as a switch
+  selector without calling `CHILDOP_ARM_ENTER` in their switch-case
+  arms.  A switch arm that never calls `CHILDOP_ARM_ENTER` is invisible
+  to the drain-time `DEAD_ARM` reporter in `dump_stats_dead_arm_check()`,
+  so a permanently-dead arm looks identical to one that ran and found
+  nothing.  Files where `rnd_modulo_u32` is used only for array indexing
+  (not multi-arm dispatch) may opt out with a
+  `/* dead-arm-detect: not a multi-arm dispatch */` comment.  Tighten
+  to FAIL once the `≥19` un-instrumented childops are annotated.
+  See `include/arm-tracking.h`.
 - `doc-pointer-exists`: every flat `Documentation/<name>.md` path named
   in a code comment must resolve to a real file, so the one-line
   pointers that replaced carved-out design essays never dangle.

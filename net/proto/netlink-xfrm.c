@@ -49,6 +49,7 @@
 
 #include "net.h"
 #include "random.h"
+#include "arm-tracking.h"
 #include "shm.h"
 #include "socket-family-grammar.h"
 #include "trinity.h"
@@ -376,8 +377,7 @@ static void dispatch_msg_kind(int fd, enum xfrm_msg_kind k)
 		 * ever reached by the picker (arm_entered == 0 = structural
 		 * bug) vs reached but always failing (arm_entered > 0,
 		 * migrate_state_ack_n == 0 = emitter bug class). */
-		__atomic_add_fetch(&shm->stats.xfrm_churn.arm_entered_migrate_state,
-				   1, __ATOMIC_RELAXED);
+		CHILDOP_ARM_ENTER(xfrm_churn, migrate_state);
 		rc = xfrm_emit_migrate_state(fd);
 		if (rc == 0) {
 			migrate_state_ack_n++;
