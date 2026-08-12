@@ -1031,6 +1031,17 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 		/* RACE C: bulk replace via MCAST_MSFILTER -- exercises the
 		 * ip_mc_msfilter realloc + rcu publish path.
 		 *
+		 * RACE C IS LIVE: the selector above is rnd_modulo_u32(5U),
+		 * so this arm fires at ~1/5 probability.  The switch to
+		 * rnd_modulo_u32(5U) was made by
+		 * 2ce62e02798c ("igmp-mld-source-churn: decorrelate RACE E selector from iter_idx"),
+		 * two commits before
+		 * aa1ac0d29877 ("igmp: account for sysctl cost of raise/restore_igmp_max_msf in RACE C").
+		 * That commit's message incorrectly described RACE C as
+		 * "currently masked by an unreachable arm" -- it was not;
+		 * the IP_MSFILTER opt-41 oracle below is on a fully active
+		 * code path.  Do NOT treat this arm as dead.
+		 *
 		 * When nsrc > IMC_MAX_MSF_CAP: save igmp_max_msf, raise to
 		 * IMC_MAX_MSF_CAP (= nsrc-1 = 64) so sysctl_igmp_max_msf
 		 * sits exactly at cap, build the nsrc=65 filter, and expect
