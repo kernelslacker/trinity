@@ -23,9 +23,12 @@
  *           mprotect prot-change, MADV_DONTNEED pte-zap, and mremap
  *           relocation) to force PMD split / folio_split().
  *        b. Reference walkers immediately after the split trigger:
- *           mincore (page-residency walk) and process_vm_readv (cross-
+ *           mincore (page-residency walk) and process_vm_readv (same-
  *           process copy_page_to_iter via folio_try_get()) race the
  *           deferred-split-queue and folio refcount manipulation.
+ *           process_vm_readv passes getpid() -- own mm; the CLONE_VM
+ *           sibling in the mincore arm is the actual second task in
+ *           the mm (different pid, shared address space).
  *        c. Re-collapse for the next round via MADV_HUGEPAGE +
  *           MADV_POPULATE_WRITE.
  *   5. munmaps the arena unconditionally.
@@ -41,6 +44,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -80,6 +84,27 @@
 #define THP_BUDGET_NS		200000000L	/* 200 ms */
 
 /*
+ * 16 MiB arena for the mincore pagewalk OOB arm.  mincore() walks into a
+ * single 4096-byte kernel page (tmp = __get_free_page(GFP_USER)); a
+ * duplicated sub-range from the ACTION_AGAIN retry path pushes the cursor
+ * past tmp+4096 (OOB write into the adjacent kernel page).  ≥16 MiB
+ * (4096 pages) is the minimum size for the cursor to reach that boundary.
+ * Keep PMD/THP alignment (multiple of 2 MiB).
+ *
+ * MINCORE_VEC_GUARD adds a 64-byte sentinel zone past the expected
+ * boundary; if any sentinel byte changes after a mincore() call the
+ * pagewalk wrote beyond the expected page-count range -- mincore_pagewalk_dup
+ * is incremented as a measurable proxy for the dup-walk, with or without
+ * a KASAN hit on the kernel side.
+ */
+#define MINCORE_ARENA_SIZE	(16UL << 20)
+#define MINCORE_ARENA_PAGES	(MINCORE_ARENA_SIZE / 4096UL)
+#define MINCORE_VEC_GUARD	64UL
+#define MINCORE_VEC_BYTES	(MINCORE_ARENA_PAGES + MINCORE_VEC_GUARD)
+#define MINCORE_RACER_STACK	(64UL * 1024UL)		/* 64 KiB sibling stack */
+#define MINCORE_SENTINEL	0xCCU
+
+/*
  * Per-round oracle tally, aggregated into shm->stats.thp_split_ref_race
  * after each round in the main loop.
  *
@@ -99,6 +124,42 @@ struct thp_round_tally {
 /* One-time THP unavailability latch and MADV_COLLAPSE feature probe. */
 static bool thp_unavail_latched;
 static int  latch_madv_collapse = -1;	/* -1=unknown, 0=absent, 1=present */
+
+/*
+ * Shared state between the parent and the CLONE_VM sibling in the mincore
+ * pagewalk arm.  Placed in a private anonymous mapping so it is visible to
+ * both tasks without MAP_SHARED (CLONE_VM shares the page tables).
+ * Do NOT touch child-framework fields (this_child() etc.) from the sibling;
+ * it is not fork-invariant.
+ */
+struct mincore_racer_state {
+	_Atomic volatile int stop;		/* parent sets 1 to terminate sibling */
+	_Atomic volatile unsigned long syscalls;	/* sibling accumulates direct calls */
+	void *arena;				/* 16 MiB CLONE_VM-shared mapping */
+};
+
+/*
+ * CLONE_VM sibling body: loops MADV_COLLAPSE + MADV_DONTNEED over the
+ * shared 16 MiB arena to trigger pte_offset_map_lock() failures in the
+ * parent's concurrent mincore() pagewalk.
+ *
+ * Must NOT call this_child() -- per-process state is not fork-invariant.
+ * Exits via _exit(0) so parent can waitpid().
+ */
+static int mincore_vm_racer_fn(void *arg)
+{
+	struct mincore_racer_state *rs = arg;
+	void *ar = rs->arena;
+	unsigned long calls = 0;
+
+	while (!__atomic_load_n(&rs->stop, __ATOMIC_ACQUIRE)) {
+		(void)madvise(ar, MINCORE_ARENA_SIZE, MADV_COLLAPSE);
+		(void)madvise(ar, MINCORE_ARENA_SIZE, MADV_DONTNEED);
+		calls += 2;
+	}
+	__atomic_add_fetch(&rs->syscalls, calls, __ATOMIC_RELAXED);
+	_exit(0);
+}
 
 /*
  * Establish THP on the arena.  Probes MADV_COLLAPSE availability on the
@@ -163,7 +224,10 @@ static bool thp_smaps_has_ahp(uintptr_t addr)
  *
  * Reference walkers follow immediately after each trigger:
  *   mincore -- page-residency walk races folio_try_get under split
- *   process_vm_readv -- cross-process copy_page_to_iter races refcount
+ *   process_vm_readv -- same-process copy_page_to_iter races refcount;
+ *     passes getpid() (own mm).  The CLONE_VM sibling spawned by the
+ *     caller is the actual second task in this mm (cross-process in the
+ *     sense of different pid, shared address space).
  *
  * Returns the number of direct syscall sites executed in this round.
  * *tally is populated with oracle observations for this round.
@@ -221,7 +285,12 @@ static unsigned long thp_one_round(void *arena, unsigned int round,
 	mincore_ok = mincore(arena, THP_ARENA_SIZE, vec);
 	calls++;
 
-	/* process_vm_readv: copy_page_to_iter under folio split. */
+	/*
+	 * process_vm_readv: same-process copy_page_to_iter races folio split.
+	 * Passes getpid() -- this is a self-read within the same mm.  The
+	 * concurrent second task (different pid, same mm via CLONE_VM) is the
+	 * cross-process pressure source driving pte_offset_map_lock() failure.
+	 */
 	{
 		struct iovec lv = { vec, vec_sz };
 		struct iovec rv = { arena, vec_sz };
@@ -250,7 +319,13 @@ bool thp_split_ref_race(struct childdata *child)
 {
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
-	unsigned char vec[THP_ARENA_PAGES + 64];	/* mincore + vm_readv buf */
+	/*
+	 * vec: mincore + vm_readv scratch buffer.  Must be MINCORE_VEC_BYTES
+	 * long so the 16 MiB mincore arm fits (4096 pages + 64-byte sentinel).
+	 * Moved off the stack: at 16 MiB arena the stack variant would be
+	 * 4160 bytes and blow the child stack; mmap'd instead.
+	 */
+	unsigned char *vec;
 	volatile unsigned int rounds;
 	struct timespec start;
 	unsigned long direct_calls = 0;
@@ -258,6 +333,7 @@ bool thp_split_ref_race(struct childdata *child)
 	unsigned long tally_ref_held = 0;
 	unsigned long tally_no_race = 0;
 	unsigned long tally_content_bad = 0;
+	unsigned long tally_mincore_dup = 0;
 	void *arena;
 	uintptr_t base, al;
 	unsigned int i;
@@ -267,6 +343,17 @@ bool thp_split_ref_race(struct childdata *child)
 
 	if (vma_pressure_is_high())
 		return true;
+
+	/*
+	 * Allocate the mincore/pvreadv scratch buffer on the heap.  At
+	 * MINCORE_VEC_BYTES = 4160 this is safe for both the 2 MiB THP rounds
+	 * (needing 576 bytes) and the 16 MiB mincore arm (needing 4160 bytes).
+	 */
+	vec = mmap(NULL, MINCORE_VEC_BYTES, PROT_READ | PROT_WRITE,
+		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (vec == MAP_FAILED)
+		return true;
+	direct_calls++;
 
 	/*
 	 * Map a PMD-aligned arena via double-map + carve:
@@ -342,7 +429,8 @@ bool thp_split_ref_race(struct childdata *child)
 
 		if (vma_pressure_is_high())
 			break;
-		direct_calls += thp_one_round(arena, i, vec, sizeof(vec), &rt);
+		direct_calls += thp_one_round(arena, i, vec,
+				      THP_ARENA_PAGES + 64, &rt);
 		tally_rounds++;
 		if (rt.ref_held)
 			tally_ref_held++;
@@ -355,6 +443,153 @@ bool thp_split_ref_race(struct childdata *child)
 	}
 
 	munmap(arena, THP_ARENA_SIZE);
+	direct_calls++;
+
+	/*
+	 * Mincore pagewalk OOB arm.
+	 *
+	 * Maps a PMD-aligned 16 MiB arena and races mincore() against a
+	 * CLONE_VM sibling that loops MADV_COLLAPSE + MADV_DONTNEED.  The
+	 * concurrent collapse/dontneed drives pte_offset_map_lock() failures
+	 * in the pagewalk, triggering the ACTION_AGAIN retry path.
+	 * walk_pud_range() then re-walks the PUD sub-range; mincore_pte_range()
+	 * advances its cursor unconditionally, pushing it past the 4096-byte
+	 * tmp buffer (OOB write into the adjacent kernel page).  KASAN catches
+	 * the overwrite.  tally_mincore_dup counts calls where the sentinel
+	 * bytes past MINCORE_ARENA_PAGES in vec were modified, confirming the
+	 * pagewalk wrote beyond the expected range.
+	 *
+	 * CLONE_VM (not CLONE_VFORK) -- the sibling is a live concurrent task
+	 * in the same mm, not a blocked parent waiting for exec/exit.
+	 */
+	{
+		struct mincore_racer_state *rs = MAP_FAILED;
+		void *mc_arena = MAP_FAILED;
+		void *sibling_stack = MAP_FAILED;
+		uintptr_t mc_base, mc_al;
+		pid_t sibling_pid = -1;
+		unsigned int mc_rounds;
+
+		/* Allocate shared racer state (visible to CLONE_VM sibling). */
+		rs = mmap(NULL, sizeof(*rs), PROT_READ | PROT_WRITE,
+			  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (rs == MAP_FAILED)
+			goto mc_out;
+		direct_calls++;
+		rs->stop = 0;
+		rs->syscalls = 0;
+
+		/* Allocate sibling stack. */
+		sibling_stack = mmap(NULL, MINCORE_RACER_STACK,
+				     PROT_READ | PROT_WRITE,
+				     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (sibling_stack == MAP_FAILED)
+			goto mc_out;
+		direct_calls++;
+
+		/*
+		 * Map a PMD-aligned 16 MiB arena for the mincore arm.
+		 * Same double-map + carve pattern as the THP arena above.
+		 */
+		mc_arena = mmap(NULL, MINCORE_ARENA_SIZE * 2, PROT_NONE,
+				MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (mc_arena == MAP_FAILED)
+			goto mc_out;
+		direct_calls++;
+
+		mc_base = (uintptr_t)mc_arena;
+		mc_al   = (mc_base + MINCORE_ARENA_SIZE - 1)
+			  & ~(MINCORE_ARENA_SIZE - 1);
+
+		if (mmap((void *)mc_al, MINCORE_ARENA_SIZE,
+			 PROT_READ | PROT_WRITE,
+			 MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
+			 -1, 0) == MAP_FAILED) {
+			munmap(mc_arena, MINCORE_ARENA_SIZE * 2);
+			mc_arena = MAP_FAILED;
+			direct_calls += 2;
+			goto mc_out;
+		}
+		direct_calls++;
+
+		if (mc_al > mc_base) {
+			munmap((void *)mc_base, mc_al - mc_base);
+			direct_calls++;
+		}
+		if (mc_al + MINCORE_ARENA_SIZE < mc_base + MINCORE_ARENA_SIZE * 2) {
+			munmap((void *)(mc_al + MINCORE_ARENA_SIZE),
+			       mc_base + MINCORE_ARENA_SIZE * 2
+			       - (mc_al + MINCORE_ARENA_SIZE));
+			direct_calls++;
+		}
+		mc_arena = (void *)mc_al;
+
+		/* Fault in the arena so mincore has populated PTEs to walk. */
+		(void)madvise(mc_arena, MINCORE_ARENA_SIZE, MADV_HUGEPAGE);
+		(void)madvise(mc_arena, MINCORE_ARENA_SIZE, MADV_POPULATE_WRITE);
+		direct_calls += 2;
+
+		rs->arena = mc_arena;
+
+		/*
+		 * Spawn the CLONE_VM sibling.  NOT CLONE_VFORK -- the sibling
+		 * must run concurrently (CLONE_VFORK blocks the parent until the
+		 * child calls exec or _exit, which is specific to the exec/_exit arm).
+		 */
+		sibling_pid = clone(mincore_vm_racer_fn,
+				    (char *)sibling_stack + MINCORE_RACER_STACK,
+				    CLONE_VM | SIGCHLD,
+				    rs);
+		if (sibling_pid < 0)
+			goto mc_stop;
+
+		/*
+		 * Parent loops mincore() over the full 16 MiB.  Each call races
+		 * the sibling's MADV_COLLAPSE/MADV_DONTNEED.  Initialise the
+		 * sentinel zone before each call; check it after to detect
+		 * writes past MINCORE_ARENA_PAGES.
+		 */
+		mc_rounds = JITTER_RANGE(8U);
+		for (unsigned int r = 0; r < mc_rounds; r++) {
+			__builtin_memset(vec + MINCORE_ARENA_PAGES,
+					 MINCORE_SENTINEL, MINCORE_VEC_GUARD);
+			(void)mincore(mc_arena, MINCORE_ARENA_SIZE, vec);
+			direct_calls++;
+
+			/* Sentinel check: dup-walk wrote past expected boundary? */
+			for (unsigned long b = 0; b < MINCORE_VEC_GUARD; b++) {
+				if (vec[MINCORE_ARENA_PAGES + b] != MINCORE_SENTINEL) {
+					tally_mincore_dup++;
+					break;
+				}
+			}
+
+			if (vma_pressure_is_high())
+				break;
+		}
+
+mc_stop:
+		/* Signal sibling to exit and reap it. */
+		__atomic_store_n(&rs->stop, 1, __ATOMIC_RELEASE);
+		if (sibling_pid > 0) {
+			waitpid_eintr(sibling_pid, NULL, 0);
+			direct_calls += (unsigned long)
+				__atomic_load_n(&rs->syscalls, __ATOMIC_RELAXED);
+		}
+
+mc_out:
+		if (mc_arena != MAP_FAILED) {
+			munmap(mc_arena, MINCORE_ARENA_SIZE);
+			direct_calls++;
+		}
+		if (sibling_stack != MAP_FAILED)
+			(void)munmap(sibling_stack, MINCORE_RACER_STACK);
+		if (rs != MAP_FAILED)
+			(void)munmap(rs, sizeof(*rs));
+	}
+
+	/* Free the heap vec buffer. */
+	munmap(vec, MINCORE_VEC_BYTES);
 	direct_calls++;
 
 	if (valid_op)
@@ -376,6 +611,10 @@ bool thp_split_ref_race(struct childdata *child)
 				&shm->stats.thp_split_ref_race.content_mismatch,
 				tally_content_bad, __ATOMIC_RELAXED);
 	}
+	if (tally_mincore_dup)
+		__atomic_add_fetch(
+			&shm->stats.thp_split_ref_race.mincore_pagewalk_dup,
+			tally_mincore_dup, __ATOMIC_RELAXED);
 
 	return true;
 }

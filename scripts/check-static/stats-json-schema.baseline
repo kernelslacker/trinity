@@ -305,6 +305,7 @@ stats	object
     stats.thp_split_ref_race.thp_split_while_ref_held	u64
     stats.thp_split_ref_race.thp_no_race	u64
     stats.thp_split_ref_race.content_mismatch	u64
+    stats.thp_split_ref_race.mincore_pagewalk_dup	u64
   stats.uffd_fault_move	object
     stats.uffd_fault_move.v1_resolve_ok	u64
     stats.uffd_fault_move.v1_resolve_fail	u64

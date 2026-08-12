@@ -15,6 +15,7 @@ static const struct stat_field thp_split_ref_race_fields[] = {
 	STAT_FIELD_SUB(thp_split_ref_race, thp_split_while_ref_held),
 	STAT_FIELD_SUB(thp_split_ref_race, thp_no_race),
 	STAT_FIELD_SUB(thp_split_ref_race, content_mismatch),
+	STAT_FIELD_SUB(thp_split_ref_race, mincore_pagewalk_dup),
 };
 
 const struct stat_category thp_split_ref_race_category =
