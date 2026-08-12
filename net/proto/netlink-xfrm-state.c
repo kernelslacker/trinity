@@ -496,6 +496,13 @@ struct xfrm_user_migrate_state {
  * kernel bounce on ESRCH -- still walks the parser arms.  flags is
  * masked to the two known bits with a 1-in-8 unknown-bit rotation so
  * both KNOWN_FLAGS and reject-unknown-bits paths get coverage.
+ *
+ * After the fixed body, rotate 0–2 XFRMA attributes from the
+ * XFRM_MSG_MIGRATE_STATE allowlist (xfrm_reject_unused_attr): ENCAP,
+ * MTIMER_THRESH, NAT_KEEPALIVE_INTERVAL, MARK, SET_MARK.  OFFLOAD_DEV
+ * is skipped (struct xfrm_user_offload layout is complex; TODO: add
+ * when an offload-capable test rig is available).  1-in-8: send the
+ * off-allowlist XFRMA_ALG_AUTH to exercise the reject path.
  */
 int xfrm_emit_migrate_state(int fd)
 {
@@ -505,6 +512,7 @@ int xfrm_emit_migrate_state(int fd)
 	struct xfrm_sa_track t;
 	__u16 family;
 	size_t off;
+	bool encap_valid = false;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
@@ -545,6 +553,101 @@ int xfrm_emit_migrate_state(int fd)
 	ums->reserved           = 0;
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ums));
+
+	/*
+	 * XFRMA_ENCAP: 1-in-3; rotate encap_type through sentinel (0,
+	 * inherit), valid ESPINUDP, and one invalid type (EINVAL arm).
+	 */
+	if (rnd_modulo_u32(3) == 0) {
+		struct xfrm_encap_tmpl encap;
+		unsigned int ec = rnd_modulo_u32(3);
+
+		memset(&encap, 0, sizeof(encap));
+		encap.encap_sport = htons(4500);
+		encap.encap_dport = htons(4500);
+		if (ec == 0) {
+			encap.encap_type = 0;              /* sentinel: remove encap */
+		} else if (ec == 1) {
+			encap.encap_type = UDP_ENCAP_ESPINUDP; /* valid */
+			encap_valid = true;
+		} else {
+			encap.encap_type = 0xf;            /* invalid → EINVAL */
+		}
+		off = xfrm_nla_put(buf, off, sizeof(buf),
+				   XFRMA_ENCAP, &encap, sizeof(encap));
+		if (!off)
+			return -EIO;
+	}
+
+	/* XFRMA_MTIMER_THRESH: 1-in-4; random mapping_maxage override. */
+	if (rnd_modulo_u32(4) == 0) {
+		__u32 thresh = rand32();
+
+		off = xfrm_nla_put(buf, off, sizeof(buf),
+				   XFRMA_MTIMER_THRESH,
+				   &thresh, sizeof(thresh));
+		if (!off)
+			return -EIO;
+	}
+
+	/*
+	 * XFRMA_NAT_KEEPALIVE_INTERVAL: pair with valid encap for the happy
+	 * path; send alone 1-in-16 to hit the NAT-requires-encap EINVAL arm.
+	 */
+	if ((encap_valid && rnd_modulo_u32(4) == 0) ||
+	    (!encap_valid && rnd_modulo_u32(16) == 0)) {
+		__u32 interval = rand32();
+
+		off = xfrm_nla_put(buf, off, sizeof(buf),
+				   XFRMA_NAT_KEEPALIVE_INTERVAL,
+				   &interval, sizeof(interval));
+		if (!off)
+			return -EIO;
+	}
+
+	/* XFRMA_MARK: 1-in-4; random v+m pair for new_mark on migrated SA. */
+	if (rnd_modulo_u32(4) == 0) {
+		struct { __u32 v; __u32 m; } mark_attr;
+
+		mark_attr.v = rand32();
+		mark_attr.m = rand32();
+		off = xfrm_nla_put(buf, off, sizeof(buf),
+				   XFRMA_MARK, &mark_attr, sizeof(mark_attr));
+		if (!off)
+			return -EIO;
+	}
+
+	/* XFRMA_SET_MARK + XFRMA_SET_MARK_MASK: 1-in-4; random smark pair. */
+	if (rnd_modulo_u32(4) == 0) {
+		__u32 smark_v = rand32();
+		__u32 smark_m = rand32();
+
+		off = xfrm_nla_put(buf, off, sizeof(buf),
+				   XFRMA_SET_MARK, &smark_v, sizeof(smark_v));
+		if (!off)
+			return -EIO;
+		off = xfrm_nla_put(buf, off, sizeof(buf),
+				   XFRMA_SET_MARK_MASK, &smark_m, sizeof(smark_m));
+		if (!off)
+			return -EIO;
+	}
+
+	/*
+	 * 1-in-8: emit off-allowlist XFRMA_ALG_AUTH to exercise the
+	 * xfrm_reject_unused_attr() EINVAL arm for XFRM_MSG_MIGRATE_STATE.
+	 * Uses a minimal struct xfrm_algo (name[64] + key_len u32, no key).
+	 */
+	if (rnd_modulo_u32(8) == 0) {
+		struct { char name[64]; __u32 key_len; } auth_attr;
+
+		memset(&auth_attr, 0, sizeof(auth_attr));
+		off = xfrm_nla_put(buf, off, sizeof(buf),
+				   XFRMA_ALG_AUTH,
+				   &auth_attr, sizeof(auth_attr));
+		if (!off)
+			return -EIO;
+	}
+
 	nlh->nlmsg_len = (__u32)off;
 	return xfrm_send_recv(fd, buf, off);
 }

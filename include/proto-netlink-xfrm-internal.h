@@ -69,6 +69,7 @@ struct xfrm_userpolicy_default {
 #define XFRMA_MIGRATE			17
 #define XFRMA_ALG_AEAD			18
 #define XFRMA_ALG_AUTH_TRUNC		20
+#define XFRMA_MARK			21
 #define XFRMA_REPLAY_ESN_VAL		23
 #define XFRMA_SA_EXTRA_FLAGS		24
 #define XFRMA_OFFLOAD_DEV		28
