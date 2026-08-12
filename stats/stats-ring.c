@@ -120,6 +120,20 @@ static void apply_slot(const void *p, void *cb_ctx __unused__)
 
 	switch (field) {
 	case STATS_FIELD_OP_COUNT:
+		/*
+		 * KNOWN LOSSY WINDOW: op_count and total_op_count are
+		 * accumulated only from drained ring slots.  When the
+		 * 1024-slot per-child stats ring is full, enqueue calls
+		 * silently discard the slot and this increment is lost.
+		 * Dropped counts under-bias op_count, causing call-limit,
+		 * epoch-limit, and strategy-rotation checks to fire late
+		 * or not at all under sustained load.
+		 * 438eaf8460c6 ("stats: make op-count clock lossless via MAP_SHARED atomic")
+		 * fixed this; that fix was reverted 2026-08-09 by
+		 * 51e8cd3d8f0d ("Revert "stats: make op-count clock lossless via MAP_SHARED atomic"")
+		 * with no rationale.  A fresh replacement approach is needed
+		 * -- see STATS_FIELD_CALL_COMPLETE below.
+		 */
 		parent_stats.op_count += delta;
 		parent_stats.total_op_count += delta;
 		break;
@@ -302,7 +316,12 @@ static void apply_slot(const void *p, void *cb_ctx __unused__)
 		 * bump for this slot.  successes/failures is gated on a
 		 * known result_class; any other byte value in _reserved is
 		 * treated as INCOMPLETE so a scribbled slot cannot fabricate
-		 * a success/failure attribution. */
+		 * a success/failure attribution.
+		 *
+		 * NOTE: the op_count/total_op_count bumps here share the same
+		 * lossy window described in STATS_FIELD_OP_COUNT above.  A
+		 * ring-full drop at the dispatch-step.c site silently loses
+		 * this syscall completion from the op-count clocks too. */
 		uint8_t result = (uint8_t)s->_reserved;
 
 		parent_stats.op_count += delta;
