@@ -116,7 +116,11 @@ awk '{print $1}' "$HARVEST" | sort -u > "$SYMS_ALL"
       linux/vdpa.h linux/ovpn.h linux/nbd-netlink.h linux/net_dropmon.h \
       linux/net_shaper.h linux/nfsd_netlink.h linux/ioprio.h linux/nfc.h \
       linux/psample.h linux/psp-dbc.h linux/psp-sev.h \
-      linux/ethtool_netlink.h linux/hw_breakpoint.h; do
+      linux/ethtool_netlink.h linux/hw_breakpoint.h \
+      linux/pkt_sched.h linux/pkt_cls.h linux/fib_rules.h linux/devlink.h \
+      linux/dcbnl.h linux/netlink.h linux/netfilter/nfnetlink_log.h \
+      linux/netfilter/nfnetlink_queue.h linux/tc_act/tc_mirred.h \
+      linux/netfilter/nf_tables_compat.h; do
     [ -f "/usr/include/$h" ] && echo "#include <$h>"
   done
 } > "$PCH_HDR"
@@ -209,6 +213,7 @@ if [ ! -x "$FINAL_BIN" ]; then
 fi
 
 "$FINAL_BIN" > "$COMPILER_TABLE" 2>/dev/null
+harvested=$(wc -l < "$SYMS_ALL")
 probed=$(wc -l < "$COMPILER_TABLE")
 
 if [ "$probed" -eq 0 ]; then
@@ -343,5 +348,5 @@ if [ "$total_fail" -gt 0 ]; then
     exit 1
 fi
 
-echo "PASS: $NAME ($probed symbols probed via compiler, $checked trinity shim(s) verified correct)"
+echo "PASS: $NAME (harvested $harvested, resolvable $probed, verified $checked)"
 exit 0

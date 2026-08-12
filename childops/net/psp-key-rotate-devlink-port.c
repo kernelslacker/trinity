@@ -73,10 +73,10 @@
 #define DEVLINK_FAMILY_NAME		"devlink"
 #endif
 #ifndef DEVLINK_CMD_PORT_NEW
-#define DEVLINK_CMD_PORT_NEW		31
+#define DEVLINK_CMD_PORT_NEW		7
 #endif
 #ifndef DEVLINK_CMD_PORT_DEL
-#define DEVLINK_CMD_PORT_DEL		32
+#define DEVLINK_CMD_PORT_DEL		8
 #endif
 #ifndef DEVLINK_ATTR_BUS_NAME
 #define DEVLINK_ATTR_BUS_NAME		1
@@ -94,7 +94,7 @@
 #define DEVLINK_PORT_FLAVOUR_VIRTUAL	5
 #endif
 #ifndef DEVLINK_ATTR_PORT_NUMBER
-#define DEVLINK_ATTR_PORT_NUMBER	36
+#define DEVLINK_ATTR_PORT_NUMBER	78
 #endif
 
 #define PDPC_BUS			"netdevsim"
