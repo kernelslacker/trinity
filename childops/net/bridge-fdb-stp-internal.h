@@ -171,6 +171,15 @@ int bfs_build_setlink_master(struct nl_ctx *ctx, int ifindex,
 			 int master_ifindex);
 int bfs_build_setlink_brport_learning(struct nl_ctx *ctx, int ifindex);
 
+/*
+ * star_g port-group UAF oracle arm.
+ * Only defined when <linux/if_bridge.h> is available (MDBE_ATTR_*,
+ * br_mdb_entry, br_port_msg); silently absent on stripped sysroots.
+ */
+#if __has_include(<linux/if_bridge.h>)
+void do_bridge_star_g_uaf(struct nl_ctx *ctx);
+#endif
+
 /* bridge-fdb-stp-fdb.c */
 int build_fdb_del(struct nl_ctx *ctx, int port_ifindex,
 		  const unsigned char *mac);

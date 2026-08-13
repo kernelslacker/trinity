@@ -35,7 +35,8 @@ childops/net/afxdp-churn-io.c      # carve of afxdp_churn (dispatch: afxdp-churn
 childops/net/afxdp-churn-umem.c    # carve of afxdp_churn (dispatch: afxdp-churn.c)
 
 # --- bridge_fdb_stp carves ---
-# Three carve files for CHILD_OP_BRIDGE_FDB_STP (dispatch: bridge-fdb-stp.c).
+# Four carve files for CHILD_OP_BRIDGE_FDB_STP (dispatch: bridge-fdb-stp.c).
+childops/net/bridge-fdb-stp-setup.c      # carve of bridge_fdb_stp (dispatch: bridge-fdb-stp.c); do_bridge_star_g_uaf called from bridge_fdb_stp_in_ns
 childops/net/bridge-fdb-stp-stp.c        # carve of bridge_fdb_stp (dispatch: bridge-fdb-stp.c)
 childops/net/bridge-fdb-stp-traffic.c    # carve of bridge_fdb_stp (dispatch: bridge-fdb-stp.c)
 childops/net/bridge-fdb-stp-vlan-mass.c  # carve of bridge_fdb_stp (dispatch: bridge-fdb-stp.c)

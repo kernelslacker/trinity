@@ -14,6 +14,21 @@ struct bridge_fdb_stp_stats {
 	unsigned long bridge_vlan_mass_runs;		/* mass-VLAN-add sub-mode invocations */
 	unsigned long bridge_vlan_mass_max_n;		/* largest IFLA_BRIDGE_VLAN_INFO entry count attempted in one msg */
 	unsigned long bridge_vlan_mass_enotbufs;	/* sendmsg -ENOBUFS / -EMSGSIZE on the oversize bulk message */
+
+	/*
+	 * star_g port-group UAF oracle.
+	 *
+	 * Positive-control invariant: if mdb_star_g_created and mdb_sg_created both stay
+	 * 0 the builder or src-list nesting is broken; do not report a
+	 * clean kernel.  star_g_arm_setup_failed covers failures in the
+	 * bridge/veth setup phase before any MDB work.
+	 */
+	unsigned long star_g_arm_setup_failed;		/* bridge/veth setup failure before MDB */
+	unsigned long mdb_star_g_created;		/* RTM_NEWMDB (*,G) EXCLUDE accepted */
+	unsigned long mdb_sg_created;			/* RTM_NEWMDB (S,G) accepted (per entry) */
+	unsigned long star_g_mdbe_src_list_built;	/* build_star_g_src_list_nest() successes */
+	unsigned long star_g_mdb_before;		/* MDB entry count before oracle-A triggers */
+	unsigned long star_g_mdb_after;			/* MDB entry count after oracle-A triggers */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_BRIDGE_FDB_STP_H */

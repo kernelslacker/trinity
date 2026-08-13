@@ -333,6 +333,26 @@ static int bridge_fdb_stp_in_ns(void *arg)
 		return 0;
 	}
 
+#if __has_include(<linux/if_bridge.h>)
+	/*
+	 * star_g port-group UAF oracle.
+	 * Creates its own bridge (MCAST_SNOOPING=1) + veth pair, installs
+	 * (*,G) EXCLUDE + (S,G) MDB entries, then triggers both
+	 * __br_multicast_disable_port_ctx() and br_multicast_del_port()
+	 * via state-change + un-enslave.  KASAN fires slab-use-after-free
+	 * on port->mglist walk on a buggy kernel.
+	 *
+	 * Gated independently of ns_unsupported_bridge: that latch covers
+	 * the main STP arm; MCAST_SNOOPING failures here are counted
+	 * separately via star_g_arm_setup_failed.
+	 */
+	if (!ns_unsupported_bridge && ONE_IN(8)) {
+		do_bridge_star_g_uaf(&ictx.ctx);
+		nl_close(&ictx.ctx);
+		return 0;
+	}
+#endif
+
 	bridge_fdb_stp_iter_setup_names(&ictx);
 
 	if (bridge_fdb_stp_iter_bridge_create(&ictx) != 0)

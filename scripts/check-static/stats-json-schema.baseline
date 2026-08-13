@@ -496,6 +496,12 @@ stats	object
     stats.bridge_fdb_stp.vlan_mass_runs	u64
     stats.bridge_fdb_stp.vlan_mass_max_n	u64
     stats.bridge_fdb_stp.vlan_mass_enotbufs	u64
+    stats.bridge_fdb_stp.star_g_arm_setup_failed	u64
+    stats.bridge_fdb_stp.mdb_star_g_created	u64
+    stats.bridge_fdb_stp.mdb_sg_created	u64
+    stats.bridge_fdb_stp.star_g_src_list_built	u64
+    stats.bridge_fdb_stp.star_g_mdb_before	u64
+    stats.bridge_fdb_stp.star_g_mdb_after	u64
   stats.nftables_churn	object
     stats.nftables_churn.runs	u64
     stats.nftables_churn.setup_failed	u64
