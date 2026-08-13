@@ -434,11 +434,6 @@ fi
 harvested=$(wc -l < "$SYMS_ALL")
 probed=$(wc -l < "$COMPILER_TABLE")
 
-if [ "$probed" -eq 0 ]; then
-    echo "WARN: $NAME: probe binary produced no output; skipping"
-    exit 0
-fi
-
 # ---------------------------------------------------------------------------
 # Coverage ratchet: probed must not drop below the stored floor.
 #
@@ -455,6 +450,15 @@ probed_floor=0
 if [ -f "$PROBED_FLOOR_FILE" ]; then
     probed_floor=$(grep -oE '^[0-9]+' "$PROBED_FLOOR_FILE" | head -1 || echo 0)
     probed_floor=${probed_floor:-0}
+fi
+
+if [ "$probed" -eq 0 ]; then
+    if [ "$probed_floor" -gt 0 ]; then
+        echo "FAIL: $NAME: coverage ratchet: probed 0 < floor $probed_floor (probe binary produced no output)"
+        exit 1
+    fi
+    echo "WARN: $NAME: probe binary produced no output; skipping"
+    exit 0
 fi
 # Only enforce the ratchet when Tier 2 actually ran: the committed floor
 # includes Tier-2 resolutions, so on a box where Tier 2 is skipped (tree
