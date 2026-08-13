@@ -535,11 +535,18 @@ if [ "$total_fail" -gt 0 ]; then
     exit 1
 fi
 
-# Invariant check: every harvested symbol is either resolvable or unresolved.
+# Invariant 1: every harvested symbol is either resolvable or unresolved.
 # harvested = resolvable + total_unresolved; a mismatch indicates a bookkeeping bug.
 total_unresolved=$(wc -l < "$SYMS_BAD" | tr -d ' ')
 if [ "$harvested" -ne $((probed + total_unresolved)) ]; then
     echo "FAIL: $NAME: invariant broken: harvested $harvested != resolvable $probed + unresolved $total_unresolved" >&2
+    exit 1
+fi
+
+# Invariant 2: every resolvable symbol must have been verified.
+# verified (checked) < resolvable (probed) means symbols were silently skipped.
+if [ "$checked" -ne "$probed" ]; then
+    echo "FAIL: $NAME: invariant broken: verified $checked != resolvable $probed ($((probed - checked)) symbol(s) resolved but not verified)" >&2
     exit 1
 fi
 
