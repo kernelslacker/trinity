@@ -28,6 +28,7 @@ void shared_str_heap_free_size_check(void);
 void dispatch_stage_order_self_check(void);
 void deferred_free_ownership_self_check(void);
 void stats_opclock_lossless_self_check(void);
+void struct_field_bounds_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -91,6 +92,11 @@ int main(int argc, char **argv)
 	printf("  stats_opclock_lossless_self_check ... ");
 	fflush(stdout);
 	stats_opclock_lossless_self_check();
+	printf("OK\n");
+
+	printf("  struct_field_bounds_self_check ... ");
+	fflush(stdout);
+	struct_field_bounds_self_check();
 	printf("OK\n");
 
 	return 0;

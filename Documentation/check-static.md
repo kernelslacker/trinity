@@ -633,3 +633,12 @@ External hashes (Linux kernel commits, upstream projects) should be prefixed
 with `upstream:` so it is clear they are not expected to resolve locally:
 
     upstream:abc123def456 ("mm: fix some page fault bug")
+- `struct-field-offset-size-wrap`: reject bare `->offset +` arithmetic
+  in comparison predicates in `args/` when neither operand carries an
+  `(unsigned long)` / `(uint64_t)` cast.  Both `struct struct_field`
+  members `offset` and `size` are `unsigned int`; the expression
+  `f->offset + f->size` wraps modulo 2^32 before comparison when the
+  sum exceeds `UINT_MAX`, silently bypassing the bounds guard.  The
+  correct form is `f->offset > size || f->size > size - f->offset`.
+  Array-index expressions of the form `buf[f->offset + byte_off]` are
+  excluded (the index is bounded by an earlier guard).

@@ -340,7 +340,7 @@ unsigned int collect_mutable_candidates(unsigned char *buf,
 	for (i = 0; i < n_fields && collected < out_max; i++) {
 		const struct struct_field *f = &fields[i];
 
-		if (f->offset + f->size > size)
+		if (f->offset > size || f->size > size - f->offset)
 			continue;
 
 		if (field_tag_is_mutable_c2b(f->tag)) {
@@ -390,7 +390,7 @@ unsigned int collect_mutable_candidates(unsigned char *buf,
 				f->u.embedded_struct.elem_struct_name);
 			if (child_desc == NULL || child_desc->struct_size == 0)
 				continue;
-			if ((unsigned long) f->offset + child_desc->struct_size > size)
+			if (f->offset > size || child_desc->struct_size > size - f->offset)
 				continue;
 
 			collected += collect_mutable_candidates(

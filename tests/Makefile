@@ -79,6 +79,7 @@ endif
 # one-line change, not a "someone added a file and the test binary
 # silently pulled it in" surprise.
 REAL_SRCS	:= \
+	$(TOP)/args/struct_fill.c \
 	$(TOP)/args/struct_mutate.c \
 	$(TOP)/args/struct_mutate_selftest.c \
 	$(TOP)/struct_catalog/variant.c \
@@ -97,6 +98,7 @@ FAKE_SRCS	:= \
 	dispatch_stage_order_test.c \
 	deferred_free_test.c \
 	stats_opclock_lossless_test.c \
+	struct_field_bounds_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

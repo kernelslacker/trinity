@@ -248,7 +248,7 @@ void struct_fill_passes(unsigned char *buf, unsigned int size,
 	for (i = 0; i < n; i++) {
 		const struct struct_field *f = &fields[i];
 
-		if (f->offset + f->size > size)
+		if (f->offset > size || f->size > size - f->offset)
 			continue;
 
 		switch (f->tag) {
@@ -477,7 +477,7 @@ void struct_fill_passes(unsigned char *buf, unsigned int size,
 	for (i = 0; i < n; i++) {
 		const struct struct_field *f = &fields[i];
 
-		if (f->offset + f->size > size)
+		if (f->offset > size || f->size > size - f->offset)
 			continue;
 
 		switch (f->tag) {
@@ -698,7 +698,7 @@ void struct_fill_passes(unsigned char *buf, unsigned int size,
 		const struct struct_field *f = &fields[i];
 		int paired;
 
-		if (f->offset + f->size > size)
+		if (f->offset > size || f->size > size - f->offset)
 			continue;
 
 		if (f->tag != FT_LEN_BYTES && f->tag != FT_LEN_COUNT)

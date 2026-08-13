@@ -91,7 +91,7 @@ static void scrub_field_array(unsigned char *buf, unsigned int size,
 		const struct struct_desc *target;
 		unsigned long ptr;
 
-		if (f->offset + f->size > size)
+		if (f->offset > size || f->size > size - f->offset)
 			continue;
 
 		switch (f->tag) {
@@ -133,7 +133,7 @@ static void scrub_field_array(unsigned char *buf, unsigned int size,
 			target = struct_catalog_lookup(f->u.embedded_struct.elem_struct_name);
 			if (target == NULL || target->struct_size == 0)
 				break;
-			if ((unsigned long) f->offset + target->struct_size > size)
+			if (f->offset > size || target->struct_size > size - f->offset)
 				break;
 			scrub_struct_addresses(buf + f->offset,
 					       target->struct_size,
@@ -294,7 +294,7 @@ static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
 	 * asb_relocate() reads *addr at the top of its body (the
 	 * asb_copy_active sigsetjmp guard covers only the inner
 	 * memcpy, not this outer deref).  The per-field bound check
-	 * (f->offset + f->size > size) only constrains the walk within
+	 * (f->offset > size || f->size > size - f->offset) only constrains the walk within
 	 * an assumed-valid @size-byte allocation; it does nothing when
 	 * @buf itself is unmapped.
 	 *
