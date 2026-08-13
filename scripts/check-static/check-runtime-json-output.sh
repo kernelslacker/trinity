@@ -212,14 +212,22 @@ def norm_baseline_type(t):
 def is_int_key(k):
     return k.isdigit()
 
-def walk_json(obj, path="", visited_arr_paths=None):
-    """Yield (path, norm_type, raw_val) triples.  Arrays yield one representative element.
+def walk_json(obj, path=""):
+    """Yield (path, norm_type, raw_val) triples.
 
-    raw_val is the actual Python value for leaf (non-container) nodes, or None
-    for containers.  Callers use raw_val for enum-pin enforcement.
+    For lists, all elements are visited so that every distinct leaf value
+    at each path is yielded.  This is required for enum-pin enforcement:
+    the representative-element rule is fine for TYPE inference (schema[path]
+    is set on first-wins), but values[path] must accumulate the full value
+    set across all array elements so that enum:... pins cover every row, not
+    just the first one.
+
+    Plain JSON cannot contain structural cycles, so no visited-path guard is
+    needed -- iterating all list elements is safe.
+
+    raw_val is the actual Python value for leaf (non-container) nodes, or
+    None for containers.  Callers use raw_val for enum-pin enforcement.
     """
-    if visited_arr_paths is None:
-        visited_arr_paths = set()
     t = norm_type(obj)
     raw_val = obj if not isinstance(obj, (dict, list)) else None
     if path:  # skip the root node (empty path); only emit named nodes
@@ -233,11 +241,14 @@ def walk_json(obj, path="", visited_arr_paths=None):
             if v is None:
                 yield (child_path, "null", None)
                 continue
-            yield from walk_json(v, child_path, visited_arr_paths)
+            yield from walk_json(v, child_path)
     elif isinstance(obj, list):
-        if obj and path not in visited_arr_paths:
-            visited_arr_paths = visited_arr_paths | {path}
-            yield from walk_json(obj[0], path, visited_arr_paths)
+        # Iterate ALL elements so that values from every row are yielded.
+        # schema[path] type is set on first-wins (representative element
+        # is fine for type inference); values[path] accumulates all raw
+        # values so enum pins cover every array element.
+        for elem in obj:
+            yield from walk_json(elem, path)
 
 def extract_runtime_schema(stdout_path):
     """Parse the live binary stdout, find the JSON object, walk it.
@@ -266,8 +277,15 @@ def extract_runtime_schema(stdout_path):
                 for path, t, raw_val in walk_json(obj):
                     if path not in schema:
                         schema[path] = t
-                        if raw_val is not None:
-                            values[path] = raw_val
+                    if raw_val is not None:
+                        # Accumulate the full set of values seen at this
+                        # path across all array elements.  Enum-pin
+                        # enforcement checks every collected value, so
+                        # unsupported/ran_no_effect (afxdp-only rows) are
+                        # caught even though igmp always emits first.
+                        if path not in values:
+                            values[path] = set()
+                        values[path].add(raw_val)
                 return schema, values, None
         except json.JSONDecodeError:
             continue
@@ -364,12 +382,15 @@ for p in sorted(runtime_paths & baseline_paths):
         continue
     token_str = raw[5:].rstrip('?')  # strip 'enum:' prefix and nullable marker
     allowed   = set(token_str.split("|"))
-    actual    = rt_values.get(p)
-    if actual is None:
+    actual_set = rt_values.get(p)
+    if actual_set is None:
         continue  # value absent at runtime (nullable path, not in this run)
-    if actual not in allowed:
-        enum_errors.append(
-            f"  {p}: value {actual!r} not in allowed set {sorted(allowed)}")
+    # Check every collected value -- values[path] is a set accumulating all
+    # raw values seen across every array element for this path.
+    for actual in sorted(actual_set):
+        if actual not in allowed:
+            enum_errors.append(
+                f"  {p}: value {actual!r} not in allowed set {sorted(allowed)}")
 
 errors = []
 if unexpected:
