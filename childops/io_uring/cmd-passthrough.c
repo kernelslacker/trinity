@@ -335,10 +335,13 @@ static void sqe_clear(struct io_uring_sqe *s)
  *                                  in io_uring_cmd_prep() before the
  *                                  biconditional (-EINVAL), so it never
  *                                  reaches ->uring_cmd().  Kept as a
- *                                  deliberate negative probe: fires
- *                                  nulldev_cmd_rejected on 50% of draws,
- *                                  providing a standing assertion that
- *                                  the mutual-exclusion check still exists.
+ *                                  deliberate negative probe providing a
+ *                                  standing assertion that the mutual-
+ *                                  exclusion check still exists.  Counted
+ *                                  separately as fixed_multishot_prep_rejected
+ *                                  so these draws do not dilute the oracle
+ *                                  denominator (nulldev_mshot_attempts counts
+ *                                  only plain-MULTISHOT draws).
  * ------------------------------------------------------------------ */
 
 static const __u32 uring_cmd_flag_variants_no_mshot[] = {
@@ -689,13 +692,28 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 					1, __ATOMIC_RELAXED);
 		} else if (cqe_res < 0) {
 			/* CQE arrived with negative result: prep rejected the
-			 * submission (-EINVAL: unsupported flag combination;
-			 * -EOPNOTSUPP: cmd_op not handled by uring_cmd_null).
-			 * The uring_cmd dispatch path was not reached. */
-			if (valid_op)
-				__atomic_add_fetch(
-					&shm->stats.iouring_cmd_passthrough.nulldev_cmd_rejected,
-					1, __ATOMIC_RELAXED);
+			 * submission before reaching uring_cmd_null.  Route to
+			 * the appropriate counter based on the draw:
+			 *
+			 *  FIXED|MULTISHOT: rejected by the mutual-exclusion
+			 *  check in io_uring_cmd_prep() (-EINVAL).  This is a
+			 *  deliberate negative probe; count it separately so
+			 *  it does not dilute the oracle denominator.
+			 *
+			 *  Plain MULTISHOT: rejected at prep for another reason
+			 *  (-EOPNOTSUPP: cmd_op not handled).  The uring_cmd
+			 *  dispatch path was reached but the op was refused.
+			 */
+			if (valid_op) {
+				if (cmd_flags & IORING_URING_CMD_FIXED)
+					__atomic_add_fetch(
+						&shm->stats.iouring_cmd_passthrough.fixed_multishot_prep_rejected,
+						1, __ATOMIC_RELAXED);
+				else
+					__atomic_add_fetch(
+						&shm->stats.iouring_cmd_passthrough.nulldev_cmd_rejected,
+						1, __ATOMIC_RELAXED);
+			}
 		}
 	}
 	} /* end cmd_flags scope */

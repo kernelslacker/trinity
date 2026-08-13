@@ -50,6 +50,23 @@ struct iouring_cmd_passthrough_stats {
 	 * not handled) before reaching uring_cmd_null().
 	 */
 	unsigned long nulldev_cmd_rejected;	/* nulldev plain-MULTISHOT CQE returned errno */
+	/*
+	 * FIXED|MULTISHOT prep-rejection counter.  pick_uring_cmd_flags()
+	 * rotates IORING_URING_CMD_MULTISHOT and IORING_URING_CMD_FIXED|
+	 * MULTISHOT 50/50 as a deliberate negative probe: io_uring_cmd_prep()
+	 * enforces a mutual-exclusion check that rejects FIXED|MULTISHOT with
+	 * -EINVAL before the SQE reaches ->uring_cmd.  Counting those draws
+	 * separately makes the oracle denominator unambiguous: the ratio
+	 * mshot_cmd_no_cqe / nulldev_mshot_attempts uses only plain-MULTISHOT
+	 * attempts; FIXED|MULTISHOT draws are excluded from that denominator
+	 * and tracked here instead.
+	 *
+	 * A non-zero count asserts that the mutual-exclusion check is still
+	 * present in the prep path.  If this counter stays zero while
+	 * nulldev_mshot_attempts is non-zero, 100% of draws selected plain
+	 * MULTISHOT (unexpected given the 50/50 picker).
+	 */
+	unsigned long fixed_multishot_prep_rejected;	/* FIXED|MULTISHOT rejected at prep */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_IOURING_CMD_PASSTHROUGH_H */
