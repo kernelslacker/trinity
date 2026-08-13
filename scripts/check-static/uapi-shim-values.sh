@@ -426,7 +426,7 @@ MISMATCH_FILE="$WORKDIR/mismatches.txt"
 # int32 normalisation: truncate to 32-bit signed to match C's (int) semantics.
 # Handles hex (0x...), octal (0...), and decimal integers.
 # For hex values longer than 8 digits, only the lower 32 bits are kept.
-awk '
+awk -v harvest_file="$HARVEST" '
 # Return numeric value of a single hex digit character (0-9, a-f, A-F)
 function hd(c) {
     return (c >= "0" && c <= "9") ? (c + 0) : (index("0123456789abcdef", tolower(c)) - 1)
@@ -457,8 +457,12 @@ function int32(s,   v, i, c, n) {
     return v
 }
 BEGIN { fail = 0; checked = 0 }
-# Pass 1: load harvest into memory (SYM -> space-separated list of values)
-FNR == NR {
+# Pass 1: load harvest into memory (SYM -> space-separated list of values).
+# Use FILENAME == harvest_file rather than the FNR == NR idiom: if the harvest
+# file is empty awk never emits a record for it, so when the first record of
+# the compiler table arrives both FNR and NR are 1, causing that record to be
+# misidentified as pass-1 data and loaded into harvest[] instead of checked.
+FILENAME == harvest_file {
     sym = $1; val = $2
     harvest[sym] = (sym in harvest) ? harvest[sym] " " val : val
     next
@@ -537,6 +541,13 @@ fi
 
 # Invariant 1: every harvested symbol is either resolvable or unresolved.
 # harvested = resolvable + total_unresolved; a mismatch indicates a bookkeeping bug.
+#
+# Note: the "known-private" class (TRINITY_*, NR_*, MAX_*, etc. -- symbols that
+# match KNOWN_MISSING_RE) is NOT a separate term here.  Those symbols failed the
+# compiler probe and therefore live in SYMS_BAD, folded into total_unresolved.
+# They are only excluded from the *reporting* step (unresolved-uapi warnings).
+# So the identity is: harvested = resolvable + (unresolved-uapi + known-private)
+#                   = resolvable + total_unresolved  ✓
 total_unresolved=$(wc -l < "$SYMS_BAD" | tr -d ' ')
 if [ "$harvested" -ne $((probed + total_unresolved)) ]; then
     echo "FAIL: $NAME: invariant broken: harvested $harvested != resolvable $probed + unresolved $total_unresolved" >&2
