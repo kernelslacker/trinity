@@ -13,8 +13,9 @@
 #      defines for headers/features trinity probes at build time.
 #   2. fuzz-target kernel config (CONFIG_* style) -- for features trinity
 #      does not gate at configure time (e.g. runtime-latched childops).
-#      Location: FUZZ_KCONFIG env, else ~/.config/trinity/fuzz-kconfig.
-#      If absent the kernel-source checks are skipped and noted.
+#      Location: FUZZ_KCONFIG env, else ~/.config/trinity/fuzz-kconfig
+#      (a symlink to the active target kernel .config is fine).
+#      If absent or unreadable, kernel-config checks are skipped.
 #
 # MAPPING TABLE
 # Each entry: childop-file<TAB>config-source<TAB>check-symbol<TAB>display-name
@@ -38,7 +39,10 @@ TRINITY_CONFIG="$ROOT/config.h"
 _FUZZ_KCONFIG_DEFAULT="$HOME/.config/trinity/fuzz-kconfig"
 FUZZ_KCONFIG="${FUZZ_KCONFIG:-$_FUZZ_KCONFIG_DEFAULT}"
 KCONFIG=""
-if [ -f "$FUZZ_KCONFIG" ]; then
+if [ -n "$FUZZ_KCONFIG" ] && [ -e "$FUZZ_KCONFIG" ] && [ ! -r "$FUZZ_KCONFIG" ]; then
+	# File exists but we cannot read it (e.g. backing mount not active).
+	echo "$NAME: kconfig $FUZZ_KCONFIG not readable (skipping kernel-config checks)" >&2
+elif [ -f "$FUZZ_KCONFIG" ]; then
 	KCONFIG="$FUZZ_KCONFIG"
 else
 	echo "  $NAME: skipped: fuzz-target kconfig not found" \
