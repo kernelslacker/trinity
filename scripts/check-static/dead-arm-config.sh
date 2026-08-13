@@ -39,11 +39,28 @@ TRINITY_CONFIG="$ROOT/config.h"
 _FUZZ_KCONFIG_DEFAULT="$HOME/.config/trinity/fuzz-kconfig"
 FUZZ_KCONFIG="${FUZZ_KCONFIG:-$_FUZZ_KCONFIG_DEFAULT}"
 KCONFIG=""
-if [ -n "$FUZZ_KCONFIG" ] && [ -e "$FUZZ_KCONFIG" ] && [ ! -r "$FUZZ_KCONFIG" ]; then
+if [ -n "$FUZZ_KCONFIG" ] && [ -L "$FUZZ_KCONFIG" ] && [ ! -e "$FUZZ_KCONFIG" ]; then
+	# Dangling symlink: the symlink itself exists but its target is gone
+	# (e.g. backing mount unmounted).  [ -e ] follows the link and returns
+	# false when the target is missing, so the normal [ -e ] && [ ! -r ]
+	# guard cannot fire for this case.
+	echo "WARN: $NAME: kconfig $FUZZ_KCONFIG is a dangling symlink" \
+	     "(mount gone?); skipping kernel-config checks" >&2
+elif [ -n "$FUZZ_KCONFIG" ] && [ -e "$FUZZ_KCONFIG" ] && [ ! -r "$FUZZ_KCONFIG" ]; then
 	# File exists but we cannot read it (e.g. backing mount not active).
 	echo "$NAME: kconfig $FUZZ_KCONFIG not readable (skipping kernel-config checks)" >&2
 elif [ -f "$FUZZ_KCONFIG" ]; then
-	KCONFIG="$FUZZ_KCONFIG"
+	# Content validation: a readable but near-empty file is not authoritative.
+	# A real fuzz-target .config has thousands of CONFIG_ lines; require at
+	# least 100 to guard against truncated, stale, or zombie-mount files.
+	_cfg_count=$(grep -c '^CONFIG_' "$FUZZ_KCONFIG" 2>/dev/null || echo 0)
+	if [ "$_cfg_count" -lt 100 ]; then
+		echo "WARN: $NAME: kconfig $FUZZ_KCONFIG contains only $_cfg_count CONFIG_" \
+		     "line(s) (expected >=100; truncated or stale file?);" \
+		     "skipping kernel-config checks" >&2
+	else
+		KCONFIG="$FUZZ_KCONFIG"
+	fi
 else
 	echo "  $NAME: skipped: fuzz-target kconfig not found" \
 	     "(set FUZZ_KCONFIG= or place config at $FUZZ_KCONFIG)" >&2
