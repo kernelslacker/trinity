@@ -464,6 +464,12 @@ if [ -f "$PROBED_FLOOR_FILE" ]; then
     probed_floor=${probed_floor:-0}
 fi
 
+if [ "$probed_floor" -eq 0 ]; then
+    echo "FAIL: $NAME: probed floor is unseeded (uapi-shim-probed-floor.baseline contains 0)"
+    echo "FAIL: $NAME: seed it with a real observed probed count before enabling the ratchet"
+    exit 1
+fi
+
 tier1_floor=0
 if [ -f "$TIER1_FLOOR_FILE" ]; then
     tier1_floor=$(grep -oE '^[0-9]+' "$TIER1_FLOOR_FILE" | head -1 || true)
@@ -473,6 +479,11 @@ fi
 if [ "$tier1_floor" -eq 0 ]; then
     echo "FAIL: $NAME: tier-1 probed floor is unseeded (uapi-shim-tier1-probed-floor.baseline contains 0)"
     echo "FAIL: $NAME: seed it with a real observed Tier-1 probed count before enabling the ratchet"
+    exit 1
+fi
+
+if [ "$probed_floor" -lt "$tier1_floor" ]; then
+    echo "FAIL: $NAME: probed_floor ($probed_floor) < tier1_floor ($tier1_floor) — Tier-2 floor must be >= Tier-1 floor"
     exit 1
 fi
 
