@@ -63,7 +63,7 @@ the parent worker.  The fix is the in-grandchild suppression flag:
 
 ```c
 /* health/signals-fault-handler.c:516 */
-if (in_grandchild) {
+if (in_grandchild == getpid()) {
     /* skip fault_beacon stamp — this_child() points at parent's slot */
     ...
 }
@@ -82,9 +82,15 @@ static void my_worker(void)
 }
 ```
 
-This sets `in_grandchild` before any code that might call `this_child()` and
-ensures that per-process-state guards fire correctly even if the grandchild
-crashes synchronously.
+This stores `getpid()` into `in_grandchild` before any code that might call
+`this_child()` and ensures that per-process-state guards fire correctly even
+if the grandchild crashes synchronously.
+
+Note: `in_grandchild` is a `pid_t` (not `volatile sig_atomic_t`) storing the
+grandchild's PID.  The fault-handler guard tests `in_grandchild == getpid()`
+rather than a bare non-zero check, so that `clone(..., CLONE_VM | SIGCHLD, ...)`
+racers that write their own PID cannot poison the primary child's flag — each
+process's PID is unique even under `CLONE_VM`.
 
 ## Forward pointer
 

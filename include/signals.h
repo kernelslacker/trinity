@@ -2,6 +2,7 @@
 
 #include <setjmp.h>
 #include <signal.h>
+#include <unistd.h>
 
 extern volatile sig_atomic_t sigalrm_pending;
 extern volatile sig_atomic_t xcpu_pending;
@@ -25,9 +26,9 @@ extern volatile sig_atomic_t in_do_syscall;
  * fork()d grandchild body so the flag is set before any other code
  * runs in that process image.
  */
-extern volatile sig_atomic_t in_grandchild;
+extern pid_t in_grandchild;
 
-#define CHILDOP_GRANDCHILD_ENTER() do { in_grandchild = 1; } while (0)
+#define CHILDOP_GRANDCHILD_ENTER() do { in_grandchild = getpid(); } while (0)
 
 /*
  * Per-child recovery point for asb_relocate()'s best-effort source copy.
