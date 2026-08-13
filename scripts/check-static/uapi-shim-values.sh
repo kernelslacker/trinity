@@ -459,13 +459,13 @@ probed=$(wc -l < "$COMPILER_TABLE")
 # ---------------------------------------------------------------------------
 probed_floor=0
 if [ -f "$PROBED_FLOOR_FILE" ]; then
-    probed_floor=$(grep -oE '^[0-9]+' "$PROBED_FLOOR_FILE" | head -1 || echo 0)
+    probed_floor=$(grep -oE '^[0-9]+' "$PROBED_FLOOR_FILE" | head -1 || true)
     probed_floor=${probed_floor:-0}
 fi
 
 tier1_floor=0
 if [ -f "$TIER1_FLOOR_FILE" ]; then
-    tier1_floor=$(grep -oE '^[0-9]+' "$TIER1_FLOOR_FILE" | head -1 || echo 0)
+    tier1_floor=$(grep -oE '^[0-9]+' "$TIER1_FLOOR_FILE" | head -1 || true)
     tier1_floor=${tier1_floor:-0}
 fi
 

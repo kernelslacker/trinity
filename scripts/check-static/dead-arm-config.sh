@@ -53,7 +53,8 @@ elif [ -f "$FUZZ_KCONFIG" ]; then
 	# Content validation: a readable but near-empty file is not authoritative.
 	# A real fuzz-target .config has thousands of CONFIG_ lines; require at
 	# least 100 to guard against truncated, stale, or zombie-mount files.
-	_cfg_count=$(grep -c '^CONFIG_' "$FUZZ_KCONFIG" 2>/dev/null || echo 0)
+	_cfg_count=$(grep -c '^CONFIG_' "$FUZZ_KCONFIG" 2>/dev/null || true)
+	_cfg_count=${_cfg_count:-0}
 	if [ "$_cfg_count" -lt 100 ]; then
 		echo "WARN: $NAME: kconfig $FUZZ_KCONFIG contains only $_cfg_count CONFIG_" \
 		     "line(s) (expected >=100; truncated or stale file?);" \
