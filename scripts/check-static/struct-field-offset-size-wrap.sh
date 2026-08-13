@@ -47,14 +47,14 @@ hits_tmp="$(mktemp)"
 scan_tmp="$(mktemp)"
 trap 'rm -f "$hits_tmp" "$scan_tmp"' EXIT
 
-# Collect all .c / .h files under args/.
-find args/ \( -name '*.c' -o -name '*.h' \) -type f -print | sort > "$scan_tmp"
+# Collect all .c / .h files under args/ and cmp_hints/.
+find args/ cmp_hints/ \( -name '*.c' -o -name '*.h' \) -type f -print | sort > "$scan_tmp"
 
 # Fail-closed: assert at least one file was found.
 scanned="$(wc -l < "$scan_tmp" | tr -d ' ')"
 if [ "$scanned" -lt 1 ]; then
-	echo "FAIL: $NAME: no .c/.h files found under args/ -- directory moved or removed?" >&2
-	echo "FAIL: $NAME: scanned 0 files under args/ (expected >= 1)"
+	echo "FAIL: $NAME: no .c/.h files found under args/ cmp_hints/ -- directory moved or removed?" >&2
+	echo "FAIL: $NAME: scanned 0 files under args/ cmp_hints/ (expected >= 1)"
 	exit 1
 fi
 
@@ -108,16 +108,16 @@ n="$(wc -l < "$hits_tmp" | tr -d ' ')"
 
 if [ "$n" -gt 0 ]; then
 	{
-		echo "  $NAME: bare ->offset + arithmetic in args/ without widening cast."
+		echo "  $NAME: bare ->offset + arithmetic in args/ or cmp_hints/ without widening cast."
 		echo "  This pattern wraps in unsigned int when offset + field_size > UINT_MAX."
 		echo "  Use the non-wrapping form instead:"
 		echo "    if (f->offset > size || f->size > size - f->offset) continue;"
 		echo "  Offending site(s):"
 		sed 's/^/    /' "$hits_tmp"
 	} >&2
-	echo "FAIL: $NAME: $n bare ->offset+ arithmetic site(s) in args/ lacking widening cast"
+	echo "FAIL: $NAME: $n bare ->offset+ arithmetic site(s) in args/ cmp_hints/ lacking widening cast"
 	exit 1
 fi
 
-echo "PASS: $NAME: 0 bare ->offset+ arithmetic sites in args/ (scanned $scanned files)"
+echo "PASS: $NAME: 0 bare ->offset+ arithmetic sites in args/ cmp_hints/ (scanned $scanned files)"
 exit 0
