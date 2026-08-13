@@ -236,7 +236,7 @@ LINUS_SRC="$HOME/src/linux-linus"
 LINUS_UAPI="$LINUS_SRC/include/uapi"
 HDR_INSTALL=""
 SYMS_TIER2_GOOD="$WORKDIR/syms-tier2-good.txt"
-TIER2_STATUS="skipped: linus tree absent"
+TIER2_STATUS="not-needed"
 BUILD_SCRATCH=""
 touch "$SYMS_TIER2_GOOD"
 
@@ -273,6 +273,8 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
                 cp -a "$HDR_INSTALL/." "$LINUS_HDR_CACHE" 2>/dev/null || true
         fi
     fi
+elif [ ! -d "$LINUS_UAPI" ]; then
+    TIER2_STATUS="skipped: linus tree absent"
 fi
 
 if [ -n "$HDR_INSTALL" ] && [ -s "$SYMS_BAD" ]; then
