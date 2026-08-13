@@ -264,6 +264,7 @@ stats	object
     stats.iouring_recipes.partial	u64
     stats.iouring_recipes.enosys	u64
   stats.iouring_cmd_passthrough	object
+    stats.iouring_cmd_passthrough.nulldev_mshot_attempts	u64
     stats.iouring_cmd_passthrough.mshot_cmd_no_cqe	u64
     stats.iouring_cmd_passthrough.cqe_rejected	u64
     stats.iouring_cmd_passthrough.nulldev_cmd_rejected	u64

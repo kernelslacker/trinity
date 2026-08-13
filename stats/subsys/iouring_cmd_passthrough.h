@@ -3,6 +3,26 @@
 
 struct iouring_cmd_passthrough_stats {
 	/*
+	 * Denominator for the nulldev multishot oracle.  Incremented once
+	 * per variant_nulldev() invocation, after every precondition
+	 * (open, PROVIDE_BUFFERS, ring_submit_sqe) has succeeded and
+	 * immediately before the second ring_enter() call — i.e. only
+	 * when we are about to ask the kernel to schedule the multishot
+	 * URING_CMD.  Counts only plain IORING_URING_CMD_MULTISHOT draws;
+	 * IORING_URING_CMD_FIXED|MULTISHOT draws (which the kernel rejects
+	 * at prep before reaching uring_cmd_null) are excluded so the
+	 * ratio is unambiguous.
+	 *
+	 * The bug is confirmed when:
+	 *   mshot_cmd_no_cqe > 0 &&
+	 *   mshot_cmd_no_cqe == nulldev_mshot_attempts
+	 * (every oracle attempt failed — deterministic, not statistical).
+	 * A zero for both means the arm was never selected or an earlier
+	 * precondition failed; a zero for mshot_cmd_no_cqe alone with a
+	 * non-zero attempts means the kernel is behaving correctly.
+	 */
+	unsigned long nulldev_mshot_attempts;	/* plain-MULTISHOT draws that reached ring_enter */
+	/*
 	 * Outcome counter for IORING_OP_URING_CMD with
 	 * IORING_URING_CMD_MULTISHOT submitted to /dev/null.
 	 *
@@ -25,13 +45,11 @@ struct iouring_cmd_passthrough_stats {
 	/*
 	 * Nulldev URING_CMD rejection counter.  Incremented by
 	 * variant_nulldev() when the URING_CMD CQE arrives with a
-	 * negative result — the submission was rejected at prep time
-	 * (-EINVAL: unsupported flag combination; -EOPNOTSUPP: cmd_op not
-	 * handled) before reaching uring_cmd_null().  A non-zero count
-	 * here means the flag-rotation picker selected a combination that
-	 * did not survive io_uring_cmd_prep().
+	 * negative result and the draw used plain IORING_URING_CMD_MULTISHOT
+	 * — the submission was rejected at prep time (-EOPNOTSUPP: cmd_op
+	 * not handled) before reaching uring_cmd_null().
 	 */
-	unsigned long nulldev_cmd_rejected;	/* nulldev URING_CMD CQE returned errno */
+	unsigned long nulldev_cmd_rejected;	/* nulldev plain-MULTISHOT CQE returned errno */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_IOURING_CMD_PASSTHROUGH_H */

@@ -618,19 +618,33 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 		goto out;
 
 	/* URING_CMD to /dev/null with MULTISHOT + BUFFER_SELECT. */
+	{
+	__u32 cmd_flags = pick_uring_cmd_flags();
+
 	sqe_clear(&sqe);
 	sqe.opcode          = IORING_OP_URING_CMD;
 	sqe.fd              = null_fd;
 	sqe.cmd_op          = 0;	/* any cmd_op; uring_cmd_null handles all */
 	sqe.flags           = IOSQE_BUFFER_SELECT;
 	sqe.buf_group       = NULLDEV_PBUF_GROUP_ID;
-	sqe.uring_cmd_flags = pick_uring_cmd_flags();
+	sqe.uring_cmd_flags = cmd_flags;
 	sqe.user_data       = 0xc0d2;
 
 	if (!ring_submit_sqe(ctx, &sqe))
 		goto out;
 
 	(*direct_calls)++;
+
+	/* Count only plain-MULTISHOT draws as oracle attempts: FIXED|MULTISHOT
+	 * is rejected by io_uring_cmd_prep() before reaching uring_cmd_null,
+	 * so those draws never contribute to mshot_cmd_no_cqe.  The denominator
+	 * must exclude them so the ratio mshot_cmd_no_cqe/nulldev_mshot_attempts
+	 * is unambiguous and the dead-arm check is exact. */
+	if (valid_op && !(cmd_flags & IORING_URING_CMD_FIXED))
+		__atomic_add_fetch(
+			&shm->stats.iouring_cmd_passthrough.nulldev_mshot_attempts,
+			1, __ATOMIC_RELAXED);
+
 	/* Submit with min_complete=0: do not block.  A blocking wait with
 	 * min_complete=1 would hang forever on the bug path because the
 	 * req is pinned (IOU_ISSUE_SKIP_COMPLETE) and no CQE will arrive. */
@@ -666,6 +680,7 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 					1, __ATOMIC_RELAXED);
 		}
 	}
+	} /* end cmd_flags scope */
 out:
 	free(pbuf);
 	if (null_fd >= 0)
