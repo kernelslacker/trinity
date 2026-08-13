@@ -25,6 +25,13 @@
 #include "rnd.h"
 #include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
 
+#ifndef MCAST_EXCLUDE
+#define MCAST_EXCLUDE	0
+#endif
+#ifndef MCAST_INCLUDE
+#define MCAST_INCLUDE	1
+#endif
+
 /* Prototypes for external-linkage generators defined below.  Their
  * sibling declarations for the dispatcher live in net/netlink/msg-core.c;
  * these self-declarations satisfy -Wmissing-prototypes without
@@ -272,6 +279,88 @@ static size_t build_mdba_router_nested(unsigned char *p, size_t avail)
 }
 
 /*
+ * Count of successful MDBE_ATTR_SRC_LIST nest constructions.  Per
+ * Positive-control: if this stays 0 every RTM_*MDB that hit the src-list path
+ * returned -EINVAL from the kernel's nest parser, and the arm reads
+ * as a clean kernel rather than a real test.  Checked at report time.
+ */
+static unsigned long mdbe_src_list_built;
+
+/*
+ * Build a two-level MDBE_ATTR_SRC_LIST nest directly into buf[0..avail):
+ *
+ *   MDBE_ATTR_SRC_LIST  (NLA_F_NESTED)
+ *     MDBE_SRC_LIST_ENTRY  (NLA_F_NESTED)  × nsrcs
+ *       MDBE_SRCATTR_ADDRESS  4 bytes  (IPv4 in_addr, network byte order)
+ *
+ * Kernel policy: br_mdb_config_src_list_init() walks the outer nest
+ * with nla_for_each_nested(MDBE_SRC_LIST_ENTRY), then for each entry
+ * does nla_parse_nested(MDBE_SRCATTR_ADDRESS, NLA_BINARY [4,16]).
+ * A flat 8-byte payload is never a valid nest and causes -EINVAL on
+ * every draw that selects this attr, silently blocking src-list
+ * coverage.  vxlan_mdbe_attrs_pol uses the same wire shape.
+ *
+ * Returns total bytes written (aligned outer length), or 0 on failure.
+ * Bumps mdbe_src_list_built on success so callers can confirm the
+ * builder is reaching the kernel rather than bouncing at nla_parse.
+ *
+ * nsrcs must be >= 1.
+ */
+static size_t build_mdbe_src_list_into(unsigned char *p, size_t avail,
+					int nsrcs)
+{
+	/*
+	 * Per-entry layout:
+	 *   MDBE_SRC_LIST_ENTRY hdr (NLA_HDRLEN = 4)
+	 *     MDBE_SRCATTR_ADDRESS hdr (4) + IPv4 payload (4) = 8
+	 *   Total entry: 12 bytes; NLA_ALIGN(12) = 12
+	 * Outer layout:
+	 *   MDBE_ATTR_SRC_LIST hdr (4) + nsrcs × 12
+	 */
+	const size_t per_entry = NLA_ALIGN(NLA_HDRLEN + NLA_HDRLEN + 4);
+	const size_t inner_len = (size_t)nsrcs * per_entry;
+	const size_t total = NLA_HDRLEN + inner_len;
+	struct nlattr *outer;
+	size_t off;
+	int i;
+
+	if (total > avail)
+		return 0;
+
+	outer = (struct nlattr *)p;
+	outer->nla_type = MDBE_ATTR_SRC_LIST | NLA_F_NESTED;
+	outer->nla_len  = 0; /* fixed up below */
+	off = NLA_HDRLEN;
+
+	for (i = 0; i < nsrcs; i++) {
+		size_t entry_off = off;
+		struct nlattr *entry_nla = (struct nlattr *)(p + off);
+		struct nlattr *addr_nla;
+		__u32 src;
+
+		entry_nla->nla_type = MDBE_SRC_LIST_ENTRY | NLA_F_NESTED;
+		entry_nla->nla_len  = 0;
+		off += NLA_HDRLEN;
+
+		addr_nla = (struct nlattr *)(p + off);
+		addr_nla->nla_type = MDBE_SRCATTR_ADDRESS;
+		addr_nla->nla_len  = (__u16)(NLA_HDRLEN + 4);
+		off += NLA_HDRLEN;
+
+		/* Random unicast src addr; any unicast is valid here */
+		src = rand_ipv4();
+		memcpy(p + off, &src, 4);
+		off += NLA_ALIGN(4);
+
+		entry_nla->nla_len = (__u16)(off - entry_off);
+	}
+
+	outer->nla_len = (__u16)off;
+	mdbe_src_list_built++;
+	return off;
+}
+
+/*
  * Generate a structured payload for bridge multicast database
  * rtnetlink attributes.  Covers the RTM_*MDB message group (17).
  *
@@ -307,30 +396,35 @@ size_t gen_rta_mdba_payload(unsigned char *p, size_t avail,
 	case MDBA_ROUTER: /* aliases MDBA_SET_ENTRY_ATTRS / MDBA_GET_ENTRY_ATTRS (= 2) */
 		if (ONE_IN(4))
 			return build_mdba_router_nested(p, avail);
-		/* MDBE_ATTR_* chain that satisfies br_mdbe_attrs_pol --
-		 * random sub-attr payloads, valid type bytes; the per-attr
-		 * NLA_BINARY / NLA_U8 / NLA_NESTED policies will still
-		 * length-reject some sub-attrs, but the parse reaches the
-		 * inner walker instead of bouncing on the outer nlattr. */
+		/*
+		 * MDBE_ATTR_* chain for br_mdbe_attrs_pol and
+		 * vxlan_mdbe_attrs_pol (both consumers validate these attrs).
+		 *
+		 * MDBE_ATTR_SRC_LIST and MDBE_ATTR_GROUP_MODE are handled
+		 * separately:
+		 *
+		 *   SRC_LIST: NLA_NESTED two-level nest — build with
+		 *     build_mdbe_src_list_into().  A flat 8-byte payload
+		 *     is never a valid nest; br_mdb_config_src_list_init()
+		 *     rejects it with -EINVAL on every draw.
+		 *
+		 *   GROUP_MODE: NLA_POLICY_RANGE(NLA_U8, MCAST_EXCLUDE,
+		 *     MCAST_INCLUDE) = [0,1].  A random byte is rejected
+		 *     254 out of 256 times; pick from {0, 1} instead.
+		 *
+		 * Flat attrs widths (both consumers agree):
+		 *   SOURCE       NLA_BINARY [4,16]  use 4 (IPv4 in_addr)
+		 *   RTPROT       NLA_U8             1
+		 *   DST          NLA_BINARY [4,16]  use 4
+		 *   DST_PORT     NLA_U16            2
+		 *   VNI          NLA_U32            4
+		 *   IFINDEX      NLA_S32            4
+		 *   SRC_VNI      NLA_U32            4
+		 *   STATE_MASK   NLA_U8             1
+		 */
 		if (avail >= NLA_HDRLEN + 4) {
-			/*
-			 * MDBE_ATTR_* widths from br_mdbe_attrs_pol and
-			 * vxlan_mdbe_attrs_pol (both validate these attrs):
-			 *   SOURCE       NLA_BINARY [4,16] use 4 (IPv4 in_addr)
-			 *   SRC_LIST     NLA_NESTED         8
-			 *   GROUP_MODE   NLA_U8             1
-			 *   RTPROT       NLA_U8             1
-			 *   DST          NLA_BINARY [4,16] use 4
-			 *   DST_PORT     NLA_U16            2
-			 *   VNI          NLA_U32            4
-			 *   IFINDEX      NLA_S32            4
-			 *   SRC_VNI      NLA_U32            4
-			 *   STATE_MASK   NLA_U8             1
-			 */
-			static const struct nlattr_width mdbe_attrs[] = {
+			static const struct nlattr_width mdbe_flat_attrs[] = {
 				{ MDBE_ATTR_SOURCE,     4 },
-				{ MDBE_ATTR_SRC_LIST,   8 },
-				{ MDBE_ATTR_GROUP_MODE, 1 },
 				{ MDBE_ATTR_RTPROT,     1 },
 				{ MDBE_ATTR_DST,        4 },
 				{ MDBE_ATTR_DST_PORT,   2 },
@@ -339,8 +433,35 @@ size_t gen_rta_mdba_payload(unsigned char *p, size_t avail,
 				{ MDBE_ATTR_SRC_VNI,    4 },
 				{ MDBE_ATTR_STATE_MASK, 1 },
 			};
-			return build_nested_attrs(p, avail, mdbe_attrs,
-						  ARRAY_SIZE(mdbe_attrs), 0);
+			size_t off;
+			size_t cap = avail < 256 ? avail : 256;
+			struct nlattr *gm_nla;
+			__u8 gmode;
+			size_t sl;
+
+			/* Step 1: flat attrs via build_nested_attrs */
+			off = build_nested_attrs(p, cap, mdbe_flat_attrs,
+						 ARRAY_SIZE(mdbe_flat_attrs), 0);
+
+			/* Step 2: MDBE_ATTR_GROUP_MODE — pick from {0,1} */
+			if (off + NLA_ALIGN(NLA_HDRLEN + 1) <= cap) {
+				gm_nla = start_nlattr(p, off, cap,
+						      MDBE_ATTR_GROUP_MODE, 1);
+				if (gm_nla) {
+					gmode = (__u8)(rand32() & 1); /* 0=EXCLUDE 1=INCLUDE */
+					*(p + off + NLA_HDRLEN) = gmode;
+					off += NLA_ALIGN(NLA_HDRLEN + 1);
+				}
+			}
+
+			/* Step 3: MDBE_ATTR_SRC_LIST as proper two-level nest */
+			if (off < cap) {
+				sl = build_mdbe_src_list_into(p + off, cap - off,
+							      1 + (int)(rand32() & 1));
+				off += sl;
+			}
+
+			return off;
 		}
 		return 0;
 
