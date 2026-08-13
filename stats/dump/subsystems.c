@@ -419,7 +419,7 @@ static void dump_stats_dead_arm_check(void)
 				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_e", pr);
 		} else {
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "igmp-mld-source-churn/v4", "insufficient-samples");
+			       "igmp-mld-source-churn/v4", "insufficient_samples");
 		}
 
 		v6_draws =
@@ -438,7 +438,7 @@ static void dump_stats_dead_arm_check(void)
 				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_d", pr);
 		} else {
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "igmp-mld-source-churn/v6", "insufficient-samples");
+			       "igmp-mld-source-churn/v6", "insufficient_samples");
 		}
 	}
 
