@@ -481,17 +481,8 @@ case "$TIER2_STATUS" in
 esac
 
 if [ "$probed" -eq 0 ]; then
-    relevant_floor=0
-    case "$TIER2_STATUS" in
-    ran*)       relevant_floor="$probed_floor" ;;
-    not-needed) relevant_floor="$tier1_floor" ;;
-    esac
-    if [ "$relevant_floor" -gt 0 ]; then
-        echo "FAIL: $NAME: coverage ratchet: probed 0 < floor $relevant_floor (probe binary produced no output)"
-        exit 1
-    fi
-    echo "WARN: $NAME: probe binary produced no output; skipping"
-    exit 0
+    echo "FAIL: $NAME: coverage ratchet: probe binary produced no output (probed=0)"
+    exit 1
 fi
 # Two-floor coverage ratchet:
 #
