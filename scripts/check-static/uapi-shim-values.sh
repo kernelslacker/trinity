@@ -285,7 +285,7 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
         for _dir in scripts include/generated usr; do
             _abs="$LINUS_SRC/$_dir"
             [ -d "$_abs" ] || continue
-            _litter="${_litter}$(find "$_abs" -newer "$HDR_SENTINEL" 2>/dev/null)"
+            _litter="${_litter}${_litter:+$'\n'}$(find "$_abs" -newer "$HDR_SENTINEL" 2>/dev/null)"
         done
         if [ -n "$_litter" ]; then
             _shown=$(printf '%s\n' "$_litter" | head -20 | tr '\n' ' ')
