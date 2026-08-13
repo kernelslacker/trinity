@@ -359,7 +359,9 @@ void json_emit_dead_arms_section(void)
 	/* afxdp-churn: single XDP_COPY bind arm, floor = 5*1 = 5 draws.
 	 * Floor gates on runs (group opportunity count), not arm_entered_bind --
 	 * for a single-arm group arm_entered_bind==0 IS the dead state, so
-	 * gating on it is a tautology (always insufficient_samples, never dead). */
+	 * gating on it is a tautology (always insufficient_samples, never dead).
+	 * ran_no_effect: arm_entered_bind > 0 but arm_effective_bind == 0 --
+	 * the bind arm was reached but never produced detectable output. */
 	if (shm->stats.afxdp_churn.runs > 0) {
 		unsigned long runs = shm->stats.afxdp_churn.runs;
 		unsigned long ae = shm->stats.afxdp_churn.arm_entered_bind;
@@ -370,6 +372,10 @@ void json_emit_dead_arms_section(void)
 		else if (!ae)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
 						    ae, runs, "dead");
+		else if (!shm->stats.afxdp_churn.arm_effective_bind)
+			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
+						    ae, runs, "ran_no_effect");
+		/* else: ae >= 1, arm_effective_bind >= 1: fully live */
 	}
 
 	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm.
