@@ -331,6 +331,15 @@ update this section to match `ls scripts/check-static/*.sh`.)
   masquerading as kernel signal.  Anonymous / primitive allocations
   are skipped; genuine field-by-field-writes exceptions go on the
   `IGNORE` list with a justification.
+- `ioctls-archdoc-sanitiser-claims`: verify that `ioctls/CLAUDE.md` does
+  not falsely claim a file has zero custom sanitisers or no per-command
+  struct fillers when the file actually defines `sanitise_*` functions.
+  Seeded with `vfio.c` (17 definitions) and `iommufd.c` (21 definitions),
+  which previously carried false zero-sanitiser claims that propagated
+  verbatim into a 3-agent review finding against already-landed work.
+  Fail-closed: asserts the seed table is non-empty and that every seeded
+  file has at least one `sanitise_*` definition, so a renamed or emptied
+  file reads as FAIL rather than a silent vacuous PASS.
 - `json-separator-adjacency`: detect missing `putchar(',')` separators
   between adjacent `stat_category_emit_json()` calls within a function
   in `stats/json/*.c`.  A missing comma produces a malformed-JSON
