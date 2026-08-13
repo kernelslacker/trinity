@@ -374,6 +374,17 @@ static unsigned int qdisc_kind_idx(const char *name)
 	return NR_QDISC_KINDS;
 }
 
+static unsigned int cls_kind_idx(const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < NR_CLS_KINDS; i++) {
+		if (strcmp(cls_kinds[i], name) == 0)
+			return i;
+	}
+	return NR_CLS_KINDS;
+}
+
 /*
  * Build the deliberate peek-x-peek stack and drive it with a UDP
  * burst.  Uses the same BUDGETED+JITTER pattern as the standard
@@ -665,6 +676,128 @@ teardown:
 	}
 	(void)build_deltfilter(ctx, ifindex, handle);
 	(void)build_delqdisc(ctx, ifindex, handle, TC_H_ROOT);
+}
+
+/*
+ * Probe the cls_u32 hnode refcount leak on the u32_replace_hw_knode()
+ * error path.  Two unfixed bugs in net/sched/cls_u32.c:
+ *
+ *  Create path (:1193 errunbind:): u32_change() increments ht_down->refcnt
+ *  via u32_set_parms(:779) then hits -EOPNOTSUPP; errunbind: frees the
+ *  knode but never drops ht_down.  Hnode refcnt stuck at 2.
+ *
+ *  Update path (:942): erroneous refcount_inc(&ht_old->refcnt) under
+ *  `if (tb[TCA_U32_LINK])` with no matching dec.  Same stuck refcnt.
+ *
+ * Trigger is deterministic: TCA_CLS_FLAGS_SKIP_SW on a dummy device always
+ * fails u32_replace_hw_knode() with -EOPNOTSUPP (block->nooffloaddevcnt>0).
+ * tc_flags_valid() accepts SKIP_SW alone; only SKIP_HW|SKIP_SW is rejected.
+ *
+ * Oracle: RTM_DELTFILTER on the hnode handle.  refcount_dec_if_one() in
+ * u32_delete() returns -EBUSY when refcnt > 1 (cls_u32.c:686-691).
+ * Expected return 0; -EBUSY confirms the leak is live.
+ */
+static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
+{
+	/* hnode handles: htid encoded in top 12 bits of tcm_handle.
+	 * 0x80000000 = htid 0x800 (create-path test).
+	 * 0x10000000 = htid 0x100 (update-path test).
+	 * htid=0 is reserved; u32_change() rejects it. */
+	const __u32 hnode1 = 0x80000000U;
+	const __u32 hnode2 = 0x10000000U;
+	/* knode handle for the update-path test.  0x800 encodes
+	 * htid=0 (root chain) + keyid=0x800; root chain is initialised
+	 * when the u32 type is first used on this qdisc. */
+	const __u32 knode_h = 0x800U;
+	unsigned int u32_cidx;
+	__u32 major, qhandle;
+	int rc;
+
+	u32_cidx = cls_kind_idx("u32");
+	if (u32_cidx >= NR_CLS_KINDS || ns_unsupported_cls_kind[u32_cidx])
+		return;
+
+	modprobe_cls(u32_cidx);
+
+	/* Install a root prio qdisc to anchor the u32 filter chain. */
+	major = (__u32)((rand32() % 0xfee0U) + 0x10U);
+	qhandle = major << 16;
+	rc = build_newqdisc(ctx, ifindex, qhandle, TC_H_ROOT, "prio",
+			    NLM_F_CREATE | NLM_F_EXCL);
+	if (rc != 0)
+		return;
+
+	/* --- Create-path leak test --- */
+
+	/* Step 1: RTM_NEWTFILTER u32 DIVISOR=1 creates hnode1.
+	 * u32_change() allocates tc_u_hnode, refcnt initialised to 1. */
+	rc = build_u32_divisor(ctx, ifindex, hnode1, qhandle);
+	if (rc == 0) {
+		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.u32_divisor_create_ok,
+				   1, __ATOMIC_RELAXED);
+
+		/* Step 2: RTM_NEWTFILTER u32 SEL+LINK+SKIP_SW.
+		 * u32_set_parms() increments hnode1->refcnt to 2.
+		 * u32_replace_hw_knode() hits -EOPNOTSUPP on dummy.
+		 * errunbind: frees knode but never drops hnode1->refcnt.
+		 * Intentional -EOPNOTSUPP; bump ok counter on that result. */
+		rc = build_u32_filter_link(ctx, ifindex, 0, qhandle, hnode1,
+					   TCA_CLS_FLAGS_SKIP_SW, true);
+		if (rc == -EOPNOTSUPP)
+			__atomic_add_fetch(
+				&shm->stats.tc_qdisc_churn.u32_link_skip_sw_ok,
+				1, __ATOMIC_RELAXED);
+
+		/* Step 3 (oracle): RTM_DELTFILTER on hnode1.
+		 * Expected: 0 (refcnt drops to 0, hnode freed).
+		 * -EBUSY: refcnt stuck at 2, leak confirmed. */
+		if (build_deltfilter_handle(ctx, ifindex, hnode1, qhandle)
+		    == -EBUSY)
+			__atomic_add_fetch(
+				&shm->stats.tc_qdisc_churn.u32_link_leak_detected,
+				1, __ATOMIC_RELAXED);
+	}
+
+	/* --- Update-path leak test --- */
+
+	/* Create second hnode (htid=0x100) for the update-path variant.
+	 * cls_u32.c:942 does an erroneous refcount_inc(&ht_old->refcnt)
+	 * when TCA_U32_LINK is present, with no matching dec, then hits
+	 * -EOPNOTSUPP on the hw path. */
+	rc = build_u32_divisor(ctx, ifindex, hnode2, qhandle);
+	if (rc == 0) {
+		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.u32_divisor_create_ok,
+				   1, __ATOMIC_RELAXED);
+
+		/* Create knode (explicit handle, no SKIP_SW) linking to hnode2;
+		 * hnode2->refcnt becomes 2.  Then re-issue same handle WITH
+		 * SKIP_SW so u32_change takes the update path at :938 and
+		 * hits the erroneous refcount_inc at :942. */
+		rc = build_u32_filter_link(ctx, ifindex, knode_h, qhandle, hnode2,
+					   0, true);
+		if (rc == 0) {
+			rc = build_u32_filter_link(ctx, ifindex, knode_h, qhandle,
+						   hnode2, TCA_CLS_FLAGS_SKIP_SW,
+						   false);
+			if (rc == -EOPNOTSUPP)
+				__atomic_add_fetch(
+					&shm->stats.tc_qdisc_churn.u32_link_skip_sw_ok,
+					1, __ATOMIC_RELAXED);
+
+			/* Oracle on hnode2: -EBUSY = update-path leak. */
+			if (build_deltfilter_handle(ctx, ifindex, hnode2, qhandle)
+			    == -EBUSY)
+				__atomic_add_fetch(
+					&shm->stats.tc_qdisc_churn.u32_link_leak_detected,
+					1, __ATOMIC_RELAXED);
+		}
+	}
+
+	/* Teardown: bulk-delete filters then remove the qdisc.  The netns
+	 * exit cascade would clean up anyway; explicit teardown keeps
+	 * the stats counters meaningful. */
+	(void)build_deltfilter(ctx, ifindex, qhandle);
+	(void)build_delqdisc(ctx, ifindex, qhandle, TC_H_ROOT);
 }
 
 /*
@@ -1153,6 +1286,18 @@ static int tc_qdisc_churn_in_ns(void *arg)
 	if (ONE_IN(4)) {
 		do_qfq_traffic_churn(&it->nl, it->dummy_idx, it->dummy_name,
 				     &it->direct_calls);
+		goto out;
+	}
+
+	/*
+	 * One iteration in four (of the remaining) probes the cls_u32
+	 * hnode refcount leak on the u32_replace_hw_knode() error path.
+	 * TCA_CLS_FLAGS_SKIP_SW on a dummy device deterministically
+	 * returns -EOPNOTSUPP; the oracle is RTM_DELTFILTER on the
+	 * hnode returning -EBUSY (refcnt stuck > 1) instead of 0.
+	 */
+	if (ONE_IN(4)) {
+		do_u32_skip_sw_leak(&it->nl, it->dummy_idx);
 		goto out;
 	}
 

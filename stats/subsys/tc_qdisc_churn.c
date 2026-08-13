@@ -23,6 +23,9 @@ static const struct stat_field tc_qdisc_churn_fields[] = {
 	STAT_FIELD_SUB(tc_qdisc_churn, qfq_traffic_runs),
 	STAT_FIELD_SUB(tc_qdisc_churn, qfq_traffic_burst_ok),
 	STAT_FIELD_SUB(tc_qdisc_churn, qfq_traffic_change_ok),
+	STAT_FIELD_SUB(tc_qdisc_churn, u32_divisor_create_ok),
+	STAT_FIELD_SUB(tc_qdisc_churn, u32_link_skip_sw_ok),
+	STAT_FIELD_SUB(tc_qdisc_churn, u32_link_leak_detected),
 };
 
 const struct stat_category tc_qdisc_churn_category =

@@ -593,6 +593,9 @@ stats	object
     stats.tc_qdisc_churn.qfq_traffic_runs	u64
     stats.tc_qdisc_churn.qfq_traffic_burst_ok	u64
     stats.tc_qdisc_churn.qfq_traffic_change_ok	u64
+    stats.tc_qdisc_churn.u32_divisor_create_ok	u64
+    stats.tc_qdisc_churn.u32_link_skip_sw_ok	u64
+    stats.tc_qdisc_churn.u32_link_leak_detected	u64
   stats.tc_mirred_blockcast	object
     stats.tc_mirred_blockcast.runs	u64
     stats.tc_mirred_blockcast.setup_failed	u64

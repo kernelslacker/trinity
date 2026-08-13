@@ -24,6 +24,9 @@ struct tc_qdisc_churn_stats {
 	unsigned long qfq_traffic_runs;		/* qfq singleton-aggregate change/enqueue race lane fired */
 	unsigned long qfq_traffic_burst_ok;	/* loopback UDP sendto on qfq tree returned >0 */
 	unsigned long qfq_traffic_change_ok;	/* RTM_NEWTCLASS change accepted (qfq_change_class ran) */
+	unsigned long u32_divisor_create_ok;	/* RTM_NEWTFILTER u32 DIVISOR hnode created */
+	unsigned long u32_link_skip_sw_ok;	/* RTM_NEWTFILTER u32 LINK+SKIP_SW hit -EOPNOTSUPP (intentional) */
+	unsigned long u32_link_leak_detected;	/* RTM_DELTFILTER hnode returned -EBUSY: refcount leak confirmed */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_TC_QDISC_CHURN_H */

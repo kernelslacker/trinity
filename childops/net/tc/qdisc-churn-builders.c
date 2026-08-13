@@ -469,6 +469,129 @@ int build_newqdisc_opts(struct nl_ctx *ctx, int ifindex, __u32 handle,
  * TCA_QFQ_LMAX attribute so the kernel keeps the class's current
  * lmax (peek-stack caller doesn't care about the exact value).
  */
+int build_u32_divisor(struct nl_ctx *ctx, int ifindex, __u32 handle,
+		      __u32 parent)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	size_t off, opts_off;
+	__u32 divisor = 1;
+	__u32 info = ((__u32)1U << 16) | (__u32)htons(ETH_P_ALL);
+
+	memset(buf, 0, sizeof(buf));
+	off = tcmsg_hdr(ctx, buf, RTM_NEWTFILTER, NLM_F_CREATE | NLM_F_EXCL,
+			ifindex, handle, parent, info);
+
+	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, "u32");
+	if (!off)
+		return -EIO;
+
+	opts_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_OPTIONS);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf), TCA_U32_DIVISOR, divisor);
+	if (!off)
+		return -EIO;
+	nla_nest_end(buf, opts_off, off);
+
+	tcmsg_finalize(buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
+}
+
+/*
+ * RTM_NEWTFILTER kind="u32" with TCA_U32_SEL (minimal 1-key, match-all),
+ * TCA_U32_LINK=link_handle, and TCA_U32_FLAGS=flags inside TCA_OPTIONS.
+ *
+ * The selector is mandatory (u32_change:1097) and is policy-checked for
+ * min_len = sizeof(struct tc_u32_sel).  We send the 16 B header with
+ * nkeys=1 at byte offset 2, followed by one zeroed struct tc_u32_key
+ * (16 B, mask=0/val=0 = match-all), for a total of 32 B.
+ *
+ * use_excl=true  -> NLM_F_CREATE|NLM_F_EXCL (create new knode)
+ * use_excl=false -> NLM_F_CREATE only        (update if handle exists)
+ *
+ * With TCA_CLS_FLAGS_SKIP_SW on a dummy/veth device the hw-offload path
+ * returns -EOPNOTSUPP.  The create-path error unwind (cls_u32.c:1193)
+ * frees the knode but never drops n->ht_down; the update path (:942)
+ * carries an erroneous refcount_inc with no matching dec.  Both leave
+ * hnode refcnt > 1, detectable via RTM_DELTFILTER -> -EBUSY.
+ */
+int build_u32_filter_link(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			  __u32 parent, __u32 link_handle, __u32 flags,
+			  bool use_excl)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	/* Selector buffer: tc_u32_sel header (16 B) + one tc_u32_key (16 B).
+	 * All fields zero-initialised; nkeys=1 at byte offset 2 tells the
+	 * kernel one key follows.  mask=0/val=0 matches every packet.
+	 * Byte layout: flags[0] offshift[1] nkeys[2] pad[3] offmask[4-5]
+	 * off[6-7] offoff[8-9] hoff[10-11] hmask[12-15] key[16-31]. */
+#if __has_include(<linux/pkt_cls.h>)
+	unsigned char sel_buf[sizeof(struct tc_u32_sel) +
+			       sizeof(struct tc_u32_key)];
+#else
+	unsigned char sel_buf[32]; /* tc_u32_sel(16 B) + tc_u32_key(16 B) */
+#endif
+	size_t off, opts_off;
+	__u16 extra_flags;
+	__u32 info = ((__u32)1U << 16) | (__u32)htons(ETH_P_ALL);
+
+	extra_flags = (__u16)(NLM_F_CREATE | (use_excl ? NLM_F_EXCL : 0));
+
+	memset(sel_buf, 0, sizeof(sel_buf));
+	sel_buf[2] = 1; /* nkeys = 1 */
+
+	memset(buf, 0, sizeof(buf));
+	off = tcmsg_hdr(ctx, buf, RTM_NEWTFILTER, extra_flags,
+			ifindex, handle, parent, info);
+
+	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, "u32");
+	if (!off)
+		return -EIO;
+
+	opts_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_OPTIONS);
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), TCA_U32_SEL, sel_buf, sizeof(sel_buf));
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf), TCA_U32_LINK, link_handle);
+	if (!off)
+		return -EIO;
+	if (flags) {
+		off = nla_put_u32(buf, off, sizeof(buf), TCA_U32_FLAGS, flags);
+		if (!off)
+			return -EIO;
+	}
+	nla_nest_end(buf, opts_off, off);
+
+	tcmsg_finalize(buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
+}
+
+/*
+ * RTM_DELTFILTER targeting a specific handle.  Unlike build_deltfilter()
+ * which uses handle=0 (bulk-delete-all on parent), this targets a single
+ * filter by tcm_handle.  If hnode refcnt is stuck > 1 by the leak, the
+ * kernel returns -EBUSY (cls_u32.c:686-691); expected result is 0.
+ */
+int build_deltfilter_handle(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			    __u32 parent)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	__u32 info = ((__u32)1U << 16) | (__u32)htons(ETH_P_ALL);
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	off = tcmsg_hdr(ctx, buf, RTM_DELTFILTER, 0, ifindex, handle, parent, info);
+	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, "u32");
+	if (!off)
+		return -EIO;
+	tcmsg_finalize(buf, off);
+	return nl_send_recv(ctx, buf, off);
+}
+
 int build_qfq_class(struct nl_ctx *ctx, int ifindex, __u32 handle,
 		    __u32 parent, __u32 weight, __u32 lmax,
 		    __u16 extra_flags)

@@ -68,6 +68,28 @@
 #define TCA_OPTIONS		2
 #endif
 
+/* cls_u32 TCA_OPTIONS attribute IDs (kernel UAPI; stable). */
+#ifndef TCA_U32_UNSPEC
+#define TCA_U32_UNSPEC		0
+#define TCA_U32_CLASSID		1
+#define TCA_U32_HASH		2
+#define TCA_U32_LINK		3
+#define TCA_U32_DIVISOR		4
+#define TCA_U32_SEL		5
+#define TCA_U32_POLICE		6
+#define TCA_U32_ACT		7
+#define TCA_U32_INDEV		8
+#define TCA_U32_PCNT		9
+#define TCA_U32_MARK		10
+#define TCA_U32_FLAGS		11
+#endif
+
+/* cls filter flags (kernel UAPI; stable).  SKIP_SW alone is valid;
+ * only SKIP_HW|SKIP_SW together is rejected by tc_flags_valid(). */
+#ifndef TCA_CLS_FLAGS_SKIP_SW
+#define TCA_CLS_FLAGS_SKIP_SW	(1 << 1)
+#endif
+
 /* sch_qfq per-class TCA_OPTIONS attribute IDs (kernel UAPI; stable). */
 #ifndef TCA_QFQ_WEIGHT
 #define TCA_QFQ_WEIGHT		1
@@ -129,5 +151,23 @@ int build_qfq_class(struct nl_ctx *ctx, int ifindex, __u32 handle,
 		    __u16 extra_flags);
 size_t encode_red_opts(unsigned char *buf, size_t cap);
 size_t encode_tbf_opts(unsigned char *buf, size_t cap);
+
+/*
+ * u32 filter builders for the SKIP_SW refcount-leak oracle arm.
+ * build_u32_divisor: RTM_NEWTFILTER kind="u32", TCA_OPTIONS{ TCA_U32_DIVISOR=1 }
+ *   creates an hnode with the given handle (htid encoded in top 12 bits).
+ * build_u32_filter_link: RTM_NEWTFILTER kind="u32",
+ *   TCA_OPTIONS{ TCA_U32_SEL=<minimal 1-key sel>, TCA_U32_LINK=link_handle,
+ *   TCA_U32_FLAGS=flags }.  use_excl controls NLM_F_EXCL.
+ * build_deltfilter_handle: RTM_DELTFILTER targeting a specific handle
+ *   (rather than the bulk-delete-all form of build_deltfilter).
+ */
+int build_u32_divisor(struct nl_ctx *ctx, int ifindex, __u32 handle,
+		      __u32 parent);
+int build_u32_filter_link(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			  __u32 parent, __u32 link_handle, __u32 flags,
+			  bool use_excl);
+int build_deltfilter_handle(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			    __u32 parent);
 
 #endif /* CHILDOPS_TC_QDISC_CHURN_INTERNAL_H */
