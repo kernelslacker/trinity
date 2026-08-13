@@ -511,6 +511,10 @@ not-needed)
 "skipped: linus tree absent")
     echo "  $NAME: coverage ratchet skipped (tier2=$TIER2_STATUS; probed $probed is Tier-1 only)" >&2
     ;;
+*)
+    echo "FAIL: $NAME: unknown TIER2_STATUS '$TIER2_STATUS'"
+    exit 1
+    ;;
 esac
 
 # ---------------------------------------------------------------------------
