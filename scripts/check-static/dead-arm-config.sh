@@ -89,8 +89,16 @@ malformed_rows=""
 
 while IFS=$'\t' read -r cfile src sym display; do
 	[ -n "$cfile" ] || continue
-	# skip comment rows; map_entries grep also excludes them so the partition holds
-	[[ "$cfile" == \#* ]] && continue
+	# skip comment rows; regex matches map_entries grep so the partition holds
+	[[ "$cfile" =~ ^[[:space:]]*# ]] && continue
+
+	# validate row: sym must be non-empty (3-field row or explicit blank field)
+	if [ -z "$sym" ]; then
+		echo "  $NAME: malformed row (empty sym field): cfile='$cfile' src='$src'" >&2
+		malformed_count=$((malformed_count + 1))
+		malformed_rows="${malformed_rows:+$malformed_rows, }$cfile"
+		continue
+	fi
 
 	case "$src" in
 	trinity)
