@@ -92,6 +92,14 @@ while IFS=$'\t' read -r cfile src sym display; do
 	# skip comment rows; regex matches map_entries grep so the partition holds
 	[[ "$cfile" =~ ^[[:space:]]*# ]] && continue
 
+	# validate row: 5+ fields -- surplus absorbed into display as embedded tab
+	if [[ "$display" == *$'\t'* ]]; then
+		echo "  $NAME: malformed row (too many fields): cfile='$cfile'" >&2
+		malformed_count=$((malformed_count + 1))
+		malformed_rows="${malformed_rows:+$malformed_rows, }$cfile"
+		continue
+	fi
+
 	# validate row: sym must be non-empty (3-field row or explicit blank field)
 	if [ -z "$sym" ]; then
 		echo "  $NAME: malformed row (empty sym field): cfile='$cfile' src='$src'" >&2
