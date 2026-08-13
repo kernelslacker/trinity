@@ -380,12 +380,14 @@ void json_emit_dead_arms_section(void)
 
 	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm.
 	 * Gate on msg_kind_draws (grammar pick_msg_kind() call count) to match
-	 * the text emitter in stats/dump/subsystems.c. Floor: 200 draws. */
-	if (shm->stats.xfrm_churn.msg_kind_draws > 0) {
+	 * the text emitter in stats/dump/subsystems.c. Floor: 300 draws.
+	 * No zero-guard: draws==0 falls into draws<300 and emits
+	 * insufficient_samples, matching the text emitter behaviour. */
+	{
 		unsigned long draws = shm->stats.xfrm_churn.msg_kind_draws;
 		unsigned long ae = shm->stats.xfrm_churn.arm_entered_migrate_state;
 
-		if (draws < 200)
+		if (draws < 300)
 			json_emit_dead_arms_element(&first, "xfrm-churn", "migrate_state",
 						    ae, draws, "insufficient_samples");
 		else if (!ae)
