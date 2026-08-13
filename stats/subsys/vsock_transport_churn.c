@@ -14,6 +14,8 @@ static const struct stat_field vsock_transport_churn_fields[] = {
 	STAT_FIELD_SUB(vsock_transport_churn, seq_eom_sends_ok),
 	STAT_FIELD_SUB(vsock_transport_churn, seq_eom_sends_failed),
 	STAT_FIELD_SUB(vsock_transport_churn, seq_eom_skipped),
+	STAT_FIELD_SUB(vsock_transport_churn, vsock_reconnect_attempted),
+	STAT_FIELD_SUB(vsock_transport_churn, vsock_reconnect_while_closing),
 };
 
 const struct stat_category vsock_transport_churn_category =

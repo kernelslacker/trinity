@@ -105,6 +105,8 @@ static void mark_ns_unsupported_vsock_transport_churn(void)
 #define VS_SEQ_EOM_GATE			8U
 #define VS_SEQ_EOM_BURST_MIN		4U
 #define VS_SEQ_EOM_BURST_RANGE		5U	/* 4..8 inclusive */
+#define VS_RECONNECT_TRIES		4U	/* inner re-connect iterations per arm invocation */
+#define VS_RECONNECT_GATE		4U	/* ONE_IN gate: ~25 % of outer iterations */
 
 static void apply_timeouts(int s, unsigned long *direct_calls)
 {
@@ -608,6 +610,150 @@ out:
 	}
 }
 
+/*
+ * vsock_connect double-insert from reconnect-while-CLOSING race.
+ *
+ * vsock_connect() tests sk->sk_state == TCP_ESTABLISHED *after*
+ * schedule_timeout() returns.  A peer RST arriving in that window moves
+ * the socket to TCP_CLOSING without removing it from vsock_connected_table.
+ * connect() then resets to TCP_CLOSE -- still on the table.  Reconnecting
+ * to the same address calls __vsock_insert_connected() on a still-linked
+ * hlist node, which is a hard BUG() under CONFIG_DEBUG_LIST=y.
+ *
+ * Arm: listener accepts and immediately RST-closes the child socket; client
+ * reconnects the same fd to the same address while the RST may still be
+ * in-flight (genuine timing race).  vsock_reconnect_attempted counts every
+ * attempt; vsock_reconnect_while_closing counts the subset where SO_ERROR
+ * returned ECONNRESET before the re-connect call (RST arrived in the race
+ * window).  If DEBUG_LIST fires the BUG the kernel crashes -- that is the
+ * oracle; no userspace catch is needed or attempted.
+ *
+ * Brick-safety: VMADDR_CID_LOCAL only, never VMADDR_CID_HOST.
+ */
+static void iter_reconnect_while_closing(const struct timespec *t_outer,
+					 unsigned long *direct_calls)
+{
+	int listener = -1, cli = -1, child_srv = -1;
+	struct sockaddr_vm addr;
+	socklen_t slen = sizeof(addr);
+	unsigned int i;
+
+	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+		return;
+
+	/* Open listener bound to VMADDR_CID_LOCAL. */
+	(*direct_calls)++;
+	listener = socket(AF_VSOCK, SOCK_STREAM, 0);
+	if (listener < 0)
+		goto out;
+
+	memset(&addr, 0, sizeof(addr));
+	addr.svm_family = AF_VSOCK;
+	addr.svm_cid = VMADDR_CID_LOCAL;
+	addr.svm_port = VMADDR_PORT_ANY;
+
+	(*direct_calls)++;
+	if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+		goto out;
+
+	(*direct_calls)++;
+	if (getsockname(listener, (struct sockaddr *)&addr, &slen) < 0)
+		goto out;
+
+	(*direct_calls)++;
+	if (listen(listener, 8) < 0)
+		goto out;
+
+	/* Open client socket with the standard 100 ms timeouts. */
+	(*direct_calls)++;
+	cli = socket(AF_VSOCK, SOCK_STREAM, 0);
+	if (cli < 0)
+		goto out;
+	apply_timeouts(cli, direct_calls);
+
+	/* First blocking connect: cli reaches TCP_ESTABLISHED. */
+	(*direct_calls)++;
+	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+		goto out;
+
+	/* Accept and immediately RST: the RST is injected into cli's receive
+	 * path as close as possible behind the ESTABLISHED wakeup that
+	 * connect() just returned from. */
+	(*direct_calls)++;
+	child_srv = accept(listener, NULL, NULL);
+	if (child_srv >= 0) {
+		(*direct_calls)++;
+		(void)shutdown(child_srv, SHUT_RDWR);
+		(*direct_calls)++;
+		close(child_srv);
+		child_srv = -1;
+	}
+
+	/* Reconnect loop.  Each iteration shuts down the client socket and
+	 * reconnects on the SAME fd to the SAME address.  The bug path:
+	 * vsock_connect() resets the socket to TCP_CLOSE without removing it
+	 * from vsock_connected_table; the subsequent __vsock_insert_connected()
+	 * call is a hlist double-add, a hard BUG() under CONFIG_DEBUG_LIST=y. */
+	for (i = 0; i < VS_RECONNECT_TRIES; i++) {
+		int so_err = 0;
+		socklen_t elen = sizeof(so_err);
+
+		if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+			break;
+
+		/* Check whether the RST arrived while we were in the race window.
+		 * SO_ERROR == ECONNRESET means sk_state moved through TCP_CLOSING;
+		 * this is the observable half of the timing race. */
+		(*direct_calls)++;
+		if (getsockopt(cli, SOL_SOCKET, SO_ERROR,
+			       &so_err, &elen) == 0 && so_err == ECONNRESET)
+			__atomic_add_fetch(
+				&shm->stats.vsock_transport_churn.vsock_reconnect_while_closing,
+				1, __ATOMIC_RELAXED);
+
+		/* shutdown(SHUT_RDWR) is required before reconnecting -- clears
+		 * SOCK_DONE; mirrors what iter_one's teardown path does. */
+		(*direct_calls)++;
+		(void)shutdown(cli, SHUT_RDWR);
+
+		__atomic_add_fetch(
+			&shm->stats.vsock_transport_churn.vsock_reconnect_attempted,
+			1, __ATOMIC_RELAXED);
+
+		/* Reconnect to the SAME address on the SAME fd.  Under the bug,
+		 * the socket is still in vsock_connected_table; this call fires
+		 * __vsock_insert_connected() on an already-linked node. */
+		(*direct_calls)++;
+		(void)connect(cli, (struct sockaddr *)&addr, sizeof(addr));
+
+		/* Accept and immediately RST the new child (if connect succeeded)
+		 * to keep the race window open for the next iteration. */
+		(*direct_calls)++;
+		child_srv = accept(listener, NULL, NULL);
+		if (child_srv >= 0) {
+			(*direct_calls)++;
+			(void)shutdown(child_srv, SHUT_RDWR);
+			(*direct_calls)++;
+			close(child_srv);
+			child_srv = -1;
+		}
+	}
+
+out:
+	if (child_srv >= 0) {
+		(*direct_calls)++;
+		close(child_srv);
+	}
+	if (cli >= 0) {
+		(*direct_calls)++;
+		close(cli);
+	}
+	if (listener >= 0) {
+		(*direct_calls)++;
+		close(listener);
+	}
+}
+
 bool vsock_transport_churn(struct childdata *child)
 {
 	struct timespec t_outer;
@@ -672,6 +818,9 @@ bool vsock_transport_churn(struct childdata *child)
 
 		if (ONE_IN(VS_SEQ_EOM_GATE))
 			iter_seq_eom_burst(&t_outer, &direct_calls);
+
+		if (ONE_IN(VS_RECONNECT_GATE))
+			iter_reconnect_while_closing(&t_outer, &direct_calls);
 	}
 
 	if (valid_op)

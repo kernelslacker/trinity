@@ -1617,6 +1617,8 @@ stats	object
     stats.vsock_transport_churn.seq_eom_sends_ok	u64
     stats.vsock_transport_churn.seq_eom_sends_failed	u64
     stats.vsock_transport_churn.seq_eom_skipped	u64
+    stats.vsock_transport_churn.vsock_reconnect_attempted	u64
+    stats.vsock_transport_churn.vsock_reconnect_while_closing	u64
   stats.psp_key_rotate	object
     stats.psp_key_rotate.runs	u64
     stats.psp_key_rotate.setup_failed	u64

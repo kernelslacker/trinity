@@ -15,6 +15,9 @@ struct vsock_transport_churn_stats {
 	unsigned long seq_eom_sends_ok;			/* sendmsg(MSG_EOR, iov_len=0) returned >= 0 */
 	unsigned long seq_eom_sends_failed;		/* sendmsg(MSG_EOR, iov_len=0) returned < 0 */
 	unsigned long seq_eom_skipped;			/* sub-mode gated out: no socket / unsupported / wall-cap */
+	/* vsock_connect double-insert: reconnect-while-CLOSING race counters */
+	unsigned long vsock_reconnect_attempted;	/* re-connect call issued on the same fd */
+	unsigned long vsock_reconnect_while_closing;	/* SO_ERROR==ECONNRESET detected before re-connect (RST arrived in race window) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_VSOCK_TRANSPORT_CHURN_H */
