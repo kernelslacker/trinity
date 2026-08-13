@@ -88,26 +88,28 @@ skip_count=0
 malformed_count=0
 malformed_rows=""
 
+# Pre-validate mapping: every real row must have exactly 4 tab-separated fields.
+# awk -F'\t' does not collapse adjacent tabs, so empty interior fields (which
+# IFS=$'\t' read would silently shift away) are correctly detected here.  This
+# also subsumes the former >=5-field check added in fe7dc0433804.
+_map_bad=$(printf '%s\n' "$MAPPING" | \
+	awk -F'\t' '
+		/^[[:space:]]*#/ { next }
+		/^[[:space:]]*$/ { next }
+		NF != 4 || $1=="" || $2=="" || $3=="" || $4=="" {
+			printf "  %s: malformed row (NF=%d, expected 4 non-empty tab-separated fields): %s\n", name, NF, $0
+		}
+	' name="$NAME")
+if [ -n "$_map_bad" ]; then
+	printf '%s\n' "$_map_bad" >&2
+	echo "FAIL: $NAME: mapping table has rows with wrong field count (expected exactly 4 tab-separated fields)"
+	exit 1
+fi
+
 while IFS=$'\t' read -r cfile src sym display; do
 	[ -n "$cfile" ] || continue
 	# skip comment rows; regex matches map_entries grep so the partition holds
 	[[ "$cfile" =~ ^[[:space:]]*# ]] && continue
-
-	# validate row: 5+ fields -- surplus absorbed into display as embedded tab
-	if [[ "$display" == *$'\t'* ]]; then
-		echo "  $NAME: malformed row (too many fields): cfile='$cfile'" >&2
-		malformed_count=$((malformed_count + 1))
-		malformed_rows="${malformed_rows:+$malformed_rows, }$cfile"
-		continue
-	fi
-
-	# validate row: sym must be non-empty (3-field row or explicit blank field)
-	if [ -z "$sym" ]; then
-		echo "  $NAME: malformed row (empty sym field): cfile='$cfile' src='$src'" >&2
-		malformed_count=$((malformed_count + 1))
-		malformed_rows="${malformed_rows:+$malformed_rows, }$cfile"
-		continue
-	fi
 
 	case "$src" in
 	trinity)
@@ -151,7 +153,7 @@ fi
 # ---- Malformed entries → hard FAIL ----
 if [ "$malformed_count" -gt 0 ]; then
 	echo "FAIL: $NAME: $malformed_count malformed mapping entry/entries" \
-	     "(unknown source field): $malformed_rows"
+	     "(unknown config-source field): $malformed_rows"
 	exit 1
 fi
 
