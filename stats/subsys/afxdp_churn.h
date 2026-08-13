@@ -29,6 +29,24 @@ struct afxdp_churn_stats {
 	unsigned long tx_md_bind_failed;		/* UMEM_REG with tx_metadata_len rejected; latched off, retried without */
 	unsigned long tailroom_iters;			/* tailroom-probe TX desc sent (near-full-chunk len + AF_PACKET tap) */
 
+	/* Runtime cap-denied probe counter (access-after-cap-drop class).
+	 *
+	 * setup_failed_cap_denied is incremented in two places:
+	 *   (a) in afxdp_iter_setup_umem() when socket(AF_XDP) returns
+	 *       EPERM or EACCES -- these indicate the fuzz user lacks
+	 *       CAP_NET_RAW or is blocked by seccomp/LSM, as distinct from
+	 *       EAFNOSUPPORT/EPROTONOSUPPORT which means AF_XDP is absent
+	 *       from the kernel build;
+	 *   (b) in the early-bail path of afxdp_churn() when
+	 *       ns_cap_denied_afxdp is already latched.
+	 *
+	 * When setup_failed_cap_denied == runs the arm is cap-dead:
+	 * CONFIG_XDP_SOCKETS is compiled in (socket() finds the protocol)
+	 * but the fuzz user's capability set prevents socket creation.
+	 * dump_stats_dead_arm_check() emits RUNTIME_DEAD_ARM for this case,
+	 * distinct from UNSUPPORTED_ARM (AF_XDP not in kernel). */
+	unsigned long setup_failed_cap_denied;
+
 	/* Per-arm entry tally for dead-arm detection.  Bumped at the top
 	 * of the XDP_COPY bind arm (the memset+sxdp+bind block in
 	 * afxdp_iter_bind()) before the bind() retry loop, independent

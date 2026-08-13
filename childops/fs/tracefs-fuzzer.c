@@ -198,6 +198,21 @@ static unsigned int nr_discovered_tracers;
 static bool tracefs_available;
 
 /*
+ * Runtime write-access probe: set once per child on the first
+ * tracefs_fuzzer() invocation (after uid/cap-drop).  tracefs_probe_done
+ * gates the one-shot access(W_OK) call so it fires exactly once per
+ * child process.  tracefs_runtime_dead latches the result: true means
+ * the fuzz user cannot write to tracefs (EACCES/EPERM), so all
+ * subsequent dispatches are silently skipped.
+ *
+ * Both variables live in BSS (false/zero at link time) and are
+ * inherited false by every child via COW at fork, guaranteeing each
+ * child runs its own probe on first entry.
+ */
+static bool tracefs_probe_done;
+static bool tracefs_runtime_dead;
+
+/*
  * Per-target child-side inaccessibility cache.
  *
  * The parent runs as the invoking user (typically root) and discovers
@@ -1545,6 +1560,37 @@ void tracefs_fuzzer_init(void)
 bool tracefs_fuzzer(struct childdata *child)
 {
 	if (!tracefs_available)
+		return true;
+
+	/*
+	 * Runtime device-presence probe (access-after-cap-drop class).
+	 *
+	 * tracefs_fuzzer_init() confirmed the mount exists via access(F_OK)
+	 * in the parent, where the invoking user (typically root) can always
+	 * see it.  After uid/cap-drop in the child the fuzz user may have no
+	 * write permission.  Probe access(W_OK) on the canonical
+	 * tracing_on file once per child (COW latch: tracefs_probe_done
+	 * starts false at fork, so each child runs exactly one probe).
+	 *
+	 * EACCES/EPERM: cap-dead arm -- latch it and bail on every call.
+	 * Any other error (EROFS, ENOENT transient): leave the latch clear
+	 * and proceed; write() outcomes will accumulate normally.
+	 */
+	if (!tracefs_probe_done) {
+		char probe_path[TRACEFS_MAX_PATH];
+
+		snprintf(probe_path, sizeof(probe_path),
+			 "%s/tracing_on", tracefs_root);
+		if (access(probe_path, W_OK) < 0 &&
+		    (errno == EACCES || errno == EPERM)) {
+			tracefs_runtime_dead = true;
+			__atomic_add_fetch(
+				&shm->stats.tracefs_fuzzer.runtime_cap_denied,
+				1, __ATOMIC_RELAXED);
+		}
+		tracefs_probe_done = true;
+	}
+	if (tracefs_runtime_dead)
 		return true;
 
 	/* Snapshot child->op_type once and bounds-check before indexing

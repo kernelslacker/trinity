@@ -360,10 +360,42 @@ void json_emit_dead_arms_section(void)
 		}
 	}
 
+	/* tracefs-fuzzer: runtime cap-denied dead-arm probe.
+	 * Emits runtime_dead when runtime_cap_denied > 0 (at least one
+	 * child ran the access(W_OK) probe and was denied) AND no writes
+	 * ever succeeded (total_write_ok == 0).  The two conditions together
+	 * mean tracefs is present (config-live) but not writable under the
+	 * fuzz user's capabilities after cap-drop (runtime-dead).
+	 * No separate floor gate: runtime_cap_denied > 0 implies at least
+	 * one child completed the probe. */
+	if (shm->stats.tracefs_fuzzer.runtime_cap_denied > 0) {
+		unsigned long cap_denied =
+			shm->stats.tracefs_fuzzer.runtime_cap_denied;
+		unsigned long total_write_ok =
+			shm->stats.tracefs_fuzzer.kprobe_write_ok +
+			shm->stats.tracefs_fuzzer.uprobe_write_ok +
+			shm->stats.tracefs_fuzzer.filter_write_ok +
+			shm->stats.tracefs_fuzzer.event_enable_write_ok +
+			shm->stats.tracefs_fuzzer.misc_write_ok +
+			shm->stats.tracefs_fuzzer.dynevent_write_ok +
+			shm->stats.tracefs_fuzzer.set_event_write_ok;
+
+		if (!total_write_ok)
+			json_emit_dead_arms_element(
+				&first,
+				"tracefs-fuzzer", "write_access",
+				cap_denied, cap_denied,
+				arm_verdict_to_str(ARM_VERDICT_RUNTIME_DEAD));
+	}
+
 	/* afxdp-churn: single XDP_COPY bind arm, floor = 5*1 = 5 draws.
 	 * Floor gates on runs (group opportunity count), not arm_entered_bind --
 	 * for a single-arm group arm_entered_bind==0 IS the dead state, so
 	 * gating on it is a tautology (always insufficient_samples, never dead).
+	 * runtime_dead: setup_failed_cap_denied==runs -- socket(AF_XDP) returned
+	 * EPERM/EACCES on every invocation; AF_XDP is compiled in but the fuzz
+	 * user lacks CAP_NET_RAW.  Checked before unsupported so cap-denied
+	 * (fixable config) is distinguished from kernel-absent (build issue).
 	 * unsupported (runtime latch): setup_failed_unsupported==runs -- the
 	 * ns_unsupported_afxdp latch fired on every invocation; bind was never
 	 * reached.  Predicated on the dedicated counter so transient failures
@@ -380,6 +412,14 @@ void json_emit_dead_arms_section(void)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
 						    ae, runs,
 						    arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
+		else if (shm->stats.afxdp_churn.setup_failed_cap_denied == runs)
+			/* RUNTIME_DEAD: socket(AF_XDP) denied by capability
+			 * check (EPERM/EACCES); CONFIG_XDP_SOCKETS compiled in
+			 * but fuzz user lacks CAP_NET_RAW after cap-drop. */
+			json_emit_dead_arms_element(&first, "afxdp-churn",
+						    "socket_cap",
+						    ae, runs,
+						    arm_verdict_to_str(ARM_VERDICT_RUNTIME_DEAD));
 		else if (shm->stats.afxdp_churn.setup_failed_unsupported == runs)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
 						    ae, runs,

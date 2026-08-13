@@ -208,6 +208,14 @@ extern bool ns_unsupported_afxdp;
 extern bool ns_unsupported_bpf_xdp;
 extern bool ns_unsupported_xdp_sg;
 extern bool ns_unsupported_tx_metadata;
+/* Runtime cap-denied latch: set when socket(AF_XDP) returns EPERM or
+ * EACCES (fuzz user lacks CAP_NET_RAW or is LSM-blocked), as distinct
+ * from ns_unsupported_afxdp which fires for EAFNOSUPPORT/EPROTONOSUPPORT
+ * (AF_XDP absent from kernel) as well.  Once latched, afxdp_churn()
+ * bails early and bumps setup_failed_cap_denied on every subsequent
+ * call.  dump_stats_dead_arm_check() emits RUNTIME_DEAD_ARM when
+ * setup_failed_cap_denied == runs. */
+extern bool ns_cap_denied_afxdp;
 
 struct xsk_state {
 	int		xsk_fd;

@@ -44,6 +44,25 @@ struct tracefs_fuzzer_stats {
 	 * carved forward so a future ftrace-subset dispatcher landing has a
 	 * pre-approved home. */
 	unsigned long ftrace_subset_skipped;
+
+	/* Runtime cap-denied probe (set in child context, after cap-drop).
+	 *
+	 * tracefs_fuzzer_init() probes tracefs_root with access(F_OK) in the
+	 * PARENT before cap-drop, where the invoking user (typically root)
+	 * can always see the mount.  In the child, after uid/cap-drop to the
+	 * fuzz user, write access to tracefs may be denied (EACCES/EPERM)
+	 * even though the mount is present.  The init-time F_OK check
+	 * correctly sets tracefs_available=true, so the childop dispatches,
+	 * but every write attempt returns OUTCOME_OPEN_FAIL.
+	 *
+	 * runtime_cap_denied is incremented once per child (COW latch) the
+	 * first time tracefs_fuzzer() is invoked from that child, by probing
+	 * access(tracefs_root/tracing_on, W_OK) AFTER cap-drop.  When this
+	 * counter is non-zero and no write-ok counters accumulated, the arm
+	 * is cap-dead and dump_stats_dead_arm_check() emits RUNTIME_DEAD_ARM
+	 * for the childop. */
+	unsigned long runtime_cap_denied;
 };
+
 
 #endif /* _TRINITY_STATS_SUBSYS_TRACEFS_FUZZER_H */

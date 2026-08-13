@@ -449,6 +449,36 @@ static void dump_stats_dead_arm_check(void)
 		}
 	}
 
+	/* tracefs-fuzzer: runtime cap-denied dead-arm probe.
+	 *
+	 * tracefs_fuzzer_init() confirms mount presence via access(F_OK) in
+	 * the parent (root context).  In each child, after uid/cap-drop, the
+	 * fuzz user may have no write access.  The child-side probe calls
+	 * access(tracefs_root/tracing_on, W_OK) once on first entry (COW
+	 * latch per child) and increments runtime_cap_denied on EACCES/EPERM.
+	 *
+	 * Verdict: RUNTIME_DEAD_ARM when runtime_cap_denied > 0 (at least one
+	 * child was cap-denied) AND no write ever succeeded (total_write_ok==0).
+	 * The two conditions together mean tracefs is present (config-live)
+	 * but unreachable for writing under the fuzz user's capabilities
+	 * (runtime-dead).  No separate floor gate: runtime_cap_denied > 0
+	 * implies at least one child ran the probe. */
+	if (shm->stats.tracefs_fuzzer.runtime_cap_denied > 0) {
+		unsigned long total_write_ok =
+			shm->stats.tracefs_fuzzer.kprobe_write_ok +
+			shm->stats.tracefs_fuzzer.uprobe_write_ok +
+			shm->stats.tracefs_fuzzer.filter_write_ok +
+			shm->stats.tracefs_fuzzer.event_enable_write_ok +
+			shm->stats.tracefs_fuzzer.misc_write_ok +
+			shm->stats.tracefs_fuzzer.dynevent_write_ok +
+			shm->stats.tracefs_fuzzer.set_event_write_ok;
+
+		if (!total_write_ok)
+			stat_row("RUNTIME_DEAD_ARM",
+				 "tracefs-fuzzer/write_access",
+				 shm->stats.tracefs_fuzzer.runtime_cap_denied);
+	}
+
 	/* afxdp-churn: XDP_COPY bind arm -- bumped before bind() so a zero
 	 * here means setup always bailed before reaching the bind block.
 	 * Floor: 5 * 1 = 5 draws required (runs is the opportunity count).
@@ -475,6 +505,13 @@ static void dump_stats_dead_arm_check(void)
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
 			       "afxdp-churn",
 			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
+		else if (shm->stats.afxdp_churn.setup_failed_cap_denied ==
+			 shm->stats.afxdp_churn.runs)
+			/* RUNTIME_DEAD_ARM: socket(AF_XDP) denied by capability
+			 * check (EPERM/EACCES after cap-drop); CONFIG_XDP_SOCKETS
+			 * is compiled in but the fuzz user lacks CAP_NET_RAW. */
+			stat_row("RUNTIME_DEAD_ARM", "afxdp-churn/socket_cap",
+				 shm->stats.afxdp_churn.runs);
 		else if (shm->stats.afxdp_churn.setup_failed_unsupported ==
 			 shm->stats.afxdp_churn.runs)
 			stat_row("UNSUPPORTED_ARM", "afxdp-churn/bind",

@@ -301,6 +301,18 @@ update this section to match `ls scripts/check-static/*.sh`.)
   (`CONFIG_TRANSPARENT_HUGEPAGE`), and `xfrm-churn`
   (`CONFIG_XFRM_USER`).  Tighten to FAIL once the fuzz-host baseline
   is established.
+- `dead-arm-runtime-probe`: verify that the access-after-cap-drop
+  runtime dead-arm probes for `tracefs-fuzzer` and `afxdp-churn` are
+  present and wired into the dead-arm reporting surface.  Distinct from
+  `dead-arm-config` (build-time symbol absence) and `dead-arm-detect`
+  (selector-unreachable arms): a *runtime-dead* arm is config-live and
+  selector-reachable but fails at the device/capability level after
+  uid/cap-drop.  The tracefs probe calls `access(tracing_on, W_OK)` in
+  child context; the afxdp probe checks `errno == EPERM/EACCES` on
+  `socket(AF_XDP)` and sets `ns_cap_denied_afxdp`.  Both probes feed
+  `dump_stats_dead_arm_check()` which emits `RUNTIME_DEAD_ARM` when the
+  probe fires and no successful I/O is recorded.  FAIL on zero matches
+  (fail-closed: probes must not be silently absent).
 - `doc-pointer-exists`: every flat `Documentation/<name>.md` path named
   in a code comment must resolve to a real file, so the one-line
   pointers that replaced carved-out design essays never dangle.

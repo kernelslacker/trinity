@@ -169,22 +169,41 @@ int afxdp_iter_setup_umem(struct childdata *child,
 
 	st->xsk_fd = socket(AF_XDP, SOCK_RAW | SOCK_CLOEXEC, 0);
 	if (st->xsk_fd < 0) {
-		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT ||
-		    errno == EPERM || errno == EACCES) {
+		/* child->op_type lives in shared memory and can be
+		 * scribbled by a poisoned-arena write from a sibling;
+		 * bounds-check the snapshot before indexing the
+		 * NR_CHILD_OP_TYPES-sized stats arrays, same pattern
+		 * the child.c dispatch loop uses for the unguarded
+		 * write that motivated this guard. */
+		const enum child_op_type _op = child->op_type;
+		const bool _valid_op = ((int) _op >= 0 && _op < NR_CHILD_OP_TYPES);
+
+		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
+			/* AF_XDP not compiled into the kernel. */
 			ns_unsupported_afxdp = true;
-			/* child->op_type lives in shared memory and can be
-			 * scribbled by a poisoned-arena write from a sibling;
-			 * bounds-check the snapshot before indexing the
-			 * NR_CHILD_OP_TYPES-sized stats arrays, same pattern
-			 * the child.c dispatch loop uses for the unguarded
-			 * write that motivated this guard. */
-			{
-				const enum child_op_type op = child->op_type;
-				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-					__atomic_store_n(&shm->stats.childop.latch_reason[op],
-							 CHILDOP_LATCH_UNSUPPORTED,
-							 __ATOMIC_RELAXED);
-			}
+			if (_valid_op)
+				__atomic_store_n(
+					&shm->stats.childop.latch_reason[_op],
+					CHILDOP_LATCH_UNSUPPORTED,
+					__ATOMIC_RELAXED);
+		} else if (errno == EPERM || errno == EACCES) {
+			/* AF_XDP compiled in but fuzz user lacks CAP_NET_RAW
+			 * or is LSM/seccomp-blocked.  Set both latches so:
+			 *  - ns_unsupported_afxdp keeps the existing bail-on-
+			 *    loop path working; and
+			 *  - ns_cap_denied_afxdp lets dump_stats_dead_arm_check
+			 *    emit RUNTIME_DEAD_ARM (distinct from UNSUPPORTED_ARM)
+			 *    by checking setup_failed_cap_denied == runs. */
+			ns_cap_denied_afxdp  = true;
+			ns_unsupported_afxdp = true;
+			if (_valid_op)
+				__atomic_store_n(
+					&shm->stats.childop.latch_reason[_op],
+					CHILDOP_LATCH_UNSUPPORTED,
+					__ATOMIC_RELAXED);
+			__atomic_add_fetch(
+				&shm->stats.afxdp_churn.setup_failed_cap_denied,
+				1, __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);

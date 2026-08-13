@@ -54,6 +54,7 @@ bool ns_unsupported_afxdp;
 bool ns_unsupported_bpf_xdp;
 bool ns_unsupported_xdp_sg;
 bool ns_unsupported_tx_metadata;
+bool ns_cap_denied_afxdp;
 
 /* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
 static void iter_one(struct childdata *child, unsigned int idx,
@@ -130,6 +131,20 @@ bool afxdp_churn(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.afxdp_churn.runs,
 			   1, __ATOMIC_RELAXED);
+
+	/* Runtime cap-denied probe: socket(AF_XDP) returned EPERM/EACCES
+	 * in a previous iteration; the fuzz user lacks CAP_NET_RAW or is
+	 * LSM-blocked.  Distinct from ns_unsupported_afxdp which also fires
+	 * for EAFNOSUPPORT (AF_XDP absent from kernel).  Checked first so
+	 * dump_stats_dead_arm_check() can emit RUNTIME_DEAD_ARM (cap issue,
+	 * fixable) rather than UNSUPPORTED_ARM (kernel build issue). */
+	if (ns_cap_denied_afxdp) {
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed_cap_denied,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
 
 	if (ns_unsupported_afxdp) {
 		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,

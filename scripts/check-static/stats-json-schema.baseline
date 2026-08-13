@@ -243,6 +243,7 @@ stats	object
     stats.tracefs_fuzzer.set_event_open_fail	u64
     stats.tracefs_fuzzer.set_event_write_fail	u64
     stats.tracefs_fuzzer.set_event_write_ok	u64
+    stats.tracefs_fuzzer.runtime_cap_denied	u64
   stats.bpf_fd_provider	object
     stats.bpf_fd_provider.maps_provided	u64
     stats.bpf_fd_provider.progs_provided	u64
@@ -1677,6 +1678,7 @@ stats	object
     stats.afxdp_churn.tailroom_iters	u64
     stats.afxdp_churn.arm_entered_bind	u64
     stats.afxdp_churn.arm_effective_bind	u64
+    stats.afxdp_churn.setup_failed_cap_denied	u64
   stats.kvm	object
     stats.kvm.vcpu_ioctls_dispatched	u64
     stats.kvm.vm_ioctls_dispatched	u64
