@@ -215,7 +215,7 @@ fi
 "$FINAL_BIN" > "$COMPILER_TABLE" 2>/dev/null
 
 # ---------------------------------------------------------------------------
-# Step 4b: Tier 2 fallback — linux-linus source tree (read-only)
+# Step 4b: Tier 2 fallback — linux-linus source tree (headers built into scratch tmpdir)
 # For symbols that failed to resolve against installed system headers, attempt
 # a second compile-probe using ~/src/linux-linus/include/uapi prepended.
 # This catches symbols too new for the build host's installed headers — exactly
@@ -228,14 +228,16 @@ fi
 # symbol at all.  The wrong value was live for multiple ticks before manual
 # review caught it.
 #
-# Tier 2 is purely additive and uses the linus tree read-only.
+# Tier 2 is purely additive; headers_install builds into a scratch tmpdir to
+# keep the linus source tree unmodified.
 # If ~/src/linux-linus does not exist the block is skipped silently.
 # ---------------------------------------------------------------------------
 LINUS_SRC="$HOME/src/linux-linus"
 LINUS_UAPI="$LINUS_SRC/include/uapi"
 HDR_INSTALL=""
 SYMS_TIER2_GOOD="$WORKDIR/syms-tier2-good.txt"
-TIER2_STATUS="skipped"
+TIER2_STATUS="skipped: linus tree absent"
+BUILD_SCRATCH=""
 touch "$SYMS_TIER2_GOOD"
 
 if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
@@ -245,13 +247,15 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
     # translation unit to die with a fatal error before a single symbol is
     # evaluated.  headers_install strips those internal dependencies.
     HDR_INSTALL=$(mktemp -d /tmp/linus-hdrs-XXXXXX)
-    trap 'rm -rf "$WORKDIR" "$HDR_INSTALL"' EXIT
-    if ! make -C "$LINUS_SRC" headers_install \
+    BUILD_SCRATCH=$(mktemp -d /tmp/trinity-linus-build-XXXXXX)
+    trap 'rm -rf "$WORKDIR" "$HDR_INSTALL" "$BUILD_SCRATCH"' EXIT
+    if ! make -C "$LINUS_SRC" O="$BUILD_SCRATCH" headers_install \
              INSTALL_HDR_PATH="$HDR_INSTALL" 2>/dev/null; then
         echo "WARN: $NAME: Tier 2 skipped: headers_install failed" >&2
         TIER2_STATUS="skipped: headers_install failed"
-        rm -rf "$HDR_INSTALL"
+        rm -rf "$HDR_INSTALL" "$BUILD_SCRATCH"
         HDR_INSTALL=""
+        BUILD_SCRATCH=""
     fi
 fi
 
@@ -336,7 +340,7 @@ if [ -n "$HDR_INSTALL" ] && [ -s "$SYMS_BAD" ]; then
 
     if [ $TIER2_OK -eq 0 ]; then
         echo "WARN: $NAME: Tier 2 (linux-linus) all batches failed with fatal errors; SYMS_BAD unchanged" >&2
-        TIER2_STATUS="skipped"
+        TIER2_STATUS="skipped: all batches fatal"
     else
         # Collect still-bad symbols: undeclared from successful batches PLUS
         # all symbols from fatally-failed batches (those must stay bad).
