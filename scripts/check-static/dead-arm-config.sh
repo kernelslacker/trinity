@@ -17,7 +17,7 @@
 #      If absent the kernel-source checks are skipped and noted.
 #
 # MAPPING TABLE
-# Each entry: childop-file | config-source | check-symbol | display-name
+# Each entry: childop-file<TAB>config-source<TAB>check-symbol<TAB>display-name
 #
 # (empty -- no childops are currently config-dead on the fuzz target)
 #
@@ -49,7 +49,7 @@ trinity_has() { grep -q "^#define $1 " "$TRINITY_CONFIG" 2>/dev/null; }
 kernel_has()  { grep -qE "^$1=(y|m)" "$KCONFIG" 2>/dev/null; }
 
 # ---- Mapping table (tab-separated) ----
-# Format: file | source | symbol | display-name
+# Format: file<TAB>source<TAB>symbol<TAB>display-name
 MAPPING=$(cat <<'EOF'
 EOF
 )
@@ -60,11 +60,16 @@ map_entries=$(printf '%s\n' "$MAPPING" | grep -cvE '^[[:space:]]*#|^[[:space:]]*
 
 # ---- Walk mapping and check each entry ----
 
+checked=0
 warn_count=0
 skip_count=0
+malformed_count=0
+malformed_rows=""
 
 while IFS=$'\t' read -r cfile src sym display; do
 	[ -n "$cfile" ] || continue
+	# skip comment rows; map_entries grep also excludes them so the partition holds
+	[[ "$cfile" == \#* ]] && continue
 
 	case "$src" in
 	trinity)
@@ -73,7 +78,7 @@ while IFS=$'\t' read -r cfile src sym display; do
 			skip_count=$((skip_count + 1))
 			continue
 		fi
-		trinity_has "$sym" && continue
+		trinity_has "$sym" && { checked=$((checked + 1)); continue; }
 		;;
 	kernel)
 		if [ -z "$KCONFIG" ]; then
@@ -81,10 +86,12 @@ while IFS=$'\t' read -r cfile src sym display; do
 			skip_count=$((skip_count + 1))
 			continue
 		fi
-		kernel_has "$sym" && continue
+		kernel_has "$sym" && { checked=$((checked + 1)); continue; }
 		;;
 	*)
 		echo "  $NAME: unknown source '$src' for $cfile -- fix mapping" >&2
+		malformed_count=$((malformed_count + 1))
+		malformed_rows="${malformed_rows:+$malformed_rows, }$cfile"
 		continue
 		;;
 	esac
@@ -93,6 +100,22 @@ while IFS=$'\t' read -r cfile src sym display; do
 	warn_count=$((warn_count + 1))
 
 done <<< "$MAPPING"
+
+# ---- Partition assertion ----
+# Every real table row must land in exactly one counter bucket.
+_total=$((checked + warn_count + skip_count + malformed_count))
+if [ "$_total" -ne "$map_entries" ]; then
+	echo "FAIL: $NAME: partition check failed: checked=$checked warn=$warn_count" \
+	     "skip=$skip_count malformed=$malformed_count total=$_total expected=$map_entries"
+	exit 1
+fi
+
+# ---- Malformed entries → hard FAIL ----
+if [ "$malformed_count" -gt 0 ]; then
+	echo "FAIL: $NAME: $malformed_count malformed mapping entry/entries" \
+	     "(unknown source field): $malformed_rows"
+	exit 1
+fi
 
 # ---- Summary ----
 
