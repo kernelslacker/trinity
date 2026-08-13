@@ -580,9 +580,27 @@ out:
 #define NULLDEV_PBUF_COUNT	2
 #define NULLDEV_PBUF_SIZE	64
 
+/*
+ * Cap on the number of times the nulldev mshot arm is allowed to confirm
+ * the orphaned-request bug.  The bug is deterministic: a handful of hits
+ * is conclusive proof.  Beyond this bound every iteration orphans an
+ * io_kiocb + io_async_cmd that is never freed for the lifetime of the box
+ * (IOU_ISSUE_SKIP_COMPLETE, no WARN, no back-pressure), so a long fuzz
+ * run would silently grow unreclaimable slab.  Once the cap is reached
+ * the variant returns early without touching the ring.
+ */
+#define NULLDEV_MSHOT_BUG_CAP	3
+
 static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 			    const bool valid_op)
 {
+	/* Stop driving the arm once the bug is confirmed to the cap.  The
+	 * bug is deterministic; there is no value in accumulating thousands
+	 * of orphaned slab objects on a buggy kernel. */
+	if (__atomic_load_n(
+			&shm->stats.iouring_cmd_passthrough.mshot_cmd_no_cqe,
+			__ATOMIC_RELAXED) >= NULLDEV_MSHOT_BUG_CAP)
+		return false;
 	struct io_uring_sqe sqe;
 	void *pbuf = NULL;
 	int null_fd = -1;
