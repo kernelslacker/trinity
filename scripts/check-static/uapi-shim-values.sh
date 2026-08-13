@@ -246,16 +246,32 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
     # via linux/if.h) that are not present under uapi/ and cause every
     # translation unit to die with a fatal error before a single symbol is
     # evaluated.  headers_install strips those internal dependencies.
-    HDR_INSTALL=$(mktemp -d /tmp/linus-hdrs-XXXXXX)
-    BUILD_SCRATCH=$(mktemp -d /tmp/trinity-linus-build-XXXXXX)
-    trap 'rm -rf "$WORKDIR" "$HDR_INSTALL" "$BUILD_SCRATCH"' EXIT
-    if ! make -C "$LINUS_SRC" O="$BUILD_SCRATCH" headers_install \
-             INSTALL_HDR_PATH="$HDR_INSTALL" 2>/dev/null; then
-        echo "WARN: $NAME: Tier 2 skipped: headers_install failed" >&2
-        TIER2_STATUS="skipped: headers_install failed"
-        rm -rf "$HDR_INSTALL" "$BUILD_SCRATCH"
-        HDR_INSTALL=""
-        BUILD_SCRATCH=""
+    #
+    # Cache the installed headers under XDG_CACHE_HOME keyed by the linus
+    # revision so repeated runs skip the cold make invocation.
+    LINUS_HASH=$(git -C "$LINUS_SRC" rev-parse --short HEAD 2>/dev/null || true)
+    LINUS_HDR_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/trinity/linus-hdrs-${LINUS_HASH}"
+
+    if [ -n "$LINUS_HASH" ] && [ -f "$LINUS_HDR_CACHE/include/linux/version.h" ]; then
+        # Cache hit: reuse previously-built headers; skip make entirely.
+        HDR_INSTALL="$LINUS_HDR_CACHE"
+        trap 'rm -rf "$WORKDIR"' EXIT
+    else
+        HDR_INSTALL=$(mktemp -d /tmp/linus-hdrs-XXXXXX)
+        BUILD_SCRATCH=$(mktemp -d /tmp/trinity-linus-build-XXXXXX)
+        trap 'rm -rf "$WORKDIR" "$HDR_INSTALL" "$BUILD_SCRATCH"' EXIT
+        if ! make -C "$LINUS_SRC" O="$BUILD_SCRATCH" headers_install \
+                 INSTALL_HDR_PATH="$HDR_INSTALL" -j"$(nproc)" 2>/dev/null; then
+            echo "WARN: $NAME: Tier 2 skipped: headers_install failed" >&2
+            TIER2_STATUS="skipped: headers_install failed"
+            rm -rf "$HDR_INSTALL" "$BUILD_SCRATCH"
+            HDR_INSTALL=""
+            BUILD_SCRATCH=""
+        elif [ -n "$LINUS_HASH" ]; then
+            # Populate cache for future runs (best-effort; failure is non-fatal)
+            mkdir -p "$(dirname "$LINUS_HDR_CACHE")" 2>/dev/null &&
+                cp -a "$HDR_INSTALL/." "$LINUS_HDR_CACHE" 2>/dev/null || true
+        fi
     fi
 fi
 
