@@ -4,5 +4,5 @@
 #define ETHTOOL_MSG_TSCONFIG_GET 46
 #endif
 #ifndef ETHTOOL_MSG_MSE_GET
-#define ETHTOOL_MSG_MSE_GET 52
+#define ETHTOOL_MSG_MSE_GET 51
 #endif

@@ -231,15 +231,34 @@ fi
 # Tier 2 is purely additive and uses the linus tree read-only.
 # If ~/src/linux-linus does not exist the block is skipped silently.
 # ---------------------------------------------------------------------------
-# Bug 1 fix: use only LINUS_UAPI; LINUS_INC (kernel-internal headers) caused
-# fatal compiler errors that silently hid all unresolved symbols.
-LINUS_UAPI="$HOME/src/linux-linus/include/uapi"
+LINUS_SRC="$HOME/src/linux-linus"
+LINUS_UAPI="$LINUS_SRC/include/uapi"
+HDR_INSTALL=""
 SYMS_TIER2_GOOD="$WORKDIR/syms-tier2-good.txt"
 TIER2_STATUS="skipped"
 touch "$SYMS_TIER2_GOOD"
 
 if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
-    # Build a PCH using linus UAPI headers only (read-only).
+    # Produce a sanitized uapi export via headers_install.  The raw source
+    # tree's include/uapi pulls in kernel-internal headers (e.g. linux/compiler.h
+    # via linux/if.h) that are not present under uapi/ and cause every
+    # translation unit to die with a fatal error before a single symbol is
+    # evaluated.  headers_install strips those internal dependencies.
+    HDR_INSTALL=$(mktemp -d /tmp/linus-hdrs-XXXXXX)
+    trap 'rm -rf "$WORKDIR" "$HDR_INSTALL"' EXIT
+    if ! make -C "$LINUS_SRC" headers_install \
+             INSTALL_HDR_PATH="$HDR_INSTALL" 2>/dev/null; then
+        echo "WARN: $NAME: Tier 2 skipped: headers_install failed" >&2
+        TIER2_STATUS="skipped: headers_install failed"
+        rm -rf "$HDR_INSTALL"
+        HDR_INSTALL=""
+    fi
+fi
+
+if [ -n "$HDR_INSTALL" ] && [ -s "$SYMS_BAD" ]; then
+    LINUS_HDR_INC="$HDR_INSTALL/include"
+
+    # Build a PCH using the sanitized installed uapi headers (read-only).
     PCH_HDR2="$WORKDIR/uapi-probe-linus.h"
     {
         echo '#include <stdio.h>'
@@ -264,23 +283,24 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
             linux/dcbnl.h linux/netlink.h linux/netfilter/nfnetlink_log.h \
             linux/netfilter/nfnetlink_queue.h linux/tc_act/tc_mirred.h \
             linux/netfilter/nf_tables_compat.h; do
-            if [ -f "$LINUS_UAPI/$h" ] || [ -f "/usr/include/$h" ]; then
+            if [ -f "$LINUS_HDR_INC/$h" ] || [ -f "/usr/include/$h" ]; then
                 echo "#include <$h>"
             fi
         done
     } > "$PCH_HDR2"
-    # Compile PCH: only -I LINUS_UAPI (no kernel-internal include tree)
     gcc -w -x c-header \
-        -I"$LINUS_UAPI" \
+        -I"$LINUS_HDR_INC" \
         -o "${PCH_HDR2}.gch" "$PCH_HDR2" 2>/dev/null || true
 
     BATCH2_DIR="$WORKDIR/batches2"
     mkdir -p "$BATCH2_DIR"
     split -l 100 "$SYMS_BAD" "$BATCH2_DIR/batch-"
 
-    # Bug 2 fix: run batches serially so we can inspect per-batch exit status.
-    # A fatal compile error (no 'undeclared' diagnostics) means the batch did
-    # not run at all -- symbols must stay in SYMS_BAD, not be silently 'resolved'.
+    # Run batches serially so we can inspect the per-batch exit status and
+    # error output.  A batch that exits non-zero with a 'fatal error:' line
+    # (even alongside undeclared-identifier diagnostics) did not fully evaluate
+    # its symbols; those symbols must remain unresolved rather than be silently
+    # counted as resolved.
     TIER2_OK=0
     FATAL_SYMS="$WORKDIR/tier2-fatal-syms.txt"
     touch "$FATAL_SYMS"
@@ -294,17 +314,18 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
             echo 'return 0;}'
         } > "$BATCH2_DIR/${bname}.c"
         gcc -w -fmax-errors=200 \
-            -I"$LINUS_UAPI" \
+            -I"$LINUS_HDR_INC" \
             -include "$PCH_HDR2" \
             -o "$BATCH2_DIR/${bname}.out" "$BATCH2_DIR/${bname}.c" \
             2>"$BATCH2_DIR/${bname}.err"
         batch_exit=$?
         if [ $batch_exit -ne 0 ]; then
-            # Distinguish a fatal error (no undeclared diagnostics) from a batch
-            # that compiled but had genuinely undeclared symbols.
-            if ! extract_bad_syms "$BATCH2_DIR/${bname}.err" | grep -q .; then
-                # Fatal compile error -- no valid diagnostics.  Preserve all
-                # symbols from this batch as still-unresolved.
+            # A 'fatal error:' means the compiler stopped mid-translation-unit;
+            # symbols after the cutoff were never evaluated.  Treat any non-zero
+            # exit that carries a fatal error as a full batch failure regardless
+            # of whether undeclared-identifier diagnostics were also emitted.
+            if grep -q 'fatal error:' "$BATCH2_DIR/${bname}.err" || \
+               ! extract_bad_syms "$BATCH2_DIR/${bname}.err" | grep -q .; then
                 echo "WARN: $NAME: Tier 2 batch $bname fatal compile error; symbols remain unresolved" >&2
                 cat "$batch" >> "$FATAL_SYMS"
                 continue
@@ -314,12 +335,11 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
     done
 
     if [ $TIER2_OK -eq 0 ]; then
-        # Bug 3 fix: do NOT touch SYMS_BAD when no batch ran successfully.
         echo "WARN: $NAME: Tier 2 (linux-linus) all batches failed with fatal errors; SYMS_BAD unchanged" >&2
         TIER2_STATUS="skipped"
     else
         # Collect still-bad symbols: undeclared from successful batches PLUS
-        # all symbols from fatally-failed batches (Bug 3 fix: those must stay bad).
+        # all symbols from fatally-failed batches (those must stay bad).
         SYMS_BAD2="$WORKDIR/syms-bad2.txt"
         {
             extract_bad_syms "$BATCH2_DIR"/*.err 2>/dev/null
@@ -333,7 +353,7 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
         cp "$SYMS_BAD2" "$SYMS_BAD"
 
         TIER2_RESOLVED=$(wc -l < "$SYMS_TIER2_GOOD" | tr -d ' ')
-        LINUS_HASH=$(git -C "$HOME/src/linux-linus" rev-parse --short HEAD 2>/dev/null || true)
+        LINUS_HASH=$(git -C "$LINUS_SRC" rev-parse --short HEAD 2>/dev/null || true)
         if [ -n "$LINUS_HASH" ]; then
             TIER2_STATUS="ran($TIER2_RESOLVED,oracle=$LINUS_HASH)"
         else
@@ -350,7 +370,7 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
                 awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$SYMS_TIER2_GOOD"
                 echo 'return 0;}'
             } > "$FINAL_C2"
-            if gcc -w -I"$LINUS_UAPI" \
+            if gcc -w -I"$LINUS_HDR_INC" \
                    -include "$PCH_HDR2" \
                    -o "$FINAL_BIN2" "$FINAL_C2" 2>"$FINAL_ERR2"; then
                 # Append Tier 2 authoritative values to the shared compiler table
