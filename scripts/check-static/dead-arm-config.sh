@@ -20,7 +20,7 @@
 # MAPPING TABLE
 # Each entry: childop-file<TAB>config-source<TAB>check-symbol<TAB>display-name
 #
-# (empty -- no childops are currently config-dead on the fuzz target)
+# Known config-dead childops (cfile, source, CONFIG_ symbol, display name).
 #
 # SEVERITY: WARN (exit 0) -- baseline not yet established on fuzz host.
 
@@ -73,6 +73,8 @@ kernel_has()  { grep -qE "^$1=(y|m)" "$KCONFIG" 2>/dev/null; }
 # ---- Mapping table (tab-separated) ----
 # Format: file<TAB>source<TAB>symbol<TAB>display-name
 MAPPING=$(cat <<'EOF'
+childops/misc/fault-injector.c	kernel	CONFIG_FAULT_INJECTION	fault injection
+childops/fs/tracefs-fuzzer.c	kernel	CONFIG_FTRACE	tracefs (kprobe/uprobe)
 EOF
 )
 
@@ -91,7 +93,8 @@ malformed_rows=""
 # Pre-validate mapping: every real row must have exactly 4 tab-separated fields.
 # awk -F'\t' does not collapse adjacent tabs, so empty interior fields (which
 # IFS=$'\t' read would silently shift away) are correctly detected here.  This
-# also subsumes the former >=5-field check added in fe7dc0433804.
+# also subsumes the former >=5-field check added in
+# fe7dc0433804 ("dead-arm-config: reject 5+ field rows in mapping walk").
 _map_bad=$(printf '%s\n' "$MAPPING" | \
 	awk -F'\t' '
 		/^[[:space:]]*#/ { next }
