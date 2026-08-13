@@ -730,19 +730,51 @@ teardown:
 static int settle_then_probe_hnode2_delete(struct nl_ctx *ctx, int ifindex,
 					   __u32 hnode_handle, __u32 qhandle)
 {
+	/*
+	 * EINTR-robustness: nanosleep(rem=NULL) silently discards the
+	 * unslept remainder when interrupted by SIGALRM (SIGALRM is armed
+	 * without SA_RESTART in child/child.c; it always interrupts
+	 * nanosleep).  A truncated settle leaves hnode2->refcnt still 2,
+	 * making refcount_dec_if_one() return -EBUSY — a false-positive
+	 * that latches u32_skip_sw_arm_done and silences the leak detector
+	 * for the rest of the run.  This is the wave-contradicts-itself
+	 * instance: proc-read-eintr-retry.sh landed the same wave but
+	 * cannot see a verdict-bearing nanosleep (cf. the analogous comment
+	 * in childops/fs/statmount-idmap-overflow.c on SIGALRM bleed-through).
+	 *
+	 * Fix: drive the settle off a monotonic deadline instead of a loop
+	 * counter.  SIGALRM can shorten any individual clock_nanosleep slice,
+	 * but it cannot shorten the deadline — the outer loop re-probes and
+	 * re-sleeps until the full SETTLE_ATTEMPTS × SETTLE_DELAY_MS window
+	 * has elapsed on the wall clock.
+	 */
 	const struct timespec gap = {
 		.tv_sec  = 0,
 		.tv_nsec = (long)SETTLE_DELAY_MS * 1000000L,
 	};
-	int attempt, rc;
+	struct timespec deadline, now;
+	int rc;
 
-	for (attempt = 0; attempt < SETTLE_ATTEMPTS; attempt++) {
+	clock_gettime(CLOCK_MONOTONIC, &deadline);
+	deadline.tv_nsec += (long)SETTLE_DELAY_MS * SETTLE_ATTEMPTS * 1000000L;
+	if (deadline.tv_nsec >= 1000000000L) {
+		deadline.tv_sec  += deadline.tv_nsec / 1000000000L;
+		deadline.tv_nsec  = deadline.tv_nsec % 1000000000L;
+	}
+
+	do {
 		rc = build_deltfilter_handle(ctx, ifindex, hnode_handle, qhandle);
 		if (rc != -EBUSY)
 			return rc; /* success or unexpected error — done */
-		(void)nanosleep(&gap, NULL);
-	}
-	return -EBUSY; /* persisted across all settle attempts */
+		/* EINTR from SIGALRM just shortens this slice; the deadline
+		 * loop compensates for any lost sleep time. */
+		(void)clock_nanosleep(CLOCK_MONOTONIC, 0, &gap, NULL);
+		clock_gettime(CLOCK_MONOTONIC, &now);
+	} while (now.tv_sec < deadline.tv_sec ||
+		 (now.tv_sec == deadline.tv_sec &&
+		  now.tv_nsec < deadline.tv_nsec));
+
+	return -EBUSY; /* persisted across full settle window */
 }
 
 static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)

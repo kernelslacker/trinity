@@ -577,6 +577,12 @@ update this section to match `ls scripts/check-static/*.sh`.)
    never a direct `RTM_DELTFILTER` on a live hnode2 -- that returns -EBUSY
    on healthy kernels too and is a false positive.  The settle helper must
    be defined, not merely called.
+- `nanosleep-eintr-guard`: reject `(void)nanosleep()` in `childops/` files
+   that carry an `_arm_done` latch (oracle verdict paths).  SIGALRM (armed
+   without SA_RESTART) interrupts the sleep and `rem=NULL` silently
+   discards the unslept remainder, truncating a settle window and yielding
+   a false verdict.  Drive the settle off a `CLOCK_MONOTONIC` deadline loop
+   instead so an interrupted slice is re-probed to the full deadline.
 - `syscall-metadata`: best-effort sanity on `struct syscallentry` --
   ARG_RANGE arguments must declare low/high bounds.
 - `tipc-addrtype-catalog`: every `TIPC_ADDR_*` value in
