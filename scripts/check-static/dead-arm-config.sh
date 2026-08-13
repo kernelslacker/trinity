@@ -73,8 +73,9 @@ kernel_has()  { grep -qE "^$1=(y|m)" "$KCONFIG" 2>/dev/null; }
 # ---- Mapping table (tab-separated) ----
 # Format: file<TAB>source<TAB>symbol<TAB>display-name
 MAPPING=$(cat <<'EOF'
+# NOTE: config rows only for CONFIG_*-gated arms; runtime-dead arms need a separate probe.
 childops/misc/fault-injector.c	kernel	CONFIG_FAULT_INJECTION	fault injection
-childops/fs/tracefs-fuzzer.c	kernel	CONFIG_FTRACE	tracefs (kprobe/uprobe)
+childops/fs/ublk-lifecycle.c	kernel	CONFIG_BLK_DEV_UBLK	ublk
 EOF
 )
 
