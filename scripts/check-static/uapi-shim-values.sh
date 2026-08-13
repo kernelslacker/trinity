@@ -448,10 +448,23 @@ if [ -f "$PROBED_FLOOR_FILE" ]; then
     probed_floor=$(grep -oE '^[0-9]+' "$PROBED_FLOOR_FILE" | head -1 || echo 0)
     probed_floor=${probed_floor:-0}
 fi
-if [ "$probed" -lt "$probed_floor" ]; then
-    echo "FAIL: $NAME: coverage ratchet: probed $probed < floor $probed_floor"
-    exit 1
-fi
+# Only enforce the ratchet when Tier 2 actually ran: the committed floor
+# includes Tier-2 resolutions, so on a box where Tier 2 is skipped (tree
+# absent / not-needed / build failed) probed reflects Tier-1 only and would
+# false-FAIL against a Tier-2-inclusive floor.  Skip rather than break cs on
+# an environment difference.
+case "$TIER2_STATUS" in
+ran*)
+    if [ "$probed" -lt "$probed_floor" ]; then
+        echo "FAIL: $NAME: coverage ratchet: probed $probed < floor $probed_floor"
+        exit 1
+    fi
+    ;;
+*)
+    [ "$probed" -lt "$probed_floor" ] && \
+        echo "  $NAME: coverage ratchet skipped (tier2=$TIER2_STATUS; probed $probed is Tier-1 only)" >&2
+    ;;
+esac
 
 # ---------------------------------------------------------------------------
 # Step 5: Compare trinity values against compiler values
