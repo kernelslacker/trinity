@@ -429,7 +429,7 @@ char get_pid_state(int childno)
 	 * state char sits two bytes after it.  pread keeps this poll
 	 * allocation-free; the parent reap loop hits it once per child
 	 * per cycle. */
-	n = pread(fd, buf, sizeof(buf) - 1, 0);
+	n = TEMP_FAILURE_RETRY(pread(fd, buf, sizeof(buf) - 1, 0));
 	if (n <= 0)
 		return '?';
 	buf[n] = '\0';

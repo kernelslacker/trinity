@@ -200,10 +200,10 @@ static ssize_t read_small_file(const char *path, char *buf, size_t bufsz)
 		return -1;
 	buf[0] = '\0';
 
-	fd = open(path, O_RDONLY | O_CLOEXEC);
+	fd = TEMP_FAILURE_RETRY(open(path, O_RDONLY | O_CLOEXEC));
 	if (fd < 0)
 		return -1;
-	n = read(fd, buf, bufsz - 1);
+	n = TEMP_FAILURE_RETRY(read(fd, buf, bufsz - 1));
 	close(fd);
 	if (n <= 0)
 		return -1;
@@ -607,10 +607,10 @@ void dump_proc_self_status(void)
 	char *p, *eol;
 	int fd;
 
-	fd = open("/proc/self/status", O_RDONLY | O_CLOEXEC);
+	fd = TEMP_FAILURE_RETRY(open("/proc/self/status", O_RDONLY | O_CLOEXEC));
 	if (fd < 0)
 		return;
-	n = read(fd, buf, sizeof(buf) - 1);
+	n = TEMP_FAILURE_RETRY(read(fd, buf, sizeof(buf) - 1));
 	close(fd);
 	if (n <= 0)
 		return;

@@ -389,7 +389,7 @@ void setup_startup_isolation(void)
 	 * unprovision the netns, so net_ready still latches and consumers
 	 * that find netns_fd == -1 just skip the attach type.
 	 */
-	netns_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
+	netns_fd = TEMP_FAILURE_RETRY(open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC));
 	if (netns_fd < 0) {
 		output(0, "startup isolation: open(/proc/self/ns/net) failed (errno=%d) -- net_ready latched without BPF-link netns_fd freebie\n",
 			errno);

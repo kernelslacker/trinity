@@ -716,7 +716,7 @@ void log_buffer_prot_from_proc_maps(const char *who, unsigned long addr,
 	bool found = false;
 
 	/* check-static: slow-ok */
-	fd = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
+	fd = TEMP_FAILURE_RETRY(open("/proc/self/maps", O_RDONLY | O_CLOEXEC));
 	if (fd < 0) {
 		outputerr("%s: open(/proc/self/maps) failed: errno=%d "
 			  "addr=0x%lx size=0x%lx\n",
@@ -730,7 +730,7 @@ void log_buffer_prot_from_proc_maps(const char *who, unsigned long addr,
 	 * covers @addr is the answer.  Tail-truncation across buffer
 	 * boundaries is acceptable for a diagnostic that only needs the
 	 * matching line. */
-	while ((n = read(fd, buf, sizeof(buf) - 1)) > 0) {
+	while ((n = TEMP_FAILURE_RETRY(read(fd, buf, sizeof(buf) - 1))) > 0) {
 		char *p = buf;
 		char *end_p = buf + n;
 		*end_p = '\0';

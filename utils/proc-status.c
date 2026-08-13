@@ -20,7 +20,7 @@ ssize_t proc_status_read(char *buf, size_t bufsz)
 	if (buf == NULL || bufsz < 2)
 		return -1;
 
-	fd = open("/proc/self/status", O_RDONLY | O_CLOEXEC);
+	fd = TEMP_FAILURE_RETRY(open("/proc/self/status", O_RDONLY | O_CLOEXEC));
 	if (fd < 0)
 		return -1;
 
@@ -62,7 +62,7 @@ char *proc_status_slurp(void)
 	size_t cap = 0, off = 0;
 	int fd;
 
-	fd = open("/proc/self/status", O_RDONLY | O_CLOEXEC);
+	fd = TEMP_FAILURE_RETRY(open("/proc/self/status", O_RDONLY | O_CLOEXEC));
 	if (fd < 0)
 		return NULL;
 

@@ -159,11 +159,11 @@ static void print_core_pattern(void)
 	ssize_t n;
 	int fd;
 
-	fd = open("/proc/sys/kernel/core_pattern", O_RDONLY | O_CLOEXEC);
+	fd = TEMP_FAILURE_RETRY(open("/proc/sys/kernel/core_pattern", O_RDONLY | O_CLOEXEC));
 	if (fd == -1)
 		return;
 
-	n = read(fd, buf, sizeof(buf) - 1);
+	n = TEMP_FAILURE_RETRY(read(fd, buf, sizeof(buf) - 1));
 	close(fd);
 
 	if (n <= 0)

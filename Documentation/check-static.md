@@ -452,6 +452,18 @@ update this section to match `ls scripts/check-static/*.sh`.)
   can redirect `rec->post_state` at a foreign chunk with a matching
   cookie value and the `.post` handler clears the wrong struct.
   Grandfathered handlers live in `post-state-ownership.baseline`.
+- `proc-read-eintr-retry`: reject `open()` / `read()` / `pread()` calls
+  whose argument list contains a `/proc` path literal, or whose fd
+  comes from `pidstatfiles[]`, when not wrapped in
+  `TEMP_FAILURE_RETRY`.  Trinity children take `SIGALRM` once per
+  second (installed without `SA_RESTART`); an unretried `EINTR` on a
+  `/proc` read is treated by callers as "pid is dead", causing false
+  reap decisions and silently-dropping D-state diagnostics (`get_pid_state()`
+  returns `'?'` instead of `'D'`).  `close()` is deliberately not
+  covered: retrying `close()` after `EINTR` on Linux is the
+  double-close bug.  Scoped to `main/` + `dispatch/` + `utils/`;
+  zero files scanned is treated as FAIL (fail-closed on directory
+  renames).
 - `rettype-multiplexer-conflict`: an op-multiplexed syscall (one whose
   `.sanitise` publishes `rec->rettype` per-cmd) must not also carry a
   static `.rettype = RET_XXX` initializer.  `effective_rettype()`
