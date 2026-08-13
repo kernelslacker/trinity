@@ -261,6 +261,7 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
         HDR_INSTALL=$(mktemp -d /tmp/linus-hdrs-XXXXXX)
         BUILD_SCRATCH=$(mktemp -d /tmp/trinity-linus-build-XXXXXX)
         trap 'rm -rf "$WORKDIR" "$HDR_INSTALL" "$BUILD_SCRATCH"' EXIT
+        before_fp=$(git -C "$HOME/src/linux-linus" status --porcelain --ignored scripts/ 2>/dev/null)
         if ! make -C "$LINUS_SRC" O="$BUILD_SCRATCH" headers_install \
                  INSTALL_HDR_PATH="$HDR_INSTALL" -j"$(nproc)" 2>/dev/null; then
             echo "WARN: $NAME: Tier 2 skipped: headers_install failed" >&2
@@ -272,6 +273,13 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
             # Populate cache for future runs (best-effort; failure is non-fatal)
             mkdir -p "$(dirname "$LINUS_HDR_CACHE")" 2>/dev/null &&
                 cp -a "$HDR_INSTALL/." "$LINUS_HDR_CACHE" 2>/dev/null || true
+        fi
+        after_fp=$(git -C "$HOME/src/linux-linus" status --porcelain --ignored scripts/ 2>/dev/null)
+        if [ "$before_fp" != "$after_fp" ]; then
+            changed=$(diff <(printf '%s\n' "$before_fp") <(printf '%s\n' "$after_fp") \
+                | awk '/^>/{print $NF}' | head -20 | tr '\n' ' ')
+            echo "FAIL: $NAME: headers_install wrote into source tree scripts/: ${changed}"
+            exit 1
         fi
     fi
 elif [ ! -d "$LINUS_UAPI" ]; then
