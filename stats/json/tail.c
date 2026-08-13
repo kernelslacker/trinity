@@ -17,6 +17,7 @@
 #include "shm.h"
 #include "stats-internal.h"
 #include "stats/json/internal.h"
+#include "stats/arm-verdict.h"
 
 
 
@@ -302,27 +303,28 @@ void json_emit_dead_arms_section(void)
 			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_a)
 				json_emit_dead_arms_element(&first,
 					"igmp-mld-source-churn", "race_v4_a",
-					0, pr, "dead");
+					0, pr, arm_verdict_to_str(ARM_VERDICT_DEAD));
 			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b)
 				json_emit_dead_arms_element(&first,
 					"igmp-mld-source-churn", "race_v4_b",
-					0, pr, "dead");
+					0, pr, arm_verdict_to_str(ARM_VERDICT_DEAD));
 			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c)
 				json_emit_dead_arms_element(&first,
 					"igmp-mld-source-churn", "race_v4_c",
-					0, pr, "dead");
+					0, pr, arm_verdict_to_str(ARM_VERDICT_DEAD));
 			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d)
 				json_emit_dead_arms_element(&first,
 					"igmp-mld-source-churn", "race_v4_d",
-					0, pr, "dead");
+					0, pr, arm_verdict_to_str(ARM_VERDICT_DEAD));
 			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_e)
 				json_emit_dead_arms_element(&first,
 					"igmp-mld-source-churn", "race_v4_e",
-					0, pr, "dead");
+					0, pr, arm_verdict_to_str(ARM_VERDICT_DEAD));
 		} else {
 			json_emit_dead_arms_element(&first,
 				"igmp-mld-source-churn", "v4",
-				v4_draws, pr, "insufficient_samples");
+				v4_draws, pr,
+				arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
 		}
 
 		{
@@ -336,23 +338,24 @@ void json_emit_dead_arms_section(void)
 				if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_a)
 					json_emit_dead_arms_element(&first,
 						"igmp-mld-source-churn", "race_v6_a",
-						0, pr, "dead");
+						0, pr, arm_verdict_to_str(ARM_VERDICT_DEAD));
 				if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_b)
 					json_emit_dead_arms_element(&first,
 						"igmp-mld-source-churn", "race_v6_b",
-						0, pr, "dead");
+						0, pr, arm_verdict_to_str(ARM_VERDICT_DEAD));
 				if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_c)
 					json_emit_dead_arms_element(&first,
 						"igmp-mld-source-churn", "race_v6_c",
-						0, pr, "dead");
+						0, pr, arm_verdict_to_str(ARM_VERDICT_DEAD));
 				if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_d)
 					json_emit_dead_arms_element(&first,
 						"igmp-mld-source-churn", "race_v6_d",
-						0, pr, "dead");
+						0, pr, arm_verdict_to_str(ARM_VERDICT_DEAD));
 			} else {
 				json_emit_dead_arms_element(&first,
 					"igmp-mld-source-churn", "v6",
-					v6_draws, pr, "insufficient_samples");
+					v6_draws, pr,
+					arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
 			}
 		}
 	}
@@ -375,22 +378,27 @@ void json_emit_dead_arms_section(void)
 
 		if (runs < 5 * 1)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
-						    ae, runs, "insufficient_samples");
+						    ae, runs,
+						    arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
 		else if (shm->stats.afxdp_churn.setup_failed_unsupported == runs)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
-						    ae, runs, "unsupported");
+						    ae, runs,
+						    arm_verdict_to_str(ARM_VERDICT_UNSUPPORTED));
 		else if (!ae)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
-						    ae, runs, "dead");
+						    ae, runs,
+						    arm_verdict_to_str(ARM_VERDICT_DEAD));
 		else if (!shm->stats.afxdp_churn.arm_effective_bind)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
-						    ae, runs, "ran_no_effect");
+						    ae, runs,
+						    arm_verdict_to_str(ARM_VERDICT_RAN_NO_EFFECT));
 		/* else: ae >= 1, arm_effective_bind >= 1: fully live */
 	} else if (shm->stats.afxdp_churn.runs_stubbed > 0) {
 		unsigned long rs = shm->stats.afxdp_churn.runs_stubbed;
 
 		json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
-					    0, rs, "unsupported");
+					    0, rs,
+					    arm_verdict_to_str(ARM_VERDICT_UNSUPPORTED));
 	}
 
 	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm.
@@ -404,10 +412,12 @@ void json_emit_dead_arms_section(void)
 
 		if (draws < 300)
 			json_emit_dead_arms_element(&first, "xfrm-churn", "migrate_state",
-						    ae, draws, "insufficient_samples");
+						    ae, draws,
+						    arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
 		else if (!ae)
 			json_emit_dead_arms_element(&first, "xfrm-churn", "migrate_state",
-						    ae, draws, "dead");
+						    ae, draws,
+						    arm_verdict_to_str(ARM_VERDICT_DEAD));
 		/* else: ae >= 1, arm is live -- emit nothing */
 	}
 

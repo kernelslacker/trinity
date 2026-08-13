@@ -33,6 +33,7 @@
 #include "utils.h"
 #include "utils-proc.h"
 #include "version.h"
+#include "stats/arm-verdict.h"
 
 static void dump_stats_render_vfs_writes(void)
 {
@@ -423,7 +424,8 @@ static void dump_stats_dead_arm_check(void)
 				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_e", pr);
 		} else {
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "igmp-mld-source-churn/v4", "insufficient_samples");
+			       "igmp-mld-source-churn/v4",
+			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
 		}
 
 		v6_draws =
@@ -442,7 +444,8 @@ static void dump_stats_dead_arm_check(void)
 				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_d", pr);
 		} else {
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "igmp-mld-source-churn/v6", "insufficient_samples");
+			       "igmp-mld-source-churn/v6",
+			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
 		}
 	}
 
@@ -470,7 +473,8 @@ static void dump_stats_dead_arm_check(void)
 	if (shm->stats.afxdp_churn.runs > 0) {
 		if (shm->stats.afxdp_churn.runs < 5 * 1)
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "afxdp-churn", "insufficient_samples");
+			       "afxdp-churn",
+			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
 		else if (shm->stats.afxdp_churn.setup_failed_unsupported ==
 			 shm->stats.afxdp_churn.runs)
 			stat_row("UNSUPPORTED_ARM", "afxdp-churn/bind",
@@ -507,7 +511,8 @@ static void dump_stats_dead_arm_check(void)
 
 		if (draws < 300)
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "xfrm-churn", "insufficient_samples");
+			       "xfrm-churn",
+			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
 		else if (!shm->stats.xfrm_churn.arm_entered_migrate_state)
 			stat_row("DEAD_ARM", "xfrm-churn/migrate_state",
 				 draws);
