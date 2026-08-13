@@ -45,6 +45,7 @@ NAME="uapi-shim-values"
 ROOT="${REPO_ROOT:-$(pwd)}"
 BASELINE="$ROOT/scripts/check-static/uapi-shim-values.baseline"
 PROBED_FLOOR_FILE="$ROOT/scripts/check-static/uapi-shim-probed-floor.baseline"
+TIER1_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-tier1-probed-floor.baseline"
 
 # ---------------------------------------------------------------------------
 # Prerequisites
@@ -452,19 +453,47 @@ if [ -f "$PROBED_FLOOR_FILE" ]; then
     probed_floor=${probed_floor:-0}
 fi
 
+tier1_floor=0
+if [ -f "$TIER1_FLOOR_FILE" ]; then
+    tier1_floor=$(grep -oE '^[0-9]+' "$TIER1_FLOOR_FILE" | head -1 || echo 0)
+    tier1_floor=${tier1_floor:-0}
+fi
+
+# Tier-2 breakage states: the linus tree was present and Tier-2 was entered
+# but failed to produce usable output.  These are not environment differences --
+# they indicate a broken build environment or a regressed probe path.  Fail
+# immediately so the breakage is visible rather than silently skipped.
+case "$TIER2_STATUS" in
+"skipped: headers_install failed"|"skipped: all batches fatal")
+    echo "FAIL: $NAME: Tier-2 attempted but failed (tier2=$TIER2_STATUS)"
+    exit 1
+    ;;
+esac
+
 if [ "$probed" -eq 0 ]; then
-    if [ "$probed_floor" -gt 0 ]; then
-        echo "FAIL: $NAME: coverage ratchet: probed 0 < floor $probed_floor (probe binary produced no output)"
+    relevant_floor=0
+    case "$TIER2_STATUS" in
+    ran*)       relevant_floor="$probed_floor" ;;
+    not-needed) relevant_floor="$tier1_floor" ;;
+    esac
+    if [ "$relevant_floor" -gt 0 ]; then
+        echo "FAIL: $NAME: coverage ratchet: probed 0 < floor $relevant_floor (probe binary produced no output)"
         exit 1
     fi
     echo "WARN: $NAME: probe binary produced no output; skipping"
     exit 0
 fi
-# Only enforce the ratchet when Tier 2 actually ran: the committed floor
-# includes Tier-2 resolutions, so on a box where Tier 2 is skipped (tree
-# absent / not-needed / build failed) probed reflects Tier-1 only and would
-# false-FAIL against a Tier-2-inclusive floor.  Skip rather than break cs on
-# an environment difference.
+# Two-floor coverage ratchet:
+#
+#   not-needed   Tier-1 resolved all symbols; Tier-2 was never entered.
+#                Enforce the Tier-1-only floor (TIER1_FLOOR_FILE) so that
+#                fully-resolved runs are ratcheted even without a linus tree.
+#
+#   ran*         Tier-2 ran and augmented Tier-1 results.  Enforce the
+#                Tier-2-inclusive floor (PROBED_FLOOR_FILE).
+#
+#   skipped: linus tree absent
+#                Genuine environment difference; skip both floors.
 case "$TIER2_STATUS" in
 ran*)
     if [ "$probed" -lt "$probed_floor" ]; then
@@ -472,9 +501,14 @@ ran*)
         exit 1
     fi
     ;;
-*)
-    [ "$probed" -lt "$probed_floor" ] && \
-        echo "  $NAME: coverage ratchet skipped (tier2=$TIER2_STATUS; probed $probed is Tier-1 only)" >&2
+not-needed)
+    if [ "$probed" -lt "$tier1_floor" ]; then
+        echo "FAIL: $NAME: coverage ratchet: probed $probed < tier1_floor $tier1_floor"
+        exit 1
+    fi
+    ;;
+"skipped: linus tree absent")
+    echo "  $NAME: coverage ratchet skipped (tier2=$TIER2_STATUS; probed $probed is Tier-1 only)" >&2
     ;;
 esac
 
@@ -631,5 +665,5 @@ if [ "$checked" -ne "$probed" ]; then
     exit 1
 fi
 
-echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / unresolved-uapi $unresolved_uapi_count / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor)"
+echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / unresolved-uapi $unresolved_uapi_count / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor)"
 exit 0
