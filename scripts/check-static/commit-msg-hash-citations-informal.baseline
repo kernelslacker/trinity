@@ -58,3 +58,4 @@ fa8e3333b28b55e4bc5ccc73e25a596f363b445a
 #   (child: inplace-crypto-oracle: move splice inertness counters to shm)
 #   subject matches but lacks quotes
 ea87ec770355e18c3f557071184c4e59dfb7e4e8
+4451266d55c4   # brct pkts_conntracked oracle fix: cites related checksum fixes informally
