@@ -470,6 +470,12 @@ if [ -f "$TIER1_FLOOR_FILE" ]; then
     tier1_floor=${tier1_floor:-0}
 fi
 
+if [ "$tier1_floor" -eq 0 ]; then
+    echo "FAIL: $NAME: tier-1 probed floor is unseeded (uapi-shim-tier1-probed-floor.baseline contains 0)"
+    echo "FAIL: $NAME: seed it with a real observed Tier-1 probed count before enabling the ratchet"
+    exit 1
+fi
+
 # Tier-2 breakage states: the linus tree was present and Tier-2 was entered
 # but failed to produce usable output.  These are not environment differences --
 # they indicate a broken build environment or a regressed probe path.  Fail
