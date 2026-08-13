@@ -479,12 +479,12 @@ static void dump_stats_dead_arm_check(void)
 	 * check entirely even if the grammar ran thousands of times and the
 	 * arm is genuinely dead.
 	 * With XMK_MIGRATE_STATE weight 2/120 (empty ring) to 4/138 (full
-	 * ring), p ≈ 1/60-1/34; 200 draws gives ~3-6 expected hits before
+	 * ring), p ≈ 1/60-1/34; 300 draws gives ~5-9 expected hits before
 	 * the dead-arm verdict fires. */
 	{
 		unsigned long draws = shm->stats.xfrm_churn.msg_kind_draws;
 
-		if (draws < 200)
+		if (draws < 300)
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
 			       "xfrm-churn", "insufficient_samples");
 		else if (!shm->stats.xfrm_churn.arm_entered_migrate_state)
