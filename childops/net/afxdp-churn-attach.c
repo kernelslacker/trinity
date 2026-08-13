@@ -22,6 +22,7 @@
 #if __has_include(<linux/if_xdp.h>) && __has_include(<linux/bpf.h>)
 
 #include "afxdp-churn-internal.h"
+#include "arm-tracking.h"
 #include "pids.h"
 
 /*
