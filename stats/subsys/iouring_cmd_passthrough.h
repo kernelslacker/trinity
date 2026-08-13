@@ -5,13 +5,16 @@ struct iouring_cmd_passthrough_stats {
 	/*
 	 * Denominator for the nulldev multishot oracle.  Incremented once
 	 * per variant_nulldev() invocation, after every precondition
-	 * (open, PROVIDE_BUFFERS, ring_submit_sqe) has succeeded and
-	 * immediately before the second ring_enter() call — i.e. only
-	 * when we are about to ask the kernel to schedule the multishot
-	 * URING_CMD.  Counts only plain IORING_URING_CMD_MULTISHOT draws;
-	 * IORING_URING_CMD_FIXED|MULTISHOT draws (which the kernel rejects
-	 * at prep before reaching uring_cmd_null) are excluded so the
-	 * ratio is unambiguous.
+	 * (open, PROVIDE_BUFFERS, ring_submit_sqe) has succeeded AND after
+	 * ring_enter() returns successfully — i.e. only when the kernel has
+	 * actually accepted the submission.  Transient ring_enter() failures
+	 * (EINTR/EAGAIN/EBUSY) take the goto-out path and must not advance
+	 * this counter, because the numerator (mshot_cmd_no_cqe) is only
+	 * incremented when a CQE is observed to be absent — which cannot
+	 * happen if ring_enter() never returned success.  Counts only plain
+	 * IORING_URING_CMD_MULTISHOT draws; IORING_URING_CMD_FIXED|MULTISHOT
+	 * draws (which the kernel rejects at prep before reaching
+	 * uring_cmd_null) are excluded so the ratio is unambiguous.
 	 *
 	 * The bug is confirmed when:
 	 *   mshot_cmd_no_cqe > 0 &&

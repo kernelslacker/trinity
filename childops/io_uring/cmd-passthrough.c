@@ -656,22 +656,25 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 
 	(*direct_calls)++;
 
-	/* Count only plain-MULTISHOT draws as oracle attempts: FIXED|MULTISHOT
-	 * is rejected by io_uring_cmd_prep() before reaching uring_cmd_null,
-	 * so those draws never contribute to mshot_cmd_no_cqe.  The denominator
-	 * must exclude them so the ratio mshot_cmd_no_cqe/nulldev_mshot_attempts
-	 * is unambiguous and the dead-arm check is exact. */
-	if (valid_op && !(cmd_flags & IORING_URING_CMD_FIXED))
-		__atomic_add_fetch(
-			&shm->stats.iouring_cmd_passthrough.nulldev_mshot_attempts,
-			1, __ATOMIC_RELAXED);
-
 	/* Submit with min_complete=0: do not block.  A blocking wait with
 	 * min_complete=1 would hang forever on the bug path because the
 	 * req is pinned (IOU_ISSUE_SKIP_COMPLETE) and no CQE will arrive. */
 	r = ring_enter(ctx, 1, 0);
 	if (r < 0)
 		goto out;
+
+	/* Count only plain-MULTISHOT draws as oracle attempts, and only after
+	 * ring_enter() succeeds.  FIXED|MULTISHOT is rejected by
+	 * io_uring_cmd_prep() before reaching uring_cmd_null, so those draws
+	 * never contribute to mshot_cmd_no_cqe.  The denominator must exclude
+	 * them so the ratio mshot_cmd_no_cqe/nulldev_mshot_attempts is
+	 * unambiguous and the dead-arm check is exact.  Counting only after a
+	 * successful ring_enter ensures transient failures (EINTR/EAGAIN/EBUSY)
+	 * do not advance the denominator while leaving the numerator untouched. */
+	if (valid_op && !(cmd_flags & IORING_URING_CMD_FIXED))
+		__atomic_add_fetch(
+			&shm->stats.iouring_cmd_passthrough.nulldev_mshot_attempts,
+			1, __ATOMIC_RELAXED);
 
 	{
 		/* Peek head/tail before draining: ring_drain_cqes_first_res()
