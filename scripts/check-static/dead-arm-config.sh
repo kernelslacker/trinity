@@ -54,6 +54,10 @@ MAPPING=$(cat <<'EOF'
 EOF
 )
 
+# Count real mapping entries (non-comment, non-blank) so an empty table
+# reports as dormant rather than silently passing.
+map_entries=$(printf '%s\n' "$MAPPING" | grep -cvE '^[[:space:]]*#|^[[:space:]]*$')
+
 # ---- Walk mapping and check each entry ----
 
 warn_count=0
@@ -110,6 +114,11 @@ fi
 if [ "$skip_count" -gt 0 ]; then
 	echo "WARN: $NAME: 0 config-dead arms detected; $skip_count entry/entries skipped" \
 	     "(config source not readable -- results incomplete)"
+	exit 0
+fi
+
+if [ "$map_entries" -eq 0 ]; then
+	echo "WARN: $NAME: empty mapping table -- no entries to check; gate has no detection power"
 	exit 0
 fi
 
