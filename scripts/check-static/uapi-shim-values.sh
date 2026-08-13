@@ -261,9 +261,8 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
     else
         HDR_INSTALL=$(mktemp -d /tmp/linus-hdrs-XXXXXX)
         BUILD_SCRATCH=$(mktemp -d /tmp/trinity-linus-build-XXXXXX)
-        trap 'rm -rf "$WORKDIR" "$HDR_INSTALL" "$BUILD_SCRATCH"' EXIT
-        HDR_SENTINEL="$WORKDIR/headers-install-sentinel"
-        touch "$HDR_SENTINEL"
+        trap 'rm -rf "$WORKDIR" "$HDR_INSTALL" "$BUILD_SCRATCH" "$HDR_SENTINEL"' EXIT
+        HDR_SENTINEL=$(mktemp "$LINUS_SRC/.hdr-sentinel-XXXXXX")
         if ! make -C "$LINUS_SRC" O="$BUILD_SCRATCH" headers_install \
                  INSTALL_HDR_PATH="$HDR_INSTALL" -j"$(nproc)" 2>/dev/null; then
             echo "WARN: $NAME: Tier 2 skipped: headers_install failed" >&2
@@ -280,7 +279,9 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
         # was touched by headers_install is litter.  Covers scripts/,
         # include/generated/, and usr/ -- all directories headers_install
         # may write into when O= is not honoured.  The sentinel lives in
-        # $WORKDIR and is removed by the existing EXIT trap.
+        # $LINUS_SRC (same filesystem as the probed paths) so cross-fs
+        # timestamp granularity skew cannot cause misses; it is removed
+        # by the EXIT trap.
         _litter=""
         for _dir in scripts include/generated usr; do
             _abs="$LINUS_SRC/$_dir"
