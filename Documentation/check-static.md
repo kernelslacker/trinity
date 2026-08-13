@@ -562,6 +562,12 @@ update this section to match `ls scripts/check-static/*.sh`.)
   writers must use `__atomic_fetch_add(..., __ATOMIC_RELAXED)`;
   `RELAXED` is correct because the child is the sole writer and
   nothing orders against this counter on either side.
+- `u32-skip-sw-oracle-false-positive`: the cls_u32 SKIP_SW update-path
+   oracle in `do_u32_skip_sw_leak()` must delete the step-A knode and probe
+   hnode2 via `settle_then_probe_hnode2_delete()` (bounded RCU backoff),
+   never a direct `RTM_DELTFILTER` on a live hnode2 -- that returns -EBUSY
+   on healthy kernels too and is a false positive.  The settle helper must
+   be defined, not merely called.
 - `syscall-metadata`: best-effort sanity on `struct syscallentry` --
   ARG_RANGE arguments must declare low/high bounds.
 - `tipc-addrtype-catalog`: every `TIPC_ADDR_*` value in

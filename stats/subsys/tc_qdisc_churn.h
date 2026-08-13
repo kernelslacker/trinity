@@ -27,6 +27,8 @@ struct tc_qdisc_churn_stats {
 	unsigned long u32_divisor_create_ok;	/* RTM_NEWTFILTER u32 DIVISOR hnode created */
 	unsigned long u32_link_skip_sw_ok;	/* RTM_NEWTFILTER u32 LINK+SKIP_SW hit -EOPNOTSUPP (intentional) */
 	unsigned long u32_link_leak_detected;	/* RTM_DELTFILTER hnode returned -EBUSY: refcount leak confirmed */
+	unsigned long u32_update_path_step2_bad_errno; /* SKIP_SW update returned neither 0 nor -EOPNOTSUPP (build defect) */
+	unsigned long u32_skip_sw_arm_done;	/* sticky: arm fired, skip further invocations */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_TC_QDISC_CHURN_H */

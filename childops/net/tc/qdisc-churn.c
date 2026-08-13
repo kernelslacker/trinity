@@ -696,7 +696,55 @@ teardown:
  * Oracle: RTM_DELTFILTER on the hnode handle.  refcount_dec_if_one() in
  * u32_delete() returns -EBUSY when refcnt > 1 (cls_u32.c:686-691).
  * Expected return 0; -EBUSY confirms the leak is live.
+ *
+ * Update-path false-positive fix: the initial knode install (step A)
+ * legitimately holds refcnt=2 on hnode2 while the knode is live.  The
+ * oracle must first delete the knode (RTM_DELTFILTER on knode handle)
+ * and wait for the RCU-deferred u32_delete_key_freepf_work decrement to
+ * land before probing hnode2.  settle_then_probe_hnode2_delete() retries
+ * up to SETTLE_ATTEMPTS x SETTLE_DELAY_MS to distinguish a genuine leak
+ * (-EBUSY persisting after settle) from a healthy refcnt drop (rc=0).
  */
+
+#define SETTLE_ATTEMPTS  5
+#define SETTLE_DELAY_MS  20
+
+/*
+ * settle_then_probe_hnode2_delete - retry RTM_DELTFILTER on an hnode handle
+ * with a bounded backoff to let RCU-deferred knode reclaim land.
+ *
+ * On a healthy kernel u32_delete_key_freepf_work is queued by
+ * u32_delete() and runs asynchronously; the hnode refcnt drop is not
+ * synchronous with the knode RTM_DELTFILTER reply.  This helper gives
+ * the work item time to complete before declaring the hnode busy.
+ *
+ * Returns 0 if the hnode was successfully deleted within the window,
+ * -EBUSY if all attempts returned -EBUSY (genuine leak on a buggy
+ * kernel), or any other errno from the first attempt that is not -EBUSY
+ * (unexpected error, not a leak signal).
+ *
+ * NOTE: do NOT use nl_send_recv_retry() for this retry loop.  On the
+ * create-path -EBUSY IS the intended signal (refcnt truly stuck); a
+ * generic retry helper would launder the result.
+ */
+static int settle_then_probe_hnode2_delete(struct nl_ctx *ctx, int ifindex,
+					   __u32 hnode_handle, __u32 qhandle)
+{
+	const struct timespec gap = {
+		.tv_sec  = 0,
+		.tv_nsec = (long)SETTLE_DELAY_MS * 1000000L,
+	};
+	int attempt, rc;
+
+	for (attempt = 0; attempt < SETTLE_ATTEMPTS; attempt++) {
+		rc = build_deltfilter_handle(ctx, ifindex, hnode_handle, qhandle);
+		if (rc != -EBUSY)
+			return rc; /* success or unexpected error — done */
+		(void)nanosleep(&gap, NULL);
+	}
+	return -EBUSY; /* persisted across all settle attempts */
+}
+
 static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
 {
 	/* hnode handles: htid encoded in top 12 bits of tcm_handle.
@@ -712,6 +760,13 @@ static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
 	unsigned int u32_cidx;
 	__u32 major, qhandle;
 	int rc;
+
+	/* Sticky guard: once the arm has fired (leak confirmed or already
+	 * exercised), skip further invocations.  Leak presence is a kernel
+	 * property; re-running only adds noise. */
+	if (__atomic_load_n(&shm->stats.tc_qdisc_churn.u32_skip_sw_arm_done,
+			    __ATOMIC_RELAXED))
+		return;
 
 	u32_cidx = cls_kind_idx("u32");
 	if (u32_cidx >= NR_CLS_KINDS || ns_unsupported_cls_kind[u32_cidx])
@@ -752,10 +807,14 @@ static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
 		 * Expected: 0 (refcnt drops to 0, hnode freed).
 		 * -EBUSY: refcnt stuck at 2, leak confirmed. */
 		if (build_deltfilter_handle(ctx, ifindex, hnode1, qhandle)
-		    == -EBUSY)
+		    == -EBUSY) {
 			__atomic_add_fetch(
 				&shm->stats.tc_qdisc_churn.u32_link_leak_detected,
 				1, __ATOMIC_RELAXED);
+			__atomic_store_n(
+				&shm->stats.tc_qdisc_churn.u32_skip_sw_arm_done,
+				1UL, __ATOMIC_RELAXED);
+		}
 	}
 
 	/* --- Update-path leak test --- */
@@ -769,27 +828,60 @@ static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
 		__atomic_add_fetch(&shm->stats.tc_qdisc_churn.u32_divisor_create_ok,
 				   1, __ATOMIC_RELAXED);
 
-		/* Create knode (explicit handle, no SKIP_SW) linking to hnode2;
-		 * hnode2->refcnt becomes 2.  Then re-issue same handle WITH
-		 * SKIP_SW so u32_change takes the update path at :938 and
-		 * hits the erroneous refcount_inc at :942. */
+		/* Step A: install knode (explicit handle, no SKIP_SW) linking
+		 * to hnode2.  This is a legitimate install; hnode2->refcnt
+		 * becomes 2 (base + live knode). */
 		rc = build_u32_filter_link(ctx, ifindex, knode_h, qhandle, hnode2,
 					   0, true);
 		if (rc == 0) {
+			/* Step B: re-issue same knode handle WITH SKIP_SW so
+			 * u32_change takes the update path at :938 and hits the
+			 * erroneous refcount_inc at :942.  On a buggy kernel this
+			 * bumps hnode2->refcnt to 3 and never decrements it.
+			 * Expected result: -EOPNOTSUPP (dummy has no offload).
+			 * Any other non-zero errno is a build defect (e.g. the
+			 * selector was malformed and got -EINVAL). */
 			rc = build_u32_filter_link(ctx, ifindex, knode_h, qhandle,
 						   hnode2, TCA_CLS_FLAGS_SKIP_SW,
 						   false);
-			if (rc == -EOPNOTSUPP)
+			if (rc == -EOPNOTSUPP) {
 				__atomic_add_fetch(
 					&shm->stats.tc_qdisc_churn.u32_link_skip_sw_ok,
 					1, __ATOMIC_RELAXED);
+			} else if (rc != 0) {
+				/* Unexpected errno from the SKIP_SW update attempt:
+				 * the selector may be malformed (-EINVAL) or the
+				 * handle was rejected.  Count as a build defect so
+				 * a silently-clean arm is visible in the stats. */
+				__atomic_add_fetch(
+					&shm->stats.tc_qdisc_churn.u32_update_path_step2_bad_errno,
+					1, __ATOMIC_RELAXED);
+			}
 
-			/* Oracle on hnode2: -EBUSY = update-path leak. */
-			if (build_deltfilter_handle(ctx, ifindex, hnode2, qhandle)
-			    == -EBUSY)
+			/* Step C: delete the knode BEFORE probing hnode2.
+			 * Even on a fixed kernel hnode2->refcnt is 2 while the
+			 * knode installed in step A is still live.  Deleting the
+			 * knode queues u32_delete_key_freepf_work (RCU-deferred)
+			 * which will decrement the refcnt asynchronously.
+			 * We must do this before the hnode oracle or the delete
+			 * returns -EBUSY on healthy kernels too (false positive). */
+			(void)build_deltfilter_handle(ctx, ifindex, knode_h, qhandle);
+
+			/* Step D (oracle): delete hnode2 with settle-and-retry.
+			 * Allow the RCU work item from step C to complete.
+			 * -EBUSY persisting after all settle attempts means the
+			 * refcnt was bumped an extra time in step B (update-path
+			 * bug) and the leak is genuine. */
+			if (settle_then_probe_hnode2_delete(ctx, ifindex,
+							    hnode2, qhandle)
+			    == -EBUSY) {
 				__atomic_add_fetch(
 					&shm->stats.tc_qdisc_churn.u32_link_leak_detected,
 					1, __ATOMIC_RELAXED);
+				__atomic_store_n(
+					&shm->stats.tc_qdisc_churn.u32_skip_sw_arm_done,
+					1UL, __ATOMIC_RELAXED);
+			}
 		}
 	}
 
