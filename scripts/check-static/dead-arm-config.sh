@@ -1,8 +1,7 @@
 #!/bin/bash
 #
 # dead-arm-config: warn about childop files that are config-dead on the
-# current build target because a required kernel or header feature is
-# absent.
+# fuzz target because a required kernel or header feature is absent.
 #
 # Counterpart to dead-arm-detect (which catches selector-dead arms from
 # rnd_modulo_u32 dispatch).  A config-dead arm either compiles to a stub
@@ -12,28 +11,15 @@
 # CONFIG SOURCES (probed in order)
 #   1. trinity config.h ($REPO_ROOT/config.h, from ./configure) -- USE_*
 #      defines for headers/features trinity probes at build time.
-#   2. kernel .config (/boot/config-$(uname -r) or /proc/config.gz) --
-#      for features trinity does not gate at configure time (e.g. THP
-#      is runtime-latched via CHILDOP_LATCH_UNSUPPORTED, no USE_* exists).
+#   2. fuzz-target kernel config (CONFIG_* style) -- for features trinity
+#      does not gate at configure time (e.g. runtime-latched childops).
+#      Location: FUZZ_KCONFIG env, else ~/.config/trinity/fuzz-kconfig.
+#      If absent the kernel-source checks are skipped and noted.
 #
 # MAPPING TABLE
 # Each entry: childop-file | config-source | check-symbol | display-name
 #
-#   afxdp-churn / afxdp-churn-attach
-#     Guard:  #if __has_include(<linux/if_xdp.h>) && __has_include(<linux/bpf.h>)
-#     Source: trinity (USE_XDP written by: check_header linux/if_xdp.h USE_XDP)
-#
-#   thp-split-ref-race
-#     Guard:  none -- runtime CHILDOP_LATCH_UNSUPPORTED when smaps shows
-#             no AnonHugePages after MADV_HUGEPAGE probe
-#     Source: kernel (no USE_* in config.h; probe /boot/config-$(uname -r))
-#     LIMIT:  skipped if kernel .config is not readable
-#
-#   xfrm-churn
-#     Guard:  none -- XFRM netlink fails at runtime when CONFIG_XFRM_USER=n
-#     Source: kernel (only specific enum probes in trinity config.h;
-#             no blanket USE_XFRM)
-#     LIMIT:  skipped if kernel .config is not readable
+# (empty -- no childops are currently config-dead on the fuzz target)
 #
 # SEVERITY: WARN (exit 0) -- baseline not yet established on fuzz host.
 
@@ -48,27 +34,23 @@ cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
 TRINITY_CONFIG="$ROOT/config.h"
 
+# Fuzz-target kernel config: prefer FUZZ_KCONFIG env, then default location.
+_FUZZ_KCONFIG_DEFAULT="$HOME/.config/trinity/fuzz-kconfig"
+FUZZ_KCONFIG="${FUZZ_KCONFIG:-$_FUZZ_KCONFIG_DEFAULT}"
 KCONFIG=""
-KCONFIG_CMD=""
-KVER="$(uname -r 2>/dev/null || true)"
-if [ -n "$KVER" ] && [ -f "/boot/config-$KVER" ]; then
-	KCONFIG="/boot/config-$KVER"
-	KCONFIG_CMD="grep"
-elif [ -f "/proc/config.gz" ]; then
-	KCONFIG="/proc/config.gz"
-	KCONFIG_CMD="zgrep"
+if [ -f "$FUZZ_KCONFIG" ]; then
+	KCONFIG="$FUZZ_KCONFIG"
+else
+	echo "  $NAME: skipped: fuzz-target kconfig not found" \
+	     "(set FUZZ_KCONFIG= or place config at $FUZZ_KCONFIG)" >&2
 fi
 
 trinity_has() { grep -q "^#define $1 " "$TRINITY_CONFIG" 2>/dev/null; }
-kernel_has()  { $KCONFIG_CMD -qE "^$1=(y|m)" "$KCONFIG" 2>/dev/null; }
+kernel_has()  { grep -qE "^$1=(y|m)" "$KCONFIG" 2>/dev/null; }
 
 # ---- Mapping table (tab-separated) ----
 # Format: file | source | symbol | display-name
 MAPPING=$(cat <<'EOF'
-childops/net/afxdp-churn.c	trinity	USE_XDP	CONFIG_XDP_SOCKETS
-childops/net/afxdp-churn-attach.c	trinity	USE_XDP	CONFIG_XDP_SOCKETS
-childops/mm/thp-split-ref-race.c	kernel	CONFIG_TRANSPARENT_HUGEPAGE	CONFIG_TRANSPARENT_HUGEPAGE
-childops/net/xfrm/xfrm-churn.c	kernel	CONFIG_XFRM_USER	CONFIG_XFRM_USER
 EOF
 )
 
@@ -90,9 +72,8 @@ while IFS=$'\t' read -r cfile src sym display; do
 		trinity_has "$sym" && continue
 		;;
 	kernel)
-		if [ -z "$KCONFIG_CMD" ]; then
-			echo "  $NAME: $cfile: skipping ($display: no readable kernel .config;" \
-			     "need /boot/config-$(uname -r 2>/dev/null) or /proc/config.gz)" >&2
+		if [ -z "$KCONFIG" ]; then
+			echo "  $NAME: $cfile: skipping ($display: fuzz-target kconfig not found)" >&2
 			skip_count=$((skip_count + 1))
 			continue
 		fi
@@ -118,7 +99,7 @@ if [ "$warn_count" -gt 0 ]; then
 		echo "  A config-dead arm compiles to a stub or returns LATCH_UNSUPPORTED"
 		echo "  every invocation; it contributes zero useful fuzz surface."
 		echo "  Resolution: enable the kernel/build option, or remove the childop"
-		echo "  from the rotation until the config is present on the fuzz host."
+		echo "  from the rotation until the config is present on the fuzz target."
 		[ "$skip_count" -gt 0 ] && \
 		echo "  ($skip_count mapping entry/entries skipped -- config source not readable)"
 	} >&2
