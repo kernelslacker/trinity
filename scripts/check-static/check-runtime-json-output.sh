@@ -195,6 +195,8 @@ BASELINE_TYPE_RE = re.compile(
 def norm_baseline_type(t):
     """Normalise a baseline type annotation to the same token set."""
     t = t.rstrip('?')   # strip nullable marker
+    if t.startswith('enum:'):
+        return "str"    # enum pins are string-valued; allowed set checked separately
     if BASELINE_TYPE_RE.match(t):
         return "num"
     if t in ("object",):
@@ -211,12 +213,17 @@ def is_int_key(k):
     return k.isdigit()
 
 def walk_json(obj, path="", visited_arr_paths=None):
-    """Yield (path, norm_type) pairs.  Arrays yield one representative element."""
+    """Yield (path, norm_type, raw_val) triples.  Arrays yield one representative element.
+
+    raw_val is the actual Python value for leaf (non-container) nodes, or None
+    for containers.  Callers use raw_val for enum-pin enforcement.
+    """
     if visited_arr_paths is None:
         visited_arr_paths = set()
     t = norm_type(obj)
+    raw_val = obj if not isinstance(obj, (dict, list)) else None
     if path:  # skip the root node (empty path); only emit named nodes
-        yield (path, t)
+        yield (path, t, raw_val)
     if isinstance(obj, dict):
         for k, v in obj.items():
             seg = "%u" if is_int_key(k) else k
@@ -224,7 +231,7 @@ def walk_json(obj, path="", visited_arr_paths=None):
             # Skip null children -- they will be absent from the runtime
             # schema but may be present in the baseline as nullable (obj?).
             if v is None:
-                yield (child_path, "null")
+                yield (child_path, "null", None)
                 continue
             yield from walk_json(v, child_path, visited_arr_paths)
     elif isinstance(obj, list):
@@ -239,6 +246,9 @@ def extract_runtime_schema(stdout_path):
     the JSON document; the JSON lands as the very last non-empty line of
     stdout.  Search lines from the end for one that parses as a JSON object
     containing 'stats' or 'syscalls'.
+
+    Returns (schema, values, error) where schema maps path->norm_type and
+    values maps path->raw_value for leaf nodes (used for enum-pin checks).
     """
     with open(stdout_path, "rb") as f:
         raw = f.read().decode("utf-8", errors="replace")
@@ -252,13 +262,16 @@ def extract_runtime_schema(stdout_path):
             obj, _end = decoder.raw_decode(line)
             if isinstance(obj, dict) and ("stats" in obj or "syscalls" in obj):
                 schema = {}
-                for path, t in walk_json(obj):
+                values = {}
+                for path, t, raw_val in walk_json(obj):
                     if path not in schema:
                         schema[path] = t
-                return schema, None
+                        if raw_val is not None:
+                            values[path] = raw_val
+                return schema, values, None
         except json.JSONDecodeError:
             continue
-    return None, "no valid JSON object found in stdout (last line must be the JSON document)"
+    return None, {}, "no valid JSON object found in stdout (last line must be the JSON document)"
 
 def extract_baseline_schema(baseline_path):
     """Read the static baseline, return {path: norm_type}."""
@@ -280,7 +293,7 @@ def extract_baseline_schema(baseline_path):
 
 # --- main -------------------------------------------------------------------
 
-rt_schema, err = extract_runtime_schema(stdout_path)
+rt_schema, rt_values, err = extract_runtime_schema(stdout_path)
 if err:
     print(f"FAIL: stats-json: {err}", flush=True)
     with open(result_path, "w") as f:
@@ -342,6 +355,22 @@ for p in sorted(runtime_paths & baseline_paths):
     # which is unexpected but not necessarily wrong for a type-check gate.
     type_mismatches.append(f"  {p}: runtime={rt!r} baseline={bl!r} (raw={raw!r})")
 
+# Enum-pin enforcement: for baseline entries typed as enum:v1|v2|..., assert
+# that the live value (if present) is one of the declared tokens.
+enum_errors = []
+for p in sorted(runtime_paths & baseline_paths):
+    raw = raw_bl_types.get(p, "")
+    if not raw.startswith("enum:"):
+        continue
+    token_str = raw[5:].rstrip('?')  # strip 'enum:' prefix and nullable marker
+    allowed   = set(token_str.split("|"))
+    actual    = rt_values.get(p)
+    if actual is None:
+        continue  # value absent at runtime (nullable path, not in this run)
+    if actual not in allowed:
+        enum_errors.append(
+            f"  {p}: value {actual!r} not in allowed set {sorted(allowed)}")
+
 errors = []
 if unexpected:
     errors.append("paths in runtime JSON not found in static baseline "
@@ -351,6 +380,10 @@ if unexpected:
 if type_mismatches:
     errors.append("type mismatches between runtime and baseline:")
     for m in type_mismatches:
+        errors.append(m)
+if enum_errors:
+    errors.append("enum-pin violations (value not in declared set):")
+    for m in enum_errors:
         errors.append(m)
 
 with open(result_path, "w") as f:

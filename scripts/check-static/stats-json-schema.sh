@@ -974,6 +974,12 @@ fi
 # the ordered structure intact (no sort).
 baseline=$(grep -Ev '^\s*(#|$)' "$BASELINE")
 
+# Normalise enum pins (enum:v1|v2|...) back to str before comparing against
+# the source-reconstructed schema, which always emits 'str' for %s fields.
+# The enum annotation is a runtime-gate refinement; the static schema check
+# only cares that the field is string-typed, not which tokens are allowed.
+baseline=$(printf '%s\n' "$baseline" | sed 's/\tenum:[^\t]*/\tstr/g')
+
 if [ "$schema" = "$baseline" ]; then
 	count=$(printf '%s\n' "$schema" | wc -l)
 	echo "PASS: $NAME: $count schema entries pinned"
