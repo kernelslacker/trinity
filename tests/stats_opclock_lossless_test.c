@@ -58,7 +58,8 @@
 #define RING_CAP 1024
 
 struct sim_ring {
-	unsigned long lossless_op_count;	/* per-child, plain (no atomic) */
+	unsigned long lossless_op_count;	/* per-child; RELAXED atomic in production
+					 * (harness is single-threaded) */
 	unsigned int head;
 	unsigned int tail;
 	unsigned int slots[RING_CAP];	/* payload unused in test */
@@ -124,15 +125,16 @@ static void agg_init(struct sim_aggregate *a)
 /*   - child.c alt-op path                                             */
 /*                                                                     */
 /* Both sites:                                                         */
-/*   1. increment the per-child lossless_op_count (plain ++, no       */
-/*      atomic -- sole writer)                                         */
+/*   1. increment the per-child lossless_op_count via RELAXED          */
+/*      atomic fetch-add (sole writer; harness is single-threaded)     */
 /*   2. enqueue the ring (may fail if full -- drop is OK)              */
 /* ------------------------------------------------------------------ */
 
 static void sim_op_complete(struct sim_ring *ring)
 {
-	/* Step 1: per-child lossless increment (plain ++ in production) */
-	ring->lossless_op_count++;
+	/* Step 1: per-child lossless increment (RELAXED atomic in production;
+	 * single-threaded harness so ordering is moot here) */
+	__atomic_fetch_add(&ring->lossless_op_count, 1, __ATOMIC_RELAXED);
 
 	/* Step 2: ring enqueue (return discarded, matching production) */
 	(void)ring_enqueue(ring, 1u);

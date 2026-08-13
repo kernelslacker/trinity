@@ -919,10 +919,12 @@ void child_process(struct childdata *child, int childno)
 					&shm->stats.childop.timeout_missed[op],
 					1, __ATOMIC_RELAXED);
 			alarm(0);
-			/* Lossless op-count: single writer (this child), so
-			 * plain increment — no atomic, no shared cacheline. */
+			/* Lossless op-count: sole writer (this child), so
+			 * RELAXED is sufficient — nothing orders against this
+			 * counter; the consumer loads RELAXED. */
 			if (child->stats_ring != NULL)
-				child->stats_ring->lossless_op_count++;
+				__atomic_fetch_add(&child->stats_ring->lossless_op_count,
+						   1, __ATOMIC_RELAXED);
 			stats_ring_enqueue(child->stats_ring,
 					   STATS_FIELD_OP_COUNT, 0, 1);
 		}

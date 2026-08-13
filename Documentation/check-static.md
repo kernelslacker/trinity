@@ -541,6 +541,15 @@ update this section to match `ls scripts/check-static/*.sh`.)
   values, reordered emission, and duplicate keys at the same scope
   that would otherwise silently break downstream scrapers.
   Regenerate with `--regen` and review the baseline diff.
+- `stats-ring-op-clock-atomic`: every access to `lossless_op_count`
+  in production `.c` files (excluding `tests/`) must be lexically
+  inside an `__atomic_` call on the same source line.  The parent
+  reads the field with `__atomic_load_n`; a plain store or increment
+  races with that load and is C11 undefined behaviour regardless of
+  whether x86-64 or arm64 codegen happens to be correct today.  Both
+  writers must use `__atomic_fetch_add(..., __ATOMIC_RELAXED)`;
+  `RELAXED` is correct because the child is the sole writer and
+  nothing orders against this counter on either side.
 - `syscall-metadata`: best-effort sanity on `struct syscallentry` --
   ARG_RANGE arguments must declare low/high bounds.
 - `tipc-addrtype-catalog`: every `TIPC_ADDR_*` value in

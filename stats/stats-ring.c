@@ -440,9 +440,8 @@ void stats_ring_drain_all(void)
 		/*
 		 * Accumulate the per-child lossless_op_count before draining
 		 * the ring so the sum reflects every op completed up to now.
-		 * Plain read: the child is the sole writer (no atomic needed);
-		 * RELAXED load matches the child's plain store on architectures
-		 * with stronger-than-relaxed store ordering (x86-64, arm64).
+		 * The child is the sole writer; RELAXED is sufficient because
+		 * nothing orders against this counter on either side.
 		 */
 		lossless_total += __atomic_load_n(&ring->lossless_op_count,
 						  __ATOMIC_RELAXED);
@@ -452,7 +451,7 @@ void stats_ring_drain_all(void)
 	/*
 	 * Derive total_op_count and op_count from the per-child lossless
 	 * sum accumulated above.  Each child increments its own ring's
-	 * lossless_op_count (plain ++, sole writer) so the sum is lossless
+	 * lossless_op_count (RELAXED atomic fetch-add, sole writer) so the sum is lossless
 	 * -- no ring-full drop can silently lose an increment.  op_count =
 	 * total - epoch_start preserves the per-epoch view that
 	 * fleet_op_count (published below) and check_main_loop_stops()

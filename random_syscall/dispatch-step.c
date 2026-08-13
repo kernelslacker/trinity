@@ -579,10 +579,12 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		else
 			result = STATS_RESULT_SUCCESS;
 
-		/* Lossless op-count: single writer (this child), so
-		 * plain increment — no atomic, no shared cacheline. */
+		/* Lossless op-count: sole writer (this child), so
+		 * RELAXED is sufficient — nothing orders against this
+		 * counter; the consumer loads RELAXED. */
 		if (child->stats_ring != NULL)
-			child->stats_ring->lossless_op_count++;
+			__atomic_fetch_add(&child->stats_ring->lossless_op_count,
+					   1, __ATOMIC_RELAXED);
 		stats_ring_enqueue_call_complete(child->stats_ring,
 						 (uint16_t)entry->syscall_category,
 						 result);

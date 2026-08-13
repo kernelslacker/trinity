@@ -269,9 +269,10 @@ struct stats_ring_slot {
 struct stats_ring {
 	/*
 	 * Per-child lossless op counter.  Incremented by the child (sole
-	 * writer) at every op-completion site — no atomic needed, no shared
-	 * cacheline contention.  The parent sums across all children's rings
-	 * in stats_ring_drain_all() and stores the result into
+	 * writer) via RELAXED atomic fetch-add at every op-completion site.
+	 * RELAXED is sufficient: the child is the only writer and nothing
+	 * orders against this counter; the parent reads it RELAXED in
+	 * stats_ring_drain_all() and stores the sum into
 	 * parent_stats.total_op_count.
 	 *
 	 * Cache-line aligned so the child's hot-path write lands on its own
