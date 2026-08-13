@@ -222,7 +222,6 @@ static int open_loopback_pair(pid_t *out_pid)
 	if (pid < 0)
 		goto fail;
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		int s;
 		unsigned char drain[4096];
 

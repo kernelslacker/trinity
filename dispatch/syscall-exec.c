@@ -578,7 +578,6 @@ void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		prctl(PR_SET_NAME, (unsigned long) &childname);
 
 		/* this_child() grandchild rule: see Documentation/this-child-grandchild-reachability.md */
-		CHILDOP_GRANDCHILD_ENTER();
 
 		__do_syscall(rec, entry, GOING_AWAY, NULL, child);
 		/* if this was for eg. an successful execve, we should never get here.

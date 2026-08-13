@@ -323,7 +323,6 @@ static int fpr_vfork_g2_fn(void *arg)
 	struct timespec nap = { .tv_sec = 0, .tv_nsec = 1000000L }; /* 1 ms */
 	unsigned int spins;
 
-	CHILDOP_GRANDCHILD_ENTER();
 	/*
 	 * Do NOT set PDEATHSIG.  G2 must survive G1's death because G2 is the
 	 * one that kills G1 and then races with P.  If P dies unexpectedly the
@@ -372,7 +371,6 @@ static int fpr_vfork_g1_fn(void *arg)
 	struct fpr_vfork_shared *vs = arg;
 	pid_t g2_pid;
 
-	CHILDOP_GRANDCHILD_ENTER();
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 	if (getppid() == 1)
 		_exit(0);
@@ -447,7 +445,6 @@ static void fpr_run_nested_vfork_race(struct fpr_shared *s)
 		unsigned int spins;
 		long readback;
 
-		CHILDOP_GRANDCHILD_ENTER();
 		(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 		if (getppid() == 1)
 			_exit(0);
@@ -627,7 +624,6 @@ static pid_t fpr_spawn_worker(struct fpr_shared *s, fpr_worker_entry entry)
 	pid_t pid = fork();
 
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		entry(s);
 		_exit(0);
 	}

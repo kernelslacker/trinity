@@ -305,7 +305,6 @@ void nl80211_admin_gate_probe(uint32_t wiphy_idx, unsigned long *direct_calls)
 		return;
 
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		struct genl_ctx cctx;
 		struct genl_open_opts opts;
 		unsigned int i;

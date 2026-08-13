@@ -141,7 +141,6 @@ static unsigned long run_concurrent_writeback(int fd, unsigned char *map,
 		if (pid < 0)
 			break;
 		if (pid == 0) {
-			CHILDOP_GRANDCHILD_ENTER();
 			unsigned long off = i * slice;
 			unsigned long end = off + slice;
 			unsigned long p;
@@ -235,7 +234,6 @@ static unsigned long run_dontfork_split(int fd, unsigned long region_bytes)
 		return calls;
 	}
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		unsigned long p;
 		unsigned char byte = (unsigned char)(rnd_u32() & 0xff);
 

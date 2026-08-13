@@ -227,7 +227,6 @@ static void one_cycle(unsigned long *direct_calls)
 	}
 
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		accessor_loop(path);
 		_exit(0);
 	}

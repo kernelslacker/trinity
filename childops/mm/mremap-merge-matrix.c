@@ -634,7 +634,6 @@ bool mremap_merge_matrix(struct childdata *child)
 		direct_calls++;
 		race_pid = fork();
 		if (race_pid == 0) {
-			CHILDOP_GRANDCHILD_ENTER();
 			char *race_base = slot_addr(arena,
 						    NR_SRC_SLOTS + NR_DST_SLOTS,
 						    slot_bytes);

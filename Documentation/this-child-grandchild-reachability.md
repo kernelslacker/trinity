@@ -59,38 +59,22 @@ treated as a no-op if something unexpected (e.g. a non-child process calling
 
 Any write to a per-process member — including stamping `fault_beacon`, updating
 `kcov.fd`, or advancing ring cursors — through the COW-inherited slot corrupts
-the parent worker.  The fix is the in-grandchild suppression flag:
+the parent worker.  The fault handler detects grandchildren with a write-free
+predicate:
 
 ```c
-/* health/signals-fault-handler.c:516 */
-if (in_grandchild == getpid()) {
+/* health/signals-fault-handler.c */
+if (mypid() != getpid()) {
     /* skip fault_beacon stamp — this_child() points at parent's slot */
     ...
 }
 ```
 
-## Gate pattern for new grandchild producers
-
-Every function body that is invoked exclusively inside a fork()'d grandchild
-**must** call `CHILDOP_GRANDCHILD_ENTER()` as its first statement:
-
-```c
-static void my_worker(void)
-{
-    CHILDOP_GRANDCHILD_ENTER();
-    /* ... rest of worker ... */
-}
-```
-
-This stores `getpid()` into `in_grandchild` before any code that might call
-`this_child()` and ensures that per-process-state guards fire correctly even
-if the grandchild crashes synchronously.
-
-Note: `in_grandchild` is a `pid_t` (not `volatile sig_atomic_t`) storing the
-grandchild's PID.  The fault-handler guard tests `in_grandchild == getpid()`
-rather than a bare non-zero check, so that `clone(..., CLONE_VM | SIGCHLD, ...)`
-racers that write their own PID cannot poison the primary child's flag — each
-process's PID is unique even under `CLONE_VM`.
+`mypid()` returns `cached_pid`, which is written in the parent by `main()` and
+in each forked primary child by `init_child()`.  Grandchildren never call
+`init_child()`, so they inherit the parent's `cached_pid` unchanged.  Thus
+`mypid() != getpid()` is TRUE in every grandchild and FALSE in every primary
+child, with no marking required at fork sites.
 
 ## Forward pointer
 

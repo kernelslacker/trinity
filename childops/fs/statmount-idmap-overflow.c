@@ -291,7 +291,6 @@ static void probe_statmount_idmap(void)
  */
 static __attribute__((noreturn)) void carrier_child(int ready_fd)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	char ready = 1;
 	ssize_t w;
 	unsigned long write_calls = 0;

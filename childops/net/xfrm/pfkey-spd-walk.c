@@ -342,7 +342,6 @@ static unsigned long drain_replies(int fd)
 static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base,
 						       enum child_op_type op)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	uint8_t buf[256];
 	struct spd_variant v;
 	struct timespec t0;
@@ -414,7 +413,6 @@ static __attribute__((noreturn)) void spd_walker_child(struct spd_variant base,
 static __attribute__((noreturn)) void spd_racer_child(uint8_t walker_dir,
 						      enum child_op_type op)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	uint8_t buf[256];
 	struct timespec t0;
 	unsigned long n = 0;

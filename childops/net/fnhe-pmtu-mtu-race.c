@@ -994,7 +994,6 @@ static int fnhe_pmtu_mtu_race_in_ns(void *arg)
 			goto out_reap;
 		}
 		if (wa == 0) {
-			CHILDOP_GRANDCHILD_ENTER();
 			unsigned long start = rctx->iter * FNHE_INJECT_COUNT;
 
 			injection_worker_body(op_type, start);
@@ -1010,7 +1009,6 @@ static int fnhe_pmtu_mtu_race_in_ns(void *arg)
 		goto out_reap;
 	}
 	if (wb == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		mtu_flap_worker_body(op_type);
 		/* noreturn */
 	}

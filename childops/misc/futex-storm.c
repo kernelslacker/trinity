@@ -393,7 +393,6 @@ static int futex_storm_iter_spawn_workers(struct futex_storm_iter_ctx *ctx)
 		if (pid < 0)
 			break;
 		if (pid == 0) {
-			CHILDOP_GRANDCHILD_ENTER();
 			inner_worker(ctx->s);
 			_exit(0);	/* unreachable */
 		}

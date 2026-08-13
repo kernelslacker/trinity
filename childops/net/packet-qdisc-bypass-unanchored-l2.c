@@ -541,7 +541,6 @@ static void bypass_attach_xdp(struct nl_ctx *ctx, int ifindex, int prog_fd)
 static void lane_a_worker(unsigned int mst_ifindex, const char *mst_name,
 			  int op_type)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	/* A minimal Ethernet frame: dst + src MACs + ethertype + zeros.
 	 * SOCK_DGRAM: kernel prepends the L2 header; payload starts after.
 	 * SOCK_RAW / SOCK_PACKET: we supply the full frame. */
@@ -888,7 +887,6 @@ static void xsk_bypass_tx_kick(struct xsk_bypass_state *s, int xsk_fd)
  */
 static void lane_b_worker(unsigned int mst_ifindex, int op_type)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	struct xsk_bypass_state s;
 	struct timespec t0, now;
 	unsigned int i;

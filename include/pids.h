@@ -30,6 +30,13 @@ extern unsigned long long cached_start_time;
  * begins.  No thread-local storage is needed because trinity children
  * are processes (fork), not threads — each child gets its own private
  * copy of the global via copy-on-write.
+ *
+ * CLONE_VM grandchildren (throwaway extra-forks inside childop workers)
+ * never call init_child(), so they inherit the parent worker's
+ * cached_pid unchanged.  Consequently mypid() != getpid() is TRUE
+ * inside every grandchild, and this property is intentional and
+ * load-bearing: child_fault_handler() uses it as the grandchild
+ * suppression predicate (see health/signals-fault-handler.c).
  */
 static inline pid_t mypid(void)
 {

@@ -484,7 +484,6 @@ bool userns_fuzzer(struct childdata *child)
 	}
 
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		inner_child_main(child);
 		_exit(0);	/* unreachable */
 	}

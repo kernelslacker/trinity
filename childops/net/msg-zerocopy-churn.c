@@ -137,7 +137,6 @@ static int open_loopback_pair(pid_t *out_pid, unsigned long *direct_calls)
 	if (pid < 0)
 		goto fail;
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		/* Acceptor child: accept once, drain anything the parent
 		 * pushes through the ZC path so the receive window stays
 		 * open, then exit. */

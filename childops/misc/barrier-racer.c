@@ -523,7 +523,6 @@ bool barrier_racer(struct childdata *child)
 		if (pid < 0)
 			break;
 		if (pid == 0) {
-			CHILDOP_GRANDCHILD_ENTER();
 			inner_worker(s, target);
 			_exit(0);	/* unreachable */
 		}

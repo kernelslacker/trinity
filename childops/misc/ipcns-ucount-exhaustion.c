@@ -106,7 +106,6 @@ static bool ipcns_write_str(const char *path, const char *val,
  */
 static void hammer_worker(void)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	int i;
 
 	for (i = 0; i < HAMMER_LOOPS; i++)
@@ -123,7 +122,6 @@ static void hammer_worker(void)
  */
 static void churn_worker(void)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	pid_t pids[CHURN_FORKS];
 	int i, n = 0;
 
@@ -133,7 +131,6 @@ static void churn_worker(void)
 		if (p < 0)
 			break;
 		if (p == 0) {
-			CHILDOP_GRANDCHILD_ENTER();
 			(void)unshare(CLONE_NEWIPC);
 			_exit(0);
 		}
@@ -257,7 +254,6 @@ bool ipcns_ucount_exhaustion(struct childdata *child)
 	}
 
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		inner_child_main(shared_dc);
 		_exit(0); /* unreachable */
 	}

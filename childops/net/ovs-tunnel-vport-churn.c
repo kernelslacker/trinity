@@ -257,7 +257,6 @@ static void ovs_try_modprobe(const char *mod)
 	if (pid < 0)
 		return;
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		int devnull = open("/dev/null", O_RDWR | O_CLOEXEC);
 		if (devnull >= 0) {
 			(void)dup2(devnull, 0);
@@ -683,7 +682,6 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		if (helper[0] != '\0') {
 			racer_pid = fork();
 			if (racer_pid == 0) {
-				CHILDOP_GRANDCHILD_ENTER();
 				ovs_race_dellink_loop(helper, 5);
 				_exit(0);
 			}

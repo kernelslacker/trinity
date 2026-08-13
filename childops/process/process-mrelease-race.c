@@ -185,7 +185,6 @@ static void victim_body(int ready_wr, int release_rd,
 			size_t fault_bytes, bool add_shmem, bool add_thp,
 			struct racer_result *slot)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	void *anon_region;
 	void *shmem_region = MAP_FAILED;
 	volatile char *p;
@@ -276,7 +275,6 @@ done:
 static void racer_body(int pidfd, int release_rd,
 		       struct racer_result *slot)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	char byte;
 	int rc;
 
@@ -315,7 +313,6 @@ static void racer_body(int pidfd, int release_rd,
 static void waitid_racer_body(int pidfd, int release_rd,
 			      struct racer_result *slot)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	char byte;
 	siginfo_t info;
 
@@ -592,7 +589,6 @@ static int run_exit_probe(void)
 
 	pid = fork();
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		_exit(0);
 	}
 	if (pid < 0)

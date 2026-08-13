@@ -167,7 +167,6 @@ static void probe_inet(struct childdata *child)
  */
 static __attribute__((noreturn)) void twseed_worker(uint16_t port)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	struct sockaddr_in sin;
 	int listener;
 	unsigned int i;
@@ -237,7 +236,6 @@ out:
  */
 static __attribute__((noreturn)) void churn_worker(int family, uint16_t port)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	struct timespec t0;
 	unsigned long cycles = 0;
 	unsigned long n = 0;
@@ -301,7 +299,6 @@ static __attribute__((noreturn)) void churn_worker(int family, uint16_t port)
  */
 static __attribute__((noreturn)) void syn_worker(uint16_t port)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	struct sockaddr_in sin;
 	struct sockaddr_in6 sin6;
 	struct timespec t0;
@@ -359,7 +356,6 @@ static __attribute__((noreturn)) void syn_worker(uint16_t port)
  */
 static __attribute__((noreturn)) void rehash_worker(uint16_t port)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	struct sockaddr_in sin_bind, sin_peer;
 	struct timespec t0;
 	unsigned long cycles = 0;

@@ -174,7 +174,6 @@ static int open_loopback_pair(pid_t *out_pid)
 	if (pid < 0)
 		goto fail;
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		/* Acceptor child.  accept() one connection, drain so the
 		 * parent's sends don't stall on receive-window watermarks,
 		 * then exit. */

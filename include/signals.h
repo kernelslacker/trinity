@@ -10,27 +10,6 @@ extern volatile sig_atomic_t ctrlc_pending;
 extern volatile sig_atomic_t in_do_syscall;
 
 /*
- * Set at the top of every fork()d grandchild worker body immediately
- * after the fork(), before any childop logic runs.  Read by
- * child_fault_handler() to skip the fault-beacon stamp and buglog
- * open on a grandchild crash: this_child() in the grandchild returns
- * the parent worker's childdata (cached_pid is COW-inherited and never
- * updated across the throwaway fork), so a beacon stamp would publish
- * a fault attributed to the wrong worker, and the buglog open +
- * memfd lseek+drain would corrupt the worker's on-disk forensic
- * record.  Skip straight to the in-handler stderr writes; the
- * grandchild has no childdata of its own to stamp into and the
- * kernel-side crash artefacts still surface the death.
- *
- * Use CHILDOP_GRANDCHILD_ENTER() as the first statement in every
- * fork()d grandchild body so the flag is set before any other code
- * runs in that process image.
- */
-extern pid_t in_grandchild;
-
-#define CHILDOP_GRANDCHILD_ENTER() do { in_grandchild = getpid(); } while (0)
-
-/*
  * Per-child recovery point for asb_relocate()'s best-effort source copy.
  *
  * range_readable_user() proves the source range from cached state

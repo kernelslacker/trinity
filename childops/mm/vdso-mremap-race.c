@@ -170,7 +170,6 @@ enum mremap_shape {
  */
 static void __attribute__((noreturn)) spinner_helper(void)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	struct timespec start, now;
 	long elapsed_ns;
 	unsigned long iters = 0;
@@ -202,7 +201,6 @@ static void __attribute__((noreturn)) spinner_helper(void)
  */
 static void __attribute__((noreturn)) mutator_helper(void)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	enum vdso_mutation mut;
 	void *vdso_addr = (void *) vdso_start;
 	void *fresh;

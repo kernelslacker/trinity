@@ -192,7 +192,6 @@ static void pdpc_modprobe_netdevsim_once(void)
 	if (pid < 0)
 		return;
 	if (pid == 0) {
-		CHILDOP_GRANDCHILD_ENTER();
 		devnull = open("/dev/null", O_RDWR | O_CLOEXEC);
 		if (devnull >= 0) {
 			(void)dup2(devnull, 0);

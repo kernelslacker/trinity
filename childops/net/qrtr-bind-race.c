@@ -156,7 +156,6 @@ static uint32_t pick_port(void)
  */
 static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 {
-	CHILDOP_GRANDCHILD_ENTER();
 	struct sockaddr_qrtr sq, local;
 	socklen_t slen = sizeof(local);
 	unsigned long n = 0;
