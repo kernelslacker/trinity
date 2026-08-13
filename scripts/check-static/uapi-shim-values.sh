@@ -44,6 +44,7 @@ set -u
 NAME="uapi-shim-values"
 ROOT="${REPO_ROOT:-$(pwd)}"
 BASELINE="$ROOT/scripts/check-static/uapi-shim-values.baseline"
+PROBED_FLOOR_FILE="$ROOT/scripts/check-static/uapi-shim-probed-floor.baseline"
 
 # ---------------------------------------------------------------------------
 # Prerequisites
@@ -431,6 +432,28 @@ if [ "$probed" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Coverage ratchet: probed must not drop below the stored floor.
+#
+# The floor is a single integer in scripts/check-static/uapi-shim-probed-floor.baseline.
+# It represents the minimum acceptable count of compiler-verified symbols.
+#
+# To legitimately lower the floor (e.g. after removing headers or dead shims):
+#   1. Confirm the reduction is intentional (symbols removed, not just broken).
+#   2. Edit the baseline file manually to the new minimum.
+#   3. Add a comment in the same commit explaining the reason.
+# Do NOT lower the floor to paper over a probe regression.
+# ---------------------------------------------------------------------------
+probed_floor=0
+if [ -f "$PROBED_FLOOR_FILE" ]; then
+    probed_floor=$(grep -oE '^[0-9]+' "$PROBED_FLOOR_FILE" | head -1 || echo 0)
+    probed_floor=${probed_floor:-0}
+fi
+if [ "$probed" -lt "$probed_floor" ]; then
+    echo "FAIL: $NAME: coverage ratchet: probed $probed < floor $probed_floor"
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
 # Step 5: Compare trinity values against compiler values
 # For each compiler-resolvable symbol, every occurrence in the harvest must
 # carry the compiler's authoritative value.
@@ -583,5 +606,5 @@ if [ "$checked" -ne "$probed" ]; then
     exit 1
 fi
 
-echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / unresolved-uapi $unresolved_uapi_count / tier2=$TIER2_STATUS)"
+echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / unresolved-uapi $unresolved_uapi_count / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor)"
 exit 0
