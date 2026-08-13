@@ -262,7 +262,8 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
         HDR_INSTALL=$(mktemp -d /tmp/linus-hdrs-XXXXXX)
         BUILD_SCRATCH=$(mktemp -d /tmp/trinity-linus-build-XXXXXX)
         trap 'rm -rf "$WORKDIR" "$HDR_INSTALL" "$BUILD_SCRATCH"' EXIT
-        before_fp=$(git -C "$HOME/src/linux-linus" status --porcelain --ignored scripts/ 2>/dev/null)
+        HDR_SENTINEL="$WORKDIR/headers-install-sentinel"
+        touch "$HDR_SENTINEL"
         if ! make -C "$LINUS_SRC" O="$BUILD_SCRATCH" headers_install \
                  INSTALL_HDR_PATH="$HDR_INSTALL" -j"$(nproc)" 2>/dev/null; then
             echo "WARN: $NAME: Tier 2 skipped: headers_install failed" >&2
@@ -275,11 +276,20 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
             mkdir -p "$(dirname "$LINUS_HDR_CACHE")" 2>/dev/null &&
                 cp -a "$HDR_INSTALL/." "$LINUS_HDR_CACHE" 2>/dev/null || true
         fi
-        after_fp=$(git -C "$HOME/src/linux-linus" status --porcelain --ignored scripts/ 2>/dev/null)
-        if [ "$before_fp" != "$after_fp" ]; then
-            changed=$(diff <(printf '%s\n' "$before_fp") <(printf '%s\n' "$after_fp") \
-                | awk '/^>/{print $NF}' | head -20 | tr '\n' ' ')
-            echo "FAIL: $NAME: headers_install wrote into source tree scripts/: ${changed}"
+        # mtime probe: any source-tree file newer than the sentinel that
+        # was touched by headers_install is litter.  Covers scripts/,
+        # include/generated/, and usr/ -- all directories headers_install
+        # may write into when O= is not honoured.  The sentinel lives in
+        # $WORKDIR and is removed by the existing EXIT trap.
+        _litter=""
+        for _dir in scripts include/generated usr; do
+            _abs="$LINUS_SRC/$_dir"
+            [ -d "$_abs" ] || continue
+            _litter="${_litter}$(find "$_abs" -newer "$HDR_SENTINEL" 2>/dev/null)"
+        done
+        if [ -n "$_litter" ]; then
+            _shown=$(printf '%s\n' "$_litter" | head -20 | tr '\n' ' ')
+            echo "FAIL: $NAME: headers_install wrote into source tree: ${_shown}"
             exit 1
         fi
     fi
