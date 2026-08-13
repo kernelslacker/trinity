@@ -386,8 +386,12 @@ static void dump_stats_render_zombie_slots(void)
  * dead state for a single-arm group; gating on it makes the floor a
  * tautology that always fires, permanently masking the dead verdict.
  *
- * Model: stat_row("DEAD_ARM", "<childop>/<arm>", <parent_runs>).
+ * Model: stat_row("DEAD_ARM",        "<childop>/<arm>", <parent_runs>).
+ *        stat_row("UNSUPPORTED_ARM", "<childop>/<arm>", <parent_runs>).
  *        output "DEAD_ARM_SKIP <group> insufficient_samples" when below floor.
+ * UNSUPPORTED_ARM: arm_entered==0 AND setup_failed==runs -- the feature is
+ * absent in this netns (e.g. no AF_XDP support); distinct from DEAD_ARM where
+ * setup succeeds but the arm is structurally unreachable.
  * Pairs with dump_stats_render_childop_missing_producer() which catches
  * ops that never set up a setup_accepted producer.
  */
@@ -448,6 +452,10 @@ static void dump_stats_dead_arm_check(void)
 	 * For this single-arm group the floor gates on runs, not arm_entered_bind
 	 * -- arm_entered_bind==0 IS the dead state, not an ambiguous sample.
 	 *
+	 * UNSUPPORTED_ARM: arm_entered_bind == 0 AND setup_failed == runs --
+	 * every invocation bailed at setup (e.g. AF_XDP unavailable in netns);
+	 * the feature is absent, not structurally dead past a reached entry point.
+	 *
 	 * RAN_NO_EFFECT: arm_entered_bind > 0 but arm_effective_bind == 0
 	 * means the bind arm was reached on every draw but never produced
 	 * detectable output (bind() always failed, or the follow-on I/O was
@@ -457,6 +465,10 @@ static void dump_stats_dead_arm_check(void)
 		if (shm->stats.afxdp_churn.runs < 5 * 1)
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
 			       "afxdp-churn", "insufficient_samples");
+		else if (!shm->stats.afxdp_churn.arm_entered_bind &&
+			 shm->stats.afxdp_churn.setup_failed == shm->stats.afxdp_churn.runs)
+			stat_row("UNSUPPORTED_ARM", "afxdp-churn/bind",
+				 shm->stats.afxdp_churn.runs);
 		else if (!shm->stats.afxdp_churn.arm_entered_bind)
 			stat_row("DEAD_ARM", "afxdp-churn/bind",
 				 shm->stats.afxdp_churn.runs);

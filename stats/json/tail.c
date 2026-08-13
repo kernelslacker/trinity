@@ -248,7 +248,8 @@ void dump_stats_json_probes_misuse_and_tail(void)
  * appears first in the output.
  *
  * status values:
- *   "dead"                 -- arm_entered==0, sampling floor met
+ *   "unsupported"          -- arm_entered==0, floor met, setup_failed==runs (feature absent in netns)
+ *   "dead"                 -- arm_entered==0, floor met, not all runs failed setup
  *   "insufficient_samples" -- too few draws to distinguish dead from live
  */
 static void json_emit_dead_arms_element(bool *first, const char *group,
@@ -360,6 +361,9 @@ void json_emit_dead_arms_section(void)
 	 * Floor gates on runs (group opportunity count), not arm_entered_bind --
 	 * for a single-arm group arm_entered_bind==0 IS the dead state, so
 	 * gating on it is a tautology (always insufficient_samples, never dead).
+	 * unsupported: arm_entered_bind==0 AND setup_failed==runs -- feature absent
+	 * in this netns (e.g. no AF_XDP); distinct from dead (setup succeeds but
+	 * arm is structurally unreachable).
 	 * ran_no_effect: arm_entered_bind > 0 but arm_effective_bind == 0 --
 	 * the bind arm was reached but never produced detectable output. */
 	if (shm->stats.afxdp_churn.runs > 0) {
@@ -369,6 +373,9 @@ void json_emit_dead_arms_section(void)
 		if (runs < 5 * 1)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
 						    ae, runs, "insufficient_samples");
+		else if (!ae && shm->stats.afxdp_churn.setup_failed == runs)
+			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
+						    ae, runs, "unsupported");
 		else if (!ae)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
 						    ae, runs, "dead");
