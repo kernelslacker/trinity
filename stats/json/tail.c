@@ -372,18 +372,20 @@ void json_emit_dead_arms_section(void)
 						    ae, runs, "dead");
 	}
 
-	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm, floor = 5*1 = 5 draws.
-	 * Same single-arm reasoning as afxdp-churn above: gate on runs. */
-	if (shm->stats.xfrm_churn.runs > 0) {
-		unsigned long runs = shm->stats.xfrm_churn.runs;
+	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm.
+	 * Gate on msg_kind_draws (grammar pick_msg_kind() call count) to match
+	 * the text emitter in stats/dump/subsystems.c. Floor: 200 draws. */
+	if (shm->stats.xfrm_churn.msg_kind_draws > 0) {
+		unsigned long draws = shm->stats.xfrm_churn.msg_kind_draws;
 		unsigned long ae = shm->stats.xfrm_churn.arm_entered_migrate_state;
 
-		if (runs < 5 * 1)
+		if (draws < 200)
 			json_emit_dead_arms_element(&first, "xfrm-churn", "migrate_state",
-						    ae, runs, "insufficient_samples");
+						    ae, draws, "insufficient_samples");
 		else if (!ae)
 			json_emit_dead_arms_element(&first, "xfrm-churn", "migrate_state",
-						    ae, runs, "dead");
+						    ae, draws, "dead");
+		/* else: ae >= 1, arm is live -- emit nothing */
 	}
 
 	fputs("]", stdout);
