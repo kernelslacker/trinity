@@ -361,9 +361,12 @@ void json_emit_dead_arms_section(void)
 	 * Floor gates on runs (group opportunity count), not arm_entered_bind --
 	 * for a single-arm group arm_entered_bind==0 IS the dead state, so
 	 * gating on it is a tautology (always insufficient_samples, never dead).
-	 * unsupported: arm_entered_bind==0 AND setup_failed==runs -- feature absent
-	 * in this netns (e.g. no AF_XDP); distinct from dead (setup succeeds but
-	 * arm is structurally unreachable).
+	 * unsupported (runtime latch): setup_failed_unsupported==runs -- the
+	 * ns_unsupported_afxdp latch fired on every invocation; bind was never
+	 * reached.  Predicated on the dedicated counter so transient failures
+	 * that also bump setup_failed do not produce a false unsupported verdict.
+	 * unsupported (stub): runs_stubbed > 0 and runs == 0 -- compiled without
+	 * XDP headers; the feature is structurally absent on this build.
 	 * ran_no_effect: arm_entered_bind > 0 but arm_effective_bind == 0 --
 	 * the bind arm was reached but never produced detectable output. */
 	if (shm->stats.afxdp_churn.runs > 0) {
@@ -373,7 +376,7 @@ void json_emit_dead_arms_section(void)
 		if (runs < 5 * 1)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
 						    ae, runs, "insufficient_samples");
-		else if (!ae && shm->stats.afxdp_churn.setup_failed == runs)
+		else if (shm->stats.afxdp_churn.setup_failed_unsupported == runs)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
 						    ae, runs, "unsupported");
 		else if (!ae)
@@ -383,6 +386,11 @@ void json_emit_dead_arms_section(void)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
 						    ae, runs, "ran_no_effect");
 		/* else: ae >= 1, arm_effective_bind >= 1: fully live */
+	} else if (shm->stats.afxdp_churn.runs_stubbed > 0) {
+		unsigned long rs = shm->stats.afxdp_churn.runs_stubbed;
+
+		json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
+					    0, rs, "unsupported");
 	}
 
 	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm.

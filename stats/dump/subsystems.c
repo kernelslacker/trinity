@@ -452,21 +452,27 @@ static void dump_stats_dead_arm_check(void)
 	 * For this single-arm group the floor gates on runs, not arm_entered_bind
 	 * -- arm_entered_bind==0 IS the dead state, not an ambiguous sample.
 	 *
-	 * UNSUPPORTED_ARM: arm_entered_bind == 0 AND setup_failed == runs --
-	 * every invocation bailed at setup (e.g. AF_XDP unavailable in netns);
-	 * the feature is absent, not structurally dead past a reached entry point.
+	 * UNSUPPORTED_ARM (runtime latch): setup_failed_unsupported == runs --
+	 * the ns_unsupported_afxdp latch fired on every invocation (AF_XDP
+	 * unavailable in this netns); bind was never reached.  Predicated on
+	 * the dedicated counter so transient socket/mmap/cap-gate failures
+	 * that also bump setup_failed do not produce a false unsupported verdict.
+	 *
+	 * UNSUPPORTED_ARM (stub): runs_stubbed > 0 and runs == 0 -- the
+	 * childop was compiled without XDP headers; the feature is structurally
+	 * absent on this build.
 	 *
 	 * RAN_NO_EFFECT: arm_entered_bind > 0 but arm_effective_bind == 0
-	 * means the bind arm was reached on every draw but never produced
-	 * detectable output (bind() always failed, or the follow-on I/O was
-	 * silently dropped).  This is the 510-H class: config-dead past the
-	 * entry point, or uapi-value-wrong on the bind flags/ifindex. */
+	 * means the bind arm was reached but never produced detectable output
+	 * (bind() always failed, or the follow-on I/O was silently dropped).
+	 * This is the 510-H class: config-dead past the entry point, or
+	 * uapi-value-wrong on the bind flags/ifindex. */
 	if (shm->stats.afxdp_churn.runs > 0) {
 		if (shm->stats.afxdp_churn.runs < 5 * 1)
 			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
 			       "afxdp-churn", "insufficient_samples");
-		else if (!shm->stats.afxdp_churn.arm_entered_bind &&
-			 shm->stats.afxdp_churn.setup_failed == shm->stats.afxdp_churn.runs)
+		else if (shm->stats.afxdp_churn.setup_failed_unsupported ==
+			 shm->stats.afxdp_churn.runs)
 			stat_row("UNSUPPORTED_ARM", "afxdp-churn/bind",
 				 shm->stats.afxdp_churn.runs);
 		else if (!shm->stats.afxdp_churn.arm_entered_bind)
@@ -476,6 +482,9 @@ static void dump_stats_dead_arm_check(void)
 			stat_row("RAN_NO_EFFECT", "afxdp-churn/bind",
 				 shm->stats.afxdp_churn.arm_entered_bind);
 		/* else: arm_entered_bind >= 1, arm_effective_bind >= 1: fully live */
+	} else if (shm->stats.afxdp_churn.runs_stubbed > 0) {
+		stat_row("UNSUPPORTED_ARM", "afxdp-churn/bind",
+			 shm->stats.afxdp_churn.runs_stubbed);
 	}
 
 	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm in dispatch_msg_kind() --

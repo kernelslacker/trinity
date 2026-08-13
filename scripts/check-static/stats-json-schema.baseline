@@ -1638,6 +1638,7 @@ stats	object
     stats.afxdp_churn.runs	u64
     stats.afxdp_churn.runs_stubbed	u64
     stats.afxdp_churn.setup_failed	u64
+    stats.afxdp_churn.setup_failed_unsupported	u64
     stats.afxdp_churn.umem_reg_ok	u64
     stats.afxdp_churn.rings_setup_ok	u64
     stats.afxdp_churn.prog_load_ok	u64
@@ -1889,5 +1890,4 @@ dead_arms	array
   dead_arms.arm	str
   dead_arms.arm_entered	u64
   dead_arms.parent_runs	u64
-# dead_arms.status valid values: insufficient_samples | dead | ran_no_effect | unsupported
-  dead_arms.status	enum:insufficient_samples|dead|ran_no_effect|unsupported
+  dead_arms.status	str

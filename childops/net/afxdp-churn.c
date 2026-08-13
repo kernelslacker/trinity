@@ -134,6 +134,8 @@ bool afxdp_churn(struct childdata *child)
 	if (ns_unsupported_afxdp) {
 		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed,
 				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.afxdp_churn.setup_failed_unsupported,
+				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 

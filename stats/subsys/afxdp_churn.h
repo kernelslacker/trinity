@@ -6,6 +6,7 @@ struct afxdp_churn_stats {
 	unsigned long runs;				/* total afxdp_churn invocations */
 	unsigned long runs_stubbed;			/* invocations from #else stub (XDP headers absent; not a real childop run) */
 	unsigned long setup_failed;			/* socket / mmap / setsockopt / cap-gate latched */
+	unsigned long setup_failed_unsupported;		/* ns_unsupported_afxdp latch fired — feature absent in this netns */
 	unsigned long umem_reg_ok;			/* setsockopt(XDP_UMEM_REG) accepted */
 	unsigned long rings_setup_ok;		/* all four XDP_*_RING setsockopts accepted */
 	unsigned long prog_load_ok;			/* bpf(BPF_PROG_LOAD, BPF_PROG_TYPE_XDP) accepted */
