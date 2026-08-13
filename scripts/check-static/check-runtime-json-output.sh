@@ -75,6 +75,17 @@ case "${1:-}" in
 	*)       echo "FAIL: $NAME: unknown arg: $1" >&2; exit 1 ;;
 esac
 
+# Enum-pin-count floor: catch baseline regressions where all enum:
+# annotations have been silently dropped (e.g. bare --regen without the
+# annotation-merge step).  Without this, the enforcement loop in the
+# Python cross-check below skips 100% of paths and the gate degrades to
+# a pure structural check with no value-set enforcement.
+_enum_pin_count=$(grep -c $'\tenum:' "$BASELINE_JSON" 2>/dev/null || echo 0)
+if [ "$_enum_pin_count" -lt 1 ]; then
+	echo "FAIL: $NAME: enum pin count ${_enum_pin_count} < floor 1 -- baseline has lost all enum annotations (run stats-json-schema.sh --regen to restore)" >&2
+	exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Helper: spawn the binary under the sanctioned capped form.
 #

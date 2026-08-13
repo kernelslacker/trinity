@@ -939,6 +939,34 @@ PYEOF
 [ -n "$schema" ] || fail "extractor produced no schema entries"
 
 if [ "$MODE" = "regen" ]; then
+	# Save existing enum: annotations and their preceding '#' comment lines
+	# from the old baseline before overwriting it.  --regen rewrites from C
+	# source which only sees types (%s -> str), not semantic token sets, so
+	# without this merge step every enum pin is silently destroyed on regen.
+	_pins_tmp=$(mktemp)
+	_cmts_tmp=$(mktemp)
+	if [ -r "$BASELINE" ]; then
+		_prev_cmt=""
+		while IFS= read -r _bline; do
+			_trimmed="${_bline#"${_bline%%[![:space:]]*}"}"
+			case "$_trimmed" in
+				\#*) _prev_cmt="$_bline"; continue ;;
+			esac
+			case "$_bline" in
+				*$'\t'enum:*)
+					_bpath="${_trimmed%%$'\t'*}"
+					_bann="${_trimmed#*$'\t'}"
+					printf '%s\t%s\n' "$_bpath" "$_bann" >> "$_pins_tmp"
+					if [ -n "$_prev_cmt" ]; then
+						printf '%s\t%s\n' "$_bpath" "$_prev_cmt" >> "$_cmts_tmp"
+					fi
+					;;
+			esac
+			_prev_cmt=""
+		done < "$BASELINE"
+	fi
+
+	# Write the fresh schema.
 	{
 		cat <<'EOF'
 # stats-json-schema.baseline
@@ -963,7 +991,32 @@ if [ "$MODE" = "regen" ]; then
 EOF
 		printf '%s\n' "$schema"
 	} > "$BASELINE"
-	count=$(printf '%s\n' "$schema" | wc -l)
+
+	# Merge saved enum pins back in (if any).
+	if [ -s "$_pins_tmp" ]; then
+		_merged_tmp=$(mktemp)
+		while IFS= read -r _bline; do
+			_trimmed="${_bline#"${_bline%%[![:space:]]*}"}"
+			_bpath="${_trimmed%%$'\t'*}"
+			_pin=$(awk -F'\t' -v p="$_bpath" '$1 == p { print $2; exit }' "$_pins_tmp")
+			if [ -n "$_pin" ]; then
+				_indent="${_bline%%[![:space:]]*}"
+				_cmt=$(awk -F'\t' -v p="$_bpath" '$1 == p { print $2; exit }' "$_cmts_tmp")
+				if [ -n "$_cmt" ]; then
+					printf '%s\n' "$_cmt"
+				fi
+				printf '%s%s\t%s\n' "$_indent" "$_bpath" "$_pin"
+			else
+				printf '%s\n' "$_bline"
+			fi
+		done < "$BASELINE" > "$_merged_tmp"
+		mv "$_merged_tmp" "$BASELINE"
+		_pin_count=$(wc -l < "$_pins_tmp")
+		echo "REGEN: $NAME: restored ${_pin_count} enum annotation(s)"
+	fi
+	rm -f "$_pins_tmp" "$_cmts_tmp"
+
+	count=$(grep -Ev '^\s*(#|$)' "$BASELINE" | wc -l)
 	echo "REGEN: $NAME: wrote $count schema entries to ${BASELINE#"$ROOT"/}"
 	exit 0
 fi

@@ -1890,4 +1890,5 @@ dead_arms	array
   dead_arms.arm	str
   dead_arms.arm_entered	u64
   dead_arms.parent_runs	u64
-  dead_arms.status	str
+# dead_arms.status valid values: insufficient_samples | dead | ran_no_effect | unsupported
+  dead_arms.status	enum:insufficient_samples|dead|ran_no_effect|unsupported
