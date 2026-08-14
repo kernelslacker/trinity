@@ -489,6 +489,20 @@ update this section to match `ls scripts/check-static/*.sh`.)
   double-close bug.  Scoped to `main/` + `dispatch/` + `utils/`;
   zero files scanned is treated as FAIL (fail-closed on directory
   renames).
+- `procfs-writer-deny-overlap`: confirm that `warn_allow_deny_overlap()`
+  in `childops/fs/procfs-writer.c` audits both its anchored
+  (`MATCH_PREFIX` / `MATCH_EXACT`) and `MATCH_SUFFIX` deny-rule halves
+  and reports a non-zero count of shadowed pairs.  The suffix half
+  works by construction: for each (`MATCH_PREFIX` allow,
+  `MATCH_SUFFIX` deny) pair the checker synthesizes the concrete path
+  `<allow_prefix>x<deny_suffix>` and runs it through the live
+  `path_allowed()` / `path_denied()` / `path_prefiltered()` trio; if
+  admitted with the deny silently overridden, a warning is emitted
+  naming both patterns and the example path.  The gate fails-close
+  if the suffix count drops to zero, meaning the checker has gone
+  structurally silent.  A count delta (new deny or allow entry)
+  produces a WARN rather than a FAIL so intentional policy changes
+  land without a forced source edit to the script.
 - `rettype-multiplexer-conflict`: an op-multiplexed syscall (one whose
   `.sanitise` publishes `rec->rettype` per-cmd) must not also carry a
   static `.rettype = RET_XXX` initializer.  `effective_rettype()`

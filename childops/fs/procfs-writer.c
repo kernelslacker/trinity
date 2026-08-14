@@ -432,11 +432,14 @@ static bool path_prefiltered(const char *path)
  * just makes the conflict visible so the operator can rename the
  * pattern, tighten the allow, or accept the intent.
  *
- * Only path-anchored patterns (PREFIX / EXACT) are compared.  SUFFIX
- * rules fire by tail match anywhere beneath a discovery root, so an
- * overlap with an anchored allow prefix depends on the concrete
- * filesystem layout at run time and can't be decided by pattern
- * inspection alone; those pairs are left to the operator.
+ * Anchored (PREFIX / EXACT) deny rules are compared against allow
+ * prefixes by pattern inspection.  MATCH_SUFFIX deny rules are audited
+ * by construction: for each SUFFIX deny x PREFIX allow pair, a concrete
+ * path "<allow_prefix>x<suffix_deny>" is synthesized and run through the
+ * live path_allowed() / path_denied() / path_prefiltered() trio.  If
+ * the synthesized path is admitted with the deny silently overridden, a
+ * warning is emitted naming both patterns.  This reuses the real matcher
+ * rather than duplicating its logic.
  */
 static bool pattern_is_anchored(enum path_match kind)
 {
@@ -491,6 +494,7 @@ static void warn_allow_deny_overlap(void)
 {
 	unsigned int i, j;
 
+	/* Pass 1: anchored (PREFIX / EXACT) deny vs PREFIX / EXACT allow. */
 	for (i = 0; i < ARRAY_SIZE(allow_rules); i++) {
 		const struct path_rule *a = &allow_rules[i];
 
@@ -523,6 +527,62 @@ static void warn_allow_deny_overlap(void)
 			outputerr("procfs_writer: WARNING: allow rule '%s' [%s] overlaps deny rule '%s' [%s]; allow wins by design -- the deny is silently ignored on the overlap\n",
 				  a->pattern, a->class,
 				  d->pattern, d->class);
+		}
+	}
+
+	/*
+	 * Pass 2: MATCH_SUFFIX deny vs MATCH_PREFIX allow.
+	 *
+	 * Pattern inspection cannot decide whether a suffix deny and a
+	 * prefix allow overlap -- that depends on concrete paths.  Instead,
+	 * synthesize a candidate path "<allow_prefix>x<suffix_deny>" for
+	 * every (allow, deny) pair and run it through the live matchers.
+	 * If the synthesized path is admitted with the deny silenced (allow
+	 * wins), emit a warning naming both patterns and the example path.
+	 * The synthesized path is deliberately artificial -- 'x' between
+	 * the prefix and the suffix ensures the path stays under the allow
+	 * root while satisfying the suffix match.  Not every warned pair
+	 * maps to a real writable file on this machine; the checker is
+	 * reporting that the rule pair is invisible to the policy, not that
+	 * a concrete mutation is possible today.
+	 */
+	for (j = 0; j < ARRAY_SIZE(deny_rules); j++) {
+		const struct path_rule *d = &deny_rules[j];
+		char synth[PROCFS_MAX_PATH];
+		int n;
+
+		if (d->kind != MATCH_SUFFIX)
+			continue;
+
+		for (i = 0; i < ARRAY_SIZE(allow_rules); i++) {
+			const struct path_rule *a = &allow_rules[i];
+
+			if (a->kind != MATCH_PREFIX)
+				continue;
+
+			/*
+			 * Build "<allow_prefix>x<suffix_deny>": the allow
+			 * prefix already ends with '/' and the suffix deny
+			 * pattern starts with '/', so the lone 'x' between
+			 * them produces a valid path with no double slash.
+			 */
+			n = snprintf(synth, sizeof(synth), "%sx%s",
+				     a->pattern, d->pattern);
+			if (n < 0 || (size_t)n >= sizeof(synth))
+				continue;
+
+			if (!path_allowed(synth))
+				continue;
+			if (!path_denied(synth))
+				continue;
+			if (path_prefiltered(synth))
+				continue;
+
+			/* check-static: child-output-ok */
+			outputerr("procfs_writer: WARNING: allow rule '%s' [%s] shadows suffix deny rule '%s' [%s]; allow wins on any path under this prefix ending with the suffix (e.g. '%s') -- the deny is silently ignored\n",
+				  a->pattern, a->class,
+				  d->pattern, d->class,
+				  synth);
 		}
 	}
 }
