@@ -92,6 +92,9 @@ check_match() {
 # the named childop.  Files are found via glob under childops/.
 # Fails if no files match the glob (probe removed) or no file contains
 # the pattern (probe present but probe token absent).
+# C comments are stripped before matching so comment-only occurrences
+# (e.g. a token mentioned in a block comment but not in live code) are
+# not counted as present.
 check_in_childop() {
 	local label="$1"
 	local childop="$2"
@@ -105,7 +108,10 @@ check_in_childop() {
 		# skip directories
 		[ -f "$f" ] || continue
 		found_files=$((found_files + 1))
-		count=$(grep -cE "$pattern" "$f" 2>/dev/null || true)
+		# Strip C block and line comments before grepping so that a
+		# token mentioned only in a comment does not count as present.
+		count=$(perl -0777 -pe 's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' "$f" 2>/dev/null | \
+			grep -cE "$pattern" 2>/dev/null || true)
 		if [ "${count:-0}" -gt 0 ]; then
 			matched=$((matched + 1))
 		fi
@@ -133,11 +139,20 @@ while IFS=$'\t' read -r childop probe_kind stats_field emitter_symbol; do
 	subsys="${stats_field%%.*}"
 	field="${stats_field#*.}"
 
-	# 1. Probe pattern present in childop source files
+	# 1. Probe pattern present in childop source files (comments stripped)
 	check_in_childop \
 		"$childop probe present in childop source" \
 		"$childop" \
 		"$probe_kind"
+
+	# 1b. Stats field token present in at least one childop source file.
+	# This ensures the actual stats write (e.g. setup_failed_cap_denied
+	# or runtime_cap_denied) is present in the childop implementation,
+	# not merely in stats/ headers or emitters checked by steps 2-4.
+	check_in_childop \
+		"$childop $field present in childop source" \
+		"$childop" \
+		"$field"
 
 	# 2. Stats field declared in the subsystem's stats header
 	check_match \
