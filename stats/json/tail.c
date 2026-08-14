@@ -415,10 +415,14 @@ void json_emit_dead_arms_section(void)
 		else if (shm->stats.afxdp_churn.setup_failed_cap_denied == runs)
 			/* RUNTIME_DEAD: socket(AF_XDP) denied by capability
 			 * check (EPERM/EACCES); CONFIG_XDP_SOCKETS compiled in
-			 * but fuzz user lacks CAP_NET_RAW after cap-drop. */
+			 * but fuzz user lacks CAP_NET_RAW after cap-drop.
+			 * Numerator: setup_failed_cap_denied (== runs on this
+			 * path; ae==arm_entered_bind is always 0 here because
+			 * AF_XDP bind is never reached after a cap failure).
+			 * Must match stat_row in stats/dump/subsystems.c. */
 			json_emit_dead_arms_element(&first, "afxdp-churn",
 						    "socket_cap",
-						    ae, runs,
+						    shm->stats.afxdp_churn.setup_failed_cap_denied, runs,
 						    arm_verdict_to_str(ARM_VERDICT_RUNTIME_DEAD));
 		else if (shm->stats.afxdp_churn.setup_failed_unsupported == runs)
 			json_emit_dead_arms_element(&first, "afxdp-churn", "bind",
