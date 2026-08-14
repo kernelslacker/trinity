@@ -255,6 +255,7 @@ libc_heap_embedded_redirected
 libc_heap_redirected
 lock_held_scribble
 lock_word_scribbled
+lossless_slot_implausible
 maps_pick_attempts_sum
 maps_pick_cycles_sampled_count
 maps_pick_cycles_sampled_sum

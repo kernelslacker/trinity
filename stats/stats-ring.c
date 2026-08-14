@@ -366,6 +366,17 @@ static void stats_publish_locked(void)
 			 __ATOMIC_RELAXED);
 }
 
+/*
+ * Absolute plausibility ceiling for a single per-child lossless_op_count
+ * contribution.  2^52 (~4.5e15) is several orders of magnitude above any
+ * realistic run total (even 100k ops/sec/child running continuously for
+ * years stays well under 10^13), while the observed garbage value
+ * 0x693bb2ae5ba348af (~2^62.7) is far above it.  A slot exceeding this
+ * ceiling is treated as scribbled shm and skipped rather than clamped
+ * into the monotonic total_op_count where it would stick forever.
+ */
+#define LOSSLESS_OP_COUNT_SANE_CEILING (1UL << 52)
+
 void stats_ring_drain_all(void)
 {
 	unsigned int i;
@@ -442,9 +453,26 @@ void stats_ring_drain_all(void)
 		 * the ring so the sum reflects every op completed up to now.
 		 * The child is the sole writer; RELAXED is sufficient because
 		 * nothing orders against this counter on either side.
+		 *
+		 * Plausibility guard: if the loaded value exceeds
+		 * LOSSLESS_OP_COUNT_SANE_CEILING the slot is scribbled or
+		 * uninitialised shm.  Skip it rather than letting one garbage
+		 * read spike lossless_total and get locked in permanently by
+		 * the monotonic high-water clamp below.
 		 */
-		lossless_total += __atomic_load_n(&ring->lossless_op_count,
-						  __ATOMIC_RELAXED);
+		{
+			unsigned long slot_ops =
+				__atomic_load_n(&ring->lossless_op_count,
+						__ATOMIC_RELAXED);
+			if (slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING) {
+				output(0, "stats_ring: child[%u] lossless_op_count "
+				       "0x%lx exceeds plausibility ceiling, skipping\n",
+				       i, slot_ops);
+				parent_stats.lossless_slot_implausible++;
+			} else {
+				lossless_total += slot_ops;
+			}
+		}
 		(void) stats_ring_drain(ring);
 	}
 

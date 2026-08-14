@@ -367,6 +367,9 @@ static void dump_stats_render_scribble_canary_blanket(void)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (parent_stats.lock_word_scribbled)
 		stat_row("corruption", "lock_word_scribbled",   parent_stats.lock_word_scribbled);
+	if (parent_stats.lossless_slot_implausible)
+		stat_row("corruption", "lossless_slot_implausible",
+			 parent_stats.lossless_slot_implausible);
 	if (shm->stats.diag.lock_held_scribble)
 		stat_row("corruption", "lock_held_scribble",    shm->stats.diag.lock_held_scribble);
 	if (shm->stats.diag.rec_canary_stomped)

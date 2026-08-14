@@ -465,6 +465,15 @@ struct stats_aggregate {
 	unsigned long ring_drain_children_visited;   /* (child x cycle) pairs actually drained */
 	unsigned long ring_children_overflow_events; /* (child x cycle) pairs whose drain saw overflow>0 */
 
+	/*
+	 * Count of per-child lossless_op_count slots skipped during
+	 * stats_ring_drain_all() because the loaded value exceeded
+	 * LOSSLESS_OP_COUNT_SANE_CEILING.  A non-zero rate indicates
+	 * that child shm pages are being scribbled -- a real corruption
+	 * signal for triage.  Parent-only writer; plain ++ is safe.
+	 */
+	unsigned long lossless_slot_implausible;
+
 	/* check_lock() observed LOCK_RESERVED_DIRTY(state) on the periodic
 	 * sanity walk and called force_bust_lock() to recover.  Bumped from
 	 * main context only (sole walker), so plain ++ is safe.  Lives in

@@ -417,6 +417,7 @@ stats	object
     stats.corruption.pagecache_canary_corrupt_caught	u64
     stats.corruption.objpool_array_stale_caught	u64
     stats.corruption.lock_word_scribbled	u64
+    stats.corruption.lossless_slot_implausible	u64
     stats.corruption.lock_held_scribble	u64
     stats.corruption.chain_replay_len_corrupt	u64
   stats.shared_buffer	object

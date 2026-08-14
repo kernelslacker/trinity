@@ -429,6 +429,7 @@ void dump_stats_json_corruption_and_audit(void)
 			"\"pagecache_canary_corrupt_caught\":%lu,"
 			"\"objpool_array_stale_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
+			"\"lossless_slot_implausible\":%lu,"
 			"\"lock_held_scribble\":%lu,"
 			"\"chain_replay_len_corrupt\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
@@ -517,6 +518,7 @@ void dump_stats_json_corruption_and_audit(void)
 		shm->stats.diag.pagecache_canary_corrupt_caught,
 		shm->stats.diag.objpool_array_stale_caught,
 		parent_stats.lock_word_scribbled,
+		parent_stats.lossless_slot_implausible,
 		shm->stats.diag.lock_held_scribble,
 		shm->stats.chain_restype.replay_len_corrupt,
 		parent_stats.shared_buffer_redirected, parent_stats.range_overlaps_shared_rejects,
