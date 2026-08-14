@@ -120,13 +120,6 @@ size_t gen_rta_neigh_payload(unsigned char *p, size_t avail,
 }
 
 /*
- * Address family most recently chosen by build_mdbe_src_list_into();
- * declared here so fill_mdb_entry() can pin addr.proto to match.
- * AF_INET or AF_INET6 when a src-list was just built; 0 otherwise.
- */
-static int mdbe_last_sl_af;
-
-/*
  * Populate a struct br_mdb_entry that survives the kernel's
  * rtnl_validate_mdb_entry gate: a non-zero ifindex, MDB_TEMPORARY /
  * MDB_PERMANENT state, a vid below VLAN_VID_MASK (0xfff), and a group
@@ -134,27 +127,26 @@ static int mdbe_last_sl_af;
  * not link-local (224.0.0.0/24), an IPv6 site-local multicast that is
  * not the all-nodes group, or an L2 multicast MAC (group bit set on the
  * first octet).
+ *
+ * sl_af: address family of the src-list built alongside this entry
+ * (AF_INET or AF_INET6), or 0 when no src-list is present.  When
+ * non-zero, addr.proto is pinned to match so br_mdb_config_src_list_init()
+ * does not reject the family mismatch before the src-list handler runs.
  */
-static void fill_mdb_entry(struct br_mdb_entry *e)
+static void fill_mdb_entry(struct br_mdb_entry *e, int sl_af)
 {
 	memset(e, 0, sizeof(*e));
 	e->ifindex = 1 + rnd_modulo_u32(63);
 	e->state = RAND_BOOL() ? MDB_PERMANENT : MDB_TEMPORARY;
 	e->vid = RAND_BOOL() ? 0 : rnd_modulo_u32(0xfff);
 
-	/*
-	 * When a src-list was just built for this message, pin addr.proto
-	 * to the matching address family so the kernel's per-entry length
-	 * check in br_mdb_config_src_list_init() does not reject the
-	 * combination before the src-list handler runs.
-	 */
-	if (mdbe_last_sl_af == AF_INET) {
+	if (sl_af == AF_INET) {
 		e->addr.proto = htons(ETH_P_IP);
 		e->addr.u.ip4 = htonl(0xe1000000 |
 				      (rnd_u32() & 0x00ffffff));
 		return;
 	}
-	if (mdbe_last_sl_af == AF_INET6) {
+	if (sl_af == AF_INET6) {
 		e->addr.proto = htons(ETH_P_IPV6);
 		e->addr.u.ip6.s6_addr[0] = 0xff;
 		e->addr.u.ip6.s6_addr[1] = 0x05;
@@ -230,7 +222,7 @@ static size_t build_mdba_mdb_nested(unsigned char *p, size_t avail)
 	if (info_cap > 192)
 		info_cap = 192;
 
-	fill_mdb_entry(&entry);
+	fill_mdb_entry(&entry, 0);
 	memcpy(info_payload, &entry, sizeof(entry));
 	info_off = NLA_ALIGN(sizeof(entry));
 
@@ -306,10 +298,10 @@ static size_t build_mdba_router_nested(unsigned char *p, size_t avail)
 }
 
 /*
- * Count of successful MDBE_ATTR_SRC_LIST nest constructions.  Per
- * Positive-control: if this stays 0 every RTM_*MDB that hit the src-list path
- * returned -EINVAL from the kernel's nest parser, and the arm reads
- * as a clean kernel rather than a real test.  Checked at report time.
+ * Count of successful MDBE_ATTR_SRC_LIST nest constructions in this child.
+ * Useful as a local positive-control when debugging: if it stays 0 on a
+ * run that exercised the src-list arm, the nest builder is broken.  This
+ * is a child-local variable and is not visible to the parent at report time.
  */
 static unsigned long mdbe_src_list_built;
 
@@ -439,7 +431,6 @@ static size_t build_mdbe_src_list_into(unsigned char *p, size_t avail,
 	}
 
 	outer->nla_len = (__u16)off;
-	mdbe_last_sl_af = af;
 	mdbe_src_list_built++;
 	return off;
 }
@@ -471,7 +462,7 @@ size_t gen_rta_mdba_payload(unsigned char *p, size_t avail,
 		if (avail >= sizeof(struct br_mdb_entry)) {
 			struct br_mdb_entry entry;
 
-			fill_mdb_entry(&entry);
+			fill_mdb_entry(&entry, 0);
 			memcpy(p, &entry, sizeof(entry));
 			return sizeof(entry);
 		}
@@ -543,9 +534,7 @@ size_t gen_rta_mdba_payload(unsigned char *p, size_t avail,
 			 * and IPv6 (16-byte) MDBE_SRCATTR_ADDRESS paths are
 			 * exercised.  nsrcs in [1,16] approaches but does not
 			 * reach PG_SRC_ENT_LIMIT (32), covering EHT limit
-			 * edges without triggering -EINVAL at the count gate.
-			 * mdbe_last_sl_af is set inside the builder so that
-			 * fill_mdb_entry() can pin addr.proto to match. */
+			 * edges without triggering -EINVAL at the count gate. */
 			if (off < cap) {
 				int sl_af = (rand32() & 1) ? AF_INET6 : AF_INET;
 				int nsrcs = 1 + (int)(rand32() % 16);
