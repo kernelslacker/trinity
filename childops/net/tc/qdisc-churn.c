@@ -766,9 +766,14 @@ static int settle_then_probe_hnode2_delete(struct nl_ctx *ctx, int ifindex,
 		rc = build_deltfilter_handle(ctx, ifindex, hnode_handle, qhandle);
 		if (rc != -EBUSY)
 			return rc; /* success or unexpected error — done */
-		/* EINTR from SIGALRM just shortens this slice; the deadline
-		 * loop compensates for any lost sleep time. */
-		(void)clock_nanosleep(CLOCK_MONOTONIC, 0, &gap, NULL);
+		/* clock_nanosleep returns EINTR when SIGALRM fires; the deadline
+		 * loop compensates for any truncated slice.  Capture the return
+		 * value so (void)-cast is not needed — bail on unexpected errors. */
+		{
+			int r = clock_nanosleep(CLOCK_MONOTONIC, 0, &gap, NULL);
+			if (r && r != EINTR)
+				break; /* unexpected error: exit settle loop */
+		}
 		clock_gettime(CLOCK_MONOTONIC, &now);
 	} while (now.tv_sec < deadline.tv_sec ||
 		 (now.tv_sec == deadline.tv_sec &&

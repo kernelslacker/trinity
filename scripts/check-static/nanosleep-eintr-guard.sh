@@ -64,9 +64,11 @@ while IFS= read -r srcfile; do
     fi
     oracle_files=$((oracle_files + 1))
 
-    # Match (void)nanosleep( — the cast-to-void pattern confirms the return
-    # value (and thus the EINTR signal) is being silently discarded.
-    grep -E -n '\(void\)[[:space:]]*nanosleep[[:space:]]*\(' "$srcfile" 2>/dev/null \
+    # Match (void)nanosleep( and (void)clock_nanosleep( — the cast-to-void
+    # pattern confirms the return value (and thus the EINTR signal) is being
+    # silently discarded.  clock_nanosleep with rem=NULL discards the unslept
+    # remainder on EINTR identically to bare nanosleep with rem=NULL.
+    grep -E -n '\(void\)[[:space:]]*(clock_)?nanosleep[[:space:]]*\(' "$srcfile" 2>/dev/null \
     | while IFS=: read -r lineno content; do
         # Skip comment lines.
         trimmed="${content#"${content%%[![:space:]]*}"}"
@@ -76,6 +78,11 @@ while IFS= read -r srcfile; do
         echo "${srcfile}:${lineno}: ${content}"
     done
 done < <(find "$SCAN_DIR" -name '*.c' -type f | sort) >> "$hits_tmp"
+
+if [ "$oracle_files" -eq 0 ]; then
+    echo "FAIL: $NAME: 0 oracle-grade files found (oracle_files=0; fail-closed — _arm_done scope may have changed)" >&2
+    exit 1
+fi
 
 if [ "$scanned" -eq 0 ]; then
     echo "FAIL: $NAME: no .c files found under ${SCAN_DIR}/ — directory layout changed?" >&2
@@ -87,17 +94,18 @@ n="$(wc -l < "$hits_tmp" | tr -d ' ')"
 
 if [ "$n" -gt 0 ]; then
     {
-        echo "  $NAME: (void)nanosleep() in an oracle-grade childop (has _arm_done latch)"
-        echo "  discards EINTR remainder.  SIGALRM (no SA_RESTART) truncates the sleep"
-        echo "  silently, producing a false-positive -EBUSY that latches the arm"
-        echo "  permanently and silences the detector for the rest of the run."
+        echo "  $NAME: (void)nanosleep() or (void)clock_nanosleep() in an oracle-grade"
+        echo "  childop (has _arm_done latch) discards EINTR remainder.  SIGALRM (no"
+        echo "  SA_RESTART) truncates the sleep silently, producing a false-positive"
+        echo "  -EBUSY that latches the arm permanently and silences the detector for"
+        echo "  the rest of the run.  clock_nanosleep with rem=NULL has the same hazard."
         echo "  Use a deadline loop with clock_gettime(CLOCK_MONOTONIC), or retry"
         echo "  with the rem argument:"
         echo "    struct timespec rem = gap;"
         echo "    while (nanosleep(&rem, &rem) < 0 && errno == EINTR) ;"
         sed 's/^/    /' "$hits_tmp"
     } >&2
-    echo "FAIL: $NAME: $n bare (void)nanosleep site(s) in oracle childops (${scanned} files scanned, ${oracle_files} oracle)"
+    echo "FAIL: $NAME: $n bare (void)nanosleep/(void)clock_nanosleep site(s) in oracle childops (${scanned} files scanned, ${oracle_files} oracle)"
     exit 1
 fi
 
