@@ -209,9 +209,16 @@ if ! gcc -w -include "$PCH_HDR" -o "$FINAL_BIN" "$FINAL_C" 2>"$FINAL_ERR"; then
     fi
 fi
 
+# TIER1_STATUS names the outcome of the Tier-1 probe build so callers and
+# future routing logic can distinguish hard breakage from deliberate skips.
+# "broken: probe binary unbuildable" means the gcc compile step failed even
+# after the second-pass bad-symbol strip — this is a build-environment failure,
+# not a "tree absent" style soft skip, so it routes to exit 1.
+TIER1_STATUS="ok"
 if [ ! -x "$FINAL_BIN" ]; then
-    echo "WARN: $NAME: compiler probe binary could not be built; skipping value check"
-    exit 0
+    TIER1_STATUS="broken: probe binary unbuildable"
+    echo "FAIL: $NAME: Tier-1 probe binary could not be built (TIER1_STATUS=$TIER1_STATUS)" >&2
+    exit 1
 fi
 
 "$FINAL_BIN" > "$COMPILER_TABLE" 2>/dev/null
