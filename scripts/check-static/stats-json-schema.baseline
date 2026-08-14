@@ -606,7 +606,8 @@ stats	object
     stats.tc_qdisc_churn.u32_link_skip_sw_ok	u64
     stats.tc_qdisc_churn.u32_link_leak_detected	u64
     stats.tc_qdisc_churn.u32_update_path_step2_bad_errno	u64
-    stats.tc_qdisc_churn.u32_skip_sw_arm_done	u64
+    stats.tc_qdisc_churn.u32_skip_sw_hnode1_arm_done	u64
+    stats.tc_qdisc_churn.u32_skip_sw_hnode2_arm_done	u64
   stats.tc_mirred_blockcast	object
     stats.tc_mirred_blockcast.runs	u64
     stats.tc_mirred_blockcast.setup_failed	u64

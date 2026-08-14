@@ -736,7 +736,7 @@ static int settle_then_probe_hnode2_delete(struct nl_ctx *ctx, int ifindex,
 	 * without SA_RESTART in child/child.c; it always interrupts
 	 * nanosleep).  A truncated settle leaves hnode2->refcnt still 2,
 	 * making refcount_dec_if_one() return -EBUSY — a false-positive
-	 * that latches u32_skip_sw_arm_done and silences the leak detector
+	 * that latches u32_skip_sw_hnode2_arm_done and silences the leak detector
 	 * for the rest of the run.  This is the wave-contradicts-itself
 	 * instance: proc-read-eintr-retry.sh landed the same wave but
 	 * cannot see a verdict-bearing nanosleep (cf. the analogous comment
@@ -796,11 +796,12 @@ static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
 	__u32 major, qhandle;
 	int rc;
 
-	/* Detection is one-shot: u32_skip_sw_arm_done gates only the stat
-	 * bump, NOT function entry.  Churn runs unconditionally every
-	 * invocation so the netlink exercise continues on buggy kernels.
-	 * u32_link_leak_detected fires on first confirmed leak and is then
-	 * suppressed (arm_done=1) to avoid duplicate counting — but the
+	/* Detection is one-shot: per-arm latches (u32_skip_sw_hnode1_arm_done,
+	 * u32_skip_sw_hnode2_arm_done) gate only the stat bump, NOT function
+	 * entry.  Churn runs unconditionally every invocation so the netlink
+	 * exercise continues on buggy kernels.
+	 * u32_link_leak_detected fires on first confirmed leak per arm and is
+	 * then suppressed (arm_done=1) to avoid duplicate counting — but the
 	 * hnode churn itself keeps going.  This differs from the io_uring
 	 * cap: an orphaned io_kiocb is unreclaimable (async-cancel path
 	 * gone), so continued hammering grows kernel memory without bound.
@@ -848,7 +849,7 @@ static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
 		if (build_deltfilter_handle(ctx, ifindex, hnode1, qhandle)
 		    == -EBUSY) {
 			if (!__atomic_exchange_n(
-				&shm->stats.tc_qdisc_churn.u32_skip_sw_arm_done,
+				&shm->stats.tc_qdisc_churn.u32_skip_sw_hnode1_arm_done,
 				1UL, __ATOMIC_RELAXED))
 				__atomic_add_fetch(
 					&shm->stats.tc_qdisc_churn.u32_link_leak_detected,
@@ -915,7 +916,7 @@ static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
 							    hnode2, qhandle)
 			    == -EBUSY) {
 				if (!__atomic_exchange_n(
-					&shm->stats.tc_qdisc_churn.u32_skip_sw_arm_done,
+					&shm->stats.tc_qdisc_churn.u32_skip_sw_hnode2_arm_done,
 					1UL, __ATOMIC_RELAXED))
 					__atomic_add_fetch(
 						&shm->stats.tc_qdisc_churn.u32_link_leak_detected,
