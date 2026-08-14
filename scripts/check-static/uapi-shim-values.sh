@@ -97,6 +97,10 @@ if [ -f "$HARVEST_FLOOR_FILE" ]; then
     harvest_floor=$(grep -oE '^[0-9]+' "$HARVEST_FLOOR_FILE" | head -1 || true)
     harvest_floor=${harvest_floor:-0}
 fi
+if [ "$harvest_floor" -eq 0 ]; then
+    echo "FAIL: $NAME: harvest floor is unseeded (uapi-shim-harvest-floor.baseline contains 0 or is missing)"; exit 1
+fi
+# Do NOT lower the harvest floor to paper over a pipeline regression.
 if [ ! -s "$HARVEST" ]; then
     echo "FAIL: $NAME: harvest is empty — find/perl/grep pipeline produced no output"
     exit 1
