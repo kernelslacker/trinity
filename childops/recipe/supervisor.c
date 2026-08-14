@@ -525,6 +525,11 @@ static int recipe_seccomp_listener_supervisor(enum child_op_type op)
 bool recipe_seccomp_listener_exec(bool *unsupported)
 {
 	struct childdata *tc = this_child();
+	/* Defensive sentinel matching the hoisted blocks above: if
+	 * this_child() returns NULL, NR_CHILD_OP_TYPES is used and
+	 * valid_op gates the direct-syscalls bump; unguarded
+	 * call sites rely on childop_direct_syscalls_add()'s reject
+	 * path which now bumps direct_tally_dropped for observability. */
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	pid_t supervisor;
@@ -813,6 +818,11 @@ out:
 bool recipe_cgroup_kill_events(bool *unsupported)
 {
 	struct childdata *tc = this_child();
+	/* Defensive sentinel matching the hoisted blocks above: if
+	 * this_child() returns NULL, NR_CHILD_OP_TYPES is used and
+	 * valid_op gates the direct-syscalls bump; unguarded
+	 * call sites rely on childop_direct_syscalls_add()'s reject
+	 * path which now bumps direct_tally_dropped for observability. */
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	pid_t supervisor;

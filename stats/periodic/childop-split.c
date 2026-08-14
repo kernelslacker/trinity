@@ -143,6 +143,19 @@ void childop_split_dump(void)
 		wt_childop, wt_syscall, wt_pct / 100,
 		sc_childop, sc_random, sc_pct / 100,
 		it_childop, it_random, it_pct / 100);
+
+	/* Emit the out-of-range discard counter alongside the split so
+	 * operators can correlate silent direct-syscall tally loss with
+	 * the per-period split numbers.  Skip when zero (no discards). */
+	{
+		unsigned long dropped = __atomic_load_n(
+			&shm->stats.childop.direct_tally_dropped,
+			__ATOMIC_RELAXED);
+		if (dropped)
+			stats_log_write(
+				"childop_direct_tally_dropped: %lu\n",
+				dropped);
+	}
 }
 
 /*

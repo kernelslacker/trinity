@@ -267,6 +267,7 @@ static const struct stat_category frontier_discriminator_category =
 
 static const struct stat_field childop_burst_fields[] = {
 	STAT_FIELD_SUB(childop, burst_alt_picks_window),
+	STAT_FIELD_SUB(childop, direct_tally_dropped),
 };
 
 static const struct stat_category childop_burst_category =
