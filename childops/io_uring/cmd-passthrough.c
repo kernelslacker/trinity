@@ -47,6 +47,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "child.h"
@@ -594,6 +595,21 @@ out:
  */
 #define NULLDEV_MSHOT_BUG_CAP	3
 
+/*
+ * Settle window for the CQE peek after ring_enter(min_complete=0).
+ * A FIXED|MULTISHOT rejection CQE is posted at io_uring_cmd_prep()
+ * time; under DEFER_TASKRUN, SQPOLL, or scheduling pressure the
+ * head/tail update may not yet be visible at the first peek.  Retry
+ * up to NULLDEV_CQE_SETTLE_ATTEMPTS × NULLDEV_CQE_SETTLE_DELAY_MS ms
+ * before declaring no CQE.  A deadline-based loop (not a fixed
+ * iteration count) ensures SIGALRM cannot shorten the window: SIGALRM
+ * is armed without SA_RESTART in child/child.c and will interrupt
+ * clock_nanosleep, but the outer loop re-probes to the wall-clock
+ * deadline regardless of how many times the slice is interrupted.
+ */
+#define NULLDEV_CQE_SETTLE_ATTEMPTS	5
+#define NULLDEV_CQE_SETTLE_DELAY_MS	20
+
 static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 			    const bool valid_op)
 {
@@ -680,16 +696,60 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 		/* Peek head/tail before draining: ring_drain_cqes_first_res()
 		 * returns 0 both when no CQE is available and when a CQE
 		 * carries res=0.  Capture the presence of a CQE now so the
-		 * ncqe==0 oracle survives the switch to first_res. */
-		bool had_cqe = (ring_u32(ctx->cq_ring, ctx->cq_off_head) !=
-		                ring_u32(ctx->cq_ring, ctx->cq_off_tail));
+		 * ncqe==0 oracle survives the switch to first_res.
+		 *
+		 * Settle: a FIXED|MULTISHOT rejection CQE is posted at
+		 * io_uring_cmd_prep() time and may not be visible at the
+		 * first head/tail peek under DEFER_TASKRUN, SQPOLL, or plain
+		 * scheduling pressure.  A false had_cqe=false here would
+		 * advance mshot_cmd_no_cqe on a healthy kernel, potentially
+		 * hitting NULLDEV_MSHOT_BUG_CAP and killing the arm for the
+		 * rest of the run.  Retry for up to
+		 * NULLDEV_CQE_SETTLE_ATTEMPTS × NULLDEV_CQE_SETTLE_DELAY_MS ms
+		 * using a deadline-based loop; see 6fcd73253f79 ("tc/qdisc-churn: make settle window EINTR-robust against SIGALRM bleed") for the same pattern. */
+		const struct timespec gap = {
+			.tv_sec  = 0,
+			.tv_nsec = (long)NULLDEV_CQE_SETTLE_DELAY_MS * 1000000L,
+		};
+		struct timespec deadline, now;
+		bool had_cqe;
+
+		clock_gettime(CLOCK_MONOTONIC, &deadline);
+		deadline.tv_nsec += (long)NULLDEV_CQE_SETTLE_DELAY_MS *
+		                    NULLDEV_CQE_SETTLE_ATTEMPTS * 1000000L;
+		if (deadline.tv_nsec >= 1000000000L) {
+			deadline.tv_sec  += deadline.tv_nsec / 1000000000L;
+			deadline.tv_nsec  = deadline.tv_nsec % 1000000000L;
+		}
+
+		do {
+			had_cqe = (ring_u32(ctx->cq_ring, ctx->cq_off_head) !=
+			           ring_u32(ctx->cq_ring, ctx->cq_off_tail));
+			if (had_cqe)
+				break;
+			/* SIGALRM may interrupt the slice; the deadline loop
+			 * compensates — the full window always elapses. */
+			(void)clock_nanosleep(CLOCK_MONOTONIC, 0, &gap, NULL);
+			clock_gettime(CLOCK_MONOTONIC, &now);
+		} while (now.tv_sec < deadline.tv_sec ||
+		         (now.tv_sec == deadline.tv_sec &&
+		          now.tv_nsec < deadline.tv_nsec));
+
 		int cqe_res = ring_drain_cqes_first_res(ctx);
 
 		if (!had_cqe) {
 			/* No CQE: /dev/null's uring_cmd did not post a
 			 * completion (IOU_ISSUE_SKIP_COMPLETE — req pinned).
-			 * The absence is the bug-probe signal; count it. */
-			if (valid_op)
+			 * The absence is the bug-probe signal; count it.
+			 *
+			 * Guard matches the denominator: exclude FIXED draws.
+			 * A FIXED|MULTISHOT submission is rejected at prep
+			 * before reaching uring_cmd_null, so its CQE may
+			 * carry -EINVAL rather than being absent; counting
+			 * it here would make mshot_cmd_no_cqe exceed
+			 * nulldev_mshot_attempts, violating the oracle
+			 * invariant. */
+			if (valid_op && !(cmd_flags & IORING_URING_CMD_FIXED))
 				__atomic_add_fetch(
 					&shm->stats.iouring_cmd_passthrough.mshot_cmd_no_cqe,
 					1, __ATOMIC_RELAXED);
