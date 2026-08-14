@@ -62,7 +62,7 @@ if [ -f "$BASELINE" ]; then
 		[[ -z "$bline" || "$bline" == \#* ]] && continue
 		# Resolve abbreviated or full SHA; warn and skip unresolvable entries.
 		full=$(git rev-parse --verify "${bline%% *}" 2>/dev/null) || {
-			echo "WARNING: $NAME: baseline entry unresolvable, skipping: ${bline%% *}" >&2
+			echo "WARN: $NAME: baseline entry unresolvable, skipping: ${bline%% *}" >&2
 			continue
 		}
 		if [[ -v _baseline["$full"] ]]; then
