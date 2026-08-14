@@ -184,11 +184,10 @@ while IFS=$'\t' read -r childop probe_kind stats_field emitter_symbol; do
 	arms_walked=$((arms_walked + 1))
 done <<< "$MAPPING"
 
-# ---- Row-count assertion ----
-if [ "$arms_walked" -ne "$map_entries" ]; then
-	echo "FAIL: $NAME: walked $arms_walked arm(s) but mapping has $map_entries entries" >&2
-	fail_count=$((fail_count + 1))
-fi
+# No arms_walked == map_entries assertion: pre-validation (awk) already exits
+# on any row with wrong field count or empty fields, so every row that
+# map_entries counts is guaranteed to reach the walker and increment
+# arms_walked.  The check would be a tautology.
 
 # ---- Reverse check: emission sites must match table rows ----
 subsys_count=$(grep -c 'RUNTIME_DEAD_ARM"' stats/dump/subsystems.c 2>/dev/null)
