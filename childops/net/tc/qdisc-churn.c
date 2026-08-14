@@ -772,7 +772,7 @@ static int settle_then_probe_hnode2_delete(struct nl_ctx *ctx, int ifindex,
 		{
 			int r = clock_nanosleep(CLOCK_MONOTONIC, 0, &gap, NULL);
 			if (r && r != EINTR)
-				break; /* unexpected error: exit settle loop */
+				return -r; /* unexpected error: abort without final probe */
 		}
 		clock_gettime(CLOCK_MONOTONIC, &now);
 	} while (now.tv_sec < deadline.tv_sec ||
