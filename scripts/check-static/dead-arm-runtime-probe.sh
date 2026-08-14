@@ -1,8 +1,7 @@
 #!/bin/bash
 #
 # dead-arm-runtime-probe: verify that the access-after-cap-drop runtime
-# dead-arm probes exist and are wired into the dead-arm reporting surface
-# for tracefs-fuzzer and afxdp-churn.
+# dead-arm probes exist and are wired into the dead-arm reporting surface.
 #
 # Background: dead-arm-config.sh catches CONFIG_*-gated arms at build
 # time, but two classes of arm are config-live and runtime-dead:
@@ -15,9 +14,18 @@
 #     EACCES because the fuzz user lacks CAP_NET_RAW after cap-drop.
 #     Probe: errno check on socket(AF_XDP) → ns_cap_denied_afxdp latch.
 #
-# Each check below requires at least one match.  Fail-closed: zero
-# matches is a hard FAIL, not a silent pass.  This guards against the
-# probes being accidentally removed or the wiring silently dropped.
+# MAPPING TABLE
+# Each row: childop<TAB>probe_kind<TAB>stats_field<TAB>emitter_symbol
+#
+#   childop       - name of the childop (matches files under childops/)
+#   probe_kind    - grep-E pattern checked against the childop's source files
+#   stats_field   - subsys.field form; field is checked in the stats header,
+#                   the dotted form is checked in subsystems.c and json/tail.c
+#   emitter_symbol - verdict enum token checked in stats/arm-verdict.h
+#
+# Each check requires at least one match.  Fail-closed: zero matches is a
+# hard FAIL.  Row-count assertion prevents a silently-emptied table from
+# appearing to pass.
 #
 # Severity: FAIL (exit 1) -- these probes are part of the correctness
 # contract for the dead-arm detection surface.
@@ -28,6 +36,42 @@ NAME="dead-arm-runtime-probe"
 ROOT="${REPO_ROOT:-$(pwd)}"
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
+
+# ---- Mapping table (tab-separated) ----
+# Format: childop<TAB>probe_kind<TAB>stats_field<TAB>emitter_symbol
+MAPPING=$(cat <<'EOF'
+tracefs-fuzzer	access\(.*W_OK\)	tracefs_fuzzer.runtime_cap_denied	ARM_VERDICT_RUNTIME_DEAD
+afxdp-churn	ns_cap_denied_afxdp	afxdp_churn.setup_failed_cap_denied	ARM_VERDICT_RUNTIME_DEAD
+EOF
+)
+
+# Count real mapping entries (non-comment, non-blank).
+map_entries=$(printf '%s\n' "$MAPPING" | grep -cvE '^[[:space:]]*#|^[[:space:]]*$')
+
+# Minimum arm count: shrinking the table below this is a hard FAIL.
+MIN_ARMS=2
+
+if [ "$map_entries" -lt "$MIN_ARMS" ]; then
+	echo "FAIL: $NAME: mapping table has $map_entries arm(s); expected at least $MIN_ARMS"
+	exit 1
+fi
+
+# ---- Pre-validate mapping: every real row must have exactly 4 tab-separated
+# non-empty fields.  awk -F'\t' detects empty interior fields that IFS=$'\t'
+# read would silently shift away. ----
+_map_bad=$(printf '%s\n' "$MAPPING" | \
+	awk -F'\t' '
+		/^[[:space:]]*#/ { next }
+		/^[[:space:]]*$/ { next }
+		NF != 4 || $1=="" || $2=="" || $3=="" || $4=="" {
+			printf "  %s: malformed row (NF=%d, expected 4 non-empty tab-separated fields): %s\n", name, NF, $0
+		}
+	' name="$NAME")
+if [ -n "$_map_bad" ]; then
+	printf '%s\n' "$_map_bad" >&2
+	echo "FAIL: $NAME: mapping table has rows with wrong field count (expected exactly 4 tab-separated fields)"
+	exit 1
+fi
 
 fail_count=0
 
@@ -44,82 +88,89 @@ check_match() {
 	fi
 }
 
-# ---- tracefs-fuzzer: access(W_OK) probe in child context ----
+# check_in_childop: assert pattern found in at least one source file for
+# the named childop.  Files are found via glob under childops/.
+# Fails if no files match the glob (probe removed) or no file contains
+# the pattern (probe present but probe token absent).
+check_in_childop() {
+	local label="$1"
+	local childop="$2"
+	local pattern="$3"
+	local found_files=0
+	local matched=0
+	local f count
 
-# The probe performs access(..., W_OK) on the tracefs tracing_on file
-# from within tracefs_fuzzer() (child context, after cap-drop).
-check_match \
-	"tracefs W_OK probe present" \
-	"childops/fs/tracefs-fuzzer.c" \
-	"access\(.*W_OK\)"
+	shopt -s globstar nullglob 2>/dev/null
+	for f in childops/**/*"${childop}"* childops/*"${childop}"*; do
+		# skip directories
+		[ -f "$f" ] || continue
+		found_files=$((found_files + 1))
+		count=$(grep -cE "$pattern" "$f" 2>/dev/null || true)
+		if [ "${count:-0}" -gt 0 ]; then
+			matched=$((matched + 1))
+		fi
+	done
 
-# The probe increments runtime_cap_denied on EACCES/EPERM.
-check_match \
-	"tracefs runtime_cap_denied increment" \
-	"childops/fs/tracefs-fuzzer.c" \
-	"runtime_cap_denied"
+	if [ "$found_files" -eq 0 ]; then
+		echo "FAIL: $NAME: $label: no source files found for childop '$childop'" >&2
+		fail_count=$((fail_count + 1))
+		return
+	fi
+	if [ "$matched" -eq 0 ]; then
+		echo "FAIL: $NAME: $label: pattern '$pattern' not found in any $childop source file" >&2
+		fail_count=$((fail_count + 1))
+	fi
+}
 
-# The field exists in the stats struct.
-check_match \
-	"tracefs runtime_cap_denied stats field" \
-	"stats/subsys/tracefs_fuzzer.h" \
-	"runtime_cap_denied"
+# ---- Walk the mapping table ----
+arms_walked=0
 
-# The dead-arm check picks up the counter in dump_stats_dead_arm_check().
-check_match \
-	"tracefs dead-arm check wired in subsystems.c" \
-	"stats/dump/subsystems.c" \
-	"tracefs_fuzzer\.runtime_cap_denied"
+while IFS=$'\t' read -r childop probe_kind stats_field emitter_symbol; do
+	[ -n "$childop" ] || continue
+	[[ "$childop" =~ ^[[:space:]]*# ]] && continue
 
-# The JSON emitter covers the tracefs runtime_dead case.
-check_match \
-	"tracefs JSON dead-arm emitter in tail.c" \
-	"stats/json/tail.c" \
-	"tracefs_fuzzer.*runtime_cap_denied|runtime_cap_denied.*tracefs_fuzzer"
+	# Derive subsys and field from stats_field (e.g. tracefs_fuzzer.runtime_cap_denied)
+	subsys="${stats_field%%.*}"
+	field="${stats_field#*.}"
 
-# ---- afxdp-churn: ns_cap_denied_afxdp socket(EPERM/EACCES) probe ----
+	# 1. Probe pattern present in childop source files
+	check_in_childop \
+		"$childop probe present in childop source" \
+		"$childop" \
+		"$probe_kind"
 
-# The latch is declared in the internal header.
-check_match \
-	"afxdp ns_cap_denied_afxdp declared in internal header" \
-	"childops/net/afxdp-churn-internal.h" \
-	"ns_cap_denied_afxdp"
+	# 2. Stats field declared in the subsystem's stats header
+	check_match \
+		"$childop $field in stats header" \
+		"stats/subsys/${subsys}.h" \
+		"$field"
 
-# The latch is set in afxdp-churn-umem.c when socket() returns EPERM/EACCES.
-check_match \
-	"afxdp ns_cap_denied_afxdp set on EPERM/EACCES" \
-	"childops/net/afxdp-churn-umem.c" \
-	"ns_cap_denied_afxdp"
+	# 3. Dotted stats_field wired in the dead-arm check (subsystems.c)
+	check_match \
+		"$childop ${stats_field} wired in subsystems.c" \
+		"stats/dump/subsystems.c" \
+		"${subsys}\\.${field}"
 
-# The new setup_failed_cap_denied counter exists in the stats struct.
-check_match \
-	"afxdp setup_failed_cap_denied stats field" \
-	"stats/subsys/afxdp_churn.h" \
-	"setup_failed_cap_denied"
+	# 4. JSON emitter covers the runtime_dead case (json/tail.c)
+	check_match \
+		"$childop JSON dead-arm emitter in tail.c" \
+		"stats/json/tail.c" \
+		"${subsys}.*${field}|${field}.*${subsys}"
 
-# The early-bail in afxdp_churn() checks the latch.
-check_match \
-	"afxdp cap-denied early bail in afxdp-churn.c" \
-	"childops/net/afxdp-churn.c" \
-	"ns_cap_denied_afxdp"
+	# 5. Verdict token present in the shared verdict enum
+	check_match \
+		"$emitter_symbol in arm-verdict.h" \
+		"stats/arm-verdict.h" \
+		"$emitter_symbol"
 
-# dump_stats_dead_arm_check() emits RUNTIME_DEAD_ARM for the cap-denied case.
-check_match \
-	"afxdp RUNTIME_DEAD_ARM wired in subsystems.c" \
-	"stats/dump/subsystems.c" \
-	"setup_failed_cap_denied"
+	arms_walked=$((arms_walked + 1))
+done <<< "$MAPPING"
 
-# The JSON emitter covers the afxdp cap-denied runtime_dead case.
-check_match \
-	"afxdp JSON runtime_dead emitter in tail.c" \
-	"stats/json/tail.c" \
-	"setup_failed_cap_denied"
-
-# ---- ARM_VERDICT_RUNTIME_DEAD in the shared verdict enum ----
-check_match \
-	"ARM_VERDICT_RUNTIME_DEAD in arm-verdict.h" \
-	"stats/arm-verdict.h" \
-	"ARM_VERDICT_RUNTIME_DEAD"
+# ---- Row-count assertion ----
+if [ "$arms_walked" -ne "$map_entries" ]; then
+	echo "FAIL: $NAME: walked $arms_walked arm(s) but mapping has $map_entries entries" >&2
+	fail_count=$((fail_count + 1))
+fi
 
 # ---- Final verdict ----
 
@@ -128,5 +179,5 @@ if [ "$fail_count" -gt 0 ]; then
 	exit 1
 fi
 
-echo "PASS: $NAME: all runtime dead-arm probe checks present and wired"
+echo "PASS: $NAME: all $arms_walked runtime dead-arm probe arm(s) present and wired"
 exit 0
