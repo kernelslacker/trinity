@@ -120,6 +120,13 @@ size_t gen_rta_neigh_payload(unsigned char *p, size_t avail,
 }
 
 /*
+ * Address family most recently chosen by build_mdbe_src_list_into();
+ * declared here so fill_mdb_entry() can pin addr.proto to match.
+ * AF_INET or AF_INET6 when a src-list was just built; 0 otherwise.
+ */
+static int mdbe_last_sl_af;
+
+/*
  * Populate a struct br_mdb_entry that survives the kernel's
  * rtnl_validate_mdb_entry gate: a non-zero ifindex, MDB_TEMPORARY /
  * MDB_PERMANENT state, a vid below VLAN_VID_MASK (0xfff), and a group
@@ -134,6 +141,26 @@ static void fill_mdb_entry(struct br_mdb_entry *e)
 	e->ifindex = 1 + rnd_modulo_u32(63);
 	e->state = RAND_BOOL() ? MDB_PERMANENT : MDB_TEMPORARY;
 	e->vid = RAND_BOOL() ? 0 : rnd_modulo_u32(0xfff);
+
+	/*
+	 * When a src-list was just built for this message, pin addr.proto
+	 * to the matching address family so the kernel's per-entry length
+	 * check in br_mdb_config_src_list_init() does not reject the
+	 * combination before the src-list handler runs.
+	 */
+	if (mdbe_last_sl_af == AF_INET) {
+		e->addr.proto = htons(ETH_P_IP);
+		e->addr.u.ip4 = htonl(0xe1000000 |
+				      (rnd_u32() & 0x00ffffff));
+		return;
+	}
+	if (mdbe_last_sl_af == AF_INET6) {
+		e->addr.proto = htons(ETH_P_IPV6);
+		e->addr.u.ip6.s6_addr[0] = 0xff;
+		e->addr.u.ip6.s6_addr[1] = 0x05;
+		e->addr.u.ip6.s6_addr[15] = 1 + rnd_modulo_u32(254);
+		return;
+	}
 
 	switch (rnd_modulo_u32(3)) {
 	case 0:
@@ -287,37 +314,87 @@ static size_t build_mdba_router_nested(unsigned char *p, size_t avail)
 static unsigned long mdbe_src_list_built;
 
 /*
- * Build a two-level MDBE_ATTR_SRC_LIST nest directly into buf[0..avail):
+ * Generate a random unicast IPv4 source address suitable for use in
+ * an MDBE_SRCATTR_ADDRESS entry.  Excludes loopback (127.0.0.0/8)
+ * and multicast (224.0.0.0/4).
+ */
+static __u32 rand_ipv4_unicast_src(void)
+{
+	__u32 addr;
+
+	do {
+		switch (rand32() & 3) {
+		case 0:
+			/* 10.x.y.z private */
+			addr = htonl(0x0a000000 |
+				     (rand32() & 0x00ffffff));
+			break;
+		case 1:
+			/* 172.16–31.y.z private */
+			addr = htonl(0xac100000 |
+				     (rand32() & 0x000fffff));
+			break;
+		case 2:
+			/* 192.168.x.y private */
+			addr = htonl(0xc0a80000 |
+				     (rand32() & 0x0000ffff));
+			break;
+		default:
+			/* Full random; retry if it falls in loopback or
+			 * multicast range */
+			addr = rand32();
+			break;
+		}
+	} while ((ntohl(addr) >> 24) == 127 ||		/* loopback */
+		 (ntohl(addr) >> 28) == 0xe);		/* multicast 224/4 */
+	return addr;
+}
+
+/*
+ * Generate a random unicast IPv6 source address for use in
+ * MDBE_SRCATTR_ADDRESS.  Uses the documentation/example prefix
+ * 2001:db8::/32 (RFC 3849) with random low bits so the address is a
+ * valid unicast, not loopback (::1) and not multicast (ff::/8).
+ */
+static void rand_ipv6_unicast_src(struct in6_addr *addr)
+{
+	memset(addr, 0, sizeof(*addr));
+	/* 2001:0db8 :: <64 random bits> */
+	addr->s6_addr[0]  = 0x20;
+	addr->s6_addr[1]  = 0x01;
+	addr->s6_addr[2]  = 0x0d;
+	addr->s6_addr[3]  = 0xb8;
+	generate_rand_bytes(&addr->s6_addr[8], 8);
+}
+
+/*
+ * Build a two-level MDBE_ATTR_SRC_LIST nest directly into buf[0..avail).
+ * Supports both IPv4 (4-byte) and IPv6 (16-byte) MDBE_SRCATTR_ADDRESS
+ * entries, matching the kernel NLA_BINARY [4,16] policy in br_mdbe_src_list_pol.
  *
  *   MDBE_ATTR_SRC_LIST  (NLA_F_NESTED)
  *     MDBE_SRC_LIST_ENTRY  (NLA_F_NESTED)  × nsrcs
- *       MDBE_SRCATTR_ADDRESS  4 bytes  (IPv4 in_addr, network byte order)
+ *       MDBE_SRCATTR_ADDRESS  4 bytes (AF_INET) or 16 bytes (AF_INET6)
  *
- * Kernel policy: br_mdb_config_src_list_init() walks the outer nest
- * with nla_for_each_nested(MDBE_SRC_LIST_ENTRY), then for each entry
- * does nla_parse_nested(MDBE_SRCATTR_ADDRESS, NLA_BINARY [4,16]).
- * A flat 8-byte payload is never a valid nest and causes -EINVAL on
- * every draw that selects this attr, silently blocking src-list
- * coverage.  vxlan_mdbe_attrs_pol uses the same wire shape.
+ * af must be AF_INET or AF_INET6.  All entries in one call share the
+ * same address family so the group entry's addr.proto stays consistent.
  *
  * Returns total bytes written (aligned outer length), or 0 on failure.
- * Bumps mdbe_src_list_built on success so callers can confirm the
- * builder is reaching the kernel rather than bouncing at nla_parse.
+ * Bumps mdbe_src_list_built on success.
  *
  * nsrcs must be >= 1.
  */
 static size_t build_mdbe_src_list_into(unsigned char *p, size_t avail,
-					int nsrcs)
+					int nsrcs, int af)
 {
 	/*
-	 * Per-entry layout:
-	 *   MDBE_SRC_LIST_ENTRY hdr (NLA_HDRLEN = 4)
-	 *     MDBE_SRCATTR_ADDRESS hdr (4) + IPv4 payload (4) = 8
-	 *   Total entry: 12 bytes; NLA_ALIGN(12) = 12
-	 * Outer layout:
-	 *   MDBE_ATTR_SRC_LIST hdr (4) + nsrcs × 12
+	 * Per-entry wire size depends on address family:
+	 *   IPv4: ENTRY hdr (4) + ADDR hdr (4) + payload (4)  = 12 bytes
+	 *   IPv6: ENTRY hdr (4) + ADDR hdr (4) + payload (16) = 24 bytes
+	 * NLA_ALIGN rounds both to a multiple of 4 (12 and 24 both fit).
 	 */
-	const size_t per_entry = NLA_ALIGN(NLA_HDRLEN + NLA_HDRLEN + 4);
+	const size_t addr_len = (af == AF_INET6) ? 16 : 4;
+	const size_t per_entry = NLA_ALIGN(NLA_HDRLEN + NLA_HDRLEN + addr_len);
 	const size_t inner_len = (size_t)nsrcs * per_entry;
 	const size_t total = NLA_HDRLEN + inner_len;
 	struct nlattr *outer;
@@ -336,7 +413,6 @@ static size_t build_mdbe_src_list_into(unsigned char *p, size_t avail,
 		size_t entry_off = off;
 		struct nlattr *entry_nla = (struct nlattr *)(p + off);
 		struct nlattr *addr_nla;
-		__u32 src;
 
 		entry_nla->nla_type = MDBE_SRC_LIST_ENTRY | NLA_F_NESTED;
 		entry_nla->nla_len  = 0;
@@ -344,18 +420,26 @@ static size_t build_mdbe_src_list_into(unsigned char *p, size_t avail,
 
 		addr_nla = (struct nlattr *)(p + off);
 		addr_nla->nla_type = MDBE_SRCATTR_ADDRESS;
-		addr_nla->nla_len  = (__u16)(NLA_HDRLEN + 4);
+		addr_nla->nla_len  = (__u16)(NLA_HDRLEN + addr_len);
 		off += NLA_HDRLEN;
 
-		/* Random unicast src addr; any unicast is valid here */
-		src = rand_ipv4();
-		memcpy(p + off, &src, 4);
-		off += NLA_ALIGN(4);
+		if (af == AF_INET6) {
+			struct in6_addr src6;
+
+			rand_ipv6_unicast_src(&src6);
+			memcpy(p + off, &src6, 16);
+		} else {
+			__u32 src4 = rand_ipv4_unicast_src();
+
+			memcpy(p + off, &src4, 4);
+		}
+		off += NLA_ALIGN(addr_len);
 
 		entry_nla->nla_len = (__u16)(off - entry_off);
 	}
 
 	outer->nla_len = (__u16)off;
+	mdbe_last_sl_af = af;
 	mdbe_src_list_built++;
 	return off;
 }
@@ -454,10 +538,20 @@ size_t gen_rta_mdba_payload(unsigned char *p, size_t avail,
 				}
 			}
 
-			/* Step 3: MDBE_ATTR_SRC_LIST as proper two-level nest */
+			/* Step 3: MDBE_ATTR_SRC_LIST as proper two-level nest.
+			 * Coin-flip the address family so both IPv4 (4-byte)
+			 * and IPv6 (16-byte) MDBE_SRCATTR_ADDRESS paths are
+			 * exercised.  nsrcs in [1,16] approaches but does not
+			 * reach PG_SRC_ENT_LIMIT (32), covering EHT limit
+			 * edges without triggering -EINVAL at the count gate.
+			 * mdbe_last_sl_af is set inside the builder so that
+			 * fill_mdb_entry() can pin addr.proto to match. */
 			if (off < cap) {
+				int sl_af = (rand32() & 1) ? AF_INET6 : AF_INET;
+				int nsrcs = 1 + (int)(rand32() % 16);
+
 				sl = build_mdbe_src_list_into(p + off, cap - off,
-							      1 + (int)(rand32() & 1));
+							      nsrcs, sl_af);
 				off += sl;
 			}
 
