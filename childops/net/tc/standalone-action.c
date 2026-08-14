@@ -28,8 +28,9 @@
  *     goto_chain verdict live.
  *  7. Mid-burst: RTM_NEWACTION + NLM_F_REPLACE with a flipped ctrlact
  *     (TC_ACT_OK ↔ TC_ACT_GOTO_CHAIN|1) -- this reaches
- *     tcf_action_set_ctrlact() while traffic is in flight and bumps the
- *     tc_action_replace_concurrent counter.
+ *     tcf_action_set_ctrlact() while traffic is in flight; bumps
+ *     tc_action_replace_concurrent only when at least one packet was
+ *     sent before the replace point.
  *  8. Teardown: delete filter, delete shared action, delete veth pair.
  *
  * Brick-safety: only private veth ends inside the fresh netns are touched.
@@ -766,6 +767,8 @@ static int tcsa_in_ns(void *arg)
 		const unsigned int replace_at_a = iters / 3;
 		const unsigned int replace_at_b = (iters * 2) / 3;
 
+		unsigned long sent_this_burst = 0;
+
 		for (i = 0; i < iters; i++) {
 			unsigned char payload[64];
 			ssize_t n;
@@ -778,10 +781,16 @@ static int tcsa_in_ns(void *arg)
 				   MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
 			direct_calls += 1;
-			if (n > 0)
+			if (n > 0) {
 				__atomic_add_fetch(
 					&shm->stats.tc_standalone_action.packet_sent_ok,
 					1, __ATOMIC_RELAXED);
+				sent_this_burst++;
+			} else {
+				__atomic_add_fetch(
+					&shm->stats.tc_standalone_action.packet_send_fail,
+					1, __ATOMIC_RELAXED);
+			}
 
 			/* Mid-burst RTM_NEWACTION + NLM_F_REPLACE: flip the
 			 * ctrlact on the shared action between TC_ACT_OK and
@@ -810,11 +819,13 @@ static int tcsa_in_ns(void *arg)
 					__atomic_add_fetch(
 						&shm->stats.tc_standalone_action.action_replace_ok,
 						1, __ATOMIC_RELAXED);
-					/* Concurrent replace completed while
-					 * traffic was in flight. */
-					__atomic_add_fetch(
-						&shm->stats.tc_standalone_action.tc_action_replace_concurrent,
-						1, __ATOMIC_RELAXED);
+					/* Only count as concurrent if at least
+					 * one packet crossed the NIC before
+					 * this replace point. */
+					if (sent_this_burst > 0)
+						__atomic_add_fetch(
+							&shm->stats.tc_standalone_action.tc_action_replace_concurrent,
+							1, __ATOMIC_RELAXED);
 				}
 			}
 		}

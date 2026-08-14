@@ -11,6 +11,7 @@ static const struct stat_field tc_standalone_action_fields[] = {
 	STAT_FIELD_SUB(tc_standalone_action, filter_ok),
 	STAT_FIELD_SUB(tc_standalone_action, filter_fail),
 	STAT_FIELD_SUB(tc_standalone_action, packet_sent_ok),
+	STAT_FIELD_SUB(tc_standalone_action, packet_send_fail),
 	STAT_FIELD_SUB(tc_standalone_action, action_replace_ok),
 	STAT_FIELD_SUB(tc_standalone_action, tc_action_replace_concurrent),
 	STAT_FIELD_SUB(tc_standalone_action, action_del_ok),
