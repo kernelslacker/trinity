@@ -14,6 +14,7 @@ static const struct stat_field af_unix_scm_rights_gc_fields[] = {
 	STAT_FIELD_SUB(af_unix_scm_rights_gc, sibling_spawn_failed),
 	STAT_FIELD_SUB(af_unix_scm_rights_gc, sibling_reaped_ok),
 	STAT_FIELD_SUB(af_unix_scm_rights_gc, sibling_crashed),
+	STAT_FIELD_SUB(af_unix_scm_rights_gc, unix_gc_two_scc_arm),
 };
 
 const struct stat_category af_unix_scm_rights_gc_category =

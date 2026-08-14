@@ -1364,6 +1364,7 @@ stats	object
     stats.af_unix_scm_rights_gc.sibling_spawn_failed	u64
     stats.af_unix_scm_rights_gc.sibling_reaped_ok	u64
     stats.af_unix_scm_rights_gc.sibling_crashed	u64
+    stats.af_unix_scm_rights_gc.unix_gc_two_scc_arm	u64
   stats.af_unix_peek_race	object
     stats.af_unix_peek_race.runs	u64
     stats.af_unix_peek_race.setup_failed	u64

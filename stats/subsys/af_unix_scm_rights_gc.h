@@ -15,6 +15,7 @@ struct af_unix_scm_rights_gc_stats {
 	unsigned long sibling_spawn_failed;/* clone()/clone3() failed; fell back to single-task race burst */
 	unsigned long sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
 	unsigned long sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
+	unsigned long unix_gc_two_scc_arm;	/* two-SCC + self-edge arm: full iteration completed */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_AF_UNIX_SCM_RIGHTS_GC_H */

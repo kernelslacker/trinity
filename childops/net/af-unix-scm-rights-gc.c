@@ -905,6 +905,286 @@ static void af_unix_scm_rights_gc_race_burst(struct af_unix_scm_rights_gc_iter_c
 }
 
 /*
+ * Shared state for the two-SCC self-edge race sibling.  Smaller than
+ * af_unix_race_shared: we only need the futex handshake and a direct-
+ * call counter.  The B[1] fd crosses the clone boundary via the shared
+ * fd table (CLONE_FILES), so both sides refer to it by the same
+ * integer without any extra passing dance.
+ */
+struct af_unix_two_scc_shared {
+	int		sb1_fd;		/* B-pair [1] fd -- sibling sends to itself */
+	uint32_t	go;		/* futex: 0 = wait, 1 = start */
+	uint32_t	_pad;
+	uint64_t	direct_call_count;
+};
+
+/*
+ * Sibling body for the two-SCC arm.  Cloned with CLONE_FILES so it
+ * shares the parent's fd table; sb1_fd is the same struct file seen
+ * by the parent.  The single fuzzed call is:
+ *
+ *   sendmsg(sb1, SCM_RIGHTS={sb1}, MSG_DONTWAIT)
+ *
+ * -- a self-edge: sk-B queues its own fd in its peer's receive buffer,
+ * adding B's struct file to the inflight set a second time.  This
+ * races with the parent's concurrent close(sa[1]) + close(sb[1]),
+ * which is the race shape that triggers the unix_del_edge()/scc_entry
+ * corruption fixed by upstream: 594d90519502
+ * ("af_unix: Unlink scc_entry in unix_del_edge()").
+ *
+ * Safety conventions identical to af_unix_sibling_main():
+ *   PR_SET_PDEATHSIG SIGKILL, alarm(2), getppid() orphan-check.
+ */
+__attribute__((noreturn))
+static void af_unix_two_scc_sibling_main(struct af_unix_two_scc_shared *ts)
+{
+	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
+	(void)alarm(2);
+
+	if (trinity_raw_syscall(__NR_getppid) == 1)
+		(void)syscall(__NR_exit, 0);
+
+	/* prctl + alarm + getppid = 3 preamble syscalls. */
+	__atomic_fetch_add(&ts->direct_call_count, 3UL, __ATOMIC_RELAXED);
+
+	while (__atomic_load_n(&ts->go, __ATOMIC_ACQUIRE) == 0U) {
+		__atomic_fetch_add(&ts->direct_call_count, 1UL, __ATOMIC_RELAXED);
+		(void)raw_futex_wait(&ts->go, 0U);
+	}
+
+	/* Self-edge send: B[1] sends its own fd (B[1]) to B[0]'s recv queue. */
+	{
+		char payload[UNIX_SCM_PAYLOAD_BYTES] = { 0 };
+		char cbuf[CMSG_SPACE(sizeof(int))];
+		struct iovec iov;
+		struct msghdr mh;
+		struct cmsghdr *cmsg;
+		int sb1 = ts->sb1_fd;
+
+		iov.iov_base = payload;
+		iov.iov_len  = sizeof(payload);
+		memset(&mh, 0, sizeof(mh));
+		memset(cbuf, 0, sizeof(cbuf));
+		mh.msg_iov	  = &iov;
+		mh.msg_iovlen	  = 1;
+		mh.msg_control	  = cbuf;
+		mh.msg_controllen = sizeof(cbuf);
+
+		cmsg = CMSG_FIRSTHDR(&mh);
+		cmsg->cmsg_level = SOL_SOCKET;
+		cmsg->cmsg_type  = SCM_RIGHTS;
+		cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
+		memcpy(CMSG_DATA(cmsg), &sb1, sizeof(sb1));
+
+		(void)trinity_raw_syscall(__NR_sendmsg, (long)sb1,
+					 (long)&mh, (long)MSG_DONTWAIT);
+		__atomic_fetch_add(&ts->direct_call_count, 1UL, __ATOMIC_RELAXED);
+	}
+
+	syscall(__NR_exit, 0);
+	__builtin_unreachable();
+}
+
+/*
+ * Two-SCC arm (low-frequency, ~1-in-8 invocations).
+ *
+ * Builds two disjoint SCCs simultaneously:
+ *
+ *   SCC 1 -- self-loop X:
+ *     socketpair sx; sendmsg(sx[1], SCM_RIGHTS={sx[0]}) -> sx[0]'s file
+ *     queued in sx[0]'s recv buffer; close(sx[0]).  Now sx[0]'s struct
+ *     unix_sock is only reachable via the SCM_RIGHTS msg in its own
+ *     recv queue -- a self-edge X -> X.
+ *
+ *   SCC 2 -- 2-cycle A <-> B:
+ *     socketpairs sa/sb; sendmsg(sa[1], SCM_RIGHTS={sb[0]}) and
+ *     sendmsg(sb[1], SCM_RIGHTS={sa[0]}); close(sa[0]), close(sb[0]).
+ *     Both sockets are now only reachable via each other's recv queues.
+ *
+ * Self-edge race (concurrent with close()):
+ *     A clone(CLONE_FILES) sibling does sendmsg(sb[1], SCM_RIGHTS={sb[1]})
+ *     -- a second edge into B from itself -- while the parent concurrently
+ *     closes sa[1] and sb[1].  This is the race between unix_add_edges()
+ *     publishing the new edge before skb_queue_tail() and unix_del_edge()
+ *     walking the partially-linked scc_entry; fixed by
+ *     upstream: 594d90519502 ("af_unix: Unlink scc_entry in unix_del_edge()").
+ *
+ *   Falls back to an inline self-edge send (no race, lower coverage) when
+ *   clone3 is unavailable.
+ *
+ * GC trigger:
+ *     close(sx[1]) -- drops the last userspace ref to the X self-loop,
+ *     nudging the gc workqueue to walk both SCCs.  With two disjoint SCCs
+ *     alive the gc chooses unix_walk_scc_fast() for the second one,
+ *     exercising the scc_entry list traversal.
+ *
+ * Oracle: KASAN use-after-free in unix_walk_scc_fast() scc_entry traversal
+ * on a kernel without upstream: 594d90519502 ("af_unix: Unlink scc_entry
+ * in unix_del_edge()").  Silent on a patched kernel.
+ *
+ * Returns the tally of direct kernel syscalls for childop telemetry.
+ */
+static unsigned long iter_two_scc(void)
+{
+	int sx[2] = { -1, -1 };	/* self-loop pair X */
+	int sa[2] = { -1, -1 };	/* 2-cycle pair A */
+	int sb[2] = { -1, -1 };	/* 2-cycle pair B */
+	unsigned long direct_calls = 0;
+	ssize_t s;
+	struct af_unix_two_scc_shared *ts = NULL;
+	pid_t sibling = -1;
+	bool arm_complete = false;
+
+	/* --- Step 1: build self-loop X (SCC 1) -------------------------------- */
+	direct_calls++;			/* socketpair attempt */
+	if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, sx) < 0)
+		goto out;
+	set_recv_timeo(sx[0]);
+	set_recv_timeo(sx[1]);
+	direct_calls += 2;		/* two setsockopt(SO_RCVTIMEO) */
+
+	/*
+	 * sendmsg(sx[1], SCM_RIGHTS={sx[0]}) queues sx[0]'s file on sx[0]'s
+	 * recv buffer (SOCK_DGRAM: send on [1] -> recv on [0]).
+	 */
+	s = send_scm_fd(sx[1], sx[0]);
+	direct_calls++;
+	if (s < 0)
+		goto out;
+
+	/* Drop userspace ref; sx[0]'s socket is now only reachable via itself. */
+	(void)close(sx[0]); sx[0] = -1;
+	direct_calls++;
+
+	/* --- Step 2: build 2-cycle A <-> B (SCC 2) ----------------------------- */
+	direct_calls++;			/* socketpair sa attempt */
+	if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, sa) < 0)
+		goto out;
+	set_recv_timeo(sa[0]);
+	set_recv_timeo(sa[1]);
+	direct_calls += 2;
+
+	direct_calls++;			/* socketpair sb attempt */
+	if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, sb) < 0)
+		goto out;
+	set_recv_timeo(sb[0]);
+	set_recv_timeo(sb[1]);
+	direct_calls += 2;
+
+	/* A -> B: sb[0]'s file queued on sa[0]'s recv buffer. */
+	s = send_scm_fd(sa[1], sb[0]);
+	direct_calls++;
+	if (s < 0)
+		goto out;
+
+	/* B -> A: sa[0]'s file queued on sb[0]'s recv buffer. */
+	s = send_scm_fd(sb[1], sa[0]);
+	direct_calls++;
+	if (s < 0)
+		goto out;
+
+	/* Drop cycle-endpoint refs; both sockets GC-only-reachable now. */
+	(void)close(sa[0]); sa[0] = -1;
+	(void)close(sb[0]); sb[0] = -1;
+	direct_calls += 2;
+
+	/* --- Step 3: self-edge B -> B, concurrent with close(sa[1]/sb[1]) ----- */
+	ts = mmap(NULL, sizeof(*ts), PROT_READ | PROT_WRITE,
+		  MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+	if (ts == MAP_FAILED)
+		ts = NULL;
+
+	if (ts != NULL && !af_unix_scm_clone3_unavailable) {
+		struct clone_args args;
+		long ret;
+
+		ts->sb1_fd		= sb[1];
+		ts->go			= 0;
+		ts->direct_call_count	= 0;
+
+		memset(&args, 0, sizeof(args));
+		args.flags	 = CLONE_FILES;
+		args.exit_signal = SIGCHLD;
+
+		ret = trinity_raw_syscall(__NR_clone3, &args, sizeof(args));
+		if (ret < 0) {
+			if (errno == ENOSYS)
+				af_unix_scm_clone3_unavailable = true;
+		} else if (ret == 0) {
+			af_unix_two_scc_sibling_main(ts);	/* noreturn */
+		} else {
+			sibling = (pid_t)ret;
+		}
+	}
+
+	if (sibling > 0) {
+		/* Signal sibling, then race with the close()s below. */
+		__atomic_store_n(&ts->go, 1U, __ATOMIC_RELEASE);
+		(void)raw_futex_wake(&ts->go, 1);
+	} else {
+		/*
+		 * Fallback (clone3 unavailable or mmap failed): send the
+		 * self-edge inline.  No concurrent race, but still exercises
+		 * the two-SCC + self-edge graph shape for GC.
+		 */
+		(void)send_scm_fd(sb[1], sb[1]);
+		direct_calls++;
+	}
+
+	/* Parent side of the race: drop A[1] and B[1] concurrently with
+	 * the sibling's self-edge send (or immediately after, in fallback). */
+	(void)close(sa[1]); sa[1] = -1;
+	direct_calls++;
+	(void)close(sb[1]); sb[1] = -1;
+	direct_calls++;
+
+	if (sibling > 0) {
+		int status = 0;
+		pid_t rc;
+
+		rc = waitpid_eintr(sibling, &status, WNOHANG);
+		if (rc == 0) {
+			(void)kill(sibling, SIGKILL);
+			rc = waitpid_eintr(sibling, &status, 0);
+		}
+		sibling = -1;
+		/* Drain sibling's raw-syscall tally (prctl+alarm+getppid+
+		 * futex_wait(go)+sendmsg = preamble 3 + 1 + 1 = 5 min). */
+		if (ts != NULL)
+			direct_calls += (unsigned long)
+				__atomic_load_n(&ts->direct_call_count,
+						__ATOMIC_RELAXED);
+	}
+
+	/* --- Step 4: trigger GC by closing X's last userspace ref ------------- */
+	(void)close(sx[1]); sx[1] = -1;
+	direct_calls++;
+
+	arm_complete = true;
+
+out:
+	if (sibling > 0) {
+		(void)kill(sibling, SIGKILL);
+		(void)waitpid_eintr(sibling, NULL, 0);
+	}
+	if (sx[0] >= 0) { (void)close(sx[0]); direct_calls++; }
+	if (sx[1] >= 0) { (void)close(sx[1]); direct_calls++; }
+	if (sa[0] >= 0) { (void)close(sa[0]); direct_calls++; }
+	if (sa[1] >= 0) { (void)close(sa[1]); direct_calls++; }
+	if (sb[0] >= 0) { (void)close(sb[0]); direct_calls++; }
+	if (sb[1] >= 0) { (void)close(sb[1]); direct_calls++; }
+	if (ts != NULL)
+		(void)munmap(ts, sizeof(*ts));
+
+	if (arm_complete)
+		__atomic_add_fetch(
+			&shm->stats.af_unix_scm_rights_gc.unix_gc_two_scc_arm,
+			1, __ATOMIC_RELAXED);
+
+	return direct_calls;
+}
+
+/*
  * One outer iteration: build a 3-pair SCM_RIGHTS cycle, drop userspace
  * refs to make it gc-only-reachable, run a small race burst.  All
  * counters are best-effort -- the per-step bumps carry the success
@@ -1023,8 +1303,19 @@ bool af_unix_scm_rights_gc_churn(struct childdata *child)
 	if (outer_iters == 0U)
 		outer_iters = 1U;
 
-	for (i = 0; i < outer_iters; i++)
-		direct_calls += iter_one(child);
+	for (i = 0; i < outer_iters; i++) {
+		/*
+		 * ~1-in-8: run the two-SCC self-edge arm (SCC1 = self-loop
+		 * X, SCC2 = 2-cycle A<->B, concurrent self-edge B->B racing
+		 * close(A[1])/close(B[1])).  Exercises unix_walk_scc_fast()
+		 * and the scc_entry unlink path.  The remaining 7/8 run the
+		 * existing 3-cycle arm unchanged.
+		 */
+		if (ONE_IN(8))
+			direct_calls += iter_two_scc();
+		else
+			direct_calls += iter_one(child);
+	}
 
 	/* Publish this invocation's direct-syscall load once at the tail
 	 * so the hot inner loop pays a single RELAXED atomic add per op
