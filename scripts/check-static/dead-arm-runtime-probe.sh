@@ -187,6 +187,18 @@ if [ "$arms_walked" -ne "$map_entries" ]; then
 	fail_count=$((fail_count + 1))
 fi
 
+# ---- Reverse check: emission sites must match table rows ----
+subsys_count=$(grep -c 'RUNTIME_DEAD_ARM"' stats/dump/subsystems.c 2>/dev/null || echo 0)
+tail_count=$(grep -c 'ARM_VERDICT_RUNTIME_DEAD' stats/json/tail.c 2>/dev/null || echo 0)
+if [ "$subsys_count" -ne "$map_entries" ]; then
+	echo "FAIL: $NAME: stats/dump/subsystems.c has $subsys_count RUNTIME_DEAD_ARM emission(s); expected $map_entries (one per table row)" >&2
+	exit 1
+fi
+if [ "$tail_count" -ne "$map_entries" ]; then
+	echo "FAIL: $NAME: stats/json/tail.c has $tail_count ARM_VERDICT_RUNTIME_DEAD emission(s); expected $map_entries (one per table row)" >&2
+	exit 1
+fi
+
 # ---- Final verdict ----
 
 if [ "$fail_count" -gt 0 ]; then
