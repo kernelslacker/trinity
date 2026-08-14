@@ -107,6 +107,9 @@ check_in_childop() {
 	for f in childops/**/*"${childop}"* childops/*"${childop}"*; do
 		# skip directories
 		[ -f "$f" ] || continue
+		# restrict to source files; build artifacts (.o, .d, etc.) must not
+		# satisfy the probe — they can outlive the source after a deletion
+		case "$f" in *.c|*.h) ;; *) continue ;; esac
 		found_files=$((found_files + 1))
 		# Strip C block and line comments before grepping so that a
 		# token mentioned only in a comment does not count as present.
