@@ -71,6 +71,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -85,6 +86,7 @@
 #include "signals.h"
 #include "trinity.h"
 
+#include "kernel/membarrier.h"
 #include "kernel/socket.h"
 
 #define IRR_PORT_BASE			47100U
@@ -564,15 +566,40 @@ static unsigned long run_addrform_arm(void)
 		&shm->stats.inet_listener_rehash_race.addrform_child_accepted,
 		1, __ATOMIC_RELAXED);
 
-	/* Step 7: close(listener) FIRST, then close(child).
-	 * This ordering is the bug trigger: inet6_cleanup_sock() on
-	 * listener close runs xchg(&np->pktoptions, ...) and
-	 * xchg(&np->opt, ...) over the listener's ipv6_pinfo, which the
-	 * accepted child still references.  KASAN catches the UAF write
-	 * when the child's cleanup later touches the same freed region. */
+	/* Step 7: close(listener) FIRST, force an RCU grace period via
+	 * membarrier(MEMBARRIER_CMD_GLOBAL), then close(child).
+	 *
+	 * The listener socket is SOCK_RCU_FREE: its memory is reclaimed
+	 * via call_rcu, so close(addrfd) only schedules the callback --
+	 * the ipv6_pinfo region is still live.  Without a grace period
+	 * the child's inet6_cleanup_sock() runs microseconds after
+	 * close(addrfd), long before the RCU callback fires, so the
+	 * oracle-triggering write lands on a still-live object every
+	 * time and KASAN is silent.
+	 *
+	 * membarrier(MEMBARRIER_CMD_GLOBAL, 0, 0) is synchronize_rcu()
+	 * from userspace (kernel/sched/membarrier.c): it issues a
+	 * scheduler IPI to every CPU, waiting until each has passed
+	 * through a quiescent point.  After it returns the listener's
+	 * RCU callback has fired and the ipv6_pinfo region is freed.
+	 * close(child) then runs inet6_cleanup_sock() on the freed
+	 * memory, which is the write the oracle needs to catch.
+	 *
+	 * Only a 0 return is counted -- a non-zero return means the
+	 * grace period was not guaranteed and the oracle cannot fire. */
 	close(addrfd);
 	addrfd = -1;
 	n++;
+	{
+		long mb_ret = syscall(__NR_membarrier,
+				      MEMBARRIER_CMD_GLOBAL, 0, 0);
+
+		n++;
+		if (mb_ret == 0)
+			__atomic_add_fetch(
+				&shm->stats.inet_listener_rehash_race.addrform_grace_forced,
+				1, __ATOMIC_RELAXED);
+	}
 	close(child);
 	child = -1;
 	n++;
