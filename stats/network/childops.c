@@ -240,6 +240,25 @@ static void dump_stats_render_tc_mirred_blockcast(void)
 	}
 }
 
+static void dump_stats_render_tc_standalone_action(void)
+{
+	if (shm->stats.tc_standalone_action.runs) {
+		stat_row("tc_standalone_action", "runs",                        shm->stats.tc_standalone_action.runs);
+		stat_row("tc_standalone_action", "setup_failed",               shm->stats.tc_standalone_action.setup_failed);
+		stat_row("tc_standalone_action", "qdisc_ok",                   shm->stats.tc_standalone_action.qdisc_ok);
+		stat_row("tc_standalone_action", "qdisc_fail",                 shm->stats.tc_standalone_action.qdisc_fail);
+		stat_row("tc_standalone_action", "action_create_ok",           shm->stats.tc_standalone_action.action_create_ok);
+		stat_row("tc_standalone_action", "action_create_fail",         shm->stats.tc_standalone_action.action_create_fail);
+		stat_row("tc_standalone_action", "filter_ok",                  shm->stats.tc_standalone_action.filter_ok);
+		stat_row("tc_standalone_action", "filter_fail",                shm->stats.tc_standalone_action.filter_fail);
+		stat_row("tc_standalone_action", "packet_sent_ok",             shm->stats.tc_standalone_action.packet_sent_ok);
+		stat_row("tc_standalone_action", "action_replace_ok",          shm->stats.tc_standalone_action.action_replace_ok);
+		stat_row("tc_standalone_action", "tc_action_replace_concurrent", shm->stats.tc_standalone_action.tc_action_replace_concurrent);
+		stat_row("tc_standalone_action", "action_del_ok",              shm->stats.tc_standalone_action.action_del_ok);
+		stat_row("tc_standalone_action", "link_del_ok",                shm->stats.tc_standalone_action.link_del_ok);
+	}
+}
+
 static void dump_stats_render_xfrm_churn(void)
 {
 	if (shm->stats.xfrm_churn.runs) {
@@ -658,6 +677,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&tc_live_traffic_category);
 
+	stat_category_emit_text(&tc_standalone_action_category);
+
 	dump_stats_render_bridge_fdb_stp();
 
 	stat_category_emit_text(&bridge_conntrack_churn_category);
@@ -667,6 +688,8 @@ void __cold dump_stats_childop_runs_network(void)
 	dump_stats_render_tc_qdisc_churn();
 
 	dump_stats_render_tc_mirred_blockcast();
+
+	dump_stats_render_tc_standalone_action();
 
 	dump_stats_render_xfrm_churn();
 

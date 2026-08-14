@@ -199,6 +199,7 @@ CHILDOP(CHILD_OP_CRED_TRANSITION_CHURN    , "cred_transition_churn"      , cred_
 CHILDOP(CHILD_OP_NETDEV_NETNS_MIGRATE     , "netdev_netns_migrate"       , netdev_netns_migrate       , true, 1)
 CHILDOP(CHILD_OP_MAP_SHARED_STRESS        , "map_shared_stress"          , map_shared_stress          , true, 1)
 CHILDOP(CHILD_OP_TC_LIVE_TRAFFIC          , "tc_live_traffic"            , tc_live_traffic            , true, 1)
+CHILDOP(CHILD_OP_TC_STANDALONE_ACTION     , "tc_standalone_action"       , tc_standalone_action       , true, 1)
 CHILDOP(CHILD_OP_HFS_MOUNT_FUZZ           , "hfs_mount_fuzz"             , hfs_mount_fuzz             , true, 1)
 CHILDOP(CHILD_OP_RDS_ZCOPY_CRAFTED_SEND   , "rds_zcopy_crafted_send"     , rds_zcopy_crafted_send     , true, 1)
 CHILDOP(CHILD_OP_RDS_BIND_TRANSPORT_REFLEAK, "rds_bind_transport_refleak" , rds_bind_transport_refleak , true, 1)

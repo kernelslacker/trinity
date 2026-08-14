@@ -290,6 +290,7 @@ extern const struct stat_category sysfs_string_race_category;
 extern const struct stat_category sysv_shm_orphan_race_category;
 extern const struct stat_category tc_live_traffic_category;
 extern const struct stat_category tc_mirred_blockcast_category;
+extern const struct stat_category tc_standalone_action_category;
 extern const struct stat_category tc_qdisc_churn_category;
 extern const struct stat_category tcp_ao_rotate_category;
 extern const struct stat_category tcp_md5_listener_race_category;

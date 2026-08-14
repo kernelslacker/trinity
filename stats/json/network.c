@@ -286,6 +286,8 @@ void dump_stats_json_netfilter_and_xfrm(void)
 	putchar(',');
 	stat_category_emit_json(&tc_live_traffic_category);
 	putchar(',');
+	stat_category_emit_json(&tc_standalone_action_category);
+	putchar(',');
 	stat_category_emit_json(&xfrm_churn_category);
 	putchar(',');
 	stat_category_emit_json(&xfrm_ah_esn_category);

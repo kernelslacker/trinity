@@ -186,6 +186,7 @@
 #include "stats/subsys/sysv_shm_orphan_race.h"
 #include "stats/subsys/tc_live_traffic.h"
 #include "stats/subsys/tc_mirred_blockcast.h"
+#include "stats/subsys/tc_standalone_action.h"
 #include "stats/subsys/tc_qdisc_churn.h"
 #include "stats/subsys/tcp_ao_rotate.h"
 #include "stats/subsys/tcp_md5_listener_race.h"
@@ -778,6 +779,9 @@ struct stats_s {
 
 	/* tc_live_traffic accounting.  See stats/subsys/tc_live_traffic.h. */
 	struct tc_live_traffic_stats tc_live_traffic __attribute__((aligned(64)));
+
+	/* tc_standalone_action accounting.  See stats/subsys/tc_standalone_action.h. */
+	struct tc_standalone_action_stats tc_standalone_action __attribute__((aligned(64)));
 
 	/* xfrm_churn accounting.  See stats/subsys/xfrm_churn.h. */
 	struct xfrm_churn_stats xfrm_churn __attribute__((aligned(64)));

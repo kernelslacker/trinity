@@ -683,6 +683,20 @@ struct shm_s {
 	bool tc_live_modprobe_tried_act_mirred;
 	bool tc_live_modprobe_tried_act_police;
 
+	/* tc/standalone-action per-grandchild setup latches (childops/net/tc/
+	 * standalone-action.c).  Written inside the userns_run_in_ns() grandchild;
+	 * use __ATOMIC_RELAXED load/store (only false->true, idempotent). */
+	bool tc_sa_ns_unsupported_rtnl;
+	bool tc_sa_ns_unsupported_veth;
+	bool tc_sa_ns_unsupported_clsact;
+	bool tc_sa_ns_unsupported_matchall;
+	bool tc_sa_ns_unsupported_action;
+	bool tc_sa_ns_unsupported_inet;
+	bool tc_sa_lo_brought_up;
+	bool tc_sa_modprobe_tried_ingress;
+	bool tc_sa_modprobe_tried_matchall;
+	bool tc_sa_modprobe_tried_act_gact;
+
 	/* tc/qdisc-churn per-grandchild setup latches (childops/net/tc/
 	 * qdisc-churn.c).  Same rationale as the tc_live_* latches above:
 	 * the write sites sit inside the userns_run_in_ns() grandchild, so
