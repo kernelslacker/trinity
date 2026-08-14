@@ -80,7 +80,7 @@ esac
 # annotation-merge step).  Without this, the enforcement loop in the
 # Python cross-check below skips 100% of paths and the gate degrades to
 # a pure structural check with no value-set enforcement.
-_enum_pin_count=$(grep -c $'\tenum:' "$BASELINE_JSON" 2>/dev/null || echo 0)
+_enum_pin_count=$(grep -c $'\tenum:' "$BASELINE_JSON" 2>/dev/null)
 if [ "$_enum_pin_count" -lt 1 ]; then
 	echo "FAIL: $NAME: enum pin count ${_enum_pin_count} < floor 1 -- baseline has lost all enum annotations (run stats-json-schema.sh --regen to restore)" >&2
 	exit 1

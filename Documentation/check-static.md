@@ -401,6 +401,10 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `SA_RESTART`, so a non-wrapper blocking `waitpid()` can return
   `-1/EINTR`; treating that as "done" leaves a child unreaped and
   can strand a worker on a torn-down shared mapping.
+- `no-grep-c-or-echo`: ban the `$(grep -c ... || echo 0)` idiom in
+  `scripts/`.  `grep -c` already prints 0 on zero matches; `|| echo 0`
+  doubles it to `0\n0` and breaks numeric comparisons — use `grep -c`
+  directly.
 - `no-libc-rand`: reject libc PRNG callsites (`rand`, `random`,
   `srand`, `*rand48`) outside the `rand/` wrapper layer and
   `include/rnd.h`.
