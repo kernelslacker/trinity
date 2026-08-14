@@ -722,5 +722,10 @@ if [ "$checked" -ne "$probed" ]; then
     exit 1
 fi
 
+case "$TIER1_STATUS" in
+    ok) ;;
+    *) echo "FAIL: $NAME: unknown TIER1_STATUS '$TIER1_STATUS'" >&2; exit 1 ;;
+esac
+
 echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / unresolved-uapi $unresolved_uapi_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor)"
 exit 0
