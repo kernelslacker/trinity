@@ -226,7 +226,7 @@ fi
 # ---------------------------------------------------------------------------
 # Step 4b: Tier 2 fallback — linux-linus source tree (headers built into scratch tmpdir)
 # For symbols that failed to resolve against installed system headers, attempt
-# a second compile-probe using ~/src/linux-linus/include/uapi prepended.
+# a second compile-probe using the linux-linus source tree/include/uapi prepended.
 # This catches symbols too new for the build host's installed headers — exactly
 # the highest-risk class (freshly-added shims where an off-by-one is most
 # likely).
@@ -239,9 +239,9 @@ fi
 #
 # Tier 2 is purely additive; headers_install builds into a scratch tmpdir to
 # keep the linus source tree unmodified.
-# If ~/src/linux-linus does not exist the block is skipped silently.
+# If the linux-linus source tree does not exist the block is skipped silently.
 # ---------------------------------------------------------------------------
-LINUS_SRC="$HOME/src/linux-linus"
+LINUS_SRC="the linux-linus source tree"
 LINUS_UAPI="$LINUS_SRC/include/uapi"
 HDR_INSTALL=""
 SYMS_TIER2_GOOD="$WORKDIR/syms-tier2-good.txt"
@@ -249,7 +249,15 @@ TIER2_STATUS="not-needed"
 BUILD_SCRATCH=""
 touch "$SYMS_TIER2_GOOD"
 
-if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
+# Check all-resolved FIRST, independent of tree presence.  If Tier-1 resolved
+# every symbol, TIER2_STATUS stays "not-needed" regardless of whether
+# the linux-linus source tree exists.  Testing [ -d "$LINUS_UAPI" ] first would route a
+# fully-resolved run on a tree-absent box into "skipped: linus tree absent",
+# which causes the ratchet case to skip tier1_floor enforcement entirely —
+# the stated intent at the not-needed case comment (lines below) is the opposite.
+if [ ! -s "$SYMS_BAD" ]; then
+    TIER2_STATUS="not-needed"   # all symbols resolved by Tier-1; tree presence irrelevant
+elif [ -d "$LINUS_UAPI" ]; then
     # Produce a sanitized uapi export via headers_install.  The raw source
     # tree's include/uapi pulls in kernel-internal headers (e.g. linux/compiler.h
     # via linux/if.h) that are not present under uapi/ and cause every
@@ -301,7 +309,7 @@ if [ -d "$LINUS_UAPI" ] && [ -s "$SYMS_BAD" ]; then
             exit 1
         fi
     fi
-elif [ ! -d "$LINUS_UAPI" ]; then
+else
     TIER2_STATUS="skipped: linus tree absent"
 fi
 
