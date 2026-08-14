@@ -32,9 +32,10 @@
 #      deleted, the deny table was silently emptied, or the binary was
 #      not rebuilt after the source change.
 #   3. The suffix count matches the sealed baseline (7 deny suffixes x
-#      8 allow prefixes = 56 pairs); a delta WARNS but does not FAIL so
-#      that a deliberate policy change lands cleanly while still drawing
-#      attention to the count change.
+#      8 allow prefixes = 56 pairs); a delta FAILs so that a silent
+#      drift in the procfs deny table cannot pass undetected.  Update
+#      BASELINE_SUFFIX_PAIRS in this script after a deliberate policy
+#      change.
 #   4. At least one anchored overlap warning OR zero is acceptable --
 #      the anchored half is structurally exercised; current policy has
 #      all anchored overlaps resolved by prefilter_rules[] so the count
@@ -83,12 +84,7 @@ fi
 suffix_pairs=$(grep -c "procfs_writer: WARNING:.*shadows suffix deny rule" \
 		    "$STDERR_FILE" 2>/dev/null || true)
 
-# Count anchored-overlap pairs: the original half uses "overlaps deny rule".
-anchored_pairs=$(grep -c "procfs_writer: WARNING:.*overlaps deny rule" \
-		      "$STDERR_FILE" 2>/dev/null || true)
-
 fail=0
-warn=0
 
 # Fail-close: zero suffix pairs means the suffix loop is broken or the
 # deny table was emptied.  This is the primary gate the 524 lesson
@@ -99,24 +95,21 @@ if [ "$suffix_pairs" -eq 0 ]; then
 	fail=1
 fi
 
-# Delta warning: a count change signals either a policy change (add/remove
-# deny or allow entry) or a bug in the synthesizer.  The gate does not hard-
-# fail so that a deliberate policy expansion lands without a source edit to
-# this script, but the operator sees the count change immediately.
+# Hard fail on count delta: a mismatch signals a policy change (add/remove
+# deny or allow entry) or a bug in the synthesizer.  Update
+# BASELINE_SUFFIX_PAIRS in this script after a deliberate policy change.
 if [ "$suffix_pairs" -ne "$BASELINE_SUFFIX_PAIRS" ]; then
-	echo "WARN: $NAME: suffix shadow pair count changed:" \
+	echo "FAIL: $NAME: suffix shadow pair count changed:" \
 	     "expected=$BASELINE_SUFFIX_PAIRS got=$suffix_pairs" \
 	     "(update BASELINE_SUFFIX_PAIRS in this script after a deliberate" \
 	     "policy change)" >&2
-	warn=1
+	fail=1
 fi
 
 if [ "$fail" -eq 1 ]; then
-	echo "FAIL: $NAME (suffix_pairs=$suffix_pairs anchored_pairs=$anchored_pairs)"
+	echo "FAIL: $NAME (suffix_pairs=$suffix_pairs)"
 	exit 1
 fi
 
-status="PASS"
-[ "$warn" -eq 1 ] && status="WARN"
-echo "$status: $NAME (suffix_pairs=$suffix_pairs anchored_pairs=$anchored_pairs)"
+echo "PASS: $NAME (suffix_pairs=$suffix_pairs)"
 exit 0
