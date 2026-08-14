@@ -24,6 +24,7 @@
 #include "trinity.h"
 #include "rnd.h"
 #include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
+#include "shm.h"
 
 #ifndef MCAST_EXCLUDE
 #define MCAST_EXCLUDE	0
@@ -298,14 +299,6 @@ static size_t build_mdba_router_nested(unsigned char *p, size_t avail)
 }
 
 /*
- * Count of successful MDBE_ATTR_SRC_LIST nest constructions in this child.
- * Useful as a local positive-control when debugging: if it stays 0 on a
- * run that exercised the src-list arm, the nest builder is broken.  This
- * is a child-local variable and is not visible to the parent at report time.
- */
-static unsigned long mdbe_src_list_built;
-
-/*
  * Generate a random unicast IPv4 source address suitable for use in
  * an MDBE_SRCATTR_ADDRESS entry.  Excludes loopback (127.0.0.0/8)
  * and multicast (224.0.0.0/4).
@@ -372,7 +365,7 @@ static void rand_ipv6_unicast_src(struct in6_addr *addr)
  * same address family so the group entry's addr.proto stays consistent.
  *
  * Returns total bytes written (aligned outer length), or 0 on failure.
- * Bumps mdbe_src_list_built on success.
+ * Bumps shm->stats.bridge_fdb_stp.neigh_mdbe_src_list_built on success.
  *
  * nsrcs must be >= 1.
  */
@@ -431,7 +424,8 @@ static size_t build_mdbe_src_list_into(unsigned char *p, size_t avail,
 	}
 
 	outer->nla_len = (__u16)off;
-	mdbe_src_list_built++;
+	__atomic_add_fetch(&shm->stats.bridge_fdb_stp.neigh_mdbe_src_list_built, 1,
+			   __ATOMIC_RELAXED);
 	return off;
 }
 
@@ -779,7 +773,7 @@ static size_t build_ndta_parms_nested(unsigned char *p, size_t avail)
 	__u32 ifindex;
 	size_t off = 0;
 	size_t cap;
-	int children;
+	int nchildren;
 
 	if (avail < NLA_HDRLEN + sizeof(ifindex))
 		return 0;
@@ -794,8 +788,8 @@ static size_t build_ndta_parms_nested(unsigned char *p, size_t avail)
 	memcpy(p + off + NLA_HDRLEN, &ifindex, sizeof(ifindex));
 	off += NLA_ALIGN(NLA_HDRLEN + sizeof(ifindex));
 
-	children = RAND_RANGE(1, 4);
-	while (children-- > 0) {
+	nchildren = RAND_RANGE(1, 4);
+	while (nchildren-- > 0) {
 		unsigned short atype;
 		size_t plen;
 		size_t total;

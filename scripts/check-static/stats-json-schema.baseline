@@ -501,6 +501,7 @@ stats	object
     stats.bridge_fdb_stp.mdb_star_g_created	u64
     stats.bridge_fdb_stp.mdb_sg_created	u64
     stats.bridge_fdb_stp.star_g_src_list_built	u64
+    stats.bridge_fdb_stp.neigh_mdbe_src_list_built	u64
     stats.bridge_fdb_stp.star_g_mdb_before	u64
     stats.bridge_fdb_stp.star_g_mdb_after	u64
   stats.nftables_churn	object

@@ -27,6 +27,11 @@ struct bridge_fdb_stp_stats {
 	unsigned long mdb_star_g_created;		/* RTM_NEWMDB (*,G) EXCLUDE accepted */
 	unsigned long mdb_sg_created;			/* RTM_NEWMDB (S,G) accepted (per entry) */
 	unsigned long star_g_mdbe_src_list_built;	/* build_star_g_src_list_nest() successes */
+	/*
+	 * Positive-control: if this stays 0 after exercising the src-list path
+	 * in msg-rtnl-neigh.c, the build_mdbe_src_list_into() builder is broken.
+	 */
+	unsigned long neigh_mdbe_src_list_built;	/* build_mdbe_src_list_into() successes */
 	unsigned long star_g_mdb_before;		/* MDB entry count before oracle-A triggers */
 	unsigned long star_g_mdb_after;			/* MDB entry count after oracle-A triggers */
 };

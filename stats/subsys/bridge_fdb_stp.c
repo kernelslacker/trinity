@@ -17,6 +17,7 @@ static const struct stat_field bridge_fdb_stp_fields[] = {
 	STAT_FIELD_JSON_SUB(bridge_fdb_stp, mdb_star_g_created, "mdb_star_g_created"),
 	STAT_FIELD_JSON_SUB(bridge_fdb_stp, mdb_sg_created, "mdb_sg_created"),
 	STAT_FIELD_JSON_SUB(bridge_fdb_stp, star_g_mdbe_src_list_built, "star_g_src_list_built"),
+	STAT_FIELD_JSON_SUB(bridge_fdb_stp, neigh_mdbe_src_list_built, "neigh_mdbe_src_list_built"),
 	STAT_FIELD_JSON_SUB(bridge_fdb_stp, star_g_mdb_before, "star_g_mdb_before"),
 	STAT_FIELD_JSON_SUB(bridge_fdb_stp, star_g_mdb_after, "star_g_mdb_after"),
 };
