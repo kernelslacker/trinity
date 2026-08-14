@@ -52,6 +52,17 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `activate-syscall-active-flag`: every direct `activate_syscall*()`
   callsite must first set the entry's ACTIVE flag, so the flag-driven
   init / dump / picker consumers see the activated entry.
+- `baseline-collation`: for every committed `scripts/check-static/*.baseline`
+  or `dead-arm-baseline.txt` file whose consuming script invokes `comm`(1)
+  against a directly-sorted copy of that file, assert the committed file is
+  byte-identical to its own `LC_ALL=C sort` output.  A locale mismatch
+  between the sort that built the baseline and the sort that runs at gate
+  time causes `comm` to silently degrade, producing spurious set-difference
+  results.  Only order-sensitive consumers (direct-sort `comm` callers) are
+  checked; baselines consumed via comment-stripping pipelines or `grep`-only
+  readers are excluded because they are not order-sensitive.  Fail-closed:
+  if the consumer list is empty the filter is treated as broken and the gate
+  fails rather than passing vacuously.
 - `bpf-opcode-shim`: every `BPF_*` symbol used in `net/bpf/*.c` must be
   `#define`d by trinity's uapi-shim headers (`include/bpf.h`,
   `net/bpf/internal.h`) or listed in `bpf-opcode-shim.baseline`.  A newly
