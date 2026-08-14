@@ -292,6 +292,10 @@ subject_mismatch_detail=""
 if [ -f "$BARE_BASELINE" ]; then
 	while IFS= read -r _bline; do
 		[[ -z "$_bline" || "$_bline" == \#* ]] && continue
+		if [[ -v _bare_baseline["$_bline"] ]]; then
+			echo "FAIL: $NAME: duplicate baseline entry: $_bline" >&2
+			exit 1
+		fi
 		_bare_baseline["$_bline"]=1
 	done < "$BARE_BASELINE"
 fi
