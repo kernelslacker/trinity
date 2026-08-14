@@ -774,7 +774,10 @@ static int settle_then_probe_hnode2_delete(struct nl_ctx *ctx, int ifindex,
 		 (now.tv_sec == deadline.tv_sec &&
 		  now.tv_nsec < deadline.tv_nsec));
 
-	return -EBUSY; /* persisted across full settle window */
+	/* One final probe after the last settle sleep: the loop exits after
+	 * sleeping without re-probing, so issue the probe here rather than
+	 * returning -EBUSY unconditionally. */
+	return build_deltfilter_handle(ctx, ifindex, hnode_handle, qhandle);
 }
 
 static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
@@ -844,16 +847,12 @@ static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
 		 * -EBUSY: refcnt stuck at 2, leak confirmed. */
 		if (build_deltfilter_handle(ctx, ifindex, hnode1, qhandle)
 		    == -EBUSY) {
-			if (!__atomic_load_n(
+			if (!__atomic_exchange_n(
 				&shm->stats.tc_qdisc_churn.u32_skip_sw_arm_done,
-				__ATOMIC_RELAXED)) {
+				1UL, __ATOMIC_RELAXED))
 				__atomic_add_fetch(
 					&shm->stats.tc_qdisc_churn.u32_link_leak_detected,
 					1, __ATOMIC_RELAXED);
-				__atomic_store_n(
-					&shm->stats.tc_qdisc_churn.u32_skip_sw_arm_done,
-					1UL, __ATOMIC_RELAXED);
-			}
 		}
 	}
 
@@ -915,16 +914,12 @@ static void do_u32_skip_sw_leak(struct nl_ctx *ctx, int ifindex)
 			if (settle_then_probe_hnode2_delete(ctx, ifindex,
 							    hnode2, qhandle)
 			    == -EBUSY) {
-				if (!__atomic_load_n(
+				if (!__atomic_exchange_n(
 					&shm->stats.tc_qdisc_churn.u32_skip_sw_arm_done,
-					__ATOMIC_RELAXED)) {
+					1UL, __ATOMIC_RELAXED))
 					__atomic_add_fetch(
 						&shm->stats.tc_qdisc_churn.u32_link_leak_detected,
 						1, __ATOMIC_RELAXED);
-					__atomic_store_n(
-						&shm->stats.tc_qdisc_churn.u32_skip_sw_arm_done,
-						1UL, __ATOMIC_RELAXED);
-				}
 			}
 		}
 	}
