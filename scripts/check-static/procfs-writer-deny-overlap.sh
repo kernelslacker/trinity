@@ -41,21 +41,17 @@
 #      is legitimately zero.  This gate does not re-check that half
 #      beyond confirming the binary ran and the suffix half fired.
 #
-# Baseline: 56 suffix-shadow pairs.  Update by re-running this script
-# with --regen after a deliberate policy change.
+# Baseline: 56 suffix-shadow pairs.  Update BASELINE_SUFFIX_PAIRS in
+# this script after a deliberate policy change.
 
 set -u
 
 NAME="procfs-writer-deny-overlap"
 ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
-BASELINE_FILE="$ROOT/scripts/check-static/procfs-writer-deny-overlap.baseline"
 
 # Expected suffix-pair count sealed at the time this gate was written.
 # 7 MATCH_SUFFIX deny rules x 8 MATCH_PREFIX allow rules.
 BASELINE_SUFFIX_PAIRS=56
-
-REGEN=0
-[ "${1:-}" = "--regen" ] && REGEN=1
 
 BINARY="$ROOT/trinity"
 if [ ! -x "$BINARY" ]; then
@@ -91,14 +87,6 @@ suffix_pairs=$(grep -c "procfs_writer: WARNING:.*shadows suffix deny rule" \
 anchored_pairs=$(grep -c "procfs_writer: WARNING:.*overlaps deny rule" \
 		      "$STDERR_FILE" 2>/dev/null || true)
 
-total_warnings=$((suffix_pairs + anchored_pairs))
-
-if [ $REGEN -eq 1 ]; then
-	echo "$suffix_pairs" > "$BASELINE_FILE"
-	echo "REGEN: $NAME: baseline updated to suffix_pairs=$suffix_pairs"
-	exit 0
-fi
-
 fail=0
 warn=0
 
@@ -119,7 +107,7 @@ if [ "$suffix_pairs" -ne "$BASELINE_SUFFIX_PAIRS" ]; then
 	echo "WARN: $NAME: suffix shadow pair count changed:" \
 	     "expected=$BASELINE_SUFFIX_PAIRS got=$suffix_pairs" \
 	     "(update BASELINE_SUFFIX_PAIRS in this script after a deliberate" \
-	     "policy change, or re-run with --regen)" >&2
+	     "policy change)" >&2
 	warn=1
 fi
 
@@ -130,5 +118,5 @@ fi
 
 status="PASS"
 [ "$warn" -eq 1 ] && status="WARN"
-echo "$status: $NAME (suffix_pairs=$suffix_pairs anchored_pairs=$anchored_pairs total=$total_warnings)"
+echo "$status: $NAME (suffix_pairs=$suffix_pairs anchored_pairs=$anchored_pairs)"
 exit 0
