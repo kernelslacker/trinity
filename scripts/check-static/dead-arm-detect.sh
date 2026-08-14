@@ -66,6 +66,7 @@
 # See Documentation/check-static.md for the PASS/FAIL/WARN exit convention.
 
 set -u
+export LC_ALL=C
 
 NAME="dead-arm-detect"
 ROOT="${REPO_ROOT:-$(pwd)}"
