@@ -1,10 +1,9 @@
 #!/bin/bash
 #
 # baseline-collation: assert that every committed baseline file used by
-# a comm(1)/join(1) consumer script is either byte-identical to its own
-# LC_ALL=C sort output (for direct-sort consumers), or that the consumer
-# protects against collation divergence via export LC_ALL=C or an
-# in-script re-sort.
+# a comm(1)/join(1) consumer script is never fed raw to comm/join without
+# an in-script sort, and that every directly-sorted committed baseline is
+# byte-identical to its own LC_ALL=C sort output.
 #
 # Background
 # ----------
@@ -16,68 +15,67 @@
 # LC_ALL=C so comm runs in consistent collation") fixed one such gate.
 # This check prevents the class from recurring.
 #
-# Consumer detection
-# ------------------
-# A "collation-sensitive consumer" is a script where at least one
-# non-comment line contains BOTH a comm(1) or join(1) invocation AND a
-# reference to a variable whose name contains "baseline" (case-insensitive),
-# e.g.:
+# Consumer detection (operand provenance)
+# ----------------------------------------
+# A "collation-sensitive consumer" is a script in check-static/ where:
+#   (a) a non-comment line assigns a variable to a path of the form
+#       $ROOT/scripts/check-static/*.{baseline,txt}, AND
+#   (b) the script contains at least one comm(1) or join(1) invocation.
 #
-#   comm -13 "$BASELINE" "$tmp"          ← dangerous: committed file direct to comm
-#   comm -13 "$tmp/baseline_sorted" ...  ← variable path contains "baseline"
-#   comm -23 "$current_tmp" "$baseline_tmp"  ← variable name contains "baseline"
+# Keying on the ASSIGNMENT (not on the name of the variable that appears
+# on the comm/join line) closes the naming-convention hole: a consumer
+# using `comm -13 "$BASE2" "$tmp"` where
+# `BASE2="$ROOT/scripts/check-static/x.baseline"` is correctly detected
+# even though "baseline" does not appear in the variable name on the
+# comm line.
 #
-# Keying on the comm/join call line (not on a sort line) closes several
-# holes in the original detector:
+# Safety check (operand tracking — not proximity)
+# -----------------------------------------------
+# For each detected consumer, every committed baseline variable (those
+# assigned to check-static paths) must NOT appear directly as an operand
+# to comm/join.  A raw committed baseline fed to comm skips the sort step
+# that guarantees locale-invariant ordering.
 #
-#  Hole 1 — case-sensitivity: the old grep used a lowercase-only pattern
-#    (.*\$.*aseline) which matched "baseline_file" but not "BASELINE".
-#    Any script using the house-style uppercase variable was invisible.
+# Concretely: if the script has
 #
-#  Hole 2 — unanchored regex: .*\$.*aseline spans the entire line, so
-#    `sort "$warn_list" > "$baseline_file"` matched even though sort's
-#    direct argument was the temp file, not the committed baseline.
+#   MYBASE="$ROOT/scripts/check-static/foo.baseline"
+#   ...
+#   comm -13 "$MYBASE" "$tmp"         ← FAIL: raw committed file to comm
 #
-#  Hole 3 — sort-line requirement inverted the risk: the most dangerous
-#    shape — `comm -13 "$COMMITTED_BASELINE" "$tmp"` with no sort — was
-#    NEVER selected because there was no matching sort line.
+# it is UNSAFE.  The correct form sorts first:
 #
-# Acceptance note: a script containing
-#   comm -13 "$BASELINE" "$tmp"
-# with an uppercase BASELINE variable and no in-script sort would be
-# detected as a consumer (comm on same line as "baseline") and would then
-# fail the safety check (no export LC_ALL=C, no sort near the baseline
-# reference), causing a gate failure.
+#   sort "$MYBASE" > "$tmp/sorted"
+#   comm -13 "$tmp/sorted" "$tmp/cur" ← OK: committed file pre-sorted
 #
-# Safety check
-# ------------
-# For each detected consumer we verify EITHER:
-#   • the script contains `export LC_ALL=C`, OR
-#   • the script re-sorts the committed baseline operand in-script:
-#     detected when a sort command appears within 6 lines after a line
-#     referencing any "baseline"-named variable (case-insensitive).
-#     This catches both single-line (`sort "$BASELINE" > tmp`) and
-#     multi-line pipeline forms (`sed ... "$BASELINE" \n | sort > tmp`).
+# IMPORTANT: export LC_ALL=C is NOT a substitute.
+# LC_ALL=C pins the locale for sorts performed *at runtime by the script*.
+# It cannot retroactively sort a file committed in a different locale
+# order.  A script that has `export LC_ALL=C` but passes the committed
+# baseline directly to comm is still UNSAFE and will FAIL this gate.
+# LC_ALL=C is a desirable complement — it ensures the in-script sort and
+# comm agree on order — but it does not replace the sort step.
 #
-# Baseline C-sort validation
-# --------------------------
-# For direct-sort consumers (sort takes the committed baseline variable as
-# a positional argument, not via a comment-stripping pipeline), the
-# committed baseline must be byte-identical to its own LC_ALL=C sort
-# output.  This is necessary because:
-#   • the committed file content is passed to sort unchanged, so
-#   • the committed order must equal LC_ALL=C order to be locale-invariant.
+# Baseline C-sort validation (direct-sort consumers only)
+# -------------------------------------------------------
+# If the consumer sorts the committed baseline variable directly
+# (`sort "$MYBASE" > tmp`, with sort as the first command, not in a
+# pipeline receiving the baseline), the committed file must be
+# byte-identical to its own LC_ALL=C sort output.
 #
 # Baselines consumed through comment-stripping pipelines (sed/awk before
-# sort) carry intentional section comments that make the file non-C-sorted
-# by design.  Those are explicitly excluded: the strip→sort sequence is
-# always locale-independent regardless of the committed file's raw order.
+# sort) carry intentional section comments that make the raw file
+# non-C-sorted by design; those are excluded from this check.
 #
 # Fail-close
 # ----------
 # If the consumer list is empty the filter is almost certainly broken
 # (the known consumer dead-arm-detect.sh vanished or was restructured).
 # Gate fails rather than silently passing with zero checks performed.
+#
+# Selftest
+# --------
+# Run with --selftest to exercise the three fail-open checks against
+# synthetic fixtures.  Each fixture must exit 1 under the gate.
 
 set -u
 
@@ -93,41 +91,188 @@ fail() {
 _fail=0
 
 # ------------------------------------------------------------------
+# extract_baseline_vars SCRIPT
+#
+# Print (one per line, sorted -u) the names of variables that are
+# assigned a $ROOT/scripts/check-static/*.{baseline,txt} path on a
+# non-comment line.  The ROOT placeholder may be written as $ROOT or
+# ${ROOT}; no other root spellings are matched (they would need their
+# own assignment patterns and are not used by current consumers).
+# ------------------------------------------------------------------
+extract_baseline_vars() {
+	local script="$1"
+	grep -v '^[[:space:]]*#' "$script" \
+	| grep -oP '^[[:space:]]*\K[A-Za-z_][A-Za-z0-9_]*(?=="\$\{?ROOT\}?/scripts/check-static/[^"[:space:]]+\.(?:baseline|txt)")' \
+	| sort -u
+}
+
+# ------------------------------------------------------------------
+# has_direct_comm VAR SCRIPT
+#
+# Return 0 (true) if any non-comment line in SCRIPT that contains a
+# comm or join invocation also contains a direct reference to $VAR or
+# ${VAR}.  "Direct" means the variable reference is not inside a
+# quoted sort sub-expression; for the purpose of this check we simply
+# look for the token on the same non-comment line as comm/join.
+#
+# Returning 0 means the committed baseline variable is being passed
+# raw to comm/join — UNSAFE.
+# ------------------------------------------------------------------
+has_direct_comm() {
+	local var="$1" script="$2"
+	grep -v '^[[:space:]]*#' "$script" \
+	| grep -qP '\b(comm|join)\b.*\$\{?'"$var"'\}?|\$\{?'"$var"'\}?.*\b(comm|join)\b'
+}
+
+# ------------------------------------------------------------------
+# is_direct_sort_consumer VAR SCRIPT
+#
+# Return 0 (true) if SCRIPT has a line where sort is the first command
+# (start-of-line, possibly with leading whitespace) and $VAR appears
+# as a positional argument on that line — i.e., the committed baseline
+# is fed directly to sort, not via a preceding pipeline stage that
+# transforms its content (sed, grep, awk, ...).
+#
+# This distinguishes:
+#   sort "$MYBASE" > "$tmp/sorted"          ← direct sort (yes)
+#   sed '...' "$MYBASE" | sort > "$tmp"     ← pipeline sort (no)
+# ------------------------------------------------------------------
+is_direct_sort_consumer() {
+	local var="$1" script="$2"
+	grep -v '^[[:space:]]*#' "$script" \
+	| grep -qP '^[[:space:]]*sort[[:space:]].*\$\{?'"$var"'\}?'
+}
+
+# ------------------------------------------------------------------
+# Selftest: three synthetic fixtures must each cause a FAIL exit.
+#
+# Fixture A — LC_ALL=C alone (no in-script sort of the baseline).
+# Fixture B — proximity false-positive: unrelated sort within 6 lines
+#             of a baseline assignment, but comm uses the raw baseline.
+# Fixture C — naming-convention miss: var is named $BASE2 (no
+#             "baseline" in the name) but points to a check-static path.
+# ------------------------------------------------------------------
+if [ "${1:-}" = "--selftest" ]; then
+	gate="$(realpath "${BASH_SOURCE[0]}")"
+
+	# Each fixture is placed under scripts/check-static/ inside an isolated
+	# temp root so the gate's consumer scan finds exactly one script per run.
+	# A dummy x.baseline is created at the expected path so consumer detection
+	# does not abort before the safety check fires.
+	#
+	# run_fixture LABEL FIXTURE_FILE: copy FIXTURE_FILE into a fresh isolated
+	# repo root and assert that the gate exits non-zero (fixture is caught).
+	run_fixture() {
+		local label="$1" src="$2" rc
+		local tmproot
+		tmproot="$(mktemp -d)"
+		mkdir -p "$tmproot/scripts/check-static"
+		cp "$src" "$tmproot/scripts/check-static/$(basename "$src")"
+		touch "$tmproot/scripts/check-static/x.baseline"
+		rc=0
+		REPO_ROOT="$tmproot" bash "$gate" >/dev/null 2>&1 || rc=$?
+		rm -rf "$tmproot"
+		if [ "$rc" -eq 0 ]; then
+			echo "SELFTEST FAIL: $label: gate returned 0 (expected non-zero)" >&2
+			return 1
+		fi
+		echo "SELFTEST PASS: $label: gate correctly exits $rc" >&2
+	}
+
+	# Write fixture scripts to a shared temp dir; run each through run_fixture.
+	stdir="$(mktemp -d)"
+	trap 'rm -rf "$stdir"' EXIT
+
+	# Fixture A: export LC_ALL=C present, but raw committed baseline to comm.
+	# The old gate accepted LC_ALL=C as sufficient; the updated gate must FAIL.
+	cat > "$stdir/fixture-a.sh" << 'FIXA'
+#!/bin/bash
+export LC_ALL=C
+ROOT="${REPO_ROOT:-$(pwd)}"
+MYBASE="$ROOT/scripts/check-static/x.baseline"
+tmp="$(mktemp)"
+some_producer > "$tmp"
+comm -13 "$MYBASE" "$tmp"   # raw committed baseline -- unsafe even with LC_ALL=C
+rm -f "$tmp"
+FIXA
+
+	# Fixture B: unrelated sort within 6 lines of baseline assignment, but
+	# comm still uses the raw baseline (proximity heuristic false-positive trap).
+	cat > "$stdir/fixture-b.sh" << 'FIXB'
+#!/bin/bash
+ROOT="${REPO_ROOT:-$(pwd)}"
+MYBASE="$ROOT/scripts/check-static/x.baseline"
+other_list="$(mktemp)"
+some_producer > "$other_list"
+sort "$other_list" > /dev/null   # unrelated sort within 6 lines of MYBASE=
+tmp="$(mktemp)"
+some_producer2 > "$tmp"
+comm -13 "$MYBASE" "$tmp"       # raw baseline -- proximity sort gave false confidence
+rm -f "$other_list" "$tmp"
+FIXB
+
+	# Fixture C: variable named $BASE2 (no "baseline" in the name) points to
+	# a check-static path -- naming-convention detector would miss it.
+	cat > "$stdir/fixture-c.sh" << 'FIXC'
+#!/bin/bash
+ROOT="${REPO_ROOT:-$(pwd)}"
+BASE2="$ROOT/scripts/check-static/x.baseline"
+tmp="$(mktemp)"
+some_producer > "$tmp"
+comm -13 "$BASE2" "$tmp"        # raw committed baseline, oddly-named variable
+rm -f "$tmp"
+FIXC
+
+	self_fail=0
+	run_fixture "fixture-A (LC_ALL=C alone)"          "$stdir/fixture-a.sh" || self_fail=1
+	run_fixture "fixture-B (proximity false-positive)" "$stdir/fixture-b.sh" || self_fail=1
+	run_fixture "fixture-C (naming-convention miss)"   "$stdir/fixture-c.sh" || self_fail=1
+
+	if [ "$self_fail" -ne 0 ]; then
+		echo "FAIL: $NAME: selftest: one or more fixtures were not caught" >&2
+		exit 1
+	fi
+	echo "PASS: $NAME: selftest: all fixtures correctly detected"
+	exit 0
+fi
+
+# ------------------------------------------------------------------
 # Step 1: enumerate consumer scripts.
 #
-# A consumer is any .sh file in $CSDIR where at least one non-comment
-# line contains BOTH a comm/join invocation AND "baseline" (case-insensitive).
-# Matching on the same line means:
-#   • Python ".join()" in inline heredocs never matches (no "baseline" on
-#     the same line).
-#   • `comm <(printf ...) <(printf ...)` never matches unless the printf
-#     args happen to contain "baseline" — which, by convention, they do not.
-#   • `comm "$tmp/baseline_sorted" ...` does match, correctly.
+# A consumer is any .sh file in $CSDIR (excluding this script) where:
+#   (a) a non-comment line assigns a variable to a path of the form
+#       $ROOT/scripts/check-static/*.{baseline,txt}, AND
+#   (b) the script contains at least one comm or join invocation on a
+#       non-comment line.
 #
-# We skip the checker itself to avoid matching the acceptance-note examples
-# embedded in our own comments.
+# This is provenance-based detection: the variable name on the
+# comm/join line does not need to contain "baseline".  A consumer
+# using `comm -13 "$BASE2" ...` where BASE2 holds a check-static path
+# is correctly detected.
 # ------------------------------------------------------------------
-
 mapfile -t consumer_scripts < <(
 	for f in "$CSDIR"/*.sh; do
 		[ -f "$f" ] || continue
-		# Skip ourselves — our own comments contain the example patterns.
 		[ "$(realpath "$f")" = "$(realpath "${BASH_SOURCE[0]}")" ] && continue
-		# Non-comment line must contain comm/join AND "baseline" (case-insensitive)
-		grep -iqE '^[^#]*\b(comm|join)\b[^#]*[Bb][Aa][Ss][Ee][Ll][Ii][Nn][Ee]' "$f" || continue
+		# Must have a var assigned to a check-static baseline path.
+		mapfile -t bvars < <(extract_baseline_vars "$f")
+		[ "${#bvars[@]}" -eq 0 ] && continue
+		# Must have a comm or join call on a non-comment line.
+		# Require trailing whitespace to exclude Python str.join() /
+		# os.path.join() calls inside embedded heredocs.
+		grep -v '^[[:space:]]*#' "$f" | grep -qP '\b(comm|join)\b[[:space:]]' || continue
 		echo "$f"
 	done | sort -u
 )
 
 if [ "${#consumer_scripts[@]}" -eq 0 ]; then
-	echo "FAIL: $NAME: no comm/join consumers with baseline references found" \
+	echo "FAIL: $NAME: no comm/join consumers with check-static baseline references found" \
 	     "in scripts/check-static/ — filter is broken?" >&2
 	exit 1
 fi
 
-# Emit the consumer list so the population is auditable on every run.
 {
-	echo "  $NAME: comm/join consumers with baseline refs (${#consumer_scripts[@]}):"
+	echo "  $NAME: comm/join consumers with check-static baseline refs (${#consumer_scripts[@]}):"
 	for cs in "${consumer_scripts[@]}"; do
 		echo "    $(basename "$cs")"
 	done
@@ -142,75 +287,67 @@ checked=0
 for script in "${consumer_scripts[@]}"; do
 	sname="$(basename "$script" .sh)"
 
-	# ---- Safety check ----
-	#
-	# The consumer must either:
-	#   (a) export LC_ALL=C as a standalone command (not a single-command
-	#       prefix like `LC_ALL=C sort`), which pins the locale for the
-	#       entire script, OR
-	#   (b) re-sort the committed baseline operand in-script.
-	#
-	# Re-sort detection (awk, case-insensitive): flag if a sort command
-	# appears within 6 lines after a line referencing any variable whose
-	# name contains "baseline".  6 lines covers typical multi-line pipelines
-	# with backslash continuation (sed → grep → sort).  Sort is matched
-	# without \b (not supported in awk ERE) using a character-class anchor:
-	# (^|non-alnum-non-_)sort(space|pipe|end).
-	has_lc_all=0
-	grep -qE '^[[:space:]]*export[[:space:]]+LC_ALL=C([[:space:]]|$)' \
-		"$script" && has_lc_all=1
+	# Collect baseline variable names for this consumer.
+	mapfile -t bvars < <(extract_baseline_vars "$script")
 
-	has_resort=0
-	if awk '
-		BEGIN { baseline_line = 0 }
-		tolower($0) ~ /baseline/ { baseline_line = NR }
-		/(^|[^[:alnum:]_])sort([[:space:]]|$|\|)/ {
-			if (baseline_line > 0 && (NR - baseline_line) <= 6) found = 1
-		}
-		END { exit !found }
-	' "$script"; then
-		has_resort=1
-	fi
+	# ---- Safety check (operand tracking) ----
+	#
+	# For each committed baseline variable, check that it does NOT appear
+	# as a direct operand to comm/join.  The committed file must always be
+	# routed through an in-script sort before reaching comm/join.
+	#
+	# NOTE: export LC_ALL=C is NOT accepted as a substitute.  LC_ALL=C
+	# pins the locale for sorts the script performs at runtime; it cannot
+	# retroactively sort a committed file.  A script that pins LC_ALL=C
+	# but passes the committed baseline raw to comm will still produce
+	# wrong results on a host where the baseline was written in a
+	# different locale.  Both conditions — in-script sort AND LC_ALL=C —
+	# are desirable, but only the sort step is mandatory for correctness.
+	consumer_safe=1
+	for bv in "${bvars[@]}"; do
+		if has_direct_comm "$bv" "$script"; then
+			fail "  $NAME: '$sname' passes the committed baseline variable" \
+			     "\$$bv directly to comm/join without an in-script sort."
+			fail "  $NAME: LC_ALL=C alone does not fix this: it pins the" \
+			     "runtime sort locale but cannot sort a committed file." \
+			     "Fix: sort \"\$$bv\" > \"\$tmp/sorted\" and use \$tmp/sorted in comm."
+			consumer_safe=0
+		fi
+	done
 
-	if [ "$has_lc_all" -eq 0 ] && [ "$has_resort" -eq 0 ]; then
-		fail "  $NAME: '$sname' invokes comm/join with a baseline-named variable" \
-		     "but has neither 'export LC_ALL=C' nor an in-script sort of the" \
-		     "baseline operand — collation mismatch risk on non-C-locale hosts."
-		fail "  $NAME: fix: add 'export LC_ALL=C' near the top of the script, or" \
-		     "sort the committed baseline variable before using its content in comm/join."
+	if [ "$consumer_safe" -eq 0 ]; then
 		continue
 	fi
 
 	# ---- Baseline C-sort validation (direct-sort consumers only) ----
 	#
-	# If the consumer directly sorts the committed baseline variable (sort
-	# has the baseline-named variable as a positional argument, not as the
-	# output of a sed/grep pipeline), the committed file must be
-	# byte-identical to its own LC_ALL=C sort output.
+	# If the consumer sorts the committed baseline variable directly
+	# (sort is the first command on the line, taking the baseline var as
+	# a positional argument — not inside a pipeline that transforms the
+	# content first), the committed file must be byte-identical to its
+	# LC_ALL=C sort output.
 	#
-	# Detect: any line matching
-	#   ^<ws>sort<ws>...$<Variable_Containing_Baseline>...
-	# where the variable name (case-insensitive) contains "baseline".
-	# This matches `sort "$baseline_file" > tmp` but NOT
-	# `sed ... "$BASELINE" | sort` (sort has no baseline-named arg).
+	# Baselines consumed through comment-stripping pipelines (sed/awk
+	# before sort) carry intentional section comments that make the raw
+	# file non-C-sorted by design; those are excluded.
 	is_direct_sort=0
-	grep -iqE \
-		'^[[:space:]]*(sort)[[:space:]].*\$[{]?[A-Za-z_]*[Bb][Aa][Ss][Ee][Ll][Ii][Nn][Ee][A-Za-z_]*[}]?' \
-		"$script" && is_direct_sort=1
+	for bv in "${bvars[@]}"; do
+		if is_direct_sort_consumer "$bv" "$script"; then
+			is_direct_sort=1
+			break
+		fi
+	done
 
 	if [ "$is_direct_sort" -eq 0 ]; then
-		# Pipeline-sort or LC_ALL=C-protected consumer: the committed
-		# baseline is comment-stripped or otherwise transformed before
-		# sorting, so the committed file's raw order is irrelevant.
-		# No baseline C-sort check needed.
-		echo "  $NAME: OK  $sname (pipeline-sort or LC_ALL=C; baseline order not checked)" >&2
+		echo "  $NAME: OK  $sname (pipeline-sort consumer; committed baseline order not checked)" >&2
 		continue
 	fi
 
 	# Direct-sort consumer: validate every committed baseline path.
 	mapfile -t bpaths < <(
-		grep -oP '\$ROOT/scripts/check-static/[^"'\''[:space:]]+' "$script" \
-		| grep -E '\.(baseline|txt)$' \
+		grep -v '^[[:space:]]*#' "$script" \
+		| grep -oP '\$\{?ROOT\}?/scripts/check-static/[^"'"'"'[:space:]]+\.(?:baseline|txt)' \
+		| sed 's/\${ROOT}/\$ROOT/g' \
 		| sort -u
 	)
 
@@ -252,7 +389,7 @@ if [ "$_fail" -ne 0 ]; then
 fi
 
 if [ "$checked" -eq 0 ]; then
-	echo "PASS: $NAME (${#consumer_scripts[@]} consumer(s) safe via LC_ALL=C or pipeline-sort;" \
+	echo "PASS: $NAME (${#consumer_scripts[@]} consumer(s) safe;" \
 	     "no direct-sort baselines to validate)"
 else
 	echo "PASS: $NAME ($checked direct-sort baseline(s) verified C-sorted," \
