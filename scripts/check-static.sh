@@ -44,11 +44,13 @@ ran_count=0
 # before running the gate battery.  If the selftest fails, the detector has
 # been broken (e.g. a grep pattern was mutated to never match) and the gate
 # would silently pass with zero real collation checks performed.
-if [ -x "$CHECK_DIR/baseline-collation.sh" ]; then
-	if ! "$CHECK_DIR/baseline-collation.sh" --selftest; then
-		echo "check-static: baseline-collation selftest failed; aborting" >&2
-		exit 1
-	fi
+if [ ! -f "$CHECK_DIR/baseline-collation.sh" ]; then
+	echo "check-static: baseline-collation.sh missing; aborting" >&2
+	exit 1
+fi
+if ! bash "$CHECK_DIR/baseline-collation.sh" --selftest; then
+	echo "check-static: baseline-collation selftest failed; aborting" >&2
+	exit 1
 fi
 
 if [ ! -d "$CHECK_DIR" ] || [ -z "$(ls -A "$CHECK_DIR" 2>/dev/null)" ]; then
