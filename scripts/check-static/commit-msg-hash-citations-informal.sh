@@ -60,8 +60,15 @@ declare -A _baseline
 if [ -f "$BASELINE" ]; then
 	while IFS= read -r bline; do
 		[[ -z "$bline" || "$bline" == \#* ]] && continue
-		# Resolve abbreviated or full SHA; skip unresolvable entries.
-		full=$(git rev-parse --verify "${bline%% *}" 2>/dev/null) || continue
+		# Resolve abbreviated or full SHA; warn and skip unresolvable entries.
+		full=$(git rev-parse --verify "${bline%% *}" 2>/dev/null) || {
+			echo "WARNING: $NAME: baseline entry unresolvable, skipping: ${bline%% *}" >&2
+			continue
+		}
+		if [[ -v _baseline["$full"] ]]; then
+			echo "FAIL: $NAME: duplicate baseline entry: $full (from: $bline)" >&2
+			exit 1
+		fi
 		_baseline["$full"]=1
 	done < "$BASELINE"
 fi

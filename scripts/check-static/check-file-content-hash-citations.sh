@@ -304,6 +304,10 @@ fi
 if [ -f "$SUBJECT_BASELINE" ]; then
 	while IFS= read -r _sline; do
 		[[ -z "$_sline" || "$_sline" == \#* ]] && continue
+		if [[ -v _subject_baseline["$_sline"] ]]; then
+			echo "FAIL: $NAME: duplicate subject-baseline entry: $_sline" >&2
+			exit 1
+		fi
 		_subject_baseline["$_sline"]=1
 	done < "$SUBJECT_BASELINE"
 fi
