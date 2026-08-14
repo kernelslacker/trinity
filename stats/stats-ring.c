@@ -18,6 +18,7 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <string.h>
 
@@ -367,15 +368,47 @@ static void stats_publish_locked(void)
 }
 
 /*
- * Absolute plausibility ceiling for a single per-child lossless_op_count
- * contribution.  2^52 (~4.5e15) is several orders of magnitude above any
- * realistic run total (even 100k ops/sec/child running continuously for
- * years stays well under 10^13), while the observed garbage value
- * 0x693bb2ae5ba348af (~2^62.7) is far above it.  A slot exceeding this
- * ceiling is treated as scribbled shm and skipped rather than clamped
- * into the monotonic total_op_count where it would stick forever.
+ * Plausibility guards for per-child lossless_op_count contributions.
+ *
+ * LOSSLESS_OP_COUNT_SANE_CEILING (absolute): any value above 2^52
+ * (~4.5e15) is unconditionally treated as scribbled shm and dropped.
+ * This catches the observed garbage value 0x693bb2ae5ba348af (~2^62.7)
+ * and anything above the ceiling.  2^52 is many orders of magnitude
+ * above any realistic run total (100k ops/sec/child × years < 10^13).
+ *
+ * LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN (delta): lossless_op_count is
+ * run-monotonic (never reset across child respawns).  A drain-to-drain
+ * increment larger than this constant is implausible regardless of the
+ * absolute value, and catches the entire class of garbage values in
+ * the range [real_total, 2^52) that the absolute ceiling misses.
+ * 1e8 ops per drain interval is a 100× safety margin over the fastest
+ * realistic child (1M syscalls/sec × ~1s drain cadence = 1M delta).
+ *
+ * Both checks share one action: skip accumulation and emit a one-shot
+ * diagnostic (rate-limited to once per slot via slot_implausible_reported
+ * so lossless_slot_implausible counts distinct corrupted slots, not
+ * the slot × drain re-observation product).
  */
-#define LOSSLESS_OP_COUNT_SANE_CEILING (1UL << 52)
+#define LOSSLESS_OP_COUNT_SANE_CEILING        (1UL << 52)
+#define LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN (100000000UL)  /* 1e8 ops/drain */
+
+/*
+ * Per-slot cross-drain state.  Allocated once (calloc) on first entry
+ * to stats_ring_drain_all(); sized to max_children at that point.
+ * Single-writer (parent main loop), no locking needed.
+ *
+ * prev_lossless_op_count[i] — last accepted lossless_op_count for slot i.
+ *   Initialised to 0 ("never seen"); delta check is suppressed until
+ *   the first valid observation so a freshly started child whose real
+ *   counter happens to be large (but < ceiling) is not falsely flagged.
+ *
+ * slot_implausible_reported[i] — set true after the first output() for
+ *   slot i so subsequent drain iterations stay silent.  Reset to false
+ *   when a slot transitions back to plausible (counter advances normally
+ *   again, e.g. after a child respawn clears the scribbled region).
+ */
+static unsigned long *prev_lossless_op_count;
+static bool         *slot_implausible_reported;
 
 void stats_ring_drain_all(void)
 {
@@ -384,6 +417,14 @@ void stats_ring_drain_all(void)
 
 	if (children == NULL)
 		return;
+
+	/* One-time allocation of cross-drain per-slot state. */
+	if (prev_lossless_op_count == NULL) {
+		prev_lossless_op_count =
+			calloc(max_children, sizeof(*prev_lossless_op_count));
+		slot_implausible_reported =
+			calloc(max_children, sizeof(*slot_implausible_reported));
+	}
 
 	for_each_child(i) {
 		struct childdata *child;
@@ -454,22 +495,67 @@ void stats_ring_drain_all(void)
 		 * The child is the sole writer; RELAXED is sufficient because
 		 * nothing orders against this counter on either side.
 		 *
-		 * Plausibility guard: if the loaded value exceeds
-		 * LOSSLESS_OP_COUNT_SANE_CEILING the slot is scribbled or
-		 * uninitialised shm.  Skip it rather than letting one garbage
-		 * read spike lossless_total and get locked in permanently by
-		 * the monotonic high-water clamp below.
+		 * Two-layer plausibility guard — see the LOSSLESS_OP_COUNT_*
+		 * constants above for the full rationale:
+		 *
+		 * 1. Absolute ceiling: slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING
+		 *    catches wild garbage far above any realistic total.
+		 *
+		 * 2. Delta ceiling: slot_ops − prev > MAX_DELTA_PER_DRAIN
+		 *    catches plausible-magnitude scribbles that fall in the
+		 *    range [real_total, SANE_CEILING) and would otherwise slip
+		 *    through, get accumulated, and lock in permanently via the
+		 *    high-water clamp below.  Also flags a backward jump
+		 *    (slot_ops < prev), which violates the monotonic invariant
+		 *    and can only happen if shm was stomped.
+		 *
+		 * Diagnostic output is rate-limited to one message per slot
+		 * for the lifetime of the run (slot_implausible_reported[]).
+		 * lossless_slot_implausible counts distinct corrupted slots,
+		 * not the (slot × drain) re-observation product.
 		 */
 		{
 			unsigned long slot_ops =
 				__atomic_load_n(&ring->lossless_op_count,
 						__ATOMIC_RELAXED);
-			if (slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING) {
-				output(0, "stats_ring: child[%u] lossless_op_count "
-				       "0x%lx exceeds plausibility ceiling, skipping\n",
-				       i, slot_ops);
-				parent_stats.lossless_slot_implausible++;
+			unsigned long prev = (prev_lossless_op_count != NULL)
+					     ? prev_lossless_op_count[i] : 0;
+			bool absolute_bad = (slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING);
+			/*
+			 * Delta check only when we have a prior baseline (prev > 0).
+			 * A backward jump (slot_ops < prev) also violates monotonicity.
+			 */
+			bool delta_bad = (prev > 0) &&
+					 ((slot_ops < prev) ||
+					  (slot_ops - prev >
+					   LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN));
+
+			if (absolute_bad || delta_bad) {
+				/* Rate-limit: emit at most one message per slot. */
+				if (slot_implausible_reported == NULL ||
+				    !slot_implausible_reported[i]) {
+					output(0, "stats_ring: child[%u] lossless_op_count "
+					       "0x%lx %s (prev 0x%lx), skipping\n",
+					       i, slot_ops,
+					       absolute_bad
+						? "exceeds absolute plausibility ceiling"
+						: "delta implausible (possible scribble)",
+					       prev);
+					if (slot_implausible_reported != NULL)
+						slot_implausible_reported[i] = true;
+					/* Count distinct corrupted slots, not
+					 * slot × drain re-observations. */
+					parent_stats.lossless_slot_implausible++;
+				}
+				/* Do NOT update prev: keep the last known-good
+				 * baseline so the delta check stays anchored. */
 			} else {
+				/* Slot is plausible; re-arm reporting in case the
+				 * child respawned and the scribble is gone. */
+				if (slot_implausible_reported != NULL)
+					slot_implausible_reported[i] = false;
+				if (prev_lossless_op_count != NULL)
+					prev_lossless_op_count[i] = slot_ops;
 				lossless_total += slot_ops;
 			}
 		}
