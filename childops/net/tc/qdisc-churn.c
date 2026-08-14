@@ -195,18 +195,6 @@ static bool ns_unsupported_cls_kind[NR_CLS_KINDS];
 static bool modprobe_tried_qdisc[NR_QDISC_KINDS];
 static bool modprobe_tried_cls[NR_CLS_KINDS];
 
-static bool lo_brought_up(void)
-{
-	return __atomic_load_n(&shm->tc_qdisc_churn_lo_brought_up,
-			       __ATOMIC_RELAXED);
-}
-
-static void mark_lo_brought_up(void)
-{
-	__atomic_store_n(&shm->tc_qdisc_churn_lo_brought_up, true,
-			 __ATOMIC_RELAXED);
-}
-
 /* Master gate: persistent across iterations in the persistent
  * child.  Set when userns_run_in_ns returns -EPERM (hardened userns
  * policy refused CLONE_NEWUSER -- typically
@@ -1379,14 +1367,11 @@ static int tc_qdisc_churn_in_ns(void *arg)
 			childop_direct_syscalls_add(op, it->direct_calls);
 		return 0;
 	}
-	if (!lo_brought_up()) {
-		rtnl_bring_lo_up(&it->nl);
-		/* rtnl_bring_lo_up: if_nametoindex (socket+ioctl+close).
-		 * The nl_send_recv portion is credited automatically via
-		 * opts.caller_op (nl_close publishes netlink transport). */
-		it->direct_calls += 3;
-		mark_lo_brought_up();
-	}
+	rtnl_bring_lo_up(&it->nl);
+	/* rtnl_bring_lo_up: if_nametoindex (socket+ioctl+close).
+	 * The nl_send_recv portion is credited automatically via
+	 * opts.caller_op (nl_close publishes netlink transport). */
+	it->direct_calls += 3;
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],

@@ -143,13 +143,6 @@
  * for the remainder of this child's lifetime. */
 static bool ns_unsupported_sctp_chunk_rx;
 
-/* Per-grandchild bookkeeping.  Inherited as false at grandchild fork
- * time (the persistent child never sets it), set to true after the
- * grandchild's first rtnl_bring_lo_up() in its own fresh netns.  Dies
- * with the grandchild on _exit(), so each subsequent grandchild
- * correctly re-runs the bring-lo-up once in its own netns. */
-static bool lo_brought_up;
-
 /* Set once per persistent child after the modprobe attempt runs.
  * modprobe needs CAP_SYS_MODULE in init_user_ns, which the grandchild
  * does not hold, so it fires from the persistent child before the hop. */
@@ -766,12 +759,9 @@ static int sctp_chunk_rx_in_ns(void *arg)
 	if (kind_unsupported())
 		return 0;
 
-	if (!lo_brought_up) {
-		if (nl_open(&nl, &opts) == 0) {
-			rtnl_bring_lo_up(&nl);
-			nl_close(&nl);
-			lo_brought_up = true;
-		}
+	if (nl_open(&nl, &opts) == 0) {
+		rtnl_bring_lo_up(&nl);
+		nl_close(&nl);
 	}
 
 	if (sctp_chunk_rx_iter_setup_listener(&ctx) != 0)

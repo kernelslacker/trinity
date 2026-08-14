@@ -85,31 +85,6 @@ bool ns_unsupported_veth;
  * iteration. */
 static bool ns_unsupported;
 
-/* Per-grandchild "lo up" setup latch lives in shm
- * (shm->bridge_fdb_stp_lo_brought_up).  The write site sits inside the
- * userns_run_in_ns() grandchild body -- a process-local static would
- * die with the grandchild on _exit() and every subsequent invocation
- * would re-pay the "lo up" rtnetlink round-trip.  RELAXED atomic
- * load/store is safe: only false -> true, idempotent write. */
-static bool lo_brought_up(void)
-{
-	return __atomic_load_n(&shm->bridge_fdb_stp_lo_brought_up,
-			       __ATOMIC_RELAXED);
-}
-
-static void mark_lo_brought_up(void)
-{
-	__atomic_store_n(&shm->bridge_fdb_stp_lo_brought_up, true,
-			 __ATOMIC_RELAXED);
-}
-
-/*
- * Bring lo up inside the private netns.  A freshly-unshared netns has
- * lo present but DOWN; some bridge / fdb code paths short-circuit on
- * the upper-layer carrier state, so flip lo up once-per-child.
- * Failures are ignored — they latch through the rest of the sequence
- * naturally.
- */
 /*
  * Phase 1: pick the per-invocation interface names.  All five names
  * (one bridge + two veth pairs) share a single 16-bit random suffix so
@@ -309,10 +284,7 @@ static int bridge_fdb_stp_in_ns(void *arg)
 		return 0;
 	}
 
-	if (!lo_brought_up()) {
-		rtnl_bring_lo_up(&ictx.ctx);
-		mark_lo_brought_up();
-	}
+	rtnl_bring_lo_up(&ictx.ctx);
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and

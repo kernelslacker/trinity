@@ -119,28 +119,15 @@ static void mark_modprobe_tried_algo(unsigned int idx)
 			 __ATOMIC_RELAXED);
 }
 
-/* Per-grandchild setup latches live in shm (shm->xfrm_churn_
- * lo_brought_up / ns_unsupported_iptfs / ns_unsupported_zerocopy).
- * The write sites sit inside the userns_run_in_ns() grandchild -- a
- * process-local static would die with the grandchild on _exit() and
- * every subsequent invocation would re-pay the "lo up" rtnetlink
- * round-trip, the iptfs NEWSA EFAIL and the SO_ZEROCOPY setsockopt
+/* Per-grandchild ns_unsupported_iptfs / ns_unsupported_zerocopy
+ * latches live in shm.  The write sites sit inside the
+ * userns_run_in_ns() grandchild -- a process-local static would die
+ * with the grandchild on _exit() and every subsequent invocation
+ * would re-pay the iptfs NEWSA EFAIL and the SO_ZEROCOPY setsockopt
  * EFAIL forever (latch-in-grandchild bug).  Shared shm state means
- * one successful lo-up / one iptfs reject / one zerocopy reject per
- * fleet rather than per grandchild.  RELAXED atomic load/store from
- * multiple grandchildren is safe -- only false -> true, idempotent. */
-
-static bool lo_brought_up(void)
-{
-	return __atomic_load_n(&shm->xfrm_churn_lo_brought_up,
-			       __ATOMIC_RELAXED);
-}
-
-static void mark_lo_brought_up(void)
-{
-	__atomic_store_n(&shm->xfrm_churn_lo_brought_up, true,
-			 __ATOMIC_RELAXED);
-}
+ * one iptfs reject / one zerocopy reject per fleet rather than per
+ * grandchild.  RELAXED atomic load/store from multiple grandchildren
+ * is safe -- only false -> true, idempotent. */
 
 /* CONFIG_XFRM_IPTFS is compiled out unless CONFIG_XFRM_IPTFS is set;
  * where it is, bursts route through xfrm_iptfs.c (iptfs_output ->
@@ -399,7 +386,7 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 	const enum child_op_type op = ctx->child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (!lo_brought_up()) {
+	{
 		struct nl_ctx rtnl = { .fd = -1 };
 		struct nl_open_opts rtnl_opts = {
 			.proto        = NETLINK_ROUTE,
@@ -411,7 +398,6 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 			rtnl_bring_lo_up(&rtnl);
 			nl_close(&rtnl);
 		}
-		mark_lo_brought_up();
 	}
 
 	if (nl_open(&ctx->nl, &opts) < 0) {

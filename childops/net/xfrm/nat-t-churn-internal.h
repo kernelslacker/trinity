@@ -266,7 +266,6 @@ struct nat_t_alg {
  */
 extern bool ns_unsupported_nat_t;
 extern bool ns_unsupported_xfrm6;
-extern bool lo_brought_up;
 extern __u32 g_iter;
 extern const __u8 nat_t_v6_addr[16];
 

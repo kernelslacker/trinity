@@ -158,26 +158,6 @@ static bool ns_unsupported_vxlan_encap;
  * persists fleet-wide via shm so the unsupported attempt is paid
  * once per fleet rather than once per grandchild. */
 
-/* Per-grandchild lo-up latch lives in shm
- * (shm->vxlan_encap_lo_brought_up).  The write site sits inside the
- * userns_run_in_ns() grandchild's vxlan_encap_in_ns() path, so a
- * process-local static would die with the grandchild on _exit() and
- * every subsequent invocation would re-pay the rtnetlink "lo up"
- * round-trip forever -- the parent never observes the latch.  Living
- * in shm lets one successful lo-up persist fleet-wide.  RELAXED
- * atomic load/store is safe: only false -> true, idempotent write. */
-static bool lo_brought_up(void)
-{
-	return __atomic_load_n(&shm->vxlan_encap_lo_brought_up,
-			       __ATOMIC_RELAXED);
-}
-
-static void mark_lo_brought_up(void)
-{
-	__atomic_store_n(&shm->vxlan_encap_lo_brought_up, true,
-			 __ATOMIC_RELAXED);
-}
-
 /* Set once per persistent child after the best-effort modprobe burst
  * runs.  modprobe needs CAP_SYS_MODULE in init_user_ns, which the
  * grandchild does not hold, so the modprobes fire from the persistent
@@ -743,11 +723,12 @@ struct vxlan_encap_iter_ctx {
 
 /*
  * Open the rtnl socket and bring lo up inside the private netns.
- * Returns 0 on success and -1 on failure (with setup_failed bumped so
- * caller can bail without entering teardown — although teardown is also
- * safe to call on failure because it gates on ctx->nl_opened).  The
- * lo_brought_up latch is shared across invocations so the setlink only
- * fires the first time through.
+ * userns_run_in_ns() creates a fresh netns per call, so lo must be
+ * brought up unconditionally — the per-netns lo state is discarded
+ * when the grandchild exits.  Returns 0 on success and -1 on failure
+ * (with setup_failed bumped so caller can bail without entering
+ * teardown — teardown is also safe on failure because it gates on
+ * ctx->nl_opened).
  */
 static int vxlan_encap_iter_open_ctx(struct vxlan_encap_iter_ctx *ctx)
 {
@@ -764,10 +745,7 @@ static int vxlan_encap_iter_open_ctx(struct vxlan_encap_iter_ctx *ctx)
 	}
 	ctx->nl_opened = true;
 
-	if (!lo_brought_up()) {
-		rtnl_bring_lo_up(&ctx->nl);
-		mark_lo_brought_up();
-	}
+	rtnl_bring_lo_up(&ctx->nl);
 	return 0;
 }
 

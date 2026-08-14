@@ -45,14 +45,6 @@ bool ns_unsupported_nat_t;
  * while leaving the v4 path running. */
 bool ns_unsupported_xfrm6;
 
-/* Per-grandchild bookkeeping.  Inherited as false at grandchild fork
- * time (the persistent child never sets it -- the in-ns callback runs
- * exclusively in transient grandchildren), set to true after the
- * grandchild's first bring_lo_up() call in its own fresh netns.  Dies
- * with the grandchild on _exit(), so each subsequent grandchild
- * correctly re-runs bring_lo_up() once in its own netns.  The kernel
- * side of SIOCSIFFLAGS is idempotent if lo is already up. */
-bool lo_brought_up;
 __u32 g_iter;
 
 /* RFC 3849 documentation prefix: 2001:db8::dead.  Used as both the
@@ -74,21 +66,20 @@ void warn_once_unsupported(const char *reason, int err)
 
 /*
  * Bring lo up via SIOCSIFFLAGS on a temporary AF_INET DGRAM socket.
- * Idempotent -- a second call after the interface is already up is a
- * no-op at the kernel level.  Failure is silent because the rest of
- * the sequence will surface a visible error if lo really is broken.
+ * Called unconditionally at the start of each grandchild invocation --
+ * userns_run_in_ns() gives every grandchild a fresh netns in which lo
+ * is DOWN, so the round-trip is mandatory per call.  Failure is silent
+ * because the rest of the sequence will surface a visible error if lo
+ * really is broken.
  */
 void bring_lo_up(void)
 {
 	/* Snapshot the caller's op via this_child()->op_type (NULL guard
 	 * for parent-context callers, NR_CHILD_OP_TYPES bounds check to
 	 * match the surrounding valid_op gate in nat-t-churn) and
-	 * publish this one-shot lo bring-up's raw kernel entries (socket
-	 * + up to two ioctls + close) so the direct-syscall reporter
-	 * moves under load.  bring_lo_up runs at most once per
-	 * grandchild via the lo_brought_up latch, so a single per-call
-	 * bump lines up with "a grandchild committed to running this
-	 * op" without multi-counting per invocation. */
+	 * publish the lo bring-up's raw kernel entries (socket + up to
+	 * two ioctls + close) so the direct-syscall reporter moves under
+	 * load. */
 	{
 		struct childdata *tc = this_child();
 		const enum child_op_type op = tc ? tc->op_type :

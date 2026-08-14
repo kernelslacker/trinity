@@ -121,27 +121,6 @@
  */
 static bool ns_unsupported_esp_crafted_rx;
 
-/* Per-grandchild lo-up latch lives in shm
- * (shm->esp_crafted_rx_lo_brought_up).  The write site sits inside
- * the userns_run_in_ns() grandchild's esp_crafted_rx_in_ns() path,
- * so a process-local static would die with the grandchild on _exit()
- * and every subsequent invocation would re-open a NETLINK_ROUTE
- * socket and re-pay the rtnetlink "lo up" round-trip forever -- the
- * parent never observes the latch.  Living in shm lets one
- * successful lo-up persist fleet-wide.  RELAXED atomic load/store is
- * safe: only false -> true, idempotent write. */
-static bool lo_brought_up(void)
-{
-	return __atomic_load_n(&shm->esp_crafted_rx_lo_brought_up,
-			       __ATOMIC_RELAXED);
-}
-
-static void mark_lo_brought_up(void)
-{
-	__atomic_store_n(&shm->esp_crafted_rx_lo_brought_up, true,
-			 __ATOMIC_RELAXED);
-}
-
 /* Set once per persistent child after the modprobe attempts run.
  * modprobe needs CAP_SYS_MODULE in init_user_ns, which the grandchild
  * does not hold, so it fires from the persistent child before the hop. */
@@ -160,10 +139,10 @@ static void mark_kind_unsupported(void)
 }
 
 /*
- * Bring lo up (per-grandchild one-time) and open NETLINK_XFRM.
- * Returns 0 on success, -1 on failure.  On NETLINK_XFRM open failure
- * with the CONFIG_XFRM absent errno set, latches the kind off so
- * subsequent invocations short-circuit.
+ * Bring lo up and open NETLINK_XFRM.  Returns 0 on success, -1 on
+ * failure.  On NETLINK_XFRM open failure with the CONFIG_XFRM absent
+ * errno set, latches the kind off so subsequent invocations
+ * short-circuit.
  */
 static int esp_crafted_rx_iter_open_ctx(struct esp_crafted_rx_iter_ctx *ctx)
 {
@@ -175,7 +154,7 @@ static int esp_crafted_rx_iter_open_ctx(struct esp_crafted_rx_iter_ctx *ctx)
 	const enum child_op_type op = ctx->child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (!lo_brought_up()) {
+	{
 		struct nl_ctx rtnl = { .fd = -1 };
 		struct nl_open_opts rtnl_opts = {
 			.proto        = NETLINK_ROUTE,
@@ -187,7 +166,6 @@ static int esp_crafted_rx_iter_open_ctx(struct esp_crafted_rx_iter_ctx *ctx)
 			rtnl_bring_lo_up(&rtnl);
 			nl_close(&rtnl);
 		}
-		mark_lo_brought_up();
 	}
 
 	if (nl_open(&ctx->nl, &opts) < 0) {

@@ -387,78 +387,13 @@ struct shm_s {
 	 */
 #define VXLAN_ENCAP_NR_KINDS 3
 	bool vxlan_encap_kind_unsupported[VXLAN_ENCAP_NR_KINDS];
-	/* vxlan-encap per-grandchild lo-up latch (childops/net/
-	 * vxlan-encap.c).  Written inside the userns_run_in_ns()
-	 * grandchild's vxlan_encap_in_ns() path -- a process-local
-	 * static would die with the grandchild on _exit() and every
-	 * subsequent invocation would re-pay the rtnetlink "lo up"
-	 * round-trip forever.  Living in shm lets one successful lo-up
-	 * persist fleet-wide.  RELAXED atomic load/store is safe --
-	 * only false -> true, idempotent write. */
-	bool vxlan_encap_lo_brought_up;
 	bool ip_gre_kind_unsupported;
-	/* ip_gre-churn per-grandchild lo-up latch (childops/net/
-	 * ip_gre-churn.c).  Written inside the userns_run_in_ns()
-	 * grandchild's ip_gre_in_ns() path -- a process-local static
-	 * would die with the grandchild on _exit() and every subsequent
-	 * invocation would re-pay the rtnetlink "lo up" round-trip
-	 * forever.  Living in shm lets one successful lo-up persist
-	 * fleet-wide.  RELAXED atomic load/store is safe -- only
-	 * false -> true, idempotent write. */
-	bool ip_gre_churn_lo_brought_up;
 	bool sctp_chunk_rx_kind_unsupported;
 	bool esp_crafted_rx_kind_unsupported;
-	/* esp-crafted-rx per-grandchild lo-up latch (childops/net/
-	 * esp-crafted-rx.c).  Written inside the userns_run_in_ns()
-	 * grandchild's esp_crafted_rx_in_ns() path -- a process-local
-	 * static would die with the grandchild on _exit() and every
-	 * subsequent invocation would re-open a NETLINK_ROUTE socket
-	 * and re-pay the "lo up" rtnetlink round-trip forever.  Living
-	 * in shm lets one successful lo-up persist fleet-wide.  RELAXED
-	 * atomic load/store is safe -- only false -> true, idempotent
-	 * write. */
-	bool esp_crafted_rx_lo_brought_up;
 	bool fou_gue_mcast_rx_kind_unsupported;
-	/* fou-gue-mcast-rx per-grandchild lo-up latch (childops/net/
-	 * fou-gue-mcast-rx.c).  Written inside the userns_run_in_ns()
-	 * grandchild's fou_gue_mcast_rx_in_ns() path -- a process-local
-	 * static would die with the grandchild on _exit() and every
-	 * subsequent invocation would re-open a NETLINK_ROUTE socket
-	 * and re-pay the "lo up" rtnetlink round-trip forever.  Living
-	 * in shm lets one successful lo-up persist fleet-wide.  RELAXED
-	 * atomic load/store is safe -- only false -> true, idempotent
-	 * write. */
-	bool fou_gue_mcast_rx_lo_brought_up;
 	bool geneve_rx_kind_unsupported;
-	/* geneve-rx per-grandchild lo-up latch (childops/net/
-	 * geneve-rx.c).  Written inside the userns_run_in_ns()
-	 * grandchild's geneve_rx_in_ns() path -- a process-local static
-	 * would die with the grandchild on _exit() and every subsequent
-	 * invocation would re-pay the rtnetlink "lo up" round-trip
-	 * forever.  Living in shm lets one successful lo-up persist
-	 * fleet-wide.  RELAXED atomic load/store is safe -- only
-	 * false -> true, idempotent write. */
-	bool geneve_rx_lo_brought_up;
 	bool bareudp_rx_kind_unsupported;
-	/* bareudp-rx per-grandchild lo-up latch (childops/net/
-	 * bareudp-rx.c).  Written inside the userns_run_in_ns()
-	 * grandchild's bareudp_rx_in_ns() path -- a process-local static
-	 * would die with the grandchild on _exit() and every subsequent
-	 * invocation would re-pay the rtnetlink "lo up" round-trip
-	 * forever.  Living in shm lets one successful lo-up persist
-	 * fleet-wide.  RELAXED atomic load/store is safe -- only
-	 * false -> true, idempotent write. */
-	bool bareudp_rx_lo_brought_up;
 	bool mpls_label_stack_rx_kind_unsupported;
-	/* mpls-label-stack-rx per-grandchild lo-up latch (childops/net/
-	 * mpls-label-stack-rx.c).  Written inside the userns_run_in_ns()
-	 * grandchild's mpls_label_stack_rx_in_ns() path -- a
-	 * process-local static would die with the grandchild on _exit()
-	 * and every subsequent invocation would re-pay the rtnetlink
-	 * "lo up" round-trip forever.  Living in shm lets one successful
-	 * lo-up persist fleet-wide.  RELAXED atomic load/store is safe
-	 * -- only false -> true, idempotent write. */
-	bool mpls_label_stack_rx_lo_brought_up;
 	bool espintcp_coalesce_kind_unsupported;
 #define VETH_XDP_NR_KINDS 4
 	bool veth_xdp_kind_unsupported[VETH_XDP_NR_KINDS];
@@ -549,20 +484,6 @@ struct shm_s {
 	 * any outputerr() call.  See childops/net/fnhe-pmtu-mtu-race.c. */
 	bool fnhe_pmtu_warn_fired;
 
-	/* bridge-fdb-stp per-grandchild setup latch (childops/net/
-	 * bridge-fdb-stp.c).  "lo up" write site sits inside the
-	 * userns_run_in_ns() grandchild body; a process-local static
-	 * would die with the grandchild and every subsequent invocation
-	 * would re-pay the rtnetlink round-trip. */
-	bool bridge_fdb_stp_lo_brought_up;
-
-	/* nftables/churn per-grandchild "lo up" setup latch (childops/net/
-	 * netfilter/nftables/churn.c).  Write site sits inside the
-	 * userns_run_in_ns() grandchild body; a process-local static
-	 * would die with the grandchild and every subsequent invocation
-	 * would re-pay the rtnetlink round-trip. */
-	bool nftables_churn_lo_brought_up;
-
 	/* bridge-conntrack-churn per-grandchild "lo up" setup latch
 	 * (childops/net/bridge-conntrack-churn.c).  Write site sits
 	 * inside the userns_run_in_ns() grandchild body; a process-local
@@ -641,15 +562,13 @@ struct shm_s {
 	bool tc_mirred_bc_ns_unsupported_matchall;
 	bool tc_mirred_bc_ns_unsupported_inet;
 
-	/* tc/mirred-blockcast per-grandchild setup latches (childops/net/
-	 * tc/mirred-blockcast.c).  Written inside the userns_run_in_ns()
-	 * grandchild -- a process-local static would die with the
-	 * grandchild on _exit() and every subsequent invocation would
-	 * re-pay the full lo-up / modprobe cost forever.  Living in shm
-	 * lets one successful "lo up" or one modprobe attempt persist
-	 * fleet-wide.  RELAXED atomic load/store is safe -- only
-	 * false -> true, idempotent write. */
-	bool tc_mirred_bc_lo_brought_up;
+	/* tc/mirred-blockcast per-grandchild modprobe latches
+	 * (childops/net/tc/mirred-blockcast.c).  Written inside the
+	 * userns_run_in_ns() grandchild -- a process-local static would
+	 * die with the grandchild on _exit() and every subsequent
+	 * invocation would re-pay the modprobe cost forever.  Living in
+	 * shm lets one modprobe attempt persist fleet-wide.  RELAXED
+	 * atomic load/store is safe -- only false -> true, idempotent. */
 	bool tc_mirred_bc_modprobe_tried_ingress;
 	bool tc_mirred_bc_modprobe_tried_matchall;
 	bool tc_mirred_bc_modprobe_tried_mirred;
@@ -668,15 +587,13 @@ struct shm_s {
 	bool tc_live_ns_unsupported_inet;
 	bool tc_live_ns_unsupported_xdp;
 
-	/* tc/live-traffic per-grandchild setup latches (childops/net/tc/
+	/* tc/live-traffic per-grandchild modprobe latches (childops/net/tc/
 	 * live-traffic.c).  Written inside the userns_run_in_ns()
 	 * grandchild -- a process-local static would die with the
 	 * grandchild on _exit() and every subsequent invocation would
-	 * re-pay the full lo-up / modprobe cost forever.  Living in shm
-	 * lets one successful "lo up" or one modprobe attempt persist
-	 * fleet-wide.  RELAXED atomic load/store is safe -- only
-	 * false -> true, idempotent write. */
-	bool tc_live_lo_brought_up;
+	 * re-pay the modprobe cost forever.  Living in shm lets one
+	 * modprobe attempt persist fleet-wide.  RELAXED atomic load/store
+	 * is safe -- only false -> true, idempotent write. */
 	bool tc_live_modprobe_tried_ingress;
 	bool tc_live_modprobe_tried_matchall;
 	bool tc_live_modprobe_tried_cls_bpf;
@@ -692,7 +609,6 @@ struct shm_s {
 	bool tc_sa_ns_unsupported_matchall;
 	bool tc_sa_ns_unsupported_action;
 	bool tc_sa_ns_unsupported_inet;
-	bool tc_sa_lo_brought_up;
 	bool tc_sa_modprobe_tried_ingress;
 	bool tc_sa_modprobe_tried_matchall;
 	bool tc_sa_modprobe_tried_act_gact;
@@ -702,15 +618,13 @@ struct shm_s {
 	 * the write sites sit inside the userns_run_in_ns() grandchild, so
 	 * a process-local static would die with the grandchild on _exit()
 	 * and every subsequent invocation would re-pay the same rtnl / inet
-	 * / bridge / dummy setup probe and the "lo up" rtnetlink round-trip
-	 * forever.  Living in shm lets one negative probe or one successful
-	 * lo-up persist fleet-wide.  RELAXED atomic load/store is safe --
-	 * only false -> true, idempotent write. */
+	 * / bridge / dummy setup probe forever.  Living in shm lets one
+	 * negative probe persist fleet-wide.  RELAXED atomic load/store is
+	 * safe -- only false -> true, idempotent write. */
 	bool tc_qdisc_churn_ns_unsupported_rtnl;
 	bool tc_qdisc_churn_ns_unsupported_dummy;
 	bool tc_qdisc_churn_ns_unsupported_inet;
 	bool tc_qdisc_churn_ns_unsupported_bridge;
-	bool tc_qdisc_churn_lo_brought_up;
 
 	/* mpls-route-churn per-grandchild setup latches (childops/net/
 	 * mpls-route-churn.c).  Written inside the userns_run_in_ns()
@@ -739,14 +653,12 @@ struct shm_s {
 	int wgdf_wg_ifindex;
 
 	/* xfrm-churn per-grandchild setup latches (childops/net/xfrm/
-	 * xfrm-churn.c: lo_brought_up / ns_unsupported_iptfs /
-	 * ns_unsupported_zerocopy are written inside the
-	 * userns_run_in_ns() grandchild -- a process-local static would
-	 * die with the grandchild on _exit() and every subsequent call
-	 * would re-pay the full rtnetlink / SA-install / setsockopt cost.
-	 * RELAXED atomic load/store is safe -- only false -> true, and
-	 * the write is idempotent. */
-	bool xfrm_churn_lo_brought_up;
+	 * xfrm-churn.c: ns_unsupported_iptfs / ns_unsupported_zerocopy
+	 * are written inside the userns_run_in_ns() grandchild -- a
+	 * process-local static would die with the grandchild on _exit()
+	 * and every subsequent call would re-pay the SA-install /
+	 * setsockopt cost.  RELAXED atomic load/store is safe -- only
+	 * false -> true, and the write is idempotent. */
 	bool xfrm_churn_ns_unsupported_iptfs;
 	bool xfrm_churn_ns_unsupported_zerocopy;
 

@@ -104,24 +104,6 @@ static void mark_ns_unsupported_inet(void)
 			 __ATOMIC_RELAXED);
 }
 
-/* Per-grandchild "lo up" setup latch lives in shm
- * (shm->nftables_churn_lo_brought_up).  Write site sits inside the
- * userns_run_in_ns() grandchild body -- a process-local static would
- * die with the grandchild and every subsequent invocation would re-pay
- * the "lo up" rtnetlink round-trip.  RELAXED atomic load/store is
- * safe: only false -> true, idempotent write. */
-static bool lo_brought_up(void)
-{
-	return __atomic_load_n(&shm->nftables_churn_lo_brought_up,
-			       __ATOMIC_RELAXED);
-}
-
-static void mark_lo_brought_up(void)
-{
-	__atomic_store_n(&shm->nftables_churn_lo_brought_up, true,
-			 __ATOMIC_RELAXED);
-}
-
 /* Master gate: persistent across iterations in the persistent child.
  * Set when userns_run_in_ns returns -EPERM (hardened userns policy
  * refused CLONE_NEWUSER -- typically user.max_user_namespaces=0 or
@@ -216,14 +198,12 @@ static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 }
 
 /*
- * Phase: NETLINK_ROUTE socket open + one-time lo bring-up inside the
- * fresh netns.  Splits out from setup_netns because the nfnl fd is
- * already live by the time we get here, so a failure must funnel
- * through the out: cleanup path to close it (whereas
- * setup_netns failures had nothing yet to clean).  The lo bring-up is
- * gated by the process-wide lo_brought_up latch so subsequent
- * invocations skip the RTM_NEWLINK round trip.  Returns 0 on success;
- * -1 means caller should goto out -- nfnl needs closing.
+ * Phase: NETLINK_ROUTE socket open + lo bring-up inside the fresh
+ * netns.  Splits out from setup_netns because the nfnl fd is already
+ * live by the time we get here, so a failure must funnel through the
+ * out: cleanup path to close it (whereas setup_netns failures had
+ * nothing yet to clean).  Returns 0 on success; -1 means caller
+ * should goto out -- nfnl needs closing.
  */
 static int nftables_churn_iter_open_rtnl(struct nftables_churn_iter_ctx *ctx)
 {
@@ -243,10 +223,7 @@ static int nftables_churn_iter_open_rtnl(struct nftables_churn_iter_ctx *ctx)
 		return -1;
 	}
 
-	if (!lo_brought_up()) {
-		rtnl_bring_lo_up(&ctx->rtnl);
-		mark_lo_brought_up();
-	}
+	rtnl_bring_lo_up(&ctx->rtnl);
 
 	return 0;
 }

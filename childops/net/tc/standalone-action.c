@@ -255,17 +255,6 @@ static void mark_ns_unsupported_inet(void)
 			 __ATOMIC_RELAXED);
 }
 
-static bool lo_brought_up(void)
-{
-	return __atomic_load_n(&shm->tc_sa_lo_brought_up,
-			       __ATOMIC_RELAXED);
-}
-static void mark_lo_brought_up(void)
-{
-	__atomic_store_n(&shm->tc_sa_lo_brought_up, true,
-			 __ATOMIC_RELAXED);
-}
-
 static bool modprobe_tried_ingress(void)
 {
 	return __atomic_load_n(&shm->tc_sa_modprobe_tried_ingress,
@@ -651,10 +640,7 @@ static int tcsa_in_ns(void *arg)
 		try_modprobe("act_gact");
 	}
 
-	if (!lo_brought_up()) {
-		rtnl_bring_lo_up(&nl);
-		mark_lo_brought_up();
-	}
+	rtnl_bring_lo_up(&nl);
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],

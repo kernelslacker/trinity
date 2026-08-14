@@ -324,25 +324,11 @@ static void mark_ns_unsupported_xdp(void)
 			 __ATOMIC_RELAXED);
 }
 
-/* Per-grandchild setup latches live in shm for the same reason as the
- * ns_unsupported_* gates above: the write site sits inside the
- * userns_run_in_ns() grandchild, so a process-local static dies with
- * the grandchild on _exit() and every subsequent invocation re-pays
- * the "lo up" rtnetlink round-trip and the try_modprobe() cost.
- * Shared shm state means one successful lo-up / one modprobe attempt
- * per fleet, not per grandchild. */
-
-static bool lo_brought_up(void)
-{
-	return __atomic_load_n(&shm->tc_live_lo_brought_up,
-			       __ATOMIC_RELAXED);
-}
-
-static void mark_lo_brought_up(void)
-{
-	__atomic_store_n(&shm->tc_live_lo_brought_up, true,
-			 __ATOMIC_RELAXED);
-}
+/* Per-grandchild modprobe latches live in shm: the write site sits
+ * inside the userns_run_in_ns() grandchild, so a process-local static
+ * dies with the grandchild on _exit() and every subsequent invocation
+ * re-pays the try_modprobe() cost.  Shared shm state means one
+ * modprobe attempt per fleet, not per grandchild. */
 
 static bool modprobe_tried_ingress(void)
 {
@@ -936,10 +922,7 @@ static int tc_live_in_ns(void *arg)
 		try_modprobe("act_police");
 	}
 
-	if (!lo_brought_up()) {
-		rtnl_bring_lo_up(&nl);
-		mark_lo_brought_up();
-	}
+	rtnl_bring_lo_up(&nl);
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],

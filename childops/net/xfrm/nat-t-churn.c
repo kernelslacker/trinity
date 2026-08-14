@@ -75,10 +75,7 @@ static int nat_t_churn_in_ns(void *arg)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (!lo_brought_up) {
-		bring_lo_up();
-		lo_brought_up = true;
-	}
+	bring_lo_up();
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);

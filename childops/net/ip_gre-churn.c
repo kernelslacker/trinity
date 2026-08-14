@@ -125,26 +125,6 @@ enum inner_shape {
  * remainder of this child's lifetime. */
 static bool ns_unsupported_ip_gre;
 
-/* Per-grandchild lo-up latch lives in shm
- * (shm->ip_gre_churn_lo_brought_up).  The write site sits inside the
- * userns_run_in_ns() grandchild's ip_gre_in_ns() path, so a
- * process-local static would die with the grandchild on _exit() and
- * every subsequent invocation would re-pay the rtnetlink "lo up"
- * round-trip forever -- the parent never observes the latch.  Living
- * in shm lets one successful lo-up persist fleet-wide.  RELAXED
- * atomic load/store is safe: only false -> true, idempotent write. */
-static bool lo_brought_up(void)
-{
-	return __atomic_load_n(&shm->ip_gre_churn_lo_brought_up,
-			       __ATOMIC_RELAXED);
-}
-
-static void mark_lo_brought_up(void)
-{
-	__atomic_store_n(&shm->ip_gre_churn_lo_brought_up, true,
-			 __ATOMIC_RELAXED);
-}
-
 /* Set once per persistent child after the modprobe attempt runs.
  * modprobe needs CAP_SYS_MODULE in init_user_ns, which the grandchild
  * does not hold, so it fires from the persistent child before the hop. */
@@ -386,10 +366,7 @@ static int ip_gre_iter_open_ctx(struct ip_gre_iter_ctx *ctx)
 	}
 	ctx->nl_opened = true;
 
-	if (!lo_brought_up()) {
-		rtnl_bring_lo_up(&ctx->nl);
-		mark_lo_brought_up();
-	}
+	rtnl_bring_lo_up(&ctx->nl);
 	return 0;
 }
 
