@@ -74,8 +74,9 @@
 #
 # Selftest
 # --------
-# Run with --selftest to exercise the three fail-open checks against
-# synthetic fixtures.  Each fixture must exit 1 under the gate.
+# Run with --selftest to exercise three negative fixtures (each must exit
+# non-zero and emit the detection message) and one positive fixture (a
+# genuinely safe script that must exit 0).
 
 set -u
 
@@ -144,13 +145,22 @@ is_direct_sort_consumer() {
 }
 
 # ------------------------------------------------------------------
-# Selftest: three synthetic fixtures must each cause a FAIL exit.
+# Selftest: three negative fixtures must each cause a FAIL exit (the
+# gate catches the unsafe pattern); one positive fixture must exit 0
+# (genuinely safe script passes the gate).
 #
 # Fixture A — LC_ALL=C alone (no in-script sort of the baseline).
 # Fixture B — proximity false-positive: unrelated sort within 6 lines
 #             of a baseline assignment, but comm uses the raw baseline.
 # Fixture C — naming-convention miss: var is named $BASE2 (no
 #             "baseline" in the name) but points to a check-static path.
+# Fixture D — POSITIVE CONTROL: LC_ALL=C + pre-sorts baseline before
+#             comm; gate must exit 0.
+#
+# Note: --selftest is a manual developer tool and is also invoked by
+# scripts/check-static.sh as a pre-flight check on every CI/gate run,
+# so that a broken detector is caught immediately rather than silently
+# passing with zero real checks.
 # ------------------------------------------------------------------
 if [ "${1:-}" = "--selftest" ]; then
 	gate="$(realpath "${BASH_SOURCE[0]}")"
@@ -162,21 +172,59 @@ if [ "${1:-}" = "--selftest" ]; then
 	#
 	# run_fixture LABEL FIXTURE_FILE: copy FIXTURE_FILE into a fresh isolated
 	# repo root and assert that the gate exits non-zero (fixture is caught).
+	# Assertions:
+	#   1. exit code != 0  (detection fired)
+	#   2. output contains 'passes the committed baseline variable'
+	#      (real detection path, not the fail-close)
+	#   3. output does NOT contain 'filter is broken?'
+	#      (if the fail-close fires, the detector itself is broken)
 	run_fixture() {
-		local label="$1" src="$2" rc
+		local label="$1" src="$2" rc out
 		local tmproot
 		tmproot="$(mktemp -d)"
 		mkdir -p "$tmproot/scripts/check-static"
 		cp "$src" "$tmproot/scripts/check-static/$(basename "$src")"
 		touch "$tmproot/scripts/check-static/x.baseline"
 		rc=0
-		REPO_ROOT="$tmproot" bash "$gate" >/dev/null 2>&1 || rc=$?
+		out="$(REPO_ROOT="$tmproot" bash "$gate" 2>&1)" || rc=$?
 		rm -rf "$tmproot"
 		if [ "$rc" -eq 0 ]; then
 			echo "SELFTEST FAIL: $label: gate returned 0 (expected non-zero)" >&2
 			return 1
 		fi
-		echo "SELFTEST PASS: $label: gate correctly exits $rc" >&2
+		if ! echo "$out" | grep -q 'passes the committed baseline variable'; then
+			echo "SELFTEST FAIL: $label: detection message not found in output (filter may be broken)" >&2
+			echo "  output: $out" >&2
+			return 1
+		fi
+		if echo "$out" | grep -q 'filter is broken?'; then
+			echo "SELFTEST FAIL: $label: 'filter is broken?' in output — fail-close fired instead of real detection" >&2
+			echo "  output: $out" >&2
+			return 1
+		fi
+		echo "SELFTEST PASS: $label: gate correctly exits $rc and emits detection message" >&2
+	}
+
+	# run_fixture_pass LABEL FIXTURE_FILE: positive-control variant — asserts
+	# that the gate exits 0 (genuinely safe script is not falsely flagged).
+	run_fixture_pass() {
+		local label="$1" src="$2" rc out
+		local tmproot
+		tmproot="$(mktemp -d)"
+		mkdir -p "$tmproot/scripts/check-static"
+		cp "$src" "$tmproot/scripts/check-static/$(basename "$src")"
+		# Positive fixture sorts the baseline, so provide a real (empty =
+		# already C-sorted) baseline at the expected path.
+		touch "$tmproot/scripts/check-static/x.baseline"
+		rc=0
+		out="$(REPO_ROOT="$tmproot" bash "$gate" 2>&1)" || rc=$?
+		rm -rf "$tmproot"
+		if [ "$rc" -ne 0 ]; then
+			echo "SELFTEST FAIL: $label: gate returned $rc (expected 0 — safe script falsely flagged)" >&2
+			echo "  output: $out" >&2
+			return 1
+		fi
+		echo "SELFTEST PASS: $label: gate correctly exits 0 (safe script not flagged)" >&2
 	}
 
 	# Write fixture scripts to a shared temp dir; run each through run_fixture.
@@ -223,16 +271,34 @@ comm -13 "$BASE2" "$tmp"        # raw committed baseline, oddly-named variable
 rm -f "$tmp"
 FIXC
 
+	# Fixture D (POSITIVE CONTROL): LC_ALL=C set AND baseline pre-sorted
+	# before comm.  The committed baseline variable ($MYBASE) never appears
+	# directly on the comm line — this is the correct pattern.  Gate must
+	# exit 0; if it does not, the detector has a false-positive.
+	cat > "$stdir/fixture-d.sh" << 'FIXD'
+#!/bin/bash
+export LC_ALL=C
+ROOT="${REPO_ROOT:-$(pwd)}"
+MYBASE="$ROOT/scripts/check-static/x.baseline"
+tmp="$(mktemp)"
+sorted_base="$(mktemp)"
+some_producer > "$tmp"
+sort "$MYBASE" > "$sorted_base"  # pre-sort the committed baseline -- safe
+comm -13 "$sorted_base" "$tmp"  # committed baseline NOT passed raw to comm
+rm -f "$tmp" "$sorted_base"
+FIXD
+
 	self_fail=0
-	run_fixture "fixture-A (LC_ALL=C alone)"          "$stdir/fixture-a.sh" || self_fail=1
-	run_fixture "fixture-B (proximity false-positive)" "$stdir/fixture-b.sh" || self_fail=1
-	run_fixture "fixture-C (naming-convention miss)"   "$stdir/fixture-c.sh" || self_fail=1
+	run_fixture      "fixture-A (LC_ALL=C alone)"          "$stdir/fixture-a.sh" || self_fail=1
+	run_fixture      "fixture-B (proximity false-positive)" "$stdir/fixture-b.sh" || self_fail=1
+	run_fixture      "fixture-C (naming-convention miss)"   "$stdir/fixture-c.sh" || self_fail=1
+	run_fixture_pass "fixture-D (positive control: safe)"   "$stdir/fixture-d.sh" || self_fail=1
 
 	if [ "$self_fail" -ne 0 ]; then
-		echo "FAIL: $NAME: selftest: one or more fixtures were not caught" >&2
+		echo "FAIL: $NAME: selftest: one or more fixtures failed" >&2
 		exit 1
 	fi
-	echo "PASS: $NAME: selftest: all fixtures correctly detected"
+	echo "PASS: $NAME: selftest: all fixtures correctly handled (3 caught, 1 safe)"
 	exit 0
 fi
 
