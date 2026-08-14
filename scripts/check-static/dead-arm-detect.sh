@@ -180,9 +180,18 @@ if [ ! -f "$baseline_file" ]; then
 fi
 
 # Sort current warn list; diff against baseline using comm(1).
-# comm -13 prints lines that are in the new set but NOT in the baseline.
+# Sort the baseline into a temp as well to guard against collation-order
+# differences between writers and readers.
+# comm -13 baseline current: lines only in current  = newly un-instrumented files.
+# comm -23 baseline current: lines only in baseline = stale/fixed entries.
 sort "$warn_list" > "$tmp/warn_sorted"
-new_files="$(comm -13 "$baseline_file" "$tmp/warn_sorted")"
+sort "$baseline_file" > "$tmp/baseline_sorted"
+new_files="$(comm -13 "$tmp/baseline_sorted" "$tmp/warn_sorted")"
+stale_files="$(comm -23 "$tmp/baseline_sorted" "$tmp/warn_sorted")"
+stale_count=0
+if [ -n "$stale_files" ]; then
+	stale_count="$(echo "$stale_files" | wc -l | tr -d ' ')"
+fi
 
 if [ -n "$new_files" ]; then
 	{
@@ -196,10 +205,11 @@ if [ -n "$new_files" ]; then
 fi
 
 if [ "$warn_count" -eq 0 ]; then
-	echo "PASS: $NAME: all dispatch-on-rnd_modulo_u32 files use CHILDOP_ARM_ENTER"
+	echo "PASS: $NAME: all dispatch-on-rnd_modulo_u32 files use CHILDOP_ARM_ENTER" \
+	     "(stale-baseline=$stale_count)"
 else
 	baseline_count="$(wc -l < "$baseline_file" | tr -d ' ')"
 	echo "WARN: $NAME: $warn_count file(s) missing CHILDOP_ARM_ENTER" \
-	     "(within baseline of $baseline_count; see stderr)"
+	     "(within baseline of $baseline_count; stale-baseline=$stale_count; see stderr)"
 fi
 exit 0
