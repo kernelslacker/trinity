@@ -367,12 +367,18 @@ bool recipe_mount_userns_dance(bool *unsupported)
  * the recipe doesn't depend on its output, only on driving execve()
  * through the post-seccomp-filter task_struct.
  */
-static void seccomp_listener_inner(void) __attribute__((noreturn));
-static void seccomp_listener_inner(void)
+static void seccomp_listener_inner(enum child_op_type op) __attribute__((noreturn));
+static void seccomp_listener_inner(enum child_op_type op)
 {
 	struct utsname u;
 
 	(void)trinity_raw_syscall(__NR_uname, &u);
+	/* Tally the one raw-syscall site directly into shm (shm is MAP_SHARED
+	 * across fork).  childop_direct_syscalls_add() is safe from a
+	 * doubly-forked context because it uses atomic ops on the shared
+	 * stats array; only this_child() fails there. */
+	if ((int)op >= 0 && op < NR_CHILD_OP_TYPES)
+		childop_direct_syscalls_add(op, 1);
 
 	(void)execl("/bin/true", "/bin/true", (char *)NULL);
 
@@ -426,7 +432,7 @@ static int seccomp_listener_install(void)
  */
 #define RECIPE_SECCOMP_LISTENER_POLL_MS	1000
 
-static int recipe_seccomp_listener_supervisor(void)
+static int recipe_seccomp_listener_supervisor(enum child_op_type op)
 {
 	struct seccomp_notif req;
 	struct seccomp_notif_resp resp;
@@ -470,7 +476,7 @@ static int recipe_seccomp_listener_supervisor(void)
 		 * accurate so the supervisor's close() actually releases the
 		 * notification queue. */
 		close(listener);
-		seccomp_listener_inner();
+		seccomp_listener_inner(op);
 		/* unreachable -- inner uses _exit on every path */
 	}
 
@@ -518,25 +524,21 @@ static int recipe_seccomp_listener_supervisor(void)
 /* Recipe 35: seccomp USER_NOTIF listener + traced exec. See Documentation/recipe-catalog.md */
 bool recipe_seccomp_listener_exec(bool *unsupported)
 {
-	{
-		struct childdata *tc = this_child();
-		const enum child_op_type op = tc ? tc->op_type :
-			NR_CHILD_OP_TYPES;
-		const bool valid_op = ((int) op >= 0 &&
-				       op < NR_CHILD_OP_TYPES);
-
-		if (valid_op)
-			childop_direct_syscalls_add(op, 1);
-	}
+	struct childdata *tc = this_child();
+	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	pid_t supervisor;
 	int status;
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 
 	supervisor = fork();
 	if (supervisor < 0)
 		return false;
 
 	if (supervisor == 0)
-		_exit(recipe_seccomp_listener_supervisor());
+		_exit(recipe_seccomp_listener_supervisor(op));
 
 	if (waitpid_eintr(supervisor, &status, 0) < 0)
 		return false;
@@ -571,13 +573,16 @@ bool recipe_seccomp_listener_exec(bool *unsupported)
  * supervisor's backup SIGKILL covers the "inner not in the cgroup"
  * case.
  */
-static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
+static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
+			      enum child_op_type op)
 	__attribute__((noreturn));
-static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
+static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
+			      enum child_op_type op)
 {
 	char procs_path[128];
 	char pidbuf[16];
 	ssize_t w __unused__;
+	unsigned long ncalls = 0;
 	int procs_fd;
 	int len;
 	char ack = '!';
@@ -585,16 +590,21 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
 	(void)snprintf(procs_path, sizeof(procs_path), "%s/cgroup.procs",
 		       cgroup_path);
 	procs_fd = open(procs_path, O_WRONLY);
+	ncalls++;  /* open */
 	if (procs_fd >= 0) {
 		len = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)getpid());
 		w = write(procs_fd, pidbuf, (size_t)len);
+		ncalls++;  /* write */
 		close(procs_fd);
+		ncalls++;  /* close */
 	}
 
 	/* One byte is enough -- the supervisor read()s exactly one byte and
 	 * doesn't care about the value, only the wakeup. */
 	w = write(pipe_w, &ack, 1);
+	ncalls++;  /* write */
 	close(pipe_w);
+	ncalls++;  /* close */
 
 	/* PR_SET_PDEATHSIG SIGKILL: if the supervisor crashes before it
 	 * can write(kill_fd, "1\n", 2) into cgroup.kill, the inner would
@@ -603,6 +613,12 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
 	 * fork and this point. */
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 		      0UL, 0UL, 0UL);
+	ncalls++;  /* prctl */
+	/* Publish the inner-body tally before either _exit().  shm is
+	 * accessible from a doubly-forked context via its MAP_SHARED
+	 * mapping; only this_child() returns NULL at this depth. */
+	if ((int)op >= 0 && op < NR_CHILD_OP_TYPES)
+		childop_direct_syscalls_add(op, ncalls);
 	if (getppid() == 1)
 		_exit(0);
 
@@ -631,7 +647,8 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
 static int cgroup_kill_setup(const char *cgroup_path,
 			     int *events_fd, int *kill_fd,
 			     int pipefd[2], pid_t *inner,
-			     bool *cgroup_made)
+			     bool *cgroup_made,
+			     enum child_op_type op)
 {
 	char path[128];
 
@@ -672,7 +689,7 @@ static int cgroup_kill_setup(const char *cgroup_path,
 		close(*events_fd);
 		close(*kill_fd);
 		close(pipefd[0]);
-		cgroup_kill_inner(cgroup_path, pipefd[1]);
+		cgroup_kill_inner(cgroup_path, pipefd[1], op);
 		/* unreachable -- inner uses _exit on every path */
 	}
 
@@ -765,7 +782,7 @@ static void cgroup_kill_teardown(const char *cgroup_path,
 		(void)rmdir(cgroup_path);
 }
 
-static int recipe_cgroup_kill_supervisor(void)
+static int recipe_cgroup_kill_supervisor(enum child_op_type op)
 {
 	char cgroup_path[64];
 	int events_fd = -1;
@@ -779,7 +796,7 @@ static int recipe_cgroup_kill_supervisor(void)
 		       "/sys/fs/cgroup/trinity-kill-%d", (int)getpid());
 
 	rc = cgroup_kill_setup(cgroup_path, &events_fd, &kill_fd,
-			       pipefd, &inner, &cgroup_made);
+			       pipefd, &inner, &cgroup_made, op);
 	if (rc != 0)
 		goto out;
 
@@ -795,25 +812,21 @@ out:
 /* Recipe 36: cgroup.kill + cgroup.events supervisor. See Documentation/recipe-catalog.md */
 bool recipe_cgroup_kill_events(bool *unsupported)
 {
-	{
-		struct childdata *tc = this_child();
-		const enum child_op_type op = tc ? tc->op_type :
-			NR_CHILD_OP_TYPES;
-		const bool valid_op = ((int) op >= 0 &&
-				       op < NR_CHILD_OP_TYPES);
-
-		if (valid_op)
-			childop_direct_syscalls_add(op, 1);
-	}
+	struct childdata *tc = this_child();
+	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	pid_t supervisor;
 	int status;
+
+	if (valid_op)
+		childop_direct_syscalls_add(op, 1);
 
 	supervisor = fork();
 	if (supervisor < 0)
 		return false;
 
 	if (supervisor == 0)
-		_exit(recipe_cgroup_kill_supervisor());
+		_exit(recipe_cgroup_kill_supervisor(op));
 
 	if (waitpid_eintr(supervisor, &status, 0) < 0)
 		return false;
