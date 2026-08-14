@@ -92,4 +92,3 @@ THREAD_UNCOUNTED:childops/net/tcp-ulp-swap-churn.c#tcp_ulp_swap_churn
 THREAD_UNCOUNTED:childops/net/tls-ulp-churn.c#tls_ulp_churn
 THREAD_UNCOUNTED:childops/net/xfrm/nat-t-churn.c#nat_t_churn_in_ns
 THREAD_UNCOUNTED:childops/net/xfrm/xfrm-churn.c#xfrm_churn_in_ns
-FORK_UNCOUNTED:childops/process/process-mrelease-race.c#victim_body

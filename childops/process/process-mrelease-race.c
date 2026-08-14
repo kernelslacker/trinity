@@ -236,9 +236,13 @@ static void victim_body(int ready_wr, int release_rd,
 	close(ready_wr);
 	ncalls++;	/* close */
 
-	/* Flush the running count to the shared slot before blocking.
-	 * SIGKILL arrives during read() below; the done: label is
-	 * unreachable in normal flow, so this is the only live store. */
+	/* First store: flush count accumulated so far into the shared slot.
+	 * SIGKILL normally arrives during the read() below, which means the
+	 * done: label is unreachable on that path and this is the last store
+	 * the parent will see.  A second store at done: covers the (rare)
+	 * EOF-from-pipe path and ensures the scanner can confirm the full
+	 * raw-syscall budget is accounted (read + close below raise ncalls
+	 * past this point). */
 	if (slot)
 		slot->direct_count = ncalls;
 
@@ -260,6 +264,12 @@ static void victim_body(int ready_wr, int release_rd,
 		(void)munmap(shmem_region, 4 * 1024 * 1024);
 
 done:
+	/* Second store: update slot with the final ncalls tally on any path
+	 * that reaches here (mmap failure, or post-read EOF in the
+	 * non-SIGKILL case).  On the SIGKILL path this store is skipped;
+	 * the first store above carries the count the parent reads. */
+	if (slot)
+		slot->direct_count = ncalls;
 	_exit(0);
 }
 
