@@ -46,6 +46,7 @@ ROOT="${REPO_ROOT:-$(pwd)}"
 BASELINE="$ROOT/scripts/check-static/uapi-shim-values.baseline"
 PROBED_FLOOR_FILE="$ROOT/scripts/check-static/uapi-shim-probed-floor.baseline"
 TIER1_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-tier1-probed-floor.baseline"
+HARVEST_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-harvest-floor.baseline"
 
 # ---------------------------------------------------------------------------
 # Prerequisites
@@ -83,18 +84,26 @@ find "$ROOT" -path "$ROOT/scripts" -prune -o \
   sed 's/#[[:space:]]*define[[:space:]]*//' | \
   awk '{print $1, $2}' | sort -u > "$HARVEST"
 
-# Harvest floor: an empty (or nearly empty) harvest is never legitimate —
-# there are 272+ uapi shims in the tree.  A silently-emptied table must fail
-# hard rather than passing vacuously (mirrors MIN_ARMS rationale;
-# 97d55b637edd ("check-static/dead-arm-runtime-probe: convert to MAPPING-table shape")).
-MIN_SHIM_DEFINES=100
+# Harvest floor: the pipeline collects every integer #define in the source
+# tree (excluding scripts/), yielding ~3743 unique SYM→value pairs on the
+# baseline run.  The floor is ratcheted via uapi-shim-harvest-floor.baseline
+# (matching the tier1-probed-floor pattern) so a silently-collapsed
+# find/perl/grep pipeline fails hard rather than passing vacuously (mirrors
+# MIN_ARMS rationale; 97d55b637edd ("check-static/dead-arm-runtime-probe:
+# convert to MAPPING-table shape")).  This check runs unconditionally and is
+# the only surviving quantitative floor on the linus-tree-absent path.
+harvest_floor=0
+if [ -f "$HARVEST_FLOOR_FILE" ]; then
+    harvest_floor=$(grep -oE '^[0-9]+' "$HARVEST_FLOOR_FILE" | head -1 || true)
+    harvest_floor=${harvest_floor:-0}
+fi
 if [ ! -s "$HARVEST" ]; then
     echo "FAIL: $NAME: harvest is empty — find/perl/grep pipeline produced no output"
     exit 1
 fi
 harvest_count=$(wc -l < "$HARVEST" | tr -d ' ')
-if [ "$harvest_count" -lt "$MIN_SHIM_DEFINES" ]; then
-    echo "FAIL: $NAME: harvest floor: only $harvest_count shim define(s) found, need >= $MIN_SHIM_DEFINES"
+if [ "$harvest_count" -lt "$harvest_floor" ]; then
+    echo "FAIL: $NAME: harvest floor: only $harvest_count shim define(s) found, need >= $harvest_floor (ratcheted baseline)"
     exit 1
 fi
 
