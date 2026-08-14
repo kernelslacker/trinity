@@ -680,13 +680,16 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 		goto out;
 
 	/* Count only plain-MULTISHOT draws as oracle attempts, and only after
-	 * ring_enter() succeeds.  FIXED|MULTISHOT is rejected by
-	 * io_uring_cmd_prep() before reaching uring_cmd_null, so those draws
-	 * never contribute to mshot_cmd_no_cqe.  The denominator must exclude
-	 * them so the ratio mshot_cmd_no_cqe/nulldev_mshot_attempts is
-	 * unambiguous and the dead-arm check is exact.  Counting only after a
-	 * successful ring_enter ensures transient failures (EINTR/EAGAIN/EBUSY)
-	 * do not advance the denominator while leaving the numerator untouched. */
+	 * ring_enter() succeeds.  pick_uring_cmd_flags() always returns a value
+	 * with MULTISHOT set (either MULTISHOT alone or FIXED|MULTISHOT), so
+	 * !(FIXED) is equivalent to plain-MULTISHOT — there is no third value
+	 * with neither bit set.  FIXED|MULTISHOT draws are rejected by
+	 * io_uring_cmd_prep() before reaching uring_cmd_null and must not
+	 * contribute to the denominator, so the ratio
+	 * mshot_cmd_no_cqe/nulldev_mshot_attempts stays unambiguous and the
+	 * dead-arm check is exact.  Counting only after a successful ring_enter
+	 * ensures transient failures (EINTR/EAGAIN/EBUSY) do not advance the
+	 * denominator while leaving the numerator untouched. */
 	if (valid_op && !(cmd_flags & IORING_URING_CMD_FIXED))
 		__atomic_add_fetch(
 			&shm->stats.iouring_cmd_passthrough.nulldev_mshot_attempts,
@@ -735,6 +738,16 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 		         (now.tv_sec == deadline.tv_sec &&
 		          now.tv_nsec < deadline.tv_nsec));
 
+		/* One final probe after the last settle sleep: the loop
+		 * exits after sleeping without re-probing, so check
+		 * head/tail once more rather than relying on the stale
+		 * had_cqe from before the last sleep.  Mirrors the fix in
+		 * ccf121115541 ("tc/qdisc-churn: atomic-exchange skip-sw
+		 * latch, probe after settle"). */
+		if (!had_cqe)
+			had_cqe = (ring_u32(ctx->cq_ring, ctx->cq_off_head) !=
+			           ring_u32(ctx->cq_ring, ctx->cq_off_tail));
+
 		int cqe_res = ring_drain_cqes_first_res(ctx);
 
 		if (!had_cqe) {
@@ -742,11 +755,14 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 			 * completion (IOU_ISSUE_SKIP_COMPLETE — req pinned).
 			 * The absence is the bug-probe signal; count it.
 			 *
-			 * Guard matches the denominator: exclude FIXED draws.
-			 * A FIXED|MULTISHOT submission is rejected at prep
-			 * before reaching uring_cmd_null, so its CQE may
-			 * carry -EINVAL rather than being absent; counting
-			 * it here would make mshot_cmd_no_cqe exceed
+			 * Guard matches the denominator: !(FIXED) selects
+			 * plain-MULTISHOT draws.  pick_uring_cmd_flags()
+			 * always returns MULTISHOT or FIXED|MULTISHOT — never
+			 * a value with neither bit set — so !(FIXED) is
+			 * exact.  A FIXED|MULTISHOT submission is rejected at
+			 * prep before reaching uring_cmd_null, so its CQE may
+			 * carry -EINVAL rather than being absent; counting it
+			 * here would make mshot_cmd_no_cqe exceed
 			 * nulldev_mshot_attempts, violating the oracle
 			 * invariant. */
 			if (valid_op && !(cmd_flags & IORING_URING_CMD_FIXED))
