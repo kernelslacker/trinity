@@ -252,7 +252,6 @@ stats	object
     stats.frontier_discriminator.frseq_would_skip	u64
   stats.childop_burst	object
     stats.childop_burst.burst_alt_picks_window	u64
-    stats.childop_burst.direct_tally_dropped	u64
   stats.corrupt_ptr_probe	object
     stats.corrupt_ptr_probe.sample_seq	u64
   stats.recipe_runner	object

@@ -16,8 +16,7 @@ Periodic counter rates over last s:
 + (./s, total )
 === childop-split ===
 childop_split: walltime childop=. (/ ns) syscalls childop=. (/) iterations childop=. (/)
-childop_split_json: {walltime_ns:{childop:,syscall:,pct_childop_x10:},syscalls:{childop:,random:,pct_childop_x10:},iterations:{childop:,random:,pct_childop_x10:},direct_tally_dropped:}
-childop_direct_tally_dropped:
+childop_split_json: {walltime_ns:{childop:,syscall:,pct_childop_x10:},syscalls:{childop:,random:,pct_childop_x10:},iterations:{childop:,random:,pct_childop_x10:}}
 === cost-pool ===
 cost-pool active: 32bit flat= cheap= exp= 64bit flat= cheap= exp=
 cost-pool active: flat= cheap= exp=

@@ -126,15 +126,8 @@ void childop_outcome_window_dump(void)
  */
 void childop_direct_syscalls_add(enum child_op_type op, unsigned long n)
 {
-	if ((int) op < 0 || op >= NR_CHILD_OP_TYPES) {
-		/* Out-of-range op (includes NR_CHILD_OP_TYPES sentinel used
-		 * when this_child() returns NULL inside fork()ed bodies).
-		 * Count the discarded syscalls (n, not 1) so the tally
-		 * measures magnitude of loss, not number of dropped calls. */
-		__atomic_add_fetch(&shm->stats.childop.direct_tally_dropped,
-				   n, __ATOMIC_RELAXED);
+	if ((int) op < 0 || op >= NR_CHILD_OP_TYPES)
 		return;
-	}
 	if (n == 0)
 		return;
 	__atomic_add_fetch(&shm->stats.childop.direct_syscalls[op], n,

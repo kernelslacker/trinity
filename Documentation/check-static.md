@@ -136,14 +136,6 @@ update this section to match `ls scripts/check-static/*.sh`.)
   subsystem-owned source.  Drift shows up on-host as "option accepted
   but does nothing" or "internal error: unhandled long option --NAME";
   this gate catches it before a fuzz host does.
-- `check-childop-split-json-parity`: assert structural parity between
-  the `childop-split` TEXT surface and the `childop_split_json:` JSON
-  object emitted by the same dump function.  Supplemental scalar counters
-  on the text side (e.g. `childop_direct_tally_dropped:`) must have a
-  matching top-level key in the JSON object, and every non-core JSON key
-  must have a corresponding text-side counter.  Fail-close on an empty
-  key set.  Driven from `periodic-text-schema.baseline`; run
-  `check-periodic-text-schema.sh --regen` after a schema change.
 - `check-periodic-text-schema`: pin the block-header and counter-name
   schema of the parent-side periodic text surfaces emitted by
   `main/loop.c::run_periodic_surfaces()` (`counter-rates`,

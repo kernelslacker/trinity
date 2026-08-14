@@ -438,17 +438,6 @@ struct childop_stats {
 	 * iouring_flood, iouring_recipes, madvise_cycler.  RELAXED add-
 	 * fetch: a coarse anomaly indicator, not an event log. */
 	unsigned long pool_race_aborted[NR_CHILD_OP_TYPES];
-
-	/* Count of childop_direct_syscalls_add() calls silently discarded
-	 * because the op argument was out of range (including the
-	 * NR_CHILD_OP_TYPES sentinel used when this_child() returns NULL
-	 * at call sites inside fork()ed supervisor bodies).  Non-zero
-	 * means direct-syscall tally is being lost for at least one
-	 * childop invocation; surface in the periodic split dump so the
-	 * operator can detect the discard without a separate WARN path.
-	 * RELAXED add-fetch: a cumulative diagnostic counter, not an
-	 * event log; production is rare (only fires on out-of-range op). */
-	unsigned long direct_tally_dropped;
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_CHILDOP_H */

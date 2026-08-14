@@ -134,32 +134,15 @@ void childop_split_dump(void)
 		sc_pct / 1000, (sc_pct / 100) % 10, sc_childop, sc_total,
 		it_pct / 1000, (it_pct / 100) % 10, it_childop, it_total);
 
-	unsigned long dropped = __atomic_load_n(
-		&shm->stats.childop.direct_tally_dropped,
-		__ATOMIC_RELAXED);
-
 	stats_log_write(
 		"childop_split_json: {"
 		"\"walltime_ns\":{\"childop\":%lu,\"syscall\":%lu,\"pct_childop_x10\":%lu},"
 		"\"syscalls\":{\"childop\":%lu,\"random\":%lu,\"pct_childop_x10\":%lu},"
-		"\"iterations\":{\"childop\":%lu,\"random\":%lu,\"pct_childop_x10\":%lu},"
-		"\"direct_tally_dropped\":%lu"
+		"\"iterations\":{\"childop\":%lu,\"random\":%lu,\"pct_childop_x10\":%lu}"
 		"}\n",
 		wt_childop, wt_syscall, wt_pct / 100,
 		sc_childop, sc_random, sc_pct / 100,
-		it_childop, it_random, it_pct / 100,
-		dropped);
-
-	/* Emit the out-of-range discard counter alongside the split on the
-	 * text surface too so operators can correlate silent direct-syscall
-	 * tally loss with the per-period split numbers.  The JSON object
-	 * above always includes the field (set to 0 when no discards) so
-	 * JSON-only consumers see it unconditionally; the text line is
-	 * skipped when zero to avoid clutter in the common case. */
-	if (dropped)
-		stats_log_write(
-			"childop_direct_tally_dropped: %lu\n",
-			dropped);
+		it_childop, it_random, it_pct / 100);
 }
 
 /*
