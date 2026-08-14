@@ -52,6 +52,14 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `activate-syscall-active-flag`: every direct `activate_syscall*()`
   callsite must first set the entry's ACTIVE flag, so the flag-driven
   init / dump / picker consumers see the activated entry.
+- `baseline-associative-dup-guard`: every `*.sh` under `scripts/check-static/`
+  that contains both a `declare -A` array and a `while IFS= read` baseline
+  loading loop must protect each insert with a `[[ -v ]]` dup guard; a loader
+  that silently overwrites duplicate keys converts a malformed baseline into
+  invisible semantic corruption.  Fail-closed: zero loaders found is treated
+  as a gate malfunction and exits 1.  Pre-existing unguarded loaders are
+  listed in `baseline-associative-dup-guard.baseline` (ADVISORY); any new
+  unguarded loader not in the baseline fails immediately.
 - `baseline-collation`: for every committed `scripts/check-static/*.baseline`
   or `dead-arm-baseline.txt` file whose consuming script invokes `comm`(1)
   against a directly-sorted copy of that file, assert the committed file is

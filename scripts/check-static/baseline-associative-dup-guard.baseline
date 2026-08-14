@@ -1,0 +1,24 @@
+# baseline-associative-dup-guard.baseline
+#
+# Scripts whose declare -A + while-read baseline loaders currently lack
+# a [[ -v ]] dup guard.  Entries here are pre-existing debt; the gate
+# reports them as ADVISORY rather than FAIL.  Remove an entry once its
+# loader acquires a guard.  This list must only shrink.
+bpf-subcmd-catalog.sh
+check-reexec-coverage.sh
+child-context-output.sh
+child-exit-zero-error-path.sh
+childop-direct-syscall-uncounted.sh
+childop-lock-call.sh
+childop-stats-writer-registered.sh
+fd-event-close-direct.sh
+io-uring-register-catalog.sh
+net-proto-sfg-parity.sh
+pdeathsig-getppid-recheck.sh
+post-state-deref.sh
+post-state-magic.sh
+post-state-ownership.sh
+shm-latch-direct.sh
+siginfo-catalog.sh
+signal-disposition-ownership.sh
+stats-field-unemitted.sh
