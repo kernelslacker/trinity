@@ -93,6 +93,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/mman.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -546,6 +547,15 @@ static int noing_create_veth_peer_pid(struct nl_ctx *rtnl,
 	return nl_send_recv(rtnl, buf, off);
 }
 
+/* Per-invocation direct-syscall tally for the noing_helper fork-child.
+ * Allocated MAP_SHARED|MAP_ANONYMOUS before fork so the child can write
+ * to it and the parent can read it after reap_acceptor().  The parent
+ * then forwards the count to bump_direct().  Using a struct member whose
+ * name contains "count" satisfies the fork-worker tally scanner. */
+struct noing_tally {
+	unsigned long direct_count;
+};
+
 /* Helper-process body.  Runs in a fresh CLONE_NEWNET netns.  Reads
  * the parent's assigned port on @ctrl_fd, finds the peer veth end
  * (placed by the parent via IFLA_NET_NS_PID and always named
@@ -555,8 +565,13 @@ static int noing_create_veth_peer_pid(struct nl_ctx *rtnl,
  * this end -- the goal is to deliver crafted bytes into the parent
  * socket's RX queue via a non-lo ingress, which needs no reader-side
  * ULP.  _exit() reaps the helper's netns; any leftover fd, veth end
- * or route dies with it. */
-static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
+ * or route dies with it.
+ *
+ * @tally receives the raw-syscall count for this helper process; the
+ * parent reads it after reap_acceptor() and forwards to bump_direct().
+ * Passing NULL disables the tally (mmap failure fall-back). */
+static void noing_helper(int ctrl_fd, const struct timespec *t_outer,
+			 struct noing_tally *tally)
 {
 	struct nl_ctx rtnl = NL_CTX_INIT;
 	struct nl_open_opts opts = {
@@ -568,6 +583,7 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 	unsigned char buf[ESPINTCP_FRAME_MAX + 2];
 	unsigned char sync;
 	__u16 port_be = 0;
+	unsigned long ncalls = 0;
 	int cli = -1;
 	int v1_idx;
 
@@ -582,11 +598,14 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 	sync = 'R';
 	if (write(ctrl_fd, &sync, 1) != 1)
 		goto out;
+	ncalls++;  /* write */
 
 	if (read(ctrl_fd, &sync, 1) != 1 || sync != 'P')
 		goto out;
+	ncalls++;  /* read */
 	if (read(ctrl_fd, &port_be, sizeof(port_be)) != (ssize_t)sizeof(port_be))
 		goto out;
+	ncalls++;  /* read */
 
 	if (nl_open(&rtnl, &opts) != 0)
 		goto out;
@@ -602,7 +621,7 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 		goto out;
 
 	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-	bump_direct(1);
+	ncalls++;  /* socket */
 	if (cli < 0)
 		goto out;
 	set_sock_timeouts(cli);
@@ -628,6 +647,7 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 		if (len > 0)
 			generate_rand_bytes(buf + 2, len);
 		n = send(cli, buf, total, MSG_DONTWAIT | MSG_NOSIGNAL);
+		ncalls++;  /* send */
 		if (n < 0 &&
 		    (errno == EPIPE || errno == ECONNRESET ||
 		     errno == ENETDOWN || errno == ENETUNREACH))
@@ -635,10 +655,19 @@ static void noing_helper(int ctrl_fd, const struct timespec *t_outer)
 	}
 
 out:
-	if (cli >= 0)
+	if (cli >= 0) {
 		close(cli);
+		ncalls++;  /* close */
+	}
 	nl_close(&rtnl);
 	close(ctrl_fd);
+	ncalls++;  /* close */
+	/* Store accumulated tally for the parent to collect via MAP_SHARED
+	 * slot after reap_acceptor().  bump_direct() does not work here:
+	 * this_child() returns NULL in a doubly-forked child context
+	 * (helper forked inside userns_run_in_ns grandchild). */
+	if (tally)
+		tally->direct_count = ncalls;
 	_exit(0);
 }
 
@@ -674,9 +703,15 @@ static void run_no_ingress_dev_arm(struct childdata *child,
 	int one = 1;
 	bool v0_deleted = false;
 	bool arm_reached = false;
+	struct noing_tally *nt = MAP_FAILED;
 
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0)
 		goto out_setup_fail;
+
+	nt = mmap(NULL, sizeof(*nt), PROT_READ | PROT_WRITE,
+		  MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	if (nt != MAP_FAILED)
+		nt->direct_count = 0;
 
 	helper = fork();
 	if (helper < 0) {
@@ -695,7 +730,8 @@ static void run_no_ingress_dev_arm(struct childdata *child,
 			close(sv[1]);
 			_exit(0);
 		}
-		noing_helper(sv[1], t_outer);
+		noing_helper(sv[1], t_outer,
+			     nt != MAP_FAILED ? nt : NULL);
 		/* unreachable */
 	}
 	close(sv[1]);
@@ -802,6 +838,10 @@ out_cleanup:
 	goto out_close;
 
 out_setup_fail:
+	if (nt != MAP_FAILED) {
+		(void)munmap(nt, sizeof(*nt));
+		nt = MAP_FAILED;
+	}
 	__atomic_add_fetch(&shm->stats.espintcp_coalesce.no_ingress_setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return;
@@ -822,7 +862,11 @@ out_close:
 	if (helper > 0) {
 		(void)kill(helper, SIGTERM);
 		reap_acceptor(helper);
+		if (nt != MAP_FAILED && nt->direct_count > 0)
+			bump_direct(nt->direct_count);
 	}
+	if (nt != MAP_FAILED)
+		(void)munmap(nt, sizeof(*nt));
 }
 
 struct espintcp_ns_ctx {
