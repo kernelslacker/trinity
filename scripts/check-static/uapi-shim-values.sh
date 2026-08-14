@@ -83,9 +83,19 @@ find "$ROOT" -path "$ROOT/scripts" -prune -o \
   sed 's/#[[:space:]]*define[[:space:]]*//' | \
   awk '{print $1, $2}' | sort -u > "$HARVEST"
 
+# Harvest floor: an empty (or nearly empty) harvest is never legitimate —
+# there are 272+ uapi shims in the tree.  A silently-emptied table must fail
+# hard rather than passing vacuously (mirrors MIN_ARMS rationale;
+# 97d55b637edd ("check-static/dead-arm-runtime-probe: convert to MAPPING-table shape")).
+MIN_SHIM_DEFINES=100
 if [ ! -s "$HARVEST" ]; then
-    echo "PASS: $NAME (no shim defines found)"
-    exit 0
+    echo "FAIL: $NAME: harvest is empty — find/perl/grep pipeline produced no output"
+    exit 1
+fi
+harvest_count=$(wc -l < "$HARVEST" | tr -d ' ')
+if [ "$harvest_count" -lt "$MIN_SHIM_DEFINES" ]; then
+    echo "FAIL: $NAME: harvest floor: only $harvest_count shim define(s) found, need >= $MIN_SHIM_DEFINES"
+    exit 1
 fi
 
 awk '{print $1}' "$HARVEST" | sort -u > "$SYMS_ALL"
@@ -703,5 +713,5 @@ if [ "$checked" -ne "$probed" ]; then
     exit 1
 fi
 
-echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / unresolved-uapi $unresolved_uapi_count / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor)"
+echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / unresolved-uapi $unresolved_uapi_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor)"
 exit 0
