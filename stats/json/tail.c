@@ -465,5 +465,47 @@ void json_emit_dead_arms_section(void)
 		/* else: ae >= 1, arm is live -- emit nothing */
 	}
 
+	/* bridge-fdb-stp: star_g port-group UAF oracle arm.
+	 *
+	 * Primary verdict (setup_failed == runs): bridge/veth setup failed on
+	 * every invocation before any MDB work was attempted; the oracle never
+	 * ran.  A silently-failing bridge/veth environment must not read as
+	 * oracle-clean (setup-bug guard).
+	 *
+	 * Secondary verdict (positive-control invariant): both
+	 * mdb_star_g_created and mdb_sg_created stayed 0 after a floor of
+	 * runs -- the (*,G) builder or src-list nesting is broken.  Do not
+	 * absorb into a clean-kernel verdict.
+	 *
+	 * Floor: 5 draws (single-arm group; gate on runs, not an arm-entry
+	 * counter -- absence of MDB creation IS the dead state for this oracle).
+	 * No zero-guard: runs==0 never enters the block. */
+	if (shm->stats.bridge_fdb_stp.runs > 0) {
+		unsigned long runs = shm->stats.bridge_fdb_stp.runs;
+		unsigned long sf   = shm->stats.bridge_fdb_stp.star_g_arm_setup_failed;
+
+		if (runs < 5)
+			json_emit_dead_arms_element(&first,
+				"bridge-fdb-stp", "star_g",
+				sf, runs,
+				arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
+		else if (sf == runs)
+			/* DEAD: setup failed on every run; no MDB work attempted. */
+			json_emit_dead_arms_element(&first,
+				"bridge-fdb-stp", "star_g",
+				sf, runs,
+				arm_verdict_to_str(ARM_VERDICT_DEAD));
+		else if (!shm->stats.bridge_fdb_stp.mdb_star_g_created &&
+			 !shm->stats.bridge_fdb_stp.mdb_sg_created)
+			/* DEAD: oracle ran but never created (*,G)
+			 * EXCLUDE or (S,G) MDB entries; builder or src-list
+			 * nesting is broken. */
+			json_emit_dead_arms_element(&first,
+				"bridge-fdb-stp", "star_g",
+				sf, runs,
+				arm_verdict_to_str(ARM_VERDICT_DEAD));
+		/* else: mdb_star_g_created >= 1 or mdb_sg_created >= 1: arm live */
+	}
+
 	fputs("]", stdout);
 }

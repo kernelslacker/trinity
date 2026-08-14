@@ -560,6 +560,45 @@ static void dump_stats_dead_arm_check(void)
 				 draws);
 		/* else: arm_entered_migrate_state >= 1, arm is live */
 	}
+
+	/* bridge-fdb-stp: star_g port-group UAF oracle arm.
+	 *
+	 * Primary signal: star_g_arm_setup_failed == runs -- bridge/veth
+	 * setup failed on every invocation before any MDB work; the oracle
+	 * never had a chance to run.  Predicated on exact equality so that
+	 * partial-failure runs where some MDB entries were created are not
+	 * misclassified as dead.
+	 *
+	 * Secondary signal (positive-control invariant): if both
+	 * mdb_star_g_created and mdb_sg_created remain 0 after a floor of
+	 * runs the (*,G) builder or src-list nesting is broken -- the arm
+	 * ran but never produced the MDB entries needed to exercise the
+	 * kernel code path.  Do not absorb this into a clean-kernel verdict.
+	 *
+	 * Floor: 5 draws required (single-arm group; gate on runs, not on
+	 * an arm-entry counter, because absence of MDB creation IS the dead
+	 * state for this oracle). */
+	if (shm->stats.bridge_fdb_stp.runs > 0) {
+		unsigned long runs = shm->stats.bridge_fdb_stp.runs;
+
+		if (runs < 5)
+			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
+			       "bridge-fdb-stp",
+			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
+		else if (shm->stats.bridge_fdb_stp.star_g_arm_setup_failed == runs)
+			/* DEAD_ARM: bridge/veth setup failed on every run;
+			 * no MDB work was ever attempted.  A silently-failing
+			 * bridge/veth environment must not read as oracle-clean. */
+			stat_row("DEAD_ARM", "bridge-fdb-stp/star_g", runs);
+		else if (!shm->stats.bridge_fdb_stp.mdb_star_g_created &&
+			 !shm->stats.bridge_fdb_stp.mdb_sg_created)
+			/* DEAD_ARM: oracle ran but (*,G) EXCLUDE and
+			 * (S,G) MDB entries were never created -- the builder
+			 * or src-list nesting is broken; do not report a
+			 * clean kernel. */
+			stat_row("DEAD_ARM", "bridge-fdb-stp/star_g", runs);
+		/* else: mdb_star_g_created >= 1 or mdb_sg_created >= 1: arm live */
+	}
 }
 
 void dump_stats_fuzzer_subsystems(void)
