@@ -81,7 +81,7 @@ declare -A _seen_in_loaders
 
 for bn in "${loaders[@]}"; do
 	_seen_in_loaders["$bn"]=1
-	if grep -q '\[\[ -v ' "$CHECK_DIR/$bn"; then
+	if grep -v '^[[:space:]]*#' "$CHECK_DIR/$bn" | grep -q '\[\[ -v '; then
 		continue
 	fi
 	if [[ -v _baselined["$bn"] ]]; then
@@ -100,7 +100,7 @@ for key in "${!_baselined[@]}"; do
 	if [[ ! -v _seen_in_loaders["$key"] ]]; then
 		# Script no longer exists or is no longer classified as a loader.
 		stale+=("$key")
-	elif grep -q '\[\[ -v ' "$CHECK_DIR/$key"; then
+	elif grep -v '^[[:space:]]*#' "$CHECK_DIR/$key" | grep -q '\[\[ -v '; then
 		# Script has since acquired a [[ -v ]] guard; prune the baseline.
 		stale+=("$key")
 	fi
