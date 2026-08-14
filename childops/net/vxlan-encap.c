@@ -70,7 +70,16 @@
 #define IFLA_VXLAN_GROUP	2
 #define IFLA_VXLAN_LINK		3
 #define IFLA_VXLAN_LOCAL	4
+#define IFLA_VXLAN_AGEING	8
 #define IFLA_VXLAN_PORT		15
+#endif
+
+/* IFLA_VXLAN_AGEING may be absent even on sysroots that expose
+ * IFLA_VXLAN_ID (both live in the same uapi enum, but some trimmed
+ * trees expose only the subset used in older kernels).  Guard it
+ * separately so the ageing arm compiles everywhere. */
+#ifndef IFLA_VXLAN_AGEING
+#define IFLA_VXLAN_AGEING	8
 #endif
 
 #ifndef IFLA_GENEVE_ID
@@ -512,6 +521,203 @@ static enum tun_kind pick_kind(void)
 }
 
 /*
+ * Never-up ageing-changelink arm: create-virtual-netdev,
+ * changelink-while-down, dellink.  Covers the timer UAF fixed by
+ * upstream: b37971686ec5 ("vxlan: do not arm the ageing timer on a device that
+ * is down"): vxlan_changelink() called mod_timer() on any
+ * IFLA_VXLAN_AGEING change with no netif_running() gate; the only
+ * synchronous cancel is timer_delete_sync() in vxlan_stop(), which
+ * never fires for a device that was never brought up; free_netdev()
+ * releases the vxlan_dev allocation while age_timer is still queued,
+ * causing KASAN slab-use-after-free in __run_timers / expire_timers
+ * on unpatched kernels.
+ *
+ * Build a vxlan RTM_NEWLINK create message with IFLA_VXLAN_AGEING=val.
+ * ifi_flags / ifi_change are left zero — device intentionally never
+ * brought up.  Returns 0 on kernel accept, negated errno on rejection.
+ */
+static int build_vxlan_newlink_ageing(struct nl_ctx *ctx,
+				      const char *name, __u32 vni,
+				      __u32 ageing)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	__u32 local_addr  = htonl(0x7f000001U);
+	__u32 remote_addr = htonl(0x7f000002U);
+	size_t off, li_off, id_off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	/* ifi_flags / ifi_change intentionally zero: device must not be
+	 * brought up — that is the essential precondition for the UAF. */
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
+	if (!off)
+		return -EIO;
+
+	li_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
+	if (!off)
+		return -EIO;
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "vxlan");
+	if (!off)
+		return -EIO;
+
+	id_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+	if (!off)
+		return -EIO;
+
+	off = nla_put_u32(buf, off, sizeof(buf), IFLA_VXLAN_ID,
+			  vni & VNI_MASK);
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFLA_VXLAN_LOCAL,
+		      &local_addr, sizeof(local_addr));
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFLA_VXLAN_GROUP,
+		      &remote_addr, sizeof(remote_addr));
+	if (!off)
+		return -EIO;
+	off = nla_put_u16(buf, off, sizeof(buf), IFLA_VXLAN_PORT,
+			  htons(4789));
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf), IFLA_VXLAN_AGEING, ageing);
+	if (!off)
+		return -EIO;
+
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * RTM_NEWLINK NLM_F_REPLACE (changelink) targeting the existing device
+ * at @ifindex.  Emits only IFLA_VXLAN_AGEING in IFLA_INFO_DATA — the
+ * minimal payload that reaches vxlan_changelink() -> mod_timer() on an
+ * unpatched kernel.  The device must be down (never brought up).
+ * Returns 0 on kernel accept, negated errno on rejection.
+ */
+static int build_vxlan_changelink_ageing(struct nl_ctx *ctx,
+					 int ifindex, __u32 ageing)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	size_t off, li_off, id_off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	/* NLM_F_REPLACE selects the changelink path in rtnl_newlink();
+	 * NLM_F_CREATE must NOT be set — this must modify an existing dev. */
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_REPLACE;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = ifindex;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	li_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
+	if (!off)
+		return -EIO;
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "vxlan");
+	if (!off)
+		return -EIO;
+
+	id_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+	if (!off)
+		return -EIO;
+
+	off = nla_put_u32(buf, off, sizeof(buf), IFLA_VXLAN_AGEING, ageing);
+	if (!off)
+		return -EIO;
+
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * Orchestrate the never-up ageing-changelink-dellink sequence.
+ *
+ * Runs inside the same private netns the main arm uses (caller is
+ * vxlan_encap_in_ns()).  Reuses the already-open nl_ctx so no extra
+ * socket is needed.  Emits IFLA_VXLAN_AGEING=A on create, then
+ * IFLA_VXLAN_AGEING=B on changelink (B != A, guaranteed by picking
+ * A first and then xor-ing a random non-zero delta into B).
+ *
+ * Latch: if the RTM_NEWLINK create returns EAFNOSUPPORT / EOPNOTSUPP /
+ * ENOTSUP the TUN_VXLAN kind latch is already set by the time we are
+ * called — pick_kind() would have returned TUN_NR and the caller would
+ * not have reached here, so no extra latch write is needed.  ENOTSUP
+ * on changelink is transient (not a missing-module signal) and is
+ * silently ignored.
+ *
+ * Increments vxlan_neverup_changelink_arm on each fully completed
+ * create -> changelink -> dellink sequence so a fleet runner can
+ * confirm reach on kernels where upstream: b37971686ec5 is absent.
+ */
+static void vxlan_neverup_ageing_changelink_arm(struct nl_ctx *nl)
+{
+	char ifname[IFNAMSIZ];
+	__u32 vni, ageing_a, ageing_b;
+	int ifindex, rc;
+
+	/* Fresh ifname for this arm so it does not collide with the
+	 * main arm's device (both share the same netns). */
+	snprintf(ifname, sizeof(ifname), "trage%u",
+		 (unsigned int)(rand32() & 0xffffu));
+
+	vni     = rand32() & VNI_MASK;
+	ageing_a = (rand32() & 0xffffu) + 1U;	/* non-zero, fits u16 range */
+	/* B must differ from A; XOR a random non-zero 8-bit value. */
+	ageing_b = ageing_a ^ ((rand32() & 0xfeu) + 2U);
+
+	/* Step 1: create device, do NOT bring it up. */
+	rc = build_vxlan_newlink_ageing(nl, ifname, vni, ageing_a);
+	if (rc != 0)
+		return;	/* EAFNOSUPPORT / EEXIST / EINVAL — no counter bump */
+
+	ifindex = (int)if_nametoindex(ifname);
+	if (ifindex == 0) {
+		/* Cannot resolve ifindex — netns teardown will clean up
+		 * the device; skip the changelink+dellink sequence and
+		 * do not increment the reach counter. */
+		return;
+	}
+
+	/* Step 2: changelink while down — arms age_timer on unpatched
+	 * kernels without netif_running() gate. */
+	(void)build_vxlan_changelink_ageing(nl, ifindex, ageing_b);
+
+	/* Step 3: dellink — free_netdev() with timer still queued. */
+	if (rtnl_dellink(nl, ifindex) == 0) {
+		__atomic_add_fetch(
+			&shm->stats.vxlan_encap_churn.vxlan_neverup_changelink_arm,
+			1, __ATOMIC_RELAXED);
+	}
+}
+
+/*
  * Per-invocation state shared across the vxlan_encap_iter_* helpers.
  * Lives on the orchestrator's stack and is fresh per invocation.  Only
  * fields read or written across helper boundaries are lifted here; the
@@ -903,16 +1109,26 @@ static int vxlan_encap_in_ns(void *arg)
 	if (ctx.kind == TUN_NR)
 		return 0;
 
-	if (vxlan_encap_iter_open_ctx(&ctx) == 0 &&
-	    vxlan_encap_iter_build_link(&ctx) == 0) {
-		if (valid_op) {
-			__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.childop.data_path[op],
-					   1, __ATOMIC_RELAXED);
+	if (vxlan_encap_iter_open_ctx(&ctx) == 0) {
+		/* Low-frequency (~1-in-8) never-up ageing-changelink arm
+		 * (vxlan only; kind latch guards the TUN_VXLAN gate).
+		 * Mutually exclusive with the main burst+flush sequence
+		 * per invocation — the two sequences must not share a
+		 * device in the same netns. */
+		if (!kind_unsupported(TUN_VXLAN) && ONE_IN(8)) {
+			vxlan_neverup_ageing_changelink_arm(&ctx.nl);
+		} else if (vxlan_encap_iter_build_link(&ctx) == 0) {
+			if (valid_op) {
+				__atomic_add_fetch(
+					&shm->stats.childop.setup_accepted[op],
+					1, __ATOMIC_RELAXED);
+				__atomic_add_fetch(
+					&shm->stats.childop.data_path[op],
+					1, __ATOMIC_RELAXED);
+			}
+			vxlan_encap_iter_send_burst(&ctx);
+			vxlan_encap_iter_flush_race(&ctx);
 		}
-		vxlan_encap_iter_send_burst(&ctx);
-		vxlan_encap_iter_flush_race(&ctx);
 	}
 
 	vxlan_encap_iter_teardown(&ctx);

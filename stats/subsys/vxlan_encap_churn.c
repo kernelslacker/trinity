@@ -10,6 +10,7 @@ static const struct stat_field vxlan_encap_churn_fields[] = {
 	STAT_FIELD_SUB(vxlan_encap_churn, packet_sent_ok),
 	STAT_FIELD_SUB(vxlan_encap_churn, link_del_ok),
 	STAT_FIELD_SUB(vxlan_encap_churn, fdb_flush_ok),
+	STAT_FIELD_SUB(vxlan_encap_churn, vxlan_neverup_changelink_arm),
 };
 
 const struct stat_category vxlan_encap_churn_category =

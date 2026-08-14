@@ -11,6 +11,7 @@ struct vxlan_encap_churn_stats {
 	unsigned long packet_sent_ok;	/* sendto on AF_PACKET raw bound to tunnel returned >0 */
 	unsigned long link_del_ok;	/* RTM_DELLINK accepted */
 	unsigned long fdb_flush_ok;	/* RTM_DELNEIGH NLM_F_BULK bulk-flush accepted (vxlan only) */
+	unsigned long vxlan_neverup_changelink_arm; /* never-up ageing changelink+dellink completed */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_VXLAN_ENCAP_CHURN_H */
