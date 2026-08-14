@@ -51,17 +51,14 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
 	 * and publish once up front so the direct-syscall reporter
 	 * attributes this invocation's raw kernel entries (fork / ptrace /
 	 * prctl / kill / waitpid) to the parent op regardless of which
-	 * early-return path the dispatch takes.  Bounds-check matches the
-	 * surrounding valid_op gate in recipe_runner. */
+	 * early-return path the dispatch takes.  childop_direct_syscalls_add()
+	 * is the single choke point that rejects and counts out-of-range ops. */
 	{
 		struct childdata *tc = this_child();
 		const enum child_op_type op = tc ? tc->op_type :
 			NR_CHILD_OP_TYPES;
-		const bool valid_op = ((int) op >= 0 &&
-				       op < NR_CHILD_OP_TYPES);
 
-		if (valid_op)
-			childop_direct_syscalls_add(op, 1);
+		childop_direct_syscalls_add(op, 1);
 	}
 	unsigned int cycles;
 	unsigned int i;
@@ -296,11 +293,8 @@ bool recipe_mount_userns_dance(bool *unsupported)
 		struct childdata *tc = this_child();
 		const enum child_op_type op = tc ? tc->op_type :
 			NR_CHILD_OP_TYPES;
-		const bool valid_op = ((int) op >= 0 &&
-				       op < NR_CHILD_OP_TYPES);
 
-		if (valid_op)
-			childop_direct_syscalls_add(op, 1);
+		childop_direct_syscalls_add(op, 1);
 	}
 	pid_t pid;
 	int status;
@@ -525,18 +519,14 @@ static int recipe_seccomp_listener_supervisor(enum child_op_type op)
 bool recipe_seccomp_listener_exec(bool *unsupported)
 {
 	struct childdata *tc = this_child();
-	/* Defensive sentinel matching the hoisted blocks above: if
-	 * this_child() returns NULL, NR_CHILD_OP_TYPES is used and
-	 * valid_op gates the direct-syscalls bump; unguarded
-	 * call sites rely on childop_direct_syscalls_add()'s reject
-	 * path which now bumps direct_tally_dropped for observability. */
+	/* childop_direct_syscalls_add() is the single choke point: it rejects
+	 * and counts out-of-range ops (including the NR_CHILD_OP_TYPES sentinel
+	 * used when this_child() returns NULL). */
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	pid_t supervisor;
 	int status;
 
-	if (valid_op)
-		childop_direct_syscalls_add(op, 1);
+	childop_direct_syscalls_add(op, 1);
 
 	supervisor = fork();
 	if (supervisor < 0)
@@ -818,18 +808,14 @@ out:
 bool recipe_cgroup_kill_events(bool *unsupported)
 {
 	struct childdata *tc = this_child();
-	/* Defensive sentinel matching the hoisted blocks above: if
-	 * this_child() returns NULL, NR_CHILD_OP_TYPES is used and
-	 * valid_op gates the direct-syscalls bump; unguarded
-	 * call sites rely on childop_direct_syscalls_add()'s reject
-	 * path which now bumps direct_tally_dropped for observability. */
+	/* childop_direct_syscalls_add() is the single choke point: it rejects
+	 * and counts out-of-range ops (including the NR_CHILD_OP_TYPES sentinel
+	 * used when this_child() returns NULL). */
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	pid_t supervisor;
 	int status;
 
-	if (valid_op)
-		childop_direct_syscalls_add(op, 1);
+	childop_direct_syscalls_add(op, 1);
 
 	supervisor = fork();
 	if (supervisor < 0)

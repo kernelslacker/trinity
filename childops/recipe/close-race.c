@@ -119,11 +119,10 @@ bool recipe_timerfd_xclose(bool *unsupported)
 	 * so the direct-syscall reporter attributes this invocation's
 	 * per-cycle raw kernel entries (timerfd_create, timerfd_settime,
 	 * poll, read, close) to the parent op's per-childop tally.
-	 * Bounds-check matches the surrounding valid_op gate in
-	 * recipe_runner. */
+	 * childop_direct_syscalls_add() is the single choke point for
+	 * out-of-range op rejection and counting. */
 	struct childdata *tc = this_child();
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	struct itimerspec its;
 	unsigned int cycles;
 	unsigned int i;
@@ -183,9 +182,8 @@ bool recipe_timerfd_xclose(bool *unsupported)
 		(void)close(tfd);
 
 		(void)pthread_join(tid, NULL);
-		if (valid_op)
-			childop_direct_syscalls_add(op,
-				(unsigned long)ra.local_syscalls);
+		childop_direct_syscalls_add(op,
+			(unsigned long)ra.local_syscalls);
 
 		completed++;
 	}
@@ -246,7 +244,6 @@ bool recipe_signalfd_delivery(bool *unsupported)
 {
 	struct childdata *tc = this_child();
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	sigset_t ss, reduced, oldss;
 	struct signalfd_siginfo buf[8];
 	union sigval sv;
@@ -348,8 +345,7 @@ out:
 			;
 		(void)sigprocmask(SIG_SETMASK, &oldss, NULL);
 	}
-	if (valid_op)
-		childop_direct_syscalls_add(op, 1);
+	childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 
@@ -396,7 +392,6 @@ bool recipe_epoll_xclose(bool *unsupported)
 {
 	struct childdata *tc = this_child();
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	struct epoll_event ev;
 	struct epoll_event evs[RECIPE_EPOLL_XCLOSE_NFDS + 1];
 	int evfds[RECIPE_EPOLL_XCLOSE_NFDS];
@@ -486,8 +481,7 @@ out:
 		close(extra);
 	if (epfd >= 0)
 		close(epfd);
-	if (valid_op)
-		childop_direct_syscalls_add(op, 1);
+	childop_direct_syscalls_add(op, 1);
 	return ok;
 }
 
@@ -538,7 +532,6 @@ bool recipe_iouring_fixed_uaf(bool *unsupported)
 {
 	struct childdata *tc = this_child();
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	struct iour_ring ctx;
 	struct io_uring_params p;
 	enum iour_setup_status st;
@@ -659,7 +652,6 @@ out:
 	if (devnull >= 0)
 		close(devnull);
 	iour_ring_teardown(&ctx);
-	if (valid_op)
-		childop_direct_syscalls_add(op, 1);
+	childop_direct_syscalls_add(op, 1);
 	return ok;
 }

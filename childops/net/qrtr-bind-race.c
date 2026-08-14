@@ -170,8 +170,7 @@ static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 			struct childdata *tc = this_child();
 			const enum child_op_type op =
 				tc ? tc->op_type : NR_CHILD_OP_TYPES;
-			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				childop_direct_syscalls_add(op, n);
+			childop_direct_syscalls_add(op, n);
 		}
 		_exit(0);
 	}
@@ -191,8 +190,7 @@ static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 			struct childdata *tc = this_child();
 			const enum child_op_type op =
 				tc ? tc->op_type : NR_CHILD_OP_TYPES;
-			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				childop_direct_syscalls_add(op, n);
+			childop_direct_syscalls_add(op, n);
 		}
 		_exit(0);
 	}
@@ -212,8 +210,7 @@ static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 	{
 		struct childdata *tc = this_child();
 		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			childop_direct_syscalls_add(op, n);
+		childop_direct_syscalls_add(op, n);
 	}
 	_exit(0);
 }

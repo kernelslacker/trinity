@@ -118,22 +118,21 @@ void childop_outcome_window_dump(void)
  * Opt-in producer for shm->stats.childop.direct_syscalls[op].  Called
  * from inside a childop's op_fn body with the number of direct kernel
  * calls the caller just issued (usually a per-inner-iter constant --
- * pipe_thrash: 1 per create + 1 per close in the drain).  Bounds-check
- * the op index so a corrupted child->op_type read (poisoned-arena
- * write from a sibling) cannot scribble past the array; matches the
- * defensive gates in the other per-childop bump paths (see the
- * shm->stats.pipe_thrash bumps in pipe_thrash and the valid_op gate
- * around them).  RELAXED add-fetch -- cumulative diagnostic.
+ * pipe_thrash: 1 per create + 1 per close in the drain).  This is the
+ * single choke point for bounds-checking the op index: call sites pass
+ * the NR_CHILD_OP_TYPES sentinel (via tc ? tc->op_type : NR_CHILD_OP_TYPES)
+ * when this_child() returns NULL and let the reject path here count the
+ * loss.  RELAXED add-fetch -- cumulative diagnostic.
  */
 void childop_direct_syscalls_add(enum child_op_type op, unsigned long n)
 {
 	if ((int) op < 0 || op >= NR_CHILD_OP_TYPES) {
 		/* Out-of-range op (includes NR_CHILD_OP_TYPES sentinel used
-		 * when this_child() returns NULL inside fork()ed supervisor
-		 * bodies).  Tally the discard so operators can detect silent
-		 * direct-syscall count loss without a separate WARN path. */
+		 * when this_child() returns NULL inside fork()ed bodies).
+		 * Count the discarded syscalls (n, not 1) so the tally
+		 * measures magnitude of loss, not number of dropped calls. */
 		__atomic_add_fetch(&shm->stats.childop.direct_tally_dropped,
-				   1, __ATOMIC_RELAXED);
+				   n, __ATOMIC_RELAXED);
 		return;
 	}
 	if (n == 0)

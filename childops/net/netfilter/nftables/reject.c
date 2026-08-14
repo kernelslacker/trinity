@@ -417,7 +417,6 @@ out:
 		const enum child_op_type op_tc = tc ? tc->op_type
 						    : NR_CHILD_OP_TYPES;
 
-		if ((int)op_tc >= 0 && op_tc < NR_CHILD_OP_TYPES)
-			childop_direct_syscalls_add(op_tc, dc);
+		childop_direct_syscalls_add(op_tc, dc);
 	}
 }

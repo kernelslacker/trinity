@@ -311,8 +311,7 @@ static __attribute__((noreturn)) void carrier_child(int ready_fd)
 		struct childdata *tc = this_child();
 		const enum child_op_type op =
 			tc ? tc->op_type : NR_CHILD_OP_TYPES;
-		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-			childop_direct_syscalls_add(op, 1UL + write_calls + 1UL);
+		childop_direct_syscalls_add(op, 1UL + write_calls + 1UL);
 	}
 
 	/* Pause until SIGTERM.  pause() returns -1/EINTR on any signal;

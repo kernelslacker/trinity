@@ -44,15 +44,13 @@ int nat_t_open_encap_udp(void)
 	unsigned long direct_calls = 0;
 	struct childdata *tc = this_child();
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	direct_calls++;
 	if (udp < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 			warn_once_unsupported("AF_INET socket", errno);
-		if (valid_op)
-			childop_direct_syscalls_add(op, direct_calls);
+		childop_direct_syscalls_add(op, direct_calls);
 		return -1;
 	}
 
@@ -62,8 +60,7 @@ int nat_t_open_encap_udp(void)
 	src.sin_port        = htons(NAT_T_ENCAP_PORT);
 	if (bind(udp, (struct sockaddr *)&src, sizeof(src)) < 0) {
 		close(udp);
-		if (valid_op)
-			childop_direct_syscalls_add(op, direct_calls);
+		childop_direct_syscalls_add(op, direct_calls);
 		return -1;
 	}
 
@@ -71,13 +68,11 @@ int nat_t_open_encap_udp(void)
 	if (setsockopt(udp, SOL_UDP, UDP_ENCAP, &encap_type,
 		       sizeof(encap_type)) < 0) {
 		close(udp);
-		if (valid_op)
-			childop_direct_syscalls_add(op, direct_calls);
+		childop_direct_syscalls_add(op, direct_calls);
 		return -1;
 	}
 
-	if (valid_op)
-		childop_direct_syscalls_add(op, direct_calls);
+	childop_direct_syscalls_add(op, direct_calls);
 	return udp;
 }
 
@@ -103,7 +98,6 @@ bool nat_t_send_esp_in_udp(int udp, __be32 spi, __u32 seq)
 	 * publish to. */
 	struct childdata *tc = this_child();
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	hdr[0] = spi;
 	hdr[1] = htonl(seq);
@@ -116,8 +110,7 @@ bool nat_t_send_esp_in_udp(int udp, __be32 spi, __u32 seq)
 
 	n = sendto(udp, frame, sizeof(frame), MSG_DONTWAIT,
 		   (struct sockaddr *)&dst, sizeof(dst));
-	if (valid_op)
-		childop_direct_syscalls_add(op, 1);
+	childop_direct_syscalls_add(op, 1);
 	return n > 0;
 }
 
@@ -246,7 +239,6 @@ void nat_t_churn_v6(void)
 	unsigned long direct_calls = 0;
 	struct childdata *tc = this_child();
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.nat_t_churn.xfrm6_setup_fail,
@@ -364,6 +356,5 @@ out:
 	if (udp >= 0)
 		close(udp);
 	nl_close(&ctx);
-	if (valid_op)
-		childop_direct_syscalls_add(op, direct_calls);
+	childop_direct_syscalls_add(op, direct_calls);
 }
