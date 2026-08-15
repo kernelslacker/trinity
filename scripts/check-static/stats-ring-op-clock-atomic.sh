@@ -12,10 +12,10 @@
 # generated code happens to be correct on the target architecture.
 #
 # This gate fails if any .c file outside the explicit allow-list
-# contains "lossless_op_count" on a non-comment line that does NOT also
-# contain "__atomic_" on the same line (i.e. the token is not lexically
-# inside an atomic macro call written on one line, or on the same line
-# as the field reference for multi-line calls).
+# contains "lossless_op_count" on a non-comment line where __atomic_
+# does NOT directly govern the field reference itself (i.e. lossless_op_count
+# appears as an argument to the intrinsic, or the field is assigned from
+# an intrinsic whose argument list contains lossless_op_count).
 #
 # Allow-listed paths (by explicit case statement, NOT bare grep -v):
 #
@@ -85,12 +85,17 @@ while IFS= read -r srcfile; do
 		esac
 
 		# Line is a non-comment source line.  It is valid only if
-		# __atomic_ also appears on the same line (the field reference
-		# is either on the same line as the __atomic_fetch_add /
-		# __atomic_load_n call, or the entire call is one line).
-		case "$content" in
-			*__atomic_*) continue ;;
-		esac
+		# __atomic_ directly governs the lossless_op_count field
+		# reference: either the intrinsic takes lossless_op_count as an
+		# argument, or the field name precedes an __ATOMIC_ order token
+		# (i.e. is itself the argument being qualified).  A bare
+		# substring test for __atomic_ anywhere on the line admits false
+		# passes when an unrelated intrinsic appears on the same line
+		# (e.g. a plain store to lossless_op_count whose RHS loads a
+		# different field atomically).
+		if echo "$content" | grep -qE '__atomic_[a-z_]+\([^)]*lossless_op_count'; then
+			continue
+		fi
 
 		# Surviving lines are plain (non-atomic) accesses -- FAIL.
 		echo "${nf}:${lineno}: ${trimmed}"
@@ -128,4 +133,39 @@ if [ "$n" -gt 0 ]; then
 fi
 
 echo "PASS: $NAME: 0 plain lossless_op_count accesses ($scanned files scanned)"
+
+# Self-test: verify the anchored atomicity predicate accepts genuinely
+# atomic accesses and rejects a plain assignment whose RHS happens to
+# contain an unrelated __atomic_ call on the same line.
+#
+# Three fixture lines are tested:
+#   1. __atomic_fetch_add(&ring->lossless_op_count, ...) -- must be accepted
+#   2. __atomic_load_n(&ring->lossless_op_count, ...) -- must be accepted
+#   3. ring->lossless_op_count = __atomic_load_n(&other_field, ...) -- must
+#      be REJECTED: the atomic intrinsic governs other_field, not
+#      lossless_op_count; the assignment itself is a plain (non-atomic) write.
+_st_pat='__atomic_[a-z_]+\([^)]*lossless_op_count'
+_st_fails=0
+# Fixture lines 1 and 2: atomic intrinsic takes lossless_op_count as an
+# argument -- predicate must accept them (grep matches => continue in loop).
+for _st_line in \
+	'__atomic_fetch_add(&ring->lossless_op_count, 1, __ATOMIC_RELAXED);' \
+	'__atomic_load_n(&ring->lossless_op_count, __ATOMIC_RELAXED);'
+do
+	if ! echo "$_st_line" | grep -qE "$_st_pat"; then
+		echo "FAIL: $NAME: self-test: anchored predicate wrongly rejected: $_st_line" >&2
+		_st_fails=$((_st_fails + 1))
+	fi
+done
+# Fixture line 3: plain assignment to lossless_op_count; the __atomic_ call
+# on the RHS operates on a different field entirely.  Predicate must reject.
+if echo 'ring->lossless_op_count = __atomic_load_n(&other_field, __ATOMIC_RELAXED);' | grep -qE "$_st_pat"; then
+	echo "FAIL: $NAME: self-test: anchored predicate wrongly accepted plain assignment with unrelated atomic" >&2
+	_st_fails=$((_st_fails + 1))
+fi
+if [ "$_st_fails" -gt 0 ]; then
+	echo "FAIL: $NAME: self-test: $_st_fails predicate classification(s) wrong"
+	exit 1
+fi
+echo "PASS: $NAME: self-test: anchored predicate correctly classifies all 3 fixture lines"
 exit 0
