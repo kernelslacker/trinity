@@ -253,6 +253,7 @@ static void dump_stats_render_tc_standalone_action(void)
 		stat_row("tc_standalone_action", "filter_fail",                shm->stats.tc_standalone_action.filter_fail);
 		stat_row("tc_standalone_action", "packet_sent_ok",             shm->stats.tc_standalone_action.packet_sent_ok);
 		stat_row("tc_standalone_action", "packet_send_fail",           shm->stats.tc_standalone_action.packet_send_fail);
+		stat_row("tc_standalone_action", "bindtodevice_fail",          shm->stats.tc_standalone_action.bindtodevice_fail);
 		stat_row("tc_standalone_action", "action_replace_ok",          shm->stats.tc_standalone_action.action_replace_ok);
 		stat_row("tc_standalone_action", "tc_action_replace_concurrent", shm->stats.tc_standalone_action.tc_action_replace_concurrent);
 		stat_row("tc_standalone_action", "action_del_ok",              shm->stats.tc_standalone_action.action_del_ok);

@@ -741,8 +741,11 @@ static int tcsa_in_ns(void *arg)
 				mark_ns_unsupported_inet();
 			goto out;
 		}
-		(void)setsockopt(udp, SOL_SOCKET, SO_BINDTODEVICE,
-				 a_name, strlen(a_name) + 1);
+		if (setsockopt(udp, SOL_SOCKET, SO_BINDTODEVICE,
+				 a_name, strlen(a_name) + 1) < 0)
+			__atomic_add_fetch(
+				&shm->stats.tc_standalone_action.bindtodevice_fail,
+				1, __ATOMIC_RELAXED);
 		direct_calls += 1;
 
 		memset(&dst, 0, sizeof(dst));

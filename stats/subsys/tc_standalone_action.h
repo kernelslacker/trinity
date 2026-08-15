@@ -13,6 +13,7 @@ struct tc_standalone_action_stats {
 	unsigned long filter_fail;		/* matchall filter referencing shared action rejected */
 	unsigned long packet_sent_ok;		/* live UDP sendto returned >0 */
 	unsigned long packet_send_fail;		/* live UDP sendto returned <=0 */
+	unsigned long bindtodevice_fail;		/* SO_BINDTODEVICE setsockopt returned <0 */
 	unsigned long action_replace_ok;	/* RTM_NEWACTION + NLM_F_REPLACE accepted (tcf_action_set_ctrlact) */
 	unsigned long tc_action_replace_concurrent; /* replace cycles where >=1 packet preceded the replace point */
 	unsigned long action_del_ok;		/* RTM_DELACTION accepted at teardown */
