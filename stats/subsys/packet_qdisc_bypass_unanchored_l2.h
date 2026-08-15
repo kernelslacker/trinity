@@ -2,6 +2,15 @@
 #define _TRINITY_STATS_SUBSYS_PACKET_QDISC_BYPASS_UNANCHORED_L2_H
 
 /*
+ * Number of RTM_NEWLINK kinds swept by the per-kind if_nlmsg_size()
+ * oracle in childops/net/packet-qdisc-bypass-unanchored-l2.c.  The
+ * index meaning is fixed by enum nlmsg_sweep_kind / nlmsg_sweep_kind_name[]
+ * there and surfaced with matching labels by
+ * dump_stats_render_packet_qdisc_bypass_unanchored_l2().
+ */
+#define NLMSG_SWEEP_NKINDS 10
+
+/*
  * Counters for the packet-qdisc-bypass-unanchored-l2 childop
  * (childops/net/packet-qdisc-bypass-unanchored-l2.c).
  *
@@ -57,6 +66,19 @@ struct packet_qdisc_bypass_unanchored_l2_stats {
 	/* Subscriber socket()/bind() to RTNLGRP_LINK failed, so the oracle
 	 * never armed for that iteration.  Should be ~0. */
 	unsigned long nlmsg_subscriber_unarmed_macsec;
+	/*
+	 * Per-kind if_nlmsg_size() sweep, indexed by enum nlmsg_sweep_kind.
+	 * The macsec oracle above replicated across NLMSG_SWEEP_NKINDS
+	 * RTM_NEWLINK kinds that all route through rtnl_fill_ifinfo()/
+	 * if_nlmsg_size().  Kept per kind (never aggregated) so a single
+	 * noisy kind cannot mask the other nine, each with its own positive
+	 * control.  Surfaced by stat_row() in
+	 * dump_stats_render_packet_qdisc_bypass_unanchored_l2().
+	 */
+	unsigned long nlmsg_sweep_created[NLMSG_SWEEP_NKINDS];    /* RTM_NEWLINK succeeded (denominator) */
+	unsigned long nlmsg_sweep_undercount[NLMSG_SWEEP_NKINDS]; /* subscriber saw EMSGSIZE (bug oracle) */
+	unsigned long nlmsg_sweep_live[NLMSG_SWEEP_NKINDS];       /* positive control: broadcast delivered */
+	unsigned long nlmsg_sweep_silent[NLMSG_SWEEP_NKINDS];     /* armed but no delivery (incl. unarmed); should be ~0 */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_PACKET_QDISC_BYPASS_UNANCHORED_L2_H */

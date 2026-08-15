@@ -318,6 +318,260 @@ static int bypass_create_macsec(struct nl_ctx *ctx,
 	return nl_send_recv(ctx, buf, off);
 }
 
+/* ------------------------------------------------------------------ */
+/* if_nlmsg_size() RTNLGRP_LINK subscriber oracle (shared mechanism)     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Open a NETLINK_ROUTE socket subscribed to RTNLGRP_LINK.  Returns the
+ * fd, or -1 if socket()/bind() failed.  MUST be opened *before* the
+ * RTM_NEWLINK whose broadcast (positive control) or EMSGSIZE poison
+ * (bug oracle) it will observe.
+ */
+static int nlmsg_link_sub_open(void)
+{
+	int fd;
+	struct sockaddr_nl snl;
+
+	fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+	if (fd < 0)
+		return -1;
+	memset(&snl, 0, sizeof(snl));
+	snl.nl_family = AF_NETLINK;
+	snl.nl_groups = 1U << (RTNLGRP_LINK - 1);
+	if (bind(fd, (struct sockaddr *)&snl, sizeof(snl)) < 0) {
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
+/*
+ * Classify and count the outcome of the RTNLGRP_LINK subscriber oracle
+ * after an RTM_NEWLINK, then close sub_fd.  Exactly one counter is
+ * bumped:
+ *
+ *   sub_fd < 0                -> *unarmed (or *silent if unarmed==NULL)
+ *   create_rc != 0            -> nothing: a failed create broadcasts no
+ *                                RTM_NEWLINK, so an EAGAIN there is
+ *                                expected and must not pollute *silent
+ *   recv() == EMSGSIZE        -> *undercount  (bug oracle fired)
+ *   recv() n >= 0             -> *live         (positive control)
+ *   recv() other (EAGAIN,...) -> *silent       (armed, no delivery)
+ *
+ * Rationale.  When if_nlmsg_size() under-counts, rtmsg_ifinfo_build_skb()
+ * calls rtnl_set_sk_err() with -EMSGSIZE; netlink_set_err() negates it
+ * to a positive sk_err, so the next recv() returns EMSGSIZE — that is
+ * the bug oracle.  But a broken subscription (bound to the wrong group,
+ * a silent socket failure, notifications not delivered) recv()s EAGAIN
+ * and is indistinguishable from a clean run, so a zero *undercount would
+ * be meaningless.  *live is the positive control: on a healthy kernel a
+ * successful RTM_NEWLINK broadcasts a clean notification, queued on the
+ * subscriber before the newlink syscall returns, so a live subscription
+ * recv()s it.  A non-zero *live proves the mechanism can fire; a zero
+ * *live after completed iters means the oracle is decoration.
+ */
+static void nlmsg_link_sub_classify(int sub_fd, int create_rc,
+				    unsigned long *undercount,
+				    unsigned long *live,
+				    unsigned long *silent,
+				    unsigned long *unarmed)
+{
+	if (sub_fd < 0) {
+		__atomic_add_fetch(unarmed ? unarmed : silent, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
+	if (create_rc == 0) {
+		unsigned char rbuf[256];
+		ssize_t n = recv(sub_fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
+
+		if (n < 0 && errno == EMSGSIZE)
+			__atomic_add_fetch(undercount, 1, __ATOMIC_RELAXED);
+		else if (n >= 0)
+			__atomic_add_fetch(live, 1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(silent, 1, __ATOMIC_RELAXED);
+	}
+	close(sub_fd);
+}
+
+/* ------------------------------------------------------------------ */
+/* Per-kind if_nlmsg_size() sweep                                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * RTM_NEWLINK kinds swept by the per-kind oracle.  Order is load-bearing:
+ * it indexes the nlmsg_sweep_* arrays in struct
+ * packet_qdisc_bypass_unanchored_l2_stats and the label table in
+ * dump_stats_render_packet_qdisc_bypass_unanchored_l2().  Keep in sync
+ * with NLMSG_SWEEP_NKINDS.
+ */
+enum nlmsg_sweep_kind {
+	NLMSG_SWEEP_DUMMY = 0,
+	NLMSG_SWEEP_BRIDGE,
+	NLMSG_SWEEP_IFB,
+	NLMSG_SWEEP_NLMON,
+	NLMSG_SWEEP_BOND,
+	NLMSG_SWEEP_GRE,
+	NLMSG_SWEEP_VLAN,
+	NLMSG_SWEEP_MACVLAN,
+	NLMSG_SWEEP_VXLAN,
+	NLMSG_SWEEP_VETH,
+};
+
+_Static_assert(NLMSG_SWEEP_VETH + 1 == NLMSG_SWEEP_NKINDS,
+	       "nlmsg_sweep_kind count must equal NLMSG_SWEEP_NKINDS");
+
+/* IFLA_INFO_KIND string per kind; also used as the stats dump label. */
+static const char *const nlmsg_sweep_kind_name[NLMSG_SWEEP_NKINDS] = {
+	[NLMSG_SWEEP_DUMMY]   = "dummy",
+	[NLMSG_SWEEP_BRIDGE]  = "bridge",
+	[NLMSG_SWEEP_IFB]     = "ifb",
+	[NLMSG_SWEEP_NLMON]   = "nlmon",
+	[NLMSG_SWEEP_BOND]    = "bond",
+	[NLMSG_SWEEP_GRE]     = "gre",
+	[NLMSG_SWEEP_VLAN]    = "vlan",
+	[NLMSG_SWEEP_MACVLAN] = "macvlan",
+	[NLMSG_SWEEP_VXLAN]   = "vxlan",
+	[NLMSG_SWEEP_VETH]    = "veth",
+};
+
+/*
+ * RTM_NEWLINK for one sweep kind.  Most kinds create with IFLA_INFO_KIND
+ * alone; the few with a mandatory attribute get exactly it:
+ *   vlan     -> IFLA_LINK (parent) + IFLA_INFO_DATA{IFLA_VLAN_ID}
+ *   macvlan  -> IFLA_LINK (parent)
+ *   vxlan    -> IFLA_INFO_DATA{IFLA_VXLAN_ID}
+ *   veth     -> IFLA_INFO_DATA{VETH_INFO_PEER}
+ * Unsupported kinds (module not loaded) or rejected creates return the
+ * kernel error; the caller leaves nlmsg_sweep_created[k] at zero.
+ */
+static int bypass_sweep_create(struct nl_ctx *ctx, enum nlmsg_sweep_kind k,
+			       const char *name, int parent_ifindex)
+{
+	unsigned char buf[BYPASS_RTNL_BUF];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	size_t off, li_off, id_off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family  = AF_UNSPEC;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
+	if (!off) return -EIO;
+
+	/* Stacked kinds carry a parent ifindex. */
+	if (k == NLMSG_SWEEP_VLAN || k == NLMSG_SWEEP_MACVLAN) {
+		off = nla_put_u32(buf, off, sizeof(buf), IFLA_LINK,
+				  (__u32)parent_ifindex);
+		if (!off) return -EIO;
+	}
+
+	li_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
+	if (!off) return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND,
+			  nlmsg_sweep_kind_name[k]);
+	if (!off) return -EIO;
+
+	if (k == NLMSG_SWEEP_VLAN) {
+		id_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+		if (!off) return -EIO;
+		off = nla_put_u16(buf, off, sizeof(buf), IFLA_VLAN_ID, 100);
+		if (!off) return -EIO;
+		nla_nest_end(buf, id_off, off);
+	} else if (k == NLMSG_SWEEP_VXLAN) {
+		id_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+		if (!off) return -EIO;
+		off = nla_put_u32(buf, off, sizeof(buf), IFLA_VXLAN_ID, 42);
+		if (!off) return -EIO;
+		nla_nest_end(buf, id_off, off);
+	} else if (k == NLMSG_SWEEP_VETH) {
+		struct ifinfomsg *peer_ifi;
+		char peername[16];
+		size_t plen = strlen(name), pv_off;
+
+		if (plen + 2 > sizeof(peername))
+			return -EIO;
+		memcpy(peername, name, plen);
+		peername[plen] = 'p';
+		peername[plen + 1] = '\0';
+
+		id_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+		if (!off) return -EIO;
+		pv_off = off;
+		off = nla_nest_start(buf, off, sizeof(buf), VETH_INFO_PEER);
+		if (!off) return -EIO;
+		if (off + NLMSG_ALIGN(sizeof(*peer_ifi)) > sizeof(buf))
+			return -EIO;
+		peer_ifi = (struct ifinfomsg *)(buf + off);
+		memset(peer_ifi, 0, sizeof(*peer_ifi));
+		peer_ifi->ifi_family = AF_UNSPEC;
+		off += NLMSG_ALIGN(sizeof(*peer_ifi));
+		off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, peername);
+		if (!off) return -EIO;
+		nla_nest_end(buf, pv_off, off);
+		nla_nest_end(buf, id_off, off);
+	}
+	/* dummy/bridge/ifb/nlmon/bond/gre/macvlan: kind (+ parent) suffices. */
+
+	nla_nest_end(buf, li_off, off);
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * Replicate the RTNLGRP_LINK subscriber oracle across every sweep kind.
+ * All RTM_NEWLINK kinds pass through rtnl_fill_ifinfo()/if_nlmsg_size();
+ * any kind whose size accounting under-counts poisons subscribers with
+ * EMSGSIZE.  Counts are kept strictly per kind (never aggregated) so a
+ * single noisy kind cannot mask the other nine, and each kind carries
+ * its own positive control (nlmsg_sweep_live[k]).  The subscriber
+ * socket is (re)opened per kind so an sk_err poison from one kind does
+ * not leak into the next.  Runs in the fresh CLONE_NEWNET of
+ * iter_one_in_ns(); created links are reaped by netns teardown.
+ *
+ * The socket()/bind() ("unarmed") case is process-wide, not kind-
+ * specific, so it is folded into nlmsg_sweep_silent[k] (unarmed==NULL);
+ * the per-kind macsec lane keeps a dedicated unarmed counter.
+ */
+static void bypass_nlmsg_size_sweep(struct nl_ctx *ctx, int parent_ifindex)
+{
+	unsigned int k;
+
+	for (k = 0; k < NLMSG_SWEEP_NKINDS; k++) {
+		char name[8] = "swpX";
+		int sub_fd, rc;
+
+		name[3] = (char)('0' + (int)k);   /* k < 10 by construction */
+
+		sub_fd = nlmsg_link_sub_open();
+		rc = bypass_sweep_create(ctx, (enum nlmsg_sweep_kind)k, name,
+					 parent_ifindex);
+		if (rc == 0)
+			__atomic_add_fetch(
+				&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_sweep_created[k],
+				1, __ATOMIC_RELAXED);
+		nlmsg_link_sub_classify(sub_fd, rc,
+			&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_sweep_undercount[k],
+			&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_sweep_live[k],
+			&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_sweep_silent[k],
+			NULL);
+	}
+}
+
 /*
  * Install a TX security association on a macsec interface via the
  * MACSEC generic-netlink family (MACSEC_CMD_ADD_TXSA).
@@ -1046,6 +1300,14 @@ static int iter_one_in_ns(void *arg)
 	}
 
 	/*
+	 * Per-kind if_nlmsg_size() sweep.  Runs before the macsec lane so it
+	 * exercises every kind even on kernels where CONFIG_MACSEC=m is not
+	 * loaded (the macsec create below would latch and skip).  veth0 is
+	 * the parent for the stacked kinds (vlan/macvlan).
+	 */
+	bypass_nlmsg_size_sweep(&nl, (int)veth0_ifx);
+
+	/*
 	 * Create macsec device mst0 over veth0.
 	 *
 	 * RTNLGRP_LINK subscriber oracle: open a second NETLINK_ROUTE socket
@@ -1085,52 +1347,15 @@ static int iter_one_in_ns(void *arg)
 	 * completed iters exist but the positive control never fired.
 	 */
 	{
-		int sub_fd;
-		struct sockaddr_nl snl;
-
-		sub_fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
-		if (sub_fd >= 0) {
-			memset(&snl, 0, sizeof(snl));
-			snl.nl_family = AF_NETLINK;
-			snl.nl_groups = 1U << (RTNLGRP_LINK - 1);
-			if (bind(sub_fd, (struct sockaddr *)&snl, sizeof(snl)) < 0) {
-				close(sub_fd);
-				sub_fd = -1;
-			}
-		}
+		int sub_fd = nlmsg_link_sub_open();
 
 		rc = bypass_create_macsec(&nl, "mst0", (int)veth0_ifx);
 
-		if (sub_fd < 0) {
-			/* Oracle never armed: socket()/bind() to RTNLGRP_LINK
-			 * failed, so neither the bug oracle nor the positive
-			 * control can run.  Distinct from a live-but-silent
-			 * subscriber so the positive control is not diluted. */
-			__atomic_add_fetch(
-				&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_unarmed_macsec,
-				1, __ATOMIC_RELAXED);
-		} else {
-			/* Only classify when the link was actually created: a
-			 * failed create broadcasts nothing, so an EAGAIN there is
-			 * expected and must not pollute the silent counter. */
-			if (rc == 0) {
-				unsigned char rbuf[256];
-				ssize_t n = recv(sub_fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
-				if (n < 0 && errno == EMSGSIZE)
-					__atomic_add_fetch(
-						&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_size_undercount_macsec,
-						1, __ATOMIC_RELAXED);
-				else if (n >= 0)
-					__atomic_add_fetch(
-						&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_live_macsec,
-						1, __ATOMIC_RELAXED);
-				else
-					__atomic_add_fetch(
-						&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_silent_macsec,
-						1, __ATOMIC_RELAXED);
-			}
-			close(sub_fd);
-		}
+		nlmsg_link_sub_classify(sub_fd, rc,
+			&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_size_undercount_macsec,
+			&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_live_macsec,
+			&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_silent_macsec,
+			&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_unarmed_macsec);
 	}
 
 	if (rc != 0) {

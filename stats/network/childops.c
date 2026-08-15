@@ -112,6 +112,50 @@ static void dump_stats_render_packet_qdisc_bypass_unanchored_l2(void)
 			  shm->stats.packet_qdisc_bypass_unanchored_l2.completed_ok,
 			  shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_silent_macsec,
 			  shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_unarmed_macsec);
+
+	/*
+	 * Per-kind if_nlmsg_size() sweep.  Emit each kind's counters and,
+	 * mirroring the macsec positive-control warn above, flag any kind
+	 * that created links but never delivered a broadcast: its zero
+	 * under-count is meaningless because the oracle could not fire.
+	 * Kept per kind so a single noisy kind cannot mask the others.
+	 * Labels track enum nlmsg_sweep_kind order in the childop.
+	 */
+	{
+		static const char *const kname[NLMSG_SWEEP_NKINDS] = {
+			"dummy", "bridge", "ifb", "nlmon", "bond",
+			"gre", "vlan", "macvlan", "vxlan", "veth",
+		};
+		unsigned int k;
+
+		for (k = 0; k < NLMSG_SWEEP_NKINDS; k++) {
+			char m[48];
+			unsigned long created = shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_sweep_created[k];
+			unsigned long under   = shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_sweep_undercount[k];
+			unsigned long live    = shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_sweep_live[k];
+			unsigned long silent  = shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_sweep_silent[k];
+
+			/* Unsupported kind / never ran: stay terse. */
+			if (!created && !under && !live && !silent)
+				continue;
+
+			snprintf(m, sizeof(m), "sweep_%s_created", kname[k]);
+			stat_row("packet_qdisc_bypass_unanchored_l2", m, created);
+			snprintf(m, sizeof(m), "sweep_%s_undercount", kname[k]);
+			stat_row("packet_qdisc_bypass_unanchored_l2", m, under);
+			snprintf(m, sizeof(m), "sweep_%s_live", kname[k]);
+			stat_row("packet_qdisc_bypass_unanchored_l2", m, live);
+			snprintf(m, sizeof(m), "sweep_%s_silent", kname[k]);
+			stat_row("packet_qdisc_bypass_unanchored_l2", m, silent);
+
+			if (created > 0 && live == 0)
+				outputerr("nlmsg_sweep[%s]: %lu link(s) created but the "
+					  "positive control never fired (silent=%lu) — the "
+					  "if_nlmsg_size() oracle is unproven for this kind; "
+					  "its zero under-count is meaningless\n",
+					  kname[k], created, silent);
+		}
+	}
 }
 
 static void dump_stats_render_packet_fanout_thrash(void)
