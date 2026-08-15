@@ -1051,10 +1051,17 @@ static int iter_one_in_ns(void *arg)
 	 * RTNLGRP_LINK subscriber oracle: open a second NETLINK_ROUTE socket
 	 * subscribed to RTNLGRP_LINK before the RTM_NEWLINK call.  When
 	 * if_nlmsg_size() under-counts the space rtnl_fill_ifinfo() needs,
-	 * rtmsg_ifinfo_build_skb() WARNs and calls rtnl_set_sk_err(), which
-	 * sets sk_err on every RTNLGRP_LINK subscriber.  The subsequent
-	 * MSG_DONTWAIT recv() then returns -1 / ENOBUFS — userspace-visible
-	 * without dmesg.  Count per-kind rather than abort.
+	 * rtmsg_ifinfo_build_skb() WARNs and calls rtnl_set_sk_err() with
+	 * err = -EMSGSIZE.  netlink_set_err() negates that to a positive
+	 * sk_err (net/netlink/af_netlink.c: "sk->sk_err wants a positive
+	 * error value"), so do_one_set_err() stores EMSGSIZE on every
+	 * RTNLGRP_LINK subscriber.  The subsequent MSG_DONTWAIT recv() then
+	 * returns -1 / EMSGSIZE — userspace-visible without dmesg.
+	 *
+	 * Match ONLY EMSGSIZE: EAGAIN is the normal no-traffic case, and
+	 * ENOBUFS is a genuine broadcast receive-buffer overrun (or an skb
+	 * OOM in rtmsg_ifinfo_build_skb), neither of which is a size-
+	 * accounting failure.  Count per-kind rather than abort.
 	 */
 	{
 		int sub_fd;
@@ -1076,7 +1083,7 @@ static int iter_one_in_ns(void *arg)
 		if (sub_fd >= 0) {
 			unsigned char rbuf[128];
 			ssize_t n = recv(sub_fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
-			if (n < 0 && errno == ENOBUFS)
+			if (n < 0 && errno == EMSGSIZE)
 				__atomic_add_fetch(
 					&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_size_undercount_macsec,
 					1, __ATOMIC_RELAXED);

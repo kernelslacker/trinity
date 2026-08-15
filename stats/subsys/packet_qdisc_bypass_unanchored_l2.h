@@ -38,7 +38,7 @@ struct packet_qdisc_bypass_unanchored_l2_stats {
 					   * call was removed, or the lane was disabled. */
 	unsigned long macsec_sa_install_failed; /* TX SA add failed: other non-zero error */
 	unsigned long completed_ok;	/* iter reached clean teardown */
-	/* if_nlmsg_size() oracle: RTNLGRP_LINK subscriber saw ENOBUFS from
+	/* if_nlmsg_size() oracle: RTNLGRP_LINK subscriber saw EMSGSIZE from
 	 * rtnl_set_sk_err() when creating a macsec link, meaning
 	 * rtmsg_ifinfo_build_skb() warned and poisoned subscribed sockets. */
 	unsigned long nlmsg_size_undercount_macsec;
