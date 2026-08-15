@@ -33,12 +33,20 @@
  * 5. rotation_boundary       -- strategy rotation clock (fleet_op_count
  *                               = op_count from per-child sum) triggers
  *                               at the correct window boundary.
- * 6. child_respawn_preserve  -- simulated child exit + respawn resets
- *                               the per-child lossless_op_count to 0
- *                               for the new child, but the parent's
- *                               total_op_count accumulates correctly
- *                               because the parent drains (and adds)
- *                               before respawning.
+ * 6. child_respawn_preserve  -- simulated child exit + respawn preserves
+ *                               lossless_op_count in the ring page
+ *                               (mirrors stats_ring_init which does NOT
+ *                               zero lossless_op_count on respawn).
+ *                               The parent drain reads the counter
+ *                               directly; no compensation is needed.
+ *
+ * 7. delta_guard             -- exercises the delta-based plausibility
+ *                               arm from dfb8993f4632: a scribble to
+ *                               P + 1e8 + 1 (below the absolute ceiling
+ *                               but above the per-drain delta limit)
+ *                               stalls the aggregate across repeated
+ *                               drains and survives a stats_ring_init
+ *                               respawn (permanence hazard).
  */
 
 #include <stdbool.h>
@@ -57,6 +65,13 @@
  */
 #define RING_CAP 1024
 
+/*
+ * Mirrors the two plausibility constants in stats/stats-ring.c.
+ * Keep these in sync if the production values change.
+ */
+#define LOSSLESS_OP_COUNT_SANE_CEILING        (1UL << 52)
+#define LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN (100000000UL)  /* 1e8 ops/drain */
+
 struct sim_ring {
 	unsigned long lossless_op_count;	/* per-child; RELAXED atomic in production
 					 * (harness is single-threaded) */
@@ -68,6 +83,20 @@ struct sim_ring {
 static void ring_init(struct sim_ring *r)
 {
 	memset(r, 0, sizeof(*r));
+}
+
+/*
+ * Mirrors production stats_ring_init(): clears ring slots and
+ * head/tail but PRESERVES lossless_op_count (run-monotonic across
+ * child respawns -- see stats-ring.c:stats_ring_init and
+ * stats_ring.h:lossless_op_count).
+ */
+static void ring_respawn_init(struct sim_ring *r)
+{
+	unsigned long saved = r->lossless_op_count;
+
+	memset(r, 0, sizeof(*r));
+	r->lossless_op_count = saved;
 }
 
 /*
@@ -164,6 +193,63 @@ static void sim_drain(struct sim_ring *ring,
 
 	/* Step 5: publish fleet_op_count */
 	*fleet_op_count = agg->op_count;
+}
+
+/* ------------------------------------------------------------------ */
+/* Delta-guarded drain                                                  */
+/*                                                                     */
+/* Mirrors the two-layer plausibility guard added in dfb8993f4632:    */
+/*   1. absolute ceiling: slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING   */
+/*   2. delta ceiling:    slot_ops - prev > MAX_DELTA_PER_DRAIN,      */
+/*      or backward jump: slot_ops < prev (monotonicity violated)     */
+/*                                                                     */
+/* Returns true when the slot was accepted (aggregate updated),        */
+/* false when rejected (aggregate stalls at last good value).          */
+/*                                                                     */
+/* prev_op and reported mirror the per-slot cross-drain state          */
+/* (prev_lossless_op_count[] and slot_implausible_reported[] in        */
+/* production).                                                        */
+/* ------------------------------------------------------------------ */
+
+static bool sim_drain_guarded(struct sim_ring *ring,
+			      struct sim_aggregate *agg,
+			      unsigned long *fleet_op_count,
+			      unsigned long *prev_op,
+			      bool *reported)
+{
+	unsigned long slot_ops;
+	unsigned long prev;
+	bool absolute_bad;
+	bool delta_bad;
+
+	(void)ring_drain(ring);
+
+	slot_ops     = ring->lossless_op_count;
+	prev         = *prev_op;
+	absolute_bad = (slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING);
+	delta_bad    = (prev > 0) &&
+		       ((slot_ops < prev) ||
+			(slot_ops - prev > LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN));
+
+	if (absolute_bad || delta_bad) {
+		/*
+		 * Rate-limit flag: only emits a diagnostic on first detection.
+		 * Aggregate stalls; prev_op is NOT updated so the delta check
+		 * stays anchored to the last known-good baseline.
+		 */
+		*reported = true;
+		agg->op_count   = agg->total_op_count - agg->epoch_start_op_count;
+		*fleet_op_count = agg->op_count;
+		return false;
+	}
+
+	/* Plausible: re-arm reporting, advance prev baseline, update agg. */
+	*reported           = false;
+	*prev_op            = slot_ops;
+	agg->total_op_count = slot_ops;
+	agg->op_count       = agg->total_op_count - agg->epoch_start_op_count;
+	*fleet_op_count     = agg->op_count;
+	return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -426,11 +512,13 @@ static void test_rotation_boundary(void)
 /* ------------------------------------------------------------------ */
 /* Test 6: child_respawn_preserve                                      */
 /*                                                                     */
-/* A child exits and is respawned.  In the real codebase the parent   */
-/* drains before recycling the slot, so the pre-exit lossless_op_count */
-/* is captured in total_op_count.  The new child gets a fresh ring    */
-/* (lossless_op_count = 0); its ops accumulate from 0 but the parent  */
-/* adds its lossless_op_count on top of the previously captured total. */
+/* A child exits and is respawned.  Production stats_ring_init() does  */
+/* NOT zero lossless_op_count (it is run-monotonic across respawns).  */
+/* The ring page is allocated once per slot in shm.c and never        */
+/* reallocated; lossless_op_count simply continues incrementing in    */
+/* the new child.  The parent drain reads the counter directly and    */
+/* needs no compensation: total_op_count = lossless_op_count after    */
+/* any drain, naturally spanning both child lifetimes.                 */
 /* ------------------------------------------------------------------ */
 
 static void test_child_respawn_preserve(void)
@@ -441,7 +529,6 @@ static void test_child_respawn_preserve(void)
 	unsigned long pre_exit_ops = 400;
 	unsigned long post_respawn_ops = 300;
 	unsigned long i;
-	unsigned long captured_before_respawn;
 
 	ring_init(&ring);
 	agg_init(&agg);
@@ -452,40 +539,30 @@ static void test_child_respawn_preserve(void)
 		sim_op_complete(&ring);
 	sim_drain(&ring, &agg, &fleet);
 
-	SELFTEST_ASSERT(agg.op_count == pre_exit_ops);
-
-	/* Parent captures total before respawn (drain already done). */
-	captured_before_respawn = agg.total_op_count;
-	SELFTEST_ASSERT(captured_before_respawn == pre_exit_ops);
+	SELFTEST_ASSERT(agg.op_count       == pre_exit_ops);
+	SELFTEST_ASSERT(agg.total_op_count == pre_exit_ops);
+	SELFTEST_ASSERT(ring.lossless_op_count == pre_exit_ops);
 
 	/*
-	 * Child A exits.  Child B gets a fresh ring (lossless_op_count=0).
-	 * The parent's total_op_count keeps the pre-exit tally; subsequent
-	 * drains sum child B's fresh lossless_op_count on top of the base.
-	 *
-	 * Simulate: re-initialise ring (fresh child B), then run ops, then
-	 * drain.  The drain sets total_op_count = ring.lossless_op_count
-	 * which is only child B's ops.  To model the real parent behaviour
-	 * (parent accumulates across child lifetimes), the drain must start
-	 * from epoch_start and add the per-child field.  In the single-child
-	 * model here, the parent's "captured" value is folded into
-	 * epoch_start_op_count so the drain's (total - epoch_start) gives
-	 * the right delta.  Adjust epoch_start to reflect the carry-over.
+	 * Child A exits.  Production stats_ring_init() is called on the
+	 * same ring page; it clears slots/head/tail but leaves
+	 * lossless_op_count intact.  Simulate with ring_respawn_init().
 	 */
-	agg.epoch_start_op_count = 0;	/* run started at 0, not at epoch reset */
+	ring_respawn_init(&ring);
+	SELFTEST_ASSERT(ring.lossless_op_count == pre_exit_ops);
 
-	ring_init(&ring);	/* fresh child B */
-
+	/* Child B runs post_respawn_ops; lossless_op_count keeps climbing. */
 	for (i = 0; i < post_respawn_ops; i++)
 		sim_op_complete(&ring);
 
+	SELFTEST_ASSERT(ring.lossless_op_count == pre_exit_ops + post_respawn_ops);
+
 	/*
-	 * Simulate multi-child parent drain: total = pre_exit (captured) +
-	 * child B's lossless_op_count.
+	 * Drain: total_op_count = lossless_op_count directly -- no
+	 * compensation required.  The run-monotonic counter already spans
+	 * both child lifetimes.
 	 */
-	agg.total_op_count = captured_before_respawn + ring.lossless_op_count;
-	agg.op_count = agg.total_op_count - agg.epoch_start_op_count;
-	fleet = agg.op_count;
+	sim_drain(&ring, &agg, &fleet);
 
 	SELFTEST_ASSERT(agg.total_op_count == pre_exit_ops + post_respawn_ops);
 	SELFTEST_ASSERT(agg.op_count       == pre_exit_ops + post_respawn_ops);
@@ -495,6 +572,98 @@ static void test_child_respawn_preserve(void)
 			- agg.epoch_start_op_count;
 		SELFTEST_ASSERT(epoch_ops == pre_exit_ops + post_respawn_ops);
 	}
+}
+
+/* ------------------------------------------------------------------ */
+/* Test 7: delta_guard                                                 */
+/*                                                                     */
+/* Exercises the delta-based plausibility arm added in dfb8993f4632:  */
+/*                                                                     */
+/* Phase 1: run baseline_ops normally; first guarded drain accepts and */
+/*           records prev = baseline_ops.                              */
+/*                                                                     */
+/* Phase 2: scribble lossless_op_count to P + MAX_DELTA + 1.  The    */
+/*           absolute ceiling passes (far below 2^52); the delta arm  */
+/*           trips (increment > 1e8).  Repeated drains (including     */
+/*           while the child keeps incrementing in the corrupted       */
+/*           range) are all rejected and the aggregate stalls.         */
+/*                                                                     */
+/* Phase 3: respawn via ring_respawn_init() (mirrors production        */
+/*           stats_ring_init -- lossless_op_count is preserved).       */
+/*           The scribble survives; rejection persists and the         */
+/*           aggregate remains stalled -- the permanence hazard is     */
+/*           directly observable.                                      */
+/* ------------------------------------------------------------------ */
+
+static void test_delta_guard(void)
+{
+	struct sim_ring ring;
+	struct sim_aggregate agg;
+	unsigned long fleet = 0;
+	unsigned long prev_op = 0;
+	bool reported = false;
+	unsigned long baseline_ops = 500;
+	unsigned long stalled_total;
+	bool accepted;
+
+	ring_init(&ring);
+	agg_init(&agg);
+
+	/* Phase 1: establish baseline P. */
+	{
+		unsigned long i;
+
+		for (i = 0; i < baseline_ops; i++)
+			sim_op_complete(&ring);
+	}
+
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported);
+	SELFTEST_ASSERT(accepted);
+	SELFTEST_ASSERT(agg.total_op_count == baseline_ops);
+	SELFTEST_ASSERT(prev_op == baseline_ops);
+	SELFTEST_ASSERT(!reported);
+
+	/*
+	 * Phase 2: scribble lossless_op_count to P + MAX_DELTA + 1.
+	 * Below SANE_CEILING (absolute guard passes) but the increment from
+	 * prev exceeds MAX_DELTA_PER_DRAIN (delta guard trips).
+	 */
+	ring.lossless_op_count =
+		baseline_ops + LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN + 1;
+	SELFTEST_ASSERT(ring.lossless_op_count < LOSSLESS_OP_COUNT_SANE_CEILING);
+
+	stalled_total = agg.total_op_count;
+
+	/* Drain 1 after scribble: delta guard trips; aggregate stalls. */
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported);
+	SELFTEST_ASSERT(!accepted);
+	SELFTEST_ASSERT(reported);
+	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
+	/* prev_op must not have advanced (baseline stays anchored). */
+	SELFTEST_ASSERT(prev_op == baseline_ops);
+
+	/* Child keeps incrementing inside the corrupted range. */
+	ring.lossless_op_count += 1000;
+
+	/* Drain 2: delta from original prev is larger; still rejected. */
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported);
+	SELFTEST_ASSERT(!accepted);
+	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
+	SELFTEST_ASSERT(prev_op == baseline_ops);
+
+	/*
+	 * Phase 3: respawn via ring_respawn_init() (mirrors production
+	 * stats_ring_init which preserves lossless_op_count).
+	 * The scribbled value survives the respawn.
+	 */
+	ring_respawn_init(&ring);
+	SELFTEST_ASSERT(ring.lossless_op_count ==
+			baseline_ops + LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN + 1001);
+
+	/* Drain after respawn: rejection persists; aggregate stalls permanently. */
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported);
+	SELFTEST_ASSERT(!accepted);
+	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
 }
 
 /* ------------------------------------------------------------------ */
@@ -510,4 +679,5 @@ void stats_opclock_lossless_self_check(void)
 	test_epoch_termination();
 	test_rotation_boundary();
 	test_child_respawn_preserve();
+	test_delta_guard();
 }
