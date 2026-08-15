@@ -288,6 +288,17 @@ struct childop_stats {
 	 * fetch: cumulative diagnostic, single-writer-per-child. */
 	unsigned long direct_syscalls[NR_CHILD_OP_TYPES];
 
+	/* Fleet-total count of direct-syscall tally calls that were
+	 * discarded because the op index was out of range
+	 * (childop_direct_syscalls_add() reject path).  Counts the
+	 * number of syscalls lost from accounting, i.e. the `n`
+	 * argument that was passed to the rejected call.  A non-zero
+	 * value means doubly-forked bodies (where this_child() returns
+	 * NULL) completed work that is invisible to the per-op
+	 * direct_syscalls[] telemetry.  RELAXED add-fetch: cumulative
+	 * diagnostic, multi-producer. */
+	unsigned long direct_tally_dropped;
+
 	/* Per-op SIGALRM-timeout counters for the 1-second alt-op stall
 	 * watchdog (arm at child.c is_alt_op `alarm(1)`, fire in the
 	 * sigalrm_pending block at the top of the next iter, disarm at

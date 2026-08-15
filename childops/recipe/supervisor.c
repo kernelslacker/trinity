@@ -367,12 +367,10 @@ static void seccomp_listener_inner(enum child_op_type op)
 	struct utsname u;
 
 	(void)trinity_raw_syscall(__NR_uname, &u);
-	/* Tally the one raw-syscall site directly into shm (shm is MAP_SHARED
-	 * across fork).  childop_direct_syscalls_add() is safe from a
-	 * doubly-forked context because it uses atomic ops on the shared
-	 * stats array; only this_child() fails there. */
-	if ((int)op >= 0 && op < NR_CHILD_OP_TYPES)
-		childop_direct_syscalls_add(op, 1);
+	/* childop_direct_syscalls_add() is the single choke point: it rejects
+	 * and counts out-of-range ops (including the NR_CHILD_OP_TYPES sentinel
+	 * when this_child() returns NULL in doubly-forked contexts). */
+	childop_direct_syscalls_add(op, 1);
 
 	(void)execl("/bin/true", "/bin/true", (char *)NULL);
 
@@ -609,11 +607,10 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 		      0UL, 0UL, 0UL);
 	ncalls++;  /* prctl */
-	/* Publish the inner-body tally before either _exit().  shm is
-	 * accessible from a doubly-forked context via its MAP_SHARED
-	 * mapping; only this_child() returns NULL at this depth. */
-	if ((int)op >= 0 && op < NR_CHILD_OP_TYPES)
-		childop_direct_syscalls_add(op, ncalls);
+	/* childop_direct_syscalls_add() is the single choke point: it rejects
+	 * and counts out-of-range ops (including the NR_CHILD_OP_TYPES sentinel
+	 * when this_child() returns NULL in doubly-forked contexts). */
+	childop_direct_syscalls_add(op, ncalls);
 	if (getppid() == 1)
 		_exit(0);
 

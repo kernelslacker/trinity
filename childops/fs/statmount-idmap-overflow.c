@@ -653,7 +653,6 @@ static int statmount_idmap_loop_in_ns(void *arg)
 	unsigned int i;
 	unsigned long direct_calls = 0;
 	const enum child_op_type op = (enum child_op_type)ctx->op_type;
-	const bool valid_op = ((int)op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	/* MS_PRIVATE on / so anything we mount cannot propagate even
 	 * if the host's mount namespace had MS_SHARED propagation.
@@ -676,8 +675,7 @@ static int statmount_idmap_loop_in_ns(void *arg)
 					 ctx->scratch_cap);
 	}
 
-	if (valid_op)
-		childop_direct_syscalls_add(op, direct_calls);
+	childop_direct_syscalls_add(op, direct_calls);
 
 	return 0;
 }

@@ -314,8 +314,9 @@ bool qrtr_bind_race(struct childdata *child)
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
 	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot.  Skip the stats
-	 * writes entirely when the snapshot is out of range. */
+	 * accounting on the same valid_op snapshot.  Guard array-indexed
+	 * writes on valid_op; childop_direct_syscalls_add() is its own
+	 * choke point and is called unconditionally. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
@@ -346,8 +347,7 @@ bool qrtr_bind_race(struct childdata *child)
 			break;
 	}
 
-	if (valid_op)
-		childop_direct_syscalls_add(op, direct_calls);
+	childop_direct_syscalls_add(op, direct_calls);
 
 	return true;
 }

@@ -507,6 +507,12 @@ static const struct {
 	  offsetof(struct stats_s, childop.fd_probe_calls) },
 	{ "fd_probe_ns_total",
 	  offsetof(struct stats_s, childop.fd_probe_ns_total) },
+	/* Syscalls lost from direct-syscall accounting because
+	 * childop_direct_syscalls_add() was called with an out-of-range
+	 * op (typically from a doubly-forked context where this_child()
+	 * returns NULL and the sentinel NR_CHILD_OP_TYPES is passed). */
+	{ "direct_tally_dropped",
+	  offsetof(struct stats_s, childop.direct_tally_dropped) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, diag.pagecache_canary_corrupt_caught) },
 	{ "objpool_array_stale_caught",

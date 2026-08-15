@@ -11,6 +11,7 @@ MISSING:af_alg_probe.done              # not yet wired to af_alg_probe descripto
 MISSING:childop.walltime_ns            # internal per-child wall-time accumulator; not yet JSON-wired
 MISSING:childop.fd_probe_calls         # fd-probe diagnostic; not yet JSON-wired
 MISSING:childop.fd_probe_ns_total      # fd-probe timing accumulator; not yet JSON-wired
+MISSING:childop.direct_tally_dropped   # drop-counter for out-of-range ops; surfaced via counter-rates periodic stream, not main JSON blob
 MISSING:childop.decay_slot             # bandit slot bookkeeping; not yet JSON-wired
 MISSING:ebpf_gen.map_fd_substituted    # ebpf_gen field; not yet wired to bpf_fd_provider descriptor
 MISSING:ebpf_gen.helper_call_emitted   # ebpf_gen field; not yet wired

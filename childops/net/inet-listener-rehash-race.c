@@ -766,7 +766,6 @@ bool inet_listener_rehash_race(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.inet_listener_rehash_race.completed_ok,
 			   1, __ATOMIC_RELAXED);
-	if (valid_op)
-		childop_direct_syscalls_add(op, direct_calls);
+	childop_direct_syscalls_add(op, direct_calls);
 	return true;
 }

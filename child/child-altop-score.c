@@ -126,8 +126,13 @@ void childop_outcome_window_dump(void)
  */
 void childop_direct_syscalls_add(enum child_op_type op, unsigned long n)
 {
-	if ((int) op < 0 || op >= NR_CHILD_OP_TYPES)
+	if ((int) op < 0 || op >= NR_CHILD_OP_TYPES) {
+		if (n > 0)
+			__atomic_add_fetch(
+				&shm->stats.childop.direct_tally_dropped,
+				n, __ATOMIC_RELAXED);
 		return;
+	}
 	if (n == 0)
 		return;
 	__atomic_add_fetch(&shm->stats.childop.direct_syscalls[op], n,
