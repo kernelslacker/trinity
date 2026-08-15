@@ -428,8 +428,8 @@ fi
 # Step 2: narrow to members that have a counter write site.
 # Patterns: __atomic_add_fetch(&shm->X, ...) or shm->X++
 while IFS= read -r shm_field; do
-	if xargs -0 grep -lqE "__atomic_add_fetch\(&shm->$shm_field[[:space:]]*,|shm->$shm_field\+\+" \
-		   < "$CFILES" 2>/dev/null; then
+	if xargs -0 grep -lE "__atomic_(add_fetch|fetch_add)\(&shm->$shm_field[[:space:]]*,|shm->$shm_field[[:space:]]*\+=|shm->$shm_field\+\+" \
+		   < "$CFILES" 2>/dev/null | grep -q .; then
 		echo "$shm_field"
 	fi
 done < "$SHM_SCALARS" | sort -u > "$SHM_WRITTEN"
