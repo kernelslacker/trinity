@@ -398,9 +398,17 @@ static void stats_publish_locked(void)
  * Single-writer (parent main loop), no locking needed.
  *
  * prev_lossless_op_count[i] — last accepted lossless_op_count for slot i.
- *   Initialised to 0 ("never seen"); delta check is suppressed until
- *   the first valid observation so a freshly started child whose real
- *   counter happens to be large (but < ceiling) is not falsely flagged.
+ *   Always 0 until the first drain accept; do NOT use this field alone
+ *   to gate the delta check — a zero prev suppresses nothing under the
+ *   new scheme (see have_baseline_lossless below).
+ *
+ * have_baseline_lossless[i] — set true on the first accepted drain for
+ *   slot i regardless of the observed value.  The delta guard is armed
+ *   from drain 1 with prev = 0, so any first observation that exceeds
+ *   MAX_DELTA_PER_DRAIN is rejected.  This closes the hole where a
+ *   scribble present on the very first drain was admitted as the
+ *   baseline (prev == 0 disabling the delta arm) and locked
+ *   total_op_count HIGH for the run.
  *
  * slot_implausible_reported[i] — set true after the first output() for
  *   slot i so subsequent drain iterations stay silent.  Reset to false
@@ -408,6 +416,7 @@ static void stats_publish_locked(void)
  *   again, e.g. after a child respawn clears the scribbled region).
  */
 static unsigned long *prev_lossless_op_count;
+static bool         *have_baseline_lossless;
 static bool         *slot_implausible_reported;
 
 void stats_ring_drain_all(void)
@@ -422,6 +431,8 @@ void stats_ring_drain_all(void)
 	if (prev_lossless_op_count == NULL) {
 		prev_lossless_op_count =
 			calloc(max_children, sizeof(*prev_lossless_op_count));
+		have_baseline_lossless =
+			calloc(max_children, sizeof(*have_baseline_lossless));
 		slot_implausible_reported =
 			calloc(max_children, sizeof(*slot_implausible_reported));
 	}
@@ -522,10 +533,17 @@ void stats_ring_drain_all(void)
 					     ? prev_lossless_op_count[i] : 0;
 			bool absolute_bad = (slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING);
 			/*
-			 * Delta check only when we have a prior baseline (prev > 0).
-			 * A backward jump (slot_ops < prev) also violates monotonicity.
+			 * Delta check once we have recorded at least one drain for
+			 * this slot (have_baseline_lossless[i]).  Using an explicit
+			 * baseline flag rather than the (prev > 0) sentinel arms
+			 * the guard from drain 1 with prev = 0, so a scribble on
+			 * the very first drain is caught rather than admitted as
+			 * the baseline.  A backward jump (slot_ops < prev) also
+			 * violates the monotonic invariant.
 			 */
-			bool delta_bad = (prev > 0) &&
+			bool have_base = (have_baseline_lossless != NULL) &&
+					  have_baseline_lossless[i];
+			bool delta_bad = have_base &&
 					 ((slot_ops < prev) ||
 					  (slot_ops - prev >
 					   LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN));
@@ -556,6 +574,8 @@ void stats_ring_drain_all(void)
 					slot_implausible_reported[i] = false;
 				if (prev_lossless_op_count != NULL)
 					prev_lossless_op_count[i] = slot_ops;
+				if (have_baseline_lossless != NULL)
+					have_baseline_lossless[i] = true;
 				lossless_total += slot_ops;
 			}
 		}

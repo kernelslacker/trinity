@@ -41,12 +41,20 @@
  *                               directly; no compensation is needed.
  *
  * 7. delta_guard             -- exercises the delta-based plausibility
- *                               arm from dfb8993f4632: a scribble to
+ *                               arm from dfb8993f4632 ("stats-ring: add per-slot delta plausibility guard for lossless_op_count"): a scribble to
  *                               P + 1e8 + 1 (below the absolute ceiling
  *                               but above the per-drain delta limit)
  *                               stalls the aggregate across repeated
  *                               drains and survives a stats_ring_init
  *                               respawn (permanence hazard).
+ *
+ * 8. first_drain_scribble     -- mirror of test 7: scribble a
+ *                               pointer-shaped value (below absolute
+ *                               ceiling) BEFORE the first drain so
+ *                               prev == 0 and have_baseline is false.
+ *                               Verifies the guard rejects it rather
+ *                               than admitting it as the baseline and
+ *                               locking total_op_count HIGH.
  */
 
 #include <stdbool.h>
@@ -198,7 +206,7 @@ static void sim_drain(struct sim_ring *ring,
 /* ------------------------------------------------------------------ */
 /* Delta-guarded drain                                                  */
 /*                                                                     */
-/* Mirrors the two-layer plausibility guard added in dfb8993f4632:    */
+/* Mirrors the two-layer plausibility guard in stats/stats-ring.c:    */
 /*   1. absolute ceiling: slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING   */
 /*   2. delta ceiling:    slot_ops - prev > MAX_DELTA_PER_DRAIN,      */
 /*      or backward jump: slot_ops < prev (monotonicity violated)     */
@@ -206,15 +214,18 @@ static void sim_drain(struct sim_ring *ring,
 /* Returns true when the slot was accepted (aggregate updated),        */
 /* false when rejected (aggregate stalls at last good value).          */
 /*                                                                     */
-/* prev_op and reported mirror the per-slot cross-drain state          */
-/* (prev_lossless_op_count[] and slot_implausible_reported[] in        */
-/* production).                                                        */
+/* prev_op, have_baseline, and reported mirror the per-slot cross-drain*/
+/* state (prev_lossless_op_count[], have_baseline_lossless[], and      */
+/* slot_implausible_reported[] in production).  have_baseline must be  */
+/* false on first call and is set true on the first accept, arming the */
+/* delta check from drain 1 with prev = 0.                             */
 /* ------------------------------------------------------------------ */
 
 static bool sim_drain_guarded(struct sim_ring *ring,
 			      struct sim_aggregate *agg,
 			      unsigned long *fleet_op_count,
 			      unsigned long *prev_op,
+			      bool *have_baseline,
 			      bool *reported)
 {
 	unsigned long slot_ops;
@@ -227,7 +238,7 @@ static bool sim_drain_guarded(struct sim_ring *ring,
 	slot_ops     = ring->lossless_op_count;
 	prev         = *prev_op;
 	absolute_bad = (slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING);
-	delta_bad    = (prev > 0) &&
+	delta_bad    = (*have_baseline) &&
 		       ((slot_ops < prev) ||
 			(slot_ops - prev > LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN));
 
@@ -245,6 +256,7 @@ static bool sim_drain_guarded(struct sim_ring *ring,
 
 	/* Plausible: re-arm reporting, advance prev baseline, update agg. */
 	*reported           = false;
+	*have_baseline      = true;
 	*prev_op            = slot_ops;
 	agg->total_op_count = slot_ops;
 	agg->op_count       = agg->total_op_count - agg->epoch_start_op_count;
@@ -577,7 +589,9 @@ static void test_child_respawn_preserve(void)
 /* ------------------------------------------------------------------ */
 /* Test 7: delta_guard                                                 */
 /*                                                                     */
-/* Exercises the delta-based plausibility arm added in dfb8993f4632:  */
+/* Exercises the delta-based plausibility arm added in               */
+/* dfb8993f4632 ("stats-ring: add per-slot delta plausibility guard  */
+/* for lossless_op_count"):                                          */
 /*                                                                     */
 /* Phase 1: run baseline_ops normally; first guarded drain accepts and */
 /*           records prev = baseline_ops.                              */
@@ -601,6 +615,7 @@ static void test_delta_guard(void)
 	struct sim_aggregate agg;
 	unsigned long fleet = 0;
 	unsigned long prev_op = 0;
+	bool have_baseline = false;
 	bool reported = false;
 	unsigned long baseline_ops = 500;
 	unsigned long stalled_total;
@@ -617,10 +632,11 @@ static void test_delta_guard(void)
 			sim_op_complete(&ring);
 	}
 
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported);
 	SELFTEST_ASSERT(accepted);
 	SELFTEST_ASSERT(agg.total_op_count == baseline_ops);
 	SELFTEST_ASSERT(prev_op == baseline_ops);
+	SELFTEST_ASSERT(have_baseline);
 	SELFTEST_ASSERT(!reported);
 
 	/*
@@ -635,7 +651,7 @@ static void test_delta_guard(void)
 	stalled_total = agg.total_op_count;
 
 	/* Drain 1 after scribble: delta guard trips; aggregate stalls. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(reported);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
@@ -646,7 +662,7 @@ static void test_delta_guard(void)
 	ring.lossless_op_count += 1000;
 
 	/* Drain 2: delta from original prev is larger; still rejected. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
 	SELFTEST_ASSERT(prev_op == baseline_ops);
@@ -661,9 +677,64 @@ static void test_delta_guard(void)
 			baseline_ops + LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN + 1001);
 
 	/* Drain after respawn: rejection persists; aggregate stalls permanently. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
+}
+
+/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* Test 8: first_drain_scribble                                        */
+/*                                                                     */
+/* Mirror of test 7: scribble a pointer-shaped value (below the       */
+/* absolute ceiling) BEFORE the first drain, so have_baseline is false */
+/* and prev == 0.  Under the old (prev > 0) scheme the delta arm was  */
+/* disabled and the scribble was admitted as the baseline, locking     */
+/* total_op_count HIGH.  The new have_baseline scheme must reject it.  */
+/* ------------------------------------------------------------------ */
+
+static void test_first_drain_scribble(void)
+{
+	struct sim_ring ring;
+	struct sim_aggregate agg;
+	unsigned long fleet = 0;
+	unsigned long prev_op = 0;
+	bool have_baseline = false;
+	bool reported = false;
+	bool accepted;
+
+	/*
+	 * A pointer-shaped value: below SANE_CEILING (2^52) but well above
+	 * MAX_DELTA_PER_DRAIN.  This mimics a fuzzed arg pointer stomping
+	 * the lossless_op_count field before any legitimate op is observed.
+	 * 0x00007f2a12345678 == 139816774608504 < 2^52 == 4503599627370496.
+	 */
+	const unsigned long scribble = 0x00007f2a12345678UL;
+
+	ring_init(&ring);
+	agg_init(&agg);
+
+	/* No ops have run; plant the scribble before the first drain. */
+	ring.lossless_op_count = scribble;
+
+	/* Sanity: value is below the absolute ceiling so only delta catches it. */
+	SELFTEST_ASSERT(scribble < LOSSLESS_OP_COUNT_SANE_CEILING);
+	/* Sanity: value exceeds the per-drain delta limit. */
+	SELFTEST_ASSERT(scribble > LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN);
+
+	/*
+	 * First drain: have_baseline is false so prev == 0.  The delta from
+	 * 0 to scribble exceeds MAX_DELTA_PER_DRAIN.  Must be rejected.
+	 */
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported);
+	SELFTEST_ASSERT(!accepted);
+	SELFTEST_ASSERT(reported);
+	/* Aggregate must not have moved. */
+	SELFTEST_ASSERT(agg.total_op_count == 0);
+	/* have_baseline must remain false: no good baseline recorded. */
+	SELFTEST_ASSERT(!have_baseline);
+	/* prev_op must remain 0: bad value must not pollute the anchor. */
+	SELFTEST_ASSERT(prev_op == 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -680,4 +751,5 @@ void stats_opclock_lossless_self_check(void)
 	test_rotation_boundary();
 	test_child_respawn_preserve();
 	test_delta_guard();
+	test_first_drain_scribble();
 }
