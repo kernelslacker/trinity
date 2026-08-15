@@ -361,4 +361,132 @@ if [ -s "$UNALLOWED" ]; then
 fi
 
 echo "PASS: $NAME: $field_count stats_s fields (flat + nested), all reachable or allowlisted"
+
+# =====================================================================
+# shm_s scalar counter coverage (additive extension).
+#
+# The stats_s walker above covers shm->stats.<path>.  A scalar
+# counter declared directly in struct shm_s -- e.g. lo_up_fail
+# (four write sites, no render path, added in 7f1219f165e7 ("add lo_up_fail counter to surface silent lo bring-up failures")) -- lies
+# outside that population entirely: the stats_s walker cannot
+# enumerate it, and the consumer-read grep only matches shm->stats.*,
+# so a producer with no render path passes silently.  This section
+# closes that gap without touching any existing logic.
+#
+# Population: scalar (non-array) members of struct shm_s in
+# include/shm.h that have at least one counter write site:
+#   __atomic_add_fetch(&shm->X, ...)  or  shm->X++
+#
+# Each member in the population must either:
+#   1. appear on a non-write, non-comment source line (evidence that
+#      something reads the value back out), or
+#   2. be listed in the explicit allowlist below.
+#
+# Population count is reported; zero is WARN (parser broken).
+# =====================================================================
+SHM_H="$ROOT/include/shm.h"
+[ -r "$SHM_H" ] || fail "cannot read $SHM_H"
+
+SHM_SCALARS="$TMP/shm_scalars"
+SHM_WRITTEN="$TMP/shm_written"
+SHM_READ="$TMP/shm_read"
+SHM_UNREACHED="$TMP/shm_unreached"
+SHM_UNALLOWED="$TMP/shm_unallowed"
+
+# Step 1: enumerate scalar direct members of struct shm_s.
+# Track brace depth so nested anonymous struct/union bodies are skipped;
+# only direct (depth-0) members are emitted.
+# Excluded: arrays ([), bool, enum, pointer, lock_t, uid_t, struct members.
+awk '
+/^struct shm_s \{/ { in_s=1; depth=0; next }
+!in_s { next }
+{
+    if (/\{/) depth++
+    if (depth > 0 && /\}/) { depth--; next }
+    if (depth > 0) next
+    if (/^\};/) { in_s=0; next }
+    line = $0
+    sub(/\/\*.*/, "", line)
+    sub(/[[:space:]]+$/, "", line)
+    if (line !~ /^[[:space:]]*(unsigned[[:space:]]+(int|long|char)|uint8_t|uint16_t|uint32_t|uint64_t|int)[[:space:]]/) next
+    if (line ~ /\[/) next
+    gsub(/[[:space:]]*(__attribute__[^;]*)?[[:space:]]*;.*/, "", line)
+    sub(/.*[[:space:]]/, "", line)
+    if (line ~ /^[a-zA-Z_][a-zA-Z0-9_]*$/) print line
+}
+' "$SHM_H" | sort -u > "$SHM_SCALARS"
+
+shm_scalar_count="$(wc -l < "$SHM_SCALARS")"
+if [ "$shm_scalar_count" -eq 0 ]; then
+	echo "WARN: $NAME: shm_s scalar enumeration returned 0 fields (parser broken?)" >&2
+fi
+
+# Step 2: narrow to members that have a counter write site.
+# Patterns: __atomic_add_fetch(&shm->X, ...) or shm->X++
+while IFS= read -r shm_field; do
+	if xargs -0 grep -lqE "__atomic_add_fetch\(&shm->$shm_field[[:space:]]*,|shm->$shm_field\+\+" \
+		   < "$CFILES" 2>/dev/null; then
+		echo "$shm_field"
+	fi
+done < "$SHM_SCALARS" | sort -u > "$SHM_WRITTEN"
+
+shm_written_count="$(wc -l < "$SHM_WRITTEN")"
+if [ "$shm_written_count" -eq 0 ]; then
+	echo "WARN: $NAME: shm_s written-scalar population is 0 (write-site grep broken?)" >&2
+fi
+
+# Step 3: find members with a non-write, non-comment read in the tree.
+# A line counts as a read if:
+#   - it contains shm->X (as a whole word), AND
+#   - it is not a write (__atomic_add_fetch / shm->X++ / shm->X =), AND
+#   - it is not a comment line (first non-space is * or //).
+while IFS= read -r shm_field; do
+	if xargs -0 grep -hE "\bshm->$shm_field\b" < "$CFILES" 2>/dev/null | \
+	   grep -vE '^[[:space:]]*([*/]|//)' | \
+	   grep -qvE "__atomic_add_fetch.*shm->$shm_field|\bshm->$shm_field[[:space:]]*(\+\+|--)| \
+\bshm->$shm_field[[:space:]]*(=|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
+		echo "$shm_field"
+	fi
+done < "$SHM_WRITTEN" | sort -u > "$SHM_READ"
+
+comm -23 "$SHM_WRITTEN" "$SHM_READ" > "$SHM_UNREACHED"
+
+# Allowlist for shm_s scalar counters with write sites.
+#
+# Operational internal counters (written atomically, read back for
+# protocol decisions, but not surfaced in the operator report):
+#   running_childs      -- spawn-quorum tracker; read by pids.c for
+#                          child-count checks; not a reportable metric.
+#   sibling_freeze_gen  -- freeze-epoch sequencer; read by the sibling
+#                          freeze sweep in child.c; not a metric.
+#   syscalls32_attempted -- biarch probe denominator; read in
+#                          syscall-exec.c to gate 32-bit probing;
+#                          not surfaced in periodic output.
+#
+# Dead-counter escrow (written, no render path; wire up or remove):
+#   lo_up_fail -- fleet-wide lo bring-up failure counter, four write
+#                 sites (rtnl_bring_lo_up, bring_lo_up), zero render
+#                 reads.  Added in 7f1219f165e7 ("add lo_up_fail counter to surface silent lo bring-up failures"); existence proof that
+#                 shm_s counters bypass the stats_s gate entirely.
+#                 Follow-up: wire to stat_row or delete.
+SHM_ALLOWLIST=(
+	running_childs
+	sibling_freeze_gen
+	syscalls32_attempted
+	lo_up_fail
+)
+printf '%s\n' "${SHM_ALLOWLIST[@]}" | sort -u > "$TMP/shm_allow"
+comm -23 "$SHM_UNREACHED" "$TMP/shm_allow" > "$SHM_UNALLOWED"
+
+if [ -s "$SHM_UNALLOWED" ]; then
+	echo "FAIL: $NAME: shm_s scalar counters with write sites but no rendered read and no allowlist entry:" >&2
+	sed 's/^/  /' "$SHM_UNALLOWED" >&2
+	echo "" >&2
+	echo "Either add a render path (stat_row / periodic print / JSON emit" >&2
+	echo "referencing shm->X on an emit path) or add to the shm_s allowlist" >&2
+	echo "in $0 with an explanatory comment." >&2
+	exit 1
+fi
+
+echo "PASS: $NAME: $shm_written_count shm_s written scalar(s) checked, all read or allowlisted"
 exit 0
