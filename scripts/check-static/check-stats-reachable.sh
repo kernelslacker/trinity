@@ -442,12 +442,12 @@ fi
 # Step 3: find members with a non-write, non-comment read in the tree.
 # A line counts as a read if:
 #   - it contains shm->X (as a whole word), AND
-#   - it is not a write (__atomic_add_fetch / shm->X++ / shm->X =), AND
+#   - it is not a write (__atomic_add_fetch|__atomic_fetch_add / shm->X++ / shm->X =), AND
 #   - it is not a comment line (first non-space is * or //).
 while IFS= read -r shm_field; do
 	if xargs -0 grep -hE "\bshm->$shm_field\b" < "$CFILES" 2>/dev/null | \
 	   grep -vE '^[[:space:]]*([*/]|//)' | \
-	   grep -qvE "__atomic_add_fetch.*shm->$shm_field|\bshm->$shm_field[[:space:]]*(\+\+|--|=[^=]|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
+	   grep -qvE "__atomic_(add_fetch|fetch_add).*shm->$shm_field|\bshm->$shm_field[[:space:]]*(\+\+|--|=[^=]|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
 		echo "$shm_field"
 	fi
 done < "$SHM_WRITTEN" | sort -u > "$SHM_READ"
@@ -502,11 +502,11 @@ echo "PASS: $NAME: $shm_written_count shm_s written scalar(s) checked ($shm_allo
 # pipeline must produce zero non-write lines (grep -qv must exit non-zero).
 _fix_field="foo"
 _fix_file="$TMP/fix_fixture"
-printf '\tshm->%s = 0;\n\t__atomic_add_fetch(&shm->%s, 1, __ATOMIC_RELAXED);\n' \
-	"$_fix_field" "$_fix_field" > "$_fix_file"
+printf '\tshm->%s = 0;\n\t__atomic_add_fetch(&shm->%s, 1, __ATOMIC_RELAXED);\n\t__atomic_fetch_add(&shm->%s, 1, __ATOMIC_RELAXED);\n' \
+	"$_fix_field" "$_fix_field" "$_fix_field" > "$_fix_file"
 if grep -hE "\bshm->$_fix_field\b" "$_fix_file" | \
    grep -vE '^[[:space:]]*([*/]|//)' | \
-   grep -qvE "__atomic_add_fetch.*shm->$_fix_field|\bshm->$_fix_field[[:space:]]*(\+\+|--|=[^=]|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
+   grep -qvE "__atomic_(add_fetch|fetch_add).*shm->$_fix_field|\bshm->$_fix_field[[:space:]]*(\+\+|--|=[^=]|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
 	fail "self-test: tab-indented 'shm->$_fix_field = 0' was misclassified as a non-write read (write-filter regex broken)"
 fi
 echo "PASS: $NAME: self-test: tab-indented shm assignment correctly excluded from read set"
