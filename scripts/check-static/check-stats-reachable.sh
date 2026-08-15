@@ -366,9 +366,13 @@ echo "PASS: $NAME: $field_count stats_s fields (flat + nested), all reachable or
 # shm_s scalar counter coverage (additive extension).
 #
 # The stats_s walker above covers shm->stats.<path>.  A scalar
-# counter declared directly in struct shm_s -- e.g. lo_up_fail
-# (four write sites, no render path, added in 7f1219f165e7 ("add lo_up_fail counter to surface silent lo bring-up failures")) -- lies
-# outside that population entirely: the stats_s walker cannot
+# counter declared directly in struct shm_s -- e.g. nat_t_churn.lo_up_fail
+# was written from rtnl_bring_lo_up / bring_lo_up (four __atomic sites)
+# while still a shm_s member, with no render path, before commit
+# 78ee45bc83ed ("lo_up_fail: wire into stats surface with four-site plumbing")
+# moved it into struct nat_t_churn_stats where it is now
+# correctly covered by STAT_FIELD_SUB(nat_t_churn, lo_up_fail) and a
+# stat_row emit -- lies outside that population entirely: the stats_s walker cannot
 # enumerate it, and the consumer-read grep only matches shm->stats.*,
 # so a producer with no render path passes silently.  This section
 # closes that gap without touching any existing logic.
@@ -462,21 +466,22 @@ comm -23 "$SHM_WRITTEN" "$SHM_READ" > "$SHM_UNREACHED"
 #   syscalls32_attempted -- biarch probe denominator; read in
 #                          syscall-exec.c to gate 32-bit probing;
 #                          not surfaced in periodic output.
-#
-# Dead-counter escrow (written, no render path; wire up or remove):
-#   lo_up_fail -- fleet-wide lo bring-up failure counter, four write
-#                 sites (rtnl_bring_lo_up, bring_lo_up), zero render
-#                 reads.  Added in 7f1219f165e7 ("add lo_up_fail counter to surface silent lo bring-up failures"); existence proof that
-#                 shm_s counters bypass the stats_s gate entirely.
-#                 Follow-up: wire to stat_row or delete.
 SHM_ALLOWLIST=(
 	running_childs
 	sibling_freeze_gen
 	syscalls32_attempted
-	lo_up_fail
 )
 printf '%s\n' "${SHM_ALLOWLIST[@]}" | sort -u > "$TMP/shm_allow"
 comm -23 "$SHM_UNREACHED" "$TMP/shm_allow" > "$SHM_UNALLOWED"
+shm_allow_count="$(comm -12 "$SHM_WRITTEN" "$TMP/shm_allow" | wc -l)"
+
+# Vacuous-pass guard: if every written field is on the allowlist the gate
+# can never FAIL regardless of what is added to shm_s in future.  Emit a
+# WARN so the condition is visible in CI output without blocking green.
+if [ "$shm_written_count" -gt 0 ] && [ ! -s "$SHM_UNALLOWED" ] && \
+	   [ "$shm_allow_count" -eq "$shm_written_count" ]; then
+	echo "WARN: $NAME: shm_s pass is currently vacuous — all $shm_written_count written field(s) are allowlisted; gate cannot fail" >&2
+fi
 
 if [ -s "$SHM_UNALLOWED" ]; then
 	echo "FAIL: $NAME: shm_s scalar counters with write sites but no rendered read and no allowlist entry:" >&2
@@ -488,5 +493,5 @@ if [ -s "$SHM_UNALLOWED" ]; then
 	exit 1
 fi
 
-echo "PASS: $NAME: $shm_written_count shm_s written scalar(s) checked, all read or allowlisted"
+echo "PASS: $NAME: $shm_written_count shm_s written scalar(s) checked ($shm_allow_count allowlisted, $((shm_written_count - shm_allow_count)) verified read)"
 exit 0
