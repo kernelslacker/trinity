@@ -1751,6 +1751,7 @@ stats	object
     stats.nat_t_churn.xfrm6_setup_fail	u64
     stats.nat_t_churn.xfrm6_sendto_runs	u64
     stats.nat_t_churn.xfrm6_delsa_races	u64
+    stats.nat_t_churn.lo_up_fail	u64
   stats.af_alg_probe	object
     stats.af_alg_probe.runs	u64
     stats.af_alg_probe.unsupported	u64

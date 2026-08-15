@@ -22,6 +22,7 @@ struct nat_t_churn_stats {
 	unsigned long xfrm6_setup_fail;			/* NEWSA / sock / setsockopt rejected */
 	unsigned long xfrm6_sendto_runs;		/* sendto() to unreachable v6 dest issued */
 	unsigned long xfrm6_delsa_races;		/* DELSA accepted while sendto burst inflight */
+	unsigned long lo_up_fail;			/* lo bring-up failed (socket/ioctl/rtnetlink error) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_NAT_T_CHURN_H */

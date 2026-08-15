@@ -11,6 +11,7 @@ static const struct stat_field nat_t_churn_fields[] = {
 	STAT_FIELD_SUB(nat_t_churn, xfrm6_setup_fail),
 	STAT_FIELD_SUB(nat_t_churn, xfrm6_sendto_runs),
 	STAT_FIELD_SUB(nat_t_churn, xfrm6_delsa_races),
+	STAT_FIELD_SUB(nat_t_churn, lo_up_fail),
 };
 
 const struct stat_category nat_t_churn_category =

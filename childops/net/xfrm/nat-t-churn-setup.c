@@ -69,7 +69,7 @@ void warn_once_unsupported(const char *reason, int err)
  * Called unconditionally at the start of each grandchild invocation --
  * userns_run_in_ns() gives every grandchild a fresh netns in which lo
  * is DOWN, so the round-trip is mandatory per call.  Failures are
- * counted via shm->lo_up_fail so the dead-arm oracle can distinguish
+ * counted via shm->stats.nat_t_churn.lo_up_fail so the dead-arm oracle can distinguish
  * lo-up failure from no-route or arm-never-reached.
  */
 void bring_lo_up(void)
@@ -95,7 +95,7 @@ void bring_lo_up(void)
 
 	s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (s < 0) {
-		__atomic_add_fetch(&shm->lo_up_fail, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.nat_t_churn.lo_up_fail, 1, __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -105,7 +105,7 @@ void bring_lo_up(void)
 		ifr.ifr_flags |= IFF_UP | IFF_RUNNING;
 		(void)ioctl(s, SIOCSIFFLAGS, &ifr);
 	} else {
-		__atomic_add_fetch(&shm->lo_up_fail, 1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.nat_t_churn.lo_up_fail, 1, __ATOMIC_RELAXED);
 	}
 	close(s);
 }

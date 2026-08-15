@@ -324,6 +324,7 @@ static void dump_stats_render_nat_t_churn(void)
 		stat_row("nat_t_churn", "xfrm6_setup_fail",  shm->stats.nat_t_churn.xfrm6_setup_fail);
 		stat_row("nat_t_churn", "xfrm6_sendto_runs", shm->stats.nat_t_churn.xfrm6_sendto_runs);
 		stat_row("nat_t_churn", "xfrm6_delsa_races", shm->stats.nat_t_churn.xfrm6_delsa_races);
+		stat_row("nat_t_churn", "lo_up_fail",        shm->stats.nat_t_churn.lo_up_fail);
 	}
 }
 

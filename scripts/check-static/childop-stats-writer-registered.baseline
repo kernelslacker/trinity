@@ -74,8 +74,9 @@ childops/net/psp-key-rotate-lifecycle.c     # carve of psp_key_rotate (dispatch:
 childops/net/psp-key-rotate-traffic.c       # carve of psp_key_rotate (dispatch: psp-key-rotate.c)
 
 # --- nat_t_churn carves ---
-# Two sub-files for CHILD_OP_NAT_T_CHURN (dispatch: xfrm/nat-t-churn.c).
+# Three sub-files for CHILD_OP_NAT_T_CHURN (dispatch: xfrm/nat-t-churn.c).
 childops/net/xfrm/nat-t-churn-cleanup.c  # carve of nat_t_churn (dispatch: nat-t-churn.c)
+childops/net/xfrm/nat-t-churn-setup.c    # carve of nat_t_churn (dispatch: nat-t-churn.c)
 childops/net/xfrm/nat-t-churn-traffic.c  # carve of nat_t_churn (dispatch: nat-t-churn.c)
 
 # --- xfrm_churn carves ---
