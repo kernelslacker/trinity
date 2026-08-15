@@ -102,9 +102,12 @@ BEGIN { depth=0; key="" }
 			} else if (c ~ /[a-zA-Z0-9_]/) {
 				key = key c
 			} else {
-				# Non-identifier character resets in-progress key.
-				if (length(key) > 0 && c != ",") key = ""
-				# Comma at top-level is just a separator -- ignore.
+				# Non-identifier character (including top-level comma) resets
+				# any in-progress key.  A comma arrives after the value of the
+				# preceding key:value pair; if the value was a scalar its
+				# characters have accumulated into `key` and must be flushed
+				# before the next key name starts.
+				if (length(key) > 0) key = ""
 			}
 		} else {
 			key = ""
@@ -112,6 +115,55 @@ BEGIN { depth=0; key="" }
 	}
 }
 ' | LC_ALL=C sort -u)
+
+# ---------------------------------------------------------------------------
+# Fixture self-test: verify the awk key-extractor produces clean keys when
+# there are two or more scalar key:value pairs at top-level depth.  Before
+# the comma-bleed fix, the second key would be parsed as "<value1><key2>"
+# because the value characters accumulated into `key` and the separating comma
+# was exempted from the reset.  Exercise a synthetic JSON string that has
+# two scalar keys (alpha, beta) plus the three core nested-object keys to
+# catch any regression in one shot.
+# ---------------------------------------------------------------------------
+
+_fixture_json="dummy: {walltime_ns:{childop:0},syscalls:{childop:0},iterations:{childop:0},alpha:42,beta:7}"
+_fixture_keys=$(printf '%s\n' "$_fixture_json" | awk '
+BEGIN { depth=0; key="" }
+{
+	start = index($0, "{")
+	if (start == 0) next
+	s = substr($0, start)
+	n = length(s)
+	for (i = 1; i <= n; i++) {
+		c = substr(s, i, 1)
+		if (c == "{") {
+			depth++
+		} else if (c == "}") {
+			depth--
+		} else if (depth == 1) {
+			if (c == ":") {
+				if (length(key) > 0) {
+					print key
+					key = ""
+				}
+			} else if (c ~ /[a-zA-Z0-9_]/) {
+				key = key c
+			} else {
+				if (length(key) > 0) key = ""
+			}
+		} else {
+			key = ""
+		}
+	}
+}
+' | LC_ALL=C sort -u)
+
+for _want in alpha beta iterations syscalls walltime_ns; do
+	if ! printf '%s\n' "$_fixture_keys" | grep -qx "$_want"; then
+		fail "awk key-extractor fixture: expected key '${_want}' not found in output (got: $(printf '%s' "$_fixture_keys" | tr '\n' ' ')) -- comma-bleed regression?"
+	fi
+done
+unset _fixture_json _fixture_keys _want
 
 # ---------------------------------------------------------------------------
 # Text side: extract supplemental counter names.
