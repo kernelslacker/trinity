@@ -29,6 +29,53 @@ if [[ -e /sys/kernel/debug/kcov ]]; then
     fi
 fi
 
+# The 2026-08-14 debug-kernel rebuild compiles in six fault injectors
+# (failslab, fail_page_alloc, fail_futex, fail_sunrpc, fail_skb_realloc,
+# fail_usercopy).  Compiled in is not the same as armed, and the difference
+# is invisible from the Kconfig: failslab and fail_page_alloc default to
+# ignore-gfp-wait=1 (they skip every GFP_KERNEL allocation, i.e. nearly all
+# of them) so they inject essentially nothing, and fail_skb_realloc defaults
+# filtered=false so any non-zero probability faults reallocs on EVERY netdev
+# on the box.  A run can therefore look fully fault-injecting while injecting
+# nothing, or arm host-wide against the real management interface by accident.
+# As with the kcov check above we only diagnose and print the fix: the
+# debugfs files are root-owned, trinity runs unprivileged, and the runner
+# must never write them itself.  Silent no-op when /sys/kernel/debug is
+# absent or unreadable (non-debug kernels, unprivileged hosts).
+if [[ -r /sys/kernel/debug ]]; then
+    # failslab / fail_page_alloc: clear ignore-gfp-wait or they inject almost
+    # nothing.  These two are the only compiled-in injectors that need it
+    # (fail_futex/fail_sunrpc/fail_usercopy have no gfp filter and are live).
+    for _inj in failslab fail_page_alloc; do
+        _gfp="/sys/kernel/debug/${_inj}/ignore-gfp-wait"
+        if [[ -e "${_gfp}" ]] && [[ "$(cat "${_gfp}" 2>/dev/null || echo 1)" != "0" ]]; then
+            echo "WARNING: ${_inj} has ignore-gfp-wait=1 — it skips every GFP_KERNEL allocation and injects almost nothing as configured." >&2
+            echo "  Fix: echo 0 | sudo tee ${_gfp}" >&2
+        fi
+    done
+
+    # fail_skb_realloc: the device filter is load-bearing, not stylistic.
+    # should_fail_net_realloc_skb() only consults skb->dev->name when
+    # 'filtered' is set, and it defaults false — so 'devname' MUST be written
+    # before 'probability', or the injector arms against every netdev on the
+    # host including its real management interface.
+    _skb=/sys/kernel/debug/fail_skb_realloc
+    if [[ -d "${_skb}" ]]; then
+        _prob="$(cat "${_skb}/probability" 2>/dev/null || echo 0)"
+        _filt="$(cat "${_skb}/filtered" 2>/dev/null || echo 0)"
+        if [[ "${_prob}" == "0" ]]; then
+            echo "WARNING: fail_skb_realloc probability=0 — the RX-path skb-realloc injector is disarmed." >&2
+            echo "  Fix (device filter FIRST, then probability — the order is load-bearing):" >&2
+            echo "    echo <ifname> | sudo tee ${_skb}/devname" >&2
+            echo "    echo 1        | sudo tee ${_skb}/filtered" >&2
+            echo "    echo <N>      | sudo tee ${_skb}/probability" >&2
+        elif [[ "${_filt}" == "0" ]]; then
+            echo "WARNING: fail_skb_realloc is armed (probability=${_prob}) but UNSCOPED (filtered=0) — it faults reallocs on EVERY netdev, including this host's management interface." >&2
+            echo "  Fix: set a device filter — echo <ifname> | sudo tee ${_skb}/devname && echo 1 | sudo tee ${_skb}/filtered" >&2
+        fi
+    fi
+fi
+
 # When running under valgrind, recommend the suppressions file so the
 # known KCOV_INIT_TRACE false positive doesn't drown the real output.
 if [[ -n "${RUNNING_ON_VALGRIND:-}" ]]; then
