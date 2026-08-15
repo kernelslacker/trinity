@@ -1219,6 +1219,7 @@ stats	object
   stats.mpls_route_churn	object
     stats.mpls_route_churn.runs	u64
     stats.mpls_route_churn.label_install_ok	u64
+    stats.mpls_route_churn.multipath_install_ok	u64
     stats.mpls_route_churn.iptunnel_install_ok	u64
     stats.mpls_route_churn.delete_ok	u64
     stats.mpls_route_churn.ns_unsupported	u64

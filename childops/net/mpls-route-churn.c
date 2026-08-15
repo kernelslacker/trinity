@@ -367,6 +367,128 @@ static int build_mpls_label_delete(struct nl_ctx *ctx, __u32 in_label)
 }
 
 /*
+ * Arm C: install one AF_MPLS multipath route (≥2 nexthops).
+ *
+ *   RTM_NEWROUTE family=AF_MPLS dst_len=20
+ *     RTA_DST       : 4-byte mpls_label encoding the in-label
+ *     RTA_MULTIPATH : sequence of rtnexthop + RTA_VIA entries
+ *       [rtnexthop] [RTA_VIA AF_INET 127.0.0.x]
+ *       [rtnexthop] [RTA_VIA AF_INET 127.0.0.y]
+ *       ...
+ *
+ * Each rtnexthop carries rtnh_ifindex=lo so the kernel's
+ * mpls_rtm_newroute multipath walk sets rt_nhn ≥ 2, causing
+ * mpls_select_multipath() to enter mpls_multipath_hash() on receive.
+ *
+ * Returns 0 on accept, negated errno on rejection, -EIO on local
+ * failure.  *out_in_label is set to the in-label so the caller can
+ * issue the matching RTM_DELROUTE.
+ */
+static int build_mpls_multipath_install(struct nl_ctx *ctx, int lo_ifindex,
+					__u32 *out_in_label)
+{
+	unsigned char buf[MPLS_RC_RTNL_BUF];
+	/* Per-nexthop layout:
+	 *   rtnexthop (8) + NLA_VIA header (NLA_HDRLEN=4) +
+	 *   mpls_rtvia (2) + IPv4 addr (4) = 18 → NLA_ALIGN'd to 20.
+	 * 3 nexthops at 20 bytes each = 60 bytes; 64 gives slack. */
+	unsigned char mp_buf[64];
+	struct nlmsghdr *nlh;
+	struct rtmsg *rtm;
+	struct mpls_label in_label_buf;
+	__u32 in_label;
+	unsigned int nhops, i;
+	size_t off, mp_off;
+	/* Per-nexthop size = sizeof(rtnexthop) + NLA_ALIGN(NLA_HDRLEN +
+	 * sizeof(mpls_rtvia) + sizeof(__be32)) = 8 + NLA_ALIGN(10) = 8 + 12 = 20. */
+	const size_t nh_sz = sizeof(struct rtnexthop) + 12U;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWROUTE;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	rtm = (struct rtmsg *)NLMSG_DATA(nlh);
+	rtm->rtm_family   = AF_MPLS;
+	rtm->rtm_dst_len  = 20;
+	rtm->rtm_table    = RT_TABLE_MAIN;
+	rtm->rtm_protocol = RTPROT_STATIC;
+	rtm->rtm_scope    = RT_SCOPE_UNIVERSE;
+	rtm->rtm_type     = RTN_UNICAST;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*rtm));
+
+	in_label = MPLS_RC_LABEL_MIN + rnd_modulo_u32(MPLS_RC_LABEL_RANGE);
+	in_label_buf.entry = mpls_label_encode(in_label, true);
+	off = nla_put(buf, off, sizeof(buf), RTA_DST,
+		      &in_label_buf, sizeof(in_label_buf));
+	if (!off)
+		return -EIO;
+
+	/* Build RTA_MULTIPATH payload: 2..3 rtnexthop entries.
+	 * Each entry: rtnexthop header + RTA_VIA (AF_INET 127.0.0.x). */
+	nhops = 2U + rnd_modulo_u32(2U);	/* 2 or 3 nexthops */
+	if (nhops * nh_sz > sizeof(mp_buf))
+		nhops = sizeof(mp_buf) / nh_sz;
+	if (nhops < 2U)
+		nhops = 2U;
+
+	memset(mp_buf, 0, sizeof(mp_buf));
+	mp_off = 0;
+
+	for (i = 0; i < nhops; i++) {
+		struct rtnexthop *nh;
+		struct nlattr *via_nla;
+		struct mpls_rtvia *via;
+		__u32 nexthop_addr;
+
+		nh = (struct rtnexthop *)(mp_buf + mp_off);
+		nh->rtnh_flags   = 0;
+		nh->rtnh_hops    = 0;
+		nh->rtnh_ifindex = lo_ifindex > 0 ? lo_ifindex : 1;
+		/* rtnh_len: self (8) + RTA_VIA NLA aligned (12) = 20. */
+		nh->rtnh_len     = (__u16)nh_sz;
+		mp_off += sizeof(*nh);
+
+		/* RTA_VIA NLA: nla_len = NLA_HDRLEN + sizeof(mpls_rtvia) + 4 = 10 */
+		via_nla = (struct nlattr *)(mp_buf + mp_off);
+		via_nla->nla_type = RTA_VIA;
+		via_nla->nla_len  = (__u16)(NLA_HDRLEN +
+					    sizeof(struct mpls_rtvia) + 4);
+		mp_off += NLA_HDRLEN;
+
+		via = (struct mpls_rtvia *)(mp_buf + mp_off);
+		via->rtvia_family = AF_INET;
+		mp_off += sizeof(struct mpls_rtvia);
+
+		/* 127.0.0.{2..254} -- same range as the single-nexthop arm */
+		nexthop_addr = htonl(0x7f000002U + rnd_modulo_u32(253U));
+		memcpy(mp_buf + mp_off, &nexthop_addr, 4U);
+		mp_off += 4U;
+
+		/* Pad to NLA_ALIGNTO (4-byte boundary) so the next rtnexthop
+		 * starts aligned and RTNH_ALIGN(rtnh_len) == rtnh_len. */
+		mp_off = (mp_off + (NLA_ALIGNTO - 1U)) & ~(size_t)(NLA_ALIGNTO - 1U);
+	}
+
+	off = nla_put(buf, off, sizeof(buf), RTA_MULTIPATH,
+		      mp_buf, mp_off);
+	if (!off)
+		return -EIO;
+
+	off = nla_put_u32(buf, off, sizeof(buf), RTA_TABLE, RT_TABLE_MAIN);
+	if (!off)
+		return -EIO;
+
+	nlh->nlmsg_len = (__u32)off;
+
+	*out_in_label = in_label;
+	return mpls_send_recv_retry(ctx, buf, off);
+}
+
+/*
  * Arm B: install one IPv4 route with MPLS_IPTUNNEL lwtunnel encap.
  *
  *   RTM_NEWROUTE family=AF_INET dst_len=32
@@ -613,15 +735,17 @@ static int mpls_route_churn_in_ns(void *arg)
 				   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < outer_iters; i++) {
-		bool pick_arm_a;
+		/* arm_pick: 0=A (single-nexthop label), 1=B (iptunnel),
+		 * 2=C (multipath label, rt_nhn>=2 → mpls_multipath_hash). */
+		unsigned int arm_pick;
 
 		if ((unsigned long long)ns_since(&t_outer) >=
 		    MPLS_RC_WALL_CAP_NS)
 			break;
 
-		pick_arm_a = (rand32() & 1U) != 0;
+		arm_pick = rnd_modulo_u32(3U);
 
-		if (pick_arm_a &&
+		if (arm_pick == 0U &&
 		    !__atomic_load_n(&shm->mpls_route_ns_unsupported_mpls,
 				     __ATOMIC_RELAXED)) {
 			__u32 in_label = 0;
@@ -640,7 +764,7 @@ static int mpls_route_churn_in_ns(void *arg)
 			} else {
 				map_rc_to_latch(op, rc, 'A');
 			}
-		} else if (!pick_arm_a &&
+		} else if (arm_pick == 1U &&
 			   !__atomic_load_n(&shm->mpls_route_ns_unsupported_lwtunnel,
 					    __ATOMIC_RELAXED)) {
 			__be32 dst = 0;
@@ -658,6 +782,25 @@ static int mpls_route_churn_in_ns(void *arg)
 						1, __ATOMIC_RELAXED);
 			} else {
 				map_rc_to_latch(op, rc, 'B');
+			}
+		} else if (arm_pick == 2U &&
+			   !__atomic_load_n(&shm->mpls_route_ns_unsupported_mpls,
+					    __ATOMIC_RELAXED)) {
+			__u32 in_label = 0;
+			int rc = build_mpls_multipath_install(&ctx, lo_ifindex,
+							      &in_label);
+
+			if (rc == 0) {
+				__atomic_add_fetch(
+					&shm->stats.mpls_route_churn.multipath_install_ok,
+					1, __ATOMIC_RELAXED);
+				if (build_mpls_label_delete(&ctx,
+							    in_label) == 0)
+					__atomic_add_fetch(
+						&shm->stats.mpls_route_churn.delete_ok,
+						1, __ATOMIC_RELAXED);
+			} else {
+				map_rc_to_latch(op, rc, 'A');
 			}
 		}
 

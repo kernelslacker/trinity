@@ -83,6 +83,10 @@
 #include "kernel/fcntl.h"
 #include "kernel/socket.h"
 
+#ifndef SO_ZEROCOPY
+#define SO_ZEROCOPY		60
+#endif
+
 #ifndef ETH_P_MPLS_UC
 #define ETH_P_MPLS_UC			0x8847
 #endif
@@ -489,6 +493,123 @@ static int mpls_label_stack_rx_iter_build_link(struct mpls_label_stack_rx_iter_c
 }
 
 /*
+ * mlr_send_nonlinear_frame - one-shot MSG_ZEROCOPY send where the inner
+ * L3 header is placed in a separate iov entry from the Ethernet + MPLS
+ * label-stack headers.  With MSG_ZEROCOPY the kernel maps the second iov
+ * page directly as an skb frag, landing the inner IPv4 header in
+ * skb->data_len (nonlinear) with insufficient linear tailroom.  This is
+ * the precondition that makes pskb_may_pull() in mpls_multipath_hash()
+ * call __pskb_pull_tail() -> pskb_expand_head() rather than returning
+ * immediately on an already-linear skb.
+ *
+ * The Ethernet + MPLS portion (iov[0]) carries a two-entry label stack
+ * with BOS on the second entry.  After the kernel pops both labels and
+ * reaches S=1, it inspects the inner IPv4 header (iov[1]) via
+ * pskb_may_pull(skb, sizeof(*mpls_hdr) + sizeof(struct iphdr)).  If the
+ * inner header is still in nonlinear data, pskb_may_pull must pull tail.
+ *
+ * Best-effort: AF_PACKET MSG_ZEROCOPY returns -ENOTSUPP on kernels that
+ * have not implemented the zerocopy TX path for raw sockets; failure is
+ * silent and the burst continues normally.  The errqueue drain is
+ * MSG_DONTWAIT so it cannot block.
+ */
+static void mlr_send_nonlinear_frame(struct mpls_label_stack_rx_iter_ctx *ctx)
+{
+	/* iov[0]: Ethernet header (14 bytes) + two MPLS entries (8 bytes) */
+	uint8_t eth_mpls[MLR_ETH_HLEN + 8U];
+	/* iov[1]: inner IPv4 header in its own buffer so MSG_ZEROCOPY maps
+	 * it as a separate frag rather than merging into iov[0]'s page. */
+	struct iphdr inner;
+	struct iovec iov[2];
+	struct msghdr mhdr;
+	struct sockaddr_ll dst;
+	uint32_t e0, e1;
+	int one = 1;
+	size_t off = 0;
+	ssize_t n;
+
+	memset(eth_mpls, 0, sizeof(eth_mpls));
+
+	/* Ethernet header: dst=broadcast, src=locally-administered, type=0x8847 */
+	memset(eth_mpls, 0xff, 6);
+	off = 6;
+	eth_mpls[off + 0] = 0x02;
+	eth_mpls[off + 1] = 0x00;
+	eth_mpls[off + 2] = 0x00;
+	eth_mpls[off + 3] = 0x00;
+	eth_mpls[off + 4] = 0x00;
+	eth_mpls[off + 5] = 0x01;
+	off += 6;
+	eth_mpls[off + 0] = 0x88;
+	eth_mpls[off + 1] = 0x47;
+	off += 2;
+
+	/* Two-entry MPLS stack: entry 0 has S=0 (not bottom), entry 1 has
+	 * S=1 (bottom of stack).  Both use user-space labels >=16.  The
+	 * walker must pop both before it sees the inner IPv4 header. */
+	e0 = mlr_encode_entry(16U + rnd_modulo_u32(0xffffU),
+			      (uint8_t)(rand32() & 0x7U), false, pick_ttl());
+	e1 = mlr_encode_entry(16U + rnd_modulo_u32(0xffffU),
+			      (uint8_t)(rand32() & 0x7U), true, pick_ttl());
+	eth_mpls[off + 0] = (uint8_t)((e0 >> 24) & 0xffU);
+	eth_mpls[off + 1] = (uint8_t)((e0 >> 16) & 0xffU);
+	eth_mpls[off + 2] = (uint8_t)((e0 >>  8) & 0xffU);
+	eth_mpls[off + 3] = (uint8_t)(e0 & 0xffU);
+	off += 4U;
+	eth_mpls[off + 0] = (uint8_t)((e1 >> 24) & 0xffU);
+	eth_mpls[off + 1] = (uint8_t)((e1 >> 16) & 0xffU);
+	eth_mpls[off + 2] = (uint8_t)((e1 >>  8) & 0xffU);
+	eth_mpls[off + 3] = (uint8_t)(e1 & 0xffU);
+	off += 4U;
+
+	/* Inner IPv4 header in separate iov so MSG_ZEROCOPY maps it as a
+	 * frag -- the MPLS decap path will need pskb_may_pull to reach it. */
+	memset(&inner, 0, sizeof(inner));
+	inner.version  = 4;
+	inner.ihl      = 5;
+	inner.ttl      = 64;
+	inner.protocol = IPPROTO_UDP;
+	inner.saddr    = (__be32)__builtin_bswap32(0x7f000001U);
+	inner.daddr    = (__be32)__builtin_bswap32(0x7f000001U);
+	inner.tot_len  = htons((uint16_t)sizeof(inner));
+
+	/* Enable SO_ZEROCOPY on the socket.  Failure (e.g. older kernel,
+	 * or already set) is harmless -- we attempt the send regardless. */
+	setsockopt(ctx->raw, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one));
+	ctx->direct_calls++;	/* setsockopt */
+
+	iov[0].iov_base = eth_mpls;
+	iov[0].iov_len  = off;
+	iov[1].iov_base = &inner;
+	iov[1].iov_len  = sizeof(inner);
+
+	memset(&dst, 0, sizeof(dst));
+	dst.sll_family   = AF_PACKET;
+	dst.sll_protocol = htons(ETH_P_MPLS_UC);
+	dst.sll_ifindex  = ctx->lo_ifindex;
+	dst.sll_halen    = 6;
+	memset(dst.sll_addr, 0xff, 6);
+
+	memset(&mhdr, 0, sizeof(mhdr));
+	mhdr.msg_name    = &dst;
+	mhdr.msg_namelen = sizeof(dst);
+	mhdr.msg_iov     = iov;
+	mhdr.msg_iovlen  = 2;
+
+	n = sendmsg(ctx->raw, &mhdr, MSG_ZEROCOPY | MSG_DONTWAIT);
+	ctx->direct_calls++;	/* sendmsg */
+	if (n > 0)
+		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.packet_sent_ok,
+				   1, __ATOMIC_RELAXED);
+
+	/* Drain the errqueue notification that MSG_ZEROCOPY generates
+	 * once the kernel has finished with the user pages.  Best-effort:
+	 * MSG_DONTWAIT so it cannot block if no notification is ready. */
+	recv(ctx->raw, NULL, 0, MSG_ERRQUEUE | MSG_DONTWAIT);
+	ctx->direct_calls++;	/* recv(MSG_ERRQUEUE) */
+}
+
+/*
  * Burst phase: open AF_PACKET / SOCK_RAW bound to lo with sll_protocol=
  * ETH_P_MPLS_UC, then push BUDGETED+JITTER hand-rolled Ethernet(0x8847)
  * / label-stack / inner-IPv4 frames at lo.  The kernel's mpls_forward
@@ -548,6 +669,13 @@ static void mpls_label_stack_rx_iter_send_burst(struct mpls_label_stack_rx_iter_
 			__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
+
+	/* Nonlinear-frame variant: send one frame with the inner L3 header
+	 * in a separate iov entry so MSG_ZEROCOPY maps it as an skb frag.
+	 * This targets the pskb_may_pull reallocation path in
+	 * mpls_multipath_hash() (inner-L3 in nonlinear data, linear tailroom
+	 * insufficient to absorb the frag without pskb_expand_head). */
+	mlr_send_nonlinear_frame(ctx);
 }
 
 /*

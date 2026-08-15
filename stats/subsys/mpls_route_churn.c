@@ -4,6 +4,7 @@
 static const struct stat_field mpls_route_churn_fields[] = {
 	STAT_FIELD_SUB(mpls_route_churn, runs),
 	STAT_FIELD_SUB(mpls_route_churn, label_install_ok),
+	STAT_FIELD_SUB(mpls_route_churn, multipath_install_ok),
 	STAT_FIELD_SUB(mpls_route_churn, iptunnel_install_ok),
 	STAT_FIELD_SUB(mpls_route_churn, delete_ok),
 	STAT_FIELD_SUB(mpls_route_churn, ns_unsupported),
