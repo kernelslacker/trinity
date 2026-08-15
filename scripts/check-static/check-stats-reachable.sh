@@ -378,8 +378,8 @@ echo "PASS: $NAME: $field_count stats_s fields (flat + nested), all reachable or
 # closes that gap without touching any existing logic.
 #
 # Population: scalar (non-array) members of struct shm_s in
-# include/shm.h that have at least one counter write site:
-#   __atomic_add_fetch(&shm->X, ...)  or  shm->X++
+# include/shm.h that have at least one counter write site (any of the
+# nine spellings in SHM_WRITE_PAT_ATOMIC / shm_write_pat below).
 #
 # Each member in the population must either:
 #   1. appear on a non-write, non-comment source line (evidence that
@@ -388,6 +388,38 @@ echo "PASS: $NAME: $field_count stats_s fields (flat + nested), all reachable or
 #
 # Population count is reported; zero is WARN (parser broken).
 # =====================================================================
+
+# ---------------------------------------------------------------------
+# SHM_WRITE_PAT_ATOMIC: canonical atomic-write primitive set for shm_s
+# scalars.  Used by shm_write_pat() which is called in BOTH Step 2
+# (write-site detection → population) and Step 3 (write-line exclusion
+# → read set).  A single definition here prevents the two stages from
+# drifting apart.
+#
+# Seven primitives:
+#   __atomic_add_fetch  __atomic_fetch_add   (increment / add RMW)
+#   __atomic_store_n                         (plain store)
+#   __atomic_compare_exchange_n              (CAS)
+#   __atomic_exchange_n                      (swap)
+#   __atomic_fetch_sub  __atomic_sub_fetch   (decrement / subtract RMW)
+#
+# Together with the two direct-operator forms in shm_write_pat() these
+# cover all nine write spellings observed tree-wide.
+# ---------------------------------------------------------------------
+SHM_WRITE_PAT_ATOMIC='__atomic_(add_fetch|fetch_add|store_n|compare_exchange_n|exchange_n|fetch_sub|sub_fetch)'
+
+# shm_write_pat FIELD
+# Emit an ERE matching any write to shm->FIELD on a source line.
+# Nine spellings:
+#   atomic primitives (matched via SHM_WRITE_PAT_ATOMIC) whose first
+#   pointer arg is &shm->FIELD -- the primitive name and shm->FIELD both
+#   appear on the same line;
+#   shm->FIELD++ / shm->FIELD--  (post-inc/dec);
+#   shm->FIELD += / shm->FIELD -= (compound-assignment).
+shm_write_pat() {
+	local f="$1"
+	printf '%s' "${SHM_WRITE_PAT_ATOMIC}.*\bshm->${f}\b|\bshm->${f}[[:space:]]*(\+\+|--|\+=|-=)"
+}
 SHM_H="$ROOT/include/shm.h"
 [ -r "$SHM_H" ] || fail "cannot read $SHM_H"
 
@@ -426,9 +458,9 @@ if [ "$shm_scalar_count" -eq 0 ]; then
 fi
 
 # Step 2: narrow to members that have a counter write site.
-# Patterns: __atomic_add_fetch(&shm->X, ...) or shm->X++
+# Recognises all nine write spellings via shm_write_pat().
 while IFS= read -r shm_field; do
-	if xargs -0 grep -lE "__atomic_(add_fetch|fetch_add)\(&shm->$shm_field[[:space:]]*,|shm->$shm_field[[:space:]]*\+=|shm->$shm_field\+\+" \
+	if xargs -0 grep -lE "$(shm_write_pat "$shm_field")" \
 		   < "$CFILES" 2>/dev/null | grep -q .; then
 		echo "$shm_field"
 	fi
@@ -439,15 +471,28 @@ if [ "$shm_written_count" -eq 0 ]; then
 	echo "WARN: $NAME: shm_s written-scalar population is 0 (write-site grep broken?)" >&2
 fi
 
+# Denominator sanity: if the population is less than half the total
+# scalar count the write-spelling set is probably missing a form.
+# The 5/37 situation before the SHM_WRITE_PAT unification would have
+# triggered this — emit WARN so the mismatch is visible in CI instead
+# of reading silently as green coverage.
+if [ "$shm_scalar_count" -gt 0 ] && \
+		[ "$((shm_written_count * 2))" -lt "$shm_scalar_count" ]; then
+	echo "WARN: $NAME: only $shm_written_count of $shm_scalar_count shm_s scalars have known write sites (check SHM_WRITE_PAT coverage)" >&2
+fi
+
 # Step 3: find members with a non-write, non-comment read in the tree.
 # A line counts as a read if:
 #   - it contains shm->X (as a whole word), AND
-#   - it is not a write (__atomic_add_fetch|__atomic_fetch_add / shm->X++ / shm->X =), AND
+#   - it is not a write (any of the nine spellings in shm_write_pat(), OR
+#     a simple / compound assignment: =[^=] *=, /=, <<=, >>=, &=, |=, ^=), AND
 #   - it is not a comment line (first non-space is * or //).
+# shm_write_pat() is used here for the same nine spellings as Step 2 so
+# the two stages share one canonical write-form definition.
 while IFS= read -r shm_field; do
 	if xargs -0 grep -hE "\bshm->$shm_field\b" < "$CFILES" 2>/dev/null | \
 	   grep -vE '^[[:space:]]*([*/]|//)' | \
-	   grep -qvE "__atomic_(add_fetch|fetch_add).*shm->$shm_field|\bshm->$shm_field[[:space:]]*(\+\+|--|=[^=]|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
+	   grep -qvE "$(shm_write_pat "$shm_field")|\bshm->$shm_field[[:space:]]*(=[^=]|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
 		echo "$shm_field"
 	fi
 done < "$SHM_WRITTEN" | sort -u > "$SHM_READ"
@@ -458,17 +503,30 @@ comm -23 "$SHM_WRITTEN" "$SHM_READ" > "$SHM_UNREACHED"
 #
 # Operational internal counters (written atomically, read back for
 # protocol decisions, but not surfaced in the operator report):
-#   running_childs      -- spawn-quorum tracker; read by pids.c for
-#                          child-count checks; not a reportable metric.
-#   sibling_freeze_gen  -- freeze-epoch sequencer; read by the sibling
-#                          freeze sweep in child.c; not a metric.
+#   running_childs       -- spawn-quorum tracker; read by pids.c for
+#                           child-count checks; not a reportable metric.
+#   sibling_freeze_gen   -- freeze-epoch sequencer; read by the sibling
+#                           freeze sweep in child.c; not a metric.
 #   syscalls32_attempted -- biarch probe denominator; read in
-#                          syscall-exec.c to gate 32-bit probing;
-#                          not surfaced in periodic output.
+#                           syscall-exec.c to gate 32-bit probing;
+#                           not surfaced in periodic output.
+#   newnet_in_flight     -- CLONE_NEWNET throttle counter; read via
+#                           __atomic_load_n in include/shm.h inline
+#                           try_admit_newnet().  The *.c-only read scan
+#                           misses inline-header reads; the field is
+#                           not a reportable metric.
+#   wgdf_wg_ifindex      -- wireguard ifindex cached by wgdf_setup()
+#                           inside the userns_run_in_ns() grandchild.
+#                           No current .c-file reader (the companion
+#                           wgdf_load_wg_ifindex accessor is not yet
+#                           wired); reserved for a future diagnostic
+#                           consumer in wireguard-decrypt-flood.c.
 SHM_ALLOWLIST=(
 	running_childs
 	sibling_freeze_gen
 	syscalls32_attempted
+	newnet_in_flight
+	wgdf_wg_ifindex
 )
 printf '%s\n' "${SHM_ALLOWLIST[@]}" | sort -u > "$TMP/shm_allow"
 comm -23 "$SHM_UNREACHED" "$TMP/shm_allow" > "$SHM_UNALLOWED"
@@ -494,20 +552,25 @@ fi
 
 echo "PASS: $NAME: $shm_written_count shm_s written scalar(s) checked ($shm_allow_count allowlisted, $((shm_written_count - shm_allow_count)) verified read)"
 
-# Self-test: tab-indented assignment must not slip through the write-exclusion
-# filter.  Before the fix the regex was split with backslash-newline inside a
-# double-quoted string, leaving a literal space before \bshm->; a tab-indented
-# `shm->foo = 0;` therefore failed to match and the field was misclassified
-# as a read.  Verify the fix: both lines below are writes, so the combined
-# pipeline must produce zero non-write lines (grep -qv must exit non-zero).
+# Self-test: verify the write-exclusion filter (shm_write_pat + extra
+# assignment operators) correctly blocks every write spelling and lets
+# no write line slip through as a false read.  All six lines below are
+# writes; the combined pipeline must produce zero non-write output
+# (i.e. grep -qv must exit non-zero — every line IS excluded).
+#   1. tab-indented simple assignment  shm->foo = 0;
+#   2. __atomic_add_fetch
+#   3. __atomic_fetch_add
+#   4. __atomic_store_n              (new spelling — Hole 2 regression test)
+#   5. __atomic_compare_exchange_n   (new spelling)
+#   6. __atomic_fetch_sub            (new spelling)
 _fix_field="foo"
 _fix_file="$TMP/fix_fixture"
-printf '\tshm->%s = 0;\n\t__atomic_add_fetch(&shm->%s, 1, __ATOMIC_RELAXED);\n\t__atomic_fetch_add(&shm->%s, 1, __ATOMIC_RELAXED);\n' \
-	"$_fix_field" "$_fix_field" "$_fix_field" > "$_fix_file"
+printf '\tshm->%s = 0;\n\t__atomic_add_fetch(&shm->%s, 1, __ATOMIC_RELAXED);\n\t__atomic_fetch_add(&shm->%s, 1, __ATOMIC_RELAXED);\n\t__atomic_store_n(&shm->%s, 0, __ATOMIC_RELAXED);\n\t__atomic_compare_exchange_n(&shm->%s, &old, 1, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED);\n\t__atomic_fetch_sub(&shm->%s, 1, __ATOMIC_RELAXED);\n' \
+	"$_fix_field" "$_fix_field" "$_fix_field" "$_fix_field" "$_fix_field" "$_fix_field" > "$_fix_file"
 if grep -hE "\bshm->$_fix_field\b" "$_fix_file" | \
    grep -vE '^[[:space:]]*([*/]|//)' | \
-   grep -qvE "__atomic_(add_fetch|fetch_add).*shm->$_fix_field|\bshm->$_fix_field[[:space:]]*(\+\+|--|=[^=]|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
-	fail "self-test: tab-indented 'shm->$_fix_field = 0' was misclassified as a non-write read (write-filter regex broken)"
+   grep -qvE "$(shm_write_pat "$_fix_field")|\bshm->$_fix_field[[:space:]]*(=[^=]|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
+	fail "self-test: a write line was misclassified as a non-write read (write-filter regex broken)"
 fi
-echo "PASS: $NAME: self-test: tab-indented shm assignment correctly excluded from read set"
+echo "PASS: $NAME: self-test: all write spellings correctly excluded from read set"
 exit 0
