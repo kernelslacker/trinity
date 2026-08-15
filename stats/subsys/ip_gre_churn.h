@@ -9,6 +9,9 @@ struct ip_gre_churn_stats {
 	unsigned long link_up_ok;		/* RTM_NEWLINK setlink IFF_UP accepted */
 	unsigned long packet_sent_ok;	/* sendto on IPPROTO_RAW returned >0 */
 	unsigned long link_del_ok;		/* RTM_DELLINK accepted */
+	/* erspan oflags read-back invariance oracle */
+	unsigned long oracle_runs;		/* erspan-oflags oracle invocations */
+	unsigned long oflags_corrupted;		/* oflags changed after TX burst */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_IP_GRE_CHURN_H */

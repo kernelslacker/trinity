@@ -8,6 +8,8 @@ static const struct stat_field ip_gre_churn_fields[] = {
 	STAT_FIELD_SUB(ip_gre_churn, link_up_ok),
 	STAT_FIELD_SUB(ip_gre_churn, packet_sent_ok),
 	STAT_FIELD_SUB(ip_gre_churn, link_del_ok),
+	STAT_FIELD_SUB(ip_gre_churn, oracle_runs),
+	STAT_FIELD_SUB(ip_gre_churn, oflags_corrupted),
 };
 
 const struct stat_category ip_gre_churn_category =

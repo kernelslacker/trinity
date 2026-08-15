@@ -57,6 +57,7 @@
 
 #include <linux/if_ether.h>
 #include <linux/if_link.h>
+#include <linux/if_packet.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 
@@ -91,6 +92,12 @@
 
 #ifndef ETH_P_TEB
 #define ETH_P_TEB		0x6558
+#endif
+
+/* ERSPAN-specific IFLA_GRE_* attribute ids (UAPI stable, net/ipv4/ip_gre.c). */
+#ifndef IFLA_GRE_ERSPAN_INDEX
+#define IFLA_GRE_ERSPAN_INDEX		21
+#define IFLA_GRE_ERSPAN_VER		22
 #endif
 
 /* Reasonable ceiling for a single rtnl message + payload; gretap link
@@ -532,6 +539,372 @@ static void ip_gre_iter_teardown(struct ip_gre_iter_ctx *ctx)
 	nl_close(&ctx->nl);
 }
 
+/*
+ * build_erspan_link - RTM_NEWLINK creating an "erspan" v1 tunnel.
+ *
+ * Sets both iflags and oflags to GRE_KEY_FLAG | GRE_SEQ_FLAG — the exact
+ * pair that net/ipv4/ip_gre.c:erspan_xmit() clears locklessly on every TX,
+ * permanently mutating tunnel->parms.o_flags and corrupting subsequent
+ * RTM_GETLINK reports.  Returns 0 on accept, negated errno on rejection,
+ * -EIO on local failure.
+ */
+static int build_erspan_link(struct nl_ctx *ctx, const char *name, __u32 key)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	__u32 local_addr;
+	__u32 remote_addr;
+	__be16 flags;
+	__be32 erspan_key;
+	__u8 erspan_ver;
+	__be32 erspan_idx;
+	size_t off;
+	size_t li_off, id_off;
+
+	flags = GRE_KEY_FLAG | GRE_SEQ_FLAG;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
+	if (!off)
+		return -EIO;
+
+	li_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
+	if (!off)
+		return -EIO;
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "erspan");
+	if (!off)
+		return -EIO;
+
+	id_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+	if (!off)
+		return -EIO;
+
+	local_addr  = htonl(0x7f000001U);
+	remote_addr = htonl(0x7f000002U);
+
+	off = nla_put(buf, off, sizeof(buf), IFLA_GRE_LOCAL,
+		      &local_addr, sizeof(local_addr));
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFLA_GRE_REMOTE,
+		      &remote_addr, sizeof(remote_addr));
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFLA_GRE_IFLAGS,
+		      &flags, sizeof(flags));
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFLA_GRE_OFLAGS,
+		      &flags, sizeof(flags));
+	if (!off)
+		return -EIO;
+
+	erspan_key = htonl(key);
+	off = nla_put(buf, off, sizeof(buf), IFLA_GRE_IKEY,
+		      &erspan_key, sizeof(erspan_key));
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFLA_GRE_OKEY,
+		      &erspan_key, sizeof(erspan_key));
+	if (!off)
+		return -EIO;
+
+	/* ERSPAN version 1 with index 1. */
+	erspan_ver = 1;
+	off = nla_put_u8(buf, off, sizeof(buf), IFLA_GRE_ERSPAN_VER, erspan_ver);
+	if (!off)
+		return -EIO;
+	erspan_idx = htonl(1);
+	off = nla_put(buf, off, sizeof(buf), IFLA_GRE_ERSPAN_INDEX,
+		      &erspan_idx, sizeof(erspan_idx));
+	if (!off)
+		return -EIO;
+
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * erspan_getlink_oflags - RTM_GETLINK for @ifindex and extract IFLA_GRE_OFLAGS
+ * from the IFLA_LINKINFO/IFLA_INFO_DATA nested payload.
+ *
+ * Sends a unicast (non-dump) RTM_GETLINK and receives exactly one RTM_NEWLINK
+ * reply.  Walks the top-level attribute list looking for IFLA_LINKINFO, then
+ * IFLA_INFO_DATA within it, then IFLA_GRE_OFLAGS within that.  Returns 0
+ * and stores the flag word via @oflags_out on success; returns -EIO or a
+ * negated errno on failure.
+ *
+ * Attribute walking uses the same open-coded style as the rest of this tree
+ * (no NLA_OK/NLA_NEXT macros — those are kernel-internal).
+ */
+static int erspan_getlink_oflags(struct nl_ctx *ctx, int ifindex,
+				 __be16 *oflags_out)
+{
+	unsigned char req[RTNL_BUF_BYTES];
+	unsigned char resp[8192];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	const unsigned char *attrs;
+	size_t attrs_len;
+	size_t off;
+	ssize_t n;
+
+	memset(req, 0, sizeof(req));
+	nlh = (struct nlmsghdr *)req;
+	nlh->nlmsg_type  = RTM_GETLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST;	/* no NLM_F_ACK: one RTM_NEWLINK back */
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = ifindex;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+	nlh->nlmsg_len = (__u32)off;
+
+	if (send(ctx->fd, req, off, 0) != (ssize_t)off)
+		return -EIO;
+
+	n = recv(ctx->fd, resp, sizeof(resp), 0);
+	if (n < (ssize_t)NLMSG_HDRLEN)
+		return -EIO;
+
+	nlh = (struct nlmsghdr *)resp;
+	if ((size_t)n < nlh->nlmsg_len || nlh->nlmsg_len < NLMSG_HDRLEN)
+		return -EIO;
+	if (nlh->nlmsg_type == NLMSG_ERROR) {
+		const struct nlmsgerr *e =
+			(const struct nlmsgerr *)NLMSG_DATA(nlh);
+		return e->error;
+	}
+	if (nlh->nlmsg_type != RTM_NEWLINK)
+		return -EIO;
+	if (nlh->nlmsg_len < NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)))
+		return -EIO;
+
+	/* Top-level attrs start after the fixed ifinfomsg. */
+	attrs     = (const unsigned char *)resp +
+		    NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(struct ifinfomsg));
+	attrs_len = nlh->nlmsg_len -
+		    NLMSG_HDRLEN - NLMSG_ALIGN(sizeof(struct ifinfomsg));
+
+	/* Walk top-level attrs to find IFLA_LINKINFO. */
+	for (off = 0; off + NLA_HDRLEN <= attrs_len; ) {
+		const struct nlattr *nla =
+			(const struct nlattr *)(attrs + off);
+		size_t nla_full;
+
+		if (nla->nla_len < NLA_HDRLEN)
+			break;
+		nla_full = nla->nla_len;
+		if (nla_full > attrs_len - off)
+			break;
+
+		if ((nla->nla_type & NLA_TYPE_MASK) == IFLA_LINKINFO) {
+			/* Walk IFLA_LINKINFO payload for IFLA_INFO_DATA. */
+			const unsigned char *li_pay =
+				(const unsigned char *)nla + NLA_HDRLEN;
+			size_t li_len = nla_full - NLA_HDRLEN;
+			size_t li_off;
+
+			for (li_off = 0; li_off + NLA_HDRLEN <= li_len; ) {
+				const struct nlattr *li_nla =
+					(const struct nlattr *)(li_pay + li_off);
+				size_t li_nla_full;
+
+				if (li_nla->nla_len < NLA_HDRLEN)
+					break;
+				li_nla_full = li_nla->nla_len;
+				if (li_nla_full > li_len - li_off)
+					break;
+
+				if ((li_nla->nla_type & NLA_TYPE_MASK) ==
+				    IFLA_INFO_DATA) {
+					/* Walk IFLA_INFO_DATA for IFLA_GRE_OFLAGS. */
+					const unsigned char *id_pay =
+						(const unsigned char *)li_nla +
+						NLA_HDRLEN;
+					size_t id_len =
+						li_nla_full - NLA_HDRLEN;
+					size_t id_off;
+
+					for (id_off = 0;
+					     id_off + NLA_HDRLEN <= id_len; ) {
+						const struct nlattr *id_nla =
+							(const struct nlattr *)
+							(id_pay + id_off);
+						size_t id_nla_full;
+
+						if (id_nla->nla_len < NLA_HDRLEN)
+							break;
+						id_nla_full = id_nla->nla_len;
+						if (id_nla_full > id_len - id_off)
+							break;
+
+						if ((id_nla->nla_type &
+						     NLA_TYPE_MASK) ==
+						    IFLA_GRE_OFLAGS &&
+						    id_nla_full >=
+						    NLA_HDRLEN +
+						    sizeof(__be16)) {
+							memcpy(oflags_out,
+							       (const unsigned char *)id_nla +
+							       NLA_HDRLEN,
+							       sizeof(__be16));
+							return 0;
+						}
+						id_off += NLA_ALIGN(id_nla_full);
+					}
+				}
+				li_off += NLA_ALIGN(li_nla_full);
+			}
+		}
+		off += NLA_ALIGN(nla_full);
+	}
+	return -ENODATA;
+}
+
+/*
+ * ip_gre_erspan_oflags_oracle - ERSPAN tx-invariance oracle.
+ *
+ * Creates an "erspan" v1 tunnel with GRE_KEY_FLAG | GRE_SEQ_FLAG in
+ * IFLA_GRE_OFLAGS, snapshots the reported oflags before and after a TX
+ * burst, and fires the oflags_corrupted counter on any mismatch.
+ *
+ * Background: net/ipv4/ip_gre.c:erspan_xmit() clears IP_TUNNEL_SEQ and
+ * IP_TUNNEL_KEY from tunnel->parms.o_flags locklessly in the xmit path,
+ * permanently altering the tunnel's reported configuration.  A correct
+ * kernel leaves oflags unchanged across transmits that carry no
+ * configuration change.
+ *
+ * The oracle is self-contained: it opens its own rtnl socket, creates a
+ * uniquely-named erspan link, tests it, and tears it down.  EOPNOTSUPP /
+ * ENOENT from RTM_NEWLINK mean the "erspan" kind is not registered (module
+ * absent or kernel config missing); that case is skipped silently.
+ */
+static void ip_gre_erspan_oflags_oracle(struct childdata *child)
+{
+	/* Oracle state: independent nl_ctx, erspan link, AF_PACKET fd. */
+	struct nl_ctx nl = NL_CTX_INIT;
+	struct nl_open_opts opts = {
+		.proto        = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+		.caller_op    = CHILD_OP_IP_GRE_CHURN,
+	};
+	char ifname[IFNAMSIZ];
+	__u32 key;
+	int ifindex;
+	int pkt_fd = -1;
+	__be16 oflags_before;
+	__be16 oflags_after;
+	unsigned int burst_i;
+	unsigned int burst_n;
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.ip_gre_churn.oracle_runs,
+			   1, __ATOMIC_RELAXED);
+
+	if (nl_open(&nl, &opts) < 0)
+		return;
+
+	rtnl_bring_lo_up(&nl);
+
+	key = rand32();
+	snprintf(ifname, sizeof(ifname), "orsp%u",
+		 (unsigned int)(rand32() & 0xffffu));
+
+	rc = build_erspan_link(&nl, ifname, key);
+	if (rc != 0) {
+		/*
+		 * EOPNOTSUPP / ENOENT: "erspan" kind not registered.
+		 * EAFNOSUPPORT / EPROTONOSUPPORT: tunnel family absent.
+		 * All four mean no erspan support; skip silently.
+		 */
+		nl_close(&nl);
+		return;
+	}
+
+	ifindex = (int)if_nametoindex(ifname);
+	if (ifindex == 0)
+		goto out_del;
+
+	/* Snapshot IFLA_GRE_OFLAGS before TX. */
+	oflags_before = 0;
+	if (erspan_getlink_oflags(&nl, ifindex, &oflags_before) != 0)
+		goto out_del;
+
+	/* Bring the tunnel up so ndo_start_xmit is reachable. */
+	rtnl_setlink_up(&nl, ifindex);
+
+	/*
+	 * TX burst via AF_PACKET/SOCK_RAW injected directly into the
+	 * erspan interface.  ERSPAN is a L2 (ARPHRD_ETHER) tunnel, so
+	 * AF_PACKET frames go straight into erspan_xmit() — the path
+	 * that unconditionally clears IP_TUNNEL_KEY and IP_TUNNEL_SEQ
+	 * from tunnel->parms.o_flags on every transmit on affected kernels.
+	 */
+	pkt_fd = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
+	if (pkt_fd >= 0) {
+		unsigned char frame[64];
+		struct sockaddr_ll sll;
+
+		memset(frame, 0, sizeof(frame));
+		/* Minimal Ethernet frame: dst/src all-zeros, EtherType=IP. */
+		frame[12] = 0x08;	/* ETH_P_IP big-endian */
+		frame[13] = 0x00;
+
+		memset(&sll, 0, sizeof(sll));
+		sll.sll_family   = AF_PACKET;
+		sll.sll_protocol = htons(ETH_P_ALL);
+		sll.sll_ifindex  = ifindex;
+
+		burst_n = 8;
+		for (burst_i = 0; burst_i < burst_n; burst_i++)
+			sendto(pkt_fd, frame, sizeof(frame), MSG_DONTWAIT,
+			       (struct sockaddr *)&sll, sizeof(sll));
+
+		close(pkt_fd);
+		pkt_fd = -1;
+	}
+
+	/* Snapshot IFLA_GRE_OFLAGS after TX. */
+	oflags_after = 0;
+	if (erspan_getlink_oflags(&nl, ifindex, &oflags_after) != 0)
+		goto out_del;
+
+	/*
+	 * Invariance check: oflags must survive a TX burst unchanged.
+	 * A mismatch means the kernel mutated the tunnel's reported
+	 * configuration — the lockless o_flags corruption in erspan_xmit().
+	 */
+	if (oflags_before != oflags_after)
+		__atomic_add_fetch(&shm->stats.ip_gre_churn.oflags_corrupted,
+				   1, __ATOMIC_RELAXED);
+
+out_del:
+	if (ifindex > 0)
+		rtnl_dellink(&nl, ifindex);
+	nl_close(&nl);
+	(void)child;
+}
+
 struct ip_gre_ctx {
 	struct childdata *child;
 };
@@ -570,6 +943,18 @@ static int ip_gre_in_ns(void *arg)
 	}
 
 	ip_gre_iter_teardown(&ctx);
+
+	/*
+	 * ERSPAN oflags invariance oracle: create a separate "erspan" v1
+	 * tunnel, snapshot oflags before and after a TX burst, fire the
+	 * corruption counter on any mismatch.  Runs unconditionally inside
+	 * this private netns — the oracle uses its own link name so it
+	 * does not interfere with the gretap link above even if both are
+	 * alive simultaneously (they are not: teardown runs first).
+	 */
+	if (!kind_unsupported())
+		ip_gre_erspan_oflags_oracle(child);
+
 	return 0;
 }
 

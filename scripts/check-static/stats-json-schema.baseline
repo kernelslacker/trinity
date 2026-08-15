@@ -1252,6 +1252,8 @@ stats	object
     stats.ip_gre_churn.link_up_ok	u64
     stats.ip_gre_churn.packet_sent_ok	u64
     stats.ip_gre_churn.link_del_ok	u64
+    stats.ip_gre_churn.oracle_runs	u64
+    stats.ip_gre_churn.oflags_corrupted	u64
   stats.ovs_tunnel_vport_churn	object
     stats.ovs_tunnel_vport_churn.runs	u64
     stats.ovs_tunnel_vport_churn.setup_failed	u64
