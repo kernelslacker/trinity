@@ -76,6 +76,24 @@ if [[ -r /sys/kernel/debug ]]; then
     fi
 fi
 
+# lockdep self-disables on the FIRST splat — debug_locks_off() sets
+# debug_locks=0 and lockdep never reports again until reboot — so "no
+# deadlock found" and "lockdep died hours ago" are the same output.
+# /proc/lockdep_stats exposes the live/dead bit as ' debug_locks:'
+# (1=live, 0=self-disabled).  Record it now so cleanup() can flag a mid-run
+# 1->0 transition, and warn loudly if it is already dead before we start.
+# The single number is the whole signal; parsing dmesg for splat text is
+# dmesg-scan's job, not the runner's.  Guarded so a non-lockdep kernel is a
+# silent no-op.
+lockdep_alive_at_start=""
+if [[ -r /proc/lockdep_stats ]]; then
+    lockdep_alive_at_start=$(awk '/^ debug_locks:/ {print $2}' /proc/lockdep_stats)
+    if [[ "${lockdep_alive_at_start}" == "0" ]]; then
+        echo "WARNING: lockdep is already self-disabled (debug_locks=0 in /proc/lockdep_stats) — lock-order coverage is DEAD for this run." >&2
+        echo "  A prior splat killed it; nothing re-enables lockdep short of a reboot, so 'no deadlock found' this run means nothing." >&2
+    fi
+fi
+
 # When running under valgrind, recommend the suppressions file so the
 # known KCOV_INIT_TRACE false positive doesn't drown the real output.
 if [[ -n "${RUNNING_ON_VALGRIND:-}" ]]; then
@@ -138,6 +156,15 @@ cleanup() {
         systemctl --user stop "${scope_name}" >/dev/null 2>&1 || true
     elif [[ -n "${child}" ]]; then
         kill -KILL -- "-${child}" 2>/dev/null || true
+    fi
+    # lockdep self-disables on the first splat; report a mid-run 1->0
+    # transition so a run that went blind after minute 3 isn't mistaken for a
+    # clean one.  Runs on EXIT/INT/TERM, so this fires on crash and interrupt
+    # paths too, not only on clean exit.
+    if [[ "${lockdep_alive_at_start:-}" == "1" ]] && [[ -r /proc/lockdep_stats ]]; then
+        if [[ "$(awk '/^ debug_locks:/ {print $2}' /proc/lockdep_stats)" == "0" ]]; then
+            echo "WARNING: lockdep self-disabled during this run (debug_locks 1 -> 0) — lock-order coverage stopped at the first splat (see dmesg.log); everything after that point was uncovered." >&2
+        fi
     fi
     # Stop the dmesg follower after trinity so it captures teardown splats;
     # line-buffered output means no extra flush is needed.
