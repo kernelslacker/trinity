@@ -491,6 +491,16 @@ struct shm_s {
 	 * invocation would re-pay the rtnetlink round-trip. */
 	bool bridge_conntrack_lo_up_done;
 
+	/* Fleet-wide lo bring-up failure counter.  Bumped by
+	 * rtnl_bring_lo_up() (childops/net/netlink/netlink-util.c) on
+	 * if_nametoindex("lo") <= 0 or nl_send_recv() error, and by
+	 * bring_lo_up() (childops/net/xfrm/nat-t-churn-setup.c) on
+	 * socket() or SIOCGIFFLAGS failure.  RELAXED atomic add; a
+	 * non-zero value at run-end means the dead-arm oracle's
+	 * packet_sent_ok==0 verdict may reflect lo-up failure rather
+	 * than no-route or arm-never-reached. */
+	unsigned int lo_up_fail;
+
 	/* nl80211-churn per-grandchild first-wiphy cache (childops/net/
 	 * netlink/nl80211-churn.c).  Both the cached wiphy index and the
 	 * "cached" gate live in shm; write sites sit inside the

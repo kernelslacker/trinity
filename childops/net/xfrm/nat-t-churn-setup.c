@@ -68,9 +68,9 @@ void warn_once_unsupported(const char *reason, int err)
  * Bring lo up via SIOCSIFFLAGS on a temporary AF_INET DGRAM socket.
  * Called unconditionally at the start of each grandchild invocation --
  * userns_run_in_ns() gives every grandchild a fresh netns in which lo
- * is DOWN, so the round-trip is mandatory per call.  Failure is silent
- * because the rest of the sequence will surface a visible error if lo
- * really is broken.
+ * is DOWN, so the round-trip is mandatory per call.  Failures are
+ * counted via shm->lo_up_fail so the dead-arm oracle can distinguish
+ * lo-up failure from no-route or arm-never-reached.
  */
 void bring_lo_up(void)
 {
@@ -94,14 +94,18 @@ void bring_lo_up(void)
 	int s;
 
 	s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-	if (s < 0)
+	if (s < 0) {
+		__atomic_add_fetch(&shm->lo_up_fail, 1, __ATOMIC_RELAXED);
 		return;
+	}
 
 	memset(&ifr, 0, sizeof(ifr));
 	strncpy(ifr.ifr_name, "lo", IFNAMSIZ - 1);
 	if (ioctl(s, SIOCGIFFLAGS, &ifr) == 0) {
 		ifr.ifr_flags |= IFF_UP | IFF_RUNNING;
 		(void)ioctl(s, SIOCSIFFLAGS, &ifr);
+	} else {
+		__atomic_add_fetch(&shm->lo_up_fail, 1, __ATOMIC_RELAXED);
 	}
 	close(s);
 }

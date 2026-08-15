@@ -480,8 +480,10 @@ void rtnl_bring_lo_up(struct nl_ctx *ctx)
 	struct ifinfomsg *ifi;
 	int lo_idx = (int)if_nametoindex("lo");
 
-	if (lo_idx <= 0)
+	if (lo_idx <= 0) {
+		__atomic_add_fetch(&shm->lo_up_fail, 1, __ATOMIC_RELAXED);
 		return;
+	}
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
@@ -496,5 +498,6 @@ void rtnl_bring_lo_up(struct nl_ctx *ctx)
 	ifi->ifi_change = IFF_UP;
 
 	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-	(void)nl_send_recv(ctx, buf, nlh->nlmsg_len);
+	if (nl_send_recv(ctx, buf, nlh->nlmsg_len) != 0)
+		__atomic_add_fetch(&shm->lo_up_fail, 1, __ATOMIC_RELAXED);
 }
