@@ -42,6 +42,21 @@ struct packet_qdisc_bypass_unanchored_l2_stats {
 	 * rtnl_set_sk_err() when creating a macsec link, meaning
 	 * rtmsg_ifinfo_build_skb() warned and poisoned subscribed sockets. */
 	unsigned long nlmsg_size_undercount_macsec;
+	/* Positive control for the oracle above: a successful macsec
+	 * RTM_NEWLINK broadcasts a clean RTM_NEWLINK notification that a
+	 * live RTNLGRP_LINK subscriber recv()s (n >= 0).  A near-zero count
+	 * after completed iters means the subscription is not delivering and
+	 * the under-count oracle is decoration (a broken subscription reads
+	 * identically to a clean run). */
+	unsigned long nlmsg_subscriber_live_macsec;
+	/* Subscriber was armed and the macsec link was created, but recv()
+	 * returned neither the RTM_NEWLINK broadcast nor an EMSGSIZE poison
+	 * (typically EAGAIN): the subscription is not working.  Should be
+	 * ~0; a nonzero count means the oracle cannot be trusted. */
+	unsigned long nlmsg_subscriber_silent_macsec;
+	/* Subscriber socket()/bind() to RTNLGRP_LINK failed, so the oracle
+	 * never armed for that iteration.  Should be ~0. */
+	unsigned long nlmsg_subscriber_unarmed_macsec;
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_PACKET_QDISC_BYPASS_UNANCHORED_L2_H */

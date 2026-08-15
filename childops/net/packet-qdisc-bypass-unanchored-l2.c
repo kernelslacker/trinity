@@ -1062,6 +1062,27 @@ static int iter_one_in_ns(void *arg)
 	 * ENOBUFS is a genuine broadcast receive-buffer overrun (or an skb
 	 * OOM in rtmsg_ifinfo_build_skb), neither of which is a size-
 	 * accounting failure.  Count per-kind rather than abort.
+	 *
+	 * Positive control (nlmsg_subscriber_live_macsec): on a healthy
+	 * kernel a successful RTM_NEWLINK broadcasts a clean RTM_NEWLINK
+	 * notification to every RTNLGRP_LINK subscriber, queued
+	 * synchronously before the newlink syscall returns.  A live
+	 * subscription therefore recv()s that broadcast (n >= 0).  This is
+	 * the oracle's self-test: without it a broken subscription (bind to
+	 * the wrong group, silent socket failure, notifications not
+	 * reaching us) recv()s EAGAIN and looks identical to a clean run —
+	 * so an under-count would be missed and we would never know.  The
+	 * three outcomes are counted disjointly so exactly one fires per
+	 * successful create:
+	 *   - EMSGSIZE  -> nlmsg_size_undercount_macsec (bug oracle fired)
+	 *   - n >= 0    -> nlmsg_subscriber_live_macsec  (positive control)
+	 *   - else      -> nlmsg_subscriber_silent_macsec (armed but no
+	 *                  delivery: subscription is not working, oracle is
+	 *                  decoration — should stay ~0)
+	 * and a fourth, nlmsg_subscriber_unarmed_macsec, counts the case
+	 * where the subscriber socket could not even be created/bound.
+	 * dump_stats_render_packet_qdisc_bypass_unanchored_l2() warns when
+	 * completed iters exist but the positive control never fired.
 	 */
 	{
 		int sub_fd;
@@ -1080,13 +1101,34 @@ static int iter_one_in_ns(void *arg)
 
 		rc = bypass_create_macsec(&nl, "mst0", (int)veth0_ifx);
 
-		if (sub_fd >= 0) {
-			unsigned char rbuf[128];
-			ssize_t n = recv(sub_fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
-			if (n < 0 && errno == EMSGSIZE)
-				__atomic_add_fetch(
-					&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_size_undercount_macsec,
-					1, __ATOMIC_RELAXED);
+		if (sub_fd < 0) {
+			/* Oracle never armed: socket()/bind() to RTNLGRP_LINK
+			 * failed, so neither the bug oracle nor the positive
+			 * control can run.  Distinct from a live-but-silent
+			 * subscriber so the positive control is not diluted. */
+			__atomic_add_fetch(
+				&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_unarmed_macsec,
+				1, __ATOMIC_RELAXED);
+		} else {
+			/* Only classify when the link was actually created: a
+			 * failed create broadcasts nothing, so an EAGAIN there is
+			 * expected and must not pollute the silent counter. */
+			if (rc == 0) {
+				unsigned char rbuf[256];
+				ssize_t n = recv(sub_fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
+				if (n < 0 && errno == EMSGSIZE)
+					__atomic_add_fetch(
+						&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_size_undercount_macsec,
+						1, __ATOMIC_RELAXED);
+				else if (n >= 0)
+					__atomic_add_fetch(
+						&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_live_macsec,
+						1, __ATOMIC_RELAXED);
+				else
+					__atomic_add_fetch(
+						&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_silent_macsec,
+						1, __ATOMIC_RELAXED);
+			}
 			close(sub_fd);
 		}
 	}

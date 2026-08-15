@@ -92,6 +92,26 @@ static void dump_stats_render_packet_qdisc_bypass_unanchored_l2(void)
 		outputerr("macsec_sa_install_eperm == 0 after %lu completed iters: "
 			  "structural assumption may have changed\n",
 			  shm->stats.packet_qdisc_bypass_unanchored_l2.completed_ok);
+
+	/*
+	 * Positive-control oracle for nlmsg_size_undercount_macsec.  A
+	 * successful macsec RTM_NEWLINK broadcasts a clean notification that
+	 * a live RTNLGRP_LINK subscriber receives, so nlmsg_subscriber_live_macsec
+	 * must be non-zero once any iteration completed.  If it is zero the
+	 * subscription is not delivering: the under-count oracle cannot fire
+	 * either (a broken subscription reads identically to a clean run),
+	 * so a zero nlmsg_size_undercount_macsec is meaningless.  Warn so
+	 * the oracle is not silently trusted as a decoration.
+	 */
+	if (shm->stats.packet_qdisc_bypass_unanchored_l2.completed_ok > 0 &&
+	    shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_live_macsec == 0)
+		outputerr("nlmsg_subscriber_live_macsec == 0 after %lu completed iters: "
+			  "RTNLGRP_LINK subscriber never received a broadcast "
+			  "(silent=%lu unarmed=%lu) — the if_nlmsg_size() under-count "
+			  "oracle is unproven and its zero count is meaningless\n",
+			  shm->stats.packet_qdisc_bypass_unanchored_l2.completed_ok,
+			  shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_silent_macsec,
+			  shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_subscriber_unarmed_macsec);
 }
 
 static void dump_stats_render_packet_fanout_thrash(void)
