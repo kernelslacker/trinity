@@ -119,10 +119,14 @@ void childop_outcome_window_dump(void)
  * from inside a childop's op_fn body with the number of direct kernel
  * calls the caller just issued (usually a per-inner-iter constant --
  * pipe_thrash: 1 per create + 1 per close in the drain).  This is the
- * single choke point for bounds-checking the op index: call sites pass
- * the NR_CHILD_OP_TYPES sentinel (via tc ? tc->op_type : NR_CHILD_OP_TYPES)
- * when this_child() returns NULL and let the reject path here count the
- * loss.  RELAXED add-fetch -- cumulative diagnostic.
+ * single choke point for bounds-checking the op index.  An out-of-range
+ * op triggers the direct_tally_dropped counter; the only realistic cause
+ * is a corrupted child->op_type (shm memory corruption from a sibling),
+ * NOT a doubly-forked context: fork grandchildren inherit cached_childno,
+ * cached_pid, and cached_child unchanged via COW and take the fast path --
+ * this_child() (dispatch/pids.c:181-201) never returns NULL inside a
+ * childop body.  A non-zero direct_tally_dropped is a corruption oracle.
+ * RELAXED add-fetch -- cumulative diagnostic.
  */
 void childop_direct_syscalls_add(enum child_op_type op, unsigned long n)
 {

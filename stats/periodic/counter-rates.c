@@ -508,9 +508,15 @@ static const struct {
 	{ "fd_probe_ns_total",
 	  offsetof(struct stats_s, childop.fd_probe_ns_total) },
 	/* Syscalls lost from direct-syscall accounting because
-	 * childop_direct_syscalls_add() was called with an out-of-range
-	 * op (typically from a doubly-forked context where this_child()
-	 * returns NULL and the sentinel NR_CHILD_OP_TYPES is passed). */
+	 * childop_direct_syscalls_add() received an out-of-range op.
+	 * In practice this means child->op_type was corrupted (e.g. a
+	 * poisoned-arena write from a sibling).  A non-zero rate is a
+	 * shm corruption signal, not normal accounting noise: fork
+	 * grandchildren take the fast path and this_child() never
+	 * returns NULL inside a childop body (dispatch/pids.c:181-201),
+	 * so the doubly-forked / NULL-this_child() scenario posited in
+	 * d8e938a8a940 ("stats: wire direct_tally_dropped counter to reachable reject path")
+	 * does not occur. */
 	{ "direct_tally_dropped",
 	  offsetof(struct stats_s, childop.direct_tally_dropped) },
 	{ "pagecache_canary_corrupt_caught",

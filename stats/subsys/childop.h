@@ -288,15 +288,18 @@ struct childop_stats {
 	 * fetch: cumulative diagnostic, single-writer-per-child. */
 	unsigned long direct_syscalls[NR_CHILD_OP_TYPES];
 
-	/* Fleet-total count of direct-syscall tally calls that were
-	 * discarded because the op index was out of range
-	 * (childop_direct_syscalls_add() reject path).  Counts the
-	 * number of syscalls lost from accounting, i.e. the `n`
-	 * argument that was passed to the rejected call.  A non-zero
-	 * value means doubly-forked bodies (where this_child() returns
-	 * NULL) completed work that is invisible to the per-op
-	 * direct_syscalls[] telemetry.  RELAXED add-fetch: cumulative
-	 * diagnostic, multi-producer. */
+	/* Fleet-total count of direct-syscall tally calls discarded
+	 * because the op index was out of range (childop_direct_syscalls_add()
+	 * reject path).  The only realistic way to reach this path is a
+	 * corrupted child->op_type -- e.g. a poisoned-arena write from a
+	 * sibling landing in the wrong shm slot.  This is NOT an
+	 * accounting-noise counter for doubly-forked contexts: fork
+	 * grandchildren inherit cached_childno/cached_pid/cached_child
+	 * unchanged via COW and take the fast path; this_child() never
+	 * returns NULL inside a childop body (dispatch/pids.c:181-201).
+	 * A non-zero value is a corruption signal and should be treated
+	 * as diagnostic evidence of shm integrity loss.  RELAXED
+	 * add-fetch: cumulative diagnostic, multi-producer. */
 	unsigned long direct_tally_dropped;
 
 	/* Per-op SIGALRM-timeout counters for the 1-second alt-op stall
