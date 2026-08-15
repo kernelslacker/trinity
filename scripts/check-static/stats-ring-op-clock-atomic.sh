@@ -54,6 +54,60 @@ trap 'rm -f "$hits_tmp" "$grep_err_tmp"' EXIT
 
 scanned=0
 
+# _is_plain_lossless_access LINE
+#
+# Returns 0 (true) when LINE contains a plain (non-atomic) access to
+# lossless_op_count -- i.e. when, after stripping every __atomic_*()
+# call expression using balanced-paren matching, any (->|\.)lossless_op_count
+# token still remains.  Returns 1 (false) when every access on the line
+# is inside an __atomic_ intrinsic.
+#
+# This is the production predicate.  The self-test below exercises the
+# same function directly so that mutating it breaks both production and
+# the self-test simultaneously.
+#
+# Balanced-paren stripping is done with a Python3 one-liner so that
+# call expressions containing nested parens (e.g. get_ring(child)->field)
+# are handled correctly.  The [^)]* predicate introduced by
+# d40b905576e4 ("check-static: anchor lossless_op_count atomicity predicate to field")
+# could not cross a ')' and therefore false-rejected such sites, and it
+# also false-accepted a plain store whose RHS atomically loads the same
+# field (the field name appeared inside the intrinsic's parens on the RHS
+# while the LHS write was still plain).
+_is_plain_lossless_access() {
+	local _stripped
+	_stripped="$(printf '%s' "$1" | python3 -c "
+import re, sys
+s = sys.stdin.read()
+while True:
+    new_s = ''
+    i = 0
+    found = False
+    while i < len(s):
+        m = re.match(r'__atomic_[a-z_]+\\(', s[i:])
+        if m:
+            j = i + len(m.group()) - 1  # index of the opening '('
+            depth = 1
+            j += 1
+            while j < len(s) and depth > 0:
+                if s[j] == '(':
+                    depth += 1
+                elif s[j] == ')':
+                    depth -= 1
+                j += 1
+            i = j  # skip past the entire __atomic_xxx(...) call
+            found = True
+        else:
+            new_s += s[i]
+            i += 1
+    if not found:
+        break
+    s = new_s
+print(s, end='')
+")"
+	echo "$_stripped" | grep -qE '(->|\.)lossless_op_count'
+}
+
 while IFS= read -r srcfile; do
 	# Normalise to a path without leading ./
 	nf="${srcfile#./}"
@@ -100,16 +154,13 @@ while IFS= read -r srcfile; do
 			//*)  continue ;;
 		esac
 
-		# Line is a non-comment source line.  It is valid only if
-		# __atomic_ directly governs the lossless_op_count field
-		# reference: either the intrinsic takes lossless_op_count as an
-		# argument, or the field name precedes an __ATOMIC_ order token
-		# (i.e. is itself the argument being qualified).  A bare
-		# substring test for __atomic_ anywhere on the line admits false
-		# passes when an unrelated intrinsic appears on the same line
-		# (e.g. a plain store to lossless_op_count whose RHS loads a
-		# different field atomically).
-		if echo "$content" | grep -qE '__atomic_[a-z_]+\([^)]*lossless_op_count'; then
+		# Line is a non-comment source line.  It is valid only if every
+		# access to lossless_op_count on the line is inside an __atomic_
+		# intrinsic.  _is_plain_lossless_access strips all __atomic_*()
+		# call expressions (balanced-paren walk) and checks whether any
+		# (->|\.)lossless_op_count token survives.  If none survives,
+		# every access was inside an intrinsic and the line is safe.
+		if ! _is_plain_lossless_access "$content"; then
 			continue
 		fi
 
@@ -160,40 +211,68 @@ if [ "$n" -gt 0 ]; then
 	exit 1
 fi
 
-echo "PASS: $NAME: 0 plain lossless_op_count accesses ($scanned files scanned)"
-
-# Self-test: verify the anchored atomicity predicate accepts genuinely
-# atomic accesses and rejects a plain assignment whose RHS happens to
-# contain an unrelated __atomic_ call on the same line.
+# Self-test: verify _is_plain_lossless_access() classifies all fixture
+# lines correctly.  Runs before the PASS echo so a failing self-test
+# cannot produce a PASS line followed by FAIL output.
 #
-# Three fixture lines are tested:
-#   1. __atomic_fetch_add(&ring->lossless_op_count, ...) -- must be accepted
-#   2. __atomic_load_n(&ring->lossless_op_count, ...) -- must be accepted
-#   3. ring->lossless_op_count = __atomic_load_n(&other_field, ...) -- must
-#      be REJECTED: the atomic intrinsic governs other_field, not
-#      lossless_op_count; the assignment itself is a plain (non-atomic) write.
-_st_pat='__atomic_[a-z_]+\([^)]*lossless_op_count'
+# The self-test calls _is_plain_lossless_access() directly -- the same
+# function the walk loop uses -- so any mutation of the production
+# predicate immediately breaks the self-test as well.
+#
+# Five fixture lines:
+#   1. __atomic_fetch_add(&ring->lossless_op_count, ...) -- PASS (inside intrinsic)
+#   2. __atomic_load_n(&ring->lossless_op_count, ...) -- PASS (inside intrinsic)
+#   3. ring->lossless_op_count = __atomic_load_n(&other_field, ...) -- FAIL
+#      (intrinsic governs other_field; lossless_op_count LHS is a plain write)
+#   4. ring->lossless_op_count = __atomic_load_n(&other->lossless_op_count, ...) -- FAIL
+#      (same-field store: field appears in the intrinsic's args on the RHS
+#      but the LHS is still a plain write; the old [^)]* predicate falsely
+#      accepted this because the field name was visible inside the parens)
+#   5. __atomic_fetch_add(&get_ring(child)->lossless_op_count, ...) -- PASS
+#      (nested paren in arg; the old [^)]* predicate falsely rejected this
+#      because [^)]* cannot cross the ')' from get_ring(child))
 _st_fails=0
-# Fixture lines 1 and 2: atomic intrinsic takes lossless_op_count as an
-# argument -- predicate must accept them (grep matches => continue in loop).
+
+# Fixtures 1 and 2: every access is inside an __atomic_ intrinsic -- must PASS.
 for _st_line in \
 	'__atomic_fetch_add(&ring->lossless_op_count, 1, __ATOMIC_RELAXED);' \
 	'__atomic_load_n(&ring->lossless_op_count, __ATOMIC_RELAXED);'
 do
-	if ! echo "$_st_line" | grep -qE "$_st_pat"; then
-		echo "FAIL: $NAME: self-test: anchored predicate wrongly rejected: $_st_line" >&2
+	if _is_plain_lossless_access "$_st_line"; then
+		echo "FAIL: $NAME: self-test: predicate wrongly rejected atomic access: $_st_line" >&2
 		_st_fails=$((_st_fails + 1))
 	fi
 done
-# Fixture line 3: plain assignment to lossless_op_count; the __atomic_ call
-# on the RHS operates on a different field entirely.  Predicate must reject.
-if echo 'ring->lossless_op_count = __atomic_load_n(&other_field, __ATOMIC_RELAXED);' | grep -qE "$_st_pat"; then
-	echo "FAIL: $NAME: self-test: anchored predicate wrongly accepted plain assignment with unrelated atomic" >&2
+
+# Fixture 3: plain LHS write; atomic on RHS governs a different field -- must FAIL.
+if ! _is_plain_lossless_access \
+	'ring->lossless_op_count = __atomic_load_n(&other_field, __ATOMIC_RELAXED);'; then
+	echo "FAIL: $NAME: self-test: predicate wrongly accepted plain store (unrelated RHS atomic)" >&2
 	_st_fails=$((_st_fails + 1))
 fi
+
+# Fixture 4 (same-field store): LHS is a plain write; RHS atomically loads
+# the *same* field.  The old [^)]* predicate accepted this because the field
+# name appeared inside the intrinsic's parens on the RHS.  Must FAIL.
+if ! _is_plain_lossless_access \
+	'ring->lossless_op_count = __atomic_load_n(&other->lossless_op_count, __ATOMIC_RELAXED);'; then
+	echo "FAIL: $NAME: self-test: predicate wrongly accepted same-field plain store" >&2
+	_st_fails=$((_st_fails + 1))
+fi
+
+# Fixture 5 (nested paren in intrinsic arg): the old [^)]* predicate rejected
+# this because it could not cross the ')' from get_ring(child).  Must PASS.
+if _is_plain_lossless_access \
+	'__atomic_fetch_add(&get_ring(child)->lossless_op_count, 1, __ATOMIC_RELAXED);'; then
+	echo "FAIL: $NAME: self-test: predicate wrongly rejected nested-paren atomic access" >&2
+	_st_fails=$((_st_fails + 1))
+fi
+
 if [ "$_st_fails" -gt 0 ]; then
 	echo "FAIL: $NAME: self-test: $_st_fails predicate classification(s) wrong"
 	exit 1
 fi
-echo "PASS: $NAME: self-test: anchored predicate correctly classifies all 3 fixture lines"
+echo "PASS: $NAME: self-test: predicate correctly classifies all 5 fixture lines"
+
+echo "PASS: $NAME: 0 plain lossless_op_count accesses ($scanned files scanned)"
 exit 0
