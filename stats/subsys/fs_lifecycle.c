@@ -3,10 +3,9 @@
 
 /*
  * Descriptors for dump_stats_json_lifecycle_and_storms().  The JSON walker
- * ignores gate_offset (it emits every category unconditionally) so the gate
- * field here only matters if a future change wires stat_category_emit_text()
- * onto these tables; the current text dump for these two categories stays
- * hand-coded in dump_stats_childop_runs_local().
+ * emits every category unconditionally; the current text dump stays
+ * hand-coded in dump_stats_childop_runs_local().  If stat_category_emit_text()
+ * is wired onto these tables it will emit when any field is non-zero.
  */
 static const struct stat_field fs_lifecycle_fields[] = {
 	STAT_FIELD_SUB(fs_lifecycle, tmpfs),

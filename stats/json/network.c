@@ -73,9 +73,10 @@ void dump_stats_json_socket_family_and_tls(void)
  * sub-groups nested inside struct nftables_churn_stats, .name preserves
  * the full member identifier so the JSON key stays "xt_ct_iters" etc.
  *
- * The text emitter for these subsystems stays hand-coded for now, so the
- * gate_offset choices below only matter if a future change wires
- * stat_category_emit_text() onto these tables.
+ * The text emitter for these subsystems stays hand-coded for now; if a
+ * future change wires stat_category_emit_text() onto these tables it will
+ * emit when any field is non-zero, so the gate_field choices below are
+ * documentation only.
  */
 static const struct stat_field nftables_churn_fields[] = {
 	STAT_FIELD_SUB(nftables_churn, runs),

@@ -20,33 +20,23 @@ unsigned long stat_field_load(const struct stat_field *f)
 	return __atomic_load_n(p, __ATOMIC_RELAXED);
 }
 
-static unsigned long stat_gate_load(const struct stat_category *cat)
-{
-	unsigned long *p = (unsigned long *)((char *)&shm->stats + cat->gate_offset);
-	return __atomic_load_n(p, __ATOMIC_RELAXED);
-}
-
-static unsigned long stat_gate2_load(const struct stat_category *cat)
-{
-	unsigned long *p = (unsigned long *)((char *)&shm->stats + cat->gate_offset2);
-	return __atomic_load_n(p, __ATOMIC_RELAXED);
-}
-
 /*
- * Emit one category as text rows.  Mirrors the existing
- * "if (shm->stats.<gate>) { stat_row(...); ... }" idiom: when the gate
- * counter is zero the whole block is suppressed so quiet runs stay terse.
- *
- * Categories declared with STAT_CATEGORY2 carry a second gate field;
- * the block is emitted when either gate is non-zero.
+ * Emit one category as text rows.  The block is suppressed when every
+ * field in the category is zero, so quiet runs stay terse.  Walking all
+ * fields instead of a designated gate counter means any non-zero field
+ * triggers output -- new fields added to an existing category are
+ * automatically covered with no macro-arity changes.
  */
 void stat_category_emit_text(const struct stat_category *cat)
 {
 	size_t i;
 
-	if (stat_gate_load(cat) == 0 &&
-	    (cat->gate_offset2 == 0 || stat_gate2_load(cat) == 0))
-		return;
+	for (i = 0; i < cat->n_fields; i++) {
+		if (stat_field_load(&cat->fields[i]) != 0)
+			goto emit;
+	}
+	return;
+emit:
 	for (i = 0; i < cat->n_fields; i++)
 		stat_row(cat->name, cat->fields[i].name,
 		         stat_field_load(&cat->fields[i]));

@@ -14,12 +14,11 @@
  * epoll_*) the suffix alone wouldn't yield the schema's JSON key, so
  * STAT_FIELD_JSON() pins the JSON key explicitly.
  *
- * As with the fs_lifecycle/futex_storm pair above, the JSON walker
- * ignores stat_category.gate_offset; the gate field is set to the same
- * counter the existing text emitter uses (or a placeholder for
- * fd_lifecycle, which has no single gate) so a future text-side wiring
- * has a sensible default.  These tables have no live caller yet -- they
- * land here so the per-fn JSON conversions can be reviewed in isolation.
+ * The gate_field argument to STAT_CATEGORY is accepted for backward
+ * compatibility but is not stored; stat_category_emit_text() emits the
+ * block when any field in the category is non-zero.  These tables have
+ * no live text caller yet -- they land here so the per-fn JSON
+ * conversions can be reviewed in isolation.
  */
 /* child_dead_parent_observed: init_child()'s pid-handshake loop saw
  * pid_alive(mainpid) == false -- the parent died before publishing this
@@ -108,9 +107,9 @@ static const struct stat_field fd_lifecycle_fields[] = {
 	STAT_FIELD_SUB(fd, provider_invalid),
 };
 
-/* fd_lifecycle has no single gate counter -- the text emitter ORs many
- * fields.  Use fd.stale_detected as a placeholder for the JSON walker
- * (which ignores gate_offset); any text-side wiring will need to revisit. */
+/* fd_lifecycle has no single natural gate counter; stat_category_emit_text()
+ * will emit the block when any field is non-zero, which covers the
+ * ORed-fields case automatically. */
 static const struct stat_category fd_lifecycle_category
 	__attribute__((unused)) =
 	STAT_CATEGORY("fd_lifecycle",

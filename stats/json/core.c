@@ -85,11 +85,12 @@ void dump_stats_json_oracle(void)
  * correlated edits.  These tables collapse that to one STAT_FIELD*
  * row per field.
  *
- * The JSON walker ignores stat_category.gate_offset (every category
- * emits unconditionally), so the gate choices below only matter if a
- * future change wires stat_category_emit_text() onto these tables.
- * Each text-side block in dump_stats_text() stays hand-coded for now
- * and picks its own gate predicate.
+ * The JSON walker emits every category unconditionally.  The gate_field
+ * argument to STAT_CATEGORY is not stored in the descriptor; text emission
+ * via stat_category_emit_text() fires when any field is non-zero, so the
+ * gate choices below are effectively documentation only.  Each text-side
+ * block in dump_stats_text() stays hand-coded for now and picks its own
+ * gate predicate.
  *
  * Where the JSON schema key doesn't match the struct member suffix
  * (vfs_writes, memory_pressure) the row uses STAT_FIELD_JSON to pin

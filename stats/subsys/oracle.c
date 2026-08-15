@@ -6,13 +6,11 @@
  * <syscall>_oracle_anomalies in struct oracle_stats but the JSON schema
  * emits it as "<syscall>_anomalies" (the "oracle_" infix is implicit in
  * the enclosing category key), so each row uses STAT_FIELD_JSON_SUB to
- * pin the cross-prefix JSON key.  The JSON walker ignores
- * stat_category.gate_offset (it emits every category unconditionally)
- * and the text dump for oracle stays hand-coded in
- * dump_stats_oracle_anomalies() where each row has its own per-field
- * gate, so fd_oracle_anomalies here is a placeholder gate that matters
- * only if a future change wires stat_category_emit_text() onto this
- * table.
+ * pin the cross-prefix JSON key.  The JSON walker emits every category
+ * unconditionally; the text dump for oracle stays hand-coded in
+ * dump_stats_oracle_anomalies() where each row has its own per-field gate.
+ * If stat_category_emit_text() is wired onto this table it will emit when
+ * any anomaly counter is non-zero.
  */
 static const struct stat_field oracle_fields[] = {
 	STAT_FIELD_JSON_SUB(oracle, fd_oracle_anomalies,                     "fd_anomalies"),
