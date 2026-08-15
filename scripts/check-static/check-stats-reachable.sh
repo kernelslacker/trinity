@@ -447,8 +447,7 @@ fi
 while IFS= read -r shm_field; do
 	if xargs -0 grep -hE "\bshm->$shm_field\b" < "$CFILES" 2>/dev/null | \
 	   grep -vE '^[[:space:]]*([*/]|//)' | \
-	   grep -qvE "__atomic_add_fetch.*shm->$shm_field|\bshm->$shm_field[[:space:]]*(\+\+|--)| \
-\bshm->$shm_field[[:space:]]*(=|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
+	   grep -qvE "__atomic_add_fetch.*shm->$shm_field|\bshm->$shm_field[[:space:]]*(\+\+|--|=[^=]|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
 		echo "$shm_field"
 	fi
 done < "$SHM_WRITTEN" | sort -u > "$SHM_READ"
@@ -494,4 +493,21 @@ if [ -s "$SHM_UNALLOWED" ]; then
 fi
 
 echo "PASS: $NAME: $shm_written_count shm_s written scalar(s) checked ($shm_allow_count allowlisted, $((shm_written_count - shm_allow_count)) verified read)"
+
+# Self-test: tab-indented assignment must not slip through the write-exclusion
+# filter.  Before the fix the regex was split with backslash-newline inside a
+# double-quoted string, leaving a literal space before \bshm->; a tab-indented
+# `shm->foo = 0;` therefore failed to match and the field was misclassified
+# as a read.  Verify the fix: both lines below are writes, so the combined
+# pipeline must produce zero non-write lines (grep -qv must exit non-zero).
+_fix_field="foo"
+_fix_file="$TMP/fix_fixture"
+printf '\tshm->%s = 0;\n\t__atomic_add_fetch(&shm->%s, 1, __ATOMIC_RELAXED);\n' \
+	"$_fix_field" "$_fix_field" > "$_fix_file"
+if grep -hE "\bshm->$_fix_field\b" "$_fix_file" | \
+   grep -vE '^[[:space:]]*([*/]|//)' | \
+   grep -qvE "__atomic_add_fetch.*shm->$_fix_field|\bshm->$_fix_field[[:space:]]*(\+\+|--|=[^=]|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
+	fail "self-test: tab-indented 'shm->$_fix_field = 0' was misclassified as a non-write read (write-filter regex broken)"
+fi
+echo "PASS: $NAME: self-test: tab-indented shm assignment correctly excluded from read set"
 exit 0
