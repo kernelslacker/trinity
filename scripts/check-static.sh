@@ -40,6 +40,14 @@ skipped() {
 fail_count=0
 ran_count=0
 
+# No checks installed → benign pass (empty or absent check-static/ dir is
+# not an error; a freshly-cloned tree before any checks are added should
+# still pass the gate).
+if [ ! -d "$CHECK_DIR" ] || [ -z "$(ls -A "$CHECK_DIR" 2>/dev/null)" ]; then
+	echo "check-static: no checks installed in $CHECK_DIR"
+	exit 0
+fi
+
 # Pre-flight: verify that baseline-collation's own detector logic is alive
 # before running the gate battery.  If the selftest fails, the detector has
 # been broken (e.g. a grep pattern was mutated to never match) and the gate
@@ -51,11 +59,6 @@ fi
 if ! bash "$CHECK_DIR/baseline-collation.sh" --selftest; then
 	echo "check-static: baseline-collation selftest failed; aborting" >&2
 	exit 1
-fi
-
-if [ ! -d "$CHECK_DIR" ] || [ -z "$(ls -A "$CHECK_DIR" 2>/dev/null)" ]; then
-	echo "check-static: no checks installed in $CHECK_DIR"
-	exit 0
 fi
 
 for check in "$CHECK_DIR"/*.sh; do
