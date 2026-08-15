@@ -14,6 +14,7 @@ static const struct stat_field packet_qdisc_bypass_unanchored_l2_fields[] = {
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, macsec_sa_install_eperm),
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, macsec_sa_install_failed),
 	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, completed_ok),
+	STAT_FIELD_SUB(packet_qdisc_bypass_unanchored_l2, nlmsg_size_undercount_macsec),
 };
 
 const struct stat_category packet_qdisc_bypass_unanchored_l2_category =

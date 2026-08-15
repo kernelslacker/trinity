@@ -1045,8 +1045,45 @@ static int iter_one_in_ns(void *arg)
 		goto out_nl;
 	}
 
-	/* Create macsec device mst0 over veth0 */
-	rc = bypass_create_macsec(&nl, "mst0", (int)veth0_ifx);
+	/*
+	 * Create macsec device mst0 over veth0.
+	 *
+	 * RTNLGRP_LINK subscriber oracle: open a second NETLINK_ROUTE socket
+	 * subscribed to RTNLGRP_LINK before the RTM_NEWLINK call.  When
+	 * if_nlmsg_size() under-counts the space rtnl_fill_ifinfo() needs,
+	 * rtmsg_ifinfo_build_skb() WARNs and calls rtnl_set_sk_err(), which
+	 * sets sk_err on every RTNLGRP_LINK subscriber.  The subsequent
+	 * MSG_DONTWAIT recv() then returns -1 / ENOBUFS — userspace-visible
+	 * without dmesg.  Count per-kind rather than abort.
+	 */
+	{
+		int sub_fd;
+		struct sockaddr_nl snl;
+
+		sub_fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+		if (sub_fd >= 0) {
+			memset(&snl, 0, sizeof(snl));
+			snl.nl_family = AF_NETLINK;
+			snl.nl_groups = 1U << (RTNLGRP_LINK - 1);
+			if (bind(sub_fd, (struct sockaddr *)&snl, sizeof(snl)) < 0) {
+				close(sub_fd);
+				sub_fd = -1;
+			}
+		}
+
+		rc = bypass_create_macsec(&nl, "mst0", (int)veth0_ifx);
+
+		if (sub_fd >= 0) {
+			unsigned char rbuf[128];
+			ssize_t n = recv(sub_fd, rbuf, sizeof(rbuf), MSG_DONTWAIT);
+			if (n < 0 && errno == ENOBUFS)
+				__atomic_add_fetch(
+					&shm->stats.packet_qdisc_bypass_unanchored_l2.nlmsg_size_undercount_macsec,
+					1, __ATOMIC_RELAXED);
+			close(sub_fd);
+		}
+	}
+
 	if (rc != 0) {
 		__atomic_add_fetch(
 			&shm->stats.packet_qdisc_bypass_unanchored_l2.setup_failed,
