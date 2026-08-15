@@ -196,6 +196,60 @@ CORE_SPLIT_FIELDS="walltime_ns
 syscalls
 iterations"
 
+# ---------------------------------------------------------------------------
+# Positive assertion 1: all three core split fields must be present as
+# top-level keys in childop_split_json:.  Being "exempt from parity" means
+# they need no matching supplemental text counter — it does NOT mean they
+# may be absent from the JSON object.  A regression that drops one of these
+# keys would otherwise pass the parity checks undetected.
+# ---------------------------------------------------------------------------
+
+while IFS= read -r _cfield; do
+	[ -z "$_cfield" ] && continue
+	if ! printf '%s\n' "$json_toplevel" | grep -qx "$_cfield"; then
+		fail "core field '${_cfield}' absent from childop_split_json: — JSON lost a required core split key"
+	fi
+done < <(printf '%s\n' "$CORE_SPLIT_FIELDS")
+
+# ---------------------------------------------------------------------------
+# Positive assertion 2: childop_split: must be present on the text side.
+# This single line encodes walltime_ns/syscalls/iterations as a human-
+# readable token; its absence means the core fields have dropped from the
+# text surface entirely.
+# ---------------------------------------------------------------------------
+
+printf '%s\n' "$section" | grep -q '^childop_split:' || \
+	fail "childop_split: line absent from childop-split baseline section — core fields lost from text surface"
+
+# ---------------------------------------------------------------------------
+# Selftest for positive assertion 1: verify the loop detects a missing core
+# field.  Use a fixture that omits 'iterations' and confirm it is caught.
+# ---------------------------------------------------------------------------
+
+_st_keys="walltime_ns
+syscalls"
+_st_caught=""
+while IFS= read -r _cfield; do
+	[ -z "$_cfield" ] && continue
+	if ! printf '%s\n' "$_st_keys" | grep -qx "$_cfield"; then
+		_st_caught="$_cfield"
+		break
+	fi
+done < <(printf '%s\n' "$CORE_SPLIT_FIELDS")
+[ "$_st_caught" = "iterations" ] || \
+	fail "selftest: core-field absence check: expected 'iterations' missing, got '${_st_caught:-none}'"
+unset _st_keys _st_caught _cfield
+
+# ---------------------------------------------------------------------------
+# Selftest for positive assertion 2: a section that lacks childop_split:
+# must not produce a false pass.  Verify grep correctly returns non-zero.
+# ---------------------------------------------------------------------------
+
+_st_section="childop_split_json: {walltime_ns:{},syscalls:{},iterations:{}}"
+printf '%s\n' "$_st_section" | grep -q '^childop_split:' && \
+	fail "selftest: childop_split: wrongly detected in fixture that lacks it"
+unset _st_section
+
 # Compute non-core JSON keys (those not in CORE_SPLIT_FIELDS).
 json_noncorekeys=$(printf '%s\n' "$json_toplevel" | while IFS= read -r jkey; do
 	if ! printf '%s\n' "$CORE_SPLIT_FIELDS" | grep -qx "$jkey"; then
