@@ -49,36 +49,14 @@ fail() {
 	exit 1
 }
 
-[ -r "$BASELINE" ] || fail "baseline not found: ${BASELINE#"$ROOT"/} -- run check-periodic-text-schema.sh --regen first"
-
 # ---------------------------------------------------------------------------
-# Extract the === childop-split === section from the baseline.
-# ---------------------------------------------------------------------------
-
-section=$(awk '
-	/^=== childop-split ===/ { found=1; next }
-	found && /^===/ { exit }
-	found { print }
-' "$BASELINE")
-
-[ -n "$section" ] || fail "=== childop-split === section not found in ${BASELINE#"$ROOT"/}"
-
-# ---------------------------------------------------------------------------
-# JSON side: extract top-level keys from the childop_split_json: line.
-#
-# The schema template looks like:
-#   childop_split_json: {walltime_ns:{childop:,...},syscalls:{...},iterations:{...}}
-#
-# Top-level keys are those that appear directly inside the outer { ... }
-# object -- i.e., keys followed by ":{" (nested object) or ":" at depth 0.
-# The awk below walks character-by-character, tracking brace depth, and
-# records each key encountered at depth 1 (direct child of the outer {}).
+# extract_toplevel_keys -- shared awk key-extractor used by both the
+# production path and the fixture self-test.  Reads a single line from
+# stdin and prints the sorted unique set of top-level JSON key names.
 # ---------------------------------------------------------------------------
 
-json_line=$(printf '%s\n' "$section" | grep '^childop_split_json:')
-[ -n "$json_line" ] || fail "childop_split_json: line absent from childop-split baseline section"
-
-json_toplevel=$(printf '%s\n' "$json_line" | awk '
+extract_toplevel_keys() {
+	awk '
 BEGIN { depth=0; key="" }
 {
 	# Locate the opening { that starts the JSON object.
@@ -114,7 +92,59 @@ BEGIN { depth=0; key="" }
 		}
 	}
 }
-' | LC_ALL=C sort -u)
+' | LC_ALL=C sort -u
+}
+
+# ---------------------------------------------------------------------------
+# find_missing_core_field -- shared core-field presence check used by both
+# the production assertion and the selftest.  Reads a newline-separated set
+# of known keys from stdin.  If any CORE_SPLIT_FIELDS entry is absent,
+# prints it and returns 1.  Returns 0 if all fields are present.
+# ---------------------------------------------------------------------------
+
+find_missing_core_field() {
+	local _keys
+	_keys=$(cat)
+	while IFS= read -r _cf; do
+		[ -z "$_cf" ] && continue
+		if ! printf '%s\n' "$_keys" | grep -qx "$_cf"; then
+			printf '%s\n' "$_cf"
+			return 1
+		fi
+	done < <(printf '%s\n' "$CORE_SPLIT_FIELDS")
+	return 0
+}
+
+[ -r "$BASELINE" ] || fail "baseline not found: ${BASELINE#"$ROOT"/} -- run check-periodic-text-schema.sh --regen first"
+
+# ---------------------------------------------------------------------------
+# Extract the === childop-split === section from the baseline.
+# ---------------------------------------------------------------------------
+
+section=$(awk '
+	/^=== childop-split ===/ { found=1; next }
+	found && /^===/ { exit }
+	found { print }
+' "$BASELINE")
+
+[ -n "$section" ] || fail "=== childop-split === section not found in ${BASELINE#"$ROOT"/}"
+
+# ---------------------------------------------------------------------------
+# JSON side: extract top-level keys from the childop_split_json: line.
+#
+# The schema template looks like:
+#   childop_split_json: {walltime_ns:{childop:,...},syscalls:{...},iterations:{...}}
+#
+# Top-level keys are those that appear directly inside the outer { ... }
+# object -- i.e., keys followed by ":{" (nested object) or ":" at depth 0.
+# The awk below walks character-by-character, tracking brace depth, and
+# records each key encountered at depth 1 (direct child of the outer {}).
+# ---------------------------------------------------------------------------
+
+json_line=$(printf '%s\n' "$section" | grep '^childop_split_json:')
+[ -n "$json_line" ] || fail "childop_split_json: line absent from childop-split baseline section"
+
+json_toplevel=$(printf '%s\n' "$json_line" | extract_toplevel_keys)
 
 # ---------------------------------------------------------------------------
 # Fixture self-test: verify the awk key-extractor produces clean keys when
@@ -127,36 +157,7 @@ BEGIN { depth=0; key="" }
 # ---------------------------------------------------------------------------
 
 _fixture_json="dummy: {walltime_ns:{childop:0},syscalls:{childop:0},iterations:{childop:0},alpha:42,beta:7}"
-_fixture_keys=$(printf '%s\n' "$_fixture_json" | awk '
-BEGIN { depth=0; key="" }
-{
-	start = index($0, "{")
-	if (start == 0) next
-	s = substr($0, start)
-	n = length(s)
-	for (i = 1; i <= n; i++) {
-		c = substr(s, i, 1)
-		if (c == "{") {
-			depth++
-		} else if (c == "}") {
-			depth--
-		} else if (depth == 1) {
-			if (c == ":") {
-				if (length(key) > 0) {
-					print key
-					key = ""
-				}
-			} else if (c ~ /[a-zA-Z0-9_]/) {
-				key = key c
-			} else {
-				if (length(key) > 0) key = ""
-			}
-		} else {
-			key = ""
-		}
-	}
-}
-' | LC_ALL=C sort -u)
+_fixture_keys=$(printf '%s\n' "$_fixture_json" | extract_toplevel_keys)
 
 for _want in alpha beta iterations syscalls walltime_ns; do
 	if ! printf '%s\n' "$_fixture_keys" | grep -qx "$_want"; then
@@ -204,12 +205,9 @@ iterations"
 # keys would otherwise pass the parity checks undetected.
 # ---------------------------------------------------------------------------
 
-while IFS= read -r _cfield; do
-	[ -z "$_cfield" ] && continue
-	if ! printf '%s\n' "$json_toplevel" | grep -qx "$_cfield"; then
-		fail "core field '${_cfield}' absent from childop_split_json: — JSON lost a required core split key"
-	fi
-done < <(printf '%s\n' "$CORE_SPLIT_FIELDS")
+_missing=$(printf '%s\n' "$json_toplevel" | find_missing_core_field) || \
+	fail "core field '${_missing}' absent from childop_split_json: — JSON lost a required core split key"
+unset _missing
 
 # ---------------------------------------------------------------------------
 # Positive assertion 2: childop_split: must be present on the text side.
@@ -228,17 +226,10 @@ printf '%s\n' "$section" | grep -q '^childop_split:' || \
 
 _st_keys="walltime_ns
 syscalls"
-_st_caught=""
-while IFS= read -r _cfield; do
-	[ -z "$_cfield" ] && continue
-	if ! printf '%s\n' "$_st_keys" | grep -qx "$_cfield"; then
-		_st_caught="$_cfield"
-		break
-	fi
-done < <(printf '%s\n' "$CORE_SPLIT_FIELDS")
+_st_caught=$(printf '%s\n' "$_st_keys" | find_missing_core_field) || true
 [ "$_st_caught" = "iterations" ] || \
 	fail "selftest: core-field absence check: expected 'iterations' missing, got '${_st_caught:-none}'"
-unset _st_keys _st_caught _cfield
+unset _st_keys _st_caught
 
 # ---------------------------------------------------------------------------
 # Selftest for positive assertion 2: a section that lacks childop_split:
