@@ -70,7 +70,7 @@ STDERR_FILE="$WORK/trinity.stderr"
 # keeps the run deterministic and safe; a handful of iterations is
 # enough for init to complete.
 ( cd "$WORK" && \
-  TRINITY_NO_DMESG=1 timeout 15 \
+  TRINITY_NO_DMESG=1 timeout -k 5 15 \
       "$BINARY" --dry-run -C 1 -N 20 \
       >"$WORK/trinity.stdout" 2>"$STDERR_FILE" ) || true
 
