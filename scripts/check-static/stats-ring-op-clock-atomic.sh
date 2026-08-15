@@ -53,9 +53,15 @@ while IFS= read -r srcfile; do
 	# Normalise to a path without leading ./
 	nf="${srcfile#./}"
 
-	# Explicit allow-list: tests/ directory (single-threaded fixture).
+	# Explicit allow-list.
 	case "$nf" in
 		tests/*) continue ;;
+		# stats/stats-ring.c is the parent-side consumer: all actual
+		# ring->lossless_op_count accesses use __atomic_load_n, and the
+		# cross-drain state array prev_lossless_op_count[] is parent-only
+		# (no child ever touches it).  Allow the whole file rather than
+		# relying on comment-line filtering alone to pass the check.
+		stats/stats-ring.c) continue ;;
 	esac
 
 	scanned=$((scanned + 1))

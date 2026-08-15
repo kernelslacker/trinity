@@ -590,8 +590,7 @@ static void test_child_respawn_preserve(void)
 /* Test 7: delta_guard                                                 */
 /*                                                                     */
 /* Exercises the delta-based plausibility arm added in               */
-/* dfb8993f4632 ("stats-ring: add per-slot delta plausibility guard  */
-/* for lossless_op_count"):                                          */
+/* dfb8993f4632 ("stats-ring: add per-slot delta plausibility guard for lossless_op_count"): */
 /*                                                                     */
 /* Phase 1: run baseline_ops normally; first guarded drain accepts and */
 /*           records prev = baseline_ops.                              */
