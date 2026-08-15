@@ -74,11 +74,11 @@
 #define RING_CAP 1024
 
 /*
- * Mirrors the two plausibility constants in stats/stats-ring.c.
- * Keep these in sync if the production values change.
+ * Plausibility guard thresholds shared with the production drain.
+ * Single canonical definition in include/stats_ring_opclock_limits.h;
+ * no hand-copy, no "keep in sync" comment needed.
  */
-#define LOSSLESS_OP_COUNT_SANE_CEILING        (1UL << 52)
-#define LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN (100000000UL)  /* 1e8 ops/drain */
+#include "stats_ring_opclock_limits.h"
 
 struct sim_ring {
 	unsigned long lossless_op_count;	/* per-child; RELAXED atomic in production

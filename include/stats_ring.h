@@ -5,6 +5,7 @@
 
 #include "spsc-ring.h"
 #include "stats.h"	/* NR_SYSCAT */
+#include "stats_ring_opclock_limits.h"	/* LOSSLESS_OP_COUNT_* guard thresholds */
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
 /*
