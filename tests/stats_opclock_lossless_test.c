@@ -214,18 +214,17 @@ static void sim_drain(struct sim_ring *ring,
 /* Returns true when the slot was accepted (aggregate updated),        */
 /* false when rejected (aggregate stalls at last good value).          */
 /*                                                                     */
-/* prev_op, have_baseline, and reported mirror the per-slot cross-drain*/
-/* state (prev_lossless_op_count[], have_baseline_lossless[], and      */
-/* slot_implausible_reported[] in production).  have_baseline must be  */
-/* false on first call and is set true on the first accept, arming the */
-/* delta check from drain 1 with prev = 0.                             */
+/* prev_op and reported mirror the per-slot cross-drain state          */
+/* (prev_lossless_op_count[] and slot_implausible_reported[] in        */
+/* production).  The delta check is unconditional from drain 1: prev   */
+/* starts at 0, lossless_op_count is monotonic from 0, and one drain  */
+/* interval cannot legitimately exceed MAX_DELTA_PER_DRAIN ops.        */
 /* ------------------------------------------------------------------ */
 
 static bool sim_drain_guarded(struct sim_ring *ring,
 			      struct sim_aggregate *agg,
 			      unsigned long *fleet_op_count,
 			      unsigned long *prev_op,
-			      bool *have_baseline,
 			      bool *reported,
 			      int *emissions)
 {
@@ -239,9 +238,8 @@ static bool sim_drain_guarded(struct sim_ring *ring,
 	slot_ops     = ring->lossless_op_count;
 	prev         = *prev_op;
 	absolute_bad = (slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING);
-	delta_bad    = (*have_baseline) &&
-		       ((slot_ops < prev) ||
-			(slot_ops - prev > LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN));
+	delta_bad    = (slot_ops < prev) ||
+		       (slot_ops - prev > LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN);
 
 	if (absolute_bad || delta_bad) {
 		/*
@@ -260,7 +258,6 @@ static bool sim_drain_guarded(struct sim_ring *ring,
 
 	/* Plausible: re-arm reporting, advance prev baseline, update agg. */
 	*reported           = false;
-	*have_baseline      = true;
 	*prev_op            = slot_ops;
 	agg->total_op_count = slot_ops;
 	agg->op_count       = agg->total_op_count - agg->epoch_start_op_count;
@@ -618,7 +615,6 @@ static void test_delta_guard(void)
 	struct sim_aggregate agg;
 	unsigned long fleet = 0;
 	unsigned long prev_op = 0;
-	bool have_baseline = false;
 	bool reported = false;
 	unsigned long baseline_ops = 500;
 	unsigned long stalled_total;
@@ -637,11 +633,10 @@ static void test_delta_guard(void)
 
 	int emissions = 0;
 
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported, &emissions);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported, &emissions);
 	SELFTEST_ASSERT(accepted);
 	SELFTEST_ASSERT(agg.total_op_count == baseline_ops);
 	SELFTEST_ASSERT(prev_op == baseline_ops);
-	SELFTEST_ASSERT(have_baseline);
 	SELFTEST_ASSERT(!reported);
 
 	/*
@@ -656,7 +651,7 @@ static void test_delta_guard(void)
 	stalled_total = agg.total_op_count;
 
 	/* Drain 1 after scribble: delta guard trips; aggregate stalls. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported, &emissions);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported, &emissions);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(reported);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
@@ -667,7 +662,7 @@ static void test_delta_guard(void)
 	ring.lossless_op_count += 1000;
 
 	/* Drain 2: delta from original prev is larger; still rejected. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported, &emissions);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported, &emissions);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
 	SELFTEST_ASSERT(prev_op == baseline_ops);
@@ -682,7 +677,7 @@ static void test_delta_guard(void)
 			baseline_ops + LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN + 1001);
 
 	/* Drain after respawn: rejection persists; aggregate stalls permanently. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported, &emissions);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported, &emissions);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
 
@@ -713,7 +708,6 @@ static void test_first_drain_scribble(void)
 	struct sim_aggregate agg;
 	unsigned long fleet = 0;
 	unsigned long prev_op = 0;
-	bool have_baseline = false;
 	bool reported = false;
 	bool accepted;
 
@@ -737,18 +731,17 @@ static void test_first_drain_scribble(void)
 	SELFTEST_ASSERT(scribble > LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN);
 
 	/*
-	 * First drain: have_baseline is false so prev == 0.  The delta from
-	 * 0 to scribble exceeds MAX_DELTA_PER_DRAIN.  Must be rejected.
+	 * First drain: prev == 0 (calloc init).  The delta from 0 to scribble
+	 * exceeds MAX_DELTA_PER_DRAIN.  The guard is unconditional so this
+	 * must be rejected even though no previous accepted drain exists.
 	 */
 	int emissions8 = 0;
 
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported, &emissions8);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported, &emissions8);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(reported);
 	/* Aggregate must not have moved. */
 	SELFTEST_ASSERT(agg.total_op_count == 0);
-	/* have_baseline must remain false: no good baseline recorded. */
-	SELFTEST_ASSERT(!have_baseline);
 	/* prev_op must remain 0: bad value must not pollute the anchor. */
 	SELFTEST_ASSERT(prev_op == 0);
 }
