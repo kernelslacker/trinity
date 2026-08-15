@@ -161,20 +161,189 @@ if [ "$malformed_count" -gt 0 ]; then
 	exit 1
 fi
 
-# ---- Summary ----
+# ---- Ioctl-group config check ----
+# Parse ioctls/*.c files for *_devs[] arrays, map each device-class string
+# to its gating CONFIG_ symbol, and warn when an entire group is dead.
+#
+# "dead" means the symbol is neither CONFIG_X=y nor CONFIG_X=m (absent and
+# explicitly-not-set are treated identically -- both mean the feature is off).
+#
+# A group is WARN when ALL nodes are dead; partially-dead groups (some nodes
+# live, some dead) get a separate INFO line on stderr.
 
-if [ "$warn_count" -gt 0 ]; then
+# Devnode class string → CONFIG_SYMBOL<TAB>display_name
+# Keys are the literal strings that appear in ioctls/*.c devs[] arrays.
+IOCTL_NODE_MAP=$(cat <<'IOCTL_NODE_MAP_EOF'
+uinput	INPUT_UINPUT	uinput
+video4linux	MEDIA_SUPPORT	video4linux
+cec	MEDIA_CEC_SUPPORT	cec
+sound	SOUND	sound/ALSA
+alsa	SOUND	sound/ALSA
+vhost-net	VHOST_MENU	vhost
+vhost-vsock	VHOST_MENU	vhost
+vhost-vdpa	VHOST_MENU	vhost
+device-mapper	MD	device-mapper
+mtd	MTD	mtd
+pps	PPS	pps
+rfkill	RFKILL	rfkill
+isgx	X86_SGX	sgx
+firewire	FIREWIRE	firewire
+watchdog	WATCHDOG	watchdog
+mei	INTEL_MEI	intel-mei
+sr	BLK_DEV_SR	cdrom
+nbd	BLK_DEV_NBD	nbd
+vmci	VMWARE_VMCI	vmci
+ptp	PTP_1588_CLOCK	ptp
+mcelog	X86_MCELOG_LEGACY	mcelog
+IOCTL_NODE_MAP_EOF
+)
+
+# Per-file node overrides: filename<TAB>devnode_class<TAB>CONFIG_SYMBOL<TAB>display_name
+# Needed when a devnode class string is shared across files with different
+# feature gates (e.g. joystick.c uses the generic "input" class but gates on
+# INPUT_JOYDEV, not INPUT).
+IOCTL_FILE_OVERRIDE=$(cat <<'IOCTL_FILE_OVERRIDE_EOF'
+joystick.c	input	INPUT_JOYDEV	joystick
+IOCTL_FILE_OVERRIDE_EOF
+)
+
+# Pre-load the kconfig live-set once so individual node lookups are O(1).
+# Calling kernel_has() for each devnode (potentially 50+ files × 3 nodes)
+# would re-invoke grep on the kconfig file per symbol, which is
+# prohibitively slow on networked or remote mounts (~0.2s/call).
+declare -A _ioctl_kcfg_live
+if [ -n "$KCONFIG" ]; then
+	while IFS= read -r _kcfg_line; do
+		_kcfg_key="${_kcfg_line%%=*}"
+		# Dup guard required by baseline-associative-dup-guard; kconfig
+		# entries are unique in practice but guard defensively.
+		[[ -v _ioctl_kcfg_live["$_kcfg_key"] ]] && continue
+		_ioctl_kcfg_live["$_kcfg_key"]=1
+	done < <(grep -E "^CONFIG_[A-Z0-9_]+=(y|m)" "$KCONFIG" 2>/dev/null)
+fi
+ioctl_sym_live() { [ "${_ioctl_kcfg_live["CONFIG_$1"]+_}" ]; }
+
+ioctl_warn_count=0
+ioctl_info_count=0
+ioctl_skip_announced=0
+
+for _cfile in "$ROOT"/ioctls/*.c; do
+	[ -f "$_cfile" ] || continue
+	_fname=$(basename "$_cfile")
+
+	# Extract all devnode class strings from *_devs[] arrays in this file.
+	# Handles both 'char *const' and 'char * const' spellings.
+	_devnodes=$(awk '
+		/static const char[ ]*\*[ ]*const[ ]+[a-z][a-z0-9_]*_devs\[/ { in_devs=1; next }
+		in_devs && /\};/ { in_devs=0; next }
+		in_devs {
+			line = $0
+			while (match(line, /"[^"]+"/) > 0) {
+				print substr(line, RSTART+1, RLENGTH-2)
+				line = substr(line, RSTART+RLENGTH)
+			}
+		}
+	' "$_cfile" 2>/dev/null)
+
+	[ -n "$_devnodes" ] || continue
+
+	if [ -z "$KCONFIG" ]; then
+		if [ "$ioctl_skip_announced" -eq 0 ]; then
+			echo "  $NAME: ioctl-group checks skipped (fuzz-target kconfig not found)" >&2
+			ioctl_skip_announced=1
+		fi
+		continue
+	fi
+
+	_node_dead=0
+	_node_live=0
+	_dead_displays=""
+
+	while IFS= read -r _node; do
+		[ -n "$_node" ] || continue
+
+		# Look up in per-file override table first.
+		_sym=""
+		_display=""
+		while IFS=$'\t' read -r _of_file _of_node _of_sym _of_display; do
+			[ "$_of_file" = "$_fname" ] && [ "$_of_node" = "$_node" ] || continue
+			_sym="$_of_sym"
+			_display="$_of_display"
+			break
+		done <<< "$IOCTL_FILE_OVERRIDE"
+
+		# Fall back to generic node map.
+		if [ -z "$_sym" ]; then
+			while IFS=$'\t' read -r _nm_node _nm_sym _nm_display; do
+				[ "$_nm_node" = "$_node" ] || continue
+				_sym="$_nm_sym"
+				_display="$_nm_display"
+				break
+			done <<< "$IOCTL_NODE_MAP"
+		fi
+
+		if [ -z "$_sym" ]; then
+			# Not in our map; treat as live (unknown ≠ dead).
+			_node_live=$((_node_live + 1))
+			continue
+		fi
+
+		if ioctl_sym_live "$_sym"; then
+			_node_live=$((_node_live + 1))
+		else
+			_node_dead=$((_node_dead + 1))
+			# Accumulate unique display names for the WARN/INFO line.
+			case ",$_dead_displays," in
+			*",${_display},"*) ;;
+			*) _dead_displays="${_dead_displays:+$_dead_displays, }$_display" ;;
+			esac
+		fi
+	done <<< "$_devnodes"
+
+	if [ "$_node_dead" -eq 0 ]; then
+		continue  # all mapped nodes live
+	elif [ "$_node_live" -eq 0 ]; then
+		# Fully dead group.
+		echo "WARN: $NAME: ioctls/$_fname: ioctl group dead ($_dead_displays disabled)"
+		ioctl_warn_count=$((ioctl_warn_count + 1))
+	else
+		# Partially dead group: some nodes live, some dead.
+		echo "INFO: $NAME: ioctls/$_fname: ioctl group partially dead" \
+		     "($_dead_displays disabled; some nodes still live)" >&2
+		ioctl_info_count=$((ioctl_info_count + 1))
+	fi
+done
+
+# Ioctl-group summary (separate counter from childop table).
+if [ "$ioctl_warn_count" -gt 0 ]; then
 	{
 		echo ""
-		echo "  $NAME: $warn_count childop file(s) are config-dead on this target."
-		echo "  A config-dead arm compiles to a stub or returns LATCH_UNSUPPORTED"
-		echo "  every invocation; it contributes zero useful fuzz surface."
-		echo "  Resolution: enable the kernel/build option, or remove the childop"
-		echo "  from the rotation until the config is present on the fuzz target."
-		[ "$skip_count" -gt 0 ] && \
-		echo "  ($skip_count mapping entry/entries skipped -- config source not readable)"
+		echo "  $NAME: $ioctl_warn_count ioctl group(s) are config-dead on this target."
+		echo "  A dead ioctl group contributes zero coverage; its /dev nodes will"
+		echo "  never open successfully on this kernel configuration."
+		echo "  Resolution: enable the gating kernel option on the fuzz target."
+		[ "$ioctl_info_count" -gt 0 ] && \
+		echo "  ($ioctl_info_count partially-dead group(s) -- see INFO lines above)"
 	} >&2
-	echo "WARN: $NAME: $warn_count config-dead arm(s) (exit 0; WARN gate)"
+fi
+
+# ---- Summary ----
+
+if [ "$warn_count" -gt 0 ] || [ "$ioctl_warn_count" -gt 0 ]; then
+	_total_warn=$((warn_count + ioctl_warn_count))
+	{
+		[ "$warn_count" -gt 0 ] && {
+			echo ""
+			echo "  $NAME: $warn_count childop file(s) are config-dead on this target."
+			echo "  A config-dead arm compiles to a stub or returns LATCH_UNSUPPORTED"
+			echo "  every invocation; it contributes zero useful fuzz surface."
+			echo "  Resolution: enable the kernel/build option, or remove the childop"
+			echo "  from the rotation until the config is present on the fuzz target."
+			[ "$skip_count" -gt 0 ] && \
+			echo "  ($skip_count mapping entry/entries skipped -- config source not readable)"
+		}
+	} >&2
+	echo "WARN: $NAME: $warn_count config-dead childop arm(s), $ioctl_warn_count dead ioctl group(s) (exit 0; WARN gate)"
 	exit 0
 fi
 
