@@ -630,6 +630,12 @@ update this section to match `ls scripts/check-static/*.sh`.)
   writers must use `__atomic_fetch_add(..., __ATOMIC_RELAXED)`;
   `RELAXED` is correct because the child is the sole writer and
   nothing orders against this counter on either side.
+- `stats-opclock-lossless-suite`: builds `tests/test-bin-asan` (the
+  PURE-module test binary under `-fsanitize=address`) and runs the
+  `stats_opclock_lossless_self_check` suite, which gates the per-child
+  lossless op-count plausibility guards: absolute ceiling, per-drain
+  delta ceiling, and first-drain scribble rejection.  Catches a red
+  fixture suite before it escapes to the tree.
 - `u32-skip-sw-oracle-false-positive`: the cls_u32 SKIP_SW update-path
    oracle in `do_u32_skip_sw_leak()` must delete the step-A knode and probe
    hnode2 via `settle_then_probe_hnode2_delete()` (bounded RCU backoff),
