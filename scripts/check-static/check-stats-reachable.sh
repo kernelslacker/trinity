@@ -412,13 +412,13 @@ SHM_WRITE_PAT_ATOMIC='__atomic_(add_fetch|fetch_add|store_n|compare_exchange_n|e
 # Emit an ERE matching any write to shm->FIELD on a source line.
 # Nine spellings:
 #   atomic primitives (matched via SHM_WRITE_PAT_ATOMIC) whose first
-#   pointer arg is &shm->FIELD -- the primitive name and shm->FIELD both
-#   appear on the same line;
+#   pointer arg is &shm->FIELD -- anchored as \(&shm->FIELD[[:space:]]*[,)]
+#   so only the first-argument position matches, not a later read arg;
 #   shm->FIELD++ / shm->FIELD--  (post-inc/dec);
 #   shm->FIELD += / shm->FIELD -= (compound-assignment).
 shm_write_pat() {
 	local f="$1"
-	printf '%s' "${SHM_WRITE_PAT_ATOMIC}.*\bshm->${f}\b|\bshm->${f}[[:space:]]*(\+\+|--|\+=|-=)"
+	printf '%s' "${SHM_WRITE_PAT_ATOMIC}\(&shm->${f}[[:space:]]*[,)]|\bshm->${f}[[:space:]]*(\+\+|--|\+=|-=)"
 }
 SHM_H="$ROOT/include/shm.h"
 [ -r "$SHM_H" ] || fail "cannot read $SHM_H"
@@ -573,4 +573,21 @@ if grep -hE "\bshm->$_fix_field\b" "$_fix_file" | \
 	fail "self-test: a write line was misclassified as a non-write read (write-filter regex broken)"
 fi
 echo "PASS: $NAME: self-test: all write spellings correctly excluded from read set"
+
+# Self-test: verify the write-anchor correctly rejects a read of
+# shm->FIELD that appears as a later argument (not the first pointer
+# arg) of an atomic intrinsic.  The old loose pattern
+# (SHM_WRITE_PAT_ATOMIC.*\bshm->FIELD\b) false-positived on this;
+# the tight \(&shm->FIELD[[:space:]]*[,)] anchor must NOT match.
+# Line: __atomic_store_n(&shm->other, shm->foo, __ATOMIC_RELAXED);
+# -- foo is the value being stored, i.e. a read, not a write.
+_fix_fp_file="$TMP/fix_fp_fixture"
+printf '\t__atomic_store_n(&shm->other, shm->%s, __ATOMIC_RELAXED);\n' \
+	"$_fix_field" > "$_fix_fp_file"
+if grep -hE "\bshm->$_fix_field\b" "$_fix_fp_file" | \
+   grep -vE '^[[:space:]]*([*/]|//)' | \
+   grep -qE "$(shm_write_pat "$_fix_field")|\bshm->$_fix_field[[:space:]]*(=[^=]|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
+	fail "self-test: a read of shm->$_fix_field as a value argument was misclassified as a write (anchor too loose)"
+fi
+echo "PASS: $NAME: self-test: second-argument read correctly not classified as a write"
 exit 0
