@@ -26,16 +26,26 @@ static unsigned long stat_gate_load(const struct stat_category *cat)
 	return __atomic_load_n(p, __ATOMIC_RELAXED);
 }
 
+static unsigned long stat_gate2_load(const struct stat_category *cat)
+{
+	unsigned long *p = (unsigned long *)((char *)&shm->stats + cat->gate_offset2);
+	return __atomic_load_n(p, __ATOMIC_RELAXED);
+}
+
 /*
  * Emit one category as text rows.  Mirrors the existing
  * "if (shm->stats.<gate>) { stat_row(...); ... }" idiom: when the gate
  * counter is zero the whole block is suppressed so quiet runs stay terse.
+ *
+ * Categories declared with STAT_CATEGORY2 carry a second gate field;
+ * the block is emitted when either gate is non-zero.
  */
 void stat_category_emit_text(const struct stat_category *cat)
 {
 	size_t i;
 
-	if (stat_gate_load(cat) == 0)
+	if (stat_gate_load(cat) == 0 &&
+	    (cat->gate_offset2 == 0 || stat_gate2_load(cat) == 0))
 		return;
 	for (i = 0; i < cat->n_fields; i++)
 		stat_row(cat->name, cat->fields[i].name,

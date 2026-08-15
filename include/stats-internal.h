@@ -36,9 +36,10 @@ struct stat_field {
 
 struct stat_category {
 	const char              *name;		/* JSON object key / text category column */
-	size_t                   gate_offset;	/* offsetof of the gate counter */
+	size_t                   gate_offset;	/* offsetof of primary gate counter */
 	const struct stat_field *fields;
 	size_t                   n_fields;
+	size_t                   gate_offset2;	/* offsetof of secondary gate counter (0 = unused) */
 };
 
 #define STAT_FIELD(cat, suffix) \
@@ -74,6 +75,17 @@ struct stat_category {
 	  offsetof(struct stats_s, gate_field), \
 	  (fields_array), \
 	  ARRAY_SIZE(fields_array) }
+
+/* Two-field OR gate: emit when (gate_field != 0 || gate_field2 != 0).
+ * Use this instead of STAT_CATEGORY when a category has a secondary
+ * counter that should independently trigger text output -- e.g. a
+ * failure counter that can be non-zero even when the run counter is 0. */
+#define STAT_CATEGORY2(cat_name, gate_field, gate_field2, fields_array) \
+	{ (cat_name), \
+	  offsetof(struct stats_s, gate_field), \
+	  (fields_array), \
+	  ARRAY_SIZE(fields_array), \
+	  offsetof(struct stats_s, gate_field2) }
 
 /* Aggregate-stats table column widths.  Header and every row use the
  * same format string so the dump is greppable and human-scannable. */

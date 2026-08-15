@@ -14,11 +14,12 @@ static const struct stat_field nat_t_churn_fields[] = {
 	STAT_FIELD_SUB(nat_t_churn, lo_up_fail),
 };
 
-/* NOTE: text-walker conversion must gate on (runs || lo_up_fail); see
- * 3db4b71cae43 ("stats: render lo_up_fail outside nat_t_churn.runs gate").
- * STAT_CATEGORY supports a single gate_offset only; split the gate at
- * the walker call site when converting. */
+/* Gate on (runs || lo_up_fail): lo_up_fail can be non-zero even when
+ * no full churn run completes, so both counters must independently
+ * trigger text output.  STAT_CATEGORY2 encodes this OR-gate in the
+ * descriptor; stat_category_emit_text() checks both gate fields. */
 const struct stat_category nat_t_churn_category =
-	STAT_CATEGORY("nat_t_churn",
-	              nat_t_churn.runs,
-	              nat_t_churn_fields);
+	STAT_CATEGORY2("nat_t_churn",
+	               nat_t_churn.runs,
+	               nat_t_churn.lo_up_fail,
+	               nat_t_churn_fields);
