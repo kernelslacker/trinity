@@ -50,7 +50,8 @@ cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
 hits_tmp="$(mktemp)"
 grep_err_tmp="$(mktemp)"
-trap 'rm -f "$hits_tmp" "$grep_err_tmp"' EXIT
+ws_hits_tmp="$(mktemp)"
+trap 'rm -f "$hits_tmp" "$grep_err_tmp" "$ws_hits_tmp"' EXIT
 
 scanned=0
 
@@ -106,6 +107,29 @@ while True:
 print(s, end='')
 ")"
 	echo "$_stripped" | grep -qE '(->|\.)lossless_op_count'
+}
+
+# _ws_is_whole_struct_write LINE
+#
+# Returns 0 (true) when LINE contains a whole-struct write to a
+# struct stats_ring — specifically:
+#
+#   memset( ring , ...)  — whole-struct zero (first arg bare 'ring', no ->)
+#   memcpy( ring , ...)  — whole-struct copy as destination
+#   *ring = ...          — struct-value assignment through pointer
+#
+# Returns 1 (false) for sub-member writes:
+#   memset(ring->slots, ...)  — sub-member only; lossless_op_count intact
+#   memset(shm_published, ...) — different struct entirely
+#
+# Pattern rationale:
+#   'ring[[:space:]]*,' matches an identifier 'ring' followed immediately
+#   by optional whitespace then a comma — i.e. end of the first argument.
+#   'ring->' cannot match because '->' is not '[[:space:]]' or ','.
+#   '\*ring[[:space:]]*=[^=]' matches struct-deref assignment but not ==.
+_ws_is_whole_struct_write() {
+	echo "$1" | grep -qE \
+		'memset[[:space:]]*\([[:space:]]*\*?ring[[:space:]]*,|memcpy[[:space:]]*\([[:space:]]*\*?ring[[:space:]]*,|\*ring[[:space:]]*=[^=]'
 }
 
 while IFS= read -r srcfile; do
@@ -193,6 +217,78 @@ if [ -s "$grep_err_tmp" ]; then
 	exit 1
 fi
 
+# --- Whole-struct-write check ---
+# A memset/memcpy/struct-assign whose destination is a whole struct
+# stats_ring (rather than a named sub-member like ring->slots) clobbers
+# lossless_op_count non-atomically while the parent reads it via
+# __atomic_load_n(&ring->lossless_op_count, __ATOMIC_RELAXED) — a C11
+# data race and UB.  The comment guard in stats_ring_init() is not a gate.
+#
+# Scope: production .c/.h files that reference struct stats_ring.  As of
+# this writing, stats/stats-ring.c is the only production .c with struct
+# stats_ring instances; the pattern is nonetheless applied to all files
+# so any future addition is caught automatically.
+#
+# Patterns flagged:
+#   memset( ring ,  -- whole-struct zero  (first arg bare pointer, no ->)
+#   memcpy( ring ,  -- whole-struct copy  (destination is bare pointer)
+#   *ring = ...     -- struct-value assignment through a pointer
+#
+# Patterns NOT flagged (sub-member or unrelated-struct writes):
+#   memset(ring->slots, ...)   -- sub-member only
+#   memset(shm_published, ...) -- targets struct stats_published, not ring
+
+while IFS= read -r srcfile; do
+	nf="${srcfile#./}"
+	case "$nf" in
+		tests/*) continue ;;
+	esac
+	# Only scan files that actually reference struct stats_ring.
+	grep -qE 'struct[[:space:]]+stats_ring\b' "$srcfile" || continue
+
+	ws_grep_out="$(grep -nE \
+		'memset[[:space:]]*\([[:space:]]*\*?ring[[:space:]]*,|memcpy[[:space:]]*\([[:space:]]*\*?ring[[:space:]]*,|\*ring[[:space:]]*=[^=]' \
+		"$srcfile")"
+	[ -n "$ws_grep_out" ] || continue
+
+	while IFS= read -r rawline; do
+		lineno="${rawline%%:*}"
+		content="${rawline#*:}"
+		trimmed="${content#"${content%%[![:space:]]*}"}"
+		# Skip comment lines.  Use [^a-zA-Z_] after the leading '*' to
+		# avoid silently dropping code lines like '*ring = *other;'
+		# (which start with '*' followed by an identifier character).
+		# '\*[^a-zA-Z_]*)' matches block-comment bodies ('* text', '*/')
+		# but not struct-deref expressions.
+		case "$trimmed" in
+			\*[^a-zA-Z_]*) continue ;;
+			/\**) continue ;;
+			//*)  continue ;;
+		esac
+		echo "${nf}:${lineno}: ${trimmed}"
+	done <<< "$ws_grep_out"
+done < <(find . \( -name '*.c' -o -name '*.h' \) -type f -not -path './.git/*' -print | sort) \
+     >> "$ws_hits_tmp"
+
+ws_n="$(wc -l < "$ws_hits_tmp" | tr -d ' ')"
+if [ "$ws_n" -gt 0 ]; then
+	{
+		echo "  $NAME: whole-struct write to struct stats_ring detected"
+		echo "  A memset/memcpy/struct-assign targeting a whole struct stats_ring"
+		echo "  clobbers lossless_op_count non-atomically while the parent reads it via"
+		echo "    __atomic_load_n(&ring->lossless_op_count, __ATOMIC_RELAXED)"
+		echo "  This is a C11 data race and UB.  Use per-member initialisation as"
+		echo "  stats_ring_init() does and explicitly preserve lossless_op_count."
+		echo "  The comment guard in stats_ring_init() is not a gate."
+		echo "  Offending site(s):"
+		sed 's/^/    /' "$ws_hits_tmp"
+		echo "  fix: replace whole-struct zero/copy with per-member initialisation;"
+		echo "       never zero lossless_op_count (run-monotonic op clock, survives respawn)"
+	} >&2
+	echo "FAIL: $NAME: $ws_n whole-struct stats_ring write(s) found"
+	exit 1
+fi
+
 n="$(wc -l < "$hits_tmp" | tr -d ' ')"
 
 if [ "$n" -gt 0 ]; then
@@ -273,6 +369,56 @@ if [ "$_st_fails" -gt 0 ]; then
 	exit 1
 fi
 echo "PASS: $NAME: self-test: predicate correctly classifies all 5 fixture lines"
+
+# Whole-struct-write self-test: verify _ws_is_whole_struct_write() classifies
+# fixture lines correctly.  Five fixtures:
+#   1. memset(ring, ...)          -- whole-struct zero       -- FAIL
+#   2. memcpy(ring, ...)          -- whole-struct copy       -- FAIL
+#   3. *ring = *other             -- struct deref assignment -- FAIL
+#   4. memset(ring->slots, ...)   -- sub-member only        -- PASS (not flagged)
+#   5. memset(shm_published, ...) -- unrelated struct       -- PASS (not flagged)
+_ws_st_fails=0
+
+# Fixture 1: memset whose first arg is a bare stats_ring pointer -- FAIL.
+if ! _ws_is_whole_struct_write \
+	'memset(ring, 0, sizeof(*ring));'; then
+	echo "FAIL: $NAME: ws-self-test: memset(ring,...) wrongly accepted" >&2
+	_ws_st_fails=$((_ws_st_fails + 1))
+fi
+
+# Fixture 2: memcpy whose destination is a bare stats_ring pointer -- FAIL.
+if ! _ws_is_whole_struct_write \
+	'memcpy(ring, other, sizeof(*ring));'; then
+	echo "FAIL: $NAME: ws-self-test: memcpy(ring,...) wrongly accepted" >&2
+	_ws_st_fails=$((_ws_st_fails + 1))
+fi
+
+# Fixture 3: struct-value assignment through a stats_ring pointer -- FAIL.
+if ! _ws_is_whole_struct_write \
+	'*ring = *other;'; then
+	echo "FAIL: $NAME: ws-self-test: *ring=*other wrongly accepted" >&2
+	_ws_st_fails=$((_ws_st_fails + 1))
+fi
+
+# Fixture 4: memset targeting a sub-member (ring->slots) -- must NOT trip.
+if _ws_is_whole_struct_write \
+	'memset(ring->slots, 0, sizeof(ring->slots));'; then
+	echo "FAIL: $NAME: ws-self-test: memset(ring->slots,...) wrongly flagged" >&2
+	_ws_st_fails=$((_ws_st_fails + 1))
+fi
+
+# Fixture 5: memset targeting a different struct -- must NOT trip.
+if _ws_is_whole_struct_write \
+	'memset(shm_published, 0, sizeof(*shm_published));'; then
+	echo "FAIL: $NAME: ws-self-test: memset(shm_published,...) wrongly flagged" >&2
+	_ws_st_fails=$((_ws_st_fails + 1))
+fi
+
+if [ "$_ws_st_fails" -gt 0 ]; then
+	echo "FAIL: $NAME: ws-self-test: $_ws_st_fails whole-struct-write classification(s) wrong"
+	exit 1
+fi
+echo "PASS: $NAME: ws-self-test: whole-struct-write predicate correctly classifies all 5 fixture lines"
 
 echo "PASS: $NAME: 0 plain lossless_op_count accesses ($scanned files scanned)"
 exit 0
