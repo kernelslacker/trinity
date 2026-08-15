@@ -49,7 +49,8 @@ ROOT="${REPO_ROOT:-$(pwd)}"
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
 hits_tmp="$(mktemp)"
-trap 'rm -f "$hits_tmp"' EXIT
+grep_err_tmp="$(mktemp)"
+trap 'rm -f "$hits_tmp" "$grep_err_tmp"' EXIT
 
 scanned=0
 
@@ -67,7 +68,22 @@ while IFS= read -r srcfile; do
 	# Walk lines with a field-access expression for lossless_op_count.
 	# The pattern requires -> or . before the field name, so bare
 	# identifiers like prev_lossless_op_count[] do not match.
-	grep -nE '(->|\.)lossless_op_count' "$srcfile" 2>/dev/null | \
+	#
+	# Capture stdout and exit status separately so that a real grep
+	# failure (status ≥2: unreadable file, bad regex, I/O error) is
+	# never silently treated as "no match".  Status 0 = match(es)
+	# found; status 1 = no match (clean); status ≥2 = error → FAIL.
+	grep_out="$(grep -nE '(->|\.)lossless_op_count' "$srcfile")"
+	grep_status=$?
+	if [ "$grep_status" -ge 2 ]; then
+		echo "  $NAME: grep error (status $grep_status) scanning $nf" >&2
+		echo "$nf" >> "$grep_err_tmp"
+		continue
+	fi
+
+	# Status 1 (no match) means no candidate lines; nothing to inspect.
+	[ -n "$grep_out" ] || continue
+
 	while IFS= read -r rawline; do
 		# rawline is "lineno:content".
 		lineno="${rawline%%:*}"
@@ -99,7 +115,7 @@ while IFS= read -r srcfile; do
 
 		# Surviving lines are plain (non-atomic) accesses -- FAIL.
 		echo "${nf}:${lineno}: ${trimmed}"
-	done
+	done <<< "$grep_out"
 done < <(find . \( -name '*.c' -o -name '*.h' \) -type f -not -path './.git/*' -print | sort) \
      >> "$hits_tmp"
 
@@ -111,6 +127,18 @@ if [ "$scanned" -eq 0 ]; then
 		echo "  A zero-file scan must not silently pass."
 	} >&2
 	echo "FAIL: $NAME: 0 files scanned"
+	exit 1
+fi
+
+# If any grep invocation returned status ≥2 (real error), fail now.
+# An empty result that came from a grep error is NOT a PASS.
+if [ -s "$grep_err_tmp" ]; then
+	{
+		echo "  $NAME: grep exited with error status (≥2) while scanning:"
+		sed 's/^/    /' "$grep_err_tmp"
+		echo "  A grep error is not the same as no match; treating as scan failure."
+	} >&2
+	echo "FAIL: $NAME: grep scan error(s) in $(wc -l < "$grep_err_tmp" | tr -d ' ') file(s)"
 	exit 1
 fi
 
