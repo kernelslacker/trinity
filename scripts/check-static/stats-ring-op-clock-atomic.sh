@@ -22,10 +22,14 @@
 #   tests/*            -- single-threaded fixture; all accesses use
 #                         __atomic_ for model consistency, but even if
 #                         they did not the harness is not concurrent
-#   stats/stats-ring.c -- consumer side already uses __atomic_load_n;
-#                         comment lines in this file mention the field
-#                         name and are covered by the global comment
-#                         filter below
+#
+# The grep pattern '(->|\.)lossless_op_count' is token-precise: it
+# matches only field-access expressions (-> or . dereference) and not
+# bare identifiers such as prev_lossless_op_count[] or diagnostic
+# strings that merely contain the field name as a substring.  This
+# avoids the need for a whole-file exemption for stats/stats-ring.c
+# (which contains the only __atomic_load_n reader) and keeps that site
+# inside coverage.
 #
 # Comment lines (trimmed prefix: *, /*, //) are skipped globally for
 # all files, since a comment that mentions the field name is not an
@@ -56,18 +60,14 @@ while IFS= read -r srcfile; do
 	# Explicit allow-list.
 	case "$nf" in
 		tests/*) continue ;;
-		# stats/stats-ring.c is the parent-side consumer: all actual
-		# ring->lossless_op_count accesses use __atomic_load_n, and the
-		# cross-drain state array prev_lossless_op_count[] is parent-only
-		# (no child ever touches it).  Allow the whole file rather than
-		# relying on comment-line filtering alone to pass the check.
-		stats/stats-ring.c) continue ;;
 	esac
 
 	scanned=$((scanned + 1))
 
-	# Walk lines that mention lossless_op_count.
-	grep -n "lossless_op_count" "$srcfile" 2>/dev/null | \
+	# Walk lines with a field-access expression for lossless_op_count.
+	# The pattern requires -> or . before the field name, so bare
+	# identifiers like prev_lossless_op_count[] do not match.
+	grep -nE '(->|\.)lossless_op_count' "$srcfile" 2>/dev/null | \
 	while IFS= read -r rawline; do
 		# rawline is "lineno:content".
 		lineno="${rawline%%:*}"
@@ -95,13 +95,13 @@ while IFS= read -r srcfile; do
 		# Surviving lines are plain (non-atomic) accesses -- FAIL.
 		echo "${nf}:${lineno}: ${trimmed}"
 	done
-done < <(find . -name '*.c' -type f -not -path './.git/*' -print | sort) \
+done < <(find . \( -name '*.c' -o -name '*.h' \) -type f -not -path './.git/*' -print | sort) \
      >> "$hits_tmp"
 
 # Assert we actually scanned at least one file.
 if [ "$scanned" -eq 0 ]; then
 	{
-		echo "  $NAME: no .c files were scanned"
+		echo "  $NAME: no source files were scanned"
 		echo "  (directory missing, glob matched nothing, or all files allow-listed)"
 		echo "  A zero-file scan must not silently pass."
 	} >&2
