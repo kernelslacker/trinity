@@ -68,6 +68,7 @@
 
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
+#include <linux/virtio_net.h>
 
 #include "child.h"
 #include "childop-outcome.h"
@@ -82,10 +83,6 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/socket.h"
-
-#ifndef SO_ZEROCOPY
-#define SO_ZEROCOPY		60
-#endif
 
 #ifndef ETH_P_MPLS_UC
 #define ETH_P_MPLS_UC			0x8847
@@ -493,40 +490,45 @@ static int mpls_label_stack_rx_iter_build_link(struct mpls_label_stack_rx_iter_c
 }
 
 /*
- * mlr_send_nonlinear_frame - one-shot MSG_ZEROCOPY send where the inner
- * L3 header is placed in a separate iov entry from the Ethernet + MPLS
- * label-stack headers.  With MSG_ZEROCOPY the kernel maps the second iov
- * page directly as an skb frag, landing the inner IPv4 header in
- * skb->data_len (nonlinear) with insufficient linear tailroom.  This is
- * the precondition that makes pskb_may_pull() in mpls_multipath_hash()
- * call __pskb_pull_tail() -> pskb_expand_head() rather than returning
- * immediately on an already-linear skb.
+ * mlr_send_nonlinear_frame - send one crafted MPLS frame with the inner
+ * IPv4 header placed in an skb frag (nonlinear) via PACKET_VNET_HDR.
  *
- * The Ethernet + MPLS portion (iov[0]) carries a two-entry label stack
- * with BOS on the second entry.  After the kernel pops both labels and
- * reaches S=1, it inspects the inner IPv4 header (iov[1]) via
- * pskb_may_pull(skb, sizeof(*mpls_hdr) + sizeof(struct iphdr)).  If the
- * inner header is still in nonlinear data, pskb_may_pull must pull tail.
+ * packet_snd() derives the linear/frag split as:
+ *   linear = max(vnet_hdr.hdr_len, min(len, hard_header_len))
+ * Without PACKET_VNET_HDR the zeroed local vnet_hdr yields hdr_len == 0
+ * so linear == hard_header_len == 14 (Ethernet), and every regular burst
+ * frame already has len-14 bytes in frags -- the burst arm already reaches
+ * __pskb_pull_tail() on every send with a stack + inner-IPv4 total longer
+ * than 14 bytes.
  *
- * Best-effort: AF_PACKET MSG_ZEROCOPY returns -ENOTSUPP on kernels that
- * have not implemented the zerocopy TX path for raw sockets; failure is
- * silent and the burst continues normally.  The errqueue drain is
- * MSG_DONTWAIT so it cannot block.
+ * This helper tightens the split to the exact Ethernet + MPLS label-stack
+ * boundary: enabling PACKET_VNET_HDR and setting vnet_hdr.hdr_len to
+ * sizeof(ethhdr) + 2*sizeof(mpls_label) == 22 causes packet_snd() to set
+ * linear == 22 and place the sizeof(struct iphdr) == 20 inner-IPv4 bytes
+ * into skb->data_len (frags).  The subsequent pskb_may_pull(skb,
+ * sizeof(*mpls_hdr) + sizeof(struct iphdr)) in mpls_multipath_hash() then
+ * has no linear tailroom and must call __pskb_pull_tail().
  */
 static void mlr_send_nonlinear_frame(struct mpls_label_stack_rx_iter_ctx *ctx)
 {
-	/* iov[0]: Ethernet header (14 bytes) + two MPLS entries (8 bytes) */
+	/* Ethernet header (14 bytes) + two MPLS stack entries (8 bytes). */
 	uint8_t eth_mpls[MLR_ETH_HLEN + 8U];
-	/* iov[1]: inner IPv4 header in its own buffer so MSG_ZEROCOPY maps
-	 * it as a separate frag rather than merging into iov[0]'s page. */
+	/* Inner IPv4 header in its own buffer; lands in a frag because
+	 * virtio_net_hdr.hdr_len == sizeof(eth_mpls) exactly. */
 	struct iphdr inner;
-	struct iovec iov[2];
+	struct virtio_net_hdr vnet;
+	struct iovec iov[3];
 	struct msghdr mhdr;
 	struct sockaddr_ll dst;
 	uint32_t e0, e1;
 	int one = 1;
 	size_t off = 0;
 	ssize_t n;
+
+	/* Enable PACKET_VNET_HDR so packet_snd() uses vnet.hdr_len as the
+	 * linear/frag split point instead of hard_header_len (14). */
+	setsockopt(ctx->raw, SOL_PACKET, PACKET_VNET_HDR, &one, sizeof(one));
+	ctx->direct_calls++;	/* setsockopt */
 
 	memset(eth_mpls, 0, sizeof(eth_mpls));
 
@@ -544,9 +546,8 @@ static void mlr_send_nonlinear_frame(struct mpls_label_stack_rx_iter_ctx *ctx)
 	eth_mpls[off + 1] = 0x47;
 	off += 2;
 
-	/* Two-entry MPLS stack: entry 0 has S=0 (not bottom), entry 1 has
-	 * S=1 (bottom of stack).  Both use user-space labels >=16.  The
-	 * walker must pop both before it sees the inner IPv4 header. */
+	/* Two-entry MPLS stack: entry 0 has S=0, entry 1 has S=1 (bottom).
+	 * The walker must pop both before it sees the inner IPv4 header. */
 	e0 = mlr_encode_entry(16U + rnd_modulo_u32(0xffffU),
 			      (uint8_t)(rand32() & 0x7U), false, pick_ttl());
 	e1 = mlr_encode_entry(16U + rnd_modulo_u32(0xffffU),
@@ -562,8 +563,14 @@ static void mlr_send_nonlinear_frame(struct mpls_label_stack_rx_iter_ctx *ctx)
 	eth_mpls[off + 3] = (uint8_t)(e1 & 0xffU);
 	off += 4U;
 
-	/* Inner IPv4 header in separate iov so MSG_ZEROCOPY maps it as a
-	 * frag -- the MPLS decap path will need pskb_may_pull to reach it. */
+	/* virtio_net_hdr: hdr_len == Ethernet + 2 MPLS entries (22 bytes).
+	 * packet_snd() sets linear = max(22, min(42, 14)) = 22, so the
+	 * 20-byte inner IPv4 header lands in skb->data_len (frags). */
+	memset(&vnet, 0, sizeof(vnet));
+	vnet.hdr_len = (__u16)off;	/* 14 (Eth) + 8 (2x MPLS) == 22 */
+
+	/* Inner IPv4 header in a separate iov; pskb_may_pull must pull
+	 * tail to bring it into the linear region. */
 	memset(&inner, 0, sizeof(inner));
 	inner.version  = 4;
 	inner.ihl      = 5;
@@ -573,15 +580,15 @@ static void mlr_send_nonlinear_frame(struct mpls_label_stack_rx_iter_ctx *ctx)
 	inner.daddr    = (__be32)__builtin_bswap32(0x7f000001U);
 	inner.tot_len  = htons((uint16_t)sizeof(inner));
 
-	/* Enable SO_ZEROCOPY on the socket.  Failure (e.g. older kernel,
-	 * or already set) is harmless -- we attempt the send regardless. */
-	setsockopt(ctx->raw, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one));
-	ctx->direct_calls++;	/* setsockopt */
-
-	iov[0].iov_base = eth_mpls;
-	iov[0].iov_len  = off;
-	iov[1].iov_base = &inner;
-	iov[1].iov_len  = sizeof(inner);
+	/* iov[0]: virtio_net_hdr consumed by packet_snd() for split control.
+	 * iov[1]: Ethernet + MPLS (goes into linear skb->data).
+	 * iov[2]: inner IPv4 (goes into frags). */
+	iov[0].iov_base = &vnet;
+	iov[0].iov_len  = sizeof(vnet);
+	iov[1].iov_base = eth_mpls;
+	iov[1].iov_len  = off;
+	iov[2].iov_base = &inner;
+	iov[2].iov_len  = sizeof(inner);
 
 	memset(&dst, 0, sizeof(dst));
 	dst.sll_family   = AF_PACKET;
@@ -594,19 +601,13 @@ static void mlr_send_nonlinear_frame(struct mpls_label_stack_rx_iter_ctx *ctx)
 	mhdr.msg_name    = &dst;
 	mhdr.msg_namelen = sizeof(dst);
 	mhdr.msg_iov     = iov;
-	mhdr.msg_iovlen  = 2;
+	mhdr.msg_iovlen  = 3;
 
-	n = sendmsg(ctx->raw, &mhdr, MSG_ZEROCOPY | MSG_DONTWAIT);
+	n = sendmsg(ctx->raw, &mhdr, MSG_DONTWAIT);
 	ctx->direct_calls++;	/* sendmsg */
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.packet_sent_ok,
 				   1, __ATOMIC_RELAXED);
-
-	/* Drain the errqueue notification that MSG_ZEROCOPY generates
-	 * once the kernel has finished with the user pages.  Best-effort:
-	 * MSG_DONTWAIT so it cannot block if no notification is ready. */
-	recv(ctx->raw, NULL, 0, MSG_ERRQUEUE | MSG_DONTWAIT);
-	ctx->direct_calls++;	/* recv(MSG_ERRQUEUE) */
 }
 
 /*
@@ -671,10 +672,9 @@ static void mpls_label_stack_rx_iter_send_burst(struct mpls_label_stack_rx_iter_
 	}
 
 	/* Nonlinear-frame variant: send one frame with the inner L3 header
-	 * in a separate iov entry so MSG_ZEROCOPY maps it as an skb frag.
-	 * This targets the pskb_may_pull reallocation path in
-	 * mpls_multipath_hash() (inner-L3 in nonlinear data, linear tailroom
-	 * insufficient to absorb the frag without pskb_expand_head). */
+	 * placed in an skb frag via PACKET_VNET_HDR / virtio_net_hdr.hdr_len,
+	 * targeting the pskb_may_pull reallocation path in
+	 * mpls_multipath_hash() (inner-L3 in nonlinear data). */
 	mlr_send_nonlinear_frame(ctx);
 }
 
