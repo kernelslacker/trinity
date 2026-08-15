@@ -314,7 +314,7 @@ static void dump_stats_render_pipe_waker(void)
 
 static void dump_stats_render_nat_t_churn(void)
 {
-	if (shm->stats.nat_t_churn.runs) {
+	if (shm->stats.nat_t_churn.runs || shm->stats.nat_t_churn.lo_up_fail) {
 		stat_row("nat_t_churn", "runs",              shm->stats.nat_t_churn.runs);
 		stat_row("nat_t_churn", "setup_failed",      shm->stats.nat_t_churn.setup_failed);
 		stat_row("nat_t_churn", "sa_added",          shm->stats.nat_t_churn.sa_added);
