@@ -226,7 +226,8 @@ static bool sim_drain_guarded(struct sim_ring *ring,
 			      unsigned long *fleet_op_count,
 			      unsigned long *prev_op,
 			      bool *have_baseline,
-			      bool *reported)
+			      bool *reported,
+			      int *emissions)
 {
 	unsigned long slot_ops;
 	unsigned long prev;
@@ -244,10 +245,13 @@ static bool sim_drain_guarded(struct sim_ring *ring,
 
 	if (absolute_bad || delta_bad) {
 		/*
-		 * Rate-limit flag: only emits a diagnostic on first detection.
-		 * Aggregate stalls; prev_op is NOT updated so the delta check
-		 * stays anchored to the last known-good baseline.
+		 * Rate-limit flag: mirrors production's !slot_implausible_reported[i]
+		 * guard — the emission counter increments only on the first
+		 * detection per bad run.  Aggregate stalls; prev_op is NOT updated
+		 * so the delta check stays anchored to the last known-good baseline.
 		 */
+		if (!*reported)
+			(*emissions)++;
 		*reported = true;
 		agg->op_count   = agg->total_op_count - agg->epoch_start_op_count;
 		*fleet_op_count = agg->op_count;
@@ -631,7 +635,9 @@ static void test_delta_guard(void)
 			sim_op_complete(&ring);
 	}
 
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported);
+	int emissions = 0;
+
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported, &emissions);
 	SELFTEST_ASSERT(accepted);
 	SELFTEST_ASSERT(agg.total_op_count == baseline_ops);
 	SELFTEST_ASSERT(prev_op == baseline_ops);
@@ -650,7 +656,7 @@ static void test_delta_guard(void)
 	stalled_total = agg.total_op_count;
 
 	/* Drain 1 after scribble: delta guard trips; aggregate stalls. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported, &emissions);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(reported);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
@@ -661,7 +667,7 @@ static void test_delta_guard(void)
 	ring.lossless_op_count += 1000;
 
 	/* Drain 2: delta from original prev is larger; still rejected. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported, &emissions);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
 	SELFTEST_ASSERT(prev_op == baseline_ops);
@@ -676,9 +682,18 @@ static void test_delta_guard(void)
 			baseline_ops + LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN + 1001);
 
 	/* Drain after respawn: rejection persists; aggregate stalls permanently. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported);
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported, &emissions);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
+
+	/*
+	 * Rate-limit coverage: across three rejecting drains, the emission
+	 * counter must be exactly 1.  reported was false only at the first
+	 * rejection (drain 1); drains 2 and 3 see reported==true and must
+	 * not fire again.  This fails if the !*reported guard is absent or
+	 * the guard fires more than once.
+	 */
+	SELFTEST_ASSERT(emissions == 1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -725,7 +740,9 @@ static void test_first_drain_scribble(void)
 	 * First drain: have_baseline is false so prev == 0.  The delta from
 	 * 0 to scribble exceeds MAX_DELTA_PER_DRAIN.  Must be rejected.
 	 */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported);
+	int emissions8 = 0;
+
+	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &have_baseline, &reported, &emissions8);
 	SELFTEST_ASSERT(!accepted);
 	SELFTEST_ASSERT(reported);
 	/* Aggregate must not have moved. */
