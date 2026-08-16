@@ -93,5 +93,6 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported);
 bool recipe_mount_userns_dance(bool *unsupported);
 bool recipe_seccomp_listener_exec(bool *unsupported);
 bool recipe_cgroup_kill_events(bool *unsupported);
+bool recipe_seccomp_strict_fork(bool *unsupported);
 
 #endif /* _CHILDOPS_RECIPE_RUNNER_INTERNAL_H */

@@ -97,6 +97,7 @@ static const struct recipe recipes[] = {
 	{ "mount_userns_dance", recipe_mount_userns_dance, 5  },
 	{ "seccomp_listener_exec", recipe_seccomp_listener_exec, 5  },
 	{ "cgroup_kill_events", recipe_cgroup_kill_events, 5  },
+	{ "seccomp_strict_fork",  recipe_seccomp_strict_fork,  4  },
 };
 
 /*

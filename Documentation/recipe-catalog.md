@@ -358,3 +358,52 @@ fresh PID-named directory anyway.
 Per-call fork failure (`EAGAIN` under nproc/thread limits) is
 reported by the supervisor as exit code 2 (transient); the dispatcher
 will pick again next cycle.
+
+## Recipe 37: SECCOMP_MODE_STRICT via disposable forked child
+
+**File:** `childops/recipe/supervisor.c` — `recipe_seccomp_strict_fork()`
+
+**Purpose:** Exercise the kernel's `SECCOMP_MODE_STRICT` exit path, including
+the `futex_hash_allocate` and `futex_pivot_pending` regions that the normal
+fuzz loop cannot reach because `do_set_seccomp()` pins the mode to FILTER.
+
+### Why this recipe exists
+
+`do_set_seccomp()` in `syscalls/process/prctl.c` pins `a2` to
+`SECCOMP_MODE_FILTER` on every fuzzing call.  Strict mode (value 1) limits a
+task to exactly four syscalls: `read`, `write`, `_exit`, and `sigreturn`.  The
+first syscall issued by the fuzz child after a successful
+`PR_SET_SECCOMP/STRICT` call is virtually certain to be forbidden, which causes
+the kernel to `SIGKILL` the child before the post handler can run.  Pinning
+away from strict mode prevents this self-break, but leaves the strict-mode
+kernel exit path permanently dark.  This recipe covers it by using a throwaway
+child whose death is expected.
+
+### Sequence
+
+1. The outer worker calls `fork()`.
+2. The child calls `prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT, 0, 0, 0)`.
+   `SECCOMP_MODE_STRICT` requires no capability and no `NO_NEW_PRIVS`
+   precondition.
+3. The child calls `childop_direct_syscalls_add()` (atomic only, no syscall,
+   safe in strict mode), then `syscall(__NR_getpid)`.  `getpid` is not in the
+   strict-mode allowlist; the kernel delivers `SIGKILL` synchronously.
+4. The parent calls `waitpid_eintr()` and inspects the wait status.
+
+### Oracle / outcome accounting
+
+The wait status is the oracle.  Each outcome is handled in a distinct branch:
+
+| Exit condition | Meaning | Return |
+|---|---|---|
+| `WIFSIGNALED` + `SIGKILL` | expected strict-mode kill | `true` |
+| `WIFSIGNALED` + `SIGSYS` | acceptable variant | `true` |
+| `WIFEXITED(1)` | `prctl` failed (`CONFIG_SECCOMP=n`) | `false` + latch |
+| `WIFEXITED(0)` or other | anomalous: strict mode did not fire | `false` |
+| unexpected signal | anomalous | `false` |
+
+### Discovery / latch
+
+If `prctl(PR_SET_SECCOMP, STRICT)` returns an error, the recipe sets
+`*unsupported = true` (via exit code 1 from the child) and the dispatcher
+latches the slot off for the remainder of the run.

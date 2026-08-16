@@ -4,7 +4,7 @@
 /* Upper bound on the recipe_runner catalog size.  recipe-runner.c
  * asserts at startup that its table fits.  Sized large enough to
  * accommodate future recipes without reshuffling shared memory. */
-#define MAX_RECIPES 36
+#define MAX_RECIPES 37
 
 struct recipe_stats {
 	/* recipe_runner childop counters */

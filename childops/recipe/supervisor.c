@@ -368,8 +368,12 @@ static void seccomp_listener_inner(enum child_op_type op)
 
 	(void)trinity_raw_syscall(__NR_uname, &u);
 	/* childop_direct_syscalls_add() is the single choke point: it rejects
-	 * and counts out-of-range ops (including the NR_CHILD_OP_TYPES sentinel
-	 * when this_child() returns NULL in doubly-forked contexts). */
+	 * and counts out-of-range ops (including the NR_CHILD_OP_TYPES sentinel).
+	 * The inner child inherits the parent worker's COW-copied cached_childno
+	 * and cached_pid, so this_child() returns the parent worker's slot here
+	 * rather than NULL; the op value was captured in the outer frame and
+	 * passed down precisely to avoid re-invoking this_child() from the
+	 * doubly-forked context. */
 	childop_direct_syscalls_add(op, 1);
 
 	(void)execl("/bin/true", "/bin/true", (char *)NULL);
@@ -799,6 +803,138 @@ out:
 	cgroup_kill_teardown(cgroup_path, events_fd, kill_fd,
 			     pipefd, inner, cgroup_made);
 	return rc;
+}
+
+/*
+ * Throwaway child body for recipe_seccomp_strict_fork.
+ *
+ * Calls prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT) to enter strict mode
+ * and immediately issues syscall(__NR_getpid), which is not in the
+ * four-syscall allowlist {read, write, _exit, sigreturn}.  The kernel
+ * SIGKILLs the task synchronously; death is the intended outcome.
+ * SECCOMP_MODE_STRICT is unprivileged -- no capability and no
+ * NO_NEW_PRIVS precondition are required, unlike SECCOMP_MODE_FILTER.
+ *
+ * childop_direct_syscalls_add() is called after prctl() arms strict mode
+ * but before the fatal syscall.  That function uses only atomic CPU
+ * instructions on shm memory (no syscalls), so calling it in strict mode
+ * is safe.  _exit(1) is the sentinel for CONFIG_SECCOMP=n.
+ */
+static void seccomp_strict_child(enum child_op_type op) __attribute__((noreturn));
+static void seccomp_strict_child(enum child_op_type op)
+{
+	if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT, 0, 0, 0) != 0) {
+		/* ENOSYS means CONFIG_SECCOMP=n; any other errno is an
+		 * unexpected transient -- exit(1) lets the parent decide. */
+		_exit(1);
+	}
+
+	/*
+	 * Strict mode is now armed.  Publish the direct-syscall tally
+	 * before issuing the fatal syscall.
+	 */
+	childop_direct_syscalls_add(op, 1);
+
+	/*
+	 * The next syscall that is not read, write, _exit, or sigreturn
+	 * triggers an unconditional SIGKILL from the kernel.  getpid()
+	 * is the lightest non-allowlisted syscall available without a
+	 * filter fd or any memory allocation.  syscall(__NR_getpid)
+	 * bypasses any libc caching that might paper over the trap.
+	 */
+	(void)syscall(__NR_getpid);
+
+	/* Unreachable: strict mode delivered SIGKILL above.  _exit(0)
+	 * is here only as a belt-and-braces fallback in case a future
+	 * kernel changes the enforcement signal. */
+	_exit(0);
+}
+
+/*
+ * Recipe 37: SECCOMP_MODE_STRICT via disposable forked child.
+ * See Documentation/recipe-catalog.md
+ *
+ * do_set_seccomp() in syscalls/process/prctl.c pins a2 to
+ * SECCOMP_MODE_FILTER so the fuzzing child is never self-killed by the
+ * strict-mode hazard.  The kernel's strict-mode exit path is therefore
+ * unreachable from the normal fuzz loop.  This recipe provides coverage
+ * by forking a throwaway child that enters strict mode and then issues a
+ * forbidden syscall; the child dying is the point, not an error.
+ *
+ * The wait status is the oracle.  SIGKILL is the expected outcome;
+ * SIGSYS is acceptable on kernels that report strict-mode violations
+ * via SIGSYS before SIGKILL.  A clean exit or any other signal is an
+ * anomaly (counted as partial completion).
+ */
+bool recipe_seccomp_strict_fork(bool *unsupported)
+{
+	struct childdata *tc = this_child();
+	/*
+	 * Snapshot op before forking.  The inner child COW-inherits
+	 * cached_childno/cached_pid and would see the parent worker's slot
+	 * if it called this_child() itself; passing op down avoids any
+	 * ambiguity about which slot is being credited.
+	 */
+	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+	pid_t child;
+	int status;
+
+	childop_direct_syscalls_add(op, 1);
+
+	child = fork();
+	if (child < 0)
+		return false;
+
+	if (child == 0)
+		seccomp_strict_child(op);
+	/* unreachable in parent -- seccomp_strict_child() is noreturn */
+
+	if (waitpid_eintr(child, &status, 0) < 0)
+		return false;
+
+	/*
+	 * Per-outcome accounting.  Each branch is distinct so the compiler
+	 * cannot fold them and future stat-counter additions have a clear
+	 * insertion point.
+	 *
+	 * SIGKILL: strict mode intercepted the forbidden syscall and the
+	 *   kernel killed the child -- the expected, fully-exercised path.
+	 *
+	 * SIGSYS:  some kernel configurations deliver SIGSYS for a seccomp
+	 *   violation before the SIGKILL.  Still a successful exercise of
+	 *   the strict-mode exit path.
+	 *
+	 * exit(1): prctl(PR_SET_SECCOMP, STRICT) returned an error;
+	 *   treat as unsupported and latch the recipe off.
+	 *
+	 * exit(0) or other signal: anomalous -- strict mode did not kill
+	 *   the child as expected.  Count as partial.
+	 */
+	if (WIFSIGNALED(status)) {
+		int sig = WTERMSIG(status);
+
+		if (sig == SIGKILL)
+			return true;  /* SIGKILL: expected strict-mode outcome */
+
+		if (sig == SIGSYS)
+			return true;  /* SIGSYS: acceptable strict-mode variant */
+
+		/* Unexpected signal: anomalous outcome, surface as partial. */
+		return false;
+	}
+
+	if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
+		/* prctl(PR_SET_SECCOMP, STRICT) failed: CONFIG_SECCOMP=n
+		 * or another unsupported condition.  Latch off. */
+		*unsupported = true;
+		__atomic_add_fetch(&shm->stats.recipe.unsupported, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+
+	/* exit(0) or any other exit code: strict mode did not fire.
+	 * Anomalous; surface via the partial counter. */
+	return false;
 }
 
 /* Recipe 36: cgroup.kill + cgroup.events supervisor. See Documentation/recipe-catalog.md */

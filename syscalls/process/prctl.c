@@ -171,10 +171,21 @@ static struct sock_fprog *do_set_seccomp(struct syscallrecord *rec)
 {
 	unsigned long *optval = NULL, __unused__ optlen = 0;
 
-#ifdef USE_BPF
-	bpf_gen_seccomp(&optval, &optlen);
-#endif
-
+	/*
+	 * Pin mode to SECCOMP_MODE_FILTER (2), never SECCOMP_MODE_STRICT (1).
+	 * Strict mode restricts the task to exactly four syscalls:
+	 * read, write, _exit, and sigreturn.  The first syscall the fuzz
+	 * child issues after a successful PR_SET_SECCOMP/STRICT -- the
+	 * very next iteration of the fuzz loop -- is virtually certain
+	 * to be forbidden, which causes the kernel to SIGKILL the child
+	 * before the post handler can run.  This is the same self-break
+	 * hazard that sanitise_set_syscall_user_dispatch() and
+	 * sanitise_set_tsc() guard against by pinning their respective
+	 * modes.  Strict-mode coverage is provided instead by
+	 * recipe_seccomp_strict_fork() in childops/recipe/supervisor.c,
+	 * which uses a disposable forked child where the death is
+	 * expected and the kernel's strict-mode exit path is the point.
+	 */
 	rec->a2 = SECCOMP_MODE_FILTER;
 	rec->a3 = (unsigned long) optval;
 	rec->a4 = 0;
