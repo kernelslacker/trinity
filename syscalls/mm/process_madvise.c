@@ -115,8 +115,34 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 {
 	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
 
-	if (!pidfd_is_self((int)rec->a1))
+	if (!pidfd_is_self((int)rec->a1)) {
 		rec->a4 = RAND_ARRAY(process_madvise_remote_behaviours);
+		return;
+	}
+
+	/*
+	 * Self-path: MADV_GUARD_INSTALL plants PTE_MARKER_GUARD on every page
+	 * in the supplied iovec ranges.  If any of those pages belong to a
+	 * trinity pool allocation, the next write from any code path that
+	 * reuses the mapping SEGVs the child.  Neutralise by zeroing every
+	 * iov_len so the kernel sees an empty range set and returns
+	 * immediately – the syscall entry point is still exercised.
+	 *
+	 * MADV_GUARD_REMOVE is safe to pass through: removing guards from a
+	 * range that carries no guard PTEs is a kernel fast-path no-op.
+	 *
+	 * Mirrors madvise.c's rec->a1=0; rec->a2=0 neutraliser for the same
+	 * advice on the plain madvise(2) path.
+	 */
+	if (rec->a4 == MADV_GUARD_INSTALL) {
+		struct iovec *iov = (struct iovec *)rec->a2;
+		unsigned long i, vlen = rec->a3;
+
+		if (vlen > UIO_MAXIOV)
+			vlen = UIO_MAXIOV;
+		for (i = 0; i < vlen; i++)
+			iov[i].iov_len = 0;
+	}
 }
 
 struct syscallentry syscall_process_madvise = {
