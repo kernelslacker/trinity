@@ -226,22 +226,31 @@ ioctl_sym_live() { [ "${_ioctl_kcfg_live["CONFIG_$1"]+_}" ]; }
 ioctl_warn_count=0
 ioctl_info_count=0
 ioctl_skip_announced=0
+ioctl_unmapped_total=0
 
 for _cfile in "$ROOT"/ioctls/*.c; do
 	[ -f "$_cfile" ] || continue
 	_fname=$(basename "$_cfile")
 
+	# Skip files that don't define an ioctl_group struct — they may have
+	# *_devs[] arrays for other purposes (e.g. efault_cache.c uses
+	# efault_optout_devs[], which is not an ioctl group).
+	grep -q "static const struct ioctl_group" "$_cfile" || continue
+
 	# Extract all devnode class strings from *_devs[] arrays in this file.
 	# Handles both 'char *const' and 'char * const' spellings.
+	# Note: the declaration line and the closing '};' line are included in
+	# the scan so that single-line arrays and strings on the closing brace
+	# are not silently dropped.
 	_devnodes=$(awk '
-		/static const char[ ]*\*[ ]*const[ ]+[a-z][a-z0-9_]*_devs\[/ { in_devs=1; next }
-		in_devs && /\};/ { in_devs=0; next }
+		/static const char[ ]*\*[ ]*const[ ]+[a-z][a-z0-9_]*_devs\[/ { in_devs=1 }
 		in_devs {
 			line = $0
 			while (match(line, /"[^"]+"/) > 0) {
 				print substr(line, RSTART+1, RLENGTH-2)
 				line = substr(line, RSTART+RLENGTH)
 			}
+			if (/\};/) in_devs=0
 		}
 	' "$_cfile" 2>/dev/null)
 
@@ -257,6 +266,7 @@ for _cfile in "$ROOT"/ioctls/*.c; do
 
 	_node_dead=0
 	_node_live=0
+	_node_unmapped=0
 	_dead_displays=""
 
 	while IFS= read -r _node; do
@@ -283,8 +293,11 @@ for _cfile in "$ROOT"/ioctls/*.c; do
 		fi
 
 		if [ -z "$_sym" ]; then
-			# Not in our map; treat as live (unknown ≠ dead).
+			# Not in our map: treat as live for the dead-group calculation
+			# (unknown ≠ definitively dead), but accumulate for the
+			# unmapped-node WARN so the map cannot silently rot.
 			_node_live=$((_node_live + 1))
+			_node_unmapped=$((_node_unmapped + 1))
 			continue
 		fi
 
@@ -300,6 +313,8 @@ for _cfile in "$ROOT"/ioctls/*.c; do
 		fi
 	done <<< "$_devnodes"
 
+	ioctl_unmapped_total=$((ioctl_unmapped_total + _node_unmapped))
+
 	if [ "$_node_dead" -eq 0 ]; then
 		continue  # all mapped nodes live
 	elif [ "$_node_live" -eq 0 ]; then
@@ -313,6 +328,13 @@ for _cfile in "$ROOT"/ioctls/*.c; do
 		ioctl_info_count=$((ioctl_info_count + 1))
 	fi
 done
+
+# Unmapped devnode WARN: emitted regardless of kconfig availability so
+# the map cannot silently rot as new ioctls/*.c files are added.
+if [ "$ioctl_unmapped_total" -gt 0 ]; then
+	echo "WARN: $NAME: $ioctl_unmapped_total devnode string(s) in *_devs[] arrays" \
+	     "have no entry in IOCTL_NODE_MAP (map may be stale; add entries or verify)"
+fi
 
 # Ioctl-group summary (separate counter from childop table).
 if [ "$ioctl_warn_count" -gt 0 ]; then
