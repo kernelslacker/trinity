@@ -19,6 +19,7 @@ enum kmsg_event_kind {
 	KMSG_RCU,		/* RCU self-detected stall */
 	KMSG_BUG,		/* BUG()/BUG_ON, KASAN/KMSAN/KCSAN/UBSAN, refcount_t */
 	KMSG_OOPS,		/* Oops, #GP, unhandled paging fault */
+	KMSG_MM_CORRUPT,	/* mm refcount/state corruption: bad rss-counter, bad page state/map, unsplittable folio */
 };
 
 void kmsg_monitor_start(void);

@@ -74,6 +74,11 @@ static const char * const kmsg_triggers[] = {
 	"WARNING: possible recursive locking",
 	"WARNING: possible circular locking",
 	"WARNING: CPU:",		/* generic WARN_ON()/WARN() splat banner from kernel/panic.c::__warn */
+	"Tried to split an unsplittable folio",	/* mm/huge_memory.c::__split_huge_page; fires as its own record BEFORE
+						 * the WARNING: CPU: banner via __warn_printf, so it must be in the
+						 * trigger table to arm the follow-buffer before the backtrace arrives.
+						 * Note: VM_WARN_ONCE means only the first hit is logged; absence of
+						 * this string after the first event is not evidence of absence. */
 	"WARNING: suspicious RCU",	/* lockdep-RCU usage warning */
 	"WARNING: bad unlock",		/* lockdep bad-unlock-balance */
 	"WARNING: held lock",		/* lockdep held-lock-freed */
@@ -150,6 +155,13 @@ static enum kmsg_event_kind classify_kmsg_event(const char *body)
 		return KMSG_WARN_RECLOCK;
 	if (strstr(body, "WARNING: possible circular locking") != NULL)
 		return KMSG_WARN_CIRCULAR;
+	/* mm refcount/state corruption — checked before the generic WARNING:/BUG:
+	 * arms so these specific strings are not swallowed by the broader buckets. */
+	if (strstr(body, "Bad rss-counter state") != NULL ||
+	    strstr(body, "Bad page state in process") != NULL ||
+	    strstr(body, "Bad page map in process") != NULL ||
+	    strstr(body, "Tried to split an unsplittable folio") != NULL)
+		return KMSG_MM_CORRUPT;
 	if (strstr(body, "WARNING:") != NULL)
 		return KMSG_WARN;
 	if (strstr(body, "INFO: rcu_sched self-detected stall") != NULL ||
