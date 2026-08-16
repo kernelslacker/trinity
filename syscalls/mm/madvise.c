@@ -22,15 +22,22 @@
  * Coverage buckets for the advice argument.  The flat random pick from
  * madvise_advices[] below is dominated by the older NORMAL/RANDOM/
  * SEQUENTIAL/WILLNEED/DONTNEED values; the newer thp/migration advices
- * (COLD/PAGEOUT/COLLAPSE/HUGEPAGE/NOHUGEPAGE), the guard-PTE pair
- * (GUARD_INSTALL/REMOVE), and the destructive set
+ * (COLD/PAGEOUT/COLLAPSE/HUGEPAGE/NOHUGEPAGE) and the destructive set
  * (FREE/REMOVE/DONTFORK/WIPEONFORK/KEEPONFORK) rarely get drawn often
  * enough to keep their kernel paths warm.  Override rec->a3 in sanitise
  * with a bucket-weighted pick so each named family gets even attention,
  * and leave a long-tail bucket that keeps the original list-picked value
  * to preserve coverage of MERGEABLE, UNMERGEABLE, DONTDUMP, DODUMP,
  * POPULATE_READ, POPULATE_WRITE, DONTNEED_LOCKED, HWPOISON, SOFT_OFFLINE,
- * and DOFORK.
+ * DOFORK, GUARD_INSTALL, and GUARD_REMOVE.
+ *
+ * GUARD_INSTALL/GUARD_REMOVE are intentionally not given their own bucket
+ * here.  GUARD_INSTALL must be neutralised to madvise(0,0,...) whenever
+ * it is drawn (see below), so a dedicated bucket would burn 20 % of the
+ * bias budget producing no guard-PTE installs at all.  Guard-PTE coverage
+ * currently comes from the long-tail bucket only and is therefore low;
+ * a sacrificial mapping pool (see comment on madvise_bucket_destructive)
+ * would let GUARD_INSTALL run for real and is the right fix.
  */
 static const unsigned long madvise_bucket_safe[] = {
 	MADV_NORMAL, MADV_RANDOM, MADV_SEQUENTIAL, MADV_WILLNEED,
@@ -40,10 +47,6 @@ static const unsigned long madvise_bucket_safe[] = {
 static const unsigned long madvise_bucket_thp[] = {
 	MADV_COLD, MADV_PAGEOUT, MADV_COLLAPSE,
 	MADV_HUGEPAGE, MADV_NOHUGEPAGE,
-};
-
-static const unsigned long madvise_bucket_guard[] = {
-	MADV_GUARD_INSTALL, MADV_GUARD_REMOVE,
 };
 
 /*
@@ -102,14 +105,14 @@ static void sanitise_madvise(struct syscallrecord *rec)
 		rec->a2 = 0;
 	}
 
-	/* Bias toward bucket-picked advice; 1-in-5 keeps the ARG_OP draw
-	 * so the long-tail values still get exercised. */
-	switch (rnd_modulo_u32(5)) {
+	/* Bias toward bucket-picked advice; 1-in-4 keeps the ARG_OP draw
+	 * so the long-tail values (including GUARD_INSTALL/GUARD_REMOVE)
+	 * still get exercised. */
+	switch (rnd_modulo_u32(4)) {
 	case 0:	rec->a3 = RAND_ARRAY(madvise_bucket_safe); break;
 	case 1:	rec->a3 = RAND_ARRAY(madvise_bucket_thp); break;
-	case 2:	rec->a3 = RAND_ARRAY(madvise_bucket_guard); break;
-	case 3:	rec->a3 = RAND_ARRAY(madvise_bucket_destructive); break;
-	case 4:	break;	/* keep ARG_OP-picked value for long tail */
+	case 2:	rec->a3 = RAND_ARRAY(madvise_bucket_destructive); break;
+	case 3:	break;	/* keep ARG_OP-picked value for long tail */
 	}
 
 	/*
@@ -121,8 +124,12 @@ static void sanitise_madvise(struct syscallrecord *rec)
 	 * later hand the same entry to memory_pressure / iouring_* /
 	 * madvise-cycler, which then SEGV on the first per-page write into
 	 * the guarded range. Neutralise the call to keep the pool usable.
-	 * The bucket draw above can land here, so the check must run after
-	 * the override.
+	 * GUARD_INSTALL no longer has its own bucket; this check fires only
+	 * when the long-tail ARG_OP draw lands on MADV_GUARD_INSTALL.
+	 * Consequence: make_pte_marker(PTE_MARKER_GUARD) is unreachable from
+	 * the madvise syscall op; guard-PTE coverage is long-tail only.
+	 * A dedicated sacrificial mapping pool (see comment on
+	 * madvise_bucket_destructive) would fix this without pool-SEGV risk.
 	 */
 	if (rec->a3 == MADV_GUARD_INSTALL) {
 		rec->a1 = 0;
