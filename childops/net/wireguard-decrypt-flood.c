@@ -100,16 +100,16 @@
  * type codes are 32-bit little-endian on the wire. */
 #define WGDF_MSG_TYPE_DATA	4U
 
-/* Master gate + per-grandchild setup bookkeeping.  All four latches
- * (wg_ns_unsupported, wgdf_setup_done, wgdf_udp_fd, wgdf_wg_ifindex)
- * live in shm rather than process-local statics because their write
- * sites sit inside the userns_run_in_ns() grandchild -- a static
- * would die with the grandchild on _exit() and every subsequent
- * invocation would re-probe the same wireguard-module-absent errno
- * (wg_ns_unsupported) or re-run wgdf_setup() (setup_done + fd +
- * ifindex).  RELAXED atomic load/store is safe: bool latches are
- * monotonic false -> true, ints are written once by wgdf_setup() on
- * the success path and read only after wgdf_setup_done is true.
+/* Master gate + per-grandchild setup bookkeeping.  Three latches
+ * (wg_ns_unsupported, wgdf_setup_done, wgdf_udp_fd) live in shm
+ * rather than process-local statics because their write sites sit
+ * inside the userns_run_in_ns() grandchild -- a static would die with
+ * the grandchild on _exit() and every subsequent invocation would
+ * re-probe the same wireguard-module-absent errno (wg_ns_unsupported)
+ * or re-run wgdf_setup() (setup_done + fd).  RELAXED atomic
+ * load/store is safe: bool latches are monotonic false -> true, ints
+ * are written once by wgdf_setup() on the success path and read only
+ * after wgdf_setup_done is true.
  *
  * wg_ns_unsupported has two writers:
  *
@@ -152,11 +152,6 @@ static int wgdf_load_udp_fd(void)
 static void wgdf_store_udp_fd(int fd)
 {
 	__atomic_store_n(&shm->wgdf_udp_fd, fd, __ATOMIC_RELAXED);
-}
-
-static void wgdf_store_wg_ifindex(int ifindex)
-{
-	__atomic_store_n(&shm->wgdf_wg_ifindex, ifindex, __ATOMIC_RELAXED);
 }
 
 /* Per-grandchild scalars that stay process-local: derived once per
@@ -424,8 +419,6 @@ static bool wgdf_setup(struct childdata *child)
 		nl_close(&wgdf_rtnl);
 		return false;
 	}
-	wgdf_store_wg_ifindex(wg_ifindex);
-
 	memset(&opts, 0, sizeof(opts));
 	opts.family_name  = WG_GENL_NAME;
 	opts.version      = WG_GENL_VERSION;

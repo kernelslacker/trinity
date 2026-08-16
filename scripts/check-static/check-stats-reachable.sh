@@ -515,18 +515,11 @@ comm -23 "$SHM_WRITTEN" "$SHM_READ" > "$SHM_UNREACHED"
 #                           try_admit_newnet().  The *.c-only read scan
 #                           misses inline-header reads; the field is
 #                           not a reportable metric.
-#   wgdf_wg_ifindex      -- wireguard ifindex cached by wgdf_setup()
-#                           inside the userns_run_in_ns() grandchild.
-#                           No current .c-file reader (the companion
-#                           wgdf_load_wg_ifindex accessor is not yet
-#                           wired); reserved for a future diagnostic
-#                           consumer in wireguard-decrypt-flood.c.
 SHM_ALLOWLIST=(
 	running_childs
 	sibling_freeze_gen
 	syscalls32_attempted
 	newnet_in_flight
-	wgdf_wg_ifindex
 )
 printf '%s\n' "${SHM_ALLOWLIST[@]}" | sort -u > "$TMP/shm_allow"
 comm -23 "$SHM_UNREACHED" "$TMP/shm_allow" > "$SHM_UNALLOWED"

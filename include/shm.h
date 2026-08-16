@@ -642,15 +642,13 @@ struct shm_s {
 	 * wgdf_setup() forever.  Living in shm lets one negative probe or
 	 * one successful setup persist fleet-wide.  RELAXED atomic
 	 * load/store is safe -- only false -> true (bools) or once-set
-	 * monotonic (ints), and the writes are idempotent.  wgdf_udp_fd /
-	 * wgdf_wg_ifindex zero-initialise rather than -1; correctness does
-	 * not depend on that because reads are gated on wgdf_setup_done
-	 * being true, which is only set after wgdf_open_udp() /
-	 * if_nametoindex() have returned a valid handle. */
+	 * monotonic (ints), and the writes are idempotent.  wgdf_udp_fd
+	 * zero-initialises rather than -1; correctness does not depend on
+	 * that because reads are gated on wgdf_setup_done being true, which
+	 * is only set after wgdf_open_udp() has returned a valid fd. */
 	bool wg_ns_unsupported;
 	bool wgdf_setup_done;
 	int wgdf_udp_fd;
-	int wgdf_wg_ifindex;
 
 	/* xfrm-churn per-grandchild setup latches (childops/net/xfrm/
 	 * xfrm-churn.c: ns_unsupported_iptfs / ns_unsupported_zerocopy
