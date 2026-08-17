@@ -302,7 +302,7 @@ for _cfile in "$ROOT"/ioctls/*.c; do
 			_node_unmapped=$((_node_unmapped + 1))
 			case ",$_unmapped_nodes," in
 			*",${_node},"*) ;;
-			*) _unmapped_nodes="${_unmapped_nodes:+$_unmapped_nodes, }$_node" ;;
+			*) _unmapped_nodes="${_unmapped_nodes:+$_unmapped_nodes,}$_node" ;;
 			esac
 			continue
 		fi
@@ -341,9 +341,9 @@ done
 # Unmapped devnode WARN: emitted regardless of kconfig availability so
 # the map cannot silently rot as new ioctls/*.c files are added.
 if [ "$ioctl_unmapped_total" -gt 0 ]; then
-	# Build a capped display list (max 20 names + "and N more" suffix).
-	_unmapped_list=$(printf '%s' "$_all_unmapped_nodes" | tr ',' '\n' | sed '/^[[:space:]]*$/d')
-	_unmapped_count=$(printf '%s\n' "$_unmapped_list" | wc -l)
+	# Dedup across files, sort, then build a capped display list (max 20 + "and N more").
+	_unmapped_list=$(printf '%s' "$_all_unmapped_nodes" | tr ',' '\n' | sed '/^[[:space:]]*$/d' | sort -u)
+	_unmapped_count=$(printf '%s\n' "$_unmapped_list" | grep -c . || true)
 	_cap=20
 	if [ "$_unmapped_count" -gt "$_cap" ]; then
 		_extra=$((_unmapped_count - _cap))
