@@ -394,6 +394,22 @@ static void __attribute__((noreturn)) kmsg_helper_main(void)
 
 		match = line_matches_trigger(body);
 
+		/*
+		 * A record that fires a trigger while a follow window is
+		 * already open is a continuation of the same kernel event --
+		 * e.g. the "Tried to split an unsplittable folio" message that
+		 * arrives one record after its own WARNING: banner opened this
+		 * window.  Emit it for context but do NOT re-count, re-dump, or
+		 * re-arm: counting it double-counts one event (kmsg_warn_fires
+		 * +2, both KMSG_WARN and KMSG_MM_CORRUPT bumped) and re-fires
+		 * pre_crash_ring_dump_all.
+		 */
+		if (match && follow_remaining > 0) {
+			kmsg_emit("KMSG: %s\n", body);
+			follow_remaining--;
+			continue;
+		}
+
 		if (match) {
 			enum kmsg_event_kind kind = classify_kmsg_event(body);
 
