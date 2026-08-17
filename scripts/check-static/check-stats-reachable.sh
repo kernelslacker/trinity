@@ -412,13 +412,13 @@ SHM_WRITE_PAT_ATOMIC='__atomic_(add_fetch|fetch_add|store_n|compare_exchange_n|e
 # Emit an ERE matching any write to shm->FIELD on a source line.
 # Nine spellings:
 #   atomic primitives (matched via SHM_WRITE_PAT_ATOMIC) whose first
-#   pointer arg is &shm->FIELD -- anchored as \(&shm->FIELD[[:space:]]*[,)]
+#   pointer arg is &shm->FIELD -- anchored as \([[:space:]]*&shm->FIELD[[:space:]]*[,)]
 #   so only the first-argument position matches, not a later read arg;
 #   shm->FIELD++ / shm->FIELD--  (post-inc/dec);
 #   shm->FIELD += / shm->FIELD -= (compound-assignment).
 shm_write_pat() {
 	local f="$1"
-	printf '%s' "${SHM_WRITE_PAT_ATOMIC}\(&shm->${f}[[:space:]]*[,)]|\bshm->${f}[[:space:]]*(\+\+|--|\+=|-=)"
+	printf '%s' "${SHM_WRITE_PAT_ATOMIC}\([[:space:]]*&shm->${f}[[:space:]]*[,)]|\bshm->${f}[[:space:]]*(\+\+|--|\+=|-=)"
 }
 SHM_H="$ROOT/include/shm.h"
 [ -r "$SHM_H" ] || fail "cannot read $SHM_H"
@@ -567,11 +567,22 @@ if grep -hE "\bshm->$_fix_field\b" "$_fix_file" | \
 fi
 echo "PASS: $NAME: self-test: all write spellings correctly excluded from read set"
 
+# Self-test: verify the space-after-paren spelling is matched as a write.
+# Line: __atomic_store_n( &shm->foo, val, __ATOMIC_RELAXED)
+# -- one space after ( is idiomatic in this tree and must match.
+_fix_space_file="$TMP/fix_space_fixture"
+printf '\t__atomic_store_n( &shm->%s, 0, __ATOMIC_RELAXED);\n' \
+	"$_fix_field" > "$_fix_space_file"
+if ! grep -hE "${SHM_WRITE_PAT_ATOMIC}\([[:space:]]*&shm->$_fix_field[[:space:]]*[,)]" "$_fix_space_file" | grep -q .; then
+	fail "self-test: space-after-paren spelling NOT matched by shm_write_pat (anchor too strict)"
+fi
+echo "PASS: $NAME: self-test: space-after-paren atomic spelling correctly matched as write"
+
 # Self-test: verify the write-anchor correctly rejects a read of
 # shm->FIELD that appears as a later argument (not the first pointer
 # arg) of an atomic intrinsic.  The old loose pattern
 # (SHM_WRITE_PAT_ATOMIC.*\bshm->FIELD\b) false-positived on this;
-# the tight \(&shm->FIELD[[:space:]]*[,)] anchor must NOT match.
+# the tight \([[:space:]]*&shm->FIELD[[:space:]]*[,)] anchor must NOT match.
 # Line: __atomic_store_n(&shm->other, shm->foo, __ATOMIC_RELAXED);
 # -- foo is the value being stored, i.e. a read, not a write.
 _fix_fp_file="$TMP/fix_fp_fixture"
