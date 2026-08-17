@@ -147,6 +147,10 @@ void init_child_isolate_io(void)
 	 * attached to the parent's session, so a fuzzed /dev/tty write can
 	 * still reach the operator's terminal — log it and continue; the
 	 * dup2 of 0/1/2 above still covers the common path. */
+	/* After this point the worker is its own session and process-group
+	 * leader.  Any process-group-based teardown (pgid-kill, GNU timeout)
+	 * cannot reach it; only cgroup-based reap (systemd scope-stop) works.
+	 * run-trinity.sh cleanup() accounts for this; other callers must too. */
 	if (setsid() == (pid_t) -1)
 		outputerr("setsid failed! (%s)\n", strerror(errno));
 }

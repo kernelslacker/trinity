@@ -195,12 +195,14 @@ fi
 # run. scope_name/child are empty at this point, so an early fire reaps only
 # the dmesg scope; both are filled in below before they are used.
 #
-# Scoping is per-invocation: stop only this run's named scope, or signal
-# only this run's process group -- never a broad pkill that would also kill
+# Scoping is per-invocation: stop only this run's named scope, or kill only
+# this run's processes directly -- never a broad pkill that would also kill
 # concurrent trinity runs on the same host. D-state children can't be
-# force-killed until their in-flight syscall returns; scope-stop / pgid-kill
-# sends SIGKILL to every task, reaps everything killable immediately, and
-# the kernel releases the rest as their syscalls complete.
+# force-killed until their in-flight syscall returns; the kernel releases
+# them as their syscalls complete.  Only the cgroup path (scope-stop) reaches
+# every task: workers call setsid() in child/child-init-isolate.c and
+# permanently leave the parent's process group, so a pgid-kill cannot reach
+# them; the fallback must kill them individually by PID.
 scope_name=""
 child=""
 cleanup() {
@@ -209,7 +211,21 @@ cleanup() {
     if [[ -n "${scope_name}" ]]; then
         systemctl --user stop "${scope_name}" >/dev/null 2>&1 || true
     elif [[ -n "${child}" ]]; then
-        kill -KILL -- "-${child}" 2>/dev/null || true
+        # Workers call setsid() in child/child-init-isolate.c and leave the
+        # parent's process group permanently; a pgid-kill cannot reach them.
+        # Capture their PIDs from the trinity parent's task/*/children BEFORE
+        # killing the parent (workers reparent to init on parent death), then
+        # SIGKILL each directly.  This is per-invocation; never pkill -x trinity.
+        _worker_pids=()
+        for _f in /proc/"${child}"/task/*/children; do
+            [[ -r "${_f}" ]] || continue
+            read -r -a _kids < "${_f}" || continue
+            _worker_pids+=("${_kids[@]}")
+        done
+        kill -KILL "${child}" 2>/dev/null || true
+        for _wpid in "${_worker_pids[@]}"; do
+            kill -KILL "${_wpid}" 2>/dev/null || true
+        done
     fi
     # lockdep self-disables on the first splat; report a mid-run 1->0
     # transition so a run that went blind after minute 3 isn't mistaken for a
@@ -306,7 +322,8 @@ if [[ -n "${scope_name}" ]]; then
 else
     # No scope (TRINITY_NO_CGROUP / systemd-run absent / already capped):
     # enable job control so bash puts the backgrounded command in its own
-    # process group, then $! == PGID and `kill -- -PGID` reaps the tree.
+    # process group.  Note: workers setsid() out of this group; cleanup()
+    # reaps them individually by PID rather than via a pgid-kill.
     set -m
     "${cmd[@]}" &
     set +m
