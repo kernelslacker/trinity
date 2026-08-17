@@ -110,10 +110,7 @@ out:
  */
 bool recipe_posix_timer(bool *unsupported __unused__)
 {
-	struct childdata *child = this_child();
-	const enum child_op_type op = child ? child->op_type :
-		NR_CHILD_OP_TYPES;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	const enum child_op_type op = this_child()->op_type;
 	struct sigevent sev;
 	struct itimerspec its, cur;
 	timer_t tid = NULL;
@@ -211,7 +208,6 @@ out:
 	if (created)
 		(void)timer_delete(tid);
 	/* One raw syscall: syscall(__NR_gettid) in the SIGEV_THREAD_ID arm. */
-	if (valid_op)
-		childop_direct_syscalls_add(op, 1);
+	childop_direct_syscalls_add(op, 1);
 	return ok;
 }

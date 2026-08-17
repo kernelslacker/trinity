@@ -437,6 +437,15 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `no-libc-rand`: reject libc PRNG callsites (`rand`, `random`,
   `srand`, `*rand48`) outside the `rand/` wrapper layer and
   `include/rnd.h`.
+- `no-thischild-null-guard`: reject dead NULL-sentinel guards on
+  `this_child()` inside `childops/`.  `this_child()` never returns
+  NULL in child context (COW-inherited cache; see `include/pids.h`);
+  ternaries of the form `child = this_child(); op = child ?
+  child->op_type : NR_CHILD_OP_TYPES` are dead and mislead readers.
+  The correct form is `const enum child_op_type op =
+  this_child()->op_type;`.  Existing violations are grandfathered in
+  `no-thischild-null-guard.baseline`; the baseline must shrink, never
+  grow.
 - `no-unchecked-alloc-shared-str`: every `alloc_shared_str()` /
   `alloc_shared_strdup()` assignment must have a NULL guard on the
   lvalue within 4 lines.  Both functions are `__must_check`

@@ -1,0 +1,26 @@
+# Grandfathered files: this_child() NULL-sentinel ternary pattern introduced
+# before the no-thischild-null-guard check was added.
+# Baseline should shrink over time, never grow.
+#
+childops/fs/statmount-idmap-overflow.c
+childops/io_uring/recipes-fs.c
+childops/io_uring/recipes-net.c
+childops/io_uring/recipes-poll-timeout.c
+childops/io_uring/ring.c
+childops/net/afxdp-churn-attach.c
+childops/net/afxdp-churn-io.c
+childops/net/afxdp-churn-teardown.c
+childops/net/inet-listener-rehash-race.c
+childops/net/netfilter/nftables/reject.c
+childops/net/netfilter/nftables/xt.c
+childops/net/pkt-builder-deliver.c
+childops/net/qrtr-bind-race.c
+childops/net/xfrm/nat-t-churn-setup.c
+childops/net/xfrm/nat-t-churn-traffic.c
+childops/recipe/close-race.c
+childops/recipe/net.c
+childops/recipe/simple.c
+childops/recipe/simple-fs.c
+childops/recipe/simple-mm.c
+childops/recipe/simple-notify.c
+childops/recipe/supervisor.c
