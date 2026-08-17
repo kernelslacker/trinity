@@ -44,8 +44,8 @@ ran_count=0
 # not an error; a freshly-cloned tree before any checks are added should
 # still pass the gate).
 if [ ! -d "$CHECK_DIR" ] || [ -z "$(ls -A "$CHECK_DIR" 2>/dev/null)" ]; then
-	echo "check-static: no checks installed in $CHECK_DIR"
-	exit 0
+	echo "check-static: no checks found in $CHECK_DIR — check your installation"
+	exit 1
 fi
 
 # Pre-flight: verify that baseline-collation's own detector logic is alive
