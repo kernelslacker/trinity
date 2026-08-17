@@ -29,91 +29,37 @@ if [[ -e /sys/kernel/debug/kcov ]]; then
     fi
 fi
 
-# The 2026-08-14 debug-kernel rebuild compiles in six fault injectors
-# (failslab, fail_page_alloc, fail_futex, fail_sunrpc, fail_skb_realloc,
-# fail_usercopy).  Compiled in is not the same as armed, and the difference
-# is invisible from the Kconfig: failslab and fail_page_alloc default to
-# ignore-gfp-wait=1 (they skip every GFP_KERNEL allocation, i.e. nearly all
-# of them) so they inject essentially nothing, and fail_skb_realloc defaults
-# filtered=false so any non-zero probability faults reallocs on EVERY netdev
-# on the box.  A run can therefore look fully fault-injecting while injecting
-# nothing, or arm host-wide against the real management interface by accident.
-# As with the kcov check above we only diagnose and print the fix: the
-# debugfs files are root-owned (0600), trinity runs unprivileged, and the
-# runner must never write them itself.  Each check gates on [[ -r ]] before
-# reading — synthesising a worst-case default from an unreadable attr and
-# then warning about it produces unfalsifiable noise that trains operators
-# to ignore the output.  The right end-state is a privileged setup script
-# that writes a world-readable state file the runner can consume, but that
-# spec is separate future work.  Silent no-op when /sys/kernel/debug is
-# absent or unreadable (non-debug kernels, unprivileged hosts).
-if [[ -r /sys/kernel/debug ]]; then
-    # failslab / fail_page_alloc: clear ignore-gfp-wait or they inject almost
-    # nothing.  These two are the only compiled-in injectors that need it
-    # (fail_futex/fail_sunrpc/fail_usercopy have no gfp filter and are live).
-    for _inj in failslab fail_page_alloc; do
-        _gfp="/sys/kernel/debug/${_inj}/ignore-gfp-wait"
-        if [[ -e "${_gfp}" ]]; then
-            if [[ ! -r "${_gfp}" ]]; then
-                echo "WARNING: ${_inj} state UNKNOWN — debugfs attrs are 0600 root-only; run as root or via a privileged setup script to verify injector state." >&2
-            elif [[ "$(cat "${_gfp}")" != "0" ]]; then
-                echo "WARNING: ${_inj} has ignore-gfp-wait=1 — it skips every GFP_KERNEL allocation and injects almost nothing as configured." >&2
-                echo "  Fix: echo 0 | sudo tee ${_gfp}" >&2
-            fi
-        fi
-    done
+# Fault-injector state: read the world-readable file written by
+# scripts/setup-fault-injectors.sh (run once as root before this script).
+# The debugfs attrs are 0600 root-owned, so the runner cannot probe them
+# directly; the setup script is the authoritative source of truth.
+# Absent state file → unknown (no privileged setup was done this boot).
+_fi_state_file="/run/trinity/fault-injectors.state"
+_fi_injectors_armed=0
+_fi_lockdep_stats_readable=0
+if [[ -r "${_fi_state_file}" ]]; then
+    # Source key=value lines; skip comment lines.
+    while IFS='=' read -r _k _v; do
+        [[ "${_k}" == '#'* ]] && continue
+        [[ -z "${_k}" ]]      && continue
+        case "${_k}" in
+            injectors_armed)         _fi_injectors_armed="${_v}"         ;;
+            lockdep_stats_readable)  _fi_lockdep_stats_readable="${_v}"  ;;
+        esac
+    done < "${_fi_state_file}"
+fi
 
-    # All six compiled-in injectors: warn if probability=0 (disarmed) or
-    # times=0 (budget exhausted).  Each attr is checked for readability
-    # independently before use — see rationale in the block comment above.
-    for _inj in failslab fail_page_alloc fail_futex fail_sunrpc fail_usercopy; do
-        _prob_f="/sys/kernel/debug/${_inj}/probability"
-        _times_f="/sys/kernel/debug/${_inj}/times"
-        if [[ -e "${_prob_f}" ]]; then
-            if [[ ! -r "${_prob_f}" ]]; then
-                echo "WARNING: ${_inj} state UNKNOWN — debugfs attrs are 0600 root-only; run as root or via a privileged setup script to verify injector state." >&2
-            else
-                if [[ "$(cat "${_prob_f}")" == "0" ]]; then
-                    echo "WARNING: ${_inj} probability=0 — this fault injector is disarmed." >&2
-                    echo "  Fix: echo <N> | sudo tee ${_prob_f}" >&2
-                fi
-                if [[ -r "${_times_f}" ]] && [[ "$(cat "${_times_f}")" == "0" ]]; then
-                    echo "WARNING: ${_inj} times=0 — fault budget exhausted; the injector will not fire until reset." >&2
-                    echo "  Fix: echo -1 | sudo tee ${_times_f}" >&2
-                fi
-            fi
-        fi
-    done
-
-    # fail_skb_realloc: the device filter is load-bearing, not stylistic.
-    # should_fail_net_realloc_skb() only consults skb->dev->name when
-    # 'filtered' is set, and it defaults false — so 'devname' MUST be written
-    # before 'probability', or the injector arms against every netdev on the
-    # host including its real management interface.
-    _skb=/sys/kernel/debug/fail_skb_realloc
-    if [[ -d "${_skb}" ]]; then
-        _prob_f="${_skb}/probability"
-        _times_f="${_skb}/times"
-        _filt_f="${_skb}/filtered"
-        if [[ ! -r "${_prob_f}" ]]; then
-            echo "WARNING: fail_skb_realloc state UNKNOWN — debugfs attrs are 0600 root-only; run as root or via a privileged setup script to verify injector state." >&2
-        else
-            _prob="$(cat "${_prob_f}")"
-            if [[ "${_prob}" == "0" ]]; then
-                echo "WARNING: fail_skb_realloc probability=0 — the RX-path skb-realloc injector is disarmed." >&2
-                echo "  Fix (device filter FIRST, then probability — the order is load-bearing):" >&2
-                echo "    echo <ifname> | sudo tee ${_skb}/devname" >&2
-                echo "    echo 1        | sudo tee ${_skb}/filtered" >&2
-                echo "    echo <N>      | sudo tee ${_skb}/probability" >&2
-            elif [[ -r "${_filt_f}" ]] && [[ "$(cat "${_filt_f}")" == "0" ]]; then
-                echo "WARNING: fail_skb_realloc is armed (probability=${_prob}) but UNSCOPED (filtered=0) — it faults reallocs on EVERY netdev, including this host's management interface." >&2
-                echo "  Fix: set a device filter — echo <ifname> | sudo tee ${_skb}/devname && echo 1 | sudo tee ${_skb}/filtered" >&2
-            fi
-            if [[ -r "${_times_f}" ]] && [[ "$(cat "${_times_f}")" == "0" ]]; then
-                echo "WARNING: fail_skb_realloc times=0 — fault budget exhausted; the injector will not fire until reset." >&2
-                echo "  Fix: echo -1 | sudo tee ${_times_f}" >&2
-            fi
-        fi
+if [[ "${_fi_injectors_armed}" == "1" ]]; then
+    echo "trinity: fault injectors armed by setup-fault-injectors.sh (see ${_fi_state_file})"
+else
+    # No state file or injectors not armed: advise the operator.
+    # The debugfs attrs are 0600 so we cannot read or write them here;
+    # warn once and direct to the setup script.
+    if [[ -d /sys/kernel/debug/failslab || -d /sys/kernel/debug/fail_page_alloc ]]; then
+        echo "WARNING: fault injectors appear compiled in but setup-fault-injectors.sh has not run." >&2
+        echo "  Six compiled-in injectors (failslab, fail_page_alloc, fail_usercopy, fail_futex," >&2
+        echo "  fail_sunrpc, fail_skb_realloc) default probability=0 and will not fire." >&2
+        echo "  Fix: sudo scripts/setup-fault-injectors.sh [--pid \$\$] then re-run this script." >&2
     fi
 fi
 
@@ -130,21 +76,28 @@ fi
 # debug_locks=0, or exists but not readable), "unknown" (absent — non-lockdep
 # kernel).  cleanup() gates on != unknown so the mid-run liveness check fires
 # whenever startup could determine a state, not only when it found lockdep live.
+# /proc/lockdep_stats is 0400 (root-read-only) by default; setup-fault-injectors.sh
+# runs chmod o+r on it and records lockdep_stats_readable=1 in the state file.
+# Use that hint: if the setup script relaxed the mode, read it directly;
+# if not, we know it's unreadable and say so without a misleading access probe.
 lockdep_state="unknown"
 if [[ -e /proc/lockdep_stats ]]; then
-    if [[ -r /proc/lockdep_stats ]]; then
-        lockdep_at_start=$(awk '/^ debug_locks:/ {print $2}' /proc/lockdep_stats)
+    if [[ "${_fi_lockdep_stats_readable}" == "1" ]] || [[ -r /proc/lockdep_stats ]]; then
+        lockdep_at_start=$(awk '/^ debug_locks:/ {print $2}' /proc/lockdep_stats 2>/dev/null || echo "")
         if [[ "${lockdep_at_start}" == "0" ]]; then
             lockdep_state="dead"
             echo "WARNING: lockdep is already self-disabled (debug_locks=0 in /proc/lockdep_stats) — lock-order coverage is DEAD for this run." >&2
             echo "  A prior splat killed it; nothing re-enables lockdep short of a reboot, so 'no deadlock found' this run means nothing." >&2
-        else
+        elif [[ -n "${lockdep_at_start}" ]]; then
             lockdep_state="alive"
+        else
+            lockdep_state="dead"
+            echo "WARNING: lockdep liveness UNKNOWN — /proc/lockdep_stats not readable (try: sudo scripts/setup-fault-injectors.sh)" >&2
         fi
     else
         lockdep_state="dead"
-        echo "WARNING: lockdep liveness UNKNOWN — /proc/lockdep_stats exists but is not readable as $(id -un)" >&2
-        echo "  Running with CONFIG_LOCKDEP=y but without privilege to verify lock-order coverage." >&2
+        echo "WARNING: lockdep liveness UNKNOWN — /proc/lockdep_stats is 0400 root-only; run setup-fault-injectors.sh as root to relax readability" >&2
+        echo "  Fix: sudo scripts/setup-fault-injectors.sh" >&2
     fi
 fi
 
@@ -232,13 +185,13 @@ cleanup() {
     # clean one.  Runs on EXIT/INT/TERM, so this fires on crash and interrupt
     # paths too, not only on clean exit.
     if [[ "${lockdep_state:-unknown}" != "unknown" ]] && [[ -e /proc/lockdep_stats ]]; then
-        if [[ -r /proc/lockdep_stats ]]; then
-            if [[ "$(awk '/^ debug_locks:/ {print $2}' /proc/lockdep_stats)" == "0" ]]; then
+        if [[ "${_fi_lockdep_stats_readable:-0}" == "1" ]] || [[ -r /proc/lockdep_stats ]]; then
+            _lds_end=$(awk '/^ debug_locks:/ {print $2}' /proc/lockdep_stats 2>/dev/null || echo "")
+            if [[ "${_lds_end}" == "0" ]]; then
                 echo "WARNING: lockdep self-disabled during this run (debug_locks ${lockdep_state} -> dead) — lock-order coverage stopped at the first splat (see dmesg.log); everything after that point was uncovered." >&2
             fi
         else
-            echo "WARNING: lockdep liveness UNKNOWN at cleanup — /proc/lockdep_stats exists but is not readable as $(id -un) (was ${lockdep_state} at start)" >&2
-            echo "  Running with CONFIG_LOCKDEP=y but without privilege to verify lock-order coverage." >&2
+            echo "WARNING: lockdep liveness UNKNOWN at cleanup — /proc/lockdep_stats is 0400 root-only (was ${lockdep_state} at start); run setup-fault-injectors.sh to relax readability" >&2
         fi
     fi
     # Stop the dmesg follower after trinity so it captures teardown splats;
