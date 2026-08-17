@@ -227,6 +227,7 @@ ioctl_warn_count=0
 ioctl_info_count=0
 ioctl_skip_announced=0
 ioctl_unmapped_total=0
+_all_unmapped_nodes=""
 
 for _cfile in "$ROOT"/ioctls/*.c; do
 	[ -f "$_cfile" ] || continue
@@ -268,6 +269,7 @@ for _cfile in "$ROOT"/ioctls/*.c; do
 	_node_live=0
 	_node_unmapped=0
 	_dead_displays=""
+	_unmapped_nodes=""
 
 	while IFS= read -r _node; do
 		[ -n "$_node" ] || continue
@@ -298,6 +300,10 @@ for _cfile in "$ROOT"/ioctls/*.c; do
 			# unmapped-node WARN so the map cannot silently rot.
 			_node_live=$((_node_live + 1))
 			_node_unmapped=$((_node_unmapped + 1))
+			case ",$_unmapped_nodes," in
+			*",${_node},"*) ;;
+			*) _unmapped_nodes="${_unmapped_nodes:+$_unmapped_nodes, }$_node" ;;
+			esac
 			continue
 		fi
 
@@ -314,6 +320,9 @@ for _cfile in "$ROOT"/ioctls/*.c; do
 	done <<< "$_devnodes"
 
 	ioctl_unmapped_total=$((ioctl_unmapped_total + _node_unmapped))
+	if [ -n "$_unmapped_nodes" ]; then
+		_all_unmapped_nodes="${_all_unmapped_nodes:+$_all_unmapped_nodes, }$_unmapped_nodes"
+	fi
 
 	if [ "$_node_dead" -eq 0 ]; then
 		continue  # all mapped nodes live
@@ -332,8 +341,20 @@ done
 # Unmapped devnode WARN: emitted regardless of kconfig availability so
 # the map cannot silently rot as new ioctls/*.c files are added.
 if [ "$ioctl_unmapped_total" -gt 0 ]; then
+	# Build a capped display list (max 20 names + "and N more" suffix).
+	_unmapped_list=$(printf '%s' "$_all_unmapped_nodes" | tr ',' '\n' | sed '/^[[:space:]]*$/d')
+	_unmapped_count=$(printf '%s\n' "$_unmapped_list" | wc -l)
+	_cap=20
+	if [ "$_unmapped_count" -gt "$_cap" ]; then
+		_extra=$((_unmapped_count - _cap))
+		_unmapped_cap=$(printf '%s\n' "$_unmapped_list" | head -"$_cap" | tr '\n' ',' | sed 's/,[[:space:]]*$//')
+		_unmapped_cap="$_unmapped_cap (and $_extra more)"
+	else
+		_unmapped_cap=$(printf '%s\n' "$_unmapped_list" | tr '\n' ',' | sed 's/,[[:space:]]*$//')
+	fi
 	echo "WARN: $NAME: $ioctl_unmapped_total devnode string(s) in *_devs[] arrays" \
-	     "have no entry in IOCTL_NODE_MAP (map may be stale; add entries or verify)"
+	     "have no entry in IOCTL_NODE_MAP: $_unmapped_cap" \
+	     "(map may be stale; add entries or verify)"
 fi
 
 # Ioctl-group summary (separate counter from childop table).
