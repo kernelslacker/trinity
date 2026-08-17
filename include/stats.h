@@ -153,6 +153,7 @@
 #include "stats/subsys/pipe_waker.h"
 #include "stats/subsys/plateau.h"
 #include "stats/subsys/pkt_builder.h"
+#include "stats/subsys/posix_timer.h"
 #include "stats/subsys/procfs_writer.h"
 #include "stats/subsys/psp_key_rotate.h"
 #include "stats/subsys/qrtr_bind_race.h"
@@ -1197,6 +1198,9 @@ struct stats_s {
 	/* --blob-ab-mode within-run A/B harness counters.  See
 	 * stats/subsys/blob_ab.h for the per-field commentary. */
 	struct blob_ab_stats blob_ab;
+
+	/* recipe_posix_timer arm 2 accounting.  See stats/subsys/posix_timer.h. */
+	struct posix_timer_stats posix_timer __attribute__((aligned(64)));
 };
 
 unsigned int stats_syscall_category(const char *name);

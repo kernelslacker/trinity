@@ -259,6 +259,10 @@ stats	object
     stats.recipe_runner.completed	u64
     stats.recipe_runner.partial	u64
     stats.recipe_runner.unsupported	u64
+  stats.posix_timer	object
+    stats.posix_timer.sigev_delivered	u64
+    stats.posix_timer.sigev_missed	u64
+    stats.posix_timer.sigev_cookie_bad	u64
   stats.iouring_recipes	object
     stats.iouring_recipes.runs	u64
     stats.iouring_recipes.completed	u64

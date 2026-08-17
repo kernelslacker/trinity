@@ -273,6 +273,7 @@ extern const struct stat_category pkt_builder_category;
 extern const struct stat_category qrtr_bind_race_category;
 extern const struct stat_category rds_bind_transport_refleak_category;
 extern const struct stat_category rds_zcopy_crafted_send_category;
+extern const struct stat_category posix_timer_category;
 extern const struct stat_category recipe_runner_category;
 extern const struct stat_category refcount_audit_category;
 extern const struct stat_category rpl_clone_fidelity_category;

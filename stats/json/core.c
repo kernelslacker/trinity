@@ -318,6 +318,8 @@ void dump_stats_json_iouring_and_zombies(void)
 {
 	stat_category_emit_json(&recipe_runner_category);
 	putchar(',');
+	stat_category_emit_json(&posix_timer_category);
+	putchar(',');
 	stat_category_emit_json(&iouring_recipes_category);
 	putchar(',');
 	stat_category_emit_json(&iouring_cmd_passthrough_category);

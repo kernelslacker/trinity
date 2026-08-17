@@ -167,6 +167,7 @@ bool recipe_posix_timer(bool *unsupported __unused__)
 		sev.sigev_notify		 = SIGEV_THREAD_ID;
 		sev.sigev_signo			 = sig;
 		sev._sigev_un._tid		 = (pid_t)syscall(__NR_gettid);
+		childop_direct_syscalls_add(op, 1);
 		sev.sigev_value.sival_int = 0x5e; /* arbitrary cookie */
 
 		if (timer_create(CLOCK_MONOTONIC, &sev, &tid2) < 0)
@@ -180,11 +181,27 @@ bool recipe_posix_timer(bool *unsupported __unused__)
 			goto arm2_cleanup;
 
 		/* Wait up to 50 ms for the RT signal delivery via
-		 * posix_timer_event() -> send_sigqueue().  Best-effort:
-		 * EINTR / EAGAIN are both fine. */
+		 * posix_timer_event() -> send_sigqueue(). */
 		ts.tv_sec  = 0;
 		ts.tv_nsec = 50000000;
-		(void)sigtimedwait(&ss, &si, &ts);
+		{
+			int r = sigtimedwait(&ss, &si, &ts);
+			if (r > 0) {
+				if (si.si_code == SI_TIMER &&
+				    si.si_value.sival_int == 0x5e)
+					__atomic_add_fetch(
+						&shm->stats.posix_timer.sigev_delivered,
+						1, __ATOMIC_RELAXED);
+				else
+					__atomic_add_fetch(
+						&shm->stats.posix_timer.sigev_cookie_bad,
+						1, __ATOMIC_RELAXED);
+			} else {
+				__atomic_add_fetch(
+					&shm->stats.posix_timer.sigev_missed,
+					1, __ATOMIC_RELAXED);
+			}
+		}
 
 arm2_cleanup:
 		if (created2)
@@ -207,7 +224,5 @@ arm2_done:
 out:
 	if (created)
 		(void)timer_delete(tid);
-	/* One raw syscall: syscall(__NR_gettid) in the SIGEV_THREAD_ID arm. */
-	childop_direct_syscalls_add(op, 1);
 	return ok;
 }
