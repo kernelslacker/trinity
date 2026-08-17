@@ -79,9 +79,10 @@ static const char * const kmsg_triggers[] = {
 					 * and the v6.19+ reword (upstream: 28ea295f941e):
 					 *   "WARNING: %s:%d at %pS, CPU#%d: %s/%d"
 					 * as well as all lockdep WARNING: variants */
-	"Tried to split an unsplittable folio",	/* mm/huge_memory.c::__split_huge_page; fires as its own record BEFORE
-						 * the WARNING: banner, so it must be in the
-						 * trigger table to arm the follow-buffer before the backtrace arrives.
+	"Tried to split an unsplittable folio",	/* mm/huge_memory.c::__folio_split; the WARNING: banner fires FIRST
+						 * (kernel/panic.c::__warn() emits "WARNING: %s:%d" before the
+						 * format string), so this message arrives inside the follow-buffer
+						 * window the banner already opened.
 						 * Note: VM_WARN_ONCE means only the first hit is logged; absence of
 						 * this string after the first event is not evidence of absence. */
 	"WARNING: suspicious RCU",	/* lockdep-RCU usage warning */
