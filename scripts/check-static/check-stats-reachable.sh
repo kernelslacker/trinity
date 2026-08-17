@@ -324,8 +324,12 @@ grep -hoE 'offsetof\(struct stats_s,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_.]*' "$CFILE
 # correctly excludes.  Without the join, the continuation line carries
 # &shm->stats.foo.bar but not the __atomic_( token and passes through
 # as a false read, wrongly marking the field reachable.
+#
+# $HFILES (newline-delimited) is also scanned so that stats references
+# in inline helpers in include/*.h are not invisible to this pass.
 # ---------------------------------------------------------------------
-grep -hE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' "$CFILES_NORM" 2>/dev/null | \
+{ grep -hE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' "$CFILES_NORM" 2>/dev/null; \
+  xargs grep -hE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' 2>/dev/null < "$HFILES"; } | \
 	grep -vE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+(\[[^]]*\])?[[:space:]]*(\+\+|--|=|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)' | \
 	grep -vE '__atomic_(add|sub|store|exchange|and|or|xor|fetch|compare)' | \
 	grep -oE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' | \
@@ -564,8 +568,11 @@ fi
 #   - it is not a comment line (first non-space is * or //).
 # shm_write_pat() is used here for the same nine spellings as Step 2 so
 # the two stages share one canonical write-form definition.
+# $HFILES (newline-delimited) is also scanned so that inline-header
+# reads (e.g. in include/shm.h) are not invisible to this pass.
 while IFS= read -r shm_field; do
-	if grep -hE "\bshm->$shm_field\b" "$CFILES_NORM" 2>/dev/null | \
+	if { grep -hE "\bshm->$shm_field\b" "$CFILES_NORM" 2>/dev/null; \
+	     xargs grep -hE "\bshm->$shm_field\b" 2>/dev/null < "$HFILES"; } | \
 	   grep -vE '^[[:space:]]*([*/]|//)' | \
 	   grep -qvE "$(shm_write_pat "$shm_field")|\bshm->$shm_field[[:space:]]*(=[^=]|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
 		echo "$shm_field"
@@ -585,11 +592,6 @@ comm -23 "$SHM_WRITTEN" "$SHM_READ" > "$SHM_UNREACHED"
 #   syscalls32_attempted -- biarch probe denominator; read in
 #                           syscall-exec.c to gate 32-bit probing;
 #                           not surfaced in periodic output.
-#   newnet_in_flight     -- CLONE_NEWNET throttle counter; read via
-#                           __atomic_load_n in include/shm.h inline
-#                           try_admit_newnet().  The *.c-only read scan
-#                           misses inline-header reads; the field is
-#                           not a reportable metric.
 #   plateau_intervention_rotation_counter -- monotonic per-intervention
 #                           rotation sequencer; consumed via the return
 #                           value of __atomic_fetch_add (stored in the
@@ -603,7 +605,6 @@ SHM_ALLOWLIST=(
 	running_childs
 	sibling_freeze_gen
 	syscalls32_attempted
-	newnet_in_flight
 	plateau_intervention_rotation_counter
 )
 printf '%s\n' "${SHM_ALLOWLIST[@]}" | sort -u > "$TMP/shm_allow"
