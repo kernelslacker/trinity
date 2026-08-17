@@ -815,13 +815,13 @@ out:
  * SECCOMP_MODE_STRICT is unprivileged -- no capability and no
  * NO_NEW_PRIVS precondition are required, unlike SECCOMP_MODE_FILTER.
  *
- * childop_direct_syscalls_add() is called after prctl() arms strict mode
- * but before the fatal syscall.  That function uses only atomic CPU
- * instructions on shm memory (no syscalls), so calling it in strict mode
- * is safe.  _exit(1) is the sentinel for CONFIG_SECCOMP=n.
+ * childop_direct_syscalls_add() is called after prctl() arms strict mode,
+ * crediting both the marker write() and the fatal getpid().  That function
+ * uses only atomic CPU instructions on shm memory (no syscalls), so calling
+ * it in strict mode is safe.  _exit(1) is the sentinel for CONFIG_SECCOMP=n.
  */
-static void seccomp_strict_child(enum child_op_type op) __attribute__((noreturn));
-static void seccomp_strict_child(enum child_op_type op)
+static void seccomp_strict_child(enum child_op_type op, int marker_wfd) __attribute__((noreturn));
+static void seccomp_strict_child(enum child_op_type op, int marker_wfd)
 {
 	if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT, 0, 0, 0) != 0) {
 		/* ENOSYS means CONFIG_SECCOMP=n; any other errno is an
@@ -830,10 +830,21 @@ static void seccomp_strict_child(enum child_op_type op)
 	}
 
 	/*
-	 * Strict mode is now armed.  Publish the direct-syscall tally
-	 * before issuing the fatal syscall.
+	 * Strict mode is now armed.  Signal the parent by writing one marker
+	 * byte; write() is in the strict allowlist so this is safe.  Do NOT
+	 * close marker_wfd -- close() is not in the allowlist; the kernel
+	 * closes all fds on exit anyway.
 	 */
-	childop_direct_syscalls_add(op, 1);
+	if (write(marker_wfd, "\x5e", 1) != 1) {
+		/* Write failed: parent sees marker_ok=false, which correctly
+		 * treats SIGKILL as an external kill (no harm done). */
+	}
+
+	/*
+	 * Publish the direct-syscall tally: two syscalls issued in strict
+	 * mode -- write() above (the marker) and getpid() below.
+	 */
+	childop_direct_syscalls_add(op, 2);
 
 	/*
 	 * The next syscall that is not read, write, _exit, or sigreturn
@@ -861,10 +872,14 @@ static void seccomp_strict_child(enum child_op_type op)
  * by forking a throwaway child that enters strict mode and then issues a
  * forbidden syscall; the child dying is the point, not an error.
  *
- * The wait status is the oracle.  SIGKILL is the expected outcome;
- * SIGSYS is acceptable on kernels that report strict-mode violations
- * via SIGSYS before SIGKILL.  A clean exit or any other signal is an
- * anomaly (counted as partial completion).
+ * The oracle is SIGKILL combined with a pipe marker: the child writes
+ * one byte to a pipe after prctl(STRICT) succeeds and before the fatal
+ * syscall.  Both conditions must hold -- SIGKILL alone could be an
+ * external kill (OOM, cgroup.kill, watchdog) arriving before prctl()
+ * armed strict mode.  SIGSYS is a SECCOMP_RET_TRAP outcome of filter
+ * mode only; receiving it under strict mode means strict mode did NOT
+ * engage and is treated as anomalous.  A clean exit or any other signal
+ * is similarly anomalous (counted as partial completion).
  */
 bool recipe_seccomp_strict_fork(bool *unsupported)
 {
@@ -878,31 +893,50 @@ bool recipe_seccomp_strict_fork(bool *unsupported)
 	const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
 	pid_t child;
 	int status;
+	int pfd[2];
+
+	if (pipe(pfd) < 0)
+		return false;
 
 	childop_direct_syscalls_add(op, 1);
 
 	child = fork();
-	if (child < 0)
+	if (child < 0) {
+		close(pfd[0]);
+		close(pfd[1]);
 		return false;
+	}
 
 	if (child == 0)
-		seccomp_strict_child(op);
+		seccomp_strict_child(op, pfd[1]);  /* noreturn */
 	/* unreachable in parent -- seccomp_strict_child() is noreturn */
 
-	if (waitpid_eintr(child, &status, 0) < 0)
+	close(pfd[1]);  /* close write-end in parent */
+
+	if (waitpid_eintr(child, &status, 0) < 0) {
+		close(pfd[0]);
 		return false;
+	}
+
+	char marker = 0;
+	const bool marker_ok = (read(pfd[0], &marker, 1) == 1 && marker == 0x5e);
+	close(pfd[0]);
 
 	/*
 	 * Per-outcome accounting.  Each branch is distinct so the compiler
 	 * cannot fold them and future stat-counter additions have a clear
 	 * insertion point.
 	 *
-	 * SIGKILL: strict mode intercepted the forbidden syscall and the
+	 * SIGKILL + marker: strict mode armed (marker written) and the
 	 *   kernel killed the child -- the expected, fully-exercised path.
 	 *
-	 * SIGSYS:  some kernel configurations deliver SIGSYS for a seccomp
-	 *   violation before the SIGKILL.  Still a successful exercise of
-	 *   the strict-mode exit path.
+	 * SIGKILL without marker: external kill (OOM, cgroup.kill, watchdog)
+	 *   arrived before prctl() armed strict mode.  Not a true exercise.
+	 *
+	 * SIGSYS:  SECCOMP_RET_TRAP is a filter-mode outcome only;
+	 *   kernel/seccomp.c __secure_computing_strict() calls do_exit(SIGKILL)
+	 *   unconditionally.  Receiving SIGSYS means strict mode did not
+	 *   engage -- anomalous, surface as partial.
 	 *
 	 * exit(1): prctl(PR_SET_SECCOMP, STRICT) returned an error;
 	 *   treat as unsupported and latch the recipe off.
@@ -913,11 +947,16 @@ bool recipe_seccomp_strict_fork(bool *unsupported)
 	if (WIFSIGNALED(status)) {
 		int sig = WTERMSIG(status);
 
-		if (sig == SIGKILL)
-			return true;  /* SIGKILL: expected strict-mode outcome */
+		if (sig == SIGKILL) {
+			if (marker_ok)
+				return true;  /* strict mode armed and fired: full exercise */
+			/* SIGKILL without marker: external kill before prctl() armed;
+			 * strict-mode path not reached. */
+			return false;
+		}
 
-		if (sig == SIGSYS)
-			return true;  /* SIGSYS: acceptable strict-mode variant */
+		/* SIGSYS is SECCOMP_RET_TRAP (filter mode only); reaching here means
+		 * strict mode did not engage.  Surface as anomalous. */
 
 		/* Unexpected signal: anomalous outcome, surface as partial. */
 		return false;
