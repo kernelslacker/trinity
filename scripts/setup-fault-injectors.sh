@@ -1,0 +1,324 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+#
+# setup-fault-injectors.sh — privileged pre-run helper for trinity fault injection
+#
+# Must be run as root (CAP_SYS_RESOURCE required for proc_fault_inject_write(),
+# CAP_DAC_OVERRIDE required for chmod on /proc/lockdep_stats).
+#
+# Arms the six compiled-in fault injectors with correct per-context
+# scoping, relaxes /proc/lockdep_stats readability, and emits a world-readable
+# machine-readable state file that run-trinity.sh can consume without privilege.
+#
+# USAGE:
+#   sudo scripts/setup-fault-injectors.sh [OPTIONS]
+#
+# OPTIONS:
+#   --pid PID       Write make-it-fail=1 to /proc/PID/make-it-fail so all
+#                   tasks forked from PID inherit it (scopes injection to the
+#                   trinity process tree only).  Typically called again with
+#                   the PID of the run-trinity.sh process after it starts.
+#   --prob N        Fault probability 1-100 (default: ${TRINITY_FAULT_PROB:-2})
+#   --netdev IFACE  Network interface for fail_skb_realloc devname filter
+#                   (default: $TRINITY_NETDEV or first non-loopback interface)
+#   --state FILE    State file path (default: /run/trinity/fault-injectors.state)
+#   --dry-run       Print what would be written; do not write anything
+#   -h, --help      Show this message
+#
+# SCOPING:
+#   failslab, fail_page_alloc:  task-filter=1 + ignore-gfp-wait=0
+#   fail_usercopy, fail_futex:  task-filter=1
+#   fail_sunrpc:                task-filter=1 (kthreads satisfy in_task())
+#   fail_skb_realloc:           devname=IFACE + filtered=1   (task-filter FATAL:
+#                               softirq/NAPI has in_task()=false, applying
+#                               task-filter=1 silently disarms this injector)
+#
+# INHERITANCE:
+#   task->make_it_fail is copied through dup_task_struct() so writing 1 to the
+#   trinity parent's /proc/<pid>/make-it-fail scopes injection to its entire
+#   process tree without touching any other task on the host.
+
+set -euo pipefail
+
+STATE_FILE="/run/trinity/fault-injectors.state"
+PROB="${TRINITY_FAULT_PROB:-2}"
+TARGET_PID=""
+NETDEV="${TRINITY_NETDEV:-}"
+DRY_RUN=
+
+usage() {
+    sed -n '/^# USAGE:/,/^[^#]/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+
+die() { echo "setup-fault-injectors: ERROR: $*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --pid)       TARGET_PID="$2"; shift 2 ;;
+        --prob)      PROB="$2";       shift 2 ;;
+        --netdev)    NETDEV="$2";     shift 2 ;;
+        --state)     STATE_FILE="$2"; shift 2 ;;
+        --dry-run)   DRY_RUN=1;       shift   ;;
+        -h|--help)   usage 0 ;;
+        *)           die "Unknown argument: $1 (try --help)" ;;
+    esac
+done
+
+# ---------------------------------------------------------------------------
+# Privilege check
+# ---------------------------------------------------------------------------
+if [[ "${EUID:-$(id -u)}" -ne 0 ]] && [[ -z "${DRY_RUN}" ]]; then
+    die "must be run as root (CAP_SYS_RESOURCE required for fault-inject attrs)"
+fi
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+DEBUGFS=""
+for _mnt in /sys/kernel/debug /debug; do
+    if [[ -d "${_mnt}" ]] && mountpoint -q "${_mnt}" 2>/dev/null; then
+        DEBUGFS="${_mnt}"
+        break
+    fi
+done
+# If not a mountpoint but the directory exists and is populated, use it anyway.
+if [[ -z "${DEBUGFS}" ]] && [[ -d /sys/kernel/debug/failslab ]]; then
+    DEBUGFS=/sys/kernel/debug
+fi
+[[ -n "${DEBUGFS}" ]] || die "debugfs not found or not mounted — cannot arm fault injectors"
+
+write_attr() {
+    local file="$1" value="$2"
+    if [[ -n "${DRY_RUN}" ]]; then
+        echo "[dry-run] echo ${value} > ${file}"
+        return
+    fi
+    if [[ ! -e "${file}" ]]; then
+        echo "  SKIP (absent): ${file}" >&2
+        return
+    fi
+    echo "${value}" > "${file}" || { echo "  WARN: failed to write ${value} to ${file}" >&2; return; }
+}
+
+# Resolve the network interface for fail_skb_realloc devname filter.
+# The filter is load-bearing: without it the injector arms against every netdev
+# on the host, including the real management interface.
+resolve_netdev() {
+    if [[ -n "${NETDEV}" ]]; then
+        echo "${NETDEV}"; return
+    fi
+    # Prefer a virtual/dummy interface (safe for testing); fall back to first
+    # non-loopback interface that is UP.
+    local iface
+    for iface in $(ls /sys/class/net/ 2>/dev/null); do
+        [[ "${iface}" == "lo" ]] && continue
+        # Prefer dummy/veth interfaces (lower blast radius on the host).
+        if [[ -e /sys/class/net/${iface}/type ]]; then
+            local iftype
+            iftype=$(cat /sys/class/net/${iface}/type 2>/dev/null || echo 0)
+            # ARPHRD_ETHER=1; dummy/veth are also 1 but report driver in uevent.
+            if [[ -e /sys/class/net/${iface}/device/driver ]]; then
+                : # real hardware — defer
+            else
+                # No physical device backing → virtual (dummy/veth/macvlan/etc.)
+                echo "${iface}"; return
+            fi
+        fi
+    done
+    # Fall back to first non-loopback UP interface.
+    for iface in $(ls /sys/class/net/ 2>/dev/null); do
+        [[ "${iface}" == "lo" ]] && continue
+        if [[ -e /sys/class/net/${iface}/operstate ]]; then
+            echo "${iface}"; return
+        fi
+    done
+    echo ""
+}
+
+# ---------------------------------------------------------------------------
+# Arm fault injectors
+# ---------------------------------------------------------------------------
+echo "setup-fault-injectors: arming fault injectors (debugfs=${DEBUGFS}, prob=${PROB})"
+
+# Common attributes applied to every injector before injector-specific ones.
+# Order matters for fail_skb_realloc: devname+filtered BEFORE probability so
+# the injector is never briefly armed without a device filter.
+arm_common() {
+    local inj="$1"
+    local d="${DEBUGFS}/${inj}"
+    write_attr "${d}/interval"  1
+    write_attr "${d}/times"    -1
+    write_attr "${d}/space"     0
+    write_attr "${d}/verbose"   2
+}
+
+# --- failslab ---------------------------------------------------------------
+# GFP context: task.  Must clear ignore-gfp-wait (defaults 1 on most kernels,
+# which skips every GFP_KERNEL alloc → near-zero effective injection rate).
+_inj=failslab
+if [[ -d "${DEBUGFS}/${_inj}" ]]; then
+    echo "  ${_inj}: task-filter=1 ignore-gfp-wait=0 prob=${PROB}"
+    arm_common "${_inj}"
+    write_attr "${DEBUGFS}/${_inj}/task-filter"      1
+    write_attr "${DEBUGFS}/${_inj}/ignore-gfp-wait"  0
+    write_attr "${DEBUGFS}/${_inj}/probability"      "${PROB}"
+else
+    echo "  ${_inj}: not present — skipping" >&2
+fi
+
+# --- fail_page_alloc ---------------------------------------------------------
+_inj=fail_page_alloc
+if [[ -d "${DEBUGFS}/${_inj}" ]]; then
+    echo "  ${_inj}: task-filter=1 ignore-gfp-wait=0 prob=${PROB}"
+    arm_common "${_inj}"
+    write_attr "${DEBUGFS}/${_inj}/task-filter"      1
+    write_attr "${DEBUGFS}/${_inj}/ignore-gfp-wait"  0
+    write_attr "${DEBUGFS}/${_inj}/probability"      "${PROB}"
+else
+    echo "  ${_inj}: not present — skipping" >&2
+fi
+
+# --- fail_usercopy -----------------------------------------------------------
+_inj=fail_usercopy
+if [[ -d "${DEBUGFS}/${_inj}" ]]; then
+    echo "  ${_inj}: task-filter=1 prob=${PROB}"
+    arm_common "${_inj}"
+    write_attr "${DEBUGFS}/${_inj}/task-filter"  1
+    write_attr "${DEBUGFS}/${_inj}/probability"  "${PROB}"
+else
+    echo "  ${_inj}: not present — skipping" >&2
+fi
+
+# --- fail_futex --------------------------------------------------------------
+_inj=fail_futex
+if [[ -d "${DEBUGFS}/${_inj}" ]]; then
+    echo "  ${_inj}: task-filter=1 prob=${PROB}"
+    arm_common "${_inj}"
+    write_attr "${DEBUGFS}/${_inj}/task-filter"  1
+    write_attr "${DEBUGFS}/${_inj}/probability"  "${PROB}"
+else
+    echo "  ${_inj}: not present — skipping" >&2
+fi
+
+# --- fail_sunrpc -------------------------------------------------------------
+# Runs in kthread context; kthreads satisfy in_task() so task-filter=1 is safe.
+_inj=fail_sunrpc
+if [[ -d "${DEBUGFS}/${_inj}" ]]; then
+    echo "  ${_inj}: task-filter=1 prob=${PROB}"
+    arm_common "${_inj}"
+    write_attr "${DEBUGFS}/${_inj}/task-filter"  1
+    write_attr "${DEBUGFS}/${_inj}/probability"  "${PROB}"
+else
+    echo "  ${_inj}: not present — skipping" >&2
+fi
+
+# --- fail_skb_realloc --------------------------------------------------------
+# Runs in softirq/NAPI context: in_task()=false.  Applying task-filter=1
+# would silently disarm the injector (lib/fault-inject.c:149 short-circuits on
+# task_filter when !in_task()).  Use devname + filtered=1 ONLY.
+# devname and filtered MUST be written BEFORE probability or the injector
+# arms briefly against every netdev on the host.
+_inj=fail_skb_realloc
+if [[ -d "${DEBUGFS}/${_inj}" ]]; then
+    _netdev=$(resolve_netdev)
+    if [[ -z "${_netdev}" ]]; then
+        echo "  ${_inj}: WARN: no suitable network interface found — skipping (set TRINITY_NETDEV or --netdev)" >&2
+    else
+        echo "  ${_inj}: devname=${_netdev} filtered=1 prob=${PROB}  [NO task-filter: softirq context]"
+        arm_common "${_inj}"
+        # Device filter BEFORE probability — order is load-bearing.
+        write_attr "${DEBUGFS}/${_inj}/devname"     "${_netdev}"
+        write_attr "${DEBUGFS}/${_inj}/filtered"    1
+        write_attr "${DEBUGFS}/${_inj}/probability" "${PROB}"
+    fi
+else
+    echo "  ${_inj}: not present — skipping" >&2
+fi
+
+# ---------------------------------------------------------------------------
+# make-it-fail: scope injection to the trinity process tree
+# ---------------------------------------------------------------------------
+# task->make_it_fail is copied through dup_task_struct(); writing 1 here
+# and then forking run-trinity.sh (or having run-trinity.sh call this with
+# its own PID) scopes all task-filtered injectors to the trinity subtree only.
+make_it_fail_pid=""
+if [[ -n "${TARGET_PID}" ]]; then
+    _mif="/proc/${TARGET_PID}/make-it-fail"
+    if [[ -e "${_mif}" ]]; then
+        echo "setup-fault-injectors: arming make-it-fail for PID ${TARGET_PID}"
+        write_attr "${_mif}" 1
+        make_it_fail_pid="${TARGET_PID}"
+    else
+        echo "  WARN: /proc/${TARGET_PID}/make-it-fail not found (PID gone?)" >&2
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# /proc/lockdep_stats: relax readability
+# ---------------------------------------------------------------------------
+# /proc/lockdep_stats is created with mode 0400 (root-read-only) by
+# kernel/lockdep_proc.c.  The unprivileged runner needs to read it to
+# determine whether lockdep is live or self-disabled (debug_locks=0).
+# chmod o+r is safe: the file is read-only even for root; there is no
+# write path and no security-sensitive data beyond lock statistics.
+lockdep_stats_readable=0
+if [[ -e /proc/lockdep_stats ]]; then
+    if [[ -n "${DRY_RUN}" ]]; then
+        echo "[dry-run] chmod o+r /proc/lockdep_stats"
+        lockdep_stats_readable=1
+    else
+        if chmod o+r /proc/lockdep_stats 2>/dev/null; then
+            echo "setup-fault-injectors: /proc/lockdep_stats chmod o+r OK"
+            lockdep_stats_readable=1
+        else
+            echo "  WARN: chmod o+r /proc/lockdep_stats failed" >&2
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Write state file
+# ---------------------------------------------------------------------------
+STATE_DIR=$(dirname "${STATE_FILE}")
+if [[ -n "${DRY_RUN}" ]]; then
+    echo "[dry-run] mkdir -p ${STATE_DIR} && write ${STATE_FILE}"
+else
+    mkdir -p "${STATE_DIR}"
+fi
+
+_netdev_armed=$(resolve_netdev)
+
+emit_state() {
+    cat <<EOF
+# Generated by setup-fault-injectors.sh at $(date -u +%Y-%m-%dT%H:%M:%SZ)
+# Consumed by run-trinity.sh; key=value, world-readable.
+injectors_armed=1
+fault_probability=${PROB}
+lockdep_stats_readable=${lockdep_stats_readable}
+make_it_fail_pid=${make_it_fail_pid}
+failslab_armed=$([[ -d "${DEBUGFS}/failslab" ]] && echo 1 || echo 0)
+fail_page_alloc_armed=$([[ -d "${DEBUGFS}/fail_page_alloc" ]] && echo 1 || echo 0)
+fail_usercopy_armed=$([[ -d "${DEBUGFS}/fail_usercopy" ]] && echo 1 || echo 0)
+fail_futex_armed=$([[ -d "${DEBUGFS}/fail_futex" ]] && echo 1 || echo 0)
+fail_sunrpc_armed=$([[ -d "${DEBUGFS}/fail_sunrpc" ]] && echo 1 || echo 0)
+fail_skb_realloc_armed=$([[ -d "${DEBUGFS}/fail_skb_realloc" ]] && [[ -n "${_netdev_armed}" ]] && echo 1 || echo 0)
+fail_skb_realloc_devname=${_netdev_armed}
+debugfs_path=${DEBUGFS}
+EOF
+}
+
+if [[ -n "${DRY_RUN}" ]]; then
+    echo "--- state file (dry-run) ---"
+    emit_state
+    echo "---"
+else
+    emit_state > "${STATE_FILE}"
+    chmod 0644 "${STATE_FILE}"
+    echo "setup-fault-injectors: state written to ${STATE_FILE}"
+fi
+
+echo "setup-fault-injectors: done."
