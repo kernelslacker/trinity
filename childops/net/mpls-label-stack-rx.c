@@ -522,6 +522,7 @@ static void mlr_send_nonlinear_frame(struct mpls_label_stack_rx_iter_ctx *ctx)
 	struct sockaddr_ll dst;
 	uint32_t e0, e1;
 	int one = 1;
+	int zero = 0;
 	size_t off = 0;
 	ssize_t n;
 
@@ -608,6 +609,11 @@ static void mlr_send_nonlinear_frame(struct mpls_label_stack_rx_iter_ctx *ctx)
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.mpls_label_stack_rx.packet_sent_ok,
 				   1, __ATOMIC_RELAXED);
+
+	/* Clear the sticky PACKET_VNET_HDR mode so the socket leaves
+	 * a clean state for any future user of ctx->raw. */
+	setsockopt(ctx->raw, SOL_PACKET, PACKET_VNET_HDR, &zero, sizeof(zero));
+	ctx->direct_calls++;	/* setsockopt (clear) */
 }
 
 /*
