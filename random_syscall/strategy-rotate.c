@@ -243,6 +243,15 @@ void maybe_rotate_strategy(void)
 		warn_in_window = sat_sub_ul(warn_now,
 			__atomic_load_n(&shm->kmsg_warn_fires_at_window_start,
 					__ATOMIC_RELAXED));
+		/* Per-kind window deltas are also available via
+		 *   sat_sub_ul(__atomic_load_n(&kcov_shm->kmsg.fires_per_kind[k],
+		 *                              __ATOMIC_RELAXED),
+		 *              __atomic_load_n(
+		 *                  &shm->fires_per_kind_at_window_start[k],
+		 *                  __ATOMIC_RELAXED))
+		 * for k in [KMSG_WARN .. KMSG_MM_CORRUPT].  Wire into
+		 * bandit_record_pull when per-kind cohort attribution is
+		 * needed (e.g. KMSG_MM_CORRUPT vs KMSG_BUG separation). */
 	} else {
 		warn_in_window = 0UL;
 	}
@@ -336,13 +345,34 @@ void maybe_rotate_strategy(void)
 	 * Reseeded under RELAXED matching the other *_at_window_start stores
 	 * above; the snapshot tolerates a race between read and store
 	 * because the delta is a coarse cohort-level signal, not a precise
-	 * per-call attribution. */
+	 * per-call attribution.
+	 * fires_per_kind_at_window_start[] is reseeded in lock-step so
+	 * window-close logic can compute per-kind deltas (e.g. KMSG_MM_CORRUPT
+	 * vs KMSG_BUG) with the same race-tolerance contract. */
 	__atomic_store_n(&shm->kmsg_warn_fires_at_window_start,
 			 kcov_shm != NULL ?
 				 __atomic_load_n(&kcov_shm->kmsg.kmsg_warn_fires,
 						 __ATOMIC_RELAXED) :
 				 0UL,
 			 __ATOMIC_RELAXED);
+	if (kcov_shm != NULL) {
+		unsigned int _ki;
+
+		for (_ki = 0; _ki < NR_KMSG_KINDS; _ki++) {
+			__atomic_store_n(&shm->fires_per_kind_at_window_start[_ki],
+					 __atomic_load_n(
+						 &kcov_shm->kmsg.fires_per_kind[_ki],
+						 __ATOMIC_RELAXED),
+					 __ATOMIC_RELAXED);
+		}
+	} else {
+		unsigned int _ki;
+
+		for (_ki = 0; _ki < NR_KMSG_KINDS; _ki++)
+			__atomic_store_n(
+				&shm->fires_per_kind_at_window_start[_ki],
+				0UL, __ATOMIC_RELAXED);
+	}
 	/* Publish the selection reason BEFORE current_strategy: the RELEASE
 	 * store on current_strategy below pairs with the picker's and the
 	 * plateau gates' ACQUIRE loads of current_strategy, making the

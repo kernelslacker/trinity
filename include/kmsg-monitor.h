@@ -20,6 +20,7 @@ enum kmsg_event_kind {
 	KMSG_BUG,		/* BUG()/BUG_ON, KASAN/KMSAN/KCSAN/UBSAN, refcount_t */
 	KMSG_OOPS,		/* Oops, #GP, unhandled paging fault */
 	KMSG_MM_CORRUPT,	/* mm refcount/state corruption: bad rss-counter, bad page state/map, unsplittable folio */
+	NR_KMSG_KINDS,		/* sentinel — array-size constant; not a real event kind */
 };
 
 void kmsg_monitor_start(void);

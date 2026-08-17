@@ -233,7 +233,14 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	 * start delta for the same window.  Observation only -- no consumer
 	 * in select_next_strategy or ucb1_score reads these arrays; V3
 	 * action mode will wire them into the picker once the significance
-	 * gate from the design doc clears. */
+	 * gate from the design doc clears.
+	 *
+	 * Per-kind breakdown: kcov_shm->kmsg.fires_per_kind[k] (indexed by
+	 * enum kmsg_event_kind) and shm->fires_per_kind_at_window_start[k]
+	 * expose per-flavour window deltas -- e.g. KMSG_MM_CORRUPT separate
+	 * from KMSG_BUG / KMSG_WARN -- that the flat warn_fires signal does
+	 * not carry.  Wire per-kind deltas into per-cohort buckets here
+	 * when kind-level attribution is needed. */
 	chaos_idx = was_chaos ? 1u : 0u;
 	__atomic_fetch_add(&shm->bandit_pulls_by_chaos[arm][chaos_idx], 1UL,
 			   __ATOMIC_RELAXED);

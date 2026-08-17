@@ -17,6 +17,7 @@
 #include "stats.h"
 #include "strategy.h"
 #include "syscall.h"
+#include "kmsg-monitor.h"
 #include "types.h"
 
 #include "kernel/fcntl.h"
@@ -1023,6 +1024,12 @@ struct shm_s {
 	 * "WARNs this window", not per-arm.  See
 	 * Documentation/shm-state.md (Cmp-novelty bloom + reward). */
 	unsigned long kmsg_warn_fires_at_window_start;
+	/* Per-kind snapshot parallel to kmsg_warn_fires_at_window_start.
+	 * Reseeded from kcov_shm->kmsg.fires_per_kind[] at the same point as
+	 * kmsg_warn_fires_at_window_start so callers can compute per-kind
+	 * window deltas for cohort attribution.  Index layout mirrors
+	 * fires_per_kind[]: valid range is 1..NR_KMSG_KINDS-1. */
+	unsigned long fires_per_kind_at_window_start[NR_KMSG_KINDS];
 
 	/* Per-arm cumulative sum of (cmp_term * 1000 / total_reward) across
 	 * windows where cmp_term > 0; divided by bandit_pulls[arm] at end

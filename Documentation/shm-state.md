@@ -540,6 +540,10 @@ chaos-state dimension:
   counter; no companion lifetime series because the headline V2
   question is "does chaos correlate with WARNs?" and a per-arm-flat
   WARN total without the cohort split would not answer it.
+  Per-kind deltas (e.g. KMSG_MM_CORRUPT separately from KMSG_BUG) are
+  available via `kcov_shm->kmsg.fires_per_kind[k]` minus
+  `shm->fires_per_kind_at_window_start[k]`; wire them into per-cohort
+  buckets here when kind-level attribution is needed.
 
 Observation-only -- nothing in `select_next_strategy` / `ucb1_score`
 / `pick_next_strategy` reads these arrays.  The learner's reward
@@ -755,6 +759,17 @@ the cohort split sees represents only events the kernel emitted inside
 the just-finished window.  Written only by the CAS-winning child on
 the rotation path; RELAXED accesses match the other
 `*_at_window_start` fields.
+
+### `fires_per_kind_at_window_start[NR_KMSG_KINDS]`
+
+Per-kind snapshot parallel to `kmsg_warn_fires_at_window_start`.  Reseeded
+from `kcov_shm->kmsg.fires_per_kind[]` at the same rotation point and with
+the same RELAXED-atomic contract.  Indexed by `enum kmsg_event_kind`
+(values `1..NR_KMSG_KINDS-1`; slot 0 / `KMSG_EVENT_UNKNOWN` is never
+written by the monitor and will always be zero).  Enables window-close
+logic to compute per-kind deltas -- e.g. `KMSG_MM_CORRUPT` separate from
+`KMSG_BUG` or `KMSG_WARN` -- without conflating distinct kernel failure
+modes into the single flat `warn_fires` signal.
 
 ### `bandit_cmp_share_sum_x1000[NR_STRATEGIES]`
 

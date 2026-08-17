@@ -325,8 +325,14 @@ static inline unsigned long per_syscall_calls_prior_total(unsigned int nr)
  *   cmp_records..:              8388680  (unchanged, precedes childop_kcov)
  *   hints_flat..:               8388736  (unchanged, precedes childop_kcov)
  *   per_syscall.per_syscall_edges: 8401576 + 2304 = 8403880
- *   reexec_arms..:              25947360 + 5376 = 25952736 */
-_Static_assert(sizeof(struct kcov_shared) == 25952752UL,
+ *   reexec_arms..:              25947360 + 5376 = 25952736
+ * fires_per_kind[NR_KMSG_KINDS] added to struct kcov_kmsg (NR_KMSG_KINDS=8
+ * unsigned longs = 64 bytes).  kmsg sits between hints_flat and per_syscall
+ * so per_syscall and everything after it shifts by +64:
+ *   sizeof:                     25952752 + 64 = 25952816
+ *   per_syscall.per_syscall_edges: 8403880 + 64 = 8403944
+ *   reexec_arms..:              25952736 + 64 = 25952800 */
+_Static_assert(sizeof(struct kcov_shared) == 25952816UL,
 	"struct kcov_shared sizeof drifted -- audit layout before updating this");
 _Static_assert(offsetof(struct kcov_shared, bucket_seen) == 0UL,
 	"kcov_shared.bucket_seen must remain the first field");
@@ -334,7 +340,7 @@ _Static_assert(offsetof(struct kcov_shared, cmp_records.cmp_records_collected) =
 	"kcov_shared.cmp_records.cmp_records_collected offset drifted");
 _Static_assert(offsetof(struct kcov_shared, hints_flat.cmp_hints_injected) == 8388736UL,
 	"kcov_shared.hints_flat.cmp_hints_injected offset drifted");
-_Static_assert(offsetof(struct kcov_shared, per_syscall.per_syscall_edges) == 8403880UL,
+_Static_assert(offsetof(struct kcov_shared, per_syscall.per_syscall_edges) == 8403944UL,
 	"kcov_shared.per_syscall.per_syscall_edges offset drifted");
-_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25952736UL,
+_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25952800UL,
 	"kcov_shared last-field offset drifted -- append-only tail broken");

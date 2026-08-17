@@ -414,9 +414,17 @@ static void __attribute__((noreturn)) kmsg_helper_main(void)
 			 * MAP_SHARED region; the atomic from the helper process
 			 * lands in the same memory the parent and fuzz children
 			 * read. */
-			if (kind != KMSG_EVENT_UNKNOWN && kcov_shm != NULL)
+			if (kind != KMSG_EVENT_UNKNOWN && kcov_shm != NULL) {
 				__atomic_fetch_add(&kcov_shm->kmsg.kmsg_warn_fires,
 						   1UL, __ATOMIC_RELAXED);
+				/* Per-kind breakdown: bump the kind-indexed slot so
+				 * consumers can separate KMSG_MM_CORRUPT from
+				 * KMSG_BUG / KMSG_WARN in cohort attribution rather
+				 * than relying on the flat total alone. */
+				__atomic_fetch_add(
+					&kcov_shm->kmsg.fires_per_kind[kind],
+					1UL, __ATOMIC_RELAXED);
+			}
 
 			kmsg_emit("KMSG: {event:%d, banner:\"%s\"}\n",
 				(int)kind, body);
