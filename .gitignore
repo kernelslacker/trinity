@@ -24,3 +24,4 @@ rotation-events-*.jsonl
 *.pyc
 __pycache__/
 dmesg.log
+tests/test-bin-*
