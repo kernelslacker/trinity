@@ -9,17 +9,20 @@
 
 /* Per-childop one-shot latch reason codes published to
  * shm->stats.childop.latch_reason[op] when a childop disables itself for
- * the remainder of the run.  Compact enum (rendered as the integer code
- * in stats; no string table is materialised at this layer -- decoding is
- * the operator's job).  CHILDOP_LATCH_NONE = 0 matches the create_shm()
- * memset so a never-latched op renders as absent in the per-op dump.
+ * the remainder of the run.  Compact enum; CHILDOP_LATCH_NONE = 0 matches
+ * the create_shm() memset so a never-latched op renders as absent in the
+ * per-op dump.
  *
  * Keep this list small and generic -- the reason a childop latches off
  * usually reduces to one of "this kernel can't do it" (missing config /
  * netns scope / cap), "the one-shot init step returned an error", or "a
  * persistent resource exhaustion is happening".  Childop-specific detail
  * stays in that childop's own counters; this enum is the cross-childop
- * summary the per-arm-yield telemetry consumes. */
+ * summary the per-arm-yield telemetry consumes.
+ *
+ * childop_latch_reason_name() maps each value to a short label used as a
+ * fallback in the canary BROKEN-SETUP line when the static hints table
+ * has no entry for the op. */
 enum childop_latch_reason {
 	CHILDOP_LATCH_NONE = 0,
 	CHILDOP_LATCH_UNSUPPORTED,		/* kernel feature absent / built out */
@@ -28,6 +31,19 @@ enum childop_latch_reason {
 	CHILDOP_LATCH_RESOURCE_EXHAUSTED,	/* persistent ENOMEM/EMFILE/EAGAIN at setup */
 	CHILDOP_LATCH_OTHER,
 };
+
+static inline const char *childop_latch_reason_name(enum childop_latch_reason r)
+{
+	switch (r) {
+	case CHILDOP_LATCH_NONE:		return "none";
+	case CHILDOP_LATCH_UNSUPPORTED:		return "unsupported";
+	case CHILDOP_LATCH_NS_UNSUPPORTED:	return "ns-unsupported";
+	case CHILDOP_LATCH_INIT_FAILED:		return "init-failed";
+	case CHILDOP_LATCH_RESOURCE_EXHAUSTED:	return "resource-exhausted";
+	case CHILDOP_LATCH_OTHER:		return "other";
+	}
+	return "unknown";
+}
 
 /* Per-pick regime stamp written by set_syscall_nr_coverage_frontier at the
  * two accept sites and consumed by the post-call attribution path in

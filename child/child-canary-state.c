@@ -530,6 +530,29 @@ void leave_canarying_demote_setup_broken(enum child_op_type op,
 {
 	struct canary_op_state *s = &canary_ops[op];
 	enum canary_setup_fail_reason reason = canary_setup_fail_reason_for_op(op);
+	const char *reason_str;
+	char latch_buf[48];
+
+	/* When the static hints table has no entry for this op
+	 * (SETUP_FAIL_REASON_UNKNOWN), fall back to the latch_reason the
+	 * childop itself wrote into shm when it disabled itself.  This
+	 * surfaces the real cause (e.g. "latch:unsupported") in the
+	 * BROKEN-SETUP and AUTO-BLOCKED lines instead of the uninformative
+	 * "unknown" the table-miss would otherwise produce. */
+	if (reason == SETUP_FAIL_REASON_UNKNOWN) {
+		enum childop_latch_reason lr = (enum childop_latch_reason)
+			__atomic_load_n(&shm->stats.childop.latch_reason[op],
+					__ATOMIC_RELAXED);
+		if (lr != CHILDOP_LATCH_NONE) {
+			snprintf(latch_buf, sizeof(latch_buf), "latch:%s",
+				 childop_latch_reason_name(lr));
+			reason_str = latch_buf;
+		} else {
+			reason_str = canary_setup_fail_reason_name(reason);
+		}
+	} else {
+		reason_str = canary_setup_fail_reason_name(reason);
+	}
 
 	s->consecutive_setup_broken++;
 	s->setup_fail_reason = reason;
@@ -557,7 +580,7 @@ void leave_canarying_demote_setup_broken(enum child_op_type op,
 		canary_op_setup_broken[op] = false;
 		output(0, "canary: %s AUTO-BLOCKED after %u consecutive 100%% setup-failure windows (reason: %s, last setup_failures=%lu in %lu iters); terminal, no further re-canary; effective for new children at next respawn\n",
 			s->name, s->consecutive_setup_broken,
-			canary_setup_fail_reason_name(reason),
+			reason_str,
 			setup_failures, window_iters);
 		return;
 	}
@@ -569,7 +592,7 @@ void leave_canarying_demote_setup_broken(enum child_op_type op,
 	 * routine "demoted (reason: zero_edges ...)" line so a grep for
 	 * BROKEN-SETUP surfaces only the structural-failure cases. */
 	output(0, "canary: %s BROKEN-SETUP: 100%% setup failure (reason: %s, setup_failures=%lu, setup_ok=0 in %lu iters; consecutive_setup_broken=%u/%u) -- fix this op; backoff=%us before re-test; effective for new children at next respawn\n",
-		s->name, canary_setup_fail_reason_name(reason),
+		s->name, reason_str,
 		setup_failures, window_iters,
 		s->consecutive_setup_broken,
 		CANARY_SETUP_BROKEN_AUTOBLOCK_N,
