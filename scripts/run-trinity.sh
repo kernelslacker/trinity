@@ -126,15 +126,23 @@ fi
 # The single number is the whole signal; parsing dmesg for splat text is
 # dmesg-scan's job, not the runner's.  Guarded so a non-lockdep kernel is a
 # silent no-op.
-lockdep_alive_at_start=""
+# Tri-state: "alive" (readable, debug_locks=1), "dead" (readable but
+# debug_locks=0, or exists but not readable), "unknown" (absent — non-lockdep
+# kernel).  cleanup() gates on != unknown so the mid-run liveness check fires
+# whenever startup could determine a state, not only when it found lockdep live.
+lockdep_state="unknown"
 if [[ -e /proc/lockdep_stats ]]; then
     if [[ -r /proc/lockdep_stats ]]; then
-        lockdep_alive_at_start=$(awk '/^ debug_locks:/ {print $2}' /proc/lockdep_stats)
-        if [[ "${lockdep_alive_at_start}" == "0" ]]; then
+        lockdep_at_start=$(awk '/^ debug_locks:/ {print $2}' /proc/lockdep_stats)
+        if [[ "${lockdep_at_start}" == "0" ]]; then
+            lockdep_state="dead"
             echo "WARNING: lockdep is already self-disabled (debug_locks=0 in /proc/lockdep_stats) — lock-order coverage is DEAD for this run." >&2
             echo "  A prior splat killed it; nothing re-enables lockdep short of a reboot, so 'no deadlock found' this run means nothing." >&2
+        else
+            lockdep_state="alive"
         fi
     else
+        lockdep_state="dead"
         echo "WARNING: lockdep liveness UNKNOWN — /proc/lockdep_stats exists but is not readable as $(id -un)" >&2
         echo "  Running with CONFIG_LOCKDEP=y but without privilege to verify lock-order coverage." >&2
     fi
@@ -207,13 +215,13 @@ cleanup() {
     # transition so a run that went blind after minute 3 isn't mistaken for a
     # clean one.  Runs on EXIT/INT/TERM, so this fires on crash and interrupt
     # paths too, not only on clean exit.
-    if [[ "${lockdep_alive_at_start:-}" == "1" ]] && [[ -e /proc/lockdep_stats ]]; then
+    if [[ "${lockdep_state:-unknown}" != "unknown" ]] && [[ -e /proc/lockdep_stats ]]; then
         if [[ -r /proc/lockdep_stats ]]; then
             if [[ "$(awk '/^ debug_locks:/ {print $2}' /proc/lockdep_stats)" == "0" ]]; then
-                echo "WARNING: lockdep self-disabled during this run (debug_locks 1 -> 0) — lock-order coverage stopped at the first splat (see dmesg.log); everything after that point was uncovered." >&2
+                echo "WARNING: lockdep self-disabled during this run (debug_locks ${lockdep_state} -> dead) — lock-order coverage stopped at the first splat (see dmesg.log); everything after that point was uncovered." >&2
             fi
         else
-            echo "WARNING: lockdep liveness UNKNOWN — /proc/lockdep_stats exists but is not readable as $(id -un)" >&2
+            echo "WARNING: lockdep liveness UNKNOWN at cleanup — /proc/lockdep_stats exists but is not readable as $(id -un) (was ${lockdep_state} at start)" >&2
             echo "  Running with CONFIG_LOCKDEP=y but without privilege to verify lock-order coverage." >&2
         fi
     fi
