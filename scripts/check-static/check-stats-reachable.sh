@@ -137,8 +137,8 @@ find "$SUBSYS_DIR" "$ROOT/include" -maxdepth 1 -name '*.h' -type f > "$HFILES"
 join_continuations() {
 	awk '
 	FNR == 1 { pending = "" }
-	/^[^)]*(__atomic_[a-z_]+|offsetof)\([^)]*$/ { pending = $0; next }
 	pending != "" { print pending " " $0; pending = ""; next }
+	/^[^)]*(__atomic_[a-z_]+|offsetof)\([^)]*$/ { pending = $0; next }
 	{ print }
 	END { if (pending != "") print pending }
 	'
@@ -153,8 +153,8 @@ join_continuations() {
 # resets pending at each file boundary so multi-batch invocations are safe.
 xargs -0 awk '
 FNR == 1 { pending = "" }
-/^[^)]*(__atomic_[a-z_]+|offsetof)\([^)]*$/ { pending = $0; next }
 pending != "" { print pending " " $0; pending = ""; next }
+/^[^)]*(__atomic_[a-z_]+|offsetof)\([^)]*$/ { pending = $0; next }
 { print }
 END { if (pending != "") print pending }
 ' < "$CFILES" > "$CFILES_NORM"
@@ -399,8 +399,17 @@ ALLOWLIST_PATTERNS=(
 	# transition_edge.calls_at_window_start: per-strategy window-start
 	#   snapshot (atomic_store, not monotonic counter); internal bandit
 	#   bookkeeping, not an externally reportable metric.
+	# transition_edge.calls_by_strategy: per-strategy accumulated call
+	#   counter (array, one slot per strategy).  Written from
+	#   per-syscall-edges.c; read ONLY to seed calls_at_window_start via
+	#   __atomic_load_n inside strategy-rotate.c's __atomic_store_n
+	#   call.  The load+store appear on a single joined line after the
+	#   continuation fix, so the __atomic_store_n filter correctly
+	#   excludes the line from the consumer-read set.  Internal bandit
+	#   window-delta bookkeeping; not an externally reportable metric.
 	'tracefs_fuzzer\.ftrace_subset_skipped'
 	'transition_edge\.calls_at_window_start'
+	'transition_edge\.calls_by_strategy'
 
 	# --- explicit dead-counter escrow: newly visible after multiline-write fix ---
 	# pc_edge_source.errno_saves: per-syscall array written from
@@ -710,4 +719,59 @@ if grep -hE "\bshm->$_fix_field\b" "$_fix_fp_file" | \
 	fail "self-test: a read of shm->$_fix_field as a value argument was misclassified as a write (anchor too loose)"
 fi
 echo "PASS: $NAME: self-test: second-argument read correctly not classified as a write"
+
+# Self-test: verify join_continuations correctly joins a continuation where the
+# opening token has a trailing space before end of line (space-after-paren form):
+#   __atomic_fetch_add( 
+#       &shm->foo, 1, __ATOMIC_RELAXED);
+# The trailing space after `(` must not break the `[^)]*$` anchor.
+_fix_sp_file="$TMP/fix_space_paren_fixture"
+printf '__atomic_fetch_add( \n\t&shm->foo, 1, __ATOMIC_RELAXED);\n' > "$_fix_sp_file"
+_fix_sp_out="$TMP/fix_space_paren_out"
+join_continuations < "$_fix_sp_file" > "$_fix_sp_out"
+_fix_sp_wc="$(wc -l < "$_fix_sp_out")"
+if [ "$_fix_sp_wc" -ne 1 ]; then
+	fail "self-test: space-after-paren fixture: expected 1 joined output line, got $_fix_sp_wc"
+fi
+if ! grep -q '__atomic_fetch_add' "$_fix_sp_out" || ! grep -q '&shm->foo' "$_fix_sp_out"; then
+	fail "self-test: space-after-paren fixture: joined line missing expected tokens"
+fi
+echo "PASS: $NAME: self-test: space-after-paren continuation correctly joined"
+
+# Self-test: verify join_continuations() does NOT overwrite pending when two
+# consecutive lines both match the continuation pattern (nested-atomic overwrite bug).
+#
+# Fixture (four lines):
+#   Line 1: __atomic_store_n(&shm->foo,          ← matches pattern → pending = line1
+#   Line 2:     __atomic_load_n(&shm->bar,       ← also matches; BUGGY awk overwrites
+#   Line 3:         __ATOMIC_RELAXED),           ←   pending with line2, drops line1
+#   Line 4:     __ATOMIC_RELAXED)
+#
+# FIXED awk (pending-check before pattern): line1+line2 joined into one output line;
+# lines 3 and 4 pass through → 3 output lines; both atomic keywords present.
+# BUGGY awk: line1 silently dropped (pending overwritten), output 2 lines;
+# __atomic_store_n (the write site) missing from output.
+_fix_ns_file="$TMP/fix_nested_store_fixture"
+{
+	printf '__atomic_store_n(&shm->foo,\n'
+	printf '    __atomic_load_n(&shm->bar,\n'
+	printf '        __ATOMIC_RELAXED),\n'
+	printf '    __ATOMIC_RELAXED)\n'
+} > "$_fix_ns_file"
+_fix_ns_out="$TMP/fix_nested_store_out"
+join_continuations < "$_fix_ns_file" > "$_fix_ns_out"
+# Both atomic keywords must appear (store line must not have been dropped).
+if ! grep -q '__atomic_store_n' "$_fix_ns_out"; then
+	fail "self-test: nested-store fixture: __atomic_store_n was dropped by join_continuations (consecutive-match overwrite bug)"
+fi
+if ! grep -q '__atomic_load_n' "$_fix_ns_out"; then
+	fail "self-test: nested-store fixture: __atomic_load_n missing from join_continuations output"
+fi
+# Line count: one 2-line join → 1 line; remaining 2 lines pass through = 3 total.
+# Buggy awk drops line1 and joins line2+line3 → 2 lines.
+_fix_ns_wc="$(wc -l < "$_fix_ns_out")"
+if [ "$_fix_ns_wc" -ne 3 ]; then
+	fail "self-test: nested-store fixture: expected 3 output lines from join_continuations, got $_fix_ns_wc (content dropped or rule order wrong)"
+fi
+echo "PASS: $NAME: self-test: nested-store consecutive-match not overwritten by join_continuations"
 exit 0
