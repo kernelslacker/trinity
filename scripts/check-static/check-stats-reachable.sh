@@ -110,10 +110,54 @@ UNREACHED="$TMP/unreached"
 UNALLOWED="$TMP/unallowed"
 CFILES="$TMP/cfiles"
 HFILES="$TMP/hfiles"
+CFILES_NORM="$TMP/cfiles_norm.txt"
 
 # NUL-delimited file lists reused by several xargs passes.
 find "$ROOT" -name '*.c' -type f -print0 > "$CFILES"
 find "$SUBSYS_DIR" "$ROOT/include" -maxdepth 1 -name '*.h' -type f > "$HFILES"
+
+# join_continuations: normalise continuation lines so that two-line
+# calls like
+#   __atomic_fetch_add(
+#           &shm->field, ...
+# and
+#   .offset = offsetof(struct stats_s,
+#                      member.sub.leaf)
+# are presented as a single line to write-pattern matchers and to the
+# offsetof extractor (step 2c).  Without this join:
+#  - The __atomic_*( continuation line carries &shm->field but not the
+#    __atomic_( token, so write-exclusion filters that look for both
+#    tokens on the same line classify the continuation as a false read.
+#  - The offsetof continuation line carries the dotted field path but
+#    not "offsetof(struct stats_s,", so the step-2c extractor cannot
+#    capture the path and treats the field as unreachable.
+# One level of join is sufficient for all spellings observed in this
+# tree; FNR==1 resets state at each file boundary so awk file-batching
+# cannot bleed pending state across files.
+join_continuations() {
+	awk '
+	FNR == 1 { pending = "" }
+	/^[^)]*(__atomic_[a-z_]+|offsetof)\([^)]*$/ { pending = $0; next }
+	pending != "" { print pending " " $0; pending = ""; next }
+	{ print }
+	END { if (pending != "") print pending }
+	'
+}
+
+# Pre-build a single continuation-joined text file covering all C source
+# files.  Steps 2c, 2d, and the shm_s write-site / read-set scans all
+# read from this file, eliminating scattered per-step normalization.
+# The awk body below is the same logic as join_continuations(); that
+# shell function exists for the self-test where we pipe a small fixture
+# through it directly.  xargs passes all file paths as arguments; FNR==1
+# resets pending at each file boundary so multi-batch invocations are safe.
+xargs -0 awk '
+FNR == 1 { pending = "" }
+/^[^)]*(__atomic_[a-z_]+|offsetof)\([^)]*$/ { pending = $0; next }
+pending != "" { print pending " " $0; pending = ""; next }
+{ print }
+END { if (pending != "") print pending }
+' < "$CFILES" > "$CFILES_NORM"
 
 # ---------------------------------------------------------------------
 # Field enumeration.
@@ -253,8 +297,12 @@ xargs -0 grep -hE 'STAT_FIELD_(JSON_)?SUB\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:
 # ---------------------------------------------------------------------
 # Reachability step 2c: bespoke offsetof(struct stats_s, path) entries.
 # Extract the full dotted path (may be multi-level, e.g. frontier.core.foo).
+# $CFILES_NORM is used so that two-line offsetof entries such as:
+#   .offset = offsetof(struct stats_s,
+#                      frontier.discriminator.frseq_candidates) },
+# are joined into a single line before extraction.
 # ---------------------------------------------------------------------
-xargs -0 grep -hoE 'offsetof\(struct stats_s,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_.]*' < "$CFILES" 2>/dev/null | \
+grep -hoE 'offsetof\(struct stats_s,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_.]*' "$CFILES_NORM" 2>/dev/null | \
 	sed -E 's/offsetof\(struct stats_s,[[:space:]]*//' \
 	> "$OFF"
 
@@ -267,8 +315,17 @@ xargs -0 grep -hoE 'offsetof\(struct stats_s,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_.]*
 # __atomic_* primitive (which typically takes `&stats.foo` as its
 # first arg and rewrites it in-place).  Everything left is a read
 # on some render path.
+#
+# Input is $CFILES_NORM (continuation-joined) rather than raw source
+# so that two-line writes:
+#   __atomic_add_fetch(
+#           &shm->stats.foo.bar, 1, __ATOMIC_RELAXED);
+# arrive as a single joined line that the __atomic_ filter below
+# correctly excludes.  Without the join, the continuation line carries
+# &shm->stats.foo.bar but not the __atomic_( token and passes through
+# as a false read, wrongly marking the field reachable.
 # ---------------------------------------------------------------------
-xargs -0 grep -hE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' < "$CFILES" 2>/dev/null | \
+grep -hE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' "$CFILES_NORM" 2>/dev/null | \
 	grep -vE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+(\[[^]]*\])?[[:space:]]*(\+\+|--|=|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)' | \
 	grep -vE '__atomic_(add|sub|store|exchange|and|or|xor|fetch|compare)' | \
 	grep -oE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' | \
@@ -340,6 +397,20 @@ ALLOWLIST_PATTERNS=(
 	#   bookkeeping, not an externally reportable metric.
 	'tracefs_fuzzer\.ftrace_subset_skipped'
 	'transition_edge\.calls_at_window_start'
+
+	# --- explicit dead-counter escrow: newly visible after multiline-write fix ---
+	# pc_edge_source.errno_saves: per-syscall array written from
+	#   minicorpus_save_with_reason() (persist/minicorpus-save.c) for
+	#   errno-provenance-tagged corpus admissions.  Mirrors rq_saves[]
+	#   which is rendered in stats/periodic/top-syscalls.c; errno variant
+	#   has no render path yet.  Exposed as dead by the multiline-write
+	#   fix (was falsely reachable via continuation-line false read).
+	# pc_edge_source.errno_pcedge_wins: per-syscall array written from
+	#   frontier_record_new_edge() (strategy/strategy-frontier.c) for
+	#   errno-sourced PC-edge wins.  Mirrors rq_pcedge_wins[] (rendered
+	#   in top-syscalls.c); errno variant has no render path yet.
+	'pc_edge_source\.errno_saves'
+	'pc_edge_source\.errno_pcedge_wins'
 )
 
 allow_re="^($(IFS='|'; echo "${ALLOWLIST_PATTERNS[*]}"))\$"
@@ -459,9 +530,13 @@ fi
 
 # Step 2: narrow to members that have a counter write site.
 # Recognises all nine write spellings via shm_write_pat().
+# $CFILES_NORM (continuation-joined) is used so that two-line writes
+#   __atomic_fetch_add(
+#           &shm->field, ...
+# are presented as a single line and matched by shm_write_pat().
 while IFS= read -r shm_field; do
-	if xargs -0 grep -lE "$(shm_write_pat "$shm_field")" \
-		   < "$CFILES" 2>/dev/null | grep -q .; then
+	if grep -qE "$(shm_write_pat "$shm_field")" \
+		   "$CFILES_NORM" 2>/dev/null; then
 		echo "$shm_field"
 	fi
 done < "$SHM_SCALARS" | sort -u > "$SHM_WRITTEN"
@@ -490,7 +565,7 @@ fi
 # shm_write_pat() is used here for the same nine spellings as Step 2 so
 # the two stages share one canonical write-form definition.
 while IFS= read -r shm_field; do
-	if xargs -0 grep -hE "\bshm->$shm_field\b" < "$CFILES" 2>/dev/null | \
+	if grep -hE "\bshm->$shm_field\b" "$CFILES_NORM" 2>/dev/null | \
 	   grep -vE '^[[:space:]]*([*/]|//)' | \
 	   grep -qvE "$(shm_write_pat "$shm_field")|\bshm->$shm_field[[:space:]]*(=[^=]|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
 		echo "$shm_field"
@@ -515,11 +590,21 @@ comm -23 "$SHM_WRITTEN" "$SHM_READ" > "$SHM_UNREACHED"
 #                           try_admit_newnet().  The *.c-only read scan
 #                           misses inline-header reads; the field is
 #                           not a reportable metric.
+#   plateau_intervention_rotation_counter -- monotonic per-intervention
+#                           rotation sequencer; consumed via the return
+#                           value of __atomic_fetch_add (stored in the
+#                           local `rot`), not by reading
+#                           shm->plateau_intervention_rotation_counter
+#                           on any render path.  Newly visible as written
+#                           after the multiline-write fix (the write was
+#                           a two-line __atomic_fetch_add / &shm->field
+#                           split that the old line-based scanner missed).
 SHM_ALLOWLIST=(
 	running_childs
 	sibling_freeze_gen
 	syscalls32_attempted
 	newnet_in_flight
+	plateau_intervention_rotation_counter
 )
 printf '%s\n' "${SHM_ALLOWLIST[@]}" | sort -u > "$TMP/shm_allow"
 comm -23 "$SHM_UNREACHED" "$TMP/shm_allow" > "$SHM_UNALLOWED"
@@ -567,16 +652,46 @@ if grep -hE "\bshm->$_fix_field\b" "$_fix_file" | \
 fi
 echo "PASS: $NAME: self-test: all write spellings correctly excluded from read set"
 
-# Self-test: verify the space-after-paren spelling is matched as a write.
-# Line: __atomic_store_n( &shm->foo, val, __ATOMIC_RELAXED)
-# -- one space after ( is idiomatic in this tree and must match.
-_fix_space_file="$TMP/fix_space_fixture"
-printf '\t__atomic_store_n( &shm->%s, 0, __ATOMIC_RELAXED);\n' \
-	"$_fix_field" > "$_fix_space_file"
-if ! grep -hE "${SHM_WRITE_PAT_ATOMIC}\([[:space:]]*&shm->$_fix_field[[:space:]]*[,)]" "$_fix_space_file" | grep -q .; then
-	fail "self-test: space-after-paren spelling NOT matched by shm_write_pat (anchor too strict)"
+# Self-test: verify that join_continuations correctly joins the two-line
+# __atomic_*( / &shm->... pattern and that the joined line is matched as
+# a write by the atomic-write filter.
+#
+# Fixture lines are copied verbatim from the top-offending source files:
+#   childops/mm/uffd-fault-move.c               lines 468-470
+#   childops/net/packet-qdisc-bypass-unanchored-l2.c  lines 871-873
+#   childops/net/igmp-mld-source-churn.c        lines 205-207
+# All three share the two-line form:
+#   line N:   __atomic_add_fetch(
+#   line N+1: \t\t\t&shm->stats.<sub>.<field>, 1, __ATOMIC_RELAXED);
+# Without join_continuations the N+1 line lacks __atomic_*( and passes
+# the write filter as a false read; after joining both tokens appear on
+# one line and the filter correctly excludes it.
+_fix_ml_file="$TMP/fix_multiline_fixture"
+{
+	# childops/mm/uffd-fault-move.c 468-470
+	printf '\t\t__atomic_add_fetch(\n'
+	printf '\t\t\t&shm->stats.uffd_fault_move.v1_dontwake_woke_early,\n'
+	printf '\t\t\t1, __ATOMIC_RELAXED);\n'
+	# childops/net/packet-qdisc-bypass-unanchored-l2.c 871-873
+	printf '\t\t__atomic_add_fetch(\n'
+	printf '\t\t\t&shm->stats.packet_qdisc_bypass_unanchored_l2.lane_a_sends,\n'
+	printf '\t\t\t1, __ATOMIC_RELAXED);\n'
+	# childops/net/igmp-mld-source-churn.c 205-207
+	printf '\t\t__atomic_add_fetch(\n'
+	printf '\t\t\t&shm->stats.igmp_mld_source_churn.igmp_max_msf_raise_fail,\n'
+	printf '\t\t\t1, __ATOMIC_RELAXED);\n'
+} > "$_fix_ml_file"
+# Raw fixture: no line should match atomic_write_pattern AND &shm-> together
+# (the __atomic_add_fetch( line has no &shm-> and the &shm->... line has no __atomic_).
+if grep -qE "${SHM_WRITE_PAT_ATOMIC}\([[:space:]]*&shm->" "$_fix_ml_file"; then
+	fail "self-test: multiline fixture: raw file already has one-line atomic+shm pattern (fixture wrong)"
 fi
-echo "PASS: $NAME: self-test: space-after-paren atomic spelling correctly matched as write"
+# After join_continuations: every written occurrence must be matched.
+if ! join_continuations < "$_fix_ml_file" | \
+   grep -qE "${SHM_WRITE_PAT_ATOMIC}\([[:space:]]*&shm->"; then
+	fail "self-test: join_continuations did not expose multiline __atomic_add_fetch( / &shm-> writes"
+fi
+echo "PASS: $NAME: self-test: multiline atomic write correctly joined and matched by write filter"
 
 # Self-test: verify the write-anchor correctly rejects a read of
 # shm->FIELD that appears as a later argument (not the first pointer
