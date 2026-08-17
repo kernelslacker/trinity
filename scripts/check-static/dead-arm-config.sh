@@ -219,7 +219,19 @@ if [ -n "$KCONFIG" ]; then
 		# entries are unique in practice but guard defensively.
 		[[ -v _ioctl_kcfg_live["$_kcfg_key"] ]] && continue
 		_ioctl_kcfg_live["$_kcfg_key"]=1
-	done < <(grep -E "^CONFIG_[A-Z0-9_]+=(y|m)" "$KCONFIG" 2>/dev/null)
+	done < <(grep -E "^CONFIG_[A-Z0-9_]+=(y|m)" "$KCONFIG")
+	# Plausibility floor: a real kernel .config has thousands of CONFIG_=y/m
+	# lines.  A near-empty result means EIO on a seeky read, a partial file,
+	# or a stale symlink that slipped past the earlier dangling-link check.
+	# Without this guard every mapped ioctl node appears config-dead and
+	# produces fabricated WARNs that are indistinguishable from real ones.
+	_ioctl_kcfg_count=${#_ioctl_kcfg_live[@]}
+	if [ "$_ioctl_kcfg_count" -lt 100 ]; then
+		echo "WARN: $NAME: ioctl kconfig pre-load yielded only $_ioctl_kcfg_count" \
+		     "symbol(s) from $KCONFIG (expected >=100; EIO or partial read?);" \
+		     "skipping ioctl dead-arm checks (check mount, re-run)" >&2
+		KCONFIG=""
+	fi
 fi
 ioctl_sym_live() { [ "${_ioctl_kcfg_live["CONFIG_$1"]+_}" ]; }
 
