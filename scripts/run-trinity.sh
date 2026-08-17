@@ -39,8 +39,13 @@ fi
 # on the box.  A run can therefore look fully fault-injecting while injecting
 # nothing, or arm host-wide against the real management interface by accident.
 # As with the kcov check above we only diagnose and print the fix: the
-# debugfs files are root-owned, trinity runs unprivileged, and the runner
-# must never write them itself.  Silent no-op when /sys/kernel/debug is
+# debugfs files are root-owned (0600), trinity runs unprivileged, and the
+# runner must never write them itself.  Each check gates on [[ -r ]] before
+# reading — synthesising a worst-case default from an unreadable attr and
+# then warning about it produces unfalsifiable noise that trains operators
+# to ignore the output.  The right end-state is a privileged setup script
+# that writes a world-readable state file the runner can consume, but that
+# spec is separate future work.  Silent no-op when /sys/kernel/debug is
 # absent or unreadable (non-debug kernels, unprivileged hosts).
 if [[ -r /sys/kernel/debug ]]; then
     # failslab / fail_page_alloc: clear ignore-gfp-wait or they inject almost
@@ -48,9 +53,35 @@ if [[ -r /sys/kernel/debug ]]; then
     # (fail_futex/fail_sunrpc/fail_usercopy have no gfp filter and are live).
     for _inj in failslab fail_page_alloc; do
         _gfp="/sys/kernel/debug/${_inj}/ignore-gfp-wait"
-        if [[ -e "${_gfp}" ]] && [[ "$(cat "${_gfp}" 2>/dev/null || echo 1)" != "0" ]]; then
-            echo "WARNING: ${_inj} has ignore-gfp-wait=1 — it skips every GFP_KERNEL allocation and injects almost nothing as configured." >&2
-            echo "  Fix: echo 0 | sudo tee ${_gfp}" >&2
+        if [[ -e "${_gfp}" ]]; then
+            if [[ ! -r "${_gfp}" ]]; then
+                echo "WARNING: ${_inj} state UNKNOWN — debugfs attrs are 0600 root-only; run as root or via a privileged setup script to verify injector state." >&2
+            elif [[ "$(cat "${_gfp}")" != "0" ]]; then
+                echo "WARNING: ${_inj} has ignore-gfp-wait=1 — it skips every GFP_KERNEL allocation and injects almost nothing as configured." >&2
+                echo "  Fix: echo 0 | sudo tee ${_gfp}" >&2
+            fi
+        fi
+    done
+
+    # All six compiled-in injectors: warn if probability=0 (disarmed) or
+    # times=0 (budget exhausted).  Each attr is checked for readability
+    # independently before use — see rationale in the block comment above.
+    for _inj in failslab fail_page_alloc fail_futex fail_sunrpc fail_usercopy; do
+        _prob_f="/sys/kernel/debug/${_inj}/probability"
+        _times_f="/sys/kernel/debug/${_inj}/times"
+        if [[ -e "${_prob_f}" ]]; then
+            if [[ ! -r "${_prob_f}" ]]; then
+                echo "WARNING: ${_inj} state UNKNOWN — debugfs attrs are 0600 root-only; run as root or via a privileged setup script to verify injector state." >&2
+            else
+                if [[ "$(cat "${_prob_f}")" == "0" ]]; then
+                    echo "WARNING: ${_inj} probability=0 — this fault injector is disarmed." >&2
+                    echo "  Fix: echo <N> | sudo tee ${_prob_f}" >&2
+                fi
+                if [[ -r "${_times_f}" ]] && [[ "$(cat "${_times_f}")" == "0" ]]; then
+                    echo "WARNING: ${_inj} times=0 — fault budget exhausted; the injector will not fire until reset." >&2
+                    echo "  Fix: echo -1 | sudo tee ${_times_f}" >&2
+                fi
+            fi
         fi
     done
 
@@ -61,17 +92,27 @@ if [[ -r /sys/kernel/debug ]]; then
     # host including its real management interface.
     _skb=/sys/kernel/debug/fail_skb_realloc
     if [[ -d "${_skb}" ]]; then
-        _prob="$(cat "${_skb}/probability" 2>/dev/null || echo 0)"
-        _filt="$(cat "${_skb}/filtered" 2>/dev/null || echo 0)"
-        if [[ "${_prob}" == "0" ]]; then
-            echo "WARNING: fail_skb_realloc probability=0 — the RX-path skb-realloc injector is disarmed." >&2
-            echo "  Fix (device filter FIRST, then probability — the order is load-bearing):" >&2
-            echo "    echo <ifname> | sudo tee ${_skb}/devname" >&2
-            echo "    echo 1        | sudo tee ${_skb}/filtered" >&2
-            echo "    echo <N>      | sudo tee ${_skb}/probability" >&2
-        elif [[ "${_filt}" == "0" ]]; then
-            echo "WARNING: fail_skb_realloc is armed (probability=${_prob}) but UNSCOPED (filtered=0) — it faults reallocs on EVERY netdev, including this host's management interface." >&2
-            echo "  Fix: set a device filter — echo <ifname> | sudo tee ${_skb}/devname && echo 1 | sudo tee ${_skb}/filtered" >&2
+        _prob_f="${_skb}/probability"
+        _times_f="${_skb}/times"
+        _filt_f="${_skb}/filtered"
+        if [[ ! -r "${_prob_f}" ]]; then
+            echo "WARNING: fail_skb_realloc state UNKNOWN — debugfs attrs are 0600 root-only; run as root or via a privileged setup script to verify injector state." >&2
+        else
+            _prob="$(cat "${_prob_f}")"
+            if [[ "${_prob}" == "0" ]]; then
+                echo "WARNING: fail_skb_realloc probability=0 — the RX-path skb-realloc injector is disarmed." >&2
+                echo "  Fix (device filter FIRST, then probability — the order is load-bearing):" >&2
+                echo "    echo <ifname> | sudo tee ${_skb}/devname" >&2
+                echo "    echo 1        | sudo tee ${_skb}/filtered" >&2
+                echo "    echo <N>      | sudo tee ${_skb}/probability" >&2
+            elif [[ -r "${_filt_f}" ]] && [[ "$(cat "${_filt_f}")" == "0" ]]; then
+                echo "WARNING: fail_skb_realloc is armed (probability=${_prob}) but UNSCOPED (filtered=0) — it faults reallocs on EVERY netdev, including this host's management interface." >&2
+                echo "  Fix: set a device filter — echo <ifname> | sudo tee ${_skb}/devname && echo 1 | sudo tee ${_skb}/filtered" >&2
+            fi
+            if [[ -r "${_times_f}" ]] && [[ "$(cat "${_times_f}")" == "0" ]]; then
+                echo "WARNING: fail_skb_realloc times=0 — fault budget exhausted; the injector will not fire until reset." >&2
+                echo "  Fix: echo -1 | sudo tee ${_times_f}" >&2
+            fi
         fi
     fi
 fi
