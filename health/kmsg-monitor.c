@@ -73,9 +73,14 @@ static const char * const kmsg_triggers[] = {
 	"UBSAN:",
 	"WARNING: possible recursive locking",
 	"WARNING: possible circular locking",
-	"WARNING: CPU:",		/* generic WARN_ON()/WARN() splat banner from kernel/panic.c::__warn */
+	"WARNING: ",			/* generic WARN_ON()/WARN() splat banner from __warn() in kernel/panic.c;
+					 * matches both the pre-v6.19 format
+					 *   "WARNING: CPU: %d PID: %d at %s:%d %pS"
+					 * and the v6.19+ reword (upstream: 28ea295f941e):
+					 *   "WARNING: %s:%d at %pS, CPU#%d: %s/%d"
+					 * as well as all lockdep WARNING: variants */
 	"Tried to split an unsplittable folio",	/* mm/huge_memory.c::__split_huge_page; fires as its own record BEFORE
-						 * the WARNING: CPU: banner via __warn_printf, so it must be in the
+						 * the WARNING: banner, so it must be in the
 						 * trigger table to arm the follow-buffer before the backtrace arrives.
 						 * Note: VM_WARN_ONCE means only the first hit is logged; absence of
 						 * this string after the first event is not evidence of absence. */

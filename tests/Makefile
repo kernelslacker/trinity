@@ -99,6 +99,7 @@ FAKE_SRCS	:= \
 	deferred_free_test.c \
 	stats_opclock_lossless_test.c \
 	struct_field_bounds_test.c \
+	kmsg_trigger_selftest.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
