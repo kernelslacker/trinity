@@ -87,7 +87,7 @@ struct reexec_pending {
  * breaks the loop on a helper FAIL (the per-window ceiling hit); the
  * control arm (burst_drain_arm_b == false) is unaffected and continues to
  * drain up to MAX_REEXEC_PENDING per the greedy baseline landed in
- * b86f2e77a846 ("drain all staged reexec_pending entries per dispatch").
+ * 59650d9d2e17 ("drain all staged reexec_pending entries per dispatch").
  * K=4 is half the producer-side buffer cap: the measurement asks whether
  * a surgical top-K drain converts to more distinct-edge lift per attempt
  * than the greedy drain during the exact plateau where the greedy drain

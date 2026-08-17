@@ -26,9 +26,9 @@
 # then review the resulting diffs and commit them alongside the code change.
 #
 # Scope fence (already landed -- do NOT redo):
-#   fa70568f8e3e ("stats: latch ferror and disable timeseries sink on write failure")
-#   68677eaa3211 ("stats: emit terminal JSONL record at shutdown with total cross-check")
-#   52e845a6381f ("stats: terminal cross-check must read the monotonic total_op_count")
+#   8d326144e77a ("stats: latch ferror and disable timeseries sink on write failure")
+#   1f993d65e941 ("stats: emit terminal JSONL record at shutdown with total cross-check")
+#   02deb071fca2 ("stats: terminal cross-check must read the monotonic total_op_count")
 # This fixture exercises those paths; it does not rebuild the mechanisms.
 
 set -u
@@ -889,7 +889,7 @@ fi
 #       Expected exit:   0 (run completes normally without the JSONL sinks)
 #
 # These exercises confirm that the open-failure error-transaction paths in
-# stats/log.c and stats/rotation_event.c are live (fa70568f8e3e
+# stats/log.c and stats/rotation_event.c are live (8d326144e77a
 # ("stats: latch ferror and disable timeseries sink on write failure")).
 # ---------------------------------------------------------------------------
 

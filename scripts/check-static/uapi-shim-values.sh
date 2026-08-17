@@ -89,7 +89,7 @@ find "$ROOT" -path "$ROOT/scripts" -prune -o \
 # baseline run.  The floor is ratcheted via uapi-shim-harvest-floor.baseline
 # (matching the tier1-probed-floor pattern) so a silently-collapsed
 # find/perl/grep pipeline fails hard rather than passing vacuously (mirrors
-# MIN_ARMS rationale; 97d55b637edd ("check-static/dead-arm-runtime-probe:
+# MIN_ARMS rationale; fa88fdd8adbb ("check-static/dead-arm-runtime-probe:
 # convert to MAPPING-table shape")).  This check runs unconditionally and is
 # the only surviving quantitative floor on the linus-tree-absent path.
 harvest_floor=0

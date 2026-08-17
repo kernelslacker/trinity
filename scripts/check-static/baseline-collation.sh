@@ -11,7 +11,7 @@
 # locale.  When a committed baseline was originally sorted under en_US.UTF-8
 # but the gate runs in a C/POSIX shell (CI containers, cron, env-scrubbed
 # runners), sort produces a different order, comm silently degrades, and
-# set-difference results are wrong.  c481a1c1f5a7 ("dead-arm-detect: pin
+# set-difference results are wrong.  a38cd3b95cf0 ("dead-arm-detect: pin
 # LC_ALL=C so comm runs in consistent collation") fixed one such gate.
 # This check prevents the class from recurring.
 #

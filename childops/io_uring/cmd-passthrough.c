@@ -709,7 +709,7 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 		 * hitting NULLDEV_MSHOT_BUG_CAP and killing the arm for the
 		 * rest of the run.  Retry for up to
 		 * NULLDEV_CQE_SETTLE_ATTEMPTS × NULLDEV_CQE_SETTLE_DELAY_MS ms
-		 * using a deadline-based loop; see 6fcd73253f79 ("tc/qdisc-churn: make settle window EINTR-robust against SIGALRM bleed") for the same pattern. */
+		 * using a deadline-based loop; see 30d2c41af5c4 ("tc/qdisc-churn: make settle window EINTR-robust against SIGALRM bleed") for the same pattern. */
 		const struct timespec gap = {
 			.tv_sec  = 0,
 			.tv_nsec = (long)NULLDEV_CQE_SETTLE_DELAY_MS * 1000000L,
@@ -742,7 +742,7 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 		 * exits after sleeping without re-probing, so check
 		 * head/tail once more rather than relying on the stale
 		 * had_cqe from before the last sleep.  Mirrors the fix in
-		 * ccf121115541 ("tc/qdisc-churn: atomic-exchange skip-sw
+		 * 038587938c2f ("tc/qdisc-churn: atomic-exchange skip-sw
 		 * latch, probe after settle"). */
 		if (!had_cqe)
 			had_cqe = (ring_u32(ctx->cq_ring, ctx->cq_off_head) !=

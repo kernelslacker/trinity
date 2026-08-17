@@ -41,7 +41,7 @@
  *                               directly; no compensation is needed.
  *
  * 7. delta_guard             -- exercises the delta-based plausibility
- *                               arm from dfb8993f4632 ("stats-ring: add per-slot delta plausibility guard for lossless_op_count"): a scribble to
+ *                               arm from 1e1a436cc490 ("stats-ring: add per-slot delta plausibility guard for lossless_op_count"): a scribble to
  *                               P + 1e8 + 1 (below the absolute ceiling
  *                               but above the per-drain delta limit)
  *                               stalls the aggregate across repeated
@@ -591,7 +591,7 @@ static void test_child_respawn_preserve(void)
 /* Test 7: delta_guard                                                 */
 /*                                                                     */
 /* Exercises the delta-based plausibility arm added in               */
-/* dfb8993f4632 ("stats-ring: add per-slot delta plausibility guard for lossless_op_count"): */
+/* 1e1a436cc490 ("stats-ring: add per-slot delta plausibility guard for lossless_op_count"): */
 /*                                                                     */
 /* Phase 1: run baseline_ops normally; first guarded drain accepts and */
 /*           records prev = baseline_ops.                              */

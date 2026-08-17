@@ -17,4 +17,4 @@
 #   annotated: "drain all staged reexec_pending entries per dispatch"
 #   real:      "random-syscall: drain all staged reexec_pending entries per dispatch"
 #   (annotation is missing the "random-syscall:" subsystem prefix)
-include/cmp_hints/redqueen.h:b86f2e77a846
+include/cmp_hints/redqueen.h:59650d9d2e17

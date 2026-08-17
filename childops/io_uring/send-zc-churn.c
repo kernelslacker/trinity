@@ -378,7 +378,7 @@ static int iouring_send_zc_iter_setup(struct iouring_send_zc_iter_ctx *it)
 				 * write from a sibling; bounds-check the
 				 * snapshot before indexing the
 				 * NR_CHILD_OP_TYPES-sized stats array, same
-				 * pattern as 825305aed33d. */
+				 * pattern as 950e48314ab0. */
 				{
 					const enum child_op_type op = it->child->op_type;
 					if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
@@ -449,7 +449,7 @@ static int iouring_send_zc_iter_socket(struct iouring_send_zc_iter_ctx *it)
 			 * can be scribbled by a poisoned-arena write from
 			 * a sibling; bounds-check the snapshot before
 			 * indexing the NR_CHILD_OP_TYPES-sized stats array,
-			 * same pattern as 825305aed33d. */
+			 * same pattern as 950e48314ab0. */
 			{
 				const enum child_op_type op = it->child->op_type;
 				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
@@ -622,7 +622,7 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child,
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling, same
-	 * pattern as 825305aed33d. */
+	 * pattern as 950e48314ab0. */
 	{
 		const enum child_op_type op = child->op_type;
 		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
@@ -666,7 +666,7 @@ bool iouring_send_zc_churn(struct childdata *child)
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling, same
-	 * pattern as 825305aed33d. */
+	 * pattern as 950e48314ab0. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	/* Fleet-wide direct-syscall tally.  Bumped inside do_register()/

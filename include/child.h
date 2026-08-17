@@ -616,7 +616,7 @@ struct childdata {
 	 * as inside a CMP_RISING_PC_FLAT plateau (plateau_burst), the drain
 	 * loop caps at REDQUEEN_REEXEC_BURST_DRAIN entries (default 4) and
 	 * breaks on a helper FAIL (per-window ceiling hit).  Arm A (false)
-	 * leaves the greedy drain-all baseline (b86f2e77a846) untouched so
+	 * leaves the greedy drain-all baseline (59650d9d2e17) untouched so
 	 * the two arms measure "surgical top-K drain during plateau" vs
 	 * "greedy drain-all during plateau" on distinct-edge lift per
 	 * attempt.  Independent of redqueen_enabled (an arm-B child with

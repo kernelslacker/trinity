@@ -12,7 +12,7 @@
  * signal(2) installer's default bucket below.  The synchronous-fault
  * class (SIGILL/SIGTRAP/SIGABRT/SIGBUS/SIGFPE/SIGSEGV) is excluded
  * here for the same reason it is excluded from rt_sigaction's settable
- * pool in syscalls/sigaction.c (see f4a04186fa66): the handler arg is
+ * pool in syscalls/sigaction.c (see 1d0279f0e6f9): the handler arg is
  * an ARG_ADDRESS draw that frequently resolves to a wild rand-shaped
  * pointer, and pairing one of the fault signos with that draw
  * permanently replaces trinity's per-child child_fault_handler

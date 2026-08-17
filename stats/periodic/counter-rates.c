@@ -515,7 +515,7 @@ static const struct {
 	 * grandchildren take the fast path and this_child() never
 	 * returns NULL inside a childop body (dispatch/pids.c:181-201),
 	 * so the doubly-forked / NULL-this_child() scenario posited in
-	 * d8e938a8a940 ("stats: wire direct_tally_dropped counter to reachable reject path")
+	 * 56285eafae0f ("stats: wire direct_tally_dropped counter to reachable reject path")
 	 * does not occur. */
 	{ "direct_tally_dropped",
 	  offsetof(struct stats_s, childop.direct_tally_dropped) },

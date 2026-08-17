@@ -33,7 +33,7 @@ static void sanitise_ftruncate(struct syscallrecord *rec)
 	 * regular-file truncate paths fire instead of bouncing off the
 	 * VFS prologue on pipes / sockets / read-only handles drawn from
 	 * the broad ARG_FD pool.  Mirrors the positioned-write bias added
-	 * in 5104a97f6dea.  Applied BEFORE the protected-fd reroll so the
+	 * in 018072e2f5fc.  Applied BEFORE the protected-fd reroll so the
 	 * reroll still has the last word on fd selection. */
 	if (rnd_modulo_u32(100) < 25) {
 		int fd = get_rand_writeable_pagecache_fd();

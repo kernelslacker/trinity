@@ -334,7 +334,7 @@ static const struct path_rule prefilter_rules[] = {
 	{ "/proc/sys/fs/suid_dumpable", MATCH_EXACT, "core" },
 
 	/*
-	 * fs-global siblings — all described in deny_rules[] (c830cc386bda
+	 * fs-global siblings — all described in deny_rules[] (f0e4b43ca295
 	 * added suid_dumpable; the same failure class applies to every
 	 * host-global /proc/sys/fs/ knob listed below).  The /proc/sys/fs/
 	 * allow prefix shadows deny_rules[] for this entire subtree, so

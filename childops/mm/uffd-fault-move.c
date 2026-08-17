@@ -943,7 +943,7 @@ cleanup_v1:
 			 * here: the leaked worker's count is retained permanently
 			 * so the childop's handlers remain installed for the rest
 			 * of the child's life — decremented on clean join only.
-			 * See d128999b6950 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement").
+			 * See 8952c45d2f37 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement").
 			 * ctx (heap) and the src_pages/region mappings are
 			 * intentionally not freed: the stranded worker is still
 			 * running and may be touching them.  Child-process exit
@@ -1582,7 +1582,7 @@ cleanup_v3:
 			 * here: the leaked worker's count is retained permanently
 			 * so the childop's handlers remain installed for the rest
 			 * of the child's life — decremented on clean join only.
-			 * See d128999b6950 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement").
+			 * See 8952c45d2f37 ("uffd-fault-move: fix SIGBUS/SIGSEGV handler displacement").
 			 * fctx (heap) and the region mapping are intentionally
 			 * not freed: the stranded worker is still running and
 			 * may be touching them.  Child-process exit reclaims

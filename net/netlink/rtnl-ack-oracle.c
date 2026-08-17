@@ -173,7 +173,7 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 	 * and the next non-dump increment brings it to 0 mod SAMPLE_RATE,
 	 * firing the gate for the next eligible message.  Identical to the
 	 * counter correction in rtnl_oracle_abort();
-	 * bc919ef76769 ("net/netlink: rtnl_oracle_abort steps sample counter back by one").
+	 * e881da483f4b ("net/netlink: rtnl_oracle_abort steps sample counter back by one").
 	 */
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		oracle_state.counter--;

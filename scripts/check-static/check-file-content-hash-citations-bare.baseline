@@ -8,18 +8,18 @@
 #
 # To clear an entry: add the ("subject") annotation to the cited line and
 # remove the corresponding line from this file in the same commit.
-childops/fs/procfs-writer.c:c830cc386bda
-childops/fs/ublk-lifecycle.c:825305aed33d
-childops/io_uring/send-zc-churn.c:825305aed33d
-childops/net/packet-qdisc-bypass-unanchored-l2.c:aa572518c2bf
-childops/net/packet-qdisc-bypass-unanchored-l2.c:fed6db19d692
-include/child.h:b86f2e77a846
-net/socket-family-grammar-alg.c:1c7259d88947
-scripts/check-static/check-runtime-json-output.sh:fa70568f8e3e
-scripts/check-static/json-separator-adjacency.sh:a79d41c36e2b
+childops/fs/procfs-writer.c:f0e4b43ca295
+childops/fs/ublk-lifecycle.c:950e48314ab0
+childops/io_uring/send-zc-churn.c:950e48314ab0
+childops/net/packet-qdisc-bypass-unanchored-l2.c:2bed5637987c
+childops/net/packet-qdisc-bypass-unanchored-l2.c:fafa23bad4ce
+include/child.h:59650d9d2e17
+net/socket-family-grammar-alg.c:5019c4342a24
+scripts/check-static/check-runtime-json-output.sh:8d326144e77a
+scripts/check-static/json-separator-adjacency.sh:872757fb803b
 scripts/check-static/pdeathsig-getppid-recheck.sh:e8f741787a65
-stats/network/childops.c:aa572518c2bf
-syscalls/fs/ftruncate.c:5104a97f6dea
-syscalls/signal/signal.c:f4a04186fa66
-syscalls/xattr/lremovexattr.c:f0d5ab520c00
-syscalls/xattr/removexattr.c:f0d5ab520c00
+stats/network/childops.c:2bed5637987c
+syscalls/fs/ftruncate.c:018072e2f5fc
+syscalls/signal/signal.c:1d0279f0e6f9
+syscalls/xattr/lremovexattr.c:7aa68bb3e648
+syscalls/xattr/removexattr.c:7aa68bb3e648

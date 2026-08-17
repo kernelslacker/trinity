@@ -188,7 +188,7 @@ unsigned long frontier_cold_weight(unsigned int nr,
 	 * discovers both kinds of novelty correctly contributes to both
 	 * terms because two distinct novelty events happened -- there is
 	 * no double-counting.  Composition with the PC-edge backbone
-	 * is coordinated with 86ee2986cec8 ("random-syscall: shadow-score
+	 * is coordinated with 434ca4fc8c96 ("random-syscall: shadow-score
 	 * blended frontier cold weight"), which introduced the bucket-bits
 	 * and distinct-pcs terms; the disjoint transition term layered on
 	 * top is what makes blend_weight differ from old_weight under

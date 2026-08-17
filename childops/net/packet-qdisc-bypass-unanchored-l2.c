@@ -1606,8 +1606,8 @@ bool packet_qdisc_bypass_unanchored_l2(struct childdata *child)
 	 * GENL_ADMIN_PERM guarantees 100% EPERM from a child userns.  A zero delta
 	 * after i completed iterations means the structural assumption changed —
 	 * macsec gained GENL_UNS_ADMIN_PERM, the install call was removed, or the
-	 * lane was disconnected from this op.  Counter added by aa572518c2bf;
-	 * userns-admin lane added by fed6db19d692.
+	 * lane was disconnected from this op.  Counter added by 2bed5637987c;
+	 * userns-admin lane added by fafa23bad4ce.
 	 */
 	if (__atomic_load_n(
 		    &shm->stats.packet_qdisc_bypass_unanchored_l2.macsec_sa_install_eperm,

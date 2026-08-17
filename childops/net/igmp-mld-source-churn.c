@@ -523,7 +523,7 @@ static void msfilter_getsockopt_oracle_v4_opt41(int s, __u32 grp_be,
  * but uses IPPROTO_IPV6 and fills gf_group as a sockaddr_in6 with
  * @grp_v6.  ip6_mc_msfilter gates on the global sysctl_mld_max_msf
  * (/proc/sys/net/ipv6/mld_max_msf, not per-netns); the v6 raise was
- * already dropped by 3fe3a7e7f01d ("Restore igmp_max_msf after raise; track
+ * already dropped by 57554bfe0ae9 ("Restore igmp_max_msf after raise; track
  * write failures; drop v6 raise"), so raise_igmp_max_msf() only covers v4.
  */
 static void msfilter_getsockopt_oracle_v6(int s,
@@ -1034,9 +1034,9 @@ static unsigned long igmp_source_iter_v4_race(struct igmp_source_iter_v4_ctx *it
 		 * RACE C IS LIVE: the selector above is rnd_modulo_u32(5U),
 		 * so this arm fires at ~1/5 probability.  The switch to
 		 * rnd_modulo_u32(5U) was made by
-		 * 2ce62e02798c ("igmp-mld-source-churn: decorrelate RACE E selector from iter_idx"),
+		 * b927d5b4e893 ("igmp-mld-source-churn: decorrelate RACE E selector from iter_idx"),
 		 * two commits before
-		 * aa1ac0d29877 ("igmp: account for sysctl cost of raise/restore_igmp_max_msf in RACE C").
+		 * b7897e5ad2c0 ("igmp: account for sysctl cost of raise/restore_igmp_max_msf in RACE C").
 		 * That commit's message incorrectly described RACE C as
 		 * "currently masked by an unreachable arm" -- it was not;
 		 * the IP_MSFILTER opt-41 oracle below is on a fully active

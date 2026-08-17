@@ -209,7 +209,7 @@ static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
 			 * scribbled by a poisoned-arena write from a sibling;
 			 * bounds-check the snapshot before indexing the
 			 * NR_CHILD_OP_TYPES-sized stats array, same pattern
-			 * as 825305aed33d. */
+			 * as 950e48314ab0. */
 			const enum child_op_type op = ctx->child->op_type;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
 				__atomic_store_n(&shm->stats.childop.latch_reason[op],
@@ -413,7 +413,7 @@ bool ublk_lifecycle(struct childdata *child)
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; same
-	 * pattern as 825305aed33d.  Hoisted to function scope so the out:
+	 * pattern as 950e48314ab0.  Hoisted to function scope so the out:
 	 * publish uses the same gate as the setup_accepted / data_path
 	 * increments below, and so a mid-flow early exit that already
 	 * issued real syscalls still credits them via one atomic add. */

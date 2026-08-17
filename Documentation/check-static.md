@@ -186,7 +186,7 @@ update this section to match `ls scripts/check-static/*.sh`.)
   other direction.  This gate exists because the "What today's checks
   enforce" list is hand-maintained -- without enforcement, it drifted
   silently until 22 scripts were undocumented at once (the state
-  4b5e17517772 ("check-static: gate sfg phase-order invariants") exposed).
+  17c1420e3d8d ("check-static: gate sfg phase-order invariants") exposed).
 - `check-stats-reachable`: every scalar counter reachable from
   `struct stats_s` (flat leaves plus recursively-descended
   `stats/subsys/*_stats` sub-structs) must be surfaced by a
@@ -391,7 +391,7 @@ update this section to match `ls scripts/check-static/*.sh`.)
   on any comma-separator emit (`putchar(',')` / `fputc(',` /
   `printf(",`), and flags a second emit reached with no separator
   between.  Regression fixture: the pre-fix pre-image of
-  `dump_stats_json_netfilter_and_xfrm()` (a79d41c36e2b ("stats/json: fix missing comma before ip6mr_churn in network section")^) is replayed
+  `dump_stats_json_netfilter_and_xfrm()` (872757fb803b ("stats/json: fix missing comma before ip6mr_churn in network section")^) is replayed
   inline as a known-bad input and must produce exactly one hit.
 - `kcov-canonicalise-pcs`: (i) `kcov_canon_pc()` in `kcov/collect.c`
   must subtract `kcov_kaslr_base`, (ii) `pc_canon_to_edge()` must

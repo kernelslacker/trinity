@@ -81,7 +81,7 @@ static void dump_stats_render_packet_qdisc_bypass_unanchored_l2(void)
 	/*
 	 * Structural-assumption oracle: bypass_install_macsec_txsa() is gated
 	 * on GENL_ADMIN_PERM (init_user_ns), so every call from a child userns
-	 * returns -EPERM.  aa572518c2bf added macsec_sa_install_eperm to make
+	 * returns -EPERM.  2bed5637987c added macsec_sa_install_eperm to make
 	 * that visible.  Because 100% EPERM is the invariant, zero is the
 	 * impossible case: it means the macsec genl family gained
 	 * GENL_UNS_ADMIN_PERM upstream, the op is no longer called, or the

@@ -444,7 +444,7 @@ echo "PASS: $NAME: $field_count stats_s fields (flat + nested), all reachable or
 # counter declared directly in struct shm_s -- e.g. nat_t_churn.lo_up_fail
 # was written from rtnl_bring_lo_up / bring_lo_up (four __atomic sites)
 # while still a shm_s member, with no render path, before commit
-# 78ee45bc83ed ("lo_up_fail: wire into stats surface with four-site plumbing")
+# 9c09cc25e898 ("lo_up_fail: wire into stats surface with four-site plumbing")
 # moved it into struct nat_t_churn_stats where it is now
 # correctly covered by STAT_FIELD_SUB(nat_t_churn, lo_up_fail) and a
 # stat_row emit -- lies outside that population entirely: the stats_s walker cannot

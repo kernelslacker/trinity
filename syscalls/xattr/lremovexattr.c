@@ -45,7 +45,7 @@ static void sanitise_lremovexattr(struct syscallrecord *rec)
 	 * dispatch or the simple_xattr_remove fast path that the
 	 * per-inode i_xattrs rwsem guards.  Same "high calls, low
 	 * edges" cold-syscall shape that fremovexattr was in before
-	 * the f0d5ab520c00 testfile-fd repoint.
+	 * the 7aa68bb3e648 testfile-fd repoint.
 	 *
 	 * Half the draws now repoint at one of the trinity-testfile<N>
 	 * absolute paths and plant a known user.* xattr there via

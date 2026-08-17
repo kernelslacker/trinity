@@ -145,7 +145,7 @@ int xdp_netlink_set_fd(struct nl_ctx *rtnl, unsigned int ifindex,
  * one whose hardware type indicates an IP tunnel.  Covers ARPHRD_TUNNEL
  * (ipip), ARPHRD_IPGRE (gre), and ARPHRD_SIT (sit) — exactly the
  * kinds that NNM creates and migrates into this netns
- * (7e165350bd48 ("netdev-netns-migrate: add gre and ipip to device kind rotation")).
+ * (9c24ed41429a ("netdev-netns-migrate: add gre and ipip to device kind rotation")).
  * Returns 0 if no matching device is present.  The probe socket and
  * ioctl syscalls are credited via *dc_out so the direct-syscall
  * reporter sees them.

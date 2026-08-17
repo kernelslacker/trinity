@@ -95,7 +95,7 @@ malformed_rows=""
 # awk -F'\t' does not collapse adjacent tabs, so empty interior fields (which
 # IFS=$'\t' read would silently shift away) are correctly detected here.  This
 # also subsumes the former >=5-field check added in
-# fe7dc0433804 ("dead-arm-config: reject 5+ field rows in mapping walk").
+# bef2967bc339 ("dead-arm-config: reject 5+ field rows in mapping walk").
 _map_bad=$(printf '%s\n' "$MAPPING" | \
 	awk -F'\t' '
 		/^[[:space:]]*#/ { next }

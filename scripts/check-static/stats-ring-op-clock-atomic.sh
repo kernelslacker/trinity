@@ -71,7 +71,7 @@ scanned=0
 # Balanced-paren stripping is done with a Python3 one-liner so that
 # call expressions containing nested parens (e.g. get_ring(child)->field)
 # are handled correctly.  The [^)]* predicate introduced by
-# d40b905576e4 ("check-static: anchor lossless_op_count atomicity predicate to field")
+# c9acec6229ef ("check-static: anchor lossless_op_count atomicity predicate to field")
 # could not cross a ')' and therefore false-rejected such sites, and it
 # also false-accepted a plain store whose RHS atomically loads the same
 # field (the field name appeared inside the intrinsic's parens on the RHS

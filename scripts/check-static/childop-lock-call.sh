@@ -12,8 +12,8 @@
 # LOCK_OWNER) and are covered by this gate for the same reason.
 #
 # All 14 known lock() call sites are on the child_process() dispatch path
-# (audited in 96e7cd26ef56 ("locks: document cached_pid COW-fork caveat at bust_lock()")
-# and 60b11ae678b5 ("check-static: flag childop lock() calls for grandchild review")).
+# (audited in a7170a389132 ("locks: document cached_pid COW-fork caveat at bust_lock()")
+# and 0a98a973d953 ("check-static: flag childop lock() calls for grandchild review")).
 # utils/locks.c (implementation) and main/reap.c (force_bust_lock recovery)
 # are excluded by name.  All other audited sites are listed in
 # childop-lock-call.allowlist by file:line:hash so that a new lock() call

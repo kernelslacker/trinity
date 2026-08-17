@@ -486,7 +486,7 @@ void dump_child_fault_beacon(struct childdata *child)
  * that the classification sees the final state of the log file rather than
  * a snapshot mid-write.  The pid is passed explicitly so zombie-deferred
  * callers in process_zombie_pending() can supply the original pid after
- * pids[child->num] has already been set to EMPTY_PIDSLOT (b5bfac7d77d9 ("health: fix partial-buglog misclassification (unreadable + poll race)")
+ * pids[child->num] has already been set to EMPTY_PIDSLOT (e4a44396a761 ("health: fix partial-buglog misclassification (unreadable + poll race)")
  * moved the bug-log path build from dump_child_fault_beacon into here).
  *
  * Four outcomes, tracked as distinct counters:
@@ -512,7 +512,7 @@ void dump_child_fault_beacon(struct childdata *child)
  *               total - (no_log + partial + unreadable + complete)
  *               surfaces beacons from children lost before reap_child()
  *               ran classify_child_buglog() (e.g. SIGKILL via
- *               kill_all_kids()).  Prior to b5bfac7d77d9 ("health: fix partial-buglog misclassification (unreadable + poll race)") this gap was
+ *               kill_all_kids()).  Prior to e4a44396a761 ("health: fix partial-buglog misclassification (unreadable + poll race)") this gap was
  *               silently absorbed into the subtraction-derived complete.
  *
  * access() and open()/read() are safe here (parent context).

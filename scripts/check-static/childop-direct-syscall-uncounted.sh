@@ -104,9 +104,9 @@ trap 'rm -f "$RESULTS_FILE" 2>/dev/null' EXIT
 # under a temporary REPO_ROOT.  Four fixtures exercise the pass-1 wrapper
 # classifier; the live scanner is invoked for each assertion rather than a
 # duplicate inline awk (which was testing a copy of the classifier, not the
-# live code path -- divergence introduced by e42e11dc9d47 ("check-static:
+# live code path -- divergence introduced by 6b635c147088 ("check-static:
 # skip raw_* forward declarations in wrapper classifier"), anchoring
-# fixed in the self-test copy by 0766c926be65 ("check-static: anchor
+# fixed in the self-test copy by 6e04f6ea7550 ("check-static: anchor
 # pass-1 wrapper self-count to atomic-arg member") but not the live block).
 #
 # Fixture A: raw_x prototype (static void raw_x(int);) must NOT register in
@@ -415,7 +415,7 @@ while IFS= read -r srcfile; do
 				# inside the first arg; for store_n require the stored
 				# value (second arg) to be non-zero.  Mirrors the
 				# self-test classifier; live block diverged from the
-				# self-test copy anchored by 0766c926be65 ("check-static: anchor
+				# self-test copy anchored by 6e04f6ea7550 ("check-static: anchor
 				# pass-1 wrapper self-count to atomic-arg member").
 				if (match(code, /__atomic_(add_fetch|fetch_add)[[:space:]]*\([[:space:]]*&[^,]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*/) ||
 				    match(code, /__atomic_store_n[[:space:]]*\([^,]*->[ \t]*[a-zA-Z_0-9]*(syscall|tally|count)[a-zA-Z_0-9]*[^,]*,[[:space:]]*[^0 \t,]/) ||
