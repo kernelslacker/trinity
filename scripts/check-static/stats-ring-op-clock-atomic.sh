@@ -51,7 +51,8 @@ cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 hits_tmp="$(mktemp)"
 grep_err_tmp="$(mktemp)"
 ws_hits_tmp="$(mktemp)"
-trap 'rm -f "$hits_tmp" "$grep_err_tmp" "$ws_hits_tmp"' EXIT
+ws_strip_tmp="$(mktemp)"
+trap 'rm -f "$hits_tmp" "$grep_err_tmp" "$ws_hits_tmp" "$ws_strip_tmp"' EXIT
 
 scanned=0
 
@@ -109,27 +110,32 @@ print(s, end='')
 	echo "$_stripped" | grep -qE '(->|\.)lossless_op_count'
 }
 
-# _ws_is_whole_struct_write LINE
+# _ws_is_whole_struct_write LINE NAME
 #
 # Returns 0 (true) when LINE contains a whole-struct write to a
-# struct stats_ring — specifically:
+# struct stats_ring pointer whose C identifier is NAME — specifically:
 #
-#   memset( ring , ...)  — whole-struct zero (first arg bare 'ring', no ->)
-#   memcpy( ring , ...)  — whole-struct copy as destination
-#   *ring = ...          — struct-value assignment through pointer
+#   memset( NAME , ...)  — whole-struct zero (first arg bare NAME, no ->)
+#   memcpy( NAME , ...)  — whole-struct copy as destination
+#   *NAME = ...          — struct-value assignment through pointer
 #
 # Returns 1 (false) for sub-member writes:
-#   memset(ring->slots, ...)  — sub-member only; lossless_op_count intact
-#   memset(shm_published, ...) — different struct entirely
+#   memset(NAME->slots, ...)  — sub-member only; lossless_op_count intact
+#   memset(other_var, ...)    — different variable / struct entirely
 #
 # Pattern rationale:
-#   'ring[[:space:]]*,' matches an identifier 'ring' followed immediately
-#   by optional whitespace then a comma — i.e. end of the first argument.
-#   'ring->' cannot match because '->' is not '[[:space:]]' or ','.
-#   '\*ring[[:space:]]*=[^=]' matches struct-deref assignment but not ==.
+#   'NAME[[:space:]]*,' matches identifier NAME followed immediately by
+#   optional whitespace then a comma — i.e. end of the first argument.
+#   'NAME->' cannot match because '->' is not '[[:space:]]' or ','.
+#   '\*NAME[[:space:]]*=[^=]' matches struct-deref assignment but not ==.
+#
+# NAME is anchored dynamically per file by scanning for declarations of
+# the form 'struct stats_ring * NAME', so aliases ('r', 'sr', etc.) are
+# caught as well as the canonical 'ring'.
 _ws_is_whole_struct_write() {
-	echo "$1" | grep -qE \
-		'memset[[:space:]]*\([[:space:]]*\*?ring[[:space:]]*,|memcpy[[:space:]]*\([[:space:]]*\*?ring[[:space:]]*,|\*ring[[:space:]]*=[^=]'
+	local _line="$1" _name="$2"
+	echo "$_line" | grep -qE \
+		"memset[[:space:]]*\([[:space:]]*\*?${_name}[[:space:]]*,|memcpy[[:space:]]*\([[:space:]]*\*?${_name}[[:space:]]*,|\*${_name}[[:space:]]*=[^=]"
 }
 
 while IFS= read -r srcfile; do
@@ -229,14 +235,19 @@ fi
 # stats_ring instances; the pattern is nonetheless applied to all files
 # so any future addition is caught automatically.
 #
-# Patterns flagged:
-#   memset( ring ,  -- whole-struct zero  (first arg bare pointer, no ->)
-#   memcpy( ring ,  -- whole-struct copy  (destination is bare pointer)
-#   *ring = ...     -- struct-value assignment through a pointer
+# Patterns flagged (matched against every name declared as struct stats_ring *):
+#   memset( NAME ,  -- whole-struct zero  (first arg bare pointer, no ->)
+#   memcpy( NAME ,  -- whole-struct copy  (destination is bare pointer)
+#   *NAME = ...     -- struct-value assignment through a pointer
 #
 # Patterns NOT flagged (sub-member or unrelated-struct writes):
-#   memset(ring->slots, ...)   -- sub-member only
-#   memset(shm_published, ...) -- targets struct stats_published, not ring
+#   memset(NAME->slots, ...)   -- sub-member only
+#   memset(shm_published, ...) -- targets a different struct entirely
+#
+# The name set is built per-file from declarations of the form
+# 'struct stats_ring * NAME', so aliases ('r', 'sr', etc.) are detected
+# as well as the canonical 'ring'.  Files with no such declarations are
+# skipped (no typed locals → no whole-struct races possible).
 
 while IFS= read -r srcfile; do
 	nf="${srcfile#./}"
@@ -246,27 +257,50 @@ while IFS= read -r srcfile; do
 	# Only scan files that actually reference struct stats_ring.
 	grep -qE 'struct[[:space:]]+stats_ring\b' "$srcfile" || continue
 
-	ws_grep_out="$(grep -nE \
-		'memset[[:space:]]*\([[:space:]]*\*?ring[[:space:]]*,|memcpy[[:space:]]*\([[:space:]]*\*?ring[[:space:]]*,|\*ring[[:space:]]*=[^=]' \
-		"$srcfile")"
-	[ -n "$ws_grep_out" ] || continue
+	# Type-anchor: extract every variable name declared as struct stats_ring *.
+	# Anchoring on the type rather than the literal identifier 'ring' ensures
+	# that aliases like 'r', 'sr', or any other local pointer are also checked.
+	mapfile -t _ws_names < <(
+		grep -oE 'struct[[:space:]]+stats_ring[[:space:]]*\*[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)' "$srcfile" \
+		| grep -oE '[A-Za-z_][A-Za-z0-9_]*$'
+	)
+	# No typed locals → no whole-struct races possible for this file.
+	[ "${#_ws_names[@]}" -gt 0 ] || continue
 
-	while IFS= read -r rawline; do
-		lineno="${rawline%%:*}"
-		content="${rawline#*:}"
-		trimmed="${content#"${content%%[![:space:]]*}"}"
-		# Skip comment lines.  Use [^a-zA-Z_] after the leading '*' to
-		# avoid silently dropping code lines like '*ring = *other;'
-		# (which start with '*' followed by an identifier character).
-		# '\*[^a-zA-Z_]*)' matches block-comment bodies ('* text', '*/')
-		# but not struct-deref expressions.
-		case "$trimmed" in
-			\*[^a-zA-Z_]*) continue ;;
-			/\**) continue ;;
-			//*)  continue ;;
-		esac
-		echo "${nf}:${lineno}: ${trimmed}"
-	done <<< "$ws_grep_out"
+	# Strip // line comments before scanning (same as _is_plain_lossless_access
+	# does upstream) so a commented-out memset does not false-positive.
+	sed 's|//[^"]*$||g' "$srcfile" > "$ws_strip_tmp"
+
+	for _ws_name in "${_ws_names[@]}"; do
+		ws_grep_out="$(grep -nE \
+			"memset[[:space:]]*\([[:space:]]*\*?${_ws_name}[[:space:]]*,|memcpy[[:space:]]*\([[:space:]]*\*?${_ws_name}[[:space:]]*,|\*${_ws_name}[[:space:]]*=[^=]" \
+			"$ws_strip_tmp")"
+		[ -n "$ws_grep_out" ] || continue
+
+		while IFS= read -r rawline; do
+			lineno="${rawline%%:*}"
+			content="${rawline#*:}"
+			trimmed="${content#"${content%%[![:space:]]*}"}"
+			# Skip comment lines.  Use [^a-zA-Z_] after the leading '*' to
+			# avoid silently dropping code lines like '*ring = *other;'
+			# (which start with '*' followed by an identifier character).
+			# '\*[^a-zA-Z_]*)' matches block-comment bodies ('* text', '*/')
+			# but not struct-deref expressions.
+			case "$trimmed" in
+				\*[^a-zA-Z_]*) continue ;;
+				/\**) continue ;;
+				//*)  continue ;;
+			esac
+			# Skip pointer declarations: 'struct stats_ring *NAME = ...' is
+			# a variable initialisation, not a whole-struct store through a
+			# pointer.  The '\*NAME =' pattern matches both forms; exclude
+			# the declaration form so only actual dereference-assigns remain.
+			echo "$trimmed" | grep -qE \
+				"struct[[:space:]]+stats_ring[[:space:]]*\*[[:space:]]*${_ws_name}[[:space:]]*=" \
+				&& continue
+			echo "${nf}:${lineno}: ${trimmed}"
+		done <<< "$ws_grep_out"
+	done
 done < <(find . \( -name '*.c' -o -name '*.h' \) -type f -not -path './.git/*' -print | sort) \
      >> "$ws_hits_tmp"
 
@@ -371,46 +405,60 @@ fi
 echo "PASS: $NAME: self-test: predicate correctly classifies all 5 fixture lines"
 
 # Whole-struct-write self-test: verify _ws_is_whole_struct_write() classifies
-# fixture lines correctly.  Five fixtures:
-#   1. memset(ring, ...)          -- whole-struct zero       -- FAIL
-#   2. memcpy(ring, ...)          -- whole-struct copy       -- FAIL
-#   3. *ring = *other             -- struct deref assignment -- FAIL
+# fixture lines correctly.  Six fixtures:
+#   1. memset(ring, ...)          -- whole-struct zero       -- FAIL (name=ring)
+#   2. memcpy(ring, ...)          -- whole-struct copy       -- FAIL (name=ring)
+#   3. *ring = *other             -- struct deref assignment -- FAIL (name=ring)
 #   4. memset(ring->slots, ...)   -- sub-member only        -- PASS (not flagged)
 #   5. memset(shm_published, ...) -- unrelated struct       -- PASS (not flagged)
+#   6. memset(r, ...)             -- alias pointer name 'r'  -- FAIL (name=r)
+#      Fixture 6 detects the pre-fix anchor deficiency: the old hard-coded
+#      'ring' pattern would miss a pointer declared as 'struct stats_ring *r'.
 _ws_st_fails=0
 
 # Fixture 1: memset whose first arg is a bare stats_ring pointer -- FAIL.
 if ! _ws_is_whole_struct_write \
-	'memset(ring, 0, sizeof(*ring));'; then
+	'memset(ring, 0, sizeof(*ring));' ring; then
 	echo "FAIL: $NAME: ws-self-test: memset(ring,...) wrongly accepted" >&2
 	_ws_st_fails=$((_ws_st_fails + 1))
 fi
 
 # Fixture 2: memcpy whose destination is a bare stats_ring pointer -- FAIL.
 if ! _ws_is_whole_struct_write \
-	'memcpy(ring, other, sizeof(*ring));'; then
+	'memcpy(ring, other, sizeof(*ring));' ring; then
 	echo "FAIL: $NAME: ws-self-test: memcpy(ring,...) wrongly accepted" >&2
 	_ws_st_fails=$((_ws_st_fails + 1))
 fi
 
 # Fixture 3: struct-value assignment through a stats_ring pointer -- FAIL.
 if ! _ws_is_whole_struct_write \
-	'*ring = *other;'; then
+	'*ring = *other;' ring; then
 	echo "FAIL: $NAME: ws-self-test: *ring=*other wrongly accepted" >&2
 	_ws_st_fails=$((_ws_st_fails + 1))
 fi
 
 # Fixture 4: memset targeting a sub-member (ring->slots) -- must NOT trip.
 if _ws_is_whole_struct_write \
-	'memset(ring->slots, 0, sizeof(ring->slots));'; then
+	'memset(ring->slots, 0, sizeof(ring->slots));' ring; then
 	echo "FAIL: $NAME: ws-self-test: memset(ring->slots,...) wrongly flagged" >&2
 	_ws_st_fails=$((_ws_st_fails + 1))
 fi
 
 # Fixture 5: memset targeting a different struct -- must NOT trip.
 if _ws_is_whole_struct_write \
-	'memset(shm_published, 0, sizeof(*shm_published));'; then
+	'memset(shm_published, 0, sizeof(*shm_published));' ring; then
 	echo "FAIL: $NAME: ws-self-test: memset(shm_published,...) wrongly flagged" >&2
+	_ws_st_fails=$((_ws_st_fails + 1))
+fi
+
+# Fixture 6: whole-struct zero via an alias pointer name 'r' -- FAIL.
+# This is the negative fixture that exposes the pre-fix anchor deficiency:
+# the old hard-coded 'ring' pattern would accept memset(r,...) even when
+# 'r' is declared as 'struct stats_ring *r = ...'.  The fixed predicate
+# anchors on the type-extracted name and must catch this.
+if ! _ws_is_whole_struct_write \
+	'memset(r, 0, sizeof(*r));' r; then
+	echo "FAIL: $NAME: ws-self-test: memset(r,...) with alias name 'r' wrongly accepted" >&2
 	_ws_st_fails=$((_ws_st_fails + 1))
 fi
 
@@ -418,7 +466,7 @@ if [ "$_ws_st_fails" -gt 0 ]; then
 	echo "FAIL: $NAME: ws-self-test: $_ws_st_fails whole-struct-write classification(s) wrong"
 	exit 1
 fi
-echo "PASS: $NAME: ws-self-test: whole-struct-write predicate correctly classifies all 5 fixture lines"
+echo "PASS: $NAME: ws-self-test: whole-struct-write predicate correctly classifies all 6 fixture lines"
 
 echo "PASS: $NAME: 0 plain lossless_op_count accesses ($scanned files scanned)"
 exit 0
