@@ -79,12 +79,6 @@ static const char * const kmsg_triggers[] = {
 					 * and the v6.19+ reword (upstream: 28ea295f941e):
 					 *   "WARNING: %s:%d at %pS, CPU#%d: %s/%d"
 					 * as well as all lockdep WARNING: variants */
-	"Tried to split an unsplittable folio",	/* mm/huge_memory.c::__folio_split; the WARNING: banner fires FIRST
-						 * (kernel/panic.c::__warn() emits "WARNING: %s:%d" before the
-						 * format string), so this message arrives inside the follow-buffer
-						 * window the banner already opened.
-						 * Note: VM_WARN_ONCE means only the first hit is logged; absence of
-						 * this string after the first event is not evidence of absence. */
 	"WARNING: suspicious RCU",	/* lockdep-RCU usage warning */
 	"WARNING: bad unlock",		/* lockdep bad-unlock-balance */
 	"WARNING: held lock",		/* lockdep held-lock-freed */
@@ -92,7 +86,6 @@ static const char * const kmsg_triggers[] = {
 	"Kernel BUG",			/* BUG()/BUG_ON() banner */
 	"kernel BUG",			/* alternate-case BUG banner emitted by some arches */
 	"BUG:",				/* "BUG: sleeping function ...", "BUG: workqueue lockup", "BUG: scheduling while atomic", "BUG: unable to handle ..." */
-	"refcount_t:",			/* lib/refcount.c overflow/underflow saturation */
 	"INFO: rcu_sched self-detected stall",
 	"INFO: rcu_preempt self-detected stall",
 	"INFO: task ",			/* "INFO: task <name> blocked for more than ..." */
