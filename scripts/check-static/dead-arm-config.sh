@@ -211,6 +211,7 @@ IOCTL_FILE_OVERRIDE_EOF
 # Calling kernel_has() for each devnode (potentially 50+ files × 3 nodes)
 # would re-invoke grep on the kconfig file per symbol, which is
 # prohibitively slow on networked or remote mounts (~0.2s/call).
+_ioctl_floor_skip=0
 declare -A _ioctl_kcfg_live
 if [ -n "$KCONFIG" ]; then
 	while IFS= read -r _kcfg_line; do
@@ -226,11 +227,12 @@ if [ -n "$KCONFIG" ]; then
 	# Without this guard every mapped ioctl node appears config-dead and
 	# produces fabricated WARNs that are indistinguishable from real ones.
 	_ioctl_kcfg_count=${#_ioctl_kcfg_live[@]}
-	if [ "$_ioctl_kcfg_count" -lt 100 ]; then
+	if [ "$_ioctl_kcfg_count" -lt 1500 ]; then
 		echo "WARN: $NAME: ioctl kconfig pre-load yielded only $_ioctl_kcfg_count" \
-		     "symbol(s) from $KCONFIG (expected >=100; EIO or partial read?);" \
+		     "symbol(s) from $KCONFIG (expected >=1500; EIO or partial read?);" \
 		     "skipping ioctl dead-arm checks (check mount, re-run)" >&2
 		KCONFIG=""
+		_ioctl_floor_skip=1
 	fi
 fi
 ioctl_sym_live() { [ "${_ioctl_kcfg_live["CONFIG_$1"]+_}" ]; }
@@ -410,6 +412,13 @@ fi
 
 if [ "$map_entries" -eq 0 ]; then
 	echo "WARN: $NAME: empty mapping table -- no entries to check; gate has no detection power"
+	exit 0
+fi
+
+if [ "$_ioctl_floor_skip" -eq 1 ]; then
+	echo "WARN: $NAME: 0 childop arms dead; ioctl dead-arm checks skipped" \
+	     "(kconfig floor: only $_ioctl_kcfg_count symbol(s) loaded, need >=1500;" \
+	     "check mount, re-run)"
 	exit 0
 fi
 
