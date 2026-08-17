@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# stats-opclock-lossless-suite: build and run the stats_opclock_lossless
-# test suite under ASAN to gate the lossless op-count invariants.
+# test-bin-asan-suite: build and run the full test-bin-asan binary
+# under ASAN to gate all fixtures it contains.
 #
 # The test binary (tests/test-bin-asan) exercises the per-child
 # lossless_op_count plausibility guards -- absolute ceiling, delta
@@ -23,7 +23,7 @@
 
 set -u
 
-NAME="stats-opclock-lossless-suite"
+NAME="test-bin-asan-suite"
 ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 out_tmp="$(mktemp)"
@@ -49,9 +49,9 @@ if ! make test-asan >"$out_tmp" 2>&1; then
 		echo "  $NAME: make test-asan failed; output follows:"
 		sed 's/^/    /' "$out_tmp"
 	} >&2
-	echo "FAIL: $NAME: stats_opclock_lossless suite failed (see above)"
+	echo "FAIL: $NAME: test-bin-asan suite failed (see above)"
 	exit 1
 fi
 
-echo "PASS: $NAME: all stats_opclock_lossless fixtures passed under ASAN"
+echo "PASS: $NAME: all test-bin-asan fixtures passed under ASAN"
 exit 0
