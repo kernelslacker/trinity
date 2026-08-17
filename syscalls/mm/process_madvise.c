@@ -138,6 +138,8 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 		struct iovec *iov = (struct iovec *)rec->a2;
 		unsigned long i, vlen = rec->a3;
 
+		if (iov == NULL)
+			return;
 		if (vlen > UIO_MAXIOV)
 			vlen = UIO_MAXIOV;
 		for (i = 0; i < vlen; i++)
