@@ -83,9 +83,11 @@ static const char * const kmsg_triggers[] = {
 	"WARNING: bad unlock",		/* lockdep bad-unlock-balance */
 	"WARNING: held lock",		/* lockdep held-lock-freed */
 	"Oops:",			/* arch oops banner */
+	/* riscv/sh only — x86_64 uses the lowercase-k entry below */
 	"Kernel BUG",			/* BUG()/BUG_ON() banner */
 	"kernel BUG",			/* alternate-case BUG banner emitted by some arches */
 	"BUG:",				/* "BUG: sleeping function ...", "BUG: workqueue lockup", "BUG: scheduling while atomic", "BUG: unable to handle ..." */
+	/* CONFIG_PREEMPT_RCU=y on the fuzz-target => rcu_state.name is "rcu_preempt"; dead on the fuzz target */
 	"INFO: rcu_sched self-detected stall",
 	"INFO: rcu_preempt self-detected stall",
 	"detected stalls on CPUs/tasks",	/* print_other_cpu_stall() dominant many-core path + expedited variant */
