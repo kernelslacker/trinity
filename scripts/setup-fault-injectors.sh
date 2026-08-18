@@ -206,6 +206,8 @@ if [[ -d "${DEBUGFS}/${_inj}" ]]; then
     write_attr "${DEBUGFS}/${_inj}/task-filter"      1
     write_attr "${DEBUGFS}/${_inj}/ignore-gfp-wait"  0
     write_attr "${DEBUGFS}/${_inj}/probability"      "${PROB}"
+    # min-order=0: kernel default is 1, which exempts order-0 allocs at mm/fail_page_alloc.c:30
+    write_attr "${DEBUGFS}/${_inj}/min-order"        0
     if confirm_prob_armed "${DEBUGFS}/${_inj}"; then
         _fail_page_alloc_armed=1
         _arm_count=$(( _arm_count + 1 ))
