@@ -26,7 +26,8 @@
 #   -h, --help      Show this message
 #
 # SCOPING:
-#   failslab, fail_page_alloc:  task-filter=1 + ignore-gfp-wait=0
+#   failslab:                    task-filter=1 + ignore-gfp-wait=0
+#   fail_page_alloc:             task-filter=1 + ignore-gfp-wait=0 + ignore-gfp-highmem=0
 #   fail_usercopy, fail_futex:  task-filter=1
 #   fail_sunrpc:                task-filter=1 (kthreads satisfy in_task())
 #   fail_skb_realloc:           devname=IFACE   (task-filter FATAL:
@@ -212,13 +213,23 @@ fi
 # --- fail_page_alloc ---------------------------------------------------------
 _inj=fail_page_alloc
 if [[ -d "${DEBUGFS}/${_inj}" ]]; then
-    echo "  ${_inj}: task-filter=1 ignore-gfp-wait=0 prob=${PROB}"
+    echo "  ${_inj}: task-filter=1 ignore-gfp-wait=0 ignore-gfp-highmem=0 prob=${PROB}"
     arm_common "${_inj}"
-    write_attr "${DEBUGFS}/${_inj}/task-filter"      1
-    write_attr "${DEBUGFS}/${_inj}/ignore-gfp-wait"  0
-    write_attr "${DEBUGFS}/${_inj}/probability"      "${PROB}"
-    # min-order=0: kernel default is 1, which exempts order-0 allocs at mm/fail_page_alloc.c:30
-    write_attr "${DEBUGFS}/${_inj}/min-order"        0
+    write_attr "${DEBUGFS}/${_inj}/task-filter"       1
+    # Disarm all four should_fail_alloc_page() short-circuits
+    # (mm/fail_page_alloc.c:30-38):
+    #   min-order=0        : kernel default 1 exempts order-0 allocs (line 30)
+    #   ignore-gfp-wait=0  : maps to ignore_gfp_reclaim; default 1 exempts
+    #                        GFP_RECLAIM/GFP_WAIT callers (line 38)
+    #   ignore-gfp-highmem=0: default true exempts __GFP_HIGHMEM allocs
+    #                        (line 35), silently dropping anonymous page-faults
+    #                        and page-cache fills on x86_64
+    #   __GFP_NOFAIL       : no trinity allocation path sets NOFAIL, so
+    #                        that check (line 32) needs no knob adjustment
+    write_attr "${DEBUGFS}/${_inj}/min-order"         0
+    write_attr "${DEBUGFS}/${_inj}/ignore-gfp-wait"   0
+    write_attr "${DEBUGFS}/${_inj}/ignore-gfp-highmem" 0
+    write_attr "${DEBUGFS}/${_inj}/probability"       "${PROB}"
     if confirm_prob_armed "${DEBUGFS}/${_inj}"; then
         _fail_page_alloc_armed=1
         _arm_count=$(( _arm_count + 1 ))
