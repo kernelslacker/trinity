@@ -1210,6 +1210,7 @@ stats	object
     stats.multipath_linkdown_rebalance.route_ok	u64
     stats.multipath_linkdown_rebalance.rebalance_triggers	u64
     stats.multipath_linkdown_rebalance.flip_attempts	u64
+    stats.multipath_linkdown_rebalance.flip_writes_ok	u64
     stats.multipath_linkdown_rebalance.completed_ok	u64
   stats.ip6_udp_cork_splice	object
     stats.ip6_udp_cork_splice.runs	u64

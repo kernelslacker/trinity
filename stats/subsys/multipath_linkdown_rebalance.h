@@ -11,6 +11,7 @@ struct multipath_linkdown_rebalance_stats {
 	unsigned long route_ok;			/* initial multipath route installed */
 	unsigned long rebalance_triggers;	/* NLM_F_REPLACE re-runs accepted */
 	unsigned long flip_attempts;		/* sysctl 1<->0 write attempts (2 per iteration, regardless of success) */
+	unsigned long flip_writes_ok;		/* sysctl writes that pwrite() confirmed (returned > 0) */
 	unsigned long completed_ok;		/* full cycle reached worker reap */
 };
 

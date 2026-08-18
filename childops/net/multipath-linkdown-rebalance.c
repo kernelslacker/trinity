@@ -388,14 +388,14 @@ static int mlr_open_sysctl(bool v6, const char *dev)
 	return open(path, O_WRONLY | O_CLOEXEC);
 }
 
-static void mlr_write_sysctl(int fd, char val)
+static int mlr_write_sysctl(int fd, char val)
 {
 	ssize_t w;
 
 	if (fd < 0)
-		return;
+		return -1;
 	w = pwrite(fd, &val, 1, 0);
-	(void)w;
+	return (int)w;
 }
 
 /*
@@ -416,12 +416,22 @@ static void mlr_flip_worker(int fd_a, int fd_b)
 
 	for (i = 0; i < MLR_FLIP_ITERS; i++) {
 		char v = (char)('1' - (char)(i & 1U));	/* '1' then '0' */
+		int wa, wb;
+		unsigned int ok = 0;
 
-		mlr_write_sysctl(fd_a, v);
-		mlr_write_sysctl(fd_b, v);
+		wa = mlr_write_sysctl(fd_a, v);
+		wb = mlr_write_sysctl(fd_b, v);
+		if (wa > 0)
+			ok++;
+		if (wb > 0)
+			ok++;
 		__atomic_add_fetch(
 			&shm->stats.multipath_linkdown_rebalance.flip_attempts,
 			2, __ATOMIC_RELAXED);
+		if (ok)
+			__atomic_add_fetch(
+				&shm->stats.multipath_linkdown_rebalance.flip_writes_ok,
+				ok, __ATOMIC_RELAXED);
 
 		if ((i & 0x3ffU) == 0 &&
 		    (unsigned long long)ns_since(&t0) >= MLR_WALL_NS)
@@ -562,12 +572,31 @@ static int multipath_linkdown_rebalance_in_ns(void *arg)
 		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
-	/* Prime the sysctls to 1 so the first-pass weight sum can be
-	 * zero, and open write handles for the flip worker. */
+	/*
+	 * Prime the sysctls to 1 so the first-pass weight sum can be
+	 * zero, and open write handles for the flip worker.  Both opens
+	 * MUST succeed: without ignore_routes_with_linkdown == 1 on both
+	 * legs, linkdown nexthops are treated as UP, the first-pass weight
+	 * sum (total) is never zero, and the divide-by-zero target is
+	 * unreachable for the entire invocation.  An un-primed run that
+	 * continues would pollute completed_ok without ever exercising the
+	 * bug window, so we treat open failure as a setup failure and stop.
+	 */
 	fd_a = mlr_open_sysctl(v6, legs[0].local);
 	fd_b = mlr_open_sysctl(v6, legs[1].local);
-	mlr_write_sysctl(fd_a, '1');
-	mlr_write_sysctl(fd_b, '1');
+	if (fd_a < 0 || fd_b < 0) {
+		__atomic_add_fetch(
+			&shm->stats.multipath_linkdown_rebalance.setup_failed,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
+	if (mlr_write_sysctl(fd_a, '1') <= 0 ||
+	    mlr_write_sysctl(fd_b, '1') <= 0) {
+		__atomic_add_fetch(
+			&shm->stats.multipath_linkdown_rebalance.setup_failed,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
 
 	/* Install the multipath route -- num_path == 2 arms the
 	 * rebalance.  A kernel without CONFIG_IP_ROUTE_MULTIPATH /
