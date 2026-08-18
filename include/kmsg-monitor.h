@@ -20,6 +20,9 @@ enum kmsg_event_kind {
 	KMSG_BUG,		/* BUG()/BUG_ON, KASAN/KMSAN/KCSAN/UBSAN, refcount_t */
 	KMSG_OOPS,		/* Oops, #GP, unhandled paging fault */
 	KMSG_MM_CORRUPT,	/* mm refcount/state corruption: bad rss-counter, bad page state/map, unsplittable folio */
+	KMSG_WARN_RCU_SUSPICIOUS, /* lockdep "suspicious RCU usage" warning */
+	KMSG_WARN_BAD_UNLOCK,	/* lockdep bad-unlock-balance */
+	KMSG_WARN_HELD_LOCK_FREED, /* lockdep held-lock-freed */
 	NR_KMSG_KINDS,		/* sentinel — array-size constant; not a real event kind */
 };
 

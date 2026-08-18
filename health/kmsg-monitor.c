@@ -154,6 +154,12 @@ static enum kmsg_event_kind classify_kmsg_event(const char *body)
 		return KMSG_WARN_RECLOCK;
 	if (strstr(body, "WARNING: possible circular locking") != NULL)
 		return KMSG_WARN_CIRCULAR;
+	if (strstr(body, "WARNING: suspicious RCU") != NULL)
+		return KMSG_WARN_RCU_SUSPICIOUS;
+	if (strstr(body, "WARNING: bad unlock") != NULL)
+		return KMSG_WARN_BAD_UNLOCK;
+	if (strstr(body, "WARNING: held lock") != NULL)
+		return KMSG_WARN_HELD_LOCK_FREED;
 	/* mm refcount/state corruption — checked before the generic WARNING:/BUG:
 	 * arms so these specific strings are not swallowed by the broader buckets. */
 	if (strstr(body, "Bad rss-counter state") != NULL ||
