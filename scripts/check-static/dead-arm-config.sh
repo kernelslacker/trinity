@@ -407,6 +407,13 @@ if [ "$warn_count" -gt 0 ] || [ "$ioctl_warn_count" -gt 0 ]; then
 	exit 0
 fi
 
+if [ "${_childop_floor_skip:-0}" -eq 1 ]; then
+	echo "WARN: $NAME: childop kconfig floor not met: only ${_childop_cfg_count:-0} CONFIG_" \
+	     "line(s) in $FUZZ_KCONFIG (need >=1500; truncated or stale file?);" \
+	     "kernel-config checks skipped (check mount, re-run)"
+	exit 0
+fi
+
 if [ "$skip_count" -gt 0 ]; then
 	echo "WARN: $NAME: 0 config-dead arms detected; $skip_count entry/entries skipped" \
 	     "(config source not readable -- results incomplete)"
@@ -415,13 +422,6 @@ fi
 
 if [ "$map_entries" -eq 0 ]; then
 	echo "WARN: $NAME: empty mapping table -- no entries to check; gate has no detection power"
-	exit 0
-fi
-
-if [ "${_childop_floor_skip:-0}" -eq 1 ]; then
-	echo "WARN: $NAME: childop kconfig floor not met: only ${_childop_cfg_count:-0} CONFIG_" \
-	     "line(s) in $FUZZ_KCONFIG (need >=1500; truncated or stale file?);" \
-	     "kernel-config checks skipped (check mount, re-run)"
 	exit 0
 fi
 
