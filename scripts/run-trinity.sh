@@ -95,16 +95,10 @@ else
     # The debugfs attrs are 0600 so we cannot read or write them here;
     # warn once and direct to the setup script.
     if [[ -d /sys/kernel/debug/failslab || -d /sys/kernel/debug/fail_page_alloc ]]; then
-        if [[ "${_fi_injectors_armed_reason}" == "invalid_prob" ]]; then
-            echo "WARNING: fault injectors compiled in but setup-fault-injectors.sh rejected the probability value." >&2
-            echo "  injectors_armed_reason=invalid_prob in ${_fi_state_file}: --prob / TRINITY_FAULT_PROB was out of range (1-100)." >&2
-            echo "  Fix: sudo scripts/setup-fault-injectors.sh --prob N [--pid \$\$] with 1 <= N <= 100, then re-run." >&2
-        else
-            echo "WARNING: fault injectors appear compiled in but setup-fault-injectors.sh has not run." >&2
+            echo "WARNING: fault injectors appear compiled in but setup-fault-injectors.sh has not run or died on invalid args (check stderr)." >&2
             echo "  Six compiled-in injectors (failslab, fail_page_alloc, fail_usercopy, fail_futex," >&2
             echo "  fail_sunrpc, fail_skb_realloc) default probability=0 and will not fire." >&2
             echo "  Fix: sudo scripts/setup-fault-injectors.sh [--pid \$\$] then re-run this script." >&2
-        fi
     fi
 fi
 

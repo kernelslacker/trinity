@@ -76,8 +76,8 @@ done
 # Accept only integers in 1..100; reject non-numeric and out-of-range values.
 # Both TRINITY_FAULT_PROB (env) and --prob N go through PROB; validate once
 # after argument parsing so the same check covers both sources.
-if ! [[ "${PROB}" =~ ^[0-9]+$ ]] || [[ "${PROB}" -lt 1 ]] || [[ "${PROB}" -gt 100 ]]; then
-    die "invalid probability '${PROB}': must be an integer in 1..100 (set via --prob or TRINITY_FAULT_PROB)"
+if ! [[ "${PROB}" =~ ^[1-9][0-9]*$ ]] || [[ 10#${PROB} -lt 1 ]] || [[ 10#${PROB} -gt 100 ]]; then # ^[1-9][0-9]*$ rejects leading zeros (08/007); 10# forces decimal in arithmetic
+    die "invalid probability '${PROB}': must be an integer in 1..100 (set via --prob or TRINITY_FAULT_PROB)" # fast-fail: no state file written on invalid input; runner will report "has not run"
 fi
 
 # ---------------------------------------------------------------------------
