@@ -180,6 +180,10 @@ struct tcp_ao_rotate_iter_ctx {
 	struct sockaddr_in srv_addr;
 	struct sockaddr_in cli_addr;
 	const char *alg;
+	/* Second listener for the reconnect-to-different-peer arm. */
+	int srv2_listener;
+	int srv2_acc;
+	struct sockaddr_in srv2_addr;
 	struct childdata *child;
 	/* Running tally of direct kernel syscalls this invocation issued
 	 * (socket / bind / listen / getsockname / fcntl / connect / accept /
@@ -451,11 +455,10 @@ static int tcp_ao_rotate_iter_connect(struct tcp_ao_rotate_iter_ctx *ctx)
  * DEL_KEY old cur_id while the peer may still be retransmitting with
  * it.  The DEL after rotate is the targeted race — RCU walkers in
  * tcp_ao_lookup_key on the verify path may still hold a pointer to
- * the freed key node.  The trailing shutdown(SHUT_RDWR) on both fds
- * lives here so the orchestrator just owns control flow; on any
- * earlier-phase bail the teardown helper still closes the fds.
+ * the freed key node.  Returns the final active sndid so the
+ * reconnect arm knows which key id is current_key on exit.
  */
-static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
+static uint8_t tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 {
 	struct tcp_ao_add ao_add;
 	struct tcp_ao_del ao_del;
@@ -468,7 +471,7 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 			 JITTER_RANGE(ROTATE_ITERS_BASE));
 	cur_id = 1;
 	for (i = 0; i < iters; i++) {
-		uint8_t next_id = cur_id + 1;
+		uint8_t next_id = (uint8_t)(cur_id + 1);
 
 		/* sndid wraps inside a single byte; if we run long enough
 		 * to wrap to 0 the kernel rejects (sndid 0 is reserved as
@@ -556,28 +559,170 @@ static void tcp_ao_rotate_iter_rotate_loop(struct tcp_ao_rotate_iter_ctx *ctx)
 		cur_id = next_id;
 	}
 
-	ctx->direct_calls++;
-	(void)shutdown(ctx->cli, SHUT_RDWR);
-	ctx->direct_calls++;
-	(void)shutdown(ctx->srv_acc, SHUT_RDWR);
+	return cur_id;
 }
 
 /*
- * Phase 5: close whichever fds we managed to open.  Runs on every
+ * Phase 5 (reconnect arm): trigger the peer-change current_key
+ * use-after-free window.
+ *
+ * After the rotate loop the client socket still holds stale_id as its
+ * current_key, matched against peer-1's address.  We open a second
+ * loopback listener on a fresh ephemeral port and install a new AO key
+ * pair using sndid/rcvid RECONNECT_SNDID on each side.  We then
+ * disconnect the client with connect(AF_UNSPEC), which causes the
+ * kernel to free peer-1's AO key list while leaving current_key
+ * pointing into the freed allocation.  Reconnecting to the second
+ * listener completes the peer-change; any subsequent TCP_AO_INFO or
+ * TCP_AO_DEL_KEY call that touches current_key dereferences the freed
+ * node — the UAF window the Hyunwoo Kim net/ipv4/tcp_ao.c fix closes.
+ */
+#define RECONNECT_SNDID	200u
+
+static void tcp_ao_rotate_iter_reconnect_peer(struct tcp_ao_rotate_iter_ctx *ctx,
+					  uint8_t stale_id)
+{
+	struct sockaddr discon;
+	struct tcp_ao_add ao_add;
+	struct tcp_ao_del ao_del;
+	struct tcp_ao_info_opt ao_info;
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_attempted,
+			   1, __ATOMIC_RELAXED);
+
+	/* Stand up a second loopback listener for the new peer address. */
+	if (open_loopback_listener(&ctx->srv2_listener, &ctx->srv2_addr,
+				   &ctx->direct_calls) < 0)
+		return;
+
+	/* AO key on the second listener: peer = client, sndid=RECONNECT_SNDID. */
+	fill_ao_add(&ao_add, &ctx->cli_addr,
+		    RECONNECT_SNDID, RECONNECT_SNDID, true, ctx->alg);
+	ctx->direct_calls++;
+	rc = setsockopt(ctx->srv2_listener, IPPROTO_TCP, TCP_AO_ADD_KEY,
+			&ao_add, sizeof(ao_add));
+	if (rc < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.addkey_rejected,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.keys_added,
+			   1, __ATOMIC_RELAXED);
+
+	/* AO key on the client: peer = second listener, sndid=RECONNECT_SNDID.
+	 * set_current=0: the peer-1 current_key stays dangling until we
+	 * explicitly probe it after the reconnect. */
+	fill_ao_add(&ao_add, &ctx->srv2_addr,
+		    RECONNECT_SNDID, RECONNECT_SNDID, false, ctx->alg);
+	ctx->direct_calls++;
+	rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
+			&ao_add, sizeof(ao_add));
+	if (rc < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.addkey_rejected,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.keys_added,
+			   1, __ATOMIC_RELAXED);
+
+	/* Disconnect from peer 1: the kernel frees peer-1's AO key list but
+	 * current_key still points into it — the dangling-reference window
+	 * opens here. */
+	memset(&discon, 0, sizeof(discon));
+	discon.sa_family = AF_UNSPEC;
+	ctx->direct_calls++;
+	(void)connect(ctx->cli, &discon, sizeof(discon));
+
+	/* Reconnect to peer 2: this is the peer-change path in
+	 * tcp_ao_connect_init that the kernel fix targets. */
+	ctx->direct_calls++;
+	rc = connect(ctx->cli, (struct sockaddr *)&ctx->srv2_addr,
+		     sizeof(ctx->srv2_addr));
+	if (rc < 0 && errno != EINPROGRESS) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_failed,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	ctx->direct_calls++;
+	ctx->srv2_acc = accept(ctx->srv2_listener, NULL, NULL);
+	if (ctx->srv2_acc < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_failed,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+	ctx->direct_calls++;
+	(void)fcntl(ctx->srv2_acc, F_SETFL, O_NONBLOCK);
+
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_ok,
+			   1, __ATOMIC_RELAXED);
+
+	/* Probe the stale current_key via TCP_AO_INFO — primary UAF vector.
+	 * stale_id is the peer-1 sndid that current_key may still reference
+	 * after the peer-change freed it. */
+	memset(&ao_info, 0, sizeof(ao_info));
+	ao_info.set_current = 1;
+	ao_info.current_key = stale_id;
+	ctx->direct_calls++;
+	rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_INFO,
+			&ao_info, sizeof(ao_info));
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.stale_key_probed,
+			   1, __ATOMIC_RELAXED);
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.key_rotations,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.info_rejected,
+				   1, __ATOMIC_RELAXED);
+
+	/* TCP_AO_DEL_KEY against the stale peer-1 sndid — second UAF probe. */
+	fill_ao_del(&ao_del, &ctx->srv_addr, stale_id, stale_id);
+	ctx->direct_calls++;
+	rc = setsockopt(ctx->cli, IPPROTO_TCP, TCP_AO_DEL_KEY,
+			&ao_del, sizeof(ao_del));
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.key_dels,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.delkey_rejected,
+				   1, __ATOMIC_RELAXED);
+
+	rotate_send(ctx->cli, &ctx->direct_calls);
+	rotate_send(ctx->srv2_acc, &ctx->direct_calls);
+
+	ctx->direct_calls++;
+	(void)shutdown(ctx->srv2_acc, SHUT_RDWR);
+}
+
+/*
+ * Phase 6: close whichever fds we managed to open.  Runs on every
  * exit path — both the success path falling through to out: after
- * rotate_loop returns, and the early-bail goto out from any earlier
- * phase failure.  Order matches the original out: cleanup: accepted
- * server fd first, then client, then listener.  Fields default to -1
- * via the orchestrator's designated initialiser so the guards skip
- * fds that were never opened.
+ * the reconnect arm returns, and the early-bail goto out from any
+ * earlier phase failure.  Shutdown is attempted before each close so
+ * the peer sees an orderly FIN rather than a silent close.  Fields
+ * default to -1 via the orchestrator's designated initialiser so the
+ * guards skip fds that were never opened.
  */
 static void tcp_ao_rotate_iter_teardown(struct tcp_ao_rotate_iter_ctx *ctx)
 {
+	if (ctx->srv2_acc >= 0) {
+		ctx->direct_calls++;
+		close(ctx->srv2_acc);
+	}
+	if (ctx->srv2_listener >= 0) {
+		ctx->direct_calls++;
+		close(ctx->srv2_listener);
+	}
 	if (ctx->srv_acc >= 0) {
+		ctx->direct_calls++;
+		(void)shutdown(ctx->srv_acc, SHUT_RDWR);
 		ctx->direct_calls++;
 		close(ctx->srv_acc);
 	}
 	if (ctx->cli >= 0) {
+		ctx->direct_calls++;
+		(void)shutdown(ctx->cli, SHUT_RDWR);
 		ctx->direct_calls++;
 		close(ctx->cli);
 	}
@@ -590,11 +735,13 @@ static void tcp_ao_rotate_iter_teardown(struct tcp_ao_rotate_iter_ctx *ctx)
 bool tcp_ao_rotate(struct childdata *child)
 {
 	struct tcp_ao_rotate_iter_ctx ctx = {
-		.listener     = -1,
-		.cli          = -1,
-		.srv_acc      = -1,
-		.child        = child,
-		.direct_calls = 0,
+		.listener      = -1,
+		.cli           = -1,
+		.srv_acc       = -1,
+		.srv2_listener = -1,
+		.srv2_acc      = -1,
+		.child         = child,
+		.direct_calls  = 0,
 	};
 
 	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.runs, 1, __ATOMIC_RELAXED);
@@ -627,7 +774,10 @@ bool tcp_ao_rotate(struct childdata *child)
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop.data_path[op],
 				   1, __ATOMIC_RELAXED);
-	tcp_ao_rotate_iter_rotate_loop(&ctx);
+	{
+		uint8_t stale_id = tcp_ao_rotate_iter_rotate_loop(&ctx);
+		tcp_ao_rotate_iter_reconnect_peer(&ctx, stale_id);
+	}
 
 out:
 	tcp_ao_rotate_iter_teardown(&ctx);
