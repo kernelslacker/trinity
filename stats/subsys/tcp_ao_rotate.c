@@ -15,6 +15,7 @@ static const struct stat_field tcp_ao_rotate_fields[] = {
 	STAT_FIELD_SUB(tcp_ao_rotate, delkey_rejected),
 	STAT_FIELD_SUB(tcp_ao_rotate, cycles),
 	STAT_FIELD_SUB(tcp_ao_rotate, reconnect_attempted),
+	STAT_FIELD_SUB(tcp_ao_rotate, reconnect_setup_failed),
 	STAT_FIELD_SUB(tcp_ao_rotate, reconnect_failed),
 	STAT_FIELD_SUB(tcp_ao_rotate, reconnect_ok),
 	STAT_FIELD_SUB(tcp_ao_rotate, stale_key_probed),

@@ -593,8 +593,11 @@ static void tcp_ao_rotate_iter_reconnect_peer(struct tcp_ao_rotate_iter_ctx *ctx
 
 	/* Stand up a second loopback listener for the new peer address. */
 	if (open_loopback_listener(&ctx->srv2_listener, &ctx->srv2_addr,
-				   &ctx->direct_calls) < 0)
+				   &ctx->direct_calls) < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_setup_failed,
+				   1, __ATOMIC_RELAXED);
 		return;
+	}
 
 	/* AO key on the second listener: peer = client, sndid=RECONNECT_SNDID. */
 	fill_ao_add(&ao_add, &ctx->cli_addr,
@@ -604,6 +607,8 @@ static void tcp_ao_rotate_iter_reconnect_peer(struct tcp_ao_rotate_iter_ctx *ctx
 			&ao_add, sizeof(ao_add));
 	if (rc < 0) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.addkey_rejected,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
@@ -620,6 +625,8 @@ static void tcp_ao_rotate_iter_reconnect_peer(struct tcp_ao_rotate_iter_ctx *ctx
 			&ao_add, sizeof(ao_add));
 	if (rc < 0) {
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.addkey_rejected,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}

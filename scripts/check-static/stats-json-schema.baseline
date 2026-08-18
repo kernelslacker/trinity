@@ -1141,6 +1141,7 @@ stats	object
     stats.tcp_ao_rotate.delkey_rejected	u64
     stats.tcp_ao_rotate.cycles	u64
     stats.tcp_ao_rotate.reconnect_attempted	u64
+    stats.tcp_ao_rotate.reconnect_setup_failed	u64
     stats.tcp_ao_rotate.reconnect_failed	u64
     stats.tcp_ao_rotate.reconnect_ok	u64
     stats.tcp_ao_rotate.stale_key_probed	u64

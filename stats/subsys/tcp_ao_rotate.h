@@ -16,10 +16,11 @@ struct tcp_ao_rotate_stats {
 	unsigned long delkey_rejected;	/* TCP_AO_DEL_KEY rejected */
 	unsigned long cycles;		/* full cycles reaching teardown */
 	/* reconnect-to-different-peer arm (peer-change current_key UAF) */
-	unsigned long reconnect_attempted; /* peer-change arm entered */
-	unsigned long reconnect_failed;	/* connect/accept to peer 2 failed */
-	unsigned long reconnect_ok;	/* client reached ESTABLISHED with peer 2 */
-	unsigned long stale_key_probed;	/* TCP_AO_INFO/DEL_KEY issued after peer change */
+	unsigned long reconnect_attempted;  /* peer-change arm entered */
+	unsigned long reconnect_setup_failed; /* listener/key setup failed before connect */
+	unsigned long reconnect_failed;	    /* connect/accept to peer 2 failed */
+	unsigned long reconnect_ok;	    /* client reached ESTABLISHED with peer 2 */
+	unsigned long stale_key_probed;	    /* TCP_AO_INFO/DEL_KEY issued after peer change */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_TCP_AO_ROTATE_H */
