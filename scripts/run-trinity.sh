@@ -284,6 +284,18 @@ cleanup() {
             echo "WARNING: lockdep liveness UNKNOWN at cleanup — /proc/lockdep_stats is 0400 root-only (was ${lockdep_state} at start); run setup-fault-injectors.sh to relax readability" >&2
         fi
     fi
+    # fail_skb_realloc is not task-filtered (softirq/NAPI context has
+    # in_task()=false) so it stays armed at the configured probability for
+    # every process on the host after trinity exits.  Remind the operator to
+    # run the teardown script; the runner itself is unprivileged and cannot
+    # write the debugfs attrs directly.
+    if [[ "${_fi_injectors_armed:-0}" == "1" ]]; then
+        echo "WARNING: fail_skb_realloc is still armed in debugfs — it fires for every process on this host until explicitly disarmed or the host reboots." >&2
+        echo "  The five task-filtered injectors (failslab, fail_page_alloc, fail_usercopy, fail_futex, fail_sunrpc) went inert when the trinity tree exited." >&2
+        echo "  To disarm all injectors and restore /proc/lockdep_stats permissions, run as root:" >&2
+        echo "    sudo scripts/teardown-fault-injectors.sh" >&2
+        echo "  Or manually: echo 0 | sudo tee /sys/kernel/debug/fail_skb_realloc/probability" >&2
+    fi
     # Stop the dmesg follower after trinity so it captures teardown splats;
     # line-buffered output means no extra flush is needed.
     if [[ -n "${dmesg_scope}" ]]; then
