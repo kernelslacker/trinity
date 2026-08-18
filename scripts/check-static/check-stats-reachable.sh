@@ -115,7 +115,7 @@ HFILES_NORM="$TMP/hfiles_norm.txt"
 
 # NUL-delimited file lists reused by several xargs passes.
 find "$ROOT" -name '*.c' -type f -print0 > "$CFILES"
-find "$SUBSYS_DIR" "$ROOT/include" -maxdepth 1 -name '*.h' -type f > "$HFILES"
+find "$SUBSYS_DIR" "$ROOT/include" -name '*.h' -type f > "$HFILES"
 
 # join_continuations: normalise continuation lines so that two-line
 # calls like
