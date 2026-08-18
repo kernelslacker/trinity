@@ -149,6 +149,7 @@ _fail_usercopy_armed=0
 _fail_futex_armed=0
 _fail_sunrpc_armed=0
 _fail_skb_realloc_armed=0
+_netdev_armed=""
 
 echo "setup-fault-injectors: arming fault injectors (debugfs=${DEBUGFS}, prob=${PROB})"
 
@@ -276,6 +277,7 @@ if [[ -d "${DEBUGFS}/${_inj}" ]]; then
     if [[ -z "${_netdev}" ]]; then
         echo "  ${_inj}: WARN: no suitable network interface found — skipping (set TRINITY_NETDEV or --netdev)" >&2
     else
+        _netdev_armed=${_netdev}
         echo "  ${_inj}: devname=${_netdev} prob=${PROB}  [NO task-filter: softirq context; filtered set by kernel via devname]"
         arm_common "${_inj}"
         # Device filter BEFORE probability — order is load-bearing.
@@ -346,8 +348,6 @@ if [[ -n "${DRY_RUN}" ]]; then
 else
     mkdir -p "${STATE_DIR}"
 fi
-
-_netdev_armed=$(resolve_netdev)
 
 emit_state() {
     if [[ -n "${DRY_RUN}" ]]; then
