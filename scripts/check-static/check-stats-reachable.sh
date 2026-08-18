@@ -296,16 +296,22 @@ fi
 # ---------------------------------------------------------------------
 # Reachability step 2a: flat STAT_FIELD / STAT_FIELD_JSON.
 # Emits `cat_suffix` (macro-concatenated identifier).
+# $HFILES_NORM is also scanned so that a STAT_FIELD*() invocation in
+# an inline header helper is not invisible to this pass.
 # ---------------------------------------------------------------------
-xargs -0 grep -hoE 'STAT_FIELD(_JSON)?\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' < "$CFILES" 2>/dev/null | \
+{ xargs -0 grep -hoE 'STAT_FIELD(_JSON)?\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' < "$CFILES" 2>/dev/null; \
+  grep -hoE 'STAT_FIELD(_JSON)?\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' "$HFILES_NORM" 2>/dev/null; } | \
 	sed -E 's/STAT_FIELD(_JSON)?\([[:space:]]*//; s/[[:space:]]*,[[:space:]]*/_/' \
 	> "$DESC.flat"
 
 # ---------------------------------------------------------------------
 # Reachability step 2b: STAT_FIELD_SUB / STAT_FIELD_JSON_SUB.
 # Emits `sub.field` (offsetof-based, member expressed literally).
+# $HFILES_NORM is also scanned so that a STAT_FIELD_SUB*() invocation
+# in an inline header helper is not invisible to this pass.
 # ---------------------------------------------------------------------
-xargs -0 grep -hE 'STAT_FIELD_(JSON_)?SUB\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' < "$CFILES" 2>/dev/null | \
+{ xargs -0 grep -hE 'STAT_FIELD_(JSON_)?SUB\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' < "$CFILES" 2>/dev/null; \
+  grep -hE 'STAT_FIELD_(JSON_)?SUB\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' "$HFILES_NORM" 2>/dev/null; } | \
 	sed -E 's/.*STAT_FIELD_(JSON_)?SUB\([[:space:]]*([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*,[[:space:]]*([a-zA-Z_][a-zA-Z0-9_]*).*/\2.\3/' \
 	> "$DESC.sub"
 
@@ -565,9 +571,11 @@ fi
 #   __atomic_fetch_add(
 #           &shm->field, ...
 # are presented as a single line and matched by shm_write_pat().
+# $HFILES_NORM is also scanned so that a field written only in an
+# inline header helper is not missing from the population.
 while IFS= read -r shm_field; do
 	if grep -qE "$(shm_write_pat "$shm_field")" \
-		   "$CFILES_NORM" 2>/dev/null; then
+		   "$CFILES_NORM" "$HFILES_NORM" 2>/dev/null; then
 		echo "$shm_field"
 	fi
 done < "$SHM_SCALARS" | sort -u > "$SHM_WRITTEN"
