@@ -29,9 +29,10 @@
 #   failslab, fail_page_alloc:  task-filter=1 + ignore-gfp-wait=0
 #   fail_usercopy, fail_futex:  task-filter=1
 #   fail_sunrpc:                task-filter=1 (kthreads satisfy in_task())
-#   fail_skb_realloc:           devname=IFACE + filtered=1   (task-filter FATAL:
+#   fail_skb_realloc:           devname=IFACE   (task-filter FATAL:
 #                               softirq/NAPI has in_task()=false, applying
-#                               task-filter=1 silently disarms this injector)
+#                               task-filter=1 silently disarms this injector;
+#                               kernel sets filtered internally via devname_write)
 #
 # INHERITANCE:
 #   task->make_it_fail is copied through dup_task_struct() so writing 1 to the
@@ -173,7 +174,7 @@ confirm_prob_armed() {
 }
 
 # Common attributes applied to every injector before injector-specific ones.
-# Order matters for fail_skb_realloc: devname+filtered BEFORE probability so
+# Order matters for fail_skb_realloc: devname BEFORE probability so
 # the injector is never briefly armed without a device filter.
 arm_common() {
     local inj="$1"
@@ -268,25 +269,32 @@ fi
 # --- fail_skb_realloc --------------------------------------------------------
 # Runs in softirq/NAPI context: in_task()=false.  Applying task-filter=1
 # would silently disarm the injector (lib/fault-inject.c:149 short-circuits on
-# task_filter when !in_task()).  Use devname + filtered=1 ONLY.
-# devname and filtered MUST be written BEFORE probability or the injector
+# task_filter when !in_task()).  Use devname scoping ONLY.
+# devname MUST be written BEFORE probability or the injector
 # arms briefly against every netdev on the host.
+# The kernel sets filtered internally via devname_write(); there is no
+# userspace-writable filtered file in debugfs.
 _inj=fail_skb_realloc
 if [[ -d "${DEBUGFS}/${_inj}" ]]; then
     _netdev=$(resolve_netdev)
     if [[ -z "${_netdev}" ]]; then
         echo "  ${_inj}: WARN: no suitable network interface found — skipping (set TRINITY_NETDEV or --netdev)" >&2
     else
-        echo "  ${_inj}: devname=${_netdev} filtered=1 prob=${PROB}  [NO task-filter: softirq context]"
+        echo "  ${_inj}: devname=${_netdev} prob=${PROB}  [NO task-filter: softirq context; filtered set by kernel via devname]"
         arm_common "${_inj}"
         # Device filter BEFORE probability — order is load-bearing.
         write_attr "${DEBUGFS}/${_inj}/devname"     "${_netdev}"
-        write_attr "${DEBUGFS}/${_inj}/filtered"    1
-        write_attr "${DEBUGFS}/${_inj}/probability" "${PROB}"
-        if confirm_prob_armed "${DEBUGFS}/${_inj}"; then
-            _fail_skb_realloc_armed=1
-            _arm_count=$(( _arm_count + 1 ))
-        fi
+        # Confirm devname was accepted before arming probability.
+        _dn_read=$(cat "${DEBUGFS}/${_inj}/devname" 2>/dev/null || true)
+        if [[ -z "${_dn_read}" ]]; then
+            echo "  ${_inj}: WARN: devname write did not take — skipping" >&2
+        else
+            write_attr "${DEBUGFS}/${_inj}/probability" "${PROB}"
+            if confirm_prob_armed "${DEBUGFS}/${_inj}"; then
+                _fail_skb_realloc_armed=1
+                _arm_count=$(( _arm_count + 1 ))
+            fi
+        fi  # devname readback guard
     fi
 else
     echo "  ${_inj}: not present — skipping" >&2
