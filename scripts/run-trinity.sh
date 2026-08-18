@@ -36,7 +36,6 @@ fi
 # Absent state file → unknown (no privileged setup was done this boot).
 _fi_state_file="/run/trinity/fault-injectors.state"
 _fi_injectors_armed=0
-_fi_injectors_armed_reason=""
 _fi_lockdep_stats_readable=0
 _fi_make_it_fail_pid=""
 if [[ -r "${_fi_state_file}" ]]; then
@@ -46,7 +45,6 @@ if [[ -r "${_fi_state_file}" ]]; then
         [[ -z "${_k}" ]]      && continue
         case "${_k}" in
             injectors_armed)         _fi_injectors_armed="${_v}"         ;;
-            injectors_armed_reason)  _fi_injectors_armed_reason="${_v}"  ;;
             lockdep_stats_readable)  _fi_lockdep_stats_readable="${_v}"  ;;
             make_it_fail_pid)        _fi_make_it_fail_pid="${_v}"        ;;
         esac
