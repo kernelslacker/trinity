@@ -172,9 +172,13 @@ cleanup() {
         _worker_pids=()
         for _f in /proc/"${child}"/task/*/children; do
             [[ -r "${_f}" ]] || continue
-            read -r -a _kids < "${_f}" || continue
-            _worker_pids+=("${_kids[@]}")
+            _kids=()
+            read -r -a _kids < "${_f}" || true
+            (( ${#_kids[@]} )) && _worker_pids+=("${_kids[@]}")
         done
+        if [[ ${#_worker_pids[@]} -eq 0 ]] && kill -0 "${child}" 2>/dev/null; then
+            echo "WARNING: cleanup(): worker sweep found no PIDs (CONFIG_PROC_CHILDREN?); workers may be leaked" >&2
+        fi
         kill -KILL "${child}" 2>/dev/null || true
         for _wpid in "${_worker_pids[@]}"; do
             kill -KILL "${_wpid}" 2>/dev/null || true
