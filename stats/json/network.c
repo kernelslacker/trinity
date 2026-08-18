@@ -488,6 +488,9 @@ void json_emit_tcp_ipv6_and_tunnels_section(void)
 	stat_category_emit_json(&vrf_fib_churn_category);
 
 	printf(",");
+	stat_category_emit_json(&multipath_linkdown_rebalance_category);
+
+	printf(",");
 	stat_category_emit_json(&ip6_udp_cork_splice_category);
 
 	printf(",");

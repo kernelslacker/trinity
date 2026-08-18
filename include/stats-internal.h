@@ -321,6 +321,7 @@ extern const struct stat_category ip4_udp_cork_splice_category;
 extern const struct stat_category nexthop_replace_churn_category;
 extern const struct stat_category ip6_udp_cork_splice_category;
 extern const struct stat_category vlan_filter_churn_category;
+extern const struct stat_category multipath_linkdown_rebalance_category;
 extern const struct stat_category vrf_fib_churn_category;
 extern const struct stat_category vxlan_encap_churn_category;
 extern const struct stat_category wireguard_decrypt_flood_category;

@@ -36,6 +36,7 @@ CHILD_OP_UBLK_LIFECYCLE          REASON: device lifecycle race
 CHILD_OP_NETNS_TEARDOWN_CHURN    REASON: netns teardown race
 CHILD_OP_IPV6_PMTU_TEARDOWN_RACE REASON: PMTU teardown race
 CHILD_OP_FNHE_PMTU_MTU_RACE      REASON: IPv4 PMTU/MTU exception-table UAF race; runs only inside a private netns via userns_run_in_ns and does not benefit from steady rotation (mirrors ipv6_pmtu_teardown_race)
+CHILD_OP_MULTIPATH_LINKDOWN_REBALANCE REASON: multipath ignore_routes_with_linkdown vs rebalance divide-by-zero race; runs only inside a private netns via userns_run_in_ns with a fork flip-worker and does not benefit from steady rotation (mirrors fnhe_pmtu_mtu_race)
 CHILD_OP_IP6_UDP_CORK_SPLICE      REASON: deterministic OOB stress path; runs only when userns_run_in_ns opens a private netns and does not benefit from steady rotation
 CHILD_OP_IP4_UDP_CORK_SPLICE      REASON: deterministic OOB stress path; runs only when userns_run_in_ns opens a private netns and does not benefit from steady rotation
 CHILD_OP_TCP_MD5_LISTENER_RACE   REASON: listener-socket race

@@ -211,6 +211,7 @@
 #include "stats/subsys/vdso_race.h"
 #include "stats/subsys/veth_asymmetric_xdp.h"
 #include "stats/subsys/vlan_filter_churn.h"
+#include "stats/subsys/multipath_linkdown_rebalance.h"
 #include "stats/subsys/vrf_fib_churn.h"
 #include "stats/subsys/vsock_transport_churn.h"
 #include "stats/subsys/vxlan_encap_churn.h"
@@ -723,6 +724,9 @@ struct stats_s {
 
 	/* vrf_fib_churn accounting.  See stats/subsys/vrf_fib_churn.h. */
 	struct vrf_fib_churn_stats vrf_fib_churn __attribute__((aligned(64)));
+
+	/* multipath_linkdown_rebalance accounting.  See stats/subsys/multipath_linkdown_rebalance.h. */
+	struct multipath_linkdown_rebalance_stats multipath_linkdown_rebalance __attribute__((aligned(64)));
 
 	/* ip6_udp_cork_splice accounting.  See stats/subsys/ip6_udp_cork_splice.h. */
 	struct ip6_udp_cork_splice_stats ip6_udp_cork_splice __attribute__((aligned(64)));

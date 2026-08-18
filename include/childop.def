@@ -223,6 +223,7 @@ CHILDOP(CHILD_OP_UFFD_FAULT_MOVE          , "uffd_fault_move"             , uffd
 CHILDOP(CHILD_OP_MEMFD_SECRET_LIFECYCLE   , "memfd_secret_lifecycle"      , memfd_secret_lifecycle      , true, 0)
 CHILDOP(CHILD_OP_FNHE_PMTU_MTU_RACE      , "fnhe_pmtu_mtu_race"          , fnhe_pmtu_mtu_race          , true, 1)
 CHILDOP(CHILD_OP_PACKET_QDISC_BYPASS_L2  , "packet_qdisc_bypass_unanchored_l2", packet_qdisc_bypass_unanchored_l2, true, 1)
+CHILDOP(CHILD_OP_MULTIPATH_LINKDOWN_REBALANCE, "multipath_linkdown_rebalance", multipath_linkdown_rebalance, true, 1)
 
 #ifdef _CHILDOP_SENTINEL_DEFAULT
 #undef CHILDOP_SENTINEL

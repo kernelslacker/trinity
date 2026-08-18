@@ -1196,6 +1196,16 @@ stats	object
     stats.vrf_fib_churn.rule2_added	u64
     stats.vrf_fib_churn.rule_removed	u64
     stats.vrf_fib_churn.link_removed	u64
+  stats.multipath_linkdown_rebalance	object
+    stats.multipath_linkdown_rebalance.runs	u64
+    stats.multipath_linkdown_rebalance.setup_failed	u64
+    stats.multipath_linkdown_rebalance.v4_runs	u64
+    stats.multipath_linkdown_rebalance.v6_runs	u64
+    stats.multipath_linkdown_rebalance.legs_ok	u64
+    stats.multipath_linkdown_rebalance.route_ok	u64
+    stats.multipath_linkdown_rebalance.rebalance_triggers	u64
+    stats.multipath_linkdown_rebalance.flip_writes	u64
+    stats.multipath_linkdown_rebalance.completed_ok	u64
   stats.ip6_udp_cork_splice	object
     stats.ip6_udp_cork_splice.runs	u64
     stats.ip6_udp_cork_splice.setup_failed	u64
