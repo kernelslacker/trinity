@@ -108,12 +108,13 @@ write_attr() {
 # Resolve the network interface for fail_skb_realloc devname filter.
 # The filter is load-bearing: without it the injector arms against every netdev
 # on the host, including the real management interface.
+# Returns the first non-loopback virtual/dummy interface (no physical
+# device/driver backing), or empty string if none found.  Set TRINITY_NETDEV
+# or --netdev to force a specific interface.
 resolve_netdev() {
     if [[ -n "${NETDEV}" ]]; then
         echo "${NETDEV}"; return
     fi
-    # Prefer a virtual/dummy interface (safe for testing); fall back to first
-    # non-loopback interface that is UP.
     local iface
     for iface in $(ls /sys/class/net/ 2>/dev/null); do
         [[ "${iface}" == "lo" ]] && continue
@@ -123,18 +124,11 @@ resolve_netdev() {
             iftype=$(cat /sys/class/net/${iface}/type 2>/dev/null || echo 0)
             # ARPHRD_ETHER=1; dummy/veth are also 1 but report driver in uevent.
             if [[ -e /sys/class/net/${iface}/device/driver ]]; then
-                : # real hardware — defer
+                : # real hardware — skip
             else
                 # No physical device backing → virtual (dummy/veth/macvlan/etc.)
                 echo "${iface}"; return
             fi
-        fi
-    done
-    # Fall back to first non-loopback UP interface.
-    for iface in $(ls /sys/class/net/ 2>/dev/null); do
-        [[ "${iface}" == "lo" ]] && continue
-        if [[ -e /sys/class/net/${iface}/operstate ]]; then
-            echo "${iface}"; return
         fi
     done
     echo ""
