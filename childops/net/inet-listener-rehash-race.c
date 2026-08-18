@@ -99,6 +99,11 @@
  * connects to in step 2.  Sits outside the [PORT_BASE..PORT_BASE+POOL)
  * range so it never conflicts with the race workers. */
 #define IRR_ADDRFORM_HELPER_PORT	(IRR_PORT_BASE + IRR_PORT_POOL + 3U)
+/* Port for the listener-concurrent ADDRFORM arm.  +5 keeps it clear of
+ * HELPER_PORT (+3) and the rehash scratch peer (+1). */
+#define IRR_ADDRFORM_LISTENER_PORT	(IRR_PORT_BASE + IRR_PORT_POOL + 5U)
+#define IRR_ADDRFORM_LISTENER_BACKLOG	32U
+#define IRR_ADDRFORM_LISTENER_WALL_NS	(250L * 1000L * 1000L)
 
 /* Latched once per process on EAFNOSUPPORT / EACCES / EPROTONOSUPPORT
  * from the bare socket() probe -- means TCP is unusable in this net
@@ -612,6 +617,211 @@ out:
 	return n;
 }
 
+/* Forward declaration: reap_worker is defined after the arm functions but
+ * called from run_addrform_listener_arm(). */
+static void reap_worker(pid_t pid);
+
+/*
+ * SYN-filler worker for the listener-concurrent ADDRFORM arm (fork()d):
+ * fires connect()s at the AF_INET6 listener on LISTENER_PORT in a tight
+ * time-bounded loop, keeping accepted sockets open briefly so the listener's
+ * accept queue stays populated with established-but-unaccepted request socks
+ * while the parent fires IPV6_ADDRFORM.
+ *
+ * Using v4-mapped ::ffff:127.0.0.1 so a listener without IPV6_V6ONLY
+ * accepts them; this stresses the reqsk path used by patches 1/3 and 2/3.
+ */
+static __attribute__((noreturn))
+void addrform_listener_syn_worker(uint16_t port)
+{
+	struct sockaddr_in6 sin6;
+	struct timespec t0;
+	unsigned long n = 0;
+
+	memset(&sin6, 0, sizeof(sin6));
+	sin6.sin6_family = AF_INET6;
+	sin6.sin6_port   = htons(port);
+	/* ::ffff:127.0.0.1 -- v4-mapped loopback; accepted by non-V6ONLY listeners */
+	sin6.sin6_addr.s6_addr[10] = 0xff;
+	sin6.sin6_addr.s6_addr[11] = 0xff;
+	sin6.sin6_addr.s6_addr[12] = 127;
+	sin6.sin6_addr.s6_addr[15] = 1;
+
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+	while (!budget_elapsed_ns(&t0, IRR_ADDRFORM_LISTENER_WALL_NS)) {
+		struct linger lg = { .l_onoff = 1, .l_linger = 0 };
+		int c = socket(AF_INET6,
+			       SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+
+		n++;
+		if (c < 0)
+			continue;
+		/* EINPROGRESS is expected -- the SYN is queued as a reqsk on the
+		 * listener.  Once the handshake completes (loopback is immediate)
+		 * the kernel inserts an established sock into the accept queue,
+		 * which is sk_clone()'s domain and the target of patches 1/3-2/3. */
+		(void)connect(c, (struct sockaddr *)&sin6, sizeof(sin6));
+		n++;
+		(void)setsockopt(c, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+		n++;
+		close(c);
+		n++;
+	}
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op =
+			tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		childop_direct_syscalls_add(op, n);
+	}
+	_exit(0);
+}
+
+/*
+ * Accept-drainer worker for the listener-concurrent ADDRFORM arm (fork()d):
+ * tight accept4() loop that drives sk_clone() on every pending established
+ * connection -- the racing side of patches 1/3 and 2/3.
+ */
+static __attribute__((noreturn))
+void addrform_listener_accept_worker(int listener_fd)
+{
+	struct timespec t0;
+	unsigned long n = 0;
+
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+	while (!budget_elapsed_ns(&t0, IRR_ADDRFORM_LISTENER_WALL_NS)) {
+		int a = accept4(listener_fd, NULL, NULL,
+				SOCK_CLOEXEC | SOCK_NONBLOCK);
+		n++;
+		if (a >= 0) {
+			close(a);
+			n++;
+		}
+	}
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op =
+			tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		childop_direct_syscalls_add(op, n);
+	}
+	_exit(0);
+}
+
+/*
+ * IPV6_ADDRFORM listener-concurrent arm.
+ *
+ * Targets the bug class fixed by Hyunwoo Kim's netdev patches (08-17):
+ * IPV6_ADDRFORM fires on a LISTENING socket that has pending request socks
+ * (patches 1/3: reqsk_queue UAF; 2/3: sk_clone race; 3/3: out_of_order_queue
+ * OOB write).  The existing run_addrform_arm() cannot reach this class because
+ * it issues ADDRFORM while ESTABLISHED -- before listen() runs.
+ *
+ * Shape:
+ *   1. socket(AF_INET6, SOCK_STREAM) without IPV6_V6ONLY, bind(), listen(N)
+ *   2. Fork SYN worker: fires v4-mapped connect()s to populate the accept
+ *      queue with pending request socks / established-but-unaccepted socks
+ *   3. Fork accept worker: tight accept4() loop -- races sk_clone() path
+ *   4. Parent fires setsockopt(IPPROTO_IPV6, IPV6_ADDRFORM, PF_INET) in a
+ *      tight loop while both workers are live
+ *
+ * Liveness signal: addrform_listener_returned_zero counts setsockopt returns
+ * of 0.  All four kernel gates on ADDRFORM fail with a plain errno, so a
+ * zero-return is the only evidence the conversion path was reached.
+ *
+ * Oracle: KASAN (UAF read or OOB write); covered by existing infrastructure.
+ */
+static unsigned long run_addrform_listener_arm(void)
+{
+	int listener = -1;
+	struct sockaddr_in6 sin6;
+	uint16_t port = (uint16_t)IRR_ADDRFORM_LISTENER_PORT;
+	int one = 1, pf_inet = PF_INET;
+	pid_t p_syn = -1, p_accept = -1;
+	struct timespec t0;
+	unsigned long n = 0;
+
+	/* Step 1: AF_INET6 listener without IPV6_V6ONLY, bound to ::1:PORT. */
+	listener = socket(AF_INET6, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	n++;
+	if (listener < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.addrform_setup_failed,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
+	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+	n++;
+	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
+	n++;
+
+	addr_v6(&sin6, port);
+	if (bind(listener, (struct sockaddr *)&sin6, sizeof(sin6)) < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.addrform_setup_failed,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
+	n++;
+
+	if (listen(listener, (int)IRR_ADDRFORM_LISTENER_BACKLOG) < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.addrform_setup_failed,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
+	n++;
+
+	/* Step 2: SYN worker -- populates the accept queue with reqsks. */
+	p_syn = fork();
+	n++;
+	if (p_syn == 0)
+		addrform_listener_syn_worker(port);
+	if (p_syn < 0) {
+		/* Without reqsks the race surface is absent; bail cleanly. */
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.fork_failed,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
+
+	/* Step 3: accept worker -- races sk_clone() on queued socks. */
+	p_accept = fork();
+	n++;
+	if (p_accept == 0)
+		addrform_listener_accept_worker(listener);
+	if (p_accept < 0)
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.fork_failed,
+			1, __ATOMIC_RELAXED);
+	/* accept worker failure is tolerated: ADDRFORM still races the SYN arm. */
+
+	/* Step 4: repeatedly fire ADDRFORM on the LISTENING socket while the
+	 * SYN and accept workers are live.  addrform_listener_returned_zero is
+	 * the only liveness signal -- the kernel's four gate checks all fail
+	 * with a plain errno, so a zero-return proves the conversion ran. */
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+	while (!budget_elapsed_ns(&t0, IRR_ADDRFORM_LISTENER_WALL_NS)) {
+		if (setsockopt(listener, IPPROTO_IPV6, IPV6_ADDRFORM,
+			       &pf_inet, sizeof(pf_inet)) == 0)
+			__atomic_add_fetch(
+				&shm->stats.inet_listener_rehash_race.addrform_listener_returned_zero,
+				1, __ATOMIC_RELAXED);
+		n++;
+	}
+
+	reap_worker(p_syn);
+	if (p_syn > 0) n++;
+	p_syn = -1;
+	reap_worker(p_accept);
+	if (p_accept > 0) n++;
+	p_accept = -1;
+
+out:
+	if (p_syn    > 0) { reap_worker(p_syn);    n++; }
+	if (p_accept > 0) { reap_worker(p_accept); n++; }
+	if (listener >= 0) { close(listener); n++; }
+	return n;
+}
+
 static void reap_worker(pid_t pid)
 {
 	int status;
@@ -712,6 +922,11 @@ static unsigned long run_one_round(void)
 	 * reaped so it does not share ports or timing with the race itself.
 	 * Contributes its own syscall count directly to this round's total. */
 	calls += run_addrform_arm();
+
+	/* Listener-concurrent ADDRFORM arm: fires IPV6_ADDRFORM on a LISTENING
+	 * socket with pending reqsks, targeting the bug class in patches 1/3-3/3
+	 * that run_addrform_arm() cannot reach (it converts while ESTABLISHED). */
+	calls += run_addrform_listener_arm();
 
 	return calls;
 }
