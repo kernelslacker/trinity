@@ -166,9 +166,20 @@ static enum kmsg_event_kind classify_kmsg_event(const char *body)
 	if (strstr(body, "INFO: rcu_sched self-detected stall") != NULL ||
 	    strstr(body, "INFO: rcu_preempt self-detected stall") != NULL)
 		return KMSG_RCU;
+	/* On x86_64 a page-fault Oops arrives as two records: the first is
+	 * "BUG: unable to handle page fault for address: ..." (or the NULL
+	 * dereference variant) from arch/x86/mm/fault.c page_fault_oops(),
+	 * and the second is "Oops: ..." from dumpstack.c.  These two x86
+	 * spellings must be caught here, above the generic BUG: arm, so that
+	 * record-1 is bucketed as KMSG_OOPS before the Oops: follow record
+	 * arrives.  Note: "Unable to handle kernel paging request" is the
+	 * non-x86 spelling (alpha, csky, mips, s390, ...) and does not fire
+	 * on x86_64. */
 	if (strstr(body, "Oops:") != NULL ||
 	    strstr(body, "general protection fault") != NULL ||
-	    strstr(body, "Unable to handle kernel paging request") != NULL)
+	    strstr(body, "Unable to handle kernel paging request") != NULL ||
+	    strstr(body, "unable to handle page fault") != NULL ||
+	    strstr(body, "kernel NULL pointer dereference") != NULL)
 		return KMSG_OOPS;
 	if (strstr(body, "BUG:") != NULL ||
 	    strstr(body, "Kernel BUG") != NULL ||
