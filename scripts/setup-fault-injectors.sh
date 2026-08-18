@@ -70,6 +70,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------------------------------------------------------------------------
+# Validate PROB
+# ---------------------------------------------------------------------------
+# Accept only integers in 1..100; reject non-numeric and out-of-range values.
+# Both TRINITY_FAULT_PROB (env) and --prob N go through PROB; validate once
+# after argument parsing so the same check covers both sources.
+if ! [[ "${PROB}" =~ ^[0-9]+$ ]] || [[ "${PROB}" -lt 1 ]] || [[ "${PROB}" -gt 100 ]]; then
+    die "invalid probability '${PROB}': must be an integer in 1..100 (set via --prob or TRINITY_FAULT_PROB)"
+fi
+
+# ---------------------------------------------------------------------------
 # Privilege check
 # ---------------------------------------------------------------------------
 if [[ "${EUID:-$(id -u)}" -ne 0 ]] && [[ -z "${DRY_RUN}" ]]; then
@@ -357,6 +367,7 @@ emit_state() {
 # DRY-RUN: no writes occurred; *_present keys reflect compiled-in status only.
 # Arm state is unknown without a privileged run.
 injectors_armed=unknown
+injectors_armed_reason=dry_run
 fault_probability=${PROB}
 lockdep_stats_readable=${lockdep_stats_readable}
 make_it_fail_pid=${make_it_fail_pid}
@@ -376,6 +387,7 @@ EOF
 # injectors_armed=1 only when at least one injector has a confirmed non-zero
 # probability — directory existence (compiled in) is not sufficient.
 injectors_armed=$(( _arm_count > 0 ? 1 : 0 ))
+injectors_armed_reason=ok
 fault_probability=${PROB}
 lockdep_stats_readable=${lockdep_stats_readable}
 make_it_fail_pid=${make_it_fail_pid}
