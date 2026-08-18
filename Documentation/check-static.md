@@ -280,26 +280,12 @@ update this section to match `ls scripts/check-static/*.sh`.)
   build.  Companion to `kcov-canonicalise-pcs` on the PC side;
   `cmp_hints_flush_pending()` is the one whitelisted transitive
   caller because its inputs are already canonical.
-- `commit-msg-hash-citations-informal`: scan commit messages of commits
-  in `origin/master..HEAD` (falling back to `HEAD~200..HEAD`) and flag
-  every hex-hash citation that uses the bare-informal form
-  `hash (description text without quotes)` instead of the required
-  `hash ("exact commit subject")` form.  Bare-informal citations
-  carry wrong attributions when the description is not the real commit
-  subject and are invisible to subject-match resolution after a
-  cherry-pick rewrite.  Pre-existing violations that cannot be amended
-  are baselined by commit SHA in
-  `commit-msg-hash-citations-informal.baseline`; any new bare-informal
-  citation in a commit not listed in the baseline is a FAIL.
-  Complements `check-file-content-hash-citations` (which covers the
-  file-content half of the citation convention).
 - `commit-msg-hash-resolves`: scan commit messages in
   `origin/master..HEAD` (skipping when there is no unpushed range)
   and FAIL on any hex-hash citation that exists as a git object but is
   NOT reachable
   from HEAD -- a dangling cherry-pick orphan pointing at the wrong
-  context.  This is the reachability half of the citation convention,
-  complementing the form check in `commit-msg-hash-citations-informal`.
+  context.  This is the reachability half of the citation convention.
   Pre-existing dangling citations are grandfathered in
   `commit-msg-hash-resolves.baseline`; only a new unreachable citation
   fails.  The gate logic lives in `scripts/commit-msg-hash-resolves.sh`
