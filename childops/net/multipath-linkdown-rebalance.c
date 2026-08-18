@@ -420,7 +420,7 @@ static void mlr_flip_worker(int fd_a, int fd_b)
 		mlr_write_sysctl(fd_a, v);
 		mlr_write_sysctl(fd_b, v);
 		__atomic_add_fetch(
-			&shm->stats.multipath_linkdown_rebalance.flip_writes,
+			&shm->stats.multipath_linkdown_rebalance.flip_attempts,
 			2, __ATOMIC_RELAXED);
 
 		if ((i & 0x3ffU) == 0 &&

@@ -9,7 +9,7 @@ static const struct stat_field multipath_linkdown_rebalance_fields[] = {
 	STAT_FIELD_SUB(multipath_linkdown_rebalance, legs_ok),
 	STAT_FIELD_SUB(multipath_linkdown_rebalance, route_ok),
 	STAT_FIELD_SUB(multipath_linkdown_rebalance, rebalance_triggers),
-	STAT_FIELD_SUB(multipath_linkdown_rebalance, flip_writes),
+	STAT_FIELD_SUB(multipath_linkdown_rebalance, flip_attempts),
 	STAT_FIELD_SUB(multipath_linkdown_rebalance, completed_ok),
 };
 

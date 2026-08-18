@@ -10,7 +10,7 @@ struct multipath_linkdown_rebalance_stats {
 	unsigned long legs_ok;			/* both veth legs up + addressed */
 	unsigned long route_ok;			/* initial multipath route installed */
 	unsigned long rebalance_triggers;	/* NLM_F_REPLACE re-runs accepted */
-	unsigned long flip_writes;		/* sysctl 1<->0 writes issued */
+	unsigned long flip_attempts;		/* sysctl 1<->0 write attempts (2 per iteration, regardless of success) */
 	unsigned long completed_ok;		/* full cycle reached worker reap */
 };
 
