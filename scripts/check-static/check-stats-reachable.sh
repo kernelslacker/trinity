@@ -111,6 +111,7 @@ UNALLOWED="$TMP/unallowed"
 CFILES="$TMP/cfiles"
 HFILES="$TMP/hfiles"
 CFILES_NORM="$TMP/cfiles_norm.txt"
+HFILES_NORM="$TMP/hfiles_norm.txt"
 
 # NUL-delimited file lists reused by several xargs passes.
 find "$ROOT" -name '*.c' -type f -print0 > "$CFILES"
@@ -158,6 +159,20 @@ pending != "" { print pending " " $0; pending = ""; next }
 { print }
 END { if (pending != "") print pending }
 ' < "$CFILES" > "$CFILES_NORM"
+
+# Pre-build a single continuation-joined text file covering all header
+# files.  The read-scan arms in step 2d and the shm_s read scan both
+# consume this file so that a field access split across two header lines
+# is not invisible to the write-exclusion filter.  HFILES is
+# newline-delimited (not NUL-delimited), so xargs without -0 is used;
+# FNR==1 resets pending at each file boundary.
+xargs awk '
+FNR == 1 { pending = "" }
+pending != "" { print pending " " $0; pending = ""; next }
+/^[^)]*(__atomic_[a-z_]+|offsetof)\([^)]*$/ { pending = $0; next }
+{ print }
+END { if (pending != "") print pending }
+' < "$HFILES" > "$HFILES_NORM"
 
 # ---------------------------------------------------------------------
 # Field enumeration.
@@ -325,11 +340,14 @@ grep -hoE 'offsetof\(struct stats_s,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_.]*' "$CFILE
 # &shm->stats.foo.bar but not the __atomic_( token and passes through
 # as a false read, wrongly marking the field reachable.
 #
-# $HFILES (newline-delimited) is also scanned so that stats references
-# in inline helpers in include/*.h are not invisible to this pass.
+# $HFILES_NORM (continuation-joined header stream) is also scanned so
+# that stats references in inline helpers in include/*.h are not
+# invisible to this pass.  Using the joined form means a field access
+# split across two header lines is correctly seen by the write-exclusion
+# filter rather than arriving as a false read on the continuation line.
 # ---------------------------------------------------------------------
 { grep -hE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' "$CFILES_NORM" 2>/dev/null; \
-  xargs grep -hE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' 2>/dev/null < "$HFILES"; } | \
+  grep -hE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' "$HFILES_NORM" 2>/dev/null; } | \
 	grep -vE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+(\[[^]]*\])?[[:space:]]*(\+\+|--|=|\+=|-=|\*=|/=|<<=|>>=|&=|\|=|\^=)' | \
 	grep -vE '__atomic_(add|sub|store|exchange|and|or|xor|fetch|compare)' | \
 	grep -oE '\bstats(\.[a-zA-Z_][a-zA-Z0-9_]*)+\b' | \
@@ -577,11 +595,13 @@ fi
 #   - it is not a comment line (first non-space is * or //).
 # shm_write_pat() is used here for the same nine spellings as Step 2 so
 # the two stages share one canonical write-form definition.
-# $HFILES (newline-delimited) is also scanned so that inline-header
-# reads (e.g. in include/shm.h) are not invisible to this pass.
+# $HFILES_NORM (continuation-joined header stream) is also scanned so
+# that inline-header reads (e.g. in include/shm.h) are not invisible to
+# this pass.  Using the joined form ensures a read split across two
+# header lines is not misclassified by the write-exclusion filter.
 while IFS= read -r shm_field; do
 	if { grep -hE "\bshm->$shm_field\b" "$CFILES_NORM" 2>/dev/null; \
-	     xargs grep -hE "\bshm->$shm_field\b" 2>/dev/null < "$HFILES"; } | \
+	     grep -hE "\bshm->$shm_field\b" "$HFILES_NORM" 2>/dev/null; } | \
 	   grep -vE '^[[:space:]]*([*/]|//)' | \
 	   grep -qvE "$(shm_write_pat "$shm_field")|\bshm->$shm_field[[:space:]]*(=[^=]|\*=|/=|<<=|>>=|&=|\|=|\^=)"; then
 		echo "$shm_field"
