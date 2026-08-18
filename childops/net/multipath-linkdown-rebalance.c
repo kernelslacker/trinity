@@ -457,7 +457,7 @@ static void mlr_reap_worker(pid_t pid)
 		r = waitpid_eintr(pid, NULL, WNOHANG);
 		if (r == pid)
 			return;
-		if (r < 0 && errno != ECHILD)
+		if (r < 0)
 			return;
 
 		if (clock_gettime(CLOCK_MONOTONIC, &now) == 0 &&
