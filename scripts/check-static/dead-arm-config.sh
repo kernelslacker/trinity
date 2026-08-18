@@ -55,10 +55,13 @@ elif [ -f "$FUZZ_KCONFIG" ]; then
 	# least 100 to guard against truncated, stale, or zombie-mount files.
 	_cfg_count=$(grep -c '^CONFIG_' "$FUZZ_KCONFIG" 2>/dev/null || true)
 	_cfg_count=${_cfg_count:-0}
-	if [ "$_cfg_count" -lt 100 ]; then
+	_childop_floor_skip=0
+	if [ "$_cfg_count" -lt 1500 ]; then
 		echo "WARN: $NAME: kconfig $FUZZ_KCONFIG contains only $_cfg_count CONFIG_" \
-		     "line(s) (expected >=100; truncated or stale file?);" \
+		     "line(s) (expected >=1500; truncated or stale file?);" \
 		     "skipping kernel-config checks" >&2
+		_childop_floor_skip=1
+		_childop_cfg_count=$_cfg_count
 	else
 		KCONFIG="$FUZZ_KCONFIG"
 	fi
@@ -412,6 +415,13 @@ fi
 
 if [ "$map_entries" -eq 0 ]; then
 	echo "WARN: $NAME: empty mapping table -- no entries to check; gate has no detection power"
+	exit 0
+fi
+
+if [ "${_childop_floor_skip:-0}" -eq 1 ]; then
+	echo "WARN: $NAME: childop kconfig floor not met: only ${_childop_cfg_count:-0} CONFIG_" \
+	     "line(s) in $FUZZ_KCONFIG (need >=1500; truncated or stale file?);" \
+	     "kernel-config checks skipped (check mount, re-run)"
 	exit 0
 fi
 
