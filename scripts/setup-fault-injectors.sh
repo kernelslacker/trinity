@@ -301,6 +301,18 @@ if [[ -d "${DEBUGFS}/${_inj}" ]]; then
         _netdev_armed=${_netdev}
         echo "  ${_inj}: devname=${_netdev} prob=${PROB}  [NO task-filter: softirq context; filtered set by kernel via devname]"
         arm_common "${_inj}"
+        # devname_write() calls reset_settings() which clears 'filtered'
+        # before copying the new interface name; between the clear and the
+        # restore, should_fail_net_realloc_skb() runs with no filter active.
+        # On a fresh arm probability is 0 so the window is harmless.  On a
+        # re-arm probability is already live, so the devname write itself
+        # opens a window against every netdev on the host including the
+        # SSH management NIC.  Zero probability before touching devname so
+        # the reset_settings() race is always benign, then restore it after
+        # the devname readback confirms the filter is live.
+        if [[ -z "${DRY_RUN}" ]] && { _cur_prob=$(cat "${DEBUGFS}/${_inj}/probability" 2>/dev/null || echo 0); [[ "${_cur_prob}" -gt 0 ]] 2>/dev/null; }; then
+            write_attr "${DEBUGFS}/${_inj}/probability" 0
+        fi
         # Device filter BEFORE probability — order is load-bearing.
         write_attr "${DEBUGFS}/${_inj}/devname"     "${_netdev}"
         # Confirm devname was accepted before arming probability.
