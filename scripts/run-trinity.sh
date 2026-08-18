@@ -37,6 +37,7 @@ fi
 _fi_state_file="/run/trinity/fault-injectors.state"
 _fi_injectors_armed=0
 _fi_lockdep_stats_readable=0
+_fi_make_it_fail_pid=""
 if [[ -r "${_fi_state_file}" ]]; then
     # Source key=value lines; skip comment lines.
     while IFS='=' read -r _k _v; do
@@ -45,12 +46,48 @@ if [[ -r "${_fi_state_file}" ]]; then
         case "${_k}" in
             injectors_armed)         _fi_injectors_armed="${_v}"         ;;
             lockdep_stats_readable)  _fi_lockdep_stats_readable="${_v}"  ;;
+            make_it_fail_pid)        _fi_make_it_fail_pid="${_v}"        ;;
         esac
     done < "${_fi_state_file}"
 fi
 
 if [[ "${_fi_injectors_armed}" == "1" ]]; then
-    echo "trinity: fault injectors armed by setup-fault-injectors.sh (see ${_fi_state_file})"
+    # Determine whether the task-filtered injectors are actually scoped to
+    # this run.  fail_task() in lib/fault-inject.c:81 gates five of the six
+    # injectors on current->make_it_fail, which is only set via the
+    # /proc/<pid>/make-it-fail procfs knob and inherited by dup_task_struct().
+    # If setup-fault-injectors.sh ran without --pid, make_it_fail_pid is
+    # empty and those five injectors inject nothing for any task in this run.
+    _fi_task_filtered_inert=0
+    if [[ -z "${_fi_make_it_fail_pid}" ]]; then
+        _fi_task_filtered_inert=1
+    else
+        # Walk the PPid chain upward from this process to see whether
+        # make_it_fail_pid is an ancestor of $$ (and therefore whether
+        # current->make_it_fail is set for tasks spawned from this shell).
+        _fi_pid_is_ancestor=0
+        _fi_walk="$$"
+        while [[ -n "${_fi_walk}" ]] && [[ "${_fi_walk}" != "0" ]]; do
+            if [[ "${_fi_walk}" == "${_fi_make_it_fail_pid}" ]]; then
+                _fi_pid_is_ancestor=1
+                break
+            fi
+            _fi_walk=$(awk '/^PPid:/ {print $2}' "/proc/${_fi_walk}/status" 2>/dev/null) || break
+        done
+        if [[ "${_fi_pid_is_ancestor}" != "1" ]]; then
+            _fi_task_filtered_inert=1
+        fi
+    fi
+    if [[ "${_fi_task_filtered_inert}" == "1" ]]; then
+        echo "WARNING: fault injectors armed but make_it_fail_pid is absent or targets a different task tree (see ${_fi_state_file})." >&2
+        echo "  Five task-filtered injectors (failslab, fail_page_alloc, fail_usercopy, fail_futex, fail_sunrpc)" >&2
+        echo "  are inert for this run: fail_task() (lib/fault-inject.c:81) gates them on current->make_it_fail," >&2
+        echo "  which is only inherited by dup_task_struct() descendants of the --pid target." >&2
+        echo "  Only fail_skb_realloc is not task-filtered and will fire." >&2
+        echo "  Fix: sudo scripts/setup-fault-injectors.sh --pid \$\$ then re-run." >&2
+    else
+        echo "trinity: fault injectors armed by setup-fault-injectors.sh (see ${_fi_state_file})"
+    fi
 else
     # No state file or injectors not armed: advise the operator.
     # The debugfs attrs are 0600 so we cannot read or write them here;
