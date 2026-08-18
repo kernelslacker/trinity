@@ -55,7 +55,7 @@ LDFLAGS		+= -Wl,--wrap=mprotect
 # into a subsequent non-ASAN link (and vice versa).
 #
 # NDEBUG target: `make -C tests NDEBUG=1` compiles with -DNDEBUG,
-# disabling assert() guards in persist/deferred-free.c.  All seven
+# disabling assert() guards in persist/deferred-free.c.  All eight
 # fixtures pass green in NDEBUG builds; fixture 7 uses the bool return
 # value of deferred_free_seal_all() in place of debug_assert_sealed().
 # The NDEBUG binary lands in build-ndebug/ so it never contaminates

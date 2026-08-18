@@ -639,7 +639,7 @@ update this section to match `ls scripts/check-static/*.sh`.)
   writers must use `__atomic_fetch_add(..., __ATOMIC_RELAXED)`;
   `RELAXED` is correct because the child is the sole writer and
   nothing orders against this counter on either side.
-- `stats-opclock-lossless-suite`: builds `tests/test-bin-asan` (the
+- `test-bin-asan-suite`: builds `tests/test-bin-asan` (the
   PURE-module test binary under `-fsanitize=address`) and runs the
   `stats_opclock_lossless_self_check` suite, which gates the per-child
   lossless op-count plausibility guards: absolute ceiling, per-drain
