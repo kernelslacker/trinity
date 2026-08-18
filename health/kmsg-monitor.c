@@ -88,6 +88,9 @@ static const char * const kmsg_triggers[] = {
 	"BUG:",				/* "BUG: sleeping function ...", "BUG: workqueue lockup", "BUG: scheduling while atomic", "BUG: unable to handle ..." */
 	"INFO: rcu_sched self-detected stall",
 	"INFO: rcu_preempt self-detected stall",
+	"detected stalls on CPUs/tasks",	/* print_other_cpu_stall() dominant many-core path + expedited variant */
+	"detected expedited stalls",		/* tree_exp.h expedited paths (both variants) */
+	"rcu_tasks detected stalls on tasks",	/* tasks.h rcu_tasks path */
 	"INFO: task ",			/* "INFO: task <name> blocked for more than ..." */
 	"general protection fault",
 	"Unable to handle kernel paging request",
@@ -170,7 +173,10 @@ static enum kmsg_event_kind classify_kmsg_event(const char *body)
 	if (strstr(body, "WARNING:") != NULL)
 		return KMSG_WARN;
 	if (strstr(body, "INFO: rcu_sched self-detected stall") != NULL ||
-	    strstr(body, "INFO: rcu_preempt self-detected stall") != NULL)
+	    strstr(body, "INFO: rcu_preempt self-detected stall") != NULL ||
+	    strstr(body, "detected stalls on CPUs/tasks") != NULL ||
+	    strstr(body, "detected expedited stalls") != NULL ||
+	    strstr(body, "rcu_tasks detected stalls on tasks") != NULL)
 		return KMSG_RCU;
 	/* On x86_64 a page-fault Oops arrives as two records: the first is
 	 * "BUG: unable to handle page fault for address: ..." (or the NULL
