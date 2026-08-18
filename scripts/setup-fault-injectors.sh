@@ -304,15 +304,17 @@ if [[ -d "${DEBUGFS}/${_inj}" ]]; then
         # Device filter BEFORE probability — order is load-bearing.
         write_attr "${DEBUGFS}/${_inj}/devname"     "${_netdev}"
         # Confirm devname was accepted before arming probability.
-        _dn_read=$(cat "${DEBUGFS}/${_inj}/devname" 2>/dev/null || true)
-        if [[ -z "${_dn_read}" ]]; then
-            echo "  ${_inj}: WARN: devname write did not take — skipping" >&2
-        else
+        # Under --dry-run write_attr is a no-op; the readback will be empty
+        # even when the injector is compiled in.  Short-circuit to directory
+        # presence (same policy as confirm_prob_armed()).
+        if [[ -n "${DRY_RUN}" ]] || { _dn_read=$(cat "${DEBUGFS}/${_inj}/devname" 2>/dev/null || true); [[ -n "${_dn_read}" ]]; }; then
             write_attr "${DEBUGFS}/${_inj}/probability" "${PROB}"
             if confirm_prob_armed "${DEBUGFS}/${_inj}"; then
                 _fail_skb_realloc_armed=1
                 _arm_count=$(( _arm_count + 1 ))
             fi
+        else
+            echo "  ${_inj}: WARN: devname write did not take — skipping" >&2
         fi  # devname readback guard
     fi
 else
