@@ -298,7 +298,6 @@ if [[ -d "${DEBUGFS}/${_inj}" ]]; then
     if [[ -z "${_netdev}" ]]; then
         echo "  ${_inj}: WARN: no suitable network interface found — skipping (set TRINITY_NETDEV or --netdev)" >&2
     else
-        _netdev_armed=${_netdev}
         echo "  ${_inj}: devname=${_netdev} prob=${PROB}  [NO task-filter: softirq context; filtered set by kernel via devname]"
         arm_common "${_inj}"
         # devname_write() calls reset_settings() which clears 'filtered'
@@ -323,6 +322,7 @@ if [[ -d "${DEBUGFS}/${_inj}" ]]; then
             write_attr "${DEBUGFS}/${_inj}/probability" "${PROB}"
             if confirm_prob_armed "${DEBUGFS}/${_inj}"; then
                 _fail_skb_realloc_armed=1
+                _netdev_armed=${_netdev}
                 _arm_count=$(( _arm_count + 1 ))
             fi
         else
