@@ -217,10 +217,10 @@ if [[ -z "${DRY_RUN}" ]] && [[ -e "${_tracing_on}" ]]; then
         # Test files against FILE_MODE and directories against DIR_MODE so that
         # a correctly-configured tree (dirs at DIR_MODE, files at FILE_MODE)
         # satisfies the predicate and the latch fires.
-        _need_work=$(find "${MOUNT_POINT}" \( \
-            \( -type f ! -perm "${FILE_MODE#0}" \) -o \
-            \( -type d ! -perm "${DIR_MODE#0}" \) -o \
-            ! -group "${TARGET_GROUP}" \
+        _need_work=$(find "${MOUNT_POINT}" \( -type f -o -type d \) \
+            \( ! -group "${TARGET_GROUP}" \
+               -o \( -type f ! -perm "${FILE_MODE#0}" \) \
+               -o \( -type d ! -perm "${DIR_MODE#0}" \) \
             \) -print -quit 2>/dev/null)
         if [[ -z "${_need_work}" ]]; then
             info "all entries in ${MOUNT_POINT} already have group '${TARGET_GROUP}' and correct modes — skipping chgrp/chmod"
