@@ -302,6 +302,7 @@ if [[ -n "${DRY_RUN}" ]]; then
     echo "[dry-run] mkdir -p ${_spp_state_dir} && write ${_spp_state_file}"
 else
     mkdir -p "${_spp_state_dir}"
+    chmod 0755 "${_spp_state_dir}"
 fi
 
 emit_state() {

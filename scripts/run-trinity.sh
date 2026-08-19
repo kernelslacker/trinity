@@ -140,10 +140,17 @@ if [[ "${_tf_tracefs_ready}" != "1" ]]; then
     # skipping all tracefs operations.  Warn so the operator knows coverage
     # may be degraded without failing the run.
     if [[ ! -r "${_tf_state_file}" ]]; then
-        echo "WARNING: ${_tf_state_file} absent — setup-privileged-preconditions.sh has not run this boot." >&2
-        echo "  tracefs-fuzzer may get EACCES on tracing_on (TRACE_MODE_WRITE 0640 root:root)" >&2
-        echo "  and set tracefs_runtime_dead, silently skipping all tracefs coverage." >&2
-        echo "  Fix: sudo scripts/setup-privileged-preconditions.sh [--user \$USER] then re-run." >&2
+        _tf_state_dir=$(dirname "${_tf_state_file}")
+        if [[ -d "${_tf_state_dir}" && ! -x "${_tf_state_dir}" ]]; then
+            echo "WARNING: ${_tf_state_dir} exists but is not traversable (directory mode too strict — created under umask 077?)." >&2
+            echo "  Cannot read ${_tf_state_file}." >&2
+            echo "  Fix: sudo chmod 0755 ${_tf_state_dir}  or  sudo scripts/setup-privileged-preconditions.sh [--user \$USER] then re-run." >&2
+        else
+            echo "WARNING: ${_tf_state_file} absent — setup-privileged-preconditions.sh has not run this boot." >&2
+            echo "  tracefs-fuzzer may get EACCES on tracing_on (TRACE_MODE_WRITE 0640 root:root)" >&2
+            echo "  and set tracefs_runtime_dead, silently skipping all tracefs coverage." >&2
+            echo "  Fix: sudo scripts/setup-privileged-preconditions.sh [--user \$USER] then re-run." >&2
+        fi
     else
         echo "WARNING: ${_tf_state_file} present but tracefs_ready != 1 (got '${_tf_tracefs_ready}')." >&2
         echo "  Tracefs coverage may be disabled for this run (see ${_tf_state_file})." >&2

@@ -380,6 +380,7 @@ if [[ -n "${DRY_RUN}" ]]; then
     echo "[dry-run] mkdir -p ${STATE_DIR} && write ${STATE_FILE}"
 else
     mkdir -p "${STATE_DIR}"
+    chmod 0755 "${STATE_DIR}"
 fi
 
 emit_state() {
