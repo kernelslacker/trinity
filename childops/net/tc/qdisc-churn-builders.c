@@ -291,15 +291,17 @@ int build_delqdisc(struct nl_ctx *ctx, int ifindex, __u32 handle,
  * a valid stab nest the function returns -EINVAL and the stab branch of
  * qdisc_calculate_pkt_len() is never reached.
  *
- * Safety constraint on overhead: a near-INT_MAX overhead combined with
- * a small class quantum (e.g. DRR) forces drr_dequeue() to spin in the
- * deficit loop under the qdisc spinlock with BH disabled for seconds --
- * a real CPU stall that STORM_BUDGET_NS cannot cap.  The draw is bounded
- * to [0, 4095] bytes by default; this still exercises all parse paths,
+ * Safety constraint: the product tab[slot] << size_log is the real hazard.
+ * With size_log=30 and tab[slot]=65535, the effective packet length seen by
+ * qdisc_calculate_pkt_len() approaches 2^45, and a small DRR quantum pins
+ * the root qdisc spinlock for ~4M deficit-loop iterations with BH disabled
+ * -- a real CPU stall that STORM_BUDGET_NS cannot cap.  By default
+ * size_log is bounded to [0,12] and tab[i] to [0,4095], keeping the
+ * product at most 4095<<12 (~16M); this still exercises all parse paths,
  * the stab dedup walk, qdisc_put_stab(), and the stab branch of
- * qdisc_calculate_pkt_len().  The near-INT_MAX arm lives behind
- * #define STAB_OVERHEAD_UNBOUNDED and must NOT be enabled on shared
- * hardware without the tree maintainer's explicit approval.
+ * qdisc_calculate_pkt_len().  Full-range draws for size_log, tab[i], and
+ * overhead live behind #define STAB_OVERHEAD_UNBOUNDED and must NOT be
+ * enabled on shared hardware without the tree maintainer's explicit approval.
  */
 int build_newqdisc_stab(struct nl_ctx *ctx, int ifindex, __u32 handle,
 			__u32 parent, const char *kind, __u16 extra_flags)
@@ -342,17 +344,20 @@ int build_newqdisc_stab(struct nl_ctx *ctx, int ifindex, __u32 handle,
 	memset(&s, 0, sizeof(s));
 	/* cell_log/size_log validated <= STAB_SIZE_LOG_MAX (30) in kernel */
 	s.cell_log   = (__u8)rnd_modulo_u32(31);
-	s.size_log   = (__u8)rnd_modulo_u32(31);
-	s.cell_align = -1;
 	/*
-	 * overhead: [0, 4095] bounded default.  See safety note above.
-	 * #define STAB_OVERHEAD_UNBOUNDED to opt into the full range
-	 * (near-INT_MAX; can stall the box; requires maintainer approval).
+	 * Magnitude inputs bounded by default; see safety note above.
+	 * STAB_OVERHEAD_UNBOUNDED opts in to full-range draws for all three.
 	 */
+#ifndef STAB_OVERHEAD_UNBOUNDED
+	s.size_log   = (__u8)rnd_modulo_u32(13);	/* [0,12]: product safe */
+#else
+	s.size_log   = (__u8)rnd_modulo_u32(31);	/* opt-in only */
+#endif
+	s.cell_align = -1;
 #ifndef STAB_OVERHEAD_UNBOUNDED
 	s.overhead   = (int)rnd_modulo_u32(4096);
 #else
-	s.overhead   = (int)rand32();	/* opt-in only -- see safety note */
+	s.overhead   = (int)rand32();	/* opt-in only; see safety note above */
 #endif
 	s.linklayer  = 1 + rnd_modulo_u32(3);	/* 1=ethernet 2=atm 3=adsl */
 	s.mpu        = (__u32)rnd_modulo_u32(256);
@@ -376,7 +381,11 @@ int build_newqdisc_stab(struct nl_ctx *ctx, int ifindex, __u32 handle,
 		data_hdr->nla_len  = (unsigned short)(NLA_HDRLEN + data_len);
 		tab = (__u16 *)(buf + off + NLA_HDRLEN);
 		for (i = 0; i < tsize; i++)
-			tab[i] = (__u16)rnd_modulo_u32(65536);
+#ifndef STAB_OVERHEAD_UNBOUNDED
+			tab[i] = (__u16)rnd_modulo_u32(4096);	/* [0,4095]: product safe */
+#else
+			tab[i] = (__u16)rnd_modulo_u32(65536);	/* opt-in only */
+#endif
 		off += NLA_ALIGN(NLA_HDRLEN + data_len);
 	}
 
