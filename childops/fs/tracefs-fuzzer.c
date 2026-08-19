@@ -1167,7 +1167,7 @@ static unsigned long do_event_enable(void)
  * calls __ftrace_set_clr_event() instead) never reaches.
  *
  * Grammar covered:
- *   <sys>:<evt>  <sys>:  :<evt>  *:<evt>  *:  bare <name>  and !-prefixed forms
+ *   <sys>:<evt>  <sys>:  :<evt>  *:<evt>  bare <name>  and !-prefixed forms
  *   :mod:<modname> suffix with both existing and non-existent module names
  *
  * The crash pair for the NULL deref in __ftrace_set_clr_event_nolock
@@ -1181,6 +1181,35 @@ static unsigned long do_event_enable(void)
  * Cached mod entries live on tr->mod_events and are released at tracefs
  * instance teardown -- no resource leak across runs.
  */
+/*
+ * Count lines in set_event -- each non-empty line names one enabled
+ * event.  Used to record the surviving enabled-event count after a
+ * disable arm writes its spec.
+ */
+static unsigned long count_set_event_lines(void)
+{
+	char path[TRACEFS_MAX_PATH];
+	char buf[4096];
+	unsigned long count = 0;
+	ssize_t n;
+	int fd;
+
+	snprintf(path, sizeof(path), "%s/set_event", tracefs_root);
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return 0;
+	while ((n = read(fd, buf, sizeof(buf))) > 0) {
+		ssize_t i;
+
+		for (i = 0; i < n; i++) {
+			if (buf[i] == '\n')
+				count++;
+		}
+	}
+	close(fd);
+	return count;
+}
+
 static unsigned long do_set_event(void)
 {
 	static const char * const known_subsys[] = {
@@ -1210,6 +1239,7 @@ static unsigned long do_set_event(void)
 	bool *bad = &single_path_inaccessible[SP_SET_EVENT];
 	unsigned int syslen;
 	const char *mod;
+	bool is_disable;
 	int fd;
 	ssize_t ret;
 
@@ -1242,6 +1272,7 @@ static unsigned long do_set_event(void)
 		   ? colon_pos + 1 : evname;
 	syslen = (unsigned int)strcspn(evname, ":");
 
+	is_disable = false;
 	switch (rnd_modulo_u32(12)) {
 	case 0:
 		/* <sys>:<evt> -- enable one specific event */
@@ -1265,14 +1296,17 @@ static unsigned long do_set_event(void)
 		break;
 	case 5:
 		/* !<sys>:<evt> -- remove/disable one event */
+		is_disable = true;
 		snprintf(spec, sizeof(spec), "!%s", evname);
 		break;
 	case 6:
 		/* !<sys>: -- remove all events in subsystem */
+		is_disable = true;
 		snprintf(spec, sizeof(spec), "!%.*s:", (int)syslen, evname);
 		break;
 	case 7:
 		/* !:<evt> -- remove by event name */
+		is_disable = true;
 		snprintf(spec, sizeof(spec), "!:%s", evt_part);
 		break;
 	case 8:
@@ -1282,6 +1316,7 @@ static unsigned long do_set_event(void)
 		break;
 	case 9:
 		/* !<sys>:<evt>:mod:<modname> -- module-filtered remove */
+		is_disable = true;
 		mod = RAND_ARRAY(mod_names);
 		snprintf(spec, sizeof(spec), "!%s:mod:%s", evname, mod);
 		break;
@@ -1330,6 +1365,35 @@ static unsigned long do_set_event(void)
 		return bump_arm_counter(ARM_SET_EVENT, OUTCOME_OPEN_FAIL);
 	ret = write(fd, spec, strlen(spec));
 	close(fd);
+
+	/*
+	 * Disable-arm oracle: after writing a !-prefixed spec, record
+	 * the surviving enabled-event count as a stats scalar, then
+	 * write "*:" to restore the enabled set.  Without this teardown
+	 * repeated disable arms silently erode the enabled set with no
+	 * counter recording the loss -- the same defect that justified
+	 * removing the "!*:" arm.
+	 */
+	if (is_disable && ret >= 0) {
+		unsigned long remaining = count_set_event_lines();
+		int rfd;
+
+		__atomic_add_fetch(
+			&shm->stats.tracefs_fuzzer.set_event_post_disable_count,
+			remaining, __ATOMIC_RELAXED);
+		rfd = open_write_target(path, bad);
+		if (rfd >= 0) {
+			ssize_t rret = write(rfd, "*:", 2);
+
+			close(rfd);
+			if (rret >= 0)
+				__atomic_add_fetch(
+					&shm->stats.tracefs_fuzzer
+						.set_event_disable_reenabled,
+					1, __ATOMIC_RELAXED);
+		}
+	}
+
 	return bump_arm_counter(ARM_SET_EVENT,
 				ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
 }
