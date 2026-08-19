@@ -174,6 +174,7 @@ static enum kmsg_event_kind classify_kmsg_event(const char *body)
 		return KMSG_MM_CORRUPT;
 	if (strstr(body, "WARNING:") != NULL)
 		return KMSG_WARN;
+	/* CONFIG_PREEMPT_RCU=y: rcu_state.name is "rcu_preempt" on this kernel; dead on the fleet */
 	if (strstr(body, "INFO: rcu_sched self-detected stall") != NULL ||
 	    strstr(body, "INFO: rcu_preempt self-detected stall") != NULL ||
 	    strstr(body, "detected stalls on CPUs/tasks") != NULL ||
@@ -196,7 +197,7 @@ static enum kmsg_event_kind classify_kmsg_event(const char *body)
 	    strstr(body, "kernel NULL pointer dereference") != NULL)
 		return KMSG_OOPS;
 	if (strstr(body, "BUG:") != NULL ||
-	    strstr(body, "Kernel BUG") != NULL ||
+	    strstr(body, "Kernel BUG") != NULL || /* riscv/sh only — x86_64 uses the lowercase entry below */
 	    strstr(body, "kernel BUG") != NULL ||
 	    strstr(body, "UBSAN:") != NULL ||
 	    strstr(body, "refcount_t:") != NULL)
