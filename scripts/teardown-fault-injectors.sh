@@ -60,10 +60,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# File-scope flag: set to 1 by write_attr() on any absent-file or write-error
-# path.  Prevents the state-file rewrite from recording armed=0 when disarming
-# failed — fail-safe, not fail-quiet.
+# _teardown_failed: set to 1 by write_attr() when an attribute file is absent.
+# A missing attribute means there is nothing to disarm (e.g. version skew),
+# not that a write was attempted and failed.  Informational only.
 _teardown_failed=0
+
+# _teardown_write_failed: set to 1 by write_attr() only when a write is
+# attempted and fails.  Gates the state-file rewrite: if any write failed,
+# the armed state may still be live and we must not record injectors_armed=0.
+_teardown_write_failed=0
 
 # ---------------------------------------------------------------------------
 # Privilege check
@@ -103,7 +108,7 @@ write_attr() {
         _teardown_failed=1
         return
     fi
-    echo "${value}" > "${file}" || { echo "  WARN: failed to write ${value@Q} to ${file}" >&2; _teardown_failed=1; return; }
+    echo "${value}" > "${file}" || { echo "  WARN: failed to write ${value@Q} to ${file}" >&2; _teardown_write_failed=1; return; }
 }
 
 # ---------------------------------------------------------------------------
@@ -259,7 +264,7 @@ fi
 if [[ -n "${DRY_RUN}" ]]; then
     echo "[dry-run] rewrite ${STATE_FILE} with zeros"
 else
-    if [[ "${_teardown_failed}" -ne 0 ]]; then
+    if [[ "${_teardown_write_failed}" -ne 0 ]]; then
         echo "teardown-fault-injectors: some writes failed — state file NOT updated, armed state may still be live" >&2
     else
         _state_dir=$(dirname "${STATE_FILE}")
