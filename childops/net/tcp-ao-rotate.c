@@ -652,18 +652,12 @@ static void tcp_ao_rotate_iter_reconnect_peer(struct tcp_ao_rotate_iter_ctx *ctx
 		return;
 	}
 
-	ctx->direct_calls++;
-	ctx->srv2_acc = accept(ctx->srv2_listener, NULL, NULL);
-	if (ctx->srv2_acc < 0) {
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_failed,
-				   1, __ATOMIC_RELAXED);
-		return;
-	}
-	ctx->direct_calls++;
-	(void)fcntl(ctx->srv2_acc, F_SETFL, O_NONBLOCK);
-
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_ok,
-			   1, __ATOMIC_RELAXED);
+	/*
+	 * Both probes operate on ctx->cli and are independent of whether
+	 * the server-side accept has completed.  The UAF window is opened
+	 * by the connect(AF_UNSPEC) -> connect(srv2_addr) pair above, so
+	 * fire the probes now before accept() can gate them.
+	 */
 
 	/* Probe the stale current_key via TCP_AO_INFO — primary UAF vector.
 	 * stale_id is the peer-1 sndid that current_key may still reference
@@ -694,6 +688,19 @@ static void tcp_ao_rotate_iter_reconnect_peer(struct tcp_ao_rotate_iter_ctx *ctx
 	else
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.delkey_rejected,
 				   1, __ATOMIC_RELAXED);
+
+	ctx->direct_calls++;
+	ctx->srv2_acc = accept(ctx->srv2_listener, NULL, NULL);
+	if (ctx->srv2_acc < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_failed,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+	ctx->direct_calls++;
+	(void)fcntl(ctx->srv2_acc, F_SETFL, O_NONBLOCK);
+
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_ok,
+			   1, __ATOMIC_RELAXED);
 
 	rotate_send(ctx->cli, &ctx->direct_calls);
 	rotate_send(ctx->srv2_acc, &ctx->direct_calls);
