@@ -17,7 +17,7 @@
 # remains set until explicitly written back to 0.  See
 # setup-fault-injectors.sh:337 (the authoritative note in this repo) and
 # include/linux/sched.h:1449, fs/proc/base.c:1425, lib/fault-inject.c:81
-# (linux-linus v7.2-437-g0f23d56f17fd).  This script explicitly clears the
+# (linux-linus upstream:0f23d56f17fd, v7.2-437).  This script explicitly clears the
 # flag via /proc/<pid>/make-it-fail before rewriting the state file.
 # fail_skb_realloc is NOT task-filtered (it uses a devname filter instead,
 # since softirq/NAPI context has in_task()=false) and stays armed at the

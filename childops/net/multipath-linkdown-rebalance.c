@@ -4,7 +4,7 @@
  * upper-bound divisor to zero.  A real IPv4/IPv6 twin: the same bug
  * shape lives once per family and neither half exists in the tree.
  *
- * Kernel bug (unfixed at linux-linus 0f23d56f17fd):
+ * Kernel bug (unfixed at linux-linus upstream:0f23d56f17fd):
  *
  *   v4  fib_rebalance()             net/ipv4/fib_semantics.c:853
  *   v6  rt6_multipath_rebalance()   net/ipv6/route.c:4862
