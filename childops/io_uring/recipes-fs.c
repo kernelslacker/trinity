@@ -1120,8 +1120,10 @@ bool recipe_getxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
  * hash_tail[bucket] stale-pointer path fixed in upstream: d6a2d7b04b5a.
  *
  * Both WRITEs carry IOSQE_ASYNC so they are punted directly to io-wq
- * and hashed by inode (single fd → single inode → bucket 0).  A NOP
- * is interleaved between them as the "non-hashed predecessor" whose
+ * and hashed by inode (single fd → single inode → same hash bucket;
+ * which bucket is determined by hash_ptr(inode, 6) and is opaque to
+ * userspace).  The NOP also carries IOSQE_ASYNC so it enters io-wq
+ * as a non-hashed work item — the "non-hashed predecessor" whose
  * removal must not leave hash_tail[] pointing at the stale slot.
  * The ASYNC_CANCEL races against the hashed tail before it completes.
  * ------------------------------------------------------------------ */
@@ -1150,7 +1152,7 @@ bool recipe_write_hashed_cancel(struct iour_recipe_state *s, bool *unsupported _
 	if (s->memfd < 0)
 		return false;
 
-	/* SQE 0: WRITE #1 — IOSQE_ASYNC forces io-wq, hashed to bucket 0. */
+	/* SQE 0: WRITE #1 — IOSQE_ASYNC forces io-wq, hashed by inode. */
 	sqe_clear(&sqes[0]);
 	sqes[0].opcode    = IORING_OP_WRITE;
 	sqes[0].fd        = s->memfd;
@@ -1160,12 +1162,16 @@ bool recipe_write_hashed_cancel(struct iour_recipe_state *s, bool *unsupported _
 	sqes[0].flags     = IOSQE_ASYNC;
 	sqes[0].user_data = WHC_UD_WRITE1;
 
-	/* SQE 1: NOP — unrelated op interleaved (non-hashed predecessor). */
+	/* SQE 1: NOP + IOSQE_ASYNC — enters io-wq as a non-hashed work
+	 * item between the two hashed WRITEs.  Without IOSQE_ASYNC the
+	 * NOP completes inline in the submit path and never enters io-wq,
+	 * so the [non-hashed, hashed-tail] adjacency would never form. */
 	sqe_clear(&sqes[1]);
 	sqes[1].opcode    = IORING_OP_NOP;
+	sqes[1].flags     = IOSQE_ASYNC;
 	sqes[1].user_data = WHC_UD_NOP;
 
-	/* SQE 2: WRITE #2 — same fd → same inode → same bucket 0 hash. */
+	/* SQE 2: WRITE #2 — same fd → same inode → same hash bucket. */
 	sqe_clear(&sqes[2]);
 	sqes[2].opcode    = IORING_OP_WRITE;
 	sqes[2].fd        = s->memfd;
@@ -1182,12 +1188,17 @@ bool recipe_write_hashed_cancel(struct iour_recipe_state *s, bool *unsupported _
 	sqes[3].addr      = WHC_UD_WRITE2;
 	sqes[3].user_data = WHC_UD_CANCEL;
 
-	if (!iour_submit_sqes(ctx, sqes, 4))
+	if (!iour_submit_sqes(ctx, sqes, 4)) {
+		close(s->memfd);
 		return false;
+	}
 	r = iour_enter(ctx, 4, 1);
-	if (r < 0)
+	if (r < 0) {
+		close(s->memfd);
 		return false;
+	}
 	iour_drain_cqes(ctx);
+	close(s->memfd);
 	return true;
 
 #undef WHC_UD_WRITE1
