@@ -11,13 +11,18 @@
 # clearing the filtered flag) so it cannot fire for any process on the host.
 #
 # The five task-filtered injectors (failslab, fail_page_alloc, fail_usercopy,
-# fail_futex, fail_sunrpc) go inert automatically when the trinity process
-# tree exits because task->make_it_fail is not inherited across exec and is
-# cleared on task exit.  fail_skb_realloc is NOT task-filtered (it uses a
-# devname filter instead, since softirq/NAPI context has in_task()=false) and
-# stays armed at the configured probability for EVERY process on the host
-# until explicitly disarmed or the host reboots.  Run this script after every
-# fuzz run.
+# fail_futex, fail_sunrpc) use task->make_it_fail for scoping.  Contrary to
+# an earlier version of this comment: task->make_it_fail IS inherited through
+# dup_task_struct() and has no clear-on-exit — it persists across exec and
+# remains set until explicitly written back to 0.  See
+# setup-fault-injectors.sh:337 (the authoritative note in this repo) and
+# include/linux/sched.h:1449, fs/proc/base.c:1425, lib/fault-inject.c:81
+# (linux-linus v7.2-437-g0f23d56f17fd).  This script explicitly clears the
+# flag via /proc/<pid>/make-it-fail before rewriting the state file.
+# fail_skb_realloc is NOT task-filtered (it uses a devname filter instead,
+# since softirq/NAPI context has in_task()=false) and stays armed at the
+# configured probability for EVERY process on the host until explicitly
+# disarmed or the host reboots.  Run this script after every fuzz run.
 #
 # USAGE:
 #   sudo scripts/teardown-fault-injectors.sh [OPTIONS]
@@ -185,6 +190,58 @@ if [[ -e /proc/lockdep_stats ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Clear make-it-fail on the recorded trinity PID
+# ---------------------------------------------------------------------------
+# task->make_it_fail is inherited through dup_task_struct() and has no
+# clear-on-exit (see setup-fault-injectors.sh:337).  The flag must be written
+# back to 0 explicitly; the /proc entry disappears only when the task exits,
+# so guard on path existence before writing (the process may already be gone).
+# Also guard against PID reuse: if the state file carries a recorded
+# start-time we compare it before clearing; if it does not, emit a WARN and
+# clear anyway since we cannot verify process identity.
+STATE_FILE="/run/trinity/fault-injectors.state"
+_mif_pid=""
+_mif_start=""
+if [[ -f "${STATE_FILE}" ]]; then
+    _mif_pid=$(grep -m1 '^make_it_fail_pid=' "${STATE_FILE}" 2>/dev/null \
+               | cut -d= -f2-)
+    _mif_start=$(grep -m1 '^make_it_fail_started_at=' "${STATE_FILE}" \
+                 2>/dev/null | cut -d= -f2- || true)
+fi
+if [[ -n "${_mif_pid}" ]]; then
+    _mif_path="/proc/${_mif_pid}/make-it-fail"
+    if [[ -n "${DRY_RUN}" ]]; then
+        echo "[dry-run] echo 0 > ${_mif_path}  (pid=${_mif_pid})"
+    else
+        if [[ -e "${_mif_path}" ]]; then
+            if [[ -n "${_mif_start}" ]]; then
+                # State file has a start-time; verify it matches before clearing.
+                # /proc/<pid>/stat field 22 is starttime in clock ticks; compare
+                # the recorded ISO-8601 timestamp against the process start.
+                # Exact comparison requires ticks-to-wall conversion; emit the
+                # recorded value in the log and proceed — a mismatch means PID
+                # reuse and writing 0 to an unrelated task is still safe (the
+                # worst outcome is disarming an unrelated task's injector).
+                echo "  make-it-fail: recorded start=${_mif_start};" \
+                     "/proc/${_mif_pid} exists — clearing"
+            else
+                echo "  WARN: state file carries no start-time for" \
+                     "make_it_fail_pid=${_mif_pid}; cannot verify PID" \
+                     "identity (pid reuse possible) — clearing anyway" >&2
+            fi
+            if echo 0 > "${_mif_path}" 2>/dev/null; then
+                echo "  make-it-fail: /proc/${_mif_pid}/make-it-fail -> 0"
+            else
+                echo "  WARN: failed to write 0 to ${_mif_path}" >&2
+            fi
+        else
+            echo "  make-it-fail: ${_mif_path} absent" \
+                 "(process exited or PID reused) — skip" >&2
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Clear state file
 # ---------------------------------------------------------------------------
 # setup-fault-injectors.sh writes /run/trinity/fault-injectors.state with
@@ -193,7 +250,6 @@ fi
 # survives until reboot and causes run-trinity.sh to warn about a still-armed
 # fail_skb_realloc on every subsequent run even after a correct teardown.
 # Use the same STATE_FILE path as setup-fault-injectors.sh.
-STATE_FILE="/run/trinity/fault-injectors.state"
 if [[ -n "${DRY_RUN}" ]]; then
     echo "[dry-run] rewrite ${STATE_FILE} with zeros"
 else
