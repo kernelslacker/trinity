@@ -69,6 +69,7 @@
 #include <unistd.h>
 #include <linux/tcp.h>
 #include <fcntl.h>
+#include <time.h>
 #include <net/if.h>
 #include <sched.h>
 #include <string.h>
@@ -1208,8 +1209,8 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	direct_calls++;
 	if (setsockopt(listener, IPPROTO_TCP, TCP_AO_ADD_KEY,
 		       &ao_add, sizeof(ao_add)) < 0) {
-		/* TCP-AO not available — not an error for this arm. */
-		goto setup_fail;
+		/* TCP-AO not available on this host; separate from setup errors. */
+		goto ao_unavailable;
 	}
 
 	/* TCP-AO key on the client (peer = veth_b's address). */
@@ -1233,11 +1234,10 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	 * the reporter's reproducer uses to open the UAF window in
 	 * tcp_ao_connect_init().  The parent immediately issues connect().
 	 *
-	 * A detach that completes before connect() enters the kernel
-	 * is counted in vrf_detach_raced regardless; the coverage value
-	 * is the same: l3mdev_master_ifindex_by_index() returns 0 inside
-	 * tcp_ao_connect_init() on a socket whose bound device is no
-	 * longer enslaved, which the loopback sequence never exercises.
+	 * vrf_detach_raced counts socket-open (oracle: child reached the
+	 * rtnl path).  vrf_detach_landed gates on nl_send_recv() == 0
+	 * (oracle: kernel accepted MASTER=0).  Compare vrf_detach_ts_ns
+	 * against vrf_connect_ts_ns to tell raced from sequential.
 	 */
 	direct_calls++; /* fork */
 	pid = fork();
@@ -1253,10 +1253,24 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 			.caller_op    = NR_CHILD_OP_TYPES,
 		};
 		if (nl_open(&race_nl, &race_opts) == 0) {
-			(void)vrf_arm_build_detach(&race_nl, va_idx);
+			struct timespec _dts;
+			int _det_rc;
+			/* vrf_detach_raced: netlink socket open, RTM_SETLINK queued. */
 			__atomic_add_fetch(
 				&shm->stats.tcp_ao_rotate.vrf_detach_raced,
 				1, __ATOMIC_RELAXED);
+			clock_gettime(CLOCK_MONOTONIC, &_dts);
+			__atomic_store_n(
+				&shm->stats.tcp_ao_rotate.vrf_detach_ts_ns,
+				(unsigned long)_dts.tv_sec * 1000000000UL +
+				(unsigned long)_dts.tv_nsec,
+				__ATOMIC_RELAXED);
+			_det_rc = vrf_arm_build_detach(&race_nl, va_idx);
+			/* vrf_detach_landed: kernel accepted RTM_SETLINK MASTER=0. */
+			if (_det_rc == 0)
+				__atomic_add_fetch(
+					&shm->stats.tcp_ao_rotate.vrf_detach_landed,
+					1, __ATOMIC_RELAXED);
 			nl_close(&race_nl);
 		}
 		_exit(0);
@@ -1264,7 +1278,19 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 
 	/* Parent: fire connect() into the VRF-bound socket.  EINPROGRESS
 	 * means the SYN is in flight and tcp_ao_connect_init() has already
-	 * run — the race window has been opened.  Either outcome counts. */
+	 * run — the race window has been opened.  Either outcome counts.
+	 * Record a monotonic timestamp immediately before entering the kernel
+	 * so raced-vs-sequential is derivable by comparing vrf_connect_ts_ns
+	 * against vrf_detach_ts_ns in the stats file. */
+	{
+		struct timespec _cts;
+		clock_gettime(CLOCK_MONOTONIC, &_cts);
+		__atomic_store_n(
+			&shm->stats.tcp_ao_rotate.vrf_connect_ts_ns,
+			(unsigned long)_cts.tv_sec * 1000000000UL +
+			(unsigned long)_cts.tv_nsec,
+			__ATOMIC_RELAXED);
+	}
 	direct_calls++;
 	rc = connect(cli, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
 	if (rc == 0 || errno == EINPROGRESS) {
@@ -1289,6 +1315,10 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	}
 	goto out;
 
+ao_unavailable:
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_ao_unavailable,
+			   1, __ATOMIC_RELAXED);
+	goto out;
 setup_fail:
 	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_enslave_setup_failed,
 			   1, __ATOMIC_RELAXED);
