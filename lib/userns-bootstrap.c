@@ -177,14 +177,17 @@ static void grandchild_body(int target_ns_flags,
 		_exit(UBS_EXIT_TARGET_UNSHARE);
 
 	/*
-	 * Cap the callback's run-time.  If fn(arg) blocks (e.g. on a
-	 * kernel object that was never going to become ready), the
-	 * default SIGALRM disposition terminates this grandchild so
-	 * the parent's waitpid() returns within USERNS_CALLBACK_ALARM_S
-	 * seconds.  No handler is needed -- _exit() is not called;
-	 * the signal kills the process outright and the parent sees
-	 * WIFSIGNALED/SIGALRM in the wait status.
+	 * Cap the callback's run-time.  The grandchild is reached via
+	 * plain fork() with no execve(), so signal handlers installed
+	 * by the trinity child (including the SIGALRM flag-setter from
+	 * health/signals-policy.c) are inherited.  unshare(CLONE_NEWUSER)
+	 * does not reset dispositions.  Reset SIGALRM to SIG_DFL so
+	 * that alarm() actually terminates this disposable grandchild
+	 * when fn(arg) blocks; with the inherited handler the signal
+	 * would merely set a flag and return, leaving the grandchild
+	 * running and the one-shot alarm consumed.
 	 */
+	signal(SIGALRM, SIG_DFL);
 	alarm(USERNS_CALLBACK_ALARM_S);
 	(void)fn(arg);
 	_exit(UBS_EXIT_RAN);
@@ -214,25 +217,33 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 	}
 
 	/*
-	 * Belt-and-suspenders parent-side timeout.  The grandchild
-	 * installs alarm(USERNS_CALLBACK_ALARM_S) before invoking the
-	 * callback, so a wedged fn() causes the grandchild to die
-	 * within that window and waitpid_eintr() returns normally via
-	 * the resulting SIGCHLD.  The parent alarm below
-	 * (USERNS_PARENT_ALARM_S > USERNS_CALLBACK_ALARM_S) provides a
-	 * secondary escape: even if the grandchild's own alarm was
-	 * suppressed, the parent's SIGALRM fires, EINTR is returned,
-	 * the loop retries, and at that point the grandchild is either
-	 * already dead or will be killed by SIGKILL from the reaper.
-	 * Cancel the alarm immediately after the wait to avoid leaving
-	 * a stale one-shot alarm in the child process.
+	 * Belt-and-suspenders parent-side timeout.  The grandchild now
+	 * resets SIGALRM to SIG_DFL before arming alarm(), so a wedged
+	 * fn() is terminated by the grandchild's own alarm and
+	 * waitpid_eintr() returns normally via the resulting SIGCHLD.
+	 * The parent alarm (USERNS_PARENT_ALARM_S > USERNS_CALLBACK_ALARM_S)
+	 * is a secondary escape for the unlikely case the grandchild's
+	 * alarm fails to fire.
+	 *
+	 * Save and restore the caller's pending alarm: alarm(N) replaces
+	 * any existing pending alarm and returns the remaining seconds.
+	 * Without save/restore, child.c's 1-second stall watchdog
+	 * (alarm(1) set before every alt-op) is clobbered and then
+	 * cancelled by the alarm(0) below, leaving the op with no inner
+	 * stall detection.
+	 *
+	 * Note: waitpid_eintr() retries through EINTR, so the parent's
+	 * SIGALRM will not permanently interrupt the wait -- it fires the
+	 * flag-setter, the loop re-blocks, and no escalation to SIGKILL
+	 * occurs from the parent side.  The grandchild-side SIG_DFL
+	 * reset (above) is what makes the cap real.
 	 */
-	alarm(USERNS_PARENT_ALARM_S);
+	unsigned int rem = alarm(USERNS_PARENT_ALARM_S);
 	if (waitpid_eintr(pid, &status, 0) < 0) {
-		alarm(0);
+		alarm(rem);
 		return -EAGAIN;
 	}
-	alarm(0);
+	alarm(rem);
 
 	if (WIFEXITED(status)) {
 		switch (WEXITSTATUS(status)) {

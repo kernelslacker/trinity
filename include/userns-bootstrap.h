@@ -40,20 +40,24 @@
 
 /*
  * Maximum wall-clock seconds any fn(arg) callback passed to
- * userns_run_in_ns() is permitted to run.  The grandchild installs
- * alarm(USERNS_CALLBACK_ALARM_S) immediately before invoking fn();
- * if fn() blocks (e.g. on accept(2), a futex, or any other kernel
- * object that never becomes ready), the default SIGALRM disposition
- * terminates the grandchild so the parent is unblocked within this
- * many seconds.  Callers that legitimately need longer should split
- * their work across multiple userns_run_in_ns() calls.
+ * userns_run_in_ns() is permitted to run.  The grandchild explicitly
+ * resets SIGALRM to SIG_DFL before arming alarm(USERNS_CALLBACK_ALARM_S)
+ * because signal handlers are inherited across fork() and the trinity
+ * child installs a SIGALRM flag-setter (health/signals-policy.c) that
+ * would otherwise absorb the alarm without terminating the process.
+ * With SIG_DFL restored, a blocked fn() is killed outright and the
+ * parent's waitpid() returns within this many seconds.  Callers that
+ * legitimately need longer should split their work across multiple
+ * userns_run_in_ns() calls.
  *
  * USERNS_PARENT_ALARM_S is the secondary timeout set by the parent
  * before calling waitpid_eintr().  It is intentionally larger than
  * USERNS_CALLBACK_ALARM_S so that the grandchild's own alarm fires
  * first in the normal case; the parent alarm is a belt-and-suspenders
- * escape for the unlikely event that the grandchild's alarm was
- * suppressed.
+ * escape for the unlikely event that the grandchild's alarm fails to
+ * fire.  Note that waitpid_eintr() retries through EINTR, so the
+ * parent alarm cannot interrupt the wait permanently; the grandchild-
+ * side SIG_DFL reset is the primary enforcement mechanism.
  */
 #define USERNS_CALLBACK_ALARM_S  30u
 #define USERNS_PARENT_ALARM_S    35u
