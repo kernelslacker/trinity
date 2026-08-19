@@ -103,6 +103,16 @@ if ! [[ "${FILE_MODE}" =~ ^0[0-7]{3}$ ]]; then
     die "invalid mode '${FILE_MODE}': must be an octal permission string (e.g. 0664, 0666)"
 fi
 
+# Derive DIR_MODE from FILE_MODE: OR the execute/search bit into every
+# non-zero rwx triad.  Example: 0664 (rw-rw-r--) -> 0775 (rwxrwxr-x).
+# Derived here (after FILE_MODE is validated) so both the idempotency latch
+# predicate below and the enforcement chmod step can share one derivation.
+_fm_val=$(( 8#${FILE_MODE#0} ))
+_o=$(( (_fm_val >> 6) & 7 )); [[ $_o -ne 0 ]] && _o=$(( _o | 1 ))
+_g=$(( (_fm_val >> 3) & 7 )); [[ $_g -ne 0 ]] && _g=$(( _g | 1 ))
+_w=$(( _fm_val & 7 ));        [[ $_w -ne 0 ]] && _w=$(( _w | 1 ))
+DIR_MODE=$(printf "0%o" $(( (_o << 6) | (_g << 3) | _w )))
+
 # ---------------------------------------------------------------------------
 # Privilege check
 # ---------------------------------------------------------------------------
@@ -251,14 +261,6 @@ if [[ "${_perms_ok}" != "2" ]]; then
     # -type d — rather than chmod -R so that symlinks and device nodes are left
     # untouched (tracefs does not create such entries, but defensive coding is
     # warranted when touching a kernel filesystem via CAP_DAC_OVERRIDE).
-
-    # Derive DIR_MODE from FILE_MODE: OR the execute/search bit into every
-    # non-zero rwx triad.  Example: 0664 (rw-rw-r--) -> 0775 (rwxrwxr-x).
-    _fm_val=$(( 8#${FILE_MODE#0} ))
-    _o=$(( (_fm_val >> 6) & 7 )); [[ $_o -ne 0 ]] && _o=$(( _o | 1 ))
-    _g=$(( (_fm_val >> 3) & 7 )); [[ $_g -ne 0 ]] && _g=$(( _g | 1 ))
-    _w=$(( _fm_val & 7 ));        [[ $_w -ne 0 ]] && _w=$(( _w | 1 ))
-    DIR_MODE=$(printf "0%o" $(( (_o << 6) | (_g << 3) | _w )))
 
     dry_run_or_exec find "${MOUNT_POINT}" -type f -exec chmod "${FILE_MODE}" {} +
     dry_run_or_exec find "${MOUNT_POINT}" -type d -exec chmod "${DIR_MODE}"  {} +
