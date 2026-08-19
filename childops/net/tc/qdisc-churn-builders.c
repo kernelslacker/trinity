@@ -19,6 +19,8 @@
 #include <string.h>
 
 #include "qdisc-churn-internal.h"
+#include "random.h"
+#include "rnd.h"
 
 /*
  * RTM_NEWLINK type=dummy with the supplied dev name.  Each iteration
@@ -280,6 +282,115 @@ int build_delqdisc(struct nl_ctx *ctx, int ifindex, __u32 handle,
 }
 
 /*
+ * RTM_NEWQDISC with a TCA_STAB nest appended to the message.
+ *
+ * TCA_STAB is a top-level attribute on the NEWQDISC message; the kernel
+ * passes it to qdisc_get_stab() (net/sched/sch_api.c) which installs a
+ * size table used by qdisc_calculate_pkt_len() to account for link-layer
+ * framing overhead when computing per-packet accounting lengths.  Without
+ * a valid stab nest the function returns -EINVAL and the stab branch of
+ * qdisc_calculate_pkt_len() is never reached.
+ *
+ * Safety constraint on overhead: a near-INT_MAX overhead combined with
+ * a small class quantum (e.g. DRR) forces drr_dequeue() to spin in the
+ * deficit loop under the qdisc spinlock with BH disabled for seconds --
+ * a real CPU stall that STORM_BUDGET_NS cannot cap.  The draw is bounded
+ * to [0, 4095] bytes by default; this still exercises all parse paths,
+ * the stab dedup walk, qdisc_put_stab(), and the stab branch of
+ * qdisc_calculate_pkt_len().  The near-INT_MAX arm lives behind
+ * #define STAB_OVERHEAD_UNBOUNDED and must NOT be enabled on shared
+ * hardware without the tree maintainer's explicit approval.
+ */
+int build_newqdisc_stab(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			__u32 parent, const char *kind, __u16 extra_flags)
+{
+#if __has_include(<linux/pkt_sched.h>)
+	unsigned char buf[RTNL_BUF_BYTES];
+	size_t off, opts_off, stab_off;
+	struct tc_sizespec s;
+	unsigned int tsize;
+	size_t data_len;
+	__u16 *tab;
+	unsigned int i;
+
+	memset(buf, 0, sizeof(buf));
+	off = tcmsg_hdr(ctx, buf, RTM_NEWQDISC, extra_flags, ifindex,
+			handle, parent, 0);
+
+	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, kind);
+	if (!off)
+		return -EIO;
+
+	opts_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_OPTIONS);
+	if (!off)
+		return -EIO;
+	nla_nest_end(buf, opts_off, off);
+
+	/*
+	 * TCA_STAB nest: BASE + DATA.  tsize in [1, 64]; kernel validates
+	 * nla_len(TCA_STAB_DATA) / sizeof(u16) == s.tsize.
+	 */
+	tsize    = 1 + rnd_modulo_u32(64);
+	data_len = (size_t)tsize * sizeof(__u16);
+
+	stab_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_STAB);
+	if (!off)
+		goto send;	/* send without stab on no-room */
+
+	memset(&s, 0, sizeof(s));
+	/* cell_log/size_log validated <= STAB_SIZE_LOG_MAX (30) in kernel */
+	s.cell_log   = (__u8)rnd_modulo_u32(31);
+	s.size_log   = (__u8)rnd_modulo_u32(31);
+	s.cell_align = -1;
+	/*
+	 * overhead: [0, 4095] bounded default.  See safety note above.
+	 * #define STAB_OVERHEAD_UNBOUNDED to opt into the full range
+	 * (near-INT_MAX; can stall the box; requires maintainer approval).
+	 */
+#ifndef STAB_OVERHEAD_UNBOUNDED
+	s.overhead   = (int)rnd_modulo_u32(4096);
+#else
+	s.overhead   = (int)rand32();	/* opt-in only -- see safety note */
+#endif
+	s.linklayer  = 1 + rnd_modulo_u32(3);	/* 1=ethernet 2=atm 3=adsl */
+	s.mpu        = (__u32)rnd_modulo_u32(256);
+	s.mtu        = 1500;
+	s.tsize      = tsize;
+
+	off = nla_put(buf, off, sizeof(buf), TCA_STAB_BASE, &s, sizeof(s));
+	if (!off) {
+		/* No room for BASE; abandon the stab nest and send plain */
+		off = stab_off;
+		goto send;
+	}
+
+	/* TCA_STAB_DATA: write header then fill tsize u16 entries directly.
+	 * nla_put() must not be called with data=NULL when len>0 (UB); write
+	 * header manually and fill the payload inline. */
+	if (off + NLA_ALIGN(NLA_HDRLEN + data_len) <= sizeof(buf)) {
+		struct nlattr *data_hdr = (struct nlattr *)(buf + off);
+
+		data_hdr->nla_type = TCA_STAB_DATA;
+		data_hdr->nla_len  = (unsigned short)(NLA_HDRLEN + data_len);
+		tab = (__u16 *)(buf + off + NLA_HDRLEN);
+		for (i = 0; i < tsize; i++)
+			tab[i] = (__u16)rnd_modulo_u32(65536);
+		off += NLA_ALIGN(NLA_HDRLEN + data_len);
+	}
+
+	nla_nest_end(buf, stab_off, off);
+send:
+	tcmsg_finalize(buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
+#else
+	/* pkt_sched.h unavailable: fall back to plain build_newqdisc */
+	return build_newqdisc(ctx, ifindex, handle, parent, kind, extra_flags);
+#endif
+}
+
+/*
  * RTM_NEWTCLASS under (ifindex, parent).  TCA_KIND inherits the
  * qdisc kind (htb, hfsc, etc.) — the kernel rejects with EINVAL if
  * the parent qdisc isn't classful, which the caller has already
@@ -307,6 +418,43 @@ int build_newtclass(struct nl_ctx *ctx, int ifindex, __u32 handle,
 		return -EIO;
 	nla_nest_end(buf, opts_off, off);
 
+	tcmsg_finalize(buf, off);
+	return nl_send_recv_retry(ctx, buf, off);
+}
+
+/*
+ * RTM_NEWTCLASS with a drawn quantum in TCA_OPTIONS.  For DRR:
+ * TCA_DRR_QUANTUM (u32) drawn from [256, 4096] bytes drives the
+ * deficit-accounting loop in drr_dequeue() with non-trivial deficit
+ * logic rather than always deferring to the driver MTU default.  The
+ * quantum argument is caller-supplied so the driver loop can draw a
+ * random value with appropriate bounds once and pass it for both classes.
+ */
+int build_newtclass_with_quantum(struct nl_ctx *ctx, int ifindex,
+				 __u32 handle, __u32 parent,
+				 const char *kind, __u32 quantum)
+{
+	unsigned char buf[RTNL_BUF_BYTES];
+	size_t off, opts_off;
+
+	memset(buf, 0, sizeof(buf));
+	off = tcmsg_hdr(ctx, buf, RTM_NEWTCLASS, NLM_F_CREATE | NLM_F_EXCL,
+			ifindex, handle, parent, 0);
+
+	off = nla_put_str(buf, off, sizeof(buf), TCA_KIND, kind);
+	if (!off)
+		return -EIO;
+
+	opts_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), TCA_OPTIONS);
+	if (!off)
+		return -EIO;
+
+	off = nla_put_u32(buf, off, sizeof(buf), TCA_DRR_QUANTUM, quantum);
+	if (!off)
+		return -EIO;
+
+	nla_nest_end(buf, opts_off, off);
 	tcmsg_finalize(buf, off);
 	return nl_send_recv_retry(ctx, buf, off);
 }

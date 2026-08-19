@@ -96,6 +96,17 @@
 #define TCA_QFQ_LMAX		2
 #endif
 
+/* sch_drr per-class TCA_OPTIONS attribute ID (kernel UAPI; stable). */
+#ifndef TCA_DRR_QUANTUM
+#define TCA_DRR_QUANTUM		1
+#endif
+
+/* TCA_STAB sub-namespace attribute IDs (kernel UAPI; stable). */
+#ifndef TCA_STAB_BASE
+#define TCA_STAB_BASE		1
+#define TCA_STAB_DATA		2
+#endif
+
 /* RTM_* qdisc / class / filter message types (kernel UAPI; stable). */
 #ifndef RTM_NEWQDISC
 #define RTM_NEWQDISC		36
@@ -151,6 +162,28 @@ int build_qfq_class(struct nl_ctx *ctx, int ifindex, __u32 handle,
 		    __u16 extra_flags);
 size_t encode_red_opts(unsigned char *buf, size_t cap);
 size_t encode_tbf_opts(unsigned char *buf, size_t cap);
+
+/*
+ * build_newqdisc_stab - RTM_NEWQDISC with a TCA_STAB nest appended.
+ * Mirrors build_newqdisc but emits TCA_STAB_BASE (struct tc_sizespec
+ * with bounded overhead field) and TCA_STAB_DATA (tsize u16 entries)
+ * so qdisc_get_stab() can install a valid size table.
+ *
+ * Safety: overhead drawn from [0, 4095] by default to avoid the
+ * multi-second spinlock stall described in qdisc-churn-builders.c.
+ */
+int build_newqdisc_stab(struct nl_ctx *ctx, int ifindex, __u32 handle,
+			__u32 parent, const char *kind, __u16 extra_flags);
+
+/*
+ * build_newtclass_with_quantum - RTM_NEWTCLASS with a drawn quantum
+ * inside TCA_OPTIONS.  For DRR: TCA_DRR_QUANTUM u32 in [256, 4096]
+ * bytes exercises the deficit-accounting path instead of always
+ * relying on the driver MTU default.
+ */
+int build_newtclass_with_quantum(struct nl_ctx *ctx, int ifindex,
+				 __u32 handle, __u32 parent,
+				 const char *kind, __u32 quantum);
 
 /*
  * u32 filter builders for the SKIP_SW refcount-leak oracle arm.

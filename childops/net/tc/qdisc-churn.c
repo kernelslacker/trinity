@@ -116,6 +116,11 @@ static const struct qdisc_kind qdisc_kinds[] = {
 	{ "fq_pie",      false },
 	{ "fq_codel",    false },
 	{ "pfifo_fast",  false },
+	/* drr: CONFIG_NET_SCH_DRR; modprobe latch in tc_qdisc_add_qdisc()
+	 * handles module load.  Classful: each class carries a deficit
+	 * counter; build_newtclass_with_quantum() draws a small quantum
+	 * so drr_dequeue() exercises non-trivial deficit accounting. */
+	{ "drr",         true  },
 };
 #define NR_QDISC_KINDS	ARRAY_SIZE(qdisc_kinds)
 
@@ -1078,9 +1083,22 @@ static int tc_qdisc_add_qdisc(struct tc_qdisc_iter_ctx *it)
 	it->class2 = it->handle | 2U;
 
 	modprobe_qdisc(it->qidx);
-	rc = build_newqdisc(&it->nl, it->dummy_idx, it->handle, TC_H_ROOT,
-			    qdisc_kinds[it->qidx].name,
-			    NLM_F_CREATE | NLM_F_EXCL);
+	/*
+	 * Attach a TCA_STAB nest one iteration in two.  build_newqdisc_stab()
+	 * emits TCA_STAB_BASE (struct tc_sizespec, bounded overhead) and
+	 * TCA_STAB_DATA (tsize u16 entries) so qdisc_get_stab() installs a
+	 * valid size table and qdisc_calculate_pkt_len() takes the stab path.
+	 */
+	if (ONE_IN(2))
+		rc = build_newqdisc_stab(&it->nl, it->dummy_idx, it->handle,
+					 TC_H_ROOT,
+					 qdisc_kinds[it->qidx].name,
+					 NLM_F_CREATE | NLM_F_EXCL);
+	else
+		rc = build_newqdisc(&it->nl, it->dummy_idx, it->handle,
+				    TC_H_ROOT,
+				    qdisc_kinds[it->qidx].name,
+				    NLM_F_CREATE | NLM_F_EXCL);
 	if (rc != 0) {
 		if (is_unsupported_err(rc))
 			ns_unsupported_qdisc_kind[it->qidx] = true;
@@ -1104,14 +1122,41 @@ static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
 	int rc;
 
 	if (qdisc_kinds[it->qidx].classful) {
-		if (build_newtclass(&it->nl, it->dummy_idx, it->class1, TC_H_ROOT,
-				    qdisc_kinds[it->qidx].name) == 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tclass_create_ok,
-					   1, __ATOMIC_RELAXED);
-		if (build_newtclass(&it->nl, it->dummy_idx, it->class2, TC_H_ROOT,
-				    qdisc_kinds[it->qidx].name) == 0)
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn.tclass_create_ok,
-					   1, __ATOMIC_RELAXED);
+		const char *kname = qdisc_kinds[it->qidx].name;
+
+		if (strcmp(kname, "drr") == 0) {
+			/*
+			 * DRR: draw a small quantum for both classes so
+			 * drr_dequeue() exercises non-trivial deficit accounting.
+			 * Range [256, 4096] bytes; same value for both classes
+			 * to keep the round-robin behaviour symmetric.
+			 */
+			__u32 q = 256 + rnd_modulo_u32(3841);
+
+			if (build_newtclass_with_quantum(&it->nl, it->dummy_idx,
+							 it->class1, TC_H_ROOT,
+							 kname, q) == 0)
+				__atomic_add_fetch(
+					&shm->stats.tc_qdisc_churn.tclass_create_ok,
+					1, __ATOMIC_RELAXED);
+			if (build_newtclass_with_quantum(&it->nl, it->dummy_idx,
+							 it->class2, TC_H_ROOT,
+							 kname, q) == 0)
+				__atomic_add_fetch(
+					&shm->stats.tc_qdisc_churn.tclass_create_ok,
+					1, __ATOMIC_RELAXED);
+		} else {
+			if (build_newtclass(&it->nl, it->dummy_idx, it->class1,
+					    TC_H_ROOT, kname) == 0)
+				__atomic_add_fetch(
+					&shm->stats.tc_qdisc_churn.tclass_create_ok,
+					1, __ATOMIC_RELAXED);
+			if (build_newtclass(&it->nl, it->dummy_idx, it->class2,
+					    TC_H_ROOT, kname) == 0)
+				__atomic_add_fetch(
+					&shm->stats.tc_qdisc_churn.tclass_create_ok,
+					1, __ATOMIC_RELAXED);
+		}
 	}
 
 	cidx = pick_cls_idx();

@@ -36,6 +36,89 @@ size_t gen_rta_action_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
 /*
+ * UAPI fallbacks for the stab sub-namespace.  pkt_sched.h on stripped
+ * sysroots may omit the TCA_STAB_* enum; values are stable UAPI.
+ */
+#ifndef TCA_STAB_BASE
+#define TCA_STAB_BASE	1
+#define TCA_STAB_DATA	2
+#endif
+
+/*
+ * Build a correct TCA_STAB nested payload: TCA_STAB_BASE carrying a
+ * struct tc_sizespec and (when tsize > 0) TCA_STAB_DATA carrying
+ * tsize u16 size-table entries.  The stab sub-namespace is distinct
+ * from the outer TCA_* namespace; using tca_attrs here would draw
+ * TCA_KIND/TCA_OPTIONS/... slots, which fail stab_policy validation
+ * in qdisc_get_stab() (net/sched/sch_api.c) with -EINVAL.
+ *
+ * Safety constraint on overhead: a near-INT_MAX overhead combined
+ * with a small DRR/ETS class quantum forces qdisc_calculate_pkt_len()
+ * to return a huge accounting length; drr_dequeue() then spins in the
+ * deficit loop under the qdisc spinlock with BH disabled for seconds.
+ * STORM_BUDGET_NS cannot cap that stall because the CPU never returns
+ * to the childop.  The default draw is bounded to [0, 4095] bytes;
+ * this still exercises every line of qdisc_get_stab(), the stab dedup
+ * walk, qdisc_put_stab(), and the stab branch of
+ * qdisc_calculate_pkt_len().  The near-INT_MAX arm lives behind
+ * #define STAB_OVERHEAD_UNBOUNDED and must NOT be enabled on shared
+ * hardware without the tree maintainer's explicit approval.
+ */
+static size_t build_stab_nest(unsigned char *p, size_t avail)
+{
+	struct tc_sizespec s;
+	unsigned int tsize;
+	size_t data_len;
+	size_t off = 0;
+	__u16 *tab;
+	unsigned int i;
+
+	/* tsize in [1, 64]; kernel validates nla_len(DATA)/sizeof(u16)==tsize */
+	tsize    = 1 + rnd_modulo_u32(64);
+	data_len = (size_t)tsize * sizeof(__u16);
+
+	if (avail < NLA_ALIGN(NLA_HDRLEN + sizeof(s)) +
+		    NLA_ALIGN(NLA_HDRLEN + data_len))
+		return 0;
+
+	memset(&s, 0, sizeof(s));
+	/* cell_log/size_log must be <= STAB_SIZE_LOG_MAX (30, kernel-internal) */
+	s.cell_log   = (__u8)rnd_modulo_u32(31);
+	s.size_log   = (__u8)rnd_modulo_u32(31);
+	s.cell_align = -1;		/* kernel passes through unchanged */
+	/*
+	 * overhead bounded to [0, 4095]: covers every parse path and the
+	 * dedup walk without the spinlock-stall risk described above.
+	 * STAB_OVERHEAD_UNBOUNDED opt-in: near-INT_MAX; requires approval.
+	 */
+#ifndef STAB_OVERHEAD_UNBOUNDED
+	s.overhead   = (int)rnd_modulo_u32(4096);
+#else
+	s.overhead   = (int)rand32();	/* opt-in only; see safety note above */
+#endif
+	s.linklayer  = 1 + rnd_modulo_u32(3);	/* 1=ethernet 2=atm 3=adsl */
+	s.mpu        = (__u32)rnd_modulo_u32(256);
+	s.mtu        = 1500;
+	s.tsize      = tsize;
+
+	/* TCA_STAB_BASE: exact sizeof(struct tc_sizespec) bytes required */
+	if (!start_nlattr(p, off, avail, TCA_STAB_BASE, sizeof(s)))
+		return 0;
+	memcpy(p + off + NLA_HDRLEN, &s, sizeof(s));
+	off += NLA_ALIGN(NLA_HDRLEN + sizeof(s));
+
+	/* TCA_STAB_DATA: tsize u16 entries; length must match s.tsize */
+	if (!start_nlattr(p, off, avail, TCA_STAB_DATA, data_len))
+		return off;
+	tab = (__u16 *)(p + off + NLA_HDRLEN);
+	for (i = 0; i < tsize; i++)
+		tab[i] = (__u16)rnd_modulo_u32(65536);
+	off += NLA_ALIGN(NLA_HDRLEN + data_len);
+
+	return off;
+}
+
+/*
  * Generate a structured payload for tc rtnetlink attributes (TCA_*).
  * Covers RTM_*QDISC / RTM_*TCLASS / RTM_*TFILTER message groups (5/6/7).
  * TCA_KIND is the single highest-leverage attr: it selects the
@@ -140,16 +223,32 @@ size_t gen_rta_tc_payload(unsigned char *p, size_t avail,
 		}
 		return 0;
 
-	case TCA_OPTIONS:
 	case TCA_STAB:
+		/* Build with the correct stab namespace (TCA_STAB_BASE /
+		 * TCA_STAB_DATA under stab_policy in sch_api.c:491).
+		 * The outer tca_attrs table (TCA_KIND, TCA_OPTIONS, ...) is
+		 * the wrong namespace and always yields -EINVAL inside
+		 * qdisc_get_stab() -- build_stab_nest() fixes that.
+		 *
+		 * TODO: TCA_OPTIONS and TCA_STATS2 in the sibling case below
+		 * are also handled via tca_attrs.  Whether those containers
+		 * are equally mis-targeted (drawing outer-namespace slots into
+		 * per-kind / per-stat policy walkers) has not been
+		 * established; treat it as an open question for a separate
+		 * audit rather than assuming this fix answers it. */
+		if (avail >= NLA_ALIGN(NLA_HDRLEN + sizeof(struct tc_sizespec)) +
+			     NLA_ALIGN(NLA_HDRLEN + sizeof(__u16)))
+			return build_stab_nest(p, avail);
+		return 0;
+
+	case TCA_OPTIONS:
 	case TCA_STATS2:
 		/* Nested containers.  TCA_OPTIONS is the per-kind options
-		 * blob (cls_u32_policy, fq_codel_policy, …); TCA_STAB is
-		 * the size table; TCA_STATS2 is the modern stats nest.
-		 * The sub-attr namespaces differ per container, so emit a
-		 * generic small nest with valid nlattr framing — that gets
-		 * past nla_parse_nested into the per-kind / per-stat
-		 * policy walker. */
+		 * blob (cls_u32_policy, fq_codel_policy, …); TCA_STATS2 is
+		 * the modern stats nest.  Their sub-attr namespaces differ
+		 * per container; the tca_attrs table (outer TCA_* namespace)
+		 * used here may be similarly mis-targeted -- that is an open
+		 * question not addressed in this commit (see TODO above). */
 		if (avail >= NLA_HDRLEN + 8) {
 			return build_nested_attrs(p, avail, tca_attrs,
 						  tca_attrs_n, 0);
