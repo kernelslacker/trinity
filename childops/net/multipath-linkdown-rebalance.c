@@ -568,9 +568,6 @@ static int multipath_linkdown_rebalance_in_ns(void *arg)
 	__atomic_add_fetch(
 		&shm->stats.multipath_linkdown_rebalance.legs_ok,
 		1, __ATOMIC_RELAXED);
-	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
-				   1, __ATOMIC_RELAXED);
 
 	/*
 	 * Prime the sysctls to 1 so the first-pass weight sum can be
@@ -597,6 +594,9 @@ static int multipath_linkdown_rebalance_in_ns(void *arg)
 			1, __ATOMIC_RELAXED);
 		goto out;
 	}
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop.setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	/* Install the multipath route -- num_path == 2 arms the
 	 * rebalance.  A kernel without CONFIG_IP_ROUTE_MULTIPATH /
