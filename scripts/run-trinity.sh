@@ -50,6 +50,7 @@ fi
 # Absent state file → unknown (no privileged setup was done this boot).
 _fi_state_file="/run/trinity/fault-injectors.state"
 _fi_injectors_armed=0
+_fi_skb_realloc_armed=0
 _fi_lockdep_stats_readable=0
 _fi_make_it_fail_pid=""
 if [[ -r "${_fi_state_file}" ]]; then
@@ -59,6 +60,7 @@ if [[ -r "${_fi_state_file}" ]]; then
         [[ -z "${_k}" ]]      && continue
         case "${_k}" in
             injectors_armed)         _fi_injectors_armed="${_v}"         ;;
+            skb_realloc_armed)       _fi_skb_realloc_armed="${_v}"       ;;
             lockdep_stats_readable)  _fi_lockdep_stats_readable="${_v}"  ;;
             make_it_fail_pid)        _fi_make_it_fail_pid="${_v}"        ;;
         esac
@@ -289,7 +291,7 @@ cleanup() {
     # every process on the host after trinity exits.  Remind the operator to
     # run the teardown script; the runner itself is unprivileged and cannot
     # write the debugfs attrs directly.
-    if [[ "${_fi_injectors_armed:-0}" == "1" ]]; then
+    if [[ "${_fi_skb_realloc_armed:-0}" == "1" ]]; then
         echo "WARNING: fail_skb_realloc is still armed in debugfs — it fires for every process on this host until explicitly disarmed or the host reboots." >&2
         echo "  The five task-filtered injectors (failslab, fail_page_alloc, fail_usercopy, fail_futex, fail_sunrpc) went inert when the trinity tree exited." >&2
         echo "  To disarm all injectors and restore /proc/lockdep_stats permissions, run as root:" >&2

@@ -399,6 +399,7 @@ EOF
 # injectors_armed=1 only when at least one injector has a confirmed non-zero
 # probability — directory existence (compiled in) is not sufficient.
 injectors_armed=$(( _arm_count > 0 ? 1 : 0 ))
+skb_realloc_armed=${_fail_skb_realloc_armed}
 lockdep_stats_readable=${lockdep_stats_readable}
 make_it_fail_pid=${make_it_fail_pid}
 EOF

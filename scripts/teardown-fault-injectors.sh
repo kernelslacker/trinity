@@ -184,4 +184,34 @@ if [[ -e /proc/lockdep_stats ]]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# Clear state file
+# ---------------------------------------------------------------------------
+# setup-fault-injectors.sh writes /run/trinity/fault-injectors.state with
+# injectors_armed=1 (and skb_realloc_armed=1 when that injector armed).
+# Without this reset, a stale injectors_armed=1 / skb_realloc_armed=1
+# survives until reboot and causes run-trinity.sh to warn about a still-armed
+# fail_skb_realloc on every subsequent run even after a correct teardown.
+# Use the same STATE_FILE path as setup-fault-injectors.sh.
+STATE_FILE="/run/trinity/fault-injectors.state"
+if [[ -n "${DRY_RUN}" ]]; then
+    echo "[dry-run] rewrite ${STATE_FILE} with zeros"
+else
+    _state_dir=$(dirname "${STATE_FILE}")
+    if [[ -d "${_state_dir}" ]] || mkdir -p "${_state_dir}" 2>/dev/null; then
+        cat > "${STATE_FILE}" <<EOF
+# Cleared by teardown-fault-injectors.sh at $(date -u +%Y-%m-%dT%H:%M:%SZ)
+# All injectors have been disarmed; these values reflect that.
+injectors_armed=0
+skb_realloc_armed=0
+lockdep_stats_readable=0
+make_it_fail_pid=
+EOF
+        chmod 0644 "${STATE_FILE}"
+        echo "teardown-fault-injectors: state file cleared (${STATE_FILE})"
+    else
+        echo "  WARN: could not write ${STATE_FILE} (no state dir)" >&2
+    fi
+fi
+
 echo "teardown-fault-injectors: done."
