@@ -72,6 +72,7 @@
 #include <net/if.h>
 #include <sched.h>
 #include <string.h>
+#include <poll.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
 
@@ -1143,7 +1144,17 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	srv_addr.sin_port        = 0;
 
 	direct_calls++;
-	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	/*
+	 * SOCK_NONBLOCK is mandatory here: this function runs inside a
+	 * grandchild forked by userns_run_in_ns(CLONE_NEWNET, ...).  POSIX
+	 * resets pending alarms across fork(), so the parent's alarm(1)
+	 * cap (set by child.c) does not protect this context.  The socket
+	 * itself must provide the safety bound.  The poll() before accept()
+	 * below enforces the 1-second limit matching the loopback arm's
+	 * documented invariant.  TODO: add SIGALRM inside userns_run_in_ns
+	 * so all callers are covered at the fork boundary.
+	 */
+	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 	if (listener < 0)
 		goto setup_fail;
 	{
@@ -1257,10 +1268,17 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	direct_calls++;
 	rc = connect(cli, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
 	if (rc == 0 || errno == EINPROGRESS) {
+		struct pollfd pfd = { .fd = listener, .events = POLLIN };
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_connect_ok,
 				   1, __ATOMIC_RELAXED);
 		direct_calls++;
-		srv_acc = accept(listener, NULL, NULL);
+		/* Bounded wait: listener is SOCK_NONBLOCK so we must poll
+		 * before accept(); 1000 ms matches the loopback arm's 1-second
+		 * invariant and caps the grandchild even without an alarm(). */
+		if (poll(&pfd, 1, 1000) > 0 && (pfd.revents & POLLIN)) {
+			direct_calls++;
+			srv_acc = accept(listener, NULL, NULL);
+		}
 	}
 
 	/* Reap the detach child before closing the netns. */
