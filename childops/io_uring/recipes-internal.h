@@ -152,6 +152,7 @@ bool recipe_setxattr(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_fsetxattr(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_getxattr(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_fgetxattr(struct iour_recipe_state *s, bool *unsupported);
+bool recipe_write_hashed_cancel(struct iour_recipe_state *s, bool *unsupported);
 
 /* net family -- childops/io_uring/recipes-net.c */
 bool recipe_send_recv_linked(struct iour_recipe_state *s, bool *unsupported);

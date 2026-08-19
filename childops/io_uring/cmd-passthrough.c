@@ -662,7 +662,8 @@ static bool variant_nulldev(struct iour_ring *ctx, unsigned long *direct_calls,
 	sqe.opcode          = IORING_OP_URING_CMD;
 	sqe.fd              = null_fd;
 	sqe.cmd_op          = 0;	/* any cmd_op; uring_cmd_null handles all */
-	sqe.flags           = IOSQE_BUFFER_SELECT;
+	sqe.flags           = IOSQE_BUFFER_SELECT |
+			      (rnd_modulo_u32(4) == 0 ? IOSQE_ASYNC : 0);
 	sqe.buf_group       = NULLDEV_PBUF_GROUP_ID;
 	sqe.uring_cmd_flags = cmd_flags;
 	sqe.user_data       = 0xc0d2;

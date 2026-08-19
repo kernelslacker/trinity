@@ -525,6 +525,7 @@ static const struct iour_recipe catalog[] = {
 	{ "fsetxattr",              recipe_fsetxattr              },
 	{ "getxattr",               recipe_getxattr               },
 	{ "fgetxattr",              recipe_fgetxattr              },
+	{ "write_hashed_cancel",    recipe_write_hashed_cancel    },
 	{ "waitid",                 recipe_waitid                 },
 	{ "eventfd_recursive",      recipe_eventfd_recursive      },
 	/*

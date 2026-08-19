@@ -333,7 +333,8 @@ bool recipe_provide_buffers(struct iour_recipe_state *s, bool *unsupported __unu
 	sqe.opcode    = IORING_OP_RECV;
 	sqe.fd        = s->sock[1];
 	sqe.len       = PBUF_BUF_SIZE;
-	sqe.flags     = IOSQE_BUFFER_SELECT;
+	sqe.flags     = IOSQE_BUFFER_SELECT |
+			(rnd_modulo_u32(4) == 0 ? IOSQE_ASYNC : 0);
 	sqe.buf_group = PBUF_GROUP_ID;
 	sqe.user_data = 101;
 

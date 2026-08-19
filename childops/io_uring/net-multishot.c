@@ -507,7 +507,8 @@ static int iouring_multishot_iter_arm_recv(struct iouring_multishot_iter_ctx *it
 	sqe.addr      = 0;
 	sqe.len       = 0;
 	sqe.ioprio    = IORING_RECV_MULTISHOT;
-	sqe.flags     = IOSQE_BUFFER_SELECT;
+	sqe.flags     = IOSQE_BUFFER_SELECT |
+			(rnd_modulo_u32(4) == 0 ? IOSQE_ASYNC : 0);
 	sqe.buf_group = PBUF_GROUP_ID;
 	sqe.user_data = MULTISHOT_USER_DATA;
 
@@ -617,7 +618,8 @@ static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it,
 	sqe.addr      = 0;
 	sqe.len       = 0;
 	sqe.ioprio    = IORING_RECV_MULTISHOT;
-	sqe.flags     = IOSQE_BUFFER_SELECT;
+	sqe.flags     = IOSQE_BUFFER_SELECT |
+			(rnd_modulo_u32(4) == 0 ? IOSQE_ASYNC : 0);
 	sqe.buf_group = PBUF_GROUP_ID;
 	sqe.user_data = MULTISHOT_USER_DATA;
 

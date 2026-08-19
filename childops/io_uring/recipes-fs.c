@@ -483,7 +483,8 @@ bool recipe_read_multishot(struct iour_recipe_state *s, bool *unsupported)
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_READ_MULTISHOT;
 	sqe.fd        = s->pipefd[0];
-	sqe.flags     = IOSQE_BUFFER_SELECT;
+	sqe.flags     = IOSQE_BUFFER_SELECT |
+			(rnd_modulo_u32(4) == 0 ? IOSQE_ASYNC : 0);
 	sqe.buf_group = READMS_GROUP;
 	sqe.user_data = 331;
 	if (!iour_submit_sqes(ctx, &sqe, 1))
@@ -1111,6 +1112,88 @@ bool recipe_getxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
 		return false;
 	iour_drain_cqes(ctx);
 	return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Recipe: two hashed WRITEs to the same memfd + interleaved NOP +
+ * ASYNC_CANCEL targeting the tail — exercises the io-wq
+ * hash_tail[bucket] stale-pointer path fixed in upstream: d6a2d7b04b5a.
+ *
+ * Both WRITEs carry IOSQE_ASYNC so they are punted directly to io-wq
+ * and hashed by inode (single fd → single inode → bucket 0).  A NOP
+ * is interleaved between them as the "non-hashed predecessor" whose
+ * removal must not leave hash_tail[] pointing at the stale slot.
+ * The ASYNC_CANCEL races against the hashed tail before it completes.
+ * ------------------------------------------------------------------ */
+bool recipe_write_hashed_cancel(struct iour_recipe_state *s, bool *unsupported __unused__)
+{
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type :
+			NR_CHILD_OP_TYPES;
+		const bool valid_op = ((int) op >= 0 &&
+				       op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			childop_direct_syscalls_add(op, 1);
+	}
+#define WHC_UD_WRITE1	590
+#define WHC_UD_NOP	591
+#define WHC_UD_WRITE2	592
+#define WHC_UD_CANCEL	593
+	struct iour_ring *ctx = s->ctx;
+	struct io_uring_sqe sqes[4];
+	static const char payload[64];
+	int r;
+
+	s->memfd = iour_make_memfd();
+	if (s->memfd < 0)
+		return false;
+
+	/* SQE 0: WRITE #1 — IOSQE_ASYNC forces io-wq, hashed to bucket 0. */
+	sqe_clear(&sqes[0]);
+	sqes[0].opcode    = IORING_OP_WRITE;
+	sqes[0].fd        = s->memfd;
+	sqes[0].addr      = (__u64)(uintptr_t)payload;
+	sqes[0].len       = sizeof(payload);
+	sqes[0].off       = 0;
+	sqes[0].flags     = IOSQE_ASYNC;
+	sqes[0].user_data = WHC_UD_WRITE1;
+
+	/* SQE 1: NOP — unrelated op interleaved (non-hashed predecessor). */
+	sqe_clear(&sqes[1]);
+	sqes[1].opcode    = IORING_OP_NOP;
+	sqes[1].user_data = WHC_UD_NOP;
+
+	/* SQE 2: WRITE #2 — same fd → same inode → same bucket 0 hash. */
+	sqe_clear(&sqes[2]);
+	sqes[2].opcode    = IORING_OP_WRITE;
+	sqes[2].fd        = s->memfd;
+	sqes[2].addr      = (__u64)(uintptr_t)payload;
+	sqes[2].len       = sizeof(payload);
+	sqes[2].off       = 0;
+	sqes[2].flags     = IOSQE_ASYNC;
+	sqes[2].user_data = WHC_UD_WRITE2;
+
+	/* SQE 3: ASYNC_CANCEL targeting WRITE #2's user_data — races
+	 * io_wq_remove_pending() against the hashed tail slot. */
+	sqe_clear(&sqes[3]);
+	sqes[3].opcode    = IORING_OP_ASYNC_CANCEL;
+	sqes[3].addr      = WHC_UD_WRITE2;
+	sqes[3].user_data = WHC_UD_CANCEL;
+
+	if (!iour_submit_sqes(ctx, sqes, 4))
+		return false;
+	r = iour_enter(ctx, 4, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+
+#undef WHC_UD_WRITE1
+#undef WHC_UD_NOP
+#undef WHC_UD_WRITE2
+#undef WHC_UD_CANCEL
 }
 
 bool recipe_fgetxattr(struct iour_recipe_state *s, bool *unsupported __unused__)
