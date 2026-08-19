@@ -230,19 +230,43 @@ if [[ "${_perms_ok}" != "2" ]]; then
     fi
 
     # chmod: relax the write bit for the group (or world if no group given).
-    # We use find to apply the mode only to regular files; directories get
-    # +x as well so the runner can traverse the tree.
+    # Regular files receive FILE_MODE; directories receive DIR_MODE, which
+    # ORs the execute/search bit into every non-zero rwx triad of FILE_MODE
+    # so the runner can traverse the tree.
     #
-    # We do NOT use chmod -R directly on the mount point because that would
-    # also affect special files (which tracefs does not create, but defensive
-    # coding is warranted when touching a kernel filesystem via CAP_DAC_OVERRIDE).
-    dry_run_or_exec find "${MOUNT_POINT}" \
-        \( -type f -o -type d \) \
-        -exec chmod "${FILE_MODE}" {} +
+    # Two separate find(1) invocations are used — one for -type f and one for
+    # -type d — rather than chmod -R so that symlinks and device nodes are left
+    # untouched (tracefs does not create such entries, but defensive coding is
+    # warranted when touching a kernel filesystem via CAP_DAC_OVERRIDE).
+
+    # Derive DIR_MODE from FILE_MODE: OR the execute/search bit into every
+    # non-zero rwx triad.  Example: 0664 (rw-rw-r--) -> 0775 (rwxrwxr-x).
+    _fm_val=$(( FILE_MODE ))
+    _o=$(( (_fm_val >> 6) & 7 )); [[ $_o -ne 0 ]] && _o=$(( _o | 1 ))
+    _g=$(( (_fm_val >> 3) & 7 )); [[ $_g -ne 0 ]] && _g=$(( _g | 1 ))
+    _w=$(( _fm_val & 7 ));        [[ $_w -ne 0 ]] && _w=$(( _w | 1 ))
+    DIR_MODE=$(printf "0%o" $(( (_o << 6) | (_g << 3) | _w )))
+
+    dry_run_or_exec find "${MOUNT_POINT}" -type f -exec chmod "${FILE_MODE}" {} +
+    dry_run_or_exec find "${MOUNT_POINT}" -type d -exec chmod "${DIR_MODE}"  {} +
 
     if [[ -z "${DRY_RUN}" ]]; then
-        info "chmod ${FILE_MODE} on files/dirs under ${MOUNT_POINT}"
+        info "chmod ${FILE_MODE} (files) / ${DIR_MODE} (dirs) under ${MOUNT_POINT}"
     fi
+fi
+
+# ---------------------------------------------------------------------------
+# Step 3: Verify unprivileged write access
+# ---------------------------------------------------------------------------
+#
+# Confirm that the target user can actually write tracing_on after the chmod
+# above.  This catches gaps such as a read-only bind-mount or an LSM denial
+# that would cause tracefs_fuzzer_init() to set tracefs_runtime_dead anyway.
+if [[ -z "${DRY_RUN}" ]] && [[ -n "${TARGET_USER}" ]]; then
+    if ! runuser -u "${TARGET_USER}" -- test -w "${MOUNT_POINT}/tracing_on" 2>/dev/null; then
+        die "post-condition failed: ${TARGET_USER} cannot write ${MOUNT_POINT}/tracing_on"
+    fi
+    info "verified: ${TARGET_USER} can write ${MOUNT_POINT}/tracing_on"
 fi
 
 # ---------------------------------------------------------------------------
