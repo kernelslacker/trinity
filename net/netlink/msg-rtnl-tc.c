@@ -52,15 +52,17 @@ size_t gen_rta_action_payload(unsigned char *p, size_t avail,
  * TCA_KIND/TCA_OPTIONS/... slots, which fail stab_policy validation
  * in qdisc_get_stab() (net/sched/sch_api.c) with -EINVAL.
  *
- * Safety constraint on overhead: a near-INT_MAX overhead combined
- * with a small DRR/ETS class quantum forces qdisc_calculate_pkt_len()
- * to return a huge accounting length; drr_dequeue() then spins in the
- * deficit loop under the qdisc spinlock with BH disabled for seconds.
- * STORM_BUDGET_NS cannot cap that stall because the CPU never returns
- * to the childop.  The default draw is bounded to [0, 4095] bytes;
- * this still exercises every line of qdisc_get_stab(), the stab dedup
- * walk, qdisc_put_stab(), and the stab branch of
- * qdisc_calculate_pkt_len().  The near-INT_MAX arm lives behind
+ * Safety constraint on magnitude inputs: qdisc_calculate_pkt_len()
+ * computes pkt_len ~= overhead + (tab[slot] << size_log).  A large
+ * product forces drr_dequeue() to spin in the deficit loop under the
+ * qdisc spinlock with BH disabled for seconds; STORM_BUDGET_NS cannot
+ * cap that stall because the CPU never returns to the childop.
+ * The default draws bound overhead to [0, 4095], size_log to [0, 12],
+ * and tab[i] to [0, 4095] so the product tab[i]<<size_log is at most
+ * 4095<<12 (~16M) — well clear of stall territory while still
+ * exercising every line of qdisc_get_stab(), the stab dedup walk,
+ * qdisc_put_stab(), and the stab branch of qdisc_calculate_pkt_len().
+ * Full-range draws for all three inputs live behind
  * #define STAB_OVERHEAD_UNBOUNDED and must NOT be enabled on shared
  * hardware without the tree maintainer's explicit approval.
  */
@@ -84,16 +86,16 @@ static size_t build_stab_nest(unsigned char *p, size_t avail)
 	memset(&s, 0, sizeof(s));
 	/* cell_log/size_log must be <= STAB_SIZE_LOG_MAX (30, kernel-internal) */
 	s.cell_log   = (__u8)rnd_modulo_u32(31);
-	s.size_log   = (__u8)rnd_modulo_u32(31);
 	s.cell_align = -1;		/* kernel passes through unchanged */
 	/*
-	 * overhead bounded to [0, 4095]: covers every parse path and the
-	 * dedup walk without the spinlock-stall risk described above.
-	 * STAB_OVERHEAD_UNBOUNDED opt-in: near-INT_MAX; requires approval.
+	 * Magnitude inputs bounded by default; see safety note above.
+	 * STAB_OVERHEAD_UNBOUNDED opts in to full-range draws for all three.
 	 */
 #ifndef STAB_OVERHEAD_UNBOUNDED
+	s.size_log   = (__u8)rnd_modulo_u32(13);	/* [0,12]: product safe */
 	s.overhead   = (int)rnd_modulo_u32(4096);
 #else
+	s.size_log   = (__u8)rnd_modulo_u32(31);	/* opt-in only */
 	s.overhead   = (int)rand32();	/* opt-in only; see safety note above */
 #endif
 	s.linklayer  = 1 + rnd_modulo_u32(3);	/* 1=ethernet 2=atm 3=adsl */
@@ -112,7 +114,11 @@ static size_t build_stab_nest(unsigned char *p, size_t avail)
 		return off;
 	tab = (__u16 *)(p + off + NLA_HDRLEN);
 	for (i = 0; i < tsize; i++)
-		tab[i] = (__u16)rnd_modulo_u32(65536);
+#ifndef STAB_OVERHEAD_UNBOUNDED
+		tab[i] = (__u16)rnd_modulo_u32(4096);	/* [0,4095]: product safe */
+#else
+		tab[i] = (__u16)rnd_modulo_u32(65536);	/* opt-in only */
+#endif
 	off += NLA_ALIGN(NLA_HDRLEN + data_len);
 
 	return off;
