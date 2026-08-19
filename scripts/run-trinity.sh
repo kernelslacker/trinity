@@ -114,6 +114,41 @@ else
     fi
 fi
 
+# Tracefs state: read the world-readable file written by
+# scripts/setup-privileged-preconditions.sh (run once as root before this
+# script).  The tracefs control files are 0640 root:root by default so the
+# runner cannot probe them directly; the setup script is the authoritative
+# source of truth.  Absent state file → unknown (setup has not run this boot).
+_tf_state_file="/run/trinity/tracefs.state"
+_tf_tracefs_ready=0
+if [[ -r "${_tf_state_file}" ]]; then
+    while IFS='=' read -r _k _v; do
+        [[ "${_k}" == '#'* ]] && continue
+        [[ -z "${_k}" ]]      && continue
+        case "${_k}" in
+            tracefs_ready)  _tf_tracefs_ready="${_v}"  ;;
+        esac
+    done < "${_tf_state_file}"
+fi
+
+if [[ "${_tf_tracefs_ready}" != "1" ]]; then
+    # Absent state file or tracefs_ready != 1: tracefs-fuzzer will probe
+    # access(W_OK) on tracing_on at runtime and set tracefs_runtime_dead
+    # (childops/fs/tracefs-fuzzer.c:1579-1594) if it gets EACCES, silently
+    # skipping all tracefs operations.  Warn so the operator knows coverage
+    # may be degraded without failing the run.
+    if [[ ! -r "${_tf_state_file}" ]]; then
+        echo "WARNING: ${_tf_state_file} absent — setup-privileged-preconditions.sh has not run this boot." >&2
+        echo "  tracefs-fuzzer may get EACCES on tracing_on (TRACE_MODE_WRITE 0640 root:root)" >&2
+        echo "  and set tracefs_runtime_dead, silently skipping all tracefs coverage." >&2
+        echo "  Fix: sudo scripts/setup-privileged-preconditions.sh [--user \$USER] then re-run." >&2
+    else
+        echo "WARNING: ${_tf_state_file} present but tracefs_ready != 1 (got '${_tf_tracefs_ready}')." >&2
+        echo "  Tracefs coverage may be disabled for this run (see ${_tf_state_file})." >&2
+        echo "  Fix: sudo scripts/setup-privileged-preconditions.sh [--user \$USER] then re-run." >&2
+    fi
+fi
+
 # lockdep self-disables on the FIRST splat — debug_locks_off() sets
 # debug_locks=0 and lockdep never reports again until reboot — so "no
 # deadlock found" and "lockdep died hours ago" are the same output.
