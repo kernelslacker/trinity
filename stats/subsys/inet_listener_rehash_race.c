@@ -20,10 +20,6 @@ static const struct stat_field inet_listener_rehash_race_fields[] = {
 	STAT_FIELD_SUB(inet_listener_rehash_race, addrform_child_accepted),
 	STAT_FIELD_SUB(inet_listener_rehash_race, addrform_setup_failed),
 	STAT_FIELD_SUB(inet_listener_rehash_race, addrform_grace_forced),
-	STAT_FIELD_SUB(inet_listener_rehash_race, addrform_listener_returned_zero),
-	STAT_FIELD_SUB(inet_listener_rehash_race, reqsk_setup_failed),
-	STAT_FIELD_SUB(inet_listener_rehash_race, reqsk_syn_sent),
-	STAT_FIELD_SUB(inet_listener_rehash_race, reqsk_accepted),
 };
 
 const struct stat_category inet_listener_rehash_race_category =
