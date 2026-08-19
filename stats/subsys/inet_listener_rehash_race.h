@@ -22,6 +22,11 @@ struct inet_listener_rehash_race_stats {
 	unsigned long addrform_child_accepted;	/* accept() on addrform'd listener ok */
 	unsigned long addrform_setup_failed;	/* goto out before step 3 (setup failure) */
 	unsigned long addrform_grace_forced;	/* membarrier(GLOBAL)==0 between listener and child close */
+	/* IPV6_ADDRFORM concurrent-reqsk arm */
+	unsigned long addrform_listener_returned_zero; /* setsockopt(ADDRFORM)==0 on LISTEN socket */
+	unsigned long reqsk_setup_failed;	/* bind/listen for reqsk arm failed */
+	unsigned long reqsk_syn_sent;		/* client connect() successes to reqsk listener */
+	unsigned long reqsk_accepted;		/* accept4() successes in reqsk acceptor worker */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_INET_LISTENER_REHASH_RACE_H */

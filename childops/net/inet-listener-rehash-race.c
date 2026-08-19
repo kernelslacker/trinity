@@ -99,6 +99,12 @@
  * connects to in step 2.  Sits outside the [PORT_BASE..PORT_BASE+POOL)
  * range so it never conflicts with the race workers. */
 #define IRR_ADDRFORM_HELPER_PORT	(IRR_PORT_BASE + IRR_PORT_POOL + 3U)
+/* Listener port for the concurrent-reqsk ADDRFORM arm.  Chosen well clear
+ * of the race-worker pool and the helper port so the two arms never share
+ * a bound port while both are active. */
+#define IRR_REQSK_LISTEN_PORT		(IRR_PORT_BASE + IRR_PORT_POOL + 16U)
+#define IRR_REQSK_BACKLOG		128
+#define IRR_REQSK_WORKER_CAP_NS		(250L * 1000L * 1000L)
 /* Latched once per process on EAFNOSUPPORT / EACCES / EPROTONOSUPPORT
  * from the bare socket() probe -- means TCP is unusable in this net
  * namespace and no amount of retry will change it. */
@@ -611,6 +617,219 @@ out:
 	return n;
 }
 
+/* Forward declaration: defined after run_addrform_arm() below. */
+static void reap_worker(pid_t pid);
+
+/*
+ * Client worker for the concurrent-reqsk arm (fork()d): hammers SYNs
+ * at the reqsk-arm listener and immediately sends a small payload so
+ * the socket has data queued before accept() can consume it.  Receiving
+ * data on the listener's reqsk queue before sk_clone() runs is the
+ * out_of_order_queue population step for 3/3 coverage.  noreturn.
+ */
+static __attribute__((noreturn)) void reqsk_client_worker(uint16_t port)
+{
+	struct sockaddr_in6 sin6;
+	struct timespec t0;
+	unsigned long sent = 0;
+	unsigned long n = 0;
+	const char payload[4] = { 0xde, 0xad, 0xbe, 0xef };
+
+	addr_v6(&sin6, port);
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+	while (!budget_elapsed_ns(&t0, IRR_REQSK_WORKER_CAP_NS)) {
+		int c = socket(AF_INET6,
+			       SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+
+		n++;
+		if (c < 0)
+			continue;
+		if (connect(c, (struct sockaddr *)&sin6, sizeof(sin6)) == 0 ||
+		    errno == EINPROGRESS) {
+			/* Payload: best-effort; the point is to leave bytes
+			 * queued on the reqsk so out_of_order_queue is
+			 * non-empty when sk_clone() runs (3/3 coverage). */
+			(void)send(c, payload, sizeof(payload), MSG_DONTWAIT);
+			n++;
+			sent++;
+		}
+		n++; /* connect attempt */
+		close(c);
+		n++;
+	}
+	__atomic_add_fetch(&shm->stats.inet_listener_rehash_race.reqsk_syn_sent,
+			   sent, __ATOMIC_RELAXED);
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		childop_direct_syscalls_add(op, n);
+	}
+	_exit(0);
+}
+
+/*
+ * Acceptor worker for the concurrent-reqsk arm (fork()d): tight loop
+ * of accept4() on the same listener the parent is hammering with
+ * ADDRFORM.  accept4() calls sk_clone_lock() on the listener -- this
+ * is the sk_clone() racing ADDRFORM side (2/3 coverage).  noreturn.
+ */
+static __attribute__((noreturn)) void reqsk_acceptor_worker(int listener)
+{
+	struct timespec t0;
+	unsigned long accepted = 0;
+	unsigned long n = 0;
+
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+	while (!budget_elapsed_ns(&t0, IRR_REQSK_WORKER_CAP_NS)) {
+		int a = accept4(listener, NULL, NULL,
+				SOCK_CLOEXEC | SOCK_NONBLOCK);
+
+		n++;
+		if (a >= 0) {
+			accepted++;
+			close(a);
+			n++;
+		}
+	}
+	__atomic_add_fetch(&shm->stats.inet_listener_rehash_race.reqsk_accepted,
+			   accepted, __ATOMIC_RELAXED);
+	{
+		struct childdata *tc = this_child();
+		const enum child_op_type op = tc ? tc->op_type : NR_CHILD_OP_TYPES;
+		childop_direct_syscalls_add(op, n);
+	}
+	_exit(0);
+}
+
+/*
+ * IPV6_ADDRFORM concurrent-reqsk arm.
+ *
+ * Drives the three races introduced when IPV6_ADDRFORM fires on a
+ * listening AF_INET6 socket that has pending request sockets:
+ *
+ *   1/3  ipv6_sockglue.c: ADDRFORM frees inet6_sk(sk) while request-
+ *        socket creation still holds a reference to it via the listener's
+ *        ipv6_pinfo pointer.  UAF read on the freed pinfo region.
+ *
+ *   2/3  sock.c / sk_clone_lock(): OOB write in sk_clone() when the
+ *        source struct sock is mid-conversion by ADDRFORM -- the clone
+ *        copies a partially-invalidated sk_prot pointer.
+ *
+ *   3/3  tcp_minisocks.c: the child socket inherits the listener's
+ *        out_of_order_queue at clone time, aliasing the same skb list
+ *        on two socks.  The client worker populates the queue by
+ *        sending payload data before accept() drains the backlog.
+ *
+ * Shape:
+ *   listener  -- AF_INET6 SOCK_STREAM, no IPV6_V6ONLY, listen(128)
+ *   p_client  -- fires SYNs + payload, fills the pending reqsk queue
+ *   p_acceptor -- tight accept4() loop, the sk_clone() side
+ *   parent    -- setsockopt(IPV6_ADDRFORM, PF_INET) hammered into the
+ *                window; addrform_listener_returned_zero counts
+ *                successes (the only liveness signal -- EINVAL/ENOPROTOOPT
+ *                are expected on converted or wrong-state sockets)
+ *
+ * KASAN automatically catches both the UAF read (1/3) and the OOB
+ * write (2/3).  No oracle instrumentation needed beyond the counter.
+ */
+static unsigned long run_addrform_listener_reqsk_arm(void)
+{
+	int listener = -1;
+	struct sockaddr_in6 sin6;
+	int zero_v6only = 0;
+	int pf_inet = PF_INET;
+	pid_t p_client = -1, p_acceptor = -1;
+	struct timespec t0;
+	unsigned long n = 0;
+
+	/* Step 1: AF_INET6 listener without IPV6_V6ONLY.  The dual-stack
+	 * flag must be clear so IPV6_ADDRFORM's ipv6_only_sock() gate does
+	 * not short-circuit before the racy frees occur. */
+	listener = socket(AF_INET6, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	n++;
+	if (listener < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.reqsk_setup_failed,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
+	(void)setsockopt(listener, IPPROTO_IPV6, IPV6_V6ONLY,
+			 &zero_v6only, sizeof(zero_v6only));
+	n++;
+	set_reuse(listener);
+	n += 2;
+
+	addr_v6(&sin6, (uint16_t)IRR_REQSK_LISTEN_PORT);
+	if (bind(listener, (struct sockaddr *)&sin6, sizeof(sin6)) < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.reqsk_setup_failed,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
+	n++;
+	/* Step 1 (cont): large backlog so the kernel accumulates as many
+	 * pending request socks as possible before ADDRFORM fires. */
+	if (listen(listener, IRR_REQSK_BACKLOG) < 0) {
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.reqsk_setup_failed,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
+	n++;
+
+	/* Step 2: fork the SYN-flooding client worker.  It fires connects
+	 * + payload sends to keep the reqsk backlog populated throughout
+	 * the ADDRFORM window.  noreturn child. */
+	p_client = fork();
+	n++;
+	if (p_client == 0)
+		reqsk_client_worker((uint16_t)IRR_REQSK_LISTEN_PORT);
+	if (p_client < 0)
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.fork_failed,
+			1, __ATOMIC_RELAXED);
+
+	/* Step 3: fork the acceptor worker.  It calls accept4() on the
+	 * same listener fd (inherited across fork()) in a tight loop --
+	 * this is the sk_clone_lock() side of race 2/3. */
+	p_acceptor = fork();
+	n++;
+	if (p_acceptor == 0)
+		reqsk_acceptor_worker(listener);
+	if (p_acceptor < 0)
+		__atomic_add_fetch(
+			&shm->stats.inet_listener_rehash_race.fork_failed,
+			1, __ATOMIC_RELAXED);
+
+	/* Step 4: hammer setsockopt(IPV6_ADDRFORM, PF_INET) into the
+	 * window opened by the client and acceptor workers.  On unpatched
+	 * kernels ADDRFORM may succeed on a LISTEN socket and the
+	 * concurrent reqsk creation / sk_clone() racing that free is
+	 * exactly races 1/3 and 2/3.  Zero return means the conversion
+	 * gate opened; EINVAL/ENOPROTOOPT means the kernel rejected it
+	 * (expected on patched or already-converted sockets). */
+	clock_gettime(CLOCK_MONOTONIC, &t0);
+	while (!budget_elapsed_ns(&t0, IRR_REQSK_WORKER_CAP_NS)) {
+		if (setsockopt(listener, IPPROTO_IPV6, IPV6_ADDRFORM,
+			       &pf_inet, sizeof(pf_inet)) == 0)
+			__atomic_add_fetch(
+				&shm->stats.inet_listener_rehash_race.addrform_listener_returned_zero,
+				1, __ATOMIC_RELAXED);
+		n++;
+	}
+
+	reap_worker(p_client);
+	if (p_client > 0)
+		n++;
+	reap_worker(p_acceptor);
+	if (p_acceptor > 0)
+		n++;
+
+out:
+	if (listener >= 0) { close(listener); n++; }
+	return n;
+}
+
 static void reap_worker(pid_t pid)
 {
 	int status;
@@ -711,6 +930,11 @@ static unsigned long run_one_round(void)
 	 * reaped so it does not share ports or timing with the race itself.
 	 * Contributes its own syscall count directly to this round's total. */
 	calls += run_addrform_arm();
+
+	/* Concurrent-reqsk ADDRFORM arm: overlaps ADDRFORM with a live
+	 * LISTEN socket that has pending request socks, covering the three
+	 * races that the sequential arm (above) cannot reach. */
+	calls += run_addrform_listener_reqsk_arm();
 
 
 	return calls;
