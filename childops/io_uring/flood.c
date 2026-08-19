@@ -136,15 +136,18 @@ static unsigned int pick_setup_flags(void)
 #endif
 #ifdef IORING_SETUP_SQE_MIXED
 	/*
-	 * SQE_MIXED selects mixed-size (64/128-byte) SQE slots; it
-	 * requires SQE128 to be set at the same time so that the kernel
-	 * allocates wide slots for the ring.  An older kernel that does
-	 * not recognise either flag returns EINVAL, which
+	 * SQE128 and SQE_MIXED are mutually exclusive: SQE128 requests
+	 * uniform 128-byte SQE slots, while SQE_MIXED selects mixed-size
+	 * (64/128-byte) slots.  Setting both together causes the kernel
+	 * to return -EINVAL, so pick one or the other.  An older kernel
+	 * that does not recognise either flag returns EINVAL, which
 	 * iouring_flood_iter_setup_ring already handles with a no-flags
 	 * retry.
 	 */
 	if (RAND_BOOL())
-		flags |= IORING_SETUP_SQE_MIXED | IORING_SETUP_SQE128;
+		flags |= IORING_SETUP_SQE128;
+	else
+		flags |= IORING_SETUP_SQE_MIXED;
 #endif
 	return flags;
 }
