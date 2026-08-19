@@ -60,6 +60,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# File-scope flag: set to 1 by write_attr() on any absent-file or write-error
+# path.  Prevents the state-file rewrite from recording armed=0 when disarming
+# failed — fail-safe, not fail-quiet.
+_teardown_failed=0
+
 # ---------------------------------------------------------------------------
 # Privilege check
 # ---------------------------------------------------------------------------
@@ -95,9 +100,10 @@ write_attr() {
     fi
     if [[ ! -e "${file}" ]]; then
         echo "  SKIP (absent): ${file}" >&2
+        _teardown_failed=1
         return
     fi
-    echo "${value}" > "${file}" || { echo "  WARN: failed to write ${value@Q} to ${file}" >&2; return; }
+    echo "${value}" > "${file}" || { echo "  WARN: failed to write ${value@Q} to ${file}" >&2; _teardown_failed=1; return; }
 }
 
 # ---------------------------------------------------------------------------
@@ -253,9 +259,12 @@ fi
 if [[ -n "${DRY_RUN}" ]]; then
     echo "[dry-run] rewrite ${STATE_FILE} with zeros"
 else
-    _state_dir=$(dirname "${STATE_FILE}")
-    if [[ -d "${_state_dir}" ]] || mkdir -p "${_state_dir}" 2>/dev/null; then
-        cat > "${STATE_FILE}" <<EOF
+    if [[ "${_teardown_failed}" -ne 0 ]]; then
+        echo "teardown-fault-injectors: some writes failed — state file NOT updated, armed state may still be live" >&2
+    else
+        _state_dir=$(dirname "${STATE_FILE}")
+        if [[ -d "${_state_dir}" ]] || mkdir -p "${_state_dir}" 2>/dev/null; then
+            cat > "${STATE_FILE}" <<EOF
 # Cleared by teardown-fault-injectors.sh at $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # All injectors have been disarmed; these values reflect that.
 injectors_armed=0
@@ -263,10 +272,11 @@ skb_realloc_armed=0
 lockdep_stats_readable=0
 make_it_fail_pid=
 EOF
-        chmod 0644 "${STATE_FILE}"
-        echo "teardown-fault-injectors: state file cleared (${STATE_FILE})"
-    else
-        echo "  WARN: could not write ${STATE_FILE} (no state dir)" >&2
+            chmod 0644 "${STATE_FILE}"
+            echo "teardown-fault-injectors: state file cleared (${STATE_FILE})"
+        else
+            echo "  WARN: could not write ${STATE_FILE} (no state dir)" >&2
+        fi
     fi
 fi
 
