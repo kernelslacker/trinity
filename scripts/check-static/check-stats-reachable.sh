@@ -380,6 +380,35 @@ sort -u "$DESC.flat" "$DESC.sub" "$OFF" "$REFS" > "$REACHABLE"
 comm -23 "$FIELDS" "$REACHABLE" > "$UNREACHED"
 
 # ---------------------------------------------------------------------
+# Pre-emptive assertion: every field about to be flagged UNREACHED must
+# have zero occurrences in the HFILES_POP \ HFILES_EXCL gap.
+#
+# f216b3830da2 ("check-stats-reachable: separate population and exclusion
+# header sets") split the old single HFILES into HFILES_POP (all
+# headers under $ROOT, ~593 files) and HFILES_EXCL ($SUBSYS_DIR +
+# $ROOT/include, ~535 files), leaving ~58 headers in HFILES_POP that are
+# NOT in HFILES_EXCL.  Those 58 gap headers are covered neither by the
+# write-exclusion scan (HFILES_NORM, built from HFILES_EXCL) nor by the
+# consumer-read scan.  A field referenced only from a gap header would
+# escape both scans and land in $UNREACHED as a silent false positive.
+#
+# Assert here -- before any allowlist filtering -- that no field in
+# $UNREACHED appears in the gap set.  On any healthy tree the gap set
+# contains no references to stats_s fields and this loop is a no-op.
+# If a future change introduces such a reference the script fails loudly
+# rather than silently misfiling a reached field as unreachable.
+# ---------------------------------------------------------------------
+HFILES_GAP="$TMP/hfiles_gap"
+comm -23 <(sort "$HFILES_POP") <(sort "$HFILES_EXCL") > "$HFILES_GAP"
+if [ -s "$UNREACHED" ] && [ -s "$HFILES_GAP" ]; then
+	while IFS= read -r _gap_field; do
+		if xargs grep -qF "$_gap_field" < "$HFILES_GAP" 2>/dev/null; then
+			fail "assertion: UNREACHED field '$_gap_field' appears in HFILES_POP \\ HFILES_EXCL gap headers (~58-header coverage gap); result may be a false positive -- widen HFILES_EXCL or investigate"
+		fi
+	done < "$UNREACHED"
+fi
+
+# ---------------------------------------------------------------------
 # Step 3: allowlist known-intentional residue.
 #
 # Categories:
