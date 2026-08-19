@@ -41,6 +41,7 @@
 #include <sys/syscall.h>
 #include <linux/io_uring.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -58,6 +59,14 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/unistd.h"
+
+#ifndef IORING_SETUP_SQE128
+#define IORING_SETUP_SQE128		(1U << 10)
+#endif
+#ifndef IORING_SETUP_SQE_MIXED
+#define IORING_SETUP_SQE_MIXED		(1U << 19)
+#endif
+
 /* Hard cap on setup → submit → teardown cycles per invocation.  Sized so
  * the worst-case loop completes well inside the alarm(1) window even when
  * sibling churners are also hammering the kernel allocator. */
@@ -79,6 +88,15 @@
  * sysctl — neither flips during this process's lifetime, so further
  * attempts are pure overhead. */
 static bool ns_unsupported;
+
+/*
+ * Latched once if /proc/self/fdinfo/<fd> is not readable (containerised
+ * environment, seccomp filter, etc.).  Reading fdinfo while the ring is
+ * live exercises the kernel-side fdinfo printer against rings that may
+ * hold mixed-size SQE slots.  On failure the latch prevents repeated
+ * open() overhead on every subsequent cycle.
+ */
+static bool fdinfo_unavail;
 
 /* Page-sized buffer used for READ / WRITE SQEs.  Allocated lazily on
  * first use and reused across cycles within the same child — the kernel
@@ -115,6 +133,18 @@ static unsigned int pick_setup_flags(void)
 #ifdef IORING_SETUP_TASKRUN_FLAG
 	if (RAND_BOOL())
 		flags |= IORING_SETUP_TASKRUN_FLAG;
+#endif
+#ifdef IORING_SETUP_SQE_MIXED
+	/*
+	 * SQE_MIXED selects mixed-size (64/128-byte) SQE slots; it
+	 * requires SQE128 to be set at the same time so that the kernel
+	 * allocates wide slots for the ring.  An older kernel that does
+	 * not recognise either flag returns EINVAL, which
+	 * iouring_flood_iter_setup_ring already handles with a no-flags
+	 * retry.
+	 */
+	if (RAND_BOOL())
+		flags |= IORING_SETUP_SQE_MIXED | IORING_SETUP_SQE128;
 #endif
 	return flags;
 }
@@ -212,6 +242,38 @@ static void fill_sqe(struct io_uring_sqe *s,
 		s->off    = 0;
 		break;
 	}
+}
+
+/*
+ * Read up to 512 bytes from /proc/self/fdinfo/<ring_fd> into a stack
+ * buffer.  This exercises the kernel-side fdinfo printer while the ring
+ * is live, including paths that only activate when the ring holds
+ * mixed-size (SQE128 / SQE_MIXED) slots.  The call is a trigger, not
+ * an assertion: errors are swallowed silently and the unavailability
+ * latch stops further attempts for the life of the child process.
+ */
+static void iouring_flood_read_fdinfo(int ring_fd, unsigned long *direct_calls)
+{
+	char path[64];
+	char buf[512];
+	int fd;
+	ssize_t n;
+
+	if (fdinfo_unavail)
+		return;
+
+	snprintf(path, sizeof(path), "/proc/self/fdinfo/%d", ring_fd);
+	(*direct_calls)++;
+	fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0) {
+		fdinfo_unavail = true;
+		return;
+	}
+	(*direct_calls)++;
+	n = read(fd, buf, sizeof(buf));
+	(void)n;
+	(*direct_calls)++;
+	close(fd);
 }
 
 /*
@@ -432,6 +494,11 @@ bool iouring_flood(struct childdata *child)
 					   1, __ATOMIC_RELAXED);
 		direct_calls++;
 		iouring_flood_iter_reap_cqes(&ctx, n_subs);
+
+		/* Read the ring's fdinfo while it is live with submitted
+		 * entries.  This triggers the kernel fdinfo printer on the
+		 * normal execution path, not only on the watchdog path. */
+		iouring_flood_read_fdinfo(ctx.fd, &direct_calls);
 
 		iour_ring_teardown(&ctx);
 	}
