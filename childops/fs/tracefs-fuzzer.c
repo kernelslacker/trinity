@@ -1516,9 +1516,9 @@ void tracefs_fuzzer_init(void)
 	}
 
 	snprintf(path, sizeof(path), "%s/current_tracer", tracefs_root);
-	ftrace_subset_present = (access(path, F_OK) == 0);
+	ftrace_subset_present = (access(path, W_OK) == 0);
 	snprintf(path, sizeof(path), "%s/available_events", tracefs_root);
-	events_subset_present = (access(path, F_OK) == 0);
+	events_subset_present = (access(path, W_OK) == 0);
 
 	outputstd("tracefs-fuzzer: root=%s ftrace_subset=%s events_subset=%s\n", /* check-static: child-output-ok */
 		  tracefs_root,
@@ -1545,6 +1545,26 @@ void tracefs_fuzzer_init(void)
 	if (access(path, W_OK) == 0)
 		avail |= REQ_DYNEVENT;
 
+	/*
+	 * Verify the two weight-2 unconditional arms (kprobe_events and
+	 * uprobe_events, required=0) are actually writable.  They are always
+	 * included in the pick table regardless of the REQ_* subset flags, so
+	 * if either file is not writable every heavy dispatch would silently
+	 * accumulate EACCES write outcomes with no latch and no warning.
+	 */
+	snprintf(path, sizeof(path), "%s/kprobe_events", tracefs_root);
+	if (access(path, W_OK) != 0) {
+		__atomic_store_n(&shm->stats.childop.latch_reason[CHILD_OP_TRACEFS_FUZZER],
+				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
+		return;
+	}
+	snprintf(path, sizeof(path), "%s/uprobe_events", tracefs_root);
+	if (access(path, W_OK) != 0) {
+		__atomic_store_n(&shm->stats.childop.latch_reason[CHILD_OP_TRACEFS_FUZZER],
+				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
+		return;
+	}
+
 	snprintf(filter_files[0], sizeof(filter_files[0]),
 		 "%s/set_ftrace_filter", tracefs_root);
 	snprintf(filter_files[1], sizeof(filter_files[1]),
@@ -1569,24 +1589,36 @@ bool tracefs_fuzzer(struct childdata *child)
 	 * in the parent, where the invoking user (typically root) can always
 	 * see it.  After uid/cap-drop in the child the fuzz user may have no
 	 * write permission.  Probe access(W_OK) on the canonical
-	 * tracing_on file once per child (COW latch: tracefs_probe_done
-	 * starts false at fork, so each child runs exactly one probe).
+	 * tracing_on file and on the two weight-2 unconditional files
+	 * (kprobe_events, uprobe_events) once per child (COW latch:
+	 * tracefs_probe_done starts false at fork, so each child runs
+	 * exactly one probe).
 	 *
-	 * EACCES/EPERM: cap-dead arm -- latch it and bail on every call.
-	 * Any other error (EROFS, ENOENT transient): leave the latch clear
-	 * and proceed; write() outcomes will accumulate normally.
+	 * EACCES/EPERM on any of the three: cap-dead arm -- latch it and
+	 * bail on every call.  Any other error (EROFS, ENOENT transient):
+	 * leave the latch clear and proceed; write() outcomes will
+	 * accumulate normally.
 	 */
 	if (!tracefs_probe_done) {
 		char probe_path[TRACEFS_MAX_PATH];
+		const char * const weight2_probes[] = {
+			"tracing_on",
+			"kprobe_events",
+			"uprobe_events",
+		};
+		unsigned int pi;
 
-		snprintf(probe_path, sizeof(probe_path),
-			 "%s/tracing_on", tracefs_root);
-		if (access(probe_path, W_OK) < 0 &&
-		    (errno == EACCES || errno == EPERM)) {
-			tracefs_runtime_dead = true;
-			__atomic_add_fetch(
-				&shm->stats.tracefs_fuzzer.runtime_cap_denied,
-				1, __ATOMIC_RELAXED);
+		for (pi = 0; pi < ARRAY_SIZE(weight2_probes); pi++) {
+			snprintf(probe_path, sizeof(probe_path),
+				 "%s/%s", tracefs_root, weight2_probes[pi]);
+			if (access(probe_path, W_OK) < 0 &&
+			    (errno == EACCES || errno == EPERM)) {
+				tracefs_runtime_dead = true;
+				__atomic_add_fetch(
+					&shm->stats.tracefs_fuzzer.runtime_cap_denied,
+					1, __ATOMIC_RELAXED);
+				break;
+			}
 		}
 		tracefs_probe_done = true;
 	}
