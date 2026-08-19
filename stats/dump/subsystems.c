@@ -160,6 +160,9 @@ static void dump_stats_render_netlink_generator(void)
 	if (shm->stats.netlink_nested_attr_lost_align)
 		stat_row("netlink_generator", "nested_attr_lost_align",
 			 shm->stats.netlink_nested_attr_lost_align);
+	if (shm->stats.netlink_stab_emit_skipped)
+		stat_row("netlink_generator", "stab_emit_skipped",
+			 shm->stats.netlink_stab_emit_skipped);
 }
 
 static void dump_stats_render_rtnl_ack_oracle(void)

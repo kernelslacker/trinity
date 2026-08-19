@@ -490,6 +490,13 @@ struct stats_s {
 	 * per-container counter, not per-attr; use build_calls as denominator.
 	 * Truncation rate (per container) = lost_align / netlink_nested_attr_build_calls. */
 	unsigned long netlink_nested_attr_lost_align;
+	/* build_stab_nest: TCA_STAB payload skipped because avail cannot fit
+	 * even the minimum viable stab (BASE + NLA_HDRLEN + 1 u16 DATA entry).
+	 * A non-zero rate means the buffer presented to build_stab_nest() was
+	 * below the minimum stab envelope; TCA_STAB was silently absent from
+	 * those messages with no other indication.  Paired with
+	 * netlink_nested_attrs_emitted to estimate the TCA_STAB miss fraction. */
+	unsigned long netlink_stab_emit_skipped;
 
 	/* rtnl ACK oracle: per-outcome histogram + per-RTM-group accepted
 	 * counters.  See stats/subsys/rtnl-ack-oracle.h for field details.

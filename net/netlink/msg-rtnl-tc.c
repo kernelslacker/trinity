@@ -24,6 +24,7 @@
 #include "trinity.h"
 #include "rnd.h"
 #include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
+#include "shm.h"
 
 /* Prototypes for external-linkage generators defined below.  Their
  * sibling declarations for the dispatcher live in net/netlink/msg-core.c;
@@ -80,13 +81,38 @@ static size_t build_stab_nest(unsigned char *p, size_t avail)
 	__u16 *tab;
 	unsigned int i;
 
-	/* tsize in [1, 64]; kernel validates nla_len(DATA)/sizeof(u16)==tsize */
-	tsize    = 1 + rnd_modulo_u32(64);
-	data_len = (size_t)tsize * sizeof(__u16);
+	/*
+	 * Derive the maximum tsize that fits within avail before consuming
+	 * any RNG state.  Drawing tsize unconditionally then bailing on the
+	 * avail check would perturb seeded-run reproducibility and silently
+	 * emit zero bytes for TCA_STAB with no observable counter.
+	 *
+	 * BASE occupies NLA_ALIGN(NLA_HDRLEN + sizeof(s)) bytes; the DATA
+	 * attr adds NLA_HDRLEN plus tsize*sizeof(__u16).  Solve for tsize:
+	 *   max_tsize = (avail - base_sz - NLA_HDRLEN) / sizeof(__u16)
+	 * Cap at 64: kernel validates nla_len(DATA)/sizeof(u16) == tsize.
+	 */
+	{
+		size_t base_sz = NLA_ALIGN(NLA_HDRLEN + sizeof(s));
+		size_t max_tsize_sz;
 
-	if (avail < NLA_ALIGN(NLA_HDRLEN + sizeof(s)) +
-		    NLA_ALIGN(NLA_HDRLEN + data_len))
-		return 0;
+		if (avail <= base_sz + (size_t)NLA_HDRLEN) {
+			__atomic_add_fetch(&shm->stats.netlink_stab_emit_skipped,
+					   1, __ATOMIC_RELAXED);
+			return 0;
+		}
+		max_tsize_sz = (avail - base_sz - (size_t)NLA_HDRLEN) /
+			       sizeof(__u16);
+		if (max_tsize_sz < 1) {
+			__atomic_add_fetch(&shm->stats.netlink_stab_emit_skipped,
+					   1, __ATOMIC_RELAXED);
+			return 0;
+		}
+		if (max_tsize_sz > 64)
+			max_tsize_sz = 64;
+		tsize = 1 + rnd_modulo_u32((unsigned int)max_tsize_sz);
+	}
+	data_len = (size_t)tsize * sizeof(__u16);
 
 	memset(&s, 0, sizeof(s));
 	/*
@@ -265,6 +291,13 @@ size_t gen_rta_tc_payload(unsigned char *p, size_t avail,
 		 * the wrong namespace and always yields -EINVAL inside
 		 * qdisc_get_stab() -- build_stab_nest() fixes that.
 		 *
+		 * Guard against the callee's worst case: tsize=64 requires
+		 * NLA_ALIGN(NLA_HDRLEN + 64*sizeof(__u16)) bytes for DATA on
+		 * top of the BASE attr.  A weaker guard (e.g. room for only
+		 * one u16) lets the caller say "go" when the callee would
+		 * return 0 after consuming RNG state, making TCA_STAB absent
+		 * from those messages with no observable counter.
+		 *
 		 * TODO: TCA_OPTIONS and TCA_STATS2 in the sibling case below
 		 * are also handled via tca_attrs.  Whether those containers
 		 * are equally mis-targeted (drawing outer-namespace slots into
@@ -272,7 +305,7 @@ size_t gen_rta_tc_payload(unsigned char *p, size_t avail,
 		 * established; treat it as an open question for a separate
 		 * audit rather than assuming this fix answers it. */
 		if (avail >= NLA_ALIGN(NLA_HDRLEN + sizeof(struct tc_sizespec)) +
-			     NLA_ALIGN(NLA_HDRLEN + sizeof(__u16)))
+			     NLA_ALIGN(NLA_HDRLEN + 64 * sizeof(__u16)))
 			return build_stab_nest(p, avail);
 		return 0;
 
@@ -356,7 +389,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 	size_t klen;
 	size_t off = 0;
 	size_t cap;
-	int children;
+	int nchildren;
 
 	cap = avail;
 	if (cap > 192)
@@ -371,8 +404,8 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 	memcpy(p + off + NLA_HDRLEN, kind, klen);
 	off += NLA_ALIGN(NLA_HDRLEN + klen);
 
-	children = RAND_RANGE(0, 3);
-	while (children-- > 0) {
+	nchildren = RAND_RANGE(0, 3);
+	while (nchildren-- > 0) {
 		unsigned short atype;
 		size_t plen;
 		size_t total;
