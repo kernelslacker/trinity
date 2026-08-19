@@ -327,8 +327,14 @@ static unsigned int iouring_flood_iter_submit_burst(
 
 	for (i = 0; i < n_subs; i++) {
 		unsigned int slot = (tail + i) & mask;
-
-		sqes[slot] = burst[i];
+		/*
+		 * Index by byte offset using sqe_stride so that SQE128
+		 * rings (stride = 128) land on the correct kernel-visible
+		 * slot rather than colliding at 64-byte boundaries.
+		 */
+		struct io_uring_sqe *dst = (struct io_uring_sqe *)
+			((char *)sqes + (size_t)slot * ctx->sqe_stride);
+		*dst = burst[i];
 		sq_array[slot] = slot;
 	}
 

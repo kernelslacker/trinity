@@ -95,6 +95,15 @@ struct iour_ring {
 	size_t		sqe_map_sz;
 	bool		single_mmap;
 
+	/*
+	 * Bytes between consecutive SQE slots as seen by the kernel.
+	 * 64 for standard rings, 128 when IORING_SETUP_SQE128 is set.
+	 * Callers that index ctx->sqes must use this stride rather than
+	 * sizeof(struct io_uring_sqe) so SQE128 rings write to the right
+	 * slot and do not collide with or clobber adjacent entries.
+	 */
+	unsigned int	sqe_stride;
+
 	unsigned int	sq_entries;
 	unsigned int	cq_entries;
 

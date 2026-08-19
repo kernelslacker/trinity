@@ -126,10 +126,25 @@ enum iour_setup_status iour_ring_setup(struct io_uring_params *p,
 			  sizeof(struct io_uring_cqe), &cq_sz))
 		goto fail_close;
 
-	/* SQE array: sq_entries * sizeof(struct io_uring_sqe). */
-	if (__builtin_mul_overflow((size_t)p->sq_entries,
-				   sizeof(struct io_uring_sqe), &sqes_sz))
-		goto fail_close;
+	/*
+	 * SQE array: sq_entries * sqe_size.  For IORING_SETUP_SQE128
+	 * rings the kernel indexes at 128 B/entry (see io_get_sqe:
+	 * "if (ctx->flags & IORING_SETUP_SQE128) head <<= 1"), so the
+	 * mapping must be twice as large as for a standard 64-byte ring.
+	 */
+	{
+		const size_t sqe_size =
+			(p->flags & IORING_SETUP_SQE128)
+			? 2 * sizeof(struct io_uring_sqe)
+			: sizeof(struct io_uring_sqe);
+
+		if (__builtin_mul_overflow((size_t)p->sq_entries,
+					   sqe_size, &sqes_sz))
+			goto fail_close;
+
+		/* Stash stride so callers index slots correctly. */
+		out->sqe_stride = (unsigned int)sqe_size;
+	}
 
 	/* IORING_FEAT_SINGLE_MMAP shares one mapping between SQ and CQ
 	 * sized to max(sq_sz, cq_sz).  Mapping only sq_sz (which the
