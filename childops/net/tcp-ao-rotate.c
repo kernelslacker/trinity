@@ -651,6 +651,14 @@ static void tcp_ao_rotate_iter_reconnect_peer(struct tcp_ao_rotate_iter_ctx *ctx
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
+	/* Client connect() returned 0 or EINPROGRESS — peer-change sequence
+	 * is underway from the client's perspective regardless of whether
+	 * the server-side accept() completes.  Key reconnect_ok on this
+	 * client-side outcome so the accounting partition holds:
+	 *   reconnect_attempted == reconnect_ok + reconnect_failed
+	 *                          + reconnect_setup_failed */
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_ok,
+			   1, __ATOMIC_RELAXED);
 
 	/*
 	 * Both probes operate on ctx->cli and are independent of whether
@@ -658,6 +666,8 @@ static void tcp_ao_rotate_iter_reconnect_peer(struct tcp_ao_rotate_iter_ctx *ctx
 	 * by the connect(AF_UNSPEC) -> connect(srv2_addr) pair above, so
 	 * fire the probes now before accept() can gate them.
 	 */
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_probed,
+			   1, __ATOMIC_RELAXED);
 
 	/* Probe the stale current_key via TCP_AO_INFO — primary UAF vector.
 	 * stale_id is the peer-1 sndid that current_key may still reference
@@ -698,9 +708,6 @@ static void tcp_ao_rotate_iter_reconnect_peer(struct tcp_ao_rotate_iter_ctx *ctx
 	}
 	ctx->direct_calls++;
 	(void)fcntl(ctx->srv2_acc, F_SETFL, O_NONBLOCK);
-
-	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.reconnect_ok,
-			   1, __ATOMIC_RELAXED);
 
 	rotate_send(ctx->cli, &ctx->direct_calls);
 	rotate_send(ctx->srv2_acc, &ctx->direct_calls);
