@@ -59,8 +59,10 @@ IOCTL_SIZE_ASSERT(KVM_GET_SREGS, struct kvm_sregs);
 IOCTL_SIZE_ASSERT(KVM_SET_SREGS, struct kvm_sregs);
 IOCTL_SIZE_ASSERT(KVM_GET_FPU, struct kvm_fpu);
 IOCTL_SIZE_ASSERT(KVM_SET_FPU, struct kvm_fpu);
+#if !defined(__s390__) && !defined(__PPC__)
 IOCTL_SIZE_ASSERT(KVM_GET_VCPU_EVENTS, struct kvm_vcpu_events);
 IOCTL_SIZE_ASSERT(KVM_SET_VCPU_EVENTS, struct kvm_vcpu_events);
+#endif
 IOCTL_SIZE_ASSERT(KVM_INTERRUPT, struct kvm_interrupt);
 IOCTL_SIZE_ASSERT(KVM_GET_MP_STATE, struct kvm_mp_state);
 IOCTL_SIZE_ASSERT(KVM_SET_MP_STATE, struct kvm_mp_state);
@@ -220,8 +222,10 @@ static const struct ioctl kvm_vcpu_ioctls[] = {
 	IOCTL(KVM_SET_SREGS),
 	IOCTL(KVM_GET_FPU),
 	IOCTL(KVM_SET_FPU),
+#if !defined(__s390__) && !defined(__PPC__)
 	IOCTL(KVM_GET_VCPU_EVENTS),
 	IOCTL(KVM_SET_VCPU_EVENTS),
+#endif
 	IOCTL(KVM_INTERRUPT),
 	IOCTL(KVM_NMI),
 #ifdef KVM_SMI
