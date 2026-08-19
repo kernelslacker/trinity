@@ -1546,20 +1546,22 @@ void tracefs_fuzzer_init(void)
 		avail |= REQ_DYNEVENT;
 
 	/*
-	 * Verify the two weight-2 unconditional arms (kprobe_events and
-	 * uprobe_events, required=0) are actually writable.  They are always
-	 * included in the pick table regardless of the REQ_* subset flags, so
-	 * if either file is not writable every heavy dispatch would silently
-	 * accumulate EACCES write outcomes with no latch and no warning.
+	 * Probe the two weight-2 optional arms (kprobe_events and
+	 * uprobe_events).  Mirror the runtime latch policy: only a hard
+	 * permission denial (EACCES, EPERM) means the invoking user can
+	 * never write them -- latch UNSUPPORTED and bail.  Any other
+	 * errno (ENOENT -- subsystem not built in, EROFS -- transient)
+	 * is a configuration-absent condition, not a permission failure;
+	 * tolerate it silently, just as the dynamic_events arm does.
 	 */
 	snprintf(path, sizeof(path), "%s/kprobe_events", tracefs_root);
-	if (access(path, W_OK) != 0) {
+	if (access(path, W_OK) != 0 && (errno == EACCES || errno == EPERM)) {
 		__atomic_store_n(&shm->stats.childop.latch_reason[CHILD_OP_TRACEFS_FUZZER],
 				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		return;
 	}
 	snprintf(path, sizeof(path), "%s/uprobe_events", tracefs_root);
-	if (access(path, W_OK) != 0) {
+	if (access(path, W_OK) != 0 && (errno == EACCES || errno == EPERM)) {
 		__atomic_store_n(&shm->stats.childop.latch_reason[CHILD_OP_TRACEFS_FUZZER],
 				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		return;
