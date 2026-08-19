@@ -13,5 +13,4 @@ static const struct stat_field icmp_inject_fields[] = {
 
 const struct stat_category icmp_inject_category =
 	STAT_CATEGORY("icmp_inject",
-	              icmp_inject.errors_injected,
 	              icmp_inject_fields);

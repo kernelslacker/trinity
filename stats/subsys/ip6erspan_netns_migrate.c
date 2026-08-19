@@ -14,5 +14,4 @@ static const struct stat_field ip6erspan_netns_migrate_fields[] = {
 
 const struct stat_category ip6erspan_netns_migrate_category =
 	STAT_CATEGORY("ip6erspan_netns_migrate",
-	              ip6erspan_netns_migrate.iters,
 	              ip6erspan_netns_migrate_fields);

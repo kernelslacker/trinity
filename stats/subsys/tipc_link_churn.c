@@ -14,5 +14,4 @@ static const struct stat_field tipc_link_churn_fields[] = {
 
 const struct stat_category tipc_link_churn_category =
 	STAT_CATEGORY("tipc_link_churn",
-	              tipc_link_churn.runs,
 	              tipc_link_churn_fields);

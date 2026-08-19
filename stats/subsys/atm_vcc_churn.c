@@ -11,5 +11,4 @@ static const struct stat_field atm_vcc_churn_fields[] = {
 
 const struct stat_category atm_vcc_churn_category =
 	STAT_CATEGORY("atm_vcc_churn",
-	              atm_vcc_churn.runs,
 	              atm_vcc_churn_fields);

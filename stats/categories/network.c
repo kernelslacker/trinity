@@ -42,7 +42,6 @@ static const struct stat_field pkt_builder_fields[] = {
 
 const struct stat_category pkt_builder_category =
 	STAT_CATEGORY("pkt_builder",
-	              pkt_builder.runs,
 	              pkt_builder_fields);
 
 

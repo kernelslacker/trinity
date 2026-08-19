@@ -9,5 +9,4 @@ static const struct stat_field futex_storm_fields[] = {
 
 const struct stat_category futex_storm_category =
 	STAT_CATEGORY("futex_storm",
-	              futex_storm.runs,
 	              futex_storm_fields);

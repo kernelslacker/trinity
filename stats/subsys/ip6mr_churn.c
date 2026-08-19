@@ -9,5 +9,4 @@ static const struct stat_field ip6mr_churn_fields[] = {
 
 const struct stat_category ip6mr_churn_category =
 	STAT_CATEGORY("ip6mr_churn",
-	              ip6mr_churn.iters,
 	              ip6mr_churn_fields);

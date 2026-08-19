@@ -14,5 +14,4 @@ static const struct stat_field iouring_send_zc_churn_fields[] = {
 
 const struct stat_category iouring_send_zc_churn_category =
 	STAT_CATEGORY("iouring_send_zc_churn",
-	              iouring_send_zc_churn.runs,
 	              iouring_send_zc_churn_fields);

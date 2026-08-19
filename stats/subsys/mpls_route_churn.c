@@ -12,5 +12,4 @@ static const struct stat_field mpls_route_churn_fields[] = {
 
 const struct stat_category mpls_route_churn_category =
 	STAT_CATEGORY("mpls_route_churn",
-	              mpls_route_churn.runs,
 	              mpls_route_churn_fields);

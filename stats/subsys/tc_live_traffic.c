@@ -19,5 +19,4 @@ static const struct stat_field tc_live_traffic_fields[] = {
 
 const struct stat_category tc_live_traffic_category =
 	STAT_CATEGORY("tc_live_traffic",
-	              tc_live_traffic.runs,
 	              tc_live_traffic_fields);

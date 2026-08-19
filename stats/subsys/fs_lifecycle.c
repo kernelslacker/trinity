@@ -19,5 +19,4 @@ static const struct stat_field fs_lifecycle_fields[] = {
 
 const struct stat_category fs_lifecycle_category =
 	STAT_CATEGORY("fs_lifecycle",
-	              fs_lifecycle.tmpfs,
 	              fs_lifecycle_fields);

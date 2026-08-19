@@ -69,15 +69,13 @@ struct stat_category {
 	  .offset = offsetof(struct stats_s, sub.field) }
 
 /*
- * STAT_CATEGORY(cat_name, gate_field, fields_array)
+ * STAT_CATEGORY(cat_name, fields_array)
  *
- * gate_field is accepted for backward compatibility with existing callers but
- * is not stored in the descriptor.  stat_category_emit_text() decides whether
- * to emit by walking fields[] and checking whether any value is non-zero,
- * so adding a new field to a category automatically covers it without any
- * arity change to the macro.
+ * stat_category_emit_text() decides whether to emit by walking fields[] and
+ * checking whether any value is non-zero, so adding a new field to a category
+ * automatically covers it.
  */
-#define STAT_CATEGORY(cat_name, gate_field, fields_array) \
+#define STAT_CATEGORY(cat_name, fields_array) \
 	{ (cat_name), \
 	  (fields_array), \
 	  ARRAY_SIZE(fields_array) }

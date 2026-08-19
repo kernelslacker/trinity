@@ -99,5 +99,4 @@ static const struct stat_field oracle_fields[] = {
 
 const struct stat_category oracle_category =
 	STAT_CATEGORY("oracle",
-	              oracle.fd_oracle_anomalies,
 	              oracle_fields);

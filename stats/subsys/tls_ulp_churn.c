@@ -14,5 +14,4 @@ static const struct stat_field tls_ulp_churn_fields[] = {
 
 const struct stat_category tls_ulp_churn_category =
 	STAT_CATEGORY("tls_ulp_churn",
-	              tls_ulp_churn.runs,
 	              tls_ulp_churn_fields);

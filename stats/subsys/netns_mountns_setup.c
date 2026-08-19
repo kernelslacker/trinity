@@ -13,5 +13,4 @@ static const struct stat_field netns_mountns_setup_fields[] = {
 
 const struct stat_category netns_mountns_setup_category =
 	STAT_CATEGORY("netns_mountns_setup",
-	              netns_mountns_setup.runs,
 	              netns_mountns_setup_fields);

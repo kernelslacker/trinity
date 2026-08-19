@@ -11,5 +11,4 @@ static const struct stat_field vlan_filter_churn_fields[] = {
 
 const struct stat_category vlan_filter_churn_category =
 	STAT_CATEGORY("vlan_filter_churn",
-	              vlan_filter_churn.runs,
 	              vlan_filter_churn_fields);

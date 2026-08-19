@@ -22,5 +22,4 @@ static const struct stat_field psp_key_rotate_fields[] = {
 
 const struct stat_category psp_key_rotate_category =
 	STAT_CATEGORY("psp_key_rotate",
-	              psp_key_rotate.runs,
 	              psp_key_rotate_fields);

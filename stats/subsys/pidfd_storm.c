@@ -13,5 +13,4 @@ static const struct stat_field pidfd_storm_fields[] = {
 
 const struct stat_category pidfd_storm_category =
 	STAT_CATEGORY("pidfd_storm",
-	              pidfd_storm.runs,
 	              pidfd_storm_fields);

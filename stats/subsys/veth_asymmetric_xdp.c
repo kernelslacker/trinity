@@ -12,5 +12,4 @@ static const struct stat_field veth_asymmetric_xdp_fields[] = {
 
 const struct stat_category veth_asymmetric_xdp_category =
 	STAT_CATEGORY("veth_asymmetric_xdp",
-	              veth_asymmetric_xdp.iters,
 	              veth_asymmetric_xdp_fields);

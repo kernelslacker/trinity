@@ -21,5 +21,4 @@ static const struct stat_field fd_runtime_skipped_fields[] = {
 
 const struct stat_category fd_runtime_skipped_category =
 	STAT_CATEGORY("fd_runtime_skipped",
-	              fd_runtime.stdio,
 	              fd_runtime_skipped_fields);

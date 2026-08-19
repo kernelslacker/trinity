@@ -23,5 +23,4 @@ static const struct stat_field xfrm_churn_fields[] = {
 
 const struct stat_category xfrm_churn_category =
 	STAT_CATEGORY("xfrm_churn",
-	              xfrm_churn.runs,
 	              xfrm_churn_fields);

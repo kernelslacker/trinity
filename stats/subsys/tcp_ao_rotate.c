@@ -23,5 +23,4 @@ static const struct stat_field tcp_ao_rotate_fields[] = {
 
 const struct stat_category tcp_ao_rotate_category =
 	STAT_CATEGORY("tcp_ao_rotate",
-	              tcp_ao_rotate.runs,
 	              tcp_ao_rotate_fields);

@@ -13,5 +13,4 @@ static const struct stat_field tc_mirred_blockcast_fields[] = {
 
 const struct stat_category tc_mirred_blockcast_category =
 	STAT_CATEGORY("tc_mirred_blockcast",
-	              tc_mirred_blockcast.runs,
 	              tc_mirred_blockcast_fields);

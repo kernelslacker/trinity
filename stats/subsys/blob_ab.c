@@ -26,5 +26,4 @@ static const struct stat_field blob_ab_mode_fields[] = {
 
 const struct stat_category blob_ab_mode_category =
 	STAT_CATEGORY("blob_ab_mode",
-	              blob_ab.havoc_fills,
 	              blob_ab_mode_fields);

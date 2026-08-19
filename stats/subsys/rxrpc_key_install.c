@@ -12,5 +12,4 @@ static const struct stat_field rxrpc_key_install_fields[] = {
 
 const struct stat_category rxrpc_key_install_category =
 	STAT_CATEGORY("rxrpc_key_install",
-	              rxrpc_key_install.runs,
 	              rxrpc_key_install_fields);

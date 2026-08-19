@@ -10,5 +10,4 @@ static const struct stat_field wireguard_decrypt_flood_fields[] = {
 
 const struct stat_category wireguard_decrypt_flood_category =
 	STAT_CATEGORY("wireguard_decrypt_flood",
-	              wgdf.runs,
 	              wireguard_decrypt_flood_fields);

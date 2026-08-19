@@ -16,5 +16,4 @@ static const struct stat_field ct_expect_realloc_fields[] = {
 
 const struct stat_category ct_expect_realloc_category =
 	STAT_CATEGORY("ct_expect_realloc",
-	              ct_expect_realloc.runs,
 	              ct_expect_realloc_fields);

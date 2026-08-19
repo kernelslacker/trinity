@@ -12,5 +12,4 @@ static const struct stat_field fou_gue_mcast_rx_fields[] = {
 
 const struct stat_category fou_gue_mcast_rx_category =
 	STAT_CATEGORY("fou_gue_mcast_rx",
-	              fou_gue_mcast_rx.runs,
 	              fou_gue_mcast_rx_fields);

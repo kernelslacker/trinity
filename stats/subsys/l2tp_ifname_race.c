@@ -16,5 +16,4 @@ static const struct stat_field l2tp_ifname_race_fields[] = {
 
 const struct stat_category l2tp_ifname_race_category =
 	STAT_CATEGORY("l2tp_ifname_race",
-		l2tp_ifname_race.runs,
 		l2tp_ifname_race_fields);

@@ -12,5 +12,4 @@ static const struct stat_field xattr_thrash_fields[] = {
 
 const struct stat_category xattr_thrash_category =
 	STAT_CATEGORY("xattr_thrash",
-	              xattr_thrash.runs,
 	              xattr_thrash_fields);

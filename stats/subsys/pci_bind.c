@@ -15,5 +15,4 @@ static const struct stat_field pci_bind_fields[] = {
 
 const struct stat_category pci_bind_category =
 	STAT_CATEGORY("pci_bind",
-	              pci_bind.runs,
 	              pci_bind_fields);

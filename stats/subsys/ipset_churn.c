@@ -18,5 +18,4 @@ static const struct stat_field ipset_churn_fields[] = {
 
 const struct stat_category ipset_churn_category =
 	STAT_CATEGORY("ipset_churn",
-	              ipset_churn.runs,
 	              ipset_churn_fields);

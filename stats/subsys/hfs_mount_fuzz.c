@@ -14,5 +14,4 @@ static const struct stat_field hfs_mount_fuzz_fields[] = {
 
 const struct stat_category hfs_mount_fuzz_category =
 	STAT_CATEGORY("hfs_mount_fuzz",
-		      hfs_mount_fuzz.runs,
 		      hfs_mount_fuzz_fields);

@@ -12,5 +12,4 @@ static const struct stat_field blkdev_lifecycle_race_fields[] = {
 
 const struct stat_category blkdev_lifecycle_race_category =
 	STAT_CATEGORY("blkdev_lifecycle_race",
-	              blkdev_lifecycle.runs,
 	              blkdev_lifecycle_race_fields);

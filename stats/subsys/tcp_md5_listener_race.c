@@ -13,5 +13,4 @@ static const struct stat_field tcp_md5_listener_race_fields[] = {
 
 const struct stat_category tcp_md5_listener_race_category =
 	STAT_CATEGORY("tcp_md5_listener_race",
-	              tcp_md5_listener_race.runs,
 	              tcp_md5_listener_race_fields);

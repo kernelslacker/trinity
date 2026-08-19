@@ -8,5 +8,4 @@ static const struct stat_field sched_cycler_fields[] = {
 
 const struct stat_category sched_cycler_category =
 	STAT_CATEGORY("sched_cycler",
-	              sched_cycler.runs,
 	              sched_cycler_fields);

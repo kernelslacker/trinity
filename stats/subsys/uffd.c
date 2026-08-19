@@ -10,5 +10,4 @@ static const struct stat_field uffd_churn_fields[] = {
 
 const struct stat_category uffd_churn_category =
 	STAT_CATEGORY("uffd_churn",
-	              uffd.runs,
 	              uffd_churn_fields);

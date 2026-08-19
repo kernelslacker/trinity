@@ -109,8 +109,7 @@ RAW_FIELD_RE = re.compile(
 CATEGORY_DECL_RE = re.compile(
     r'\bstruct\s+stat_category\s+(?P<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*'
     r'STAT_CATEGORY2?\s*\(\s*"(?P<jname>[^"]+)"\s*,\s*'
-    r'[A-Za-z_][A-Za-z0-9_.\[\]]*\s*,\s*'
-    r'(?:[A-Za-z_][A-Za-z0-9_.\[\]]*\s*,\s*)?'
+    r'(?:[A-Za-z_][A-Za-z0-9_.\[\]]*\s*,\s*){0,2}'
     r'(?P<fvar>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*;',
     re.DOTALL,
 )

@@ -14,5 +14,4 @@ static const struct stat_field netns_teardown_fields[] = {
 
 const struct stat_category netns_teardown_category =
 	STAT_CATEGORY("netns_teardown",
-	              netns_teardown.runs,
 	              netns_teardown_fields);

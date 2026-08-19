@@ -22,5 +22,4 @@ static const struct stat_field packet_qdisc_bypass_unanchored_l2_fields[] = {
 
 const struct stat_category packet_qdisc_bypass_unanchored_l2_category =
 	STAT_CATEGORY("packet_qdisc_bypass_unanchored_l2",
-	              packet_qdisc_bypass_unanchored_l2.runs,
 	              packet_qdisc_bypass_unanchored_l2_fields);

@@ -13,5 +13,4 @@ static const struct stat_field sockmap_cork_race_fields[] = {
 
 const struct stat_category sockmap_cork_race_category =
 	STAT_CATEGORY("sockmap_cork_race",
-	              sockmap_cork_race.runs,
 	              sockmap_cork_race_fields);

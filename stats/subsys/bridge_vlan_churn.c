@@ -15,5 +15,4 @@ static const struct stat_field bridge_vlan_churn_fields[] = {
 
 const struct stat_category bridge_vlan_churn_category =
 	STAT_CATEGORY("bridge_vlan_churn",
-	              bridge_vlan_churn.runs,
 	              bridge_vlan_churn_fields);

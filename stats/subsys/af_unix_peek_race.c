@@ -18,5 +18,4 @@ static const struct stat_field af_unix_peek_race_fields[] = {
 
 const struct stat_category af_unix_peek_race_category =
 	STAT_CATEGORY("af_unix_peek_race",
-		af_unix_peek_race.runs,
 		af_unix_peek_race_fields);

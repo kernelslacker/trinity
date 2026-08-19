@@ -10,5 +10,4 @@ static const struct stat_field iouring_eventfd_fields[] = {
 
 const struct stat_category iouring_eventfd_category =
 	STAT_CATEGORY("iouring_eventfd",
-	              iouring_eventfd.register_ok,
 	              iouring_eventfd_fields);

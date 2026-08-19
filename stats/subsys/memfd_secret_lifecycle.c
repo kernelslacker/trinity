@@ -18,5 +18,4 @@ static const struct stat_field memfd_secret_lifecycle_fields[] = {
 
 const struct stat_category memfd_secret_lifecycle_category =
 	STAT_CATEGORY("memfd_secret_lifecycle",
-	              memfd_secret_lifecycle.oracle_pass,
 	              memfd_secret_lifecycle_fields);

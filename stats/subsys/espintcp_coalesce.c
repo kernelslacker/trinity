@@ -15,5 +15,4 @@ static const struct stat_field espintcp_coalesce_fields[] = {
 
 const struct stat_category espintcp_coalesce_category =
 	STAT_CATEGORY("espintcp_coalesce_churn",
-	              espintcp_coalesce.runs,
 	              espintcp_coalesce_fields);

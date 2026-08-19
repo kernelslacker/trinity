@@ -13,5 +13,4 @@ static const struct stat_field tls_rotate_fields[] = {
 
 const struct stat_category tls_rotate_category =
 	STAT_CATEGORY("tls_rotate",
-	              tls_rotate.runs,
 	              tls_rotate_fields);

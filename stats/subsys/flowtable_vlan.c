@@ -13,5 +13,4 @@ static const struct stat_field flowtable_encap_vlan_fields[] = {
 
 const struct stat_category flowtable_encap_vlan_category =
 	STAT_CATEGORY("flowtable_encap_vlan",
-	              flowtable_vlan.runs,
 	              flowtable_encap_vlan_fields);

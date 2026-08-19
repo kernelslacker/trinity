@@ -33,5 +33,4 @@ static const struct stat_field tc_qdisc_churn_fields[] = {
 
 const struct stat_category tc_qdisc_churn_category =
 	STAT_CATEGORY("tc_qdisc_churn",
-	              tc_qdisc_churn.runs,
 	              tc_qdisc_churn_fields);

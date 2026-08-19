@@ -34,5 +34,4 @@ static const struct stat_field afxdp_churn_fields[] = {
 
 const struct stat_category afxdp_churn_category =
 	STAT_CATEGORY("afxdp_churn",
-	              afxdp_churn.runs,
 	              afxdp_churn_fields);

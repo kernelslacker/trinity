@@ -9,5 +9,4 @@ static const struct stat_field perf_event_chains_fields[] = {
 
 const struct stat_category perf_event_chains_category =
 	STAT_CATEGORY("perf_event_chains",
-	              perf_chains.runs,
 	              perf_event_chains_fields);

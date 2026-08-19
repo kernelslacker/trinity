@@ -18,5 +18,4 @@ static const struct stat_field sysv_shm_orphan_race_fields[] = {
 
 const struct stat_category sysv_shm_orphan_race_category =
 	STAT_CATEGORY("sysv_shm_orphan_race",
-	              sysv_shm_orphan_race.runs,
 	              sysv_shm_orphan_race_fields);

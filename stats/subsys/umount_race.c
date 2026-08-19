@@ -12,5 +12,4 @@ static const struct stat_field umount_race_fields[] = {
 
 const struct stat_category umount_race_category =
 	STAT_CATEGORY("umount_race",
-	              umount_race.runs,
 	              umount_race_fields);

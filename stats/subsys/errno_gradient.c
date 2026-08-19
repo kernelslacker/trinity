@@ -17,5 +17,4 @@ static const struct stat_field errno_gradient_fields[] = {
 
 const struct stat_category errno_gradient_category =
 	STAT_CATEGORY("errno_gradient",
-	              errno_gradient.crossings,
 	              errno_gradient_fields);

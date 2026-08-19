@@ -18,5 +18,4 @@ static const struct stat_field sctp_assoc_churn_fields[] = {
 
 const struct stat_category sctp_assoc_churn_category =
 	STAT_CATEGORY("sctp_assoc_churn",
-	              sctp_assoc_churn.runs,
 	              sctp_assoc_churn_fields);

@@ -13,5 +13,4 @@ static const struct stat_field no_domains_fields[] = {
 
 const struct stat_category no_domains_category =
 	STAT_CATEGORY("no_domains",
-	              no_domains.runtime_skipped,
 	              no_domains_fields);

@@ -11,5 +11,4 @@ static const struct stat_field aio_fields[] = {
 
 const struct stat_category aio_category =
 	STAT_CATEGORY("aio",
-	              aio.submitted,
 	              aio_fields);

@@ -21,5 +21,4 @@ static const struct stat_field iscsi_login_walker_fields[] = {
 
 const struct stat_category iscsi_login_walker_category =
 	STAT_CATEGORY("iscsi_login_walker",
-	              iscsi_walker.runs,
 	              iscsi_login_walker_fields);

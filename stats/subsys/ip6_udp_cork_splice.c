@@ -12,5 +12,4 @@ static const struct stat_field ip6_udp_cork_splice_fields[] = {
 
 const struct stat_category ip6_udp_cork_splice_category =
 	STAT_CATEGORY("ip6_udp_cork_splice",
-	              ip6_udp_cork_splice.runs,
 	              ip6_udp_cork_splice_fields);

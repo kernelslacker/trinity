@@ -16,5 +16,4 @@ static const struct stat_field splice_protocols_fields[] = {
 
 const struct stat_category splice_protocols_category =
 	STAT_CATEGORY("splice_protocols",
-	              splice_protocols.runs,
 	              splice_protocols_fields);

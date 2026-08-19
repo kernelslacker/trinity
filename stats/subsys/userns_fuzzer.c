@@ -10,5 +10,4 @@ static const struct stat_field userns_fuzzer_fields[] = {
 
 const struct stat_category userns_fuzzer_category =
 	STAT_CATEGORY("userns_fuzzer",
-	              userns_fuzzer.runs,
 	              userns_fuzzer_fields);

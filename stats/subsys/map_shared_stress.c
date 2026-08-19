@@ -11,5 +11,4 @@ static const struct stat_field map_shared_stress_fields[] = {
 
 const struct stat_category map_shared_stress_category =
 	STAT_CATEGORY("map_shared_stress",
-	              map_shared_stress.runs,
 	              map_shared_stress_fields);

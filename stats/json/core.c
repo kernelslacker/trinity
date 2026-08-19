@@ -113,7 +113,6 @@ static const struct stat_field vfs_writes_fields[] = {
 
 const struct stat_category vfs_writes_category =
 	STAT_CATEGORY("vfs_writes",
-	              procfs_writer.procfs_open_fail,
 	              vfs_writes_fields);
 
 static const struct stat_field memory_pressure_fields[] = {
@@ -122,7 +121,6 @@ static const struct stat_field memory_pressure_fields[] = {
 
 const struct stat_category memory_pressure_category =
 	STAT_CATEGORY("memory_pressure",
-	              memory_pressure.runs,
 	              memory_pressure_fields);
 
 static const struct stat_field genl_family_calls_fields[] = {
@@ -150,7 +148,6 @@ static const struct stat_field genl_family_calls_fields[] = {
 
 const struct stat_category genl_family_calls_category =
 	STAT_CATEGORY("genl_family_calls",
-	              genl_family_calls_devlink,
 	              genl_family_calls_fields);
 
 static const struct stat_field nfnl_subsys_calls_fields[] = {
@@ -162,7 +159,6 @@ static const struct stat_field nfnl_subsys_calls_fields[] = {
 
 const struct stat_category nfnl_subsys_calls_category =
 	STAT_CATEGORY("nfnl_subsys_calls",
-	              nfnl_subsys_calls_ctnetlink,
 	              nfnl_subsys_calls_fields);
 
 static const struct stat_field netlink_generator_fields[] = {
@@ -176,7 +172,6 @@ static const struct stat_field netlink_generator_fields[] = {
 
 const struct stat_category netlink_generator_category =
 	STAT_CATEGORY("netlink_generator",
-	              netlink_nested_attrs_emitted,
 	              netlink_generator_fields);
 
 static const struct stat_field rtnl_ack_oracle_fields[] = {
@@ -204,7 +199,6 @@ static const struct stat_field rtnl_ack_oracle_fields[] = {
 
 const struct stat_category rtnl_ack_oracle_category =
 	STAT_CATEGORY("rtnl_ack_oracle",
-	              rtnl_ack_oracle.accepted,
 	              rtnl_ack_oracle_fields);
 
 static const struct stat_field tracefs_fuzzer_fields[] = {
@@ -234,7 +228,6 @@ static const struct stat_field tracefs_fuzzer_fields[] = {
 
 const struct stat_category tracefs_fuzzer_category =
 	STAT_CATEGORY("tracefs_fuzzer",
-	              tracefs_fuzzer.kprobe_open_fail,
 	              tracefs_fuzzer_fields);
 
 static const struct stat_field bpf_fd_provider_fields[] = {
@@ -244,7 +237,6 @@ static const struct stat_field bpf_fd_provider_fields[] = {
 
 const struct stat_category bpf_fd_provider_category =
 	STAT_CATEGORY("bpf_fd_provider",
-	              ebpf_gen.maps_provided,
 	              bpf_fd_provider_fields);
 
 /*
@@ -263,7 +255,6 @@ static const struct stat_field frontier_discriminator_fields[] = {
 
 static const struct stat_category frontier_discriminator_category =
 	STAT_CATEGORY("frontier_discriminator",
-	              frontier.discriminator.frseq_candidates,
 	              frontier_discriminator_fields);
 
 static const struct stat_field childop_burst_fields[] = {
@@ -272,7 +263,6 @@ static const struct stat_field childop_burst_fields[] = {
 
 static const struct stat_category childop_burst_category =
 	STAT_CATEGORY("childop_burst",
-	              childop.burst_alt_picks_window,
 	              childop_burst_fields);
 
 static const struct stat_field corrupt_ptr_probe_fields[] = {
@@ -281,7 +271,6 @@ static const struct stat_field corrupt_ptr_probe_fields[] = {
 
 static const struct stat_category corrupt_ptr_probe_category =
 	STAT_CATEGORY("corrupt_ptr_probe",
-	              corrupt_ptr.sample_seq,
 	              corrupt_ptr_probe_fields);
 
 void dump_stats_json_basic_subsystems(void)

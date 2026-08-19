@@ -16,5 +16,4 @@ static const struct stat_field fnhe_pmtu_mtu_race_fields[] = {
 
 const struct stat_category fnhe_pmtu_mtu_race_category =
 	STAT_CATEGORY("fnhe_pmtu_mtu_race",
-	              fnhe_pmtu_mtu_race.runs,
 	              fnhe_pmtu_mtu_race_fields);

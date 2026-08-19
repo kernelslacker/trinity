@@ -45,7 +45,6 @@ static const struct stat_field eth_emitter_fields[] = {
 
 static const struct stat_category eth_emitter_category =
 	STAT_CATEGORY("eth_emitter",
-	              eth_emitter.runs,
 	              eth_emitter_fields);
 
 
@@ -159,7 +158,6 @@ static const struct stat_field nftables_churn_fields[] = {
 
 const struct stat_category nftables_churn_category =
 	STAT_CATEGORY("nftables_churn",
-	              nftables_churn.runs,
 	              nftables_churn_fields);
 
 
@@ -175,7 +173,6 @@ static const struct stat_field xfrm_ah_esn_fields[] = {
 
 const struct stat_category xfrm_ah_esn_category =
 	STAT_CATEGORY("xfrm_ah_esn",
-	              xfrm_ah_esn.async_runs,
 	              xfrm_ah_esn_fields);
 
 static const struct stat_field xfrm_compat_fields[] = {
@@ -192,7 +189,6 @@ static const struct stat_field xfrm_compat_fields[] = {
 
 const struct stat_category xfrm_compat_category =
 	STAT_CATEGORY("xfrm_compat",
-	              xfrm_compat.sweep_runs,
 	              xfrm_compat_fields);
 
 static const struct stat_field sysfs_string_race_fields[] = {
@@ -207,7 +203,6 @@ static const struct stat_field sysfs_string_race_fields[] = {
 
 const struct stat_category sysfs_string_race_category =
 	STAT_CATEGORY("sysfs_string_race",
-	              sysfs_string_race.runs,
 	              sysfs_string_race_fields);
 
 
@@ -227,7 +222,6 @@ static const struct stat_field sock_diag_walker_fields[] = {
 
 const struct stat_category sock_diag_walker_category =
 	STAT_CATEGORY("sock_diag_walker",
-	              sock_diag_walker.runs,
 	              sock_diag_walker_fields);
 
 static const struct stat_field altname_thrash_fields[] = {
@@ -240,7 +234,6 @@ static const struct stat_field altname_thrash_fields[] = {
 
 const struct stat_category altname_thrash_category =
 	STAT_CATEGORY("altname_thrash",
-	              altname_thrash.invocations,
 	              altname_thrash_fields);
 
 
@@ -262,7 +255,6 @@ static const struct stat_field ipmr_cache_report_fields[] = {
 
 const struct stat_category ipmr_cache_report_category =
 	STAT_CATEGORY("ipmr_cache_report",
-	              ipmr_cache_report.iters,
 	              ipmr_cache_report_fields);
 
 static const struct stat_field ipmr_getroute_pktinfo_fields[] = {
@@ -274,7 +266,6 @@ static const struct stat_field ipmr_getroute_pktinfo_fields[] = {
 
 const struct stat_category ipmr_getroute_pktinfo_category =
 	STAT_CATEGORY("ipmr_getroute_pktinfo",
-	              ipmr_getroute_pktinfo.iters,
 	              ipmr_getroute_pktinfo_fields);
 
 void dump_stats_json_netfilter_and_xfrm(void)

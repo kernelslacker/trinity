@@ -29,7 +29,6 @@ static const struct stat_field kvm_fields[] = {
 
 static const struct stat_category kvm_category =
 	STAT_CATEGORY("kvm",
-	              kvm.vcpu_ioctls_dispatched,
 	              kvm_fields);
 
 static const struct stat_field kvm_run_churn_fields[] = {
@@ -50,7 +49,6 @@ static const struct stat_field kvm_run_churn_fields[] = {
 
 static const struct stat_category kvm_run_churn_category =
 	STAT_CATEGORY("kvm_run_churn",
-	              kvm.invocations,
 	              kvm_run_churn_fields);
 
 static const struct stat_field kvm_reclaim_race_fields[] = {
@@ -64,7 +62,6 @@ static const struct stat_field kvm_reclaim_race_fields[] = {
 
 static const struct stat_category kvm_reclaim_race_category =
 	STAT_CATEGORY("kvm_reclaim_race",
-	              kvm.reclaim_prefault_ok,
 	              kvm_reclaim_race_fields);
 
 static const struct stat_field nl80211_fields[] = {
@@ -87,7 +84,6 @@ static const struct stat_field nl80211_fields[] = {
 
 static const struct stat_category nl80211_category =
 	STAT_CATEGORY("nl80211",
-	              nl80211.runs,
 	              nl80211_fields);
 
 void dump_stats_json_iouring_zc_and_kvm(void)
@@ -120,7 +116,6 @@ static const struct stat_field af_alg_probe_fields[] = {
 
 static const struct stat_category af_alg_probe_category =
 	STAT_CATEGORY("af_alg_probe",
-	              af_alg_probe.runs,
 	              af_alg_probe_fields);
 
 static const struct stat_field af_alg_recvmsg_fields[] = {
@@ -136,7 +131,6 @@ static const struct stat_field af_alg_recvmsg_fields[] = {
 
 static const struct stat_category af_alg_recvmsg_category =
 	STAT_CATEGORY("af_alg_recvmsg",
-	              af_alg_recvmsg.runs,
 	              af_alg_recvmsg_fields);
 
 void dump_stats_json_rxrpc_alg_ublk_block(void)

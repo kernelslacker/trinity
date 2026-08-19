@@ -13,5 +13,4 @@ static const struct stat_field bareudp_rx_fields[] = {
 
 const struct stat_category bareudp_rx_category =
 	STAT_CATEGORY("bareudp_rx",
-	              bareudp_rx.runs,
 	              bareudp_rx_fields);

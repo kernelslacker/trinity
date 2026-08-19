@@ -24,5 +24,4 @@ static const struct stat_field bridge_fdb_stp_fields[] = {
 
 const struct stat_category bridge_fdb_stp_category =
 	STAT_CATEGORY("bridge_fdb_stp",
-	              bridge_fdb_stp.runs,
 	              bridge_fdb_stp_fields);

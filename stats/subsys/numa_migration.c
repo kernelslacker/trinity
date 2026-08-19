@@ -11,5 +11,4 @@ static const struct stat_field numa_migration_fields[] = {
 
 const struct stat_category numa_migration_category =
 	STAT_CATEGORY("numa_migration",
-	              numa_migration.runs,
 	              numa_migration_fields);

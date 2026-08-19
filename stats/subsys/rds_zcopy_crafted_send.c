@@ -15,5 +15,4 @@ static const struct stat_field rds_zcopy_crafted_send_fields[] = {
 
 const struct stat_category rds_zcopy_crafted_send_category =
 	STAT_CATEGORY("rds_zcopy_crafted_send",
-	              rds_zcopy_crafted_send.runs,
 	              rds_zcopy_crafted_send_fields);

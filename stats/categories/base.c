@@ -14,11 +14,9 @@
  * epoll_*) the suffix alone wouldn't yield the schema's JSON key, so
  * STAT_FIELD_JSON() pins the JSON key explicitly.
  *
- * The gate_field argument to STAT_CATEGORY is accepted for backward
- * compatibility but is not stored; stat_category_emit_text() emits the
- * block when any field in the category is non-zero.  These tables have
- * no live text caller yet -- they land here so the per-fn JSON
- * conversions can be reviewed in isolation.
+ * stat_category_emit_text() emits the block when any field in the category
+ * is non-zero.  These tables have no live text caller yet -- they land here
+ * so the per-fn JSON conversions can be reviewed in isolation.
  */
 /* child_dead_parent_observed: init_child()'s pid-handshake loop saw
  * pid_alive(mainpid) == false -- the parent died before publishing this
@@ -32,7 +30,6 @@ static const struct stat_field child_fields[] = {
 
 const struct stat_category child_category =
 	STAT_CATEGORY("child",
-	              diag.child_dead_parent_observed,
 	              child_fields);
 
 /* parent_inherited_fds_closed: sanitize_inherited_fds() closed an fd
@@ -48,7 +45,6 @@ static const struct stat_field parent_fields[] = {
 
 const struct stat_category parent_category =
 	STAT_CATEGORY("parent",
-	              fd.parent_inherited_fds_closed,
 	              parent_fields);
 
 /* zombie_slots mixes two struct prefixes (zombie_slots_ for the gauge,
@@ -63,7 +59,6 @@ static const struct stat_field zombie_slots_fields[] = {
 
 const struct stat_category zombie_slots_category =
 	STAT_CATEGORY("zombie_slots",
-	              zombie_reaper.reaped,
 	              zombie_slots_fields);
 
 static const struct stat_field kvm_run_churn_fields[] = {
@@ -85,7 +80,6 @@ static const struct stat_field kvm_run_churn_fields[] = {
 static const struct stat_category kvm_run_churn_category
 	__attribute__((unused)) =
 	STAT_CATEGORY("kvm_run_churn",
-	              kvm.invocations,
 	              kvm_run_churn_fields);
 
 static const struct stat_field fd_lifecycle_fields[] = {
@@ -113,6 +107,5 @@ static const struct stat_field fd_lifecycle_fields[] = {
 static const struct stat_category fd_lifecycle_category
 	__attribute__((unused)) =
 	STAT_CATEGORY("fd_lifecycle",
-	              fd.stale_detected,
 	              fd_lifecycle_fields);
 

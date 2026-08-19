@@ -12,5 +12,4 @@ static const struct stat_field futex_pi_requeue_rollback_fields[] = {
 
 const struct stat_category futex_pi_requeue_rollback_category =
 	STAT_CATEGORY("futex_pi_requeue_rollback",
-	              futex_pi_requeue_rollback.runs,
 	              futex_pi_requeue_rollback_fields);

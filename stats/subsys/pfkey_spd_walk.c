@@ -15,5 +15,4 @@ static const struct stat_field pfkey_spd_walk_fields[] = {
 
 const struct stat_category pfkey_spd_walk_category =
 	STAT_CATEGORY("pfkey_spd_walk",
-	              pfkey_spd_walk.runs,
 	              pfkey_spd_walk_fields);

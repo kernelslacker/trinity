@@ -17,5 +17,4 @@ static const struct stat_field genetlink_fuzzer_fields[] = {
 
 const struct stat_category genetlink_fuzzer_category =
 	STAT_CATEGORY("genetlink_fuzzer",
-	              genetlink_fuzzer.families_discovered,
 	              genetlink_fuzzer_fields);

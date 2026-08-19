@@ -14,5 +14,4 @@ static const struct stat_field cred_transition_fields[] = {
 
 const struct stat_category cred_transition_category =
 	STAT_CATEGORY("cred_transition",
-	              cred_transition.runs,
 	              cred_transition_fields);

@@ -10,5 +10,4 @@ static const struct stat_field refcount_audit_fields[] = {
 
 const struct stat_category refcount_audit_category =
 	STAT_CATEGORY("refcount_audit",
-	              refcount_audit.runs,
 	              refcount_audit_fields);

@@ -16,5 +16,4 @@ static const struct stat_field msg_zerocopy_churn_fields[] = {
 
 const struct stat_category msg_zerocopy_churn_category =
 	STAT_CATEGORY("msg_zerocopy_churn",
-	              msg_zerocopy_churn.runs,
 	              msg_zerocopy_churn_fields);

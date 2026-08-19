@@ -16,5 +16,4 @@ static const struct stat_field iouring_recipes_fields[] = {
 
 const struct stat_category iouring_recipes_category =
 	STAT_CATEGORY("iouring_recipes",
-	              iouring_recipes.runs,
 	              iouring_recipes_fields);

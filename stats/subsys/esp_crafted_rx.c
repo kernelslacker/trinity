@@ -14,5 +14,4 @@ static const struct stat_field esp_crafted_rx_fields[] = {
 
 const struct stat_category esp_crafted_rx_category =
 	STAT_CATEGORY("esp_crafted_rx",
-	              esp_crafted_rx.runs,
 	              esp_crafted_rx_fields);

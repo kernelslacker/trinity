@@ -12,5 +12,4 @@ static const struct stat_field sock_ulp_sockmap_layering_fields[] = {
 
 const struct stat_category sock_ulp_sockmap_layering_category =
 	STAT_CATEGORY("sock_ulp_sockmap_layering",
-	              sock_ulp_sockmap_layering.runs,
 	              sock_ulp_sockmap_layering_fields);

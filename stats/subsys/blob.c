@@ -43,5 +43,4 @@ static const struct stat_field blob_mutator_fields[] = {
 
 const struct stat_category blob_mutator_category =
 	STAT_CATEGORY("blob_mutator",
-	              blob.fills,
 	              blob_mutator_fields);

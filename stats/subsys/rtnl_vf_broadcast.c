@@ -10,5 +10,4 @@ static const struct stat_field rtnl_vf_broadcast_getlink_fields[] = {
 
 const struct stat_category rtnl_vf_broadcast_getlink_category =
 	STAT_CATEGORY("rtnl_vf_broadcast_getlink",
-	              rtnl_vf_broadcast.runs,
 	              rtnl_vf_broadcast_getlink_fields);

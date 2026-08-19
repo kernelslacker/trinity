@@ -11,5 +11,4 @@ static const struct stat_field fork_storm_fields[] = {
 
 const struct stat_category fork_storm_category =
 	STAT_CATEGORY("fork_storm",
-	              fork_storm.runs,
 	              fork_storm_fields);

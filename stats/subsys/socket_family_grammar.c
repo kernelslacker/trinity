@@ -11,5 +11,4 @@ static const struct stat_field socket_family_grammar_fields[] = {
 
 const struct stat_category socket_family_grammar_category =
 	STAT_CATEGORY("socket_family_grammar",
-	              socket_family_grammar.runs,
 	              socket_family_grammar_fields);

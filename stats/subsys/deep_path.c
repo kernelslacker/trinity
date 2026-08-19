@@ -11,5 +11,4 @@ static const struct stat_field deep_path_nesting_fields[] = {
 
 const struct stat_category deep_path_nesting_category =
 	STAT_CATEGORY("deep_path_nesting",
-	              deep_path.runs,
 	              deep_path_nesting_fields);

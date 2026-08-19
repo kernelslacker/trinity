@@ -13,5 +13,4 @@ static const struct stat_field uid_change_fields[] = {
 
 const struct stat_category uid_change_category =
 	STAT_CATEGORY("uid_change",
-	              uid_change.logged,
 	              uid_change_fields);

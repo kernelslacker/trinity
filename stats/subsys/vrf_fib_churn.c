@@ -17,5 +17,4 @@ static const struct stat_field vrf_fib_churn_fields[] = {
 
 const struct stat_category vrf_fib_churn_category =
 	STAT_CATEGORY("vrf_fib_churn",
-	              vrf_fib_churn.runs,
 	              vrf_fib_churn_fields);

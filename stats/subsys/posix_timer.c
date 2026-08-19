@@ -9,5 +9,4 @@ static const struct stat_field posix_timer_fields[] = {
 
 const struct stat_category posix_timer_category =
 	STAT_CATEGORY("posix_timer",
-	              posix_timer.sigev_delivered,
 	              posix_timer_fields);

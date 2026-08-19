@@ -10,5 +10,4 @@ static const struct stat_field sctp_chunk_rx_fields[] = {
 
 const struct stat_category sctp_chunk_rx_category =
 	STAT_CATEGORY("sctp_chunk_rx",
-	              sctp_chunk_rx.runs,
 	              sctp_chunk_rx_fields);

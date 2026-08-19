@@ -11,5 +11,4 @@ static const struct stat_field ovs_tunnel_vport_churn_fields[] = {
 
 const struct stat_category ovs_tunnel_vport_churn_category =
 	STAT_CATEGORY("ovs_tunnel_vport_churn",
-	              ovs_tunnel_vport_churn.runs,
 	              ovs_tunnel_vport_churn_fields);

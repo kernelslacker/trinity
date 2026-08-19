@@ -12,5 +12,4 @@ static const struct stat_field mpls_label_stack_rx_fields[] = {
 
 const struct stat_category mpls_label_stack_rx_category =
 	STAT_CATEGORY("mpls_label_stack_rx",
-	              mpls_label_stack_rx.runs,
 	              mpls_label_stack_rx_fields);

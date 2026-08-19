@@ -13,5 +13,4 @@ static const struct stat_field geneve_rx_fields[] = {
 
 const struct stat_category geneve_rx_category =
 	STAT_CATEGORY("geneve_rx",
-	              geneve_rx.runs,
 	              geneve_rx_fields);

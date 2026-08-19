@@ -19,5 +19,4 @@ static const struct stat_field af_unix_scm_rights_gc_fields[] = {
 
 const struct stat_category af_unix_scm_rights_gc_category =
 	STAT_CATEGORY("af_unix_scm_rights_gc",
-	              af_unix_scm_rights_gc.runs,
 	              af_unix_scm_rights_gc_fields);

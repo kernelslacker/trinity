@@ -11,5 +11,4 @@ static const struct stat_field fdstress_fields[] = {
 
 const struct stat_category fdstress_category =
 	STAT_CATEGORY("fdstress",
-	              fdstress.close_reopen,
 	              fdstress_fields);

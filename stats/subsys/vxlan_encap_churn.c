@@ -15,5 +15,4 @@ static const struct stat_field vxlan_encap_churn_fields[] = {
 
 const struct stat_category vxlan_encap_churn_category =
 	STAT_CATEGORY("vxlan_encap_churn",
-	              vxlan_encap_churn.runs,
 	              vxlan_encap_churn_fields);

@@ -11,5 +11,4 @@ static const struct stat_field ipv6_pmtu_race_fields[] = {
 
 const struct stat_category ipv6_pmtu_race_category =
 	STAT_CATEGORY("ipv6_pmtu_race",
-	              ipv6_pmtu_race.runs,
 	              ipv6_pmtu_race_fields);

@@ -15,5 +15,4 @@ static const struct stat_field nexthop_replace_churn_fields[] = {
 
 const struct stat_category nexthop_replace_churn_category =
 	STAT_CATEGORY("nexthop_replace_churn",
-		      nexthop_replace_churn.runs,
 		      nexthop_replace_churn_fields);

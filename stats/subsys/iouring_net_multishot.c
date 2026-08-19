@@ -18,5 +18,4 @@ static const struct stat_field iouring_net_multishot_fields[] = {
 
 const struct stat_category iouring_net_multishot_category =
 	STAT_CATEGORY("iouring_net_multishot",
-	              iouring_net_multishot.runs,
 	              iouring_net_multishot_fields);

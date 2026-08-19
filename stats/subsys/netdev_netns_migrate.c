@@ -17,5 +17,4 @@ static const struct stat_field netdev_netns_migrate_fields[] = {
 
 const struct stat_category netdev_netns_migrate_category =
 	STAT_CATEGORY("netdev_netns_migrate",
-	              netdev_netns_migrate.iters,
 	              netdev_netns_migrate_fields);

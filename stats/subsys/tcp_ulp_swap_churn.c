@@ -16,5 +16,4 @@ static const struct stat_field tcp_ulp_swap_churn_fields[] = {
 
 const struct stat_category tcp_ulp_swap_churn_category =
 	STAT_CATEGORY("tcp_ulp_swap_churn",
-	              tcp_ulp_swap_churn.runs,
 	              tcp_ulp_swap_churn_fields);

@@ -16,5 +16,4 @@ static const struct stat_field nf_conntrack_helper_churn_fields[] = {
 
 const struct stat_category nf_conntrack_helper_churn_category =
 	STAT_CATEGORY("nf_conntrack_helper_churn",
-	              nf_conntrack_helper_churn.runs,
 	              nf_conntrack_helper_churn_fields);

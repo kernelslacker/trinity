@@ -16,5 +16,4 @@ static const struct stat_field af_alg_weak_cipher_probe_fields[] = {
 
 const struct stat_category af_alg_weak_cipher_probe_category =
 	STAT_CATEGORY("af_alg_weak_cipher_probe",
-	              af_alg_weak_cipher_probe.runs,
 	              af_alg_weak_cipher_probe_fields);

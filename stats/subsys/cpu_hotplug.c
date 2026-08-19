@@ -13,5 +13,4 @@ static const struct stat_field cpu_hotplug_rider_fields[] = {
 
 const struct stat_category cpu_hotplug_rider_category =
 	STAT_CATEGORY("cpu_hotplug_rider",
-	              cpu_hotplug.runs,
 	              cpu_hotplug_rider_fields);

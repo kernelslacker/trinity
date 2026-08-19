@@ -14,5 +14,4 @@ static const struct stat_field rpl_clone_fidelity_fields[] = {
 
 const struct stat_category rpl_clone_fidelity_category =
 	STAT_CATEGORY("rpl_clone_fidelity",
-	              rpl_clone_fidelity.srh_mutated,
 	              rpl_clone_fidelity_fields);

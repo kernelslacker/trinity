@@ -27,5 +27,4 @@ static const struct stat_field uffd_fault_move_fields[] = {
 
 const struct stat_category uffd_fault_move_category =
 	STAT_CATEGORY("uffd_fault_move",
-	              uffd_fault_move.oracle_checks_run,
 	              uffd_fault_move_fields);

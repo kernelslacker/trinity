@@ -13,5 +13,4 @@ static const struct stat_field netconf_inetdev_race_fields[] = {
 
 const struct stat_category netconf_getdevconf_inetdev_teardown_race_category =
 	STAT_CATEGORY("netconf_getdevconf_inetdev_teardown_race",
-	              netconf_inetdev_race.runs,
 	              netconf_inetdev_race_fields);

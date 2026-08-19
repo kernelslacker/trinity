@@ -14,5 +14,4 @@ static const struct stat_field mremap_merge_matrix_fields[] = {
 
 const struct stat_category mremap_merge_matrix_category =
 	STAT_CATEGORY("mremap_merge_matrix",
-	              mremap_merge_matrix.checks_run,
 	              mremap_merge_matrix_fields);

@@ -9,5 +9,4 @@ static const struct stat_field flock_thrash_fields[] = {
 
 const struct stat_category flock_thrash_category =
 	STAT_CATEGORY("flock_thrash",
-	              flock_thrash.runs,
 	              flock_thrash_fields);

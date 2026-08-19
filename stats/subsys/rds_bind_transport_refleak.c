@@ -24,5 +24,4 @@ static const struct stat_field rds_bind_transport_refleak_fields[] = {
 
 const struct stat_category rds_bind_transport_refleak_category =
 	STAT_CATEGORY("rds_bind_transport_refleak",
-	              rds_bind_transport_refleak.runs,
 	              rds_bind_transport_refleak_fields);

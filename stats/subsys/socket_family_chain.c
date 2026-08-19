@@ -11,5 +11,4 @@ static const struct stat_field socket_family_chain_fields[] = {
 
 const struct stat_category socket_family_chain_category =
 	STAT_CATEGORY("socket_family_chain",
-	              socket_family_chain.runs,
 	              socket_family_chain_fields);

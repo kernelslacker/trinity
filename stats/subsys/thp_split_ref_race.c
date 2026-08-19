@@ -19,5 +19,4 @@ static const struct stat_field thp_split_ref_race_fields[] = {
 
 const struct stat_category thp_split_ref_race_category =
 	STAT_CATEGORY("thp_split_ref_race",
-	              thp_split_ref_race.split_trigger_rounds,
 	              thp_split_ref_race_fields);

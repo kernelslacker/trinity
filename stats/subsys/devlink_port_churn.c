@@ -12,5 +12,4 @@ static const struct stat_field devlink_port_churn_fields[] = {
 
 const struct stat_category devlink_port_churn_category =
 	STAT_CATEGORY("devlink_port_churn",
-	              devlink_port_churn.iterations,
 	              devlink_port_churn_fields);

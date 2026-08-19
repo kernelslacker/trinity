@@ -10,5 +10,4 @@ static const struct stat_field pipe_thrash_fields[] = {
 
 const struct stat_category pipe_thrash_category =
 	STAT_CATEGORY("pipe_thrash",
-	              pipe_thrash.runs,
 	              pipe_thrash_fields);

@@ -10,5 +10,4 @@ static const struct stat_field mount_churn_fields[] = {
 
 const struct stat_category mount_churn_category =
 	STAT_CATEGORY("mount_churn",
-	              mount_churn.runs,
 	              mount_churn_fields);

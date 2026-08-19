@@ -16,5 +16,4 @@ static const struct stat_field inplace_crypto_fields[] = {
 
 const struct stat_category inplace_crypto_category =
 	STAT_CATEGORY("inplace_crypto",
-	              inplace_crypto.mutated,
 	              inplace_crypto_fields);

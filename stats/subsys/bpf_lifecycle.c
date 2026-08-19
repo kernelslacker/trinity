@@ -13,5 +13,4 @@ static const struct stat_field bpf_lifecycle_fields[] = {
 
 const struct stat_category bpf_lifecycle_category =
 	STAT_CATEGORY("bpf_lifecycle",
-	              bpf_lifecycle.runs,
 	              bpf_lifecycle_fields);

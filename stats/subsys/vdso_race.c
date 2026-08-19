@@ -9,5 +9,4 @@ static const struct stat_field vdso_mremap_race_fields[] = {
 
 const struct stat_category vdso_mremap_race_category =
 	STAT_CATEGORY("vdso_mremap_race",
-	              vdso_race.runs,
 	              vdso_mremap_race_fields);

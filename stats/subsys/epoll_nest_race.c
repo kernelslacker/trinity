@@ -10,5 +10,4 @@ static const struct stat_field epoll_nest_race_fields[] = {
 
 const struct stat_category epoll_nest_race_category =
 	STAT_CATEGORY("epoll_nest_race",
-	              epoll_nest_race.runs,
 	              epoll_nest_race_fields);

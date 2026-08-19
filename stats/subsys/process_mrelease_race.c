@@ -18,5 +18,4 @@ static const struct stat_field process_mrelease_race_fields[] = {
 
 const struct stat_category process_mrelease_race_category =
 	STAT_CATEGORY("process_mrelease_race",
-	              process_mrelease_race.runs,
 	              process_mrelease_race_fields);

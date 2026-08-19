@@ -16,5 +16,4 @@ static const struct stat_field iscsi_target_probe_fields[] = {
 
 const struct stat_category iscsi_target_probe_category =
 	STAT_CATEGORY("iscsi_target_probe",
-	              iscsi_target_probe.runs,
 	              iscsi_target_probe_fields);

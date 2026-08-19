@@ -10,5 +10,4 @@ static const struct stat_field close_racer_fields[] = {
 
 const struct stat_category close_racer_category =
 	STAT_CATEGORY("close_racer",
-	              close_racer.runs,
 	              close_racer_fields);

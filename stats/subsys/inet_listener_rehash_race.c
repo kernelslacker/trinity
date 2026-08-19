@@ -24,5 +24,4 @@ static const struct stat_field inet_listener_rehash_race_fields[] = {
 
 const struct stat_category inet_listener_rehash_race_category =
 	STAT_CATEGORY("inet_listener_rehash_race",
-	              inet_listener_rehash_race.runs,
 	              inet_listener_rehash_race_fields);

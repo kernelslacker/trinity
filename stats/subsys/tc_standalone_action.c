@@ -21,5 +21,4 @@ static const struct stat_field tc_standalone_action_fields[] = {
 
 const struct stat_category tc_standalone_action_category =
 	STAT_CATEGORY("tc_standalone_action",
-	              tc_standalone_action.runs,
 	              tc_standalone_action_fields);

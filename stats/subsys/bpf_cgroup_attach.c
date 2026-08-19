@@ -22,5 +22,4 @@ static const struct stat_field bpf_cgroup_attach_fields[] = {
 
 const struct stat_category bpf_cgroup_attach_category =
 	STAT_CATEGORY("bpf_cgroup_attach",
-	              bpf_cgroup_attach.runs,
 	              bpf_cgroup_attach_fields);

@@ -19,5 +19,4 @@ static const struct stat_field nat_t_churn_fields[] = {
  * a separate gate argument. */
 const struct stat_category nat_t_churn_category =
 	STAT_CATEGORY("nat_t_churn",
-	              nat_t_churn.runs,
 	              nat_t_churn_fields);

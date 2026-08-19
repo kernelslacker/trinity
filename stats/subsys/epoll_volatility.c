@@ -9,5 +9,4 @@ static const struct stat_field epoll_volatility_fields[] = {
 
 const struct stat_category epoll_volatility_category =
 	STAT_CATEGORY("epoll_volatility",
-	              epoll_volatility.runs,
 	              epoll_volatility_fields);

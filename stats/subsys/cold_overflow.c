@@ -16,5 +16,4 @@ static const struct stat_field cold_overflow_fields[] = {
 
 const struct stat_category cold_overflow_category =
 	STAT_CATEGORY("cold_overflow",
-	              cold_overflow.would_save,
 	              cold_overflow_fields);

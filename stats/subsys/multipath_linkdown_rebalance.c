@@ -16,5 +16,4 @@ static const struct stat_field multipath_linkdown_rebalance_fields[] = {
 
 const struct stat_category multipath_linkdown_rebalance_category =
 	STAT_CATEGORY("multipath_linkdown_rebalance",
-	              multipath_linkdown_rebalance.runs,
 	              multipath_linkdown_rebalance_fields);

@@ -12,5 +12,4 @@ static const struct stat_field handshake_req_abort_fields[] = {
 
 const struct stat_category handshake_req_abort_category =
 	STAT_CATEGORY("handshake_req_abort",
-	              handshake_req_abort.runs,
 	              handshake_req_abort_fields);

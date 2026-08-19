@@ -24,5 +24,4 @@ static const struct stat_field mptcp_pm_churn_fields[] = {
 
 const struct stat_category mptcp_pm_churn_category =
 	STAT_CATEGORY("mptcp_pm_churn",
-	              mptcp_pm_churn.runs,
 	              mptcp_pm_churn_fields);

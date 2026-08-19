@@ -17,5 +17,4 @@ static const struct stat_field userns_bootstrap_fields[] = {
 
 const struct stat_category userns_bootstrap_category =
 	STAT_CATEGORY("userns_bootstrap",
-	              userns_bootstrap.runs,
 	              userns_bootstrap_fields);

@@ -12,5 +12,4 @@ static const struct stat_field bridge_conntrack_churn_fields[] = {
 
 const struct stat_category bridge_conntrack_churn_category =
 	STAT_CATEGORY("bridge_conntrack_churn",
-	              bridge_ct.runs,
 	              bridge_conntrack_churn_fields);

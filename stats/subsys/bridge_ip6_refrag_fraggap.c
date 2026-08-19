@@ -10,5 +10,4 @@ static const struct stat_field bridge_ip6_refrag_fraggap_fields[] = {
 
 const struct stat_category bridge_ip6_refrag_fraggap_category =
 	STAT_CATEGORY("bridge_ip6_refrag_fraggap",
-	              bridge_ip6_refrag_fraggap.runs,
 	              bridge_ip6_refrag_fraggap_fields);

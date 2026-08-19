@@ -20,5 +20,4 @@ static const struct stat_field vsock_transport_churn_fields[] = {
 
 const struct stat_category vsock_transport_churn_category =
 	STAT_CATEGORY("vsock_transport_churn",
-	              vsock_transport_churn.runs,
 	              vsock_transport_churn_fields);

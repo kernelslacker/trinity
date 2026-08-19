@@ -13,5 +13,4 @@ static const struct stat_field cgroup_churn_fields[] = {
 
 const struct stat_category cgroup_churn_category =
 	STAT_CATEGORY("cgroup_churn",
-	              cgroup_churn.runs,
 	              cgroup_churn_fields);

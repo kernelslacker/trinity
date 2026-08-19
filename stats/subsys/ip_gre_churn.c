@@ -14,5 +14,4 @@ static const struct stat_field ip_gre_churn_fields[] = {
 
 const struct stat_category ip_gre_churn_category =
 	STAT_CATEGORY("ip_gre_churn",
-	              ip_gre_churn.runs,
 	              ip_gre_churn_fields);

@@ -34,5 +34,4 @@ static const struct stat_field igmp_mld_source_churn_fields[] = {
 
 const struct stat_category igmp_mld_source_churn_category =
 	STAT_CATEGORY("igmp_mld_source_churn",
-	              igmp_mld_source_churn.runs,
 	              igmp_mld_source_churn_fields);

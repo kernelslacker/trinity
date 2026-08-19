@@ -14,5 +14,4 @@ static const struct stat_field packet_fanout_thrash_fields[] = {
 
 const struct stat_category packet_fanout_thrash_category =
 	STAT_CATEGORY("packet_fanout_thrash",
-	              packet_fanout_thrash.runs,
 	              packet_fanout_thrash_fields);

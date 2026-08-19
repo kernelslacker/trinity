@@ -14,5 +14,4 @@ static const struct stat_field qrtr_bind_race_fields[] = {
 
 const struct stat_category qrtr_bind_race_category =
 	STAT_CATEGORY("qrtr_bind_race",
-	              qrtr_bind_race.runs,
 	              qrtr_bind_race_fields);

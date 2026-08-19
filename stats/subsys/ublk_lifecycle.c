@@ -12,5 +12,4 @@ static const struct stat_field ublk_lifecycle_fields[] = {
 
 const struct stat_category ublk_lifecycle_category =
 	STAT_CATEGORY("ublk_lifecycle",
-	              ublk_lifecycle.iters,
 	              ublk_lifecycle_fields);

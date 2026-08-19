@@ -14,5 +14,4 @@ static const struct stat_field netlink_monitor_race_fields[] = {
 
 const struct stat_category netlink_monitor_race_category =
 	STAT_CATEGORY("netlink_monitor_race",
-	              netlink_monitor_race.runs,
 	              netlink_monitor_race_fields);

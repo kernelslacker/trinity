@@ -17,5 +17,4 @@ static const struct stat_field statmount_idmap_fields[] = {
 
 const struct stat_category statmount_idmap_category =
 	STAT_CATEGORY("statmount_idmap",
-	              statmount_idmap.runs,
 	              statmount_idmap_fields);

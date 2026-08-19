@@ -10,5 +10,4 @@ static const struct stat_field iouring_flood_fields[] = {
 
 const struct stat_category iouring_flood_category =
 	STAT_CATEGORY("iouring_flood",
-	              iouring.runs,
 	              iouring_flood_fields);

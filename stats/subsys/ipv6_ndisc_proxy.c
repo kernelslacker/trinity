@@ -10,5 +10,4 @@ static const struct stat_field ipv6_ndisc_proxy_fields[] = {
 
 const struct stat_category ipv6_ndisc_proxy_category =
 	STAT_CATEGORY("ipv6_ndisc_proxy",
-	              ipv6_ndisc_proxy.runs,
 	              ipv6_ndisc_proxy_fields);

@@ -9,5 +9,4 @@ static const struct stat_field madvise_cycler_fields[] = {
 
 const struct stat_category madvise_cycler_category =
 	STAT_CATEGORY("madvise_cycler",
-	              madvise_cycler.runs,
 	              madvise_cycler_fields);
