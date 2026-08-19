@@ -203,16 +203,17 @@ if [[ -z "${DRY_RUN}" ]] && [[ -e "${_tracing_on}" ]]; then
     _perms_ok=1
     info "${_tracing_on} exists — scanning tree for wrong group or mode"
     if [[ -n "${TARGET_GROUP}" ]]; then
-        # Strip any leading zero from FILE_MODE for comparison with find -perm.
-        _want_mode="${FILE_MODE#0}"
         # Scan the whole tree; stop at the first entry that needs attention.
-        # Using FILE_MODE for directories is conservative: a dir with FILE_MODE
-        # instead of DIR_MODE will trigger a chmod rerun, which is harmless.
-        _need_work=$(find "${MOUNT_POINT}" \( -type f -o -type d \) \
-            \( ! -group "${TARGET_GROUP}" -o ! -perm "${_want_mode}" \) \
-            -print -quit 2>/dev/null)
+        # Test files against FILE_MODE and directories against DIR_MODE so that
+        # a correctly-configured tree (dirs at DIR_MODE, files at FILE_MODE)
+        # satisfies the predicate and the latch fires.
+        _need_work=$(find "${MOUNT_POINT}" \( \
+            \( -type f ! -perm "${FILE_MODE#0}" \) -o \
+            \( -type d ! -perm "${DIR_MODE#0}" \) -o \
+            ! -group "${TARGET_GROUP}" \
+            \) -print -quit 2>/dev/null)
         if [[ -z "${_need_work}" ]]; then
-            info "all entries in ${MOUNT_POINT} already have group '${TARGET_GROUP}' and mode '${_want_mode}' — skipping chgrp/chmod"
+            info "all entries in ${MOUNT_POINT} already have group '${TARGET_GROUP}' and correct modes — skipping chgrp/chmod"
             _perms_ok=2  # 2 = fully done, skip both steps
         else
             _perms_ok=1  # at least one entry needs chgrp/chmod
