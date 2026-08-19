@@ -2,6 +2,15 @@
 
 #include <netinet/in.h>
 
+#ifndef IPV6_FLOWINFO
+#define IPV6_FLOWINFO           11
+#endif
+#ifndef IPV6_FLOWLABEL_MGR
+#define IPV6_FLOWLABEL_MGR      32
+#endif
+#ifndef IPV6_FLOWINFO_SEND
+#define IPV6_FLOWINFO_SEND	33
+#endif
 #ifndef IPV6_ADDR_PREFERENCES
 #define IPV6_ADDR_PREFERENCES	72
 #endif
