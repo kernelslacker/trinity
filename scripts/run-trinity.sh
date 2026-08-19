@@ -29,6 +29,20 @@ if [[ -e /sys/kernel/debug/kcov ]]; then
     fi
 fi
 
+# Privileged pre-run setup scripts: must be run manually as root.
+# This script does NOT invoke them automatically — each requires
+# elevated privilege and is a deliberate per-boot decision.
+#
+#   scripts/setup-fault-injectors.sh
+#       Arm debugfs fault injectors.
+#       (CAP_SYS_RESOURCE, CAP_DAC_OVERRIDE)
+#
+#   scripts/setup-privileged-preconditions.sh
+#       Mount tracefs and relax 0640 file modes (TRACE_MODE_WRITE,
+#       kernel/trace/trace.h:34) so the unprivileged runner can
+#       exercise tracefs-fuzzer.
+#       (CAP_SYS_ADMIN, CAP_DAC_OVERRIDE)
+#
 # Fault-injector state: read the world-readable file written by
 # scripts/setup-fault-injectors.sh (run once as root before this script).
 # The debugfs attrs are 0600 root-owned, so the runner cannot probe them
