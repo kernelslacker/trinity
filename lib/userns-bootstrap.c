@@ -176,6 +176,16 @@ static void grandchild_body(int target_ns_flags,
 	if (target_ns_flags != 0 && unshare(target_ns_flags) != 0)
 		_exit(UBS_EXIT_TARGET_UNSHARE);
 
+	/*
+	 * Cap the callback's run-time.  If fn(arg) blocks (e.g. on a
+	 * kernel object that was never going to become ready), the
+	 * default SIGALRM disposition terminates this grandchild so
+	 * the parent's waitpid() returns within USERNS_CALLBACK_ALARM_S
+	 * seconds.  No handler is needed -- _exit() is not called;
+	 * the signal kills the process outright and the parent sees
+	 * WIFSIGNALED/SIGALRM in the wait status.
+	 */
+	alarm(USERNS_CALLBACK_ALARM_S);
 	(void)fn(arg);
 	_exit(UBS_EXIT_RAN);
 }
@@ -203,8 +213,26 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 		_exit(UBS_EXIT_USERNS_OTHER);	/* unreachable */
 	}
 
-	if (waitpid_eintr(pid, &status, 0) < 0)
+	/*
+	 * Belt-and-suspenders parent-side timeout.  The grandchild
+	 * installs alarm(USERNS_CALLBACK_ALARM_S) before invoking the
+	 * callback, so a wedged fn() causes the grandchild to die
+	 * within that window and waitpid_eintr() returns normally via
+	 * the resulting SIGCHLD.  The parent alarm below
+	 * (USERNS_PARENT_ALARM_S > USERNS_CALLBACK_ALARM_S) provides a
+	 * secondary escape: even if the grandchild's own alarm was
+	 * suppressed, the parent's SIGALRM fires, EINTR is returned,
+	 * the loop retries, and at that point the grandchild is either
+	 * already dead or will be killed by SIGKILL from the reaper.
+	 * Cancel the alarm immediately after the wait to avoid leaving
+	 * a stale one-shot alarm in the child process.
+	 */
+	alarm(USERNS_PARENT_ALARM_S);
+	if (waitpid_eintr(pid, &status, 0) < 0) {
+		alarm(0);
 		return -EAGAIN;
+	}
+	alarm(0);
 
 	if (WIFEXITED(status)) {
 		switch (WEXITSTATUS(status)) {

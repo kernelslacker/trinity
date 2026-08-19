@@ -38,6 +38,26 @@
 #ifndef _TRINITY_USERNS_BOOTSTRAP_H
 #define _TRINITY_USERNS_BOOTSTRAP_H
 
+/*
+ * Maximum wall-clock seconds any fn(arg) callback passed to
+ * userns_run_in_ns() is permitted to run.  The grandchild installs
+ * alarm(USERNS_CALLBACK_ALARM_S) immediately before invoking fn();
+ * if fn() blocks (e.g. on accept(2), a futex, or any other kernel
+ * object that never becomes ready), the default SIGALRM disposition
+ * terminates the grandchild so the parent is unblocked within this
+ * many seconds.  Callers that legitimately need longer should split
+ * their work across multiple userns_run_in_ns() calls.
+ *
+ * USERNS_PARENT_ALARM_S is the secondary timeout set by the parent
+ * before calling waitpid_eintr().  It is intentionally larger than
+ * USERNS_CALLBACK_ALARM_S so that the grandchild's own alarm fires
+ * first in the normal case; the parent alarm is a belt-and-suspenders
+ * escape for the unlikely event that the grandchild's alarm was
+ * suppressed.
+ */
+#define USERNS_CALLBACK_ALARM_S  30u
+#define USERNS_PARENT_ALARM_S    35u
+
 int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg);
 
 #endif
