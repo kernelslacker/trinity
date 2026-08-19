@@ -550,6 +550,25 @@ if mode == "regen":
         for k in terminal_keys:
             lines.append(k)
         lines.append("")
+    # Floor: refuse to write an empty [window] when the prior baseline had one.
+    # A run that did not reach the window-emit threshold (10001 ops) produces
+    # no window records; blindly writing that as the new baseline would silently
+    # drop the entire section.  Check whether the existing baseline has a
+    # [window] section and abort regen if it does but window_keys is empty.
+    if not window_keys and os.path.exists(baseline_path):
+        _had_window = False
+        with open(baseline_path) as _f:
+            for _l in _f:
+                if _l.rstrip('\n') == '[window]':
+                    _had_window = True
+                    break
+        if _had_window:
+            with open(result_path, "w") as f:
+                f.write("error: regen would write empty [window] section "
+                        "but prior baseline has one -- "
+                        "run did not reach window-emit threshold; "
+                        "use -N 15000 or higher\n")
+            sys.exit(1)
     if window_keys:
         lines.append("[window]")
         for k in window_keys:
@@ -648,7 +667,7 @@ with open(result_path, "w") as f:
         n_terminal = len(terminal_keys) if terminal_keys else 0
         n_window   = len(window_keys)   if window_keys   else 0
         f.write("ok\n")
-        f.write(f"terminal_keys={n_terminal} window_keys={n_window}\n")
+        f.write(f"terminal_keys={n_terminal} window_compared={n_window}\n")
 
 sys.exit(1 if check_errors else 0)
 PYEOF
