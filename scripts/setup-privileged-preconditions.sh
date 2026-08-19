@@ -217,13 +217,11 @@ if [[ -z "${DRY_RUN}" ]] && [[ -e "${_tracing_on}" ]]; then
         # Test files against FILE_MODE and directories against DIR_MODE so that
         # a correctly-configured tree (dirs at DIR_MODE, files at FILE_MODE)
         # satisfies the predicate and the latch fires.
-        _need_work=$(find "${MOUNT_POINT}" \( -type f -o -type d \) \
-            \( ! -group "${TARGET_GROUP}" \
-               -o \( -type f ! -perm "${FILE_MODE#0}" \) \
-               -o \( -type d ! -perm "${DIR_MODE#0}" \) \
-            \) -print -quit)
-        _find_rc=$?
-        if [[ ${_find_rc} -ne 0 ]]; then
+        if ! _need_work=$(find "${MOUNT_POINT}" \( -type f -o -type d \) \
+                \( ! -group "${TARGET_GROUP}" \
+                   -o \( -type f ! -perm "${FILE_MODE#0}" \) \
+                   -o \( -type d ! -perm "${DIR_MODE#0}" \) \
+                \) -print -quit 2>&1); then
             _need_work=1  # find failed -- cannot verify; must enforce
         fi
         if [[ -z "${_need_work}" ]]; then
