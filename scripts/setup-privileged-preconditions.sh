@@ -201,18 +201,21 @@ if [[ -z "${DRY_RUN}" ]] && [[ -e "${_tracing_on}" ]]; then
     # Use -e rather than -w: root can always write so the -w test carried
     # no information about whether the *unprivileged runner* can write.
     _perms_ok=1
-    info "${_tracing_on} exists — checking group owner and mode"
+    info "${_tracing_on} exists — scanning tree for wrong group or mode"
     if [[ -n "${TARGET_GROUP}" ]]; then
-        _cur_grp=$(stat -c '%G' "${_tracing_on}" 2>/dev/null || true)
-        _cur_mode=$(stat -c '%a' "${_tracing_on}" 2>/dev/null || true)
-        # Strip any leading zero from FILE_MODE for comparison: stat
-        # returns e.g. '664', not '0664'.
+        # Strip any leading zero from FILE_MODE for comparison with find -perm.
         _want_mode="${FILE_MODE#0}"
-        if [[ "${_cur_grp}" == "${TARGET_GROUP}" ]] && [[ "${_cur_mode}" == "${_want_mode}" ]]; then
-            info "group already '${TARGET_GROUP}' and mode already '${_cur_mode}' on ${_tracing_on} — skipping chgrp/chmod"
+        # Scan the whole tree; stop at the first entry that needs attention.
+        # Using FILE_MODE for directories is conservative: a dir with FILE_MODE
+        # instead of DIR_MODE will trigger a chmod rerun, which is harmless.
+        _need_work=$(find "${MOUNT_POINT}" \( -type f -o -type d \) \
+            \( ! -group "${TARGET_GROUP}" -o ! -perm "${_want_mode}" \) \
+            -print -quit 2>/dev/null)
+        if [[ -z "${_need_work}" ]]; then
+            info "all entries in ${MOUNT_POINT} already have group '${TARGET_GROUP}' and mode '${_want_mode}' — skipping chgrp/chmod"
             _perms_ok=2  # 2 = fully done, skip both steps
         else
-            _perms_ok=1  # group or mode differs — needs chgrp/chmod
+            _perms_ok=1  # at least one entry needs chgrp/chmod
         fi
     fi
 fi
