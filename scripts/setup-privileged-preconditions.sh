@@ -221,7 +221,11 @@ if [[ -z "${DRY_RUN}" ]] && [[ -e "${_tracing_on}" ]]; then
             \( ! -group "${TARGET_GROUP}" \
                -o \( -type f ! -perm "${FILE_MODE#0}" \) \
                -o \( -type d ! -perm "${DIR_MODE#0}" \) \
-            \) -print -quit 2>/dev/null)
+            \) -print -quit)
+        _find_rc=$?
+        if [[ ${_find_rc} -ne 0 ]]; then
+            _need_work=1  # find failed -- cannot verify; must enforce
+        fi
         if [[ -z "${_need_work}" ]]; then
             info "all entries in ${MOUNT_POINT} already have group '${TARGET_GROUP}' and correct modes — skipping chgrp/chmod"
             _perms_ok=2  # 2 = fully done, skip both steps
@@ -242,13 +246,15 @@ fi
 
 if [[ "${_perms_ok}" != "2" ]]; then
     if [[ -n "${TARGET_GROUP}" ]]; then
-        # chgrp -R: assign the target group to every file and directory.
+        # chgrp: assign the target group to every regular file and directory
+        # under MOUNT_POINT (symlinks and non-regular entries are skipped, to
+        # match the predicate used by the latch scan above).
         # kernel/trace/trace.h:34 TRACE_MODE_WRITE 0640 means without this
         # chgrp the group bits (0040 r-- for the group) are irrelevant to any
         # group other than root.
-        dry_run_or_exec chgrp -R "${TARGET_GROUP}" "${MOUNT_POINT}"
+        dry_run_or_exec find "${MOUNT_POINT}" \( -type f -o -type d \) -exec chgrp "${TARGET_GROUP}" {} +
         if [[ -z "${DRY_RUN}" ]]; then
-            info "chgrp -R ${TARGET_GROUP} ${MOUNT_POINT}"
+            info "chgrp ${TARGET_GROUP} (files+dirs) under ${MOUNT_POINT}"
         fi
     fi
 
