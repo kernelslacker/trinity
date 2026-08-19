@@ -198,21 +198,21 @@ _tracing_on="${MOUNT_POINT}/tracing_on"
 _perms_ok=
 
 if [[ -z "${DRY_RUN}" ]] && [[ -e "${_tracing_on}" ]]; then
-    # Check writability directly.
-    if [[ -w "${_tracing_on}" ]]; then
-        _perms_ok=1
-        info "${_tracing_on} is already writable — checking group owner"
-        # Even if the root-user itself can write (it always can), we still
-        # want to relax for the unprivileged runner; proceed unless the file
-        # is already in the correct group.
-        if [[ -n "${TARGET_GROUP}" ]]; then
-            _cur_grp=$(stat -c '%G' "${_tracing_on}" 2>/dev/null || true)
-            if [[ "${_cur_grp}" == "${TARGET_GROUP}" ]]; then
-                info "group already '${TARGET_GROUP}' on ${_tracing_on} — skipping chgrp/chmod"
-                _perms_ok=2  # 2 = fully done, skip both steps
-            else
-                _perms_ok=1  # needs chgrp/chmod
-            fi
+    # Use -e rather than -w: root can always write so the -w test carried
+    # no information about whether the *unprivileged runner* can write.
+    _perms_ok=1
+    info "${_tracing_on} exists — checking group owner and mode"
+    if [[ -n "${TARGET_GROUP}" ]]; then
+        _cur_grp=$(stat -c '%G' "${_tracing_on}" 2>/dev/null || true)
+        _cur_mode=$(stat -c '%a' "${_tracing_on}" 2>/dev/null || true)
+        # Strip any leading zero from FILE_MODE for comparison: stat
+        # returns e.g. '664', not '0664'.
+        _want_mode="${FILE_MODE#0}"
+        if [[ "${_cur_grp}" == "${TARGET_GROUP}" ]] && [[ "${_cur_mode}" == "${_want_mode}" ]]; then
+            info "group already '${TARGET_GROUP}' and mode already '${_cur_mode}' on ${_tracing_on} — skipping chgrp/chmod"
+            _perms_ok=2  # 2 = fully done, skip both steps
+        else
+            _perms_ok=1  # group or mode differs — needs chgrp/chmod
         fi
     fi
 fi
