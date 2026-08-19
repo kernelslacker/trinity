@@ -1146,6 +1146,10 @@ stats	object
     stats.tcp_ao_rotate.reconnect_ok	u64
     stats.tcp_ao_rotate.reconnect_probed	u64
     stats.tcp_ao_rotate.stale_key_probed	u64
+    stats.tcp_ao_rotate.vrf_enslave_attempted	u64
+    stats.tcp_ao_rotate.vrf_enslave_setup_failed	u64
+    stats.tcp_ao_rotate.vrf_detach_raced	u64
+    stats.tcp_ao_rotate.vrf_connect_ok	u64
   stats.tcp_md5_listener_race	object
     stats.tcp_md5_listener_race.runs	u64
     stats.tcp_md5_listener_race.setup_failed	u64

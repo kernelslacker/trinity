@@ -65,22 +65,34 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <linux/tcp.h>
 #include <fcntl.h>
+#include <net/if.h>
+#include <sched.h>
 #include <string.h>
 #include <sys/types.h>
+#include <arpa/inet.h>
+
+#include <linux/if_addr.h>
+#include <linux/if_link.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 
 #include "child.h"
 #include "childop-outcome.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #include "kernel/fcntl.h"
 #include "kernel/socket.h"
+#include "utils.h"
 /* TCP_AO_* constant fallbacks already live in include/kernel/socket.h.  The
  * structs (tcp_ao_add / tcp_ao_del / tcp_ao_info_opt) live in
  * <linux/tcp.h>.  TCP_AO_MAXKEYLEN was introduced in the same header
@@ -88,6 +100,14 @@
  * definitions on hosts whose toolchain headers predate 6.7.  When the
  * fallback fires we use the kernel struct names so the rest of this
  * file is identical between code paths. */
+#ifndef IFLA_VRF_TABLE
+#define IFLA_VRF_TABLE	1
+#endif
+
+#ifndef VETH_INFO_PEER
+#define VETH_INFO_PEER	1
+#endif
+
 #ifndef TCP_AO_MAXKEYLEN
 #define TCP_AO_MAXKEYLEN	80
 
@@ -753,6 +773,557 @@ static void tcp_ao_rotate_iter_teardown(struct tcp_ao_rotate_iter_ctx *ctx)
 	}
 }
 
+/*
+ * VRF-enslave / detach arm
+ * ========================
+ * Exercises the L3-master membership path in tcp_ao_connect_init().
+ *
+ * The loopback sequence above always takes the default-domain path in
+ * tcp_ao_connect_init() because no bound device is set.  This arm
+ * creates a private VRF master and a veth pair inside the netns, enslaves
+ * one veth end to the VRF, installs TCP-AO keys against the peer address,
+ * then races connect() against a concurrent RTM_SETLINK IFLA_MASTER=0
+ * on the enslaved device.  The race opens the window described in
+ * tcp_ao_connect_init(): the L3 master is resolved twice without the
+ * socket lock stabilising VRF membership, so the AO key list can be
+ * freed while the receive path holds a pointer under RCU.
+ *
+ * Primitives lifted from childops/net/vrf-fib-churn.c (VRF NEWLINK
+ * builder + IFLA_VRF_TABLE attribute) and childops/net/bridge-fdb-stp-
+ * setup.c (veth-pair NEWLINK builder and IFLA_MASTER set/clear helpers).
+ * Kept local so the .c file remains self-contained.
+ *
+ * Self-bounding: userns_run_in_ns() forks a transient grandchild that
+ * _exit()s after one iteration; the netns and every interface/socket it
+ * contains are reaped by the kernel on grandchild exit.  The racing
+ * detach child is an additional fork inside the grandchild; both
+ * descend from the grandchild, not the persistent trinity child.
+ */
+
+/* VRF arm address constants.  Both are in the 10.57.0.0/30 subnet;
+ * the choice is arbitrary — a fresh private netns has no host routes,
+ * so any non-overlapping pair works.  /30 gives exactly two host
+ * addresses (no broadcast collision with .0 and .3). */
+#define VRF_ARM_ADDR_A	0x0a390001u	/* 10.57.0.1 — enslaved veth end */
+#define VRF_ARM_ADDR_B	0x0a390002u	/* 10.57.0.2 — free veth end / listener */
+#define VRF_ARM_PREFIXLEN	30
+#define VRF_ARM_TABLE		77u	/* arbitrary; private netns */
+
+#define VRF_ARM_BUF		2048
+
+/*
+ * RTM_NEWLINK kind="vrf" with IFLA_VRF_TABLE.  Lifted from
+ * childops/net/vrf-fib-churn.c:build_vrf_link().
+ */
+static int vrf_arm_build_vrf_link(struct nl_ctx *ctx, const char *name,
+				  __u32 table)
+{
+	unsigned char buf[VRF_ARM_BUF];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	size_t off, li_off, id_off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
+	if (!off)
+		return -EIO;
+
+	li_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "vrf");
+	if (!off)
+		return -EIO;
+
+	id_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+	if (!off)
+		return -EIO;
+	off = nla_put_u32(buf, off, sizeof(buf), IFLA_VRF_TABLE, table);
+	if (!off)
+		return -EIO;
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * RTM_NEWLINK kind="veth" with VETH_INFO_PEER.  Lifted from
+ * childops/net/bridge-fdb-stp-setup.c:bfs_build_veth_create().
+ */
+static int vrf_arm_build_veth_pair(struct nl_ctx *ctx, const char *name,
+				   const char *peer_name)
+{
+	unsigned char buf[VRF_ARM_BUF];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi, *peer_ifi;
+	size_t off, li_off, id_off, peer_off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, name);
+	if (!off)
+		return -EIO;
+
+	li_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_LINKINFO);
+	if (!off)
+		return -EIO;
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_INFO_KIND, "veth");
+	if (!off)
+		return -EIO;
+
+	id_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), IFLA_INFO_DATA);
+	if (!off)
+		return -EIO;
+
+	peer_off = off;
+	off = nla_nest_start(buf, off, sizeof(buf), VETH_INFO_PEER);
+	if (!off)
+		return -EIO;
+
+	if (off + NLMSG_ALIGN(sizeof(*peer_ifi)) > sizeof(buf))
+		return -EIO;
+	peer_ifi = (struct ifinfomsg *)(buf + off);
+	memset(peer_ifi, 0, sizeof(*peer_ifi));
+	peer_ifi->ifi_family = AF_UNSPEC;
+	off += NLMSG_ALIGN(sizeof(*peer_ifi));
+
+	off = nla_put_str(buf, off, sizeof(buf), IFLA_IFNAME, peer_name);
+	if (!off)
+		return -EIO;
+
+	nla_nest_end(buf, peer_off, off);
+	nla_nest_end(buf, id_off, off);
+	nla_nest_end(buf, li_off, off);
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * RTM_SETLINK IFLA_MASTER=master_ifindex — enslave ifindex to master.
+ * Lifted from childops/net/bridge-fdb-stp-setup.c:bfs_build_setlink_master().
+ */
+static int vrf_arm_build_enslave(struct nl_ctx *ctx, int ifindex,
+				 int master_ifindex)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_SETLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = ifindex;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_u32(buf, off, sizeof(buf), IFLA_MASTER,
+			  (__u32)master_ifindex);
+	if (!off)
+		return -EIO;
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * RTM_NEWADDR adding an IPv4 /30 address to ifindex.
+ * Lifted from childops/net/vrf-fib-churn.c:build_addaddr() and
+ * narrowed to a fixed-prefix /30 for the veth address pair.
+ */
+static int vrf_arm_build_addaddr(struct nl_ctx *ctx, int ifindex, __u32 addr_hbo)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct ifaddrmsg *ifa;
+	__u32 addr = htonl(addr_hbo);
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWADDR;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK |
+			   NLM_F_CREATE | NLM_F_EXCL;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifa = (struct ifaddrmsg *)NLMSG_DATA(nlh);
+	ifa->ifa_family    = AF_INET;
+	ifa->ifa_prefixlen = VRF_ARM_PREFIXLEN;
+	ifa->ifa_flags     = 0;
+	ifa->ifa_scope     = RT_SCOPE_UNIVERSE;
+	ifa->ifa_index     = (unsigned int)ifindex;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifa));
+
+	off = nla_put(buf, off, sizeof(buf), IFA_LOCAL, &addr, sizeof(addr));
+	if (!off)
+		return -EIO;
+	off = nla_put(buf, off, sizeof(buf), IFA_ADDRESS, &addr, sizeof(addr));
+	if (!off)
+		return -EIO;
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * RTM_NEWLINK setlink IFF_UP — bring ifindex up.
+ * Lifted from childops/net/vrf-fib-churn.c:build_setlink_up().
+ */
+static int vrf_arm_build_setlink_up(struct nl_ctx *ctx, int ifindex)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = ifindex;
+	ifi->ifi_flags  = IFF_UP;
+	ifi->ifi_change = IFF_UP;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * RTM_SETLINK IFLA_MASTER=0 — detach ifindex from its master.
+ * Lifted from childops/net/bridge-fdb-stp-setup.c:bsgu_unenslave().
+ * This is the racing detach that opens the L3-membership-change
+ * window inside tcp_ao_connect_init().
+ */
+static int vrf_arm_build_detach(struct nl_ctx *ctx, int ifindex)
+{
+	unsigned char buf[128];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_SETLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = ifindex;
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+
+	off = nla_put_u32(buf, off, sizeof(buf), IFLA_MASTER, 0);
+	if (!off)
+		return -EIO;
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+struct vrf_arm_ctx {
+	struct childdata *child;
+};
+
+/*
+ * In-ns body: runs inside a private user+net namespace forked by
+ * userns_run_in_ns().  The grandchild's netns is torn down on _exit()
+ * so every interface, address and socket is reaped by the kernel.
+ *
+ * Race shape:
+ *   parent (grandchild): connect(cli, srv_addr) — fires tcp_ao_connect_init()
+ *                        with an SO_BINDTODEVICE socket on a VRF-enslaved veth.
+ *   child  (gg-child)  : RTM_SETLINK IFLA_MASTER=0 on the enslaved veth —
+ *                        changes the answer l3mdev_master_ifindex_by_index()
+ *                        returns between tcp_ao_connect_init()'s two lookups.
+ *
+ * A detach that completes before connect() enters the kernel is still
+ * exercised coverage: it drives the "no l3mdev master" branch of
+ * tcp_ao_connect_init(), which previously required hand-crafted
+ * reproducer setups to reach.
+ */
+static int tcp_ao_vrf_arm_in_ns(void *arg)
+{
+	struct vrf_arm_ctx *actx = (struct vrf_arm_ctx *)arg;
+	struct childdata *child = actx->child;
+	char vrf_name[IFNAMSIZ], veth_a[IFNAMSIZ], veth_b[IFNAMSIZ];
+	struct nl_ctx nlctx = NL_CTX_INIT;
+	struct nl_open_opts opts = {
+		.proto        = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+		.caller_op    = NR_CHILD_OP_TYPES, /* netlink calls not tallied separately */
+	};
+	int listener = -1, cli = -1, srv_acc = -1;
+	int vrf_idx = 0, va_idx = 0, vb_idx = 0;
+	struct sockaddr_in srv_addr, cli_addr;
+	struct tcp_ao_add ao_add;
+	socklen_t slen;
+	pid_t pid;
+	int rc;
+	unsigned long direct_calls = 0;
+
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	unsigned int rng = rand32() & 0xffffu;
+	snprintf(vrf_name, sizeof(vrf_name), "trvf%04x", rng);
+	snprintf(veth_a,  sizeof(veth_a),   "trva%04x", rng);
+	snprintf(veth_b,  sizeof(veth_b),   "trvb%04x", rng);
+
+	if (nl_open(&nlctx, &opts) < 0) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_enslave_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return 0;
+	}
+
+	/* Step 1: VRF master device. */
+	if (vrf_arm_build_vrf_link(&nlctx, vrf_name, VRF_ARM_TABLE) != 0)
+		goto setup_fail;
+	vrf_idx = (int)if_nametoindex(vrf_name);
+	if (vrf_idx == 0)
+		goto setup_fail;
+
+	/* Step 2: veth pair. */
+	if (vrf_arm_build_veth_pair(&nlctx, veth_a, veth_b) != 0)
+		goto setup_fail;
+	va_idx = (int)if_nametoindex(veth_a);
+	vb_idx = (int)if_nametoindex(veth_b);
+	if (va_idx == 0 || vb_idx == 0)
+		goto setup_fail;
+
+	/* Step 3: enslave veth_a to the VRF. */
+	if (vrf_arm_build_enslave(&nlctx, va_idx, vrf_idx) != 0)
+		goto setup_fail;
+
+	/* Step 4: assign addresses and bring interfaces up. */
+	(void)vrf_arm_build_addaddr(&nlctx, va_idx, VRF_ARM_ADDR_A);
+	(void)vrf_arm_build_addaddr(&nlctx, vb_idx, VRF_ARM_ADDR_B);
+	(void)vrf_arm_build_setlink_up(&nlctx, vrf_idx);
+	(void)vrf_arm_build_setlink_up(&nlctx, va_idx);
+	(void)vrf_arm_build_setlink_up(&nlctx, vb_idx);
+
+	/* Step 5: listener on veth_b's address. */
+	memset(&srv_addr, 0, sizeof(srv_addr));
+	srv_addr.sin_family      = AF_INET;
+	srv_addr.sin_addr.s_addr = htonl(VRF_ARM_ADDR_B);
+	srv_addr.sin_port        = 0;
+
+	direct_calls++;
+	listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (listener < 0)
+		goto setup_fail;
+	{
+		int one = 1;
+		direct_calls++;
+		(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR,
+				 &one, sizeof(one));
+	}
+	direct_calls++;
+	if (bind(listener, (struct sockaddr *)&srv_addr, sizeof(srv_addr)) < 0)
+		goto setup_fail;
+	direct_calls++;
+	if (listen(listener, 1) < 0)
+		goto setup_fail;
+	slen = sizeof(srv_addr);
+	direct_calls++;
+	if (getsockname(listener, (struct sockaddr *)&srv_addr, &slen) < 0)
+		goto setup_fail;
+
+	/* Step 6: client socket bound to veth_a (the VRF-enslaved side). */
+	direct_calls++;
+	cli = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	if (cli < 0)
+		goto setup_fail;
+
+	/*
+	 * SO_BINDTODEVICE makes the kernel resolve the L3 master from
+	 * veth_a's ifindex on every connect() — that is the index path
+	 * inside tcp_ao_connect_init() that the race targets.
+	 */
+	direct_calls++;
+	(void)setsockopt(cli, SOL_SOCKET, SO_BINDTODEVICE,
+			 veth_a, (socklen_t)strlen(veth_a));
+
+	/* Explicit bind so the source address is deterministic and the
+	 * listener's AO key prefix=32 match resolves cleanly. */
+	memset(&cli_addr, 0, sizeof(cli_addr));
+	cli_addr.sin_family      = AF_INET;
+	cli_addr.sin_addr.s_addr = htonl(VRF_ARM_ADDR_A);
+	cli_addr.sin_port        = 0;
+	direct_calls++;
+	if (bind(cli, (struct sockaddr *)&cli_addr, sizeof(cli_addr)) < 0)
+		goto setup_fail;
+	slen = sizeof(cli_addr);
+	direct_calls++;
+	if (getsockname(cli, (struct sockaddr *)&cli_addr, &slen) < 0)
+		goto setup_fail;
+
+	/* Step 7: TCP-AO key on the listener (peer = veth_a's address). */
+	fill_ao_add(&ao_add, &cli_addr, 1, 1, true, "hmac(sha1)");
+	direct_calls++;
+	if (setsockopt(listener, IPPROTO_TCP, TCP_AO_ADD_KEY,
+		       &ao_add, sizeof(ao_add)) < 0) {
+		/* TCP-AO not available — not an error for this arm. */
+		goto setup_fail;
+	}
+
+	/* TCP-AO key on the client (peer = veth_b's address). */
+	fill_ao_add(&ao_add, &srv_addr, 1, 1, true, "hmac(sha1)");
+	direct_calls++;
+	if (setsockopt(cli, IPPROTO_TCP, TCP_AO_ADD_KEY,
+		       &ao_add, sizeof(ao_add)) < 0)
+		goto setup_fail;
+
+	/* Step 8: O_NONBLOCK so connect() returns EINPROGRESS and the
+	 * racing detach has a wider window to race against. */
+	direct_calls++;
+	(void)fcntl(cli, F_SETFL, O_NONBLOCK);
+
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_enslave_attempted,
+			   1, __ATOMIC_RELAXED);
+
+	/*
+	 * Step 9: fork the racing detacher.  The child sends
+	 * RTM_SETLINK IFLA_MASTER=0 on va_idx — the same operation that
+	 * the reporter's reproducer uses to open the UAF window in
+	 * tcp_ao_connect_init().  The parent immediately issues connect().
+	 *
+	 * A detach that completes before connect() enters the kernel
+	 * is counted in vrf_detach_raced regardless; the coverage value
+	 * is the same: l3mdev_master_ifindex_by_index() returns 0 inside
+	 * tcp_ao_connect_init() on a socket whose bound device is no
+	 * longer enslaved, which the loopback sequence never exercises.
+	 */
+	direct_calls++; /* fork */
+	pid = fork();
+	if (pid == 0) {
+		/* Detach child: open a fresh netlink socket and issue
+		 * RTM_SETLINK IFLA_MASTER=0.  Account even if the kernel
+		 * rejects (ENODEV / ENOBUFS) — the ioctl reached the
+		 * rtnl path regardless. */
+		struct nl_ctx race_nl = NL_CTX_INIT;
+		struct nl_open_opts race_opts = {
+			.proto        = NETLINK_ROUTE,
+			.recv_timeo_s = 1,
+			.caller_op    = NR_CHILD_OP_TYPES,
+		};
+		if (nl_open(&race_nl, &race_opts) == 0) {
+			(void)vrf_arm_build_detach(&race_nl, va_idx);
+			__atomic_add_fetch(
+				&shm->stats.tcp_ao_rotate.vrf_detach_raced,
+				1, __ATOMIC_RELAXED);
+			nl_close(&race_nl);
+		}
+		_exit(0);
+	}
+
+	/* Parent: fire connect() into the VRF-bound socket.  EINPROGRESS
+	 * means the SYN is in flight and tcp_ao_connect_init() has already
+	 * run — the race window has been opened.  Either outcome counts. */
+	direct_calls++;
+	rc = connect(cli, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
+	if (rc == 0 || errno == EINPROGRESS) {
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_connect_ok,
+				   1, __ATOMIC_RELAXED);
+		direct_calls++;
+		srv_acc = accept(listener, NULL, NULL);
+	}
+
+	/* Reap the detach child before closing the netns. */
+	if (pid > 0) {
+		int wstatus;
+		direct_calls++; /* waitpid */
+		(void)waitpid_eintr(pid, &wstatus, 0);
+	}
+	goto out;
+
+setup_fail:
+	__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_enslave_setup_failed,
+			   1, __ATOMIC_RELAXED);
+out:
+	if (srv_acc >= 0) {
+		direct_calls++;
+		(void)shutdown(srv_acc, SHUT_RDWR);
+		direct_calls++;
+		close(srv_acc);
+	}
+	if (cli >= 0) {
+		direct_calls++;
+		(void)shutdown(cli, SHUT_RDWR);
+		direct_calls++;
+		close(cli);
+	}
+	if (listener >= 0) {
+		direct_calls++;
+		close(listener);
+	}
+	nl_close(&nlctx);
+	if (valid_op && direct_calls > 0)
+		childop_direct_syscalls_add(op, direct_calls);
+	return 0;
+}
+
+/*
+ * Outer entrypoint for the VRF-enslave/detach arm.  Runs the in-ns body
+ * inside a transient grandchild with a fresh user+net namespace so link
+ * creation does not touch the host routing table and the kernel reaps
+ * every interface with the grandchild's netns on exit.
+ *
+ * ns_unsupported is shared with the loopback arm: if ENOPROTOOPT or
+ * EPERM latched the flag on TCP_AO_ADD_KEY, skip immediately — the VRF
+ * arm's same setsockopt will fail identically.
+ */
+static void tcp_ao_rotate_vrf_arm(struct childdata *child)
+{
+	struct vrf_arm_ctx actx = { .child = child };
+	int rc;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, tcp_ao_vrf_arm_in_ns, &actx);
+	if (rc == -EPERM) {
+		/* Policy refuses CLONE_NEWUSER; the loopback arm would
+		 * already have latched ns_unsupported for a different
+		 * reason, but match the shape: bump setup_failed so the
+		 * stats surface explains the zero vrf_enslave_attempted. */
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_enslave_setup_failed,
+				   1, __ATOMIC_RELAXED);
+	}
+	/* rc == -EAGAIN: transient fork / id-map failure; skip silently. */
+}
+
 bool tcp_ao_rotate(struct childdata *child)
 {
 	struct tcp_ao_rotate_iter_ctx ctx = {
@@ -799,6 +1370,11 @@ bool tcp_ao_rotate(struct childdata *child)
 		uint8_t stale_id = tcp_ao_rotate_iter_rotate_loop(&ctx);
 		tcp_ao_rotate_iter_reconnect_peer(&ctx, stale_id);
 	}
+	/* VRF-enslave/detach arm: runs in its own netns via
+	 * userns_run_in_ns() so it does not interfere with the
+	 * loopback iteration above.  Skipped if TCP-AO is absent. */
+	if (!ns_unsupported)
+		tcp_ao_rotate_vrf_arm(child);
 
 out:
 	tcp_ao_rotate_iter_teardown(&ctx);

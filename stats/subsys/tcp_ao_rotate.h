@@ -22,6 +22,11 @@ struct tcp_ao_rotate_stats {
 	unsigned long reconnect_ok;	    /* client connect() to peer 2 returned 0 or EINPROGRESS */
 	unsigned long reconnect_probed;	    /* UAF probes (TCP_AO_INFO+DEL_KEY on stale key) fired after peer change */
 	unsigned long stale_key_probed;	    /* TCP_AO_INFO/DEL_KEY issued after peer change */
+	/* vrf-enslave/detach arm (L3-master membership race during connect) */
+	unsigned long vrf_enslave_attempted;  /* VRF arm entered: keys installed, connect about to fire */
+	unsigned long vrf_enslave_setup_failed; /* VRF/veth/addr/key setup failed before connect */
+	unsigned long vrf_detach_raced;	      /* RTM_SETLINK MASTER=0 issued concurrently with connect */
+	unsigned long vrf_connect_ok;	      /* connect() returned 0 or EINPROGRESS against VRF peer */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_TCP_AO_ROTATE_H */
