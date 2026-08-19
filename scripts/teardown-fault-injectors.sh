@@ -53,7 +53,7 @@ die() { echo "teardown-fault-injectors: ERROR: $*" >&2; exit 1; }
 # ---------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --debugfs)  DEBUGFS_OVERRIDE="$2"; shift 2 ;;
+        --debugfs)  [[ $# -ge 2 ]] || die "--debugfs requires an argument"; DEBUGFS_OVERRIDE="$2"; shift 2 ;;
         --dry-run)  DRY_RUN=1;             shift   ;;
         -h|--help)  usage 0 ;;
         *)          die "Unknown argument: $1 (try --help)" ;;
