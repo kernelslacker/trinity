@@ -24,6 +24,10 @@ static const struct stat_field tcp_ao_rotate_fields[] = {
 	STAT_FIELD_SUB(tcp_ao_rotate, vrf_enslave_setup_failed),
 	STAT_FIELD_SUB(tcp_ao_rotate, vrf_detach_raced),
 	STAT_FIELD_SUB(tcp_ao_rotate, vrf_connect_ok),
+	STAT_FIELD_SUB(tcp_ao_rotate, vrf_ao_unavailable),
+	STAT_FIELD_SUB(tcp_ao_rotate, vrf_detach_landed),
+	STAT_FIELD_SUB(tcp_ao_rotate, vrf_connect_ts_ns),
+	STAT_FIELD_SUB(tcp_ao_rotate, vrf_detach_ts_ns),
 };
 
 const struct stat_category tcp_ao_rotate_category =
