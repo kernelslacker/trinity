@@ -99,7 +99,7 @@ elif [[ -z "${TARGET_GROUP}" ]]; then
 fi
 
 # Validate FILE_MODE: must be a valid octal string (3 or 4 digits, all 0-7).
-if ! [[ "${FILE_MODE}" =~ ^0?[0-7]{3}$ ]]; then
+if ! [[ "${FILE_MODE}" =~ ^0[0-7]{3}$ ]]; then
     die "invalid mode '${FILE_MODE}': must be an octal permission string (e.g. 0664, 0666)"
 fi
 
@@ -250,7 +250,7 @@ if [[ "${_perms_ok}" != "2" ]]; then
 
     # Derive DIR_MODE from FILE_MODE: OR the execute/search bit into every
     # non-zero rwx triad.  Example: 0664 (rw-rw-r--) -> 0775 (rwxrwxr-x).
-    _fm_val=$(( FILE_MODE ))
+    _fm_val=$(( 8#${FILE_MODE#0} ))
     _o=$(( (_fm_val >> 6) & 7 )); [[ $_o -ne 0 ]] && _o=$(( _o | 1 ))
     _g=$(( (_fm_val >> 3) & 7 )); [[ $_g -ne 0 ]] && _g=$(( _g | 1 ))
     _w=$(( _fm_val & 7 ));        [[ $_w -ne 0 ]] && _w=$(( _w | 1 ))
