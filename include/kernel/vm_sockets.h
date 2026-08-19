@@ -1,4 +1,5 @@
 #pragma once
+#include <sys/socket.h>
 #include <linux/vm_sockets.h>
 
 #ifndef SO_VM_SOCKETS_BUFFER_SIZE
