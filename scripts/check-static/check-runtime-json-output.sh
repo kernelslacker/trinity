@@ -545,30 +545,35 @@ if mode == "regen":
     lines.append("#   scripts/check-static/check-runtime-json-output.sh --regen")
     lines.append("# and commit the diff alongside the code change.")
     lines.append("")
+    # Floor: refuse to write an empty section when the prior baseline had one.
+    # Both [terminal] and [window] can legitimately be absent from a short run
+    # (terminal requires a clean shutdown; window requires >= 10001 ops), but
+    # silently dropping a section that the established baseline carries would
+    # corrupt the gate: check mode would then see an empty set for that section
+    # and flag every runtime field as 'unexpected' instead of a real failure.
+    def _check_regen_floor(section, keys, hint):
+        """Abort regen if keys is empty but the prior baseline had [section]."""
+        if keys or not os.path.exists(baseline_path):
+            return
+        header = f'[{section}]'
+        with open(baseline_path) as _f:
+            for _l in _f:
+                if _l.rstrip('\n') == header:
+                    with open(result_path, "w") as _rf:
+                        _rf.write(
+                            f"error: regen would write empty [{section}] section "
+                            f"but prior baseline has one -- {hint}\n")
+                    sys.exit(1)
+    _check_regen_floor("terminal", terminal_keys,
+                       "run did not emit a terminal shutdown record")
     if terminal_keys:
         lines.append("[terminal]")
         for k in terminal_keys:
             lines.append(k)
         lines.append("")
-    # Floor: refuse to write an empty [window] when the prior baseline had one.
-    # A run that did not reach the window-emit threshold (10001 ops) produces
-    # no window records; blindly writing that as the new baseline would silently
-    # drop the entire section.  Check whether the existing baseline has a
-    # [window] section and abort regen if it does but window_keys is empty.
-    if not window_keys and os.path.exists(baseline_path):
-        _had_window = False
-        with open(baseline_path) as _f:
-            for _l in _f:
-                if _l.rstrip('\n') == '[window]':
-                    _had_window = True
-                    break
-        if _had_window:
-            with open(result_path, "w") as f:
-                f.write("error: regen would write empty [window] section "
-                        "but prior baseline has one -- "
-                        "run did not reach window-emit threshold; "
-                        "use -N 15000 or higher\n")
-            sys.exit(1)
+    _check_regen_floor("window", window_keys,
+                       "run did not reach window-emit threshold; "
+                       "use -N 15000 or higher")
     if window_keys:
         lines.append("[window]")
         for k in window_keys:
