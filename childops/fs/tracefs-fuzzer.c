@@ -1518,7 +1518,9 @@ void tracefs_fuzzer_init(void)
 	snprintf(path, sizeof(path), "%s/current_tracer", tracefs_root);
 	ftrace_subset_present = (access(path, W_OK) == 0);
 	snprintf(path, sizeof(path), "%s/available_events", tracefs_root);
-	events_subset_present = (access(path, W_OK) == 0);
+	/* available_events is read-only by design: kernel/trace/trace_events.c:4829
+	 * creates it with TRACE_MODE_READ.  Probe R_OK, not W_OK. */
+	events_subset_present = (access(path, R_OK) == 0);
 
 	outputstd("tracefs-fuzzer: root=%s ftrace_subset=%s events_subset=%s\n", /* check-static: child-output-ok */
 		  tracefs_root,
