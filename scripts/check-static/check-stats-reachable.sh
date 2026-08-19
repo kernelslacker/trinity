@@ -109,13 +109,22 @@ REACHABLE="$TMP/reachable"
 UNREACHED="$TMP/unreached"
 UNALLOWED="$TMP/unallowed"
 CFILES="$TMP/cfiles"
-HFILES="$TMP/hfiles"
+HFILES_POP="$TMP/hfiles_pop"
+HFILES_EXCL="$TMP/hfiles_excl"
 CFILES_NORM="$TMP/cfiles_norm.txt"
 HFILES_NORM="$TMP/hfiles_norm.txt"
 
-# NUL-delimited file lists reused by several xargs passes.
+# NUL-delimited C-file list reused by several xargs passes.
+# Two header lists with distinct roles:
+#   HFILES_POP  - all headers under $ROOT (wide population for awk_enum).
+#   HFILES_EXCL - headers under $SUBSYS_DIR and $ROOT/include only
+#                 (narrow exclusion set for HFILES_NORM / write-filter).
+# Keeping these separate prevents a widened scan from suppressing findings:
+# widening HFILES_POP adds candidates (correct direction); widening the
+# exclusion set exempts them from flagging (opposite direction).
 find "$ROOT" -name '*.c' -type f -print0 > "$CFILES"
-find "$ROOT" -name '*.h' -type f > "$HFILES"
+find "$ROOT" -name '*.h' -type f > "$HFILES_POP"
+find "$SUBSYS_DIR" "$ROOT/include" -name '*.h' -type f > "$HFILES_EXCL"
 
 # join_continuations: normalise continuation lines so that two-line
 # calls like
@@ -160,19 +169,20 @@ pending != "" { print pending " " $0; pending = ""; next }
 END { if (pending != "") print pending }
 ' < "$CFILES" > "$CFILES_NORM"
 
-# Pre-build a single continuation-joined text file covering all header
-# files.  The read-scan arms in step 2d and the shm_s read scan both
-# consume this file so that a field access split across two header lines
-# is not invisible to the write-exclusion filter.  HFILES is
-# newline-delimited (not NUL-delimited), so xargs without -0 is used;
-# FNR==1 resets pending at each file boundary.
+# Pre-build a single continuation-joined text file covering the exclusion
+# header set (HFILES_EXCL: $SUBSYS_DIR + $ROOT/include).  The read-scan
+# arms in step 2d and the shm_s read scan both consume this file so that
+# a field access split across two header lines is not invisible to the
+# write-exclusion filter.  HFILES_EXCL is newline-delimited (not
+# NUL-delimited), so xargs without -0 is used; FNR==1 resets pending at
+# each file boundary.
 xargs awk '
 FNR == 1 { pending = "" }
 pending != "" { print pending " " $0; pending = ""; next }
 /^[^)]*(__atomic_[a-z_]+|offsetof)\([^)]*$/ { pending = $0; next }
 { print }
 END { if (pending != "") print pending }
-' < "$HFILES" > "$HFILES_NORM"
+' < "$HFILES_EXCL" > "$HFILES_NORM"
 
 # ---------------------------------------------------------------------
 # Field enumeration.
@@ -252,7 +262,10 @@ awk_enum() {
 }
 
 # Build the struct index (all struct definitions), then walk.
-awk_enum "$STATS_H" $(cat "$HFILES") > "$TMP/index"
+# Use mapfile to read HFILES_POP into an array so filenames with spaces
+# are handled correctly (avoids unquoted word-splitting via $(cat ...)).
+mapfile -t _hfiles_pop_arr < "$HFILES_POP"
+awk_enum "$STATS_H" "${_hfiles_pop_arr[@]}" > "$TMP/index"
 
 # Walk stats_s recursively into a fully-qualified leaf list.
 python3 - "$TMP/index" > "$FIELDS" <<'PY'
