@@ -149,15 +149,19 @@ fi
 # This injector is NOT task-filtered (softirq/NAPI has in_task()=false).
 # It stays armed at the configured probability for every process on the host
 # until explicitly disarmed.  Two steps are required:
-#   1. Write "" to devname — this calls devname_write() → reset_settings(),
-#      which clears the filtered flag and resets internal state.
-#   2. Write 0 to probability — belt-and-suspenders; reset_settings() already
-#      zeros probability, but an explicit write is clearer and idempotent.
+#   1. Zero probability first — devname_write() calls reset_settings() which
+#      clears 'filtered' and devname but does NOT touch probability.  Between
+#      the devname clear and probability being zeroed, the injector is
+#      unfiltered at the full configured probability, firing against every
+#      netdev on the host including the SSH management NIC.  Zero probability
+#      before clearing devname so the reset_settings() window is always benign.
+#   2. Clear devname — this calls devname_write() → reset_settings(), which
+#      clears the filtered flag and resets internal state.
 _inj=fail_skb_realloc
 if [[ -d "${DEBUGFS}/${_inj}" ]]; then
-    echo "  ${_inj}: devname -> '' (clears filtered via reset_settings()), probability -> 0"
-    write_attr "${DEBUGFS}/${_inj}/devname"     ""
+    echo "  ${_inj}: probability -> 0, devname -> '' (clears filtered via reset_settings())"
     write_attr "${DEBUGFS}/${_inj}/probability" 0
+    write_attr "${DEBUGFS}/${_inj}/devname"     ""
 else
     echo "  ${_inj}: not present — skipping" >&2
 fi
