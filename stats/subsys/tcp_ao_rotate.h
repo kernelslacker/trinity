@@ -26,11 +26,11 @@ struct tcp_ao_rotate_stats {
 	unsigned long vrf_enslave_attempted;    /* VRF arm entered: keys installed, connect about to fire */
 	unsigned long vrf_enslave_setup_failed; /* VRF/veth/addr/key setup failed before connect */
 	unsigned long vrf_ao_unavailable;       /* TCP_AO_ADD_KEY failed (ENOPROTOOPT/EPERM) — host has no TCP-AO */
-	unsigned long vrf_detach_raced;         /* detach child opened netlink and issued RTM_SETLINK (socket-open oracle) */
+	unsigned long vrf_detach_raced;         /* detach child opened netlink socket (oracle: reached rtnl path) */
 	unsigned long vrf_detach_landed;        /* RTM_SETLINK MASTER=0 accepted by kernel (nl_send_recv == 0) */
-	unsigned long vrf_connect_ok;           /* connect() returned 0 or EINPROGRESS against VRF peer */
-	unsigned long vrf_connect_ts_ns;        /* CLOCK_MONOTONIC ns just before connect() in parent (last iteration) */
-	unsigned long vrf_detach_ts_ns;         /* CLOCK_MONOTONIC ns at RTM_SETLINK issue in detach child (last iteration) */
+	unsigned long vrf_connect_ok;           /* accept() succeeded: server saw the SYN through VRF */
+	unsigned long vrf_detach_before_connect; /* per-iter: detach RTM_SETLINK fired before connect() */
+	unsigned long vrf_detach_after_connect;  /* per-iter: detach RTM_SETLINK fired after connect() */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_TCP_AO_ROTATE_H */

@@ -1096,6 +1096,7 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	socklen_t slen;
 	pid_t pid;
 	int rc;
+	int race_pfd[2];
 	unsigned long direct_calls = 0;
 
 	const enum child_op_type op = child->op_type;
@@ -1236,9 +1237,13 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	 *
 	 * vrf_detach_raced counts socket-open (oracle: child reached the
 	 * rtnl path).  vrf_detach_landed gates on nl_send_recv() == 0
-	 * (oracle: kernel accepted MASTER=0).  Compare vrf_detach_ts_ns
-	 * against vrf_connect_ts_ns to tell raced from sequential.
+	 * (oracle: kernel accepted MASTER=0).  The child passes its
+	 * RTM_SETLINK timestamp back to the parent via a pipe so the
+	 * parent can record per-iteration ordering without shm aliasing.
 	 */
+	race_pfd[0] = race_pfd[1] = -1;
+	if (pipe(race_pfd) != 0)
+		race_pfd[0] = race_pfd[1] = -1;
 	direct_calls++; /* fork */
 	pid = fork();
 	if (pid == 0) {
@@ -1252,19 +1257,15 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 			.recv_timeo_s = 1,
 			.caller_op    = NR_CHILD_OP_TYPES,
 		};
+		close(race_pfd[0]);
 		if (nl_open(&race_nl, &race_opts) == 0) {
 			struct timespec _dts;
 			int _det_rc;
-			/* vrf_detach_raced: netlink socket open, RTM_SETLINK queued. */
+			/* vrf_detach_raced: netlink socket open (oracle: child reached rtnl path). */
 			__atomic_add_fetch(
 				&shm->stats.tcp_ao_rotate.vrf_detach_raced,
 				1, __ATOMIC_RELAXED);
 			clock_gettime(CLOCK_MONOTONIC, &_dts);
-			__atomic_store_n(
-				&shm->stats.tcp_ao_rotate.vrf_detach_ts_ns,
-				(unsigned long)_dts.tv_sec * 1000000000UL +
-				(unsigned long)_dts.tv_nsec,
-				__ATOMIC_RELAXED);
 			_det_rc = vrf_arm_build_detach(&race_nl, va_idx);
 			/* vrf_detach_landed: kernel accepted RTM_SETLINK MASTER=0. */
 			if (_det_rc == 0)
@@ -1272,47 +1273,66 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 					&shm->stats.tcp_ao_rotate.vrf_detach_landed,
 					1, __ATOMIC_RELAXED);
 			nl_close(&race_nl);
+			{ ssize_t _n = write(race_pfd[1], &_dts, sizeof(_dts)); (void)_n; }
 		}
+		close(race_pfd[1]);
 		_exit(0);
 	}
+	close(race_pfd[1]);
 
 	/* Parent: fire connect() into the VRF-bound socket.  EINPROGRESS
 	 * means the SYN is in flight and tcp_ao_connect_init() has already
 	 * run — the race window has been opened.  Either outcome counts.
-	 * Record a monotonic timestamp immediately before entering the kernel
-	 * so raced-vs-sequential is derivable by comparing vrf_connect_ts_ns
-	 * against vrf_detach_ts_ns in the stats file. */
+	 * Capture a local monotonic timestamp immediately before entering
+	 * the kernel; compare it against the detach child's timestamp
+	 * (received via pipe) to record per-iteration ordering. */
 	{
-		struct timespec _cts;
-		clock_gettime(CLOCK_MONOTONIC, &_cts);
-		__atomic_store_n(
-			&shm->stats.tcp_ao_rotate.vrf_connect_ts_ns,
-			(unsigned long)_cts.tv_sec * 1000000000UL +
-			(unsigned long)_cts.tv_nsec,
-			__ATOMIC_RELAXED);
-	}
-	direct_calls++;
-	rc = connect(cli, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
-	if (rc == 0 || errno == EINPROGRESS) {
-		struct pollfd pfd = { .fd = listener, .events = POLLIN };
-		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_connect_ok,
-				   1, __ATOMIC_RELAXED);
+		struct timespec cts;
+		clock_gettime(CLOCK_MONOTONIC, &cts);
 		direct_calls++;
-		/* Bounded wait: listener is SOCK_NONBLOCK so we must poll
-		 * before accept(); 1000 ms matches the loopback arm's 1-second
-		 * invariant and caps the grandchild even without an alarm(). */
-		if (poll(&pfd, 1, 1000) > 0 && (pfd.revents & POLLIN)) {
+		rc = connect(cli, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
+		if (rc == 0 || errno == EINPROGRESS) {
+			struct pollfd pfd = { .fd = listener, .events = POLLIN };
 			direct_calls++;
-			srv_acc = accept(listener, NULL, NULL);
+			/* Bounded wait: listener is SOCK_NONBLOCK so we must poll
+			 * before accept(); 1000 ms matches the loopback arm's 1-second
+			 * invariant and caps the grandchild even without an alarm(). */
+			if (poll(&pfd, 1, 1000) > 0 && (pfd.revents & POLLIN)) {
+				direct_calls++;
+				srv_acc = accept(listener, NULL, NULL);
+			}
+		}
+
+		/* Reap the detach child before closing the netns. */
+		if (pid > 0) {
+			int wstatus;
+			direct_calls++; /* waitpid */
+			(void)waitpid_eintr(pid, &wstatus, 0);
+		}
+
+		/* Read the child's RTM_SETLINK timestamp via pipe and record
+		 * per-iteration ordering: before/after connect(). */
+		{
+			struct timespec dts = {0, 0};
+			{ ssize_t _n = read(race_pfd[0], &dts, sizeof(dts)); (void)_n; }
+			close(race_pfd[0]);
+			if (dts.tv_sec || dts.tv_nsec) {
+				long long d =
+					((long long)cts.tv_sec  - (long long)dts.tv_sec)  * 1000000000LL
+					+ ((long long)cts.tv_nsec - (long long)dts.tv_nsec);
+				__atomic_add_fetch(
+					d > 0
+					? &shm->stats.tcp_ao_rotate.vrf_detach_before_connect
+					: &shm->stats.tcp_ao_rotate.vrf_detach_after_connect,
+					1, __ATOMIC_RELAXED);
+			}
 		}
 	}
 
-	/* Reap the detach child before closing the netns. */
-	if (pid > 0) {
-		int wstatus;
-		direct_calls++; /* waitpid */
-		(void)waitpid_eintr(pid, &wstatus, 0);
-	}
+	/* vrf_connect_ok: accept() succeeded — server saw the SYN through VRF. */
+	if (srv_acc >= 0)
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_connect_ok,
+				   1, __ATOMIC_RELAXED);
 	goto out;
 
 ao_unavailable:
