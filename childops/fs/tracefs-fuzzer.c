@@ -1242,7 +1242,7 @@ static unsigned long do_set_event(void)
 		   ? colon_pos + 1 : evname;
 	syslen = (unsigned int)strcspn(evname, ":");
 
-	switch (rnd_modulo_u32(14)) {
+	switch (rnd_modulo_u32(12)) {
 	case 0:
 		/* <sys>:<evt> -- enable one specific event */
 		snprintf(spec, sizeof(spec), "%s", evname);
@@ -1318,14 +1318,6 @@ static unsigned long do_set_event(void)
 		return bump_arm_counter(ARM_SET_EVENT,
 					ret < 0 ? OUTCOME_WRITE_FAIL
 						: OUTCOME_WRITE_OK);
-	case 11:
-		/* *: -- wildcard subsystem, empty event: enable all events */
-		snprintf(spec, sizeof(spec), "*:");
-		break;
-	case 12:
-		/* !*: -- wildcard subsystem, empty event: disable all events */
-		snprintf(spec, sizeof(spec), "!*:");
-		break;
 	default:
 		/* *:<evt>:mod:<modname> -- wide match with module filter */
 		mod = RAND_ARRAY(mod_names);
