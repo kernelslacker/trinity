@@ -85,6 +85,7 @@ THREAD_UNCOUNTED:childops/net/packet-qdisc-bypass-unanchored-l2.c#iter_one_in_ns
 THREAD_UNCOUNTED:childops/net/rds-bind-transport-refleak.c#rds_bind_transport_refleak
 THREAD_UNCOUNTED:childops/net/rxrpc-sendmsg-cmsg-churn.c#rxrpc_sendmsg_cmsg_churn
 THREAD_UNCOUNTED:childops/net/tc/qdisc-churn.c#tc_qdisc_churn_in_ns
+THREAD_UNCOUNTED:childops/net/tcp-ao-rotate.c#tcp_ao_vrf_arm_in_ns
 THREAD_UNCOUNTED:childops/net/tcp-ulp-swap-churn.c#tcp_ulp_swap_churn
 THREAD_UNCOUNTED:childops/net/tls-ulp-churn.c#tls_ulp_churn
 THREAD_UNCOUNTED:childops/net/xfrm/nat-t-churn.c#nat_t_churn_in_ns

@@ -295,7 +295,6 @@ static int open_loopback_listener(int *listener, struct sockaddr_in *addr,
 	return 0;
 
 fail:
-	(*direct_calls)++;
 	close(s);
 	return -1;
 }
@@ -1229,7 +1228,6 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	ready_pfd[0] = ready_pfd[1] = -1;
 	if (pipe(race_pfd) != 0 || pipe(rendezvous_pfd) != 0 ||
 	    pipe(ready_pfd) != 0) {
-	direct_calls += 3;	/* pipe x3: race/rendezvous/ready */
 		__atomic_add_fetch(
 			&shm->stats.tcp_ao_rotate.vrf_pipe_unavailable,
 			1, __ATOMIC_RELAXED);
@@ -1327,7 +1325,6 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	close(race_pfd[1]);
 	close(rendezvous_pfd[0]);
 	close(ready_pfd[1]); /* parent only reads from ready_pfd */
-	direct_calls += 3;	/* close x3: race/rendezvous/ready */
 
 	/* Wait for child to signal readiness: it has pre-built its netlink
 	 * message and is blocked at the rendezvous gate.  Only after this
@@ -1335,10 +1332,8 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	 * deterministic rather than scheduler-dependent. */
 	{ char _rdy;
 	  ssize_t _r = read(ready_pfd[0], &_rdy, 1);
-	direct_calls++;	/* read(ready_pfd[0]) */
 	  (void)_r; }
 	close(ready_pfd[0]);
-	direct_calls++;	/* close(ready_pfd[0]) */
 
 	/*
 	 * Parent: coin-flip the rendezvous token write around connect().
