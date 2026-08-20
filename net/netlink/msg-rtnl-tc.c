@@ -57,12 +57,17 @@ size_t gen_rta_action_payload(unsigned char *p, size_t avail,
  * product forces drr_dequeue() to spin in the deficit loop under the
  * qdisc spinlock with BH disabled for seconds; STORM_BUDGET_NS cannot
  * cap that stall because the CPU never returns to the childop.
- * The default draws bound overhead to [0, 4095], size_log to [0, 12],
- * and tab[i] to [0, 4095] so the product tab[i]<<size_log is at most
- * 4095<<12 (~16M) — well clear of stall territory while still
+ * The default draws enforce the in-range path (slot < tsize) so the
+ * kernel extrapolation branch in __qdisc_calculate_pkt_len() is
+ * unreachable: cell_log is set to at least ceil(log2(69631/tsize))
+ * so the worst-case slot (69630 >> cell_log, where
+ * 69630 = u16_max + overhead_max) is always < tsize.  size_log is
+ * drawn from the full kernel-accepted range [0,30]; tab[i] entries
+ * are capped at (INT32_MAX >> size_log) so tab[i]<<size_log never
+ * exceeds INT32_MAX — well clear of stall territory while still
  * exercising every line of qdisc_get_stab(), the stab dedup walk,
  * qdisc_put_stab(), and the stab branch of qdisc_calculate_pkt_len().
- * Full-range draws for all three inputs live behind
+ * Full-range draws for overhead live behind
  * #define STAB_OVERHEAD_UNBOUNDED and must NOT be enabled on shared
  * hardware without the tree maintainer's explicit approval.
  */
@@ -84,15 +89,27 @@ static size_t build_stab_nest(unsigned char *p, size_t avail)
 		return 0;
 
 	memset(&s, 0, sizeof(s));
-	/* cell_log/size_log must be <= STAB_SIZE_LOG_MAX (30, kernel-internal) */
-	s.cell_log   = (__u8)rnd_modulo_u32(31);
-	s.cell_align = -1;		/* kernel passes through unchanged */
 	/*
-	 * Magnitude inputs bounded by default; see safety note above.
-	 * STAB_OVERHEAD_UNBOUNDED opts in to full-range draws for all three.
+	 * cell_log: enforce the in-range path (slot < tsize) so the kernel's
+	 * extrapolation branch is unreachable.  The worst-case input to the
+	 * slot computation is pkt_len + overhead <= 65535 + 4095 = 69630.
+	 * Find the minimum cell_log such that 69630 >> cell_log < tsize, then
+	 * draw uniformly from [min_cell_log, 30].
+	 *
+	 * size_log: full kernel-accepted range [0,30] (covers all parse paths
+	 * including STAB_SIZE_LOG_MAX validation).  tab[i] is capped below to
+	 * keep tab[i] << size_log within s32 range.
 	 */
+	{
+		unsigned int min_cl = 0;
+
+		while (min_cl < 30 && (69630U >> min_cl) >= tsize)
+			min_cl++;
+		s.cell_log = (__u8)(min_cl + rnd_modulo_u32(31U - min_cl));
+	}
+	s.cell_align = -1;		/* kernel passes through unchanged */
 #ifndef STAB_OVERHEAD_UNBOUNDED
-	s.size_log   = (__u8)rnd_modulo_u32(13);	/* [0,12]: product safe */
+	s.size_log   = (__u8)rnd_modulo_u32(31);	/* [0,30]: full parse surface */
 	s.overhead   = (int)rnd_modulo_u32(4096);
 #else
 	s.size_log   = (__u8)rnd_modulo_u32(31);	/* opt-in only */
@@ -113,12 +130,24 @@ static size_t build_stab_nest(unsigned char *p, size_t avail)
 	if (!start_nlattr(p, off, avail, TCA_STAB_DATA, data_len))
 		return off;
 	tab = (__u16 *)(p + off + NLA_HDRLEN);
-	for (i = 0; i < tsize; i++)
+	{
+		/*
+		 * Cap tab[i] so tab[i] << size_log <= INT32_MAX.
+		 * max_tab_val = (INT32_MAX >> size_log), clamped to u16 max
+		 * since the table element type is __u16.
+		 */
 #ifndef STAB_OVERHEAD_UNBOUNDED
-		tab[i] = (__u16)rnd_modulo_u32(4096);	/* [0,4095]: product safe */
+		unsigned int max_tab_val = 0x7fffffffU >> s.size_log;
+
+		if (max_tab_val > 0xffffU)
+			max_tab_val = 0xffffU;
+		for (i = 0; i < tsize; i++)
+			tab[i] = (__u16)rnd_modulo_u32(max_tab_val + 1U);
 #else
-		tab[i] = (__u16)rnd_modulo_u32(65536);	/* opt-in only */
+		for (i = 0; i < tsize; i++)
+			tab[i] = (__u16)rnd_modulo_u32(65536);	/* opt-in only */
 #endif
+	}
 	off += NLA_ALIGN(NLA_HDRLEN + data_len);
 
 	return off;

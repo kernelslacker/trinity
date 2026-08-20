@@ -295,11 +295,14 @@ int build_delqdisc(struct nl_ctx *ctx, int ifindex, __u32 handle,
  * With size_log=30 and tab[slot]=65535, the effective packet length seen by
  * qdisc_calculate_pkt_len() approaches 2^45, and a small DRR quantum pins
  * the root qdisc spinlock for ~4M deficit-loop iterations with BH disabled
- * -- a real CPU stall that STORM_BUDGET_NS cannot cap.  By default
- * size_log is bounded to [0,12] and tab[i] to [0,4095], keeping the
- * product at most 4095<<12 (~16M); this still exercises all parse paths,
- * the stab dedup walk, qdisc_put_stab(), and the stab branch of
- * qdisc_calculate_pkt_len().  Full-range draws for size_log, tab[i], and
+ * -- a real CPU stall that STORM_BUDGET_NS cannot cap.  The default draws
+ * enforce the in-range path (slot < tsize) so the kernel extrapolation
+ * branch in __qdisc_calculate_pkt_len() is unreachable: cell_log is set to
+ * at least ceil(log2(69631/tsize)) so the worst-case slot
+ * (69630 >> cell_log, where 69630 = u16_max + overhead_max) is always
+ * < tsize.  size_log is drawn from the full kernel-accepted range [0,30];
+ * tab[i] entries are capped at (INT32_MAX >> size_log) so
+ * tab[i] << size_log never exceeds INT32_MAX.  Full-range draws for
  * overhead live behind #define STAB_OVERHEAD_UNBOUNDED and must NOT be
  * enabled on shared hardware without the tree maintainer's explicit approval.
  */
@@ -342,14 +345,26 @@ int build_newqdisc_stab(struct nl_ctx *ctx, int ifindex, __u32 handle,
 		goto send;	/* send without stab on no-room */
 
 	memset(&s, 0, sizeof(s));
-	/* cell_log/size_log validated <= STAB_SIZE_LOG_MAX (30) in kernel */
-	s.cell_log   = (__u8)rnd_modulo_u32(31);
 	/*
-	 * Magnitude inputs bounded by default; see safety note above.
-	 * STAB_OVERHEAD_UNBOUNDED opts in to full-range draws for all three.
+	 * cell_log: enforce the in-range path (slot < tsize) so the kernel's
+	 * extrapolation branch is unreachable.  The worst-case input to the
+	 * slot computation is pkt_len + overhead <= 65535 + 4095 = 69630.
+	 * Find the minimum cell_log such that 69630 >> cell_log < tsize, then
+	 * draw uniformly from [min_cell_log, 30].
+	 *
+	 * size_log: full kernel-accepted range [0,30] (covers all parse paths
+	 * including STAB_SIZE_LOG_MAX validation).  tab[i] is capped below to
+	 * keep tab[i] << size_log within s32 range.
 	 */
+	{
+		unsigned int min_cl = 0;
+
+		while (min_cl < 30 && (69630U >> min_cl) >= tsize)
+			min_cl++;
+		s.cell_log = (__u8)(min_cl + rnd_modulo_u32(31U - min_cl));
+	}
 #ifndef STAB_OVERHEAD_UNBOUNDED
-	s.size_log   = (__u8)rnd_modulo_u32(13);	/* [0,12]: product safe */
+	s.size_log = (__u8)rnd_modulo_u32(31);		/* [0,30]: full parse surface */
 #else
 	s.size_log   = (__u8)rnd_modulo_u32(31);	/* opt-in only */
 #endif
@@ -380,12 +395,24 @@ int build_newqdisc_stab(struct nl_ctx *ctx, int ifindex, __u32 handle,
 		data_hdr->nla_type = TCA_STAB_DATA;
 		data_hdr->nla_len  = (unsigned short)(NLA_HDRLEN + data_len);
 		tab = (__u16 *)(buf + off + NLA_HDRLEN);
-		for (i = 0; i < tsize; i++)
+		{
+			/*
+			 * Cap tab[i] so tab[i] << size_log <= INT32_MAX.
+			 * max_tab_val = (INT32_MAX >> size_log), clamped to
+			 * u16 max since the table element type is __u16.
+			 */
 #ifndef STAB_OVERHEAD_UNBOUNDED
-			tab[i] = (__u16)rnd_modulo_u32(4096);	/* [0,4095]: product safe */
+			unsigned int max_tab_val = 0x7fffffffU >> s.size_log;
+
+			if (max_tab_val > 0xffffU)
+				max_tab_val = 0xffffU;
+			for (i = 0; i < tsize; i++)
+				tab[i] = (__u16)rnd_modulo_u32(max_tab_val + 1U);
 #else
-			tab[i] = (__u16)rnd_modulo_u32(65536);	/* opt-in only */
+			for (i = 0; i < tsize; i++)
+				tab[i] = (__u16)rnd_modulo_u32(65536);	/* opt-in only */
 #endif
+		}
 		off += NLA_ALIGN(NLA_HDRLEN + data_len);
 	}
 
