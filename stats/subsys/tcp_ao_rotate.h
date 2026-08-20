@@ -34,6 +34,7 @@ struct tcp_ao_rotate_stats {
 	unsigned long vrf_detach_before_connect; /* per-iter: detach RTM_SETLINK fired before connect() */
 	unsigned long vrf_detach_after_connect;  /* per-iter: detach RTM_SETLINK fired after connect() */
 	unsigned long vrf_detach_tied;           /* per-iter: detach and connect timestamps equal (d==0) */
+	unsigned long vrf_pipe_unavailable;      /* pipe() failed for race_pfd/rendezvous_pfd/ready_pfd; arm skipped */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_TCP_AO_ROTATE_H */

@@ -1067,6 +1067,7 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	int rc;
 	int race_pfd[2];
 	int rendezvous_pfd[2];
+	int ready_pfd[2];
 	unsigned long direct_calls = 0;
 
 	const enum child_op_type op = child->op_type;
@@ -1203,20 +1204,34 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	 * Step 9: fork the racing detacher.  The child sends
 	 * RTM_SETLINK IFLA_MASTER=0 on va_idx — the same operation that
 	 * the reporter's reproducer uses to open the UAF window in
-	 * tcp_ao_connect_init().  The parent immediately issues connect().
+	 * tcp_ao_connect_init().
 	 *
-	 * vrf_detach_raced counts socket-open (oracle: child reached the
-	 * rtnl path).  vrf_detach_landed gates on nl_send_recv() == 0
-	 * (oracle: kernel accepted MASTER=0).  The child passes its
-	 * RTM_SETLINK timestamp back to the parent via a pipe so the
+	 * Rendezvous protocol (two-way, introduced after c3593fa388fa):
+	 *   ready_pfd  (child→parent): child writes one byte after its
+	 *              netlink message is pre-built; parent blocks on this
+	 *              read before coin-flipping.  Guarantees the child is
+	 *              truly poised when the token fires — not a scheduler
+	 *              lottery.
+	 *   rendezvous_pfd (parent→child): parent writes one byte either
+	 *              before or after connect() (coin-flip), controlling
+	 *              which side of the SYN the detach fires on.
+	 *
+	 * vrf_detach_raced bumps after a successful message build (child
+	 * is poised at the rendezvous gate).  vrf_detach_landed gates on
+	 * nl_send_recv() == 0 (kernel accepted MASTER=0).  The child passes
+	 * its RTM_SETLINK timestamp back to the parent via race_pfd so the
 	 * parent can record per-iteration ordering without shm aliasing.
 	 */
 	race_pfd[0] = race_pfd[1] = -1;
-	if (pipe(race_pfd) != 0)
-		race_pfd[0] = race_pfd[1] = -1;
 	rendezvous_pfd[0] = rendezvous_pfd[1] = -1;
-	if (pipe(rendezvous_pfd) != 0)
-		rendezvous_pfd[0] = rendezvous_pfd[1] = -1;
+	ready_pfd[0] = ready_pfd[1] = -1;
+	if (pipe(race_pfd) != 0 || pipe(rendezvous_pfd) != 0 ||
+	    pipe(ready_pfd) != 0) {
+		__atomic_add_fetch(
+			&shm->stats.tcp_ao_rotate.vrf_pipe_unavailable,
+			1, __ATOMIC_RELAXED);
+		goto out;
+	}
 	direct_calls++; /* fork */
 	pid = fork();
 	if (pid == 0) {
@@ -1237,6 +1252,7 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 		};
 		close(race_pfd[0]);
 		close(rendezvous_pfd[1]);
+		close(ready_pfd[0]); /* child only writes to ready_pfd */
 		if (nl_open(&race_nl, &race_opts) == 0) {
 			unsigned char _dbuf[128];
 			struct nlmsghdr *_dnlh;
@@ -1261,6 +1277,15 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 					    IFLA_MASTER, 0);
 			if (_doff != 0) {
 				_dnlh->nlmsg_len = (__u32)_doff;
+
+				/* Signal parent: message is built and child
+				 * is poised at the rendezvous gate.  Parent
+				 * blocks on ready_pfd[0] before coin-flipping
+				 * so connect() vs detach ordering is truly
+				 * controlled, not a scheduler lottery. */
+				{ char _rdy = 1;
+				  ssize_t _w = write(ready_pfd[1], &_rdy, 1);
+				  (void)_w; }
 
 				/* vrf_detach_raced: setup complete; poised
 				 * to send RTM_SETLINK once token arrives. */
@@ -1293,10 +1318,21 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 		}
 		close(rendezvous_pfd[0]);
 		close(race_pfd[1]);
+		close(ready_pfd[1]);
 		_exit(0);
 	}
 	close(race_pfd[1]);
 	close(rendezvous_pfd[0]);
+	close(ready_pfd[1]); /* parent only reads from ready_pfd */
+
+	/* Wait for child to signal readiness: it has pre-built its netlink
+	 * message and is blocked at the rendezvous gate.  Only after this
+	 * read do we coin-flip, so the connect/detach interleaving is
+	 * deterministic rather than scheduler-dependent. */
+	{ char _rdy;
+	  ssize_t _r = read(ready_pfd[0], &_rdy, 1);
+	  (void)_r; }
+	close(ready_pfd[0]);
 
 	/*
 	 * Parent: coin-flip the rendezvous token write around connect().
