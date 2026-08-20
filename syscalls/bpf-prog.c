@@ -86,11 +86,13 @@ static bool bpf_prog_load(union bpf_attr *attr)
 	}
 
 	attr->license = (u64) license;
-	/* Rotate log_level and keep the trio consistent.
-	 * bpf_verifier_log_attr_valid() rejects log_buf set with log_level==0.
-	 * Valid non-zero values: 1 (insns), 2 (+state), 4 (+verbose), 7 (all). */
-	static const unsigned int bpf_log_levels[] = {0, 1, 2, 4, 7};
-	attr->log_level = bpf_log_levels[rnd_u32() % ARRAY_SIZE(bpf_log_levels)];
+	/* Rotate log_level over the full BPF_LOG_MASK range (0-15) so that
+	 * BPF_LOG_FIXED (8), BPF_LOG_STATS (4), and all their combinations
+	 * receive coverage.  One value in 17 is deliberately out-of-mask (0x10)
+	 * to exercise the log_level & ~BPF_LOG_MASK reject arm in
+	 * bpf_verifier_log_attr_valid().  BPF_LOG_MASK = 0xF. */
+	unsigned int log_level_raw = rnd_modulo_u32(17); /* dead-arm-detect: not a multi-arm dispatch */
+	attr->log_level = log_level_raw < 16 ? log_level_raw : 0x10U;
 	if (attr->log_level == 0) {
 		attr->log_size = 0;
 		attr->log_buf = 0;
