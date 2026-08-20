@@ -800,7 +800,15 @@ static void discover_targets(void)
 	walk_dir("/sys/kernel", MAX_DISCOVERY_DEPTH);
 	walk_dir("/sys/module", MAX_DISCOVERY_DEPTH);
 	walk_dir("/sys/class", MAX_DISCOVERY_DEPTH);
-	walk_dir("/sys/fs/cgroup", MAX_DISCOVERY_DEPTH);
+	/* Skip the cgroup tree when mkdir is known to be denied fleet-wide.
+	 * shm->cgroup_mkdir_unsupported is set by 7ebc6a631eff ("childops:
+	 * latch cgroup_mkdir_unsupported when mkdir returns EACCES").  On an
+	 * unprivileged runner every file under /sys/fs/cgroup is non-writable
+	 * so the walk spends discovery budget populating a candidate set
+	 * whose every write returns EACCES.  When the latch is clear (e.g. a
+	 * privileged or delegated-subtree run) the walk proceeds unchanged. */
+	if (!__atomic_load_n(&shm->cgroup_mkdir_unsupported, __ATOMIC_RELAXED))
+		walk_dir("/sys/fs/cgroup", MAX_DISCOVERY_DEPTH);
 	walk_dir("/proc/sys", MAX_DISCOVERY_DEPTH);
 
 	add_per_task_files("/proc/self");
