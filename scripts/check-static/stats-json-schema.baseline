@@ -247,6 +247,7 @@ stats	object
     stats.tracefs_fuzzer.set_event_disable_arms	u64
     stats.tracefs_fuzzer.set_event_readback_fail	u64
     stats.tracefs_fuzzer.set_event_disable_reenabled	u64
+    stats.tracefs_fuzzer.set_event_wide_disable_arms	u64
     stats.tracefs_fuzzer.runtime_cap_denied	u64
   stats.bpf_fd_provider	object
     stats.bpf_fd_provider.maps_provided	u64

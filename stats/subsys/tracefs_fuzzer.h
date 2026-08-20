@@ -39,14 +39,18 @@ struct tracefs_fuzzer_stats {
 	 * enabled-event count so the most-recent snapshot is always readable.
 	 * set_event_disable_arms is the denominator: incremented once per
 	 * disable-arm oracle firing so post_disable_count / disable_arms
-	 * is interpretable.  set_event_disable_reenabled counts how many
-	 * times the re-enable teardown (writing "*:") ran to restore the
-	 * set; all three together let an operator detect net erosion vs
-	 * successful restores.
+	 * is interpretable.  set_event_disable_reenabled counts successful
+	 * exact-undo restores (cases that disable and re-enable the same
+	 * single event or module-filtered event, i.e. case 5 and case 9).
+	 * set_event_wide_disable_arms counts the wide-scope arms (case 6:
+	 * !<sys>:, case 7: !:<evt>) that have no safe exact-undo counterpart
+	 * and are therefore left un-restored; all four together let an
+	 * operator detect net erosion vs successful targeted restores.
 	 */
 	unsigned long set_event_post_disable_count;
 	unsigned long set_event_disable_arms;
 	unsigned long set_event_disable_reenabled;
+	unsigned long set_event_wide_disable_arms;
 
 	/* count_set_event_lines() open-fail counter: incremented when
 	 * open(set_event, O_RDONLY) fails so the caller can distinguish

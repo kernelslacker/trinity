@@ -1255,6 +1255,7 @@ static unsigned long do_set_event(void)
 	unsigned int syslen;
 	const char *mod;
 	bool is_disable;
+	bool is_exact_disable;
 	int fd;
 	ssize_t ret;
 
@@ -1288,6 +1289,7 @@ static unsigned long do_set_event(void)
 	syslen = (unsigned int)strcspn(evname, ":");
 
 	is_disable = false;
+	is_exact_disable = false;
 	switch (rnd_modulo_u32(12)) {
 	case 0:
 		/* <sys>:<evt> -- enable one specific event */
@@ -1312,15 +1314,16 @@ static unsigned long do_set_event(void)
 	case 5:
 		/* !<sys>:<evt> -- remove/disable one event */
 		is_disable = true;
+		is_exact_disable = true;
 		snprintf(spec, sizeof(spec), "!%s", evname);
 		break;
 	case 6:
-		/* !<sys>: -- remove all events in subsystem */
+		/* !<sys>: -- remove all events in subsystem (wide scope, no exact undo) */
 		is_disable = true;
 		snprintf(spec, sizeof(spec), "!%.*s:", (int)syslen, evname);
 		break;
 	case 7:
-		/* !:<evt> -- remove by event name */
+		/* !:<evt> -- remove by event name across all subsystems (wide scope, no exact undo) */
 		is_disable = true;
 		snprintf(spec, sizeof(spec), "!:%s", evt_part);
 		break;
@@ -1332,6 +1335,7 @@ static unsigned long do_set_event(void)
 	case 9:
 		/* !<sys>:<evt>:mod:<modname> -- module-filtered remove */
 		is_disable = true;
+		is_exact_disable = true;
 		mod = RAND_ARRAY(mod_names);
 		snprintf(spec, sizeof(spec), "!%s:mod:%s", evname, mod);
 		break;
@@ -1382,19 +1386,17 @@ static unsigned long do_set_event(void)
 	close(fd);
 
 	/*
-	 * Disable-arm oracle: after writing a !-prefixed spec, record
-	 * the surviving enabled-event count as a stats scalar, then
-	 * re-enable exactly what was just disabled by stripping the
-	 * leading '!' from spec and writing the result.  This is a
-	 * targeted undo rather than a global re-enable: bare "*:" would
-	 * call ftrace_set_clr_event(NULL, NULL, NULL) and enable every
-	 * tracepoint on the instance -- not a restore, a hostile override
-	 * that pins the measurement to a near-constant and erases the
-	 * variability do_event_enable() builds.
+	 * Disable-arm oracle: after writing a !-prefixed spec, record the
+	 * surviving enabled-event count as a stats scalar.  Only cases 5
+	 * and 9 carry an exact-undo (single event or module-filtered event);
+	 * cases 6 and 7 are wide-scope disables whose spec+1 re-enable form
+	 * would expand the enabled set beyond what was just removed, so they
+	 * are counted separately and left un-restored.  The distinction keeps
+	 * set_event_post_disable_count a true erosion gauge rather than a
+	 * near-constant pinned by wide restores.
 	 */
 	if (is_disable && ret >= 0) {
 		long remaining = count_set_event_lines();
-		int rfd;
 
 		/* Denominator: count every oracle firing. */
 		__atomic_add_fetch(
@@ -1405,17 +1407,31 @@ static unsigned long do_set_event(void)
 			__atomic_store_n(
 				&shm->stats.tracefs_fuzzer.set_event_post_disable_count,
 				(unsigned long)remaining, __ATOMIC_RELAXED);
-		rfd = open_write_target(path, bad);
-		if (rfd >= 0) {
-			/* spec[0] == '!'; spec+1 is the matching enable form */
-			ssize_t rret = write(rfd, spec + 1, strlen(spec + 1));
 
-			close(rfd);
-			if (rret >= 0)
-				__atomic_add_fetch(
-					&shm->stats.tracefs_fuzzer
-						.set_event_disable_reenabled,
-					1, __ATOMIC_RELAXED);
+		if (is_exact_disable) {
+			/* spec[0] == '!'; spec+1 is the exact matching enable form */
+			size_t elen = strlen(spec + 1);
+			int rfd = open_write_target(path, bad);
+
+			if (rfd >= 0) {
+				ssize_t rret = write(rfd, spec + 1, elen);
+
+				close(rfd);
+				if (rret > 0)
+					__atomic_add_fetch(
+						&shm->stats.tracefs_fuzzer
+							.set_event_disable_reenabled,
+						1, __ATOMIC_RELAXED);
+			}
+		} else {
+			/* Wide-scope arm (case 6: !<sys>:, case 7: !:<evt>):
+			 * writing spec+1 would enable the whole subsystem or
+			 * all matching events -- not an exact undo.  Count it
+			 * and leave the set as-is. */
+			__atomic_add_fetch(
+				&shm->stats.tracefs_fuzzer
+					.set_event_wide_disable_arms,
+				1, __ATOMIC_RELAXED);
 		}
 	}
 
