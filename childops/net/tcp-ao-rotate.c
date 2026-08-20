@@ -1206,7 +1206,9 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	 * the reporter's reproducer uses to open the UAF window in
 	 * tcp_ao_connect_init().
 	 *
-	 * Rendezvous protocol (two-way, introduced after c3593fa388fa):
+	 * Rendezvous protocol (two-way, introduced after
+	 * c3593fa388fa ("child: tcp-ao: add rendezvous pipe to VRF race
+	 * childop")):
 	 *   ready_pfd  (child→parent): child writes one byte after its
 	 *              netlink message is pre-built; parent blocks on this
 	 *              read before coin-flipping.  Guarantees the child is
@@ -1227,6 +1229,7 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	ready_pfd[0] = ready_pfd[1] = -1;
 	if (pipe(race_pfd) != 0 || pipe(rendezvous_pfd) != 0 ||
 	    pipe(ready_pfd) != 0) {
+	direct_calls += 3;	/* pipe x3: race/rendezvous/ready */
 		__atomic_add_fetch(
 			&shm->stats.tcp_ao_rotate.vrf_pipe_unavailable,
 			1, __ATOMIC_RELAXED);
@@ -1324,6 +1327,7 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	close(race_pfd[1]);
 	close(rendezvous_pfd[0]);
 	close(ready_pfd[1]); /* parent only reads from ready_pfd */
+	direct_calls += 3;	/* close x3: race/rendezvous/ready */
 
 	/* Wait for child to signal readiness: it has pre-built its netlink
 	 * message and is blocked at the rendezvous gate.  Only after this
@@ -1331,8 +1335,10 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	 * deterministic rather than scheduler-dependent. */
 	{ char _rdy;
 	  ssize_t _r = read(ready_pfd[0], &_rdy, 1);
+	direct_calls++;	/* read(ready_pfd[0]) */
 	  (void)_r; }
 	close(ready_pfd[0]);
+	direct_calls++;	/* close(ready_pfd[0]) */
 
 	/*
 	 * Parent: coin-flip the rendezvous token write around connect().

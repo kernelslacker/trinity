@@ -1162,6 +1162,7 @@ stats	object
     stats.tcp_ao_rotate.vrf_detach_before_connect	u64
     stats.tcp_ao_rotate.vrf_detach_after_connect	u64
     stats.tcp_ao_rotate.vrf_detach_tied	u64
+    stats.tcp_ao_rotate.vrf_pipe_unavailable	u64
   stats.tcp_md5_listener_race	object
     stats.tcp_md5_listener_race.runs	u64
     stats.tcp_md5_listener_race.setup_failed	u64
