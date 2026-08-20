@@ -758,10 +758,11 @@ if err:
 # Parse any live rotation events.  Terminal records (type=="terminal")
 # are separated from rotation event records so they can be validated
 # independently against the [terminal] baseline section.
+live_path_exists = bool(live_path and os.path.exists(live_path))
 live_fields = None
 live_terminal_fields = None
 live_errors = []
-if live_path and os.path.exists(live_path):
+if live_path_exists:
     with open(live_path) as f:
         for lineno, raw in enumerate(f, 1):
             raw = raw.strip()
@@ -887,7 +888,7 @@ if live_terminal_fields is not None and bl_terminal_set:
         check_errors.append(
             "rotation-event terminal record: missing fields: " +
             ", ".join(sorted(missing_term)))
-elif live_terminal_fields is None and bl_terminal_set:
+elif live_terminal_fields is None and bl_terminal_set and live_path_exists:
     check_errors.append(
         "rotation-event terminal record: absent but expected by baseline")
 
