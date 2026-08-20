@@ -103,9 +103,18 @@ while IFS= read -r srcfile; do
 		fi
 
 		# Check for the required reset in the truncated window.
-		# Accept both signal(SIGALRM, SIG_DFL) and sigaction(SIGALRM, ...) forms.
+		# Accept signal(SIGALRM, SIG_DFL) directly, or a sigaction(SIGALRM, ...)
+		# call that is paired with a .sa_handler = SIG_DFL assignment in the
+		# same window -- confirming it resets the disposition rather than
+		# installing a handler.
 		if printf '%s\n' "$window" | \
-		   grep -qE 'signal[[:space:]]*\([[:space:]]*SIGALRM[[:space:]]*,[[:space:]]*SIG_DFL|sigaction[[:space:]]*\([[:space:]]*SIGALRM[[:space:]]*,'; then
+		   grep -qE 'signal[[:space:]]*\([[:space:]]*SIGALRM[[:space:]]*,[[:space:]]*SIG_DFL'; then
+			continue
+		fi
+		if printf '%s\n' "$window" | \
+		   grep -qE 'sigaction[[:space:]]*\([[:space:]]*SIGALRM[[:space:]]*,' && \
+		   printf '%s\n' "$window" | \
+		   grep -qE '\.sa_handler[[:space:]]*=[[:space:]]*SIG_DFL'; then
 			continue
 		fi
 
@@ -137,7 +146,8 @@ if [ "$flagged" -gt 0 ]; then
 		echo "  $NAME: $flagged alarm() callsite(s) in fork()-containing files"
 		echo "  without a preceding signal(SIGALRM, SIG_DFL) reset:"
 		sed 's/^/    /' "$hits_tmp"
-		echo "  fix: add 'signal(SIGALRM, SIG_DFL);' immediately before alarm()."
+		echo "  fix: add 'signal(SIGALRM, SIG_DFL);' immediately before alarm(), or"
+		echo "  use the sigaction(2) form with '.sa_handler = SIG_DFL' in the struct."
 		echo "  Background: fork() without execve() inherits the parent's SIGALRM"
 		echo "  flag-setter, making alarm() a no-op watchdog.  See commit"
 		echo '  fdb73bc89fe4 ("userns-bootstrap: fix grandchild SIGALRM disposition and alarm clobber")'
