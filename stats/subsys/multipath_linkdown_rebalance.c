@@ -12,6 +12,7 @@ static const struct stat_field multipath_linkdown_rebalance_fields[] = {
 	STAT_FIELD_SUB(multipath_linkdown_rebalance, flip_attempts),
 	STAT_FIELD_SUB(multipath_linkdown_rebalance, flip_writes_ok),
 	STAT_FIELD_SUB(multipath_linkdown_rebalance, completed_ok),
+	STAT_FIELD_SUB(multipath_linkdown_rebalance, partition_invalid),
 };
 
 const struct stat_category multipath_linkdown_rebalance_category =

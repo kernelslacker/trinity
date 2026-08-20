@@ -1231,6 +1231,7 @@ stats	object
     stats.multipath_linkdown_rebalance.flip_attempts	u64
     stats.multipath_linkdown_rebalance.flip_writes_ok	u64
     stats.multipath_linkdown_rebalance.completed_ok	u64
+    stats.multipath_linkdown_rebalance.partition_invalid	u64
   stats.ip6_udp_cork_splice	object
     stats.ip6_udp_cork_splice.runs	u64
     stats.ip6_udp_cork_splice.setup_failed	u64

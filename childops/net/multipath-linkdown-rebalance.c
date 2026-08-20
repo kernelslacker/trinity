@@ -370,6 +370,181 @@ static int mlr_build_route(struct nl_ctx *nl, bool v6,
 }
 
 /* ------------------------------------------------------------------ */
+/* partition well-formedness oracle                                    */
+/* ------------------------------------------------------------------ */
+
+/*
+ * mlr_expected_upper_bound - compute the expected fib_nh_upper_bound
+ * for a nexthop whose cumulative weight is cum_w, given a partition
+ * with total_w across all nexthops.
+ *
+ * Mirrors the kernel formula:
+ *   v4  (fib_rebalance):       DIV_ROUND_CLOSEST_ULL(cum_w << 31, total) - 1
+ *   v6  (rt6_upper_bound_set): DIV_ROUND_CLOSEST_ULL(cum_w <<  8, total) - 1
+ *
+ * The v6 range is [0, 255]; the v4 range is [0, INT_MAX].  The final
+ * nexthop in a well-formed partition reaches the maximum of its range.
+ */
+static int mlr_expected_upper_bound(unsigned int cum_w, unsigned int total_w,
+				    bool v6)
+{
+	unsigned long long n = (unsigned long long)cum_w << (v6 ? 8 : 31);
+	unsigned long long d = (unsigned long long)total_w;
+
+	/* DIV_ROUND_CLOSEST_ULL: (n + d/2) / d */
+	return (int)((n + d / 2ULL) / d) - 1;
+}
+
+/*
+ * mlr_partition_check - RTM_GETROUTE partition well-formedness oracle.
+ *
+ * Issues RTM_GETROUTE for the installed multipath route and validates
+ * that the RTA_MULTIPATH nexthop sequence forms a valid partition:
+ *
+ *   1. Nexthop count == MLR_LEGS.
+ *   2. Total nexthop weight > 0 (no zero-weight degenerate partition).
+ *   3. Computed upper_bound sequence is non-decreasing.
+ *   4. Final upper_bound == expected maximum
+ *      (255 for v6 [<<8 range], INT_MAX for v4 [<<31 range]).
+ *
+ * A well-formed partition confirms the kernel ran fib_rebalance() /
+ * rt6_multipath_rebalance() without the divide-by-zero producing
+ * wrong upper bounds.  A mis-programming shows as a degenerate
+ * nexthop count or a final bound that does not reach the maximum.
+ *
+ * Returns true when the partition is well-formed, or when the route
+ * cannot be retrieved (transient lookup failures are not counted as
+ * violations -- only definitively malformed partitions are counted).
+ * Returns false when the route IS returned but the partition is bad.
+ */
+static bool mlr_partition_check(struct nl_ctx *nl, bool v6)
+{
+	struct {
+		struct nlmsghdr	nlh;
+		struct rtmsg	rtm;
+		unsigned char	attrs[RTA_LENGTH(sizeof(struct in6_addr))];
+	} req;
+	unsigned char		 rsp[2048];
+	struct nlmsghdr		*rnlh;
+	struct rtmsg		*rrtm;
+	struct rtattr		*rta;
+	int			 rta_len;
+	ssize_t			 n;
+
+	memset(&req, 0, sizeof(req));
+	req.nlh.nlmsg_type  = RTM_GETROUTE;
+	req.nlh.nlmsg_flags = NLM_F_REQUEST;
+	req.nlh.nlmsg_seq   = nl_seq_next(nl);
+	req.rtm.rtm_family  = v6 ? AF_INET6 : AF_INET;
+	req.rtm.rtm_dst_len = v6 ? 128 : 32;
+	req.rtm.rtm_table   = RT_TABLE_MAIN;
+	req.rtm.rtm_type    = RTN_UNICAST;
+
+	{
+		struct rtattr *a = (struct rtattr *)req.attrs;
+		size_t gw_sz = v6 ? sizeof(struct in6_addr) : sizeof(__u32);
+
+		a->rta_type = RTA_DST;
+		a->rta_len  = (__u16)RTA_LENGTH(gw_sz);
+		if (v6) {
+			struct in6_addr dst;
+
+			memset(&dst, 0, sizeof(dst));
+			dst.s6_addr[0] = 0xfd;
+			dst.s6_addr[1] = 0x00;
+			dst.s6_addr[2] = 0xd1;
+			dst.s6_addr[3] = 0xd2;
+			dst.s6_addr[15] = 0x01;
+			memcpy(RTA_DATA(a), &dst, gw_sz);
+		} else {
+			__u32 dst = htonl(0xc6120701U);	/* 198.18.7.1 */
+
+			memcpy(RTA_DATA(a), &dst, gw_sz);
+		}
+		req.nlh.nlmsg_len = (__u32)(NLMSG_ALIGN(NLMSG_HDRLEN +
+						    sizeof(req.rtm)) +
+					    RTA_ALIGN((__u16)RTA_LENGTH(gw_sz)));
+	}
+
+	if (send(nl->fd, &req, req.nlh.nlmsg_len, 0) < 0)
+		return true;	/* send failed — skip */
+
+	n = recv(nl->fd, rsp, sizeof(rsp), 0);
+	if (n < (ssize_t)sizeof(struct nlmsghdr))
+		return true;	/* recv failed — skip */
+
+	rnlh = (struct nlmsghdr *)rsp;
+	if (!NLMSG_OK(rnlh, (unsigned int)n) || rnlh->nlmsg_type != RTM_NEWROUTE)
+		return true;	/* not a route reply — skip */
+
+	rrtm    = (struct rtmsg *)NLMSG_DATA(rnlh);
+	rta     = RTM_RTA(rrtm);
+	rta_len = (int)RTM_PAYLOAD(rnlh);
+
+	while (RTA_OK(rta, rta_len)) {
+		if (rta->rta_type == RTA_MULTIPATH) {
+			const unsigned char    *mp     = (const unsigned char *)RTA_DATA(rta);
+			int			 mp_rem = (int)RTA_PAYLOAD(rta);
+			const struct rtnexthop *rtnh;
+			unsigned int		 total_w = 0;
+			unsigned int		 cum_w   = 0;
+			unsigned int		 count   = 0;
+			int			 prev_ub = -1;
+			const int		 max_ub  = v6 ? 255 : 0x7fffffff;
+			int			 step;
+			unsigned int		 j;
+
+			/* First pass: count nexthops + accumulate total weight. */
+			rtnh = (const struct rtnexthop *)mp;
+			for (;;) {
+				if (mp_rem < (int)sizeof(*rtnh))
+					break;
+				if (rtnh->rtnh_len < sizeof(*rtnh) ||
+				    (int)rtnh->rtnh_len > mp_rem)
+					break;
+				total_w += (unsigned int)rtnh->rtnh_hops + 1;
+				count++;
+				step     = (int)RTNH_ALIGN(rtnh->rtnh_len);
+				mp_rem  -= step;
+				rtnh     = (const struct rtnexthop *)
+					   ((const char *)rtnh + step);
+			}
+
+			/* Nexthop count and weight sanity. */
+			if (count != MLR_LEGS || total_w == 0)
+				return false;
+
+			/*
+			 * Second pass: verify the upper-bound sequence is
+			 * non-decreasing and terminates at the expected
+			 * maximum (255 for v6, INT_MAX for v4).
+			 */
+			rtnh = (const struct rtnexthop *)mp;
+			for (j = 0; j < MLR_LEGS; j++) {
+				int ub;
+
+				cum_w  += (unsigned int)rtnh->rtnh_hops + 1;
+				ub      = mlr_expected_upper_bound(cum_w, total_w,
+								   v6);
+				if (ub < prev_ub)
+					return false;
+				prev_ub = ub;
+				step    = (int)RTNH_ALIGN(rtnh->rtnh_len);
+				rtnh    = (const struct rtnexthop *)
+					  ((const char *)rtnh + step);
+			}
+
+			/* Final upper-bound must reach the expected maximum. */
+			return (prev_ub == max_ub);
+		}
+		rta = RTA_NEXT(rta, rta_len);
+	}
+
+	/* No RTA_MULTIPATH found — route is no longer multipath. */
+	return false;
+}
+
+/* ------------------------------------------------------------------ */
 /* sysctl flip worker                                                  */
 /* ------------------------------------------------------------------ */
 
@@ -635,10 +810,25 @@ static int multipath_linkdown_rebalance_in_ns(void *arg)
 	for (i = 0; i < MLR_REPLACE_ITERS; i++) {
 		if ((unsigned long long)ns_since(&t0) >= MLR_WALL_NS)
 			break;
-		if (mlr_build_route(&ctx, v6, legs, true) == 0)
+		if (mlr_build_route(&ctx, v6, legs, true) == 0) {
 			__atomic_add_fetch(
 				&shm->stats.multipath_linkdown_rebalance.rebalance_triggers,
 				1, __ATOMIC_RELAXED);
+			/*
+			 * Semantic oracle (post-fix): read back the route via
+			 * RTM_GETROUTE and validate the nexthop partition.
+			 * A well-formed partition has non-decreasing
+			 * upper_bounds and a final bound that reaches the
+			 * family maximum (255 for v6 [<<8 range], INT_MAX
+			 * for v4 [<<31 range]).  Mis-programming of
+			 * fib_nh_upper_bound is the residual race the
+			 * remove-the-divide fix does not close.
+			 */
+			if (!mlr_partition_check(&ctx, v6))
+				__atomic_add_fetch(
+					&shm->stats.multipath_linkdown_rebalance.partition_invalid,
+					1, __ATOMIC_RELAXED);
+		}
 	}
 
 	mlr_reap_worker(worker);

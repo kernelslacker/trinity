@@ -13,6 +13,7 @@ struct multipath_linkdown_rebalance_stats {
 	unsigned long flip_attempts;		/* sysctl 1<->0 write attempts (2 per iteration, regardless of success) */
 	unsigned long flip_writes_ok;		/* sysctl writes that pwrite() confirmed (returned > 0) */
 	unsigned long completed_ok;		/* full cycle reached worker reap */
+	unsigned long partition_invalid;	/* RTM_GETROUTE showed malformed nexthop partition */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_MULTIPATH_LINKDOWN_REBALANCE_H */
