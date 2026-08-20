@@ -14,7 +14,7 @@ struct syscall_wedge_stats {
 	 *
 	 *  count[nr]
 	 *      Bumped once per stuck-child detection event, at the first
-	 *      is_child_making_progress() pass that finds diff >= 30 s for
+	 *      is_child_making_progress() pass that finds diff >= REAP_STALL_THRESHOLD_S s for
 	 *      this child.  Latched per-child via childdata.wedge_accounted so
 	 *      a child that stays wedged across many watchdog ticks counts as
 	 *      one event, not one per tick.  RELAXED add-fetch -- diagnostic,

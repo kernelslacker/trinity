@@ -42,13 +42,13 @@
 /* Wall-clock ceiling on a canary window with zero invocations.  op_fn
  * bumps childop_invocations[op] only on return; if every dispatch of
  * the canaried op wedges inside a kernel syscall long enough to trip
- * the 30 s parent watchdog, the child is killed before that bump ever
+ * the REAP_STALL_THRESHOLD_S s parent watchdog, the child is killed before that bump ever
  * lands and invocations stays at 0.  window_iters (measured off the
  * invocation delta) is then also 0, setup_fail_delta (invocations -
  * setup_accepted) is 0, and neither the SETUP_BROKEN branch nor the
  * iters >= budget branch below can fire -- the canary slot is pinned
  * on the hung op indefinitely and every other dormant op is starved
- * of a canary window.  600 s is ~20x the parent's 30 s per-child
+ * of a canary window.  600 s is ~20x the parent's REAP_STALL_THRESHOLD_S s per-child
  * stall detection so a genuinely slow op that eventually returns is
  * not misclassified as wedged. */
 #define CANARY_WEDGE_STALL_SEC	600U

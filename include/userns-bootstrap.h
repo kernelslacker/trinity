@@ -38,6 +38,8 @@
 #ifndef _TRINITY_USERNS_BOOTSTRAP_H
 #define _TRINITY_USERNS_BOOTSTRAP_H
 
+#include "reap-thresholds.h"
+
 /*
  * Maximum wall-clock seconds any fn(arg) callback passed to
  * userns_run_in_ns() is permitted to run.  The grandchild explicitly
@@ -61,17 +63,13 @@
  * enforcement mechanism.
  *
  * Both constants are derived from REAP_STALL_THRESHOLD_S (the reap-
- * watchdog stall kill threshold, defined in main/reap-watchdog.c).
- * The redeclaration here must stay in sync with that file; the
- * _Static_assert below cross-checks the relationship at compile time.
+ * watchdog stall kill threshold, defined in include/reap-thresholds.h).
  * USERNS_PARENT_ALARM_S must fire well before the reaper SIGKILLs the
  * trinity child at REAP_STALL_THRESHOLD_S seconds of no progress;
  * USERNS_CALLBACK_ALARM_S must be smaller still so the grandchild's own
- * alarm fires before the parent alarm.
+ * alarm fires before the parent alarm.  The _Static_asserts below enforce
+ * these constraints at compile time in every TU that includes this header.
  */
-
-/* Redeclaration -- must equal REAP_STALL_THRESHOLD_S in main/reap-watchdog.c */
-#define REAP_STALL_THRESHOLD_S   30u
 
 #define USERNS_PARENT_ALARM_S    12u
 #define USERNS_CALLBACK_ALARM_S   8u

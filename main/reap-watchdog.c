@@ -29,8 +29,7 @@
 #include "utils.h"
 #include "main-internal.h"
 #include "reap-internal.h"
-
-#define REAP_STALL_THRESHOLD_S 30u
+#include "reap-thresholds.h"
 
 unsigned long hiscore = 0;
 

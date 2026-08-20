@@ -187,7 +187,7 @@ struct childdata {
 	bool dstate_diag_dumped;
 
 	/* SHADOW-ONLY stuck-child accounting latch.  Set true by
-	 * is_child_making_progress() on the first detection of diff>=30s for
+	 * is_child_making_progress() on the first detection of diff>=REAP_STALL_THRESHOLD_S s for
 	 * this child, alongside an increment of
 	 * shm->stats.syscall_wedge.count[wedge_nr] and
 	 * shm->stats.childop.wedge_count[wedge_op_type].  reap_child() then
@@ -197,7 +197,7 @@ struct childdata {
 	 * is recycled.  wedge_start_tp is seeded from child->tp (the child's
 	 * last-progress timestamp) rather than from the detection moment so
 	 * the accumulated duration covers the FULL window the slot was
-	 * unreusable -- the watchdog's 30 s grace period included -- and
+	 * unreusable -- the watchdog's REAP_STALL_THRESHOLD_S s grace period included -- and
 	 * matches the semantics the operator expects when reading "wedged
 	 * total".  Latched per-child so a child that survives many watchdog
 	 * ticks contributes one event with a real duration, not one event
