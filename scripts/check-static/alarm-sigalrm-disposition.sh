@@ -123,17 +123,20 @@ while IFS= read -r srcfile; do
 
 		# Check for the required reset in the truncated window.
 		# Accept signal(SIGALRM, SIG_DFL) directly, or a sigaction(SIGALRM, ...)
-		# call that is paired with a .sa_handler = SIG_DFL assignment in the
-		# same window -- confirming it resets the disposition rather than
-		# installing a handler.
+		# call where the specific struct passed to sigaction(SIGALRM, &<id>, ...)
+		# has .sa_handler = SIG_DFL assigned in the same window -- confirming
+		# it resets the disposition rather than installing a handler.
+		# Both checks must refer to the *same* struct identifier to prevent a
+		# sibling-signal SIG_DFL assignment from satisfying the sigaction arm.
 		if printf '%s\n' "$window" | \
 		   grep -qE 'signal[[:space:]]*\([[:space:]]*SIGALRM[[:space:]]*,[[:space:]]*SIG_DFL'; then
 			continue
 		fi
-		if printf '%s\n' "$window" | \
-		   grep -qE 'sigaction[[:space:]]*\([[:space:]]*SIGALRM[[:space:]]*,' && \
-		   printf '%s\n' "$window" | \
-		   grep -qE '\.sa_handler[[:space:]]*=[[:space:]]*SIG_DFL'; then
+		sigact_struct=$(printf '%s\n' "$window" | \
+			grep -oE 'sigaction[[:space:]]*\([[:space:]]*SIGALRM[[:space:]]*,[[:space:]]*&([A-Za-z_][A-Za-z0-9_]*)' | \
+			grep -oE '&[A-Za-z_][A-Za-z0-9_]*$' | tr -d '&')
+		if [ -n "$sigact_struct" ] && printf '%s\n' "$window" | \
+		   grep -qE "${sigact_struct}[.]sa_handler[[:space:]]*=[[:space:]]*SIG_DFL"; then
 			continue
 		fi
 
@@ -166,7 +169,8 @@ if [ "$flagged" -gt 0 ]; then
 		echo "  without a preceding signal(SIGALRM, SIG_DFL) reset:"
 		sed 's/^/    /' "$hits_tmp"
 		echo "  fix: add 'signal(SIGALRM, SIG_DFL);' immediately before alarm(), or"
-		echo "  use the sigaction(2) form with '.sa_handler = SIG_DFL' in the struct."
+		echo "  use the sigaction(2) form: set '.sa_handler = SIG_DFL' on the SAME struct"
+		echo "  passed to sigaction(SIGALRM, ...) -- e.g. 'sa.sa_handler = SIG_DFL; sigaction(SIGALRM, &sa, NULL);'."
 		echo "  Background: fork() without execve() inherits the parent's SIGALRM"
 		echo "  flag-setter, making alarm() a no-op watchdog.  See commit"
 		echo '  fdb73bc89fe4 ("userns-bootstrap: fix grandchild SIGALRM disposition and alarm clobber")'
