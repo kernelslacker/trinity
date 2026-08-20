@@ -22,6 +22,12 @@ struct ebpf_gen_stats {
 	unsigned long maps_provided;
 	unsigned long progs_provided;
 
+	/* Cumulative count of BPF_PROG_LOAD calls that returned a negative fd
+	 * (kernel rejected the program -- verifier error, invalid attr, etc.).
+	 * Non-zero here and zero in progs_provided means every load is failing;
+	 * a log_level=0 / non-NULL log_buf mismatch is the canonical trigger. */
+	unsigned long bpf_prog_load_rejected;
+
 	/* net/bpf/ebpf.c generator: cumulative count of programs that prepended
 	 * an LD_MAP_FD loading a real bpf-map fd from the trinity object pool
 	 * (Phase 3.3).  Bumped whenever the 5% base substitution rate or the

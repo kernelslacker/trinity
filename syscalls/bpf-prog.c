@@ -86,13 +86,22 @@ static bool bpf_prog_load(union bpf_attr *attr)
 	}
 
 	attr->license = (u64) license;
-	attr->log_level = 0;
-	attr->log_size = rnd_modulo_u32(page_size);
-	attr->log_buf = (u64) get_writable_address(page_size);
-	{
-		unsigned long log_buf_addr = attr->log_buf;
-		avoid_shared_buffer_inout(&log_buf_addr, page_size);
-		attr->log_buf = log_buf_addr;
+	/* Rotate log_level and keep the trio consistent.
+	 * bpf_verifier_log_attr_valid() rejects log_buf set with log_level==0.
+	 * Valid non-zero values: 1 (insns), 2 (+state), 4 (+verbose), 7 (all). */
+	static const unsigned int bpf_log_levels[] = {0, 1, 2, 4, 7};
+	attr->log_level = bpf_log_levels[rnd_u32() % ARRAY_SIZE(bpf_log_levels)];
+	if (attr->log_level == 0) {
+		attr->log_size = 0;
+		attr->log_buf = 0;
+	} else {
+		attr->log_size = rnd_modulo_u32(page_size);
+		attr->log_buf = (u64) get_writable_address(page_size);
+		{
+			unsigned long log_buf_addr = attr->log_buf;
+			avoid_shared_buffer_inout(&log_buf_addr, page_size);
+			attr->log_buf = log_buf_addr;
+		}
 	}
 	attr->kern_version = get_kern_version();
 	bpf_fill_obj_name(attr->prog_name);
@@ -189,6 +198,9 @@ static void bpf_attach_sk_lookup(int prog_fd)
 void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
 			bool classic_bpf_insns)
 {
+	if (fd < 0)
+		__atomic_add_fetch(&shm->stats.ebpf_gen.bpf_prog_load_rejected, 1, __ATOMIC_RELAXED);
+
 	if (fd >= 0 && attr_readable)
 		publish_resource(OBJ_FD_BPF_PROG, fd,
 				 &(struct resource_meta){.subtype = attr->prog_type});
