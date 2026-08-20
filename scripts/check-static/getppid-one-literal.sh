@@ -27,12 +27,16 @@
 #
 #   Pass 1 (same-line): catches getppid() compared directly against a
 #   literal sentinel on the same source line.  Flagged forms:
-#     getppid() == 1   (exact init check)
-#     getppid() != 1   (inverse sentinel — still subreaper-unsafe)
-#     getppid() <= 1   (close-zero — equivalent to == 1 for PIDs)
-#     getppid() <  2   (close-zero — equivalent to <= 1 for PIDs)
-#     1 == getppid()   (yoda form of exact init check)
-#     1 != getppid()   (yoda form of inverse sentinel)
+#     getppid() == 1        (exact init check)
+#     getppid() != 1        (inverse sentinel — still subreaper-unsafe)
+#     getppid() <= 1        (close-zero — equivalent to == 1 for PIDs)
+#     getppid() <  2        (close-zero — equivalent to <= 1 for PIDs)
+#     1 == getppid()        (yoda form of exact init check)
+#     1 != getppid()        (yoda form of inverse sentinel)
+#     getppid() == mainpid  (mainpid sentinel — unsafe at depth > 1)
+#     getppid() != mainpid  (inverse mainpid sentinel — unsafe at depth > 1)
+#     getppid() <= mainpid  (mainpid sentinel variant)
+#     getppid() <  mainpid  (mainpid sentinel variant)
 #   All forms are caught for both the libc getppid() and raw-syscall variants.
 #
 #   Pass 2 (hoisted): catches the common refactoring where the call is
@@ -65,11 +69,13 @@ BASELINE="$ROOT/scripts/check-static/getppid-one-literal.baseline"
 
 # ---------------------------------------------------------------------------
 # Pass 1 pattern: getppid() (or raw-syscall equivalents) compared on the
-# same line against a literal sentinel via ==, !=, <=, or <.
+# same line against a literal or named sentinel via ==, !=, <=, or <.
 #
 # Operators and literals caught:
-#   == 1  != 1  <= 1     (literal 1 with any of those operators)
-#   < 2                  (literal 2 with strict-less — equivalent to <= 1)
+#   == 1  != 1  <= 1        (literal 1 with any of those operators)
+#   < 2                     (literal 2 with strict-less — equivalent to <= 1)
+#   == mainpid  != mainpid  (mainpid named sentinel — unsafe at fork depth > 1)
+#   <= mainpid  < mainpid   (mainpid named sentinel variants)
 # ---------------------------------------------------------------------------
 CALLEXPR='(getppid[[:space:]]*\(\)|trinity_raw_syscall\([^)]*__NR_getppid[^)]*\)|syscall\([^)]*__NR_getppid[^)]*\))'
 PATTERN="${CALLEXPR}[[:space:]]*((==|!=|<=)[[:space:]]*1|<[[:space:]]*2)([^0-9]|$)"
@@ -77,6 +83,11 @@ PATTERN="${CALLEXPR}[[:space:]]*((==|!=|<=)[[:space:]]*1|<[[:space:]]*2)([^0-9]|
 # on the literal-left side (1 <= getppid() / 1 < getppid() have different
 # semantics and are not subreaper-sentinel patterns).
 YODA_PATTERN="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${CALLEXPR}"
+# mainpid sentinel: getppid() compared against the mainpid global.  This is
+# unsafe at fork depth > 1 — at that depth mainpid != getppid() on every call
+# so the guard fires unconditionally.  Only the direct child of main() (where
+# the parent IS mainpid) may use this comparison; pin that site in the baseline.
+PATTERN_MAINPID="${CALLEXPR}[[:space:]]*(==|!=|<=|<)[[:space:]]*mainpid([^a-z_A-Z0-9]|$)"
 
 # ---------------------------------------------------------------------------
 # Pass 2: hoisted assignment — variable assigned from getppid(), then
@@ -140,7 +151,7 @@ for srcfile in "${srcfiles[@]}"; do
 
 		echo "$key: getppid() literal sentinel (==1 / !=1 / <=1 / <2) — use saved-ppid idiom for subreaper safety" >> "$hits_tmp"
 		flagged=$((flagged + 1))
-	done < <(grep -nE "${PATTERN}|${YODA_PATTERN}" "$srcfile" 2>/dev/null)
+	done < <(grep -nE "${PATTERN}|${YODA_PATTERN}|${PATTERN_MAINPID}" "$srcfile" 2>/dev/null)
 done
 
 # ---------------------------------------------------------------------------

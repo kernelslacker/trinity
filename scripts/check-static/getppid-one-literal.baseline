@@ -27,3 +27,4 @@ childops/process/process-mrelease-race.c:197  pending conversion to saved-ppid i
 childops/process/process-mrelease-race.c:292  pending conversion to saved-ppid idiom
 childops/process/process-mrelease-race.c:330  pending conversion to saved-ppid idiom
 health/kmsg-monitor.c:334  pending conversion to saved-ppid idiom
+child/child.c:256  mainpid sentinel: direct child of main(); parent IS mainpid at depth 1 — subreaper-safe at this call site
