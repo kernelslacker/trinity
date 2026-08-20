@@ -31,6 +31,8 @@
 #     getppid() != 1   (inverse sentinel — still subreaper-unsafe)
 #     getppid() <= 1   (close-zero — equivalent to == 1 for PIDs)
 #     getppid() <  2   (close-zero — equivalent to <= 1 for PIDs)
+#     1 == getppid()   (yoda form of exact init check)
+#     1 != getppid()   (yoda form of inverse sentinel)
 #   All forms are caught for both the libc getppid() and raw-syscall variants.
 #
 #   Pass 2 (hoisted): catches the common refactoring where the call is
@@ -38,9 +40,13 @@
 #     pid_t p = getppid();   /* hoisted assignment */
 #     ...
 #     if (p == 1)            /* flagged here */
+#     if (1 == p)            /* yoda form — also flagged */
 #   The pass finds all local variables assigned from getppid() in each .c
 #   file, then checks whether those variables appear in a sentinel comparison
 #   (==, !=, <=, <) against literal 1 or 2 anywhere in the same file.
+#   NOTE: Pass 2 is file-scoped; it may false-positive if two different
+#   functions in the same file both use a same-named local variable but only
+#   one function assigns it from getppid().  Pin such sites in the baseline.
 #
 # 551c2d57bf5e ("userns-bootstrap: add getppid()==1 re-check after
 # PR_SET_PDEATHSIG") introduced the last site converted in the batch that
@@ -67,6 +73,10 @@ BASELINE="$ROOT/scripts/check-static/getppid-one-literal.baseline"
 # ---------------------------------------------------------------------------
 CALLEXPR='(getppid[[:space:]]*\(\)|trinity_raw_syscall\([^)]*__NR_getppid[^)]*\)|syscall\([^)]*__NR_getppid[^)]*\))'
 PATTERN="${CALLEXPR}[[:space:]]*((==|!=|<=)[[:space:]]*1|<[[:space:]]*2)([^0-9]|$)"
+# Yoda form: 1 == getppid() / 1 != getppid() — only == and != are meaningful
+# on the literal-left side (1 <= getppid() / 1 < getppid() have different
+# semantics and are not subreaper-sentinel patterns).
+YODA_PATTERN="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${CALLEXPR}"
 
 # ---------------------------------------------------------------------------
 # Pass 2: hoisted assignment — variable assigned from getppid(), then
@@ -130,7 +140,7 @@ for srcfile in "${srcfiles[@]}"; do
 
 		echo "$key: getppid() literal sentinel (==1 / !=1 / <=1 / <2) — use saved-ppid idiom for subreaper safety" >> "$hits_tmp"
 		flagged=$((flagged + 1))
-	done < <(grep -nE "$PATTERN" "$srcfile" 2>/dev/null)
+	done < <(grep -nE "${PATTERN}|${YODA_PATTERN}" "$srcfile" 2>/dev/null)
 done
 
 # ---------------------------------------------------------------------------
@@ -162,10 +172,12 @@ for srcfile in "${srcfiles[@]}"; do
 	relpath="${srcfile#"$ROOT"/}"
 
 	for varname in "${unique_vars[@]}"; do
-		# Step B: look for this variable compared against literal 1 or 2.
+		# Step B: look for this variable compared against literal 1 or 2,
+		# including the yoda form (1 == varname / 1 != varname).
 		# Require a word boundary before the variable name so we don't
 		# match longer identifiers that happen to end with the same suffix.
 		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*((==|!=|<=)[[:space:]]*1|<[[:space:]]*2)([^0-9]|$)"
+		cmp_pattern_yoda="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*(^|[^a-z_A-Z0-9])${varname}([^a-z_A-Z0-9]|$)"
 
 		while IFS=: read -r lineno content; do
 			[ -z "$lineno" ] && continue
@@ -191,7 +203,7 @@ for srcfile in "${srcfiles[@]}"; do
 
 			echo "$key: hoisted getppid() via '$varname' compared against literal sentinel — use saved-ppid idiom for subreaper safety" >> "$hits_tmp"
 			flagged=$((flagged + 1))
-		done < <(grep -nE "$cmp_pattern" "$srcfile" 2>/dev/null)
+		done < <(grep -nE "${cmp_pattern}|${cmp_pattern_yoda}" "$srcfile" 2>/dev/null)
 	done
 done
 
