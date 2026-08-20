@@ -37,15 +37,22 @@ struct tracefs_fuzzer_stats {
 	/* Disable-arm oracle: set_event_post_disable_count is a gauge —
 	 * each successful !-prefixed write stores (not adds) the surviving
 	 * enabled-event count so the most-recent snapshot is always readable.
-	 * set_event_disable_arms is the denominator: incremented once per
-	 * disable-arm oracle firing so post_disable_count / disable_arms
-	 * is interpretable.  set_event_disable_reenabled counts successful
-	 * exact-undo restores (cases that disable and re-enable the same
-	 * single event or module-filtered event, i.e. case 5 and case 9).
+	 * Because this is a last-write-wins store and NOT a running sum,
+	 * post_disable_count / disable_arms is NOT a meaningful ratio; it
+	 * reflects only the most-recently observed surviving count (a spot
+	 * reading).  Tracking net erosion over time requires a monotonic sum
+	 * or ring sample, neither of which is maintained here.
+	 * set_event_disable_arms is incremented once per disable-arm oracle
+	 * firing and covers all four arm categories; it is advanced BEFORE
+	 * the remaining >= 0 readback check, so a readback failure increments
+	 * the counter without updating the gauge.
+	 * set_event_disable_reenabled counts successful exact-undo restores
+	 * (cases that disable and re-enable the same single event or
+	 * module-filtered event) — it is produced ONLY by cases 5 and 9, so
+	 * reenabled / disable_arms is structurally capped well below 1.
 	 * set_event_wide_disable_arms counts the wide-scope arms (case 6:
 	 * !<sys>:, case 7: !:<evt>) that have no safe exact-undo counterpart
-	 * and are therefore left un-restored; all four together let an
-	 * operator detect net erosion vs successful targeted restores.
+	 * and are therefore left un-restored.
 	 */
 	unsigned long set_event_post_disable_count;
 	unsigned long set_event_disable_arms;
