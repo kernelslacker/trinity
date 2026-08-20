@@ -177,7 +177,7 @@ for srcfile in "${srcfiles[@]}"; do
 		# Require a word boundary before the variable name so we don't
 		# match longer identifiers that happen to end with the same suffix.
 		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*((==|!=|<=)[[:space:]]*1|<[[:space:]]*2)([^0-9]|$)"
-		cmp_pattern_yoda="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*(^|[^a-z_A-Z0-9])${varname}([^a-z_A-Z0-9]|$)"
+		cmp_pattern_yoda="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)"
 
 		while IFS=: read -r lineno content; do
 			[ -z "$lineno" ] && continue
