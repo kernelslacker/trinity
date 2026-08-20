@@ -1210,6 +1210,10 @@ static long count_set_event_lines(void)
  *   <sys>:<evt>  <sys>:  :<evt>  *:<evt>  bare <name>  and !-prefixed forms
  *   :mod:<modname> suffix with both existing and non-existent module names
  *
+ * Bare "*:" (no event name) is not emitted by any arm or by the
+ * disable-arm oracle; it normalises to sub=NULL, event=NULL inside
+ * ftrace_set_clr_event() and enables every tracepoint globally.
+ *
  * The crash pair for the NULL deref in __ftrace_set_clr_event_nolock
  * (kernel upstream: d58772d8520c): writing "*:mod:nosuchmod" caches a mod-entry with
  * match=NULL ('*' normalises to NULL in the parser); a subsequent
@@ -1380,10 +1384,13 @@ static unsigned long do_set_event(void)
 	/*
 	 * Disable-arm oracle: after writing a !-prefixed spec, record
 	 * the surviving enabled-event count as a stats scalar, then
-	 * write "*:" to restore the enabled set.  Without this teardown
-	 * repeated disable arms silently erode the enabled set with no
-	 * counter recording the loss -- the same defect that justified
-	 * removing the "!*:" arm.
+	 * re-enable exactly what was just disabled by stripping the
+	 * leading '!' from spec and writing the result.  This is a
+	 * targeted undo rather than a global re-enable: bare "*:" would
+	 * call ftrace_set_clr_event(NULL, NULL, NULL) and enable every
+	 * tracepoint on the instance -- not a restore, a hostile override
+	 * that pins the measurement to a near-constant and erases the
+	 * variability do_event_enable() builds.
 	 */
 	if (is_disable && ret >= 0) {
 		long remaining = count_set_event_lines();
@@ -1400,7 +1407,8 @@ static unsigned long do_set_event(void)
 				(unsigned long)remaining, __ATOMIC_RELAXED);
 		rfd = open_write_target(path, bad);
 		if (rfd >= 0) {
-			ssize_t rret = write(rfd, "*:", 2);
+			/* spec[0] == '!'; spec+1 is the matching enable form */
+			ssize_t rret = write(rfd, spec + 1, strlen(spec + 1));
 
 			close(rfd);
 			if (rret >= 0)
