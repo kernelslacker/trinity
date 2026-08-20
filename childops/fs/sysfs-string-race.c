@@ -207,7 +207,8 @@ static unsigned int pick_writable_target(void)
  * inherited from the trinity parent into a sysfs write target.
  */
 __attribute__((noreturn))
-static void writer_child(int fd, const char *cand, unsigned int iters)
+static void writer_child(int fd, const char *cand, unsigned int iters,
+			 pid_t expected_ppid)
 {
 	size_t len = strlen(cand);
 	unsigned int i;
@@ -218,12 +219,12 @@ static void writer_child(int fd, const char *cand, unsigned int iters)
 	/*
 	 * Detect reparenting that occurred between fork() returning in the
 	 * child and the prctl() arming above — PDEATHSIG does not cover that
-	 * window.  Compare against mainpid (orchestrator pid, inherited across
-	 * fork, never rewritten in children).  The pre-prctl window is
-	 * structurally unresolvable in child code; prctl is the best
-	 * available mitigation for races that occur after this check.
+	 * window.  Compare against expected_ppid, the pid of the forking
+	 * parent captured via getpid() before the fork() call.  The
+	 * pre-prctl window is structurally unresolvable in child code;
+	 * prctl is the best available mitigation for races after this check.
 	 */
-	if (getppid() != mainpid)
+	if (getppid() != expected_ppid)
 		_exit(0);
 
 	for (i = 0; i < iters; i++) {
@@ -321,9 +322,10 @@ bool sysfs_string_race(struct childdata *child)
 	}
 
 	direct_calls++;
+	pid_t expected_ppid = getpid();
 	pa = fork();
 	if (pa == 0) {
-		writer_child(fd, cand_a, per_child);	/* noreturn */
+		writer_child(fd, cand_a, per_child, expected_ppid);	/* noreturn */
 	}
 	if (pa < 0) {
 		__atomic_add_fetch(&shm->stats.sysfs_string_race.fork_failed,
@@ -335,7 +337,7 @@ bool sysfs_string_race(struct childdata *child)
 	direct_calls++;
 	pb = fork();
 	if (pb == 0) {
-		writer_child(fd, cand_b, per_child);	/* noreturn */
+		writer_child(fd, cand_b, per_child, expected_ppid);	/* noreturn */
 	}
 	if (pb < 0) {
 		__atomic_add_fetch(&shm->stats.sysfs_string_race.fork_failed,

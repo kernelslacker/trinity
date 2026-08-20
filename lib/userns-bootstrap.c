@@ -146,7 +146,8 @@ static int install_identity_maps(uid_t uid, gid_t gid)
  * capability profile the rest of the fuzzer doesn't expect.
  */
 static void grandchild_body(int target_ns_flags,
-			    int (*fn)(void *), void *arg)
+			    int (*fn)(void *), void *arg,
+			    pid_t expected_ppid)
 {
 	int map_err;
 	/*
@@ -161,13 +162,15 @@ static void grandchild_body(int target_ns_flags,
 	/*
 	 * Detect reparenting that occurred between fork() returning in the
 	 * child and the prctl() arming above — PDEATHSIG does not cover that
-	 * window.  Compare against mainpid (the top-level orchestrator pid,
-	 * captured by the parent before any fork) which is inherited across
-	 * fork and never rewritten in children.  The pre-prctl window is
-	 * structurally unresolvable in child code; prctl is the best
-	 * available mitigation for races that occur after this check.
+	 * window.  Compare against expected_ppid, the pid of the parent
+	 * captured via getpid() immediately before the fork() call.  Using
+	 * the caller's own pid (not mainpid, the orchestrator global) is
+	 * correct here: the grandchild's parent is the trinity worker, not
+	 * the top-level orchestrator.  The pre-prctl window is structurally
+	 * unresolvable in child code; prctl is the best available mitigation
+	 * for races that occur after this check.
 	 */
-	if (getppid() != mainpid)
+	if (getppid() != expected_ppid)
 		_exit(EXIT_FAILURE);
 
 	/*
@@ -227,6 +230,7 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 	__atomic_add_fetch(&shm->stats.userns_bootstrap.runs,
 	                   1, __ATOMIC_RELAXED);
 
+	pid_t expected_ppid = getpid();
 	pid = fork();
 	if (pid < 0) {
 		__atomic_add_fetch(&shm->stats.userns_bootstrap.fork_fail,
@@ -235,7 +239,7 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 	}
 
 	if (pid == 0) {
-		grandchild_body(target_ns_flags, fn, arg);
+		grandchild_body(target_ns_flags, fn, arg, expected_ppid);
 		_exit(UBS_EXIT_USERNS_OTHER);	/* unreachable */
 	}
 

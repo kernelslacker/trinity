@@ -117,6 +117,9 @@ struct fpr_shared {
 	int requeue_nr;		/* val2 (nr_requeue) for CMP_REQUEUE_PI */
 	unsigned int use_vfork_race;	/* 1 -> nested-vfork phash.ref NULL-race arm */
 	unsigned int slot_count;	/* PR_FUTEX_HASH_SET_SLOTS argument drawn by fpr_pick_axes */
+	/* Parent pid captured before fork(); forked workers compare getppid()
+	 * against this to detect reparenting in the fork()->prctl() window. */
+	pid_t expected_ppid;
 	/* Direct-syscall accumulator: every raw_futex() bumps this
 	 * before entering the kernel, plus the consumer's sched_setattr
 	 * trinity_raw_syscall and the waiter's syscall(__NR_gettid).
@@ -180,7 +183,7 @@ static void fpr_owner_main(struct fpr_shared *s)
 
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 	/* Catch reparenting in the fork()->prctl() window; prctl covers after. */
-	if (getppid() != mainpid)
+	if (getppid() != s->expected_ppid)
 		_exit(0);
 
 	if (raw_futex(s, &s->futex_target_pi, FUTEX_LOCK_PI, flag, 0, NULL, NULL, 0) < 0)
@@ -204,7 +207,7 @@ static void fpr_waiter_main(struct fpr_shared *s)
 
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 	/* Catch reparenting in the fork()->prctl() window; prctl covers after. */
-	if (getppid() != mainpid)
+	if (getppid() != s->expected_ppid)
 		_exit(0);
 
 	__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
@@ -239,7 +242,7 @@ static void fpr_consumer_main(struct fpr_shared *s)
 
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 	/* Catch reparenting in the fork()->prctl() window; prctl covers after. */
-	if (getppid() != mainpid)
+	if (getppid() != s->expected_ppid)
 		_exit(0);
 
 	if (!wait_for_state(s, FPR_STATE_WAITER_READY))
@@ -314,6 +317,9 @@ struct fpr_vfork_shared {
 	long		g2_ret;
 	/* Stack for G2, allocated by G1; pointer stored here so P can munmap */
 	void		*g2_stack;
+	/* Orchestrator pid captured before clone(G1); G1 compares getppid()
+	 * against this to detect reparenting in the clone()->prctl() window. */
+	pid_t		expected_ppid;
 	/* Direct-syscall accumulator (RELAXED atomic, same as pivot arm) */
 	unsigned long	direct_syscalls;
 };
@@ -377,8 +383,8 @@ static int fpr_vfork_g1_fn(void *arg)
 	pid_t g2_pid;
 
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-	/* Catch reparenting in the fork()->prctl() window; prctl covers after. */
-	if (getppid() != mainpid)
+	/* Catch reparenting in the clone()->prctl() window; prctl covers after. */
+	if (getppid() != vs->expected_ppid)
 		_exit(0);
 
 	/*
@@ -453,7 +459,7 @@ static void fpr_run_nested_vfork_race(struct fpr_shared *s)
 
 		(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 		/* Catch reparenting in the fork()->prctl() window; prctl covers after. */
-		if (getppid() != mainpid)
+		if (getppid() != s->expected_ppid)
 			_exit(0);
 
 		vs = mmap(NULL, sizeof(*vs), PROT_READ | PROT_WRITE,
@@ -461,6 +467,8 @@ static void fpr_run_nested_vfork_race(struct fpr_shared *s)
 		if (vs == MAP_FAILED)
 			_exit(0);
 		memset(vs, 0, sizeof(*vs));
+		/* G1's expected parent is the orchestrator: capture before clone. */
+		vs->expected_ppid = getpid();
 		/*
 		 * Use a non-zero slot count for the vfork arm.  The one-way door
 		 * fires on SET_SLOTS(0) too, but a non-zero count is the common
@@ -685,6 +693,7 @@ bool futex_pi_requeue_rollback(struct childdata *child)
 	if (s == NULL)
 		return true;
 	fpr_pick_axes(s);
+	s->expected_ppid = getpid();
 	flag = s->use_private ? FUTEX_PRIVATE_FLAG : 0U;
 
 	if (s->use_vfork_race) {

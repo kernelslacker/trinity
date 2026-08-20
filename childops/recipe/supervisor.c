@@ -68,6 +68,7 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
 	bool fork_latched = false;
 
 	cycles = 1 + rnd_modulo_u32(RECIPE_PTRACE_SEIZE_MAX_CYCLES);
+	pid_t expected_ppid = getpid();
 
 	for (i = 0; i < cycles; i++) {
 		siginfo_t si;
@@ -99,11 +100,11 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
 			 * tracee sticks in pause() forever.  The re-check
 			 * below catches reparenting in the fork()->prctl()
 			 * window; that window is not covered by PDEATHSIG.
-			 * Compare against mainpid (orchestrator pid, inherited
-			 * across fork, never rewritten in children). */
+			 * Compare against expected_ppid, the parent's pid
+			 * captured via getpid() before this fork() call. */
 			(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 				      0UL, 0UL, 0UL);
-			if (getppid() != mainpid)
+			if (getppid() != expected_ppid)
 				_exit(0);
 			(void)pause();
 			_exit(0);
@@ -573,10 +574,10 @@ bool recipe_seccomp_listener_exec(bool *unsupported)
  * case.
  */
 static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
-			      enum child_op_type op)
+			      enum child_op_type op, pid_t expected_ppid)
 	__attribute__((noreturn));
 static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
-			      enum child_op_type op)
+			      enum child_op_type op, pid_t expected_ppid)
 {
 	char procs_path[128];
 	char pidbuf[16];
@@ -609,10 +610,10 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
 	 * the inner process receives SIGKILL rather than orphaning and blocking
 	 * in pause() forever.  The re-check below detects reparenting that
 	 * occurred in the fork()->prctl() window, which PDEATHSIG cannot cover.
-	 * Compare against mainpid (orchestrator pid, inherited across fork,
-	 * never rewritten in children).  The pre-prctl window is structurally
-	 * unresolvable in child code; prctl is the best available mitigation
-	 * for races that occur after this check.
+	 * Compare against expected_ppid, the parent's pid captured via
+	 * getpid() before the fork() call.  The pre-prctl window is
+	 * structurally unresolvable in child code; prctl is the best
+	 * available mitigation for races that occur after this check.
 	 */
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 		      0UL, 0UL, 0UL);
@@ -621,7 +622,7 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
 	 * and counts out-of-range ops (including the NR_CHILD_OP_TYPES sentinel
 	 * when this_child() returns NULL in doubly-forked contexts). */
 	childop_direct_syscalls_add(op, ncalls);
-	if (getppid() != mainpid)
+	if (getppid() != expected_ppid)
 		_exit(0);
 
 	(void)pause();
@@ -682,6 +683,7 @@ static int cgroup_kill_setup(const char *cgroup_path,
 	if (pipe2(pipefd, O_CLOEXEC) != 0)
 		return 2;
 
+	pid_t expected_ppid = getpid();
 	*inner = fork();
 	if (*inner < 0)
 		return 2;
@@ -691,7 +693,7 @@ static int cgroup_kill_setup(const char *cgroup_path,
 		close(*events_fd);
 		close(*kill_fd);
 		close(pipefd[0]);
-		cgroup_kill_inner(cgroup_path, pipefd[1], op);
+		cgroup_kill_inner(cgroup_path, pipefd[1], op, expected_ppid);
 		/* unreachable -- inner uses _exit on every path */
 	}
 

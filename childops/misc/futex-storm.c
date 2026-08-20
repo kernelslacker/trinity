@@ -96,6 +96,9 @@ struct futex_storm_shared {
 	unsigned int mode;
 	int pinned1;
 	int pinned2;
+	/* Parent pid captured before fork(); workers compare getppid()
+	 * against this to detect reparenting in the fork()->prctl() window. */
+	pid_t expected_ppid;
 };
 
 /* ------------------------------------------------------------------ */
@@ -184,12 +187,12 @@ static void inner_worker(struct futex_storm_shared *s)
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 	/*
 	 * Detect reparenting that occurred between fork() returning in the child
-	 * and the prctl() arming above.  Compare against mainpid (orchestrator
-	 * pid, captured before any fork, inherited and never rewritten in
-	 * children).  The pre-prctl window is structurally unresolvable in child
-	 * code; prctl is the best available mitigation for races after this check.
+	 * and the prctl() arming above.  Compare against s->expected_ppid, set
+	 * by the forking parent via getpid() before the fork() call.  The
+	 * pre-prctl window is structurally unresolvable in child code; prctl is
+	 * the best available mitigation for races after this check.
 	 */
-	if (getppid() != mainpid)
+	if (getppid() != s->expected_ppid)
 		_exit(0);
 
 	pthread_barrier_wait(&s->barrier);
@@ -399,6 +402,7 @@ static int futex_storm_iter_spawn_workers(struct futex_storm_iter_ctx *ctx)
 {
 	int i, status;
 
+	ctx->s->expected_ppid = getpid();
 	for (i = 0; i < (int)ctx->nworkers; i++) {
 		pid_t pid = fork();
 
