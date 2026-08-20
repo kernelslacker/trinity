@@ -1289,17 +1289,25 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	{
 		struct timespec cts;
 		clock_gettime(CLOCK_MONOTONIC, &cts);
+		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_connect_issued,
+				   1, __ATOMIC_RELAXED);
 		direct_calls++;
 		rc = connect(cli, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
 		if (rc == 0 || errno == EINPROGRESS) {
 			struct pollfd pfd = { .fd = listener, .events = POLLIN };
+			int pr;
 			direct_calls++;
 			/* Bounded wait: listener is SOCK_NONBLOCK so we must poll
 			 * before accept(); 1000 ms matches the loopback arm's 1-second
 			 * invariant and caps the grandchild even without an alarm(). */
-			if (poll(&pfd, 1, 1000) > 0 && (pfd.revents & POLLIN)) {
+			pr = poll(&pfd, 1, 1000);
+			if (pr > 0 && (pfd.revents & POLLIN)) {
 				direct_calls++;
 				srv_acc = accept(listener, NULL, NULL);
+			} else {
+				__atomic_add_fetch(
+					&shm->stats.tcp_ao_rotate.vrf_accept_timeout,
+					1, __ATOMIC_RELAXED);
 			}
 		}
 

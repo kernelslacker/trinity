@@ -1151,7 +1151,9 @@ stats	object
     stats.tcp_ao_rotate.vrf_enslave_attempted	u64
     stats.tcp_ao_rotate.vrf_enslave_setup_failed	u64
     stats.tcp_ao_rotate.vrf_detach_raced	u64
+    stats.tcp_ao_rotate.vrf_connect_issued	u64
     stats.tcp_ao_rotate.vrf_connect_ok	u64
+    stats.tcp_ao_rotate.vrf_accept_timeout	u64
     stats.tcp_ao_rotate.vrf_ao_unavailable	u64
     stats.tcp_ao_rotate.vrf_detach_landed	u64
     stats.tcp_ao_rotate.vrf_detach_before_connect	u64
