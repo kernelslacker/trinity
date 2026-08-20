@@ -231,6 +231,13 @@ static unsigned long cgroup_psi_race(const char *cgroup_path)
 
 bool cgroup_churn(struct childdata *child)
 {
+	/* Fleet-wide latch: if a previous invocation (by any child) found
+	 * that mkdir under /sys/fs/cgroup is denied, there is nothing this
+	 * invocation can do — bail immediately so the parent dispatches a
+	 * different op rather than accumulating phantom .failed counts. */
+	if (__atomic_load_n(&shm->cgroup_mkdir_unsupported, __ATOMIC_ACQUIRE))
+		return false;
+
 	unsigned int cycles;
 	unsigned int i;
 	pid_t pid = mypid();
@@ -289,8 +296,16 @@ bool cgroup_churn(struct childdata *child)
 			 * Anything else (ENOMEM, EBUSY, ...) — bail; spinning
 			 * won't help. */
 			if (errno == EACCES || errno == EROFS ||
-			    errno == ENOENT || errno == EPERM)
+			    errno == ENOENT || errno == EPERM) {
+				/* Permanent denial — latch off fleet-wide so
+				 * future invocations skip this op entirely.
+				 * Note: psi_unsupported is unreachable while
+				 * this outer latch is set (a successful mkdir
+				 * is required to reach the PSI sub-mode). */
+				__atomic_store_n(&shm->cgroup_mkdir_unsupported,
+						 true, __ATOMIC_RELEASE);
 				break;
+			}
 			continue;
 		}
 

@@ -545,6 +545,15 @@ struct shm_s {
 	 * would re-attempt the same broken setns. */
 	bool netns_teardown_ns_unsupported;
 
+	/* cgroup-churn fleet-wide unsupported latch (childops/misc/
+	 * cgroup-churn.c).  Set on the first mkdir(2) under /sys/fs/cgroup
+	 * that returns EACCES, EPERM, EROFS, or ENOENT, indicating the
+	 * runner lacks privilege or has no cgroupfs mount.  Once set,
+	 * cgroup_churn() returns false (unsupported) immediately rather
+	 * than burning a dispatch slot incrementing .failed on every call.
+	 * Stored in shm so the latch survives child respawns. */
+	bool cgroup_mkdir_unsupported;
+
 	/* rxrpc module-not-loaded latch for the AF_RXRPC arm in
 	 * netns_teardown_churn.  Set when socket(AF_RXRPC,...) returns
 	 * EAFNOSUPPORT (CONFIG_AF_RXRPC=m not loaded).  RELAXED atomic;
