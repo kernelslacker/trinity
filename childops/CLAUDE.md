@@ -9,7 +9,11 @@ childops/ is where those scripted sequences live: each file implements one
 syscall for the current fork'd child, that drives a fixed or semi-fixed
 sequence against one kernel subsystem/feature/race window.
 
-169 `.c` files + 7 `.h` files, ~93,500 LOC total.
+237 `.c` files + 21 `.h` files, ~134,500 LOC total, grouped into
+per-domain subdirectories: `net/` (103 `.c`, plus `net/netlink/` 14,
+`net/netfilter/` 5 with a further 14 under `net/netfilter/nftables/`,
+`net/xfrm/` 13, `net/tc/` 5), `misc/` (32), `mm/` (16), `fs/` (13),
+`recipe/` (11), `io_uring/` (10), `process/` (1).
 
 ## Files
 
@@ -46,47 +50,58 @@ A typical childop file is one self-contained translation unit:
 
 ### Naming families (by filename, not by enum)
 
-- `*-churn.c` (largest cluster, ~35 files: `nftables/churn.c`,
-  `bridge-vlan-churn.c`, `tc-qdisc-churn.c`, `xfrm-churn.c`,
-  `mount-churn.c`, `cgroup-churn.c`, …) — repeated create/modify/destroy
+- `*-churn.c` (largest cluster, 41 files: `net/netfilter/nftables/churn.c`,
+  `net/bridge-vlan-churn.c`, `net/tc/qdisc-churn.c`,
+  `net/xfrm/xfrm-churn.c`, `fs/mount-churn.c`, `misc/cgroup-churn.c`, …)
+  — repeated create/modify/destroy
   cycles against a kernel object family, racing teardown against live
   traffic/lookups. Several have split-out builder/internal companions
-  (`tc-qdisc-churn-builders.c` + `-internal.h`,
-  `xfrm-churn-builders.c` + `-internal.h`,
-  `nftables/{builders,compat,dormant,fwd,l4frag,xt}.c`,
-  `nftables/exprs-{conn,data,hash,nat,set,stateful}.c` +
-  `nftables/internal.h`)
+  (`net/tc/qdisc-churn-builders.c` + `-internal.h`,
+  `net/xfrm/xfrm-churn-{builders,traffic,pfkey,sk-policy,ah-esn,compat-sweep}.c`
+  + `-internal.h`,
+  `net/netfilter/nftables/{builders,compat,dormant,fwd,l4frag,reject,xt}.c`,
+  `net/netfilter/nftables/exprs-{conn,data,hash,nat,set,stateful}.c` +
+  the `nftables/internal*.h` set)
   — these are non-dispatched
   helper units compiled into the same op, not separate childops.
-- `*-race.c` (~20 files: `af-unix-peek-race.c`, `blkdev-lifecycle-race.c`,
-  `close-racer.c`, `umount-race.c`, `vdso-mremap-race.c`) — two threads/
+- `*-race.c` (21 files: `net/af-unix-peek-race.c`,
+  `fs/blkdev-lifecycle-race.c`, `misc/close-racer.c`, `fs/umount-race.c`,
+  `mm/vdso-mremap-race.c`) — two threads/
   processes/timings pitted against each other around a narrow kernel
   window (usually construction vs. teardown, or two ioctls/syscalls raced
   via fork+barrier or SCM timing).
-- `*-probe.c` (`af-alg-template-probe.c`, `af-alg-weak-cipher-probe.c`,
-  `iscsi-target-probe.c`) — one-shot, read-only capability enumeration:
+- `*-probe.c` (`net/af-alg-template-probe.c`,
+  `net/af-alg-weak-cipher-probe.c`, `net/iscsi-target-probe.c`,
+  `net/pkt-builder-probe.c`, `misc/netns-mountns-setup-probe.c`) —
+  one-shot, read-only capability enumeration:
   try each variant, record accept/reject into shm stats, no destructive
   follow-up. Front-loaded EAFNOSUPPORT/EOPNOTSUPP short-circuit.
-- `*-storm.c` / `*-thrash.c` / `*-flood.c` (`fork-storm.c`,
-  `futex-storm.c`, `signal-storm.c`, `fd-stress.c`, `xattr-thrash.c`,
-  `slab-cache-thrash.c`, `iouring-flood.c`) — bounded high-rate repetition
+- `*-storm.c` / `*-thrash.c` / `*-flood.c` / `*-stress.c`
+  (`misc/{fork-storm,futex-storm,signal-storm,pidfd-storm,fd-stress,
+  pipe-thrash,slab-cache-thrash}.c`, `mm/{vma-split-storm,map-shared-stress}.c`,
+  `fs/{xattr-thrash,flock-thrash}.c`, `io_uring/flood.c`) — bounded
+  high-rate repetition
   of one cheap operation to pressure an allocator/hot path rather than
   race a specific window.
-- `iouring-recipes*.c` / `recipe-runner*.c` — a "recipe" sub-framework
+- `io_uring/recipes*.c` / `recipe/*.c` — a "recipe" sub-framework
   (see below) for multi-syscall object-lifecycle DAGs; several files
   per dispatched op.
 - Everything else is one dispatched op per protocol/feature
-  (`wireguard-decrypt-flood.c`, `ublk-lifecycle.c`, `tls-rotate.c`,
-  `psp-key-rotate.c`, `qrtr-bind-race.c`, etc.) named directly after the
+  (`net/wireguard-decrypt-flood.c`, `fs/ublk-lifecycle.c`,
+  `net/tls-rotate.c`, `net/psp-key-rotate.c`, `net/qrtr-bind-race.c`,
+  etc.) named directly after the
   kernel subsystem it targets.
 
-### Sub-framework: recipe-runner / iouring-recipes
+### Sub-framework: recipe/ and io_uring/
 
-`recipe-runner.c` (191 lines) is the thin dispatched entry point;
-`recipe-runner-internal.h` defines the recipe DAG structures shared by
-`recipe-runner-simple.c` (1023), `recipe-runner-net.c` (725),
-`recipe-runner-close-race.c` (629), `recipe-runner-deadline-race.c` (734),
-and `recipe-runner-supervisor.c` (1048, forks/monitors/reaps the actual
+`recipe/runner.c` (216 lines) is the thin dispatched `CHILD_OP_RECIPE_RUNNER`
+entry point; `recipe/internal.h` (98) defines the recipe DAG structures
+shared by the catalogue — `recipe/simple.c` (185) plus its per-domain
+companions `simple-mm.c` (401), `simple-fs.c` (277), `simple-timers.c`
+(228), `simple-notify.c` (203) and `simple-sysv.c` (183) — together with
+`recipe/net.c` (803), `recipe/close-race.c` (657),
+`recipe/deadline-race.c` (841), and `recipe/supervisor.c` (1018,
+forks/monitors/reaps the actual
 recipe-executing children). A "recipe" is a small DAG: one syscall produces
 a resource (fd/key/timer id), later steps consume it, one teardown step
 frees it, and every path (success/partial-fail/structural-fail) converges
@@ -94,30 +109,34 @@ on a single `goto cleanup`. Recipe arg construction is deliberately
 hand-picked (not random_syscall-driven) — the point is exercising the
 *sequence*, not fuzzing individual args.
 
-`iouring-recipes.c` (649) is the dispatched `CHILD_OP_IOURING_RECIPES`
-entry; `iouring-recipes-{fs,net,poll-timeout,register}.c` and
-`iouring-recipes-internal.h`/`.h` hold the per-domain recipe bodies and
-shared ring-submission helpers. `iouring-ring.c`/`.h` provide raw
+`io_uring/recipes.c` (725) is the dispatched `CHILD_OP_IOURING_RECIPES`
+entry; `io_uring/recipes-{fs,net,poll-timeout,register}.c` and
+`io_uring/recipes-internal.h`/`recipes.h` hold the per-domain recipe bodies
+and shared ring-submission helpers. `io_uring/ring.c`/`ring.h` provide raw
 io_uring SQ/CQ ring mapping independent of the recipes layer (also used
-by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
-`iouring-net-multishot.c`, `iouring-send-zc-churn.c`).
+by `io_uring/flood.c`, `io_uring/cmd-passthrough.c`,
+`io_uring/net-multishot.c`, `io_uring/send-zc-churn.c`).
 
 ### Largest/most complex individual files
 
 | File | Lines | Role |
 |---|---|---|
-| `netfilter/nftables/internal.h` | 1619 | Shared nftables_churn declarations/state used by the split builders, sub-modes, and `exprs-*.c` files |
-| `xfrm-churn.c` | 1457 | IPsec policy/state (XFRM) churn |
-| `nl80211-churn.c` | 1315 | cfg80211/nl80211 interface + BSS churn |
-| `esp-crafted-rx.c` | 1315 | Hand-crafted ESP receive-path traffic |
-| `nat-t-churn.c` | 1292 | NAT-T/ESP encapsulation churn |
-| `psp-key-rotate.c` | 1251 | PSP (TLS offload) key rotation races |
-| `afxdp-churn.c` | 1145 | AF_XDP ring/umem lifecycle churn |
-| `bridge-fdb-stp.c` | 1075 | Bridge FDB entry churn interleaved with STP state transitions |
-| `pkt-builder.c` | 1068 | Shared packet construction helpers for crafted network childops |
-| `recipe/simple.c` | 1026 | Straight-line (non-racing) recipe DAGs |
-| `tc/qdisc-churn.c` | 966 | Traffic-control qdisc/class/filter churn |
-| `netfilter/ipset-churn.c` | 964 | ipset set/member lifecycle churn |
+| `fs/tracefs-fuzzer.c` | 1755 | Exercise the tracefs/ftrace string-parsing interfaces (kprobe/uprobe event creation, `set_ftrace_filter`) |
+| `net/igmp-mld-source-churn.c` | 1734 | IGMPv3 / MLDv2 source-filter mutation churn vs. live multicast traffic |
+| `net/bridge-conntrack-churn.c` | 1673 | Race `IPCTNL_MSG_CT_FLUSH` against ingress traffic on an `NFPROTO_BRIDGE` conntrack chain |
+| `mm/uffd-fault-move.c` | 1669 | Stateful UFFD fault + `UFFDIO_MOVE`/swap-cache race |
+| `net/packet-qdisc-bypass-unanchored-l2.c` | 1640 | Probe `PACKET_QDISC_BYPASS` and AF_XDP copy-mode transmit with an unset skb MAC header on a macsec device |
+| `net/tcp-ao-rotate.c` | 1577 | TCP-AO key add / rotate / delete race over a live loopback connection |
+| `net/tc/qdisc-churn.c` | 1549 | Traffic-control qdisc/class/filter churn (the config plane) |
+| `net/netfilter/nftables/internal-compat.h` | 1429 | UAPI fallback macros for nf_tables/netfilter/xfrm plus the xt/compat sweep and latch declarations |
+| `net/af-unix-scm-rights-gc.c` | 1346 | Build a closed cycle in the AF_UNIX SCM_RIGHTS reference graph, then race `unix_gc` against concurrent `recvmsg()` draining |
+| `io_uring/recipes-fs.c` | 1248 | Filesystem / openat / xattr / splice / tee / pipe / memfd recipe family |
+| `net/netfilter/ipset-churn.c` | 1216 | ipset set/member lifecycle churn |
+| `net/tc/live-traffic.c` | 1201 | Drive real packets through programmable tc filters while the filter chain is being replaced |
+| `net/fnhe-pmtu-mtu-race.c` | 1190 | Race IPv4 PMTU exception table updates against concurrent nexthop MTU synchronisation |
+| `net/vxlan-encap.c` | 1163 | VXLAN / GRE / GENEVE encap setup + packet inject, targeting teardown-vs-in-flight-tx on overlay tunnels |
+| `misc/bpf-lifecycle.c` | 1035 | End-to-end BPF program lifecycle with map mutation |
+| `recipe/supervisor.c` | 1018 | Forks/monitors/reaps the recipe-executing children |
 
 ## Key design decisions
 
@@ -128,17 +147,21 @@ by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
    (`bool (*const op_dispatch[])(struct childdata *)`). `CHILD_OP_SYSCALL`
    maps to `NULL` — that case is the default random_syscall path and never
    reaches this table. A `_Static_assert` pins the table size to the enum
-   count. Files are wired into the build by `Makefile`'s
-   `$(wildcard childops/*.c)` glob — no separate manifest to edit for a new
-   `.c` file, but a new *dispatched op* still requires manually adding a
+   count. Files are wired into the build by one `$(wildcard)` glob per
+   childops subdirectory in `Makefile` — no separate manifest to edit for
+   a new `.c` file in an existing subdirectory, but a *new subdirectory*
+   needs its own glob line, and a new *dispatched op* still requires
+   manually adding a
    row to `include/childop.def` (which expands into the enum, name switch,
    and `op_dispatch[]` slot) and picker coverage in `child-altop-pick.c`.
-2. **File count > enum count.** 169 `.c` files but ~118 dispatch slots:
+2. **File count > enum count.** 237 `.c` files but 168 dispatched ops
+   (169 `childop.def` rows, of which `CHILD_OP_SYSCALL` is a sentinel
+   expanding to a `NULL` dispatch slot):
    several ops are split across multiple files for size/cohesion
-   (`nftables/{builders,compat,dormant,fwd,l4frag,xt}.c`,
-   `nftables/exprs-*.c`, `tc-qdisc-churn-builders.c`,
-   `xfrm-churn-builders.c`, `iouring-recipes-*.c`,
-   `recipe-runner-*.c`), sharing state through a private internal header.
+   (`net/netfilter/nftables/{builders,compat,dormant,fwd,l4frag,reject,xt}.c`,
+   `net/netfilter/nftables/exprs-*.c`, `net/tc/qdisc-churn-builders.c`,
+   `net/xfrm/xfrm-churn-*.c`, `io_uring/recipes-*.c`,
+   `recipe/*.c`), sharing state through a private internal header.
    Only one file per group exports the dispatched entry point.
 3. **Bounded-everything discipline.** Every storm/churn op caps rounds and
    per-round work with small compile-time constants, and long-running ops
@@ -212,9 +235,11 @@ by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
   directly and stats/ renders back out.
 - `cmp_hints/collect.c` — consumes the `childop_recent_pools[]` lane fed by
   `trinity_cmp_syscall()` calls inside childops.
-- `params.c` — `--childop=`, `--no-childop=`, `--childop-cmp-harvest`
+- `main/params/options.c`, `main/params/coverage.c` — `--childop=`,
+  `--no-childop=`, `--childop-cmp-harvest`
   CLI wiring that maps names to `enum child_op_type` via `child-altop-table.c`.
-- `Makefile` — `$(wildcard childops/*.c)` builds every `.c` file
+- `Makefile` — one `$(wildcard childops/<subdir>/*.c)` line per
+  subdirectory builds every `.c` file
   unconditionally; no per-file enable/disable at build time.
 
 ## Areas of attention
@@ -229,15 +254,19 @@ by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
    silently compiles but is never dispatched. The
    `check-alt-op-rotation` static check catches picker/registry
    mismatches.
-2. **The `netfilter/nftables/` cluster** forms the single largest logical unit
-   in the directory (~7700 LOC across the dispatched orchestrator, core
-   builders, sub-mode files, six `-exprs-*.c` companions, and the internal
-   header for one dispatched op).
-   Understanding any one piece requires the internal header's shared
+2. **The `net/netfilter/nftables/` cluster** forms the single largest logical unit
+   in the directory (~8550 LOC across the dispatched orchestrator, core
+   builders, sub-mode files, six `exprs-*.c` companions, and five internal
+   headers for one dispatched op).
+   The internal header was itself split: `internal.h` (22) is now an
+   umbrella over `internal-compat.h` (1429), `internal-state.h` (129),
+   `internal-exprs.h` (62), `internal-builders.h` (47) and
+   `internal-stats.h` (17).
+   Understanding any one piece requires those shared
    struct/state declarations.
 3. **Latching correctness is per-file, unenforced by any shared state
    machine.** Each childop hand-writes its own `CHILDOP_LATCH_*` decision
-   tree from raw errno values (see the `netfilter/nftables/` cluster's distinct
+   tree from raw errno values (see the `net/netfilter/nftables/` cluster's distinct
    `ns_unsupported_*` latches); there's no shared errno-classification
    table specific to childops (though `errno-classify.h` exists generically),
    so latch logic correctness/completeness varies file to file.
@@ -250,7 +279,7 @@ by `iouring-flood.c`, `iouring-cmd-passthrough.c`,
 
 ## Summary
 
-childops/ implements Trinity's scripted-sequence fuzzing tier: ~118
+childops/ implements Trinity's scripted-sequence fuzzing tier: 168
 dispatched multi-syscall workloads (storms, churns, races, probes, and a
 recipe-DAG sub-framework) selected instead of a random syscall per child
 iteration, each self-documenting its target kernel code path/CVE class in

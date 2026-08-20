@@ -10,12 +10,22 @@ repeatedly calls `main_loop()`; none of this fuzzes anything itself.
 
 | File | Role |
 |---|---|
-| trinity.c | Process entry: `main()`, option/table setup, `warm_start_all()`, and the epoch loop that repeatedly calls `main_loop()`. Does not fuzz. |
+| trinity.c | Process entry: `main()`, option/table setup, and the epoch loop that repeatedly calls `main_loop()`. Does not fuzz. |
+| trinity-warmstart.c | Startup/shutdown staging split out of `trinity.c`: `warm_start_all()`, `init_main_process()`/`init_main_early()`/`init_pre_fork()`, `trinity_tmpdir_abs()`, `persist_state_on_clean_exit()`, `run_oneshot_passes()` |
 | params/ | CLI option parsing and the global tunables/flags the rest of the codebase reads (targeting, `--childop`, richness levers). Split by concern -- see the subdirectory breakdown below. |
 | main/loop.c | `main_loop()` driver: per-tick phase sequencing (drain → stop-checks → periodic surfaces → fork-replace), epoch reset (`reset_epoch_state`), `panic()` |
-| main/reap.c | Reap + watchdog: `waitpid(-1)` drain, zombie/D-state slot deferral, stuck-child SIGKILL escalation, fork-die-respawn loop detector, shm corruption sanity checks |
+| main/reap.c | Reap core: `reap_child()`, `reap_dead_kids()` `waitpid(-1)` drain, `kill_all_kids()`, `get_pid_state()`, signal-status dispatch (`handle_children()`) |
+| main/reap-watchdog.c | Stuck-child watchdog: `is_child_making_progress()`, SIGKILL escalation, wedge accounting, `stall_genocide()`, `check_children_progressing()` |
+| main/reap-dstate.c | Bounded `/proc` readers for D-state forensics: wchan/stack/syscall/fdinfo dumps, epoll/select fd topology, `dstate_diag_budget_take()` diagnostic budget |
+| main/reap-zombie.c | Deferred D-state slot lifecycle: `register_zombie_slot()`, `process_zombie_pending()`, `find_free_childno()`, quarantine accounting |
+| main/reap-fastdie.c | Fork-die-respawn busy-loop detector: `record_reap()` ring, `reap_entry_is_fast_die()`, `bail_fast_die_loop()` |
+| main/reap-corruption.c | `shm_is_corrupt()`: op-count monotonicity, `shm_published` mirror page and pid sanity checks |
 | main/spawn.c | `fork_children()`/`spawn_child()`: slot allocation, fork-failure backoff/bail, fork-pressure drain, forensic snapshots, final cross-run state save |
 | main/stats.c | `print_stats()`: KCOV/CMP diagnostic lines, picker/plateau/pool-ratio dumps, per-op-count-delta throttling |
+
+The `main/reap-*.c` family shares cluster-private declarations in
+`main/reap-internal.h`; callers outside that family go through
+`include/main-internal.h`.
 
 ### `main/params/` subdirectory
 
@@ -40,11 +50,11 @@ inside `main/params/` is params-cluster private and declared in
 | `debug.c` | writer-pin canary, `--guard-shared`, verbosity/diagnostics, `-h`/`-L`/`-I`/`-b` info commands, misc long-only flags. |
 | `compat.c` | Backwards-compat parser helpers: `--redqueen-pending-pick` name/parser pair and the `enable_disable_fd_usage()` hook `usage()` calls. |
 
-Roles match the guessed split exactly: main/loop.c is the loop, main/spawn.c
-forks, main/reap.c reaps/watches, main/stats.c prints. All four share
+Roles split by verb: main/loop.c is the loop, main/spawn.c forks, the
+main/reap-*.c family reaps/watches, main/stats.c prints. They share
 parent-private state declared in `include/main-internal.h` (`pidstatfiles`,
 `zombie_pids`, `zombie_since`, `spawn_times`, `hiscore`, `stall_count`) —
-this header is the internal seam for the main/loop.c 4-way split, not a public
+this header is the internal seam for the main/loop.c split, not a public
 API surface.
 
 ## Process lifecycle
@@ -145,55 +155,57 @@ API surface.
 
 ## Integration points
 
-- `trinity.c` — top-level caller: `warm_start_all()` before entry,
+- `trinity.c` / `trinity-warmstart.c` — top-level caller: `warm_start_all()` before entry,
   `epoch_loop()`/direct `main_loop()` call, `persist_state_on_clean_exit()`
   mirrors `final_state_save()`'s save set on the clean-exit path.
-- `child.c` / `child-init.c` — `spawn_child()` forks into `child_process()`
-  (child.c); child startup blocks in `init_child()` until the parent
+- `child/child.c` / `child/child-init-*.c` — `spawn_child()` forks into `child_process()`
+  (child/child.c); child startup blocks in `init_child()` until the parent
   publishes `pids[childno]`.
 - `shm.h` / shared childdata (`children[]`, `pids[]`) — the entire slot
   model; `shm->running_childs`, `shm->exit_reason`, `shm->spawn_no_more`,
   `shm->ready` are the cross-process coordination fields.
-- `stats.c`, `stats_ring.c`, `stats/periodic.c`, `stats/runid.c` — per-tick
+- `main/stats.c`, `stats/stats-ring.c`, `stats/periodic/`, `stats/runid.c` — per-tick
   ring drain (`stats_ring_drain_all`), periodic dump helpers called from
   `run_periodic_surfaces()`, run-identity snapshot at loop entry.
 - `kcov.h`, `kcov/plateau.c`, `kcov/persist.c` — `kcov_plateau_check()`,
   `kcov_bitmap_maybe_snapshot()`/`kcov_bitmap_canary_check()`,
   KCOV CMP/PC diagnostic formatting consumed by main/stats.c.
-- `cmp_hints.c`, `cmp_hints/persist.c` — `cmp_hints_maybe_snapshot()`
+- `cmp_hints/cmp_hints.c`, `cmp_hints/persist.c` — `cmp_hints_maybe_snapshot()`
   each tick; `final_state_save()` calls `cmp_hints_save_file()` on the
   fork-failure bail path.
-- `minicorpus.c` — `minicorpus_mut_attrib_canary_check()`,
+- `persist/minicorpus-*.c` — `minicorpus_mut_attrib_canary_check()`,
   `minicorpus_save_file()` in `final_state_save()`, chain-corpus snapshot
   trigger (`chain_corpus_maybe_snapshot()`).
-- `self_cgroup.c` — `self_cgroup_events_fd()` exposes the memory.events
+- `utils/self_cgroup_*.c` — `self_cgroup_events_fd()` exposes the memory.events
   inotify fd for `main_loop()`'s ppoll idle-wait; `self_cgroup_events_check()`
   runs on POLLIN to drain the notification and update the fork throttle;
   `self_cgroup_fork_into_workload()` performs the actual fork; memory.high
   back-pressure feeds `fork_throttle_us`.
-- `child-canary.c` / canary queue — `canary_queue_init()`,
+- `child/child-canary-*.c` / canary queue — `canary_queue_init()`,
   `canary_queue_on_child_respawn()`, `canary_queue_on_crash()`,
   `canary_queue_tick()`, `fork_pressure_drain_active()` consumed by the
   canary picker to suppress pid-heavy ops during fork pressure.
-- `child-altop-pick.c` — `init_altop_dispatch()`/`assign_dedicated_alt_op()` for
+- `child/child-altop-pick.c` — `init_altop_dispatch()`/`assign_dedicated_alt_op()` for
   dedicated-alt-op child slots.
-- `random.c` — `reseed()` on every replacement spawn and on epoch reset.
-- `locks.c` — `check_all_locks()`/`force_bust_lock()` for lock recovery
+- `rand/random.c` — `reseed()` on every replacement spawn and on epoch reset.
+- `utils/locks.c` — `check_all_locks()`/`force_bust_lock()` for lock recovery
   after a child dies holding the syscall dispatch lock.
-- `pids.c` / `pid_is_valid`/`pid_alive`/`kill_pid` — pid-liveness and
+- `dispatch/pids.c` / `pid_is_valid`/`pid_alive`/`kill_pid` — pid-liveness and
   signal-delivery primitives used throughout reap/spawn.
-- `kmsg-monitor.c` — `kmsg_monitor_note_reaped()` notified when
+- `health/kmsg-monitor.c` — `kmsg_monitor_note_reaped()` notified when
   `reap_dead_kids()` reaps an untracked pid, in case it was the kmsg
   helper process (which lives outside the fuzz-child `pids[]` machinery).
 
 ## Areas of attention
 
-1. **main/reap.c size and responsibility span** (1,803 LOC) — covers shm
+1. **The reap cluster's responsibility span** (6 files, ~2,500 LOC) — shm
    corruption sanity, normal reap, zombie/D-state deferral, watchdog
    escalation, D-state forensic dumping (5 separate bounded `/proc` readers),
-   fast-die-loop ring detection, and signal-status dispatch. A change to
-   any one sub-concern (e.g. the D-state diagnostic format) risks
-   collateral edits across an 1,800-line file with no sub-file boundary.
+   fast-die-loop ring detection, and signal-status dispatch. Each now has its
+   own translation unit, so a change to one sub-concern (e.g. the D-state
+   diagnostic format) lands in one file; what crosses the boundary is
+   declared in `main/reap-internal.h`. The largest files in main/ are
+   `spawn.c` (773), `loop.c` (714) and `trinity-warmstart.c` (685).
 2. **Slot-reuse correctness is load-bearing and documented but easy to
    violate on a future edit** — `find_free_childno()`'s double-empty check
    (`pids[i]` AND `zombie_pids[i]`) is the sole guard against the
@@ -226,7 +238,7 @@ main/ is the parent's control plane: `main_loop()` in main/loop.c sequences a
 fixed per-tick pipeline (drain child-published state → check stop
 conditions → run periodic surfaces → top up the fleet), main/spawn.c owns
 fork/slot-allocation with layered backoff and forensic capture on failure,
-main/reap.c owns poll-based reaping with a D-state-aware two-phase slot
+the main/reap-*.c family owns poll-based reaping with a D-state-aware two-phase slot
 lifecycle (live → zombie-pending → free) plus a stuck-child watchdog and
 fork-die-respawn loop breaker, and main/stats.c renders the operator-facing
 health/coverage summary at a throttled, change-gated cadence. The layer

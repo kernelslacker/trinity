@@ -2,18 +2,37 @@
 
 Fuzzer intelligence layer for Trinity. Collects constants the kernel compares syscall-derived values against (KCOV_TRACE_CMP), feeds them back into arg generation to bias inputs toward values likely to pass kernel validation gates.
 
-## Files (8 files, ~5,950 LOC)
+## Files (16 files, ~8,513 LOC)
 
 | File | Lines | Role |
 |---|---|---|
-| cmp_hints.c | 358 | Entry point: SHM allocation, strip-installation, chaos-mode gating |
-| collect.c | 1042 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer, cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
-| pool.c | 482 | Pool primitives: lock wrappers, corruption gates, dedup + LRU eviction, bloom filter, recent ring, batch flush |
-| get.c | 559 | Consumer tier: two-tier picker (recent ring first during plateaus, durable pool otherwise), A/B live-pick policy, weighted draw |
-| credit.c | 419 | Feedback loop: per-entry credit drain (wins/misses), outcome classification (PC win, CMP novelty, transition, corpus save) |
-| hyp.c | ~1600 | Typed hypothesis store: inference engine with 5 kind lanes (EXACT, BITMASK, ENUM_FAMILY, RANGE, BOUNDARY), state machine (OBSERVED→PROMOTED/DEMOTE→RETIRED), live inject arm |
-| field.c | ~663 | Field-scoped attribution pool: maps kernel CMP constants to specific struct fields via struct catalog walking |
-| persist.c | 835 | Warm-start persistence: on-disk snapshot/load with kallsyms SHA-256 fingerprinting, KASLR-base validation, CRC32 integrity |
+| cmp_hints.c | 369 | Entry point: SHM allocation, strip-installation, chaos-mode gating |
+| collect.c | 1237 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer, cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
+| pool.c | 1067 | Pool primitives: lock wrappers, corruption gates, dedup + LRU eviction, bloom filter, recent ring, batch flush |
+| get.c | 656 | Consumer tier: two-tier picker (recent ring first during plateaus, durable pool otherwise), A/B live-pick policy, weighted draw |
+| credit.c | 511 | Feedback loop: per-entry credit drain (wins/misses), outcome classification (PC win, CMP novelty, transition, corpus save) |
+| field.c | 847 | Field-scoped attribution pool: maps kernel CMP constants to specific struct fields via struct catalog walking |
+| persist.c | 866 | Warm-start persistence: on-disk snapshot/load with kallsyms SHA-256 fingerprinting, KASLR-base validation, CRC32 integrity |
+| shadow_promote.c | 360 | Measure-only shadow-arm promotion evaluator: walks a registry of shadow arms each stats tick, emits one promotion-criterion line. Writes no generation path. |
+| childop_consume.c | 76 | Consume-side resolver for the childop CMP path (`--childop-cmp-harvest`); shadow-scores what a live consume would return, always returns "no hint" |
+
+### Typed hypothesis store (`hyp-*.c`)
+
+The typed hypothesis store — 5 kind lanes (EXACT, BITMASK, ENUM_FAMILY,
+RANGE, BOUNDARY), the OBSERVED→PROMOTED/DEMOTED→RETIRED state machine, and
+the live inject arm — is split one lane per translation unit. Helpers a lane
+exports to a sibling lane, but not to the public `cmp_hints.h`, live in
+`cmp_hints/hyp-internal.h`.
+
+| File | Lines | Role |
+|---|---|---|
+| hyp-pool.c | 191 | Pool primitives: `cmp_hyp_find()` / alloc / range-identity. Writers run under the matching durable `cmp_hint_pool` lock. |
+| hyp-observe.c | 259 | Observe path: the five kind-lane inference rules |
+| hyp-credit.c | 440 | Credit path: `cmp_hyp_find_for_credit()`, per-outcome selectors, `cmp_hyp_credit_outcome()` / `cmp_hyp_credit_consume()` |
+| hyp-pick.c | 270 | Picker: `cmp_hyp_would_pick_locked()` pool walk, specificity ordering, state-aware preference within a kind |
+| hyp-derive.c | 815 | Derive ladder: `cmp_hyp_derive_value()` plus the pow2/alignment, bitmask FULL_OR/ANDNOT_TOGGLE and sign-switch probe classes |
+| hyp-live.c | 235 | LIVE inject arm: `cmp_hyp_try_live_inject()` and its three gating channels (plateau-amplified A, always-on bootstrap B, PROMOTED-bypass C) |
+| hyp-len-correlated.c | 314 | Length-correlation observe path: matches `KCOV_CMP_CONST` arg2 against `FT_LEN_BYTES`/`FT_LEN_COUNT` fields in the dispatching syscall's cataloged input structs |
 
 ## Data model
 
@@ -33,7 +52,7 @@ Per-child:
 1. **Lock-free consumption** — `cmp_hints_try_get_ex()` does a lockless ACQUIRE load on `pool->count` then indexes into `entries[]`. Torn reads from concurrent LRU eviction yield either the pre- or post-eviction value, both valid.
 2. **Two-tier picker** — during the `CMP_RISING_PC_FLAT` plateau, the recent ring is sampled first for fresh constants; steady state queries only the durable LRU pool.
 3. **A/B live-pick policy** — each child gets arm A (uniform random draw) or arm B (weighted: `FLOOR + wins*4 - misses`, floored). Arm B consumes SHADOW feedback scores from the credit drain; arm A is the control.
-4. **Typed hypothesis inference (hyp.c)** — on every new constant, 5 parallel lanes observe it: EXACT (per-value identity), BITMASK (single-bit-only values), ENUM_FAMILY (all values at a cmp_ip, accumulating lo/hi/mask), RANGE (synthesized from ENUM_FAMILY at ≥3 hits, span 2..32), BOUNDARY (per-(cmp_ip, width) strict-inequality summary, N-1/N+1). State machine: OBSERVED → first win → PROMOTED; 8+ misses no wins → DEMOTED → sustained misses → RETIRED. PROMOTED gets higher injection probability via the Promoted-Bypass channel (~1.6%).
+4. **Typed hypothesis inference (`hyp-*.c`)** — on every new constant, 5 parallel lanes observe it: EXACT (per-value identity), BITMASK (single-bit-only values), ENUM_FAMILY (all values at a cmp_ip, accumulating lo/hi/mask), RANGE (synthesized from ENUM_FAMILY at ≥3 hits, span 2..32), BOUNDARY (per-(cmp_ip, width) strict-inequality summary, N-1/N+1). State machine: OBSERVED → first win → PROMOTED; 8+ misses no wins → DEMOTED → sustained misses → RETIRED. PROMOTED gets higher injection probability via the Promoted-Bypass channel (~1.6%).
 5. **Field-scoped attribution (field.c)** — walks cataloged struct arguments, checks if a field value matches CMP arg2, records the constant against that struct::field tuple for precise re-injection at the right arg slot.
 6. **Chaos mode** — every 8th window (~12.5%) suppresses hint injection to let random-arg generation explore invalid-combination space.
 7. **Persistence (persist.c)** — warm-start with 5-version schema evolution: v1→v2 pool capacity 32→16, v2→v3 last_used widened to uint64_t, v3→v4 arch dimension added, v4→v5 KASLR canonicalization. Validity gates: magic, version, max_syscall, per_syscall count, entry_size, payload_bytes, CRC32, kallsyms SHA-256 fingerprint, KASLR-base mode agreement.
@@ -43,19 +62,19 @@ Per-child:
 
 - `args/cmp_hint_inject.c` — commits a `cmp_hints_try_get()` hint to a produced syscall arg; the actual injection point downstream of get.c's picker
 - `blob_mutator.c` — `cmp_hints_try_get_sized()` for width-preserving splat into opaque buffers (CMPDICT mode)
-- `child-init.c` — per-child bloom filter reset and consumed stash clearing on fork
-- `trinity.c` — warm-start load on boot, save on shutdown, snapshot tick in main loop
-- `params.c` — `--no-cmp-hints-warm-start` toggle, blob-mutator mode description
-- `signals.c` — recovery point for field-scoped timespec deref SEGV
+- `child/child-init-*.c` — per-child bloom filter reset and consumed stash clearing on fork
+- `main/trinity-warmstart.c` — warm-start load on boot, save on shutdown, snapshot tick in main loop
+- `main/params/runtime.c` — `--no-cmp-hints-warm-start` toggle, blob-mutator mode description
+- `health/signals-fault-handler.c` — recovery point for field-scoped timespec deref SEGV
 - `strategy.c`, `strategy-plateau.c`, `strategy-cmp-novelty.c`, `strategy-bandit.c`, `strategy-frontier.c`, `strategy-rescue.c`, `stats_ring.h` — plateau hypothesis coordination, CMP-novelty outcome classification, bandit/frontier scoring, stats ring counters
 - `deferred-free.c` — recovers real allocation length for field-scoped pool scans; parallel recent-entry walk order
-- `sequence.c`, `prop_ring.c` — mid-run snapshot triggers and injection-rate mirroring analogous to the cmp_hints gate
+- `random_syscall/chain-persist.c`, `objects/prop_ring.c` — mid-run snapshot triggers and injection-rate mirroring analogous to the cmp_hints gate
 
 ## Areas of attention
 
-1. **hyp.c size** (~1600 LOC) does inference, state machine, picker, derive logic, credit outcomes, and live inject — 5–6 responsibilities. `cmp_hyp_derive_value()` (lines 1168–1431) alone is ~260 lines with deep nesting.
+1. **Largest files** — collect.c (1,237), pool.c (1,067), persist.c (866), field.c (847), hyp-derive.c (815). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) now sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:506–815) is still ~310 lines with deep nesting.
 2. **Complex credit resolution** — `cmp_hyp_find_for_credit()` walks all 5 hypothesis kinds in specificity order (EXACT > ENUM_FAMILY > BITMASK > RANGE > BOUNDARY) on every consume and every outcome credit.
-3. **Field-scan safety depends on `range_readable_user()`** (field.c:424) — checks VMA readability before dereferencing struct buffers; a missed page-fault race SEGVs the child (recovery point in signals.c).
+3. **Field-scan safety depends on `range_readable_user()`** (field.c:424) — checks VMA readability before dereferencing struct buffers; a missed page-fault race SEGVs the child (recovery point in health/signals-fault-handler.c).
 
 ## Summary
 

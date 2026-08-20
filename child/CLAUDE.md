@@ -2,7 +2,7 @@
 
 Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop that runs one workload per iteration — either a random syscall (`random_syscall/`) or a scripted childop (`childops/`) via the alt-op picker — under an `alarm()` backstop and a set of self-integrity oracles. Distinct from `childops/`: those are the scripted *workloads*; this is the runtime *infrastructure* that drives them.
 
-## Files (22 files, ~6,400 LOC)
+## Files (24 files, ~8,159 LOC)
 
 | File | Role |
 |---|---|
@@ -42,5 +42,5 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 
 ## Areas of attention
 - Alt-op scoring / canary-promotion cadence live here; the *workloads* live in `childops/`.
-- Signal-mask policy is in `health/signals.c`, NOT here.
+- Signal-mask policy is in `health/signals-policy.c`, NOT here.
 - child-context-output baseline is line-sensitive — a pure code-motion move preserves line numbers, but new output callsites shift it.

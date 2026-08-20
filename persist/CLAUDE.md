@@ -2,14 +2,32 @@
 
 Coverage-guided argument retention plus the deferred-free temporal-overlap queue — state that survives across iterations so productive inputs can be replayed and frees can be safely delayed.
 
-`sequence.c` (the chain corpus) is the last file still at repo root — under active rework in the resource-typing lane. It moves to `random_syscall/` (beside `chain-subst.c`, its executor sibling), not here, once that settles: it's a chain *executor* whose corpus is a secondary feature, distinct from minicorpus's per-syscall arg snapshots.
+The chain corpus does *not* live here: it is a chain *executor* whose corpus is
+a secondary feature, distinct from minicorpus's per-syscall arg snapshots, so it
+sits in `random_syscall/` beside `chain-subst.c` as `chain-corpus.c` /
+`chain-persist.c`.
 
-## Files (2 files, ~4,450 LOC)
+## Files (10 files, ~4,875 LOC)
 
 | File | Lines | Role |
 |---|---|---|
-| minicorpus.c | 2327 | Coverage-guided argument retention: snapshot the args of a syscall that found a new edge, re-inject them into later iterations. |
-| deferred-free.c | 2120 | Deferred-free queue: hold a tracked free for a TTL window so a temporally-overlapping later syscall can still touch the buffer, with the bad-free/UAF safety machinery. |
+| deferred-free.c | 2343 | Deferred-free queue: hold a tracked free for a TTL window so a temporally-overlapping later syscall can still touch the buffer, with the bad-free/UAF safety machinery. |
+
+Coverage-guided argument retention — snapshot the args of a syscall that found
+a new edge, re-inject them into later iterations — is split across
+`minicorpus-*.c`, sharing `persist/minicorpus-internal.h`:
+
+| File | Lines | Role |
+|---|---|---|
+| minicorpus-field-mutate.c | 631 | Per-arg mutator engine: weighted case picker (Beta(1,1)-prior posterior mean over historical trials/wins), structure-aware neighbour ops for ARG_LIST / ARG_OP / ARG_RANGE, and the 1..STACK_MAX stacking wrapper |
+| minicorpus-file.c | 521 | On-disk warm-start format: fixed header (magic, version, kernel major.minor, syscall-number space) followed by fixed-size entries |
+| minicorpus-accounting.c | 370 | Mutate accept-reject accounting: per-process attribution stashes drained into fleet-wide trials/wins on post-syscall commit; baseline gate, source-age histogram, per-tag rules |
+| minicorpus-select.c | 213 | Replay entry point: picks a saved snapshot from the per-syscall ring (uniform normally, K-newest-window under the CMP-rising-PC-flat plateau), then runs the splice-and-mutate driver |
+| minicorpus-core.c | 197 | Core primitives: shm allocation + init, per-ring lock bracket, replayability predicate, wp-canary sweep, mutator kill-switch |
+| minicorpus-xprop.c | 173 | Cross-syscall value propagation: with low probability override a target arg with a value pulled from a *different* syscall's corpus pool |
+| minicorpus-save.c | 169 | Save path: capture per-syscall arg snapshots into the ring after a productive coverage signal (`minicorpus_save()` / `minicorpus_save_with_reason()`) |
+| minicorpus-splice.c | 152 | Splice-and-mutate driver: walks the six saved arg slots applying cross-arg splice, xprop pull and the weighted-stack mutator chain, with a final fd-safety scrub |
+| minicorpus-snapshot.c | 106 | Periodic mid-run snapshot trigger: `minicorpus_maybe_snapshot()` called by every child after each kcov edge event, armed pre-fork by `minicorpus_enable_snapshots()` |
 
 ## Key invariants
 - **minicorpus snapshot on new edge** — only args that produced a fresh KCOV edge are retained; replay threads them into later iterations.

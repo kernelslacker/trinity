@@ -7,7 +7,7 @@ content-aware text payload generation. Everything downstream (args/,
 struct_catalog/, mm/, syscalls/, childops/) draws its randomness through
 this directory rather than calling libc rand() directly.
 
-## Files (10 files, ~2,923 LOC)
+## Files (10 files, ~3,112 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -37,15 +37,15 @@ this directory rather than calling libc rand() directly.
 ## Integration points
 
 - `args/gen_arg_scalar.c`, `args/handle_arg.c` — primary consumers of `mutate_value()`, `get_boundary_value()`/interesting-value family, and `get_len()`/`get_len_relative()` for ARG_LEN generation
-- `blob_mutator.c`, `minicorpus.c` — pull interesting/boundary values and `generate_random_page()` into corpus/blob mutation paths
+- `args/pools/blob_mutator*.c` — pull interesting/boundary values and `generate_random_page()` into corpus/blob mutation paths
 - `args/generate-args.c`, `args/argtype_table.c`, `args/gen_arg_time.c`, `args/scrub.c`, `args/struct_fill.c` — address generation (`get_writable_address`, `get_non_null_address`, `get_address`) and shared-buffer scrubbing wired into arg production
 - `struct_catalog/*.c` (aio, catalog, futex, kexec, landlock, perf, quota, registry, socket, time, validate) — heavy consumers of `get_address()`/`get_writable_address()` family for struct-field pointer fill
-- `mm/maps.c`, `childops/mmap-lifecycle.c`, `childops/mprotect-split.c`, `deferred-free.c` — address-space childops draw from the writable pool and honor `track_shared_region()` exclusions
+- `mm/maps-*.c`, `childops/mm/mmap-lifecycle.c`, `childops/mm/mprotect-split.c`, `deferred-free.c` — address-space childops draw from the writable pool and honor `track_shared_region()` exclusions
 - `ioctls/*.c` (autofs, btrfs, dm, i2c-dev, kvm-vcpu, kvm-vm, scsi, sg, ioctls.c) and hundreds of `syscalls/*.c` — broad consumers of address/length/page generators (grep shows 150+ syscalls/*.c call sites)
 - `net/proto-*.c`, `childops/*-churn.c` (30+ files) — `generate_random_page()`/`generate_rand_bytes()` for wire-format payload fuzzing
 - `childops/*` name-consuming set (afxdp-churn, altname-thrash, bridge-*, flowtable-encap-vlan, ip6erspan/ip6gre, ipv6-ndisc-proxy, keyring-spam, l2tp-ifname-race, netlink-monitor-race, nftables-churn, nl80211-churn, psp-key-rotate, tc-*, veth-asymmetric-xdp, vrf-fib-churn, vxlan-encap), plus `syscalls/{add_key,bpf,keyctl,mq_open,request_key,setsockopt-optval-builders}.c`, `xattr.c`, `net/proto/pppox.c` — record/reuse names via name-pool.c's per-kind ring
 - `childops/{ipvs-sysctl-writer,procfs-writer,tracefs-fuzzer}.c` — direct consumers of `gen_text_payload()` for sysfs/procfs/tracefs string-parser fuzzing
-- `child-init.c`, `child.c`, `main/loop.c`, `main/spawn.c`, `trinity.c`, `utils/shm.c` — seed lifecycle: `init_seed()` at startup, `set_seed()` per fork, `reseed()` on crash detection
+- `child/child-init-freeze.c`, `child/child.c`, `main/loop.c`, `main/spawn.c`, `trinity.c`, `utils/shm.c` — seed lifecycle: `init_seed()` at startup, `set_seed()` per fork, `reseed()` on crash detection
 - `syscalls/{fchmodat2,file_getattr,file_setattr,getxattrat,listxattrat,removexattrat,setxattrat}.c` — direct `mutate_value()`/`shift_flag_bit()` callers for xattr/attr flag fuzzing
 
 ### Relationship to cmp_hints/
