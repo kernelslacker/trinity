@@ -26,6 +26,7 @@
 
 #include "child.h"
 #include "childop-outcome.h"
+#include "pids.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
 #include "rnd.h"
@@ -93,17 +94,16 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
 			 * trinity shared state from a stopped-and-resumed
 			 * tracee context.
 			 *
-			 * PR_SET_PDEATHSIG SIGKILL guards against the
-			 * parent crashing before it can SEIZE us; without
-			 * it the orphaned tracee sticks in pause() forever.
-			 * Saved-ppid re-check is subreaper-safe: getppid()==1
-			 * misses reparents to a PR_SET_CHILD_SUBREAPER
-			 * ancestor; comparing against the pre-prctl snapshot
-			 * is correct regardless of subreaper config. */
-			pid_t saved_ppid = getppid();
+			 * PR_SET_PDEATHSIG SIGKILL guards against the parent
+			 * crashing after arming; without it the orphaned
+			 * tracee sticks in pause() forever.  The re-check
+			 * below catches reparenting in the fork()->prctl()
+			 * window; that window is not covered by PDEATHSIG.
+			 * Compare against mainpid (orchestrator pid, inherited
+			 * across fork, never rewritten in children). */
 			(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 				      0UL, 0UL, 0UL);
-			if (getppid() != saved_ppid)
+			if (getppid() != mainpid)
 				_exit(0);
 			(void)pause();
 			_exit(0);
@@ -585,11 +585,6 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
 	int procs_fd;
 	int len;
 	char ack = '!';
-	/* Snapshot parent PID as the first child action so the orphan
-	 * re-check below is subreaper-safe (getppid()==1 misses reparents
-	 * to a PR_SET_CHILD_SUBREAPER ancestor). */
-	pid_t saved_ppid = getppid();
-
 	(void)snprintf(procs_path, sizeof(procs_path), "%s/cgroup.procs",
 		       cgroup_path);
 	procs_fd = open(procs_path, O_WRONLY);
@@ -609,11 +604,16 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
 	close(pipe_w);
 	ncalls++;  /* close */
 
-	/* PR_SET_PDEATHSIG SIGKILL: if the supervisor crashes before it
-	 * can write(kill_fd, "1\n", 2) into cgroup.kill, the inner would
-	 * orphan and pause() forever.  Re-check against saved_ppid (captured
-	 * at function entry) to cover the prctl race window; the saved-pid
-	 * idiom is subreaper-safe unlike the == 1 literal. */
+	/*
+	 * PR_SET_PDEATHSIG SIGKILL: if the supervisor crashes after this point
+	 * the inner process receives SIGKILL rather than orphaning and blocking
+	 * in pause() forever.  The re-check below detects reparenting that
+	 * occurred in the fork()->prctl() window, which PDEATHSIG cannot cover.
+	 * Compare against mainpid (orchestrator pid, inherited across fork,
+	 * never rewritten in children).  The pre-prctl window is structurally
+	 * unresolvable in child code; prctl is the best available mitigation
+	 * for races that occur after this check.
+	 */
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 		      0UL, 0UL, 0UL);
 	ncalls++;  /* prctl */
@@ -621,7 +621,7 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
 	 * and counts out-of-range ops (including the NR_CHILD_OP_TYPES sentinel
 	 * when this_child() returns NULL in doubly-forked contexts). */
 	childop_direct_syscalls_add(op, ncalls);
-	if (getppid() != saved_ppid)
+	if (getppid() != mainpid)
 		_exit(0);
 
 	(void)pause();

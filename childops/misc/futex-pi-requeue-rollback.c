@@ -80,6 +80,7 @@
 #include "child.h"
 #include "kernel/prctl.h"
 #include "childop-outcome.h"
+#include "pids.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
 #include "random.h"
@@ -176,10 +177,10 @@ static void publish_state(struct fpr_shared *s, uint32_t val)
 static void fpr_owner_main(struct fpr_shared *s)
 {
 	unsigned int flag = s->use_private ? FUTEX_PRIVATE_FLAG : 0U;
-	pid_t saved_ppid = getppid();
 
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-	if (getppid() != saved_ppid)
+	/* Catch reparenting in the fork()->prctl() window; prctl covers after. */
+	if (getppid() != mainpid)
 		_exit(0);
 
 	if (raw_futex(s, &s->futex_target_pi, FUTEX_LOCK_PI, flag, 0, NULL, NULL, 0) < 0)
@@ -200,10 +201,10 @@ static void fpr_waiter_main(struct fpr_shared *s)
 	unsigned int flag = s->use_private ? FUTEX_PRIVATE_FLAG : 0U;
 	struct timespec ts;
 	int val;
-	pid_t saved_ppid = getppid();
 
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-	if (getppid() != saved_ppid)
+	/* Catch reparenting in the fork()->prctl() window; prctl covers after. */
+	if (getppid() != mainpid)
 		_exit(0);
 
 	__atomic_add_fetch(&s->direct_syscalls, 1, __ATOMIC_RELAXED);
@@ -235,10 +236,10 @@ static void fpr_consumer_main(struct fpr_shared *s)
 {
 	struct sched_attr attr;
 	pid_t waiter_tid;
-	pid_t saved_ppid = getppid();
 
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-	if (getppid() != saved_ppid)
+	/* Catch reparenting in the fork()->prctl() window; prctl covers after. */
+	if (getppid() != mainpid)
 		_exit(0);
 
 	if (!wait_for_state(s, FPR_STATE_WAITER_READY))
@@ -374,10 +375,10 @@ static int fpr_vfork_g1_fn(void *arg)
 {
 	struct fpr_vfork_shared *vs = arg;
 	pid_t g2_pid;
-	pid_t saved_ppid = getppid();
 
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-	if (getppid() != saved_ppid)
+	/* Catch reparenting in the fork()->prctl() window; prctl covers after. */
+	if (getppid() != mainpid)
 		_exit(0);
 
 	/*
@@ -450,9 +451,9 @@ static void fpr_run_nested_vfork_race(struct fpr_shared *s)
 		unsigned int spins;
 		long readback;
 
-		pid_t saved_ppid_orch = getppid();
 		(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-		if (getppid() != saved_ppid_orch)
+		/* Catch reparenting in the fork()->prctl() window; prctl covers after. */
+		if (getppid() != mainpid)
 			_exit(0);
 
 		vs = mmap(NULL, sizeof(*vs), PROT_READ | PROT_WRITE,

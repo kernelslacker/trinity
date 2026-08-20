@@ -38,6 +38,7 @@
 #include <unistd.h>
 
 #include "childops-util.h"
+#include "pids.h"
 #include "shm.h"
 #include "signals.h"
 #include "userns-bootstrap.h"
@@ -149,27 +150,24 @@ static void grandchild_body(int target_ns_flags,
 {
 	int map_err;
 	/*
-	 * Snapshot our parent's PID before arming PDEATHSIG.  getppid()==1
-	 * is not subreaper-safe: if any ancestor has called
-	 * PR_SET_CHILD_SUBREAPER (systemd --user, a container init, etc.)
-	 * orphans reparent to that pid, not init, and the == 1 test is dead
-	 * code.  Comparing against the captured value is correct regardless
-	 * of subreaper configuration.
-	 */
-	pid_t saved_ppid = getppid();
-
-	/*
 	 * If the trinity child (our parent process) is killed before we
 	 * exit -- for example by the reap-watchdog SIGKILL at
 	 * REAP_STALL_THRESHOLD_S seconds of no progress -- ensure the
 	 * grandchild is also killed rather than reparented and left running
 	 * indefinitely.  PR_SET_PDEATHSIG delivers SIGKILL to this process
-	 * when its parent terminates.
+	 * when its parent terminates after this point.
 	 */
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-	/* Race: parent may have died between clone() return and prctl() arming;
-	 * if so we are already reparented — exit now. */
-	if (getppid() != saved_ppid)
+	/*
+	 * Detect reparenting that occurred between fork() returning in the
+	 * child and the prctl() arming above — PDEATHSIG does not cover that
+	 * window.  Compare against mainpid (the top-level orchestrator pid,
+	 * captured by the parent before any fork) which is inherited across
+	 * fork and never rewritten in children.  The pre-prctl window is
+	 * structurally unresolvable in child code; prctl is the best
+	 * available mitigation for races that occur after this check.
+	 */
+	if (getppid() != mainpid)
 		_exit(EXIT_FAILURE);
 
 	/*

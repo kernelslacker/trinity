@@ -177,13 +177,19 @@ static void inner_worker(struct futex_storm_shared *s)
 	 * so a parent that dies while workers are still parked on the barrier
 	 * does not leave them blocked indefinitely.
 	 *
-	 * getppid() != saved_ppid re-check covers the race where the
-	 * orchestrator died between fork() returning here and the prctl
-	 * arming -- PDEATHSIG would not fire and reparenting has happened.
+	 * prctl(PR_SET_PDEATHSIG) covers reparenting that occurs after arming.
+	 * The re-check below catches the window between fork() returning in the
+	 * child and the prctl arming — that window is not covered by PDEATHSIG.
 	 */
-	pid_t saved_ppid = getppid();
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-	if (getppid() != saved_ppid)
+	/*
+	 * Detect reparenting that occurred between fork() returning in the child
+	 * and the prctl() arming above.  Compare against mainpid (orchestrator
+	 * pid, captured before any fork, inherited and never rewritten in
+	 * children).  The pre-prctl window is structurally unresolvable in child
+	 * code; prctl is the best available mitigation for races after this check.
+	 */
+	if (getppid() != mainpid)
 		_exit(0);
 
 	pthread_barrier_wait(&s->barrier);

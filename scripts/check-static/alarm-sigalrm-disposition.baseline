@@ -37,6 +37,6 @@ dispatch/syscall-exec.c:493  alarm(0) cancel -- parent scope, flag-setter is cor
 #   243: alarm(rem) restore on waitpid error
 #   246: alarm(rem) restore after waitpid success
 # All three are in the parent where the flag-setter is correct.
-lib/userns-bootstrap.c:266  parent-side alarm arm in userns_run_in_ns -- not a grandchild body
-lib/userns-bootstrap.c:268  parent-side alarm(rem) restore on error path
-lib/userns-bootstrap.c:271  parent-side alarm(rem) restore after waitpid
+lib/userns-bootstrap.c:264  parent-side alarm arm in userns_run_in_ns -- not a grandchild body
+lib/userns-bootstrap.c:266  parent-side alarm(rem) restore on error path
+lib/userns-bootstrap.c:269  parent-side alarm(rem) restore after waitpid

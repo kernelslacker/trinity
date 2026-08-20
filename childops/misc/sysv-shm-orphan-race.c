@@ -42,6 +42,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "pids.h"
 #include "syscall-gate.h"
 #include "shm.h"
 #include "trinity.h"
@@ -192,19 +193,22 @@ __attribute__((noreturn))
 static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 {
 	long shmid;
-	/* Snapshot parent PID before arming PDEATHSIG; subreaper-safe unlike
-	 * == 1 (PR_SET_CHILD_SUBREAPER means orphans reparent to an ancestor
-	 * other than init). */
-	long saved_ppid = trinity_raw_syscall(__NR_getppid);
 
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	signal(SIGALRM, SIG_DFL);
 	(void)alarm(2);
 
-	if (trinity_raw_syscall(__NR_getppid) != saved_ppid)
+	/*
+	 * Detect reparenting in the fork()->prctl() window; PDEATHSIG does not
+	 * cover that window.  Compare against mainpid (orchestrator pid,
+	 * captured before any fork, never rewritten in children).  The
+	 * pre-prctl window is structurally unresolvable in child code; prctl
+	 * is the best available mitigation for races after this check.
+	 */
+	if (trinity_raw_syscall(__NR_getppid) != (long)mainpid)
 		(void)syscall(__NR_exit, 0);
-	/* Count the preamble: getppid(saved) + prctl + alarm + getppid(recheck) = 4. */
-	__atomic_fetch_add(&rs->direct_call_count, 4UL, __ATOMIC_RELAXED);
+	/* Count the preamble: prctl + alarm + getppid(recheck) = 3. */
+	__atomic_fetch_add(&rs->direct_call_count, 3UL, __ATOMIC_RELAXED);
 
 	shmid = raw_shmget(IPC_PRIVATE, SYSV_SHM_SEG_BYTES, IPC_CREAT | 0600);
 	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* shmget */
@@ -261,16 +265,22 @@ static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
 	uint32_t budget;
 	uint32_t i;
 	int shmid;
-	long saved_ppid = trinity_raw_syscall(__NR_getppid);
 
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	signal(SIGALRM, SIG_DFL);
 	(void)alarm(2);
 
-	if (trinity_raw_syscall(__NR_getppid) != saved_ppid)
+	/*
+	 * Detect reparenting in the fork()->prctl() window; PDEATHSIG does not
+	 * cover that window.  Compare against mainpid (orchestrator pid,
+	 * captured before any fork, never rewritten in children).  The
+	 * pre-prctl window is structurally unresolvable in child code; prctl
+	 * is the best available mitigation for races after this check.
+	 */
+	if (trinity_raw_syscall(__NR_getppid) != (long)mainpid)
 		(void)syscall(__NR_exit, 0);
-	/* Count the preamble: getppid(saved) + prctl + alarm + getppid(recheck) = 4. */
-	__atomic_fetch_add(&rs->direct_call_count, 4UL, __ATOMIC_RELAXED);
+	/* Count the preamble: prctl + alarm + getppid(recheck) = 3. */
+	__atomic_fetch_add(&rs->direct_call_count, 3UL, __ATOMIC_RELAXED);
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U) {
 		/* per-attempt: the loop may spin zero or many times */

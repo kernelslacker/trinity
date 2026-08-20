@@ -47,6 +47,7 @@
 #include "child.h"
 #include "childop-outcome.h"
 #include "childops-util.h"
+#include "pids.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -210,18 +211,19 @@ static void writer_child(int fd, const char *cand, unsigned int iters)
 {
 	size_t len = strlen(cand);
 	unsigned int i;
-	/* Snapshot parent PID before arming PDEATHSIG so the orphan check is
-	 * subreaper-safe (getppid()==1 misses reparents to a PR_SET_CHILD_SUBREAPER
-	 * ancestor such as systemd --user or a container init). */
-	pid_t saved_ppid = getppid();
-
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	signal(SIGALRM, SIG_DFL);
 	(void)alarm(SYSFS_STRING_RACE_CHILD_WATCHDOG_S);
 
-	/* Re-check parent presence after arming PDEATHSIG, in case the
-	 * parent died between fork() and the prctl above. */
-	if (getppid() != saved_ppid)
+	/*
+	 * Detect reparenting that occurred between fork() returning in the
+	 * child and the prctl() arming above — PDEATHSIG does not cover that
+	 * window.  Compare against mainpid (orchestrator pid, inherited across
+	 * fork, never rewritten in children).  The pre-prctl window is
+	 * structurally unresolvable in child code; prctl is the best
+	 * available mitigation for races that occur after this check.
+	 */
+	if (getppid() != mainpid)
 		_exit(0);
 
 	for (i = 0; i < iters; i++) {
