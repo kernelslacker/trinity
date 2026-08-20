@@ -177,11 +177,14 @@ _spp_write_state() {
         chmod 0755 "${_spp_state_dir}"
         # Write atomically via a temp file so a partial write (full /run,
         # permission error) never leaves a truncated state file visible to
-        # run-trinity.sh.  If mv fails, remove the temp and warn; run-trinity.sh
-        # will fall back to the "state file absent" branch which is accurate.
+        # run-trinity.sh.  grep verifies the key tracefs_ready= is present
+        # before the mv; a disk-full mid-heredoc that leaves only comment
+        # lines will fail the check and be discarded.  If mv fails, remove
+        # the temp and warn; run-trinity.sh will fall back to the "state file
+        # absent" branch which is accurate.
         local _spp_tmp
         _spp_tmp=$(mktemp "${_spp_state_file}.XXXXXX")             || { echo "setup-privileged-preconditions: WARNING: mktemp failed; state file not written" >&2; return; }
-        if emit_state > "${_spp_tmp}" && [[ -s "${_spp_tmp}" ]]; then
+        if emit_state > "${_spp_tmp}" && grep -q ^tracefs_ready= "${_spp_tmp}"; then
             if ! mv "${_spp_tmp}" "${_spp_state_file}"; then
                 rm -f "${_spp_tmp}"
                 echo "setup-privileged-preconditions: WARNING: mv ${_spp_tmp} -> ${_spp_state_file} failed; state file not written" >&2
