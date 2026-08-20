@@ -132,7 +132,7 @@ while IFS= read -r srcfile; do
 					}
 					gsub(/^[[:space:]]+|[[:space:]]+$/, "", stripped)
 					if (stripped == "") next
-					buf = buf line "\n"
+					buf = buf stripped "\n"
 				}
 				END { printf "%s", buf }
 			')"
