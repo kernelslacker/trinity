@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <sched.h>
 #include <stdbool.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -146,6 +147,16 @@ static void grandchild_body(int target_ns_flags,
 			    int (*fn)(void *), void *arg)
 {
 	int map_err;
+
+	/*
+	 * If the trinity child (our parent process) is killed before we
+	 * exit -- for example by the reap-watchdog SIGKILL at
+	 * REAP_STALL_THRESHOLD_S seconds of no progress -- ensure the
+	 * grandchild is also killed rather than reparented to init and
+	 * left running indefinitely.  PR_SET_PDEATHSIG delivers SIGKILL
+	 * to this process when its parent terminates.
+	 */
+	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 
 	/*
 	 * Capture the parent-ns effective uid/gid BEFORE unshare(CLONE_NEWUSER).

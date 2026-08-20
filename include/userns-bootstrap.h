@@ -51,16 +51,35 @@
  * userns_run_in_ns() calls.
  *
  * USERNS_PARENT_ALARM_S is the secondary timeout set by the parent
- * before calling waitpid_eintr().  It is intentionally larger than
- * USERNS_CALLBACK_ALARM_S so that the grandchild's own alarm fires
- * first in the normal case; the parent alarm is a belt-and-suspenders
- * escape for the unlikely event that the grandchild's alarm fails to
- * fire.  Note that waitpid_eintr() retries through EINTR, so the
- * parent alarm cannot interrupt the wait permanently; the grandchild-
- * side SIG_DFL reset is the primary enforcement mechanism.
+ * before calling waitpid_eintr().  It is intentionally smaller than
+ * REAP_STALL_THRESHOLD_S (the reap-watchdog.c kill threshold) so that
+ * the grandchild's own alarm fires first in the normal case; the parent
+ * alarm is a belt-and-suspenders escape for the unlikely event that the
+ * grandchild's alarm fails to fire.  Note that waitpid_eintr() retries
+ * through EINTR, so the parent alarm cannot interrupt the wait
+ * permanently; the grandchild-side SIG_DFL reset is the primary
+ * enforcement mechanism.
+ *
+ * Both constants are derived from REAP_STALL_THRESHOLD_S (the reap-
+ * watchdog stall kill threshold, defined in main/reap-watchdog.c).
+ * The redeclaration here must stay in sync with that file; the
+ * _Static_assert below cross-checks the relationship at compile time.
+ * USERNS_PARENT_ALARM_S must fire well before the reaper SIGKILLs the
+ * trinity child at REAP_STALL_THRESHOLD_S seconds of no progress;
+ * USERNS_CALLBACK_ALARM_S must be smaller still so the grandchild's own
+ * alarm fires before the parent alarm.
  */
-#define USERNS_CALLBACK_ALARM_S  30u
-#define USERNS_PARENT_ALARM_S    35u
+
+/* Redeclaration -- must equal REAP_STALL_THRESHOLD_S in main/reap-watchdog.c */
+#define REAP_STALL_THRESHOLD_S   30u
+
+#define USERNS_PARENT_ALARM_S    12u
+#define USERNS_CALLBACK_ALARM_S   8u
+
+_Static_assert(USERNS_PARENT_ALARM_S < REAP_STALL_THRESHOLD_S,
+	       "parent alarm must fire before reaper kills");
+_Static_assert(USERNS_CALLBACK_ALARM_S < USERNS_PARENT_ALARM_S,
+	       "callback alarm must fire before parent alarm");
 
 int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg);
 

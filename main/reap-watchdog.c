@@ -30,6 +30,8 @@
 #include "main-internal.h"
 #include "reap-internal.h"
 
+#define REAP_STALL_THRESHOLD_S 30u
+
 unsigned long hiscore = 0;
 
 /*
@@ -317,11 +319,12 @@ static void stuck_syscall_info(struct childdata *child, int childno)
  *
  * wedge_start_tp is seeded from child->tp -- the child's
  * last-progress timestamp, written by the child each loop
- * iteration and the same field the diff>=30s check above samples.
- * Anchoring the start at last-progress rather than at the
- * detection moment means the accumulated wedged duration covers
- * the FULL window the slot was unreusable (the watchdog's 30 s
- * grace period included), so the per-syscall and per-childop
+ * iteration and the same field the diff>=REAP_STALL_THRESHOLD_S
+ * check above samples.  Anchoring the start at last-progress
+ * rather than at the detection moment means the accumulated wedged
+ * duration covers the FULL window the slot was unreusable (the
+ * watchdog's REAP_STALL_THRESHOLD_S s grace period included), so
+ * the per-syscall and per-childop
  * top-N renders share one consistent, operator-meaningful
  * duration definition.  child->tp is CLOCK_MONOTONIC at the
  * child's write site so the reap-time clamp (now > start) covers
@@ -450,7 +453,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 		diff = now - old;
 
 	/* hopefully the common case. */
-	if (diff < 30)
+	if (diff < REAP_STALL_THRESHOLD_S)
 		return true;
 
 	/* After too many kill attempts, the child is truly stuck (D state,
@@ -477,12 +480,13 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	 * actual queued kill so the >= 10 threshold means "we tried." */
 	state = get_pid_state(childno);
 
-	/* First-detection-only forensic for ANY 30s-stalled child, D or
-	 * interruptible.  The epoll/ep_item_poll wedge holder blocks in
-	 * interruptible sleep on the polled fd's waitqueue, not 'D', so
-	 * gating this on 'D' alone skipped exactly the task whose
-	 * fd-topology names the blocking fd.  A task with zero progress for
-	 * 30s is parked in its wait, so /proc/<pid>/stack is stable either
+	/* First-detection-only forensic for ANY stalled child (beyond
+	 * REAP_STALL_THRESHOLD_S), D or interruptible.  The epoll/ep_item_poll
+	 * wedge holder blocks in interruptible sleep on the polled fd's
+	 * waitqueue, not 'D', so gating this on 'D' alone skipped exactly the
+	 * task whose fd-topology names the blocking fd.  A task with zero
+	 * progress for REAP_STALL_THRESHOLD_S s is parked in its wait, so
+	 * /proc/<pid>/stack is stable either
 	 * way.  Read-only + latched, so no change to the kill logic. */
 	if (!child->dstate_diag_dumped) {
 		char wchan[128];
@@ -512,12 +516,12 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 		return false;
 	}
 
-	/* After 30 seconds of no progress, send a kill signal. */
-	if (diff >= 30) {
+	/* After REAP_STALL_THRESHOLD_S seconds of no progress, send a kill signal. */
+	if (diff >= REAP_STALL_THRESHOLD_S) {
 		if (!child->kill_in_flight)
 			stuck_syscall_info(child, childno);
-		debugf("child %d (pid %u) hasn't made progress in 30 seconds! Sending SIGKILL\n",
-				childno, pid);
+		debugf("child %d (pid %u) hasn't made progress in %u seconds! Sending SIGKILL\n",
+				childno, pid, REAP_STALL_THRESHOLD_S);
 		__atomic_add_fetch(&child->kill_count, 1, __ATOMIC_RELAXED);
 		child->kill_in_flight = true;
 		kill_pid(pid);
