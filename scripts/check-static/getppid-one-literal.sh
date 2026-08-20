@@ -23,6 +23,25 @@
 # literal pattern (both libc and raw-syscall forms) on non-comment lines,
 # and reports any hit not pinned in the baseline as FAIL.
 #
+# Two scan passes are performed:
+#
+#   Pass 1 (same-line): catches getppid() compared directly against a
+#   literal sentinel on the same source line.  Flagged forms:
+#     getppid() == 1   (exact init check)
+#     getppid() != 1   (inverse sentinel — still subreaper-unsafe)
+#     getppid() <= 1   (close-zero — equivalent to == 1 for PIDs)
+#     getppid() <  2   (close-zero — equivalent to <= 1 for PIDs)
+#   All forms are caught for both the libc getppid() and raw-syscall variants.
+#
+#   Pass 2 (hoisted): catches the common refactoring where the call is
+#   separated from the comparison:
+#     pid_t p = getppid();   /* hoisted assignment */
+#     ...
+#     if (p == 1)            /* flagged here */
+#   The pass finds all local variables assigned from getppid() in each .c
+#   file, then checks whether those variables appear in a sentinel comparison
+#   (==, !=, <=, <) against literal 1 or 2 anywhere in the same file.
+#
 # 551c2d57bf5e ("userns-bootstrap: add getppid()==1 re-check after
 # PR_SET_PDEATHSIG") introduced the last site converted in the batch that
 # added this gate; those sites are now all fixed.  Any new occurrence must
@@ -38,9 +57,25 @@ NAME="getppid-one-literal"
 ROOT="${REPO_ROOT:-$(pwd)}"
 BASELINE="$ROOT/scripts/check-static/getppid-one-literal.baseline"
 
-# Pattern: getppid() == 1 (with optional spaces around ==) in either the
-# libc call form or the raw __NR_getppid syscall form.
-PATTERN='(getppid[[:space:]]*\(\)|trinity_raw_syscall\([^)]*__NR_getppid[^)]*\)|syscall\([^)]*__NR_getppid[^)]*\))[[:space:]]*==[[:space:]]*1([^0-9]|$)'
+# ---------------------------------------------------------------------------
+# Pass 1 pattern: getppid() (or raw-syscall equivalents) compared on the
+# same line against a literal sentinel via ==, !=, <=, or <.
+#
+# Operators and literals caught:
+#   == 1  != 1  <= 1     (literal 1 with any of those operators)
+#   < 2                  (literal 2 with strict-less — equivalent to <= 1)
+# ---------------------------------------------------------------------------
+CALLEXPR='(getppid[[:space:]]*\(\)|trinity_raw_syscall\([^)]*__NR_getppid[^)]*\)|syscall\([^)]*__NR_getppid[^)]*\))'
+PATTERN="${CALLEXPR}[[:space:]]*((==|!=|<=)[[:space:]]*1|<[[:space:]]*2)([^0-9]|$)"
+
+# ---------------------------------------------------------------------------
+# Pass 2: hoisted assignment — variable assigned from getppid(), then
+# compared against a literal in the same file.
+#
+# Step A: grep for assignment of getppid() to a local variable name.
+# Step B: for each variable found, grep for comparisons against 1 or 2.
+# ---------------------------------------------------------------------------
+ASSIGN_PATTERN='[a-z_][a-z_0-9]*[[:space:]]*=[[:space:]]*getppid[[:space:]]*\(\)'
 
 # Load baselined file:lineno keys.
 # Format: `path/to/file.c:lineno  reason text`
@@ -66,8 +101,15 @@ trap 'rm -f "$hits_tmp"' EXIT
 flagged=0
 total=0
 
-# Scan all .c files under the repository root.
-while IFS= read -r srcfile; do
+# Collect the list of .c files once; both passes iterate over the same set.
+mapfile -t srcfiles < <(find "$ROOT" -name '*.c' -type f \
+	! -path '*/scripts/*' \
+	| sort)
+
+# ---------------------------------------------------------------------------
+# Pass 1: same-line getppid() sentinel comparison.
+# ---------------------------------------------------------------------------
+for srcfile in "${srcfiles[@]}"; do
 	while IFS=: read -r lineno content; do
 		[ -z "$lineno" ] && continue
 
@@ -86,12 +128,72 @@ while IFS= read -r srcfile; do
 			continue
 		fi
 
-		echo "$key: getppid()==1 literal (use saved-ppid idiom for subreaper safety)" >> "$hits_tmp"
+		echo "$key: getppid() literal sentinel (==1 / !=1 / <=1 / <2) — use saved-ppid idiom for subreaper safety" >> "$hits_tmp"
 		flagged=$((flagged + 1))
 	done < <(grep -nE "$PATTERN" "$srcfile" 2>/dev/null)
-done < <(find "$ROOT" -name '*.c' -type f \
-	! -path '*/scripts/*' \
-	| sort)
+done
+
+# ---------------------------------------------------------------------------
+# Pass 2: hoisted getppid() — variable assigned then compared against literal.
+# ---------------------------------------------------------------------------
+# Track keys already flagged or baselined in pass 1 to avoid double-counting.
+declare -A SEEN_P2=()
+
+for srcfile in "${srcfiles[@]}"; do
+	# Step A: collect all variable names assigned from getppid() in this file.
+	mapfile -t varnames < <(
+		grep -oE "$ASSIGN_PATTERN" "$srcfile" 2>/dev/null \
+		| grep -oE '^[a-z_][a-z_0-9]*'
+	)
+	[ "${#varnames[@]}" -eq 0 ] && continue
+
+	# Deduplicate variable names (a file may assign getppid() to the same
+	# variable in multiple branches).
+	declare -A seen_vars=()
+	unique_vars=()
+	for v in "${varnames[@]}"; do
+		if [ -z "${seen_vars[$v]+x}" ]; then
+			seen_vars["$v"]=1
+			unique_vars+=("$v")
+		fi
+	done
+	unset seen_vars
+
+	relpath="${srcfile#"$ROOT"/}"
+
+	for varname in "${unique_vars[@]}"; do
+		# Step B: look for this variable compared against literal 1 or 2.
+		# Require a word boundary before the variable name so we don't
+		# match longer identifiers that happen to end with the same suffix.
+		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*((==|!=|<=)[[:space:]]*1|<[[:space:]]*2)([^0-9]|$)"
+
+		while IFS=: read -r lineno content; do
+			[ -z "$lineno" ] && continue
+
+			# Skip comment lines.
+			trimmed="${content#"${content%%[![:space:]]*}"}"
+			case "$trimmed" in
+				\**|/\**|//*) continue ;;
+			esac
+
+			key="$relpath:$lineno"
+
+			# Skip if already processed (pass 1 hit, baselined, or
+			# a prior variable in this file already flagged this line).
+			if [ -n "${BASELINED[$key]+x}" ]; then
+				BASELINED["$key"]=2
+				continue
+			fi
+			[ -n "${SEEN_P2[$key]+x}" ] && continue
+			SEEN_P2["$key"]=1
+
+			total=$((total + 1))
+
+			echo "$key: hoisted getppid() via '$varname' compared against literal sentinel — use saved-ppid idiom for subreaper safety" >> "$hits_tmp"
+			flagged=$((flagged + 1))
+		done < <(grep -nE "$cmp_pattern" "$srcfile" 2>/dev/null)
+	done
+done
 
 # Report stale baseline entries (advisory, non-fatal).
 stale=()
@@ -103,10 +205,10 @@ done
 
 if [ "$flagged" -gt 0 ]; then
 	{
-		echo "  $NAME: $flagged getppid()==1 literal(s) found on non-comment lines:"
+		echo "  $NAME: $flagged getppid() literal sentinel(s) found on non-comment lines:"
 		sed 's/^/    /' "$hits_tmp"
 		echo "  fix: capture 'pid_t saved_ppid = getppid();' before prctl(PR_SET_PDEATHSIG)"
-		echo "       and replace 'getppid() == 1' with 'getppid() != saved_ppid'."
+		echo "       and replace 'getppid() == 1' / 'ppid < 2' etc. with 'getppid() != saved_ppid'."
 		echo "       This is correct regardless of PR_SET_CHILD_SUBREAPER configuration."
 		echo "       If the site genuinely tests for init as a process identity (not an"
 		echo "       orphan sentinel), pin it in scripts/check-static/getppid-one-literal.baseline."
@@ -121,7 +223,7 @@ if [ "${#stale[@]}" -gt 0 ]; then
 fi
 
 if [ "$flagged" -gt 0 ]; then
-	echo "FAIL: $NAME: $flagged getppid()==1 literal(s) not in baseline"
+	echo "FAIL: $NAME: $flagged getppid() literal sentinel(s) not in baseline"
 	exit 1
 fi
 
