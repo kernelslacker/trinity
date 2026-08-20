@@ -60,8 +60,10 @@ total_callsites=0
 # This is a file-level co-presence heuristic; per-function scoping is
 # handled by the lookbehind window below.
 while IFS= read -r srcfile; do
-	# Must contain fork( (the trigger for inherited dispositions).
-	grep -qE 'fork[[:space:]]*\(' "$srcfile" 2>/dev/null || continue
+	# Must contain a process-creation call (the trigger for inherited dispositions).
+	# Trinity childops clone via __NR_clone / __NR_fork as well as fork();
+	# match any of the idioms so we don't miss raw-syscall sites.
+	grep -qE 'fork[[:space:]]*\(|vfork[[:space:]]*\(|clone[[:space:]]*\(|__NR_clone|__NR_fork|__NR_clone3' "$srcfile" 2>/dev/null || continue
 
 	# Scan each alarm() callsite in the file.
 	while IFS=: read -r lineno content; do
@@ -90,16 +92,20 @@ while IFS= read -r srcfile; do
 			# Truncate at the last column-0 `}` before the callsite
 			# (i.e. keep only lines after the most recent function
 			# boundary in the window).
+			# Also strip comment lines so a reset mentioned only in a
+			# comment does not falsely credit the site.
 			window="$(printf '%s\n' "$window" | awk '
 				/^}/ { buf = "" ; next }
+				/^[[:space:]]*(\*|\/\/|\/\*)/ { next }
 				{ buf = buf $0 "\n" }
 				END { printf "%s", buf }
 			')"
 		fi
 
 		# Check for the required reset in the truncated window.
+		# Accept both signal(SIGALRM, SIG_DFL) and sigaction(SIGALRM, ...) forms.
 		if printf '%s\n' "$window" | \
-		   grep -qE 'signal[[:space:]]*\([[:space:]]*SIGALRM[[:space:]]*,[[:space:]]*SIG_DFL'; then
+		   grep -qE 'signal[[:space:]]*\([[:space:]]*SIGALRM[[:space:]]*,[[:space:]]*SIG_DFL|sigaction[[:space:]]*\([[:space:]]*SIGALRM[[:space:]]*,'; then
 			continue
 		fi
 
