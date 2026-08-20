@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <sched.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <sys/prctl.h>
 #include <sys/wait.h>
 #include <fcntl.h>
@@ -157,6 +158,10 @@ static void grandchild_body(int target_ns_flags,
 	 * to this process when its parent terminates.
 	 */
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
+	/* Race: parent may have died between clone() return and prctl() arming;
+	 * if so we are already reparented to init — exit now. */
+	if (getppid() == 1)
+		_exit(EXIT_FAILURE);
 
 	/*
 	 * Capture the parent-ns effective uid/gid BEFORE unshare(CLONE_NEWUSER).
