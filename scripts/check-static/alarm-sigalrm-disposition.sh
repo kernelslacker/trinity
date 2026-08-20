@@ -55,15 +55,32 @@ trap 'rm -f "$hits_tmp"' EXIT
 
 flagged=0
 total_callsites=0
+skipped_count=0
 
 # Collect candidate files: .c files containing both alarm( and fork(.
 # This is a file-level co-presence heuristic; per-function scoping is
 # handled by the lookbehind window below.
 while IFS= read -r srcfile; do
-	# Must contain a process-creation call (the trigger for inherited dispositions).
-	# Trinity childops clone via __NR_clone / __NR_fork as well as fork();
-	# match any of the idioms so we don't miss raw-syscall sites.
-	grep -qE 'fork[[:space:]]*\(|vfork[[:space:]]*\(|clone[[:space:]]*\(|__NR_clone|__NR_fork|__NR_clone3' "$srcfile" 2>/dev/null || continue
+	relpath="${srcfile#"$ROOT"/}"
+
+	# Path-based arm: childops/ and child/ files are fork-dispatched
+	# children that will never carry the clone idiom the co-presence
+	# heuristic requires.  Admit them unconditionally so a future real
+	# alarm() callsite without a preceding signal(SIGALRM, SIG_DFL) reset
+	# is caught rather than silently falling outside the gate.
+	case "$relpath" in
+		childops/*|child/*) : ;;
+		*)
+			# Must contain a process-creation call (the trigger for inherited dispositions).
+			# Trinity childops clone via __NR_clone / __NR_fork as well as fork();
+			# match any of the idioms so we don't miss raw-syscall sites.
+			if ! grep -qE 'fork[[:space:]]*\(|vfork[[:space:]]*\(|clone[[:space:]]*\(|__NR_clone|__NR_fork|__NR_clone3' "$srcfile" 2>/dev/null; then
+				grep -qE '[^a-zA-Z_]alarm[[:space:]]*\(|^alarm[[:space:]]*\(' "$srcfile" 2>/dev/null && \
+					skipped_count=$((skipped_count + 1))
+				continue
+			fi
+			;;
+	esac
 
 	# Scan each alarm() callsite in the file.
 	while IFS=: read -r lineno content; do
@@ -140,7 +157,6 @@ while IFS= read -r srcfile; do
 			continue
 		fi
 
-		relpath="${srcfile#"$ROOT"/}"
 		key="$relpath:$lineno"
 		if [ -n "${BASELINED[$key]+x}" ]; then
 			BASELINED["$key"]=2
@@ -193,5 +209,5 @@ if [ "$flagged" -gt 0 ]; then
 fi
 
 baseline_size=${#BASELINED[@]}
-echo "PASS: $NAME (callsites=$total_callsites, baselined=$baseline_size)"
+echo "PASS: $NAME (callsites=$total_callsites, baselined=$baseline_size, skipped_files=$skipped_count)"
 exit 0
