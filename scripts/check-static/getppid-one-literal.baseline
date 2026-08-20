@@ -1,0 +1,27 @@
+# getppid-one-literal.baseline
+#
+# Known sites where getppid()==1 is still used as the orphan-detection
+# idiom but have not yet been converted to the saved-ppid pattern.
+#
+# These sites are subreaper-unsafe (PR_SET_CHILD_SUBREAPER on any
+# ancestor means orphans reparent to that pid, not init, so the == 1
+# test silently becomes dead code).  They are pinned here only to allow
+# the gate to pass while the per-file conversion work is queued.
+#
+# This list should SHRINK over time, never grow.  When a site is fixed
+# (saved-ppid idiom added), remove its line from this file.  A new
+# getppid()==1 literal that is not an orphan sentinel and genuinely
+# needs to detect init as a process identity may be added here with a
+# clear explanation; all other new occurrences must fail the gate.
+#
+# Format: `path/to/file.c:lineno  reason text`
+# Lines starting with # and blank lines are ignored.
+
+childops/misc/pidfd-storm.c:264  pending conversion to saved-ppid idiom
+childops/net/af-unix-peek-race.c:230  pending conversion to saved-ppid idiom
+childops/net/af-unix-scm-rights-gc.c:419  pending conversion to saved-ppid idiom
+childops/net/af-unix-scm-rights-gc.c:949  pending conversion to saved-ppid idiom
+childops/process/process-mrelease-race.c:197  pending conversion to saved-ppid idiom
+childops/process/process-mrelease-race.c:292  pending conversion to saved-ppid idiom
+childops/process/process-mrelease-race.c:330  pending conversion to saved-ppid idiom
+health/kmsg-monitor.c:334  pending conversion to saved-ppid idiom

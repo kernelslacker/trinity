@@ -95,13 +95,15 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
 			 *
 			 * PR_SET_PDEATHSIG SIGKILL guards against the
 			 * parent crashing before it can SEIZE us; without
-			 * it the orphaned tracee sticks in pause()
-			 * forever under PID 1.  Re-check getppid() in case
-			 * the parent already died in the prctl race
-			 * window. */
+			 * it the orphaned tracee sticks in pause() forever.
+			 * Saved-ppid re-check is subreaper-safe: getppid()==1
+			 * misses reparents to a PR_SET_CHILD_SUBREAPER
+			 * ancestor; comparing against the pre-prctl snapshot
+			 * is correct regardless of subreaper config. */
+			pid_t saved_ppid = getppid();
 			(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 				      0UL, 0UL, 0UL);
-			if (getppid() == 1)
+			if (getppid() != saved_ppid)
 				_exit(0);
 			(void)pause();
 			_exit(0);
@@ -583,6 +585,10 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
 	int procs_fd;
 	int len;
 	char ack = '!';
+	/* Snapshot parent PID as the first child action so the orphan
+	 * re-check below is subreaper-safe (getppid()==1 misses reparents
+	 * to a PR_SET_CHILD_SUBREAPER ancestor). */
+	pid_t saved_ppid = getppid();
 
 	(void)snprintf(procs_path, sizeof(procs_path), "%s/cgroup.procs",
 		       cgroup_path);
@@ -605,9 +611,9 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
 
 	/* PR_SET_PDEATHSIG SIGKILL: if the supervisor crashes before it
 	 * can write(kill_fd, "1\n", 2) into cgroup.kill, the inner would
-	 * orphan to PID 1 and pause() forever.  Re-check getppid() to
-	 * cover the prctl race window where the supervisor died between
-	 * fork and this point. */
+	 * orphan and pause() forever.  Re-check against saved_ppid (captured
+	 * at function entry) to cover the prctl race window; the saved-pid
+	 * idiom is subreaper-safe unlike the == 1 literal. */
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 		      0UL, 0UL, 0UL);
 	ncalls++;  /* prctl */
@@ -615,7 +621,7 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w,
 	 * and counts out-of-range ops (including the NR_CHILD_OP_TYPES sentinel
 	 * when this_child() returns NULL in doubly-forked contexts). */
 	childop_direct_syscalls_add(op, ncalls);
-	if (getppid() == 1)
+	if (getppid() != saved_ppid)
 		_exit(0);
 
 	(void)pause();

@@ -148,19 +148,28 @@ static void grandchild_body(int target_ns_flags,
 			    int (*fn)(void *), void *arg)
 {
 	int map_err;
+	/*
+	 * Snapshot our parent's PID before arming PDEATHSIG.  getppid()==1
+	 * is not subreaper-safe: if any ancestor has called
+	 * PR_SET_CHILD_SUBREAPER (systemd --user, a container init, etc.)
+	 * orphans reparent to that pid, not init, and the == 1 test is dead
+	 * code.  Comparing against the captured value is correct regardless
+	 * of subreaper configuration.
+	 */
+	pid_t saved_ppid = getppid();
 
 	/*
 	 * If the trinity child (our parent process) is killed before we
 	 * exit -- for example by the reap-watchdog SIGKILL at
 	 * REAP_STALL_THRESHOLD_S seconds of no progress -- ensure the
-	 * grandchild is also killed rather than reparented to init and
-	 * left running indefinitely.  PR_SET_PDEATHSIG delivers SIGKILL
-	 * to this process when its parent terminates.
+	 * grandchild is also killed rather than reparented and left running
+	 * indefinitely.  PR_SET_PDEATHSIG delivers SIGKILL to this process
+	 * when its parent terminates.
 	 */
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 	/* Race: parent may have died between clone() return and prctl() arming;
-	 * if so we are already reparented to init — exit now. */
-	if (getppid() == 1)
+	 * if so we are already reparented — exit now. */
+	if (getppid() != saved_ppid)
 		_exit(EXIT_FAILURE);
 
 	/*

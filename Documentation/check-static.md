@@ -350,6 +350,14 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `fd-from-object-coverage`: `fd_from_object()` in `objects/dispatch.c` must
   switch on every `OBJ_FD_*` enum value, and every case label must
   still refer to a live enum member.
+- `getppid-one-literal`: reject any non-comment source line that compares
+  `getppid()` (libc or raw `__NR_getppid` syscall form) against the literal
+  constant `1` to detect orphaning.  The correct idiom captures the parent
+  PID before arming `PR_SET_PDEATHSIG` and compares against that snapshot;
+  `getppid()==1` is dead code when any ancestor has `PR_SET_CHILD_SUBREAPER`
+  set (systemd --user, container init, etc.).  Known remaining sites are
+  pinned in `scripts/check-static/getppid-one-literal.baseline`; that list
+  should shrink over time, never grow.
 - `io-uring-register-catalog`: every opcode in
   `io_uring_register_opcodes[]`
   (`syscalls/io_uring/io_uring_register.c`) must have a matching

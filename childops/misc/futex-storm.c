@@ -162,22 +162,28 @@ static void do_cmp_requeue(struct futex_storm_shared *s, int idx1, int idx2)
 static void inner_worker(struct futex_storm_shared *s)
 {
 	/*
+	 * Snapshot parent PID before arming PDEATHSIG.  Comparing against the
+	 * saved value is subreaper-safe: getppid()==1 silently fails when any
+	 * ancestor has PR_SET_CHILD_SUBREAPER set (systemd --user, container
+	 * init) and orphans reparent to that pid instead of init.
+	 *
 	 * Belt to the shm->exit_reason brace below: PDEATHSIG covers the
 	 * orchestrator-died-for-a-non-shutdown-reason path (watchdog SIGKILL,
 	 * a fault) where exit_reason stays STILL_RUNNING and the worker would
-	 * otherwise burn the host on futex ops orphaned under PID 1.  The
-	 * exit_reason check in the loop below still handles Ctrl-C and any
+	 * otherwise burn the host on futex ops orphaned under a subreaper.
+	 * The exit_reason check in the loop below still handles Ctrl-C and any
 	 * other shm-propagated shutdown where the parent stays alive long
 	 * enough to drive a clean drain.  Armed BEFORE pthread_barrier_wait
 	 * so a parent that dies while workers are still parked on the barrier
 	 * does not leave them blocked indefinitely.
 	 *
-	 * getppid()==1 re-check covers the race where the orchestrator died
-	 * between fork() returning here and the prctl arming -- PDEATHSIG
-	 * would not fire and the reparent-to-init has already happened.
+	 * getppid() != saved_ppid re-check covers the race where the
+	 * orchestrator died between fork() returning here and the prctl
+	 * arming -- PDEATHSIG would not fire and reparenting has happened.
 	 */
+	pid_t saved_ppid = getppid();
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
-	if (getppid() == 1)
+	if (getppid() != saved_ppid)
 		_exit(0);
 
 	pthread_barrier_wait(&s->barrier);

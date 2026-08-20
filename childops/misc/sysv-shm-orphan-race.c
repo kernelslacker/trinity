@@ -22,7 +22,8 @@
  * sysfs writes.
  *
  * Sibling defences: PR_SET_PDEATHSIG SIGKILL immediately after clone, plus
- * a getppid()==1 re-check to cover the pre-arming window.  Independent
+ * a saved-ppid re-check to cover the pre-arming window (subreaper-safe;
+ * getppid()==1 misses reparents to PR_SET_CHILD_SUBREAPER ancestors).  Independent
  * alarm(2) watchdog (SIGALRM reset to SIG_DFL before arming: fork without
  * execve() inherits the parent's handler, not SIG_DFL).  Raw __NR_* only.
  *
@@ -178,8 +179,9 @@ static long raw_shmctl(int shmid, int cmd, void *buf)
  *     copy of the parent's signal dispositions, including the SIGALRM
  *     flag-setter installed by health/signals-policy.c; without the
  *     reset alarm() would merely set a flag rather than terminate.
- *   - getppid()==1 re-check post-PDEATHSIG: covers the race where the
- *     parent died between clone return and prctl arming.
+ *   - saved-ppid re-check post-PDEATHSIG: covers the race where the
+ *     parent died between clone return and prctl arming; subreaper-safe
+ *     (getppid()==1 misses reparents to a PR_SET_CHILD_SUBREAPER ancestor).
  *
  * Workload: shmget -> publish -> wait for go -> shmat (puts an
  * attachment count) -> shmctl(IPC_RMID) (sets SHM_DEST) -> exit.
@@ -190,15 +192,19 @@ __attribute__((noreturn))
 static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 {
 	long shmid;
+	/* Snapshot parent PID before arming PDEATHSIG; subreaper-safe unlike
+	 * == 1 (PR_SET_CHILD_SUBREAPER means orphans reparent to an ancestor
+	 * other than init). */
+	long saved_ppid = trinity_raw_syscall(__NR_getppid);
 
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	signal(SIGALRM, SIG_DFL);
 	(void)alarm(2);
 
-	if (trinity_raw_syscall(__NR_getppid) == 1)
+	if (trinity_raw_syscall(__NR_getppid) != saved_ppid)
 		(void)syscall(__NR_exit, 0);
-	/* Count the preamble: prctl + alarm + getppid = 3. */
-	__atomic_fetch_add(&rs->direct_call_count, 3UL, __ATOMIC_RELAXED);
+	/* Count the preamble: getppid(saved) + prctl + alarm + getppid(recheck) = 4. */
+	__atomic_fetch_add(&rs->direct_call_count, 4UL, __ATOMIC_RELAXED);
 
 	shmid = raw_shmget(IPC_PRIVATE, SYSV_SHM_SEG_BYTES, IPC_CREAT | 0600);
 	__atomic_fetch_add(&rs->direct_call_count, 1UL, __ATOMIC_RELAXED); /* shmget */
@@ -245,9 +251,9 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
  * same isolation as the originator (separate VM/sighand/TGID).  Drives
  * concurrent shmat against the shmid published by the originator.
  *
- * Same defence set: PR_SET_PDEATHSIG SIGKILL, alarm(2), getppid()==1
- * re-check, raw syscall(__NR_*) only, no trinity dispatch, no shm
- * pool access.
+ * Same defence set: PR_SET_PDEATHSIG SIGKILL, alarm(2), saved-ppid
+ * re-check (subreaper-safe; see originator_main), raw syscall(__NR_*)
+ * only, no trinity dispatch, no shm pool access.
  */
 __attribute__((noreturn))
 static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
@@ -255,15 +261,16 @@ static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
 	uint32_t budget;
 	uint32_t i;
 	int shmid;
+	long saved_ppid = trinity_raw_syscall(__NR_getppid);
 
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	signal(SIGALRM, SIG_DFL);
 	(void)alarm(2);
 
-	if (trinity_raw_syscall(__NR_getppid) == 1)
+	if (trinity_raw_syscall(__NR_getppid) != saved_ppid)
 		(void)syscall(__NR_exit, 0);
-	/* Count the preamble: prctl + alarm + getppid = 3. */
-	__atomic_fetch_add(&rs->direct_call_count, 3UL, __ATOMIC_RELAXED);
+	/* Count the preamble: getppid(saved) + prctl + alarm + getppid(recheck) = 4. */
+	__atomic_fetch_add(&rs->direct_call_count, 4UL, __ATOMIC_RELAXED);
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U) {
 		/* per-attempt: the loop may spin zero or many times */
