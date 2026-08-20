@@ -207,9 +207,14 @@ if [ "$flagged" -gt 0 ]; then
 	{
 		echo "  $NAME: $flagged getppid() literal sentinel(s) found on non-comment lines:"
 		sed 's/^/    /' "$hits_tmp"
-		echo "  fix: use getppid() != mainpid where mainpid = getpid() is captured"
-		echo "       in main() before any fork().  Do NOT use saved_ppid = getppid()"
-		echo "       inside the child -- that idiom is logically inverted (55bd6a1478ff)."
+		echo "  fix: capture expected_ppid = getpid() in the forking parent"
+		echo "       immediately before fork(), pass it to the child (struct field"
+		echo "       or function parameter), and compare getppid() != expected_ppid."
+		echo "       Do NOT use saved_ppid = getppid() inside the child -- that idiom"
+		echo "       is logically inverted.  Do NOT compare against mainpid either:"
+		echo "       it is the top-level orchestrator pid, so at depth > 1 (forked by"
+		echo "       a worker, not by main) the comparison is unequal on every call"
+		echo "       and the guard fires unconditionally."
 		echo "       If the site genuinely tests for init as a process identity (not an"
 		echo "       orphan sentinel), pin it in scripts/check-static/getppid-one-literal.baseline."
 	} >&2
