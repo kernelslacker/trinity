@@ -181,7 +181,7 @@ _spp_write_state() {
         # will fall back to the "state file absent" branch which is accurate.
         local _spp_tmp
         _spp_tmp=$(mktemp "${_spp_state_file}.XXXXXX")             || { echo "setup-privileged-preconditions: WARNING: mktemp failed; state file not written" >&2; return; }
-        if emit_state > "${_spp_tmp}"; then
+        if emit_state > "${_spp_tmp}" && [[ -s "${_spp_tmp}" ]]; then
             if ! mv "${_spp_tmp}" "${_spp_state_file}"; then
                 rm -f "${_spp_tmp}"
                 echo "setup-privileged-preconditions: WARNING: mv ${_spp_tmp} -> ${_spp_state_file} failed; state file not written" >&2
@@ -205,6 +205,17 @@ trap '_spp_write_state' EXIT
 # only mutation below is TARGET_GROUP (resolved from TARGET_USER or SUDO_UID)
 # which is always assigned an explicit value (possibly empty string) before
 # the Steps begin.
+
+# ---------------------------------------------------------------------------
+# ERR trap: Steps 1-3
+# ---------------------------------------------------------------------------
+# set -e aborts on any unhandled command failure.  Without this trap,
+# a failing dry_run_or_exec mount (or any other non-die failure path) exits
+# with _tracefs_ready_val still 'unknown', and run-trinity.sh emits the soft
+# "tracefs_ready != 1 ... coverage may be disabled" warning instead of the
+# hard failure message.  Trap ERR across Steps 1-3 so that any set -e abort
+# sets the failed marker; cleared with 'trap - ERR' after Step 3.
+trap '_tracefs_ready_val=failed' ERR
 
 # ---------------------------------------------------------------------------
 # Step 1: Ensure tracefs is mounted
@@ -377,6 +388,10 @@ if [[ -z "${DRY_RUN}" ]] && [[ -n "${TARGET_USER}" ]]; then
     info "verified: ${TARGET_USER} can write ${MOUNT_POINT}/tracing_on"
     _tracefs_ready_val=1
 fi
+
+# Steps 1-3 complete; clear ERR trap so subsequent non-fatal operations
+# (summary output, state-file writes) don't accidentally set failed.
+trap - ERR
 
 # ---------------------------------------------------------------------------
 # Summary  (tracefs.state is written by the EXIT trap registered above)
