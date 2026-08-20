@@ -207,9 +207,9 @@ if [ "$flagged" -gt 0 ]; then
 	{
 		echo "  $NAME: $flagged getppid() literal sentinel(s) found on non-comment lines:"
 		sed 's/^/    /' "$hits_tmp"
-		echo "  fix: capture 'pid_t saved_ppid = getppid();' before prctl(PR_SET_PDEATHSIG)"
-		echo "       and replace 'getppid() == 1' / 'ppid < 2' etc. with 'getppid() != saved_ppid'."
-		echo "       This is correct regardless of PR_SET_CHILD_SUBREAPER configuration."
+		echo "  fix: use getppid() != mainpid where mainpid = getpid() is captured"
+		echo "       in main() before any fork().  Do NOT use saved_ppid = getppid()"
+		echo "       inside the child -- that idiom is logically inverted (55bd6a1478ff)."
 		echo "       If the site genuinely tests for init as a process identity (not an"
 		echo "       orphan sentinel), pin it in scripts/check-static/getppid-one-literal.baseline."
 	} >&2
