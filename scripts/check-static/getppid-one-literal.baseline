@@ -17,7 +17,7 @@
 # Format: `path/to/file.c:lineno  reason text`
 # Lines starting with # and blank lines are ignored.
 
-childops/misc/pidfd-storm.c:264  pending conversion to saved-ppid idiom
+childops/misc/pidfd-storm.c:268  pending conversion to saved-ppid idiom
 childops/net/af-unix-peek-race.c:230  pending conversion to saved-ppid idiom
 childops/net/af-unix-scm-rights-gc.c:419  pending conversion to saved-ppid idiom
 childops/net/af-unix-scm-rights-gc.c:949  pending conversion to saved-ppid idiom

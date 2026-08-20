@@ -50,7 +50,7 @@
  *     itself fits in the window.
  *   - PER_PIDFD_REAP_TIMEOUT_MS caps the teardown wait per pidfd, so a
  *     kernel-side hang on the pidfd-exit path cannot pin the whole
- *     invocation past the parent's REAP_STALL_THRESHOLD_S s stuck-child watchdog and drown
+ *     invocation past the parent reap watchdog timeout and drown
  *     out the fleet's genuine wedge signal (the reason for this bound:
  *     without it, one slow SIGKILL landing on a pause()-child dragged
  *     the whole pidfd_storm invocation to top-of-fleet wedge attributor).
@@ -81,6 +81,7 @@
 #include "shm.h"
 #include "signals.h"
 #include "trinity.h"
+#include "reap-thresholds.h"
 #include "utils.h"
 
 /* Wall-clock ceiling for the inner storm loop.  Same band as
@@ -106,8 +107,8 @@
  * pidfd POLLIN within a few milliseconds; a slow reap in the tens of
  * ms band is still normal under fleet load.  500 ms is roughly two
  * orders of magnitude above the observed p99 and keeps the worst-case
- * teardown (NR_CHILDREN * 500 ms = 3 s) well below the parent's REAP_STALL_THRESHOLD_S s
- * per-child stall detector even when every slot times out at once, so
+ * teardown (NR_CHILDREN * PER_PIDFD_REAP_TIMEOUT_MS ms) well below the parent reap
+ * watchdog timeout even when every slot times out at once, so
  * one wedged pidfd cannot push the whole pidfd_storm invocation past
  * the watchdog and drown out the fleet's genuine stuck-child signal.
  * The escape counters (pidfd_storm_reap_slow /
@@ -116,6 +117,9 @@
  * seeing those counters climb has a direct pointer to a pidfd path
  * that isn't waking on SIGKILL. */
 #define PER_PIDFD_REAP_TIMEOUT_MS	500
+
+_Static_assert(NR_CHILDREN * PER_PIDFD_REAP_TIMEOUT_MS / 1000u < REAP_STALL_THRESHOLD_S,
+	       "pidfd teardown must complete before reap watchdog fires");
 
 /* Curated signal set for the storm body.  Explicitly avoids
  * SIGKILL/SIGTERM — those are for teardown.  SIGSTOP/SIGCONT exercise
@@ -377,7 +381,7 @@ static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
  *
  * Callers use this as the pre-reap gate in the teardown path so a
  * blocking waitpid() does not stall the whole pidfd_storm invocation
- * past the parent's REAP_STALL_THRESHOLD_S s stuck-child watchdog when SIGKILL somehow
+ * past the parent reap watchdog timeout when SIGKILL somehow
  * fails to land on a pause()-child promptly.
  */
 static bool wait_for_pidfd_exit(int pidfd, int timeout_ms)
@@ -429,7 +433,7 @@ static bool wait_for_pidfd_exit(int pidfd, int timeout_ms)
  * waitpid_eintr(), and if that too misses, bump
  * pidfd_storm_reap_zombies and move on -- leaving a zombie for the
  * fuzz child's later SIGCHLD path is cheaper than pinning the whole
- * pidfd_storm invocation past the parent's REAP_STALL_THRESHOLD_S s stuck-child watchdog
+ * pidfd_storm invocation past the parent reap watchdog timeout
  * and drowning the fleet's genuine stuck-child signal.  Slots whose
  * pidfd_open failed at spawn have no pidfd to poll, so they fall
  * back to the pre-existing blocking waitpid_eintr(); those are the
