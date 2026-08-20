@@ -1395,7 +1395,7 @@ static unsigned long do_set_event(void)
 	 * set_event_post_disable_count a true erosion gauge rather than a
 	 * near-constant pinned by wide restores.
 	 */
-	if (is_disable && ret >= 0) {
+	if (is_disable && ret > 0) {
 		long remaining = count_set_event_lines();
 
 		/* Denominator: count every oracle firing. */
