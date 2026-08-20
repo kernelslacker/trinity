@@ -29,7 +29,13 @@ int jsonl_open(const char *path);
 /*
  * Append json_line followed by '\n' to fd.  json_line must already be
  * a complete JSON object; no formatting, escaping, or validation is
- * performed here.  Write errors are swallowed -- the caller is a
- * fuzzer and there is no useful recovery action.
+ * performed here.
+ *
+ * Returns 0 on success.  Returns -1 if the writev() call fails (errno
+ * set) or produces a short write (partial record, no trailing newline).
+ * On failure a best-effort truncation marker is written directly via
+ * write() so a downstream reader can distinguish a sink-failure
+ * truncation from a clean end-of-run.  The caller is responsible for
+ * latching the sink closed and not writing again.
  */
-void jsonl_write(int fd, const char *json_line);
+int jsonl_write(int fd, const char *json_line);

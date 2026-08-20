@@ -72,6 +72,15 @@ void stats_rotation_event_close(void)
 {
 	if (rotation_event_fd < 0)
 		return;
+
+	/* Terminal record so a downstream reader can distinguish a clean
+	 * end-of-run from a mid-run sink death.  jsonl_write() emits the
+	 * truncation marker internally on failure; we still close and
+	 * null the fd either way. */
+	if (jsonl_write(rotation_event_fd,
+			"{\"type\":\"terminal\"}") < 0)
+		outputerr("rotation event: terminal record write failed\n");
+
 	close(rotation_event_fd);
 	rotation_event_fd = -1;
 }
@@ -141,5 +150,15 @@ void stats_rotation_event_emit(const struct rotation_event *ev)
 	if (n < 0 || (size_t)n >= sizeof(buf))
 		return;
 
-	jsonl_write(rotation_event_fd, buf);
+	/* Mirror the timeseries error-transaction: check the return,
+	 * latch the sink closed on failure so future calls are no-ops
+	 * (the fd<0 guard at the top of every entry point). */
+	if (jsonl_write(rotation_event_fd, buf) < 0) {
+		int saved_errno = errno;
+
+		close(rotation_event_fd);
+		rotation_event_fd = -1;
+		outputerr("rotation event write failed, disabling sink: %s\n",
+			  strerror(saved_errno));
+	}
 }

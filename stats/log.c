@@ -103,6 +103,7 @@ void stats_log_open(const char *path)
 void stats_log_close(void)
 {
 	char ts[STATS_LOG_TS_BUFSIZE];
+	int close_ret;
 
 	if (stats_log_fp == NULL)
 		return;
@@ -110,8 +111,39 @@ void stats_log_close(void)
 	stats_log_iso_timestamp(ts, sizeof(ts));
 	fprintf(stats_log_fp,
 		"=== trinity stats log closed at %s ===\n", ts);
-	fclose(stats_log_fp);
+	fflush(stats_log_fp);
+
+	/* Mirror the timeseries error-transaction: ferror() is sticky,
+	 * so a single check here catches any failure in the fprintf or
+	 * fflush above.  On error write the truncation marker directly
+	 * via write(fileno()) -- bypassing the broken stdio buffer --
+	 * so a downstream reader can distinguish a sink-disabled
+	 * truncation from a clean end-of-run.  Check fclose() on the
+	 * success path because it flushes any remaining buffered data
+	 * and a full filesystem can fail there too. */
+	if (ferror(stats_log_fp)) {
+		int saved_errno = errno;
+		const char *marker =
+			"\n=== trinity stats log truncated: "
+			"write_error ===\n";
+		int lfd = fileno(stats_log_fp);
+
+		if (lfd >= 0) {
+			if (write(lfd, marker, strlen(marker)) < 0) {
+				/* nothing to do -- sink is already dead */
+			}
+		}
+		outputerr("stats log footer write failed: %s\n",
+			  strerror(saved_errno));
+		fclose(stats_log_fp);
+		stats_log_fp = NULL;
+		return;
+	}
+
+	close_ret = fclose(stats_log_fp);
 	stats_log_fp = NULL;
+	if (close_ret != 0)
+		outputerr("stats log close failed: %s\n", strerror(errno));
 }
 
 /*
@@ -1050,7 +1082,31 @@ void stats_log_write(const char *fmt, ...)
 	output(0, "%s", buf);
 
 	if (stats_log_fp != NULL) {
-		fputs(buf, stats_log_fp);
-		fflush(stats_log_fp);
+		/* One log line = one atomic transaction: fputs then fflush.
+		 * ferror() is sticky so a single check after the pair
+		 * catches a failure in either call.  On error write the
+		 * truncation marker directly via write(fileno()) --
+		 * bypassing the broken stdio buffer -- then latch the sink
+		 * closed.  The NULL guard at the top of every entry point
+		 * turns every future call into a no-op. */
+		if (fputs(buf, stats_log_fp) == EOF ||
+		    fflush(stats_log_fp) == EOF ||
+		    ferror(stats_log_fp)) {
+			int saved_errno = errno;
+			const char *marker =
+				"\n=== trinity stats log truncated: "
+				"write_error ===\n";
+			int lfd = fileno(stats_log_fp);
+
+			if (lfd >= 0) {
+				if (write(lfd, marker, strlen(marker)) < 0) {
+					/* nothing -- sink already dead */
+				}
+			}
+			fclose(stats_log_fp);
+			stats_log_fp = NULL;
+			outputerr("stats log write failed, disabling "
+				  "sink: %s\n", strerror(saved_errno));
+		}
 	}
 }

@@ -34,3 +34,6 @@ t_close_mono_ns
 warn_fires_in_window
 was_chaos
 
+[terminal]
+type
+

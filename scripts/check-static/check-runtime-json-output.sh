@@ -755,8 +755,11 @@ if err:
         f.write(f"error: {err}\n")
     sys.exit(1)
 
-# Parse any live rotation events.
+# Parse any live rotation events.  Terminal records (type=="terminal")
+# are separated from rotation event records so they can be validated
+# independently against the [terminal] baseline section.
 live_fields = None
+live_terminal_fields = None
 live_errors = []
 if live_path and os.path.exists(live_path):
     with open(live_path) as f:
@@ -766,7 +769,10 @@ if live_path and os.path.exists(live_path):
                 continue
             try:
                 rec = json.loads(raw)
-                if live_fields is None:
+                if rec.get("type") == "terminal":
+                    if live_terminal_fields is None:
+                        live_terminal_fields = sorted(rec.keys())
+                elif live_fields is None:
                     live_fields = sorted(rec.keys())
             except json.JSONDecodeError as e:
                 live_errors.append(f"line {lineno}: {e}")
@@ -795,6 +801,18 @@ if mode == "regen":
     for k in src_fields:
         lines.append(k)
     lines.append("")
+    # Terminal record section: fields emitted by stats_rotation_event_close().
+    # The terminal record contains only {"type":"terminal"} -- a single-field
+    # sentinel so a downstream reader can distinguish a clean end-of-run from
+    # a mid-run sink death (where the truncation marker ends the stream).
+    # Derive the field set from any live terminal record if present; fall back
+    # to the known static field set {"type"} so --regen succeeds even when the
+    # short fixture run does not produce a rotation-event JSONL file at all.
+    term_fields = sorted(live_terminal_fields) if live_terminal_fields else ["type"]
+    lines.append("[terminal]")
+    for k in term_fields:
+        lines.append(k)
+    lines.append("")
     with open(result_path, "w") as f:
         f.write("\n".join(lines) + "\n")
     with open(baseline_path, "w") as f:
@@ -808,22 +826,23 @@ if not os.path.exists(baseline_path):
         f.write(f"error: baseline missing at {baseline_path} -- run --regen\n")
     sys.exit(1)
 
-bl_fields = []
+bl_sections_parsed = {}
+current_sec = None
 with open(baseline_path) as f:
-    in_section = False
     for line in f:
         line = line.rstrip('\n')
         if not line or line.startswith('#'):
             continue
-        if line == '[rotation]':
-            in_section = True
+        if line.startswith('[') and line.endswith(']'):
+            current_sec = line[1:-1]
+            bl_sections_parsed[current_sec] = []
             continue
-        if line.startswith('['):
-            in_section = False
-            continue
-        if in_section:
-            bl_fields.append(line)
+        if current_sec is not None:
+            bl_sections_parsed[current_sec].append(line)
+
+bl_fields = bl_sections_parsed.get("rotation", [])
 bl_fields_set = set(bl_fields)
+bl_terminal_set = set(bl_sections_parsed.get("terminal", []))
 
 check_errors = []
 
@@ -841,7 +860,7 @@ if extra_in_bl:
         "rotation-event baseline fields not in source "
         "(removed field? run --regen): " + ", ".join(sorted(extra_in_bl)))
 
-# Live-vs-baseline agreement (only when live records were found).
+# Live rotation event records: validate against [rotation] section.
 if live_fields is not None:
     live_set = set(live_fields)
     extra_live    = live_set    - bl_fields_set
@@ -855,18 +874,39 @@ if live_fields is not None:
             "live rotation record: missing fields: " +
             ", ".join(sorted(missing_live)))
 
+# Terminal record: validate against [terminal] section.
+if live_terminal_fields is not None and bl_terminal_set:
+    live_term_set = set(live_terminal_fields)
+    extra_term    = live_term_set  - bl_terminal_set
+    missing_term  = bl_terminal_set - live_term_set
+    if extra_term:
+        check_errors.append(
+            "rotation-event terminal record: unexpected fields: " +
+            ", ".join(sorted(extra_term)))
+    if missing_term:
+        check_errors.append(
+            "rotation-event terminal record: missing fields: " +
+            ", ".join(sorted(missing_term)))
+elif live_terminal_fields is None and bl_terminal_set:
+    check_errors.append(
+        "rotation-event terminal record: absent but expected by baseline")
+
 with open(result_path, "w") as f:
     if check_errors:
         f.write("error\n")
         f.write("\n".join(check_errors) + "\n")
     elif live_fields is None:
-        # No live records: strategy rotation requires STRATEGY_WINDOW (131072)
-        # ops -- unreachable under the fixture cap.  Report SKIP so the caller
-        # can distinguish "validated against live output" from "not exercised".
+        # No live rotation event records: strategy rotation requires
+        # STRATEGY_WINDOW (131072) ops -- unreachable under the fixture cap.
+        # Report SKIP so the caller can distinguish "validated against live
+        # output" from "not exercised".  Terminal-record validation still
+        # ran above if the baseline carries a [terminal] section.
+        term_note = (f" terminal_validated={live_terminal_fields is not None}"
+                     if bl_terminal_set else "")
         f.write("skip\n")
         f.write(f"source_fields={len(src_fields)} "
                 f"baseline_fields={len(bl_fields)} "
-                f"live_records=none(not-exercised)\n")
+                f"live_records=none(not-exercised){term_note}\n")
     else:
         n_live = len(live_fields)
         f.write("ok\n")
