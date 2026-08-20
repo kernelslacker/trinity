@@ -95,9 +95,28 @@ while IFS= read -r srcfile; do
 			# Also strip comment lines so a reset mentioned only in a
 			# comment does not falsely credit the site.
 			window="$(printf '%s\n' "$window" | awk '
-				/^}/ { buf = "" ; next }
-				/^[[:space:]]*(\*|\/\/|\/\*)/ { next }
-				{ buf = buf $0 "\n" }
+				/^}/ { in_block = 0; buf = ""; next }
+				{
+					line = $0
+					stripped = ""
+					i = 1
+					len = length(line)
+					while (i <= len) {
+						if (in_block) {
+							if (substr(line, i, 2) == "*/") { in_block = 0; i += 2 }
+							else { i++ }
+						} else if (substr(line, i, 2) == "/*") {
+							in_block = 1; i += 2
+						} else if (substr(line, i, 2) == "//") {
+							break
+						} else {
+							stripped = stripped substr(line, i, 1); i++
+						}
+					}
+					gsub(/^[[:space:]]+|[[:space:]]+$/, "", stripped)
+					if (stripped == "") next
+					buf = buf line "\n"
+				}
 				END { printf "%s", buf }
 			')"
 		fi
