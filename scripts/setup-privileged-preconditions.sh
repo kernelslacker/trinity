@@ -50,7 +50,7 @@
 #   # Preview without writing:
 #   sudo scripts/setup-privileged-preconditions.sh --dry-run
 
-set -euo pipefail
+set -Eeuo pipefail
 
 MOUNT_POINT="/sys/kernel/tracing"
 TARGET_USER="${TRINITY_USER:-${SUDO_USER:-}}"
