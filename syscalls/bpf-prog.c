@@ -95,7 +95,7 @@ static bool bpf_prog_load(union bpf_attr *attr)
 		attr->log_size = 0;
 		attr->log_buf = 0;
 	} else {
-		attr->log_size = rnd_modulo_u32(page_size);
+		attr->log_size = rnd_modulo_u32(page_size - 1) + 1;
 		attr->log_buf = (u64) get_writable_address(page_size);
 		{
 			unsigned long log_buf_addr = attr->log_buf;
