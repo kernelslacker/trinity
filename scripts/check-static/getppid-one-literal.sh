@@ -88,6 +88,8 @@ YODA_PATTERN="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${CALLEXPR}"
 # so the guard fires unconditionally.  Only the direct child of main() (where
 # the parent IS mainpid) may use this comparison; pin that site in the baseline.
 PATTERN_MAINPID="${CALLEXPR}[[:space:]]*(==|!=|<=|<)[[:space:]]*mainpid([^a-z_A-Z0-9]|$)"
+# Yoda mainpid form: mainpid == getppid() / mainpid != getppid()
+YODA_MAINPID_PATTERN="(^|[^a-z_A-Z0-9])mainpid[[:space:]]*(==|!=)[[:space:]]*${CALLEXPR}"
 
 # ---------------------------------------------------------------------------
 # Pass 2: hoisted assignment — variable assigned from getppid(), then
@@ -151,7 +153,7 @@ for srcfile in "${srcfiles[@]}"; do
 
 		echo "$key: getppid() literal sentinel (==1 / !=1 / <=1 / <2) — use saved-ppid idiom for subreaper safety" >> "$hits_tmp"
 		flagged=$((flagged + 1))
-	done < <(grep -nE "${PATTERN}|${YODA_PATTERN}|${PATTERN_MAINPID}" "$srcfile" 2>/dev/null)
+	done < <(grep -nE "${PATTERN}|${YODA_PATTERN}|${PATTERN_MAINPID}|${YODA_MAINPID_PATTERN}" "$srcfile" 2>/dev/null)
 done
 
 # ---------------------------------------------------------------------------
@@ -187,8 +189,8 @@ for srcfile in "${srcfiles[@]}"; do
 		# including the yoda form (1 == varname / 1 != varname).
 		# Require a word boundary before the variable name so we don't
 		# match longer identifiers that happen to end with the same suffix.
-		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*((==|!=|<=)[[:space:]]*1|<[[:space:]]*2)([^0-9]|$)"
-		cmp_pattern_yoda="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)"
+		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*((==|!=|<=)[[:space:]]*(1|mainpid)([^a-z_A-Z0-9]|$)|<[[:space:]]*2([^0-9]|$))"
+		cmp_pattern_yoda="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)|(^|[^a-z_A-Z0-9])mainpid[[:space:]]*(==|!=)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)"
 
 		while IFS=: read -r lineno content; do
 			[ -z "$lineno" ] && continue
