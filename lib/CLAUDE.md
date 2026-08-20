@@ -9,13 +9,13 @@ state — this is a directory of convenience, not a subsystem.
 
 | File | Lines | Role |
 |---|---|---|
-| cmsg_build.c | 678 | Builds `msghdr.msg_control` ancillary-data blocks for send/sendmsg fuzzing: 16 cmsg kinds (SCM_RIGHTS, SCM_CREDENTIALS, SO_TIMESTAMPING, PACKET_AUXDATA, UDP_GSO, IP/IPv6 pktinfo/tos/ttl/retopts/rthdr, SCM_TXTIME, TLS_SET_RECORD_TYPE) plus a multi-cmsg packer |
-| userns-bootstrap.c | 255 | `userns_run_in_ns()`: fork a transient grandchild, enter an identity-mapped user namespace (+ optional secondary namespaces), run a callback, exit — never touches the persistent child's credentials |
-| publish_resource.c | 221 | `publish_resource()`: single typed entry point that stamps a freshly minted kernel handle (fd, aio ctx, key serial, pkey, timerid, pid, sysv id) into the OBJ_LOCAL object pool, replacing ~70 hand-rolled `alloc_object()`/`add_object()` call sites |
+| cmsg_build.c | 802 | Builds `msghdr.msg_control` ancillary-data blocks for send/sendmsg fuzzing: 16 cmsg kinds (SCM_RIGHTS, SCM_CREDENTIALS, SO_TIMESTAMPING, PACKET_AUXDATA, UDP_GSO, IP/IPv6 pktinfo/tos/ttl/retopts/rthdr, SCM_TXTIME, TLS_SET_RECORD_TYPE) plus a multi-cmsg packer |
+| userns-bootstrap.c | 322 | `userns_run_in_ns()`: fork a transient grandchild, enter an identity-mapped user namespace (+ optional secondary namespaces), run a callback, exit — never touches the persistent child's credentials |
+| publish_resource.c | 241 | `publish_resource()`: single typed entry point that stamps a freshly minted kernel handle (fd, aio ctx, key serial, pkey, timerid, pid, sysv id) into the OBJ_LOCAL object pool, replacing ~70 hand-rolled `alloc_object()`/`add_object()` call sites |
 | spsc-ring.c | 129 | Lock-free single-producer/single-consumer ring buffer primitive: `spsc_ring_init/try_enqueue/drain/overwrite_enqueue`, acquire/release atomics, power-of-two slot count, caller owns storage |
 | numa.c | 84 | Parses `/sys/devices/system/node/online` cpulist syntax into a NUMA node pool; `init_numa_nodes()` / `random_numa_node()` for `ARG_NUMA_NODE` generation |
 | fd.c | 55 | `write_all()` / `read_all()`: EINTR-retrying full-buffer read/write loops shared by every on-disk persistence format |
-| jsonl.c | 35 | Dependency-free JSON-Lines sink (`jsonl_open`/`jsonl_write`): raw open/write/close only, no reliance on trinity's output/shm/logging so it can run before those are up |
+| jsonl.c | 64 | Dependency-free JSON-Lines sink (`jsonl_open`/`jsonl_write`): raw open/write/close only, no reliance on trinity's output/shm/logging so it can run before those are up |
 
 (numa.c and cmsg_build.c are the two largest by responsibility; userns-bootstrap.c is the highest-risk for correctness due to privilege semantics.)
 
