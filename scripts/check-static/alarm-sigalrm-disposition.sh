@@ -51,7 +51,8 @@ if [ -r "$BASELINE" ]; then
 fi
 
 hits_tmp="$(mktemp)"
-trap 'rm -f "$hits_tmp"' EXIT
+stripped_tmp="$(mktemp)"
+trap 'rm -f "$hits_tmp" "$stripped_tmp"' EXIT
 
 flagged=0
 total_callsites=0
@@ -87,6 +88,12 @@ skipped_count=0
 while IFS= read -r srcfile; do
 	relpath="${srcfile#"$ROOT"/}"
 
+	# Strip block and line comments from the entire file once.  Used for
+	# both the co-presence heuristic and the lookbehind window so that
+	# comment state is seeded from byte 0 and a block-comment opener
+	# outside the window cannot blind the scanner.
+	strip_c_comments "$srcfile" > "$stripped_tmp"
+
 	# Path-based arm: childops/ and child/ files are fork-dispatched
 	# children that will never carry the clone idiom the co-presence
 	# heuristic requires.  Admit them unconditionally so a future real
@@ -102,9 +109,8 @@ while IFS= read -r srcfile; do
 			# named only in a comment must not admit the file, and an
 			# alarm() named only in a comment must not be counted as a
 			# skipped (out-of-coverage) file.
-			stripped_src="$(strip_c_comments "$srcfile")"
-			if ! printf '%s\n' "$stripped_src" | grep -qE 'fork[[:space:]]*\(|vfork[[:space:]]*\(|clone[[:space:]]*\(|__NR_clone|__NR_fork|__NR_clone3'; then
-				if printf '%s\n' "$stripped_src" | grep -qE '[^a-zA-Z_]alarm[[:space:]]*\(|^alarm[[:space:]]*\('; then
+			if ! grep -qE 'fork[[:space:]]*\(|vfork[[:space:]]*\(|clone[[:space:]]*\(|__NR_clone|__NR_fork|__NR_clone3' "$stripped_tmp"; then
+				if grep -qE '[^a-zA-Z_]alarm[[:space:]]*\(|^alarm[[:space:]]*\(' "$stripped_tmp"; then
 					skipped_count=$((skipped_count + 1))
 				fi
 				continue
@@ -135,31 +141,13 @@ while IFS= read -r srcfile; do
 			# alarm() is the very first line; no room for a reset.
 			window=""
 		else
-			window="$(sed -n "${start},${end}p" "$srcfile")"
-			# Truncate at the last column-0 `}` before the callsite
-			# (i.e. keep only lines after the most recent function
-			# boundary in the window).
-			# Also strip comment lines so a reset mentioned only in a
-			# comment does not falsely credit the site.
-			window="$(printf '%s\n' "$window" | awk '
-				/^}/ { in_block = 0; buf = ""; next }
+			# Slice from the already-comment-stripped file so that a
+			# block-comment opener outside the window cannot blind the
+			# scanner.  Only function-boundary truncation is needed here.
+			window="$(sed -n "${start},${end}p" "$stripped_tmp" | awk '
+				/^}/ { buf = ""; next }
 				{
-					line = $0
-					stripped = ""
-					i = 1
-					len = length(line)
-					while (i <= len) {
-						if (in_block) {
-							if (substr(line, i, 2) == "*/") { in_block = 0; i += 2 }
-							else { i++ }
-						} else if (substr(line, i, 2) == "/*") {
-							in_block = 1; i += 2
-						} else if (substr(line, i, 2) == "//") {
-							break
-						} else {
-							stripped = stripped substr(line, i, 1); i++
-						}
-					}
+					stripped = $0
 					gsub(/^[[:space:]]+|[[:space:]]+$/, "", stripped)
 					if (stripped == "") next
 					buf = buf stripped "\n"
