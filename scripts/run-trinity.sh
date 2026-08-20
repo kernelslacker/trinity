@@ -152,9 +152,20 @@ if [[ "${_tf_tracefs_ready}" != "1" ]]; then
             echo "  Fix: sudo scripts/setup-privileged-preconditions.sh [--user \$USER] then re-run." >&2
         fi
     else
-        echo "WARNING: ${_tf_state_file} present but tracefs_ready != 1 (got '${_tf_tracefs_ready}')." >&2
-        echo "  Tracefs coverage may be disabled for this run (see ${_tf_state_file})." >&2
-        echo "  Fix: sudo scripts/setup-privileged-preconditions.sh [--user \$USER] then re-run." >&2
+        if [[ "${_tf_tracefs_ready}" == "failed" ]]; then
+            # setup-privileged-preconditions.sh aborted in Steps 1-3 before it
+            # could make tracefs writable.  This is a hard setup failure, not
+            # a "maybe degraded" situation; tell the operator clearly.
+            echo "ERROR: ${_tf_state_file} reports tracefs_ready=failed —" >&2
+            echo "  setup-privileged-preconditions.sh aborted during mount/permission/verification." >&2
+            echo "  Tracefs coverage is disabled for this run.  Check the setup script's" >&2
+            echo "  stderr output for the specific failure, then re-run:" >&2
+            echo "  sudo scripts/setup-privileged-preconditions.sh [--user \$USER]" >&2
+        else
+            echo "WARNING: ${_tf_state_file} present but tracefs_ready != 1 (got '${_tf_tracefs_ready}')." >&2
+            echo "  Tracefs coverage may be disabled for this run (see ${_tf_state_file})." >&2
+            echo "  Fix: sudo scripts/setup-privileged-preconditions.sh [--user \$USER] then re-run." >&2
+        fi
     fi
 fi
 

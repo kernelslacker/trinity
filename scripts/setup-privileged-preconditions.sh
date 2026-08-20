@@ -175,12 +175,36 @@ _spp_write_state() {
     else
         mkdir -p "${_spp_state_dir}"
         chmod 0755 "${_spp_state_dir}"
-        emit_state > "${_spp_state_file}"
+        # Write atomically via a temp file so a partial write (full /run,
+        # permission error) never leaves a truncated state file visible to
+        # run-trinity.sh.  If mv fails, remove the temp and warn; run-trinity.sh
+        # will fall back to the "state file absent" branch which is accurate.
+        local _spp_tmp
+        _spp_tmp=$(mktemp "${_spp_state_file}.XXXXXX")             || { echo "setup-privileged-preconditions: WARNING: mktemp failed; state file not written" >&2; return; }
+        if emit_state > "${_spp_tmp}"; then
+            if ! mv "${_spp_tmp}" "${_spp_state_file}"; then
+                rm -f "${_spp_tmp}"
+                echo "setup-privileged-preconditions: WARNING: mv ${_spp_tmp} -> ${_spp_state_file} failed; state file not written" >&2
+                return
+            fi
+        else
+            rm -f "${_spp_tmp}"
+            echo "setup-privileged-preconditions: WARNING: emit_state failed; state file not written" >&2
+            return
+        fi
         chmod 0644 "${_spp_state_file}"
         info "state written to ${_spp_state_file}"
     fi
 }
 trap '_spp_write_state' EXIT
+# Guard: MOUNT_POINT, TARGET_USER, TARGET_GROUP, FILE_MODE are all assigned
+# unconditionally at lines 55-59 (before argument parsing may override them)
+# and cannot be unset at this point.  Under set -u any reference to an unset
+# variable in emit_state() would abort the EXIT trap body, so it is important
+# that no path between here and the trap registration can unset them.  The
+# only mutation below is TARGET_GROUP (resolved from TARGET_USER or SUDO_UID)
+# which is always assigned an explicit value (possibly empty string) before
+# the Steps begin.
 
 # ---------------------------------------------------------------------------
 # Step 1: Ensure tracefs is mounted
@@ -227,6 +251,7 @@ fi
 # that CONFIG_TRACING is enabled in this kernel).
 if [[ -z "${DRY_RUN}" ]]; then
     if [[ ! -e "${MOUNT_POINT}/tracing_on" ]]; then
+        _tracefs_ready_val=failed
         die "${MOUNT_POINT}/tracing_on not found after mount — is CONFIG_TRACING enabled in this kernel?"
     fi
 fi
@@ -287,6 +312,7 @@ fi
 # also absent.  Die loudly rather than silently writing tracefs_ready=unknown
 # every boot and leaving the operator puzzled about missing coverage.
 if [[ -z "${DRY_RUN}" ]] && [[ -z "${TARGET_GROUP}" ]] && [[ $(( FILE_MODE & 2 )) -eq 0 ]]; then
+    _tracefs_ready_val=failed
     die "cannot grant unprivileged write access to tracefs: TARGET_GROUP is empty (root invoked without --user / TRINITY_USER / SUDO_USER) and FILE_MODE '${FILE_MODE}' has no world-write bit — chgrp is skipped so group-write bits are inaccessible; re-run with --user USER or --mode 0666"
 fi
 
@@ -345,6 +371,7 @@ fi
 # never runs, so we cannot claim ready=1; leave it 'unknown'.
 if [[ -z "${DRY_RUN}" ]] && [[ -n "${TARGET_USER}" ]]; then
     if ! runuser -u "${TARGET_USER}" -- test -w "${MOUNT_POINT}/tracing_on" 2>/dev/null; then
+        _tracefs_ready_val=failed
         die "post-condition failed: ${TARGET_USER} cannot write ${MOUNT_POINT}/tracing_on"
     fi
     info "verified: ${TARGET_USER} can write ${MOUNT_POINT}/tracing_on"
