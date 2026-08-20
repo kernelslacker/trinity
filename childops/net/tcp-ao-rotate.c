@@ -1025,37 +1025,6 @@ static int vrf_arm_build_setlink_up(struct nl_ctx *ctx, int ifindex)
 	return nl_send_recv(ctx, buf, off);
 }
 
-/*
- * RTM_SETLINK IFLA_MASTER=0 — detach ifindex from its master.
- * Lifted from childops/net/bridge-fdb-stp-setup.c:bsgu_unenslave().
- * This is the racing detach that opens the L3-membership-change
- * window inside tcp_ao_connect_init().
- */
-static int vrf_arm_build_detach(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_SETLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-
-	off = nla_put_u32(buf, off, sizeof(buf), IFLA_MASTER, 0);
-	if (!off)
-		return -EIO;
-
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
 
 struct vrf_arm_ctx {
 	struct childdata *child;
@@ -1097,6 +1066,7 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	pid_t pid;
 	int rc;
 	int race_pfd[2];
+	int rendezvous_pfd[2];
 	unsigned long direct_calls = 0;
 
 	const enum child_op_type op = child->op_type;
@@ -1244,13 +1214,21 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	race_pfd[0] = race_pfd[1] = -1;
 	if (pipe(race_pfd) != 0)
 		race_pfd[0] = race_pfd[1] = -1;
+	rendezvous_pfd[0] = rendezvous_pfd[1] = -1;
+	if (pipe(rendezvous_pfd) != 0)
+		rendezvous_pfd[0] = rendezvous_pfd[1] = -1;
 	direct_calls++; /* fork */
 	pid = fork();
 	if (pid == 0) {
-		/* Detach child: open a fresh netlink socket and issue
-		 * RTM_SETLINK IFLA_MASTER=0.  Account even if the kernel
-		 * rejects (ENODEV / ENOBUFS) — the ioctl reached the
-		 * rtnl path regardless. */
+		/*
+		 * Detach child: open a fresh netlink socket, pre-build the
+		 * RTM_SETLINK MASTER=0 message, then block on the rendezvous
+		 * pipe until the parent sends a 1-byte token.  The parent
+		 * controls the connect/detach interleaving: it writes the
+		 * token either before or after connect() depending on a
+		 * coin-flip, so both before_connect and after_connect
+		 * orderings get sampled across iterations.
+		 */
 		struct nl_ctx race_nl = NL_CTX_INIT;
 		struct nl_open_opts race_opts = {
 			.proto        = NETLINK_ROUTE,
@@ -1258,41 +1236,112 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 			.caller_op    = NR_CHILD_OP_TYPES,
 		};
 		close(race_pfd[0]);
+		close(rendezvous_pfd[1]);
 		if (nl_open(&race_nl, &race_opts) == 0) {
+			unsigned char _dbuf[128];
+			struct nlmsghdr *_dnlh;
+			struct ifinfomsg *_difi;
+			size_t _doff;
 			struct timespec _dts;
 			int _det_rc;
-			/* vrf_detach_raced: netlink socket open (oracle: child reached rtnl path). */
-			__atomic_add_fetch(
-				&shm->stats.tcp_ao_rotate.vrf_detach_raced,
-				1, __ATOMIC_RELAXED);
-			clock_gettime(CLOCK_MONOTONIC, &_dts);
-			_det_rc = vrf_arm_build_detach(&race_nl, va_idx);
-			/* vrf_detach_landed: kernel accepted RTM_SETLINK MASTER=0. */
-			if (_det_rc == 0)
+
+			/* Pre-build the RTM_SETLINK MASTER=0 message so the
+			 * child holds everything it needs and only the send
+			 * itself races against the parent's connect(). */
+			memset(_dbuf, 0, sizeof(_dbuf));
+			_dnlh = (struct nlmsghdr *)_dbuf;
+			_dnlh->nlmsg_type  = RTM_SETLINK;
+			_dnlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+			_dnlh->nlmsg_seq   = nl_seq_next(&race_nl);
+			_difi = (struct ifinfomsg *)NLMSG_DATA(_dnlh);
+			_difi->ifi_family  = AF_UNSPEC;
+			_difi->ifi_index   = va_idx;
+			_doff = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*_difi));
+			_doff = nla_put_u32(_dbuf, _doff, sizeof(_dbuf),
+					    IFLA_MASTER, 0);
+			if (_doff != 0) {
+				_dnlh->nlmsg_len = (__u32)_doff;
+
+				/* vrf_detach_raced: setup complete; poised
+				 * to send RTM_SETLINK once token arrives. */
 				__atomic_add_fetch(
-					&shm->stats.tcp_ao_rotate.vrf_detach_landed,
+					&shm->stats.tcp_ao_rotate.vrf_detach_raced,
 					1, __ATOMIC_RELAXED);
+
+				/* Block until parent sends the rendezvous
+				 * token; this guarantees the parent controls
+				 * which side of connect() the detach fires
+				 * on rather than leaving it to scheduler
+				 * whim. */
+				{ char _tok;
+				  ssize_t _r = read(rendezvous_pfd[0],
+						    &_tok, 1);
+				  (void)_r; }
+
+				clock_gettime(CLOCK_MONOTONIC, &_dts);
+				_det_rc = nl_send_recv(&race_nl, _dbuf, _doff);
+				/* vrf_detach_landed: kernel accepted MASTER=0. */
+				if (_det_rc == 0)
+					__atomic_add_fetch(
+						&shm->stats.tcp_ao_rotate.vrf_detach_landed,
+						1, __ATOMIC_RELAXED);
+				{ ssize_t _n = write(race_pfd[1], &_dts,
+						     sizeof(_dts));
+				  (void)_n; }
+			}
 			nl_close(&race_nl);
-			{ ssize_t _n = write(race_pfd[1], &_dts, sizeof(_dts)); (void)_n; }
 		}
+		close(rendezvous_pfd[0]);
 		close(race_pfd[1]);
 		_exit(0);
 	}
 	close(race_pfd[1]);
+	close(rendezvous_pfd[0]);
 
-	/* Parent: fire connect() into the VRF-bound socket.  EINPROGRESS
-	 * means the SYN is in flight and tcp_ao_connect_init() has already
-	 * run — the race window has been opened.  Either outcome counts.
-	 * Capture a local monotonic timestamp immediately before entering
-	 * the kernel; compare it against the detach child's timestamp
-	 * (received via pipe) to record per-iteration ordering. */
+	/*
+	 * Parent: coin-flip the rendezvous token write around connect().
+	 *
+	 * coin==0: write token BEFORE connect() — child unblocks and races
+	 *          to fire RTM_SETLINK ahead of the SYN; samples the
+	 *          before_connect interleaving.
+	 * coin==1: call connect() FIRST, then write token — child fires
+	 *          RTM_SETLINK after the SYN is already in flight; samples
+	 *          the after_connect interleaving.
+	 *
+	 * Capture a monotonic timestamp immediately before connect() in
+	 * both branches and compare against the child's post-gate timestamp
+	 * (received via race_pfd) to confirm the ordering and catch any
+	 * timing inversions.
+	 */
 	{
 		struct timespec cts;
-		clock_gettime(CLOCK_MONOTONIC, &cts);
+		int coin = (int)(rand32() & 1);
+
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_connect_issued,
 				   1, __ATOMIC_RELAXED);
-		direct_calls++;
-		rc = connect(cli, (struct sockaddr *)&srv_addr, sizeof(srv_addr));
+
+		if (coin == 0) {
+			/* Token first: unblock child before issuing SYN. */
+			{ char _tok = 1;
+			  ssize_t _w = write(rendezvous_pfd[1], &_tok, 1);
+			  (void)_w; }
+			close(rendezvous_pfd[1]);
+			clock_gettime(CLOCK_MONOTONIC, &cts);
+			direct_calls++;
+			rc = connect(cli, (struct sockaddr *)&srv_addr,
+				     sizeof(srv_addr));
+		} else {
+			/* Connect first: issue SYN before unblocking child. */
+			clock_gettime(CLOCK_MONOTONIC, &cts);
+			direct_calls++;
+			rc = connect(cli, (struct sockaddr *)&srv_addr,
+				     sizeof(srv_addr));
+			{ char _tok = 1;
+			  ssize_t _w = write(rendezvous_pfd[1], &_tok, 1);
+			  (void)_w; }
+			close(rendezvous_pfd[1]);
+		}
+
 		if (rc == 0 || errno == EINPROGRESS) {
 			struct pollfd pfd = { .fd = listener, .events = POLLIN };
 			int pr;
@@ -1318,20 +1367,45 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 			(void)waitpid_eintr(pid, &wstatus, 0);
 		}
 
-		/* Read the child's RTM_SETLINK timestamp via pipe and record
-		 * per-iteration ordering: before/after connect(). */
+		/*
+		 * Read the child's RTM_SETLINK timestamp from race_pfd and
+		 * record per-iteration ordering.  Three buckets:
+		 *   d > 0: cts > dts — detach fired before connect()  → before_connect
+		 *   d < 0: cts < dts — detach fired after connect()   → after_connect
+		 *   d == 0: timestamps equal                          → tied
+		 * dts=={0,0} means the child's netlink open or message build
+		 * failed and no timestamp was written; count as an additional
+		 * setup failure since the race window did not fire.
+		 */
 		{
 			struct timespec dts = {0, 0};
-			{ ssize_t _n = read(race_pfd[0], &dts, sizeof(dts)); (void)_n; }
+			{ ssize_t _n = read(race_pfd[0], &dts, sizeof(dts));
+			  (void)_n; }
 			close(race_pfd[0]);
 			if (dts.tv_sec || dts.tv_nsec) {
 				long long d =
 					((long long)cts.tv_sec  - (long long)dts.tv_sec)  * 1000000000LL
 					+ ((long long)cts.tv_nsec - (long long)dts.tv_nsec);
+				if (d > 0)
+					__atomic_add_fetch(
+						&shm->stats.tcp_ao_rotate.vrf_detach_before_connect,
+						1, __ATOMIC_RELAXED);
+				else if (d < 0)
+					__atomic_add_fetch(
+						&shm->stats.tcp_ao_rotate.vrf_detach_after_connect,
+						1, __ATOMIC_RELAXED);
+				else
+					__atomic_add_fetch(
+						&shm->stats.tcp_ao_rotate.vrf_detach_tied,
+						1, __ATOMIC_RELAXED);
+			} else {
+				/* No timestamp: child's netlink setup failed
+				 * before the gate; the race window never
+				 * opened.  Count as an additional setup
+				 * failure so the zero in before/after/tied
+				 * is explainable from the stats output. */
 				__atomic_add_fetch(
-					d > 0
-					? &shm->stats.tcp_ao_rotate.vrf_detach_before_connect
-					: &shm->stats.tcp_ao_rotate.vrf_detach_after_connect,
+					&shm->stats.tcp_ao_rotate.vrf_enslave_setup_failed,
 					1, __ATOMIC_RELAXED);
 			}
 		}

@@ -33,6 +33,7 @@ struct tcp_ao_rotate_stats {
 	unsigned long vrf_accept_timeout;       /* poll() expired before POLLIN: box too busy to accept */
 	unsigned long vrf_detach_before_connect; /* per-iter: detach RTM_SETLINK fired before connect() */
 	unsigned long vrf_detach_after_connect;  /* per-iter: detach RTM_SETLINK fired after connect() */
+	unsigned long vrf_detach_tied;           /* per-iter: detach and connect timestamps equal (d==0) */
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_TCP_AO_ROTATE_H */
