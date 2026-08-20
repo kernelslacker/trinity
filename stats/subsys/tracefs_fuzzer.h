@@ -34,16 +34,24 @@ struct tracefs_fuzzer_stats {
 	unsigned long set_event_write_fail;
 	unsigned long set_event_write_ok;
 
-	/* Disable-arm oracle: set_event_post_disable_count accumulates the
-	 * surviving enabled-event count (lines in set_event) observed after
-	 * each successful !-prefixed write, giving a visible signal when
-	 * the enabled set has been eroded.  set_event_disable_reenabled
-	 * counts how many times the re-enable teardown (writing "*:") ran
-	 * to restore the set; both together let an operator detect net
-	 * erosion vs successful restores.
+	/* Disable-arm oracle: set_event_post_disable_count is a gauge —
+	 * each successful !-prefixed write stores (not adds) the surviving
+	 * enabled-event count so the most-recent snapshot is always readable.
+	 * set_event_disable_arms is the denominator: incremented once per
+	 * disable-arm oracle firing so post_disable_count / disable_arms
+	 * is interpretable.  set_event_disable_reenabled counts how many
+	 * times the re-enable teardown (writing "*:") ran to restore the
+	 * set; all three together let an operator detect net erosion vs
+	 * successful restores.
 	 */
 	unsigned long set_event_post_disable_count;
+	unsigned long set_event_disable_arms;
 	unsigned long set_event_disable_reenabled;
+
+	/* count_set_event_lines() open-fail counter: incremented when
+	 * open(set_event, O_RDONLY) fails so the caller can distinguish
+	 * a readback failure from a genuine zero-event count. */
+	unsigned long set_event_readback_fail;
 
 	/* Number of dispatches inside tracefs_fuzzer that landed on a
 	 * function-tracer-subset op (set_ftrace_filter / set_ftrace_notrace /

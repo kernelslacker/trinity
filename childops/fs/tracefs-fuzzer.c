@@ -1161,6 +1161,46 @@ static unsigned long do_event_enable(void)
 }
 
 /*
+ * Count lines in set_event -- each non-empty line names one enabled
+ * event.  Used to record the surviving enabled-event count after a
+ * disable arm writes its spec.
+ *
+ * Returns the line count on success, or -1 if the file could not be
+ * opened (distinguishable from a genuine zero-event count).
+ */
+static long count_set_event_lines(void)
+{
+	char path[TRACEFS_MAX_PATH];
+	char buf[4096];
+	unsigned long count = 0;
+	ssize_t n;
+	int fd;
+
+	snprintf(path, sizeof(path), "%s/set_event", tracefs_root);
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		__atomic_add_fetch(&shm->stats.tracefs_fuzzer.set_event_readback_fail,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
+	for (;;) {
+		ssize_t i;
+
+		n = read(fd, buf, sizeof(buf));
+		if (n < 0 && errno == EINTR)
+			continue;
+		if (n <= 0)
+			break;
+		for (i = 0; i < n; i++) {
+			if (buf[i] == '\n')
+				count++;
+		}
+	}
+	close(fd);
+	return (long)count;
+}
+
+/*
  * Write to set_event, the top-level event-selector file.  This surfaces
  * ftrace_set_clr_event() and the :mod: module-filter cache in trace_events.c
  * -- a path that ARM_EVENT_ENABLE (which writes per-event enable files and
@@ -1181,35 +1221,6 @@ static unsigned long do_event_enable(void)
  * Cached mod entries live on tr->mod_events and are released at tracefs
  * instance teardown -- no resource leak across runs.
  */
-/*
- * Count lines in set_event -- each non-empty line names one enabled
- * event.  Used to record the surviving enabled-event count after a
- * disable arm writes its spec.
- */
-static unsigned long count_set_event_lines(void)
-{
-	char path[TRACEFS_MAX_PATH];
-	char buf[4096];
-	unsigned long count = 0;
-	ssize_t n;
-	int fd;
-
-	snprintf(path, sizeof(path), "%s/set_event", tracefs_root);
-	fd = open(path, O_RDONLY);
-	if (fd < 0)
-		return 0;
-	while ((n = read(fd, buf, sizeof(buf))) > 0) {
-		ssize_t i;
-
-		for (i = 0; i < n; i++) {
-			if (buf[i] == '\n')
-				count++;
-		}
-	}
-	close(fd);
-	return count;
-}
-
 static unsigned long do_set_event(void)
 {
 	static const char * const known_subsys[] = {
@@ -1375,12 +1386,18 @@ static unsigned long do_set_event(void)
 	 * removing the "!*:" arm.
 	 */
 	if (is_disable && ret >= 0) {
-		unsigned long remaining = count_set_event_lines();
+		long remaining = count_set_event_lines();
 		int rfd;
 
+		/* Denominator: count every oracle firing. */
 		__atomic_add_fetch(
-			&shm->stats.tracefs_fuzzer.set_event_post_disable_count,
-			remaining, __ATOMIC_RELAXED);
+			&shm->stats.tracefs_fuzzer.set_event_disable_arms,
+			1, __ATOMIC_RELAXED);
+		/* Gauge: store current level, not a running sum. */
+		if (remaining >= 0)
+			__atomic_store_n(
+				&shm->stats.tracefs_fuzzer.set_event_post_disable_count,
+				(unsigned long)remaining, __ATOMIC_RELAXED);
 		rfd = open_write_target(path, bad);
 		if (rfd >= 0) {
 			ssize_t rret = write(rfd, "*:", 2);

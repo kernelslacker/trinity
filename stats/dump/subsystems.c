@@ -264,6 +264,8 @@ static void dump_stats_render_tracefs(void)
 	    shm->stats.tracefs_fuzzer.set_event_open_fail || shm->stats.tracefs_fuzzer.set_event_write_fail ||
 	    shm->stats.tracefs_fuzzer.set_event_write_ok ||
 	    shm->stats.tracefs_fuzzer.set_event_post_disable_count ||
+	    shm->stats.tracefs_fuzzer.set_event_disable_arms ||
+	    shm->stats.tracefs_fuzzer.set_event_readback_fail ||
 	    shm->stats.tracefs_fuzzer.set_event_disable_reenabled) {
 		stat_row("tracefs_fuzzer", "kprobe_open_fail",         shm->stats.tracefs_fuzzer.kprobe_open_fail);
 		stat_row("tracefs_fuzzer", "kprobe_write_fail",        shm->stats.tracefs_fuzzer.kprobe_write_fail);
@@ -287,6 +289,8 @@ static void dump_stats_render_tracefs(void)
 		stat_row("tracefs_fuzzer", "set_event_write_fail",         shm->stats.tracefs_fuzzer.set_event_write_fail);
 		stat_row("tracefs_fuzzer", "set_event_write_ok",           shm->stats.tracefs_fuzzer.set_event_write_ok);
 		stat_row("tracefs_fuzzer", "set_event_post_disable_count", shm->stats.tracefs_fuzzer.set_event_post_disable_count);
+		stat_row("tracefs_fuzzer", "set_event_disable_arms", shm->stats.tracefs_fuzzer.set_event_disable_arms);
+		stat_row("tracefs_fuzzer", "set_event_readback_fail", shm->stats.tracefs_fuzzer.set_event_readback_fail);
 		stat_row("tracefs_fuzzer", "set_event_disable_reenabled",  shm->stats.tracefs_fuzzer.set_event_disable_reenabled);
 	}
 }

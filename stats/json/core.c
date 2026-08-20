@@ -224,6 +224,8 @@ static const struct stat_field tracefs_fuzzer_fields[] = {
 	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_write_fail,        "set_event_write_fail"),
 	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_write_ok,          "set_event_write_ok"),
 	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_post_disable_count,"set_event_post_disable_count"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_disable_arms,"set_event_disable_arms"),
+	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_readback_fail,"set_event_readback_fail"),
 	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_disable_reenabled, "set_event_disable_reenabled"),
 	STAT_FIELD_JSON_SUB(tracefs_fuzzer, runtime_cap_denied,          "runtime_cap_denied"),
 };
