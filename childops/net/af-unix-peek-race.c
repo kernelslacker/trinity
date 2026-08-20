@@ -202,10 +202,13 @@ static long raw_futex_wake(uint32_t *uaddr, int n)
  *   - PR_SET_PDEATHSIG SIGKILL: if the parent crashes, the kernel
  *     kills the orphaned sibling so it cannot spin its race loop
  *     against an unattended fd table forever.
- *   - alarm(2): self-bound watchdog.  Independent of the parent's
- *     per-syscall alarm(1) (no CLONE_SIGHAND, so the parent's SIGALRM
- *     never reaches us).  Belt-and-braces against a kernel bug that
- *     swallows MSG_DONTWAIT and SO_RCVTIMEO=1s simultaneously.
+ *   - alarm(2): self-bound watchdog, with SIGALRM reset to SIG_DFL
+ *     before arming.  fork() without execve() gives the child a private
+ *     copy of the parent's signal dispositions, including the SIGALRM
+ *     flag-setter installed by health/signals-policy.c; without the
+ *     reset alarm() would merely set a flag rather than terminate.
+ *     Belt-and-braces against a kernel bug that swallows MSG_DONTWAIT
+ *     and SO_RCVTIMEO=1s simultaneously.
  *   - getppid()==1 re-check post-PDEATHSIG: covers the race where the
  *     parent died between clone return and prctl arming.
  *
@@ -221,6 +224,7 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 	uint32_t i;
 
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
+	signal(SIGALRM, SIG_DFL);
 	(void)alarm(2);
 
 	if (trinity_raw_syscall(__NR_getppid) == 1)

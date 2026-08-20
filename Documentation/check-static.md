@@ -52,6 +52,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `activate-syscall-active-flag`: every direct `activate_syscall*()`
   callsite must first set the entry's ACTIVE flag, so the flag-driven
   init / dump / picker consumers see the activated entry.
+- `alarm-sigalrm-disposition`: every `alarm()` callsite in a `.c` file
+  that also contains `fork()` must be preceded by `signal(SIGALRM, SIG_DFL)`
+  in the same function body.  `fork()` without `execve()` gives the child a
+  private copy of the parent's signal dispositions, including the SIGALRM
+  flag-setter installed by `health/signals-policy.c`; without a prior reset
+  to `SIG_DFL` the `alarm()` watchdog merely sets a flag rather than
+  delivering a fatal signal.  The fix pattern is fdb73bc89fe4 ("userns-bootstrap: fix grandchild SIGALRM disposition and alarm clobber").
+  Parent-scope `alarm()` calls and `alarm(0)` cancels that trip the
+  file-level co-presence heuristic can be pinned in
+  `alarm-sigalrm-disposition.baseline`.
 - `baseline-associative-dup-guard`: every `*.sh` under `scripts/check-static/`
   that contains both a `declare -A` array and a `while IFS= read` baseline
   loading loop must protect each insert with a `[[ -v ]]` dup guard; a loader

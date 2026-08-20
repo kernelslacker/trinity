@@ -1,0 +1,42 @@
+# alarm-sigalrm-disposition.baseline
+#
+# Grandfathered list of alarm() callsites in fork()-containing files
+# that trip the heuristic in
+# scripts/check-static/alarm-sigalrm-disposition.sh but which are in
+# fact legitimate -- the alarm() call is in the long-lived trinity child
+# process itself (not in a forked grandchild), or is an alarm(0)/restore
+# call rather than a watchdog arming.
+#
+# Format: `path/to/file.c:lineno  reason text...`
+# Lines starting with `#` and blank lines are ignored.
+#
+# This baseline should SHRINK over time as false positives are
+# resolved via narrower detection.  A new alarm() arming in a
+# forked grandchild body without signal(SIGALRM, SIG_DFL) must FAIL
+# the gate, never be silently added here.
+
+# child/child.c: alarm(0) cancel and alarm(1) re-arm calls in the
+# long-lived trinity dispatch child.  The SIGALRM flag-setter is the
+# *intended* handler for these calls (they power the per-syscall
+# timeout); no SIG_DFL reset is wanted.
+child/child.c:361  alarm(0) cancel in dispatch loop -- parent scope, flag-setter is correct
+child/child.c:525  alarm(1) re-arm in dispatch loop -- parent scope, flag-setter is correct
+child/child.c:921  alarm(0) cancel in dispatch loop -- parent scope, flag-setter is correct
+
+# dispatch/syscall-exec.c: alarm(1) watchdog and alarm(0) cancel in the
+# exec-dispatch path, executed in the long-lived child process, not a
+# forked grandchild.  Flag-setter is the intended handler here.
+dispatch/syscall-exec.c:388  alarm(1) exec watchdog -- parent scope, flag-setter is correct
+dispatch/syscall-exec.c:493  alarm(0) cancel -- parent scope, flag-setter is correct
+
+# lib/userns-bootstrap.c: these three alarm() calls are in
+# userns_run_in_ns(), the PARENT side of the grandchild fork.  The
+# grandchild's alarm (line ~191) already has the signal(SIGALRM, SIG_DFL)
+# fix applied (commit fdb73bc89fe4).  The parent calls here are:
+#   241: alarm(USERNS_PARENT_ALARM_S) -- cap wait time in parent
+#   243: alarm(rem) restore on waitpid error
+#   246: alarm(rem) restore after waitpid success
+# All three are in the parent where the flag-setter is correct.
+lib/userns-bootstrap.c:241  parent-side alarm arm in userns_run_in_ns -- not a grandchild body
+lib/userns-bootstrap.c:243  parent-side alarm(rem) restore on error path
+lib/userns-bootstrap.c:246  parent-side alarm(rem) restore after waitpid

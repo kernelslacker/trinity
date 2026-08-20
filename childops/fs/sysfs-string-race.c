@@ -212,6 +212,7 @@ static void writer_child(int fd, const char *cand, unsigned int iters)
 	unsigned int i;
 
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
+	signal(SIGALRM, SIG_DFL);
 	(void)alarm(SYSFS_STRING_RACE_CHILD_WATCHDOG_S);
 
 	/* Re-check parent presence after arming PDEATHSIG, in case the

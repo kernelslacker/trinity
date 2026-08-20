@@ -23,8 +23,8 @@
  *
  * Sibling defences: PR_SET_PDEATHSIG SIGKILL immediately after clone, plus
  * a getppid()==1 re-check to cover the pre-arming window.  Independent
- * alarm(2) watchdog (no CLONE_SIGHAND, so it doesn't collide with parent's
- * SIGALRM(1)).  Raw __NR_* syscalls only.
+ * alarm(2) watchdog (SIGALRM reset to SIG_DFL before arming: fork without
+ * execve() inherits the parent's handler, not SIG_DFL).  Raw __NR_* only.
  *
  * Cap-gate latch: first invocation probes shmget(IPC_PRIVATE,4096,...) and
  * immediately IPC_RMIDs it.  EPERM / ENOSYS / ENOSPC latches for the
@@ -173,9 +173,11 @@ static long raw_shmctl(int shmid, int cmd, void *buf)
  *
  *   - PR_SET_PDEATHSIG SIGKILL: if the parent crashes, the kernel
  *     kills the orphaned sibling so it cannot leak the segment.
- *   - alarm(2): self-bound watchdog.  Independent of the parent's
- *     per-syscall alarm(1) (no CLONE_SIGHAND, so the parent's SIGALRM
- *     never reaches us).
+ *   - alarm(2): self-bound watchdog, with SIGALRM reset to SIG_DFL
+ *     before arming.  fork() without execve() gives the child a private
+ *     copy of the parent's signal dispositions, including the SIGALRM
+ *     flag-setter installed by health/signals-policy.c; without the
+ *     reset alarm() would merely set a flag rather than terminate.
  *   - getppid()==1 re-check post-PDEATHSIG: covers the race where the
  *     parent died between clone return and prctl arming.
  *
@@ -190,6 +192,7 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 	long shmid;
 
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
+	signal(SIGALRM, SIG_DFL);
 	(void)alarm(2);
 
 	if (trinity_raw_syscall(__NR_getppid) == 1)
@@ -254,6 +257,7 @@ static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
 	int shmid;
 
 	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
+	signal(SIGALRM, SIG_DFL);
 	(void)alarm(2);
 
 	if (trinity_raw_syscall(__NR_getppid) == 1)
