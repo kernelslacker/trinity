@@ -27,6 +27,9 @@
 
 set -u
 
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
+
 NAME="alarm-sigalrm-disposition"
 ROOT="${REPO_ROOT:-$(pwd)}"
 BASELINE="$ROOT/scripts/check-static/alarm-sigalrm-disposition.baseline"
@@ -56,29 +59,6 @@ trap 'rm -f "$hits_tmp" "$stripped_tmp"' EXIT
 
 flagged=0
 total_callsites=0
-# Emit $1 with C comments (block and line) removed, so a token that appears
-# only inside a comment does not satisfy a content test.  Mirrors the
-# comment-stripping the main scanner applies to its lookbehind window.
-strip_c_comments() {
-	awk '
-		{
-			line = $0; stripped = ""; i = 1; len = length(line)
-			while (i <= len) {
-				if (in_block) {
-					if (substr(line, i, 2) == "*/") { in_block = 0; i += 2 }
-					else { i++ }
-				} else if (substr(line, i, 2) == "/*") {
-					in_block = 1; i += 2
-				} else if (substr(line, i, 2) == "//") {
-					break
-				} else {
-					stripped = stripped substr(line, i, 1); i++
-				}
-			}
-			print stripped
-		}
-	' "$1" 2>/dev/null
-}
 
 skipped_count=0
 

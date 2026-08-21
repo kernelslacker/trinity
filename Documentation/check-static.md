@@ -405,6 +405,12 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `kcov_canon_pc()` in the same body -- otherwise raw runtime PCs
   reach the edge/transition slot hash and the cached bitmap silently
   aliases across KASLR rerolls the fingerprint considers identical.
+- `lib`: shared helper library sourced by gate scripts; not a gate
+  itself.  Currently provides `strip_c_comments()`, an awk-based
+  block-and-line-comment stripper that preserves line count so
+  `grep -n` output stays line-number-aligned with the raw source.
+  Gate scripts source this file instead of embedding a local copy of
+  the helper.
 - `nested-writable-len`: flag nested `get_writable_struct` /
   `get_writable_long_string` allocations stored straight into an outer
   struct field without a NULL check -- the NULL-pointer-with-nonzero-

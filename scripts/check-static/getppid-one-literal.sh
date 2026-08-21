@@ -68,6 +68,9 @@
 
 set -u
 
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
+
 NAME="getppid-one-literal"
 ROOT="${REPO_ROOT:-$(pwd)}"
 BASELINE="$ROOT/scripts/check-static/getppid-one-literal.baseline"
@@ -143,7 +146,8 @@ if [ -r "$BASELINE" ]; then
 fi
 
 hits_tmp="$(mktemp)"
-trap 'rm -f "$hits_tmp"' EXIT
+stripped_tmp="$(mktemp)"
+trap 'rm -f "$hits_tmp" "$stripped_tmp"' EXIT
 
 flagged=0
 total=0
@@ -153,21 +157,25 @@ mapfile -t srcfiles < <(find "$ROOT" -name '*.c' -type f \
 	! -path '*/scripts/*' \
 	| sort)
 
-# ---------------------------------------------------------------------------
-# Pass 1: same-line getppid() sentinel comparison.
-# ---------------------------------------------------------------------------
+# Track keys already flagged or baselined in pass 1 to avoid double-counting.
+declare -A SEEN_P2=()
+
+# Both passes run inside a single outer loop so each source file is
+# comment-stripped exactly once.  Grepping the stripped copy means a
+# pattern that appears only inside a C comment is invisible to both passes.
 for srcfile in "${srcfiles[@]}"; do
+	# Strip block and line comments for this file; reused by both passes.
+	strip_c_comments "$srcfile" > "$stripped_tmp"
+
+	relpath="${srcfile#"$ROOT"/}"
+
+	# -----------------------------------------------------------------------
+	# Pass 1: same-line getppid() sentinel comparison.
+	# -----------------------------------------------------------------------
 	while IFS=: read -r lineno content; do
 		[ -z "$lineno" ] && continue
 
-		# Skip lines that are comments (leading *, //, or /*).
-		trimmed="${content#"${content%%[![:space:]]*}"}"
-		case "$trimmed" in
-			\**|/\**|//*) continue ;;
-		esac
-
 		total=$((total + 1))
-		relpath="${srcfile#"$ROOT"/}"
 		key="$relpath:$lineno"
 
 		if [ -n "${BASELINED[$key]+x}" ]; then
@@ -177,19 +185,16 @@ for srcfile in "${srcfiles[@]}"; do
 
 		echo "$key: getppid() literal sentinel (==1 / !=1 / <=1 / <2) — use saved-ppid idiom for subreaper safety" >> "$hits_tmp"
 		flagged=$((flagged + 1))
-	done < <(grep -nE "${PATTERN}|${YODA_PATTERN}|${PATTERN_MAINPID}|${YODA_MAINPID_PATTERN}" "$srcfile" 2>/dev/null)
-done
+	done < <(grep -nE "${PATTERN}|${YODA_PATTERN}|${PATTERN_MAINPID}|${YODA_MAINPID_PATTERN}" "$stripped_tmp" 2>/dev/null)
 
-# ---------------------------------------------------------------------------
-# Pass 2: hoisted getppid() — variable assigned then compared against literal.
-# ---------------------------------------------------------------------------
-# Track keys already flagged or baselined in pass 1 to avoid double-counting.
-declare -A SEEN_P2=()
+	# -----------------------------------------------------------------------
+	# Pass 2: hoisted getppid() — variable assigned then compared against
+	# literal.  Step A collects variable names; Step B scans for comparisons.
+	# -----------------------------------------------------------------------
 
-for srcfile in "${srcfiles[@]}"; do
 	# Step A: collect all variable names assigned from getppid() in this file.
 	mapfile -t varnames < <(
-		grep -oE "$ASSIGN_PATTERN" "$srcfile" 2>/dev/null \
+		grep -oE "$ASSIGN_PATTERN" "$stripped_tmp" 2>/dev/null \
 		| grep -oE '^[a-z_][a-z_0-9]*'
 	)
 	[ "${#varnames[@]}" -eq 0 ] && continue
@@ -206,8 +211,6 @@ for srcfile in "${srcfiles[@]}"; do
 	done
 	unset seen_vars
 
-	relpath="${srcfile#"$ROOT"/}"
-
 	for varname in "${unique_vars[@]}"; do
 		# Step B: look for this variable compared against literal 1 or 2,
 		# including the yoda form (1 == varname / 1 != varname).
@@ -220,12 +223,6 @@ for srcfile in "${srcfiles[@]}"; do
 
 		while IFS=: read -r lineno content; do
 			[ -z "$lineno" ] && continue
-
-			# Skip comment lines.
-			trimmed="${content#"${content%%[![:space:]]*}"}"
-			case "$trimmed" in
-				\**|/\**|//*) continue ;;
-			esac
 
 			key="$relpath:$lineno"
 
@@ -242,7 +239,7 @@ for srcfile in "${srcfiles[@]}"; do
 
 			echo "$key: hoisted getppid() via '$varname' compared against literal sentinel — use saved-ppid idiom for subreaper safety" >> "$hits_tmp"
 			flagged=$((flagged + 1))
-		done < <(grep -nE "${cmp_pattern}|${cmp_pattern_yoda}" "$srcfile" 2>/dev/null)
+		done < <(grep -nE "${cmp_pattern}|${cmp_pattern_yoda}" "$stripped_tmp" 2>/dev/null)
 	done
 done
 
