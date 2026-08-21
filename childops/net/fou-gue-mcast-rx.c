@@ -890,8 +890,6 @@ static void fou_gue_iter_send_burst(struct fou_gue_iter_ctx *ctx)
 		struct gue_opts gopts;
 
 		pick_gue_opts(&gopts, inner_emit_len(inner_v6, trunc_len));
-		if (is_gue)
-			count_gue_opts(&gopts);
 
 		if (ctx->v6) {
 			struct sockaddr_in6 dst;
@@ -921,9 +919,18 @@ static void fou_gue_iter_send_burst(struct fou_gue_iter_ctx *ctx)
 				   (struct sockaddr *)&dst, sizeof(dst));
 			ctx->direct_calls++;
 		}
-		if (n > 0)
+		if (n > 0) {
+			/* Count options only for ver-0 frames that actually
+			 * reached sendto: ver 1 is parsed as an IPv4 header,
+			 * ver 2/3 are rejected before the option parser, so
+			 * counting them would inflate the liveness counters
+			 * by ~4x.
+			 */
+			if (is_gue && gue_ver == 0)
+				count_gue_opts(&gopts);
 			__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.packet_sent_ok,
 					   1, __ATOMIC_RELAXED);
+		}
 	}
 }
 
