@@ -649,6 +649,14 @@ update this section to match `ls scripts/check-static/*.sh`.)
   writers must use `__atomic_fetch_add(..., __ATOMIC_RELAXED)`;
   `RELAXED` is correct because the child is the sole writer and
   nothing orders against this counter on either side.
+- `strip-c-comments-selftest`: selftest for the `strip_c_comments()`
+  helper in `lib.sh`.  Asserts that `/*` and `//` inside a C string
+  literal or char literal do not open comment state: a `getppid() == 1`
+  on the line after a `"a /* b"` string survives stripping, a `//`
+  inside `"http://..."` does not erase the rest of the line, and
+  a real block comment is still stripped.  Without these invariants
+  every gate that sources `lib.sh` and greps the stripped output is
+  silently fail-open on lines that follow a string-embedded `/*`.
 - `test-bin-asan-suite`: builds `tests/test-bin-asan` (the
   PURE-module test binary under `-fsanitize=address`) and runs the
   `stats_opclock_lossless_self_check` suite, which gates the per-child
