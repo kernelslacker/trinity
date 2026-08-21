@@ -20,6 +20,14 @@ struct xfrm_churn_stats {
 	unsigned long burn_throttled;		/* burn-this-netns skipped: MAX_CONCURRENT_NEWNET cap reached */
 	unsigned long burn_completed;		/* burn-this-netns reached the readers + larval insert */
 
+	/* Device-teardown race arm (xfrm-churn-devteardown.c). */
+	unsigned long devteardown_runs;		/* dev-teardown arm entered */
+	unsigned long devteardown_v6_runs;	/* of those, AF_INET6 topology (xfrm6_fill_dst on the menu) */
+	unsigned long devteardown_setup_failed;	/* dummy / addr / route / SA / policy never came up */
+	unsigned long devteardown_armed;	/* topology up, workers about to fork */
+	unsigned long devteardown_sent;		/* rotating-destination sendto through the tunnel bundle returned >0 */
+	unsigned long devteardown_dellink;	/* RTM_DELLINK of the bundle's egress dummy accepted */
+
 	/* Grammar draw counter: bumped in xfrm_grammar_data_leg() each time
 	 * pick_msg_kind() runs, i.e. once per grammar invocation regardless
 	 * of which kind is selected.  Used as the denominator for the

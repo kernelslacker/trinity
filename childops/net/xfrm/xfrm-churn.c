@@ -172,6 +172,9 @@ static void mark_ns_unsupported_zerocopy(void)
  * that survives long enough to short-circuit subsequent invocations. */
 static bool ns_unsupported_xfrm_churn;
 
+/* One-shot per persistent child; see the call site in xfrm_churn(). */
+static bool modprobe_dummy_tried;
+
 static void warn_once_unsupported_xfrm_churn(const char *reason, int err)
 {
 	if (ns_unsupported_xfrm_churn)
@@ -262,6 +265,13 @@ static bool is_unsupported_err(int rc)
  * caller can fall through to the normal flow.
  */
 #define XFRM_BURN_GATE_DENOM	64U
+
+/* Device-teardown race arm gate.  Exclusive with the normal loopback
+ * flow (it forks two wall-bounded workers and would otherwise stack
+ * ~220 ms on top of the burst/rekey/teardown sequence under child.c's
+ * alarm(1)), so keep it a minority of invocations: the UPDSA/DELSA
+ * rekey race is the proven arm and must stay the common case. */
+#define XFRM_DEVTEARDOWN_GATE_DENOM	5U
 
 static bool xfrm_burn_netns(unsigned long *direct_calls_p)
 {
@@ -772,6 +782,15 @@ static int xfrm_churn_in_ns(void *arg)
 	if (ONE_IN(XFRM_BURN_GATE_DENOM) && xfrm_burn_netns(&ctx->direct_calls))
 		goto out;
 
+	/*
+	 * Device-teardown race arm: the only path in this op whose
+	 * bundle egress device is deletable.  Falls through to the
+	 * normal flow when the dummy / SA / policy never came up.
+	 */
+	if (ONE_IN(XFRM_DEVTEARDOWN_GATE_DENOM) &&
+	    xfrm_dev_teardown_race(child, &ctx->direct_calls))
+		goto out;
+
 	if (xfrm_churn_iter_setup_netns(ctx) != 0)
 		return 0;
 
@@ -824,6 +843,16 @@ bool xfrm_churn(struct childdata *child)
 
 	if (ns_unsupported_xfrm_churn)
 		return true;
+
+	/* The device-teardown arm needs a "dummy" netdev inside the
+	 * grandchild's netns, and RTM_NEWLINK-driven module autoload
+	 * wants CAP_SYS_MODULE in init_user_ns -- which the grandchild
+	 * does not hold.  Load it from the persistent child before the
+	 * userns hop, once. */
+	if (!modprobe_dummy_tried) {
+		modprobe_dummy_tried = true;
+		try_modprobe("dummy");
+	}
 
 	rc = userns_run_in_ns(CLONE_NEWNET, xfrm_churn_in_ns, &ctx);
 	if (rc == -EPERM) {

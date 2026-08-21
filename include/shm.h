@@ -669,6 +669,11 @@ struct shm_s {
 	 * false -> true, and the write is idempotent. */
 	bool xfrm_churn_ns_unsupported_iptfs;
 	bool xfrm_churn_ns_unsupported_zerocopy;
+	/* Same shape for the device-teardown arm (childops/net/xfrm/
+	 * xfrm-churn-devteardown.c): RTM_NEWLINK kind="dummy" rejected
+	 * means CONFIG_DUMMY is absent and no amount of retrying inside a
+	 * fresh grandchild will change that. */
+	bool xfrm_churn_ns_unsupported_dummy;
 
 	/* xfrm-churn per-algo latches indexed by xfrm_algos[]
 	 * (childops/net/xfrm/xfrm-churn.c).  Written inside the

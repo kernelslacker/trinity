@@ -677,6 +677,12 @@ stats	object
     stats.xfrm_churn.burn_runs	u64
     stats.xfrm_churn.burn_throttled	u64
     stats.xfrm_churn.burn_completed	u64
+    stats.xfrm_churn.devteardown_runs	u64
+    stats.xfrm_churn.devteardown_v6_runs	u64
+    stats.xfrm_churn.devteardown_setup_failed	u64
+    stats.xfrm_churn.devteardown_armed	u64
+    stats.xfrm_churn.devteardown_sent	u64
+    stats.xfrm_churn.devteardown_dellink	u64
     stats.xfrm_churn.arm_entered_migrate_state	u64
   stats.xfrm_ah_esn	object
     stats.xfrm_ah_esn.setup_ok	u64

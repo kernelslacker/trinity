@@ -409,6 +409,8 @@ struct xfrm_algo_def {
  */
 void xfrm_churn_fill_selector(struct xfrm_selector *sel, __u8 proto);
 void xfrm_churn_fill_lifetime(struct xfrm_lifetime_cfg *lft);
+size_t xfrm_churn_append_algo_attrs(unsigned char *buf, size_t off, size_t cap,
+				    const struct xfrm_algo_def *def);
 __u32 pick_sa_seq(void);
 int build_sa_msg(struct nl_ctx *ctx, __u16 msg_type,
 		 const struct xfrm_algo_def *def,
@@ -489,5 +491,20 @@ void xfrm_compat_msg_sweep(struct nl_ctx *ctx);
  * Short-circuits on the shared ns_unsupported_xfrm latch.
  */
 void xfrm_compat_allocspi_sweep(struct nl_ctx *ctx);
+
+/*
+ * Device-teardown race arm.  Defined in
+ * childops/net/xfrm/xfrm-churn-devteardown.c.  Adds a deletable dummy
+ * to the grandchild's netns, routes a tunnel-mode SA's outer endpoint
+ * over it, and races RTM_DELLINK against a rotating-destination sendto
+ * burst so xfrm_bundle_create()'s unreferenced `dev = dst->dev` is
+ * read while the netdev is being freed.  The rest of xfrm-churn runs
+ * on lo, which cannot be deleted, so that half of the race is
+ * otherwise structurally absent.  Returns true when the race was
+ * launched (caller short-circuits the invocation), false when the
+ * topology never came up so the caller can fall through to the normal
+ * loopback flow.  *dc accumulates own-body direct syscalls.
+ */
+bool xfrm_dev_teardown_race(struct childdata *child, unsigned long *dc);
 
 #endif /* CHILDOPS_XFRM_CHURN_INTERNAL_H */

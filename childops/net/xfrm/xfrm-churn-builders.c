@@ -9,8 +9,7 @@
  * Pure relocation: every function body is byte-for-byte the same as
  * the original.  The only linkage change is widening file-static
  * functions that the xfrm-churn.c phase drivers now reach across the
- * TU boundary; append_algo_attrs() keeps file-static linkage because
- * it has no cross-TU callers.
+ * TU boundary.
  *
  * All entry points consume the shared types / constants / UAPI shims
  * declared in childops/net/xfrm/xfrm-churn-internal.h; nothing here touches
@@ -55,8 +54,8 @@ void xfrm_churn_fill_lifetime(struct xfrm_lifetime_cfg *lft)
  * IPCOMP carries XFRMA_ALG_COMP.  Returns the new offset, or 0 on
  * buffer overflow (caller must check).
  */
-static size_t append_algo_attrs(unsigned char *buf, size_t off, size_t cap,
-				const struct xfrm_algo_def *def)
+size_t xfrm_churn_append_algo_attrs(unsigned char *buf, size_t off, size_t cap,
+				    const struct xfrm_algo_def *def)
 {
 	unsigned char keymat[64];
 	unsigned int enc_key_bytes  = def->enc_key_bits / 8;
@@ -189,7 +188,7 @@ int build_sa_msg(struct nl_ctx *ctx, __u16 msg_type,
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*sa));
 
-	off = append_algo_attrs(buf, off, sizeof(buf), def);
+	off = xfrm_churn_append_algo_attrs(buf, off, sizeof(buf), def);
 	if (!off)
 		return -EIO;
 

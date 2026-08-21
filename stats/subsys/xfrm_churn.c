@@ -18,6 +18,12 @@ static const struct stat_field xfrm_churn_fields[] = {
 	STAT_FIELD_SUB(xfrm_churn, burn_runs),
 	STAT_FIELD_SUB(xfrm_churn, burn_throttled),
 	STAT_FIELD_SUB(xfrm_churn, burn_completed),
+	STAT_FIELD_SUB(xfrm_churn, devteardown_runs),
+	STAT_FIELD_SUB(xfrm_churn, devteardown_v6_runs),
+	STAT_FIELD_SUB(xfrm_churn, devteardown_setup_failed),
+	STAT_FIELD_SUB(xfrm_churn, devteardown_armed),
+	STAT_FIELD_SUB(xfrm_churn, devteardown_sent),
+	STAT_FIELD_SUB(xfrm_churn, devteardown_dellink),
 	STAT_FIELD_SUB(xfrm_churn, arm_entered_migrate_state),
 };
 
