@@ -23,10 +23,17 @@ struct ebpf_gen_stats {
 	unsigned long progs_provided;
 
 	/* Cumulative count of BPF_PROG_LOAD calls that returned a negative fd
-	 * (kernel rejected the program -- verifier error, invalid attr, etc.).
+	 * due to a verifier rejection (errno != EINVAL at post time).
 	 * Non-zero here and zero in progs_provided means every load is failing;
 	 * a log_level=0 / non-NULL log_buf mismatch is the canonical trigger. */
 	unsigned long bpf_prog_load_rejected;
+
+	/* Cumulative count of BPF_PROG_LOAD calls that returned -EINVAL from
+	 * kernel attribute validation (e.g. log_buf != NULL with log_size == 0)
+	 * rather than from the verifier.  Separated from bpf_prog_load_rejected
+	 * so the ~1/4096 attr-invalid rate does not mask the ambient verifier-
+	 * reject EACCES in the steady state. */
+	unsigned long bpf_prog_load_attr_invalid;
 
 	/* net/bpf/ebpf.c generator: cumulative count of programs that prepended
 	 * an LD_MAP_FD loading a real bpf-map fd from the trinity object pool

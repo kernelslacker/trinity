@@ -198,10 +198,14 @@ static void bpf_attach_sk_lookup(int prog_fd)
 }
 
 void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
-			bool classic_bpf_insns)
+			bool classic_bpf_insns, int errnum)
 {
-	if (fd < 0)
-		__atomic_add_fetch(&shm->stats.ebpf_gen.bpf_prog_load_rejected, 1, __ATOMIC_RELAXED);
+	if (fd < 0) {
+		if (errnum == EINVAL)
+			__atomic_add_fetch(&shm->stats.ebpf_gen.bpf_prog_load_attr_invalid, 1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(&shm->stats.ebpf_gen.bpf_prog_load_rejected, 1, __ATOMIC_RELAXED);
+	}
 
 	if (fd >= 0 && attr_readable)
 		publish_resource(OBJ_FD_BPF_PROG, fd,

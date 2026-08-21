@@ -47,7 +47,7 @@ void sanitise_bpf_prog_attach(union bpf_attr *attr, struct syscallrecord *rec);
 void sanitise_bpf_prog_test_run(union bpf_attr *attr, struct syscallrecord *rec);
 void sanitise_bpf_raw_tracepoint(union bpf_attr *attr, struct syscallrecord *rec);
 void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
-			bool classic_bpf_insns);
+			bool classic_bpf_insns, int errnum);
 void post_bpf_prog_get_fd_by_id(int fd);
 void post_bpf_prog_attach(unsigned long ret, bool attr_readable,
 			  union bpf_attr *attr);

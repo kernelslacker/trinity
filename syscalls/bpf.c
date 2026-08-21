@@ -566,6 +566,7 @@ static void post_bpf(struct syscallrecord *rec)
 	union bpf_attr *attr;
 	unsigned int cmd;
 	int fd = rec->retval;
+	int saved_errno = (fd < 0) ? errno : 0;
 	unsigned long ret = rec->retval;
 	bool attr_readable;
 
@@ -635,7 +636,7 @@ static void post_bpf(struct syscallrecord *rec)
 		post_bpf_map_create(fd, attr_readable, attr);
 		break;
 	case BPF_PROG_LOAD:
-		post_bpf_prog_load(fd, attr_readable, attr, snap->classic_bpf_insns);
+		post_bpf_prog_load(fd, attr_readable, attr, snap->classic_bpf_insns, saved_errno);
 		break;
 	case BPF_MAP_GET_FD_BY_ID:
 		post_bpf_map_get_fd_by_id(fd);

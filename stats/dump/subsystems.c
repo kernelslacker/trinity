@@ -303,12 +303,16 @@ static void dump_stats_render_tracefs(void)
 static void dump_stats_render_bpf_fd_provider(void)
 {
 	if (shm->stats.ebpf_gen.maps_provided || shm->stats.ebpf_gen.progs_provided ||
-	    shm->stats.ebpf_gen.bpf_prog_load_rejected) {
+	    shm->stats.ebpf_gen.bpf_prog_load_rejected ||
+	    shm->stats.ebpf_gen.bpf_prog_load_attr_invalid) {
 		stat_row("bpf_fd_provider", "maps_provided",  shm->stats.ebpf_gen.maps_provided);
 		stat_row("bpf_fd_provider", "progs_provided", shm->stats.ebpf_gen.progs_provided);
 		if (shm->stats.ebpf_gen.bpf_prog_load_rejected)
 			stat_row("bpf_fd_provider", "bpf_prog_load_rejected",
 				 shm->stats.ebpf_gen.bpf_prog_load_rejected);
+		if (shm->stats.ebpf_gen.bpf_prog_load_attr_invalid)
+			stat_row("bpf_fd_provider", "bpf_prog_load_attr_invalid",
+				 shm->stats.ebpf_gen.bpf_prog_load_attr_invalid);
 	}
 }
 

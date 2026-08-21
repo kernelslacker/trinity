@@ -239,6 +239,7 @@ static const struct stat_field bpf_fd_provider_fields[] = {
 	STAT_FIELD_SUB(ebpf_gen, maps_provided),
 	STAT_FIELD_SUB(ebpf_gen, progs_provided),
 	STAT_FIELD_SUB(ebpf_gen, bpf_prog_load_rejected),
+	STAT_FIELD_SUB(ebpf_gen, bpf_prog_load_attr_invalid),
 };
 
 const struct stat_category bpf_fd_provider_category =
