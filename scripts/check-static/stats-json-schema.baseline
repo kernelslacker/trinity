@@ -254,7 +254,7 @@ stats	object
     stats.bpf_fd_provider.maps_provided	u64
     stats.bpf_fd_provider.progs_provided	u64
     stats.bpf_fd_provider.bpf_prog_load_rejected	u64
-    stats.bpf_fd_provider.bpf_prog_load_attr_invalid	u64
+    stats.bpf_fd_provider.bpf_prog_load_einval	u64
   stats.frontier_discriminator	object
     stats.frontier_discriminator.frseq_candidates	u64
     stats.frontier_discriminator.frseq_would_skip	u64

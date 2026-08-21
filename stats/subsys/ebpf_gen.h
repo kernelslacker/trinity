@@ -23,17 +23,22 @@ struct ebpf_gen_stats {
 	unsigned long progs_provided;
 
 	/* Cumulative count of BPF_PROG_LOAD calls that returned a negative fd
-	 * due to a verifier rejection (errno != EINVAL at post time).
-	 * Non-zero here and zero in progs_provided means every load is failing;
-	 * a log_level=0 / non-NULL log_buf mismatch is the canonical trigger. */
+	 * with errno != EINVAL (typically EACCES from the verifier, EPERM, or
+	 * E2BIG).  Non-zero here and zero in progs_provided means every load
+	 * is failing past the EINVAL-early-exit paths.  Counts only non-EINVAL
+	 * failures; -EINVAL outcomes are tracked separately in
+	 * bpf_prog_load_einval. */
 	unsigned long bpf_prog_load_rejected;
 
-	/* Cumulative count of BPF_PROG_LOAD calls that returned -EINVAL from
-	 * kernel attribute validation (e.g. log_buf != NULL with log_size == 0)
-	 * rather than from the verifier.  Separated from bpf_prog_load_rejected
-	 * so the ~1/4096 attr-invalid rate does not mask the ambient verifier-
-	 * reject EACCES in the steady state. */
-	unsigned long bpf_prog_load_attr_invalid;
+	/* Cumulative count of BPF_PROG_LOAD calls that returned -EINVAL for
+	 * any reason before the verifier is reached (CHECK_ATTR failure,
+	 * unknown prog_flags, btf_get_by_fd error, log-clause mismatch, etc.).
+	 * Separated from bpf_prog_load_rejected (errno != EINVAL) so EINVAL
+	 * noise does not mask verifier-reject EACCES in the steady state.
+	 * Note: bpf_prog_load_rejected counts non-EINVAL failures only; run-
+	 * over-run comparisons spanning the rename commit should account for
+	 * the semantic narrowing of that counter. */
+	unsigned long bpf_prog_load_einval;
 
 	/* net/bpf/ebpf.c generator: cumulative count of programs that prepended
 	 * an LD_MAP_FD loading a real bpf-map fd from the trinity object pool

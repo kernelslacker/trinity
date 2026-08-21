@@ -202,7 +202,7 @@ void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
 {
 	if (fd < 0) {
 		if (errnum == EINVAL)
-			__atomic_add_fetch(&shm->stats.ebpf_gen.bpf_prog_load_attr_invalid, 1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.ebpf_gen.bpf_prog_load_einval, 1, __ATOMIC_RELAXED);
 		else
 			__atomic_add_fetch(&shm->stats.ebpf_gen.bpf_prog_load_rejected, 1, __ATOMIC_RELAXED);
 	}
