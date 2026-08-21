@@ -93,13 +93,19 @@ BASELINE="$ROOT/scripts/check-static/getppid-one-literal.baseline"
 #                 Includes ==|!= (self-mirroring), >= (mirror of <=),
 #                 > (mirror of <), <= (mirror of >= in direct form), and
 #                 < (mirror of > in direct form).
-#   SENTINELS   — named sentinel comparands (literal 1 handled separately
-#                 because it also has the < 2 close-zero form).
+#   SENTINEL_NAMED — named (non-literal) sentinel comparands; add entries here
+#                 to extend coverage.  Literal 1 is handled separately because
+#                 it also has the < 2 close-zero form and only == / != are
+#                 meaningful in the yoda position.
+#   SENTINELS   — full sentinel set (literal 1 + all named sentinels), derived
+#                 from SENTINEL_NAMED; used for documentation only — pattern
+#                 constructions reference the split variables directly.
 # ---------------------------------------------------------------------------
 OPS_LITERAL='==|!=|<=|<'
 OPS_NAMED='==|!=|<=|<|>=|>'
 OPS_YODA='==|!=|>=|>|<=|<'
-SENTINELS='1|mainpid'
+SENTINEL_NAMED='mainpid'
+SENTINELS="1|${SENTINEL_NAMED}"
 
 # ---------------------------------------------------------------------------
 # Pass 1 pattern: getppid() (or raw-syscall equivalents) compared on the
@@ -108,9 +114,9 @@ SENTINELS='1|mainpid'
 # Operators and literals caught:
 #   == 1  != 1  <= 1  < 1   (literal 1 via OPS_LITERAL)
 #   < 2                     (literal 2 with strict-less — equivalent to <= 1)
-#   == mainpid  != mainpid  (mainpid named sentinel — unsafe at fork depth > 1)
-#   <= mainpid  < mainpid   (mainpid named sentinel variants)
-#   mainpid OP getppid()    (all yoda forms via OPS_YODA)
+#   == mainpid  != mainpid  (SENTINEL_NAMED — unsafe at fork depth > 1)
+#   <= mainpid  < mainpid   (SENTINEL_NAMED variants)
+#   mainpid OP getppid()    (all yoda forms via OPS_YODA; mainpid from SENTINEL_NAMED)
 # ---------------------------------------------------------------------------
 CALLEXPR='(getppid[[:space:]]*\(\)|trinity_raw_syscall\([^)]*__NR_getppid[^)]*\)|syscall\([^)]*__NR_getppid[^)]*\))'
 PATTERN="${CALLEXPR}[[:space:]]*(($OPS_LITERAL)[[:space:]]*1([^0-9]|$)|<[[:space:]]*2([^0-9]|$))"
@@ -122,10 +128,10 @@ YODA_PATTERN="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${CALLEXPR}"
 # unsafe at fork depth > 1 — at that depth mainpid != getppid() on every call
 # so the guard fires unconditionally.  Only the direct child of main() (where
 # the parent IS mainpid) may use this comparison; pin that site in the baseline.
-PATTERN_MAINPID="${CALLEXPR}[[:space:]]*($OPS_NAMED)[[:space:]]*mainpid([^a-z_A-Z0-9]|$)"
+PATTERN_MAINPID="${CALLEXPR}[[:space:]]*($OPS_NAMED)[[:space:]]*(${SENTINEL_NAMED})([^a-z_A-Z0-9]|$)"
 # Yoda mainpid form: all forms where mainpid appears on the left.
 # Uses OPS_YODA so that >=, >, and <= are caught in addition to == and !=.
-YODA_MAINPID_PATTERN="(^|[^a-z_A-Z0-9])mainpid[[:space:]]*($OPS_YODA)[[:space:]]*${CALLEXPR}"
+YODA_MAINPID_PATTERN="(^|[^a-z_A-Z0-9])(${SENTINEL_NAMED})[[:space:]]*($OPS_YODA)[[:space:]]*${CALLEXPR}"
 
 # ---------------------------------------------------------------------------
 # Pass 2: hoisted assignment — variable assigned from getppid(), then
@@ -228,8 +234,8 @@ for srcfile in "${srcfiles[@]}"; do
 		# Use the axis-split OPS_LITERAL/OPS_NAMED sets so operators stay in
 		# sync with Pass 1: literal-1 uses OPS_LITERAL (avoids tautology false-
 		# positives for >= 1 / > 1), mainpid uses OPS_NAMED (allows >= / >).
-		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*(($OPS_LITERAL)[[:space:]]*1([^0-9]|$)|($OPS_NAMED)[[:space:]]*mainpid([^a-z_A-Z0-9]|$)|<[[:space:]]*2([^0-9]|$))"
-		cmp_pattern_yoda="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)|(^|[^a-z_A-Z0-9])mainpid[[:space:]]*($OPS_YODA)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)"
+		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*(($OPS_LITERAL)[[:space:]]*1([^0-9]|$)|($OPS_NAMED)[[:space:]]*(${SENTINEL_NAMED})([^a-z_A-Z0-9]|$)|<[[:space:]]*2([^0-9]|$))"
+		cmp_pattern_yoda="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)|(^|[^a-z_A-Z0-9])(${SENTINEL_NAMED})[[:space:]]*($OPS_YODA)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)"
 
 		while IFS=: read -r lineno content; do
 			[ -z "$lineno" ] && continue
