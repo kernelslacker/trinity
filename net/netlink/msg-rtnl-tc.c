@@ -97,15 +97,13 @@ static size_t build_stab_nest(unsigned char *p, size_t avail)
 		size_t max_tsize_sz;
 
 		if (avail <= base_sz + (size_t)NLA_HDRLEN) {
-			__atomic_add_fetch(&shm->stats.netlink_stab_emit_skipped,
-					   1, __ATOMIC_RELAXED);
+			/* unreachable: caller gate ensures avail >= MIN_STAB_AVAIL */
 			return 0;
 		}
 		max_tsize_sz = (avail - base_sz - (size_t)NLA_HDRLEN) /
 			       sizeof(__u16);
 		if (max_tsize_sz < 1) {
-			__atomic_add_fetch(&shm->stats.netlink_stab_emit_skipped,
-					   1, __ATOMIC_RELAXED);
+			/* unreachable: caller gate ensures avail >= MIN_STAB_AVAIL */
 			return 0;
 		}
 		if (max_tsize_sz > 64)
@@ -307,6 +305,12 @@ size_t gen_rta_tc_payload(unsigned char *p, size_t avail,
 		if (avail >= NLA_ALIGN(NLA_HDRLEN + sizeof(struct tc_sizespec)) +
 			     NLA_ALIGN(NLA_HDRLEN + 64 * sizeof(__u16)))
 			return build_stab_nest(p, avail);
+		/* avail below the 160-byte stab minimum (BASE + DATA worst case);
+		 * this is the expected-hot skip path that the counter was meant
+		 * to observe -- the callee bail arms are structurally unreachable
+		 * once this guard is in place (f5fa63fdd232). */
+		__atomic_add_fetch(&shm->stats.netlink_stab_emit_skipped,
+				   1, __ATOMIC_RELAXED);
 		return 0;
 
 	case TCA_OPTIONS:
