@@ -163,55 +163,15 @@ UNEMITTED:stats/subsys/transition_edge.h:count_by_strategy
 # check in a post handler TU; no stats/ emitter reads it yet.
 UNEMITTED:include/stats.h:post_handler_untouched_out_buf
 
-# netlink nested-attr counters: DUMP-ONLY.  Emitted by the netlink text dump
-# path (stats/dump/) but absent from stats/json/core.c.  netlink_stab_emit_skipped
-# is the specific 576-D gap (TCA_STAB miss counter added in 576-D without a
-# JSON emitter).  Wire all seven to stats/json/network.c or stats/json/core.c.
-UNEMITTED:include/stats.h:netlink_nested_attrs_emitted
-UNEMITTED:include/stats.h:netlink_nested_attrs_accepted
-UNEMITTED:include/stats.h:netlink_nested_attr_skipped_width
-UNEMITTED:include/stats.h:netlink_nested_attr_built_width
-UNEMITTED:include/stats.h:netlink_nested_attr_build_calls
-UNEMITTED:include/stats.h:netlink_nested_attr_lost_align
-UNEMITTED:include/stats.h:netlink_stab_emit_skipped
-
-# genl_family_calls_* dispatch counters: DUMP-ONLY (except ncsi/tcmu: DARK).
-# All 21 counters are written by gen_genl_body() and emitted by the netlink
-# text dump path but are absent from stats/json/network.c.  Wire them to the
-# JSON network section.  genl_family_calls_ncsi and genl_family_calls_tcmu are
-# currently totally dark (no stats/ .c reference) -- they may need producers
-# or may not be reachable on the test system.
-UNEMITTED:include/stats.h:genl_family_calls_devlink
-UNEMITTED:include/stats.h:genl_family_calls_nl80211
-UNEMITTED:include/stats.h:genl_family_calls_taskstats
-UNEMITTED:include/stats.h:genl_family_calls_ethtool
-UNEMITTED:include/stats.h:genl_family_calls_mptcp_pm
-UNEMITTED:include/stats.h:genl_family_calls_tipc
-UNEMITTED:include/stats.h:genl_family_calls_wireguard
-UNEMITTED:include/stats.h:genl_family_calls_l2tp
-UNEMITTED:include/stats.h:genl_family_calls_gtp
-UNEMITTED:include/stats.h:genl_family_calls_macsec
-UNEMITTED:include/stats.h:genl_family_calls_netlabel
-UNEMITTED:include/stats.h:genl_family_calls_team
-UNEMITTED:include/stats.h:genl_family_calls_hsr
-UNEMITTED:include/stats.h:genl_family_calls_fou
-UNEMITTED:include/stats.h:genl_family_calls_psample
+# genl_family_calls_* dispatch counters: DARK (no stats/ .c reference).
+# 20 of the 23 family counters are wired via STAT_FIELD(genl_family_calls, X)
+# in stats/json/core.c and are therefore emitted to JSON; those are no longer
+# in this baseline.  ncsi, tcmu, and nfsd have no STAT_FIELD entry in any
+# stats/json/ file and no direct member access -- they may lack a reachable
+# producer on the test system.
 UNEMITTED:include/stats.h:genl_family_calls_ncsi
 UNEMITTED:include/stats.h:genl_family_calls_tcmu
 UNEMITTED:include/stats.h:genl_family_calls_nfsd
-UNEMITTED:include/stats.h:genl_family_calls_ila
-UNEMITTED:include/stats.h:genl_family_calls_ioam6
-UNEMITTED:include/stats.h:genl_family_calls_seg6
-UNEMITTED:include/stats.h:genl_family_calls_thermal
-UNEMITTED:include/stats.h:genl_family_calls_ipvs
-
-# nfnl_subsys_calls_* dispatch counters: DUMP-ONLY.  Written by the nfnetlink
-# dispatcher and emitted by the netlink text dump path but absent from
-# stats/json/network.c.  Wire to the JSON network section.
-UNEMITTED:include/stats.h:nfnl_subsys_calls_ctnetlink
-UNEMITTED:include/stats.h:nfnl_subsys_calls_ctnetlink_exp
-UNEMITTED:include/stats.h:nfnl_subsys_calls_nftables
-UNEMITTED:include/stats.h:nfnl_subsys_calls_ipset
 
 # watchdog_signal: DARK.  No reference found in any stats/ .c file; the field
 # may be bumped from outside stats/ (watchdog TU) but has no emitter at all.

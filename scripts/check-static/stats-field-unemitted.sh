@@ -149,12 +149,32 @@ find "$STATS_DIR/json" -name '*.c' | LC_ALL=C sort | \
 			rest = substr(rest, RSTART + RLENGTH)
 		}
 
-		# (b) STAT_FIELD* macro: extract second argument
+		# (b) STAT_FIELD* macro: extract second argument AND prefix_field
+		# composite.  Population B field names are of the form prefix_field
+		# (e.g. genl_family_calls_fou) while the macro spells them as
+		# STAT_FIELD(genl_family_calls, fou).  Emitting both the bare field
+		# name and the prefix_field composite lets Phase 3 match either form,
+		# so a struct stats_s member declared as genl_family_calls_fou is
+		# correctly recognised as emitted when stats/json/core.c contains
+		# STAT_FIELD(genl_family_calls, fou).
 		rest = line
 		while (match(rest, /STAT_FIELD[_A-Z0-9]*[[:space:]]*\([^,)]+,[[:space:]]*/)) {
+			macro_part = substr(rest, RSTART, RLENGTH)
 			tail = substr(rest, RSTART + RLENGTH)
-			if (match(tail, /^[a-zA-Z_][a-zA-Z0-9_]*/))
-				print substr(tail, 1, RLENGTH)
+			# Extract prefix: identifier immediately after the opening paren
+			prefix = ""
+			if (match(macro_part, /\([[:space:]]*/)) {
+				after_paren = substr(macro_part, RSTART + RLENGTH)
+				if (match(after_paren, /^[a-zA-Z_][a-zA-Z0-9_]*/)) {
+					prefix = substr(after_paren, 1, RLENGTH)
+				}
+			}
+			if (match(tail, /^[a-zA-Z_][a-zA-Z0-9_]*/)) {
+				field = substr(tail, 1, RLENGTH)
+				print field
+				if (prefix != "")
+					print prefix "_" field
+			}
 			rest = tail
 		}
 
@@ -446,6 +466,25 @@ fi
 
 if [ "${#new_unbaselined[@]}" -gt 0 ]; then
 	echo "FAIL: $NAME: ${#new_unbaselined[@]} unemitted field(s) not in baseline"
+	exit 1
+fi
+
+# Selftest control: a field wired via STAT_FIELD(prefix, field) in
+# stats/json/core.c must NOT appear in the unemitted set.  If the Phase
+# 1b extractor emits only the bare second argument (e.g. "fou") and not
+# the prefix_field composite ("genl_family_calls_fou"), this control
+# trips, catching a regression to the name-shape mismatch fixed here.
+control_key="UNEMITTED:include/stats.h:genl_family_calls_fou"
+if [ -n "${SEEN_UNEMITTED[$control_key]+x}" ]; then
+	{
+		echo "  selftest control FAIL: $control_key appears in the unemitted set"
+		echo "  genl_family_calls_fou is wired via STAT_FIELD(genl_family_calls, fou)"
+		echo "  in stats/json/core.c and must NOT be flagged as unemitted."
+		echo "  Phase 1b must emit both the bare field name (fou) and the"
+		echo "  prefix_field composite (genl_family_calls_fou) for STAT_FIELD*"
+		echo "  macro entries so Phase 3 can match either form."
+	} >&2
+	echo "FAIL: $NAME: selftest control: known-emitted field flagged as unemitted"
 	exit 1
 fi
 
