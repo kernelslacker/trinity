@@ -278,6 +278,97 @@ if echo "$_st_out_d" | grep -q 'st_raw_x_wrapped_proto'; then
 	exit 1
 fi
 > "$_st_root/scripts/check-static/$NAME.baseline"
+
+# Sub-tests E-J: ratchet pawl-follow fixture matrix (six rows from
+# 11f8fcdd2d33 ("check-static: close ratchet fail-open and add pawl-follow to .prev")
+# that were documented but not covered by in-tree selftest cases).
+# Baseline all fixture-file findings so the scanner reaches the ratchet guard.
+_st_bl_all="$(printf '%s\n%s\n' "$_st_bl_a" "$_st_bl_c")"
+printf '%s\n' "$_st_bl_all" > "$_st_root/scripts/check-static/$NAME.baseline"
+
+# Sub-test E: .prev missing → FAIL.
+echo "99" > "$_st_root/scripts/check-static/$NAME.count.baseline"
+rm -f "$_st_root/scripts/check-static/$NAME.count.baseline.prev"
+_st_out_e=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_e=$?
+if [ $_st_rc_e -eq 0 ]; then
+	echo "FAIL: $NAME selftest E: missing .prev must FAIL (got PASS; output: $_st_out_e)" >&2
+	exit 1
+fi
+if ! echo "$_st_out_e" | grep -qE 'missing|FAIL.*prev|FAIL.*ratchet'; then
+	echo "FAIL: $NAME selftest E: missing .prev wrong diagnostic (output: $_st_out_e)" >&2
+	exit 1
+fi
+
+# Sub-test F: .prev empty → FAIL.
+echo "99" > "$_st_root/scripts/check-static/$NAME.count.baseline"
+> "$_st_root/scripts/check-static/$NAME.count.baseline.prev"
+_st_out_f=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_f=$?
+if [ $_st_rc_f -eq 0 ]; then
+	echo "FAIL: $NAME selftest F: empty .prev must FAIL (got PASS; output: $_st_out_f)" >&2
+	exit 1
+fi
+if ! echo "$_st_out_f" | grep -qE 'empty|non-numeric|FAIL.*prev'; then
+	echo "FAIL: $NAME selftest F: empty .prev wrong diagnostic (output: $_st_out_f)" >&2
+	exit 1
+fi
+
+# Sub-test G: .prev = "n/a" (non-numeric) → FAIL.
+echo "99" > "$_st_root/scripts/check-static/$NAME.count.baseline"
+echo "n/a" > "$_st_root/scripts/check-static/$NAME.count.baseline.prev"
+_st_out_g=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_g=$?
+if [ $_st_rc_g -eq 0 ]; then
+	echo "FAIL: $NAME selftest G: non-numeric .prev must FAIL (got PASS; output: $_st_out_g)" >&2
+	exit 1
+fi
+if ! echo "$_st_out_g" | grep -qE 'non-numeric|FAIL.*prev'; then
+	echo "FAIL: $NAME selftest G: non-numeric .prev wrong diagnostic (output: $_st_out_g)" >&2
+	exit 1
+fi
+
+# Sub-test H: ceiling lowered (frozen=3 < prev=99) → PASS and .prev updated to 3.
+# total=3 (two A findings + one C finding, all baselined), frozen=3 ≥ total.
+echo "3" > "$_st_root/scripts/check-static/$NAME.count.baseline"
+echo "99" > "$_st_root/scripts/check-static/$NAME.count.baseline.prev"
+_st_out_h=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_h=$?
+if [ $_st_rc_h -ne 0 ]; then
+	echo "FAIL: $NAME selftest H: lowered ceiling with stale .prev must PASS (exit=$_st_rc_h; output: $_st_out_h)" >&2
+	exit 1
+fi
+_st_prev_h=$(cat "$_st_root/scripts/check-static/$NAME.count.baseline.prev" 2>/dev/null | tr -d '[:space:]')
+if [ "$_st_prev_h" != "3" ]; then
+	echo "FAIL: $NAME selftest H: pawl-follow must update .prev to 3 (got: '$_st_prev_h')" >&2
+	exit 1
+fi
+
+# Sub-test I: silent re-raise blocked → FAIL (frozen=99 > new .prev=3).
+echo "99" > "$_st_root/scripts/check-static/$NAME.count.baseline"
+echo "3" > "$_st_root/scripts/check-static/$NAME.count.baseline.prev"
+_st_out_i=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_i=$?
+if [ $_st_rc_i -eq 0 ]; then
+	echo "FAIL: $NAME selftest I: re-raise above new .prev must FAIL (got PASS; output: $_st_out_i)" >&2
+	exit 1
+fi
+if ! echo "$_st_out_i" | grep -qE 'ratchet|raised'; then
+	echo "FAIL: $NAME selftest I: re-raise wrong diagnostic (output: $_st_out_i)" >&2
+	exit 1
+fi
+
+# Sub-test J: normal state (frozen=3, .prev=3, total=3) → PASS.
+echo "3" > "$_st_root/scripts/check-static/$NAME.count.baseline"
+echo "3" > "$_st_root/scripts/check-static/$NAME.count.baseline.prev"
+_st_out_j=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_j=$?
+if [ $_st_rc_j -ne 0 ]; then
+	echo "FAIL: $NAME selftest J: normal state (frozen=prev=total=3) must PASS (exit=$_st_rc_j; output: $_st_out_j)" >&2
+	exit 1
+fi
+
+> "$_st_root/scripts/check-static/$NAME.baseline"
 fi # end _CSC_SELFTEST_RECURSE guard
 
 # Walk every .c file under childops/.  For each file that has no
@@ -1023,7 +1114,8 @@ fi
 # so the ratchet cannot silently re-raise back to a stale high-water mark.
 if [ "$frozen" -lt "$prev" ]; then
 	if ! printf '%s\n' "$frozen" > "$PREV_BASELINE" 2>/dev/null; then
-		echo "WARN: $NAME: could not update $PREV_BASELINE; check file permissions." >&2
+		echo "FAIL: $NAME: could not update $PREV_BASELINE; check file permissions." >&2
+		exit 1
 	fi
 fi
 
