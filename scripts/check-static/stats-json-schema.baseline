@@ -770,6 +770,11 @@ stats	object
     stats.fou_gue_mcast_rx.port_install_failed	u64
     stats.fou_gue_mcast_rx.packet_sent_ok	u64
     stats.fou_gue_mcast_rx.port_delete_ok	u64
+    stats.fou_gue_mcast_rx.port_nopartial_ok	u64
+    stats.fou_gue_mcast_rx.gue_flags_uniform	u64
+    stats.fou_gue_mcast_rx.gue_priv_emitted	u64
+    stats.fou_gue_mcast_rx.gue_remcsum_emitted	u64
+    stats.fou_gue_mcast_rx.gue_remcsum_underflow	u64
   stats.geneve_rx	object
     stats.geneve_rx.runs	u64
     stats.geneve_rx.setup_failed	u64

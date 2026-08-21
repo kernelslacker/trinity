@@ -43,12 +43,12 @@
  *          in 224.0.0.0/24; v6: rotating ff02::/16 group) with an
  *          occasional unicast loopback dst so the non-mcast path
  *          gets coverage too,
- *        - GUE variant: version {0, 1, 2, 3}, control bit, Hlen in
- *          4-byte units {0, 1, 2, 4, 8, 31}, proto (inner ip proto
- *          for ver 0), and a random flags word.  Version 0 is the
- *          spec'd form; ver 2/3 walk the reject path; ver 1's first
- *          32-bit word is treated as an inner IP header (RFC-legacy
- *          direct-IP variant).  FOU has no GUE header.
+ *        - GUE variant: version {0, 1, 2, 3}, control bit, proto
+ *          (inner ip proto for ver 0), and a GUE option plan (see
+ *          pick_gue_opts()).  Version 0 is the spec'd form; ver 2/3
+ *          walk the reject path; ver 1's first 32-bit word is treated
+ *          as an inner IP header (RFC-legacy direct-IP variant).  FOU
+ *          has no GUE header.
  *        - inner IP shape: v4 or v6 header (matched to the outer AF
  *          for FOU; free choice for GUE ver 0),
  *        - inner proto: TCP / UDP / ICMP / random -- picks the
@@ -63,6 +63,18 @@
  * netns.  One FOU_CMD_ADD / FOU_CMD_DEL per invocation, all sends
  * MSG_DONTWAIT.  Netns destruction on grandchild _exit reaps any port
  * install or raw socket left behind by a mid-iteration bail.
+ *
+ * Oracle caveat for the REMCSUM arm: an offset < start pair makes
+ * skb_remcsum_adjust_partial() store a wrapped u16 into
+ * skb->csum_offset, but nothing on a loopback-only RX path reads it
+ * back -- the upstream damage needs a NETIF_F_HW_CSUM driver doing
+ * skb_copy_and_csum_dev() on a forwarded CHECKSUM_PARTIAL skb, which
+ * this netns has no way to provide.  What this arm buys is parser
+ * reach (gue_remcsum / gue_gro_remcsum / the private-flags walk /
+ * gue_control_message were all structurally unreachable before it),
+ * plus whatever pskb_may_pull / DEBUG_NET / skb_checksum_help
+ * complaint the malformed lengths shake out.  Do not expect a KASAN
+ * splat from the underflow itself.
  *
  * Latches: ns_unsupported_fou_gue_mcast_rx master gate on
  * userns_run_in_ns() -EPERM (unprivileged userns disabled).
@@ -121,7 +133,20 @@
 #define FOU_ATTR_AF		2	/* u8  */
 #define FOU_ATTR_IPPROTO	3	/* u8  */
 #define FOU_ATTR_TYPE		4	/* u8  */
+#define FOU_ATTR_REMCSUM_NOPARTIAL 5	/* flag */
 #endif
+
+/*
+ * GUE option wire constants (kernel-internal include/net/gue.h, not
+ * exported to uapi, so they are restated here rather than shimmed).
+ * validate_gue_flags() accepts GUE_FLAGS_ALL == GUE_FLAG_PRIV only --
+ * one bit out of sixteen -- and the private-flags dword must be
+ * exactly GUE_PFLAG_REMCSUM for the remote-checksum option to parse.
+ */
+#define GUE_FLAG_PRIV		htons(1U << 0)
+#define GUE_LEN_PRIV		4U
+#define GUE_PFLAG_REMCSUM	htonl(1U << 31)
+#define GUE_PLEN_REMCSUM	4U
 
 #ifndef FOU_ENCAP_DIRECT
 #define FOU_ENCAP_DIRECT	1	/* raw IP inside UDP */
@@ -243,22 +268,165 @@ static uint8_t pick_inner_trunc_len(void)
 }
 
 /*
- * Draw a GUE Hlen in 4-byte units.  0 is the standard GUE-0 form
- * (fixed 4-byte header, no extensions); 1/2/4/8 are common extension
- * lengths; 31 is the maximum a 5-bit field can express and forces
- * the parser to consume 124 bytes of extension before touching the
- * inner header.  The extension bytes themselves are random.
+ * Draw a GUE Hlen in 4-byte units, never below @min_units.  0 is the
+ * standard GUE-0 form (fixed 4-byte header, no extensions); 1/2/4/8
+ * are common extension lengths; 31 is the maximum a 5-bit field can
+ * express and forces the parser to consume 124 bytes of extension
+ * before touching the inner header.  min_units is what the drawn
+ * option set actually needs, so a plan that claims options always has
+ * room for them (a short Hlen is reachable on purpose via the
+ * dedicated too-small arms in pick_gue_opts(), not by accident here).
  */
-static uint8_t pick_gue_hlen(void)
+static uint8_t pick_gue_hlen(uint8_t min_units)
 {
-	switch (rnd_modulo_u32(6)) {
-	case 0:  return 0U;
-	case 1:  return 1U;
-	case 2:  return 2U;
-	case 3:  return 4U;
-	case 4:  return 8U;
-	default: return FGMR_GUE_HLEN_MAX;
+	static const uint8_t ladder[] = { 0U, 1U, 2U, 4U, 8U,
+					  FGMR_GUE_HLEN_MAX };
+	uint8_t h = ladder[rnd_modulo_u32(ARRAY_SIZE(ladder))];
+
+	return h < min_units ? min_units : h;
+}
+
+/*
+ * One frame's GUE option plan.  Kept separate from the emitter so the
+ * probability shaping lives in one place: a uniform 16-bit flags draw
+ * clears validate_gue_flags() with p ~= 2/65536 and can never produce
+ * the GUE_PFLAG_REMCSUM dword, so the option parser in gue_udp_recv()
+ * (and its GRO twin) is unreachable by construction unless the flags
+ * word and the option bytes are laid out together.
+ */
+struct gue_opts {
+	__be16		flags;
+	__be32		pflags;
+	bool		priv;		/* pflags dword belongs at option[0..3] */
+	bool		remcsum;	/* {start,offset} belongs at option[4..7] */
+	bool		uniform;	/* legacy uniform-random flags residue */
+	uint16_t	rc_start;
+	uint16_t	rc_offset;
+	uint8_t		hlen;		/* 4-byte units, as it goes on the wire */
+};
+
+/* Fraction of GUE frames that keep the old uniform-random flags word
+ * so the validate_gue_flags() reject arm stays covered.  It used to be
+ * 100% of the traffic, which is the whole reason this plan exists. */
+#define FGMR_GUE_UNIFORM_DENOM	8U
+
+/*
+ * Draw the REMCSUM {start, offset} pair.  @avail is the number of
+ * frame bytes that follow the GUE header, which bounds what
+ * gue_remcsum() can pskb_may_pull(): it needs
+ * max(offset + 2, start) bytes past the header or it drops.
+ *
+ * skb_remcsum_adjust_partial() stores (offset - start) into the u16
+ * skb->csum_offset, so offset < start wraps -- that arm is weighted
+ * up because it is the one upstream rejects, but the in-range,
+ * equal, past-the-frame and fully-random arms all stay live so the
+ * pull-failure and well-formed paths keep coverage.
+ */
+static void pick_remcsum_pair(struct gue_opts *o, size_t avail)
+{
+	uint32_t lim = (avail >= 2U) ? (uint32_t)(avail - 2U) : 0U;
+	uint32_t start, offset;
+
+	if (lim < 2U) {
+		/* Truncation shaved the inner header down past the point
+		 * where an in-frame pair exists; only the drop arms are
+		 * reachable, so draw freely. */
+		o->rc_start  = (uint16_t)rnd_u32();
+		o->rc_offset = (uint16_t)rnd_u32();
+		return;
 	}
+
+	switch (rnd_modulo_u32(6)) {
+	case 0:
+	case 1:		/* offset < start: the u16 csum_offset underflow */
+		start  = 1U + rnd_modulo_u32(lim);
+		offset = rnd_modulo_u32(start);
+		break;
+	case 2:		/* offset == start: csum_offset 0 */
+		start  = rnd_modulo_u32(lim + 1U);
+		offset = start;
+		break;
+	case 3:		/* well-formed: start <= offset, both in frame */
+		start  = rnd_modulo_u32(lim + 1U);
+		offset = start + rnd_modulo_u32(lim + 1U - start);
+		break;
+	case 4:		/* past the linear frame: pskb_may_pull drop arm */
+		start  = (uint32_t)avail + rnd_modulo_u32(4096U);
+		offset = (uint32_t)avail + rnd_modulo_u32(4096U);
+		break;
+	default:
+		start  = rnd_u32() & 0xffffU;
+		offset = rnd_u32() & 0xffffU;
+		break;
+	}
+
+	o->rc_start  = (uint16_t)start;
+	o->rc_offset = (uint16_t)offset;
+}
+
+/*
+ * Build one frame's GUE option plan.  @avail is the byte count that
+ * will follow the GUE header (needed to keep a REMCSUM pair inside
+ * the frame often enough to reach skb_remcsum_process()).
+ */
+static void pick_gue_opts(struct gue_opts *o, size_t avail)
+{
+	memset(o, 0, sizeof(*o));
+
+	if (ONE_IN(FGMR_GUE_UNIFORM_DENOM)) {
+		o->uniform = true;
+		o->flags   = (__be16)(rand32() & 0xffffU);
+		o->hlen    = pick_gue_hlen(0U);
+		return;
+	}
+
+	if (ONE_IN(3)) {
+		/* flags == 0: no options at all, the plain GUE-0 accept
+		 * path straight through to the inner header. */
+		o->hlen = pick_gue_hlen(0U);
+		return;
+	}
+
+	o->flags = GUE_FLAG_PRIV;
+	o->priv  = true;
+
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		/* Unknown private bit -> the pflags & ~GUE_PFLAGS_ALL
+		 * reject arm inside validate_gue_flags(). */
+		o->pflags = (__be32)htonl(rnd_u32() | (1U << 30));
+		o->hlen   = pick_gue_hlen(1U);
+		return;
+	case 1:
+		/* PRIV claimed with no room for the dword -> the first
+		 * len > optlen reject arm. */
+		o->priv = false;
+		o->hlen = 0U;
+		return;
+	default:
+		break;
+	}
+
+	if (ONE_IN(4)) {
+		/* PRIV set, REMCSUM clear: exercises the private-flags
+		 * walk and its doffset advance without the option. */
+		o->hlen = pick_gue_hlen(1U);
+		return;
+	}
+
+	o->pflags  = GUE_PFLAG_REMCSUM;
+	o->remcsum = true;
+
+	if (ONE_IN(8)) {
+		/* REMCSUM claimed but Hlen too small for its four bytes
+		 * -> the second len > optlen reject arm. */
+		o->remcsum = false;
+		o->hlen    = 1U;
+		return;
+	}
+
+	o->hlen = pick_gue_hlen(2U);
+	pick_remcsum_pair(o, avail);
 }
 
 /*
@@ -303,7 +471,8 @@ static void pick_v6_dst(uint8_t out[16])
  * local encode failure.
  */
 static int fou_cmd_port(struct genl_ctx *ctx, __u8 cmd, __be16 port,
-			__u8 af, __u8 ipproto, __u8 encap_type)
+			__u8 af, __u8 ipproto, __u8 encap_type,
+			bool nopartial)
 {
 	unsigned char buf[256];
 	size_t off;
@@ -327,6 +496,17 @@ static int fou_cmd_port(struct genl_ctx *ctx, __u8 cmd, __be16 port,
 	off = nla_put_u8(buf, off, sizeof(buf), FOU_ATTR_TYPE, encap_type);
 	if (!off)
 		return -EIO;
+	/* FOU_F_REMCSUM_NOPARTIAL picks which half of
+	 * skb_remcsum_process() a REMCSUM option lands in: unset takes
+	 * skb_remcsum_adjust_partial() (the CHECKSUM_PARTIAL /
+	 * csum_offset arm), set takes remcsum_adjust() on a
+	 * CHECKSUM_COMPLETE skb.  Rotated so both run. */
+	if (nopartial) {
+		off = nla_put(buf, off, sizeof(buf),
+			      FOU_ATTR_REMCSUM_NOPARTIAL, NULL, 0);
+		if (!off)
+			return -EIO;
+	}
 
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_len = (__u32)off;
@@ -341,12 +521,16 @@ static int fou_cmd_port(struct genl_ctx *ctx, __u8 cmd, __be16 port,
  * still has that many linear bytes; emitting fewer than nominal is
  * what drives the parse-past-end seam.
  */
+static size_t inner_emit_len(bool inner_v6, uint8_t trunc_len)
+{
+	size_t nominal = inner_v6 ? 40U : 20U;
+
+	return (trunc_len >= nominal) ? 0U : (nominal - trunc_len);
+}
+
 static size_t build_inner(uint8_t *buf, bool inner_v6, uint8_t inner_proto,
 			  uint8_t trunc_len)
 {
-	size_t nominal = inner_v6 ? 40U : 20U;
-	size_t emit;
-
 	memset(buf, 0, FGMR_INNER_NOMINAL);
 	if (inner_v6) {
 		buf[0] = 0x60;			/* v6, tc=0, flow=0 */
@@ -362,28 +546,37 @@ static size_t build_inner(uint8_t *buf, bool inner_v6, uint8_t inner_proto,
 		*(__be32 *)(buf + 16) = FGMR_V4_UCAST_BE;
 	}
 
-	emit = (trunc_len >= nominal) ? 0U : (nominal - trunc_len);
-	return emit;
+	return inner_emit_len(inner_v6, trunc_len);
 }
 
 /*
- * Build a GUE header at buf.  Version, control bit, Hlen (in 4-byte
- * units), proto and flags are drawn by the caller so the packet-emit
- * loop can churn each dimension independently.  Extension bytes
- * (Hlen*4) are random.  Returns the header length in bytes (4 + Hlen*4).
+ * Build a GUE header at buf.  Version, control bit and proto are drawn
+ * by the caller; Hlen, the flags word and the option bytes come from
+ * the plan.  Option layout mirrors gue_udp_recv(): the private-flags
+ * dword is the first four option bytes and the REMCSUM {start, offset}
+ * pair the next four.  Bytes past the planned options stay random so
+ * the trailing-option walk still sees noise.  Returns the header
+ * length in bytes (4 + Hlen*4).
  */
 static size_t build_gue_hdr(uint8_t *buf, uint8_t ver, bool control,
-			    uint8_t hlen, uint8_t proto, __be16 flags)
+			    uint8_t proto, const struct gue_opts *o)
 {
-	size_t ext_bytes = (size_t)hlen * 4U;
+	size_t ext_bytes = (size_t)o->hlen * 4U;
 
 	buf[0] = (uint8_t)(((ver & 0x3U) << 6) |
 			   ((control ? 1U : 0U) << 5) |
-			   (hlen & 0x1fU));
+			   (o->hlen & 0x1fU));
 	buf[1] = proto;
-	*(__be16 *)(buf + 2) = flags;
+	*(__be16 *)(buf + 2) = o->flags;
 	if (ext_bytes)
 		generate_rand_bytes(buf + 4, (unsigned int)ext_bytes);
+
+	if (o->priv && ext_bytes >= GUE_LEN_PRIV)
+		*(__be32 *)(buf + 4) = o->pflags;
+	if (o->remcsum && ext_bytes >= GUE_LEN_PRIV + GUE_PLEN_REMCSUM) {
+		*(__be16 *)(buf + 4 + GUE_LEN_PRIV)      = htons(o->rc_start);
+		*(__be16 *)(buf + 4 + GUE_LEN_PRIV + 2U) = htons(o->rc_offset);
+	}
 	return 4U + ext_bytes;
 }
 
@@ -398,7 +591,7 @@ static size_t build_gue_hdr(uint8_t *buf, uint8_t ver, bool control,
  */
 static size_t build_v4_frame(uint8_t *buf, __be16 dport, __be32 daddr,
 			     bool is_gue, uint8_t gue_ver, bool gue_ctrl,
-			     uint8_t gue_hlen, uint8_t inner_proto,
+			     const struct gue_opts *gopts, uint8_t inner_proto,
 			     bool inner_v6, uint8_t trunc_len)
 {
 	struct iphdr *iph;
@@ -424,12 +617,9 @@ static size_t build_v4_frame(uint8_t *buf, __be16 dport, __be32 daddr,
 	uh->dest   = dport;
 	off += sizeof(*uh);
 
-	if (is_gue) {
-		__be16 flags = (__be16)(rand32() & 0xffffU);
-
+	if (is_gue)
 		off += build_gue_hdr(buf + off, gue_ver, gue_ctrl,
-				     gue_hlen, inner_proto, flags);
-	}
+				     inner_proto, gopts);
 
 	inner_bytes = build_inner(inner, inner_v6, inner_proto, trunc_len);
 	if (inner_bytes) {
@@ -456,7 +646,7 @@ static size_t build_v4_frame(uint8_t *buf, __be16 dport, __be32 daddr,
  */
 static size_t build_v6_frame(uint8_t *buf, __be16 dport, const uint8_t daddr[16],
 			     bool is_gue, uint8_t gue_ver, bool gue_ctrl,
-			     uint8_t gue_hlen, uint8_t inner_proto,
+			     const struct gue_opts *gopts, uint8_t inner_proto,
 			     bool inner_v6, uint8_t trunc_len)
 {
 	struct udphdr *uh;
@@ -481,12 +671,9 @@ static size_t build_v6_frame(uint8_t *buf, __be16 dport, const uint8_t daddr[16]
 	uh->dest   = dport;
 	off += sizeof(*uh);
 
-	if (is_gue) {
-		__be16 flags = (__be16)(rand32() & 0xffffU);
-
+	if (is_gue)
 		off += build_gue_hdr(buf + off, gue_ver, gue_ctrl,
-				     gue_hlen, inner_proto, flags);
-	}
+				     inner_proto, gopts);
 
 	inner_bytes = build_inner(inner, inner_v6, inner_proto, trunc_len);
 	if (inner_bytes) {
@@ -514,6 +701,7 @@ struct fou_gue_iter_ctx {
 	int raw_fd;
 	__be16 port;
 	__u8 encap_type;
+	bool nopartial;
 	bool port_added;
 	bool v6;
 	bool ctx_open;
@@ -590,10 +778,11 @@ static int fou_gue_iter_install_port(struct fou_gue_iter_ctx *ctx)
 					FGMR_PORT_MIN));
 	ctx->v6         = ONE_IN(2);
 	ctx->encap_type = ONE_IN(2) ? FOU_ENCAP_GUE : FOU_ENCAP_DIRECT;
+	ctx->nopartial  = ONE_IN(4);
 
 	rc = fou_cmd_port(&ctx->genl, FOU_CMD_ADD, ctx->port,
 			  ctx->v6 ? AF_INET6 : AF_INET,
-			  IPPROTO_IPIP, ctx->encap_type);
+			  IPPROTO_IPIP, ctx->encap_type, ctx->nopartial);
 	if (rc != 0) {
 		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.port_install_failed,
 				   1, __ATOMIC_RELAXED);
@@ -611,6 +800,9 @@ static int fou_gue_iter_install_port(struct fou_gue_iter_ctx *ctx)
 	ctx->port_added = true;
 	__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.port_install_ok,
 			   1, __ATOMIC_RELAXED);
+	if (ctx->nopartial)
+		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.port_nopartial_ok,
+				   1, __ATOMIC_RELAXED);
 	return 0;
 }
 
@@ -649,6 +841,32 @@ static void fou_gue_iter_open_raw(struct fou_gue_iter_ctx *ctx)
  * MSG_DONTWAIT so a backed-up loopback queue cannot stall the
  * iteration past the SIGALRM(1s) cap.
  */
+/*
+ * Record which GUE option arm a frame took.  Only the emitted-with-room
+ * cases count: a plan whose Hlen deliberately excludes its own options
+ * is a reject-arm draw, not option coverage.
+ */
+static void count_gue_opts(const struct gue_opts *o)
+{
+	size_t ext_bytes = (size_t)o->hlen * 4U;
+
+	if (o->uniform) {
+		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.gue_flags_uniform,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+	if (o->priv && ext_bytes >= GUE_LEN_PRIV)
+		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.gue_priv_emitted,
+				   1, __ATOMIC_RELAXED);
+	if (o->remcsum && ext_bytes >= GUE_LEN_PRIV + GUE_PLEN_REMCSUM) {
+		__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.gue_remcsum_emitted,
+				   1, __ATOMIC_RELAXED);
+		if (o->rc_offset < o->rc_start)
+			__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.gue_remcsum_underflow,
+					   1, __ATOMIC_RELAXED);
+	}
+}
+
 static void fou_gue_iter_send_burst(struct fou_gue_iter_ctx *ctx)
 {
 	unsigned int iters;
@@ -669,7 +887,11 @@ static void fou_gue_iter_send_burst(struct fou_gue_iter_ctx *ctx)
 		bool inner_v6       = ONE_IN(2);
 		uint8_t gue_ver     = (uint8_t)(rand32() & 0x3U);
 		bool gue_ctrl       = ONE_IN(4);
-		uint8_t gue_hlen    = pick_gue_hlen();
+		struct gue_opts gopts;
+
+		pick_gue_opts(&gopts, inner_emit_len(inner_v6, trunc_len));
+		if (is_gue)
+			count_gue_opts(&gopts);
 
 		if (ctx->v6) {
 			struct sockaddr_in6 dst;
@@ -680,7 +902,7 @@ static void fou_gue_iter_send_burst(struct fou_gue_iter_ctx *ctx)
 			dst.sin6_family = AF_INET6;
 			memcpy(&dst.sin6_addr, d6, 16);
 			len = build_v6_frame(pkt, ctx->port, d6, is_gue,
-					     gue_ver, gue_ctrl, gue_hlen,
+					     gue_ver, gue_ctrl, &gopts,
 					     inner_proto, inner_v6, trunc_len);
 			n = sendto(ctx->raw_fd, pkt, len, MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
@@ -693,7 +915,7 @@ static void fou_gue_iter_send_burst(struct fou_gue_iter_ctx *ctx)
 			dst.sin_family      = AF_INET;
 			dst.sin_addr.s_addr = d4;
 			len = build_v4_frame(pkt, ctx->port, d4, is_gue,
-					     gue_ver, gue_ctrl, gue_hlen,
+					     gue_ver, gue_ctrl, &gopts,
 					     inner_proto, inner_v6, trunc_len);
 			n = sendto(ctx->raw_fd, pkt, len, MSG_DONTWAIT,
 				   (struct sockaddr *)&dst, sizeof(dst));
@@ -718,7 +940,7 @@ static void fou_gue_iter_teardown(struct fou_gue_iter_ctx *ctx)
 	if (ctx->port_added) {
 		if (fou_cmd_port(&ctx->genl, FOU_CMD_DEL, ctx->port,
 				 ctx->v6 ? AF_INET6 : AF_INET,
-				 IPPROTO_IPIP, ctx->encap_type) == 0)
+				 IPPROTO_IPIP, ctx->encap_type, false) == 0)
 			__atomic_add_fetch(&shm->stats.fou_gue_mcast_rx.port_delete_ok,
 					   1, __ATOMIC_RELAXED);
 	}
