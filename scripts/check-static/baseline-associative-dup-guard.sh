@@ -61,6 +61,8 @@ for script in "$CHECK_DIR"/*.sh; do
 	[ -f "$script" ] || continue
 	bn=$(basename "$script")
 	[ "$bn" = "$SELF" ] && continue
+	# lib.sh is a shared helper, not a gate; exclude from loader population.
+	[ "$bn" = "lib.sh" ] && continue
 	grep -q 'declare -A' "$script" || continue
 	grep -q 'while IFS= read' "$script" || continue
 	loaders+=("$bn")

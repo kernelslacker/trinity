@@ -40,9 +40,13 @@ fail() {
 [ -d "$DIR" ] || fail "check-static directory not found: $DIR"
 [ -r "$DOC" ] || fail "doc file not found: $DOC"
 
+# lib.sh is a shared helper sourced by gate scripts, not a gate itself.
+# Exclude it from the script population; its doc row stays for readers
+# but is likewise excluded from the doc population to keep parity clean.
 scripts=$(ls "$DIR"/*.sh 2>/dev/null \
 	| xargs -n1 basename \
 	| sed 's/\.sh$//' \
+	| grep -v '^lib$' \
 	| sort -u)
 
 [ -n "$scripts" ] || fail "no scripts found under $DIR"
@@ -53,6 +57,7 @@ scripts=$(ls "$DIR"/*.sh 2>/dev/null \
 # inside a row body).
 docs=$(grep -oE '^- `[a-z0-9-]+`' "$DOC" \
 	| sed -e 's/^- `//' -e 's/`$//' \
+	| grep -v '^lib$' \
 	| sort -u)
 
 [ -n "$docs" ] || fail "no doc rows found in $DOC"

@@ -65,6 +65,10 @@ for check in "$CHECK_DIR"/*.sh; do
 	[ -f "$check" ] || continue
 	name="$(basename "$check" .sh)"
 
+	# lib.sh (and any future lib-*.sh) is a shared helper sourced by gate
+	# scripts; it is not a gate itself and must not be executed as one.
+	case "$name" in lib|lib-*) continue ;; esac
+
 	if skipped "$name"; then
 		echo "SKIP: $name (via CHECK_STATIC_SKIP)"
 		continue
