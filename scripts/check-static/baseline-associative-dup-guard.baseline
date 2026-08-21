@@ -10,7 +10,6 @@ child-context-output.sh
 child-exit-zero-error-path.sh
 childop-direct-syscall-uncounted.sh
 childop-lock-call.sh
-childop-stats-writer-registered.sh
 fd-event-close-direct.sh
 io-uring-register-catalog.sh
 net-proto-sfg-parity.sh

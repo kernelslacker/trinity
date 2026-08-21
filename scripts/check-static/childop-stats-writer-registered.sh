@@ -57,6 +57,7 @@ fi
 
 # Load baseline exemptions (relative paths, one per line, # comments ok).
 declare -A GRANDFATHERED=()
+declare -A seen=()
 if [ -r "$BASELINE" ]; then
 	while IFS= read -r entry; do
 		[ -z "$entry" ] && continue
@@ -64,6 +65,11 @@ if [ -r "$BASELINE" ]; then
 		# Strip trailing whitespace and inline comments.
 		entry="$(sed 's/[[:space:]]#.*$//' <<< "$entry" | sed 's/[[:space:]]*$//')"
 		[ -z "$entry" ] && continue
+		if [[ -v seen[$entry] ]]; then
+			echo "FAIL: $NAME: duplicate baseline entry: $entry" >&2
+			exit 1
+		fi
+		seen[$entry]=1
 		GRANDFATHERED["$entry"]=1
 	done < "$BASELINE"
 fi
