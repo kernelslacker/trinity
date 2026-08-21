@@ -84,6 +84,7 @@ childops/net/xfrm/nat-t-churn-traffic.c  # carve of nat_t_churn (dispatch: nat-t
 childops/net/xfrm/xfrm-churn-ah-esn.c        # carve of xfrm_churn (dispatch: xfrm-churn.c)
 childops/net/xfrm/xfrm-churn-devteardown.c   # carve of xfrm_churn (dispatch: xfrm-churn.c)
 childops/net/xfrm/xfrm-churn-compat-sweep.c  # carve of xfrm_churn (dispatch: xfrm-churn.c)
+childops/net/xfrm/xfrm-churn-devteardown.c   # carve of xfrm_churn (dispatch: xfrm-churn.c)
 childops/net/xfrm/xfrm-churn-pfkey.c         # carve of xfrm_churn (dispatch: xfrm-churn.c)
 childops/net/xfrm/xfrm-churn-sk-policy.c     # carve of xfrm_churn (dispatch: xfrm-churn.c)
 childops/net/xfrm/xfrm-churn-traffic.c       # carve of xfrm_churn (dispatch: xfrm-churn.c)

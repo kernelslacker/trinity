@@ -1352,6 +1352,7 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 	 */
 	{
 		struct timespec cts;
+		struct timespec dts = {0, 0};
 		int coin = (int)(rand32() & 1);
 
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate.vrf_connect_issued,
@@ -1363,6 +1364,17 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 			  ssize_t _w = write(rendezvous_pfd[1], &_tok, 1);
 			  (void)_w; }
 			close(rendezvous_pfd[1]);
+			/*
+			 * Wait for the child to take its own timestamp and
+			 * write it to race_pfd[1] before we stamp cts and
+			 * call connect().  Without this barrier cts is taken
+			 * before the child is even scheduled off its blocking
+			 * read(), so cts < dts and every coin==0 iteration is
+			 * mis-bucketed as vrf_detach_after_connect.
+			 */
+			{ ssize_t _n = read(race_pfd[0], &dts, sizeof(dts));
+			  (void)_n; }
+			close(race_pfd[0]);
 			clock_gettime(CLOCK_MONOTONIC, &cts);
 			direct_calls++;
 			rc = connect(cli, (struct sockaddr *)&srv_addr,
@@ -1415,10 +1427,13 @@ static int tcp_ao_vrf_arm_in_ns(void *arg)
 		 * setup failure since the race window did not fire.
 		 */
 		{
-			struct timespec dts = {0, 0};
-			{ ssize_t _n = read(race_pfd[0], &dts, sizeof(dts));
-			  (void)_n; }
-			close(race_pfd[0]);
+			/* coin==0 already read race_pfd[0] before connect();
+			 * coin==1 races freely so we read it here after reap. */
+			if (coin != 0) {
+				{ ssize_t _n = read(race_pfd[0], &dts, sizeof(dts));
+				  (void)_n; }
+				close(race_pfd[0]);
+			}
 			if (dts.tv_sec || dts.tv_nsec) {
 				long long d =
 					((long long)cts.tv_sec  - (long long)dts.tv_sec)  * 1000000000LL
