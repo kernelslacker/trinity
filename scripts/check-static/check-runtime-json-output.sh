@@ -714,9 +714,11 @@ fi
 # That threshold is unreachable under the fixture's -N cap, so no live rotation
 # records are produced by the binary runs above.  To exercise the terminal-
 # record validation arm on every run we inject a synthetic rotation-events
-# JSONL fixture carrying one rotation record (all baseline fields, placeholder
-# values) and one terminal record.  The Python cross-check then validates both
-# record types against the baseline and emits "ok" rather than "skip".
+# JSONL fixture carrying one rotation record (fields derived at runtime from the
+# [rotation] section of stats-rotation-jsonl-schema.baseline) and one terminal
+# record.  The Python cross-check then validates both record types against the
+# baseline and emits "ok" rather than "skip".  --regen is the sole maintenance
+# point; the synthetic record tracks field additions automatically.
 # ---------------------------------------------------------------------------
 
 # Inject a synthetic rotation record so at least one non-terminal record is
@@ -727,7 +729,12 @@ fi
 # before the fixture; Python validates every non-terminal record and reports the
 # union of field mismatches.  If no binary file exists, create a full synthetic
 # fixture (rotation + terminal).
-_ROTATION_SYNTH_RECORD='{"t_close_mono_ns":0,"start_mono_ns":0,"op_count_start":0,"op_count_end":131072,"syscalls_in_window":0,"strategy_prev":0,"strategy_prev_name":"random","strategy_next":0,"strategy_next_name":"random","selection_reason_prev":0,"selection_reason_prev_name":"initial","selection_reason_next":0,"selection_reason_next_name":"initial","pim_mode":0,"pim_mode_name":"none","pc_edge_calls_in_window":0,"pc_edges_in_window":0,"cmp_wins_in_window":0,"warn_fires_in_window":0,"was_chaos":false,"plateau_active":false,"distinct_edges_now":0}'
+#
+# Build the synthetic record from the [rotation] section of the baseline file
+# so that --regen is the sole maintenance point; the literal cannot drift.
+_ROTATION_SYNTH_RECORD="$(awk '/^\[rotation\]/{f=1;next} /^\[/{f=0} f && /^[^#]/{print}' \
+	"$BASELINE_ROTATION" | \
+	python3 -c 'import json,sys; fields=[l.strip() for l in sys.stdin if l.strip()]; print(json.dumps({f:0 for f in fields}))' )"
 _ROTATION_REAL="$(ls "$WORK"/rotation-events-*.jsonl 2>/dev/null | head -1)"
 if [ -n "$_ROTATION_REAL" ]; then
 	# Binary run produced a file: append synthetic so real records come first.
