@@ -571,13 +571,14 @@ static int mlr_open_sysctl(bool v6, const char *dev, unsigned long *direct_calls
 	return fd;
 }
 
-static int mlr_write_sysctl(int fd, char val)
+static int mlr_write_sysctl(int fd, char val, unsigned long *direct_calls)
 {
 	ssize_t w;
 
 	if (fd < 0)
 		return -1;
 	w = pwrite(fd, &val, 1, 0);
+	(*direct_calls)++;
 	return (int)w;
 }
 
@@ -587,9 +588,11 @@ static int mlr_write_sysctl(int fd, char val)
  * between the rebalance's two passes turns `total == 0` into a live
  * divisor.  _exit()s -- noreturn.
  */
-static void mlr_flip_worker(int fd_a, int fd_b)
+static void mlr_flip_worker(int fd_a, int fd_b,
+			    enum child_op_type op, bool valid_op)
 {
 	struct timespec t0;
+	unsigned long direct_calls = 0;
 	unsigned int i;
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t0) < 0) {
@@ -602,8 +605,8 @@ static void mlr_flip_worker(int fd_a, int fd_b)
 		int wa, wb;
 		unsigned int ok = 0;
 
-		wa = mlr_write_sysctl(fd_a, v);
-		wb = mlr_write_sysctl(fd_b, v);
+		wa = mlr_write_sysctl(fd_a, v, &direct_calls);
+		wb = mlr_write_sysctl(fd_b, v, &direct_calls);
 		if (wa > 0)
 			ok++;
 		if (wb > 0)
@@ -621,6 +624,8 @@ static void mlr_flip_worker(int fd_a, int fd_b)
 			break;
 	}
 
+	if (valid_op)
+		childop_direct_syscalls_add(op, direct_calls);
 	_exit(0);
 }
 
@@ -770,8 +775,8 @@ static int multipath_linkdown_rebalance_in_ns(void *arg)
 			1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	if (mlr_write_sysctl(fd_a, '1') <= 0 ||
-	    mlr_write_sysctl(fd_b, '1') <= 0) {
+	if (mlr_write_sysctl(fd_a, '1', &direct_calls) <= 0 ||
+	    mlr_write_sysctl(fd_b, '1', &direct_calls) <= 0) {
 		__atomic_add_fetch(
 			&shm->stats.multipath_linkdown_rebalance.setup_failed,
 			1, __ATOMIC_RELAXED);
@@ -801,7 +806,7 @@ static int multipath_linkdown_rebalance_in_ns(void *arg)
 	if (worker == 0) {
 		/* The worker only needs the sysctl fds; drop the rtnl fd. */
 		nl_close(&ctx);
-		mlr_flip_worker(fd_a, fd_b);
+		mlr_flip_worker(fd_a, fd_b, op, valid_op);
 		/* unreachable */
 	}
 
