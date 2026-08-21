@@ -32,8 +32,8 @@
 
 /*
  * Compute payload length implied by an nla_attr_spec.  Variable-length
- * kinds (STRING, BINARY) draw a length in [4, max_len], or just take
- * max_len when it's already <= 4.
+ * kinds (STRING, BINARY) draw a length in [min_len, max_len], or just
+ * return max_len when it equals min_len.
  */
 static size_t spec_payload_len(const struct nla_attr_spec *spec)
 {
@@ -46,7 +46,7 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 	case NLA_KIND_STRING:
 	case NLA_KIND_STRING_CPULIST:
 	case NLA_KIND_BINARY: {
-		unsigned int lo = spec->min_len > 4 ? spec->min_len : 4;
+		unsigned int lo = spec->min_len; /* no artificial floor */
 
 		if (spec->max_len > lo)
 			return RAND_RANGE(lo, spec->max_len);

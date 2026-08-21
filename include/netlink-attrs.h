@@ -21,7 +21,7 @@ enum nla_kind {
 	/* Binary blob whose length the kernel constrains to exactly one
 	 * of two values (typically AES-128 vs AES-256 key bytes).  Picks
 	 * uniformly between min_len and max_len per emission rather than
-	 * sweeping the [4, max_len] range NLA_KIND_BINARY uses: any
+	 * sweeping the [min_len, max_len] range NLA_KIND_BINARY uses: any
 	 * intermediate length is a guaranteed kernel reject, so spending
 	 * fuzz budget there is wasted work that only flips -EINVAL on
 	 * the validate side. */
