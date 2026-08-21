@@ -308,7 +308,7 @@ size_t gen_rta_tc_payload(unsigned char *p, size_t avail,
 		/* avail below the 160-byte stab minimum (BASE + DATA worst case);
 		 * this is the expected-hot skip path that the counter was meant
 		 * to observe -- the callee bail arms are structurally unreachable
-		 * once this guard is in place (f5fa63fdd232). */
+		 * once this guard is in place (f5fa63fdd232 ("net/netlink: fix TCA_STAB avail/tsize mismatch in build_stab_nest()")). */
 		__atomic_add_fetch(&shm->stats.netlink_stab_emit_skipped,
 				   1, __ATOMIC_RELAXED);
 		return 0;
