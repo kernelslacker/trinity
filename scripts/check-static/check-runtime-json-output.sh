@@ -805,8 +805,8 @@ if live_path_exists:
                 if rec.get("type") == "terminal":
                     if live_terminal_fields is None:
                         live_terminal_fields = sorted(rec.keys())
-		else:
-		    live_fields_list.append(sorted(rec.keys()))
+                else:
+                    live_fields_list.append(sorted(rec.keys()))
             except json.JSONDecodeError as e:
                 live_errors.append(f"line {lineno}: {e}")
 
@@ -899,17 +899,17 @@ if live_fields_list:
     extra_live_all   = set()
     missing_live_all = set()
     for lf in live_fields_list:
-	lfs = set(lf)
-	extra_live_all   |= lfs - bl_fields_set
-	missing_live_all |= bl_fields_set - lfs
+        lfs = set(lf)
+        extra_live_all   |= lfs - bl_fields_set
+        missing_live_all |= bl_fields_set - lfs
     if extra_live_all:
         check_errors.append(
             "live rotation record: unexpected fields: " +
-	    ", ".join(sorted(extra_live_all)))
+            ", ".join(sorted(extra_live_all)))
     if missing_live_all:
         check_errors.append(
             "live rotation record: missing fields: " +
-	    ", ".join(sorted(missing_live_all)))
+            ", ".join(sorted(missing_live_all)))
 
 # Terminal record: validate against [terminal] section.
 if live_terminal_fields is not None and bl_terminal_set:
@@ -945,13 +945,13 @@ with open(result_path, "w") as f:
                 f"baseline_fields={len(bl_fields)} "
                 f"live_records=none(not-exercised){term_note}\n")
     else:
-	n_live = len(live_fields_list[-1])
-	source_tag = "real+synth" if have_real else "synth-only"
+        n_live = len(live_fields_list[-1])
+        source_tag = "real+synth" if have_real else "synth-only"
         f.write("ok\n")
         f.write(f"source_fields={len(src_fields)} "
                 f"baseline_fields={len(bl_fields)} "
-		f"live_records={len(live_fields_list)}recs({n_live}fields) "
-		f"validated={source_tag}\n")
+                f"live_records={len(live_fields_list)}recs({n_live}fields) "
+                f"validated={source_tag}\n")
 
 sys.exit(1 if check_errors else 0)
 PYEOF
