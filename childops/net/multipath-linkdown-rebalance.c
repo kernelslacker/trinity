@@ -417,7 +417,7 @@ static int mlr_expected_upper_bound(unsigned int cum_w, unsigned int total_w,
  * violations -- only definitively malformed partitions are counted).
  * Returns false when the route IS returned but the partition is bad.
  */
-static bool mlr_partition_check(struct nl_ctx *nl, bool v6)
+static bool mlr_partition_check(struct nl_ctx *nl, bool v6, unsigned long *direct_calls)
 {
 	struct {
 		struct nlmsghdr	nlh;
@@ -466,10 +466,15 @@ static bool mlr_partition_check(struct nl_ctx *nl, bool v6)
 					    RTA_ALIGN((__u16)RTA_LENGTH(gw_sz)));
 	}
 
-	if (send(nl->fd, &req, req.nlh.nlmsg_len, 0) < 0)
-		return true;	/* send failed — skip */
+	{
+		ssize_t sret = send(nl->fd, &req, req.nlh.nlmsg_len, 0);
+		(*direct_calls)++;
+		if (sret < 0)
+			return true;	/* send failed — skip */
+	}
 
 	n = recv(nl->fd, rsp, sizeof(rsp), 0);
+	(*direct_calls)++;
 	if (n < (ssize_t)sizeof(struct nlmsghdr))
 		return true;	/* recv failed — skip */
 
@@ -824,7 +829,7 @@ static int multipath_linkdown_rebalance_in_ns(void *arg)
 			 * fib_nh_upper_bound is the residual race the
 			 * remove-the-divide fix does not close.
 			 */
-			if (!mlr_partition_check(&ctx, v6))
+			if (!mlr_partition_check(&ctx, v6, &direct_calls))
 				__atomic_add_fetch(
 					&shm->stats.multipath_linkdown_rebalance.partition_invalid,
 					1, __ATOMIC_RELAXED);
