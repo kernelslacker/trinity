@@ -168,6 +168,7 @@ static const struct stat_field netlink_generator_fields[] = {
 	STAT_FIELD(netlink, nested_attr_built_width),
 	STAT_FIELD(netlink, nested_attr_build_calls),
 	STAT_FIELD(netlink, nested_attr_lost_align),
+	STAT_FIELD(netlink, stab_emit_skipped),
 };
 
 const struct stat_category netlink_generator_category =
