@@ -988,6 +988,28 @@ if [ -z "$frozen" ] || ! [ "$frozen" -ge 0 ] 2>/dev/null; then
 	exit 1
 fi
 
+# Anti-backslide assertion: the ceiling in count.baseline must never
+# increase.  count.baseline.prev records the highest value the ceiling
+# is allowed to hold; to lower the ceiling, update both files together.
+# To intentionally raise it (strongly discouraged — the baseline header
+# says it should shrink over time, never grow), the author must also
+# update .prev, making the decision explicit and reviewable.
+PREV_BASELINE="${COUNT_BASELINE}.prev"
+if [ -r "$PREV_BASELINE" ]; then
+	prev=$(cat "$PREV_BASELINE" 2>/dev/null | tr -d '[:space:]')
+	if [ -n "$prev" ] && [ "$prev" -ge 0 ] 2>/dev/null; then
+		if [ "$frozen" -gt "$prev" ]; then
+			{
+				echo "FAIL: $NAME: ceiling raised $prev→$frozen (ratchet must only shrink)."
+				echo "  To lower the ceiling, decrease both count.baseline and"
+				echo "  count.baseline.prev together.  Raising the ceiling requires"
+				echo "  an explicit matching update of count.baseline.prev."
+			} >&2
+			exit 1
+		fi
+	fi
+fi
+
 total=${#SEEN_KEY[@]}
 
 if [ "$total" -gt "$frozen" ]; then
