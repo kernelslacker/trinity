@@ -17,7 +17,7 @@ state — this is a directory of convenience, not a subsystem.
 | fd.c | 55 | `write_all()` / `read_all()`: EINTR-retrying full-buffer read/write loops shared by every on-disk persistence format |
 | jsonl.c | 64 | Dependency-free JSON-Lines sink (`jsonl_open`/`jsonl_write`): raw open/write/close only, no reliance on trinity's output/shm/logging so it can run before those are up |
 
-(numa.c and cmsg_build.c are the two largest by responsibility; userns-bootstrap.c is the highest-risk for correctness due to privilege semantics.)
+(cmsg_build.c and userns-bootstrap.c are the two largest by responsibility; userns-bootstrap.c is the highest-risk for correctness due to privilege semantics.)
 
 ## Key design decisions
 
