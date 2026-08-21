@@ -558,14 +558,17 @@ static bool mlr_partition_check(struct nl_ctx *nl, bool v6, unsigned long *direc
  * Path is per-netns (net.* sysctls are namespaced), so this only ever
  * touches the grandchild's private netns.  Returns fd or -1.
  */
-static int mlr_open_sysctl(bool v6, const char *dev)
+static int mlr_open_sysctl(bool v6, const char *dev, unsigned long *direct_calls)
 {
 	char path[128];
+	int fd;
 
 	snprintf(path, sizeof(path),
 		 "/proc/sys/net/ipv%s/conf/%s/ignore_routes_with_linkdown",
 		 v6 ? "6" : "4", dev);
-	return open(path, O_WRONLY | O_CLOEXEC);
+	fd = open(path, O_WRONLY | O_CLOEXEC);
+	(*direct_calls)++;
+	return fd;
 }
 
 static int mlr_write_sysctl(int fd, char val)
@@ -759,8 +762,8 @@ static int multipath_linkdown_rebalance_in_ns(void *arg)
 	 * continues would pollute completed_ok without ever exercising the
 	 * bug window, so we treat open failure as a setup failure and stop.
 	 */
-	fd_a = mlr_open_sysctl(v6, legs[0].local);
-	fd_b = mlr_open_sysctl(v6, legs[1].local);
+	fd_a = mlr_open_sysctl(v6, legs[0].local, &direct_calls);
+	fd_b = mlr_open_sysctl(v6, legs[1].local, &direct_calls);
 	if (fd_a < 0 || fd_b < 0) {
 		__atomic_add_fetch(
 			&shm->stats.multipath_linkdown_rebalance.setup_failed,
