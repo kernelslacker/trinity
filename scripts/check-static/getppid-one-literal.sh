@@ -83,15 +83,21 @@ BASELINE="$ROOT/scripts/check-static/getppid-one-literal.baseline"
 # Deriving all four patterns from these variables prevents the operator axis
 # from diverging between passes and between yoda/non-yoda forms.
 #
-#   OPS      — operators for non-yoda form: expr OP sentinel
-#   OPS_YODA — operators for yoda form:     sentinel OP expr
-#              Includes ==|!= (self-mirroring), >= (mirror of <=),
-#              > (mirror of <), <= (mirror of >= in direct form), and
-#              < (mirror of > in direct form).
-#   SENTINELS — named sentinel comparands (literal 1 handled separately
-#              because it also has the < 2 close-zero form).
+#   OPS_LITERAL — operators for the literal-1 axis (non-yoda): expr OP 1
+#                 Only == != <= < are meaningful; >= 1 and > 1 are
+#                 tautologies for PIDs (always true) and must not be flagged.
+#   OPS_NAMED   — operators for the named-sentinel axis (non-yoda): expr OP sentinel
+#                 Superset of OPS_LITERAL; adds >= and > which are valid
+#                 mirror comparators for the mainpid sentinel.
+#   OPS_YODA    — operators for yoda form:     sentinel OP expr
+#                 Includes ==|!= (self-mirroring), >= (mirror of <=),
+#                 > (mirror of <), <= (mirror of >= in direct form), and
+#                 < (mirror of > in direct form).
+#   SENTINELS   — named sentinel comparands (literal 1 handled separately
+#                 because it also has the < 2 close-zero form).
 # ---------------------------------------------------------------------------
-OPS='==|!=|<=|<|>=|>'
+OPS_LITERAL='==|!=|<=|<'
+OPS_NAMED='==|!=|<=|<|>=|>'
 OPS_YODA='==|!=|>=|>|<=|<'
 SENTINELS='1|mainpid'
 
@@ -100,14 +106,14 @@ SENTINELS='1|mainpid'
 # same line against a literal or named sentinel.
 #
 # Operators and literals caught:
-#   == 1  != 1  <= 1  < 1   (literal 1 via OPS)
+#   == 1  != 1  <= 1  < 1   (literal 1 via OPS_LITERAL)
 #   < 2                     (literal 2 with strict-less — equivalent to <= 1)
 #   == mainpid  != mainpid  (mainpid named sentinel — unsafe at fork depth > 1)
 #   <= mainpid  < mainpid   (mainpid named sentinel variants)
 #   mainpid OP getppid()    (all yoda forms via OPS_YODA)
 # ---------------------------------------------------------------------------
 CALLEXPR='(getppid[[:space:]]*\(\)|trinity_raw_syscall\([^)]*__NR_getppid[^)]*\)|syscall\([^)]*__NR_getppid[^)]*\))'
-PATTERN="${CALLEXPR}[[:space:]]*(($OPS)[[:space:]]*1([^0-9]|$)|<[[:space:]]*2([^0-9]|$))"
+PATTERN="${CALLEXPR}[[:space:]]*(($OPS_LITERAL)[[:space:]]*1([^0-9]|$)|<[[:space:]]*2([^0-9]|$))"
 # Yoda form: 1 == getppid() / 1 != getppid() — only == and != are meaningful
 # on the literal-left side (1 <= getppid() / 1 < getppid() have different
 # semantics and are not subreaper-sentinel patterns).
@@ -116,7 +122,7 @@ YODA_PATTERN="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${CALLEXPR}"
 # unsafe at fork depth > 1 — at that depth mainpid != getppid() on every call
 # so the guard fires unconditionally.  Only the direct child of main() (where
 # the parent IS mainpid) may use this comparison; pin that site in the baseline.
-PATTERN_MAINPID="${CALLEXPR}[[:space:]]*($OPS)[[:space:]]*mainpid([^a-z_A-Z0-9]|$)"
+PATTERN_MAINPID="${CALLEXPR}[[:space:]]*($OPS_NAMED)[[:space:]]*mainpid([^a-z_A-Z0-9]|$)"
 # Yoda mainpid form: all forms where mainpid appears on the left.
 # Uses OPS_YODA so that >=, >, and <= are caught in addition to == and !=.
 YODA_MAINPID_PATTERN="(^|[^a-z_A-Z0-9])mainpid[[:space:]]*($OPS_YODA)[[:space:]]*${CALLEXPR}"
@@ -219,9 +225,10 @@ for srcfile in "${srcfiles[@]}"; do
 		# including the yoda form (1 == varname / 1 != varname).
 		# Require a word boundary before the variable name so we don't
 		# match longer identifiers that happen to end with the same suffix.
-		# Use the shared OPS/OPS_YODA sets so operators stay in sync with
-		# the Pass 1 patterns above.
-		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*(($OPS)[[:space:]]*(${SENTINELS})([^a-z_A-Z0-9]|$)|<[[:space:]]*2([^0-9]|$))"
+		# Use the axis-split OPS_LITERAL/OPS_NAMED sets so operators stay in
+		# sync with Pass 1: literal-1 uses OPS_LITERAL (avoids tautology false-
+		# positives for >= 1 / > 1), mainpid uses OPS_NAMED (allows >= / >).
+		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*(($OPS_LITERAL)[[:space:]]*1([^0-9]|$)|($OPS_NAMED)[[:space:]]*mainpid([^a-z_A-Z0-9]|$)|<[[:space:]]*2([^0-9]|$))"
 		cmp_pattern_yoda="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)|(^|[^a-z_A-Z0-9])mainpid[[:space:]]*($OPS_YODA)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)"
 
 		while IFS=: read -r lineno content; do
