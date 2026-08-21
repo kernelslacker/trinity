@@ -308,11 +308,16 @@ static size_t build_vxlan_vni_entry_nested(unsigned char *p, size_t avail)
 			break;
 		case 1:
 			atype = VXLAN_VNIFILTER_ENTRY_GROUP;
-			plen = sizeof(struct in_addr);
+			/* 1-in-8: short payload exercises the NLA_BINARY ceiling
+			 * validator (kernel bug 984f831dda31 accepted under-length
+			 * attrs but read at full width). */
+			plen = ONE_IN(8) ? RAND_RANGE((size_t)1, sizeof(struct in_addr) - 1)
+					 : sizeof(struct in_addr);
 			break;
 		default:
 			atype = VXLAN_VNIFILTER_ENTRY_GROUP6;
-			plen = sizeof(struct in6_addr);
+			plen = ONE_IN(8) ? RAND_RANGE((size_t)1, sizeof(struct in6_addr) - 1)
+					 : sizeof(struct in6_addr);
 			break;
 		}
 
@@ -336,12 +341,12 @@ static size_t build_vxlan_vni_entry_nested(unsigned char *p, size_t avail)
 		} else if (atype == VXLAN_VNIFILTER_ENTRY_GROUP) {
 			__u32 v4 = rand_ipv4();
 
-			memcpy(payload, &v4, sizeof(v4));
+			memcpy(payload, &v4, plen);
 		} else {
 			struct in6_addr v6;
 
 			rand_ipv6(&v6);
-			memcpy(payload, &v6, sizeof(v6));
+			memcpy(payload, &v6, plen);
 		}
 		off += total;
 	}
