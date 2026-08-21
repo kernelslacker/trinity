@@ -122,12 +122,6 @@ while IFS= read -r srcfile; do
 	while IFS=: read -r lineno content; do
 		[ -z "$lineno" ] && continue
 
-		# Skip comment lines.
-		trimmed="${content#"${content%%[![:space:]]*}"}"
-		case "$trimmed" in
-			\**|/\**|//*) continue ;;
-		esac
-
 		total_callsites=$((total_callsites + 1))
 
 		# Read up to LOOKBEHIND lines before the callsite, stopping at
@@ -184,7 +178,7 @@ while IFS= read -r srcfile; do
 		echo "$key: alarm() without preceding signal(SIGALRM, SIG_DFL) in fork()-containing file" \
 			>> "$hits_tmp"
 		flagged=$((flagged + 1))
-	done < <(grep -nE '[^a-zA-Z_]alarm[[:space:]]*\(|^alarm[[:space:]]*\(' "$srcfile" 2>/dev/null)
+	done < <(grep -nE '[^a-zA-Z_]alarm[[:space:]]*\(|^alarm[[:space:]]*\(' "$stripped_tmp" 2>/dev/null)
 done < <(find "$ROOT" -name '*.c' -type f \
 	-not -path "$ROOT/scripts/check-static/*" \
 	| sort)
