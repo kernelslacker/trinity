@@ -763,7 +763,7 @@ live_path     = sys.argv[2]   # may be empty string
 baseline_path = sys.argv[3]
 mode          = sys.argv[4]
 result_path   = sys.argv[5]
-have_real     = len(sys.argv) > 6 and sys.argv[6] == '1'
+have_real     = False  # resolved after live file is parsed
 
 # Extract expected field names from the snprintf format string in
 # stats_rotation_event_emit().  Look for every "\"KEY\":%...(,|}) pattern.
@@ -815,6 +815,8 @@ if live_errors:
         f.write("error\n")
         f.write("\n".join(live_errors) + "\n")
     sys.exit(1)
+
+have_real = len(live_fields_list) > 1
 
 if mode == "regen":
     lines = []
@@ -945,13 +947,19 @@ with open(result_path, "w") as f:
                 f"baseline_fields={len(bl_fields)} "
                 f"live_records=none(not-exercised){term_note}\n")
     else:
-        n_live = len(live_fields_list[-1])
         source_tag = "real+synth" if have_real else "synth-only"
         f.write("ok\n")
-        f.write(f"source_fields={len(src_fields)} "
-                f"baseline_fields={len(bl_fields)} "
-                f"live_records={len(live_fields_list)}recs({n_live}fields) "
-                f"validated={source_tag}\n")
+        if have_real:
+            n_live = len(live_fields_list[0])
+            f.write(f"source_fields={len(src_fields)} "
+                    f"baseline_fields={len(bl_fields)} "
+                    f"live_records={len(live_fields_list)}recs({n_live}fields) "
+                    f"validated={source_tag}\n")
+        else:
+            f.write(f"source_fields={len(src_fields)} "
+                    f"baseline_fields={len(bl_fields)} "
+                    f"live_records={len(live_fields_list)}recs "
+                    f"validated={source_tag}\n")
 
 sys.exit(1 if check_errors else 0)
 PYEOF
