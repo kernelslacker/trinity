@@ -279,9 +279,10 @@ if echo "$_st_out_d" | grep -q 'st_raw_x_wrapped_proto'; then
 fi
 > "$_st_root/scripts/check-static/$NAME.baseline"
 
-# Sub-tests E-J: ratchet pawl-follow fixture matrix (six rows from
-# 11f8fcdd2d33 ("check-static: close ratchet fail-open and add pawl-follow to .prev")
-# that were documented but not covered by in-tree selftest cases).
+# Sub-tests E-K: ratchet pawl-follow fixture matrix (seven rows:
+# E-J from 11f8fcdd2d33 ("check-static: close ratchet fail-open and add pawl-follow to .prev")
+# that were documented but not covered by in-tree selftest cases;
+# K added to cover the unwritable-tree WARN path for pawl-follow write failure).
 # Baseline all fixture-file findings so the scanner reaches the ratchet guard.
 _st_bl_all="$(printf '%s\n%s\n' "$_st_bl_a" "$_st_bl_c")"
 printf '%s\n' "$_st_bl_all" > "$_st_root/scripts/check-static/$NAME.baseline"
@@ -365,6 +366,27 @@ _st_out_j=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
 _st_rc_j=$?
 if [ $_st_rc_j -ne 0 ]; then
 	echo "FAIL: $NAME selftest J: normal state (frozen=prev=total=3) must PASS (exit=$_st_rc_j; output: $_st_out_j)" >&2
+	exit 1
+fi
+
+# Sub-test K: unwritable PREV_BASELINE and parent directory → WARN + PASS.
+# Set frozen=3 < prev=99 (pawl-follow triggers) then make both the file
+# and its parent directory not writable.  The gate must emit a WARN and
+# exit 0 (the invariant was evaluated correctly; only bookkeeping failed).
+echo "3"  > "$_st_root/scripts/check-static/$NAME.count.baseline"
+echo "99" > "$_st_root/scripts/check-static/$NAME.count.baseline.prev"
+chmod a-w "$_st_root/scripts/check-static/$NAME.count.baseline.prev" \
+		"$_st_root/scripts/check-static"
+_st_out_k=$(REPO_ROOT="$_st_root" _CSC_SELFTEST_RECURSE=1 bash "$_st_self" 2>&1)
+_st_rc_k=$?
+chmod u+w "$_st_root/scripts/check-static" \
+		"$_st_root/scripts/check-static/$NAME.count.baseline.prev"
+if [ $_st_rc_k -ne 0 ]; then
+	echo "FAIL: $NAME selftest K: unwritable-tree pawl-write must WARN+PASS (exit=$_st_rc_k; output: $_st_out_k)" >&2
+	exit 1
+fi
+if ! echo "$_st_out_k" | grep -q 'WARN'; then
+	echo "FAIL: $NAME selftest K: unwritable-tree must emit WARN (output: $_st_out_k)" >&2
 	exit 1
 fi
 
@@ -1114,8 +1136,23 @@ fi
 # so the ratchet cannot silently re-raise back to a stale high-water mark.
 if [ "$frozen" -lt "$prev" ]; then
 	if ! printf '%s\n' "$frozen" > "$PREV_BASELINE" 2>/dev/null; then
-		echo "FAIL: $NAME: could not update $PREV_BASELINE; check file permissions." >&2
-		exit 1
+		# Write failed.  Distinguish two cases:
+		#   - Tree is writable (normal dev path): the file or directory
+		#     should be writable, so a write failure is unexpected →
+		#     hard FAIL to surface the permissions problem.
+		#   - Tree is not writable (read-only checkout, CI export,
+		#     shallow clone): the invariant was evaluated correctly and
+		#     only the bookkeeping update failed → emit WARN and
+		#     continue.  The symmetry with read failure is unsound:
+		#     read failure means the gate cannot evaluate its invariant
+		#     (FAIL is correct); write failure here means the invariant
+		#     was fine and only persistence of the pawl value failed.
+		if [ -w "$PREV_BASELINE" ] || [ -w "$(dirname "$PREV_BASELINE")" ]; then
+			echo "FAIL: $NAME: could not update $PREV_BASELINE; check file permissions." >&2
+			exit 1
+		else
+			echo "WARN: $NAME: $PREV_BASELINE is not writable (read-only tree); skipping pawl-follow update." >&2
+		fi
 	fi
 fi
 
