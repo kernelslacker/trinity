@@ -139,6 +139,8 @@ mkdir -p "$_st_root/childops" "$_st_root/scripts/check-static"
 # Empty baseline; count ceiling large enough not to interfere with sub-tests.
 > "$_st_root/scripts/check-static/$NAME.baseline"
 echo "99" > "$_st_root/scripts/check-static/$NAME.count.baseline"
+# .prev must match the ceiling so the ratchet guard does not misfire.
+echo "99" > "$_st_root/scripts/check-static/$NAME.count.baseline.prev"
 
 # Fixture A: prototype raw_x must not register as self-counting.
 # A childop that calls socket() should still be flagged UNCOUNTED.
@@ -988,25 +990,40 @@ if [ -z "$frozen" ] || ! [ "$frozen" -ge 0 ] 2>/dev/null; then
 	exit 1
 fi
 
-# Anti-backslide assertion: the ceiling in count.baseline must never
-# increase.  count.baseline.prev records the highest value the ceiling
-# is allowed to hold; to lower the ceiling, update both files together.
-# To intentionally raise it (strongly discouraged — the baseline header
-# says it should shrink over time, never grow), the author must also
-# update .prev, making the decision explicit and reviewable.
+# Anti-backslide ratchet: .prev is the highest value the ceiling is
+# allowed to hold.  A missing, empty, or non-numeric .prev is a hard
+# failure -- it means the guard file has been tampered with or was
+# never properly seeded, and silently skipping would be fail-open.
 PREV_BASELINE="${COUNT_BASELINE}.prev"
-if [ -r "$PREV_BASELINE" ]; then
-	prev=$(cat "$PREV_BASELINE" 2>/dev/null | tr -d '[:space:]')
-	if [ -n "$prev" ] && [ "$prev" -ge 0 ] 2>/dev/null; then
-		if [ "$frozen" -gt "$prev" ]; then
-			{
-				echo "FAIL: $NAME: ceiling raised $prev→$frozen (ratchet must only shrink)."
-				echo "  To lower the ceiling, decrease both count.baseline and"
-				echo "  count.baseline.prev together.  Raising the ceiling requires"
-				echo "  an explicit matching update of count.baseline.prev."
-			} >&2
-			exit 1
-		fi
+if [ ! -e "$PREV_BASELINE" ]; then
+	{
+		echo "FAIL: $NAME: ratchet guard $PREV_BASELINE is missing."
+		echo "  Create it with the current ceiling value to initialise the ratchet."
+	} >&2
+	exit 1
+fi
+prev=$(cat "$PREV_BASELINE" 2>/dev/null | tr -d '[:space:]')
+if [ -z "$prev" ] || ! [ "$prev" -ge 0 ] 2>/dev/null; then
+	{
+		echo "FAIL: $NAME: $PREV_BASELINE is empty or non-numeric (got: '$prev')."
+		echo "  It must contain a non-negative integer matching the ceiling."
+	} >&2
+	exit 1
+fi
+if [ "$frozen" -gt "$prev" ]; then
+	{
+		echo "FAIL: $NAME: ceiling raised $prev→$frozen (ratchet must only shrink)."
+		echo "  To lower the ceiling, decrease both count.baseline and"
+		echo "  count.baseline.prev together.  Raising the ceiling requires"
+		echo "  an explicit matching update of count.baseline.prev."
+	} >&2
+	exit 1
+fi
+# Pawl follow: when the ceiling is lowered, advance .prev to track it
+# so the ratchet cannot silently re-raise back to a stale high-water mark.
+if [ "$frozen" -lt "$prev" ]; then
+	if ! printf '%s\n' "$frozen" > "$PREV_BASELINE" 2>/dev/null; then
+		echo "WARN: $NAME: could not update $PREV_BASELINE; check file permissions." >&2
 	fi
 fi
 
