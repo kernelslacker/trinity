@@ -37,11 +37,14 @@
 #     getppid() != mainpid  (inverse mainpid sentinel — unsafe at depth > 1)
 #     getppid() <= mainpid  (mainpid sentinel variant)
 #     getppid() <  mainpid  (mainpid sentinel variant)
+#     getppid() >= mainpid  (mainpid sentinel variant — mirror of mainpid <=)
+#     getppid() >  mainpid  (mainpid sentinel variant — mirror of mainpid <)
 #     mainpid == getppid()  (yoda mainpid sentinel)
 #     mainpid != getppid()  (yoda inverse mainpid sentinel)
 #     mainpid >= getppid()  (yoda mainpid: equiv to getppid() <= mainpid)
 #     mainpid >  getppid()  (yoda mainpid: equiv to getppid() < mainpid)
 #     mainpid <= getppid()  (yoda mainpid: equiv to getppid() >= mainpid)
+#     mainpid <  getppid()  (yoda mainpid: equiv to getppid() > mainpid)
 #   All forms are caught for both the libc getppid() and raw-syscall variants.
 #
 #   Pass 2 (hoisted): catches the common refactoring where the call is
@@ -83,13 +86,13 @@ BASELINE="$ROOT/scripts/check-static/getppid-one-literal.baseline"
 #   OPS      — operators for non-yoda form: expr OP sentinel
 #   OPS_YODA — operators for yoda form:     sentinel OP expr
 #              Includes ==|!= (self-mirroring), >= (mirror of <=),
-#              > (mirror of <), and <= (to catch mainpid <= getppid()
-#              which is equivalent to getppid() >= mainpid — still suspect).
+#              > (mirror of <), <= (mirror of >= in direct form), and
+#              < (mirror of > in direct form).
 #   SENTINELS — named sentinel comparands (literal 1 handled separately
 #              because it also has the < 2 close-zero form).
 # ---------------------------------------------------------------------------
-OPS='==|!=|<=|<'
-OPS_YODA='==|!=|>=|>|<='
+OPS='==|!=|<=|<|>=|>'
+OPS_YODA='==|!=|>=|>|<=|<'
 SENTINELS='1|mainpid'
 
 # ---------------------------------------------------------------------------
@@ -218,7 +221,7 @@ for srcfile in "${srcfiles[@]}"; do
 		# match longer identifiers that happen to end with the same suffix.
 		# Use the shared OPS/OPS_YODA sets so operators stay in sync with
 		# the Pass 1 patterns above.
-		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*(($OPS)[[:space:]]*(1|mainpid)([^a-z_A-Z0-9]|$)|<[[:space:]]*2([^0-9]|$))"
+		cmp_pattern="(^|[^a-z_A-Z0-9])${varname}[[:space:]]*(($OPS)[[:space:]]*(${SENTINELS})([^a-z_A-Z0-9]|$)|<[[:space:]]*2([^0-9]|$))"
 		cmp_pattern_yoda="(^|[^0-9])1[[:space:]]*(==|!=)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)|(^|[^a-z_A-Z0-9])mainpid[[:space:]]*($OPS_YODA)[[:space:]]*${varname}([^a-z_A-Z0-9]|$)"
 
 		while IFS=: read -r lineno content; do
