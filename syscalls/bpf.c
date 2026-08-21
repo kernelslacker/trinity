@@ -566,7 +566,7 @@ static void post_bpf(struct syscallrecord *rec)
 	union bpf_attr *attr;
 	unsigned int cmd;
 	int fd = rec->retval;
-	int saved_errno = (fd < 0) ? errno : 0;
+	int saved_errno = rec->errno_post;
 	unsigned long ret = rec->retval;
 	bool attr_readable;
 
