@@ -719,33 +719,36 @@ fi
 # record types against the baseline and emits "ok" rather than "skip".
 # ---------------------------------------------------------------------------
 
-# Inject a synthetic rotation record so the live_fields arm and the terminal-
-# record validation arm both execute on every run.  The binary's -N 15000 run
-# may have produced a rotation-events JSONL that carries only a terminal
-# record (no rotation record, since STRATEGY_WINDOW=131072 is unreachable
-# under the fixture cap).  Prepend one synthetic rotation record so the
-# Python cross-check sees a non-terminal record and sets live_fields.  If
-# no binary rotation-events file exists create a full synthetic fixture.
+# Inject a synthetic rotation record so at least one non-terminal record is
+# always present, exercising the rotation-field validation path on every run.
+# The binary's -N 15000 run may have produced a rotation-events JSONL carrying
+# only a terminal record (STRATEGY_WINDOW=131072 is unreachable under the cap).
+# Append the synthetic record so real binary records come first and are examined
+# before the fixture; Python validates every non-terminal record and reports the
+# union of field mismatches.  If no binary file exists, create a full synthetic
+# fixture (rotation + terminal).
 _ROTATION_SYNTH_RECORD='{"t_close_mono_ns":0,"start_mono_ns":0,"op_count_start":0,"op_count_end":131072,"syscalls_in_window":0,"strategy_prev":0,"strategy_prev_name":"random","strategy_next":0,"strategy_next_name":"random","selection_reason_prev":0,"selection_reason_prev_name":"initial","selection_reason_next":0,"selection_reason_next_name":"initial","pim_mode":0,"pim_mode_name":"none","pc_edge_calls_in_window":0,"pc_edges_in_window":0,"cmp_wins_in_window":0,"warn_fires_in_window":0,"was_chaos":false,"plateau_active":false,"distinct_edges_now":0}'
 _ROTATION_REAL="$(ls "$WORK"/rotation-events-*.jsonl 2>/dev/null | head -1)"
 if [ -n "$_ROTATION_REAL" ]; then
-	# Binary run produced a file (likely terminal-only): inject the synthetic
-	# rotation record at the front so live_fields is non-None after parsing.
+	# Binary run produced a file: append synthetic so real records come first.
 	_ROTATION_COMBINED="$WORK/rotation-events-combined-fixture.jsonl"
-	{ printf '%s\n' "$_ROTATION_SYNTH_RECORD"; cat "$_ROTATION_REAL"; } \
+	{ cat "$_ROTATION_REAL"; printf '%s\n' "$_ROTATION_SYNTH_RECORD"; } \
 		> "$_ROTATION_COMBINED"
 	ROTATION_FILE="$_ROTATION_COMBINED"
+	_ROTATION_HAVE_REAL=1
 else
 	# No binary file: create a full synthetic fixture with rotation + terminal.
 	ROTATION_FILE="$WORK/rotation-events-synthetic-fixture.jsonl"
 	printf '%s\n' "$_ROTATION_SYNTH_RECORD" '{"type":"terminal"}' \
 		> "$ROTATION_FILE"
+	_ROTATION_HAVE_REAL=0
 fi
 
 python3 - "$ROOT/stats/rotation_event.c" \
           "${ROTATION_FILE:-}" \
           "$BASELINE_ROTATION" "$MODE" \
-          "$WORK/rotation_check.result" <<'PYEOF'
+	  "$WORK/rotation_check.result" \
+	  "${_ROTATION_HAVE_REAL:-0}" <<'PYEOF'
 import sys, json, os, re
 
 source_path   = sys.argv[1]
@@ -753,6 +756,7 @@ live_path     = sys.argv[2]   # may be empty string
 baseline_path = sys.argv[3]
 mode          = sys.argv[4]
 result_path   = sys.argv[5]
+have_real     = len(sys.argv) > 6 and sys.argv[6] == '1'
 
 # Extract expected field names from the snprintf format string in
 # stats_rotation_event_emit().  Look for every "\"KEY\":%...(,|}) pattern.
@@ -780,7 +784,7 @@ if err:
 # are separated from rotation event records so they can be validated
 # independently against the [terminal] baseline section.
 live_path_exists = bool(live_path and os.path.exists(live_path))
-live_fields = None
+live_fields_list = []   # sorted field list per non-terminal record
 live_terminal_fields = None
 live_errors = []
 if live_path_exists:
@@ -794,8 +798,8 @@ if live_path_exists:
                 if rec.get("type") == "terminal":
                     if live_terminal_fields is None:
                         live_terminal_fields = sorted(rec.keys())
-                elif live_fields is None:
-                    live_fields = sorted(rec.keys())
+		else:
+		    live_fields_list.append(sorted(rec.keys()))
             except json.JSONDecodeError as e:
                 live_errors.append(f"line {lineno}: {e}")
 
@@ -882,19 +886,23 @@ if extra_in_bl:
         "rotation-event baseline fields not in source "
         "(removed field? run --regen): " + ", ".join(sorted(extra_in_bl)))
 
-# Live rotation event records: validate against [rotation] section.
-if live_fields is not None:
-    live_set = set(live_fields)
-    extra_live    = live_set    - bl_fields_set
-    missing_live  = bl_fields_set - live_set
-    if extra_live:
+# Live rotation event records: validate every non-terminal record against the
+# [rotation] section and accumulate mismatches across all of them.
+if live_fields_list:
+    extra_live_all   = set()
+    missing_live_all = set()
+    for lf in live_fields_list:
+	lfs = set(lf)
+	extra_live_all   |= lfs - bl_fields_set
+	missing_live_all |= bl_fields_set - lfs
+    if extra_live_all:
         check_errors.append(
             "live rotation record: unexpected fields: " +
-            ", ".join(sorted(extra_live)))
-    if missing_live:
+	    ", ".join(sorted(extra_live_all)))
+    if missing_live_all:
         check_errors.append(
             "live rotation record: missing fields: " +
-            ", ".join(sorted(missing_live)))
+	    ", ".join(sorted(missing_live_all)))
 
 # Terminal record: validate against [terminal] section.
 if live_terminal_fields is not None and bl_terminal_set:
@@ -917,7 +925,7 @@ with open(result_path, "w") as f:
     if check_errors:
         f.write("error\n")
         f.write("\n".join(check_errors) + "\n")
-    elif live_fields is None:
+    elif not live_fields_list:
         # No live rotation record found in the fixture file (terminal-only or
         # empty).  The synthetic fixture injected by the shell should always
         # supply at least one rotation record; reaching here means the fixture
@@ -930,11 +938,13 @@ with open(result_path, "w") as f:
                 f"baseline_fields={len(bl_fields)} "
                 f"live_records=none(not-exercised){term_note}\n")
     else:
-        n_live = len(live_fields)
+	n_live = len(live_fields_list[-1])
+	source_tag = "real+synth" if have_real else "synth-only"
         f.write("ok\n")
         f.write(f"source_fields={len(src_fields)} "
                 f"baseline_fields={len(bl_fields)} "
-                f"live_records=yes({n_live}fields)\n")
+		f"live_records={len(live_fields_list)}recs({n_live}fields) "
+		f"validated={source_tag}\n")
 
 sys.exit(1 if check_errors else 0)
 PYEOF
