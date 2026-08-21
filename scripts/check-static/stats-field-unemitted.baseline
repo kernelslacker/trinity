@@ -140,3 +140,106 @@ UNEMITTED:stats/subsys/pc_edge_source.h:errno_pcedge_wins
 # NR_STRATEGIES-wide arrays are not yet wired to any dump emitter.
 UNEMITTED:stats/subsys/transition_edge.h:calls_by_strategy
 UNEMITTED:stats/subsys/transition_edge.h:count_by_strategy
+
+# ── Population B: struct stats_s fields in include/stats.h ───────────────────
+#
+# These fields are members of struct stats_s declared in include/stats.h.
+# The emission requirement for Population B is stricter than for Population A:
+# a field must appear in stats/json/*.c (JSON export).  A reference in the
+# text-dump path (stats/dump/) is not sufficient.
+#
+# The entries below reflect the state at the time Population B was added to
+# this gate.  They are seeded from the real delta -- not grandfathered
+# blindly -- so that each entry carries an explicit reason.  The baseline
+# should shrink as fields are wired to stats/json/*.c emitters.
+#
+# Reason codes used below:
+#   DUMP-ONLY : referenced in a stats/dump/ text emitter but absent from
+#               stats/json/*.c; the JSON-export gap this gate was added to catch.
+#   DARK      : no reference in any stats/ .c file at all; the field is
+#               written by a producer outside stats/ but has no consumer.
+
+# post_handler_untouched_out_buf: DARK.  Written by the post-handler sanity
+# check in a post handler TU; no stats/ emitter reads it yet.
+UNEMITTED:include/stats.h:post_handler_untouched_out_buf
+
+# netlink nested-attr counters: DUMP-ONLY.  Emitted by the netlink text dump
+# path (stats/dump/) but absent from stats/json/core.c.  netlink_stab_emit_skipped
+# is the specific 576-D gap (TCA_STAB miss counter added in 576-D without a
+# JSON emitter).  Wire all seven to stats/json/network.c or stats/json/core.c.
+UNEMITTED:include/stats.h:netlink_nested_attrs_emitted
+UNEMITTED:include/stats.h:netlink_nested_attrs_accepted
+UNEMITTED:include/stats.h:netlink_nested_attr_skipped_width
+UNEMITTED:include/stats.h:netlink_nested_attr_built_width
+UNEMITTED:include/stats.h:netlink_nested_attr_build_calls
+UNEMITTED:include/stats.h:netlink_nested_attr_lost_align
+UNEMITTED:include/stats.h:netlink_stab_emit_skipped
+
+# genl_family_calls_* dispatch counters: DUMP-ONLY (except ncsi/tcmu: DARK).
+# All 21 counters are written by gen_genl_body() and emitted by the netlink
+# text dump path but are absent from stats/json/network.c.  Wire them to the
+# JSON network section.  genl_family_calls_ncsi and genl_family_calls_tcmu are
+# currently totally dark (no stats/ .c reference) -- they may need producers
+# or may not be reachable on the test system.
+UNEMITTED:include/stats.h:genl_family_calls_devlink
+UNEMITTED:include/stats.h:genl_family_calls_nl80211
+UNEMITTED:include/stats.h:genl_family_calls_taskstats
+UNEMITTED:include/stats.h:genl_family_calls_ethtool
+UNEMITTED:include/stats.h:genl_family_calls_mptcp_pm
+UNEMITTED:include/stats.h:genl_family_calls_tipc
+UNEMITTED:include/stats.h:genl_family_calls_wireguard
+UNEMITTED:include/stats.h:genl_family_calls_l2tp
+UNEMITTED:include/stats.h:genl_family_calls_gtp
+UNEMITTED:include/stats.h:genl_family_calls_macsec
+UNEMITTED:include/stats.h:genl_family_calls_netlabel
+UNEMITTED:include/stats.h:genl_family_calls_team
+UNEMITTED:include/stats.h:genl_family_calls_hsr
+UNEMITTED:include/stats.h:genl_family_calls_fou
+UNEMITTED:include/stats.h:genl_family_calls_psample
+UNEMITTED:include/stats.h:genl_family_calls_ncsi
+UNEMITTED:include/stats.h:genl_family_calls_tcmu
+UNEMITTED:include/stats.h:genl_family_calls_nfsd
+UNEMITTED:include/stats.h:genl_family_calls_ila
+UNEMITTED:include/stats.h:genl_family_calls_ioam6
+UNEMITTED:include/stats.h:genl_family_calls_seg6
+UNEMITTED:include/stats.h:genl_family_calls_thermal
+UNEMITTED:include/stats.h:genl_family_calls_ipvs
+
+# nfnl_subsys_calls_* dispatch counters: DUMP-ONLY.  Written by the nfnetlink
+# dispatcher and emitted by the netlink text dump path but absent from
+# stats/json/network.c.  Wire to the JSON network section.
+UNEMITTED:include/stats.h:nfnl_subsys_calls_ctnetlink
+UNEMITTED:include/stats.h:nfnl_subsys_calls_ctnetlink_exp
+UNEMITTED:include/stats.h:nfnl_subsys_calls_nftables
+UNEMITTED:include/stats.h:nfnl_subsys_calls_ipset
+
+# watchdog_signal: DARK.  No reference found in any stats/ .c file; the field
+# may be bumped from outside stats/ (watchdog TU) but has no emitter at all.
+UNEMITTED:include/stats.h:watchdog_signal
+
+# Subsystem scalar aggregates embedded directly in struct stats_s: DUMP-ONLY.
+# These fields aggregate per-subsystem scalars and are referenced by the text
+# dump (stats/dump/subsystems.c or stats/dump/strategy.c) but are absent from
+# the JSON emitters in stats/json/.  Each should be wired to the appropriate
+# stats/json/ section (core.c, network.c, or a new subsystem section).
+UNEMITTED:include/stats.h:ebpf_gen
+UNEMITTED:include/stats.h:zombie_reaper
+UNEMITTED:include/stats.h:picker_bandit
+UNEMITTED:include/stats.h:cmp_frontier
+UNEMITTED:include/stats.h:expensive_adaptive
+UNEMITTED:include/stats.h:cost_pool_selector
+UNEMITTED:include/stats.h:context_suppress
+UNEMITTED:include/stats.h:remote_adaptive
+UNEMITTED:include/stats.h:btrfs_ioctls_dispatched
+UNEMITTED:include/stats.h:ioctl_group_match
+UNEMITTED:include/stats.h:ioctl_group_miss
+UNEMITTED:include/stats.h:ioctl_group_random
+UNEMITTED:include/stats.h:ip6mr_churn
+UNEMITTED:include/stats.h:accept_unblocker
+UNEMITTED:include/stats.h:pipe_waker
+UNEMITTED:include/stats.h:syscall_dispatch
+UNEMITTED:include/stats.h:cred_class
+
+# blob_ab: DARK.  No reference in any stats/ .c file; the subsystem may not
+# have a dump consumer yet.
+UNEMITTED:include/stats.h:blob_ab
