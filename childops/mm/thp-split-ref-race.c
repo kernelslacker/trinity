@@ -50,6 +50,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/syscall.h>
 #include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
@@ -76,6 +77,9 @@
 #endif
 #ifndef MADV_COLLAPSE
 #define MADV_COLLAPSE		25
+#endif
+#ifndef MPOL_F_ADDR
+#define MPOL_F_ADDR		2	/* linux/mempolicy.h -- query policy for addr */
 #endif
 
 /* 2 MiB = one PMD on most architectures. */
@@ -120,6 +124,32 @@ struct thp_round_tally {
 /* One-time THP unavailability latch and MADV_COLLAPSE feature probe. */
 static bool thp_unavail_latched;
 static int  latch_madv_collapse = -1;	/* -1=unknown, 0=absent, 1=present */
+
+/*
+ * Pagewalk reader identifiers for the reader-rotation arm.
+ *
+ * Each entry drives a distinct ACTION_AGAIN producer in the kernel's
+ * walk_pmd_range() / walk_pud_range() pagewalk code.  The CLONE_VM sibling
+ * (MADV_COLLAPSE + MADV_DONTNEED loop) creates the pte_offset_map_lock()
+ * failure condition for any of these callers.
+ *
+ * Producers by location at HEAD:
+ *   PWR_MINCORE    mm/mincore.c:181             -- primary, existing arm
+ *   PWR_MLOCK      mm/mlock.c:380
+ *   PWR_MEMPOLICY  mm/mempolicy.c:708
+ *   PWR_SMAPS      fs/proc/task_mmu.c:1155
+ *   PWR_PAGEMAP    fs/proc/task_mmu.c:1802
+ *   PWR_CLEAR_REFS fs/proc/task_mmu.c:2193
+ */
+enum pagewalk_reader {
+	PWR_MINCORE = 0,
+	PWR_MLOCK,
+	PWR_MEMPOLICY,
+	PWR_SMAPS,
+	PWR_PAGEMAP,
+	PWR_CLEAR_REFS,
+	PWR_COUNT
+};
 
 /*
  * Shared state between the parent and the CLONE_VM sibling in the mincore
@@ -538,20 +568,153 @@ bool thp_split_ref_race(struct childdata *child)
 			goto mc_stop;
 
 		/*
-		 * Parent loops mincore() over the full 16 MiB.  Each call races
-		 * the sibling's MADV_COLLAPSE/MADV_DONTNEED.  Bounded by
-		 * THP_BUDGET_NS so the sibling cannot spin the full arm duration.
+		 * Reader-rotation arm: pick one pagewalk reader per invocation.
+		 * Each drives a distinct ACTION_AGAIN producer in the kernel's
+		 * pagewalk code; the same CLONE_VM sibling (collapse/zap loop)
+		 * is the pressure source for all of them.  mincore is the
+		 * primary -- it advances an output cursor and is the loudest
+		 * failure mode -- but the others matter for idempotency coverage.
+		 *
+		 * For proc-based readers (smaps, pagemap, clear_refs) the file is
+		 * opened once before the loop.  If open() fails we fall back to
+		 * mincore so the arm always exercises something.
+		 */
+		enum pagewalk_reader pwr =
+			(enum pagewalk_reader)rnd_modulo_u32(PWR_COUNT);
+		int proc_fd = -1;
+
+		switch (pwr) {
+		case PWR_SMAPS:
+			proc_fd = open("/proc/self/smaps", O_RDONLY);
+			direct_calls++;
+			break;
+		case PWR_PAGEMAP:
+			proc_fd = open("/proc/self/pagemap", O_RDONLY);
+			direct_calls++;
+			break;
+		case PWR_CLEAR_REFS:
+			proc_fd = open("/proc/self/clear_refs", O_WRONLY);
+			direct_calls++;
+			break;
+		default:
+			break;
+		}
+		/* If the proc open failed, fall back to the primary arm. */
+		if (proc_fd < 0 && (pwr == PWR_SMAPS ||
+				    pwr == PWR_PAGEMAP ||
+				    pwr == PWR_CLEAR_REFS))
+			pwr = PWR_MINCORE;
+
+		/*
+		 * Parent loops the chosen reader over the 16 MiB arena.  Each
+		 * call races the sibling's MADV_COLLAPSE / MADV_DONTNEED.
+		 * Bounded by THP_BUDGET_NS so the sibling cannot spin the full
+		 * arm duration.
 		 */
 		mc_rounds = JITTER_RANGE(8U);
 		clock_gettime(CLOCK_MONOTONIC, &start);
 		for (unsigned int r = 0; r < mc_rounds; r++) {
-			(void)mincore(mc_arena, MINCORE_ARENA_SIZE, vec);
-			direct_calls++;
+			switch (pwr) {
+			case PWR_MLOCK:
+				/*
+				 * mlock() walks PTEs to pin pages; munlock() walks
+				 * them again to unpin.  Both hit mm/mlock.c:380.
+				 */
+				(void)mlock(mc_arena, MINCORE_ARENA_SIZE);
+				(void)munlock(mc_arena, MINCORE_ARENA_SIZE);
+				direct_calls += 2;
+				break;
+			case PWR_MEMPOLICY:
+				/*
+				 * get_mempolicy(MPOL_F_ADDR) walks PTEs to find
+				 * the NUMA policy for a specific address
+				 * (mm/mempolicy.c:708).  Falls back to mincore
+				 * on kernels without SYS_get_mempolicy.
+				 */
+#ifdef SYS_get_mempolicy
+				{
+					int mode;
+					(void)syscall(SYS_get_mempolicy, &mode,
+						      NULL, 0, mc_arena,
+						      MPOL_F_ADDR);
+					direct_calls++;
+				}
+#else
+				(void)mincore(mc_arena, MINCORE_ARENA_SIZE, vec);
+				direct_calls++;
+#endif
+				break;
+			case PWR_SMAPS:
+				/*
+				 * Sequential read of /proc/self/smaps walks the
+				 * full VMA list including the mc_arena range
+				 * (fs/proc/task_mmu.c:1155).
+				 */
+				if (proc_fd >= 0) {
+					(void)lseek(proc_fd, 0, SEEK_SET);
+					ssize_t rret = read(proc_fd, vec,
+							    MINCORE_VEC_BYTES);
+
+					(void)rret;
+					direct_calls += 2;
+				}
+				break;
+			case PWR_PAGEMAP: {
+				/*
+				 * pread() at the pagemap offset for mc_arena walks
+				 * PTEs for those pages (fs/proc/task_mmu.c:1802).
+				 * Each 8-byte entry covers one page; reading
+				 * MINCORE_VEC_BYTES covers 512 pages (2 MiB).
+				 */
+				if (proc_fd >= 0) {
+					off_t pgmap_off =
+						((off_t)(uintptr_t)mc_arena
+						 / 4096L) * 8L;
+					ssize_t pret = pread(proc_fd, vec,
+						    MINCORE_VEC_BYTES,
+						    pgmap_off);
+
+					(void)pret;
+					direct_calls++;
+				}
+				break;
+			}
+			case PWR_CLEAR_REFS:
+				/*
+				 * Writing "4\n" to clear_refs clears soft-dirty
+				 * bits by walking PTEs for the whole mm
+				 * (fs/proc/task_mmu.c:2193).
+				 */
+				if (proc_fd >= 0) {
+					static const char cr_cmd[] = "4\n";
+					ssize_t wret = pwrite(proc_fd, cr_cmd,
+						     sizeof(cr_cmd) - 1, 0);
+
+					(void)wret;
+					direct_calls++;
+				}
+				break;
+			case PWR_MINCORE:
+			default:
+				/*
+				 * Primary arm: mincore() walks PTEs to report
+				 * page-residency (mm/mincore.c:181).  The CLONE_VM
+				 * sibling's concurrent collapse/dontneed drives
+				 * pte_offset_map_lock() failures → ACTION_AGAIN.
+				 */
+				(void)mincore(mc_arena, MINCORE_ARENA_SIZE, vec);
+				direct_calls++;
+				break;
+			}
 
 			if (vma_pressure_is_high())
 				break;
 			if (budget_elapsed_ns(&start, THP_BUDGET_NS))
 				break;
+		}
+		if (proc_fd >= 0) {
+			close(proc_fd);
+			direct_calls++;
 		}
 
 mc_stop:
