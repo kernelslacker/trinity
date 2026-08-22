@@ -1,8 +1,0 @@
-# Grandfathered direct FD_EVENT_CLOSE producers outside fd-event.c.
-# Each entry is a `relative/path/to/file.c:funcname` site that emits
-# FD_EVENT_CLOSE without going through notify_child_fd_closed[_range]().
-#
-# Currently empty: the check enforces zero direct producers outside
-# fd-event.c.  Any new direct producer is trapped immediately.
-#
-# This list should shrink over time, never grow.

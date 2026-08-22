@@ -1,7 +1,0 @@
-# post-state-deref-order: handlers grandfathered out of the ORDERING
-# rule (post_state_is_owned() must precede the first snap->magic read).
-#
-# Entries are file:funcname pairs.  Each entry here is a known
-# ordering bug awaiting its own commit -- the baseline should shrink
-# over time, never grow.  See post-state-deref.sh for the rationale
-# and prctl.c for the reference shape.

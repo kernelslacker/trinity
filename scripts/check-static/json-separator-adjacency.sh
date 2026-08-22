@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# json-separator-adjacency: detect missing putchar(',') separators between
+# json-separator-adjacency: detect missing comma separators between
 # adjacent stat_category_emit_json() calls within a function in stats/json/*.c.
 #
 # Background: 872757fb803b ("stats/json: fix missing comma before ip6mr_churn
@@ -51,8 +51,11 @@ _scan() {
 import sys, re
 
 EMIT_RE = re.compile(r'stat_category_emit_json\(&([A-Za-z_][A-Za-z0-9_]*)\)')
-# separator: putchar(',') / fputc(',' / printf(",
-SEP_RE  = re.compile(r"putchar\s*\(','\)|fputc\s*\(',|printf\s*\(\",")
+# separator: the json_stats_sep() helper, or a hand-written comma emit
+# (putchar(',') / fputc(',' / printf(",).  json_stats_sep() is the
+# supported form -- it decides positionally, so it is correct both as the
+# first member of an object and as a later one.
+SEP_RE  = re.compile(r"json_stats_sep\s*\(\)|putchar\s*\(','\)|fputc\s*\(',|printf\s*\(\",")
 
 violations = 0
 funcs_checked = 0
@@ -145,6 +148,24 @@ void dump_stats_json_netfilter_and_xfrm(void)
 __FIXTURE__
 
 fixture_output="$(_scan "$FIXTURE_FILE" 2>/dev/null)"
+# Negative control: the same shape with json_stats_sep() must be clean, so a
+# future edit that stops recognising the helper fails here rather than
+# silently accepting a document with a missing comma.
+SEP_FIXTURE="$(mktemp /tmp/json-sep-ok.XXXXXX.c)"
+cat > "$SEP_FIXTURE" <<'__OKFIXTURE__'
+void dump_stats_json_ok(void)
+{
+	json_stats_sep();
+	stat_category_emit_json(&a_category);
+	json_stats_sep();
+	stat_category_emit_json(&b_category);
+}
+__OKFIXTURE__
+if _scan "$SEP_FIXTURE" 2>/dev/null | grep -q 'NO SEPARATOR'; then
+	rm -f "$SEP_FIXTURE"
+	fail "negative control: json_stats_sep() not recognised as a separator"
+fi
+rm -f "$SEP_FIXTURE"
 fixture_hits="$(echo "$fixture_output" | grep 'NO SEPARATOR' | wc -l | tr -d ' ')"
 if [ "$fixture_hits" -ne 1 ]; then
 	fail "regression fixture: expected 1 violation, got $fixture_hits (detector broken)"
@@ -170,7 +191,7 @@ if [ "$violations" -gt 0 ]; then
 	{
 		echo "  $NAME: missing comma separator between adjacent stat_category_emit_json() calls:"
 		sed 's/^/    /' "$hits_tmp"
-		echo "  fix: add putchar(',') between the two calls."
+		echo "  fix: call json_stats_sep() before the second one."
 	} >&2
 	echo "FAIL: $NAME: $violations violation(s) in $funcs_checked functions checked"
 	exit 1
