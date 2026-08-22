@@ -70,10 +70,10 @@ unsigned long hiscore = 0;
  * SA_RESTART precisely so the call returns EINTR after a second.  A
  * child that is still in that syscall 30 seconds later did not get its
  * alarm.  The mask is the first place to look, because the child fuzzes
- * rt_sigprocmask(2) against itself: watchdog_reinstall_if_clobbered()
- * repairs a clobbered SIGALRM *disposition* before arming, but nothing
- * repairs a blocked SIGALRM, and a blocked signal just sits pending
- * while the syscall sleeps on.
+ * rt_sigprocmask(2) against itself.  watchdog_signals_rearm() now
+ * repairs both the disposition and the mask before each arm, so a
+ * SIGALRM-blocked wedge recorded here means the mask was re-blocked
+ * after the arm -- during the syscall itself -- rather than before it.
  *
  * SigBlk sits late in the file, after Groups: -- which a child that
  * called setgroups() can inflate -- so this slurps rather than trusting

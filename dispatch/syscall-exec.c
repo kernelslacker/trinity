@@ -384,7 +384,7 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		 * counters so both the incidence and the repair rate stay
 		 * measurable.
 		 */
-		watchdog_reinstall_if_clobbered();
+		watchdog_signals_rearm();
 		(void)alarm(1);
 	}
 

@@ -30,7 +30,7 @@
 #include "signals-internal.h"
 
 #include "pids.h"	/* mypid(), mainpid */
-#include "shm.h"	/* shm->stats (watchdog_reinstall_if_clobbered) */
+#include "shm.h"	/* shm->stats (watchdog_signals_rearm) */
 
 volatile sig_atomic_t sigalrm_pending;
 volatile sig_atomic_t xcpu_pending;
@@ -101,9 +101,38 @@ void sigxcpu_handler(__unused__ int sig)
 	 * time of the signal. */
 }
 
-void watchdog_reinstall_if_clobbered(void)
+/*
+ * Put the inner watchdog back the way the child found it, immediately
+ * before each alarm(1) arm.  Two ways a child breaks its own 1-second
+ * watchdog, and it fuzzes the syscalls for both:
+ *
+ *   rt_sigaction  -- swaps out the handler.  Repaired below; measured
+ *                    by the _clobbered / _reinstalled counter pairs.
+ *   rt_sigprocmask-- blocks the signal.  A blocked SIGALRM is not
+ *                    delivered, it is merely pending, so the alarm
+ *                    fires into nothing and the blocking syscall sleeps
+ *                    on until the ~30-second outer watchdog kills the
+ *                    child.  Repaired below; measured by the _unblocked
+ *                    counters.
+ *
+ * The second one was theory until the wedge path started recording
+ * SigBlk.  In the first run that carried it, four of the seven reported
+ * wedges had SIGALRM blocked, and every one of the seven masks had
+ * SIGKILL and SIGSTOP clear -- the kernel's own sigdelsetmask
+ * fingerprint, so these are real fuzzed masks and not stale reads.
+ *
+ * This deliberately narrows what rt_sigprocmask fuzzing can express:
+ * the child may block SIGALRM, but not across a NEED_ALARM syscall.
+ * That is the same trade the disposition reinstall already makes, for
+ * the same reason -- a fuzzer that can disable its own liveness
+ * mechanism spends its time wedged instead of fuzzing.  SIGKILL and
+ * SIGSTOP are unblockable by the kernel for exactly this class of
+ * reason; these two are trinity's equivalent.
+ */
+void watchdog_signals_rearm(void)
 {
 	struct sigaction cur;
+	sigset_t unblock, old;
 
 	/* SIGALRM: reinstall the flag-setter if a fuzzed rt_sigaction
 	 * has swapped it out.  Match the mask_signals_child() install:
@@ -137,6 +166,22 @@ void watchdog_reinstall_if_clobbered(void)
 				   1, __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.watchdog_signal.sigxcpu_reinstalled,
 				   1, __ATOMIC_RELAXED);
+	}
+	/*
+	 * Unblock both watchdog signals.  One syscall does the repair and
+	 * the measurement: SIG_UNBLOCK returns the previous mask, so a
+	 * separate query is not needed on the hot path.
+	 */
+	sigemptyset(&unblock);
+	sigaddset(&unblock, SIGALRM);
+	sigaddset(&unblock, SIGXCPU);
+	if (sigprocmask(SIG_UNBLOCK, &unblock, &old) == 0) {
+		if (sigismember(&old, SIGALRM))
+			__atomic_add_fetch(&shm->stats.watchdog_signal.sigalrm_unblocked,
+					   1, __ATOMIC_RELAXED);
+		if (sigismember(&old, SIGXCPU))
+			__atomic_add_fetch(&shm->stats.watchdog_signal.sigxcpu_unblocked,
+					   1, __ATOMIC_RELAXED);
 	}
 }
 

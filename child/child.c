@@ -521,7 +521,7 @@ void child_process(struct childdata *child, int childno)
 			 * the paired clobbered/reinstalled counters so both
 			 * the incidence and the repair rate stay measurable.
 			 */
-			watchdog_reinstall_if_clobbered();
+			watchdog_signals_rearm();
 			alarm(1);
 		}
 

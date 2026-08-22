@@ -143,7 +143,7 @@ void init_stderr_memfd(void);
  *
  * No caller should ever invoke these handlers directly or take their
  * address for anything other than the sa_handler equality check
- * performed by watchdog_reinstall_if_clobbered().
+ * performed by watchdog_signals_rearm().
  */
 void sigalrm_handler(int sig);
 void sigxcpu_handler(int sig);
@@ -160,7 +160,7 @@ void sigxcpu_handler(int sig);
  * repair bumps both the watchdog_sig*_clobbered incidence counter
  * and the paired watchdog_sig*_reinstalled repair counter.
  */
-void watchdog_reinstall_if_clobbered(void);
+void watchdog_signals_rearm(void);
 
 /*
  * The numeric fd returned by memfd_create() inside init_stderr_memfd().

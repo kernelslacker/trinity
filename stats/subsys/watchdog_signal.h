@@ -49,6 +49,17 @@ struct watchdog_signal_stats {
 	 * sites, same RELAXED semantics as the paired _clobbered row. */
 	unsigned long sigalrm_reinstalled;
 	unsigned long sigxcpu_reinstalled;
+
+	/* Bumped when the arm-site found the signal BLOCKED rather than
+	 * re-dispositioned -- a fuzzed rt_sigprocmask, the other way a
+	 * child disarms its own inner watchdog.  Blocking is the more
+	 * damaging of the two: a clobbered handler still lets the signal
+	 * interrupt the syscall, while a blocked one leaves it pending
+	 * and the call sleeps until the outer 30-second watchdog.  Read
+	 * off the previous mask that sigprocmask(SIG_UNBLOCK) returns, so
+	 * the count is free.  RELAXED add-fetch, same caveat as above. */
+	unsigned long sigalrm_unblocked;
+	unsigned long sigxcpu_unblocked;
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_WATCHDOG_SIGNAL_H */
