@@ -55,6 +55,19 @@ struct syscall_wedge_stats {
 	 * add-fetch as the arrays above. */
 	unsigned long expected_block_kills;
 	unsigned long unexpected_wedges;
+
+	/* Subset of expected_block_kills where the child had SIGALRM
+	 * blocked at wedge time.  Every syscall counted in
+	 * expected_block_kills carries NEED_ALARM, so the dispatcher armed
+	 * alarm(1) before it and the call should have returned EINTR a
+	 * second later.  It did not.  A fuzzed rt_sigprocmask(2) blocking
+	 * SIGALRM is the leading explanation -- the disposition is
+	 * repaired before arming, the mask is not -- and this counter is
+	 * how that stops being a theory.  If it tracks
+	 * expected_block_kills, the inner watchdog is being defeated and
+	 * every wedge is costing 30 seconds of a child slot instead of
+	 * one. */
+	unsigned long expected_block_sigalrm_blocked;
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_SYSCALL_WEDGE_H */

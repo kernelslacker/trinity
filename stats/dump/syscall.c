@@ -318,10 +318,28 @@ void dump_stats_top_wedging_syscalls(void)
 			&shm->stats.syscall_wedge.unexpected_wedges,
 			__ATOMIC_RELAXED);
 
+		unsigned long alrm = __atomic_load_n(
+			&shm->stats.syscall_wedge.expected_block_sigalrm_blocked,
+			__ATOMIC_RELAXED);
+
 		if (expected != 0 || unexpected != 0)
 			output(0, "Wedge events: %lu expected-block (killed "
 				"quietly), %lu unexpected (reported)\n",
 				expected, unexpected);
+
+		/*
+		 * Every expected-block wedge was a NEED_ALARM syscall that
+		 * the dispatcher armed alarm(1) for.  Reaching the 30-second
+		 * outer watchdog means that alarm never landed.  Print the
+		 * SIGALRM-blocked share whenever there were any such wedges
+		 * -- a zero here is as informative as a large number, since
+		 * it rules the mask out and points somewhere else.
+		 */
+		if (expected != 0)
+			output(0, "  of those, %lu had SIGALRM blocked "
+				"(%lu%% -- inner alarm defeated by the "
+				"child's own sigprocmask)\n",
+				alrm, (alrm * 100) / expected);
 	}
 
 	if (count_total == 0 && us_total == 0)

@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <signal.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdbool.h>
@@ -17,6 +18,7 @@
 #include "objects.h"
 #include "params.h"
 #include "pids.h"
+#include "proc-status.h"
 #include "random.h"
 #include "shm.h"
 #include "stats.h"
@@ -53,9 +55,71 @@ unsigned long hiscore = 0;
  * in.  Caller gates on the per-child dstate_diag_dumped latch so this
  * fires once per stuck child, not every watchdog tick.
  */
-static void scream_stuck_child(struct childdata *child, int childno,
-			       pid_t pid, time_t wedge_seconds)
+/*
+ * SIGALRM's bit in the /proc SigBlk word.  The kernel renders the mask
+ * with signal N at bit N-1, so SIGALRM (14) is bit 13.
+ */
+#define SIGBLK_BIT(sig)		(1ULL << ((sig) - 1))
+
+/*
+ * Read a child's blocked-signal mask out of /proc/<pid>/status.
+ *
+ * Why the watchdog cares: every syscall that shows up wedged past the
+ * stall threshold carries NEED_ALARM, which means the dispatcher armed
+ * alarm(1) immediately before the call and installed SIGALRM without
+ * SA_RESTART precisely so the call returns EINTR after a second.  A
+ * child that is still in that syscall 30 seconds later did not get its
+ * alarm.  The mask is the first place to look, because the child fuzzes
+ * rt_sigprocmask(2) against itself: watchdog_reinstall_if_clobbered()
+ * repairs a clobbered SIGALRM *disposition* before arming, but nothing
+ * repairs a blocked SIGALRM, and a blocked signal just sits pending
+ * while the syscall sleeps on.
+ *
+ * SigBlk sits late in the file, after Groups: -- which a child that
+ * called setgroups() can inflate -- so this slurps rather than trusting
+ * a fixed buffer to reach it.  Returns false on any failure, including
+ * "read the file but the field was not in it", which is the truncation
+ * case worth not silently reporting as a zero mask.
+ */
+static bool read_pid_sigblk(pid_t pid, uint64_t *out)
 {
+	char path[64];
+	char buf[16384];
+	const char *value;
+	size_t total = 0;
+	ssize_t n;
+	int fd;
+
+	snprintf(path, sizeof(path), "/proc/%d/status", pid);
+	fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return false;
+
+	while (total < sizeof(buf) - 1) {
+		n = TEMP_FAILURE_RETRY(read(fd, buf + total,
+					    sizeof(buf) - 1 - total));
+		if (n <= 0)
+			break;
+		total += (size_t)n;
+	}
+	close(fd);
+
+	if (total == 0)
+		return false;
+	buf[total] = '\0';
+
+	value = proc_status_find_field(buf, "SigBlk");
+	if (value == NULL)
+		return false;
+
+	return proc_status_parse_hex_mask(value, out);
+}
+
+static void scream_stuck_child(struct childdata *child, int childno,
+			       pid_t pid, time_t wedge_seconds,
+			       bool sigblk_ok, uint64_t sigblk)
+{
+	char sigblkstr[64];
 	char wchan[128];
 	char stackbuf[2048];
 	char filename[80];
@@ -70,6 +134,19 @@ static void scream_stuck_child(struct childdata *child, int childno,
 
 	if (read_pid_wchan(pid, wchan, sizeof(wchan)) <= 0)
 		snprintf(wchan, sizeof(wchan), "?");
+
+	/*
+	 * Blocked mask, with SIGALRM called out by name: the inner
+	 * 1-second alarm is the mechanism that should have ended this
+	 * wedge, and "SIGALRM blocked" is the one-word explanation of
+	 * why it did not.
+	 */
+	if (!sigblk_ok)
+		snprintf(sigblkstr, sizeof(sigblkstr), "?");
+	else
+		snprintf(sigblkstr, sizeof(sigblkstr), "0x%016" PRIx64 "%s",
+			 sigblk,
+			 (sigblk & SIGBLK_BIT(SIGALRM)) ? " (SIGALRM BLOCKED)" : "");
 
 	snprintf(filename, sizeof(filename), "/proc/%d/stack", pid);
 	fd = open(filename, O_RDONLY | O_CLOEXEC);
@@ -111,8 +188,9 @@ static void scream_stuck_child(struct childdata *child, int childno,
 
 	if (stack_n > 0) {
 		output(0,
-		       "STUCK CHILD: pid=%d childno=%d op=%s wedged %lds state=%c wchan=%s\nkernel stack:\n%s%s",
+		       "STUCK CHILD: pid=%d childno=%d op=%s wedged %lds state=%c wchan=%s sigblk=%s\nkernel stack:\n%s%s",
 		       pid, childno, opname, (long)wedge_seconds, state, wchan,
+		       sigblkstr,
 		       stackbuf,
 		       stackbuf[stack_n - 1] == '\n' ? "" : "\n");
 	} else {
@@ -132,9 +210,9 @@ static void scream_stuck_child(struct childdata *child, int childno,
 				 n ? n : "?");
 		}
 		output(0,
-		       "STUCK CHILD: pid=%d childno=%d op=%s wedged %lds state=%c wchan=%s (kernel stack unavailable%s)\n",
+		       "STUCK CHILD: pid=%d childno=%d op=%s wedged %lds state=%c wchan=%s sigblk=%s (kernel stack unavailable%s)\n",
 		       pid, childno, opname, (long)wedge_seconds, state, wchan,
-		       errtag);
+		       sigblkstr, errtag);
 	}
 }
 
@@ -481,6 +559,8 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	struct syscallrecord *rec;
 	struct timespec tp;
 	time_t diff, old, now;
+	uint64_t sigblk = 0;
+	bool sigblk_ok = false;
 	pid_t pid;
 	char state;
 
@@ -557,6 +637,14 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	 * progress for REAP_STALL_THRESHOLD_S s is parked in its wait, so
 	 * /proc/<pid>/stack is stable either
 	 * way.  Read-only + latched, so no change to the kill logic. */
+	if (!child->dstate_diag_dumped) {
+		/*
+		 * One /proc/<pid>/status read per wedge EVENT (the whole
+		 * block is latched), shared by both arms below.
+		 */
+		sigblk_ok = read_pid_sigblk(pid, &sigblk);
+	}
+
 	if (!child->dstate_diag_dumped &&
 	    wedge_is_expected_block(child, state)) {
 		/*
@@ -566,6 +654,17 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 		 */
 		__atomic_add_fetch(&shm->stats.syscall_wedge.expected_block_kills,
 				   1UL, __ATOMIC_RELAXED);
+		/*
+		 * The quiet arm is where the alarm question actually
+		 * lives: these are all NEED_ALARM syscalls that should
+		 * have been EINTR'd at one second.  Counting how many of
+		 * them had SIGALRM blocked answers "is a fuzzed
+		 * rt_sigprocmask defeating the inner watchdog" without
+		 * printing anything.
+		 */
+		if (sigblk_ok && (sigblk & SIGBLK_BIT(SIGALRM)))
+			__atomic_add_fetch(&shm->stats.syscall_wedge.expected_block_sigalrm_blocked,
+					   1UL, __ATOMIC_RELAXED);
 		child->dstate_diag_dumped = true;
 	}
 
@@ -574,7 +673,8 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 
 		__atomic_add_fetch(&shm->stats.syscall_wedge.unexpected_wedges,
 				   1UL, __ATOMIC_RELAXED);
-		scream_stuck_child(child, childno, pid, diff);
+		scream_stuck_child(child, childno, pid, diff,
+				   sigblk_ok, sigblk);
 		/* Gate the verbose snapshot behind the global budget.  wchan
 		 * is re-read here (scream_stuck_child does its own read) so
 		 * dstate_diag_budget_take can key its per-signature cap on
