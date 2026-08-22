@@ -120,7 +120,8 @@ const struct netproto proto_unix = {
  * grammar dispatcher (net/socket-family-grammar-core.c).
  *
  * walk_setsockopts fires the SO_PASS* toggle sequence in order:
- *   SO_PASSCRED -> SO_PASSPIDFD -> SO_PASSSEC -> SO_PASSRIGHTS.
+ *   SO_PASSCRED -> SO_PASSPIDFD -> SO_PASSSEC -> SO_PASSRIGHTS ->
+ *   SO_RIGHTS_NOTRUNC.
  * Each option is a boolean and the kernel's unix_set_peek_off /
  * unix_sock_table_lock paths run differently depending on which
  * combination of these flags is set when the cmsg-bearing sendmsg
@@ -151,6 +152,21 @@ static const unsigned int unix_pass_opts_seq[] = {
 #ifdef SO_PASSRIGHTS
 	SO_PASSRIGHTS,
 #endif
+	/*
+	 * SO_RIGHTS_NOTRUNC belongs in this walk rather than in the
+	 * random per-syscall setsockopt draw for the same reason the
+	 * SO_PASS* flags do: it only means anything on an fd that then
+	 * carries an SCM_RIGHTS block, and gen_cmsg below is the only
+	 * thing in the tree that builds one with live fds in it.  A
+	 * random setsockopt on a random fd sets a flag nothing reads.
+	 *
+	 * Unlike the SO_PASS* flags this one has its own validation --
+	 * unix_setsockopt rejects optlen != sizeof(int) and val outside
+	 * [0,1] before it reaches the store -- so the alternating 0/1
+	 * the walk already does drives the accept path, and the random
+	 * draw in syscalls/socket/setsockopt.c covers the reject side.
+	 */
+	SO_RIGHTS_NOTRUNC,
 };
 
 static void unix_grammar_pick_triplet(struct socket_triplet *out)

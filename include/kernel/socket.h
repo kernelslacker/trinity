@@ -366,6 +366,19 @@
 #define SO_INQ			84
 #endif
 
+/*
+ * SO_RIGHTS_NOTRUNC (Linux 7.3) changes what AF_UNIX does when an
+ * SCM_RIGHTS block does not fit the receiver's control buffer.  The
+ * historical behaviour silently truncates -- the fds that did not fit
+ * are dropped, and dropping a struct file reference on a partial copy
+ * is where SCM_RIGHTS has leaked and slipped refcounts before.  With
+ * the option set the kernel takes the other path instead, so there are
+ * now two of them.
+ */
+#ifndef SO_RIGHTS_NOTRUNC
+#define SO_RIGHTS_NOTRUNC	85
+#endif
+
 #ifndef TCP_THIN_LINEAR_TIMEOUTS
 #define TCP_THIN_LINEAR_TIMEOUTS 16
 #endif

@@ -60,7 +60,7 @@ static const unsigned int socket_opts[] = {
 	SO_RESERVE_MEM, SO_TXREHASH, SO_RCVMARK,
 	SO_PASSPIDFD, SO_PEERPIDFD,
 	SO_DEVMEM_LINEAR, SO_DEVMEM_DMABUF, SO_DEVMEM_DONTNEED,
-	SO_RCVPRIORITY, SO_PASSRIGHTS, SO_INQ,
+	SO_RCVPRIORITY, SO_PASSRIGHTS, SO_INQ, SO_RIGHTS_NOTRUNC,
 #ifdef SCM_TS_OPT_ID
 	SCM_TS_OPT_ID,
 #endif
@@ -92,6 +92,15 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ SOL_SOCKET, SO_REUSEPORT,     build_int_bool },
 	{ SOL_SOCKET, SO_BUSY_POLL,     build_int_small_positive },
 	{ SOL_SOCKET, SO_INCOMING_CPU,  build_int_small_positive },
+	/*
+	 * AF_UNIX-only, and validated: unix_setsockopt rejects any
+	 * optlen != sizeof(int) and any value outside [0,1] before the
+	 * store.  build_int_bool feeds the accept path here; the reject
+	 * path comes from the same option appearing in socket_opts[]
+	 * above, where the generic draw supplies arbitrary lengths and
+	 * values.
+	 */
+	{ SOL_SOCKET, SO_RIGHTS_NOTRUNC, build_int_bool },
 
 	/* IPPROTO_IP */
 	{ IPPROTO_IP,   IP_TTL,                build_int_small_positive },
