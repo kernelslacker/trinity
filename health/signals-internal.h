@@ -94,6 +94,7 @@ static inline void sigsafe_putp(struct sigsafe_buf *b, const void *p)
 /* ------------------------------------------------------------------ */
 
 void write_siginfo_safely(int sig, const siginfo_t *info, const char *who);
+void write_signal_delivery_state(const void *ctxp);
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 void write_backtrace_raw_pcs(const char *who);
 #endif

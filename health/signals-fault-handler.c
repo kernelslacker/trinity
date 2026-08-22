@@ -621,6 +621,14 @@ skip_buglog:
 	write_siginfo_safely(sig, info, "trinity child");
 
 	/*
+	 * Signal-delivery state, emitted right after the siginfo line it
+	 * explains.  A SIGSEGV with si_code=SI_KERNEL and si_addr=0 is a
+	 * statement about signal delivery, not about a bad address, and
+	 * the alternate stack / blocked mask are what decide which.
+	 */
+	write_signal_delivery_state(ctx);
+
+	/*
 	 * Stamp the currently-running childop's identity so the
 	 * canary queue can attribute the crash to a specific op
 	 * rather than bottoming out at child_process+offset.  Emits

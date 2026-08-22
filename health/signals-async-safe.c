@@ -12,7 +12,9 @@
  *   - pure inline ucontext reads
  * No allocator, no stdio, no locale, no lock.
  */
-#include <signal.h>	/* siginfo_t */
+#include <signal.h>	/* siginfo_t / stack_t */
+#include <string.h>	/* memcpy of the ucontext sigmask word */
+#include <sys/syscall.h>	/* SYS_sigaltstack */
 #include <unistd.h>	/* write() */
 #include <ucontext.h>	/* ucontext_t / REG_RIP &c for fault_beacon IP/SP capture */
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
@@ -73,6 +75,108 @@ void write_siginfo_safely(int sig, const siginfo_t *info, const char *who)
 	written = sizeof(buf) - b.left;
 	w = write(STDERR_FILENO, buf, written);
 	(void)w;	/* dying anyway; can't act on a short write */
+}
+
+/*
+ * Signal-delivery state at fault time.
+ *
+ * Why this exists: four crashes in the 7.2 run came in as SIGSEGV with
+ * si_code=SI_KERNEL (128) and si_addr=0, taken while the child was
+ * blocked inside a syscall.  That pair means "kernel-generated, not a
+ * page fault", and the shortlist of things that produce it is mostly
+ * about signal delivery itself -- an alternate stack the kernel could
+ * not use, a frame it could not build, a handler running somewhere
+ * unexpected.  Every candidate on that shortlist is a property of the
+ * child's signal state, and none of it was in the log, so the crashes
+ * could be argued about but not classified.
+ *
+ * Three facts, all cheap, and each says a specific thing -- verified
+ * against a real kernel-delivered SIGSEGV rather than assumed, because
+ * the first cut of this function labelled two of the three wrongly:
+ *
+ *   altstack   -- the alternate stack as sigaltstack(2) reports it now.
+ *                 Its SS_ONSTACK bit is the direct answer to "is this
+ *                 handler executing on the alternate stack", which is
+ *                 the fact worth having.  Trinity fuzzes sigaltstack(2),
+ *                 so a bogus registration here is the first thing to
+ *                 rule in or out.
+ *   uc_stack   -- NOT the stack this handler runs on, despite the
+ *                 tempting name.  The kernel fills it from the
+ *                 INTERRUPTED context, so its SS_ONSTACK means the
+ *                 interrupted code was itself already on the alternate
+ *                 stack, i.e. this is a nested delivery.  A plain first
+ *                 signal reports flags=0 here even while the handler
+ *                 runs on the alt stack.
+ *   uc_sigmask -- the mask to be restored on return, i.e. what was
+ *                 blocked BEFORE delivery, not during the handler.  A
+ *                 signal arriving on a mask a fuzzed rt_sigprocmask()
+ *                 just rewrote is the other half of the question.
+ *
+ * STRICTLY ASYNC-SIGNAL-SAFE: pure reads from the caller-owned
+ * ucontext, one raw sigaltstack(2) query (a bare syscall, no libc
+ * state), one write(2).
+ */
+void write_signal_delivery_state(const void *ctxp)
+{
+	const ucontext_t *uc = ctxp;
+	stack_t cur = { 0 };
+	char buf[320];
+	struct sigsafe_buf b = { buf, sizeof(buf) };
+	unsigned long blocked = 0;
+	size_t used;
+	ssize_t w;
+	long rc;
+
+	if (uc == NULL)
+		return;
+
+	/*
+	 * Raw syscall rather than the libc wrapper: sigaltstack() is not
+	 * on the POSIX 2024 2.4.3 list, and while glibc's is a thin
+	 * marshaller today that is not a contract.  A failed query leaves
+	 * the zeroed struct, which prints as an all-zero stack -- honest,
+	 * and distinguishable from a real registration.
+	 */
+	rc = syscall(SYS_sigaltstack, (stack_t *)NULL, &cur);
+
+	/*
+	 * First word of the blocked set covers signals 1..64 on every
+	 * arch trinity builds for; the beacon does not need more.
+	 */
+	memcpy(&blocked, &uc->uc_sigmask, sizeof(blocked));
+
+	sigsafe_puts(&b, "SIGNAL-DELIVERY: altstack=");
+	if (rc != 0) {
+		sigsafe_puts(&b, "<query-failed>");
+	} else {
+		sigsafe_putp(&b, cur.ss_sp);
+		sigsafe_puts(&b, " size=");
+		sigsafe_putu(&b, (unsigned long)cur.ss_size);
+		sigsafe_puts(&b, " flags=");
+		sigsafe_puti(&b, (long)cur.ss_flags);
+		if (cur.ss_flags & SS_DISABLE)
+			sigsafe_puts(&b, " (DISABLED)");
+		/* SS_ONSTACK from the query means "executing on it now". */
+		sigsafe_puts(&b, (cur.ss_flags & SS_ONSTACK)
+				 ? " (running-on-altstack)" : " (running-on-main-stack)");
+	}
+
+	sigsafe_puts(&b, " interrupted_stack sp=");
+	sigsafe_putp(&b, uc->uc_stack.ss_sp);
+	sigsafe_puts(&b, " size=");
+	sigsafe_putu(&b, (unsigned long)uc->uc_stack.ss_size);
+	sigsafe_puts(&b, " flags=");
+	sigsafe_puti(&b, (long)uc->uc_stack.ss_flags);
+	if (uc->uc_stack.ss_flags & SS_ONSTACK)
+		sigsafe_puts(&b, " (NESTED: interrupted code was already on the altstack)");
+
+	sigsafe_puts(&b, " blocked_pre=");
+	sigsafe_putp(&b, (const void *)blocked);
+	sigsafe_putc(&b, '\n');
+
+	used = sizeof(buf) - b.left;
+	w = write(STDERR_FILENO, buf, used);
+	(void)w;	/* dying anyway; short write irrelevant */
 }
 
 /*
