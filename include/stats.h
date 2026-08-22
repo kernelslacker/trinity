@@ -20,16 +20,10 @@
 #include "kernel/if_packet.h"
 #include "kernel/mount.h"
 #include "stats/subsys/accept_unblocker.h"
-#include "stats/subsys/af_alg_probe.h"
-#include "stats/subsys/af_alg_recvmsg.h"
-#include "stats/subsys/af_unix_scm_rights_gc.h"
 #include "stats/subsys/aio.h"
 #include "stats/subsys/arg.h"
-#include "stats/subsys/blkdev_lifecycle.h"
 #include "stats/subsys/blob.h"
 #include "stats/subsys/blob_ab.h"
-#include "stats/subsys/bridge_ct.h"
-#include "stats/subsys/bridge_ip6frag.h"
 #include "stats/subsys/chain_corpus.h"
 #include "stats/subsys/chain_restype.h"
 #include "stats/subsys/childop.h"
@@ -38,74 +32,44 @@
 #include "stats/subsys/cost_pool_selector.h"
 #include "stats/subsys/cold_overflow.h"
 #include "stats/subsys/corrupt_ptr.h"
-#include "stats/subsys/cpu_hotplug.h"
 #include "stats/subsys/cred_class.h"
-#include "stats/subsys/cred_transition.h"
-#include "stats/subsys/deep_path.h"
 #include "stats/subsys/deferred_free.h"
 #include "stats/subsys/diag.h"
 #include "stats/subsys/divergence_sentinel.h"
 #include "stats/subsys/epoll_volatility.h"
 #include "stats/subsys/errno_gradient.h"
-#include "stats/subsys/espintcp_coalesce.h"
 #include "stats/subsys/ebpf_gen.h"
 #include "stats/subsys/expensive_adaptive.h"
 #include "stats/subsys/fd.h"
 #include "stats/subsys/fd_runtime.h"
-#include "stats/subsys/fdstress.h"
-#include "stats/subsys/flowtable_vlan.h"
 #include "stats/subsys/frontier.h"
 #include "stats/subsys/prctl_futex_hash.h"
-#include "stats/subsys/icmp_inject.h"
-#include "stats/subsys/inplace_crypto.h"
-#include "stats/subsys/iouring.h"
-#include "stats/subsys/iouring_eventfd.h"
 #include "stats/subsys/iouring_send_zc_churn.h"
 #include "stats/subsys/kvm.h"
-#include "stats/subsys/ip6gre_lapb.h"
-#include "stats/subsys/ipv6_pmtu_race.h"
-#include "stats/subsys/iscsi_walker.h"
 #include "stats/subsys/maps.h"
 #include "stats/subsys/minicorpus.h"
-#include "stats/subsys/netns_mountns_setup.h"
-#include "stats/subsys/netns_teardown.h"
-#include "stats/subsys/nl80211.h"
 #include "stats/subsys/no_domains.h"
 #include "stats/subsys/oracle.h"
 #include "stats/subsys/pc_edge_source.h"
 #include "stats/subsys/picker_bandit.h"
 #include "stats/subsys/pipe_waker.h"
 #include "stats/subsys/plateau.h"
-#include "stats/subsys/pkt_builder.h"
-#include "stats/subsys/posix_timer.h"
 #include "stats/subsys/procfs_writer.h"
-#include "stats/subsys/recipe.h"
 #include "stats/subsys/remote_adaptive.h"
-#include "stats/subsys/refcount_audit.h"
-#include "stats/subsys/rpl_clone_fidelity.h"
 #include "stats/subsys/rtnl-ack-oracle.h"
-#include "stats/subsys/rtnl_vf_broadcast.h"
-#include "stats/subsys/netconf_inetdev_race.h"
 #include "stats/subsys/rxrpc_key_install.h"
-#include "stats/subsys/rxrpc_sendmsg_cmsg.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/socket_family_grammar.h"
 #include "stats/subsys/xfrm_grammar.h"
-#include "stats/subsys/statmount_idmap.h"
 #include "stats/subsys/syscall_wedge.h"
 #include "stats/subsys/syscall_dispatch.h"
 #include "stats/subsys/topo_pair.h"
 #include "stats/subsys/transition_edge.h"
-#include "stats/subsys/uffd.h"
 #include "stats/subsys/uid_change.h"
 #include "stats/subsys/userns_bootstrap.h"
-#include "stats/subsys/vdso_race.h"
 #include "stats/subsys/vsock_transport_churn.h"
 #include "stats/subsys/watchdog_signal.h"
-#include "stats/subsys/wgdf.h"
 #include "stats/subsys/xattr_thrash.h"
-#include "stats/subsys/xfrm_ah_esn.h"
-#include "stats/subsys/xfrm_compat.h"
 #include "stats/subsys/zombie_reaper.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
@@ -434,24 +398,8 @@ struct stats_s {
 	unsigned long nfnl_subsys_calls_nftables;
 	unsigned long nfnl_subsys_calls_ipset;
 
-
-
-
-	/* recipe_runner accounting.  See stats/subsys/recipe.h. */
-	struct recipe_stats recipe __attribute__((aligned(64)));
-
-	/* fdstress accounting.  See stats/subsys/fdstress.h. */
-	struct fdstress_stats fdstress __attribute__((aligned(64)));
-
-
-	/* iouring_eventfd accounting.  See stats/subsys/iouring_eventfd.h. */
-	struct iouring_eventfd_stats iouring_eventfd __attribute__((aligned(64)));
-
 	/* aio submission counter.  See stats/subsys/aio.h. */
 	struct aio_stats aio __attribute__((aligned(64)));
-
-	/* refcount_audit accounting.  See stats/subsys/refcount_audit.h. */
-	struct refcount_audit_stats refcount_audit __attribute__((aligned(64)));
 
 
 
@@ -468,28 +416,6 @@ struct stats_s {
 
 	/* epoll_volatility childop counters.  See stats/subsys/epoll_volatility.h. */
 	struct epoll_volatility_stats epoll_volatility __attribute__((aligned(64)));
-
-
-
-
-
-
-
-
-
-
-	/* vdso_mremap_race accounting.  See stats/subsys/vdso_race.h. */
-	struct vdso_race_stats vdso_race __attribute__((aligned(64)));
-
-
-	/* cpu_hotplug accounting.  See stats/subsys/cpu_hotplug.h. */
-	struct cpu_hotplug_stats cpu_hotplug __attribute__((aligned(64)));
-
-	/* uffd_churn accounting.  See stats/subsys/uffd.h. */
-	struct uffd_stats uffd __attribute__((aligned(64)));
-
-	/* iouring_flood accounting.  See stats/subsys/iouring.h. */
-	struct iouring_stats iouring __attribute__((aligned(64)));
 
 	/* watchdog signal-handler clobber + reinstall accounting.  See
 	 * stats/subsys/watchdog_signal.h. */
@@ -510,143 +436,11 @@ struct stats_s {
 
 
 
-
-	/* pkt_builder accounting.  See stats/subsys/pkt_builder.h. */
-	struct pkt_builder_stats pkt_builder __attribute__((aligned(64)));
-
-
-
-
-
-
-
-
-	/* rtnl_vf_broadcast_getlink accounting.  See stats/subsys/rtnl_vf_broadcast.h. */
-	struct rtnl_vf_broadcast_stats rtnl_vf_broadcast __attribute__((aligned(64)));
-
-	/* netconf_getdevconf_inetdev_teardown_race accounting.
-	 * See stats/subsys/netconf_inetdev_race.h. */
-	struct netconf_inetdev_race_stats netconf_inetdev_race __attribute__((aligned(64)));
-
-
-	/* ipv6_pmtu_race accounting.  See stats/subsys/ipv6_pmtu_race.h. */
-	struct ipv6_pmtu_race_stats ipv6_pmtu_race __attribute__((aligned(64)));
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	/* bridge_conntrack_churn accounting.  See stats/subsys/bridge_ct.h. */
-	struct bridge_ct_stats bridge_ct __attribute__((aligned(64)));
-
-	/* bridge_ip6frag_refrag accounting.  See stats/subsys/bridge_ip6frag.h. */
-	struct bridge_ip6frag_stats bridge_ip6frag __attribute__((aligned(64)));
-
-
-
-
-
-
-
-
-
-	/* xfrm_ah_esn accounting.  See stats/subsys/xfrm_ah_esn.h. */
-	struct xfrm_ah_esn_stats xfrm_ah_esn __attribute__((aligned(64)));
-
-	/* xfrm_compat accounting.  See stats/subsys/xfrm_compat.h. */
-	struct xfrm_compat_stats xfrm_compat __attribute__((aligned(64)));
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	/* af_unix_scm_rights_gc accounting.  See stats/subsys/af_unix_scm_rights_gc.h. */
-	struct af_unix_scm_rights_gc_stats af_unix_scm_rights_gc __attribute__((aligned(64)));
-
-
-
-
-
-
-
-	/* statmount_idmap accounting.  See stats/subsys/statmount_idmap.h. */
-	struct statmount_idmap_stats statmount_idmap __attribute__((aligned(64)));
-
-	/* cred_transition accounting.  See stats/subsys/cred_transition.h. */
-	struct cred_transition_stats cred_transition __attribute__((aligned(64)));
-
-	/* netns_teardown accounting.  See stats/subsys/netns_teardown.h. */
-	struct netns_teardown_stats netns_teardown __attribute__((aligned(64)));
-
-	/* deep_path_nesting accounting.  See stats/subsys/deep_path.h. */
-	struct deep_path_stats deep_path __attribute__((aligned(64)));
-
-	/* espintcp_coalesce accounting.  See stats/subsys/espintcp_coalesce.h. */
-	struct espintcp_coalesce_stats espintcp_coalesce __attribute__((aligned(64)));
-
-	/* netns_mountns_setup accounting.  See stats/subsys/netns_mountns_setup.h. */
-	struct netns_mountns_setup_stats netns_mountns_setup __attribute__((aligned(64)));
-
-
-
-
-
 	/* iouring_send_zc_churn accounting.  See stats/subsys/iouring_send_zc_churn.h. */
 	struct iouring_send_zc_churn_stats iouring_send_zc_churn __attribute__((aligned(64)));
 
 	/* vsock_transport_churn accounting.  See stats/subsys/vsock_transport_churn.h. */
 	struct vsock_transport_churn_stats vsock_transport_churn __attribute__((aligned(64)));
-
-
-
-
-
-
-
-
-	/* ip6gre_bond_lapb_stack accounting.  See stats/subsys/ip6gre_lapb.h. */
-	struct ip6gre_lapb_stats ip6gre_lapb __attribute__((aligned(64)));
-
-	/* wireguard_decrypt_flood accounting.  See stats/subsys/wgdf.h. */
-	struct wgdf_stats wgdf __attribute__((aligned(64)));
-
-	/* blkdev_lifecycle_race accounting.  See stats/subsys/blkdev_lifecycle.h. */
-	struct blkdev_lifecycle_stats blkdev_lifecycle __attribute__((aligned(64)));
-
-
-	/* icmp_inject accounting.  See stats/subsys/icmp_inject.h. */
-	struct icmp_inject_stats icmp_inject __attribute__((aligned(64)));
-
-
-	/* iscsi_walker accounting.  See stats/subsys/iscsi_walker.h. */
-	struct iscsi_walker_stats iscsi_walker __attribute__((aligned(64)));
-
-
-
-
-	/* flowtable_vlan accounting.  See stats/subsys/flowtable_vlan.h. */
-	struct flowtable_vlan_stats flowtable_vlan __attribute__((aligned(64)));
 
 
 
@@ -751,28 +545,9 @@ struct stats_s {
 	unsigned long ioctl_group_miss;
 	unsigned long ioctl_group_random;
 
-	/* nl80211_churn childop counters (cfg80211 state-machine fuzz).
-	 * See stats/subsys/nl80211.h. */
-	struct nl80211_stats nl80211;
-
 
 	/* rxrpc_key_install accounting.  See stats/subsys/rxrpc_key_install.h. */
 	struct rxrpc_key_install_stats rxrpc_key_install __attribute__((aligned(64)));
-
-
-	/* af_alg_template_probe accounting.  See stats/subsys/af_alg_probe.h. */
-	struct af_alg_probe_stats af_alg_probe;
-
-	/* af_alg_recvmsg_churn childop counters.  See stats/subsys/af_alg_recvmsg.h. */
-	struct af_alg_recvmsg_stats af_alg_recvmsg;
-
-	/* inplace_crypto_oracle childop counters.
-	 * See stats/subsys/inplace_crypto.h. */
-	struct inplace_crypto_stats inplace_crypto __attribute__((aligned(64)));
-
-	/* ipv6_rpl_clone_fidelity oracle childop counters.
-	 * See stats/subsys/rpl_clone_fidelity.h. */
-	struct rpl_clone_fidelity_stats rpl_clone_fidelity __attribute__((aligned(64)));
 
 
 
@@ -785,9 +560,6 @@ struct stats_s {
 
 	/* minicorpus snapshot/ring accounting.  See stats/subsys/minicorpus.h. */
 	struct minicorpus_stats minicorpus;
-
-	/* rxrpc_sendmsg_cmsg accounting.  See stats/subsys/rxrpc_sendmsg_cmsg.h. */
-	struct rxrpc_sendmsg_cmsg_stats rxrpc_sendmsg_cmsg;
 
 
 
@@ -858,9 +630,6 @@ struct stats_s {
 	/* --blob-ab-mode within-run A/B harness counters.  See
 	 * stats/subsys/blob_ab.h for the per-field commentary. */
 	struct blob_ab_stats blob_ab;
-
-	/* recipe_posix_timer arm 2 accounting.  See stats/subsys/posix_timer.h. */
-	struct posix_timer_stats posix_timer __attribute__((aligned(64)));
 };
 
 unsigned int stats_syscall_category(const char *name);

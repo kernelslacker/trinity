@@ -265,19 +265,11 @@ void dump_stats_json_basic_subsystems(void)
 void dump_stats_json_iouring_and_zombies(void)
 {
 	json_stats_sep();
-	stat_category_emit_json(&posix_timer_category);
-	json_stats_sep();
-	stat_category_emit_json(&iouring_eventfd_category);
-	json_stats_sep();
 	stat_category_emit_json(&aio_category);
 	json_stats_sep();
 	stat_category_emit_json(&errno_gradient_category);
 	json_stats_sep();
 	stat_category_emit_json(&cold_overflow_category);
-	json_stats_sep();
-	stat_category_emit_json(&inplace_crypto_category);
-	json_stats_sep();
-	stat_category_emit_json(&rpl_clone_fidelity_category);
 	json_stats_sep();
 	stat_category_emit_json(&fd_runtime_skipped_category);
 	json_stats_sep();

@@ -307,9 +307,7 @@ void dump_stats_fuzzer_subsystems(void)
 
 	stat_category_emit_text(&cold_overflow_category);
 
-	stat_category_emit_text(&inplace_crypto_category);
 
-	stat_category_emit_text(&rpl_clone_fidelity_category);
 
 
 

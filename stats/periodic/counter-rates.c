@@ -881,14 +881,6 @@ static const struct {
 	  offsetof(struct stats_s, kvm.vcpu_ioctls_dispatched) },
 	{ "kvm_vm_ioctls_dispatched",
 	  offsetof(struct stats_s, kvm.vm_ioctls_dispatched) },
-	/* nl80211_churn invocation rate.  Periodic visibility lets an operator
-	 * confirm the cfg80211 state-machine fuzzer is making progress under the
-	 * mac80211_hwsim radio without waiting for the end-of-run summary; a
-	 * flat counter while other network childops advance is the signal that
-	 * the hwsim probe latched ns_unsupported_nl80211 and the op went
-	 * noop_forever for the rest of the run. */
-	{ "nl80211_runs",
-	  offsetof(struct stats_s, nl80211.runs) },
 	/* SHADOW-ONLY cumulative count of "deep but warm" calls -- no PC-edge
 	 * novelty and no CMP-bloom novelty, yet either a per-call PC walk
 	 * meaningfully deeper than the syscall's lifetime mean or a trace

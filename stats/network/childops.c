@@ -117,35 +117,6 @@ static void dump_stats_render_vsock_transport_churn(void)
 	}
 }
 
-static void dump_stats_render_rxrpc_sendmsg_cmsg(void)
-{
-	if (shm->stats.rxrpc_sendmsg_cmsg.runs) {
-		static const char * const rxrpc_cmsg_slot_names[8] = {
-			"user_call_id",
-			"abort",
-			"accept",
-			"exclusive_call",
-			"upgrade_service",
-			"tx_length",
-			"set_call_timeout",
-			"charge_accept",
-		};
-		char key[64];
-		unsigned int slot;
-
-		stat_row("rxrpc_sendmsg_cmsg_churn", "runs",          shm->stats.rxrpc_sendmsg_cmsg.runs);
-		stat_row("rxrpc_sendmsg_cmsg_churn", "socket_failed", shm->stats.rxrpc_sendmsg_cmsg.socket_failed);
-		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_ok",    shm->stats.rxrpc_sendmsg_cmsg.sendmsg_ok);
-		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_fail",  shm->stats.rxrpc_sendmsg_cmsg.sendmsg_fail);
-		for (slot = 0; slot < 8U; slot++) {
-			snprintf(key, sizeof(key), "cmsg_sent_%s",
-				 rxrpc_cmsg_slot_names[slot]);
-			stat_row("rxrpc_sendmsg_cmsg_churn", key,
-				 shm->stats.rxrpc_sendmsg_cmsg.sent[slot]);
-		}
-	}
-}
-
 static void dump_stats_render_kvm_run_churn(void)
 {
 	if (shm->stats.kvm.invocations) {
@@ -164,61 +135,20 @@ static void dump_stats_render_kvm_run_churn(void)
 		stat_row("kvm_run_churn", "gpc_memslot_race_unsupported",  shm->stats.kvm.gpc_memslot_race_unsupported);
 	}
 }
-
-static void dump_stats_render_nl80211_churn(void)
-{
-	if (shm->stats.nl80211.runs) {
-		stat_row("nl80211_churn", "runs",                  shm->stats.nl80211.runs);
-		stat_row("nl80211_churn", "setup_failed",          shm->stats.nl80211.setup_failed);
-		stat_row("nl80211_churn", "scan_triggered",        shm->stats.nl80211.scan_triggered);
-		stat_row("nl80211_churn", "connect_attempted",     shm->stats.nl80211.connect_attempted);
-		stat_row("nl80211_churn", "connect_succeeded",     shm->stats.nl80211.connect_succeeded);
-		stat_row("nl80211_churn", "disconnect_attempted",  shm->stats.nl80211.disconnect_attempted);
-		stat_row("nl80211_churn", "regdom_changed",        shm->stats.nl80211.regdom_changed);
-		stat_row("nl80211_churn", "iface_created",         shm->stats.nl80211.iface_created);
-		stat_row("nl80211_churn", "iface_destroyed",       shm->stats.nl80211.iface_destroyed);
-		stat_row("nl80211_churn", "bursts_sent",           shm->stats.nl80211.bursts_sent);
-		stat_row("nl80211_churn", "pmsr_runs",             shm->stats.nl80211.pmsr_runs);
-		stat_row("nl80211_churn", "pmsr_ok",               shm->stats.nl80211.pmsr_ok);
-		stat_row("nl80211_churn", "admin_gate_runs",       shm->stats.nl80211.admin_gate_runs);
-		stat_row("nl80211_churn", "admin_gate_eperm_ok",   shm->stats.nl80211.admin_gate_eperm_ok);
-		stat_row("nl80211_churn", "admin_gate_unexpected", shm->stats.nl80211.admin_gate_unexpected);
-	}
-}
-
-static void dump_stats_render_af_alg_recvmsg_churn(void)
-{
-	if (shm->stats.af_alg_recvmsg.runs) {
-		stat_row("af_alg_recvmsg_churn", "runs",               shm->stats.af_alg_recvmsg.runs);
-		stat_row("af_alg_recvmsg_churn", "setkey_sent",        shm->stats.af_alg_recvmsg.setkey_sent);
-		stat_row("af_alg_recvmsg_churn", "iv_sent",            shm->stats.af_alg_recvmsg.iv_sent);
-		stat_row("af_alg_recvmsg_churn", "oob_iov",            shm->stats.af_alg_recvmsg.oob_iov);
-		stat_row("af_alg_recvmsg_churn", "zerolen",            shm->stats.af_alg_recvmsg.zerolen);
-		stat_row("af_alg_recvmsg_churn", "oversize",           shm->stats.af_alg_recvmsg.oversize);
-		stat_row("af_alg_recvmsg_churn", "empty_cmsg_no_more", shm->stats.af_alg_recvmsg.empty_cmsg_no_more);
-		stat_row("af_alg_recvmsg_churn", "unsupported",        shm->stats.af_alg_recvmsg.unsupported);
-	}
-}
 void __cold dump_stats_childop_runs_network(void)
 {
 	stat_category_emit_text(&socket_family_grammar_category);
 	stat_category_emit_text(&xfrm_grammar_category);
 
-	stat_category_emit_text(&ipv6_pmtu_race_category);
 
 	dump_stats_render_accept_unblocker();
 
 	dump_stats_render_pipe_waker();
 
-	stat_category_emit_text(&af_unix_scm_rights_gc_category);
 
-	stat_category_emit_text(&netns_teardown_category);
 
-	stat_category_emit_text(&cred_transition_category);
 
-	stat_category_emit_text(&espintcp_coalesce_category);
 
-	stat_category_emit_text(&netns_mountns_setup_category);
 
 	stat_category_emit_text(&blob_mutator_category);
 
@@ -232,20 +162,14 @@ void __cold dump_stats_childop_runs_network(void)
 
 	dump_stats_render_vsock_transport_churn();
 
-	stat_category_emit_text(&pkt_builder_category);
 
-	stat_category_emit_text(&icmp_inject_category);
 
-	dump_stats_render_rxrpc_sendmsg_cmsg();
 
 	dump_stats_render_kvm_run_churn();
 
-	dump_stats_render_nl80211_churn();
 
 	stat_category_emit_text(&rxrpc_key_install_category);
 
-	stat_category_emit_text(&fdstress_category);
 
 
-	dump_stats_render_af_alg_recvmsg_churn();
 }

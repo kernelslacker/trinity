@@ -340,13 +340,6 @@ struct shm_s {
 	 * Documentation/shm-state.md (CLONE_NEWNET throttle). */
 	int newnet_in_flight;
 
-	/* recipe_runner discovery latches: a recipe whose first invocation
-	 * detects an absent kernel feature (ENOSYS, missing config) flips
-	 * its slot here so siblings stop probing.  Indexed by the recipe's
-	 * slot in the static catalog inside recipe-runner.c. */
-	bool recipe_disabled[MAX_RECIPES];
-
-
 	/* Set to true once we confirm io_uring_setup returns ENOSYS.
 	 * Avoids repeated failed probes from every child. */
 	bool iouring_enosys;

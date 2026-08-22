@@ -214,15 +214,6 @@ stats	object
     stats.childop_burst.burst_alt_picks_window	u64
   stats.corrupt_ptr_probe	object
     stats.corrupt_ptr_probe.sample_seq	u64
-  stats.posix_timer	object
-    stats.posix_timer.sigev_delivered	u64
-    stats.posix_timer.sigev_missed	u64
-    stats.posix_timer.sigev_cookie_bad	u64
-  stats.iouring_eventfd	object
-    stats.iouring_eventfd.register_ok	u64
-    stats.iouring_eventfd.register_fail	u64
-    stats.iouring_eventfd.recursive_runs	u64
-    stats.iouring_eventfd.recursive_cqes	u64
   stats.aio	object
     stats.aio.submitted	u64
   stats.errno_gradient	object
@@ -233,14 +224,6 @@ stats	object
     stats.cold_overflow.would_save	u64
     stats.cold_overflow.would_save_cold	u64
     stats.cold_overflow.would_save_absent	u64
-  stats.inplace_crypto	object
-    stats.inplace_crypto.mutated	u64
-    stats.inplace_crypto.splice_attempts	u64
-    stats.inplace_crypto.splice_ok	u64
-    stats.inplace_crypto.splice_warned	u64
-  stats.rpl_clone_fidelity	object
-    stats.rpl_clone_fidelity.srh_mutated	u64
-    stats.rpl_clone_fidelity.daddr_mutated	u64
   stats.fd_runtime_skipped	object
     stats.fd_runtime_skipped.stdio	u64
     stats.fd_runtime_skipped.already_registered	u64
@@ -354,21 +337,6 @@ stats	object
   stats.xfrm_grammar	object
     stats.xfrm_grammar.msg_kind_draws	u64
     stats.xfrm_grammar.migrate_state_arm_entered	u64
-  stats.xfrm_ah_esn	object
-    stats.xfrm_ah_esn.setup_ok	u64
-    stats.xfrm_ah_esn.setup_fail	u64
-    stats.xfrm_ah_esn.async_runs	u64
-    stats.xfrm_ah_esn.delsa_races	u64
-  stats.xfrm_compat	object
-    stats.xfrm_compat.sweep_runs	u64
-    stats.xfrm_compat.sends_ok	u64
-    stats.xfrm_compat.sends_failed	u64
-    stats.xfrm_compat.replies_seen	u64
-    stats.xfrm_compat.allocspi_runs	u64
-    stats.xfrm_compat.allocspi_sends_ok	u64
-    stats.xfrm_compat.allocspi_sends_failed	u64
-    stats.xfrm_compat.allocspi_replies_seen	u64
-    stats.xfrm_compat.allocspi_unsupported	u64
   stats.blob_mutator	object
     stats.blob_mutator.fills	u64
     stats.blob_mutator.havoc_ops	u64
@@ -412,101 +380,6 @@ stats	object
     stats.epoll_volatility.runs	u64
     stats.epoll_volatility.ctl_calls	u64
     stats.epoll_volatility.failed	u64
-  stats.statmount_idmap	object
-    stats.statmount_idmap.runs	u64
-    stats.statmount_idmap.setup_failed	u64
-    stats.statmount_idmap.iter	u64
-    stats.statmount_idmap.fork_failed	u64
-    stats.statmount_idmap.carrier_ok	u64
-    stats.statmount_idmap.carrier_fail	u64
-    stats.statmount_idmap.setattr_ok	u64
-    stats.statmount_idmap.setattr_fail	u64
-    stats.statmount_idmap.statmount_call	u64
-    stats.statmount_idmap.statmount_ok	u64
-    stats.statmount_idmap.statmount_overflow	u64
-  stats.netns_teardown	object
-    stats.netns_teardown.runs	u64
-    stats.netns_teardown.setup_failed	u64
-    stats.netns_teardown.unshare_ok	u64
-    stats.netns_teardown.socket_pair_ok	u64
-    stats.netns_teardown.fork_ok	u64
-    stats.netns_teardown.setns_ok	u64
-    stats.netns_teardown.kill_ok	u64
-    stats.netns_teardown.completed_ok	u64
-  stats.cred_transition	object
-    stats.cred_transition.runs	u64
-    stats.cred_transition.setup_failed	u64
-    stats.cred_transition.capset_ok	u64
-    stats.cred_transition.capset_failed	u64
-    stats.cred_transition.op_ok	u64
-    stats.cred_transition.op_failed	u64
-    stats.cred_transition.keyctl_ok	u64
-    stats.cred_transition.keyctl_failed	u64
-  stats.espintcp_coalesce_churn	object
-    stats.espintcp_coalesce_churn.runs	u64
-    stats.espintcp_coalesce_churn.setup_failed	u64
-    stats.espintcp_coalesce_churn.ulp_install_ok	u64
-    stats.espintcp_coalesce_churn.ulp_install_failed	u64
-    stats.espintcp_coalesce_churn.send_ok	u64
-    stats.espintcp_coalesce_churn.keepalive_ok	u64
-    stats.espintcp_coalesce_churn.no_ingress_arm_ok	u64
-    stats.espintcp_coalesce_churn.no_ingress_setup_failed	u64
-    stats.espintcp_coalesce_churn.no_ingress_dellink_ok	u64
-  stats.netns_mountns_setup	object
-    stats.netns_mountns_setup.runs	u64
-    stats.netns_mountns_setup.setup_failed	u64
-    stats.netns_mountns_setup.unshare_ok	u64
-    stats.netns_mountns_setup.mount_private_ok	u64
-    stats.netns_mountns_setup.loopback_ok	u64
-    stats.netns_mountns_setup.socket_ok	u64
-    stats.netns_mountns_setup.completed_ok	u64
-  stats.ipv6_pmtu_race	object
-    stats.ipv6_pmtu_race.runs	u64
-    stats.ipv6_pmtu_race.setup_failed	u64
-    stats.ipv6_pmtu_race.ptb_sent_ok	u64
-    stats.ipv6_pmtu_race.dellink_ok	u64
-    stats.ipv6_pmtu_race.completed_ok	u64
-  stats.pkt_builder	object
-    stats.pkt_builder.runs	u64
-    stats.pkt_builder.setup_failed	u64
-    stats.pkt_builder.built_ok	u64
-    stats.pkt_builder.build_failed	u64
-    stats.pkt_builder.mutated	u64
-    stats.pkt_builder.truncated	u64
-    stats.pkt_builder.delivered_ok	u64
-    stats.pkt_builder.delivery_failed	u64
-    stats.pkt_builder.delivery_disabled	u64
-    stats.pkt_builder.srh_probe_inert	u64
-    stats.pkt_builder.srh_nl_open_failed	u64
-    stats.pkt_builder.recipe_vxlan_eth_ip4	u64
-    stats.pkt_builder.recipe_gretap_eth_ip4	u64
-    stats.pkt_builder.recipe_raw_ip4_gretap_ip4	u64
-    stats.pkt_builder.recipe_qinq_ip4	u64
-    stats.pkt_builder.recipe_geneve_v6_eth_ip6	u64
-    stats.pkt_builder.recipe_mpls_ip4	u64
-    stats.pkt_builder.recipe_rpl_srh_udp	u64
-    stats.pkt_builder.recipe_seg6_srh_udp	u64
-    stats.pkt_builder.recipe_esp_ip4	u64
-    stats.pkt_builder.recipe_vlan_ip4	u64
-  stats.af_unix_scm_rights_gc	object
-    stats.af_unix_scm_rights_gc.runs	u64
-    stats.af_unix_scm_rights_gc.setup_failed	u64
-    stats.af_unix_scm_rights_gc.cycle_built_ok	u64
-    stats.af_unix_scm_rights_gc.close_ok	u64
-    stats.af_unix_scm_rights_gc.trigger_ok	u64
-    stats.af_unix_scm_rights_gc.recv_ok	u64
-    stats.af_unix_scm_rights_gc.peek_ok	u64
-    stats.af_unix_scm_rights_gc.iouring_variant_ok	u64
-    stats.af_unix_scm_rights_gc.sibling_spawn_ok	u64
-    stats.af_unix_scm_rights_gc.sibling_spawn_failed	u64
-    stats.af_unix_scm_rights_gc.sibling_reaped_ok	u64
-    stats.af_unix_scm_rights_gc.sibling_crashed	u64
-    stats.af_unix_scm_rights_gc.unix_gc_two_scc_arm	u64
-  stats.refcount_audit	object
-    stats.refcount_audit.runs	u64
-    stats.refcount_audit.fd_anomalies	u64
-    stats.refcount_audit.mmap_anomalies	u64
-    stats.refcount_audit.sock_anomalies	u64
   stats.iouring_send_zc_churn	object
     stats.iouring_send_zc_churn.runs	u64
     stats.iouring_send_zc_churn.setup_failed	u64
@@ -523,20 +396,6 @@ stats	object
     stats.rxrpc_key_install.quota_hits	u64
     stats.rxrpc_key_install.unsupported	u64
     stats.rxrpc_key_install.xrxgk_accepted	u64
-  stats.icmp_inject	object
-    stats.icmp_inject.errors_injected	u64
-    stats.icmp_inject.inject_failed	u64
-    stats.icmp_inject.selftest_runs	u64
-    stats.icmp_inject.selftest_ok	u64
-    stats.icmp_inject.selftest_fail	u64
-    stats.icmp_inject.init_failed	u64
-    stats.icmp_inject.ns_unsupported	u64
-  stats.fdstress	object
-    stats.fdstress.close_reopen	u64
-    stats.fdstress.dup2_replace	u64
-    stats.fdstress.type_confusion	u64
-    stats.fdstress.cloexec_toggle	u64
-    stats.fdstress.protected_skipped	u64
   stats.vsock_transport_churn	object
     stats.vsock_transport_churn.runs	u64
     stats.vsock_transport_churn.setup_failed	u64

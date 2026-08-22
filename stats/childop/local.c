@@ -36,7 +36,6 @@
 
 void dump_stats_childop_runs_local(void)
 {
-	stat_category_emit_text(&refcount_audit_category);
 
 
 
@@ -55,7 +54,6 @@ void dump_stats_childop_runs_local(void)
 
 
 
-	stat_category_emit_text(&statmount_idmap_category);
 
 
 

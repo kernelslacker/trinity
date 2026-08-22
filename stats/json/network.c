@@ -53,39 +53,8 @@ void dump_stats_json_socket_family_and_tls(void)
 
 
 
-static const struct stat_field xfrm_ah_esn_fields[] = {
-	STAT_FIELD_SUB(xfrm_ah_esn, setup_ok),
-	STAT_FIELD_SUB(xfrm_ah_esn, setup_fail),
-	STAT_FIELD_SUB(xfrm_ah_esn, async_runs),
-	STAT_FIELD_SUB(xfrm_ah_esn, delsa_races),
-};
-
-const struct stat_category xfrm_ah_esn_category =
-	STAT_CATEGORY("xfrm_ah_esn",
-	              xfrm_ah_esn_fields);
-
-static const struct stat_field xfrm_compat_fields[] = {
-	STAT_FIELD_SUB(xfrm_compat, sweep_runs),
-	STAT_FIELD_SUB(xfrm_compat, sends_ok),
-	STAT_FIELD_SUB(xfrm_compat, sends_failed),
-	STAT_FIELD_SUB(xfrm_compat, replies_seen),
-	STAT_FIELD_SUB(xfrm_compat, allocspi_runs),
-	STAT_FIELD_SUB(xfrm_compat, allocspi_sends_ok),
-	STAT_FIELD_SUB(xfrm_compat, allocspi_sends_failed),
-	STAT_FIELD_SUB(xfrm_compat, allocspi_replies_seen),
-	STAT_FIELD_SUB(xfrm_compat, allocspi_unsupported),
-};
-
-const struct stat_category xfrm_compat_category =
-	STAT_CATEGORY("xfrm_compat",
-	              xfrm_compat_fields);
-
 void dump_stats_json_netfilter_and_xfrm(void)
 {
-	json_stats_sep();
-	stat_category_emit_json(&xfrm_ah_esn_category);
-	json_stats_sep();
-	stat_category_emit_json(&xfrm_compat_category);
 }
 
 void json_emit_socket_family_grammar_section(void)
@@ -144,33 +113,21 @@ void json_emit_pidfd_fs_and_container_section(void)
 
 
 
-	json_stats_sep();
-	stat_category_emit_json(&statmount_idmap_category);
 
 
 }
 
 void json_emit_tcp_ipv6_and_tunnels_section(void)
 {
-	json_stats_sep();
-	stat_category_emit_json(&netns_teardown_category);
-
-	json_stats_sep();
-	stat_category_emit_json(&cred_transition_category);
-
-
-	json_stats_sep();
-	stat_category_emit_json(&espintcp_coalesce_category);
-
-	json_stats_sep();
-	stat_category_emit_json(&netns_mountns_setup_category);
 
 
 
 
 
-	json_stats_sep();
-	stat_category_emit_json(&ipv6_pmtu_race_category);
+
+
+
+
 
 
 
@@ -192,14 +149,6 @@ void json_emit_bridge_pci_unix_and_iouring_section(void)
 {
 
 
-	json_stats_sep();
-	stat_category_emit_json(&pkt_builder_category);
-
-
-
-
-	json_stats_sep();
-	stat_category_emit_json(&af_unix_scm_rights_gc_category);
 
 
 
@@ -210,8 +159,10 @@ void json_emit_bridge_pci_unix_and_iouring_section(void)
 
 
 
-	json_stats_sep();
-	stat_category_emit_json(&refcount_audit_category);
+
+
+
+
 }
 
 void json_emit_iouring_iscsi_and_net_tail_section(void)
@@ -230,8 +181,6 @@ void json_emit_iouring_iscsi_and_net_tail_section(void)
 
 
 
-	json_stats_sep();
-	stat_category_emit_json(&icmp_inject_category);
 
 
 
@@ -241,6 +190,4 @@ void json_emit_iouring_iscsi_and_net_tail_section(void)
 
 
 
-	json_stats_sep();
-	stat_category_emit_json(&fdstress_category);
 }
