@@ -75,12 +75,22 @@ trap 'rm -rf "$WORKDIR"' EXIT
 # Strip C block/line comments first so commented-out stale values are ignored.
 # Decimal and hex values are both captured; stored as-is for normalization
 # at comparison time.
+#
+# NEGATIVE decimals are captured too, and were not until this was fixed.  The
+# comparison code has always handled them -- int32() carries a comment reading
+# "decimal (may carry sign from -1, etc.)" -- but the harvest regex accepted
+# only unsigned literals, so no negative shim ever reached that branch.  The
+# symbols this hid are not incidental: negative-fd sentinels are a family
+# (AT_FDCWD -100, PIDFD_SELF_THREAD -10000, FD_PIDFS_ROOT -10002,
+# FD_NSFS_ROOT -10003, FD_FAILFS_ROOT -10004), they are precisely the
+# constants that have to be exact, and a wrong one aims a syscall at the
+# wrong magic fd instead of failing loudly.
 # Output: "SYM VALUE" pairs, sorted and uniqued.
 # ---------------------------------------------------------------------------
 find "$ROOT" -path "$ROOT/scripts" -prune -o \
     \( -name '*.c' -o -name '*.h' \) -print 2>/dev/null | sort | \
   xargs perl -0777 -pe 's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' 2>/dev/null | \
-  grep -oE '#[[:space:]]*define[[:space:]]+[A-Z][A-Z0-9_]+[[:space:]]+(0[xX][0-9a-fA-F]+|[0-9]+)([[:space:]]|$)' | \
+  grep -oE '#[[:space:]]*define[[:space:]]+[A-Z][A-Z0-9_]+[[:space:]]+(0[xX][0-9a-fA-F]+|-?[0-9]+)([[:space:]]|$)' | \
   sed 's/#[[:space:]]*define[[:space:]]*//' | \
   awk '{print $1, $2}' | sort -u > "$HARVEST"
 
