@@ -236,7 +236,7 @@ void sanity_check_tables(void)
 void check_user_specified_arch(const char *arg, char **arg_name, bool *only_64bit, bool *only_32bit)
 {
 	//Check if the arch is specified
-	char *arg_arch = strstr(arg,",");
+	const char *arg_arch = strstr(arg,",");
 
 	if (arg_arch  != NULL) {
 		unsigned long size = 0;
