@@ -49,6 +49,18 @@ orchestrator) to locate sources.  Conventions:
 when scripts are added to or removed from `scripts/check-static/`,
 update this section to match `ls scripts/check-static/*.sh`.)
 
+- `check-stats-reachable`: every field in `struct stats_s` must have a
+  `STAT_FIELD*()` descriptor row, a consumer read, or an allowlist entry
+  naming its bespoke walker.  Catches a counter that is written and then
+  never surfaced.
+
+- `stats-group-has-producer`: the complement -- every group in
+  `struct stats_s` must be written by something outside `stats/`.  A group
+  with a descriptor and no writer renders as an all-zero object forever, and
+  a consumer cannot tell "ran, found nothing" from "was deleted".  Counts
+  writers in the direct, `offsetof()` and `parent_stats` forms; self-tests
+  the `offsetof()` form, which a naive grep misses.
+
 - `check-static-doc-parity`: every `scripts/check-static/*.sh` must have a
   row in the list below, and every row must name a script that exists.  The
   battery is the project's change detector; a check nobody can find in the
