@@ -380,15 +380,6 @@ stats	object
     stats.epoll_volatility.runs	u64
     stats.epoll_volatility.ctl_calls	u64
     stats.epoll_volatility.failed	u64
-  stats.iouring_send_zc_churn	object
-    stats.iouring_send_zc_churn.runs	u64
-    stats.iouring_send_zc_churn.setup_failed	u64
-    stats.iouring_send_zc_churn.register_bufs_ok	u64
-    stats.iouring_send_zc_churn.send_zc_ok	u64
-    stats.iouring_send_zc_churn.sendmsg_zc_ok	u64
-    stats.iouring_send_zc_churn.unregister_race_ok	u64
-    stats.iouring_send_zc_churn.update_race_ok	u64
-    stats.iouring_send_zc_churn.cqe_drained	u64
   stats.rxrpc_key_install	object
     stats.rxrpc_key_install.runs	u64
     stats.rxrpc_key_install.calls	u64

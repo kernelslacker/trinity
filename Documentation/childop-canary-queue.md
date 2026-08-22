@@ -119,7 +119,6 @@ Under sustained `fork()` failure (`>=100` consecutive
 already losing the spawn race.
 
 The pid-heavy set is whichever ops fork a helper of their own:
-`iouring_send_zc_churn` (forks its loopback peer) and
 `vsock_transport_churn` (reaches `fork()` through
 `userns_run_in_ns()`).  It is declared in
 `child/child-canary-policy.c`; an op that grows an inner fork belongs

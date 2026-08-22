@@ -36,8 +36,6 @@ needs a `childop.def` row.
 - `fs/inode-spewer.c` — inode/dentry cache churn.
 - `fs/procfs-writer.c` — pseudo-filesystem write surfaces, allow/deny ruled.
 - `fs/xattr-thrash.c` — extended-attribute churn.
-- `io_uring/send-zc-churn.c` — zero-copy send churn over a forked loopback
-  peer.
 - `misc/epoll-volatility.c` — epoll set churn against volatile fds.
 - `mm/pagecache-canary-check.c` — pagecache integrity canary.
 - `net/rxrpc-key-install.c` — rxrpc key install/rotate.
@@ -46,12 +44,11 @@ needs a `childop.def` row.
 
 ### Shared helpers (not dispatched)
 
-- `io_uring/ring.c` (+ `ring.h`) — ring setup/teardown.
 - `net/netlink/netlink-util.c` — netlink send/recv plumbing and `ns_since()`.
 
 ## Notes
 
-- `iouring_send_zc_churn` and `vsock_transport_churn` both fork. They are the
+- `vsock_transport_churn` forks (through `userns_run_in_ns()`). It is the
   membership of the canary picker's pid-heavy suppression set
   (`child/child-canary-policy.c`); anything else that grows an inner fork
   belongs there too.

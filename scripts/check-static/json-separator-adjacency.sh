@@ -102,7 +102,7 @@ for path in sys.argv[1:]:
         if not in_func:
             continue
 
-        # Separator emit: reset tracking
+	# Separator emit: reset tracking
         if SEP_RE.search(stripped):
             last_emit = None
             last_line = 0

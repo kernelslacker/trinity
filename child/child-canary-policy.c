@@ -38,12 +38,10 @@ const unsigned int canary_config_blocked_count = ARRAY_SIZE(canary_config_blocke
 
 /* Ops that fork a helper worker of their own, so a canary window for
  * one of them adds pid pressure on top of whatever made the parent's
- * fork loop start failing.  iouring_send_zc_churn forks its loopback
- * peer directly; vsock_transport_churn reaches fork() through
- * userns_run_in_ns(), which forks a transient grandchild to enter a
- * fresh netns. */
+ * fork loop start failing.  vsock_transport_churn reaches fork()
+ * through userns_run_in_ns(), which forks a transient grandchild to
+ * enter a fresh netns. */
 static const enum child_op_type canary_pid_heavy_ops[] = {
-	CHILD_OP_IOURING_SEND_ZC_CHURN,
 	CHILD_OP_VSOCK_TRANSPORT_CHURN,
 };
 

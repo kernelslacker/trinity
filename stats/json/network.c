@@ -168,12 +168,6 @@ void json_emit_bridge_pci_unix_and_iouring_section(void)
 void json_emit_iouring_iscsi_and_net_tail_section(void)
 {
 	json_stats_sep();
-	stat_category_emit_json(&iouring_send_zc_churn_category);
-
-
-
-
-	json_stats_sep();
 	stat_category_emit_json(&rxrpc_key_install_category);
 
 

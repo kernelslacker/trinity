@@ -170,7 +170,6 @@ extern const struct stat_category errno_gradient_category;
 extern const struct stat_category fd_runtime_skipped_category;
 extern const struct stat_category prctl_futex_hash_category;
 extern const struct stat_category genl_family_calls_category;
-extern const struct stat_category iouring_send_zc_churn_category;
 extern const struct stat_category netlink_generator_category;
 extern const struct stat_category nfnl_subsys_calls_category;
 extern const struct stat_category no_domains_category;

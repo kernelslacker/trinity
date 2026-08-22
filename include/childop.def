@@ -60,7 +60,6 @@ CHILDOP(CHILD_OP_INODE_SPEWER             , "inode_spewer"               , inode
 CHILDOP(CHILD_OP_PROCFS_WRITER            , "procfs_writer"              , procfs_writer              , true, 0)
 CHILDOP(CHILD_OP_XATTR_THRASH             , "xattr_thrash"               , xattr_thrash               , true, 1)
 CHILDOP(CHILD_OP_EPOLL_VOLATILITY         , "epoll_volatility"           , epoll_volatility           , true, 1)
-CHILDOP(CHILD_OP_IOURING_SEND_ZC_CHURN    , "iouring_send_zc_churn"      , iouring_send_zc_churn      , true, 1)
 CHILDOP(CHILD_OP_VSOCK_TRANSPORT_CHURN    , "vsock_transport_churn"      , vsock_transport_churn      , true, 1)
 CHILDOP(CHILD_OP_RXRPC_KEY_INSTALL        , "rxrpc_key_install"          , rxrpc_key_install          , true, 1)
 CHILDOP(CHILD_OP_PAGECACHE_CANARY_CHECK   , "pagecache_canary_check"     , pagecache_canary_check     , true, 0)

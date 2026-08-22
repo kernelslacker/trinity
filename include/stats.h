@@ -44,7 +44,6 @@
 #include "stats/subsys/fd_runtime.h"
 #include "stats/subsys/frontier.h"
 #include "stats/subsys/prctl_futex_hash.h"
-#include "stats/subsys/iouring_send_zc_churn.h"
 #include "stats/subsys/kvm.h"
 #include "stats/subsys/maps.h"
 #include "stats/subsys/minicorpus.h"
@@ -436,8 +435,6 @@ struct stats_s {
 
 
 
-	/* iouring_send_zc_churn accounting.  See stats/subsys/iouring_send_zc_churn.h. */
-	struct iouring_send_zc_churn_stats iouring_send_zc_churn __attribute__((aligned(64)));
 
 	/* vsock_transport_churn accounting.  See stats/subsys/vsock_transport_churn.h. */
 	struct vsock_transport_churn_stats vsock_transport_churn __attribute__((aligned(64)));
