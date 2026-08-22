@@ -423,7 +423,10 @@ if [ -n "$HDR_INSTALL" ] && [ -s "$SYMS_BAD" ]; then
             linux/pkt_sched.h linux/pkt_cls.h linux/fib_rules.h linux/devlink.h \
             linux/dcbnl.h linux/netlink.h linux/netfilter/nfnetlink_log.h \
             linux/netfilter/nfnetlink_queue.h linux/tc_act/tc_mirred.h \
-            linux/netfilter/nf_tables_compat.h; do
+            linux/netfilter/nf_tables_compat.h \
+            linux/userfaultfd.h linux/nsfs.h linux/nexthop.h \
+            linux/blkdev.h linux/ublk_cmd.h linux/vfio.h \
+            linux/openvswitch.h linux/mount.h linux/pidfd.h; do
             if [ -f "$LINUS_HDR_INC/$h" ] || [ -f "/usr/include/$h" ]; then
                 echo "#include <$h>"
             fi
