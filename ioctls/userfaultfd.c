@@ -1,7 +1,8 @@
 /* userfaultfd ioctl fuzzing */
 
 #include <linux/ioctl.h>
-#include <linux/userfaultfd.h>
+
+#include "kernel/userfaultfd.h"
 
 #include "ioctls.h"
 #include "maps.h"
@@ -31,6 +32,8 @@ IOCTL_SIZE_ASSERT(UFFDIO_WRITEPROTECT, struct uffdio_writeprotect);
 IOCTL_SIZE_ASSERT(UFFDIO_CONTINUE, struct uffdio_continue);
 IOCTL_SIZE_ASSERT(UFFDIO_POISON, struct uffdio_poison);
 IOCTL_SIZE_ASSERT(UFFDIO_MOVE, struct uffdio_move);
+IOCTL_SIZE_ASSERT(UFFDIO_RWPROTECT, struct uffdio_rwprotect);
+IOCTL_SIZE_ASSERT(UFFDIO_SET_MODE, struct uffdio_set_mode);
 
 static int userfaultfd_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
@@ -70,6 +73,19 @@ static void sanitise_uffdio_api(struct syscallrecord *rec)
 		UFFD_FEATURE_POISON,
 		UFFD_FEATURE_WP_ASYNC,
 		UFFD_FEATURE_MOVE,
+		/*
+		 * RWP and RWP_ASYNC gate UFFDIO_REGISTER_MODE_RWP and the
+		 * UFFDIO_SET_MODE toggle respectively; without them in the
+		 * handshake the kernel rejects both at registration and the
+		 * new commands are unreachable.  RWP_ASYNC is the one that
+		 * resolves faults in-kernel with no message to a monitor,
+		 * which is precisely why it is safe to negotiate here: the
+		 * EVENT_* features are excluded above because they block the
+		 * triggering op until a monitor reads, and trinity runs no
+		 * monitor.  Async is the opposite -- it needs no reader.
+		 */
+		UFFD_FEATURE_RWP,
+		UFFD_FEATURE_RWP_ASYNC,
 	};
 
 	ua = (struct uffdio_api *) get_writable_struct(sizeof(*ua));
@@ -93,6 +109,7 @@ static void sanitise_uffdio_register(struct syscallrecord *rec)
 		UFFDIO_REGISTER_MODE_MISSING,
 		UFFDIO_REGISTER_MODE_WP,
 		UFFDIO_REGISTER_MODE_MINOR,
+		UFFDIO_REGISTER_MODE_RWP,
 	};
 
 	ur = (struct uffdio_register *) get_writable_struct(sizeof(*ur));
@@ -172,6 +189,77 @@ static void sanitise_uffdio_writeprotect(struct syscallrecord *rec)
 	}
 	uwp->mode = set_rand_bitmask(ARRAY_SIZE(wp_modes), wp_modes);
 	rec->a3 = (unsigned long) uwp;
+}
+
+/*
+ * UFFDIO_RWPROTECT -- same shape as UFFDIO_WRITEPROTECT, different
+ * meaning: !MODE_RWP undoes the protection rather than applying it, so
+ * a bitmask draw covers both the protect and the un-protect direction
+ * against a range that may or may not be registered for RWP.
+ */
+static void sanitise_uffdio_rwprotect(struct syscallrecord *rec)
+{
+	struct uffdio_rwprotect *urwp;
+	struct map *map;
+	static const unsigned long rwp_modes[] = {
+		UFFDIO_RWPROTECT_MODE_RWP,
+		UFFDIO_RWPROTECT_MODE_DONTWAKE,
+	};
+
+	urwp = (struct uffdio_rwprotect *) get_writable_struct(sizeof(*urwp));
+	if (!urwp)
+		return;
+	memset(urwp, 0, sizeof(*urwp));
+	map = get_map();
+	if (map) {
+		urwp->range.start = (unsigned long) map->ptr;
+		urwp->range.len = map->size;
+	}
+	urwp->mode = set_rand_bitmask(ARRAY_SIZE(rwp_modes), rwp_modes);
+	rec->a3 = (unsigned long) urwp;
+}
+
+/*
+ * UFFDIO_SET_MODE -- runtime feature toggle, and the only uffd command
+ * with a documented cross-field rule: "setting a bit in both enable and
+ * disable is invalid".  A hand-written mutual-exclusion check on a live
+ * toggle is worth hitting from both sides, so a third of the draws set
+ * the SAME bit in both words to aim straight at it, and the rest pick
+ * the two words independently -- which lands on the invalid overlap
+ * only by chance, and on the legal enable-or-disable paths the rest of
+ * the time.
+ *
+ * UFFD_FEATURE_RWP_ASYNC is the only feature the kernel accepts here
+ * today; drawing values outside that set keeps the reject arm live for
+ * whatever gets added next.
+ */
+static void sanitise_uffdio_set_mode(struct syscallrecord *rec)
+{
+	struct uffdio_set_mode *usm;
+	static const unsigned long toggle_features[] = {
+		UFFD_FEATURE_RWP_ASYNC,
+		UFFD_FEATURE_RWP,
+		UFFD_FEATURE_WP_ASYNC,
+		UFFD_FEATURE_POISON,
+	};
+
+	usm = (struct uffdio_set_mode *) get_writable_struct(sizeof(*usm));
+	if (!usm)
+		return;
+	memset(usm, 0, sizeof(*usm));
+
+	if (ONE_IN(3)) {
+		/* Aim at the both-set-is-invalid rule deliberately. */
+		usm->enable = set_rand_bitmask(ARRAY_SIZE(toggle_features),
+					       toggle_features);
+		usm->disable = usm->enable;
+	} else {
+		usm->enable = set_rand_bitmask(ARRAY_SIZE(toggle_features),
+					       toggle_features);
+		usm->disable = set_rand_bitmask(ARRAY_SIZE(toggle_features),
+						toggle_features);
+	}
+	rec->a3 = (unsigned long) usm;
 }
 
 static void sanitise_uffdio_continue(struct syscallrecord *rec)
@@ -286,6 +374,12 @@ static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallre
 	case UFFDIO_MOVE:
 		sanitise_uffdio_move(rec);
 		break;
+	case UFFDIO_RWPROTECT:
+		sanitise_uffdio_rwprotect(rec);
+		break;
+	case UFFDIO_SET_MODE:
+		sanitise_uffdio_set_mode(rec);
+		break;
 	case UFFDIO_WAKE:
 	case UFFDIO_UNREGISTER:
 		sanitise_uffdio_range(rec);
@@ -306,6 +400,8 @@ static const struct ioctl userfaultfd_ioctls[] = {
 	IOCTL(UFFDIO_CONTINUE),
 	IOCTL(UFFDIO_POISON),
 	IOCTL(UFFDIO_MOVE),
+	IOCTL(UFFDIO_RWPROTECT),
+	IOCTL(UFFDIO_SET_MODE),
 };
 
 static const struct ioctl_group userfaultfd_grp = {
