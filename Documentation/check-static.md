@@ -61,6 +61,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
   writers in the direct, `offsetof()` and `parent_stats` forms; self-tests
   the `offsetof()` form, which a naive grep misses.
 
+- `shim-symbol-single-value`: a uapi fallback symbol -- one guarded by
+  `#ifndef SYM` anywhere in the tree -- must have exactly one value.  Two
+  values for one symbol means two translation units disagree about the ABI
+  while the build stays green, which is how `struct ns_id_req` ran as a
+  24-byte layout in `struct_catalog/` and a 32-byte one in
+  `include/kernel/nsfs.h`.  Per-arch and file-local constants are out of
+  scope: they are unguarded and are allowed to differ.  Self-tests both
+  directions -- a planted guarded conflict must fire, a planted unguarded
+  one must not.
+
 - `check-static-doc-parity`: every `scripts/check-static/*.sh` must have a
   row in the list below, and every row must name a script that exists.  The
   battery is the project's change detector; a check nobody can find in the
