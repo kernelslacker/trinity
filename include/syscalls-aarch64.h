@@ -488,4 +488,5 @@ struct syscalltable syscalls_aarch64[] = {
 /* 469 */	{ .entry = &syscall_file_setattr },
 /* 470 */	{ .entry = &syscall_listns },
 /* 471 */	{ .entry = &syscall_rseq_slice_yield },
+/* 472 */	{ .entry = &syscall_fchroot },
 };

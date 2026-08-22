@@ -98,3 +98,27 @@
 #define F_GETDELEG		(F_LINUX_SPECIFIC_BASE + 15)
 #define F_SETDELEG		(F_LINUX_SPECIFIC_BASE + 16)
 #endif
+
+/*
+ * Negative-fd sentinels.  These are not descriptors: each is a magic
+ * value a specific syscall recognises and turns into a filesystem root
+ * without a table lookup, so every call site that reasons about
+ * "fd < 0", AT_FDCWD, or fdget() has one more convention to get right.
+ * FD_FAILFS_ROOT arrived in Linux 7.3 with the failfs series and is
+ * accepted by both fchdir(2) (cdf930a00949) and fchroot(2)
+ * (b1221afa31cc).
+ *
+ * Shimmed as plain #defines because that is what upstream uses -- these
+ * are macros in include/uapi/linux/fcntl.h, not enum members, so an
+ * older header genuinely lacks the name and the #ifndef guard means
+ * what it says here.
+ */
+#ifndef FD_PIDFS_ROOT
+#define FD_PIDFS_ROOT		-10002
+#endif
+#ifndef FD_NSFS_ROOT
+#define FD_NSFS_ROOT		-10003
+#endif
+#ifndef FD_FAILFS_ROOT
+#define FD_FAILFS_ROOT		-10004
+#endif
