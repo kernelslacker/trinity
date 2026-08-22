@@ -19,7 +19,7 @@
 void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		struct kcov_child *kc, struct childdata *child)
 {
-	/* Kernel-entry seal barrier: with --deferred-free-batch ON any
+	/* Kernel-entry seal barrier: with batching on (the default) any
 	 * X_unlock left rw_open by pre-dispatch bookkeeping (sanitiser
 	 * zmalloc_tracked, cleanup_release_post_state on the previous
 	 * iteration's return path) is mprotected back to steady state

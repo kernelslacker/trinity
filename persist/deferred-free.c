@@ -164,7 +164,7 @@ static struct timespec rc_rw_open_at;
 static struct timespec ring_rw_open_at;
 
 /*
- * Per-region open flags for --deferred-free-batch.  With batching OFF
+ * Per-region open flags for the batched mode.  With batching off
  * these stay false and the X_unlock/X_lock helpers behave exactly as
  * before (real mprotect flip per mutation).  With batching ON the
  * first X_unlock() of a phase mprotects the region RW and sets its
@@ -1362,7 +1362,7 @@ static void ring_dispose_after_enomem(void)
 			  errno);
 
 	/*
-	 * The ring page is gone.  Under --deferred-free-batch a leftover
+	 * The ring page is gone.  Under batching a leftover
 	 * ring_rw_open=true would drive the next seal barrier into an
 	 * mprotect against a stale VA (EFAULT, flag stays set, debug assert
 	 * trips at the next chokepoint).  Clear it now: no page to reprotect
@@ -1432,7 +1432,7 @@ static void deferred_free_record_outstanding(unsigned int v)
 }
 
 /*
- * Kernel-entry seal barrier for --deferred-free-batch.  Walk each of
+ * Kernel-entry seal barrier for the batched mode.  Walk each of
  * the protection regions; for any left rw_open by an earlier
  * lazy-open, mprotect it back to its steady state (READ for
  * alloc_track / rc, NONE for ring) and clear the

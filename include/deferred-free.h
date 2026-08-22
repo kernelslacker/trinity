@@ -244,9 +244,9 @@ void deferred_free_tick(void);
 void deferred_free_flush(void);
 
 /*
- * Kernel-entry seal barrier.  With --deferred-free-batch OFF this is a
+ * Kernel-entry seal barrier.  With --no-deferred-free-batch this is a
  * no-op (each per-mutation X_unlock/X_lock still flips its region round-
- * trip inside the caller).  With --deferred-free-batch ON every
+ * trip inside the caller).  With batching on (the default) every
  * X_unlock() lazily promotes its region to RW and every X_lock() defers
  * the mprotect back to steady state; this barrier walks the
  * protection regions (alloc_track, ring_control, ring)

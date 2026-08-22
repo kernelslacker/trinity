@@ -244,8 +244,8 @@ bool parse_long_misc_options(int opt, const char *name, char *arg)
 		return true;
 	}
 
-	if (strcmp("deferred-free-batch", name) == 0) {
-		deferred_free_batch = true;
+	if (strcmp("no-deferred-free-batch", name) == 0) {
+		deferred_free_batch = false;
 		return true;
 	}
 

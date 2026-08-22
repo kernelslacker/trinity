@@ -291,7 +291,7 @@ void child_process(struct childdata *child, int childno)
 		 * a fault handler that siglongjmps out of a mid-phase
 		 * bookkeeping site (e.g. inside cleanup_release_post_state
 		 * mid-consume) unwinds back to the loop top with regions
-		 * still rw_open under --deferred-free-batch.  Seal every
+		 * still rw_open while batching.  Seal every
 		 * such leftover here, before the iteration touches any
 		 * deferred-free state or dispatches, so the next kernel
 		 * entry cannot see a stale window.  No-op with the flag
@@ -768,7 +768,7 @@ void child_process(struct childdata *child, int childno)
 		 * the kernel, otherwise a copy_to_user aliased to a
 		 * deferred-free page silently scribbles instead of
 		 * faulting on the PROT_READ/PROT_NONE tripwire.  No-op
-		 * with --deferred-free-batch OFF. */
+		 * with --no-deferred-free-batch. */
 		if (!deferred_free_seal_all()) {
 			__atomic_add_fetch(
 				&shm->stats.syscall_dispatch.seal_fail_aborts,

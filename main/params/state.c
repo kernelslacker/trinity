@@ -60,7 +60,7 @@ bool no_domains[TRINITY_PF_MAX];
 bool dry_run = false;
 bool sysrq_on_lockup = false;
 bool self_corrupt_canary = false;
-bool deferred_free_batch = false;
+bool deferred_free_batch = true;
 bool show_unannotated = false;
 bool show_syscall_list = false;
 bool show_ioctl_list = false;

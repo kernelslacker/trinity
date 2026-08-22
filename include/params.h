@@ -64,17 +64,18 @@ extern bool sysrq_on_lockup;
 extern bool self_corrupt_canary;
 
 /*
- * --deferred-free-batch: A/B switch for per-iteration mprotect batching
- * inside persist/deferred-free.c.  DEFAULT OFF: every X_unlock/X_lock in
- * the deferred-free metadata regions still flips its bracket
- * individually, byte-identical to the pre-row baseline.  ON collapses
- * repeat mutations inside one iteration-phase into a single lazy-open +
- * a single seal-barrier close, ~2x+ mprotect reduction on the hot path
- * (measured against the t372-a *_rw_calls / *_ro_calls counters).
+ * Per-iteration mprotect batching inside persist/deferred-free.c.
+ * DEFAULT ON: repeat mutations inside one iteration-phase collapse into
+ * a single lazy-open plus a single seal-barrier close, which is a ~2x+
+ * mprotect reduction on the hot path (measured against the *_rw_calls /
+ * *_ro_calls counters).  --no-deferred-free-batch turns it off, so every
+ * X_unlock/X_lock flips its own bracket and a stray write is pinned to
+ * the individual mutation that made it.
  * Seal barrier fires at every kernel-entry chokepoint (do_syscall /
  * childop dispatch / signal-longjmp unwind) so the PROT_READ/PROT_NONE
  * steady state is restored before any fuzzed / childop-direct syscall
- * enters the kernel.  See Documentation/params-debug.md#deferred-free-batch.
+ * enters the kernel.
+ * See Documentation/params-debug.md#no-deferred-free-batch.
  */
 extern bool deferred_free_batch;
 extern bool show_unannotated;
