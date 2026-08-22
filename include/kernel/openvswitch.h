@@ -54,17 +54,35 @@
 #define OVS_VPORT_TYPE_GENEVE	5
 #endif
 
+/*
+ * enum ovs_vport_attr, from OVS_VPORT_ATTR_UNSPEC = 0:
+ *
+ *   PORT_NO 1, TYPE 2, NAME 3, OPTIONS 4, UPCALL_PID 5, STATS 6,
+ *   PAD 7, IFINDEX 8, NETNSID 9, UPCALL_STATS 10
+ *
+ * These are enum MEMBERS upstream, not macros, which is the trap: the
+ * preprocessor cannot see an enum member, so #ifndef is always true and
+ * the value below is not a fallback -- it is a macro that SHADOWS the
+ * real enum in every translation unit that includes this header, on
+ * every kernel, however new the installed uapi headers are.  A wrong
+ * number here is therefore not "wrong on old systems", it is wrong
+ * everywhere, silently, and it stays wrong because the shim is what the
+ * compiler sees.
+ */
+#ifndef OVS_VPORT_ATTR_PORT_NO
+#define OVS_VPORT_ATTR_PORT_NO	1
+#endif
 #ifndef OVS_VPORT_ATTR_TYPE
-#define OVS_VPORT_ATTR_TYPE	1
+#define OVS_VPORT_ATTR_TYPE	2
 #endif
 #ifndef OVS_VPORT_ATTR_NAME
-#define OVS_VPORT_ATTR_NAME	2
+#define OVS_VPORT_ATTR_NAME	3
 #endif
 #ifndef OVS_VPORT_ATTR_OPTIONS
-#define OVS_VPORT_ATTR_OPTIONS	3
+#define OVS_VPORT_ATTR_OPTIONS	4
 #endif
 #ifndef OVS_VPORT_ATTR_UPCALL_PID
-#define OVS_VPORT_ATTR_UPCALL_PID	4
+#define OVS_VPORT_ATTR_UPCALL_PID	5
 #endif
 
 #ifndef OVS_TUNNEL_ATTR_DST_PORT
