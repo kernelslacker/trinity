@@ -27,6 +27,21 @@
 #include "rnd.h"
 #include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
 
+/*
+ * 7.3 attrs the payload switches below fill.  Both are enum MEMBERS
+ * upstream, so #ifndef is always true and these #defines shadow the
+ * real enum rather than falling back to it -- a wrong number here is
+ * wrong on every kernel, not just old ones.  Same shape as the shims in
+ * msg-tables.c, which is where the matching attr-table entries live;
+ * the uapi-shim gate checks both copies against upstream.
+ */
+#ifndef RTA_DEL_REASON
+#define RTA_DEL_REASON			32
+#endif
+#ifndef NHA_DST_PORT
+#define NHA_DST_PORT			18
+#endif
+
 /* Prototypes for external-linkage generators defined below.  Their
  * sibling declarations for the dispatcher live in net/netlink/msg-core.c;
  * these self-declarations satisfy -Wmissing-prototypes without
@@ -114,6 +129,22 @@ size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 	case RTA_PRIORITY:
 		if (avail >= 4) {
 			__u32 val = rnd_modulo_u32(64);
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case RTA_DEL_REASON:
+		/*
+		 * u32 RT_DEL_REASON_*: UNSPEC 0, EXPIRED 1, RA_WITHDRAWN 2.
+		 * Draw one past the defined maximum as well -- the values
+		 * come off the wire into a switch on the kernel side, and
+		 * an out-of-vocab reason is the case a hand-written
+		 * validation either handles or does not.
+		 */
+		if (avail >= 4) {
+			__u32 val = rnd_modulo_u32(4);
+
 			memcpy(p, &val, 4);
 			return 4;
 		}
@@ -294,6 +325,27 @@ size_t gen_rta_nexthop_payload(unsigned char *p, size_t avail,
 
 			memcpy(p, &val, 4);
 			return 4;
+		}
+		return 0;
+
+	case NHA_DST_PORT:
+		/*
+		 * be16 UDP destination port for an fdb nexthop.  Real
+		 * VXLAN / GENEVE ports most of the time so the attr
+		 * resolves against something a tunnel driver recognises,
+		 * random the rest so the parse path sees arbitrary
+		 * 16-bit values too.  Network byte order: the kernel
+		 * reads this with nla_get_be16().
+		 */
+		if (avail >= 2) {
+			static const __u16 ports[] = { 4789, 6081, 4790, 0 };
+			__u16 val = ONE_IN(4)
+				  ? (__u16)rnd_u32()
+				  : ports[rnd_modulo_u32(ARRAY_SIZE(ports))];
+
+			val = htons(val);
+			memcpy(p, &val, 2);
+			return 2;
 		}
 		return 0;
 

@@ -51,6 +51,14 @@ static int tun_fd_test(int fd __attribute__((unused)),
  * back on any output-carrying command), stamp ifr_name and ifr_flags
  * with plausible values, and rewrite a3 to point at it.
  */
+/*
+ * IFF_BACKPRESSURE (7.3) is a plain upstream #define, not an enum
+ * member, so the #ifndef is a real fallback.
+ */
+#ifndef IFF_BACKPRESSURE
+#define IFF_BACKPRESSURE	0x0080
+#endif
+
 static const unsigned short tun_iff_flags[] = {
 	IFF_TUN,
 	IFF_TAP,
@@ -60,6 +68,15 @@ static const unsigned short tun_iff_flags[] = {
 	IFF_TAP | IFF_VNET_HDR,
 	IFF_TAP | IFF_MULTI_QUEUE,
 	IFF_TAP | IFF_MULTI_QUEUE | IFF_NO_PI,
+	/*
+	 * IFF_BACKPRESSURE pairs with the queueing modes rather than
+	 * standing alone -- it changes what the driver does when the
+	 * ring fills, which needs a ring that can fill.
+	 */
+	IFF_TAP | IFF_BACKPRESSURE,
+	IFF_TUN | IFF_BACKPRESSURE,
+	IFF_TAP | IFF_MULTI_QUEUE | IFF_BACKPRESSURE,
+	IFF_TAP | IFF_VNET_HDR | IFF_BACKPRESSURE,
 };
 
 static void sanitise_tun_ifreq(struct syscallrecord *rec)

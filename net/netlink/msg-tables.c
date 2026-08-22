@@ -245,6 +245,17 @@ const size_t ifa_attrs_n = ARRAY_SIZE(ifa_attrs);
 #ifndef RTA_FLOWLABEL
 #define RTA_FLOWLABEL			31
 #endif
+/*
+ * RTA_DEL_REASON (7.3) carries a u32 RT_DEL_REASON_* saying why the
+ * kernel deleted a route.  Kernel-to-userspace on the notification
+ * side, so a value trinity SENDS is not something the kernel consumes
+ * for routing -- but it is still parsed: the attr has to survive
+ * nla_parse and the policy check on the receive side of RTM_DELROUTE,
+ * and an attr the fuzzer never emits is a policy slot never tested.
+ */
+#ifndef RTA_DEL_REASON
+#define RTA_DEL_REASON			32
+#endif
 
 const unsigned short rta_attrs[] = {
 	RTA_DST, RTA_SRC, RTA_IIF, RTA_OIF, RTA_GATEWAY, RTA_PRIORITY,
@@ -252,7 +263,7 @@ const unsigned short rta_attrs[] = {
 	RTA_TABLE, RTA_MARK, RTA_MFC_STATS, RTA_VIA, RTA_NEWDST,
 	RTA_PREF, RTA_ENCAP_TYPE, RTA_ENCAP, RTA_EXPIRES, RTA_UID,
 	RTA_TTL_PROPAGATE, RTA_IP_PROTO, RTA_SPORT, RTA_DPORT, RTA_NH_ID,
-	RTA_FLOWLABEL,
+	RTA_FLOWLABEL, RTA_DEL_REASON,
 };
 const size_t rta_attrs_n = ARRAY_SIZE(rta_attrs);
 
@@ -354,11 +365,20 @@ const size_t tca_attrs_n = ARRAY_SIZE(tca_attrs);
 #define NHA_GROUP_STATS			15
 #endif
 
+/*
+ * NHA_DST_PORT (7.3): be16 UDP destination port for an fdb nexthop,
+ * e.g. VXLAN.  Only meaningful alongside NHA_FDB, which the table
+ * already carries.
+ */
+#ifndef NHA_DST_PORT
+#define NHA_DST_PORT			18
+#endif
+
 const unsigned short nha_attrs[] = {
 	NHA_GROUP, NHA_GROUP_TYPE, NHA_BLACKHOLE, NHA_OIF, NHA_GATEWAY,
 	NHA_ENCAP_TYPE, NHA_ENCAP, NHA_GROUPS, NHA_MASTER, NHA_FDB,
 	NHA_RES_GROUP, NHA_RES_BUCKET, NHA_OP_FLAGS, NHA_GROUP_STATS,
-	NHA_HW_STATS_USED, NHA_HW_STATS_ENABLE,
+	NHA_HW_STATS_USED, NHA_HW_STATS_ENABLE, NHA_DST_PORT,
 };
 const size_t nha_attrs_n = ARRAY_SIZE(nha_attrs);
 
