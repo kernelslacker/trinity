@@ -12,10 +12,20 @@
 # The runtime gate (check-runtime-json-output.sh) only covers paths the
 # fixture actually exercises, leaving paths outside the baseline unvalidated.
 #
-# Detector: scan stats/json/*.c line-by-line per function.  Track the last
-# stat_category_emit_json() call; reset tracking on any separator emit
-# (putchar(',') / fputc(',' / printf(",")).  Flag any second
-# stat_category_emit_json() reached with no separator between.
+# Detector: scan stats/json/*.c line-by-line per function.  Two directions,
+# because a comma can be wrong in two ways:
+#
+#   NO SEPARATOR   - two stat_category_emit_json() calls with no separator
+#                    between them, i.e. a missing comma (the 872757fb803b bug).
+#   ORPHAN SEPARATOR - two separators with no emit between them, i.e. a comma
+#                    with nothing to separate.  This is what deleting a stats
+#                    category leaves behind: the category's emit line goes and
+#                    its json_stats_sep() stays, producing ",," and a document
+#                    that no JSON parser will accept.  Categories get deleted
+#                    routinely now (the childop burns), so this direction is
+#                    not hypothetical -- it was found by the runtime gate
+#                    while this check, whose entire subject is separator
+#                    adjacency, passed the same tree.
 #
 # Regression fixture: the pre-fix pre-image of dump_stats_json_netfilter_and_xfrm
 # (minus the putchar between ipmr_getroute_pktinfo_category and ip6mr_churn_category)
@@ -67,6 +77,7 @@ for path in sys.argv[1:]:
     in_func = False
     last_emit = None
     last_line = 0
+    last_sep_line = None
     for lineno, raw in enumerate(lines, 1):
         line = raw.rstrip('\n')
         stripped = line.lstrip()
@@ -83,6 +94,7 @@ for path in sys.argv[1:]:
                 in_func = False
                 last_emit = None
                 last_line = 0
+                last_sep_line = None
             continue
 
         # Opening brace at column 0 after a function signature
@@ -97,16 +109,33 @@ for path in sys.argv[1:]:
             current_func = None
             last_emit = None
             last_line = 0
+            last_sep_line = None
             continue
 
         if not in_func:
             continue
 
-	# Separator emit: reset tracking
+        # Separator emit: reset emit tracking, and flag a separator that
+        # follows another separator with nothing but blank lines and
+        # comments in between.  Deliberately strict about "nothing in
+        # between": any other statement between the two separators could
+        # be emitting an object of its own, and this check does not try to
+        # model that.  The deletion-leftover shape it is aimed at leaves
+        # exactly this residue.
         if SEP_RE.search(stripped):
+            if last_sep_line is not None:
+                print(f"{path}:{lineno} {current_func}() separator(L{last_sep_line}) "
+                      f"-> separator ORPHAN SEPARATOR")
+                violations += 1
+            last_sep_line = lineno
             last_emit = None
             last_line = 0
             continue
+
+        # Any other code between two separators clears the orphan state --
+        # only blank lines and comments are transparent.
+        if stripped and not stripped.startswith(('/*', '*', '//')):
+            last_sep_line = None
 
         # stat_category_emit_json call
         m = EMIT_RE.search(stripped)
@@ -118,6 +147,7 @@ for path in sys.argv[1:]:
                 violations += 1
             last_emit = sym_short
             last_line = lineno
+            last_sep_line = None
 
 print(f"funcs={funcs_checked}")
 sys.exit(0 if violations == 0 else 1)
@@ -166,6 +196,47 @@ if _scan "$SEP_FIXTURE" 2>/dev/null | grep -q 'NO SEPARATOR'; then
 	fail "negative control: json_stats_sep() not recognised as a separator"
 fi
 rm -f "$SEP_FIXTURE"
+# Orphan-separator fixture: the residue a deleted stats category leaves --
+# its json_stats_sep() with the emit line gone.  Blank lines between the two
+# separators are exactly how it looks in a real deletion diff, so the fixture
+# keeps them.  The detector must report exactly one ORPHAN SEPARATOR.
+ORPHAN_FIXTURE="$(mktemp /tmp/json-sep-orphan.XXXXXX.c)"
+cat > "$ORPHAN_FIXTURE" <<'__ORPHANFIXTURE__'
+void dump_stats_json_orphan(void)
+{
+	json_stats_sep();
+
+
+	json_stats_sep();
+	stat_category_emit_json(&b_category);
+}
+__ORPHANFIXTURE__
+orphan_output="$(_scan "$ORPHAN_FIXTURE" 2>/dev/null)"
+orphan_hits="$(echo "$orphan_output" | grep -c 'ORPHAN SEPARATOR')"
+rm -f "$ORPHAN_FIXTURE"
+if [ "$orphan_hits" -ne 1 ]; then
+	fail "orphan fixture: expected 1 ORPHAN SEPARATOR, got $orphan_hits (detector broken)"
+fi
+
+# Negative control for the orphan direction: two separators with a real emit
+# between them is the normal shape and must stay silent, or every well-formed
+# section in the tree becomes a false positive.
+ORPHAN_OK="$(mktemp /tmp/json-sep-orphan-ok.XXXXXX.c)"
+cat > "$ORPHAN_OK" <<'__ORPHANOK__'
+void dump_stats_json_orphan_ok(void)
+{
+	json_stats_sep();
+	stat_category_emit_json(&a_category);
+	json_stats_sep();
+	stat_category_emit_json(&b_category);
+}
+__ORPHANOK__
+if _scan "$ORPHAN_OK" 2>/dev/null | grep -q 'ORPHAN SEPARATOR'; then
+	rm -f "$ORPHAN_OK"
+	fail "orphan negative control: a separated pair of emits was reported as orphaned"
+fi
+rm -f "$ORPHAN_OK"
+
 fixture_hits="$(echo "$fixture_output" | grep 'NO SEPARATOR' | wc -l | tr -d ' ')"
 if [ "$fixture_hits" -ne 1 ]; then
 	fail "regression fixture: expected 1 violation, got $fixture_hits (detector broken)"
@@ -184,14 +255,15 @@ trap 'rm -f "$FIXTURE_FILE" "$hits_tmp"' EXIT
 
 _scan "$ROOT"/stats/json/*.c > "$hits_tmp" 2>&1 || true
 
-violations="$(grep 'NO SEPARATOR' "$hits_tmp" 2>/dev/null | wc -l | tr -d ' ')"
+violations="$(grep -cE 'NO SEPARATOR|ORPHAN SEPARATOR' "$hits_tmp" 2>/dev/null || true)"
 funcs_checked="$(grep '^funcs=' "$hits_tmp" | cut -d= -f2)"
 
 if [ "$violations" -gt 0 ]; then
 	{
-		echo "  $NAME: missing comma separator between adjacent stat_category_emit_json() calls:"
+		echo "  $NAME: separator defect(s) in stats/json:"
 		sed 's/^/    /' "$hits_tmp"
-		echo "  fix: call json_stats_sep() before the second one."
+		echo "  fix: NO SEPARATOR -- call json_stats_sep() before the second emit."
+		echo "       ORPHAN SEPARATOR -- delete the json_stats_sep() whose emit is gone."
 	} >&2
 	echo "FAIL: $NAME: $violations violation(s) in $funcs_checked functions checked"
 	exit 1
