@@ -399,6 +399,22 @@ static void init_shm_per_child_rings(void)
 		 * record the address in the canary array so
 		 * stats_ring_drain_all() can spot the swap before deref. */
 		child->stats_ring = alloc_shared_pool(sizeof(struct stats_ring));
+		/*
+		 * The op clock has to be zeroed HERE, not in
+		 * stats_ring_init().  alloc_shared_pool() poisons the fresh
+		 * mapping with random bytes to expose uninitialized reads,
+		 * and stats_ring_init() runs again on every child respawn --
+		 * where it must NOT touch lossless_op_count, because the
+		 * counter is the run-monotonic op clock and a respawn is not
+		 * a reset.  This allocation is the one moment that is both
+		 * after the poison and before the first child, so it is the
+		 * only correct place to clear it.  Skip it and every slot
+		 * starts at a random ~2^63 value, the drain's plausibility
+		 * guard rejects all of them on the first pass, and
+		 * total_op_count stays 0 for the entire run.
+		 */
+		__atomic_store_n(&child->stats_ring->lossless_op_count, 0,
+				 __ATOMIC_RELAXED);
 		stats_ring_init(child->stats_ring);
 
 		/* Record the ring address in the canary array. */

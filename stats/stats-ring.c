@@ -39,7 +39,10 @@ struct stats_published *shm_published;
 void stats_ring_init(struct stats_ring *ring)
 {
 	/* Do NOT zero lossless_op_count here — it is the run-monotonic op clock and must
-	   survive child respawn; see stats_ring_drain_all(). */
+	   survive child respawn; see stats_ring_drain_all().  Its one-time
+	   clear happens at allocation in init_shm_alloc_per_child(), which is
+	   the only point that is both after alloc_shared_pool()'s random-byte
+	   poison and before any child can bump it. */
 	memset(ring->slots, 0, sizeof(ring->slots));
 	spsc_ring_init(&ring->base);
 }
