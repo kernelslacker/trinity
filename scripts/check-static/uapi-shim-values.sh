@@ -263,9 +263,24 @@ fi
 # Tier 2 is purely additive; headers_install builds into a scratch tmpdir to
 # keep the linus source tree unmodified.
 # If the linux-linus source tree does not exist the block is skipped silently.
+#
+# The tree location comes from $TRINITY_LINUS_SRC, and there is no default.
+# It cannot have one: any built-in guess is somebody's home directory, and a
+# home-anchored path does not belong in this repo.  The previous value here
+# was the literal string "the linux-linus source tree", which is a sentence
+# rather than a path -- [ -d ] on it is false on every machine that has ever
+# run this check, so Tier 2 has never once executed and every run has reported
+# "tier2=skipped: linus tree absent", including on boxes with the tree sitting
+# right there.  That is the tier that exists to catch freshly-added shims
+# whose symbols the build host's headers are too old to know, which is exactly
+# the class the merge-window work produces.
+#
+#   TRINITY_LINUS_SRC=/path/to/linux scripts/check-static.sh
+#
+# Unset still skips silently, so the default posture is unchanged.
 # ---------------------------------------------------------------------------
-LINUS_SRC="the linux-linus source tree"
-LINUS_UAPI="$LINUS_SRC/include/uapi"
+LINUS_SRC="${TRINITY_LINUS_SRC:-}"
+LINUS_UAPI="${LINUS_SRC:+$LINUS_SRC/include/uapi}"
 HDR_INSTALL=""
 SYMS_TIER2_GOOD="$WORKDIR/syms-tier2-good.txt"
 TIER2_STATUS="not-needed"
@@ -280,7 +295,7 @@ touch "$SYMS_TIER2_GOOD"
 # the stated intent at the not-needed case comment (lines below) is the opposite.
 if [ ! -s "$SYMS_BAD" ]; then
     TIER2_STATUS="not-needed"   # all symbols resolved by Tier-1; tree presence irrelevant
-elif [ -d "$LINUS_UAPI" ]; then
+elif [ -n "$LINUS_UAPI" ] && [ -d "$LINUS_UAPI" ]; then
     # Produce a sanitized uapi export via headers_install.  The raw source
     # tree's include/uapi pulls in kernel-internal headers (e.g. linux/compiler.h
     # via linux/if.h) that are not present under uapi/ and cause every
