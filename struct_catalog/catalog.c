@@ -148,6 +148,7 @@
 
 #include "kernel/keyctl.h"
 #include "kernel/l2tp.h"
+#include "kernel/nsfs.h"
 /* FIELD / FIELDX initialiser macros live in struct_catalog-internal.h
  * so the per-family leaf TUs under struct_catalog/ can reuse them. */
 
@@ -187,33 +188,13 @@ _Static_assert(sizeof(struct open_how) == 3 * sizeof(__u64),
 /* ------------------------------------------------------------------ */
 
 /*
- * struct ns_id_req from include/uapi/linux/nsfs.h.  Defined locally
- * under the same #ifndef guard the listns sanitiser uses so the
- * translation unit builds against kernel headers that predate the
- * struct.  The shape MUST match the one in syscalls/listns.c and the
- * matching shim in struct_catalog/mount.c -- the spine needs the type
- * visible for sizeof(struct ns_id_req) on its catalog entry, the leaf
- * TU needs it for the FIELD() offsetof / sizeof initialisers.  A
- * future header bump that grows the struct needs all copies updated.
+ * struct ns_id_req comes from include/kernel/nsfs.h (included above),
+ * which is the single definition shared with the listns sanitiser and
+ * the leaf table in struct_catalog/mount.c.  The spine needs the type
+ * visible for sizeof(struct ns_id_req) on its catalog entry; the leaf
+ * TU needs it for the FIELD() offsetof / sizeof initialisers.  Both
+ * now agree by construction rather than by three hand-kept copies.
  */
-#ifndef NS_ID_REQ_SIZE_VER0
-struct ns_id_req {
-	__u32 size;
-	__u32 ns_type;
-	__u64 ns_id;
-	__u64 user_ns_id;
-};
-#define NS_ID_REQ_SIZE_VER0	24
-#else
-/*
- * Host <linux/nsfs.h> supplied the struct.  Assert its size matches
- * NS_ID_REQ_SIZE_VER0 so a future uapi bump that grows the head trips
- * at compile time rather than silently diverging from the shim in
- * struct_catalog/mount.c.
- */
-_Static_assert(sizeof(struct ns_id_req) == NS_ID_REQ_SIZE_VER0,
-	       "struct ns_id_req head drifted from trinity fallback; update both fallback copies");
-#endif
 
 /*
  * struct lsm_ctx from include/uapi/linux/lsm.h may not be present in

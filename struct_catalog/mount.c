@@ -6,12 +6,10 @@
  * struct_catalog.h and arch.h are #included unconditionally so this TU
  * is never empty when USE_<X> is off.
  *
- * The struct ns_id_req fallback below mirrors the trinity-local shim
- * that struct_catalog.c keeps under the same #ifndef NS_ID_REQ_SIZE_VER0
- * guard: the spine references sizeof(struct ns_id_req) on its catalog
- * entry, so the type must stay visible in both TUs.  Both copies must
- * land on a layout-identical definition; a future uapi bump that grows
- * the struct needs both updated.
+ * struct ns_id_req comes from include/kernel/nsfs.h, included by this
+ * TU and by the spine (which references sizeof(struct ns_id_req) on its
+ * catalog entry), so the type stays visible in both without a second
+ * hand-kept copy.
  */
 
 #include <stddef.h>
@@ -26,6 +24,7 @@
 
 #include "kernel/sched.h"
 #include "kernel/mount.h"
+#include "kernel/nsfs.h"
 /* ------------------------------------------------------------------ */
 /* struct mount_attr (mount_setattr, open_tree_attr)                   */
 /* ------------------------------------------------------------------ */
@@ -89,37 +88,20 @@ const struct struct_field mnt_id_req_fields[MNT_ID_REQ_FIELDS_N] = {
 /* ------------------------------------------------------------------ */
 
 /*
- * struct ns_id_req from include/uapi/linux/nsfs.h.  Defined locally
- * under the same #ifndef guard the listns sanitiser uses so the
- * translation unit builds against kernel headers that predate the
- * struct.  The shape MUST match the one in syscalls/listns.c -- a
- * future header bump that grows the struct needs both copies updated.
+ * struct ns_id_req comes from include/kernel/nsfs.h (included above) --
+ * one definition, shared with the listns sanitiser and the catalog
+ * spine.  The header carries the size assertion for the case where the
+ * host <linux/nsfs.h> supplies the struct itself.
  *
- * ns_type carries a single CLONE_NEW* namespace selector.  An out-of-
- * vocab bit makes listns return -EINVAL before any iterator runs, so
- * an FT_RAW splat almost never reaches the namespace lookup paths;
- * mask the field to the eight defined CLONE_NEW* bits so CMP-learned
- * constants attribute against a real selector.  CLONE_NEWTIME's
- * fallback definition lives in include/kernel/mount.h for older kernel headers.
+ * ns_type is a bit MASK of namespace types to include, not a single
+ * selector (upstream 7.3 respecified it; enum ns_type's members are the
+ * CLONE_NEW* bit values).  An out-of-vocab bit makes listns return
+ * -EINVAL before any iterator runs, so an FT_RAW splat almost never
+ * reaches the namespace lookup paths; mask the field to the eight
+ * defined CLONE_NEW* bits so CMP-learned constants attribute against a
+ * real selector.  CLONE_NEWTIME's fallback definition lives in
+ * include/kernel/mount.h for older kernel headers.
  */
-#ifndef NS_ID_REQ_SIZE_VER0
-struct ns_id_req {
-	__u32 size;
-	__u32 ns_type;
-	__u64 ns_id;
-	__u64 user_ns_id;
-};
-#define NS_ID_REQ_SIZE_VER0	24
-#else
-/*
- * Host <linux/nsfs.h> supplied the struct.  Assert its size matches
- * NS_ID_REQ_SIZE_VER0 so a future uapi bump that grows the head trips
- * at compile time rather than silently diverging from the shim in
- * struct_catalog/catalog.c.
- */
-_Static_assert(sizeof(struct ns_id_req) == NS_ID_REQ_SIZE_VER0,
-	       "struct ns_id_req head drifted from trinity fallback; update both fallback copies");
-#endif
 
 #define NS_ID_REQ_NS_TYPE_MASK \
 	(CLONE_NEWNS   | CLONE_NEWUTS  | CLONE_NEWIPC     | CLONE_NEWUSER | \

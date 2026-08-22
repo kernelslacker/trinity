@@ -863,11 +863,11 @@ extern const struct struct_field af_alg_iv_fields[AF_ALG_IV_FIELDS_N];
  * mnt_id_req (statmount / listmount), and struct ns_id_req (listns).
  * Each _N constant gives the extern decl a complete array type so the
  * spine's ARRAY_SIZE() at the reference site keeps folding to the same
- * constant it did before the carve.  The struct ns_id_req fallback
- * shim lives in both struct_catalog.c and struct_catalog/mount.c under
- * the same #ifndef NS_ID_REQ_SIZE_VER0 guard -- the spine needs the
- * type visible for sizeof(struct ns_id_req) on its catalog entry, the
- * leaf TU needs it for the FIELD() offsetof / sizeof initialisers.
+ * constant it did before the carve.  The struct ns_id_req shim lives
+ * in include/kernel/nsfs.h, which both struct_catalog/catalog.c and
+ * struct_catalog/mount.c include -- the spine needs the type visible
+ * for sizeof(struct ns_id_req) on its catalog entry, the leaf TU needs
+ * it for the FIELD() offsetof / sizeof initialisers.
  */
 enum {
 	MOUNT_ATTR_FIELDS_N	= 4,
