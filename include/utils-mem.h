@@ -260,6 +260,14 @@ void register_loaded_image_segments(void);
 void log_load_bases(void);
 
 /*
+ * Load base of the trinity PIE image, latched by log_load_bases() before
+ * any child forks and inherited by every child.  Read from the fault
+ * handlers, which cannot call dl_iterate_phdr(), so a bug log can name
+ * the base its own raw PCs are relative to.
+ */
+extern unsigned long trinity_load_base;
+
+/*
  * Log an mprotect() failure as:
  *   mprotect(addr=%p, len=%zu, prot=0x%x [READ|WRITE|EXEC]) failed at
  *   <binary>+0xOFFSET: <strerror>

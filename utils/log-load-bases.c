@@ -16,6 +16,13 @@
  * first callback is always the main executable, distinguished by
  * dlpi_name == "".
  *
+ * The main executable's base is also latched into trinity_load_base so
+ * the async-signal-safe crash paths can print it into the per-pid bug
+ * log itself.  The [load-bases] line only reaches the parent's stderr:
+ * a bug log shipped on its own -- which is how bug tarballs travel --
+ * carries raw PCs and no way to resolve them.  A plain unsigned long
+ * read is safe in a handler where dl_iterate_phdr is not.
+ *
  * Must run before fork_children() so the logged bases match what
  * children inherit via fork (the bases are stable for the process
  * lifetime; children share the same mappings COW).  Only enumerates
@@ -60,6 +67,7 @@ static int load_base_callback(struct dl_phdr_info *info, size_t size, void *data
 	 * against) cannot relabel a DSO as trinity. */
 	if (!st->main_logged && name[0] == '\0') {
 		outputerr("[load-bases] trinity: 0x%lx\n", addr);
+		trinity_load_base = addr;
 		st->main_logged = true;
 		return 0;
 	}
@@ -93,6 +101,14 @@ static int load_base_callback(struct dl_phdr_info *info, size_t size, void *data
 
 	return 0;
 }
+
+/*
+ * Load base of the main executable, latched by load_base_callback().
+ * Zero until log_load_bases() runs, and zero for a non-PIE build --
+ * consumers print it unconditionally, and 0x0 is the honest answer in
+ * both cases (a non-PIE binary needs no adjustment).
+ */
+unsigned long trinity_load_base;
 
 void log_load_bases(void)
 {

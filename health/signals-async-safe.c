@@ -20,6 +20,7 @@
 #endif
 
 #include "signals-internal.h"
+#include "utils-mem.h"	/* trinity_load_base */
 
 /*
  * Signal-safe siginfo dump shared by child_fault_handler and
@@ -89,8 +90,8 @@ void write_siginfo_safely(int sig, const siginfo_t *info, const char *who)
  * psiginfo() -> fmemopen -> calloc deadlock removed in
  * 81143aaeaba6.
  *
- * We emit RAW PCs only; the bugs.txt post-processor resolves them
- * offline against the load bases recorded in the beacon.
+ * We emit RAW PCs only, followed by the PIE base they are relative to
+ * so the log resolves without a second artifact.
  * backtrace() itself is pre-warmed at parent_init_signals() so
  * libgcc_s.so.1 is COW-inherited and the unwinder needs no dlopen at
  * signal time.  Single write() -- on the POSIX safe list -- for the
@@ -124,7 +125,19 @@ void write_backtrace_raw_pcs(const char *who)
 			sigsafe_putc(&b, ' ');
 		sigsafe_putp(&b, frames[i]);
 	}
-	sigsafe_puts(&b, " (RAW, resolve offline against [load-bases])\n");
+	/*
+	 * Name the base the PCs are relative to, in this file.  The
+	 * [load-bases] line goes to the parent's stderr, which is a
+	 * different artifact from the per-pid bug log -- and the bug log
+	 * is what gets tarred up and moved.  On its own it was
+	 * unresolvable: raw PIE addresses plus a pointer to a line that
+	 * lives somewhere else.  trinity_load_base is a plain unsigned
+	 * long latched before the first fork, so reading it here is safe
+	 * where dl_iterate_phdr() is not.
+	 */
+	sigsafe_puts(&b, " (RAW; subtract trinity_base=");
+	sigsafe_putp(&b, (const void *)trinity_load_base);
+	sigsafe_puts(&b, " to resolve)\n");
 
 	used = sizeof(buf) - b.left;
 	w = write(STDERR_FILENO, buf, used);

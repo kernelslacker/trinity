@@ -339,7 +339,9 @@ void writer_trap_handler(int sig, siginfo_t *info, void *ctx)
 	sigsafe_putp(&b, info != NULL ? info->si_addr : NULL);
 	sigsafe_puts(&b, " writer_pc=");
 	sigsafe_putp(&b, fault_beacon_extract_ip(ctx));
-	sigsafe_puts(&b, " (RAW, resolve offline against [load-bases])");
+	sigsafe_puts(&b, " (RAW; subtract trinity_base=");
+	sigsafe_putp(&b, (const void *)trinity_load_base);
+	sigsafe_puts(&b, ")");
 	sigsafe_puts(&b, " syscall_nr=");
 	sigsafe_puti(&b, (long)last_syscall_nr);
 	sigsafe_puts(&b, " childop=");
