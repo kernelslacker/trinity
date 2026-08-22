@@ -301,6 +301,29 @@ void dump_stats_top_wedging_syscalls(void)
 		}
 	}
 
+	{
+		/*
+		 * Split first: the overwhelming majority of wedges are a
+		 * child parked in a syscall that blocks by definition, and
+		 * those are killed without a word in the log.  Print the
+		 * split so "quiet" never means "invisible" -- if the
+		 * expected count is enormous relative to run length, the
+		 * inner 1-second alarm is not doing its job and that is a
+		 * real finding hiding behind a suppressed message.
+		 */
+		unsigned long expected = __atomic_load_n(
+			&shm->stats.syscall_wedge.expected_block_kills,
+			__ATOMIC_RELAXED);
+		unsigned long unexpected = __atomic_load_n(
+			&shm->stats.syscall_wedge.unexpected_wedges,
+			__ATOMIC_RELAXED);
+
+		if (expected != 0 || unexpected != 0)
+			output(0, "Wedge events: %lu expected-block (killed "
+				"quietly), %lu unexpected (reported)\n",
+				expected, unexpected);
+	}
+
 	if (count_total == 0 && us_total == 0)
 		return;
 

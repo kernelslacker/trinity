@@ -35,6 +35,26 @@ struct syscall_wedge_stats {
 	 * syscall which also stay text-only). */
 	unsigned long count[MAX_NR_SYSCALL];
 	unsigned long long total_us[MAX_NR_SYSCALL];
+
+	/* Wedge events split by whether the block was expected.
+	 *
+	 *  expected_block_kills
+	 *      Child sat in a NEED_ALARM syscall in interruptible sleep past
+	 *      the stall threshold -- read() on an idle fd, clock_nanosleep(),
+	 *      rt_sigtimedwait().  Killed silently: no stuck-child scream, no
+	 *      /proc stack, no fd topology.  It is the overwhelmingly common
+	 *      case and narrating it buries the other kind.
+	 *  unexpected_wedges
+	 *      Everything else -- 'D' state, a childop, a syscall with no
+	 *      NEED_ALARM flag, or a record we could not read.  These still
+	 *      get the full report; this counter is the denominator that says
+	 *      how much of the log is worth reading.
+	 *
+	 * Both latched per child via childdata.dstate_diag_dumped, so they
+	 * count wedge events rather than watchdog ticks.  Same RELAXED
+	 * add-fetch as the arrays above. */
+	unsigned long expected_block_kills;
+	unsigned long unexpected_wedges;
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_SYSCALL_WEDGE_H */

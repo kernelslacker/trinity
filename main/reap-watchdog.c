@@ -402,6 +402,76 @@ static void latch_wedge_accounting(struct childdata *child)
 }
 
 /*
+ * Is this wedge one we asked for?
+ *
+ * Most of what the watchdog reports as STUCK is a child sitting in a
+ * syscall whose whole job is to sit: read() on an empty pipe,
+ * clock_nanosleep(), rt_sigtimedwait(), semtimedop().  91 of the 91
+ * stuck-child reports in one 7.2 run were this, and each one costs a
+ * multi-line scream plus a /proc stack and an fd-topology dump.  That
+ * is a lot of log for "the child did exactly what the syscall says".
+ *
+ * The tree already knows which syscalls block: NEED_ALARM is the flag
+ * that makes the dispatcher arm its 1-second inner alarm before the
+ * call.  Reuse that judgement rather than inventing a second list --
+ * one that would immediately drift from the first.
+ *
+ * Three conditions, all required:
+ *   - interruptible sleep.  A 'D' state task is a different animal and
+ *     keeps the full report; so does 'R', which is not blocking at all.
+ *   - CHILD_OP_SYSCALL.  A childop wedge is not attributable to
+ *     child->syscall.nr (childops issue syscalls directly without
+ *     updating the record), so the flag lookup would be reading a
+ *     stale number.
+ *   - the syscall carries NEED_ALARM.
+ *
+ * A quiet wedge is still killed, still counted, and still latched into
+ * the per-syscall wedge accounting -- the only thing suppressed is the
+ * narrative.  If the aggregate counter starts climbing in a way that
+ * looks wrong, that is the signal to go looking, and the top-N wedge
+ * table at shutdown still names the syscalls.
+ */
+static bool wedge_is_expected_block(struct childdata *child, char state)
+{
+	struct syscallrecord *rec = &child->syscall;
+	struct syscallentry *entry;
+	enum syscallstate sstate;
+	unsigned int callno;
+	bool do32;
+	bool got;
+
+	if (state != 'S')
+		return false;
+
+	if (child->op_type != CHILD_OP_SYSCALL)
+		return false;
+
+	SREC_SNAPSHOT(rec, {
+		do32 = rec->do32bit;
+		callno = rec->nr;
+		sstate = __atomic_load_n(&rec->state, __ATOMIC_RELAXED);
+	}, got);
+
+	/*
+	 * A snapshot give-up or a record that has not reached BEFORE means
+	 * we do not know what the child is in.  Report it: an unexplained
+	 * wedge is exactly the case the loud path exists for.
+	 */
+	if (!got) {
+		parent_stats.srec_snapshot_giveups++;
+		return false;
+	}
+	if (sstate < BEFORE || callno >= MAX_NR_SYSCALL)
+		return false;
+
+	entry = get_syscall_entry(callno, do32);
+	if (entry == NULL)
+		return false;
+
+	return (entry->flags & NEED_ALARM) != 0;
+}
+
+/*
  * Check that a child is making forward progress by comparing the timestamps it
  * recorded before making its last syscall.
  * If no progress is being made, send SIGKILLs to it.
@@ -487,9 +557,23 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	 * progress for REAP_STALL_THRESHOLD_S s is parked in its wait, so
 	 * /proc/<pid>/stack is stable either
 	 * way.  Read-only + latched, so no change to the kill logic. */
+	if (!child->dstate_diag_dumped &&
+	    wedge_is_expected_block(child, state)) {
+		/*
+		 * Blocked in a syscall that blocks.  Count it and kill it;
+		 * do not narrate it.  Latched like the loud path so the
+		 * counter tracks wedge EVENTS, not watchdog ticks.
+		 */
+		__atomic_add_fetch(&shm->stats.syscall_wedge.expected_block_kills,
+				   1UL, __ATOMIC_RELAXED);
+		child->dstate_diag_dumped = true;
+	}
+
 	if (!child->dstate_diag_dumped) {
 		char wchan[128];
 
+		__atomic_add_fetch(&shm->stats.syscall_wedge.unexpected_wedges,
+				   1UL, __ATOMIC_RELAXED);
 		scream_stuck_child(child, childno, pid, diff);
 		/* Gate the verbose snapshot behind the global budget.  wchan
 		 * is re-read here (scream_stuck_child does its own read) so
