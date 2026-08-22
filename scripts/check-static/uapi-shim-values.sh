@@ -94,6 +94,41 @@ find "$ROOT" -path "$ROOT/scripts" -prune -o \
   sed 's/#[[:space:]]*define[[:space:]]*//' | \
   awk '{print $1, $2}' | sort -u > "$HARVEST"
 
+# Second harvest pass: single-bit shift shims.
+#
+# A large share of flag constants are not written as literals at all --
+# upstream writes them as shifts, and the shims copy that verbatim:
+#
+#   #define UFFD_FEATURE_RWP          (1<<17)
+#   #define UFFDIO_REGISTER_MODE_RWP  ((__u64)1<<3)
+#
+# The literal-only pass above skips every one of those, so flag
+# constants -- where an off-by-one shift is easy to make and invisible,
+# because a wrong bit is still a plausible-looking flag -- were the
+# least-checked class in the tree rather than the most.
+#
+# Evaluate only the unambiguous shape: an optional cast, a literal 1, a
+# left shift, a decimal or hex count, nothing else.  Anything with
+# arithmetic, an identifier, or a second term is left alone rather than
+# half-parsed -- a wrong value here would be a false accusation against
+# a correct shim, which is worse than no check at all.  Shifts wider
+# than 63 are dropped; the comparison side truncates to int32 exactly as
+# it does for a literal.
+find "$ROOT" -path "$ROOT/scripts" -prune -o \
+    \( -name '*.c' -o -name '*.h' \) -print 2>/dev/null | sort | \
+  xargs perl -0777 -ne '
+	s{/\*.*?\*/}{}gs; s{//[^\n]*}{}g;
+	while (m{^[ \t]*\#[ \t]*define[ \t]+([A-Z][A-Z0-9_]+)[ \t]+
+		 \(*\s* (?:\((?:__u\d+|unsigned\ long\ long|unsigned\ long|unsigned\ int|unsigned|int|long)\)\s*)?
+		 1 \s*<<\s* (0[xX][0-9a-fA-F]+|[0-9]+) \s*\)*\s*$}gmx) {
+		my ($sym, $sh) = ($1, $2);
+		$sh = hex($sh) if $sh =~ /^0[xX]/;
+		next if $sh > 63;
+		printf("%s %s\n", $sym, 1 << $sh);
+	}' 2>/dev/null | sort -u >> "$HARVEST"
+
+sort -u -o "$HARVEST" "$HARVEST"
+
 # Harvest floor: the pipeline collects every integer #define in the source
 # tree (excluding scripts/), yielding ~3743 unique SYM→value pairs on the
 # baseline run.  The floor is ratcheted via uapi-shim-harvest-floor.baseline
