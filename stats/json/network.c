@@ -25,40 +25,11 @@
  * flat key per slot ("tmpl_arp" .. "tmpl_bad_ethertype"), so raw
  * offsetof() entries pin each key to its array index.
  */
-static const struct stat_field eth_emitter_fields[] = {
-	STAT_FIELD_SUB(eth_emitter, runs),
-	STAT_FIELD_SUB(eth_emitter, setup_failed),
-	STAT_FIELD_JSON_SUB(eth_emitter, short_frame, "short"),
-	STAT_FIELD_SUB(eth_emitter, sends_ok),
-	STAT_FIELD_SUB(eth_emitter, sends_failed),
-	{ .name = "tmpl_arp",
-	  .offset = offsetof(struct stats_s, eth_emitter.per_tmpl[0]) },
-	{ .name = "tmpl_ipv4_frag_zero",
-	  .offset = offsetof(struct stats_s, eth_emitter.per_tmpl[1]) },
-	{ .name = "tmpl_ipv6_na",
-	  .offset = offsetof(struct stats_s, eth_emitter.per_tmpl[2]) },
-	{ .name = "tmpl_vlan_qinq",
-	  .offset = offsetof(struct stats_s, eth_emitter.per_tmpl[3]) },
-	{ .name = "tmpl_bad_ethertype",
-	  .offset = offsetof(struct stats_s, eth_emitter.per_tmpl[4]) },
-};
-
-static const struct stat_category eth_emitter_category =
-	STAT_CATEGORY("eth_emitter",
-	              eth_emitter_fields);
 
 
 
 void dump_stats_json_socket_family_and_tls(void)
 {
-	stat_category_emit_json(&packet_fanout_thrash_category);
-	putchar(',');
-	stat_category_emit_json(&eth_emitter_category);
-	putchar(',');
-	stat_category_emit_json(&iouring_net_multishot_category);
-	putchar(',');
-	stat_category_emit_json(&bridge_fdb_stp_category);
-	putchar(',');
 }
 
 /*
@@ -77,88 +48,6 @@ void dump_stats_json_socket_family_and_tls(void)
  * emit when any field is non-zero, so the gate_field choices below are
  * documentation only.
  */
-static const struct stat_field nftables_churn_fields[] = {
-	STAT_FIELD_SUB(nftables_churn, runs),
-	STAT_FIELD_SUB(nftables_churn, setup_failed),
-	STAT_FIELD_SUB(nftables_churn, table_create_ok),
-	STAT_FIELD_SUB(nftables_churn, set_create_ok),
-	STAT_FIELD_SUB(nftables_churn, chain_create_ok),
-	STAT_FIELD_SUB(nftables_churn, rule_create_ok),
-	STAT_FIELD_SUB(nftables_churn, packet_sent_ok),
-	STAT_FIELD_SUB(nftables_churn, rule_insert_ok),
-	STAT_FIELD_SUB(nftables_churn, rule_del_ok),
-	STAT_FIELD_SUB(nftables_churn, table_del_ok),
-	STAT_FIELD_SUB(nftables_churn, payload_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, meta_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, lookup_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, log_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, bitwise_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, cmp_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, range_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, byteorder_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, socket_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, quota_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, limit_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, numgen_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, hash_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, synproxy_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, counter_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, connlimit_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, masq_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, redir_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, tproxy_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, xfrm_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, dup_netdev_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, dup_ipv4_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, dup_ipv6_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, fwd_netdev_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, last_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, rt_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, fib_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, exthdr_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, osf_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, queue_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, immediate_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, dynset_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, ct_expr_emit),
-	STAT_FIELD_SUB(nftables_churn, objref_expr_emit),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_compat_validate_install_ok,   "compat_validate_install_ok"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_compat_validate_install_fail, "compat_validate_install_fail"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_compat_validate_unsupported,  "compat_validate_unsupported"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_compat_validate_per_hook_pairs, "compat_validate_per_hook_pairs"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_dormant_abort_iters, "dormant_abort_iters"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_dormant_abort_eperm, "dormant_abort_eperm"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_dormant_abort_emsg,  "dormant_abort_emsg"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_dormant_abort_ok,    "dormant_abort_ok"),
-	STAT_FIELD_SUB(nftables_churn, xt_ct_iters),
-	STAT_FIELD_SUB(nftables_churn, xt_ct_eperm),
-	STAT_FIELD_SUB(nftables_churn, xt_ct_unsupported),
-	STAT_FIELD_SUB(nftables_churn, xt_ct_set_ok),
-	STAT_FIELD_SUB(nftables_churn, xt_ct_get_ok),
-	STAT_FIELD_SUB(nftables_churn, xt_ct_v2_seen),
-	STAT_FIELD_SUB(nftables_churn, xt_tcp_match_iters),
-	STAT_FIELD_SUB(nftables_churn, xt_tcp_match_eperm),
-	STAT_FIELD_SUB(nftables_churn, xt_tcp_match_unsupported),
-	STAT_FIELD_SUB(nftables_churn, xt_tcp_match_set_ok),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_fwd_loop_runs,             "fwd_loop_runs"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_fwd_loop_ns_setup_failed,  "fwd_loop_ns_setup_failed"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_fwd_loop_probe_sent_ok,    "fwd_loop_probe_sent_ok"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_fwd_loop_completed_ok,     "fwd_loop_completed_ok"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_iters,       "l4frag_iters"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_install_ok,  "l4frag_install_ok"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_rule_ok,     "l4frag_rule_ok"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_send_ok,     "l4frag_send_ok"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_l4frag_send_failed, "l4frag_send_failed"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_inet_ingress_reject_runs,          "inet_ingress_reject_runs"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_inet_ingress_reject_setup_failed,  "inet_ingress_reject_setup_failed"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_inet_ingress_reject_probe_sent_ok,  "inet_ingress_reject_probe_sent_ok"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_inet_ingress_reject_ipcb_opt_armed, "inet_ingress_reject_ipcb_opt_armed"),
-	STAT_FIELD_JSON_SUB(nftables_churn, nft_inet_ingress_reject_completed_ok,   "inet_ingress_reject_completed_ok"),
-};
-
-const struct stat_category nftables_churn_category =
-	STAT_CATEGORY("nftables_churn",
-	              nftables_churn_fields);
 
 
 
@@ -191,446 +80,167 @@ const struct stat_category xfrm_compat_category =
 	STAT_CATEGORY("xfrm_compat",
 	              xfrm_compat_fields);
 
-static const struct stat_field sysfs_string_race_fields[] = {
-	STAT_FIELD_SUB(sysfs_string_race, runs),
-	STAT_FIELD_SUB(sysfs_string_race, setup_failed),
-	STAT_FIELD_SUB(sysfs_string_race, target_missing),
-	STAT_FIELD_SUB(sysfs_string_race, target_used),
-	STAT_FIELD_SUB(sysfs_string_race, fork_failed),
-	STAT_FIELD_SUB(sysfs_string_race, writes_ok),
-	STAT_FIELD_SUB(sysfs_string_race, writes_failed),
-};
-
-const struct stat_category sysfs_string_race_category =
-	STAT_CATEGORY("sysfs_string_race",
-	              sysfs_string_race_fields);
-
-
-
-static const struct stat_field sock_diag_walker_fields[] = {
-	STAT_FIELD_SUB(sock_diag_walker, runs),
-	STAT_FIELD_SUB(sock_diag_walker, setup_failed),
-	STAT_FIELD_SUB(sock_diag_walker, inet),
-	/* .unix_ underscored because the GCC predefines "unix" as a
-	 * macro on Linux targets; JSON key pinned to "unix" so the
-	 * emitted schema is unchanged across the carve. */
-	STAT_FIELD_JSON_SUB(sock_diag_walker, unix_, "unix"),
-	STAT_FIELD_SUB(sock_diag_walker, netlink),
-	STAT_FIELD_SUB(sock_diag_walker, packet),
-	STAT_FIELD_SUB(sock_diag_walker, vsock),
-};
-
-const struct stat_category sock_diag_walker_category =
-	STAT_CATEGORY("sock_diag_walker",
-	              sock_diag_walker_fields);
-
-static const struct stat_field altname_thrash_fields[] = {
-	STAT_FIELD_SUB(altname_thrash, invocations),
-	STAT_FIELD_SUB(altname_thrash, unshare_failed),
-	STAT_FIELD_SUB(altname_thrash, addprop_done),
-	STAT_FIELD_SUB(altname_thrash, delprop_done),
-	STAT_FIELD_SUB(altname_thrash, getlink_done),
-};
-
-const struct stat_category altname_thrash_category =
-	STAT_CATEGORY("altname_thrash",
-	              altname_thrash_fields);
-
-
-
-
-
-
-
-
-
-
-
-
-static const struct stat_field ipmr_cache_report_fields[] = {
-	STAT_FIELD_SUB(ipmr_cache_report, iters),
-	STAT_FIELD_SUB(ipmr_cache_report, eperm),
-	STAT_FIELD_SUB(ipmr_cache_report, emit_ok),
-};
-
-const struct stat_category ipmr_cache_report_category =
-	STAT_CATEGORY("ipmr_cache_report",
-	              ipmr_cache_report_fields);
-
-static const struct stat_field ipmr_getroute_pktinfo_fields[] = {
-	STAT_FIELD_SUB(ipmr_getroute_pktinfo, iters),
-	STAT_FIELD_SUB(ipmr_getroute_pktinfo, eperm),
-	STAT_FIELD_SUB(ipmr_getroute_pktinfo, pktinfo_ok),
-	STAT_FIELD_SUB(ipmr_getroute_pktinfo, getroute_ok),
-};
-
-const struct stat_category ipmr_getroute_pktinfo_category =
-	STAT_CATEGORY("ipmr_getroute_pktinfo",
-	              ipmr_getroute_pktinfo_fields);
-
 void dump_stats_json_netfilter_and_xfrm(void)
 {
-	stat_category_emit_json(&nftables_churn_category);
-	putchar(',');
-	stat_category_emit_json(&tc_qdisc_churn_category);
-	putchar(',');
-	stat_category_emit_json(&tc_mirred_blockcast_category);
-	putchar(',');
-	stat_category_emit_json(&tc_live_traffic_category);
-	putchar(',');
-	stat_category_emit_json(&tc_standalone_action_category);
-	putchar(',');
-	stat_category_emit_json(&xfrm_churn_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&xfrm_ah_esn_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&xfrm_compat_category);
-	putchar(',');
-	stat_category_emit_json(&sysfs_string_race_category);
-	putchar(',');
-	stat_category_emit_json(&atm_vcc_churn_category);
-	putchar(',');
-	stat_category_emit_json(&sock_ulp_sockmap_layering_category);
-	putchar(',');
-	stat_category_emit_json(&sockmap_cork_race_category);
-	putchar(',');
-	stat_category_emit_json(&sock_diag_walker_category);
-	putchar(',');
-	stat_category_emit_json(&altname_thrash_category);
-	putchar(',');
-	stat_category_emit_json(&sctp_assoc_churn_category);
-	putchar(',');
-	stat_category_emit_json(&sctp_chunk_rx_category);
-	putchar(',');
-	stat_category_emit_json(&esp_crafted_rx_category);
-	putchar(',');
-	stat_category_emit_json(&fou_gue_mcast_rx_category);
-	putchar(',');
-	stat_category_emit_json(&geneve_rx_category);
-	putchar(',');
-	stat_category_emit_json(&bareudp_rx_category);
-	putchar(',');
-	stat_category_emit_json(&mpls_label_stack_rx_category);
-	putchar(',');
-	stat_category_emit_json(&rds_zcopy_crafted_send_category);
-	putchar(',');
-	stat_category_emit_json(&bridge_ip6_refrag_fraggap_category);
-	putchar(',');
-	stat_category_emit_json(&mptcp_pm_churn_category);
-	putchar(',');
-	stat_category_emit_json(&devlink_port_churn_category);
-	putchar(',');
-	stat_category_emit_json(&ipmr_cache_report_category);
-	putchar(',');
-	stat_category_emit_json(&ipmr_getroute_pktinfo_category);
-	putchar(',');
-	stat_category_emit_json(&ip6mr_churn_category);
 }
 
 void json_emit_socket_family_grammar_section(void)
 {
+	json_stats_sep();
 	stat_category_emit_json(&socket_family_grammar_category);
+	json_stats_sep();
+	stat_category_emit_json(&xfrm_grammar_category);
 }
 
 void json_emit_net_churn_and_early_storms_section(void)
 {
-	printf(",");
-	stat_category_emit_json(&nf_conntrack_helper_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&ct_expect_realloc_category);
 
-	printf(",");
-	stat_category_emit_json(&ipset_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&tcp_ulp_swap_churn_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&blob_mutator_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&blob_ab_mode_category);
 
-	printf(",");
-	stat_category_emit_json(&msg_zerocopy_churn_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&setsockopt_pairing_category);
 
-	printf(",");
-	stat_category_emit_json(&sched_cycler_category);
 
-	printf(",");
-	stat_category_emit_json(&userns_fuzzer_category);
 
-	printf(",");
-	stat_category_emit_json(&ipcns_ucount_exhaustion_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&userns_bootstrap_category);
 
-	printf(",");
-	stat_category_emit_json(&barrier_racer_category);
 
-	printf(",");
-	stat_category_emit_json(&perf_event_chains_category);
 
-	printf(",");
-	stat_category_emit_json(&bpf_lifecycle_category);
 
-	printf(",");
-	stat_category_emit_json(&signal_storm_category);
 
-	printf(",");
-	stat_category_emit_json(&pipe_thrash_category);
 
-	printf(",");
-	stat_category_emit_json(&fork_storm_category);
 }
 
 void json_emit_pidfd_fs_and_container_section(void)
 {
-	printf(",");
-	stat_category_emit_json(&cpu_hotplug_rider_category);
 
-	printf(",");
-	stat_category_emit_json(&pidfd_storm_category);
 
-	printf(",");
-	stat_category_emit_json(&process_mrelease_race_category);
 
-	printf(",");
-	stat_category_emit_json(&madvise_cycler_category);
 
-	printf(",");
-	stat_category_emit_json(&keyring_spam_category);
 
-	printf(",");
-	stat_category_emit_json(&vdso_mremap_race_category);
 
-	printf(",");
-	stat_category_emit_json(&flock_thrash_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&xattr_thrash_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&epoll_volatility_category);
 
-	printf(",");
-	stat_category_emit_json(&epoll_nest_race_category);
 
-	printf(",");
-	stat_category_emit_json(&cgroup_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&mount_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&umount_race_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&statmount_idmap_category);
 
-	printf(",");
-	stat_category_emit_json(&uffd_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&tls_rotate_category);
 }
 
 void json_emit_tcp_ipv6_and_tunnels_section(void)
 {
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&netns_teardown_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&cred_transition_category);
 
-	printf(",");
-	stat_category_emit_json(&deep_path_nesting_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&espintcp_coalesce_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&netns_mountns_setup_category);
 
-	printf(",");
-	stat_category_emit_json(&socket_family_chain_category);
 
-	printf(",");
-	stat_category_emit_json(&tcp_ao_rotate_category);
 
-	printf(",");
-	stat_category_emit_json(&tcp_md5_listener_race_category);
 
-	printf(",");
-	stat_category_emit_json(&inet_listener_rehash_race_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&ipv6_pmtu_race_category);
 
-	printf(",");
-	stat_category_emit_json(&fnhe_pmtu_mtu_race_category);
 
-	printf(",");
-	stat_category_emit_json(&vrf_fib_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&multipath_linkdown_rebalance_category);
 
-	printf(",");
-	stat_category_emit_json(&ip6_udp_cork_splice_category);
 
-	printf(",");
-	stat_category_emit_json(&ip4_udp_cork_splice_category);
 
-	printf(",");
-	stat_category_emit_json(&nexthop_replace_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&mpls_route_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&tls_ulp_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&ip6gre_bond_lapb_stack_category);
 
-	printf(",");
-	stat_category_emit_json(&vxlan_encap_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&ip_gre_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&ovs_tunnel_vport_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&netlink_monitor_race_category);
 
-	printf(",");
-	stat_category_emit_json(&tipc_link_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&igmp_mld_source_churn_category);
 }
 
 void json_emit_bridge_pci_unix_and_iouring_section(void)
 {
-	printf(",");
-	stat_category_emit_json(&bridge_vlan_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&vlan_filter_churn_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&pkt_builder_category);
 
-	printf(",");
-	stat_category_emit_json(&pci_bind_category);
 
-	printf(",");
-	stat_category_emit_json(&ublk_lifecycle_category);
 
-	printf(",");
-	stat_category_emit_json(&handshake_req_abort_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&af_unix_scm_rights_gc_category);
 
-	printf(",");
-	stat_category_emit_json(&af_unix_peek_race_category);
 
-	printf(",");
-	stat_category_emit_json(&sysv_shm_orphan_race_category);
 
-	printf(",");
-	stat_category_emit_json(&map_shared_stress_category);
 
-	printf(",");
-	stat_category_emit_json(&qrtr_bind_race_category);
 
-	printf(",");
-	stat_category_emit_json(&pfkey_spd_walk_category);
 
-	printf(",");
-	stat_category_emit_json(&l2tp_ifname_race_category);
 
-	printf(",");
-	stat_category_emit_json(&bpf_cgroup_attach_category);
 
-	printf(",");
-	stat_category_emit_json(&iouring_flood_category);
 
-	printf(",");
-	stat_category_emit_json(&close_racer_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&refcount_audit_category);
 }
 
 void json_emit_iouring_iscsi_and_net_tail_section(void)
 {
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&iouring_send_zc_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&iscsi_target_probe_category);
 
-	printf(",");
-	stat_category_emit_json(&iscsi_login_walker_category);
 
-	printf(",");
-	stat_category_emit_json(&ipv6_ndisc_proxy_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&rxrpc_key_install_category);
 
-	printf(",");
-	stat_category_emit_json(&af_alg_weak_cipher_probe_category);
 
-	printf(",");
-	stat_category_emit_json(&bridge_conntrack_churn_category);
 
-	printf(",");
-	stat_category_emit_json(&bridge_ip6frag_refrag_category);
 
-	printf(",");
-	stat_category_emit_json(&blkdev_lifecycle_race_category);
 
-	printf(",");
-	stat_category_emit_json(&hfs_mount_fuzz_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&icmp_inject_category);
 
-	printf(",");
-	stat_category_emit_json(&veth_asymmetric_xdp_category);
 
-	printf(",");
-	stat_category_emit_json(&ip6erspan_netns_migrate_category);
 
-	printf(",");
-	stat_category_emit_json(&netdev_netns_migrate_category);
 
-	printf(",");
-	stat_category_emit_json(&flowtable_encap_vlan_category);
 
-	printf(",");
-	stat_category_emit_json(&splice_protocols_category);
 
-	printf(",");
-	stat_category_emit_json(&wireguard_decrypt_flood_category);
 
-	printf(",");
-	stat_category_emit_json(&rtnl_vf_broadcast_getlink_category);
 
-	printf(",");
-	stat_category_emit_json(&netconf_getdevconf_inetdev_teardown_race_category);
 
-	printf(",");
+	json_stats_sep();
 	stat_category_emit_json(&fdstress_category);
 }

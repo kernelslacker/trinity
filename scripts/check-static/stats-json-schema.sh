@@ -693,12 +693,35 @@ for name, body in find_function_bodies(dump_src):
     break
 
 # Build the composite emission stream.
+# The stats-object member separator is positional: json_stats_sep()
+# emits nothing for the first member of the object and a comma for
+# every later one, and json_stats_sep_reset() opens a fresh object.
+# Model that here so the reconstructed stream matches what the binary
+# actually prints.
+_sep_state = {'first': True}
+
+
+def resolve_separator(fname):
+    if fname == 'json_stats_sep_reset':
+        _sep_state['first'] = True
+        return []
+    if fname == 'json_stats_sep':
+        if _sep_state['first']:
+            _sep_state['first'] = False
+            return []
+        return [('literal', ',')]
+    return None
+
+
 def resolve_section(fname, seen=None):
     """Return the ordered emission stream for a single section-emitter
        function, expanding stat_category_emit_json() and nested calls
        recursively (with cycle guard)."""
     if seen is None:
         seen = set()
+    sep = resolve_separator(fname)
+    if sep is not None:
+        return sep
     if fname in seen:
         return []
     seen = seen | {fname}
@@ -733,6 +756,11 @@ for kind, val in sections:
         append_literal(val)
         continue
     # kind == 'call' -- expand the function.
+    sep = resolve_separator(val)
+    if sep is not None:
+        for _k, _v in sep:
+            append_literal(_v)
+        continue
     if val not in func_bodies:
         missing_funcs.append(val)
         continue

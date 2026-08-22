@@ -38,64 +38,27 @@ void dump_stats_childop_runs_local(void)
 {
 	stat_category_emit_text(&refcount_audit_category);
 
-	if (shm->stats.fs_lifecycle.tmpfs   || shm->stats.fs_lifecycle.ramfs   ||
-	    shm->stats.fs_lifecycle.rdonly  || shm->stats.fs_lifecycle.overlay ||
-	    shm->stats.fs_lifecycle.quota   || shm->stats.fs_lifecycle.bind    ||
-	    shm->stats.fs_lifecycle.unsupported) {
-		stat_row("fs_lifecycle", "tmpfs",       shm->stats.fs_lifecycle.tmpfs);
-		stat_row("fs_lifecycle", "ramfs",       shm->stats.fs_lifecycle.ramfs);
-		stat_row("fs_lifecycle", "rdonly",      shm->stats.fs_lifecycle.rdonly);
-		stat_row("fs_lifecycle", "overlay",     shm->stats.fs_lifecycle.overlay);
-		stat_row("fs_lifecycle", "quota",       shm->stats.fs_lifecycle.quota);
-		stat_row("fs_lifecycle", "bind",        shm->stats.fs_lifecycle.bind);
-		stat_row("fs_lifecycle", "unsupported", shm->stats.fs_lifecycle.unsupported);
-	}
 
-	stat_category_emit_text(&signal_storm_category);
 
-	if (shm->stats.futex_storm.runs)
-		output(0, "\nfutex storm: runs:%lu inner_crashed:%lu iters:%lu\n",
-			shm->stats.futex_storm.runs,
-			shm->stats.futex_storm.inner_crashed,
-			shm->stats.futex_storm.iters);
 
-	stat_category_emit_text(&pipe_thrash_category);
 
-	stat_category_emit_text(&fork_storm_category);
 
-	stat_category_emit_text(&cpu_hotplug_rider_category);
 
-	stat_category_emit_text(&pidfd_storm_category);
 
-	stat_category_emit_text(&process_mrelease_race_category);
 
-	stat_category_emit_text(&madvise_cycler_category);
-
-	stat_category_emit_text(&keyring_spam_category);
-
-	stat_category_emit_text(&vdso_mremap_race_category);
-
-	stat_category_emit_text(&flock_thrash_category);
 
 	stat_category_emit_text(&xattr_thrash_category);
 
 	stat_category_emit_text(&epoll_volatility_category);
 
-	stat_category_emit_text(&epoll_nest_race_category);
 
-	stat_category_emit_text(&cgroup_churn_category);
 
-	stat_category_emit_text(&mount_churn_category);
 
-	stat_category_emit_text(&umount_race_category);
 
 	stat_category_emit_text(&statmount_idmap_category);
 
-	stat_category_emit_text(&uffd_churn_category);
 
-	stat_category_emit_text(&iouring_flood_category);
 
-	stat_category_emit_text(&close_racer_category);
 }
 
 /*

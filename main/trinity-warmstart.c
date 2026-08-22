@@ -678,8 +678,6 @@ void init_pre_fork(void)
 bool run_oneshot_passes(void)
 {
 	procfs_writer_init();
-	perf_event_chains_init();
-	tracefs_fuzzer_init();
 
 	return true;
 }

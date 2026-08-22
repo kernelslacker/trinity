@@ -19,6 +19,7 @@ void __cold dump_stats_json(void)
 	json_emit_syscalls_array();
 
 	fputs(",\"stats\":{", stdout);
+	json_stats_sep_reset();
 	dump_stats_json_fault_and_fd_lifecycle();
 	dump_stats_json_oracle();
 	dump_stats_json_basic_subsystems();
@@ -26,7 +27,6 @@ void __cold dump_stats_json(void)
 	dump_stats_json_corruption_and_audit();
 	dump_stats_json_lifecycle_and_storms();
 	json_emit_socket_family_grammar_section();
-	printf(",");
 	dump_stats_json_socket_family_and_tls();
 	dump_stats_json_netfilter_and_xfrm();
 
@@ -36,9 +36,9 @@ void __cold dump_stats_json(void)
 	json_emit_bridge_pci_unix_and_iouring_section();
 	json_emit_iouring_iscsi_and_net_tail_section();
 
-	dump_stats_json_iouring_zc_and_kvm();
-	dump_stats_json_rxrpc_alg_ublk_block();
-	dump_stats_json_probes_misuse_and_tail();
+	dump_stats_json_vsock_tail();
+
+	putchar('}');			/* close "stats" */
 
 	/*
 	 * Per-childop arrays in struct stats_s indexed by NR_CHILD_OP_TYPES
@@ -57,8 +57,7 @@ void __cold dump_stats_json(void)
 	json_emit_minicorpus_section();
 	json_emit_cmp_hints_section();
 	type_graph_json_emit_top_handoffs();
-	json_emit_dead_arms_section();
 
-	fputs("}\n", stdout);
+	fputs("}\n", stdout);		/* close the root object */
 	fflush(stdout);
 }

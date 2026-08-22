@@ -167,7 +167,7 @@ garbage named files; just rm -rf tmp afterwards)
    picker mode; non-bandit modes get no explorer pool unless this is set.
 
  --alt-op-children: reserve N children to run dedicated alt ops
-   (mmap_lifecycle, mprotect_split, ...) round-robin instead of mixing
+   (inode_spewer, xattr_thrash, ...) round-robin instead of mixing
    them at 1% in every child (default: max(2, --children/8))
 
  --canary-slots: reserve N slots from the front of --alt-op-children to run

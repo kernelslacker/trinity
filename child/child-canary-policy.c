@@ -32,46 +32,22 @@
  * -------------------------------------------------------------------- */
 
 const enum child_op_type canary_config_blocked[] = {
-	CHILD_OP_NUMA_MIGRATION,
-	CHILD_OP_TIPC_LINK_CHURN,
-	CHILD_OP_SCTP_ASSOC_CHURN,
-	CHILD_OP_NL80211_CHURN,
-	CHILD_OP_UBLK_LIFECYCLE,
-	CHILD_OP_ATM_VCC_CHURN,
-	CHILD_OP_IP6GRE_BOND_LAPB_STACK,
 };
 const unsigned int canary_config_blocked_count = ARRAY_SIZE(canary_config_blocked);
 
-/* Pid-heavy ops the picker temporarily evicts while the parent fork
- * loop is in the drain window (see fork_pressure_drain_active() in
- * main/loop.c).  Membership criteria: the op either fork()s short-lived
- * helper workers internally (and bumps a *_fork_failed counter when
- * that inner fork fails -- those five are the same set surfaced in
- * main/loop.c's bail-time subworker fork-fail dump) or its primary purpose
- * is hammering the pid/pidfd allocator (pidfd_storm).  fork_storm
- * is double-gated: it is already in canary_risky_defer below, but is
- * listed here for completeness so a future risky-defer reshuffle
- * cannot quietly let it through the drain. */
+
+/* Ops that fork a helper worker of their own, so a canary window for
+ * one of them adds pid pressure on top of whatever made the parent's
+ * fork loop start failing.  iouring_send_zc_churn forks its loopback
+ * peer directly; vsock_transport_churn reaches fork() through
+ * userns_run_in_ns(), which forks a transient grandchild to enter a
+ * fresh netns. */
 static const enum child_op_type canary_pid_heavy_ops[] = {
-	CHILD_OP_FORK_STORM,
-	CHILD_OP_PIDFD_STORM,
-	CHILD_OP_QRTR_BIND_RACE,
-	CHILD_OP_PFKEY_SPD_WALK,
-	CHILD_OP_L2TP_IFNAME_RACE,
-	CHILD_OP_STATMOUNT_IDMAP_OVERFLOW,
-	CHILD_OP_SYSFS_STRING_RACE,
+	CHILD_OP_IOURING_SEND_ZC_CHURN,
+	CHILD_OP_VSOCK_TRANSPORT_CHURN,
 };
 
 const enum child_op_type canary_risky_defer[] = {
-	CHILD_OP_FORK_STORM,
-	CHILD_OP_CPU_HOTPLUG_RIDER,
-	CHILD_OP_VDSO_MREMAP_RACE,
-	CHILD_OP_BARRIER_RACER,
-	CHILD_OP_MOUNT_CHURN,
-	CHILD_OP_UFFD_CHURN,
-	CHILD_OP_DEVLINK_PORT_CHURN,
-	CHILD_OP_RTNL_VF_BROADCAST_GETLINK,
-	CHILD_OP_TTY_LDISC_CHURN,
 };
 const unsigned int canary_risky_defer_count = ARRAY_SIZE(canary_risky_defer);
 
@@ -143,25 +119,6 @@ struct canary_setup_reason_hint {
 	enum canary_setup_fail_reason reason;
 };
 
-static const struct canary_setup_reason_hint canary_setup_reason_hints[] = {
-	/* Ops in the startup CONFIG_BLOCKED set: each entry mirrors the
-	 * feature its setup path probes for. */
-	{ CHILD_OP_NUMA_MIGRATION,		SETUP_FAIL_REASON_NS_UNSUPPORTED },
-	{ CHILD_OP_TIPC_LINK_CHURN,		SETUP_FAIL_REASON_MODULE_MISSING },
-	{ CHILD_OP_SCTP_ASSOC_CHURN,		SETUP_FAIL_REASON_MODULE_MISSING },
-	{ CHILD_OP_NL80211_CHURN,		SETUP_FAIL_REASON_MODULE_MISSING },
-	{ CHILD_OP_UBLK_LIFECYCLE,		SETUP_FAIL_REASON_MODULE_MISSING },
-	{ CHILD_OP_ATM_VCC_CHURN,		SETUP_FAIL_REASON_MODULE_MISSING },
-	{ CHILD_OP_IP6GRE_BOND_LAPB_STACK,	SETUP_FAIL_REASON_MODULE_MISSING },
-	/* Ops observed in the 11/11-run 100%-setup-fail tally.  The queue
-	 * will now auto-transition these into CONFIG_BLOCKED after
-	 * CANARY_SETUP_BROKEN_AUTOBLOCK_N windows; the reason label lets
-	 * the operator triage without cross-referencing sources. */
-	{ CHILD_OP_IP6ERSPAN_NETNS_MIGRATE,	SETUP_FAIL_REASON_MODULE_MISSING },
-	{ CHILD_OP_BPF_CGROUP_ATTACH,		SETUP_FAIL_REASON_CAP_MISSING },
-	{ CHILD_OP_AFXDP_CHURN,			SETUP_FAIL_REASON_DEVICE_MISSING },
-	{ CHILD_OP_HFS_MOUNT_FUZZ,		SETUP_FAIL_REASON_FS_UNSUPPORTED },
-};
 
 const char *canary_setup_fail_reason_name(enum canary_setup_fail_reason r)
 {
@@ -183,11 +140,9 @@ const char *canary_setup_fail_reason_name(enum canary_setup_fail_reason r)
 enum canary_setup_fail_reason
 canary_setup_fail_reason_for_op(enum child_op_type op)
 {
-	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(canary_setup_reason_hints); i++)
-		if (canary_setup_reason_hints[i].op == op)
-			return canary_setup_reason_hints[i].reason;
+	/* Every op that had a host-feature hint is gone; the remaining
+	 * ops fail setup for reasons the table never described. */
+	(void)op;
 	return SETUP_FAIL_REASON_UNKNOWN;
 }
 

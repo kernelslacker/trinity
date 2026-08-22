@@ -49,19 +49,14 @@
  * when many children cross the boundary in the same instant.
  */
 static const enum child_op_type covjump_bridge_ops[] = {
-	CHILD_OP_BRIDGE_FDB_STP,
-	CHILD_OP_BRIDGE_VLAN_CHURN,
-	CHILD_OP_BRIDGE_CT_CHURN,
+	/* CHILD_OP_BRIDGE_CT_CHURN removed */
 };
 static const enum child_op_type covjump_conntrack_ops[] = {
-	CHILD_OP_NF_CONNTRACK_HELPER,
+	/* CHILD_OP_NF_CONNTRACK_HELPER removed (nf_conntrack_helper_churn doomed) */
 };
 static const enum child_op_type covjump_mld_ops[] = {
-	CHILD_OP_IGMP_MLD_SOURCE_CHURN,
 };
 static const enum child_op_type covjump_mempress_ops[] = {
-	CHILD_OP_MEMORY_PRESSURE,
-	CHILD_OP_MLOCK_PRESSURE,
 };
 
 static bool covjump_any_delta(const enum child_op_type *ops, unsigned int n,

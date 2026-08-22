@@ -147,26 +147,6 @@ stats	object
     stats.vfs_writes.debugfs_open_fail	u64
     stats.vfs_writes.debugfs_write_fail	u64
     stats.vfs_writes.debugfs_write_ok	u64
-  stats.memory_pressure	object
-    stats.memory_pressure.runs_madv_pageout	u64
-  stats.numa_migration	object
-    stats.numa_migration.runs	u64
-    stats.numa_migration.calls	u64
-    stats.numa_migration.failed	u64
-    stats.numa_migration.no_numa	u64
-    stats.numa_migration.sysfs_unreadable	u64
-  stats.genetlink_fuzzer	object
-    stats.genetlink_fuzzer.families_discovered	u64
-    stats.genetlink_fuzzer.discovery_cycles	u64
-    stats.genetlink_fuzzer.msgs_sent	u64
-    stats.genetlink_fuzzer.eperm	u64
-    stats.genetlink_fuzzer.stale_seq_drops	u64
-    stats.genetlink_fuzzer.missing_producer	u64
-    stats.genetlink_fuzzer.discovery_io_err	u64
-    stats.genetlink_fuzzer.discovery_nlerr	u64
-    stats.genetlink_fuzzer.userns_run_fail	u64
-    stats.genetlink_fuzzer.in_ns_open_fail	u64
-    stats.genetlink_fuzzer.send_drain_fail	u64
   stats.genl_family_calls	object
     stats.genl_family_calls.devlink	u64
     stats.genl_family_calls.nl80211	u64
@@ -222,34 +202,6 @@ stats	object
     stats.rtnl_ack_oracle.recv_enobufs	u64
     stats.rtnl_ack_oracle.recv_eintr	u64
     stats.rtnl_ack_oracle.recv_error	u64
-  stats.tracefs_fuzzer	object
-    stats.tracefs_fuzzer.kprobe_open_fail	u64
-    stats.tracefs_fuzzer.kprobe_write_fail	u64
-    stats.tracefs_fuzzer.kprobe_write_ok	u64
-    stats.tracefs_fuzzer.uprobe_open_fail	u64
-    stats.tracefs_fuzzer.uprobe_write_fail	u64
-    stats.tracefs_fuzzer.uprobe_write_ok	u64
-    stats.tracefs_fuzzer.filter_open_fail	u64
-    stats.tracefs_fuzzer.filter_write_fail	u64
-    stats.tracefs_fuzzer.filter_write_ok	u64
-    stats.tracefs_fuzzer.event_enable_open_fail	u64
-    stats.tracefs_fuzzer.event_enable_write_fail	u64
-    stats.tracefs_fuzzer.event_enable_write_ok	u64
-    stats.tracefs_fuzzer.misc_open_fail	u64
-    stats.tracefs_fuzzer.misc_write_fail	u64
-    stats.tracefs_fuzzer.misc_write_ok	u64
-    stats.tracefs_fuzzer.dynevent_open_fail	u64
-    stats.tracefs_fuzzer.dynevent_write_fail	u64
-    stats.tracefs_fuzzer.dynevent_write_ok	u64
-    stats.tracefs_fuzzer.set_event_open_fail	u64
-    stats.tracefs_fuzzer.set_event_write_fail	u64
-    stats.tracefs_fuzzer.set_event_write_ok	u64
-    stats.tracefs_fuzzer.set_event_post_disable_count	u64
-    stats.tracefs_fuzzer.set_event_disable_arms	u64
-    stats.tracefs_fuzzer.set_event_readback_fail	u64
-    stats.tracefs_fuzzer.set_event_disable_reenabled	u64
-    stats.tracefs_fuzzer.set_event_wide_disable_arms	u64
-    stats.tracefs_fuzzer.runtime_cap_denied	u64
   stats.bpf_fd_provider	object
     stats.bpf_fd_provider.maps_provided	u64
     stats.bpf_fd_provider.progs_provided	u64
@@ -262,26 +214,10 @@ stats	object
     stats.childop_burst.burst_alt_picks_window	u64
   stats.corrupt_ptr_probe	object
     stats.corrupt_ptr_probe.sample_seq	u64
-  stats.recipe_runner	object
-    stats.recipe_runner.runs	u64
-    stats.recipe_runner.completed	u64
-    stats.recipe_runner.partial	u64
-    stats.recipe_runner.unsupported	u64
   stats.posix_timer	object
     stats.posix_timer.sigev_delivered	u64
     stats.posix_timer.sigev_missed	u64
     stats.posix_timer.sigev_cookie_bad	u64
-  stats.iouring_recipes	object
-    stats.iouring_recipes.runs	u64
-    stats.iouring_recipes.completed	u64
-    stats.iouring_recipes.partial	u64
-    stats.iouring_recipes.enosys	u64
-  stats.iouring_cmd_passthrough	object
-    stats.iouring_cmd_passthrough.nulldev_mshot_attempts	u64
-    stats.iouring_cmd_passthrough.mshot_cmd_no_cqe	u64
-    stats.iouring_cmd_passthrough.cqe_rejected	u64
-    stats.iouring_cmd_passthrough.nulldev_cmd_rejected	u64
-    stats.iouring_cmd_passthrough.fixed_multishot_prep_rejected	u64
   stats.iouring_eventfd	object
     stats.iouring_eventfd.register_ok	u64
     stats.iouring_eventfd.register_fail	u64
@@ -305,37 +241,6 @@ stats	object
   stats.rpl_clone_fidelity	object
     stats.rpl_clone_fidelity.srh_mutated	u64
     stats.rpl_clone_fidelity.daddr_mutated	u64
-  stats.memfd_secret_lifecycle	object
-    stats.memfd_secret_lifecycle.oracle_pass	u64
-    stats.memfd_secret_lifecycle.oracle_fired	u64
-    stats.memfd_secret_lifecycle.oracle_inconclusive	u64
-    stats.memfd_secret_lifecycle.conc_truncate_races	u64
-    stats.memfd_secret_lifecycle.setup_rejected	u64
-  stats.mremap_merge_matrix	object
-    stats.mremap_merge_matrix.checks_run	u64
-    stats.mremap_merge_matrix.tag_mismatch	u64
-    stats.mremap_merge_matrix.topology_unexpected	u64
-  stats.thp_split_ref_race	object
-    stats.thp_split_ref_race.split_trigger_rounds	u64
-    stats.thp_split_ref_race.thp_split_while_ref_held	u64
-    stats.thp_split_ref_race.thp_no_race	u64
-    stats.thp_split_ref_race.content_mismatch	u64
-  stats.uffd_fault_move	object
-    stats.uffd_fault_move.v1_resolve_ok	u64
-    stats.uffd_fault_move.v1_resolve_fail	u64
-    stats.uffd_fault_move.v1_wp_faults_resolved	u64
-    stats.uffd_fault_move.v1_poison_faults_resolved	u64
-    stats.uffd_fault_move.v1_dontwake_still_blocked	u64
-    stats.uffd_fault_move.v1_dontwake_woke_early	u64
-    stats.uffd_fault_move.v2_move_ok	u64
-    stats.uffd_fault_move.v2_move_fail	u64
-    stats.uffd_fault_move.v2_move_einval	u64
-    stats.uffd_fault_move.v2_move_skipped	u64
-    stats.uffd_fault_move.v3_teardown_ok	u64
-    stats.uffd_fault_move.v3_teardown_fail	u64
-    stats.uffd_fault_move.oracle_checks_run	u64
-    stats.uffd_fault_move.oracle_mismatch	u64
-    stats.uffd_fault_move.leaked_workers	u64
   stats.fd_runtime_skipped	object
     stats.fd_runtime_skipped.stdio	u64
     stats.fd_runtime_skipped.already_registered	u64
@@ -438,25 +343,6 @@ stats	object
     stats.shared_buffer.libc_heap_redirected	u64
     stats.shared_buffer.libc_heap_embedded_redirected	u64
     stats.shared_buffer.mm_gate_post_slip	u64
-  stats.fs_lifecycle	object
-    stats.fs_lifecycle.tmpfs	u64
-    stats.fs_lifecycle.ramfs	u64
-    stats.fs_lifecycle.rdonly	u64
-    stats.fs_lifecycle.overlay	u64
-    stats.fs_lifecycle.quota	u64
-    stats.fs_lifecycle.bind	u64
-    stats.fs_lifecycle.unsupported	u64
-  stats.futex_storm	object
-    stats.futex_storm.runs	u64
-    stats.futex_storm.inner_crashed	u64
-    stats.futex_storm.iters	u64
-  stats.futex_pi_requeue_rollback	object
-    stats.futex_pi_requeue_rollback.runs	u64
-    stats.futex_pi_requeue_rollback.setup_failed	u64
-    stats.futex_pi_requeue_rollback.requeue_ok	u64
-    stats.futex_pi_requeue_rollback.requeue_failed	u64
-    stats.futex_pi_requeue_rollback.vfork_runs	u64
-    stats.futex_pi_requeue_rollback.vfork_slotmismatch	u64
   stats.prctl_futex_hash	object
     stats.prctl_futex_hash.set_slots_ebusy	u64
   stats.socket_family_grammar	object
@@ -465,225 +351,9 @@ stats	object
     stats.socket_family_grammar.distinct_seq	u64
     stats.socket_family_grammar.reward	u64
     stats.socket_family_grammar.feedback_picks	u64
-  stats.packet_fanout_thrash	object
-    stats.packet_fanout_thrash.runs	u64
-    stats.packet_fanout_thrash.setup_failed	u64
-    stats.packet_fanout_thrash.ring_failed	u64
-    stats.packet_fanout_thrash.rings_installed	u64
-    stats.packet_fanout_thrash.mmap_failed	u64
-    stats.packet_fanout_thrash.joins	u64
-    stats.packet_fanout_thrash.rejoins_ok	u64
-    stats.packet_fanout_thrash.rejoins_rejected	u64
-  stats.eth_emitter	object
-    stats.eth_emitter.runs	u64
-    stats.eth_emitter.setup_failed	u64
-    stats.eth_emitter.short	u64
-    stats.eth_emitter.sends_ok	u64
-    stats.eth_emitter.sends_failed	u64
-    stats.eth_emitter.tmpl_arp	u64
-    stats.eth_emitter.tmpl_ipv4_frag_zero	u64
-    stats.eth_emitter.tmpl_ipv6_na	u64
-    stats.eth_emitter.tmpl_vlan_qinq	u64
-    stats.eth_emitter.tmpl_bad_ethertype	u64
-  stats.iouring_net_multishot	object
-    stats.iouring_net_multishot.runs	u64
-    stats.iouring_net_multishot.setup_failed	u64
-    stats.iouring_net_multishot.pbuf_ring_ok	u64
-    stats.iouring_net_multishot.pbuf_legacy_ok	u64
-    stats.iouring_net_multishot.armed	u64
-    stats.iouring_net_multishot.packets_sent	u64
-    stats.iouring_net_multishot.completions	u64
-    stats.iouring_net_multishot.cancel_submitted	u64
-    stats.iouring_net_multishot.napi_register_ok	u64
-    stats.iouring_net_multishot.napi_register_fail	u64
-    stats.iouring_net_multishot.napi_unregister_ok	u64
-    stats.iouring_net_multishot.napi_unregister_fail	u64
-  stats.bridge_fdb_stp	object
-    stats.bridge_fdb_stp.runs	u64
-    stats.bridge_fdb_stp.setup_failed	u64
-    stats.bridge_fdb_stp.bridge_create_ok	u64
-    stats.bridge_fdb_stp.veth_create_ok	u64
-    stats.bridge_fdb_stp.raw_send_ok	u64
-    stats.bridge_fdb_stp.stp_toggle_ok	u64
-    stats.bridge_fdb_stp.fdb_del_ok	u64
-    stats.bridge_fdb_stp.link_del_ok	u64
-    stats.bridge_fdb_stp.vlan_mass_runs	u64
-    stats.bridge_fdb_stp.vlan_mass_max_n	u64
-    stats.bridge_fdb_stp.vlan_mass_enotbufs	u64
-    stats.bridge_fdb_stp.star_g_arm_setup_failed	u64
-    stats.bridge_fdb_stp.mdb_star_g_created	u64
-    stats.bridge_fdb_stp.mdb_sg_created	u64
-    stats.bridge_fdb_stp.star_g_src_list_built	u64
-    stats.bridge_fdb_stp.neigh_mdbe_src_list_built	u64
-    stats.bridge_fdb_stp.star_g_mdb_before	u64
-    stats.bridge_fdb_stp.star_g_mdb_after	u64
-  stats.nftables_churn	object
-    stats.nftables_churn.runs	u64
-    stats.nftables_churn.setup_failed	u64
-    stats.nftables_churn.table_create_ok	u64
-    stats.nftables_churn.set_create_ok	u64
-    stats.nftables_churn.chain_create_ok	u64
-    stats.nftables_churn.rule_create_ok	u64
-    stats.nftables_churn.packet_sent_ok	u64
-    stats.nftables_churn.rule_insert_ok	u64
-    stats.nftables_churn.rule_del_ok	u64
-    stats.nftables_churn.table_del_ok	u64
-    stats.nftables_churn.payload_expr_emit	u64
-    stats.nftables_churn.meta_expr_emit	u64
-    stats.nftables_churn.lookup_expr_emit	u64
-    stats.nftables_churn.log_expr_emit	u64
-    stats.nftables_churn.bitwise_expr_emit	u64
-    stats.nftables_churn.cmp_expr_emit	u64
-    stats.nftables_churn.range_expr_emit	u64
-    stats.nftables_churn.byteorder_expr_emit	u64
-    stats.nftables_churn.socket_expr_emit	u64
-    stats.nftables_churn.quota_expr_emit	u64
-    stats.nftables_churn.limit_expr_emit	u64
-    stats.nftables_churn.numgen_expr_emit	u64
-    stats.nftables_churn.hash_expr_emit	u64
-    stats.nftables_churn.synproxy_expr_emit	u64
-    stats.nftables_churn.counter_expr_emit	u64
-    stats.nftables_churn.connlimit_expr_emit	u64
-    stats.nftables_churn.masq_expr_emit	u64
-    stats.nftables_churn.redir_expr_emit	u64
-    stats.nftables_churn.tproxy_expr_emit	u64
-    stats.nftables_churn.xfrm_expr_emit	u64
-    stats.nftables_churn.dup_netdev_expr_emit	u64
-    stats.nftables_churn.dup_ipv4_expr_emit	u64
-    stats.nftables_churn.dup_ipv6_expr_emit	u64
-    stats.nftables_churn.fwd_netdev_expr_emit	u64
-    stats.nftables_churn.last_expr_emit	u64
-    stats.nftables_churn.rt_expr_emit	u64
-    stats.nftables_churn.fib_expr_emit	u64
-    stats.nftables_churn.exthdr_expr_emit	u64
-    stats.nftables_churn.osf_expr_emit	u64
-    stats.nftables_churn.queue_expr_emit	u64
-    stats.nftables_churn.immediate_expr_emit	u64
-    stats.nftables_churn.dynset_expr_emit	u64
-    stats.nftables_churn.ct_expr_emit	u64
-    stats.nftables_churn.objref_expr_emit	u64
-    stats.nftables_churn.compat_validate_install_ok	u64
-    stats.nftables_churn.compat_validate_install_fail	u64
-    stats.nftables_churn.compat_validate_unsupported	u64
-    stats.nftables_churn.compat_validate_per_hook_pairs	u64
-    stats.nftables_churn.dormant_abort_iters	u64
-    stats.nftables_churn.dormant_abort_eperm	u64
-    stats.nftables_churn.dormant_abort_emsg	u64
-    stats.nftables_churn.dormant_abort_ok	u64
-    stats.nftables_churn.xt_ct_iters	u64
-    stats.nftables_churn.xt_ct_eperm	u64
-    stats.nftables_churn.xt_ct_unsupported	u64
-    stats.nftables_churn.xt_ct_set_ok	u64
-    stats.nftables_churn.xt_ct_get_ok	u64
-    stats.nftables_churn.xt_ct_v2_seen	u64
-    stats.nftables_churn.xt_tcp_match_iters	u64
-    stats.nftables_churn.xt_tcp_match_eperm	u64
-    stats.nftables_churn.xt_tcp_match_unsupported	u64
-    stats.nftables_churn.xt_tcp_match_set_ok	u64
-    stats.nftables_churn.fwd_loop_runs	u64
-    stats.nftables_churn.fwd_loop_ns_setup_failed	u64
-    stats.nftables_churn.fwd_loop_probe_sent_ok	u64
-    stats.nftables_churn.fwd_loop_completed_ok	u64
-    stats.nftables_churn.l4frag_iters	u64
-    stats.nftables_churn.l4frag_install_ok	u64
-    stats.nftables_churn.l4frag_rule_ok	u64
-    stats.nftables_churn.l4frag_send_ok	u64
-    stats.nftables_churn.l4frag_send_failed	u64
-    stats.nftables_churn.inet_ingress_reject_runs	u64
-    stats.nftables_churn.inet_ingress_reject_setup_failed	u64
-    stats.nftables_churn.inet_ingress_reject_probe_sent_ok	u64
-    stats.nftables_churn.inet_ingress_reject_ipcb_opt_armed	u64
-    stats.nftables_churn.inet_ingress_reject_completed_ok	u64
-  stats.tc_qdisc_churn	object
-    stats.tc_qdisc_churn.runs	u64
-    stats.tc_qdisc_churn.setup_failed	u64
-    stats.tc_qdisc_churn.link_create_ok	u64
-    stats.tc_qdisc_churn.qdisc_create_ok	u64
-    stats.tc_qdisc_churn.tclass_create_ok	u64
-    stats.tc_qdisc_churn.tfilter_create_ok	u64
-    stats.tc_qdisc_churn.packet_sent_ok	u64
-    stats.tc_qdisc_churn.qdisc_replace_ok	u64
-    stats.tc_qdisc_churn.tfilter_del_ok	u64
-    stats.tc_qdisc_churn.qdisc_del_ok	u64
-    stats.tc_qdisc_churn.link_del_ok	u64
-    stats.tc_qdisc_churn.peek_stack_runs	u64
-    stats.tc_qdisc_churn.peek_stack_install_ok	u64
-    stats.tc_qdisc_churn.peek_stack_install_fail	u64
-    stats.tc_qdisc_churn.peek_stack_burst_ok	u64
-    stats.tc_qdisc_churn.bridge_parent_runs	u64
-    stats.tc_qdisc_churn.bridge_dellink_race_ok	u64
-    stats.tc_qdisc_churn.gso_burst_ok	u64
-    stats.tc_qdisc_churn.qfq_traffic_runs	u64
-    stats.tc_qdisc_churn.qfq_traffic_burst_ok	u64
-    stats.tc_qdisc_churn.qfq_traffic_change_ok	u64
-    stats.tc_qdisc_churn.u32_divisor_create_ok	u64
-    stats.tc_qdisc_churn.u32_link_skip_sw_ok	u64
-    stats.tc_qdisc_churn.u32_link_leak_detected	u64
-    stats.tc_qdisc_churn.u32_update_path_step2_bad_errno	u64
-    stats.tc_qdisc_churn.u32_skip_sw_hnode1_arm_done	u64
-    stats.tc_qdisc_churn.u32_skip_sw_hnode2_arm_done	u64
-  stats.tc_mirred_blockcast	object
-    stats.tc_mirred_blockcast.runs	u64
-    stats.tc_mirred_blockcast.setup_failed	u64
-    stats.tc_mirred_blockcast.qdisc_ok	u64
-    stats.tc_mirred_blockcast.qdisc_fail	u64
-    stats.tc_mirred_blockcast.filter_ok	u64
-    stats.tc_mirred_blockcast.filter_fail	u64
-    stats.tc_mirred_blockcast.packet_sent_ok	u64
-  stats.tc_live_traffic	object
-    stats.tc_live_traffic.runs	u64
-    stats.tc_live_traffic.setup_failed	u64
-    stats.tc_live_traffic.qdisc_ok	u64
-    stats.tc_live_traffic.qdisc_fail	u64
-    stats.tc_live_traffic.filter_ok	u64
-    stats.tc_live_traffic.filter_fail	u64
-    stats.tc_live_traffic.filter_del_ok	u64
-    stats.tc_live_traffic.filter_replace_ok	u64
-    stats.tc_live_traffic.packet_sent_ok	u64
-    stats.tc_live_traffic.link_del_ok	u64
-    stats.tc_live_traffic.bpf_load_ok	u64
-    stats.tc_live_traffic.xdp_load_ok	u64
-    stats.tc_live_traffic.xdp_attach_ok	u64
-  stats.tc_standalone_action	object
-    stats.tc_standalone_action.runs	u64
-    stats.tc_standalone_action.setup_failed	u64
-    stats.tc_standalone_action.qdisc_ok	u64
-    stats.tc_standalone_action.qdisc_fail	u64
-    stats.tc_standalone_action.action_create_ok	u64
-    stats.tc_standalone_action.action_create_fail	u64
-    stats.tc_standalone_action.filter_ok	u64
-    stats.tc_standalone_action.filter_fail	u64
-    stats.tc_standalone_action.packet_sent_ok	u64
-    stats.tc_standalone_action.packet_send_fail	u64
-    stats.tc_standalone_action.bindtodevice_fail	u64
-    stats.tc_standalone_action.action_replace_ok	u64
-    stats.tc_standalone_action.tc_action_replace_concurrent	u64
-    stats.tc_standalone_action.action_del_ok	u64
-    stats.tc_standalone_action.link_del_ok	u64
-  stats.xfrm_churn	object
-    stats.xfrm_churn.runs	u64
-    stats.xfrm_churn.setup_failed	u64
-    stats.xfrm_churn.sa_added	u64
-    stats.xfrm_churn.tunnel_sa_added	u64
-    stats.xfrm_churn.iptfs_sa_added	u64
-    stats.xfrm_churn.sa_updated	u64
-    stats.xfrm_churn.sa_deleted	u64
-    stats.xfrm_churn.pol_added	u64
-    stats.xfrm_churn.pol_deleted	u64
-    stats.xfrm_churn.esp_sent	u64
-    stats.xfrm_churn.zc_sent	u64
-    stats.xfrm_churn.zc_errq_drained	u64
-    stats.xfrm_churn.pfkey_send_ok	u64
-    stats.xfrm_churn.burn_runs	u64
-    stats.xfrm_churn.burn_throttled	u64
-    stats.xfrm_churn.burn_completed	u64
-    stats.xfrm_churn.devteardown_runs	u64
-    stats.xfrm_churn.devteardown_v6_runs	u64
-    stats.xfrm_churn.devteardown_setup_failed	u64
-    stats.xfrm_churn.devteardown_armed	u64
-    stats.xfrm_churn.devteardown_sent	u64
-    stats.xfrm_churn.devteardown_dellink	u64
-    stats.xfrm_churn.arm_entered_migrate_state	u64
+  stats.xfrm_grammar	object
+    stats.xfrm_grammar.msg_kind_draws	u64
+    stats.xfrm_grammar.migrate_state_arm_entered	u64
   stats.xfrm_ah_esn	object
     stats.xfrm_ah_esn.setup_ok	u64
     stats.xfrm_ah_esn.setup_fail	u64
@@ -699,211 +369,6 @@ stats	object
     stats.xfrm_compat.allocspi_sends_failed	u64
     stats.xfrm_compat.allocspi_replies_seen	u64
     stats.xfrm_compat.allocspi_unsupported	u64
-  stats.sysfs_string_race	object
-    stats.sysfs_string_race.runs	u64
-    stats.sysfs_string_race.setup_failed	u64
-    stats.sysfs_string_race.target_missing	u64
-    stats.sysfs_string_race.target_used	u64
-    stats.sysfs_string_race.fork_failed	u64
-    stats.sysfs_string_race.writes_ok	u64
-    stats.sysfs_string_race.writes_failed	u64
-  stats.atm_vcc_churn	object
-    stats.atm_vcc_churn.runs	u64
-    stats.atm_vcc_churn.unsupported	u64
-    stats.atm_vcc_churn.socket_ok	u64
-    stats.atm_vcc_churn.ioctls_sent	u64
-    stats.atm_vcc_churn.kernel_rejected	u64
-  stats.sock_ulp_sockmap_layering	object
-    stats.sock_ulp_sockmap_layering.runs	u64
-    stats.sock_ulp_sockmap_layering.setup_failed	u64
-    stats.sock_ulp_sockmap_layering.map_failed	u64
-    stats.sock_ulp_sockmap_layering.prog_failed	u64
-    stats.sock_ulp_sockmap_layering.attach_failed	u64
-    stats.sock_ulp_sockmap_layering.layered_ok	u64
-  stats.sockmap_cork_race	object
-    stats.sockmap_cork_race.runs	u64
-    stats.sockmap_cork_race.setup_failed	u64
-    stats.sockmap_cork_race.map_failed	u64
-    stats.sockmap_cork_race.prog_failed	u64
-    stats.sockmap_cork_race.attach_failed	u64
-    stats.sockmap_cork_race.enroll_failed	u64
-    stats.sockmap_cork_race.races_run	u64
-  stats.sock_diag_walker	object
-    stats.sock_diag_walker.runs	u64
-    stats.sock_diag_walker.setup_failed	u64
-    stats.sock_diag_walker.inet	u64
-    stats.sock_diag_walker.unix	u64
-    stats.sock_diag_walker.netlink	u64
-    stats.sock_diag_walker.packet	u64
-    stats.sock_diag_walker.vsock	u64
-  stats.altname_thrash	object
-    stats.altname_thrash.invocations	u64
-    stats.altname_thrash.unshare_failed	u64
-    stats.altname_thrash.addprop_done	u64
-    stats.altname_thrash.delprop_done	u64
-    stats.altname_thrash.getlink_done	u64
-  stats.sctp_assoc_churn	object
-    stats.sctp_assoc_churn.runs	u64
-    stats.sctp_assoc_churn.setup_failed	u64
-    stats.sctp_assoc_churn.bindx_added	u64
-    stats.sctp_assoc_churn.bindx_removed	u64
-    stats.sctp_assoc_churn.bindx_rejected	u64
-    stats.sctp_assoc_churn.connect_failed	u64
-    stats.sctp_assoc_churn.connected	u64
-    stats.sctp_assoc_churn.accepted	u64
-    stats.sctp_assoc_churn.packets_sent	u64
-    stats.sctp_assoc_churn.peeled_off	u64
-    stats.sctp_assoc_churn.peeloff_rejected	u64
-    stats.sctp_assoc_churn.cycles	u64
-  stats.sctp_chunk_rx	object
-    stats.sctp_chunk_rx.runs	u64
-    stats.sctp_chunk_rx.setup_failed	u64
-    stats.sctp_chunk_rx.listener_ok	u64
-    stats.sctp_chunk_rx.packet_sent_ok	u64
-  stats.esp_crafted_rx	object
-    stats.esp_crafted_rx.runs	u64
-    stats.esp_crafted_rx.setup_failed	u64
-    stats.esp_crafted_rx.sa_install_ok	u64
-    stats.esp_crafted_rx.sa_install_failed	u64
-    stats.esp_crafted_rx.packet_sent_ok	u64
-    stats.esp_crafted_rx.sa_delete_ok	u64
-    stats.esp_crafted_rx.stacked_sa_install_ok	u64
-    stats.esp_crafted_rx.stacked_sent_ok	u64
-  stats.fou_gue_mcast_rx	object
-    stats.fou_gue_mcast_rx.runs	u64
-    stats.fou_gue_mcast_rx.setup_failed	u64
-    stats.fou_gue_mcast_rx.port_install_ok	u64
-    stats.fou_gue_mcast_rx.port_install_failed	u64
-    stats.fou_gue_mcast_rx.packet_sent_ok	u64
-    stats.fou_gue_mcast_rx.port_delete_ok	u64
-    stats.fou_gue_mcast_rx.port_nopartial_ok	u64
-    stats.fou_gue_mcast_rx.gue_flags_uniform	u64
-    stats.fou_gue_mcast_rx.gue_priv_emitted	u64
-    stats.fou_gue_mcast_rx.gue_remcsum_emitted	u64
-    stats.fou_gue_mcast_rx.gue_remcsum_underflow	u64
-  stats.geneve_rx	object
-    stats.geneve_rx.runs	u64
-    stats.geneve_rx.setup_failed	u64
-    stats.geneve_rx.link_create_ok	u64
-    stats.geneve_rx.link_create_failed	u64
-    stats.geneve_rx.link_up_ok	u64
-    stats.geneve_rx.packet_sent_ok	u64
-    stats.geneve_rx.link_del_ok	u64
-  stats.bareudp_rx	object
-    stats.bareudp_rx.runs	u64
-    stats.bareudp_rx.setup_failed	u64
-    stats.bareudp_rx.link_create_ok	u64
-    stats.bareudp_rx.link_create_failed	u64
-    stats.bareudp_rx.link_up_ok	u64
-    stats.bareudp_rx.packet_sent_ok	u64
-    stats.bareudp_rx.link_del_ok	u64
-  stats.mpls_label_stack_rx	object
-    stats.mpls_label_stack_rx.runs	u64
-    stats.mpls_label_stack_rx.setup_failed	u64
-    stats.mpls_label_stack_rx.config_ok	u64
-    stats.mpls_label_stack_rx.config_failed	u64
-    stats.mpls_label_stack_rx.link_up_ok	u64
-    stats.mpls_label_stack_rx.packet_sent_ok	u64
-  stats.rds_zcopy_crafted_send	object
-    stats.rds_zcopy_crafted_send.runs	u64
-    stats.rds_zcopy_crafted_send.setup_failed	u64
-    stats.rds_zcopy_crafted_send.bind_ok	u64
-    stats.rds_zcopy_crafted_send.zc_enable_ok	u64
-    stats.rds_zcopy_crafted_send.hole_ok	u64
-    stats.rds_zcopy_crafted_send.sends_ok	u64
-    stats.rds_zcopy_crafted_send.sends_efault	u64
-    stats.rds_zcopy_crafted_send.sends_failed	u64
-    stats.rds_zcopy_crafted_send.errqueue_drained	u64
-  stats.bridge_ip6_refrag_fraggap	object
-    stats.bridge_ip6_refrag_fraggap.runs	u64
-    stats.bridge_ip6_refrag_fraggap.brnf_enabled	u64
-    stats.bridge_ip6_refrag_fraggap.bursts	u64
-    stats.bridge_ip6_refrag_fraggap.frags_sent	u64
-  stats.mptcp_pm_churn	object
-    stats.mptcp_pm_churn.runs	u64
-    stats.mptcp_pm_churn.setup_failed	u64
-    stats.mptcp_pm_churn.sock_mptcp_ok	u64
-    stats.mptcp_pm_churn.addr_added_ok	u64
-    stats.mptcp_pm_churn.addr_removed_ok	u64
-    stats.mptcp_pm_churn.send_ok	u64
-    stats.mptcp_pm_churn.setsockopt_unsupported	u64
-    stats.mptcp_pm_churn.setsockopt_master_set	u64
-    stats.mptcp_pm_churn.setsockopt_master_fail	u64
-    stats.mptcp_pm_churn.getsockopt_verify_ok	u64
-    stats.mptcp_pm_churn.getsockopt_verify_drift	u64
-    stats.mptcp_pm_churn.sockopt_sweep_runs	u64
-    stats.mptcp_pm_churn.sockopt_set_ok	u64
-    stats.mptcp_pm_churn.sockopt_set_failed	u64
-    stats.mptcp_pm_churn.sockopt_subflow_added	u64
-    stats.mptcp_pm_churn.sockopt_readback_ok	u64
-    stats.mptcp_pm_churn.sockopt_inherit_mismatch	u64
-    stats.mptcp_pm_churn.sockopt_unsupported_latched	u64
-  stats.devlink_port_churn	object
-    stats.devlink_port_churn.iterations	u64
-    stats.devlink_port_churn.split_ok	u64
-    stats.devlink_port_churn.split_fail	u64
-    stats.devlink_port_churn.reload_ok	u64
-    stats.devlink_port_churn.reload_fail	u64
-    stats.devlink_port_churn.create_skipped	u64
-  stats.ipmr_cache_report	object
-    stats.ipmr_cache_report.iters	u64
-    stats.ipmr_cache_report.eperm	u64
-    stats.ipmr_cache_report.emit_ok	u64
-  stats.ipmr_getroute_pktinfo	object
-    stats.ipmr_getroute_pktinfo.iters	u64
-    stats.ipmr_getroute_pktinfo.eperm	u64
-    stats.ipmr_getroute_pktinfo.pktinfo_ok	u64
-    stats.ipmr_getroute_pktinfo.getroute_ok	u64
-  stats.ip6mr_churn	object
-    stats.ip6mr_churn.iters	u64
-    stats.ip6mr_churn.eperm	u64
-    stats.ip6mr_churn.emit_ok	u64
-  stats.nf_conntrack_helper_churn	object
-    stats.nf_conntrack_helper_churn.runs	u64
-    stats.nf_conntrack_helper_churn.setup_failed	u64
-    stats.nf_conntrack_helper_churn.no_helper	u64
-    stats.nf_conntrack_helper_churn.attach_ok	u64
-    stats.nf_conntrack_helper_churn.attach_fail	u64
-    stats.nf_conntrack_helper_churn.exp_ok	u64
-    stats.nf_conntrack_helper_churn.packet_sent	u64
-    stats.nf_conntrack_helper_churn.delete_ok	u64
-    stats.nf_conntrack_helper_churn.zone_swap	u64
-    stats.nf_conntrack_helper_churn.detach_ok	u64
-  stats.ct_expect_realloc	object
-    stats.ct_expect_realloc.runs	u64
-    stats.ct_expect_realloc.ns_setup_failed	u64
-    stats.ct_expect_realloc.ns_unsupported	u64
-    stats.ct_expect_realloc.ct_setup_failed	u64
-    stats.ct_expect_realloc.helper_missing	u64
-    stats.ct_expect_realloc.master_ok	u64
-    stats.ct_expect_realloc.expect_ok	u64
-    stats.ct_expect_realloc.realloc_ok	u64
-    stats.ct_expect_realloc.unlink_ok	u64
-    stats.ct_expect_realloc.full_cycle	u64
-  stats.ipset_churn	object
-    stats.ipset_churn.runs	u64
-    stats.ipset_churn.setup_failed	u64
-    stats.ipset_churn.create_ok	u64
-    stats.ipset_churn.create_fail	u64
-    stats.ipset_churn.add_ok	u64
-    stats.ipset_churn.test_ok	u64
-    stats.ipset_churn.del_ok	u64
-    stats.ipset_churn.header_ok	u64
-    stats.ipset_churn.list_ok	u64
-    stats.ipset_churn.swap_ok	u64
-    stats.ipset_churn.flush_ok	u64
-    stats.ipset_churn.destroy_ok	u64
-  stats.tcp_ulp_swap_churn	object
-    stats.tcp_ulp_swap_churn.runs	u64
-    stats.tcp_ulp_swap_churn.setup_failed	u64
-    stats.tcp_ulp_swap_churn.install_tls_ok	u64
-    stats.tcp_ulp_swap_churn.tx_install_ok	u64
-    stats.tcp_ulp_swap_churn.send_ok	u64
-    stats.tcp_ulp_swap_churn.swap_rejected_ok	u64
-    stats.tcp_ulp_swap_churn.ifname_probe_ok	u64
-    stats.tcp_ulp_swap_churn.uninstall_ok	u64
-    stats.tcp_ulp_swap_churn.reinstall_ok	u64
-    stats.tcp_ulp_swap_churn.install_failed	u64
   stats.blob_mutator	object
     stats.blob_mutator.fills	u64
     stats.blob_mutator.havoc_ops	u64
@@ -922,32 +387,8 @@ stats	object
     stats.blob_ab_mode.cmpdict_new_edges	u64
     stats.blob_ab_mode.cmpdict_hit_cmp	u64
     stats.blob_ab_mode.cmpdict_sum_cmp	u64
-  stats.msg_zerocopy_churn	object
-    stats.msg_zerocopy_churn.runs	u64
-    stats.msg_zerocopy_churn.setup_failed	u64
-    stats.msg_zerocopy_churn.sends_ok	u64
-    stats.msg_zerocopy_churn.sends_efault	u64
-    stats.msg_zerocopy_churn.sends_eagain	u64
-    stats.msg_zerocopy_churn.errqueue_drained	u64
-    stats.msg_zerocopy_churn.errqueue_empty	u64
-    stats.msg_zerocopy_churn.munmap_ok	u64
-    stats.msg_zerocopy_churn.send_after_munmap_caught	u64
-    stats.msg_zerocopy_churn.sndzc_disable_ok	u64
   stats.setsockopt_pairing	object
     stats.setsockopt_pairing.paired_emitted	u64
-  stats.sched_cycler	object
-    stats.sched_cycler.runs	u64
-    stats.sched_cycler.eperm	u64
-  stats.userns_fuzzer	object
-    stats.userns_fuzzer.runs	u64
-    stats.userns_fuzzer.inner_crashed	u64
-    stats.userns_fuzzer.unsupported	u64
-    stats.userns_fuzzer.root_private_failed	u64
-  stats.ipcns_ucount_exhaustion	object
-    stats.ipcns_ucount_exhaustion.runs	u64
-    stats.ipcns_ucount_exhaustion.inner_crashed	u64
-    stats.ipcns_ucount_exhaustion.limit_install_failed	u64
-    stats.ipcns_ucount_exhaustion.inner_timeout	u64
   stats.userns_bootstrap	object
     stats.userns_bootstrap.runs	u64
     stats.userns_bootstrap.ran	u64
@@ -960,83 +401,6 @@ stats	object
     stats.userns_bootstrap.target_unshare	u64
     stats.userns_bootstrap.fork_fail	u64
     stats.userns_bootstrap.signalled	u64
-  stats.barrier_racer	object
-    stats.barrier_racer.runs	u64
-    stats.barrier_racer.inner_crashed	u64
-  stats.perf_event_chains	object
-    stats.perf_event_chains.runs	u64
-    stats.perf_event_chains.groups_created	u64
-    stats.perf_event_chains.ioctl_ops	u64
-  stats.bpf_lifecycle	object
-    stats.bpf_lifecycle.runs	u64
-    stats.bpf_lifecycle.progs_loaded	u64
-    stats.bpf_lifecycle.attached	u64
-    stats.bpf_lifecycle.triggered	u64
-    stats.bpf_lifecycle.verifier_rejects	u64
-    stats.bpf_lifecycle.attach_failed	u64
-    stats.bpf_lifecycle.eperm	u64
-  stats.signal_storm	object
-    stats.signal_storm.runs	u64
-    stats.signal_storm.kill	u64
-    stats.signal_storm.probe	u64
-    stats.signal_storm.sigqueue	u64
-    stats.signal_storm.no_targets	u64
-  stats.pipe_thrash	object
-    stats.pipe_thrash.runs	u64
-    stats.pipe_thrash.pipes	u64
-    stats.pipe_thrash.socketpairs	u64
-    stats.pipe_thrash.alloc_failed	u64
-  stats.fork_storm	object
-    stats.fork_storm.runs	u64
-    stats.fork_storm.forks	u64
-    stats.fork_storm.failed	u64
-    stats.fork_storm.nested	u64
-    stats.fork_storm.reaped_signal	u64
-  stats.cpu_hotplug_rider	object
-    stats.cpu_hotplug_rider.runs	u64
-    stats.cpu_hotplug_rider.affinity_calls	u64
-    stats.cpu_hotplug_rider.sysfs_writes	u64
-    stats.cpu_hotplug_rider.open_eperm	u64
-    stats.cpu_hotplug_rider.write_eperm	u64
-    stats.cpu_hotplug_rider.write_ok	u64
-    stats.cpu_hotplug_rider.actual_offlines	u64
-  stats.pidfd_storm	object
-    stats.pidfd_storm.runs	u64
-    stats.pidfd_storm.signals	u64
-    stats.pidfd_storm.getfds	u64
-    stats.pidfd_storm.failed	u64
-    stats.pidfd_storm.iters	u64
-    stats.pidfd_storm.reap_slow	u64
-    stats.pidfd_storm.reap_zombies	u64
-  stats.process_mrelease_race	object
-    stats.process_mrelease_race.runs	u64
-    stats.process_mrelease_race.kill_rounds	u64
-    stats.process_mrelease_race.success	u64
-    stats.process_mrelease_race.esrch	u64
-    stats.process_mrelease_race.einval	u64
-    stats.process_mrelease_race.eintr	u64
-    stats.process_mrelease_race.other_fail	u64
-    stats.process_mrelease_race.reap_slow	u64
-    stats.process_mrelease_race.racer_unreported	u64
-    stats.process_mrelease_race.control_esrch	u64
-    stats.process_mrelease_race.control_einval	u64
-    stats.process_mrelease_race.control_unexpected_success	u64
-  stats.madvise_cycler	object
-    stats.madvise_cycler.runs	u64
-    stats.madvise_cycler.calls	u64
-    stats.madvise_cycler.failed	u64
-  stats.keyring_spam	object
-    stats.keyring_spam.runs	u64
-    stats.keyring_spam.calls	u64
-    stats.keyring_spam.failed	u64
-  stats.vdso_mremap_race	object
-    stats.vdso_mremap_race.runs	u64
-    stats.vdso_mremap_race.mutations	u64
-    stats.vdso_mremap_race.helper_segvs	u64
-  stats.flock_thrash	object
-    stats.flock_thrash.runs	u64
-    stats.flock_thrash.locks	u64
-    stats.flock_thrash.failed	u64
   stats.xattr_thrash	object
     stats.xattr_thrash.runs	u64
     stats.xattr_thrash.set	u64
@@ -1048,31 +412,6 @@ stats	object
     stats.epoll_volatility.runs	u64
     stats.epoll_volatility.ctl_calls	u64
     stats.epoll_volatility.failed	u64
-  stats.epoll_nest_race	object
-    stats.epoll_nest_race.runs	u64
-    stats.epoll_nest_race.ctl_calls	u64
-    stats.epoll_nest_race.racer_laps	u64
-    stats.epoll_nest_race.failed	u64
-  stats.cgroup_churn	object
-    stats.cgroup_churn.runs	u64
-    stats.cgroup_churn.mkdirs	u64
-    stats.cgroup_churn.rmdirs	u64
-    stats.cgroup_churn.failed	u64
-    stats.cgroup_churn.psi_race_runs	u64
-    stats.cgroup_churn.psi_race_writes	u64
-    stats.cgroup_churn.psi_race_failed	u64
-  stats.mount_churn	object
-    stats.mount_churn.runs	u64
-    stats.mount_churn.mounts	u64
-    stats.mount_churn.umounts	u64
-    stats.mount_churn.failed	u64
-  stats.umount_race	object
-    stats.umount_race.runs	u64
-    stats.umount_race.picks	u64
-    stats.umount_race.forks	u64
-    stats.umount_race.umounts	u64
-    stats.umount_race.umount_failed	u64
-    stats.umount_race.setup_failed	u64
   stats.statmount_idmap	object
     stats.statmount_idmap.runs	u64
     stats.statmount_idmap.setup_failed	u64
@@ -1085,19 +424,6 @@ stats	object
     stats.statmount_idmap.statmount_call	u64
     stats.statmount_idmap.statmount_ok	u64
     stats.statmount_idmap.statmount_overflow	u64
-  stats.uffd_churn	object
-    stats.uffd_churn.runs	u64
-    stats.uffd_churn.registers	u64
-    stats.uffd_churn.unregisters	u64
-    stats.uffd_churn.failed	u64
-  stats.tls_rotate	object
-    stats.tls_rotate.runs	u64
-    stats.tls_rotate.setup_failed	u64
-    stats.tls_rotate.ulp_failed	u64
-    stats.tls_rotate.ulp_asymmetric	u64
-    stats.tls_rotate.installs	u64
-    stats.tls_rotate.rekeys_ok	u64
-    stats.tls_rotate.rekeys_rejected	u64
   stats.netns_teardown	object
     stats.netns_teardown.runs	u64
     stats.netns_teardown.setup_failed	u64
@@ -1116,12 +442,6 @@ stats	object
     stats.cred_transition.op_failed	u64
     stats.cred_transition.keyctl_ok	u64
     stats.cred_transition.keyctl_failed	u64
-  stats.deep_path_nesting	object
-    stats.deep_path_nesting.runs	u64
-    stats.deep_path_nesting.setup_failed	u64
-    stats.deep_path_nesting.max_depth_reached	u64
-    stats.deep_path_nesting.reader_ok	u64
-    stats.deep_path_nesting.reader_failed	u64
   stats.espintcp_coalesce_churn	object
     stats.espintcp_coalesce_churn.runs	u64
     stats.espintcp_coalesce_churn.setup_failed	u64
@@ -1140,243 +460,12 @@ stats	object
     stats.netns_mountns_setup.loopback_ok	u64
     stats.netns_mountns_setup.socket_ok	u64
     stats.netns_mountns_setup.completed_ok	u64
-  stats.socket_family_chain	object
-    stats.socket_family_chain.runs	u64
-    stats.socket_family_chain.completed	u64
-    stats.socket_family_chain.failed	u64
-    stats.socket_family_chain.authencesn_attempts	u64
-    stats.socket_family_chain.splice_attempts	u64
-  stats.tcp_ao_rotate	object
-    stats.tcp_ao_rotate.runs	u64
-    stats.tcp_ao_rotate.setup_failed	u64
-    stats.tcp_ao_rotate.addkey_rejected	u64
-    stats.tcp_ao_rotate.keys_added	u64
-    stats.tcp_ao_rotate.connect_failed	u64
-    stats.tcp_ao_rotate.connected	u64
-    stats.tcp_ao_rotate.packets_sent	u64
-    stats.tcp_ao_rotate.key_rotations	u64
-    stats.tcp_ao_rotate.info_rejected	u64
-    stats.tcp_ao_rotate.key_dels	u64
-    stats.tcp_ao_rotate.delkey_rejected	u64
-    stats.tcp_ao_rotate.cycles	u64
-    stats.tcp_ao_rotate.reconnect_attempted	u64
-    stats.tcp_ao_rotate.reconnect_setup_failed	u64
-    stats.tcp_ao_rotate.reconnect_failed	u64
-    stats.tcp_ao_rotate.reconnect_ok	u64
-    stats.tcp_ao_rotate.reconnect_probed	u64
-    stats.tcp_ao_rotate.stale_key_probed	u64
-    stats.tcp_ao_rotate.vrf_enslave_attempted	u64
-    stats.tcp_ao_rotate.vrf_enslave_setup_failed	u64
-    stats.tcp_ao_rotate.vrf_detach_raced	u64
-    stats.tcp_ao_rotate.vrf_connect_issued	u64
-    stats.tcp_ao_rotate.vrf_connect_ok	u64
-    stats.tcp_ao_rotate.vrf_accept_timeout	u64
-    stats.tcp_ao_rotate.vrf_ao_unavailable	u64
-    stats.tcp_ao_rotate.vrf_detach_landed	u64
-    stats.tcp_ao_rotate.vrf_detach_before_connect	u64
-    stats.tcp_ao_rotate.vrf_detach_after_connect	u64
-    stats.tcp_ao_rotate.vrf_detach_tied	u64
-    stats.tcp_ao_rotate.vrf_pipe_unavailable	u64
-  stats.tcp_md5_listener_race	object
-    stats.tcp_md5_listener_race.runs	u64
-    stats.tcp_md5_listener_race.setup_failed	u64
-    stats.tcp_md5_listener_race.md5_set_ok	u64
-    stats.tcp_md5_listener_race.md5_set_failed	u64
-    stats.tcp_md5_listener_race.connect_ok	u64
-    stats.tcp_md5_listener_race.rst_sent_ok	u64
-    stats.tcp_md5_listener_race.completed_ok	u64
-  stats.inet_listener_rehash_race	object
-    stats.inet_listener_rehash_race.runs	u64
-    stats.inet_listener_rehash_race.setup_failed	u64
-    stats.inet_listener_rehash_race.iter	u64
-    stats.inet_listener_rehash_race.fork_failed	u64
-    stats.inet_listener_rehash_race.spawn_quad_ok	u64
-    stats.inet_listener_rehash_race.twseed_listener_ok	u64
-    stats.inet_listener_rehash_race.twseed_ok	u64
-    stats.inet_listener_rehash_race.churn_v4_cycles	u64
-    stats.inet_listener_rehash_race.churn_v6_cycles	u64
-    stats.inet_listener_rehash_race.syn_sent	u64
-    stats.inet_listener_rehash_race.rehash_cycles	u64
-    stats.inet_listener_rehash_race.sibling_crashed	u64
-    stats.inet_listener_rehash_race.sibling_reaped_ok	u64
-    stats.inet_listener_rehash_race.completed_ok	u64
-    stats.inet_listener_rehash_race.addrform_returned_zero	u64
-    stats.inet_listener_rehash_race.addrform_child_accepted	u64
-    stats.inet_listener_rehash_race.addrform_setup_failed	u64
-    stats.inet_listener_rehash_race.addrform_grace_forced	u64
   stats.ipv6_pmtu_race	object
     stats.ipv6_pmtu_race.runs	u64
     stats.ipv6_pmtu_race.setup_failed	u64
     stats.ipv6_pmtu_race.ptb_sent_ok	u64
     stats.ipv6_pmtu_race.dellink_ok	u64
     stats.ipv6_pmtu_race.completed_ok	u64
-  stats.fnhe_pmtu_mtu_race	object
-    stats.fnhe_pmtu_mtu_race.runs	u64
-    stats.fnhe_pmtu_mtu_race.setup_failed	u64
-    stats.fnhe_pmtu_mtu_race.injections_sent	u64
-    stats.fnhe_pmtu_mtu_race.exceptions_installed	u64
-    stats.fnhe_pmtu_mtu_race.inject_failed	u64
-    stats.fnhe_pmtu_mtu_race.evictions_observed	u64
-    stats.fnhe_pmtu_mtu_race.observed_entries	u64
-    stats.fnhe_pmtu_mtu_race.mtu_flaps	u64
-    stats.fnhe_pmtu_mtu_race.negative_ctrl_runs	u64
-    stats.fnhe_pmtu_mtu_race.completed_ok	u64
-  stats.vrf_fib_churn	object
-    stats.vrf_fib_churn.runs	u64
-    stats.vrf_fib_churn.setup_failed	u64
-    stats.vrf_fib_churn.link_ok	u64
-    stats.vrf_fib_churn.addr_ok	u64
-    stats.vrf_fib_churn.up_ok	u64
-    stats.vrf_fib_churn.rule_added	u64
-    stats.vrf_fib_churn.bound	u64
-    stats.vrf_fib_churn.sendto_ok	u64
-    stats.vrf_fib_churn.rule2_added	u64
-    stats.vrf_fib_churn.rule_removed	u64
-    stats.vrf_fib_churn.link_removed	u64
-  stats.multipath_linkdown_rebalance	object
-    stats.multipath_linkdown_rebalance.runs	u64
-    stats.multipath_linkdown_rebalance.setup_failed	u64
-    stats.multipath_linkdown_rebalance.v4_runs	u64
-    stats.multipath_linkdown_rebalance.v6_runs	u64
-    stats.multipath_linkdown_rebalance.legs_ok	u64
-    stats.multipath_linkdown_rebalance.route_ok	u64
-    stats.multipath_linkdown_rebalance.rebalance_triggers	u64
-    stats.multipath_linkdown_rebalance.flip_attempts	u64
-    stats.multipath_linkdown_rebalance.flip_writes_ok	u64
-    stats.multipath_linkdown_rebalance.completed_ok	u64
-    stats.multipath_linkdown_rebalance.partition_invalid	u64
-  stats.ip6_udp_cork_splice	object
-    stats.ip6_udp_cork_splice.runs	u64
-    stats.ip6_udp_cork_splice.setup_failed	u64
-    stats.ip6_udp_cork_splice.mtu_set	u64
-    stats.ip6_udp_cork_splice.p1_ok	u64
-    stats.ip6_udp_cork_splice.p1_rejected	u64
-    stats.ip6_udp_cork_splice.p2_ok	u64
-  stats.ip4_udp_cork_splice	object
-    stats.ip4_udp_cork_splice.runs	u64
-    stats.ip4_udp_cork_splice.setup_failed	u64
-    stats.ip4_udp_cork_splice.mtu_set	u64
-    stats.ip4_udp_cork_splice.p1_ok	u64
-    stats.ip4_udp_cork_splice.p1_rejected	u64
-    stats.ip4_udp_cork_splice.p2_ok	u64
-  stats.nexthop_replace_churn	object
-    stats.nexthop_replace_churn.runs	u64
-    stats.nexthop_replace_churn.setup_failed	u64
-    stats.nexthop_replace_churn.nh_setup_ok	u64
-    stats.nexthop_replace_churn.sentinel_ok	u64
-    stats.nexthop_replace_churn.replace_single_ok	u64
-    stats.nexthop_replace_churn.replace_group_ok	u64
-    stats.nexthop_replace_churn.route_add_ok	u64
-    stats.nexthop_replace_churn.route_del_ok	u64
-    stats.nexthop_replace_churn.teardown_ok	u64
-  stats.mpls_route_churn	object
-    stats.mpls_route_churn.runs	u64
-    stats.mpls_route_churn.label_install_ok	u64
-    stats.mpls_route_churn.multipath_install_ok	u64
-    stats.mpls_route_churn.iptunnel_install_ok	u64
-    stats.mpls_route_churn.delete_ok	u64
-    stats.mpls_route_churn.ns_unsupported	u64
-  stats.tls_ulp_churn	object
-    stats.tls_ulp_churn.runs	u64
-    stats.tls_ulp_churn.setup_failed	u64
-    stats.tls_ulp_churn.ulp_install_ok	u64
-    stats.tls_ulp_churn.tx_install_ok	u64
-    stats.tls_ulp_churn.send_ok	u64
-    stats.tls_ulp_churn.splice_ok	u64
-    stats.tls_ulp_churn.rekey_ok	u64
-    stats.tls_ulp_churn.recv_ok	u64
-  stats.ip6gre_bond_lapb_stack	object
-    stats.ip6gre_bond_lapb_stack.runs	u64
-    stats.ip6gre_bond_lapb_stack.setup_failed	u64
-    stats.ip6gre_bond_lapb_stack.flag_toggles	u64
-  stats.vxlan_encap_churn	object
-    stats.vxlan_encap_churn.runs	u64
-    stats.vxlan_encap_churn.setup_failed	u64
-    stats.vxlan_encap_churn.link_create_ok	u64
-    stats.vxlan_encap_churn.fdb_add_ok	u64
-    stats.vxlan_encap_churn.link_up_ok	u64
-    stats.vxlan_encap_churn.packet_sent_ok	u64
-    stats.vxlan_encap_churn.link_del_ok	u64
-    stats.vxlan_encap_churn.fdb_flush_ok	u64
-    stats.vxlan_encap_churn.vxlan_neverup_changelink_arm	u64
-  stats.ip_gre_churn	object
-    stats.ip_gre_churn.runs	u64
-    stats.ip_gre_churn.setup_failed	u64
-    stats.ip_gre_churn.link_create_ok	u64
-    stats.ip_gre_churn.link_up_ok	u64
-    stats.ip_gre_churn.packet_sent_ok	u64
-    stats.ip_gre_churn.link_del_ok	u64
-    stats.ip_gre_churn.oracle_runs	u64
-    stats.ip_gre_churn.oflags_corrupted	u64
-  stats.ovs_tunnel_vport_churn	object
-    stats.ovs_tunnel_vport_churn.runs	u64
-    stats.ovs_tunnel_vport_churn.setup_failed	u64
-    stats.ovs_tunnel_vport_churn.create_ok	u64
-    stats.ovs_tunnel_vport_churn.delete_ok	u64
-    stats.ovs_tunnel_vport_churn.race_dellink_attempted	u64
-  stats.netlink_monitor_race	object
-    stats.netlink_monitor_race.runs	u64
-    stats.netlink_monitor_race.setup_failed	u64
-    stats.netlink_monitor_race.mon_open	u64
-    stats.netlink_monitor_race.mut_open	u64
-    stats.netlink_monitor_race.mut_op_ok	u64
-    stats.netlink_monitor_race.recv_drained	u64
-    stats.netlink_monitor_race.group_drop	u64
-    stats.netlink_monitor_race.group_add	u64
-  stats.tipc_link_churn	object
-    stats.tipc_link_churn.runs	u64
-    stats.tipc_link_churn.setup_failed	u64
-    stats.tipc_link_churn.bearer_enable_ok	u64
-    stats.tipc_link_churn.sock_rdm_ok	u64
-    stats.tipc_link_churn.topsrv_connect_ok	u64
-    stats.tipc_link_churn.sub_ports_sent	u64
-    stats.tipc_link_churn.publish_ok	u64
-    stats.tipc_link_churn.bearer_disable_ok	u64
-  stats.igmp_mld_source_churn	object
-    stats.igmp_mld_source_churn.runs	u64
-    stats.igmp_mld_source_churn.setup_failed	u64
-    stats.igmp_mld_source_churn.join_ok	u64
-    stats.igmp_mld_source_churn.leave_ok	u64
-    stats.igmp_mld_source_churn.block_ok	u64
-    stats.igmp_mld_source_churn.msfilter_ok	u64
-    stats.igmp_mld_source_churn.drop_ok	u64
-    stats.igmp_mld_source_churn.send_ok	u64
-    stats.igmp_mld_source_churn.msfilter_get_ok	u64
-    stats.igmp_mld_source_churn.msfilter_get_overrun	u64
-    stats.igmp_mld_source_churn.msfilter_get_deep_overrun	u64
-    stats.igmp_mld_source_churn.msfilter_get_rejected	u64
-    stats.igmp_mld_source_churn.msfilter41_get_ok	u64
-    stats.igmp_mld_source_churn.msfilter41_get_overrun	u64
-    stats.igmp_mld_source_churn.msfilter41_get_rejected	u64
-    stats.igmp_mld_source_churn.igmp_max_msf_raise_fail	u64
-    stats.igmp_mld_source_churn.msfilter_enobufs_v4	u64
-    stats.igmp_mld_source_churn.msfilter_enobufs_v6	u64
-    stats.igmp_mld_source_churn.add_source_enobufs	u64
-    stats.igmp_mld_source_churn.arm_entered_race_v4_a	u64
-    stats.igmp_mld_source_churn.arm_entered_race_v4_b	u64
-    stats.igmp_mld_source_churn.arm_entered_race_v4_c	u64
-    stats.igmp_mld_source_churn.arm_entered_race_v4_d	u64
-    stats.igmp_mld_source_churn.arm_entered_race_v4_e	u64
-    stats.igmp_mld_source_churn.arm_entered_race_v6_a	u64
-    stats.igmp_mld_source_churn.arm_entered_race_v6_b	u64
-    stats.igmp_mld_source_churn.arm_entered_race_v6_c	u64
-    stats.igmp_mld_source_churn.arm_entered_race_v6_d	u64
-  stats.bridge_vlan_churn	object
-    stats.bridge_vlan_churn.runs	u64
-    stats.bridge_vlan_churn.setup_failed	u64
-    stats.bridge_vlan_churn.bridge_create_ok	u64
-    stats.bridge_vlan_churn.veth_create_ok	u64
-    stats.bridge_vlan_churn.vlan_add_ok	u64
-    stats.bridge_vlan_churn.vlan_del_ok	u64
-    stats.bridge_vlan_churn.tunnel_add_ok	u64
-    stats.bridge_vlan_churn.mst_set_ok	u64
-    stats.bridge_vlan_churn.raw_send_ok	u64
-  stats.vlan_filter_churn	object
-    stats.vlan_filter_churn.runs	u64
-    stats.vlan_filter_churn.setup_failed	u64
-    stats.vlan_filter_churn.veth_create_ok	u64
-    stats.vlan_filter_churn.vlan_add_ok	u64
-    stats.vlan_filter_churn.vlan_del_ok	u64
   stats.pkt_builder	object
     stats.pkt_builder.runs	u64
     stats.pkt_builder.setup_failed	u64
@@ -1399,30 +488,6 @@ stats	object
     stats.pkt_builder.recipe_seg6_srh_udp	u64
     stats.pkt_builder.recipe_esp_ip4	u64
     stats.pkt_builder.recipe_vlan_ip4	u64
-  stats.pci_bind	object
-    stats.pci_bind.runs	u64
-    stats.pci_bind.drivers_available	u64
-    stats.pci_bind.no_devices	u64
-    stats.pci_bind.unbind_ok	u64
-    stats.pci_bind.unbind_enodev	u64
-    stats.pci_bind.unbind_failed	u64
-    stats.pci_bind.bind_ok	u64
-    stats.pci_bind.bind_enodev	u64
-    stats.pci_bind.bind_failed	u64
-  stats.ublk_lifecycle	object
-    stats.ublk_lifecycle.iters	u64
-    stats.ublk_lifecycle.eperm	u64
-    stats.ublk_lifecycle.add_ok	u64
-    stats.ublk_lifecycle.fetch_ok	u64
-    stats.ublk_lifecycle.del_ok	u64
-    stats.ublk_lifecycle.race_observed	u64
-  stats.handshake_req_abort	object
-    stats.handshake_req_abort.runs	u64
-    stats.handshake_req_abort.setup_failed	u64
-    stats.handshake_req_abort.accept_ok	u64
-    stats.handshake_req_abort.done_ok	u64
-    stats.handshake_req_abort.abort_ok	u64
-    stats.handshake_req_abort.orphan_close	u64
   stats.af_unix_scm_rights_gc	object
     stats.af_unix_scm_rights_gc.runs	u64
     stats.af_unix_scm_rights_gc.setup_failed	u64
@@ -1437,95 +502,6 @@ stats	object
     stats.af_unix_scm_rights_gc.sibling_reaped_ok	u64
     stats.af_unix_scm_rights_gc.sibling_crashed	u64
     stats.af_unix_scm_rights_gc.unix_gc_two_scc_arm	u64
-  stats.af_unix_peek_race	object
-    stats.af_unix_peek_race.runs	u64
-    stats.af_unix_peek_race.setup_failed	u64
-    stats.af_unix_peek_race.pair_open_ok	u64
-    stats.af_unix_peek_race.peek_off_armed	u64
-    stats.af_unix_peek_race.peek_off_rejected	u64
-    stats.af_unix_peek_race.send_ok	u64
-    stats.af_unix_peek_race.shutdown_ok	u64
-    stats.af_unix_peek_race.pair_rebuilds	u64
-    stats.af_unix_peek_race.sibling_spawn_ok	u64
-    stats.af_unix_peek_race.sibling_spawn_failed	u64
-    stats.af_unix_peek_race.sibling_reaped_ok	u64
-    stats.af_unix_peek_race.sibling_crashed	u64
-  stats.sysv_shm_orphan_race	object
-    stats.sysv_shm_orphan_race.runs	u64
-    stats.sysv_shm_orphan_race.setup_failed	u64
-    stats.sysv_shm_orphan_race.shmget_ok	u64
-    stats.sysv_shm_orphan_race.shmget_failed	u64
-    stats.sysv_shm_orphan_race.attach_ok	u64
-    stats.sysv_shm_orphan_race.attach_failed	u64
-    stats.sysv_shm_orphan_race.rmid_ok	u64
-    stats.sysv_shm_orphan_race.rmid_failed	u64
-    stats.sysv_shm_orphan_race.sibling_spawn_ok	u64
-    stats.sysv_shm_orphan_race.sibling_spawn_failed	u64
-    stats.sysv_shm_orphan_race.sibling_reaped_ok	u64
-    stats.sysv_shm_orphan_race.sibling_crashed	u64
-  stats.map_shared_stress	object
-    stats.map_shared_stress.runs	u64
-    stats.map_shared_stress.setup_failed	u64
-    stats.map_shared_stress.writeback_ok	u64
-    stats.map_shared_stress.dontfork_ok	u64
-    stats.map_shared_stress.append_ok	u64
-  stats.qrtr_bind_race	object
-    stats.qrtr_bind_race.runs	u64
-    stats.qrtr_bind_race.setup_failed	u64
-    stats.qrtr_bind_race.iter	u64
-    stats.qrtr_bind_race.fork_failed	u64
-    stats.qrtr_bind_race.spawn_pair_ok	u64
-    stats.qrtr_bind_race.sibling_reaped_ok	u64
-    stats.qrtr_bind_race.sibling_crashed	u64
-    stats.qrtr_bind_race.setup_fail	u64
-  stats.pfkey_spd_walk	object
-    stats.pfkey_spd_walk.runs	u64
-    stats.pfkey_spd_walk.setup_failed	u64
-    stats.pfkey_spd_walk.iter	u64
-    stats.pfkey_spd_walk.fork_failed	u64
-    stats.pfkey_spd_walk.spawn_pair_ok	u64
-    stats.pfkey_spd_walk.sibling_reaped_ok	u64
-    stats.pfkey_spd_walk.sibling_crashed	u64
-    stats.pfkey_spd_walk.spdget_resolved	u64
-    stats.pfkey_spd_walk.spdget_missed	u64
-  stats.l2tp_ifname_race	object
-    stats.l2tp_ifname_race.runs	u64
-    stats.l2tp_ifname_race.setup_failed	u64
-    stats.l2tp_ifname_race.iter	u64
-    stats.l2tp_ifname_race.tunnel_ok	u64
-    stats.l2tp_ifname_race.tunnel_fail	u64
-    stats.l2tp_ifname_race.fork_failed	u64
-    stats.l2tp_ifname_race.spawn_pair_ok	u64
-    stats.l2tp_ifname_race.sibling_reaped_ok	u64
-    stats.l2tp_ifname_race.sibling_crashed	u64
-    stats.l2tp_ifname_race.debugfs_read_done	u64
-  stats.bpf_cgroup_attach	object
-    stats.bpf_cgroup_attach.runs	u64
-    stats.bpf_cgroup_attach.setup_failed	u64
-    stats.bpf_cgroup_attach.prog_loaded	u64
-    stats.bpf_cgroup_attach.attached	u64
-    stats.bpf_cgroup_attach.attach_rejected	u64
-    stats.bpf_cgroup_attach.packets_sent	u64
-    stats.bpf_cgroup_attach.detached	u64
-    stats.bpf_cgroup_attach.post_detach_sent	u64
-    stats.bpf_cgroup_attach.setsockopt_hook_reach	u64
-    stats.bpf_cgroup_attach.getsockopt_hook_reach	u64
-    stats.bpf_cgroup_attach.setsockopt_post_detach_reach	u64
-    stats.bpf_cgroup_attach.getsockopt_post_detach_reach	u64
-    stats.bpf_cgroup_attach.setsockopt_probe_bursts	u64
-    stats.bpf_cgroup_attach.getsockopt_probe_bursts	u64
-    stats.bpf_cgroup_attach.setsockopt_probe_calls	u64
-    stats.bpf_cgroup_attach.getsockopt_probe_calls	u64
-  stats.iouring_flood	object
-    stats.iouring_flood.runs	u64
-    stats.iouring_flood.submits	u64
-    stats.iouring_flood.reaped	u64
-    stats.iouring_flood.failed	u64
-  stats.close_racer	object
-    stats.close_racer.runs	u64
-    stats.close_racer.pairs	u64
-    stats.close_racer.failed	u64
-    stats.close_racer.thread_spawn_fail	u64
   stats.refcount_audit	object
     stats.refcount_audit.runs	u64
     stats.refcount_audit.fd_anomalies	u64
@@ -1540,38 +516,6 @@ stats	object
     stats.iouring_send_zc_churn.unregister_race_ok	u64
     stats.iouring_send_zc_churn.update_race_ok	u64
     stats.iouring_send_zc_churn.cqe_drained	u64
-  stats.iscsi_target_probe	object
-    stats.iscsi_target_probe.runs	u64
-    stats.iscsi_target_probe.setup_failed	u64
-    stats.iscsi_target_probe.no_target	u64
-    stats.iscsi_target_probe.connected	u64
-    stats.iscsi_target_probe.login_sent	u64
-    stats.iscsi_target_probe.login_replies	u64
-    stats.iscsi_target_probe.scsi_cmd_sent	u64
-    stats.iscsi_target_probe.bytes_out	u64
-    stats.iscsi_target_probe.bytes_in	u64
-    stats.iscsi_target_probe.length_decoupled	u64
-  stats.iscsi_login_walker	object
-    stats.iscsi_login_walker.runs	u64
-    stats.iscsi_login_walker.setup_failed	u64
-    stats.iscsi_login_walker.no_target	u64
-    stats.iscsi_login_walker.connected	u64
-    stats.iscsi_login_walker.state_security_sent	u64
-    stats.iscsi_login_walker.state_op_neg_sent	u64
-    stats.iscsi_login_walker.login_response_ok	u64
-    stats.iscsi_login_walker.login_rejected	u64
-    stats.iscsi_login_walker.ffp_reached	u64
-    stats.iscsi_login_walker.ffp_iters	u64
-    stats.iscsi_login_walker.ffp_pdus	u64
-    stats.iscsi_login_walker.chaos_runs	u64
-    stats.iscsi_login_walker.chaos_pdus	u64
-    stats.iscsi_login_walker.bytes_out	u64
-    stats.iscsi_login_walker.bytes_in	u64
-  stats.ipv6_ndisc_proxy	object
-    stats.ipv6_ndisc_proxy.runs	u64
-    stats.ipv6_ndisc_proxy.ns_sent_ok	u64
-    stats.ipv6_ndisc_proxy.setup_failed	u64
-    stats.ipv6_ndisc_proxy.proxy_enable_ok	u64
   stats.rxrpc_key_install	object
     stats.rxrpc_key_install.runs	u64
     stats.rxrpc_key_install.calls	u64
@@ -1579,44 +523,6 @@ stats	object
     stats.rxrpc_key_install.quota_hits	u64
     stats.rxrpc_key_install.unsupported	u64
     stats.rxrpc_key_install.xrxgk_accepted	u64
-  stats.af_alg_weak_cipher_probe	object
-    stats.af_alg_weak_cipher_probe.runs	u64
-    stats.af_alg_weak_cipher_probe.socket_failed	u64
-    stats.af_alg_weak_cipher_probe.total_bind_attempts	u64
-    stats.af_alg_weak_cipher_probe.total_bind_accepted	u64
-    stats.af_alg_weak_cipher_probe.weak_accepted_total	u64
-    stats.af_alg_weak_cipher_probe.setkey_accepted_total	u64
-    stats.af_alg_weak_cipher_probe.skcipher_weak_accepted	u64
-    stats.af_alg_weak_cipher_probe.aead_weak_accepted	u64
-    stats.af_alg_weak_cipher_probe.hash_weak_accepted	u64
-    stats.af_alg_weak_cipher_probe.strong_rejected	u64
-  stats.bridge_conntrack_churn	object
-    stats.bridge_conntrack_churn.runs	u64
-    stats.bridge_conntrack_churn.flushes	u64
-    stats.bridge_conntrack_churn.pkts_sent	u64
-    stats.bridge_conntrack_churn.pkts_conntracked	u64
-    stats.bridge_conntrack_churn.ct_timeout_obj_ok	u64
-    stats.bridge_conntrack_churn.ct_mangle_ok	u64
-  stats.bridge_ip6frag_refrag	object
-    stats.bridge_ip6frag_refrag.runs	u64
-    stats.bridge_ip6frag_refrag.pairs_sent	u64
-    stats.bridge_ip6frag_refrag.frames_sent	u64
-  stats.blkdev_lifecycle_race	object
-    stats.blkdev_lifecycle_race.runs	u64
-    stats.blkdev_lifecycle_race.setup_failed	u64
-    stats.blkdev_lifecycle_race.set_fd_ok	u64
-    stats.blkdev_lifecycle_race.clr_fd	u64
-    stats.blkdev_lifecycle_race.ebusy	u64
-    stats.blkdev_lifecycle_race.rescans	u64
-  stats.hfs_mount_fuzz	object
-    stats.hfs_mount_fuzz.runs	u64
-    stats.hfs_mount_fuzz.setup_failed	u64
-    stats.hfs_mount_fuzz.set_fd_ok	u64
-    stats.hfs_mount_fuzz.set_fd_busy	u64
-    stats.hfs_mount_fuzz.mount_ok	u64
-    stats.hfs_mount_fuzz.mount_failed	u64
-    stats.hfs_mount_fuzz.ns_unsupported	u64
-    stats.hfs_mount_fuzz.hfs_unsupported	u64
   stats.icmp_inject	object
     stats.icmp_inject.errors_injected	u64
     stats.icmp_inject.inject_failed	u64
@@ -1625,71 +531,6 @@ stats	object
     stats.icmp_inject.selftest_fail	u64
     stats.icmp_inject.init_failed	u64
     stats.icmp_inject.ns_unsupported	u64
-  stats.veth_asymmetric_xdp	object
-    stats.veth_asymmetric_xdp.iters	u64
-    stats.veth_asymmetric_xdp.eperm	u64
-    stats.veth_asymmetric_xdp.unsupported	u64
-    stats.veth_asymmetric_xdp.pair_ok	u64
-    stats.veth_asymmetric_xdp.xdp_attach_ok	u64
-    stats.veth_asymmetric_xdp.send_ok	u64
-  stats.ip6erspan_netns_migrate	object
-    stats.ip6erspan_netns_migrate.iters	u64
-    stats.ip6erspan_netns_migrate.eperm	u64
-    stats.ip6erspan_netns_migrate.unsupported	u64
-    stats.ip6erspan_netns_migrate.link_create_ok	u64
-    stats.ip6erspan_netns_migrate.netns_migrate_ok	u64
-    stats.ip6erspan_netns_migrate.changelink_ok	u64
-    stats.ip6erspan_netns_migrate.ip6erspan_unsupported_observed	u64
-    stats.ip6erspan_netns_migrate.changelink_unsupported_observed	u64
-  stats.netdev_netns_migrate	object
-    stats.netdev_netns_migrate.iters	u64
-    stats.netdev_netns_migrate.eperm	u64
-    stats.netdev_netns_migrate.unsupported	u64
-    stats.netdev_netns_migrate.pin_sock_ok	u64
-    stats.netdev_netns_migrate.link_create_ok	u64
-    stats.netdev_netns_migrate.migrate_ok	u64
-    stats.netdev_netns_migrate.migrate_rejected	u64
-    stats.netdev_netns_migrate.up_ok	u64
-    stats.netdev_netns_migrate.addr_ok	u64
-    stats.netdev_netns_migrate.unsupported_observed	u64
-    stats.netdev_netns_migrate.drive_unsupported_observed	u64
-  stats.flowtable_encap_vlan	object
-    stats.flowtable_encap_vlan.runs	u64
-    stats.flowtable_encap_vlan.setup_ok	u64
-    stats.flowtable_encap_vlan.setup_failed	u64
-    stats.flowtable_encap_vlan.offloaded_pkts	u64
-    stats.flowtable_encap_vlan.gso_sends	u64
-    stats.flowtable_encap_vlan.vlan_teardown_races	u64
-    stats.flowtable_encap_vlan.unsupported_latched	u64
-  stats.splice_protocols	object
-    stats.splice_protocols.runs	u64
-    stats.splice_protocols.setup_failed	u64
-    stats.splice_protocols.chain_ok	u64
-    stats.splice_protocols.in_bytes	u64
-    stats.splice_protocols.out_bytes	u64
-    stats.splice_protocols.udp_encap_attempted	u64
-    stats.splice_protocols.tcp_repair_attempted	u64
-    stats.splice_protocols.packet_ring_attempted	u64
-    stats.splice_protocols.alg_attempted	u64
-    stats.splice_protocols.rxrpc_attempted	u64
-  stats.wireguard_decrypt_flood	object
-    stats.wireguard_decrypt_flood.runs	u64
-    stats.wireguard_decrypt_flood.setup_failed	u64
-    stats.wireguard_decrypt_flood.packets_sent	u64
-    stats.wireguard_decrypt_flood.unsupported_latched	u64
-  stats.rtnl_vf_broadcast_getlink	object
-    stats.rtnl_vf_broadcast_getlink.runs	u64
-    stats.rtnl_vf_broadcast_getlink.setup_ok	u64
-    stats.rtnl_vf_broadcast_getlink.setup_failed	u64
-    stats.rtnl_vf_broadcast_getlink.getlink_ok	u64
-  stats.netconf_getdevconf_inetdev_teardown_race	object
-    stats.netconf_getdevconf_inetdev_teardown_race.runs	u64
-    stats.netconf_getdevconf_inetdev_teardown_race.setup_failed	u64
-    stats.netconf_getdevconf_inetdev_teardown_race.getconf_v4_ok	u64
-    stats.netconf_getdevconf_inetdev_teardown_race.getconf_v6_ok	u64
-    stats.netconf_getdevconf_inetdev_teardown_race.getconf_enodev	u64
-    stats.netconf_getdevconf_inetdev_teardown_race.dellink_ok	u64
-    stats.netconf_getdevconf_inetdev_teardown_race.completed_ok	u64
   stats.fdstress	object
     stats.fdstress.close_reopen	u64
     stats.fdstress.dup2_replace	u64
@@ -1711,176 +552,6 @@ stats	object
     stats.vsock_transport_churn.seq_eom_skipped	u64
     stats.vsock_transport_churn.vsock_reconnect_attempted	u64
     stats.vsock_transport_churn.vsock_reconnect_while_closing	u64
-  stats.psp_key_rotate	object
-    stats.psp_key_rotate.runs	u64
-    stats.psp_key_rotate.setup_failed	u64
-    stats.psp_key_rotate.netdev_create_ok	u64
-    stats.psp_key_rotate.family_resolve_ok	u64
-    stats.psp_key_rotate.dev_get_ok	u64
-    stats.psp_key_rotate.key_install_ok	u64
-    stats.psp_key_rotate.spi_set_ok	u64
-    stats.psp_key_rotate.send_ok	u64
-    stats.psp_key_rotate.rotate_ok	u64
-    stats.psp_key_rotate.spi_switch_ok	u64
-    stats.psp_key_rotate.shutdown_ok	u64
-    stats.psp_key_rotate.devlink_port_churn_runs	u64
-    stats.psp_key_rotate.devlink_port_churn_port_add_ok	u64
-    stats.psp_key_rotate.devlink_port_churn_port_del_ok	u64
-    stats.psp_key_rotate.devlink_port_churn_vf_spawn_ok	u64
-    stats.psp_key_rotate.devlink_port_churn_unsupported_latched	u64
-  stats.afxdp_churn	object
-    stats.afxdp_churn.runs	u64
-    stats.afxdp_churn.runs_stubbed	u64
-    stats.afxdp_churn.setup_failed	u64
-    stats.afxdp_churn.setup_failed_unsupported	u64
-    stats.afxdp_churn.umem_reg_ok	u64
-    stats.afxdp_churn.rings_setup_ok	u64
-    stats.afxdp_churn.prog_load_ok	u64
-    stats.afxdp_churn.map_create_ok	u64
-    stats.afxdp_churn.map_update_ok	u64
-    stats.afxdp_churn.bind_ok	u64
-    stats.afxdp_churn.link_attach_ok	u64
-    stats.afxdp_churn.netlink_attach_ok	u64
-    stats.afxdp_churn.attach_failed	u64
-    stats.afxdp_churn.send_ok	u64
-    stats.afxdp_churn.recv_ok	u64
-    stats.afxdp_churn.map_delete_ok	u64
-    stats.afxdp_churn.munmap_race_ok	u64
-    stats.afxdp_churn.xsg_iters	u64
-    stats.afxdp_churn.tx_metadata_iters	u64
-    stats.afxdp_churn.tun_bind_iters	u64
-    stats.afxdp_churn.tunnel_bind_iters	u64
-    stats.afxdp_churn.bind_failed	u64
-    stats.afxdp_churn.xsg_bind_failed	u64
-    stats.afxdp_churn.tx_md_bind_failed	u64
-    stats.afxdp_churn.tailroom_iters	u64
-    stats.afxdp_churn.arm_entered_bind	u64
-    stats.afxdp_churn.arm_effective_bind	u64
-    stats.afxdp_churn.setup_failed_cap_denied	u64
-  stats.kvm	object
-    stats.kvm.vcpu_ioctls_dispatched	u64
-    stats.kvm.vm_ioctls_dispatched	u64
-  stats.kvm_run_churn	object
-    stats.kvm_run_churn.invocations	u64
-    stats.kvm_run_churn.exit_io	u64
-    stats.kvm_run_churn.exit_mmio	u64
-    stats.kvm_run_churn.exit_hlt	u64
-    stats.kvm_run_churn.exit_shutdown	u64
-    stats.kvm_run_churn.exit_fail_entry	u64
-    stats.kvm_run_churn.exit_internal_error	u64
-    stats.kvm_run_churn.exit_intr	u64
-    stats.kvm_run_churn.exit_other	u64
-    stats.kvm_run_churn.errors	u64
-    stats.kvm_run_churn.gpc_memslot_race_runs	u64
-    stats.kvm_run_churn.gpc_memslot_race_deletes	u64
-    stats.kvm_run_churn.gpc_memslot_race_unsupported	u64
-  stats.kvm_reclaim_race	object
-    stats.kvm_reclaim_race.reclaim_prefault_ok	u64
-    stats.kvm_reclaim_race.reclaim_prefault_eopnotsupp	u64
-    stats.kvm_reclaim_race.reclaim_prefault_err	u64
-    stats.kvm_reclaim_race.reclaim_set_nr_mmu_ok	u64
-    stats.kvm_reclaim_race.reclaim_set_nr_mmu_err	u64
-    stats.kvm_reclaim_race.reclaim_memslot_ok	u64
-  stats.nl80211	object
-    stats.nl80211.runs	u64
-    stats.nl80211.setup_failed	u64
-    stats.nl80211.scan_triggered	u64
-    stats.nl80211.connect_attempted	u64
-    stats.nl80211.connect_succeeded	u64
-    stats.nl80211.disconnect_attempted	u64
-    stats.nl80211.regdom_changed	u64
-    stats.nl80211.iface_created	u64
-    stats.nl80211.iface_destroyed	u64
-    stats.nl80211.bursts_sent	u64
-    stats.nl80211.pmsr_runs	u64
-    stats.nl80211.pmsr_ok	u64
-    stats.nl80211.admin_gate_runs	u64
-    stats.nl80211.admin_gate_eperm_ok	u64
-    stats.nl80211.admin_gate_unexpected	u64
-  stats.nat_t_churn	object
-    stats.nat_t_churn.runs	u64
-    stats.nat_t_churn.setup_failed	u64
-    stats.nat_t_churn.sa_added	u64
-    stats.nat_t_churn.sa_deleted	u64
-    stats.nat_t_churn.frames_sent	u64
-    stats.nat_t_churn.xfrm6_setup_ok	u64
-    stats.nat_t_churn.xfrm6_setup_fail	u64
-    stats.nat_t_churn.xfrm6_sendto_runs	u64
-    stats.nat_t_churn.xfrm6_delsa_races	u64
-    stats.nat_t_churn.lo_up_fail	u64
-  stats.af_alg_probe	object
-    stats.af_alg_probe.runs	u64
-    stats.af_alg_probe.unsupported	u64
-    stats.af_alg_probe.accept_total	u64
-    stats.af_alg_probe.reject_total	u64
-  stats.af_alg_recvmsg	object
-    stats.af_alg_recvmsg.runs	u64
-    stats.af_alg_recvmsg.setkey_sent	u64
-    stats.af_alg_recvmsg.iv_sent	u64
-    stats.af_alg_recvmsg.oob_iov	u64
-    stats.af_alg_recvmsg.zerolen	u64
-    stats.af_alg_recvmsg.oversize	u64
-    stats.af_alg_recvmsg.empty_cmsg_no_more	u64
-    stats.af_alg_recvmsg.unsupported	u64
-  stats.ipvs_sysctl_writer	object
-    stats.ipvs_sysctl_writer.runs	u64
-    stats.ipvs_sysctl_writer.writes_ok	u64
-    stats.ipvs_sysctl_writer.writes_failed	u64
-    stats.ipvs_sysctl_writer.unsupported_latched	u64
-    stats.ipvs_sysctl_writer.burn_iters	u64
-  stats.ipfrag_source_churn	object
-    stats.ipfrag_source_churn.runs	u64
-    stats.ipfrag_source_churn.packets_sent_ok	u64
-    stats.ipfrag_source_churn.send_failed	u64
-    stats.ipfrag_source_churn.unique_srcs	u64
-  stats.obscure_af_churn	object
-    stats.obscure_af_churn.runs	u64
-    stats.obscure_af_churn.no_viable_pf	u64
-    stats.obscure_af_churn.sendmsg_no_bind	object
-      stats.obscure_af_churn.sendmsg_no_bind.runs	u64
-      stats.obscure_af_churn.sendmsg_no_bind.rejected	u64
-      stats.obscure_af_churn.sendmsg_no_bind.unexpected_success	u64
-    stats.obscure_af_churn.bind_then_sendmsg	object
-      stats.obscure_af_churn.bind_then_sendmsg.runs	u64
-      stats.obscure_af_churn.bind_then_sendmsg.rejected	u64
-      stats.obscure_af_churn.bind_then_sendmsg.unexpected_success	u64
-    stats.obscure_af_churn.connect_no_listen	object
-      stats.obscure_af_churn.connect_no_listen.runs	u64
-      stats.obscure_af_churn.connect_no_listen.rejected	u64
-      stats.obscure_af_churn.connect_no_listen.unexpected_success	u64
-    stats.obscure_af_churn.ioctl_rotation	object
-      stats.obscure_af_churn.ioctl_rotation.runs	u64
-      stats.obscure_af_churn.ioctl_rotation.rejected	u64
-      stats.obscure_af_churn.ioctl_rotation.unexpected_success	u64
-    stats.obscure_af_churn.setsockopt_zero_len	object
-      stats.obscure_af_churn.setsockopt_zero_len.runs	u64
-      stats.obscure_af_churn.setsockopt_zero_len.rejected	u64
-      stats.obscure_af_churn.setsockopt_zero_len.unexpected_success	u64
-    stats.obscure_af_churn.close_via_dup	object
-      stats.obscure_af_churn.close_via_dup.runs	u64
-      stats.obscure_af_churn.close_via_dup.rejected	u64
-      stats.obscure_af_churn.close_via_dup.unexpected_success	u64
-  stats.rxrpc_sendmsg_cmsg_churn	object
-    stats.rxrpc_sendmsg_cmsg_churn.runs	u64
-    stats.rxrpc_sendmsg_cmsg_churn.socket_failed	u64
-    stats.rxrpc_sendmsg_cmsg_churn.sendmsg_ok	u64
-    stats.rxrpc_sendmsg_cmsg_churn.sendmsg_fail	u64
-    stats.rxrpc_sendmsg_cmsg_churn.user_call_id	u64
-    stats.rxrpc_sendmsg_cmsg_churn.abort	u64
-    stats.rxrpc_sendmsg_cmsg_churn.accept	u64
-    stats.rxrpc_sendmsg_cmsg_churn.exclusive_call	u64
-    stats.rxrpc_sendmsg_cmsg_churn.upgrade_service	u64
-    stats.rxrpc_sendmsg_cmsg_churn.tx_length	u64
-    stats.rxrpc_sendmsg_cmsg_churn.set_call_timeout	u64
-    stats.rxrpc_sendmsg_cmsg_churn.charge_accept	u64
-  stats.tty_ldisc_churn	object
-    stats.tty_ldisc_churn.runs	u64
-    stats.tty_ldisc_churn.setup_failed	u64
-    stats.tty_ldisc_churn.ldisc_set_ok	u64
-    stats.tty_ldisc_churn.ldisc_set_failed	u64
-    stats.tty_ldisc_churn.write_ok	u64
-    stats.tty_ldisc_churn.read_ok	u64
-    stats.tty_ldisc_churn.per_disc	array
 kcov	object?
   kcov.unique_edges	u64
   kcov.total_pcs	u64
@@ -1981,10 +652,3 @@ type_graph	object?
     type_graph.top_handoffs.total_ema	u32
     type_graph.top_handoffs.success_ema	u32
     type_graph.top_handoffs.novel_ema	u32
-dead_arms	array
-  dead_arms.group	str
-  dead_arms.arm	str
-  dead_arms.arm_entered	u64
-  dead_arms.parent_runs	u64
-# dead_arms.status valid values: insufficient_samples | dead | ran_no_effect | unsupported
-  dead_arms.status	enum:insufficient_samples|dead|ran_no_effect|unsupported

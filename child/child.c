@@ -1067,7 +1067,6 @@ out:
 	kcov_child_flush_stats(child);
 	kcov_cleanup_child(&child->kcov);
 	inode_spewer_cleanup();
-	psp_key_rotate_cleanup_child();
 
 	if (child->fail_nth_fd != -1) {
 		close(child->fail_nth_fd);

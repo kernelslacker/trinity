@@ -365,7 +365,7 @@ static void rand_ipv6_unicast_src(struct in6_addr *addr)
  * same address family so the group entry's addr.proto stays consistent.
  *
  * Returns total bytes written (aligned outer length), or 0 on failure.
- * Bumps shm->stats.bridge_fdb_stp.neigh_mdbe_src_list_built on success.
+ * Bumps a stat on success.
  *
  * nsrcs must be >= 1.
  */
@@ -424,8 +424,6 @@ static size_t build_mdbe_src_list_into(unsigned char *p, size_t avail,
 	}
 
 	outer->nla_len = (__u16)off;
-	__atomic_add_fetch(&shm->stats.bridge_fdb_stp.neigh_mdbe_src_list_built, 1,
-			   __ATOMIC_RELAXED);
 	return off;
 }
 

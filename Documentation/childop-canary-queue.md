@@ -114,11 +114,13 @@ diagnostic `edges_discovered` global-delta comparator.
 ## --fork-pressure-drain
 
 Under sustained `fork()` failure (`>=100` consecutive
-`spawn_child` failures), suppress canary picks of pid-heavy ops
-(`pidfd_storm`, `qrtr_bind_race`, `pfkey_spd_walk`,
-`l2tp_ifname_race`, `statmount_idmap_overflow`, `sysfs_string_race`)
-for 30 s so the canary picker stops piling new fork demand on a
-parent already losing the spawn race.
+`spawn_child` failures), suppress canary picks of pid-heavy ops for
+30 s so the canary picker stops piling new fork demand on a parent
+already losing the spawn race.
 
-`fork_storm` is always skipped via the risky-defer set (independent
-of this flag).  Default off; opt-in only.
+The pid-heavy set is whichever ops fork a helper of their own:
+`iouring_send_zc_churn` (forks its loopback peer) and
+`vsock_transport_churn` (reaches `fork()` through
+`userns_run_in_ns()`).  It is declared in
+`child/child-canary-policy.c`; an op that grows an inner fork belongs
+there too.  Default off; opt-in only.

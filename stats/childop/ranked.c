@@ -379,19 +379,6 @@ static void dump_stats_render_childop_taint_transitions(void)
 			 shm->stats.childop.taint_transitions[op]);
 	}
 }
-
-static void dump_stats_render_slab_cache_thrash_runs(void)
-{
-	unsigned int t;
-
-	for (t = 0; t < NR_SLAB_TARGETS; t++) {
-		if (shm->stats.slab_cache_thrash.runs[t] == 0)
-			continue;
-		stat_row("slab_cache_thrash", slab_target_name(t),
-			 shm->stats.slab_cache_thrash.runs[t]);
-	}
-}
-
 static void dump_stats_render_childop_pool_race_aborted(void)
 {
 	unsigned int op;
@@ -521,5 +508,4 @@ void dump_stats_childop_ranked_tables(void)
 	dump_stats_render_childop_latch_reason();
 	dump_stats_render_childop_would_demote();
 	dump_stats_render_childop_would_promote();
-	dump_stats_render_slab_cache_thrash_runs();
 }

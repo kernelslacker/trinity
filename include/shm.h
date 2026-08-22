@@ -346,19 +346,11 @@ struct shm_s {
 	 * slot in the static catalog inside recipe-runner.c. */
 	bool recipe_disabled[MAX_RECIPES];
 
-	/* iouring_recipes discovery latches: mirrors recipe_disabled but
-	 * scoped to the iouring-recipes childop catalog. */
-	bool iouring_recipe_disabled[MAX_IOURING_RECIPES];
 
 	/* Set to true once we confirm io_uring_setup returns ENOSYS.
 	 * Avoids repeated failed probes from every child. */
 	bool iouring_enosys;
 
-	/* socket_family_chain childop unsupported latch.  Set to true after
-	 * an invocation hits a burst of ESRCH/EPERM/ENOPROTOOPT errors,
-	 * indicating the kernel was built without CRYPTO_USER_API or AF_ALG
-	 * is otherwise locked down.  Siblings then skip the chain entirely. */
-	bool socket_family_chain_unsupported;
 
 	/* Per-family latch for the socket-family-grammar dispatcher
 	 * (net/socket-family-grammar-core.c).  sfg_unsupported[family] is set

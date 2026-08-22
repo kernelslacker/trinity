@@ -24,48 +24,11 @@
 static unsigned int stall_threshold(enum child_op_type op_type)
 {
 	switch (op_type) {
-	case CHILD_OP_MMAP_LIFECYCLE:	return 30;
-	case CHILD_OP_MPROTECT_SPLIT:	return 30;
-	case CHILD_OP_MLOCK_PRESSURE:	return 50;
 	case CHILD_OP_INODE_SPEWER:		return 40;
 	case CHILD_OP_PROCFS_WRITER:		return 60;
-	case CHILD_OP_MEMORY_PRESSURE:		return 30;
-	case CHILD_OP_USERNS_FUZZER:		return 60;
-	case CHILD_OP_SCHED_CYCLER:		return 30;
-	case CHILD_OP_BARRIER_RACER:		return 30;
-	case CHILD_OP_GENETLINK_FUZZER:		return 30;
-	case CHILD_OP_PERF_CHAINS:		return 30;
-	case CHILD_OP_TRACEFS_FUZZER:		return 60;
-	case CHILD_OP_BPF_LIFECYCLE:		return 40;
-	case CHILD_OP_FAULT_INJECTOR:		return 20;
-	case CHILD_OP_RECIPE_RUNNER:		return 40;
-	case CHILD_OP_IOURING_RECIPES:		return 40;
-	case CHILD_OP_FD_STRESS:		return 30;
-	case CHILD_OP_FS_LIFECYCLE:		return 60;
-	case CHILD_OP_FLOCK_THRASH:		return 30;
-	case CHILD_OP_PIDFD_STORM:		return 30;
-	case CHILD_OP_MADVISE_CYCLER:		return 30;
-	case CHILD_OP_KEYRING_SPAM:		return 30;
-	case CHILD_OP_VDSO_MREMAP_RACE:		return 30;
-	case CHILD_OP_NUMA_MIGRATION:		return 40;
-	case CHILD_OP_CPU_HOTPLUG_RIDER:	return 50;
-	case CHILD_OP_CGROUP_CHURN:		return 30;
-	case CHILD_OP_MOUNT_CHURN:		return 40;
-	case CHILD_OP_NAT_T_CHURN:		return 40;
-	case CHILD_OP_UFFD_CHURN:		return 30;
-	case CHILD_OP_IOURING_FLOOD:		return 30;
-	case CHILD_OP_CLOSE_RACER:		return 30;
 	case CHILD_OP_XATTR_THRASH:		return 30;
 	case CHILD_OP_EPOLL_VOLATILITY:		return 30;
-	case CHILD_OP_SLAB_CACHE_THRASH:	return 30;
-	case CHILD_OP_TLS_ROTATE:		return 30;
-	case CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING:	return 30;
-	case CHILD_OP_PACKET_FANOUT_THRASH:	return 30;
-	case CHILD_OP_SPLICE_PROTOCOLS:		return 30;
 	case CHILD_OP_RXRPC_KEY_INSTALL:	return 30;
-	case CHILD_OP_AF_ALG_WEAK_CIPHER_PROBE:	return 20;
-	case CHILD_OP_AF_ALG_TEMPLATE_PROBE:	return 20;
-	case CHILD_OP_TTY_LDISC_CHURN:		return 30;
 	default:				return 10;
 	}
 }

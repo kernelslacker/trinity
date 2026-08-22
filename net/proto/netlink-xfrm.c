@@ -377,7 +377,8 @@ static void dispatch_msg_kind(int fd, enum xfrm_msg_kind k)
 		 * ever reached by the picker (arm_entered == 0 = structural
 		 * bug) vs reached but always failing (arm_entered > 0,
 		 * migrate_state_ack_n == 0 = emitter bug class). */
-		CHILDOP_ARM_ENTER(xfrm_churn, migrate_state);
+		__atomic_add_fetch(&shm->stats.xfrm_grammar.migrate_state_arm_entered,
+				   1, __ATOMIC_RELAXED);
 		rc = xfrm_emit_migrate_state(fd);
 		if (rc == 0) {
 			migrate_state_ack_n++;
@@ -550,9 +551,9 @@ static void xfrm_grammar_data_leg(int parent_fd, int child_fd,
 	xfrm_drain_mcast();
 	k = pick_msg_kind();
 	/* Count every grammar draw so the dead-arm floor for
-	 * XMK_MIGRATE_STATE can gate on the number of opportunities the
-	 * picker had, not on xfrm_churn childop runs (a separate path). */
-	__atomic_add_fetch(&shm->stats.xfrm_churn.msg_kind_draws, 1, __ATOMIC_RELAXED);
+	 * XMK_MIGRATE_STATE gates on the opportunities the picker had. */
+	__atomic_add_fetch(&shm->stats.xfrm_grammar.msg_kind_draws,
+			   1, __ATOMIC_RELAXED);
 	dispatch_msg_kind(parent_fd, k);
 	xfrm_drain_async(parent_fd);
 	xfrm_drain_mcast();

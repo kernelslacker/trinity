@@ -5,6 +5,7 @@
  * grow a JSON output path.
  */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stddef.h>
 #include "stats-internal.h"
@@ -45,6 +46,28 @@ void json_emit_string(const char *s)
  * Emit one category as a JSON object: "name":{"field":N,"field":N,...}.
  * Caller is responsible for the surrounding comma separator.
  */
+/*
+ * Member separator for the "stats" object.  Sections emit their items
+ * unconditionally, so the comma between two members is purely
+ * positional: the first member emits none, every later one emits one.
+ * Keeping that decision in one place is what stops a deleted section
+ * from leaving a stray comma behind.
+ */
+static bool json_stats_first = true;
+
+void json_stats_sep_reset(void)
+{
+	json_stats_first = true;
+}
+
+void json_stats_sep(void)
+{
+	if (json_stats_first)
+		json_stats_first = false;
+	else
+		putchar(',');
+}
+
 void stat_category_emit_json(const struct stat_category *cat)
 {
 	size_t i;

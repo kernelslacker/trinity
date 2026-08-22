@@ -21,6 +21,7 @@
  */
 void dump_stats_json_fault_and_fd_lifecycle(void)
 {
+	json_stats_sep();
 	printf("\"fault_injection\":{\"armed_fail_nth\":%lu,\"returned_enomem\":%lu},"
 		"\"fd_lifecycle\":{\"stale_detected\":%lu,\"stale_by_generation\":%lu,"
 			"\"closed_tracked\":%lu,\"duped\":%lu,"
@@ -39,7 +40,7 @@ void dump_stats_json_fault_and_fd_lifecycle(void)
 			"\"event_full_evict\":%lu,"
 			"\"event_full_close_range\":%lu,"
 			"\"event_close_range_enqueued\":%lu,"
-			"\"event_close_range_length_sum\":%lu},",
+			"\"event_close_range_length_sum\":%lu}",
 		parent_stats.fault_injected, parent_stats.fault_consumed,
 		shm->stats.fd.stale_detected, shm->stats.fd.stale_by_generation,
 		shm->stats.fd.closed_tracked,
@@ -72,8 +73,8 @@ void dump_stats_json_fault_and_fd_lifecycle(void)
 
 void dump_stats_json_oracle(void)
 {
+	json_stats_sep();
 	stat_category_emit_json(&oracle_category);
-	putchar(',');
 }
 
 /*
@@ -114,14 +115,6 @@ static const struct stat_field vfs_writes_fields[] = {
 const struct stat_category vfs_writes_category =
 	STAT_CATEGORY("vfs_writes",
 	              vfs_writes_fields);
-
-static const struct stat_field memory_pressure_fields[] = {
-	STAT_FIELD_JSON_SUB(memory_pressure, runs, "runs_madv_pageout"),
-};
-
-const struct stat_category memory_pressure_category =
-	STAT_CATEGORY("memory_pressure",
-	              memory_pressure_fields);
 
 static const struct stat_field genl_family_calls_fields[] = {
 	STAT_FIELD(genl_family_calls, devlink),
@@ -202,40 +195,6 @@ const struct stat_category rtnl_ack_oracle_category =
 	STAT_CATEGORY("rtnl_ack_oracle",
 	              rtnl_ack_oracle_fields);
 
-static const struct stat_field tracefs_fuzzer_fields[] = {
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, kprobe_open_fail,        "kprobe_open_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, kprobe_write_fail,       "kprobe_write_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, kprobe_write_ok,         "kprobe_write_ok"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, uprobe_open_fail,        "uprobe_open_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, uprobe_write_fail,       "uprobe_write_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, uprobe_write_ok,         "uprobe_write_ok"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, filter_open_fail,        "filter_open_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, filter_write_fail,       "filter_write_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, filter_write_ok,         "filter_write_ok"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, event_enable_open_fail,  "event_enable_open_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, event_enable_write_fail, "event_enable_write_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, event_enable_write_ok,   "event_enable_write_ok"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, misc_open_fail,          "misc_open_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, misc_write_fail,         "misc_write_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, misc_write_ok,           "misc_write_ok"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, dynevent_open_fail,      "dynevent_open_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, dynevent_write_fail,     "dynevent_write_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, dynevent_write_ok,       "dynevent_write_ok"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_open_fail,         "set_event_open_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_write_fail,        "set_event_write_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_write_ok,          "set_event_write_ok"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_post_disable_count,"set_event_post_disable_count"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_disable_arms,"set_event_disable_arms"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_readback_fail,"set_event_readback_fail"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_disable_reenabled, "set_event_disable_reenabled"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, set_event_wide_disable_arms, "set_event_wide_disable_arms"),
-	STAT_FIELD_JSON_SUB(tracefs_fuzzer, runtime_cap_denied,          "runtime_cap_denied"),
-};
-
-const struct stat_category tracefs_fuzzer_category =
-	STAT_CATEGORY("tracefs_fuzzer",
-	              tracefs_fuzzer_fields);
-
 static const struct stat_field bpf_fd_provider_fields[] = {
 	STAT_FIELD_SUB(ebpf_gen, maps_provided),
 	STAT_FIELD_SUB(ebpf_gen, progs_provided),
@@ -283,80 +242,59 @@ static const struct stat_category corrupt_ptr_probe_category =
 
 void dump_stats_json_basic_subsystems(void)
 {
+	json_stats_sep();
 	stat_category_emit_json(&vfs_writes_category);
-	putchar(',');
-	stat_category_emit_json(&memory_pressure_category);
-	putchar(',');
-	stat_category_emit_json(&numa_migration_category);
-	putchar(',');
-	stat_category_emit_json(&genetlink_fuzzer_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&genl_family_calls_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&nfnl_subsys_calls_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&netlink_generator_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&rtnl_ack_oracle_category);
-	putchar(',');
-	stat_category_emit_json(&tracefs_fuzzer_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&bpf_fd_provider_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&frontier_discriminator_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&childop_burst_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&corrupt_ptr_probe_category);
-	putchar(',');
 }
 
 void dump_stats_json_iouring_and_zombies(void)
 {
-	stat_category_emit_json(&recipe_runner_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&posix_timer_category);
-	putchar(',');
-	stat_category_emit_json(&iouring_recipes_category);
-	putchar(',');
-	stat_category_emit_json(&iouring_cmd_passthrough_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&iouring_eventfd_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&aio_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&errno_gradient_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&cold_overflow_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&inplace_crypto_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&rpl_clone_fidelity_category);
-	putchar(',');
-	stat_category_emit_json(&memfd_secret_lifecycle_category);
-	putchar(',');
-	stat_category_emit_json(&mremap_merge_matrix_category);
-	putchar(',');
-	stat_category_emit_json(&thp_split_ref_race_category);
-	putchar(',');
-	stat_category_emit_json(&uffd_fault_move_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&fd_runtime_skipped_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&child_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&parent_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&uid_change_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&no_domains_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&zombie_slots_category);
-	putchar(',');
 }
 
 void dump_stats_json_corruption_and_audit(void)
 {
+	json_stats_sep();
 	printf("\"corruption\":{\"fd_event_ring_noncanon\":%lu,"
 			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
 			"\"stats_ring_noncanon\":%lu,\"stats_ring_canary\":%lu,"
@@ -434,7 +372,7 @@ void dump_stats_json_corruption_and_audit(void)
 			"\"chain_replay_len_corrupt\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
 			"\"libc_heap_redirected\":%lu,\"libc_heap_embedded_redirected\":%lu,"
-			"\"mm_gate_post_slip\":%lu},",
+			"\"mm_gate_post_slip\":%lu}",
 		shm->stats.fd.event_ring_corrupted,
 		shm->stats.fd.event_ring_overwritten,
 		shm->stats.fd.event_payload_corrupt,
@@ -528,12 +466,6 @@ void dump_stats_json_corruption_and_audit(void)
 
 void dump_stats_json_lifecycle_and_storms(void)
 {
-	stat_category_emit_json(&fs_lifecycle_category);
-	putchar(',');
-	stat_category_emit_json(&futex_storm_category);
-	putchar(',');
-	stat_category_emit_json(&futex_pi_requeue_rollback_category);
-	putchar(',');
+	json_stats_sep();
 	stat_category_emit_json(&prctl_futex_hash_category);
-	putchar(',');
 }

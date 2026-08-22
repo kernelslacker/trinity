@@ -55,37 +55,6 @@ static void dump_stats_render_vfs_writes(void)
 	}
 }
 
-static void dump_stats_render_memory_pressure(void)
-{
-	if (shm->stats.memory_pressure.runs)
-		stat_row("memory_pressure", "runs_madv_pageout", shm->stats.memory_pressure.runs);
-}
-
-static void dump_stats_render_genetlink(void)
-{
-	if (shm->stats.genetlink_fuzzer.families_discovered ||
-	    shm->stats.genetlink_fuzzer.discovery_cycles       ||
-	    shm->stats.genetlink_fuzzer.msgs_sent              ||
-	    shm->stats.genetlink_fuzzer.missing_producer       ||
-	    shm->stats.genetlink_fuzzer.discovery_io_err       ||
-	    shm->stats.genetlink_fuzzer.discovery_nlerr        ||
-	    shm->stats.genetlink_fuzzer.userns_run_fail        ||
-	    shm->stats.genetlink_fuzzer.in_ns_open_fail        ||
-	    shm->stats.genetlink_fuzzer.send_drain_fail) {
-		stat_row("genetlink_fuzzer", "families_discovered", shm->stats.genetlink_fuzzer.families_discovered);
-		stat_row("genetlink_fuzzer", "discovery_cycles",    shm->stats.genetlink_fuzzer.discovery_cycles);
-		stat_row("genetlink_fuzzer", "msgs_sent",           shm->stats.genetlink_fuzzer.msgs_sent);
-		stat_row("genetlink_fuzzer", "eperm",               shm->stats.genetlink_fuzzer.eperm);
-		stat_row("genetlink_fuzzer", "stale_seq_drops",     shm->stats.genetlink_fuzzer.stale_seq_drops);
-		stat_row("genetlink_fuzzer", "missing_producer",    shm->stats.genetlink_fuzzer.missing_producer);
-		stat_row("genetlink_fuzzer", "discovery_io_err",    shm->stats.genetlink_fuzzer.discovery_io_err);
-		stat_row("genetlink_fuzzer", "discovery_nlerr",     shm->stats.genetlink_fuzzer.discovery_nlerr);
-		stat_row("genetlink_fuzzer", "userns_run_fail",     shm->stats.genetlink_fuzzer.userns_run_fail);
-		stat_row("genetlink_fuzzer", "in_ns_open_fail",     shm->stats.genetlink_fuzzer.in_ns_open_fail);
-		stat_row("genetlink_fuzzer", "send_drain_fail",     shm->stats.genetlink_fuzzer.send_drain_fail);
-	}
-}
-
 static void dump_stats_render_genl_family_calls(void)
 {
 	if (shm->stats.genl_family_calls_devlink   ||
@@ -250,56 +219,6 @@ static void dump_stats_render_kvm(void)
 			 shm->stats.kvm.reclaim_memslot_ok);
 }
 
-static void dump_stats_render_tracefs(void)
-{
-	if (shm->stats.tracefs_fuzzer.kprobe_open_fail || shm->stats.tracefs_fuzzer.kprobe_write_fail ||
-	    shm->stats.tracefs_fuzzer.kprobe_write_ok ||
-	    shm->stats.tracefs_fuzzer.uprobe_open_fail || shm->stats.tracefs_fuzzer.uprobe_write_fail ||
-	    shm->stats.tracefs_fuzzer.uprobe_write_ok ||
-	    shm->stats.tracefs_fuzzer.filter_open_fail || shm->stats.tracefs_fuzzer.filter_write_fail ||
-	    shm->stats.tracefs_fuzzer.filter_write_ok ||
-	    shm->stats.tracefs_fuzzer.event_enable_open_fail || shm->stats.tracefs_fuzzer.event_enable_write_fail ||
-	    shm->stats.tracefs_fuzzer.event_enable_write_ok ||
-	    shm->stats.tracefs_fuzzer.misc_open_fail || shm->stats.tracefs_fuzzer.misc_write_fail ||
-	    shm->stats.tracefs_fuzzer.misc_write_ok ||
-	    shm->stats.tracefs_fuzzer.dynevent_open_fail || shm->stats.tracefs_fuzzer.dynevent_write_fail ||
-	    shm->stats.tracefs_fuzzer.dynevent_write_ok ||
-	    shm->stats.tracefs_fuzzer.set_event_open_fail || shm->stats.tracefs_fuzzer.set_event_write_fail ||
-	    shm->stats.tracefs_fuzzer.set_event_write_ok ||
-	    shm->stats.tracefs_fuzzer.set_event_post_disable_count ||
-	    shm->stats.tracefs_fuzzer.set_event_disable_arms ||
-	    shm->stats.tracefs_fuzzer.set_event_readback_fail ||
-	    shm->stats.tracefs_fuzzer.set_event_disable_reenabled ||
-	    shm->stats.tracefs_fuzzer.set_event_wide_disable_arms) {
-		stat_row("tracefs_fuzzer", "kprobe_open_fail",         shm->stats.tracefs_fuzzer.kprobe_open_fail);
-		stat_row("tracefs_fuzzer", "kprobe_write_fail",        shm->stats.tracefs_fuzzer.kprobe_write_fail);
-		stat_row("tracefs_fuzzer", "kprobe_write_ok",          shm->stats.tracefs_fuzzer.kprobe_write_ok);
-		stat_row("tracefs_fuzzer", "uprobe_open_fail",         shm->stats.tracefs_fuzzer.uprobe_open_fail);
-		stat_row("tracefs_fuzzer", "uprobe_write_fail",        shm->stats.tracefs_fuzzer.uprobe_write_fail);
-		stat_row("tracefs_fuzzer", "uprobe_write_ok",          shm->stats.tracefs_fuzzer.uprobe_write_ok);
-		stat_row("tracefs_fuzzer", "filter_open_fail",         shm->stats.tracefs_fuzzer.filter_open_fail);
-		stat_row("tracefs_fuzzer", "filter_write_fail",        shm->stats.tracefs_fuzzer.filter_write_fail);
-		stat_row("tracefs_fuzzer", "filter_write_ok",          shm->stats.tracefs_fuzzer.filter_write_ok);
-		stat_row("tracefs_fuzzer", "event_enable_open_fail",   shm->stats.tracefs_fuzzer.event_enable_open_fail);
-		stat_row("tracefs_fuzzer", "event_enable_write_fail",  shm->stats.tracefs_fuzzer.event_enable_write_fail);
-		stat_row("tracefs_fuzzer", "event_enable_write_ok",    shm->stats.tracefs_fuzzer.event_enable_write_ok);
-		stat_row("tracefs_fuzzer", "misc_open_fail",           shm->stats.tracefs_fuzzer.misc_open_fail);
-		stat_row("tracefs_fuzzer", "misc_write_fail",          shm->stats.tracefs_fuzzer.misc_write_fail);
-		stat_row("tracefs_fuzzer", "misc_write_ok",            shm->stats.tracefs_fuzzer.misc_write_ok);
-		stat_row("tracefs_fuzzer", "dynevent_open_fail",       shm->stats.tracefs_fuzzer.dynevent_open_fail);
-		stat_row("tracefs_fuzzer", "dynevent_write_fail",      shm->stats.tracefs_fuzzer.dynevent_write_fail);
-		stat_row("tracefs_fuzzer", "dynevent_write_ok",        shm->stats.tracefs_fuzzer.dynevent_write_ok);
-		stat_row("tracefs_fuzzer", "set_event_open_fail",          shm->stats.tracefs_fuzzer.set_event_open_fail);
-		stat_row("tracefs_fuzzer", "set_event_write_fail",         shm->stats.tracefs_fuzzer.set_event_write_fail);
-		stat_row("tracefs_fuzzer", "set_event_write_ok",           shm->stats.tracefs_fuzzer.set_event_write_ok);
-		stat_row("tracefs_fuzzer", "set_event_post_disable_count", shm->stats.tracefs_fuzzer.set_event_post_disable_count);
-		stat_row("tracefs_fuzzer", "set_event_disable_arms", shm->stats.tracefs_fuzzer.set_event_disable_arms);
-		stat_row("tracefs_fuzzer", "set_event_readback_fail", shm->stats.tracefs_fuzzer.set_event_readback_fail);
-		stat_row("tracefs_fuzzer", "set_event_disable_reenabled",  shm->stats.tracefs_fuzzer.set_event_disable_reenabled);
-		stat_row("tracefs_fuzzer", "set_event_wide_disable_arms",  shm->stats.tracefs_fuzzer.set_event_wide_disable_arms);
-	}
-}
-
 static void dump_stats_render_bpf_fd_provider(void)
 {
 	if (shm->stats.ebpf_gen.maps_provided || shm->stats.ebpf_gen.progs_provided ||
@@ -338,40 +257,6 @@ static void dump_stats_render_ebpf_gen(void)
 	}
 }
 
-static void dump_stats_render_recipe_runner(void)
-{
-	if (shm->stats.recipe.runs) {
-		stat_row("recipe_runner", "runs",        shm->stats.recipe.runs);
-		stat_row("recipe_runner", "completed",   shm->stats.recipe.completed);
-		stat_row("recipe_runner", "partial",     shm->stats.recipe.partial);
-		stat_row("recipe_runner", "unsupported", shm->stats.recipe.unsupported);
-		recipe_runner_dump_stats();
-	}
-}
-
-static void dump_stats_render_iouring(void)
-{
-	if (shm->stats.iouring_recipes.runs) {
-		stat_row("iouring_recipes", "runs",      shm->stats.iouring_recipes.runs);
-		stat_row("iouring_recipes", "completed", shm->stats.iouring_recipes.completed);
-		stat_row("iouring_recipes", "partial",   shm->stats.iouring_recipes.partial);
-		stat_row("iouring_recipes", "enosys",    shm->stats.iouring_recipes.enosys);
-		iouring_recipes_dump_stats();
-	}
-
-	if (shm->stats.iouring_eventfd.register_ok ||
-	    shm->stats.iouring_eventfd.register_fail) {
-		stat_row("iouring_eventfd", "register_ok",
-			 shm->stats.iouring_eventfd.register_ok);
-		stat_row("iouring_eventfd", "register_fail",
-			 shm->stats.iouring_eventfd.register_fail);
-		stat_row("iouring_eventfd", "recursive_runs",
-			 shm->stats.iouring_eventfd.recursive_runs);
-		stat_row("iouring_eventfd", "recursive_cqes",
-			 shm->stats.iouring_eventfd.recursive_cqes);
-	}
-}
-
 static void dump_stats_render_zombie_slots(void)
 {
 	if (shm->stats.zombie_reaper.reaped || shm->stats.zombie_reaper.timed_out ||
@@ -384,261 +269,18 @@ static void dump_stats_render_zombie_slots(void)
 	}
 }
 
-/*
- * Dead-arm detection: for each childop arm that books an arm_entered
- * tally at its top, report any arm whose counter is still 0 over a
- * full run while its parent childop ran at least once.  An arm with
- * arm_entered == 0 is either structurally unreachable on this kernel
- * (config-dead), permanently gate-rejected (cap-gate latched before
- * the arm), or unreachable from the dispatch path (modulo-routing bug
- * like igmp RACE E before the iter_idx-bias fix).  The value rendered is the
- * parent's runs count so the operator can see how many invocations
- * the dead arm survived undetected.
- *
- * Sample floor: before emitting DEAD_ARM for a group, require
- * sum(arm_entered_*) >= 5 * nr_arms for that group.  Short runs (smoke,
- * -C 4, N~200) cannot accumulate enough draws across a multi-way
- * selector to guarantee every arm fires, so checking without this
- * floor produces spurious DEAD_ARM on every smoke invocation.  When
- * the floor is not met, emit one DEAD_ARM_SKIP line so absence is
- * explicit and grep-able.
- *
- * For single-arm groups the floor must gate on the group's opportunity
- * count (runs), NOT on the arm's own entry count.  arm_entered==0 IS the
- * dead state for a single-arm group; gating on it makes the floor a
- * tautology that always fires, permanently masking the dead verdict.
- *
- * Model: stat_row("DEAD_ARM",        "<childop>/<arm>", <parent_runs>).
- *        stat_row("UNSUPPORTED_ARM", "<childop>/<arm>", <parent_runs>).
- *        output "DEAD_ARM_SKIP <group> insufficient_samples" when below floor.
- * UNSUPPORTED_ARM: arm_entered==0 AND setup_failed==runs -- the feature is
- * absent in this netns (e.g. no AF_XDP support); distinct from DEAD_ARM where
- * setup succeeds but the arm is structurally unreachable.
- * Pairs with dump_stats_render_childop_missing_producer() which catches
- * ops that never set up a setup_accepted producer.
- */
-static void dump_stats_dead_arm_check(void)
-{
-	/* igmp-mld-source-churn: five v4 race arms (A-E, rnd_modulo_u32(5))
-	 * and four v6 race arms (A-D, iter_idx-derived 4-way modulo).
-	 * Floor: v4 requires 5*5=25 total draws; v6 requires 5*4=20. */
-	if (shm->stats.igmp_mld_source_churn.runs > 0) {
-		const unsigned long pr = shm->stats.igmp_mld_source_churn.runs;
-		unsigned long v4_draws, v6_draws;
-
-		v4_draws =
-			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_a +
-			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b +
-			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c +
-			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d +
-			shm->stats.igmp_mld_source_churn.arm_entered_race_v4_e;
-		if (v4_draws >= 5 * 5) {
-			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_a)
-				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_a", pr);
-			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_b)
-				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_b", pr);
-			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_c)
-				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_c", pr);
-			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_d)
-				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_d", pr);
-			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v4_e)
-				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v4_e", pr);
-		} else {
-			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "igmp-mld-source-churn/v4",
-			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
-		}
-
-		v6_draws =
-			shm->stats.igmp_mld_source_churn.arm_entered_race_v6_a +
-			shm->stats.igmp_mld_source_churn.arm_entered_race_v6_b +
-			shm->stats.igmp_mld_source_churn.arm_entered_race_v6_c +
-			shm->stats.igmp_mld_source_churn.arm_entered_race_v6_d;
-		if (v6_draws >= 5 * 4) {
-			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_a)
-				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_a", pr);
-			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_b)
-				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_b", pr);
-			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_c)
-				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_c", pr);
-			if (!shm->stats.igmp_mld_source_churn.arm_entered_race_v6_d)
-				stat_row("DEAD_ARM", "igmp-mld-source-churn/race_v6_d", pr);
-		} else {
-			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "igmp-mld-source-churn/v6",
-			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
-		}
-	}
-
-	/* tracefs-fuzzer: runtime cap-denied dead-arm probe.
-	 *
-	 * tracefs_fuzzer_init() confirms mount presence via access(F_OK) in
-	 * the parent (root context).  In each child, after uid/cap-drop, the
-	 * fuzz user may have no write access.  The child-side probe calls
-	 * access(tracefs_root/tracing_on, W_OK) once on first entry (COW
-	 * latch per child) and increments runtime_cap_denied on EACCES/EPERM.
-	 *
-	 * Verdict: RUNTIME_DEAD_ARM when runtime_cap_denied > 0 (at least one
-	 * child was cap-denied) AND no write ever succeeded (total_write_ok==0).
-	 * The two conditions together mean tracefs is present (config-live)
-	 * but unreachable for writing under the fuzz user's capabilities
-	 * (runtime-dead).  No separate floor gate: runtime_cap_denied > 0
-	 * implies at least one child ran the probe. */
-	if (shm->stats.tracefs_fuzzer.runtime_cap_denied > 0) {
-		unsigned long total_write_ok =
-			shm->stats.tracefs_fuzzer.kprobe_write_ok +
-			shm->stats.tracefs_fuzzer.uprobe_write_ok +
-			shm->stats.tracefs_fuzzer.filter_write_ok +
-			shm->stats.tracefs_fuzzer.event_enable_write_ok +
-			shm->stats.tracefs_fuzzer.misc_write_ok +
-			shm->stats.tracefs_fuzzer.dynevent_write_ok +
-			shm->stats.tracefs_fuzzer.set_event_write_ok;
-
-		if (!total_write_ok)
-			stat_row("RUNTIME_DEAD_ARM",
-				 "tracefs-fuzzer/write_access",
-				 shm->stats.tracefs_fuzzer.runtime_cap_denied);
-	}
-
-	/* afxdp-churn: XDP_COPY bind arm -- bumped before bind() so a zero
-	 * here means setup always bailed before reaching the bind block.
-	 * Floor: 5 * 1 = 5 draws required (runs is the opportunity count).
-	 * For this single-arm group the floor gates on runs, not arm_entered_bind
-	 * -- arm_entered_bind==0 IS the dead state, not an ambiguous sample.
-	 *
-	 * UNSUPPORTED_ARM (runtime latch): setup_failed_unsupported == runs --
-	 * the ns_unsupported_afxdp latch fired on every invocation (AF_XDP
-	 * unavailable in this netns); bind was never reached.  Predicated on
-	 * the dedicated counter so transient socket/mmap/cap-gate failures
-	 * that also bump setup_failed do not produce a false unsupported verdict.
-	 *
-	 * UNSUPPORTED_ARM (stub): runs_stubbed > 0 and runs == 0 -- the
-	 * childop was compiled without XDP headers; the feature is structurally
-	 * absent on this build.
-	 *
-	 * RAN_NO_EFFECT: arm_entered_bind > 0 but arm_effective_bind == 0
-	 * means the bind arm was reached but never produced detectable output
-	 * (bind() always failed, or the follow-on I/O was silently dropped).
-	 * This is the 510-H class: config-dead past the entry point, or
-	 * uapi-value-wrong on the bind flags/ifindex. */
-	if (shm->stats.afxdp_churn.runs > 0) {
-		if (shm->stats.afxdp_churn.runs < 5 * 1)
-			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "afxdp-churn",
-			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
-		else if (shm->stats.afxdp_churn.setup_failed_cap_denied ==
-			 shm->stats.afxdp_churn.runs)
-			/* RUNTIME_DEAD_ARM: socket(AF_XDP) denied by capability
-			 * check (EPERM/EACCES after cap-drop); CONFIG_XDP_SOCKETS
-			 * is compiled in but the fuzz user lacks CAP_NET_RAW.
-			 * Numerator: setup_failed_cap_denied (== runs on this
-			 * path; arm_entered_bind is always 0 because bind is
-			 * never reached after a cap failure).
-			 * Must match json_emit_dead_arms_element in
-			 * stats/json/tail.c. */
-			stat_row("RUNTIME_DEAD_ARM", "afxdp-churn/socket_cap",
-				 shm->stats.afxdp_churn.setup_failed_cap_denied);
-		else if (shm->stats.afxdp_churn.setup_failed_unsupported ==
-			 shm->stats.afxdp_churn.runs)
-			stat_row("UNSUPPORTED_ARM", "afxdp-churn/bind",
-				 shm->stats.afxdp_churn.runs);
-		else if (!shm->stats.afxdp_churn.arm_entered_bind)
-			stat_row("DEAD_ARM", "afxdp-churn/bind",
-				 shm->stats.afxdp_churn.runs);
-		else if (!shm->stats.afxdp_churn.arm_effective_bind)
-			stat_row("RAN_NO_EFFECT", "afxdp-churn/bind",
-				 shm->stats.afxdp_churn.arm_entered_bind);
-		/* else: arm_entered_bind >= 1, arm_effective_bind >= 1: fully live */
-	} else if (shm->stats.afxdp_churn.runs_stubbed > 0) {
-		stat_row("UNSUPPORTED_ARM", "afxdp-churn/bind",
-			 shm->stats.afxdp_churn.runs_stubbed);
-	}
-
-	/* xfrm-churn: XFRM_MSG_MIGRATE_STATE arm in dispatch_msg_kind() --
-	 * bumped before xfrm_emit_migrate_state() so a zero here means the
-	 * probabilistic picker never landed on XMK_MIGRATE_STATE.
-	 * Floor: gate on msg_kind_draws (grammar pick_msg_kind() calls), not
-	 * on xfrm_churn.runs (childop invocations) -- the two counters come
-	 * from entirely separate execution paths.  Using runs as the floor
-	 * caused two failure modes: runs reaches >= 5 immediately (childop
-	 * bumps it before any early-return), producing false DEAD_ARM when
-	 * the grammar has not yet drawn XMK_MIGRATE_STATE; and when the
-	 * childop is absent from the op rotation runs == 0, skipping the
-	 * check entirely even if the grammar ran thousands of times and the
-	 * arm is genuinely dead.
-	 * With XMK_MIGRATE_STATE weight 2/120 (empty ring) to 4/138 (full
-	 * ring), p ≈ 1/60-1/34; 300 draws gives ~5-9 expected hits before
-	 * the dead-arm verdict fires. */
-	{
-		unsigned long draws = shm->stats.xfrm_churn.msg_kind_draws;
-
-		if (draws < 300)
-			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "xfrm-churn",
-			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
-		else if (!shm->stats.xfrm_churn.arm_entered_migrate_state)
-			stat_row("DEAD_ARM", "xfrm-churn/migrate_state",
-				 draws);
-		/* else: arm_entered_migrate_state >= 1, arm is live */
-	}
-
-	/* bridge-fdb-stp: star_g port-group UAF oracle arm.
-	 *
-	 * Primary signal: star_g_arm_setup_failed == runs -- bridge/veth
-	 * setup failed on every invocation before any MDB work; the oracle
-	 * never had a chance to run.  Predicated on exact equality so that
-	 * partial-failure runs where some MDB entries were created are not
-	 * misclassified as dead.
-	 *
-	 * Secondary signal (positive-control invariant): if both
-	 * mdb_star_g_created and mdb_sg_created remain 0 after a floor of
-	 * runs the (*,G) builder or src-list nesting is broken -- the arm
-	 * ran but never produced the MDB entries needed to exercise the
-	 * kernel code path.  Do not absorb this into a clean-kernel verdict.
-	 *
-	 * Floor: 5 draws required (single-arm group; gate on runs, not on
-	 * an arm-entry counter, because absence of MDB creation IS the dead
-	 * state for this oracle). */
-	if (shm->stats.bridge_fdb_stp.runs > 0) {
-		unsigned long runs = shm->stats.bridge_fdb_stp.runs;
-
-		if (runs < 5)
-			output(0, "%-22s  %-32s  %s\n", "DEAD_ARM_SKIP",
-			       "bridge-fdb-stp",
-			       arm_verdict_to_str(ARM_VERDICT_INSUFFICIENT_SAMPLES));
-		else if (shm->stats.bridge_fdb_stp.star_g_arm_setup_failed == runs)
-			/* DEAD_ARM: bridge/veth setup failed on every run;
-			 * no MDB work was ever attempted.  A silently-failing
-			 * bridge/veth environment must not read as oracle-clean. */
-			stat_row("DEAD_ARM", "bridge-fdb-stp/star_g", runs);
-		else if (!shm->stats.bridge_fdb_stp.mdb_star_g_created &&
-			 !shm->stats.bridge_fdb_stp.mdb_sg_created)
-			/* DEAD_ARM: oracle ran but (*,G) EXCLUDE and
-			 * (S,G) MDB entries were never created -- the builder
-			 * or src-list nesting is broken; do not report a
-			 * clean kernel. */
-			stat_row("DEAD_ARM", "bridge-fdb-stp/star_g", runs);
-		/* else: mdb_star_g_created >= 1 or mdb_sg_created >= 1: arm live */
-	}
-}
 
 void dump_stats_fuzzer_subsystems(void)
 {
 	dump_stats_render_vfs_writes();
 
-	dump_stats_render_memory_pressure();
 
-	stat_category_emit_text(&sched_cycler_category);
 
-	stat_category_emit_text(&userns_fuzzer_category);
 
-	stat_category_emit_text(&ipcns_ucount_exhaustion_category);
 
 	stat_category_emit_text(&userns_bootstrap_category);
 
-	stat_category_emit_text(&barrier_racer_category);
 
-	dump_stats_render_genetlink();
 
 	dump_stats_render_genl_family_calls();
 
@@ -650,19 +292,14 @@ void dump_stats_fuzzer_subsystems(void)
 
 	dump_stats_render_kvm();
 
-	stat_category_emit_text(&perf_event_chains_category);
 
-	dump_stats_render_tracefs();
 
-	stat_category_emit_text(&bpf_lifecycle_category);
 
 	dump_stats_render_bpf_fd_provider();
 
 	dump_stats_render_ebpf_gen();
 
-	dump_stats_render_recipe_runner();
 
-	dump_stats_render_iouring();
 
 	stat_category_emit_text(&aio_category);
 
@@ -674,13 +311,9 @@ void dump_stats_fuzzer_subsystems(void)
 
 	stat_category_emit_text(&rpl_clone_fidelity_category);
 
-	stat_category_emit_text(&memfd_secret_lifecycle_category);
 
-	stat_category_emit_text(&mremap_merge_matrix_category);
 
-	stat_category_emit_text(&thp_split_ref_race_category);
 
-	stat_category_emit_text(&uffd_fault_move_category);
 
 	stat_category_emit_text(&fd_runtime_skipped_category);
 
@@ -723,5 +356,4 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("heap", "heap_extra_regions_overflow",
 			 shm->stats.diag.heap_extra_regions_overflow);
 
-	dump_stats_dead_arm_check();
 }

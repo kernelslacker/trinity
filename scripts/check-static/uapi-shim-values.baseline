@@ -32,22 +32,11 @@
 # IFLA_GRE_* -- linux/if_tunnel.h
 #   enum: UNSPEC=0 LINK=1 IFLAGS=2 OFLAGS=3 IKEY=4 OKEY=5 LOCAL=6 REMOTE=7
 # ---------------------------------------------------------------------------
-IFLA_GRE_LINK          1
-IFLA_GRE_IKEY          4
-IFLA_GRE_OKEY          5
-IFLA_GRE_LOCAL         6
-IFLA_GRE_REMOTE        7
-IFLA_GRE_ERSPAN_INDEX  21
-IFLA_GRE_ERSPAN_VER    22
-IFLA_GRE_ERSPAN_DIR    23
-IFLA_GRE_ERSPAN_HWID   24
 
 # ---------------------------------------------------------------------------
 # IFLA_IPTUN_* -- linux/if_tunnel.h
 #   enum: UNSPEC=0 LINK=1 LOCAL=2 REMOTE=3
 # ---------------------------------------------------------------------------
-IFLA_IPTUN_LOCAL  2
-IFLA_IPTUN_REMOTE 3
 
 # ---------------------------------------------------------------------------
 # NDA_* -- linux/neighbour.h
@@ -55,9 +44,6 @@ IFLA_IPTUN_REMOTE 3
 #         VNI=7 IFINDEX=8 MASTER=9 ...
 # ---------------------------------------------------------------------------
 NDA_DST    1
-NDA_LLADDR 2
-NDA_VNI    7
-NDA_MASTER 9
 
 # ---------------------------------------------------------------------------
 # XFRMA_* -- linux/xfrm.h (newer attrs shimmed in net/netlink/msg-tables.c)

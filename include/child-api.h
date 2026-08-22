@@ -571,8 +571,4 @@ const char *procfs_writer_allow_policy_summary(void);
  * being admitted.  Sampled at emit time; --dangerous is set during
  * option parsing before fork_children so the value is stable. */
 const char *procfs_writer_mode_summary(void);
-void perf_event_chains_init(void);
-void tracefs_fuzzer_init(void);
 const char *slab_target_name(unsigned int idx);
-const char *af_alg_probe_template_label(unsigned int idx);
-void psp_key_rotate_cleanup_child(void);

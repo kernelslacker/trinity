@@ -16,6 +16,8 @@
 /* stats/json/common.c */
 void json_emit_string(const char *s);
 void stat_category_emit_json(const struct stat_category *cat);
+void json_stats_sep(void);
+void json_stats_sep_reset(void);
 
 /* stats/json/syscalls.c */
 void json_emit_syscalls_array(void);
@@ -48,8 +50,7 @@ void json_emit_bridge_pci_unix_and_iouring_section(void);
 void json_emit_iouring_iscsi_and_net_tail_section(void);
 
 /* stats/json/tail.c */
-void dump_stats_json_iouring_zc_and_kvm(void);
-void dump_stats_json_rxrpc_alg_ublk_block(void);
+void dump_stats_json_vsock_tail(void);
 void dump_stats_json_probes_misuse_and_tail(void);
 void json_emit_dead_arms_section(void);
 
