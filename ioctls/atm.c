@@ -176,7 +176,9 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		break;
 
 	case ATM_GETNAMES:
+#ifdef ATM_ADDPARTY
 	case ATM_ADDPARTY:
+#endif
 		sanitise_atm_iobuf(rec);
 		break;
 
@@ -202,6 +204,7 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		break;
 	}
 
+#ifdef ATM_DROPPARTY
 	case ATM_DROPPARTY: {
 		/* int: party endpoint ID (1..127 for N-UNI) */
 		int *pid = (int *) get_writable_struct(sizeof(int));
@@ -211,6 +214,7 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		}
 		break;
 	}
+#endif
 
 	case BR2684_SETFILT:
 		sanitise_br2684_filter_set(rec);
@@ -289,8 +293,10 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ATM_SETSC),
 	IOCTL(ATM_SETBACKEND),
 	IOCTL(ATM_NEWBACKENDIF),
+#ifdef ATM_ADDPARTY
 	IOCTL(ATM_ADDPARTY),
 	IOCTL(ATM_DROPPARTY),
+#endif
 	/* BR2684 bridged RFC2684 backend filter */
 	IOCTL(BR2684_SETFILT),
 	IOCTL(SONET_GETSTAT),
