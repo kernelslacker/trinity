@@ -113,7 +113,7 @@ static const struct nla_attr_spec sunrpc_attrs[] = {
 	{ SUNRPC_A_IP_MAP_REQS_REQUESTS,	NLA_KIND_NESTED, 0 },
 };
 
-struct genl_family_grammar fam_sunrpc = {
+struct genl_family_grammar fam_sunrpc __attribute__((used)) = {
 	.name = SUNRPC_FAMILY_NAME,
 	.cmds = sunrpc_cmds,
 	.n_cmds = ARRAY_SIZE(sunrpc_cmds),
