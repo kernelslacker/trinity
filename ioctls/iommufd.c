@@ -47,6 +47,9 @@ static const struct ioctl iommufd_ioctls[] = {
 #ifdef IOMMU_HW_QUEUE_ALLOC
 	IOCTL(IOMMU_HW_QUEUE_ALLOC),
 #endif
+#ifdef IOMMU_IOAS_NOIOMMU_GET_PA
+	IOCTL(IOMMU_IOAS_NOIOMMU_GET_PA),
+#endif
 };
 
 /*
@@ -613,6 +616,33 @@ static void sanitise_iommufd_hw_queue_alloc(struct syscallrecord *rec)
 }
 #endif
 
+#ifdef IOMMU_IOAS_NOIOMMU_GET_PA
+static void sanitise_iommufd_ioas_noiommu_get_pa(struct syscallrecord *rec)
+{
+	struct iommu_ioas_noiommu_get_pa *p;
+	__u64 length;
+
+	/* ioctl returns the physical address backing an IOVA for noiommu devices */
+	p = get_writable_address(sizeof(*p));
+	if (p == NULL)
+		return;
+
+	length = IOMMUFD_FUZZ_PAGE_SIZE
+	       << rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ORDER + 1);
+
+	memset(p, 0, sizeof(*p));
+	p->size = sizeof(*p);
+	if (ONE_IN(8))
+		p->flags = rnd_u32();
+	p->ioas_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
+	p->iova = rnd_modulo_u64(IOMMUFD_FUZZ_IOVA_LIMIT)
+		& ~(IOMMUFD_FUZZ_PAGE_SIZE - 1);
+	p->length = length;
+
+	rec->a3 = (unsigned long)p;
+}
+#endif
+
 static void iommufd_sanitise(const struct ioctl_group *grp,
 			     struct syscallrecord *rec)
 {
@@ -694,6 +724,11 @@ static void iommufd_sanitise(const struct ioctl_group *grp,
 #ifdef IOMMU_HW_QUEUE_ALLOC
 	case IOMMU_HW_QUEUE_ALLOC:
 		sanitise_iommufd_hw_queue_alloc(rec);
+		break;
+#endif
+#ifdef IOMMU_IOAS_NOIOMMU_GET_PA
+	case IOMMU_IOAS_NOIOMMU_GET_PA:
+		sanitise_iommufd_ioas_noiommu_get_pa(rec);
 		break;
 #endif
 	default:
