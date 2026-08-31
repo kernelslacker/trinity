@@ -2,12 +2,19 @@
  * Genetlink family grammar: nfsd (kernel NFS server control plane).
  *
  * The nfsd subsystem exposes its userspace control plane through a
- * single generic-netlink family ("nfsd") carrying nine commands: a
- * dumpit-only RPC_STATUS_GET that enumerates per-RPC service stats,
- * paired *_GET / *_SET commands for the server-wide thread / version
- * / listener / pool-mode controls, and the THREADS_GET variant that
- * carries no input attrs.  The four user-callable SET commands are
- * GENL_ADMIN_PERM (CAP_SYS_NICE-equivalent gated) but the per-cmd
+ * single generic-netlink family ("nfsd") carrying nineteen commands
+ * as of v7.3-rc1.  The original nine (v7.1 and earlier) are:
+ * RPC_STATUS_GET (dumpit, per-RPC stats), paired THREADS_SET/GET,
+ * VERSION_SET/GET, LISTENER_SET/GET, and POOL_MODE_SET/GET.  Nine
+ * commands were added in v7.2 as the netlink replacement for the
+ * /proc/net/rpc/{type}/channel text upcalls: CACHE_NOTIFY (multicast
+ * event to the exportd group), SVC_EXPORT_GET/SET_REQS and
+ * EXPKEY_GET/SET_REQS (cache dump and update pairs), CACHE_FLUSH
+ * (cache invalidation), and UNLOCK_IP / UNLOCK_FILESYSTEM /
+ * UNLOCK_EXPORT (NLM lock release by address, path, or export).
+ * SERVER_STATS_GET was added in v7.3-rc1 as a dumpit-only stats
+ * command with no admin-perm requirement.  All user-callable commands
+ * that write state are GENL_ADMIN_PERM gated, but the per-cmd
  * nla_policy walker runs before the capability check, so the
  * validator coverage lands unprivileged -- penetrating the family
  * demuxer with a real family_id puts every per-cmd parser directly in
@@ -23,23 +30,19 @@
  *
  * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
  * a single flat nla_attr_spec table lists every id used by this
- * family's commands.  nfsd unusually carries four distinct top-level
- * attribute namespaces -- NFSD_A_SERVER_* (THREADS_SET), NFSD_A_
- * SERVER_PROTO_VERSION (VERSION_SET outer wrapping NFSD_A_VERSION_*),
- * NFSD_A_SERVER_SOCK_ADDR (LISTENER_SET outer wrapping NFSD_A_SOCK_*),
- * and NFSD_A_POOL_MODE_* (POOL_MODE_SET) -- whose ids all start at 1
- * with disagreeing nla_kind values (U32 vs NESTED vs NESTED vs
- * NUL_STRING).  The flat table cannot disambiguate overlapping keys,
- * so following the handshake / dpll / ovpn precedent only the
- * NFSD_A_SERVER_* surface plus the NFSD_A_RPC_STATUS_* response-side
- * namespace (whose ids 5..14 do not collide with any other namespace)
- * are enumerated here: SERVER_* is the only namespace whose ids 1..4
+ * family's commands.  nfsd carries many distinct top-level attribute
+ * namespaces whose ids all start at 1 with disagreeing nla_kind
+ * values (U32 vs NESTED vs NESTED vs NUL_STRING vs U64 vs BINARY).
+ * The flat table cannot disambiguate overlapping keys, so following
+ * the handshake / dpll / ovpn precedent only the NFSD_A_SERVER_*
+ * surface plus the NFSD_A_RPC_STATUS_* response-side namespace
+ * (whose ids 5..14 do not collide with any other namespace) are
+ * enumerated here: SERVER_* is the only namespace whose ids 1..4
  * carry consistent kinds across every attribute the THREADS_SET
- * parser ingests.  The NESTED-anchored VERSION_SET / LISTENER_SET and
- * the POOL_MODE_SET-side NUL_STRING-at-1 belong in a future grammar
- * extension that carries a per-command attribute namespace; their
- * cmds are still in the cmds[] table below and will start exercising
- * their inner parsers once the per-command namespace lands.
+ * parser ingests.  The namespaces that conflict at id 1 and belong
+ * in a future per-command namespace extension are documented in the
+ * attrs comment below; their cmds are still in the cmds[] table and
+ * will start exercising their inner parsers once that extension lands.
  *
  * The family carries a nonzero declared version (NFSD_FAMILY_VERSION
  * = 1) so the default_version member is initialised -- the kernel's
@@ -65,15 +68,25 @@
 #include "utils.h"
 
 static const struct genl_cmd_grammar nfsd_cmds[] = {
-	{ NFSD_CMD_RPC_STATUS_GET, "NFSD_CMD_RPC_STATUS_GET" },
-	{ NFSD_CMD_THREADS_SET,    "NFSD_CMD_THREADS_SET" },
-	{ NFSD_CMD_THREADS_GET,    "NFSD_CMD_THREADS_GET" },
-	{ NFSD_CMD_VERSION_SET,    "NFSD_CMD_VERSION_SET" },
-	{ NFSD_CMD_VERSION_GET,    "NFSD_CMD_VERSION_GET" },
-	{ NFSD_CMD_LISTENER_SET,   "NFSD_CMD_LISTENER_SET" },
-	{ NFSD_CMD_LISTENER_GET,   "NFSD_CMD_LISTENER_GET" },
-	{ NFSD_CMD_POOL_MODE_SET,  "NFSD_CMD_POOL_MODE_SET" },
-	{ NFSD_CMD_POOL_MODE_GET,  "NFSD_CMD_POOL_MODE_GET" },
+	{ NFSD_CMD_RPC_STATUS_GET,      "NFSD_CMD_RPC_STATUS_GET" },
+	{ NFSD_CMD_THREADS_SET,         "NFSD_CMD_THREADS_SET" },
+	{ NFSD_CMD_THREADS_GET,         "NFSD_CMD_THREADS_GET" },
+	{ NFSD_CMD_VERSION_SET,         "NFSD_CMD_VERSION_SET" },
+	{ NFSD_CMD_VERSION_GET,         "NFSD_CMD_VERSION_GET" },
+	{ NFSD_CMD_LISTENER_SET,        "NFSD_CMD_LISTENER_SET" },
+	{ NFSD_CMD_LISTENER_GET,        "NFSD_CMD_LISTENER_GET" },
+	{ NFSD_CMD_POOL_MODE_SET,       "NFSD_CMD_POOL_MODE_SET" },
+	{ NFSD_CMD_POOL_MODE_GET,       "NFSD_CMD_POOL_MODE_GET" },
+	{ NFSD_CMD_CACHE_NOTIFY,        "NFSD_CMD_CACHE_NOTIFY" },
+	{ NFSD_CMD_SVC_EXPORT_GET_REQS, "NFSD_CMD_SVC_EXPORT_GET_REQS" },
+	{ NFSD_CMD_SVC_EXPORT_SET_REQS, "NFSD_CMD_SVC_EXPORT_SET_REQS" },
+	{ NFSD_CMD_EXPKEY_GET_REQS,     "NFSD_CMD_EXPKEY_GET_REQS" },
+	{ NFSD_CMD_EXPKEY_SET_REQS,     "NFSD_CMD_EXPKEY_SET_REQS" },
+	{ NFSD_CMD_CACHE_FLUSH,         "NFSD_CMD_CACHE_FLUSH" },
+	{ NFSD_CMD_UNLOCK_IP,           "NFSD_CMD_UNLOCK_IP" },
+	{ NFSD_CMD_UNLOCK_FILESYSTEM,   "NFSD_CMD_UNLOCK_FILESYSTEM" },
+	{ NFSD_CMD_UNLOCK_EXPORT,       "NFSD_CMD_UNLOCK_EXPORT" },
+	{ NFSD_CMD_SERVER_STATS_GET,    "NFSD_CMD_SERVER_STATS_GET" },
 };
 
 /*
@@ -97,11 +110,25 @@ static const struct genl_cmd_grammar nfsd_cmds[] = {
  * dispatch-then-discard accounting in nfsd_nl_rpc_status_get_dumpit
  * the same way the fou / psample response-side enumerations do.
  *
+ * NFSD_A_CACHE_NOTIFY_CACHE_TYPE (id 1, U32) and NFSD_A_CACHE_FLUSH_
+ * MASK (id 1, U32) are consistent with the existing id 1 U32 entry;
+ * no new table slot is required.  NFSD_CMD_CACHE_NOTIFY is a kernel-
+ * originated multicast event (mcgrp exportd) with no input policy;
+ * NFSD_CMD_CACHE_FLUSH carries the single MASK attr whose masked-U32
+ * constraint the existing slot satisfies on kind.
+ *
  * Not enumerated: NFSD_A_SERVER_PROTO_VERSION (id 1, NESTED) for
  * VERSION_SET, NFSD_A_SERVER_SOCK_ADDR (id 1, NESTED) for LISTENER_
- * SET, NFSD_A_POOL_MODE_MODE (id 1, NUL_STRING) for POOL_MODE_SET --
- * all three disagree with NFSD_A_SERVER_THREADS (id 1, U32) on kind
- * and a single flat table cannot carry both.  Per the handshake
+ * SET, NFSD_A_POOL_MODE_MODE (id 1, NUL_STRING) for POOL_MODE_SET,
+ * NFSD_A_SVC_EXPORT_REQS_REQUESTS (id 1, NESTED) for SVC_EXPORT_GET/
+ * SET_REQS, NFSD_A_EXPKEY_REQS_REQUESTS (id 1, NESTED) for EXPKEY_
+ * GET/SET_REQS, NFSD_A_UNLOCK_IP_ADDRESS (id 1, BINARY) for UNLOCK_
+ * IP, NFSD_A_UNLOCK_FILESYSTEM_PATH (id 1, NUL_STRING) for UNLOCK_
+ * FILESYSTEM, NFSD_A_UNLOCK_EXPORT_PATH (id 1, NUL_STRING) for
+ * UNLOCK_EXPORT, and NFSD_A_SERVER_STATS_RC_HITS (id 1, U64) anchoring
+ * the full SERVER_STATS response namespace for SERVER_STATS_GET --
+ * every one of these disagrees with NFSD_A_SERVER_THREADS (id 1, U32)
+ * on kind and a single flat table cannot carry both.  Per the handshake
  * precedent the larger surface (SERVER_* + RPC_STATUS_*) anchors the
  * grammar and the others wait on a per-command namespace extension.
  */
