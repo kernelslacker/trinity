@@ -81,8 +81,10 @@
 
 #define TRINITY_ZCRX_CTRL_FLUSH_RQ		0
 #define TRINITY_ZCRX_CTRL_EXPORT		1
+#define TRINITY_ZCRX_CTRL_ARM_EVENT		2
+#define TRINITY_ZCRX_CTRL_ADD_AREA		3
 #ifndef TRINITY_ZCRX_CTRL_LAST
-#define TRINITY_ZCRX_CTRL_LAST			3
+#define TRINITY_ZCRX_CTRL_LAST			4
 #endif
 
 /*
@@ -162,6 +164,19 @@ struct trinity_io_uring_zcrx_ifq_reg {
 	__u32	zcrx_id;
 	__u32	__resv2;
 	__u64	__resv[3];
+};
+
+/*
+ * Mirror of struct io_uring_zcrx_area_reg from <linux/io_uring/zcrx.h>.
+ * Used as the target of zcrx_ctrl_add_area::area_ptr.
+ */
+struct trinity_io_uring_zcrx_area_reg {
+	__u64	addr;
+	__u64	len;
+	__u64	rq_area_token;
+	__u32	flags;		/* see enum zcrx_reg_flags: ZCRX_REG_IMPORT=1 */
+	__u32	dmabuf_fd;
+	__u64	__resv2[2];
 };
 
 struct trinity_io_uring_mem_region_reg {
@@ -254,17 +269,26 @@ struct trinity_io_uring_query_hdr {
 
 /*
  * Trinity-private mirror for struct zcrx_ctrl from
- * <linux/io_uring/zcrx.h> (shipped post-6.16).  Anonymous union body sized
- * to 48 bytes -- both arms (zc_export = 4 + 11*4 = 48; zc_flush = 6*8 = 48)
- * are the same length and the kernel decodes the body off ->op.
+ * <linux/io_uring/zcrx.h>.  All four union arms are 48 bytes;
+ * the kernel decodes the body off ->op.
  */
+struct trinity_io_uring_zcrx_ctrl_flush {
+	__u64	__resv[6];
+};
+
 struct trinity_io_uring_zcrx_ctrl_export {
 	__u32	zcrx_fd;
 	__u32	__resv1[11];
 };
 
-struct trinity_io_uring_zcrx_ctrl_flush {
-	__u64	__resv[6];
+struct trinity_io_uring_zcrx_ctrl_arm_event {
+	__u32	event_type;	/* enum zcrx_event_type */
+	__u32	__resv[11];
+};
+
+struct trinity_io_uring_zcrx_ctrl_add_area {
+	__u64	area_ptr;	/* struct io_uring_zcrx_area_reg * */
+	__u64	__resv[5];
 };
 
 struct trinity_io_uring_zcrx_ctrl {
@@ -272,10 +296,14 @@ struct trinity_io_uring_zcrx_ctrl {
 	__u32	op;
 	__u64	__resv[2];
 	union {
-		struct trinity_io_uring_zcrx_ctrl_export	zc_export;
 		struct trinity_io_uring_zcrx_ctrl_flush		zc_flush;
+		struct trinity_io_uring_zcrx_ctrl_export	zc_export;
+		struct trinity_io_uring_zcrx_ctrl_arm_event	zc_arm_event;
+		struct trinity_io_uring_zcrx_ctrl_add_area	zc_area;
 	} body;
 };
+_Static_assert(sizeof(struct trinity_io_uring_zcrx_ctrl) == 72,
+	       "trinity_io_uring_zcrx_ctrl must match upstream struct zcrx_ctrl");
 
 #ifndef IORING_OFF_SQ_RING
 #define IORING_OFF_SQ_RING	0ULL

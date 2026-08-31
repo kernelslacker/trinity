@@ -667,13 +667,10 @@ struct ioring_register_payload ioring_reg_query_payload(void)
 
 /*
  * IORING_REGISTER_ZCRX_CTRL: arg = struct zcrx_ctrl, nr_args = 1.
- * op selects the union arm (FLUSH_RQ = 0 / EXPORT = 1); 75% pick a
- * valid op to reach the per-op handler, 25% garbage.  For
- * ZCRX_CTRL_EXPORT occasionally seed zc_export.zcrx_fd from the fd
- * pool so io_zcrx_ctrl_export reaches its real-fd validators rather
- * than -EBADF'ing on a garbage fd.  __resv must be zero or the
- * reservedness check fires.  zcrx_id picks a small value; the kernel
- * looks it up against the io_ring_ctx's zcrx xarray.
+ * op selects the union arm (FLUSH_RQ=0 / EXPORT=1 / ARM_EVENT=2 /
+ * ADD_AREA=3); 75% pick a valid op, 25% garbage.  __resv must be
+ * zero or the reservedness check fires.  zcrx_id picks a small
+ * value; the kernel looks it up against the io_ring_ctx zcrx xarray.
  */
 struct ioring_register_payload ioring_reg_zcrx_ctrl_payload(void)
 {
@@ -694,6 +691,31 @@ struct ioring_register_payload ioring_reg_zcrx_ctrl_payload(void)
 			int xfd = get_random_fd();
 			z->body.zc_export.zcrx_fd =
 				(xfd >= 0) ? (__u32) xfd : (__u32) rnd_u32();
+		}
+		if (z->op == TRINITY_ZCRX_CTRL_ARM_EVENT) {
+			/* ZCRX_EVENT_ALLOC_FAIL=0, COPY=1; last=2 */
+			if (ONE_IN(8))
+				z->body.zc_arm_event.event_type = rnd_u32();
+			else
+				z->body.zc_arm_event.event_type =
+					rnd_modulo_u32(2);
+		}
+		if (z->op == TRINITY_ZCRX_CTRL_ADD_AREA) {
+			struct trinity_io_uring_zcrx_area_reg *a;
+
+			a = (struct trinity_io_uring_zcrx_area_reg *)
+				get_writable_struct(sizeof(*a));
+			if (a) {
+				memset(a, 0, sizeof(*a));
+				a->flags = ONE_IN(4) ? rnd_u32() : 1; /* ZCRX_REG_IMPORT */
+				if (ONE_IN(2)) {
+					int dfd = get_random_fd();
+					a->dmabuf_fd = (dfd >= 0) ?
+						(__u32) dfd : (__u32) rnd_u32();
+				}
+				z->body.zc_area.area_ptr =
+					(__u64)(unsigned long) a;
+			}
 		}
 	}
 	p.arg = (unsigned long) z;
