@@ -86,6 +86,7 @@ REAL_SRCS	:= \
 	$(TOP)/struct_catalog/address.c \
 	$(TOP)/utils/shared_freelist.c \
 	$(TOP)/utils/shared_str_heap.c \
+	$(TOP)/utils/pidstat-probe.c \
 	$(TOP)/persist/deferred-free.c
 
 FAKE_SRCS	:= \
@@ -100,6 +101,7 @@ FAKE_SRCS	:= \
 	stats_opclock_lossless_test.c \
 	struct_field_bounds_test.c \
 	kmsg_trigger_selftest.c \
+	pidstat_probe_selftest.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
