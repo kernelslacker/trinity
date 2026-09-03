@@ -305,10 +305,24 @@ static bool extract_kernel_header(const char *kmsg, size_t kmsg_len,
 }
 
 /*
- * Slurp a tiny /proc/<pid>/<name> file into fp.  Silent on any error:
- * the child may have just exited, the file may be unreadable for this
- * uid, or the kernel may not export it on this build.  Trinity runs
- * unprivileged often enough that EACCES is expected, not exceptional.
+ * Hard ceiling on what one /proc section may contribute to the report.
+ *
+ * The three files slurped today (stack, syscall, wchan) are a few
+ * hundred bytes each, so this is never reached.  It exists because the
+ * loop below has no other bound: a section like smaps or numa_maps
+ * scales with the child's VMA count, and an mm childop can leave a
+ * child with a great many, so adding one would quietly turn a crash
+ * report into an enormous file.  Trinity has produced a 1.8 GB log
+ * exactly once, from an uncapped drain.
+ */
+#define SLURP_PROC_MAX_BYTES	(64 * 1024)
+
+/*
+ * Slurp a tiny /proc/<pid>/<name> file into fp, truncating at
+ * SLURP_PROC_MAX_BYTES.  Silent on any error: the child may have just
+ * exited, the file may be unreadable for this uid, or the kernel may
+ * not export it on this build.  Trinity runs unprivileged often enough
+ * that EACCES is expected, not exceptional.
  */
 static void slurp_proc_file(FILE *fp, pid_t pid, const char *name)
 {
@@ -316,6 +330,8 @@ static void slurp_proc_file(FILE *fp, pid_t pid, const char *name)
 	char buf[4096];
 	FILE *src;
 	size_t n;
+	size_t written = 0;
+	bool truncated = false;
 	int last = -1;
 
 	snprintf(path, sizeof(path), "/proc/%d/%s", (int) pid, name);
@@ -325,8 +341,30 @@ static void slurp_proc_file(FILE *fp, pid_t pid, const char *name)
 
 	fprintf(fp, "%s:\n", name);
 	while ((n = fread(buf, 1, sizeof(buf), src)) > 0) {
-		fwrite(buf, 1, n, fp);
-		last = (unsigned char) buf[n - 1];
+		size_t chunk = n;
+
+		if (written + chunk > SLURP_PROC_MAX_BYTES) {
+			chunk = SLURP_PROC_MAX_BYTES - written;
+			truncated = true;
+		}
+
+		if (chunk != 0) {
+			fwrite(buf, 1, chunk, fp);
+			last = (unsigned char) buf[chunk - 1];
+			written += chunk;
+		}
+
+		if (truncated == true)
+			break;
+	}
+
+	/* Same marker discipline as the ferror() path below: a reader must
+	 * be able to tell a short section from a complete one. */
+	if (truncated == true) {
+		if (last != -1 && last != '\n')
+			fputc('\n', fp);
+		fprintf(fp, "[%s truncated at %u bytes]\n", name,
+			(unsigned int) SLURP_PROC_MAX_BYTES);
 	}
 
 	/* fread returns short on EOF *or* error and ferror() is sticky, so a
