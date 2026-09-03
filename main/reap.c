@@ -21,6 +21,7 @@
 #include "objects.h"
 #include "params.h"
 #include "pids.h"
+#include "pidstat-probe.h"
 #include "pre_crash_ring.h"
 #include "random.h"
 #include "shm.h"
@@ -319,13 +320,34 @@ void reap_dead_kids(void)
 		if (pid_is_valid(pid) == false)
 			continue;
 
+		/* pidstatfiles[] is allocated lazily on first entry to
+		 * main_loop(), i.e. before anything can occupy a slot, but
+		 * the teardown paths can reach here earlier than that. */
+		if (pidstatfiles != NULL && pidstatfiles[i] >= 0) {
+			if (pidstat_task_gone(pidstatfiles[i]) == true) {
+				output(0, "pid %u has disappeared. Reaping.\n", pid);
+				close(pidstatfiles[i]);
+				pidstatfiles[i] = -1;
+				reap_child(children[i], i, true);
+				reaped++;
+			} else if (verbosity > 1) {
+				/* Alive.  A child that dropped privileges
+				 * (setresuid/capset/etc.) is worth a note, but the
+				 * only way to spot one is a kill() probe, so only
+				 * pay for it when the notice would actually print
+				 * (output() drops level 1 unless -v).  Steady state
+				 * stays at one syscall per occupied slot per cycle. */
+				if (kill(pid, 0) != 0 && errno == EPERM)
+					output(1, "pid %u dropped privileges (kill probe EPERM).\n", pid);
+			}
+			continue;
+		}
+
+		/* No pidstat fd for this slot (open_child_pidstat() fails
+		 * soft), so fall back to the pid-number probe. */
 		if (kill(pid, 0) != 0) {
 			if (errno == ESRCH) {
 				output(0, "pid %u has disappeared. Reaping.\n", pid);
-				if (pidstatfiles[i] >= 0) {
-					close(pidstatfiles[i]);
-					pidstatfiles[i] = -1;
-				}
 				reap_child(children[i], i, true);
 				reaped++;
 			} else if (errno == EPERM) {
