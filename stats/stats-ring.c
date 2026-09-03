@@ -4,9 +4,18 @@
  * Children produce stats deltas into their own ring (write-only-by-owner);
  * the parent drains every ring once per main_loop iteration and applies
  * the deltas to a parent-private struct stats_aggregate that lives in
- * MAP_PRIVATE memory invisible to the kernel.  The kernel can no longer
- * scribble those counters via a wild syscall arg pointer because the
+ * MAP_PRIVATE memory invisible to the kernel.  A wild syscall arg pointer
+ * cannot scribble a counter that arrives this way, because its
  * authoritative copy is not at any kernel-visible address.
+ *
+ * That protection covers exactly the counters routed through
+ * stats_ring_enqueue(), which is a minority of the tree's counters and
+ * not a property of stats collection in general.  The original store,
+ * struct stats_s in shm, is still child-written in place at hundreds of
+ * sites and stays kernel-visible by construction; those fields are
+ * telemetry, and the corruption-defense layer treats a scribble there as
+ * expected noise.  Which store a counter belongs in is a per-counter
+ * decision -- see "Data Model" in stats/CLAUDE.md before adding one.
  *
  * The mirror page (struct stats_published) carries the small subset of
  * the aggregate that children also need to read -- currently just
