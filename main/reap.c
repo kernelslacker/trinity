@@ -387,13 +387,26 @@ void kill_all_kids(void)
 		if (pid_is_valid(pid) == false)
 			continue;
 
+		/* Disqualify a recycled pid before anything signals it:
+		 * pid_alive() below can only vouch for the pid *number*, so
+		 * once the kernel has handed that number to an unrelated
+		 * process it reports our dead child as alive and the SIGKILL
+		 * goes to a stranger.  The slot's pidstat fd is pinned to the
+		 * task we spawned, so it cannot be fooled that way. */
+		if (pidstatfiles != NULL && pidstat_task_gone(pidstatfiles[i]) == true) {
+			close(pidstatfiles[i]);
+			pidstatfiles[i] = -1;
+			reap_child(children[i], i, true);
+			continue;
+		}
+
 		if (pid_alive(pid) == true) {
 			kill_pid(pid);
 			children_seen++;
 		} else {
 			/* check we don't have anything stale in the pidlist */
 			if (errno == ESRCH) {
-				if (pidstatfiles[i] >= 0) {
+				if (pidstatfiles != NULL && pidstatfiles[i] >= 0) {
 					close(pidstatfiles[i]);
 					pidstatfiles[i] = -1;
 				}
