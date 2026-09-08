@@ -54,6 +54,37 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * Per-symbol shims for the threshold interface, which landed after the
+ * oldest headers we build against: the four THRESHOLD commands and the
+ * three THRESHOLD attributes do not exist on a 6.12-vintage
+ * <linux/thermal.h>, and referencing them unguarded fails the build
+ * rather than just skipping the newer commands.  Values are the ABI
+ * positions in enum thermal_genl_cmd / enum thermal_genl_attr; the same
+ * per-symbol #ifndef model as mptcp_pm / cifs / ila.
+ */
+#ifndef THERMAL_GENL_CMD_THRESHOLD_GET
+#define THERMAL_GENL_CMD_THRESHOLD_GET		7
+#endif
+#ifndef THERMAL_GENL_CMD_THRESHOLD_ADD
+#define THERMAL_GENL_CMD_THRESHOLD_ADD		8
+#endif
+#ifndef THERMAL_GENL_CMD_THRESHOLD_DELETE
+#define THERMAL_GENL_CMD_THRESHOLD_DELETE	9
+#endif
+#ifndef THERMAL_GENL_CMD_THRESHOLD_FLUSH
+#define THERMAL_GENL_CMD_THRESHOLD_FLUSH	10
+#endif
+#ifndef THERMAL_GENL_ATTR_THRESHOLD
+#define THERMAL_GENL_ATTR_THRESHOLD		24
+#endif
+#ifndef THERMAL_GENL_ATTR_THRESHOLD_TEMP
+#define THERMAL_GENL_ATTR_THRESHOLD_TEMP	25
+#endif
+#ifndef THERMAL_GENL_ATTR_THRESHOLD_DIRECTION
+#define THERMAL_GENL_ATTR_THRESHOLD_DIRECTION	26
+#endif
+
 static const struct genl_cmd_grammar thermal_cmds[] = {
 	{ THERMAL_GENL_CMD_TZ_GET_ID,		"THERMAL_GENL_CMD_TZ_GET_ID" },
 	{ THERMAL_GENL_CMD_TZ_GET_TRIP,		"THERMAL_GENL_CMD_TZ_GET_TRIP" },
