@@ -1,10 +1,9 @@
 /* cgroup directory FDs (O_PATH on /sys/fs/cgroup subgroups) plus
  * O_RDWR control-file FDs under a trinity-created sacrificial sub-cgroup
  * so fd-arg syscalls (write / read / ftruncate / fallocate) exercise the
- * cgroup v2 control-file parse handlers (pid-list parsing in
- * cgroup.procs, token parsing in cgroup.subtree_control, value parsing
- * in memory.max / cgroup.events) instead of skipping past every non-
- * directory in /sys/fs/cgroup.
+ * cgroup v2 control-file parse handlers (token parsing in
+ * cgroup.subtree_control, value parsing in memory.max / cgroup.events)
+ * instead of skipping past every non-directory in /sys/fs/cgroup.
  */
 
 #include <dirent.h>
@@ -37,7 +36,6 @@
  * in the same order of magnitude as CGROUP_INIT_POOL above.
  */
 static const char * const cgroup_ctl_files[] = {
-	"cgroup.procs",
 	"cgroup.subtree_control",
 	"cgroup.events",
 	"memory.max",
@@ -110,11 +108,10 @@ static bool read_self_v2_cg(char *out, size_t len)
 }
 
 /*
- * rmdir the sacrificial sub-cgroup at process exit.  Best-effort: a
- * fuzzed write that migrated a live process into cgroup.procs leaves the
- * directory non-empty and rmdir returns EBUSY.  The kernel reaps the
- * empty cgroup once the migrated processes exit, so any leaked directory
- * only survives briefly beyond trinity's own exit.
+ * rmdir the sacrificial sub-cgroup at process exit.  Best-effort: rmdir
+ * returns EBUSY while the directory still has member processes or
+ * children, and cgroup v2 never reaps a directory on its own, so a
+ * failure here leaks it until an operator removes it.
  */
 static void sacrificial_cg_cleanup(void)
 {
@@ -127,10 +124,13 @@ static void sacrificial_cg_cleanup(void)
 /*
  * Publish O_RDWR fds on cgroup v2 control files under a trinity-owned
  * sacrificial leaf sub-cgroup so fd-arg syscalls hit their write/parse
- * paths.  The sacrificial dir has no member processes and no children:
- * a fuzzed write to cgroup.procs / subtree_control cannot migrate a
- * process out of a foreign cgroup or toggle controllers at the cgroup
- * root -- the only visible effect is inside our own leaf.
+ * paths.  cgroup.procs is deliberately not in the list: the kernel
+ * authorises a write to it with the *opener's* credentials and cgroup
+ * namespace, both captured here in the parent before children drop
+ * privilege, so a child writing a small number into the inherited fd
+ * would migrate the matching host task -- pid 1 for "1", itself for
+ * "0" -- into a leaf whose memory.max, cpu.max and io.max are being
+ * fuzzed through this same pool.
  *
  * Every step probe/skips on failure so a host without cgroup v2 write
  * delegation (mkdir returns EACCES / EROFS / EPERM), a build with
