@@ -28,6 +28,12 @@ static void post_getpid(struct syscallrecord *rec)
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 
+	/* Not the oracle's business: --dry-run synthesizes -1/ENOSYS without
+	 * entering the kernel, and a fuzzed seccomp filter can return -1 with
+	 * an errno for real.  Only an errno-less -1 is a contract violation. */
+	if (syscall_errno_failure(rec))
+		return;
+
 	/* Kernel ABI: getpid() cannot fail; retval must be in [1, PID_MAX_LIMIT=4194304]. */
 	if (ret < 1 || ret > 4194304) {
 		output(0, "getpid oracle: returned pid %ld is out of range (must be in [1, PID_MAX_LIMIT=4194304], never -1)\n",

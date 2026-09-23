@@ -309,6 +309,20 @@ struct syscallrecord {
 
 #define REC_CANARY_MAGIC	0xdeadbeefcafebabeULL
 
+/*
+ * True when the AFTER record is an ordinary errno'd failure: retval -1
+ * with errno set.  The "this syscall cannot fail" oracles must stand
+ * down on this shape -- a -1 there is not evidence of a kernel ABI
+ * violation.  --dry-run synthesizes retval -1 / ENOSYS for every call
+ * without entering the kernel, and on a live run a fuzzed seccomp
+ * filter carrying SECCOMP_RET_ERRNO produces the same pair from the
+ * kernel itself.  Neither says anything about the syscall's contract.
+ */
+static inline bool syscall_errno_failure(const struct syscallrecord *rec)
+{
+	return rec->retval == (unsigned long) -1L && rec->errno_post != 0;
+}
+
 enum argtype {
 	ARG_UNDEFINED,
 	ARG_FD,

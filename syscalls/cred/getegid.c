@@ -23,6 +23,12 @@ static void post_getegid(struct syscallrecord *rec)
 	gid_t got, proc_egid;
 	unsigned long retval = rec->retval;
 
+	/* Not the oracle's business: --dry-run synthesizes -1/ENOSYS without
+	 * entering the kernel, and a fuzzed seccomp filter can return -1 with
+	 * an errno for real.  Only an errno-less -1 is a contract violation. */
+	if (syscall_errno_failure(rec))
+		return;
+
 	/* Kernel ABI: getegid() is infallible — from_kgid_munged(current_user_ns(),
 	 * current_egid()) cannot fail and the syscall return path has no error case.
 	 * A retval of -1UL is a structural ABI violation (e.g. -errno leaking

@@ -348,8 +348,11 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * AFTER state so the post path accounts it as an early failure --
 	 * handle_failure() runs for coverage while the success-gated
 	 * registrars (handle_success, register_returned_fd, prop_ring_push)
-	 * and entry->post all short-circuit on retval == -1UL, issuing no
-	 * syscall of their own.  deactivate_enosys() is skipped for dry-run
+	 * short-circuit on retval == -1UL, issuing no syscall of their own.
+	 * entry->post still runs -- it is not gated on -1UL by the
+	 * dispatcher -- so a post handler that treats -1 as a contract
+	 * violation must call syscall_errno_failure() itself.
+	 * deactivate_enosys() is skipped for dry-run
 	 * at its call site so the synthetic ENOSYS does not drain the
 	 * syscall table.  Zero the kcov trace header manually (kcov_enable
 	 * never ran on this skip path) so the caller's kcov_collect() does

@@ -22,8 +22,10 @@
  * fs->umask, stale fs_struct pointer, or anything else that desyncs
  * the cached mask from the projected one.
  *
- * No retval gate: sys_umask cannot fail, it always returns the prior
- * mask, so any call we sampled has installed the new value.  The
+ * sys_umask itself cannot fail: it always returns the prior mask, so
+ * any call we sampled has installed the new value.  We still stand
+ * down on an errno'd -1, which is not the kernel disagreeing with its
+ * own contract (see syscall_errno_failure).  The
  * kernel masks the argument with 0777 before storing, so the
  * expected value is (rec->a1 & 0777), not the raw a1 (the syscall
  * is declared with int mask and the high bits are silently
@@ -39,6 +41,12 @@ static void post_umask(struct syscallrecord *rec)
 	const char *value;
 	unsigned int kumask;
 	unsigned int expected;
+
+	/* Not the oracle's business: --dry-run synthesizes -1/ENOSYS without
+	 * entering the kernel, and a fuzzed seccomp filter can return -1 with
+	 * an errno for real.  Only an errno-less -1 is a contract violation. */
+	if (syscall_errno_failure(rec))
+		return;
 
 	/* Kernel ABI: sys_umask cannot fail and the kernel masks the
 	 * incoming argument with 0777 before storing, so the returned

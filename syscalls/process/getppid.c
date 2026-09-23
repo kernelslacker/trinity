@@ -27,6 +27,12 @@ static void post_getppid(struct syscallrecord *rec)
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 
+	/* Not the oracle's business: --dry-run synthesizes -1/ENOSYS without
+	 * entering the kernel, and a fuzzed seccomp filter can return -1 with
+	 * an errno for real.  Only an errno-less -1 is a contract violation. */
+	if (syscall_errno_failure(rec))
+		return;
+
 	/*
 	 * Kernel ABI: getppid() cannot fail; retval must be in
 	 * [0, PID_MAX_LIMIT=4194304]. PPid==0 is legitimate (init has no

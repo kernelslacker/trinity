@@ -28,6 +28,12 @@ static void post_sched_yield(struct syscallrecord *rec)
 {
 	unsigned long retval = rec->retval;
 
+	/* Not the oracle's business: --dry-run synthesizes -1/ENOSYS without
+	 * entering the kernel, and a fuzzed seccomp filter can return -1 with
+	 * an errno for real.  Only an errno-less -1 is a contract violation. */
+	if (syscall_errno_failure(rec))
+		return;
+
 	if (!ONE_IN(100))
 		return;
 
