@@ -115,6 +115,17 @@ static bool read_self_v2_cg(char *out, size_t len)
  */
 static void sacrificial_cg_cleanup(void)
 {
+	/*
+	 * Parent only.  Children reach exit() on at least four paths --
+	 * zmalloc failure, the SIGINT teardown in debug.c, the socket
+	 * post-handler, and output() -- and atexit handlers run for all of
+	 * them.  A child running this teardown tears down state the parent
+	 * and every sibling are still using.  getpid() rather than mypid():
+	 * a CLONE_VM grandchild inherits its parent worker's cached pid.
+	 */
+	if (getpid() != mainpid)
+		return;
+
 	if (sacrificial_cg_path[0] == '\0')
 		return;
 	(void)rmdir(sacrificial_cg_path);

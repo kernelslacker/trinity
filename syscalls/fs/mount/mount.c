@@ -16,6 +16,7 @@
 #include "csfu.h"
 #include "deferred-free.h"
 #include "pathnames.h"
+#include "pids.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -42,9 +43,9 @@ static char sacrificial_mount_paths[NR_SACRIFICIAL_MOUNT_PATHS][64];
 static unsigned int nr_sacrificial_mount_paths;
 
 /*
- * Parent-only atexit teardown.  Children fork after the constructor and
- * exit via _exit(), so they never run this -- only the parent rmdirs the
- * sacrificial dirs it mkdir'd.  Idempotent + fail-soft: a dir the kernel
+ * Parent-only atexit teardown, enforced by the mainpid gate below --
+ * children fork after the constructor and do reach exit() on several
+ * paths, so only the parent rmdirs the sacrificial dirs it mkdir'd.  Idempotent + fail-soft: a dir the kernel
  * already reaped (or a stray bind-mount in the host ns we cannot break)
  * is left alone rather than aborting teardown.  Without this, every
  * trinity invocation (including --dry-run smokes that gate childops off
@@ -54,6 +55,17 @@ static unsigned int nr_sacrificial_mount_paths;
 static void cleanup_sacrificial_mount_paths(void)
 {
 	unsigned int i;
+
+	/*
+	 * Parent only.  Children reach exit() on at least four paths --
+	 * zmalloc failure, the SIGINT teardown in debug.c, the socket
+	 * post-handler, and output() -- and atexit handlers run for all of
+	 * them.  A child running this teardown tears down state the parent
+	 * and every sibling are still using.  getpid() rather than mypid():
+	 * a CLONE_VM grandchild inherits its parent worker's cached pid.
+	 */
+	if (getpid() != mainpid)
+		return;
 
 	for (i = 0; i < nr_sacrificial_mount_paths; i++)
 		(void) rmdir(sacrificial_mount_paths[i]);

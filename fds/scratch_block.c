@@ -53,6 +53,7 @@
 
 #include "fd.h"
 #include "objects.h"
+#include "pids.h"
 #include "rnd.h"
 #include "scratch_block.h"
 #include "shm.h"
@@ -230,6 +231,17 @@ static void scratch_entry_release(unsigned int idx)
 static void scratch_block_atexit_cleanup(void)
 {
 	unsigned int i;
+
+	/*
+	 * Parent only.  Children reach exit() on at least four paths --
+	 * zmalloc failure, the SIGINT teardown in debug.c, the socket
+	 * post-handler, and output() -- and atexit handlers run for all of
+	 * them.  A child running this teardown tears down state the parent
+	 * and every sibling are still using.  getpid() rather than mypid():
+	 * a CLONE_VM grandchild inherits its parent worker's cached pid.
+	 */
+	if (getpid() != mainpid)
+		return;
 
 	if (!scratch_block_atexit_armed)
 		return;

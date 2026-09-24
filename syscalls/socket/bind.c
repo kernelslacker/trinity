@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "net.h"
+#include "pids.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -74,6 +75,17 @@ static void bind_unix_paths_teardown(void)
 {
 	unsigned int i;
 
+	/*
+	 * Parent only.  Children reach exit() on at least four paths --
+	 * zmalloc failure, the SIGINT teardown in debug.c, the socket
+	 * post-handler, and output() -- and atexit handlers run for all of
+	 * them.  A child running this teardown tears down state the parent
+	 * and every sibling are still using.  getpid() rather than mypid():
+	 * a CLONE_VM grandchild inherits its parent worker's cached pid.
+	 */
+	if (getpid() != mainpid)
+		return;
+
 	for (i = 0; i < nr_bind_unix_paths; i++)
 		(void) unlink(bind_unix_paths[i]);
 	if (bind_unix_dir[0] != '\0')
@@ -84,10 +96,11 @@ static void bind_unix_paths_teardown(void)
  * Parent-only constructor: create /tmp/trinity-bind-<pid>/ and a bank
  * of candidate socket-file paths under it.  Children fork after the
  * constructor and never re-run it, so every child sees the same paths
- * via COW.  The atexit teardown runs only in the parent -- children
- * exit via _exit() and skip atexit -- so a per-call .cleanup unlink is
- * still required to keep back-to-back binds against the same slot from
- * bouncing on EADDRINUSE.
+ * via COW.  The atexit teardown is gated on the parent explicitly --
+ * children do reach exit() on several paths and would otherwise run it
+ * -- so a per-call .cleanup unlink is still required to keep
+ * back-to-back binds against the same slot from bouncing on
+ * EADDRINUSE.
  */
 static void __attribute__((constructor)) bind_unix_paths_init(void)
 {
