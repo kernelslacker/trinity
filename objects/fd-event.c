@@ -143,8 +143,8 @@ void notify_child_fd_closed(struct childdata *child, int fd)
  * Range close.  Enqueue a single FD_EVENT_CLOSE_RANGE carrying
  * [lo, hi] instead of N FD_EVENT_CLOSEs: a wide close_range() must
  * not overflow FD_EVENT_RING_SIZE (1024) and drop events.  The parent
- * drain walks the range and calls remove_object_by_fd() per fd; lookup
- * misses are O(1), so unrelated fds in the span are cheap.
+ * drain counts the event; it does not retire the range, because these
+ * are the child's descriptors, not the parent's.
  */
 void notify_child_fd_closed_range(struct childdata *child, int lo, int hi)
 {
@@ -206,57 +206,50 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	} else {
 		switch (ev.type) {
 		case FD_EVENT_CLOSE:
+			/*
+			 * Count only.  A child has its own fd table after
+			 * fork, so its close() dropped the child's reference
+			 * and nothing else; the parent's copy is the
+			 * inheritance source for every child spawned after
+			 * this one, not a leak.  Destroying it here shrinks
+			 * the global pool for the rest of the run -- nothing
+			 * refills it, since open_fds() runs once before the
+			 * first fork and provider replenish is child-side --
+			 * and in a root run the lost fds were opened with
+			 * privilege the children no longer have.
+			 */
+			__atomic_add_fetch(&shm->stats.fd.event_close_count,
+					   1, __ATOMIC_RELAXED);
+			break;
 		case FD_EVENT_EVICT:
 			/*
-			 * CLOSE and EVICT both retire the pooled object: a
-			 * child either genuinely closed the fd (CLOSE) or the
-			 * parent watchdog is expiring a stale slot whose fd
-			 * may still be live in a sibling (EVICT).  Either
-			 * way the parent wants the slot gone.  Bump separate
-			 * counters so the two paths stay observable.
+			 * Destructive, unlike CLOSE above: this is the parent
+			 * watchdog deliberately retiring an fd that wedged a
+			 * child, so the slot has to go even though siblings
+			 * may still hold it.
 			 *
 			 * Per-provider outstanding-fd gauge decrement lives
 			 * in __destroy_object() (objects/registry.c) so it covers
 			 * every fd-provider destruction path -- parent-side
-			 * stuck-fd eviction, close/close_range post-handlers,
-			 * and perf/kvm peer pre-closes all flow through that
-			 * common point.  remove_object_by_fd() ultimately
-			 * calls __destroy_object(), so each drain still
-			 * pays the decrement exactly once.
+			 * stuck-fd eviction and perf/kvm peer pre-closes all
+			 * flow through that common point.
+			 * remove_object_by_fd() ultimately calls
+			 * __destroy_object(), so each drain still pays the
+			 * decrement exactly once.
 			 */
 			remove_object_by_fd(ev.fd1);
-			if (ev.type == FD_EVENT_EVICT)
-				__atomic_add_fetch(&shm->stats.fd.event_evict_count,
-						   1, __ATOMIC_RELAXED);
-			else
-				__atomic_add_fetch(&shm->stats.fd.event_close_count,
-						   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.fd.event_evict_count,
+					   1, __ATOMIC_RELAXED);
 			break;
 		case FD_EVENT_CLOSE_RANGE: {
 			/*
-			 * Bulk-close range from close_range().  Walk
-			 * [fd1, fd2] and retire each fd; remove_object_by_fd()
-			 * is a no-op for untracked fds, so a span that
-			 * straddles trinity-tracked and disposable sandbox
-			 * fds is fine.  Clamp the walk width as defence
-			 * against a child stomping fd2 to a wild value past
-			 * the payload_valid() snapshot -- the snapshot is on
-			 * a parent-local copy so a TOCTOU flip can't reach
-			 * here, but the clamp also bounds a kernel-accepted
-			 * range that simply grew past what close_range.c's
-			 * post handler would have clamped.  Match the same
-			 * 1024 cap close_range.c uses on the producer side.
+			 * Bulk-close range from close_range().  Count only,
+			 * for the same reason as FD_EVENT_CLOSE above: the
+			 * child closed its own descriptors and the parent's
+			 * remain the inheritance source.  This one mattered
+			 * most -- a single close_range() used to retire up to
+			 * 1024 global objects in one drain.
 			 */
-			int lo = ev.fd1;
-			int hi = ev.fd2;
-			int fd;
-
-			if (hi - lo > 1024)
-				hi = lo + 1024;
-
-			for (fd = lo; fd <= hi; fd++)
-				remove_object_by_fd(fd);
-
 			__atomic_add_fetch(&shm->stats.fd.event_close_count,
 					   1, __ATOMIC_RELAXED);
 			break;

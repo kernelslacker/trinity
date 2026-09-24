@@ -157,10 +157,10 @@ static void post_dup2(struct syscallrecord *rec)
 	 * dup2(oldfd, oldfd) is a documented kernel no-op success: it
 	 * returns oldfd without closing anything.  sanitise_dup2() picks
 	 * rec->a2 == rec->a1 about 10% of the time to exercise the
-	 * oldfd == newfd short-circuit in __do_dup2(); emitting a CLOSE
-	 * event for rec->a2 in that case makes the parent destroy a
-	 * still-live tracked object and close its copy of the fd, which
-	 * degrades fd provider coverage over long runs.  dup3(oldfd,
+	 * oldfd == newfd short-circuit in __do_dup2(); reporting a close
+	 * of rec->a2 in that case would evict a live descriptor from the
+	 * child's own live-fds snapshot on the strength of a close that
+	 * never happened.  dup3(oldfd,
 	 * oldfd, flags) returns EINVAL, so the negative-retval guard
 	 * above already keeps that case out of the post path.
 	 */

@@ -151,14 +151,16 @@ void destroy_global_objects(void)
 }
 
 /*
- * Look up an fd in the parent's hash table and destroy its object.
- * Called from fd_event_drain() after a child reported a close.
+ * Look up an fd in the parent's hash table and destroy its object,
+ * closing the parent's copy (already_closed=false).
  *
- * The child closed its own copy of the fd (children have independent
- * fd tables after fork).  The parent's copy is still open and must be
- * closed here -- pass already_closed=false so the destructor runs
- * close() on the parent's fd.  Without this, every child close event
- * leaks one fd in the parent, leading to fd exhaustion.
+ * Only for deliberate parent-side retirement: the stuck-fd watchdog's
+ * FD_EVENT_EVICT, and the provider pre-close paths.  NOT for a child's
+ * close() -- children have independent fd tables after fork, so a
+ * child's close drops only the child's reference while the parent's
+ * copy remains the inheritance source for every later child.  Tearing
+ * it down there shrinks the global pool monotonically for the whole
+ * run with no path that refills it.
  */
 void remove_object_by_fd(int fd)
 {

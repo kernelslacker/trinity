@@ -105,9 +105,9 @@ void notify_child_fd_closed(struct childdata *child, int fd);
 
 /*
  * Range variant of notify_child_fd_closed for close_range()-style
- * bulk closes.  Enqueues one FD_EVENT_CLOSE per fd in [lo, hi],
- * evicts the whole range from fd_hash[] and the live_fds ring in
- * one pass each.  Child context only; caller must ensure `child`
- * is non-NULL.
+ * bulk closes.  Enqueues a single FD_EVENT_CLOSE_RANGE carrying
+ * [lo, hi] -- not one event per fd -- and evicts the whole range from
+ * fd_hash[] and the live_fds ring in one pass each.  Child context
+ * only; caller must ensure `child` is non-NULL.
  */
 void notify_child_fd_closed_range(struct childdata *child, int lo, int hi);
