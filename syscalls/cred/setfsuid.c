@@ -25,6 +25,15 @@ static void post_setfsuid(struct syscallrecord *rec)
 {
 	uid_t want, prev, probe;
 
+	/* --dry-run synthesizes retval -1 / ENOSYS without entering the
+	 * kernel, and a fuzzed seccomp filter can return -1 with an errno on
+	 * a live run.  Neither installed a new fsuid, so the probe below would
+	 * be comparing against a prev we never got -- and issuing a real
+	 * setfsuid() from the dry-run path, which is meant to be syscall-free.
+	 */
+	if (syscall_errno_failure(rec))
+		return;
+
 	if (!ONE_IN(20))
 		return;
 
