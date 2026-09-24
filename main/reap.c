@@ -578,6 +578,28 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 
 			debugf("Child %d (pid:%u) exited after %ld operations.\n",
 				childno, childpid, child->op_nr);
+
+			/*
+			 * A real fault arrives here, not in the WIFSIGNALED
+			 * arm below.  escalate_fault() ends a non-debug child
+			 * with _exit(EXIT_SUCCESS) so the reaper sees a clean
+			 * exit, which means the only crashes the canary queue
+			 * ever saw were the ones whose fault handler a fuzzed
+			 * rt_sigaction had already replaced.  Outside -D a
+			 * crash-looping childop was therefore never demoted.
+			 *
+			 * The fault beacon is what distinguishes the two: the
+			 * child stamps it from child_fault_handler before it
+			 * exits.  Read it before reap_child(), which clears
+			 * written.  The exit code deliberately stays
+			 * EXIT_SUCCESS -- reap-fastdie.c keeps that value out
+			 * of the fast-die ring on purpose.
+			 */
+			if (__atomic_load_n(&child->fault_beacon.written,
+					    __ATOMIC_ACQUIRE) != 0)
+				canary_queue_on_crash(childno,
+						      child->fault_beacon.signo);
+
 			record_reap(childno, childstatus);
 			reap_child(children[childno], childno, true);
 			if (pidstatfiles[childno] >= 0)
