@@ -187,6 +187,8 @@ static void wait_for_idle_tick_or_cgroup_event(void)
  * the while-loop condition catch the exit on its next pass. */
 static bool check_main_loop_stops(const struct timespec *epoch_start)
 {
+	unsigned int i;
+
 	taint_check();
 
 	if (shm_is_corrupt() == true)
@@ -226,11 +228,18 @@ static bool check_main_loop_stops(const struct timespec *epoch_start)
 		panic(EXIT_NO_SYSCALLS_ENABLED);
 	}
 
-	while (check_all_locks() == true) {
+	/* Bound this the same way kill_all_kids() bounds its copy: a child
+	 * wedged in D-state can hold a lock for as long as the kernel keeps
+	 * it, and reap_dead_kids() cannot take it away.  Unbounded, the
+	 * parent's whole tick disappears into this loop.  After 10 rounds,
+	 * bust the table lock and carry on. */
+	for (i = 0; check_all_locks() == true && i < 10; i++) {
 		reap_dead_kids();
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_ACQUIRE) == EXIT_REACHED_COUNT)
 			kill_all_kids();
 	}
+	if (check_all_locks() == true)
+		force_bust_lock(&shm->syscalltable_lock);
 
 	unsigned long op = parent_stats.op_count;
 	/*
