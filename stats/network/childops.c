@@ -37,24 +37,10 @@
 /* Per-group shadow of blob_fills.  Sum-suppressed so an OFF /
  * no-blob-fill run emits nothing (render-gap-aware); per-row zero-
  * suppressed so a partially-covered run only shows the groups that
- * actually ran a blob_fill().  Group name table mirrors
- * check_fd_leaks() in child/child.c. */
+ * actually ran a blob_fill().  Group names come from group_name(),
+ * which is the one table shared with check_fd_leaks(). */
 static void dump_stats_render_blob_fills_by_group(void)
 {
-	static const char * const group_names[NR_GROUPS] = {
-		[GROUP_NONE]     = "none",
-		[GROUP_VM]       = "vm",
-		[GROUP_VFS]      = "vfs",
-		[GROUP_NET]      = "net",
-		[GROUP_IPC]      = "ipc",
-		[GROUP_PROCESS]  = "process",
-		[GROUP_SIGNAL]   = "signal",
-		[GROUP_IO_URING] = "io_uring",
-		[GROUP_BPF]      = "bpf",
-		[GROUP_SCHED]    = "sched",
-		[GROUP_TIME]     = "time",
-		[GROUP_XATTR]    = "xattr",
-	};
 	unsigned long total = 0;
 	unsigned int i;
 
@@ -66,7 +52,7 @@ static void dump_stats_render_blob_fills_by_group(void)
 	for (i = 0; i < NR_GROUPS; i++) {
 		if (shm->stats.blob.fills_by_group[i] == 0)
 			continue;
-		stat_row("blob_fills_by_group", group_names[i],
+		stat_row("blob_fills_by_group", group_name(i),
 			 shm->stats.blob.fills_by_group[i]);
 	}
 }

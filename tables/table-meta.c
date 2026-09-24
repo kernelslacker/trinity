@@ -500,3 +500,45 @@ bool this_syscallname(const char *thisname)
 
 	return strcmp(thisname, e->name) == 0;
 }
+
+/*
+ * Single id-to-name table for the syscall groups.  Two copies of this
+ * used to live in child/child.c and stats/network/childops.c, both of
+ * them stopping at GROUP_XATTR (11).  GROUP_VFS_PATH (12) through
+ * GROUP_NS (18) are real and reachable, so those callers passed NULL
+ * to a "%s" conversion -- undefined behaviour that glibc happens to
+ * render as "(null)", which is exactly what a --stats run prints in
+ * the blob_fills_by_group table today.
+ *
+ * Returns a non-NULL string for every input, including one that is
+ * out of range, so no caller can reintroduce the NULL.
+ */
+const char *group_name(unsigned int group)
+{
+	static const char * const names[NR_GROUPS] = {
+		[GROUP_NONE]       = "none",
+		[GROUP_VM]         = "vm",
+		[GROUP_VFS]        = "vfs",
+		[GROUP_NET]        = "net",
+		[GROUP_IPC]        = "ipc",
+		[GROUP_PROCESS]    = "process",
+		[GROUP_SIGNAL]     = "signal",
+		[GROUP_IO_URING]   = "io_uring",
+		[GROUP_BPF]        = "bpf",
+		[GROUP_SCHED]      = "sched",
+		[GROUP_TIME]       = "time",
+		[GROUP_XATTR]      = "xattr",
+		[GROUP_VFS_PATH]   = "vfs_path",
+		[GROUP_VFS_STAT]   = "vfs_stat",
+		[GROUP_VFS_MOUNT]  = "vfs_mount",
+		[GROUP_VFS_SYNC]   = "vfs_sync",
+		[GROUP_VFS_IO]     = "vfs_io",
+		[GROUP_CRED]       = "cred",
+		[GROUP_NS]         = "ns",
+	};
+
+	if (group >= NR_GROUPS || names[group] == NULL)
+		return "?";
+
+	return names[group];
+}

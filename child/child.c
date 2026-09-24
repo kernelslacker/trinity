@@ -193,20 +193,6 @@ void oom_score_adj(int adj)
 
 static void check_fd_leaks(struct childdata *child)
 {
-	static const char * const group_names[NR_GROUPS] = {
-		[GROUP_NONE] = "none",
-		[GROUP_VM] = "vm",
-		[GROUP_VFS] = "vfs",
-		[GROUP_NET] = "net",
-		[GROUP_IPC] = "ipc",
-		[GROUP_PROCESS] = "process",
-		[GROUP_SIGNAL] = "signal",
-		[GROUP_IO_URING] = "io_uring",
-		[GROUP_BPF] = "bpf",
-		[GROUP_SCHED] = "sched",
-		[GROUP_TIME] = "time",
-		[GROUP_XATTR] = "xattr",
-	};
 	long delta;
 	unsigned int i;
 
@@ -224,7 +210,7 @@ static void check_fd_leaks(struct childdata *child)
 	for (i = 0; i < NR_GROUPS; i++) {
 		if (child->fd_created_by_group[i] > 0)
 			output(0, "  group %-10s: %lu fds created\n",
-				group_names[i], child->fd_created_by_group[i]);
+				group_name(i), child->fd_created_by_group[i]);
 	}
 }
 
