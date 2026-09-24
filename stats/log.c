@@ -171,6 +171,18 @@ void stats_log_close(void)
  */
 static FILE *stats_timeseries_fp = NULL;
 
+/*
+ * Byte cap for the timeseries JSONL.  Every record carries a row for
+ * every active syscall -- about 350 of them 64-bit only, about 800
+ * biarch, at 330-410 bytes each -- and one record is emitted per ~10k
+ * fleet ops.  That is roughly 11-33 bytes per op, so a run doing 10k
+ * ops/s writes on the order of 10-28 GB/day into the launch directory
+ * with nothing to stop it filling the filesystem.  Suppressing
+ * unchanged rows (below) removes most of it; this is the backstop for
+ * a run that keeps finding new coverage for days.
+ */
+#define STATS_TIMESERIES_MAX_BYTES	(4UL * 1024 * 1024 * 1024)
+
 /* Last op_count successfully emitted in a window record.  Used at
  * clean shutdown for the terminal record's cross-check: the running
  * tally the sink itself printed vs the authoritative parent_stats.op_count
@@ -487,6 +499,20 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 				cmp_hyp_live_injected,
 				&stats_ts_prev_per_syscall_cmp_hyp_live_injected[nr][arch_ix]);
 		}
+
+		/* Suppress rows that gained nothing this window.  The
+		 * cumulative fields are unchanged since the last record
+		 * that carried them, so re-emitting ~350 (or ~800 biarch)
+		 * identical rows every ~10k ops is the bulk of the file
+		 * for no information.  A row reappears the moment any of
+		 * its counters moves.  The window deltas are computed
+		 * above regardless, because that is also what advances the
+		 * prev-snapshot arrays. */
+		if (edges_gained == 0 && local_edges_gained == 0 &&
+		    remote_edges_gained == 0 && cmp_injected_gained == 0 &&
+		    cmp_hint_pc_wins_gained == 0 &&
+		    cmp_hyp_live_injected_gained == 0)
+			continue;
 
 		fprintf(stats_timeseries_fp,
 			"%s{\"nr\":%u,\"arch\":\"%s\",\"name\":\"%s\""
@@ -984,9 +1010,28 @@ void stats_timeseries_emit_window(unsigned long op_count)
 {
 	unsigned long edges_total;
 	bool first = true;
+	off_t written;
 
 	if (stats_timeseries_fp == NULL)
 		return;
+
+	/* Size backstop.  Same shape as the write-error path below: emit a
+	 * terminal marker so a collector can tell a capped stream from a
+	 * clean end-of-run, then disable the sink.  ftello() failing (-1)
+	 * simply leaves the cap unenforced rather than killing the sink. */
+	written = ftello(stats_timeseries_fp);
+	if (written >= 0 && (unsigned long long) written >= STATS_TIMESERIES_MAX_BYTES) {
+		const char *marker =
+			"\n{\"truncated\":true,\"reason\":\"size_cap\"}\n";
+
+		fputs(marker, stats_timeseries_fp);
+		fflush(stats_timeseries_fp);
+		fclose(stats_timeseries_fp);
+		stats_timeseries_fp = NULL;
+		outputerr("stats: timeseries JSONL hit the %lu byte cap; sink disabled.\n",
+			  (unsigned long) STATS_TIMESERIES_MAX_BYTES);
+		return;
+	}
 
 	edges_total = stats_ts_emit_record_head(stats_timeseries_fp, op_count);
 	stats_ts_emit_baselines(stats_timeseries_fp, edges_total);
