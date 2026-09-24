@@ -400,8 +400,13 @@ static void stats_publish_locked(void)
  *
  * slot_implausible_reported[i] — set true after the first output() for
  *   slot i so subsequent drain iterations stay silent.  Reset to false
- *   when a slot transitions back to plausible (counter advances normally
- *   again, e.g. after a child respawn clears the scribbled region).
+ *   when a slot transitions back to plausible.
+ *
+ *   Note that nothing currently makes that transition happen: the
+ *   counter lives in the child's ring page, stats_ring_init() does not
+ *   clear it on respawn, and prev stays anchored to the last good
+ *   value, so a slot that goes implausible stays implausible for the
+ *   rest of the run and only ever contributes its frozen prev.
  */
 static unsigned long *prev_lossless_op_count;
 static bool         *slot_implausible_reported;
@@ -548,7 +553,19 @@ void stats_ring_drain_all(void)
 					parent_stats.lossless_slot_implausible++;
 				}
 				/* Do NOT update prev: keep the last known-good
-				 * baseline so the delta check stays anchored. */
+				 * baseline so the delta check stays anchored.
+				 *
+				 * Still contribute prev to the sum.  Those ops
+				 * really happened and were counted in earlier
+				 * drains; dropping them here would make the
+				 * fleet total go backwards, which the
+				 * high-water clamp below then hides by
+				 * freezing total_op_count until the other
+				 * children have made up the difference.  With
+				 * one scribbled slot out of many that stall is
+				 * invisible and every derived rate reads low.
+				 */
+				lossless_total += prev;
 			} else {
 				/* Slot is plausible; re-arm reporting in case the
 				 * child respawned and the scribble is gone. */

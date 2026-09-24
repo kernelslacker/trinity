@@ -247,6 +247,12 @@ static bool sim_drain_guarded(struct sim_ring *ring,
 		 * guard — the emission counter increments only on the first
 		 * detection per bad run.  Aggregate stalls; prev_op is NOT updated
 		 * so the delta check stays anchored to the last known-good baseline.
+		 *
+		 * Production contributes prev to the fleet sum on this path.
+		 * With one simulated ring that is indistinguishable from
+		 * stalling (sum == prev == total), so the model does not
+		 * reproduce it; the behaviour it protects only shows up with
+		 * more than one contributing slot.
 		 */
 		if (!*reported)
 			(*emissions)++;
