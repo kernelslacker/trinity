@@ -42,6 +42,8 @@ void check_children_progressing(void);
 void kill_all_kids(void);
 void reap_dead_kids(void);
 void process_zombie_pending(void);
+/* main/reap-zombie.c -- park a slot whose task the kernel has not released. */
+void register_zombie_slot(int childno, pid_t pid);
 void dstate_diag_get_counts(unsigned int *printed, unsigned int *omitted,
 			    unsigned int *sigs);
 

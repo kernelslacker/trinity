@@ -405,6 +405,37 @@ static void log_main_loop_exit(void)
 	}
 }
 
+/* Seconds the inner kill/reap loop below may spend before it stops
+ * waiting for a child to die and parks it as zombie-pending instead. */
+#define SHUTDOWN_WAIT_SECS	30
+
+/*
+ * Hand every still-running slot to the zombie reaper.  Called when the
+ * inner wait below has given up on them.  register_zombie_slot() copes
+ * with a task the kernel will not release yet, and drops
+ * running_childs via reap_child(), which is what lets the caller make
+ * progress.  Slots already parked are skipped: re-registering one
+ * trips the BUG_ON in register_zombie_slot().
+ */
+static void park_surviving_children(void)
+{
+	unsigned int i;
+
+	for_each_child(i) {
+		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
+
+		if (pid == EMPTY_PIDSLOT)
+			continue;
+		if (zombie_pids[i] != EMPTY_PIDSLOT)
+			continue;
+
+		output(0, "child %u (pid %u) did not exit within %us of "
+			"shutdown; parking it as zombie-pending.\n",
+			i, pid, SHUTDOWN_WAIT_SECS);
+		register_zombie_slot(i, pid);
+	}
+}
+
 /* Shutdown-tail wait: keep reaping and killing children until the
  * pid map is empty.  Per-invocation counters (last, shutdown_attempts)
  * are scoped to this call so they reset across epochs -- carrying
@@ -414,6 +445,7 @@ static void wait_for_children_to_exit(void)
 {
 	unsigned int last = 0;
 	unsigned int shutdown_attempts = 0;
+	struct timespec deadline;
 
 	handle_children();
 
@@ -434,12 +466,34 @@ static void wait_for_children_to_exit(void)
 				__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED));
 		}
 
-		/* Wait for all the children to exit. */
+		/*
+		 * Wait for all the children to exit, but not forever.
+		 * running_childs only drops in reap_child(), which needs
+		 * either a waitpid status or a pidstat task that has gone
+		 * away.  A SIGKILLed task still in D-state has neither, and
+		 * kill(pid, 0) keeps succeeding for it, so kill_all_kids()
+		 * counts it as seen and never zeroes running_childs either.
+		 * Without a deadline this loop spins kill+sleep(1) forever,
+		 * the outer attempt cap above is never re-evaluated, and the
+		 * final drain, stats and exit code never run.
+		 */
+		clock_gettime(CLOCK_MONOTONIC, &deadline);
+		deadline.tv_sec += SHUTDOWN_WAIT_SECS;
+
 		while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) > 0) {
+			struct timespec now;
+
 			taint_check();
 
 			handle_children();
 			kill_all_kids();
+
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			if (now.tv_sec >= deadline.tv_sec) {
+				park_surviving_children();
+				break;
+			}
+
 			/* Give children a chance to exit before retrying. */
 			sleep(1);
 		}
