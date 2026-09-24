@@ -14,6 +14,7 @@
 #include "net.h"
 #include "objects.h"
 #include "params.h"
+#include "pids.h"
 #include "domains.h"
 #include "random.h"
 #include "rnd.h"
@@ -225,7 +226,7 @@ void gen_socket_args(struct socket_triplet *st)
 			st->family = find_next_enabled_domain(st->family);
 			if (st->family == -1u) {
 				outputerr("No available socket family found\n");
-				exit(EXIT_FAILURE);
+				trinity_exit(EXIT_FAILURE);
 			}
 		}
 

@@ -5,6 +5,7 @@
 #include <string.h>
 #include "debug.h"
 #include "deferred-free.h"
+#include "pids.h"
 #include "trinity.h"
 #include "utils.h"
 #include "utils-internal.h"
@@ -35,7 +36,7 @@ void * __zmalloc(size_t size, const char *func)
 			goto done;
 
 		outputerr("%s: malloc(%zu) failure.\n", func, size);
-		exit(EXIT_FAILURE);
+		trinity_exit(EXIT_FAILURE);
 	}
 
 done:

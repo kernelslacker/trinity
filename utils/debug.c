@@ -184,7 +184,7 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_SIGINT) {
 			if (child != NULL)
 				set_dontkillme(child, false);
-			exit(EXIT_FAILURE);
+			trinity_exit(EXIT_FAILURE);
 		}
 		sleep(1);
 	}

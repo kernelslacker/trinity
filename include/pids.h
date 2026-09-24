@@ -1,6 +1,9 @@
 #pragma once
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include "child-api.h"
 #include "types.h"
 
@@ -59,3 +62,21 @@ int pid_is_valid(pid_t);
 void pids_init(void);
 
 
+
+/*
+ * exit() from a child is wrong twice over: it runs atexit handlers
+ * registered by the parent's constructors, and it flushes stdio
+ * buffers the child inherited at fork, re-emitting whatever the parent
+ * had queued but not yet written.  The handlers are gated on mainpid,
+ * but the buffers are not, so route every exit that a child can reach
+ * through here.  getpid() and not mypid(): a CLONE_VM grandchild
+ * inherits its parent worker's cached pid.
+ */
+static inline void trinity_exit(int status)
+{
+	if (getpid() == mainpid)
+		exit(status);
+
+	fflush(NULL);
+	_exit(status);
+}

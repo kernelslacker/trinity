@@ -71,7 +71,7 @@ skip_pid:
 	va_end(args);
 	if (n < 0) {
 		outputerr("## Something went wrong in output() [%d]\n", n);
-		exit(EXIT_FAILURE);
+		trinity_exit(EXIT_FAILURE);
 	}
 
 	fprintf(should_route_to_stdout() ? stdout : stderr,
