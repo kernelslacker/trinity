@@ -35,7 +35,6 @@ static const struct dev_template dev_templates[DEV_TEMPLATE_MAX] = {
 	[DEV_TEMPLATE_FULL]          = { "/dev/full",           O_RDWR,   "baseline" },
 	[DEV_TEMPLATE_URANDOM]       = { "/dev/urandom",        O_RDONLY, "baseline" },
 	[DEV_TEMPLATE_LOOP_CONTROL]  = { "/dev/loop-control",   O_RDWR,   "CONFIG_BLK_DEV_LOOP" },
-	[DEV_TEMPLATE_KVM]           = { "/dev/kvm",            O_RDWR,   "CONFIG_KVM + virt-capable hw" },
 	[DEV_TEMPLATE_VFIO]          = { "/dev/vfio/vfio",      O_RDWR,   "CONFIG_VFIO" },
 	[DEV_TEMPLATE_TUN]           = { "/dev/net/tun",        O_RDWR,   "CONFIG_TUN" },
 	[DEV_TEMPLATE_USERFAULTFD]   = { "/dev/userfaultfd",    O_RDWR,   "CONFIG_USERFAULTFD (>=6.1)" },
