@@ -146,7 +146,7 @@ static unsigned long random_ioctl_arg(void)
  *     watching errno; cache the verdict per (group, request) in shm
  *     so every other child reuses it.  See efault_cache.c.
  *
- *   Tier 3 — legacy 50/50.  When the probe is opted out (KVM, vhost,
+ *   Tier 3 — legacy 50/50.  When the probe is opted out (vhost,
  *     vfio, iommufd, loop-control all allocate kernel state on
  *     dispatch), inconclusive, or transiently failed (EBADF on a
  *     mismatched fd), fall back to the historical coin flip between

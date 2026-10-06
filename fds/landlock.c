@@ -25,7 +25,7 @@
  * EOPNOTSUPP from a kernel built without the feature, or EPERM from a
  * locked-down profile).  Once latched, init / regen / consumers all
  * fast-path past landlock without re-entering the syscall.  Mirrors the
- * unsupported_<name> shape used by kvm / memfd_secret / mq.
+ * unsupported_<name> shape used by memfd_secret / mq.
  */
 static bool unsupported_landlock;
 

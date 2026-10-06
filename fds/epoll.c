@@ -59,8 +59,8 @@ static void arm_epoll(int epfd)
 		 * Refuse fds whose owning fd_provider opted into
 		 * poll_can_block.  ep_item_poll runs the target's f_op->poll
 		 * synchronously inside EPOLL_CTL_ADD, and a blocking ->poll
-		 * (FUSE without a daemon, idle io_uring CQ, vCPU not yet
-		 * KVM_RUN'd, never-exiting pidfd target, unregistered uffd)
+		 * (FUSE without a daemon, idle io_uring CQ,
+		 * never-exiting pidfd target, unregistered uffd)
 		 * parks the calling task in TASK_UNINTERRUPTIBLE on the
 		 * per-fd waitqueue.  The watchdog cannot kill it and
 		 * defer-slot-reuse pins the slot, cascading into the wedge

@@ -4,12 +4,12 @@
 /*
  * Descriptor tables staged for the follow-up JSON fan-out (per-fn conversions
  * of dump_stats_json_iouring_and_zombies / _socket_family_and_tls /
- * _iouring_zc_and_kvm / _netfilter_and_xfrm / _fault_and_fd_lifecycle).
+ * _netfilter_and_xfrm / _fault_and_fd_lifecycle).
  *
  * The category JSON key in each case doesn't match the struct member's
  * single prefix, so STAT_FIELD() rows pick whichever prefix matches the
  * actual struct member (packet_fanout_*, recipe_*, nat_t_churn_/nat_t_,
- * kvm_run_/kvm_, fd_/local_fd_/epoll_); .name doubles as the text-side
+ * fd_/local_fd_/epoll_); .name doubles as the text-side
  * key.  For fd_lifecycle's three cross-prefix members (local_fd_* and
  * epoll_*) the suffix alone wouldn't yield the schema's JSON key, so
  * STAT_FIELD_JSON() pins the JSON key explicitly.

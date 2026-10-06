@@ -132,7 +132,7 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
 	 * Stamp the pool tag now that the obj has passed the fd-bound
 	 * gate and is about to enter a pool.  Read back by
 	 * objpool_check() in consumers (the post-2026-05-18 audit sweep
-	 * across fds/ + syscalls/keyctl.c + childops/misc/kvm-run-churn.c)
+	 * across fds/ + syscalls/keyctl.c)
 	 * to catch wild-obj-pointer derefs the loose 47-bit VA-range
 	 * shape check lets through.  release_obj()'s memset zeroes the
 	 * chunk on the way back to the deferred-free ring, which
@@ -476,7 +476,7 @@ void __destroy_object(struct object *obj, enum obj_scope scope,
 		 * path -- so every fd-provider destruction pays the
 		 * decrement exactly once: child FD_EVENT_CLOSE drain,
 		 * parent-side stuck-fd eviction, close/close_range post-
-		 * handlers, perf/kvm peer pre-closes, and bulk shutdown
+		 * handlers, perf peer pre-closes, and bulk shutdown
 		 * drain all flow through __destroy_object().
 		 */
 		__atomic_fetch_sub(&shm->stats.fd.provider_outstanding[type],

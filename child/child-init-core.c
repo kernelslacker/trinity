@@ -103,9 +103,9 @@ void init_child(struct childdata *child, int childno)
 
 	/*
 	 * Post-fork per-provider bring-up.  Providers whose kernel-side
-	 * resource lifecycle is tied to the creating task's mm (KVM VM /
-	 * vCPU fds most obviously) must create their objects here rather
-	 * than in the parent-side .init hook, otherwise every child
+	 * resource lifecycle is tied to the creating task's mm must create
+	 * their objects here rather than in the parent-side .init hook,
+	 * otherwise every child
 	 * inherits a parent-owned object that the kernel refuses from
 	 * child context.  Sequenced after init_child_setup_sandbox() so
 	 * per-child unshare/drop_privs/rlimit tightening are already in

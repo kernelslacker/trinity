@@ -8,7 +8,7 @@
  * the socket-family walker for OBJ_FD_SOCKET.  The walk reliably
  * surfaces regular files and the always-present character devices
  * (/dev/null, /dev/zero, ...), but the high-value subsystem entry
- * points — /dev/kvm, /dev/vfio/vfio, /dev/userfaultfd, /dev/fuse —
+ * points — /dev/vfio/vfio, /dev/userfaultfd, /dev/fuse —
  * are gated on kconfig symbols or device-class permissions that the
  * stat-and-open walk silently bounces off, even on a kernel that
  * supports them.

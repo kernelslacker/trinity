@@ -27,7 +27,7 @@
  * Map fd → owning fd_provider.  Consults the fork-time OBJ_GLOBAL
  * fd_hash first, then the calling child's OBJ_LOCAL pools so fds
  * created post-fork by providers that publish into OBJ_LOCAL
- * (kvm-vcpu, kvm-vm, io_uring, userfaultfd, pidfd, seccomp-notif, ...)
+ * (io_uring, userfaultfd, pidfd, seccomp-notif, ...)
  * resolve to their provider — those never enter fd_hash, and
  * fd_poll_can_block() used to answer false for their poll-blocking
  * fds, letting the epoll/poll/select sanitisers admit them into

@@ -46,8 +46,7 @@ static int tun_fd_test(int fd __attribute__((unused)),
  * buffer from _IOC_SIZE(request) == sizeof(int) and hands the kernel
  * a four-byte pointer.  The kernel then copy_from_user()s a whole
  * struct ifreq off that pointer and faults past the first field --
- * the exact under-size bug class kvm-vm.c documents for its own
- * hand-fillers.  Allocate a real ifreq, zero it (pool residue leaks
+ * a classic ioctl arg under-size.  Allocate a real ifreq, zero it (pool residue leaks
  * back on any output-carrying command), stamp ifr_name and ifr_flags
  * with plausible values, and rewrite a3 to point at it.
  */

@@ -341,7 +341,7 @@ retry:
  * if no object of the requested fd_type is available — so even on a
  * minimal startup configuration this never wedges.  Providers tagged
  * poll_can_block are excluded by construction: none of the listed
- * fd_types opt into that tag (FUSE/uffd/kvm/io_uring/pidfd/seccomp_notif
+ * fd_types opt into that tag (FUSE/uffd/io_uring/pidfd/seccomp_notif
  * are kept out so the wait/wake codepath in do_sys_poll / do_select
  * actually gets to block).
  */

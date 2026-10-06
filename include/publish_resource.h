@@ -38,7 +38,7 @@
  *   flags       — eventfd/inotify/userfaultfd/fanotify/memfd/
  *                 memfd_secret/perf primary flags word
  *   aux         — fanotify event_f_flags (secondary flags),
- *                 timerfd clockid, kvm_system api_version
+ *                 timerfd clockid
  *   subtype     — bpf map_type / prog_type / attach_type
  *   extra_int   — eventfd count, pidfd owning pid
  *   name        — memfd display name.  The wrapper stores the pointer
@@ -48,8 +48,8 @@
  * Pools whose per-object struct carries fields the unified shape
  * cannot cleanly hold (mmap's strdup'd name + ptr + size + prot +
  * flags + type tuple, sockinfo's inherited triplet, watch_queue's
- * peer_fd, pipe's reader bool, epoll's create1/pool_idx, the kvm_vm
- * / kvm_vcpu parent-fd graph) intentionally fall through to the
+ * peer_fd, pipe's reader bool, epoll's create1/pool_idx)
+ * intentionally fall through to the
  * "id only" path: publish_resource() stamps the primary handle and
  * returns the obj pointer so the caller can patch any remaining
  * pool-specific fields before the obj escapes the publish site.
@@ -80,7 +80,7 @@ struct object;
  * Returns the published object on success so callers that need to
  * patch a not-covered field can chase it.  Returns NULL on
  * alloc_object() failure or when @type is not routed by the wrapper
- * (mmap, sockinfo, watch_queue, pipe, epoll, kvm_vm, kvm_vcpu,
+ * (mmap, sockinfo, watch_queue, pipe, epoll,
  * futex/sysv_shm — these carry pool-specific allocations or
  * inherited state that the unified shape cannot represent).  On
  * failure the caller still owns @id; the wrapper performs no

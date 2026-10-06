@@ -64,7 +64,7 @@ static void memfd_dump(struct object *obj, enum obj_scope scope)
 /*
  * Parent-side setup: wire the OBJ_GLOBAL head's destroy + dump slots so
  * init_object_lists(OBJ_LOCAL, child) inherits them into every child's
- * per-pool objhead (same shape as setup_kvm_heads() in fds/kvm.c).  The
+ * per-pool objhead.  The
  * OBJ_GLOBAL memfd pool stays empty for the run -- every memfd we track
  * is created per-child from memfd_child_init() into that child's private
  * OBJ_LOCAL pool.
@@ -148,7 +148,7 @@ static void memfd_child_init(struct childdata *child __attribute__((unused)))
  * memfd_child_init() and not exposed to the OBJ_GLOBAL lockless-reader
  * UAF window (single-writer / single-reader inside one child).  We
  * still run objpool_check() and cap the retry loop to match the shape
- * used by the KVM per-child pickers.
+ * used by the other per-child pickers.
  */
 static int get_rand_memfd_fd(void)
 {

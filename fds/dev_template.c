@@ -6,10 +6,9 @@
  * The probe runs once in the parent during open_fds() (pre-fork), so
  * children inherit the fds via the normal fork-copies-fd path.  Per-
  * child re-opens would be wasted work for these devices: their open
- * has no per-fd state that disappears across fork (KVM's per-fd VM
- * state is created later via KVM_CREATE_VM ioctl, which the ioctl
- * fuzzer hits on its own; /dev/userfaultfd and /dev/fuse similarly
- * defer per-fd state to subsequent ioctls).
+ * has no per-fd state that disappears across fork (/dev/userfaultfd and
+ * /dev/fuse defer per-fd state to subsequent ioctls the ioctl fuzzer
+ * hits on its own).
  *
  * Entries that fail to open log their gate label at output level 1
  * so the startup banner names what was missing rather than just

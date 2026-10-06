@@ -86,8 +86,8 @@ static const struct ioctl vfio_ioctls[] = {
 };
 
 /*
- * Per-VFIO ioctl struct-arg seeding.  Mirrors the kvm_vm_sanitise() pattern:
- * delegate ioctl selection to pick_random_ioctl(), then override rec->a3 for
+ * Per-VFIO ioctl struct-arg seeding.  Delegates ioctl selection to
+ * pick_random_ioctl(), then overrides rec->a3 for
  * the commands whose argument is a struct.  All VFIO ioctls are declared with
  * _IO() (no encoded size or direction), so the tiered arg-shape picker in
  * ioctls.c has no signal to work from and hands the kernel a random-shaped

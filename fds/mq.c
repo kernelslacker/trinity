@@ -23,7 +23,7 @@
  * queue limit hit and not getting any better since we never reach the
  * mq_unlink path on init failure).  Once latched, regen + consumers
  * fast-path past mq_open.  Mirrors the unsupported_<name> shape used by
- * kvm / landlock / memfd_secret.
+ * landlock / memfd_secret.
  */
 static bool unsupported_mq;
 

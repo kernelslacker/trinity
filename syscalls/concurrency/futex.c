@@ -146,7 +146,7 @@ struct __lock * get_random_lock(void)
 	 * pointer the caller dereferenced inside futex_trylock_or_wait
 	 * -- the __cmpxchg on thislock->futex SIGSEGV'd in the
 	 * 20260630-1603 run (15 reports, all rooted at futex.c:248 ->
-	 * futex.c:256).  Mirrors the OBJ_FD_BPF_* / OBJ_FD_KVM_VCPU /
+	 * futex.c:256).  Mirrors the OBJ_FD_BPF_* /
 	 * OBJ_FD_EPOLL get_random_object() consumers that already gate
 	 * on objpool_check() before touching obj.
 	 */

@@ -41,7 +41,7 @@
  * is supported -- so EINVAL here means the kernel disabled the feature at
  * runtime, e.g. secretmem.enable_secretmem=0).  Neither flips during this
  * process, so init / regen / consumers all fast-path past the syscall
- * once latched.  Mirrors the unsupported_<name> shape used by kvm /
+ * once latched.  Mirrors the unsupported_<name> shape used by
  * landlock / mq.
  */
 static bool unsupported_memfd_secret;

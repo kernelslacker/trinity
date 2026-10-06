@@ -18,7 +18,7 @@ struct epoll_volatility_stats {
 	/* Number of fd-pickup attempts the watch-set sanitisers (arm_epoll,
 	 * sanitise_epoll_ctl, sanitise_poll/ppoll, sanitise_select) refused
 	 * because the candidate fd belonged to an fd_provider whose
-	 * poll_can_block tag was set (FUSE / userfaultfd / KVM vCPU /
+	 * poll_can_block tag was set (FUSE / userfaultfd /
 	 * io_uring / pidfd).  Drop the kernel into the four ep_item_poll
 	 * blocking-poll callsites (do_epoll_ctl + ep_send_events +
 	 * __ep_eventpoll_poll + ep_loop_check_proc) without this filter and

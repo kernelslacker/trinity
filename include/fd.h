@@ -26,10 +26,8 @@ struct fd_provider {
 	 * from init_child_rendezvous_parent() after the OBJ_LOCAL pool is
 	 * brought up, so implementations can freely populate OBJ_LOCAL
 	 * objhead entries in the child's own mm.  Providers whose kernel-
-	 * side resource lifecycle is tied to the creating task's mm (KVM
-	 * vCPU / VM fds -- vcpu->kvm->mm is stamped at KVM_CREATE_VM time
-	 * and every subsequent vCPU ioctl compares vcpu->kvm->mm against
-	 * current->mm; io_uring rings whose SQE user_data + registered
+	 * side resource lifecycle is tied to the creating task's mm
+	 * (io_uring rings whose SQE user_data + registered
 	 * buffers reference addresses valid only in the creating mm; ...)
 	 * MUST create their kernel objects here rather than in .init,
 	 * otherwise every child inherits a parent-context object that
@@ -70,7 +68,7 @@ struct fd_provider {
 	/*
 	 * Set by providers whose fds back a kernel ->poll handler that can
 	 * block indefinitely waiting on an external actor (FUSE userspace
-	 * daemon, userfaultfd consumer, KVM vCPU thread, io_uring CQ
+	 * daemon, userfaultfd consumer, io_uring CQ
 	 * producer, exiting task referenced by pidfd).  arm_epoll() and the
 	 * epoll_ctl/poll/ppoll/select sanitisers refuse to populate watch
 	 * sets with these fds: ep_item_poll runs the target ->poll

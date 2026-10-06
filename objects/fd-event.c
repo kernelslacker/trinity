@@ -231,7 +231,7 @@ static void apply_slot(const void *p, void *ctx __unused__)
 			 * Per-provider outstanding-fd gauge decrement lives
 			 * in __destroy_object() (objects/registry.c) so it covers
 			 * every fd-provider destruction path -- parent-side
-			 * stuck-fd eviction and perf/kvm peer pre-closes all
+			 * stuck-fd eviction and perf peer pre-closes all
 			 * flow through that common point.
 			 * remove_object_by_fd() ultimately calls
 			 * __destroy_object(), so each drain still pays the

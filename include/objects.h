@@ -633,7 +633,7 @@ struct object *find_local_object_by_fd(enum objecttype type, int fd);
  * Walk every OBJ_LOCAL fd-typed pool for the calling child and return
  * the object that owns @fd, or NULL if no local pool tracks it.  Lets
  * fd_lookup_provider reach fds that live only in per-child OBJ_LOCAL
- * pools (kvm-vcpu, kvm-vm, io_uring, userfaultfd, pidfd,
+ * pools (io_uring, userfaultfd, pidfd,
  * seccomp-notif, ...) — those never enter the fork-time global
  * fd_hash snapshot, so the epoll/poll/select sanitisers rely on this
  * lookup to register them in watch sets (blocking ->poll handlers need

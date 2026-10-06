@@ -380,8 +380,8 @@ void track_shared_region_tagged(unsigned long addr, unsigned long size,
  * Inverse of track_shared_region() / alloc_shared() registration.
  * Removes the matching shared_regions[] entry (exact addr+size match)
  * and undoes the bitmap refcount/bit it contributed, so providers that
- * munmap their region on destructor (io_uring rings, kvm vCPU run
- * pages) stop accumulating stale slots and stop holding the bitmap bit
+ * munmap their region on destructor (io_uring rings) stop accumulating
+ * stale slots and stop holding the bitmap bit
  * set after their VA has been recycled to something unrelated.
  *
  * Slot reuse uses swap-with-last compaction: the freed slot inherits

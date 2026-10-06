@@ -869,8 +869,8 @@ static const struct {
 	{ "epoll_lazy_armed",
 	  offsetof(struct stats_s, epoll_volatility.lazy_armed) },
 	/* Watch-set populations refused because the candidate fd belonged
-	 * to a poll_can_block-tagged fd_provider (FUSE / userfaultfd / KVM
-	 * vCPU / io_uring / pidfd).  Sustained growth confirms the filter
+	 * to a poll_can_block-tagged fd_provider (FUSE / userfaultfd
+	 * / io_uring / pidfd).  Sustained growth confirms the filter
 	 * is intercepting the fds that would otherwise wedge children in
 	 * ep_item_poll → fops->poll on the per-fd waitqueue. */
 	{ "epoll_blocking_poll_skipped",

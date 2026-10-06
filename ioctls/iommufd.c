@@ -53,8 +53,8 @@ static const struct ioctl iommufd_ioctls[] = {
 };
 
 /*
- * Per-IOMMUFD ioctl struct-arg seeding.  Mirrors the kvm_vm_sanitise() pattern:
- * delegate ioctl selection to pick_random_ioctl(), then override rec->a3 for
+ * Per-IOMMUFD ioctl struct-arg seeding.  Delegates ioctl selection to
+ * pick_random_ioctl(), then overrides rec->a3 for
  * the commands whose argument is a struct.  Every IOMMUFD request is declared
  * with _IO() (size/direction are carried in-band by the struct's size field),
  * so the generic arg-shape picker in ioctls.c hands the kernel a random-shaped
