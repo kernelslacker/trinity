@@ -207,28 +207,6 @@ struct landlockobj {
 	int fd;
 };
 
-struct kvmsysobj {
-	int fd;
-	int api_version;
-};
-
-struct kvmvmobj {
-	int fd;
-	int parent_sysfd;
-	int nr_vcpus;
-	int nr_devices;
-	void *guest_ram;	/* seeded guest RAM (real-mode code @ gpa 0), or NULL */
-	size_t guest_ram_size;
-};
-
-struct kvmvcpuobj {
-	int fd;
-	int parent_vmfd;
-	int vcpu_id;
-	void *kvm_run;
-	size_t kvm_run_size;
-};
-
 struct aioobj {
 	unsigned long ctx;
 };
@@ -371,12 +349,6 @@ struct object {
 		struct io_uringobj io_uringobj;
 
 		struct landlockobj landlockobj;
-
-		struct kvmsysobj kvmsysobj;
-
-		struct kvmvmobj kvmvmobj;
-
-		struct kvmvcpuobj kvmvcpuobj;
 
 		struct aioobj aioobj;
 

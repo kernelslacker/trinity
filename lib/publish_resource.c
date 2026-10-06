@@ -23,7 +23,7 @@
  * the legacy alloc_object()/add_object() path) doesn't leave
  * an orphaned object behind us.
  *
- * mmap/sockinfo/watch_queue/pipe/epoll/kvm_vm/kvm_vcpu and
+ * mmap/sockinfo/watch_queue/pipe/epoll and
  * the futex/sysv_shm/aio_iocb families need pool-specific
  * state the unified shape can't carry.  Return NULL so the
  * caller falls back to the legacy alloc_object()/add_object()
@@ -60,9 +60,6 @@ static bool publish_resource_type_supported(enum objecttype type)
 	case OBJ_FD_SECCOMP_NOTIF:
 	case OBJ_FD_IOMMUFD:
 	case OBJ_FD_FS_CTX:
-	case OBJ_FD_KVM_SYSTEM:
-	case OBJ_FD_KVM_VM:
-	case OBJ_FD_KVM_VCPU:
 	case OBJ_FD_MOUNT:
 	case OBJ_FD_SIGNALFD:
 	case OBJ_FD_CGROUP:
@@ -122,9 +119,6 @@ static void publish_resource_stamp_primary(struct object *obj,
 	case OBJ_FD_SECCOMP_NOTIF:
 	case OBJ_FD_IOMMUFD:
 	case OBJ_FD_FS_CTX:
-	case OBJ_FD_KVM_SYSTEM:
-	case OBJ_FD_KVM_VM:
-	case OBJ_FD_KVM_VCPU:
 	case OBJ_FD_MOUNT:
 	case OBJ_FD_SIGNALFD:
 	case OBJ_FD_CGROUP:
@@ -194,9 +188,6 @@ static void publish_resource_stamp_metadata(struct object *obj,
 		break;
 	case OBJ_FD_PIDFD:
 		obj->pidfdobj.pid = (pid_t)m->extra_int;
-		break;
-	case OBJ_FD_KVM_SYSTEM:
-		obj->kvmsysobj.api_version = (int)m->aux;
 		break;
 	default:
 		break;

@@ -395,9 +395,6 @@ const char *type_graph_obj_type_name(uint8_t type)
 	case OBJ_FD_SECCOMP_NOTIF:	return "FD_SECCOMP_NOTIF";
 	case OBJ_FD_IOMMUFD:		return "FD_IOMMUFD";
 	case OBJ_FD_FS_CTX:		return "FD_FS_CTX";
-	case OBJ_FD_KVM_SYSTEM:		return "FD_KVM_SYSTEM";
-	case OBJ_FD_KVM_VM:		return "FD_KVM_VM";
-	case OBJ_FD_KVM_VCPU:		return "FD_KVM_VCPU";
 	case OBJ_FD_PAGECACHE:		return "FD_PAGECACHE";
 	case OBJ_FD_WRITEABLE_PAGECACHE: return "FD_WRITEABLE_PAGECACHE";
 	case OBJ_FD_CANARY:		return "FD_CANARY";

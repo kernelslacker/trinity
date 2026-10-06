@@ -46,9 +46,6 @@ void invalidate_object_fd(struct object *obj, enum objecttype type)
 	case OBJ_FD_SECCOMP_NOTIF: obj->seccomp_notifobj.fd = -1; break;
 	case OBJ_FD_IOMMUFD:	obj->iommufdobj.fd = -1; break;
 	case OBJ_FD_FS_CTX:	obj->fsctxobj.fd = -1; break;
-	case OBJ_FD_KVM_SYSTEM:	obj->kvmsysobj.fd = -1; break;
-	case OBJ_FD_KVM_VM:	obj->kvmvmobj.fd = -1; break;
-	case OBJ_FD_KVM_VCPU:	obj->kvmvcpuobj.fd = -1; break;
 	case OBJ_FD_PAGECACHE:	obj->fileobj.fd = -1; break;
 	case OBJ_FD_WRITEABLE_PAGECACHE: obj->fileobj.fd = -1; break;
 	case OBJ_FD_CANARY:	obj->fileobj.fd = -1; break;
@@ -103,9 +100,6 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	case OBJ_FD_SECCOMP_NOTIF: obj->seccomp_notifobj.fd = fd; break;
 	case OBJ_FD_IOMMUFD:	obj->iommufdobj.fd = fd; break;
 	case OBJ_FD_FS_CTX:	obj->fsctxobj.fd = fd; break;
-	case OBJ_FD_KVM_SYSTEM:	obj->kvmsysobj.fd = fd; break;
-	case OBJ_FD_KVM_VM:	obj->kvmvmobj.fd = fd; break;
-	case OBJ_FD_KVM_VCPU:	obj->kvmvcpuobj.fd = fd; break;
 	case OBJ_FD_SIGNALFD:	obj->signalfdobj.fd = fd; break;
 	case OBJ_FD_MOUNT:	obj->mountfdobj.fd = fd; break;
 	case OBJ_FD_CGROUP:	obj->cgroupfdobj.fd = fd; break;
@@ -185,9 +179,6 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_SECCOMP_NOTIF: return obj->seccomp_notifobj.fd;
 	case OBJ_FD_IOMMUFD:	return obj->iommufdobj.fd;
 	case OBJ_FD_FS_CTX:	return obj->fsctxobj.fd;
-	case OBJ_FD_KVM_SYSTEM:	return obj->kvmsysobj.fd;
-	case OBJ_FD_KVM_VM:	return obj->kvmvmobj.fd;
-	case OBJ_FD_KVM_VCPU:	return obj->kvmvcpuobj.fd;
 	case OBJ_FD_SIGNALFD:	return obj->signalfdobj.fd;
 	case OBJ_FD_MOUNT:	return obj->mountfdobj.fd;
 	case OBJ_FD_CGROUP:	return obj->cgroupfdobj.fd;
