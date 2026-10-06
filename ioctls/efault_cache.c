@@ -176,7 +176,6 @@ static void cache_store(unsigned int group_idx, unsigned int request,
  * in find_ioctl_group().
  */
 static const char * const efault_optout_devs[] = {
-	"kvm",			/* KVM_CREATE_VCPU/IRQCHIP/PIT allocate state */
 	"vhost-net",		/* vhost ring/queue setup before validation */
 	"vhost-vsock",
 	"vhost-scsi",
@@ -184,21 +183,6 @@ static const char * const efault_optout_devs[] = {
 	"iommu",		/* iommufd ALLOC ioctls create containers */
 	"vfio",			/* vfio group/container setup */
 	"loop-control",		/* LOOP_CTL_GET_FREE allocates a loop dev */
-};
-
-/*
- * Same opt-out semantics keyed by grp->name for groups that have no
- * /proc/devices presence to match on.  Programmatically-created fds
- * (KVM vCPU fds, etc.) reach find_ioctl_group() through fd_test
- * instead of devs[]/devtype, and their groups carry no devs[] entry to
- * match against efault_optout_devs above.  KVM vCPU ioctls in
- * particular include several that mutate vCPU state without an arg
- * (KVM_NMI / KVM_SMI are _IO() and the EFAULT probe would actually
- * deliver an NMI to the guest just to classify the request shape) so
- * the per-vCPU group is opted out by name.
- */
-static const char * const efault_optout_names[] = {
-	"kvm_vcpu",
 };
 
 /*
@@ -225,13 +209,6 @@ static bool compute_efault_probe_allowed(const struct ioctl_group *grp)
 			continue;
 		for (j = 0; j < ARRAY_SIZE(efault_optout_devs); ++j) {
 			if (strcmp(grp->devs[i], efault_optout_devs[j]) == 0)
-				return false;
-		}
-	}
-
-	if (grp->name != NULL) {
-		for (j = 0; j < ARRAY_SIZE(efault_optout_names); ++j) {
-			if (strcmp(grp->name, efault_optout_names[j]) == 0)
 				return false;
 		}
 	}

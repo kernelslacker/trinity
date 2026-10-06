@@ -103,24 +103,6 @@ static void dump_stats_render_vsock_transport_churn(void)
 	}
 }
 
-static void dump_stats_render_kvm_run_churn(void)
-{
-	if (shm->stats.kvm.invocations) {
-		stat_row("kvm_run_churn", "invocations",        shm->stats.kvm.invocations);
-		stat_row("kvm_run_churn", "exit_io",            shm->stats.kvm.exit_io);
-		stat_row("kvm_run_churn", "exit_mmio",          shm->stats.kvm.exit_mmio);
-		stat_row("kvm_run_churn", "exit_hlt",           shm->stats.kvm.exit_hlt);
-		stat_row("kvm_run_churn", "exit_shutdown",      shm->stats.kvm.exit_shutdown);
-		stat_row("kvm_run_churn", "exit_fail_entry",    shm->stats.kvm.exit_fail_entry);
-		stat_row("kvm_run_churn", "exit_internal_error", shm->stats.kvm.exit_internal_error);
-		stat_row("kvm_run_churn", "exit_intr",          shm->stats.kvm.exit_intr);
-		stat_row("kvm_run_churn", "exit_other",         shm->stats.kvm.exit_other);
-		stat_row("kvm_run_churn", "errors",             shm->stats.kvm.errors);
-		stat_row("kvm_run_churn", "gpc_memslot_race_runs",         shm->stats.kvm.gpc_memslot_race_runs);
-		stat_row("kvm_run_churn", "gpc_memslot_race_deletes",      shm->stats.kvm.gpc_memslot_race_deletes);
-		stat_row("kvm_run_churn", "gpc_memslot_race_unsupported",  shm->stats.kvm.gpc_memslot_race_unsupported);
-	}
-}
 void __cold dump_stats_childop_runs_network(void)
 {
 	stat_category_emit_text(&socket_family_grammar_category);
@@ -146,11 +128,6 @@ void __cold dump_stats_childop_runs_network(void)
 
 
 	dump_stats_render_vsock_transport_churn();
-
-
-
-
-	dump_stats_render_kvm_run_churn();
 
 
 	stat_category_emit_text(&rxrpc_key_install_category);

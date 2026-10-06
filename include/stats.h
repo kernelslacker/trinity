@@ -44,7 +44,6 @@
 #include "stats/subsys/fd_runtime.h"
 #include "stats/subsys/frontier.h"
 #include "stats/subsys/prctl_futex_hash.h"
-#include "stats/subsys/kvm.h"
 #include "stats/subsys/maps.h"
 #include "stats/subsys/minicorpus.h"
 #include "stats/subsys/no_domains.h"
@@ -511,10 +510,6 @@ struct stats_s {
 	 * integrity, mut-attrib inversion catches, forced_windows).
 	 * See stats/subsys/plateau.h. */
 	struct plateau_stats plateau __attribute__((aligned(64)));
-
-	/* KVM ioctl fuzzing: per-vCPU / per-VM dispatches, KVM_RUN churn,
-	 * gpc-memslot-race sub-mode.  See stats/subsys/kvm.h. */
-	struct kvm_stats kvm;
 
 	/* btrfs ioctl dispatches into btrfs_grp.  Bumped from btrfs_sanitise()
 	 * each time pick_random_ioctl() lands on an ioctl destined for an

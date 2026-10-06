@@ -875,16 +875,6 @@ static const struct {
 	 * ep_item_poll → fops->poll on the per-fd waitqueue. */
 	{ "epoll_blocking_poll_skipped",
 	  offsetof(struct stats_s, epoll_volatility.blocking_poll_skipped) },
-	/* Per-vCPU ioctl dispatches into kvm_vcpu_grp.  Rate-of-change at the
-	 * 10-minute window granularity confirms the OBJ_FD_KVM_VCPU fd_test
-	 * path is keeping up with vCPU pool churn -- a flat counter while the
-	 * vcpu pool is non-empty would mean the new ioctl group isn't winning
-	 * find_ioctl_group() arbitration, or the sanitiser is being bypassed
-	 * by a fd that doesn't satisfy kvm_vcpu_fd_test. */
-	{ "kvm_vcpu_ioctls_dispatched",
-	  offsetof(struct stats_s, kvm.vcpu_ioctls_dispatched) },
-	{ "kvm_vm_ioctls_dispatched",
-	  offsetof(struct stats_s, kvm.vm_ioctls_dispatched) },
 	/* SHADOW-ONLY cumulative count of "deep but warm" calls -- no PC-edge
 	 * novelty and no CMP-bloom novelty, yet either a per-call PC walk
 	 * meaningfully deeper than the syscall's lifetime mean or a trace

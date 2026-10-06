@@ -187,38 +187,6 @@ static void dump_stats_render_rtnl_ack_oracle(void)
 	}
 }
 
-static void dump_stats_render_kvm(void)
-{
-	if (shm->stats.kvm.vcpu_ioctls_dispatched)
-		stat_row("kvm", "vcpu_ioctls_dispatched", shm->stats.kvm.vcpu_ioctls_dispatched);
-
-	if (shm->stats.kvm.vm_ioctls_dispatched)
-		stat_row("kvm", "vm_ioctls_dispatched", shm->stats.kvm.vm_ioctls_dispatched);
-
-	if (shm->stats.kvm.reclaim_prefault_ok ||
-	    shm->stats.kvm.reclaim_prefault_eopnotsupp ||
-	    shm->stats.kvm.reclaim_prefault_err) {
-		stat_row("kvm_reclaim_race", "reclaim_prefault_ok",
-			 shm->stats.kvm.reclaim_prefault_ok);
-		stat_row("kvm_reclaim_race", "reclaim_prefault_eopnotsupp",
-			 shm->stats.kvm.reclaim_prefault_eopnotsupp);
-		stat_row("kvm_reclaim_race", "reclaim_prefault_err",
-			 shm->stats.kvm.reclaim_prefault_err);
-	}
-
-	if (shm->stats.kvm.reclaim_set_nr_mmu_ok ||
-	    shm->stats.kvm.reclaim_set_nr_mmu_err) {
-		stat_row("kvm_reclaim_race", "reclaim_set_nr_mmu_ok",
-			 shm->stats.kvm.reclaim_set_nr_mmu_ok);
-		stat_row("kvm_reclaim_race", "reclaim_set_nr_mmu_err",
-			 shm->stats.kvm.reclaim_set_nr_mmu_err);
-	}
-
-	if (shm->stats.kvm.reclaim_memslot_ok)
-		stat_row("kvm_reclaim_race", "reclaim_memslot_ok",
-			 shm->stats.kvm.reclaim_memslot_ok);
-}
-
 static void dump_stats_render_bpf_fd_provider(void)
 {
 	if (shm->stats.ebpf_gen.maps_provided || shm->stats.ebpf_gen.progs_provided ||
@@ -289,11 +257,6 @@ void dump_stats_fuzzer_subsystems(void)
 	dump_stats_render_netlink_generator();
 
 	dump_stats_render_rtnl_ack_oracle();
-
-	dump_stats_render_kvm();
-
-
-
 
 	dump_stats_render_bpf_fd_provider();
 
