@@ -245,22 +245,21 @@ struct deferred_free_stats {
 	unsigned long tracked_free_unverified_leak;
 
 	/* ring_evict_oldest_safe() reclaimed a full-ring slot WITHOUT
-	 * free()ing the evicted chunk.  Interim defense against the
+	 * free()ing the evicted chunk and could not file it into the
+	 * generation arena either (arena pressure; gen_arena_pressure_leak
+	 * bumps alongside), so the chunk leaks until child exit.  The
+	 * eviction site never free()s: that is the defense against the
 	 * address-reuse window where a stale caller ref to a freed-and-
 	 * reused chunk passes every value-keyed gate (heap-bounds,
 	 * shared-region, alloc_track_consume) and eviction free()s a
 	 * now-live chunk -- the surviving class of bad-free at the
 	 * eviction site.  The durable fix is at the caller-lifecycle
-	 * root (drop the retained ref).  This counter only fires when
-	 * the ring is full (TTL eviction is rare given the 5-50 TTL
-	 * range and per-syscall tick), so the leak is bounded; child
-	 * exit reclaims it.  Cannot double-free because the site never
-	 * free()s.  The RING_DRAIN / flush + immediate-free fallback
-	 * paths intentionally KEEP freeing -- leaking everywhere would
-	 * be a whole-ring RSS blowup, not a bounded eviction-only
-	 * defense.  Expected to read as zero on a fixed caller chain;
-	 * the next ASAN run is the validation gate (ring_evict bad-free
-	 * count should drop to zero). */
+	 * root (drop the retained ref).  Cannot double-free because the
+	 * site never free()s.  The RING_DRAIN / flush + immediate-free
+	 * fallback paths intentionally KEEP freeing -- leaking everywhere
+	 * would be a whole-ring RSS blowup, not a bounded eviction-only
+	 * defense.  Expected to read as zero while the arena keeps up
+	 * with the eviction rate. */
 	unsigned long ring_evict_leaked;
 
 	/* alloc_track_refresh() found @ptr currently pinned in the
@@ -359,17 +358,15 @@ struct deferred_free_stats {
 	unsigned long ring_rw_ns_total;
 
 	/* Generation-arena for evicted ring entries.  Full-ring evictions
-	 * used to leak-on-eviction (see ring_evict_leaked); under actual
-	 * load that "benign leak" observed 3.4M events per campaign and
-	 * drove host shmem past 10 GB.  Evictions now flow into a small
-	 * bounded arena of generation-tagged buckets: each generation ages
-	 * for a bounded call-window (long enough that any stale caller ref
-	 * that survived the ring's own 5-50 TTL has itself naturally
-	 * exited scope), then retires ALL its entries as one drain.
-	 * Retirement routes through tracked_free_checked() so alloc_track
-	 * remains the binding ownership gate; a stomp between admission
-	 * and retire is caught by the retire-time shape/heap/shared
-	 * prefilter and the alloc_track_consume gate.
+	 * used to leak-on-eviction (see ring_evict_leaked).  Evictions now
+	 * flow into a small bounded arena of generation-tagged buckets:
+	 * each generation ages for a bounded call-window (at least the
+	 * longest ring TTL, and short enough that alloc_track still
+	 * remembers its entries), then retires ALL its entries as one
+	 * drain.  Retirement routes through tracked_free_checked() so
+	 * alloc_track remains the binding ownership gate; a stomp between
+	 * admission and retire is caught by the retire-time
+	 * shape/heap/shared prefilter and the alloc_track_consume gate.
 	 *
 	 *   _admitted: evicted-from-ring chunks pushed into the active
 	 *     generation.  Rate matches ring eviction rate less the

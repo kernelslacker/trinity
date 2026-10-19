@@ -243,11 +243,13 @@ one child doesn't perturb siblings.
 
 ## Leak-on-eviction defense (ring_evict_oldest_safe)
 
-Interim leak-on-eviction defense: the eviction site does NOT `free()` the
-evicted chunk.  Reclaim the ring slot, drop the inflight-hash entry, bump
-`ring_evict_leaked`, and let the heap chunk leak.  Child exit reclaims it.
+The eviction site does NOT `free()` the evicted chunk.  It reclaims the ring
+slot and files the chunk into the generation arena, which frees it when the
+chunk's generation retires.  Only when the arena is full does the chunk
+leak, bumping `ring_evict_leaked` and `gen_arena_pressure_leak`; child exit
+reclaims it.
 
-Why leak instead of free: the surviving bad-free class at the eviction site
+Why hold instead of free: the surviving bad-free class at the eviction site
 is the address-reuse window.  A stale caller reference to a chunk that was
 freed and recycled by glibc still holds the original pointer value; that
 value now names a live chunk owned by an unrelated allocation.  The value
@@ -257,25 +259,33 @@ a valid live tracked chunk" -- because it IS, just not the one the stale
 ref thought it was.  Freeing on that signal frees a now-live chunk and the
 original owner eventually trips ASAN.  The durable fix is at the caller-
 lifecycle root (drop the retained ref before glibc can reuse the address);
-removing eviction as a `free()` site closes the crash window while that work
-bakes separately.
+until then, holding an evicted chunk as long as the ring would have gives it
+the same protection a TTL-expired chunk gets, rather than the immediate free
+eviction would otherwise be.  The evicted entry may also be a pre-dispatch
+buffer (`deferred_free_enqueue_or_leak`) that the syscall being built still
+reads.
 
-Bounded leak: eviction only fires when the ring is full (TTL range 5-50,
-ticked every syscall, so steady-state eviction is rare).  The
-`RING_DRAIN` / flush and immediate-free fallback paths intentionally keep
+How long to hold: about the longest ring TTL (`GEN_ARENA_RETIRE_TICKS` is
+`DEFERRED_TTL_MAX`), and no longer than `alloc_track` remembers the chunk.
+`alloc_track` keeps only the last `ALLOC_TRACK_SIZE` tracked allocations; a
+chunk's slot was written when it was allocated, before its time in the ring,
+and every evicted pointer had its own tracking call.  A generation that
+retires after that many further allocations retires into consume misses:
+every chunk it holds leaks, counted under `deferred_free_corrupt_ptr`.
+Eviction is not rare: TTLs count batched ticks, so an entry lives 80-800
+syscalls and the 64-slot ring is typically full.
+
+The `RING_DRAIN` / flush and immediate-free fallback paths intentionally keep
 freeing -- leaking the whole ring would be an RSS blowup, not a bounded
-defense.  Cannot double-free / bad-free because the site never calls
-`free()`.
+defense.  Cannot double-free / bad-free at the eviction site because it
+never calls `free()`.
 
 The cheap stateless prefilters stay for telemetry granularity: a scribbled
 slot still bumps `ring_eviction_corrupt` instead of being silently leaked
 under `ring_evict_leaked`, so the stomp-rate signal is preserved (and is
 independent of the leak decision).  `alloc_track` is intentionally left
-populated -- the chunk is, from the heap allocator's view, still live.
-
-Validation gate: the next multi-child ASAN fuzz run should show the
-`ring_evict` bad-free class drop to zero.  Until that run confirms it, this
-lands on local master only.
+populated -- the chunk is, from the heap allocator's view, still live, and
+the arena's retire consumes the entry when it frees the chunk.
 
 ## free_ring_entry corruption gating
 

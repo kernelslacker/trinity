@@ -666,25 +666,26 @@ static void ring_lock(void)
 
 /*
  * Generation arena: bounded holding pen for pointers evicted out of the
- * full-ring by ring_evict_oldest_safe().  The eviction site historically
- * leaked its evicted chunk on the floor as an "interim defense" against
- * the address-reuse bad-free class (see Documentation/deferred-free.md
- * "Leak-on-eviction defense"); run3 observed 3,479,168 eviction leaks
- * over a 6.21M-syscall campaign and host shmem past 10 GB, so the
- * "benign leak" comment was falsified in practice.
+ * full ring by ring_evict_oldest_safe().  Eviction cannot free() on the
+ * spot: the evicted entry may be a pre-dispatch buffer the syscall being
+ * built still reads, or a chunk a stale caller ref still names (the
+ * address-reuse bad-free class, see Documentation/deferred-free.md
+ * "Leak-on-eviction defense").
  *
- * The arena replaces the permanent leak with a bounded-hold: every
- * evicted chunk is filed into an ACTIVE generation, an ACTIVE generation
- * SEALs when it fills or ages past GEN_ARENA_SEAL_TICKS, and a SEALED
- * generation retires (drains its entire chunk list via
+ * Every evicted chunk is filed into an ACTIVE generation, an ACTIVE
+ * generation SEALs when it fills or ages past GEN_ARENA_SEAL_TICKS, and a
+ * SEALED generation retires (drains its entire chunk list via
  * tracked_free_checked, which alloc_track-consume-gates each free) once
  * it has aged GEN_ARENA_RETIRE_TICKS batched-ticks beyond seal time.
- * The retirement window is chosen a couple of orders of magnitude longer
- * than the ring's own 5-50 TTL x DEFERRED_TICK_BATCH multiplier so any
- * stale caller ref that survived the ring's own hold has itself naturally
- * exited the caller's frame -- the same address-reuse class the interim
- * leak avoided is closed by outliving the reuse window, not by refusing
- * to free.
+ *
+ * The retire horizon is bounded on both sides.  It matches the longest
+ * ring TTL, so an evicted chunk is held about as long as one that expires
+ * in the ring.  And the retire has to land before ALLOC_TRACK_SIZE more
+ * tracked allocations rotate the chunk's alloc_track slot out: the slot
+ * was written when the buffer was allocated, before its time in the
+ * ring, and every evicted pointer had its own tracking call, so a horizon
+ * of thousands of syscalls makes the retire consume-miss and leak the
+ * chunk instead of freeing it.
  *
  * Under arena pressure (every slot ACTIVE or SEALED-not-yet-retirable),
  * eviction falls back to the historical leak-on-eviction behaviour and
@@ -702,7 +703,7 @@ static void ring_lock(void)
 #define GEN_ARENA_SLOTS			4
 #define GEN_ARENA_ENTRIES		256
 #define GEN_ARENA_SEAL_TICKS		64	/* ~1024 syscalls: force-seal an under-filled active */
-#define GEN_ARENA_RETIRE_TICKS		512	/* ~8192 syscalls of post-seal bake before retire */
+#define GEN_ARENA_RETIRE_TICKS		DEFERRED_TTL_MAX	/* post-seal hold: the longest ring TTL */
 
 enum gen_arena_state {
 	GEN_EMPTY = 0,
@@ -1791,9 +1792,11 @@ static bool deferred_free_reject_outside_heap(void *ptr, void *caller_pc)
 	return true;
 }
 
-/* Force-free the oldest (lowest TTL) entry to make room.  In
- * practice this rarely happens — TTL range is 5-50 and we tick every
- * syscall. */
+/*
+ * Make room by moving the lowest-TTL entry into the generation arena.
+ * Not a rare path: TTLs count batched ticks, so an entry lives 80-800
+ * syscalls and the ring is typically full -- most enqueues evict.
+ */
 static void ring_evict_oldest_safe(void)
 {
 	unsigned int i;
@@ -1811,7 +1814,18 @@ static void ring_evict_oldest_safe(void)
 	if (ring[oldest].ptr == NULL)
 		return;
 
+	/*
+	 * Clear the slot before handing the pointer on, as the tick drain
+	 * does before free(): an interruption in between then leaks the
+	 * chunk instead of leaving it owned by both the ring and the arena.
+	 */
 	evict_ptr = ring[oldest].ptr;
+	ring[oldest].ptr = NULL;
+	if (rc_unlock() == 0) {
+		occupied_mask &= ~(1ULL << oldest);
+		ring_count--;
+		rc_lock();
+	}
 
 	/*
 	 * Prefilter stays for telemetry granularity: a scribbled slot
@@ -1845,12 +1859,6 @@ static void ring_evict_oldest_safe(void)
 			__atomic_add_fetch(&shm->stats.deferred_free.ring_evict_leaked,
 					   1, __ATOMIC_RELAXED);
 		}
-	}
-	ring[oldest].ptr = NULL;
-	if (rc_unlock() == 0) {
-		occupied_mask &= ~(1ULL << oldest);
-		ring_count--;
-		rc_lock();
 	}
 }
 

@@ -1,9 +1,9 @@
 /*
  * deferred_free_test.c -- deferred-free ownership and sealing fixtures.
  *
- * Ten fixtures covering deferred-free ownership and sealing
+ * Eleven fixtures covering deferred-free ownership and sealing
  * invariants.  Three build flavors exist: debug (default), ASAN
- * (ASAN=1), and NDEBUG (NDEBUG=1).  All ten fixtures pass in all
+ * (ASAN=1), and NDEBUG (NDEBUG=1).  All eleven fixtures pass in all
  * three flavors.
  *
  * Prerequisites: persist/deferred-free.c compiled as a REAL_SRC (added
@@ -42,6 +42,9 @@
  * 10. arena_ownership      -- an arena-held pointer is refused by
  *                                    enqueue, tracked_free_now and
  *                                    alloc_track_refresh
+ * 11. generation_retire_in_window -- an evicted pointer is freed before
+ *                                    one-per-tick alloc_track churn
+ *                                    rotates its slot out
  */
 
 #include <errno.h>
@@ -928,6 +931,58 @@ static void fixture_arena_ownership(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Fixture 11: Generation retire inside the alloc_track window        */
+/*                                                                     */
+/* Evict one pointer into the generation arena, then run the child    */
+/* loop's tick with one tracked allocation per iteration.  The arena  */
+/* must retire the pointer as a real free while its alloc_track slot  */
+/* is still live.  A retire horizon longer than ALLOC_TRACK_SIZE      */
+/* iterations lets the slot rotate out first, and the retire leaks    */
+/* the chunk as a consume miss instead.                                */
+/* ------------------------------------------------------------------ */
+
+static void fixture_generation_retire_in_window(void)
+{
+	void *ptrs[DEFERRED_RING_SIZE + 1];
+	unsigned long base_admitted, base_retired, base_corrupt;
+	unsigned int i;
+
+	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++) {
+		ptrs[i] = malloc(8);
+		DF_ASSERT(ptrs[i] != NULL);
+		deferred_alloc_track(ptrs[i], 8);
+	}
+
+	base_admitted = shm->stats.deferred_free.gen_arena_admitted;
+	base_retired  = shm->stats.deferred_free.gen_arena_retired_ok;
+	base_corrupt  = parent_stats.deferred_free_corrupt_ptr;
+
+	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++)
+		deferred_free_enqueue(ptrs[i]);
+	DF_ASSERT(shm->stats.deferred_free.gen_arena_admitted
+		  == base_admitted + 1);
+
+	/*
+	 * Stop at the first retire outcome, a free or a consume miss.  The
+	 * ring entries TTL-expire well inside the window and free cleanly
+	 * along the way; the cap only bounds an arena that never retires.
+	 */
+	for (i = 0; i < 4 * ALLOC_TRACK_SIZE; i++) {
+		if (shm->stats.deferred_free.gen_arena_retired_ok != base_retired ||
+		    parent_stats.deferred_free_corrupt_ptr != base_corrupt)
+			break;
+		deferred_alloc_track(next_fake_ptr(), 0);
+		deferred_free_tick();
+	}
+
+	DF_ASSERT(shm->stats.deferred_free.gen_arena_retired_ok
+		  == base_retired + 1);
+	DF_ASSERT(parent_stats.deferred_free_corrupt_ptr == base_corrupt);
+
+	deferred_free_flush();
+}
+
+/* ------------------------------------------------------------------ */
 /* Suite entry point                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -1004,5 +1059,10 @@ void deferred_free_ownership_self_check(void)
 	printf("    fixture 10 (arena_ownership) ... ");
 	fflush(stdout);
 	fixture_arena_ownership();
+	printf("OK\n");
+
+	printf("    fixture 11 (generation_retire_in_window) ... ");
+	fflush(stdout);
+	fixture_generation_retire_in_window();
 	printf("OK\n");
 }
