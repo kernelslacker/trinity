@@ -741,7 +741,7 @@ enum tracked_free_site {
 	TRACKED_FREE_SITE_IMMEDIATE,	/* tracked_free_now + enqueue immediate-free fallbacks */
 	TRACKED_FREE_SITE_GEN_RETIRE,	/* gen_arena_retire_one -- generation-arena drain */
 };
-static void tracked_free_checked(void *ptr, enum tracked_free_site site);
+static bool tracked_free_checked(void *ptr, enum tracked_free_site site);
 
 static int gen_unlock(void)
 {
@@ -821,9 +821,9 @@ static void gen_arena_retire_one(struct gen_arena *arena)
 			continue;
 		}
 
-		tracked_free_checked(ptr, TRACKED_FREE_SITE_GEN_RETIRE);
-		__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_retired_ok,
-				   1, __ATOMIC_RELAXED);
+		if (tracked_free_checked(ptr, TRACKED_FREE_SITE_GEN_RETIRE))
+			__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_retired_ok,
+					   1, __ATOMIC_RELAXED);
 	}
 
 	arena->count = 0;
@@ -1056,14 +1056,15 @@ void alloc_track_refresh(void *ptr)
  * the array (rotation / duplicate-ptr edge case).  See
  * Documentation/deferred-free.md "Ownership gate: alloc_track_consume vs
  * alloc_track_lookup" for the historical bad-free class this replaced.
+ * Returns true iff @ptr was freed.
  */
-static void tracked_free_checked(void *ptr, enum tracked_free_site site)
+static bool tracked_free_checked(void *ptr, enum tracked_free_site site)
 {
 	struct childdata *c;
 
 	if (alloc_track_consume(ptr)) {
 		free(ptr);
-		return;
+		return true;
 	}
 
 	switch (site) {
@@ -1098,6 +1099,7 @@ static void tracked_free_checked(void *ptr, enum tracked_free_site site)
 				   1, __ATOMIC_RELAXED);
 		break;
 	}
+	return false;
 }
 
 /*

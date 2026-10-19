@@ -370,14 +370,18 @@ struct deferred_free_stats {
 	 *   _admitted: evicted-from-ring chunks pushed into the active
 	 *     generation.  Rate matches ring eviction rate less the
 	 *     _pressure_leak below.  A non-zero _admitted with a zero
-	 *     _retired_ok means either no generation has aged out yet or
-	 *     retirement fault-stalled -- correlate against _retired_ok.
+	 *     _retired_ok means no generation has aged out yet, retirement
+	 *     fault-stalled, or every retire consume-missed (see
+	 *     deferred_free_corrupt_ptr).  Once generations are retiring,
+	 *     _admitted - _retire_reject - _retired_ok counts the retire
+	 *     misses plus the chunks still held.
 	 *
 	 *   _retired_ok: chunks free()d by the generation drain and
 	 *     confirmed by alloc_track_consume() -- the arena is doing
 	 *     what leak-on-eviction refused to.  Steady-state should
 	 *     track _admitted after a bake-in lag equal to the retirement
-	 *     window.
+	 *     window.  A consume miss at retire leaks the chunk and lands
+	 *     in deferred_free_corrupt_ptr instead.
 	 *
 	 *   _retire_reject: chunks the drain refused because the retire-
 	 *     time re-check (shape / heap-bounds / shared-region overlap)

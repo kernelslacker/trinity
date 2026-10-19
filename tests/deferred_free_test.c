@@ -1,9 +1,9 @@
 /*
  * deferred_free_test.c -- deferred-free ownership and sealing fixtures.
  *
- * Eight fixtures covering deferred-free ownership and sealing
+ * Nine fixtures covering deferred-free ownership and sealing
  * invariants.  Three build flavors exist: debug (default), ASAN
- * (ASAN=1), and NDEBUG (NDEBUG=1).  All eight fixtures pass in all
+ * (ASAN=1), and NDEBUG (NDEBUG=1).  All nine fixtures pass in all
  * three flavors.
  *
  * Prerequisites: persist/deferred-free.c compiled as a REAL_SRC (added
@@ -36,6 +36,9 @@
  *                                    failure: seal_all returns false on
  *                                    every call; simulated chokepoint
  *                                    caller proves dispatch suppressed
+ * 9. generation_retire_after_rotation -- a consume miss at retire
+ *                                    leaks the chunk; it is not
+ *                                    counted as gen_arena_retired_ok
  */
 
 #include <errno.h>
@@ -812,6 +815,61 @@ static void fixture_permanent_seal_failure_suppresses_dispatch(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Fixture 9: Generation retire after alloc_track rotation            */
+/*                                                                     */
+/* Evict one pointer into the generation arena, then rotate every     */
+/* ptr's alloc_track slot out before the flush.  The arena retire's   */
+/* consume misses, so the chunk is leaked, not freed: it must bump     */
+/* deferred_free_corrupt_ptr and must NOT count as                     */
+/* gen_arena_retired_ok, which reports real frees only.                */
+/* ------------------------------------------------------------------ */
+
+static void fixture_generation_retire_after_rotation(void)
+{
+	void *ptrs[DEFERRED_RING_SIZE + 1];
+	unsigned long base_admitted, base_retired, base_corrupt;
+	unsigned int i;
+
+	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++) {
+		ptrs[i] = malloc(8);
+		DF_ASSERT(ptrs[i] != NULL);
+		deferred_alloc_track(ptrs[i], 8);
+	}
+
+	base_admitted = shm->stats.deferred_free.gen_arena_admitted;
+	base_retired  = shm->stats.deferred_free.gen_arena_retired_ok;
+	base_corrupt  = parent_stats.deferred_free_corrupt_ptr;
+
+	/* Fill the ring; the extra enqueue evicts one ptr into the arena. */
+	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++)
+		deferred_free_enqueue(ptrs[i]);
+	DF_ASSERT(shm->stats.deferred_free.gen_arena_admitted
+		  == base_admitted + 1);
+
+	/*
+	 * ALLOC_TRACK_SIZE fillers overwrite every slot, including the
+	 * DEFERRED_RING_SIZE + 1 slots just written (see fixture 5).
+	 */
+	for (i = 0; i < ALLOC_TRACK_SIZE; i++)
+		deferred_alloc_track(next_fake_ptr(), 0);
+
+	/*
+	 * Flush: the arena retire and all DEFERRED_RING_SIZE ring drains
+	 * consume-miss.  Each bumps deferred_free_corrupt_ptr once; none
+	 * is a retirement.
+	 */
+	deferred_free_flush();
+
+	DF_ASSERT(shm->stats.deferred_free.gen_arena_retired_ok == base_retired);
+	DF_ASSERT(parent_stats.deferred_free_corrupt_ptr
+		  == base_corrupt + DEFERRED_RING_SIZE + 1);
+
+	/* Leak-on-uncertainty: nothing was freed, so WE own all of them. */
+	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++)
+		free(ptrs[i]);
+}
+
+/* ------------------------------------------------------------------ */
 /* Suite entry point                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -878,5 +936,10 @@ void deferred_free_ownership_self_check(void)
 	 * a finite countdown could allow.
 	 */
 	fixture_permanent_seal_failure_suppresses_dispatch();
+	printf("OK\n");
+
+	printf("    fixture 9 (generation_retire_after_rotation) ... ");
+	fflush(stdout);
+	fixture_generation_retire_after_rotation();
 	printf("OK\n");
 }
