@@ -691,7 +691,11 @@ static void ring_lock(void)
  * eviction falls back to the historical leak-on-eviction behaviour and
  * bumps the dedicated _pressure_leak counter in addition to
  * ring_evict_leaked, so an operator can tell "arena defense engaged" from
- * "arena undersized for this workload."
+ * "arena undersized for this workload."  An evicted chunk is held RETIRE
+ * to SEAL + RETIRE ticks; the arena sustains up to (SLOTS - 1) * ENTRIES
+ * / RETIRE_TICKS evictions per batched tick (~2.2 per syscall), and never
+ * runs dry at low rates, where generations seal on age rather than fill,
+ * while SLOTS - 1 seal windows cover RETIRE_TICKS (asserted below).
  *
  * Storage is one small mmap'd armor region shared across all generations;
  * gen_unlock()/gen_lock() open the RW window for the duration of a
@@ -700,10 +704,27 @@ static void ring_lock(void)
  * generation's ptrs[] page fails the write, preserving the
  * "corruption-shaped stomp cannot silently reach free()" invariant.
  */
-#define GEN_ARENA_SLOTS			4
+#define GEN_ARENA_SLOTS			8
 #define GEN_ARENA_ENTRIES		256
-#define GEN_ARENA_SEAL_TICKS		64	/* ~1024 syscalls: force-seal an under-filled active */
+#define GEN_ARENA_SEAL_TICKS		16	/* ~256 syscalls: force-seal an under-filled active */
 #define GEN_ARENA_RETIRE_TICKS		DEFERRED_TTL_MAX	/* post-seal hold: the longest ring TTL */
+
+_Static_assert((GEN_ARENA_SLOTS - 1) * GEN_ARENA_SEAL_TICKS >=
+	       GEN_ARENA_RETIRE_TICKS,
+	       "a trickle of evictions would seal every generation before "
+	       "the oldest retires and fall back to the pressure leak");
+
+/*
+ * Oldest an evicted chunk's alloc_track slot can be at retire: a full
+ * ring TTL before eviction, SEAL + RETIRE in the arena, a tick of slack.
+ * Keeping that under half the alloc_track window lets retire still find
+ * the slot at up to two tracked allocations per iteration.
+ */
+_Static_assert((DEFERRED_TTL_MAX + 1 + GEN_ARENA_SEAL_TICKS +
+		GEN_ARENA_RETIRE_TICKS) * DEFERRED_TICK_BATCH * 2 <=
+	       ALLOC_TRACK_SIZE,
+	       "an evicted chunk can outlive its alloc_track slot, so its "
+	       "retire would consume-miss and leak it");
 
 enum gen_arena_state {
 	GEN_EMPTY = 0,

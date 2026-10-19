@@ -1,9 +1,9 @@
 /*
  * deferred_free_test.c -- deferred-free ownership and sealing fixtures.
  *
- * Eleven fixtures covering deferred-free ownership and sealing
+ * Twelve fixtures covering deferred-free ownership and sealing
  * invariants.  Three build flavors exist: debug (default), ASAN
- * (ASAN=1), and NDEBUG (NDEBUG=1).  All eleven fixtures pass in all
+ * (ASAN=1), and NDEBUG (NDEBUG=1).  All twelve fixtures pass in all
  * three flavors.
  *
  * Prerequisites: persist/deferred-free.c compiled as a REAL_SRC (added
@@ -45,6 +45,8 @@
  * 11. generation_retire_in_window -- an evicted pointer is freed before
  *                                    one-per-tick alloc_track churn
  *                                    rotates its slot out
+ * 12. arena_eviction_burst -- ~2 evictions per iteration never fall
+ *                                    back to the pressure leak
  */
 
 #include <errno.h>
@@ -983,6 +985,50 @@ static void fixture_generation_retire_in_window(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Fixture 12: Arena capacity under sustained eviction                */
+/*                                                                     */
+/* Keep the ring full and evict about two pointers per child-loop     */
+/* iteration (BURST_PER_TICK per batched tick) for BURST_TICKS ticks. */
+/* That rate sits between what seven generations sustain              */
+/* (6 * 256 / 50 = 30.7 per tick) and what eight do (35.8), so the    */
+/* run needs every generation and would pressure-leak with one fewer. */
+/* Every eviction must land in the arena; none may fall back to the   */
+/* pressure leak.                                                      */
+/* ------------------------------------------------------------------ */
+
+#define BURST_PER_TICK	33
+#define BURST_TICKS	150
+
+static void fixture_arena_eviction_burst(void)
+{
+	unsigned long base_leak, base_admitted;
+	unsigned int t, i;
+
+	base_leak = shm->stats.deferred_free.gen_arena_pressure_leak;
+	base_admitted = shm->stats.deferred_free.gen_arena_admitted;
+
+	for (t = 0; t < BURST_TICKS; t++) {
+		for (i = 0; i < BURST_PER_TICK; i++) {
+			void *p = malloc(8);
+
+			DF_ASSERT(p != NULL);
+			deferred_alloc_track(p, 8);
+			deferred_free_enqueue(p);
+		}
+		for (i = 0; i < DEFERRED_TICK_BATCH; i++)
+			deferred_free_tick();
+	}
+
+	/* Nearly every enqueue past the first DEFERRED_RING_SIZE evicts;
+	 * half of them is a floor that proves the arena was exercised. */
+	DF_ASSERT(shm->stats.deferred_free.gen_arena_admitted - base_admitted
+		  >= BURST_TICKS * BURST_PER_TICK / 2);
+	DF_ASSERT(shm->stats.deferred_free.gen_arena_pressure_leak == base_leak);
+
+	deferred_free_flush();
+}
+
+/* ------------------------------------------------------------------ */
 /* Suite entry point                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -1064,5 +1110,10 @@ void deferred_free_ownership_self_check(void)
 	printf("    fixture 11 (generation_retire_in_window) ... ");
 	fflush(stdout);
 	fixture_generation_retire_in_window();
+	printf("OK\n");
+
+	printf("    fixture 12 (arena_eviction_burst) ... ");
+	fflush(stdout);
+	fixture_arena_eviction_burst();
 	printf("OK\n");
 }
