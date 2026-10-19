@@ -203,10 +203,11 @@ struct deferred_free_stats {
 	unsigned long rec_owned_overflow_to_ring;
 
 	/* tracked_free_now() found @ptr already pinned in the deferred-
-	 * free ring (ring[] direct scan at entry) and routed it through
-	 * the ring-as-sole-owner path: alloc_track drained, free()
-	 * skipped, ring slot left intact so the TTL/evict path frees the
-	 * chunk exactly once.  Non-zero empirically proves the
+	 * free ring (ring[] direct scan at entry), or held by the
+	 * generation arena it was evicted into, and routed it through
+	 * the ring-as-sole-owner path: consume and free() skipped, ring
+	 * or arena slot left intact so the TTL drain or arena retire
+	 * frees the chunk exactly once.  Non-zero empirically proves the
 	 * ring-as-sole-owner path is engaged and the reuse-mediated
 	 * double-free is closed off.  Rate-of-change is
 	 * the headline metric: a count proportional to ring throughput
@@ -218,16 +219,19 @@ struct deferred_free_stats {
 	unsigned long ring_owned_skip;
 
 	/* deferred_free_enqueue_internal() found @ptr already pinned in
-	 * an occupied ring slot at admission time and refused to take a
-	 * second slot.  Without this gate, an alloc_track_refresh() that
-	 * re-admits a ring-resident @ptr lets the next enqueue pass the
-	 * alloc_track_consume() check a second time and admit @ptr to
-	 * two ring slots.  The reuse-mediated double-free then runs when
-	 * the first slot's TTL fires and free()s @ptr; address reuse
-	 * binds the same value to a new chunk; the second slot's TTL
-	 * fires and free()s the new owner's chunk.  Non-zero proves the
-	 * gate is engaged; rate-of-change correlates with refresh
-	 * pressure on the mm/maps-*.c / objects/ hot paths. */
+	 * an occupied ring slot, or held by the generation arena, at
+	 * admission time and refused to take a second slot.  An evicted
+	 * @ptr keeps its alloc_track entry until its generation retires,
+	 * so it needs the same refusal.  Without this gate, an
+	 * alloc_track_refresh() that re-admits a ring-resident @ptr lets
+	 * the next enqueue pass the alloc_track_lookup() gate a second
+	 * time and admit @ptr to two ring slots.  The reuse-mediated
+	 * double-free then runs when the first slot's TTL fires and
+	 * free()s @ptr; address reuse binds the same value to a new
+	 * chunk; the second slot's TTL fires and free()s the new owner's
+	 * chunk.  Non-zero proves the gate is engaged; rate-of-change
+	 * correlates with refresh pressure on the mm/maps-*.c / objects/
+	 * hot paths. */
 	unsigned long double_admit_skip;
 
 	/* tracked_free_now() could not verify ring residency because
@@ -260,18 +264,18 @@ struct deferred_free_stats {
 	unsigned long ring_evict_leaked;
 
 	/* alloc_track_refresh() found @ptr currently pinned in the
-	 * deferred ring and skipped both the consume + re-add.  The
-	 * ring already owns the chunk's lifecycle; re-admitting a
-	 * fresh alloc_track entry for a ring-resident @ptr decouples
-	 * that entry's lifetime from the original __zmalloc-time entry
-	 * the ring's free-time consume gate relies on, leaving the
-	 * address-reuse-then-stale-enqueue path through which eviction
-	 * matches a fresh consume entry and free()s a now-live chunk
-	 * owned by a different allocation.  Non-zero proves the gate
-	 * is engaged on a refresh of a ring-resident ptr; rate-of-
-	 * change correlates with the mm/maps-*.c / objects/ refresh
-	 * pressure that previously fed double_admit_skip at the
-	 * enqueue dedup. */
+	 * deferred ring, or held by the generation arena, and skipped
+	 * both the consume + re-add.  The ring already owns the chunk's
+	 * lifecycle; re-admitting a fresh alloc_track entry for a
+	 * ring-resident @ptr decouples that entry's lifetime from the
+	 * original __zmalloc-time entry the ring's free-time consume gate
+	 * relies on, leaving the address-reuse-then-stale-enqueue path
+	 * through which a later free-time consume matches a fresh entry
+	 * and free()s a now-live chunk owned by a different allocation.
+	 * Non-zero proves the gate is engaged on a refresh of a
+	 * ring-resident ptr; rate-of-change correlates with the
+	 * mm/maps-*.c / objects/ refresh pressure that previously fed
+	 * double_admit_skip at the enqueue dedup. */
 	unsigned long alloc_track_refresh_ring_owned_skip;
 
 	/* alloc_track_refresh() could not verify ring residency because

@@ -2,8 +2,9 @@
  * Deferred-free queue: hold syscall-owned allocations for 5-50 more
  * syscalls instead of freeing them at return, so multiple allocations
  * overlap in time and expose kernel UAF / stale-ref / double-free.
- * Membership tests go through a side hash, not a linear ring walk, so
- * per-tick cost stays flat under millions of syscalls.
+ * Membership tests stay bounded under millions of syscalls: alloc_track
+ * goes through a side hash, ring and arena residency are bounded scans
+ * of the authoritative arrays.
  */
 
 #include <errno.h>
@@ -974,6 +975,37 @@ static void gen_arena_flush(void)
 }
 
 /*
+ * Is @ptr held by a generation?  An evicted pointer keeps its alloc_track
+ * entry until its generation retires, so every check that treats a
+ * ring-resident pointer as deferred-owned (enqueue dedup,
+ * tracked_free_now, alloc_track_refresh) must treat an arena-resident
+ * one the same way: a re-enqueue or tracked_free_now would otherwise give
+ * the pointer a second owner whose free lands on whatever reuses the
+ * address.  Reads the PROT_READ steady state directly, no bracket; the
+ * clamp keeps a scribbled count from walking past ptrs[].  Each of those
+ * calls scans every occupied entry, several hundred while the ring is
+ * saturated.
+ */
+static bool gen_arena_contains(void *ptr)
+{
+	unsigned int i;
+	unsigned int j;
+
+	if (gen == NULL)
+		return false;
+
+	for (i = 0; i < GEN_ARENA_SLOTS; i++) {
+		const struct gen_arena *a = &gen->arenas[i];
+
+		for (j = 0; j < a->count && j < GEN_ARENA_ENTRIES; j++) {
+			if (a->ptrs[j] == ptr)
+				return true;
+		}
+	}
+	return false;
+}
+
+/*
  * Is @ptr currently pinned in the deferred-free ring?  Linear scan of
  * the 64 slots; cheap (64 cache-resident pointer compares) and definitive
  * because ring[] is the source-of-truth for ring residency.
@@ -1000,11 +1032,11 @@ static bool ring_contains(void *ptr)
 /*
  * Refresh a tracked entry's LRU position (consume + re-insert at head)
  * so long-lived dedup'd anon-pool entries don't rotate out under
- * unrelated tracked-alloc churn.  Skip when @ptr is ring-resident:
- * the ring owns the lifecycle and a fresh alloc_track entry would
- * become a stale survivor that outlives the ring's drain and arms an
- * address-reuse bad-free.  ring_unlock failure -> skip (cannot verify
- * residency safely).  See Documentation/deferred-free.md
+ * unrelated tracked-alloc churn.  Skip when @ptr is ring- or
+ * arena-resident: the ring owns the lifecycle and a fresh alloc_track
+ * entry would become a stale survivor that outlives the ring's drain and
+ * arms an address-reuse bad-free.  ring_unlock failure -> skip (cannot
+ * verify residency safely).  See Documentation/deferred-free.md
  * "alloc_track_refresh" for the full desync analysis.
  */
 void alloc_track_refresh(void *ptr)
@@ -1025,7 +1057,7 @@ void alloc_track_refresh(void *ptr)
 		ring_lock();
 	}
 
-	if (ring_owned) {
+	if (ring_owned || gen_arena_contains(ptr)) {
 		__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_refresh_ring_owned_skip,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -1104,12 +1136,13 @@ static bool tracked_free_checked(void *ptr, enum tracked_free_site site)
 
 /*
  * Synchronously free a zmalloc_tracked() pointer, skipping when @ptr is
- * ring-resident (the ring owns the free-time consume).  Ring-ownership
- * check scans ring[] directly (source of truth); the previous
- * value-keyed mirror desynced under ENOMEM and stomp pressure and
- * armed a reuse-mediated double-free.  ring_unlock ENOMEM -> leak @ptr
- * rather than risk it.  See Documentation/deferred-free.md
- * "tracked_free_now ring-residency check".
+ * ring- or arena-resident (the ring owns the free-time consume, or the
+ * generation it evicted @ptr into does).  Ring-ownership check scans
+ * ring[] directly (source of truth); the previous value-keyed mirror
+ * desynced under ENOMEM and stomp pressure and armed a reuse-mediated
+ * double-free.  ring_unlock ENOMEM -> leak @ptr rather than risk it.
+ * See Documentation/deferred-free.md "tracked_free_now ring-residency
+ * check".
  */
 void tracked_free_now(void *ptr)
 {
@@ -1135,12 +1168,12 @@ void tracked_free_now(void *ptr)
 	 * Ring residency check runs BEFORE alloc_track_consume:
 	 * alloc_track is now populated through ring residency (the
 	 * enqueue gate uses non-consuming alloc_track_lookup; consume is
-	 * deferred to free_ring_entry / ring_evict_oldest_safe).
-	 * Consuming here when the ring owns the ptr would strip the
-	 * alloc_track entry the ring's free-time gate relies on -- the
-	 * subsequent eviction or drain would see alloc_track_lookup miss
-	 * and leak the slot instead of freeing it.  Skip the consume
-	 * (and the free, which the ring will perform) when ring-owned.
+	 * deferred to free_ring_entry, or to gen_arena_retire_one for an
+	 * evicted ptr).  Consuming here when the ring owns the ptr would
+	 * strip the alloc_track entry that free-time gate relies on -- the
+	 * subsequent drain or arena retire would consume-miss and leak the
+	 * chunk instead of freeing it.  Skip the consume (and the free,
+	 * which the ring or arena will perform) when ring-owned.
 	 */
 	if (ring != NULL) {
 		if (ring_unlock() != RING_UNLOCK_OK) {
@@ -1152,7 +1185,7 @@ void tracked_free_now(void *ptr)
 		ring_lock();
 	}
 
-	if (ring_owned) {
+	if (ring_owned || gen_arena_contains(ptr)) {
 		__atomic_add_fetch(&shm->stats.deferred_free.ring_owned_skip,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -1867,13 +1900,13 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 *
 	 * Non-consuming probe: the alloc_track entry is left in place so it
 	 * remains the authoritative ownership gate at actual-free time
-	 * (free_ring_entry / ring_evict_oldest_safe).  Defer of the consume
+	 * (free_ring_entry / gen_arena_retire_one).  Defer of the consume
 	 * is what lets a stomp that swaps ring[i].ptr to an interior or
 	 * stale heap-shaped value be rejected at free time -- the interior
-	 * pointer hashes to a different slot, alloc_track_lookup misses,
+	 * pointer matches no alloc_track slot, alloc_track_consume misses,
 	 * and the slot is leaked instead of handed to free().  The
-	 * companion free-time consume is in free_ring_entry and
-	 * ring_evict_oldest_safe.
+	 * companion free-time consume is in free_ring_entry and, for an
+	 * evicted ptr, gen_arena_retire_one.
 	 */
 	if (!alloc_track_lookup(ptr)) {
 		static unsigned long unknown_drops;
@@ -1922,6 +1955,18 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	}
 
 	/*
+	 * A pointer the generation arena holds still passes the lookup
+	 * above, and the ring_contains() dedup below cannot see it.  Refuse
+	 * it here, ahead of the pressure fallbacks, which would otherwise
+	 * free a chunk the arena still owns.
+	 */
+	if (gen_arena_contains(ptr)) {
+		__atomic_add_fetch(&shm->stats.deferred_free.double_admit_skip,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/*
 	 * Soft cap on the per-process VMA contribution of the deferred-
 	 * free path.  Each in-ring entry pins an allocation past its
 	 * natural lifetime, holding the matching glibc-arena page (and
@@ -1941,7 +1986,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * and BEFORE ring_unlock so the rejected enqueue does not pay
 	 * the mprotect bracket cost.  The alloc_track entry stays
 	 * populated through ring residency by design (consume is
-	 * deferred to free_ring_entry / ring_evict_oldest_safe); the
+	 * deferred to free_ring_entry / gen_arena_retire_one); the
 	 * pressure-path immediate-free below routes around the ring and
 	 * goes through tracked_free_checked() so its free() is gated on
 	 * alloc_track_consume() success -- keeps the set in lock-step
@@ -2291,9 +2336,9 @@ void deferred_free_flush(void)
 	 * discipline -- alloc_track_consume gate, corrupt-shape reject --
 	 * is what we want to run against every held ptr, not the anonymous
 	 * "process exit reclaims everything" path).  Runs BEFORE the ring
-	 * drain so an alloc_track_consume race between the two (a ptr that
-	 * somehow lives in both) resolves in favour of the ring's
-	 * source-of-truth path. */
+	 * drain, so a ptr that somehow lives in both is consumed and freed
+	 * by the arena retire and the ring drain's consume then misses:
+	 * one free either way. */
 	gen_arena_flush();
 
 	/* Ring already disposed by a prior ENOMEM event.  Nothing to

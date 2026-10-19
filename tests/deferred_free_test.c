@@ -1,9 +1,9 @@
 /*
  * deferred_free_test.c -- deferred-free ownership and sealing fixtures.
  *
- * Nine fixtures covering deferred-free ownership and sealing
+ * Ten fixtures covering deferred-free ownership and sealing
  * invariants.  Three build flavors exist: debug (default), ASAN
- * (ASAN=1), and NDEBUG (NDEBUG=1).  All nine fixtures pass in all
+ * (ASAN=1), and NDEBUG (NDEBUG=1).  All ten fixtures pass in all
  * three flavors.
  *
  * Prerequisites: persist/deferred-free.c compiled as a REAL_SRC (added
@@ -39,6 +39,9 @@
  * 9. generation_retire_after_rotation -- a consume miss at retire
  *                                    leaks the chunk; it is not
  *                                    counted as gen_arena_retired_ok
+ * 10. arena_ownership      -- an arena-held pointer is refused by
+ *                                    enqueue, tracked_free_now and
+ *                                    alloc_track_refresh
  */
 
 #include <errno.h>
@@ -870,6 +873,61 @@ static void fixture_generation_retire_after_rotation(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Fixture 10: Arena ownership                                        */
+/*                                                                     */
+/* A pointer evicted into the generation arena keeps its alloc_track  */
+/* entry until retirement, so it must be refused exactly like a       */
+/* ring-resident one.  Fill the ring, evict one pointer, then         */
+/* re-enqueue, tracked_free_now and alloc_track_refresh every         */
+/* pointer: each call must bump its skip counter, and the flush must  */
+/* free the evicted pointer once, from the arena.  Without the arena  */
+/* check the re-enqueue gives the evicted pointer a second owner in   */
+/* the ring.                                                           */
+/* ------------------------------------------------------------------ */
+
+static void fixture_arena_ownership(void)
+{
+	void *ptrs[DEFERRED_RING_SIZE + 1];
+	unsigned long base_admitted, base_retired, base_skip;
+	unsigned int i;
+
+	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++) {
+		ptrs[i] = malloc(8);
+		DF_ASSERT(ptrs[i] != NULL);
+		deferred_alloc_track(ptrs[i], 8);
+	}
+
+	base_admitted = shm->stats.deferred_free.gen_arena_admitted;
+	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++)
+		deferred_free_enqueue(ptrs[i]);
+	DF_ASSERT(shm->stats.deferred_free.gen_arena_admitted
+		  == base_admitted + 1);
+
+	base_skip = shm->stats.deferred_free.double_admit_skip;
+	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++)
+		deferred_free_enqueue(ptrs[i]);
+	DF_ASSERT(shm->stats.deferred_free.double_admit_skip
+		  == base_skip + DEFERRED_RING_SIZE + 1);
+
+	base_skip = shm->stats.deferred_free.ring_owned_skip;
+	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++)
+		tracked_free_now(ptrs[i]);
+	DF_ASSERT(shm->stats.deferred_free.ring_owned_skip
+		  == base_skip + DEFERRED_RING_SIZE + 1);
+
+	base_skip = shm->stats.deferred_free.alloc_track_refresh_ring_owned_skip;
+	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++)
+		alloc_track_refresh(ptrs[i]);
+	DF_ASSERT(shm->stats.deferred_free.alloc_track_refresh_ring_owned_skip
+		  == base_skip + DEFERRED_RING_SIZE + 1);
+
+	base_retired = shm->stats.deferred_free.gen_arena_retired_ok;
+	deferred_free_flush();
+	DF_ASSERT(shm->stats.deferred_free.gen_arena_retired_ok
+		  == base_retired + 1);
+}
+
+/* ------------------------------------------------------------------ */
 /* Suite entry point                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -941,5 +999,10 @@ void deferred_free_ownership_self_check(void)
 	printf("    fixture 9 (generation_retire_after_rotation) ... ");
 	fflush(stdout);
 	fixture_generation_retire_after_rotation();
+	printf("OK\n");
+
+	printf("    fixture 10 (arena_ownership) ... ");
+	fflush(stdout);
+	fixture_arena_ownership();
 	printf("OK\n");
 }

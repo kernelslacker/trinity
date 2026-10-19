@@ -94,7 +94,8 @@ dedup'd entry resident regardless of churn rate.
 
 Ring-residency gate: skip the consume + re-add when `@ptr` is currently
 pinned in the deferred ring.  The ring already owns the chunk's lifecycle
-(free-time consume runs in `free_ring_entry` / `ring_evict_oldest_safe`), so
+(free-time consume runs in `free_ring_entry`, or in `gen_arena_retire_one`
+once the ring has evicted the chunk), so
 a fresh `alloc_track` entry from `deferred_alloc_track(@ptr)` creates a
 stale-survivor entry that outlives the ring's drain: after the ring drains
 `@ptr` and frees the chunk, the heap recycles the address, and a stale
@@ -104,9 +105,12 @@ chunk.  The choke-point enqueue dedup (`ring_contains` check feeding
 `deferred_free_double_admit_skip`) catches the value-side symptom (two ring
 slots for the same ptr) but the desync this refresh creates between
 `alloc_track` and ring residency survives that gate -- it is the
-address-reuse residual the leak-on-eviction interim (`ring_evict_leaked`)
-was put in place to mask.  Treat "ring owns this ptr" as an authoritative
-skip on the refresh source itself.
+address-reuse residual the leak-on-eviction defense (`ring_evict_leaked`,
+now the generation arena) was put in place to mask.  Treat "ring owns this
+ptr" as an authoritative skip on the refresh source itself.  The generation
+arena counts as ring residency: an evicted pointer keeps its `alloc_track`
+entry until its generation retires, so the skip also fires when
+`gen_arena_contains()` finds it.
 
 Source of truth: `ring[]` is mprotect-armored AND registered with
 `shared_regions[]`, so neither scribble nor mprotect-failure can desync it
@@ -191,11 +195,14 @@ currently pinned in the deferred-free ring.  `ring[]` is the source-of-truth
 (mprotect-armored AND registered with `shared_regions[]`, so neither
 scribble nor mprotect-failure can desync it from itself).  Direct
 `ring[]` scan trusts the stronger gate and is immune to both desync
-vectors.
+vectors.  A pointer the ring evicted into the generation arena is still
+owned by the deferred path (its retire consumes and frees it), so
+`gen_arena_contains()` is checked alongside the ring scan.
 
-Cost: `ring_count > 0` gate (read against `rc`'s `PROT_READ` steady state --
-no syscall); on the non-empty path, one `ring_unlock` pair plus a 64-slot
-scan.  Acceptable on the cleanup boundary.
+Cost: `ring != NULL` gate (read against `rc`'s `PROT_READ` steady state --
+no syscall); while the ring exists, one `ring_unlock` pair plus a 64-slot
+scan, then a scan of the arena's occupied entries, which are `PROT_READ` at
+rest and need no bracket.  Acceptable on the cleanup boundary.
 
 `ring_unlock()` failure (ENOMEM) cannot verify residency -- leak `@ptr`
 rather than risk a double-free; child exit reclaims it.  Bumps
