@@ -4,9 +4,9 @@
 # under ASAN to gate all fixtures it contains.
 #
 # The test binary (tests/test-bin-asan) exercises the per-child
-# lossless_op_count plausibility guards -- absolute ceiling, delta
-# ceiling, and the first-drain scribble rejection path -- without
-# importing the full trinity shm/ring stack.  The ASAN build catches
+# lossless_op_count plausibility guard -- delta ceiling, first-drain
+# scribble rejection, and recovery by rebase -- without importing the
+# full trinity shm/ring stack.  The ASAN build catches
 # memory errors that a plain debug build might mask.
 #
 # Invoked as part of `bash scripts/check-static.sh`; the top-level

@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <string.h>
+#include <time.h>
 
 #include "arch.h"		/* page_size, PAGE_MASK */
 #include "child.h"
@@ -395,9 +396,15 @@ void stats_ring_drain_all(void)
 {
 	unsigned int i;
 	unsigned long lossless_total = 0;
+	unsigned long now_ms;
+	struct timespec now;
 
 	if (children == NULL)
 		return;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	now_ms = (unsigned long)now.tv_sec * 1000UL +
+		 (unsigned long)now.tv_nsec / 1000000UL;
 
 	/* One-time allocation of cross-drain per-slot state. */
 	if (opclock_slots == NULL)
@@ -472,32 +479,16 @@ void stats_ring_drain_all(void)
 		 * The child is the sole writer; RELAXED is sufficient because
 		 * nothing orders against this counter on either side.
 		 *
-		 * Two-layer plausibility guard, applied by
-		 * opclock_slot_observe():
-		 *
-		 * 1. Absolute ceiling: slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING
-		 *    catches wild garbage far above any realistic total.
-		 *
-		 * 2. Delta ceiling: slot_ops − prev > MAX_DELTA_PER_DRAIN
-		 *    catches plausible-magnitude scribbles that fall in the
-		 *    range [real_total, SANE_CEILING) and would otherwise slip
-		 *    through, get accumulated, and lock in permanently via the
-		 *    high-water clamp below.  Also flags a backward jump
-		 *    (slot_ops < prev), which violates the monotonic invariant
-		 *    and can only happen if shm was stomped.
-		 *
-		 * Diagnostic output is rate-limited to one message per
-		 * implausible run of a slot.  lossless_slot_implausible counts
-		 * distinct corrupted slots, not the (slot × drain)
-		 * re-observation product.
-		 *
-		 * A rejected slot still contributes its last accepted value.
-		 * Those ops really happened and were counted in earlier
-		 * drains; dropping them here would make the fleet total go
-		 * backwards, which the high-water clamp below then hides by
-		 * freezing total_op_count until the other children have made
-		 * up the difference.  With one scribbled slot out of many that
-		 * stall is invisible and every derived rate reads low.
+		 * opclock_slot_observe() applies the plausibility guard (see
+		 * include/stats_ring_opclock_limits.h) and returns what the
+		 * slot contributes.  An untrusted slot still contributes its
+		 * accumulated total.  Those ops really happened and were
+		 * counted in earlier drains; dropping them here would make the
+		 * fleet total go backwards, which the high-water clamp below
+		 * then hides by freezing total_op_count until the other
+		 * children have made up the difference.  With one scribbled
+		 * slot out of many that stall is invisible and every derived
+		 * rate reads low.
 		 */
 		{
 			unsigned long slot_ops =
@@ -506,19 +497,28 @@ void stats_ring_drain_all(void)
 			struct opclock_slot fallback = { 0 };
 			struct opclock_slot *st = (opclock_slots != NULL)
 						  ? &opclock_slots[i] : &fallback;
+			enum opclock_verdict v;
 
-			if (opclock_slot_observe(st, slot_ops) ==
-			    OPCLOCK_NEWLY_REJECTED) {
+			lossless_total += opclock_slot_observe(st, slot_ops,
+							       now_ms, &v);
+			if (v == OPCLOCK_NEWLY_REJECTED) {
 				output(0, "stats_ring: child[%u] lossless_op_count "
 				       "0x%lx %s (prev 0x%lx), skipping\n",
 				       i, slot_ops,
-				       slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING
+				       slot_ops < st->prev
+					? "went backwards (possible scribble)"
+					: slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING
 					? "exceeds absolute plausibility ceiling"
 					: "delta implausible (possible scribble)",
 				       st->prev);
 				parent_stats.lossless_slot_implausible++;
+			} else if (v == OPCLOCK_REBASED) {
+				output(0, "stats_ring: child[%u] lossless_op_count "
+				       "0x%lx climbing plausibly again, rebasing "
+				       "(%u of %u)\n",
+				       i, slot_ops, st->rebases,
+				       LOSSLESS_OP_COUNT_MAX_REBASES);
 			}
-			lossless_total += st->prev;
 		}
 		(void) stats_ring_drain(ring);
 	}

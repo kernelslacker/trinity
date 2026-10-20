@@ -410,8 +410,9 @@ static void init_shm_per_child_rings(void)
 		 * after the poison and before the first child, so it is the
 		 * only correct place to clear it.  Skip it and every slot
 		 * starts at a random ~2^63 value, the drain's plausibility
-		 * guard rejects all of them on the first pass, and
-		 * total_op_count stays 0 for the entire run.
+		 * guard rejects all of them on the first pass, and each
+		 * child's first LOSSLESS_OP_COUNT_REBASE_SPAN_MS or so of ops
+		 * are lost before its slot rebases.
 		 */
 		__atomic_store_n(&child->stats_ring->lossless_op_count, 0,
 				 __ATOMIC_RELAXED);

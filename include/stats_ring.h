@@ -467,11 +467,13 @@ struct stats_aggregate {
 	unsigned long ring_children_overflow_events; /* (child x cycle) pairs whose drain saw overflow>0 */
 
 	/*
-	 * Count of per-child lossless_op_count slots skipped during
-	 * stats_ring_drain_all() because the loaded value exceeded
-	 * LOSSLESS_OP_COUNT_SANE_CEILING.  A non-zero rate indicates
-	 * that child shm pages are being scribbled -- a real corruption
-	 * signal for triage.  Parent-only writer; plain ++ is safe.
+	 * Count of implausible runs in per-child lossless_op_count: a
+	 * reading stats_ring_drain_all()'s guard rejected (a delta above
+	 * LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN or a backward step),
+	 * counted once per run until the slot is trusted again.  A
+	 * non-zero rate indicates that child shm pages are being
+	 * scribbled -- a real corruption signal for triage.  Parent-only
+	 * writer; plain ++ is safe.
 	 */
 	unsigned long lossless_slot_implausible;
 

@@ -211,9 +211,10 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `test-bin-asan-suite`: builds `tests/test-bin-asan` (the
   PURE-module test binary under `-fsanitize=address`) and runs the
   `stats_opclock_lossless_self_check` suite, which gates the per-child
-  lossless op-count plausibility guards: absolute ceiling, per-drain
-  delta ceiling, and first-drain scribble rejection.  Catches a red
-  fixture suite before it escapes to the tree.
+  lossless op-count plausibility guard: per-drain delta ceiling,
+  first-drain scribble rejection, and recovery by rebase, including that
+  a clock-like scribble never rebases.  Catches a red fixture suite
+  before it escapes to the tree.
 - `syscall-metadata`: best-effort sanity on `struct syscallentry` --
   ARG_RANGE arguments must declare low/high bounds.
 - `track-shared-region-pairing`: every `track_shared_region()` must
