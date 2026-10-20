@@ -381,35 +381,15 @@ static void stats_publish_locked(void)
 
 /*
  * Plausibility guards for per-child lossless_op_count contributions.
- * Constants defined in include/stats_ring_opclock_limits.h (pulled in
- * via stats_ring.h) -- see that header for the full rationale.
- */
-
-/*
+ * The thresholds and the per-slot fold, opclock_slot_observe(), live in
+ * include/stats_ring_opclock_limits.h (pulled in via stats_ring.h) --
+ * see that header for the full rationale.
+ *
  * Per-slot cross-drain state.  Allocated once (calloc) on first entry
  * to stats_ring_drain_all(); sized to max_children at that point.
  * Single-writer (parent main loop), no locking needed.
- *
- * prev_lossless_op_count[i] — last accepted lossless_op_count for slot i.
- *   Starts at 0 (calloc).  The delta guard is unconditional from drain 1:
- *   prev = 0, so any first observation that exceeds MAX_DELTA_PER_DRAIN
- *   is rejected immediately.  No separate "have baseline" flag is needed
- *   because lossless_op_count is monotonic from 0 and one drain interval
- *   cannot legitimately produce more than LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN
- *   ops, so the check is always meaningful.
- *
- * slot_implausible_reported[i] — set true after the first output() for
- *   slot i so subsequent drain iterations stay silent.  Reset to false
- *   when a slot transitions back to plausible.
- *
- *   Note that nothing currently makes that transition happen: the
- *   counter lives in the child's ring page, stats_ring_init() does not
- *   clear it on respawn, and prev stays anchored to the last good
- *   value, so a slot that goes implausible stays implausible for the
- *   rest of the run and only ever contributes its frozen prev.
  */
-static unsigned long *prev_lossless_op_count;
-static bool         *slot_implausible_reported;
+static struct opclock_slot *opclock_slots;
 
 void stats_ring_drain_all(void)
 {
@@ -420,12 +400,8 @@ void stats_ring_drain_all(void)
 		return;
 
 	/* One-time allocation of cross-drain per-slot state. */
-	if (prev_lossless_op_count == NULL) {
-		prev_lossless_op_count =
-			calloc(max_children, sizeof(*prev_lossless_op_count));
-		slot_implausible_reported =
-			calloc(max_children, sizeof(*slot_implausible_reported));
-	}
+	if (opclock_slots == NULL)
+		opclock_slots = calloc(max_children, sizeof(*opclock_slots));
 
 	for_each_child(i) {
 		struct childdata *child;
@@ -496,8 +472,8 @@ void stats_ring_drain_all(void)
 		 * The child is the sole writer; RELAXED is sufficient because
 		 * nothing orders against this counter on either side.
 		 *
-		 * Two-layer plausibility guard — see the LOSSLESS_OP_COUNT_*
-		 * constants above for the full rationale:
+		 * Two-layer plausibility guard, applied by
+		 * opclock_slot_observe():
 		 *
 		 * 1. Absolute ceiling: slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING
 		 *    catches wild garbage far above any realistic total.
@@ -510,71 +486,39 @@ void stats_ring_drain_all(void)
 		 *    (slot_ops < prev), which violates the monotonic invariant
 		 *    and can only happen if shm was stomped.
 		 *
-		 * Diagnostic output is rate-limited to one message per slot
-		 * for the lifetime of the run (slot_implausible_reported[]).
-		 * lossless_slot_implausible counts distinct corrupted slots,
-		 * not the (slot × drain) re-observation product.
+		 * Diagnostic output is rate-limited to one message per
+		 * implausible run of a slot.  lossless_slot_implausible counts
+		 * distinct corrupted slots, not the (slot × drain)
+		 * re-observation product.
+		 *
+		 * A rejected slot still contributes its last accepted value.
+		 * Those ops really happened and were counted in earlier
+		 * drains; dropping them here would make the fleet total go
+		 * backwards, which the high-water clamp below then hides by
+		 * freezing total_op_count until the other children have made
+		 * up the difference.  With one scribbled slot out of many that
+		 * stall is invisible and every derived rate reads low.
 		 */
 		{
 			unsigned long slot_ops =
 				__atomic_load_n(&ring->lossless_op_count,
 						__ATOMIC_RELAXED);
-			unsigned long prev = (prev_lossless_op_count != NULL)
-					     ? prev_lossless_op_count[i] : 0;
-			bool absolute_bad = (slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING);
-			/*
-			 * Delta check is unconditional from drain 1.  prev starts
-			 * at 0 (calloc), lossless_op_count is monotonic from 0,
-			 * and one drain interval cannot legitimately produce more
-			 * than LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN ops, so the
-			 * check is always valid — including on the very first
-			 * drain where prev == 0.  A backward jump (slot_ops < prev)
-			 * also violates the monotonic invariant.
-			 */
-			bool delta_bad = (slot_ops < prev) ||
-					 (slot_ops - prev >
-					  LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN);
+			struct opclock_slot fallback = { 0 };
+			struct opclock_slot *st = (opclock_slots != NULL)
+						  ? &opclock_slots[i] : &fallback;
 
-			if (absolute_bad || delta_bad) {
-				/* Rate-limit: emit at most one message per slot. */
-				if (slot_implausible_reported == NULL ||
-				    !slot_implausible_reported[i]) {
-					output(0, "stats_ring: child[%u] lossless_op_count "
-					       "0x%lx %s (prev 0x%lx), skipping\n",
-					       i, slot_ops,
-					       absolute_bad
-						? "exceeds absolute plausibility ceiling"
-						: "delta implausible (possible scribble)",
-					       prev);
-					if (slot_implausible_reported != NULL)
-						slot_implausible_reported[i] = true;
-					/* Count distinct corrupted slots, not
-					 * slot × drain re-observations. */
-					parent_stats.lossless_slot_implausible++;
-				}
-				/* Do NOT update prev: keep the last known-good
-				 * baseline so the delta check stays anchored.
-				 *
-				 * Still contribute prev to the sum.  Those ops
-				 * really happened and were counted in earlier
-				 * drains; dropping them here would make the
-				 * fleet total go backwards, which the
-				 * high-water clamp below then hides by
-				 * freezing total_op_count until the other
-				 * children have made up the difference.  With
-				 * one scribbled slot out of many that stall is
-				 * invisible and every derived rate reads low.
-				 */
-				lossless_total += prev;
-			} else {
-				/* Slot is plausible; re-arm reporting in case the
-				 * child respawned and the scribble is gone. */
-				if (slot_implausible_reported != NULL)
-					slot_implausible_reported[i] = false;
-				if (prev_lossless_op_count != NULL)
-					prev_lossless_op_count[i] = slot_ops;
-				lossless_total += slot_ops;
+			if (opclock_slot_observe(st, slot_ops) ==
+			    OPCLOCK_NEWLY_REJECTED) {
+				output(0, "stats_ring: child[%u] lossless_op_count "
+				       "0x%lx %s (prev 0x%lx), skipping\n",
+				       i, slot_ops,
+				       slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING
+					? "exceeds absolute plausibility ceiling"
+					: "delta implausible (possible scribble)",
+				       st->prev);
+				parent_stats.lossless_slot_implausible++;
 			}
+			lossless_total += st->prev;
 		}
 		(void) stats_ring_drain(ring);
 	}

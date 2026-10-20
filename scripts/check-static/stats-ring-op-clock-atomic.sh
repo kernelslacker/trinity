@@ -25,7 +25,7 @@
 #
 # The grep pattern '(->|\.)lossless_op_count' is token-precise: it
 # matches only field-access expressions (-> or . dereference) and not
-# bare identifiers such as prev_lossless_op_count[] or diagnostic
+# bare identifiers that merely end in the field name, or diagnostic
 # strings that merely contain the field name as a substring.  This
 # avoids the need for a whole-file exemption for stats/stats-ring.c
 # (which contains the only __atomic_load_n reader) and keeps that site
@@ -151,7 +151,7 @@ while IFS= read -r srcfile; do
 
 	# Walk lines with a field-access expression for lossless_op_count.
 	# The pattern requires -> or . before the field name, so bare
-	# identifiers like prev_lossless_op_count[] do not match.
+	# identifiers that merely end in the field name do not match.
 	#
 	# Capture stdout and exit status separately so that a real grep
 	# failure (status ≥2: unreadable file, bad regex, I/O error) is

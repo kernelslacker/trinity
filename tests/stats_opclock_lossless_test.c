@@ -15,6 +15,9 @@
  *     epoch_start_op_count)
  *   - simulated drains that sum per-child lossless_op_count
  *   - simulated epoch resets
+ * The per-slot plausibility guard is not modelled: the guarded drain
+ * calls production's opclock_slot_observe() from
+ * include/stats_ring_opclock_limits.h.
  *
  * Suite entry point: stats_opclock_lossless_self_check()
  *
@@ -206,69 +209,37 @@ static void sim_drain(struct sim_ring *ring,
 /* ------------------------------------------------------------------ */
 /* Delta-guarded drain                                                  */
 /*                                                                     */
-/* Mirrors the two-layer plausibility guard in stats/stats-ring.c:    */
+/* Folds the reading through opclock_slot_observe(), the same per-slot */
+/* guard stats_ring_drain_all() applies (include/                      */
+/* stats_ring_opclock_limits.h):                                       */
 /*   1. absolute ceiling: slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING   */
 /*   2. delta ceiling:    slot_ops - prev > MAX_DELTA_PER_DRAIN,      */
 /*      or backward jump: slot_ops < prev (monotonicity violated)     */
 /*                                                                     */
-/* Returns true when the slot was accepted (aggregate updated),        */
-/* false when rejected (aggregate stalls at last good value).          */
-/*                                                                     */
-/* prev_op and reported mirror the per-slot cross-drain state          */
-/* (prev_lossless_op_count[] and slot_implausible_reported[] in        */
-/* production).  The delta check is unconditional from drain 1: prev   */
-/* starts at 0, lossless_op_count is monotonic from 0, and one drain  */
-/* interval cannot legitimately exceed MAX_DELTA_PER_DRAIN ops.        */
+/* Returns the guard's verdict.  With one simulated ring the fleet    */
+/* sum is this slot's contribution, so a rejection stalls the          */
+/* aggregate at the last good value.  *emissions counts the one-shot  */
+/* diagnostics production would print.                                 */
 /* ------------------------------------------------------------------ */
 
-static bool sim_drain_guarded(struct sim_ring *ring,
-			      struct sim_aggregate *agg,
-			      unsigned long *fleet_op_count,
-			      unsigned long *prev_op,
-			      bool *reported,
-			      int *emissions)
+static enum opclock_verdict sim_drain_guarded(struct sim_ring *ring,
+					      struct sim_aggregate *agg,
+					      unsigned long *fleet_op_count,
+					      struct opclock_slot *slot,
+					      int *emissions)
 {
-	unsigned long slot_ops;
-	unsigned long prev;
-	bool absolute_bad;
-	bool delta_bad;
+	enum opclock_verdict v;
 
 	(void)ring_drain(ring);
 
-	slot_ops     = ring->lossless_op_count;
-	prev         = *prev_op;
-	absolute_bad = (slot_ops > LOSSLESS_OP_COUNT_SANE_CEILING);
-	delta_bad    = (slot_ops < prev) ||
-		       (slot_ops - prev > LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN);
+	v = opclock_slot_observe(slot, ring->lossless_op_count);
+	if (v == OPCLOCK_NEWLY_REJECTED)
+		(*emissions)++;
 
-	if (absolute_bad || delta_bad) {
-		/*
-		 * Rate-limit flag: mirrors production's !slot_implausible_reported[i]
-		 * guard — the emission counter increments only on the first
-		 * detection per bad run.  Aggregate stalls; prev_op is NOT updated
-		 * so the delta check stays anchored to the last known-good baseline.
-		 *
-		 * Production contributes prev to the fleet sum on this path.
-		 * With one simulated ring that is indistinguishable from
-		 * stalling (sum == prev == total), so the model does not
-		 * reproduce it; the behaviour it protects only shows up with
-		 * more than one contributing slot.
-		 */
-		if (!*reported)
-			(*emissions)++;
-		*reported = true;
-		agg->op_count   = agg->total_op_count - agg->epoch_start_op_count;
-		*fleet_op_count = agg->op_count;
-		return false;
-	}
-
-	/* Plausible: re-arm reporting, advance prev baseline, update agg. */
-	*reported           = false;
-	*prev_op            = slot_ops;
-	agg->total_op_count = slot_ops;
+	agg->total_op_count = slot->prev;
 	agg->op_count       = agg->total_op_count - agg->epoch_start_op_count;
 	*fleet_op_count     = agg->op_count;
-	return true;
+	return v;
 }
 
 /* ------------------------------------------------------------------ */
@@ -620,11 +591,10 @@ static void test_delta_guard(void)
 	struct sim_ring ring;
 	struct sim_aggregate agg;
 	unsigned long fleet = 0;
-	unsigned long prev_op = 0;
-	bool reported = false;
+	struct opclock_slot slot = { 0 };
 	unsigned long baseline_ops = 500;
 	unsigned long stalled_total;
-	bool accepted;
+	enum opclock_verdict v;
 
 	ring_init(&ring);
 	agg_init(&agg);
@@ -639,11 +609,11 @@ static void test_delta_guard(void)
 
 	int emissions = 0;
 
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported, &emissions);
-	SELFTEST_ASSERT(accepted);
+	v = sim_drain_guarded(&ring, &agg, &fleet, &slot, &emissions);
+	SELFTEST_ASSERT(v == OPCLOCK_ACCEPTED);
 	SELFTEST_ASSERT(agg.total_op_count == baseline_ops);
-	SELFTEST_ASSERT(prev_op == baseline_ops);
-	SELFTEST_ASSERT(!reported);
+	SELFTEST_ASSERT(slot.prev == baseline_ops);
+	SELFTEST_ASSERT(!slot.untrusted);
 
 	/*
 	 * Phase 2: scribble lossless_op_count to P + MAX_DELTA + 1.
@@ -657,21 +627,21 @@ static void test_delta_guard(void)
 	stalled_total = agg.total_op_count;
 
 	/* Drain 1 after scribble: delta guard trips; aggregate stalls. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported, &emissions);
-	SELFTEST_ASSERT(!accepted);
-	SELFTEST_ASSERT(reported);
+	v = sim_drain_guarded(&ring, &agg, &fleet, &slot, &emissions);
+	SELFTEST_ASSERT(v != OPCLOCK_ACCEPTED);
+	SELFTEST_ASSERT(slot.untrusted);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
-	/* prev_op must not have advanced (baseline stays anchored). */
-	SELFTEST_ASSERT(prev_op == baseline_ops);
+	/* slot.prev must not have advanced (baseline stays anchored). */
+	SELFTEST_ASSERT(slot.prev == baseline_ops);
 
 	/* Child keeps incrementing inside the corrupted range. */
 	ring.lossless_op_count += 1000;
 
 	/* Drain 2: delta from original prev is larger; still rejected. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported, &emissions);
-	SELFTEST_ASSERT(!accepted);
+	v = sim_drain_guarded(&ring, &agg, &fleet, &slot, &emissions);
+	SELFTEST_ASSERT(v != OPCLOCK_ACCEPTED);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
-	SELFTEST_ASSERT(prev_op == baseline_ops);
+	SELFTEST_ASSERT(slot.prev == baseline_ops);
 
 	/*
 	 * Phase 3: respawn via ring_respawn_init() (mirrors production
@@ -683,16 +653,16 @@ static void test_delta_guard(void)
 			baseline_ops + LOSSLESS_OP_COUNT_MAX_DELTA_PER_DRAIN + 1001);
 
 	/* Drain after respawn: rejection persists; aggregate stalls permanently. */
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported, &emissions);
-	SELFTEST_ASSERT(!accepted);
+	v = sim_drain_guarded(&ring, &agg, &fleet, &slot, &emissions);
+	SELFTEST_ASSERT(v != OPCLOCK_ACCEPTED);
 	SELFTEST_ASSERT(agg.total_op_count == stalled_total);
 
 	/*
 	 * Rate-limit coverage: across three rejecting drains, the emission
-	 * counter must be exactly 1.  reported was false only at the first
-	 * rejection (drain 1); drains 2 and 3 see reported==true and must
-	 * not fire again.  This fails if the !*reported guard is absent or
-	 * the guard fires more than once.
+	 * counter must be exactly 1.  slot.untrusted was false only at the
+	 * first rejection (drain 1); drains 2 and 3 see it set and must not
+	 * fire again.  This fails if the one-shot latch is absent or the
+	 * guard fires more than once.
 	 */
 	SELFTEST_ASSERT(emissions == 1);
 }
@@ -713,9 +683,8 @@ static void test_first_drain_scribble(void)
 	struct sim_ring ring;
 	struct sim_aggregate agg;
 	unsigned long fleet = 0;
-	unsigned long prev_op = 0;
-	bool reported = false;
-	bool accepted;
+	struct opclock_slot slot = { 0 };
+	enum opclock_verdict v;
 
 	/*
 	 * A pointer-shaped value: below SANE_CEILING (2^52) but well above
@@ -743,13 +712,13 @@ static void test_first_drain_scribble(void)
 	 */
 	int emissions8 = 0;
 
-	accepted = sim_drain_guarded(&ring, &agg, &fleet, &prev_op, &reported, &emissions8);
-	SELFTEST_ASSERT(!accepted);
-	SELFTEST_ASSERT(reported);
+	v = sim_drain_guarded(&ring, &agg, &fleet, &slot, &emissions8);
+	SELFTEST_ASSERT(v != OPCLOCK_ACCEPTED);
+	SELFTEST_ASSERT(slot.untrusted);
 	/* Aggregate must not have moved. */
 	SELFTEST_ASSERT(agg.total_op_count == 0);
-	/* prev_op must remain 0: bad value must not pollute the anchor. */
-	SELFTEST_ASSERT(prev_op == 0);
+	/* slot.prev must remain 0: bad value must not pollute the anchor. */
+	SELFTEST_ASSERT(slot.prev == 0);
 }
 
 /* ------------------------------------------------------------------ */
