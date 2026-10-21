@@ -78,10 +78,11 @@ static bool reap_entry_is_fast_die(const struct reap_record *r)
 		return false;
 
 	/*
-	 * Targeted-mode-only exempt reasons (-c/-r/-g).  In targeted mode
-	 * these are the run finishing on its own terms, not corruption;
-	 * in default fuzz mode they should not fire at all, and if they
-	 * do a fast-die cluster still signals something wrong.
+	 * Targeted-mode-only exempt reasons (-c/-r/-g): the
+	 * exit_reason_is_clean() set.  In targeted mode these are the run
+	 * finishing on its own terms, not corruption; in default fuzz mode
+	 * they should not fire at all, and if they do a fast-die cluster
+	 * still signals something wrong.
 	 *   - EXIT_REACHED_COUNT: requested op count reached.
 	 *   - EXIT_EPOCH_DONE:    epoch budget consumed.
 	 *   - EXIT_SIGINT:        ^C from terminal -- parent panics
@@ -92,10 +93,7 @@ static bool reap_entry_is_fast_die(const struct reap_record *r)
 	 *     current caller, retained so future operator exits routed
 	 *     through shm->exit_reason are exempted the same way.
 	 */
-	if ((r->exit_status == EXIT_REACHED_COUNT ||
-	     r->exit_status == EXIT_EPOCH_DONE ||
-	     r->exit_status == EXIT_SIGINT ||
-	     r->exit_status == EXIT_USER_REQUEST) &&
+	if (exit_reason_is_clean((enum exit_reasons)r->exit_status) &&
 	    (do_specific_syscall || random_selection ||
 	     desired_group != GROUP_NONE))
 		return false;

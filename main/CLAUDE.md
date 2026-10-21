@@ -213,11 +213,13 @@ API surface.
    that reaps a slot without going through `reap_child()` +
    `register_zombie_slot()`'s logic would reopen that hole.
 3. **`bail_fast_die_loop()`'s exclusion list is a maintenance trap** —
-   `reap_entry_is_fast_die()` hardcodes five `exit_reason` values as
-   "expected fast clean exit, don't count toward the corruption ring."
-   Any future exit path that legitimately exits quickly and cleanly (new
-   operator-driven shutdown reason, new targeted-mode depletion path) must
-   remember to add itself here or risk a false-positive
+   `reap_entry_is_fast_die()` treats two `exit_reason` values in any mode,
+   and the `exit_reason_is_clean()` set (include/exit.h) in targeted mode,
+   as "expected fast clean exit, don't count toward the corruption ring."
+   That predicate also picks the exit code and gates the end-of-run
+   warm-start saves, so a new clean shutdown reason goes there.  Any other
+   exit path that legitimately exits quickly (new targeted-mode depletion
+   path) must remember to add itself here or risk a false-positive
    `EXIT_SHM_CORRUPTION` panic under adversarial timing.
 4. **`panic()`'s deferred-effect design means every caller must reason
    about one extra tick of execution** — code between a `panic()` call and

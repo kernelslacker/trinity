@@ -264,24 +264,20 @@ void persist_state_on_clean_exit(void)
 {
 	enum trinity_persist_component saved[4];
 	uint32_t nr_saved = 0;
+	bool clean = exit_reason_is_clean(
+		__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
 
 	/*
 	 * Persist the minicorpus on graceful exit so the next run starts
 	 * warm.  Skip after a corruption or crash — saving from a poisoned
 	 * shm could feed garbage back in on restart.
 	 */
-	if (!no_warm_start) {
-		enum exit_reasons er =
-			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
-
-		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
-		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
-			const char *path = warm_start_path ? warm_start_path
-							   : minicorpus_default_path();
-			if (path != NULL && minicorpus_save_file(path)) {
-				output(0, "minicorpus: persisted to %s\n", path);
-				saved[nr_saved++] = PERSIST_MINICORPUS;
-			}
+	if (clean && !no_warm_start) {
+		const char *path = warm_start_path ? warm_start_path
+						   : minicorpus_default_path();
+		if (path != NULL && minicorpus_save_file(path)) {
+			output(0, "minicorpus: persisted to %s\n", path);
+			saved[nr_saved++] = PERSIST_MINICORPUS;
 		}
 	}
 
@@ -293,18 +289,12 @@ void persist_state_on_clean_exit(void)
 	 * snapshot trigger covers crashes; this captures the trailing
 	 * window of edges that the periodic cadence had not yet flushed.
 	 */
-	if (!no_kcov_warm_start && kcov_shm != NULL) {
-		enum exit_reasons er =
-			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+	if (clean && !no_kcov_warm_start && kcov_shm != NULL) {
+		const char *kpath = kcov_bitmap_default_path();
 
-		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
-		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
-			const char *kpath = kcov_bitmap_default_path();
-
-			if (kpath != NULL && kcov_bitmap_save_file(kpath)) {
-				output(0, "kcov-bitmap: persisted to %s\n", kpath);
-				saved[nr_saved++] = PERSIST_KCOV;
-			}
+		if (kpath != NULL && kcov_bitmap_save_file(kpath)) {
+			output(0, "kcov-bitmap: persisted to %s\n", kpath);
+			saved[nr_saved++] = PERSIST_KCOV;
 		}
 	}
 
@@ -317,18 +307,12 @@ void persist_state_on_clean_exit(void)
 	 * trailing window of entries the periodic cadence had not yet
 	 * flushed.
 	 */
-	if (!no_cmp_hints_warm_start && cmp_hints_shm != NULL) {
-		enum exit_reasons er =
-			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+	if (clean && !no_cmp_hints_warm_start && cmp_hints_shm != NULL) {
+		const char *cpath = cmp_hints_default_path();
 
-		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
-		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
-			const char *cpath = cmp_hints_default_path();
-
-			if (cpath != NULL && cmp_hints_save_file(cpath)) {
-				output(0, "cmp-hints: persisted to %s\n", cpath);
-				saved[nr_saved++] = PERSIST_CMP_HINTS;
-			}
+		if (cpath != NULL && cmp_hints_save_file(cpath)) {
+			output(0, "cmp-hints: persisted to %s\n", cpath);
+			saved[nr_saved++] = PERSIST_CMP_HINTS;
 		}
 	}
 
@@ -341,19 +325,12 @@ void persist_state_on_clean_exit(void)
 	 * bitmap / cmp-hints, which cover mid-run crashes); this end-of-run
 	 * save is the only persistence point.
 	 */
-	if (!no_chain_warm_start && chain_corpus_shm != NULL) {
-		enum exit_reasons er =
-			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+	if (clean && !no_chain_warm_start && chain_corpus_shm != NULL) {
+		const char *cpath = chain_corpus_default_path();
 
-		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
-		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
-			const char *cpath = chain_corpus_default_path();
-
-			if (cpath != NULL && chain_corpus_save_file(cpath)) {
-				output(0, "chain corpus: persisted to %s\n",
-				       cpath);
-				saved[nr_saved++] = PERSIST_CHAIN;
-			}
+		if (cpath != NULL && chain_corpus_save_file(cpath)) {
+			output(0, "chain corpus: persisted to %s\n", cpath);
+			saved[nr_saved++] = PERSIST_CHAIN;
 		}
 	}
 

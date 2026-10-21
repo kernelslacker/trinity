@@ -46,23 +46,6 @@
 #include "utils.h"
 #include "version.h"
 
-static int set_exit_code(enum exit_reasons reason)
-{
-	/* Clean exits return 0; everything else returns the reason
-	 * code directly so the parent can distinguish failure modes. */
-	switch (reason) {
-	case STILL_RUNNING:
-	case EXIT_REACHED_COUNT:
-	case EXIT_SIGINT:
-	case EXIT_USER_REQUEST:
-	case EXIT_EPOCH_DONE:
-		return EXIT_SUCCESS;
-
-	default:
-		return (int)reason;
-	}
-}
-
 /*
  * Epoch-based wrapper around main_loop().
  *
@@ -218,7 +201,7 @@ static void derive_and_clamp_slot_partition(void)
  *   clean_run = true   -- main_loop()/epoch_loop() returned normally
  *   and end-of-run persistence already ran.  Tear down the global
  *   objects table, emit the syscall-totals summary, optionally dump
- *   stats, and re-derive ret from shm->exit_reason via set_exit_code.
+ *   stats, and re-derive ret from shm->exit_reason.
  *
  *   clean_run = false  -- a pre-fuzz short-circuit (dump-mode, munge
  *   failure).  Skip the clean-run-only work; ret is whatever the
@@ -235,6 +218,8 @@ static void __attribute__((noreturn))
 finalize_and_exit(int ret, bool clean_run)
 {
 	if (clean_run) {
+		enum exit_reasons reason;
+
 		destroy_global_objects();
 
 		output(0, "Ran %ld syscalls. Successes: %ld  Failures: %ld\n",
@@ -277,7 +262,11 @@ finalize_and_exit(int ret, bool clean_run)
 		if (show_stats == true)
 			dump_stats();
 
-		ret = set_exit_code(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
+		/* Clean exits return 0; everything else returns the reason
+		 * code directly so the parent can distinguish failure modes.
+		 * STILL_RUNNING is 0, so it exits 0 too. */
+		reason = __atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+		ret = exit_reason_is_clean(reason) ? EXIT_SUCCESS : (int)reason;
 	}
 
 	kmsg_monitor_stop();

@@ -31,6 +31,7 @@ void stats_opclock_lossless_self_check(void);
 void struct_field_bounds_self_check(void);
 void kmsg_trigger_self_check(void);
 void pidstat_probe_self_check(void);
+void exit_reason_clean_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -109,6 +110,11 @@ int main(int argc, char **argv)
 	printf("  pidstat_probe_self_check ... ");
 	fflush(stdout);
 	pidstat_probe_self_check();
+	printf("OK\n");
+
+	printf("  exit_reason_clean_self_check ... ");
+	fflush(stdout);
+	exit_reason_clean_self_check();
 	printf("OK\n");
 
 	return 0;

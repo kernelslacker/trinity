@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 enum exit_reasons {
 	STILL_RUNNING = 0,
 	EXIT_NO_SYSCALLS_ENABLED = 1,
@@ -62,4 +64,23 @@ static inline const char * decode_exit(enum exit_reasons reason)
 	if ((unsigned int)reason >= NUM_EXIT_REASONS)
 		return "Unknown exit reason";
 	return reasons[reason];
+}
+
+/*
+ * The run ended on its own terms or at the operator's request, and shm
+ * is still trustworthy.  These reasons exit 0, they gate the end-of-run
+ * warm-start saves, and in targeted mode they are not fast-die evidence;
+ * every other reason is a failure mode.
+ */
+static inline bool exit_reason_is_clean(enum exit_reasons reason)
+{
+	switch (reason) {
+	case EXIT_REACHED_COUNT:
+	case EXIT_SIGINT:
+	case EXIT_USER_REQUEST:
+	case EXIT_EPOCH_DONE:
+		return true;
+	default:
+		return false;
+	}
 }
