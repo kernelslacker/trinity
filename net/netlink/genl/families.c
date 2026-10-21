@@ -358,7 +358,7 @@ static const struct {
 	{ "NLBL_UNLBL",    offsetof(struct stats_s, genl_family_calls_netlabel) },
 	{ "NLBL_CALIPSO",  offsetof(struct stats_s, genl_family_calls_netlabel) },
 	{ "team",          offsetof(struct stats_s, genl_family_calls_team) },
-	{ "hsr",           offsetof(struct stats_s, genl_family_calls_hsr) },
+	{ "HSR",           offsetof(struct stats_s, genl_family_calls_hsr) },
 	{ "fou",           offsetof(struct stats_s, genl_family_calls_fou) },
 	{ "psample",       offsetof(struct stats_s, genl_family_calls_psample) },
 	{ "NCSI",          offsetof(struct stats_s, genl_family_calls_ncsi) },

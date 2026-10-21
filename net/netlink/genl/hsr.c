@@ -2,17 +2,17 @@
  * Genetlink family grammar: hsr (NET_HSR / High-availability Seamless
  * Redundancy, IEC 62439-3).
  *
- * The HSR/PRP driver exposes its userspace control plane through a
- * single generic-netlink family ("hsr") with six user-callable
- * commands: HSR_C_RING_ERROR, HSR_C_NODE_DOWN, HSR_C_GET_NODE_STATUS,
- * HSR_C_SET_NODE_STATUS, HSR_C_GET_NODE_LIST, and HSR_C_SET_NODE_LIST.
- * Every command gates on HSR_A_IFINDEX referencing an existing HSR
- * netdev; on a host with no HSR device every path bails -ENODEV after
- * the full attribute walk completes — that's the parser-level coverage
- * spec-driven fuzzing exists to provide.
+ * The HSR/PRP driver's generic-netlink family ("HSR") accepts two
+ * commands from userspace: HSR_C_GET_NODE_STATUS and
+ * HSR_C_GET_NODE_LIST.  The other four ids are kernel-to-user messages
+ * the genl core rejects on input (RING_ERROR / NODE_DOWN notifications,
+ * SET_NODE_STATUS / SET_NODE_LIST replies), so the grammar omits them.
+ * Both need HSR_A_IFINDEX to name an HSR master; without one they
+ * answer -EINVAL after the full attribute walk completes — that's the
+ * parser-level coverage spec-driven fuzzing exists to provide.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "hsr", so the per-cmd nla_policy walker in
+ * family_id for "HSR", so the per-cmd nla_policy walker in
  * net/hsr/hsr_netlink.c plus the node-table lookup paths have been
  * routinely cold under generic netlink fuzzing; resolving the family
  * at first NETLINK_GENERIC use lets the message generator address real
@@ -42,12 +42,8 @@
 #include "utils.h"
 
 static const struct genl_cmd_grammar hsr_cmds[] = {
-	{ HSR_C_RING_ERROR,		"HSR_C_RING_ERROR" },
-	{ HSR_C_NODE_DOWN,		"HSR_C_NODE_DOWN" },
 	{ HSR_C_GET_NODE_STATUS,	"HSR_C_GET_NODE_STATUS" },
-	{ HSR_C_SET_NODE_STATUS,	"HSR_C_SET_NODE_STATUS" },
 	{ HSR_C_GET_NODE_LIST,		"HSR_C_GET_NODE_LIST" },
-	{ HSR_C_SET_NODE_LIST,		"HSR_C_SET_NODE_LIST" },
 };
 
 /*
@@ -76,7 +72,7 @@ static const struct nla_attr_spec hsr_attrs[] = {
 };
 
 struct genl_family_grammar fam_hsr = {
-	.name = "hsr",
+	.name = "HSR",
 	.cmds = hsr_cmds,
 	.n_cmds = ARRAY_SIZE(hsr_cmds),
 	.attrs = hsr_attrs,
