@@ -89,6 +89,7 @@ REAL_SRCS	:= \
 	$(TOP)/utils/shared_freelist.c \
 	$(TOP)/utils/shared_str_heap.c \
 	$(TOP)/utils/pidstat-probe.c \
+	$(TOP)/utils/tmpdir.c \
 	$(TOP)/persist/deferred-free.c \
 	$(TOP)/fds/fds-protected.c \
 	$(TOP)/lib/jsonl.c \
@@ -130,6 +131,7 @@ FAKE_SRCS	:= \
 	fake_fds.c \
 	fd_replenish_test.c \
 	drop_privs_test.c \
+	tmpdir_test.c \
 	fake_parent.c \
 	epoch_reset_test.c \
 	test_main.c

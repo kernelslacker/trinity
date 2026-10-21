@@ -1,9 +1,17 @@
 /*
  * trinity's tmp/ working directory: change_tmp_dir() moves the parent
- * into it at startup, and trinity_tmpdir_abs() hands its absolute path
- * to everything that has to find it again after a fuzzed chdir().
+ * into it, trinity_tmpdir_abs() returns its absolute path for use after
+ * a fuzzed chdir(), make_scratch_dir() creates per-pid scratch dirs in
+ * it and sweep_dead_pid_dirs() removes those whose run has died.
  */
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -57,4 +65,105 @@ void change_tmp_dir(void)
 	 * back to /tmp via trinity_tmpdir_abs(). */
 	if (getcwd(tmp_dir_abs, sizeof(tmp_dir_abs)) == NULL)
 		tmp_dir_abs[0] = '\0';
+}
+
+/*
+ * mkdir a per-run scratch dir, or adopt one that a dead run with our
+ * pid left behind.  Only a directory we own is adopted: scratch dirs
+ * live in a world-writable directory (tmp/ is 0777, /tmp is shared), so
+ * anything else under the name may have been planted.  Returns NULL, or
+ * why @path cannot be used.
+ */
+const char *make_scratch_dir(const char *path)
+{
+	struct stat st;
+
+	if (mkdir(path, 0700) == 0)
+		return NULL;
+	if (errno != EEXIST)
+		return strerror(errno);
+	if (lstat(path, &st) != 0 || !S_ISDIR(st.st_mode) ||
+	    st.st_uid != geteuid())
+		return "exists and is not a directory we own";
+	return NULL;
+}
+
+/*
+ * Unlink the sockets in dir @name under @parent.  O_NOFOLLOW, so a
+ * symlink planted under the dir's name cannot aim the unlinks at
+ * another directory.  Anything that is not a socket stays, and keeps
+ * the dir.
+ */
+static void unlink_sockets(int parent, const char *name)
+{
+	struct dirent *de;
+	DIR *dir;
+	int fd;
+
+	fd = openat(parent, name,
+		    O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+	if (fd < 0)
+		return;
+	dir = fdopendir(fd);
+	if (dir == NULL) {
+		close(fd);
+		return;
+	}
+
+	while ((de = readdir(dir)) != NULL) {
+		struct stat st;
+
+		if (fstatat(fd, de->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0 &&
+		    S_ISSOCK(st.st_mode))
+			(void) unlinkat(fd, de->d_name, 0);
+	}
+	closedir(dir);
+}
+
+/*
+ * Remove the scratch dirs that dead runs left under trinity_tmpdir_abs().
+ * Each is named @prefix plus the pid of the parent that created it, and
+ * that parent's atexit teardown never runs after a SIGKILL or an ASAN
+ * build's _exit().  A live pid -- our own, another trinity's, or one a
+ * dead run's pid was recycled to -- keeps its dirs.
+ */
+void sweep_dead_pid_dirs(const char *prefix)
+{
+	size_t len = strlen(prefix);
+	struct dirent *de;
+	DIR *dir;
+
+	dir = opendir(trinity_tmpdir_abs());
+	if (dir == NULL)
+		return;
+
+	while ((de = readdir(dir)) != NULL) {
+		const char *digits = de->d_name + len;
+		char *end;
+		long pid;
+
+		if (strncmp(de->d_name, prefix, len) != 0 ||
+		    !isdigit((unsigned char) *digits))
+			continue;
+		errno = 0;
+		pid = strtol(digits, &end, 10);
+		if (errno != 0 || *end != '\0')
+			continue;
+		if (pid <= 0 || pid > INT_MAX)
+			continue;
+		if (kill((pid_t) pid, 0) == 0 || errno != ESRCH)
+			continue;
+
+		/*
+		 * rmdir() refuses a mount point with EBUSY, so ENOTEMPTY
+		 * means entries of the dir itself: drop the sockets a
+		 * bind() left behind and try again.
+		 */
+		if (unlinkat(dirfd(dir), de->d_name, AT_REMOVEDIR) != 0 &&
+		    errno == ENOTEMPTY) {
+			unlink_sockets(dirfd(dir), de->d_name);
+			(void) unlinkat(dirfd(dir), de->d_name, AT_REMOVEDIR);
+		}
+	}
+	closedir(dir);
 }

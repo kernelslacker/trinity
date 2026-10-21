@@ -5,13 +5,11 @@
  * On error, -1 is returned, and errno is set appropriately.
  */
 #include <arpa/inet.h>
-#include <errno.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -20,6 +18,8 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "tmpdir.h"
+#include "trinity.h"
 #include "utils.h"
 
 /*
@@ -56,9 +56,9 @@
  *       for cleanly.
  *
  *   (e) AF_UNIX real-filesystem-path bind -- sun_path steered at one
- *       of a small parent-owned pool of paths under a per-pid /tmp
- *       directory, driving unix_bind_bsd through vfs_mknod.  The
- *       .cleanup hook unlink()s the specific path used so the next
+ *       of a small parent-owned pool of paths under a per-pid directory
+ *       in trinity's tmp dir, driving unix_bind_bsd through vfs_mknod.
+ *       The .cleanup hook unlink()s the specific path used so the next
  *       draw from the same slot does not bounce on EADDRINUSE.
  *
  * When the socket family is anything else, or the bucket falls in the
@@ -67,8 +67,13 @@
  */
 
 #define NR_BIND_UNIX_PATHS	8
-static char bind_unix_dir[64];
-static char bind_unix_paths[NR_BIND_UNIX_PATHS][64];
+#define BIND_UNIX_DIR_PREFIX	"trinity-bind-"
+/*
+ * sun_path-sized: bind_build_pathname_unix() would bind a longer pool
+ * path truncated, under a name cleanup_bind() never unlinks.
+ */
+static char bind_unix_dir[sizeof(((struct sockaddr_un *) 0)->sun_path)];
+static char bind_unix_paths[NR_BIND_UNIX_PATHS][sizeof(bind_unix_dir)];
 static unsigned int nr_bind_unix_paths;
 
 static void bind_unix_paths_teardown(void)
@@ -76,12 +81,11 @@ static void bind_unix_paths_teardown(void)
 	unsigned int i;
 
 	/*
-	 * Parent only.  Children reach exit() on at least four paths --
-	 * zmalloc failure, the operator-stop teardown in debug.c, the socket
-	 * post-handler, and output() -- and atexit handlers run for all of
-	 * them.  A child running this teardown tears down state the parent
-	 * and every sibling are still using.  getpid() rather than mypid():
-	 * a CLONE_VM grandchild inherits its parent worker's cached pid.
+	 * Parent only: a child running this teardown would tear down state
+	 * the parent and every sibling are still using.  Children leave
+	 * through _exit() or trinity_exit() and never run atexit handlers,
+	 * so the gate is defence in depth.  getpid() rather than mypid(): a
+	 * CLONE_VM grandchild inherits its parent worker's cached pid.
 	 */
 	if (getpid() != mainpid)
 		return;
@@ -93,41 +97,58 @@ static void bind_unix_paths_teardown(void)
 }
 
 /*
- * Parent-only constructor: create /tmp/trinity-bind-<pid>/ and a bank
- * of candidate socket-file paths under it.  Children fork after the
- * constructor and never re-run it, so every child sees the same paths
- * via COW.  The atexit teardown is gated on the parent explicitly --
- * children do reach exit() on several paths and would otherwise run it
- * -- so a per-call .cleanup unlink is still required to keep
- * back-to-back binds against the same slot from bouncing on
- * EADDRINUSE.
+ * Create <tmpdir>/trinity-bind-<pid>/ and a bank of candidate
+ * socket-file paths under it.  bind's .init hook: it runs in the parent
+ * once options are parsed, so an early exit such as --help creates
+ * nothing, and before fork, so every child sees the same paths via COW.
+ * A biarch run calls it once per syscall table; the latch keeps the
+ * second call from sweeping or logging again.  The paths are formatted
+ * first so a tmp dir too deep for sun_path leaves no dir behind.  A
+ * failure is logged, as it quietly drops the filesystem-path bucket.
+ * The atexit teardown runs only when the parent exits, so a per-call
+ * .cleanup unlink is still required to keep back-to-back binds against
+ * the same slot from bouncing on EADDRINUSE.
  */
-static void __attribute__((constructor)) bind_unix_paths_init(void)
+static int bind_unix_paths_init(void)
 {
+	static bool done;
+	const char *why = "path too long for sun_path";
 	unsigned int i;
 	int n;
 
+	if (done)
+		return nr_bind_unix_paths > 0 ? 0 : -1;
+	done = true;
+
+	sweep_dead_pid_dirs(BIND_UNIX_DIR_PREFIX);
+
 	n = snprintf(bind_unix_dir, sizeof(bind_unix_dir),
-		     "/tmp/trinity-bind-%d", (int) getpid());
-	if (n <= 0 || n >= (int) sizeof(bind_unix_dir)) {
-		bind_unix_dir[0] = '\0';
-		return;
-	}
-	if (mkdir(bind_unix_dir, 0700) != 0 && errno != EEXIST) {
-		bind_unix_dir[0] = '\0';
-		return;
-	}
+		     "%s/" BIND_UNIX_DIR_PREFIX "%d",
+		     trinity_tmpdir_abs(), (int) getpid());
+	if (n <= 0 || n >= (int) sizeof(bind_unix_dir))
+		goto fail;
 
 	for (i = 0; i < NR_BIND_UNIX_PATHS; i++) {
 		n = snprintf(bind_unix_paths[i], sizeof(bind_unix_paths[i]),
 			     "%s/s%u", bind_unix_dir, i);
 		if (n <= 0 || n >= (int) sizeof(bind_unix_paths[i]))
-			break;
-		nr_bind_unix_paths = i + 1;
+			goto fail;
 	}
 
-	if (nr_bind_unix_paths > 0)
-		atexit(bind_unix_paths_teardown);
+	why = make_scratch_dir(bind_unix_dir);
+	if (why != NULL)
+		goto fail;
+
+	nr_bind_unix_paths = NR_BIND_UNIX_PATHS;
+	atexit(bind_unix_paths_teardown);
+	return 0;
+
+fail:
+	output(0, "bind: %s/" BIND_UNIX_DIR_PREFIX "%d: %s; "
+	       "AF_UNIX path binds disabled\n",
+	       trinity_tmpdir_abs(), (int) getpid(), why);
+	bind_unix_dir[0] = '\0';
+	return -1;
 }
 
 /*
@@ -306,4 +327,5 @@ struct syscallentry syscall_bind = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_bind,
 	.cleanup = cleanup_bind,
+	.init = bind_unix_paths_init,
 };
