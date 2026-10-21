@@ -5,7 +5,7 @@
  * bumps as it works and drains them into fleet-wide trials/wins on the
  * post-syscall commit.  Split out of minicorpus-mutate.c so the
  * accounting rules (baseline gate, source-age histogram, per-tag
- * struct-field credit, replay/splice/xprop win counters) live in one
+ * struct-field credit, replay/splice win counters) live in one
  * place, separate from the mutator picker and the splice-and-mutate
  * driver that populate the stash.
  */
@@ -53,7 +53,6 @@ unsigned int mut_structured_attrib[MUT_NUM_OPS];
  */
 bool this_replay_ran;
 bool this_replay_spliced;
-bool this_replay_xprop;
 
 /*
  * Process-local post-replay perturbation attribution flag.  Set by
@@ -273,13 +272,6 @@ static void minicorpus_mut_attrib_perop_accounting(bool found_new)
 			__atomic_fetch_add(&minicorpus_shm->splice_wins,
 					   1UL, __ATOMIC_RELAXED);
 		this_replay_spliced = false;
-	}
-
-	if (this_replay_xprop) {
-		if (found_new)
-			__atomic_fetch_add(&minicorpus_shm->xprop_wins,
-					   1UL, __ATOMIC_RELAXED);
-		this_replay_xprop = false;
 	}
 
 	if (this_replay_perturbed) {

@@ -200,27 +200,6 @@ struct minicorpus_shared {
 	unsigned long replay_wins;		/* replays that found new coverage */
 	unsigned long splice_hits;		/* per-arg splice firings */
 	unsigned long splice_wins;		/* replays with splice that found new coverage */
-	/* Cross-syscall value propagation (xprop): bumped once per per-arg
-	 * draw that pulled a value from another syscall's corpus pool (see
-	 * minicorpus_pick_from_other_syscall).  Sibling to splice_hits --
-	 * splice shuffles values within one snapshot, xprop shuffles them
-	 * across syscalls.  RELAXED atomic. */
-	unsigned long xprop_hits;
-	unsigned long xprop_wins;		/* replays with xprop that found new coverage */
-	/* xprop source/target type-hit rate accounting.
-	 * xprop_attempts is the denominator (bumped at every entry into
-	 * minicorpus_pick_from_other_syscall regardless of outcome); the
-	 * three reject counters split the !hit path by reason so the
-	 * type-hit rate is xprop_hits / xprop_attempts and the dominant
-	 * reject cause is the largest of the three.  These exist to
-	 * surface the realised hit-rate the typed cross-syscall
-	 * propagation row is gated on (the typed-bucket index is
-	 * only worth building if the current uniform-pick path is
-	 * actually dominated by type-mismatch rejects). */
-	unsigned long xprop_attempts;
-	unsigned long xprop_reject_target_not_fdarg;
-	unsigned long xprop_reject_src_self;
-	unsigned long xprop_reject_src_empty;
 	/* Distribution of stacking depths chosen by pick_stack_depth().
 	 * Index is the depth value (1..STACK_MAX); index 0 is unused. */
 	unsigned long stack_depth_histogram[STACK_MAX + 1];
@@ -384,12 +363,12 @@ struct minicorpus_shared {
 
 	/* Aggregate count of lockless-reader num_args validator failures;
 	 * non-zero means torn reads ARE happening at this rate.  Bumped on
-	 * each [1, 6] out-of-range snapshot.num_args observed by the xprop
-	 * pick, replay common, and replay burst readers (the three sites
-	 * that dropped ring->lock).  Single field rather than per-ring: the
-	 * counter exists to answer "is the validator firing at a non-trivial
-	 * rate fleet-wide?" at dashboard scale, not "which ring is hot
-	 * enough to tear", so 1024 atomic counter slots for per-syscall
+	 * each [1, 6] out-of-range snapshot.num_args observed by the replay
+	 * common and replay burst readers (the two sites that dropped
+	 * ring->lock).  Single field rather than per-ring: the counter
+	 * exists to answer "is the validator firing at a non-trivial rate
+	 * fleet-wide?" at dashboard scale, not "which ring is hot enough
+	 * to tear", so 1024 atomic counter slots for per-syscall
 	 * granularity would buy nothing currently consumed.  RELAXED. */
 	unsigned long replay_torn_rejects;
 };
@@ -462,11 +441,8 @@ void minicorpus_replay_perturbation_mark(void);
  * mutate + fd safety) to args[6] in place.  Used by both per-syscall
  * mini-corpus replay and chain-corpus replay so the mutation engine
  * and its productivity counters are shared.  @entry supplies argtype[]
- * and num_args; pass NULL-checked entry.  @nr is the syscall table
- * index — consumed by the xprop branch to scope the cross-syscall
- * source pool. */
-void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
-		unsigned int nr);
+ * and num_args; pass NULL-checked entry. */
+void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry);
 
 /* Mutator-case attribution.
  *

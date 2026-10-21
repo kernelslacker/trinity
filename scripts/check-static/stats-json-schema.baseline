@@ -452,13 +452,6 @@ minicorpus	object?
   minicorpus.splice	object
     minicorpus.splice.hits	u64
     minicorpus.splice.wins	u64
-  minicorpus.xprop	object
-    minicorpus.xprop.hits	u64
-    minicorpus.xprop.wins	u64
-    minicorpus.xprop.attempts	u64
-    minicorpus.xprop.reject_target_not_fdarg	u64
-    minicorpus.xprop.reject_src_self	u64
-    minicorpus.xprop.reject_src_empty	u64
   minicorpus.stack_depth_histogram	object
     minicorpus.stack_depth_histogram.%u	u64
   minicorpus.replay	object

@@ -2,13 +2,13 @@
  * Mini-corpus splice-and-mutate driver.
  *
  * Walks the six saved arg slots for one syscall replay applying the
- * cross-arg splice, the cross-syscall xprop pull, and the weighted-
- * stack per-arg mutator chain from persist/minicorpus-field-mutate.c,
- * with a final fd-safety scrub so stale stdio fds in the saved args
- * never reach dispatch.  Both the per-syscall mini-corpus replay path
- * (persist/minicorpus-mutate.c) and the chain-corpus replay path call
- * this so the mutation logic -- and the splice/replay/xprop telemetry
- * it bumps -- stays a single shared engine.
+ * cross-arg splice and the weighted-stack per-arg mutator chain from
+ * persist/minicorpus-field-mutate.c, with a final fd-safety scrub so
+ * stale stdio fds in the saved args never reach dispatch.  Both the
+ * per-syscall mini-corpus replay path (persist/minicorpus-mutate.c)
+ * and the chain-corpus replay path call this so the mutation logic --
+ * and the splice/replay telemetry it bumps -- stays a single shared
+ * engine.
  */
 
 #include <string.h>
@@ -22,13 +22,6 @@
 #include "syscall.h"
 
 #include "minicorpus-internal.h"
-
-/*
- * Cross-syscall value propagation ratio.  With probability 1/XPROP_RATIO,
- * an fd-typed slot is overridden with a value drawn from the fd-returning
- * whitelist built at init instead of the snapshot's own value.
- */
-#define XPROP_RATIO 64
 
 /*
  * Cross-arg splice ratio.  With probability 1/SPLICE_RATIO, an arg in
@@ -58,17 +51,11 @@
  * so the mutation logic — and the splice/replay/mut_attrib telemetry
  * it bumps — is a single shared engine.
  *
- * @nr is the syscall table index for the call whose args are being
- * mutated; consulted by the xprop branch to scope the cross-syscall
- * source pool.  Both callers already have the value (rec->nr /
- * saved->nr).
- *
  * Splice and mutate read from a local snapshot of the input so a
  * sibling arg's value used for splice is the original input, not an
  * already-mutated peer; matches the per-syscall behaviour.
  */
-void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
-		unsigned int nr)
+void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry)
 {
 	unsigned long snapshot[6];
 	unsigned int i;
@@ -82,8 +69,8 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
 		unsigned long val = snapshot[i];
 
 		/* Mutator kill switch.  When set via TRINITY_DISABLE_MUTATORS
-		 * the corpus entry is replayed verbatim -- skip splice, xprop
-		 * and the weighted-stack mutate.  The fd-safety scrub below
+		 * the corpus entry is replayed verbatim -- skip splice and
+		 * the weighted-stack mutate.  The fd-safety scrub below
 		 * still runs so stale stdio fds in the saved args don't slip
 		 * through; that scrub is replay correctness, not mutation. */
 		if (mutators_disabled)
@@ -104,26 +91,6 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
 			__atomic_fetch_add(&minicorpus_shm->splice_hits,
 					   1UL, __ATOMIC_RELAXED);
 			this_replay_spliced = true;
-		}
-
-		/* Cross-syscall value propagation: with probability
-		 * 1/XPROP_RATIO, override this arg with a value pulled from
-		 * a *different* syscall's corpus pool.  Only fd-typed slots
-		 * are eligible; the source set is the fd-returning-syscall
-		 * whitelist built at init.  Runs after splice so an xprop
-		 * hit displaces a spliced value rather than the other way
-		 * round (xprop is the rarer event and its picked value is
-		 * less likely to have been seen by the mutator before).  The
-		 * downstream mutator chain still applies on top, matching
-		 * splice's "starting value for the chain" semantics. */
-		if (ONE_IN(XPROP_RATIO)) {
-			unsigned long xval;
-
-			if (minicorpus_pick_from_other_syscall(nr,
-					entry->argtype[i], &xval)) {
-				val = xval;
-				this_replay_xprop = true;
-			}
 		}
 
 		/* ~25% chance to mutate each arg.  When we do mutate, apply

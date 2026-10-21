@@ -67,22 +67,6 @@ static void dump_corpus_mutator_productivity(void)
 	}
 }
 
-static void dump_corpus_xprop(void)
-{
-	unsigned long xp_hits = __atomic_load_n(
-		&minicorpus_shm->xprop_hits, __ATOMIC_RELAXED);
-	unsigned long xp_wins = __atomic_load_n(
-		&minicorpus_shm->xprop_wins, __ATOMIC_RELAXED);
-	unsigned long pct10;
-
-	if (xp_hits == 0)
-		return;
-
-	pct10 = xp_wins * 1000UL / xp_hits;
-	output(0, "Xprop: %lu hits  %lu wins (%lu.%lu%%)\n",
-	       xp_hits, xp_wins, pct10 / 10, pct10 % 10);
-}
-
 static void dump_corpus_stack_depth(void)
 {
 	unsigned long histo_total = 0;
@@ -248,14 +232,12 @@ static void dump_stats_corpus_tail(void)
 		       s_hits, s_wins, pct10 / 10, pct10 % 10);
 	}
 
-	dump_corpus_xprop();
-
 	/* Lockless-reader torn-read validator firings (aggregate over
-	 * xprop pick, replay common, replay burst).  Gated on non-zero
-	 * because the expected steady-state value is 0 -- the writer's
-	 * release-store publish pattern makes mid-publish reads rare.
-	 * A non-zero rate here means the validator is doing real work
-	 * and torn reads ARE happening at the printed rate. */
+	 * replay common, replay burst).  Gated on non-zero because the
+	 * expected steady-state value is 0 -- the writer's release-store
+	 * publish pattern makes mid-publish reads rare.  A non-zero rate
+	 * here means the validator is doing real work and torn reads ARE
+	 * happening at the printed rate. */
 	torn = __atomic_load_n(&minicorpus_shm->replay_torn_rejects,
 			       __ATOMIC_RELAXED);
 	if (torn > 0)

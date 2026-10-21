@@ -25,7 +25,7 @@ struct minicorpus_shared *minicorpus_shm = NULL;
 /*
  * Process-wide runtime kill switch for the mutator chain.  Set at init
  * from $TRINITY_DISABLE_MUTATORS=1 and inherited COW by every child.
- * When true, minicorpus_mutate_args() skips splice, xprop, and the
+ * When true, minicorpus_mutate_args() skips splice and the
  * weighted-stack mutate steps and feeds the corpus entry through
  * verbatim (fd-safety scrub still runs).  Replay rates and corpus
  * promotion behaviour are otherwise unchanged, so an A/B between
@@ -77,8 +77,6 @@ void minicorpus_init(void)
 	output(0, "KCOV: mini-corpus allocated (%lu KB, %d entries/syscall)\n",
 		(unsigned long) sizeof(struct minicorpus_shared) / 1024,
 		CORPUS_RING_SIZE);
-
-	xprop_build_whitelist();
 
 	/* Mutator kill switch.  Honour only "1" -- any other value (empty,
 	 * "0", arbitrary string) leaves mutators enabled, matching the

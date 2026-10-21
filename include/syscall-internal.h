@@ -38,10 +38,10 @@ static inline void clear_stale_kcov_state(struct kcov_child *kc,
 	rec->dispatch_args_valid = false;
 }
 
-/* effective_rettype() moved to syscall.h so non-dispatch consumers
- * (random_syscall/fd-group.c, persist/minicorpus-xprop.c) can share
- * the same source-of-truth helper for op-multiplexed rettype (bpf,
- * seccomp, fcntl, futex publish rec->rettype from their sanitise). */
+/* effective_rettype() lives in syscall.h so non-dispatch consumers
+ * (random_syscall/fd-group.c) can share the same source-of-truth helper
+ * for op-multiplexed rettype (bpf, seccomp, fcntl, futex publish
+ * rec->rettype from their sanitise). */
 
 void arena_liveness_probe(struct syscallentry *entry,
 			  struct syscallrecord *rec);

@@ -704,11 +704,5 @@ struct syscallentry syscall_bpf = {
 	.flags = KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_bpf,
 	.post = post_bpf,
-	/* Op-multiplexed: sanitise_bpf publishes rec->rettype = RET_FD
-	 * for the fd-returning cmd arms (MAP_CREATE, PROG_LOAD, OBJ_GET,
-	 * *_GET_FD_BY_ID, BTF_LOAD, LINK_CREATE, ENABLE_STATS, ITER_CREATE,
-	 * RAW_TRACEPOINT_OPEN, TOKEN_CREATE).  Hint so xprop's whitelist
-	 * walker still recognises bpf as an fd source. */
-	.rettype_publish_hint = RET_FD,
 };
 #endif

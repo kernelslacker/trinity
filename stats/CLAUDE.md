@@ -54,7 +54,7 @@ bottom rather than enumerated. The renderers below are the other 58.
 | json/common.c | JSON mechanics: string escape and `stat_category_emit_json()` descriptor renderer. |
 | json/syscalls.c | Per-syscall JSON array. |
 | json/kcov.c | KCOV JSON block (counters, transition globals, top-Ns, cold syscalls, previous-window snapshots). |
-| json/minicorpus.c | Minicorpus JSON block (mutators, xprop, stack-depth, saves/evicts, replay-wins, sequence chains). |
+| json/minicorpus.c | Minicorpus JSON block (mutators, stack-depth, saves/evicts, replay-wins, sequence chains). |
 | json/cmp-hints.c | cmp_hints JSON summary (total hints, syscalls-with-hints). |
 | json/core.c | Non-network JSON section emitters + basic-subsystem descriptor tables. |
 | json/network.c | Network / netfilter / xfrm / socket-family / long-chain JSON section emitters + descriptor tables. |

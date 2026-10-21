@@ -2,7 +2,7 @@
 
 /*
  * Cross-module surface shared between the minicorpus TUs (core /
- * xprop / save / accounting / field-mutate / splice / select / file /
+ * save / accounting / field-mutate / splice / select / file /
  * snapshot).  Everything else stays file-static in its owning TU.
  */
 
@@ -14,11 +14,6 @@ void minicorpus_ring_lock(struct corpus_ring *ring);
 void minicorpus_ring_unlock(struct corpus_ring *ring);
 
 bool corpus_args_replayable(const struct syscallentry *entry);
-
-void xprop_build_whitelist(void);
-bool minicorpus_pick_from_other_syscall(unsigned int nr,
-					enum argtype arg_atype,
-					unsigned long *val);
 
 /* init writes, mutate reads -- process-wide runtime kill switch. */
 extern bool mutators_disabled;
@@ -36,7 +31,6 @@ extern unsigned int mut_attrib[MUT_NUM_OPS];
 extern unsigned int mut_structured_attrib[MUT_NUM_OPS];
 extern bool this_replay_ran;
 extern bool this_replay_spliced;
-extern bool this_replay_xprop;
 extern bool this_replay_source_tracked;
 extern unsigned int this_replay_source_nr;
 extern unsigned int this_replay_source_slot;

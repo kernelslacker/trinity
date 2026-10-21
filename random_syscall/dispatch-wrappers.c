@@ -225,7 +225,7 @@ bool replay_syscall_step(struct childdata *child,
 		return FAIL;
 
 	memcpy(args, saved->args, sizeof(args));
-	minicorpus_mutate_args(args, entry, saved->nr);
+	minicorpus_mutate_args(args, entry);
 
 	/* Replay steps bypass set_syscall_nr() (which is where the bandit's
 	 * per-arm pick stamp normally lands), so the child still holds the

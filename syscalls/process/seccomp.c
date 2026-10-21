@@ -380,11 +380,6 @@ struct syscallentry syscall_seccomp = {
 	 * saw, instead of either leaking a real listener fd (stomp clears
 	 * the bit) or close()ing a non-fd return value (stomp sets it). */
 	.arg_snapshot_mask = (1u << 1),
-	/* Op-multiplexed: sanitise_seccomp publishes rec->rettype = RET_FD
-	 * for SECCOMP_SET_MODE_FILTER + SECCOMP_FILTER_FLAG_NEW_LISTENER,
-	 * which returns a notification listener fd.  Hint so xprop's
-	 * whitelist walker still recognises seccomp as an fd source. */
-	.rettype_publish_hint = RET_FD,
 	/* sanitise_seccomp is re-exec clean (BPF program generation + heap
 	 * allocs only, no global side effects): REEXEC_SANITISE_OK is correct.
 	 * However, the SYSCALL itself compounds across re-exec: a second

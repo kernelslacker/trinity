@@ -200,7 +200,7 @@ bool minicorpus_replay(struct syscallrecord *rec)
 	if (!corpus_args_replayable(entry))
 		return false;
 
-	minicorpus_mutate_args(snapshot.args, entry, nr);
+	minicorpus_mutate_args(snapshot.args, entry);
 
 	rec->a1 = snapshot.args[0];
 	rec->a2 = snapshot.args[1];
