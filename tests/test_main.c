@@ -35,6 +35,7 @@ void exit_reason_clean_self_check(void);
 void parent_stop_self_check(void);
 void stop_file_self_check(void);
 void fd_protected_self_check(void);
+void owned_fd_ring_self_check(void);
 void epoch_reset_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
@@ -134,6 +135,11 @@ int main(int argc, char **argv)
 	printf("  fd_protected_self_check ... ");
 	fflush(stdout);
 	fd_protected_self_check();
+	printf("OK\n");
+
+	printf("  owned_fd_ring_self_check ... ");
+	fflush(stdout);
+	owned_fd_ring_self_check();
 	printf("OK\n");
 
 	printf("  epoch_reset_self_check ... ");

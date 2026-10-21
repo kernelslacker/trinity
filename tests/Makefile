@@ -91,7 +91,8 @@ REAL_SRCS	:= \
 	$(TOP)/utils/pidstat-probe.c \
 	$(TOP)/persist/deferred-free.c \
 	$(TOP)/fds/fds-protected.c \
-	$(TOP)/lib/jsonl.c
+	$(TOP)/lib/jsonl.c \
+	$(TOP)/fds/owned-fd-ring.c
 
 # Parent TUs, linked for reset_epoch_state(), the zombie reaper and the
 # rotation-events sink.  They also pull in parent functions the tests
@@ -121,6 +122,7 @@ FAKE_SRCS	:= \
 	parent_stop_test.c \
 	stop_file_test.c \
 	fd_protected_test.c \
+	owned_fd_ring_test.c \
 	fake_parent.c \
 	epoch_reset_test.c \
 	test_main.c
