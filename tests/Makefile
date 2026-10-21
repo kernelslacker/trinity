@@ -104,6 +104,7 @@ FAKE_SRCS	:= \
 	pidstat_probe_selftest.c \
 	exit_reason_test.c \
 	parent_stop_test.c \
+	stop_file_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

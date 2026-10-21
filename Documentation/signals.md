@@ -385,9 +385,10 @@ Under a root parent no child can signal the parent at all:
 `kill_ok_by_cred()` wants a matching uid or `CAP_KILL` in the parent's
 user namespace.  The uid test is what keeps fuzzed signals out of a
 non-root run, and the cost is that a non-root run cannot be stopped by
-a signal from its own uid.  Stop one from root, or with ctrl-c on its
-terminal.  An operator whose uid is not mapped into the parent's user
-namespace also arrives as the overflow uid and is ignored.
+a signal from its own uid.  Stop one from root, with ctrl-c on its
+terminal, or with the stop file below.  An operator whose uid is not
+mapped into the parent's user namespace also arrives as the overflow
+uid and is ignored.
 
 Only the parent acts on these.  A forked child keeps the parent's
 handler until `mask_signals_child()` replaces it, and the parent's own
@@ -404,3 +405,30 @@ an epoch is winding down (`EXIT_EPOCH_DONE`) ends the run instead of
 letting the next epoch start.  Only the parent's stop paths check this:
 a child still writes `EXIT_SIGINT` on its own ctrl-c, and
 `EXIT_REACHED_COUNT` once the op count is reached, over any reason.
+
+## Stop file
+
+For a run that no signal from its own uid can stop, the parent looks
+for `trinity-stop` in `trinity_tmpdir_abs()` once per main-loop tick:
+the `tmp/` directory next to where trinity was started, or `/tmp` when
+there was none.  Finding it stops the run with `EXIT_USER_REQUEST`, so
+`touch tmp/trinity-stop` is the same-uid equivalent of an operator
+SIGTERM.  `scripts/killtrin.sh` creates it for every parent it may stop
+(every one as root, otherwise the invoker's own), and
+`scripts/run-trinity.sh`'s cleanup does the same for its own run when
+that run has a `tmp/` of its own, before either falls back to signals.
+Both remove the file again when they are done.
+
+- The name contains a `-`, which `generate_random_pathname()` never
+  emits, and it is in neither the walked nor the static pathname pool,
+  so a fuzzing child does not create it by accident.
+- The file must be owned by the uid the run started as, or by root,
+  checked with `lstat()` so a symlink is judged by its own owner.
+  Same-uid children could still create it on purpose; the check keeps
+  out other users (`tmp/` is chmod 0777 at startup) and, in a root run,
+  the nobody children.
+- The parent deletes a leftover `trinity-stop` at startup, so a request
+  that outlived its run does not stop the next one.  It does not delete
+  the file when acting on it: every run sharing `/tmp` should see it.
+- Like a stop signal, the stop file never relabels a failure shutdown
+  already under way.

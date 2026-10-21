@@ -91,8 +91,8 @@ static bool reap_entry_is_fast_die(const struct reap_record *r)
 	 *     EXIT_SIGINT to any racing child.
 	 *   - EXIT_USER_REQUEST:  operator stop -- parent panics it in
 	 *     main_stop_handler for an SI_USER SIGINT/SIGTERM from a uid
-	 *     no child can send as.  Spin-bailout propagates it the same
-	 *     way.
+	 *     no child can send as, or on finding the stop file.
+	 *     Spin-bailout propagates it the same way.
 	 */
 	if (exit_reason_is_clean((enum exit_reasons)r->exit_status) &&
 	    (do_specific_syscall || random_selection ||

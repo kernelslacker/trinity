@@ -515,15 +515,17 @@ void init_post_parse_io(void)
  * the seed publish and the monitor / show-mode dispatch.  Brings up
  * the uid pool used by fault-injection paths, chdir's into trinity's
  * tmp/ working directory (so subsequent ./last-run-seed and ./tmp/
- * paths are relative to a known location), and carves out the
- * per-subsystem shm regions on top of the base shm reserved during
- * process bootstrap.
+ * paths are relative to a known location), clears a stale stop file
+ * there, and carves out the per-subsystem shm regions on top of the
+ * base shm reserved during process bootstrap.
  */
 void init_main_early(void)
 {
 	init_uids();
 
 	change_tmp_dir();
+
+	stop_file_init();
 
 	output(1, "phase: init_shm\n");
 	init_shm();

@@ -264,9 +264,32 @@ fi
 # them; the fallback must kill them individually by PID.
 scope_name=""
 child=""
+stopfile=""
 cleanup() {
     local rc=$?
     trap - EXIT INT TERM
+    # Neither stop below is clean: the SIGKILL fallback loses trinity's
+    # end-of-run saves, and a non-root trinity ignores the same-uid
+    # SIGTERM that systemctl stop sends before it escalates to SIGKILL.
+    # So first ask for a clean exit through the stop file, as
+    # scripts/killtrin.sh does, and give trinity time to reap its
+    # children and write the warm-start saves.  A trinity still in our
+    # cwd never found ./tmp and polls the /tmp every such run shares;
+    # leave that one to the signal path rather than stop other runs
+    # with it.
+    if [[ -n "${child}" ]] && _cwd=$(readlink "/proc/${child}/cwd") &&
+       [[ "${_cwd}" != "$(pwd -P)" ]]; then
+        stopfile="${_cwd}/trinity-stop"
+        # Create by rename, so a symlink already sitting on the name is
+        # replaced rather than written through.
+        if _tmp=$(mktemp "${_cwd}/.trinity-stop.XXXXXX" 2>/dev/null); then
+            mv -fT "${_tmp}" "${stopfile}" 2>/dev/null || rm -f "${_tmp}" || true
+        fi
+        for ((_i = 0; _i < 60; _i++)); do
+            kill -0 "${child}" 2>/dev/null || break
+            sleep 1
+        done
+    fi
     if [[ -n "${scope_name}" ]]; then
         systemctl --user stop "${scope_name}" >/dev/null 2>&1 || true
     elif [[ -n "${child}" ]]; then
@@ -289,6 +312,9 @@ cleanup() {
         for _wpid in "${_worker_pids[@]}"; do
             kill -KILL "${_wpid}" 2>/dev/null || true
         done
+    fi
+    if [[ -n "${stopfile}" ]]; then
+        rm -f "${stopfile}" 2>/dev/null || true
     fi
     # lockdep self-disables on the first splat; report a mid-run 1->0
     # transition so a run that went blind after minute 3 isn't mistaken for a

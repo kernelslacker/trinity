@@ -33,6 +33,7 @@ void kmsg_trigger_self_check(void);
 void pidstat_probe_self_check(void);
 void exit_reason_clean_self_check(void);
 void parent_stop_self_check(void);
+void stop_file_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -121,6 +122,11 @@ int main(int argc, char **argv)
 	printf("  parent_stop_self_check ... ");
 	fflush(stdout);
 	parent_stop_self_check();
+	printf("OK\n");
+
+	printf("  stop_file_self_check ... ");
+	fflush(stdout);
+	stop_file_self_check();
 	printf("OK\n");
 
 	return 0;

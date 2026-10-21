@@ -103,7 +103,9 @@ API surface.
   `check_main_loop_stops()` also handles targeted-mode (`-c`/`-r`/`-g`)
   self-depletion, op-count/epoch-iteration/epoch-timeout limits (via
   `panic()`, which just stamps `shm->exit_reason` for the loop to notice
-  next pass), and drains locks held by now-dead children.
+  next pass), the operator stop file (`trinity-stop` in
+  `trinity_tmpdir_abs()`, cleared at startup by `stop_file_init()`), and
+  drains locks held by now-dead children.
 - **Fast-die loop detector**: `record_reap()` keeps a 16-entry ring of
   recent reap outcomes; if all 16 are "died within 2s, non-zero exit"
   it declares a fork-die-respawn busy-loop (symptomatic of shm corruption

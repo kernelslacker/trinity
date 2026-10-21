@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <poll.h>
 #include <stdint.h>
 #include <sys/prctl.h>
@@ -32,6 +33,7 @@
 #include "shm.h"
 #include "stats.h"
 #include "stats_ring.h"
+#include "stop-file.h"
 #include "strategy.h"
 #include "syscall.h"
 #include "syscall_record.h"
@@ -178,6 +180,18 @@ static void wait_for_idle_tick_or_cgroup_event(void)
 	}
 }
 
+/* trinity_tmpdir_abs()/STOP_FILE_NAME, built once by stop_file_init(). */
+static char stop_file[PATH_MAX];
+
+void stop_file_init(void)
+{
+	snprintf(stop_file, sizeof(stop_file), "%s/" STOP_FILE_NAME,
+		 trinity_tmpdir_abs());
+
+	/* A request that outlived an earlier run must not stop this one. */
+	(void)unlink(stop_file);
+}
+
 /* Per-tick stop-condition checks.  Runs after the child-surface
  * drain so taint and shm-integrity checks see the freshest state.
  * Returns true if main_loop should branch straight to the corrupt
@@ -187,6 +201,7 @@ static void wait_for_idle_tick_or_cgroup_event(void)
  * the while-loop condition catch the exit on its next pass. */
 static bool check_main_loop_stops(const struct timespec *epoch_start)
 {
+	enum exit_reasons reason;
 	unsigned int i;
 
 	taint_check();
@@ -271,6 +286,16 @@ static bool check_main_loop_stops(const struct timespec *epoch_start)
 			final_state_save();
 			panic(EXIT_EPOCH_DONE);
 		}
+	}
+
+	/* Checked last so a request still ends the run when an epoch limit
+	 * fired this tick.  Like a stop signal, it never replaces a failure
+	 * reason. */
+	reason = __atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+	if ((reason == STILL_RUNNING || exit_reason_is_clean(reason)) &&
+	    stop_file_requested(stop_file, orig_uid)) {
+		output(0, "Found %s. Telling children to exit.\n", stop_file);
+		panic(EXIT_USER_REQUEST);
 	}
 
 	return false;
