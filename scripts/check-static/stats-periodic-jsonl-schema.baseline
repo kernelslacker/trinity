@@ -10,7 +10,7 @@
 #                  (only present when >= 10001 ops were run)
 #
 # Regenerate after a field-name change with:
-#   scripts/check-static/check-runtime-json-output.sh --regen
+#   scripts/check-runtime-json-output.sh --regen
 # and commit the diff alongside the code change.
 
 [terminal]

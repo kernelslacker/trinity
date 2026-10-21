@@ -150,6 +150,11 @@ every translation unit lives under one of the directories below.
   change that shifts lines in a baselined file must update that baseline in the
   same commit (common ones: `child-context-output.baseline`,
   `sanitiser-slow-path.baseline`, `post-state-magic.baseline`).
+- `make check-static` never executes the trinity binary. The one fixture that
+  does, `scripts/check-runtime-json-output.sh` (a `--dry-run` cross-check of
+  the JSON/JSONL output against the schema baselines), is the opt-in
+  `make check-runtime`; run it only on a host where starting the fuzzer is
+  acceptable.
 
 ## Code structure — files & functions
 

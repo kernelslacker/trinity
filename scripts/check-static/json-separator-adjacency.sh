@@ -9,7 +9,7 @@
 # putchar(',') between ipmr_getroute_pktinfo_category and ip6mr_churn_category
 # was missing.  The static schema gate reconstructs from source and never
 # parses binary output, so the missing comma passed every pre-existing check.
-# The runtime gate (check-runtime-json-output.sh) only covers paths the
+# The runtime gate (scripts/check-runtime-json-output.sh) only covers paths the
 # fixture actually exercises, leaving paths outside the baseline unvalidated.
 #
 # Detector: scan stats/json/*.c line-by-line per function.  Two directions,

@@ -9,7 +9,9 @@ is single-digit seconds) and require no runtime execution beyond what
 Trinity's fuzzer binary cannot safely run on developer hosts; it only
 runs on an isolated fuzz machine.  Architectural invariants that would
 normally surface as a runtime assertion failure therefore have to be
-caught earlier.  `check-static` is where that catching happens.
+caught earlier.  `check-static` is where that catching happens, and no
+check in it executes the binary; the one fixture that does is the
+opt-in `make check-runtime` (see below).
 
 ## Running
 
@@ -42,6 +44,38 @@ orchestrator) to locate sources.  Conventions:
 - Return 0 on pass/warn, non-zero on fail.
 - Keep runtime under one second; the whole battery should stay fast
   enough that contributors run it after every edit.
+- Never execute the trinity binary or a wrapper that does
+  (`scripts/run-trinity.sh`).  A fixture that has to run it belongs
+  behind `make check-runtime`, not in this directory.
+
+## Runtime check (opt-in)
+
+    make check-runtime
+
+`scripts/check-runtime-json-output.sh` is the one fixture that executes
+the binary, so `check-static` never runs it.  `make check-runtime`
+builds `./trinity` first; run it only on a host where starting the
+fuzzer is acceptable.  The fixture spawns the binary under the
+sanctioned capped form (`timeout`/`TRINITY_NO_DMESG`/`--dry-run`), then
+cross-checks all three machine-readable output surfaces against their
+baselines: (1) final stats JSON (`--stats-json`) key-paths and
+value-types versus the source-reconstruction baseline produced by
+`stats-json-schema.sh` — a source-reconstruction error and a
+binary-emission error produce different failures; (2) periodic JSONL
+terminal-record field names versus
+`scripts/check-static/stats-periodic-jsonl-schema.baseline` (the
+`-N 15000` run crosses the >10000-op window-emit threshold so both
+terminal and window records are validated); (3) the live rotation-event
+JSONL terminal record against the `[terminal]` section of
+`scripts/check-static/stats-rotation-jsonl-schema.baseline`, and any
+live rotation record against its `[rotation]` section (live rotation
+events require STRATEGY_WINDOW = 131072 ops, which is unreachable under
+the fixture cap, so a synthetic record built from the baseline keeps
+that arm exercised, and a missing one fails rather than skips; the
+source side of both sections is pinned by the static
+`stats-rotation-jsonl-schema` check).  Also exercises sink-failure
+end-to-end: open failures for `--stats-log-file` and the auto-named
+timeseries/rotation files are verified to surface in stderr with exit 0.
 
 ## What today's checks enforce
 
@@ -76,27 +110,6 @@ update this section to match `ls scripts/check-static/*.sh`.)
   battery is the project's change detector; a check nobody can find in the
   docs is a check nobody knows they lost.
 
-- `check-runtime-json-output`: spawn the binary under the sanctioned
-  capped form (`timeout`/`TRINITY_NO_DMESG`/`--dry-run`), then
-  cross-check all three machine-readable output surfaces against
-  their baselines: (1) final stats JSON (`--stats-json`) key-paths
-  and value-types versus the source-reconstruction baseline produced
-  by `stats-json-schema.sh` — a source-reconstruction error and a
-  binary-emission error produce different failures; (2) periodic
-  JSONL terminal-record field names versus
-  `stats-periodic-jsonl-schema.baseline` (the -N 15000 run crosses
-  the >10000-op window-emit threshold so both terminal and window
-  records are validated); (3) the live rotation-event JSONL terminal
-  record against the `[terminal]` section of
-  `stats-rotation-jsonl-schema.baseline`, and any live rotation record
-  against its `[rotation]` section (live rotation events require
-  STRATEGY_WINDOW = 131072 ops, which is unreachable under the fixture
-  cap, so a synthetic record built from the baseline keeps that arm
-  exercised, and a missing one fails rather than skips; the source side
-  of both sections is pinned by `stats-rotation-jsonl-schema`).
-  Also exercises sink-failure end-to-end: open failures for
-  `--stats-log-file` and the auto-named timeseries/rotation files are
-  verified to surface in stderr with exit 0.
 - `json-separator-adjacency`: detect missing `putchar(',')` separators
   between adjacent `stat_category_emit_json()` calls within a function
   in `stats/json/*.c`.  A missing comma produces a malformed-JSON

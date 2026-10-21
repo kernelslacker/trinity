@@ -14,6 +14,10 @@
 # on stdout (plus optional detail on stderr) and exits 0 for pass/warn,
 # non-zero for fail.  See Documentation/check-static.md.
 #
+# A check must never execute the trinity binary or a wrapper that does.
+# The one fixture that spawns it is scripts/check-runtime-json-output.sh,
+# which only the opt-in `make check-runtime` runs.
+#
 # Skip individual checks with CHECK_STATIC_SKIP=name1,name2.
 
 set -u

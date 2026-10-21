@@ -10,7 +10,7 @@
 # The "key": names are read out of both and diffed against the [rotation]
 # and [terminal] baseline sections in both directions.  Trinity's output is
 # never consulted; the live records are cross-checked against the same
-# baseline by scripts/check-static/check-runtime-json-output.sh.
+# baseline by the opt-in scripts/check-runtime-json-output.sh.
 #
 # To regenerate after an intentional field change:
 #   scripts/check-static/stats-rotation-jsonl-schema.sh --regen

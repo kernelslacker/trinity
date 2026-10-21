@@ -365,6 +365,15 @@ scan:
 check-static:
 	@./scripts/check-static.sh
 
+# Opt-in, and deliberately not part of check-static: this one execs
+# ./trinity (--dry-run, under timeout, via scripts/run-trinity.sh) to
+# cross-check the live JSON/JSONL output against the schema baselines.
+# The build runs first, so the baselines are never checked against an
+# old binary.  Run it only on a host where starting the fuzzer is
+# acceptable.
+check-runtime: trinity
+	@./scripts/check-runtime-json-output.sh
+
 coverity:
 	@rm -rf cov-int trinity-coverity.tar.xz
 	@cov-build --dir cov-int make -B -j $(NR_CPUS)
