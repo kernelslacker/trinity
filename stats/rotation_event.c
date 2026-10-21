@@ -14,6 +14,7 @@
  */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -29,6 +30,8 @@
 #include "trinity.h"
 #include "utils-proc.h"
 
+#include "kernel/fcntl.h"
+
 /*
  * Sink fd.  <0 means the file is not open (either --stats was off, or
  * the open failed).  All emit calls short-circuit on this predicate so
@@ -39,7 +42,8 @@
  * is the CAS-winning fuzz child.  No drop-in-child helper is provided
  * for this reason -- see include/rotation_event.h.  A child can still
  * reach the number with a fuzzed close_range/dup2/ftruncate/write, so
- * the protected-fd registry names it via stats_rotation_event_fd().
+ * the protected-fd registry names it via stats_rotation_event_fd() and
+ * each child moves its copy high.
  */
 static int rotation_event_fd = -1;
 
@@ -73,6 +77,27 @@ void stats_rotation_event_open(void)
 int stats_rotation_event_fd(void)
 {
 	return rotation_event_fd;
+}
+
+void stats_rotation_event_relocate_in_child(void)
+{
+	int new_fd;
+
+	if (rotation_event_fd < 0 ||
+	    (unsigned int) rotation_event_fd >= ROTATION_EVENT_FD_HIGH_BASE)
+		return;
+
+	/* Best-effort: if the dup fails (soft RLIMIT_NOFILE not above the
+	 * base, no free slot at or above it), keep the low fd and let the
+	 * protected-fd registry catch attempts on it.  CLOEXEC keeps a
+	 * fuzzed execve in a grandchild from inheriting the sink. */
+	new_fd = fcntl(rotation_event_fd, F_DUPFD_CLOEXEC,
+		       (int) ROTATION_EVENT_FD_HIGH_BASE);
+	if (new_fd < 0)
+		return;
+
+	close(rotation_event_fd);
+	rotation_event_fd = new_fd;
 }
 
 void stats_rotation_event_close(void)

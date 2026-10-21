@@ -16,10 +16,11 @@
  *                          rendezvous / per-child object-pool bring-
  *                          up that follows.
  *   - child-init-sandbox.c shm->ready barrier, fault-injector arm,
- *                          per-child unshare()s, root-only
- *                          drop_privs, capset()-to-empty + oracle
- *                          anchor capture, rlimit / cgroup / umask
- *                          sweep in munge_process.
+ *                          rotation-sink fd relocation, per-child
+ *                          unshare()s, root-only drop_privs,
+ *                          capset()-to-empty + oracle anchor capture,
+ *                          rlimit / cgroup / umask sweep in
+ *                          munge_process.
  *   - child-init-runtime.c kcov bring-up, uniarch active-syscalls
  *                          pin, explorer-pool slot flag, A/B-
  *                          comparison cohort stamps, heap-bounds

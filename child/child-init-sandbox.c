@@ -1,7 +1,8 @@
 /*
  * Per-child sandbox bring-up: block on shm->ready, arm the fault
- * injectors (via child-init-clean.c helpers), optionally dirty FPU
- * and mask signals, per-child unshare()s (with the mnt/net gates on
+ * injectors (via child-init-clean.c helpers), move the inherited
+ * rotation sink out of the low fd range, optionally dirty FPU and
+ * mask signals, per-child unshare()s (with the mnt/net gates on
  * shm->isolation.*_ready), root-only drop_privs(), unconditional
  * capset()-to-empty + cap-drop oracle anchor capture, and the
  * random rlimit / cgroup / umask sweep in munge_process.
@@ -50,6 +51,7 @@
 #include "pre_crash_ring.h"
 #include "random.h"
 #include "rnd.h"
+#include "rotation_event.h"
 #include "self_cgroup.h"
 #include "shm.h"
 #include "signals.h"
@@ -433,7 +435,8 @@ static void munge_process(void)
  *   - block on shm->ready so every child enters the post-init
  *     world at roughly the same moment,
  *   - turn on the make-it-fail / fail-nth / tainted-fd fault
- *     injectors,
+ *     injectors and move the inherited rotation sink out of the low
+ *     fd range,
  *   - optionally dirty FPU state and always mask child signals,
  *   - randomly unshare into a private mount/ipc/io/net ns (with
  *     the MS_PRIVATE remount + no_private_ns latch dance) and a
@@ -463,6 +466,10 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	open_fail_nth(child);
 
 	open_tainted_fd(child);
+
+	/* The parent's rotation sink is inherited on purpose; move our copy
+	 * up with the fds above, out of the range the pickers draw from. */
+	stats_rotation_event_relocate_in_child();
 
 	if (RAND_BOOL())
 		use_fpu();

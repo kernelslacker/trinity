@@ -27,7 +27,7 @@ behind `fds-internal.h`, one concern per translation unit.
 | memfd_secret.c | 230 | `memfd_secret` fd provider |
 | pipes.c | 227 | Pipe fd provider |
 | userfaultfd.c | 226 | userfaultfd provider (`poll_can_block`-tagged) |
-| fds-protected.c | 242 | Protected-fd registry: `fd_is_protected()`, `lowest_protected_fd_in_range()`, `reroll_protected_fd_arg()` |
+| fds-protected.c | 243 | Protected-fd registry: `fd_is_protected()`, `lowest_protected_fd_in_range()`, `reroll_protected_fd_arg()` |
 | watch_queue.c | 219 | Notification-pipe fds via `pipe2(O_NOTIFICATION_PIPE)` |
 | inotify.c | 219 | inotify fd provider |
 | writeable-pagecache.c | 212 | Writable pagecache-backed file fd pool |
@@ -75,7 +75,7 @@ behind `fds-internal.h`, one concern per translation unit.
 - `syscalls/fs/dup.c`, `syscalls/fs/ftruncate.c`, `syscalls/fs/fallocate.c`, `syscalls/fs/lseek.c`, `syscalls/fs/llseek.c`, `syscalls/*write*`, `syscalls/fs/splice/copy_file_range.c`, `syscalls/fs/splice/sendfile.c`, `syscalls/fs/splice/splice.c` — consult `fd_is_protected()` / `reroll_protected_fd_arg()` to keep kcov and stderr-capture fds safe from the close/size-changing families
 - `syscalls/poll/poll.c`, `syscalls/poll/select.c`, `syscalls/poll/pselect6.c`, `syscalls/poll/epoll_ctl.c` — use `get_pollable_random_fd()` and `fd_poll_can_block()` to build/validate watch sets
 - `kcov/lifecycle.c`, `kcov/diag.c` — own the fds that `fd_is_protected()` shields (`child->kcov.fd`, `child->kcov.cmp_fd`)
-- `stats/rotation_event.c` — owns the rotation-events sink fd (`stats_rotation_event_fd()`), the one shielded fd the parent opens and every child inherits
+- `stats/rotation_event.c` — owns the rotation-events sink fd (`stats_rotation_event_fd()`), the one shielded fd the parent opens and every child inherits; each child parks its copy at `ROTATION_EVENT_FD_HIGH_BASE` (60000), like the kcov/taint/fail-nth slots
 - `random_syscall/chain-subst.c` — fd substitution in syscall chains draws from the same typed/random pickers
 - `ioctls/fuse.c`, `ioctls/autofs.c`, `ioctls/seccomp.c`, `net/proto/unix.c`, `net/proto/pppox.c`, `lib/cmsg_build.c` — ioctl/net-specific consumers of fds sourced through this layer
 - `struct_catalog/aio.c`, `struct_catalog/landlock.c`, `struct_catalog/registry.c` — struct-field fd slots populated from typed providers

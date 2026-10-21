@@ -77,7 +77,8 @@
  *     file description the whole fleet shares, so a fuzzed write or
  *     ftruncate on its number tears the JSONL for every child, and a
  *     close_range walk or a dup2 over it sends that child's records
- *     nowhere or into an unrelated file.
+ *     nowhere or into an unrelated file.  Each child also moves its
+ *     copy above ROTATION_EVENT_FD_HIGH_BASE.
  *
  * Parent context (this_child() == NULL): STDERR_FILENO still matches
  * the constant check, but the parent never opens a kcov_child, a
@@ -86,8 +87,8 @@
  * trinity_tainted_fd_cached() slot is
  * still consulted here; parent-side arg generation is rare but the
  * conservative answer (treat the taint fd as protected) is the right
- * one regardless.  The rotation sink is the same in both contexts: the
- * parent opens it and every child inherits the same number.
+ * one regardless.  The rotation sink needs no this_child() gate: its
+ * static is per-process and names whichever number this process holds.
  *
  * The fd < 0 / hi < lo guards mirror the kernel-side validation order
  * the close-family syscalls themselves apply, so a sanitiser that

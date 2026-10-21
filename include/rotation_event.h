@@ -24,11 +24,19 @@
  * do NOT drop the fd on fork; concurrent writers rely on the O_APPEND
  * writev() atomic-seek-to-end contract in lib/jsonl.c.  What keeps a
  * fuzzed syscall off the shared description is the protected-fd
- * registry, which names the fd through stats_rotation_event_fd().
+ * registry, which names the fd through stats_rotation_event_fd(), and
+ * each child moving its copy out of the low fd range.
  */
 
 #include <stdbool.h>
 #include <stdint.h>
+
+/*
+ * Where a child parks its copy of the sink: above the small numbers that
+ * pickers and mutated fd args reach and the registry alone does not
+ * cover.  Keep in sync with KCOV_FD_HIGH_BASE.
+ */
+#define ROTATION_EVENT_FD_HIGH_BASE 60000U
 
 /*
  * Per-block snapshot assembled by the CAS-winning child at rotation
@@ -88,6 +96,18 @@ void stats_rotation_event_open(void);
  * ftruncate / write cannot reach the file every child shares.
  */
 int stats_rotation_event_fd(void);
+
+/*
+ * Move this process's copy of the sink to the first free fd at or above
+ * ROTATION_EVENT_FD_HIGH_BASE and close the low number it inherited.
+ * Called early in every child, before any fuzzed syscall.  The parent
+ * keeps the number it opened: it fuzzes nothing, and a high fd there
+ * would make every fork copy a ~60k-slot fd table.  Best-effort: when
+ * no slot at or above the base is available (soft RLIMIT_NOFILE not
+ * above it) the low number stays and only the registry guards it.
+ * No-op when the sink is not open.
+ */
+void stats_rotation_event_relocate_in_child(void);
 
 /*
  * Close the sink from the parent at shutdown.  Safe to call when open
