@@ -7,7 +7,6 @@
  */
 
 #include <errno.h>
-#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -15,7 +14,6 @@
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include "arch.h"
@@ -559,7 +557,6 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		  struct childdata *child)
 {
-	pid_t pid = 0;
 	pid_t extrapid;
 
 #ifdef __SANITIZE_ADDRESS__
@@ -601,37 +598,7 @@ void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 	if (pid_alive(extrapid) == true)
 		usleep(100);
 
-	/* Bound the loop to ~1 second (1000 * 1ms) so a D-state
-	 * grandchild can't stall us forever.
-	 */
-	for (int i = 0; pid == 0 && i < 1000; i++) {
-		int childstatus;
-
-		pid = waitpid_eintr(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-		usleep(1000);
-	}
-
-	/* Timed out, or waitpid errored. Force-kill, then try a bounded
-	 * WNOHANG reap. A D-state grandchild survives SIGKILL, and a
-	 * blocking waitpid here would pin the worker past the ~1s budget
-	 * claimed above. If the grandchild still hasn't exited after a
-	 * few short polls, log and continue -- leave it as a zombie for
-	 * the eventual SIGCHLD path rather than wedging the worker.
-	 */
-	if (pid <= 0) {
-		pid_t rp = 0;
-
-		kill(extrapid, SIGKILL);
-		for (int i = 0; i < 5; i++) {
-			rp = waitpid_eintr(extrapid, NULL, WNOHANG);
-			if (rp != 0)
-				break;
-			usleep(1000);
-		}
-		if (rp == 0)
-			output(1, "extrafork: grandchild %d unreapable after SIGKILL, leaving zombie\n",
-			       extrapid);
-	}
+	extrafork_reap(extrapid, 1000);
 
 	/* Grandchild died before reaching __do_syscall's AFTER block, so
 	 * handle_syscall_ret will skip entry->post (state != AFTER gate).

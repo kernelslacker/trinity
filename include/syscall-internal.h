@@ -6,6 +6,7 @@
  */
 
 #include <stdbool.h>
+#include <sys/types.h>
 
 #include "kcov.h"
 #include "syscall.h"
@@ -64,3 +65,4 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		  struct kcov_child *kc, struct childdata *child);
 void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		  struct childdata *child);
+void extrafork_reap(pid_t extrapid, unsigned int polls);

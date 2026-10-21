@@ -41,6 +41,7 @@ void epoch_reset_self_check(void);
 void drop_privs_self_check(void);
 void tmpdir_self_check(void);
 void reap_stop_self_check(void);
+void extrafork_reap_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -169,6 +170,11 @@ int main(int argc, char **argv)
 	printf("  reap_stop_self_check ... ");
 	fflush(stdout);
 	reap_stop_self_check();
+	printf("OK\n");
+
+	printf("  extrafork_reap_self_check ... ");
+	fflush(stdout);
+	extrafork_reap_self_check();
 	printf("OK\n");
 
 	return 0;

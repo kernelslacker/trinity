@@ -37,7 +37,7 @@ every translation unit lives under one of the directories below.
 | [main/](main/CLAUDE.md) | Process entry + CLI/tunables + parent control plane: fork/reap/watchdog/stats tick loop (22 files, ~7,924 LOC) |
 | [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (24 files, ~8,159 LOC) |
 | [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (18 files, ~7,907 LOC) |
-| [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (8 files, ~2,628 LOC) |
+| [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (9 files, ~2,628 LOC) |
 | [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (363 files, ~65,625 LOC) |
 | [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (7 files, ~1,926 LOC) |
 | [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (18 files, ~6,920 LOC) |
@@ -68,7 +68,7 @@ every translation unit lives under one of the directories below.
 - [child/](child/CLAUDE.md) — per-child loop, bring-up/sandbox, alt-op picker, canary/sentinel/capdrop oracles, cred throttle (24 files).
 
 ### Syscall dispatch & results
-- [dispatch/](dispatch/CLAUDE.md) — issues the picked syscall (syscall.c), records results (results.c), pid liveness/kill primitives (pids.c) (8 files).
+- [dispatch/](dispatch/CLAUDE.md) — issues the picked syscall (syscall.c), records results (results.c), pid liveness/kill primitives (pids.c) (9 files).
 
 ### Object pools & result threading
 - `objects/` — the `OBJ_LOCAL`/`OBJ_GLOBAL` object pools threading a syscall result (fd/id/handle) into a later syscall argument, plus the cross-child futex-word pool and the prop/fd-event rings. See [objects/](objects/CLAUDE.md); `lib/publish_resource.c` is the typed stamping front end.

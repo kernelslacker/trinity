@@ -2,7 +2,7 @@
 
 Issues the picked syscall, records its outcome, and tracks pid liveness — the tail of one fuzz iteration: `child/` picks (via `random_syscall/` + the `syscalls/` descriptor), this layer makes the call and books the result.
 
-## Files (8 files, ~2,628 LOC)
+## Files (9 files, ~2,628 LOC)
 
 The `do_syscall()` machinery is split across `syscall*.c`: `syscall.c` keeps only
 the entry point, with the execution path and the return-side phases in their own
@@ -12,6 +12,7 @@ translation units.
 |---|---|
 | syscall.c | Top-level coordinator: the `do_syscall()` entry point, picking between the common in-child path and the EXTRA_FORK throwaway-grandchild wrapper. |
 | syscall-exec.c | Raw execution path: biarch 32-on-64 dispatch, fail-nth fault injection, in-child watchdog fd eviction, the SHADOW noisy-sample bracket, the `__do_syscall` bracket, and `do_extrafork()`. |
+| extrafork-reap.c | `extrafork_reap()`: the wait-then-kill that ends `do_extrafork()`'s throwaway grandchild. |
 | syscall-return.c | `handle_syscall_ret()` coordinator and its three phase helpers, in the preserved order: validate → dispatch → post. |
 | syscall-post.c | Generic close-fd hook, post-state / rettype bound validators, and ENOSYS deactivation. |
 | syscall-retfd.c | fd return validation and registration. |

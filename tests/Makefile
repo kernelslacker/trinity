@@ -95,7 +95,8 @@ REAL_SRCS	:= \
 	$(TOP)/lib/jsonl.c \
 	$(TOP)/fds/owned-fd-ring.c \
 	$(TOP)/fds/fds.c \
-	$(TOP)/fds/fds-registry.c
+	$(TOP)/fds/fds-registry.c \
+	$(TOP)/dispatch/extrafork-reap.c
 
 # Parent TUs, linked for reset_epoch_state(), the reaper, the zombie
 # reaper and the rotation-events sink, plus utils/uid.c for
@@ -136,6 +137,7 @@ FAKE_SRCS	:= \
 	fake_parent.c \
 	epoch_reset_test.c \
 	reap_stop_test.c \
+	extrafork_reap_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
