@@ -54,3 +54,13 @@ extern unsigned int num_fd_providers_initialized;
  */
 extern struct fd_provider **active_providers;
 extern unsigned int num_active_providers;
+
+/*
+ * Dispatcher cap: the maximum number of providers touched per replenish
+ * tick.  Each provider issues create-syscalls to open the new fds, so a
+ * larger cap trades fuzz-budget cycles for pool depth.  Three keeps one
+ * periodic-work pass to ~6 create-syscalls (3 providers * 2 budget).  The
+ * walk resumes after the last provider it served, so every opted-in
+ * provider still gets its turn.
+ */
+#define REPLENISH_MAX_PROVIDERS_PER_TICK	3

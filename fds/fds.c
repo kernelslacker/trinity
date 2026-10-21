@@ -119,20 +119,18 @@ void run_fd_provider_child_init(struct childdata *child)
 	}
 }
 
-/*
- * Dispatcher cap: the maximum number of providers touched per replenish
- * tick.  Each provider issues create-syscalls to open the new fds, so a
- * larger cap trades fuzz-budget cycles for pool depth.  Three lets the
- * (currently ~4) opted-in providers all get service every couple of
- * dispatcher ticks without ever bursting more than ~6 create-syscalls
- * (3 providers * 2 budget) in a single periodic-work pass.
- */
-#define REPLENISH_MAX_PROVIDERS_PER_TICK	3
-
 void run_fd_provider_replenish(unsigned int per_provider_budget)
 {
+	/*
+	 * Where the last tick stopped.  A walk that began at the list head
+	 * every tick would only ever serve the first few providers, however
+	 * many opt in.  The list is fixed once the children exist, so a node
+	 * pointer stays valid; fork copies it.
+	 */
+	static struct list_head *resume;
 	struct list_head *node;
 	unsigned int providers_touched = 0;
+	unsigned int visited;
 
 	if (fd_providers == NULL)
 		return;
@@ -150,13 +148,22 @@ void run_fd_provider_replenish(unsigned int per_provider_budget)
 	if ((rnd_u32() & 3U) != 0U)
 		return;
 
-	list_for_each(node, &fd_providers->list) {
-		struct fd_provider *provider = (struct fd_provider *) node;
+	node = resume != NULL ? resume : fd_providers->list.next;
+
+	/* At most one lap, so a list with nothing to serve ends the walk. */
+	for (visited = 0; visited < num_fd_providers; visited++) {
+		struct fd_provider *provider;
+
+		if (node == &fd_providers->list)
+			node = node->next;
+		provider = (struct fd_provider *) node;
+		node = node->next;
 
 		if (!provider->initialized || provider->try_replenish == NULL)
 			continue;
 
 		provider->try_replenish(per_provider_budget);
+		resume = node;
 
 		if (++providers_touched >= REPLENISH_MAX_PROVIDERS_PER_TICK)
 			break;

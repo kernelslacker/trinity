@@ -38,7 +38,7 @@ behind `fds-internal.h`, one concern per translation unit.
 | eventfd.c | 176 | eventfd provider |
 | mq.c | 172 | POSIX message-queue fd provider |
 | signalfd.c | 167 | signalfd provider |
-| fds.c | 165 | Provider dispatchers: fd→provider lookup, `fd_poll_can_block()`, the periodic `child_ops` / `child_init` walks, and the rate-limited `run_fd_provider_replenish()` tick |
+| fds.c | 172 | Provider dispatchers: fd→provider lookup, `fd_poll_can_block()`, the periodic `child_ops` / `child_init` walks, and the rate-limited `run_fd_provider_replenish()` tick, which resumes after the last provider it served |
 | drm.c | 164 | DRM device fd provider |
 | pidfd.c | 162 | pidfd provider (`pidfd_open`) |
 | dev_template.c | 150 | Templated `/dev/*` probing provider (parent-side, pre-fork) |
@@ -48,7 +48,7 @@ behind `fds-internal.h`, one concern per translation unit.
 | iommufd.c | 115 | IOMMUFD provider (`#ifdef USE_IOMMUFD`) |
 | fds-param.c | 95 | `--enable-fds` / `--disable-fds` parsing (`process_fds_param`) |
 | fds-registry.c | 93 | The constructor-time provider list: `register_fd_provider()`, `fd_provider_name()`, `dump_fd_provider_names()` |
-| fds-internal.h | 56 | Private cross-file interface for the carve-outs — the counters and provider arrays that used to be file-statics in `fds.c` |
+| fds-internal.h | 66 | Private cross-file interface for the carve-outs — the counters and provider arrays that used to be file-statics in `fds.c`, and the replenish per-tick cap |
 | owned-fd-ring.c | 83 | `owned_fd_ring_record()` (`include/owned-fd-ring.h`): the ring of fds a `.try_replenish` provider minted; closes the oldest on wrap, but only while `fstat()` still shows the file it recorded, and retires a recorded number from every provider's ring |
 | fds-diag.c | 42 | `fd_provider_init_fail()` and the last-init-reason slot `open_fds()` reads back |
 | devfs.c | 34 | `/dev` pool provider (thin wrapper over files.c, pool 0) |

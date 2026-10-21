@@ -103,8 +103,10 @@ void run_fd_provider_child_init(struct childdata *child);
  * each up to @per_provider_budget new fds to publish this tick.  Internally
  * rate-limited (roughly one in four calls does any work) and dispatcher-
  * capped at a small number of providers per tick so a burst of
- * create-syscalls cannot swamp the child's fuzz budget.  Safe to call
- * from child context only; parent calls fall through without work.
+ * create-syscalls cannot swamp the child's fuzz budget; each tick resumes
+ * after the last provider the previous one served, so all of them get a
+ * turn.  Safe to call from child context only; parent calls fall through
+ * without work.
  */
 void run_fd_provider_replenish(unsigned int per_provider_budget);
 
