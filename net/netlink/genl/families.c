@@ -537,6 +537,16 @@ static int do_dump(int sock)
 	}
 }
 
+/*
+ * Must stay lazy and per-child, after init_child_setup_sandbox() has
+ * settled the child's netns.  Outside init_net the kernel's
+ * ctrl_dumpfamily() omits every family registered without netnsok
+ * (Documentation/params-cgroup.md lists ours), so dumping from the
+ * child's own netns is what keeps those families out of a netns'd
+ * child's picks.  A resolve in the parent before fork runs in init_net
+ * on any non-isolated run and would hand them to children that then
+ * unshare into their own netns.
+ */
 void genl_resolve_families(void)
 {
 	struct timeval tv = { .tv_sec = 0, .tv_usec = 250000 };

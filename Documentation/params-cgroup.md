@@ -52,3 +52,28 @@ Skip the parent-side `unshare(CLONE_NEWNET|CLONE_NEWNS)` +
 `init_pre_fork()`.  Children still take the per-child unshare path.
 Default off; non-root runs never attempt parent-side isolation
 regardless.
+
+Root runs need this option to fuzz the generic-netlink families the
+kernel registers without `netnsok`.  Those families exist only in the
+initial network namespace: outside `init_net`, `ctrl_dumpfamily()`
+leaves them out of the `CTRL_CMD_GETFAMILY` dump, and their messages
+fail with `ENOENT`.  Each child resolves genl family ids from that
+dump in its own netns, so a child outside `init_net` never picks
+them.  The registered grammars affected:
+
+- `thermal`
+- `vdpa`
+- `cifs`
+- `NET_DM` (drop monitor)
+- `802.15.4 MAC` (the legacy IEEE 802.15.4 family, not `nl802154`)
+- `NCSI`
+- `nfc`
+- `NLBL_MGMT`, `NLBL_CIPSOv4`, `NLBL_UNLBL`, `NLBL_CALIPSO` (NetLabel)
+
+A default root run puts every child in the parent's private netns,
+so none of these is ever fuzzed.  With `--no-startup-isolation`, only
+the children that skip the per-child `unshare(CLONE_NEWNET)` (a coin
+flip at child start-up) stay in `init_net` and can pick them.
+Non-root children stay in `init_net` because that unshare fails with
+`EPERM`, unless the binary carries the `make setcap` file
+capabilities, in which case the same coin flip applies.
