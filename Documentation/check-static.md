@@ -86,11 +86,14 @@ update this section to match `ls scripts/check-static/*.sh`.)
   JSONL terminal-record field names versus
   `stats-periodic-jsonl-schema.baseline` (the -N 15000 run crosses
   the >10000-op window-emit threshold so both terminal and window
-  records are validated); (3) rotation-event JSONL field names against
-  the source-derived `stats-rotation-jsonl-schema.baseline`
-  (source-vs-baseline agreement only — live rotation events require
+  records are validated); (3) the live rotation-event JSONL terminal
+  record against the `[terminal]` section of
+  `stats-rotation-jsonl-schema.baseline`, and any live rotation record
+  against its `[rotation]` section (live rotation events require
   STRATEGY_WINDOW = 131072 ops, which is unreachable under the fixture
-  cap; a run that produces no records emits SKIP, never a silent PASS).
+  cap, so a synthetic record built from the baseline keeps that arm
+  exercised, and a missing one fails rather than skips; the source side
+  of both sections is pinned by `stats-rotation-jsonl-schema`).
   Also exercises sink-failure end-to-end: open failures for
   `--stats-log-file` and the auto-named timeseries/rotation files are
   verified to surface in stderr with exit 0.
@@ -191,6 +194,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
   values, reordered emission, and duplicate keys at the same scope
   that would otherwise silently break downstream scrapers.
   Regenerate with `--regen` and review the baseline diff.
+- `stats-rotation-jsonl-schema`: pin the field names of the rotation-event
+  JSONL records.  `stats/rotation_event.c` writes the rotation record from
+  one `snprintf()` format string in `stats_rotation_event_emit()` and the
+  end-of-run record as a plain literal in `stats_rotation_event_close()`;
+  the `"key":` names read out of each must equal the `[rotation]` and
+  `[terminal]` sections of `stats-rotation-jsonl-schema.baseline`, in both
+  directions, so a field added or dropped without regenerating the
+  baseline trips the check.  An extractor that stops finding either
+  record or its keys is an error, not a pass.  Regenerate with `--regen`
+  (both sections come from the source) and review the baseline diff.
 - `stats-ring-op-clock-atomic`: every access to `lossless_op_count`
   in production `.c` files (excluding `tests/`) must be lexically
   inside an `__atomic_` call on the same source line.  The parent

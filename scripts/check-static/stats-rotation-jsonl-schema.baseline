@@ -1,13 +1,13 @@
 # stats-rotation-jsonl-schema.baseline
 #
 # Field names for rotation-event JSONL records emitted by
-# stats/rotation_event.c::stats_rotation_event_emit().
-#
-# Seeded from the source snprintf format string; a quick
-# dry-run rarely produces live rotation events.
+# stats/rotation_event.c: [rotation] from the snprintf format string
+# in stats_rotation_event_emit(), [terminal] from the end-of-run
+# literal in stats_rotation_event_close().  A quick dry-run rarely
+# produces live rotation events, so both come from the source.
 #
 # Regenerate after a field-name change with:
-#   scripts/check-static/check-runtime-json-output.sh --regen
+#   scripts/check-static/stats-rotation-jsonl-schema.sh --regen
 # and commit the diff alongside the code change.
 
 [rotation]
