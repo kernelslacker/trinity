@@ -33,5 +33,7 @@ void fake_parent_reset(void);
 
 /* Fork a task that stays alive until killed and dies with the test,
  * standing in for a child the kernel has not released.  A non-zero
- * @stopsig makes it stop itself with that signal first. */
+ * @stopsig makes it stop itself with that signal first, unblocked and
+ * at its default action, from a process group of its own, so SIGTSTP,
+ * SIGTTIN and SIGTTOU stop it too. */
 pid_t fake_hold_task(int stopsig);

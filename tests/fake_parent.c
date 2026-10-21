@@ -99,8 +99,20 @@ pid_t fake_hold_task(int stopsig)
 	if (pid == 0) {
 		prctl(PR_SET_PDEATHSIG, SIGKILL);
 		if (getppid() == parent) {
-			if (stopsig != 0)
+			if (stopsig != 0) {
+				sigset_t set;
+
+				/* A process group of its own in the test's
+				 * session is not orphaned, so the kernel
+				 * honours a job-control stop as well.  The
+				 * harness may block or ignore the signal. */
+				setpgid(0, 0);
+				sigemptyset(&set);
+				sigaddset(&set, stopsig);
+				sigprocmask(SIG_UNBLOCK, &set, NULL);
+				signal(stopsig, SIG_DFL);
 				raise(stopsig);
+			}
 			for (;;)
 				pause();
 		}

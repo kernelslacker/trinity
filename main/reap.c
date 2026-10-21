@@ -1,7 +1,6 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <stdint.h>
-#include <sys/ptrace.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <fcntl.h>
@@ -476,7 +475,7 @@ char get_pid_state(int childno)
 	return state;
 }
 
-static void handle_childsig(int childno, int childstatus, bool stop)
+static void handle_childsig(int childno, int childstatus)
 {
 	int __sig;
 	pid_t pid = __atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE);
@@ -484,33 +483,9 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 	if (children == NULL)
 		return;
 
-	if (stop == true)
-		__sig = WSTOPSIG(childstatus);
-	else
-		__sig = WTERMSIG(childstatus);
+	__sig = WTERMSIG(childstatus);
 
 	switch (__sig) {
-	case SIGSTOP:
-		if (stop != true)
-			return;
-		debugf("Sending PTRACE_DETACH (and then KILL)\n");
-		ptrace(PTRACE_DETACH, pid, NULL, NULL);
-		kill_pid(pid);
-		/* Route through register_zombie_slot rather than reaping the
-		 * slot unconditionally.  A bare waitpid(WNOHANG) here often
-		 * returns 0 because the kernel hasn't finished tearing down
-		 * the SIGKILL'd task; clearing pids[childno] in that window
-		 * lets the next slot occupant inherit the dying task's late
-		 * writes into childdata (same race shape documented at the
-		 * top of this file).  register_zombie_slot's fast path reaps
-		 * + replaces immediately when the kernel has already released
-		 * the task, and its slow path defers replacement until
-		 * process_zombie_pending() observes the zombie gone.  The
-		 * reason claims only the stop: kill_pid() spares a
-		 * dontkillme child. */
-		register_zombie_slot(childno, pid, "stopped");
-		return;
-
 	case SIGALRM:
 		debugf("got a alarm signal from child %d (pid %d)\n", childno, pid);
 		register_zombie_slot(childno, pid, "killed by a signal");
@@ -522,22 +497,6 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 	case SIGABRT:
 	case SIGBUS:
 	case SIGILL:
-		if (stop == true) {
-			/* ptrace-STOPPED, not dead.  The slot is still live; if
-			 * we register it as a zombie, the slot's childdata is
-			 * freed and replace_child() is gated for up to 300s
-			 * until process_zombie_pending() decides the pid is
-			 * gone -- except the pid never goes, because the task
-			 * is just stopped.  Mirror the default branch: log,
-			 * release the pidstat fd, and let the next ptrace event
-			 * (continue / kill / real death) drive the slot. */
-			debugf("Child %d (pid %d) was stopped by %s\n",
-					childno, pid, strsignal(WSTOPSIG(childstatus)));
-			if (pidstatfiles[childno] >= 0)
-				close(pidstatfiles[childno]);
-			pidstatfiles[childno] = -1;
-			return;
-		}
 		debugf("got a signal from child %d (pid %d) (%s)\n",
 				childno, pid, strsignal(WTERMSIG(childstatus)));
 		register_zombie_slot(childno, pid, "killed by a signal");
@@ -546,19 +505,10 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 	default:
 		if (__sig >= SIGRTMIN) {
 			debugf("Child %d got RT signal (%d).\n", pid, __sig);
-		} else if (stop == true) {
-			debugf("Child %d was stopped by unhandled signal (%s).\n", pid, strsignal(WSTOPSIG(childstatus)));
 		} else {
 			debugf("** Child got an unhandled signal (%d)\n", WTERMSIG(childstatus));
 		}
-
-		if (stop == false) {
-			register_zombie_slot(childno, pid, "killed by a signal");
-		} else {
-			if (pidstatfiles[childno] >= 0)
-				close(pidstatfiles[childno]);
-			pidstatfiles[childno] = -1;
-		}
+		register_zombie_slot(childno, pid, "killed by a signal");
 		return;
 	}
 }
@@ -625,9 +575,37 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			 * coherence work is needed. */
 			canary_queue_on_crash(childno, sig);
 			record_reap(childno, childstatus);
-			handle_childsig(childno, childstatus, false);
+			handle_childsig(childno, childstatus);
 		} else if (WIFSTOPPED(childstatus)) {
-			handle_childsig(childno, childstatus, true);
+			/*
+			 * A group stop: the parent never ptraces its children,
+			 * so waitpid() reports no other kind.  Once a child has
+			 * run setsid() its process group is orphaned, and the
+			 * kernel's get_signal() discards SIGTSTP, SIGTTIN and
+			 * SIGTTOU there, so only SIGSTOP stops it.  The
+			 * job-control signals can only catch a child that has
+			 * not got that far, which the watchdog would never
+			 * kill: it skips a child that has not reached its first
+			 * syscall.  Either way the child holds its slot and
+			 * fuzzes nothing, so kill it.
+			 */
+			debugf("Child %d (pid %d) stopped by %s.\n",
+				childno, childpid, strsignal(WSTOPSIG(childstatus)));
+			kill_pid(childpid);
+			/* Route through register_zombie_slot rather than
+			 * reaping the slot unconditionally.  A bare
+			 * waitpid(WNOHANG) here often returns 0 because the
+			 * kernel hasn't finished tearing down the SIGKILL'd
+			 * task; clearing pids[childno] in that window lets the
+			 * next slot occupant inherit the dying task's late
+			 * writes into childdata (same race shape documented at
+			 * the top of main/reap-zombie.c).  register_zombie_slot's
+			 * fast path reaps + replaces immediately when the kernel
+			 * has already released the task, and its slow path
+			 * defers replacement until process_zombie_pending()
+			 * observes the zombie gone.  The reason claims only
+			 * the stop: kill_pid() spares a dontkillme child. */
+			register_zombie_slot(childno, childpid, "stopped");
 		} else if (WIFCONTINUED(childstatus)) {
 			break;
 		}

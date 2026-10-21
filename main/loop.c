@@ -4,7 +4,6 @@
 #include <poll.h>
 #include <stdint.h>
 #include <sys/prctl.h>
-#include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>

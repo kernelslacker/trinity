@@ -70,4 +70,7 @@ void reap_stop_self_check(void);
 void reap_stop_self_check(void)
 {
 	stopped_child_is_killed(SIGSTOP, 2);
+	/* A job-control stop, which can only catch a child that has not
+	 * reached its setsid() yet. */
+	stopped_child_is_killed(SIGTSTP, 4);
 }
