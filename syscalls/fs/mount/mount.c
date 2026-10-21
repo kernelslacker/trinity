@@ -3,15 +3,12 @@
  *	 char __user *, type, unsigned long, flags, void __user *, data)
  */
 
-#include <dirent.h>
-#include <errno.h>
+#include <limits.h>
 #include <linux/fs.h>
 #include <linux/mount.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <unistd.h>
 #include "csfu.h"
 #include "deferred-free.h"
@@ -21,6 +18,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "kernel/mount.h"
+#include "tmpdir.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -30,39 +28,38 @@ const char **filesystem_types;
 unsigned int nr_filesystem_types;
 
 /*
- * Sacrificial mount targets created in the trinity tree at startup.
- * sanitise_mount / sanitise_move_mount steer the target argument at
- * one of these instead of the random pathnames generate_pathname()
+ * Sacrificial mount targets created in trinity's tmp dir at syscall
+ * init.  sanitise_mount / sanitise_move_mount steer the target argument
+ * at one of these instead of the random pathnames generate_pathname()
  * would otherwise hand out (/etc, /dev, /proc, ...).  Mounts that
  * actually succeed land in the per-child mount namespace and are
  * cleaned up by the child-exit teardown -- they don't pollute the
  * host namespace.
  */
 #define NR_SACRIFICIAL_MOUNT_PATHS 8
-static char sacrificial_mount_paths[NR_SACRIFICIAL_MOUNT_PATHS][64];
+#define SACRIFICIAL_MOUNT_PREFIX "trinity-mount-"
+static char sacrificial_mount_paths[NR_SACRIFICIAL_MOUNT_PATHS][PATH_MAX];
 static unsigned int nr_sacrificial_mount_paths;
 
 /*
- * Parent-only atexit teardown, enforced by the mainpid gate below --
- * children fork after the constructor and do reach exit() on several
- * paths, so only the parent rmdirs the sacrificial dirs it mkdir'd.  Idempotent + fail-soft: a dir the kernel
- * already reaped (or a stray bind-mount in the host ns we cannot break)
- * is left alone rather than aborting teardown.  Without this, every
- * trinity invocation (including --dry-run smokes that gate childops off
- * but still run constructors) leaks NR_SACRIFICIAL_MOUNT_PATHS empty
- * /tmp/trinity-mount-<pid>-N dirs into /tmp.
+ * Parent-only atexit teardown: the parent rmdirs the sacrificial dirs it
+ * mkdir'd.  Idempotent + fail-soft: a dir the kernel already reaped (or
+ * a stray bind-mount in the host ns we cannot break) is left alone
+ * rather than aborting teardown.  Without it, every clean exit
+ * (including --dry-run smokes, which gate childops off but still run
+ * syscall init) would leave NR_SACRIFICIAL_MOUNT_PATHS empty
+ * trinity-mount-<pid>-N dirs for the next run's sweep.
  */
 static void cleanup_sacrificial_mount_paths(void)
 {
 	unsigned int i;
 
 	/*
-	 * Parent only.  Children reach exit() on at least four paths --
-	 * zmalloc failure, the operator-stop teardown in debug.c, the socket
-	 * post-handler, and output() -- and atexit handlers run for all of
-	 * them.  A child running this teardown tears down state the parent
-	 * and every sibling are still using.  getpid() rather than mypid():
-	 * a CLONE_VM grandchild inherits its parent worker's cached pid.
+	 * Parent only: a child running this teardown would tear down state
+	 * the parent and every sibling are still using.  Children leave
+	 * through _exit() or trinity_exit() and never run atexit handlers,
+	 * so the gate is defence in depth.  getpid() rather than mypid(): a
+	 * CLONE_VM grandchild inherits its parent worker's cached pid.
 	 */
 	if (getpid() != mainpid)
 		return;
@@ -72,79 +69,71 @@ static void cleanup_sacrificial_mount_paths(void)
 }
 
 /*
- * Sweep /tmp for stale trinity-mount-<pid>-* dirs whose owning pid is gone.
- * atexit only catches the clean-exit path -- SIGKILL, OOM and bare _exit()
- * all skip it, so each abnormal trinity death leaks up to
- * NR_SACRIFICIAL_MOUNT_PATHS dirs.  Self-heal on the next startup by
- * rmdir'ing only the dirs whose pid no longer exists (kill(pid, 0) == ESRCH).
- * Skip live pids (some other trinity is using them) and skip our own pid
- * (we are about to mkdir those).
+ * The .init hook of both mount and move_mount, the two syscalls that
+ * steer their target at these dirs; move_mount.c forward-declares it
+ * like sanitise_move_mount().  It runs in the parent once options are
+ * parsed, so an early exit such as --help creates nothing, and before
+ * fork, so every child sees the same paths via COW.  The latch makes
+ * every call after the first (the other syscall, a biarch run's second
+ * table) a no-op.  Dirs that dead runs left behind are swept first:
+ * their atexit teardown never ran.  A failure is logged, as without
+ * these targets mount and move_mount keep a random real path.
  */
-static void sweep_dead_sacrificial_mount_paths(void)
+int make_sacrificial_mount_paths(void);
+int make_sacrificial_mount_paths(void)
 {
-	DIR *dir;
-	struct dirent *de;
-	pid_t self = getpid();
-
-	dir = opendir("/tmp");
-	if (!dir)
-		return;
-
-	while ((de = readdir(dir)) != NULL) {
-		int pid;
-		unsigned int idx;
-		char path[8 + 256];
-
-		if (sscanf(de->d_name, "trinity-mount-%d-%u", &pid, &idx) != 2)
-			continue;
-		if (pid <= 0 || pid == (int) self)
-			continue;
-		if (kill(pid, 0) == 0)
-			continue;
-		if (errno != ESRCH)
-			continue;
-		snprintf(path, sizeof(path), "/tmp/%s", de->d_name);
-		(void) rmdir(path);
-	}
-
-	closedir(dir);
-}
-
-static void __attribute__((constructor)) make_sacrificial_mount_paths(void)
-{
+	static bool done;
+	const char *why = NULL;
 	unsigned int i;
+	int n;
 
-	sweep_dead_sacrificial_mount_paths();
+	if (done)
+		return nr_sacrificial_mount_paths > 0 ? 0 : -1;
+	done = true;
+
+	sweep_dead_pid_dirs(SACRIFICIAL_MOUNT_PREFIX);
 
 	for (i = 0; i < NR_SACRIFICIAL_MOUNT_PATHS; i++) {
-		snprintf(sacrificial_mount_paths[i],
-			 sizeof(sacrificial_mount_paths[i]),
-			 "/tmp/trinity-mount-%d-%u", (int) getpid(), i);
-		if (mkdir(sacrificial_mount_paths[i], 0700) == 0 ||
-		    errno == EEXIST)
-			nr_sacrificial_mount_paths = i + 1;
+		n = snprintf(sacrificial_mount_paths[i],
+			     sizeof(sacrificial_mount_paths[i]),
+			     "%s/" SACRIFICIAL_MOUNT_PREFIX "%d-%u",
+			     trinity_tmpdir_abs(), (int) getpid(), i);
+		if (n <= 0 || n >= (int) sizeof(sacrificial_mount_paths[i]))
+			why = "path too long";
 		else
+			why = make_scratch_dir(sacrificial_mount_paths[i]);
+		if (why != NULL)
 			break;
+		nr_sacrificial_mount_paths = i + 1;
 	}
 
-	if (nr_sacrificial_mount_paths > 0)
-		atexit(cleanup_sacrificial_mount_paths);
+	if (why != NULL)
+		output(0, "mount: %s/" SACRIFICIAL_MOUNT_PREFIX "%d-%u: %s; "
+		       "made %u of %u sacrificial mount targets\n",
+		       trinity_tmpdir_abs(), (int) getpid(), i, why,
+		       nr_sacrificial_mount_paths, NR_SACRIFICIAL_MOUNT_PATHS);
+	if (nr_sacrificial_mount_paths == 0)
+		return -1;
+	atexit(cleanup_sacrificial_mount_paths);
+	return 0;
 }
 
 static char *pick_sacrificial_target(void)
 {
 	char *target;
 	const char *src;
+	size_t len;
 
 	if (nr_sacrificial_mount_paths == 0)
 		return NULL;
 
-	target = (char *) get_writable_struct(64);
+	src = sacrificial_mount_paths[rnd_modulo_u32(nr_sacrificial_mount_paths)];
+	len = strnlen(src, sizeof(sacrificial_mount_paths[0]) - 1);
+	target = (char *) get_writable_struct(len + 1);
 	if (!target)
 		return NULL;
-	memset(target, 0, 64);
-	src = sacrificial_mount_paths[rnd_modulo_u32(nr_sacrificial_mount_paths)];
-	memcpy(target, src, strnlen(src, 63));
+	memcpy(target, src, len);
+	target[len] = '\0';
 	return target;
 }
 
@@ -388,6 +377,7 @@ struct syscallentry syscall_mount = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_mount,
+	.init = make_sacrificial_mount_paths,
 };
 
 /*

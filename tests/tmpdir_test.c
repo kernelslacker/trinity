@@ -1,8 +1,9 @@
 /*
  * Self-check for utils/tmpdir.c's scratch dirs: make_scratch_dir() adopts
- * only a dir we own, and sweep_dead_pid_dirs() removes dead pids' dirs
- * (unlinking their sockets) and nothing else.  change_tmp_dir() points
- * trinity_tmpdir_abs() at a private tmp/ for the rest of the test run.
+ * only a dir we own, and sweep_dead_pid_dirs() removes dead pids' dirs,
+ * bind's and mount's names alike (unlinking sockets), and nothing else.
+ * change_tmp_dir() points trinity_tmpdir_abs() at a private tmp/ for the
+ * rest of the test run.
  */
 
 #include <dirent.h>
@@ -104,7 +105,8 @@ void tmpdir_self_check(void)
 	char base[] = "/tmp/trinity-tmpdir-test.XXXXXX";
 	char gone[32], kept[32], self[32], link[32], file[32], junk[32];
 	char other[32], kept_sock[40], kept_file[40], self_sock[40];
-	char junk_sock[40];
+	char junk_sock[40], slot0[32], slot1[32], slotx[32], slot1x[32];
+	pid_t pid;
 	int cwd;
 
 	cwd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
@@ -193,6 +195,37 @@ void tmpdir_self_check(void)
 		};
 
 		check(bind_checks, ARRAY_SIZE(bind_checks));
+	}
+
+	/* mount's dirs carry a slot number after the pid. */
+	pid = dead_pid();
+	snprintf(slot0, sizeof(slot0), "trinity-mount-%d-0", (int) pid);
+	snprintf(slot1, sizeof(slot1), "trinity-mount-%d-1", (int) pid);
+	snprintf(slotx, sizeof(slotx), "trinity-mount-%d-x", (int) pid);
+	snprintf(slot1x, sizeof(slot1x), "trinity-mount-%d-1x", (int) pid);
+	make_dir(slot0, 0);
+	make_dir(slot1, 0);
+	make_dir(slotx, 0);
+	make_dir(slot1x, 0);
+	make_dir("trinity-mount-1-0", 0);
+
+	sweep_dead_pid_dirs("trinity-mount-");
+
+	{
+		const struct expect mount_checks[] = {
+			{ slot0, false,
+			  "tmpdir sweep: kept a dead pid's slot dir" },
+			{ slot1, false,
+			  "tmpdir sweep: kept a dead pid's slot dir" },
+			{ slotx, true,
+			  "tmpdir sweep: took a slot that is not a number" },
+			{ slot1x, true,
+			  "tmpdir sweep: took a slot that is not a number" },
+			{ "trinity-mount-1-0", true,
+			  "tmpdir sweep: touched a live pid's slot dir" },
+		};
+
+		check(mount_checks, ARRAY_SIZE(mount_checks));
 	}
 
 	close(tmpfd);

@@ -6,6 +6,7 @@
 #include "kernel/mount.h"
 
 extern void sanitise_move_mount(struct syscallrecord *rec);
+extern int make_sacrificial_mount_paths(void);
 
 static unsigned long move_mount_flags[] = {
 	MOVE_MOUNT_F_SYMLINKS, MOVE_MOUNT_F_AUTOMOUNTS, MOVE_MOUNT_F_EMPTY_PATH, MOVE_MOUNT_T_SYMLINKS,
@@ -23,4 +24,5 @@ struct syscallentry syscall_move_mount = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_move_mount,
+	.init = make_sacrificial_mount_paths,
 };

@@ -122,10 +122,11 @@ static void unlink_sockets(int parent, const char *name)
 
 /*
  * Remove the scratch dirs that dead runs left under trinity_tmpdir_abs().
- * Each is named @prefix plus the pid of the parent that created it, and
- * that parent's atexit teardown never runs after a SIGKILL or an ASAN
- * build's _exit().  A live pid -- our own, another trinity's, or one a
- * dead run's pid was recycled to -- keeps its dirs.
+ * Each is named @prefix plus the pid of the parent that created it,
+ * optionally followed by '-' and a slot number, and that parent's atexit
+ * teardown never runs after a SIGKILL or an ASAN build's _exit().  A
+ * live pid -- our own, another trinity's, or one a dead run's pid was
+ * recycled to -- keeps its dirs.
  */
 void sweep_dead_pid_dirs(const char *prefix)
 {
@@ -147,7 +148,11 @@ void sweep_dead_pid_dirs(const char *prefix)
 			continue;
 		errno = 0;
 		pid = strtol(digits, &end, 10);
-		if (errno != 0 || *end != '\0')
+		if (errno != 0)
+			continue;
+		if (*end == '-' && isdigit((unsigned char) end[1]))
+			end += 1 + strspn(end + 1, "0123456789");
+		if (*end != '\0')
 			continue;
 		if (pid <= 0 || pid > INT_MAX)
 			continue;

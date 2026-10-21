@@ -42,7 +42,7 @@ cmp_hints/.
 | self_cgroup_fork.c | 114 | `self_cgroup_fork_into_workload()` — clone-into-cgroup of the children sub-cgroup |
 | self-cgroup-internal.h | 116 | Declarations private to the `self_cgroup_*.c` cluster |
 | persist-util.c | 107 | `persist_sweep_stale_tmp()`: sweeps orphaned `<path>.tmp.<pid>` staging files left by a killed writer, shared by minicorpus/cmp_hints/kcov-bitmap persistence |
-| tmpdir.c | 169 | trinity's tmp/ working directory: `change_tmp_dir()` moves the parent into it at startup, `trinity_tmpdir_abs()` returns its absolute path (`/tmp` when there is none), `make_scratch_dir()` creates a per-pid scratch dir there (adopting only a leftover dir we own), `sweep_dead_pid_dirs()` removes the ones a SIGKILLed or ASAN-exited run left behind |
+| tmpdir.c | 174 | trinity's tmp/ working directory: `change_tmp_dir()` moves the parent into it at startup, `trinity_tmpdir_abs()` returns its absolute path (`/tmp` when there is none), `make_scratch_dir()` creates a per-pid scratch dir there (adopting only a leftover dir we own), `sweep_dead_pid_dirs()` removes the ones a SIGKILLed or ASAN-exited run left behind |
 | zmalloc.c | 64 | `__zmalloc()`/`__zmalloc_tracked()`: zeroing malloc wrapper with mlockall-retry-on-ENOMEM and brk-cache refresh tick |
 
 ## Key design decisions

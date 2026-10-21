@@ -41,7 +41,7 @@ count: `process/prctl.c` (1246), `socket/setsockopt.c` (986, +
 `socket/recv.c` (808), `xattr/listxattr.c` (789), `socket/send.c` (775),
 `fs/stat/stat.c` (749), `bpf.c` (713, gated `#ifdef USE_BPF`),
 `keyctl/keyctl.c` (650), `mm/mmap.c` (576), `concurrency/futex.c` (571),
-`fs/mount/mount.c` (567), `fs/mount/statmount.c` (544),
+`fs/mount/mount.c` (569), `fs/mount/statmount.c` (544),
 `fs/stat/statfs.c` (541), `io_uring/io_uring_register.c` (532, +
 `io_uring_register-internal.h`), `ipc/sysv/ipc.c` (498),
 `timer/timer_create.c` (492), `fs/open.c` (491), `fs/readlink.c` (484),
@@ -166,12 +166,13 @@ top of each header as private to that pair of TUs).
    `KEYCTL_INVALIDATE` at pool teardown; `bpf.c` (713 lines, `#ifdef
    USE_BPF`) builds both classic and eBPF programs and drives
    `BPF_PROG_LOAD`/`BPF_MAP_CREATE`-shaped `union bpf_attr` payloads.
-   `fs/mount/mount.c` (567 lines) maintains its own sacrificial-mount-path pool with
-   a constructor/destructor pair (`make_sacrificial_mount_paths`,
-   `cleanup_sacrificial_mount_paths`, `sweep_dead_sacrificial_mount_paths`)
-   and a bounded-copy `pick_sacrificial_target()` (recent hardening commit
-   `9568f984e`) — mount namespace/target confusion is an ongoing area of
-   care here.
+   `fs/mount/mount.c` (569 lines) maintains its own sacrificial-mount-path pool
+   under trinity's tmp dir: `make_sacrificial_mount_paths()` (the `.init`
+   hook of both mount and move_mount, sweeping dead runs' dirs with
+   `sweep_dead_pid_dirs()` first), an atexit
+   `cleanup_sacrificial_mount_paths()`, and a bounded-copy
+   `pick_sacrificial_target()` (recent hardening commit `9568f984e`) —
+   mount namespace/target confusion is an ongoing area of care here.
 2. **The five largest files (`process/prctl.c`, `socket/setsockopt.c`,
    `perf/perf_event_open-pmu-discovery.c`,
    `io_uring/io_uring_register-payloads.c`, `fs/fcntl.c`) each exceed 800
