@@ -12,6 +12,7 @@
 #include "fd.h"
 #include "memfd.h"
 #include "objects.h"
+#include "owned-fd-ring.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -210,17 +211,16 @@ static void memfd_try_replenish(unsigned int budget)
 	 * open forever in a long-lived child (canary / D-state-wedged),
 	 * pinning its tmpfs pages until the box OOMs.  Keep a per-child ring
 	 * of the memfds WE created and close the one that ages out before
-	 * reusing its slot.  32 > live_fds's 16 slots, so the fd we close is
-	 * already long gone from live_fds and no consumer still holds it.
-	 * Per-child via fork-COW (replenish runs child-side only; the parent
-	 * never populates this, so created_head starts 0 in every child and
-	 * the head >= size guard never closes an unwritten slot -- avoiding a
-	 * close(0) on the zero-initialised array).  NOTE: this reclaims pages
-	 * only for memfds not still mmap'd; an mmap'd memfd's pages are held
-	 * by the VMA (OBJ_MMAP_FILE) until munmap.
+	 * reusing its slot.  MAX_OWNED_FDS exceeds CHILD_FD_RING_SIZE, so the
+	 * fd we close is already long gone from live_fds and no consumer
+	 * still holds it.  Per-child via fork-COW (replenish runs child-side
+	 * only; the parent never populates this, so every child starts with
+	 * an empty ring).
+	 * NOTE: this reclaims pages only for memfds not still mmap'd; an
+	 * mmap'd memfd's pages are held by the VMA (OBJ_MMAP_FILE) until
+	 * munmap.
 	 */
-	static int created_fds[32];
-	static unsigned int created_head;
+	static struct owned_fd_ring created_fds;
 
 	if (child == NULL)
 		return;
@@ -239,10 +239,7 @@ static void memfd_try_replenish(unsigned int budget)
 		if (flags[idx] & MFD_ALLOW_SEALING)
 			arm_memfd(fd);
 
-		if (created_head >= ARRAY_SIZE(created_fds))
-			close(created_fds[created_head % ARRAY_SIZE(created_fds)]);
-		created_fds[created_head % ARRAY_SIZE(created_fds)] = fd;
-		created_head++;
+		owned_fd_ring_record(&created_fds, fd);
 
 		child_fd_ring_push(&child->live_fds, fd);
 	}
