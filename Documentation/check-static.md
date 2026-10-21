@@ -10,8 +10,8 @@ Trinity's fuzzer binary cannot safely run on developer hosts; it only
 runs on an isolated fuzz machine.  Architectural invariants that would
 normally surface as a runtime assertion failure therefore have to be
 caught earlier.  `check-static` is where that catching happens, and no
-check in it executes the binary; the one fixture that does is the
-opt-in `make check-runtime` (see below).
+check in it executes the binary (`no-trinity-exec` enforces that); the
+one fixture that does is the opt-in `make check-runtime` (see below).
 
 ## Running
 
@@ -45,8 +45,9 @@ orchestrator) to locate sources.  Conventions:
 - Keep runtime under one second; the whole battery should stay fast
   enough that contributors run it after every edit.
 - Never execute the trinity binary or a wrapper that does
-  (`scripts/run-trinity.sh`).  A fixture that has to run it belongs
-  behind `make check-runtime`, not in this directory.
+  (`scripts/run-trinity.sh`); `no-trinity-exec` fails the battery if a
+  check names one.  A fixture that has to run it belongs behind
+  `make check-runtime`, not in this directory.
 
 ## Runtime check (opt-in)
 
@@ -152,6 +153,24 @@ update this section to match `ls scripts/check-static/*.sh`.)
   timing must use `mono_ns()` / `CLOCK_MONOTONIC`.  Comment lines
   are stripped so the existing hazard note in
   `syscalls/timer/timer_settime.c` does not false-positive.
+- `no-trinity-exec`: nothing in the static battery may start trinity.
+  Neither `scripts/check-static.sh` nor any script in
+  `scripts/check-static/` may name the binary (any path whose last
+  component is `trinity`, as the launcher scripts spell it:
+  `$TRINITY_PATH/trinity`, `./trinity`, `$(pwd)/trinity`), a launcher
+  or process tool (`run-trinity.sh`, `killtrin.sh`, `trinity-gdb-*.sh`,
+  `test-multi.sh`, `test-vm.sh`, `rand-vm.sh`, `test-all-syscalls-*.sh`,
+  `find.sh`) or the opt-in runtime fixture and its make target
+  (`check-runtime*`), because the battery has to stay runnable on hosts
+  where the fuzzer must not run.  Whole-line comments are skipped, so a
+  gate can cite the fixture, and a path has to end in `trinity` to
+  match, so cache and tmp paths that merely contain the word do not.  A
+  binary found on `PATH`, or a path assembled elsewhere, is not caught:
+  this is a tripwire, not a sandbox.  The gate is exempt from its own
+  scan, since it has to spell the patterns.  Self-tests both directions:
+  planted binary, launcher and fixture references must fire; a planted
+  comment, a `lib-find.sh` helper and the cache, tmp and awk-comment
+  lines that contain the word must not.
 - `objpool-array-gen`: enforce the `array_generation` invariant on
   `struct objhead` in `include/objects.h` and `objects/registry*.c`
   -- (i) the field exists, (ii) `get_random_object()` routes its
