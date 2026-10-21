@@ -1,20 +1,28 @@
 /*
  * Parent environment for the PARENT_SRCS tests: storage for the parent
- * globals main/loop.c and main/reap-zombie.c read, and stand-ins for
- * the parent calls their reachable code makes.  Calls that act on one
- * slot land in fake_slot_log[]; the rest do nothing.
+ * globals main/loop.c, main/reap.c and main/reap-zombie.c read, and
+ * stand-ins for the parent calls their reachable code makes.  Calls
+ * that act on one slot land in fake_slot_log[], kill_pid() and output()
+ * keep what they were given, and the rest do nothing.
  */
 
+#include <signal.h>
+#include <stdarg.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "child.h"
-#include "debug.h"		/* classify_child_buglog, beacon_loss_* */
+#include "debug.h"		/* BUG, classify_child_buglog, beacon_loss_* */
 #include "fd-event.h"
+#include "kmsg-monitor.h"
 #include "main-internal.h"
 #include "main/reap-internal.h"
 #include "pids.h"
+#include "pre_crash_ring.h"
 #include "random.h"
 #include "shm.h"
 #include "stats_ring.h"
@@ -23,19 +31,20 @@
 #include "sysv-shm.h"
 #include "tables.h"
 #include "trinity.h"
+#include "utils.h"		/* kill_pid */
 
 #include "fake_parent.h"
 
-/* Owned by trinity-warmstart.c, dispatch/pids.c, utils/shm.c,
- * main/reap.c and stats/stats-ring.c in production. */
+/* Owned by trinity-warmstart.c, dispatch/pids.c, utils/shm.c and
+ * stats/stats-ring.c in production. */
 unsigned int max_children;
 pid_t *pids;
 struct childdata **children;
-int *pidstatfiles;
-time_t *spawn_times;
 struct stats_published *shm_published;
 
 struct fake_slot_log fake_slot_log[FAKE_NR_CHILDREN];
+pid_t fake_killed_pid;
+char fake_output_log[1024];
 
 static pid_t pid_slots[FAKE_NR_CHILDREN];
 static int pidstat_slots[FAKE_NR_CHILDREN];
@@ -76,6 +85,28 @@ void fake_parent_reset(void)
 	__atomic_store_n(&shm->spawn_no_more, false, __ATOMIC_RELAXED);
 
 	memset(fake_slot_log, 0, sizeof(fake_slot_log));
+	fake_killed_pid = 0;
+	fake_output_log[0] = '\0';
+}
+
+pid_t fake_hold_task(int stopsig)
+{
+	pid_t parent = getpid();
+	pid_t pid = fork();
+
+	if (pid < 0)
+		BUG("fake parent: fork failed");
+	if (pid == 0) {
+		prctl(PR_SET_PDEATHSIG, SIGKILL);
+		if (getppid() == parent) {
+			if (stopsig != 0)
+				raise(stopsig);
+			for (;;)
+				pause();
+		}
+		_exit(0);
+	}
+	return pid;
 }
 
 void clean_childdata(struct childdata *child)
@@ -113,9 +144,50 @@ void replace_child(int childno)
 	fake_slot_log[childno].replaced++;
 }
 
-void reap_child(struct childdata *child, int childno, bool child_dead)
+int find_childno(pid_t pid)
 {
-	(void)child; (void)childno; (void)child_dead;
+	unsigned int i;
+
+	for_each_child(i) {
+		if (pids[i] == pid)
+			return i;
+	}
+	return CHILD_NOT_FOUND;
+}
+
+void kill_pid(pid_t pid)
+{
+	fake_killed_pid = pid;
+}
+
+void canary_queue_on_crash(int childno, int signo)
+{
+	(void)childno; (void)signo;
+}
+
+void record_reap(int childno, int childstatus)
+{
+	(void)childno; (void)childstatus;
+}
+
+void dump_child_fault_beacon(struct childdata *child)
+{
+	(void)child;
+}
+
+void pre_crash_ring_reset(struct pre_crash_ring *ring)
+{
+	(void)ring;
+}
+
+void inode_spewer_reap(pid_t pid)
+{
+	(void)pid;
+}
+
+void kmsg_monitor_note_reaped(pid_t pid, int status)
+{
+	(void)pid; (void)status;
 }
 
 struct syscallentry *get_syscall_entry(unsigned int calln, bool do32)
@@ -142,7 +214,19 @@ void reseed(void)
 {
 }
 
+void debugf(const char *fmt, ...)
+{
+	(void)fmt;
+}
+
 void output(int level, const char *fmt, ...)
 {
-	(void)level; (void)fmt;
+	size_t used = strlen(fake_output_log);
+	va_list args;
+
+	(void)level;
+	va_start(args, fmt);
+	vsnprintf(fake_output_log + used, sizeof(fake_output_log) - used,
+		  fmt, args);
+	va_end(args);
 }

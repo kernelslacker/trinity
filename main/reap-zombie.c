@@ -20,13 +20,13 @@
 #include "reap-internal.h"
 
 /*
- * Parent-local tracking of slots whose former occupant is in the kernel
- * as an unkillable D-state task.  We have already cleared the pid slot
- * (via reap_child), but the kernel may still wake the task to finish its
- * syscall and let it write back into our shared childdata.  If we hand
- * the slot to a freshly-forked replacement child before the kernel has
- * fully torn the zombie down, those late writes corrupt fields the new
- * child owns (tp, fd_event_ring head/tail, etc.).
+ * Parent-local tracking of slots whose former occupant the kernel has
+ * not released yet: an unkillable D-state task, or a stopped child.  We
+ * have already cleared the pid slot (via reap_child), but the kernel may
+ * still run the task and let it write back into our shared childdata.
+ * If we hand the slot to a freshly-forked replacement child before the
+ * kernel has fully torn the zombie down, those late writes corrupt
+ * fields the new child owns (tp, fd_event_ring head/tail, etc.).
  *
  * One observed corruption case traces back to exactly this race:
  * fd_event_ring contents containing a non-canonical pointer
@@ -82,14 +82,16 @@ static inline unsigned int zombie_quarantine_threshold(void)
 }
 
 /*
- * Move a slot into zombie-pending state.  The child is unkillable
- * (D-state) and we have given up trying to make it die, but the kernel
- * still owns the task struct and may run it again.  Clear the slot so
- * stats stay sensible, but do NOT spawn a replacement: we have to wait
- * until waitpid confirms the kernel released the task, otherwise the
- * zombie's last writes will land in the replacement child's childdata.
+ * Move a slot into zombie-pending state.  The kernel still owns the
+ * task struct and may run it again.  @reason goes into the log line:
+ * an unkillable (D-state) task the watchdog or the shutdown wait gave
+ * up on is a wedge, a stopped child is not, and triage has to be able
+ * to tell them apart.  Clear the slot so stats stay sensible, but do
+ * NOT spawn a replacement: we have to wait until waitpid confirms the
+ * kernel released the task, otherwise the zombie's last writes will
+ * land in the replacement child's childdata.
  */
-void register_zombie_slot(int childno, pid_t pid)
+void register_zombie_slot(int childno, pid_t pid, const char *reason)
 {
 	struct timespec now;
 	pid_t wpid;
@@ -113,7 +115,7 @@ void register_zombie_slot(int childno, pid_t pid)
 	 * us reaching this function.  A non-blocking waitpid here
 	 * tells us if the task is already gone — if so, skip the whole
 	 * deferral machinery and just reap+replace immediately and
-	 * silently.  Saves the unkillable-log + stack/syscall dump +
+	 * silently.  Saves the deferral log + stack/syscall dump +
 	 * zombie_pids[] bookkeeping that would otherwise fire and then
 	 * unwind on the very next process_zombie_pending() pass. */
 	wpid = waitpid_eintr(pid, NULL, WNOHANG);
@@ -139,10 +141,10 @@ void register_zombie_slot(int childno, pid_t pid)
 		entry = get_syscall_entry(nr, do32);
 		name = (entry != NULL) ? entry->name : "?";
 
-		output(0, "child %d (pid %u) unkillable in nr=%u (%s)%s, "
-			"deferring slot reuse until kernel releases the "
-			"D-state task.\n",
-			childno, pid, nr, name, do32 ? " (32bit)" : "");
+		output(0, "child %d (pid %u) %s in nr=%u (%s)%s, "
+			"deferring slot reuse until the kernel releases "
+			"the task.\n",
+			childno, pid, reason, nr, name, do32 ? " (32bit)" : "");
 	}
 
 	/* /proc/$pid/stack and /proc/$pid/syscall reads can block for up

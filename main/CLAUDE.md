@@ -17,7 +17,7 @@ repeatedly calls `main_loop()`; none of this fuzzes anything itself.
 | main/reap.c | Reap core: `reap_child()`, `reap_dead_kids()` `waitpid(-1)` drain, `kill_all_kids()`, `get_pid_state()`, signal-status dispatch (`handle_children()`) |
 | main/reap-watchdog.c | Stuck-child watchdog: `is_child_making_progress()`, SIGKILL escalation, wedge accounting, `stall_genocide()`, `check_children_progressing()` |
 | main/reap-dstate.c | Bounded `/proc` readers for D-state forensics: wchan/stack/syscall/fdinfo dumps, epoll/select fd topology, `dstate_diag_budget_take()` diagnostic budget |
-| main/reap-zombie.c | Deferred D-state slot lifecycle: `register_zombie_slot()`, `process_zombie_pending()`, `find_free_childno()`, quarantine accounting |
+| main/reap-zombie.c | Deferred slot reuse until the kernel releases a D-state or stopped child: `register_zombie_slot()`, `process_zombie_pending()`, `find_free_childno()`, quarantine accounting |
 | main/reap-fastdie.c | Fork-die-respawn busy-loop detector: `record_reap()` ring, `reap_entry_is_fast_die()`, `bail_fast_die_loop()` |
 | main/reap-corruption.c | `shm_is_corrupt()`: op-count monotonicity, `shm_published` mirror page and pid sanity checks |
 | main/spawn.c | `fork_children()`/`spawn_child()`: slot allocation, fork-failure backoff/bail, fork-pressure drain, forensic snapshots, final cross-run state save |
@@ -73,13 +73,15 @@ API surface.
 - **Two-tier dead-slot handling**: a normally-exiting/signaled child goes
   through `reap_child()` immediately (clears `pids[i]`, decrements
   `running_childs`, tears down pre-crash ring / bug-backtrace / fault
-  beacon). A child stuck in kernel D-state cannot be reaped safely — its
-  task struct can still write into childdata after the slot looks empty —
-  so it's parked in `zombie_pids[]`/`zombie_since[]` via
-  `register_zombie_slot()` and only handed back to `find_free_childno()`
-  once a later `waitpid(WNOHANG)` in `process_zombie_pending()` confirms
-  the kernel actually released it (or `ZOMBIE_REAP_TIMEOUT_SEC`=300s
-  elapses and the slot is force-reused, logged loudly).
+  beacon). A child the kernel has not released yet — stuck in D-state,
+  or stopped — cannot be reaped safely: its task struct can still write
+  into childdata after the slot looks empty. So it's parked in
+  `zombie_pids[]`/`zombie_since[]` via `register_zombie_slot()` and only
+  handed back to `find_free_childno()` once a later `waitpid(WNOHANG)` in
+  `process_zombie_pending()` confirms the kernel actually released it.
+  If `ZOMBIE_REAP_TIMEOUT_SEC` (300s) runs out first, the slot is
+  quarantined instead: out of service for the rest of the run, and
+  counted toward the `EXIT_KERNEL_STUCK` threshold.
 - **Stuck-child escalation**: `is_child_making_progress()` compares
   `child->tp` (last progress timestamp) each tick; at 30s idle it dumps a
   D-state diagnostic snapshot (wchan/stack/fdinfo, epoll/select fd

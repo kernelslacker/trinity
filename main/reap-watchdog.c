@@ -629,7 +629,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	 * This check must come before the D-state early return below,
 	 * otherwise unkillable D-state children never get reaped. */
 	if (__atomic_load_n(&child->kill_count, __ATOMIC_RELAXED) >= 10) {
-		register_zombie_slot(childno, pid);
+		register_zombie_slot(childno, pid, "unkillable (D-state)");
 		return true;
 	}
 

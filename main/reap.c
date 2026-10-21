@@ -51,10 +51,11 @@ time_t *spawn_times;
 /*
  * reap_child: Remove all references to a running child.
  *
- * This can get called from two possible places.
- * 1. From reap_dead_kids if it finds reference to a pid that no longer exists.
- * 2. From handle_child() if it gets a SIGBUS or SIGSTOP from the child,
- *    or if it dies from natural causes.
+ * Called from:
+ * 1. reap_dead_kids() and kill_all_kids(), for a pid that no longer exists.
+ * 2. handle_child(), when the child exits.
+ * 3. register_zombie_slot(), which the reaper's signal and stop paths,
+ *    the watchdog and the shutdown wait use to retire a slot or park it.
  */
 void reap_child(struct childdata *child, int childno, bool child_dead)
 {
@@ -504,13 +505,15 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		 * top of this file).  register_zombie_slot's fast path reaps
 		 * + replaces immediately when the kernel has already released
 		 * the task, and its slow path defers replacement until
-		 * process_zombie_pending() observes the zombie gone. */
-		register_zombie_slot(childno, pid);
+		 * process_zombie_pending() observes the zombie gone.  The
+		 * reason claims only the stop: kill_pid() spares a
+		 * dontkillme child. */
+		register_zombie_slot(childno, pid, "stopped");
 		return;
 
 	case SIGALRM:
 		debugf("got a alarm signal from child %d (pid %d)\n", childno, pid);
-		register_zombie_slot(childno, pid);
+		register_zombie_slot(childno, pid, "killed by a signal");
 		return;
 	case SIGFPE:
 	case SIGSEGV:
@@ -537,7 +540,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		}
 		debugf("got a signal from child %d (pid %d) (%s)\n",
 				childno, pid, strsignal(WTERMSIG(childstatus)));
-		register_zombie_slot(childno, pid);
+		register_zombie_slot(childno, pid, "killed by a signal");
 		return;
 
 	default:
@@ -550,7 +553,7 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 		}
 
 		if (stop == false) {
-			register_zombie_slot(childno, pid);
+			register_zombie_slot(childno, pid, "killed by a signal");
 		} else {
 			if (pidstatfiles[childno] >= 0)
 				close(pidstatfiles[childno]);

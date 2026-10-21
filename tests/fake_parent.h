@@ -1,8 +1,8 @@
 /*
- * Fake parent fleet for the tests that link main/loop.c and
- * main/reap-zombie.c (PARENT_SRCS in tests/Makefile).  fake_parent.c
- * backs the parent globals those files read with FAKE_NR_CHILDREN
- * static slots, and logs the per-slot parent calls they make.
+ * Fake parent fleet for the tests that link main/loop.c, main/reap.c
+ * and main/reap-zombie.c (PARENT_SRCS in tests/Makefile).
+ * fake_parent.c backs the parent globals those files read with
+ * FAKE_NR_CHILDREN static slots, and logs the parent calls they make.
  */
 #pragma once
 
@@ -20,6 +20,18 @@ struct fake_slot_log {
 
 extern struct fake_slot_log fake_slot_log[FAKE_NR_CHILDREN];
 
+/* The pid kill_pid() was last asked to SIGKILL.  It sends nothing, so
+ * the task stays up until the test ends it. */
+extern pid_t fake_killed_pid;
+
+/* Everything output() was asked to print since the last reset. */
+extern char fake_output_log[];
+
 /* Start a run: every slot empty and in service, the zombie reaper's
- * state and counters cleared, the log zeroed. */
+ * state and counters cleared, the logs zeroed. */
 void fake_parent_reset(void);
+
+/* Fork a task that stays alive until killed and dies with the test,
+ * standing in for a child the kernel has not released.  A non-zero
+ * @stopsig makes it stop itself with that signal first. */
+pid_t fake_hold_task(int stopsig);

@@ -467,7 +467,7 @@ static void park_surviving_children(void)
 		output(0, "child %u (pid %u) did not exit within %us of "
 			"shutdown; parking it as zombie-pending.\n",
 			i, pid, SHUTDOWN_WAIT_SECS);
-		register_zombie_slot(i, pid);
+		register_zombie_slot(i, pid, "unkillable (D-state)");
 	}
 }
 

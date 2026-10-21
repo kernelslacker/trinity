@@ -7,7 +7,6 @@
  */
 
 #include <signal.h>
-#include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -22,31 +21,12 @@
 
 #include "fake_parent.h"
 
-/* A task that stays alive until killed, and dies with the test. */
-static pid_t hold_task(void)
-{
-	pid_t parent = getpid();
-	pid_t pid = fork();
-
-	if (pid < 0)
-		BUG("epoch reset: fork failed");
-	if (pid == 0) {
-		prctl(PR_SET_PDEATHSIG, SIGKILL);
-		if (getppid() == parent) {
-			for (;;)
-				pause();
-		}
-		_exit(0);
-	}
-	return pid;
-}
-
 /* Park @slot the way park_surviving_children() does at shutdown. */
 static pid_t park_slot(unsigned int slot)
 {
-	pid_t pid = hold_task();
+	pid_t pid = fake_hold_task(0);
 
-	register_zombie_slot(slot, pid);
+	register_zombie_slot(slot, pid, "unkillable (D-state)");
 	if (zombie_pids[slot] != pid)
 		BUG("epoch reset: register_zombie_slot did not park the slot");
 	return pid;
