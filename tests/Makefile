@@ -103,6 +103,7 @@ FAKE_SRCS	:= \
 	kmsg_trigger_selftest.c \
 	pidstat_probe_selftest.c \
 	exit_reason_test.c \
+	parent_stop_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

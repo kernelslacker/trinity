@@ -86,12 +86,13 @@ static bool reap_entry_is_fast_die(const struct reap_record *r)
 	 *   - EXIT_REACHED_COUNT: requested op count reached.
 	 *   - EXIT_EPOCH_DONE:    epoch budget consumed.
 	 *   - EXIT_SIGINT:        ^C from terminal -- parent panics
-	 *     EXIT_SIGINT in sigint_handler; child main loop panics
+	 *     EXIT_SIGINT in main_stop_handler; child main loop panics
 	 *     EXIT_SIGINT on ctrlc_pending.  Spin-bailout then propagates
 	 *     EXIT_SIGINT to any racing child.
-	 *   - EXIT_USER_REQUEST:  operator-driven shutdown path; no
-	 *     current caller, retained so future operator exits routed
-	 *     through shm->exit_reason are exempted the same way.
+	 *   - EXIT_USER_REQUEST:  operator stop -- parent panics it in
+	 *     main_stop_handler for an SI_USER SIGINT/SIGTERM from a uid
+	 *     no child can send as.  Spin-bailout propagates it the same
+	 *     way.
 	 */
 	if (exit_reason_is_clean((enum exit_reasons)r->exit_status) &&
 	    (do_specific_syscall || random_selection ||

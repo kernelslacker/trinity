@@ -6,7 +6,7 @@ The layer that decides whether what just happened is a *finding* (a real kernel 
 
 | File | Lines | Role |
 |---|---|---|
-| signals-policy.c | 338 | Signal install/mask policy — `mask_signals_child()` and `setup_main_signals()`, watchdog handlers (SIGALRM/SIGXCPU), catch-all `sighandler`. |
+| signals-policy.c | 338 | Signal install/mask policy — `mask_signals_child()` and `setup_main_signals()`, watchdog handlers (SIGALRM/SIGXCPU), catch-all `sighandler`, the parent's SIGINT/SIGTERM stop handler. |
 | signals-fault-handler.c | 676 | Child and main fault handlers — the M6 sigsetjmp site, `child_fault_handler()`, `main_fault_handler()`, beacon stamp, buglog redirect, guard-page attribution. |
 | signals-precrash.c | 257 | Pre-crash capture — glibc `__abort_msg` capture, per-child stderr memfd, `open_buglog_and_drain_stderr()`. |
 | signals-async-safe.c | 187 | Async-safe utilities — `write_siginfo_safely()`, `write_backtrace_raw_pcs()`, `fault_beacon_extract_{ip,sp}()`. |
@@ -21,6 +21,7 @@ The layer that decides whether what just happened is a *finding* (a real kernel 
 
 ## Key invariants
 - **async-signal-safe handlers** — signal-handler bodies in `signals-fault-handler.c` and `signals-policy.c` may only call async-signal-safe libc or the trinity-internal `sigsafe_*` helpers (gated by `scripts/check-static/signal-handler-async-unsafe.sh`, which discovers handlers from `signals-policy.c` and checks bodies across all `signals-*.c` files).
+- **parent stop signals** — the parent stops only for a kernel-generated SIGINT (ctrl-c) or an `SI_USER` SIGINT/SIGTERM whose `si_uid` no child can hold (`parent_stop_reason()`); every other stop signal is ignored as fuzz noise, and a stop never relabels a failure shutdown as clean (a child's own `exit_reason` writes still can). See Documentation/signals.md.
 - **SIGALRM/SIGXCPU without SA_RESTART** — deliberately no SA_RESTART so a blocking syscall is interrupted rather than restarted; callers must not use bare `waitpid()` (gated by `no-bare-waitpid.sh`).
 - **taint is ground truth** — a flipped kernel taint bit means the kernel went sideways; that's a finding regardless of the child's own signal disposition.
 - **finding vs noise** — the signal-safelist plus the defense counters separate expected fuzz side-effects (guard-catches, rejected bad-frees) from real faults; only the latter become crash reports.

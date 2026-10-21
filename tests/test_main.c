@@ -32,6 +32,7 @@ void struct_field_bounds_self_check(void);
 void kmsg_trigger_self_check(void);
 void pidstat_probe_self_check(void);
 void exit_reason_clean_self_check(void);
+void parent_stop_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -115,6 +116,11 @@ int main(int argc, char **argv)
 	printf("  exit_reason_clean_self_check ... ");
 	fflush(stdout);
 	exit_reason_clean_self_check();
+	printf("OK\n");
+
+	printf("  parent_stop_self_check ... ");
+	fflush(stdout);
+	parent_stop_self_check();
 	printf("OK\n");
 
 	return 0;

@@ -173,15 +173,19 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 	outputerr("BUG!: fleet halted — fuzzing stopped, attach gdb to pid %d (or any other live process) to inspect\n",
 		mypid());
 
-	/* Now spin indefinitely (but allow ctrl-c).  set_dontkillme keeps
-	 * the parent's progress watchdog from SIGKILL'ing us, so the
-	 * spinning child stays alive and ptrace-attachable. */
+	/* Now spin indefinitely (but allow an operator stop: ctrl-c or
+	 * EXIT_USER_REQUEST).  set_dontkillme keeps the parent's progress
+	 * watchdog from SIGKILL'ing us, so the spinning child stays alive
+	 * and ptrace-attachable. */
 
 	if (child != NULL)
 		set_dontkillme(child, true);
 
 	while (1) {
-		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_SIGINT) {
+		enum exit_reasons reason =
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+		if (reason == EXIT_SIGINT || reason == EXIT_USER_REQUEST) {
 			if (child != NULL)
 				set_dontkillme(child, false);
 			trinity_exit(EXIT_FAILURE);

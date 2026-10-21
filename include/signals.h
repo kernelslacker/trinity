@@ -4,6 +4,9 @@
 #include <signal.h>
 #include <unistd.h>
 
+#include "exit.h"
+#include "uid.h"
+
 extern volatile sig_atomic_t sigalrm_pending;
 extern volatile sig_atomic_t xcpu_pending;
 extern volatile sig_atomic_t ctrlc_pending;
@@ -129,6 +132,36 @@ void mask_signals_child(void);
 void setup_main_signals(void);
 void init_abort_msg_capture(void);
 void init_stderr_memfd(void);
+
+/*
+ * What a SIGINT or SIGTERM delivered to the parent asks for, or
+ * STILL_RUNNING to ignore it.  Children fuzz kill() and friends at the
+ * parent, so only two senders are believed:
+ *   - a kernel-generated SIGINT (si_code > 0), e.g. a terminal ctrl-c;
+ *   - SI_USER from a uid no child can send as.  The kernel stamps si_uid
+ *     itself and refuses a userspace siginfo with a non-negative si_code
+ *     aimed at another process, so neither field can be forged.
+ *     Children run as nobody under a root parent and as the parent's uid
+ *     otherwise; one inside a user namespace with no uid mapping can
+ *     arrive as overflowuid.
+ * The stop never relabels a shutdown already under way for a failure
+ * (@cur): that would exit 0 and run the warm-start saves on a shm the
+ * failure may have poisoned.
+ */
+static inline enum exit_reasons parent_stop_reason(int sig, const siginfo_t *info,
+						   enum exit_reasons cur)
+{
+	uid_t child_uid = (orig_uid == 0) ? nobody_uid : orig_uid;
+
+	if (cur != STILL_RUNNING && !exit_reason_is_clean(cur))
+		return STILL_RUNNING;
+	if (info->si_code > 0)
+		return sig == SIGINT ? EXIT_SIGINT : STILL_RUNNING;
+	if (info->si_code == SI_USER &&
+	    info->si_uid != child_uid && info->si_uid != overflowuid)
+		return EXIT_USER_REQUEST;
+	return STILL_RUNNING;
+}
 
 /*
  * The internal-watchdog handlers installed once by mask_signals_child().

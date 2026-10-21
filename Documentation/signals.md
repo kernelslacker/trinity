@@ -351,3 +351,56 @@ UNKNOWN (child just started, never picked) and AFTER (previous call
 returned, next not yet picked) both mean "no syscall in flight".  In
 those cases we emit `-1` rather than a misleading number that points
 at the *previous* call.
+
+## Stopping the parent: SIGINT and SIGTERM
+
+Children fuzz `kill()`, `tgkill()`, `rt_sigqueueinfo()`,
+`pidfd_send_signal()` and friends, and `kill(-1, ...)` or a garbage pid
+reaches the parent, so the parent believes only two kinds of stop
+signal.  `parent_stop_reason()` (include/signals.h) decides;
+`main_stop_handler()` stamps the verdict through `panic()`.
+
+- A kernel-generated SIGINT (`si_code > 0`, e.g. a terminal ctrl-c)
+  stops the run with `EXIT_SIGINT`.  A same-uid child can still provoke
+  one: `F_SETOWN` to the parent plus `F_SETSIG` on an `O_ASYNC` fd makes
+  the kernel deliver SIGINT with a positive `POLL_*` `si_code`
+  (`send_sigio_to_task()` in fs/fcntl.c).
+- An `SI_USER` SIGINT or SIGTERM stops it with `EXIT_USER_REQUEST`
+  when `si_uid` is a uid no child can send as.  `SI_USER` is what
+  `kill(2)`, and `pidfd_send_signal(2)` on a process pidfd without a
+  siginfo, deliver: `kill(1)`, `timeout(1)` and systemd all arrive this
+  way.  The kernel fills in `si_uid` for these and refuses a userspace
+  siginfo with a non-negative `si_code` aimed at another process
+  (`si_code_reserved_to_kernel()` in kernel/signal.c), so a child cannot
+  forge one.  `SI_TKILL`, `SI_QUEUE` and the other negative codes are
+  ignored; the queued ones carry a sender-chosen `si_uid`.
+- The uids a child can send as: nobody when the parent runs as root
+  (child init calls `drop_privs()`), the parent's own uid otherwise,
+  and the overflow uid.  `pidfd_send_signal()` stamps `si_uid` in the
+  sender's user namespace before translating it into the parent's, so
+  a child inside a user namespace with no uid mapping arrives as
+  `/proc/sys/kernel/overflowuid`.
+
+Under a root parent no child can signal the parent at all:
+`kill_ok_by_cred()` wants a matching uid or `CAP_KILL` in the parent's
+user namespace.  The uid test is what keeps fuzzed signals out of a
+non-root run, and the cost is that a non-root run cannot be stopped by
+a signal from its own uid.  Stop one from root, or with ctrl-c on its
+terminal.  An operator whose uid is not mapped into the parent's user
+namespace also arrives as the overflow uid and is ignored.
+
+Only the parent acts on these.  A forked child keeps the parent's
+handler until `mask_signals_child()` replaces it, and the parent's own
+SIGTERM to a canary slot child carries a trusted uid in a root run, so
+the handler checks `getpid()` against `mainpid`.  `mypid()` would not
+do: `cached_pid` still holds the parent's pid until the child reaches
+`set_child_cache()`.
+
+A stop signal never relabels a shutdown already under way for a
+failure: `EXIT_SIGINT` or `EXIT_USER_REQUEST` there would exit 0 and
+run the end-of-run warm-start saves on a shm the failure may have
+poisoned.  A clean reason is still replaced, so a stop that lands while
+an epoch is winding down (`EXIT_EPOCH_DONE`) ends the run instead of
+letting the next epoch start.  Only the parent's stop paths check this:
+a child still writes `EXIT_SIGINT` on its own ctrl-c, and
+`EXIT_REACHED_COUNT` once the op count is reached, over any reason.

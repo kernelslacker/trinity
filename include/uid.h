@@ -12,3 +12,5 @@ extern gid_t orig_gid;
 
 extern uid_t nobody_uid;
 extern gid_t nobody_gid;
+
+extern uid_t overflowuid;

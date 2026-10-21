@@ -21,9 +21,11 @@ gid_t nobody_gid;
 
 /* Cached value of /proc/sys/kernel/overflowuid, read once at startup.
  * unshare() into a user namespace without a uid_map can flip getuid()
- * to this value; check_uid() compares against it every syscall.  If
- * the startup read fails we keep the historical 65534 fallback. */
-static uid_t overflowuid = 65534;
+ * to this value; check_uid() compares against it every syscall, and
+ * parent_stop_reason() treats a signal stamped with it as possibly a
+ * child's.  If the startup read fails we keep the historical 65534
+ * fallback. */
+uid_t overflowuid = 65534;
 
 void drop_privs(void)
 {
