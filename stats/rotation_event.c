@@ -89,8 +89,8 @@ void stats_rotation_event_relocate_in_child(void)
 
 	/* Best-effort: if the dup fails (soft RLIMIT_NOFILE not above the
 	 * base, no free slot at or above it), keep the low fd and let the
-	 * protected-fd registry catch attempts on it.  CLOEXEC keeps a
-	 * fuzzed execve in a grandchild from inheriting the sink. */
+	 * protected-fd registry catch attempts on it.  CLOEXEC again: a dup
+	 * does not inherit the original's close-on-exec flag. */
 	new_fd = fcntl(rotation_event_fd, F_DUPFD_CLOEXEC,
 		       (int) ROTATION_EVENT_FD_HIGH_BASE);
 	if (new_fd < 0)

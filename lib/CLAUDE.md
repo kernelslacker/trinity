@@ -15,7 +15,7 @@ state — this is a directory of convenience, not a subsystem.
 | spsc-ring.c | 129 | Lock-free single-producer/single-consumer ring buffer primitive: `spsc_ring_init/try_enqueue/drain/overwrite_enqueue`, acquire/release atomics, power-of-two slot count, caller owns storage |
 | numa.c | 84 | Parses `/sys/devices/system/node/online` cpulist syntax into a NUMA node pool; `init_numa_nodes()` / `random_numa_node()` for `ARG_NUMA_NODE` generation |
 | fd.c | 55 | `write_all()` / `read_all()`: EINTR-retrying full-buffer read/write loops shared by every on-disk persistence format |
-| jsonl.c | 64 | Dependency-free JSON-Lines sink (`jsonl_open`/`jsonl_write`): raw open/write/close only, no reliance on trinity's output/shm/logging so it can run before those are up |
+| jsonl.c | 65 | Dependency-free JSON-Lines sink (`jsonl_open`/`jsonl_write`): raw open/write/close only, no reliance on trinity's output/shm/logging so it can run before those are up |
 
 (cmsg_build.c and userns-bootstrap.c are the two largest by responsibility; userns-bootstrap.c is the highest-risk for correctness due to privilege semantics.)
 
@@ -41,7 +41,7 @@ state — this is a directory of convenience, not a subsystem.
 - **numa.c**: `trinity.c` calls `init_numa_nodes()` at startup; `args/gen_arg_scalar.c` calls `random_numa_node()` for `ARG_NUMA_NODE` generation.
 - **fd.c**: `write_all`/`read_all` shared by every on-disk persistence format — `random_syscall/chain-persist.c`, `persist/minicorpus-file.c`,
   `cmp_hints/persist.c`, `kcov/persist.c`.
-- **jsonl.c**: declared in `include/jsonl.h`; consumer is the diag-ring drain (per grep, currently only referenced from its own header — a narrow/early-stage integration point).
+- **jsonl.c**: declared in `include/jsonl.h`; its only caller is `stats/rotation_event.c`, which opens the sink before fork() and lets every child inherit it.
 
 ## Areas of attention
 

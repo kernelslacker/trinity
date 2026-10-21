@@ -23,7 +23,8 @@
 
 int jsonl_open(const char *path)
 {
-	return open(path, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
+	return open(path, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND | O_CLOEXEC,
+		    0644);
 }
 
 int jsonl_write(int fd, const char *json_line)

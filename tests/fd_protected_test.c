@@ -1,9 +1,10 @@
 /*
  * Self-check for the rotation-events sink fd, which the parent opens
- * and every child keeps, so a fuzzed syscall on its number would tear
- * the one file they all append to.  Runs the real
- * stats_rotation_event_*() entry points against the protected-fd
- * registry; the stderr memfd and taint fd are stubbed as not open.
+ * and every child keeps: a fuzzed syscall on its number would tear the
+ * one file they all append to, and an exec'd image must not inherit it.
+ * Runs the real stats_rotation_event_*() entry points against the
+ * protected-fd registry; its other inputs (stderr memfd, taint fd) are
+ * stubbed as not open.
  */
 
 #include <errno.h>
@@ -91,6 +92,10 @@ void fd_protected_self_check(void)
 	sink = stats_rotation_event_fd();
 	if (sink < 0)
 		BUG("fd protected: the rotation sink did not open");
+	/* The descriptor the parent opens is judged here; the child's move
+	 * makes its own. */
+	if (!(fcntl(sink, F_GETFD) & FD_CLOEXEC))
+		BUG("fd protected: the sink is not close-on-exec at open");
 	/* The parent keeps the number it opened: it fuzzes nothing, and a
 	 * high fd there would make every fork copy a 60k-slot fd table. */
 	if ((unsigned int)sink >= ROTATION_EVENT_FD_HIGH_BASE)
