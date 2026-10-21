@@ -1,6 +1,7 @@
 #pragma once
 
 #if __has_include(<netinet/sctp.h>)
+#include <netinet/in.h>
 #include <netinet/sctp.h>
 #endif
 
