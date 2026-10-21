@@ -287,8 +287,10 @@ finalize_and_exit(int ret, bool clean_run)
 	 * which finds those unreachable allocations and tkill()s the parent
 	 * with SIGABRT before reaper-of-children completes -- orphaning
 	 * surviving fuzz children that then burn CPU indefinitely.  Children
-	 * still go through their own _exit()/exit() paths, so LSAN coverage
-	 * of real leaks introduced by the fuzz path is unaffected.
+	 * never run the check either: they exit through _exit(), exit_group
+	 * or trinity_exit(), which calls _exit() outside the parent.  The
+	 * next run's sweep_dead_pid_dirs() reclaims the scratch dirs the
+	 * skipped atexit teardowns leave behind.
 	 */
 	_exit(ret);
 #else
