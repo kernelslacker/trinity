@@ -27,8 +27,8 @@
  * parent-held loop fd, unlink the backing image, rmdir the scratch
  * subtree.  Best-effort and idempotent throughout -- partial teardown
  * is harmless because the parent's private mount namespace is
- * destroyed with the process and the kernel auto-clears any lingering
- * loop binding on the last close.
+ * destroyed with the process and every loop is bound with
+ * LO_FLAGS_AUTOCLEAR, so the kernel unbinds it on the last close.
  *
  * btrfs/xfs/vfat scratch entries are deferred (a follow-up); the
  * pool layout has SCRATCH_BLOCK_MAX headroom so adding them later
@@ -224,9 +224,11 @@ static void scratch_entry_release(unsigned int idx)
 /*
  * Tear down every published entry (LIFO: leaves first, then trunk).
  * Idempotent against the partial-init path that already released a
- * slot.  No errors are surfaced -- atexit context, the kernel
- * destroys the mount namespace with the process and auto-clears
- * lingering loop bindings on the last fd close.
+ * slot.  No errors are surfaced -- atexit context, and anything this
+ * misses or never runs for (SIGKILL, an ASAN build's _exit) still
+ * unwinds: the mount namespace dies with its last process, and the
+ * LO_FLAGS_AUTOCLEAR set at bind time unbinds each loop on its last
+ * close.  Only the backing images and the scratch subtree stay behind.
  */
 static void scratch_block_atexit_cleanup(void)
 {
@@ -266,10 +268,11 @@ static void scratch_block_atexit_cleanup(void)
  *   1. create + ftruncate the backing image to a random power-of-two
  *      size in [4 MiB, 32 MiB];
  *   2. LOOP_CTL_GET_FREE to reserve a fresh loop number;
- *   3. open /dev/loop$N and bind the image with LOOP_CONFIGURE
- *      (LOOP_SET_FD fallback for older kernels);
+ *   3. open /dev/loop$N and bind the image with LOOP_CONFIGURE and
+ *      LO_FLAGS_AUTOCLEAR (LOOP_SET_FD + LOOP_SET_STATUS64 fallback
+ *      for older kernels);
  *   4. close the backing fd -- the kernel holds its own reference
- *      until LOOP_CLR_FD;
+ *      until the loop unbinds;
  *   5. fork mkfs.ext4 -F -q; on failure publish a loop-only slot
  *      (no mount, fs_type = "none") so block-fd consumers still get
  *      a vetted /dev/loopN to fuzz;
@@ -339,6 +342,11 @@ static bool scratch_make_loop(unsigned int idx, struct scratch_block_entry *out)
 
 	memset(&cfg, 0, sizeof(cfg));
 	cfg.fd = (uint32_t)img_fd;
+	/* AUTOCLEAR: the kernel unbinds on the device's last close, so a
+	 * parent that skips its atexit teardown (SIGKILL, an ASAN build's
+	 * _exit) doesn't leave the loop bound.  That makes the parent-held
+	 * loop_fd what keeps it bound: never close it before teardown. */
+	cfg.info.lo_flags = LO_FLAGS_AUTOCLEAR;
 	if (ioctl(loop_fd, LOOP_CONFIGURE, &cfg) < 0) {
 		/* LOOP_CONFIGURE landed in 5.8; LOOP_SET_FD has always
 		 * worked.  Fall back so older kernels still get a pool. */
@@ -351,6 +359,11 @@ static bool scratch_make_loop(unsigned int idx, struct scratch_block_entry *out)
 			(void)unlink(img_path);
 			return false;
 		}
+		/* LOOP_SET_FD binds with an all-zero loop_info64, so
+		 * applying cfg.info changes nothing but lo_flags. */
+		if (ioctl(loop_fd, LOOP_SET_STATUS64, &cfg.info) < 0)
+			output(0, "scratch_block: LOOP_SET_STATUS64 on %s failed: %s; loop stays bound if trinity is killed\n",
+			       dev_path, strerror(errno));
 	}
 
 	/* The kernel holds its own reference to the backing file via
