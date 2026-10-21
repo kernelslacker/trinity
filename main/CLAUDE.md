@@ -11,7 +11,7 @@ repeatedly calls `main_loop()`; none of this fuzzes anything itself.
 | File | Role |
 |---|---|
 | trinity.c | Process entry: `main()`, option/table setup, and the epoch loop that repeatedly calls `main_loop()`. Does not fuzz. |
-| trinity-warmstart.c | Startup/shutdown staging split out of `trinity.c`: `warm_start_all()`, `init_main_process()`/`init_main_early()`/`init_pre_fork()`, `trinity_tmpdir_abs()`, `persist_state_on_clean_exit()`, `run_oneshot_passes()` |
+| trinity-warmstart.c | Startup/shutdown staging split out of `trinity.c`: `warm_start_all()`, `init_main_process()`/`init_main_early()`/`init_pre_fork()`, `persist_state_on_clean_exit()`, `run_oneshot_passes()` |
 | params/ | CLI option parsing and the global tunables/flags the rest of the codebase reads (targeting, `--childop`, richness levers). Split by concern -- see the subdirectory breakdown below. |
 | main/loop.c | `main_loop()` driver: per-tick phase sequencing (drain → stop-checks → periodic surfaces → fork-replace), epoch reset (`reset_epoch_state`), `panic()` |
 | main/reap.c | Reap core: `reap_child()`, `reap_dead_kids()` `waitpid(-1)` drain, `kill_all_kids()`, `get_pid_state()`, signal-status dispatch (`handle_children()`) |

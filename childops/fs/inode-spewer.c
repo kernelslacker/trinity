@@ -36,6 +36,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "tmpdir.h"
 #include "trinity.h"
 #include "utils.h"
 

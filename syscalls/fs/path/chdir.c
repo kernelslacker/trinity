@@ -8,6 +8,7 @@
 #include "pathnames.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "tmpdir.h"
 #include "trinity.h"
 #include "utils.h"
 

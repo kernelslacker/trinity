@@ -24,7 +24,7 @@
 #include <fcntl.h>	/* O_WRONLY, O_CREAT, O_APPEND, O_CLOEXEC */
 #include <sys/mman.h>	/* memfd_create() */
 
-#include "trinity.h"	/* trinity_tmpdir_abs() */
+#include "tmpdir.h"	/* trinity_tmpdir_abs() */
 #include "signals.h"
 #include "signals-internal.h"
 

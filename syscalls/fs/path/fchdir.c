@@ -35,7 +35,7 @@
 #include "kernel/fcntl.h"
 #include "rnd.h"
 #include "sanitise.h"
-#include "trinity.h"
+#include "tmpdir.h"
 
 static void sanitise_fchdir(struct syscallrecord *rec)
 {

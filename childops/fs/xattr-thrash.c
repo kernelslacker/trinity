@@ -53,7 +53,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
-#include "trinity.h"
+#include "tmpdir.h"
 #include "utils.h"
 
 /* Number of trinity-testfile? files we open private fds onto.  Matches

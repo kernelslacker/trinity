@@ -16,6 +16,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "tmpdir.h"
 #include "trinity.h"
 #include "uid.h"
 #include "utils.h"

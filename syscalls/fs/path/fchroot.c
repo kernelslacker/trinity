@@ -47,7 +47,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
-#include "trinity.h"
+#include "tmpdir.h"
 #include "utils.h"
 
 /*

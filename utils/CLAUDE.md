@@ -42,6 +42,7 @@ cmp_hints/.
 | self_cgroup_fork.c | 114 | `self_cgroup_fork_into_workload()` — clone-into-cgroup of the children sub-cgroup |
 | self-cgroup-internal.h | 116 | Declarations private to the `self_cgroup_*.c` cluster |
 | persist-util.c | 107 | `persist_sweep_stale_tmp()`: sweeps orphaned `<path>.tmp.<pid>` staging files left by a killed writer, shared by minicorpus/cmp_hints/kcov-bitmap persistence |
+| tmpdir.c | 60 | trinity's tmp/ working directory: `change_tmp_dir()` moves the parent into it at startup, `trinity_tmpdir_abs()` returns its absolute path (`/tmp` when there is none) |
 | zmalloc.c | 64 | `__zmalloc()`/`__zmalloc_tracked()`: zeroing malloc wrapper with mlockall-retry-on-ENOMEM and brk-cache refresh tick |
 
 ## Key design decisions

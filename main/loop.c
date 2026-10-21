@@ -39,6 +39,7 @@
 #include "syscall_record.h"
 #include "tables.h"
 #include "taint.h"
+#include "tmpdir.h"
 #include "trinity.h"
 #include "uid.h"
 #include "utils.h"

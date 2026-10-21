@@ -28,6 +28,7 @@
 #include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
+#include "tmpdir.h"
 #include "trinity.h"
 #include "utils.h"
 #include "version.h"
