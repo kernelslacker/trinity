@@ -15,20 +15,21 @@
  */
 
 /* Parent-private per-childno arrays.  Allocated once in main_loop()
- * and reused across epochs.  reset_epoch_state() clears pidstatfiles[],
- * spawn_times[] and zombie_quarantined[] but never writes zombie_pids[]
- * or zombie_since[], so a zombie-pending slot stays parked into the next
- * epoch; process_zombie_pending() empties those when it retires or
- * quarantines a slot.  Live in parent address space, not in shm, so
- * child stray writes cannot scribble them. */
+ * and reused across epochs.  reset_epoch_state() clears pidstatfiles[]
+ * and spawn_times[] but never writes the zombie_* arrays, so a
+ * zombie-pending or quarantined slot stays parked into the next epoch;
+ * process_zombie_pending() empties zombie_pids[]/zombie_since[] when it
+ * retires or quarantines a slot.  Live in parent address space, not in
+ * shm, so child stray writes cannot scribble them. */
 extern int *pidstatfiles;
 extern pid_t *zombie_pids;
 extern time_t *zombie_since;
 extern bool *zombie_quarantined;
 extern time_t *spawn_times;
-/* Number of non-quarantined slots available for forking this epoch. */
+/* Number of non-quarantined slots available for forking. */
 extern unsigned int live_child_slots;
-/* Count quarantined slots in [lo, hi) — for per-lane pool-size adjustments. */
+/* Count quarantined slots in [lo, hi) — for live_child_slots and the
+ * per-lane pool sizes. */
 unsigned int count_quarantined_in_range(unsigned int lo, unsigned int hi);
 
 /* Updated by check_children_progressing(), read by print_stats. */

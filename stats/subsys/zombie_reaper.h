@@ -21,8 +21,9 @@ struct zombie_reaper_stats {
 	 * kernel did not release the D-state task within
 	 * ZOMBIE_REAP_TIMEOUT_SEC.  These are never recycled; the fleet
 	 * shrinks by one per quarantined slot for the rest of the run.
-	 * When this counter reaches ZOMBIE_QUARANTINE_FATAL_THRESHOLD
-	 * the run is terminated with EXIT_KERNEL_STUCK.
+	 * Once zombie_quarantine_threshold() slots are quarantined the
+	 * run stops with EXIT_KERNEL_STUCK; reap-zombie.c counts them in
+	 * parent memory, not from this shm copy.
 	 */
 	unsigned long quarantined;
 };

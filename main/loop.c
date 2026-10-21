@@ -763,15 +763,16 @@ void reset_epoch_state(void)
 	for_each_child(i) {
 		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
 
-		/* A zombie-pending slot stays parked, with its zombie_pids[]
-		 * entry, for process_zombie_pending() to retire next epoch.
-		 * Nothing at the epoch boundary proves its task is gone, so
-		 * the task may still write the childdata, and the deferred
-		 * bug-log classification and SysV drains read it once the
-		 * task is reaped. */
+		/* A parked slot stays parked: nothing at the epoch boundary
+		 * proves its task is gone, so the task may still write the
+		 * childdata.  A zombie-pending slot keeps its zombie_pids[]
+		 * entry for process_zombie_pending() to retire next epoch, and
+		 * the deferred bug-log classification and SysV drains read the
+		 * childdata once the task is reaped.  A quarantined slot stays
+		 * out of service for the run. */
 		if (zombie_pids[i] != EMPTY_PIDSLOT) {
 			pending++;
-		} else {
+		} else if (!zombie_quarantined[i]) {
 			clean_childdata(children[i]);
 			fd_event_ring_init(children[i]->fd_event_ring);
 		}
@@ -783,7 +784,6 @@ void reset_epoch_state(void)
 			close(pidstatfiles[i]);
 			pidstatfiles[i] = -1;
 		}
-		zombie_quarantined[i] = false;
 		spawn_times[i] = 0;
 	}
 
@@ -794,9 +794,9 @@ void reset_epoch_state(void)
 	__atomic_store_n(&shm->stats.zombie_reaper.slots_pending, pending,
 			 __ATOMIC_RELAXED);
 
-	/* Per-epoch live slot count: zombie_quarantined[] was just cleared
-	 * above, so all slots are back in service for the new epoch. */
-	live_child_slots = max_children;
+	/* Quarantined slots stay out of service for the rest of the run. */
+	live_child_slots = max_children -
+		count_quarantined_in_range(0, max_children);
 
 	reseed();
 }
