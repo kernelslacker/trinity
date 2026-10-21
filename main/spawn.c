@@ -726,10 +726,17 @@ void fork_children(void)
 		 * main loop for N seconds, blocking reap of children that
 		 * are dying in the same pressure window.  No-op in the
 		 * common no-pressure path -- the loop just spins back to
-		 * the running_childs < max_children check and exits when
-		 * the pool is full.  main_loop's existing under-target
-		 * branch will re-enter fork_children on the next tick. */
-		if (fork_throttle_us > 0)
+		 * the running_childs < live_child_slots check and exits
+		 * when the pool is full.  main_loop's existing
+		 * under-target branch will re-enter fork_children on the
+		 * next tick.  Yield only while a fillable slot remains,
+		 * which keeps that branch open for the next call.  Once
+		 * none does, a parked slot alone holds it open only until
+		 * the next tick's zombie pass refills or quarantines the
+		 * slot, so carry on instead: the next pass leaves through
+		 * the loop exit or the parked-slot return, and both open
+		 * the startup barrier. */
+		if (fork_throttle_us > 0 && find_free_childno() != CHILD_NOT_FOUND)
 			return;
 	}
 	__atomic_store_n(&shm->ready, true, __ATOMIC_RELEASE);
