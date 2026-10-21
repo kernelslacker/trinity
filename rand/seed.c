@@ -157,7 +157,7 @@ void reseed(void)
 {
 	if (getpid() != mainpid) {
 		outputerr("Reseeding should only happen from parent!\n");
-		exit(EXIT_FAILURE);
+		trinity_exit(EXIT_FAILURE);
 	}
 
 	/* We are reseeding. */

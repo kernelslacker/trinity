@@ -38,6 +38,7 @@ void fd_protected_self_check(void);
 void owned_fd_ring_self_check(void);
 void fd_replenish_self_check(void);
 void epoch_reset_self_check(void);
+void drop_privs_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -151,6 +152,11 @@ int main(int argc, char **argv)
 	printf("  epoch_reset_self_check ... ");
 	fflush(stdout);
 	epoch_reset_self_check();
+	printf("OK\n");
+
+	printf("  drop_privs_self_check ... ");
+	fflush(stdout);
+	drop_privs_self_check();
 	printf("OK\n");
 
 	return 0;

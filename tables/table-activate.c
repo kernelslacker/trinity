@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "params.h"
+#include "pids.h"
 #include "shm.h"
 #include "syscall.h"
 #include "tables.h"
@@ -55,7 +56,7 @@ static void assert_pool_partition(unsigned int nr_active,
 		output(0, "[tables] pool-partition drift: flat=%u cheap=%u exp=%u (sum=%u)\n",
 		       nr_active, nr_active_cheap, nr_active_exp,
 		       nr_active_cheap + nr_active_exp);
-		exit(EXIT_FAILURE);
+		trinity_exit(EXIT_FAILURE);
 	}
 }
 

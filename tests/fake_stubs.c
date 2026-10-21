@@ -53,7 +53,6 @@
 #include "debug.h"
 #include "minicorpus.h"
 #include "struct_catalog.h"
-#include "uid.h"
 
 /*
  * mainpid, outputerr, alloc_shared: minimum needed to link
@@ -69,14 +68,6 @@
  * zeroed by the kernel.
  */
 pid_t mainpid;
-
-/*
- * orig_uid, nobody_uid, overflowuid: owned by utils/uid.c in production.
- * parent_stop_test.c sets them per case to model root and non-root runs.
- */
-uid_t orig_uid;
-uid_t nobody_uid;
-uid_t overflowuid;
 
 /* Prototypes for the fakes below.  The production headers that
  * declare these (trinity.h, utils-mem.h) drag in shm/state includes

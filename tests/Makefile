@@ -97,14 +97,16 @@ REAL_SRCS	:= \
 	$(TOP)/fds/fds-registry.c
 
 # Parent TUs, linked for reset_epoch_state(), the zombie reaper and the
-# rotation-events sink.  They also pull in parent functions the tests
-# never call (main_loop() reaches most of the parent), so each function
-# gets its own section and --gc-sections drops the unreached ones.
-# fake_parent.c covers the rest.
+# rotation-events sink, plus utils/uid.c for drop_privs().  They also
+# pull in parent functions the tests never call (main_loop() reaches
+# most of the parent), so each function gets its own section and
+# --gc-sections drops the unreached ones.  fake_parent.c covers the
+# rest.
 PARENT_SRCS	:= \
 	$(TOP)/main/loop.c \
 	$(TOP)/main/reap-zombie.c \
-	$(TOP)/stats/rotation_event.c
+	$(TOP)/stats/rotation_event.c \
+	$(TOP)/utils/uid.c
 LDFLAGS		+= -Wl,--gc-sections
 
 FAKE_SRCS	:= \
@@ -127,6 +129,7 @@ FAKE_SRCS	:= \
 	owned_fd_ring_test.c \
 	fake_fds.c \
 	fd_replenish_test.c \
+	drop_privs_test.c \
 	fake_parent.c \
 	epoch_reset_test.c \
 	test_main.c

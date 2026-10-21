@@ -188,7 +188,7 @@ void * __alloc_shared(size_t size, bool is_pool)
 	}
 	if (ret == MAP_FAILED) {
 		outputerr("mmap %zu failure\n", size);
-		exit(EXIT_FAILURE);
+		trinity_exit(EXIT_FAILURE);
 	}
 	/* poison with independently-random bytes to expose uninitialized reads. */
 	{
@@ -292,7 +292,7 @@ void * alloc_shared(size_t size)
 	ret = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
 	if (ret == MAP_FAILED) {
 		outputerr("mmap %zu failure\n", size);
-		exit(EXIT_FAILURE);
+		trinity_exit(EXIT_FAILURE);
 	}
 	/* poison with independently-random bytes to expose uninitialized reads. */
 	{
