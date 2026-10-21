@@ -37,7 +37,9 @@
  * Deliberately inherited across fork(): unlike stats_timeseries_fp
  * (parent-only writer, dropped in children), the rotation-event writer
  * is the CAS-winning fuzz child.  No drop-in-child helper is provided
- * for this reason -- see include/rotation_event.h.
+ * for this reason -- see include/rotation_event.h.  A child can still
+ * reach the number with a fuzzed close_range/dup2/ftruncate/write, so
+ * the protected-fd registry names it via stats_rotation_event_fd().
  */
 static int rotation_event_fd = -1;
 
@@ -66,6 +68,11 @@ void stats_rotation_event_open(void)
 			  path, strerror(errno));
 		return;
 	}
+}
+
+int stats_rotation_event_fd(void)
+{
+	return rotation_event_fd;
 }
 
 void stats_rotation_event_close(void)

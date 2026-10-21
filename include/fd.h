@@ -227,11 +227,16 @@ int get_typed_fd(enum argtype type);
  *     the per-pid bug log writes via fd 2 and reads from the memfd,
  *     so either being clobbered before the handler runs loses the
  *     pre-crash explanation.
+ *   - the rotation-events JSONL sink (stats_rotation_event_fd(), see
+ *     rotation_event.h): opened by the parent and kept by every child
+ *     so the CAS-winning child can write its record, which makes it one
+ *     file description the whole fleet shares.  A fuzz-induced write /
+ *     ftruncate over its number tears the stream for every child.
  *
  * Parent-context callers (this_child() == NULL) still get STDERR_FILENO
- * protected -- the constant is process-wide -- but neither the kcov
- * slots nor the memfd are live in the parent, so those checks naturally
- * fall through.
+ * and the rotation sink protected -- both are process-wide -- but
+ * neither the kcov slots nor the memfd are live in the parent, so those
+ * checks naturally fall through.
  */
 bool fd_is_protected(int fd);
 

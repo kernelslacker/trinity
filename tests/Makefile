@@ -89,15 +89,19 @@ REAL_SRCS	:= \
 	$(TOP)/utils/shared_freelist.c \
 	$(TOP)/utils/shared_str_heap.c \
 	$(TOP)/utils/pidstat-probe.c \
-	$(TOP)/persist/deferred-free.c
+	$(TOP)/persist/deferred-free.c \
+	$(TOP)/fds/fds-protected.c \
+	$(TOP)/lib/jsonl.c
 
-# Parent TUs, linked for reset_epoch_state() and the zombie reaper.  They
-# also pull in parent functions the tests never call (main_loop() reaches
-# most of the parent), so each function gets its own section and
-# --gc-sections drops the unreached ones.  fake_parent.c covers the rest.
+# Parent TUs, linked for reset_epoch_state(), the zombie reaper and the
+# rotation-events sink.  They also pull in parent functions the tests
+# never call (main_loop() reaches most of the parent), so each function
+# gets its own section and --gc-sections drops the unreached ones.
+# fake_parent.c covers the rest.
 PARENT_SRCS	:= \
 	$(TOP)/main/loop.c \
-	$(TOP)/main/reap-zombie.c
+	$(TOP)/main/reap-zombie.c \
+	$(TOP)/stats/rotation_event.c
 LDFLAGS		+= -Wl,--gc-sections
 
 FAKE_SRCS	:= \
@@ -116,6 +120,7 @@ FAKE_SRCS	:= \
 	exit_reason_test.c \
 	parent_stop_test.c \
 	stop_file_test.c \
+	fd_protected_test.c \
 	fake_parent.c \
 	epoch_reset_test.c \
 	test_main.c

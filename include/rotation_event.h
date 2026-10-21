@@ -22,7 +22,9 @@
  * winning child is the writer, so the fd stays open across fork() and
  * every child inherits the same O_APPEND file description.  Children
  * do NOT drop the fd on fork; concurrent writers rely on the O_APPEND
- * writev() atomic-seek-to-end contract in lib/jsonl.c.
+ * writev() atomic-seek-to-end contract in lib/jsonl.c.  What keeps a
+ * fuzzed syscall off the shared description is the protected-fd
+ * registry, which names the fd through stats_rotation_event_fd().
  */
 
 #include <stdbool.h>
@@ -77,6 +79,15 @@ struct rotation_event {
  * is a no-op when the fd is < 0.
  */
 void stats_rotation_event_open(void);
+
+/*
+ * The sink's fd number in this process, or -1 when it is not open:
+ * --stats was off, the open failed, or this process latched the sink
+ * closed after a write error.  Consulted by fd_is_protected() and
+ * lowest_protected_fd_in_range() so a fuzzed close_range / dup2 /
+ * ftruncate / write cannot reach the file every child shares.
+ */
+int stats_rotation_event_fd(void);
 
 /*
  * Close the sink from the parent at shutdown.  Safe to call when open

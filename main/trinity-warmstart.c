@@ -506,7 +506,7 @@ void init_post_parse_io(void)
 	 * land next to each other.  Unlike the timeseries file the fd is
 	 * intentionally inherited across fork() and written by the CAS-
 	 * winning child of maybe_rotate_strategy(); no drop_in_child
-	 * counterpart is called. */
+	 * counterpart is called, fd_is_protected() shields it instead. */
 	stats_rotation_event_open();
 }
 

@@ -4,6 +4,7 @@
 #include "child.h"
 #include "fd.h"
 #include "pids.h"
+#include "rotation_event.h"
 #include "signals.h"
 #include "syscall.h"
 #include "taint.h"
@@ -17,7 +18,7 @@
  * to keep diagnostic and coverage fds out of the fuzz picker pool.
  * See the contract in include/fd.h.
  *
- * Four classes of fd live in this registry:
+ * Five classes of fd live in this registry:
  *
  *   - the calling child's kcov PC fd and cmp fd, opened in
  *     kcov_init_child and re-located above KCOV_FD_HIGH_BASE so the
@@ -69,6 +70,15 @@
  *     sparse size makes the bug-log drain materialise that range into
  *     the on-disk log on the next abort, swamping the host.
  *
+ *   - the rotation-events JSONL sink (stats_rotation_event_fd()).  The
+ *     parent opens it before fork and every child keeps it on purpose:
+ *     the child that wins the rotation CAS writes the window's record
+ *     through it.  Unlike the classes above it is therefore one O_APPEND
+ *     file description the whole fleet shares, so a fuzzed write or
+ *     ftruncate on its number tears the JSONL for every child, and a
+ *     close_range walk or a dup2 over it sends that child's records
+ *     nowhere or into an unrelated file.
+ *
  * Parent context (this_child() == NULL): STDERR_FILENO still matches
  * the constant check, but the parent never opens a kcov_child, a
  * stderr memfd, a per-child tainted_fd, or a per-child fail_nth_fd,
@@ -76,7 +86,8 @@
  * trinity_tainted_fd_cached() slot is
  * still consulted here; parent-side arg generation is rare but the
  * conservative answer (treat the taint fd as protected) is the right
- * one regardless.
+ * one regardless.  The rotation sink is the same in both contexts: the
+ * parent opens it and every child inherits the same number.
  *
  * The fd < 0 / hi < lo guards mirror the kernel-side validation order
  * the close-family syscalls themselves apply, so a sanitiser that
@@ -88,6 +99,7 @@ bool fd_is_protected(int fd)
 	struct childdata *child;
 	int memfd;
 	int taintfd;
+	int rotfd;
 
 	if (fd < 0)
 		return false;
@@ -98,6 +110,9 @@ bool fd_is_protected(int fd)
 		return true;
 	taintfd = trinity_tainted_fd_cached();
 	if (taintfd >= 0 && fd == taintfd)
+		return true;
+	rotfd = stats_rotation_event_fd();
+	if (rotfd >= 0 && fd == rotfd)
 		return true;
 	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	child = this_child();
@@ -132,6 +147,7 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 	struct childdata *child;
 	int memfd;
 	int taintfd;
+	int rotfd;
 	int lowest = -1;
 
 	if (hi < lo)
@@ -152,6 +168,12 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 	    (unsigned int) taintfd >= lo && (unsigned int) taintfd <= hi)
 		if (lowest < 0 || taintfd < lowest)
 			lowest = taintfd;
+
+	rotfd = stats_rotation_event_fd();
+	if (rotfd >= 0 &&
+	    (unsigned int) rotfd >= lo && (unsigned int) rotfd <= hi)
+		if (lowest < 0 || rotfd < lowest)
+			lowest = rotfd;
 
 	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	child = this_child();
