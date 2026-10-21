@@ -25,6 +25,7 @@
 #include "syscall-gate.h"
 #include "list.h"
 #include "objects.h"
+#include "owned-fd-ring.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -187,15 +188,12 @@ static void memfd_secret_try_replenish(unsigned int budget)
 	 * and removed from the kernel direct map, so the pinned pages are
 	 * unreclaimable.  Keep a per-child ring of the secretmem fds WE
 	 * created and close the one that ages out before reusing its slot.
-	 * 32 > live_fds's 16 slots, so the fd we close is already long gone
-	 * from live_fds and no consumer still holds it.  Per-child via
-	 * fork-COW (replenish runs child-side only; the parent never
-	 * populates this, so created_head starts 0 in every child and the
-	 * head >= size guard never closes an unwritten slot -- avoiding a
-	 * close(0) on the zero-initialised array).
+	 * MAX_OWNED_FDS exceeds CHILD_FD_RING_SIZE, so the fd we close is
+	 * already long gone from live_fds and no consumer still holds it.
+	 * Per-child via fork-COW (replenish runs child-side only; the parent
+	 * never populates this, so every child starts with an empty ring).
 	 */
-	static int created_fds[32];
-	static unsigned int created_head;
+	static struct owned_fd_ring created_fds;
 
 	if (child == NULL)
 		return;
@@ -209,10 +207,7 @@ static void memfd_secret_try_replenish(unsigned int budget)
 		if (fd < 0)
 			return;
 
-		if (created_head >= ARRAY_SIZE(created_fds))
-			close(created_fds[created_head % ARRAY_SIZE(created_fds)]);
-		created_fds[created_head % ARRAY_SIZE(created_fds)] = fd;
-		created_head++;
+		owned_fd_ring_record(&created_fds, fd);
 
 		child_fd_ring_push(&child->live_fds, fd);
 	}
