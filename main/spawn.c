@@ -634,6 +634,16 @@ void fork_children(void)
 					dump_childnos();
 					exit(EXIT_LOST_CHILD);
 				}
+			} else {
+				/* Every empty slot is parked, so every slot
+				 * that can take a child has one: open the
+				 * startup barrier here.  The store after the
+				 * loop is never reached while a parked slot
+				 * counts in live_child_slots, and the slot's
+				 * refill goes through replace_child(), not
+				 * this loop. */
+				__atomic_store_n(&shm->ready, true,
+						 __ATOMIC_RELEASE);
 			}
 			return;
 		}

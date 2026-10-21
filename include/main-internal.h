@@ -15,9 +15,12 @@
  */
 
 /* Parent-private per-childno arrays.  Allocated once in main_loop()
- * and reused across epochs (cleared in reset_epoch_state()).  Live in
- * parent address space, not in shm, so child stray writes cannot
- * scribble them. */
+ * and reused across epochs.  reset_epoch_state() clears pidstatfiles[],
+ * spawn_times[] and zombie_quarantined[] but never writes zombie_pids[]
+ * or zombie_since[], so a zombie-pending slot stays parked into the next
+ * epoch; process_zombie_pending() empties those when it retires or
+ * quarantines a slot.  Live in parent address space, not in shm, so
+ * child stray writes cannot scribble them. */
 extern int *pidstatfiles;
 extern pid_t *zombie_pids;
 extern time_t *zombie_since;

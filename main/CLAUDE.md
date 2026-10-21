@@ -134,6 +134,9 @@ API surface.
    each epoch as a forked child); `reset_epoch_state()` clears per-epoch
    counters while deliberately preserving coverage state (kcov bitmap,
    cmp_hints pool, minicorpus, bandit arm state) across epoch boundaries.
+   It also leaves a zombie-pending slot parked, childdata untouched, for
+   `process_zombie_pending()` to retire next epoch: the boundary proves
+   nothing about the slot's task.
 4. **`panic()` is a deferred, non-blocking stop signal** — it only stamps
    `shm->spawn_no_more`/`shm->exit_reason`; the actual unwind happens on
    the main_loop while-condition's next check, giving in-flight per-tick

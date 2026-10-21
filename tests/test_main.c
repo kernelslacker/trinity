@@ -34,6 +34,7 @@ void pidstat_probe_self_check(void);
 void exit_reason_clean_self_check(void);
 void parent_stop_self_check(void);
 void stop_file_self_check(void);
+void epoch_reset_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -127,6 +128,11 @@ int main(int argc, char **argv)
 	printf("  stop_file_self_check ... ");
 	fflush(stdout);
 	stop_file_self_check();
+	printf("OK\n");
+
+	printf("  epoch_reset_self_check ... ");
+	fflush(stdout);
+	epoch_reset_self_check();
 	printf("OK\n");
 
 	return 0;

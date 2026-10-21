@@ -11,7 +11,9 @@
 # does NOT reuse the top-level Makefile's OBJS -- that would drag the
 # whole trinity build in, defeating the point of a PURE-module test
 # seam.  New PURE modules migrate onto the test target one at a time
-# by adding them to REAL_SRCS below.
+# by adding them to REAL_SRCS below.  PARENT_SRCS is the exception: a
+# few non-PURE parent TUs, linked with --gc-sections so that only the
+# code a test reaches needs fakes (fake_parent.c).
 #
 # Object files and the linked binary are keyed by build flavor:
 #   normal -> build/          + test-bin
@@ -89,6 +91,15 @@ REAL_SRCS	:= \
 	$(TOP)/utils/pidstat-probe.c \
 	$(TOP)/persist/deferred-free.c
 
+# Parent TUs, linked for reset_epoch_state() and the zombie reaper.  They
+# also pull in parent functions the tests never call (main_loop() reaches
+# most of the parent), so each function gets its own section and
+# --gc-sections drops the unreached ones.  fake_parent.c covers the rest.
+PARENT_SRCS	:= \
+	$(TOP)/main/loop.c \
+	$(TOP)/main/reap-zombie.c
+LDFLAGS		+= -Wl,--gc-sections
+
 FAKE_SRCS	:= \
 	fake_rng.c \
 	fake_shm.c \
@@ -105,12 +116,15 @@ FAKE_SRCS	:= \
 	exit_reason_test.c \
 	parent_stop_test.c \
 	stop_file_test.c \
+	fake_parent.c \
+	epoch_reset_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
 REAL_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(REAL_SRCS))
+PARENT_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(PARENT_SRCS))
 FAKE_OBJS	:= $(patsubst %.c,$(BUILDDIR)/%.o,$(FAKE_SRCS))
 
 .PHONY: all test test-asan test-ndebug clean
@@ -127,8 +141,10 @@ test-asan:
 test-ndebug:
 	$(MAKE) NDEBUG=1
 
-$(TEST_BIN): $(REAL_OBJS) $(FAKE_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(FAKE_OBJS)
+$(TEST_BIN): $(REAL_OBJS) $(PARENT_OBJS) $(FAKE_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(PARENT_OBJS) $(FAKE_OBJS)
+
+$(PARENT_OBJS): CFLAGS += -ffunction-sections
 
 $(BUILDDIR)/real/%.o: $(TOP)/%.c
 	@mkdir -p $(dir $@)

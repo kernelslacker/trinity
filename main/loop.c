@@ -676,6 +676,7 @@ dont_wait:
  */
 void reset_epoch_state(void)
 {
+	unsigned long pending = 0;
 	unsigned int i;
 
 	__atomic_store_n(&shm->exit_reason, STILL_RUNNING, __ATOMIC_RELAXED);
@@ -761,8 +762,19 @@ void reset_epoch_state(void)
 	}
 	for_each_child(i) {
 		__atomic_store_n(&pids[i], EMPTY_PIDSLOT, __ATOMIC_RELAXED);
-		clean_childdata(children[i]);
-		fd_event_ring_init(children[i]->fd_event_ring);
+
+		/* A zombie-pending slot stays parked, with its zombie_pids[]
+		 * entry, for process_zombie_pending() to retire next epoch.
+		 * Nothing at the epoch boundary proves its task is gone, so
+		 * the task may still write the childdata, and the deferred
+		 * bug-log classification and SysV drains read it once the
+		 * task is reaped. */
+		if (zombie_pids[i] != EMPTY_PIDSLOT) {
+			pending++;
+		} else {
+			clean_childdata(children[i]);
+			fd_event_ring_init(children[i]->fd_event_ring);
+		}
 
 		/* Parent-local per-slot arrays are persistent across epochs
 		 * (allocated once in main_loop) -- clear the stale entries
@@ -771,18 +783,16 @@ void reset_epoch_state(void)
 			close(pidstatfiles[i]);
 			pidstatfiles[i] = -1;
 		}
-		zombie_pids[i] = EMPTY_PIDSLOT;
-		zombie_since[i] = 0;
 		zombie_quarantined[i] = false;
 		spawn_times[i] = 0;
 	}
 
-	/* zombie_pids[] is now EMPTY_PIDSLOT across the board; reset the
-	 * aggregate gauge in lockstep so process_zombie_pending's gauge != 0
-	 * fast-path actually sees zero and short-circuits.  Sibling counters
-	 * zombies_reaped / zombies_timed_out are cumulative-by-design and
-	 * correctly persist; only the live gauge needs the re-zero. */
-	__atomic_store_n(&shm->stats.zombie_reaper.slots_pending, 0, __ATOMIC_RELAXED);
+	/* Recount the gauge from zombie_pids[], the state it summarises,
+	 * rather than trust its shm copy: process_zombie_pending() skips
+	 * its walk while the gauge reads 0, so a stray child write could
+	 * otherwise strand the slots carried over above. */
+	__atomic_store_n(&shm->stats.zombie_reaper.slots_pending, pending,
+			 __ATOMIC_RELAXED);
 
 	/* Per-epoch live slot count: zombie_quarantined[] was just cleared
 	 * above, so all slots are back in service for the new epoch. */
