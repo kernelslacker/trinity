@@ -26,7 +26,7 @@ cmp_hints/.
 | utils.c | 287 | Misc: `sizeunit()`, `kill_pid()`, `sanitize_inherited_fds()`, `get_num_fds()`, `cached_online_cpus()` |
 | proc-status.c | 293 | `/proc/self/status` seq_file-safe reader (loops read() to EOF) plus field parsers (uint, uid/gid quad, hex sigmask, ns-last-uint) |
 | rlimit-safe.c | 246 | Per-resource "safe" (cur,max) pair dictionaries for fuzzing the rlimit family without self-DoS (RLIMIT_NICE encoding, RTPRIO range, etc.) |
-| shm.c | 513 | `create_shm()`/`init_shm()` orchestrator: shm sizing, sentinel stamping (netns_fd=-1, scratch_block=-1), phased init (debug/start-time, self-exe snapshot, strategy-rotation state, children[] + fd/stats ring allocation, mprotect(PROT_READ) lockdown, subsystem singleton bring-up) |
+| shm.c | 537 | `create_shm()`/`init_shm()` orchestrator: shm sizing, sentinel stamping (netns_fd=-1, scratch_block=-1), phased init (debug/start-time, self-exe snapshot, strategy-rotation state, children[] + fd/stats ring allocation with the ring-pointer canaries in parent-private heap, mprotect(PROT_READ) lockdown, subsystem singleton bring-up) |
 | post_snapshot.c | 135 | `range_readable_user()` (VMA-readability gate before deref) and safe struct-copy helpers used by field-scoped attribution and post handlers |
 | sysv-shm.c | 114 | SysV shared-memory object type: create/dump/destructor, integrates with `objects/` and shared-region tracking |
 | rlimits.c | 128 | Startup rlimit caps: raise RLIMIT_MEMLOCK to infinity (needs CAP_SYS_RESOURCE), cap NOFILE/NPROC/AS as OOM-cascade defense-in-depth |

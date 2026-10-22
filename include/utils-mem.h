@@ -107,7 +107,7 @@ void *alloc_shared_page_aligned(size_t inner_size, size_t *out_rounded_len)
 	__must_check;
 
 /*
- * Checked size = a * b for shared-allocation call sites with a variable
+ * Checked size = a * b for allocation call sites with a variable
  * count multiplier (max_children, files_in_index, syscall table size).
  * Returns true and writes the product when it fits in size_t; returns
  * false on overflow without touching *out.  Callers are expected to

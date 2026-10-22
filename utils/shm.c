@@ -260,7 +260,8 @@ static void init_shm_strategy_state(void)
  * children[] alloc (the parent-only mprotect(PROT_READ) at the
  * tail of init_shm runs on this exact length) and stashed in
  * init_shm_childptrslen so that mprotect can find it without a
- * third pass through shared_size_mul.  The for_each_child
+ * third pass through shared_size_mul.  children[] is shared memory;
+ * the two canaries are parent-private heap.  The for_each_child
  * population pass that fills all three arrays is the next phase;
  * this helper only carves the address space.
  */
@@ -291,6 +292,11 @@ static void init_shm_alloc_children(void)
 	/*
 	 * Allocate the canary array.  We store one pointer per child slot
 	 * and compare in fd_event_drain_all().
+	 *
+	 * Heap, not alloc_shared_pool(): a canary a child can reach is no more
+	 * trustworthy than the childdata pointer it checks.  Only the parent's
+	 * drains read it; a child inherits a COW copy it never uses, and
+	 * nothing it writes reaches the parent's.
 	 */
 	if (!shared_size_mul(max_children, sizeof(struct fd_event_ring *),
 			     &fd_event_ring_arr_bytes)) {
@@ -298,11 +304,12 @@ static void init_shm_alloc_children(void)
 			  max_children);
 		exit(EXIT_FAILURE);
 	}
-	expected_fd_event_rings = alloc_shared_pool(fd_event_ring_arr_bytes);
+	expected_fd_event_rings = zmalloc(fd_event_ring_arr_bytes);
 
 	/*
-	 * Same shape for the stats_ring canary -- one pointer per child slot,
-	 * compared in stats_ring_drain_all().
+	 * Same shape, and the same parent-private heap, for the stats_ring
+	 * canary -- one pointer per child slot, compared in
+	 * stats_ring_drain_all().
 	 */
 	{
 		size_t stats_ring_arr_bytes;
@@ -313,7 +320,7 @@ static void init_shm_alloc_children(void)
 				  max_children);
 			exit(EXIT_FAILURE);
 		}
-		expected_stats_rings = alloc_shared_pool(stats_ring_arr_bytes);
+		expected_stats_rings = zmalloc(stats_ring_arr_bytes);
 	}
 }
 
@@ -323,13 +330,13 @@ static void init_shm_alloc_children(void)
  * publish its pointer into children[], zero the embedded
  * syscallrecord, stamp child->num from the loop counter, then
  * carve out the two per-child shared rings (fd_event_ring,
- * stats_ring) and run each ring's init.  The fd_event_ring
- * address is also mirrored into the expected_fd_event_rings[]
- * canary so fd_event_drain_all() can spot a wild-write swap of
- * the in-childdata pointer.
+ * stats_ring) and run each ring's init.  Each ring's address is
+ * also recorded in the parent-private expected_fd_event_rings[] /
+ * expected_stats_rings[] canary so the drains can spot a wild-write
+ * swap of the in-childdata pointer.
  *
  * Runs after init_shm_alloc_children() (which carves children[]
- * and expected_fd_event_rings[]) and before the published-mirror
+ * and both canary arrays) and before the published-mirror
  * + mprotect tail phase that locks children[] PROT_READ.  Pulled
  * into its own helper so the orchestrator reads as a phase list;
  * no shared state with adjacent phases, signature collapses to

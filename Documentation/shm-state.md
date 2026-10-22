@@ -857,12 +857,14 @@ siblings.
   the per-child ring pointer can be detected.  `fd_event_drain_all()`
   compares the live pointer against this array; a mismatch means the
   pointer was overwritten after init, and we use the known-good value
-  to keep draining while logging the incident.
+  to keep draining while logging the incident.  The array itself is a
+  parent heap allocation filled before fork, not a shared pool: only
+  the parent reads it, and a child's writes land in its own COW copy.
 
 - `expected_stats_rings` -- canary copy of each child's `stats_ring`
-  pointer, same detection story as `expected_fd_event_rings`;
-  `stats_ring_drain_all()` compares the live pointer against this
-  array on drain.
+  pointer, same detection story and same parent-private array as
+  `expected_fd_event_rings`; `stats_ring_drain_all()` compares the
+  live pointer against this array on drain.
 
 ### `NEWNET_INFLIGHT_TICKET` bit encoding
 
