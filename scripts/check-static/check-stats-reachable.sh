@@ -460,8 +460,6 @@ ALLOWLIST_PATTERNS=(
 	'diag\.statmount_setup_fail'
 
 	# --- internal bookkeeping fields: not counters for external reports ---
-	# tracefs_fuzzer.ftrace_subset_skipped: declared as a forward-carved
-	#   slot for a future ftrace-subset dispatcher; no live producer.
 	# transition_edge.calls_at_window_start: per-strategy window-start
 	#   snapshot (atomic_store, not monotonic counter); internal bandit
 	#   bookkeeping, not an externally reportable metric.
@@ -473,7 +471,6 @@ ALLOWLIST_PATTERNS=(
 	#   continuation fix, so the __atomic_store_n filter correctly
 	#   excludes the line from the consumer-read set.  Internal bandit
 	#   window-delta bookkeeping; not an externally reportable metric.
-	'tracefs_fuzzer\.ftrace_subset_skipped'
 	'transition_edge\.calls_at_window_start'
 	'transition_edge\.calls_by_strategy'
 
