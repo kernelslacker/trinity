@@ -42,7 +42,7 @@ static void arena_stale_warn_ratelimited(const struct syscallentry *entry,
  * Telemetry-only -- callers bump a counter on STALE but do not coerce
  * the slot or skip the post handler.
  *
- * Ordering rationale (matches spec §3):
+ * Ordering rationale:
  *   1. is_corrupt_ptr_shape() -> UNKNOWN: defer to the existing shape
  *      gate; double-firing would double-count the structurally-broken
  *      class under both counters.
