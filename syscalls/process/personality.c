@@ -94,6 +94,9 @@ struct syscallentry syscall_personality = {
 	.group = GROUP_PROCESS,
 	.num_args = 1,
 	.argname = { [0] = "personality" },
+	/* sanitise_personality() writes the persona on every path without
+	 * reading it. */
+	.sanitiser_owned_mask = (1u << 0),
 	.sanitise = sanitise_personality,
 	.flags = REEXEC_SANITISE_OK,
 	.post = post_personality,
