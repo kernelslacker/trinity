@@ -455,6 +455,41 @@ static void selftest_identity_zombie(void)
 		BUG("pidstat identity: cannot reap the zombie");
 }
 
+/*
+ * A lock stamped while its owner's /proc read failed records 0 or
+ * PID_START_TIME_UNKNOWN, which no live start time equals.  There is no
+ * fingerprint to compare then, so a live holder must not read as a
+ * recycled pid: whether the task is still there decides, and a zombie is
+ * not.
+ */
+static const unsigned long long unrecorded_starts[] = {
+	0, PID_START_TIME_UNKNOWN,
+};
+
+static void selftest_identity_unrecorded_start(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(unrecorded_starts); i++) {
+		unsigned long long recorded = unrecorded_starts[i];
+		bool live_gone, zombie_gone, reaped_gone;
+		pid_t pid = fake_hold_task(0);
+
+		live_gone = pidstat_identity_gone(pid, recorded);
+		leave_zombie(pid);
+		zombie_gone = pidstat_identity_gone(pid, recorded);
+		if (waitpid_eintr(pid, NULL, 0) != pid)
+			BUG("pidstat identity: cannot reap the zombie");
+		reaped_gone = pidstat_identity_gone(pid, recorded);
+
+		if (live_gone || !zombie_gone || !reaped_gone) {
+			fprintf(stderr, "pidstat identity: recorded start time %#llx: gone while live %d, as a zombie %d, reaped %d\n",
+				recorded, live_gone, zombie_gone, reaped_gone);
+			BUG("pidstat identity: a holder with no usable start time was judged by it");
+		}
+	}
+}
+
 void pidstat_probe_self_check(void);
 void pidstat_probe_self_check(void)
 {
@@ -468,4 +503,5 @@ void pidstat_probe_self_check(void)
 	selftest_parse();
 	selftest_identity_live_recycled_gone();
 	selftest_identity_zombie();
+	selftest_identity_unrecorded_start();
 }

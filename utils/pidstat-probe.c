@@ -147,15 +147,24 @@ struct pidstat_fields pidstat_parse(const char *buf)
  * zombie or dead (state Z or X).  A zombie still answers kill() and still
  * reads with the start_time it ran with, but it never runs again to
  * release anything, and the parent that spins in lock() on it cannot reap
- * it.  When /proc cannot say (a full fd table, ENOMEM) the pid number
- * decides: ESRCH from kill(pid, 0) means no task holds it, so it is
- * neither the live holder nor a recycled pid.  The parent has to get that
- * answer, because lock() gives it no other way out of the spin on a
- * holder that is already reaped.  Returning false means the same holder
- * is still alive, or may be, and the caller must not release the lock.
+ * it.
+ *
+ * A start_time of 0 or PID_START_TIME_UNKNOWN is what a lock holds when
+ * its owner's /proc read failed as it stamped it.  No live task has that
+ * start time, so comparing would call every live holder recycled; with no
+ * fingerprint only the task decides, and one that is still there is taken
+ * for the holder.
+ *
+ * When /proc cannot say (a full fd table, ENOMEM) the pid number decides:
+ * ESRCH from kill(pid, 0) means no task holds it, so it is neither the
+ * live holder nor a recycled pid.  The parent has to get that answer,
+ * because lock() gives it no other way out of the spin on a holder that
+ * is already reaped.  Returning false means the same holder is still
+ * alive, or may be, and the caller must not release the lock.
  */
 bool pidstat_identity_gone(pid_t pid, unsigned long long start_time)
 {
+	bool recorded = start_time != 0 && start_time != PID_START_TIME_UNKNOWN;
 	char buf[512];
 	enum pidstat_result res;
 
@@ -169,7 +178,7 @@ bool pidstat_identity_gone(pid_t pid, unsigned long long start_time)
 		if (f.state == 'Z' || f.state == 'X')
 			return true;
 		if (f.start_time != PID_START_TIME_UNKNOWN)
-			return f.start_time != start_time;
+			return recorded && f.start_time != start_time;
 	}
 	return kill(pid, 0) == -1 && errno == ESRCH;
 }

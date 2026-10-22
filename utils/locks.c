@@ -76,8 +76,10 @@ static bool check_lock(lock_t *lk)
 		 * on the owner_start_time fingerprint: pidstat_identity_gone()
 		 * says gone for a pid with no task, a zombie, or a task whose
 		 * start_time differs from the sampled one, and when /proc
-		 * could not say only if kill(pid, 0) says ESRCH.  It decides
-		 * for try_release_dead_holder() and force_bust_lock() as well.
+		 * could not say only if kill(pid, 0) says ESRCH.  A lock that
+		 * recorded no usable start_time has no fingerprint to compare,
+		 * so a task that is still there is its holder.  It decides for
+		 * try_release_dead_holder() and force_bust_lock() as well.
 		 *
 		 * pid_alive() returns false only for a task that is gone or
 		 * dying.  A probe that fails for any other reason (a refused
@@ -294,7 +296,9 @@ bool trylock(lock_t *lk)
  * (pid, start_time) fingerprint catches that: a recycled pid will have
  * a different /proc/<pid>/stat field 22 even if the numeric pid
  * matches.  We compare against the stored owner_start_time and treat
- * mismatch as "the original holder is gone".
+ * mismatch as "the original holder is gone".  A lock that stored none
+ * (0, or PID_START_TIME_UNKNOWN) cannot be told from a recycle that way,
+ * so there the holder is gone only when its task is.
  *
  * Ask pidstat_identity_gone() rather than a raw kill(pid, 0): a zombie
  * holder still has a task struct (kill returns 0) but cannot release the
@@ -418,7 +422,8 @@ void unlock(lock_t *lk)
  * -- mismatch means the original owner is gone (process exited and a
  * different process now holds that pid).  Match on a live task means the
  * original lock-acquiring process is still alive; log once and bail.  A
- * zombie holder is gone either way, since it can never release the lock.
+ * zombie holder is gone either way, since it can never release the lock,
+ * and one with no stored start_time is judged by its task alone.
  * ABA-CAS on the sampled state mirrors try_release_dead_holder() so a
  * sibling child grabbing shm->syscalltable_lock during the bust window
  * isn't clobbered.

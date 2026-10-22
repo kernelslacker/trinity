@@ -24,6 +24,9 @@ struct lock_struct {
 	 * recycles a dead lock-owner's pid onto a fresh child keeps the
 	 * bust refused forever and the lock stuck.  Stale across releases
 	 * (unlock() does not zero this -- the next acquire overwrites it).
+	 * An owner whose own /proc read failed stamps 0 or
+	 * PID_START_TIME_UNKNOWN; recovery has no fingerprint to compare
+	 * then, and goes by whether the owner's task is still there.
 	 *
 	 * Concurrent racing acquirers may stomp each other's pre-CAS
 	 * writes; the winner re-stamps after its CAS to narrow the
