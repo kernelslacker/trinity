@@ -43,6 +43,10 @@ extern unsigned int fake_stray_ring_init;
 #define FAKE_FORK_PID(slot)	((pid_t)(0x7fff0000 + (slot)))
 extern unsigned int fake_fork_fail[FAKE_NR_CHILDREN];
 
+/* While non-zero, get_num_fds() fails with this errno instead of
+ * counting.  fake_parent_reset() clears it. */
+extern int fake_num_fds_errno;
+
 /* The pid kill_pid() was last asked to SIGKILL.  It sends nothing, so
  * the task stays up until the test ends it. */
 extern pid_t fake_killed_pid;
@@ -52,8 +56,8 @@ extern char fake_output_log[];
 
 /* Start a run: every slot empty and in service, the startup barrier
  * shut, the zombie reaper's and the spawn path's state and counters
- * cleared, every fork succeeding, the logs zeroed, the fake clock
- * stopped. */
+ * cleared, every fork succeeding and the fd count real, the logs zeroed,
+ * the fake clock stopped. */
 void fake_parent_reset(void);
 
 /*

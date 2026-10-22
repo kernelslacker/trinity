@@ -89,6 +89,11 @@ LDFLAGS		+= -Wl,--wrap=clock_gettime -Wl,--wrap=sleep -Wl,--wrap=usleep
 # it; spawn_test.c calls the real one as __real_replace_child().
 LDFLAGS		+= -Wl,--wrap=replace_child
 
+# get_num_fds() failure injection: fake_parent.c wraps it so a test can
+# make spawn_child() see any errno from the fd count.  The wrapper counts
+# for real unless a test has set fake_num_fds_errno.
+LDFLAGS		+= -Wl,--wrap=get_num_fds
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs the
 # arch-program #10 spec calls for on the integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing

@@ -79,6 +79,7 @@ unsigned int max_nr_64bit_syscalls;
 
 struct fake_slot_log fake_slot_log[FAKE_NR_CHILDREN];
 unsigned int fake_fork_fail[FAKE_NR_CHILDREN];
+int fake_num_fds_errno;
 pid_t fake_killed_pid;
 unsigned int fake_sleeps;
 void (*fake_sleep_hook)(void);
@@ -145,6 +146,7 @@ void fake_parent_reset(void)
 	fork_pressure_drain = false;
 	max_files_rlimit.rlim_cur = RLIM_INFINITY;
 	memset(fake_fork_fail, 0, sizeof(fake_fork_fail));
+	fake_num_fds_errno = 0;
 
 	memset(fake_slot_log, 0, sizeof(fake_slot_log));
 	fake_killed_pid = 0;
@@ -355,6 +357,17 @@ pid_t self_cgroup_fork_into_workload(void)
 /* Only the pid-map-full exit reaches this. */
 void dump_childnos(void)
 {
+}
+
+int __real_get_num_fds(void);
+int __wrap_get_num_fds(void);
+int __wrap_get_num_fds(void)
+{
+	if (fake_num_fds_errno != 0) {
+		errno = fake_num_fds_errno;
+		return -1;
+	}
+	return __real_get_num_fds();
 }
 
 /* What final_state_save() reaches, from the fork-failure bail path that
