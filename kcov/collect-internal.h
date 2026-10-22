@@ -2,8 +2,8 @@
 #pragma once
 
 /*
- * collect-internal.h — pure-computation static inline helpers shared
- * across the kcov/collect*.c translation units.
+ * collect-internal.h — pure-computation static inline helpers for
+ * kcov/collect.c.
  *
  * All helpers here are static inline (zero out-of-line instantiation).
  * Nothing touches mutable shared state, holds locks, or has observable
@@ -13,13 +13,10 @@
  * finalizer edge hash), kcov_entry_sentinel (per-call sentinel seed for
  * the transition map), pair_to_transition (prev/cur PC pair hash).
  *
- * bucket_for_count (AFL hit-count bucket classifier) is private to
- * collect.c — not shared here — because collect-fanout.c does not use
- * it and a static definition in a widely-included header would produce
- * -Wunused-function warnings.
+ * bucket_for_count (AFL hit-count bucket classifier) stays private to
+ * collect.c rather than living here.
  *
- * Consumers: kcov/collect.c (main hot path) and kcov/collect-fanout.c
- * (kcov_sample_new_edges read-only probe).
+ * Consumer: kcov/collect.c (main hot path).
  */
 
 #include <stdbool.h>

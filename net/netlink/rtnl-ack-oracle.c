@@ -136,7 +136,6 @@ static struct {
 	int               active;
 	unsigned short    nlmsg_type;
 	__u32             nlmsg_seq;
-	struct nlmsghdr  *sampled_nlh; /* message buffer that had NLM_F_ACK ORed in */
 } oracle_state;
 
 /*
@@ -156,7 +155,6 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 	struct nlmsghdr *nlh = (struct nlmsghdr *)(void *)msg;
 
 	oracle_state.active = 0;
-	oracle_state.sampled_nlh = NULL;
 
 	oracle_state.counter++;
 	if ((oracle_state.counter % RTNL_ACK_ORACLE_SAMPLE_RATE) != 0)
@@ -171,9 +169,7 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 	 * Roll the counter back before returning so the budget slot is not
 	 * wasted: counter-- leaves it at (SAMPLE_RATE-1) mod SAMPLE_RATE,
 	 * and the next non-dump increment brings it to 0 mod SAMPLE_RATE,
-	 * firing the gate for the next eligible message.  Identical to the
-	 * counter correction in rtnl_oracle_abort();
-	 * e881da483f4b ("net/netlink: rtnl_oracle_abort steps sample counter back by one").
+	 * firing the gate for the next eligible message.
 	 */
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		oracle_state.counter--;
@@ -191,41 +187,7 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 	nlh->nlmsg_flags |= (unsigned short)NLM_F_ACK;
 	oracle_state.nlmsg_type  = nlmsg_type;
 	oracle_state.nlmsg_seq   = nlh->nlmsg_seq;
-	oracle_state.sampled_nlh = nlh;
 	oracle_state.active = 1;
-}
-
-/*
- * rtnl_oracle_abort - cancel a pending sample without draining.
- *
- * Called when gen_msg was taken on a path that cannot call
- * rtnl_oracle_drain().  Undoes the in-place NLM_F_ACK annotation and rolls
- * the counter back so the budget slot is not consumed on a path where
- * draining is impossible.  No-ops immediately when the oracle is not active.
- */
-void rtnl_oracle_abort(void)
-{
-	if (!oracle_state.active)
-		return;
-
-	/*
-	 * Undo the NLM_F_ACK flag we ORed into the buffer so the message goes
-	 * out without requesting an ACK and the socket receive queue stays clean.
-	 */
-	if (oracle_state.sampled_nlh != NULL)
-		oracle_state.sampled_nlh->nlmsg_flags &=
-			(unsigned short)~NLM_F_ACK;
-
-	/*
-	 * Step the counter back by one so it sits at (SAMPLE_RATE - 1) mod
-	 * SAMPLE_RATE.  The next increment brings it to 0 mod SAMPLE_RATE,
-	 * which fires the sample — giving the slot to the next message on a
-	 * drainable path rather than wasting a full period.
-	 */
-	oracle_state.counter--;
-
-	oracle_state.active = 0;
-	oracle_state.sampled_nlh = NULL;
 }
 
 /*
@@ -262,7 +224,6 @@ void rtnl_oracle_drain(int fd, int send_ok)
 	 * during draining cannot double-count this probe.
 	 */
 	oracle_state.active = 0;
-	oracle_state.sampled_nlh = NULL;
 
 	/*
 	 * The message never reached the kernel: sendmsg() itself failed.

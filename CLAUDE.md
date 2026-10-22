@@ -44,7 +44,7 @@ every translation unit lives under one of the directories below.
 | [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype (11 files, ~3,066 LOC) |
 | [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs (50 files, ~10,619 LOC) |
 | [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~3,112 LOC) |
-| [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (123 files, ~22,703 LOC) |
+| [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (123 files, ~22,663 LOC) |
 | [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (72 files, ~18,097 LOC) |
 | [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (43 files, ~10,351 LOC) |
 | [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg  + cross-child futex pool & prop/fd-event rings (14 files, ~3,806 LOC) |
@@ -53,7 +53,7 @@ every translation unit lives under one of the directories below.
 | [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (12 files, ~3,550 LOC) |
 | [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/race/storm/recipe) (237 files, ~130,021 LOC) |
 | [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (11 files, ~4,273 LOC) |
-| [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (10 files, ~5,435 LOC) |
+| [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (10 files, ~5,450 LOC) |
 | [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) (16 files, ~8,513 LOC) |
 | [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (74 files, ~22,719 LOC) |
 | [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (7 files, ~1,677 LOC) |

@@ -3,11 +3,9 @@
  * AFL-style hit-count bucketing, shadow transition-pair hashing, and
  * per-syscall/mode/childop counter fan-out.  Supporting helpers
  * (kcov_canon_pc, pc_canon_to_edge, kcov_entry_sentinel,
- * pair_to_transition) live in collect-internal.h so collect-fanout.c
- * can share them without duplicating definitions.
+ * pair_to_transition) live in collect-internal.h.
  *
- * CMP-record dispatch (kcov_collect_cmp, kcov_trace_pos,
- * kcov_sample_new_edges) → collect-fanout.c
+ * CMP-record dispatch (kcov_collect_cmp) → collect-fanout.c
  * Cold-skip policy (kcov_syscall_cold_skip_pct, kcov_syscall_is_cold)
  * → cold-skip.c
  * CMP-IP KASLR canonicalisation (kcov_canon_cmp_ip) → transition-hash.c
