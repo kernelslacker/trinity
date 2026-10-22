@@ -77,6 +77,10 @@ static const struct genl_cmd_grammar nfsd_cmds[] = {
 	{ NFSD_CMD_LISTENER_GET,        "NFSD_CMD_LISTENER_GET" },
 	{ NFSD_CMD_POOL_MODE_SET,       "NFSD_CMD_POOL_MODE_SET" },
 	{ NFSD_CMD_POOL_MODE_GET,       "NFSD_CMD_POOL_MODE_GET" },
+	/* Not an op: a kernel-to-user multicast event, so the demuxer
+	 * answers -EOPNOTSUPP.  Kept on purpose: reaching that rejection
+	 * is demuxer coverage, and the id is right if a doit handler
+	 * ever appears. */
 	{ NFSD_CMD_CACHE_NOTIFY,        "NFSD_CMD_CACHE_NOTIFY" },
 	{ NFSD_CMD_SVC_EXPORT_GET_REQS, "NFSD_CMD_SVC_EXPORT_GET_REQS" },
 	{ NFSD_CMD_SVC_EXPORT_SET_REQS, "NFSD_CMD_SVC_EXPORT_SET_REQS" },

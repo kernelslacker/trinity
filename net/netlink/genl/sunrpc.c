@@ -40,10 +40,9 @@
  * CACHE_FLUSH (u32 MASK) outer surfaces and the inner ip-map / unix-
  * gid sub-attribute namespaces belong in a future grammar extension
  * that carries a per-command attribute namespace; their cmds are still
- * in the cmds[] table below so the family demuxer and the version
- * check are exercised for every command, only the per-cmd attr-policy
- * walker stays cold for the two u32-anchored commands until the
- * per-command namespace lands.
+ * in the cmds[] table below so the family demuxer is exercised for
+ * every command, only the per-cmd attr-policy walker stays cold for
+ * the two u32-anchored commands until the per-command namespace lands.
  *
  * The NESTED REQUESTS entry follows the handshake CERTIFICATE / psample
  * TUNNEL / ovpn PEER precedent: the generator emits an
@@ -79,6 +78,10 @@
 #include "utils.h"
 
 static const struct genl_cmd_grammar sunrpc_cmds[] = {
+	/* Not an op: a kernel-to-user multicast event, so the demuxer
+	 * answers -EOPNOTSUPP.  Kept on purpose: reaching that rejection
+	 * is demuxer coverage, and the id is right if a doit handler
+	 * ever appears. */
 	{ SUNRPC_CMD_CACHE_NOTIFY,	  "SUNRPC_CMD_CACHE_NOTIFY" },
 	{ SUNRPC_CMD_IP_MAP_GET_REQS,	  "SUNRPC_CMD_IP_MAP_GET_REQS" },
 	{ SUNRPC_CMD_IP_MAP_SET_REQS,	  "SUNRPC_CMD_IP_MAP_SET_REQS" },
