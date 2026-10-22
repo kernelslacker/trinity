@@ -171,10 +171,10 @@ static void derive_and_clamp_slot_partition(void)
 	}
 
 	/* Compute the default explorer-pool size when the operator did not
-	 * pass --explorer-children (max_children/4 under PICKER_BANDIT_UCB1,
-	 * zero otherwise), and clamp an explicit value to max_children/2.
-	 * Runs after the alt-op clamp so both partitions see the final
-	 * max_children. */
+	 * pass --explorer-children ((max_children - alt_op_children)/4
+	 * under PICKER_BANDIT_UCB1, zero otherwise), and clamp an explicit
+	 * value to (max_children - alt_op_children)/2.  Runs after the
+	 * alt-op clamp so both partitions see the final max_children. */
 	clamp_default_explorer_children();
 
 	/* Surface the resolved slot partition unconditionally so the operator

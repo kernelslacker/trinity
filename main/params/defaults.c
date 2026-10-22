@@ -100,9 +100,10 @@ unsigned long derive_max_children_cap(enum max_children_binding *out_binding)
 
 /*
  * Compute the default explorer-pool size when --explorer-children was not
- * passed.  The default is mode-aware: max_children/4 (25%) under
- * PICKER_BANDIT_UCB1 (for -C64 → 16 explorers, -C16 → 4, -C8 → 2, -C4
- * → 1), zero under every other picker mode.
+ * passed.  The default is mode-aware: a quarter of the slots left once
+ * the dedicated alt-op slots are carved off, (max_children -
+ * alt_op_children)/4, under PICKER_BANDIT_UCB1, zero under every other
+ * picker mode.
  *
  * The explorer pool exists to provide a strategy-independent baseline
  * alongside the bandit's learned policy, with its coverage discoveries
@@ -116,10 +117,10 @@ unsigned long derive_max_children_cap(enum max_children_binding *out_binding)
  *
  * The operator can still force a non-zero pool in any mode by passing
  * --explorer-children=N; that path is unconditional and only the upper
- * ceiling (max_children/2) is enforced -- more than half being
- * explorers would leave the bandit pool too small for UCB1 to
- * differentiate arms, and even in non-bandit modes the same imbalance
- * argument applies to the active strategy.
+ * ceiling, (max_children - alt_op_children)/2, is enforced -- more than
+ * half of the remaining slots being explorers would leave the bandit
+ * pool too small for UCB1 to differentiate arms, and even in non-bandit
+ * modes the same imbalance argument applies to the active strategy.
  *
  * Called from main() after clamp_default_max_children() so max_children
  * is final.  Mirrors the alt_op_children clamp pattern in trinity.c.
