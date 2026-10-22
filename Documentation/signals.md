@@ -249,10 +249,9 @@ SIGSEGV in the same child still reaches this handler (no permanently-
 blocked SEGV after recovery).
 
 The identical shape repeats for the `cmp_hints_collect()` field-scoped
-ARG_TIMESPEC deref (`cmp_field_read_active`), the `vma_split_storm`
-recovery slot (`vma_split_storm_touch_active`; nothing arms it now that
-the childop is gone), and (under `CONFIG_GUARD_SHARED`) the
-`kcov_enable_trace()` `trace_buf[0] = 0` reset (`kcov_protect_active`):
+ARG_TIMESPEC deref (`cmp_field_read_active`) and (under
+`CONFIG_GUARD_SHARED`) the `kcov_enable_trace()` `trace_buf[0] = 0`
+reset (`kcov_protect_active`):
 the same three-way gate on signo / `si_code` / active-flag, each flag
 set only across the specific probe, so any unrelated fatal signal still
 falls through to the normal crash path.

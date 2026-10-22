@@ -65,20 +65,6 @@ volatile sig_atomic_t asb_copy_active;
 sigjmp_buf cmp_field_recover;
 volatile sig_atomic_t cmp_field_read_active;
 
-/*
- * Recovery point for vma_split_storm's touch_random_page() one-byte
- * store.  See include/signals.h for the full contract.  Definition
- * lives here so the storage for the jmp_buf is colocated with the
- * handler that reads vma_split_storm_touch_active.
- *
- * Inherited COW-private into every forked child; never touched by the
- * parent.  Plain file-scope storage rather than __thread because
- * trinity children are single-threaded processes -- no two threads in
- * the same address space race on the slot.
- */
-sigjmp_buf vma_split_storm_touch_recover;
-volatile sig_atomic_t vma_split_storm_touch_active;
-
 #ifdef CONFIG_GUARD_SHARED
 /*
  * Recovery point for the kcov_enable_trace() trace_buf[0]=0 reset.
@@ -443,20 +429,6 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	if (cmp_field_read_active && info->si_code > 0 &&
 	    (sig == SIGSEGV || sig == SIGBUS)) {
 		siglongjmp(cmp_field_recover, 1);
-	}
-
-	/*
-	 * vma_split_storm touch_random_page() one-byte-store
-	 * recovery.  The pte-priming write can hit a sub-VMA whose
-	 * most recent mprotect was PROT_READ, faulting with
-	 * SIGSEGV/SEGV_ACCERR (op-bookkeeping fault, not a kernel
-	 * bug).  Same three-way gate as asb_copy above.  Outside
-	 * CONFIG_GUARD_SHARED so it applies to all builds.
-	 * See Documentation/signals.md.
-	 */
-	if (vma_split_storm_touch_active && info->si_code > 0 &&
-	    (sig == SIGSEGV || sig == SIGBUS)) {
-		siglongjmp(vma_split_storm_touch_recover, 1);
 	}
 
 #ifdef CONFIG_GUARD_SHARED
