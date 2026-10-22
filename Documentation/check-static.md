@@ -200,6 +200,24 @@ update this section to match `ls scripts/check-static/*.sh`.)
   can redirect `rec->post_state` at a foreign chunk with a matching
   cookie value and the `.post` handler clears the wrong struct.
   Grandfathered handlers live in `post-state-ownership.baseline`.
+- `procfs-writer-allow-deny-overlap`: pin the places where an allow rule in
+  `childops/fs/procfs-writer.c` overlaps a deny rule.  `add_entry()` admits a
+  path when `allow_rules[]` matches or `deny_rules[]` does not, so an overlap
+  is a deny that is silently ignored.  Allow-wins is intentional, so the
+  pairs are pinned in `procfs-writer-allow-deny-overlap.baseline` rather than
+  banned: a new overlap and a pinned pair that no longer overlaps both fail.
+  An anchored (`PREFIX`/`EXACT`) pair is found by pattern, unless
+  `prefilter_rules[]` already blocks the deny ahead of the allow check; a
+  `SUFFIX` deny is found by running `<allow prefix>x<suffix>` through the
+  matchers.  The tables are read out of the source: a table, match kind or
+  entry the extractor cannot read is an error, not a pass.  The script
+  re-implements the C matcher, so a digest of the C functions it mirrors
+  (`rule_matches()`, `path_under_discovery_root()`, `path_matches_table()`
+  and the three `path_*()` table wrappers) is pinned in it: a change to one
+  fails with "matcher changed, re-verify the model" until the model and the
+  digest are updated.  Self-tests both directions on synthetic tables, with
+  a near-miss per match kind that a looser matcher would accept.  Regenerate
+  with `--regen` and review the baseline diff.
 - `shared-region-budget`: tripwire that warns when the number of
   shared-region producer call sites approaches `MAX_SHARED_ALLOCS`.
   Silent under-protection is the bug class, not loud over-protection.

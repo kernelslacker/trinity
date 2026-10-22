@@ -1,0 +1,73 @@
+# procfs-writer-allow-deny-overlap.baseline
+#
+# Allow/deny rule pairs in childops/fs/procfs-writer.c that overlap,
+# so the allow rule wins and the deny is ignored on the overlap.
+# The allow-wins order in add_entry() is intentional; the pairs are
+# pinned so a new one has to be reviewed and one that stops
+# overlapping is noticed.
+#
+# One pair per line:
+#   <allow kind> <allow pattern> <deny kind> <deny pattern>
+# A SUFFIX deny is judged on the path "<allow prefix>x<suffix>",
+# which need not exist on a host.
+#
+# Regenerate after a rule-table change with:
+#   scripts/check-static/procfs-writer-allow-deny-overlap.sh --regen
+# and commit the diff alongside the table change.
+
+PREFIX /proc/sys/fs/ SUFFIX /cgroup.max.depth
+PREFIX /proc/sys/fs/ SUFFIX /cgroup.max.descendants
+PREFIX /proc/sys/fs/ SUFFIX /cgroup.procs
+PREFIX /proc/sys/fs/ SUFFIX /cgroup.subtree_control
+PREFIX /proc/sys/fs/ SUFFIX /cgroup.threads
+PREFIX /proc/sys/fs/ SUFFIX /coredump_filter
+PREFIX /proc/sys/fs/ SUFFIX /mem
+PREFIX /proc/sys/kernel/keys/ SUFFIX /cgroup.max.depth
+PREFIX /proc/sys/kernel/keys/ SUFFIX /cgroup.max.descendants
+PREFIX /proc/sys/kernel/keys/ SUFFIX /cgroup.procs
+PREFIX /proc/sys/kernel/keys/ SUFFIX /cgroup.subtree_control
+PREFIX /proc/sys/kernel/keys/ SUFFIX /cgroup.threads
+PREFIX /proc/sys/kernel/keys/ SUFFIX /coredump_filter
+PREFIX /proc/sys/kernel/keys/ SUFFIX /mem
+PREFIX /proc/sys/kernel/random/ SUFFIX /cgroup.max.depth
+PREFIX /proc/sys/kernel/random/ SUFFIX /cgroup.max.descendants
+PREFIX /proc/sys/kernel/random/ SUFFIX /cgroup.procs
+PREFIX /proc/sys/kernel/random/ SUFFIX /cgroup.subtree_control
+PREFIX /proc/sys/kernel/random/ SUFFIX /cgroup.threads
+PREFIX /proc/sys/kernel/random/ SUFFIX /coredump_filter
+PREFIX /proc/sys/kernel/random/ SUFFIX /mem
+PREFIX /proc/sys/net/ SUFFIX /cgroup.max.depth
+PREFIX /proc/sys/net/ SUFFIX /cgroup.max.descendants
+PREFIX /proc/sys/net/ SUFFIX /cgroup.procs
+PREFIX /proc/sys/net/ SUFFIX /cgroup.subtree_control
+PREFIX /proc/sys/net/ SUFFIX /cgroup.threads
+PREFIX /proc/sys/net/ SUFFIX /coredump_filter
+PREFIX /proc/sys/net/ SUFFIX /mem
+PREFIX /proc/sys/user/ SUFFIX /cgroup.max.depth
+PREFIX /proc/sys/user/ SUFFIX /cgroup.max.descendants
+PREFIX /proc/sys/user/ SUFFIX /cgroup.procs
+PREFIX /proc/sys/user/ SUFFIX /cgroup.subtree_control
+PREFIX /proc/sys/user/ SUFFIX /cgroup.threads
+PREFIX /proc/sys/user/ SUFFIX /coredump_filter
+PREFIX /proc/sys/user/ SUFFIX /mem
+PREFIX /proc/sys/vm/ SUFFIX /cgroup.max.depth
+PREFIX /proc/sys/vm/ SUFFIX /cgroup.max.descendants
+PREFIX /proc/sys/vm/ SUFFIX /cgroup.procs
+PREFIX /proc/sys/vm/ SUFFIX /cgroup.subtree_control
+PREFIX /proc/sys/vm/ SUFFIX /cgroup.threads
+PREFIX /proc/sys/vm/ SUFFIX /coredump_filter
+PREFIX /proc/sys/vm/ SUFFIX /mem
+PREFIX /sys/class/ SUFFIX /cgroup.max.depth
+PREFIX /sys/class/ SUFFIX /cgroup.max.descendants
+PREFIX /sys/class/ SUFFIX /cgroup.procs
+PREFIX /sys/class/ SUFFIX /cgroup.subtree_control
+PREFIX /sys/class/ SUFFIX /cgroup.threads
+PREFIX /sys/class/ SUFFIX /coredump_filter
+PREFIX /sys/class/ SUFFIX /mem
+PREFIX /sys/module/ SUFFIX /cgroup.max.depth
+PREFIX /sys/module/ SUFFIX /cgroup.max.descendants
+PREFIX /sys/module/ SUFFIX /cgroup.procs
+PREFIX /sys/module/ SUFFIX /cgroup.subtree_control
+PREFIX /sys/module/ SUFFIX /cgroup.threads
+PREFIX /sys/module/ SUFFIX /coredump_filter
+PREFIX /sys/module/ SUFFIX /mem
