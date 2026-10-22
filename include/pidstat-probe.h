@@ -13,3 +13,19 @@ enum pidstat_result {
 };
 
 enum pidstat_result pidstat_read(pid_t pid, char *buf, size_t size);
+
+/*
+ * What a start time reads as when /proc cannot say, as opposed to 0 for a
+ * pid that is gone.  No start time equals it, so it is no proof of death:
+ * pidstat_identity_gone() asks kill(pid, 0) instead.
+ */
+#define PID_START_TIME_UNKNOWN	(~0ULL)
+
+struct pidstat_fields {
+	char state;			/* field 3, '?' when the line has none */
+	unsigned long long start_time;	/* field 22, clock ticks since boot */
+};
+
+struct pidstat_fields pidstat_parse(const char *buf);
+
+bool pidstat_identity_gone(pid_t pid, unsigned long long start_time);

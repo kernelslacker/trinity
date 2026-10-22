@@ -1,6 +1,4 @@
-#include <errno.h>
 #include <sched.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -10,35 +8,13 @@
 #include "exit.h"
 #include "locks.h"
 #include "minicorpus.h"
+#include "pidstat-probe.h"
 #include "pids.h"
 #include "sequence.h"
 #include "shm.h"
 #include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
-
-/*
- * Dead-owner fingerprint test used by all three recovery sites
- * (check_lock, try_release_dead_holder, force_bust_lock).  Returns
- * true when the original holder is gone -- either the pid has no task
- * any more (start_time == 0) or the live start_time differs from the
- * snapshot stored at acquire time (pid recycled to a new process).
- * When /proc cannot say (PID_START_TIME_UNKNOWN: a full fd table,
- * ENOMEM) the pid number decides: ESRCH from kill(pid, 0) means no task
- * holds it, so it is neither the live holder nor a recycled pid.  The
- * parent has to get that answer, because lock() gives it no other way
- * out of the spin on a holder that is already reaped.  Returning false
- * means the same holder is still alive, or may be, and the caller must
- * not release the lock.
- */
-static inline bool is_dead_holder(pid_t pid, unsigned long stored_start)
-{
-	unsigned long long current_start = pid_start_time(pid);
-
-	if (current_start == PID_START_TIME_UNKNOWN)
-		return kill(pid, 0) == -1 && errno == ESRCH;
-	return current_start == 0 || current_start != stored_start;
-}
 
 /*
  * Periodic sanity walker.  Recovers the lock word in two failure
@@ -100,14 +76,15 @@ static bool check_lock(lock_t *lk)
 		 * on the owner_start_time fingerprint: only release if the live
 		 * owner's start_time differs from the sampled one (or is 0 =
 		 * truly dead); one that /proc could not give releases only
-		 * when kill(pid, 0) says ESRCH.  Same fingerprint rule used
-		 * by try_release_dead_holder() and force_bust_lock().
+		 * when kill(pid, 0) says ESRCH.  pidstat_identity_gone() holds
+		 * that rule for try_release_dead_holder() and
+		 * force_bust_lock() as well.
 		 *
 		 * pid_alive() returns false only for a task that is gone or
 		 * dying.  A probe that fails for any other reason (a refused
 		 * kill(), a /proc it cannot open) counts as alive. */
 		stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
-		if (!is_dead_holder(pid, stored_start)) {
+		if (!pidstat_identity_gone(pid, stored_start)) {
 			/* Same fingerprint, or /proc could not say and a task
 			 * still holds the pid: cannot safely release.  The
 			 * first is the rare same-fingerprint recycle race
@@ -335,14 +312,14 @@ static void try_release_dead_holder(lock_t *lk)
 		return;
 
 	stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
-	if (!is_dead_holder(owner, stored_start))
+	if (!pidstat_identity_gone(owner, stored_start))
 		return;
 
-	/* Either the pid is gone (current_start == 0) or it was recycled
-	 * (mismatch).  Try to release ONLY if the state word hasn't
-	 * changed since we sampled -- a CAS to 0 with the sampled state
-	 * as expected, so a fresh acquirer who CAS'd in between (and
-	 * therefore wrote a new owner_start_time) doesn't get clobbered. */
+	/* Either the holder is gone or its pid was recycled.  Try to release
+	 * ONLY if the state word hasn't changed since we sampled -- a CAS to
+	 * 0 with the sampled state as expected, so a fresh acquirer who
+	 * CAS'd in between (and therefore wrote a new owner_start_time)
+	 * doesn't get clobbered. */
 	__atomic_compare_exchange_n(&lk->state, &sampled, 0,
 				    0, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
 }
@@ -469,7 +446,7 @@ void force_bust_lock(lock_t *lk)
 	owner = LOCK_OWNER(s);
 	stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
 	/* cached_pid COW caveat: see the note above this function */
-	if (!is_dead_holder(owner, stored_start)) {
+	if (!pidstat_identity_gone(owner, stored_start)) {
 		static bool warned;
 		if (!warned) {
 			warned = true;

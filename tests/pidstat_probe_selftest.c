@@ -46,11 +46,18 @@
  * and a /proc mounted for another pid namespace answer it for a task the
  * caller can signal.  The kill() wrapper in fake_parent.c stands in for
  * what kill() says.
+ *
+ * pidstat_parse() picks the state and start_time out of a stat line, and
+ * pidstat_identity_gone() builds the lock recovery test on it: is the
+ * task a lock recorded as (pid, start_time) gone.  The parse is checked
+ * against lines of the test's own and against a stat line the kernel
+ * wrote, and the test against tasks the test holds.
  */
 
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -267,10 +274,13 @@ static void selftest_read_enoent_needs_kill(void)
 /*
  * With the soft RLIMIT_NOFILE at the lowest free fd number the open of
  * the stat file fails with EMFILE, whatever the task is.  That says
- * nothing about it.
+ * nothing about it, so the pid number decides whether a lock holder is
+ * gone: kill(pid, 0) finding the task keeps it, and ESRCH from kill()
+ * ends it, whatever start time the lock recorded.
  */
 static void selftest_read_out_of_fds(void)
 {
+	bool gone_alive, gone_esrch;
 	struct rlimit orig, lim;
 	enum pidstat_result res;
 	char buf[512];
@@ -286,11 +296,117 @@ static void selftest_read_out_of_fds(void)
 	if (setrlimit(RLIMIT_NOFILE, &lim) != 0)
 		BUG("pidstat read: cannot lower RLIMIT_NOFILE");
 	res = pidstat_read(getpid(), buf, sizeof(buf));
+	gone_alive = pidstat_identity_gone(getpid(), 1);
+	fake_kill_probe_pid = getpid();
+	fake_kill_probe_errno = ESRCH;
+	gone_esrch = pidstat_identity_gone(getpid(), 1);
+	fake_kill_probe_errno = 0;
 	if (setrlimit(RLIMIT_NOFILE, &orig) != 0)
 		BUG("pidstat read: cannot restore RLIMIT_NOFILE");
 
 	if (res != PIDSTAT_UNKNOWN)
 		BUG("pidstat read: a full fd table did not read as unknown");
+	if (gone_alive)
+		BUG("pidstat identity: a full fd table read a live holder as gone");
+	if (!gone_esrch)
+		BUG("pidstat identity: ESRCH from kill() did not end a holder /proc could not read");
+}
+
+/* Fields 4 to 21 of a stat line, which the parser only walks past. */
+#define STAT_TAIL "1 1234 1234 0 -1 4194560 1 0 0 0 1 2 0 0 20 0 1 0"
+
+struct parse_case {
+	const char *what;
+	const char *line;
+	char state;
+	unsigned long long start_time;
+};
+
+static const struct parse_case parse_cases[] = {
+	{ "plain line", "1234 (bash) S " STAT_TAIL " 987654 4096 1",
+	  'S', 987654 },
+	{ "comm holding ')' and spaces", "42 (a) b (c)) Z " STAT_TAIL " 555 0 0",
+	  'Z', 555 },
+	{ "no ')'", "1234 bash S 1", '?', PID_START_TIME_UNKNOWN },
+	{ "no space after ')'", "1 (x)S 1", '?', PID_START_TIME_UNKNOWN },
+	{ "empty line", "", '?', PID_START_TIME_UNKNOWN },
+	{ "ends at the state", "1 (x) S", 'S', PID_START_TIME_UNKNOWN },
+	{ "stops short of start_time", "1 (x) S " STAT_TAIL,
+	  'S', PID_START_TIME_UNKNOWN },
+};
+
+static void selftest_parse(void)
+{
+	unsigned long long start = 0;
+	struct pidstat_fields f;
+	char buf[512], state = 0;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(parse_cases); i++) {
+		const struct parse_case *c = &parse_cases[i];
+
+		f = pidstat_parse(c->line);
+		if (f.state != c->state || f.start_time != c->start_time) {
+			fprintf(stderr, "pidstat parse: case: %s\n", c->what);
+			BUG("pidstat parse: a line read as the wrong fields");
+		}
+	}
+
+	/* A line the kernel wrote, with the fields picked out by a format
+	 * that counts them on its own: the state and the 22nd field. */
+	if (pidstat_read(getpid(), buf, sizeof(buf)) != PIDSTAT_OK)
+		BUG("pidstat parse: cannot read our own stat line");
+	if (sscanf(strrchr(buf, ')') + 2, "%c"
+		   " %*s %*s %*s %*s %*s %*s %*s %*s %*s"
+		   " %*s %*s %*s %*s %*s %*s %*s %*s %*s"
+		   " %llu", &state, &start) != 2)
+		BUG("pidstat parse: cannot pick fields out of our own stat line");
+	f = pidstat_parse(buf);
+	if (f.state != state || f.start_time != start)
+		BUG("pidstat parse: a line from the kernel read as the wrong fields");
+}
+
+static unsigned long long start_time_of(pid_t pid)
+{
+	unsigned long long start;
+	char buf[512];
+
+	if (pidstat_read(pid, buf, sizeof(buf)) != PIDSTAT_OK)
+		BUG("pidstat identity: cannot read the held task's stat line");
+	start = pidstat_parse(buf).start_time;
+	if (start == PID_START_TIME_UNKNOWN)
+		BUG("pidstat identity: the held task's start time did not parse");
+	return start;
+}
+
+static void end_task(pid_t pid)
+{
+	if (kill(pid, SIGKILL) != 0 || waitpid_eintr(pid, NULL, 0) != pid)
+		BUG("pidstat identity: cannot end the held task");
+}
+
+static void selftest_identity_live_recycled_gone(void)
+{
+	unsigned long long start;
+	pid_t pid;
+
+	pid = fake_hold_task(0);
+	start = start_time_of(pid);
+
+	if (pidstat_identity_gone(pid, start))
+		BUG("pidstat identity: a live task with its recorded start time read as gone");
+
+	/* The pid reissued to a task that started later is not the holder. */
+	if (!pidstat_identity_gone(pid, start + 1))
+		BUG("pidstat identity: a pid with another start time did not read as recycled");
+
+	end_task(pid);
+	if (!pidstat_identity_gone(pid, start))
+		BUG("pidstat identity: a reaped task did not read as gone");
+
+	/* No task has pid 0 or below, however the start time compares. */
+	if (!pidstat_identity_gone(0, start) || !pidstat_identity_gone(-1, start))
+		BUG("pidstat identity: a pid that names no task did not read as gone");
 }
 
 void pidstat_probe_self_check(void);
@@ -303,4 +419,6 @@ void pidstat_probe_self_check(void)
 	selftest_read_live_and_gone();
 	selftest_read_enoent_needs_kill();
 	selftest_read_out_of_fds();
+	selftest_parse();
+	selftest_identity_live_recycled_gone();
 }

@@ -56,7 +56,7 @@ void set_child_cache(int childno, pid_t pid, struct childdata *child)
 bool pid_alive(pid_t pid)
 {
 	char buf[512];
-	char state = '?';
+	char state;
 
 	if (pid < -1) {
 		syslogf("pid_alive called with pid %d!\n", pid);
@@ -98,14 +98,7 @@ bool pid_alive(pid_t pid)
 		break;
 	}
 
-	/* Format: pid (comm with possible spaces) state ppid ...
-	 * The comm may contain ')' so look for the LAST ')' then read
-	 * the next whitespace token. */
-	{
-		char *rparen = strrchr(buf, ')');
-		if (rparen != NULL && rparen[1] == ' ' && rparen[2] != '\0')
-			state = rparen[2];
-	}
+	state = pidstat_parse(buf).state;
 
 	if (state == 'Z' || state == 'X') {
 		/* Set errno so callers (notably check_lock) treat this
@@ -128,16 +121,10 @@ bool pid_alive(pid_t pid)
  * to reuse the dead holder's numeric value, but start_time is monotonic
  * across the system boot and uniquely tags the (pid, fork-instance)
  * pair.  Only the 0 answer is evidence of death.
- *
- * The comm field at the start of the line may contain ')', so anchor on
- * the LAST ')' and skip 21 whitespace-separated fields after it to land
- * on field 22.
  */
 unsigned long long pid_start_time(pid_t pid)
 {
 	char buf[512];
-	char *p, *rparen;
-	unsigned int field;
 
 	if (pid <= 0)
 		return 0;
@@ -151,21 +138,7 @@ unsigned long long pid_start_time(pid_t pid)
 		break;
 	}
 
-	rparen = strrchr(buf, ')');
-	if (rparen == NULL || rparen[1] != ' ')
-		return PID_START_TIME_UNKNOWN;
-
-	/* After the closing ')' field 3 (state) starts.  Field 22
-	 * (start_time) is the 20th whitespace-separated token after. */
-	p = rparen + 2;
-	for (field = 3; field < 22; field++) {
-		while (*p != '\0' && *p != ' ')
-			p++;
-		if (*p != ' ')
-			return PID_START_TIME_UNKNOWN;
-		p++;
-	}
-	return strtoull(p, NULL, 10);
+	return pidstat_parse(buf).start_time;
 }
 
 struct childdata * this_child(void)

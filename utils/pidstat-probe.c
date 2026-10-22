@@ -3,6 +3,8 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -102,4 +104,67 @@ enum pidstat_result pidstat_read(pid_t pid, char *buf, size_t size)
 
 	buf[n] = '\0';
 	return PIDSTAT_OK;
+}
+
+/*
+ * Pick the fields the liveness callers need out of a stat line that
+ * pidstat_read() returned: "pid (comm) state ppid ...".  The comm field
+ * may contain ')' and spaces, so anchor on the LAST ')' and read the
+ * state from the byte two after it.  After the closing ')' field 3
+ * (state) starts; field 22 (start_time) is the 20th whitespace-separated
+ * token after.  A field the line stops short of reads as '?' or
+ * PID_START_TIME_UNKNOWN.
+ */
+struct pidstat_fields pidstat_parse(const char *buf)
+{
+	struct pidstat_fields f = { '?', PID_START_TIME_UNKNOWN };
+	const char *p = strrchr(buf, ')');
+	unsigned int field;
+
+	if (p == NULL || p[1] != ' ' || p[2] == '\0')
+		return f;
+
+	f.state = p[2];
+
+	p += 2;
+	for (field = 3; field < 22; field++) {
+		while (*p != '\0' && *p != ' ')
+			p++;
+		if (*p != ' ')
+			return f;
+		p++;
+	}
+	f.start_time = strtoull(p, NULL, 10);
+	return f;
+}
+
+/*
+ * Dead-owner fingerprint test used by all three lock recovery sites
+ * (check_lock, try_release_dead_holder, force_bust_lock).  Returns true
+ * when the task a lock recorded as (pid, start_time) is gone -- either
+ * the pid has no task any more or the live start_time differs from the
+ * snapshot stored at acquire time (pid recycled to a new process).
+ * When /proc cannot say (a full fd table, ENOMEM) the pid number decides:
+ * ESRCH from kill(pid, 0) means no task holds it, so it is neither the
+ * live holder nor a recycled pid.  The parent has to get that answer,
+ * because lock() gives it no other way out of the spin on a holder that
+ * is already reaped.  Returning false means the same holder is still
+ * alive, or may be, and the caller must not release the lock.
+ */
+bool pidstat_identity_gone(pid_t pid, unsigned long long start_time)
+{
+	char buf[512];
+	enum pidstat_result res;
+
+	res = pidstat_read(pid, buf, sizeof(buf));
+	if (res == PIDSTAT_GONE)
+		return true;
+
+	if (res == PIDSTAT_OK) {
+		unsigned long long current = pidstat_parse(buf).start_time;
+
+		if (current != PID_START_TIME_UNKNOWN)
+			return current != start_time;
+	}
+	return kill(pid, 0) == -1 && errno == ESRCH;
 }
