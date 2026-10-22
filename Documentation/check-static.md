@@ -2,9 +2,9 @@
 
 `make check-static` runs a battery of structural consistency checks
 against the source tree.  It is the bridge between "the code compiled"
-and "the code is internally consistent."  The checks are cheap (target
-is single-digit seconds) and require no runtime execution beyond what
-`make` already does.
+and "the code is internally consistent."  The checks are cheap (the whole
+battery takes well under a minute) and none of them executes the fuzzer;
+the slowest compile probe code or run the unit-test binary.
 
 Trinity's fuzzer binary cannot safely run on developer hosts; it only
 runs on an isolated fuzz machine.  Architectural invariants that would
@@ -28,9 +28,10 @@ if any check failed.  Detailed failure output goes to stderr.
 
 ## Skipping a check
 
-    CHECK_STATIC_SKIP=check-alt-op-rotation,post-state-magic make check-static
+    CHECK_STATIC_SKIP=no-time-subtraction,post-state-magic make check-static
 
-Comma-separated list of check basenames (without `.sh`).
+Comma-separated list of check basenames (without `.sh`).  A skipped check
+prints `SKIP: <check-name> (via CHECK_STATIC_SKIP)` and is not counted.
 
 ## Adding a check
 
@@ -42,8 +43,8 @@ orchestrator) to locate sources.  Conventions:
 - Print exactly one `PASS:` / `WARN:` / `FAIL:` line on stdout.
 - Emit detail on stderr.
 - Return 0 on pass/warn, non-zero on fail.
-- Keep runtime under one second; the whole battery should stay fast
-  enough that contributors run it after every edit.
+- Keep runtime short; the whole battery takes well under a minute and
+  should stay fast enough that contributors run it after every edit.
 - Never execute the trinity binary or a wrapper that does
   (`scripts/run-trinity.sh`); `no-trinity-exec` fails the battery if a
   check names one.  A fixture that has to run it belongs behind
@@ -102,10 +103,11 @@ update this section to match `ls scripts/check-static/*.sh`.)
   lines for an entry that is annotated or whose file never sets
   `REEXEC_OK`.
 
-- `check-stats-reachable`: every field in `struct stats_s` must have a
-  `STAT_FIELD*()` descriptor row, a consumer read, or an allowlist entry
-  naming its bespoke walker.  Catches a counter that is written and then
-  never surfaced.
+- `check-stats-reachable`: every scalar in the `struct stats_s` tree -- the
+  flat members and every leaf of the nested `stats/subsys/*.h` structs --
+  must have a `STAT_FIELD*()` descriptor row, a consumer read (a producer
+  write does not count) or an allowlist entry naming its bespoke walker.
+  Catches a counter that is written and then never surfaced.
 
 - `stats-group-has-producer`: the complement -- every group in
   `struct stats_s` must be written by something outside `stats/`.  A group
@@ -221,23 +223,31 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `post-state-deref`: every `.post` handler that dereferences a
   pointer read from `rec->post_state` must first gate it with
   `looks_like_corrupted_ptr()` or a `*_POST_STATE_MAGIC` cookie
-  compare.
-- `post-state-magic`: every `struct *_post_state` in `syscalls/` must
-  begin with `unsigned long magic` and ship a matching
+  compare.  A handler that uses both the ownership gate
+  (`post_state_is_owned()`) and the cookie compare must test ownership
+  first: reading `snap->magic` before that trusts memory that a sibling
+  stomp may have redirected at a foreign chunk with a matching cookie.
+- `post-state-magic`: every `struct *_post_state` in `syscalls/` and
+  `lib/` must begin with `unsigned long magic` and ship a matching
   `*_POST_STATE_MAGIC` constant -- the convention that prevented the
   ppoll bad-free regression class.  Grandfathered structs that predate
   the convention are listed in
-  `scripts/check-static/post-state-magic.baseline`; that list should
-  shrink over time, never grow.
+  `scripts/check-static/post-state-magic.baseline`; it is empty today and
+  should stay that way.
 - `post-state-ownership`: every `.sanitise` handler that stamps a
   `*_POST_STATE_MAGIC` cookie into a freshly-allocated post_state
   struct must also call `post_state_install()` or
   `post_state_register()` to wire the chunk into the ownership
-  table.  Closes the third leg beneath `post-state-magic` and
-  `post-state-deref`: without ownership registration a sibling stomp
-  can redirect `rec->post_state` at a foreign chunk with a matching
-  cookie value and the `.post` handler clears the wrong struct.
-  Grandfathered handlers live in `post-state-ownership.baseline`.
+  table.  `lib/` holds the helpers sanitisers call rather than `.sanitise`
+  handlers (`sanitiser_own_fd()` is the setup site for every sanitiser that
+  opens an fd it must close), so there every function that assigns a
+  `*_POST_STATE_MAGIC` cookie is held to the same rule.  Closes the
+  third leg beneath `post-state-magic` and `post-state-deref`: without
+  ownership registration a sibling stomp can redirect `rec->post_state`
+  at a foreign chunk with a matching cookie value and the `.post`
+  handler clears the wrong struct.
+  Grandfathered handlers live in `post-state-ownership.baseline`, which is
+  empty today.
 - `procfs-writer-allow-deny-overlap`: pin the places where an allow rule in
   `childops/fs/procfs-writer.c` overlaps a deny rule.  `add_entry()` admits a
   path when `allow_rules[]` matches or `deny_rules[]` does not, so an overlap
@@ -261,12 +271,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
   Silent under-protection is the bug class, not loud over-protection.
 - `shm-latch-direct`: latch fields of `struct shm_s` (`exit_reason`,
   `current_strategy`, `current_selection_reason`,
-  `plateau_current_hypothesis`) must only be read or written through
-  `__atomic_*` intrinsics; a plain `shm->field` access is a torn write
-  that breaks the publish ordering.
+  `plateau_current_hypothesis`, `ready`, `spawn_no_more`,
+  `postmortem_in_progress`, and the feature-discovery latches
+  `dont_make_it_fail`, `no_fail_nth`, `no_pidns`, `no_private_ns`) must
+  only be read or written through `__atomic_*` intrinsics; a plain
+  `shm->field` access is a torn write that breaks the publish ordering.
 - `signal-handler-async-unsafe`: forbid async-signal-UNSAFE libc calls
   (`snprintf`, `malloc`, `fopen`, `syslog`, ...) inside known signal
-  handlers discovered in `signals.c`.
+  handlers, discovered from the `sa_handler`/`sa_sigaction` assignments in
+  `health/signals-policy.c` and checked in `health/signals-policy.c`,
+  `signals-fault-handler.c`, `signals-async-safe.c` and `signals-precrash.c`.
 - `srec-no-lock-around-publish`: flag any `lock(&...->lock)`
   immediately preceding a `srec_publish_begin(...)` or any
   `unlock(&...->lock)` immediately following a `srec_publish_end(...)`
@@ -309,13 +323,23 @@ update this section to match `ls scripts/check-static/*.sh`.)
   a real block comment is still stripped.  Without these invariants
   every gate that sources `lib.sh` and greps the stripped output is
   silently fail-open on lines that follow a string-embedded `/*`.
-- `test-bin-asan-suite`: builds `tests/test-bin-asan` (the
-  PURE-module test binary under `-fsanitize=address`) and runs the
-  `stats_opclock_lossless_self_check` suite, which gates the per-child
-  lossless op-count plausibility guard: per-drain delta ceiling,
+- `struct-field-offset-size-wrap`: reject bare `->offset +` arithmetic
+  in comparison predicates in `args/` and `cmp_hints/` when neither
+  operand carries an `(unsigned long)` / `(uint64_t)` cast.  Both
+  `struct struct_field` members `offset` and `size` are `unsigned int`;
+  the expression `f->offset + f->size` wraps modulo 2^32 before
+  comparison when the sum exceeds `UINT_MAX`, silently bypassing the
+  bounds guard.  The correct form is
+  `f->offset > size || f->size > size - f->offset`.
+  Array-index expressions of the form `buf[f->offset + byte_off]` are
+  excluded (the index is bounded by an earlier guard).
+- `test-bin-asan-suite`: runs `make test-asan`, which builds
+  `tests/test-bin-asan` (the PURE-module test binary under
+  `-fsanitize=address`) and runs every fixture in it.  They include the
+  per-child lossless op-count plausibility guard: per-drain delta ceiling,
   first-drain scribble rejection, and recovery by rebase, including that
-  a clock-like scribble never rebases.  Catches a red fixture suite
-  before it escapes to the tree.
+  a clock-like scribble never rebases.  Catches a red fixture before it
+  escapes to the tree.
 - `syscall-metadata`: best-effort sanity on `struct syscallentry` --
   ARG_RANGE arguments must declare low/high bounds.
 - `track-shared-region-pairing`: every `track_shared_region()` must
@@ -364,8 +388,9 @@ update this section to match `ls scripts/check-static/*.sh`.)
 ## Tools
 
 These scripts live under `scripts/` (not `scripts/check-static/`) and are
-informational aids, not build gates.  They exit 0 always and produce no
-PASS/FAIL lines.
+informational aids, not build gates.  `hash-subject-resolver.sh` exits 0
+always and produces no PASS/FAIL lines; `commit-msg-hash-resolves.sh` prints
+one and exits 1 on a failure, but nothing in the battery runs it.
 
 - `scripts/hash-subject-resolver.sh`: given one or more files, extract every
   12–40 char lowercase hex token and attempt to resolve each to a reachable
@@ -374,6 +399,13 @@ PASS/FAIL lines.
   after a rebase or cherry-pick wave to locate stale citations before filing
   them as queue fixes.  Run it read-only over any document; it never writes
   to its inputs.
+- `scripts/commit-msg-hash-resolves.sh [<git-log-range>]`: checks that every
+  hex-hash citation in the commit messages of a range (default
+  `origin/master..HEAD`, so only unpushed work) exists as a git object and is
+  reachable from `HEAD`, skipping `upstream:`-prefixed ones.  A hash that is
+  an object but not an ancestor is the dangerous case: it names a commit
+  from an orphaned cherry-pick branch.  Prints `PASS:` or `FAIL:` and exits
+  1 on an unreachable citation.
 
 ## Hash citation convention
 
@@ -392,12 +424,3 @@ External hashes (Linux kernel commits, upstream projects) should be prefixed
 with `upstream:` so it is clear they are not expected to resolve locally:
 
     upstream:abc123def456 ("mm: fix some page fault bug")
-- `struct-field-offset-size-wrap`: reject bare `->offset +` arithmetic
-  in comparison predicates in `args/` when neither operand carries an
-  `(unsigned long)` / `(uint64_t)` cast.  Both `struct struct_field`
-  members `offset` and `size` are `unsigned int`; the expression
-  `f->offset + f->size` wraps modulo 2^32 before comparison when the
-  sum exceeds `UINT_MAX`, silently bypassing the bounds guard.  The
-  correct form is `f->offset > size || f->size > size - f->offset`.
-  Array-index expressions of the form `buf[f->offset + byte_off]` are
-  excluded (the index is bounded by an earlier guard).
