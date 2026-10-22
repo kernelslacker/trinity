@@ -30,6 +30,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "stats/kcov/cmp/hyp_kind_labels.h"
 #include "stats/kcov/cmp/internal.h"
 
 /*
@@ -394,11 +395,6 @@ void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
  */
 void kcov_cmp_render_pc_win_conversion_split_block(long elapsed __unused__)
 {
-	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-		"exact", "range", "boundary", "bitmask",
-		"enum_family", "alignment", "length",
-		"foreign_value",
-	};
 	static bool armed;
 	static unsigned long prev_hints_injected;
 	static unsigned long prev_hyp_live_injected;
@@ -505,7 +501,7 @@ void kcov_cmp_render_pc_win_conversion_split_block(long elapsed __unused__)
 				(unsigned int)((d_k_wins * 100UL) / d_k_inj) : 0;
 
 			stats_log_write("    %-22s %12lu %12lu %7u%%\n",
-					kind_labels[k],
+					cmp_hyp_kind_labels[k],
 					d_k_wins, d_k_inj, pct);
 		}
 		stats_log_write("  cumulative:\n");
@@ -523,7 +519,7 @@ void kcov_cmp_render_pc_win_conversion_split_block(long elapsed __unused__)
 					       cur_hyp_live_injected_by_kind[k]) : 0;
 
 			stats_log_write("    %-22s %12lu %12lu %7u%%\n",
-					kind_labels[k],
+					cmp_hyp_kind_labels[k],
 					cur_hyp_pc_wins_by_kind[k],
 					cur_hyp_live_injected_by_kind[k], pct);
 		}

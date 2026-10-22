@@ -50,6 +50,7 @@ bottom rather than enumerated. The renderers below are the other 58.
 | kcov/cmp/cohort.c | Cross-subsystem A/B and sidecar rows: baseline inject denom, handle_arg_op prop_ring, frontier cold-weight blend, adaptive remote-KCOV, per-arg ownership sidecar, structure-aware picker cohort. |
 | kcov/cmp/diag.c | Steady periodic diagnostics: KCOV mode mix, KCOV CMP DIAG errnos, KCOV PC DIAG errnos + retry counters. |
 | kcov/cmp/internal.h | Private renderer prototypes shared across `stats/kcov/cmp/` TUs. |
+| kcov/cmp/hyp_kind_labels.h | The one `enum cmp_hypothesis_kind` label table the per-kind renderers print from, with a compile-time one-label-per-kind check. |
 | json/dump.c | `--stats-json` top-level orchestrator: root object, `"stats"` wrapper, and section order. |
 | json/common.c | JSON mechanics: string escape and `stat_category_emit_json()` descriptor renderer. |
 | json/syscalls.c | Per-syscall JSON array. |

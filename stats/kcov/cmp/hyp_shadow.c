@@ -32,6 +32,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "stats/kcov/cmp/hyp_kind_labels.h"
 #include "stats/kcov/cmp/internal.h"
 
 /* Per-kind census: accepted (inserted_by_kind) vs dropped
@@ -45,11 +46,6 @@
  * CMP_HYP_PER_SYSCALL is reached. */
 void kcov_cmp_render_hyp_shadow_per_kind_census(void)
 {
-	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-		"exact", "range", "boundary", "bitmask",
-		"enum_family", "alignment", "length",
-		"foreign_value",
-	};
 	static unsigned long prev_hyp_ins_kind[CMP_HYP_KIND_NR];
 	static unsigned long prev_hyp_full_kind[CMP_HYP_KIND_NR];
 	static unsigned long prev_hyp_pool_full_kind[CMP_HYP_KIND_NR];
@@ -68,7 +64,7 @@ void kcov_cmp_render_hyp_shadow_per_kind_census(void)
 
 		stats_log_write(
 			"  cmp_hyp[%-13s] inserted +%lu (total %lu)  kind_full +%lu (total %lu)  pool_full +%lu (total %lu)\n",
-			kind_labels[k],
+			cmp_hyp_kind_labels[k],
 			sat_sub_ul(cur_ins, prev_hyp_ins_kind[k]), cur_ins,
 			sat_sub_ul(cur_full, prev_hyp_full_kind[k]), cur_full,
 			sat_sub_ul(cur_pool_full, prev_hyp_pool_full_kind[k]),
@@ -86,11 +82,6 @@ void kcov_cmp_render_hyp_shadow_per_kind_census(void)
  * share of insertions the typed consumer is pulling. */
 void kcov_cmp_render_hyp_shadow_consumes_census(void)
 {
-	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-		"exact", "range", "boundary", "bitmask",
-		"enum_family", "alignment", "length",
-		"foreign_value",
-	};
 	static unsigned long prev_hyp_consumed_kind[CMP_HYP_KIND_NR];
 	unsigned int k;
 
@@ -101,7 +92,7 @@ void kcov_cmp_render_hyp_shadow_consumes_census(void)
 
 		stats_log_write(
 			"  cmp_hyp[%-13s] consumed +%lu (total %lu)\n",
-			kind_labels[k],
+			cmp_hyp_kind_labels[k],
 			sat_sub_ul(cur_cons, prev_hyp_consumed_kind[k]), cur_cons);
 		prev_hyp_consumed_kind[k] = cur_cons;
 	}
@@ -122,11 +113,6 @@ void kcov_cmp_render_hyp_shadow_picker_census(void)
 	static const char * const state_labels[CMP_HYP_STATE_NR] = {
 		"observed", "testing", "promoted",
 		"demoted",  "retired",
-	};
-	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-		"exact", "range", "boundary", "bitmask",
-		"enum_family", "alignment", "length",
-		"foreign_value",
 	};
 	static unsigned long prev_picked[CMP_HYP_STATE_NR];
 	static unsigned long prev_skipped_retired_kind[CMP_HYP_KIND_NR];
@@ -157,7 +143,7 @@ void kcov_cmp_render_hyp_shadow_picker_census(void)
 			continue;
 		stats_log_write(
 			"  cmp_hyp_skipped_retired[%-13s] +%lu  (total %lu)\n",
-			kind_labels[k], delta, cur);
+			cmp_hyp_kind_labels[k], delta, cur);
 	}
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		unsigned long cur = __atomic_load_n(
@@ -170,7 +156,7 @@ void kcov_cmp_render_hyp_shadow_picker_census(void)
 			continue;
 		stats_log_write(
 			"  cmp_hyp_demoted_reroll_picked[%-13s] +%lu  (total %lu)\n",
-			kind_labels[k], delta, cur);
+			cmp_hyp_kind_labels[k], delta, cur);
 	}
 }
 /* h->state live transition census.  Bumped from
@@ -220,11 +206,6 @@ void kcov_cmp_render_hyp_shadow_state_transitions(void)
  * is consuming credit without conversion. */
 void kcov_cmp_render_hyp_shadow_outcome_partition(void)
 {
-	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-		"exact", "range", "boundary", "bitmask",
-		"enum_family", "alignment", "length",
-		"foreign_value",
-	};
 	static unsigned long prev_pc[CMP_HYP_KIND_NR];
 	static unsigned long prev_tr[CMP_HYP_KIND_NR];
 	static unsigned long prev_ms[CMP_HYP_KIND_NR];
@@ -252,7 +233,7 @@ void kcov_cmp_render_hyp_shadow_outcome_partition(void)
 
 		stats_log_write(
 			"  cmp_hyp[%-13s] outcome  pc +%lu  tr +%lu  ms +%lu  cs +%lu  ds +%lu  ks +%lu  nv +%lu\n",
-			kind_labels[k],
+			cmp_hyp_kind_labels[k],
 			sat_sub_ul(pc, prev_pc[k]), sat_sub_ul(tr, prev_tr[k]),
 			sat_sub_ul(ms, prev_ms[k]), sat_sub_ul(cs, prev_cs[k]),
 			sat_sub_ul(ds, prev_ds[k]), sat_sub_ul(ks, prev_ks[k]),

@@ -33,6 +33,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "stats/kcov/cmp/hyp_kind_labels.h"
 #include "stats/kcov/cmp/internal.h"
 
 /*
@@ -53,11 +54,6 @@
 void kcov_cmp_hyp_saturation_block_render(long elapsed __unused__)
 {
 #define KCOV_CMP_HYP_SAT_TOPN	32
-	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-		"exact", "range", "boundary", "bitmask",
-		"enum_family", "alignment", "length",
-		"foreign_value",
-	};
 	struct sat_row {
 		unsigned int nr;
 		unsigned int do32;
@@ -129,13 +125,15 @@ void kcov_cmp_hyp_saturation_block_render(long elapsed __unused__)
 			elapsed, top_count, occupied_pools,
 			total_entries, CMP_HYP_PER_SYSCALL);
 	{
-		char hdr[CMP_HYP_KIND_NR * 12 + 1];
+		/* Per-kind columns are 13 wide, the label limit in
+		 * hyp_kind_labels.h, plus one separating space. */
+		char hdr[CMP_HYP_KIND_NR * 14 + 1];
 		int off = 0;
 
 		hdr[0] = '\0';
 		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 			int w = snprintf(hdr + off, sizeof(hdr) - off,
-					 " %11s", kind_labels[k]);
+					 " %13s", cmp_hyp_kind_labels[k]);
 			if (w < 0 || (size_t)w >= sizeof(hdr) - (size_t)off)
 				break;
 			off += w;
@@ -153,7 +151,7 @@ void kcov_cmp_hyp_saturation_block_render(long elapsed __unused__)
 		unsigned int nr_max;
 		unsigned int pct;
 		char count_buf[16];
-		char row[CMP_HYP_KIND_NR * 12 + 1];
+		char row[CMP_HYP_KIND_NR * 14 + 1];
 		int off = 0;
 
 		if (biarch) {
@@ -182,7 +180,7 @@ void kcov_cmp_hyp_saturation_block_render(long elapsed __unused__)
 		row[0] = '\0';
 		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 			int w = snprintf(row + off, sizeof(row) - off,
-					 " %11u", r->per_kind[k]);
+					 " %13u", r->per_kind[k]);
 			if (w < 0 || (size_t)w >= sizeof(row) - (size_t)off)
 				break;
 			off += w;

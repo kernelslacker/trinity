@@ -32,6 +32,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "stats/kcov/cmp/hyp_kind_labels.h"
 #include "stats/kcov/cmp/internal.h"
 
 /*
@@ -45,11 +46,6 @@
  */
 void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
 {
-	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-		"exact", "range", "boundary", "bitmask",
-		"enum_family", "alignment", "length",
-		"foreign_value",
-	};
 	static unsigned long prev_hyp_would_pick_kind[CMP_HYP_KIND_NR];
 	static unsigned long prev_hyp_would_miss_kind[CMP_HYP_KIND_NR];
 	static unsigned long prev_hyp_would_value_differs;
@@ -90,7 +86,7 @@ void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
 		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 			stats_log_write(
 				"  cmp_hyp_would[%-13s] pick +%lu (total %lu)  miss +%lu (total %lu)  value_differs +%lu (total %lu)\n",
-				kind_labels[k],
+				cmp_hyp_kind_labels[k],
 				sat_sub_ul(cur_hyp_would_pick_kind[k], prev_hyp_would_pick_kind[k]),
 				cur_hyp_would_pick_kind[k],
 				sat_sub_ul(cur_hyp_would_miss_kind[k], prev_hyp_would_miss_kind[k]),
@@ -125,11 +121,6 @@ void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
  */
 void kcov_cmp_render_hyp_would_promote_demote_block(long elapsed __unused__)
 {
-	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-		"exact", "range", "boundary", "bitmask",
-		"enum_family", "alignment", "length",
-		"foreign_value",
-	};
 	static unsigned long prev_hyp_would_promote_kind[CMP_HYP_KIND_NR];
 	static unsigned long prev_hyp_would_demote_kind[CMP_HYP_KIND_NR];
 	unsigned long cur_hyp_would_promote_kind[CMP_HYP_KIND_NR];
@@ -155,7 +146,7 @@ void kcov_cmp_render_hyp_would_promote_demote_block(long elapsed __unused__)
 		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 			stats_log_write(
 				"  cmp_hyp_would[%-13s] promote +%lu (total %lu)  demote +%lu (total %lu)\n",
-				kind_labels[k],
+				cmp_hyp_kind_labels[k],
 				sat_sub_ul(cur_hyp_would_promote_kind[k], prev_hyp_would_promote_kind[k]),
 				cur_hyp_would_promote_kind[k],
 				sat_sub_ul(cur_hyp_would_demote_kind[k], prev_hyp_would_demote_kind[k]),

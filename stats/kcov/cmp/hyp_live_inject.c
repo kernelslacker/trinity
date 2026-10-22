@@ -35,6 +35,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "stats/kcov/cmp/hyp_kind_labels.h"
 #include "stats/kcov/cmp/internal.h"
 
 /*
@@ -57,11 +58,6 @@
  */
 void kcov_cmp_render_hyp_live_inject_block(long elapsed __unused__)
 {
-	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-		"exact", "range", "boundary", "bitmask",
-		"enum_family", "alignment", "length",
-		"foreign_value",
-	};
 	static unsigned long prev_hyp_live_injected;
 	static unsigned long prev_hyp_live_gate_passed;
 	static unsigned long prev_hyp_live_injected_kind[CMP_HYP_KIND_NR];
@@ -133,7 +129,7 @@ void kcov_cmp_render_hyp_live_inject_block(long elapsed __unused__)
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		stats_log_write(
 			"  cmp_hyp_live_inject[%-13s] +%lu (total %lu)\n",
-			kind_labels[k],
+			cmp_hyp_kind_labels[k],
 			sat_sub_ul(cur_hyp_live_injected_kind[k],
 				   prev_hyp_live_injected_kind[k]),
 			cur_hyp_live_injected_kind[k]);
