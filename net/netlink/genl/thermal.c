@@ -34,9 +34,11 @@
  * but absent from the input policy — so they are intentionally omitted.
  * THRESHOLD_ADD and THRESHOLD_DELETE consume TZ_ID + THRESHOLD_TEMP +
  * THRESHOLD_DIRECTION, all of which the table already carries.
- * THRESHOLD_FLUSH consumes TZ_ID only.  The THERMAL_GENL_EVENT_* enum
- * is the kernel-to-userspace notification channel and is not callable
- * from userspace at all.
+ * THRESHOLD_FLUSH consumes TZ_ID only.  TZ_GET_MODE is in the uapi
+ * enum but thermal_genl_ops[] registers no op for it, so the genl core
+ * rejects it on input and the grammar omits it.  The
+ * THERMAL_GENL_EVENT_* enum is the kernel-to-userspace notification
+ * channel and is not callable from userspace at all.
  *
  * Header gating mirrors the psample / ila / fou / hsr / seg6 families:
  * <linux/thermal.h> is the upstream UAPI header carrying every
@@ -90,7 +92,6 @@ static const struct genl_cmd_grammar thermal_cmds[] = {
 	{ THERMAL_GENL_CMD_TZ_GET_TRIP,		"THERMAL_GENL_CMD_TZ_GET_TRIP" },
 	{ THERMAL_GENL_CMD_TZ_GET_TEMP,		"THERMAL_GENL_CMD_TZ_GET_TEMP" },
 	{ THERMAL_GENL_CMD_TZ_GET_GOV,		"THERMAL_GENL_CMD_TZ_GET_GOV" },
-	{ THERMAL_GENL_CMD_TZ_GET_MODE,		"THERMAL_GENL_CMD_TZ_GET_MODE" },
 	{ THERMAL_GENL_CMD_CDEV_GET,		"THERMAL_GENL_CMD_CDEV_GET" },
 	{ THERMAL_GENL_CMD_THRESHOLD_GET,	"THERMAL_GENL_CMD_THRESHOLD_GET" },
 	{ THERMAL_GENL_CMD_THRESHOLD_ADD,	"THERMAL_GENL_CMD_THRESHOLD_ADD" },
