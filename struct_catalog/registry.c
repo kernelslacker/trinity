@@ -11,10 +11,9 @@
  * (SLOT_POOL_MAX, DISCRIM_VARIANTS_PER_SLOT_MAX) BUG on overflow
  * rather than silently drop mappings.
  *
- * Three public resolvers:
+ * Two public resolvers:
  *   - struct_arg_lookup: rec-driven (nr, arg) with discriminator match.
  *   - struct_arg_lookup_two_key: explicit (name, arg, k1, k2).
- *   - struct_arg_lookup_by_name: discriminator-blind default.
  */
 
 #include <stdbool.h>
@@ -177,8 +176,7 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
 		return NULL;
 
 	/*
-	 * Linear scan keeps the cost identical to struct_arg_lookup_by_name
-	 * and avoids a second nr-indexed table just for explicit-key
+	 * Linear scan avoids a second nr-indexed table just for explicit-key
 	 * callers.  The registration table is small (~70 entries today); the
 	 * scan runs once per apply_sockopt_entry call which already does
 	 * O(table) work picking a random row.
@@ -186,8 +184,7 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
 	 * Skip rows with no second key registered: this entry point is for
 	 * genuine two-key resolution -- a single-key row would resolve to
 	 * different semantics on its own and a caller wanting that should
-	 * use struct_arg_lookup() (rec-path) or struct_arg_lookup_by_name
-	 * (discriminator-blind) instead.
+	 * use struct_arg_lookup() (rec-path) instead.
 	 */
 	FOR_EACH_SYSCALL_STRUCT_ARG(g, sa) {
 		if (sa->arg_idx != arg_idx)
@@ -209,35 +206,6 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
 		return sa->desc;
 	}
 	return NULL;
-}
-
-const struct struct_desc *struct_arg_lookup_by_name(const char *name,
-						    unsigned int arg_idx)
-{
-	const struct syscall_struct_arg_group *g;
-	const struct syscall_struct_arg *sa;
-	const struct struct_desc *first = NULL;
-
-	if (name == NULL || arg_idx < 1 || arg_idx > 6)
-		return NULL;
-	/*
-	 * Prefer the slot's default (non-discriminated) entry; fall back to
-	 * the first discriminated variant when no default is registered.
-	 * Callers that need OR-across-all-variants semantics (e.g. the
-	 * nested-address-scrub mask) use struct_arg_any_has_address_field()
-	 * below -- single-desc returns can't represent that question.
-	 */
-	FOR_EACH_SYSCALL_STRUCT_ARG(g, sa) {
-		if (sa->arg_idx != arg_idx)
-			continue;
-		if (strcmp(sa->syscall_name, name) != 0)
-			continue;
-		if (sa->discrim_arg_idx == 0)
-			return sa->desc;
-		if (first == NULL)
-			first = sa->desc;
-	}
-	return first;
 }
 
 /*

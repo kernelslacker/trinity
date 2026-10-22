@@ -460,8 +460,8 @@ uint8_t compute_nested_address_scrub_mask(const struct syscallentry *entry)
 		 * Discriminator-aware: any cataloged variant for this slot
 		 * carrying an FT_ADDRESS field forces the bit on, because the
 		 * live variant resolves per-dispatch and the mask is a
-		 * conservative include.  struct_arg_lookup_by_name() returns
-		 * only one descriptor and can't represent that OR-across.
+		 * conservative include.  A single-descriptor lookup can't
+		 * represent that OR-across.
 		 */
 		if (struct_arg_any_has_address_field(entry->name, i + 1))
 			mask |= (uint8_t)(1u << i);
