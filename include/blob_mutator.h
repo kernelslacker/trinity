@@ -8,8 +8,9 @@
  * Design rationale: Documentation/blob-mutator.md
  *
  * Ladder rungs (each layers on top of the prior):
- *   OFF      - default; ARG_BUF_SIZED hook skips blob_fill() entirely,
- *              no RNG draw, no byte write.  A/B baseline.
+ *   OFF      - default; the ARG_BUF_SIZED hook skips blob_fill() and
+ *              falls back to a plain generate_rand_bytes() fill.  A/B
+ *              baseline.
  *   FILL     - generate_rand_bytes() the owned buffer via the
  *              random-page.c content generator.
  *   HAVOC    - FILL plus a bounded byte-mutation pass (bit/byte flip

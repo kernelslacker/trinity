@@ -64,12 +64,10 @@ struct cmp_hints_shared {
 	 * Source-tagged by storage (this dedicated grid -- NOT mixed
 	 * into the durable per-syscall pool grid above) so childop
 	 * constants cannot evict random-syscall constants out of the
-	 * 16-entry durable LRU.  Per the design
-	 * (projects/trinity/childop-cmp-integration-design.md §3.1),
-	 * promotion of a per-nr slice into the shared durable pool is a
-	 * separate quota-gated C6 step earned by the §4 conversion-chain
-	 * metrics; until then this lane is the only sink for childop CMP
-	 * constants.
+	 * 16-entry durable LRU.  Promoting a per-nr slice into the shared
+	 * durable pool is a separate quota-gated step, earned by the
+	 * conversion-chain metrics; until then this lane is the only sink
+	 * for childop CMP constants.
 	 *
 	 * Not persisted by cmp_hints_save_file -- the save path only
 	 * writes pools[], identical to recent_pools[] above.  Memset to
@@ -149,7 +147,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
  * size) tuple again so "recent" semantics aren't diluted by
  * collapsing a tuple the kernel saw twice into one slot.  Out-of-
  * range nr / NULL shm / oversize ring head are silently dropped (the
- * harvest path is advisory; see §3.1).
+ * harvest path is advisory).
  */
 void cmp_hints_childop_insert(unsigned int nr, bool do32,
 			      unsigned long cmp_ip, unsigned long val,

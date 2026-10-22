@@ -318,9 +318,9 @@ extern unsigned int frontier_noise_sample;
  * baseline.  Operator opt-in via --corpus-save-errno-grad-live. */
 extern bool corpus_save_errno_grad_live;
 
-/* self-cgroup containment knobs (see self_cgroup.c).  NULL string args
- * mean "use the default" (60%/50%/20% of MemTotal).  no_cgroup skips
- * the sub-cgroup creation entirely. */
+/* self-cgroup containment knobs (see utils/self_cgroup_setup.c).  NULL
+ * string args mean "use the default" (60%/50%/20% of MemTotal).
+ * no_cgroup skips the sub-cgroup creation entirely. */
 extern char *memory_max_arg;
 extern char *memory_high_arg;
 extern char *memory_swap_max_arg;

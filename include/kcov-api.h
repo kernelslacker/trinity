@@ -84,8 +84,8 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
  *     childop_cmp_brackets_skipped_nested.
  *
  * On a successful begin the per-bracket record / insert counters in
- * kcov.c are reset to zero so the §3.2 anti-domination caps measure
- * one childop dispatch at a time.
+ * kcov.c are reset to zero so the anti-domination caps measure one
+ * childop dispatch at a time.
  */
 bool kcov_cmp_bracket_begin(struct kcov_child *kc);
 void kcov_cmp_bracket_end(struct kcov_child *kc);
@@ -104,8 +104,8 @@ void kcov_cmp_bracket_end(struct kcov_child *kc);
 void childop_cmp_reset(struct kcov_child *kc);
 void childop_cmp_collect(struct kcov_child *kc, unsigned int nr);
 
-/* Per-bracket record + insert caps for the §3.2 anti-domination
- * defence.  Records exceeding the cap on a single bracket are
+/* Per-bracket record + insert caps for the anti-domination defence.
+ * Records exceeding the cap on a single bracket are
  * counted (kcov_shm->childop_cmp.childop_cmp_record_cap_hits) and dropped from
  * harvest; insert-cap hits bump the matching insert counter.  Sized
  * generously vs typical childop fan-out (10..100 syscalls per
@@ -174,7 +174,7 @@ extern unsigned int childop_kcov_sample_n;
  * Childop CMP harvest mode (--childop-cmp-harvest).  Mirrors the
  * --kcov-transition-coverage / --frontier-saturation-cooldown A/B
  * pattern: a default-OFF behaviour-neutral knob that opens the
- * §3.2 hybrid bracket on a CMP-mode child at the childop dispatch
+ * hybrid bracket on a CMP-mode child at the childop dispatch
  * gate when flipped on.
  *
  *   OFF  - default.  The childop dispatch path is byte-identical to
@@ -191,9 +191,9 @@ extern unsigned int childop_kcov_sample_n;
  *          childop_recent_pools[nr][do32] lane.  The lane is
  *          non-persisted and does NOT evict the durable
  *          per-syscall pool; promotion is a separate per-nr
- *          quota-gated C6 step.  Migration of individual childops
+ *          quota-gated step.  Migration of individual childops
  *          to route through trinity_cmp_syscall is a per-childop
- *          C5 step earned by the §4 conversion chain.
+ *          step earned by the conversion-chain metrics.
  *
  * The two modes are kept distinct from --childop-kcov-attribution
  * (PC-side) -- a child is PC-mode OR CMP-mode for life

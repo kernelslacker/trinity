@@ -19,7 +19,7 @@ unsigned long childop_cmp_trace_truncated[MAX_NR_SYSCALL];
 unsigned long childop_cmp_window_contaminated[MAX_NR_SYSCALL];
 /* Per-childop syscall-sample census, indexed by enum child_op_type.
  * Lets the operator see which childop is dominating the lane before
- * the §3.2 noisy-syscall skip-list would need tuning.  Same
+ * the noisy-syscall skip-list would need tuning.  Same
  * KCOV_CHILDOP_NR_MAX bound the PC-side childop_kcov_* arrays use. */
 unsigned long childop_cmp_syscalls_sampled_per_op[KCOV_CHILDOP_NR_MAX];
 };

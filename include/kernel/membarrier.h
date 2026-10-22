@@ -3,9 +3,9 @@
 /*
  * Wrapper around <linux/membarrier.h> that ships #ifndef-guarded
  * fallbacks for the MEMBARRIER_CMD_* values touched by
- * syscalls/membarrier.c.  Per-symbol #ifndef so a sysroot that ships
- * only a subset of the membarrier.h symbols (older LTS, stripped
- * headers) still compiles.
+ * syscalls/concurrency/membarrier.c.  Per-symbol #ifndef so a sysroot
+ * that ships only a subset of the membarrier.h symbols (older LTS,
+ * stripped headers) still compiles.
  */
 #include <linux/membarrier.h>
 

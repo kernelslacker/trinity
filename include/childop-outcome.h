@@ -195,8 +195,8 @@ void childop_score_dump(void);
  * bumping the previous slot for a handful of instructions (bounded
  * window-boundary attribution error), never has its addition silently
  * dropped, and never drives the cached sum negative.  Deliberately not
- * borrowing strategy-frontier.c's frontier_window_advance() -- the two
- * ring lifecycles stay disjoint, per the C2 spec. */
+ * borrowing frontier_window_advance() (strategy/strategy-frontier-window.c)
+ * -- the two ring lifecycles stay disjoint. */
 void childop_decay_record_edges(enum child_op_type op, unsigned long edges);
 void childop_decay_record_wall(enum child_op_type op, unsigned long ns);
 void childop_window_advance(void);

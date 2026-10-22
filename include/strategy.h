@@ -210,11 +210,12 @@ extern enum frontier_live_cooldown_mode frontier_live_cooldown_mode;
  * No-op when frontier_live_cooldown_mode is OFF or kcov_shm is
  * unavailable; SHADOW-ONLY -- never returns a value, never gates picker
  * selection; the COMBINED live divergence is a deliberate follow-up.
- * Called from the LIVE-regime miss-attribution path in random_syscall/strategy-accounting.c
- * (account_per_syscall_new_edges) immediately after the existing
- * frontier_live_would_skip projection so the discriminated counters
- * sit alongside the undiscriminated projection for direct comparison.
- * See the implementation in strategy-frontier.c for the full contract.
+ * Called from the LIVE-regime miss-attribution path in
+ * random_syscall/per-syscall-edges.c (account_per_syscall_new_edges)
+ * immediately after the existing frontier_live_would_skip projection so
+ * the discriminated counters sit alongside the undiscriminated
+ * projection for direct comparison.  See the implementation in
+ * strategy-frontier-cool.c for the full contract.
  */
 void frontier_live_cool_spare(unsigned int syscallnr, bool do32);
 
@@ -907,7 +908,7 @@ void plateau_snapshot_delta(struct plateau_window_snapshot *out,
  * enum order and the FIRST match wins, so the ordering encodes
  * precedence -- CMP_RISING_PC_FLAT is most specific,
  * SINGLE_GROUP_DOMINANT is most general.  Thresholds live in
- * strategy_plateau_hypothesis_check() in strategy.c.
+ * strategy_plateau_hypothesis_check() in strategy/strategy-plateau.c.
  * See Documentation/strategy.md for the design rationale.
  */
 enum plateau_hypothesis {
@@ -932,9 +933,9 @@ const char *strategy_plateau_hypothesis_name(enum plateau_hypothesis h);
  * Evaluate the rule tree against the (entry, now) delta.  Pure function
  * over the snapshot deltas -- no side effects, no logging, no counter
  * bumps.  The per-tick driver (strategy_plateau_hypothesis_tick) wraps
- * the call with the publish-and-log bookkeeping; consumer gates in
- * child.c and minicorpus.c read the published value from shm rather
- * than re-running the rule check.
+ * the call with the publish-and-log bookkeeping; consumer gates (e.g.
+ * child/child-altop-pick.c and persist/minicorpus-select.c) read the
+ * published value from shm rather than re-running the rule check.
  *
  * Returns PLATEAU_HYPOTHESIS_NONE when no rule matches the deltas;
  * this is the expected state for a freshly-entered plateau where
@@ -973,8 +974,9 @@ void strategy_plateau_hypothesis_tick(void);
 /*
  * Read-side accessors used by main/loop.c print_stats() to format the
  * one-line plateau hypothesis block.  The deltas + last hypothesis +
- * fire-count array live as parent-private state in strategy.c (the
- * tick driver only runs on the parent path).
+ * fire-count array live as parent-private state in
+ * strategy/strategy-plateau.c (the tick driver only runs on the parent
+ * path).
  */
 enum plateau_hypothesis strategy_plateau_hypothesis_current(void);
 const struct plateau_window_snapshot *strategy_plateau_hypothesis_delta(void);

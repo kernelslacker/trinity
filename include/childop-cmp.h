@@ -4,9 +4,8 @@
  * Childop CMP-harvest syscall wrapper.
  *
  * trinity_cmp_syscall(nr, ...) replaces trinity_raw_syscall(nr, ...)
- * at childop syscall sites that participate in the §3.2 KCOV_CMP
- * hybrid harvest path (see projects/trinity/childop-cmp-integration-
- * design.md).  The wrapper is a thin shell around
+ * at childop syscall sites that participate in the hybrid KCOV_CMP
+ * harvest path.  The wrapper is a thin shell around
  * trinity_raw_syscall that:
  *
  *   1. resets cmp_trace_buf[0] to 0 immediately before the syscall
@@ -28,14 +27,13 @@
  * sits behind the child.c op_uses_outer_bracket gate AND the child
  * is CMP-mode.
  *
- * The §3.2 all-routed invariant says every syscall a childop issues
- * inside an open kcov_cmp_bracket MUST go through this wrapper -- an
- * unwrapped helper syscall landing inside a reset/syscall/collect
- * window would be misattributed to the wrapping nr.  Per-childop
- * migration to this wrapper is a separate per-op step landed by C5
- * in the design phasing; until a childop has audited every syscall
- * it issues in its dispatch (including teardown) for routing, it
- * MUST NOT be moved off trinity_raw_syscall.
+ * The all-routed invariant: every syscall a childop issues inside an
+ * open kcov_cmp_bracket MUST go through this wrapper -- an unwrapped
+ * helper syscall landing inside a reset/syscall/collect window would
+ * be misattributed to the wrapping nr.  Migrating a childop to this
+ * wrapper is a separate per-op step; until a childop has audited every
+ * syscall it issues in its dispatch (including teardown) for routing,
+ * it MUST NOT be moved off trinity_raw_syscall.
  *
  * this_child() is available inside both helpers; the wrapper does
  * not need the caller to thread struct kcov_child * through every

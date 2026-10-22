@@ -6,9 +6,9 @@
 /*
  * Internal-only declarations for symbols shared between the compilation
  * units that make up the CMP-hint learning + conversion core: the thin
- * cmp_hints.c orchestrator plus cmp_hints/hyp.c, cmp_hints/pool.c,
- * cmp_hints/field.c, cmp_hints/collect.c, cmp_hints/get.c,
- * cmp_hints/credit.c, and cmp_hints/persist.c.
+ * cmp_hints.c orchestrator plus the cmp_hints/hyp-*.c lanes,
+ * cmp_hints/pool.c, cmp_hints/field.c, cmp_hints/collect.c,
+ * cmp_hints/get.c, cmp_hints/credit.c, and cmp_hints/persist.c.
  *
  * Symbols here were file-static before the TU split.  They are
  * deliberately NOT promoted into the public include/cmp_hints.h --
@@ -256,7 +256,7 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
  * SHADOW typed-hypothesis consume credit.  Called from
  * cmp_hints_stash_consumed() (collect.c) on every push so the typed
  * denominator tracks the per-pool denominator.  Definition in
- * cmp_hints/hyp.c.
+ * cmp_hints/hyp-credit.c.
  */
 void cmp_hyp_credit_consume(unsigned int nr, bool do32,
 			    unsigned long cmp_ip, unsigned long value,
@@ -266,7 +266,7 @@ void cmp_hyp_credit_consume(unsigned int nr, bool do32,
  * SHADOW would-pick resolver.  Invoked on every successful raw-pool
  * pick from cmp_hints/get.c so the would-pick / would-miss /
  * would-value-differs counters in kcov_shm stay comparable across
- * runs.  Definition in cmp_hints/hyp.c.
+ * runs.  Definition in cmp_hints/hyp-pick.c.
  */
 void cmp_hyp_would_pick(unsigned int nr, bool do32,
 			unsigned long cmp_ip, unsigned int size,
@@ -360,7 +360,7 @@ bool cmp_shared_tier_try_serve_cold_miss(unsigned int nr, bool do32,
  * by a hypothesis-derived value; the *out_kind / *out_gate_fired
  * out-params let the caller book the accept-gated denominator +
  * per-kind partition at the commit point.  Definition in
- * cmp_hints/hyp.c.
+ * cmp_hints/hyp-live.c.
  *
  * arg_idx is the caller's syscall argnum (1..6) threaded through from
  * cmp_hints_try_get_ex for the placement-proof observability contract

@@ -117,12 +117,13 @@ void apply_chain_substitution(struct syscallrecord *rec,
 			      bool have_substitute,
 			      unsigned long substitute_retval);
 
-/* strategy-accounting.c -- strategy-window rotation and per-call
- * reward / cohort attribution.  Called from dispatch-step.c on every
- * parent syscall; remote_adaptive_decide is queried from dispatch_step
- * before the raw call to decide whether to publish the remote-adaptive
- * path.  Public API is declared in the cluster-local header
- * random_syscall/strategy-accounting-internal.h. */
+/* strategy-rotate.c, per-syscall-edges.c, warm-reserve.c,
+ * remote-adaptive.c, fd-group.c -- strategy-window rotation and
+ * per-call reward / cohort attribution.  Called from dispatch-step.c on
+ * every parent syscall; remote_adaptive_decide is queried from
+ * dispatch_step before the raw call to decide whether to publish the
+ * remote-adaptive path.  Public API is declared in the cluster-local
+ * header random_syscall/strategy-accounting-internal.h. */
 
 /*
  * dispatch-step.c -- the dispatch_step coordinator and the greedy

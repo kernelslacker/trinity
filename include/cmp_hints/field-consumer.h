@@ -122,7 +122,7 @@ enum cmp_hint_use {
  * for POOL only" gap.  Aggregated across all syscalls (the per-nr
  * split lives in per_syscall_cmp_injected / _wins).  Append-only:
  * callers keying on a slot index (kcov_shm counter arrays sized by
- * CMP_HINT_CALLSITE_NR, stats/kcov_cmp.c render table) depend on
+ * CMP_HINT_CALLSITE_NR, stats/kcov/cmp/periodic.c render table) depend on
  * the ordering being stable across builds.
  */
 enum cmp_hint_callsite {

@@ -659,9 +659,9 @@ struct syscallentry {
 	/*
 	 * Cached "is this the close(2) syscall?" flag.  Resolved once from
 	 * .name at table-init time in copy_syscall_table() so the dispatch
-	 * fd-leak accounting in random_syscall/strategy-accounting.c can branch on a single
-	 * byte load instead of running strcmp(entry->name, "close") on
-	 * every syscall invocation.
+	 * fd-leak accounting in random_syscall/fd-group.c can branch on a
+	 * single byte load instead of running strcmp(entry->name, "close")
+	 * on every syscall invocation.
 	 */
 	bool is_close_syscall;
 

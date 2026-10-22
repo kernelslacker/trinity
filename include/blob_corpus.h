@@ -6,13 +6,13 @@
 /*
  * Per-(nr, do32) opaque-blob content corpus.
  *
- * Sibling of persist/minicorpus.c but scoped to blob CONTENT rather
- * than argument scalars.  minicorpus stores args[6] for a syscall
- * that produced novel coverage; those saved args include the pointer
- * to the ARG_BUF_SIZED buffer but not its bytes, so a minicorpus
- * replay lands the buffer pointer inside a fresh writable pool slot
- * that then gets blob_fill()'d with generate_rand_bytes() -- the
- * productive byte pattern that made the original save is discarded.
+ * Sibling of the persist/minicorpus-*.c mini-corpus but scoped to blob
+ * CONTENT rather than argument scalars.  minicorpus stores args[6] for
+ * a syscall that produced novel coverage; those saved args include the
+ * pointer to the ARG_BUF_SIZED buffer but not its bytes, so a
+ * minicorpus replay lands the buffer pointer inside a fresh writable
+ * pool slot that then gets blob_fill()'d with generate_rand_bytes() --
+ * the productive byte pattern that made the original save is discarded.
  *
  * This module closes that gap.  blob_fill() stashes the just-authored
  * buffer as a pending candidate keyed by (nr, do32); when the same
