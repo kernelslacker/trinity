@@ -1,28 +1,9 @@
 /*
- * userns_run_in_ns() -- see include/userns-bootstrap.h for the full
- * contract.  This is the transient-fork implementation modelled on
- * childops/misc/userns-fuzzer.c's inner_child_main() and outer parent
- * (fork/_exit/waitpid).  It is generalised so any caller can request
- * an identity-mapped userns plus arbitrary secondary namespaces.
- *
- * The order inside the grandchild is fixed and matches the kernel's
- * documented requirements:
- *   1. unshare(CLONE_NEWUSER)               -- enter a fresh userns
- *   2. write /proc/self/uid_map "0 <uid> 1" -- single-line identity map
- *   3. write /proc/self/setgroups "deny"    -- required before gid_map
- *                                              for an unprivileged
- *                                              writer (Documentation/
- *                                              admin-guide/namespaces/
- *                                              user.rst)
- *   4. write /proc/self/gid_map "0 <gid> 1" -- single-line identity map
- *   5. unshare(target_ns_flags) if non-zero -- ns_capable now granted
- *                                              by the userns above
- *   6. fn(arg); _exit(...)                  -- single fork/exit per call
- *
- * setns() is never called from the grandchild -- in particular never
- * into an init-namespace fd -- so the grandchild cannot escape into
- * the host's namespace stack and its caps remain firewalled to the
- * fresh userns.
+ * userns_run_in_ns(): fork a transient grandchild, enter an identity-mapped
+ * user namespace plus any secondary namespaces, run the callback, _exit().
+ * Contract: include/userns-bootstrap.h; rationale:
+ * Documentation/userns-bootstrap.md.  The grandchild never calls setns(), so
+ * its capabilities stay confined to the fresh user namespace.
  */
 
 #include <errno.h>
@@ -144,6 +125,10 @@ static int install_identity_maps(uid_t uid, gid_t gid)
  * Grandchild body.  Every exit path uses _exit() to skip atexit
  * handlers -- those might touch trinity shared state with a
  * capability profile the rest of the fuzzer doesn't expect.
+ *
+ * The order is fixed: unshare(CLONE_NEWUSER), the id-map writes, the
+ * secondary unshare(target_ns_flags), then fn(arg).  The secondary
+ * unshare needs the ns_capable() that only the new userns grants.
  */
 static void grandchild_body(int target_ns_flags,
 			    int (*fn)(void *), void *arg,
