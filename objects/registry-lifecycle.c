@@ -132,7 +132,7 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
 	 * Stamp the pool tag now that the obj has passed the fd-bound
 	 * gate and is about to enter a pool.  Read back by
 	 * objpool_check() in consumers (the post-2026-05-18 audit sweep
-	 * across fds/ + syscalls/keyctl.c)
+	 * across fds/ + syscalls/keyctl/keyctl.c)
 	 * to catch wild-obj-pointer derefs the loose 47-bit VA-range
 	 * shape check lets through.  release_obj()'s memset zeroes the
 	 * chunk on the way back to the deferred-free ring, which
