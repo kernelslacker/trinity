@@ -332,3 +332,18 @@ struct fd_hash_entry *fd_hash_lookup(int fd)
 	}
 	return NULL;
 }
+
+/*
+ * The OBJ_GLOBAL view answers first: a child clears its snapshot entry
+ * when it closes or replaces a global fd, while its OBJ_LOCAL pools keep
+ * an object past a close until something retires it.  Only fds opened
+ * after the fork reach the local half.
+ */
+struct object *find_object_by_fd(int fd)
+{
+	struct fd_hash_entry *e = fd_hash_lookup(fd);
+
+	if (e != NULL && e->obj != NULL)
+		return e->obj;
+	return local_fd_find_by_fd(fd);
+}

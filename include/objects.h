@@ -632,7 +632,7 @@ struct object *find_local_object_by_fd(enum objecttype type, int fd);
 /*
  * Walk every OBJ_LOCAL fd-typed pool for the calling child and return
  * the object that owns @fd, or NULL if no local pool tracks it.  Lets
- * fd_lookup_provider reach fds that live only in per-child OBJ_LOCAL
+ * find_object_by_fd reach fds that live only in per-child OBJ_LOCAL
  * pools (io_uring, userfaultfd, pidfd,
  * seccomp-notif, ...) — those never enter the fork-time global
  * fd_hash snapshot, so the epoll/poll/select sanitisers rely on this
@@ -641,7 +641,26 @@ struct object *find_local_object_by_fd(enum objecttype type, int fd);
  */
 struct object *local_fd_find_by_fd(int fd);
 
+/*
+ * Resolve @fd to the pooled object that tracks it, or NULL if no pool
+ * does: the OBJ_GLOBAL fd_hash first (a child's fork-time snapshot, with
+ * the closes it has seen applied), then the calling child's OBJ_LOCAL
+ * pools.  The object's obj_type names its pool.
+ */
+struct object *find_object_by_fd(int fd);
+
 void remove_object_by_fd(int fd);
+
+/*
+ * Child-side sibling of remove_object_by_fd(): retire every OBJ_LOCAL
+ * object the calling child tracks under @fd, for a number the kernel has
+ * already closed or handed out again (dup2/dup3 onto it, or a dup landing
+ * on a number a closed fd left behind).  Each object is destroyed with
+ * its fd invalidated, so no destructor closes @fd, which may name a new
+ * file by now.  Raises no fd event; a caller that closed something
+ * reports it through notify_child_fd_closed().
+ */
+void remove_local_objects_by_fd(int fd);
 
 /* fd hash table for O(1) fd→object lookup */
 #define FD_HASH_SIZE 4096	/* power of 2, must exceed max tracked fds */

@@ -1,9 +1,9 @@
 /*
  * Environment for linking fds/fds.c and fds/fds-registry.c into the test
- * binary: the allocator and list validator the registry needs, and stubs
- * for the object-pool lookups only the fd-to-provider walk reaches.  The
- * stubs abort when called, so a test that wanders into that walk fails
- * loudly instead of quietly seeing an untracked fd.
+ * binary: the allocator and list validator the registry needs, and a stub
+ * for the object-pool lookup the fd-to-provider walk reaches.  The stub
+ * aborts unless a test has installed a pool, so a test that wanders into
+ * that walk fails loudly instead of quietly seeing an untracked fd.
  */
 
 #include <stdio.h>
@@ -38,16 +38,17 @@ void __list_add_valid_or_die(struct list_head *new, struct list_head *prev,
 	(void)file; (void)func; (void)line;
 }
 
-struct fd_hash_entry *fd_hash_lookup(int fd)
-{
-	(void)fd;
-	fprintf(stderr, "fake fd_hash_lookup called unexpectedly\n");
-	abort();
-}
+/*
+ * What find_object_by_fd() answers.  A test that drives code reaching the
+ * lookup sets this for the duration of the call and clears it after.
+ */
+struct object *(*fake_find_object_by_fd)(int fd);
 
-struct object *local_fd_find_by_fd(int fd)
+struct object *find_object_by_fd(int fd)
 {
-	(void)fd;
-	fprintf(stderr, "fake local_fd_find_by_fd called unexpectedly\n");
-	abort();
+	if (fake_find_object_by_fd == NULL) {
+		fprintf(stderr, "fake find_object_by_fd called unexpectedly\n");
+		abort();
+	}
+	return fake_find_object_by_fd(fd);
 }

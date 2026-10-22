@@ -38,7 +38,7 @@ behind `fds-internal.h`, one concern per translation unit.
 | eventfd.c | 176 | eventfd provider |
 | mq.c | 172 | POSIX message-queue fd provider |
 | signalfd.c | 167 | signalfd provider |
-| fds.c | 172 | Provider dispatchers: fd→provider lookup, `fd_poll_can_block()`, the periodic `child_ops` / `child_init` walks, and the rate-limited `run_fd_provider_replenish()` tick, which resumes after the last provider it served |
+| fds.c | 164 | Provider dispatchers: fd→provider lookup, `fd_poll_can_block()`, the periodic `child_ops` / `child_init` walks, and the rate-limited `run_fd_provider_replenish()` tick, which resumes after the last provider it served |
 | drm.c | 164 | DRM device fd provider |
 | pidfd.c | 162 | pidfd provider (`pidfd_open`) |
 | dev_template.c | 150 | Templated `/dev/*` probing provider (parent-side, pre-fork) |
@@ -74,6 +74,7 @@ behind `fds-internal.h`, one concern per translation unit.
 - `trinity.c` — calls `open_fds()` once at startup after global object init
 - `childops/misc/fd-stress.c`, `run_fd_provider_child_ops()` — periodic per-child fd-level actions (bind/listen/accept, etc.) via each provider's optional `.child_ops`
 - `syscalls/fs/dup.c`, `syscalls/fs/ftruncate.c`, `syscalls/fs/fallocate.c`, `syscalls/fs/lseek.c`, `syscalls/fs/llseek.c`, `syscalls/*write*`, `syscalls/fs/splice/copy_file_range.c`, `syscalls/fs/splice/sendfile.c`, `syscalls/fs/splice/splice.c` — consult `fd_is_protected()` / `reroll_protected_fd_arg()` to keep kcov and stderr-capture fds safe from the close/size-changing families
+- `syscalls/fs/dup.c` — pools the dup family's results: the copy joins the `OBJ_LOCAL` pool of the fd it copies (`find_object_by_fd()`, then `publish_resource()`), and the object the returned number held is retired first (`remove_local_objects_by_fd()`); protected fds never enter a pool, on either end
 - `syscalls/poll/poll.c`, `syscalls/poll/select.c`, `syscalls/poll/pselect6.c`, `syscalls/poll/epoll_ctl.c` — use `get_pollable_random_fd()` and `fd_poll_can_block()` to build/validate watch sets
 - `kcov/lifecycle.c`, `kcov/diag.c` — own the fds that `fd_is_protected()` shields (`child->kcov.fd`, `child->kcov.cmp_fd`)
 - `stats/rotation_event.c` — owns the rotation-events sink fd (`stats_rotation_event_fd()`), the one shielded fd the parent opens and every child inherits; each child parks its copy above `PROTECTED_FD_HIGH_BASE` (60000, `include/fd.h`), like the kcov/taint/fail-nth slots

@@ -283,3 +283,23 @@ struct object *local_fd_find_by_fd(int fd)
 	}
 	return NULL;
 }
+
+/*
+ * Nothing retires a local object when its fd closes, so a number the
+ * kernel hands out again can still sit in a pool under the file it used
+ * to name, in several pools or twice in one.  Take one object per pass:
+ * a destroy that finds the slot inconsistent leaves the object where it
+ * was, and the bound stops the loop from finding it forever.
+ */
+void remove_local_objects_by_fd(int fd)
+{
+	unsigned int i;
+
+	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
+		struct object *obj = local_fd_find_by_fd(fd);
+
+		if (obj == NULL)
+			return;
+		__destroy_object(obj, OBJ_LOCAL, obj->obj_type, true);
+	}
+}
