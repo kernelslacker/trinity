@@ -101,7 +101,7 @@ check-config:
 # PURE-module test binary integration paths (arch-program #10).
 #
 # `make test-bin`    -- build the tests/ binary against the fake
-#                       shm+RNG providers.  Does not run it.
+#                       shm+RNG providers and run it.
 # `make test-asan`   -- rebuild under -fsanitize=address + run with
 #                       the default fixed seed (0xa17e57).  This is
 #                       the canonical single-shot integration
@@ -116,6 +116,8 @@ check-config:
 # directory and output binary by flavor (build/+test-bin for normal,
 # build-asan/+test-bin-asan for ASAN, build-ndebug/+test-bin-ndebug for
 # NDEBUG) so alternating targets never link incompatible .o files.
+# Its default goal also runs the binary once it is built, so the recipes
+# below do not.
 # New PURE modules migrate onto the test-bin cargo by adding one line
 # to tests/Makefile REAL_SRCS, not by wiring anything here.
 .PHONY: test-bin test-asan test-ndebug
@@ -125,13 +127,9 @@ test-bin: check-config
 
 test-asan: check-config
 	@$(MAKE) --no-print-directory -C tests ASAN=1
-	@echo "  RUN  tests/test-bin-asan (ASAN, seed=default)"
-	@./tests/test-bin-asan
 
 test-ndebug: check-config
 	@$(MAKE) --no-print-directory -C tests NDEBUG=1
-	@echo "  RUN  tests/test-bin-ndebug (NDEBUG, seed=default)"
-	@./tests/test-bin-ndebug
 
 
 MACHINE		:= $(shell $(CC) -dumpmachine)
