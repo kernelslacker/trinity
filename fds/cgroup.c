@@ -151,7 +151,7 @@ static void sacrificial_cg_cleanup(void)
  * in any of these cases.
  *
  * The self_cgroup gate is load-bearing: our current cgroup must be
- * inside utils/self_cgroup.c's "trinity-<pid>" container before we
+ * inside utils/self_cgroup_setup.c's "trinity-<pid>" container before we
  * mkdir a sibling under it.  A host where self_cgroup_setup fell back
  * to the outer scope leaves that marker absent and the whole feature
  * short-circuits before mkdir, so the smoke path (or any build that

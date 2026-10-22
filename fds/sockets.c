@@ -508,15 +508,16 @@ out:
 /*
  * Probe each socket family the random-syscall picker might select and
  * latch off the ones the running kernel can't open at all.  gen_socket_args
- * (syscalls/socket.c) consults no_domains[] before every random socket()
- * pick; without this auto-skip, a kernel built without CONFIG_BT / CONFIG_X25
- * / CONFIG_TIPC / CONFIG_PHONET / CONFIG_ATM / CONFIG_NFC / CONFIG_INFINIBAND
- * / CONFIG_SMC etc. burns one random-syscall slot per cycle on a
- * guaranteed-EAFNOSUPPORT call.  Only mark when both SOCK_STREAM and
- * SOCK_DGRAM probes return EAFNOSUPPORT or EPROTONOSUPPORT — anything else
- * (EACCES, EPERM, success) means the family is reachable and policy / type
- * mismatches are not our concern here.  The per-family code stays in tree;
- * users on a kernel with the family present probe-pass and fuzz normally.
+ * (syscalls/socket/socket.c) consults no_domains[] before every random
+ * socket() pick; without this auto-skip, a kernel built without CONFIG_BT /
+ * CONFIG_X25 / CONFIG_TIPC / CONFIG_PHONET / CONFIG_ATM / CONFIG_NFC /
+ * CONFIG_INFINIBAND / CONFIG_SMC etc. burns one random-syscall slot per
+ * cycle on a guaranteed-EAFNOSUPPORT call.  Only mark when both
+ * SOCK_STREAM and SOCK_DGRAM probes return EAFNOSUPPORT or
+ * EPROTONOSUPPORT — anything else (EACCES, EPERM, success) means the
+ * family is reachable and policy / type mismatches are not our concern
+ * here.  The per-family code stays in tree; users on a kernel with the
+ * family present probe-pass and fuzz normally.
  */
 static void probe_unsupported_pf_families(void)
 {
@@ -690,8 +691,9 @@ struct socketinfo * get_rand_socketinfo(void)
 		 * believable obj address but wildly wrong fd/family.
 		 * Legitimate sockets always have fd >= 0 (set by
 		 * add_socket() before publish) and family < TRINITY_PF_MAX
-		 * (the same bound syscalls/socket.c:133 and
-		 * syscalls/socketcall.c:199 enforce on the dispatch path).
+		 * (the same bound post_socket() in syscalls/socket/socket.c
+		 * and register_sock_fd() in syscalls/socket/socketcall.c
+		 * enforce before they register a socket).
 		 * Reject anything outside those bounds rather than feed it
 		 * into rand_proto_for_family() / get_domain_name() etc.
 		 */

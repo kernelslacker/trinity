@@ -91,9 +91,10 @@ unsigned int load_scratch_block_count(void)
 /*
  * Parent-only state for the atexit teardown.  Kept as file-scope
  * statics rather than in shm so child wild-writes cannot redirect
- * teardown into an attacker-chosen path (mirror self_cgroup.c's
- * cg_workload, cg_workload_fd handling).  The published view children
- * read lives in shm->isolation.scratch_block[].
+ * teardown into an attacker-chosen path (mirror
+ * utils/self_cgroup_setup.c's cg_workload, cg_workload_fd handling).
+ * The published view children read lives in
+ * shm->isolation.scratch_block[].
  */
 static char scratch_root_abs[PATH_MAX];
 static int loopctl_fd = -1;
