@@ -80,11 +80,11 @@ static void dump_strategy_stats_intervention_modes(void)
 
 		output(0, "  intervention modes:");
 		for (pim = 0; pim < NR_PIM_MODES; pim++)
-			output(0, " %s=%lu",
+			output(CONT, " %s=%lu",
 			       plateau_intervention_mode_name(
 				       (enum plateau_intervention_mode)pim),
 			       mode_windows[pim]);
-		output(0, "\n");
+		output(CONT, "\n");
 
 		/* Per-mode outcome accounting (paired with the windows[]
 		 * denominator above).  One line per mode; rates derived at
@@ -189,12 +189,12 @@ static void dump_strategy_stats_rescue_classes(void)
 				__ATOMIC_RELAXED);
 			if (count == 0)
 				continue;
-			output(0, " %s=%lu",
+			output(CONT, " %s=%lu",
 			       random_rescue_class_name(
 				       (enum random_rescue_class)c),
 			       count);
 		}
-		output(0, "\n");
+		output(CONT, "\n");
 
 		/* Amplified class is the orchestrator's current
 		 * pick; RRC_NR_CLASSES means no class is being
@@ -445,13 +445,13 @@ static void render_arm_reasons(int i)
 			output(0, "    reasons:");
 			any_reason = true;
 		}
-		output(0, " %s=%lu/%lu",
+		output(CONT, " %s=%lu/%lu",
 		       strategy_selection_reason_name(
 			       (enum strategy_selection_reason)r),
 		       rp, rr);
 	}
 	if (any_reason)
-		output(0, "\n");
+		output(CONT, "\n");
 }
 
 /* Chaos cohort breakdown: this arm's per-window WARN-fire
