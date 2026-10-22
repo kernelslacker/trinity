@@ -5,7 +5,7 @@ subsystems (kcov, cmp_hints, childops, random_syscall, corruption defenses)
 bump counters here; this directory turns those counters into text, JSON, CSV
 timeseries, and periodic operator-facing dumps.
 
-## Layout (74 .c files + 53 headers, ~22,717 LOC)
+## Layout (74 .c files + 53 headers, ~22,666 LOC)
 
 16 of those `.c` files and 48 of the headers are the per-subsystem counter
 tree under `stats/subsys/` (~391 + ~4,747 LOC), listed as one row at the
@@ -58,7 +58,7 @@ bottom rather than enumerated. The renderers below are the other 58.
 | json/minicorpus.c | Minicorpus JSON block (mutators, stack-depth, saves/evicts, replay-wins, sequence chains). |
 | json/cmp-hints.c | cmp_hints JSON summary (total hints, syscalls-with-hints). |
 | json/core.c | Non-network JSON section emitters + basic-subsystem descriptor tables. |
-| json/network.c | Network / netfilter / xfrm / socket-family / long-chain JSON section emitters + descriptor tables. |
+| json/network.c | Network / iouring-network long-chain JSON section emitters. |
 | json/tail.c | `vsock_transport_churn` JSON tail. |
 | json/type_graph.c | JSON shape for the resource type-graph observer (the observer itself is `objects/type-graph.c`); kept under `stats/json/` so the schema check finds its format literals. |
 | json/internal.h | Private cross-file interface for the `stats/json/` cluster; only `dump_stats_json()` is exported, from `include/stats-internal.h`. |

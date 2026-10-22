@@ -40,8 +40,6 @@ void dump_stats_json_corruption_and_audit(void);
 void dump_stats_json_lifecycle_and_storms(void);
 
 /* stats/json/network.c */
-void dump_stats_json_socket_family_and_tls(void);
-void dump_stats_json_netfilter_and_xfrm(void);
 void json_emit_net_churn_and_early_storms_section(void);
 void json_emit_pidfd_fs_and_container_section(void);
 void json_emit_tcp_ipv6_and_tunnels_section(void);

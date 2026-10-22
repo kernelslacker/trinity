@@ -9,7 +9,7 @@ pure data-plus-resolution: it contains no fill/mutate logic of its own (that
 lives in `args/struct_fill.c`, `args/struct_mutate.c`, `args/struct_validate.c`,
 `args/scrub.c`).
 
-## Files (50 .c files, ~10,619 LOC)
+## Files (49 .c files, ~10,533 LOC)
 
 The registration table and the union-bpf_attr tables have each been split: the
 per-domain registration arrays live under `struct_catalog/registry/` and the
@@ -18,7 +18,7 @@ per-cmd BPF field tables under `bpf-*.c`.
 | File | Lines | Role |
 |---|---|---|
 | sockaddr-af.c | 792 | `sockaddr_storage_fields`/`_variants` tagged union (dispatch on `ss_family`) + per-AF field arrays (UNIX/INET/INET6/NETLINK/PACKET/TIPC/QIPCRTR/NFC + optional VSOCK/CAIF/CAN/RXRPC/X25/PHONET/AX25/ROSE/ATM/LLC/MCTP/IF_ALG/XDP) |
-| catalog.c | 748 | `struct_catalog[]` — the struct_desc array itself (name/size/fields/variants per SC_X slot), local shims for structs missing from older kernel headers (`open_how`, `ns_id_req`, `lsm_ctx`), `struct_catalog_lookup()` by name |
+| catalog.c | 725 | `struct_catalog[]` — the struct_desc array itself (name/size/fields/variants per SC_X slot), local shims for structs missing from older kernel headers (`open_how`, `ns_id_req`, `lsm_ctx`), `struct_catalog_lookup()` by name |
 | io_uring_register.c | 695 | io_uring_setup params fields + `io_uring_register_variants[]` (one variant per IORING_REGISTER_* opcode) |
 | sctp.c | 587 | 20+ SCTP setsockopt optval field tables (rtoinfo, assocparams, sndinfo, paddrparams, etc.), gated `USE_SCTP` |
 | perf.c | 572 | `perf_event_attr_fields` + per-PERF_TYPE_* variant field arrays and vocab pools |
@@ -56,7 +56,6 @@ per-cmd BPF field tables under `bpf-*.c`.
 | resource.c | 48 | rlimit, cachestat_range |
 | kexec.c | 48 | kexec_segment |
 | ldt.c | 45 | user_desc (modify_ldt write arm, X86-only) |
-| crypto.c | 43 | `af_alg_iv` — the AF_ALG `ALG_SET_IV` control-message payload; attribution-only |
 | cap.c | 35 | user_cap_header, user_cap_data |
 | tcp.c | 33 | tcp_repair_opt (gated `USE_TCP_REPAIR_OPT`) |
 
@@ -74,9 +73,9 @@ per-cmd BPF field tables under `bpf-*.c`.
 | registry/sched.c | 28 | sched_setattr / sched_getattr → sched_attr; sched_setparam / sched_setscheduler → sched_param |
 | registry/io_uring.c | 25 | io_uring setup and register paths only — io_uring_enter's opcode-dispatched SQE bodies resolve through their own opcode table |
 
-`catalog.c` additionally `#include`s six `catalog-*.inc` fragments (~296 LOC) —
+`catalog.c` additionally `#include`s five `catalog-*.inc` fragments (~278 LOC) —
 blocks of `struct_catalog[]` designated initializers for the bpf, ptrace_regs,
-setsockopt, sctp, uffdio and AF_ALG slots, each wrapped in its own feature guard.
+setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
 
 `sockaddr.o` build artifact present in the directory listing is stale/ignored
 (no matching `.c`).

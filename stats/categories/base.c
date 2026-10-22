@@ -3,8 +3,7 @@
 
 /*
  * Descriptor tables staged for the follow-up JSON fan-out (per-fn conversions
- * of dump_stats_json_iouring_and_zombies / _socket_family_and_tls /
- * _netfilter_and_xfrm / _fault_and_fd_lifecycle).
+ * of dump_stats_json_iouring_and_zombies / _fault_and_fd_lifecycle).
  *
  * The category JSON key in each case doesn't match the struct member's
  * single prefix, so STAT_FIELD() rows pick whichever prefix matches the

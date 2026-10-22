@@ -42,7 +42,7 @@ every translation unit lives under one of the directories below.
 | [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (7 files, ~1,926 LOC) |
 | [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (18 files, ~6,920 LOC) |
 | [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype (11 files, ~3,066 LOC) |
-| [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs (50 files, ~10,619 LOC) |
+| [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs (49 files, ~10,533 LOC) |
 | [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~3,112 LOC) |
 | [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (123 files, ~22,663 LOC) |
 | [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (72 files, ~18,097 LOC) |
@@ -55,7 +55,7 @@ every translation unit lives under one of the directories below.
 | [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (11 files, ~4,273 LOC) |
 | [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (10 files, ~5,450 LOC) |
 | [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) (16 files, ~8,513 LOC) |
-| [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (74 files, ~22,717 LOC) |
+| [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (74 files, ~22,666 LOC) |
 | [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (7 files, ~1,677 LOC) |
 | [utils/](utils/CLAUDE.md) | General-purpose runtime support (32 files, ~10,562 LOC) |
 

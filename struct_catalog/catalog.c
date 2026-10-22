@@ -95,9 +95,6 @@
 #ifdef USE_MCTP
 #include <linux/mctp.h>
 #endif
-#ifdef USE_IF_ALG
-#include <linux/if_alg.h>
-#endif
 #ifdef USE_XDP
 #include <linux/if_xdp.h>
 /*
@@ -679,7 +676,6 @@ const struct struct_desc struct_catalog[] = {
 		.num_fields	= ARRAY_SIZE(kexec_segment_fields),
 	},
 #include "catalog-uffdio.inc"
-#include "catalog-af_alg.inc"
 	[SC_KEYCTL_PAYLOAD] = {
 		.name			= "keyctl_payload",
 		/*
