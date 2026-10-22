@@ -345,8 +345,12 @@ elif [ -n "$LINUS_UAPI" ] && [ -d "$LINUS_UAPI" ]; then
     # evaluated.  headers_install strips those internal dependencies.
     #
     # Cache the installed headers under XDG_CACHE_HOME keyed by the linus
-    # revision so repeated runs skip the cold make invocation.
-    LINUS_HASH=$(git -C "$LINUS_SRC" rev-parse --short HEAD 2>/dev/null || true)
+    # revision so repeated runs skip the cold make invocation.  A hook or a
+    # rebase exec exports GIT_DIR and friends, which would make git answer
+    # for the caller's repository and key the cache on the wrong revision.
+    LINUS_HASH=$(env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE \
+                     -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR -u GIT_PREFIX \
+                     git -C "$LINUS_SRC" rev-parse --short HEAD 2>/dev/null || true)
     LINUS_HDR_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/trinity/linus-hdrs-${LINUS_HASH}"
 
     if [ -n "$LINUS_HASH" ] && [ -f "$LINUS_HDR_CACHE/include/linux/version.h" ]; then
@@ -494,7 +498,6 @@ if [ -n "$HDR_INSTALL" ] && [ -s "$SYMS_BAD" ]; then
         cp "$SYMS_BAD2" "$SYMS_BAD"
 
         TIER2_RESOLVED=$(wc -l < "$SYMS_TIER2_GOOD" | tr -d ' ')
-        LINUS_HASH=$(git -C "$LINUS_SRC" rev-parse --short HEAD 2>/dev/null || true)
         if [ -n "$LINUS_HASH" ]; then
             TIER2_STATUS="ran($TIER2_RESOLVED,oracle=$LINUS_HASH)"
         else

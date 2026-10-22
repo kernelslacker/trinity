@@ -324,11 +324,12 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `uapi-shim-values-selftest`: runs `uapi-shim-values` on a scratch tree and
   asserts that a baseline symbol the host's headers lack is skipped, that one
   with no shim in the tree or a wrong pinned value fails, that a kernel tree
-  named by `TRINITY_LINUS_SRC` resolves the otherwise-skipped symbol, and that
-  unresolved symbols are one count rather than a line each.  It runs no git (a
-  stub answers the revision lookup).  Without it the gate's verdict can drift
-  back to depending on how old the build host's kernel headers are, and its
-  findings back under a line per unresolved symbol.
+  named by `TRINITY_LINUS_SRC` resolves the otherwise-skipped symbol even when
+  a hook has exported `GIT_DIR`, and that unresolved symbols are one count
+  rather than a line each.  It runs no git (a stub answers the gate's revision
+  lookup).  Without it the gate's verdict can drift back to depending on how
+  old the build host's kernel headers are, and its findings back under a line
+  per unresolved symbol.
 - `variant-address-walk`: verify both the static reachability walker
   (`struct_desc_has_address_field_depth()` in
   `struct_catalog/address.c`) and the runtime nested-address scrub

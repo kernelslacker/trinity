@@ -1,10 +1,11 @@
 #!/bin/bash
 #
 # uapi-shim-values-selftest: run uapi-shim-values on a scratch tree and pin the
-# verdicts that must not depend on the build host: a baseline entry its headers
-# predate is skipped, a stale one or a wrong value fails, a symbol only the
-# Tier-2 kernel tree resolves is checked, and unresolved symbols are one count.
-# It runs no git: a stub gives the revision the Tier-2 header cache is keyed on.
+# verdicts that must not depend on the build host or its caller: a baseline
+# entry its headers predate is skipped, a stale one or a wrong value fails, a
+# symbol only the Tier-2 kernel tree resolves is checked even under a hook's
+# GIT_DIR, and unresolved symbols are one count.  No git runs here: a stub
+# answers the gate's revision lookup.
 
 set -u
 
@@ -112,11 +113,19 @@ expect "listing requested: leaves out the other two" \
 # Case 5: the host cannot resolve the symbol but the Tier-2 kernel tree can.
 # The gate keys its header cache on the tree's git revision, so a stub git
 # answers 0123abc and a pre-seeded cache stands in for headers_install; its
-# neighbour.h defines the symbol on top of the host's header.
+# neighbour.h defines the symbol on top of the host's header.  Like the real
+# git, the stub answers for the caller's repository if GIT_* redirects it.
 linus="$work/linus"
 hdrs="$work/cache/trinity/linus-hdrs-0123abc/include"
 mkdir -p "$linus/include/uapi" "$work/bin" "$hdrs/linux"
-printf '#!/bin/sh\necho 0123abc\n' > "$work/bin/git"
+cat > "$work/bin/git" <<'EOF'
+#!/bin/sh
+if env | grep -qE '^GIT_(DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|COMMON_DIR|PREFIX)='; then
+	echo callers-revision
+else
+	echo 0123abc
+fi
+EOF
 chmod +x "$work/bin/git"
 : > "$hdrs/linux/version.h"
 printf '#include_next <linux/neighbour.h>\n#define SELFTEST_NEWER_THAN_HOST 99\n' \
@@ -132,6 +141,15 @@ run_gate "SELFTEST_NEWER_THAN_HOST 98" "${tier2[@]}"
 expect "tier2-resolved baseline symbol, wrong value: gate fails" [ "$rc" -ne 0 ]
 expect "tier2-resolved baseline symbol, wrong value: names both values" \
 	grep -q 'baseline SELFTEST_NEWER_THAN_HOST: compiler says 99, baseline says 98' "$work/err"
+
+# Case 6: a hook or rebase exec exports GIT_DIR and friends.  They must not
+# pick the revision the header cache is keyed on, or Tier 2 misses its cache.
+run_gate "SELFTEST_NEWER_THAN_HOST 99" "${tier2[@]}" GIT_DIR=/nonexistent \
+	GIT_WORK_TREE=/nonexistent GIT_INDEX_FILE=/nonexistent \
+	GIT_OBJECT_DIRECTORY=/nonexistent GIT_COMMON_DIR=/nonexistent GIT_PREFIX=x/
+expect "inherited GIT_DIR: gate still finds the Tier-2 cache" [ "$rc" -eq 0 ]
+expect "inherited GIT_DIR: baseline symbol checked, not skipped" \
+	grep -q 'baseline-skipped 0 ' "$work/out"
 
 total=$((pass + fail))
 
