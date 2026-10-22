@@ -490,8 +490,7 @@ transient recovery.
   the parser rejects `combined`.  The live regular-pool removal it
   would add (`deactivate_syscall_locked` on the `regular_suppressed`
   subset) is a separate, gated step that adds the value after
-  SHADOW_ONLY validates the classifier against a real run per the
-  `needs-root-pool-userns-axis-2026-06-27` §5 Phase 2 A/B ramp.
+  SHADOW_ONLY validates the classifier against a real run.
 
 Param-settable from `--context-pool=off|shadow-only`.
 

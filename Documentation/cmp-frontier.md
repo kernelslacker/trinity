@@ -169,9 +169,10 @@ the durable per-syscall cmp pool).
   `childop_cmp_*` shadow counter stays at zero -- the childop
   dispatch surface is byte-identical to a build without this knob.
 - `on`: the bracket opens on every CMP-mode child whose dispatch
-  reaches the existing `op_uses_outer_bracket` gate; honour the §3.2
-  all-routed invariant on any childop migrated to
-  `trinity_cmp_syscall`.
+  reaches the existing `op_uses_outer_bracket` gate; a childop
+  migrated to `trinity_cmp_syscall` must route every syscall it
+  issues inside the bracket through the wrapper (see
+  `include/childop-cmp.h`).
 
 Per-childop migration to the wrapper is a separate per-op step
 earned by the conversion-chain metrics; the OFF default ships the
