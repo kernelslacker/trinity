@@ -475,7 +475,7 @@ static void park_surviving_children(void)
  * are scoped to this call so they reset across epochs -- carrying
  * them in file scope would let a prior epoch's count trip the >10
  * cap on the first real wait of a new epoch. */
-static void wait_for_children_to_exit(void)
+void wait_for_children_to_exit(void)
 {
 	unsigned int last = 0;
 	unsigned int shutdown_attempts = 0;

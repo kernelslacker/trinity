@@ -41,6 +41,9 @@ extern unsigned int stall_count;
 /* Reset a taskless slot's rings from the parent-private canaries and point
  * its childdata back at them; call after clean_childdata(). */
 void reset_child_rings(unsigned int childno);
+/* The shutdown tail: kill and reap children until the pid map is empty,
+ * parking any the kernel will not release. */
+void wait_for_children_to_exit(void);
 
 /* main/reap.c -- exposed entry points. */
 int shm_is_corrupt(void);
