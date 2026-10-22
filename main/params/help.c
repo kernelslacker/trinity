@@ -132,7 +132,7 @@ static const struct option_help option_descs[] = {
 	{ "epoch-iterations",	 0,  "syscalls per epoch before restarting (must be > 0; omit to disable)" },
 	{ "epoch-timeout",	 0,  "seconds per epoch before restarting (must be > 0; omit to disable)" },
 	{ "exclude",		'x', "exclude syscall(s): name or comma-list, each optionally @32 or @64" },
-	{ "explorer-children",	 0,  "reserve N STRATEGY_RANDOM explorer children (default max_children/4 for bandit)" },
+	{ "explorer-children",	 0,  "reserve N STRATEGY_RANDOM explorer children (default (max_children - alt_op_children)/4 for bandit)" },
 	{ "fork-pressure-drain", 0, "suppress canary picks of pid-heavy ops under fork() failure (default off)" },
 	{ "group",		'g', "only run syscalls from a certain group (vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time,xattr)" },
 	{ "group-bias",		 0,  "bias syscall selection toward the same group as the previous call" },
