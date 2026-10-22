@@ -50,8 +50,6 @@ void json_emit_iouring_iscsi_and_net_tail_section(void);
 
 /* stats/json/tail.c */
 void dump_stats_json_vsock_tail(void);
-void dump_stats_json_probes_misuse_and_tail(void);
-void json_emit_dead_arms_section(void);
 
 /* stats/json/type_graph.c */
 void type_graph_json_emit_top_handoffs(void);
