@@ -2,7 +2,7 @@
 
 Decides what value goes in each of a syscall's up to 6 argument slots, given the slot's declared `argtype` (ARG_FD, ARG_STRUCT_PTR_IN, ARG_RANGE, ...) and, for struct-shaped slots, the per-field schema pulled from struct_catalog/. Runs once per dispatch from `generate_syscall_args()`, between sanitise-callback selection and the kernel call.
 
-## Files (18 files, ~6,920 LOC)
+## Files (18 files, ~6,722 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -13,7 +13,7 @@ Decides what value goes in each of a syscall's up to 6 argument slots, given the
 | struct_validate.c | 166 | One-shot (first-fill-gated) startup validator: walks every struct_catalog fields[] array checking FT_LEN_* buf_fields siblings agree on FT_PTR_BYTES/ARRAY tag and unit; BUG()s on authoring mistakes. Entry point `struct_field_fill_schema_aware()` also lives here |
 | arg-decoder.c | 240 | Renders a dispatched syscall into the `-vv` trace line (prefix `name(args)` + postfix `= ret`); skipped when verbosity<=1 and no post-mortem in progress |
 | gen_arg_mask.c | 275 | ARG_NODEMASK / ARG_CPUMASK bucketed bitmap generators, plus ARG_IOVECLEN/ARG_SOCKADDRLEN paired-length passthrough and ARG_SOCKETINFO |
-| generate-args.c | 574 | Top-level orchestration: `arg_meta_init()` (per-slot dir/owner metadata, `ARG_OWNER_SANITISER` for `sanitiser_owned_mask` slots), `blanket_address_scrub()`, `generic_sanitise()` (calls `fill_arg()` per slot, zeroing the entry's `sanitiser_owned_mask` slots instead), `generic_free_arg()`, `generate_syscall_args()` entry point |
+| generate-args.c | 376 | Top-level orchestration: `arg_meta_init()` (per-slot dir/owner metadata, `ARG_OWNER_SANITISER` for `sanitiser_owned_mask` slots), `blanket_address_scrub()`, `generic_sanitise()` (calls `fill_arg()` per slot, zeroing the entry's `sanitiser_owned_mask` slots instead), `generic_free_arg()`, `generate_syscall_args()` entry point |
 | scrub.c | 374 | Post-fill defensive address relocation: walks FT_ADDRESS fields inside cataloged structs (recursing FT_PTR_STRUCT/FT_PTR_ARRAY, depth-capped at 4) and redirects any pointer aliasing shared_regions/libc-heap via `avoid_shared_buffer_out()` |
 | gen_arg_struct_ptr.c | 338 | ARG_STRUCT_PTR_IN/OUT/INOUT generators (alloc + schema-fill or poison-fill via struct_catalog lookup, fallback sizes when uncataloged) and ARG_STRUCT_SIZE (copy_struct_from_user size-word distribution, incl. per-struct old-ABI size table and CMP-hint pull) |
 | handle_arg.c | 433 | Per-argtype-family generators too stateful for a one-line table entry: ARG_ADDRESS (previous-slot reuse), ARG_RANGE (boundary bias + CMP-hint), ARG_OP/ARG_LIST (bitmask/command draws + CMP-hint + prop_ring), ARG_IOVEC(_IN) (9-bucket count distribution around UIO_FASTIOV/UIO_MAXIOV), ARG_SOCKADDR, ARG_MODE_T, `publish_paired_length()` |
