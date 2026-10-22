@@ -43,17 +43,13 @@
 #     happens-before edge and the readers can observe the flag
 #     before the data the publish was meant to make visible.
 #
-#   - dont_make_it_fail, no_fail_nth, no_pidns, no_private_ns,
-#     socket_family_chain_unsupported,
-#     recipe_disabled[], iouring_recipe_disabled[]: feature-discovery
-#     latches.  First child to observe "kernel can't / won't do this"
-#     RELAXED-stores true so siblings stop probing; every reader
-#     RELAXED-loads.  A torn load on a fresh child can leave the bit
-#     half-flipped: the reader treats the feature as still-supported
-#     and re-runs the probe path, burning the syscall budget on a
-#     known-dead arm.
-#     Array entries share the same protocol -- the per-slot store
-#     publishes to all other children's per-slot loads.
+#   - dont_make_it_fail, no_fail_nth, no_pidns, no_private_ns:
+#     feature-discovery latches.  First child to observe "kernel
+#     can't / won't do this" RELAXED-stores true so siblings stop
+#     probing; every reader RELAXED-loads.  A torn load on a fresh
+#     child can leave the bit half-flipped: the reader treats the
+#     feature as still-supported and re-runs the probe path, burning
+#     the syscall budget on a known-dead arm.
 #
 # Heuristic: every `shm->FIELD` token reference (with FIELD in the
 # watch list) outside an `&shm->FIELD` operand is a violation.
@@ -86,7 +82,7 @@ BASELINE="$ROOT/scripts/check-static/shm-latch-direct.baseline"
 # the field's existing write sites must all be __atomic_store_n /
 # __atomic_fetch_*, otherwise the very first check run will flip
 # legitimate writers into baseline entries.
-WATCH="exit_reason|current_strategy|current_selection_reason|plateau_current_hypothesis|ready|spawn_no_more|postmortem_in_progress|dont_make_it_fail|no_fail_nth|no_pidns|no_private_ns|socket_family_chain_unsupported|recipe_disabled|iouring_recipe_disabled"
+WATCH="exit_reason|current_strategy|current_selection_reason|plateau_current_hypothesis|ready|spawn_no_more|postmortem_in_progress|dont_make_it_fail|no_fail_nth|no_pidns|no_private_ns"
 
 declare -A GRANDFATHERED=()
 if [ -r "$BASELINE" ]; then
