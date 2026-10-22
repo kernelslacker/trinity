@@ -9,16 +9,14 @@
 # Ensures tracefs is mounted at a stable path and that the tracefs control
 # files are writable by the unprivileged trinity runner.  Without this:
 #
-#   (1) tracefs_fuzzer_init() (childops/fs/tracefs-fuzzer.c:1503-1516) probes
-#       <root>/tracing_on with access(F_OK); if neither candidate root exists
-#       the childop latches CHILDOP_LATCH_UNSUPPORTED and exits immediately.
+#   (1) With no tracefs mount there are no tracefs files for fuzzed syscalls
+#       to open, and perf_event_open's tracepoint-id pool stays empty
+#       (syscalls/perf/perf_event_open-pmu-discovery.c).
 #
 #   (2) Even with the mount present, all tracefs control files are mode 0640
 #       root:root (kernel/trace/trace.h:34 TRACE_MODE_WRITE 0640).  After the
-#       child process drops privileges the runtime probe at
-#       childops/fs/tracefs-fuzzer.c:1579-1594 calls access(W_OK) on
-#       tracing_on, gets EACCES, sets tracefs_runtime_dead, and every
-#       subsequent call returns immediately without exercising anything.
+#       child process drops privileges, a fuzzed open for write on one of
+#       them fails with EACCES before reaching the tracing code.
 #
 # This script is idempotent: if the mount already exists and the permissions
 # are already relaxed it exits 0 without making any changes.
@@ -224,9 +222,9 @@ trap '_tracefs_ready_val=failed' ERR
 # Step 1: Ensure tracefs is mounted
 # ---------------------------------------------------------------------------
 #
-# tracefs_fuzzer_init() (childops/fs/tracefs-fuzzer.c:1503-1516) probes the
-# first candidate root whose <root>/tracing_on exists via access(F_OK).  The
-# candidate list (childops/fs/tracefs-fuzzer.c:66-68) is, in order:
+# The candidate tracefs roots are, in order (the order perf_event_open's
+# tracepoint enumeration walks them in
+# syscalls/perf/perf_event_open-pmu-discovery.c):
 #   /sys/kernel/tracing   -- dedicated tracefs mount (kernels >= 4.1)
 #   /sys/kernel/debug/tracing -- tracefs mounted under debugfs (older kernels)
 #
@@ -376,7 +374,7 @@ fi
 #
 # Confirm that the target user can actually write tracing_on after the chmod
 # above.  This catches gaps such as a read-only bind-mount or an LSM denial
-# that would cause tracefs_fuzzer_init() to set tracefs_runtime_dead anyway.
+# that would leave the runner's tracefs writes failing with EACCES anyway.
 #
 # _tracefs_ready_val is the measured result written to the state file.
 # It is initialised to 'unknown' early in the script and promoted to '1'

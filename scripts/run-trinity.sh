@@ -40,7 +40,7 @@ fi
 #   scripts/setup-privileged-preconditions.sh
 #       Mount tracefs and relax 0640 file modes (TRACE_MODE_WRITE,
 #       kernel/trace/trace.h:34) so the unprivileged runner can
-#       exercise tracefs-fuzzer.
+#       write the tracefs control files.
 #       (CAP_SYS_ADMIN, CAP_DAC_OVERRIDE)
 #
 # Fault-injector state: read the world-readable file written by
@@ -134,11 +134,10 @@ if [[ -r "${_tf_state_file}" ]]; then
 fi
 
 if [[ "${_tf_tracefs_ready}" != "1" ]]; then
-    # Absent state file or tracefs_ready != 1: tracefs-fuzzer will probe
-    # access(W_OK) on tracing_on at runtime and set tracefs_runtime_dead
-    # (childops/fs/tracefs-fuzzer.c:1579-1594) if it gets EACCES, silently
-    # skipping all tracefs operations.  Warn so the operator knows coverage
-    # may be degraded without failing the run.
+    # Absent state file or tracefs_ready != 1: the tracefs control files
+    # are most likely still 0640 root:root, so a fuzzed open for write by
+    # the unprivileged runner fails with EACCES and tracefs coverage is
+    # degraded.  Warn so the operator knows without failing the run.
     if [[ ! -r "${_tf_state_file}" ]]; then
         _tf_state_dir=$(dirname "${_tf_state_file}")
         if [[ -d "${_tf_state_dir}" && ! -x "${_tf_state_dir}" ]]; then
@@ -147,8 +146,8 @@ if [[ "${_tf_tracefs_ready}" != "1" ]]; then
             echo "  Fix: sudo chmod 0755 ${_tf_state_dir}  or  sudo scripts/setup-privileged-preconditions.sh [--user \$USER] then re-run." >&2
         else
             echo "WARNING: ${_tf_state_file} absent — setup-privileged-preconditions.sh has not run this boot." >&2
-            echo "  tracefs-fuzzer may get EACCES on tracing_on (TRACE_MODE_WRITE 0640 root:root)" >&2
-            echo "  and set tracefs_runtime_dead, silently skipping all tracefs coverage." >&2
+            echo "  writes to tracefs files such as tracing_on may get EACCES (TRACE_MODE_WRITE 0640 root:root)" >&2
+            echo "  and silently degrade tracefs coverage." >&2
             echo "  Fix: sudo scripts/setup-privileged-preconditions.sh [--user \$USER] then re-run." >&2
         fi
     else
