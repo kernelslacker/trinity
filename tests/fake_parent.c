@@ -43,6 +43,9 @@ pid_t *pids;
 struct childdata **children;
 struct stats_published *shm_published;
 
+/* Owned by main/spawn.c in production. */
+uint64_t spawn_stall_deadline;
+
 /* Owned by tables/tables.c, tables-uniarch.c and tables-biarch.c in
  * production.  Empty, so get_syscall_entry() finds no entry. */
 bool biarch;

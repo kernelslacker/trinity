@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdint.h>
 #include <sys/types.h>
 #include <time.h>
 
@@ -52,6 +53,9 @@ void dstate_diag_get_counts(unsigned int *printed, unsigned int *omitted,
 			    unsigned int *sigs);
 
 /* main/spawn.c -- exposed entry points. */
+/* CLOCK_MONOTONIC ns at which a startup fill whose spawns keep failing
+ * opens the barrier anyway; reset_epoch_state() clears it. */
+extern uint64_t spawn_stall_deadline;
 void replace_child(int childno);
 void fork_children(void);
 void dump_proc_self_status(void);

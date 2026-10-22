@@ -61,6 +61,19 @@ static unsigned long fork_pressure_failures;
  * fraction of the run.  Each new burst re-arms the window. */
 #define FORK_PRESSURE_DRAIN_RECOVERY_S	30U
 
+/* Seconds a startup fill may fail every spawn before it opens the
+ * barrier anyway.  Unthrottled, two 2 s call budgets and the tick
+ * between them take just over 4 s: it opens a second into the third
+ * call, once a whole retry with a clear mask has failed. */
+#define SPAWN_STALL_OPEN_S	5U
+
+/* CLOCK_MONOTONIC ns past which fork_children() opens the startup
+ * barrier, or 0.  A failed spawn there arms it while it is 0, and one
+ * that succeeds clears it, as does reset_epoch_state(), so only an
+ * unbroken run of failures within an epoch reaches it.  replace_child()
+ * leaves it alone, for the reason it leaves fork_pressure_failures. */
+uint64_t spawn_stall_deadline;
+
 unsigned long fork_pressure_drain_active(void)
 {
 	return __atomic_load_n(&fork_pressure_active_until, __ATOMIC_RELAXED);
@@ -586,6 +599,35 @@ void dump_proc_self_status(void)
 	}
 }
 
+/*
+ * Run on every failed spawn in fork_children().  A global fork cap
+ * (RLIMIT_NPROC, pids.max) fails every spawn.  With twelve or more
+ * slots empty, the backoff budget ends every call before it has skipped
+ * them all, so the parked-or-skipped return never opens the startup
+ * barrier, and the children that did fork would wait at it for as long
+ * as the cap holds.  Open it once spawns have failed for
+ * SPAWN_STALL_OPEN_S straight.  Only reset_epoch_state() closes the
+ * barrier, so this opens it, and logs, at most once an epoch.
+ */
+static void check_spawn_stall(void)
+{
+	uint64_t now = mono_ns();
+
+	if (spawn_stall_deadline == 0) {
+		spawn_stall_deadline = now + SPAWN_STALL_OPEN_S * 1000000000ULL;
+		return;
+	}
+	if (now < spawn_stall_deadline ||
+	    __atomic_load_n(&shm->ready, __ATOMIC_RELAXED))
+		return;
+
+	__atomic_store_n(&shm->ready, true, __ATOMIC_RELEASE);
+	output(0, "main: the startup fill has not grown for %u s (%u of %u slots running); opening the startup barrier\n",
+		SPAWN_STALL_OPEN_S,
+		__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED),
+		live_child_slots);
+}
+
 /* Generate children*/
 void fork_children(void)
 {
@@ -613,8 +655,10 @@ void fork_children(void)
 	 * fleet waiting at it.  It stays free, which keeps running_childs
 	 * below live_child_slots, so main_loop()'s top-up calls back next
 	 * tick and retries it with a clear mask.  The 2 s budget fits
-	 * eleven skips, so twelve or more failing slots still hold the
-	 * barrier.  Allocated once: max_children is fixed for the run. */
+	 * eleven skips, so with twelve or more failing slots every call
+	 * ends on the budget first, and while they keep failing only
+	 * check_spawn_stall() opens the barrier.  Allocated once:
+	 * max_children is fixed for the run. */
 	static bool *skipped;
 
 	if (skipped == NULL)
@@ -698,6 +742,7 @@ void fork_children(void)
 							fork_pressure_failures,
 							FORK_PRESSURE_DRAIN_RECOVERY_S);
 				}
+				check_spawn_stall();
 				if (consecutive_fork_failures >= max_consecutive_fork_failures) {
 					outputerr("main: fork stuck - %u consecutive spawn failures; bailing (process table likely exhausted)\n",
 						consecutive_fork_failures);
@@ -726,6 +771,7 @@ void fork_children(void)
 				continue;
 			consecutive_fork_failures = 0;
 			fork_pressure_failures = 0;
+			spawn_stall_deadline = 0;
 		}
 
 		/* Per-spawn visibility under -v.  Today only the final

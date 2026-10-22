@@ -3,7 +3,8 @@
  * slot lifecycle in main/reap-zombie.c.  A zombie-pending or quarantined
  * slot must come out of an epoch reset still parked: nothing at the
  * boundary proves its task is gone.  Forked children held in pause()
- * stand in for tasks the kernel has not released.
+ * stand in for tasks the kernel has not released.  The reset must also
+ * disarm fork_children()'s spawn-stall deadline.
  */
 
 #include <signal.h>
@@ -182,6 +183,20 @@ static void quarantine_threshold_spans_epochs(void)
 	fake_parent_reset();
 }
 
+/* Spawns that kept failing to the end of an epoch leave a stall
+ * deadline armed and long past.  Kept, it would open the next epoch's
+ * barrier at that epoch's first failed spawn. */
+static void stall_deadline_cleared(void)
+{
+	fake_parent_reset();
+	spawn_stall_deadline = 1;
+
+	reset_epoch_state();
+
+	if (spawn_stall_deadline != 0)
+		BUG("epoch reset: kept the last epoch's spawn-stall deadline");
+}
+
 void epoch_reset_self_check(void);
 void epoch_reset_self_check(void)
 {
@@ -189,4 +204,5 @@ void epoch_reset_self_check(void)
 	carried_slot_reaped_by_drain();
 	quarantined_slot_survives_reset();
 	quarantine_threshold_spans_epochs();
+	stall_deadline_cleared();
 }

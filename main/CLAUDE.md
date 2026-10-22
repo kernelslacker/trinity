@@ -156,7 +156,13 @@ API surface.
    call: the per-call 1000-failure `EXIT_FORK_FAILURE` bail is never
    reached behind it, and a fleet that cannot fork is retried every tick.
    The opt-in fork-pressure drain counts failures across calls, so a
-   refill of a few slots still reaches its threshold of 100.
+   refill of a few slots still reaches its threshold of 100.  The 2s cap
+   fits eleven skips, so under a global fork cap (RLIMIT_NPROC, cgroup
+   `pids.max`) a startup fill with twelve or more slots failing never
+   skips them all; once its spawns have failed for 5s straight
+   (`SPAWN_STALL_OPEN_S`, timed across calls and restarted by a
+   `fork_children()` spawn that succeeds and by the epoch reset) it
+   opens the barrier anyway and logs once.
 6. **One-shot forensic snapshots on the bail path** — fork-failure,
    fast-die-loop, and D-state-stuck all have latched (`static bool
    emitted`) one-time dumps (`/proc/self/status`, cgroup pids/memory.events,

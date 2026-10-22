@@ -683,6 +683,9 @@ void reset_epoch_state(void)
 	__atomic_store_n(&shm->spawn_no_more, false, __ATOMIC_RELEASE);
 	__atomic_store_n(&shm->ready, false, __ATOMIC_RELEASE);
 	__atomic_store_n(&shm->running_childs, 0, __ATOMIC_RELAXED);
+	/* A deadline the last epoch's failed spawns armed would open the
+	 * barrier just closed at this epoch's first failed spawn. */
+	spawn_stall_deadline = 0;
 
 	parent_stats.op_count = 0;
 	parent_stats.previous_op_count = 0;
