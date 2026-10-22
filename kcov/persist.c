@@ -462,6 +462,19 @@ static void kcov_bitmap_recount(const unsigned char *bm, size_t n,
 	*distinct = d;
 }
 
+/*
+ * Scratch copies of the blocks one save serialises.  kcov_bitmap_save_file()
+ * owns them and frees them at its one cleanup label.
+ */
+struct kcov_bitmap_blobs {
+	unsigned char *bucket_seen;
+	unsigned char *priors;
+	size_t priors_size;
+	struct kcov_per_syscall_diag_ondisk *diag;
+	size_t diag_size;
+	struct kcov_strat_ondisk strat;
+};
+
 /* per_syscall_edges / per_syscall_calls are [nr][do32?1:0]; the
  * on-disk priors format is still one MAX_NR_SYSCALL-long per-nr
  * blob, so sum both arch dims into the serialised slot.  Loaders
@@ -617,18 +630,12 @@ static bool kcov_bitmap_persist_refused(unsigned long recount_edges,
 
 /*
  * Write the blocks to "<path>.tmp.<pid>" and rename it over @path, so a
- * crash mid-write never replaces a good cache with a torn one.  Takes
- * ownership of the three scratch blobs and frees them on every path;
- * the caller must not touch them afterwards.
+ * crash mid-write never replaces a good cache with a torn one.  The tmp
+ * fd and file are released here; @blobs stay with the caller.
  */
 static bool kcov_bitmap_write_file(const char *path,
 				   const struct kcov_bitmap_file_header *hdr,
-				   const struct kcov_strat_ondisk *strat_blob,
-				   unsigned char *bucket_seen_blob,
-				   unsigned char *priors_blob,
-				   size_t priors_blob_size,
-				   struct kcov_per_syscall_diag_ondisk *diag_blob,
-				   size_t diag_blob_size)
+				   const struct kcov_bitmap_blobs *blobs)
 {
 	char tmppath[PATH_MAX];
 	int fd;
@@ -636,30 +643,16 @@ static bool kcov_bitmap_write_file(const char *path,
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
 		       path, (int)mypid());
-	if (ret < 0 || (size_t)ret >= sizeof(tmppath)) {
-		free(bucket_seen_blob);
-		free(diag_blob);
-		free(priors_blob);
+	if (ret < 0 || (size_t)ret >= sizeof(tmppath))
 		return false;
-	}
 
 	fd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (fd < 0) {
-		free(bucket_seen_blob);
-		free(diag_blob);
-		free(priors_blob);
+	if (fd < 0)
 		return false;
-	}
 
 	/* Neutralise any fuzzer-installed umask so the save mode is 0644. */
-	if (fchmod(fd, 0644) != 0) {
-		(void)close(fd);
-		(void)unlink(tmppath);
-		free(bucket_seen_blob);
-		free(diag_blob);
-		free(priors_blob);
-		return false;
-	}
+	if (fchmod(fd, 0644) != 0)
+		goto fail;
 
 	{
 		struct trinity_persist_envelope env;
@@ -672,57 +665,41 @@ static bool kcov_bitmap_write_file(const char *path,
 
 	if (write_all(fd, hdr, sizeof(*hdr)) < 0)
 		goto fail;
-	if (write_all(fd, bucket_seen_blob, KCOV_NUM_EDGES) < 0)
+	if (write_all(fd, blobs->bucket_seen, KCOV_NUM_EDGES) < 0)
 		goto fail;
-	if (write_all(fd, priors_blob, priors_blob_size) < 0)
+	if (write_all(fd, blobs->priors, blobs->priors_size) < 0)
 		goto fail;
-	if (write_all(fd, diag_blob, diag_blob_size) < 0)
+	if (write_all(fd, blobs->diag, blobs->diag_size) < 0)
 		goto fail;
-	if (write_all(fd, strat_blob, sizeof(*strat_blob)) < 0)
+	if (write_all(fd, &blobs->strat, sizeof(blobs->strat)) < 0)
 		goto fail;
 	if (fsync(fd) != 0)
 		goto fail;
 	if (close(fd) != 0) {
 		(void)unlink(tmppath);
-		free(bucket_seen_blob);
-		free(diag_blob);
-		free(priors_blob);
 		return false;
 	}
 	if (rename(tmppath, path) != 0) {
 		(void)unlink(tmppath);
-		free(bucket_seen_blob);
-		free(diag_blob);
-		free(priors_blob);
 		return false;
 	}
-	free(bucket_seen_blob);
-	free(diag_blob);
-	free(priors_blob);
 	return true;
 
 fail:
 	(void)close(fd);
 	(void)unlink(tmppath);
-	free(bucket_seen_blob);
-	free(diag_blob);
-	free(priors_blob);
 	return false;
 }
 
 bool kcov_bitmap_save_file(const char *path)
 {
 	struct kcov_bitmap_file_header hdr;
-	struct kcov_strat_ondisk strat_blob;
+	struct kcov_bitmap_blobs blobs;
 	unsigned long edges_now;
 	unsigned long recount_edges;
 	unsigned long recount_distinct;
-	unsigned char *priors_blob;
-	unsigned char *bucket_seen_blob;
-	struct kcov_per_syscall_diag_ondisk *diag_blob;
-	size_t priors_blob_size;
 	size_t one_array_size;
-	size_t diag_blob_size;
+	bool ok = false;
 
 	if (path == NULL || kcov_shm == NULL)
 		return false;
@@ -733,28 +710,29 @@ bool kcov_bitmap_save_file(const char *path)
 		return true;
 	}
 
+	memset(&blobs, 0, sizeof(blobs));
+
 	one_array_size = (size_t)MAX_NR_SYSCALL * sizeof(unsigned long);
-	priors_blob_size = 2 * one_array_size;
-	priors_blob = malloc(priors_blob_size);
-	if (priors_blob == NULL) {
+	blobs.priors_size = 2 * one_array_size;
+	blobs.priors = malloc(blobs.priors_size);
+	if (blobs.priors == NULL) {
 		output(0, "kcov-bitmap: priors scratch alloc fail (%zu bytes) -- save aborted\n",
-		       priors_blob_size);
-		return false;
+		       blobs.priors_size);
+		goto out;
 	}
-	kcov_bitmap_pack_priors(priors_blob, one_array_size);
+	kcov_bitmap_pack_priors(blobs.priors, one_array_size);
 
-	diag_blob_size = (size_t)MAX_NR_SYSCALL * 2 *
-			 sizeof(struct kcov_per_syscall_diag_ondisk);
-	diag_blob = malloc(diag_blob_size);
-	if (diag_blob == NULL) {
+	blobs.diag_size = (size_t)MAX_NR_SYSCALL * 2 *
+			  sizeof(struct kcov_per_syscall_diag_ondisk);
+	blobs.diag = malloc(blobs.diag_size);
+	if (blobs.diag == NULL) {
 		output(0, "kcov-bitmap: diag scratch alloc fail (%zu bytes) -- save aborted\n",
-		       diag_blob_size);
-		free(priors_blob);
-		return false;
+		       blobs.diag_size);
+		goto out;
 	}
-	kcov_bitmap_pack_diag(diag_blob);
+	kcov_bitmap_pack_diag(blobs.diag);
 
-	strat_blob = kcov_bitmap_pack_strat();
+	blobs.strat = kcov_bitmap_pack_strat();
 
 	/* Snapshot bucket_seen into a stable buffer so the CRC stamped in
 	 * the header and the bytes later streamed to disk cover the
@@ -767,23 +745,17 @@ bool kcov_bitmap_save_file(const char *path)
 	 * additive, so a byte flipping mid-memcpy is harmless (we capture 0
 	 * or 1; the edge is recaptured on the next save).  The only
 	 * invariant is that the CRC and the write reference the same bytes. */
-	bucket_seen_blob = malloc(KCOV_NUM_EDGES);
-	if (bucket_seen_blob == NULL) {
+	blobs.bucket_seen = malloc(KCOV_NUM_EDGES);
+	if (blobs.bucket_seen == NULL) {
 		output(0, "kcov-bitmap: bucket_seen scratch alloc fail (%zu bytes) -- save aborted\n",
 		       (size_t)KCOV_NUM_EDGES);
-		free(diag_blob);
-		free(priors_blob);
-		return false;
+		goto out;
 	}
-	memcpy(bucket_seen_blob, kcov_shm->bucket_seen, KCOV_NUM_EDGES);
+	memcpy(blobs.bucket_seen, kcov_shm->bucket_seen, KCOV_NUM_EDGES);
 
 	memset(&hdr, 0, sizeof(hdr));
-	if (!kcov_get_kernel_fp(hdr.kallsyms_sha256)) {
-		free(bucket_seen_blob);
-		free(diag_blob);
-		free(priors_blob);
-		return false;
-	}
+	if (!kcov_get_kernel_fp(hdr.kallsyms_sha256))
+		goto out;
 
 	hdr.magic = KCOV_BITMAP_FILE_MAGIC;
 	hdr.version = KCOV_BITMAP_FILE_VERSION;
@@ -796,24 +768,20 @@ bool kcov_bitmap_save_file(const char *path)
 	 * more (edge, bucket) bit-flips out of step with the bytes the
 	 * payload_crc32 below covers.  The recount makes the on-disk
 	 * (counter, bitmap) pair coherent by construction. */
-	kcov_bitmap_recount(bucket_seen_blob, KCOV_NUM_EDGES,
+	kcov_bitmap_recount(blobs.bucket_seen, KCOV_NUM_EDGES,
 			    &recount_edges, &recount_distinct);
 
 	if (kcov_bitmap_persist_refused(recount_edges, recount_distinct,
-					edges_now)) {
-		free(bucket_seen_blob);
-		free(diag_blob);
-		free(priors_blob);
-		return false;
-	}
+					edges_now))
+		goto out;
 
 	hdr.edges_found = recount_edges;
 	hdr.distinct_edges = recount_distinct;
-	hdr.payload_crc32 = crc32(bucket_seen_blob, KCOV_NUM_EDGES);
+	hdr.payload_crc32 = crc32(blobs.bucket_seen, KCOV_NUM_EDGES);
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
-	hdr.priors_crc32 = crc32(priors_blob, priors_blob_size);
-	hdr.diag_crc32 = crc32(diag_blob, diag_blob_size);
-	hdr.strat_crc32 = crc32(&strat_blob, sizeof(strat_blob));
+	hdr.priors_crc32 = crc32(blobs.priors, blobs.priors_size);
+	hdr.diag_crc32 = crc32(blobs.diag, blobs.diag_size);
+	hdr.strat_crc32 = crc32(&blobs.strat, sizeof(blobs.strat));
 	/* Stamp the canonicalisation mode so the loader can refuse a
 	 * canonical-vs-raw mismatch.  Zero means the writer hashed PCs
 	 * raw (kallsyms unreadable, _text absent); non-zero is the
@@ -823,17 +791,21 @@ bool kcov_bitmap_save_file(const char *path)
 	 * their own local base before comparing bucket indices. */
 	hdr.kaslr_base = kcov_kaslr_base;
 
-	if (!kcov_bitmap_write_file(path, &hdr, &strat_blob, bucket_seen_blob,
-				    priors_blob, priors_blob_size,
-				    diag_blob, diag_blob_size))
-		return false;
+	if (!kcov_bitmap_write_file(path, &hdr, &blobs))
+		goto out;
 	kcov_bitmap_edges_at_last_save = edges_now;
-	return true;
+	ok = true;
+
+out:
+	free(blobs.bucket_seen);
+	free(blobs.diag);
+	free(blobs.priors);
+	return ok;
 }
 
 /*
  * Read and check the persist envelope at the head of @fd.  On failure the
- * reason is logged and @fd is closed.
+ * reason is logged; the caller owns @fd either way.
  */
 static bool kcov_bitmap_check_envelope(int fd, const char *path)
 {
@@ -844,58 +816,29 @@ static bool kcov_bitmap_check_envelope(int fd, const char *path)
 	if (en != (ssize_t)sizeof(env)) {
 		output(0, "kcov-bitmap: envelope truncated at %s (got %zd, want %zu) -- cold start\n",
 		       path, en, sizeof(env));
-		(void)close(fd);
 		return false;
 	}
-	if (!persist_envelope_validate(&env, PERSIST_KCOV, path)) {
-		(void)close(fd);
+	if (!persist_envelope_validate(&env, PERSIST_KCOV, path))
 		return false;
-	}
 	if (!persist_envelope_check_generation(&env, PERSIST_KCOV,
-					       path)) {
-		(void)close(fd);
+					       path))
 		return false;
-	}
 
 	return true;
 }
 
 /*
- * Everything up to the bitmap: refuse a NULL path or kcov_shm, sweep stale
- * tmp files, fingerprint the kernel, open @path and check its envelope and
- * header.  On success *hdr_out holds the header and *fd_out is open,
- * positioned at the bitmap.  On failure the reason is logged and the fd,
- * if it was opened, is already closed.
+ * Check the persist envelope, then read the header and check it against
+ * this kernel (@cur_fp) and this build.  On success *hdr_out holds the
+ * header and @fd is positioned at the bitmap.  On failure the reason is
+ * logged; the caller owns @fd either way.
  */
-static bool kcov_bitmap_load_header(const char *path,
-				    struct kcov_bitmap_file_header *hdr_out,
-				    int *fd_out)
+static bool kcov_bitmap_load_header(int fd, const char *path,
+				    const uint8_t cur_fp[32],
+				    struct kcov_bitmap_file_header *hdr_out)
 {
 	struct kcov_bitmap_file_header hdr;
-	uint8_t cur_fp[32];
 	ssize_t n;
-	int fd;
-
-	if (path == NULL || kcov_shm == NULL)
-		return false;
-
-	persist_sweep_stale_tmp(path);
-
-	if (!kcov_get_kernel_fp(cur_fp)) {
-		output(0, "kcov-bitmap: cannot fingerprint kernel (/proc/kallsyms unavailable) -- warm-start disabled this run\n");
-		return false;
-	}
-
-	fd = open(path, O_RDONLY);
-	if (fd < 0) {
-		if (errno == ENOENT)
-			output(0, "kcov-bitmap: no persisted state at %s -- cold start\n",
-			       path);
-		else
-			output(0, "kcov-bitmap: open(%s) failed: %s -- cold start\n",
-			       path, strerror(errno));
-		return false;
-	}
 
 	if (!kcov_bitmap_check_envelope(fd, path))
 		return false;
@@ -910,14 +853,12 @@ static bool kcov_bitmap_load_header(const char *path,
 	if (n != (ssize_t)KCOV_BITMAP_HDR_V6_SIZE) {
 		output(0, "kcov-bitmap: header truncated at %s (got %zd, want %u) -- cold start\n",
 		       path, n, (unsigned int)KCOV_BITMAP_HDR_V6_SIZE);
-		(void)close(fd);
 		return false;
 	}
 
 	if (hdr.magic != KCOV_BITMAP_FILE_MAGIC) {
 		output(0, "kcov-bitmap: file magic 0x%08x != expected 0x%08x at %s -- cold start\n",
 		       hdr.magic, KCOV_BITMAP_FILE_MAGIC, path);
-		(void)close(fd);
 		return false;
 	}
 	if (hdr.version < KCOV_BITMAP_FILE_MIN_LOAD_VERSION ||
@@ -926,7 +867,6 @@ static bool kcov_bitmap_load_header(const char *path,
 		       hdr.version,
 		       (unsigned int)KCOV_BITMAP_FILE_MIN_LOAD_VERSION,
 		       (unsigned int)KCOV_BITMAP_FILE_VERSION, path);
-		(void)close(fd);
 		return false;
 	}
 	/* v7 trailer: 8 B of {strat_crc32, pad2} that v5/v6 binaries
@@ -941,26 +881,23 @@ static bool kcov_bitmap_load_header(const char *path,
 		if (n != (ssize_t)tail_size) {
 			output(0, "kcov-bitmap: v7 header trailer truncated at %s (got %zd, want %zu) -- cold start\n",
 			       path, n, tail_size);
-			(void)close(fd);
 			return false;
 		}
 	}
 	if (hdr.num_edges != KCOV_NUM_EDGES) {
 		output(0, "kcov-bitmap: num_edges %u != expected %u at %s (file built with a different KCOV_NUM_EDGES) -- cold start\n",
 		       hdr.num_edges, KCOV_NUM_EDGES, path);
-		(void)close(fd);
 		return false;
 	}
 	if (hdr.num_buckets != KCOV_NUM_BUCKETS) {
 		output(0, "kcov-bitmap: num_buckets %u != expected %u at %s (file built with a different KCOV_NUM_BUCKETS) -- cold start\n",
 		       hdr.num_buckets, KCOV_NUM_BUCKETS, path);
-		(void)close(fd);
 		return false;
 	}
-	if (memcmp(hdr.kallsyms_sha256, cur_fp, sizeof(cur_fp)) != 0) {
+	if (memcmp(hdr.kallsyms_sha256, cur_fp,
+		   sizeof(hdr.kallsyms_sha256)) != 0) {
 		output(0, "kcov-bitmap: kernel fingerprint mismatch at %s (kallsyms content differs from when the file was written) -- cold start\n",
 		       path);
-		(void)close(fd);
 		return false;
 	}
 	/* The on-disk buckets are indexed by canonical PC (raw PC minus
@@ -978,18 +915,17 @@ static bool kcov_bitmap_load_header(const char *path,
 		       path,
 		       (unsigned long long)hdr.kaslr_base,
 		       (unsigned long long)kcov_kaslr_base);
-		(void)close(fd);
 		return false;
 	}
 
 	*hdr_out = hdr;
-	*fd_out = fd;
 	return true;
 }
 
 /*
  * Stage the bitmap into scratch, check its CRC and only then publish it
- * into kcov_shm.  On failure the reason is logged and @fd is closed.
+ * into kcov_shm.  On failure the reason is logged; the caller owns @fd
+ * either way.
  */
 static bool kcov_bitmap_load_bitmap(int fd,
 				    const char *path,
@@ -1005,7 +941,6 @@ static bool kcov_bitmap_load_bitmap(int fd,
 	if (scratch == NULL) {
 		output(0, "kcov-bitmap: scratch alloc fail (%zu bytes) -- cold start\n",
 		       (size_t)KCOV_NUM_EDGES);
-		(void)close(fd);
 		return false;
 	}
 	n = read_all(fd, scratch, KCOV_NUM_EDGES);
@@ -1013,7 +948,6 @@ static bool kcov_bitmap_load_bitmap(int fd,
 		output(0, "kcov-bitmap: payload truncated at %s (got %zd, want %zu) -- cold start\n",
 		       path, n, (size_t)KCOV_NUM_EDGES);
 		free(scratch);
-		(void)close(fd);
 		return false;
 	}
 
@@ -1022,7 +956,6 @@ static bool kcov_bitmap_load_bitmap(int fd,
 		output(0, "kcov-bitmap: skipping warm-start of %s -- CRC mismatch\n",
 		       path);
 		free(scratch);
-		(void)close(fd);
 		return false;
 	}
 
@@ -1223,19 +1156,22 @@ static void kcov_bitmap_load_strat(int fd,
 	}
 }
 
-bool kcov_bitmap_load_file(const char *path)
+/*
+ * Read every block of the open file: the bitmap is published only once its
+ * CRC checks out, the priors, diag and strat blocks are soft.  The caller
+ * owns @fd and closes it whatever this returns.
+ */
+static bool kcov_bitmap_read_blocks(int fd, const char *path,
+				    const uint8_t cur_fp[32],
+				    struct kcov_bitmap_file_header *hdr)
 {
-	struct kcov_bitmap_file_header hdr;
 	uint64_t diag_off;
 	uint64_t strat_off;
-	unsigned long recount_edges;
-	unsigned long recount_distinct;
-	int fd;
 
-	if (!kcov_bitmap_load_header(path, &hdr, &fd))
+	if (!kcov_bitmap_load_header(fd, path, cur_fp, hdr))
 		return false;
 
-	if (!kcov_bitmap_load_bitmap(fd, path, &hdr))
+	if (!kcov_bitmap_load_bitmap(fd, path, hdr))
 		return false;
 
 	/* The blocks behind the bitmap sit back to back, sized for the
@@ -1245,18 +1181,54 @@ bool kcov_bitmap_load_file(const char *path)
 	 * computed offsets rather than from wherever the last read
 	 * stopped.  The priors start where the bitmap read ended. */
 	diag_off = sizeof(struct trinity_persist_envelope) +
-		   (hdr.version >= 7U ? sizeof(hdr) :
-					KCOV_BITMAP_HDR_V6_SIZE) +
+		   (hdr->version >= 7U ? sizeof(*hdr) :
+					 KCOV_BITMAP_HDR_V6_SIZE) +
 		   KCOV_NUM_EDGES +
-		   (uint64_t)hdr.max_nr_syscall * 2 * sizeof(unsigned long);
-	strat_off = diag_off + (uint64_t)hdr.max_nr_syscall * 2 *
+		   (uint64_t)hdr->max_nr_syscall * 2 * sizeof(unsigned long);
+	strat_off = diag_off + (uint64_t)hdr->max_nr_syscall * 2 *
 		    sizeof(struct kcov_per_syscall_diag_ondisk);
 
-	kcov_bitmap_load_priors(fd, path, &hdr);
-	kcov_bitmap_load_diag(fd, path, &hdr, diag_off);
-	kcov_bitmap_load_strat(fd, path, &hdr, strat_off);
+	kcov_bitmap_load_priors(fd, path, hdr);
+	kcov_bitmap_load_diag(fd, path, hdr, diag_off);
+	kcov_bitmap_load_strat(fd, path, hdr, strat_off);
+	return true;
+}
 
+bool kcov_bitmap_load_file(const char *path)
+{
+	struct kcov_bitmap_file_header hdr;
+	uint8_t cur_fp[32];
+	unsigned long recount_edges;
+	unsigned long recount_distinct;
+	bool read_ok;
+	int fd;
+
+	if (path == NULL || kcov_shm == NULL)
+		return false;
+
+	persist_sweep_stale_tmp(path);
+
+	if (!kcov_get_kernel_fp(cur_fp)) {
+		output(0, "kcov-bitmap: cannot fingerprint kernel (/proc/kallsyms unavailable) -- warm-start disabled this run\n");
+		return false;
+	}
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		if (errno == ENOENT)
+			output(0, "kcov-bitmap: no persisted state at %s -- cold start\n",
+			       path);
+		else
+			output(0, "kcov-bitmap: open(%s) failed: %s -- cold start\n",
+			       path, strerror(errno));
+		return false;
+	}
+
+	read_ok = kcov_bitmap_read_blocks(fd, path, cur_fp, &hdr);
 	(void)close(fd);
+	if (!read_ok)
+		return false;
+
 	/* Recount counters from the just-loaded bitmap instead of
 	 * trusting the header values verbatim.  Headers written without
 	 * the save-side recount can carry a skewed pair (counters were
