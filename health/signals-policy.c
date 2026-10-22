@@ -266,11 +266,12 @@ void mask_signals_child(void)
 	 * watchpoint (--writer-watch).  Installed unconditionally so the
 	 * disposition is the same shape regardless of whether the perf
 	 * event has been armed yet; writer_watch_arm_child() is what
-	 * actually opens the perf fd and routes SIGTRAP here via
-	 * F_SETSIG.  When --writer-watch is not in use the perf fd is
-	 * never opened, no SIGTRAP can fire, and the handler is dead
-	 * code.  SA_SIGINFO so the handler can read the ucontext for the
-	 * writer's RIP and the siginfo for the watched address.
+	 * actually opens the perf event, whose sigtrap=1 has the kernel
+	 * raise SIGTRAP here.  Without --writer-watch that never happens,
+	 * and the handler ignores the SIGTRAPs a sibling sends.
+	 * SA_SIGINFO so the handler can read the ucontext for the
+	 * writer's RIP and the siginfo for the watched address and the
+	 * sender.
 	 */
 	{
 		struct sigaction trap_sa;

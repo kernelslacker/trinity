@@ -6,9 +6,10 @@
  * WRITE breakpoint (PERF_TYPE_BREAKPOINT / HW_BREAKPOINT_W) on the
  * passed address in every fuzz child.  A write to that address traps
  * synchronously, in the writing child, at the exact instruction.  The
- * SIGTRAP is delivered via F_SETSIG to writer_trap_handler() in
- * signals.c, which dumps the writer's RIP, syscall nr, childop name,
- * op_nr and pid -- the exact wild writer, with no race.
+ * event's sigtrap=1 has the kernel raise a SIGTRAP, and
+ * writer_trap_handler() in health/signals-fault-handler.c dumps the
+ * writer's RIP, syscall nr, childop name, op_nr and pid -- the exact
+ * wild writer, with no race.
  *
  * exclude_kernel=0 so kernel-side value-result writes (copy_to_user
  * through a fuzzed pointer that lands in the watched address) trap too.

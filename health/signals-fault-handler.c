@@ -298,6 +298,10 @@ void stamp_childop_identity(void)
  * identity and _exit()s so the trap does not re-fire when the kernel
  * resumes the interrupted thread.  See Documentation/signals.md.
  *
+ * A SIGTRAP another process sent (kill, tgkill, rt_sigqueueinfo, or a
+ * SIGIO routed here by F_SETSIG) is no trap and is ignored, as in
+ * child_fault_handler(): fault_signal_is_real() decides.
+ *
  * STRICTLY ASYNC-SIGNAL-SAFE: only write(2), sigsafe_* helpers, and
  * pure inline ucontext reads.  No libc malloc / stdio / locale / lock,
  * no symbolization (dladdr is unsafe; emit RAW PC and resolve offline
@@ -320,6 +324,9 @@ void writer_trap_handler(int sig, siginfo_t *info, void *ctx)
 	size_t used;
 	ssize_t w;
 
+	if (!fault_signal_is_real(sig, info, mypid()))
+		return;
+
 	me = this_child();
 	if (me != NULL &&
 	    range_in_tracked_shared((unsigned long)me,
@@ -336,7 +343,7 @@ void writer_trap_handler(int sig, siginfo_t *info, void *ctx)
 
 	sigsafe_puts(&b, "WRITER-PINNED: hardware write breakpoint fired");
 	sigsafe_puts(&b, " addr=");
-	sigsafe_putp(&b, info != NULL ? info->si_addr : NULL);
+	sigsafe_putp(&b, info->si_addr);
 	sigsafe_puts(&b, " writer_pc=");
 	sigsafe_putp(&b, fault_beacon_extract_ip(ctx));
 	sigsafe_puts(&b, " (RAW; subtract trinity_base=");
@@ -355,7 +362,6 @@ void writer_trap_handler(int sig, siginfo_t *info, void *ctx)
 	used = sizeof(buf) - b.left;
 	w = write(STDERR_FILENO, buf, used);
 	(void)w;	/* dying anyway; short write irrelevant */
-	(void)sig;
 
 	/*
 	 * _exit(), not return / raise.  The watched address has just been

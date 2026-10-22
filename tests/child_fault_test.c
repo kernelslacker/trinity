@@ -1,9 +1,10 @@
 /*
  * Self-check for the handlers a child takes fault signals with:
- * child_fault_handler() (health/signals-fault-handler.c) and the guards
- * around a walk of a mapping in mm/fault-read.c and mm/fault-write.c.
- * Each case forks a task, delivers one signal to it for real, and reads
- * the verdict off its exit status and stderr.
+ * child_fault_handler() and writer_trap_handler()
+ * (health/signals-fault-handler.c) and the guards around a walk of a
+ * mapping in mm/fault-read.c and mm/fault-write.c.  Each case forks a
+ * task, delivers one signal to it for real, and reads the verdict off
+ * its exit status and stderr.
  */
 
 #include <errno.h>
@@ -28,6 +29,11 @@
 #include "utils-macros.h"	/* ARRAY_SIZE */
 #include "utils.h"		/* waitpid_eintr */
 
+/* The si_code of a perf event's sigtrap; older libc headers lack it. */
+#ifndef TRAP_PERF
+#define TRAP_PERF	6
+#endif
+
 #define SURVIVED	42	/* the task got past the signal */
 #define NOT_SENT	43	/* the task could not send the signal */
 
@@ -35,12 +41,14 @@ enum verdict {
 	IGNORED,	/* the handler returned and the task carried on */
 	DROPPED,	/* a signal the task fuzzed at itself: a quiet exit */
 	LOGGED,		/* taken for a fault: a crash report, then exit */
+	PINNED,		/* taken for the writer-watch trap: its report, then exit */
 };
 
 static const char *const verdict_name[] = {
 	[IGNORED] = "ignored",
 	[DROPPED] = "dropped",
 	[LOGGED] = "logged",
+	[PINNED] = "pinned",
 };
 
 #define SIBLING		0x1	/* a sibling sends it, else the task itself */
@@ -113,6 +121,25 @@ static const struct child_case cases[] = {
 	  SIGILL, ILL_ILLOPC, 0, LOGGED },
 	{ "SIGSEGV forced by the kernel",
 	  SIGSEGV, SI_KERNEL, 0, LOGGED },
+
+	/* The writer-watch breakpoint's SIGTRAP is the kernel's, with
+	 * TRAP_PERF, and ends the task with a report of the writer.  What
+	 * a sibling or F_SETSIG can send is not that.  The handler has no
+	 * quiet drop, so the task's own kill() is reported like a trap. */
+	{ "SIGTRAP, TRAP_PERF from the writer-watch breakpoint",
+	  SIGTRAP, TRAP_PERF, 0, PINNED },
+	{ "SIGTRAP from kill(getpid())",
+	  SIGTRAP, SI_USER, NAMES_SELF, PINNED },
+	{ "SIGTRAP from a sibling's kill",
+	  SIGTRAP, SI_USER, SIBLING, IGNORED },
+	{ "SIGTRAP from a sibling's tgkill",
+	  SIGTRAP, SI_TKILL, SIBLING, IGNORED },
+	{ "SIGTRAP, SI_QUEUE naming the task",
+	  SIGTRAP, SI_QUEUE, SIBLING | NAMES_SELF, IGNORED },
+	{ "SIGTRAP, F_SETSIG band naming the task",
+	  SIGTRAP, SI_SIGIO, SIBLING | NAMES_SELF, IGNORED },
+	{ "SIGTRAP, SI_QUEUE the task queued at itself",
+	  SIGTRAP, SI_QUEUE, NAMES_SELF, IGNORED },
 };
 
 /* @word is what the siginfo holds first: si_pid for a code that has a
@@ -233,8 +260,11 @@ static enum verdict run_case(const struct child_case *c)
 
 	if (WIFEXITED(status) && WEXITSTATUS(status) == SURVIVED)
 		return IGNORED;
-	if (WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS)
+	if (WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS) {
+		if (strstr(log, "WRITER-PINNED"))
+			return PINNED;
 		return strstr(log, "BUGLOG-COMPLETE") ? LOGGED : DROPPED;
+	}
 	fprintf(stderr, "%s: task status %#x\n", c->what, status);
 	BUG("child fault: the task did not end as the handler would end it");
 }

@@ -185,6 +185,17 @@ data-breakpoints).  This handler dumps the writer's identity and
 `_exit()`s so the trap does not re-fire when the kernel resumes the
 interrupted thread.
 
+Only a SIGTRAP that `fault_signal_is_real()` (include/signals.h) calls
+real gets that far: the breakpoint's own, with its positive `si_code`,
+any other the kernel raises, and one the child aims at itself with
+`kill()` or `tgkill()`.  A `kill()`, `tgkill()` or `rt_sigqueueinfo()`
+from a sibling, and a SIGIO that `F_SETSIG` routes here (`SI_SIGIO`,
+with `si_band` where `si_pid` would be), are ignored: a sibling cannot
+end the child by sending one.  There is no quiet drop as in
+`child_fault_handler()`: a SIGTRAP the rule passes is reported and ends
+the child, one it aimed at itself included.  tests/child_fault_test.c
+delivers these shapes as it does for `child_fault_handler()`.
+
 Synchronous delivery requires `perf_event_attr.sigtrap=1` (kernel >=
 5.13).  The earlier `F_SETSIG`/SIGIO route is asynchronous and would
 make `info->si_addr` meaningless -- explicitly NOT used.
@@ -528,6 +539,8 @@ SIGABRT, SIGBUS and SIGILL.  It judges them by the parent's rule,
 `fault_signal_is_real()` (include/signals.h): a real fault, or the
 child's own `abort()`, `raise()` or `kill(getpid(), ...)`, goes on to the
 crash path, and anything else returns and lets the child carry on.
+`writer_trap_handler()`, which it installs for SIGTRAP, asks the same
+rule (see "SIGTRAP handler for the writer-pinning canary").
 
 Children fuzz `kill()`, `tgkill()`, `rt_sigqueueinfo()` and
 `pidfd_send_signal()` at one another, so `si_pid` is believed only where
