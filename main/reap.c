@@ -385,13 +385,11 @@ void kill_all_kids(void)
 			children_seen++;
 		} else {
 			/* check we don't have anything stale in the pidlist */
-			if (errno == ESRCH) {
-				if (pidstatfiles != NULL && pidstatfiles[i] >= 0) {
-					close(pidstatfiles[i]);
-					pidstatfiles[i] = -1;
-				}
-				reap_child(children[i], i, true);
+			if (pidstatfiles != NULL && pidstatfiles[i] >= 0) {
+				close(pidstatfiles[i]);
+				pidstatfiles[i] = -1;
 			}
+			reap_child(children[i], i, true);
 		}
 	}
 

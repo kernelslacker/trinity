@@ -47,8 +47,7 @@ void set_child_cache(int childno, pid_t pid, struct childdata *child)
  *
  * False means the task is gone or dying, established by ESRCH from
  * kill(), by a /proc read that says the pid has no task (pidstat_read()
- * confirms an ENOENT with kill()), or by the state field, and leaves
- * errno at ESRCH, which kill_all_kids() reads.
+ * confirms an ENOENT with kill()), or by the state field.
  * Anything that stops the probe short of that (a refused kill(), a full
  * fd table, ENOMEM) says nothing about the task and counts as alive: a
  * false answer releases locks and skips the SIGKILL.
@@ -90,7 +89,6 @@ bool pid_alive(pid_t pid)
 	switch (pidstat_read(pid, buf, sizeof(buf))) {
 	case PIDSTAT_GONE:
 		/* Race: process exited between kill() and the read. */
-		errno = ESRCH;
 		return false;
 	case PIDSTAT_UNKNOWN:
 		return true;
@@ -100,15 +98,7 @@ bool pid_alive(pid_t pid)
 
 	state = pidstat_parse(buf).state;
 
-	if (state == 'Z' || state == 'X') {
-		/* Set errno so callers (notably check_lock) treat this
-		 * the same as a fully-dead pid and release the lock
-		 * instead of bailing on the EPERM-style guard. */
-		errno = ESRCH;
-		return false;
-	}
-
-	return true;
+	return state != 'Z' && state != 'X';
 }
 
 /*

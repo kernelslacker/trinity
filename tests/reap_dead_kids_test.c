@@ -3,7 +3,9 @@
  * slot with a pidstat fd is judged by that fd alone, and one without is
  * probed with kill(pid, 0), where only ESRCH reaps it.  The probe is
  * failed with any errno, and the probes counted, through the kill()
- * wrapper in fake_parent.c, which is transparent unless armed.
+ * wrapper in fake_parent.c, which is transparent unless armed.  Also the
+ * pid_alive() branch of kill_all_kids(), which the fake pid_alive() in
+ * fake_parent.c answers from the same probe.
  */
 
 #include <errno.h>
@@ -155,6 +157,45 @@ static void kill_probe_decides_without_a_pidstat_fd(unsigned int slot,
 	end_task(pid);
 }
 
+/* kill_all_kids() asks pid_alive() about a slot whose pidstat fd does
+ * not say the task is gone.  The fake one answers from kill(pid, 0), so
+ * ESRCH is a task that is not there: its slot is reaped and its fd closed
+ * with no SIGKILL for it.  A task the probe still finds is sent one and
+ * keeps its slot. */
+static void kill_all_kids_follows_pid_alive(unsigned int slot, bool gone)
+{
+	pid_t pid;
+
+	start_scenario();
+	pid = occupy_slot(slot);
+	pidstatfiles[slot] = open_child_pidstat(pid);
+	if (pidstatfiles[slot] < 0)
+		BUG("kill all kids: cannot open the task's stat file");
+	if (gone) {
+		fake_kill_probe_pid = pid;
+		fake_kill_probe_errno = ESRCH;
+	}
+
+	kill_all_kids();
+
+	if (gone) {
+		if (pids[slot] != EMPTY_PIDSLOT || pidstatfiles[slot] != -1 ||
+		    shm->running_childs != 0)
+			BUG("kill all kids: a slot pid_alive() gave up on was not reaped");
+		if (fake_killed_pid != 0)
+			BUG("kill all kids: a task that is not there was sent a SIGKILL");
+	} else {
+		if (fake_killed_pid != pid)
+			BUG("kill all kids: a live task was not sent a SIGKILL");
+		if (pids[slot] != pid || shm->running_childs != 1)
+			BUG("kill all kids: a live task's slot was reaped");
+		close(pidstatfiles[slot]);
+		pidstatfiles[slot] = -1;
+	}
+
+	end_task(pid);
+}
+
 void reap_dead_kids_self_check(void);
 void reap_dead_kids_self_check(void)
 {
@@ -164,6 +205,8 @@ void reap_dead_kids_self_check(void)
 	pidstat_fd_leaves_a_live_task(3);
 	for (i = 0; i < ARRAY_SIZE(probe_cases); i++)
 		kill_probe_decides_without_a_pidstat_fd(5, &probe_cases[i]);
+	kill_all_kids_follows_pid_alive(4, true);
+	kill_all_kids_follows_pid_alive(6, false);
 
 	/* Leave no armed probe for later suites. */
 	start_scenario();
