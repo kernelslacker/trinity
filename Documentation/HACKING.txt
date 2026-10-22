@@ -4,7 +4,7 @@
   (especially enterprise ones).  The preferred way to fix this is to add the missing
   declarations to kernel fallback headers
   If for some reason you can't detect presence of a definition in a header file
-  (or need to test prescence of a header file), add it to configure.sh. This should
+  (or need to test prescence of a header file), add it to configure. This should
   be a last resort, in most cases an #ifndef addition to kernel fallback headers will be enough.
 
   This means of course that trinity will be trying to run new syscalls on older kernels
@@ -13,28 +13,33 @@
   kernels on distributions with older userspace whose header files may not define those features.
 
 * Porting to new architectures
-  - Add a syscalls-{archname}.h defining the syscall table in the same order as your arch
-  - Add a arch-{archname}.h to define useful things like PAGE_OFFSET
+  - Add an include/syscalls-{archname}.h defining the syscall table in the same order as your arch
+  - Add an include/arch-{archname}.h to define useful things like PAGE_OFFSET, and to #define
+    SYSCALLS (SYSCALLS32 and SYSCALLS64 for a biarch arch) as the name of that table
   - If your arch starts its Linux syscalls at non-zero (like MIPS does), define SYSCALL_OFFSET
     in arch-{archname}.h
-  - Add syscalls/{syscallname}.c for your arch specific syscalls.
-  - Change setup_syscall_tables in tables.c to pick the correct syscall table for your arch.
+  - Add syscalls/{archname}/{syscallname}.c for your arch specific syscalls, and list that
+    directory in SYSCALLS_ARCH in the Makefile.
+  - Include the new headers from include/arch.h and include/arch-syscalls.h so the build picks
+    the correct syscall table for your arch.  select_syscall_tables() in tables/table-copy.c
+    copies it into shared memory at startup.
   That should be it.
 
 * Adding new sanitise routines
   syscalls:
    - First, decide if it's worth adding a sanitise routine at all, or if the generic
-     sanitise routines are good enough, by setting each arguments .arg*type member
+     sanitise routines are good enough, by setting each arguments .argtype[] entry
      to an appropriate ARG_*
    - In cases where the generic routines are either insufficient, or need to be overridden,
      the .sanitise member of the syscall struct can be pointed to a routine that will
      run after the generic sanitise routines.
-   - The 'child' parameter of the sanitise function is to be used to index the various
-     per-child arrays in the shm.
+   - The sanitise function is passed the syscall record (rec), and overwrites rec->a1..a6
+     in place once the generic routines have filled them.
    - Likewise, after the syscall is run, you may need to free up resources allocated
-     in the .sanitise.  You can do this in the .post function.
-     There's an unsigned long in the shm named 'scratch' that may be used to store
-     ptrs to resources etc for retrieval later in .post
+     in the .sanitise.  You can do this in the .post function, or in .cleanup, which runs
+     unconditionally after .post.
+     rec->post_state may be used to store ptrs to resources etc for retrieval later in
+     .post and .cleanup.
    - Beware of 'over sanitising' and limiting the possibility for boundary conditions
      to be violated. A syscall that always succeeds is not the goal, you want to be
      exercising as many error paths as possible.
@@ -46,7 +51,8 @@
   On startup, the first process sets up the shm etc, and then enters
   the 'main' loop (see main/loop.c), which is responsible for..
 
-  - initial opening of sockets/fd's.  See sockets.c/fds.c/files.c
+  - initial opening of sockets/fd's.  See open_fds() in fds/fds-init.c, and the providers
+    in fds/ (fds/sockets.c, fds/files.c, ...)
   - forking new children See fork_children()
   - handling those children.  See handle_child()
   - makes sure the child processes are making progress,
