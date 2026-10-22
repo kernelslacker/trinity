@@ -63,6 +63,9 @@ struct syscallentry syscall_nice = {
 	.name = "nice",
 	.num_args = 1,
 	.argname = { [0] = "increment" },
+	/* sanitise_nice() writes the increment on every path without reading
+	 * it. */
+	.sanitiser_owned_mask = (1u << 0),
 	.sanitise = sanitise_nice,
 	.post = post_nice,
 	.group = GROUP_SCHED,
