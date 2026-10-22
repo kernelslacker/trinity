@@ -429,9 +429,12 @@ failure: `EXIT_SIGINT` or `EXIT_USER_REQUEST` there would exit 0 and
 run the end-of-run warm-start saves on a shm the failure may have
 poisoned.  A clean reason is still replaced, so a stop that lands while
 an epoch is winding down (`EXIT_EPOCH_DONE`) ends the run instead of
-letting the next epoch start.  Only the parent's stop paths check this:
-a child still writes `EXIT_REACHED_COUNT` once the op count is reached,
-over any reason.
+letting the next epoch start.  That includes one that lands after
+`epoch_loop()` has read the reason: `reset_epoch_state()` swaps
+`EXIT_EPOCH_DONE` for `STILL_RUNNING` with a compare-exchange, and when
+the stop got there first it changes nothing and the loop ends the run.
+Only the parent's stop paths check this: a child still writes
+`EXIT_REACHED_COUNT` once the op count is reached, over any reason.
 
 ## Stop file
 

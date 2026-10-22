@@ -98,7 +98,13 @@ static void epoch_loop(void)
 		}
 
 		output(0, "Epoch %u complete, resetting for next epoch.\n", epoch_nr);
-		reset_epoch_state();
+		if (!reset_epoch_state()) {
+			/* A stop signal landed after the check above. */
+			reason = __atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+			output(0, "Epoch %u ended with reason %s, stopping.\n",
+				epoch_nr, decode_exit(reason));
+			return;
+		}
 	}
 }
 

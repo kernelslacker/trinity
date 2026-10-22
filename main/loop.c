@@ -692,13 +692,22 @@ void reset_child_rings(unsigned int childno)
  * Reset shared state between epochs.  Coverage data (kcov bitmap,
  * cmp_hints, minicorpus) is deliberately preserved so that coverage
  * accumulates across epoch boundaries.
+ *
+ * Returns false, with nothing touched, when exit_reason is no longer
+ * EXIT_EPOCH_DONE: epoch_loop() read that reason before calling in, so a
+ * stop signal has replaced it since (main_stop_handler() lets a stop
+ * replace a clean reason).  Storing STILL_RUNNING over it would swallow
+ * the stop and start another epoch.
  */
-void reset_epoch_state(void)
+bool reset_epoch_state(void)
 {
+	enum exit_reasons ended = EXIT_EPOCH_DONE;
 	unsigned long pending = 0;
 	unsigned int i;
 
-	__atomic_store_n(&shm->exit_reason, STILL_RUNNING, __ATOMIC_RELAXED);
+	if (!__atomic_compare_exchange_n(&shm->exit_reason, &ended, STILL_RUNNING,
+					 false, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+		return false;
 	__atomic_store_n(&shm->spawn_no_more, false, __ATOMIC_RELEASE);
 	__atomic_store_n(&shm->ready, false, __ATOMIC_RELEASE);
 	__atomic_store_n(&shm->running_childs, 0, __ATOMIC_RELAXED);
@@ -821,6 +830,7 @@ void reset_epoch_state(void)
 		count_quarantined_in_range(0, max_children);
 
 	reseed();
+	return true;
 }
 
 /*

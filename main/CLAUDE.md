@@ -149,7 +149,10 @@ API surface.
    boundary proves nothing about their tasks: `process_zombie_pending()`
    retires a zombie-pending slot next epoch, and a quarantined slot stays
    out of service for the run and keeps counting toward the
-   `EXIT_KERNEL_STUCK` threshold.
+   `EXIT_KERNEL_STUCK` threshold. The reset begins with a compare-exchange
+   of `exit_reason` from `EXIT_EPOCH_DONE`; if a stop signal replaced the
+   reason after `epoch_loop()` read it, the reset returns false having
+   touched nothing and the loop ends the run.
 4. **`panic()` is a deferred, non-blocking stop signal** — it only stamps
    `shm->spawn_no_more`/`shm->exit_reason`; the actual unwind happens on
    the main_loop while-condition's next check, giving in-flight per-tick

@@ -11,7 +11,7 @@ extern char *progname;
 
 void main_loop(void);
 void stop_file_init(void);
-void reset_epoch_state(void);
+bool reset_epoch_state(void);
 void pidstatfiles_drop_in_child(void);
 
 /* Returns the CLOCK_MONOTONIC second past which the fork-pressure

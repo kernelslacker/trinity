@@ -24,6 +24,21 @@
 
 #include "fake_parent.h"
 
+/*
+ * End the epoch the way main_loop() does and reset at the boundary the
+ * way epoch_loop() does.  A reset only follows an epoch that ended on its
+ * own, so the suites below that look at what the reset leaves behind start
+ * from here.
+ */
+static void reset_at_boundary(void)
+{
+	panic(EXIT_EPOCH_DONE);
+	if (!reset_epoch_state())
+		BUG("epoch reset: refused to reset after an epoch that ended on its own");
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
+		BUG("epoch reset: left the run stopping after a finished epoch");
+}
+
 /* Park @slot the way park_surviving_children() does at shutdown. */
 static pid_t park_slot(unsigned int slot)
 {
@@ -100,7 +115,7 @@ static void zombie_pending_survives_reset(void)
 	 * process_zombie_pending() from ever walking the slots. */
 	shm->stats.zombie_reaper.slots_pending = 0;
 
-	reset_epoch_state();
+	reset_at_boundary();
 
 	if (zombie_pids[3] != pid || zombie_since[3] != since)
 		BUG("epoch reset: a zombie-pending slot was recycled");
@@ -129,7 +144,7 @@ static void carried_slot_reaped_by_drain(void)
 	fake_parent_reset();
 	pid = park_slot(3);
 
-	reset_epoch_state();
+	reset_at_boundary();
 
 	kill(pid, SIGKILL);
 	(void)waitpid_eintr(pid, NULL, 0);
@@ -145,7 +160,7 @@ static void quarantined_slot_survives_reset(void)
 	fake_parent_reset();
 	pid = quarantine_slot(5);
 
-	reset_epoch_state();
+	reset_at_boundary();
 
 	if (!zombie_quarantined[5])
 		BUG("epoch reset: a quarantined slot went back into service");
@@ -170,7 +185,7 @@ static void quarantine_threshold_spans_epochs(void)
 	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 		BUG("epoch reset: one quarantine tripped a threshold of two");
 
-	reset_epoch_state();
+	reset_at_boundary();
 
 	second = quarantine_slot(7);
 	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
@@ -194,7 +209,7 @@ static void stall_deadline_cleared(void)
 	fake_parent_reset();
 	spawn_stall_deadline = 1;
 
-	reset_epoch_state();
+	reset_at_boundary();
 
 	if (spawn_stall_deadline != 0)
 		BUG("epoch reset: kept the last epoch's spawn-stall deadline");
@@ -217,7 +232,7 @@ static void scribbled_ring_pointers_healed(void)
 	children[4]->fd_event_ring = wild_fd;
 	children[4]->stats_ring = wild_stats;
 
-	reset_epoch_state();
+	reset_at_boundary();
 
 	if (fake_stray_ring_init != 0)
 		BUG("epoch reset: wrote through a scribbled ring pointer");
@@ -233,9 +248,41 @@ static void scribbled_ring_pointers_healed(void)
 	(void)waitpid_eintr(pid, NULL, 0);
 }
 
+/*
+ * main_stop_handler() ends in panic(), and it lets a stop replace a clean
+ * reason like EXIT_EPOCH_DONE.  One that lands after epoch_loop() read
+ * EXIT_EPOCH_DONE and before the reset must still end the run, and the
+ * reset it was about to make must leave the run as the stop found it.
+ */
+static void stop_at_boundary_survives(void)
+{
+	unsigned int i;
+
+	fake_parent_reset();
+	panic(EXIT_EPOCH_DONE);
+	panic(EXIT_USER_REQUEST);
+
+	if (reset_epoch_state())
+		BUG("epoch reset: started a new epoch over a stop that landed at the boundary");
+
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
+	    EXIT_USER_REQUEST)
+		BUG("epoch reset: overwrote a stop that landed at the boundary");
+	if (!__atomic_load_n(&shm->spawn_no_more, __ATOMIC_RELAXED))
+		BUG("epoch reset: reopened spawning for a run that is stopping");
+	for_each_child(i) {
+		if (fake_slot_log[i].cleaned != 0)
+			BUG("epoch reset: reinitialised a slot of a run that is stopping");
+	}
+
+	/* Undo the panic so later suites do not inherit a stopping run. */
+	fake_parent_reset();
+}
+
 void epoch_reset_self_check(void);
 void epoch_reset_self_check(void)
 {
+	stop_at_boundary_survives();
 	zombie_pending_survives_reset();
 	carried_slot_reaped_by_drain();
 	quarantined_slot_survives_reset();
