@@ -153,8 +153,11 @@ static bool child_userns_lane_active;
  * private user namespace, never in init_user_ns, so:
  *   - capable(CAP_*)   -> ns_capable(&init_user_ns, cap) -> false
  *   - ns_capable(child_userns, cap)                      -> true
- * The cap-drop oracle probes (bpf/mount/net_admin/capget) all gate on
- * init_user_ns-scoped paths and remain correct.
+ * The cap-drop oracle stays correct: its bpf and mount probes gate on
+ * init_user_ns paths and still fail, the net_admin probe flips polarity
+ * while child_userns_lane_is_active(), and the capget probe is skipped
+ * because the anchors, captured before this call, no longer match the
+ * child's user namespace.
  */
 static void maybe_enter_userns_admin_lane(int childno)
 {
@@ -523,14 +526,34 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	}
 
 	/*
+	 * Stamp the per-child (st_dev, st_ino) of /proc/self/ns/{user,mnt,
+	 * net} as the cap-drop oracle's "init ns" anchors.  Done here, co-
+	 * located with the capset()-to-empty drop, so the anchors capture
+	 * the namespace identity the child was sandboxed in -- after the
+	 * per-child unshare() dance above and before the userns-admin lane
+	 * below or any alt-op that may legitimately unshare again.  The
+	 * oracle's capget/mount/net_admin probes consult these anchors to
+	 * skip ticks during which the child has transitioned into a
+	 * bootstrapped userns/mntns/netns (the lane, statmount-idmap-
+	 * overflow's in-place unshare, the transient-fork capdrop helper)
+	 * and would otherwise false-fire; capget(self), for one, reads the
+	 * full set a new userns grants.
+	 * The bpf(KPROBE) probe stays unconditional -- its cap check pins to
+	 * the init userns and so remains correct across legitimate ns
+	 * transitions.
+	 */
+	capdrop_oracle_capture_init_ns_anchors();
+
+	/*
 	 * Userns-admin lane: runs here, AFTER capset(empty), so that
 	 * unshare(CLONE_NEWUSER) creates a new userns in which create_user_ns()
 	 * sets cap_effective = CAP_FULL_SET unconditionally.  The pre-move
 	 * placement (before capset) caused the new userns to mirror the empty
 	 * effective set, making every ns_capable() check return -EPERM.
 	 * capset does not alter euid/egid; the identity idmap write is valid
-	 * here.  Must run after the random namespace unshare block above and
-	 * before the oracle anchor capture below.
+	 * here.  Must run after the random namespace unshare block and the
+	 * oracle anchor capture above: the anchors have to name the
+	 * namespaces the drop was applied in, not the lane's.
 	 *
 	 * Only engaged when at least one active syscallentry has
 	 * userns_admin_lane set and the kernel permits unprivileged user
@@ -539,23 +562,6 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	 */
 	if (find_userns_lane_entry() != NULL)
 		maybe_enter_userns_admin_lane(childno);
-
-	/*
-	 * Stamp the per-child (st_dev, st_ino) of /proc/self/ns/{user,mnt,
-	 * net} as the cap-drop oracle's "init ns" anchors.  Done here, co-
-	 * located with the capset()-to-empty drop, so the anchors capture
-	 * the namespace identity the child was sandboxed in -- after the
-	 * per-child unshare() dance above and before the fuzz loop runs any
-	 * alt-op that may legitimately unshare again.  The oracle's
-	 * capget/mount/net_admin probes consult these anchors to skip ticks
-	 * during which the child has transitioned into a bootstrapped
-	 * userns/mntns/netns (statmount-idmap-overflow's in-place unshare,
-	 * the transient-fork capdrop helper) and would otherwise false-fire.
-	 * The bpf(KPROBE) probe stays unconditional -- its cap check pins to
-	 * the init userns and so remains correct across legitimate ns
-	 * transitions.
-	 */
-	capdrop_oracle_capture_init_ns_anchors();
 
 	munge_process();
 }
