@@ -299,11 +299,11 @@ void frontier_record_new_edge(unsigned int nr)
  * silent-regime picker steers away from exactly the syscalls that are
  * still earning the post-plateau coverage.
  *
- * Caller-side gates (in random_syscall/dispatch.c at the kcov_collect call
- * site) handle the kcov_transition_reward_mode == COMBINED and
- * !child->is_explorer and !child->kcov.remote_mode filters before
- * invoking, so this function only sees calls that should bump the
- * ring.  The RedQueen-source PC-edge attribution branch in
+ * Caller-side gates (in random_syscall/dispatch-step.c at the
+ * kcov_collect call site) handle the kcov_transition_reward_mode ==
+ * COMBINED and !child->is_explorer and !child->kcov.remote_mode filters
+ * before invoking, so this function only sees calls that should bump
+ * the ring.  The RedQueen-source PC-edge attribution branch in
  * frontier_record_new_edge() is deliberately omitted here -- that
  * counter measures PC-edge wins from RedQueen-sourced corpus replays
  * and a transition discovery is a different signal.  The silent-streak

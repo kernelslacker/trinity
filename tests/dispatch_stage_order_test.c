@@ -8,8 +8,8 @@
  * function is the transaction -- a reorder can silently mis-attribute
  * wins, double-publish corpus entries, or let an inner re-exec recurse.
  * These tests verify the five load-bearing ordering invariants without
- * importing the real dispatch.c (which carries the full trinity dep
- * chain).  Instead each test simulates the relevant fragment of the
+ * importing the real dispatch-step.c (which carries the full trinity
+ * dep chain).  Instead each test simulates the relevant fragment of the
  * dispatch_step control flow inside a local harness and asserts the
  * invariant directly.
  *
@@ -137,7 +137,7 @@ static bool sim_dispatch_step(struct fake_child *child,
 	/* --- kcov collect (abbreviated) --- */
 	ev_push(EV_COLLECT);
 
-	/* --- credit / reset block (dispatch.c :434) ---
+	/* --- credit / reset block (dispatch-step.c) ---
 	 *
 	 * Gated on !child->in_reexec.  Inside the gate: credit fires
 	 * first, then stash reset.  Outside the gate: neither fires.
@@ -152,7 +152,7 @@ static bool sim_dispatch_step(struct fake_child *child,
 	}
 	/* When in_reexec: no credit event, no reset event. */
 
-	/* --- corpus save (dispatch.c :504-510) ---
+	/* --- corpus save (dispatch-step.c) ---
 	 *
 	 * NOT inside the !in_reexec gate: both outer and inner passes
 	 * reach this point when found_something && sanitise==NULL.
@@ -168,10 +168,10 @@ static bool sim_dispatch_step(struct fake_child *child,
 			ev_push(EV_CORPUS_SAVE);
 	}
 
-	/* --- cleanup (dispatch.c: handle_syscall_ret, ring push etc.) --- */
+	/* --- cleanup (dispatch-step.c: handle_syscall_ret, ring push) --- */
 	ev_push(EV_CLEANUP);
 
-	/* --- RedQueen re-exec tail (dispatch.c :665-829) ---
+	/* --- RedQueen re-exec tail (dispatch-step.c) ---
 	 *
 	 * Gate: !in_reexec (recursion guard), redqueen_enabled, new_cmp>0,
 	 * pending>0.  For simplicity the harness treats found_something as

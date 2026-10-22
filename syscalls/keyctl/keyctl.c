@@ -155,7 +155,7 @@ static void sanitise_keyctl_get_keyring_id(struct syscallrecord *rec)
 	 * relocation, and no bespoke deferred-free / post_state oracle.
 	 * Opt into the CMP RedQueen re-exec gate per-invocation -- see
 	 * include/syscall.h REEXEC_OK and
-	 * random_syscall/dispatch.c:redqueen_reexec_step().  The keyctl
+	 * random_syscall/dispatch-step.c:redqueen_reexec_step().  The keyctl
 	 * syscall entry cannot carry the static REEXEC_SANITISE_OK
 	 * because other arms (update, read_like, search, instantiate,
 	 * capabilities, watch_key, ...) have pointer / output / shared-

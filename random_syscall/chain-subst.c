@@ -1,10 +1,10 @@
 /*
  * Sequence-chain retval substitution: rewrite one randomly chosen arg
  * slot of the current syscall record with the previous chain step's
- * retval before dispatch.c publishes the record.  Called from both
- * the fresh-args path (random_syscall_step) and the corpus-replay
- * path (replay_syscall_step) so the substitution semantics are
- * identical regardless of where the args came from.
+ * retval before dispatch-step.c publishes the record.  Called from both
+ * the fresh-args path (random_syscall_step) and the corpus-replay path
+ * (replay_syscall_step) so the substitution semantics are identical
+ * regardless of where the args came from.
  *
  * compute_numeric_substitute_mask is public via include/syscall.h;
  * apply_chain_substitution is cross-cluster private (declared in

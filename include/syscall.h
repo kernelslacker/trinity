@@ -289,20 +289,21 @@ struct syscallrecord {
 
 	/*
 	 * Per-invocation dynamic flag word.  Read by
-	 * random_syscall/dispatch.c's redqueen_reexec_step() gate alongside
-	 * entry->flags so a sanitise arm can declare, on a per-call basis,
-	 * that this specific dispatch is safe for the CMP RedQueen re-exec
-	 * step even when the syscall entry lacks the static
-	 * REEXEC_SANITISE_OK opt-in.  The static entry flag remains the
-	 * dominant knob for sanitisers whose EVERY arm is re-exec safe;
-	 * this dynamic word is for op-multiplexed sanitisers (setsockopt,
-	 * keyctl, prctl, ...) whose safety varies per (level, optname) /
-	 * per (cmd, arg) discriminator.  Reset to zero in
-	 * generate_syscall_args() before sanitise runs so a prior
-	 * dispatch's bit cannot leak into a call whose sanitise arm
-	 * chooses to leave it clear.  Namespace is DISTINCT from
-	 * entry->flags -- bit values here are defined alongside REEXEC_OK
-	 * below and must not be tested against entry->flags.
+	 * random_syscall/dispatch-step.c's redqueen_reexec_step() gate
+	 * alongside entry->flags so a sanitise arm can declare, on a
+	 * per-call basis, that this specific dispatch is safe for the
+	 * CMP RedQueen re-exec step even when the syscall entry lacks
+	 * the static REEXEC_SANITISE_OK opt-in.  The static entry flag
+	 * remains the dominant knob for sanitisers whose EVERY arm is
+	 * re-exec safe; this dynamic word is for op-multiplexed
+	 * sanitisers (setsockopt, keyctl, prctl, ...) whose safety
+	 * varies per (level, optname) / per (cmd, arg) discriminator.
+	 * Reset to zero in generate_syscall_args() before sanitise runs
+	 * so a prior dispatch's bit cannot leak into a call whose
+	 * sanitise arm chooses to leave it clear.  Namespace is
+	 * DISTINCT from entry->flags -- bit values here are defined
+	 * alongside REEXEC_OK below and must not be tested against
+	 * entry->flags.
 	 */
 	unsigned int flags;
 };
@@ -1000,7 +1001,7 @@ struct syscalltable {
  * REEXEC_OK: this specific invocation is safe for the CMP RedQueen
  * re-exec step even when the syscall entry lacks the static
  * REEXEC_SANITISE_OK opt-in.  The dispatch gate at
- * random_syscall/dispatch.c:redqueen_reexec_step() ORs this bit into
+ * random_syscall/dispatch-step.c:redqueen_reexec_step() ORs this bit into
  * the sanitise-bearing exclusion so op-multiplexed sanitisers can
  * light it from arms whose payload is a fixed-size scalar (int /
  * bool / string) with no nested pointer chains, no INOUT / output

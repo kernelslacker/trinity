@@ -245,7 +245,7 @@ static void sanitise_arch_prctl(struct syscallrecord *rec)
 	 * mask) and the two codes the kernel ignores a2 for entirely
 	 * (GET_CPUID / FORCE_TAGGED_SVA).  See include/syscall.h
 	 * REEXEC_OK for the safety contract and
-	 * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
+	 * random_syscall/dispatch-step.c:redqueen_reexec_step() for the gate
 	 * that consumes this bit -- the syscall entry lacks the static
 	 * REEXEC_SANITISE_OK because the seven getter arms above call
 	 * avoid_shared_buffer_out(&rec->a2) (relocating a2 to a shared

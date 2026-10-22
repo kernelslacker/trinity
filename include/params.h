@@ -344,15 +344,16 @@ extern char *stats_log_path;
 /*
  * --redqueen-pending-pick={random,first}: retained for compatibility,
  * no-op.  The RedQueen re-exec consumer at the dispatch_step tail
- * (random_syscall/dispatch.c) drains every staged reexec_pending[] entry per
- * parent dispatch -- there is no per-call selection between entries
- * anymore, so neither mode alters which entries (or how many) get
- * re-executed.  Parsing is preserved so existing invocations do not
- * break; the enum, parser and name helper are kept for the
- * dump_stats policy label only.  Per-pending-index success counters
- * (kcov_shm->reexec_pending_hist.reexec_pending_pick_success[]) are still bumped at each
- * entry's true index inside redqueen_reexec_step(), so per-slot /
- * per-index re-exec lift remains directly readable.
+ * (random_syscall/dispatch-step.c) drains every staged reexec_pending[]
+ * entry per parent dispatch -- there is no per-call selection between
+ * entries anymore, so neither mode alters which entries (or how many)
+ * get re-executed.  Parsing is preserved so existing invocations do not
+ * break; the enum, parser and name helper are kept for the dump_stats
+ * policy label only.  Per-pending-index success counters
+ * (kcov_shm->reexec_pending_hist.reexec_pending_pick_success[]) are
+ * still bumped at each entry's true index inside
+ * redqueen_reexec_step(), so per-slot / per-index re-exec lift remains
+ * directly readable.
  */
 enum redqueen_pending_pick_mode_t {
 	REDQUEEN_PENDING_PICK_RANDOM = 0,

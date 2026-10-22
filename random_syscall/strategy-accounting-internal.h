@@ -6,10 +6,9 @@
  * reward / cohort attribution cluster under random_syscall/.  Carved
  * out of the original strategy-accounting.c so each seam (rotation,
  * remote-adaptive, per-syscall edges, warm-cold reserve, fd+group)
- * lives in its own TU.  Called from dispatch.c on every parent
- * syscall; remote_adaptive_decide is queried from dispatch_step
- * before the raw call to decide whether to publish the remote-
- * adaptive path.
+ * lives in its own TU.  Called from dispatch-step.c on every parent
+ * syscall; remote_adaptive_decide is queried from dispatch_step before
+ * the raw call to decide whether to publish the remote-adaptive path.
  *
  * Cluster-private glue: only files under random_syscall/ implementing
  * the strategy-accounting subsystem or its direct dispatch caller are

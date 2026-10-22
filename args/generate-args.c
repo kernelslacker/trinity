@@ -288,7 +288,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 		 * or when a call happened not to fire any blob_fill().
 		 * Set by blob_fill()'s ab-mode branch to the HAVOC or
 		 * CMPDICT coin-flip outcome and drained at the credit
-		 * block in random_syscall/dispatch.c. */
+		 * block in random_syscall/dispatch-step.c. */
 		child->blob_ab_mode_last = BLOB_AB_MODE_NONE;
 		/* SHADOW feedback scoring stash starts each call empty
 		 * ([11-feedback-loop]).  cmp_hints_try_get_ex pushes; the
@@ -347,7 +347,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 	 * runs so a prior call's bit cannot leak into the new call.  Same
 	 * rationale as the post_state / owned_count / arg_snapshot_mask
 	 * hoists above: the re-exec gate at
-	 * random_syscall/dispatch.c:redqueen_reexec_step() reads
+	 * random_syscall/dispatch-step.c:redqueen_reexec_step() reads
 	 * rec->flags AFTER the parent sanitise has run and BEFORE this
 	 * function is called for the re-exec's fresh args, so an inherited
 	 * bit from an unrelated prior dispatch would misgate the current

@@ -790,7 +790,7 @@ struct childdata {
 	 * alongside cmp_hint_injected_this_call; set from inside
 	 * blob_fill() on the ab-mode branch to the HAVOC or CMPDICT
 	 * coin-flip outcome.  Read at the dispatch-site novelty-gate
-	 * credit block in random_syscall/dispatch.c to attribute this
+	 * credit block in random_syscall/dispatch-step.c to attribute this
 	 * call's new_edges to the mode that produced them.  When the
 	 * flag is absent this stamp stays BLOB_AB_MODE_NONE for every
 	 * call and the credit block short-circuits, keeping the flag-

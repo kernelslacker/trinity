@@ -4,7 +4,8 @@
 /*
  * Internal interface shared by the random-syscall cluster files under
  * random_syscall/ (pick-common.c, pickers.c, chain-subst.c,
- * strategy-accounting.c, dispatch.c).
+ * dispatch-step.c, dispatch-wrappers.c and the strategy-accounting
+ * files).
  *
  * Public entry points (random_syscall_step,
  * random_syscall_step_biased, replay_syscall_step,
@@ -101,13 +102,13 @@ bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
 				      struct childdata *child);
 
 /* pickers.c -- top-level picker dispatch, called from dispatch_step
- * in dispatch.c.  set_syscall_nr_random is public via
+ * in dispatch-step.c.  set_syscall_nr_random is public via
  * include/syscall.h; the per-strategy picker arms and the frontier
  * weight helpers live in their own sibling files (declared above). */
 bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child);
 
 /* chain-subst.c -- rewrite rec->aN in place for chain-substituted
- * arguments before dispatch.c publishes the record.
+ * arguments before dispatch-step.c publishes the record.
  * compute_numeric_substitute_mask is public via include/syscall.h;
  * argtype_accepts_numeric_substitute is file-scope static inside
  * chain-subst.c. */
@@ -117,11 +118,11 @@ void apply_chain_substitution(struct syscallrecord *rec,
 			      unsigned long substitute_retval);
 
 /* strategy-accounting.c -- strategy-window rotation and per-call
- * reward / cohort attribution.  Called from dispatch.c on every
- * parent syscall; remote_adaptive_decide is queried from
- * dispatch_step before the raw call to decide whether to publish the
- * remote-adaptive path.  Public API is declared in the cluster-local
- * header random_syscall/strategy-accounting-internal.h. */
+ * reward / cohort attribution.  Called from dispatch-step.c on every
+ * parent syscall; remote_adaptive_decide is queried from dispatch_step
+ * before the raw call to decide whether to publish the remote-adaptive
+ * path.  Public API is declared in the cluster-local header
+ * random_syscall/strategy-accounting-internal.h. */
 
 /*
  * dispatch-step.c -- the dispatch_step coordinator and the greedy

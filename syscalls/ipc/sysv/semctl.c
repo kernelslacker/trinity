@@ -222,7 +222,7 @@ static void sanitise_semctl(struct syscallrecord *rec)
 	 * is a fixed-size scalar (or fully ignored) with no pointer-slot
 	 * write, no INOUT / output buffer, and no post_state oracle -- the
 	 * contract documented at include/syscall.h REEXEC_OK, consumed by
-	 * random_syscall/dispatch.c:redqueen_reexec_step().  The syscall
+	 * random_syscall/dispatch-step.c:redqueen_reexec_step().  The syscall
 	 * entry lacks the static REEXEC_SANITISE_OK because build_semun_arg
 	 * multiplexes to buffer-carrying arms (GETALL / SETALL fill an
 	 * unsigned-short array with avoid_shared_buffer_inout / _out

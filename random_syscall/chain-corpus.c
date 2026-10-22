@@ -119,7 +119,7 @@ void chain_corpus_init(void)
  * feeding stale heap pointers, stale pids, or sanitise-stashed
  * pointers to the kernel.  Same exclusions as minicorpus_save_with_reason
  * (which treats these arg types as poison, see corpus_argtype_refused())
- * plus the entry->sanitise gate that random_syscall/dispatch.c applies
+ * plus the entry->sanitise gate that random_syscall/dispatch-step.c applies
  * before it saves.  The minicorpus's no-arguments rule is not taken: a
  * step with no arguments still shapes the chain.
  *

@@ -156,14 +156,15 @@ extern enum expensive_adaptive_mode expensive_adaptive_mode;
  * per-strategy bandit-reward path. */
 #define TRANSITION_PER_CALL_REWARD_CAP 64UL
 
-/* Transition-discovery sibling of frontier_record_new_edge() defined
- * in strategy.c.  Declared here (rather than alongside frontier_
- * record_new_edge in include/strategy.h) because the function exists
- * solely to feed the transition-reward path: its only caller is the
- * COMBINED-mode branch in random_syscall/dispatch.c, and gating the prototype
- * to the same header that defines kcov_transition_reward_mode keeps
- * "who is allowed to call this" co-located with "what makes calling
- * this meaningful".  See the function body for the contract. */
+/* Transition-discovery sibling of frontier_record_new_edge() defined in
+ * strategy/strategy-frontier.c.  Declared here (rather than alongside
+ * frontier_record_new_edge in include/strategy.h) because the function
+ * exists solely to feed the transition-reward path: its only caller is
+ * the COMBINED-mode branch in random_syscall/dispatch-step.c, and
+ * gating the prototype to the same header that defines
+ * kcov_transition_reward_mode keeps "who is allowed to call this"
+ * co-located with "what makes calling this meaningful".  See the
+ * function body for the contract. */
 void frontier_record_transition_edge(unsigned int nr);
 
 /* KCOV trace modes */

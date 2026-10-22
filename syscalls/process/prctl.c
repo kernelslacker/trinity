@@ -578,7 +578,7 @@ static struct sock_fprog *sanitise_prctl_option(struct syscallrecord *rec,
  * captured set_arg which does not depend on which of the two
  * dispatches the reaper observes).  See include/syscall.h
  * REEXEC_OK for the safety contract and
- * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
+ * random_syscall/dispatch-step.c:redqueen_reexec_step() for the gate
  * that consumes this bit -- the syscall entry lacks the static
  * REEXEC_SANITISE_OK because prctl multiplexes to pointer /
  * heap-carrying arms (PR_SET_NAME / PR_GET_NAME 16-byte comm

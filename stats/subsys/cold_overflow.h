@@ -14,15 +14,15 @@
  * field here -- the only effect of these writes is the counter
  * values rendered by the shutdown stats dump.  The existing live save
  * call at the producer site (minicorpus_save_with_reason in
- * random_syscall/dispatch.c) is untouched: its arguments and branch shape are
- * byte-identical to the pre-row baseline, and the shadow block
- * fires immediately BEFORE it on the same gated arm.  The ordering
- * is mandatory: the live save publishes a new entry of the record's
- * ABI into rings[rec->nr], which would race the corpus-absent
- * snapshot to always-false for the headline first-admission case
- * (the very event the absent subset is meant to capture).  Reading
- * the ring pre-save pins absent to the pre-decision state the
- * overflow lane would see.
+ * random_syscall/dispatch-step.c) is untouched: its arguments and
+ * branch shape are byte-identical to the pre-row baseline, and the
+ * shadow block fires immediately BEFORE it on the same gated arm.  The
+ * ordering is mandatory: the live save publishes a new entry of the
+ * record's ABI into rings[rec->nr], which would race the corpus-absent
+ * snapshot to always-false for the headline first-admission case (the
+ * very event the absent subset is meant to capture).  Reading the ring
+ * pre-save pins absent to the pre-decision state the overflow lane
+ * would see.
  *
  * Predicate composition at the bump site, mirroring the live save
  * lane's gate -- found_something, entry->sanitise == NULL and the

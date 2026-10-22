@@ -2,17 +2,17 @@
 #define _TRINITY_STATS_SUBSYS_REMOTE_ADAPTIVE_H
 
 /*
- * Adaptive remote-KCOV mode A/B disposition counters, bumped from
- * dispatch_step in random_syscall/dispatch.c on every productive-signal call
- * into the PC-mode + remote_capable path so the operator can A/B
- * compare the static remote-mode policy (per-syscall
+ * Adaptive remote-KCOV mode A/B disposition counters, bumped by
+ * remote_adaptive_decide() in random_syscall/remote-adaptive.c on every
+ * productive-signal call into the PC-mode + remote_capable path so the
+ * operator can A/B compare the static remote-mode policy (per-syscall
  * KCOV_REMOTE_HEAVY flag + ONE_IN(remote_reciprocal)) against the
  * adaptive policy (per-syscall remote_pc_edge_calls /
  * local_pc_edge_calls ratio against the REMOTE_ADAPTIVE_PROMOTE_
  * MARGIN_* threshold, gated by REMOTE_ADAPTIVE_MIN_REMOTE_CALLS /
- * MIN_LOCAL_CALLS sample floors).  All counters bump in lock-step
- * from BOTH the Arm A cohort (control) and Arm B (treatment); the
- * live remote_mode flip diverges only on Arm B.
+ * MIN_LOCAL_CALLS sample floors).  All counters bump in lock-step from
+ * BOTH the Arm A cohort (control) and Arm B (treatment); the live
+ * remote_mode flip diverges only on Arm B.
  *
  *  samples                 : total computations -- one bump per
  *    dispatch_step entry into the PC-mode + remote_capable path.

@@ -419,7 +419,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * snap, the child's post handler releases it, and the
 	 * saved_post_state restore at the tail returns rec->post_state to
 	 * 0 -- no cross-run interaction.  See
-	 * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
+	 * random_syscall/dispatch-step.c:redqueen_reexec_step() for the gate
 	 * that consumes this bit.
 	 */
 	if (arg_len == 0 && rec->a4 == 0)

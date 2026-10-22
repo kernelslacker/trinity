@@ -140,7 +140,8 @@ static void sanitise_quotactl_fd(struct syscallrecord *rec)
 		 * deferred-free / post_state oracle in this file.  Opt
 		 * into the CMP RedQueen re-exec gate per-invocation:
 		 * see REEXEC_OK contract in include/syscall.h and the
-		 * gate at random_syscall/dispatch.c:redqueen_reexec_step().
+		 * gate at
+		 * random_syscall/dispatch-step.c:redqueen_reexec_step().
 		 * The quotactl_fd syscall entry cannot carry the static
 		 * REEXEC_SANITISE_OK because sibling arms (Q_GETQUOTA /
 		 * Q_SETQUOTA / Q_GETNEXTQUOTA dqb pointer, Q_GETINFO /

@@ -9,8 +9,10 @@ struct transition_edge_stats {
 	 * (which live in shm_s, not here -- the strategy-indexed pair was
 	 * the established home before stats.h gained transition fields) but
 	 * carrying the transition-coverage signal instead of the PC-edge
-	 * signal.  Bumped from random_syscall/dispatch.c at the kcov_collect call
-	 * site using child->strategy_at_pick when transitions_this_call > 0.
+	 * signal.  Bumped by account_transition_reward() in
+	 * random_syscall/per-syscall-edges.c, which dispatch_step calls
+	 * after kcov_collect, using child->strategy_at_pick when
+	 * transitions_this_call > 0.
 	 *
 	 * calls_by_strategy[strat]
 	 *     Bumps by 1 per kcov_collect() call that flipped >=1 new
