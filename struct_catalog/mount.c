@@ -50,13 +50,13 @@ static const unsigned long mount_attr_propagation_values[] = {
  * sanitisers (build_mount_attr() in syscalls/open_tree_attr.c, mirrored
  * by sanitise_mount_setattr) that pick coherent attr_set / attr_clr /
  * propagation / userns_fd buckets and respect the kernel's mutually-
- * exclusive ATIME-mode and propagation rules.  Those sanitisers
- * overwrite rec->a4 wholesale after gen_arg_struct_ptr_in's schema-
- * aware fill, so the registration here is attribution-only --
- * struct_field_for_cmp() uses the FT_FLAGS / FT_ENUM / FT_FD tags to
- * steer KCOV-CMP learned constants at the right field rather than at a
- * coincidentally-same-width slot.  The bespoke fill stays live; this
- * entry never displaces it.
+ * exclusive ATIME-mode and propagation rules.  Those sanitisers own
+ * rec->a4 (sanitiser_owned_mask), so gen_arg_struct_ptr_in's schema-
+ * aware fill never runs for it and the registration here is
+ * attribution-only -- struct_field_for_cmp() uses the FT_FLAGS /
+ * FT_ENUM / FT_FD tags to steer KCOV-CMP learned constants at the
+ * right field rather than at a coincidentally-same-width slot.  The
+ * bespoke fill stays live; this entry never displaces it.
  */
 const struct struct_field mount_attr_fields[MOUNT_ATTR_FIELDS_N] = {
 	FIELDX(struct mount_attr, attr_set, FT_FLAGS,

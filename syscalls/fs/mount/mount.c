@@ -511,9 +511,6 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 	struct csfu_buf buf = build_csfu_struct(&desc_mount_setattr);
 	struct mount_attr *ma = buf.ptr;
 
-	if (!ma)
-		return;
-
 	/*
 	 * Steer the path argument at a known mount-point root so the
 	 * kernel's path_mounted() check in do_mount_setattr() passes.
@@ -565,5 +562,6 @@ struct syscallentry syscall_mount_setattr = {
 	.group = GROUP_VFS_MOUNT,
 	.flags = KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_mount_setattr,
+	.sanitiser_owned_mask = (1u << 3),
 	.cleanup = cleanup_mount_setattr,
 };

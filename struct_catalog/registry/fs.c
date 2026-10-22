@@ -204,8 +204,8 @@ const struct syscall_struct_arg struct_catalog_registry_fs[] = {
 	 * open_tree_attr(int dfd, const char *filename, unsigned int flags,
 	 *                struct mount_attr *uattr, size_t usize)
 	 * Both a4 slots are ARG_STRUCT_PTR_IN, but the bespoke sanitisers
-	 * (build_mount_attr / sanitise_mount_setattr) overwrite rec->a4
-	 * after the schema-aware fill -- attribution-only registration so
+	 * (build_mount_attr / sanitise_mount_setattr) own rec->a4, so no
+	 * schema-aware fill runs -- attribution-only registration so
 	 * struct_field_for_cmp can steer CMP-learned constants at the
 	 * named fields.  The curated bespoke fill stays live.
 	 */

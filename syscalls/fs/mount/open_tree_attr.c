@@ -188,9 +188,6 @@ static void sanitise_open_tree_attr(struct syscallrecord *rec)
 	struct csfu_buf buf = build_csfu_struct(&desc_open_tree_attr);
 	struct mount_attr *ma = buf.ptr;
 
-	if (!ma)
-		return;
-
 	rec->a1 = pick_open_tree_attr_dfd(rec->a1);
 	rec->a3 = pick_open_tree_attr_flags();
 
@@ -233,6 +230,7 @@ struct syscallentry syscall_open_tree_attr = {
 	.group = GROUP_VFS_MOUNT,
 	.flags = NEEDS_ROOT | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_open_tree_attr,
+	.sanitiser_owned_mask = (1u << 3),
 	.post = post_mount_fd,
 	.cleanup = cleanup_open_tree_attr,
 };

@@ -38,9 +38,6 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 	struct sched_attr *sa = buf.ptr;
 	unsigned int roll;
 
-	if (!sa)
-		return;
-
 	/*
 	 * sa->size is the kernel's ABI version tag; sched_setattr has no
 	 * separate usize syscall arg, so the csfu-picked usize is written
@@ -215,6 +212,7 @@ struct syscallentry syscall_sched_setattr = {
 	.argname = { [0] = "pid", [1] = "uattr", [2] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_sched_setattr,
+	.sanitiser_owned_mask = (1u << 1),
 	.cleanup = cleanup_sched_setattr,
 	.flags = REEXEC_SANITISE_OK,
 };

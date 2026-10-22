@@ -264,6 +264,7 @@ struct syscallentry syscall_clone3 = {
 	.argtype = { [0] = ARG_STRUCT_PTR_IN, [1] = ARG_STRUCT_SIZE },
 	.argname = { [0] = "uargs", [1] = "size" },
 	.sanitise = sanitise_clone3,
+	.sanitiser_owned_mask = (1u << 0),
 	.post = post_clone3,
 	.rettype = RET_PID_T,
 	.ret_objtype = OBJ_PID,

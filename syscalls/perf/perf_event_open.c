@@ -204,9 +204,6 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	pid_t pid;
 	int group_leader;
 
-	if (!attr)
-		return;
-
 	/*
 	 * perf_event_open has no separate usize syscall arg; the kernel
 	 * pulls attr->size out of the user buffer itself and drives
@@ -323,6 +320,7 @@ struct syscallentry syscall_perf_event_open = {
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_PERF,
 	.sanitise = sanitise_perf_event_open,
+	.sanitiser_owned_mask = (1u << 0),
 	.post = post_perf_event_open,
 	.cleanup = cleanup_perf_event_open,
 	.init = init_pmus,

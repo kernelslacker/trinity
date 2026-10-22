@@ -27,10 +27,10 @@
  * perf_event_attr is the rare cataloged struct whose live fill path
  * the schema does NOT drive.  sanitise_perf_event_open() in
  * syscalls/perf_event_open.c hand-rolls a coherent (type, config)
- * tuple via pick_perf_tuple() and overwrites rec->a1 with its own
- * buffer; the schema-aware fill produced upstream is discarded on
- * every iteration.  The catalog therefore exists for two forward-
- * infra purposes:
+ * tuple via pick_perf_tuple() and fills rec->a1 with its own buffer;
+ * a1 is in the entry's sanitiser_owned_mask, so generic_sanitise()
+ * never runs the schema-aware fill for it.  The catalog therefore
+ * exists for two forward-infra purposes:
  *
  *   1. type-scoped CMP attribution.  struct_field_for_cmp() prefers
  *      a same-width FT_ENUM / FT_FLAGS / FT_VERSION_MAGIC slot over
@@ -179,14 +179,14 @@ static const unsigned long clockid_values[] = {
  *
  * Sums to 36 bits set.  This is the only hand-built-from-bitfield
  * mask in the catalog; a generic FT_BITFIELD_RUN sidecar would be
- * cleaner but isn't worth the infra for one struct whose schema fill
- * is discarded by sanitise_perf_event_open anyway.
+ * cleaner but isn't worth the infra for one struct the schema never
+ * fills on the live path anyway.
  *
  * Constants use 1ULL so the OR-chain evaluates as u64; the implicit
  * narrowing to .u.flags.mask's unsigned long type silently drops
  * bits 32..37 (cgroup, text_poke, build_id, inherit_thread,
  * remove_on_exec, sigtrap) on 32-bit builds.  Acceptable: trinity's
- * primary target is 64-bit, the live fill path is discarded
+ * primary target is 64-bit, the schema never fills the live buffer
  * regardless, and the truncation only narrows the CMP-attribution
  * vocab on 32-bit -- never produces an invalid value.
  */
@@ -318,8 +318,8 @@ const struct struct_field perf_event_attr_fields[PERF_EVENT_ATTR_FIELDS_N] = {
  * the shared fields[] alone, which matches the kernel's perf_pmu
  * lookup path for dynamic PMU types.
  *
- * The schema-aware fill is discarded by sanitise_perf_event_open()
- * regardless (it overwrites rec->a1 with the hand-rolled csfu buffer),
+ * The schema-aware fill never runs for perf_event_open regardless (its
+ * sanitiser owns rec->a1 and fills it with the hand-rolled csfu buffer),
  * so these variants are forward infra for type-scoped CMP attribution
  * via struct_field_for_cmp() once the cmp_hints recording path
  * acquires a consumer.
@@ -454,9 +454,9 @@ static const struct struct_field perf_event_attr_hw_cache_variant_fields[] = {
  * validator gate.
  *
  * bp_addr's FT_ADDRESS is latent documentation for perf today
- * because sanitise_perf_event_open() discards the schema-filled
- * buffer and setup_breakpoints() plants its own get_address() value
- * into the csfu buffer.  The reachability walker
+ * because no schema fill runs for the sanitiser-owned rec->a1 and
+ * setup_breakpoints() plants its own get_address() value into the
+ * csfu buffer.  The reachability walker
  * (struct_desc_has_address_field()) and the runtime nested-address
  * scrub (scrub_struct_addresses() in generate-args.c) are both now
  * variant-aware, so the bp_addr annotation does flow through to the

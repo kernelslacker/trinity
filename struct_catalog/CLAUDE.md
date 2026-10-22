@@ -135,7 +135,12 @@ setsockopt, sctp, uffdio and AF_ALG slots, each wrapped in its own feature guard
    syscall's `argtype[]` is not `ARG_STRUCT_PTR_*` (a bespoke `.sanitise`
    callback owns the live fill), and the catalog row exists solely so
    `struct_field_for_cmp()` can name the right field for CMP steering instead
-   of guessing off width alone.
+   of guessing off width alone. An `ARG_STRUCT_PTR_IN` row is
+   attribution-only too when the entry lists the slot in
+   `.sanitiser_owned_mask` (clone3, io_uring_setup, mount_setattr,
+   open_tree_attr, perf_event_open, sched_setattr): `generic_sanitise()`
+   never runs the schema fill for it, and the sanitiser's own buffer goes to
+   the kernel.
 3. `struct_catalog_init()` (called after `select_syscall_tables()`) walks
    every registration group, resolves each `syscall_name` against the active
    syscall table(s) via `search_syscall_table()`, and populates
@@ -177,7 +182,10 @@ setsockopt, sctp, uffdio and AF_ALG slots, each wrapped in its own feature guard
    writer of the buffer. This is a deliberate two-speed design: bespoke
    generators keep full control of semantically tricky fills (BPF program
    generation, iovec arrays, sized buffers with bucketed distributions)
-   while still getting precise CMP steering.
+   while still getting precise CMP steering. When such a sanitiser replaces
+   an `ARG_STRUCT_PTR_IN` slot on every path, the entry's
+   `.sanitiser_owned_mask` keeps the generic schema fill from being built
+   only to be thrown away.
 3. **Two independent discriminator axes.** A registration row's
    discriminator picks *which descriptor* a slot resolves to (driven by a
    sibling syscall arg, e.g. fcntl's cmd or setsockopt's (level, optname));

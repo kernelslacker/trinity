@@ -214,6 +214,7 @@ struct syscallentry syscall_io_uring_setup = {
 	.ret_objtype = OBJ_FD_IO_URING,
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_io_uring_setup,
+	.sanitiser_owned_mask = (1u << 1),
 	.post = post_io_uring_setup,
 	.cleanup = cleanup_io_uring_setup,
 };
