@@ -397,14 +397,27 @@ the handler checks `getpid()` against `mainpid`.  `mypid()` would not
 do: `cached_pid` still holds the parent's pid until the child reaches
 `set_child_cache()`.
 
+A child ignores SIGINT (`mask_signals_child()`).  Only the parent acts
+on a ctrl-c, and the children follow `exit_reason`.
+`init_child_isolate_io()` makes each child a session leader with no
+controlling terminal, so a SIGINT that reaches one is a spoof, and a
+handler that took it for a ctrl-c would end the whole run.
+`rt_sigqueueinfo()` to itself may carry any `si_code`, `SI_KERNEL`
+included, because the kernel refuses a non-negative one only when the
+target is another process.  A sibling can use `F_SETOWN` and `F_SETSIG`
+on it, since the children share a uid even in a root run.  And a pty the
+child holds as its controlling terminal raises the real `SI_KERNEL`
+SIGINT (`kill_pgrp(..., 1)` in drivers/tty/pty.c) for a `TIOCSIG` or a
+0x03 written to the master.
+
 A stop signal never relabels a shutdown already under way for a
 failure: `EXIT_SIGINT` or `EXIT_USER_REQUEST` there would exit 0 and
 run the end-of-run warm-start saves on a shm the failure may have
 poisoned.  A clean reason is still replaced, so a stop that lands while
 an epoch is winding down (`EXIT_EPOCH_DONE`) ends the run instead of
 letting the next epoch start.  Only the parent's stop paths check this:
-a child still writes `EXIT_SIGINT` on its own ctrl-c, and
-`EXIT_REACHED_COUNT` once the op count is reached, over any reason.
+a child still writes `EXIT_REACHED_COUNT` once the op count is reached,
+over any reason.
 
 ## Stop file
 

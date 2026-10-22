@@ -5,15 +5,21 @@
  * send must not.  Covers root and non-root runs (init_uids() leaves
  * nobody_uid 0 in the latter), the overflowuid a child in an unmapped
  * user namespace arrives as, and a failure shutdown keeping its reason.
+ * Also checks that a child ignores SIGINT.
  */
 
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "debug.h"		/* BUG */
 #include "signals.h"
 #include "utils-macros.h"	/* ARRAY_SIZE */
+#include "utils.h"		/* waitpid_eintr */
 
 struct uid_setup {
 	uid_t orig, nobody, overflow;
@@ -70,6 +76,49 @@ static const struct stop_case cases[] = {
 	  SIGTERM, SI_USER, 0, EXIT_SIGINT, EXIT_USER_REQUEST },
 };
 
+/* mask_signals_child() installs these for the fault signals.  Nothing
+ * here raises one; end the task rather than return into a fault. */
+void child_fault_handler(int sig, siginfo_t *info, void *ctx);
+void writer_trap_handler(int sig, siginfo_t *info, void *ctx);
+
+void child_fault_handler(int sig, siginfo_t *info, void *ctx)
+{
+	(void)sig; (void)info; (void)ctx;
+	_exit(EXIT_FAILURE);
+}
+
+void writer_trap_handler(int sig, siginfo_t *info, void *ctx)
+{
+	(void)sig; (void)info; (void)ctx;
+	_exit(EXIT_FAILURE);
+}
+
+/*
+ * A child ignores SIGINT.  Its session has no terminal, so what reaches
+ * it is a spoof: rt_sigqueueinfo() to itself may carry SI_KERNEL, and a
+ * pty it holds as its terminal raises the real thing.  A handler that
+ * took one for a ctrl-c would end the whole run.  mask_signals_child()
+ * rewrites every disposition, so ask it in a task of its own.
+ */
+static void child_sigint_check(void)
+{
+	pid_t pid = fork();
+	int status;
+
+	if (pid < 0)
+		BUG("child SIGINT: fork failed");
+	if (pid == 0) {
+		struct sigaction sa;
+
+		mask_signals_child();
+		_exit(sigaction(SIGINT, NULL, &sa) == 0 &&
+		      sa.sa_handler == SIG_IGN ? EXIT_SUCCESS : EXIT_FAILURE);
+	}
+	if (waitpid_eintr(pid, &status, 0) != pid ||
+	    !WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS)
+		BUG("child SIGINT: not ignored");
+}
+
 void parent_stop_self_check(void);
 void parent_stop_self_check(void)
 {
@@ -96,4 +145,6 @@ void parent_stop_self_check(void)
 			BUG("parent_stop_reason: wrong verdict");
 		}
 	}
+
+	child_sigint_check();
 }

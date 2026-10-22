@@ -106,15 +106,16 @@ REAL_SRCS	:= \
 
 # Parent TUs, linked for reset_epoch_state(), the reaper, the zombie
 # reaper, the rotation-events sink and sanity_check_tables(), plus
-# utils/uid.c for drop_privs() and the child-side args/generate-args.c
-# for generic_sanitise() and arg_meta_init().  They also pull in
+# utils/uid.c for drop_privs(), the child-side args/generate-args.c
+# for generic_sanitise() and arg_meta_init(), and health/signals-policy.c
+# for mask_signals_child().  They also pull in
 # functions the tests never call (main_loop() reaches most of the
 # parent), so each function gets its own section and --gc-sections
 # drops the unreached ones.  -fdata-sections gives each function its
 # own jump-table section too: in a shared .rodata, one reached switch
 # keeps every other function's case targets, and their references,
 # alive.  fake_parent.c covers the rest; sanitiser_owned_mask_test.c
-# fakes fill_arg().
+# fakes fill_arg() and parent_stop_test.c the fault-signal handlers.
 PARENT_SRCS	:= \
 	$(TOP)/main/loop.c \
 	$(TOP)/main/reap.c \
@@ -122,7 +123,8 @@ PARENT_SRCS	:= \
 	$(TOP)/stats/rotation_event.c \
 	$(TOP)/tables/table-meta.c \
 	$(TOP)/utils/uid.c \
-	$(TOP)/args/generate-args.c
+	$(TOP)/args/generate-args.c \
+	$(TOP)/health/signals-policy.c
 LDFLAGS		+= -Wl,--gc-sections
 
 # The CMP-hint collect path, linked for cmp_hints_collect() and the

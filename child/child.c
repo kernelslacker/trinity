@@ -319,11 +319,6 @@ void child_process(struct childdata *child, int childno)
 						   __ATOMIC_RELAXED);
 		}
 
-		if (ctrlc_pending) {
-			panic(EXIT_SIGINT);
-			break;
-		}
-
 		/* SIGALRM: the blocking syscall returned EINTR.
 		 * Check for stalled-on-fd, detect stalls, and
 		 * count the timeout as an op. */
