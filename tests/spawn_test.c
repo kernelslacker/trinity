@@ -5,6 +5,7 @@
  * forked; the slots hold made-up pids.
  */
 
+#include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
 
@@ -19,6 +20,10 @@
 #include "fake_parent.h"
 
 #define BARRIER_OPEN	(__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE))
+
+#define NSEC_PER_SEC	1000000000ULL
+
+void __real_replace_child(int childno);
 
 /* Every slot but the @n from @first already holds a child. */
 static void fill_all_but(unsigned int first, unsigned int n)
@@ -251,6 +256,107 @@ static void spawn_success_restarts_the_drain_count(void)
 		BUG("spawn: a spawn that succeeded did not restart the failure count");
 }
 
+/* The line the call that opens a stalled fill's barrier prints. */
+#define STALL_OPEN	"the startup fill has not grown for 5 s (0 of 16 slots running)"
+
+/* When the barrier was first seen open, as the fake clock saw it from
+ * the sleep after the spawn that opened it. */
+static uint64_t opened_at;
+
+static void note_barrier_open(void)
+{
+	if (opened_at == 0 && BARRIER_OPEN)
+		opened_at = fake_clock_elapsed_ns();
+}
+
+/* All sixteen slots empty and none able to fork, and the sleeps watched
+ * for the barrier.  Each call fails spawns for 2 s of backoff and ends
+ * there with the barrier shut, so a call is 2 s of fake time. */
+static void stalled_fill(void)
+{
+	unsigned int i;
+
+	fake_parent_reset();
+	fake_clock_start();
+	opened_at = 0;
+	fake_sleep_hook = note_barrier_open;
+	for_each_child(i)
+		fake_fork_fail[i] = FAKE_FORK_FAIL_ALWAYS;
+}
+
+/* Global fork caps fail every spawn, and twelve or more failing slots
+ * outlast the backoff budget, so the fill never skips them all and the
+ * skip-everything return never opens the barrier.  The children that
+ * did fork would wait at it as long as the cap holds, so the barrier
+ * opens once spawns have failed for 5 s straight: not in the first two
+ * calls, 4 s of failures, but 5 s in, a second into the third, and
+ * logged once. */
+static void stalled_fill_opens_the_barrier_at_five_seconds(void)
+{
+	char *first;
+
+	stalled_fill();
+
+	fork_children();
+	fork_children();
+	if (BARRIER_OPEN)
+		BUG("spawn: the barrier opened before spawns had failed for 5 s");
+
+	fork_children();
+	if (!BARRIER_OPEN)
+		BUG("spawn: spawns that failed for 5 s did not open the barrier");
+	if (opened_at < 5 * NSEC_PER_SEC || opened_at >= 5 * NSEC_PER_SEC + NSEC_PER_SEC / 10)
+		BUG("spawn: the barrier did not open 5 s after the first failed spawn");
+
+	fork_children();
+	first = strstr(fake_output_log, STALL_OPEN);
+	if (first == NULL || strstr(first + 1, STALL_OPEN) != NULL)
+		BUG("spawn: the stalled fill did not log its opening of the barrier once");
+}
+
+/* The deadline is for failures with no spawn between: one that
+ * succeeds restarts the 5 s, so a fill that keeps landing spawns never
+ * trips it however slowly it grows.  Here slot 0 forks at 4 s, and the
+ * barrier waits for a deadline 5 s after the failure that followed. */
+static void spawn_success_restarts_the_stall_deadline(void)
+{
+	stalled_fill();
+
+	fork_children();
+	fork_children();
+	fake_fork_fail[0] = 0;
+	fork_children();
+	fork_children();
+	if (BARRIER_OPEN)
+		BUG("spawn: a spawn that succeeded did not restart the stall deadline");
+
+	fork_children();
+	if (!BARRIER_OPEN)
+		BUG("spawn: a fill that failed for 5 s since its last spawn did not open the barrier");
+	if (opened_at < 9 * NSEC_PER_SEC || opened_at >= 9 * NSEC_PER_SEC + NSEC_PER_SEC / 10)
+		BUG("spawn: the barrier did not open 5 s after the failure that followed the spawn");
+}
+
+/* A refill by replace_child() can win a pid the reaper just freed while
+ * the fill keeps failing, so it is no evidence of progress: it neither
+ * arms the deadline nor clears one. */
+static void replace_child_leaves_the_stall_deadline_alone(void)
+{
+	fake_parent_reset();
+	fake_clock_start();
+	fake_fork_fail[3] = FAKE_FORK_FAIL_ALWAYS;
+
+	__real_replace_child(3);
+	if (spawn_stall_deadline != 0)
+		BUG("spawn: a failed refill armed the stall deadline");
+
+	spawn_stall_deadline = 1;
+	fake_fork_fail[3] = 0;
+	__real_replace_child(3);
+	if (pids[3] != FAKE_FORK_PID(3) || spawn_stall_deadline != 1)
+		BUG("spawn: a refill that succeeded cleared the stall deadline");
+}
+
 void spawn_self_check(void);
 void spawn_self_check(void)
 {
@@ -263,6 +369,9 @@ void spawn_self_check(void)
 	drain_stays_off_unless_asked_for();
 	drain_count_carries_across_calls();
 	spawn_success_restarts_the_drain_count();
+	stalled_fill_opens_the_barrier_at_five_seconds();
+	spawn_success_restarts_the_stall_deadline();
+	replace_child_leaves_the_stall_deadline_alone();
 
 	/* Leave no pids or counts for later suites. */
 	fake_parent_reset();
