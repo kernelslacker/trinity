@@ -193,8 +193,9 @@ REAL_SRCS	:= \
 # syscall_socketpair, whose sanitisers sanitiser_owned_mask_test.c runs
 # against the empty pools in fake_objects.c and the domain tables in
 # fake_net.c; args/output-poison.c is the poison stamp socketpair's
-# sanitiser makes.  syscalls/concurrency/futex_wake.c brings
-# syscall_futex_wake, whose sanitiser it runs the same way.
+# sanitiser makes.  syscalls/concurrency/futex_wake.c and
+# syscalls/quota/quotactl.c bring syscall_futex_wake and
+# syscall_quotactl, whose sanitisers it runs the same way.
 # They also pull in functions the tests never call (main_loop() reaches
 # most of the parent, dispatch_step() most of the child), so each
 # function gets its own section and --gc-sections drops the unreached
@@ -240,7 +241,8 @@ PARENT_SRCS	:= \
 	$(TOP)/syscalls/socket/socket.c \
 	$(TOP)/syscalls/socket/socketpair.c \
 	$(TOP)/args/output-poison.c \
-	$(TOP)/syscalls/concurrency/futex_wake.c
+	$(TOP)/syscalls/concurrency/futex_wake.c \
+	$(TOP)/syscalls/quota/quotactl.c
 LDFLAGS		+= -Wl,--gc-sections
 
 # The CMP-hint collect path, linked for cmp_hints_collect() and the

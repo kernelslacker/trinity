@@ -176,6 +176,10 @@ struct syscallentry syscall_quotactl = {
 	.argname = { [0] = "cmd", [1] = "special", [2] = "id", [3] = "addr" },
 	.group = GROUP_VFS_MOUNT,
 	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
+	/* sanitise_quotactl() writes the packed cmd first, on every path,
+	 * without reading it.  The slots after it are written only once the
+	 * special-file buffer could be had, so they keep the generic fill. */
+	.sanitiser_owned_mask = (1u << 0),
 	.sanitise = sanitise_quotactl,
 	.rettype = RET_ZERO_SUCCESS,
 };
