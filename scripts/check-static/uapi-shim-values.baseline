@@ -10,11 +10,16 @@
 #   well-known values haven't changed in the kernel headers.
 #
 # HOW IT IS USED:
-#   For each entry here the gate additionally verifies:
-#     (a) the compiler can resolve the symbol (not just a trinity-private name)
-#     (b) the compiler's value matches the value recorded here
-#   Either mismatch fails the gate.  If the kernel headers ever change one of
-#   these, the baseline must be updated to match.
+#   For each entry here the gate additionally verifies that the compiler's
+#   value matches the value recorded here; a mismatch fails the gate.  If the
+#   kernel headers ever change one of these, the baseline must be updated to
+#   match.
+#
+#   An entry the tree still shims but no probe can resolve is skipped, with a
+#   SKIP line and a count in the PASS line: a constant newer than the build
+#   host's headers (XFRMA_IPTFS_* needs v6.14+) looks exactly like that.  If a
+#   TRINITY_LINUS_SRC tree resolves the symbol, its value is checked as usual.
+#   An entry with no integer #define in the tree is stale and fails.
 #
 # WHY THIS EXISTS:
 #   #ifndef guards on enum values are always taken (enums are not macros;

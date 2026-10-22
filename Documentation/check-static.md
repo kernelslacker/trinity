@@ -303,13 +303,27 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `track-shared-region-pairing`: every `track_shared_region()` must
   have a matching `untrack_shared_region()` on every cleanup-goto exit
   path that can free or recycle the backing mapping.
-- `uapi-shim-values`: every `#define` shim for an enum-backed UAPI constant
-  (families: `IFLA_GRE_*`, `IFLA_IPTUN_*`, `NDA_*`) must carry the correct
-  decimal value as recorded in `scripts/check-static/uapi-shim-values.baseline`.
+- `uapi-shim-values`: every integer `#define` in the tree (decimal, hex or a
+  single-bit shift) that a probe can resolve, against the installed uapi
+  headers or a kernel tree named by `TRINITY_LINUS_SRC`, must carry the
+  compiler's value, and so must each pair pinned in
+  `scripts/check-static/uapi-shim-values.baseline`.
   `#ifndef` guards on enum values are always taken — enums are not macros, so
   the shim is the definition, not a fallback.  A miscounted or typo'd value
   compiles silently and sends the wrong netlink attribute to the kernel.
   `XFRMA_*` value correctness is checked in `netlink-xfrm-attr-shim`.
+  A baseline symbol that the tree shims but no probe can resolve, such as a
+  constant newer than the build host's headers, is skipped with a `SKIP` line
+  and a count in the `PASS` line instead of failing; a `TRINITY_LINUS_SRC`
+  tree that resolves it gets the value checked as usual.  A baseline symbol
+  with no integer `#define` in the tree is stale and fails.
+- `uapi-shim-values-selftest`: runs `uapi-shim-values` on a scratch tree and
+  asserts that a baseline symbol the host's headers lack is skipped, that one
+  with no shim in the tree or a wrong pinned value fails, and that a kernel
+  tree named by `TRINITY_LINUS_SRC` resolves the otherwise-skipped symbol.  It
+  runs no git (a stub answers the revision lookup).  Without it the gate's
+  verdict can drift back to depending on how old the build host's kernel
+  headers are.
 - `variant-address-walk`: verify both the static reachability walker
   (`struct_desc_has_address_field_depth()` in
   `struct_catalog/address.c`) and the runtime nested-address scrub

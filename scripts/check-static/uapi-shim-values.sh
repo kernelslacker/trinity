@@ -28,10 +28,13 @@
 #   4. Baseline -- scripts/check-static/uapi-shim-values.baseline pins
 #                  specific symbol→value pairs.  Each baseline entry is an
 #                  additional cross-check:
-#                    * compiler can't resolve the symbol  →  FAIL
-#                      (baseline claimed it was a uapi constant)
 #                    * compiler value ≠ baseline value    →  FAIL
 #                      (kernel headers changed; baseline needs updating)
+#                    * no shim for the symbol in the tree →  FAIL
+#                      (the entry is stale or misspelled)
+#                    * shimmed, but the compiler can't resolve it  →  SKIP
+#                      (the host's headers predate it; counted in the PASS
+#                      line, and still checked if a Tier-2 tree resolves it)
 #
 # OVERLAP with netlink-xfrm-attr-shim.sh:
 #   That gate checks that every XFRMA_ token *used* in the xfrm generators
@@ -723,10 +726,19 @@ checked=${checked:-0}
 # Step 6: Baseline cross-check
 # Each baseline entry pins a (symbol, expected-compiler-value) record.
 # If the compiler now returns a different value, the baseline must be updated.
-# A symbol in the baseline that the compiler can't resolve is also a failure
-# (it may have been added without a corresponding uapi header constant).
+#
+# A baseline symbol that no probe can resolve is skipped, not failed, as long
+# as the tree still shims it.  The baseline pins recently added constants
+# (XFRMA_IPTFS_* only exist in v6.14+ headers), so on an older build host a
+# miss says how old the host is, not that the entry is wrong, and failing on
+# it would make the gate's verdict depend on the machine rather than the tree.
+# COMPILER_TABLE already holds the Tier-2 values, so an entry a linux-linus
+# tree resolves is checked like any other.  Only harvested symbols are probed,
+# so an entry missing from the harvest can never be resolved by any host and
+# is stale.
 # ---------------------------------------------------------------------------
 baseline_fail=0
+baseline_skipped=0
 
 if [ -f "$BASELINE" ]; then
     while IFS= read -r bline; do
@@ -738,9 +750,15 @@ if [ -f "$BASELINE" ]; then
 
         compiler_dec=$(awk -v s="$bsym" '$2==s{print $1; exit}' "$COMPILER_TABLE")
         if [ -z "$compiler_dec" ]; then
-            echo "FAIL: $NAME: baseline symbol $bsym not resolvable by compiler" \
-                 "(not in any uapi header -- baseline may be stale)" >&2
-            baseline_fail=$((baseline_fail + 1))
+            if grep -qxF "$bsym" "$SYMS_ALL"; then
+                echo "SKIP: $NAME: baseline symbol $bsym not resolvable by compiler" \
+                     "(tier2=$TIER2_STATUS); value not checked" >&2
+                baseline_skipped=$((baseline_skipped + 1))
+            else
+                echo "FAIL: $NAME: baseline symbol $bsym has no integer #define in" \
+                     "the tree, so it is never probed (stale or misspelled entry)" >&2
+                baseline_fail=$((baseline_fail + 1))
+            fi
             continue
         fi
         bval_dec=$(awk -v val="$bval" 'function hd(c){return (c>="0"&&c<="9")?(c+0):(index("0123456789abcdef",tolower(c))-1)} BEGIN{
@@ -794,5 +812,5 @@ case "$TIER1_STATUS" in
     *) echo "FAIL: $NAME: unknown TIER1_STATUS '$TIER1_STATUS'" >&2; exit 1 ;;
 esac
 
-echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / unresolved-uapi $unresolved_uapi_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor)"
+echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor)"
 exit 0
