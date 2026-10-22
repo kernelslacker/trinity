@@ -271,10 +271,11 @@ void frontier_barren_demote(unsigned int syscallnr, bool do32)
  * 10000 -- see include/strategy.h for the low-floor rationale), and
  * the shadow counter family the bumps land in (frontier_live_cool_*).
  *
- * Called from the LIVE-regime miss-attribution path in random_syscall/strategy-accounting.c
- * inside the existing (streak >= FRONTIER_LIVE_MISS_COOLDOWN) branch,
- * right next to the undiscriminated frontier_live_would_skip projection
- * the existing F3 shadow row bumps.  The pairing puts the
+ * Called from the LIVE-regime miss-attribution path in
+ * random_syscall/per-syscall-edges.c inside the existing
+ * (streak >= FRONTIER_LIVE_MISS_COOLDOWN) branch, right next to the
+ * undiscriminated frontier_live_would_skip projection the existing F3
+ * shadow row bumps.  The pairing puts the
  * undiscriminated and discriminated demote-mass projections in the
  * same stats dump so (live_cool_would_skip / live_would_skip) reads
  * off exactly how much over-cool the discriminator removes -- the
@@ -288,8 +289,8 @@ void frontier_barren_demote(unsigned int syscallnr, bool do32)
  * productive even after a 4-pick miss-streak, and the per-syscall
  * would-spare attribution needs to record THAT as a spare reason so
  * the operator can see the bpf / openat / io_uring_setup productive
- * set surfacing on the spare side of the partition.  See the design
- * note's §3.2 (c) "frontier_recent_count > 0 bpf backstop" lane.
+ * set surfacing on the spare side of the partition.  This is the
+ * "frontier_recent_count > 0 bpf backstop" lane.
  *
  * SHADOW-ONLY by construction: the helper computes the discriminator
  * and bumps the frontier_live_cool_* shadow counters but never reaches
