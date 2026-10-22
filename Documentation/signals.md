@@ -448,3 +448,75 @@ Both remove the file again when they are done.
   the file when acting on it: every run sharing `/tmp` should see it.
 - Like a stop signal, the stop file never relabels a failure shutdown
   already under way.
+
+## Fault signals reaching the parent
+
+The parent installs `main_fault_handler()` for SIGABRT, SIGQUIT, SIGSEGV,
+SIGBUS, SIGILL, SIGFPE, SIGTRAP and SIGSYS.  It restores the default
+action and re-raises, and the run dies, only when `fault_signal_is_real()`
+(include/signals.h) calls the signal a real fault or a crash of the
+parent's own making.  Everything else is a child's fuzzing and is
+ignored.
+
+- `SI_KERNEL` is real.  It is what a terminal's ctrl-\ sends for SIGQUIT
+  (`kill_pgrp(..., 1)` in n_tty) and what `force_sig()` stamps on a
+  fault the kernel forces.
+- A positive `si_code` on SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP or
+  SIGSYS is real: those signals have signal specific si_codes, and the
+  kernel reports its faults with them.
+- `SI_TKILL` or `SI_USER` with `si_pid == mypid()` is real: that is
+  `abort()`, `raise()` and `kill(getpid(), ...)`.  The kernel stamps
+  both codes itself and refuses a userspace siginfo that carries either
+  when it is aimed at another process (`si_code_reserved_to_kernel()`),
+  so a child's `tgkill()` or `kill()` carries the child's pid.
+- Every other negative code is noise whatever its `si_pid`, `SI_QUEUE`
+  included: `rt_sigqueueinfo()` copies `si_pid` verbatim under any of
+  them, so a same-uid child can name the parent.
+- A `POLL_*` `si_code` on SIGABRT or SIGQUIT is not real.  `F_SETOWN`
+  to the parent plus `F_SETSIG(SIGQUIT)` on an `O_ASYNC` fd makes
+  `send_sigio_to_task()` deliver SIGQUIT with a `POLL_*` `si_code`,
+  which an `si_code > 0` test takes for a kernel fault.  The kernel
+  rewrites that code to `SI_SIGIO` only for the signals in
+  `SIG_SPECIFIC_SICODES_MASK` (include/linux/signal.h): SIGILL, SIGFPE,
+  SIGSEGV, SIGBUS, SIGTRAP, SIGSYS, SIGCHLD and SIGPOLL.  So six of the
+  parent's eight arrive as `SI_SIGIO`, which is negative, and SIGABRT
+  and SIGQUIT keep a positive code.
+- `si_pid` names a sender only in some siginfo layouts.  A SIGIO's
+  `si_band`, the poll mask, sits there: `POLL_IN` is 0x41 and reads as
+  pid 65, and the other five read as 772, 1089, 8, 130 and 24 on x86.
+  A parent with one of those pids would take a SIGIO-routed SIGSEGV,
+  delivered as `SI_SIGIO`, for its own `raise()` if it trusted `si_pid`
+  there.  `SI_TIMER` has a timer id there too.  So `si_pid` counts only
+  under `SI_TKILL` and `SI_USER`.
+
+The F_SETSIG sanitiser in syscalls/fs/fcntl.c is the first line.  A
+child can make the parent the owner of a SIGIO, so the sanitiser routes
+one only to a signal the parent ignores.  With the parent set up by
+`setup_main_signals()` and a same-uid child aimed at it, the signals
+sort three ways:
+
+- Ignored, and kept: 0 (plain SIGIO) and SIGIO itself, SIGHUP, SIGUSR1,
+  SIGUSR2, SIGPIPE, SIGALRM, SIGXCPU, SIGXFSZ, SIGVTALRM and SIGPROF
+  (`SIG_IGN`), SIGRTMIN to SIGRTMAX (`SIG_IGN`), and SIGCHLD, SIGCONT,
+  SIGURG and SIGWINCH, whose default is to ignore or continue.
+- Handled, and refused: SIGINT and SIGTERM (`main_stop_handler()`),
+  SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGSEGV and SIGSYS
+  (`main_fault_handler()`).  The parent survives them only because of
+  the classifications above.
+- Neither, and refused: SIGKILL, SIGSTKFLT and SIGPWR end the parent;
+  SIGSTOP, SIGTSTP, SIGTTIN and SIGTTOU stop it.  The signals from 32
+  to below SIGRTMIN are libc's: SIGSETXID (33 in glibc) ends the parent
+  too, and their dispositions are not trinity's to set.
+
+A refused value becomes 0, a plain SIGIO.  Values above 64 are left
+alone, the kernel rejects them.  The rule lives in
+`parent_ignores_sigio_as()` (include/signals.h), and
+tests/parent_stop_test.c checks every signal it allows against
+`setup_main_signals()`, so dropping a `SIG_IGN` there fails the test.
+
+For the ten handled signals the classification above is a second line,
+and it holds when a RedQueen re-exec overwrites a3 after the sanitiser
+has run.  SIGKILL, SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU, SIGSTKFLT, SIGPWR
+and 33 have no backstop beyond the sanitiser and F_SETOWN never naming
+the parent (`get_pid()` skips `mainpid`, and the OBJ_PID pool rejects
+it).

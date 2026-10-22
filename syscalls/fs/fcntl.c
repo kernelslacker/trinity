@@ -24,6 +24,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "signals.h"
 #include "../syscalls.h"
 #include "trinity.h"
 
@@ -291,7 +292,9 @@ static void fcntl_owner(struct syscallrecord *rec)
 
 	case F_SETSIG:
 		rec->a3 = (unsigned long) rand32();
-		if (rec->a3 == SIGINT)
+		/* With F_SETOWN this routes a SIGIO to a3, and the owner can
+		 * be the parent: see parent_ignores_sigio_as(). */
+		if (!parent_ignores_sigio_as(rec->a3))
 			rec->a3 = 0; /* restore default (SIGIO) */
 		/* Scalar-only arm: a3 is a signal number int.  See REEXEC_OK
 		 * contract in include/syscall.h. */

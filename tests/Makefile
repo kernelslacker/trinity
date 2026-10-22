@@ -108,7 +108,7 @@ REAL_SRCS	:= \
 # reaper, the rotation-events sink and sanity_check_tables(), plus
 # utils/uid.c for drop_privs(), the child-side args/generate-args.c
 # for generic_sanitise() and arg_meta_init(), and health/signals-policy.c
-# for mask_signals_child().  They also pull in
+# for mask_signals_child() and setup_main_signals().  They also pull in
 # functions the tests never call (main_loop() reaches most of the
 # parent), so each function gets its own section and --gc-sections
 # drops the unreached ones.  -fdata-sections gives each function its

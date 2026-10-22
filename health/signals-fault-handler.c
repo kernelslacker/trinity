@@ -657,19 +657,15 @@ skip_buglog:
 }
 
 /*
- * Handler for signals that should only be fatal if they come from the
- * kernel (real fault), not from a child process sending us garbage via
- * kill/tkill/tgkill.
- *
- * si_code > 0:  kernel generated (e.g. SEGV_MAPERR) — always fatal
- * si_code <= 0: sent by a process (SI_USER, SI_TKILL, SI_QUEUE)
- *   - from ourselves (abort(), raise()): fatal — it's a real crash
- *   - from a child process: ignore — it's fuzzer noise
+ * Handler for signals that should only be fatal if they are a real fault
+ * or a crash of our own (abort(), raise()), not a child process sending
+ * us garbage via kill/tkill/tgkill or a SIGIO it routed here with
+ * F_SETSIG.  fault_signal_is_real() decides; the rest is fuzzer noise.
  */
 __attribute__((no_sanitize("address")))
 void main_fault_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 {
-	if (info->si_code > 0 || info->si_pid == mypid()) {
+	if (fault_signal_is_real(sig, info, mypid())) {
 		/* Real fault or self-sent (e.g. glibc abort) — dump a
 		 * backtrace and siginfo to stderr first so we have a handle
 		 * on the crash even when no coredump lands (ulimit -c 0 or a

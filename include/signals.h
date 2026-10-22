@@ -166,6 +166,96 @@ static inline enum exit_reasons parent_stop_reason(int sig, const siginfo_t *inf
 }
 
 /*
+ * Whether a signal main_fault_handler() received is a real fault or a
+ * crash of the parent's own making, rather than a fuzzing child's doing.
+ * F_SETOWN plus F_SETSIG lets a child have the kernel send the parent a
+ * SIGIO as any signal.  That siginfo holds si_band, the poll mask, where
+ * a sender's si_pid would be (POLL_IN reads as pid 65).  Its si_code
+ * depends on the signal: SIGILL, SIGFPE, SIGSEGV, SIGBUS, SIGTRAP and
+ * SIGSYS have signal specific si_codes, so send_sigio_to_task() stores
+ * SI_SIGIO for them, while any other signal, SIGABRT and SIGQUIT here,
+ * keeps a POLL_* code, which is positive without being a fault.  And
+ * rt_sigqueueinfo() lets a child write any si_pid under a negative code
+ * but SI_TKILL.  So:
+ *   - SI_KERNEL is real, as a terminal's ctrl-\ is;
+ *   - a positive code is real on a signal with signal specific si_codes;
+ *   - the parent's own pid is real under SI_USER and SI_TKILL, which the
+ *     kernel stamps itself and refuses in a userspace siginfo aimed at
+ *     another process, and which kill(getpid()), raise() and abort() use;
+ *     under no other code.
+ */
+static inline bool fault_signal_is_real(int sig, const siginfo_t *info, pid_t self)
+{
+	switch (info->si_code) {
+	case SI_KERNEL:
+		return true;
+	case SI_USER:
+	case SI_TKILL:
+		return info->si_pid == self;
+	}
+	if (info->si_code < 0)
+		return false;
+
+	switch (sig) {
+	case SIGILL:
+	case SIGFPE:
+	case SIGSEGV:
+	case SIGBUS:
+	case SIGTRAP:
+	case SIGSYS:
+		return true;
+	}
+	return false;
+}
+
+/*
+ * Whether a SIGIO that F_SETSIG routes to @sig leaves the parent alone,
+ * for the F_SETSIG sanitiser.  A child can make the parent the owner, so
+ * @sig has to be a signal the parent ignores: SIG_IGN in
+ * setup_main_signals() for SIGHUP, SIGUSR1, SIGUSR2, SIGPIPE, SIGALRM,
+ * SIGXCPU, SIGXFSZ, SIGVTALRM, SIGPROF, SIGIO and SIGRTMIN..SIGRTMAX, a
+ * default that ignores or continues for SIGCHLD, SIGCONT, SIGURG and
+ * SIGWINCH.  0, a plain SIGIO, is one of them, and the kernel rejects a
+ * value above 64.  The rest are refused: the signals the parent answers
+ * with a handler, which it survives only as far as the handler judges
+ * them, the ones whose default action ends or stops it, and the ones
+ * from 32 up to SIGRTMIN, which are libc's to dispose of.
+ * tests/parent_stop_test.c checks every signal this allows against
+ * setup_main_signals().
+ */
+static inline bool parent_ignores_sigio_as(unsigned long sig)
+{
+	switch (sig) {
+	/* handled, so safe only as far as the handler judges it */
+	case SIGINT:
+	case SIGTERM:
+	case SIGQUIT:
+	case SIGILL:
+	case SIGTRAP:
+	case SIGABRT:
+	case SIGBUS:
+	case SIGFPE:
+	case SIGSEGV:
+	case SIGSYS:
+	/* neither handled nor ignored, so the default action */
+	case SIGKILL:
+#ifdef SIGSTKFLT
+	case SIGSTKFLT:
+#endif
+	case SIGSTOP:
+	case SIGTSTP:
+	case SIGTTIN:
+	case SIGTTOU:
+	case SIGPWR:
+		return false;
+	}
+
+	/* The kernel's RT signals start at 32 and libc keeps the ones below
+	 * its SIGRTMIN, with dispositions of its own. */
+	return sig < 32 || sig >= (unsigned long) SIGRTMIN;
+}
+
+/*
  * The internal-watchdog handlers installed once by mask_signals_child().
  * Exposed only so an arm site (alarm(1) or RLIMIT_CPU) can read back
  * the live sa_handler with sigaction(_, NULL, &cur) and detect that a

@@ -296,6 +296,7 @@ void setup_main_signals(void)
 	 * Ignore signals that children can send us via kill/tkill/tgkill.
 	 * Without this, the fuzzer randomly terminates when a child happens
 	 * to send a fatal signal to the parent PID.
+	 * parent_ignores_sigio_as() (include/signals.h) must follow this list.
 	 */
 	(void)signal(SIGHUP, SIG_IGN);
 	(void)signal(SIGUSR1, SIG_IGN);
@@ -318,9 +319,9 @@ void setup_main_signals(void)
 		(void)signal(i, SIG_IGN);
 
 	/*
-	 * Use SA_SIGINFO for fault/core-dump signals so we can distinguish
-	 * real faults (si_code > 0, from kernel) from signals sent by child
-	 * processes fuzzing kill/tkill/tgkill (si_code <= 0).
+	 * Use SA_SIGINFO for fault/core-dump signals so main_fault_handler()
+	 * can tell real faults from signals sent by child processes fuzzing
+	 * kill/tkill/tgkill or F_SETSIG (fault_signal_is_real()).
 	 */
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = SA_SIGINFO;
