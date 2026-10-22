@@ -17,10 +17,10 @@
  * starter cmd set covers the read-side commands (LIST / HEADER /
  * TYPE / GET_BYNAME / GET_BYINDEX) plus the write-side counterparts
  * (CREATE / DESTROY / FLUSH / RENAME / SWAP / ADD / DEL / TEST).
- * Write commands need CAP_NET_ADMIN and will EPERM in unprivileged
- * children, but the dispatcher still walks the per-attr policy gate
- * before the perm check — so the validate paths get exercised
- * either way.
+ * nfnetlink answers every message, the read-side ones included, with
+ * -EPERM unless the sender holds CAP_NET_ADMIN over the socket's
+ * netns, and does so before the per-attr policy gate is walked — so
+ * the validate paths are only exercised by a child that holds it.
  *
  * Attribute set: the command-level IPSET_ATTR_* namespace from
  * include/uapi/linux/netfilter/ipset/ip_set.h, sized per the

@@ -18,10 +18,12 @@
  *
  * Command set: a single user-facing command (GET) per the
  * nfnl_nft_compat_cb[] callback table; the kernel exposes no NEW/DEL
- * — this subsys is read-only metadata.  GET does not require
- * CAP_NET_ADMIN, so the policy-validate path and the underlying
- * xt_request_find_match/xt_request_find_target lookups are exercised
- * in unprivileged children too.
+ * — this subsys is read-only metadata, but GET is not exempt from the
+ * nfnetlink permission test: every message gets -EPERM unless the
+ * sender holds CAP_NET_ADMIN over the socket's netns, and that test
+ * runs before the policy-validate path, so that path and the
+ * underlying xt_request_find_match/xt_request_find_target lookups are
+ * only exercised by a child that holds it.
  *
  * Attribute set: NFTA_COMPAT_* from nf_tables_compat.h, sized per
  * nfnl_compat_policy in net/netfilter/nft_compat.c.  NFTA_COMPAT_NAME

@@ -14,11 +14,11 @@
  *
  * Command set: read-side variants (GET / GET_STATS / GET_DYING /
  * GET_UNCONFIRMED on CT, GET / GET_STATS on EXP) plus their write-side
- * counterparts (NEW / DELETE).  The write-side commands need
- * CAP_NET_ADMIN in the original netns and will EPERM in unprivileged
- * children, but the dispatcher still runs the per-attr validate gate
- * before the perm check — so the attr policy paths get exercised
- * either way.
+ * counterparts (NEW / DELETE).  nfnetlink answers every one of them,
+ * the read-side included, with -EPERM unless the sender holds
+ * CAP_NET_ADMIN over the socket's netns, and it does so before the
+ * per-attr validate gate runs — so the attr policy paths are only
+ * exercised by a child that holds it.
  *
  * Attribute set: a curated subset of each namespace the kernel's
  * dispatchers walk in the common cases.  TUPLE_* / MASTER / MASK and

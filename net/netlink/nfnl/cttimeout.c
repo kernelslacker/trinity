@@ -24,10 +24,10 @@
  * IPCTNL_MSG_TIMEOUT_DEFAULT_SET / DEFAULT_GET need a registered L4
  * timeout policy and parse against a different attr set, so a fuzzer
  * pointed at them from cold just bounces at the policy-resolution
- * gate; skip them here.  All three commands need CAP_NET_ADMIN and
- * will EPERM in unprivileged children, but the per-attr validate gate
- * runs before the perm check so the policy path gets exercised either
- * way.
+ * gate; skip them here.  nfnetlink answers every message with -EPERM
+ * unless the sender holds CAP_NET_ADMIN over the socket's netns, and
+ * does so before the per-attr validate gate runs, so the policy path
+ * is only exercised by a child that holds it.
  *
  * Attribute set: the four command-level attributes cttimeout_nla_policy[]
  * accepts, followed by the per-L4 CTA_TIMEOUT_<PROTO>_* namespaces that

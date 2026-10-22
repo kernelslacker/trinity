@@ -19,10 +19,11 @@
  * fingerprint installer or the table walker).
  *
  * Command set: the two user-facing commands the dispatcher accepts
- * (ADD / REMOVE) per the nfnl_osf_callbacks[] table.  Both need
- * CAP_NET_ADMIN and will EPERM in unprivileged children, but the
- * per-attr validate gate runs before the perm check so the policy
- * path gets exercised either way.
+ * (ADD / REMOVE) per the nfnl_osf_callbacks[] table.  nfnetlink
+ * answers every message with -EPERM unless the sender holds
+ * CAP_NET_ADMIN over the socket's netns, and does so before the
+ * per-attr validate gate runs, so the policy path is only exercised
+ * by a child that holds it.
  *
  * Attribute set: a single OSF_ATTR_FINGER carrying a fixed
  * struct nf_osf_user_finger blob.  The top-level nfnl_osf_policy in

@@ -19,10 +19,11 @@
  * before reaching the nested-attr parsers.
  *
  * Command set: the three user-facing commands the dispatcher accepts
- * (NEW / GET / DEL) per the nfnl_cthelper_cb[] callback table.  All
- * three need CAP_NET_ADMIN and will EPERM in unprivileged children,
- * but the per-attr validate gate runs before the perm check so the
- * policy paths get exercised either way.
+ * (NEW / GET / DEL) per the nfnl_cthelper_cb[] callback table.
+ * nfnetlink answers every message with -EPERM before it parses
+ * attributes unless the sender holds CAP_NET_ADMIN over the socket's
+ * netns, so the policy paths are only exercised by a child that
+ * holds it.
  *
  * Attribute set: NFCTH_* command-level namespace from
  * include/uapi/linux/netfilter/nfnetlink_cthelper.h.  Top-level

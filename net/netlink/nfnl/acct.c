@@ -15,10 +15,11 @@
  * command) before reaching the parser.
  *
  * Command set: the three user-facing commands the dispatcher accepts
- * (NEW / GET / DEL) per the nfnl_acct_cb[] callback table.  NEW + DEL
- * need CAP_NET_ADMIN and will EPERM in unprivileged children, but the
- * per-attr validate gate runs before the perm check so the policy paths
- * get exercised either way.  NFNL_MSG_ACCT_GET_CTRZERO and
+ * (NEW / GET / DEL) per the nfnl_acct_cb[] callback table.  nfnetlink
+ * answers every message, GET included, with -EPERM before it parses
+ * attributes unless the sender holds CAP_NET_ADMIN over the socket's
+ * netns, so the policy paths are only exercised by a child that
+ * holds it.  NFNL_MSG_ACCT_GET_CTRZERO and
  * NFNL_MSG_ACCT_OVERQUOTA are deliberately omitted — the former is a
  * read-and-zero variant that would race other subsystems' counters under
  * fuzz, and the latter is a kernel→user multicast event with no callback

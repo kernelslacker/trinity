@@ -7,11 +7,11 @@
  * flowtable / gen namespaces, each with its own nla_policy gate.
  * The cmd set below covers every current nf_tables_msg_types entry:
  * the read / write / destroy triples per namespace, the *_RESET
- * dump variants, and the gen readback.  Write and destroy commands
- * need CAP_NET_ADMIN in the net namespace and will EPERM in
- * unprivileged children, but the dispatcher still runs the per-attr
- * validate gate before the perm check — so the attr policy paths
- * get exercised either way.
+ * dump variants, and the gen readback.  nfnetlink answers every
+ * message, the read-side ones included, with -EPERM unless the sender
+ * holds CAP_NET_ADMIN over the socket's netns, and does so before the
+ * per-attr validate gate runs — so the attr policy paths are only
+ * exercised by a child that holds it.
  *
  * The attr table mirrors the per-namespace NFTA_*_* enums for the
  * table / chain / rule / set / setelem / obj / flowtable namespaces.
