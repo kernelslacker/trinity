@@ -165,7 +165,7 @@ not aesthetics.
 
 - **Files:** a `.c` over ~1,500 lines, or holding more than one subsystem, is a
   carve candidate → split into `<subsystem>/*.c` (globbed into Makefile
-  SRCS+OBJS), cross-cluster state in `include/<subsystem>-internal.h`, public
+  SRCS), cross-cluster state in `include/<subsystem>-internal.h`, public
   header stays in `include/`. A carve is pure code-motion: no logic/rename/
   counter change, one cohesive cluster per commit, each commit passing the full
   gate.

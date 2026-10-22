@@ -143,175 +143,93 @@ SYSCALLS_ARCH	:= $(shell case "$(MACHINE)" in \
 
 VERSION_H	:= include/version.h
 
-SRCS		:= $(wildcard *.c) \
-		   $(wildcard args/*.c) \
-		   $(wildcard args/pools/*.c) \
-		   $(wildcard child/*.c) \
-		   $(wildcard childops/*.c) \
-		   $(wildcard childops/net/*.c) \
-		   $(wildcard childops/net/netlink/*.c) \
-		   $(wildcard childops/misc/*.c) \
-		   $(wildcard childops/mm/*.c) \
-		   $(wildcard childops/fs/*.c) \
-		   $(wildcard cmp_hints/*.c) \
-		   $(wildcard dispatch/*.c) \
-		   $(wildcard fds/*.c) \
-		   $(wildcard health/*.c) \
-		   $(wildcard ioctls/*.c) \
-		   $(wildcard kcov/*.c) \
-		   $(wildcard lib/*.c) \
-		   $(wildcard main/*.c) \
-		   $(wildcard main/params/*.c) \
-		   $(wildcard mm/*.c) \
-		   $(wildcard net/*.c) \
-		   $(wildcard net/bpf/*.c) \
-		   $(wildcard net/netlink/*.c) \
-		   $(wildcard net/netlink/genl/*.c) \
-		   $(wildcard net/netlink/nfnl/*.c) \
-		   $(wildcard net/proto/*.c) \
-		   $(wildcard objects/*.c) \
-		   $(wildcard persist/*.c) \
-		   $(wildcard rand/*.c) \
-		   $(wildcard random_syscall/*.c) \
-		   $(wildcard stats/*.c) \
-		   $(wildcard stats/categories/*.c) \
-		   $(wildcard stats/dump/*.c) \
-		   $(wildcard stats/json/*.c) \
-		   $(wildcard stats/subsys/*.c) \
-		   $(wildcard stats/childop/*.c) \
-		   $(wildcard stats/network/*.c) \
-		   $(wildcard stats/kcov/*.c) \
-		   $(wildcard stats/kcov/cmp/*.c) \
-		   $(wildcard stats/periodic/*.c) \
-		   $(wildcard strategy/*.c) \
-		   $(wildcard struct_catalog/*.c) \
-		   $(wildcard struct_catalog/registry/*.c) \
-		   $(wildcard syscalls/*.c) \
-		   $(wildcard syscalls/mm/memfd/*.c) \
-		   $(wildcard syscalls/mm/mlock/*.c) \
-		   $(wildcard syscalls/mm/numa/*.c) \
-		   $(wildcard syscalls/mm/*.c) \
-		   $(wildcard syscalls/fs/timestamp/*.c) \
-		   $(wildcard syscalls/fs/splice/*.c) \
-		   $(wildcard syscalls/fs/sync/*.c) \
-		   $(wildcard syscalls/fs/mount/*.c) \
-		   $(wildcard syscalls/fs/stat/*.c) \
-		   $(wildcard syscalls/fs/path/*.c) \
-		   $(wildcard syscalls/fs/*.c) \
-		   $(wildcard syscalls/perf/*.c) \
-		   $(wildcard syscalls/quota/*.c) \
-		   $(wildcard syscalls/kexec/*.c) \
-		   $(wildcard syscalls/uname/*.c) \
-		   $(wildcard syscalls/hardware/*.c) \
-		   $(wildcard syscalls/process/*.c) \
-		   $(wildcard syscalls/lsm/*.c) \
-		   $(wildcard syscalls/landlock/*.c) \
-		   $(wildcard syscalls/pidfd/*.c) \
-		   $(wildcard syscalls/module/*.c) \
-		   $(wildcard syscalls/keyctl/*.c) \
-		   $(wildcard syscalls/fsnotify/*.c) \
-		   $(wildcard syscalls/concurrency/*.c) \
-		   $(wildcard syscalls/poll/*.c) \
-		   $(wildcard syscalls/aio/*.c) \
-		   $(wildcard syscalls/io_uring/*.c) \
-		   $(wildcard syscalls/socket/*.c) \
-		   $(wildcard syscalls/mq/*.c) \
-		   $(wildcard syscalls/ipc/sysv/*.c) \
-		   $(wildcard syscalls/itimer/*.c) \
-		   $(wildcard syscalls/timer/*.c) \
-		   $(wildcard syscalls/clock/*.c) \
-		   $(wildcard syscalls/signal/*.c) \
-		   $(wildcard syscalls/sched/*.c) \
-		   $(wildcard syscalls/cred/*.c) \
-		   $(wildcard syscalls/xattr/*.c) \
-		   $(wildcard tables/*.c) \
-		   $(wildcard utils/*.c) \
-		   $(SYSCALLS_ARCH)
+# OBJS is derived from SRCS, so this is also the link order, and with it
+# the order constructors register fd providers and ioctl groups in.
+# $(wildcard) follows the locale's collation, hence the $(sort)s.
+SRCS		:= $(sort $(wildcard args/*.c)) \
+		   $(sort $(wildcard args/pools/*.c)) \
+		   $(sort $(wildcard child/*.c)) \
+		   $(sort $(wildcard childops/net/*.c)) \
+		   $(sort $(wildcard childops/net/netlink/*.c)) \
+		   $(sort $(wildcard childops/misc/*.c)) \
+		   $(sort $(wildcard childops/mm/*.c)) \
+		   $(sort $(wildcard childops/fs/*.c)) \
+		   $(sort $(wildcard cmp_hints/*.c)) \
+		   $(sort $(wildcard dispatch/*.c)) \
+		   $(sort $(wildcard fds/*.c)) \
+		   $(sort $(wildcard health/*.c)) \
+		   $(sort $(wildcard ioctls/*.c)) \
+		   $(sort $(wildcard kcov/*.c)) \
+		   $(sort $(wildcard lib/*.c)) \
+		   $(sort $(wildcard main/*.c)) \
+		   $(sort $(wildcard main/params/*.c)) \
+		   $(sort $(wildcard mm/*.c)) \
+		   $(sort $(wildcard net/*.c)) \
+		   $(sort $(wildcard net/bpf/*.c)) \
+		   $(sort $(wildcard net/netlink/*.c)) \
+		   $(sort $(wildcard net/netlink/genl/*.c)) \
+		   $(sort $(wildcard net/netlink/nfnl/*.c)) \
+		   $(sort $(wildcard net/proto/*.c)) \
+		   $(sort $(wildcard objects/*.c)) \
+		   $(sort $(wildcard persist/*.c)) \
+		   $(sort $(wildcard rand/*.c)) \
+		   $(sort $(wildcard random_syscall/*.c)) \
+		   $(sort $(wildcard stats/*.c)) \
+		   $(sort $(wildcard stats/categories/*.c)) \
+		   $(sort $(wildcard stats/dump/*.c)) \
+		   $(sort $(wildcard stats/json/*.c)) \
+		   $(sort $(wildcard stats/subsys/*.c)) \
+		   $(sort $(wildcard stats/childop/*.c)) \
+		   $(sort $(wildcard stats/network/*.c)) \
+		   $(sort $(wildcard stats/kcov/*.c)) \
+		   $(sort $(wildcard stats/kcov/cmp/*.c)) \
+		   $(sort $(wildcard stats/periodic/*.c)) \
+		   $(sort $(wildcard strategy/*.c)) \
+		   $(sort $(wildcard struct_catalog/*.c)) \
+		   $(sort $(wildcard struct_catalog/registry/*.c)) \
+		   $(sort $(wildcard syscalls/*.c)) \
+		   $(sort $(wildcard syscalls/mm/memfd/*.c)) \
+		   $(sort $(wildcard syscalls/mm/mlock/*.c)) \
+		   $(sort $(wildcard syscalls/mm/numa/*.c)) \
+		   $(sort $(wildcard syscalls/mm/*.c)) \
+		   $(sort $(wildcard syscalls/fs/timestamp/*.c)) \
+		   $(sort $(wildcard syscalls/fs/splice/*.c)) \
+		   $(sort $(wildcard syscalls/fs/sync/*.c)) \
+		   $(sort $(wildcard syscalls/fs/mount/*.c)) \
+		   $(sort $(wildcard syscalls/fs/stat/*.c)) \
+		   $(sort $(wildcard syscalls/fs/path/*.c)) \
+		   $(sort $(wildcard syscalls/fs/*.c)) \
+		   $(sort $(wildcard syscalls/perf/*.c)) \
+		   $(sort $(wildcard syscalls/quota/*.c)) \
+		   $(sort $(wildcard syscalls/kexec/*.c)) \
+		   $(sort $(wildcard syscalls/uname/*.c)) \
+		   $(sort $(wildcard syscalls/hardware/*.c)) \
+		   $(sort $(wildcard syscalls/process/*.c)) \
+		   $(sort $(wildcard syscalls/lsm/*.c)) \
+		   $(sort $(wildcard syscalls/landlock/*.c)) \
+		   $(sort $(wildcard syscalls/pidfd/*.c)) \
+		   $(sort $(wildcard syscalls/module/*.c)) \
+		   $(sort $(wildcard syscalls/keyctl/*.c)) \
+		   $(sort $(wildcard syscalls/fsnotify/*.c)) \
+		   $(sort $(wildcard syscalls/concurrency/*.c)) \
+		   $(sort $(wildcard syscalls/poll/*.c)) \
+		   $(sort $(wildcard syscalls/aio/*.c)) \
+		   $(sort $(wildcard syscalls/io_uring/*.c)) \
+		   $(sort $(wildcard syscalls/socket/*.c)) \
+		   $(sort $(wildcard syscalls/mq/*.c)) \
+		   $(sort $(wildcard syscalls/ipc/sysv/*.c)) \
+		   $(sort $(wildcard syscalls/itimer/*.c)) \
+		   $(sort $(wildcard syscalls/timer/*.c)) \
+		   $(sort $(wildcard syscalls/clock/*.c)) \
+		   $(sort $(wildcard syscalls/signal/*.c)) \
+		   $(sort $(wildcard syscalls/sched/*.c)) \
+		   $(sort $(wildcard syscalls/cred/*.c)) \
+		   $(sort $(wildcard syscalls/xattr/*.c)) \
+		   $(sort $(wildcard tables/*.c)) \
+		   $(sort $(wildcard utils/*.c)) \
+		   $(sort $(SYSCALLS_ARCH))
 
-OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard args/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard args/pools/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard child/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard childops/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard childops/net/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard childops/net/netlink/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard childops/misc/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard childops/mm/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard childops/fs/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard cmp_hints/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard dispatch/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard health/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard ioctls/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard kcov/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard lib/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard main/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard main/params/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard mm/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard net/bpf/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard net/netlink/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard net/netlink/genl/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard net/netlink/nfnl/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard net/proto/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard objects/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard persist/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard rand/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard random_syscall/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard stats/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard stats/categories/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard stats/dump/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard stats/json/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard stats/subsys/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard stats/childop/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard stats/network/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard stats/kcov/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard stats/kcov/cmp/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard stats/periodic/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard strategy/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard struct_catalog/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard struct_catalog/registry/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/mm/memfd/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/mm/mlock/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/mm/numa/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/mm/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/fs/timestamp/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/fs/splice/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/fs/sync/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/fs/mount/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/fs/stat/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/fs/path/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/fs/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/perf/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/quota/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/kexec/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/uname/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/hardware/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/process/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/lsm/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/landlock/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/pidfd/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/module/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/keyctl/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/fsnotify/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/concurrency/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/poll/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/aio/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/io_uring/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/socket/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/mq/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/ipc/sysv/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/itimer/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/timer/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/clock/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/signal/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/sched/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/cred/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/xattr/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard tables/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(wildcard utils/*.c))) \
-		   $(sort $(patsubst %.c,%.o,$(SYSCALLS_ARCH)))
+OBJS		:= $(SRCS:%.c=%.o)
 
 DEPDIR= .deps
 
