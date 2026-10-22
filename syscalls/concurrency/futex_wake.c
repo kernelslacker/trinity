@@ -91,5 +91,8 @@ struct syscallentry syscall_futex_wake = {
 	 * from the dispatch-time value the kernel actually saw; mismatch
 	 * bumps arg_shadow_stomp from inside get_arg_snapshot(). */
 	.arg_snapshot_mask = (1u << 2),
+	/* sanitise_futex_wake() writes mask and flags on every path without
+	 * reading them.  uaddr and nr come from the generic fill. */
+	.sanitiser_owned_mask = (1u << 1) | (1u << 3),
 	.rettype = RET_BORING,
 };

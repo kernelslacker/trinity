@@ -153,8 +153,9 @@ static void bad_mask_refused(void)
  * listed once its TU is linked into the test binary. */
 static struct syscallentry *const owner_entry[] = {
 	&syscall_prctl, &syscall_keyctl, &syscall_socket, &syscall_socketpair,
+	&syscall_futex_wake,
 };
-static const uint8_t owner_slots[] = { 1u << 0, 1u << 0, 0x07, 0x0f };
+static const uint8_t owner_slots[] = { 1u << 0, 1u << 0, 0x07, 0x0f, 0x0a };
 
 #define OWNER_RUNS	2048
 #define OWNER_MARK(k)	(0x5a5a00UL + (k))
