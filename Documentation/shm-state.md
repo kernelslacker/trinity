@@ -59,7 +59,7 @@ The existing per-arm series (`bandit_pulls[]`,
 WINDOWS or NEW-EDGE CALLS -- the bandit reward signal -- and leave the
 denominator side implicit.  Without an explicit per-arm dispatch count
 the only way to derive "how many syscalls actually ran under this arm
-this run" is to scale `stats.reward_per_fleet_op_window` by the window
+this run" is to scale the per-window reward by the window
 mix, which mixes in syscall latency, explorer/alt-op share, blocking
 behaviour, and rotation drift.  That makes tuning A/B comparisons
 across runs hard: a reward delta might mean the arm is genuinely
@@ -186,10 +186,10 @@ to recent yield.
 Both arrays are fixed-point parts-per-thousand (suffix `_x1000`) so
 the EMA arithmetic stays in unsigned-long integer math without
 dragging a double into shm.  The exact alpha and the EMA update site
-live in `strategy.c` (`BANDIT_EMA_ALPHA_X1000`); a half-life of
-~10-30 windows is the design target so an arm whose yield collapses
-after a configuration change (e.g. cgroup mount, netns unshare) loses
-its grip on the picker within minutes rather than hours.
+live in `strategy/strategy-bandit.c` (`BANDIT_EMA_ALPHA_X1000`); a
+half-life of ~10-30 windows is the design target so an arm whose yield
+collapses after a configuration change (e.g. cgroup mount, netns
+unshare) loses its grip on the picker within minutes rather than hours.
 
 The arrays are:
 
@@ -401,10 +401,14 @@ to either series.
 
 - `bandit_reward_calls[]` -- cumulative reward attributed to each arm,
   in CALL-COUNT units -- sum of per-window
-  `(pc_edge_calls_by_strategy delta + cmp_term)`.  The PC component
+  `(pc_edge_calls_by_strategy delta + cmp_term + transition term)`, plus
+  the blended edge-count term when `bandit_reward_edge_count_mode` is
+  COMBINED (default OFF; `kcov_transition_reward_mode` is COMBINED by
+  default).  The PC component
   counts CALLS that produced at least one new edge, not real bucket
-  edges (see `pc_edge_calls_by_strategy` above).  This is the signal
-  the UCB1 picker scores against.  The learner may later switch to
+  edges (see `pc_edge_calls_by_strategy` above).  The UCB1 picker
+  scores the discounted form of this series, `recent_reward_x1000[]`
+  (next section), not the lifetime sum.  The learner may later switch to
   consuming `bandit_reward_pc_edge_count[]` (real bucket count) or a
   transform of it; both signals are exposed so that choice can be made
   later.
@@ -442,10 +446,9 @@ Two parallel matrices carry the chaos-state dimension:
   counter; no companion lifetime series because the headline V2
   question is "does chaos correlate with WARNs?" and a per-arm-flat
   WARN total without the cohort split would not answer it.
-  Per-kind deltas (e.g. KMSG_MM_CORRUPT separately from KMSG_BUG) are
-  available via `kcov_shm->kmsg.fires_per_kind[k]` minus
-  `shm->fires_per_kind_at_window_start[k]`; wire them into per-cohort
-  buckets here when kind-level attribution is needed.
+  Per-kind deltas (e.g. KMSG_MM_CORRUPT separately from KMSG_BUG) would
+  need a per-kind snapshot at window start; only the total
+  (`kmsg_warn_fires_at_window_start`) is kept.
 
 Observation-only -- nothing in `select_next_strategy` / `ucb1_score`
 / `pick_next_strategy` reads these arrays.  The learner's reward
@@ -531,8 +534,8 @@ the recent rescue cohort:
 - `RRC_COLD_SKIP` -> `set_syscall_nr_heuristic` skips its
   `kcov_syscall_cold_skip_pct` retry, so cold syscalls flow through
   the heuristic arm during the intervention.
-- `RRC_CMP_DERIVED` -> `generate-args.c`'s 1-in-16
-  `cmp_hints_try_get_ex` rolls flip to 1-in-4 so the learned constants
+- `RRC_CMP_DERIVED` -> the baseline 1-in-16 cmp-hint injection roll in
+  `args/cmp_hint_inject.c` flips to 1-in-4 so the learned constants
   the classifier credited the rescues to fire more often.
 
 Gated on
@@ -574,10 +577,10 @@ identical.
 
 ## Plateau-hypothesis mirror
 
-`plateau_current_hypothesis` is the shm mirror of `strategy.c`'s
-parent-private `hypothesis_current`.  Published by
-`strategy_plateau_hypothesis_tick()` (parent only) at every stats
-tick; read RELAXED by `select_next_strategy()` on every rotation to
+`plateau_current_hypothesis` is the shm mirror of
+`strategy/strategy-plateau.c`'s parent-private `hypothesis_current`.
+Published by `strategy_plateau_hypothesis_tick()` (parent only) at every
+stats tick; read RELAXED by `select_next_strategy()` on every rotation to
 gate the targeted intervention selection.
 
 `PLATEAU_HYPOTHESIS_NONE` means "no rule matched" or "no plateau
@@ -616,7 +619,7 @@ at which the bloom was last cleared).  When a child observing a fresh
 CMP record finds the entry's tag more than `CMP_NOVELTY_DECAY_WINDOWS`
 rotations old it lazily zeroes the bloom and republishes the tag, so
 a constant that stops appearing for `K` windows is forgotten and
-counts as novel again.  Sized `132 bytes * MAX_NR_SYSCALL ~= 132 KiB`
+counts as novel again.  Sized `132 bytes * MAX_NR_SYSCALL * 2 ~= 264 KiB`
 inside shm -- well below other arrays already living here
 (`per_syscall_*`).
 
@@ -660,17 +663,6 @@ the just-finished window.  Written only by the CAS-winning child on
 the rotation path; RELAXED accesses match the other
 `*_at_window_start` fields.
 
-### `fires_per_kind_at_window_start[NR_KMSG_KINDS]`
-
-Per-kind snapshot parallel to `kmsg_warn_fires_at_window_start`.  Reseeded
-from `kcov_shm->kmsg.fires_per_kind[]` at the same rotation point and with
-the same RELAXED-atomic contract.  Indexed by `enum kmsg_event_kind`
-(values `1..NR_KMSG_KINDS-1`; slot 0 / `KMSG_EVENT_UNKNOWN` is never
-written by the monitor and will always be zero).  Enables window-close
-logic to compute per-kind deltas -- e.g. `KMSG_MM_CORRUPT` separate from
-`KMSG_BUG` or `KMSG_WARN` -- without conflating distinct kernel failure
-modes into the single flat `warn_fires` signal.
-
 ### `bandit_cmp_share_sum_x1000[NR_STRATEGIES]`
 
 Per-arm cumulative sum of `(cmp_term * 1000 / total_reward)` across
@@ -686,15 +678,20 @@ Per-syscall frontier-edge ring -- see `include/strategy.h`.  The
 coverage-frontier picker biases its uniform pick by each syscall's
 recent NEW-edge count.
 
-### `frontier_history[MAX_NR_SYSCALL][FRONTIER_DECAY_WINDOWS]` + `frontier_slot`
+### `frontier_history[MAX_NR_SYSCALL][PICKER_NCTX][FRONTIER_DECAY_WINDOWS]` + `frontier_slot`
 
-`frontier_history[nr][slot]` counts NEW edges syscall `nr` produced
-during the rotation window mapped to `slot`.  Slot is an index in
-`[0, FRONTIER_DECAY_WINDOWS)`; the slot currently being filled is
+`frontier_history[nr][ctx][slot]` counts NEW edges syscall `nr` produced
+under picker context `ctx` during the rotation window mapped to `slot`.
+`ctx` is `enum picker_context` (`include/picker-context.h`): the axis
+keeps a context-specific edge cluster from poisoning the INIT slice's
+weight, and only `PICKER_CTX_INIT` is written today.  Slot is an index
+in `[0, FRONTIER_DECAY_WINDOWS)`; the slot currently being filled is
 `(frontier_slot & mask)`, advanced once per rotation by the
-CAS-winning child via `frontier_window_advance()`.  Sum across all
-slots is the syscall's "recent frontier-edge count" -- the weight the
-coverage-frontier picker biases its uniform pick toward.
+CAS-winning child via `frontier_window_advance()`, which rotates the
+slice of every context so an idle context still ages out.  Sum across
+all slots of the INIT slice is the syscall's "recent frontier-edge
+count" -- the weight the coverage-frontier picker biases its uniform
+pick toward.
 
 Bumped on the `kcov_collect` new-edge branch by every child
 (multi-producer, atomic add).  Slot rotation zeroes the new slot
@@ -702,13 +699,13 @@ before publishing the new index, so a producer racing the rotation
 either bumps the previous (still-valid) slot or the freshly cleared
 new slot -- both attribute correctly within the K-window decay.
 
-Sized `MAX_NR_SYSCALL * FRONTIER_DECAY_WINDOWS * 4 = 32 KiB`, a
-rounding error against the `cmp_novelty[]` block above.
+Sized `MAX_NR_SYSCALL * PICKER_NCTX * FRONTIER_DECAY_WINDOWS * 4 = 64 KiB`,
+well under the `cmp_novelty[]` block above.
 
-### `frontier_recent_count_cached[MAX_NR_SYSCALL]`
+### `frontier_recent_count_cached[MAX_NR_SYSCALL][PICKER_NCTX]`
 
-Per-syscall cached recent-edge count -- running sum of
-`frontier_history[nr][*]` across the live ring, maintained
+Per-syscall, per-context cached recent-edge count -- running sum of
+`frontier_history[nr][ctx][*]` across the live ring, maintained
 incrementally so `frontier_recent_count(nr)` is a single RELAXED load
 instead of an `O(FRONTIER_DECAY_WINDOWS)` walk.  Producers `fetch_add
 1` here in lockstep with the per-slot bump; the window rotator
