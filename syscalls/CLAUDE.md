@@ -98,8 +98,14 @@ top of each header as private to that pair of TUs).
    generated value, can go in `.sanitiser_owned_mask`: `generic_sanitise()`
    then leaves it zeroed instead of building a value (for a struct pointer,
    an allocation plus schema fill plus deferred-free enqueue) that the
-   sanitiser would replace.  `sanity_check_tables()` refuses a mask on an
-   entry with no `.sanitise` or with a bit at or past `num_args`.
+   sanitiser would replace.  A prop_ring value or CMP hint drawn into such
+   a slot is thrown away yet still counted as injected, so a scalar slot
+   qualifies as much as a struct pointer.  `sanity_check_tables()` refuses
+   a mask on an entry with no `.sanitise` or with a bit at or past
+   `num_args`.  `tests/sanitiser_owned_mask_test.c` lists the entries that
+   set it, once their TU links into the test binary, and runs each one's
+   sanitiser to check that every slot the mask names is written on every
+   path.
 3. **`.post`/`.cleanup` split for allocation lifetime, not for logic.**
    `.post` runs for every record in `state == AFTER` — an errno'd failure and
    `--dry-run`'s synthesized `-1`/`ENOSYS` included; the dispatcher skips it

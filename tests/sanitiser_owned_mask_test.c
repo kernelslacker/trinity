@@ -3,13 +3,15 @@
  * generic_sanitise() must zero an owned slot without generating it,
  * arg_meta_init() must label it ARG_OWNER_SANITISER, and
  * sanity_check_tables() must refuse a mask with no .sanitise behind it
- * or with a bit at or past num_args.
+ * or with a bit at or past num_args.  The real entries that set the mask
+ * must own what their sanitisers write on every path.
  */
 
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -19,8 +21,10 @@
 #include "debug.h"		/* BUG */
 #include "sanitise.h"		/* generic_sanitise */
 #include "syscall.h"		/* arg_meta_init */
+#include "syscalls/syscalls.h"	/* syscall_prctl */
 #include "tables.h"		/* syscalls, max_nr_syscalls, sanity_check_tables */
 #include "utils.h"		/* waitpid_eintr */
+#include "utils-macros.h"	/* ARRAY_SIZE */
 
 /* Bit (argnum - 1) is set for each slot generic_sanitise() generated. */
 static unsigned int filled;
@@ -92,17 +96,9 @@ static void fake_sanitise(struct syscallrecord *rec)
 /* sanity_check_tables() exits on a bad entry, so run it over a one-entry
  * table in a child and return the child's exit status.  The child's
  * stderr goes to /dev/null: the refusals are expected. */
-static int table_check_status(unsigned int num_args, uint8_t mask,
-			      bool has_sanitise)
+static int entry_check_status(struct syscallentry *entry)
 {
-	struct syscallentry entry = {
-		.name = "owned_mask_probe",
-		.num_args = num_args,
-		.argname = { "a1", "a2", "a3", "a4", "a5", "a6" },
-		.sanitise = has_sanitise ? fake_sanitise : NULL,
-		.sanitiser_owned_mask = mask,
-	};
-	struct syscalltable table = { .entry = &entry };
+	struct syscalltable table = { .entry = entry };
 	int status, devnull;
 	pid_t pid;
 
@@ -124,6 +120,20 @@ static int table_check_status(unsigned int num_args, uint8_t mask,
 	return WEXITSTATUS(status);
 }
 
+static int table_check_status(unsigned int num_args, uint8_t mask,
+			      bool has_sanitise)
+{
+	struct syscallentry entry = {
+		.name = "owned_mask_probe",
+		.num_args = num_args,
+		.argname = { "a1", "a2", "a3", "a4", "a5", "a6" },
+		.sanitise = has_sanitise ? fake_sanitise : NULL,
+		.sanitiser_owned_mask = mask,
+	};
+
+	return entry_check_status(&entry);
+}
+
 static void bad_mask_refused(void)
 {
 	if (table_check_status(2, 1u << 1, true) != 0)
@@ -136,10 +146,60 @@ static void bad_mask_refused(void)
 		BUG("sanity_check_tables: accepted a mask with no .sanitise");
 }
 
+/* The real entries that set the mask and the slots each is expected to
+ * own, one bit per slot.  A sanitiser that skips an owned slot on any
+ * path sends the zero generic_sanitise() left there to the kernel, so
+ * the sanitiser runs below and must write every one.  An entry can be
+ * listed once its TU is linked into the test binary. */
+static struct syscallentry *const owner_entry[] = { &syscall_prctl };
+static const uint8_t owner_slots[] = { 1u << 0 };
+
+#define OWNER_RUNS	2048
+#define OWNER_MARK(k)	(0x5a5a00UL + (k))
+
+static void real_entries_own_what_they_write(void)
+{
+	static struct syscallrecord rec;
+	unsigned long *const slot[6] = {
+		&rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6,
+	};
+	unsigned int e, i, k;
+
+	for (e = 0; e < ARRAY_SIZE(owner_entry); e++) {
+		struct syscallentry *entry = owner_entry[e];
+		unsigned int owned = owner_slots[e];
+
+		if (entry->sanitiser_owned_mask != owned)
+			BUG("sanitiser_owned_mask: a real entry owns other slots than the test lists");
+		if (entry_check_status(entry) != 0)
+			BUG("sanity_check_tables: refused a real entry");
+
+		filled = 0;
+		generic_sanitise(entry, &rec);
+		if (filled != (((1u << entry->num_args) - 1) & ~owned))
+			BUG("generic_sanitise: a real entry's owned slots were generated or an unowned one skipped");
+
+		for (i = 0; i < OWNER_RUNS; i++) {
+			memset(&rec, 0, sizeof(rec));
+			for (k = 0; k < entry->num_args; k++) {
+				if ((owned >> k) & 1)
+					*slot[k] = OWNER_MARK(k);
+			}
+			entry->sanitise(&rec);
+			for (k = 0; k < entry->num_args; k++) {
+				if (((owned >> k) & 1) && *slot[k] == OWNER_MARK(k))
+					BUG("a sanitiser left a slot it owns unwritten");
+			}
+			free((void *) rec.post_state);
+		}
+	}
+}
+
 void sanitiser_owned_mask_self_check(void);
 void sanitiser_owned_mask_self_check(void)
 {
 	owned_slot_not_generated();
 	owned_slot_labelled();
 	bad_mask_refused();
+	real_entries_own_what_they_write();
 }

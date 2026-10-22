@@ -77,7 +77,7 @@
 #define CAP_CHECKPOINT_RESTORE	40
 #endif
 
-static int prctl_opts[] = {
+static unsigned long prctl_opts[] = {
 	PR_SET_PDEATHSIG, PR_GET_PDEATHSIG, PR_GET_DUMPABLE, PR_SET_DUMPABLE,
 	PR_GET_UNALIGN, PR_SET_UNALIGN, PR_GET_KEEPCAPS, PR_SET_KEEPCAPS,
 	PR_GET_FPEMU, PR_SET_FPEMU, PR_GET_FPEXC, PR_SET_FPEXC,
@@ -1310,7 +1310,17 @@ struct syscallentry syscall_prctl = {
 	.name = "prctl",
 	.group = GROUP_PROCESS,
 	.num_args = 5,
+	.argtype = { [0] = ARG_OP },
 	.argname = { [0] = "option", [1] = "arg2", [2] = "arg3", [3] = "arg4", [4] = "arg5" },
+	.arg_params[0].list = ARGLIST(prctl_opts),
+	/*
+	 * sanitise_prctl() draws the option itself and never reads a1, so
+	 * the generic ARG_OP draw, and any CMP hint pulled into it, would
+	 * be thrown away.  arg2..arg5 mean something different for every
+	 * option and sanitise_prctl_option() reads what the generic fill
+	 * left in them, so they stay ARG_UNDEFINED and unowned.
+	 */
+	.sanitiser_owned_mask = (1u << 0),
 	.sanitise = sanitise_prctl,
 	.post = post_prctl,
 	.rettype = RET_BORING,
