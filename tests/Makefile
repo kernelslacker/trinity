@@ -66,6 +66,11 @@ LDFLAGS		+= -Wl,--wrap=lseek
 # netlink socket; every other domain goes to the real call.
 LDFLAGS		+= -Wl,--wrap=socket
 
+# kill probe injection: reap_dead_kids_test.c wraps kill() so it can fail
+# a kill(pid, 0) probe with any errno and count the probes.  The wrapper
+# forwards to the real kill() unless armed.
+LDFLAGS		+= -Wl,--wrap=kill
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs the
 # arch-program #10 spec calls for on the integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -233,6 +238,7 @@ FAKE_SRCS	:= \
 	fake_parent.c \
 	epoch_reset_test.c \
 	reap_stop_test.c \
+	reap_dead_kids_test.c \
 	extrafork_reap_test.c \
 	cmp_field_scan_test.c \
 	sanitiser_owned_mask_test.c \

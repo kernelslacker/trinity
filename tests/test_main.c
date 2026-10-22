@@ -42,6 +42,7 @@ void epoch_reset_self_check(void);
 void drop_privs_self_check(void);
 void tmpdir_self_check(void);
 void reap_stop_self_check(void);
+void reap_dead_kids_self_check(void);
 void extrafork_reap_self_check(void);
 void cmp_field_scan_self_check(void);
 void sanitiser_owned_mask_self_check(void);
@@ -185,6 +186,11 @@ int main(int argc, char **argv)
 	printf("  reap_stop_self_check ... ");
 	fflush(stdout);
 	reap_stop_self_check();
+	printf("OK\n");
+
+	printf("  reap_dead_kids_self_check ... ");
+	fflush(stdout);
+	reap_dead_kids_self_check();
 	printf("OK\n");
 
 	printf("  extrafork_reap_self_check ... ");

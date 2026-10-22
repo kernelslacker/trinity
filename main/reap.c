@@ -18,7 +18,6 @@
 #include "kcov.h"
 #include "kmsg-monitor.h"
 #include "objects.h"
-#include "params.h"
 #include "pids.h"
 #include "pidstat-probe.h"
 #include "pre_crash_ring.h"
@@ -314,31 +313,28 @@ void reap_dead_kids(void)
 				pidstatfiles[i] = -1;
 				reap_child(children[i], i, true);
 				reaped++;
-			} else if (verbosity > 1) {
-				/* Alive.  A child that dropped privileges
-				 * (setresuid/capset/etc.) is worth a note, but the
-				 * only way to spot one is a kill() probe, so only
-				 * pay for it when the notice would actually print
-				 * (output() drops level 1 unless -v).  Steady state
-				 * stays at one syscall per occupied slot per cycle. */
-				if (kill(pid, 0) != 0 && errno == EPERM)
-					output(1, "pid %u dropped privileges (kill probe EPERM).\n", pid);
 			}
 			continue;
 		}
 
 		/* No pidstat fd for this slot (open_child_pidstat() fails
-		 * soft), so fall back to the pid-number probe. */
+		 * soft), so fall back to the pid-number probe.  Only ESRCH
+		 * means the pid is gone.  Any other errno is a refusal of a
+		 * task that exists, and should not happen to our own child:
+		 * a root parent holds CAP_KILL over its children's user
+		 * namespaces, and a child cannot change its real or saved uid
+		 * away from a same-uid parent's.  What can still refuse is a
+		 * root parent that lost CAP_KILL (a capability drop, or a
+		 * security module's capable hook) or a security_task_kill()
+		 * hook.  Log it and leave the slot to the waitpid drain. */
 		if (kill(pid, 0) != 0) {
 			if (errno == ESRCH) {
 				output(0, "pid %u has disappeared. Reaping.\n", pid);
 				reap_child(children[i], i, true);
 				reaped++;
-			} else if (errno == EPERM) {
-				/* Child dropped privileges (setresuid/capset/etc.)
-				 * and we can no longer signal it.  It is still alive;
-				 * just log so the privilege-drop is visible. */
-				output(1, "pid %u dropped privileges (kill probe EPERM).\n", pid);
+			} else {
+				output(1, "pid %u: kill probe failed: %s\n", pid,
+					strerror(errno));
 			}
 		}
 	}

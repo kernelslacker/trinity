@@ -210,6 +210,11 @@ int find_childno(pid_t pid)
 	return CHILD_NOT_FOUND;
 }
 
+int pid_is_valid(pid_t pid)
+{
+	return pid > 0;
+}
+
 void kill_pid(pid_t pid)
 {
 	fake_killed_pid = pid;
