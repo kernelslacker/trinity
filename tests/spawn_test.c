@@ -1,21 +1,25 @@
 /*
  * Self-checks for fork_children() and replace_child() (main/spawn.c):
- * the startup barrier the fresh children wait at, and the fill that
- * opens it.  The fork is faked per slot (fake_parent.c), so nothing is
- * forked; the slots hold made-up pids.
+ * the startup barrier the fresh children wait at and the fill that opens
+ * it, the retry loops' stop checks, and the ring reset.  The fork is
+ * faked per slot (fake_parent.c), so nothing is forked; the slots hold
+ * made-up pids.
  */
 
 #include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
 
+#include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
 #include "exit.h"
+#include "fd-event.h"
 #include "main-internal.h"
 #include "params.h"		/* fork_pressure_drain */
 #include "pids.h"
 #include "self_cgroup.h"	/* fork_throttle_us */
 #include "shm.h"
+#include "stats_ring.h"
 #include "trinity.h"		/* fork_pressure_drain_active, max_files_rlimit */
 
 #include "fake_parent.h"
@@ -464,6 +468,31 @@ static void fill_stops_when_the_run_stops_mid_backoff(enum stop_kind how)
 		BUG("spawn: a fill that was stopped mid-backoff opened the barrier");
 }
 
+/* A child can overwrite the ring pointers in its childdata.  The next
+ * occupant of its slot must not inherit them, nor the parent write
+ * through them, so spawn_child() resets the rings through the
+ * parent-private canaries before it forks. */
+static void spawn_resets_the_slot_rings_from_the_canaries(void)
+{
+	struct fd_event_ring *wild_fd = (struct fd_event_ring *)(uintptr_t)0x41414141;
+	struct stats_ring *wild_stats = (struct stats_ring *)(uintptr_t)0x41414141;
+
+	fake_parent_reset();
+	fill_all_but(3, 1);
+	children[3]->fd_event_ring = wild_fd;
+	children[3]->stats_ring = wild_stats;
+
+	fork_children();
+
+	if (fake_stray_ring_init != 0)
+		BUG("spawn: wrote through a scribbled ring pointer");
+	if (children[3]->fd_event_ring != expected_fd_event_rings[3] ||
+	    children[3]->stats_ring != expected_stats_rings[3])
+		BUG("spawn: forked a child with a scribbled ring pointer in its slot");
+	if (fake_slot_log[3].ring_reset != 1 || fake_slot_log[3].stats_ring_reset != 1)
+		BUG("spawn: did not reset the rings of the slot it forked");
+}
+
 void spawn_self_check(void);
 void spawn_self_check(void)
 {
@@ -481,6 +510,7 @@ void spawn_self_check(void)
 	stalled_fill_opens_the_barrier_at_five_seconds();
 	spawn_success_restarts_the_stall_deadline();
 	replace_child_leaves_the_stall_deadline_alone();
+	spawn_resets_the_slot_rings_from_the_canaries();
 	refill_stops_at_a_spawn_that_stopped_the_run();
 	fill_stops_at_a_spawn_that_stopped_the_run();
 	for (how = STOP_EXIT_REASON; how <= STOP_SPAWN_NO_MORE; how++) {
