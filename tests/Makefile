@@ -71,6 +71,11 @@ LDFLAGS		+= -Wl,--wrap=socket
 # forwards to the real kill() unless armed.
 LDFLAGS		+= -Wl,--wrap=kill
 
+# kill_pid() stand-in: utils/utils.c is linked for get_num_fds() and
+# crc32(), and its kill_pid() would SIGKILL the tasks the tests hold.
+# fake_parent.c wraps it with one that only records the pid.
+LDFLAGS		+= -Wl,--wrap=kill_pid
+
 # Fake CLOCK_MONOTONIC: fake_parent.c wraps clock_gettime(), sleep() and
 # usleep() so a test can run out the shutdown wait's 30 s bound without
 # sleeping.  The wrappers forward to the real calls unless a test has
@@ -131,11 +136,11 @@ REAL_SRCS	:= \
 
 # Parent TUs, linked for reset_epoch_state(), the shutdown wait, the
 # reaper, the zombie reaper, the rotation-events sink and
-# sanity_check_tables(), plus utils/uid.c for drop_privs(), the
-# child-side args/generate-args.c for generic_sanitise() and
-# arg_meta_init(), and health/signals-policy.c for mask_signals_child()
-# and setup_main_signals(), with the fault handlers they install
-# (signals-fault-handler.c, signals-async-safe.c).
+# sanity_check_tables(), plus utils/uid.c for drop_privs(), utils/utils.c
+# for get_num_fds() and crc32(), the child-side args/generate-args.c for
+# generic_sanitise() and arg_meta_init(), and health/signals-policy.c
+# for mask_signals_child() and setup_main_signals(), with the fault
+# handlers they install (signals-fault-handler.c, signals-async-safe.c).
 # rand/random-address.c and random_syscall/dispatch-step.c bring the
 # writable pool, avoid_shared_buffer_out() and redqueen_pin_field().
 # ioctls/loop.c brings the loop group's sanitiser, which registers itself
@@ -154,6 +159,7 @@ PARENT_SRCS	:= \
 	$(TOP)/stats/rotation_event.c \
 	$(TOP)/tables/table-meta.c \
 	$(TOP)/utils/uid.c \
+	$(TOP)/utils/utils.c \
 	$(TOP)/args/generate-args.c \
 	$(TOP)/health/signals-policy.c \
 	$(TOP)/health/signals-fault-handler.c \
@@ -178,8 +184,8 @@ CMP_SRCS	:= \
 # minicorpus_save_file() and minicorpus_load_file(), with the fd and
 # stale-tmp helpers the file path uses, and the cold-overflow probe
 # that asks the ring which ABIs it holds.  Same section-per-function
-# treatment; minicorpus_abi_test.c fakes the persist envelope, crc32(),
-# the blob corpus, the mutator chain and the cold-skip classifier.
+# treatment; minicorpus_abi_test.c fakes the persist envelope, the blob
+# corpus, the mutator chain and the cold-skip classifier.
 MINICORPUS_SRCS	:= \
 	$(TOP)/persist/minicorpus-core.c \
 	$(TOP)/persist/minicorpus-file.c \
@@ -194,8 +200,8 @@ MINICORPUS_SRCS	:= \
 # chain_corpus_load_file(), with the fd and stale-tmp helpers from
 # MINICORPUS_SRCS.  Same section-per-function treatment, so the init and
 # snapshot code and the rest of the chain cluster stay out of the link;
-# chain_corpus_test.c uses the lock, persist envelope and crc32() fakes
-# from cmp_field_scan_test.c and minicorpus_abi_test.c.
+# chain_corpus_test.c uses the lock and persist envelope fakes from
+# cmp_field_scan_test.c and minicorpus_abi_test.c.
 CHAIN_SRCS	:= \
 	$(TOP)/random_syscall/chain-corpus.c \
 	$(TOP)/random_syscall/chain-persist.c
@@ -204,8 +210,8 @@ CHAIN_SRCS	:= \
 # kcov_bitmap_save_file() and kcov_bitmap_load_file(), with the fd and
 # stale-tmp helpers they use from MINICORPUS_SRCS.  Same
 # section-per-function treatment; kcov_persist_test.c owns
-# kcov_kaslr_base, while kcov_shm, the persist envelope and crc32()
-# come from cmp_field_scan_test.c and minicorpus_abi_test.c.
+# kcov_kaslr_base, while kcov_shm and the persist envelope come from
+# cmp_field_scan_test.c and minicorpus_abi_test.c.
 KCOV_PERSIST_SRCS := \
 	$(TOP)/kcov/persist.c
 
@@ -258,6 +264,7 @@ FAKE_SRCS	:= \
 	kcov_persist_test.c \
 	shutdown_wait_test.c \
 	reap_fault_beacon_test.c \
+	get_num_fds_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

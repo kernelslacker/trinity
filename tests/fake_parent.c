@@ -264,7 +264,8 @@ void tainted_postmortem(void)
 {
 }
 
-void kill_pid(pid_t pid)
+void __wrap_kill_pid(pid_t pid);
+void __wrap_kill_pid(pid_t pid)
 {
 	fake_killed_pid = pid;
 }

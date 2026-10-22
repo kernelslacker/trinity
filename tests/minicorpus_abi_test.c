@@ -179,23 +179,6 @@ bool persist_envelope_check_generation(const struct trinity_persist_envelope *en
 	return true;
 }
 
-/* utils/utils.c is not linked (its kill_pid() would clash with
- * fake_parent.c's); the bitwise CRC-32 gives the same sums. */
-uint32_t crc32(const void *buf, size_t len)
-{
-	const uint8_t *p = buf;
-	uint32_t crc = 0xffffffffU;
-	size_t i;
-	unsigned int k;
-
-	for (i = 0; i < len; i++) {
-		crc ^= p[i];
-		for (k = 0; k < 8; k++)
-			crc = (crc & 1) ? (0xedb88320U ^ (crc >> 1)) : (crc >> 1);
-	}
-	return crc ^ 0xffffffffU;
-}
-
 static void put_entry(unsigned int nr, bool do32, unsigned long a1,
 		      unsigned long a2)
 {
