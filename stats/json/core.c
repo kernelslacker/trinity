@@ -27,6 +27,7 @@ void dump_stats_json_fault_and_fd_lifecycle(void)
 			"\"closed_tracked\":%lu,\"duped\":%lu,"
 			"\"events_processed\":%lu,\"events_dropped\":%lu,"
 			"\"event_close_count\":%lu,\"event_evict_count\":%lu,"
+			"\"watchdog_evict_count\":%lu,"
 			"\"hash_reinsert_dropped\":%lu,"
 			"\"local_hash_insert_dropped\":%lu,"
 			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu,"
@@ -47,6 +48,7 @@ void dump_stats_json_fault_and_fd_lifecycle(void)
 		shm->stats.fd.duped, shm->stats.fd.events_processed,
 		shm->stats.fd.events_dropped,
 		shm->stats.fd.event_close_count, shm->stats.fd.event_evict_count,
+		shm->stats.fd.watchdog_evict_count,
 		shm->stats.fd.hash_reinsert_dropped,
 		shm->stats.fd.local_hash_insert_dropped,
 		shm->stats.fd_runtime.registered,

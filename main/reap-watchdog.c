@@ -213,28 +213,58 @@ static void scream_stuck_child(struct childdata *child, int childno,
 	}
 }
 
-struct stuck_evict_ctx {
+struct stuck_fds {
 	int fds[6];
 	unsigned int n;
 };
 
-static void stuck_evict_fd(int fd, void *ctx)
+static void stuck_collect_fd(int fd, void *ctx)
 {
-	struct stuck_evict_ctx *c = ctx;
+	struct stuck_fds *held = ctx;
 
-	if (c->n < ARRAY_SIZE(c->fds))
-		c->fds[c->n++] = fd;
-
-	/* Remove the bad fd from the object pool so it won't be handed
-	 * out again. */
-	remove_object_by_fd(fd);
+	if (held->n < ARRAY_SIZE(held->fds))
+		held->fds[held->n++] = fd;
 }
 
-static void stuck_syscall_info(struct childdata *child, int childno)
+/*
+ * Retire the fds the stuck syscall holds so the pool does not hand them
+ * to the next child.  The in-child eviction in __do_syscall() only runs
+ * once the call has returned EINTR to the 1-second alarm, and a wedge
+ * that got this far never did: the call has no alarm, or the alarm
+ * could not interrupt it.  This decides which fds the fleet keeps
+ * fuzzing, so it does not depend on -D.
+ *
+ * Run it after the SIGKILL: removing the object closes the parent's
+ * copy, and close() calls the file's ->flush on every close, which
+ * FUSE, NFS and CIFS answer through the server, so it can block on the
+ * very wedge that holds the child.  The caller skips it for a task in
+ * D state, where that is most likely.
+ */
+static void stuck_evict_fds(struct childdata *child,
+			    const struct stuck_fds *held)
+{
+	unsigned int i;
+
+	if (held->n == 0)
+		return;
+
+	for (i = 0; i < held->n; i++)
+		remove_object_by_fd(held->fds[i]);
+	child->fd_lifetime = 0;
+	__atomic_add_fetch(&shm->stats.fd.watchdog_evict_count, held->n,
+			   __ATOMIC_RELAXED);
+}
+
+/*
+ * Report the wedged syscall before the kill, while /proc still shows
+ * it.  @pstate is the task's /proc state at the stall; its fd arguments
+ * go to @held for the caller to evict.
+ */
+static void stuck_syscall_info(struct childdata *child, int childno,
+			       char pstate, struct stuck_fds *held)
 {
 	struct syscallrecord *rec;
 	struct syscallentry *entry = NULL;
-	struct stuck_evict_ctx ctx = { .n = 0 };
 	unsigned long args[6] = { 0 };
 	unsigned int callno;
 	char fdstr[80];
@@ -279,7 +309,7 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 
 	/* Always-on kill diag: the caller is about to SIGKILL this child,
 	 * and without this line non-debug runs just see a child vanish.
-	 * The expensive fd walk and /proc stack dump below stay gated. */
+	 * The /proc stack dump below stays gated. */
 	outputerr("watchdog: kill pid:%d childno:%d nr:%u cmd:%s state:%d\n",
 		  pid, childno, callno,
 		  entry ? entry->name : "?", state);
@@ -325,6 +355,9 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 				  promoted ? 1 : 0);
 	}
 
+	if (state == BEFORE && entry != NULL)
+		for_each_fd_arg(entry, args, stuck_collect_fd, held);
+
 	if (shm->debug == false)
 		return;
 
@@ -341,37 +374,35 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 			gate |= 0x01;
 
 		if (gate != 0) {
-			for_each_fd_arg(entry, args, stuck_evict_fd, &ctx);
-
-			if (ctx.n == 0) {
+			if (held->n == 0) {
 				snprintf(fdstr, sizeof(fdstr), "(no fds)");
-			} else if (ctx.n == 1) {
+			} else if (held->n == 1) {
 				snprintf(fdstr, sizeof(fdstr), "(fd = %d)",
-					 ctx.fds[0]);
-				child->fd_lifetime = 0;
+					 held->fds[0]);
 			} else {
 				int off = snprintf(fdstr, sizeof(fdstr),
 						   "(fds = ");
 				unsigned int i;
 
-				for (i = 0; i < ctx.n && off < (int)sizeof(fdstr); i++)
+				for (i = 0; i < held->n && off < (int)sizeof(fdstr); i++)
 					off += snprintf(fdstr + off,
 							sizeof(fdstr) - off,
 							"%s%d", i ? "," : "",
-							ctx.fds[i]);
+							held->fds[i]);
 				if (off < (int)sizeof(fdstr))
 					snprintf(fdstr + off,
 						 sizeof(fdstr) - off, ")");
-				child->fd_lifetime = 0;
 			}
 		}
 	}
 
-	output(0, "child %d (pid %u. state:%d) Stuck in syscall %d:%s%s%s.\n",
+	output(0, "child %d (pid %u. state:%d) Stuck in syscall %d:%s%s%s%s.\n",
 		childno, pid, state, callno,
 		print_syscall_name(callno, do32),
 		do32 ? " (32bit)" : "",
-		fdstr);
+		fdstr,
+		(pstate == 'D' && held->n != 0) ?
+			", not evicted: task in D state" : "");
 	if (state >= BEFORE)
 		dump_pid_stack(pid);
 }
@@ -671,8 +702,12 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	latch_wedge_accounting(child);
 
 	if (state == 'D') {
+		struct stuck_fds held = { .n = 0 };
+
+		/* A task asleep in D state keeps its fds in the pool: see
+		 * stuck_evict_fds(). */
 		if (!child->kill_in_flight)
-			stuck_syscall_info(child, childno);
+			stuck_syscall_info(child, childno, state, &held);
 		kill_pid(pid);
 		__atomic_add_fetch(&child->kill_count, 1, __ATOMIC_RELAXED);
 		child->kill_in_flight = true;
@@ -681,13 +716,16 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 
 	/* After REAP_STALL_THRESHOLD_S seconds of no progress, send a kill signal. */
 	if (diff >= REAP_STALL_THRESHOLD_S) {
+		struct stuck_fds held = { .n = 0 };
+
 		if (!child->kill_in_flight)
-			stuck_syscall_info(child, childno);
+			stuck_syscall_info(child, childno, state, &held);
 		debugf("child %d (pid %u) hasn't made progress in %u seconds! Sending SIGKILL\n",
 				childno, pid, REAP_STALL_THRESHOLD_S);
 		__atomic_add_fetch(&child->kill_count, 1, __ATOMIC_RELAXED);
 		child->kill_in_flight = true;
 		kill_pid(pid);
+		stuck_evict_fds(child, &held);
 	}
 
 	/* if we're still around after 40s, repeatedly send SIGKILLs every second. */

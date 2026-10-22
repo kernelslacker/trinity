@@ -119,6 +119,10 @@ struct fd_stats {
 	 * sibling.  Split so the two paths stay observable. */
 	unsigned long event_close_count;
 	unsigned long event_evict_count;
+	/* fds the parent watchdog evicted directly from a stuck syscall's
+	 * arguments (main/reap-watchdog.c), one per fd; event_evict_count
+	 * counts the in-child watchdog's requests instead. */
+	unsigned long watchdog_evict_count;
 
 	/* get_random_fd() hit GET_RANDOM_FD_BUDGET outer iterations and
 	 * returned -1 to its caller.  Non-zero means a child was about

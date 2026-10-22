@@ -39,6 +39,7 @@ stats	object
     stats.fd_lifecycle.events_dropped	u64
     stats.fd_lifecycle.event_close_count	u64
     stats.fd_lifecycle.event_evict_count	u64
+    stats.fd_lifecycle.watchdog_evict_count	u64
     stats.fd_lifecycle.hash_reinsert_dropped	u64
     stats.fd_lifecycle.local_hash_insert_dropped	u64
     stats.fd_lifecycle.runtime_registered	u64

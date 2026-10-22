@@ -70,6 +70,7 @@ static const struct stat_field fd_lifecycle_fields[] = {
 	STAT_FIELD_SUB(fd, events_dropped),
 	STAT_FIELD_SUB(fd, event_close_count),
 	STAT_FIELD_SUB(fd, event_evict_count),
+	STAT_FIELD_SUB(fd, watchdog_evict_count),
 	STAT_FIELD_SUB(fd, hash_reinsert_dropped),
 	STAT_FIELD_SUB(fd, local_hash_insert_dropped),
 	STAT_FIELD_JSON_SUB(fd_runtime, registered, "runtime_registered"),

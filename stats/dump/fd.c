@@ -53,6 +53,7 @@ static void dump_fd_lifecycle(void)
 		stat_row("fd_lifecycle", "events_dropped",      shm->stats.fd.events_dropped);
 		stat_row("fd_lifecycle", "event_close_count",   shm->stats.fd.event_close_count);
 		stat_row("fd_lifecycle", "event_evict_count",   shm->stats.fd.event_evict_count);
+		stat_row("fd_lifecycle", "watchdog_evict_count", shm->stats.fd.watchdog_evict_count);
 		stat_row("fd_lifecycle", "hash_reinsert_dropped", shm->stats.fd.hash_reinsert_dropped);
 		stat_row("fd_lifecycle", "local_hash_insert_dropped",
 			 shm->stats.fd.local_hash_insert_dropped);
