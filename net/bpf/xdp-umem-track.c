@@ -7,9 +7,8 @@
 #include "kernel/socket.h"
 /*
  * 256 slots is plenty in practice: the per-process socket pool caps at
- * NR_SOCKET_FDS (50) and the per-family grammar walker only holds one
- * AF_XDP fd in flight at a time.  Trinity is fork-based, so each child
- * inherits its own COW copy of this table and no locking is needed.
+ * NR_SOCKET_FDS (50).  Trinity is fork-based, so each child inherits
+ * its own COW copy of this table and no locking is needed.
  */
 #define XDP_UMEM_SLOTS 256
 

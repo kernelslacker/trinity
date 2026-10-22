@@ -1,6 +1,6 @@
 # net/bpf/ — BPF / eBPF Program Generation
 
-Two independent, uncoupled program generators for the socket/seccomp/BPF surface, plus the classic-BPF disassembler and the AF_XDP umem tracker. Distinct from `net/proto/`: those *attach* these programs (KCM classifiers, socket filters, XDP); this dir *generates* them.
+Two independent, uncoupled program generators for the socket/seccomp/BPF surface, plus the classic-BPF disassembler and the AF_XDP umem tracker. Distinct from `net/proto/`: those *attach* these programs (socket filters, XDP); this dir *generates* them.
 
 ## Files (10 .c files + 2 internal headers, ~2,715 LOC)
 
@@ -19,7 +19,7 @@ behind `ebpf-internal.h`.
 | ebpf-tier3.c | 164 | Tier 3 (chaos): invalid opcodes, backward jumps, OOB registers, malformed 128-bit loads, atomic-imm family probes. No attempt at validity. |
 | internal.h | 153 | Private shared declarations + opcode-bit fallback macros for the `bpf.c`/`disasm.c` classic pair only. |
 | ebpf.c | 126 | What is left of the generator spine: the tier pick and the fill-into-buffer entry point. |
-| xdp-umem-track.c | 96 | Fixed 256-slot table tracking AF_XDP umem fd/ptr/len triples; used by `net/proto/xdp.c`. |
+| xdp-umem-track.c | 95 | Fixed 256-slot table tracking AF_XDP umem fd/ptr/len triples; used by `net/proto/xdp.c`. |
 | ebpf-regs.c | 85 | Register-liveness bookkeeping and the stack-offset picker, shared by tier 1 and tier 2. |
 | ebpf-map-fd.c | 80 | The map-fd substitution policy and the `LD_MAP_FD` pseudo-insn pair emitter it feeds — a decision the tiers do not need to understand. |
 
@@ -29,4 +29,4 @@ behind `ebpf-internal.h`.
 
 ## Interactions
 - Wide consumer fan-out, all by symbol (link-safe): `syscalls/bpf.c`, `syscalls/process/{seccomp,prctl}.c`, `syscalls/socket/setsockopt.c`, `syscalls/io_uring/io_uring_register-payloads.c`, `childops/misc/{bpf-lifecycle,bpf-cgroup-attach}.c`, `childops/net/{sock-ulp-sockmap-layering,veth-asymmetric-xdp,afxdp-churn}.c`, `fds/bpf.c`, `struct_catalog/bpf.c`.
-- `net/proto/kcm.c` pulls in `bpf.c` output (KCM sockets can attach a BPF classifier); `net/proto/xdp.c` uses `xdp-umem-track.c`.
+- `net/proto/xdp.c` uses `xdp-umem-track.c`.

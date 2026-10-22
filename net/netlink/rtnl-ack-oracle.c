@@ -198,11 +198,10 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 /*
  * rtnl_oracle_abort - cancel a pending sample without draining.
  *
- * Called when gen_msg was taken on a path that cannot call rtnl_oracle_drain()
- * (e.g. the grammar-path bare sendmsg in sfg_default_data_leg).  Undoes the
- * in-place NLM_F_ACK annotation and rolls the counter back so the budget slot
- * is not consumed on a path where draining is impossible.  No-ops immediately
- * when the oracle is not active.
+ * Called when gen_msg was taken on a path that cannot call
+ * rtnl_oracle_drain().  Undoes the in-place NLM_F_ACK annotation and rolls
+ * the counter back so the budget slot is not consumed on a path where
+ * draining is impossible.  No-ops immediately when the oracle is not active.
  */
 void rtnl_oracle_abort(void)
 {

@@ -2,7 +2,7 @@
 
 The layer that decides whether what just happened is a *finding* (a real kernel bug) or *noise* (an expected fuzzing side-effect), and assembles the evidence when it's a finding: signal handling + the child signal-mask policy, the pre-crash/breadcrumb rings that reconstruct what led to a fault, the `/dev/kmsg` scraper and taint-bit watch that catch kernel-side trouble, and the post-mortem dump assembly.
 
-## Files (11 .c files + 1 internal header, ~3,796 LOC)
+## Files (11 .c files + 1 internal header, ~4,087 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -12,7 +12,7 @@ The layer that decides whether what just happened is a *finding* (a real kernel 
 | signals-async-safe.c | 187 | Async-safe utilities — `write_siginfo_safely()`, `write_backtrace_raw_pcs()`, `fault_beacon_extract_{ip,sp}()`. |
 | signals-internal.h | 115 | Private cross-file interface — `struct sigsafe_buf` + `sigsafe_*` inlines; forward decls for de-static'd helpers. |
 | signals-safelist.c | 75 | The CHILD-NON-FATAL signal set derived from the signal-mask policy. |
-| post-mortem.c | 626 | Crash post-mortem dump assembly — gathers the syscall record, rings, and context into the crash report. |
+| post-mortem.c | 636 | Crash post-mortem dump assembly — gathers the syscall record, rings, and context into the crash report. |
 | kmsg-monitor.c | 537 | Live `/dev/kmsg` scraper capturing kernel diagnostics before the taint bit flips; runs as a helper process outside the fuzz-child `pids[]` machinery. |
 | sysrq-lockup.c | 360 | Opt-in (`--sysrq-on-lockup`) wedge diagnostic — drives SysRq 'w' + 'l' to get the kernel's own blocked-task and all-CPU-backtrace dump when the fleet wedges. Called from `main/reap-watchdog.c`, short-circuited on the flag so a default run is byte-identical. |
 | pre_crash_ring.c | 246 | Per-child ring of recent syscalls, drained by the BUG path to recover the sequence that led to a crash. |

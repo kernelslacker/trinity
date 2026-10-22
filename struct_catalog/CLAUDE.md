@@ -56,7 +56,7 @@ per-cmd BPF field tables under `bpf-*.c`.
 | resource.c | 48 | rlimit, cachestat_range |
 | kexec.c | 48 | kexec_segment |
 | ldt.c | 45 | user_desc (modify_ldt write arm, X86-only) |
-| crypto.c | 45 | `af_alg_iv` — the AF_ALG `ALG_SET_IV` control-message payload; attribution-only |
+| crypto.c | 43 | `af_alg_iv` — the AF_ALG `ALG_SET_IV` control-message payload; attribution-only |
 | cap.c | 35 | user_cap_header, user_cap_data |
 | tcp.c | 33 | tcp_repair_opt (gated `USE_TCP_REPAIR_OPT`) |
 

@@ -11,9 +11,9 @@
  * does NOT munmap() the userspace VMA the caller allocated with mmap()
  * and registered via XDP_UMEM_REG.  The mapping persists for the life
  * of the process unless an explicit munmap() is issued.  Without that
- * matching unmap every XDP setup chain leaves behind a UMEM region
- * (16 pages for the grammar walker, 64 pages for the per-socket setup)
- * and a long-lived fuzzing child grows its VMA / RSS without bound.
+ * matching unmap every XDP setup chain leaves behind a 64-page UMEM
+ * region and a long-lived fuzzing child grows its VMA / RSS without
+ * bound.
  *
  * The record / release helpers below keep a small fd-keyed side table
  * of (ptr, len) pairs so the fd's close path can issue the matching

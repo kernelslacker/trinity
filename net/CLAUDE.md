@@ -5,7 +5,7 @@ message bodies, and BPF/eBPF programs for every address family and
 netlink subsystem Trinity knows about. This is the largest subsystem
 in the tree by file count.
 
-## Files (127 .c files + 6 headers, ~28,356 LOC)
+## Files (123 .c files + 5 headers, ~22,703 LOC)
 
 Grouped by theme rather than enumerated — the long tail is highly
 repetitive (one file per protocol/family/subsystem, following a
@@ -24,36 +24,14 @@ shared struct-of-callbacks pattern).
 - `domains.c` (157) — name<->`PF_*` lookup table for `--specific-domain`
   and `--exclude-domains` CLI parsing (`find_specific_domain`,
   `parse_exclude_domains`).
-- The `socket-family-grammar-*.c` cluster — `sfg_registry[]`, a second,
-  independent dispatch table (`struct socket_family_grammar`) driving
-  coherent multi-call sequences (setsockopt -> bind -> listen ->
-  accept -> sendmsg) per family, one entry per `net/proto/<family>.c`.
-  Falls back to the legacy v1 `run_alg_chain` path when a family has
-  no grammar registered. Each protocol file that defines a grammar
-  (`grammar_inet`, `grammar_unix`, etc.) is declared
-  extern and listed here. Split one concern per TU behind
-  `socket-family-grammar-internal.h` (97); the public API stays in
-  `include/socket-family-grammar.h`:
-  - `socket-family-grammar-core.c` (695) — `sfg_registry[]` itself and the walk coordinator.
-  - `socket-family-grammar-illegal.c` (504) — the one place a precondition-violating syscall
-    is deliberately fired at `ctx->parent_fd`/`ctx->child_fd`, plus label
-    publishing, the per-family op picker, the ordering splicer, and the
-    per-op handler. Entered at `ONE_IN(SFG_ILLEGAL_RATE)`.
-  - `socket-family-grammar-alg.c` (381) — the AF_ALG lifecycle phase handlers for
-    `grammar_alg` and their ctx-aware state (key_set, alg type,
-    authsize/assoclen staged at SET_AEAD, the splice pipe pair).
-  - `socket-family-grammar-seq.c` (101) — the per-walk sequence-hash ring and the P4
-    reward-arm credit table. The FNV-1a step folding and arm-id
-    derivation are inline in the internal header so the hot per-step
-    call sites don't cross a TU boundary.
 
 ### Per-address-family protocol helpers (`proto/`)
 
-- [proto/](proto/CLAUDE.md) — the 37 per-`PF_*`/`AF_*` files, each defining `const struct netproto proto_<family>` (wired into `net_protocols[]`) plus optional `grammar_<family>` (registered in `sfg_registry[]`). One family per file, shared optname-table-plus-switch pattern.
+- [proto/](proto/CLAUDE.md) — the 37 per-`PF_*`/`AF_*` files, each defining `const struct netproto proto_<family>` (wired into `net_protocols[]`). One family per file, shared optname-table-plus-switch pattern.
 
 ### Netlink message machinery (`netlink/`)
 
-- [netlink/](netlink/CLAUDE.md) — the netlink message-construction engine (nlmsg framing, rtnetlink payloads) plus the genl-family and nfnl-subsystem grammar registries. Subdirs: [netlink/genl/](netlink/genl/CLAUDE.md) (47 files) and [netlink/nfnl/](netlink/nfnl/CLAUDE.md) (12). The AF_NETLINK *socket* helpers (`grammar_netlink`) live in `proto/`; this dir builds the *message bodies* they carry.
+- [netlink/](netlink/CLAUDE.md) — the netlink message-construction engine (nlmsg framing, rtnetlink payloads) plus the genl-family and nfnl-subsystem grammar registries. Subdirs: [netlink/genl/](netlink/genl/CLAUDE.md) (47 files) and [netlink/nfnl/](netlink/nfnl/CLAUDE.md) (12). The AF_NETLINK *socket* helpers live in `proto/netlink.c`; this dir builds the *message bodies* they carry.
 
 ### BPF / eBPF program generation
 
@@ -67,14 +45,10 @@ shared struct-of-callbacks pattern).
 
 ## Key design decisions
 
-1. **Two independent per-family dispatch tables.** `net_protocols[]`
-   (protocols.c) is the original per-syscall hook table (sockaddr,
-   setsockopt, one-shot message body). `sfg_registry[]`
-   (socket-family-grammar-core.c) is a newer, opt-in table for *coherent
-   multi-call sequences* per family (bind -> listen -> accept ->
-   sendmsg with matching state). A family can have either, both, or
-   neither; grammars are added incrementally without touching the
-   older table.
+1. **One per-family hook table.** `net_protocols[]` (protocols.c) holds
+   each family's per-syscall hooks (sockaddr, setsockopt, one-shot
+   message body); `generate_sockaddr()` falls back to a random blob
+   for a family with no entry.
 2. **Registry-of-tables pattern repeated at 3 layers.** Address
    families (`net_protocols[]`), generic-netlink families
    (`netlink/genl/`), and
@@ -91,7 +65,7 @@ shared struct-of-callbacks pattern).
    `__has_include(<linux/X.h>)` gates each genl family's `extern`
    declaration and registry entry (netlink/genl/families.c), and
    `USE_*` build flags gate whole protocol families in
-   `net_protocols[]`/`sfg_registry[]` (IPV6, RDS, BLUETOOTH, VSOCK,
+   `net_protocols[]` (IPV6, RDS, BLUETOOTH, VSOCK,
    XDP, MCTP, IF_ALG) — the directory compiles down to whatever
    subset the build/kernel config supports.
 5. **BPF has two independent, uncoupled generators.** Classic BPF
@@ -124,10 +98,6 @@ shared struct-of-callbacks pattern).
   `net_protocols[]` directly for privileged-triplet checks and to skip
   families the running kernel can't open (defends against OOB reads
   past `TRINITY_PF_MAX` with an explicit bounds comment).
-- `childops/net/socket-family-chain.c` — outer dispatcher for
-  `socket-family-grammar-core.c`'s `sfg_registry[]`; falls back to the
-  legacy `run_alg_chain` v1 path when no grammar is registered for a
-  family.
 - `struct_catalog/sockaddr-af.c`, `sockaddr-mcast.c`,
   `sockaddr-sockopt.c` — own the `sockaddr_storage` tagged-union
   per-AF field tables and setsockopt optval struct shapes (linger,
@@ -148,8 +118,6 @@ shared struct-of-callbacks pattern).
   the classic-BPF/eBPF generators (bpf/bpf.c + the bpf/ebpf*.c cluster), since filter programs
   attach via seccomp, `SO_ATTACH_FILTER`, `BPF_PROG_LOAD`, sockmap, and
   cgroup/XDP attach points.
-- `net/proto/kcm.c` — one of the few proto files that itself pulls in
-  `bpf.c` output (KCM sockets can have a BPF classifier attached).
 
 ## Areas of attention
 
@@ -168,11 +136,9 @@ shared struct-of-callbacks pattern).
    (`ebpf-tier3.c`) no longer sit side by side, but they still share
    `ebpf-helpers.c` / `ebpf-regs.c` / `ebpf-map-fd.c`, so a change to a
    shared emitter reaches all three tiers at once.
-3. **`net_protocols[]` and `sfg_registry[]` can silently diverge** —
-   nothing enforces that a family present in one table is present (or
-   absent) in the other; `fds/sockets.c` carries an explicit
-   bounds-safety comment about `net_protocols[]` sizing that flags this
-   class of risk directly.
+3. **`net_protocols[]` sizing** — `fds/sockets.c` carries an explicit
+   bounds-safety comment about indexing `net_protocols[]` past
+   `TRINITY_PF_MAX`, which flags this class of risk directly.
 4. **Conditional compilation surface is wide**: `USE_IPV6`, `USE_RDS`,
    `USE_BLUETOOTH`, `USE_VSOCK`, `USE_XDP`, `USE_MCTP`,
    `USE_IF_ALG`, plus per-genl-family `__has_include()` checks — a

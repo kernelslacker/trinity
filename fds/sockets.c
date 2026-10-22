@@ -515,7 +515,7 @@ out:
  * guaranteed-EAFNOSUPPORT call.  Only mark when both SOCK_STREAM and
  * SOCK_DGRAM probes return EAFNOSUPPORT or EPROTONOSUPPORT — anything else
  * (EACCES, EPERM, success) means the family is reachable and policy / type
- * mismatches are not our concern here.  The grammar code stays in tree;
+ * mismatches are not our concern here.  The per-family code stays in tree;
  * users on a kernel with the family present probe-pass and fuzz normally.
  */
 static void probe_unsupported_pf_families(void)

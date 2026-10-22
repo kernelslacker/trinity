@@ -344,16 +344,6 @@ struct shm_s {
 	 * Avoids repeated failed probes from every child. */
 	bool iouring_enosys;
 
-
-	/* Per-family latch for the socket-family-grammar dispatcher
-	 * (net/socket-family-grammar-core.c).  sfg_unsupported[family] is set
-	 * when can_run() probes fail or when run_grammar_chain() exhausts
-	 * its ERR_BURST_LIMIT for that family — siblings then skip the
-	 * grammar entry on subsequent picks.  No auto-clear; module load
-	 * mid-run takes the hit, same recovery story as the AF_ALG latch
-	 * above. */
-	bool sfg_unsupported[TRINITY_PF_MAX];
-
 	/*
 	 * Per-childop feature-absent latches for childops that build
 	 * their kernel objects inside a transient userns_run_in_ns()
@@ -715,42 +705,6 @@ struct shm_s {
 	 * false -> true, idempotent. */
 	bool ns_unsupported_netdev_migrate;
 	bool ns_unsupported_netdev_migrate_drive;
-
-	/*
-	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
-	 * phase ordering.  Each walk computes an FNV-1a hash over the
-	 * step-IDs it actually executed and calls sfg_seq_record()
-	 * to fold it into this ring.
-	 *
-	 * Fixed capacity keeps the memory footprint small (128 * 4 =
-	 * 512 bytes) and the counter saturates when the ring fills — the
-	 * metric is a variety signal, not a full inventory.  Multiple
-	 * children write concurrently; a compare-exchange on sfg_seq_count
-	 * makes the append race-free without a lock.  Losers of the CAS
-	 * re-scan the ring (the winner just wrote a slot that may match
-	 * their hash), so a duplicate under a lost race is possible only
-	 * if two children race with the same NEW hash simultaneously —
-	 * an over-count of one is acceptable for a variety metric.
-	 */
-#define SFG_SEQ_HASH_CAP 128
-	uint32_t sfg_seq_hashes[SFG_SEQ_HASH_CAP];
-	unsigned int sfg_seq_count;
-
-	/*
-	 * P4 feedback-scheduler reward arms, parallel to sfg_seq_hashes[]
-	 * and keyed by the same slot index (returned by sfg_seq_record).
-	 * A legal grammar walk credits the slot for its executed sequence
-	 * with the new-edge count harvested over the walk; the picker
-	 * rolls these up per (family, order-index) arm to tilt selection
-	 * toward productive orderings.  sfg_seq_arm holds the arm id that
-	 * owns each slot (stamped on first credit).  Zero-initialised with
-	 * the rest of shm; an uncredited slot has attempts == 0 and is
-	 * skipped by the rollup.  No second unbounded structure — this is
-	 * a fixed extension of the existing ring (128 * 12 = 1536 bytes).
-	 */
-	uint32_t sfg_seq_attempts[SFG_SEQ_HASH_CAP];
-	uint32_t sfg_seq_reward[SFG_SEQ_HASH_CAP];
-	uint32_t sfg_seq_arm[SFG_SEQ_HASH_CAP];
 
 	/*
 	 * Multi-strategy syscall picker + UCB1 bandit -- fleet-wide state

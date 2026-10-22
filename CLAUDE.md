@@ -35,7 +35,7 @@ every translation unit lives under one of the directories below.
 | Directory | Role |
 |---|---|
 | [main/](main/CLAUDE.md) | Process entry + CLI/tunables + parent control plane: fork/reap/watchdog/stats tick loop (22 files, ~7,924 LOC) |
-| [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (24 files, ~8,159 LOC) |
+| [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (24 files, ~8,067 LOC) |
 | [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (18 files, ~7,938 LOC) |
 | [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (9 files, ~2,628 LOC) |
 | [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (363 files, ~65,625 LOC) |
@@ -44,12 +44,12 @@ every translation unit lives under one of the directories below.
 | [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype (11 files, ~3,066 LOC) |
 | [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs (50 files, ~10,619 LOC) |
 | [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~3,112 LOC) |
-| [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (127 files, ~28,356 LOC) |
+| [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (123 files, ~22,703 LOC) |
 | [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (72 files, ~18,097 LOC) |
 | [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (43 files, ~10,351 LOC) |
 | [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg  + cross-child futex pool & prop/fd-event rings (14 files, ~3,806 LOC) |
 | [persist/](persist/CLAUDE.md) | Cross-iteration persistence — coverage-guided arg retention (minicorpus) + deferred-free temporal-overlap queue (9 files, ~4,836 LOC) |
-| [health/](health/CLAUDE.md) | Signals, crash post-mortem, pre-crash/breadcrumb rings, /dev/kmsg + taint watch — finding-vs-noise triage and crash-report assembly (11 files, ~3,796 LOC) |
+| [health/](health/CLAUDE.md) | Signals, crash post-mortem, pre-crash/breadcrumb rings, /dev/kmsg + taint watch — finding-vs-noise triage and crash-report assembly (11 files, ~4,087 LOC) |
 | [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (12 files, ~3,550 LOC) |
 | [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/race/storm/recipe) (237 files, ~130,021 LOC) |
 | [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (11 files, ~4,273 LOC) |

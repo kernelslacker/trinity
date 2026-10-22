@@ -319,8 +319,7 @@ grandchild.
 
 RELAXED atomic load/store from multiple grandchildren is safe -- the
 only transition is `false -> true` and the write is idempotent.  No
-auto-clear; an absent kernel `CONFIG` does not appear mid-run, same
-recovery story as the `sfg_unsupported[]` gates.
+auto-clear; an absent kernel `CONFIG` does not appear mid-run.
 
 ### `vxlan_encap_kind_unsupported[VXLAN_ENCAP_NR_KINDS]`
 

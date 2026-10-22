@@ -1,7 +1,7 @@
 /*
  * rxrpc_key_install -- fuzz net/rxrpc/key.c token parsers via add_key(2).
  *
- * The AF_RXRPC socket-family grammar can't reach the per-call security setup
+ * Socket-level AF_RXRPC fuzzing can't reach the per-call security setup
  * (rxrpc_init_client_call_security -> init_connection_security / issue_challenge
  * / verify_response in rxkad.c / rxgk.c).  This op closes the easiest slice of
  * that gap: the kernel-side token parser rxrpc_preparse() in net/rxrpc/key.c,

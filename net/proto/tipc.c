@@ -96,12 +96,3 @@ const struct netproto proto_tipc = {
 	.valid_triplets = tipc_triplets,
 	.nr_triplets = ARRAY_SIZE(tipc_triplets),
 };
-
-#include "socket-family-grammar.h"
-
-#include "kernel/socket.h"
-const struct socket_family_grammar grammar_tipc_stub = {
-	.family		= PF_TIPC,
-	.name		= "tipc_stub",
-	.can_run	= sfg_always_false,
-};
