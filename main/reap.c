@@ -66,28 +66,20 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	pid = __atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE);
 	if (pid == EMPTY_PIDSLOT)
 		return;
-	/* SHADOW-ONLY wedge accounting close-out.  If this child was
-	 * latched as wedged by is_child_making_progress(), add the
-	 * wall-clock interval the slot was unreusable into BOTH
+	/* SHADOW-ONLY wedge accounting close-out.  If
+	 * latch_wedge_accounting() latched this child as wedged, add the
+	 * time since wedge_start_tp (the child's last progress, so the
+	 * whole window the slot was unreusable) to both
 	 * syscall_wedge.total_us[wedge_nr] and
-	 * childop_wedge_total_us[wedge_op_type] before the slot is
-	 * recycled.  ONE duration definition feeds both arrays: the
-	 * elapsed from child->tp (last child-side progress, captured into
-	 * wedge_start_tp at latch time) up to the reap-time read of
-	 * CLOCK_MONOTONIC -- the full window the slot was unreusable, not
-	 * just the post-detection tail.  CLOCK_MONOTONIC start and end so
-	 * an NTP step can't regress the elapsed; the (end <= start) clamp
-	 * leaves elapsed_us at 0 if a torn read of the two-long start
-	 * timestamp samples a future-looking start, so the unsigned
-	 * subtraction can never wrap to a huge bogus duration (the
-	 * monotonic-clock rule).  The childop index is range-checked
-	 * against NR_CHILD_OP_TYPES to defuse an out-of-range op_type
-	 * read (the latch already clamps to CHILD_OP_SYSCALL on capture,
-	 * this is belt-and-braces against any future field reuse).
-	 * Clear the latch so a reap that races a half-published wedge
-	 * cannot double-account on a subsequent path (clean_childdata
-	 * clears it again for the next occupant; clearing here is the
-	 * conservative belt-and-braces). */
+	 * childop.wedge_total_us[wedge_op_type] before the slot is
+	 * recycled.  Both ends are CLOCK_MONOTONIC so an NTP step cannot
+	 * make the elapsed time negative, and elapsed_us stays 0 when a
+	 * torn read of the start timestamp looks like it is in the future,
+	 * so the unsigned subtraction cannot wrap.  The latch already
+	 * clamps the childop index on capture; the range check below is
+	 * belt-and-braces.  Clear the latch so no later path accounts the
+	 * same wedge twice (clean_childdata() clears it again for the next
+	 * occupant). */
 	if (child->wedge_accounted &&
 	    child->wedge_nr < MAX_NR_SYSCALL) {
 		struct timespec now;
@@ -152,8 +144,7 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	 * Classify the on-disk bug log once the child has exited.  Pass pid
 	 * explicitly -- captured from pids[childno] above -- so the zombie-
 	 * deferred path in process_zombie_pending() can also call with the
-	 * original pid after pids[childno] is already EMPTY_PIDSLOT (see
-	 * e4a44396a761 ("health: fix partial-buglog misclassification (unreadable + poll race)") which moved bug-log path building into this function).
+	 * original pid after pids[childno] is already EMPTY_PIDSLOT.
 	 * Skip when child_dead is false: the child may still be writing its
 	 * log; process_zombie_pending() calls classify_child_buglog() once
 	 * waitpid confirms the task is gone (the authoritative deferred site).
@@ -233,17 +224,10 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
  * SIGCHLD is edge-triggered: when N children die between handler
  * invocations the kernel still queues only one signal, so a reap
  * path that reaps one zombie at a time falls behind any time more
- * than one child dies in the same tick.  The previous per-slot
- * waitpid() walks were also vulnerable to drift between pids[] and
- * kernel reality (stale slot, racy spawn) — a zombie whose slot
- * had already been cleared by some other path stayed unreaped
- * indefinitely because no slot pointed at it.
- *
- * Under a crash storm (e.g. a post_handler_corrupt_ptr scribble
- * round killing children faster than we replace them) that drift
- * has been observed to leave 22 <defunct> children parked while
- * only one slot was actually fuzzing — net throughput ~1/16th of
- * nominal, KCOV edge growth flatlined.
+ * than one child dies in the same tick.  A per-slot waitpid() walk
+ * also depends on pids[] agreeing with kernel reality (stale slot,
+ * racy spawn): a zombie whose slot was already cleared by some other
+ * path stays unreaped indefinitely because no slot points at it.
  *
  * waitpid(-1) reaps whatever the kernel has, regardless of our
  * bookkeeping.  Loop with WNOHANG until it returns 0 (nothing more
