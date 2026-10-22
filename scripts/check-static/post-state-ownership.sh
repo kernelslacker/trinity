@@ -257,8 +257,8 @@ if [ "${#new_holdouts[@]}" -gt 0 ]; then
 		echo "  ${#new_holdouts[@]} sanitise handler(s) stamp _POST_STATE_MAGIC but never wire snap into the ownership table:"
 		for e in "${new_holdouts[@]}"; do echo "    $e"; done
 		echo "  fix: replace 'rec->post_state = (unsigned long) snap;' with"
-		echo "       'post_state_install(rec, snap);' (see syscalls/newstat.c for the helper form,"
-		echo "       syscalls/execve.c for the equivalent hand-rolled rec->post_state + post_state_register pair),"
+		echo "       'post_state_install(rec, snap);' (see syscalls/fs/stat/newstat.c for the helper form,"
+		echo "       syscalls/process/execve.c for the equivalent hand-rolled rec->post_state + post_state_register pair),"
 		echo "       and gate the .post handler's deref through post_state_claim_owned()."
 		echo "       OR (only if hardening is deferred) add the entry to"
 		echo "       scripts/check-static/post-state-ownership.baseline"

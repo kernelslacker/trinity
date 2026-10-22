@@ -353,13 +353,14 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Outer-scope memory containment via transient systemd scope, layered on
-# top of trinity's own self_cgroup (--memory-max etc., see self_cgroup.c).
+# top of trinity's own self_cgroup (--memory-max etc., see
+# utils/self_cgroup_setup.c).
 # The outer scope protects the brief startup window before trinity creates
 # its sub-cgroups, and is a safety net if self_cgroup setup itself fails
 # or is disabled with --no-cgroup.
 #
-# Defaults below MIRROR self_cgroup.c's defaults (60/50/20 of MemTotal);
-# if you change one, change the other.  Override per-run with
+# Defaults below MIRROR utils/self_cgroup_setup.c's defaults (60/50/20 of
+# MemTotal); if you change one, change the other.  Override per-run with
 # TRINITY_MEM_MAX / TRINITY_MEM_HIGH / TRINITY_MEM_SWAP_MAX (any unit
 # systemd accepts, e.g. "8G", "512M").  Set TRINITY_NO_CGROUP=1 to skip
 # the outer scope entirely; trinity's self_cgroup is unaffected.

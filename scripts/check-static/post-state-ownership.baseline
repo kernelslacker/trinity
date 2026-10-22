@@ -4,12 +4,13 @@
 # *_POST_STATE_MAGIC cookie into a post_state struct but do not wire
 # the chunk into the ownership table.  Each line is `path/to/file.c:funcname`.
 #
-# The defended pattern (see syscalls/newstat.c for the helper form,
-# syscalls/execve.c for the equivalent hand-rolled pair) couples
-# the magic cookie with an ownership-table register so the .post
-# handler can prove via post_state_is_owned() / post_state_claim_owned()
-# that the snap pointer references THIS attempt's snapshot, not a
-# foreign chunk a sibling stomp redirected rec->post_state to.
+# The defended pattern (see syscalls/fs/stat/newstat.c for the helper
+# form, syscalls/process/execve.c for the equivalent hand-rolled pair)
+# couples the magic cookie with an ownership-table register so the
+# .post handler can prove via post_state_is_owned() /
+# post_state_claim_owned() that the snap pointer references THIS
+# attempt's snapshot, not a foreign chunk a sibling stomp redirected
+# rec->post_state to.
 #
 # Holdouts that rely on the magic cookie alone can be cleared by a
 # sibling stomp that happens to land a heap-shaped pointer to a

@@ -4,7 +4,7 @@
 # arithmetic comparisons in args/ where neither operand carries an
 # (unsigned long) or (uint64_t) cast.
 #
-# Background (review C2): `struct struct_field` has both `offset` and
+# Background: `struct struct_field` has both `offset` and
 # `size` declared as `unsigned int` (struct_catalog.h:72-73).  The
 # expression `f->offset + f->size` is evaluated in `unsigned int`, so
 # a pair like {offset = UINT_MAX-4, size = 8} wraps to 3 modulo 2^32,

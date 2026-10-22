@@ -4,7 +4,8 @@
 # the magic-cookie convention.  Each line is `path/to/file.c:tag`
 # where `tag` is the prefix of `struct <tag>_post_state`.
 #
-# The convention (see syscalls/pipe.c, recv.c, send.c, write.c) is:
+# The convention (see syscalls/fs/pipe.c, syscalls/socket/recv.c,
+# syscalls/socket/send.c, syscalls/fs/write.c) is:
 #   1. struct foo_post_state { unsigned long magic; ... }
 #   2. #define FOO_POST_STATE_MAGIC 0x<8 bytes of ascii>
 #   3. assign and verify the magic in setup / post-mortem
