@@ -252,7 +252,9 @@ struct childdata {
 	 * strategy_at_pick).  Written once at child init from
 	 * clean_childdata; the baseline runs with PICKER_CTX_INIT on
 	 * every pick, so the field is byte-identical to a would-be
-	 * zero-initialised slot and no hot-path reader touches it yet.
+	 * zero-initialised slot and every reader (strategy-frontier.c,
+	 * strategy-plateau.c, kcov/collect.c, dispatch/syscall-return.c)
+	 * indexes the INIT slice of its per-context storage with it.
 	 * Owner-only, no cross-process coherence needed. */
 	enum picker_context context_id;
 

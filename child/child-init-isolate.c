@@ -132,8 +132,10 @@ void init_child_isolate_io(void)
 	/* And the parent's /proc/<pid>/stat fds for liveness polling.  They
 	 * are opened post-fork as each child is spawned, so every later
 	 * child inherits earlier slots' fds.  Only the parent reads them;
-	 * leaving them open in the child lets a fuzzed close/dup2 corrupt
-	 * the parent's get_pid_state view and blind stuck-detection. */
+	 * left open they cost the child fd-table slots and put sibling
+	 * /proc entries in reach of fuzzed fd syscalls.  The parent's own
+	 * copies are safe either way: a child's close() or dup2() changes
+	 * only its own fd table. */
 	pidstatfiles_drop_in_child();
 
 	/* Detach from the controlling terminal so a fuzzed
