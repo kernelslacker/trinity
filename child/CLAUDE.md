@@ -11,7 +11,7 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 | child-init-clean.c | Coredump toggles, fault-injection fd setup (make-it-fail, fail-nth), tainted-mask fd, FPU dirtier, per-slot occupant reset (`clean_childdata`). |
 | child-init-isolate.c | Stdio + controlling-terminal isolation: fd 0/1/2 → `/dev/null`, parent-fd drops (`--stats-log-file`, self-cgroup, `/proc/<pid>/stat`), `setsid()`. |
 | child-init-freeze.c | Initial sibling-childdata + shared-region `mprotect(PROT_READ)` sweeps, parent rendezvous, per-child object-pool bring-up, optional CPU pin. |
-| child-init-sandbox.c | `shm->ready` barrier, fault-injector arm, rotation-sink fd relocation, per-child unshare()s, root-only `drop_privs`, `capset()`-to-empty + oracle anchor capture, rlimit / cgroup / umask sweep. |
+| child-init-sandbox.c | `shm->ready` barrier, fault-injector arm, rotation-sink fd relocation, per-child unshare()s, root-only `drop_privs`, `capset()`-to-empty + oracle anchor capture, rlimit / umask sweep. |
 | child-init-runtime.c | kcov bring-up, uniarch active-syscalls pin, explorer-pool slot flag, A/B-comparison cohort stamps, heap-bounds re-snapshot, `RLIMIT_AS` pin, one-shot `disable_coredumps`. |
 | child-altop-pick.c | Alt-op picker + dedicated-child rotation + dormant-op gate: `pick_op_type()` / `pick_op_type_table[]` / `alt_op_rotation[]` / `assign_dedicated_alt_op()` / `init_altop_dispatch()` (gated by `scripts/check-static/check-alt-op-rotation.sh`). |
 | child-altop-table.c | Alt-op string names + indirect-call dispatch: `op_dispatch[]` / `alt_op_name()` / `alt_op_lookup_by_name()` / `op_uses_outer_bracket()` (gated by `scripts/check-static/check-alt-op-rotation.sh`). |

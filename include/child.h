@@ -967,15 +967,3 @@ struct childdata {
 })
 
 #include "arm-tracking.h"
-
-/*
- * Index of the /sys/fs/cgroup/trinity{0..7} cgroup this child was
- * placed in by munge_process() in child-init-sandbox.c, or -1 if
- * the join was skipped (pool not pre-created / open failed).
- *
- * BPF cgroup childops call this to attach to the cgroup the current
- * task is actually in, so the hook fires rather than being silently
- * skipped because the attached cgroup is a sibling the task is not
- * a member of.
- */
-int child_cgroup_slot(void);
