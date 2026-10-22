@@ -223,18 +223,24 @@ void account_warm_reserve(struct childdata *child,
  * Reading the ring here, pre-save, pins absent to the
  * pre-decision state the overflow lane would see.
  *
- * Mirrors the existing save gate (entry->sanitise == NULL)
- * so the population matches the population the live save
- * lane would admit -- a sanitise-bearing syscall is
- * deliberately excluded by both lanes for the same
- * reason (the pointer args may be stale at replay time).
+ * Mirrors the live save lane's two admission checks,
+ * entry->sanitise == NULL and corpus_args_replayable(), so
+ * the population matches the population that lane would
+ * admit.  Both exclude a sanitise-bearing syscall; a call
+ * with an iovec, pathname, sockaddr, mmap or pid argument
+ * (pointers stale at replay time, or a pid that names a
+ * live trinity process); and a call with no arguments
+ * (nothing to replay).  A call the lane refuses never
+ * lands in the ring, so it would read as absent forever.
  *
- * Gates, in cheapest-first order so the hot found_something
- * arm short-circuits before touching the plateau /
- * minicorpus loads on the dominant new_edges-only,
+ * Gates, in cheapest-first order (descriptor reads, scalar
+ * compares, then the shared-memory loads) so the hot
+ * found_something arm short-circuits before touching the
+ * plateau / minicorpus loads on the dominant new_edges-only,
  * non-plateau, in-corpus path:
  *
  *   entry->sanitise == NULL    -- match the live save lane
+ *   corpus_args_replayable()   -- and its replay filter
  *   new_cmp > 0                -- nonzero CMP signal
  *   rec->nr < MAX_NR_SYSCALL   -- bound the array index
  *   plateau == CMP_RISING_PC_FLAT
@@ -258,8 +264,8 @@ void account_cold_overflow_would_save(struct syscallentry *entry,
 {
 	bool cold, absent = false;
 
-	if (entry->sanitise != NULL || new_cmp == 0 ||
-	    rec->nr >= MAX_NR_SYSCALL ||
+	if (entry->sanitise != NULL || !corpus_args_replayable(entry) ||
+	    new_cmp == 0 || rec->nr >= MAX_NR_SYSCALL ||
 	    __atomic_load_n(&shm->plateau_current_hypothesis,
 			    __ATOMIC_RELAXED) !=
 	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)

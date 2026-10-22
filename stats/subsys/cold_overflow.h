@@ -24,10 +24,10 @@
  * the ring pre-save pins absent to the pre-decision state the
  * overflow lane would see.
  *
- * Predicate composition at the bump site, mirroring the existing
- * found_something / entry->sanitise == NULL save gate so the
- * population is the same population that already passes through
- * minicorpus_save_with_reason:
+ * Predicate composition at the bump site, mirroring the live save
+ * lane's gate -- found_something, entry->sanitise == NULL and the
+ * corpus_args_replayable() filter inside minicorpus_save_with_reason
+ * -- so the population is the same population that lane admits:
  *   plateau == CMP_RISING_PC_FLAT
  *     (RELAXED load of shm->plateau_current_hypothesis, the
  *     same key the cmp-recent-first arm and the live-inject path

@@ -36,7 +36,7 @@ every translation unit lives under one of the directories below.
 |---|---|
 | [main/](main/CLAUDE.md) | Process entry + CLI/tunables + parent control plane: fork/reap/watchdog/stats tick loop (22 files, ~7,924 LOC) |
 | [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (24 files, ~8,159 LOC) |
-| [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (18 files, ~7,907 LOC) |
+| [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (18 files, ~7,918 LOC) |
 | [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (9 files, ~2,628 LOC) |
 | [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (363 files, ~65,625 LOC) |
 | [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (7 files, ~1,926 LOC) |
@@ -48,7 +48,7 @@ every translation unit lives under one of the directories below.
 | [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (72 files, ~18,097 LOC) |
 | [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (43 files, ~10,351 LOC) |
 | [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg  + cross-child futex pool & prop/fd-event rings (14 files, ~3,867 LOC) |
-| [persist/](persist/CLAUDE.md) | Cross-iteration persistence — coverage-guided arg retention (minicorpus) + deferred-free temporal-overlap queue (9 files, ~4,815 LOC) |
+| [persist/](persist/CLAUDE.md) | Cross-iteration persistence — coverage-guided arg retention (minicorpus) + deferred-free temporal-overlap queue (9 files, ~4,817 LOC) |
 | [health/](health/CLAUDE.md) | Signals, crash post-mortem, pre-crash/breadcrumb rings, /dev/kmsg + taint watch — finding-vs-noise triage and crash-report assembly (11 files, ~3,796 LOC) |
 | [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (12 files, ~3,550 LOC) |
 | [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/race/storm/recipe) (237 files, ~130,021 LOC) |

@@ -8,12 +8,8 @@
 
 #include "minicorpus.h"
 
-struct syscallentry;
-
 void minicorpus_ring_lock(struct corpus_ring *ring);
 void minicorpus_ring_unlock(struct corpus_ring *ring);
-
-bool corpus_args_replayable(const struct syscallentry *entry);
 
 /* Save and load zero a slot of this argtype: its saved value is stale. */
 bool corpus_argtype_stale_on_replay(enum argtype type);

@@ -143,7 +143,9 @@ void minicorpus_ring_unlock(struct corpus_ring *ring)
  *                             invalidating cached corpora.
  *
  * The argtypes admitted here that still carry a stale value are zeroed
- * by corpus_argtype_stale_on_replay() at save and again at load.
+ * by corpus_argtype_stale_on_replay() at save and again at load.  The
+ * cold-overflow shadow probe calls this too, so it counts only calls
+ * the save lane can admit.
  */
 bool corpus_args_replayable(const struct syscallentry *entry)
 {

@@ -424,6 +424,13 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
  * generate fresh args.  Only call when entry->sanitise == NULL. */
 bool minicorpus_replay(struct syscallrecord *rec);
 
+/* Whether a syscall's saved args can be replayed at all: false for a call
+ * with no arguments and for one with an iovec, pathname, sockaddr, mmap or
+ * pid argument.  Save, replay and the warm-start loader refuse what it
+ * refuses, so a shadow probe of the save lane gates on it to count the
+ * same population. */
+bool corpus_args_replayable(const struct syscallentry *entry);
+
 /* Whether nr's ring holds an entry saved under @do32bit's ABI.  Both
  * ABIs share a ring, so its count alone cannot say.  Reads without the
  * ring lock, as replay does: a torn read misjudges one probe, which the

@@ -1,7 +1,7 @@
 /*
- * Self-checks for persist/minicorpus-*.c.  Biarch rings are keyed by nr
- * alone, so replay, load and the corpus-absent probe must judge by ABI.
- * Save and load zero stale slots; calls without arguments go unsaved.
+ * Self-checks for persist/minicorpus-*.c.  Rings are keyed by nr alone,
+ * so replay, load and the absent probe judge by ABI.  Save and load
+ * zero stale slots; save and the probe skip calls that cannot replay.
  */
 
 #include <fcntl.h>
@@ -129,12 +129,14 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry)
 	(void) entry;
 }
 
-/* kcov/cold-skip.c is not linked.  Never cold, so the corpus-absent
- * side alone decides what the probe counts. */
+/* kcov/cold-skip.c is not linked.  Never cold unless a test says so, so
+ * the corpus-absent side alone decides what the probe counts. */
+static unsigned int fake_cold_skip_pct;
+
 unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 {
 	(void) nr;
-	return 0;
+	return fake_cold_skip_pct;
 }
 
 /* args/pools/blob_corpus.c is not linked; no blob stash is pending. */
@@ -571,6 +573,49 @@ static void absent_probe_judges_by_abi(void)
 			 (int) PLATEAU_HYPOTHESIS_NONE, __ATOMIC_RELAXED);
 }
 
+/* The save lane refuses a call with no arguments and one with a pid
+ * argument, so neither is a would-save even when cold and absent. */
+static void probe_skips_calls_the_save_lane_refuses(void)
+{
+	static const struct {
+		struct syscallentry *entry;
+		unsigned int nr;
+	} refused[] = {
+		{ &no_args, NR_NO_ARGS },
+		{ &pid_only, NR_PID64 },
+	};
+	struct cold_overflow_stats before;
+	struct syscallrecord rec;
+	unsigned int i;
+
+	__atomic_store_n(&shm->plateau_current_hypothesis,
+			 (int) PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT,
+			 __ATOMIC_RELAXED);
+	memset(minicorpus_shm, 0, sizeof(*minicorpus_shm));
+	fake_cold_skip_pct = 1;
+
+	before = shm->stats.cold_overflow;
+	memset(&rec, 0, sizeof(rec));
+	for (i = 0; i < ARRAY_SIZE(refused); i++) {
+		rec.nr = refused[i].nr;
+		account_cold_overflow_would_save(refused[i].entry, &rec, 1);
+	}
+	if (memcmp(&before, &shm->stats.cold_overflow, sizeof(before)) != 0)
+		BUG("minicorpus absent: the probe counted a call the save lane refuses");
+
+	/* The same probe of a call the lane admits moves all three. */
+	rec.nr = NR_SHARED;
+	account_cold_overflow_would_save(&range_range, &rec, 1);
+	if (shm->stats.cold_overflow.would_save != before.would_save + 1 ||
+	    shm->stats.cold_overflow.would_save_cold != before.would_save_cold + 1 ||
+	    shm->stats.cold_overflow.would_save_absent != before.would_save_absent + 1)
+		BUG("minicorpus absent: the probe missed a call the save lane admits");
+
+	fake_cold_skip_pct = 0;
+	__atomic_store_n(&shm->plateau_current_hypothesis,
+			 (int) PLATEAU_HYPOTHESIS_NONE, __ATOMIC_RELAXED);
+}
+
 void minicorpus_abi_self_check(void);
 void minicorpus_abi_self_check(void)
 {
@@ -603,6 +648,7 @@ void minicorpus_abi_self_check(void)
 	save_skips_calls_without_args();
 	load_refuses_calls_without_args(path);
 	absent_probe_judges_by_abi();
+	probe_skips_calls_the_save_lane_refuses();
 
 	/* Back to the empty uniarch tables fake_parent.c provides. */
 	biarch = false;
