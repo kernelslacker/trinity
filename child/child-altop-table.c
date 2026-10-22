@@ -29,13 +29,10 @@
 /*
  * KCOV bracketing opt-in.  Read by the childop dispatcher.  The
  * per-op verdict lives in childop.def's fourth (uses_outer_bracket)
- * field; today only CHILD_OP_SYSCALL and CHILD_OP_SCHED_CYCLER are
- * false.  CHILD_OP_SYSCALL falls through to run_sequence_chain which
- * brackets per-syscall internally.  CHILD_OP_SCHED_CYCLER
- * (childops/misc/sched-cycler.c) calls random_syscall_step() in a
- * tight loop; an outer bracket would double-call ioctl(KCOV_ENABLE)
- * and the kernel returns -EBUSY which kcov_enable_trace currently
- * treats as fatal.
+ * field; today only CHILD_OP_SYSCALL is false.  It falls through to
+ * run_sequence_chain which brackets per-syscall internally; an outer
+ * bracket would double-call ioctl(KCOV_ENABLE) and the kernel returns
+ * -EBUSY which kcov_enable_trace currently treats as fatal.
  *
  * Kept as an accessor (rather than a lookup table) so the compiler
  * can fold the switch into a constant-time check at the call site.

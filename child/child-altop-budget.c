@@ -48,11 +48,11 @@
  *     kcov_bracket_begin succeeded).  Calls that did not bracket
  *     leave the multiplier untouched -- a quiet "no signal this
  *     iteration" rather than a ratchet driven by sibling noise.
- *     Ops permanently excluded from the bracket (CHILD_OP_SYSCALL,
- *     CHILD_OP_SCHED_CYCLER -- see op_uses_outer_bracket) therefore
- *     stay at the unity multiplier, matching the no-KCOV degradation
- *     path.  CHILD_OP_SYSCALL has its own cold-syscall heuristics
- *     inside kcov.c that this loop must not fight for control of the
+ *     The op permanently excluded from the bracket (CHILD_OP_SYSCALL
+ *     -- see op_uses_outer_bracket) therefore stays at the unity
+ *     multiplier, matching the no-KCOV degradation path.
+ *     CHILD_OP_SYSCALL has its own cold-syscall heuristics inside
+ *     kcov.c that this loop must not fight for control of the
  *     dominant ~95% path; the bracket exclusion already enforces that.
  *
  *   - Updates are RELAXED non-RMW stores.  Two children tail-racing on

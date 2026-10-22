@@ -20,9 +20,7 @@
  *                          the per-call outer KCOV bracket that
  *                          publishes childop_edges_clean[op].  false
  *                          for CHILD_OP_SYSCALL (per-syscall internal
- *                          bracket) and CHILD_OP_SCHED_CYCLER (tight
- *                          loop over random_syscall_step would double-call
- *                          ioctl(KCOV_ENABLE)).
+ *                          bracket).
  *   dormant_default     -- initial value stored in the picker's
  *                          dormant_op_disabled[] slot for this op:
  *                          1 means "gated off until the canary queue

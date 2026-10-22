@@ -541,13 +541,12 @@ void child_process(struct childdata *child, int childno)
 		 * out by op_uses_outer_bracket for CHILD_OP_SYSCALL) so
 		 * the post-call collect attributes only this dispatch's
 		 * new edges to childop_edges_clean[].  The is_alt_op
-		 * pre-check is implicit: op_uses_outer_bracket gates out
-		 * CHILD_OP_SYSCALL, and CHILD_OP_SCHED_CYCLER opts out
-		 * because it recurses into per-syscall brackets that
+		 * pre-check is implicit: op_uses_outer_bracket gates
+		 * out CHILD_OP_SYSCALL, whose per-syscall brackets
 		 * would drain the trace buffer before the outer collect
-		 * sees it.  Default --childop-kcov-attribution=off short-
-		 * circuits the whole block before kcov_bracket_begin is
-		 * called. */
+		 * sees it.  Default --childop-kcov-attribution=off
+		 * short-circuits the whole block before
+		 * kcov_bracket_begin is called. */
 		bool bracketed = false;
 		bool cmp_bracketed = false;
 		unsigned long edges_this_call = 0;
@@ -657,14 +656,14 @@ void child_process(struct childdata *child, int childno)
 		 *
 		 * Same op_uses_outer_bracket gate as the PC arm above for
 		 * the same reason: CHILD_OP_SYSCALL falls through to
-		 * random-syscall's own per-syscall CMP bracket (do_syscall)
-		 * and CHILD_OP_SCHED_CYCLER recurses into per-syscall
-		 * brackets that would otherwise drain the trace buffer
-		 * before this outer collect sees it.  kcov_cmp_bracket_begin
-		 * itself enforces mode == KCOV_MODE_CMP + cmp_capable +
-		 * !bracket_owned + active, with per-arm reject counters in
-		 * kcov_shm so the attempts == opened + sum(skipped)
-		 * invariant is directly observable. */
+		 * random-syscall's own per-syscall CMP bracket
+		 * (do_syscall), which would otherwise drain the trace
+		 * buffer before this outer collect sees it.
+		 * kcov_cmp_bracket_begin itself enforces mode ==
+		 * KCOV_MODE_CMP + cmp_capable + !bracket_owned +
+		 * active, with per-arm reject counters in kcov_shm so
+		 * the attempts == opened + sum(skipped) invariant is
+		 * directly observable. */
 		if (have_kcov &&
 		    childop_cmp_harvest_mode != CHILDOP_CMP_HARVEST_OFF &&
 		    valid_op &&

@@ -862,8 +862,8 @@ void close_window_and_decide(enum child_op_type op)
 
 	/* Invariant: an op cannot be demoted on childop_edges_clean[]
 	 * unless it is eligible to populate it.  Ops whose dispatch
-	 * shape carries no outer KCOV bracket (e.g. CHILD_OP_SCHED_CYCLER;
-	 * CHILD_OP_SYSCALL is already filtered upstream by the picker)
+	 * shape carries no outer KCOV bracket (CHILD_OP_SYSCALL, the
+	 * only one today, is already filtered upstream by the picker)
 	 * have a permanently zero clean-edge slot, so the zero_edges
 	 * comparison above would unconditionally false-demote them
 	 * regardless of their actual usefulness.  Route them through
