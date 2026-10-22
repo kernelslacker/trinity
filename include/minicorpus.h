@@ -98,13 +98,14 @@ struct corpus_entry {
 	 * errno_sourced_pcedge_wins_per_syscall[], the errno-source
 	 * counterpart of the rq_sourced wins array.  Zeroed by the memset
 	 * in minicorpus_save_with_reason; warm-start loader leaves it at
-	 * the persisted value (the on-disk format carries only args/num_args,
-	 * so a warm-started entry reads as PC-sourced, matching rq_sourced). */
+	 * the persisted value (the on-disk format does not carry the
+	 * provenance tags, so a warm-started entry reads as PC-sourced,
+	 * matching rq_sourced). */
 	bool errno_sourced;
 	/* ABI of the saving call.  On biarch the 32- and 64-bit syscalls
 	 * at one nr share a ring but are unrelated (i386 3 is read, x86_64
 	 * 3 is close), so replay only takes entries whose do32bit matches
-	 * the record being generated. */
+	 * the record being generated.  Persisted with the entry. */
 	bool do32bit;
 };
 
@@ -493,7 +494,8 @@ bool minicorpus_save_file(const char *path);
 /* Load a previously-persisted corpus from @path into the rings.
  * Discards entries silently when the file is missing, the magic/version
  * header doesn't match, the kernel major.minor differs from the running
- * kernel, or a per-entry CRC fails.
+ * kernel, a per-entry CRC fails, or the entry's nr has no replay-safe
+ * syscall in the table matching its do32bit.
  *
  * @loaded and @discarded receive counts for stats reporting; either may
  * be NULL.  Returns true if at least one entry was loaded. */

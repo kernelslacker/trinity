@@ -5,8 +5,8 @@
  * entries.  Header carries a magic, a format version, the running
  * kernel's major.minor, and the syscall-number space size.  Each
  * entry carries the syscall number, num_args, six argument values,
- * and a CRC32 covering only the entry payload — a corrupt entry is
- * dropped without taking down the whole file.
+ * the ABI (do32bit) and a CRC32 covering only the entry payload — a
+ * corrupt entry is dropped without taking down the whole file.
  *
  * The layout is intentionally architecture-specific: callers build
  * paths under a per-arch subdirectory.  Cross-arch reuse is unsafe
@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "arch.h"
 #include "fd.h"
 #include "minicorpus.h"
 #include "persist-envelope.h"
@@ -37,7 +38,9 @@
 #include "minicorpus-internal.h"
 
 #define CORPUS_FILE_MAGIC	0x54524E43U	/* "TRNC" */
-#define CORPUS_FILE_VERSION	3U
+/* scripts/cache-stats.py parses this format too: a layout change bumps
+ * the version and updates the script with it. */
+#define CORPUS_FILE_VERSION	4U
 
 /* Linux utsname fields are __NEW_UTS_LEN+1 = 65 bytes including NUL. */
 #define CORPUS_UTSNAME_LEN	65
@@ -64,8 +67,8 @@ struct corpus_file_entry {
 	uint32_t nr;
 	uint32_t num_args;
 	uint64_t args[6];
+	uint32_t do32bit;	/* 0 or 1: the table nr indexes */
 	uint32_t crc;
-	uint32_t pad;
 };
 
 static bool parse_kernel_version(const char *release,
@@ -220,6 +223,7 @@ bool minicorpus_save_file(const char *path)
 			ent.num_args = src->num_args;
 			for (j = 0; j < 6; j++)
 				ent.args[j] = (uint64_t)src->args[j];
+			ent.do32bit = src->do32bit ? 1U : 0U;
 
 			ent.crc = crc32(&ent,
 				offsetof(struct corpus_file_entry, crc));
@@ -364,23 +368,27 @@ bool minicorpus_load_file(const char *path,
 		want = crc32(&ent,
 			offsetof(struct corpus_file_entry, crc));
 		if (want != ent.crc || ent.nr >= MAX_NR_SYSCALL ||
-		    ent.num_args < 1 || ent.num_args > 6) {
+		    ent.num_args < 1 || ent.num_args > 6 || ent.do32bit > 1) {
 			ndiscarded++;
 			continue;
 		}
 
-		/* Drop entries whose argtype set is no longer replay-safe.
-		 * Catches stale-on-disk corpora pre-dating the ARG_PID guard,
-		 * cross-config swap of a saved file (different syscall set
-		 * for the same nr), and any future syscall whose argtype
-		 * changes to ARG_PID without invalidating cached corpora.
-		 * Bumps ndiscarded so operators see a corpus-quality signal
-		 * rather than silently absorbing the entry.  do32bit isn't
-		 * encoded on disk; the 64-bit table is the canonical view
-		 * and on biarch any pointer/pid argtype is shared between
-		 * both tables for a given nr. */
-		xe = get_syscall_entry(ent.nr, false);
-		if (xe != NULL && !corpus_args_replayable(xe)) {
+		/* Judge the entry by the table it was saved from: the biarch
+		 * tables map one nr to unrelated syscalls (i386 3 and 11 are
+		 * read and execve, x86_64 3 and 11 are close and munmap), and
+		 * a uniarch build has no 32-bit table at all.  An nr with no
+		 * syscall there can never be replayed.  Also drops entries
+		 * whose argtype set is no longer replay-safe: stale-on-disk
+		 * corpora pre-dating the ARG_PID guard, cross-config swap of
+		 * a saved file (different syscall set for the same nr), and
+		 * any future syscall whose argtype changes to ARG_PID without
+		 * invalidating cached corpora.  Bumps ndiscarded so operators
+		 * see a corpus-quality signal rather than silently absorbing
+		 * the entry. */
+		xe = NULL;
+		if (ent.do32bit == 0 || biarch)
+			xe = get_syscall_entry(ent.nr, ent.do32bit != 0);
+		if (xe == NULL || !corpus_args_replayable(xe)) {
 			ndiscarded++;
 			continue;
 		}
@@ -393,13 +401,11 @@ bool minicorpus_load_file(const char *path,
 		 * → ARG_FD), where the saved literal is a stale fd from the
 		 * recording run.  Predicate set matches the save-side loop so
 		 * both ends agree on what counts as stale. */
-		if (xe != NULL) {
-			for (j = 0; j < ent.num_args && j < 6; j++) {
-				if (is_fdarg(xe->argtype[j]) ||
-				    xe->argtype[j] == ARG_ADDRESS ||
-				    xe->argtype[j] == ARG_NON_NULL_ADDRESS)
-					ent.args[j] = 0;
-			}
+		for (j = 0; j < ent.num_args && j < 6; j++) {
+			if (is_fdarg(xe->argtype[j]) ||
+			    xe->argtype[j] == ARG_ADDRESS ||
+			    xe->argtype[j] == ARG_NON_NULL_ADDRESS)
+				ent.args[j] = 0;
 		}
 
 		ring = &minicorpus_shm->rings[ent.nr];
@@ -408,6 +414,7 @@ bool minicorpus_load_file(const char *path,
 		for (j = 0; j < 6; j++)
 			dst->args[j] = (unsigned long)ent.args[j];
 		dst->num_args = ent.num_args;
+		dst->do32bit = ent.do32bit != 0;
 		/* novel_replay_hits is volatile per-process baseline state,
 		 * not persisted on disk.  Zero it explicitly when overwriting
 		 * a recycled slot so an entry whose previous occupant had

@@ -135,14 +135,19 @@ CMP_SRCS	:= \
 	$(TOP)/cmp_hints/hyp-len-correlated.c \
 	$(TOP)/cmp_hints/hyp-pool.c
 
-# The minicorpus save and replay paths, linked for
-# minicorpus_save_with_reason() and minicorpus_replay().  Same
-# section-per-function treatment; minicorpus_abi_test.c fakes the blob
-# corpus and the mutator chain.
+# The minicorpus save, replay and warm-start file paths, linked for
+# minicorpus_save_with_reason(), minicorpus_replay(),
+# minicorpus_save_file() and minicorpus_load_file(), with the fd and
+# stale-tmp helpers the file path uses.  Same section-per-function
+# treatment; minicorpus_abi_test.c fakes the persist envelope, crc32(),
+# the blob corpus and the mutator chain.
 MINICORPUS_SRCS	:= \
 	$(TOP)/persist/minicorpus-core.c \
+	$(TOP)/persist/minicorpus-file.c \
 	$(TOP)/persist/minicorpus-save.c \
-	$(TOP)/persist/minicorpus-select.c
+	$(TOP)/persist/minicorpus-select.c \
+	$(TOP)/lib/fd.c \
+	$(TOP)/utils/persist-util.c
 
 FAKE_SRCS	:= \
 	fake_rng.c \

@@ -3,7 +3,7 @@
 
 Parses three on-disk formats version-aware:
   - kcov-bitmap        magic "KCBV", versions 4, 5, 6, 7
-  - corpus/<arch>      magic "TRNC", version 3
+  - corpus/<arch>      magic "TRNC", version 4
   - cmp-hints          magic "CHP_", version 4
 
 Each carrier is wrapped in a shared 96-byte "TRNPERS" envelope
@@ -69,6 +69,7 @@ KCOV_STRAT_BLOCK_SIZE = struct.calcsize(KCOV_STRAT_BLOCK_FMT)
 CORPUS_HDR_FMT = "<IIIIII65s65s"
 CORPUS_HDR_SIZE_RAW = struct.calcsize(CORPUS_HDR_FMT)
 CORPUS_HDR_SIZE = (CORPUS_HDR_SIZE_RAW + 3) & ~3
+# nr, num_args, args[6], do32bit, crc; the CRC covers everything before it.
 CORPUS_ENTRY_FMT = "<II6QII"
 CORPUS_ENTRY_SIZE = struct.calcsize(CORPUS_ENTRY_FMT)
 
@@ -77,6 +78,11 @@ CMP_HINTS_HDR_SIZE = struct.calcsize(CMP_HINTS_HDR_FMT)
 CMP_HINTS_ENTRY_FMT = "<QQIIQ"
 CMP_HINTS_ENTRY_SIZE = struct.calcsize(CMP_HINTS_ENTRY_FMT)
 CMP_HINTS_POOL_SIZE = 4 + 4 + CMP_HINTS_PER_SYSCALL * CMP_HINTS_ENTRY_SIZE
+
+# Biarch builds pair the native syscall table with a 32-bit one, which gives
+# the same nr to unrelated syscalls; corpus entries carry do32bit to say
+# which table their nr indexes.
+COMPAT_ARCH = {"x86_64": "i386"}
 
 
 def warn(msg: str) -> None:
@@ -424,8 +430,9 @@ class CorpusData:
     kernel_version: str
     entries_total: int
     entries_valid: int
-    per_syscall_count: dict[int, int]
-    arg_histograms: dict[int, list[dict[int, int]]]
+    # Keyed by (nr, do32bit).
+    per_syscall_count: dict[tuple[int, int], int]
+    arg_histograms: dict[tuple[int, int], list[dict[int, int]]]
     notes: list[str] = field(default_factory=list)
 
 
@@ -458,7 +465,7 @@ def load_corpus(path: str) -> Optional[CorpusData]:
     if magic != CORPUS_MAGIC:
         warn(f"corpus: {path}: bad magic 0x{magic:08x}")
         return None
-    if version != 3:
+    if version != 4:
         warn(f"corpus: {path}: unsupported version {version}")
         return None
     if max_nr_syscall != MAX_NR_SYSCALL:
@@ -472,8 +479,8 @@ def load_corpus(path: str) -> Optional[CorpusData]:
     if len(body) % CORPUS_ENTRY_SIZE != 0:
         notes.append(f"trailing partial entry: {len(body) % CORPUS_ENTRY_SIZE} bytes")
 
-    per_syscall_count: dict[int, int] = {}
-    arg_histograms: dict[int, list[dict[int, int]]] = {}
+    per_syscall_count: dict[tuple[int, int], int] = {}
+    arg_histograms: dict[tuple[int, int], list[dict[int, int]]] = {}
     entries_total = 0
     entries_valid = 0
 
@@ -482,18 +489,19 @@ def load_corpus(path: str) -> Optional[CorpusData]:
         ent = struct.unpack_from(CORPUS_ENTRY_FMT, body, off)
         nr, num_args = ent[0], ent[1]
         args = ent[2:8]
-        crc_field = ent[8]
-        payload = body[off : off + CORPUS_ENTRY_SIZE - 8]
+        do32bit, crc_field = ent[8], ent[9]
+        payload = body[off : off + CORPUS_ENTRY_SIZE - 4]
         calc_crc = zlib.crc32(payload) & 0xFFFFFFFF
-        if calc_crc != crc_field:
+        if calc_crc != crc_field or do32bit > 1:
             continue
         entries_valid += 1
-        per_syscall_count[nr] = per_syscall_count.get(nr, 0) + 1
-        if nr not in arg_histograms:
-            arg_histograms[nr] = [{} for _ in range(6)]
-        capped = min(num_args, 6)
-        for i in range(capped):
-            arg_histograms[nr][i][args[i]] = arg_histograms[nr][i].get(args[i], 0) + 1
+        key = (nr, do32bit)
+        per_syscall_count[key] = per_syscall_count.get(key, 0) + 1
+        hist = arg_histograms.get(key)
+        if hist is None:
+            hist = arg_histograms[key] = [{} for _ in range(6)]
+        for i in range(min(num_args, 6)):
+            hist[i][args[i]] = hist[i].get(args[i], 0) + 1
 
     return CorpusData(
         path=path,
@@ -637,6 +645,7 @@ class CacheBundle:
     kernel_label: str
     arch: Optional[str]
     syscall_names: dict[int, str]
+    compat_syscall_names: dict[int, str]
     kcov: Optional[KcovData]
     corpus: Optional[CorpusData]
     cmp_hints: Optional[CmpHintsData]
@@ -647,6 +656,16 @@ def syscall_label(names: dict[int, str], nr: int) -> str:
     if name:
         return f"nr={nr:<4d} {name}"
     return f"nr={nr:<4d} <unnamed>"
+
+
+def corpus_label(
+    names: dict[int, str], compat_names: dict[int, str], key: tuple[int, int]
+) -> str:
+    """Name a corpus (nr, do32bit) key from the table its nr indexes."""
+    nr, do32bit = key
+    if do32bit:
+        return f"{syscall_label(compat_names, nr)} (32-bit)"
+    return syscall_label(names, nr)
 
 
 def find_artifact(
@@ -691,6 +710,8 @@ def load_bundle(cache_dir: str, kernel: Optional[str] = None) -> CacheBundle:
 
     arch = corpus_arch or kcov_arch or cmp_arch or arch_from_dirname(base)
     syscall_names = load_syscall_names(arch) if arch else {}
+    compat_arch = COMPAT_ARCH.get(arch or "")
+    compat_syscall_names = load_syscall_names(compat_arch) if compat_arch else {}
 
     kcov = load_kcov(kcov_path) if kcov_path else None
     corpus = load_corpus(corpus_path) if corpus_path else None
@@ -706,6 +727,7 @@ def load_bundle(cache_dir: str, kernel: Optional[str] = None) -> CacheBundle:
         kernel_label=kernel_label,
         arch=arch,
         syscall_names=syscall_names,
+        compat_syscall_names=compat_syscall_names,
         kcov=kcov,
         corpus=corpus,
         cmp_hints=cmp_hints,
@@ -838,11 +860,15 @@ def print_corpus_stats(b: CacheBundle, top_n: int) -> None:
     if c is None:
         print("  (no corpus loaded)")
         return
-    full_rings = sum(1 for v in c.per_syscall_count.values() if v >= CORPUS_RING_SIZE)
+    # A ring holds both ABIs' entries for its nr.
+    ring_fill: dict[int, int] = {}
+    for (nr, _do32bit), kept in c.per_syscall_count.items():
+        ring_fill[nr] = ring_fill.get(nr, 0) + kept
+    full_rings = sum(1 for v in ring_fill.values() if v >= CORPUS_RING_SIZE)
     print(f"  file:            {c.path}")
     print(f"  kernel_release:  {c.kernel_release}")
     print(f"  kernel_version:  {c.kernel_version}")
-    print(f"  entries total:   {c.entries_total} ({c.entries_valid} CRC-valid)")
+    print(f"  entries total:   {c.entries_total} ({c.entries_valid} valid)")
     print(f"  distinct sys:    {len(c.per_syscall_count)}")
     print(f"  full rings:      {full_rings}  (ring_size={CORPUS_RING_SIZE})")
     for n in c.notes:
@@ -854,18 +880,16 @@ def print_corpus_stats(b: CacheBundle, top_n: int) -> None:
         f"  {'syscall':<28s} {'kept':>6s}  arg-value histograms (top entry / "
         "distinct)"
     )
-    for nr, kept in ranked[:top_n]:
-        hist = c.arg_histograms.get(nr, [])
+    for key, kept in ranked[:top_n]:
+        hist = c.arg_histograms.get(key, [])
         cells: list[str] = []
         for i, h in enumerate(hist):
             if not h:
                 continue
             top_val, top_count = max(h.items(), key=lambda kv: kv[1])
             cells.append(f"a{i}:0x{top_val:x}x{top_count}/{len(h)}d")
-        print(
-            f"  {syscall_label(b.syscall_names, nr):<28s} {kept:>6d}  "
-            f"{' '.join(cells)}"
-        )
+        label = corpus_label(b.syscall_names, b.compat_syscall_names, key)
+        print(f"  {label:<28s} {kept:>6d}  {' '.join(cells)}")
 
 
 def print_cmp_hints_stats(b: CacheBundle, top_n: int) -> None:
@@ -1228,23 +1252,23 @@ def cmd_diff(args: argparse.Namespace) -> int:
 
     if a.corpus is not None and b.corpus is not None:
         section("corpus-composition delta")
-        all_nr = sorted(
+        compat_names = a.compat_syscall_names or b.compat_syscall_names
+        all_keys = sorted(
             set(a.corpus.per_syscall_count) | set(b.corpus.per_syscall_count)
         )
-        rows = []
-        for nr in all_nr:
-            ca = a.corpus.per_syscall_count.get(nr, 0)
-            cb = b.corpus.per_syscall_count.get(nr, 0)
-            rows.append((nr, cb - ca, ca, cb))
-        rows.sort(key=lambda t: abs(t[1]), reverse=True)
-        gained = [r for r in rows if r[2] == 0 and r[3] > 0]
-        lost = [r for r in rows if r[2] > 0 and r[3] == 0]
+        corpus_rows: list[tuple[tuple[int, int], int, int, int]] = []
+        for key in all_keys:
+            ca = a.corpus.per_syscall_count.get(key, 0)
+            cb = b.corpus.per_syscall_count.get(key, 0)
+            corpus_rows.append((key, cb - ca, ca, cb))
+        corpus_rows.sort(key=lambda t: abs(t[1]), reverse=True)
+        gained = [r for r in corpus_rows if r[2] == 0 and r[3] > 0]
+        lost = [r for r in corpus_rows if r[2] > 0 and r[3] == 0]
         print(f"  syscalls only in A: {len(lost)}   only in B: {len(gained)}")
         print(f"  {'syscall':<28s} {'delta':>8s} {'A':>6s} {'B':>6s}")
-        for nr, delta, ca, cb in rows[: args.top]:
-            print(
-                f"  {syscall_label(names, nr):<28s} {delta:>+8d} " f"{ca:>6d} {cb:>6d}"
-            )
+        for key, delta, ca, cb in corpus_rows[: args.top]:
+            label = corpus_label(names, compat_names, key)
+            print(f"  {label:<28s} {delta:>+8d} {ca:>6d} {cb:>6d}")
 
     if a.cmp_hints is not None and b.cmp_hints is not None:
         section("cmp-hints pool delta")
