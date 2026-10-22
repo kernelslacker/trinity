@@ -5,10 +5,10 @@ subsystems (kcov, cmp_hints, childops, random_syscall, corruption defenses)
 bump counters here; this directory turns those counters into text, JSON, CSV
 timeseries, and periodic operator-facing dumps.
 
-## Layout (75 .c files + 54 headers, ~22,770 LOC)
+## Layout (74 .c files + 53 headers, ~22,719 LOC)
 
-17 of those `.c` files and 49 of the headers are the per-subsystem counter
-tree under `stats/subsys/` (~405 + ~4,772 LOC), listed as one row at the
+16 of those `.c` files and 48 of the headers are the per-subsystem counter
+tree under `stats/subsys/` (~391 + ~4,747 LOC), listed as one row at the
 bottom rather than enumerated. The renderers below are the other 58.
 
 | Path | Role |
@@ -76,7 +76,7 @@ bottom rather than enumerated. The renderers below are the other 58.
 | shadow_sat.c | Observation-only shadow soft-saturation score: a ~60-minute parent-side sample ring yielding distinct-edge yield over short/long horizons, normalised per 10k calls, per wall-hour and per CPU-hour. Consumed by nothing. |
 | rotation_event.c | Observation-only durable JSONL event stream, one record per closed strategy-rotation window, written by the CAS-winning child through `lib/jsonl.c`. Each child parks its copy of the sink fd above `PROTECTED_FD_HIGH_BASE` (the parent keeps its low number) and the protected-fd registry names it. No parent-side aggregate. |
 | arm-verdict.h | The shared dead-arm verdict status tokens, so `stats/dump/subsystems.c` (text) and `stats/json/tail.c` (JSON) cannot drift apart. |
-| subsys/*.h, subsys/*.c | Per-subsystem counter tree: each `<subsys>.h` declares that subsystem's counter struct (pulled into `shm->stats` via `include/stats.h`) and the matching `<subsys>.c` declares its `stat_category` descriptor table with `STAT_FIELD_SUB()`. 49 headers, 17 descriptor TUs — headers without a table are subsystems whose counters are rendered from elsewhere. |
+| subsys/*.h, subsys/*.c | Per-subsystem counter tree: each `<subsys>.h` declares that subsystem's counter struct (pulled into `shm->stats` via `include/stats.h`) and the matching `<subsys>.c` declares its `stat_category` descriptor table with `STAT_FIELD_SUB()`. 48 headers, 16 descriptor TUs — headers without a table are subsystems whose counters are rendered from elsewhere. |
 
 ## Data Model
 
@@ -88,7 +88,7 @@ Two parallel counter stores, by design:
    tables — one per subsystem under `stats/subsys/`, with the leftover
    cross-prefix and staged tables under `stats/categories/`. Each
    `stats/subsys/<subsys>.h` also declares that subsystem's counter struct,
-   and `include/stats.h` pulls all 49 of them in. Childops still increment
+   and `include/stats.h` pulls all 48 of them in. Childops still increment
    most of these directly; a wild
    kernel write via a fuzzed syscall arg can scribble these fields, which the
    corruption-defense layer treats as expected noise for this class of counter.

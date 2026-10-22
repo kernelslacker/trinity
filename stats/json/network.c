@@ -4,13 +4,12 @@
  *
  * Owns three groups of section helpers plus the JSON-local
  * descriptor tables they walk: the socket-family + TLS block,
- * the netfilter + xfrm block, and the six long
- * category-compose helpers (socket-family grammar, net-churn +
- * early storms, pidfd + fs + container, TCP + IPv6 + tunnels,
- * bridge + PCI + unix + iouring, and iouring + iSCSI + net
- * tail).  Descriptor tables that already carry extern
- * declarations in include/stats-internal.h retain their
- * external linkage; tables used only by this file stay
+ * the netfilter + xfrm block, and the five long
+ * category-compose helpers (net-churn + early storms, pidfd + fs +
+ * container, TCP + IPv6 + tunnels, bridge + PCI + unix + iouring,
+ * and iouring + iSCSI + net tail).  Descriptor tables that already
+ * carry extern declarations in include/stats-internal.h retain
+ * their external linkage; tables used only by this file stay
  * file-static.
  */
 
@@ -55,12 +54,6 @@ void dump_stats_json_socket_family_and_tls(void)
 
 void dump_stats_json_netfilter_and_xfrm(void)
 {
-}
-
-void json_emit_socket_family_grammar_section(void)
-{
-	json_stats_sep();
-	stat_category_emit_json(&socket_family_grammar_category);
 }
 
 void json_emit_net_churn_and_early_storms_section(void)

@@ -372,11 +372,8 @@ sfg_pick_phase_order(const struct socket_family_grammar *sfg,
 		}
 	}
 
-	if (have) {
-		__atomic_add_fetch(&shm->stats.socket_family_grammar.feedback_picks,
-				   1, __ATOMIC_RELAXED);
+	if (have)
 		return &sfg->phase_orders[best_idx];
-	}
 	return &sfg->phase_orders[rnd_modulo_u32(sfg->nr_phase_orders)];
 }
 
@@ -438,9 +435,6 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	uint32_t seq_hash = SFG_FNV1A_OFFSET;
 	unsigned int seq_len = 0;
 	bool (*needs_la)(struct socket_triplet *);
-
-	__atomic_add_fetch(&shm->stats.socket_family_grammar.runs, 1,
-			   __ATOMIC_RELAXED);
 
 	if (sfg->can_run != NULL && !sfg->can_run()) {
 		sfg_mark_unsupported(sfg->family);
@@ -654,11 +648,8 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	if (p4_sampling)
 		p4_edges = kcov_sample_new_edges(&child->kcov, &kcov_cursor);
 
-	if (ok) {
-		__atomic_add_fetch(&shm->stats.socket_family_grammar.completed,
-				   1, __ATOMIC_RELAXED);
+	if (ok)
 		*err_burst = 0;
-	}
 
 	if (seq_len > 0) {
 		unsigned int slot = sfg_seq_record(seq_hash);

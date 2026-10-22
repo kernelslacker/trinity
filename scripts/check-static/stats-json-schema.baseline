@@ -327,12 +327,6 @@ stats	object
     stats.shared_buffer.mm_gate_post_slip	u64
   stats.prctl_futex_hash	object
     stats.prctl_futex_hash.set_slots_ebusy	u64
-  stats.socket_family_grammar	object
-    stats.socket_family_grammar.runs	u64
-    stats.socket_family_grammar.completed	u64
-    stats.socket_family_grammar.distinct_seq	u64
-    stats.socket_family_grammar.reward	u64
-    stats.socket_family_grammar.feedback_picks	u64
   stats.blob_mutator	object
     stats.blob_mutator.fills	u64
     stats.blob_mutator.havoc_ops	u64

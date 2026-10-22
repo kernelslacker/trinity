@@ -17,11 +17,9 @@
 
 /*
  * Record a per-walk sequence hash in shm's bounded ring.  Linear scan
- * to skip duplicates; CAS on sfg_seq_count reserves a fresh slot and
- * bumps stats.socket_family_grammar_distinct_seq exactly once per new
- * sequence observed fleet-wide.  Saturates silently once the ring
- * fills (SFG_SEQ_HASH_CAP entries); the variety-signal use case does
- * not need a full inventory.
+ * to skip duplicates; CAS on sfg_seq_count reserves a fresh slot.
+ * Saturates silently once the ring fills (SFG_SEQ_HASH_CAP entries);
+ * the variety-signal use case does not need a full inventory.
  *
  * Returns the ring slot holding this hash -- the index found on a
  * duplicate, or the freshly CAS-reserved slot on a first sighting --
@@ -51,9 +49,6 @@ unsigned int sfg_seq_record(uint32_t h)
 						__ATOMIC_ACQUIRE)) {
 			__atomic_store_n(&shm->sfg_seq_hashes[slot], h,
 					 __ATOMIC_RELEASE);
-			__atomic_add_fetch(
-				&shm->stats.socket_family_grammar.distinct_seq,
-				1, __ATOMIC_RELAXED);
 			return slot;
 		}
 		/* CAS lost: `count` now holds the witnessed slot count;
@@ -83,8 +78,6 @@ void sfg_seq_credit(unsigned int slot, uint32_t arm_id, uint32_t reward)
 				 __ATOMIC_RELAXED);
 
 	__atomic_add_fetch(&shm->sfg_seq_reward[slot], reward,
-			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.socket_family_grammar.reward, reward,
 			   __ATOMIC_RELAXED);
 
 	if (__atomic_add_fetch(&shm->sfg_seq_attempts[slot], 1,

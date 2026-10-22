@@ -105,9 +105,6 @@ static void dump_stats_render_vsock_transport_churn(void)
 
 void __cold dump_stats_childop_runs_network(void)
 {
-	stat_category_emit_text(&socket_family_grammar_category);
-
-
 	dump_stats_render_accept_unblocker();
 
 	dump_stats_render_pipe_waker();

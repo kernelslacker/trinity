@@ -26,7 +26,6 @@ void __cold dump_stats_json(void)
 	dump_stats_json_iouring_and_zombies();
 	dump_stats_json_corruption_and_audit();
 	dump_stats_json_lifecycle_and_storms();
-	json_emit_socket_family_grammar_section();
 	dump_stats_json_socket_family_and_tls();
 	dump_stats_json_netfilter_and_xfrm();
 

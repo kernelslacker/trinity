@@ -720,9 +720,7 @@ struct shm_s {
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the
 	 * step-IDs it actually executed and calls sfg_seq_record()
-	 * to fold it into this ring.  The ring's population is surfaced
-	 * as stats.socket_family_grammar_distinct_seq — a value greater
-	 * than one proves the phase-order table is live.
+	 * to fold it into this ring.
 	 *
 	 * Fixed capacity keeps the memory footprint small (128 * 4 =
 	 * 512 bytes) and the counter saturates when the ring fills — the
