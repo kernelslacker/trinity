@@ -63,17 +63,9 @@ static const char *const returns_fd[] = {
 /*
  * What the linked groups reach beyond the fake registry.  Only the
  * pidfd group's fd_test touches the object pools, and nothing here
- * calls it.  Its info sanitiser asks for set_rand_bitmask(), which
- * genl_ops_test.c fakes.
+ * calls it; get_objhead() is faked in fake_objects.c.  Its info
+ * sanitiser asks for set_rand_bitmask(), which genl_ops_test.c fakes.
  */
-struct objhead *get_objhead(enum obj_scope scope, enum objecttype type)
-{
-	(void)scope;
-	(void)type;
-	BUG("ioctl rettype: a group walked an object pool");
-	return NULL;
-}
-
 void __for_each_obj_init(struct objhead *head, struct __for_each_obj_state *s)
 {
 	(void)head;

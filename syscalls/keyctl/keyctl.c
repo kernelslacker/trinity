@@ -646,5 +646,11 @@ struct syscallentry syscall_keyctl = {
 	 * and the handler still dispatches against the cmd the kernel
 	 * actually executed. */
 	.arg_snapshot_mask = (1u << 0),
+	/* sanitise_keyctl() draws the cmd itself and never reads a1, so the
+	 * ARG_OP draw, and any CMP hint pulled into it, is always thrown
+	 * away.  arg2..arg5 hold something different for every cmd, and an
+	 * arm writes only the slots it uses (a cmd with no arm writes
+	 * none), so they keep the generic fill and are not owned. */
+	.sanitiser_owned_mask = (1u << 0),
 	.rettype = RET_BORING,
 };

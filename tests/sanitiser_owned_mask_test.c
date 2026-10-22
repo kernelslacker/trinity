@@ -21,7 +21,7 @@
 #include "debug.h"		/* BUG */
 #include "sanitise.h"		/* generic_sanitise */
 #include "syscall.h"		/* arg_meta_init */
-#include "syscalls/syscalls.h"	/* syscall_prctl */
+#include "syscalls/syscalls.h"	/* syscall_prctl, syscall_keyctl */
 #include "tables.h"		/* syscalls, max_nr_syscalls, sanity_check_tables */
 #include "utils.h"		/* waitpid_eintr */
 #include "utils-macros.h"	/* ARRAY_SIZE */
@@ -151,8 +151,10 @@ static void bad_mask_refused(void)
  * path sends the zero generic_sanitise() left there to the kernel, so
  * the sanitiser runs below and must write every one.  An entry can be
  * listed once its TU is linked into the test binary. */
-static struct syscallentry *const owner_entry[] = { &syscall_prctl };
-static const uint8_t owner_slots[] = { 1u << 0 };
+static struct syscallentry *const owner_entry[] = {
+	&syscall_prctl, &syscall_keyctl,
+};
+static const uint8_t owner_slots[] = { 1u << 0, 1u << 0 };
 
 #define OWNER_RUNS	2048
 #define OWNER_MARK(k)	(0x5a5a00UL + (k))
