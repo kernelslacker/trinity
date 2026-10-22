@@ -236,10 +236,9 @@ static void sanitise_execve(struct syscallrecord *rec)
  * side-set consistent with reality.
  *
  * deferred_free_enqueue() carries its own NULL / shape / heap-bounds
- * guards, so the inner-pointer corruption checks the old direct-free
- * helper performed via inner_ptr_ok_to_free() are subsumed; a scribbled
- * inner slot is rejected at the queue boundary and counted by the same
- * telemetry path every other syscall's enqueues use.
+ * guards, so a scribbled inner slot is rejected at the queue boundary
+ * and counted by the same telemetry path every other syscall's enqueues
+ * use.
  */
 static void enqueue_execve_ptrs(void **argv, void **envp,
 				unsigned int argvcount, unsigned int envpcount)

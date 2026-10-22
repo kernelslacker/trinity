@@ -6,7 +6,7 @@ limits, namespace/cgroup isolation, crash/debug diagnostics, and small
 pointer-sanity/range helpers consumed from syscalls/, mm/, kcov/, and
 cmp_hints/.
 
-## Files (32 files + 2 internal headers, ~10,543 LOC)
+## Files (32 files + 2 internal headers, ~10,517 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -17,7 +17,7 @@ cmp_hints/.
 | shared_mem_bitmap.c | 325 | 2 MiB-granularity region bitmap plus the size-bucket bitmap: `shared_bitmap_mark`/`unmark`, `tracked_size_mark`/`unmark`, `shared_bitmap_self_check` |
 | shared_mem_guard.c | 320 | Per-object `CONFIG_GUARD_SHARED` guard-page mode: `guard_pages_alloc`, span derivation, scope classification and naming, guarded-object census |
 | shared_freelist.c | 283 | Size-bucket freelist: `shared_freelist_pop`/`push` with token bounds-checking and CAS slot claim/release |
-| corrupt_ptr.c | 660 | `looks_like_corrupted_ptr()` heuristic (NULL-ish/pid-shaped/kernel-VA/misaligned bands) plus per-child attribution rings (by syscall, by callsite PC, by rejection site) for the cluster-1/2/3 SIGSEGV triage |
+| corrupt_ptr.c | 634 | `looks_like_corrupted_ptr()` heuristic (NULL-ish/pid-shaped/kernel-VA/misaligned bands) plus per-child attribution rings (by syscall, by callsite PC, by rejection site) for the cluster-1/2/3 SIGSEGV triage |
 | locks.c | 486 | `lock_t` primitive: `trylock`/`lock`/`unlock`, dead-owner reaping via (pid, start_time) fingerprint, `check_all_locks()` periodic sweep across shm/children/cmp_hints/minicorpus/chain_corpus lock families, reserved-bit scribble recovery |
 | debug.c | 785 | Backtraces, `BUG()`/panic path, child crash dump (`dump_child_bug`, `dump_child_fault_beacon`, `dump_childdata`), list-corruption assertions, `debugf`/`syslogf` |
 | isolation.c | 413 | Parent-side one-shot namespace provisioning: `unshare(CLONE_NEWNET\|CLONE_NEWNS)`, hand-rolled netlink RTM_NEWLINK/RTM_NEWADDR to bring up lo+loopback addrs, MS_PRIVATE remount; publishes `net_ready`/`mnt_ready` latches to shm |

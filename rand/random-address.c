@@ -502,8 +502,8 @@ void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count)
  * time and the post handlers free them based on their stored values --
  * silently swapping them out would either UAF the original allocation
  * or hand free() a non-malloc pointer.  Sibling-scribble exposure on
- * those fields is handled by the existing inner_ptr_ok_to_free()
- * shape check at free time rather than at sanitise time.
+ * those fields is handled at free time, where the post handlers free
+ * the sanitise-time snapshot rather than the live field.
  */
 void scrub_msghdr_for_kernel_write(struct msghdr *msg)
 {
