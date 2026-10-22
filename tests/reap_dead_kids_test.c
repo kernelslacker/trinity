@@ -1,9 +1,9 @@
 /*
  * Self-check for the second pass of reap_dead_kids() (main/reap.c): a
  * slot with a pidstat fd is judged by that fd alone, and one without is
- * probed with kill(pid, 0), where only ESRCH reaps it.  kill() is
- * wrapped (-Wl,--wrap=kill) so a probe can fail with any errno and the
- * probes can be counted; the wrapper is transparent unless armed.
+ * probed with kill(pid, 0), where only ESRCH reaps it.  The probe is
+ * failed with any errno, and the probes counted, through the kill()
+ * wrapper in fake_parent.c, which is transparent unless armed.
  */
 
 #include <errno.h>
@@ -26,33 +26,10 @@
 /* Owned by main/params/state.c in production. */
 unsigned char verbosity = 1;
 
-/* The pid whose kill(pid, 0) probe fails with probe_errno, and how many
- * signal-0 probes the wrapper has seen. */
-static pid_t probe_pid;
-static int probe_errno;
-static unsigned int probe_calls;
-
-int __real_kill(pid_t pid, int sig);
-int __wrap_kill(pid_t pid, int sig);
-int __wrap_kill(pid_t pid, int sig)
-{
-	if (sig == 0) {
-		probe_calls++;
-		if (probe_errno != 0 && pid == probe_pid) {
-			errno = probe_errno;
-			return -1;
-		}
-	}
-	return __real_kill(pid, sig);
-}
-
 static void start_scenario(void)
 {
 	fake_parent_reset();
 	shm->running_childs = 0;
-	probe_pid = 0;
-	probe_errno = 0;
-	probe_calls = 0;
 	verbosity = 1;
 }
 
@@ -101,7 +78,7 @@ static void pidstat_fd_reaps_a_gone_task(unsigned int slot)
 		BUG("reap dead kids: a gone task's slot was not reaped");
 	if (strstr(fake_output_log, "disappeared") == NULL)
 		BUG("reap dead kids: a gone task was reaped without a word");
-	if (probe_calls != 0)
+	if (fake_kill_probes != 0)
 		BUG("reap dead kids: a slot with a pidstat fd was probed");
 }
 
@@ -122,7 +99,7 @@ static void pidstat_fd_leaves_a_live_task(unsigned int slot)
 
 	if (pids[slot] != pid || shm->running_childs != 1)
 		BUG("reap dead kids: a live task's slot was reaped");
-	if (probe_calls != 0)
+	if (fake_kill_probes != 0)
 		BUG("reap dead kids: a slot with a pidstat fd was probed");
 
 	close(pidstatfiles[slot]);
@@ -154,12 +131,12 @@ static void kill_probe_decides_without_a_pidstat_fd(unsigned int slot,
 
 	start_scenario();
 	pid = occupy_slot(slot);
-	probe_pid = pid;
-	probe_errno = c->err;
+	fake_kill_probe_pid = pid;
+	fake_kill_probe_errno = c->err;
 
 	reap_dead_kids();
 
-	if (probe_calls == 0)
+	if (fake_kill_probes == 0)
 		BUG("reap dead kids: a slot with no pidstat fd was not probed");
 	if (c->reaped) {
 		if (pids[slot] != EMPTY_PIDSLOT || shm->running_childs != 0)

@@ -51,6 +51,14 @@ extern int fake_num_fds_errno;
  * the task stays up until the test ends it. */
 extern pid_t fake_killed_pid;
 
+/* While fake_kill_probe_errno is non-zero, kill(fake_kill_probe_pid, 0)
+ * fails with it instead of probing; every other kill() goes to the real
+ * call.  fake_kill_probes counts the signal-0 probes of any pid.
+ * fake_parent_reset() disarms the probe and clears the count. */
+extern pid_t fake_kill_probe_pid;
+extern int fake_kill_probe_errno;
+extern unsigned int fake_kill_probes;
+
 /* Everything output() was asked to print since the last reset. */
 extern char fake_output_log[];
 

@@ -80,6 +80,9 @@ struct fake_slot_log fake_slot_log[FAKE_NR_CHILDREN];
 unsigned int fake_fork_fail[FAKE_NR_CHILDREN];
 int fake_num_fds_errno;
 pid_t fake_killed_pid;
+pid_t fake_kill_probe_pid;
+int fake_kill_probe_errno;
+unsigned int fake_kill_probes;
 unsigned int fake_sleeps;
 void (*fake_sleep_hook)(void);
 char fake_output_log[1024];
@@ -149,6 +152,9 @@ void fake_parent_reset(void)
 
 	memset(fake_slot_log, 0, sizeof(fake_slot_log));
 	fake_killed_pid = 0;
+	fake_kill_probe_pid = 0;
+	fake_kill_probe_errno = 0;
+	fake_kill_probes = 0;
 	fake_output_log[0] = '\0';
 	fake_stray_ring_init = 0;
 	fake_clock_running = false;
@@ -300,6 +306,20 @@ void __wrap_kill_pid(pid_t pid);
 void __wrap_kill_pid(pid_t pid)
 {
 	fake_killed_pid = pid;
+}
+
+int __real_kill(pid_t pid, int sig);
+int __wrap_kill(pid_t pid, int sig);
+int __wrap_kill(pid_t pid, int sig)
+{
+	if (sig == 0) {
+		fake_kill_probes++;
+		if (fake_kill_probe_errno != 0 && pid == fake_kill_probe_pid) {
+			errno = fake_kill_probe_errno;
+			return -1;
+		}
+	}
+	return __real_kill(pid, sig);
 }
 
 void canary_queue_on_crash(int childno, int signo)

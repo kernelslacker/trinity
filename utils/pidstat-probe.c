@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -52,14 +53,18 @@ bool pidstat_task_gone(int fd)
 
 /*
  * Read /proc/<pid>/stat by pid number, for the callers that hold no fd
- * on the task: pid_alive() and pid_start_time().  Only ENOENT and ESRCH
- * say the task is gone: procfs answers ENOENT for a pid it has no task
- * for and ESRCH once the task behind an entry it already holds is
- * released, so the open and the read can each say either.  Any other
- * failure (EMFILE or ENFILE from a full fd table, ENOMEM, EPERM under
- * hidepid=1) says nothing about the task, and reading it as death
- * releases a live holder's locks and skips the SIGKILL for a running
- * child.
+ * on the task: pid_alive() and pid_start_time().  Only ESRCH and an
+ * ENOENT that kill(pid, 0) confirms say the task is gone: procfs answers
+ * ESRCH once the task behind an entry it already holds is released, so
+ * the open and the read can each say it.  ENOENT is its answer for a pid
+ * it has no task for, but also what hidepid=2 gives a task the caller
+ * may not read, and what a /proc mounted for another pid namespace gives
+ * a pid that exists in the caller's.  kill() looks the pid up in the
+ * caller's own namespace and sees both, so ESRCH from it is the proof.
+ * Any other failure (EMFILE or ENFILE from a full fd table, ENOMEM,
+ * EPERM under hidepid=1) says nothing about the task either, and reading
+ * it as death releases a live holder's locks and skips the SIGKILL for a
+ * running child.
  *
  * Raw open/read into the caller's stack buffer rather than
  * fopen/fread/fclose: this is the parent's hottest path (once per held
@@ -74,11 +79,20 @@ enum pidstat_result pidstat_read(pid_t pid, char *buf, size_t size)
 	ssize_t n;
 	int fd, err;
 
+	/* No task has such a pid, and kill() would address a process group. */
+	if (pid <= 0)
+		return PIDSTAT_GONE;
+
 	snprintf(path, sizeof(path), "/proc/%d/stat", pid);
 	fd = TEMP_FAILURE_RETRY(open(path, O_RDONLY | O_CLOEXEC));
-	if (fd < 0)
-		return (errno == ENOENT || errno == ESRCH) ?
+	if (fd < 0) {
+		if (errno == ESRCH)
+			return PIDSTAT_GONE;
+		if (errno != ENOENT)
+			return PIDSTAT_UNKNOWN;
+		return (kill(pid, 0) == -1 && errno == ESRCH) ?
 			PIDSTAT_GONE : PIDSTAT_UNKNOWN;
+	}
 
 	n = TEMP_FAILURE_RETRY(read(fd, buf, size - 1));
 	err = errno;

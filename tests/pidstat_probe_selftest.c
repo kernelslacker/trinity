@@ -42,6 +42,10 @@
  * and pid_start_time().  Only a pid with no task reads as gone: a read
  * that fails for any other reason, a full fd table above all, must not,
  * or a live lock holder looks dead and a running child skips its SIGKILL.
+ * ENOENT is one of those reasons unless kill(pid, 0) agrees: hidepid=2
+ * and a /proc mounted for another pid namespace answer it for a task the
+ * caller can signal.  The kill() wrapper in fake_parent.c stands in for
+ * what kill() says.
  */
 
 #include <errno.h>
@@ -57,6 +61,7 @@
 #include <unistd.h>
 
 #include "debug.h"			/* BUG */
+#include "fake_parent.h"
 #include "pidstat-probe.h"
 #include "utils.h"			/* waitpid_eintr */
 #include "utils-macros.h"		/* ARRAY_SIZE */
@@ -220,6 +225,43 @@ static void selftest_read_live_and_gone(void)
 	/* No pid reaches INT_MAX, so procfs has no task for it. */
 	if (pidstat_read(INT_MAX, buf, sizeof(buf)) != PIDSTAT_GONE)
 		BUG("pidstat read: a pid with no task did not read as gone");
+
+	/* Nor is any task numbered 0 or below, and kill() would take those
+	 * for a process group, which always has someone to signal. */
+	if (pidstat_read(0, buf, sizeof(buf)) != PIDSTAT_GONE ||
+	    pidstat_read(-1, buf, sizeof(buf)) != PIDSTAT_GONE)
+		BUG("pidstat read: a pid that names no task did not read as gone");
+}
+
+/*
+ * No pid reaches INT_MAX, so the open of its stat file always fails with
+ * ENOENT; what kill() then says is the whole answer.  The real kill()
+ * says ESRCH, which selftest_read_live_and_gone() covers.  EPERM is what
+ * a caller without CAP_KILL over a task of another uid gets, and the
+ * pair hidepid=2 makes of ENOENT and EPERM is the usual way a live task
+ * reads as absent.  EACCES is what the security_task_kill hooks give.
+ */
+static const int enoent_kill_errnos[] = { EPERM, EACCES };
+
+static void selftest_read_enoent_needs_kill(void)
+{
+	unsigned int i;
+	char buf[512];
+
+	for (i = 0; i < ARRAY_SIZE(enoent_kill_errnos); i++) {
+		enum pidstat_result res;
+
+		fake_kill_probe_pid = INT_MAX;
+		fake_kill_probe_errno = enoent_kill_errnos[i];
+		res = pidstat_read(INT_MAX, buf, sizeof(buf));
+		fake_kill_probe_errno = 0;
+
+		if (res != PIDSTAT_UNKNOWN) {
+			fprintf(stderr, "pidstat read: kill() failed with %s\n",
+				strerror(enoent_kill_errnos[i]));
+			BUG("pidstat read: ENOENT read as gone though kill() still sees the pid");
+		}
+	}
 }
 
 /*
@@ -259,5 +301,6 @@ void pidstat_probe_self_check(void)
 	selftest_zombie_then_gone();
 	selftest_failed_read();
 	selftest_read_live_and_gone();
+	selftest_read_enoent_needs_kill();
 	selftest_read_out_of_fds();
 }

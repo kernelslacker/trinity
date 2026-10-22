@@ -71,8 +71,8 @@ LDFLAGS		+= -Wl,--wrap=close
 # netlink socket; every other domain goes to the real call.
 LDFLAGS		+= -Wl,--wrap=socket
 
-# kill probe injection: reap_dead_kids_test.c wraps kill() so it can fail
-# a kill(pid, 0) probe with any errno and count the probes.  The wrapper
+# kill probe injection: fake_parent.c wraps kill() so a test can fail a
+# kill(pid, 0) probe with any errno and count the probes.  The wrapper
 # forwards to the real kill() unless armed.
 LDFLAGS		+= -Wl,--wrap=kill
 
