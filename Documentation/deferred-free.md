@@ -9,19 +9,22 @@ roughly to match declaration order in the source.
 
 Side-set membership accelerator for `alloc_track[]`.
 
-`alloc_track_consume()` and `alloc_track_lookup()` resolve membership through
-this 16384-slot hash (0.25 load factor at full occupancy), so both hit and
-miss are O(1).  A fast miss matters: misses are the path that fires when a
-scribbled snapshot field arrives at `deferred_free_enqueue`, which is exactly
-the case where we want a fast reject.
+`alloc_track_lookup()` resolves a hit through this 16384-slot hash (0.25 load
+factor at full occupancy) in O(1).  A hash miss is not proof of absence (see
+the duplicate-ptr edge case below), so a miss falls back to a linear scan of
+`alloc_track[]`; a fallback hit bumps `alloc_track_lookup_array_fallback_hit`.
+The hash is deliberately not repaired on that path: the lookup runs against
+the `PROT_READ` steady state and a repair would need an mprotect RW bracket.
+`alloc_track_consume()` does not consult the hash at all -- it scans
+`alloc_track[]` backward from the head and removes the hash entry on a hit.
 
 `alloc_track[]` remains the source of truth for lifecycle (which slot a ptr
 lives in, who got displaced on rotation); the hash mirrors it for membership
 only.  Every write to `alloc_track[]` in this file is paired with the matching
-hash op inside the same function, so the two stay in lock-step.  A divergence
-here isn't just a perf miss -- it would be a correctness bug in the
-deferred-free gate, the very thing the opt-in `zmalloc_tracked()` set was
-built around.
+hash op inside the same function, so the two stay in lock-step apart from the
+duplicate-ptr case below.  A divergence here isn't just a perf miss -- it
+would be a correctness bug in the deferred-free gate, the very thing the
+opt-in `zmalloc_tracked()` set was built around.
 
 16384 slots vs `ALLOC_TRACK_SIZE=4096` -> 0.25 max load factor, keeping the
 average probe length ~1.3 even at full occupancy.  Power of two so the modulo
@@ -29,25 +32,28 @@ collapses to a bitmask.  Storage shares the `alloc_track` mmap region (see
 `alloc_track` declaration in the source) so one mprotect bracket covers both
 arrays.  Slots DO hold pointer values an attacker can turn into a `free()`
 target -- `alloc_track_lookup` gates `cleanup_release_post_state` ->
-`tracked_free_now` -> `free()`, the deferred-free enqueue admission, AND the
-deferred-free free-time ownership check -- so the `PROT_READ` steady state is
-load-bearing for memory safety, not just a perf nicety.  Mirror the
-`ring[]` armor pattern.
+`tracked_free_now` -> `free()` and the deferred-free enqueue admission, and
+`alloc_track_consume` (same pages) is the deferred-free free-time ownership
+check -- so the `PROT_READ` steady state is load-bearing for memory safety,
+not just a perf nicety.  Mirror the `ring[]` armor pattern.
 
 Fibonacci hashing: `ptr>>4` strips the 4 always-zero low bits glibc malloc
 gives us on x86_64 (16-byte-aligned chunks on 64-bit), then multiplies by the
-golden-ratio constant.  Top 10 bits of the product become the slot index,
-which scatters pointer streams that share a common prefix (e.g. addresses
-drawn from the same arena) across the table.
+golden-ratio constant.  Top 14 bits (`ALLOC_TRACK_HASH_SHIFT`) of the product
+become the slot index, which scatters pointer streams that share a common
+prefix (e.g. addresses drawn from the same arena) across the table.
 
 Duplicate-ptr edge case: if the same address enters `alloc_track[]` twice
 (rare; requires a direct `free()` outside the deferred path before a
 re-malloc returns the same address), the hash records one membership entry.
-When the first array slot rotates out, the displaced ptr is `hash_remove()`d
--- the second slot's copy is orphaned (hash says no, array says yes), and a
-subsequent `deferred_free_enqueue` of that ptr is falsely rejected.  That is
-a `deferred_free_reject` leak, not a bad-free; per the opt-in vs.
-implicit-track design rationale, the safer direction to err.
+When the first array slot rotates out, the displaced ptr is
+`alloc_track_hash_remove()`d -- the second slot's copy is orphaned (hash says
+no, array says yes).  The array fallback in `alloc_track_lookup()` and the
+array scan in `alloc_track_consume()` still find it, so the ptr is not
+rejected; the hash just stays out of step until the second slot rotates out
+too.  Every caller that sees a false negative leaks rather than frees, which
+is the safer direction to err per the opt-in vs. implicit-track design
+rationale.
 
 ## Three-result ring_unlock and the mprotect bracket
 
@@ -126,7 +132,8 @@ aging.
 ## alloc_track_refresh consume-miss discipline
 
 Preserve the recorded extent across the consume + re-add so downstream
-`lookup_size()` readers continue to see the original allocation length.
+`alloc_track_lookup_size()` readers continue to see the original allocation
+length.
 
 `alloc_track_consume()` is the source-of-truth ownership gate (see
 `tracked_free_checked()`).  A false return means `@ptr` is NOT currently in
@@ -182,8 +189,8 @@ ownership -- only a true return from `alloc_track_consume()` is.
 
 Synchronously free a `zmalloc_tracked()` pointer.  `alloc_track_consume()`
 pulls the entry out of both `alloc_track[]` and `alloc_track_hash[]` in one
-shot (hash-gated reject, then backward array scan with paired `hash_remove`
-on the hit), which is exactly the removal the deferred ring would have done
+shot (backward array scan, with the paired `alloc_track_hash_remove()` on the
+hit), which is exactly the removal the deferred ring would have done
 at TTL expiry -- but here without the queue latency.  The consume-miss case
 (pointer was never tracked, was already consumed, or rotated out) is
 silently tolerated: `free()`ing a non-tracked pointer is not by itself a bug,
@@ -275,7 +282,7 @@ every chunk it holds leaks, counted under `deferred_free_corrupt_ptr`.
 Eviction is not rare: TTLs count batched ticks, so an entry lives 80-800
 syscalls and the 64-slot ring is typically full.
 
-The `RING_DRAIN` / flush and immediate-free fallback paths intentionally keep
+The ring drain / flush and immediate-free fallback paths intentionally keep
 freeing -- leaking the whole ring would be an RSS blowup, not a bounded
 defense.  Cannot double-free / bad-free at the eviction site because it
 never calls `free()`.

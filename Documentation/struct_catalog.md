@@ -201,8 +201,9 @@ row would race the `bpf_gen_filter()` replacement.
 
 Proof batch for the two-key discriminator extension: (level,
 optname) shapes already owned by bespoke `build_*()` functions in
-`syscalls/setsockopt.c`, now resolved through
-`struct_arg_lookup_two_key()` from `apply_sockopt_entry()`.
+`syscalls/socket/setsockopt-optval-builders.c`, now resolved through
+`struct_arg_lookup_two_key()` from `apply_sockopt_entry()` in
+`syscalls/socket/setsockopt.c`.
 `discrim_arg_idx=2` is level (a2) and `discrim2_arg_idx=3` is
 optname (a3); the explicit-key consumer passes them directly off
 the picked `sockopt_table[]` row so the lookup runs against the

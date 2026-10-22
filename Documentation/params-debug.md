@@ -42,7 +42,7 @@ child syscall traffic when it ran on every mutation.
 Batching -- now the default -- collapses the N per-mutation brackets
 within one iteration-phase into ~1 real flip per region per phase,
 cutting the `*_rw_calls` / `*_ro_calls` counters by ~2x+ (measured
-against the untraced-cost counters landed in `ded23739`).  The regions
+against the untraced-cost counters landed in `9b6597e7f4e8`).  The regions
 are still read-only outside the phase window, so the tripwire still
 catches a stray write from anywhere else in the program; what it no
 longer pins down is which mutation inside a phase did it.

@@ -9,22 +9,23 @@ ladder is shaped.
 
 ## Why a content-authoring lane
 
-The `ARG_BUF_SIZED` generator in `generate-args.c` hands the kernel a
-writable pool buffer paired with a published length, but leaves the
-bytes themselves at whatever residue happens to sit in the writable
-pool slot.  Parsers reading byte 0 first (TLV tag, version, opcode,
-...) early-out on the empty residue almost always, so the content
-lane is the limiting reagent on the blob coverage surface today.
+The `ARG_BUF_SIZED` generator (`gen_arg_buf_sized()` in
+`args/gen_arg_time.c`) hands the kernel a writable pool buffer paired
+with a published length, and without this lane fills the bytes with a
+plain `generate_rand_bytes()` pass.  Random bytes almost never form a
+valid leading field, so parsers reading byte 0 first (TLV tag, version,
+opcode, ...) early-out and the content lane is the limiting reagent on
+the blob coverage surface today.
 
 ## Ladder rungs
 
 Each rung lays its work on top of the prior rung's floor.
 
-`OFF` is the default.  The `ARG_BUF_SIZED` hook skips `blob_fill()`
-entirely: no mode-load past the early return, no RNG draw, no byte
-write.  Fixed-seed dry-run is byte-identical to a build before the
-row -- the mode load itself consumes no RNG.  This is the A/B
-baseline.
+`OFF` is the default.  `gen_arg_buf_sized()` skips `blob_fill()`
+entirely and keeps its plain `generate_rand_bytes()` fill; the gate
+reads the mode and the A/B flag and does nothing else.  Fixed-seed
+dry-run is byte-identical to a build before the row -- the mode load
+itself consumes no RNG.  This is the A/B baseline.
 
 `FILL` first tries `blob_corpus_try_get_base(nr, do32, ...)` to seed
 the owned buffer from the per-`(nr, do32)` blob corpus.  On a miss
