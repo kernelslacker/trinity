@@ -150,7 +150,6 @@ SRCS		:= $(sort $(wildcard args/*.c)) \
 		   $(sort $(wildcard args/pools/*.c)) \
 		   $(sort $(wildcard child/*.c)) \
 		   $(sort $(wildcard childops/net/*.c)) \
-		   $(sort $(wildcard childops/net/netlink/*.c)) \
 		   $(sort $(wildcard childops/misc/*.c)) \
 		   $(sort $(wildcard childops/mm/*.c)) \
 		   $(sort $(wildcard childops/fs/*.c)) \

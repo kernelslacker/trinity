@@ -57,7 +57,6 @@
 
 #include "child.h"
 #include "childop-outcome.h"
-#include "childops-netlink.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -107,6 +106,21 @@ static void mark_ns_unsupported_vsock_transport_churn(void)
 #define VS_SEQ_EOM_BURST_RANGE		5U	/* 4..8 inclusive */
 #define VS_RECONNECT_TRIES		4U	/* inner re-connect iterations per arm invocation */
 #define VS_RECONNECT_GATE		4U	/* ONE_IN gate: ~25 % of outer iterations */
+
+/*
+ * Monotonic-clock delta in nanoseconds since *t0.  long long because
+ * long is 32 bits on some targets and wraps at ~2.1 s of nanoseconds.
+ * Returns 0 if clock_gettime() fails.
+ */
+static long long ns_since(const struct timespec *t0)
+{
+	struct timespec now;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
+		return 0;
+	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
+	       (long long)(now.tv_nsec - t0->tv_nsec);
+}
 
 static void apply_timeouts(int s, unsigned long *direct_calls)
 {

@@ -9,9 +9,8 @@ childops/ is where those scripted sequences live: each file implements one
 syscall for the current fork'd child, that drives a fixed or semi-fixed
 sequence against one kernel subsystem/feature/race window.
 
-8 dispatched ops in 8 `.c` files, plus two shared helper translation units,
-grouped into per-domain subdirectories: `fs/` (3), `net/` (2, plus
-`net/netlink/` 1 helper), `io_uring/` (1 + 1 helper), `misc/` (1), `mm/` (1).
+7 dispatched ops in 7 `.c` files, grouped into per-domain subdirectories:
+`fs/` (3), `net/` (2), `misc/` (1), `mm/` (1).
 
 The set is deliberately small. An earlier tree carried 168 dispatched ops;
 runtime coverage data showed most of them producing no new edges over a full
@@ -41,10 +40,6 @@ needs a `childop.def` row.
 - `net/rxrpc-key-install.c` — rxrpc key install/rotate.
 - `net/vsock-transport-churn.c` — vsock transport churn, including a variant
   that runs in a fresh netns via a `userns_run_in_ns()` grandchild.
-
-### Shared helpers (not dispatched)
-
-- `net/netlink/netlink-util.c` — netlink send/recv plumbing and `ns_since()`.
 
 ## Notes
 

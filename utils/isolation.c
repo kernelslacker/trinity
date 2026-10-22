@@ -25,14 +25,11 @@
 #include "kernel/socket.h"
 /*
  * One-shot NETLINK_ROUTE socket helpers for the parent's lo
- * provisioning sequence.  Deliberately self-contained -- the
- * include/childops-netlink.h scaffolding is scoped to childops/ and
- * pulling it into the isolation spine would invert the layering.
- * The wire envelope here is the same shape the childops/ helpers
- * use (SOCK_RAW + bind to AF_NETLINK port 0 + sendmsg/recv on a
- * synchronous NLM_F_ACK reply), just stripped to the three messages
- * this file actually needs: RTM_NEWLINK lo IFF_UP, and two
- * RTM_NEWADDR (127.0.0.1/8 and ::1/128).
+ * provisioning sequence.  The wire envelope is SOCK_RAW + bind to
+ * AF_NETLINK port 0 + sendmsg/recv on a synchronous NLM_F_ACK reply,
+ * carrying just the three messages this file actually needs:
+ * RTM_NEWLINK lo IFF_UP, and two RTM_NEWADDR (127.0.0.1/8 and
+ * ::1/128).
  *
  * Returns an open fd on success or -1 with errno preserved.  No
  * SO_RCVTIMEO -- we issue exactly three requests on a quiescent
