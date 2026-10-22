@@ -1,12 +1,13 @@
 /*
  * Parent environment for the PARENT_SRCS tests: storage for the parent
- * globals main/loop.c, main/reap.c, main/reap-zombie.c and
+ * globals main/loop.c, main/reap.c, main/reap-zombie.c, main/spawn.c and
  * tables/table-meta.c read, and stand-ins for the parent calls their
  * reachable code makes.  Calls that act on one slot land in
  * fake_slot_log[], kill_pid() and output() keep what they were given,
  * and the rest do nothing.
  */
 
+#include <errno.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -14,10 +15,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "child.h"
+#include "cmp_hints.h"
 #include "debug.h"		/* BUG, classify_child_buglog, beacon_loss_* */
 #include "fd-event.h"
 #include "health/signals-internal.h"
@@ -25,10 +28,13 @@
 #include "locks.h"
 #include "main-internal.h"
 #include "main/reap-internal.h"
+#include "params.h"
+#include "persist-envelope.h"
 #include "pids.h"
 #include "post-mortem.h"
 #include "pre_crash_ring.h"
 #include "random.h"
+#include "self_cgroup.h"
 #include "shm.h"
 #include "stats_ring.h"
 #include "sysv-msg.h"
@@ -50,8 +56,16 @@ struct fd_event_ring **expected_fd_event_rings;
 struct stats_ring **expected_stats_rings;
 struct stats_published *shm_published;
 
-/* Owned by main/spawn.c in production. */
-uint64_t spawn_stall_deadline;
+/* Owned by main/trinity-warmstart.c, utils/self_cgroup_events.c and
+ * main/params/state.c in production. */
+struct rlimit max_files_rlimit;
+unsigned int fork_throttle_us;
+bool fork_pressure_drain;
+bool no_warm_start;
+char *warm_start_path;
+bool no_kcov_warm_start;
+bool no_cmp_hints_warm_start;
+bool no_chain_warm_start;
 
 /* Owned by tables/tables.c, tables-uniarch.c and tables-biarch.c in
  * production.  Empty, so get_syscall_entry() finds no entry. */
@@ -64,12 +78,15 @@ unsigned int max_nr_32bit_syscalls;
 unsigned int max_nr_64bit_syscalls;
 
 struct fake_slot_log fake_slot_log[FAKE_NR_CHILDREN];
+unsigned int fake_fork_fail[FAKE_NR_CHILDREN];
 pid_t fake_killed_pid;
 unsigned int fake_sleeps;
 void (*fake_sleep_hook)(void);
 char fake_output_log[1024];
 unsigned int fake_stray_ring_init;
 
+/* The slot spawn_child() last prepared, which the fork it makes next is for. */
+static int spawning_slot;
 static bool fake_clock_running;
 static uint64_t fake_clock_now_ns;
 static uint64_t fake_clock_started_ns;
@@ -118,6 +135,16 @@ void fake_parent_reset(void)
 	memset(&shm->stats.zombie_reaper, 0, sizeof(shm->stats.zombie_reaper));
 	__atomic_store_n(&shm->exit_reason, STILL_RUNNING, __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->spawn_no_more, false, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->ready, false, __ATOMIC_RELAXED);
+	shm->running_childs = 0;
+
+	/* The fleet's parent is this task. */
+	cached_pid = getpid();
+	spawn_stall_deadline = 0;
+	fork_throttle_us = 0;
+	fork_pressure_drain = false;
+	max_files_rlimit.rlim_cur = RLIM_INFINITY;
+	memset(fake_fork_fail, 0, sizeof(fake_fork_fail));
 
 	memset(fake_slot_log, 0, sizeof(fake_slot_log));
 	fake_killed_pid = 0;
@@ -205,7 +232,11 @@ void reap_child_sysv_sem(struct childdata *child)
 	fake_slot_log[child->num].sysv_drained++;
 }
 
-void replace_child(int childno)
+/* Wrapped at link time: the real replace_child() in main/spawn.c is
+ * __real_replace_child(), for the spawn tests.  The reaper's refills
+ * land here and only get logged. */
+void __wrap_replace_child(int childno);
+void __wrap_replace_child(int childno)
 {
 	fake_slot_log[childno].replaced++;
 }
@@ -285,6 +316,72 @@ void record_reap(int childno, int childstatus)
 void dump_child_fault_beacon(struct childdata *child)
 {
 	(void)child;
+}
+
+/* What spawn_child() reaches.  It tells the canary queue which slot is
+ * about to be forked, so that is where the fork that follows learns it. */
+void canary_queue_on_child_respawn(int childno)
+{
+	spawning_slot = childno;
+	fake_slot_log[childno].spawns++;
+}
+
+void assign_dedicated_alt_op(struct childdata *child, int childno)
+{
+	(void)child; (void)childno;
+}
+
+/* The fork is faked, so the child side of it never runs. */
+void child_process(struct childdata *child, int childno)
+{
+	(void)child; (void)childno;
+	BUG("fake fork: spawn_child() ran a child in the parent");
+}
+
+pid_t self_cgroup_fork_into_workload(void)
+{
+	unsigned int *fail = &fake_fork_fail[spawning_slot];
+
+	fake_slot_log[spawning_slot].forks++;
+	if (*fail != 0) {
+		if (*fail != FAKE_FORK_FAIL_ALWAYS)
+			(*fail)--;
+		errno = EAGAIN;
+		return -1;
+	}
+	return FAKE_FORK_PID(spawning_slot);
+}
+
+/* Only the pid-map-full exit reaches this. */
+void dump_childnos(void)
+{
+}
+
+/* What final_state_save() reaches, from the fork-failure bail path that
+ * the backoff budget keeps out of a test's reach.  The persisted state
+ * has no home here, so these only satisfy the link. */
+const char *cmp_hints_default_path(void)
+{
+	return NULL;
+}
+
+bool cmp_hints_save_file(const char *path)
+{
+	(void)path;
+	return false;
+}
+
+uint64_t persist_envelope_current_generation(void)
+{
+	return 0;
+}
+
+bool persist_write_generation_manifest(uint64_t generation,
+				       const enum trinity_persist_component *components,
+				       uint32_t nr_components)
+{
+	(void)generation; (void)components; (void)nr_components;
+	return false;
 }
 
 /* What the fault handlers in health/ reach.  There is no childdata, no

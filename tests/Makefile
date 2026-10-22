@@ -77,10 +77,17 @@ LDFLAGS		+= -Wl,--wrap=kill
 LDFLAGS		+= -Wl,--wrap=kill_pid
 
 # Fake CLOCK_MONOTONIC: fake_parent.c wraps clock_gettime(), sleep() and
-# usleep() so a test can run out the shutdown wait's 30 s bound without
-# sleeping.  The wrappers forward to the real calls unless a test has
-# started the fake clock.
+# usleep() so a test can run out the shutdown wait's 30 s bound or the
+# spawn path's backoff and stall deadline without sleeping.  The
+# wrappers forward to the real calls unless a test has started the fake
+# clock.
 LDFLAGS		+= -Wl,--wrap=clock_gettime -Wl,--wrap=sleep -Wl,--wrap=usleep
+
+# replace_child() stand-in: main/spawn.c is linked for fork_children()
+# and replace_child(), and the reap and zombie tests keep the stand-in
+# that only logs the refill.  fake_parent.c wraps replace_child() with
+# it; spawn_test.c calls the real one as __real_replace_child().
+LDFLAGS		+= -Wl,--wrap=replace_child
 
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs the
 # arch-program #10 spec calls for on the integration path.  -Og +
@@ -135,12 +142,13 @@ REAL_SRCS	:= \
 	$(TOP)/mm/fault-write.c
 
 # Parent TUs, linked for reset_epoch_state(), the shutdown wait, the
-# reaper, the zombie reaper, the rotation-events sink and
-# sanity_check_tables(), plus utils/uid.c for drop_privs(), utils/utils.c
-# for get_num_fds() and crc32(), the child-side args/generate-args.c for
-# generic_sanitise() and arg_meta_init(), and health/signals-policy.c
-# for mask_signals_child() and setup_main_signals(), with the fault
-# handlers they install (signals-fault-handler.c, signals-async-safe.c).
+# reaper, the zombie reaper, fork_children() and replace_child(), the
+# rotation-events sink and sanity_check_tables(), plus utils/uid.c for
+# drop_privs(), utils/utils.c for get_num_fds() and crc32(), the
+# child-side args/generate-args.c for generic_sanitise() and
+# arg_meta_init(), and health/signals-policy.c for mask_signals_child()
+# and setup_main_signals(), with the fault handlers they install
+# (signals-fault-handler.c, signals-async-safe.c).
 # rand/random-address.c and random_syscall/dispatch-step.c bring the
 # writable pool, avoid_shared_buffer_out() and redqueen_pin_field().
 # ioctls/loop.c brings the loop group's sanitiser, which registers itself
@@ -156,6 +164,7 @@ PARENT_SRCS	:= \
 	$(TOP)/main/loop.c \
 	$(TOP)/main/reap.c \
 	$(TOP)/main/reap-zombie.c \
+	$(TOP)/main/spawn.c \
 	$(TOP)/stats/rotation_event.c \
 	$(TOP)/tables/table-meta.c \
 	$(TOP)/utils/uid.c \
@@ -265,6 +274,7 @@ FAKE_SRCS	:= \
 	shutdown_wait_test.c \
 	reap_fault_beacon_test.c \
 	get_num_fds_test.c \
+	spawn_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
