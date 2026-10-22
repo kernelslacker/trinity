@@ -5,7 +5,7 @@
  * cross-arg splice and the weighted-stack per-arg mutator chain from
  * persist/minicorpus-field-mutate.c, with a final fd-safety scrub so
  * stale stdio fds in the saved args never reach dispatch.  Both the
- * per-syscall mini-corpus replay path (persist/minicorpus-mutate.c)
+ * per-syscall mini-corpus replay path (persist/minicorpus-select.c)
  * and the chain-corpus replay path call this so the mutation logic --
  * and the splice/replay telemetry it bumps -- stays a single shared
  * engine.
