@@ -244,3 +244,25 @@ bool minicorpus_wp_sweep(unsigned long *bad_addr, uint64_t *bad_val)
 	}
 	return false;
 }
+
+bool minicorpus_ring_has_abi(unsigned int nr, bool do32bit)
+{
+	const struct corpus_ring *ring;
+	unsigned int count, i;
+
+	if (minicorpus_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return false;
+
+	ring = &minicorpus_shm->rings[nr];
+	/* Acquire pairs with the release in save: every slot below count
+	 * is published.  Slots fill from 0, so those are the occupied ones
+	 * until the ring wraps and all of them are. */
+	count = __atomic_load_n(&ring->count, __ATOMIC_ACQUIRE);
+	if (count > CORPUS_RING_SIZE)
+		count = CORPUS_RING_SIZE;
+	for (i = 0; i < count; i++) {
+		if (ring->entries[i].do32bit == do32bit)
+			return true;
+	}
+	return false;
+}

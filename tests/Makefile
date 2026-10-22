@@ -155,14 +155,16 @@ CMP_SRCS	:= \
 # The minicorpus save, replay and warm-start file paths, linked for
 # minicorpus_save_with_reason(), minicorpus_replay(),
 # minicorpus_save_file() and minicorpus_load_file(), with the fd and
-# stale-tmp helpers the file path uses.  Same section-per-function
+# stale-tmp helpers the file path uses, and the cold-overflow probe
+# that asks the ring which ABIs it holds.  Same section-per-function
 # treatment; minicorpus_abi_test.c fakes the persist envelope, crc32(),
-# the blob corpus and the mutator chain.
+# the blob corpus, the mutator chain and the cold-skip classifier.
 MINICORPUS_SRCS	:= \
 	$(TOP)/persist/minicorpus-core.c \
 	$(TOP)/persist/minicorpus-file.c \
 	$(TOP)/persist/minicorpus-save.c \
 	$(TOP)/persist/minicorpus-select.c \
+	$(TOP)/random_syscall/warm-reserve.c \
 	$(TOP)/lib/fd.c \
 	$(TOP)/utils/persist-util.c
 

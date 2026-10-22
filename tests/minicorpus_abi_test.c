@@ -1,7 +1,7 @@
 /*
  * Self-checks for persist/minicorpus-*.c.  Biarch rings are keyed by nr
- * alone, so replay and load must judge each entry by its ABI.  Save and
- * load zero stale slots, and a call with no arguments is not saved.
+ * alone, so replay, load and the corpus-absent probe must judge by ABI.
+ * Save and load zero stale slots; calls without arguments go unsaved.
  */
 
 #include <fcntl.h>
@@ -19,6 +19,7 @@
 #include "minicorpus.h"
 #include "persist-envelope.h"
 #include "persist/minicorpus-internal.h"
+#include "random_syscall/strategy-accounting-internal.h"	/* account_cold_overflow_would_save */
 #include "shm.h"
 #include "strategy.h"		/* PLATEAU_HYPOTHESIS_* */
 #include "syscall.h"
@@ -126,6 +127,14 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry)
 {
 	(void) args;
 	(void) entry;
+}
+
+/* kcov/cold-skip.c is not linked.  Never cold, so the corpus-absent
+ * side alone decides what the probe counts. */
+unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
+{
+	(void) nr;
+	return 0;
 }
 
 /* args/pools/blob_corpus.c is not linked; no blob stash is pending. */
@@ -522,6 +531,46 @@ static void load_refuses_calls_without_args(const char *path)
 		BUG("minicorpus no-args: the loader admitted a call with no arguments");
 }
 
+/* How much would_save_absent grew for one probe of NR_SHARED under
+ * @do32's ABI. */
+static unsigned long probe_absent(bool do32)
+{
+	unsigned long before = shm->stats.cold_overflow.would_save_absent;
+	struct syscallrecord rec;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.nr = NR_SHARED;
+	rec.do32bit = do32;
+	account_cold_overflow_would_save(&range_range, &rec, 1);
+	return shm->stats.cold_overflow.would_save_absent - before;
+}
+
+/* A ring holds both ABIs' calls at one nr, so entries of the other ABI
+ * must not hide an absent one. */
+static void absent_probe_judges_by_abi(void)
+{
+	__atomic_store_n(&shm->plateau_current_hypothesis,
+			 (int) PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT,
+			 __ATOMIC_RELAXED);
+	memset(minicorpus_shm, 0, sizeof(*minicorpus_shm));
+
+	if (probe_absent(false) != 1 || probe_absent(true) != 1)
+		BUG("minicorpus absent: an empty ring was not absent");
+
+	put_entry(NR_SHARED, false, 1, 2);
+	if (probe_absent(false) != 0)
+		BUG("minicorpus absent: a ring holding the ABI was absent");
+	if (probe_absent(true) != 1)
+		BUG("minicorpus absent: the other ABI's entry hid an absent ring");
+
+	put_entry(NR_SHARED, true, 3, 4);
+	if (probe_absent(true) != 0)
+		BUG("minicorpus absent: a ring holding both ABIs was absent");
+
+	__atomic_store_n(&shm->plateau_current_hypothesis,
+			 (int) PLATEAU_HYPOTHESIS_NONE, __ATOMIC_RELAXED);
+}
+
 void minicorpus_abi_self_check(void);
 void minicorpus_abi_self_check(void)
 {
@@ -553,6 +602,7 @@ void minicorpus_abi_self_check(void)
 	load_zeroes_stale_slots(path);
 	save_skips_calls_without_args();
 	load_refuses_calls_without_args(path);
+	absent_probe_judges_by_abi();
 
 	/* Back to the empty uniarch tables fake_parent.c provides. */
 	biarch = false;

@@ -216,13 +216,12 @@ void account_warm_reserve(struct childdata *child,
  * composition and the SHADOW contract.
  *
  * MUST run BEFORE minicorpus_save_with_reason() below:
- * the live save publishes a new entry into
- * rings[rec->nr] and bumps its count from 0 to 1, which
- * would race the "absent" snapshot to always-false for
- * the headline first-admission case (the very event the
- * absent subset is meant to capture).  Reading the count
- * here, pre-save, pins absent to the pre-decision state
- * the overflow lane would see.
+ * the live save publishes a new entry of rec's ABI into
+ * rings[rec->nr], which would race the "absent" snapshot
+ * to always-false for the headline first-admission case
+ * (the very event the absent subset is meant to capture).
+ * Reading the ring here, pre-save, pins absent to the
+ * pre-decision state the overflow lane would see.
  *
  * Mirrors the existing save gate (entry->sanitise == NULL)
  * so the population matches the population the live save
@@ -240,16 +239,19 @@ void account_warm_reserve(struct childdata *child,
  *   rec->nr < MAX_NR_SYSCALL   -- bound the array index
  *   plateau == CMP_RISING_PC_FLAT
  *   cold OR corpus-absent      -- the overflow-tail
- *                                 predicate
+ *                                 predicate; absent means the
+ *                                 ring holds no entry of rec's
+ *                                 ABI, as the two ABIs share it
  *
  * RELAXED on the bumps; ACQUIRE on the per-nr ring count
- * read so it pairs with the publishing release inside
- * minicorpus_save_with_reason on the peer side.  A peer
- * winning the first admission between our load and the
- * local save below still leaves our local view at zero
- * (we read first), so the over-count window collapses to
- * the parent-thread-only ordering enforced by this
- * "shadow-before-save" placement. */
+ * read inside minicorpus_ring_has_abi() so it pairs with
+ * the publishing release inside minicorpus_save_with_reason
+ * on the peer side.  A peer winning the first admission
+ * between our load and the local save below still leaves
+ * our local view at absent (we read first), so the
+ * over-count window collapses to the parent-thread-only
+ * ordering enforced by this "shadow-before-save"
+ * placement. */
 void account_cold_overflow_would_save(struct syscallentry *entry,
 					     struct syscallrecord *rec,
 					     unsigned long new_cmp)
@@ -266,9 +268,7 @@ void account_cold_overflow_would_save(struct syscallentry *entry,
 	cold = kcov_syscall_cold_skip_pct(rec->nr) > 0;
 
 	if (minicorpus_shm != NULL)
-		absent = __atomic_load_n(
-			&minicorpus_shm->rings[rec->nr].count,
-			__ATOMIC_ACQUIRE) == 0;
+		absent = !minicorpus_ring_has_abi(rec->nr, rec->do32bit);
 
 	if (cold || absent) {
 		__atomic_fetch_add(

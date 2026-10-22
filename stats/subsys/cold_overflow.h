@@ -17,12 +17,12 @@
  * random_syscall/dispatch.c) is untouched: its arguments and branch shape are
  * byte-identical to the pre-row baseline, and the shadow block
  * fires immediately BEFORE it on the same gated arm.  The ordering
- * is mandatory: the live save publishes a new entry into
- * rings[rec->nr] and bumps its count from 0 to 1, which would race
- * the corpus-absent snapshot to always-false for the headline
- * first-admission case (the very event the absent subset is meant
- * to capture).  Reading the count pre-save pins absent to the
- * pre-decision state the overflow lane would see.
+ * is mandatory: the live save publishes a new entry of the record's
+ * ABI into rings[rec->nr], which would race the corpus-absent
+ * snapshot to always-false for the headline first-admission case
+ * (the very event the absent subset is meant to capture).  Reading
+ * the ring pre-save pins absent to the pre-decision state the
+ * overflow lane would see.
  *
  * Predicate composition at the bump site, mirroring the existing
  * found_something / entry->sanitise == NULL save gate so the
@@ -42,10 +42,12 @@
  *                 (the existing cold-skip classifier; > 0 iff
  *                 the syscall has not earned a new edge within
  *                 KCOV_COLD_THRESHOLD calls)
- *     absent   := minicorpus_shm->rings[nr].count == 0
- *                 (ACQUIRE-paired with the publishing release
- *                 inside minicorpus_save_with_reason; absent
- *                 means no entry has ever been admitted for nr)
+ *     absent   := minicorpus_shm->rings[nr] holds no entry of
+ *                 the record's ABI (minicorpus_ring_has_abi(); the
+ *                 i386 and x86_64 calls at one nr share a ring, so
+ *                 its count alone cannot say.  ACQUIRE-paired with
+ *                 the publishing release inside
+ *                 minicorpus_save_with_reason)
  *
  * Counter shape (mirrors the errno_gradient sibling -- a gate
  * scalar plus two non-disjoint subset scalars; a single bump may
@@ -78,7 +80,7 @@ struct cold_overflow_stats {
 	/* would_save_absent
 	 *      Subset of would_save: the would-save event satisfied the
 	 *      corpus-absent side of the disjunction (the syscall's
-	 *      per-nr ring held no admitted entries at the moment the
+	 *      per-nr ring held no entry of its ABI at the moment the
 	 *      save fired).  This is the headline "the single durable
 	 *      lane has not yet admitted this syscall at all, yet it is
 	 *      producing CMP novelty" signal. */

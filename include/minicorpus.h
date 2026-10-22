@@ -424,6 +424,12 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
  * generate fresh args.  Only call when entry->sanitise == NULL. */
 bool minicorpus_replay(struct syscallrecord *rec);
 
+/* Whether nr's ring holds an entry saved under @do32bit's ABI.  Both
+ * ABIs share a ring, so its count alone cannot say.  Reads without the
+ * ring lock, as replay does: a torn read misjudges one probe, which the
+ * shadow callers tolerate. */
+bool minicorpus_ring_has_abi(unsigned int nr, bool do32bit);
+
 /* Post-replay perturbation fraction (1-in-N gate).  Single tunable so
  * an operator can trivially lift or drop the perturbation rate; also
  * lets the perturbation be disabled outright by driving the roll to
