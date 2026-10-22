@@ -518,8 +518,7 @@ extern enum bandit_reward_edge_count_mode bandit_reward_edge_count_mode;
  * Record the just-finished window's outcome for the bandit picker.
  * Always bumps the per-arm-per-reason buckets
  * bandit_pulls_by_reason[arm][reason] /
- * bandit_reward_calls_by_reason[arm][reason] /
- * bandit_reward_pc_edge_count_by_reason[arm][reason] so dump-side
+ * bandit_reward_calls_by_reason[arm][reason] so dump-side
  * analysis can split each arm's total exposure by selection path
  * (NORMAL_UCB vs COLD_START vs ROUND_ROBIN vs PLATEAU_FORCE).
  *

@@ -199,9 +199,6 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			   __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_reward_calls_by_reason[arm][reason],
 			   total, __ATOMIC_RELAXED);
-	__atomic_fetch_add(
-		&shm->bandit_reward_pc_edge_count_by_reason[arm][reason],
-		pc_edge_count, __ATOMIC_RELAXED);
 
 	/* SR_PLATEAU_FORCE windows skip the learner-facing updates: an
 	 * intervention window ran STRATEGY_RANDOM because every arm was
@@ -218,12 +215,12 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 
 	/* Per-arm x chaos-state cohort attribution -- chaos-mode V2.  Sits
 	 * below the SR_PLATEAU_FORCE early-return so the by_chaos cohort
-	 * sums reconcile with the flat bandit_pulls[] / bandit_reward_calls[]
-	 * totals updated immediately below: an intervention window that
-	 * lands inside a chaos window must drop from both cohorts together,
-	 * otherwise sum_arm sum_chaos bandit_pulls_by_chaos[arm][c] runs
-	 * ahead of sum_arm bandit_pulls[arm] by the SR_PLATEAU_FORCE count
-	 * and the operator-facing cohort ratio drifts.
+	 * sums reconcile with the flat bandit_pulls[] total updated
+	 * immediately below: an intervention window that lands inside a
+	 * chaos window must drop from both cohorts together, otherwise
+	 * sum_arm sum_chaos bandit_pulls_by_chaos[arm][c] runs ahead of
+	 * sum_arm bandit_pulls[arm] by the SR_PLATEAU_FORCE count and the
+	 * operator-facing cohort ratio drifts.
 	 *
 	 * was_chaos is sampled by the caller in maybe_rotate_strategy
 	 * before cmp_hints_chaos_tick advances the schedule, so it reflects
@@ -244,8 +241,6 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	chaos_idx = was_chaos ? 1u : 0u;
 	__atomic_fetch_add(&shm->bandit_pulls_by_chaos[arm][chaos_idx], 1UL,
 			   __ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->bandit_reward_calls_by_chaos[arm][chaos_idx],
-			   total, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_warn_fires_by_chaos[arm][chaos_idx],
 			   warn_fires, __ATOMIC_RELAXED);
 

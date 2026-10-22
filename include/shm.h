@@ -367,15 +367,14 @@ struct shm_s {
 	unsigned long bandit_reward_pc_edge_count[NR_STRATEGIES];
 
 	/* Per-arm x chaos-state cohort accumulators (chaos-mode V2,
-	 * observation-only): three parallel matrices bucketed by chaos_state
-	 * (chaos_off=0 / chaos_on=1) so per-arm reward and diagnostic-fire
-	 * rates split by cmp_hints suppression can be compared without
+	 * observation-only): two parallel matrices bucketed by chaos_state
+	 * (chaos_off=0 / chaos_on=1) so per-arm diagnostic-fire rates
+	 * split by cmp_hints suppression can be compared without
 	 * re-running the fuzzer.  Nothing in the picker reads these -- the
 	 * learner formula is unchanged.  Rationale (write discipline, why
 	 * bandit_warn_fires_by_chaos has no lifetime companion, V3 plan):
 	 * Documentation/shm-state.md (Chaos-cohort observation counters). */
 	unsigned long bandit_pulls_by_chaos[NR_STRATEGIES][2];
-	unsigned long bandit_reward_calls_by_chaos[NR_STRATEGIES][2];
 	unsigned long bandit_warn_fires_by_chaos[NR_STRATEGIES][2];
 
 	/*
@@ -448,7 +447,6 @@ struct shm_s {
 	 * (Per-selection-reason attribution). */
 	unsigned long bandit_pulls_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];
 	unsigned long bandit_reward_calls_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];
-	unsigned long bandit_reward_pc_edge_count_by_reason[NR_STRATEGIES][NR_SELECTION_REASONS];
 
 	/* Random-rescue classifier counters -- see classify_random_rescue
 	 * in include/strategy.h.  Each new-edge syscall completed during an

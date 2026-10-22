@@ -426,21 +426,16 @@ Chaos-mode V2 observation-only attribution.  Each completed window is
 bucketed into `[arm][chaos_state]` in `bandit_record_pull`, where
 `chaos_state` is the `cmp_hints_chaos_active` flag sampled at window
 close (`chaos_off=0` / `chaos_on=1`).  The cohort split lets the
-operator compare per-arm reward and kernel-diagnostic-fire rates
-between windows where cmp_hints suppression was active and windows
-where it was not, without re-running the fuzzer with chaos disabled.
+operator compare per-arm kernel-diagnostic-fire rates between windows
+where cmp_hints suppression was active and windows where it was not,
+without re-running the fuzzer with chaos disabled.
 
-Three parallel matrices mirror the existing lifetime series with a
-chaos-state dimension:
+Two parallel matrices carry the chaos-state dimension:
 
 - `bandit_pulls_by_chaos[a][c]` -- window count for arm `a` with chaos
   state `c`.  Bumped on every non-`SR_PLATEAU_FORCE` window the
   learner accepts; the per-cohort sum across `c` equals
   `bandit_pulls[a]`.
-
-- `bandit_reward_calls_by_chaos[a][c]` -- combined reward
-  (`pc_edge_calls + cmp_term`), same units as `bandit_reward_calls[a]`.
-  Sum across `c` equals `bandit_reward_calls[a]`.
 
 - `bandit_warn_fires_by_chaos[a][c]` -- per-window delta of
   `kmsg_warn_fires` bucketed into the matching cohort.  Brand new V2
@@ -460,7 +455,7 @@ statistical-significance gate from the design doc clears.
 
 Single-writer protocol matches the existing `bandit_pulls[]` path
 (CAS-serialised rotation); dump-side reads are RELAXED.
-`NR_STRATEGIES * 2 * 3 series * 8 bytes = 192 bytes` today.
+`NR_STRATEGIES * 2 * 2 series * 8 bytes = 96 bytes` today.
 
 ## Per-selection-reason attribution
 
@@ -487,17 +482,15 @@ arm's exposure splits across selection paths:
   `pc_edge_calls_by_strategy[*]` to decide which arm to force next
   time.
 
-Three parallel matrices mirror the lifetime series:
+Two parallel matrices mirror the lifetime series:
 
 - `bandit_pulls_by_reason[a][r]` -- window count.
 - `bandit_reward_calls_by_reason[a][r]` -- combined reward
   (`pc_edge_calls + cmp_term`), same units as `bandit_reward_calls[]`.
-- `bandit_reward_pc_edge_count_by_reason[a][r]` -- real bucket-edge
-  count, same units as `bandit_reward_pc_edge_count[]`.
 
 Same single-writer protocol as `bandit_pulls[]` (CAS-serialised
 rotation path).  `dump_strategy_stats()` uses RELAXED loads.
-`3 strategies * 4 reasons * 3 series * 8 bytes = 288 bytes`, trivial
+`3 strategies * 4 reasons * 2 series * 8 bytes = 192 bytes`, trivial
 against existing shm consumers.
 
 ## Random-rescue classifier
