@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/prctl.h>
@@ -42,6 +43,8 @@
 unsigned int max_children;
 pid_t *pids;
 struct childdata **children;
+struct fd_event_ring **expected_fd_event_rings;
+struct stats_ring **expected_stats_rings;
 struct stats_published *shm_published;
 
 /* Owned by main/spawn.c in production. */
@@ -60,6 +63,7 @@ unsigned int max_nr_64bit_syscalls;
 struct fake_slot_log fake_slot_log[FAKE_NR_CHILDREN];
 pid_t fake_killed_pid;
 char fake_output_log[1024];
+unsigned int fake_stray_ring_init;
 
 static pid_t pid_slots[FAKE_NR_CHILDREN];
 static int pidstat_slots[FAKE_NR_CHILDREN];
@@ -70,6 +74,9 @@ static bool quarantine_slots[FAKE_NR_CHILDREN];
 static struct childdata childdata[FAKE_NR_CHILDREN];
 static struct childdata *child_ptrs[FAKE_NR_CHILDREN];
 static struct fd_event_ring rings[FAKE_NR_CHILDREN];
+static struct stats_ring stats_rings[FAKE_NR_CHILDREN];
+static struct fd_event_ring *canary_fd_slots[FAKE_NR_CHILDREN];
+static struct stats_ring *canary_stats_slots[FAKE_NR_CHILDREN];
 
 void fake_parent_reset(void)
 {
@@ -83,11 +90,16 @@ void fake_parent_reset(void)
 	zombie_pids = zombie_pid_slots;
 	zombie_since = zombie_since_slots;
 	zombie_quarantined = quarantine_slots;
+	expected_fd_event_rings = canary_fd_slots;
+	expected_stats_rings = canary_stats_slots;
 
 	for_each_child(i) {
 		children[i] = &childdata[i];
 		children[i]->num = i;
 		children[i]->fd_event_ring = &rings[i];
+		children[i]->stats_ring = &stats_rings[i];
+		expected_fd_event_rings[i] = &rings[i];
+		expected_stats_rings[i] = &stats_rings[i];
 		pids[i] = EMPTY_PIDSLOT;
 		pidstatfiles[i] = -1;
 		zombie_pids[i] = EMPTY_PIDSLOT;
@@ -102,6 +114,7 @@ void fake_parent_reset(void)
 	memset(fake_slot_log, 0, sizeof(fake_slot_log));
 	fake_killed_pid = 0;
 	fake_output_log[0] = '\0';
+	fake_stray_ring_init = 0;
 }
 
 pid_t fake_hold_task(int stopsig)
@@ -143,7 +156,22 @@ void clean_childdata(struct childdata *child)
 
 void fd_event_ring_init(struct fd_event_ring *ring)
 {
+	if ((uintptr_t)ring < (uintptr_t)rings ||
+	    (uintptr_t)ring >= (uintptr_t)&rings[FAKE_NR_CHILDREN]) {
+		fake_stray_ring_init++;
+		return;
+	}
 	fake_slot_log[ring - rings].ring_reset++;
+}
+
+void stats_ring_init(struct stats_ring *ring)
+{
+	if ((uintptr_t)ring < (uintptr_t)stats_rings ||
+	    (uintptr_t)ring >= (uintptr_t)&stats_rings[FAKE_NR_CHILDREN]) {
+		fake_stray_ring_init++;
+		return;
+	}
+	fake_slot_log[ring - stats_rings].stats_ring_reset++;
 }
 
 void classify_child_buglog(struct childdata *child, pid_t pid)

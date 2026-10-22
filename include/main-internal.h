@@ -37,6 +37,11 @@ unsigned int count_quarantined_in_range(unsigned int lo, unsigned int hi);
 extern unsigned long hiscore;
 extern unsigned int stall_count;
 
+/* main/loop.c -- exposed entry points. */
+/* Reset a taskless slot's rings from the parent-private canaries and point
+ * its childdata back at them; call after clean_childdata(). */
+void reset_child_rings(unsigned int childno);
+
 /* main/reap.c -- exposed entry points. */
 int shm_is_corrupt(void);
 int open_child_pidstat(pid_t target);

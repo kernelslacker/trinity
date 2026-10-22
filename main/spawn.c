@@ -102,8 +102,10 @@ static bool spawn_child(int childno)
 	if (__atomic_load_n(&shm->ready, __ATOMIC_ACQUIRE))
 		reseed();
 
-	/* Wipe out any state left from a previous child running in this slot. */
+	/* Wipe out any state left from a previous child running in this slot,
+	 * a ring pointer it scribbled included. */
 	clean_childdata(child);
+	reset_child_rings(childno);
 
 	/* Commit any staged canary op BEFORE the dedicated-alt-op stamp
 	 * below reads canary_active_op().  enter_canarying() stages the

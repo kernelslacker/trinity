@@ -35,7 +35,6 @@
 #include "child-internal.h"
 #include "fd.h"
 #include "futex.h"
-#include "fd-event.h"
 #include "kcov.h"
 #include "maps.h"
 #include "minicorpus.h"
@@ -49,7 +48,6 @@
 #include "shm.h"
 #include "signals.h"
 #include "stats.h"
-#include "stats_ring.h"
 #include "syscall.h"
 #include "taint.h"
 #include "trinity.h"	// ARRAY_SIZE
@@ -300,6 +298,8 @@ static void reset_child_fault_beacons(struct childdata *child)
 
 /*
  * Wipe out any state left from a previous child running in this slot.
+ * The slot's rings are not touched here: reaching them safely takes the
+ * slot number, which childdata cannot vouch for.  See reset_child_rings().
  */
 void clean_childdata(struct childdata *child)
 {
@@ -535,10 +535,4 @@ void clean_childdata(struct childdata *child)
 	child->cmp_hints_consumed_count = 0;
 
 	reset_child_fault_beacons(child);
-
-	if (child->fd_event_ring)
-		fd_event_ring_init(child->fd_event_ring);
-
-	if (child->stats_ring)
-		stats_ring_init(child->stats_ring);
 }

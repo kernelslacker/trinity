@@ -670,6 +670,24 @@ dont_wait:
 
 
 /*
+ * Reset the rings of a slot that has no task, and point its childdata back
+ * at them.  The ring pointers in childdata are child-writable, so the
+ * parent-private canaries name the rings: the parent never writes through
+ * the childdata copy, and restoring it keeps a scribble from outliving the
+ * child that made it.  The slot number comes from the caller for the same
+ * reason; childdata's own num is just as writable.
+ */
+void reset_child_rings(unsigned int childno)
+{
+	struct childdata *child = children[childno];
+
+	child->fd_event_ring = expected_fd_event_rings[childno];
+	child->stats_ring = expected_stats_rings[childno];
+	fd_event_ring_init(expected_fd_event_rings[childno]);
+	stats_ring_init(expected_stats_rings[childno]);
+}
+
+/*
  * Reset shared state between epochs.  Coverage data (kcov bitmap,
  * cmp_hints, minicorpus) is deliberately preserved so that coverage
  * accumulates across epoch boundaries.
@@ -777,7 +795,7 @@ void reset_epoch_state(void)
 			pending++;
 		} else if (!zombie_quarantined[i]) {
 			clean_childdata(children[i]);
-			fd_event_ring_init(children[i]->fd_event_ring);
+			reset_child_rings(i);
 		}
 
 		/* Parent-local per-slot arrays are persistent across epochs

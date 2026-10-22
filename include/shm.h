@@ -1115,9 +1115,9 @@ static inline void release_newnet_ticket(struct syscallrecord *rec)
 
 /* Data-segment externs paired with shm state.  These live OUTSIDE the
  * shared region (COW-per-child) so a stray write in one child cannot
- * perturb parent or siblings; canary arrays let drain paths detect and
- * work around wild-write damage to per-child ring pointers.  See
- * Documentation/shm-state.md (Data-segment externs). */
+ * perturb parent or siblings; canary arrays let the drain and respawn
+ * paths detect and work around wild-write damage to per-child ring
+ * pointers.  See Documentation/shm-state.md (Data-segment externs). */
 extern struct childdata **children;
 extern size_t childdata_mapping_len;
 extern struct fd_event_ring **expected_fd_event_rings;

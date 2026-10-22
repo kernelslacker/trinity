@@ -864,7 +864,10 @@ siblings.
 - `expected_stats_rings` -- canary copy of each child's `stats_ring`
   pointer, same detection story and same parent-private array as
   `expected_fd_event_rings`; `stats_ring_drain_all()` compares the
-  live pointer against this array on drain.
+  live pointer against this array on drain.  Both arrays also drive
+  respawn: `reset_child_rings()` stamps each childdata pointer back
+  from them and resets the rings through them, so a scribble does not
+  outlive the child that made it.
 
 ### `NEWNET_INFLIGHT_TICKET` bit encoding
 

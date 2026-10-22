@@ -8,11 +8,13 @@
  */
 
 #include <signal.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
+#include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
 #include "main-internal.h"
 #include "pids.h"
@@ -55,7 +57,8 @@ static void check_parked_through_reset(unsigned int parked)
 		unsigned int want = (i == parked) ? 0 : 1;
 
 		if (fake_slot_log[i].cleaned != want ||
-		    fake_slot_log[i].ring_reset != want)
+		    fake_slot_log[i].ring_reset != want ||
+		    fake_slot_log[i].stats_ring_reset != want)
 			BUG("epoch reset: reinitialised the wrong slots");
 		if (i != parked)
 			pids[i] = getpid();
@@ -197,6 +200,39 @@ static void stall_deadline_cleared(void)
 		BUG("epoch reset: kept the last epoch's spawn-stall deadline");
 }
 
+/* A child can overwrite the ring pointers in its childdata.  The reset
+ * must not write through them, must leave the next occupant pointing at
+ * the rings the parent allocated, and must keep out of a parked slot,
+ * whose task may still be writing. */
+static void scribbled_ring_pointers_healed(void)
+{
+	struct fd_event_ring *wild_fd = (struct fd_event_ring *)(uintptr_t)0x41414141;
+	struct stats_ring *wild_stats = (struct stats_ring *)(uintptr_t)0x41414141;
+	pid_t pid;
+
+	fake_parent_reset();
+	pid = park_slot(3);
+	children[3]->fd_event_ring = wild_fd;
+	children[3]->stats_ring = wild_stats;
+	children[4]->fd_event_ring = wild_fd;
+	children[4]->stats_ring = wild_stats;
+
+	reset_epoch_state();
+
+	if (fake_stray_ring_init != 0)
+		BUG("epoch reset: wrote through a scribbled ring pointer");
+	if (children[4]->fd_event_ring != expected_fd_event_rings[4] ||
+	    children[4]->stats_ring != expected_stats_rings[4])
+		BUG("epoch reset: left a scribbled ring pointer in a reset slot");
+	if (children[3]->fd_event_ring != wild_fd ||
+	    children[3]->stats_ring != wild_stats)
+		BUG("epoch reset: touched the ring pointers of a parked slot");
+	check_parked_through_reset(3);
+
+	kill(pid, SIGKILL);
+	(void)waitpid_eintr(pid, NULL, 0);
+}
+
 void epoch_reset_self_check(void);
 void epoch_reset_self_check(void)
 {
@@ -205,4 +241,5 @@ void epoch_reset_self_check(void)
 	quarantined_slot_survives_reset();
 	quarantine_threshold_spans_epochs();
 	stall_deadline_cleared();
+	scribbled_ring_pointers_healed();
 }

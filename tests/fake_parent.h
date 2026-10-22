@@ -13,12 +13,17 @@
 struct fake_slot_log {
 	unsigned int cleaned;		/* clean_childdata() */
 	unsigned int ring_reset;	/* fd_event_ring_init() */
+	unsigned int stats_ring_reset;	/* stats_ring_init() */
 	pid_t classified_pid;		/* classify_child_buglog() */
 	unsigned int sysv_drained;	/* reap_child_sysv_{shm,msg,sem}() */
 	unsigned int replaced;		/* replace_child() */
 };
 
 extern struct fake_slot_log fake_slot_log[FAKE_NR_CHILDREN];
+
+/* fd_event_ring_init() / stats_ring_init() calls handed a pointer that
+ * is not one of the slots' rings: a write through a stray pointer. */
+extern unsigned int fake_stray_ring_init;
 
 /* The pid kill_pid() was last asked to SIGKILL.  It sends nothing, so
  * the task stays up until the test ends it. */
