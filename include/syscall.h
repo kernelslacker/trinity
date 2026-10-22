@@ -296,8 +296,8 @@ struct syscallrecord {
 	 * the static REEXEC_SANITISE_OK opt-in.  The static entry flag
 	 * remains the dominant knob for sanitisers whose EVERY arm is
 	 * re-exec safe; this dynamic word is for op-multiplexed
-	 * sanitisers (setsockopt, keyctl, prctl, ...) whose safety
-	 * varies per (level, optname) / per (cmd, arg) discriminator.
+	 * sanitisers (keyctl, prctl, ...) whose safety varies per
+	 * (cmd, arg) discriminator.
 	 * Reset to zero in generate_syscall_args() before sanitise runs
 	 * so a prior dispatch's bit cannot leak into a call whose
 	 * sanitise arm chooses to leave it clear.  Namespace is

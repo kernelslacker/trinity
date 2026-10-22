@@ -30,23 +30,6 @@ struct sockopt {
 	unsigned long optname;
 	unsigned long optval;
 	unsigned long optlen;
-	/*
-	 * Set true by the curated-table pick paths in do_setsockopt() when
-	 * the chosen builder emits a fixed-size scalar optval (int / bool)
-	 * with no nested pointer chains, no INOUT / output buffers, no
-	 * shared-buffer relocation, and no bespoke ownership.  Consumed by
-	 * sanitise_setsockopt() to publish REEXEC_OK on rec->flags.
-	 * redqueen_reexec_step() (random_syscall/dispatch-step.c) reads
-	 * that bit only for an entry without the static REEXEC_SANITISE_OK,
-	 * and the setsockopt entry carries it, so no arm is kept out of
-	 * the re-exec step and the bit decides nothing today.  Reset to
-	 * false at the top of do_setsockopt() so a caller's stack-allocated
-	 * struct sockopt with garbage or stale bytes cannot ride the wrong
-	 * way.  Unrelated struct sockopt consumers (getsockopt sanitiser,
-	 * socket-setup helper) never read this bit so leaving it in its
-	 * default-false state is harmless there.
-	 */
-	bool reexec_scalar_safe;
 };
 
 struct netproto {

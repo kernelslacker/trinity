@@ -1043,8 +1043,8 @@ static bool redqueen_reexec_step(struct childdata *child,
 	 * entry-level REEXEC_SANITISE_OK is set (every arm of this
 	 * sanitise is re-exec safe) OR the parent dispatch's sanitise arm
 	 * lit the per-invocation rec->flags REEXEC_OK bit (op-multiplexed
-	 * sanitisers whose safety varies per (level, optname) / per (cmd,
-	 * arg) discriminator publish the bit from the arm that ran).
+	 * sanitisers whose safety varies per (cmd, arg) discriminator
+	 * publish the bit from the arm that ran).
 	 * rec->flags is reset in generate_syscall_args() before sanitise
 	 * runs, so the bit here reflects the arm that actually shaped the
 	 * dispatched call, not a stale inherit from a prior dispatch.
