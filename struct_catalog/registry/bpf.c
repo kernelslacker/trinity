@@ -59,7 +59,7 @@ const struct syscall_struct_arg struct_catalog_registry_bpf[] = {
 	/*
 	 * prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, sock_fprog *) cBPF
 	 * install arm.  Two-key row (option at a1, mode at a2).
-	 * Attribution-only; bespoke sanitise_prctl() PR_SET_SECCOMP arm
+	 * Attribution-only; bespoke sanitise_prctl_option() PR_SET_SECCOMP arm
 	 * owns the live fill via bpf_gen_seccomp().
 	 * See Documentation/struct_catalog.md.
 	 */

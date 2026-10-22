@@ -336,14 +336,106 @@ static void sanitise_get_auxv(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
 }
 
-/* We already got a generic_sanitise at this point */
-static void sanitise_prctl(struct syscallrecord *rec)
+static void sanitise_sched_core(struct syscallrecord *rec)
 {
-	int option = prctl_opts[rnd_modulo_u32(NR_PRCTL_OPTS)];
-	struct sock_fprog *bpf = NULL;
+	rec->a2 = rnd_modulo_u32(PR_SCHED_CORE_MAX); /* cmd: 0..3 */
+	rec->a3 = 0;                                  /* pid: self */
+	rec->a4 = rnd_modulo_u32(PR_SCHED_CORE_SCOPE_PROCESS_GROUP + 1); /* type: 0..2 */
+	rec->a5 = (rec->a2 == PR_SCHED_CORE_GET)
+		? (unsigned long)get_writable_address(sizeof(unsigned long))
+		: 0;
+}
 
-	rec->post_state = 0;
-	rec->a1 = option;
+static void sanitise_futex_hash(struct syscallrecord *rec)
+{
+	if (ONE_IN(2)) {
+		rec->a2 = PR_FUTEX_HASH_GET_SLOTS;
+		rec->a3 = 0;
+	} else {
+		rec->a2 = PR_FUTEX_HASH_SET_SLOTS;
+		if (ONE_IN(256))
+			rec->a3 = 0;                              /* global-hash: absorbing/irreversible per-mm; ONE_IN(256) keeps private-hash machinery alive */
+		else if (ONE_IN(32))
+			rec->a3 = 1;                              /* deliberate -EINVAL probe */
+		else
+			rec->a3 = 1u << (rnd_modulo_u32(8) + 1); /* valid: {2,4,...,256} */
+		rec->a4 = 0;                              /* required to be 0 */
+	}
+}
+
+static void sanitise_rseq_slice_extension(struct syscallrecord *rec)
+{
+	/*
+	 * arg2: sub-command — GET (1), SET (2); 3 is out-of-range
+	 * to keep the kernel's -EINVAL reject path covered.
+	 * For SET, arg3 carries the feature flag
+	 * (PR_RSEQ_SLICE_EXT_ENABLE = 0x01 to enable, 0 to
+	 * disable).  GET and the reject draw require
+	 * arg3-arg5 zero.  Per 4f56302c4d6d.
+	 */
+	static const unsigned long rseq_ext_cmds[] = {
+		PR_RSEQ_SLICE_EXTENSION_GET, PR_RSEQ_SLICE_EXTENSION_SET, 3,
+	};
+	unsigned long rseq_cmd = RAND_ARRAY(rseq_ext_cmds);
+
+	rec->a2 = rseq_cmd;
+	rec->a3 = (rseq_cmd == PR_RSEQ_SLICE_EXTENSION_SET)
+		? (RAND_BOOL() ? PR_RSEQ_SLICE_EXT_ENABLE : 0)
+		: 0;
+	rec->a4 = 0;
+	rec->a5 = 0;
+}
+
+static void sanitise_timer_create_restore_ids(struct syscallrecord *rec)
+{
+	/*
+	 * arg2: OFF (0), ON (1), GET (2); 3 is out-of-range to
+	 * keep the kernel's -EINVAL reject path covered.
+	 * arg3-arg5 must be zero — the kernel rejects non-zero
+	 * trailing args with -EINVAL.  Per 4f56302c4d6d.
+	 */
+	static const unsigned long timer_restore_cmds[] = {
+		PR_TIMER_CREATE_RESTORE_IDS_OFF,
+		PR_TIMER_CREATE_RESTORE_IDS_ON,
+		PR_TIMER_CREATE_RESTORE_IDS_GET,
+		3,
+	};
+	rec->a2 = RAND_ARRAY(timer_restore_cmds);
+	rec->a3 = 0;
+	rec->a4 = 0;
+	rec->a5 = 0;
+}
+
+static void sanitise_set_thp_disable(struct syscallrecord *rec)
+{
+	/*
+	 * arg2: bool 0 (re-enable THP) or 1 (disable THP).
+	 * arg3: flags, only meaningful when disabling (arg2 != 0):
+	 *   0                             normal disable,
+	 *   PR_THP_DISABLE_EXCEPT_ADVISED (1<<1) keeps THP active
+	 *   only for madvise(MADV_HUGEPAGE) regions (kernel 6.16+,
+	 *   4f56302c4d6d); 4 is out-of-range to cover the reject
+	 *   path.  Nonzero flags with arg2==0 are rejected by the
+	 *   kernel, so arg3 must be 0 when re-enabling THP.
+	 *   arg4-arg5 must be zero.
+	 */
+	static const unsigned long thp_flags[] = {
+		0, PR_THP_DISABLE_EXCEPT_ADVISED, 4,
+	};
+	rec->a2 = RAND_BOOL();
+	rec->a3 = rec->a2 ? RAND_ARRAY(thp_flags) : 0;
+	rec->a4 = 0;
+	rec->a5 = 0;
+}
+
+/*
+ * Shape the arguments for the drawn @option.  Returns the heap sock_fprog
+ * a PR_SET_SECCOMP draw allocated, for the post_state snapshot.
+ */
+static struct sock_fprog *sanitise_prctl_option(struct syscallrecord *rec,
+						int option)
+{
+	struct sock_fprog *bpf = NULL;
 
 	switch (option) {
 	case PR_SET_SECCOMP:
@@ -448,205 +540,70 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		break;
 
 	case PR_SCHED_CORE:
-		rec->a2 = rnd_modulo_u32(PR_SCHED_CORE_MAX); /* cmd: 0..3 */
-		rec->a3 = 0;                                  /* pid: self */
-		rec->a4 = rnd_modulo_u32(PR_SCHED_CORE_SCOPE_PROCESS_GROUP + 1); /* type: 0..2 */
-		rec->a5 = (rec->a2 == PR_SCHED_CORE_GET)
-			? (unsigned long)get_writable_address(sizeof(unsigned long))
-			: 0;
+		sanitise_sched_core(rec);
 		break;
 
 	case PR_FUTEX_HASH:
-		if (ONE_IN(2)) {
-			rec->a2 = PR_FUTEX_HASH_GET_SLOTS;
-			rec->a3 = 0;
-		} else {
-			rec->a2 = PR_FUTEX_HASH_SET_SLOTS;
-			if (ONE_IN(256))
-				rec->a3 = 0;                              /* global-hash: absorbing/irreversible per-mm; ONE_IN(256) keeps private-hash machinery alive */
-			else if (ONE_IN(32))
-				rec->a3 = 1;                              /* deliberate -EINVAL probe */
-			else
-				rec->a3 = 1u << (rnd_modulo_u32(8) + 1); /* valid: {2,4,...,256} */
-			rec->a4 = 0;                              /* required to be 0 */
-		}
+		sanitise_futex_hash(rec);
 		break;
 
-	case PR_RSEQ_SLICE_EXTENSION: {
-		/*
-		 * arg2: sub-command — GET (1), SET (2); 3 is out-of-range
-		 * to keep the kernel's -EINVAL reject path covered.
-		 * For SET, arg3 carries the feature flag
-		 * (PR_RSEQ_SLICE_EXT_ENABLE = 0x01 to enable, 0 to
-		 * disable).  GET and the reject draw require
-		 * arg3-arg5 zero.  Per 4f56302c4d6d.
-		 */
-		static const unsigned long rseq_ext_cmds[] = {
-			PR_RSEQ_SLICE_EXTENSION_GET, PR_RSEQ_SLICE_EXTENSION_SET, 3,
-		};
-		unsigned long rseq_cmd = RAND_ARRAY(rseq_ext_cmds);
-
-		rec->a2 = rseq_cmd;
-		rec->a3 = (rseq_cmd == PR_RSEQ_SLICE_EXTENSION_SET)
-			? (RAND_BOOL() ? PR_RSEQ_SLICE_EXT_ENABLE : 0)
-			: 0;
-		rec->a4 = 0;
-		rec->a5 = 0;
+	case PR_RSEQ_SLICE_EXTENSION:
+		sanitise_rseq_slice_extension(rec);
 		break;
-	}
 
-	case PR_TIMER_CREATE_RESTORE_IDS: {
-		/*
-		 * arg2: OFF (0), ON (1), GET (2); 3 is out-of-range to
-		 * keep the kernel's -EINVAL reject path covered.
-		 * arg3-arg5 must be zero — the kernel rejects non-zero
-		 * trailing args with -EINVAL.  Per 4f56302c4d6d.
-		 */
-		static const unsigned long timer_restore_cmds[] = {
-			PR_TIMER_CREATE_RESTORE_IDS_OFF,
-			PR_TIMER_CREATE_RESTORE_IDS_ON,
-			PR_TIMER_CREATE_RESTORE_IDS_GET,
-			3,
-		};
-		rec->a2 = RAND_ARRAY(timer_restore_cmds);
-		rec->a3 = 0;
-		rec->a4 = 0;
-		rec->a5 = 0;
+	case PR_TIMER_CREATE_RESTORE_IDS:
+		sanitise_timer_create_restore_ids(rec);
 		break;
-	}
 
-	case PR_SET_THP_DISABLE: {
-		/*
-		 * arg2: bool 0 (re-enable THP) or 1 (disable THP).
-		 * arg3: flags, only meaningful when disabling (arg2 != 0):
-		 *   0                             normal disable,
-		 *   PR_THP_DISABLE_EXCEPT_ADVISED (1<<1) keeps THP active
-		 *   only for madvise(MADV_HUGEPAGE) regions (kernel 6.16+,
-		 *   4f56302c4d6d); 4 is out-of-range to cover the reject
-		 *   path.  Nonzero flags with arg2==0 are rejected by the
-		 *   kernel, so arg3 must be 0 when re-enabling THP.
-		 *   arg4-arg5 must be zero.
-		 */
-		static const unsigned long thp_flags[] = {
-			0, PR_THP_DISABLE_EXCEPT_ADVISED, 4,
-		};
-		rec->a2 = RAND_BOOL();
-		rec->a3 = rec->a2 ? RAND_ARRAY(thp_flags) : 0;
-		rec->a4 = 0;
-		rec->a5 = 0;
+	case PR_SET_THP_DISABLE:
+		sanitise_set_thp_disable(rec);
 		break;
-	}
 
 	default:
 		break;
 	}
 
-	/*
-	 * Options with post-handler work get a snapshot of the option (and
-	 * the heap sock_fprog, for PR_SET_SECCOMP) so the post path can
-	 * dispatch off snap->option (immune to a sibling scribble of
-	 * rec->a1) and read bpf from snap->bpf (immune to a scribble of
-	 * rec->a3).  Two SET options have side-effects to handle:
-	 * PR_SET_SECCOMP frees the heap sock_fprog and PR_SET_NO_NEW_PRIVS
-	 * runs the sticky-flag oracle.  The PR_GET_* family below carries
-	 * per-option STRONG-VAL retval bounds: each getter has a tight ABI
-	 * (a single bit, a small enum, a sub-byte bitmask) that is much
-	 * narrower than the generic 64-bit return slot, and any value
-	 * outside the listed set on the success path is a corruption shape
-	 * worth catching (a -errno leak, a sign-extension tear, a torn read
-	 * of the source field, or a dispatch into the wrong getter).
-	 * Options with no post-handler work skip the snap entirely -- their
-	 * post path is empty and a sibling-induced flip into them simply
-	 * returns early on snap == NULL.
-	 */
-	switch (option) {
-	case PR_FUTEX_HASH:
-	case PR_SET_SECCOMP:
-	case PR_SET_NO_NEW_PRIVS:
-	case PR_SET_NAME:
-	case PR_SET_DUMPABLE:
-	case PR_SET_KEEPCAPS:
-	case PR_SET_PDEATHSIG:
-	case PR_GET_PDEATHSIG:
-	case PR_GET_KEEPCAPS:
-	case PR_GET_DUMPABLE:
-	case PR_GET_NAME:
-	case PR_GET_NO_NEW_PRIVS:
-	case PR_CAPBSET_READ:
-	case PR_GET_TIMING:
-	case PR_GET_FPEXC:
-	case PR_GET_FPEMU:
-	case PR_GET_TSC:
-	case PR_GET_THP_DISABLE:
-	case PR_GET_CHILD_SUBREAPER:
-	case PR_GET_SECCOMP: {
-		struct prctl_post_state *snap = zmalloc_tracked(sizeof(*snap));
+	return bpf;
+}
 
-		snap->magic = PRCTL_POST_STATE_MAGIC;
-		snap->option = option;
-		snap->bpf = bpf;
-		snap->set_arg = rec->a2;
-		if (option == PR_SET_NAME && rec->a2 != 0) {
-			const unsigned char *src =
-				(const unsigned char *) rec->a2;
-			size_t i;
-
-			/*
-			 * Mirror what the kernel stores in task->comm:
-			 * copy bytes until first NUL or 15 chars, then
-			 * NUL-terminate.  zmalloc_tracked already zeroed
-			 * the trailing bytes.
-			 */
-			for (i = 0; i < 15; i++) {
-				snap->set_name[i] = src[i];
-				if (src[i] == '\0')
-					break;
-			}
-		}
-		rec->post_state = (unsigned long) snap;
-		post_state_register(snap);
-		break;
-	}
-	default:
-		break;
-	}
-
-	/*
-	 * Publish per-invocation REEXEC_OK for scalar-only prctl options
-	 * whose payload is a fixed-size scalar (int / bool / bitmask)
-	 * with no nested pointer chains, no INOUT / output buffers, no
-	 * shared-buffer relocation, and no bespoke deferred-free arm --
-	 * the post_state snapshot the second switch above registers is a
-	 * pure retval / stored-value readback oracle that stays coherent
-	 * across a CMP RedQueen re-exec (the SET is idempotent for these
-	 * scalar-only arms, and the readback compares against the
-	 * captured set_arg which does not depend on which of the two
-	 * dispatches the reaper observes).  See include/syscall.h
-	 * REEXEC_OK for the safety contract and
-	 * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
-	 * that consumes this bit -- the syscall entry lacks the static
-	 * REEXEC_SANITISE_OK because prctl multiplexes to pointer /
-	 * heap-carrying arms (PR_SET_NAME / PR_GET_NAME 16-byte comm
-	 * buffer, PR_SET_MM prctl_mm_map struct, PR_SET_VMA path
-	 * pointer, PR_SET_SECCOMP sock_fprog + bpf heap arm,
-	 * PR_GET_AUXV auxv out-buffer, PR_GET_TID_ADDRESS /
-	 * PR_GET_SHADOW_STACK_STATUS unsigned-long out-slot, and the
-	 * PR_GET_PDEATHSIG / PR_GET_UNALIGN / PR_GET_FPEMU /
-	 * PR_GET_FPEXC / PR_GET_TSC / PR_GET_ENDIAN /
-	 * PR_GET_CHILD_SUBREAPER family whose arg2 the sanitise arm
-	 * above rewrote to a shared writable out-buffer whose content
-	 * mutates between the two re-execs) that cannot ride the gate.
-	 * Retval-only getters are safe here because the kernel writes
-	 * nothing user-visible outside the syscall return slot.
-	 */
+/*
+ * Publish per-invocation REEXEC_OK for scalar-only prctl options
+ * whose payload is a fixed-size scalar (int / bool / bitmask)
+ * with no nested pointer chains, no INOUT / output buffers, no
+ * shared-buffer relocation, and no bespoke deferred-free arm --
+ * the post_state snapshot sanitise_prctl() registers is a
+ * pure retval / stored-value readback oracle that stays coherent
+ * across a CMP RedQueen re-exec (the SET is idempotent for these
+ * scalar-only arms, and the readback compares against the
+ * captured set_arg which does not depend on which of the two
+ * dispatches the reaper observes).  See include/syscall.h
+ * REEXEC_OK for the safety contract and
+ * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
+ * that consumes this bit -- the syscall entry lacks the static
+ * REEXEC_SANITISE_OK because prctl multiplexes to pointer /
+ * heap-carrying arms (PR_SET_NAME / PR_GET_NAME 16-byte comm
+ * buffer, PR_SET_MM prctl_mm_map struct, PR_SET_VMA path
+ * pointer, PR_SET_SECCOMP sock_fprog + bpf heap arm,
+ * PR_GET_AUXV auxv out-buffer, PR_GET_TID_ADDRESS /
+ * PR_GET_SHADOW_STACK_STATUS unsigned-long out-slot, and the
+ * PR_GET_PDEATHSIG / PR_GET_UNALIGN / PR_GET_FPEMU /
+ * PR_GET_FPEXC / PR_GET_TSC / PR_GET_ENDIAN /
+ * PR_GET_CHILD_SUBREAPER family whose arg2 the sanitise arm
+ * rewrote to a shared writable out-buffer whose content
+ * mutates between the two re-execs) that cannot ride the gate.
+ * Retval-only getters are safe here because the kernel writes
+ * nothing user-visible outside the syscall return slot.
+ */
+static void prctl_mark_reexec_ok(struct syscallrecord *rec, int option)
+{
 	switch (option) {
 	/*
 	 * Pure scalar SETs.  Kernel reads the arg as an unsigned long
 	 * without dereferencing any pointer.  PR_SET_TSC /
 	 * PR_SET_SHADOW_STACK_STATUS / PR_SET_SYSCALL_USER_DISPATCH
 	 * were pinned to safe/idempotent values by their sanitise arms
-	 * above; PR_SET_NO_NEW_PRIVS is a sticky one-way bit whose
-	 * second SET is a no-op.
+	 * in sanitise_prctl_option(); PR_SET_NO_NEW_PRIVS is a sticky
+	 * one-way bit whose second SET is a no-op.
 	 */
 	case PR_SET_PDEATHSIG:
 	case PR_SET_DUMPABLE:
@@ -720,6 +677,93 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	default:
 		break;
 	}
+}
+
+/* We already got a generic_sanitise at this point */
+static void sanitise_prctl(struct syscallrecord *rec)
+{
+	int option = prctl_opts[rnd_modulo_u32(NR_PRCTL_OPTS)];
+	struct sock_fprog *bpf;
+
+	rec->post_state = 0;
+	rec->a1 = option;
+
+	bpf = sanitise_prctl_option(rec, option);
+
+	/*
+	 * Options with post-handler work get a snapshot of the option (and
+	 * the heap sock_fprog, for PR_SET_SECCOMP) so the post path can
+	 * dispatch off snap->option (immune to a sibling scribble of
+	 * rec->a1) and read bpf from snap->bpf (immune to a scribble of
+	 * rec->a3).  Two SET options have side-effects to handle:
+	 * PR_SET_SECCOMP frees the heap sock_fprog and PR_SET_NO_NEW_PRIVS
+	 * runs the sticky-flag oracle.  The PR_GET_* family below carries
+	 * per-option STRONG-VAL retval bounds: each getter has a tight ABI
+	 * (a single bit, a small enum, a sub-byte bitmask) that is much
+	 * narrower than the generic 64-bit return slot, and any value
+	 * outside the listed set on the success path is a corruption shape
+	 * worth catching (a -errno leak, a sign-extension tear, a torn read
+	 * of the source field, or a dispatch into the wrong getter).
+	 * Options with no post-handler work skip the snap entirely -- their
+	 * post path is empty and a sibling-induced flip into them simply
+	 * returns early on snap == NULL.  The magic stamp and the
+	 * post_state_register() call stay in this body rather than a helper:
+	 * post-state-ownership.sh audits the .sanitise handler's own body
+	 * for the pair.
+	 */
+	switch (option) {
+	case PR_FUTEX_HASH:
+	case PR_SET_SECCOMP:
+	case PR_SET_NO_NEW_PRIVS:
+	case PR_SET_NAME:
+	case PR_SET_DUMPABLE:
+	case PR_SET_KEEPCAPS:
+	case PR_SET_PDEATHSIG:
+	case PR_GET_PDEATHSIG:
+	case PR_GET_KEEPCAPS:
+	case PR_GET_DUMPABLE:
+	case PR_GET_NAME:
+	case PR_GET_NO_NEW_PRIVS:
+	case PR_CAPBSET_READ:
+	case PR_GET_TIMING:
+	case PR_GET_FPEXC:
+	case PR_GET_FPEMU:
+	case PR_GET_TSC:
+	case PR_GET_THP_DISABLE:
+	case PR_GET_CHILD_SUBREAPER:
+	case PR_GET_SECCOMP: {
+		struct prctl_post_state *snap = zmalloc_tracked(sizeof(*snap));
+
+		snap->magic = PRCTL_POST_STATE_MAGIC;
+		snap->option = option;
+		snap->bpf = bpf;
+		snap->set_arg = rec->a2;
+		if (option == PR_SET_NAME && rec->a2 != 0) {
+			const unsigned char *src =
+				(const unsigned char *) rec->a2;
+			size_t i;
+
+			/*
+			 * Mirror what the kernel stores in task->comm:
+			 * copy bytes until first NUL or 15 chars, then
+			 * NUL-terminate.  zmalloc_tracked already zeroed
+			 * the trailing bytes.
+			 */
+			for (i = 0; i < 15; i++) {
+				snap->set_name[i] = src[i];
+				if (src[i] == '\0')
+					break;
+			}
+		}
+		rec->post_state = (unsigned long) snap;
+		post_state_register(snap);
+		break;
+	}
+	default:
+		break;
+	}
+
+	prctl_mark_reexec_ok(rec, option);
 }
 
 static void post_set_seccomp(struct prctl_post_state *snap)

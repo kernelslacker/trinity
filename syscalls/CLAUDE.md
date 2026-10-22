@@ -35,7 +35,7 @@ generic arg generation off `argtype[]`); 271 define at least one
 `.cleanup`, 3 explicitly call `generic_sanitise`.
 
 **Outliers: syscalls with substantial standalone logic (>400 LOC).** By line
-count: `process/prctl.c` (1246), `socket/setsockopt.c` (986, +
+count: `process/prctl.c` (1317), `socket/setsockopt.c` (986, +
 `setsockopt-internal.h`), `perf/perf_event_open-pmu-discovery.c` (860),
 `io_uring/io_uring_register-payloads.c` (830), `fs/fcntl.c` (810),
 `socket/recv.c` (808), `xattr/listxattr.c` (789), `socket/send.c` (775),

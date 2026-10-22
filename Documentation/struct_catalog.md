@@ -176,7 +176,7 @@ Two syscall entry points install the same cBPF program shape:
   == `PR_SET_SECCOMP`, mode at a2 == `SECCOMP_MODE_FILTER`).
 
 Both are attribution-only. The bespoke `sanitise_seccomp()` and
-`sanitise_prctl()` PR_SET_SECCOMP arm own the live fill via
+`sanitise_prctl_option()` PR_SET_SECCOMP arm own the live fill via
 `bpf_gen_seccomp()`, which builds a Markov-chain cBPF program the
 kernel verifier will load; an `FT_RAW` splat across `sock_filter[]`
 insn words could not. `argtype` for the args slot is `ARG_ADDRESS` /
