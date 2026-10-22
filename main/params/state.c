@@ -93,10 +93,10 @@ unsigned int writer_pin_stride = 1;
  * hardware WRITE breakpoint on the given 8-byte address; armed per-
  * child after fork (writer-watch.c::writer_watch_arm_child()); SIGTRAP
  * fires synchronously in the writing child at the exact instruction;
- * the handler in signals.c::writer_trap_handler dumps writer_pc +
- * syscall nr + childop + op_nr + pid -- the exact wild writer.  The
- * address is typically the bad_addr surfaced by a prior Stage-1
- * --writer-pin-sweep run.  Zero = disabled (default). */
+ * the handler in health/signals-fault-handler.c::writer_trap_handler
+ * dumps writer_pc + syscall nr + childop + op_nr + pid -- the exact
+ * wild writer.  The address is typically the bad_addr surfaced by a
+ * prior Stage-1 --writer-pin-sweep run.  Zero = disabled (default). */
 unsigned long writer_watch_addr = 0;
 
 unsigned long epoch_iterations = 0;

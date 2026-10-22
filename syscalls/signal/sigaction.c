@@ -70,15 +70,15 @@ static const unsigned int sa_flag_pool[] = {
  * draw that pairs one of those signos with the SIG_DFL/SIG_IGN/dummy/
  * wild-pointer handler bucket in alloc_sigaction() replaces trinity's
  * own child_fault_handler (installed exactly once per child in
- * signals.c::mask_signals_child, never re-armed), so the next benign
- * self-fault -- a scrubbed-pointer deref during arg-gen, a sibling shm
- * scribble -- either kills the child uncaught or is mis-attributed by
- * the parent's reaper as a kernel crash.  Same self-instrumentation-
- * defeat class as PR_SET_MDWE in prctl().  The fault signals stay
- * reachable via the small fault_class_signals[] bucket in
- * pick_signal_target() so install-path coverage for those signos is
- * preserved at a rate low enough not to dominate runs with mis-
- * attributed deaths.
+ * health/signals-policy.c::mask_signals_child, never re-armed), so the
+ * next benign self-fault -- a scrubbed-pointer deref during arg-gen, a
+ * sibling shm scribble -- either kills the child uncaught or is
+ * mis-attributed by the parent's reaper as a kernel crash.  Same
+ * self-instrumentation-defeat class as PR_SET_MDWE in prctl().  The
+ * fault signals stay reachable via the small fault_class_signals[]
+ * bucket in pick_signal_target() so install-path coverage for those
+ * signos is preserved at a rate low enough not to dominate runs with
+ * mis-attributed deaths.
  *
  * SIGKILL/SIGSTOP are rejected by the kernel before sa_flags are ever
  * inspected; the forbidden bucket targets them explicitly to keep the
@@ -108,8 +108,8 @@ static const unsigned long fault_class_signals[] = {
  * passes the cursory access check; the kernel does not deref this on
  * the install path (only on delivery), but having one bucket aim at a
  * mapped code address keeps the install-side cache effects realistic.
- * sighandler() in signals.c is static, so we route through a local
- * function whose address we can take.
+ * sighandler() in health/signals-policy.c is static, so we route
+ * through a local function whose address we can take.
  */
 static void sigaction_dummy_handler(int sig)
 {

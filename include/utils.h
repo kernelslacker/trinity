@@ -57,12 +57,13 @@
 
 /*
  * Restartable waitpid() wrapper.  Trinity installs SIGALRM and SIGXCPU
- * without SA_RESTART (signals.c), so any blocking waitpid() in a non-
- * syscall path can return -1/EINTR.  Every reap site needs the wait to
- * either complete or fail terminally; treating EINTR as "done" leaves a
- * child unreaped and, for sites that tear down a shared mapping right
- * after the wait (barrier-racer, futex-storm), leaves a worker that will
- * fault when it next touches the destroyed barrier.
+ * without SA_RESTART (health/signals-policy.c), so any blocking
+ * waitpid() in a non-syscall path can return -1/EINTR.  Every reap site
+ * needs the wait to either complete or fail terminally; treating EINTR
+ * as "done" leaves a child unreaped and, for sites that tear down a
+ * shared mapping right after the wait (barrier-racer, futex-storm),
+ * leaves a worker that will fault when it next touches the destroyed
+ * barrier.
  *
  * WNOHANG semantics are preserved: the wrapper returns 0 (not block) when
  * no child has exited, because rc == 0 falls out of the loop condition;

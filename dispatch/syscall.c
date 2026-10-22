@@ -64,7 +64,8 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * SIGSEGV/SIGBUS/SIGILL/SIGABRT is treated as fuzzer noise (the
 	 * child just executed kill/tkill/tgkill/rt_sigqueueinfo/
 	 * pidfd_send_signal at itself) and the child exits silently
-	 * instead of pouring a bug log into /tmp/.  See signals.c. */
+	 * instead of pouring a bug log into /tmp/.  See
+	 * health/signals-fault-handler.c. */
 	in_do_syscall = 1;
 
 	/* The grandchild keeps a call's effect on the process out of this

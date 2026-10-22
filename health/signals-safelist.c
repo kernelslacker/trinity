@@ -5,7 +5,7 @@
 
 /*
  * CHILD-NON-FATAL set.  Derived from the policy mask_signals_child() in
- * signals.c installs on every fuzz child:
+ * signals-policy.c installs on every fuzz child:
  *
  *   SIGFPE, SIGTSTP, SIGWINCH, SIGIO, SIGPIPE, SIGXFSZ
  *     Explicitly SIG_IGN'd by mask_signals_child() -- kernel discards

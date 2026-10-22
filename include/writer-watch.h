@@ -8,9 +8,9 @@
  * perf_event_open(PERF_TYPE_BREAKPOINT, HW_BREAKPOINT_W) on the address
  * passed via --writer-watch.  A write to the watched address traps
  * synchronously in the writing child at the exact instruction; the
- * SIGTRAP handler in signals.c (writer_trap_handler) dumps the writer
- * PC, syscall nr, childop, op_nr and pid, then _exit()s so the trap
- * does not re-fire on resume.
+ * SIGTRAP handler in health/signals-fault-handler.c (writer_trap_handler)
+ * dumps the writer PC, syscall nr, childop, op_nr and pid, then
+ * _exit()s so the trap does not re-fire on resume.
  *
  * This is the WRITER-NAMER half of the writer-pinning canary.  Stage 1
  * (--writer-pin-sweep) hands an address to this stage; Stage 2 names

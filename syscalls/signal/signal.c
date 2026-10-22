@@ -16,12 +16,13 @@
  * an ARG_ADDRESS draw that frequently resolves to a wild rand-shaped
  * pointer, and pairing one of the fault signos with that draw
  * permanently replaces trinity's per-child child_fault_handler
- * (installed exactly once per child in signals.c::mask_signals_child,
- * never re-armed).  The next benign self-fault is then either killed
- * uncaught or mis-attributed by the parent's reaper as a kernel crash.
- * The fault signals stay reachable via the small fault_class_signals[]
- * bucket in pick_signal_target() so install-path coverage for those
- * signos is preserved at a rate low enough not to dominate runs with
+ * (installed exactly once per child in
+ * health/signals-policy.c::mask_signals_child, never re-armed).  The
+ * next benign self-fault is then either killed uncaught or
+ * mis-attributed by the parent's reaper as a kernel crash.  The fault
+ * signals stay reachable via the small fault_class_signals[] bucket in
+ * pick_signal_target() so install-path coverage for those signos is
+ * preserved at a rate low enough not to dominate runs with
  * mis-attributed deaths.
  *
  * SIGKILL/SIGSTOP are rejected by the kernel; the forbidden bucket

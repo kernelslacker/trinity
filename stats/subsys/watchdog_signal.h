@@ -4,8 +4,8 @@
 /*
  * watchdog signal-handler clobber + reinstall accounting.  Sampled
  * from the arm-site probe (sigaction NULL read + reinstall) in
- * health/signals.c around every alarm(1) arm on the alt-op dispatch
- * and NEED_ALARM syscall paths.
+ * watchdog_signals_rearm() (health/signals-policy.c) before every
+ * alarm(1) arm on the alt-op dispatch and NEED_ALARM syscall paths.
  *
  * Bespoke (non-category) RAW group.  All bumps RELAXED on shm->stats.
  * The surrounding struct stats_s composes an instance of struct

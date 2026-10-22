@@ -179,11 +179,12 @@ static int reconcile_addr_len(struct syscallrecord *rec,
  * range early-continues (no bump).
  *
  * The walk itself is wrapped in the asb_copy_active / asb_copy_recover
- * sigsetjmp slot (see health/signals.c and post_snapshot_or_skip in
- * utils/post_snapshot.c) so a TOCTOU fault -- a sibling mprotect /
- * munmap in the window between the two proofs and the loads/stores
- * below -- unwinds to a skipped repair rather than a child SIGSEGV.
- * @j is volatile to silence -Wclobbered across the sigsetjmp edge.
+ * sigsetjmp slot (see health/signals-fault-handler.c and
+ * post_snapshot_or_skip in utils/post_snapshot.c) so a TOCTOU fault --
+ * a sibling mprotect / munmap in the window between the two proofs and
+ * the loads/stores below -- unwinds to a skipped repair rather than a
+ * child SIGSEGV.  @j is volatile to silence -Wclobbered across the
+ * sigsetjmp edge.
  */
 static void repair_iovec_extents_user(struct iovec *iov, unsigned long count)
 {

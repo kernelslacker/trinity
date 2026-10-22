@@ -92,7 +92,8 @@ void init_child(struct childdata *child, int childno)
 	 * flush them into the on-disk bug log on a real crash.
 	 * Clean exits discard the memfd with the process so trinity's
 	 * own outputerr() noise never reaches disk.  Falls back to
-	 * /dev/null on memfd_create() failure (see signals.c).
+	 * /dev/null on memfd_create() failure (see
+	 * health/signals-precrash.c).
 	 */
 	init_stderr_memfd();
 
@@ -127,11 +128,11 @@ void init_child(struct childdata *child, int childno)
 	 * silent abort(); with M_CHECK_ACTION=3 it formats a fuller
 	 * message ("free(): double free detected in tcache 2",
 	 * "malloc(): unsorted double linked list corrupted", &c) into
-	 * __abort_msg before raising SIGABRT.  The fault handler in
-	 * signals.c reads that pointer (cached at init_abort_msg_capture
-	 * time below) and writes it into the per-pid bug log, which is
-	 * what lets the post-mortem bucket aborts by corruption mode
-	 * rather than landing them all under malloc+0x150.
+	 * __abort_msg before raising SIGABRT.  The crash-time bug-log
+	 * capture in health/signals-precrash.c reads that pointer (cached
+	 * by init_abort_msg_capture) and writes it into the per-pid bug
+	 * log, which is what lets the post-mortem bucket aborts by
+	 * corruption mode rather than landing them all under malloc+0x150.
 	 *
 	 * Use mallopt() rather than MALLOC_CHECK_=3 in the environment:
 	 * trinity fuzzes execve, and any leaked MALLOC_CHECK_ in the

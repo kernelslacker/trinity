@@ -496,19 +496,19 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	/* In-child watchdog eviction window.  The 1s alarm above bounds
 	 * how long the kernel can hold us inside a single syscall; on
 	 * fire it interrupts the syscall with EINTR and the handler in
-	 * signals.c sets sigalrm_pending.  We do the fd-eviction work
-	 * HERE -- after the syscall has returned and alarm(0) has
-	 * disarmed, but BEFORE the lock region below publishes state =
-	 * AFTER -- rather than from the signal handler (async-signal-
-	 * unsafe to walk fd_event_ring there) or from the child main
-	 * loop's sigalrm_pending branch (which the BEFORE -> AFTER
-	 * transition would otherwise race past, leaving the eviction
-	 * unreachable).  The conjunction below is the conservative
-	 * "our watchdog actually fired on a blocking syscall" predicate:
-	 * sigalrm_pending alone can be set by any fuzzed SIGALRM source,
-	 * but the combination of our own alarm being armed, the syscall
-	 * returning EINTR, and the child running a normal syscall op is
-	 * specific to the watchdog path. */
+	 * health/signals-policy.c sets sigalrm_pending.  We do the
+	 * fd-eviction work HERE -- after the syscall has returned and
+	 * alarm(0) has disarmed, but BEFORE the lock region below
+	 * publishes state = AFTER -- rather than from the signal handler
+	 * (async-signal-unsafe to walk fd_event_ring there) or from the
+	 * child main loop's sigalrm_pending branch (which the BEFORE ->
+	 * AFTER transition would otherwise race past, leaving the
+	 * eviction unreachable).  The conjunction below is the
+	 * conservative "our watchdog actually fired on a blocking
+	 * syscall" predicate: sigalrm_pending alone can be set by any
+	 * fuzzed SIGALRM source, but the combination of our own alarm
+	 * being armed, the syscall returning EINTR, and the child running
+	 * a normal syscall op is specific to the watchdog path. */
 	if (needalarm && sigalrm_pending &&
 	    ret == (unsigned long)-1L && saved_errno == EINTR &&
 	    child != NULL && child->op_type == CHILD_OP_SYSCALL) {

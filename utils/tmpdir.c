@@ -21,10 +21,11 @@
 /*
  * Absolute path of trinity's tmp/ directory, resolved once at startup
  * inside change_tmp_dir().  Used by the per-child crash log redirect in
- * signals.c so the path is stable even if a child fuzzes chdir() out
- * from under itself.  Empty string until change_tmp_dir() succeeds;
- * trinity_tmpdir_abs() returns "/tmp" as a safe fallback in that case
- * so a degraded run still puts the log somewhere writable.
+ * health/signals-precrash.c so the path is stable even if a child
+ * fuzzes chdir() out from under itself.  Empty string until
+ * change_tmp_dir() succeeds; trinity_tmpdir_abs() returns "/tmp" as a
+ * safe fallback in that case so a degraded run still puts the log
+ * somewhere writable.
  */
 static char tmp_dir_abs[PATH_MAX];
 
@@ -60,9 +61,9 @@ void change_tmp_dir(void)
 	}
 
 	/* Resolve tmp/ to an absolute path so the per-child crash log
-	 * redirect in signals.c lands in the right place even after a
-	 * fuzzed chdir() in the child.  Best-effort -- on failure we fall
-	 * back to /tmp via trinity_tmpdir_abs(). */
+	 * redirect in health/signals-precrash.c lands in the right
+	 * place even after a fuzzed chdir() in the child.  Best-effort
+	 * -- on failure we fall back to /tmp via trinity_tmpdir_abs(). */
 	if (getcwd(tmp_dir_abs, sizeof(tmp_dir_abs)) == NULL)
 		tmp_dir_abs[0] = '\0';
 }
