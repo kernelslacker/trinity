@@ -628,11 +628,10 @@ struct frontier_discriminator_stats {
 	 *  frontier_live_cool_spared_windowed
 	 *      Cumulative: subset of candidates spared because the per-
 	 *      syscall K-window frontier-edge ring (frontier_recent_
-	 *      count) is nonzero -- the bpf-class backstop the design
-	 *      note's §3.2 (c) names.  A syscall whose ring still
-	 *      holds edges is recently productive regardless of every
-	 *      other signal; the windowed lane wins over arggen /
-	 *      objproducer in the spare cascade.
+	 *      count) is nonzero -- the bpf-class backstop.  A syscall
+	 *      whose ring still holds edges is recently productive
+	 *      regardless of every other signal; the windowed lane wins
+	 *      over arggen / objproducer in the spare cascade.
 	 *  frontier_live_cool_spared_arggen
 	 *      Cumulative: subset of candidates spared because the per-
 	 *      syscall arg-gen-progress lane fired -- distinct CMP-

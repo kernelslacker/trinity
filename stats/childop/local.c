@@ -67,8 +67,8 @@ void dump_stats_childop_runs_local(void)
  * cumulative childop_edges_clean[] / childop_wall_ns[] denominators so
  * the operator can read recent vs lifetime yield in the same row.  No
  * scheduler / picker / canary path reads either ring -- the dump is the
- * only consumer today; the C2 spec's future util-table extension is the
- * next consumer.  Skips CHILD_OP_SYSCALL (the syscall path attributes
+ * only consumer today; the future util-table reader is the next
+ * consumer.  Skips CHILD_OP_SYSCALL (the syscall path attributes
  * its work through the per-strategy counters, matching the surrounding
  * per-childop dumps) and skips never-invoked ops (skip-zero convention).
  */

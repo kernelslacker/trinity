@@ -5,7 +5,7 @@
  * hint pool, the oldpool-vs-shadow diagnostic tables, the PC-win
  * conversion split, and the SHADOW per-entry feedback plus recent-CMP-
  * pool tier rows.  This maps to the raw cmp_hints/ pool layer, not the
- * typed hypothesis layer that lives in stats/kcov/cmp/hyp.c.
+ * typed hypothesis layer that lives in stats/kcov/cmp/hyp_*.c.
  */
 
 #include <errno.h>

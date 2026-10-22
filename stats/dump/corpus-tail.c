@@ -103,8 +103,7 @@ static void dump_corpus_stack_depth(void)
 /* CMP-source save / win telemetry.  Always emit when the
  * minicorpus block is being dumped -- a zero on saves_cmp is
  * itself a signal worth seeing ("the gate widening is in but
- * the path isn't firing"), per the falsification criteria in
- * the investigations/ analysis. */
+ * the path isn't firing"). */
 static void dump_corpus_saves(void)
 {
 	unsigned long saves_pc = __atomic_load_n(

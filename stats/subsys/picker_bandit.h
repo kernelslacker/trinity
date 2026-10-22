@@ -12,10 +12,10 @@
  * warm-plateau wall-lever eligibility + would-suppress projection,
  * and reach-banded silent-regime picker weight adjustment (per-band
  * classification + would-demote/would-boost dispositions).  See
- * include/reach-band.h for the band contract and include/cmp-hyp.h
- * for the deep-but-warm predicate.  The surrounding struct stats_s
- * composes an instance of struct picker_bandit_stats as its
- * "picker_bandit" member.
+ * include/reach-band.h for the band contract and
+ * random_syscall/warm-reserve.c for the deep-but-warm predicate.  The
+ * surrounding struct stats_s composes an instance of struct
+ * picker_bandit_stats as its "picker_bandit" member.
  */
 struct picker_bandit_stats {
 	/* Bandit secondary reward-term firing (CMP + edge-count).

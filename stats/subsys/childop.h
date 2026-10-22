@@ -424,9 +424,9 @@ struct childop_stats {
 	 * per-window child counts.
 	 * Sum across the ring is the op's "recent" edge or wall total over
 	 * the last CHILDOP_DECAY_WINDOWS rotations -- the input the future
-	 * util-table reader (spec row C2's recent-ratio extension) will
-	 * prefer over the cumulative childop_wall_ns[] / childop_edges_
-	 * clean[] when the ring has signal. */
+	 * util-table reader's recent-ratio extension will prefer over the
+	 * cumulative childop_wall_ns[] / childop_edges_clean[] when the
+	 * ring has signal. */
 	unsigned long edge_history[NR_CHILD_OP_TYPES][CHILDOP_DECAY_WINDOWS];
 	unsigned long wall_history[NR_CHILD_OP_TYPES][CHILDOP_DECAY_WINDOWS];
 	unsigned long edge_recent_cached[NR_CHILD_OP_TYPES];
