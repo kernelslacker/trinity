@@ -136,7 +136,10 @@ void init_stderr_memfd(void);
  * What a SIGINT or SIGTERM delivered to the parent asks for, or
  * STILL_RUNNING to ignore it.  Children fuzz kill() and friends at the
  * parent, so only two senders are believed:
- *   - a kernel-generated SIGINT (si_code > 0), e.g. a terminal ctrl-c;
+ *   - a terminal's ctrl-c: SIGINT with si_code SI_KERNEL, which is what
+ *     n_tty's kill_pgrp(..., 1) sends.  Not any si_code > 0: F_SETOWN
+ *     plus F_SETSIG(SIGINT) on an O_ASYNC fd makes the kernel deliver
+ *     SIGINT with a POLL_* code, and a same-uid child can arrange that;
  *   - SI_USER from a uid no child can send as.  The kernel stamps si_uid
  *     itself and refuses a userspace siginfo with a non-negative si_code
  *     aimed at another process, so neither field can be forged.
@@ -154,7 +157,7 @@ static inline enum exit_reasons parent_stop_reason(int sig, const siginfo_t *inf
 
 	if (cur != STILL_RUNNING && !exit_reason_is_clean(cur))
 		return STILL_RUNNING;
-	if (info->si_code > 0)
+	if (info->si_code == SI_KERNEL)
 		return sig == SIGINT ? EXIT_SIGINT : STILL_RUNNING;
 	if (info->si_code == SI_USER &&
 	    info->si_uid != child_uid && info->si_uid != overflowuid)

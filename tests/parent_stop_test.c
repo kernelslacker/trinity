@@ -39,6 +39,16 @@ struct stop_case {
 	enum exit_reasons want;
 };
 
+/*
+ * F_SETOWN to the parent plus F_SETSIG(SIGINT) on an O_ASYNC fd makes
+ * the kernel send SIGINT with a POLL_* si_code.  Its siginfo carries
+ * si_band where a sender's si_pid/si_uid would be, so si_uid names no
+ * sender; uid 0 is the one an operator would have.
+ */
+#define POLL_SIGINT_CASE(poll_code) \
+	{ "user run: F_SETSIG SIGINT, " #poll_code, &user_run, \
+	  SIGINT, poll_code, 0, STILL_RUNNING, STILL_RUNNING }
+
 static const struct stop_case cases[] = {
 	{ "root run: root kill -TERM", &root_run,
 	  SIGTERM, SI_USER, 0, STILL_RUNNING, EXIT_USER_REQUEST },
@@ -64,6 +74,16 @@ static const struct stop_case cases[] = {
 	  SIGTERM, SI_USER, 65534, STILL_RUNNING, STILL_RUNNING },
 	{ "user run: terminal ctrl-c", &user_run,
 	  SIGINT, SI_KERNEL, 0, STILL_RUNNING, EXIT_SIGINT },
+	{ "root run: terminal ctrl-c", &root_run,
+	  SIGINT, SI_KERNEL, 0, STILL_RUNNING, EXIT_SIGINT },
+	POLL_SIGINT_CASE(POLL_IN),
+	POLL_SIGINT_CASE(POLL_OUT),
+	POLL_SIGINT_CASE(POLL_MSG),
+	POLL_SIGINT_CASE(POLL_ERR),
+	POLL_SIGINT_CASE(POLL_PRI),
+	POLL_SIGINT_CASE(POLL_HUP),
+	{ "root run: F_SETSIG SIGINT, POLL_IN", &root_run,
+	  SIGINT, POLL_IN, 0, STILL_RUNNING, STILL_RUNNING },
 	{ "user run: kernel-generated SIGTERM", &user_run,
 	  SIGTERM, SI_KERNEL, 0, STILL_RUNNING, STILL_RUNNING },
 	{ "operator stop during a taint shutdown", &root_run,

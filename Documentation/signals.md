@@ -360,11 +360,14 @@ reaches the parent, so the parent believes only two kinds of stop
 signal.  `parent_stop_reason()` (include/signals.h) decides;
 `main_stop_handler()` stamps the verdict through `panic()`.
 
-- A kernel-generated SIGINT (`si_code > 0`, e.g. a terminal ctrl-c)
-  stops the run with `EXIT_SIGINT`.  A same-uid child can still provoke
-  one: `F_SETOWN` to the parent plus `F_SETSIG` on an `O_ASYNC` fd makes
-  the kernel deliver SIGINT with a positive `POLL_*` `si_code`
-  (`send_sigio_to_task()` in fs/fcntl.c).
+- A terminal's ctrl-c stops the run with `EXIT_SIGINT`.  n_tty raises
+  it with `kill_pgrp(..., 1)`, whose `SEND_SIG_PRIV` the kernel stamps
+  `SI_KERNEL`, and only that `si_code` counts.  A positive one is not
+  enough: `F_SETOWN` to the parent plus `F_SETSIG(SIGINT)` on an
+  `O_ASYNC` fd makes the kernel deliver SIGINT with a `POLL_*`
+  `si_code` (`send_sigio_to_task()` in fs/fcntl.c keeps it, as SIGINT
+  is not in `SIG_SPECIFIC_SICODES_MASK`), and `sigio_perm()` lets a
+  same-uid child do that to the parent.  Such a SIGINT is ignored.
 - An `SI_USER` SIGINT or SIGTERM stops it with `EXIT_USER_REQUEST`
   when `si_uid` is a uid no child can send as.  `SI_USER` is what
   `kill(2)`, and `pidfd_send_signal(2)` on a process pidfd without a
