@@ -785,11 +785,3 @@ void stats_shadow_sat_emit_out_log(void);
 /* stats_ts_emit_shadow_sat(FILE *) is prototyped in stats-internal.h --
  * FILE isn't part of stats.h's public surface, and only stats/log.c
  * calls it. */
-
-/* Implemented in childops/recipe/runner.c; emits per-recipe completion
- * counts so the catalog layout stays private to that file. */
-void recipe_runner_dump_stats(void) __cold;
-
-/* Implemented in childops/io_uring/recipes.c; emits per-recipe completion
- * counts so the catalog layout stays private to that file. */
-void iouring_recipes_dump_stats(void) __cold;
