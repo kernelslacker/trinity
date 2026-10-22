@@ -2,30 +2,33 @@
  * Genetlink family grammar: psample (kernel packet sampling).
  *
  * The psample module exposes a single generic-netlink family ("psample")
- * carrying group-state requests and (since 6.10) NEW_GROUP / DEL_GROUP
- * create-delete commands.  PSAMPLE_CMD_SAMPLE is a kernel-to-userspace
- * notification id; userspace can still issue it but the cmd dispatcher
- * rejects it after running the per-cmd nla_policy walker.
+ * whose only op is PSAMPLE_CMD_GET_GROUP, an unprivileged dumpit; a
+ * request without NLM_F_DUMP finds no doit and is rejected the same
+ * way as the ids below.  PSAMPLE_CMD_SAMPLE, NEW_GROUP and DEL_GROUP
+ * are kernel-to-userspace ids (multicast sample and group-change
+ * notifications; NEW_GROUP also labels the GET_GROUP dump replies):
+ * the genl core finds no op for them and rejects them with
+ * -EOPNOTSUPP at the command lookup, before any attribute parsing, so
+ * the grammar omits them.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "psample", so the per-cmd nla_policy walker in
- * net/psample/psample.c plus the NEW_GROUP / DEL_GROUP create-delete
- * paths have been routinely cold under generic netlink fuzzing;
- * resolving the family at first NETLINK_GENERIC use lets the message
- * generator address real psample messages whose attribute shapes
- * plausibly survive the per-cmd policy.
+ * family_id for "psample", so the group dump in net/psample/psample.c
+ * has been routinely cold under generic netlink fuzzing; resolving the
+ * family at first NETLINK_GENERIC use lets the message generator
+ * address it.  The op declares no attribute policy, so the genl core
+ * skips attribute parsing for it and the attribute table below is
+ * never walked on input; it mirrors the attributes the kernel emits.
  *
  * Per the wireguard / tipc / l2tp / team / hsr / fou model, a single
- * flat nla_attr_spec table lists every id used by this family's
- * commands.  psample uses a single flat PSAMPLE_ATTR_* namespace; the
- * one nominally nested attr (PSAMPLE_ATTR_TUNNEL) is emitted as an
- * empty container so the kernel's nla_validate accepts it without
- * recursing into a per-tunnel sub-policy.  The remaining sixteen attrs
- * are scalar / binary / flag covering the group-id / sample-rate
- * selectors, the per-packet metadata (origsize, group seq, latency,
- * timestamp, proto, in/out ifindex, traffic-class occupancy), the
- * sampled-data and user-cookie binary payloads, and the
- * SAMPLE_PROBABILITY presence-only flag added in 6.7.
+ * flat nla_attr_spec table lists every id the family's messages use.
+ * psample uses a single flat PSAMPLE_ATTR_* namespace; the one
+ * nominally nested attr (PSAMPLE_ATTR_TUNNEL) is emitted as an empty
+ * container.  The remaining sixteen attrs are scalar / binary / flag
+ * covering the group-id / sample-rate fields, the per-packet metadata
+ * (origsize, group seq, latency, timestamp, proto, in/out ifindex,
+ * traffic-class occupancy), the sampled-data and user-cookie binary
+ * payloads, and the SAMPLE_PROBABILITY presence-only flag added in
+ * 6.7.
  *
  * Header gating mirrors the team / hsr / fou families: <linux/psample.h>
  * is the upstream UAPI header carrying every PSAMPLE_CMD_* and
@@ -44,9 +47,6 @@
 
 static const struct genl_cmd_grammar psample_cmds[] = {
 	{ PSAMPLE_CMD_GET_GROUP,	"PSAMPLE_CMD_GET_GROUP" },
-	{ PSAMPLE_CMD_NEW_GROUP,	"PSAMPLE_CMD_NEW_GROUP" },
-	{ PSAMPLE_CMD_DEL_GROUP,	"PSAMPLE_CMD_DEL_GROUP" },
-	{ PSAMPLE_CMD_SAMPLE,		"PSAMPLE_CMD_SAMPLE" },
 };
 
 /*
@@ -58,11 +58,10 @@ static const struct genl_cmd_grammar psample_cmds[] = {
  * LATENCY, and TIMESTAMP are u64 scalars.  DATA and USER_COOKIE are
  * variable-length binary payloads bounded above so a single greedy
  * blob can't eat the whole netlink buffer.  TUNNEL is the only
- * nominally nested attr — emitted as an empty container so the kernel's
- * nla_validate accepts it without recursing into a per-tunnel
- * sub-policy.  PAD is the alignment partner the kernel emits next to
- * the u64 scalars; it carries no payload, so a 0-byte BINARY entry
- * matches the wire shape.  SAMPLE_PROBABILITY is a presence-only flag.
+ * nominally nested attr — emitted as an empty container.  PAD is the
+ * alignment partner the kernel emits next to the u64 scalars; it
+ * carries no payload, so a 0-byte BINARY entry matches the wire shape.
+ * SAMPLE_PROBABILITY is a presence-only flag.
  */
 static const struct nla_attr_spec psample_attrs[] = {
 	{ PSAMPLE_ATTR_IIFINDEX,		NLA_KIND_U16,    2 },

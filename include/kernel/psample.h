@@ -17,8 +17,7 @@
  * SAMPLE_PROBABILITY flag) silently miss it from the validator
  * coverage; the fallback values match the upstream uapi enum ordering
  * so the wire-format ids the kernel parses match the ones the
- * generator emits.  PSAMPLE_CMD_NEW_GROUP / DEL_GROUP were added in
- * 6.10 and similarly fall back to the upstream enum values.
+ * generator emits.
  */
 #ifndef PSAMPLE_ATTR_IIFINDEX
 #define PSAMPLE_ATTR_IIFINDEX			0
