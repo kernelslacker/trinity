@@ -174,10 +174,25 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 	outputerr("BUG!: fleet halted — fuzzing stopped, attach gdb to pid %d (or any other live process) to inspect\n",
 		mypid());
 
-	/* Now spin indefinitely (but allow an operator stop: ctrl-c or
-	 * EXIT_USER_REQUEST).  set_dontkillme keeps the parent's progress
-	 * watchdog from SIGKILL'ing us, so the spinning child stays alive
-	 * and ptrace-attachable. */
+	/* Now spin, so the process stays alive and ptrace-attachable.
+	 * set_dontkillme keeps the parent's progress watchdog and
+	 * kill_pid() from SIGKILL'ing a child, so only this loop can end
+	 * it.  A child leaves when the run ends for any reason, or when
+	 * its parent is gone: left to an operator stop alone, any other
+	 * shutdown waits out the 30 s of wait_for_children_to_exit() and
+	 * parks the child as zombie-pending.  EXIT_EPOCH_DONE is one of
+	 * those reasons, so under --epoch-iterations, --epoch-timeout or
+	 * --max-runtime a halted child goes at the epoch boundary.
+	 *
+	 * The parent leaves only for an operator stop (ctrl-c or
+	 * EXIT_USER_REQUEST): its children go on fuzzing and write
+	 * exit_reason themselves (EXIT_KERNEL_TAINTED, EXIT_REACHED_COUNT),
+	 * and that must not end the spin the operator attaches to.
+	 *
+	 * A child's parent is gone when getppid() no longer names mainpid
+	 * and pid_alive() agrees, so a worker whose /proc is hidden stays
+	 * put.  A fork()ed grandchild's parent is the worker, so there
+	 * pid_alive() alone decides. */
 
 	if (child != NULL)
 		set_dontkillme(child, true);
@@ -185,8 +200,15 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 	while (1) {
 		enum exit_reasons reason =
 			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+		bool leave;
 
-		if (reason == EXIT_SIGINT || reason == EXIT_USER_REQUEST) {
+		if (child == NULL)
+			leave = reason == EXIT_SIGINT || reason == EXIT_USER_REQUEST;
+		else
+			leave = reason != STILL_RUNNING ||
+				(getppid() != mainpid && pid_alive(mainpid) == false);
+
+		if (leave) {
 			if (child != NULL)
 				set_dontkillme(child, false);
 			trinity_exit(EXIT_FAILURE);
