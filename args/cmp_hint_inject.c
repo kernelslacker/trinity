@@ -120,7 +120,7 @@ bool cmp_hint_baseline_should_inject(void)
  * bookkeeping for a committed cmp_hint injection.
  *
  * Called from each of the five argtype-handler callsites that pull a
- * cmp_hints_try_get() hint and commit it to a produced syscall arg.
+ * cmp_hints_try_get_ex() hint and commit it to a produced syscall arg.
  * Centralised so the observability counters stay in lock-step: any new
  * injection callsite gets the full row of bumps via a single helper
  * call instead of three open-coded atomics.  Effects:

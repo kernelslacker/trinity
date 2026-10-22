@@ -208,7 +208,7 @@ enum kcov_cmp_diag_part {
  * per-callsite propagation-injection split is visible alongside the flat
  * propagation_injected scalar.  Ordering is pinned (the slot index is the
  * bucket id) -- append-only.  Distinct from enum cmp_hint_callsite (in
- * cmp_hints.h): that one buckets cmp_hints_try_get() consumers (kernel
+ * cmp_hints.h): that one buckets cmp_hints_try_get_ex() consumers (kernel
  * KCOV_TRACE_CMP value source), this one buckets prop_ring_try_get()
  * consumers (trinity-observed syscall-return value source). */
 enum prop_injected_callsite {

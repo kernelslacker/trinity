@@ -334,7 +334,7 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 		/* Route every blob-mutator draw for this fill -- the
 		 * HAVOC-vs-CMPDICT coin-flip, the havoc arms, the
 		 * cmpdict pulls, the nested generate_rand_bytes and
-		 * cmp_hints_try_get -- through the dedicated blob rng
+		 * cmp_hints_try_get_sized -- through the dedicated blob rng
 		 * stream by swapping rnd_state.  The main syscall-
 		 * selection stream is preserved verbatim across the
 		 * fill so both A/B arms see the same syscall sequence

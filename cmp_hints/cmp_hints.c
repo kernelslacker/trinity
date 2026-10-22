@@ -95,7 +95,7 @@ enum cmp_shared_tier_mode cmp_shared_tier_mode =
  * Per-record bump of cmp_hints_strip_skipped (mirroring the
  * cmp_hints_bloom_skipped accounting) makes the avoided work
  * observable; the stripped syscalls' pool[nr] entries continue to be
- * served by cmp_hints_try_get() from anything they accumulated before
+ * served by cmp_hints_try_get_ex() from anything they accumulated before
  * the strip flag was set, so there is no consumer-side hole.
  */
 bool cmp_hints_strip[2][MAX_NR_SYSCALL];
@@ -112,7 +112,7 @@ bool cmp_hints_strip[2][MAX_NR_SYSCALL];
  *
  * Periodically suppress hint injection so random-arg generation gets
  * a fair shot at the invalid-combination space.  Gate at the
- * cmp_hints_try_get layer -- when chaos is active the function
+ * cmp_hints_try_get_ex layer -- when chaos is active the function
  * returns false (no hint), the caller falls through to its other
  * arg-generation paths.  Zero churn at the call site.
  *
@@ -237,7 +237,7 @@ static void cmp_hints_strip_install(const char * const names[], unsigned int n)
  *
  * Each is a top-volume CMP-record producer whose entries can only
  * displace constants from edge-producing syscalls in the same
- * cmp_hints_try_get() namespace (per-nr pools, so no direct
+ * cmp_hints_try_get_ex() namespace (per-nr pools, so no direct
  * cross-contamination, but the global LRU and the bloom-reset cadence
  * absorb the wasted work).
  */
@@ -250,7 +250,7 @@ static const char * const cmp_hints_strip_targets[] = {
 /*
  * Auto-strip CMP collection for any syscall whose num_args == 0.  With
  * no syscall arguments at all, every KCOV_CMP record such a syscall
- * emits is by construction unreachable from cmp_hints_try_get() -- the
+ * emits is by construction unreachable from cmp_hints_try_get_ex() -- the
  * argument surface is empty, so no constant the kernel compares
  * against can ever be steered by a subsequent generated arg.  Pool
  * entries from these syscalls only displace constants from

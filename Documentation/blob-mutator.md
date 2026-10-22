@@ -155,7 +155,7 @@ sequential blob-mode runs (warm-start creep, saturation) cancels.
 
 All blob-side RNG draws for the fill (the coin-flip, havoc arms,
 cmpdict pulls, and the nested `generate_rand_bytes` /
-`cmp_hints_try_get`) route through a dedicated per-child
+`cmp_hints_try_get_sized`) route through a dedicated per-child
 `rnd_blob_state` stream via a swap of `rnd_state` around
 `blob_fill()`, keeping the main syscall-selection stream identical
 to what it would have been without the flag; without this the modes

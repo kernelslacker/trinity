@@ -38,7 +38,7 @@
  * and short-circuits as soon as the field hits UINT16_MAX so a
  * pathologically hot tuple stops spending atomics once its score has
  * already conclusively dominated the population.  Lock-free scan
- * tolerates a concurrent eviction the same way cmp_hints_try_get does:
+ * tolerates a concurrent eviction the same way cmp_hints_try_get_ex does:
  * the picked entry may have been replaced by a sibling between consume
  * and credit, in which case the entries[] re-find at the saved
  * (cmp_ip, value, size) fails, the flat call-level counter still

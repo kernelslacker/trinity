@@ -5,7 +5,7 @@
 
 struct kcov_hints_canary {
 /* Wild-write detection in the cmp_hints SHM pool.  Bumped when a
- * read path (cmp_hints_try_get / pool_add_locked) observes a
+ * read path (cmp_hints_try_get_ex / pool_add_locked) observes a
  * pool->count value above the CMP_HINTS_PER_SYSCALL hard cap --
  * the only way that can happen is a kernel-side store through a
  * fuzzed syscall arg pointer landing on the count field.  Without

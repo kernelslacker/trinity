@@ -771,7 +771,7 @@ struct childdata {
 	unsigned long reexec_window_start_op;
 
 	/* per-call latch, set from any of the four
-	 * cmp_hints_try_get() callsites in generate-args.c that commit the
+	 * cmp_hints_try_get_ex() callsites in generate-args.c that commit the
 	 * returned hint to a produced syscall arg.  Cleared at the top of
 	 * generate_syscall_args() so each new call starts with a fresh
 	 * status, and read in kcov_collect()'s found_new branch to attribute

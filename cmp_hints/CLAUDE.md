@@ -2,14 +2,14 @@
 
 Fuzzer intelligence layer for Trinity. Collects constants the kernel compares syscall-derived values against (KCOV_TRACE_CMP), feeds them back into arg generation to bias inputs toward values likely to pass kernel validation gates.
 
-## Files (16 files, ~8,513 LOC)
+## Files (16 files, ~8,505 LOC)
 
 | File | Lines | Role |
 |---|---|---|
 | cmp_hints.c | 369 | Entry point: SHM allocation, strip-installation, chaos-mode gating |
 | collect.c | 1250 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer, cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
 | pool.c | 1067 | Pool primitives: lock wrappers, corruption gates, dedup + LRU eviction, bloom filter, recent ring, batch flush |
-| get.c | 656 | Consumer tier: two-tier picker (recent ring first during plateaus, durable pool otherwise), A/B live-pick policy, weighted draw |
+| get.c | 648 | Consumer tier: two-tier picker (recent ring first during plateaus, durable pool otherwise), A/B live-pick policy, weighted draw |
 | credit.c | 511 | Feedback loop: per-entry credit drain (wins/misses), outcome classification (PC win, CMP novelty, transition, corpus save) |
 | field.c | 895 | Field-scoped attribution pool: maps kernel CMP constants to specific struct fields via struct catalog walking |
 | persist.c | 866 | Warm-start persistence: on-disk snapshot/load with kallsyms SHA-256 fingerprinting, KASLR-base validation, CRC32 integrity |
@@ -60,7 +60,7 @@ Per-child:
 
 ## Integration points
 
-- `args/cmp_hint_inject.c` — commits a `cmp_hints_try_get()` hint to a produced syscall arg; the actual injection point downstream of get.c's picker
+- `args/cmp_hint_inject.c` — commits a `cmp_hints_try_get_ex()` hint to a produced syscall arg; the actual injection point downstream of get.c's picker
 - `blob_mutator.c` — `cmp_hints_try_get_sized()` for width-preserving splat into opaque buffers (CMPDICT mode)
 - `child/child-init-*.c` — per-child bloom filter reset and consumed stash clearing on fork
 - `main/trinity-warmstart.c` — warm-start load on boot, save on shutdown, snapshot tick in main loop

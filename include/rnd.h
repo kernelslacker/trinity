@@ -38,7 +38,7 @@ void rnd_seed(uint64_t seed);
  * childno) value that drives rnd_state, XORed with a fixed offset
  * constant so the two streams do not overlap.  All blob-mutator RNG
  * draws (the HAVOC-vs-CMPDICT coin-flip, havoc arm ops, cmpdict pulls,
- * and the nested generate_rand_bytes / cmp_hints_try_get calls) route
+ * and the nested generate_rand_bytes / cmp_hints_try_get_sized calls) route
  * through this stream during --blob-ab-mode fills via a swap of
  * rnd_state around blob_fill(), keeping the main syscall-selection
  * stream identical regardless of which blob mode fired -- without

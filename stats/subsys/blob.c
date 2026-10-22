@@ -11,7 +11,7 @@
  * header size fields -- its ratio to havoc_ops is the observable per-
  * arm selection rate), dict_inserts is the count of
  * committed cmp-pool splats the CMPDICT rung applied from the learned
- * per-nr cmp_hints pool (one bump per successful cmp_hints_try_get
+ * per-nr cmp_hints pool (one bump per successful cmp_hints_try_get_sized
  * pull + splat; pool misses are silent), static_magic_inserts is the
  * count of committed splats the CMPDICT rung applied from the built-
  * in well-known-magic table (ext4 / XFS / BTRFS / squashfs / ELF /

@@ -72,8 +72,8 @@ struct cmp_field_pool {
  * Use-case taxonomy for the cmp-hint consumer.  cmp_hints_try_get_ex()
  * selects an output transform from the use case (and, in a follow-up,
  * from the pool entry's recorded comparison width).  Callers that today
- * only need the historical {C-1, C, C+1} boundary triple stay on the
- * cmp_hints_try_get() wrapper, which routes to CMP_HINT_BOUNDARY.
+ * only need the historical {C-1, C, C+1} boundary triple pass
+ * CMP_HINT_BOUNDARY.
  *
  *   CMP_HINT_EXACT      Return C unchanged.  For cmd codes, enum
  *                       selectors, version magics -- any slot whose

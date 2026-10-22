@@ -35,7 +35,7 @@ unsigned long cmp_hints_strip_skipped;
  * short-circuits, and unique_inserts is what's left — the records that
  * survived bloom + pool dedup and changed pool state. */
 unsigned long cmp_hints_unique_inserts;
-/* cmp_hints_try_get() return values that the calling argument
+/* cmp_hints_try_get_ex() return values that the calling argument
  * generator actually committed to the produced syscall argument
  * (returned the hint directly, or OR'd it into a flags mask).
  * Aggregated across all callsites -- granularity is per-counter,
@@ -64,7 +64,7 @@ unsigned long propagation_injected;
  * answers the attribution question.  Shape mirrors
  * cmp_hint_callsite_injected[] below. */
 unsigned long propagation_injected_callsite[PROP_INJECTED_CALLSITE_NR];
-/* cmp_hints_try_get() calls that the chaos-mode gate forced to
+/* cmp_hints_try_get_ex() calls that the chaos-mode gate forced to
  * return false.  Bumped after the shm/nr guard, before the pool
  * lookup, when cmp_hints_chaos_active() is true for the current
  * rotation window.  Subtracted from the apparent attempt->returned
@@ -77,7 +77,7 @@ unsigned long cmp_hints_chaos_suppressed;
 /* Chaos-mode state.  Window count + active flag both live in shm
  * so all children see the same chaos schedule -- the CAS-winning
  * child in maybe_rotate_strategy updates them, every child reads
- * the flag in cmp_hints_try_get.  When these were file-scope
+ * the flag in cmp_hints_try_get_ex.  When these were file-scope
  * statics in cmp_hints.c each child had its own copy and the
  * schedule never crossed a fork: cmp_hints_chaos_suppressed
  * stayed at 0 across long multi-child runs. */

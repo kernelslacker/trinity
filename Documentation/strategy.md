@@ -548,7 +548,7 @@ catch-all.
 - `RRC_WRONG_TYPE_FD` -- placeholder; typed-fd substitution gave a
   wrong-class fd that worked.  Today never selected.
 - `RRC_CMP_DERIVED` -- this syscall has a non-empty `cmp_hints` pool,
-  so `generate-args.c`'s 1-in-16 `cmp_hints_try_get` path may have
+  so `generate-args.c`'s 1-in-16 `cmp_hints_try_get_ex` path may have
   injected a learned constant that carried the call past a kernel
   validation check the structured pickers were not pushing through.
 - `RRC_PERSONA_GATED` -- placeholder for namespace/cgroup/childop

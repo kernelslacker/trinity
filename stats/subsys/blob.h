@@ -21,7 +21,7 @@ struct blob_stats {
 	 * floor; blob_dict_inserts is the count of committed cmp-pool
 	 * splats the CMPDICT rung applied on top of the HAVOC floor from
 	 * the learned per-nr cmp_hints pool (one bump per successful
-	 * cmp_hints_try_get pull + splat; pool misses are silent);
+	 * cmp_hints_try_get_sized pull + splat; pool misses are silent);
 	 * blob_static_magic_inserts is the count of committed splats the
 	 * CMPDICT rung sourced from the built-in well-known-magic table
 	 * (ext4 / XFS / BTRFS / squashfs / ELF / gzip) instead of the

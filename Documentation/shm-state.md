@@ -631,7 +631,7 @@ the recent rescue cohort:
   `kcov_syscall_cold_skip_pct` retry, so cold syscalls flow through
   the heuristic arm during the intervention.
 - `RRC_CMP_DERIVED` -> `generate-args.c`'s 1-in-16
-  `cmp_hints_try_get` rolls flip to 1-in-4 so the learned constants
+  `cmp_hints_try_get_ex` rolls flip to 1-in-4 so the learned constants
   the classifier credited the rescues to fire more often.
 
 Gated on

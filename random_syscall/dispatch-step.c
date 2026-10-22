@@ -431,7 +431,7 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 *    (PC-mode score is undefined for a CMP-mode call, and CMP
 	 *    novelty did not fire).
 	 *
-	 * SHADOW: live pool selection in cmp_hints_try_get is uniform
+	 * SHADOW: live pool selection in cmp_hints_try_get_ex is uniform
 	 * here -- only the per-entry scores and the flat counters record
 	 * outcomes.  A future A/B-gated path will turn the scores into a
 	 * weighted live pick.

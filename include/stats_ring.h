@@ -202,7 +202,7 @@ enum stats_field {
 	/* cmp_hints_try_get_ex() bumps these on every consumer call that
 	 * passed the cmp_hints_shm / nr guard and reached the pool-snapshot
 	 * lookup.  Direct +1 enqueue per call -- no local staging like the
-	 * kcov counters above, because cmp_hints_try_get fires far less
+	 * kcov counters above, because cmp_hints_try_get_ex fires far less
 	 * often than kcov_collect (consumer-side, gated on argument
 	 * generation rather than per-syscall dispatch) and the per-call
 	 * SPSC slot cost is well within budget.  Stale-by-one-drain
@@ -211,7 +211,7 @@ enum stats_field {
 	 * across a multi-second window. */
 	STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS,
 	STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED,
-	/* Per-syscall partition of the cmp_hints_try_get() consumer-demand
+	/* Per-syscall partition of the cmp_hints_try_get_ex() consumer-demand
 	 * and pool-hit counters.  Companion to the scalar
 	 * CMP_HINTS_TRY_GET_ATTEMPTS / _RETURNED above; aux carries the
 	 * calling syscall nr (already gated nr < MAX_NR_SYSCALL at the

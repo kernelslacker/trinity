@@ -258,20 +258,10 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			  enum cmp_hint_callsite callsite,
 			  unsigned long *out);
 
-/* Back-compat wrapper.  Routes to CMP_HINT_BOUNDARY with old == 0 and
- * keeps the live typed-hypothesis inject arm OFF so the existing
- * non-typed-safe call sites in generate-args.c retain the pre-split
- * {C-1, C, C+1} rotation byte-for-byte until each is individually
- * migrated to the use case (and inject opt-in) that fits its
- * consumer slot. */
-bool cmp_hints_try_get(unsigned int nr, bool do32,
-		       enum cmp_hint_callsite callsite,
-		       unsigned long *out);
-
-/* Width-preserving variant of cmp_hints_try_get().  Same policy
- * (CMP_HINT_BOUNDARY rotation, no typed-hypothesis inject arm, no
- * accept range) but on a true return also writes the pool entry's
- * recorded operand width (uint32_t size in {1, 2, 4, 8}) into
+/* Width-preserving variant of cmp_hints_try_get_ex().  Fixed policy
+ * (CMP_HINT_BOUNDARY rotation with old == 0, no typed-hypothesis inject
+ * arm, no accept range) but on a true return also writes the pool
+ * entry's recorded operand width (uint32_t size in {1, 2, 4, 8}) into
  * *out_size.  Consumers that splat the returned constant into a
  * byte buffer (the blob mutator's CMPDICT learned arm) use this to
  * write the constant at the width the kernel's cmp instruction
@@ -352,7 +342,7 @@ struct childdata;
 /* Advance the chaos-mode window counter.  Called once per bandit window
  * rotation from maybe_rotate_strategy().  Every CHAOS_WINDOW_MODULO'th
  * window flips cmp_hints_chaos_active to true for the duration of that
- * window so cmp_hints_try_get returns false and the caller falls
+ * window so cmp_hints_try_get_ex returns false and the caller falls
  * through to its random-arg path -- the cmp-hints pool saturates on
  * kernel-validated constants, which biases generated args AWAY from
  * the invalid-combination space most WARN_ONs guard.  Periodic
@@ -360,14 +350,14 @@ struct childdata;
  *
  * cmp_hints_chaos_query exposes the current toggle for diagnostics
  * (the stats block prints it alongside the chaos_suppressed counter).
- * Hot-path callers should NOT consult it -- cmp_hints_try_get already
+ * Hot-path callers should NOT consult it -- cmp_hints_try_get_ex already
  * gates internally. */
 void cmp_hints_chaos_tick(void);
 bool cmp_hints_chaos_query(void);
 
 /* Read pool->count clamped to the CMP_HINTS_PER_SYSCALL cap.  Returns 0
  * if the pool has been corrupted by a wild kernel-side write (latched
- * via the same gate as cmp_hints_try_get).  Use from callers that need
+ * via the same gate as cmp_hints_try_get_ex).  Use from callers that need
  * the count for accounting/heuristics but do not index into entries[];
  * the alternative -- a raw read of pool->count -- silently folds the
  * stomped sentinel value (often in the millions) into running totals

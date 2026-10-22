@@ -65,7 +65,7 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 		return RRC_COLD_SKIP;
 
 	/* RRC_CMP_DERIVED.  generate-args.c's ARG_OP / ARG_LIST /
-	 * gen_undefined_arg paths roll a 1-in-16 cmp_hints_try_get on every
+	 * gen_undefined_arg paths roll a 1-in-16 cmp_hints_try_get_ex on every
 	 * call; if rec->nr has any hints in its pool, a learned constant
 	 * may have carried this RANDOM call past a kernel validation check
 	 * the structured pickers were not aware of.  Hint-pool occupancy is

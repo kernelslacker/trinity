@@ -201,9 +201,9 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 		e->last_used = stamp;
 		__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
 		/*
-		 * RELEASE-store count so a lockless reader in cmp_hints_try_get
-		 * that observes the new count is guaranteed to also see the
-		 * entries[] store above.
+		 * RELEASE-store count so a lockless reader in
+		 * cmp_hints_try_get_ex that observes the new count is
+		 * guaranteed to also see the entries[] store above.
 		 */
 		__atomic_store_n(&pool->count, count + 1, __ATOMIC_RELEASE);
 		if (kcov_shm != NULL)

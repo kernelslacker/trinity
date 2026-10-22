@@ -1,8 +1,8 @@
 /*
  * Per-syscall cmp-hint consumer.
  *
- * cmp_hints_try_get() / try_get_ex() is the entry point every
- * generate-args.c consumer routes through.  This cluster owns the
+ * cmp_hints_try_get_ex() is the entry point every generate-args.c
+ * consumer routes through.  This cluster owns the
  * two-tier picker (recent ring first during a rising-PC-flat plateau,
  * durable per-syscall pool otherwise), the per-child A/B stamp that
  * gates the uniform-versus-weighted draw, and the weighted draw itself.
@@ -557,7 +557,7 @@ static bool cmp_hints_try_get_ex_common(unsigned int nr, bool do32,
 		 * scribble it through any fuzzed syscall arg because the
 		 * authoritative copy is in MAP_PRIVATE parent memory.
 		 * Direct +1 enqueue (no local staging like the kcov
-		 * batched counters): cmp_hints_try_get fires at consumer
+		 * batched counters): cmp_hints_try_get_ex fires at consumer
 		 * cadence, well below the SPSC budget.  Ring-full drops
 		 * fold into ring_overflow_total. */
 		struct childdata *attempt_child = this_child();
@@ -621,35 +621,27 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 					   NULL);
 }
 
-bool cmp_hints_try_get(unsigned int nr, bool do32,
-		       enum cmp_hint_callsite callsite,
-		       unsigned long *out)
-{
-	/* arg_idx == 0: back-compat wrapper keeps allow_hyp_inject == false,
-	 * so hyp_injected can never fire and the fill-slot counter is never
-	 * bumped from this path.  Passing 0 is safe by construction. */
-	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, false,
-				    NULL, 0, callsite, out);
-}
-
 /*
- * Width-preserving pull.  Same policy as cmp_hints_try_get() (BOUNDARY
- * rotation, no typed-hypothesis inject, no accept range) but on a
- * successful return also writes the pool entry's recorded operand
- * width to *out_size in {1, 2, 4, 8}.  The blob mutator's CMPDICT
- * learned arm splats the returned constant at exactly that width so
- * an on-disk / on-wire byte sequence learned at a 2-byte cmp is not
- * blindly re-emitted as an 8-byte splat that surrounds the constant
- * with 6 bytes of garbage the kernel's downstream compare then
- * rejects.  On a false return *out_size is untouched.
+ * Width-preserving pull.  Same policy as cmp_hints_try_get_ex() with
+ * CMP_HINT_BOUNDARY, old == 0, no typed-hypothesis inject and no accept
+ * range, but on a successful return also writes the pool entry's
+ * recorded operand width to *out_size in {1, 2, 4, 8}.  The blob
+ * mutator's CMPDICT learned arm splats the returned constant at
+ * exactly that width so an on-disk / on-wire byte sequence learned at
+ * a 2-byte cmp is not blindly re-emitted as an 8-byte splat that
+ * surrounds the constant with 6 bytes of garbage the kernel's
+ * downstream compare then rejects.  On a false return *out_size is
+ * untouched.
  */
 bool cmp_hints_try_get_sized(unsigned int nr, bool do32,
 			     enum cmp_hint_callsite callsite,
 			     unsigned long *out, unsigned int *out_size)
 {
 	/* arg_idx == 0: sized wrapper is a non-typed CMPDICT byte-splat
-	 * consumer (no argnum context, no typed inject); same safe-by-
-	 * construction reasoning as the cmp_hints_try_get() wrapper. */
+	 * consumer (no argnum context, no typed inject).  With
+	 * allow_hyp_inject == false, hyp_injected can never fire and the
+	 * fill-slot counter is never bumped from this path, so passing 0
+	 * is safe by construction. */
 	return cmp_hints_try_get_ex_common(nr, do32, CMP_HINT_BOUNDARY, 0,
 					   false, NULL, 0, callsite,
 					   out, out_size);
