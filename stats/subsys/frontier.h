@@ -528,11 +528,11 @@ struct frontier_saturation_stats {
 	 * is added inside the silent-regime accept path with NO live reject
 	 * wired, so live selection in set_syscall_nr_coverage_frontier()
 	 * stays byte-identical to today regardless of which mode is
-	 * selected.  COMBINED is reserved in the enum for a follow-up that
-	 * wires the live reject after SHADOW_ONLY validates the predicate
-	 * against a real run.  Mirrors the off-by-construction discipline
-	 * the sibling frontier_decay_* / frontier_errno_decay_* counters
-	 * use. */
+	 * selected.  The enum has no COMBINED value; a follow-up that
+	 * wires the live reject would add it after SHADOW_ONLY validates
+	 * the predicate against a real run.  Mirrors the
+	 * off-by-construction discipline the sibling frontier_decay_* /
+	 * frontier_errno_decay_* counters use. */
 	unsigned long satcool_candidates;
 	unsigned long satcool_would_skip;
 	unsigned long satcool_spared_arggen;
@@ -577,9 +577,9 @@ struct frontier_saturation_stats {
 	 * block is added inside the silent-regime accept path with NO
 	 * live sub-floor divergence wired, so live selection in
 	 * set_syscall_nr_coverage_frontier() stays byte-identical to
-	 * today regardless of which mode is selected.  COMBINED is
-	 * reserved in the enum for a follow-up that wires the sub-floor
-	 * accept-denominator swap after SHADOW_ONLY validates the
+	 * today regardless of which mode is selected.  The enum has no
+	 * COMBINED value; a follow-up that wires the sub-floor accept-
+	 * denominator swap would add it after SHADOW_ONLY validates the
 	 * predicate against a real run.  Mirrors the off-by-construction
 	 * discipline the sibling frontier_satcool_* counters use. */
 	unsigned long barren_candidates;
@@ -683,9 +683,9 @@ struct frontier_discriminator_stats {
 	 * selection in set_syscall_nr_coverage_frontier() and the
 	 * rotation-loop halving in frontier_window_advance stay byte-
 	 * identical to today regardless of which mode is selected.
-	 * COMBINED is reserved in the enum for a follow-up that wires
-	 * the live divergence after SHADOW_ONLY validates the demote
-	 * distribution against a real run.  Mirrors the off-by-
+	 * The enum has no COMBINED value; a follow-up that wires the
+	 * live divergence would add it after SHADOW_ONLY validates the
+	 * demote distribution against a real run.  Mirrors the off-by-
 	 * construction discipline the sibling frontier_satcool_*
 	 * counters above use. */
 	unsigned long live_cool_candidates;
@@ -766,8 +766,8 @@ struct frontier_discriminator_stats {
 	 * block is added inside the group_bias gate (random_syscall/pick-heuristic.c
 	 * heuristic-arm set_syscall_nr) with NO live release wired, so
 	 * live selection stays byte-identical to today regardless of
-	 * which mode is selected.  COMBINED is reserved in the enum
-	 * for a follow-up that wires the live pin release after
+	 * which mode is selected.  The enum has no COMBINED value; a
+	 * follow-up that wires the live pin release would add it after
 	 * SHADOW_ONLY validates the predicate against a real run.
 	 * Mirrors the off-by-construction discipline the sibling
 	 * frontier_satcool_* counters above use. */

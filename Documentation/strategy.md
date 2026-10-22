@@ -190,16 +190,13 @@ Mode ramp:
   (`syncfs` / `sendfile` / `semget` / `writev`) and is ~0 on the
   struct-arg backlog (`removexattrat` / `futex` / `io_uring_setup` /
   `bpf`) before tuning `C_min` or promoting COMBINED.
-- **COMBINED** -- reserved.  The enum value exists so future commits
-  that wire the live reject can land without renumbering the enum, but
-  THIS COMMIT does NOT implement the live reject -- selecting combined
-  today behaves identically to shadow-only (the predicate is computed
-  and counters bump, no goto-retry fires).  Wiring the live reject is
-  a separate follow-up after SHADOW_ONLY validates `C_min` and the
-  spare lanes against a real run.
+- **COMBINED** -- not implemented.  The enum has no COMBINED value and
+  the parser rejects `combined`.  Adding the value and wiring the live
+  reject is a separate follow-up after SHADOW_ONLY validates `C_min`
+  and the spare lanes against a real run.
 
 Param-settable from
-`--frontier-saturation-cooldown=off|shadow-only|combined`; mirrors the
+`--frontier-saturation-cooldown=off|shadow-only`; mirrors the
 `kcov_transition_reward_mode` shape so a reader familiar with that knob
 (and its SHADOW->COMBINED ramp) recognises the rollout discipline.
 
@@ -255,19 +252,16 @@ Mode ramp:
   concentrates on `gettid` / `sched_get_priority_max` and is ~0 on
   `bpf` / `io_uring_setup` / `openat` / `io_setup` / `futex` /
   `setxattrat` before promoting COMBINED.
-- **COMBINED** -- reserved.  The enum value exists so the live
-  divergence wire-up (rotation-loop halving at
+- **COMBINED** -- not implemented.  The enum has no COMBINED value and
+  the parser rejects `combined`.  The live divergence it would add
+  (rotation-loop halving at
   `strategy-frontier.c::frontier_window_advance` and the per-syscall
-  miss-attribution reject) can land in a follow-up commit without
-  renumbering the enum, but THIS COMMIT does NOT implement the live
-  divergence -- selecting combined today behaves identically to
-  shadow-only (discriminator evaluates and counters bump, no live
-  cooldown decision is gated on the discriminator).  Mirrors the OFF /
-  SHADOW_ONLY / COMBINED ramp discipline the sibling
-  `frontier_saturation_cooldown_mode` uses.
+  miss-attribution reject) is a follow-up that adds the value when it
+  wires them.  Mirrors the OFF / SHADOW_ONLY / COMBINED ramp
+  discipline the sibling `frontier_saturation_cooldown_mode` uses.
 
 Param-settable from
-`--frontier-live-cooldown-mode=off|shadow-only|combined`; independent
+`--frontier-live-cooldown-mode=off|shadow-only`; independent
 of the LIVE-regime rotation-loop halving in
 `frontier_window_advance()`, which is always on.
 
@@ -355,16 +349,14 @@ No cross-process coherence needed; no shm, no atomics.
   mass concentrates on `rseq_slice_yield` / `getpgrp` / `sched_yield`
   and on `GROUP_PROCESS` before tuning `MIN_STREAK` / `COV_WINDOW` or
   promoting COMBINED.
-- **COMBINED** -- reserved.  The enum value exists so the live
-  pin-release wire-up can land in a follow-up commit without
-  renumbering the enum, but THIS COMMIT does NOT implement the live
-  release -- selecting combined today behaves identically to
-  shadow-only (predicate computed, counters bump, gate unchanged).
-  Mirrors the OFF / SHADOW_ONLY / COMBINED ramp discipline the sibling
+- **COMBINED** -- not implemented.  The enum has no COMBINED value and
+  the parser rejects `combined`; the live pin release is a follow-up
+  that adds the value when it wires the release.  Mirrors the OFF /
+  SHADOW_ONLY / COMBINED ramp discipline the sibling
   `frontier_saturation_cooldown_mode` uses.
 
 Param-settable from
-`--frontier-group-antilock=off|shadow-only|combined`.
+`--frontier-group-antilock=off|shadow-only`.
 
 ### Group-pin damper thresholds
 
@@ -439,17 +431,15 @@ until COMBINED lands the coin-then-draw wire-up in a follow-up commit.
   `(live_expensive_picks / (live_expensive_picks + live_cheap_picks))`
   actual-accept fraction to confirm the section 4.1 identity holds
   empirically on a real run before promoting COMBINED.
-- **COMBINED** -- reserved.  The enum value exists so the
-  coin-then-draw wire-up (dispatch by the shadow `p_exp` coin, then a
-  uniform draw from the elected pool) can land in a follow-up commit
-  without renumbering the enum, but THIS COMMIT does NOT implement the
-  live selector -- selecting combined today behaves identically to
-  shadow-only (observer accumulates, live pick stays flat
-  draw-then-reject).  Mirrors the OFF / SHADOW_ONLY / COMBINED ramp
-  discipline the sibling `frontier_saturation_cooldown_mode` /
-  `frontier_group_antilock_mode` rows use.
+- **COMBINED** -- not implemented.  The enum has no COMBINED value and
+  the parser rejects `combined`.  The coin-then-draw wire-up it would
+  add (dispatch by the shadow `p_exp` coin, then a uniform draw from
+  the elected pool) is a follow-up that adds the value when it lands.
+  Mirrors the OFF / SHADOW_ONLY / COMBINED ramp discipline the sibling
+  `frontier_saturation_cooldown_mode` / `frontier_group_antilock_mode`
+  rows use.
 
-Param-settable from `--cost-pool-selector=off|shadow-only|combined`.
+Param-settable from `--cost-pool-selector=off|shadow-only`.
 
 ## Context-pool mode -- regular_suppressed instrumentation
 
@@ -491,17 +481,14 @@ transient recovery.
   `context_regular_suppressed_*` shadow counters; selection stays
   byte-identical -- no goto-retry is gated on the classifier, no live
   suppression fires.
-- **COMBINED** -- reserved.  The enum value exists so a future commit
-  that wires the live regular-pool removal
-  (`deactivate_syscall_locked` on the `regular_suppressed` subset) can
-  land without renumbering the enum, but THIS BUILD treats combined
-  identically to shadow-only -- classifier evaluates and counters
-  bump, no live pool change happens.  The switchover is a separate,
-  gated step after SHADOW_ONLY validates the classifier against a real
-  run per the `needs-root-pool-userns-axis-2026-06-27` §5 Phase 2 A/B
-  ramp.
+- **COMBINED** -- not implemented.  The enum has no COMBINED value and
+  the parser rejects `combined`.  The live regular-pool removal it
+  would add (`deactivate_syscall_locked` on the `regular_suppressed`
+  subset) is a separate, gated step that adds the value after
+  SHADOW_ONLY validates the classifier against a real run per the
+  `needs-root-pool-userns-axis-2026-06-27` §5 Phase 2 A/B ramp.
 
-Param-settable from `--context-pool=off|shadow-only|combined`.
+Param-settable from `--context-pool=off|shadow-only`.
 
 ## Strategy selection reason
 

@@ -122,10 +122,10 @@ enum strategy_t {
 
 /*
  * Saturation-cooldown mode (--frontier-saturation-cooldown).
- * OFF | SHADOW_ONLY | COMBINED ramp; SHADOW_ONLY and COMBINED are both
- * shadow-only today (predicate evaluates + counters bump, live
- * selection unchanged).  OFF is byte-identical to a build before this
- * knob existed.
+ * OFF | SHADOW_ONLY; SHADOW_ONLY evaluates the predicate and bumps
+ * counters with live selection unchanged.  There is no COMBINED value
+ * and the parser rejects "combined"; the live-reject follow-up would
+ * add one.  OFF is byte-identical to a build before this knob existed.
  * See Documentation/strategy.md for the design rationale.
  */
 enum frontier_saturation_cooldown_mode {
@@ -181,11 +181,12 @@ void frontier_satcool_spare(unsigned int syscallnr, bool do32);
 
 /*
  * LIVE-regime cooldown discriminator mode
- * (--frontier-live-cooldown-mode).  OFF | SHADOW_ONLY | COMBINED ramp;
- * SHADOW_ONLY and COMBINED are both shadow-only today (discriminator
- * evaluates + counters bump, live cooldown decision unchanged).  OFF
- * is byte-identical to a build before this knob existed.  Independent
- * of the LIVE-regime rotation-loop halving in
+ * (--frontier-live-cooldown-mode).  OFF | SHADOW_ONLY; SHADOW_ONLY
+ * evaluates the discriminator and bumps counters with the live
+ * cooldown decision unchanged.  There is no COMBINED value and the
+ * parser rejects "combined"; the live-divergence follow-up would add
+ * one.  OFF is byte-identical to a build before this knob existed.
+ * Independent of the LIVE-regime rotation-loop halving in
  * frontier_window_advance(), which is always on.
  * See Documentation/strategy.md for the design rationale.
  */
@@ -246,10 +247,11 @@ void frontier_live_cool_spare(unsigned int syscallnr, bool do32);
 
 /*
  * Floored-barren sub-floor demote mode
- * (--frontier-barren-demote).  OFF | SHADOW_ONLY | COMBINED ramp;
- * SHADOW_ONLY and COMBINED are both shadow-only today (predicate
- * evaluates + counters bump, live selection unchanged).  OFF is
- * byte-identical to a build before this knob existed.
+ * (--frontier-barren-demote).  OFF | SHADOW_ONLY; SHADOW_ONLY
+ * evaluates the predicate and bumps counters with live selection
+ * unchanged.  There is no COMBINED value and the parser rejects
+ * "combined"; the sub-floor live-divergence follow-up would add one.
+ * OFF is byte-identical to a build before this knob existed.
  * See Documentation/strategy.md for the design rationale.
  */
 enum frontier_barren_demote_mode {
@@ -279,9 +281,10 @@ void frontier_barren_demote(unsigned int syscallnr, bool do32);
 
 /*
  * Heuristic-arm group-bias anti-lock-in damper -- F-RSEQ.
- * (--frontier-group-antilock).  OFF | SHADOW_ONLY | COMBINED ramp;
- * SHADOW_ONLY and COMBINED are both shadow-only today (predicate
- * evaluates + counters bump, live selection unchanged).  OFF is
+ * (--frontier-group-antilock).  OFF | SHADOW_ONLY; SHADOW_ONLY
+ * evaluates the predicate and bumps counters with live selection
+ * unchanged.  There is no COMBINED value and the parser rejects
+ * "combined"; the live pin-release follow-up would add one.  OFF is
  * byte-identical to a build before this knob existed.
  * See Documentation/strategy.md for the design rationale, discriminator
  * shape, state keying, and dispatch-tail bookkeeping order.
@@ -296,11 +299,12 @@ extern enum frontier_group_antilock_mode frontier_group_antilock_mode;
 
 /*
  * Cost-pool one-shot selector mode (--cost-pool-selector).
- * OFF | SHADOW_ONLY | COMBINED ramp; SHADOW_ONLY and COMBINED are
- * both shadow-only today (observer accumulates, live pick stays flat
- * draw-then-reject).  OFF is byte-identical to a build before this
- * knob existed.  The shadow observer consumes ZERO rnd_u32() calls so
- * it cannot perturb the live pick stream under any mode.
+ * OFF | SHADOW_ONLY; SHADOW_ONLY accumulates the observer and the
+ * live pick stays flat draw-then-reject.  There is no COMBINED value
+ * and the parser rejects "combined"; the coin-then-draw follow-up
+ * would add one.  OFF is byte-identical to a build before this knob
+ * existed.  The shadow observer consumes ZERO rnd_u32() calls so it
+ * cannot perturb the live pick stream under any mode.
  * See Documentation/strategy.md for the design rationale and the
  * coin-then-draw closed form.
  */
@@ -314,10 +318,11 @@ extern enum cost_pool_selector_mode cost_pool_selector_mode;
 
 /*
  * Context-pool mode -- Path-A regular_suppressed shadow instrumentation
- * for the picker (--context-pool).  OFF | SHADOW_ONLY | COMBINED ramp;
- * SHADOW_ONLY and COMBINED are both shadow-only today (classifier
- * evaluates + counters bump, live pool membership unchanged).  OFF is
- * byte-identical to a build before this knob existed.
+ * for the picker (--context-pool).  OFF | SHADOW_ONLY; SHADOW_ONLY
+ * evaluates the classifier and bumps counters with live pool
+ * membership unchanged.  There is no COMBINED value and the parser
+ * rejects "combined"; the live-suppression follow-up would add one.
+ * OFF is byte-identical to a build before this knob existed.
  * See Documentation/strategy.md for the design rationale.
  */
 enum context_pool_mode {

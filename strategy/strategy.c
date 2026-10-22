@@ -92,7 +92,7 @@ enum picker_mode_t picker_mode_arg = PICKER_BANDIT_UCB1;
  * corrected predicate's shadow accounting without changing live
  * selection.  See the enum comment in include/strategy.h for the
  * mode contract and the ramp discipline.  Param-settable via
- * --frontier-saturation-cooldown=off|shadow-only|combined.
+ * --frontier-saturation-cooldown=off|shadow-only.
  */
 enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode =
 	FRONTIER_SATURATION_COOLDOWN_MODE_OFF;
@@ -104,7 +104,7 @@ enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode =
  * spare lane fires per cool-eligible nr) without changing the live
  * picker decision.  See the enum comment in include/strategy.h for
  * the mode contract and the ramp discipline.  Param-settable via
- * --frontier-live-cooldown-mode=off|shadow-only|combined.
+ * --frontier-live-cooldown-mode=off|shadow-only.
  */
 enum frontier_live_cooldown_mode frontier_live_cooldown_mode =
 	FRONTIER_LIVE_COOLDOWN_MODE_OFF;
@@ -117,7 +117,7 @@ enum frontier_live_cooldown_mode frontier_live_cooldown_mode =
  * without changing live selection.  See the enum comment in
  * include/strategy.h for the mode contract and the ramp discipline.
  * Param-settable via
- * --frontier-barren-demote=off|shadow-only|combined.
+ * --frontier-barren-demote=off|shadow-only.
  */
 enum frontier_barren_demote_mode frontier_barren_demote_mode =
 	FRONTIER_BARREN_DEMOTE_MODE_OFF;
@@ -131,7 +131,7 @@ enum frontier_barren_demote_mode frontier_barren_demote_mode =
  * SHADOW_ONLY engages the bookkeeping + predicate without changing
  * live selection.  See the enum comment in include/strategy.h for the
  * mode contract and the ramp discipline.  Param-settable via
- * --frontier-group-antilock=off|shadow-only|combined.
+ * --frontier-group-antilock=off|shadow-only.
  */
 enum frontier_group_antilock_mode frontier_group_antilock_mode =
 	FRONTIER_GROUP_ANTILOCK_MODE_OFF;
@@ -144,7 +144,7 @@ enum frontier_group_antilock_mode frontier_group_antilock_mode =
  * without changing live selection or consuming any RNG.  See the enum
  * comment in include/strategy.h for the mode contract and the ramp
  * discipline.  Param-settable via
- * --cost-pool-selector=off|shadow-only|combined.
+ * --cost-pool-selector=off|shadow-only.
  */
 enum cost_pool_selector_mode cost_pool_selector_mode =
 	COST_POOL_SELECTOR_MODE_OFF;
@@ -156,7 +156,7 @@ enum cost_pool_selector_mode cost_pool_selector_mode =
  * regular_suppressed_* counter bumps without changing live selection.
  * See the enum comment in include/strategy.h for the mode contract and
  * the ramp discipline.  Param-settable via
- * --context-pool=off|shadow-only|combined.
+ * --context-pool=off|shadow-only.
  */
 enum context_pool_mode context_pool_mode = CONTEXT_POOL_MODE_OFF;
 

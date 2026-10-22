@@ -110,11 +110,9 @@ void __cold cost_pool_periodic_dump(void)
 	 * matters here; the analytical (ppm-scaled) fraction can be
 	 * off by at most one pick-worth-of-ppm relative to shadow_picks
 	 * across a torn snapshot, which is well below the noise floor
-	 * of a real run.  Rendered only when the observer engaged
-	 * (mode != OFF) OR the live-attribution pair accumulated (which
-	 * happens on every run regardless of mode) so a fixed-seed
-	 * --dry-run under OFF still emits the live-actual fraction as a
-	 * baseline reference. */
+	 * of a real run.  Rendered on every dump; under OFF the shadow,
+	 * predraw and live notes all return before bumping anything, so
+	 * the counters read zero and the mode name is all it shows. */
 	{
 		unsigned long shadow_picks = __atomic_load_n(
 			&shm->stats.cost_pool_selector.shadow_picks,

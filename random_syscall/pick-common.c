@@ -481,9 +481,9 @@ bool expensive_accept(unsigned int nr, bool do32)
  * the pick's byte-identity to a pre-row build depends on this
  * being the ONLY side effect the OFF branch has.
  *
- * SHADOW_ONLY / COMBINED: read the arch-specific per-pool live
- * counts under RELAXED (parse-time constants R and 1_000_000
- * elided into the divide), compute the section 4.1 closed-form
+ * SHADOW_ONLY: read the arch-specific per-pool live counts under
+ * RELAXED (parse-time constants R and 1_000_000 elided into the
+ * divide), compute the section 4.1 closed-form
  * expected-expensive-fraction scaled to parts-per-million, and
  * accumulate under RELAXED.  ZERO rnd_u32() draws so the live pick
  * stream is preserved bit-for-bit regardless of mode.  Divide-by-
@@ -562,8 +562,8 @@ void cost_pool_selector_shadow_note(bool do32)
  * cost_pool_selector_mode == OFF is bit-for-bit identical to a
  * pre-row build (no ppc_call_ratio drift from an added __atomic_
  * fetch_add per pick, no torn snapshot of the live counters, no
- * stale-cacheline contention on the pick hot path).  SHADOW_ONLY /
- * COMBINED bump the arch-appropriate live-accept counter; the cost
+ * stale-cacheline contention on the pick hot path).  SHADOW_ONLY
+ * bumps the arch-appropriate live-accept counter; the cost
  * class comes from the read-only EXPENSIVE bitmap (via
  * syscall_is_expensive()) that select_syscall_tables() builds once
  * at init, so a scribbled entry->flags cannot mis-attribute.

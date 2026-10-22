@@ -2,17 +2,17 @@
 #define _TRINITY_STATS_SUBSYS_COST_POOL_SELECTOR_H
 
 /*
- * Cost-pool one-shot selector observer counters (gated by
- * cost_pool_selector_mode != OFF for the shadow_ pair; the live_
- * pair bumps unconditionally so the analytical vs actual comparison
- * is available on every run).  See enum cost_pool_selector_mode in
+ * Cost-pool one-shot selector observer counters (all gated by
+ * cost_pool_selector_mode != OFF: the shadow, predraw and live notes
+ * each return before touching shm under OFF, so a default run reads
+ * zero throughout).  See enum cost_pool_selector_mode in
  * include/strategy.h for the shadow/live contract and the cost-pool-
  * oneshot-selector spec section 4.1 for the closed-form identity the
  * shadow rows accumulate.
  *
  *  shadow_picks               : one bump per HEURISTIC / RANDOM arm
- *    entry into set_syscall_nr_* under SHADOW_ONLY/COMBINED, after
- *    arch table chosen and before retry-loop's rnd_modulo_u32 draw.
+ *    entry into set_syscall_nr_* under SHADOW_ONLY, after arch table
+ *    chosen and before retry-loop's rnd_modulo_u32 draw.
  *    Bumps exactly once per pick call regardless of retries.
  *  shadow_expensive_ppm_sum   : cumulative sum of per-pick analytical
  *    expected expensive-pool fraction, scaled to parts-per-million.
@@ -38,9 +38,8 @@
  *
  * Observability only: the shadow observer never returns a value,
  * never gates any accept, never consumes any RNG.  cost_pool_
- * selector_mode == COMBINED in this build behaves identically to
- * SHADOW_ONLY -- the COMBINED coin-then-draw wire-up lands in a
- * follow-up commit.
+ * selector_mode has no COMBINED value; the coin-then-draw wire-up
+ * would add it in a follow-up.
  *
  * The surrounding struct stats_s composes an instance of struct
  * cost_pool_selector_stats as its "cost_pool_selector" member.

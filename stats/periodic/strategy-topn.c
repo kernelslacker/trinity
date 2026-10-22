@@ -49,9 +49,9 @@
  * Render-only: never read by the silent-regime accept site or the
  * predicate it gates.  Mode-OFF runs return before any output so the
  * default-off behaviour stays byte-identical to today; under shadow-only
- * or combined the header + total are always printed (even when the array
- * is empty) so an operator running a short or under-populated session
- * can confirm the wiring fired without having to grep for absence.
+ * the header + total are always printed (even when the array is empty)
+ * so an operator running a short or under-populated session can
+ * confirm the wiring fired without having to grep for absence.
  */
 #define SATCOOL_TOPN 30
 
@@ -134,10 +134,10 @@ void dump_satcool_would_skip_per_syscall_top(void)
  * Render-only: never read by the silent-regime accept site or the
  * predicate it gates.  Mode-OFF runs return before any output so the
  * default-off behaviour stays byte-identical to today; under shadow-
- * only or combined the header + total are always printed (even when
- * the array is empty) so an operator running a short or under-
- * populated session can confirm the wiring fired without having to
- * grep for absence, matching the satcool sibling's discipline.
+ * only the header + total are always printed (even when the array is
+ * empty) so an operator running a short or under-populated session
+ * can confirm the wiring fired without having to grep for absence,
+ * matching the satcool sibling's discipline.
  */
 #define BARREN_TOPN 30
 

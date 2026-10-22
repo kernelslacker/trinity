@@ -7,14 +7,15 @@ RANDOM picker arms.  The `--help` output carries only a one-line
 contract per option; the rationale, the classifier the observer
 computes, and the shadow-vs-live promotion criteria live here.
 
-Every three-mode option accepts the same spelling: `off`,
-`shadow-only`, `combined`.  `off` short-circuits before any
-per-syscall counter is loaded and is bit-for-bit identical to a build
-without the row.  `shadow-only` runs the observer and bumps
+The mode options accept `off` and `shadow-only`; only
+`--expensive-adaptive` also accepts `combined`.  `off` short-circuits
+before any per-syscall counter is loaded and is bit-for-bit identical
+to a build without the row.  `shadow-only` runs the observer and bumps
 observability counters; selection stays byte-identical to `off`.
-`combined` is where the observer gates the live picker; several
-options ship it as **RESERVED** (identical to `shadow-only` in this
-build) so the enum value can land before the divergence is wired.
+`combined` is where the observer gates the live picker.
+`--context-pool` and `--cost-pool-selector` have no `combined` yet:
+the parser rejects it, and the value is added together with the
+divergence it wires.
 
 ## --context-pool
 
@@ -41,9 +42,6 @@ shared `frontier_spare_lane_decide` spare cascade
 - `shadow-only`: classify + bump.  Selection stays byte-identical;
   no goto-retry or accept-gate is influenced, no live regular-pool
   deactivation fires.
-- `combined` (RESERVED): identical to `shadow-only` in this build; a
-  follow-up wires the live regular-pool removal
-  (`deactivate_syscall_locked` on the regular_suppressed subset).
 
 Validate the per-syscall `would_skip` distribution against the
 measured EPERM hogs (`fchown` / `chown` / `lchown` / `fchownat` plus
@@ -76,16 +74,14 @@ given seed.
 
 The parallel
 `cost_pool_selector_live_cheap_picks` / `cost_pool_selector_live_expensive_picks`
-accepted-pick counters bump regardless of this flag so the analytical
-(shadow) fraction can be validated empirically against the live
-draw-then-reject fraction on any run.
+accepted-pick counters bump only while the observer is on, so under
+`off` they stay zero with the rest of the family; under `shadow-only`
+the analytical (shadow) fraction can be validated empirically against
+the live draw-then-reject fraction.
 
 - `off`: skip the observer entirely; no per-pool counter loads, no
   divide, no `cost_pool_selector_shadow_*` counter bump.
 - `shadow-only`: observer accumulates.
-- `combined` (RESERVED): identical to `shadow-only` in this build; a
-  follow-up wires the live coin-then-draw dispatch on top of the
-  `shm->active_cheap*[]` / `active_expensive*[]` pools.
 
 Validate:
 

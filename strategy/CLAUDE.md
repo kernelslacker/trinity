@@ -74,10 +74,13 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
    without an immediate PC-edge win) get partial credit.
 10. **Many features are SHADOW_ONLY-gated and unwired** — saturation-cooldown
     (`frontier_satcool_spare`), LIVE-regime cooldown discriminator (`frontier_live_cool_spare`),
-    group-antilock damper, cost-pool selector, and blended edge-count bandit reward all default
-    OFF/compute-but-don't-act, accumulating shadow counters for validation against real runs
-    before a future COMBINED mode wires them into live selection. This is a deliberate,
-    consistently-applied ramp discipline across the whole directory, not ad hoc dead code.
+    floored-barren demote, group-antilock damper, cost-pool selector, and context-pool
+    classifier all default OFF and compute-but-don't-act under SHADOW_ONLY, accumulating shadow
+    counters for validation against real runs before a future COMBINED mode wires them into
+    live selection. None of the six has a COMBINED value yet and the parser rejects `combined`.
+    The blended edge-count bandit reward follows the same ramp, but its COMBINED mode is wired.
+    This is a deliberate, consistently-applied ramp discipline across the whole directory, not
+    ad hoc dead code.
 
 ## Integration points
 
@@ -102,10 +105,11 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
   (parent-only, no locking needed) and renders the current hypothesis / per-hypothesis fire
   counts.
 - `stats/dump/strategy.c` — calls `dump_strategy_stats()` at end-of-run.
-- `main/params/coverage.c` — owns `--strategy` (round-robin/bandit), `--explorer-children`, and the four
-  SHADOW_ONLY mode flags (`--frontier-saturation-cooldown`, `--frontier-live-cooldown-mode`,
-  `--frontier-group-antilock`, `--cost-pool-selector`); writes `picker_mode_arg` before
-  `init_shm()` runs.
+- `main/params/coverage.c` — owns `--strategy` (round-robin/bandit) and the six OFF/SHADOW_ONLY mode
+  flags (`--frontier-saturation-cooldown`, `--frontier-live-cooldown-mode`,
+  `--frontier-barren-demote`, `--frontier-group-antilock`, `--cost-pool-selector`,
+  `--context-pool`); writes `picker_mode_arg` before `init_shm()` runs.  `--explorer-children` is
+  parsed in `main/params/childop.c`.
 - `cmp_hints/` (see cmp_hints/CLAUDE.md) — cross-references this directory heavily: the
   `CMP_RISING_PC_FLAT` plateau hypothesis reads `kcov_shm->cmp_hints_unique_inserts`;
   `RRC_CMP_DERIVED` rescue classification reads `cmp_hints_pool_safe_count()`; the two-tier
@@ -114,9 +118,9 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
   productive-event bookkeeping mirrors `frontier_window_advance()`'s clear-then-publish
   ordering); `strategy.h` included for the plateau/frontier declarations.
 - `include/strategy.h` / `include/strategy-internal.h` — shared enums (`strategy_t`,
-  `plateau_hypothesis`, `plateau_intervention_mode`, `random_rescue_class`, the four
-  SHADOW/COMBINED mode enums) and the cross-file function declarations; internal header
-  separates truly-private helpers used only within strategy/.
+  `plateau_hypothesis`, `plateau_intervention_mode`, `random_rescue_class`, the six
+  OFF/SHADOW_ONLY mode enums, `bandit_reward_edge_count_mode`) and the cross-file function
+  declarations; internal header separates truly-private helpers used only within strategy/.
 
 ## Areas of attention
 
@@ -131,12 +135,13 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
    paragraph rationale (ordering/race justification, historical bug postmortems e.g. the
    frontier underflow story in `frontier_window_advance()`, strategy-frontier-window.c). This is valuable but means the
    real logic-to-comment ratio is low; a reader has to track which comments describe current
-   behavior vs. reserved/future (COMBINED) behavior.
-3. **Proliferation of SHADOW_ONLY/COMBINED mode pairs** (4 independent enums:
+   behavior vs. future (COMBINED) behavior.
+3. **Proliferation of mode enums** (six independent OFF/SHADOW_ONLY ones:
    `frontier_saturation_cooldown_mode`, `frontier_live_cooldown_mode`,
-   `frontier_group_antilock_mode`, `cost_pool_selector_mode`, plus
-   `bandit_reward_edge_count_mode`) — each with its own shadow-counter family and its own
-   "COMBINED reserved, not wired yet" comment. Consistent pattern, but the surface area for
+   `frontier_barren_demote_mode`, `frontier_group_antilock_mode`, `cost_pool_selector_mode`,
+   `context_pool_mode`, plus the OFF/SHADOW_ONLY/COMBINED `bandit_reward_edge_count_mode`) —
+   each with its own shadow-counter family. The six have no COMBINED value, only comments
+   about the live follow-up that would add one. Consistent pattern, but the surface area for
    dead/half-live code is large; several of these have been sitting at OFF/SHADOW_ONLY long
    enough that the directory carries meaningfully more branches than the live decision tree
    actually uses.

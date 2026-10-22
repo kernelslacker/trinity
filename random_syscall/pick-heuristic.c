@@ -88,9 +88,9 @@ bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 	 * (NOT per retry) so the analytical expected-expensive-fraction
 	 * summand matches the flat picker's one-pick-per-call rhythm.
 	 * OFF is a single RELAXED mode load + short-circuit; SHADOW_ONLY
-	 * / COMBINED accumulates the section 4.1 closed-form summand
-	 * with ZERO RNG draws so the live pick stream stays byte-
-	 * identical to a pre-row build for a given seed.
+	 * accumulates the section 4.1 closed-form summand with ZERO RNG
+	 * draws so the live pick stream stays byte-identical to a pre-row
+	 * build for a given seed.
 	 *
 	 * Shadow-vs-live accounting note: the SHADOW note above counts
 	 * pick ATTEMPTS -- it is bumped once here, before the retry:

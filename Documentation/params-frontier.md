@@ -7,14 +7,14 @@ carries only a one-line contract per option; the full rationale, the
 predicate the classifier evaluates, and the validation checklist
 before ramping past `shadow-only` live here.
 
-Every mode listed accepts the same three-way spelling: `off`,
-`shadow-only`, `combined`.  `off` short-circuits before any
-per-syscall counter is loaded and is bit-for-bit identical to a build
-without the row.  `shadow-only` runs the predicate and bumps
-observability counters but leaves selection byte-identical to `off`.
-`combined` is where the classifier gates the live picker; several
-options ship it as **RESERVED** (identical to `shadow-only` in this
-build) so the enum value can land before the divergence is wired.
+Every mode listed accepts the same two-way spelling: `off` and
+`shadow-only`.  `off` short-circuits before any per-syscall counter is
+loaded and is bit-for-bit identical to a build without the row.
+`shadow-only` runs the predicate and bumps observability counters but
+leaves selection byte-identical to `off`.  `combined`, which would let
+the classifier gate the live picker, is not implemented: the parser
+rejects it, and the value is added together with the divergence it
+wires.
 
 ## --frontier-live-cooldown-mode
 
@@ -34,9 +34,6 @@ does not fire on cold syscalls that have no per-syscall history yet.
   to `off`; the existing `frontier_live_would_skip` projection keeps
   running so the (live_cool_would_skip / live_would_skip) ratio reads
   the over-cool the discriminator would remove.
-- `combined` (RESERVED): identical to `shadow-only` in this build; a
-  follow-up wires the rotation-loop halving + per-syscall reject gated
-  on the discriminator.
 
 Validate the per-syscall would-skip distribution against
 `gettid` / `sched_get_priority_max` (expected high) and
@@ -73,9 +70,6 @@ Full predicate:
 - `shadow-only`: evaluate the predicate inside the silent-regime
   accept block and bump `frontier_barren_*` shadow counters.
   Selection is byte-identical to `off`; no goto-retry is gated.
-- `combined` (RESERVED): identical to `shadow-only` in this build; a
-  follow-up wires the live sub-floor divergence swapping the silent
-  accept denominator to `(FRONTIER_COLD_SCALE * FRONTIER_BARREN_DEMOTE_MULT + 1)`.
 
 Validate the per-syscall would-skip distribution reads the pure
 zero-arg getter cohort before considering the `combined` ramp.
@@ -94,8 +88,6 @@ edge yield has flatlined and whose alternate signal lanes are empty.
 - `shadow-only`: compute the predicate inside the silent-regime
   accept block and bump `frontier_satcool_*` shadow counters.
   Selection is byte-identical to `off`.
-- `combined` (RESERVED): identical to `shadow-only` in this build; a
-  follow-up wires the live reject.
 
 Validate the per-syscall would-skip distribution against
 `syncfs` / `sendfile` / `semget` / `writev` (expected high) and
@@ -121,8 +113,6 @@ turn.
 - `shadow-only`: run the bookkeeping and evaluate the release
   predicate; bump `frontier_frseq_*` shadow counters.  Selection
   stays byte-identical.
-- `combined` (RESERVED): identical to `shadow-only` in this build; a
-  follow-up wires the live pin release.
 
 Validate the per-syscall would-skip distribution against
 `rseq_slice_yield` / `getpgrp` / `sched_yield` (expected high) and

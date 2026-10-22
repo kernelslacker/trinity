@@ -36,8 +36,8 @@
  *   measured EPERM hogs (fchown/chown/lchown/fchownat + cred family).
  *
  * Observability-only in this commit: NO live suppression wired.
- * COMBINED is reserved in the enum for the follow-up that flips the
- * gate live.
+ * context_pool_mode has no COMBINED value; the follow-up that flips
+ * the gate live would add it.
  *
  * The surrounding struct stats_s composes an instance of struct
  * context_suppress_stats as its "context_suppress" member.
