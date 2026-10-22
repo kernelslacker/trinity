@@ -1007,19 +1007,42 @@ static void post_get_fp_exc_emu(struct syscallrecord *rec, unsigned long retval)
 	}
 }
 
-static void post_get_tsc(struct syscallrecord *rec, unsigned long retval)
+static void post_get_tsc(struct syscallrecord *rec,
+			 const struct prctl_post_state *snap,
+			 unsigned long retval)
 {
+	unsigned int mode;
+
 	/*
-	 * Kernel ABI (x86): returns one of PR_TSC_ENABLE (1) or
-	 * PR_TSC_SIGSEGV (2).  Note 0 is NOT valid here -- the TSC
-	 * mode field is initialised to PR_TSC_ENABLE.  Any other
-	 * value is a torn read of thread->flags or a dispatch into
-	 * the wrong getter.
+	 * Kernel ABI (x86, arm64): returns 0 and stores the mode through
+	 * arg2 -- PR_TSC_ENABLE (1) or PR_TSC_SIGSEGV (2) -- with
+	 * put_user() in get_tsc_mode(); every other architecture returns
+	 * -EINVAL.  Any other value in the return slot is a -errno leak
+	 * or a dispatch into the wrong getter.
 	 */
-	if (retval != 1UL && retval != 2UL &&
-	    retval != (unsigned long)-1L) {
-		output(0, "post_prctl: rejected PR_GET_TSC retval 0x%lx outside {ENABLE, SIGSEGV, -1}\n",
+	if (retval != 0UL && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_TSC retval 0x%lx outside {0, -1}\n",
 		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		return;
+	}
+	if (retval != 0UL)
+		return;
+
+	/*
+	 * Judge the mode where the kernel put it.  snap->set_arg is the
+	 * arg2 out-buffer captured at sanitise time; a buffer outside
+	 * trinity's tracked regions drops the sample.  Any mode but the
+	 * two above is a torn read of thread->flags or a scribbled
+	 * buffer.
+	 */
+	if (!post_snapshot_or_skip(&mode,
+				   (const void *)(unsigned long) snap->set_arg,
+				   sizeof(mode)))
+		return;
+	if (mode != PR_TSC_ENABLE && mode != PR_TSC_SIGSEGV) {
+		output(0, "post_prctl: rejected PR_GET_TSC mode %u outside {ENABLE, SIGSEGV}\n",
+		       mode);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 }
@@ -1027,13 +1050,17 @@ static void post_get_tsc(struct syscallrecord *rec, unsigned long retval)
 static void post_get_thp_disable(struct syscallrecord *rec, unsigned long retval)
 {
 	/*
-	 * Kernel ABI: returns the MMF_DISABLE_THP bit from mm->flags
-	 * -- a single bit, value 0 or 1.  A larger value is a torn
-	 * read of mm_struct->flags or a leak of adjacent MMF_* bits
-	 * past the THP-disable mask.
+	 * Kernel ABI: returns 0 when THP is not disabled, 1 when it is
+	 * disabled completely, and 1 | PR_THP_DISABLE_EXCEPT_ADVISED when
+	 * it is disabled except for madvise()d regions
+	 * (prctl_get_thp_disable()).  Anything else is a torn read of
+	 * mm_struct->flags or a leak of adjacent MMF_* bits past the
+	 * THP-disable mask.
 	 */
-	if (retval > 1UL && retval != (unsigned long)-1L) {
-		output(0, "post_prctl: rejected PR_GET_THP_DISABLE retval 0x%lx outside {0, 1, -1}\n",
+	if (retval != 0UL && retval != 1UL &&
+	    retval != (1UL | PR_THP_DISABLE_EXCEPT_ADVISED) &&
+	    retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_THP_DISABLE retval 0x%lx outside {0, 1, 1|EXCEPT_ADVISED, -1}\n",
 		       retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
@@ -1219,7 +1246,7 @@ static void post_prctl(struct syscallrecord *rec)
 		post_get_fp_exc_emu(rec, retval);
 		break;
 	case PR_GET_TSC:
-		post_get_tsc(rec, retval);
+		post_get_tsc(rec, snap, retval);
 		break;
 	case PR_GET_THP_DISABLE:
 		post_get_thp_disable(rec, retval);

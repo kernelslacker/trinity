@@ -158,6 +158,9 @@ REAL_SRCS	:= \
 # writable pool, avoid_shared_buffer_out() and redqueen_pin_field().
 # ioctls/loop.c brings the loop group's sanitiser, which registers itself
 # at load time; loop_status_test.c fakes the ioctl registry it reaches.
+# syscalls/process/prctl.c brings syscall_prctl, which post_oracle_test.c
+# drives through its own sanitiser and post handler with the post_state
+# table, post_snapshot_or_skip() and the corrupt-pointer bump faked.
 # They also pull in functions the tests never call (main_loop() reaches
 # most of the parent, dispatch_step() most of the child), so each
 # function gets its own section and --gc-sections drops the unreached
@@ -180,7 +183,8 @@ PARENT_SRCS	:= \
 	$(TOP)/health/signals-async-safe.c \
 	$(TOP)/rand/random-address.c \
 	$(TOP)/random_syscall/dispatch-step.c \
-	$(TOP)/ioctls/loop.c
+	$(TOP)/ioctls/loop.c \
+	$(TOP)/syscalls/process/prctl.c
 LDFLAGS		+= -Wl,--gc-sections
 
 # The CMP-hint collect path, linked for cmp_hints_collect() and the
@@ -280,6 +284,7 @@ FAKE_SRCS	:= \
 	reap_fault_beacon_test.c \
 	get_num_fds_test.c \
 	spawn_test.c \
+	post_oracle_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
