@@ -724,18 +724,22 @@ static void stats_ts_emit_cmp_hints(FILE *fp)
  * detector state visible on runs that never cross the enter/exit
  * boundaries and therefore never emit a transition line.
  *
- * When the plateau is inactive the intervention mode is reported as
- * NONE rather than UNIFORM_RANDOM: select_next_strategy() clears the
+ * When no intervention is running the mode is reported as NONE
+ * rather than UNIFORM_RANDOM: select_next_strategy() clears the
  * mode-current field back to PIM_UNIFORM_RANDOM (=0) as a "no bias"
- * sentinel outside a plateau, which otherwise looks identical to an
- * actively-forced uniform-random intervention.  intervention_active
- * disambiguates the two states, and mirroring that in the mode
+ * sentinel outside a plateau intervention, which otherwise looks
+ * identical to an actively-forced uniform-random intervention.  The
+ * intervention runs only while the detector is latched under the
+ * bandit picker, so hard_stall_active alone does not say it is in
+ * flight; intervention_active does, and mirroring that in the mode
  * string keeps the JSONL self-explanatory. */
 static void stats_ts_emit_plateau(FILE *fp)
 {
 	int plateau_hypothesis = 0;
 	int intervention_mode = 0;
+	int picker_mode = PICKER_ROUND_ROBIN;
 	bool hard_stall_active = false;
+	bool intervention_active;
 	unsigned long last_window_delta = 0;
 	time_t window_start = 0;
 	long window_elapsed = 0;
@@ -747,6 +751,8 @@ static void stats_ts_emit_plateau(FILE *fp)
 		intervention_mode = __atomic_load_n(
 			&shm->plateau_intervention_mode_current,
 			__ATOMIC_RELAXED);
+		picker_mode = __atomic_load_n(&shm->picker_mode,
+					      __ATOMIC_RELAXED);
 	}
 	if (kcov_shm != NULL) {
 		struct timespec ts;
@@ -767,7 +773,10 @@ static void stats_ts_emit_plateau(FILE *fp)
 		}
 	}
 
-	mode_name = hard_stall_active ?
+	/* Must follow the gate in select_next_strategy(). */
+	intervention_active = hard_stall_active &&
+			      picker_mode == PICKER_BANDIT_UCB1;
+	mode_name = intervention_active ?
 		plateau_intervention_mode_name(intervention_mode) : "NONE";
 
 	fprintf(fp,
@@ -783,7 +792,7 @@ static void stats_ts_emit_plateau(FILE *fp)
 		strategy_plateau_hypothesis_name(plateau_hypothesis),
 		mode_name,
 		hard_stall_active ? 1 : 0,
-		hard_stall_active ? 1 : 0,
+		intervention_active ? 1 : 0,
 		last_window_delta,
 		KCOV_PLATEAU_ENTER_THRESHOLD,
 		KCOV_PLATEAU_EXIT_THRESHOLD,
