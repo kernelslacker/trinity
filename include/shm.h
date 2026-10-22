@@ -340,10 +340,6 @@ struct shm_s {
 	 * Documentation/shm-state.md (CLONE_NEWNET throttle). */
 	int newnet_in_flight;
 
-	/* Set to true once we confirm io_uring_setup returns ENOSYS.
-	 * Avoids repeated failed probes from every child. */
-	bool iouring_enosys;
-
 	/* vsock-transport-churn per-grandchild unsupported latch
 	 * (childops/net/vsock-transport-churn.c).  Write sites include
 	 * vsock_transport_iter_setup() (AF_VSOCK socket()/bind() reject)

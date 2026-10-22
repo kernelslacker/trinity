@@ -18,8 +18,7 @@
  *
  * The wrapper deliberately fakes ENOSYS on a suppression so existing
  * childops fall into their already-present "kernel doesn't support
- * this" branch (iouring_recipes latches iouring_enosys on ENOSYS, for
- * instance) instead of needing new bespoke handling.  Real ENOSYS
+ * this" branch instead of needing new bespoke handling.  Real ENOSYS
  * returns from the kernel are indistinguishable from -x suppressions,
  * which is the desired semantics: a childop that cannot do its work
  * without an excluded syscall has nothing useful to fuzz this
