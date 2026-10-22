@@ -2,11 +2,11 @@
 
 Owns the fuzzed process's synthetic VMA pools (anon/file/testfile mmap objects), deliberate page-fault injection (read and write), mlock/memlock accounting, initial-mapping and image-segment bookkeeping, hugepage size-encoding helpers, and a VMA-count watchdog. This is the layer that hands out addresses/lengths for ARG_ADDRESS/ARG_MMAP args and then actively touches the memory behind them to trigger kernel fault paths.
 
-## Files (12 files + internal header, ~3,550 LOC)
+## Files (12 files + internal header, ~3,517 LOC)
 
 | File | Lines | Role |
 |---|---|---|
-| maps-pick.c | 681 | Pool pick + validate + refill: `pick_mmap_pool_type()`, the three corruption guards (`obj_ptr_in_user_va_band`, `obj_pool_slot_check`, `map_size_in_range`), `get_map_handle`/`validate_map_handle`, `get_map`/`get_map_with_prot`/`get_anon_map_with_prot`, `addr_in_local_runtime_map`, `maybe_refill_local_anon_pool` |
+| maps-pick.c | 648 | Pool pick + validate + refill: `pick_mmap_pool_type()`, the three corruption guards (`obj_ptr_in_user_va_band`, `obj_pool_slot_check`, `map_size_in_range`), `get_map_handle`/`validate_map_handle`, `get_map`/`get_map_with_prot`, `addr_in_local_runtime_map`, `maybe_refill_local_anon_pool` |
 | maps-lifecycle.c | 644 | Destructors and pool cloning: `map_destructor` (OBJ_LOCAL) / `map_destructor_shared` (OBJ_GLOBAL), `map_dump`, `clone_global_mmap_pool`, `init_child_mappings`, `mmap_fd()` (fd-backed mmap producer) |
 | maps-proc.c | 208 | `proc_maps_check()`: reads `/proc/self/maps` and verifies the presence/absence and prot bits of a VMA covering `[addr, addr+len)` |
 | maps-arg.c | 115 | `common_set_mmap_ptr_len()` — arg-plumbing for mincore/mremap/madvise/mlock/etc., plus the pool type-resolution walk |
@@ -42,7 +42,7 @@ Owns the fuzzed process's synthetic VMA pools (anon/file/testfile mmap objects),
 - `syscalls/fs/ftruncate.c`, `fallocate.c`, `madvise.c`, `fds/testfiles.c` — call `invalidate_obj_mmap_in_range`/`invalidate_obj_mmap_by_fd` to soft-invalidate pool entries whose backing extent changed (hole-punch, truncate)
 - `syscalls/mm/mmap.c`, `munmap.c`, `mprotect.c`, `childops/misc/refcount-auditor.c` — use `proc_maps_check()` to verify VMA invariants after a syscall
 - `child/child.c`, `child/child-init-freeze.c`, `child/child-periodic.c`, `syscalls/process/fork.c` — call `init_child_mappings()`/`dirty_random_mapping()`/fault injectors during child bootstrap and `periodic_work()`
-- `childops/mm/mmap-lifecycle.c`, `mprotect-split.c`, `madvise-pattern-cycler.c`, `numa-migration-churn.c`, `memory-pressure.c`, `childops/io_uring/recipes*.c`, `keyring-spam.c`, `fds/sockets.c`, `ioctls/userfaultfd.c`, `deferred-free.c`, `objects/registry.c`, `stats/dump.c` — general consumers of the map pool API (`get_map_handle`/`get_map_with_prot`/`get_anon_map_with_prot`)
+- `childops/mm/mmap-lifecycle.c`, `mprotect-split.c`, `madvise-pattern-cycler.c`, `numa-migration-churn.c`, `memory-pressure.c`, `childops/io_uring/recipes*.c`, `keyring-spam.c`, `fds/sockets.c`, `ioctls/userfaultfd.c`, `deferred-free.c`, `objects/registry.c`, `stats/dump.c` — general consumers of the map pool API (`get_map_handle`/`get_map_with_prot`)
 - `syscalls/mm/mlock/mlock.c`, `munlock.c`, `munlockall.c` — the only callers of `mlock_state_*`; munlockall calls `mlock_state_reset()` after a real kernel `munlockall()` clears every VM_LOCKED VMA
 - `child/child.c`, `childops/mm/vma-split-storm.c`, `mmap-lifecycle.c`, `mprotect-split.c`, `mlock-pressure.c`, `madvise-pattern-cycler.c` — the five "heavy-VMA" childops that poll `vma_pressure_is_high()` and back off; `child/child-periodic.c` drives `vma_pressure_sample_maybe()` from `periodic_work()`
 - `trinity.c` — calls `register_loaded_image_segments()` once before `fork_children()`, and `setup_initial_mappings()`/`init_child_mappings()` during startup
@@ -52,7 +52,7 @@ Owns the fuzzed process's synthetic VMA pools (anon/file/testfile mmap objects),
 
 ## Areas of attention
 
-1. **The maps cluster is the bulk of the directory (6 files, ~1,760 LOC)** — pool pick/validate/refill (maps-pick.c, 681), destructor pairs and cloning (maps-lifecycle.c, 644), `/proc/self/maps` checking (maps-proc.c), and arg-plumbing (maps-arg.c) now sit in separate TUs sharing `maps-internal.h`. The corruption-defense layer (obj-ptr band check, alloc-track lookup, size cap) is still duplicated inline across `get_map_handle`, `map_destructor`, and `map_destructor_shared` rather than factored into one shared validator.
+1. **The maps cluster is the bulk of the directory (6 files, ~1,730 LOC)** — pool pick/validate/refill (maps-pick.c, 648), destructor pairs and cloning (maps-lifecycle.c, 644), `/proc/self/maps` checking (maps-proc.c), and arg-plumbing (maps-arg.c) now sit in separate TUs sharing `maps-internal.h`. The corruption-defense layer (obj-ptr band check, alloc-track lookup, size cap) is still duplicated inline across `get_map_handle`, `map_destructor`, and `map_destructor_shared` rather than factored into one shared validator.
 2. **`common_set_mmap_ptr_len`'s type-resolution walk is O(n) over all three pools** on every call that needs `out_type` (used by `post_munmap`'s WHOLE-destroy path) — a linear scan comparing `obj` pointers, with its own scan-length stats counters acknowledging the cost.
 3. **Fault-injection signal handlers are duplicated near-verbatim** between fault-read.c and fault-write.c (armed flag, lo/hi range, sigsetjmp/siglongjmp dance) — the file-top comments in both explicitly note the same pattern exists a third time in `childops/mm/madvise-pattern-cycler.c` and `childops/mm/pagecache-canary-check.c`. `-Wclobbered`/volatile requirements make hoisting nontrivial but four independent copies is a real drift risk.
 4. **`/proc/self/maps` parsing appears in three places** (`maps-proc.c::proc_maps_check`, `vma-pressure.c::vma_pressure_count_self_vmas`, `stats/periodic/vma.c::count_proc_maps_lines`) with different failure semantics (true-on-error vs ULONG_MAX-on-error) — a shared parser deliberately was not built to avoid include-surface entanglement, per vma-pressure.c's note, but this means fixing a `/proc/self/maps` line-format edge case requires touching three files.
