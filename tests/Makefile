@@ -178,6 +178,9 @@ REAL_SRCS	:= \
 # __do_syscall() and do_extrafork() it routes to, which
 # dispatch_extrafork_test.c drives with the kcov bracket, the coupling
 # validator and the other calls the live path reaches faked.
+# tables/tables.c brings deactivate_extrafork_syscalls(), which
+# tables_extrafork_test.c drives over fake tables with the deactivation
+# it makes faked.
 # syscalls/fs/path/fchdir.c and fchroot.c, syscalls/process/setns.c and
 # lib/sanitiser-fd.c bring the entries whose sanitisers open an fd and the
 # helper that closes it, which the same test runs through sanitise, dispatch
@@ -198,6 +201,7 @@ PARENT_SRCS	:= \
 	$(TOP)/main/spawn.c \
 	$(TOP)/stats/rotation_event.c \
 	$(TOP)/tables/table-meta.c \
+	$(TOP)/tables/tables.c \
 	$(TOP)/utils/uid.c \
 	$(TOP)/utils/utils.c \
 	$(TOP)/args/generate-args.c \
@@ -311,6 +315,7 @@ FAKE_SRCS	:= \
 	reap_dead_kids_test.c \
 	extrafork_reap_test.c \
 	dispatch_extrafork_test.c \
+	tables_extrafork_test.c \
 	cmp_field_scan_test.c \
 	sanitiser_owned_mask_test.c \
 	minicorpus_abi_test.c \

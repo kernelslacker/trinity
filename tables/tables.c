@@ -71,6 +71,63 @@ void deactivate_disabled_syscalls(void)
 		deactivate_disabled_syscalls_uniarch();
 }
 
+#ifdef __SANITIZE_ADDRESS__
+static unsigned int deactivate_extrafork_in_table(const struct syscalltable *table,
+						  unsigned int nr_syscalls,
+						  bool do32bit)
+{
+	unsigned int i, nr = 0;
+
+	for (i = 0; i < nr_syscalls; i++) {
+		struct syscallentry *entry = table[i].entry;
+
+		if (entry == NULL || !(entry->flags & EXTRA_FORK))
+			continue;
+
+		/* mark_all_syscalls_active_*() flags an entry ACTIVE even when
+		 * AVOID_SYSCALL kept it out of the table, so ask the table. */
+		if (syscall_rt(entry)->active_number == 0)
+			continue;
+
+		entry->flags &= ~ACTIVE;
+		deactivate_syscall_nolock(i, do32bit);
+		nr++;
+	}
+
+	return nr;
+}
+
+/*
+ * do_extrafork() is compiled out under ASAN, so a live run never issues an
+ * EXTRA_FORK call and each one the picker draws is an iteration spent on
+ * nothing.  --dry-run keeps them: it takes these calls in the child like any
+ * other, which is what keeps their sanitisers under test there.  No child
+ * exists yet, so there is nobody to take syscalltable_lock against.
+ */
+void deactivate_extrafork_syscalls(void)
+{
+	unsigned int nr;
+
+	if (dry_run == true)
+		return;
+
+	if (biarch == true)
+		nr = deactivate_extrafork_in_table(syscalls_32bit, max_nr_32bit_syscalls, true) +
+		     deactivate_extrafork_in_table(syscalls_64bit, max_nr_64bit_syscalls, false);
+	else
+		nr = deactivate_extrafork_in_table(syscalls, max_nr_syscalls, false);
+
+	if (nr != 0)
+		output(0, "[tables] deactivated %u EXTRA_FORK syscall%s: do_extrafork() is compiled out under ASAN\n",
+		       nr, nr == 1 ? "" : "s");
+}
+#else
+void deactivate_extrafork_syscalls(void)
+{
+	/* do_extrafork() is built, so every EXTRA_FORK entry stays. */
+}
+#endif
+
 void dump_syscall_tables(void)
 {
 	if (biarch == true)
@@ -203,6 +260,10 @@ int munge_tables(void)
 			mark_all_syscalls_active();
 		deactivate_disabled_syscalls();
 	}
+
+	/* After every activation mode above, so -c, -g, -r and the default
+	 * are all covered, and ahead of the counts and the enabled check. */
+	deactivate_extrafork_syscalls();
 
 	sanity_check_tables();
 

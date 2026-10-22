@@ -67,9 +67,8 @@ bool no_kcov_warm_start;
 bool no_cmp_hints_warm_start;
 bool no_chain_warm_start;
 
-/* Owned by tables/tables.c, tables-uniarch.c and tables-biarch.c in
- * production.  Empty, so get_syscall_entry() finds no entry. */
-bool biarch;
+/* Owned by tables/tables-uniarch.c and tables-biarch.c in production.
+ * Empty, so get_syscall_entry() finds no entry. */
 const struct syscalltable *syscalls;
 const struct syscalltable *syscalls_32bit;
 const struct syscalltable *syscalls_64bit;

@@ -28,7 +28,6 @@
 #include "params.h"		/* dry_run, frontier_noise_sample */
 #include "syscall.h"
 #include "syscalls/syscalls.h"	/* syscall_fchdir, syscall_fchroot */
-#include "tables.h"		/* deactivate_syscall_nolock */
 #include "tmpdir.h"		/* change_tmp_dir */
 #include "utils.h"		/* get_num_fds */
 
@@ -75,11 +74,6 @@ bool fd_event_enqueue(struct fd_event_ring *ring, enum fd_event_type type, int f
 {
 	(void)ring; (void)type; (void)fd1;
 	return false;
-}
-
-void deactivate_syscall_nolock(unsigned int calln, bool do32bit)
-{
-	(void)calln; (void)do32bit;
 }
 
 /* Shared, as in production: a write by the grandchild is visible to us. */
