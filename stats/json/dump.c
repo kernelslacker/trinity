@@ -29,8 +29,6 @@ void __cold dump_stats_json(void)
 
 	json_emit_net_churn_and_early_storms_section();
 	json_emit_pidfd_fs_and_container_section();
-	json_emit_tcp_ipv6_and_tunnels_section();
-	json_emit_bridge_pci_unix_and_iouring_section();
 	json_emit_iouring_iscsi_and_net_tail_section();
 
 	dump_stats_json_vsock_tail();

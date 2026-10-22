@@ -1,8 +1,7 @@
 /*
  * Network / iouring-network JSON section emitters for --stats-json:
- * the five long category-compose helpers (net-churn + early storms,
- * pidfd + fs + container, TCP + IPv6 + tunnels, bridge + PCI + unix +
- * iouring, and iouring + iSCSI + net tail).
+ * the three long category-compose helpers (net-churn + early storms,
+ * pidfd + fs + container, and iouring + iSCSI + net tail).
  */
 
 #include <stddef.h>
@@ -53,54 +52,6 @@ void json_emit_pidfd_fs_and_container_section(void)
 
 	json_stats_sep();
 	stat_category_emit_json(&epoll_volatility_category);
-
-
-
-
-
-
-
-}
-
-void json_emit_tcp_ipv6_and_tunnels_section(void)
-{
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}
-
-void json_emit_bridge_pci_unix_and_iouring_section(void)
-{
-
-
-
-
-
-
-
-
-
 
 
 

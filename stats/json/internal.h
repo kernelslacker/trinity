@@ -42,8 +42,6 @@ void dump_stats_json_lifecycle_and_storms(void);
 /* stats/json/network.c */
 void json_emit_net_churn_and_early_storms_section(void);
 void json_emit_pidfd_fs_and_container_section(void);
-void json_emit_tcp_ipv6_and_tunnels_section(void);
-void json_emit_bridge_pci_unix_and_iouring_section(void);
 void json_emit_iouring_iscsi_and_net_tail_section(void);
 
 /* stats/json/tail.c */
