@@ -26,6 +26,14 @@
  *                       (the waitpid(-1) drain owns those), then says
  *                       "gone" after the wait releases the task.
  *
+ *   - probe_failed_read: only the released task's ESRCH counts as gone.
+ *                       A read that fails any other way, or reads
+ *                       nothing, says nothing about the task, and
+ *                       reaping the slot of a live child on it leaves
+ *                       the child running with nothing to track or
+ *                       kill it.  pread() is wrapped so each failure
+ *                       can be injected.
+ *
  * The fork here is the only one in the test binary.  It is a bare
  * fork/_exit/waitpid with no shm and no trinity state, and the parent
  * waits for it before returning, so nothing outlives the check.
@@ -36,6 +44,7 @@
  * or a live lock holder looks dead and a running child skips its SIGKILL.
  */
 
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
@@ -50,6 +59,35 @@
 #include "debug.h"			/* BUG */
 #include "pidstat-probe.h"
 #include "utils.h"			/* waitpid_eintr */
+#include "utils-macros.h"		/* ARRAY_SIZE */
+
+/*
+ * pread() failure injection (-Wl,--wrap=pread): while pread_fail_times is
+ * non-zero, a pread of pread_fail_fd fails with pread_fail_errno, or reads
+ * no bytes when that is 0, and counts down.  Every other call, and every
+ * call of pread_fail_fd once it has run out, goes to the real pread().
+ */
+static int pread_fail_fd = -1;
+static unsigned int pread_fail_times;
+static int pread_fail_errno;
+static unsigned int pread_calls;
+
+ssize_t __real_pread(int fd, void *buf, size_t count, off_t offset);
+ssize_t __wrap_pread(int fd, void *buf, size_t count, off_t offset);
+ssize_t __wrap_pread(int fd, void *buf, size_t count, off_t offset)
+{
+	if (fd == pread_fail_fd) {
+		pread_calls++;
+		if (pread_fail_times > 0) {
+			pread_fail_times--;
+			if (pread_fail_errno == 0)
+				return 0;
+			errno = pread_fail_errno;
+			return -1;
+		}
+	}
+	return __real_pread(fd, buf, count, offset);
+}
 
 static int open_pidstat(pid_t pid)
 {
@@ -112,6 +150,63 @@ static void selftest_zombie_then_gone(void)
 	close(fd);
 }
 
+struct read_case {
+	const char *what;
+	int err;		/* 0: the read returns no bytes */
+	bool gone;
+	unsigned int calls;	/* preads of the fd the probe makes */
+};
+
+/*
+ * The probe reads our own stat file, which never fails by itself, so what
+ * the injected read does is the whole answer.  ESRCH is what procfs gives
+ * once the task is released (proc_single_show(), handed back unchanged by
+ * seq_read_iter()).  ENOMEM is what a live task's fd gives when the
+ * seq_file buffer cannot be allocated.  EINTR is retried, so the second,
+ * real read decides.
+ */
+static const struct read_case read_cases[] = {
+	{ "ESRCH", ESRCH, true, 1 },
+	{ "ENOMEM", ENOMEM, false, 1 },
+	{ "EACCES", EACCES, false, 1 },
+	{ "EIO", EIO, false, 1 },
+	{ "no bytes", 0, false, 1 },
+	{ "EINTR, then the real read", EINTR, false, 2 },
+};
+
+static void selftest_failed_read(void)
+{
+	unsigned int i;
+	int fd;
+
+	fd = open_pidstat(getpid());
+	if (fd < 0)
+		BUG("pidstat probe: cannot open own /proc/<pid>/stat");
+
+	for (i = 0; i < ARRAY_SIZE(read_cases); i++) {
+		const struct read_case *c = &read_cases[i];
+		bool gone;
+
+		pread_fail_fd = fd;
+		pread_fail_times = 1;
+		pread_fail_errno = c->err;
+		pread_calls = 0;
+		gone = pidstat_task_gone(fd);
+		pread_fail_fd = -1;
+
+		if (gone != c->gone) {
+			fprintf(stderr, "pidstat probe: read case: %s\n", c->what);
+			BUG("pidstat probe: a failed read decided the wrong way");
+		}
+		if (pread_calls != c->calls) {
+			fprintf(stderr, "pidstat probe: read case: %s\n", c->what);
+			BUG("pidstat probe: the read was not retried exactly when it was interrupted");
+		}
+	}
+
+	close(fd);
+}
+
 static void selftest_read_live_and_gone(void)
 {
 	char buf[512], want[32];
@@ -162,6 +257,7 @@ void pidstat_probe_self_check(void)
 	selftest_no_fd();
 	selftest_live_self();
 	selftest_zombie_then_gone();
+	selftest_failed_read();
 	selftest_read_live_and_gone();
 	selftest_read_out_of_fds();
 }

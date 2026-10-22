@@ -26,6 +26,13 @@
  * a task that has exited but not been waited for is not "gone" here,
  * which is what callers reaping via waitpid() want.
  *
+ * Only that ESRCH counts as gone (proc_single_show() returns it, and
+ * seq_read_iter() hands it back unchanged).  A read that fails any other
+ * way, ENOMEM from the seq_file buffer or an LSM refusal, or returns no
+ * bytes, says nothing about the task: reaping the slot of a live child
+ * on it leaves the child running with nothing to track or kill it.  The
+ * waitpid() drain still catches a real exit.  EINTR is retried.
+ *
  * Returns false when there is no fd to ask, so a caller whose fd open
  * failed soft can fall back to whatever it did before rather than
  * treating an unopenable slot as dead.
@@ -40,7 +47,7 @@ bool pidstat_task_gone(int fd)
 
 	n = TEMP_FAILURE_RETRY(pread(fd, buf, sizeof(buf), 0));
 
-	return (n <= 0);
+	return (n < 0 && errno == ESRCH);
 }
 
 /*

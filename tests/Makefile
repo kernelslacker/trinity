@@ -76,6 +76,11 @@ LDFLAGS		+= -Wl,--wrap=socket
 # forwards to the real kill() unless armed.
 LDFLAGS		+= -Wl,--wrap=kill
 
+# pread() failure injection: pidstat_probe_selftest.c wraps pread() so it
+# can fail the read of a task's stat fd with any errno, or end it empty.
+# The wrapper forwards to the real pread() unless armed.
+LDFLAGS		+= -Wl,--wrap=pread
+
 # kill_pid() stand-in: utils/utils.c is linked for get_num_fds() and
 # crc32(), and its kill_pid() would SIGKILL the tasks the tests hold.
 # fake_parent.c wraps it with one that only records the pid.
