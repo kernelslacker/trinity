@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 /*
- * Shared mutable state.  Defined in utils/self_cgroup.c (which owns
+ * Shared mutable state.  Defined in utils/self_cgroup_setup.c (which owns
  * setup/cleanup); sibling TUs read/write these through the extern
  * declarations below.
  */
