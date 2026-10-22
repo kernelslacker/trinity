@@ -212,18 +212,18 @@ static inline bool fault_signal_is_real(int sig, const siginfo_t *info, pid_t se
 
 /*
  * Whether a SIGIO that F_SETSIG routes to @sig leaves the parent alone,
- * for the F_SETSIG sanitiser.  A child can make the parent the owner, so
- * @sig has to be a signal the parent ignores: SIG_IGN in
- * setup_main_signals() for SIGHUP, SIGUSR1, SIGUSR2, SIGPIPE, SIGALRM,
- * SIGXCPU, SIGXFSZ, SIGVTALRM, SIGPROF, SIGIO and SIGRTMIN..SIGRTMAX, a
- * default that ignores or continues for SIGCHLD, SIGCONT, SIGURG and
- * SIGWINCH.  0, a plain SIGIO, is one of them, and the kernel rejects a
- * value above 64.  The rest are refused: the signals the parent answers
- * with a handler, which it survives only as far as the handler judges
- * them, the ones whose default action ends or stops it, and the ones
- * from 32 up to SIGRTMIN, which are libc's to dispose of.
- * tests/parent_stop_test.c checks every signal this allows against
- * setup_main_signals().
+ * for the F_SETSIG sanitiser and for validate_arg_coupling(), which asks
+ * again at dispatch.  A child can make the parent the owner, so @sig has
+ * to be a signal the parent ignores: SIG_IGN in setup_main_signals() for
+ * SIGHUP, SIGUSR1, SIGUSR2, SIGPIPE, SIGALRM, SIGXCPU, SIGXFSZ,
+ * SIGVTALRM, SIGPROF, SIGIO and SIGRTMIN..SIGRTMAX, a default that
+ * ignores or continues for SIGCHLD, SIGCONT, SIGURG and SIGWINCH.  0, a
+ * plain SIGIO, is one of them, and the kernel rejects a value above 64.
+ * The rest are refused: the signals the parent answers with a handler,
+ * which it survives only as far as the handler judges them, the ones
+ * whose default action ends or stops it, and the ones from 32 up to
+ * SIGRTMIN, which are libc's to dispose of.  tests/parent_stop_test.c
+ * checks every signal this allows against setup_main_signals().
  */
 static inline bool parent_ignores_sigio_as(unsigned long sig)
 {

@@ -29,6 +29,7 @@
  * -1 return), STATS_FIELD_ARG_CONSTRAINT_REPAIRED (per clamp), and
  * STATS_FIELD_ARG_CONSTRAINT_KEPT_INCOHERENT (per skipped clamp).
  */
+#include <fcntl.h>
 #include <sys/uio.h>
 
 #include "arg_coupling.h"
@@ -299,6 +300,20 @@ int validate_arg_coupling(struct syscallrecord *rec)
 			return -1;
 		}
 	}
+
+	/*
+	 * fcntl F_SETSIG: routes an O_ASYNC fd's SIGIO to the signal in
+	 * a3, and the fd's owner can be the parent, which has to ignore
+	 * that signal (parent_ignores_sigio_as()).  sanitise_fcntl() draws
+	 * only such a3 values, but chain substitution rewrites the cmd
+	 * slot and the RedQueen pin either slot after it, leaving a3 as
+	 * another cmd's arm drew it.  Judge the pair the kernel will read:
+	 * do_fcntl() takes the cmd as an unsigned int and the arg as an
+	 * int.  A refused signal becomes 0, a plain SIGIO.
+	 */
+	if (entry->is_fcntl && (unsigned int) rec->a2 == F_SETSIG &&
+	    !parent_ignores_sigio_as((unsigned long) (int) rec->a3))
+		rec->a3 = 0;
 
 	/*
 	 * Non-adjacent (address, length) coupled pair: gen_arg_len()

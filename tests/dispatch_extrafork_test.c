@@ -5,7 +5,9 @@
  * land in the caller's own record; routed through do_extrafork() it is lost
  * wherever that is compiled out (ASAN).  The fchdir, fchroot and setns
  * sanitisers run in the child, so the fd they open has to be closed there,
- * and only that one.
+ * and only that one.  The coupling validator that runs on the final argument
+ * slots must keep an fcntl F_SETSIG from routing a SIGIO the parent would not
+ * ignore, whatever rewrote the slots after the sanitiser.
  */
 
 #include <errno.h>
@@ -20,16 +22,17 @@
 #include <unistd.h>
 
 #include "args-internal.h"	/* nested_address_scrub */
-#include "arg_coupling.h"	/* validate_arg_coupling */
 #include "child.h"
 #include "debug.h"		/* BUG */
 #include "fd-event.h"		/* fd_event_enqueue */
 #include "kcov.h"
 #include "params.h"		/* dry_run, frontier_noise_sample */
+#include "sanitise.h"		/* get_argval */
+#include "signals.h"		/* parent_ignores_sigio_as */
 #include "syscall.h"
 #include "syscalls/syscalls.h"	/* syscall_fchdir, syscall_fchroot */
 #include "tmpdir.h"		/* change_tmp_dir */
-#include "utils.h"		/* get_num_fds */
+#include "utils.h"		/* get_num_fds, shared_region_size_for */
 
 /* Owned by main/params/, which the test binary does not link. */
 bool dry_run;
@@ -57,13 +60,30 @@ void kcov_note_extrafork(struct kcov_child *kc, unsigned int nr)
 	extrafork_notes++;
 }
 
-int validate_arg_coupling(struct syscallrecord *rec)
+void validator_rejected_bump(void) { }
+
+/*
+ * What validate_arg_coupling() reaches.  Nothing is tracked in the test
+ * binary, so no base has an extent to clamp a length to.
+ */
+unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
 {
-	(void)rec;
+	switch (argnum) {
+	case 1: return rec->a1;
+	case 2: return rec->a2;
+	case 3: return rec->a3;
+	case 4: return rec->a4;
+	case 5: return rec->a5;
+	case 6: return rec->a6;
+	}
 	return 0;
 }
 
-void validator_rejected_bump(void) { }
+unsigned long shared_region_size_for(unsigned long addr)
+{
+	(void)addr;
+	return 0;
+}
 
 void nested_address_scrub(struct syscallentry *entry, struct syscallrecord *rec)
 {
@@ -241,10 +261,89 @@ static void selftest_owned_fds(void)
 		BUG("dispatch_extrafork: cannot remove the test tree");
 }
 
+/*
+ * Dispatch an fcntl whose cmd and arg slots hold @cmd and @arg, as chain
+ * substitution or the RedQueen pin leave them after the sanitiser has
+ * run, and return the arg the kernel is handed.  F_SETSIG makes the kernel
+ * route an fd's SIGIO to the signal in the arg, and the owner can be the
+ * parent.
+ */
+static unsigned long dispatch_fcntl(struct syscallentry *entry,
+				    unsigned long cmd, unsigned long arg)
+{
+	struct childdata *child = map_child();
+	struct syscallrecord *rec = &child->syscall;
+	unsigned long handed;
+
+	rec->entry = entry;
+	rec->a2 = cmd;
+	rec->a3 = arg;
+
+	dry_run = true;
+	do_syscall(rec, entry, &child->kcov, child);
+	dry_run = false;
+
+	if (rec->validator_rejected)
+		BUG("dispatch_extrafork: the coupling validator rejected an fcntl it could repair");
+	handed = rec->a3;
+	munmap(child, sizeof(*child));
+	return handed;
+}
+
+/*
+ * Every signal through the real validator, then the slot shapes the kernel
+ * reads differently from the 64-bit record: do_fcntl() takes the cmd as an
+ * unsigned int and the arg as an int.
+ */
+static void selftest_fcntl_setsig(void)
+{
+	struct syscallentry fcntl_entry = { .name = "fcntl", .num_args = 3,
+					    .is_fcntl = true };
+	struct syscallentry other_entry = { .name = "probe", .num_args = 3 };
+	unsigned long sig, handed;
+
+	for (sig = 0; sig <= 128; sig++) {
+		handed = dispatch_fcntl(&fcntl_entry, F_SETSIG, sig);
+		if (parent_ignores_sigio_as(sig)) {
+			if (handed != sig)
+				BUG("dispatch_extrafork: F_SETSIG lost a signal the parent ignores");
+		} else if (handed != 0) {
+			BUG("dispatch_extrafork: F_SETSIG routes a SIGIO the parent would not ignore");
+		}
+	}
+
+	/* The upper half of the arg never reaches the kernel's int. */
+	handed = dispatch_fcntl(&fcntl_entry, F_SETSIG, (1UL << 32) | SIGKILL);
+	if (handed != 0)
+		BUG("dispatch_extrafork: F_SETSIG hid SIGKILL in the upper half of the arg");
+	handed = dispatch_fcntl(&fcntl_entry, F_SETSIG, (1UL << 40) | SIGUSR1);
+	if (handed != ((1UL << 40) | SIGUSR1))
+		BUG("dispatch_extrafork: F_SETSIG lost a signal the parent ignores behind upper bits");
+
+	/* A negative int is an EINVAL for the kernel, not a signal. */
+	handed = dispatch_fcntl(&fcntl_entry, F_SETSIG, 0xfffffff7UL);
+	if (handed != 0xfffffff7UL)
+		BUG("dispatch_extrafork: F_SETSIG repaired an arg the kernel refuses anyway");
+
+	/* Nor does the upper half of the cmd hide an F_SETSIG. */
+	handed = dispatch_fcntl(&fcntl_entry, (1UL << 32) | F_SETSIG, SIGKILL);
+	if (handed != 0)
+		BUG("dispatch_extrafork: F_SETSIG hid its cmd in the upper half of the slot");
+
+	/* Only F_SETSIG routes a signal, and only fcntl has an F_SETSIG. */
+	handed = dispatch_fcntl(&fcntl_entry, F_SETFD, SIGKILL);
+	if (handed != SIGKILL)
+		BUG("dispatch_extrafork: an fcntl cmd other than F_SETSIG had its arg rewritten");
+	handed = dispatch_fcntl(&other_entry, F_SETSIG, SIGKILL);
+	if (handed != SIGKILL)
+		BUG("dispatch_extrafork: a syscall other than fcntl had its arg rewritten");
+}
+
 void dispatch_extrafork_self_check(void);
 void dispatch_extrafork_self_check(void)
 {
 	selftest_dry_run();
 	selftest_live();
 	selftest_owned_fds();
+	selftest_fcntl_setsig();
 }

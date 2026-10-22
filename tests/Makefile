@@ -177,8 +177,9 @@ REAL_SRCS	:= \
 # of those handlers.
 # dispatch/syscall.c and dispatch/syscall-exec.c bring do_syscall() with the
 # __do_syscall() and do_extrafork() it routes to, which
-# dispatch_extrafork_test.c drives with the kcov bracket, the coupling
-# validator and the other calls the live path reaches faked.
+# dispatch_extrafork_test.c drives with the kcov bracket and the other calls
+# the live path reaches faked.  args/arg_coupling.c brings the coupling
+# validator __do_syscall() runs on the final argument slots.
 # tables/tables.c brings deactivate_extrafork_syscalls(), which
 # tables_extrafork_test.c drives over fake tables with the deactivation
 # it makes faked.
@@ -216,6 +217,7 @@ PARENT_SRCS	:= \
 	$(TOP)/utils/uid.c \
 	$(TOP)/utils/utils.c \
 	$(TOP)/args/generate-args.c \
+	$(TOP)/args/arg_coupling.c \
 	$(TOP)/health/signals-policy.c \
 	$(TOP)/health/signals-fault-handler.c \
 	$(TOP)/health/signals-async-safe.c \

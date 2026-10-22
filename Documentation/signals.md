@@ -525,12 +525,22 @@ alone, the kernel rejects them.  The rule lives in
 tests/parent_stop_test.c checks every signal it allows against
 `setup_main_signals()`, so dropping a `SIG_IGN` there fails the test.
 
-For the ten handled signals the classification above is a second line,
-and it holds when a RedQueen re-exec overwrites a3 after the sanitiser
-has run.  SIGKILL, SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU, SIGSTKFLT, SIGPWR
-and 33 have no backstop beyond the sanitiser and F_SETOWN never naming
-the parent (`get_pid()` skips `mainpid`, and the OBJ_PID pool rejects
-it).
+The sanitiser is not the last word.  Chain substitution rewrites the cmd
+slot, and the RedQueen pin either slot, after it has run, so a cmd can
+turn into F_SETSIG over an arg another cmd's arm drew: a seal or notify
+mask reaches 9, 16, 19 to 22 and 30, and an fd number can be any signal.
+`validate_arg_coupling()` (args/arg_coupling.c) is the second line.  At
+dispatch it reads the pair the way the kernel does, the cmd as an
+unsigned int and the arg as an int (`do_fcntl()` in fs/fcntl.c), so
+neither half of a 64-bit slot can hide a signal, and it turns a refused
+one into 0.  tests/dispatch_extrafork_test.c runs every value through
+`do_syscall()`.
+
+For the ten handled signals the classification above is a third line,
+for a signal that got past both.  SIGKILL, SIGSTOP, SIGTSTP, SIGTTIN,
+SIGTTOU, SIGSTKFLT, SIGPWR and 33 have nothing beyond them and F_SETOWN
+never naming the parent (`get_pid()` skips `mainpid`, and the OBJ_PID
+pool rejects it).
 
 ## Fault signals reaching a child
 

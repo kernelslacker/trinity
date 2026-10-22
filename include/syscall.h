@@ -693,6 +693,14 @@ struct syscallentry {
 	bool is_epoll_wait_family;
 
 	/*
+	 * Cached identity of fcntl, set at table init so
+	 * validate_arg_coupling() can judge its (cmd, arg) pair with a
+	 * single byte load per dispatch.  The i386 fcntl64 slot shares
+	 * the entry, so the one name covers both.
+	 */
+	bool is_fcntl;
+
+	/*
 	 * Opt-in flag for the userns-admin lane.  When true,
 	 * init_child_setup_sandbox() performs
 	 * unshare(CLONE_NEWUSER|CLONE_NEWNET) and writes an identity

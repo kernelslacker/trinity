@@ -150,6 +150,7 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 			(strcmp(copy[m].name, "epoll_wait") == 0 ||
 			 strcmp(copy[m].name, "epoll_pwait") == 0 ||
 			 strcmp(copy[m].name, "epoll_pwait2") == 0);
+		copy[m].is_fcntl = (strcmp(copy[m].name, "fcntl") == 0);
 		copy[m].numeric_substitute_mask = compute_numeric_substitute_mask(&copy[m]);
 		copy[m].address_scrub_mask = compute_address_scrub_mask(&copy[m]);
 		/*
