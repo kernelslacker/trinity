@@ -84,6 +84,24 @@ timeseries/rotation files are verified to surface in stderr with exit 0.
 when scripts are added to or removed from `scripts/check-static/`,
 update this section to match `ls scripts/check-static/*.sh`.)
 
+- `check-reexec-coverage`: every `struct syscallentry` in `syscalls/` with
+  a `.sanitise` must say what the CMP RedQueen re-exec step does with it:
+  `REEXEC_SANITISE_OK` or `AVOID_REEXEC` in its flags, a one-line
+  `Not REEXEC_SANITISE_OK: <reason>` comment inside the entry, or a line
+  in `scripts/check-static/check-reexec-coverage.baseline` for a
+  sanitiser that opts in per call with `rec->flags |= REEXEC_OK`.  A new
+  sanitiser otherwise drops out of re-exec by default, counted in
+  `reexec_skipped_destructive` with nothing to say anyone decided it.
+  The flags have to be code: naming one in a comment does not count.
+  The baseline only shrinks: a line fails once its entry gains an
+  annotation of its own or its file stops setting `REEXEC_OK`.  The scan
+  is textual and fails closed -- an entry whose end it cannot find, a
+  `.sanitise` outside any entry, or too few entries is an error, not a
+  pass.  Self-tests both directions on planted trees, including a flag
+  named only in a comment, a rejection note with no reason, and baseline
+  lines for an entry that is annotated or whose file never sets
+  `REEXEC_OK`.
+
 - `check-stats-reachable`: every field in `struct stats_s` must have a
   `STAT_FIELD*()` descriptor row, a consumer read, or an allowlist entry
   naming its bespoke walker.  Catches a counter that is written and then

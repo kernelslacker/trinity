@@ -1,0 +1,17 @@
+# check-reexec-coverage.baseline
+#
+# Sanitise-bearing entries that carry no REEXEC_SANITISE_OK, no
+# "Not REEXEC_SANITISE_OK:" comment and no AVOID_REEXEC, because the
+# sanitiser opts in per call with rec->flags |= REEXEC_OK on the arms whose
+# payload is safe to replay.  One <file>:<entry> per line, then why the
+# entry is dynamic.
+#
+# This list only shrinks.  A line fails the gate once its entry gains an
+# annotation of its own or its file stops setting REEXEC_OK.
+
+syscalls/fs/mount/fsconfig.c:syscall_fsconfig        # FSCONFIG_CMD_* finalize arm; the SET_* arms carry key and value pointers
+syscalls/ipc/sysv/semctl.c:syscall_semctl            # SETVAL, GETVAL, GETPID, GETNCNT, GETZCNT, IPC_RMID; the buffer-carrying cmds do not qualify
+syscalls/keyctl/keyctl.c:syscall_keyctl              # scalar-only arms; update, read, search and instantiate carry pointers or output buffers
+syscalls/process/prctl.c:syscall_prctl               # scalar-only options; the pointer- and heap-carrying options do not qualify
+syscalls/quota/quotactl_fd.c:syscall_quotactl_fd     # Q_QUOTAOFF and Q_SYNC; the dqb, dqi, fmt and path arms do not qualify
+syscalls/x86/x86_64/arch_prctl.c:syscall_arch_prctl  # setter and scalar codes; the getter arms relocate a2 and install a post_state

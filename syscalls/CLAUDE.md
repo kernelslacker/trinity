@@ -88,6 +88,12 @@ top of each header as private to that pair of TUs).
    layer a `sanitise_X()` on top that mutates `rec->aN` after generic
    generation has already populated it (see `access.c`'s comment on why it
    repoints only half the time — keeping the ENOENT reject arm alive).
+   Every `.sanitise` also has to say what the CMP RedQueen re-exec step does
+   with it: `REEXEC_SANITISE_OK` or `AVOID_REEXEC` in the entry's flags, or a
+   `Not REEXEC_SANITISE_OK: <reason>` comment inside it.
+   `scripts/check-static/check-reexec-coverage.sh` fails an entry with none;
+   an op-multiplexed sanitiser that sets `REEXEC_OK` per call is listed in
+   its baseline instead.
    A slot the sanitiser writes on every path, without reading the
    generated value, can go in `.sanitiser_owned_mask`: `generic_sanitise()`
    then leaves it zeroed instead of building a value (for a struct pointer,
