@@ -3,18 +3,25 @@
  * The blocks behind the bitmap sit where the writer's layout puts them,
  * so a priors or diag block the loader skips (another MAX_NR_SYSCALL, a
  * failed scratch alloc) must not shift the block that follows it, and
- * the log must name the real cause of any block it refuses.
+ * the log must name the real cause of any block it refuses.  A file the
+ * loader turns down and a save that cannot finish must each close the one
+ * fd they opened exactly once and leave nothing behind.
  */
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
+#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
@@ -92,6 +99,9 @@ struct scenario {
 	uint32_t file_max;	/* syscall slots its header claims */
 	bool header_only;	/* the blocks stay as saved, not sized by file_max */
 	bool corrupt_strat;	/* damage the strat block's bytes */
+	size_t cut;		/* keep only this many bytes of the file; 0: all */
+	size_t flip;		/* damage the byte at this offset; 0: none */
+	bool refused;		/* the load returns false and publishes nothing */
 	size_t fail_malloc;	/* scratch size whose malloc fails; 0: none */
 	unsigned int fail_lseek;	/* the Nth lseek of the load fails; 0: none */
 	bool priors, diag, strat;	/* blocks the load must restore */
@@ -143,6 +153,35 @@ static const struct scenario scenarios[] = {
 	  .priors = true, .diag = true, .log_has = "loaded v6 diag block" },
 	{ .name = "v5 file", .version = 5, .file_max = MAX_NR_SYSCALL,
 	  .priors = true, .log_has = "loaded 4 edges" },
+	/* Files the loader turns down outright.  Each of them returns
+	 * false, has closed the fd it opened exactly once and has
+	 * published nothing. */
+	{ .name = "truncated envelope", .version = 7, .file_max = MAX_NR_SYSCALL,
+	  .refused = true, .cut = ENVELOPE_SIZE / 2,
+	  .log_has = "envelope truncated" },
+	{ .name = "truncated header", .version = 7, .file_max = MAX_NR_SYSCALL,
+	  .refused = true, .cut = ENVELOPE_SIZE + 40,
+	  .log_has = "header truncated" },
+	{ .name = "truncated bitmap", .version = 7, .file_max = MAX_NR_SYSCALL,
+	  .refused = true, .cut = BITMAP_OFF + KCOV_NUM_EDGES / 2,
+	  .log_has = "payload truncated" },
+	{ .name = "bad magic", .version = 7, .file_max = MAX_NR_SYSCALL,
+	  .refused = true,
+	  .flip = ENVELOPE_SIZE + offsetof(struct file_header, magic),
+	  .log_has = "file magic" },
+	/* The last byte of the fingerprint: a compare that stopped short of
+	 * the 32 bytes would let this file through. */
+	{ .name = "kernel fingerprint", .version = 7, .file_max = MAX_NR_SYSCALL,
+	  .refused = true,
+	  .flip = ENVELOPE_SIZE + offsetof(struct file_header, kallsyms_sha256) + 31,
+	  .log_has = "kernel fingerprint mismatch" },
+	{ .name = "payload CRC mismatch", .version = 7, .file_max = MAX_NR_SYSCALL,
+	  .refused = true, .flip = BITMAP_OFF + 100,
+	  .log_has = "CRC mismatch" },
+	{ .name = "bitmap scratch alloc fails", .version = 7,
+	  .file_max = MAX_NR_SYSCALL, .refused = true,
+	  .fail_malloc = KCOV_NUM_EDGES,
+	  .log_has = "kcov-bitmap: scratch alloc fail" },
 };
 
 /* What a block read from the wrong place shows up as.  A scenario that
@@ -178,13 +217,25 @@ off_t __wrap_lseek(int fd, off_t offset, int whence)
 	return __real_lseek(fd, offset, whence);
 }
 
+/* close() calls since the counter was last cleared: a load or a save
+ * closes the one fd it opened exactly once, whether or not it succeeds. */
+static unsigned int close_calls;
+
+int __real_close(int fd);
+int __wrap_close(int fd);
+int __wrap_close(int fd)
+{
+	close_calls++;
+	return __real_close(fd);
+}
+
 static unsigned int failures;
 
-static void expect(bool ok, const struct scenario *sc, const char *what)
+static void expect(bool ok, const char *name, const char *what)
 {
 	if (ok)
 		return;
-	fprintf(stderr, "\n    kcov persist: %s: %s", sc->name, what);
+	fprintf(stderr, "\n    kcov persist: %s: %s", name, what);
 	failures++;
 }
 
@@ -228,6 +279,82 @@ static void fill_state(void)
 		shm->pc_edge_calls_by_strategy[s] = STRAT_CALLS(s);
 		shm->pc_edge_count_by_strategy[s] = STRAT_COUNT(s);
 	}
+}
+
+/* Open fds, not counting the one the scan itself holds. */
+static unsigned int count_open_fds(void)
+{
+	struct dirent *de;
+	unsigned int n = 0;
+	DIR *d;
+
+	d = opendir("/proc/self/fd");
+	if (d == NULL)
+		BUG("kcov persist: cannot list /proc/self/fd");
+	while ((de = readdir(d)) != NULL)
+		if (de->d_name[0] != '.')
+			n++;
+	closedir(d);
+	return n - 1;
+}
+
+/* Remove the tmp files a save left in @dir, and say how many there were. */
+static unsigned int remove_tmp_files(const char *dir)
+{
+	char path[PATH_MAX];
+	struct dirent *de;
+	unsigned int n = 0;
+	DIR *d;
+
+	d = opendir(dir);
+	if (d == NULL)
+		BUG("kcov persist: cannot list the test directory");
+	while ((de = readdir(d)) != NULL) {
+		if (strstr(de->d_name, ".tmp.") == NULL)
+			continue;
+		snprintf(path, sizeof(path), "%s/%s", dir, de->d_name);
+		unlink(path);
+		n++;
+	}
+	closedir(d);
+	return n;
+}
+
+static void flip_byte(const char *path, size_t off)
+{
+	unsigned char b;
+	int fd;
+
+	fd = open(path, O_RDWR);
+	if (fd < 0 || pread(fd, &b, 1, (off_t) off) != 1)
+		BUG("kcov persist: cannot read a test file byte");
+	b ^= 0xff;
+	if (pwrite(fd, &b, 1, (off_t) off) != 1)
+		BUG("kcov persist: cannot damage a test file");
+	close(fd);
+}
+
+/* CRC and length of a whole file, to tell that a failed save left the
+ * cache it was replacing alone. */
+static uint32_t file_crc(const char *path, size_t *len)
+{
+	unsigned char *buf;
+	uint32_t crc;
+	ssize_t n;
+	int fd;
+
+	buf = malloc(FILE_SIZE + 1);
+	fd = open(path, O_RDONLY);
+	if (buf == NULL || fd < 0)
+		BUG("kcov persist: cannot read a cache back");
+	n = read_all(fd, buf, FILE_SIZE + 1);
+	close(fd);
+	if (n < 0)
+		BUG("kcov persist: cannot read a cache back");
+	crc = crc32(buf, (size_t) n);
+	*len = (size_t) n;
+	free(buf);
+	return crc;
 }
 
 /* Rewrite the saved file @img as a writer with @sc's version and slot
@@ -285,6 +412,11 @@ static void write_variant(const char *path, const unsigned char *img,
 		BUG("kcov persist: cannot write a test file");
 	close(fd);
 	free(filler);
+
+	if (sc->cut != 0 && truncate(path, (off_t) sc->cut) != 0)
+		BUG("kcov persist: cannot cut a test file");
+	if (sc->flip != 0)
+		flip_byte(path, sc->flip);
 }
 
 /* Each block is back whole or not at all, as the scenario says. */
@@ -320,11 +452,11 @@ static void check_blocks(const struct scenario *sc)
 			strat_ok = false;
 	}
 
-	expect(priors_ok, sc, sc->priors ? "priors block not restored" :
+	expect(priors_ok, sc->name, sc->priors ? "priors block not restored" :
 					   "priors block restored, not skipped");
-	expect(diag_ok, sc, sc->diag ? "diag block not restored" :
+	expect(diag_ok, sc->name, sc->diag ? "diag block not restored" :
 				       "diag block restored, not skipped");
-	expect(strat_ok, sc, sc->strat ? "strat block not restored" :
+	expect(strat_ok, sc->name, sc->strat ? "strat block not restored" :
 					 "strat block restored, not refused");
 }
 
@@ -332,6 +464,7 @@ static void run_scenario(const struct scenario *sc, const unsigned char *img,
 			 const char *path)
 {
 	unsigned int before = failures;
+	unsigned int fds;
 	unsigned int i;
 	bool loaded;
 
@@ -340,29 +473,148 @@ static void run_scenario(const struct scenario *sc, const unsigned char *img,
 	fake_output_log[0] = '\0';
 	malloc_fail_size = sc->fail_malloc;
 	lseek_fail_nth = sc->fail_lseek;
+	fds = count_open_fds();
+	close_calls = 0;
 	loaded = kcov_bitmap_load_file(path);
 	/* A failure the loader never reached would leave the scenario
 	 * testing nothing. */
-	expect(malloc_fail_size == 0 && lseek_fail_nth == 0, sc,
+	expect(malloc_fail_size == 0 && lseek_fail_nth == 0, sc->name,
 	       "the armed failure never happened");
 	malloc_fail_size = 0;
 	lseek_fail_nth = 0;
 
-	/* The bitmap is committed before any soft block is looked at. */
-	expect(loaded && kcov_shm->coverage.edges_found == SAMPLE_EDGES &&
-	       kcov_shm->coverage.distinct_edges == SAMPLE_DISTINCT,
-	       sc, "bitmap not loaded");
+	/* The loader opened one fd, and closed it whatever came of the file. */
+	expect(close_calls == 1, sc->name,
+	       "the loader did not close its fd exactly once");
+	expect(count_open_fds() == fds, sc->name, "the loader left an fd open");
+
+	if (sc->refused) {
+		/* Nothing is published until the whole bitmap checks out. */
+		expect(!loaded && kcov_shm->coverage.edges_found == 0 &&
+		       kcov_shm->bucket_seen[100] == 0 &&
+		       kcov_shm->bucket_seen[200000] == 0 &&
+		       kcov_shm->bucket_seen[KCOV_NUM_EDGES - 1] == 0,
+		       sc->name, "a refused file was loaded");
+	} else {
+		/* The bitmap is committed before any soft block is looked at. */
+		expect(loaded && kcov_shm->coverage.edges_found == SAMPLE_EDGES &&
+		       kcov_shm->coverage.distinct_edges == SAMPLE_DISTINCT,
+		       sc->name, "bitmap not loaded");
+	}
 	check_blocks(sc);
 	expect(strstr(fake_output_log, sc->log_has) != NULL ||
 	       (sc->log_or != NULL &&
-		strstr(fake_output_log, sc->log_or) != NULL), sc,
+		strstr(fake_output_log, sc->log_or) != NULL), sc->name,
 	       "the log does not name what happened");
 	for (i = 0; i < ARRAY_SIZE(complaints); i++)
 		expect(strstr(sc->log_has, complaints[i]) != NULL ||
 		       strstr(fake_output_log, complaints[i]) == NULL,
-		       sc, "the log blames a block that was fine");
+		       sc->name, "the log blames a block that was fine");
 	if (failures != before)
 		fprintf(stderr, "\n    loader log:\n%s", fake_output_log);
+}
+
+/* What can be wrong with a save that was meant to fail, as bits so a
+ * forked child can report them in its exit status. */
+#define SAVE_RETURNED_TRUE	(1u << 0)
+#define SAVE_CLOSE_COUNT	(1u << 1)
+#define SAVE_FD_LEAK		(1u << 2)
+#define SAVE_TMP_LEFT		(1u << 3)
+#define SAVE_NO_LIMIT		(1u << 4)
+
+/* Save to @path from a fresh state, which must fail having closed its tmp
+ * fd @closes times (none when the tmp file never opened), leaked no fd
+ * and left no tmp file in @dir. */
+static unsigned int save_problems(const char *dir, const char *path,
+				  unsigned int closes)
+{
+	unsigned int problems = 0;
+	unsigned int fds;
+	bool saved;
+
+	reset_state();
+	fill_state();
+	kcov_shm->coverage.edges_found = SAMPLE_EDGES + 1;
+	fds = count_open_fds();
+	close_calls = 0;
+	saved = kcov_bitmap_save_file(path);
+	if (saved)
+		problems |= SAVE_RETURNED_TRUE;
+	if (close_calls != closes)
+		problems |= SAVE_CLOSE_COUNT;
+	if (count_open_fds() != fds)
+		problems |= SAVE_FD_LEAK;
+	if (remove_tmp_files(dir) != 0)
+		problems |= SAVE_TMP_LEFT;
+	return problems;
+}
+
+static void expect_save_failed(unsigned int problems, const char *name)
+{
+	expect(!(problems & SAVE_RETURNED_TRUE), name, "the save returned true");
+	expect(!(problems & SAVE_CLOSE_COUNT), name,
+	       "the save did not close its tmp fd the expected number of times");
+	expect(!(problems & SAVE_FD_LEAK), name, "the save left an fd open");
+	expect(!(problems & SAVE_TMP_LEFT), name,
+	       "the save left a tmp file behind");
+	expect(!(problems & SAVE_NO_LIMIT), name,
+	       "the child could not lower RLIMIT_FSIZE");
+}
+
+static void check_save_failures(const char *dir)
+{
+	char path[PATH_MAX];
+	size_t len, len_after;
+	uint32_t crc;
+	int status;
+	pid_t pid;
+
+	/* The tmp file cannot be opened: there is no fd to close. */
+	snprintf(path, sizeof(path), "%s/nodir/cache", dir);
+	expect_save_failed(save_problems(dir, path, 0),
+			   "save into a missing directory");
+
+	/* The rename onto a directory fails after the tmp fd closed. */
+	snprintf(path, sizeof(path), "%s/cache", dir);
+	if (mkdir(path, 0700) != 0)
+		BUG("kcov persist: cannot make a directory to save over");
+	expect_save_failed(save_problems(dir, path, 1),
+			   "save over a directory");
+	if (rmdir(path) != 0)
+		BUG("kcov persist: cannot remove the directory to save over");
+
+	/* A write that runs into RLIMIT_FSIZE fails.  Lower the limit in a
+	 * child, so it stays out of this process, and save over a cache
+	 * that is already there: it must come through as it was. */
+	snprintf(path, sizeof(path), "%s/kept", dir);
+	reset_state();
+	fill_state();
+	kcov_shm->coverage.edges_found = SAMPLE_EDGES + 2;
+	if (!kcov_bitmap_save_file(path))
+		BUG("kcov persist: cannot write a cache to keep");
+	crc = file_crc(path, &len);
+
+	pid = fork();
+	if (pid < 0)
+		BUG("kcov persist: fork failed");
+	if (pid == 0) {
+		struct rlimit rl = { .rlim_cur = 4096, .rlim_max = 4096 };
+
+		/* The write that crosses the limit raises SIGXFSZ unless it
+		 * is ignored, and then fails with EFBIG. */
+		signal(SIGXFSZ, SIG_IGN);
+		if (setrlimit(RLIMIT_FSIZE, &rl) != 0)
+			_exit(SAVE_NO_LIMIT);
+		_exit(save_problems(dir, path, 1));
+	}
+	if (waitpid_eintr(pid, &status, 0) != pid || !WIFEXITED(status))
+		BUG("kcov persist: the limited save did not exit");
+	expect_save_failed(WEXITSTATUS(status), "save past RLIMIT_FSIZE");
+	expect(file_crc(path, &len_after) == crc && len_after == len,
+	       "save past RLIMIT_FSIZE",
+	       "the failed save changed the cache it was replacing");
+	if (unlink(path) != 0)
+		BUG("kcov persist: cannot remove the kept cache");
 }
 
 void kcov_persist_self_check(void);
@@ -374,6 +626,7 @@ void kcov_persist_self_check(void)
 	unsigned char *img;
 	struct stat st;
 	uint8_t fp[32];
+	unsigned int fds;
 	unsigned int i;
 	int fd;
 
@@ -391,8 +644,13 @@ void kcov_persist_self_check(void)
 
 	reset_state();
 	fill_state();
+	fds = count_open_fds();
+	close_calls = 0;
 	if (!kcov_bitmap_save_file(base))
 		BUG("kcov persist: saving the bitmap failed");
+	expect(close_calls == 1 && count_open_fds() == fds &&
+	       remove_tmp_files(dir) == 0, "save",
+	       "a good save must close its tmp fd once and leave no tmp file");
 
 	fd = open(base, O_RDONLY);
 	if (fd < 0 || fstat(fd, &st) != 0 || st.st_size != (off_t) FILE_SIZE)
@@ -404,6 +662,7 @@ void kcov_persist_self_check(void)
 
 	for (i = 0; i < ARRAY_SIZE(scenarios); i++)
 		run_scenario(&scenarios[i], img, variant);
+	check_save_failures(dir);
 
 	free(img);
 	free(kcov_shm);

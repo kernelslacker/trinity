@@ -60,6 +60,11 @@ LDFLAGS		+= -Wl,--wrap=alloc_track_lookup_size
 LDFLAGS		+= -Wl,--wrap=malloc
 LDFLAGS		+= -Wl,--wrap=lseek
 
+# close() counter: kcov_persist_test.c counts the closes a warm-start
+# load or save makes, to check that it closes the one fd it opened
+# exactly once.  The wrapper always forwards to the real close().
+LDFLAGS		+= -Wl,--wrap=close
+
 # NETLINK_GENERIC socket seam: genl_ops_test.c wraps socket() to hand the
 # genl family resolver a unix socketpair that carries a canned controller
 # reply.  Any other AF_NETLINK request fails, so no test can open a real
