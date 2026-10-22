@@ -54,6 +54,12 @@ LDFLAGS		+= -Wl,--wrap=mprotect
 # real lookup outside that test.
 LDFLAGS		+= -Wl,--wrap=alloc_track_lookup_size
 
+# malloc and lseek failure injection: kcov_persist_test.c wraps both so
+# it can fail one scratch allocation or one seek of the warm-start
+# loader.  The wrappers forward to the real calls unless armed.
+LDFLAGS		+= -Wl,--wrap=malloc
+LDFLAGS		+= -Wl,--wrap=lseek
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs the
 # arch-program #10 spec calls for on the integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -160,6 +166,15 @@ MINICORPUS_SRCS	:= \
 	$(TOP)/lib/fd.c \
 	$(TOP)/utils/persist-util.c
 
+# The kcov bitmap warm-start save and load paths, linked for
+# kcov_bitmap_save_file() and kcov_bitmap_load_file(), with the fd and
+# stale-tmp helpers they use from MINICORPUS_SRCS.  Same
+# section-per-function treatment; kcov_persist_test.c owns
+# kcov_kaslr_base, while kcov_shm, the persist envelope and crc32()
+# come from cmp_field_scan_test.c and minicorpus_abi_test.c.
+KCOV_PERSIST_SRCS := \
+	$(TOP)/kcov/persist.c
+
 FAKE_SRCS	:= \
 	fake_rng.c \
 	fake_shm.c \
@@ -191,6 +206,7 @@ FAKE_SRCS	:= \
 	sanitiser_owned_mask_test.c \
 	minicorpus_abi_test.c \
 	redqueen_pin_test.c \
+	kcov_persist_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
@@ -200,6 +216,7 @@ REAL_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(REAL_SRCS))
 PARENT_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(PARENT_SRCS))
 CMP_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(CMP_SRCS))
 MINICORPUS_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(MINICORPUS_SRCS))
+KCOV_PERSIST_OBJS := $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(KCOV_PERSIST_SRCS))
 FAKE_OBJS	:= $(patsubst %.c,$(BUILDDIR)/%.o,$(FAKE_SRCS))
 
 .PHONY: all test test-asan test-ndebug clean
@@ -216,10 +233,10 @@ test-asan:
 test-ndebug:
 	$(MAKE) NDEBUG=1
 
-$(TEST_BIN): $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(FAKE_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(FAKE_OBJS)
+$(TEST_BIN): $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(KCOV_PERSIST_OBJS) $(FAKE_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(KCOV_PERSIST_OBJS) $(FAKE_OBJS)
 
-$(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS): CFLAGS += -ffunction-sections -fdata-sections
+$(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(KCOV_PERSIST_OBJS): CFLAGS += -ffunction-sections -fdata-sections
 
 $(BUILDDIR)/real/%.o: $(TOP)/%.c
 	@mkdir -p $(dir $@)

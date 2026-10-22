@@ -852,6 +852,8 @@ bool kcov_bitmap_load_file(const char *path)
 	uint8_t cur_fp[32];
 	unsigned char *scratch;
 	uint32_t want_crc;
+	uint64_t diag_off;
+	uint64_t strat_off;
 	unsigned long recount_edges;
 	unsigned long recount_distinct;
 	ssize_t n;
@@ -1012,6 +1014,20 @@ bool kcov_bitmap_load_file(const char *path)
 	memcpy(kcov_shm->bucket_seen, scratch, KCOV_NUM_EDGES);
 	free(scratch);
 
+	/* The blocks behind the bitmap sit back to back, sized for the
+	 * writer's MAX_NR_SYSCALL, not ours.  A block this run skips (a
+	 * table-size change, a failed scratch alloc) goes unread but still
+	 * takes up its bytes, so diag and strat are read from their
+	 * computed offsets rather than from wherever the last read
+	 * stopped.  The priors start where the bitmap read ended. */
+	diag_off = sizeof(struct trinity_persist_envelope) +
+		   (hdr.version >= 7U ? sizeof(hdr) :
+					KCOV_BITMAP_HDR_V6_SIZE) +
+		   KCOV_NUM_EDGES +
+		   (uint64_t)hdr.max_nr_syscall * 2 * sizeof(unsigned long);
+	strat_off = diag_off + (uint64_t)hdr.max_nr_syscall * 2 *
+		    sizeof(struct kcov_per_syscall_diag_ondisk);
+
 	/* Bitmap warm-start has succeeded by this point.  The priors blob
 	 * is a soft signal -- any failure mode below logs and falls through
 	 * with priors zeroed, but must not invalidate the bitmap load. */
@@ -1086,8 +1102,12 @@ bool kcov_bitmap_load_file(const char *path)
 			output(0, "kcov-bitmap: diag scratch alloc fail (%zu bytes) -- diag skipped\n",
 			       diag_blob_size);
 		} else {
-			n = read_all(fd, diag_blob, diag_blob_size);
-			if (n != (ssize_t)diag_blob_size) {
+			if (lseek(fd, (off_t)diag_off, SEEK_SET) == (off_t)-1) {
+				output(0, "kcov-bitmap: diag seek to %llu failed at %s: %s -- diag skipped\n",
+				       (unsigned long long)diag_off, path,
+				       strerror(errno));
+			} else if ((n = read_all(fd, diag_blob, diag_blob_size)) !=
+				   (ssize_t)diag_blob_size) {
 				output(0, "kcov-bitmap: diag truncated at %s (got %zd, want %zu) -- diag skipped\n",
 				       path, n, diag_blob_size);
 			} else {
@@ -1123,6 +1143,9 @@ bool kcov_bitmap_load_file(const char *path)
 			}
 			free(diag_blob);
 		}
+	} else if (hdr.version >= 6U) {
+		output(0, "kcov-bitmap: diag disabled, max_nr_syscall %u != %u\n",
+		       hdr.max_nr_syscall, (unsigned int)MAX_NR_SYSCALL);
 	}
 
 	/* v7 strat block: pc_edge_calls_by_strategy[NR_STRATEGIES]
@@ -1132,13 +1155,19 @@ bool kcov_bitmap_load_file(const char *path)
 	 * CRC mismatch logs and falls through with the per-strategy
 	 * counters left at whatever they currently hold (typically
 	 * zero on a fresh shm), and the bitmap warm-load stays
-	 * committed.  v5/v6 files lack the block; skip them quietly. */
+	 * committed.  The block does not depend on MAX_NR_SYSCALL, so it
+	 * loads even when the priors and diag were skipped for a table
+	 * size change.  v5/v6 files lack the block; skip them quietly. */
 	if (hdr.version >= 7U) {
 		struct kcov_strat_ondisk strat_blob;
 
 		memset(&strat_blob, 0, sizeof(strat_blob));
-		n = read_all(fd, &strat_blob, sizeof(strat_blob));
-		if (n != (ssize_t)sizeof(strat_blob)) {
+		if (lseek(fd, (off_t)strat_off, SEEK_SET) == (off_t)-1) {
+			output(0, "kcov-bitmap: strat seek to %llu failed at %s: %s -- strat skipped\n",
+			       (unsigned long long)strat_off, path,
+			       strerror(errno));
+		} else if ((n = read_all(fd, &strat_blob, sizeof(strat_blob))) !=
+			   (ssize_t)sizeof(strat_blob)) {
 			output(0, "kcov-bitmap: strat truncated at %s (got %zd, want %zu) -- strat skipped\n",
 			       path, n, sizeof(strat_blob));
 		} else {

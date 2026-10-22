@@ -47,6 +47,7 @@ void cmp_field_scan_self_check(void);
 void sanitiser_owned_mask_self_check(void);
 void minicorpus_abi_self_check(void);
 void redqueen_pin_self_check(void);
+void kcov_persist_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -205,6 +206,11 @@ int main(int argc, char **argv)
 	printf("  redqueen_pin_self_check ... ");
 	fflush(stdout);
 	redqueen_pin_self_check();
+	printf("OK\n");
+
+	printf("  kcov_persist_self_check ... ");
+	fflush(stdout);
+	kcov_persist_self_check();
 	printf("OK\n");
 
 	return 0;
