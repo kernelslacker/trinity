@@ -289,7 +289,7 @@ void dump_stats_json_corruption_and_audit(void)
 	json_stats_sep();
 	printf("\"corruption\":{"
 			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
-			"\"stats_ring_noncanon\":%lu,\"stats_ring_canary\":%lu,"
+			"\"stats_ring_canary\":%lu,"
 			"\"deferred_free_corrupt_ptr\":%lu,"
 			"\"post_handler_corrupt_ptr\":%lu,\"deferred_free_reject\":%lu,"
 			"\"deferred_free_reject_pathname\":%lu,"
@@ -367,7 +367,6 @@ void dump_stats_json_corruption_and_audit(void)
 			"\"mm_gate_post_slip\":%lu}",
 		shm->stats.fd.event_ring_overwritten,
 		shm->stats.fd.event_payload_corrupt,
-		shm->stats.diag.stats_ring_corrupted,
 		shm->stats.diag.stats_ring_overwritten,
 		parent_stats.deferred_free_corrupt_ptr,
 		parent_stats.post_handler_corrupt_ptr,

@@ -245,17 +245,10 @@ struct diag_stats {
 	unsigned long shared_region_overflow;
 
 	/*
-	 * stats_ring_drain_all() found a child->stats_ring pointer
-	 * that failed the canonical-address / minimum-address sanity
-	 * check.  Same defense-in-depth role as
-	 * fd_event_ring_corrupted.
-	 */
-	unsigned long stats_ring_corrupted;
-
-	/*
 	 * stats_ring_drain_all() found a live child->stats_ring that
-	 * differed from the canary copy taken at init time.
-	 * Indicates the pointer was overwritten after init.
+	 * differed from the parent-private canary taken at init time,
+	 * whatever the value.  Indicates the pointer was overwritten
+	 * after init; the drain still reads the canary's ring.
 	 */
 	unsigned long stats_ring_overwritten;
 

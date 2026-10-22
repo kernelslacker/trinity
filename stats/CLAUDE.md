@@ -121,9 +121,11 @@ Two parallel counter stores, by design:
    cmp_hints/redqueen diagnostics; the fan-out render helpers live in the
    per-domain siblings under `stats/kcov/cmp/`.  This subtree is intentionally
    not a pure shutdown-render tree.
-5. **Ring pointer hardening in `stats_ring_drain_all()`** - before dereferencing
-   a child's ring pointer, the drainer checks for non-canonical x86-64 addresses
-   and compares against an `expected_stats_rings[]` snapshot captured at init.
+5. **Ring pointer hardening in `stats_ring_drain_all()`** - the drainer reads
+   each child's ring through `expected_stats_rings[]`, a parent-private (heap)
+   copy of the ring addresses taken before fork, and only compares the
+   child-writable `child->stats_ring` against it to count and report an
+   overwrite.
 
 ## Integration Points
 
@@ -177,9 +179,10 @@ Two parallel counter stores, by design:
    writable by a wild kernel store; only the ring-fed `parent_stats` aggregate is
    hardened. Review new counters for whether they are telemetry or authoritative
    control/diagnostic state.
-5. **Ring pointer hardening is load-bearing** - the canonical-address and
-   expected-pointer checks in `stats_ring_drain_all()` cover an observed recycled
-   child-slot failure mode, not a theoretical cleanup.
+5. **Ring pointer hardening is load-bearing** - `expected_stats_rings[]` covers
+   an observed recycled child-slot failure mode (a late write leaving a wild
+   `child->stats_ring`), not a theoretical cleanup.  It is only trustworthy
+   while it stays in parent-private memory; do not move it into a shared pool.
 
 ## Summary
 

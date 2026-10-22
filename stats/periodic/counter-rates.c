@@ -186,8 +186,6 @@ static const struct {
 	  offsetof(struct stats_s, watchdog_signal.sigxcpu_unblocked) },
 	{ "fd_event_ring_overwritten",
 	  offsetof(struct stats_s, fd.event_ring_overwritten) },
-	{ "stats_ring_corrupted",
-	  offsetof(struct stats_s, diag.stats_ring_corrupted) },
 	{ "stats_ring_overwritten",
 	  offsetof(struct stats_s, diag.stats_ring_overwritten) },
 	{ "fd_event_payload_corrupt",
