@@ -2,7 +2,10 @@
  * Self-check for the writable-pool exemption in asb_relocate(), reached
  * through avoid_shared_buffer_out(): a range wholly inside the pool is
  * left where it is, and any other range the overlap predicates flag is
- * moved into it, one whose end wraps the address space included.
+ * moved into it, one whose end wraps the address space included.  A
+ * length the pool cannot hold has no slot to move to, so the pointer
+ * stays; get_writable_address() refuses such a size, one that wraps its
+ * round-up to the slot alignment too, rather than vend an empty slot.
  */
 
 #include <limits.h>
@@ -55,6 +58,16 @@ static void pool_exemption(unsigned long base)
 		{ "no length, at the last byte of the pool", end - 1, 0, false },
 		{ "no length, outside the pool",
 		  (unsigned long) outside, 0, true },
+
+		/* A length the pool cannot hold has no slot to move the
+		 * pointer to.  One above ULONG_MAX - 15 rounds up to zero,
+		 * which is no reason to give it an empty one. */
+		{ "a length a byte longer than the pool",
+		  (unsigned long) outside, WRITABLE_POOL_BYTES + 1, false },
+		{ "a length whose round-up wraps to zero",
+		  (unsigned long) outside, ULONG_MAX - 14, false },
+		{ "an all-ones length",
+		  (unsigned long) outside, ULONG_MAX, false },
 	};
 	unsigned int i;
 
@@ -78,6 +91,32 @@ static void pool_exemption(unsigned long base)
 	}
 }
 
+/* The sizes either side of the one whose round-up to the 16-byte slot
+ * alignment wraps to zero, which passes a pool-size test made after the
+ * rounding. */
+static void oversize_refused(void)
+{
+	static const struct {
+		const char *what;
+		unsigned long size;
+	} cases[] = {
+		{ "a byte more than the pool", WRITABLE_POOL_BYTES + 1 },
+		{ "the largest size that rounds up without wrapping",
+		  ULONG_MAX - 15 },
+		{ "the smallest size that rounds up to zero", ULONG_MAX - 14 },
+		{ "ULONG_MAX - 1", ULONG_MAX - 1 },
+		{ "ULONG_MAX", ULONG_MAX },
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		if (get_writable_address(cases[i].size) != NULL) {
+			fprintf(stderr, "%s: got a slot\n", cases[i].what);
+			BUG("get_writable_address: slot for a size the pool cannot hold");
+		}
+	}
+}
+
 void asb_relocate_self_check(void);
 void asb_relocate_self_check(void)
 {
@@ -96,4 +135,6 @@ void asb_relocate_self_check(void)
 	fake_overlaps_shared = true;
 	pool_exemption(base);
 	fake_overlaps_shared = false;
+
+	oversize_refused();
 }

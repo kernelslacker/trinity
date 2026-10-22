@@ -76,9 +76,15 @@ void * get_writable_address(unsigned long size)
 	if (size == 0)
 		size = page_size;
 
-	aligned = (size + (WRITABLE_POOL_ALIGN - 1)) & ~(WRITABLE_POOL_ALIGN - 1);
-	if (aligned > WRITABLE_POOL_BYTES)
+	/*
+	 * Compare before rounding up: size + 15 wraps for a size above
+	 * ULONG_MAX - 15, and the 0 it rounds to would pass a check made
+	 * after it and vend an empty slot.
+	 */
+	if (size > WRITABLE_POOL_BYTES)
 		return NULL;
+
+	aligned = (size + (WRITABLE_POOL_ALIGN - 1)) & ~(WRITABLE_POOL_ALIGN - 1);
 
 	cursor_p = (child != NULL) ? &child->writable_pool_cursor
 				   : &parent_cursor;
