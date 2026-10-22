@@ -537,13 +537,14 @@ static void wait_for_children_to_exit(void)
 
 /*
  * Close inherited /proc/<pid>/stat fds in a freshly forked child.
- * pidstatfiles[] is parent-only (only get_pid_state and the parent
- * reap/replace paths in this file read or close them), but the fds are
+ * pidstatfiles[] is parent-only (get_pid_state() and the reap, zombie,
+ * spawn and epoch-reset paths open, read and close it), but the fds are
  * opened post-fork as each child is spawned, so every later child
- * inherits the earlier slots' fds.  Without this drop, a fuzzed close()
- * or dup2() in any child blinds the parent's liveness / stuck-detection
- * (get_pid_state then misreads child state via a stale or repointed fd).
- * No CLOEXEC alternative: trinity's children don't exec.
+ * inherits the earlier slots' fds.  The child never reads them; left
+ * open they cost it up to max_children fd-table slots and put sibling
+ * /proc entries in reach of fuzzed fd syscalls.  The parent's copies
+ * are safe regardless: a child's close() or dup2() changes only its own
+ * fd table.  No CLOEXEC alternative: trinity's children don't exec.
  */
 void pidstatfiles_drop_in_child(void)
 {

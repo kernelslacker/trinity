@@ -391,7 +391,7 @@ int main(int argc, char* argv[])
 	/* Start the kmsg monitor only on the fuzz path -- the early-exit
 	 * dump modes (handled above and right after parse_args) and the
 	 * --show-disabled-syscalls path all exit before reaching here,
-	 * so none of them pay for the pthread_create. */
+	 * so none of them pay for the helper fork. */
 	kmsg_monitor_start();
 
 	init_pre_fork();

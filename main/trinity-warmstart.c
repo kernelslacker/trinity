@@ -272,10 +272,9 @@ void persist_state_on_clean_exit(void)
 	 * End-of-run chain corpus persistence.  Same clean-exit gate the
 	 * other cross-run carriers use -- a poisoned shm after a corruption-
 	 * aborted run could feed garbage back into the next warm-start, so
-	 * we skip the save unless the shutdown was clean.  No periodic
-	 * snapshot trigger for the chain corpus (unlike minicorpus / kcov
-	 * bitmap / cmp-hints, which cover mid-run crashes); this end-of-run
-	 * save is the only persistence point.
+	 * we skip the save unless the shutdown was clean.  The periodic
+	 * snapshot trigger covers crashes; this captures the trailing
+	 * window of chains the periodic cadence had not yet flushed.
 	 */
 	if (clean && !no_chain_warm_start && chain_corpus_shm != NULL) {
 		const char *cpath = chain_corpus_default_path();

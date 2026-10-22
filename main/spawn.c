@@ -693,7 +693,8 @@ void fork_children(void)
 		/* Find a space for it in the pid map.  A slot is only
 		 * usable when both the live-pid and zombie-pending slots
 		 * are empty — see find_free_childno() and the
-		 * zombie_pids[] comment at the top of this file. */
+		 * zombie_pids[] comment at the top of
+		 * main/reap-zombie.c. */
 		childno = find_free_childno(skipped);
 		if (childno == CHILD_NOT_FOUND) {
 			/* Distinguish a genuinely-full pid map (a fatal
@@ -708,9 +709,11 @@ void fork_children(void)
 				 * dead pids the exit accounting never
 				 * cleared -- the "0 active" state. Run the
 				 * reconciliation sweep before giving up:
-				 * reap_dead_kids' kill(pid,0)==ESRCH pass
-				 * reaps those slots to EMPTY_PIDSLOT. Only
-				 * a still-full map is a genuine loss. */
+				 * reap_dead_kids() reaps a slot whose task
+				 * is gone to EMPTY_PIDSLOT, judged by the
+				 * slot's pidstat fd or, with none,
+				 * kill(pid, 0). Only a still-full map is a
+				 * genuine loss. */
 				reap_dead_kids();
 				if (find_childno(EMPTY_PIDSLOT) == CHILD_NOT_FOUND) {
 					outputerr("## Pid map was full!\n");
