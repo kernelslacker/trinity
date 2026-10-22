@@ -1,74 +1,8 @@
 /*
- * Genetlink family grammar: MACSEC (IEEE 802.1AE).
- *
- * MACsec exposes a single generic-netlink family (MACSEC_GENL_NAME =
- * "macsec") whose eleven commands cover the full receive-channel /
- * security-association lifecycle: GET_TXSC plus the per-RXSC
- * ADD/DEL/UPD triple, the per-TXSA ADD/DEL/UPD triple, the per-RXSA
- * ADD/DEL/UPD triple, and UPD_OFFLOAD for the 5.7-era hardware-offload
- * mode toggle.  The per-cmd nla_policy parsers and the post-parse
- * handlers live in drivers/net/macsec.c, dispatched via the
- * macsec_genl_ops table; every command is GENL_ADMIN_PERM gated and
- * IFINDEX-keyed, so post-parse handlers look the netdev up via
- * macsec_get_dev_from_attrs and bail with -ENODEV when the IFINDEX
- * doesn't resolve to a MACsec interface.  That contract is what makes
- * spec-driven dispatch with a fuzz IFINDEX inert at the post-parse
- * layer: the parser is fully exercised, refcount lookups are
- * attempted, and the dispatcher then drops out cleanly without
- * touching live SA / SC state.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "macsec", so the parser plus the per-SA / per-RXSC
- * dispatchers have been routinely cold under generic netlink fuzzing;
- * the controller-resolved family_id dispatcher addresses real macsec
- * messages whose attribute shapes plausibly survive the per-cmd
- * policy.  The post-parse handlers reach the SA install / delete code
- * paths (macsec_add_rxsa / _txsa / del_rxsa / _txsa) before the
- * IFINDEX gate trips, so coverage of the parser, the validate_*
- * helpers (validate_add_rxsa / _add_rxsc / etc.) and the GCM-AES key
- * sanity checks is preserved.
- *
- * Per the wireguard / tipc / l2tp model, a single flat nla_attr_spec
- * table lists every id used by any nest reachable from this family's
- * commands.  MACsec has eight nested namespaces all reachable from the
- * outer MACSEC_ATTR_* table:
- *
- *   MACSEC_ATTR_RXSC_CONFIG -> macsec_rxsc_attrs (SCI / ACTIVE)
- *   MACSEC_ATTR_SA_CONFIG   -> macsec_sa_attrs (AN/ACTIVE/PN/KEY/
- *                              KEYID/SSCI/SALT, plus a STATS sub-nest)
- *   MACSEC_ATTR_OFFLOAD     -> macsec_offload_attrs (TYPE)
- *   MACSEC_ATTR_SECY        -> macsec_secy_attrs (response-only)
- *   MACSEC_ATTR_TXSC_STATS  -> macsec_txsc_stats_attr (response-only)
- *   MACSEC_ATTR_SECY_STATS  -> macsec_secy_stats_attr (response-only)
- *   MACSEC_ATTR_TXSA_LIST   -> list of macsec_sa_attrs entries (resp)
- *   MACSEC_ATTR_RXSC_LIST   -> list of macsec_rxsc_attrs entries (resp)
- *
- * Numeric ids collide aggressively across the eight nests
- * (MACSEC_ATTR_IFINDEX = MACSEC_SECY_ATTR_SCI = MACSEC_RXSC_ATTR_SCI =
- * MACSEC_SA_ATTR_AN = MACSEC_OFFLOAD_ATTR_TYPE =
- * MACSEC_RXSC_STATS_ATTR_IN_OCTETS_VALIDATED =
- * MACSEC_SA_STATS_ATTR_IN_PKTS_OK =
- * MACSEC_TXSC_STATS_ATTR_OUT_PKTS_PROTECTED =
- * MACSEC_SECY_STATS_ATTR_OUT_PKTS_UNTAGGED = 1, and similarly all the
- * way up).  The kernel only validates each child against the policy of
- * whichever nest is currently being walked, so the collisions are
- * harmless and the single flat table is the same shape l2tp uses for
- * its outer-vs-STATS overlap.
- *
- * Several outer MACSEC_ATTR_* entries (SECY, TXSA_LIST, RXSC_LIST,
- * TXSC_STATS, SECY_STATS) are response-only — the kernel emits them on
- * GET_TXSC dump replies but the input policy doesn't validate them, so
- * they exercise the validator's "ignore on input" branch the same way
- * the OVS dp/flow STATS attrs and L2TP_ATTR_STATS' inner counters do.
- *
- * Header gating mirrors the wireguard / l2tp model: <linux/if_macsec.h>
- * is the upstream UAPI header that ships with kernel headers from 4.6
- * onward.  The XPN (SSCI/SALT) and offload (UPD_OFFLOAD command +
- * MACSEC_ATTR_OFFLOAD + the entire macsec_offload_attrs enum) bits
- * landed in 5.7; per-symbol fallbacks in include/kernel/macsec.h carry whichever
- * constants the host header omits.  Build hosts whose sysroot lacks
- * <linux/if_macsec.h> entirely silently drop the family from the
- * registry.
+ * Genetlink family grammar: MACSEC (IEEE 802.1AE), targeting the policies,
+ * validate_*() helpers and handlers in drivers/net/macsec.c.  One flat
+ * table covers all eight attribute namespaces, whose colliding ids are
+ * harmless; the permission and IFINDEX gating is noted at the cmd table.
  */
 
 #if __has_include(<linux/if_macsec.h>)
@@ -78,6 +12,13 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * Every command but GET_TXSC (a dump) is GENL_ADMIN_PERM.  Handlers parse
+ * and validate the attributes first, then resolve MACSEC_ATTR_IFINDEX
+ * with get_dev_from_nl() and return -ENODEV unless it names a MACsec
+ * interface, so any other IFINDEX exercises the parsers and validate_*()
+ * helpers without touching live SA / SC state.
+ */
 static const struct genl_cmd_grammar macsec_cmds[] = {
 	{ MACSEC_CMD_GET_TXSC,		"MACSEC_CMD_GET_TXSC" },
 	{ MACSEC_CMD_ADD_RXSC,		"MACSEC_CMD_ADD_RXSC" },
@@ -107,7 +48,7 @@ static const struct genl_cmd_grammar macsec_cmds[] = {
  */
 static const struct nla_attr_spec macsec_attrs[] = {
 	/* MACSEC_ATTR_* — outer.  IFINDEX is the netdev selector consumed
-	 * by every command's macsec_get_dev_from_attrs lookup; the
+	 * by every command's get_dev_from_nl() lookup; the
 	 * remaining ids are either nested config payloads (RXSC_CONFIG /
 	 * SA_CONFIG / OFFLOAD — the only three the input policy actually
 	 * validates) or response-only nests (SECY / *_LIST / *_STATS)

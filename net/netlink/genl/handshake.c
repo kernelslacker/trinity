@@ -1,77 +1,11 @@
 /*
- * Genetlink family grammar: handshake (kernel TLS handshake upcall).
- *
- * The handshake subsystem exposes its userspace control plane through
- * a single generic-netlink family ("handshake") covering the three
- * upcall-protocol commands: READY (kernel-to-userspace event posted
- * to multicast subscribers when a new handshake request is queued),
- * ACCEPT (a userspace handler retrieves the next queued request and
- * receives the listener socket fd plus the per-handshake policy
- * envelope), and DONE (the handler reports completion status back to
- * the kernel).  The two user-callable commands -- ACCEPT and DONE --
- * both carry GENL_ADMIN_PERM (CAP_NET_ADMIN gated), and
- * genl_family_rcv_msg() checks that flag before it parses attributes,
- * so a child without CAP_NET_ADMIN in the initial user namespace gets
- * -EPERM and never reaches the per-cmd nla_policy walker or the
- * handshake-req queue lookup paths; a child that holds it reaches
- * every per-cmd parser once the message carries a real family_id.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-
- * assigned family_id for "handshake", so the per-cmd policy walker
- * plus the queue / accept / done dispatch chains have been routinely
- * cold under generic netlink fuzzing; resolving the family at first
- * NETLINK_GENERIC use lets the message generator address real
- * handshake messages whose attribute shapes plausibly survive the
- * per-cmd policy.
- *
- * READY is listed as a "notify" op in the YAML and the kernel does
- * not register a .doit / .dumpit handler for it -- the dispatcher
- * rejects an inbound READY with -EOPNOTSUPP.  It is kept in the cmds
- * table because the fast-reject path is itself an interesting
- * coverage surface: the family demuxer accepts the family_id, the
- * header checks pass, and the per-cmd table lookup runs before the
- * EOPNOTSUPP return -- a worthwhile shape distinct from a random
- * nlmsg_type fast-reject at the controller layer.
- *
- * The family is split into three attribute namespaces in the YAML --
- * HANDSHAKE_A_X509_* (CERT/PRIVKEY for the nested X509 container),
- * HANDSHAKE_A_ACCEPT_* (the ACCEPT request + reply payloads), and
- * HANDSHAKE_A_DONE_* (the DONE request payload) -- whose id values
- * overlap starting at 1.  The flat nla_attr_spec table the registry
- * consumes cannot disambiguate overlapping keys, so following the
- * ovpn / dpll precedent only the HANDSHAKE_A_ACCEPT_* surface is
- * enumerated here: it is the larger of the three namespaces, and it
- * is the one a userspace handler interacts with at request-arrival
- * time.  The HANDSHAKE_A_DONE_* and HANDSHAKE_A_X509_* tables belong
- * in a future grammar extension that carries a per-command attribute
- * namespace; the DONE command is still in the cmds[] table above and
- * will start exercising the done parser once the per-command
- * namespace lands.
- *
- * The family carries a nonzero declared version
- * (HANDSHAKE_FAMILY_VERSION = 1) so the default_version member is
- * initialised -- the kernel's dispatcher doesn't gate on the
- * genlmsghdr.version byte today, but matching the declared family
- * version keeps the message generator honest against any future
- * version-gated dispatch.  hdrsize stays 0: handshake has no
- * family-specific fixed header, attributes follow the genlmsghdr
- * directly.
- *
- * Header gating mirrors the dpll / ovpn / nbd families:
- * <linux/handshake.h> is the upstream UAPI header carrying every
- * HANDSHAKE_CMD_* / HANDSHAKE_A_* enum referenced below.  Per-symbol
- * #ifndef shims in include/kernel/handshake.h fill in the ids on
- * build hosts whose installed uapi predates this family.  Build
- * hosts lacking the header entirely silently drop the family from
- * the registry instead of failing the build.
- *
- * arch.h is included unconditionally above the __has_include guard
- * so the translation unit is never empty even on build hosts whose
- * uapi lacks <linux/handshake.h> -- the toolchain emits no
- * compile-unit-empty warning and the registry-side ifdef'd extern
- * stays consistent with the absent strong symbol.
+ * Genetlink family grammar: handshake (kernel TLS handshake upcalls),
+ * targeting the policies and handlers in net/handshake/.  Only the
+ * HANDSHAKE_A_ACCEPT_* attribute namespace is listed; the reasons for
+ * that and for the permission split sit at the two tables below.
  */
 
+/* Keeps the TU non-empty when the guard below drops the family. */
 #include "arch.h"
 
 #if __has_include(<linux/handshake.h>)
@@ -81,14 +15,11 @@
 #include "utils.h"
 
 /*
- * handshake exposes three commands: READY (notify-only, kernel
- * rejects on input but the per-cmd lookup still runs -- worthwhile
- * coverage), ACCEPT (handler dequeues a pending request, GENL_ADMIN_
- * PERM), and DONE (handler reports completion, GENL_ADMIN_PERM).
- * The two user-callable cmds are GENL_ADMIN_PERM, which the genl core
- * checks before the nla_policy walker runs, so listing every id
- * exercises both per-cmd parsers symmetrically for a child that
- * passes that check.
+ * READY is a kernel-to-user notification with no doit or dumpit, so the
+ * demuxer answers -EOPNOTSUPP; it stays so that rejection is exercised.
+ * ACCEPT and DONE are GENL_ADMIN_PERM, which the genl core checks before
+ * the nla_policy walker runs, so a child that passes that check reaches
+ * both parsers.
  */
 static const struct genl_cmd_grammar handshake_cmds[] = {
 	{ HANDSHAKE_CMD_READY,	"HANDSHAKE_CMD_READY" },
@@ -123,8 +54,10 @@ static const struct genl_cmd_grammar handshake_cmds[] = {
  * validator's "ignore on input" branch the same way the fou /
  * psample / ovpn / dpll grammars do.  The HANDSHAKE_A_DONE_* and
  * HANDSHAKE_A_X509_* enums share id 1..N with this namespace and a
- * single flat table cannot disambiguate the overlapping keys -- they
- * are not enumerated here.
+ * single flat table cannot disambiguate the overlapping keys, so only
+ * ACCEPT_* -- the largest namespace, and the one a handler meets at
+ * request arrival -- is listed.  DONE's own attributes are not modelled
+ * until the grammar carries per-command attribute namespaces.
  */
 static const struct nla_attr_spec handshake_attrs[] = {
 	{ HANDSHAKE_A_ACCEPT_SOCKFD,		NLA_KIND_U32,    4 },

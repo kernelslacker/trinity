@@ -1,101 +1,13 @@
 /*
- * net/netlink/rtnl-ack-oracle.c
- *
  * Sampled ACK oracle for the NETLINK_ROUTE fuzz path.
  *
- * MOTIVATION
- *
  * netlink_nested_attrs_emitted counts nested-attr containers written into
- * generated NETLINK_ROUTE messages, but the counter increments identically
- * whether the kernel accepted or silently discarded the message.  The oracle
- * closes that gap: for 1-in-N sampled messages it arranges for the kernel
- * to emit an NLMSG_ERROR reply, drains that reply after the real sendmsg
- * returns, and classifies the outcome into a per-nlmsg_type histogram.
- *
- * DESIGN (correcting the reverted first attempt)
- *
- * The first attempt opened a private NETLINK_ROUTE socket
- * inside netlink_gen_msg(), sent a copy of the message, and read the ACK
- * synchronously.  Three failures:
- *
- *   1. Mutation before generation: the private send happened while
- *      netlink_gen_msg() was still building the payload, so RTM_NEW/DEL
- *      requests changed kernel state during generation and the real path
- *      sent the same payload a second time.
- *
- *   2. 150ms blocking timeout: ~1 in 10 messages corrupts nlmsg_len;
- *      four of five corruption arms produce a header the kernel drops
- *      without an ACK, so the synchronous recv timed out on ~8% of
- *      probes -- ~12ms average per rtnl generation.
- *
- *   3. Undrained fuzz socket: forcing NLM_F_ACK unconditionally on the
- *      real message left ACK replies accumulating in the fuzz socket's
- *      receive queue across thousands of messages.
- *
- * This implementation fixes all three:
- *
- *   1. Generation stays side-effect free: rtnl_oracle_sample() ORs
- *      NLM_F_ACK into the *already-built* buffer in-place and records
- *      state.  No socket is opened or used here.
- *
- *   2. Non-blocking drain: rtnl_oracle_drain() uses MSG_DONTWAIT.  A
- *      corrupted nlmsg_len that causes the kernel to drop the message
- *      returns EAGAIN immediately; that is counted as no_reply rather
- *      than blocking for 150 ms.
- *
- *   3. Drain after send, not before: rtnl_oracle_drain() is called from
- *      the proto->post_send hook in syscalls/socket/send.c, which fires
- *      after the real sendmsg() syscall has completed.  Only sampled
- *      messages have NLM_F_ACK set, so the fuzz socket's receive queue
- *      stays empty for the other N-1 messages.
- *
- * SAMPLING RATE
- *
- * RTNL_ACK_ORACLE_SAMPLE_RATE 32 means every 32nd eligible
- * single-message NETLINK_ROUTE call is probed.  At typical fuzz rates
- * (~10 000 rtnl sends/s per worker) this yields ~300 probes/s -- more
- * than enough resolution to detect a ratio shift within seconds.  Each
- * probe costs one MSG_DONTWAIT recv (< 1 us when the reply is queued,
- * < 1 us EAGAIN when not) compared to the 150 ms blocking timeout of the
- * first attempt.  Increase the rate (lower N) to improve signal density;
- * decrease it (raise N) to reduce recv overhead.
- *
- * DRAIN LOOP
- *
- * Dump requests (NLM_F_DUMP set in the original flags) are excluded from
- * sampling.  __netlink_dump_start() returns -EINTR to suppress the ACK
- * regardless of NLM_F_ACK (af_netlink.c: "We successfully started a dump,
- * by returning -EINTR we signal not to send ACK even if it was requested").
- * A sampled dump therefore never produces NLMSG_ERROR; it produces data
- * messages followed by NLMSG_DONE.  Excluding NLM_F_DUMP messages from
- * sampling avoids two problems: (1) every successful dump being filed as
- * no_reply, corrupting the accepted-rate signal; (2) up to DRAIN_MAX recvs
- * on a socket with a running dump advancing cb_running state so the next
- * recv on that fd continues the stale dump.
- *
- * Crucially, rtnl_oracle_sample() rolls counter back by one on the
- * NLM_F_DUMP return so the budget slot is not consumed: the next eligible
- * (non-dump) message fires the gate.  Without this correction, counter
- * sits at a multiple of SAMPLE_RATE after the return; the next increment
- * moves it off zero, and no probe fires for the full following period.
- * gen_nlmsg_flags() sets NLM_F_DUMP on a bare RAND_BOOL(), so roughly
- * half of every period's single slot would be silently lost — halving the
- * effective rate to ~1-in-64.  The correction keeps the rate at the
- * documented 1-in-32.  Each skipped dump is counted into dump_skipped.
- *
- * RTNL_ACK_ORACLE_DRAIN_MAX caps the drain loop for non-dump probes.  We
- * perform up to that many MSG_DONTWAIT recv() calls (datagrams) and stop on
- * NLMSG_ERROR (the explicit ACK path).  Each datagram may pack multiple
- * messages; rtnl_oracle_drain() iterates them all with NLMSG_OK/NLMSG_NEXT.
- * NLMSG_DONE cannot belong to our probe because NLM_F_DUMP is excluded from
- * sampling; each DONE terminator is queue pollution from concurrent dump
- * traffic, counted into stale_done.  Ordinary data/multipart messages are
- * counted into stale_other (per-message, not per-datagram).  If the budget
- * is exhausted before NLMSG_ERROR surfaces, the probe books
- * no_reply_exhausted; an early EAGAIN before the budget is consumed books
- * no_reply_clean.  A truncated NLMSG_ERROR (framing failure) is counted
- * separately into bad_framing and does not touch no_reply_clean.
+ * generated messages whether the kernel accepted or discarded them.  For
+ * 1-in-N messages the oracle has the kernel send an NLMSG_ERROR reply,
+ * drains it after the real sendmsg, and bins the verdict into the
+ * rtnl_ack_oracle stats, accepted counts per RTM group.
  */
+
 #include <errno.h>
 #include <sys/socket.h>
 #include <linux/netlink.h>
@@ -104,8 +16,10 @@
 #include "rtnl-ack-oracle.h"
 
 /*
- * 1-in-N sampling: probe every Nth eligible message.  32 is the default;
- * lower values give denser signal at the cost of more MSG_DONTWAIT recvs.
+ * 1-in-N sampling: probe every Nth eligible message.  32 gives ~300
+ * probes/s at the typical ~10 000 rtnl sends/s per worker -- enough to see
+ * a ratio shift within seconds -- and costs one MSG_DONTWAIT recv per
+ * probe.  Lower N gives denser signal at more recv cost.
  */
 #define RTNL_ACK_ORACLE_SAMPLE_RATE	32
 
@@ -164,12 +78,18 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 	 * Dump requests produce NLMSG_DONE on success, not NLMSG_ERROR.
 	 * __netlink_dump_start() returns -EINTR to suppress the ACK even
 	 * when NLM_F_ACK is set, so sampling a dump yields no drainable
-	 * reply and leaves cb_running advanced across drain iterations.
+	 * reply: every successful dump would be filed as no_reply,
+	 * corrupting the accepted-rate signal, and each drain recv() would
+	 * advance the running dump (cb_running), leaving the next recv on
+	 * this fd to continue a stale one.
 	 *
 	 * Roll the counter back before returning so the budget slot is not
 	 * wasted: counter-- leaves it at (SAMPLE_RATE-1) mod SAMPLE_RATE,
 	 * and the next non-dump increment brings it to 0 mod SAMPLE_RATE,
-	 * firing the gate for the next eligible message.
+	 * firing the gate for the next eligible message.  gen_nlmsg_flags()
+	 * sets NLM_F_DUMP on a bare RAND_BOOL(), so without the rollback
+	 * about half the slots would be lost and the effective rate would
+	 * halve to ~1-in-64.
 	 */
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		oracle_state.counter--;

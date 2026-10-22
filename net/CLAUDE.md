@@ -5,7 +5,7 @@ message bodies, and BPF/eBPF programs for every address family and
 netlink subsystem Trinity knows about. This is the largest subsystem
 in the tree by file count.
 
-## Files (123 .c files + 5 headers, ~22,663 LOC)
+## Files (123 .c files + 5 headers, ~22,327 LOC)
 
 Grouped by theme rather than enumerated — the long tail is highly
 repetitive (one file per protocol/family/subsystem, following a
@@ -125,10 +125,9 @@ shared struct-of-callbacks pattern).
    rtnl payloads out of the message generator, then each rtnl group out
    of the payload file. `netlink/msg-rtnl-neigh.c` (907) is now the
    largest file here, followed by `netlink/msg-tables.c` (570),
-   `netlink/msg-rtnl-tc.c` (570), `netlink/msg-rtnl-route.c` (526),
-   `netlink/rtnl-ack-oracle.c` (480) and `netlink/msg-attr-random.c`
-   (480). A single payload generator still spans hundreds of lines of
-   nested attribute construction.
+   `netlink/msg-rtnl-tc.c` (570), `netlink/msg-rtnl-route.c` (526) and
+   `netlink/msg-attr-random.c` (480). A single payload generator still
+   spans hundreds of lines of nested attribute construction.
 2. **The eBPF generator's three tiers are now three TUs** —
    `bpf/ebpf.c` (126) keeps only the fill-into-buffer core and the tier
    pick; valid-program synthesis (`ebpf-tier1.c`), boundary-case

@@ -1,73 +1,10 @@
 /*
- * Genetlink family grammar: net-shaper (per-netdev HW rate-limiting).
- *
- * The net_shaper family is the modern (6.13+) per-netdev QoS control
- * plane.  It exposes five user-callable commands: CAP_GET / GET to
- * introspect HW capability and read back the running shaper config,
- * and SET / DELETE / GROUP to create-or-update an individual shaper,
- * tear one down, or build a scheduling group.  SET / DELETE / GROUP
- * carry GENL_ADMIN_PERM (CAP_NET_ADMIN); CAP_GET / GET do not.
- * genl_family_rcv_msg() checks that flag before it parses attributes,
- * so a child without CAP_NET_ADMIN in the initial user namespace gets
- * -EPERM for the three write commands and never reaches their
- * nla_policy walker, while CAP_GET / GET run theirs unprivileged.
- * Listing every cmd id still exercises every per-cmd parser
- * symmetrically for a child that holds the capability — penetrating
- * the family demuxer with a real family_id puts the parsers plus the
- * per-netdev shaper-tree mutation paths directly in its reach.
- *
- * Random nlmsg_type ids essentially never matched the runtime-assigned
- * family_id for "net-shaper", so the per-cmd policy walker plus the
- * shaper-tree dispatch chains have been routinely cold under generic
- * netlink fuzzing; resolving the family at first NETLINK_GENERIC use
- * lets the message generator address real net_shaper messages whose
- * attribute shapes plausibly survive the per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample /
- * tcp_metrics / ovpn model, a single flat nla_attr_spec table lists
- * every id used by this family's commands.  net_shaper's top-level
- * NET_SHAPER_A_* namespace covers the per-shaper scalar set (METRIC
- * u32 enum, BW_MIN / BW_MAX / BURST u64 rate-and-burst triple,
- * PRIORITY / WEIGHT u32 scheduling pair, IFINDEX u32 netdev selector)
- * alongside three nested containers: HANDLE (the per-shaper {SCOPE,
- * ID} key), PARENT (a HANDLE-shaped parent reference used by GROUP),
- * and LEAVES (a multi-attr leaf-info container also carrying nested
- * HANDLE plus PRIORITY / WEIGHT).  Following the psample-TUNNEL and
- * ovpn-PEER/KEYCONF precedent the three nested containers are emitted
- * as empty NLA_KIND_NESTED entries so the kernel's nla_validate
- * accepts them at the outer level without recursing into the per-nest
- * sub-policies.  The inner NET_SHAPER_A_HANDLE_{SCOPE,ID} and
- * NET_SHAPER_A_CAPS_* enums share id 1..N with the top-level
- * NET_SHAPER_A_* namespace and a single flat table cannot
- * disambiguate the overlapping keys; the shim header carries
- * #ifndef-guarded fallbacks for those inner ids for the next reader
- * who extends the grammar to recursive nested emission.
- *
- * The family carries a nonzero declared version
- * (NET_SHAPER_FAMILY_VERSION = 1) so the default_version member is
- * initialised — the kernel's dispatchers don't actually gate on the
- * genlmsghdr.version byte today, but matching the declared family
- * version keeps the message generator honest against any future
- * version-gated dispatch.  hdrsize stays 0: net_shaper has no
- * family-specific fixed header, attributes follow the genlmsghdr
- * directly.
- *
- * Header gating mirrors the team / hsr / fou / psample / batadv /
- * tcp_metrics / ovpn families: <linux/net_shaper.h> is the upstream
- * UAPI header carrying every NET_SHAPER_CMD_* / NET_SHAPER_A_* enum
- * referenced below.  Build hosts lacking the header silently drop the
- * family from the registry instead of failing the build.  Per-symbol
- * #ifndef shims in include/kernel/net_shaper.h fill in
- * NET_SHAPER_CMD_* / NET_SHAPER_A_* on build hosts whose installed
- * uapi predates this family.
- *
- * arch.h is included unconditionally above the __has_include guard so
- * the translation unit is never empty even on build hosts whose uapi
- * lacks <linux/net_shaper.h> — the toolchain emits no
- * compile-unit-empty warning and the registry-side ifdef'd extern
- * stays consistent with the absent strong symbol.
+ * Genetlink family grammar: net-shaper, the 6.13+ per-netdev HW rate
+ * limiting control plane (net/shaper/).  The inner HANDLE and CAPS
+ * attribute namespaces are not listed; see the attribute table.
  */
 
+/* Keeps the TU non-empty when the guard below drops the family. */
 #include "arch.h"
 
 #if __has_include(<linux/net_shaper.h>)
