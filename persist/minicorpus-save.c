@@ -67,6 +67,7 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 	tmp.args[4] = rec->a5;
 	tmp.args[5] = rec->a6;
 	tmp.num_args = entry->num_args;
+	tmp.do32bit = rec->do32bit;
 
 	/* RedQueen-source provenance tag: read the current child's in_reexec
 	 * recursion guard inside the save site rather than threading a new

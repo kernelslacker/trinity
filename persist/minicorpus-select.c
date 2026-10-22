@@ -101,6 +101,11 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		 * oldest of the K_RECENT window. */
 		slot = (head - K_RECENT + offset) % CORPUS_RING_SIZE;
 		snapshot = ring->entries[slot];
+		/* The other ABI's syscall at this nr shares the ring; see
+		 * corpus_entry::do32bit.  Checked before the tracking
+		 * stamps below so a skipped pick credits nothing. */
+		if (snapshot.do32bit != rec->do32bit)
+			return false;
 		if (snapshot.num_args < 1 || snapshot.num_args > 6) {
 			__atomic_fetch_add(&minicorpus_shm->replay_torn_rejects,
 					   1UL, __ATOMIC_RELAXED);
@@ -160,6 +165,8 @@ bool minicorpus_replay(struct syscallrecord *rec)
 			return false;
 		slot = rnd_modulo_u32(count);
 		snapshot = ring->entries[slot];
+		if (snapshot.do32bit != rec->do32bit)
+			return false;
 		if (snapshot.num_args < 1 || snapshot.num_args > 6) {
 			__atomic_fetch_add(&minicorpus_shm->replay_torn_rejects,
 					   1UL, __ATOMIC_RELAXED);

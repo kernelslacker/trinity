@@ -101,6 +101,11 @@ struct corpus_entry {
 	 * the persisted value (the on-disk format carries only args/num_args,
 	 * so a warm-started entry reads as PC-sourced, matching rq_sourced). */
 	bool errno_sourced;
+	/* ABI of the saving call.  On biarch the 32- and 64-bit syscalls
+	 * at one nr share a ring but are unrelated (i386 3 is read, x86_64
+	 * 3 is close), so replay only takes entries whose do32bit matches
+	 * the record being generated. */
+	bool do32bit;
 };
 
 struct corpus_ring {
@@ -414,8 +419,8 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 
 /* Try to replay a saved arg set with mutations into rec.
  * Returns true if replay was performed, false if no corpus entry
- * was available or the dice roll said to generate fresh args.
- * Only call when entry->sanitise == NULL. */
+ * saved under rec->do32bit's ABI was picked or the dice roll said to
+ * generate fresh args.  Only call when entry->sanitise == NULL. */
 bool minicorpus_replay(struct syscallrecord *rec);
 
 /* Post-replay perturbation fraction (1-in-N gate).  Single tunable so

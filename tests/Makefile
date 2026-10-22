@@ -135,6 +135,15 @@ CMP_SRCS	:= \
 	$(TOP)/cmp_hints/hyp-len-correlated.c \
 	$(TOP)/cmp_hints/hyp-pool.c
 
+# The minicorpus save and replay paths, linked for
+# minicorpus_save_with_reason() and minicorpus_replay().  Same
+# section-per-function treatment; minicorpus_abi_test.c fakes the blob
+# corpus and the mutator chain.
+MINICORPUS_SRCS	:= \
+	$(TOP)/persist/minicorpus-core.c \
+	$(TOP)/persist/minicorpus-save.c \
+	$(TOP)/persist/minicorpus-select.c
+
 FAKE_SRCS	:= \
 	fake_rng.c \
 	fake_shm.c \
@@ -163,6 +172,7 @@ FAKE_SRCS	:= \
 	extrafork_reap_test.c \
 	cmp_field_scan_test.c \
 	sanitiser_owned_mask_test.c \
+	minicorpus_abi_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
@@ -171,6 +181,7 @@ FAKE_SRCS	:= \
 REAL_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(REAL_SRCS))
 PARENT_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(PARENT_SRCS))
 CMP_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(CMP_SRCS))
+MINICORPUS_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(MINICORPUS_SRCS))
 FAKE_OBJS	:= $(patsubst %.c,$(BUILDDIR)/%.o,$(FAKE_SRCS))
 
 .PHONY: all test test-asan test-ndebug clean
@@ -187,10 +198,10 @@ test-asan:
 test-ndebug:
 	$(MAKE) NDEBUG=1
 
-$(TEST_BIN): $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(FAKE_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(FAKE_OBJS)
+$(TEST_BIN): $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(FAKE_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(FAKE_OBJS)
 
-$(PARENT_OBJS) $(CMP_OBJS): CFLAGS += -ffunction-sections -fdata-sections
+$(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS): CFLAGS += -ffunction-sections -fdata-sections
 
 $(BUILDDIR)/real/%.o: $(TOP)/%.c
 	@mkdir -p $(dir $@)
