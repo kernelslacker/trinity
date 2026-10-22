@@ -22,9 +22,11 @@
 #include "fd-event.h"
 #include "health/signals-internal.h"
 #include "kmsg-monitor.h"
+#include "locks.h"
 #include "main-internal.h"
 #include "main/reap-internal.h"
 #include "pids.h"
+#include "post-mortem.h"
 #include "pre_crash_ring.h"
 #include "random.h"
 #include "shm.h"
@@ -33,6 +35,7 @@
 #include "sysv-sem.h"
 #include "sysv-shm.h"
 #include "tables.h"
+#include "taint.h"
 #include "trinity.h"
 #include "utils.h"		/* kill_pid */
 
@@ -62,9 +65,14 @@ unsigned int max_nr_64bit_syscalls;
 
 struct fake_slot_log fake_slot_log[FAKE_NR_CHILDREN];
 pid_t fake_killed_pid;
+unsigned int fake_sleeps;
+void (*fake_sleep_hook)(void);
 char fake_output_log[1024];
 unsigned int fake_stray_ring_init;
 
+static bool fake_clock_running;
+static uint64_t fake_clock_now_ns;
+static uint64_t fake_clock_started_ns;
 static pid_t pid_slots[FAKE_NR_CHILDREN];
 static int pidstat_slots[FAKE_NR_CHILDREN];
 static time_t spawn_time_slots[FAKE_NR_CHILDREN];
@@ -115,6 +123,9 @@ void fake_parent_reset(void)
 	fake_killed_pid = 0;
 	fake_output_log[0] = '\0';
 	fake_stray_ring_init = 0;
+	fake_clock_running = false;
+	fake_sleeps = 0;
+	fake_sleep_hook = NULL;
 }
 
 pid_t fake_hold_task(int stopsig)
@@ -215,6 +226,44 @@ int pid_is_valid(pid_t pid)
 	return pid > 0;
 }
 
+bool pidmap_empty(void)
+{
+	unsigned int i;
+
+	for_each_child(i) {
+		if (pids[i] != EMPTY_PIDSLOT)
+			return false;
+	}
+	return true;
+}
+
+/* Alive as far as kill(pid, 0) goes.  A zombie reads alive here, which
+ * none of the tasks the tests hold is. */
+bool pid_alive(pid_t pid)
+{
+	return kill(pid, 0) == 0;
+}
+
+/* No child holds a lock in a test. */
+bool check_all_locks(void)
+{
+	return false;
+}
+
+void force_bust_lock(lock_t *lk)
+{
+	(void)lk;
+}
+
+bool is_tainted(void)
+{
+	return false;
+}
+
+void tainted_postmortem(void)
+{
+}
+
 void kill_pid(pid_t pid)
 {
 	fake_killed_pid = pid;
@@ -305,4 +354,63 @@ void output(int level, const char *fmt, ...)
 	vsnprintf(fake_output_log + used, sizeof(fake_output_log) - used,
 		  fmt, args);
 	va_end(args);
+}
+
+int __real_clock_gettime(clockid_t clk, struct timespec *ts);
+int __wrap_clock_gettime(clockid_t clk, struct timespec *ts);
+unsigned int __real_sleep(unsigned int seconds);
+unsigned int __wrap_sleep(unsigned int seconds);
+int __real_usleep(useconds_t usec);
+int __wrap_usleep(useconds_t usec);
+
+void fake_clock_start(void)
+{
+	/* Well clear of 0, which the code under test uses for "unset". */
+	fake_clock_now_ns = 1000 * 1000000000ULL;
+	fake_clock_started_ns = fake_clock_now_ns;
+	fake_sleeps = 0;
+	fake_clock_running = true;
+}
+
+uint64_t fake_clock_elapsed_ns(void)
+{
+	return fake_clock_now_ns - fake_clock_started_ns;
+}
+
+int __wrap_clock_gettime(clockid_t clk, struct timespec *ts)
+{
+	if (!fake_clock_running || clk != CLOCK_MONOTONIC)
+		return __real_clock_gettime(clk, ts);
+
+	ts->tv_sec = fake_clock_now_ns / 1000000000ULL;
+	ts->tv_nsec = fake_clock_now_ns % 1000000000ULL;
+	return 0;
+}
+
+static void fake_sleep_ns(uint64_t ns)
+{
+	fake_clock_now_ns += ns;
+	fake_sleeps++;
+	if (fake_clock_elapsed_ns() > FAKE_CLOCK_LIMIT_S * 1000000000ULL)
+		BUG("fake clock: slept past the limit, the code under test is spinning");
+	if (fake_sleep_hook != NULL)
+		fake_sleep_hook();
+}
+
+unsigned int __wrap_sleep(unsigned int seconds)
+{
+	if (!fake_clock_running)
+		return __real_sleep(seconds);
+
+	fake_sleep_ns(seconds * 1000000000ULL);
+	return 0;
+}
+
+int __wrap_usleep(useconds_t usec)
+{
+	if (!fake_clock_running)
+		return __real_usleep(usec);
+
+	fake_sleep_ns(usec * 1000ULL);
+	return 0;
 }

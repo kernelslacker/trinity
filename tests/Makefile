@@ -71,6 +71,12 @@ LDFLAGS		+= -Wl,--wrap=socket
 # forwards to the real kill() unless armed.
 LDFLAGS		+= -Wl,--wrap=kill
 
+# Fake CLOCK_MONOTONIC: fake_parent.c wraps clock_gettime(), sleep() and
+# usleep() so a test can run out the shutdown wait's 30 s bound without
+# sleeping.  The wrappers forward to the real calls unless a test has
+# started the fake clock.
+LDFLAGS		+= -Wl,--wrap=clock_gettime -Wl,--wrap=sleep -Wl,--wrap=usleep
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs the
 # arch-program #10 spec calls for on the integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -123,12 +129,13 @@ REAL_SRCS	:= \
 	$(TOP)/mm/fault-read.c \
 	$(TOP)/mm/fault-write.c
 
-# Parent TUs, linked for reset_epoch_state(), the reaper, the zombie
-# reaper, the rotation-events sink and sanity_check_tables(), plus
-# utils/uid.c for drop_privs(), the child-side args/generate-args.c
-# for generic_sanitise() and arg_meta_init(), and health/signals-policy.c
-# for mask_signals_child() and setup_main_signals(), with the fault
-# handlers they install (signals-fault-handler.c, signals-async-safe.c).
+# Parent TUs, linked for reset_epoch_state(), the shutdown wait, the
+# reaper, the zombie reaper, the rotation-events sink and
+# sanity_check_tables(), plus utils/uid.c for drop_privs(), the
+# child-side args/generate-args.c for generic_sanitise() and
+# arg_meta_init(), and health/signals-policy.c for mask_signals_child()
+# and setup_main_signals(), with the fault handlers they install
+# (signals-fault-handler.c, signals-async-safe.c).
 # rand/random-address.c and random_syscall/dispatch-step.c bring the
 # writable pool, avoid_shared_buffer_out() and redqueen_pin_field().
 # ioctls/loop.c brings the loop group's sanitiser, which registers itself
@@ -249,6 +256,7 @@ FAKE_SRCS	:= \
 	loop_status_test.c \
 	genl_ops_test.c \
 	kcov_persist_test.c \
+	shutdown_wait_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

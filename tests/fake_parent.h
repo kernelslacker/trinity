@@ -6,6 +6,7 @@
  */
 #pragma once
 
+#include <stdint.h>
 #include <sys/types.h>
 
 #define FAKE_NR_CHILDREN	16
@@ -33,8 +34,27 @@ extern pid_t fake_killed_pid;
 extern char fake_output_log[];
 
 /* Start a run: every slot empty and in service, the zombie reaper's
- * state and counters cleared, the logs zeroed. */
+ * state and counters cleared, the logs zeroed, the fake clock stopped. */
 void fake_parent_reset(void);
+
+/*
+ * A fake CLOCK_MONOTONIC.  Once started, clock_gettime(CLOCK_MONOTONIC)
+ * reads it and sleep() and usleep() advance it by the time asked for
+ * instead of blocking, so a test can run out a 30 s bound at once.  Code
+ * that sleeps past FAKE_CLOCK_LIMIT_S is spinning, and aborts.
+ */
+#define FAKE_CLOCK_LIMIT_S	3600
+
+void fake_clock_start(void);
+
+/* Fake time since fake_clock_start(). */
+uint64_t fake_clock_elapsed_ns(void);
+
+/* sleep() and usleep() calls since fake_clock_start(). */
+extern unsigned int fake_sleeps;
+
+/* Called after each sleep, with the clock already advanced. */
+extern void (*fake_sleep_hook)(void);
 
 /* Fork a task that stays alive until killed and dies with the test,
  * standing in for a child the kernel has not released.  A non-zero
