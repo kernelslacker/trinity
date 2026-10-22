@@ -47,7 +47,7 @@ void set_child_cache(int childno, pid_t pid, struct childdata *child)
  *
  * False means the task is gone or dying, established by ESRCH from
  * kill(), by ENOENT or ESRCH from /proc, or by the state field, and
- * leaves errno at ESRCH, which kill_all_kids() and check_lock() read.
+ * leaves errno at ESRCH, which kill_all_kids() reads.
  * Anything that stops the probe short of that (a refused kill(), a full
  * fd table, ENOMEM) says nothing about the task and counts as alive: a
  * false answer releases locks and skips the SIGKILL.

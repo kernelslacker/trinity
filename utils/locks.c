@@ -92,7 +92,6 @@ static bool check_lock(lock_t *lk)
 
 	if (pid_alive(pid) == false) {
 		unsigned long stored_start;
-		bool dead_confirmed = (errno == ESRCH);
 
 		/* Recycle race: between pid_alive returning ESRCH and our CAS
 		 * below, the pid could be reissued to a new process that re-
@@ -105,9 +104,8 @@ static bool check_lock(lock_t *lk)
 		 * by try_release_dead_holder() and force_bust_lock().
 		 *
 		 * pid_alive() returns false only for a task that is gone or
-		 * dying, and leaves errno at ESRCH.  A probe that fails for
-		 * any other reason (a refused kill(), a /proc it cannot open)
-		 * counts as alive. */
+		 * dying.  A probe that fails for any other reason (a refused
+		 * kill(), a /proc it cannot open) counts as alive. */
 		stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
 		if (!is_dead_holder(pid, stored_start)) {
 			/* Same fingerprint, or /proc could not say and a task
@@ -119,12 +117,11 @@ static bool check_lock(lock_t *lk)
 		}
 
 		debugf("Found a lock held by dead pid %d. Freeing.\n", pid);
-		if (__atomic_compare_exchange_n(&lk->state, &s, 0, 0,
-						__ATOMIC_RELEASE, __ATOMIC_RELAXED))
-			return true;
-		/* CAS lost: someone else updated the word -- that is real
-		 * progress, the holder being gone (pid_alive() said ESRCH). */
-		return dead_confirmed;
+		/* A lost CAS is progress too: someone else updated the word,
+		 * and the holder is gone either way. */
+		__atomic_compare_exchange_n(&lk->state, &s, 0, 0,
+					    __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+		return true;
 	}
 	return false;
 }
