@@ -10,13 +10,13 @@ again into one TU per RTM_* group behind `msg-rtnl-common.h`.
 
 | File | Lines | Role |
 |---|---|---|
-| msg-rtnl-neigh.c | 907 | Largest file in net/: payload builders for the neighbour (NDA_*), neighbour-table (NDTA_*), bridge MDB (MDBA_*) and bridge VLAN DB (BRIDGE_VLANDB_*) groups. |
-| msg-tables.c | 570 | Pure descriptor data: per-protocol message-type lists, per-rtnl-group nlattr-type lists, per-family `nla_attr_spec` tables, and the xfrm family-field offset table. Each table is paired with an `_n` size constant so emitters can index across the TU boundary without `ARRAY_SIZE()`. |
-| msg-rtnl-tc.c | 570 | Payload builders for the tc (TCA_*), tc-action (TCA_ROOT_*) and link-stats (IFLA_STATS_*) groups. |
-| msg-rtnl-route.c | 526 | Payload builders for the route / rule / nexthop / prefix / nsid / chain groups. |
+| msg-rtnl-neigh.c | 905 | Largest file in net/: payload builders for the neighbour (NDA_*), neighbour-table (NDTA_*), bridge MDB (MDBA_*) and bridge VLAN DB (BRIDGE_VLANDB_*) groups. |
+| msg-tables.c | 590 | Pure descriptor data: per-protocol message-type lists, per-rtnl-group nlattr-type lists, per-family `nla_attr_spec` tables, and the xfrm family-field offset table. Each table is paired with an `_n` size constant so emitters can index across the TU boundary without `ARRAY_SIZE()`. |
+| msg-rtnl-tc.c | 607 | Payload builders for the tc (TCA_*), tc-action (TCA_ROOT_*) and link-stats (IFLA_STATS_*) groups. |
+| msg-rtnl-route.c | 578 | Payload builders for the route / rule / nexthop / prefix / nsid / chain groups. |
 | rtnl-ack-oracle.c | 400 | Sampled ACK oracle for NETLINK_ROUTE: on 1-in-N messages it ORs `NLM_F_ACK` into the header in place, then drains the `NLMSG_ERROR` reply *after* the real sendmsg and bins the outcome per nlmsg_type. Closes the gap where the nested-attr counter incremented identically whether the kernel accepted or discarded the message. |
 | msg-attr-random.c | 480 | Legacy random-payload attribute emission for families with no curated spec table (chiefly NETLINK_ROUTE): `gen_rta_payload` and its nested classifier, the per-group attribute-type hint lists, and the two emitters `append_nlattr` / `append_nested_attr_container`. |
-| msg-rtnl-link.c | 459 | Payload builders for the link (IFLA_*), link-property (RTM_*LINKPROP) and tunnel (RTM_*TUNNEL, vxlan-vnifilter) groups. |
+| msg-rtnl-link.c | 464 | Payload builders for the link (IFLA_*), link-property (RTM_*LINKPROP) and tunnel (RTM_*TUNNEL, vxlan-vnifilter) groups. |
 | msg-rtnl-body.c | 412 | The fixed struct each RTM_* group carries between the nlmsghdr and its attributes (ifinfomsg, rtmsg, ndmsg, ...), filled with correctly-sized fuzzed fields so length/family validation lets the message through to the attribute walker. Also defines the shared `rand_family()`. |
 | msg-core.c | 455 | `netlink_gen_msg()` (the `gen_msg` hook wired into `proto_netlink`): nlmsg flag/type generation (the 1-in-10 chaos roll lives in `build_one_nlmsg()`; for a genl message `gen_nlmsg_flags()` pins the dump bits to the picked cmd's doit/dumpit shape and draws the ATOMIC/NEW/DELETE modifiers one time in 8), `build_one_nlmsg()`, the attribute walker `iter_nlmsg_attr()`, and occasional deliberate corruption of otherwise-valid messages. |
 | msg-proto-body.c | 362 | The per-protocol equivalent of msg-rtnl-body.c: `gen_{genl,nfnl,xfrm,audit,sockdiag}_body` size and fill the small fixed header each NETLINK_* family expects before its parser runs; `gen_genl_body()` also reports the picked cmd's doit/dumpit shape and leaves the reserved word 0 outside chaos messages. |

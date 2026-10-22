@@ -5,17 +5,17 @@ Registry of kernel ioctl-driven subsystems Trinity fuzzes through the `ioctl()` 
 ## Files (69 .c files + 2 internal headers, ~17,653 LOC)
 
 Core registry/dispatch (not a per-device group):
-- `ioctls.c` (294) — group registration table, fd→group matching (`find_ioctl_group`), the tiered arg-shape picker (`pick_random_ioctl` / `ioctl_arg_for_request`), `dump_ioctls()`. No `REG_IOCTL_GROUP` — this *is* the registry.
-- `efault_cache.c` (320) — shm-resident EFAULT-probe cache backing Tier 2 of the arg-shape picker (see below). No `REG_IOCTL_GROUP` either; it's a support module `ioctls.c` calls into.
+- `ioctls.c` (309) — group registration table, fd→group matching (`find_ioctl_group`), the tiered arg-shape picker (`pick_random_ioctl` / `ioctl_arg_for_request`), `dump_ioctls()`. No `REG_IOCTL_GROUP` — this *is* the registry.
+- `efault_cache.c` (297) — shm-resident EFAULT-probe cache backing Tier 2 of the arg-shape picker (see below). No `REG_IOCTL_GROUP` either; it's a support module `ioctls.c` calls into.
 
 Largest / structurally distinct per-device files:
-- `drm.c` (799) — DRM core plus vendor extensions (i915, nouveau, radeon, exynos); defines fallback structs/macros for nouveau ioctls not present in all kernel header versions (`DRM_IOCTL_NOUVEAU_GETPARAM` etc, guarded by `#ifndef`).
+- `drm.c` (809) — DRM core plus vendor extensions (i915, nouveau, radeon, exynos); defines fallback structs/macros for nouveau ioctls not present in all kernel header versions (`DRM_IOCTL_NOUVEAU_GETPARAM` etc, guarded by `#ifndef`).
 - `btrfs.c` (740) — btrfs filesystem ioctls (as opposed to `btrfs-control.c`, the 41-line `/dev/btrfs-control` device-manager group).
-- `iommufd.c` (718) and `vfio.c` (610) — see areas of attention below; the two most heavily hand-tuned groups.
+- `iommufd.c` (753) and `vfio.c` (614) — see areas of attention below; the two most heavily hand-tuned groups.
 - `vhost.c` (572) — vhost-net/vsock/scsi/vdpa control ioctls.
 - `firewire.c` (560) — IEEE1394 character device ioctls, 26 struct-alloc sites.
 - `cdrom.c` (505) — CDROM/ATAPI command family, 23 `get_writable_struct()` sites for the various TOC/subchannel/multisession structs.
-- `vduse.c` (422), `binder.c` (407), `gpio.c` (399), `cec.c` (397), `vfs.c` (390), `mtd.c` (390), `framebuffer.c` (348), `autofs.c` (337) — mid-size, each with several `sanitise_*` struct-fillers for their multi-command ioctl surface. `binder.c` carries its own copy of `<linux/android/binder.h>`-equivalent definitions (`flat_binder_object`, `binder_write_read`, etc) inline, since the header isn't part of the standard kernel-headers package trinity builds against.
+- `vduse.c` (425), `userfaultfd.c` (415), `binder.c` (407), `gpio.c` (399), `cec.c` (397), `vfs.c` (390), `mtd.c` (390), `framebuffer.c` (348), `autofs.c` (337) — mid-size, each with several `sanitise_*` struct-fillers for their multi-command ioctl surface. `binder.c` carries its own copy of `<linux/android/binder.h>`-equivalent definitions (`flat_binder_object`, `binder_write_read`, etc) inline, since the header isn't part of the standard kernel-headers package trinity builds against.
 
 Two groups are split one class per translation unit rather than living in a
 single file. Each carved TU exposes exactly two symbols — a sanitiser and a
@@ -50,7 +50,7 @@ The remaining files follow the same per-ioctl-table pattern described below, sca
 
 ## Areas of attention
 
-1. **`vfio.c` and `iommufd.c` are among the most heavily hand-tuned groups in this directory** — 17 `sanitise_vfio_*` functions (`:104` `dma_map` … `:477` `device_feature`) and 21 `sanitise_iommufd_*` functions (`:82` `destroy` … `:591` `hw_queue_alloc`) respectively, covering every multi-field struct command in both groups. Both are `_IO()`-declared (no encoded size or direction), so Tier-1 `_IOC_SIZE` carries no signal and would hand the kernel a random-shaped buffer; the sanitisers replace that path entirely and stamp each struct's `argsz`/`size` field in-band.
+1. **`vfio.c` and `iommufd.c` are among the most heavily hand-tuned groups in this directory** — 17 `sanitise_vfio_*` functions (`:104` `dma_map` … `:477` `device_feature`) and 22 `sanitise_iommufd_*` functions (`:85` `destroy` … `:620` `ioas_noiommu_get_pa`) respectively, covering every multi-field struct command in both groups. Both are `_IO()`-declared (no encoded size or direction), so Tier-1 `_IOC_SIZE` carries no signal and would hand the kernel a random-shaped buffer; the sanitisers replace that path entirely and stamp each struct's `argsz`/`size` field in-band.
 2. **ALSA is the densest sanitiser surface in the directory** — 87 separate struct-allocation sites spanning hwdep, PCM, control, timer, sequencer, mixer, rawmidi, compress and OSS-compat ioctl families. It is no longer one file: the per-class families were carved into `snd-*.c` behind `snd-internal.h`, leaving `snd.c` as a spine that walks each class's dispatcher in order. `vt.c` was carved the same way into `vt-*.c` behind `vt-internal.h`, one family per TU. Both are code-motion splits — the dispatch order and the sanitiser bodies are unchanged — and both follow the earlier by-fd-type precedent in this directory (`btrfs.c`/`btrfs-control.c`).
 3. **EFAULT-probe side effects are opt-out by devname list, not derived from the kernel.** `efault_optout_devs[]` in `efault_cache.c` is a manually maintained list; a new group whose dispatch path allocates kernel state before arg validation (a new vhost transport, a new virtualization ioctl set) silently leaks that resource on every EFAULT probe until someone notices and adds it to the list, and a group matched only through `fd_test` has no devname to list.
 4. **No shared struct-generation infrastructure.** Every `sanitise_*` function hand-codes field values (bounded `rnd_modulo_u32()` calls, `RAND_BOOL()` flag picks); there is no catalog-driven or reflection-based struct filler for this directory (`grep -rn struct_catalog ioctls/` — zero hits), so field coverage and bounds-plausibility depend entirely on the judgment of whoever wrote each `sanitise_*` function, and are not automatically kept in sync with kernel struct changes.

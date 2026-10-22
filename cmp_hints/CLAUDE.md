@@ -2,18 +2,18 @@
 
 Fuzzer intelligence layer for Trinity. Collects constants the kernel compares syscall-derived values against (KCOV_TRACE_CMP), feeds them back into arg generation to bias inputs toward values likely to pass kernel validation gates.
 
-## Files (16 files, ~8,484 LOC)
+## Files (16 files, ~8,490 LOC)
 
 | File | Lines | Role |
 |---|---|---|
 | cmp_hints.c | 369 | Entry point: SHM allocation, strip-installation, chaos-mode gating |
-| collect.c | 1250 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer, cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
+| collect.c | 1249 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer, cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
 | pool.c | 1046 | Pool primitives: lock wrappers, corruption gates, dedup + LRU eviction, bloom filter, recent ring, batch flush |
 | get.c | 648 | Consumer tier: two-tier picker (recent ring first during plateaus, durable pool otherwise), A/B live-pick policy, weighted draw |
 | credit.c | 511 | Feedback loop: per-entry credit drain (wins/misses), outcome classification (PC win, CMP novelty, transition, corpus save) |
 | field.c | 895 | Field-scoped attribution pool: maps kernel CMP constants to specific struct fields via struct catalog walking |
 | persist.c | 866 | Warm-start persistence: on-disk snapshot/load with kallsyms SHA-256 fingerprinting, KASLR-base validation, CRC32 integrity |
-| shadow_promote.c | 360 | Measure-only shadow-arm promotion evaluator: walks a registry of shadow arms each stats tick, emits one promotion-criterion line. Writes no generation path. |
+| shadow_promote.c | 359 | Measure-only shadow-arm promotion evaluator: walks a registry of shadow arms each stats tick, emits one promotion-criterion line. Writes no generation path. |
 | childop_consume.c | 76 | Consume-side resolver for the childop CMP path (`--childop-cmp-harvest`); shadow-scores what a live consume would return, always returns "no hint" |
 
 ### Typed hypothesis store (`hyp-*.c`)
@@ -30,7 +30,7 @@ exports to a sibling lane, but not to the public `cmp_hints.h`, live in
 | hyp-observe.c | 259 | Observe path: the five kind-lane inference rules |
 | hyp-credit.c | 440 | Credit path: `cmp_hyp_find_for_credit()`, per-outcome selectors, `cmp_hyp_credit_outcome()` / `cmp_hyp_credit_consume()` |
 | hyp-pick.c | 270 | Picker: `cmp_hyp_would_pick_locked()` pool walk, specificity ordering, state-aware preference within a kind |
-| hyp-derive.c | 815 | Derive ladder: `cmp_hyp_derive_value()` plus the pow2/alignment, bitmask FULL_OR/ANDNOT_TOGGLE and sign-switch probe classes |
+| hyp-derive.c | 814 | Derive ladder: `cmp_hyp_derive_value()` plus the pow2/alignment, bitmask FULL_OR/ANDNOT_TOGGLE and sign-switch probe classes |
 | hyp-live.c | 235 | LIVE inject arm: `cmp_hyp_try_live_inject()` and its three gating channels (plateau-amplified A, always-on bootstrap B, PROMOTED-bypass C) |
 | hyp-len-correlated.c | 262 | Length-correlation observe path: matches `KCOV_CMP_CONST` arg2 against `FT_LEN_BYTES`/`FT_LEN_COUNT` fields in the dispatching syscall's cataloged input structs (gated off by default, see decision 5) |
 
@@ -72,7 +72,7 @@ Per-child:
 
 ## Areas of attention
 
-1. **Largest files** — collect.c (1,250), pool.c (1,046), field.c (895), persist.c (866), hyp-derive.c (815). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) now sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:505–814) is still ~310 lines with deep nesting.
+1. **Largest files** — collect.c (1,249), pool.c (1,046), field.c (895), persist.c (866), hyp-derive.c (814). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) now sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:505–814) is still ~310 lines with deep nesting.
 2. **Complex credit resolution** — `cmp_hyp_find_for_credit()` walks all 5 hypothesis kinds in specificity order (EXACT > ENUM_FAMILY > BITMASK > RANGE > BOUNDARY) on every consume and every outcome credit.
 3. **Field-scan safety depends on `range_readable_user()`** (`cmp_hints_field_scan_resolve()` in field.c) — checks VMA readability before dereferencing struct buffers; a missed page-fault race SEGVs the child (recovery point in health/signals-fault-handler.c).
 

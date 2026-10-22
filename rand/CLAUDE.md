@@ -7,14 +7,14 @@ content-aware text payload generation. Everything downstream (args/,
 struct_catalog/, mm/, syscalls/, childops/) draws its randomness through
 this directory rather than calling libc rand() directly.
 
-## Files (10 files, ~3,108 LOC)
+## Files (10 files, ~3,131 LOC)
 
 | File | Lines | Role |
 |---|---|---|
 | random.c | 316 | Core munged integer generators: `rand16()`/`rand32()`/`rand64()`, bitmask helpers (`set_rand_bitmask`, `rand_single_bit[64]`, `randbits[64]`), byte-repeat (`rept_byte`) |
 | interesting-numbers.c | 245 | Static a-priori boundary-value corpus: `get_boundary_value()`, `get_negative_edge_value()`, `get_sizeof_boundary_value()` (overflow-in-multiplication probes), `get_interesting_{8,16,32}bit_value()`, `get_interesting_value()` (64-bit + per-arch canonical/non-canonical address probes) |
 | text-payloads.c | 564 | Content-aware string generators for kernel string parsers: long-run strings, embedded NUL, printf format-string attacks, numeric-boundary strings, path traversal, cpu-list/bitmap-list syntax, binary control chars, plus a per-kind stateful name lane (netdev/key-desc/xattr/bpf-obj/mq/netlink-table) that bridges into name-pool.c |
-| random-address.c | 886 | Address/buffer generation and safety: writable scratch pool (`get_writable_address`, `get_non_null_address`, `range_in_writable_pool`), shared-buffer/libc-heap relocation (`avoid_shared_buffer_{out,inout}`), iovec array builder (`alloc_iovec`) with per-entry shape picker (NULL/tiny/pagecross/shared/pool/invalid/valid-map), iovec/msghdr second-pass scrub against sibling-scribble corruption |
+| random-address.c | 899 | Address/buffer generation and safety: writable scratch pool (`get_writable_address`, `get_non_null_address`, `range_in_writable_pool`), shared-buffer/libc-heap relocation (`avoid_shared_buffer_{out,inout}`), iovec array builder (`alloc_iovec`) with per-entry shape picker (NULL/tiny/pagecross/shared/pool/invalid/valid-map), iovec/msghdr second-pass scrub against sibling-scribble corruption |
 | random-page.c | 262 | Buffer-dirtying generators: `generate_rand_bytes()` (10 strategies incl. garbage, printable text, numeric-ASCII, fabricated pseudo-struct, printk format specifiers with %p extensions), `generate_random_page()` |
 | name-pool.c | 314 | Lock-free shared per-kind name ring (create-then-reference statefulness): `name_pool_record()` / `name_pool_draw_mutated()` with 5 mutation ops (exact/flip-byte/truncate/case-flip/suffix-grow) |
 | mutate.c | 169 | Value mutation strategies targeting kernel bug classes: truncate, sign-extend, alignment perturbation, negate, byte-swap, single-bit flip, arith delta, cross-width extend; `shift_flag_bit()` for flag-adjacency probing |

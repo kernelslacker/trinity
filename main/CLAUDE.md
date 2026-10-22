@@ -11,7 +11,7 @@ repeatedly calls `main_loop()`; none of this fuzzes anything itself.
 | File | Role |
 |---|---|
 | trinity.c | Process entry: `main()`, option/table setup, and the epoch loop that repeatedly calls `main_loop()`. Does not fuzz. |
-| trinity-warmstart.c | Startup/shutdown staging split out of `trinity.c`: `warm_start_all()`, `init_main_process()`/`init_main_early()`/`init_pre_fork()`, `persist_state_on_clean_exit()`, `run_oneshot_passes()` |
+| trinity-warmstart.c | Startup/shutdown staging split out of `trinity.c`: `warm_start_all()`, `init_main_process()`/`init_main_early()`/`init_pre_fork()`, `persist_state_on_clean_exit()`, `run_oneshot_passes()`; `main/trinity-internal.h` holds the declarations the two files share |
 | params/ | CLI option parsing and the global tunables/flags the rest of the codebase reads (targeting, `--childop`, richness levers). Split by concern -- see the subdirectory breakdown below. |
 | main/loop.c | `main_loop()` driver: per-tick phase sequencing (drain → stop-checks → periodic surfaces → fork-replace), epoch reset (`reset_epoch_state`), `panic()` |
 | main/reap.c | Reap core: `reap_child()`, `reap_dead_kids()` `waitpid(-1)` drain, `kill_all_kids()`, `get_pid_state()`, signal-status dispatch (`handle_children()`) |
@@ -246,7 +246,7 @@ API surface.
    own translation unit, so a change to one sub-concern (e.g. the D-state
    diagnostic format) lands in one file; what crosses the boundary is
    declared in `main/reap-internal.h`. The largest files in main/ are
-   `spawn.c` (863), `loop.c` (834) and `reap-watchdog.c` (807).
+   `spawn.c` (863), `loop.c` (844) and `reap-watchdog.c` (807).
 2. **Slot-reuse correctness is load-bearing and documented but easy to
    violate on a future edit** — `find_free_childno()`'s double-empty check
    (`pids[i]` AND `zombie_pids[i]`) is the sole guard against the

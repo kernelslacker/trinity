@@ -2,11 +2,14 @@
 
 Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop that runs one workload per iteration — either a random syscall (`random_syscall/`) or a scripted childop (`childops/`) via the alt-op picker — under an `alarm()` backstop and a set of self-integrity oracles. Distinct from `childops/`: those are the scripted *workloads*; this is the runtime *infrastructure* that drives them.
 
-## Files (24 files, ~7,994 LOC)
+## Files (24 files + internal header, ~7,804 LOC)
 
 | File | Role |
 |---|---|
 | child.c | The per-child loop: init → iterate (alt-op vs random syscall → dispatch → record) → reap. The heart of a child's life. |
+| child-periodic.c | `periodic_work()`: the every-16-ops tick (parent-pid check, divergence sentinel, cap-drop oracle) plus, every 128th op, the maps-dirty and fd-provider `child_ops` passes, skipped under `-c`/`-r`/`-g`. |
+| child-dispatch-arm.c | Alt-op dispatch bookkeeping: `probe_lowest_free_fd()` (the fd-leak proxy bracketing each dispatch) and `storm_rate_recycle()` (recycle a child whose local corruption counters climb at storm rate). |
+| child-watchdog.c | `check_stall()`: counts consecutive SIGALRM ticks without op progress against the per-op-type `stall_threshold()`, so a stuck child exits and is respawned. |
 | child-init-core.c | `init_child()` coordinator: the readable phase map that sequences the sibling child-init-* phase files. |
 | child-init-clean.c | Coredump toggles, fault-injection fd setup (make-it-fail, fail-nth), tainted-mask fd, FPU dirtier, per-slot occupant reset (`clean_childdata`). |
 | child-init-isolate.c | Stdio + controlling-terminal isolation: fd 0/1/2 → `/dev/null`, parent-fd drops (`--stats-log-file`, self-cgroup, `/proc/<pid>/stat`), `setsid()`. |
@@ -27,6 +30,7 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 | child-sentinel.c | Deterministic-divergence sentinel: flags when a child's execution diverges from the expected deterministic path (a state-corruption tell). |
 | child-capdrop-oracle.c | Post-capdrop assertion: verifies the child actually dropped to an empty capability set (fuzzing must never run privileged). |
 | cred_throttle.c | Credential-syscall oracle plus the flag-gated `--cred-throttle`: `cred_throttle_should_reject()` rejects picks of a credential class (`setuid`, `setgroups`, ...) that has never succeeded and fails with EPERM/EINVAL nearly every time, while still sampling it ~3% so a late success can retire the throttle. |
+| child-canary-internal.h | Private interface of the `child-canary-*.c` TUs: cross-file constants, the parent-private state cells and the helpers whose callers moved to another TU. |
 
 ## Key invariants
 - **`alarm()` backstop** — every child arms an alarm so an indefinite-blocking syscall can't wedge it (paired with the per-syscall `NEED_ALARM` flag).

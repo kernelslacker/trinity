@@ -23,9 +23,9 @@ A `struct syscallentry syscall_X = { ... }` initializer with `.name`,
 `.num_args`, `.argtype[6]`, `.argname[6]`, `.group`, `.rettype`, optional
 `.flags`, and optionally a `static void sanitise_X(struct syscallrecord *rec)`
 wired via `.sanitise`. Examples at the simple end:
-- `acct.c` (14 lines) — no sanitise at all, pure declarative: 1 arg
-  (`ARG_PATHNAME`), `GROUP_VFS`, `NEEDS_ROOT` flag.
-- `access.c` (76 lines) — one `sanitise_access()` that repoints the pathname
+- `fs/mount/pivot_root.c` (14 lines) — no sanitise at all, pure declarative: 2 args
+  (`ARG_PATHNAME`), `GROUP_VFS_MOUNT`, `NEEDS_ROOT` flag.
+- `fs/path/access.c` (83 lines) — one `sanitise_access()` that repoints the pathname
   arg at a real trinity-testfile inode 50% of the time, `REEXEC_SANITISE_OK`
   flag opting into CMP RedQueen re-exec.
 
@@ -39,7 +39,7 @@ count: `process/prctl.c` (1325),
 `socket/setsockopt.c` (992, + `setsockopt-internal.h`),
 `perf/perf_event_open-pmu-discovery.c` (860),
 `io_uring/io_uring_register-payloads.c` (852), `socket/recv.c` (852),
-`fs/fcntl.c` (813), `xattr/listxattr.c` (789), `socket/send.c` (775),
+`fs/fcntl.c` (815), `xattr/listxattr.c` (789), `socket/send.c` (775),
 `fs/stat/stat.c` (749), `bpf.c` (708, gated `#ifdef USE_BPF`),
 `keyctl/keyctl.c` (656), `mm/mmap.c` (576),
 `concurrency/futex.c` (571), `fs/mount/mount.c` (567),
@@ -86,7 +86,7 @@ top of each header as private to that pair of TUs).
    syscalls whose args need semantic coupling (a length that must match a
    buffer, a command opcode that gates which union member is valid).
 2. **Sanitise is optional and additive, not mandatory.** 84 files rely
-   entirely on the generic `argtype[]`-driven generator (`acct.c`); the rest
+   entirely on the generic `argtype[]`-driven generator (`pivot_root.c`); the rest
    layer a `sanitise_X()` on top that mutates `rec->aN` after generic
    generation has already populated it (see `access.c`'s comment on why it
    repoints only half the time — keeping the ENOENT reject arm alive).

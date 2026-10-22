@@ -2,11 +2,11 @@
 
 The data pools the `args/` generators draw from — pathname strings, xattr names, opaque blob content, and device/blockdev/fstype enumerations. Built at startup (from `/proc`, `/sys`, the file index) and sampled during argument generation. Distinct from `args/` itself: args/ is the argtype dispatch logic; args/pools/ is the *content* it hands out.
 
-## Files (11 files + internal header, ~3,010 LOC)
+## Files (11 files + internal header, ~3,011 LOC)
 
 | File | Lines | Role |
 |---|---|---|
-| pathnames.c | 815 | `ARG_PATHNAME` pathname pool (mirrors the testfiles the fd layer creates). |
+| pathnames.c | 816 | `ARG_PATHNAME` pathname pool (mirrors the testfiles the fd layer creates). |
 | blob_mutator.c | 584 | `--blob-mutator` content engine for opaque `ARG_BUF_SIZED` buffers; arm selection and `blob_fill()`. |
 | blob_corpus.c | 279 | Per-(nr, do32) opaque-blob content corpus: fixed-capacity table, lock-serialised store/evict, snapshot lookup. |
 | blob_mutator_arith.c | 201 | Arithmetic/length-oriented HAVOC arms (add/subtract small magnitudes at byte/word/dword width). |

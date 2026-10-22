@@ -2,7 +2,7 @@
 
 The core "choose a syscall and run it" loop. Every fuzzed syscall in trinity — fresh, chain-replayed, chain-biased, or redqueen re-exec — funnels through `set_syscall_nr()` and then `dispatch_step()` in this directory. Nothing else in the codebase is on the critical path as often: this runs once (or twice, with re-exec) per syscall, for every child, for the life of the run.
 
-## Files (18 files + 2 internal headers, ~7,920 LOC)
+## Files (18 files + 2 internal headers, ~7,891 LOC)
 
 The picker, the dispatch tail and the post-dispatch attribution helpers are each
 split one concern per translation unit, and the chain executor is the `chain-*.c`
@@ -25,18 +25,18 @@ Dispatch and chain substitution:
 |---|---|---|
 | dispatch-step.c | 1285 | `dispatch_step()`: the actual `do_syscall()` call plus all post-call bookkeeping (kcov/cmp collection, minicorpus save, cmp_hints credit, strategy attribution), and the CMP RedQueen greedy re-exec tail (`redqueen_pin_slot`, `redqueen_pin_field`, `redqueen_reexec_step`) |
 | dispatch-wrappers.c | 271 | The three public entry points that converge on `dispatch_step()`: `random_syscall_step`, `random_syscall_step_biased`, `replay_syscall_step` |
-| chain-subst.c | 269 | `apply_chain_substitution()`: splices a prior chain step's retval into one arg slot of the current call, gated by argtype safety and protected-fd/pid checks |
+| chain-subst.c | 270 | `apply_chain_substitution()`: splices a prior chain step's retval into one arg slot of the current call, gated by argtype safety and protected-fd/pid checks |
 
 Post-dispatch attribution, sharing `random_syscall/strategy-accounting-internal.h`:
 
 | File | Lines | Role |
 |---|---|---|
-| strategy-rotate.c | 441 | `maybe_rotate_strategy()`: the SR_* rotation gate — window expiry, atomic switch claim, bandit feed, next-arm select, fleet publish |
+| strategy-rotate.c | 411 | `maybe_rotate_strategy()`: the SR_* rotation gate — window expiry, atomic switch claim, bandit feed, next-arm select, fleet publish |
 | per-syscall-edges.c | 420 | `account_reexec_ab_cohort`, `account_per_syscall_new_edges`, `account_pc_edge_only`, `account_transition_reward` — per-dispatch cohort denominators and per-syscall edge attribution |
 | warm-reserve.c | 292 | `account_warm_reserve` (SHADOW deep-but-warm probe) and `account_cold_overflow_would_save` (SHADOW cold/corpus-absent overflow-tail probe) |
 | remote-adaptive.c | 254 | `remote_adaptive_decide()`: adaptive KCOV_REMOTE disposition, consulted before the raw call to override the static `remote_mode` |
 | fd-group.c | 165 | `account_fd_and_group()`: fd-leak counters, live-fd ring push, the `group_bias`-gated `last_group` stamp, and the F-RSEQ group-pin damper state machine |
-| strategy-accounting-internal.h | 52 | Cross-file declarations private to the accounting cluster |
+| strategy-accounting-internal.h | 51 | Cross-file declarations private to the accounting cluster |
 
 Chain executor and its corpus, sharing `random_syscall/chain-internal.h`:
 

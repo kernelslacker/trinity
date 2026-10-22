@@ -11,38 +11,38 @@ behind `fds-internal.h`, one concern per translation unit.
 |---|---|---|
 | sockets.c | 750 | Socket fd provider across address families/types |
 | bpf.c | 737 | BPF map/prog/link/btf/token providers — largest single-domain file, drives `bpf(2)` directly |
-| scratch_block.c | 653 | loop-device + mkfs.ext4/tmpfs scratch block fds behind mount-namespace isolation |
+| scratch_block.c | 678 | loop-device + mkfs.ext4/tmpfs scratch block fds behind mount-namespace isolation |
 | pagecache.c | 404 | Read-only pagecache-backed file fd pool |
 | fds-pick.c | 389 | The pickers: `get_new_random_fd()`, `get_random_fd()` (cache + retry/decay), `get_typed_fd()`, `get_pollable_random_fd()`, `get_child_live_fd()` |
-| cgroup.c | 342 | cgroup subdirectory fds (`O_PATH` on `/sys/fs/cgroup`) |
+| cgroup.c | 352 | cgroup subdirectory fds (`O_PATH` on `/sys/fs/cgroup`) |
 | canary.c | 341 | Deterministic-content file pool for read-side verification (pagecache canary childop) |
 | io_uring.c | 321 | io_uring instance fd provider |
-| epoll.c | 301 | epoll fd provider + lazy child-side arming (`arm_epoll_if_needed`) |
-| perf.c | 262 | `perf_event_open` fd provider |
-| memfd.c | 261 | memfd provider |
-| timerfd.c | 240 | timerfd provider |
+| epoll.c | 297 | epoll fd provider + lazy child-side arming (`arm_epoll_if_needed`) |
+| perf.c | 259 | `perf_event_open` fd provider |
+| memfd.c | 258 | memfd provider |
+| timerfd.c | 238 | timerfd provider |
 | landlock.c | 236 | Landlock ruleset fd provider |
 | testfiles.c | 235 | Regular-file test fd pool (open/create/fcntl-state tracked) |
-| memfd_secret.c | 230 | `memfd_secret` fd provider |
-| pipes.c | 227 | Pipe fd provider |
+| memfd_secret.c | 225 | `memfd_secret` fd provider |
+| pipes.c | 223 | Pipe fd provider |
 | userfaultfd.c | 226 | userfaultfd provider (`poll_can_block`-tagged) |
 | fds-protected.c | 261 | Protected-fd registry: `fd_is_protected()`, `lowest_protected_fd_in_range()`, `reroll_protected_fd_arg()`; plus `fd_relocate_high()`, the park-above-`PROTECTED_FD_HIGH_BASE` step the kcov, taint, fail-nth and rotation-sink fds share |
-| watch_queue.c | 219 | Notification-pipe fds via `pipe2(O_NOTIFICATION_PIPE)` |
-| inotify.c | 219 | inotify fd provider |
+| watch_queue.c | 215 | Notification-pipe fds via `pipe2(O_NOTIFICATION_PIPE)` |
+| inotify.c | 217 | inotify fd provider |
 | writeable-pagecache.c | 212 | Writable pagecache-backed file fd pool |
 | files.c | 201 | Shared pool-file helpers (`open_pool_files`, `get_rand_pool_fd`) backing devfs/procfs/sysfs |
 | seccomp_notif.c | 177 | seccomp user-notification fd provider (`#ifdef USE_SECCOMP`) |
-| fanotify_init.c | 177 | fanotify fd provider |
+| fanotify_init.c | 175 | fanotify fd provider |
 | sparse-files.c | 176 | Sparse-file fd provider |
-| eventfd.c | 176 | eventfd provider |
+| eventfd.c | 174 | eventfd provider |
 | mq.c | 172 | POSIX message-queue fd provider |
-| signalfd.c | 167 | signalfd provider |
+| signalfd.c | 165 | signalfd provider |
 | fds.c | 164 | Provider dispatchers: fd→provider lookup, `fd_poll_can_block()`, the periodic `child_ops` / `child_init` walks, and the rate-limited `run_fd_provider_replenish()` tick, which resumes after the last provider it served |
 | drm.c | 164 | DRM device fd provider |
 | pidfd.c | 162 | pidfd provider (`pidfd_open`) |
-| dev_template.c | 150 | Templated `/dev/*` probing provider (parent-side, pre-fork) |
+| dev_template.c | 148 | Templated `/dev/*` probing provider (parent-side, pre-fork) |
 | fs_ctx.c | 137 | `fsopen`/`fsconfig` filesystem-context fd provider |
-| fds-init.c | 126 | `open_fds()` — randomized init sweep, `active_providers[]` build, enabled/initialized and per-pool-size startup logging |
+| fds-init.c | 127 | `open_fds()` — randomized init sweep, `active_providers[]` build, enabled/initialized and per-pool-size startup logging |
 | mount.c | 117 | mount fd provider (`open_tree`/`fsmount`/`move_mount`) |
 | iommufd.c | 115 | IOMMUFD provider (`#ifdef USE_IOMMUFD`) |
 | fds-param.c | 95 | `--enable-fds` / `--disable-fds` parsing (`process_fds_param`) |

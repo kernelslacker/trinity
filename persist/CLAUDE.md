@@ -7,11 +7,11 @@ a secondary feature, distinct from minicorpus's per-syscall arg snapshots, so it
 sits in `random_syscall/` beside `chain-subst.c` as `chain-corpus.c` /
 `chain-persist.c`.
 
-## Files (9 files, ~4,805 LOC)
+## Files (9 files, ~4,792 LOC)
 
 | File | Lines | Role |
 |---|---|---|
-| deferred-free.c | 2419 | Deferred-free queue: hold a tracked free for a TTL window so a temporally-overlapping later syscall can still touch the buffer, with the bad-free/UAF safety machinery. |
+| deferred-free.c | 2405 | Deferred-free queue: hold a tracked free for a TTL window so a temporally-overlapping later syscall can still touch the buffer, with the bad-free/UAF safety machinery. |
 
 Coverage-guided argument retention — snapshot the args of a syscall that found
 a new edge, re-inject them into later iterations — is split across
@@ -24,7 +24,7 @@ a new edge, re-inject them into later iterations — is split across
 | minicorpus-accounting.c | 339 | Mutate accept-reject accounting: per-process attribution stashes drained into fleet-wide trials/wins on post-syscall commit; baseline gate, source-age histogram, per-tag rules |
 | minicorpus-select.c | 220 | Replay entry point: picks a saved snapshot from the per-syscall ring (uniform normally, K-newest-window under the CMP-rising-PC-flat plateau), then runs the splice-and-mutate driver |
 | minicorpus-core.c | 290 | Core primitives: shm allocation + init, per-ring lock bracket, replayability, refused-argtype and stale-slot predicates, per-ABI ring query, wp-canary sweep, mutator kill-switch |
-| minicorpus-save.c | 155 | Save path: capture per-syscall arg snapshots into the ring after a productive coverage signal (`minicorpus_save_with_reason()`) |
+| minicorpus-save.c | 156 | Save path: capture per-syscall arg snapshots into the ring after a productive coverage signal (`minicorpus_save_with_reason()`) |
 | minicorpus-splice.c | 119 | Splice-and-mutate driver: walks the six saved arg slots applying cross-arg splice and the weighted-stack mutator chain, with a final fd-safety scrub |
 | minicorpus-snapshot.c | 106 | Periodic mid-run snapshot trigger: `minicorpus_maybe_snapshot()` called by every child after each kcov edge event, armed pre-fork by `minicorpus_enable_snapshots()` |
 

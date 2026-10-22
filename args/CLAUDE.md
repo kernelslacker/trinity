@@ -2,12 +2,12 @@
 
 Decides what value goes in each of a syscall's up to 6 argument slots, given the slot's declared `argtype` (ARG_FD, ARG_STRUCT_PTR_IN, ARG_RANGE, ...) and, for struct-shaped slots, the per-field schema pulled from struct_catalog/. Runs once per dispatch from `generate_syscall_args()`, between sanitise-callback selection and the kernel call.
 
-## Files (18 files, ~6,722 LOC)
+## Files (18 files, ~6,749 LOC)
 
 | File | Lines | Role |
 |---|---|---|
 | output-poison.c | 105 | ARG_STRUCT_PTR_OUT canary: `poison_output_struct()` stamps a seed-derived byte pattern pre-call, `check_output_struct()` detects an untouched buffer post-call |
-| arg_coupling.c | 329 | Cross-arg DOA-shape rejection rules, plus the fcntl F_SETSIG signal repair |
+| arg_coupling.c | 345 | Cross-arg DOA-shape rejection rules, plus the fcntl F_SETSIG signal repair |
 | valresult.c | 82 | Value-result buffer shaping (getsockopt/recv-style len-io pairs): EXACT/UNDER/OVER/HUGE/ZERO cap distribution |
 | csfu.c | 159 | `copy_struct_from_user()`-shaped struct builder: 5-bucket usize distribution (EXACT/UNDERSIZE/OVERSIZE_ZERO/OVERSIZE_NONZERO/TAIL_MISMATCH) plus in-band size-field fixup |
 | struct_validate.c | 166 | One-shot (first-fill-gated) startup validator: walks every struct_catalog fields[] array checking FT_LEN_* buf_fields siblings agree on FT_PTR_BYTES/ARRAY tag and unit; BUG()s on authoring mistakes. Entry point `struct_field_fill_schema_aware()` also lives here |

@@ -5,12 +5,12 @@ fuzzer window runs under, learns from edge-discovery yield via a discounted UCB1
 coverage plateaus and classifies their cause, and drives targeted interventions (forced-random
 rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of stalls.
 
-## Files (11 files + internal header, ~4,273 LOC)
+## Files (11 files + internal header, ~4,261 LOC)
 
 | File | Lines | Role |
 |---|---|---|
 | strategy.c | 515 | Glue + plateau-intervention dispatch: `--strategy` parsing, arm/mode name tables, `select_next_strategy()` (bandit vs. intervention dispatch), rescue-classifier-driven `amplified_intervention_arm()`, PIM rotation (`select_plateau_intervention_strategy`) |
-| strategy-bandit.c | 577 | UCB1/D-UCB learner: `bandit_record_pull()` reward attribution (call-count + CMP-novelty + transition + edge-count terms, EMA-discounted), `ucb1_score()`, `pick_next_strategy()` (cold-start + round-robin + UCB1 dispatch) |
+| strategy-bandit.c | 565 | UCB1/D-UCB learner: `bandit_record_pull()` reward attribution (call-count + CMP-novelty + transition + edge-count terms, EMA-discounted), `ucb1_score()`, `pick_next_strategy()` (cold-start + round-robin + UCB1 dispatch) |
 | strategy-frontier.c | 661 | Per-syscall frontier-edge decay ring: `frontier_record_new_edge/transition_edge`, `frontier_recent_count()`, errno-plateau decay predicate, topology-pair (setup-op → productive-event) shadow ring, context-regular suppression shadow |
 | strategy-frontier-cool.c | 394 | Saturation and barren-demote cooldown helpers, split from strategy-frontier.c |
 | strategy-frontier-window.c | 208 | Per-syscall frontier-edge ring window advance (`frontier_window_advance()`), split from strategy-frontier.c |

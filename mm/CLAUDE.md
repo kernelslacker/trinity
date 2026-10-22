@@ -2,19 +2,19 @@
 
 Owns the fuzzed process's synthetic VMA pools (anon/file/testfile mmap objects), deliberate page-fault injection (read and write), mlock/memlock accounting, initial-mapping and image-segment bookkeeping, and hugepage size-encoding helpers. This is the layer that hands out addresses/lengths for ARG_ADDRESS/ARG_MMAP args and then actively touches the memory behind them to trigger kernel fault paths.
 
-## Files (11 files + internal header, ~3,224 LOC)
+## Files (11 files + internal header, ~3,166 LOC)
 
 | File | Lines | Role |
 |---|---|---|
-| maps-pick.c | 648 | Pool pick + validate + refill: `pick_mmap_pool_type()`, the three corruption guards (`obj_ptr_in_user_va_band`, `obj_pool_slot_check`, `map_size_in_range`), `get_map_handle`/`validate_map_handle`, `get_map`/`get_map_with_prot`, `addr_in_local_runtime_map`, `maybe_refill_local_anon_pool` |
-| maps-lifecycle.c | 644 | Destructors and pool cloning: `map_destructor` (OBJ_LOCAL) / `map_destructor_shared` (OBJ_GLOBAL), `map_dump`, `clone_global_mmap_pool`, `init_child_mappings`, `mmap_fd()` (fd-backed mmap producer) |
+| maps-pick.c | 645 | Pool pick + validate + refill: `pick_mmap_pool_type()`, the three corruption guards (`obj_ptr_in_user_va_band`, `obj_pool_slot_check`, `map_size_in_range`), `get_map_handle`/`validate_map_handle`, `get_map`/`get_map_with_prot`, `addr_in_local_runtime_map`, `maybe_refill_local_anon_pool` |
+| maps-lifecycle.c | 590 | Destructors and pool cloning: `map_destructor` (OBJ_LOCAL) / `map_destructor_shared` (OBJ_GLOBAL), `map_dump`, `clone_global_mmap_pool`, `init_child_mappings`, `mmap_fd()` (fd-backed mmap producer) |
 | maps-proc.c | 208 | `proc_maps_check()`: reads `/proc/self/maps` and verifies the presence/absence and prot bits of a VMA covering `[addr, addr+len)` |
 | maps-arg.c | 115 | `common_set_mmap_ptr_len()` — arg-plumbing for mincore/mremap/madvise/mlock/etc., plus the pool type-resolution walk |
 | maps-dirty.c | 96 | `dirty_mapping()` / `dirty_random_mapping()`: assorted write patterns over a mapping trinity created |
 | maps-internal.h | 18 | Cross-file declarations private to the `maps-*.c` cluster |
-| maps-initial.c | 243 | Startup-only: `setup_initial_mappings()` creates the OBJ_GLOBAL ANON pool (every prot x flags combination x mapping_sizes[9]) plus best-effort MAP_HUGETLB entries before fork; `setup_mapping_sizes()` gates 1GB mappings on free memory and a 1-in-100 roll |
+| maps-initial.c | 241 | Startup-only: `setup_initial_mappings()` creates the OBJ_GLOBAL ANON pool (every prot x flags combination x mapping_sizes[9]) plus best-effort MAP_HUGETLB entries before fork; `setup_mapping_sizes()` gates 1GB mappings on free memory and a 1-in-100 roll |
 | fault-read.c | 384 | `random_map_readfn()`: 5 read-walk strategies (whole/every-other/reverse/random/last-page) capped at 32 pages/call, wrapped in a SIGSEGV/SIGBUS handler that longjmps past TOCTOU races (sibling munmap, hole-punch) |
-| fault-write.c | 375 | `random_map_writefn()`: same 5 strategies for writes (mprotect RW + store), plus 2 single-page variants; same SIGSEGV/SIGBUS longjmp guard, mirrored per-file statics |
+| fault-write.c | 376 | `random_map_writefn()`: same 5 strategies for writes (mprotect RW + store), plus 2 single-page variants; same SIGSEGV/SIGBUS longjmp guard, mirrored per-file statics |
 | mlock-state.c | 202 | Per-child `__thread` mlock accounting: RLIMIT_MEMLOCK-aware budget tracking (`mlock_state_clamp_len`), (start,len) bucket picker for mlock/munlock args, 8-entry recently-locked ring for biasing munlock toward real locked ranges |
 | image-segments.c | 136 | One-shot at startup: `register_loaded_image_segments()` walks `dl_iterate_phdr()` and registers every writable PT_LOAD segment (main exe + every DSO's data/BSS) with `shared_regions[]` so fuzzed mmap/munmap/mprotect can't touch trinity's own static state |
 | hugepages.c | 173 | `pick_random_huge_size_encoding()`: probes `/sys/kernel/mm/hugepages/` for supported sizes, encodes a random one into the shared MAP_HUGE_*/MFD_HUGE_*/SHM_HUGE_* bitfield shift (bits 26-31) |

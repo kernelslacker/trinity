@@ -9,7 +9,7 @@ pure data-plus-resolution: it contains no fill/mutate logic of its own (that
 lives in `args/struct_fill.c`, `args/struct_mutate.c`, `args/struct_validate.c`,
 `args/scrub.c`).
 
-## Files (49 .c files, ~10,501 LOC)
+## Files (49 .c files, ~10,502 LOC)
 
 The registration table and the union-bpf_attr tables have each been split: the
 per-domain registration arrays live under `struct_catalog/registry/` and the
@@ -24,7 +24,7 @@ per-cmd BPF field tables under `bpf-*.c`.
 | perf.c | 572 | `perf_event_attr_fields` + per-PERF_TYPE_* variant field arrays and vocab pools |
 | bpf-link.c | 493 | BPF_LINK_* family field tables: BPF_LINK_UPDATE / BPF_LINK_DETACH plus the nested LINK_CREATE sub-variant fan-out (BASE, ITER, PERF_EVENT, TRACING, TRACING_MULTI, KPROBE_MULTI, UPROBE_MULTI, NETFILTER, TCX, NETKIT, CGROUP) |
 | bpf.c | 478 | union bpf_attr spine: the remaining per-cmd field tables plus `bpf_attr_variants[]` tagged-union dispatch (one variant per bpf(2) cmd), aggregating the sibling `bpf-*.c` tables |
-| registry.c | 342 | Registration composition root + (nr, arg) lookup: `syscall_struct_arg_groups[]`, the `slot_binding` pool + `desc_by_nr_64/32[]` fast nr-indexed lookup, `struct_arg_lookup`/`_two_key`, `struct_catalog_init()` |
+| registry.c | 343 | Registration composition root + (nr, arg) lookup: `syscall_struct_arg_groups[]`, the `slot_binding` pool + `desc_by_nr_64/32[]` fast nr-indexed lookup, `struct_arg_lookup`/`_two_key`, `struct_catalog_init()` |
 | bpf-prog.c | 297 | BPF_PROG_* command family field tables |
 | variant.c | 260 | Generic discriminator resolution: `read_rec_arg`, `discrim_key_matches`, `discrim_key2_matches` (shared with registry.c's rec-based lookup), `struct_desc_resolve_variant`, `struct_desc_resolve_nested_variant` |
 | time.c | 231 | timex, itimerspec, timespec, itimerval, utimbuf, timeval, timezone field tables |
@@ -40,7 +40,7 @@ per-cmd BPF field tables under `bpf-*.c`.
 | landlock.c | 150 | landlock_ruleset_attr, landlock_path_beneath_attr, landlock_net_port_attr |
 | cmp.c | 146 | `struct_field_for_cmp()` — reservoir-sampled heuristic mapping a KCOV-CMP constant to the most likely field (prefers FT_ENUM/FT_FLAGS/FT_VERSION_MAGIC "gate" fields over same-width FT_RAW) |
 | keyctl.c | 138 | keyctl payload per-cmd field tables, dispatched off `rec->a1` in the same tagged-union shape as bpf.c; attribution-only (bespoke `sanitise_keyctl()` owns every live fill) |
-| mount.c | 134 | mount_attr, mnt_id_req, ns_id_req (+ local `ns_id_req` shim for pre-6.8 headers) |
+| mount.c | 116 | mount_attr, mnt_id_req, ns_id_req (+ local `ns_id_req` shim for pre-6.8 headers) |
 | ipc.c | 122 | sembuf, mq_attr, msqid_ds, shmid_ds, msgbuf |
 | socket.c | 118 | iovec, msghdr, mmsghdr |
 | futex.c | 115 | robust_list_head, rseq, futex_waitv |
