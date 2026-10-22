@@ -2,7 +2,7 @@
 
 ## Background
 
-The audit committed in b1f25328dc9e classifies every admin-gated surface into
+The audit committed in 4dbf65fd8e64 classifies every admin-gated surface into
 three classes based on the kernel-side capability gate:
 
 - **Class 1** (`capable(CAP_*)`, 39 entries) — routes to
@@ -26,7 +26,7 @@ The two subtypes of class-2 surfaces that are first-in-line for the unlock are:
 
 Class-3 surfaces (`GENL_ADMIN_PERM`) route through `netlink_capable()` which
 always resolves to `&init_user_ns` — these are **not** unlockable by this lane.
-See b1f25328dc9e for the full gate-taxonomy table.
+See 4dbf65fd8e64 for the full gate-taxonomy table.
 
 ---
 
@@ -98,7 +98,7 @@ returns `EPERM`.  The lane must read `/proc/sys/user/max_user_namespaces` once
 at child setup time (or detect `EPERM` from the first `unshare` attempt) and
 latch a `no_userns_lane` flag in shared memory.  All subsequent children short-
 circuit without attempting the unshare.  A silently-`EPERM` lane is the exact
-failure mode documented in b1f25328dc9e — the lane must not introduce it at a
+failure mode documented in 4dbf65fd8e64 — the lane must not introduce it at a
 different abstraction level.
 
 ### 2. Cap-drop is load-bearing; the lane MUST NOT grant host caps
@@ -110,45 +110,41 @@ probes (`bpf(BPF_PROG_LOAD, KPROBE)`, `mount()`, `setsockopt(SO_RCVBUFFORCE)`,
 and alarm on success.
 
 The userns-admin lane does **not** hand the child `CAP_SYS_ADMIN` on the host.
-The mechanism is:
+The mechanism, in the order `init_child_setup_sandbox()` runs it:
 
 ```
+capset(empty)                         /* no caps left in init_user_ns */
 unshare(CLONE_NEWUSER|CLONE_NEWNET)   /* new userns + new netns */
 write uid_map / setgroups / gid_map   /* identity map */
-/* capset(empty) still runs here */
 ```
 
-After `capset(empty)`, the child holds zero capabilities in `init_user_ns`
-(the oracle's probes use `init_user_ns`-scoped gates and remain valid).  The
-child holds a full capability set *in its own user namespace* by userns
-semantics — `capable()` (which checks `init_user_ns`) still returns false;
-`ns_capable(child_userns, cap)` returns true.  The cap-drop oracle fires
-correctly because:
+The order is load-bearing.  `create_user_ns()` gives the task a full
+capability set in the *new* user namespace whatever it held before, so
+unsharing after `capset(empty)` leaves the child with zero capabilities in
+`init_user_ns` while it holds a full set *in its own user namespace*:
+`capable()` (which checks `init_user_ns`) still returns false and
+`ns_capable(child_userns, cap)` returns true.  Unsharing before the drop
+would let `capset(empty)` strip the fresh caps as well, and every
+`ns_capable()` gate would answer `-EPERM`.
 
-- The `bpf(BPF_PROG_LOAD, KPROBE)` gate calls `capable(CAP_SYS_ADMIN)` →
-  `ns_capable(&init_user_ns, ...)` → false (no caps in `init_user_ns`).
-- The `mount()` probe hits `may_mount()` which calls `ns_capable(mnt_userns,
-  CAP_SYS_ADMIN)` for the *host* mount namespace user_ns — `init_user_ns` —
-  also false.
-- The `SO_RCVBUFFORCE` probe calls `ns_capable(sock_net(sk)->user_ns,
-  CAP_NET_ADMIN)`; if the socket was opened *before* the `unshare` it belongs
-  to the host netns → `init_user_ns` → false.  Oracle sockets must be opened
-  before the unshare, or the probe must be skipped when the ns anchor has
-  changed (see below).
-- The `capget` read-back directly asserts permitted+effective+inheritable are
-  empty — this is unambiguous regardless of userns state.
+How the oracle probes see a lane-active child:
 
-The `capdrop_oracle_capture_init_ns_anchors()` call runs immediately after the
-`capset(empty)` drop, AFTER any unshare.  When the lane is active, the
-captured ns anchors reflect the *child's* user/mnt/net namespace identities
-(not `init_user_ns`).  The oracle's per-probe ns-anchor comparison gates
-already handle this: if the sampled namespace identity no longer matches the
-anchor (i.e. a subsequent alt-op legitimately re-unshares), the gated probes
-are skipped.  When the lane is active, the `mount` and `net_admin` probes are
-skipped for the lifetime of the child because the anchor itself was captured
-inside the new namespace — this is correct behaviour and does not mask a
-cap-drop regression (the `capget` read-back remains unconditional and catches
-any actual drop failure).
+- The `bpf(BPF_PROG_LOAD, KPROBE)` probe is unconditional and still fails:
+  the gate calls `capable(CAP_SYS_ADMIN)` → `ns_capable(&init_user_ns, ...)`
+  → false (no caps in `init_user_ns`).
+- The `mount()` probe hits `may_mount()`, which checks the user namespace
+  that owns the child's mount namespace — `init_user_ns`, because the lane
+  unshares only the user and net namespaces — also false.
+- The `SO_RCVBUFFORCE` probe opens its socket at probe time, inside the
+  lane's netns, where the child holds `CAP_NET_ADMIN`.  Its polarity is
+  therefore inverted while `child_userns_lane_is_active()` is true: success
+  is expected, failure is the anomaly, and a successful probe is the one
+  reliable observable that the lane is live.
+
+`capdrop_oracle_capture_init_ns_anchors()` runs after the lane, so the
+anchors record the namespaces the child was sandboxed in.  The
+capget/mount/net_admin probes compare against them and are skipped once a
+later alt-op legitimately moves the child out of those namespaces.
 
 ### 3. Preventing cross-contamination between the host-cap and userns-cap lanes
 
@@ -159,7 +155,7 @@ The two privilege lanes must not interfere:
   set, no uid_map write.  The cap-drop oracle behaves identically to today.
 
 - Children that **do** have `userns_admin_lane` set run the extended sandbox
-  (unshare + map write) before the cap-drop.  These children are structurally
+  (unshare + map write) after the cap-drop.  These children are structurally
   separated from the host-cap surface: after `capset(empty)` they cannot reach
   class-1 or class-3 surfaces any more than an unextended child can.  The
   ns_capable-gated surfaces are reachable inside the child's private namespaces;
@@ -183,8 +179,9 @@ These are the lowest-friction starting point:
 - The gate resolves `net->user_ns` from the sending socket's netns, which is
   guaranteed to be the child's private netns after the unshare.  There is no
   ambiguity about which `user_ns` the kernel will use.
-- The cap-drop oracle `mount` and `net_admin` probes are cleanly gated by the
-  ns-anchor machinery (described above).
+- The cap-drop oracle needs only one adjustment: the `SO_RCVBUFFORCE` probe
+  flips polarity under the lane (described above); the `bpf` and `mount`
+  probes keep their `init_user_ns` expectation.
 - Failure modes are limited: the child either gets `EPERM` (userns disabled,
   handled by the latch) or successfully enters the lane and fuzzes genl write
   cmds.
@@ -214,7 +211,8 @@ The scaffold adds:
 1. `bool userns_admin_lane` field on `struct syscallentry` (default `false`;
    no existing entry sets it).
 
-2. A helper `maybe_enter_userns_admin_lane()` in `child-init-sandbox.c` that:
+2. A helper `maybe_enter_userns_admin_lane()` in `child/child-init-sandbox.c`
+   that:
    - reads the `no_userns_lane` latch from shared memory; returns immediately
      if set.
    - reads `/proc/sys/user/max_user_namespaces`; if the value is `<= 0` or
@@ -224,11 +222,12 @@ The scaffold adds:
    - on `EPERM` from the unshare: sets the `no_userns_lane` latch and returns.
 
 3. The call site in `init_child_setup_sandbox()` is placed **after** the
-   existing mnt/ipc/io/net random unshare block and **before** the
-   `capset(empty)` drop.  `capdrop_oracle_capture_init_ns_anchors()` runs
-   after the cap-drop, as today, capturing the post-unshare namespace state.
+   existing mnt/ipc/io/net random unshare block and the `capset(empty)`
+   drop, and **before** `capdrop_oracle_capture_init_ns_anchors()`, so the
+   anchors capture the post-unshare namespace state.
 
-4. The helper is gated on whether the selected syscall entry (if the session
-   is restricted to a single entry via `-c`) has `userns_admin_lane` set.
-   In unrestricted mode no entry sets the flag, so the helper is a no-op for
-   all current runs.
+4. The caller engages the helper only when `find_userns_lane_entry()` finds
+   an active syscall entry with `userns_admin_lane` set.  It walks
+   `shm->active_syscalls[]` because `child->active_syscalls` is not assigned
+   yet at sandbox time.  No entry sets the flag today, so the helper is a
+   no-op for all current runs.
