@@ -146,8 +146,11 @@ static void pidfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 
 	pick_random_ioctl(grp, rec);
 
-	if (rec->a2 != PIDFD_GET_INFO)
+	/* A namespace getter returns the new nsfd; PIDFD_GET_INFO returns 0. */
+	if (rec->a2 != PIDFD_GET_INFO) {
+		rec->rettype = RET_FD;
 		return;
+	}
 
 	info = (struct pidfd_info *) get_writable_struct(sizeof(*info));
 	if (!info)

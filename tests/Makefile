@@ -163,6 +163,9 @@ REAL_SRCS	:= \
 # writable pool, avoid_shared_buffer_out() and redqueen_pin_field().
 # ioctls/loop.c brings the loop group's sanitiser, which registers itself
 # at load time; fake_ioctls.c fakes the ioctl registry it reaches.
+# ioctls/pidfd.c, vfio.c, vduse.c and drm.c bring the groups with a cmd
+# that returns an fd, and syscalls/ioctl.c the entry that picks among
+# them; ioctl_sanitise_test.c fakes the group lookup that entry reaches.
 # syscalls/process/prctl.c, syscalls/sched/sched_getscheduler.c and
 # syscalls/socket/recv.c bring syscall_prctl, syscall_sched_getscheduler
 # and the recv family, whose post handlers post_oracle_test.c drives
@@ -204,6 +207,11 @@ PARENT_SRCS	:= \
 	$(TOP)/rand/random-address.c \
 	$(TOP)/random_syscall/dispatch-step.c \
 	$(TOP)/ioctls/loop.c \
+	$(TOP)/ioctls/pidfd.c \
+	$(TOP)/ioctls/vfio.c \
+	$(TOP)/ioctls/vduse.c \
+	$(TOP)/ioctls/drm.c \
+	$(TOP)/syscalls/ioctl.c \
 	$(TOP)/syscalls/process/prctl.c \
 	$(TOP)/syscalls/sched/sched_getscheduler.c \
 	$(TOP)/syscalls/socket/recv.c \
@@ -311,6 +319,7 @@ FAKE_SRCS	:= \
 	asb_relocate_test.c \
 	fake_ioctls.c \
 	loop_status_test.c \
+	ioctl_sanitise_test.c \
 	genl_ops_test.c \
 	kcov_persist_test.c \
 	shutdown_wait_test.c \

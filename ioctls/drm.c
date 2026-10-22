@@ -780,6 +780,16 @@ static void drm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 		break;
 #endif
 
+	/*
+	 * The one cmd here that returns its fd.  The prime, syncobj and
+	 * lease ones write theirs into the arg and return 0.
+	 */
+#ifdef DRM_IOCTL_I915_PERF_OPEN
+	case DRM_IOCTL_I915_PERF_OPEN:
+		rec->rettype = RET_FD;
+		break;
+#endif
+
 	default:
 		break;
 	}

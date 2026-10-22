@@ -338,8 +338,10 @@ static void vduse_sanitise(const struct ioctl_group *grp,
 		sanitise_destroy_dev(rec);
 		break;
 
+	/* Both iotlb getters return the fd of the backing file. */
 	case VDUSE_IOTLB_GET_FD:
 		sanitise_iotlb_entry(rec);
+		rec->rettype = RET_FD;
 		break;
 
 	case VDUSE_DEV_SET_CONFIG:
@@ -374,6 +376,7 @@ static void vduse_sanitise(const struct ioctl_group *grp,
 #ifdef VDUSE_IOTLB_GET_FD2
 	case VDUSE_IOTLB_GET_FD2:
 		sanitise_iotlb_entry_v2(rec);
+		rec->rettype = RET_FD;
 		break;
 #endif
 

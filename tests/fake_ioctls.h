@@ -13,3 +13,6 @@ extern unsigned long fake_ioctl_request;
 
 /* The registered group called @name, or NULL. */
 const struct ioctl_group *fake_ioctl_group(const char *name);
+
+/* The registered groups in load order.  @n is how many. */
+const struct ioctl_group *const *fake_ioctl_groups(unsigned int *n);

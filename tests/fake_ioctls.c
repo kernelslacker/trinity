@@ -33,6 +33,12 @@ const struct ioctl_group *fake_ioctl_group(const char *name)
 	return NULL;
 }
 
+const struct ioctl_group *const *fake_ioctl_groups(unsigned int *n)
+{
+	*n = ngroups;
+	return groups;
+}
+
 void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	(void)grp;

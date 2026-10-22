@@ -42,8 +42,9 @@
  *
  * Rettype is read via effective_rettype(): static-contract entries are
  * sourced from entry->rettype (immune to per-rec stomp), op-multiplexed
- * entries (fcntl F_DUPFD*, futex FUTEX_FD) fall through to the
- * sanitise-published rec->rettype so the per-cmd contract still applies.
+ * entries (fcntl F_DUPFD*, futex FUTEX_FD, ioctl cmds that return an fd)
+ * fall through to the sanitise-published rec->rettype so the per-cmd
+ * contract still applies.
  *
  * On rejection, coerce rec->retval = -1UL and rec->errno_post =
  * EINVAL.  Every existing .post handler short-circuits on

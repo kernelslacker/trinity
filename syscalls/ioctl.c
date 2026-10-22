@@ -15,6 +15,7 @@
 static void sanitise_ioctl(struct syscallrecord *rec)
 {
 	const struct ioctl_group *grp;
+	bool fd_claimed = false;
 
 	if (ONE_IN(100)) {
 		grp = get_random_ioctl_group();
@@ -22,10 +23,11 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 				   __ATOMIC_RELAXED);
 	} else {
 		grp = find_ioctl_group(rec->a1);
-		if (grp)
+		if (grp) {
+			fd_claimed = true;
 			__atomic_add_fetch(&shm->stats.ioctl_group_match, 1,
 					   __ATOMIC_RELAXED);
-		else
+		} else
 			__atomic_add_fetch(&shm->stats.ioctl_group_miss, 1,
 					   __ATOMIC_RELAXED);
 	}
@@ -60,6 +62,15 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 	 * group ran.
 	 */
 	avoid_shared_buffer_out(&rec->a3, page_size);
+
+	/*
+	 * A group publishes RET_FD for the cmds that return the fd they
+	 * create, which holds for an fd the group claims.  Drawn without
+	 * regard to the fd, its cmd lands on whichever driver owns the fd,
+	 * and that driver decides what the call returns.
+	 */
+	if (!fd_claimed)
+		rec->rettype = RET_NONE;
 }
 
 struct syscallentry syscall_ioctl = {

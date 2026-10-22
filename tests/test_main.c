@@ -52,6 +52,7 @@ void chain_corpus_self_check(void);
 void redqueen_pin_self_check(void);
 void asb_relocate_self_check(void);
 void loop_status_self_check(void);
+void ioctl_sanitise_self_check(void);
 void genl_ops_self_check(void);
 void kcov_persist_self_check(void);
 void shutdown_wait_self_check(void);
@@ -243,6 +244,11 @@ int main(int argc, char **argv)
 	printf("  loop_status_self_check ... ");
 	fflush(stdout);
 	loop_status_self_check();
+	printf("OK\n");
+
+	printf("  ioctl_sanitise_self_check ... ");
+	fflush(stdout);
+	ioctl_sanitise_self_check();
 	printf("OK\n");
 
 	printf("  genl_ops_self_check ... ");

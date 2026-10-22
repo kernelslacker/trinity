@@ -538,6 +538,10 @@ static void vfio_sanitise(const struct ioctl_group *grp,
 #endif
 			sanitise_vfio_iommu_info(rec);
 		break;
+	case VFIO_GROUP_GET_DEVICE_FD:
+		/* Returns the new device fd. */
+		rec->rettype = RET_FD;
+		break;
 	case VFIO_GROUP_GET_STATUS:
 		sanitise_vfio_group_status(rec);
 		break;

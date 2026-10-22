@@ -850,10 +850,10 @@ static inline struct syscall_runtime *syscall_rt(const struct syscallentry *entr
  * from entry sidesteps that class for every syscall that declares a
  * static rettype.
  *
- * Op-multiplexed entries (fcntl, futex, bpf, seccomp) leave entry->rettype
- * unset (RET_NONE) and rely on their .sanitise hook to publish rec->rettype
- * per cmd at dispatch time.  Fall through to rec for those so the per-cmd
- * contract still drives the gate.
+ * Op-multiplexed entries (fcntl, futex, bpf, seccomp, ioctl) leave
+ * entry->rettype unset (RET_NONE) and rely on their .sanitise hook to
+ * publish rec->rettype per cmd at dispatch time.  Fall through to rec for
+ * those so the per-cmd contract still drives the gate.
  */
 static inline int effective_rettype(const struct syscallentry *entry,
 				    const struct syscallrecord *rec)

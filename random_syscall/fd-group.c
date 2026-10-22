@@ -81,7 +81,7 @@ void account_fd_and_group(struct childdata *child,
 
 	if (rec->retval != -1UL) {
 		/* effective_rettype falls through to rec->rettype for op-
-		 * multiplexed entries (bpf, seccomp, fcntl, futex) whose
+		 * multiplexed entries (bpf, seccomp, fcntl, futex, ioctl) whose
 		 * static entry->rettype is RET_NONE and whose per-cmd sanitise
 		 * publishes RET_FD only on fd-returning arms.  Static-contract
 		 * entries still short-circuit on entry->rettype. */
