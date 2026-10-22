@@ -1,11 +1,11 @@
 # Self-cgroup design notes
 
-Companion to `include/self_cgroup.h` and `self_cgroup.c`.  The header
-keeps the per-function contracts (load-bearing fd / inheritance
-semantics stay next to the declarations); this document holds the
-top-level design essay: what the cgroup layer buys us, the "split
-mode" layout diagram, and the fallback history when a rung of the
-layout isn't available.
+Companion to `include/self_cgroup.h` and the `utils/self_cgroup_*.c`
+implementation.  The header keeps the per-function contracts
+(load-bearing fd / inheritance semantics stay next to the
+declarations); this document holds the top-level design essay: what the
+cgroup layer buys us, the "split mode" layout diagram, and the fallback
+history when a rung of the layout isn't available.
 
 ## What it buys us
 
@@ -48,11 +48,21 @@ from the parent's main loop via `self_cgroup_events_check()`.
 
 Failures degrade gracefully:
 
-1. If the parent/children split can't be set up (older kernel without
-   `memory.oom.group`, delegation gap, etc.) trinity falls back to a
-   single-cgroup with `memory.max` -- the operator still gets the
-   hard cap, just without OOM scope isolation.
-2. When even that fails trinity continues without any cgroup
+1. The split is only carved out of a scope that is trinity's alone
+   (`scope_can_delegate()`: memory controller available, the scope's
+   `cgroup.subtree_control` writable, trinity-main its only process --
+   in practice trinity's own `systemd-run` scope).  If the scope
+   doesn't qualify, or any step of the split fails, the partial state
+   is unwound.  A kernel without `memory.oom.group` does not fail the
+   split: the knob is best-effort and the cap then falls back to
+   per-task OOM kills.
+2. If a wrapper already put a `memory.max` on the scope and the split
+   can't be nested under it, trinity defers to the wrapper's cap and
+   creates no cgroup of its own.
+3. Otherwise trinity falls back to a single cgroup with `memory.max`
+   -- the operator still gets the hard cap, just without OOM scope
+   isolation.
+4. When even that fails trinity continues without any cgroup
    containment rather than refusing to start.  Losing the cap is
    preferable to losing the run.
 

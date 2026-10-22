@@ -1,6 +1,6 @@
 # Cgroup and startup-isolation options
 
-Companion to `main/params/help.c` and `self_cgroup.c`.  Trinity
+Companion to `main/params/help.c` and `utils/self_cgroup_*.c`.  Trinity
 carves a self-cgroup at startup and puts the child fleet under its
 own memory limits so a runaway worker cannot OOM the parent (which
 is the process holding all the fuzzing state).  These options tune
@@ -22,14 +22,15 @@ pressure but does not OOM it.  Default: 50%.
 
 ## --memory-max
 
-Total trinity memory budget.  Split into
-`children/memory.max = <this> - parent_high` and a small parent
-reservation:
+Memory budget for the worker fleet: `children/memory.max = <this>`.
+The parent gets a small soft reservation of its own,
 
     parent_high = min(200M, this / 16)
 
-so worker OOM does not take the parent.  Hard limit -- exceeding it
-OOM-kills the offending worker.  Default: 60%.
+written to `parent/memory.high` with no hard cap, and sits outside the
+workers' cgroup so worker OOM does not take the parent.  Hard limit --
+exceeding it OOM-kills the workers (the whole pool at once in split
+mode, where `children/memory.oom.group=1`).  Default: 60%.
 
 ## --memory-swap-max
 
