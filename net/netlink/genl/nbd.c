@@ -2,15 +2,16 @@
  * Genetlink family grammar: nbd (Network Block Device).
  *
  * The nbd module exposes its userspace control plane through a single
- * generic-netlink family ("nbd") with five user-callable commands:
- * NBD_CMD_CONNECT, NBD_CMD_DISCONNECT, NBD_CMD_RECONFIGURE,
- * NBD_CMD_LINK_DEAD, and NBD_CMD_STATUS.  CONNECT / RECONFIGURE walk
+ * generic-netlink family ("nbd") with four user-callable commands:
+ * NBD_CMD_CONNECT, NBD_CMD_DISCONNECT, NBD_CMD_RECONFIGURE, and
+ * NBD_CMD_STATUS.  NBD_CMD_LINK_DEAD is the multicast notification the
+ * driver sends when a link dies, not an op: the genl core rejects it
+ * on input, so the grammar omits it.  CONNECT / RECONFIGURE walk
  * the full attribute policy (INDEX selector, SIZE_BYTES /
  * BLOCK_SIZE_BYTES / TIMEOUT / DEAD_CONN_TIMEOUT u64 scalars, the
  * SERVER_FLAGS / CLIENT_FLAGS u64 bitfields, the BACKEND_IDENTIFIER
  * NUL-terminated string, and the SOCKETS / DEVICE_LIST nested
- * containers); DISCONNECT / LINK_DEAD / STATUS gate primarily on
- * NBD_ATTR_INDEX.
+ * containers); DISCONNECT / STATUS gate primarily on NBD_ATTR_INDEX.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-assigned
  * family_id for "nbd", so the per-cmd nla_policy walker in
@@ -107,7 +108,6 @@ static const struct genl_cmd_grammar nbd_cmds[] = {
 	{ NBD_CMD_CONNECT,	"NBD_CMD_CONNECT" },
 	{ NBD_CMD_DISCONNECT,	"NBD_CMD_DISCONNECT" },
 	{ NBD_CMD_RECONFIGURE,	"NBD_CMD_RECONFIGURE" },
-	{ NBD_CMD_LINK_DEAD,	"NBD_CMD_LINK_DEAD" },
 	{ NBD_CMD_STATUS,	"NBD_CMD_STATUS" },
 };
 
