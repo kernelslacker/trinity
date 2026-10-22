@@ -40,5 +40,5 @@ again into one TU per RTM_* group behind `msg-rtnl-common.h`.
 
 ## Interactions
 - `netlink_gen_msg` is wired into `net/proto/netlink.c`'s `proto_netlink`.
-- Grammars are wired by extern struct (`fam_*`, subsystem grammars), consumed by the message generator and by `childops/net/netlink/genetlink-fuzzer.c` (which does independent runtime discovery, decoupled from `genl/families.c`).
+- Grammars are wired by extern struct (`fam_*`, subsystem grammars), consumed by the message generator.
 - Conditional compilation: each genl family's `extern`/registry entry is gated by `__has_include()` against kernel UAPI headers, so coverage degrades gracefully on older kernels.

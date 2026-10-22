@@ -4,10 +4,9 @@ The core "choose a syscall and run it" loop. Every fuzzed syscall in trinity —
 
 ## Files (18 files + 2 internal headers, ~7,920 LOC)
 
-The picker (`pickers.c`), the dispatch tail (`dispatch.c`) and the post-dispatch
-attribution helpers (`strategy-accounting.c`) have each been split one concern
-per translation unit; the chain executor that used to live in the root
-`sequence.c` was folded in here as the `chain-*.c` cluster.
+The picker, the dispatch tail and the post-dispatch attribution helpers are each
+split one concern per translation unit, and the chain executor is the `chain-*.c`
+cluster.
 
 Picker arms and their shared plumbing:
 
@@ -28,8 +27,7 @@ Dispatch and chain substitution:
 | dispatch-wrappers.c | 271 | The three public entry points that converge on `dispatch_step()`: `random_syscall_step`, `random_syscall_step_biased`, `replay_syscall_step` |
 | chain-subst.c | 269 | `apply_chain_substitution()`: splices a prior chain step's retval into one arg slot of the current call, gated by argtype safety and protected-fd/pid checks |
 
-Post-dispatch attribution, carved out of `strategy-accounting.c` and sharing
-`random_syscall/strategy-accounting-internal.h`:
+Post-dispatch attribution, sharing `random_syscall/strategy-accounting-internal.h`:
 
 | File | Lines | Role |
 |---|---|---|
@@ -50,7 +48,7 @@ Chain executor and its corpus, sharing `random_syscall/chain-internal.h`:
 | chain-corpus.c | 359 | The in-memory ring of admitted chains plus init / save / pick; a single fleet-wide ring of inline `chain_entry` slots, lockless on the pick path; `chain_is_replay_safe()` refuses the minicorpus's argtype list (`corpus_argtype_refused()`) and `chain_zero_stale_args()` zeroes a saved step's stale fd and pointer slots (`corpus_argtype_stale_on_replay()`) by the step's own ABI |
 | chain-internal.h | 50 | Cross-file declarations private to the `chain-*.c` cluster |
 
-Cross-cluster private declarations live in `include/random-syscall-internal.h` (the 14 non-chain files here include it; the chain cluster uses `chain-internal.h` instead). Public entry points are split across `include/child-api.h` (the four dispatch-step wrappers), `include/sequence.h` (the chain executor and its corpus API) and `include/syscall.h` (`set_syscall_nr_random`, `compute_numeric_substitute_mask`, `choose_syscall_table`).
+Cross-cluster private declarations live in `include/random-syscall-internal.h` (the 14 non-chain files here include it; the chain cluster uses `chain-internal.h` instead). Public entry points are split across `include/child-api.h` (the three dispatch-step wrappers), `include/sequence.h` (the chain executor and its corpus API) and `include/syscall.h` (`set_syscall_nr_random`, `compute_numeric_substitute_mask`, `choose_syscall_table`).
 
 ## How a syscall gets picked
 
@@ -77,14 +75,14 @@ Called identically from the fresh-args path (`random_syscall_step`), the bias pa
 
 ## How dispatch works
 
-`dispatch_step()` (dispatch-step.c) is the shared tail all four public entry points converge on. Sequence, per call:
+`dispatch_step()` (dispatch-step.c) is the shared tail all three public entry points converge on. Sequence, per call:
 1. Stamp `rec->entry`, clear `rec->validator_rejected`.
-2. Decide `child->kcov.remote_mode` (KCOV_REMOTE_ENABLE for softirq/kthread/workqueue-deferred coverage) via a static rate (`KCOV_REMOTE_RATIO`/`_HEAVY`) or, for redqueen A/B arm B, an adaptive decision from `remote_adaptive_decide()`.
+2. Decide `child->kcov.remote_mode` (KCOV_REMOTE_ENABLE for softirq/kthread/workqueue-deferred coverage) via a static rate (`KCOV_REMOTE_RATIO`/`_HEAVY`) or, for children in the remote-adaptive A/B arm B, an adaptive decision from `remote_adaptive_decide()`.
 3. `do_syscall()` — the actual syscall invocation (in dispatch/syscall.c, outside this cluster).
 4. Collect coverage: `kcov_collect()` (PC mode, kcov/collect.c) or `kcov_collect_cmp()` (CMP mode, kcov/collect-fanout.c). New-edge and new-CMP-novelty counts are per-call authoritative out-params, not global-counter diffs (which would race concurrent sibling children).
 5. Credit cmp_hints feedback (`cmp_hints_feedback_credit_*`, cmp_hints/credit.c) and typed-hypothesis stash entries.
 6. Save to minicorpus (`minicorpus_save_with_reason`) on any novelty signal (PC edge OR CMP bloom novelty — the OR is deliberate, documented as breaking a "PC-plateau → no-saves → no-mutator-wins" self-reinforcing loop).
-7. Run the accounting-cluster helpers (`account_per_syscall_new_edges`, `account_pc_edge_only`, `account_transition_reward` from per-syscall-edges.c; `account_warm_reserve`, `account_cold_overflow_would_save` from warm-reserve.c; `account_fd_and_group` from fd-group.c) — per-syscall/per-strategy reward and diagnostic bookkeeping.
+7. Run the accounting-cluster helpers (`account_reexec_ab_cohort`, `account_per_syscall_new_edges`, `account_pc_edge_only`, `account_transition_reward` from per-syscall-edges.c; `account_warm_reserve`, `account_cold_overflow_would_save` from warm-reserve.c; `account_fd_and_group` from fd-group.c) — per-syscall/per-strategy reward and diagnostic bookkeeping.
 8. Push to `child_syscall_ring` and `pre_crash_ring` for crash-forensics.
 9. Enqueue combined stats (`stats_ring_enqueue_call_complete`).
 10. Bump per-arm completion counters (mirrors the pick-time `strategy_picks[]` bump).
@@ -115,8 +113,8 @@ Nearly everything in the accounting cluster is dual-mode: a SHADOW/observability
 ## Integration points
 
 Callers into this cluster's public entry points:
-- `child/child.c` — per-child main loop; its default `CHILD_OP_SYSCALL` path falls through to `run_sequence_chain()` (child.c:782), which is what reaches the dispatch wrappers
-- `chain-exec.c` — the chain executor (in this directory since the root `sequence.c` was folded in); calls `random_syscall_step()` for fresh chain steps, `random_syscall_step_biased()` for resource-typed consumer picks (`--chain-resource-typing=live`), and `replay_syscall_step()` for corpus-replay chain steps
+- `child/child.c` — per-child main loop; its default `CHILD_OP_SYSCALL` path falls through to `run_sequence_chain()` (a NULL `op_fn` in `child_process()`), which is what reaches the dispatch wrappers
+- `chain-exec.c` — the chain executor; calls `random_syscall_step()` for fresh chain steps, `random_syscall_step_biased()` for resource-typed consumer picks (`--chain-resource-typing=live`), and `replay_syscall_step()` for corpus-replay chain steps
 
 Calls out from dispatch-step.c to the rest of the tree:
 - `dispatch/syscall.c` — `do_syscall()` (the actual syscall invocation); `args/arg-decoder.c` — `output_syscall_prefix/postfix()`; `dispatch/syscall-return.c` — `handle_syscall_ret()`
@@ -134,11 +132,11 @@ Calls out from dispatch-step.c to the rest of the tree:
 
 ## Areas of attention
 
-1. **`set_syscall_nr_coverage_frontier()` and its two weight helpers (`frontier_cold_weight`, `cmp_frontier_weight`) are the most complex control flow in the cluster** — pick-frontier.c:94-590 and pick-frontier-weight.c:106-454 / 455-514. `frontier_cold_weight()` alone computes an OLD weight, a BLENDED weight (three disjoint ilog2-scaled novelty terms), an A/B arm selection between them, and then a further reach-band adjustment (HIGH-band boost / MID-band demote), all before the caller does its own live/silent regime split with two more SHADOW decay predicates (`frontier_satcool_spare`, `frontier_errno_plateau_should_decay`) each with their own A/B live-reject roll. Six or seven independently-gated mode enums (`reach_band_mode`, `cmp_frontier_mode`, `frontier_group_antilock_mode`, per-child arm-b flags for blend/silent-decay/errno-decay/live-cool) all interact at this single call site. Correctness here depends on every SHADOW-only branch genuinely being byte-identical-when-OFF — that invariant is documented at every call site but is unverified by any test in this view.
-2. **`dispatch_step()` is a single ~720-line function (dispatch-step.c:167-885) doing coverage collection, cmp_hints credit, minicorpus save, six `account_*` calls, crash-ring pushes, stats enqueue, and the redqueen re-exec tail** — it is the busiest function in the fuzzer by call count and its correctness ordering is load-bearing in non-obvious ways: e.g. `account_cold_overflow_would_save()` must run *before* `minicorpus_save_with_reason()` or its "was this the first admission" snapshot races the save it's trying to measure (documented at warm-reserve.c:252-260).
+1. **`set_syscall_nr_coverage_frontier()` and its two weight helpers (`frontier_cold_weight`, `cmp_frontier_weight`) are the most complex control flow in the cluster** — pick-frontier.c:94-590 and pick-frontier-weight.c:106-411 / 455-514. `frontier_cold_weight()` alone computes an OLD weight, a BLENDED weight (three disjoint ilog2-scaled novelty terms), an A/B arm selection between them, and then a further reach-band adjustment (HIGH-band boost / MID-band demote), all before the caller does its own live/silent regime split with two more SHADOW decay predicates (`frontier_satcool_spare`, `frontier_errno_plateau_should_decay`) each with their own A/B live-reject roll. Six or seven independently-gated mode enums (`reach_band_mode`, `cmp_frontier_mode`, `frontier_group_antilock_mode`, per-child arm-b flags for blend/silent-decay/errno-decay/live-cool) all interact at this single call site. Correctness here depends on every SHADOW-only branch genuinely being byte-identical-when-OFF — that invariant is documented at every call site but is unverified by any test in this view.
+2. **`dispatch_step()` is a single ~720-line function (dispatch-step.c:167-885) doing coverage collection, cmp_hints credit, minicorpus save, seven `account_*` calls, crash-ring pushes, stats enqueue, and the redqueen re-exec tail** — it is the busiest function in the fuzzer by call count and its correctness ordering is load-bearing in non-obvious ways: e.g. `account_cold_overflow_would_save()` must run *before* `minicorpus_save_with_reason()` or its "was this the first admission" snapshot races the save it's trying to measure (documented at warm-reserve.c:252-260).
 3. **Recursive re-exec**: `redqueen_reexec_step()` calls back into `dispatch_step()` (dispatch-step.c:1177), guarded only by the `child->in_reexec` flag checked at the dispatch_step tail gate. If that guard were ever bypassed, this is an unbounded-recursion path; the per-window cap (`REDQUEEN_REEXEC_WINDOW_CAP`) and per-call cap (drain loop bounded by `MAX_REEXEC_PENDING`) are the only backstops.
 4. **`rec` field-level publish/restore discipline**: the dispatch and picker files thread `srec_publish_begin/end()` brackets carefully around every multi-field `rec` mutation so an out-of-band reader (watchdog, pre_crash_ring decoder) never observes a torn `(nr, do32bit, aN)` tuple. `redqueen_reexec_step()` additionally snapshots and restores six `rec` fields plus retval/errno/post_state around its inner dispatch call (dispatch-step.c:1087-1095, 1273-1281) — a missed field in that snapshot/restore pair would silently corrupt what the chain-corpus save sees after the parent call returns.
-5. **Chain substitution's protected-fd/pid masking (chain-subst.c:192-219) is a narrow, easy-to-regress safety net**: it depends on `fd_is_protected()` and `is_fdarg()` staying in sync with whatever fd classes trinity considers instrumentation-critical; a new protected-fd class added elsewhere without updating this masking would silently reopen the "chain-substitute closes trinity's own kcov fd" bug class this code exists to prevent.
+5. **Chain substitution's protected-fd/pid masking (chain-subst.c:193-220) is a narrow, easy-to-regress safety net**: it depends on `fd_is_protected()` and `is_fdarg()` staying in sync with whatever fd classes trinity considers instrumentation-critical; a new protected-fd class added elsewhere without updating this masking would silently reopen the "chain-substitute closes trinity's own kcov fd" bug class this code exists to prevent.
 6. **Every hot-path helper takes pains to be RNG-stream-identical when its owning mode is OFF** (`expensive_accept`, `cost_pool_selector_shadow_note`, `remote_adaptive_decide`, the frontier blend/decay predicates) — this is a strong implicit invariant across the whole cluster (any new mode must preserve pick-stream byte-identity under its OFF setting for reproducible fuzzing runs), but it is enforced only by code comments, not by any automated check visible in this directory.
 
 ## Summary

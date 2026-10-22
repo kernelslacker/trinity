@@ -2,7 +2,7 @@
 
 The pool layer that lets one syscall's successful result — an fd, id, or handle — become a later syscall's argument. A producing syscall's `.post` handler publishes the result as an `object`; a consuming syscall draws one back via `get_random_object()` or the fd-typed argument path. Two scopes: `OBJ_LOCAL` (per-child) and `OBJ_GLOBAL` (registered once at init, snapshotted into each child at fork).
 
-Public API is `include/objects.h`. Cross-TU glue internal to this dir is `include/objects-internal.h` — symbols that were file-local `static` in the pre-carve `objects.c`; consumers outside objects/ must go through `objects.h`.
+Public API is `include/objects.h`. Cross-TU glue internal to this dir is `include/objects-internal.h`; consumers outside objects/ must go through `objects.h`.
 
 ## Files (14 files + internal headers, ~3,841 LOC)
 

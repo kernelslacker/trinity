@@ -34,7 +34,7 @@ per-cmd BPF field tables under `bpf-*.c`.
 | sockaddr-mcast.c | 171 | ip_mreqn, ip_mreq_source, ipv6_mreq + well-known multicast-address vocab pools |
 | quota.c | 171 | if_dqblk, if_dqinfo, fs_disk_quota (quotactl/quotactl_fd) |
 | ptrace_regs.c | 171 | Per-arch ptrace register-set structs for PTRACE_{GET,SET}REGS and the iovec-wrapped PTRACE_{GET,SET}REGSET; attribution-only (the sanitiser hand-rolls the iovec / raw pointer itself) |
-| address.c | 158 | (per-family leaf; address-shaped field tables) |
+| address.c | 158 | FT_ADDRESS reachability walk: `struct_desc_has_address_field()` / `struct_arg_any_has_address_field()` — a bounded recursive scan, through `FT_PTR_STRUCT`/`FT_PTR_ARRAY` targets and every variant, deciding whether a struct can reach an `FT_ADDRESS` field; it feeds the nested-address scrub mask in `args/scrub.c` |
 | bpf-map.c | 155 | BPF_MAP_* command family field tables |
 | sockaddr-sockopt.c | 150 | linger, packet_mreq, group_req, group_source_req |
 | landlock.c | 150 | landlock_ruleset_attr, landlock_path_beneath_attr, landlock_net_port_attr |
@@ -76,9 +76,6 @@ per-cmd BPF field tables under `bpf-*.c`.
 `catalog.c` additionally `#include`s five `catalog-*.inc` fragments (~278 LOC) —
 blocks of `struct_catalog[]` designated initializers for the bpf, ptrace_regs,
 setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
-
-`sockaddr.o` build artifact present in the directory listing is stale/ignored
-(no matching `.c`).
 
 ## Data model
 

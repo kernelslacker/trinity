@@ -85,7 +85,7 @@ shared struct-of-callbacks pattern).
 
 - `include/net.h` — declares `struct netproto`, `struct protoptr`,
   `net_protocols[]`, and every per-family `extern const struct
-  netproto proto_*` — the contract every proto-*.c file implements.
+  netproto proto_*` — the contract every `net/proto/*.c` file implements.
 - `syscalls/socket/socket.c` — `rand_proto_type()` and `gen_socket_args()`
   (despite being declared in net.h) are defined here, not in net/;
   they index `net_protocols[]` to pick a protocol/type consistent with
@@ -105,27 +105,20 @@ shared struct-of-callbacks pattern).
   struct-fill machinery; net/ itself has no `struct_catalog`
   references — sockaddr/optval *scalar* generation lives in net/,
   *struct-shaped* optval generation lives in struct_catalog/.
-- `childops/net/netlink/genetlink-fuzzer.c` — does its own independent runtime
-  discovery of a family's ops list; intentionally decoupled from
-  `netlink/genl/families.c`'s registry so the two paths can't share
-  fragile state.
-- `syscalls/bpf.c`, `syscalls/process/seccomp.c`, `syscalls/process/prctl.c`,
-  `syscalls/socket/setsockopt.c`, `syscalls/io_uring/io_uring_register-payloads.c`,
-  `childops/misc/bpf-lifecycle.c`, `childops/misc/bpf-cgroup-attach.c`,
-  `childops/net/sock-ulp-sockmap-layering.c`,
-  `childops/net/veth-asymmetric-xdp.c`, `childops/net/afxdp-churn.c`,
-  `fds/bpf.c`, `struct_catalog/bpf.c` — wide fan-out of consumers of
-  the classic-BPF/eBPF generators (bpf/bpf.c + the bpf/ebpf*.c cluster), since filter programs
-  attach via seccomp, `SO_ATTACH_FILTER`, `BPF_PROG_LOAD`, sockmap, and
-  cgroup/XDP attach points.
+- `syscalls/bpf-prog.c`, `syscalls/process/seccomp.c`,
+  `syscalls/socket/setsockopt.c`, `struct_catalog/bpf_classic.c`,
+  `struct_catalog/bpf-prog.c`, `struct_catalog/registry/bpf.c`,
+  `args/struct_fill.c` — the consumers of the classic-BPF/eBPF generators
+  (bpf/bpf.c + the bpf/ebpf*.c cluster), by symbol: filter programs
+  attach via seccomp, `SO_ATTACH_FILTER` and `BPF_PROG_LOAD`.
 
 ## Areas of attention
 
 1. **The netlink message generator has been split twice** — first the
    rtnl payloads out of the message generator, then each rtnl group out
-   of the payload file. `netlink/msg-rtnl-neigh.c` (907) is now the
-   largest file here, followed by `netlink/msg-tables.c` (570),
-   `netlink/msg-rtnl-tc.c` (570), `netlink/msg-rtnl-route.c` (526) and
+   of the payload file. `netlink/msg-rtnl-neigh.c` (905) is now the
+   largest file here, followed by `netlink/msg-rtnl-tc.c` (607),
+   `netlink/msg-tables.c` (590), `netlink/msg-rtnl-route.c` (578) and
    `netlink/msg-attr-random.c` (480). A single payload generator still
    spans hundreds of lines of nested attribute construction.
 2. **The eBPF generator's three tiers are now three TUs** —

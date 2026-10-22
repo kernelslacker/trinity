@@ -2,7 +2,7 @@
 
 Central counter collection, aggregation, and dump layer for Trinity. Most
 subsystems (kcov, cmp_hints, childops, random_syscall, corruption defenses)
-bump counters here; this directory turns those counters into text, JSON, CSV
+bump counters here; this directory turns those counters into text, JSON, JSONL
 timeseries, and periodic operator-facing dumps.
 
 ## Layout (74 .c files + 53 headers, ~22,613 LOC)
@@ -23,7 +23,7 @@ bottom rather than enumerated. The renderers below are the other 58.
 | dump/fd.c | FD lifecycle/provider summaries. |
 | dump/shared-buffer.c | Shared-buffer misc and range-overlap offender summary. |
 | dump/oracle.c | Oracle anomaly counters. |
-| dump/subsystems.c | Fuzzer subsystem counters and recipe-owned stats hooks. |
+| dump/subsystems.c | Fuzzer subsystem counters: VFS writes, genl and nfnl families, netlink generator, rtnl ack oracle, bpf fd provider, eBPF generator, zombie slots. |
 | dump/corruption.c | Corruption, deferred-free, pool, and paired-fd diagnostics. |
 | dump/strategy.c | Strategy, plateau, picker, and per-syscall CMP-insert summaries. |
 | dump/corpus-tail.c | Minicorpus, cmp_hints, taint, and late tail summaries. |
@@ -68,14 +68,14 @@ bottom rather than enumerated. The renderers below are the other 58.
 | periodic/cost-pool.c | Cost-pool active-count + shadow/live selector-fraction snapshot. |
 | periodic/top-syscalls.c | Per-syscall bandit/explorer/frontier/RQ/warm-reserve top-N deltas. |
 | periodic/vma.c | Parent + child `/proc/*/maps` line-count snapshot for VMA-leak triage. |
-| log.c | `--stats-log-file` and `--stats-timeseries` file lifecycle. |
+| log.c | `--stats-log-file` and the `--stats` JSONL timeseries (`stats-timeseries-*.jsonl`) file lifecycle. |
 | runid.c | Run identity, boot/cache provenance, and shutdown delta manifest. |
 | corrupt_ptr.c | Corrupt-pointer attribution and deferred-free reject reporting. |
 | stats-ring.c | Per-child SPSC ring drain into parent-private aggregates. |
 | kcov_diag.c | Descriptor-driven KCOV per-syscall diagnostic helpers. |
 | shadow_sat.c | Observation-only shadow soft-saturation score: a ~60-minute parent-side sample ring yielding distinct-edge yield over short/long horizons, normalised per 10k calls, per wall-hour and per CPU-hour. Consumed by nothing. |
 | rotation_event.c | Observation-only durable JSONL event stream, one record per closed strategy-rotation window, written by the CAS-winning child through `lib/jsonl.c`. Each child parks its copy of the sink fd above `PROTECTED_FD_HIGH_BASE` (the parent keeps its low number) and the protected-fd registry names it. No parent-side aggregate. |
-| arm-verdict.h | The shared dead-arm verdict status tokens, so `stats/dump/subsystems.c` (text) and `stats/json/tail.c` (JSON) cannot drift apart. |
+| arm-verdict.h | Dead-arm verdict status tokens (`enum arm_verdict`, `arm_verdict_to_str()`). `stats/dump/subsystems.c` and `stats/json/tail.c` include it, but no emitter reports a verdict any more. |
 | subsys/*.h, subsys/*.c | Per-subsystem counter tree: each `<subsys>.h` declares that subsystem's counter struct (pulled into `shm->stats` via `include/stats.h`) and the matching `<subsys>.c` declares its `stat_category` descriptor table with `STAT_FIELD_SUB()`. 48 headers, 16 descriptor TUs — headers without a table are subsystems whose counters are rendered from elsewhere. |
 
 ## Data Model
@@ -146,10 +146,6 @@ Two parallel counter stores, by design:
 - `child-altop-score.c` owns `childop_score_dump()` and
   `childop_outcome_window_dump()`; `dump_stats()` invokes them as part of the
   childop block.
-- `childops/recipe/runner.c` and `childops/io_uring/recipes.c` expose
-  `recipe_runner_dump_stats()` / `iouring_recipes_dump_stats()`, called from
-  `stats/dump/subsystems.c`, keeping
-  recipe catalog layout private to the recipe implementations.
 - `include/stats.h`, `include/stats-internal.h`, and `include/stats_ring.h` are
   the three headers this directory is built around: shared-memory counter
   layout, private cross-file stats interfaces, and ring slot definitions.
@@ -176,10 +172,10 @@ Two parallel counter stores, by design:
    plus one prototype and one ordered call.
 3. **JSON descriptor ownership is still mixed** - `stats/json/` now mirrors
    the text-dump layout (common, syscalls, kcov, minicorpus, cmp-hints,
-   core, network, tail, type_graph, dump), but `stats/json/network.c`,
-   `stats/json/core.c`, and `stats/json/tail.c` still own JSON-local
-   descriptor tables that would more naturally live under
-   `stats/subsys/` or `stats/categories/`.  Follow-up
+   core, network, tail, type_graph, dump), but `stats/json/core.c` still owns
+   JSON-local descriptor tables that would more naturally live under
+   `stats/subsys/` or `stats/categories/` (`network.c` and `tail.c` only
+   compose categories defined elsewhere).  Follow-up
    work should migrate one domain at a time, keeping schema order unchanged.
 4. **Counter-store choice is still manual** - direct `shm->stats` fields remain
    writable by a wild kernel store; only the ring-fed `parent_stats` aggregate is

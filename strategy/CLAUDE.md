@@ -11,7 +11,7 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
 |---|---|---|
 | strategy.c | 515 | Glue + plateau-intervention dispatch: `--strategy` parsing, arm/mode name tables, `select_next_strategy()` (bandit vs. intervention dispatch), rescue-classifier-driven `amplified_intervention_arm()`, PIM rotation (`select_plateau_intervention_strategy`) |
 | strategy-bandit.c | 577 | UCB1/D-UCB learner: `bandit_record_pull()` reward attribution (call-count + CMP-novelty + transition + edge-count terms, EMA-discounted), `ucb1_score()`, `pick_next_strategy()` (cold-start + round-robin + UCB1 dispatch) |
-| strategy-frontier.c | 661 | Per-syscall frontier-edge decay ring: `frontier_record_new_edge/transition_edge`, `frontier_window_advance()` (ring rotation + F4 LIVE-cooldown halving), errno-plateau decay predicate, saturation-cooldown and LIVE-cooldown shadow discriminators, topology-pair (setup-op → productive-event) shadow ring |
+| strategy-frontier.c | 661 | Per-syscall frontier-edge decay ring: `frontier_record_new_edge/transition_edge`, `frontier_recent_count()`, errno-plateau decay predicate, topology-pair (setup-op → productive-event) shadow ring, context-regular suppression shadow |
 | strategy-frontier-cool.c | 394 | Saturation and barren-demote cooldown helpers, split from strategy-frontier.c |
 | strategy-frontier-window.c | 208 | Per-syscall frontier-edge ring window advance (`frontier_window_advance()`), split from strategy-frontier.c |
 | strategy-frontier-bitmap.c | 154 | Producer-observer bitmap backing the spare-lane classifier, split from strategy-frontier.c |
@@ -98,9 +98,10 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
 - `kcov/plateau.c` — `kcov_plateau_check()` calls `strategy_plateau_response()` on the plateau
   rising edge (arms the hypothesis-entry snapshot, forces an immediate rotation) and reads
   `strategy_plateau_hypothesis_current/name()` for its own stats line.
-- `kcov/collect.c` — calls `frontier_record_new_edge()` / `frontier_record_transition_edge()` on
-  the new-edge/new-transition branches, and `bandit_cmp_observe()` on the CMP-trace ingestion
-  path (feeds the novelty bloom and bandit CMP reward term).
+- `kcov/collect.c` — calls `frontier_record_new_edge()` on the new-edge branch;
+  `kcov/collect-fanout.c` calls `bandit_cmp_observe()` on the CMP-trace ingestion path (feeds
+  the novelty bloom and bandit CMP reward term); `random_syscall/dispatch-step.c` calls
+  `frontier_record_transition_edge()`.
 - `main/stats.c` — ticks `strategy_plateau_hypothesis_tick()` once per stats interval
   (parent-only, no locking needed) and renders the current hypothesis / per-hypothesis fire
   counts.
@@ -111,7 +112,7 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
   `--context-pool`); writes `picker_mode_arg` before `init_shm()` runs.  `--explorer-children` is
   parsed in `main/params/childop.c`.
 - `cmp_hints/` (see cmp_hints/CLAUDE.md) — cross-references this directory heavily: the
-  `CMP_RISING_PC_FLAT` plateau hypothesis reads `kcov_shm->cmp_hints_unique_inserts`;
+  `CMP_RISING_PC_FLAT` plateau hypothesis reads `kcov_shm->hints_flat.cmp_hints_unique_inserts`;
   `RRC_CMP_DERIVED` rescue classification reads `cmp_hints_pool_safe_count()`; the two-tier
   picker in cmp_hints/get.c samples the recent ring first during a plateau.
 - `child.c` / `child-altop-*.c` — read frontier record hooks' side effects (childop-driven

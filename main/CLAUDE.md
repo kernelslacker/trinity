@@ -29,8 +29,8 @@ The `main/reap-*.c` family shares cluster-private declarations in
 
 ### `main/params/` subdirectory
 
-CLI parsing was split out of the single `main/params.c` translation unit so
-adding a knob only touches the file that owns that knob's concern.  All
+CLI parsing is split by concern so adding a knob only touches the file that
+owns that knob's concern.  All
 externally-visible parser symbols still live in `include/params.h`; anything
 inside `main/params/` is params-cluster private and declared in
 `main/params/internal.h`.
@@ -45,8 +45,8 @@ inside `main/params/` is params-cluster private and declared in
 | `parse.c` | `parse_args()` orchestrator, `parse_duration()`/`parse_unsigned()` scalar helpers shared by every family. |
 | `selection.c` | Arch/syscall/domain/group/-r/-N/-s/-V selection knobs plus the comma-list csv helper. |
 | `runtime.c` | Epoch/max-runtime, stats, memory-cgroup, warm-start cache options. |
-| `coverage.c` | KCOV/CMP/frontier/reach/blob/cmsg strategy knobs (also currently owns the canary + fork-pressure rows the phase-2 spec will move into `childop.c`). |
-| `childop.c` | Child-slot sizing: `-C`, `--alt-op-children`, `--explorer-children`. |
+| `coverage.c` | KCOV/CMP/frontier/reach/blob/cmsg strategy knobs. |
+| `childop.c` | Child-slot sizing (`-C`, `--alt-op-children`, `--explorer-children`) and the canary/fork-pressure knobs (`--canary-slots`, `--canary-window`, `--no-canary-queue`, `--canary-seed`, `--fork-pressure-drain`). |
 | `debug.c` | writer-pin canary, `--guard-shared`, verbosity/diagnostics, `-h`/`-L`/`-I`/`-b` info commands, misc long-only flags. |
 | `compat.c` | Backwards-compat parser helpers: `--redqueen-pending-pick` name/parser pair and the `enable_disable_fd_usage()` hook `usage()` calls. |
 
@@ -228,7 +228,7 @@ API surface.
   canary picker to suppress pid-heavy ops during fork pressure.
 - `child/child-altop-pick.c` — `init_altop_dispatch()`/`assign_dedicated_alt_op()` for
   dedicated-alt-op child slots.
-- `rand/random.c` — `reseed()` on every replacement spawn and on epoch reset.
+- `rand/seed.c` — `reseed()` on every replacement spawn after startup and on epoch reset.
 - `utils/locks.c` — `check_all_locks()`/`force_bust_lock()` for lock recovery
   after a child dies holding the syscall dispatch lock.
 - `dispatch/pids.c` / `pid_is_valid`/`pid_alive`/`kill_pid` — pid-liveness and
@@ -246,7 +246,7 @@ API surface.
    own translation unit, so a change to one sub-concern (e.g. the D-state
    diagnostic format) lands in one file; what crosses the boundary is
    declared in `main/reap-internal.h`. The largest files in main/ are
-   `spawn.c` (846), `loop.c` (816) and `reap-watchdog.c` (807).
+   `spawn.c` (863), `loop.c` (834) and `reap-watchdog.c` (807).
 2. **Slot-reuse correctness is load-bearing and documented but easy to
    violate on a future edit** — `find_free_childno()`'s double-empty check
    (`pids[i]` AND `zombie_pids[i]`) is the sole guard against the

@@ -67,12 +67,12 @@ Per-child:
 - `main/params/runtime.c` — `--no-cmp-hints-warm-start` toggle, blob-mutator mode description
 - `health/signals-fault-handler.c` — recovery point for field-scoped timespec deref SEGV
 - `strategy.c`, `strategy-plateau.c`, `strategy-cmp-novelty.c`, `strategy-bandit.c`, `strategy-frontier.c`, `strategy-rescue.c`, `stats_ring.h` — plateau hypothesis coordination, CMP-novelty outcome classification, bandit/frontier scoring, stats ring counters
-- `deferred-free.c` — recovers real allocation length for field-scoped pool scans; parallel recent-entry walk order
+- `persist/deferred-free.c` — recovers real allocation length for field-scoped pool scans; parallel recent-entry walk order
 - `random_syscall/chain-persist.c`, `objects/prop_ring.c` — mid-run snapshot triggers and injection-rate mirroring analogous to the cmp_hints gate
 
 ## Areas of attention
 
-1. **Largest files** — collect.c (1,250), pool.c (1,046), field.c (895), persist.c (866), hyp-derive.c (815). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) now sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:506–815) is still ~310 lines with deep nesting.
+1. **Largest files** — collect.c (1,250), pool.c (1,046), field.c (895), persist.c (866), hyp-derive.c (815). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) now sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:505–814) is still ~310 lines with deep nesting.
 2. **Complex credit resolution** — `cmp_hyp_find_for_credit()` walks all 5 hypothesis kinds in specificity order (EXACT > ENUM_FAMILY > BITMASK > RANGE > BOUNDARY) on every consume and every outcome credit.
 3. **Field-scan safety depends on `range_readable_user()`** (`cmp_hints_field_scan_resolve()` in field.c) — checks VMA readability before dereferencing struct buffers; a missed page-fault race SEGVs the child (recovery point in health/signals-fault-handler.c).
 

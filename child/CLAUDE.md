@@ -11,10 +11,10 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 | child-init-clean.c | Coredump toggles, fault-injection fd setup (make-it-fail, fail-nth), tainted-mask fd, FPU dirtier, per-slot occupant reset (`clean_childdata`). |
 | child-init-isolate.c | Stdio + controlling-terminal isolation: fd 0/1/2 → `/dev/null`, parent-fd drops (`--stats-log-file`, self-cgroup, `/proc/<pid>/stat`), `setsid()`. |
 | child-init-freeze.c | Initial sibling-childdata + shared-region `mprotect(PROT_READ)` sweeps, parent rendezvous, per-child object-pool bring-up, optional CPU pin. |
-| child-init-sandbox.c | `shm->ready` barrier, fault-injector arm, rotation-sink fd relocation, per-child unshare()s, root-only `drop_privs`, `capset()`-to-empty + oracle anchor capture, rlimit / umask sweep. |
+| child-init-sandbox.c | `shm->ready` barrier, fault-injector arm, rotation-sink fd relocation, per-child unshare()s, root-only `drop_privs`, `capset()`-to-empty, the userns-admin lane entry (`maybe_enter_userns_admin_lane()`, a no-op while no active syscall entry sets `userns_admin_lane`), oracle anchor capture, rlimit / umask sweep. |
 | child-init-runtime.c | kcov bring-up, uniarch active-syscalls pin, explorer-pool slot flag, A/B-comparison cohort stamps, heap-bounds re-snapshot, `RLIMIT_AS` pin, one-shot `disable_coredumps`. |
-| child-altop-pick.c | Alt-op picker + dedicated-child rotation + dormant-op gate: `pick_op_type()` / `pick_op_type_table[]` / `alt_op_rotation[]` / `assign_dedicated_alt_op()` / `init_altop_dispatch()` (gated by `scripts/check-static/check-alt-op-rotation.sh`). |
-| child-altop-table.c | Alt-op string names + indirect-call dispatch: `op_dispatch[]` / `alt_op_name()` / `alt_op_lookup_by_name()` / `op_uses_outer_bracket()` (gated by `scripts/check-static/check-alt-op-rotation.sh`). |
+| child-altop-pick.c | Alt-op picker + dedicated-child rotation + dormant-op gate: `pick_op_type()` / `pick_op_type_table[]` / `alt_op_rotation[]` / `assign_dedicated_alt_op()` / `init_altop_dispatch()`. |
+| child-altop-table.c | Alt-op string names + indirect-call dispatch: `op_dispatch[]` / `alt_op_name()` / `alt_op_lookup_by_name()` / `op_uses_outer_bracket()`. |
 | child-altop-budget.c | Adaptive per-op budget multiplier + decaying-recency edge/wall ring: `adapt_budget()` / `childop_decay_record_*()` / `childop_window_advance()`. |
 | child-altop-score.c | Per-op outcome snapshot + ranked score-dump tables emitted at shutdown: `childop_outcome_snapshot()` / `childop_outcome_window_dump()` / `childop_score_dump()`. Telemetry-only. |
 | child-canary-state.c | Canary slot state-machine: parent-private state cells + state transitions (`enter_canarying` / `leave_canarying_*` / `close_window_and_decide`) + shadow recommendation helpers. |
@@ -22,17 +22,17 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 | child-canary-liveness.c | Pid-liveness probes + three-stage slot teardown (`kill_canary_slot_children`): SIGTERM → grace window → SIGKILL. |
 | child-canary-grace.c | Grace-window scheduling + init: `canary_queue_init` (priority-shuffle, CONFIG_BLOCKED stamping, first-op staging) + `canary_queue_on_child_respawn` (two-stage commit hook). |
 | child-canary-picker.c | Canary picker (`pick_next_canary`) + `~1-s` tick loop (`canary_queue_tick`), including early-bail SETUP_BROKEN and wedge-stall demotes and the plateau-edge log. |
-| child-canary-policy.c | Canary static policy tables: priority seeds, config-blocked terminals, risky-defer skip set, pid-heavy drain set, and the op → setup-failure reason hint table. |
+| child-canary-policy.c | Canary static policy tables: config-blocked terminals, risky-defer skip set, pid-heavy drain set, and the op → setup-failure reason hint table (the first-pass order is a per-epoch shuffle, not a table). |
 | child-canary-report.c | Canary summary/log emitters (`canary_queue_summary`, `canary_queue_on_crash`) + the read-only public queries (`canary_slot_active`, `canary_active_op`, `canary_op_is_promoted`) called on every fork. |
 | child-sentinel.c | Deterministic-divergence sentinel: flags when a child's execution diverges from the expected deterministic path (a state-corruption tell). |
 | child-capdrop-oracle.c | Post-capdrop assertion: verifies the child actually dropped to an empty capability set (fuzzing must never run privileged). |
-| cred_throttle.c | Credential-change oracle / throttle: gates how often a child mutates its own creds and checks the outcome. |
+| cred_throttle.c | Credential-syscall oracle plus the flag-gated `--cred-throttle`: `cred_throttle_should_reject()` rejects picks of a credential class (`setuid`, `setgroups`, ...) that has never succeeded and fails with EPERM/EINVAL nearly every time, while still sampling it ~3% so a late success can retire the throttle. |
 
 ## Key invariants
 - **`alarm()` backstop** — every child arms an alarm so an indefinite-blocking syscall can't wedge it (paired with the per-syscall `NEED_ALARM` flag).
-- **PDEATHSIG + getppid recheck** — arm `PR_SET_PDEATHSIG`, then re-check `getppid()` to close the parent-died-before-prctl race (gated by `pdeathsig-getppid-recheck.sh`). A root run arms again, and re-checks, right after `drop_privs()` in `init_child_setup_sandbox()`: `commit_creds()` zeroes `pdeath_signal` when the euid or egid changes.
+- **PDEATHSIG + getppid recheck** — arm `PR_SET_PDEATHSIG`, then re-check `getppid()` to close the parent-died-before-prctl race (`child_process()` in `child.c`). A root run arms again, and re-checks, right after `drop_privs()` in `init_child_setup_sandbox()`: `commit_creds()` zeroes `pdeath_signal` when the euid or egid changes.
 - **Cap-drop verified, not assumed** — `child-capdrop-oracle.c` asserts the empty cap set; a child that failed to drop is a bug, not a fuzz finding.
-- **child-context-output** — child-side `output()`/`outputerr()` writes are `/dev/null`-redirected and baselined (`child-context-output.baseline`); new child-side output callsites shift that baseline.
+- **Child stdio is isolated** — `child-init-isolate.c` points fd 0/1/2 at `/dev/null` so a fuzzed `write`/`splice`/`sendfile` cannot reach the operator's terminal, and `init_child()` then re-points stderr at an anonymous memfd (`init_stderr_memfd()`, `health/signals-precrash.c`) that the fault handler drains into the per-pid bug log on a real crash. Child-side `output()`/`outputerr()` text reaches a log only that way.
 
 ## Interactions
 - **`random_syscall/`** — the fresh/biased/replay pick for a non-alt-op iteration.
@@ -43,4 +43,3 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 ## Areas of attention
 - Alt-op scoring / canary-promotion cadence live here; the *workloads* live in `childops/`.
 - Signal-mask policy is in `health/signals-policy.c`, NOT here.
-- child-context-output baseline is line-sensitive — a pure code-motion move preserves line numbers, but new output callsites shift it.

@@ -37,4 +37,4 @@ a new edge, re-inject them into later iterations — is split across
 
 ## Interactions
 - Gated by **`kcov/`** + **`cmp_hints/`** (the coverage signal that decides what to retain).
-- deferred-free is called from **`args/`**, csfu, valresult, and the object/childop free paths.
+- deferred-free is called from **`args/`** (csfu and valresult included), `objects/`, `fds/`, `utils/`, `mm/` and the syscall handlers' free paths.

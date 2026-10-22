@@ -37,14 +37,14 @@ state — this is a directory of convenience, not a subsystem.
 ## Integration points
 
 - **cmsg_build.c**: `syscalls/socket/send.c` calls `pick_cmsg_kind()` + `cmsg_build()` to attach ancillary data to sendmsg/sendmmsg; `main/params/coverage.c` exposes the `cmsg_richness_mode` toggle; declared in `include/cmsg_build.h`, `include/cmsg-richness.h`.
-- **userns-bootstrap.c**: `userns_run_in_ns()` has the widest fan-out in the directory — ~29 callers under `childops/` (mount-churn.c, fs-lifecycle.c, netns-teardown-churn.c, vxlan-encap.c, xfrm-churn.c, nftables/churn.c, bridge-*.c, tc/*.c, and more), each wrapping a namespace-scoped operation in a transient grandchild. Stats counters (`shm->stats.userns_bootstrap_*`) declared in `include/stats.h`, shm struct in `include/shm.h`.
-- **publish_resource.c**: called from `fds/fs_ctx.c`, `fds/mount.c`, `childops/misc/bpf-lifecycle.c`, `pids.c`, and directly from ~15 syscall post-handlers (`syscalls/poll/eventfd.c`, `pidfd_open.c`, `memfd_create.c`, `timerfd_create.c`, `signalfd.c`, `userfaultfd.c`, `fanotify_init.c`, `inotify_init.c`, `io_setup.c`, `io_uring_setup.c`, `bpf.c`, `keyctl.c`, `timer_create.c`, `pkey.c`, `msgget.c`, `semget.c`, `landlock_create_ruleset.c`, `fsconfig.c`).
+- **userns-bootstrap.c**: `userns_run_in_ns()` has one caller, `childops/net/vsock-transport-churn.c`, which wraps its fresh-netns variant in a transient grandchild. Counters live in `shm->stats.userns_bootstrap` (`stats/subsys/userns_bootstrap.h`).
+- **publish_resource.c**: called from `fds/fs_ctx.c`, `fds/mount.c`, `dispatch/pids.c`, `random_syscall/chain-subst.c`, `syscalls/fs/dup.c`, and directly from ~20 syscall post-handlers (`syscalls/poll/eventfd.c`, `pidfd_open.c`, `memfd_create.c`, `timerfd_create.c`, `signalfd.c`, `userfaultfd.c`, `fanotify_init.c`, `inotify_init.c`, `io_setup.c`, `io_uring_setup.c`, `bpf.c`, `keyctl.c`, `timer_create.c`, `pkey.c`, `msgget.c`, `semget.c`, `landlock_create_ruleset.c`, `fsconfig.c`).
 - **spsc-ring.c**: embedded as the header of two typed rings — `fd-event.c`'s fd-event ring and `stats/stats-ring.c`'s stats ring (both use init/try_enqueue/drain), and `pre_crash_ring.c` uses `spsc_ring_overwrite_enqueue()` for its rolling-history snapshot buffer. Declared in `include/spsc-ring.h`, `include/pre_crash_ring.h`, `include/stats.h`.
-- **numa.c**: `trinity.c` calls `init_numa_nodes()` at startup; `args/gen_arg_scalar.c` calls `random_numa_node()` for `ARG_NUMA_NODE` generation.
+- **numa.c**: `main/trinity-warmstart.c` calls `init_numa_nodes()` at startup; `args/gen_arg_scalar.c` calls `random_numa_node()` for `ARG_NUMA_NODE` generation.
 - **fd.c**: `write_all`/`read_all` shared by every on-disk persistence format — `random_syscall/chain-persist.c`, `persist/minicorpus-file.c`,
-  `cmp_hints/persist.c`, `kcov/persist.c`.
+  `cmp_hints/persist.c`, `kcov/persist.c`, `utils/persist-envelope.c`.
 - **jsonl.c**: declared in `include/jsonl.h`; its only caller is `stats/rotation_event.c`, which opens the sink before fork() and lets every child inherit it.
-- **sanitiser-fd.c**: declared in `include/sanitiser-fd.h`; used by `syscalls/process/setns.c`, `syscalls/fs/path/fchdir.c` and `fchroot.c`.  An entry that calls `sanitiser_own_fd()` sets `.cleanup = cleanup_sanitiser_fd`.
+- **sanitiser-fd.c**: declared in `include/sanitiser-fd.h`; used by `syscalls/process/setns.c`, `syscalls/fs/path/fchdir.c` and `fchroot.c`.  An entry that calls `sanitiser_own_fd()` sets `.cleanup = cleanup_sanitiser_fd`.  The `post-state-magic` and `post-state-ownership` gates audit the file.
 
 ## Areas of attention
 
