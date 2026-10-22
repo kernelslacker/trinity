@@ -177,6 +177,7 @@ static const struct ioctl pidfd_ioctls[] = {
 static const struct ioctl_group pidfd_grp = {
 	.name = "pidfd",
 	.fd_test = pidfd_fd_test,
+	.fd_class = ARG_FD_PIDFD,
 	.sanitise = pidfd_sanitise,
 	.ioctls = pidfd_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(pidfd_ioctls),

@@ -15,6 +15,10 @@
 static const struct ioctl_group *grps[IOCTL_GROUPS_MAX];
 static int grps_cnt;
 
+/* The groups that set fd_class and have an fd_test to confirm the fd. */
+static const struct ioctl_group *fd_class_grps[IOCTL_GROUPS_MAX];
+static int fd_class_grps_cnt;
+
 void register_ioctl_group(const struct ioctl_group *grp)
 {
 	/* group could be empty e.g. if everything is ifdeffed out */
@@ -28,6 +32,9 @@ void register_ioctl_group(const struct ioctl_group *grp)
 
 	grps[grps_cnt] = grp;
 	ioctl_efault_register_group(grp, grps_cnt);
+
+	if (grp->fd_class != ARG_UNDEFINED && grp->fd_test != NULL)
+		fd_class_grps[fd_class_grps_cnt++] = grp;
 
 	++grps_cnt;
 }
@@ -92,6 +99,14 @@ const struct ioctl_group *get_random_ioctl_group(void)
 		return NULL;
 
 	return grps[rnd_modulo_u32(grps_cnt)];
+}
+
+const struct ioctl_group *get_random_fd_class_ioctl_group(void)
+{
+	if (fd_class_grps_cnt == 0)
+		return NULL;
+
+	return fd_class_grps[rnd_modulo_u32(fd_class_grps_cnt)];
 }
 
 /*

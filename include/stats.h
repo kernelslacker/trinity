@@ -515,19 +515,24 @@ struct stats_s {
 	/* ioctl group-match rate accounting.  Bumped from sanitise_ioctl()
 	 * in syscalls/ioctl.c to surface whether the ~62 registered ioctl
 	 * groups (~1864 gen rows) are actually being reached for fd-derived
-	 * picks (99% of the time), or if find_ioctl_group() is routinely
-	 * falling through to the "make some shit up" a3-junk branch.
+	 * picks, or if find_ioctl_group() is routinely falling through to
+	 * the "make some shit up" a3-junk branch.
 	 *  - ioctl_group_match:  fd-derived group found and dispatched.
 	 *  - ioctl_group_miss:   fd-derived lookup returned NULL; fell
 	 *                        through to the a3-junk fallback switch.
 	 *  - ioctl_group_random: the 1% get_random_ioctl_group() branch
 	 *                        was taken (independent of match/miss).
+	 *  - ioctl_group_first:  the group was drawn before the fd and an
+	 *                        fd of its class went into a1.  A draw that
+	 *                        found no such fd lands in match or miss.
 	 * A low match/(match+miss) ratio means most fds don't map to any
 	 * registered group; a starved random count means the 1% branch is
-	 * being under-sampled. */
+	 * being under-sampled; a first count well under 1/16 of the calls
+	 * means the pools of the classes it draws from are mostly empty. */
 	unsigned long ioctl_group_match;
 	unsigned long ioctl_group_miss;
 	unsigned long ioctl_group_random;
+	unsigned long ioctl_group_first;
 
 
 	/* rxrpc_key_install accounting.  See stats/subsys/rxrpc_key_install.h. */

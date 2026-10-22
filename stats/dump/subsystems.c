@@ -308,6 +308,9 @@ void dump_stats_fuzzer_subsystems(void)
 	if (shm->stats.ioctl_group_random)
 		stat_row("ioctl", "group_random",
 			 shm->stats.ioctl_group_random);
+	if (shm->stats.ioctl_group_first)
+		stat_row("ioctl", "group_first",
+			 shm->stats.ioctl_group_first);
 
 	if (shm->stats.diag.mmap_size_clamped)
 		stat_row("mmap", "mmap_size_clamped",

@@ -3,7 +3,9 @@
  */
 #include <linux/ioctl.h>
 #include <linux/major.h>
+#include <sys/stat.h>
 #include "arch.h"
+#include "fd.h"
 #include "ioctls.h"
 #include "maps.h"
 #include "random.h"
@@ -11,6 +13,42 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+
+/*
+ * One call in this many draws the group before the fd.  find_ioctl_group()
+ * starts from the fd, so a group whose fds are a small share of the pool
+ * gets a small share of the calls; this is the way round that.  It runs
+ * after the random-group draw, which keeps its one in a hundred, and
+ * only the groups that name a typed-fd class can take it.  A sixteenth
+ * moves about 6% of the calls off the fd pick: enough for
+ * ioctl_group_first to show whether it pays off, few enough that the
+ * rest keep the distribution they have.
+ */
+#define IOCTL_GROUP_FIRST_ODDS	16
+
+/*
+ * Draw a group that names an fd class and put an fd of that class in a1.
+ * NULL leaves the call to the fd pick.  get_typed_fd() hands back any fd
+ * when its pool is empty, so the group has to claim the one it returns;
+ * a protected fd is refused as gen_arg_fd() refuses it.
+ */
+static const struct ioctl_group *pick_group_first(struct syscallrecord *rec)
+{
+	const struct ioctl_group *grp = get_random_fd_class_ioctl_group();
+	struct stat st;
+	int fd;
+
+	if (grp == NULL)
+		return NULL;
+
+	fd = get_typed_fd(grp->fd_class);
+	if (fd < 0 || fd_is_protected(fd) || fstat(fd, &st) < 0 ||
+	    grp->fd_test(fd, &st) != 0)
+		return NULL;
+
+	rec->a1 = (unsigned long) fd;
+	return grp;
+}
 
 static void sanitise_ioctl(struct syscallrecord *rec)
 {
@@ -20,6 +58,11 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 	if (ONE_IN(100)) {
 		grp = get_random_ioctl_group();
 		__atomic_add_fetch(&shm->stats.ioctl_group_random, 1,
+				   __ATOMIC_RELAXED);
+	} else if (ONE_IN(IOCTL_GROUP_FIRST_ODDS) &&
+		   (grp = pick_group_first(rec)) != NULL) {
+		fd_claimed = true;
+		__atomic_add_fetch(&shm->stats.ioctl_group_first, 1,
 				   __ATOMIC_RELAXED);
 	} else {
 		grp = find_ioctl_group(rec->a1);

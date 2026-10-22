@@ -39,6 +39,12 @@ struct ioctl_group {
 	/* Optional routine that should return 0 if the file descriptor is
 	 * valid for this group. */
 	int (*fd_test)(int fd, const struct stat *);
+
+	/* Typed-fd class of the fds fd_test claims, or ARG_UNDEFINED.  A
+	 * group that names one, and has an fd_test, can be drawn before the
+	 * fd, and the fd then comes from get_typed_fd() (see
+	 * sanitise_ioctl()). */
+	enum argtype fd_class;
 };
 
 void register_ioctl_group(const struct ioctl_group *);
@@ -46,6 +52,10 @@ void register_ioctl_group(const struct ioctl_group *);
 const struct ioctl_group *find_ioctl_group(int fd);
 
 const struct ioctl_group *get_random_ioctl_group(void);
+
+/* Like get_random_ioctl_group(), among the groups that set fd_class and
+ * have an fd_test. */
+const struct ioctl_group *get_random_fd_class_ioctl_group(void);
 
 void pick_random_ioctl(const struct ioctl_group *, struct syscallrecord *rec);
 

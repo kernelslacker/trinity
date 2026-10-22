@@ -53,6 +53,7 @@ static void perf_event_sanitise(const struct ioctl_group *grp, struct syscallrec
 
 static const struct ioctl_group perf_event_grp = {
 	.fd_test = perf_event_fd_test,
+	.fd_class = ARG_FD_PERF,
 	.sanitise = perf_event_sanitise,
 	.ioctls = perf_event_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(perf_event_ioctls),

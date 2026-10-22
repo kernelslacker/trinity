@@ -206,6 +206,7 @@ static const struct ioctl socket_ioctls[] = {
 static const struct ioctl_group socket_grp = {
 	.name = "[socket]",
 	.fd_test = socket_fd_test,
+	.fd_class = ARG_FD_SOCKET,
 	.sanitise = pick_random_ioctl,
 	.ioctls = socket_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(socket_ioctls),

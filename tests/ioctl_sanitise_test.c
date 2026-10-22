@@ -4,15 +4,21 @@
  * fd, and for those alone: a cmd that writes the fd into its arg
  * returns 0.  sanitise_ioctl() withdraws the claim when the group was
  * drawn without regard to the fd, since the cmd then reaches a driver
- * that owns the return value.
+ * that owns the return value.  One call in sixteen draws the group
+ * first and swaps in an fd of its class, when there is one the group
+ * claims and no stray fd is protected.
  */
 
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "debug.h"		/* BUG */
 #include "fake_ioctls.h"
+#include "fd.h"			/* get_typed_fd */
 #include "ioctls.h"		/* struct ioctl_group */
 #include "objects.h"		/* get_objhead */
 #include "random.h"		/* rand64 */
@@ -25,6 +31,7 @@
 
 #define ROUNDS		3
 #define PICK_ROUNDS	4000
+#define FIRST_ROUNDS	8000
 
 /*
  * The cmds whose return value is the new fd, by table name.  Each was
@@ -216,6 +223,160 @@ static void withdrawn_off_the_fd(void)
 		BUG("ioctl rettype: a group pick was never exercised");
 }
 
+/*
+ * The group-first draw.  The class group claims the one fd in
+ * class_claims, publishes RET_FD like the groups that return an fd, and
+ * records the a1 its sanitiser ran with.  get_typed_fd() answers
+ * typed_fd whatever the class, as it does when the pool is empty and it
+ * falls back to an fd of any kind.
+ */
+static bool class_registered;
+static int typed_fd = -1;
+static int class_claims = -1;
+static enum argtype class_asked;
+static unsigned int class_runs;
+static unsigned long class_a1;
+
+static int class_fd_test(int fd, const struct stat *st)
+{
+	(void)st;
+	return fd == class_claims ? 0 : -1;
+}
+
+static void class_sanitise(const struct ioctl_group *grp,
+			   struct syscallrecord *rec)
+{
+	(void)grp;
+	class_runs++;
+	class_a1 = rec->a1;
+	rec->rettype = RET_FD;
+}
+
+static const struct ioctl_group class_grp = {
+	.name = "classed",
+	.fd_test = class_fd_test,
+	.fd_class = ARG_FD_PIDFD,
+	.sanitise = class_sanitise,
+};
+
+const struct ioctl_group *get_random_fd_class_ioctl_group(void)
+{
+	return class_registered ? &class_grp : NULL;
+}
+
+int get_typed_fd(enum argtype type)
+{
+	class_asked = type;
+	return typed_fd;
+}
+
+/* The a1 the generator left, and what a call that does not take the
+ * group-first pick must still carry. */
+#define GENERATED_FD	7
+
+/*
+ * Run FIRST_ROUNDS calls and return how many took the group-first pick,
+ * leaving the random-group count in @random.  A call that took it has
+ * the typed fd in a1 when the class group's sanitiser runs, and keeps
+ * its RET_FD; any other call keeps the a1 it started with.
+ */
+static unsigned long run_first_picks(unsigned long *random)
+{
+	static struct syscallrecord rec;
+	unsigned long first = 0;
+	int i;
+
+	*random = 0;
+	for (i = 0; i < FIRST_ROUNDS; i++) {
+		unsigned long first0 = shm->stats.ioctl_group_first;
+		unsigned long random0 = shm->stats.ioctl_group_random;
+		unsigned int runs = class_runs;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = GENERATED_FD;
+		syscall_ioctl.sanitise(&rec);
+
+		*random += shm->stats.ioctl_group_random - random0;
+		if (shm->stats.ioctl_group_first == first0) {
+			if (rec.a1 != GENERATED_FD)
+				BUG("ioctl group first: a call off the group-first pick lost its a1");
+			continue;
+		}
+
+		first++;
+		if (shm->stats.ioctl_group_first != first0 + 1)
+			BUG("ioctl group first: one call counted twice");
+		if (class_runs != runs + 1)
+			BUG("ioctl group first: the drawn group did not run");
+		if (class_a1 != (unsigned long) typed_fd ||
+		    rec.a1 != (unsigned long) typed_fd)
+			BUG("ioctl group first: the class fd did not reach a1 before the group ran");
+		if (rec.rettype != RET_FD)
+			BUG("ioctl group first: a group drawn with its fd lost its RET_FD");
+	}
+	return first;
+}
+
+/* Of FIRST_ROUNDS calls, one in a hundred draws a group at random and
+ * one in sixteen of the rest draws first: about 6%.  The bounds sit many
+ * standard deviations out. */
+static void group_first_pick(void)
+{
+	unsigned long first, random;
+	int fd = open("/dev/null", O_RDONLY);
+
+	if (fd < 0)
+		BUG("ioctl group first: cannot open /dev/null");
+	fd_claimed = false;
+	class_registered = true;
+
+	/* A claimed fd of the class: the pick runs at its rate, asks for the
+	 * group's class, and the random draw keeps its own. */
+	typed_fd = fd;
+	class_claims = fd;
+	class_asked = ARG_UNDEFINED;
+	first = run_first_picks(&random);
+	if (first < FIRST_ROUNDS * 4 / 100 || first > FIRST_ROUNDS * 8 / 100) {
+		fprintf(stderr, "%lu of %d calls drew the group first\n",
+			first, FIRST_ROUNDS);
+		BUG("ioctl group first: the pick is not taken one call in sixteen");
+	}
+	if (class_asked != ARG_FD_PIDFD)
+		BUG("ioctl group first: the fd was not asked for by the group's class");
+	if (random < FIRST_ROUNDS * 4 / 1000 || random > FIRST_ROUNDS * 18 / 1000) {
+		fprintf(stderr, "%lu of %d calls drew a group at random\n",
+			random, FIRST_ROUNDS);
+		BUG("ioctl group first: the random-group draw lost its one in a hundred");
+	}
+
+	/* No fd of the class: the lookup returns -1. */
+	typed_fd = -1;
+	if (run_first_picks(&random) != 0)
+		BUG("ioctl group first: picked a group with no fd of its class");
+
+	/* An fd the group does not claim, as when the class pool is empty
+	 * and the lookup hands back any fd. */
+	typed_fd = fd;
+	class_claims = -1;
+	if (run_first_picks(&random) != 0)
+		BUG("ioctl group first: picked an fd its group does not claim");
+
+	/* An fd the group claims that must not be fuzzed. */
+	typed_fd = STDERR_FILENO;
+	class_claims = STDERR_FILENO;
+	if (run_first_picks(&random) != 0)
+		BUG("ioctl group first: picked a protected fd");
+
+	/* No group names a class. */
+	typed_fd = fd;
+	class_claims = fd;
+	class_registered = false;
+	if (run_first_picks(&random) != 0)
+		BUG("ioctl group first: picked a group when none names a class");
+
+	close(fd);
+}
+
 void ioctl_sanitise_self_check(void);
 void ioctl_sanitise_self_check(void)
 {
@@ -224,4 +385,5 @@ void ioctl_sanitise_self_check(void)
 
 	groups_publish_only_fd_cmds();
 	withdrawn_off_the_fd();
+	group_first_pick();
 }

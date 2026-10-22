@@ -84,6 +84,7 @@ static const struct ioctl epoll_ioctls[] = {
 static const struct ioctl_group epoll_grp = {
 	.name = "epoll",
 	.fd_test = epoll_fd_test,
+	.fd_class = ARG_FD_EPOLL,
 	.sanitise = epoll_sanitise,
 	.ioctls = epoll_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(epoll_ioctls),
