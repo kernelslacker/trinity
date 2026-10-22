@@ -229,7 +229,7 @@ static const struct faultfn write_faultfns[] = {
  * for genuine unrelated faults.
  *
  * volatile / sigjmp_buf rationale matches the equivalent statics in
- * mm/fault-read.c and childops/mm/madvise-pattern-cycler.c: ISO C
+ * mm/fault-read.c and childops/mm/pagecache-canary-check.c: ISO C
  * 7.13.2.1 only guarantees post-longjmp values for objects with
  * volatile-qualified type, and GCC's -Wclobbered analysis flags
  * non-volatile locals as possibly clobbered through the wrap.

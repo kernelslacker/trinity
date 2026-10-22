@@ -15,11 +15,6 @@
  * family's command dispatch table where bugs actually live, instead of
  * bouncing off an unknown-family fast-reject as the legacy random-id
  * path does.
- *
- * The runtime-discovery childop in childops/net/netlink/genetlink-fuzzer.c does
- * its own discovery for the ops list it caches per family; that path
- * is intentionally separate so the two don't share fragile state and
- * each can evolve at its own pace.
  */
 
 #include <errno.h>
@@ -509,8 +504,6 @@ static struct genl_family_grammar *match_response(const char *name,
  * FAMILY_ID, and dispatch to match_response().  Skips entries lacking
  * either field.  A family we register also gets the ops it lists
  * recorded, after the match, because the list can precede the name.
- * Mirrors the parser in childops/net/netlink/genetlink-fuzzer.c —
- * intentionally separate so the two paths don't share fragile state.
  */
 static void parse_family_response(const struct nlmsghdr *nlh)
 {

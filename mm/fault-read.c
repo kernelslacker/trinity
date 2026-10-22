@@ -237,11 +237,10 @@ static bool read_clamp_size(struct map *map, struct map *out)
  * for genuine unrelated faults.
  *
  * volatile / sigjmp_buf rationale matches the equivalent statics in
- * childops/mm/madvise-pattern-cycler.c and childops/pagecache-canary-
- * check.c: ISO C 7.13.2.1 only guarantees post-longjmp values for
- * objects with volatile-qualified type, and GCC's -Wclobbered
- * analysis flags non-volatile locals as possibly clobbered through
- * the wrap.
+ * mm/fault-write.c and childops/mm/pagecache-canary-check.c: ISO C
+ * 7.13.2.1 only guarantees post-longjmp values for objects with
+ * volatile-qualified type, and GCC's -Wclobbered analysis flags
+ * non-volatile locals as possibly clobbered through the wrap.
  */
 static sigjmp_buf read_walk_jmp;
 static volatile uintptr_t read_walk_lo;

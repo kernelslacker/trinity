@@ -45,8 +45,7 @@ static unsigned long semctl_cmds[] = {
 
 /*
  * union semun is glibc-private and not declared in any header; callers
- * must provide their own per the semctl(2) man page.  Mirrors the
- * shape childops/recipe/runner.c uses.
+ * must provide their own per the semctl(2) man page.
  */
 union trinity_semun {
 	int val;

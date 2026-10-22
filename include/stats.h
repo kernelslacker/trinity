@@ -162,11 +162,6 @@ static inline bool topo_pair_unpack(uint64_t e,
  */
 #define ADAPT_BUDGET_ZERO_STREAK	4
 
-/* MAX_RECIPES lives in stats/subsys/recipe.h (used by struct
- * recipe_stats::completed_per[]).
- * MAX_IOURING_RECIPES lives in stats/subsys/iouring_recipes.h (used by
- * struct iouring_recipes_stats::completed_per[]). */
-
 /* Coarse syscall categories used by the dispatch-time histogram.  Order
  * is also the dump order; SYSCAT_OTHER is the catch-all for anything not
  * matched by the prefix table in stats/dump/syscall.c. */

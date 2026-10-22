@@ -281,11 +281,10 @@ static bool obj_pool_slot_check(struct object *obj, enum objecttype type)
  * SEGV/SIGBUS at fixed-pattern addresses.
  *
  * Legitimate allocations top out at GB(1) (mapping_sizes[8]
- * in maps-initial.c, pick_size in mmap-lifecycle.c).  Cap at
- * GB(4) so the live 1GB tier passes cleanly while ASCII
- * patterns and stomped pointers (which land in the TB+ range)
- * are rejected.  Zero is also bogus — a real mapping always
- * has at least one page.
+ * in maps-initial.c).  Cap at GB(4) so the live 1GB tier passes cleanly
+ * while ASCII patterns and stomped pointers (which land in the TB+
+ * range) are rejected.  Zero is also bogus — a real mapping always has
+ * at least one page.
  */
 static bool map_size_in_range(struct object *obj,
 			      enum objecttype type,

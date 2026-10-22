@@ -81,8 +81,7 @@ unsigned int load_scratch_block_count(void)
  * filesystem size (mkfs.ext4 rejects much smaller); upper bound keeps
  * the total host disk burn proportional even when the day-1 layout
  * grows toward SCRATCH_BLOCK_MAX entries.  Power-of-two so loop
- * device internal rounding is a no-op (blkdev-lifecycle-race.c relies
- * on the same shape to keep its per-iter window predictable).
+ * device internal rounding is a no-op.
  */
 #define SCRATCH_IMG_MIN_SHIFT	22U		/* 4 MiB */
 #define SCRATCH_IMG_MAX_SHIFT	25U		/* 32 MiB */

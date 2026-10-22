@@ -271,10 +271,7 @@ static const struct path_rule deny_rules[] = {
 	/*
 	 * tracing / dynamic-debug control — mutating filter, enable or
 	 * dynamic_debug/control nodes globally reprograms the host tracers
-	 * and drowns dmesg for every workload on the box.  The dedicated
-	 * tracefs_fuzzer childop drives these deliberately from a curated
-	 * list; procfs_writer stumbling into the same tree at random
-	 * poisons that fuzzer's signal and the host's tracing.
+	 * and drowns dmesg for every workload on the box.
 	 */
 	{ "/sys/kernel/debug/dynamic_debug/", MATCH_PREFIX, "trace" },
 	{ "/sys/kernel/tracing/",             MATCH_PREFIX, "trace" },

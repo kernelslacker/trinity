@@ -173,14 +173,14 @@ static void post_mprotect(struct syscallrecord *rec)
 	 * the cached invariant — e.g. a sub-range upgrade from PROT_NONE
 	 * -> PROT_RW would leave map->prot claiming PROT_WRITE while most
 	 * pages are still PROT_NONE.  get_map_with_prot() trusts m->prot,
-	 * hands the entry to memory_pressure / iouring_* /
-	 * madvise_pattern_cycler, and the per-page write loop SEGV_ACCERRs
-	 * on the first un-upgraded page.  Mirror the conservative AND from
-	 * mprotect_split (childops/mm/mprotect-split.c): for a whole-mapping
-	 * mprotect take the new prot exactly; for any sub-range, intersect
-	 * with the existing invariant so we only ever drop bits, never add
-	 * them.  False-negatives (skipping a mapping that still has writable
-	 * pages somewhere) are acceptable; false-positives crash the child.
+	 * so a consumer that draws the entry and writes it page by page
+	 * SEGV_ACCERRs on the first un-upgraded page.  Keep the
+	 * conservative AND: for a whole-mapping mprotect take the new
+	 * prot exactly; for any sub-range, intersect with the existing
+	 * invariant so we only ever drop bits, never add them.
+	 * False-negatives (skipping a mapping that still has writable
+	 * pages somewhere) are acceptable; false-positives crash the
+	 * child.
 	 */
 	if (snap->addr == (unsigned long)map->ptr && snap->len == map->size)
 		map->prot = snap->prot;

@@ -27,11 +27,10 @@
  * leader is destroyed while one of its members is still open, the kernel
  * detaches the member from the group and re-promotes it to a standalone
  * orphan event before the member's own close arrives.  That extra
- * promote/teardown round-trip is wasted work and is not what
- * childops/misc/perf-event-chains.c models when it explicitly closes members
- * before the leader.  Walk the rest of the pool first and pre-close any
- * members of this fd, invalidating their fd field so the outer loop's
- * later destructor invocation skips its own close().
+ * promote/teardown round-trip is wasted work, so walk the rest of the
+ * pool first and pre-close any members of this fd, invalidating their
+ * fd field so the outer loop's later destructor invocation skips its
+ * own close().
  */
 static void perffd_destructor(struct object *obj)
 {

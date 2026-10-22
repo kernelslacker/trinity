@@ -20,9 +20,9 @@
  *      copy_file_range-out/ftruncate/fallocate against an O_RDONLY
  *      fd returns EBADF before reaching any data path.
  *
- * The verifier childop pagecache_canary_check (childops/pagecache-
- * canary-check.c) consumes this pool; see its top comment for the
- * read-side coverage matrix.
+ * The verifier childop pagecache_canary_check
+ * (childops/mm/pagecache-canary-check.c) consumes this pool; see its
+ * top comment for the read-side coverage matrix.
  *
  * This is the Phase 1 baseline.  Phase 2 (directed splice/copy-fail/
  * crypto setup childops aimed at the canary pool) lands separately.

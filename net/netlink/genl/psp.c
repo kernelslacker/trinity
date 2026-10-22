@@ -31,9 +31,7 @@
  *
  * Header gating: include/kernel/psp.h wraps the upstream UAPI header
  * with per-symbol #ifndef shims so build hosts whose installed uapi
- * predates this family still compile.  Shim is shared with
- * childops/net/psp-key-rotate.c -- additive only, leaves symbols the
- * childop already depends on untouched.
+ * predates this family still compile.
  */
 
 #include "kernel/psp.h"

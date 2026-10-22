@@ -418,11 +418,9 @@ void unlock(lock_t *lk)
  * A grandchild's lock() call would record the parent's pid as owner, which
  * would misfire the self-deadlock guard in lock() and prevent
  * force_bust_lock() from recovering an orphan held by a dead grandchild.
- * Audited: no grandchild currently reaches lock() -- neither
+ * Audited: no grandchild currently reaches lock() -- the
  * userns_run_in_ns() throwaway grandchildren (dispatch/syscall-exec.c)
- * nor bare-fork() race childops (childops/net/<name>-race.c,
- * recipe/supervisor.c, etc.) have lock() call sites in their worker
- * bodies.
+ * have no lock() call sites in their worker bodies.
  *
  * Confirm the holder is truly dead before clearing.  Releasing a lock
  * owned by a live process would let two waiters enter the critical

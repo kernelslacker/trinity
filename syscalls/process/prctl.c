@@ -181,10 +181,8 @@ static struct sock_fprog *do_set_seccomp(struct syscallrecord *rec)
 	 * before the post handler can run.  This is the same self-break
 	 * hazard that sanitise_set_syscall_user_dispatch() and
 	 * sanitise_set_tsc() guard against by pinning their respective
-	 * modes.  Strict-mode coverage is provided instead by
-	 * recipe_seccomp_strict_fork() in childops/recipe/supervisor.c,
-	 * which uses a disposable forked child where the death is
-	 * expected and the kernel's strict-mode exit path is the point.
+	 * modes.  The strict-mode path stays reachable through
+	 * seccomp(SECCOMP_SET_MODE_STRICT) in syscalls/process/seccomp.c.
 	 */
 	rec->a2 = SECCOMP_MODE_FILTER;
 	rec->a3 = (unsigned long) optval;

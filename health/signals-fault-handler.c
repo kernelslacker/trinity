@@ -67,10 +67,9 @@ volatile sig_atomic_t cmp_field_read_active;
 
 /*
  * Recovery point for vma_split_storm's touch_random_page() one-byte
- * store.  See include/signals.h and childops/mm/vma-split-storm.c::
- * touch_random_page() for the full contract.  Definition lives here
- * so the storage for the jmp_buf is colocated with the handler that
- * reads vma_split_storm_touch_active.
+ * store.  See include/signals.h for the full contract.  Definition
+ * lives here so the storage for the jmp_buf is colocated with the
+ * handler that reads vma_split_storm_touch_active.
  *
  * Inherited COW-private into every forked child; never touched by the
  * parent.  Plain file-scope storage rather than __thread because

@@ -82,17 +82,17 @@ static int btrfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	bool seen_btrfs = false;
 
 	/*
-	 * Box-safety + isolation gate (mirror childops/fs/umount-race.c's
-	 * mnt_ready + scratch_block_ready double-check).  When the parent
-	 * latched a private mount namespace AND the scratch_block pool
-	 * stood up AND it published a btrfs-typed entry, the only block
-	 * fd this group is allowed to claim is that entry's loop fd --
-	 * never a host disk node, never an OBJ_FD_TESTFILE plain file
-	 * (those live in trinity's cwd, which on a typical fuzz box sits
-	 * on the host's real-root btrfs filesystem).  When any latch is
-	 * false, or no btrfs entry is published in the pool, fall
-	 * through to today's OBJ_FD_TESTFILE walk byte-for-byte so the
-	 * non-root / non-isolated dev path is unchanged.
+	 * Box-safety + isolation gate (mnt_ready + scratch_block_ready
+	 * double-check).  When the parent latched a private mount
+	 * namespace AND the scratch_block pool stood up AND it
+	 * published a btrfs-typed entry, the only block fd this group
+	 * is allowed to claim is that entry's loop fd -- never a host
+	 * disk node, never an OBJ_FD_TESTFILE plain file (those live in
+	 * trinity's cwd, which on a typical fuzz box sits on the host's
+	 * real-root btrfs filesystem).  When any latch is false, or no
+	 * btrfs entry is published in the pool, fall through to today's
+	 * OBJ_FD_TESTFILE walk byte-for-byte so the non-root /
+	 * non-isolated dev path is unchanged.
 	 */
 	isolated = __atomic_load_n(&shm->isolation.mnt_ready,
 				   __ATOMIC_RELAXED) &&

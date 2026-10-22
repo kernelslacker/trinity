@@ -37,10 +37,6 @@
  * never sees it on this path, so no post-hoc undo is needed.  MCL_CURRENT
  * and MCL_ONFAULT lock only existing pages and do not block future
  * mmaps, so they stay in.
- *
- * The mlock_pressure childop applies the same source-gate around its
- * own MCL_FUTURE OR-in (childops/mm/mlock-pressure.c) -- when adjusting
- * one path, mirror the other.
  */
 static unsigned long mlockall_flags[] = {
 #ifndef __SANITIZE_ADDRESS__

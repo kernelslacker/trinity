@@ -2,11 +2,11 @@
 
 /*
  * Wrapper around <linux/l2tp.h> that ships #ifndef-guarded fallbacks
- * for the L2TP UAPI values touched by childops/net/l2tp-ifname-race.c.
- * The real header is pulled in behind __has_include so stripped
- * sysroots that don't ship <linux/l2tp.h> still compile; per-symbol
- * #ifndef fallbacks then supply any missing values.  The numbering
- * below matches include/uapi/linux/l2tp.h and is stable UAPI.
+ * for the L2TP UAPI values used by net/netlink/genl/l2tp.c.  The real
+ * header is pulled in behind __has_include so stripped sysroots that
+ * don't ship <linux/l2tp.h> still compile; per-symbol #ifndef fallbacks
+ * then supply any missing values.  The numbering below matches
+ * include/uapi/linux/l2tp.h and is stable UAPI.
  */
 #if __has_include(<linux/l2tp.h>)
 #include <linux/l2tp.h>

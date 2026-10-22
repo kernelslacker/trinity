@@ -15,7 +15,7 @@
  *     readv    readv() with a small iovec
  *     mmap     mmap(PROT_READ) + memcmp, guarded by sigsetjmp +
  *              per-op SIGBUS handler (mirrors the pattern in
- *              childops/mm/madvise-pattern-cycler.c)
+ *              mm/fault-read.c)
  *     splice   splice() canary -> pipe, read() the pipe end
  *     sendfile sendfile() canary -> tmpfile, read tmpfile back
  *
@@ -87,11 +87,10 @@ enum read_mode {
  * around the memcmp loop; the handler longjmps back here on a
  * SIGBUS whose si_addr lands inside the active mmap range.
  *
- * volatile / sigjmp_buf rationale matches childops/madvise-
- * pattern-cycler.c: ISO C 7.13.2.1 only guarantees post-longjmp
- * values for objects with volatile-qualified type, and GCC's
- * -Wclobbered analysis flags non-volatile locals as possibly
- * clobbered through the wrap.
+ * volatile / sigjmp_buf rationale matches mm/fault-read.c: ISO C
+ * 7.13.2.1 only guarantees post-longjmp values for objects with
+ * volatile-qualified type, and GCC's -Wclobbered analysis flags
+ * non-volatile locals as possibly clobbered through the wrap.
  */
 static sigjmp_buf canary_sigbus_jmp;
 static volatile uintptr_t canary_sigbus_lo;
