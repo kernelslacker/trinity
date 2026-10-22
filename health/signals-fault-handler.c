@@ -18,11 +18,6 @@
  * calls to the post-gate paths without careful review of the deadlock
  * class documented in signals-async-safe.c::write_backtrace_raw_pcs().
  *
- * SERIALIZE with the signal() → sigaction() migrations at
- * the three escalation/default-restore sites in sighandler(),
- * escalate_fault(), and main_fault_handler() are that task's
- * territory; do not touch them here.
- *
  * See Documentation/signals.md for the full contract.
  */
 #include <setjmp.h>	/* sigjmp_buf, siglongjmp */
