@@ -15,7 +15,7 @@ repeatedly calls `main_loop()`; none of this fuzzes anything itself.
 | params/ | CLI option parsing and the global tunables/flags the rest of the codebase reads (targeting, `--childop`, richness levers). Split by concern -- see the subdirectory breakdown below. |
 | main/loop.c | `main_loop()` driver: per-tick phase sequencing (drain → stop-checks → periodic surfaces → fork-replace), epoch reset (`reset_epoch_state`), `panic()` |
 | main/reap.c | Reap core: `reap_child()`, `reap_dead_kids()` `waitpid(-1)` drain, `kill_all_kids()`, `get_pid_state()`, signal-status dispatch (`handle_children()`) |
-| main/reap-watchdog.c | Stuck-child watchdog: `is_child_making_progress()`, SIGKILL escalation, wedge accounting, `stall_genocide()`, `check_children_progressing()` |
+| main/reap-watchdog.c | Stuck-child watchdog: `is_child_making_progress()`, SIGKILL escalation, stuck-fd eviction, wedge accounting, `stall_genocide()`, `check_children_progressing()` |
 | main/reap-dstate.c | Bounded `/proc` readers for D-state forensics: wchan/stack/syscall/fdinfo dumps, epoll/select fd topology, `dstate_diag_budget_take()` diagnostic budget |
 | main/reap-zombie.c | Deferred slot reuse until the kernel releases a D-state or stopped child: `register_zombie_slot()`, `process_zombie_pending()`, `find_free_childno()`, quarantine accounting |
 | main/reap-fastdie.c | Fork-die-respawn busy-loop detector: `record_reap()` ring, `reap_entry_is_fast_die()`, `bail_fast_die_loop()` |
@@ -64,12 +64,16 @@ API surface.
   `spawn_child()` forks via `self_cgroup_fork_into_workload()`, writes
   `pids[childno]` last (release store) so the child spins in `init_child()`
   until its own pid is visible.
-- **No SIGCHLD handler**: reaping is pure polling. `reap_dead_kids()` does
-  `waitpid(-1, WNOHANG)` in a bounded loop (cap 64) each tick, because
-  SIGCHLD is edge-triggered and a per-slot `waitpid()` walk can fall behind
-  when multiple children die in one tick (observed: 22 stuck `<defunct>`
-  under a crash storm). A second pass does `kill(pid, 0)`+ESRCH to catch
-  slots the first pass's bookkeeping missed.
+- **No SIGCHLD handler**: reaping is pure polling. Each tick
+  `handle_children()` drains with `waitpid(-1, WNOHANG)` in a bounded loop
+  (cap 64), because SIGCHLD is edge-triggered and a per-slot `waitpid()`
+  walk can fall behind when multiple children die in one tick.
+  `reap_dead_kids()`, the housekeeping and shutdown path, runs the same
+  drain and then a second pass for slots the drain's bookkeeping missed: it
+  asks the slot's `/proc/<pid>/stat` fd, opened at spawn and so pinned to
+  the task rather than the pid number, whether the task is gone, and falls
+  back to `kill(pid, 0)`+ESRCH only for a slot with no fd. Any other
+  `kill()` errno is logged and leaves the slot alone.
 - **Two-tier dead-slot handling**: a normally-exiting/signaled child goes
   through `reap_child()` immediately (clears `pids[i]`, decrements
   `running_childs`, tears down pre-crash ring / bug-backtrace / fault
@@ -84,9 +88,14 @@ API surface.
   counted toward the `EXIT_KERNEL_STUCK` threshold.
 - **Stuck-child escalation**: `is_child_making_progress()` compares
   `child->tp` (last progress timestamp) each tick; at 30s idle it dumps a
-  D-state diagnostic snapshot (wchan/stack/fdinfo, epoll/select fd
-  topology) once and sends SIGKILL; if still alive at 40s it repeats
-  SIGKILL every tick. `kill_count >= 10` routes the slot into
+  D-state diagnostic snapshot (wchan/stack/fdinfo, epoll/select fd topology)
+  once and sends SIGKILL, then evicts the fds the stuck syscall held from
+  the object pool, with or without `-D` (the in-child alarm eviction never
+  ran for a wedge that got this far). Removing the object closes the
+  parent's copy, and `close()` calls the file's `->flush` (FUSE, NFS and
+  CIFS flush through the server), so the eviction runs after the kill and is
+  skipped for a task in D state, which `-D` says. If still alive at 40s it
+  repeats SIGKILL every tick. `kill_count >= 10` routes the slot into
   zombie-pending regardless of D/S state, since SIGKILL cannot preempt
   D-state. If every running child is simultaneously stalled,
   `stall_genocide()` randomly SIGKILLs ~1/4 of the fleet to break a
@@ -119,12 +128,12 @@ API surface.
 
 ## Key design decisions
 
-1. **Poll, don't trap** — SIGCHLD is never handled by a signal handler in
-   the parent (grep confirms zero `signal(SIGCHLD, ...)` install sites
-   outside children/childops); all reaping is `waitpid(WNOHANG)` polling
-   from `main_loop`'s tick. This sidesteps async-signal-safety entirely for
-   the reap path at the cost of edge-triggered-signal loss, which is why
-   `reap_dead_kids()` drains via `waitpid(-1)` rather than one pid at a time.
+1. **Poll, don't trap** — SIGCHLD has no handler in the parent
+   (`setup_main_signals()` leaves it at `SIG_DFL`); all reaping is
+   `waitpid(WNOHANG)` polling from `main_loop`'s tick. This sidesteps
+   async-signal-safety entirely for the reap path at the cost of
+   edge-triggered-signal loss, which is why the drain uses `waitpid(-1)`
+   rather than one pid at a time.
 2. **Slot reuse gated on kernel teardown, not just `pids[i]==EMPTY`** —
    `find_free_childno()` requires both `pids[i]` and `zombie_pids[i]`
    empty. This exists specifically to close a PID-reuse-adjacent hazard:
@@ -162,7 +171,12 @@ API surface.
    skips them all; once its spawns have failed for 5s straight
    (`SPAWN_STALL_OPEN_S`, timed across calls and restarted by a
    `fork_children()` spawn that succeeds and by the epoch reset) it
-   opens the barrier anyway and logs once.
+   opens the barrier anyway and logs once.  A failed spawn that is really
+   the run stopping (`spawn_child()` panics `EXIT_NO_FDS` near the fd
+   limit, or `exit_reason` / `spawn_no_more` is set mid-retry) ends both
+   retry loops at once, uncounted, instead of being retried as a fork
+   failure, and both loops check again after each backoff sleep, so a
+   stop that lands mid-sleep forks nothing further.
 6. **One-shot forensic snapshots on the bail path** — fork-failure,
    fast-die-loop, and D-state-stuck all have latched (`static bool
    emitted`) one-time dumps (`/proc/self/status`, cgroup pids/memory.events,
@@ -219,14 +233,14 @@ API surface.
 
 ## Areas of attention
 
-1. **The reap cluster's responsibility span** (6 files, ~2,500 LOC) — shm
+1. **The reap cluster's responsibility span** (6 files, ~2,700 LOC) — shm
    corruption sanity, normal reap, zombie/D-state deferral, watchdog
    escalation, D-state forensic dumping (5 separate bounded `/proc` readers),
    fast-die-loop ring detection, and signal-status dispatch. Each now has its
    own translation unit, so a change to one sub-concern (e.g. the D-state
    diagnostic format) lands in one file; what crosses the boundary is
    declared in `main/reap-internal.h`. The largest files in main/ are
-   `spawn.c` (773), `loop.c` (714) and `trinity-warmstart.c` (685).
+   `spawn.c` (846), `loop.c` (816) and `reap-watchdog.c` (807).
 2. **Slot-reuse correctness is load-bearing and documented but easy to
    violate on a future edit** — `find_free_childno()`'s double-empty check
    (`pids[i]` AND `zombie_pids[i]`) is the sole guard against the
@@ -248,12 +262,20 @@ API surface.
    `exit_reason`; `check_main_loop_stops()` explicitly documents one such
    race (targeted-mode depletion racing the fast-die ring) that required a
    dedicated early-detection branch to avoid a false corruption panic.
-5. **No signal-handler races in this layer** — verified there is no
-   SIGCHLD (or other) handler installed in the parent process; all reap
-   and watchdog logic runs synchronously inside `main_loop`'s tick, so the
-   classic async-signal-safety concerns for a fuzzer's process reaper do
-   not apply here. The tradeoff is polling latency (up to one tick, plus
-   the 25ms idle sleep) between a child dying and the parent noticing.
+5. **No signal-handler races in this layer** — `setup_main_signals()`
+   installs two handlers in the parent, and neither touches reap or
+   watchdog state. `main_stop_handler` (SIGINT/SIGTERM) only decides a
+   stop reason and calls `panic()`, two atomic stores, so its effect
+   arrives as one more deferred stop (Key design decision 4).
+   `main_fault_handler` (the fault signals) reports a real fault and
+   re-raises it, and ignores one a child sent. SIGCHLD stays at
+   `SIG_DFL`, and the signals children can send the parent (SIGHUP,
+   SIGUSR1/2, SIGALRM, SIGPIPE, the RT range, ...) are ignored. All reap
+   and watchdog logic runs synchronously inside `main_loop`'s tick, so
+   the classic async-signal-safety concerns for a fuzzer's process reaper
+   do not apply here. The tradeoff is polling latency (up to one tick,
+   plus the 25ms idle sleep) between a child dying and the parent
+   noticing.
 
 ## Summary
 
