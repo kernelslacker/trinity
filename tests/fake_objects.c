@@ -12,6 +12,19 @@
 #include "name-pool.h"
 #include "objects.h"
 
+struct object *alloc_object(void)
+{
+	fprintf(stderr, "fake alloc_object called unexpectedly\n");
+	abort();
+}
+
+void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
+{
+	(void)obj; (void)scope; (void)type;
+	fprintf(stderr, "fake add_object called unexpectedly\n");
+	abort();
+}
+
 /* REG_GLOBAL_OBJ() runs this from a constructor in each TU that uses it. */
 void register_global_obj_init(struct global_obj_entry *entry)
 {

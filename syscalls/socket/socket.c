@@ -320,6 +320,11 @@ struct syscallentry syscall_socket = {
 	.ret_objtype = OBJ_FD_SOCKET,
 	.group = GROUP_NET,
 	.flags = KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
+	/* sanitise_socket() draws the whole triplet and writes all three
+	 * slots without reading them, so none is generated.  They stay
+	 * untyped: type is an enum ORed with flags and protocol depends on
+	 * the family. */
+	.sanitiser_owned_mask = (1u << 0) | (1u << 1) | (1u << 2),
 	.sanitise = sanitise_socket,
 	.post = post_socket,
 };
