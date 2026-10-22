@@ -31,6 +31,7 @@ static void post_sched_getscheduler(struct syscallrecord *rec)
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 	int current_policy;
+	long policy;
 
 	if (get_arg_snapshot(rec, 1) != 0)
 		return;
@@ -41,16 +42,19 @@ static void post_sched_getscheduler(struct syscallrecord *rec)
 	 * Kernel ABI: sched_getscheduler() returns one of the SCHED_*
 	 * policy enum values — SCHED_OTHER(0), SCHED_FIFO(1), SCHED_RR(2),
 	 * SCHED_BATCH(3), SCHED_IDLE(5), SCHED_DEADLINE(6), SCHED_EXT(7) —
-	 * read from task_struct->policy on the resolved target.  Failure
-	 * returns -1UL and is already short-circuited above.  A success
-	 * retval outside [0, SCHED_EXT] is structurally impossible from
+	 * read from task_struct->policy on the resolved target, with
+	 * SCHED_RESET_ON_FORK OR'd in while the task has
+	 * sched_reset_on_fork set.  Failure returns -1UL and is already
+	 * short-circuited above.  A success retval outside [0, SCHED_EXT]
+	 * once that flag is masked off is structurally impossible from
 	 * the scheduler core: it indicates a sign-extension tear, a
 	 * -errno leaking onto the success path, or a torn read of
 	 * ->policy.  Reject before the ONE_IN(100) re-call oracle, which
 	 * would otherwise miss 99 out of 100 corruptions.
 	 */
-	if (ret > SCHED_EXT) {
-		outputerr("post_sched_getscheduler: retval %ld outside [0, SCHED_EXT]\n",
+	policy = ret & ~(long) SCHED_RESET_ON_FORK;
+	if (policy > SCHED_EXT) {
+		outputerr("post_sched_getscheduler: retval %ld outside [0, SCHED_EXT] once SCHED_RESET_ON_FORK is masked\n",
 			  ret);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
@@ -80,7 +84,8 @@ struct syscallentry syscall_sched_getscheduler = {
 	 * SCHED_DEADLINE=6, SCHED_EXT=7) on success, NOT 0.  The dispatcher
 	 * rzs gate would mis-reject every non-OTHER policy as a zero-success
 	 * contract violation; post_sched_getscheduler below carries the
-	 * authoritative [0, SCHED_EXT] bound for the success path.
+	 * authoritative [0, SCHED_EXT] bound for the success path, with
+	 * SCHED_RESET_ON_FORK masked off.
 	 */
 	.rettype = RET_BORING,
 	.post = post_sched_getscheduler,

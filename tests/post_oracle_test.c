@@ -8,6 +8,7 @@
  */
 
 #include <errno.h>
+#include <sched.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,7 @@
 
 #include "debug.h"		/* BUG */
 #include "kernel/prctl.h"	/* PR_THP_DISABLE_EXCEPT_ADVISED */
+#include "kernel/sched.h"	/* SCHED_EXT, SCHED_RESET_ON_FORK */
 #include "sanitise.h"		/* writable pool */
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_prctl */
@@ -32,6 +34,16 @@ void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 	(void) caller_pc;
 	(void) site;
 	bumps++;
+}
+
+void arg_shadow_stomp_bump(struct syscallrecord *rec, unsigned int argnum,
+			   unsigned long shadow, unsigned long current)
+{
+	(void) rec;
+	(void) argnum;
+	(void) shadow;
+	(void) current;
+	BUG("a post oracle read an arg whose shadow no longer matched");
 }
 
 /* Copies unless a case says the buffer is not one the real helper would
@@ -170,6 +182,49 @@ static void get_thp_disable(void)
 		       cases[i].bumps);
 }
 
+/* The policy, with SCHED_RESET_ON_FORK OR'd in while the task has
+ * sched_reset_on_fork set.  Only a query for the calling task (pid 0) is
+ * judged. */
+static void sched_getscheduler_policy(void)
+{
+	static const struct {
+		const char *what;
+		unsigned long pid;
+		unsigned long retval;
+		unsigned int bumps;
+	} cases[] = {
+		{ "sched_getscheduler, SCHED_OTHER", 0, SCHED_OTHER, 0 },
+		{ "sched_getscheduler, SCHED_EXT", 0, SCHED_EXT, 0 },
+		{ "sched_getscheduler, SCHED_OTHER with SCHED_RESET_ON_FORK",
+		  0, SCHED_OTHER | SCHED_RESET_ON_FORK, 0 },
+		{ "sched_getscheduler, SCHED_BATCH with SCHED_RESET_ON_FORK",
+		  0, SCHED_BATCH | SCHED_RESET_ON_FORK, 0 },
+		{ "sched_getscheduler, -1", 0, (unsigned long) -1L, 0 },
+		{ "sched_getscheduler, a policy past SCHED_EXT",
+		  0, SCHED_EXT + 1, 1 },
+		{ "sched_getscheduler, a policy past SCHED_EXT with the flag",
+		  0, (SCHED_EXT + 1) | SCHED_RESET_ON_FORK, 1 },
+		{ "sched_getscheduler, a stray high bit",
+		  0, 0x20000000UL | SCHED_OTHER, 1 },
+		{ "sched_getscheduler, another task's pid is not judged",
+		  1, 0x20000000UL, 0 },
+	};
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = cases[i].pid;
+		rec.arg_snapshot_mask = syscall_sched_getscheduler.arg_snapshot_mask;
+		rec.arg_shadow[0] = cases[i].pid;
+		rec.retval = cases[i].retval;
+		rec.errno_post = ((long) cases[i].retval == -1L) ? EINVAL : 0;
+		bumps = 0;
+		syscall_sched_getscheduler.post(&rec);
+		expect(cases[i].what, bumps, cases[i].bumps);
+	}
+}
+
 void post_oracle_self_check(void);
 void post_oracle_self_check(void)
 {
@@ -181,6 +236,7 @@ void post_oracle_self_check(void)
 
 	get_tsc();
 	get_thp_disable();
+	sched_getscheduler_policy();
 
 	if (failed != 0)
 		BUG("a post oracle judged a return value wrongly");
