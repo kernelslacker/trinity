@@ -6,10 +6,11 @@
  * lifecycle (PEER_NEW / PEER_SET / PEER_GET / PEER_DEL) and the
  * symmetric-key lifecycle (KEY_NEW / KEY_GET / KEY_SWAP / KEY_DEL).
  * All eight user-callable commands carry GENL_ADMIN_PERM (CAP_NET_ADMIN
- * gated), but the per-cmd nla_policy walker runs before the capability
- * check so the validator coverage lands unprivileged — penetrating the
- * family demuxer with a real family_id puts every parser plus the
- * peer-table and key-slot mutation paths directly in the fuzzer's reach.
+ * gated), and genl_family_rcv_msg() checks that flag before it parses
+ * attributes, so a child without CAP_NET_ADMIN in the initial user
+ * namespace gets -EPERM and never reaches the per-cmd nla_policy walker
+ * or the peer-table and key-slot mutation paths; a child that holds it
+ * reaches every parser once the message carries a real family_id.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-assigned
  * family_id for "ovpn", so the per-cmd policy walker plus the peer /
@@ -73,10 +74,10 @@
 /*
  * ovpn exposes eight user-callable commands: a four-command peer
  * lifecycle (NEW / SET / GET / DEL) and a four-command symmetric-key
- * lifecycle (NEW / GET / SWAP / DEL).  All eight are GENL_ADMIN_PERM
- * but the nla_policy walker runs before the capability check, so
+ * lifecycle (NEW / GET / SWAP / DEL).  All eight are GENL_ADMIN_PERM,
+ * which the genl core checks before the nla_policy walker runs, so
  * listing all eight ids exercises every per-cmd parser symmetrically
- * under the unprivileged fuzzer.  The two *_NTF notification ids
+ * for a child that passes that check.  The two *_NTF notification ids
  * (PEER_DEL_NTF, KEY_SWAP_NTF) are kernel-to-userspace only and the
  * dispatcher rejects them on input — they are omitted by design.
  */

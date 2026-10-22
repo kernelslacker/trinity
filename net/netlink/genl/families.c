@@ -10,10 +10,10 @@
  *
  * A registered family's cmds[] + attrs[] table is what unlocks fuzz
  * coverage of that family's per-command parsers: the kernel's family
- * demuxer accepts the family_id, the version check passes, and the
- * message lands directly in the family's command dispatch table where
- * bugs actually live, instead of bouncing off an unknown-family
- * fast-reject as the legacy random-id path does.
+ * demuxer accepts the family_id and the message lands directly in the
+ * family's command dispatch table where bugs actually live, instead of
+ * bouncing off an unknown-family fast-reject as the legacy random-id
+ * path does.
  *
  * The runtime-discovery childop in childops/net/netlink/genetlink-fuzzer.c does
  * its own discovery for the ops list it caches per family; that path

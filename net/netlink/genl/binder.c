@@ -10,10 +10,11 @@
  * kernel's genl_split_ops table is empty (drivers/android/
  * binder_netlink.c), so a doit send from userspace bounces at the
  * family-demuxer's op lookup with -EOPNOTSUPP -- which is the coverage
- * this grammar targets: the family_id resolver, version check, and the
- * per-cmd validator gate all run before the op lookup, so a fuzzer
- * with the correct family_id exercises real code even without a
- * user-facing doit handler.
+ * this grammar targets: the family_id resolver and the genl header
+ * checks run before the op lookup, so a fuzzer with the correct
+ * family_id exercises real code even without a user-facing doit
+ * handler.  The attribute policy walk comes after the op lookup, so no
+ * attribute is parsed on this path.
  *
  * As multicast listeners can also SEND on the socket (the kernel
  * simply won't dispatch), any future addition of a doit / dumpit

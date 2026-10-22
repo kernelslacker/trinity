@@ -8,11 +8,11 @@
  * mcgrp; paired *_GET_REQS / *_SET_REQS commands dump pending ip_map /
  * unix_gid cache requests and post responses back; CACHE_FLUSH walks a
  * u32 cache-type bitmask and flushes the matching caches.  All five
- * *_REQS / CACHE_FLUSH commands are GENL_ADMIN_PERM gated but the per-
- * cmd nla_policy walker runs before the capability check, so the
- * validator coverage lands unprivileged -- penetrating the family
- * demuxer with a real family_id puts every per-cmd parser directly in
- * the fuzzer's reach.
+ * *_REQS / CACHE_FLUSH commands are GENL_ADMIN_PERM gated, and
+ * genl_family_rcv_msg() checks that flag before it parses attributes,
+ * so a child without CAP_NET_ADMIN in the initial user namespace gets
+ * -EPERM and never reaches any per-cmd parser; a child that holds it
+ * reaches every one once the message carries a real family_id.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-assigned
  * family_id for "sunrpc", so the per-cmd nla_policy walker in

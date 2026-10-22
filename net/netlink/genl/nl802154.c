@@ -28,8 +28,9 @@
  * (SCAN_PREAMBLE_CODES, SCAN_MEAN_PRF) and reply-only attrs
  * (GENERATION, CHANNELS_SUPPORTED, PAD) are omitted -- both trip
  * -EINVAL before the handler runs.  GENL_ADMIN_PERM commands stay in:
- * the policy walker runs before the capability check, so unprivileged
- * traffic still exercises the validator.
+ * they are registered ops, and genl_family_rcv_msg() checks the flag
+ * before the policy walker, so only a child with CAP_NET_ADMIN in the
+ * initial user namespace exercises the validator through them.
  *
  * Header gating: include/net/nl802154.h is not shipped via uapi;
  * include/kernel/nl802154.h vendors every referenced NL802154_CMD_ *

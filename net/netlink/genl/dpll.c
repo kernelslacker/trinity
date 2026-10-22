@@ -6,11 +6,12 @@
  * (DEVICE_ID_GET / DEVICE_GET), per-device configuration (DEVICE_SET),
  * pin enumeration (PIN_ID_GET / PIN_GET), and per-pin configuration
  * (PIN_SET).  All six user-callable commands carry GENL_ADMIN_PERM
- * (CAP_NET_ADMIN gated), but the per-cmd nla_policy walker runs before
- * the capability check so the validator coverage lands unprivileged --
- * penetrating the family demuxer with a real family_id puts every
- * per-cmd parser plus the device / pin lookup paths directly in the
- * fuzzer's reach.
+ * (CAP_NET_ADMIN gated), and genl_family_rcv_msg() checks that flag
+ * before it parses attributes, so a child without CAP_NET_ADMIN in
+ * the initial user namespace gets -EPERM and never reaches the
+ * per-cmd nla_policy walker or the device / pin lookup paths; a child
+ * that holds it reaches every per-cmd parser once the message carries
+ * a real family_id.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-assigned
  * family_id for "dpll", so the per-cmd policy walker plus the device
@@ -73,11 +74,12 @@
  * dpll exposes six user-callable commands across two object classes:
  * a three-command device surface (DEVICE_ID_GET / DEVICE_GET /
  * DEVICE_SET) and a three-command pin surface (PIN_ID_GET / PIN_GET /
- * PIN_SET).  All six are GENL_ADMIN_PERM but the nla_policy walker
- * runs before the capability check, so listing all six ids exercises
- * every per-cmd parser symmetrically under the unprivileged fuzzer.
- * The six *_NTF notification ids are kernel-to-userspace only and the
- * dispatcher rejects them on input -- they are omitted by design.
+ * PIN_SET).  All six are GENL_ADMIN_PERM, which the genl core checks
+ * before the nla_policy walker runs, so listing all six ids exercises
+ * every per-cmd parser symmetrically for a child that passes that
+ * check.  The six *_NTF notification ids are kernel-to-userspace only
+ * and the dispatcher rejects them on input -- they are omitted by
+ * design.
  */
 static const struct genl_cmd_grammar dpll_cmds[] = {
 	{ DPLL_CMD_DEVICE_ID_GET,	"DPLL_CMD_DEVICE_ID_GET" },

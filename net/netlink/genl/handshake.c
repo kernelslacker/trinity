@@ -9,11 +9,12 @@
  * receives the listener socket fd plus the per-handshake policy
  * envelope), and DONE (the handler reports completion status back to
  * the kernel).  The two user-callable commands -- ACCEPT and DONE --
- * both carry GENL_ADMIN_PERM (CAP_NET_ADMIN gated), but the per-cmd
- * nla_policy walker runs before the capability check so the validator
- * coverage lands unprivileged -- penetrating the family demuxer with
- * a real family_id puts every per-cmd parser plus the handshake-req
- * queue lookup paths directly in the fuzzer's reach.
+ * both carry GENL_ADMIN_PERM (CAP_NET_ADMIN gated), and
+ * genl_family_rcv_msg() checks that flag before it parses attributes,
+ * so a child without CAP_NET_ADMIN in the initial user namespace gets
+ * -EPERM and never reaches the per-cmd nla_policy walker or the
+ * handshake-req queue lookup paths; a child that holds it reaches
+ * every per-cmd parser once the message carries a real family_id.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-
  * assigned family_id for "handshake", so the per-cmd policy walker
@@ -28,7 +29,7 @@
  * rejects an inbound READY with -EOPNOTSUPP.  It is kept in the cmds
  * table because the fast-reject path is itself an interesting
  * coverage surface: the family demuxer accepts the family_id, the
- * version check passes, and the per-cmd table lookup runs before the
+ * header checks pass, and the per-cmd table lookup runs before the
  * EOPNOTSUPP return -- a worthwhile shape distinct from a random
  * nlmsg_type fast-reject at the controller layer.
  *
@@ -84,9 +85,10 @@
  * rejects on input but the per-cmd lookup still runs -- worthwhile
  * coverage), ACCEPT (handler dequeues a pending request, GENL_ADMIN_
  * PERM), and DONE (handler reports completion, GENL_ADMIN_PERM).
- * The two user-callable cmds run the nla_policy walker before the
- * capability check, so listing every id exercises both per-cmd
- * parsers symmetrically under the unprivileged fuzzer.
+ * The two user-callable cmds are GENL_ADMIN_PERM, which the genl core
+ * checks before the nla_policy walker runs, so listing every id
+ * exercises both per-cmd parsers symmetrically for a child that
+ * passes that check.
  */
 static const struct genl_cmd_grammar handshake_cmds[] = {
 	{ HANDSHAKE_CMD_READY,	"HANDSHAKE_CMD_READY" },

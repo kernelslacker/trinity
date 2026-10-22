@@ -8,12 +8,13 @@
  * family (SMCR_GENL_FAMILY_NAME = "SMC_PNETID") with four user-callable
  * commands: GET (dump the table), ADD (install a NAME -> ETHNAME +
  * IBNAME/IBPORT triple), DEL (remove by NAME), FLUSH (drop every
- * entry).  ADD and DEL gate on CAP_NET_ADMIN; the per-cmd nla_policy
- * walker (smc_pnet_policy in net/smc/smc_pnet.c) runs before the
- * capability check so the validator coverage lands unprivileged --
- * penetrating the family demuxer with a real family_id puts the
- * smc_pnet_add / _remove / _dump parsers plus the netdev / IB-device
- * lookup chains directly in the fuzzer's reach.
+ * entry).  ADD, DEL and FLUSH are GENL_ADMIN_PERM, which
+ * genl_family_rcv_msg() checks before the per-cmd nla_policy walker
+ * (smc_pnet_policy in net/smc/smc_pnet.c) runs, so a child without
+ * CAP_NET_ADMIN in the initial user namespace gets -EPERM for them; a
+ * child that holds it, with a real family_id, has the smc_pnet_add /
+ * _remove / _dump parsers plus the netdev / IB-device lookup chains
+ * directly in its reach.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-assigned
  * family_id for "SMC_PNETID", so the per-cmd policy walker plus the

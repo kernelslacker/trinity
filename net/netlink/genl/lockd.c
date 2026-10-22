@@ -7,10 +7,12 @@
  * commands: SERVER_GET reads back the current grace period and
  * TCP/UDP listener ports, SERVER_SET reconfigures them.  Both run
  * through the same per-cmd nla_policy walker before the doit handler;
- * SERVER_SET is GENL_ADMIN_PERM but the policy parse happens before
- * the capability check, so even unprivileged validator traffic
- * penetrates the family demuxer once family_id resolution lets the
- * message generator address real lockd messages.
+ * SERVER_SET is GENL_ADMIN_PERM, and genl_family_rcv_msg() checks that
+ * flag before it parses attributes, so a child without CAP_NET_ADMIN
+ * in the initial user namespace gets -EPERM for it and never reaches
+ * its walker.  SERVER_GET carries no admin flag, so it penetrates the
+ * family demuxer once family_id resolution lets the message generator
+ * address real lockd messages.
  *
  * Random nlmsg_type ids essentially never matched the runtime-
  * assigned family_id for "lockd", so the per-cmd nla_policy walker in

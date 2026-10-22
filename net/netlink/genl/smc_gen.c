@@ -12,9 +12,9 @@
  * (ADD_UEID / REMOVE_UEID / FLUSH_UEID), the system EID enable
  * switch (ENABLE_SEID / DISABLE_SEID) and the handshake-limitation
  * switch (ENABLE_HS_LIMITATION / DISABLE_HS_LIMITATION).  All
- * mutators gate on CAP_NET_ADMIN; the per-cmd nla_policy walker
- * runs before the capability check so validator coverage lands
- * unprivileged.
+ * mutators are GENL_ADMIN_PERM, which the genl core checks before the
+ * per-cmd nla_policy walker runs, so validator coverage on them needs
+ * CAP_NET_ADMIN in the initial user namespace.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-
  * assigned family_id for "SMC_GEN_NETLINK", so the per-cmd policy

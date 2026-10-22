@@ -46,16 +46,18 @@ guaranteed `-EPERM` fast-rejects.
 | `BTRFS_IOC_ENCODED_WRITE` | `ioctls/btrfs.c:202` | `capable(CAP_SYS_ADMIN)` (`fs/btrfs/ioctl.c`) | **1** | Same; btrfs encoded I/O unconditionally requires global CAP\_SYS\_ADMIN |
 | btrfs snap/resize/scrub/balance/quota/send/device group (~32 ioctls) | `ioctls/btrfs.c` (various) | `capable(CAP_SYS_ADMIN)` in `fs/btrfs/ioctl.c` (35 distinct call sites) | **1** | Covers `BTRFS_IOC_SNAP_CREATE(_V2)`, `RESIZE`, `SCAN_DEV`, `ADD_DEV`, `RM_DEV(_V2)`, `BALANCE(_V2/_CTL/_PROGRESS)`, `SCRUB(_CANCEL/_PROGRESS)`, `SUBVOL_CREATE(_V2)`, `SNAP_DESTROY(_V2)`, `QUOTA_CTL`, `QGROUP_{ASSIGN,CREATE,LIMIT}`, `SEND`, `DEV_REPLACE`, `SET_FEATURES`, `GET_DEV_STATS` (reset flag) — all call `capable(CAP_SYS_ADMIN)` in the handler body and return `-EPERM` unconditionally under capset-to-empty |
 | MSR read/write | `ioctls/msr.c` | `capable(CAP_SYS_RAWIO)` (`arch/x86/kernel/msr.c:211`) | **1** | MSR device access checks `capable(CAP_SYS_RAWIO)` at open; both read and write ioctls inherit the open-time gate |
-| `NBD_CMD_CONNECT`, `NBD_CMD_DISCONNECT`, `NBD_CMD_RECONFIGURE` | `net/netlink/genl/nbd.c` | `capable(CAP_SYS_ADMIN)` inside handler body (`drivers/block/nbd.c`) — not `GENL_ADMIN_PERM` | **1** | Policy parse runs unprivileged (no `GENL_ADMIN_PERM` flag); the handler itself calls `capable()`, blocking execution. Class 1, not class 3, because the gate is an inline `capable()` not `netlink_capable()` |
+| `NBD_CMD_CONNECT`, `NBD_CMD_DISCONNECT`, `NBD_CMD_RECONFIGURE` | `net/netlink/genl/nbd.c` | `netlink_capable(skb, CAP_SYS_ADMIN)` inside handler body (`drivers/block/nbd.c`) — not `GENL_ADMIN_PERM` | **1** | Policy parse runs unprivileged (no `GENL_ADMIN_PERM` flag); the handler itself calls `netlink_capable()`, blocking execution. Counted as class 1 because the check is inline in the handler body rather than a `GENL_ADMIN_PERM` flag; it resolves to the same `&init_user_ns` test as class 3, so the entry is dead either way |
 
 ---
 
 ### Generic-netlink surfaces — Class 3 (GENL\_ADMIN\_PERM → &init\_user\_ns)
 
 `GENL_ADMIN_PERM` routes through `netlink_capable()` which calls
-`netlink_ns_capable(skb, &init_user_ns, cap)`.  The per-cmd `nla_policy`
-walker runs before this check, so the attribute parser gets fuzzer coverage;
-the handler body does not.
+`netlink_ns_capable(skb, &init_user_ns, cap)`.  `genl_family_rcv_msg()` makes
+this check after the op lookup and before any attribute is parsed, so a child
+without the capability is answered `-EPERM` before the per-cmd `nla_policy`
+walker runs: neither the attribute parser nor the handler body gets fuzzer
+coverage.
 
 | Surface | Trinity file | Kernel gate | Class | Notes |
 |---|---|---|---|---|

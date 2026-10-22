@@ -6,12 +6,19 @@
  * vlan attribute query+set, originator / neighbour / gateway / TT /
  * BLA / DAT / multicast table dumps, the throughput-meter session
  * pair (TP_METER + TP_METER_CANCEL), and a routing-algo enumeration.
- * None of the user-facing commands carry GENL_ADMIN_PERM, so the
- * per-cmd nla_policy walker and the SET_MESH / SET_HARDIF / SET_VLAN
- * write paths in net/batman-adv/netlink.c run unprivileged — penetrating
- * the family demuxer with a real family_id puts every parser, the per-
- * mesh getter dispatcher, and the SET_* setter chains directly in the
- * fuzzer's reach.
+ * None of the commands carry GENL_ADMIN_PERM, but 15 of the 18 ops (the
+ * table dumps, the routing-algo enumeration, TP_METER, TP_METER_CANCEL
+ * and the SET_* commands) carry GENL_UNS_ADMIN_PERM, which
+ * genl_family_rcv_msg() tests with netlink_ns_capable() against the
+ * user namespace of the socket's netns before it parses attributes.  A
+ * child in the initial netns without CAP_NET_ADMIN gets -EPERM and
+ * never reaches their per-cmd nla_policy walker or the SET_MESH /
+ * SET_HARDIF / SET_VLAN write paths in net/batman-adv/netlink.c; a
+ * child that holds CAP_NET_ADMIN in the user namespace owning its own
+ * netns does, and then penetrating the family demuxer with a real
+ * family_id puts every parser, the per-mesh getter dispatcher, and the
+ * SET_* setter chains directly in its reach.  Only GET_MESH, GET_HARDIF
+ * and GET_VLAN carry no flag.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-assigned
  * family_id for "batadv", so the per-cmd policy walker plus the per-mesh

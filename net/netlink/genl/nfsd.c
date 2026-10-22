@@ -14,11 +14,13 @@
  * UNLOCK_EXPORT (NLM lock release by address, path, or export).
  * SERVER_STATS_GET was added in v7.3-rc1 as a dumpit-only stats
  * command with no admin-perm requirement.  All user-callable commands
- * that write state are GENL_ADMIN_PERM gated, but the per-cmd
- * nla_policy walker runs before the capability check, so the
- * validator coverage lands unprivileged -- penetrating the family
- * demuxer with a real family_id puts every per-cmd parser directly in
- * the fuzzer's reach.
+ * that write state, and the SVC_EXPORT / EXPKEY GET_REQS dumps, are
+ * GENL_ADMIN_PERM gated; genl_family_rcv_msg() checks that flag
+ * before it parses attributes, so a child without CAP_NET_ADMIN in
+ * the initial user namespace gets -EPERM and never reaches their
+ * nla_policy walkers.  The remaining GET commands carry no admin
+ * flag, so penetrating the family demuxer with a real family_id puts
+ * those directly in the fuzzer's reach.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-assigned
  * family_id for "nfsd", so the per-cmd nla_policy walker in

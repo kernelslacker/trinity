@@ -6,10 +6,12 @@
  * carrying three commands: LIST_NODES dumps the set of registered
  * driver-owned RAS nodes, GET_ERROR_COUNTER reads back a specific
  * error counter for a node, and CLEAR_ERROR_COUNTER resets one.  All
- * three carry GENL_ADMIN_PERM; the per-cmd nla_policy walk runs
- * before the capability check, so even unprivileged validator traffic
- * penetrates the family demuxer once family_id resolution lets the
- * message generator address real drm-ras messages.
+ * three carry GENL_ADMIN_PERM, and genl_family_rcv_msg() checks that
+ * flag before it parses attributes, so a child without CAP_NET_ADMIN
+ * in the initial user namespace gets -EPERM and never reaches the
+ * per-cmd nla_policy walk; a child that holds it penetrates the family
+ * demuxer once family_id resolution lets the message generator address
+ * real drm-ras messages.
  *
  * Random nlmsg_type ids essentially never matched the runtime-
  * assigned family_id for "drm-ras", so the per-cmd nla_policy walker

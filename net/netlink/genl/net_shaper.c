@@ -6,12 +6,15 @@
  * introspect HW capability and read back the running shaper config,
  * and SET / DELETE / GROUP to create-or-update an individual shaper,
  * tear one down, or build a scheduling group.  SET / DELETE / GROUP
- * carry GENL_ADMIN_PERM (CAP_NET_ADMIN); CAP_GET / GET do not.  All
- * five run the per-cmd nla_policy walker before any capability check,
- * so listing every cmd id symmetrically exercises every per-cmd
- * parser under the unprivileged fuzzer — penetrating the family
- * demuxer with a real family_id puts the parsers plus the per-netdev
- * shaper-tree mutation paths directly in the fuzzer's reach.
+ * carry GENL_ADMIN_PERM (CAP_NET_ADMIN); CAP_GET / GET do not.
+ * genl_family_rcv_msg() checks that flag before it parses attributes,
+ * so a child without CAP_NET_ADMIN in the initial user namespace gets
+ * -EPERM for the three write commands and never reaches their
+ * nla_policy walker, while CAP_GET / GET run theirs unprivileged.
+ * Listing every cmd id still exercises every per-cmd parser
+ * symmetrically for a child that holds the capability — penetrating
+ * the family demuxer with a real family_id puts the parsers plus the
+ * per-netdev shaper-tree mutation paths directly in its reach.
  *
  * Random nlmsg_type ids essentially never matched the runtime-assigned
  * family_id for "net-shaper", so the per-cmd policy walker plus the
@@ -75,10 +78,10 @@
 
 /*
  * net_shaper exposes five user-callable commands.  SET / DELETE /
- * GROUP are GENL_ADMIN_PERM; CAP_GET / GET are not.  All five run the
- * nla_policy walker before any capability check, so listing every id
- * exercises every per-cmd parser symmetrically under the unprivileged
- * fuzzer.
+ * GROUP are GENL_ADMIN_PERM, which the genl core checks before the
+ * nla_policy walker runs; CAP_GET / GET are not.  Listing every id
+ * exercises every per-cmd parser symmetrically for a child that
+ * passes that check.
  */
 static const struct genl_cmd_grammar net_shaper_cmds[] = {
 	{ NET_SHAPER_CMD_CAP_GET,	"NET_SHAPER_CMD_CAP_GET" },

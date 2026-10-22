@@ -20,10 +20,10 @@
  * family at first NETLINK_GENERIC use lets the message generator
  * address real nbd messages whose attribute shapes plausibly survive
  * the per-cmd policy.  The handlers gate destructive work on a
- * capable(CAP_SYS_ADMIN) check inside the handler body, not on a
- * GENL_ADMIN_PERM flag, so the nla_policy walk runs unprivileged and
- * the policy validator is genuinely exercised even from a non-root
- * fuzz child.
+ * netlink_capable(skb, CAP_SYS_ADMIN) check inside the handler body,
+ * not on a GENL_ADMIN_PERM flag, so the nla_policy walk runs
+ * unprivileged and the policy validator is genuinely exercised even
+ * from a non-root fuzz child.
  *
  * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
  * a single flat nla_attr_spec table lists every id used by this

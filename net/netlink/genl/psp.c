@@ -12,10 +12,11 @@
  * with its psp shim in drivers/net/netdevsim/psp.c) so on a host
  * without a PSP-capable netdev each command bails -ENODEV after the
  * full attribute walk -- which is the parser-level coverage this
- * grammar exists to provide.  DEV_SET and KEY_ROTATE are
- * CAP_NET_ADMIN gated, but the per-cmd policy walker runs before the
- * capability check so unprivileged traffic still exercises the
- * validator.
+ * grammar exists to provide.  DEV_SET, KEY_ROTATE, DEV_ASSOC and
+ * DEV_DISASSOC are GENL_ADMIN_PERM, and genl_family_rcv_msg() checks
+ * that flag before the per-cmd policy walker, so only a child with
+ * CAP_NET_ADMIN in the initial user namespace exercises the validator
+ * through them.
  *
  * Flat attribute table.  The four nests (DEV / ASSOC / KEYS / STATS)
  * all restart their attribute numbering at 1, so the same numeric id
