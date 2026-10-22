@@ -144,8 +144,6 @@ struct syscallentry * get_syscall_entry(unsigned int calln, bool do32) __must_ch
  */
 bool syscall_is_expensive(unsigned int nr, bool do32);
 
-bool this_syscallname(const char *thisname);
-
 /*
  * Per-discriminator flag-bit fast paths for the shared .sanitise / .post
  * hooks that handle two syscallentries each (mmap/mmap2,
@@ -155,8 +153,6 @@ bool this_syscallname(const char *thisname);
  * future caller that fires before dispatch, then return the matching
  * cached flag bit.  Collapses each callsite from a get_syscall_entry()
  * lookup + biarch branch + strcmp to a single dereference + byte load.
- * this_syscallname() is left in place as the fallback for any future
- * discriminator that does not yet have a flag bit.
  */
 static inline bool current_entry_is_mmap2(void)
 {

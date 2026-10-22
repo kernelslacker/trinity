@@ -173,7 +173,7 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	unsigned long new_edge_count = 0;
 
 	/* Stamp the resolved entry on the rec so .sanitise / .post handlers
-	 * (and helpers like this_syscallname()) can reach it without
+	 * (and helpers like current_entry_is_mmap2()) can reach it without
 	 * re-running get_syscall_entry(nr, do32bit) on every probe. */
 	rec->entry = entry;
 

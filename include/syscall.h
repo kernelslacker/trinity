@@ -68,11 +68,11 @@ struct syscallrecord {
 	 * Pointer to the resolved syscallentry for this call.  Stamped once
 	 * at the top of dispatch_step() (the only path that drives a real
 	 * syscall through this rec) so the .sanitise / .post handlers and
-	 * their helpers (this_syscallname() and the per-discriminator flag
-	 * tests built on top of it) can read the entry directly instead of
-	 * re-running get_syscall_entry(nr, do32bit) -- which is a table
-	 * lookup plus a biarch branch -- on every probe.  NULL outside an
-	 * in-flight dispatch; this_syscallname() treats NULL as "not me".
+	 * their helpers (the per-discriminator current_entry_is_*() flag
+	 * tests) can read the entry directly instead of re-running
+	 * get_syscall_entry(nr, do32bit) -- which is a table lookup plus a
+	 * biarch branch -- on every probe.  NULL outside an in-flight
+	 * dispatch; current_entry_is_*() treats NULL as "not me".
 	 */
 	struct syscallentry *entry;
 
@@ -672,10 +672,10 @@ struct syscallentry {
 	 * inotify_init1, epoll_create vs epoll_create1, execve vs
 	 * execveat).  Resolved once from .name at table-init time in
 	 * copy_syscall_table() so the discriminator collapses to a single
-	 * byte load instead of the lookup-and-strcmp shape this_syscallname
-	 * costs on every probe.  Packed adjacent to is_close_syscall so the
-	 * whole cluster fits in the existing alignment hole in front of
-	 * bound_arg without growing the struct.
+	 * byte load instead of a lookup-and-strcmp on every probe.  Packed
+	 * adjacent to is_close_syscall so the whole cluster fits in the
+	 * existing alignment hole in front of bound_arg without growing the
+	 * struct.
 	 */
 	bool is_mmap2;
 	bool is_sync_file_range2;

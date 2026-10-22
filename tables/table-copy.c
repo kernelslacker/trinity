@@ -138,8 +138,8 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		 * .post hooks for the five biarch / variant pairs trinity
 		 * fuzzes.  Resolved once here so the per-call discriminator
 		 * collapses to a single-byte load (see current_entry_is_*()
-		 * in include/tables.h) instead of running this_syscallname()'s
-		 * lookup-and-strcmp on every probe.
+		 * in include/tables.h) instead of a lookup-and-strcmp on every
+		 * probe.
 		 */
 		copy[m].is_mmap2 = (strcmp(copy[m].name, "mmap2") == 0);
 		copy[m].is_sync_file_range2 = (strcmp(copy[m].name, "sync_file_range2") == 0);

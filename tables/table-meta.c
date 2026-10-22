@@ -3,9 +3,9 @@
  *
  * Carved out of tables/tables.c: this file owns the read-only accessors
  * (search_syscall_table, get_syscall_entry, print_syscall_name,
- * this_syscallname, syscall_nr_is_excluded), the per-entry sanity-check
- * pass run at init (sanity_check_tables and its helpers), the enabled/
- * disabled counters (count_syscalls_enabled, no_syscalls_enabled,
+ * syscall_nr_is_excluded), the per-entry sanity-check pass run at init
+ * (sanity_check_tables and its helpers), the enabled/disabled counters
+ * (count_syscalls_enabled, no_syscalls_enabled,
  * validate_syscall_tables), the -c/-x arg-name parser
  * (check_user_specified_arch / clear_check_user_specified_arch), and
  * the inspection printers (print_disabled_syscalls,
@@ -505,29 +505,6 @@ struct syscallentry * get_syscall_entry(unsigned int callno, bool do32 __attribu
 		return NULL;
 	return syscalls_64bit[callno].entry;
 #endif
-}
-
-/*
- * Check the name of the syscall we're in the ->sanitise of.
- * This is useful for syscalls where we have a common ->sanitise
- * for multiple syscallentry's. (mmap/mmap2, sync_file_range/sync_file_range2)
- *
- * Reads the resolved entry pointer that dispatch_step() stamps on the rec
- * before invoking do_syscall(); this elides the per-call
- * get_syscall_entry(nr, do32bit) table lookup + biarch branch the original
- * shape paid for on every callsite (mmap/mmap2 fires this twice per call).
- * All current callers run inside .sanitise / .post hooks, both of which
- * fire after dispatch_step has set rec->entry, so the NULL guard only
- * matters for any future caller that fires before dispatch.
- */
-bool this_syscallname(const char *thisname)
-{
-	struct syscallentry *e = this_child()->syscall.entry;
-
-	if (e == NULL)
-		return false;
-
-	return strcmp(thisname, e->name) == 0;
 }
 
 /*

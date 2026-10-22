@@ -2,12 +2,12 @@
 
 Central registry that turns the 430 per-syscall descriptors under `syscalls/` (and the per-arch static arrays under `include/syscalls-*.h`) into the live, shared-memory-backed arrays every picker, dispatcher, and stats/hint subsystem indexes by syscall number.
 
-## Files (7 files, ~1,926 LOC)
+## Files (7 files, ~1,903 LOC)
 
 | File | Lines | Role |
 |---|---|---|
 | tables.c | 221 | `munge_tables()` startup orchestration, `group_parent[]`, and the biarch/uniarch dispatch shims |
-| table-meta.c | 502 | Read-only accessors and inspection: `search_syscall_table()`, `get_syscall_entry()`, `print_syscall_name()`, `this_syscallname()`, `syscall_nr_is_excluded()`, the init-time `sanity_check_tables()` pass, enabled/disabled counters, the `-c`/`-x` arg-name parser |
+| table-meta.c | 550 | Read-only accessors and inspection: `search_syscall_table()`, `get_syscall_entry()`, `print_syscall_name()`, `syscall_nr_is_excluded()`, the init-time `sanity_check_tables()` pass, enabled/disabled counters, the `-c`/`-x` arg-name parser |
 | tables-biarch.c | 458 | Dual-table (32-on-64) arch variant: `syscalls_32bit`/`syscalls_64bit` globals, same operation set doubled, plus 32/64 pairing logic in `enable_random_syscalls_biarch()` and `toggle_syscall_biarch()` |
 | table-activate.c | 232 | Cost-pool-aware `activate_syscall_in_table()`/`deactivate_syscall_in_table()`, the pool-partition assertion, and the lock-taking / lock-free deactivation wrappers the pickers call |
 | tables-uniarch.c | 229 | Single-table arch variant: `syscalls` global, activate/deactivate/toggle/enable-random/group-setup/dump/display, all operating on one flat table |
@@ -31,7 +31,7 @@ Central registry that turns the 430 per-syscall descriptors under `syscalls/` (a
 3. **O(1) activate/deactivate via swap-with-last.** Both the flat `active_syscall[]` and the cheap/expensive pools use `entry->active_number`/`entry->pool_number` (1-based, 0 = inactive) as a back-index, so removing an entry swaps in the last element and rewrites one neighbour's back-index — no O(N) memmove despite the pools living in shared memory read by concurrent children.
 4. **Cost-pool bitmap is authoritative, never inferred.** `cost_pool_of()` always consults the precomputed `EXPENSIVE` bitmap, never a pool array's current membership — the comment in table-activate.c (lines 22-35) explicitly calls out that inferring from live-mutable state would let a torn pool silently "ratify" corruption instead of tripping `assert_pool_partition()`.
 5. **`get_syscall_entry(callno, do32)`** (table-meta.c:462) is the universal accessor abstracting biarch away — compiled to either the direct uniarch path or the do32-branching biarch path via `#ifndef ARCH_IS_BIARCH`. Every consumer outside tables/ goes through this rather than indexing `syscalls[]` directly.
-6. **`this_syscallname()`** caches the resolved entry on `this_child()->syscall.entry` (stamped by `dispatch_step()`) instead of re-running `get_syscall_entry()` — called from `.sanitise`/`.post` hooks, some of which (mmap/mmap2) fire twice per call.
+6. **`current_entry_is_*()`** (include/tables.h) read the entry cached on `this_child()->syscall.entry` (stamped by `dispatch_step()`) and return a flag stamped at table-init, instead of re-running `get_syscall_entry()` plus a strcmp — called from `.sanitise`/`.post` hooks, some of which (mmap/mmap2) fire twice per call.
 7. **`-x` exclusion uses a persistent flag, not a derived state.** `EXPLICITLY_EXCLUDED` is set by `toggle_syscall_n()`/`toggle_syscall_biarch_n()` and deliberately survives `deactivate_disabled_syscalls()` (which only clears `ACTIVE|TO_BE_DEACTIVATED`), so `syscall_nr_is_excluded()` can answer correctly for raw `syscall(__NR_x,...)` call sites in childops regardless of `-c`/`-r`/`-g` targeting — the file's comment (table-meta.c:393-430) documents a prior bug where inferring exclusion from `!ACTIVE` misreported non-targeted syscalls.
 8. **Group inheritance is a flat parent lookup**, not a tree walk: `group_parent[NR_GROUPS]` (tables.c:90) only has one non-default entry (`GROUP_XATTR -> GROUP_VFS`), checked as `entry->group == group || group_parent[entry->group] == group`.
 
