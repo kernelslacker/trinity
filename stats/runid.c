@@ -135,7 +135,7 @@ static unsigned long runid_corpus_entries_total(void)
 			if (!overcap_warned) {
 				overcap_warned = true;
 				output(0,
-				       "[main] WARNING corpus_count_overcap "
+				       "WARNING corpus_count_overcap "
 				       "nr=%u count=%u clamped_to=%u "
 				       "(first witness)\n",
 				       i, count, CORPUS_RING_SIZE);

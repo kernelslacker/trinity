@@ -853,9 +853,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	 * to count windows.  Placed outside the delta-gated block above so
 	 * they fire every window regardless of cmp activity.
 	 */
-	output(0, "[main] cmp_hints_chaos_suppressed_cumulative=%lu\n",
+	output(0, "cmp_hints_chaos_suppressed_cumulative=%lu\n",
 	       cur_chaos_suppressed);
-	output(0, "[main] propagation_injected_cumulative=%lu\n",
+	output(0, "propagation_injected_cumulative=%lu\n",
 	       cur_prop_injected);
 
 	kcov_cmp_render_modes_block();

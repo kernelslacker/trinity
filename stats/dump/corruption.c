@@ -61,7 +61,7 @@ static void dump_stats_render_corrupt_ptr_attrib(void)
 			 "corrupt_ptr_site:%s",
 			 corrupt_ptr_site_names[i]);
 		stat_row("corruption", metric, v);
-		output(0, "[main] %s_cumulative=%lu\n", metric, v);
+		output(0, "%s_cumulative=%lu\n", metric, v);
 	}
 	/* Anything in the headline not claimed by a named site:
 	 * the legacy post_handler_corrupt_ptr_bump(rec, NULL) callers
@@ -71,7 +71,7 @@ static void dump_stats_render_corrupt_ptr_attrib(void)
 	 * counters at slightly different moments. */
 	stat_row("corruption", "corrupt_ptr_site:post_generic",
 		 sat_sub_ul(total, named_sum));
-	output(0, "[main] corrupt_ptr_site:post_generic_cumulative=%lu (headline=%lu named_sum=%lu)\n",
+	output(0, "corrupt_ptr_site:post_generic_cumulative=%lu (headline=%lu named_sum=%lu)\n",
 	       sat_sub_ul(total, named_sum),
 	       total, named_sum);
 }
@@ -275,9 +275,9 @@ static void dump_stats_render_corrupt_ptr_family(void)
 	 * out.log | tail -1` for the current total, or grep -c against
 	 * the suffix to count windows.
 	 */
-	output(0, "[main] post_handler_corrupt_ptr_cumulative=%lu\n",
+	output(0, "post_handler_corrupt_ptr_cumulative=%lu\n",
 	       parent_stats.post_handler_corrupt_ptr);
-	output(0, "[main] validator_rejected_cumulative=%lu\n",
+	output(0, "validator_rejected_cumulative=%lu\n",
 	       parent_stats.validator_rejected);
 	if (corrupt_ptr_attrib_active())
 		dump_stats_render_corrupt_ptr_attrib();
@@ -403,9 +403,9 @@ static void dump_stats_render_arena_ptr_stale_and_sentinel(void)
 	 * `grep <counter>_cumulative out.log | tail -1` for the current
 	 * total or grep -c the suffix to count windows.
 	 */
-	output(0, "[main] arena_ptr_stale_caught_arg_cumulative=%lu\n",
+	output(0, "arena_ptr_stale_caught_arg_cumulative=%lu\n",
 	       shm->stats.diag.arena_ptr_stale_caught_arg);
-	output(0, "[main] arena_ptr_stale_caught_post_state_cumulative=%lu\n",
+	output(0, "arena_ptr_stale_caught_post_state_cumulative=%lu\n",
 	       shm->stats.diag.arena_ptr_stale_caught_post_state);
 	if (shm->stats.diag.sibling_mprotect_failed)
 		stat_row("corruption", "sibling_mprotect_failed", shm->stats.diag.sibling_mprotect_failed);

@@ -144,7 +144,7 @@ void __cold vma_count_periodic_dump(void)
 	    total != last_vma_total ||
 	    max_vmas != last_vma_max ||
 	    min_vmas != last_vma_min) {
-		stats_log_write("[main] VMAs: parent=%lu children_total=%lu children_max=%lu children_min=%lu\n",
+		stats_log_write("VMAs: parent=%lu children_total=%lu children_max=%lu children_min=%lu\n",
 				parent, total, max_vmas, min_vmas);
 		last_vma_parent = parent;
 		last_vma_total = total;
