@@ -37,7 +37,7 @@ bottom rather than enumerated. The renderers below are the other 58.
 | kcov/dump-reexec.c | CMP hint tier, reexec, ring replay, and CMP field-consumer blocks. |
 | kcov/dump-shadow.c | Shadow measurements, KCOV probe costs, KCOV dispatch stats. |
 | kcov/dump-internal.h | Private renderer prototypes shared across `stats/kcov/dump-*.c`. |
-| kcov/cmp/periodic.c | Public entry `kcov_cmp_stats_periodic_dump()`: previous-window state, elapsed gate, delta computation, render-block fan-out. |
+| kcov/cmp/periodic.c | Public entry `kcov_cmp_stats_periodic_dump()`: previous-window state, elapsed gate, delta computation, render-block fan-out; plus the static renderers for the RedQueen burst-drain cohort and the per-callsite splits that no sibling owns. |
 | kcov/cmp/base.c | Shared `kcov_cmp_rate_line()` emitter; scalar CMP-rich per-syscall top-N table; wild-write rate rows. |
 | kcov/cmp/redqueen.c | RedQueen reexec per-syscall top-N, per-slot histograms, and reexec skip-reason breakdown. |
 | kcov/cmp/pool.c | Raw cmp-hint pool + tier: oldpool per-syscall top-N, oldpool-vs-shadow, PC-win conversion split, per-entry feedback scoring, recent-CMP-pool tier. |
@@ -158,10 +158,16 @@ Two parallel counter stores, by design:
 
 1. **`stats/kcov/cmp/periodic.c` still owns the time-gated periodic dump
    orchestrator** - previous-window snapshots and any-delta gates live here.
-   The render blocks are now per-domain siblings, but the top-level function
-   is still the widest hunk in the subtree and any new top-level periodic
-   counter has to add its declaration, load, arm, delta, render, and commit
-   here.
+   The render blocks are per-domain siblings (the burst-drain and callsite
+   blocks no sibling owns are static helpers in this file), but the
+   top-level function is still ~800 lines and the widest hunk in the
+   subtree.  What is left is window-state plumbing, not rendering: the
+   `prev_*` statics, the `cur_*` loads, the first-window arm, the `delta_*`
+   computation, the any-delta gate and the commit all read or write the same
+   ~220 `cur_`/`delta_`/`prev_` variables, so none of them can be carved out
+   by moving code alone; shrinking them means gathering the window state
+   into a struct.  Any new top-level periodic counter has to add its
+   declaration, load, arm, delta, render, and commit here.
 2. **The shutdown KCOV block is now a five-way render family** -
    `stats/kcov/dump.c` keeps only the ordering; base, top-N, remote, reexec
    and shadow blocks live in `stats/kcov/dump-<domain>.c` behind

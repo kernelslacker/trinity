@@ -10,8 +10,10 @@
  * cohort, diag) and commits the previous-window snapshot.
  *
  * All static previous-window state and per-counter locals stay local
- * to this TU; the render helpers live in their per-domain siblings and
- * are declared in stats/kcov/cmp/internal.h.
+ * to this TU, and the render helpers live in their per-domain siblings
+ * declared in stats/kcov/cmp/internal.h.  The burst-drain and callsite
+ * blocks, which no sibling owns, are static helpers above the entry
+ * point and take their counters as explicit arguments.
  */
 
 #include <errno.h>
@@ -51,6 +53,131 @@
 #include "version.h"
 
 #include "stats/kcov/cmp/internal.h"
+
+static void kcov_cmp_render_reexec_burst_drain_cohort(const unsigned long delta_reexec_attempts_by_arm[2],
+						      const unsigned long cur_reexec_attempts_by_arm[2],
+						      const unsigned long delta_reexec_new_cmps_by_arm[2],
+						      const unsigned long cur_reexec_new_cmps_by_arm[2],
+						      const unsigned long delta_reexec_new_edges_by_arm[2],
+						      const unsigned long cur_reexec_new_edges_by_arm[2])
+{
+	/* Plateau-burst per-call drain-cap A/B cohort split.  Renders
+	 * arm-A (control, drain-all baseline) and arm-B (measure,
+	 * capped at REDQUEEN_REEXEC_BURST_DRAIN during plateau) side-
+	 * by-side so the shadow success criterion
+	 *   (edges/attempt B) >= (edges/attempt A)
+	 * can be read directly off the periodic dump.  Attempts are
+	 * the denominator across both novelty axes; the block only
+	 * fires when at least one arm bumped an attempt this window
+	 * to keep the render quiet under CMP-off / non-plateau runs. */
+	if (delta_reexec_attempts_by_arm[0] |
+	    delta_reexec_attempts_by_arm[1] |
+	    delta_reexec_new_cmps_by_arm[0] |
+	    delta_reexec_new_cmps_by_arm[1] |
+	    delta_reexec_new_edges_by_arm[0] |
+	    delta_reexec_new_edges_by_arm[1]) {
+		stats_log_write("  reexec burst_drain_arm cohort (A=drain-all, B=drain<=%u during plateau):\n",
+				REDQUEEN_REEXEC_BURST_DRAIN);
+		stats_log_write("    %-20s A +%lu (total %lu)   B +%lu (total %lu)\n",
+				"attempts_by_arm",
+				delta_reexec_attempts_by_arm[0],
+				cur_reexec_attempts_by_arm[0],
+				delta_reexec_attempts_by_arm[1],
+				cur_reexec_attempts_by_arm[1]);
+		stats_log_write("    %-20s A +%lu (total %lu)   B +%lu (total %lu)\n",
+				"new_cmps_by_arm",
+				delta_reexec_new_cmps_by_arm[0],
+				cur_reexec_new_cmps_by_arm[0],
+				delta_reexec_new_cmps_by_arm[1],
+				cur_reexec_new_cmps_by_arm[1]);
+		stats_log_write("    %-20s A +%lu (total %lu)   B +%lu (total %lu)\n",
+				"new_edges_by_arm",
+				delta_reexec_new_edges_by_arm[0],
+				cur_reexec_new_edges_by_arm[0],
+				delta_reexec_new_edges_by_arm[1],
+				cur_reexec_new_edges_by_arm[1]);
+	}
+}
+
+static void kcov_cmp_render_cmp_hint_callsites(bool any_callsite_delta, bool any_callsite_wins_delta,
+					       const unsigned long delta_cmp_hint_callsite[CMP_HINT_CALLSITE_NR],
+					       const unsigned long cur_cmp_hint_callsite[CMP_HINT_CALLSITE_NR],
+					       const unsigned long delta_cmp_hint_callsite_pc_wins[CMP_HINT_CALLSITE_NR],
+					       const unsigned long cur_cmp_hint_callsite_pc_wins[CMP_HINT_CALLSITE_NR],
+					       const unsigned long delta_cmp_hint_callsite_misses[CMP_HINT_CALLSITE_NR],
+					       const unsigned long cur_cmp_hint_callsite_misses[CMP_HINT_CALLSITE_NR])
+{
+	if (any_callsite_delta || any_callsite_wins_delta) {
+		static const char * const callsite_names[CMP_HINT_CALLSITE_NR] = {
+			[CMP_HINT_CALLSITE_ARG_OP]          = "ARG_OP",
+			[CMP_HINT_CALLSITE_ARG_LIST]        = "ARG_LIST",
+			[CMP_HINT_CALLSITE_ARG_UNDEFINED]   = "ARG_UNDEFINED",
+			[CMP_HINT_CALLSITE_ARG_STRUCT_SIZE] = "ARG_STRUCT_SIZE",
+			[CMP_HINT_CALLSITE_STRUCT_FIELD]    = "STRUCT_FIELD",
+			[CMP_HINT_CALLSITE_OTHER]           = "OTHER",
+			[CMP_HINT_CALLSITE_ARG_RANGE]       = "ARG_RANGE",
+		};
+		unsigned int cs;
+
+		if (any_callsite_delta) {
+			stats_log_write("  cmp_hint_callsite_injected (per-callsite delta / cumulative):\n");
+			for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
+				if (delta_cmp_hint_callsite[cs] == 0 &&
+				    cur_cmp_hint_callsite[cs] == 0)
+					continue;
+				stats_log_write("    %-20s +%lu  (total %lu)\n",
+						callsite_names[cs],
+						delta_cmp_hint_callsite[cs],
+						cur_cmp_hint_callsite[cs]);
+			}
+		}
+		/* PC-mode WIN/MISS partition by callsite -- sibling of
+		 * the injected split above.  Field-pool pulls (stamped
+		 * CMP_HINT_CALLSITE_NR) are not attributed here, so
+		 * sum(pc_wins/misses) can be less than the flat
+		 * cmp_hint_wins / cmp_hint_misses. */
+		if (any_callsite_wins_delta) {
+			stats_log_write("  cmp_hint_callsite_pc_wins/_misses (per-callsite PC-mode outcome delta / cumulative):\n");
+			for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
+				if (delta_cmp_hint_callsite_pc_wins[cs] == 0 &&
+				    delta_cmp_hint_callsite_misses[cs] == 0 &&
+				    cur_cmp_hint_callsite_pc_wins[cs] == 0 &&
+				    cur_cmp_hint_callsite_misses[cs] == 0)
+					continue;
+				stats_log_write("    %-20s wins +%lu (total %lu)  misses +%lu (total %lu)\n",
+						callsite_names[cs],
+						delta_cmp_hint_callsite_pc_wins[cs],
+						cur_cmp_hint_callsite_pc_wins[cs],
+						delta_cmp_hint_callsite_misses[cs],
+						cur_cmp_hint_callsite_misses[cs]);
+			}
+		}
+	}
+}
+
+static void kcov_cmp_render_prop_injected_callsite(bool any_prop_callsite_delta,
+						   const unsigned long delta_prop_injected_callsite[PROP_INJECTED_CALLSITE_NR],
+						   const unsigned long cur_prop_injected_callsite[PROP_INJECTED_CALLSITE_NR])
+{
+	if (any_prop_callsite_delta) {
+		static const char * const prop_callsite_names[PROP_INJECTED_CALLSITE_NR] = {
+			[PROP_INJECTED_CALLSITE_ARG_OP]        = "ARG_OP",
+			[PROP_INJECTED_CALLSITE_ARG_UNDEFINED] = "ARG_UNDEFINED",
+		};
+		unsigned int cs;
+
+		stats_log_write("  propagation_injected_callsite (per-callsite delta / cumulative):\n");
+		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++) {
+			if (delta_prop_injected_callsite[cs] == 0 &&
+			    cur_prop_injected_callsite[cs] == 0)
+				continue;
+			stats_log_write("    %-20s +%lu  (total %lu)\n",
+					prop_callsite_names[cs],
+					delta_prop_injected_callsite[cs],
+					cur_prop_injected_callsite[cs]);
+		}
+	}
+}
 
 /*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
@@ -649,42 +776,12 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		kcov_cmp_rate_line(elapsed, "reexec_attribution_width_match", delta_reexec_attribution_width_match, cur_reexec_attribution_width_match);
 		kcov_cmp_rate_line(elapsed, "reexec_new_cmps_total", delta_reexec_new_cmps_total, cur_reexec_new_cmps_total);
 		kcov_cmp_rate_line(elapsed, "reexec_new_edges_total", delta_reexec_new_edges_total, cur_reexec_new_edges_total);
-		/* Plateau-burst per-call drain-cap A/B cohort split.  Renders
-		 * arm-A (control, drain-all baseline) and arm-B (measure,
-		 * capped at REDQUEEN_REEXEC_BURST_DRAIN during plateau) side-
-		 * by-side so the shadow success criterion
-		 *   (edges/attempt B) >= (edges/attempt A)
-		 * can be read directly off the periodic dump.  Attempts are
-		 * the denominator across both novelty axes; the block only
-		 * fires when at least one arm bumped an attempt this window
-		 * to keep the render quiet under CMP-off / non-plateau runs. */
-		if (delta_reexec_attempts_by_arm[0] |
-		    delta_reexec_attempts_by_arm[1] |
-		    delta_reexec_new_cmps_by_arm[0] |
-		    delta_reexec_new_cmps_by_arm[1] |
-		    delta_reexec_new_edges_by_arm[0] |
-		    delta_reexec_new_edges_by_arm[1]) {
-			stats_log_write("  reexec burst_drain_arm cohort (A=drain-all, B=drain<=%u during plateau):\n",
-					REDQUEEN_REEXEC_BURST_DRAIN);
-			stats_log_write("    %-20s A +%lu (total %lu)   B +%lu (total %lu)\n",
-					"attempts_by_arm",
-					delta_reexec_attempts_by_arm[0],
-					cur_reexec_attempts_by_arm[0],
-					delta_reexec_attempts_by_arm[1],
-					cur_reexec_attempts_by_arm[1]);
-			stats_log_write("    %-20s A +%lu (total %lu)   B +%lu (total %lu)\n",
-					"new_cmps_by_arm",
-					delta_reexec_new_cmps_by_arm[0],
-					cur_reexec_new_cmps_by_arm[0],
-					delta_reexec_new_cmps_by_arm[1],
-					cur_reexec_new_cmps_by_arm[1]);
-			stats_log_write("    %-20s A +%lu (total %lu)   B +%lu (total %lu)\n",
-					"new_edges_by_arm",
-					delta_reexec_new_edges_by_arm[0],
-					cur_reexec_new_edges_by_arm[0],
-					delta_reexec_new_edges_by_arm[1],
-					cur_reexec_new_edges_by_arm[1]);
-		}
+		kcov_cmp_render_reexec_burst_drain_cohort(delta_reexec_attempts_by_arm,
+							  cur_reexec_attempts_by_arm,
+							  delta_reexec_new_cmps_by_arm,
+							  cur_reexec_new_cmps_by_arm,
+							  delta_reexec_new_edges_by_arm,
+							  cur_reexec_new_edges_by_arm);
 		kcov_cmp_rate_line(elapsed, "reexec_skipped_destructive", delta_reexec_skipped_destructive, cur_reexec_skipped_destructive);
 		kcov_cmp_rate_line(elapsed, "reexec_skipped_validate_silent", delta_reexec_skipped_validate_silent, cur_reexec_skipped_validate_silent);
 		kcov_cmp_rate_line(elapsed, "reexec_window_cap_hit", delta_reexec_window_cap_hit, cur_reexec_window_cap_hit);
@@ -702,70 +799,15 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		kcov_cmp_rate_line(elapsed, "cmp_parent_calls_control", delta_cmp_parent_calls_control, cur_cmp_parent_calls_control);
 		kcov_cmp_rate_line(elapsed, "cmp_parent_new_cmps_enabled", delta_cmp_parent_new_cmps_enabled, cur_cmp_parent_new_cmps_enabled);
 		kcov_cmp_rate_line(elapsed, "cmp_parent_new_cmps_control", delta_cmp_parent_new_cmps_control, cur_cmp_parent_new_cmps_control);
-		if (any_callsite_delta || any_callsite_wins_delta) {
-			static const char * const callsite_names[CMP_HINT_CALLSITE_NR] = {
-				[CMP_HINT_CALLSITE_ARG_OP]          = "ARG_OP",
-				[CMP_HINT_CALLSITE_ARG_LIST]        = "ARG_LIST",
-				[CMP_HINT_CALLSITE_ARG_UNDEFINED]   = "ARG_UNDEFINED",
-				[CMP_HINT_CALLSITE_ARG_STRUCT_SIZE] = "ARG_STRUCT_SIZE",
-				[CMP_HINT_CALLSITE_STRUCT_FIELD]    = "STRUCT_FIELD",
-				[CMP_HINT_CALLSITE_OTHER]           = "OTHER",
-				[CMP_HINT_CALLSITE_ARG_RANGE]       = "ARG_RANGE",
-			};
-			unsigned int cs;
-
-			if (any_callsite_delta) {
-				stats_log_write("  cmp_hint_callsite_injected (per-callsite delta / cumulative):\n");
-				for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
-					if (delta_cmp_hint_callsite[cs] == 0 &&
-					    cur_cmp_hint_callsite[cs] == 0)
-						continue;
-					stats_log_write("    %-20s +%lu  (total %lu)\n",
-							callsite_names[cs],
-							delta_cmp_hint_callsite[cs],
-							cur_cmp_hint_callsite[cs]);
-				}
-			}
-			/* PC-mode WIN/MISS partition by callsite -- sibling of
-			 * the injected split above.  Field-pool pulls (stamped
-			 * CMP_HINT_CALLSITE_NR) are not attributed here, so
-			 * sum(pc_wins/misses) can be less than the flat
-			 * cmp_hint_wins / cmp_hint_misses. */
-			if (any_callsite_wins_delta) {
-				stats_log_write("  cmp_hint_callsite_pc_wins/_misses (per-callsite PC-mode outcome delta / cumulative):\n");
-				for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
-					if (delta_cmp_hint_callsite_pc_wins[cs] == 0 &&
-					    delta_cmp_hint_callsite_misses[cs] == 0 &&
-					    cur_cmp_hint_callsite_pc_wins[cs] == 0 &&
-					    cur_cmp_hint_callsite_misses[cs] == 0)
-						continue;
-					stats_log_write("    %-20s wins +%lu (total %lu)  misses +%lu (total %lu)\n",
-							callsite_names[cs],
-							delta_cmp_hint_callsite_pc_wins[cs],
-							cur_cmp_hint_callsite_pc_wins[cs],
-							delta_cmp_hint_callsite_misses[cs],
-							cur_cmp_hint_callsite_misses[cs]);
-				}
-			}
-		}
-		if (any_prop_callsite_delta) {
-			static const char * const prop_callsite_names[PROP_INJECTED_CALLSITE_NR] = {
-				[PROP_INJECTED_CALLSITE_ARG_OP]        = "ARG_OP",
-				[PROP_INJECTED_CALLSITE_ARG_UNDEFINED] = "ARG_UNDEFINED",
-			};
-			unsigned int cs;
-
-			stats_log_write("  propagation_injected_callsite (per-callsite delta / cumulative):\n");
-			for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++) {
-				if (delta_prop_injected_callsite[cs] == 0 &&
-				    cur_prop_injected_callsite[cs] == 0)
-					continue;
-				stats_log_write("    %-20s +%lu  (total %lu)\n",
-						prop_callsite_names[cs],
-						delta_prop_injected_callsite[cs],
-						cur_prop_injected_callsite[cs]);
-			}
-		}
+		kcov_cmp_render_cmp_hint_callsites(any_callsite_delta, any_callsite_wins_delta,
+						   delta_cmp_hint_callsite, cur_cmp_hint_callsite,
+						   delta_cmp_hint_callsite_pc_wins,
+						   cur_cmp_hint_callsite_pc_wins,
+						   delta_cmp_hint_callsite_misses,
+						   cur_cmp_hint_callsite_misses);
+		kcov_cmp_render_prop_injected_callsite(any_prop_callsite_delta,
+						       delta_prop_injected_callsite,
+						       cur_prop_injected_callsite);
 		kcov_cmp_render_per_entry_feedback_scoring(elapsed,
 							   delta_cmp_hints_consumed, cur_cmp_hints_consumed,
 							   delta_cmp_hint_wins, cur_cmp_hint_wins,
