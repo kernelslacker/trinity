@@ -480,18 +480,18 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
  * by LRU, and the inner buffer needs explicit handling because the
  * wrapper-tracking fix in 59474a7b8c23 ("bpf: track the sock_fprog wrapper alloc in bpf_gen_filter") only tagged the outer alloc.
  *
- * Helper-boundary validation: the .post paths in syscalls/setsockopt.c,
- * syscalls/seccomp.c and syscalls/prctl.c already gate the wrapper with
+ * Helper-boundary validation: the .post paths in
+ * syscalls/socket/setsockopt.c, syscalls/process/seccomp.c and
+ * syscalls/process/prctl.c already gate the wrapper with
  * alloc_track_lookup() || range_readable_user() before reaching us, but
  * syscalls/bpf.c's BPF_PROG_LOAD classic-BPF cleanup calls in directly
  * from snap->classic_bpf_insns + attr->insns -- a sibling-scribbled
  * attr->insns that survives the snap shape check would fault on the
  * bpf->filter deref here.  Prove the wrapper inside the helper so the
  * direct caller is safe and the .post-path callers stay double-gated
- * without per-file edits.  Same shape as those callers: tracked
- * allocation (definitively one we produced via zmalloc_tracked in
- * bpf_gen_filter / bpf_gen_seccomp) or at minimum readable for a
- * sock_fprog-sized window.
+ * without per-file edits.  Same shape as those callers: tracked allocation
+ * (definitively one we produced via zmalloc_tracked in bpf_gen_filter /
+ * bpf_gen_seccomp) or at minimum readable for a sock_fprog-sized window.
  *
  * Inner-filter free is alloc_track_lookup()-only: free what we can
  * prove we own, leak the unproven.  alloc_track_lookup() hashes first

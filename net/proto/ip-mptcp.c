@@ -5,10 +5,10 @@
  * kernels, SOL_MPTCP options (MPTCP_INFO et al.) are getsockopt-only --
  * mptcp_setsockopt() at SOL_MPTCP returns -EOPNOTSUPP.  We still emit the
  * option grammar here because do_setsockopt() is shared between the
- * setsockopt and getsockopt sanitisers (see syscalls/getsockopt.c), so this
- * grammar exercises the SOL_MPTCP getsockopt dispatch path on real MPTCP
- * sockets.  Path-management lives behind the mptcp_pm genetlink family and
- * is intentionally not handled here.
+ * setsockopt and getsockopt sanitisers (see syscalls/socket/getsockopt.c),
+ * so this grammar exercises the SOL_MPTCP getsockopt dispatch path on
+ * real MPTCP sockets.  Path-management lives behind the mptcp_pm
+ * genetlink family and is intentionally not handled here.
  */
 
 #include <sys/socket.h>
