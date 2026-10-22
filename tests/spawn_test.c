@@ -119,6 +119,60 @@ static void barrier_opens_when_every_empty_slot_is_parked(void)
 	}
 }
 
+/* A slot that fails ten spawns is passed over for the rest of the call,
+ * so one that never forks does not stop the others filling or hold the
+ * barrier.  It stays empty, which keeps the fleet under target so the
+ * next call comes, and the mask starts clear on every call: that call
+ * tries the slot again, ten more times. */
+static void failing_slot_is_skipped_for_one_call(void)
+{
+	fake_parent_reset();
+	fake_clock_start();
+	fill_all_but(0, 3);
+	fake_fork_fail[0] = FAKE_FORK_FAIL_ALWAYS;
+
+	fork_children();
+
+	if (fake_slot_log[0].forks != 10)
+		BUG("spawn: a slot was not given up on after exactly ten spawns");
+	if (pids[1] != FAKE_FORK_PID(1) || pids[2] != FAKE_FORK_PID(2))
+		BUG("spawn: a failing slot kept the others from filling");
+	if (pids[0] != EMPTY_PIDSLOT || shm->running_childs != FAKE_NR_CHILDREN - 1)
+		BUG("spawn: a skipped slot did not stay empty");
+	if (!BARRIER_OPEN)
+		BUG("spawn: a skipped slot held the barrier shut");
+
+	fork_children();
+
+	if (fake_slot_log[0].forks != 20)
+		BUG("spawn: the skip mask carried over into the next call");
+
+	fake_fork_fail[0] = 0;
+	fork_children();
+
+	if (pids[0] != FAKE_FORK_PID(0) || shm->running_childs != FAKE_NR_CHILDREN)
+		BUG("spawn: a skipped slot was not filled once it could fork");
+}
+
+/* The throttle yields only for a slot the call has not skipped: with
+ * the one empty slot left skipped, nothing is fillable, the call goes
+ * on to open the barrier and does not hand a shut one back. */
+static void throttled_fill_does_not_yield_for_a_skipped_slot(void)
+{
+	fake_parent_reset();
+	fake_clock_start();
+	fork_throttle_us = 1000;
+	fill_all_but(0, 2);
+	fake_fork_fail[0] = FAKE_FORK_FAIL_ALWAYS;
+
+	fork_children();
+
+	if (fake_slot_log[0].forks != 10 || pids[1] != FAKE_FORK_PID(1))
+		BUG("spawn: a throttled call did not skip the failing slot and fork the next");
+	if (!BARRIER_OPEN)
+		BUG("spawn: a throttled call yielded for a slot it had skipped");
+}
+
 void spawn_self_check(void);
 void spawn_self_check(void)
 {
@@ -126,6 +180,8 @@ void spawn_self_check(void)
 	throttled_fill_yields_after_each_spawn();
 	throttled_fill_carries_on_past_a_parked_slot();
 	barrier_opens_when_every_empty_slot_is_parked();
+	failing_slot_is_skipped_for_one_call();
+	throttled_fill_does_not_yield_for_a_skipped_slot();
 
 	/* Leave no pids or counts for later suites. */
 	fake_parent_reset();
