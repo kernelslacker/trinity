@@ -17,7 +17,6 @@
 #include "fd.h"
 #include "fd-event.h"
 #include "kcov.h"
-#include "objects.h"
 #include "pids.h"
 #include "random.h"
 #include "sanitise.h"
@@ -48,7 +47,7 @@ static unsigned long close_range_flags[] = {
  *   2. A sibling makes max_fd < fd between syscall return and post
  *      entry.  The unsigned `max_fd - fd > 1024` comparison underflows
  *      to a huge value, the clamp kicks in setting max_fd = fd + 1024,
- *      and the loop runs across 1025 fds that were never in the
+ *      and the post reports a close of 1025 fds that were never in the
  *      original syscall's range.
  *
  * The scribble-class here is the same one many recent post handlers
@@ -331,14 +330,14 @@ static void post_close_range(struct syscallrecord *rec)
 	 * max_fd < fd is either a kernel that accepted an inverted range
 	 * (it should not) or a snapshot whose inner fields were
 	 * wholesale-stomped after the magic check; either way, skip the
-	 * range walk rather than underflow `max_fd - fd` into a huge
-	 * value that the 1024 clamp then turns into a 1025-fd walk
+	 * close report rather than underflow `max_fd - fd` into a huge
+	 * value that the 1024 clamp then turns into a 1025-fd span
 	 * starting at a fd the original syscall never touched.
 	 */
 	if (max_fd < fd)
 		goto out_free;
 
-	/* Sanity: don't scan billions of fds */
+	/* Sanity: cap the reported span at 1025 fds */
 	if (max_fd - fd > 1024)
 		max_fd = fd + 1024;
 
@@ -347,15 +346,10 @@ static void post_close_range(struct syscallrecord *rec)
 	/* Publish one CLOSE_RANGE event and drop this child's local
 	 * snapshots for the whole range in one shot.  Single pass over
 	 * fd_hash[] and the 16-slot live-fd ring instead of per-fd
-	 * walks inside the loop below. */
+	 * walks. */
 	if (child != NULL)
 		notify_child_fd_closed_range(child,
 					     (int) fd, (int) max_fd);
-
-	for (; fd <= max_fd; fd++) {
-		/* Parent-side path (no-op in children). */
-		remove_object_by_fd((int) fd);
-	}
 
 out_free:
 	post_state_release(rec, snap);
