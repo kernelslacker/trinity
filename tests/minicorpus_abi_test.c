@@ -42,6 +42,7 @@ enum {
 	NR_PTR_STRUCT,	/* struct and time pointers, 64-bit table only */
 	NR_PTR_POOL,	/* pool buffer pointers, 64-bit table only */
 	NR_PTR_MIX,	/* address pointers, then sizes, 64-bit table only */
+	NR_PLAIN_TYPED,	/* typed slots that hold plain values, 64-bit table only */
 	NR_NO_ARGS,	/* no arguments, 64-bit table only */
 	NR_ABI_END,
 };
@@ -97,6 +98,15 @@ static struct syscallentry ptr_mix = {
 		     [4] = ARG_BUF_LEN, [5] = ARG_UNDEFINED },
 };
 
+/* A range, a vocabulary pick, a flag set, a length, a mode and a cpu:
+ * typed, but values rather than pointers or ids, so replay keeps them. */
+static struct syscallentry plain_typed = {
+	.name = "plain_typed",
+	.num_args = 6,
+	.argtype = { [0] = ARG_RANGE, [1] = ARG_OP, [2] = ARG_LIST,
+		     [3] = ARG_LEN, [4] = ARG_MODE_T, [5] = ARG_CPU },
+};
+
 static struct syscallentry no_args = {
 	.name = "no_args",
 	.num_args = 0,
@@ -112,6 +122,7 @@ static const struct syscalltable abi_table[2][NR_ABI_END] = {
 		[NR_PTR_STRUCT] = { .entry = &ptr_struct },
 		[NR_PTR_POOL] = { .entry = &ptr_pool },
 		[NR_PTR_MIX] = { .entry = &ptr_mix },
+		[NR_PLAIN_TYPED] = { .entry = &plain_typed },
 		[NR_NO_ARGS] = { .entry = &no_args },
 	},
 	[1] = {
@@ -401,14 +412,15 @@ static void load_refuses_version_3(const char *path)
  * zeroed slot and a swapped one both show. */
 #define SLOT_MARK(i)	(0x7a00UL + (i))
 
-/* ptr_* entries by nr, with the slots replay must find zeroed. */
+/* Entries by nr, with the slots replay must find zeroed. */
 static const struct {
 	unsigned int nr;
 	unsigned int stale;
-} ptr_cases[] = {
+} slot_cases[] = {
 	{ NR_PTR_STRUCT, 0x3f },
 	{ NR_PTR_POOL, 0x3f },
 	{ NR_PTR_MIX, 0x07 },
+	{ NR_PLAIN_TYPED, 0x00 },
 };
 
 /* The first entry of nr's ring: the slots in @stale read zero, the
@@ -441,10 +453,10 @@ static void save_zeroes_stale_slots(void)
 	rec.a4 = SLOT_MARK(3);
 	rec.a5 = SLOT_MARK(4);
 	rec.a6 = SLOT_MARK(5);
-	for (i = 0; i < ARRAY_SIZE(ptr_cases); i++) {
-		rec.nr = ptr_cases[i].nr;
+	for (i = 0; i < ARRAY_SIZE(slot_cases); i++) {
+		rec.nr = slot_cases[i].nr;
 		minicorpus_save_with_reason(&rec, CORPUS_SAVE_REASON_PC);
-		check_slots(ptr_cases[i].nr, ptr_cases[i].stale);
+		check_slots(slot_cases[i].nr, slot_cases[i].stale);
 	}
 }
 
@@ -456,8 +468,8 @@ static void load_zeroes_stale_slots(const char *path)
 	unsigned int loaded, discarded, i, j;
 
 	memset(minicorpus_shm, 0, sizeof(*minicorpus_shm));
-	for (i = 0; i < ARRAY_SIZE(ptr_cases); i++) {
-		struct corpus_ring *ring = &minicorpus_shm->rings[ptr_cases[i].nr];
+	for (i = 0; i < ARRAY_SIZE(slot_cases); i++) {
+		struct corpus_ring *ring = &minicorpus_shm->rings[slot_cases[i].nr];
 		struct corpus_entry *e = &ring->entries[0];
 
 		for (j = 0; j < 6; j++)
@@ -474,10 +486,10 @@ static void load_zeroes_stale_slots(const char *path)
 		BUG("minicorpus scrub: saving the corpus failed");
 
 	loaded = load(path, &discarded);
-	if (loaded != ARRAY_SIZE(ptr_cases) || discarded != 0)
-		BUG("minicorpus scrub: the loader dropped a pointer entry");
-	for (i = 0; i < ARRAY_SIZE(ptr_cases); i++)
-		check_slots(ptr_cases[i].nr, ptr_cases[i].stale);
+	if (loaded != ARRAY_SIZE(slot_cases) || discarded != 0)
+		BUG("minicorpus scrub: the loader dropped an entry");
+	for (i = 0; i < ARRAY_SIZE(slot_cases); i++)
+		check_slots(slot_cases[i].nr, slot_cases[i].stale);
 }
 
 /* A call with no arguments has nothing to replay: saving one only
