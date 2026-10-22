@@ -124,6 +124,10 @@ void minicorpus_ring_unlock(struct corpus_ring *ring)
  *    pidfd_send_signal / rt_sigqueueinfo entries cascade-SIGKILLs the
  *    fleet.
  *
+ *  - no arguments: nothing to replay.  An entry would only fail the
+ *    num_args validator in minicorpus_replay() and be counted as a torn
+ *    read.
+ *
  * Three call sites must agree on this list:
  *
  *   minicorpus_save()       — refuse to capture in the first place.
@@ -144,6 +148,9 @@ void minicorpus_ring_unlock(struct corpus_ring *ring)
 bool corpus_args_replayable(const struct syscallentry *entry)
 {
 	unsigned int i;
+
+	if (entry->num_args < 1)
+		return false;
 
 	for (i = 0; i < entry->num_args && i < 6; i++) {
 		switch (entry->argtype[i]) {

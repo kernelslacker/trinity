@@ -1,7 +1,7 @@
 /*
  * Self-checks for persist/minicorpus-*.c.  Biarch rings are keyed by nr
  * alone, so replay and load must judge each entry by its ABI.  Save and
- * load also zero the slots whose saved value is stale on replay.
+ * load zero stale slots, and a call with no arguments is not saved.
  */
 
 #include <fcntl.h>
@@ -41,6 +41,7 @@ enum {
 	NR_PTR_STRUCT,	/* struct and time pointers, 64-bit table only */
 	NR_PTR_POOL,	/* pool buffer pointers, 64-bit table only */
 	NR_PTR_MIX,	/* address pointers, then sizes, 64-bit table only */
+	NR_NO_ARGS,	/* no arguments, 64-bit table only */
 	NR_ABI_END,
 };
 
@@ -95,6 +96,11 @@ static struct syscallentry ptr_mix = {
 		     [4] = ARG_BUF_LEN, [5] = ARG_UNDEFINED },
 };
 
+static struct syscallentry no_args = {
+	.name = "no_args",
+	.num_args = 0,
+};
+
 /* [do32][nr]: the tables get_syscall_entry() reads while the test runs. */
 static const struct syscalltable abi_table[2][NR_ABI_END] = {
 	[0] = {
@@ -105,6 +111,7 @@ static const struct syscalltable abi_table[2][NR_ABI_END] = {
 		[NR_PTR_STRUCT] = { .entry = &ptr_struct },
 		[NR_PTR_POOL] = { .entry = &ptr_pool },
 		[NR_PTR_MIX] = { .entry = &ptr_mix },
+		[NR_NO_ARGS] = { .entry = &no_args },
 	},
 	[1] = {
 		[NR_SHARED] = { .entry = &fd_range },
@@ -479,6 +486,42 @@ static void load_zeroes_stale_slots(const char *path)
 		check_slots(ptr_cases[i].nr, ptr_cases[i].stale);
 }
 
+/* A call with no arguments has nothing to replay: saving one only
+ * fills its ring with entries that replay counts as torn reads. */
+static void save_skips_calls_without_args(void)
+{
+	struct syscallrecord rec;
+	unsigned int i;
+
+	memset(minicorpus_shm, 0, sizeof(*minicorpus_shm));
+	memset(&rec, 0, sizeof(rec));
+	rec.nr = NR_NO_ARGS;
+	minicorpus_save_with_reason(&rec, CORPUS_SAVE_REASON_PC);
+	if (minicorpus_shm->rings[NR_NO_ARGS].count != 0)
+		BUG("minicorpus no-args: a call with no arguments was saved");
+
+	for (i = 0; i < REPLAY_TRIES; i++)
+		minicorpus_replay(&rec);
+	if (minicorpus_shm->replay_torn_rejects != 0)
+		BUG("minicorpus no-args: replay counted a torn read");
+}
+
+/* The loader agrees: an entry on disk for a syscall that now takes no
+ * arguments is refused, not admitted for replay to reject. */
+static void load_refuses_calls_without_args(const char *path)
+{
+	unsigned int discarded;
+
+	memset(minicorpus_shm, 0, sizeof(*minicorpus_shm));
+	put_entry(NR_NO_ARGS, false, 0x11, 0x22);
+	minicorpus_shm->mutations = 2000;	/* not the first save's value */
+	if (!minicorpus_save_file(path))
+		BUG("minicorpus no-args: saving the corpus failed");
+
+	if (load(path, &discarded) != 0 || discarded != 1)
+		BUG("minicorpus no-args: the loader admitted a call with no arguments");
+}
+
 void minicorpus_abi_self_check(void);
 void minicorpus_abi_self_check(void)
 {
@@ -508,6 +551,8 @@ void minicorpus_abi_self_check(void)
 	load_refuses_version_3(path);
 	save_zeroes_stale_slots();
 	load_zeroes_stale_slots(path);
+	save_skips_calls_without_args();
+	load_refuses_calls_without_args(path);
 
 	/* Back to the empty uniarch tables fake_parent.c provides. */
 	biarch = false;
