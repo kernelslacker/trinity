@@ -8,7 +8,8 @@
  * re-runs the same replay-safety predicate the save side uses
  * (chain_is_replay_safe, imported via chain-internal.h) so a saved
  * chain whose syscall table has since tightened cannot slip back
- * into the ring through the load path.
+ * into the ring through the load path, and zeroes the stale fd and
+ * pointer slots of the chains it admits, as save does.
  *
  * chain_corpus_default_path builds an XDG-anchored, arch- and kernel-
  * release-tagged path so a saved corpus is never accidentally reused
@@ -287,8 +288,8 @@ fail:
 }
 
 /*
- * Re-validate a chain candidate against the CURRENT syscall table
- * before admitting it to the ring.  Rejects on:
+ * Turn a file entry into a ring entry, re-validating it against the
+ * CURRENT syscall table first.  Rejects on:
  *   (a) any step nr >= MAX_NR_SYSCALL (out of range)
  *   (b) any step whose nr does not resolve to a live syscall entry
  *       in the active table (get_syscall_entry returns NULL --
@@ -298,15 +299,20 @@ fail:
  *       argtype that is not safe to replay -- stale heap pointers,
  *       stale pids, sanitise-stashed pointers).
  *
- * This is the same predicate the save side uses in chain_corpus_save,
+ * (c) is the same predicate the save side uses in chain_corpus_save,
  * re-run here so a saved chain whose syscall table has since changed
  * (a syscall was deactivated, a sanitise callback was added, an
  * argtype was tightened to ARG_PID) cannot slip back into the ring
  * through the load path.
+ *
+ * An admitted chain also has its stale fd and pointer slots zeroed, as
+ * save does: a file written before save did so still holds them raw, as
+ * does one saved while a slot was untyped (ARG_UNDEFINED) that is an fd
+ * or pointer type now.
  */
-static bool chain_load_entry_is_admissible(const struct chain_corpus_file_entry *ent)
+static bool chain_load_entry(const struct chain_corpus_file_entry *ent,
+			     struct chain_entry *out)
 {
-	struct chain_step steps[MAX_SEQ_LEN];
 	unsigned int i, j;
 
 	if (ent->len == 0 || ent->len > MAX_SEQ_LEN)
@@ -314,6 +320,9 @@ static bool chain_load_entry_is_admissible(const struct chain_corpus_file_entry 
 	if (ent->save_reason >= CHAIN_SAVE_NR_REASONS)
 		return false;
 
+	memset(out, 0, sizeof(*out));
+	out->len = ent->len;
+	out->save_reason = ent->save_reason;
 	for (i = 0; i < ent->len; i++) {
 		struct syscallentry *e;
 		bool do32 = ent->steps[i].do32bit != 0;
@@ -324,14 +333,17 @@ static bool chain_load_entry_is_admissible(const struct chain_corpus_file_entry 
 		if (e == NULL)
 			return false;
 
-		steps[i].nr = ent->steps[i].nr;
-		steps[i].do32bit = do32;
+		out->steps[i].nr = ent->steps[i].nr;
+		out->steps[i].do32bit = do32;
 		for (j = 0; j < 6; j++)
-			steps[i].args[j] = (unsigned long)ent->steps[i].args[j];
-		steps[i].retval = (unsigned long)ent->steps[i].retval;
+			out->steps[i].args[j] = (unsigned long)ent->steps[i].args[j];
+		out->steps[i].retval = (unsigned long)ent->steps[i].retval;
 	}
 
-	return chain_is_replay_safe(steps, ent->len);
+	if (!chain_is_replay_safe(out->steps, out->len))
+		return false;
+	chain_zero_stale_args(out->steps, out->len);
+	return true;
 }
 
 bool chain_corpus_load_file(const char *path,
@@ -424,10 +436,8 @@ bool chain_corpus_load_file(const char *path,
 	}
 
 	for (;;) {
-		struct chain_entry *dst;
+		struct chain_entry tmp;
 		unsigned int slot;
-		unsigned int step;
-		unsigned int j;
 		unsigned int head, count;
 		uint32_t want;
 		ssize_t n;
@@ -447,7 +457,7 @@ bool chain_corpus_load_file(const char *path,
 			continue;
 		}
 
-		if (!chain_load_entry_is_admissible(&ent)) {
+		if (!chain_load_entry(&ent, &tmp)) {
 			ndiscarded++;
 			continue;
 		}
@@ -455,20 +465,7 @@ bool chain_corpus_load_file(const char *path,
 		lock(&ring->lock);
 		head = ring->head;
 		slot = head % CHAIN_CORPUS_RING_SIZE;
-		dst = &ring->slots[slot];
-		memset(dst, 0, sizeof(*dst));
-		dst->len = ent.len;
-		dst->save_reason = ent.save_reason;
-		for (step = 0; step < ent.len; step++) {
-			dst->steps[step].nr = ent.steps[step].nr;
-			dst->steps[step].do32bit =
-				ent.steps[step].do32bit != 0;
-			for (j = 0; j < 6; j++)
-				dst->steps[step].args[j] =
-					(unsigned long)ent.steps[step].args[j];
-			dst->steps[step].retval =
-				(unsigned long)ent.steps[step].retval;
-		}
+		ring->slots[slot] = tmp;
 
 		/* Publish head/count with release semantics so the
 		 * lockless chain_corpus_pick reader, which loads them

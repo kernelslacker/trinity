@@ -202,6 +202,9 @@ bool corpus_args_replayable(const struct syscallentry *entry)
  *
  * Ids the kernel validates itself (key serials, timer ids, SysV ids,
  * aio contexts) are kept: a stale one just fails the kernel's lookup.
+ *
+ * The chain corpus zeroes a saved step's slots by the same rule, each
+ * step by its own ABI's table (chain_zero_stale_args()).
  */
 bool corpus_argtype_stale_on_replay(enum argtype type)
 {

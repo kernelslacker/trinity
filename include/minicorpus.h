@@ -438,8 +438,8 @@ bool corpus_args_replayable(const struct syscallentry *entry);
 bool corpus_argtype_refused(enum argtype type);
 
 /* Whether a saved value of this argtype is stale in the replaying run:
- * an fd, or a pointer into the saving run's heap or writable pool.  Save
- * and the warm-start loader zero such a slot. */
+ * an fd, or a pointer into the saving run's heap or writable pool.  The
+ * minicorpus and the chain corpus zero such a slot at save and at load. */
 bool corpus_argtype_stale_on_replay(enum argtype type);
 
 /* Whether nr's ring holds an entry saved under @do32bit's ABI.  Both

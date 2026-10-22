@@ -171,6 +171,17 @@ MINICORPUS_SRCS	:= \
 	$(TOP)/lib/fd.c \
 	$(TOP)/utils/persist-util.c
 
+# The chain corpus ring and its warm-start file, linked for
+# chain_corpus_save(), chain_corpus_save_file() and
+# chain_corpus_load_file(), with the fd and stale-tmp helpers from
+# MINICORPUS_SRCS.  Same section-per-function treatment, so the init and
+# snapshot code and the rest of the chain cluster stay out of the link;
+# chain_corpus_test.c uses the lock, persist envelope and crc32() fakes
+# from cmp_field_scan_test.c and minicorpus_abi_test.c.
+CHAIN_SRCS	:= \
+	$(TOP)/random_syscall/chain-corpus.c \
+	$(TOP)/random_syscall/chain-persist.c
+
 # The kcov bitmap warm-start save and load paths, linked for
 # kcov_bitmap_save_file() and kcov_bitmap_load_file(), with the fd and
 # stale-tmp helpers they use from MINICORPUS_SRCS.  Same
@@ -210,6 +221,7 @@ FAKE_SRCS	:= \
 	cmp_field_scan_test.c \
 	sanitiser_owned_mask_test.c \
 	minicorpus_abi_test.c \
+	chain_corpus_test.c \
 	redqueen_pin_test.c \
 	asb_relocate_test.c \
 	loop_status_test.c \
@@ -223,9 +235,10 @@ REAL_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(REAL_SRCS))
 PARENT_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(PARENT_SRCS))
 CMP_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(CMP_SRCS))
 MINICORPUS_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(MINICORPUS_SRCS))
+CHAIN_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(CHAIN_SRCS))
 KCOV_PERSIST_OBJS := $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(KCOV_PERSIST_SRCS))
 FAKE_OBJS	:= $(patsubst %.c,$(BUILDDIR)/%.o,$(FAKE_SRCS))
-TEST_OBJS	:= $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(KCOV_PERSIST_OBJS) $(FAKE_OBJS)
+TEST_OBJS	:= $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(CHAIN_OBJS) $(KCOV_PERSIST_OBJS) $(FAKE_OBJS)
 
 .PHONY: all test test-asan test-ndebug clean
 
@@ -244,7 +257,7 @@ test-ndebug:
 $(TEST_BIN): $(TEST_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(TEST_OBJS)
 
-$(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(KCOV_PERSIST_OBJS): CFLAGS += -ffunction-sections -fdata-sections
+$(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(CHAIN_OBJS) $(KCOV_PERSIST_OBJS): CFLAGS += -ffunction-sections -fdata-sections
 
 # -MMD writes a .d file beside each object listing the headers it was
 # built from, so editing a header rebuilds the objects that include it.

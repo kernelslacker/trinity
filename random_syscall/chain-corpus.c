@@ -150,6 +150,33 @@ bool chain_is_replay_safe(const struct chain_step *steps,
 }
 
 /*
+ * Zero the slots of @steps whose saved value is stale on replay: an fd,
+ * or a pointer into the saving run's heap or writable pool (see
+ * corpus_argtype_stale_on_replay()).  Replay feeds a step's saved args
+ * through minicorpus_mutate_args(), which draws a fresh fd for a zero
+ * fd slot; a zero pointer slot gives the kernel NULL, or a mutation of
+ * it, instead of the saving run's freed or recycled address.
+ *
+ * Each step is judged by the table of its own ABI: on biarch one nr is
+ * unrelated syscalls under the two.  @steps must have passed
+ * chain_is_replay_safe(), so every table entry resolves.
+ */
+void chain_zero_stale_args(struct chain_step *steps, unsigned int len)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < len; i++) {
+		const struct syscallentry *entry = get_syscall_entry(steps[i].nr,
+								     steps[i].do32bit);
+
+		for (j = 0; j < entry->num_args && j < 6; j++) {
+			if (corpus_argtype_stale_on_replay(entry->argtype[j]))
+				steps[i].args[j] = 0;
+		}
+	}
+}
+
+/*
  * Push a fresh chain into the ring, overwriting the oldest slot in place
  * when the ring is full.  Slots are inline structs in shm (no separate
  * allocation), so the write is a memcpy under the ring lock and there is
@@ -225,6 +252,8 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len,
 	tmp.len = len;
 	tmp.save_reason = reason;
 	memcpy(tmp.steps, steps, len * sizeof(struct chain_step));
+	/* Only the ring's copy: the caller's steps[] stays as dispatched. */
+	chain_zero_stale_args(tmp.steps, len);
 
 	incoming_hash = chain_shape_hash(steps, len);
 

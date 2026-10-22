@@ -62,6 +62,9 @@ bool run_sequence_chain(struct childdata *child);
 struct chain_step {
 	unsigned int nr;
 	bool do32bit;
+	/* As dispatched.  The ring's copy has its stale fd and pointer
+	 * slots zeroed, since replay would hand the kernel the saving
+	 * run's values. */
 	unsigned long args[6];
 	unsigned long retval;
 };
@@ -189,8 +192,9 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len,
  * result to @path.  chain_corpus_load_file() reads a previously-saved
  * image, refuses incompatible headers outright, drops individual
  * chains that fail re-validation (unknown syscall nr, argtype set no
- * longer replay-safe), and admits the survivors into the ring using
- * the same release-store publish sequence chain_corpus_save() uses.
+ * longer replay-safe), and admits the survivors into the ring, their
+ * stale fd and pointer slots zeroed, using the same release-store
+ * publish sequence chain_corpus_save() uses.
  *
  * chain_corpus_default_path() builds an XDG-anchored, arch- and
  * kernel-release-tagged path so a saved chain corpus is never

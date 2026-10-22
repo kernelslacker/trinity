@@ -39,4 +39,12 @@ bool chain_restype_has_consumer(enum chain_resource_kind kind,
 bool chain_is_replay_safe(const struct chain_step *steps,
 			  unsigned int len);
 
+/* chain-corpus.c -- zeroes the slots of each step whose saved value is
+ * stale on replay (an fd, a pointer into the saving run's heap or
+ * writable pool).  chain_corpus_save() runs it on the ring's copy of a
+ * chain and chain-persist.c's loader on each file entry, so both ends
+ * leave the same slots zero.  @steps must have passed
+ * chain_is_replay_safe(). */
+void chain_zero_stale_args(struct chain_step *steps, unsigned int len);
+
 #endif
