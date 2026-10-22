@@ -35,12 +35,6 @@
 #                    * shimmed, but the compiler can't resolve it  →  SKIP
 #                      (the host's headers predate it; counted in the PASS
 #                      line, and still checked if a Tier-2 tree resolves it)
-#
-# OVERLAP with netlink-xfrm-attr-shim.sh:
-#   That gate checks that every XFRMA_ token *used* in the xfrm generators
-#   has a #define fallback.  This gate checks that every such fallback carries
-#   the *correct value*.  The two gates are complementary; neither is
-#   redundant.
 
 set -u
 

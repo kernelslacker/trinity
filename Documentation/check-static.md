@@ -311,7 +311,7 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `#ifndef` guards on enum values are always taken — enums are not macros, so
   the shim is the definition, not a fallback.  A miscounted or typo'd value
   compiles silently and sends the wrong netlink attribute to the kernel.
-  `XFRMA_*` value correctness is checked in `netlink-xfrm-attr-shim`.
+  The `XFRMA_*` shims are probed like any other and pinned in the baseline.
   A baseline symbol that the tree shims but no probe can resolve, such as a
   constant newer than the build host's headers, is skipped with a `SKIP` line
   and a count in the `PASS` line instead of failing; a `TRINITY_LINUS_SRC`
