@@ -7,7 +7,7 @@ a secondary feature, distinct from minicorpus's per-syscall arg snapshots, so it
 sits in `random_syscall/` beside `chain-subst.c` as `chain-corpus.c` /
 `chain-persist.c`.
 
-## Files (9 files, ~4,836 LOC)
+## Files (9 files, ~4,813 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -21,7 +21,7 @@ a new edge, re-inject them into later iterations — is split across
 |---|---|---|
 | minicorpus-field-mutate.c | 631 | Per-arg mutator engine: weighted case picker (Beta(1,1)-prior posterior mean over historical trials/wins), structure-aware neighbour ops for ARG_LIST / ARG_OP / ARG_RANGE, and the 1..STACK_MAX stacking wrapper |
 | minicorpus-file.c | 526 | On-disk warm-start format: fixed header (magic, version, kernel major.minor, syscall-number space) followed by fixed-size entries, each validated on load against the syscall table matching its `do32bit` |
-| minicorpus-accounting.c | 362 | Mutate accept-reject accounting: per-process attribution stashes drained into fleet-wide trials/wins on post-syscall commit; baseline gate, source-age histogram, per-tag rules |
+| minicorpus-accounting.c | 339 | Mutate accept-reject accounting: per-process attribution stashes drained into fleet-wide trials/wins on post-syscall commit; baseline gate, source-age histogram, per-tag rules |
 | minicorpus-select.c | 220 | Replay entry point: picks a saved snapshot from the per-syscall ring (uniform normally, K-newest-window under the CMP-rising-PC-flat plateau), then runs the splice-and-mutate driver |
 | minicorpus-core.c | 289 | Core primitives: shm allocation + init, per-ring lock bracket, replayability, refused-argtype and stale-slot predicates, per-ABI ring query, wp-canary sweep, mutator kill-switch |
 | minicorpus-save.c | 164 | Save path: capture per-syscall arg snapshots into the ring after a productive coverage signal (`minicorpus_save()` / `minicorpus_save_with_reason()`) |
