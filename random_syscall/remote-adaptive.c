@@ -3,9 +3,9 @@
  * before the raw call to override the static remote_mode when lifetime
  * evidence disagrees with the static policy on this syscall.
  *
- * Carved out of strategy-accounting.c; the sibling seams (rotation,
- * per-syscall edge accounting, warm-cold reserve, fd+group accounting)
- * live in their own TUs under random_syscall/.
+ * The sibling seams (rotation, per-syscall edge accounting, warm-cold
+ * reserve, fd+group accounting) live in their own TUs under
+ * random_syscall/.
  *
  * remote_adaptive_decide is cross-cluster private and declared in
  * random_syscall/strategy-accounting-internal.h.

@@ -5,9 +5,9 @@
  * state machine (group-change streak reset, streak bump, fd-warm
  * bump, coverage watermark advance).
  *
- * Carved out of strategy-accounting.c; the sibling seams (rotation,
- * remote-adaptive decide, per-syscall edge accounting, warm-cold
- * reserve) live in their own TUs under random_syscall/.
+ * The sibling seams (rotation, remote-adaptive decide, per-syscall edge
+ * accounting, warm-cold reserve) live in their own TUs under
+ * random_syscall/.
  *
  * account_fd_and_group is cross-cluster private and declared in
  * random_syscall/strategy-accounting-internal.h.

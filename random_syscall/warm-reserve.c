@@ -5,9 +5,9 @@
  * account_cold_overflow_would_save shadows the CMP-triggered cold /
  * corpus-absent tail that a STAGE B overflow save lane would admit.
  *
- * Carved out of strategy-accounting.c; the sibling seams (rotation,
- * remote-adaptive decide, per-syscall edge accounting, fd+group
- * accounting) live in their own TUs under random_syscall/.
+ * The sibling seams (rotation, remote-adaptive decide, per-syscall edge
+ * accounting, fd+group accounting) live in their own TUs under
+ * random_syscall/.
  *
  * account_warm_reserve and account_cold_overflow_would_save are
  * cross-cluster private and declared in

@@ -4,9 +4,9 @@
  * feeds the just-finished window into the bandit, selects the next
  * arm, and publishes the switch to the fleet.
  *
- * Carved out of strategy-accounting.c; the sibling seams (remote-
- * adaptive decide, per-syscall edge accounting, warm-cold reserve,
- * fd+group accounting) live in their own TUs under random_syscall/.
+ * The sibling seams (remote-adaptive decide, per-syscall edge
+ * accounting, warm-cold reserve, fd+group accounting) live in their
+ * own TUs under random_syscall/.
  *
  * maybe_rotate_strategy is cross-cluster private and declared in
  * random_syscall/strategy-accounting-internal.h.

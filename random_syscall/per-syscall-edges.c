@@ -12,9 +12,9 @@
  *   - account_transition_reward:     per-strategy transition-reward
  *                                    attribution
  *
- * Carved out of strategy-accounting.c; the sibling seams (rotation,
- * remote-adaptive decide, warm-cold reserve, fd+group accounting)
- * live in their own TUs under random_syscall/.
+ * The sibling seams (rotation, remote-adaptive decide, warm-cold
+ * reserve, fd+group accounting) live in their own TUs under
+ * random_syscall/.
  *
  * All entry points are cross-cluster private and declared in
  * random_syscall/strategy-accounting-internal.h.

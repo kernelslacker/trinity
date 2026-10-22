@@ -318,9 +318,7 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * signal -- the save gate below widens to `new_edges || new_cmp
 	 * > 0` so the corpus can still grow and mutator wins can still be
 	 * credited, breaking the self-reinforcing
-	 * PC-plateau->no-saves->no-mutator-wins loop.  See
-	 * investigations/corpus-mutator-zero-wins-2026-05-20 for the full
-	 * analysis. */
+	 * PC-plateau->no-saves->no-mutator-wins loop. */
 	unsigned long new_cmp = 0;
 
 	/* Snapshot the rescue classifier's cold-skip-pct input BEFORE
@@ -1167,13 +1165,12 @@ static bool redqueen_reexec_step(struct childdata *child,
 		 * records (not just novel ones), the same bug class avoided
 		 * for PC edges via kcov_collect()'s new_edge_count out-param.
 		 *
-		 * The 6th param (inner_new_edges) reports the inner call's
+		 * The 5th param (inner_new_edges) reports the inner call's
 		 * pcres.transition_edges_real_local; distinct transition-edge
 		 * lift is the go/no-go metric for the plateau_burst measure
-		 * arm (§4 of the plateau-burst spec) because a fresh CMP
-		 * record that opens no new distinct edge is invisible to the
-		 * 85k distinct-PC-edge wall the intensification is meant to
-		 * break. */
+		 * arm because a fresh CMP record that opens no new distinct
+		 * edge is invisible to the 85k distinct-PC-edge wall the
+		 * intensification is meant to break. */
 		ok = dispatch_step(child, entry, NULL, &inner_new_cmp,
 				   &inner_new_edges);
 
