@@ -6,7 +6,7 @@
  * stats_log_close, stats_log_write, and stats_log_drop_in_child for
  * the human-readable dump log; stats_timeseries_open,
  * stats_timeseries_close, stats_timeseries_emit_window, and
- * stats_timeseries_drop_in_child for the per-window per-syscall CSV
+ * stats_timeseries_drop_in_child for the per-window per-syscall JSONL
  * timeseries.  The file-static state (stats_log_fp,
  * stats_timeseries_fp, and the prev-window edges snapshot
  * stats_ts_prev_per_syscall_edges) stays private to this TU -- only
@@ -163,11 +163,11 @@ void stats_log_close(void)
  * counter -- those are exposed separately as "calls".  No flag of its
  * own -- the operator gets it whenever they ask for --stats.
  *
- * Same fd-leak hazard as stats_log_*: fopen() leaves an ordinary
- * non-CLOEXEC fd in the table; fork() shares it; the syscall fuzzer in
- * the child can reach it numerically.  stats_timeseries_drop_in_child()
- * is called alongside stats_log_drop_in_child() from every fork()'d
- * child entry point.
+ * Same fd-leak hazard as stats_log_*: the fd fopen() leaves in the table
+ * is O_CLOEXEC, which only matters across exec; fork() shares it; the
+ * syscall fuzzer in the child can reach it numerically.
+ * stats_timeseries_drop_in_child() is called alongside
+ * stats_log_drop_in_child() from every fork()'d child entry point.
  */
 static FILE *stats_timeseries_fp = NULL;
 
