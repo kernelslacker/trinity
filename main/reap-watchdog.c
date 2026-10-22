@@ -95,14 +95,6 @@ static bool read_pid_sigblk(pid_t pid, uint64_t *out)
 	if (fd < 0)
 		return false;
 
-	/*
-	 * Hold the remaining space in its own variable and re-derive it from
-	 * total each pass, so the read length and the bound on the result are
-	 * the same expression rather than two that happen to agree.  A short
-	 * read is normal on procfs; a read longer than its count is not
-	 * possible, and the clamp costs one comparison to say where it would
-	 * stop if it were.
-	 */
 	for (;;) {
 		size_t space = sizeof(buf) - 1 - total;
 
@@ -111,8 +103,6 @@ static bool read_pid_sigblk(pid_t pid, uint64_t *out)
 
 		n = TEMP_FAILURE_RETRY(read(fd, buf + total, space));
 		if (n <= 0)
-			break;
-		if ((size_t)n > space)
 			break;
 
 		total += (size_t)n;
