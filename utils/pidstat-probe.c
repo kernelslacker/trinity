@@ -1,5 +1,7 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -39,4 +41,44 @@ bool pidstat_task_gone(int fd)
 	n = TEMP_FAILURE_RETRY(pread(fd, buf, sizeof(buf), 0));
 
 	return (n <= 0);
+}
+
+/*
+ * Read /proc/<pid>/stat by pid number, for the callers that hold no fd
+ * on the task: pid_alive() and pid_start_time().  Only ENOENT and ESRCH
+ * say the task is gone: procfs answers ENOENT for a pid it has no task
+ * for and ESRCH once the task behind an entry it already holds is
+ * released, so the open and the read can each say either.  Any other
+ * failure (EMFILE or ENFILE from a full fd table, ENOMEM, EPERM under
+ * hidepid=1) says nothing about the task, and reading it as death
+ * releases a live holder's locks and skips the SIGKILL for a running
+ * child.
+ *
+ * Raw open/read into the caller's stack buffer rather than
+ * fopen/fread/fclose: this is the parent's hottest path (once per held
+ * lock per check_all_locks tick and once per just-spawned child in
+ * init_child) and stdio's per-call malloc of a FILE and its buffer is
+ * heap traffic we don't need.  Under ASAN every one of those mallocs is
+ * a candidate abort site; under normal builds it is just wasted work.
+ */
+enum pidstat_result pidstat_read(pid_t pid, char *buf, size_t size)
+{
+	char path[64];
+	ssize_t n;
+	int fd, err;
+
+	snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+	fd = TEMP_FAILURE_RETRY(open(path, O_RDONLY | O_CLOEXEC));
+	if (fd < 0)
+		return (errno == ENOENT || errno == ESRCH) ?
+			PIDSTAT_GONE : PIDSTAT_UNKNOWN;
+
+	n = TEMP_FAILURE_RETRY(read(fd, buf, size - 1));
+	err = errno;
+	close(fd);
+	if (n <= 0)
+		return (n < 0 && err == ESRCH) ? PIDSTAT_GONE : PIDSTAT_UNKNOWN;
+
+	buf[n] = '\0';
+	return PIDSTAT_OK;
 }

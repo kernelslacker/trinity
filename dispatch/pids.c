@@ -10,6 +10,7 @@
 #include "arch.h"
 #include "objects.h"
 #include "params.h"	// dangerous
+#include "pidstat-probe.h"
 #include "pids.h"
 #include "publish_resource.h"
 #include "random.h"
@@ -43,14 +44,18 @@ void set_child_cache(int childno, pid_t pid, struct childdata *child)
  * can't do anything except wait to be reaped.  Treating a zombie as
  * "alive" deadlocks any path that's waiting for the holder to do
  * something (notably check_lock() in locks.c).
+ *
+ * False means the task is gone or dying, established by ESRCH from
+ * kill(), by ENOENT or ESRCH from /proc, or by the state field, and
+ * leaves errno at ESRCH, which kill_all_kids() and check_lock() read.
+ * Anything that stops the probe short of that (a refused kill(), a full
+ * fd table, ENOMEM) says nothing about the task and counts as alive: a
+ * false answer releases locks and skips the SIGKILL.
  */
 bool pid_alive(pid_t pid)
 {
-	char path[64];
 	char buf[512];
 	char state = '?';
-	ssize_t n;
-	int fd;
 
 	if (pid < -1) {
 		syslogf("pid_alive called with pid %d!\n", pid);
@@ -74,35 +79,24 @@ bool pid_alive(pid_t pid)
 		 * root parent gets EPERM from the kernel's uid check (nobody
 		 * has no CAP_KILL), and a security module can refuse as well:
 		 * EPERM from its CAP_KILL capable hook, EACCES from
-		 * security_task_kill().  A false return always leaves errno
-		 * at ESRCH, which kill_all_kids() and check_lock() read. */
+		 * security_task_kill(). */
 		return errno != ESRCH;
 	}
 
 	/* kill() returned 0, so the task struct exists.  Check whether
 	 * it's a zombie via /proc/<pid>/stat — third whitespace-separated
-	 * field is a single-char state.  Use raw open/read into a stack
-	 * buffer rather than fopen/fread/fclose: this is the parent's
-	 * hottest path (called per held lock per check_all_locks tick AND
-	 * once per just-spawned child in init_child) and stdio's per-call
-	 * malloc of FILE struct + IO buffer is heap traffic we don't need
-	 * here.  Under ASAN, every one of those mallocs is a candidate
-	 * abort site; under normal builds it's just wasted work. */
-	snprintf(path, sizeof(path), "/proc/%d/stat", pid);
-	fd = TEMP_FAILURE_RETRY(open(path, O_RDONLY | O_CLOEXEC));
-	if (fd < 0) {
-		/* Race: process exited between kill() and open.  Treat as
-		 * not alive — caller will recover. */
+	 * field is a single-char state. */
+	switch (pidstat_read(pid, buf, sizeof(buf))) {
+	case PIDSTAT_GONE:
+		/* Race: process exited between kill() and the read. */
 		errno = ESRCH;
 		return false;
+	case PIDSTAT_UNKNOWN:
+		return true;
+	case PIDSTAT_OK:
+		break;
 	}
-	n = TEMP_FAILURE_RETRY(read(fd, buf, sizeof(buf) - 1));
-	close(fd);
-	if (n <= 0) {
-		errno = ESRCH;
-		return false;
-	}
-	buf[n] = '\0';
+
 	/* Format: pid (comm with possible spaces) state ppid ...
 	 * The comm may contain ')' so look for the LAST ')' then read
 	 * the next whitespace token. */
@@ -125,43 +119,40 @@ bool pid_alive(pid_t pid)
 
 /*
  * Return /proc/<pid>/stat field 22 (start_time, jiffies since boot) for
- * pid, or 0 if the pid doesn't exist or the file can't be parsed.  Used
- * by the lock primitives to fingerprint a process across pid recycles:
- * pid_alive() alone cannot tell a still-running original holder from a
- * recycled pid that happens to reuse the dead holder's numeric value,
- * but start_time is monotonic across the system boot and uniquely tags
- * the (pid, fork-instance) pair.
+ * pid, 0 if the pid is gone, or PID_START_TIME_UNKNOWN if /proc could
+ * not say: a read that failed for a reason other than the pid being
+ * gone, or a line that does not parse.  Used by the lock primitives to
+ * fingerprint a process across pid recycles: pid_alive() alone cannot
+ * tell a still-running original holder from a recycled pid that happens
+ * to reuse the dead holder's numeric value, but start_time is monotonic
+ * across the system boot and uniquely tags the (pid, fork-instance)
+ * pair.  Only the 0 answer is evidence of death.
  *
- * Parsing mirrors pid_alive() (raw open/read into a stack buffer) so
- * the lock acquire path doesn't pull in stdio.  The comm field at the
- * start of the line may contain ')', so anchor on the LAST ')' and
- * skip 21 whitespace-separated fields after it to land on field 22.
+ * The comm field at the start of the line may contain ')', so anchor on
+ * the LAST ')' and skip 21 whitespace-separated fields after it to land
+ * on field 22.
  */
 unsigned long long pid_start_time(pid_t pid)
 {
-	char path[64];
 	char buf[512];
 	char *p, *rparen;
-	ssize_t n;
-	int fd;
 	unsigned int field;
 
 	if (pid <= 0)
 		return 0;
 
-	snprintf(path, sizeof(path), "/proc/%d/stat", pid);
-	fd = TEMP_FAILURE_RETRY(open(path, O_RDONLY | O_CLOEXEC));
-	if (fd < 0)
+	switch (pidstat_read(pid, buf, sizeof(buf))) {
+	case PIDSTAT_GONE:
 		return 0;
-	n = TEMP_FAILURE_RETRY(read(fd, buf, sizeof(buf) - 1));
-	close(fd);
-	if (n <= 0)
-		return 0;
-	buf[n] = '\0';
+	case PIDSTAT_UNKNOWN:
+		return PID_START_TIME_UNKNOWN;
+	case PIDSTAT_OK:
+		break;
+	}
 
 	rparen = strrchr(buf, ')');
 	if (rparen == NULL || rparen[1] != ' ')
-		return 0;
+		return PID_START_TIME_UNKNOWN;
 
 	/* After the closing ')' field 3 (state) starts.  Field 22
 	 * (start_time) is the 20th whitespace-separated token after. */
@@ -170,7 +161,7 @@ unsigned long long pid_start_time(pid_t pid)
 		while (*p != '\0' && *p != ' ')
 			p++;
 		if (*p != ' ')
-			return 0;
+			return PID_START_TIME_UNKNOWN;
 		p++;
 	}
 	return strtoull(p, NULL, 10);

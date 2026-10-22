@@ -20,6 +20,13 @@ extern pid_t cached_pid;
 extern unsigned long long cached_start_time;
 
 /*
+ * What pid_start_time() answers when /proc cannot say, as opposed to 0
+ * for a pid that is gone.  No start time equals it, so it is no proof of
+ * death: is_dead_holder() asks kill(pid, 0) instead.
+ */
+#define PID_START_TIME_UNKNOWN	(~0ULL)
+
+/*
  * Cached self pid.  glibc 2.25 (2017) dropped its libc-side getpid()
  * cache to close a fork() race, so every libc getpid() call is now a
  * real syscall.  Profiling showed __getpid as the dominant inclusive

@@ -29,12 +29,20 @@
  * The fork here is the only one in the test binary.  It is a bare
  * fork/_exit/waitpid with no shm and no trinity state, and the parent
  * waits for it before returning, so nothing outlives the check.
+ *
+ * pidstat_read() asks the same question by pid number, for pid_alive()
+ * and pid_start_time().  Only a pid with no task reads as gone: a read
+ * that fails for any other reason, a full fd table above all, must not,
+ * or a live lock holder looks dead and a running child skips its SIGKILL.
  */
 
 #include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -104,10 +112,56 @@ static void selftest_zombie_then_gone(void)
 	close(fd);
 }
 
+static void selftest_read_live_and_gone(void)
+{
+	char buf[512], want[32];
+
+	if (pidstat_read(getpid(), buf, sizeof(buf)) != PIDSTAT_OK)
+		BUG("pidstat read: a live task did not read");
+	snprintf(want, sizeof(want), "%d (", getpid());
+	if (strncmp(buf, want, strlen(want)) != 0)
+		BUG("pidstat read: the line read is not our own stat line");
+
+	/* No pid reaches INT_MAX, so procfs has no task for it. */
+	if (pidstat_read(INT_MAX, buf, sizeof(buf)) != PIDSTAT_GONE)
+		BUG("pidstat read: a pid with no task did not read as gone");
+}
+
+/*
+ * With the soft RLIMIT_NOFILE at the lowest free fd number the open of
+ * the stat file fails with EMFILE, whatever the task is.  That says
+ * nothing about it.
+ */
+static void selftest_read_out_of_fds(void)
+{
+	struct rlimit orig, lim;
+	enum pidstat_result res;
+	char buf[512];
+	int lowest_free;
+
+	lowest_free = open("/dev/null", O_RDONLY | O_CLOEXEC);
+	if (lowest_free < 0 || getrlimit(RLIMIT_NOFILE, &orig) != 0)
+		BUG("pidstat read: cannot find the lowest free fd");
+	close(lowest_free);
+
+	lim = orig;
+	lim.rlim_cur = lowest_free;
+	if (setrlimit(RLIMIT_NOFILE, &lim) != 0)
+		BUG("pidstat read: cannot lower RLIMIT_NOFILE");
+	res = pidstat_read(getpid(), buf, sizeof(buf));
+	if (setrlimit(RLIMIT_NOFILE, &orig) != 0)
+		BUG("pidstat read: cannot restore RLIMIT_NOFILE");
+
+	if (res != PIDSTAT_UNKNOWN)
+		BUG("pidstat read: a full fd table did not read as unknown");
+}
+
 void pidstat_probe_self_check(void);
 void pidstat_probe_self_check(void)
 {
 	selftest_no_fd();
 	selftest_live_self();
 	selftest_zombie_then_gone();
+	selftest_read_live_and_gone();
+	selftest_read_out_of_fds();
 }
