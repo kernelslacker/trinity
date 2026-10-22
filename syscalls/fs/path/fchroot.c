@@ -123,7 +123,11 @@ struct syscallentry syscall_fchroot = {
 	.argname = { [0] = "fd", [1] = "flags" },
 	.arg_params[1].list = ARGLIST(fchroot_flags),
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = EXTRA_FORK,
+	/* EXTRA_FORK spawns a helper process per dispatch, the same explicit
+	 * re-exec disqualifier execve carries: a re-exec would fork another
+	 * grandchild.  AVOID_REEXEC is unconditional, so no later per-call
+	 * REEXEC_OK publish can reopen it. */
+	.flags = EXTRA_FORK | AVOID_REEXEC,
 	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_fchroot,
 };
