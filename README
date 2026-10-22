@@ -162,9 +162,10 @@ garbage named files; just rm -rf tmp afterwards)
    the rotation chooses between them.
 
  --explorer-children: reserve N children to always run STRATEGY_RANDOM as a
-   strategy-independent explorer pool (default: max_children/4 under
-   --strategy=bandit, 0 otherwise; max: max_children/2). Works in any
-   picker mode; non-bandit modes get no explorer pool unless this is set.
+   strategy-independent explorer pool (default: (max_children -
+   alt_op_children)/4 under --strategy=bandit, 0 otherwise; max:
+   (max_children - alt_op_children)/2). Works in any picker mode;
+   non-bandit modes get no explorer pool unless this is set.
 
  --alt-op-children: reserve N children to run dedicated alt ops
    (inode_spewer, xattr_thrash, ...) round-robin instead of mixing
