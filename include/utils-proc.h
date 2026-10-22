@@ -35,6 +35,12 @@ void sizeunit(unsigned long size, char *buf, size_t buflen);
 
 void kill_pid(pid_t pid);
 
+/*
+ * Open fds in the parent, counted from /proc/<mainpid>/fd, the directory
+ * handle the count opens included.  Returns -1 with errno set when it
+ * cannot count, as it cannot once the parent is out of fds: a 0 there
+ * would pass any headroom check.
+ */
 int get_num_fds(void);
 
 /*

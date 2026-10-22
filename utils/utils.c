@@ -203,7 +203,7 @@ int get_num_fds(void)
 
 	fd = open(path, O_RDONLY | O_DIRECTORY);
 	if (fd == -1)
-		return 0;
+		return -1;
 
 	while ((nread = syscall(SYS_getdents64, fd, buf, sizeof(buf))) > 0) {
 		for (pos = 0; pos < nread; ) {
@@ -218,6 +218,16 @@ int get_num_fds(void)
 
 			pos += de->d_reclen;
 		}
+	}
+
+	/* A read that fails part way under-reports as surely as an open
+	 * that fails. */
+	if (nread < 0) {
+		int err = errno;
+
+		close(fd);
+		errno = err;
+		return -1;
 	}
 
 	close(fd);

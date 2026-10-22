@@ -173,10 +173,13 @@ API surface.
    `fork_children()` spawn that succeeds and by the epoch reset) it
    opens the barrier anyway and logs once.  A failed spawn that is really
    the run stopping (`spawn_child()` panics `EXIT_NO_FDS` near the fd
-   limit, or `exit_reason` / `spawn_no_more` is set mid-retry) ends both
-   retry loops at once, uncounted, instead of being retried as a fork
-   failure, and both loops check again after each backoff sleep, so a
-   stop that lands mid-sleep forks nothing further.
+   limit or when `get_num_fds()` fails with EMFILE or ENFILE, as it does
+   once the fds run out, or `exit_reason` / `spawn_no_more` is set
+   mid-retry) ends both retry loops at once, uncounted, instead of being
+   retried as a fork failure, and both loops check again after each
+   backoff sleep, so a stop that lands mid-sleep forks nothing further.
+   Any other `get_num_fds()` failure only skips that spawn's headroom
+   check, and is logged once per run.
 6. **One-shot forensic snapshots on the bail path** — fork-failure,
    fast-die-loop, and D-state-stuck all have latched (`static bool
    emitted`) one-time dumps (`/proc/self/status`, cgroup pids/memory.events,

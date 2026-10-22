@@ -131,15 +131,29 @@ static bool spawn_child(int childno)
 
 	nr_fds = get_num_fds();
 	if (nr_fds < 0) {
+		static bool headroom_skip_noted;
+		int err = errno;
+
 		/* Counting /proc/self/fd failed -- can't verify headroom.
-		 * Treat conservatively and panic rather than let a negative
-		 * value wrap through the unsigned compare below and silently
-		 * pass the fd-exhaustion ceiling check. */
-		outputerr("get_num_fds() failed (%d); cannot verify fd headroom\n", nr_fds);
-		panic(EXIT_NO_FDS);
-		return false;
-	}
-	if ((unsigned long)nr_fds + 3 > max_files_rlimit.rlim_cur) {
+		 * A parent out of fds fails the count with EMFILE or ENFILE,
+		 * the case the ceiling check below exists for, so stop the
+		 * run the same way.  Any other failure, a transient ENOMEM
+		 * or a /proc that cannot be read, only leaves this spawn
+		 * unchecked, which is not worth ending a long run for: say
+		 * so once and carry on without the compare below, which
+		 * would wrap a negative count. */
+		if (err == EMFILE || err == ENFILE) {
+			outputerr("get_num_fds() failed: %s; cannot verify fd headroom\n",
+				  strerror(err));
+			panic(EXIT_NO_FDS);
+			return false;
+		}
+		if (!headroom_skip_noted) {
+			headroom_skip_noted = true;
+			output(0, "main: get_num_fds() failed: %s; skipping the fd headroom check (logged once per run)\n",
+				strerror(err));
+		}
+	} else if ((unsigned long)nr_fds + 3 > max_files_rlimit.rlim_cur) {
 		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
 		panic(EXIT_NO_FDS);
 		return false;
