@@ -160,6 +160,13 @@ struct io_uring_register_post_state {
 	 * call is skipped entirely.
 	 */
 	unsigned long arg_len;
+	/*
+	 * Entry count named by the struct io_uring_rsrc_update2 behind
+	 * rec->a3 for FILES_UPDATE2 / BUFFERS_UPDATE, the most either can
+	 * return: nr_args is the struct's size there, not a count.  Zero
+	 * for every other opcode.
+	 */
+	unsigned int nr_update;
 };
 
 static void sanitise_io_uring_register(struct syscallrecord *rec)
@@ -177,6 +184,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * unknown fallback.
 	 */
 	unsigned long arg_len = 0;
+	unsigned int nr_update = 0;
 
 	rec->a2 = pick_io_uring_register_opcode();
 
@@ -297,6 +305,8 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	case IORING_REGISTER_FILES_UPDATE2:
 	case IORING_REGISTER_BUFFERS_UPDATE:
 		p = ioring_reg_rsrc_update_payload(opcode);
+		if (p.arg != 0)
+			nr_update = ((struct io_uring_rsrc_update2 *) p.arg)->nr;
 		break;
 
 	case IORING_REGISTER_QUERY:
@@ -349,6 +359,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	snap->magic = IO_URING_REGISTER_POST_STATE_MAGIC;
 	snap->opcode = opcode & ~IORING_REGISTER_USE_REGISTERED_RING;
 	snap->arg_len = arg_len;
+	snap->nr_update = nr_update;
 	post_state_install(rec, snap);
 
 	/*
@@ -396,17 +407,18 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * the bit either.
 	 *
 	 * post_state safety: the snapshot installed above carries only
-	 * (magic, opcode, arg_len) -- no per-arm resource ownership, no
-	 * deferred free of a3.  The oracle in post_io_uring_register is
-	 * retval-shape only (PERSONALITY validates [1, INT_MAX];
-	 * ENABLE_RINGS falls into the default "must be 0 or -1UL" arm),
-	 * with no state that a re-exec would corrupt.  The parent's post
-	 * handler has already run (handle_syscall_ret fires .post before
-	 * dispatch_step's redqueen_reexec_step tail), so the child re-exec
-	 * starts with a clean rec->post_state slot, sanitise re-runs to
-	 * install a fresh snap, the child's post handler releases it, and
-	 * the saved_post_state restore at the tail returns rec->post_state
-	 * to 0 -- no cross-run interaction.  See
+	 * (magic, opcode, arg_len, nr_update) -- no per-arm resource
+	 * ownership, no deferred free of a3.  The oracle in
+	 * post_io_uring_register is retval-shape only (PERSONALITY
+	 * validates [1, INT_MAX]; ENABLE_RINGS falls into the default
+	 * "must be 0 or -1UL" arm), with no state that a re-exec would
+	 * corrupt.  The parent's post handler has already run
+	 * (handle_syscall_ret fires .post before dispatch_step's
+	 * redqueen_reexec_step tail), so the child re-exec starts with a
+	 * clean rec->post_state slot, sanitise re-runs to install a fresh
+	 * snap, the child's post handler releases it, and the
+	 * saved_post_state restore at the tail returns rec->post_state to
+	 * 0 -- no cross-run interaction.  See
 	 * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
 	 * that consumes this bit.
 	 */
@@ -444,7 +456,7 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 * Per-opcode STRONG-VAL.  io_uring_register(2) is a multiplexer;
 	 * each opcode has its own retval shape but every opcode shares the
 	 * same -1UL failure return via the syscall return path.  On a
-	 * non-failure return, three families of shape exist:
+	 * non-failure return, four families of shape exist:
 	 *
 	 *   IORING_REGISTER_RING_FDS / IORING_UNREGISTER_RING_FDS: kernel
 	 *     loops over the user-supplied ring-fd array in
@@ -452,7 +464,15 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 *     io_ringfd_unregister and returns the loop count, bounded by
 	 *     nr_args (rec->a4).  Anything > nr_args is a structural
 	 *     regression: torn write of the count or -errno leaking through
-	 *     the success return slot.
+	 *     the success return slot.  IORING_REGISTER_FILES_UPDATE has the
+	 *     same shape: __io_sqe_files_update() ends "return done ? done :
+	 *     err", done being the files replaced out of the nr_args it was
+	 *     handed.
+	 *
+	 *   IORING_REGISTER_FILES_UPDATE2 / IORING_REGISTER_BUFFERS_UPDATE:
+	 *     the same count, but nr_args is the struct's size there, so the
+	 *     bound is the nr the struct names, which sanitise snapshots in
+	 *     nr_update.  __io_sqe_buffers_update() ends the same way.
 	 *
 	 *   IORING_REGISTER_PERSONALITY: kernel allocates a personality id
 	 *     via xa_alloc_cyclic() with XA_LIMIT(1, INT_MAX) and returns
@@ -462,10 +482,11 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 *     unsigned long.
 	 *
 	 *   All other emitted opcodes (BUFFERS / FILES / EVENTFD /
-	 *     EVENTFD_ASYNC / FILES_UPDATE / BUFFERS_UPDATE / IOWQ_AFF /
-	 *     IOWQ_MAX_WORKERS / FILE_ALLOC_RANGE / SYNC_CANCEL / NAPI /
-	 *     PROBE / RESTRICTIONS / ENABLE_RINGS / *_UPDATE / etc.):
-	 *     kernel returns 0 on success.  Any non-zero, non-(-1UL) value
+	 *     EVENTFD_ASYNC / IOWQ_AFF / IOWQ_MAX_WORKERS /
+	 *     FILE_ALLOC_RANGE / SYNC_CANCEL / NAPI / PROBE / RESTRICTIONS /
+	 *     ENABLE_RINGS / etc.): kernel returns 0 on success --
+	 *     io_sync_cancel() folds the count of cancelled requests into
+	 *     0.  Any non-zero, non-(-1UL) value
 	 *     is a sign-extension tear at the syscall ABI boundary or
 	 *     -errno leaking through the success slot.  This default is
 	 *     fail-soft for any future opcode the kernel adds: legitimate
@@ -481,9 +502,18 @@ static void post_io_uring_register(struct syscallrecord *rec)
 		switch (snap->opcode) {
 		case IORING_REGISTER_RING_FDS:
 		case IORING_UNREGISTER_RING_FDS:
+		case IORING_REGISTER_FILES_UPDATE:
 			if (ret > a4) {
 				outputerr("post_io_uring_register: opcode=%u rejected count retval=0x%lx > nr_args=%lu\n",
 					  snap->opcode, ret, a4);
+				post_handler_corrupt_ptr_bump(rec, NULL);
+			}
+			break;
+		case IORING_REGISTER_FILES_UPDATE2:
+		case IORING_REGISTER_BUFFERS_UPDATE:
+			if (ret > snap->nr_update) {
+				outputerr("post_io_uring_register: opcode=%u rejected count retval=0x%lx > nr=%u\n",
+					  snap->opcode, ret, snap->nr_update);
 				post_handler_corrupt_ptr_bump(rec, NULL);
 			}
 			break;
