@@ -28,12 +28,6 @@
  * kernel has fully torn the zombie down, those late writes corrupt
  * fields the new child owns (tp, fd_event_ring head/tail, etc.).
  *
- * One observed corruption case traces back to exactly this race:
- * fd_event_ring contents containing a non-canonical pointer
- * 0x9c000000890000 that segfaulted fd_event_drain — a half-written
- * ring index from a ghost producer that no longer existed by the time
- * the parent looked.
- *
  * zombie_pids[childno] holds the pid we are still waiting on, or
  * EMPTY_PIDSLOT if the slot is not in zombie-pending state.
  * zombie_since[childno] is the CLOCK_MONOTONIC second at which we
@@ -56,7 +50,7 @@ unsigned int live_child_slots;
 /* If the kernel still hasn't released a zombie task after this long,
  * the slot is quarantined: removed from the active fleet for the rest
  * of the run rather than recycled.  Recycling without proof of task
- * teardown risks the ghost-producer corruption documented above. */
+ * teardown risks the late-write corruption described above. */
 #define ZOMBIE_REAP_TIMEOUT_SEC 300
 
 /*
@@ -311,11 +305,10 @@ void process_zombie_pending(void)
 		 * local variable captured above; pids[i] is already
 		 * EMPTY_PIDSLOT (cleared by reap_child at the deferral
 		 * point) so the function cannot reconstruct it from
-		 * pids[child->num] (e4a44396a761 ("health: fix partial-buglog misclassification (unreadable + poll race)") moved bug-log path
-		 * building into this function for exactly this reason).
+		 * pids[child->num].
 		 * reap_child() did NOT zero fault_beacon.written on the
-		 * child_dead=false path (that store is now gated), so
-		 * classify_child_buglog can read the beacon here.
+		 * child_dead=false path (that store is gated on child_dead),
+		 * so classify_child_buglog can read the beacon here.
 		 *
 		 * shm/msg/sem drains: child_dead=false deferred these to
 		 * avoid racing a still-alive child registering new ids.
