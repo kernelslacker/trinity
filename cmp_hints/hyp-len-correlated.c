@@ -145,22 +145,19 @@ static void cmp_hyp_len_correlated_record_one(unsigned int nr, bool do32,
  * operand) already extracted from the trace-buffer record, and the
  * same per-call resolved struct args the field-scan path walks.
  *
- * NOTE ON arg1/arg2 CONVENTION: the design doc (design-len-correlated-
- * cmp-lane-2026-07-29.md) wrote "arg1 == a length-field value we just
- * filled AND arg2 == constant C, ... expected=arg2".  KCOV's actual
- * convention (documented in cmp_hints_collect()) is
- * the opposite: __sanitizer_cov_trace_const_cmpN puts the constant in
- * arg1 and the runtime operand in arg2.  This implementation follows
- * the codebase reality (arg1 = constant, arg2 = runtime) which the
- * cmp_hints_field_scan_record path already relies on -- the design's
- * semantic intent ("detect when a length we chose is compared to a
- * constant, record the constant as the expected length") is preserved.
+ * NOTE ON arg1/arg2 CONVENTION: KCOV's convention (documented in
+ * cmp_hints_collect()) is that __sanitizer_cov_trace_const_cmpN puts
+ * the constant in arg1 and the runtime operand in arg2.  This scan
+ * follows it (arg1 = constant, arg2 = runtime), as the
+ * cmp_hints_field_scan_record path already does.  The intent is to
+ * detect when a length we chose is compared to a constant, and to
+ * record that constant as the expected length.
  *
  * The gate is STRICTLY conservative: an FT_LEN_* slot value must equal
  * arg2 AND that slot's field->tag must be FT_LEN_BYTES or FT_LEN_COUNT
  * AND field->size must equal the record's operand width.  A plain
  * scalar cmp against a random field value with no length semantics is
- * not recorded (prefer false-negatives per design §Risks).
+ * not recorded (prefer false-negatives).
  *
  * Only fires on KCOV_CMP_CONST records -- the caller in
  * cmp_hints_collect() already gates on !(type & KCOV_CMP_CONST) → drop,
@@ -194,8 +191,8 @@ void cmp_hyp_len_correlated_scan_record(const struct cmp_field_scan_slot *slots,
 
 			/* STRICT: only FT_LEN_BYTES / FT_LEN_COUNT -- a random
 			 * scalar cmp against an unrelated field must NOT be
-			 * recorded as a length hint (design §Risks: prefer
-			 * false-negatives, do not record random scalars). */
+			 * recorded as a length hint (prefer false-negatives,
+			 * do not record random scalars). */
 			if (f->tag != FT_LEN_BYTES && f->tag != FT_LEN_COUNT)
 				continue;
 

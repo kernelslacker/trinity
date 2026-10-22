@@ -8,7 +8,7 @@
  * gates the uniform-versus-weighted draw, and the weighted draw itself.
  * The typed-hypothesis inject arm and the SHADOW would-pick resolver
  * are pulled in through include/cmp_hints-internal.h from
- * cmp_hints/hyp.c.
+ * cmp_hints/hyp-live.c and cmp_hints/hyp-pick.c.
  */
 
 #include <stdint.h>

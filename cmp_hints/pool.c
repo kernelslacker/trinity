@@ -382,8 +382,7 @@ static void cmp_recent_insert(unsigned int nr, bool do32,
  * Childop quarantine-lane insert.  Mirrors cmp_recent_insert() above
  * but writes to cmp_hints_shared.childop_recent_pools[nr][do32] --
  * the source-tagged, non-persisted, non-LRU-displacing lane that
- * the §3.2 trinity_cmp_syscall harvest feeds when
- * --childop-cmp-harvest=on.
+ * the trinity_cmp_syscall harvest feeds when --childop-cmp-harvest=on.
  *
  * Single-writer per (nr, do32): every caller runs inside a
  * trinity_cmp_syscall() under a kcov_cmp_bracket on a CMP-mode
@@ -395,8 +394,8 @@ static void cmp_recent_insert(unsigned int nr, bool do32,
  *
  * Pool-insert / pool-evict bumps land in kcov_shm under the same
  * per-nr keying the rest of the childop_cmp_* shadow counters use,
- * so the eviction-pressure signal the §3.1 promotion gate consumes
- * is observable per-nr from day one.
+ * so the eviction-pressure signal the promotion gate consumes is
+ * observable per-nr from day one.
  */
 void cmp_hints_childop_insert(unsigned int nr, bool do32,
 			      unsigned long cmp_ip, unsigned long val,

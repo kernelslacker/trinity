@@ -8,7 +8,7 @@
  * human can act on it.
  *
  * Rationale for the registry framing: cmp_hyp_bitmask_shadow_probe()
- * in cmp_hints/hyp.c already increments dedicated would_fire /
+ * in cmp_hints/hyp-derive.c already increments dedicated would_fire /
  * would_win pairs at the tail of struct kcov_shared for both the
  * FULL_OR and ANDNOT_TOGGLE lanes; those are the "would-win /
  * baseline-style counters" the pilot reuses verbatim.  The registry
