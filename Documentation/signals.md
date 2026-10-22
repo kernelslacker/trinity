@@ -520,3 +520,40 @@ has run.  SIGKILL, SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU, SIGSTKFLT, SIGPWR
 and 33 have no backstop beyond the sanitiser and F_SETOWN never naming
 the parent (`get_pid()` skips `mainpid`, and the OBJ_PID pool rejects
 it).
+
+## Fault signals reaching a child
+
+`mask_signals_child()` installs `child_fault_handler()` for SIGSEGV,
+SIGABRT, SIGBUS and SIGILL.  It judges them by the parent's rule,
+`fault_signal_is_real()` (include/signals.h): a real fault, or the
+child's own `abort()`, `raise()` or `kill(getpid(), ...)`, goes on to the
+crash path, and anything else returns and lets the child carry on.
+
+Children fuzz `kill()`, `tgkill()`, `rt_sigqueueinfo()` and
+`pidfd_send_signal()` at one another, so `si_pid` is believed only where
+the kernel stamps it:
+
+- `SI_USER` and `SI_TKILL` carry the sender's own pid, and the kernel
+  refuses a userspace siginfo with either aimed at another process
+  (`si_code_reserved_to_kernel()`).
+- `rt_sigqueueinfo()` copies `si_pid` verbatim under every other
+  negative code, so a sibling can name the receiver in an `SI_QUEUE`,
+  `SI_MESGQ` or `SI_ASYNCIO` signal.  A SIGIO routed by `F_SETSIG` has
+  `si_band` where `si_pid` would be (a SIGSEGV that arrives as
+  `SI_SIGIO` for a `POLL_IN` reads as pid 65 on x86), and an `SI_TIMER`
+  signal has its timer id there.  A sibling that could pass any of these
+  for the child's own signal would end the child quietly while it was in
+  `do_syscall()`, and make it write a bug log when it was not.
+- A positive `si_code` on SIGABRT is a `POLL_*` code from `F_SETSIG`, not
+  a fault, as it is for the parent.  On SIGSEGV, SIGBUS and SIGILL it is
+  the kernel's.
+
+Of the signals that pass, an `SI_USER` or `SI_TKILL` one with the child's
+own pid is the child's own fuzzing when `in_do_syscall` is set, and it
+exits quietly rather than log a bug; outside `do_syscall()` it is
+`abort()` or a crash, and is logged.  A signal the child queued at itself
+with `rt_sigqueueinfo()` under another code cannot be told from a
+sibling's, and is ignored like one.  tests/child_fault_test.c delivers
+each of these shapes for real to a task with `mask_signals_child()`'s
+dispositions and checks which of the three things the handler does with
+it: ignore it, drop it quietly, or take it for a fault.

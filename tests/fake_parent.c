@@ -19,6 +19,7 @@
 #include "child.h"
 #include "debug.h"		/* BUG, classify_child_buglog, beacon_loss_* */
 #include "fd-event.h"
+#include "health/signals-internal.h"
 #include "kmsg-monitor.h"
 #include "main-internal.h"
 #include "main/reap-internal.h"
@@ -199,6 +200,28 @@ void record_reap(int childno, int childstatus)
 void dump_child_fault_beacon(struct childdata *child)
 {
 	(void)child;
+}
+
+/* What the fault handlers in health/ reach.  There is no childdata, no
+ * tracked region and no bug log in a test, so a crash report is the
+ * text on stderr and nothing more. */
+unsigned long trinity_load_base;
+
+const char *alt_op_name(enum child_op_type op)
+{
+	(void)op;
+	return NULL;
+}
+
+bool range_in_tracked_shared(unsigned long addr, unsigned long len)
+{
+	(void)addr; (void)len;
+	return false;
+}
+
+void open_buglog_and_drain_stderr(int sig)
+{
+	(void)sig;
 }
 
 void pre_crash_ring_reset(struct pre_crash_ring *ring)

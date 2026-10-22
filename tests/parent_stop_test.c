@@ -103,31 +103,6 @@ static const struct stop_case cases[] = {
 	  SIGTERM, SI_USER, 0, EXIT_SIGINT, EXIT_USER_REQUEST },
 };
 
-/* mask_signals_child() and setup_main_signals() install these for the
- * fault signals.  Nothing here raises one; end the task rather than
- * return into a fault. */
-void child_fault_handler(int sig, siginfo_t *info, void *ctx);
-void writer_trap_handler(int sig, siginfo_t *info, void *ctx);
-void main_fault_handler(int sig, siginfo_t *info, void *ctx);
-
-void child_fault_handler(int sig, siginfo_t *info, void *ctx)
-{
-	(void)sig; (void)info; (void)ctx;
-	_exit(EXIT_FAILURE);
-}
-
-void writer_trap_handler(int sig, siginfo_t *info, void *ctx)
-{
-	(void)sig; (void)info; (void)ctx;
-	_exit(EXIT_FAILURE);
-}
-
-void main_fault_handler(int sig, siginfo_t *info, void *ctx)
-{
-	(void)sig; (void)info; (void)ctx;
-	_exit(EXIT_FAILURE);
-}
-
 /*
  * A child ignores SIGINT.  Its session has no terminal, so what reaches
  * it is a spoof: rt_sigqueueinfo() to itself may carry SI_KERNEL, and a

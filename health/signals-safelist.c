@@ -58,8 +58,10 @@ const unsigned int child_safe_signals_count = ARRAY_SIZE(child_safe_signals);
  *     merely exercising the delivery path.
  *
  *   SIGSEGV, SIGABRT, SIGBUS, SIGILL
- *     Wired to child_fault_handler().  A sibling-spoofed pick is
- *     dropped silently, but a self-targeted pick lands on the
+ *     Wired to child_fault_handler().  A sibling's pick is ignored,
+ *     and so is a self-queued SI_QUEUE one (pidfd_send_signal() builds
+ *     those half the time).  But a self-targeted kill, tkill or tgkill,
+ *     or a siginfo built as SI_USER or SI_TKILL, lands on the
  *     in_do_syscall self-fuzz gate that _exit()s the child -- so a
  *     fraction proportional to ARG_PID's self-pid bias still reaps the
  *     caller, defeating the purpose.

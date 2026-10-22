@@ -33,6 +33,7 @@ void kmsg_trigger_self_check(void);
 void pidstat_probe_self_check(void);
 void exit_reason_clean_self_check(void);
 void parent_stop_self_check(void);
+void child_fault_self_check(void);
 void stop_file_self_check(void);
 void fd_protected_self_check(void);
 void owned_fd_ring_self_check(void);
@@ -133,6 +134,11 @@ int main(int argc, char **argv)
 	printf("  parent_stop_self_check ... ");
 	fflush(stdout);
 	parent_stop_self_check();
+	printf("OK\n");
+
+	printf("  child_fault_self_check ... ");
+	fflush(stdout);
+	child_fault_self_check();
 	printf("OK\n");
 
 	printf("  stop_file_self_check ... ");

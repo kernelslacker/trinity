@@ -59,7 +59,7 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	deferred_free_debug_assert_sealed();
 
 	/* Arm the self-fuzzed-fatal-signal gate in child_fault_handler.
-	 * While set, an own-pid SI_USER/SI_TKILL/SI_QUEUE delivery of
+	 * While set, an own-pid SI_USER/SI_TKILL delivery of
 	 * SIGSEGV/SIGBUS/SIGILL/SIGABRT is treated as fuzzer noise (the
 	 * child just executed kill/tkill/tgkill/rt_sigqueueinfo/
 	 * pidfd_send_signal at itself) and the child exits silently

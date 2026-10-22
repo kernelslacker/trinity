@@ -166,23 +166,25 @@ static inline enum exit_reasons parent_stop_reason(int sig, const siginfo_t *inf
 }
 
 /*
- * Whether a signal main_fault_handler() received is a real fault or a
- * crash of the parent's own making, rather than a fuzzing child's doing.
- * F_SETOWN plus F_SETSIG lets a child have the kernel send the parent a
- * SIGIO as any signal.  That siginfo holds si_band, the poll mask, where
- * a sender's si_pid would be (POLL_IN reads as pid 65).  Its si_code
- * depends on the signal: SIGILL, SIGFPE, SIGSEGV, SIGBUS, SIGTRAP and
- * SIGSYS have signal specific si_codes, so send_sigio_to_task() stores
- * SI_SIGIO for them, while any other signal, SIGABRT and SIGQUIT here,
- * keeps a POLL_* code, which is positive without being a fault.  And
- * rt_sigqueueinfo() lets a child write any si_pid under a negative code
- * but SI_TKILL.  So:
+ * Whether a signal a fault handler received is a real fault or a crash
+ * of the receiver's own making, rather than a fuzzing child's doing.
+ * main_fault_handler() asks it for the parent, and child_fault_handler()
+ * and the guards around a walk of a mapping for a child, @self being the
+ * receiver's pid.  F_SETOWN plus F_SETSIG lets a child have the kernel
+ * send the parent or a sibling a SIGIO as any signal.  That siginfo holds
+ * si_band, the poll mask, where a sender's si_pid would be (POLL_IN reads
+ * as pid 65).  Its si_code depends on the signal: SIGILL, SIGFPE,
+ * SIGSEGV, SIGBUS, SIGTRAP and SIGSYS have signal specific si_codes, so
+ * send_sigio_to_task() stores SI_SIGIO for them, while any other signal,
+ * SIGABRT and SIGQUIT here, keeps a POLL_* code, which is positive
+ * without being a fault.  And rt_sigqueueinfo() lets a child write any
+ * si_pid under a negative code but SI_TKILL.  So:
  *   - SI_KERNEL is real, as a terminal's ctrl-\ is;
  *   - a positive code is real on a signal with signal specific si_codes;
- *   - the parent's own pid is real under SI_USER and SI_TKILL, which the
- *     kernel stamps itself and refuses in a userspace siginfo aimed at
- *     another process, and which kill(getpid()), raise() and abort() use;
- *     under no other code.
+ *   - @self is real under SI_USER and SI_TKILL, which the kernel stamps
+ *     itself and refuses in a userspace siginfo aimed at another
+ *     process, and which kill(getpid()), raise() and abort() use; under
+ *     no other code.
  */
 static inline bool fault_signal_is_real(int sig, const siginfo_t *info, pid_t self)
 {

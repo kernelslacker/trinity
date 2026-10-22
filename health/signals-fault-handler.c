@@ -385,8 +385,9 @@ void escalate_fault(int sig)
 }
 
 /*
- * Child-side fault handler.  Mirrors main_fault_handler in spirit but
- * preserves the existing non-debug clean-exit behaviour:
+ * Child-side fault handler.  Judges a signal by the same rule as
+ * main_fault_handler (fault_signal_is_real()) but preserves the
+ * existing non-debug clean-exit behaviour:
  *
  *   - Real fault (kernel-generated, si_code > 0) or self-sent (abort,
  *     stack-smash from libc):
@@ -406,8 +407,9 @@ void escalate_fault(int sig)
  *         sighandler so the parent's reaper sees a normal exit and
  *         respawns without crash-loop noise
  *
- *   - Sibling-spoofed (process-sent, kill/tkill/tgkill/rt_sigqueueinfo
- *     fuzzing aimed at us): ignore — fuzzer noise.
+ *   - Anything else (process-sent, kill/tkill/tgkill/rt_sigqueueinfo
+ *     fuzzing aimed at us, or a SIGIO routed here by F_SETSIG): ignore —
+ *     fuzzer noise.
  */
 __attribute__((no_sanitize("address")))
 void child_fault_handler(int sig, siginfo_t *info, void *ctx)
@@ -474,17 +476,26 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	}
 #endif
 
-	if (info->si_code <= 0 && info->si_pid != mypid()) {
-		/* Sibling spoof — ignore. */
+	/*
+	 * Not a fault and not our own kill()/raise()/abort(): a sibling's
+	 * kill / tgkill / rt_sigqueueinfo aimed at us, or a SIGIO routed
+	 * here by F_SETSIG.  Ignore it.  si_pid is believed only under
+	 * SI_USER and SI_TKILL, which the kernel stamps itself:
+	 * rt_sigqueueinfo copies it verbatim under every other negative
+	 * code, and in a SIGIO's siginfo it overlays si_band.
+	 * See fault_signal_is_real().
+	 */
+	if (!fault_signal_is_real(sig, info, mypid()))
 		return;
-	}
 	/*
 	 * Self-fuzzed delivery: a child running random_syscall picked
 	 * kill / tkill / tgkill / rt_sigqueueinfo / pidfd_send_signal
 	 * with target == own pid and signo ∈ {SIGSEGV, SIGBUS, SIGILL,
 	 * SIGABRT}.  The kernel obediently delivers it and we land here
-	 * with si_code == SI_USER (0) / SI_TKILL (-6) / SI_QUEUE (-1)
-	 * and si_pid == getpid().  Drop silently — same _exit path the
+	 * with si_code == SI_USER (0) / SI_TKILL (-6) and si_pid ==
+	 * getpid(): fault_signal_is_real() lets no other si_code <= 0
+	 * through, so a signal queued at ourselves under SI_QUEUE was
+	 * ignored above.  Drop silently — same _exit path the
 	 * non-debug real-fault arm uses below — so the parent's reaper
 	 * sees a normal exit and respawns without /tmp/trinity-bug-<pid>.log
 	 * polluting the run with fuzzer-generated noise.  Without this
@@ -497,7 +508,7 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 * raise() from trinity itself) is a real bug that must still be
 	 * logged.
 	 */
-	if (info->si_code <= 0 && info->si_pid == mypid() && in_do_syscall) {
+	if (info->si_code <= 0 && in_do_syscall) {
 		_exit(EXIT_SUCCESS);
 	}
 	/*

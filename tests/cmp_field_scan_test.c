@@ -5,8 +5,6 @@
  * record anything, and must still hand every record to the hint pool.
  */
 
-#include <setjmp.h>
-#include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,17 +16,14 @@
 #include "deferred-free.h"	/* alloc_track_lookup_size */
 #include "kcov.h"
 #include "locks.h"
-#include "signals.h"
 #include "struct_catalog.h"
 #include "syscall.h"
 #include "utils-mem.h"		/* range_readable_user */
 
-/* Owned by cmp_hints.c, kcov/ and the fault handler in production. */
+/* Owned by cmp_hints.c and kcov/ in production. */
 struct cmp_hints_shared *cmp_hints_shm;
 struct kcov_shared *kcov_shm;
 bool cmp_hints_strip[2][MAX_NR_SYSCALL];
-sigjmp_buf cmp_field_recover;
-volatile sig_atomic_t cmp_field_read_active;
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
 
