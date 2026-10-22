@@ -102,7 +102,9 @@ REAL_SRCS	:= \
 	$(TOP)/fds/owned-fd-ring.c \
 	$(TOP)/fds/fds.c \
 	$(TOP)/fds/fds-registry.c \
-	$(TOP)/dispatch/extrafork-reap.c
+	$(TOP)/dispatch/extrafork-reap.c \
+	$(TOP)/mm/fault-read.c \
+	$(TOP)/mm/fault-write.c
 
 # Parent TUs, linked for reset_epoch_state(), the reaper, the zombie
 # reaper, the rotation-events sink and sanity_check_tables(), plus

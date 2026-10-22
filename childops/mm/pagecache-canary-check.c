@@ -64,6 +64,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "tmpdir.h"
 #include "trinity.h"
 #include "utils.h"
@@ -122,8 +123,8 @@ void canary_sigbus_handler(int sig, siginfo_t *info, void *ctx)
 		}
 		return;
 	}
-	if (info->si_code <= 0 && info->si_pid != mypid()) {
-		/* Sibling-spoofed — kernel has consumed it already. */
+	if (!fault_signal_is_real(sig, info, mypid())) {
+		/* Not a fault or ours, see fault_signal_is_real(); dropped. */
 		return;
 	}
 	if (info->si_code <= 0) {

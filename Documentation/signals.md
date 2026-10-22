@@ -557,3 +557,19 @@ sibling's, and is ignored like one.  tests/child_fault_test.c delivers
 each of these shapes for real to a task with `mask_signals_child()`'s
 dispositions and checks which of the three things the handler does with
 it: ignore it, drop it quietly, or take it for a fault.
+
+The handlers that guard a walk of a mapping against a sibling's
+`munmap()` or hole punch take SIGBUS and SIGSEGV for the duration of the
+walk, mm/fault-read.c and mm/fault-write.c, and SIGBUS in
+childops/mm/pagecache-canary-check.c.  They ask the same question first.
+A fault inside the walked range abandons the walk.  A fault outside it,
+and a signal the child sent itself, go on to the handler
+`mask_signals_child()` installed, so that its beacon and bug log are kept.
+Anything else is ignored.  Left to the canonical handler it would be
+ignored there too, but a child whose disposition a fuzzed `rt_sigaction()`
+has replaced would have the walker restore that disposition and
+`raise()`, ending itself for a sibling's `SI_QUEUE`.
+tests/child_fault_test.c lands each shape inside a walk of
+`random_map_readfn()` and `random_map_writefn()`.  The canary's handler
+has the same shape, but its walk is inside a childop that needs the
+canary file pool, which the test binary has not.

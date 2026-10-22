@@ -1,8 +1,9 @@
 /*
- * Self-check for child_fault_handler() (health/signals-fault-handler.c):
- * which fault signals a child takes for its own.  Each case forks a task
- * with mask_signals_child()'s handlers, delivers one signal to it for
- * real, and reads the verdict off its exit status and stderr.
+ * Self-check for the handlers a child takes fault signals with:
+ * child_fault_handler() (health/signals-fault-handler.c) and the guards
+ * around a walk of a mapping in mm/fault-read.c and mm/fault-write.c.
+ * Each case forks a task, delivers one signal to it for real, and reads
+ * the verdict off its exit status and stderr.
  */
 
 #include <errno.h>
@@ -10,14 +11,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
+#include "maps.h"
 #include "pids.h"		/* cached_pid */
+#include "random.h"		/* generate_random_page */
+#include "shm.h"
 #include "signals.h"
 #include "utils-macros.h"	/* ARRAY_SIZE */
 #include "utils.h"		/* waitpid_eintr */
@@ -109,7 +115,9 @@ static const struct child_case cases[] = {
 	  SIGSEGV, SI_KERNEL, 0, LOGGED },
 };
 
-static int deliver(pid_t target, int sig, int code, pid_t named)
+/* @word is what the siginfo holds first: si_pid for a code that has a
+ * sender, si_addr for a positive one, which is a fault's. */
+static int deliver(pid_t target, int sig, int code, unsigned long word)
 {
 	siginfo_t si;
 
@@ -121,9 +129,28 @@ static int deliver(pid_t target, int sig, int code, pid_t named)
 	memset(&si, 0, sizeof(si));
 	si.si_signo = sig;
 	si.si_code = code;
-	si.si_pid = named;
-	si.si_uid = getuid();
+	if (code > 0) {
+		si.si_addr = (void *)word;
+	} else {
+		si.si_pid = word;
+		si.si_uid = getuid();
+	}
 	return syscall(SYS_rt_sigqueueinfo, target, sig, &si);
+}
+
+/* Setup the tasks share.  Don't outlive the test binary if a case
+ * aborts.  Unblock @sig: mask_signals_child() puts back the mask it
+ * found, and a signal the harness blocked would only sit pending.  And
+ * set the pid mypid() reports. */
+static void task_init(int sig)
+{
+	sigset_t set;
+
+	prctl(PR_SET_PDEATHSIG, SIGKILL);
+	sigemptyset(&set);
+	sigaddset(&set, sig);
+	sigprocmask(SIG_UNBLOCK, &set, NULL);
+	cached_pid = getpid();
 }
 
 /* The signal comes from the task itself, or from the test while the task
@@ -134,19 +161,11 @@ static int deliver(pid_t target, int sig, int code, pid_t named)
 static void task(const struct child_case *c, int ready, int go, int err)
 {
 	pid_t named = (c->flags & NAMES_SELF) ? getpid() : getppid();
-	sigset_t set;
 	char b;
 
-	/* Don't outlive the test binary if a case aborts. */
-	prctl(PR_SET_PDEATHSIG, SIGKILL);
 	dup2(err, STDERR_FILENO);
 	mask_signals_child();
-	/* mask_signals_child() puts back the mask it found, and a signal
-	 * the test harness blocked would only sit pending. */
-	sigemptyset(&set);
-	sigaddset(&set, c->sig);
-	sigprocmask(SIG_UNBLOCK, &set, NULL);
-	cached_pid = getpid();
+	task_init(c->sig);
 	in_do_syscall = (c->flags & IN_SYSCALL) != 0;
 
 	if (c->flags & SIBLING) {
@@ -220,6 +239,199 @@ static enum verdict run_case(const struct child_case *c)
 	BUG("child fault: the task did not end as the handler would end it");
 }
 
+/*
+ * The walkers guard a walk of a mapping against the SIGBUS or SIGSEGV a
+ * sibling's munmap or hole punch causes.  A fault inside the walked
+ * range abandons the walk, a signal the task sent itself goes on to
+ * trinity's handler, and the rest is ignored.  Both walkers call
+ * log_mprotect_failure() from inside the walk when an mprotect() fails,
+ * which one on an unaligned page does, so that is where a case lands its
+ * signal.  Trinity's handler is a recorder here: the verdict is what the
+ * walker decided, not what child_fault_handler() makes of what it is
+ * handed.
+ */
+enum walk_verdict {
+	WALK_IGNORED,	/* the handler returned and the walk finished */
+	WALK_PASSED,	/* handed on to trinity's own handler */
+	WALK_ABORTED,	/* a fault in the walked range: the walk was dropped */
+};
+
+static const char *const walk_verdict_name[] = {
+	[WALK_IGNORED] = "ignored",
+	[WALK_PASSED] = "passed on",
+	[WALK_ABORTED] = "aborted the walk",
+};
+
+#define IN_RANGE	0x8	/* a fault's si_addr is in the walked range */
+#define WALK_EXIT	50	/* exit status of WALK_IGNORED, then up */
+
+struct walk_case {
+	const char *what;
+	int sig;
+	int code;
+	unsigned int flags;
+	enum walk_verdict want;
+};
+
+static const struct walk_case walk_cases[] = {
+	/* What the walkers are there for, and what is not theirs. */
+	{ "BUS_ADRERR inside the walked range",
+	  SIGBUS, BUS_ADRERR, IN_RANGE, WALK_ABORTED },
+	{ "SEGV_MAPERR inside the walked range",
+	  SIGSEGV, SEGV_MAPERR, IN_RANGE, WALK_ABORTED },
+	{ "BUS_ADRERR outside the walked range",
+	  SIGBUS, BUS_ADRERR, 0, WALK_PASSED },
+	{ "SIGSEGV forced by the kernel",
+	  SIGSEGV, SI_KERNEL, 0, WALK_PASSED },
+	{ "SIGSEGV from kill(getpid())",
+	  SIGSEGV, SI_USER, NAMES_SELF, WALK_PASSED },
+	{ "SIGBUS from raise()",
+	  SIGBUS, SI_TKILL, NAMES_SELF, WALK_PASSED },
+
+	/* What a sibling can queue at the task: naming it in si_pid must
+	 * not make the signal the task's own. */
+	{ "SIGSEGV, SI_QUEUE naming the task",
+	  SIGSEGV, SI_QUEUE, NAMES_SELF, WALK_IGNORED },
+	{ "SIGBUS, SI_MESGQ naming the task",
+	  SIGBUS, SI_MESGQ, NAMES_SELF, WALK_IGNORED },
+	{ "SIGSEGV, SI_ASYNCIO naming the task",
+	  SIGSEGV, SI_ASYNCIO, NAMES_SELF, WALK_IGNORED },
+	{ "SIGBUS, F_SETSIG band naming the task",
+	  SIGBUS, SI_SIGIO, NAMES_SELF, WALK_IGNORED },
+	{ "SIGSEGV, SI_TIMER with the task's pid as its id",
+	  SIGSEGV, SI_TIMER, NAMES_SELF, WALK_IGNORED },
+	{ "SIGBUS, SI_QUEUE naming another process",
+	  SIGBUS, SI_QUEUE, 0, WALK_IGNORED },
+};
+
+static const struct {
+	const char *name;
+	void (*walk)(struct map *map);
+} walkers[] = {
+	{ "random_map_readfn", random_map_readfn },
+	{ "random_map_writefn", random_map_writefn },
+};
+
+static const struct walk_case *walk_armed;
+static volatile sig_atomic_t passed_on;
+
+/* Where the armed case lands its signal, once. */
+void log_mprotect_failure(void *addr, size_t len, int prot, void *caller,
+			  int err)
+{
+	const struct walk_case *c = walk_armed;
+	unsigned long word;
+
+	(void)len; (void)prot; (void)caller; (void)err;
+	if (c == NULL)
+		return;
+	walk_armed = NULL;
+	if (c->code > 0)
+		word = (c->flags & IN_RANGE) ? (unsigned long)addr : 0;
+	else
+		word = (c->flags & NAMES_SELF) ? getpid() : getppid();
+	if (deliver(getpid(), c->sig, c->code, word) != 0)
+		_exit(NOT_SENT);
+}
+
+/* Only dirty_first_page() calls it, once an mprotect() has worked, which
+ * one on an unaligned page does not. */
+void generate_random_page(char *page)
+{
+	(void)page;
+}
+
+static void recorder(int sig, siginfo_t *info, void *ctx)
+{
+	(void)sig; (void)info; (void)ctx;
+	passed_on = 1;
+}
+
+static void walk_task(const struct walk_case *c, void (*walk)(struct map *map))
+{
+	size_t len = 2 * (size_t)sysconf(_SC_PAGESIZE);
+	unsigned long aborted = shm->stats.diag.read_walk_aborted +
+				shm->stats.diag.write_walk_aborted;
+	struct sigaction sa;
+	struct map map;
+	char *region;
+
+	task_init(c->sig);
+	/* Trinity's own handler, as a walker finds it on its first call. */
+	memset(&sa, 0, sizeof(sa));
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_SIGINFO;
+	sa.sa_sigaction = recorder;
+	sigaction(SIGBUS, &sa, NULL);
+	sigaction(SIGSEGV, &sa, NULL);
+
+	region = mmap(NULL, len, PROT_READ | PROT_WRITE,
+		      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (region == MAP_FAILED)
+		_exit(NOT_SENT);
+	memset(&map, 0, sizeof(map));
+	/* Not page aligned, so the walk's mprotect() fails.  The read that
+	 * follows stays inside the two pages mapped here, and the write is
+	 * skipped. */
+	map.ptr = region + 1;
+	map.size = page_size;
+	map.type = INITIAL_ANON;
+	map.fd = -1;
+
+	walk_armed = c;
+	walk(&map);
+	if (walk_armed != NULL)
+		_exit(NOT_SENT);
+	if (aborted != shm->stats.diag.read_walk_aborted +
+		       shm->stats.diag.write_walk_aborted)
+		_exit(WALK_EXIT + WALK_ABORTED);
+	_exit(WALK_EXIT + (passed_on ? WALK_PASSED : WALK_IGNORED));
+}
+
+static enum walk_verdict run_walk(const struct walk_case *c,
+				  void (*walk)(struct map *map))
+{
+	int status;
+	pid_t pid = fork();
+
+	if (pid < 0)
+		BUG("guarded walk: fork failed");
+	if (pid == 0)
+		walk_task(c, walk);
+
+	alarm(10);
+	if (waitpid_eintr(pid, &status, 0) != pid)
+		BUG("guarded walk: waitpid failed");
+	alarm(0);
+
+	if (!WIFEXITED(status) || WEXITSTATUS(status) < WALK_EXIT ||
+	    WEXITSTATUS(status) > WALK_EXIT + WALK_ABORTED) {
+		fprintf(stderr, "%s: task status %#x\n", c->what, status);
+		BUG("guarded walk: the task did not end as a walk would");
+	}
+	return WEXITSTATUS(status) - WALK_EXIT;
+}
+
+static void walk_check(void)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < ARRAY_SIZE(walkers); i++) {
+		for (j = 0; j < ARRAY_SIZE(walk_cases); j++) {
+			const struct walk_case *c = &walk_cases[j];
+			enum walk_verdict got = run_walk(c, walkers[i].walk);
+
+			if (got != c->want) {
+				fprintf(stderr, "%s, %s: got %s, want %s\n",
+					walkers[i].name, c->what,
+					walk_verdict_name[got],
+					walk_verdict_name[c->want]);
+				BUG("guarded walk: wrong verdict");
+			}
+		}
+	}
+}
+
 void child_fault_self_check(void);
 void child_fault_self_check(void)
 {
@@ -235,4 +447,5 @@ void child_fault_self_check(void)
 			BUG("child_fault_handler: wrong verdict");
 		}
 	}
+	walk_check();
 }
