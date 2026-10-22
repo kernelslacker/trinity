@@ -203,8 +203,10 @@ static void sanitise_arch_prctl(struct syscallrecord *rec)
 		 * TILEDATA (18) are the only values the kernel inspects.
 		 * TILEDATA sets a per-task allow-bit -- no architectural
 		 * state change until the child actually executes AMX.  The
-		 * GUEST variant only touches the guest-permission mask via
-		 * KVM's fpu_guest_cfg, so the child's own state is unaffected. */
+		 * GUEST variant only updates the thread group's guest_perm
+		 * mask, which KVM reads back through
+		 * xstate_get_guest_group_perm(), so the child's own state is
+		 * unaffected. */
 		rec->a2 = RAND_BOOL() ? ARCH_XCOMP_TILECFG : ARCH_XCOMP_TILEDATA;
 		break;
 
