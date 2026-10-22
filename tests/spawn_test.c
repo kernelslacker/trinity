@@ -5,13 +5,16 @@
  * forked; the slots hold made-up pids.
  */
 
+#include <string.h>
 #include <sys/types.h>
 
 #include "debug.h"		/* BUG */
 #include "main-internal.h"
+#include "params.h"		/* fork_pressure_drain */
 #include "pids.h"
 #include "self_cgroup.h"	/* fork_throttle_us */
 #include "shm.h"
+#include "trinity.h"		/* fork_pressure_drain_active */
 
 #include "fake_parent.h"
 
@@ -173,6 +176,81 @@ static void throttled_fill_does_not_yield_for_a_skipped_slot(void)
 		BUG("spawn: a throttled call yielded for a slot it had skipped");
 }
 
+/* The line the call that crosses the drain's threshold prints. */
+#define DRAIN_ENGAGED	"fork-pressure drain engaged (100 consecutive spawn failures)"
+
+/* Four empty slots that never fork, so a call fails forty spawns, ten
+ * for each slot, and the call ends there.  The failure count is static
+ * in main/spawn.c and only a fork_children() spawn that succeeds zeroes
+ * it, so one does first, to start every test from none. */
+static void four_failing_slots(void)
+{
+	unsigned int i;
+
+	fake_parent_reset();
+	fill_all_but(0, 1);
+	fork_children();
+
+	fake_parent_reset();
+	fake_clock_start();
+	fork_pressure_drain = true;
+	fill_all_but(0, 4);
+	for (i = 0; i < 4; i++)
+		fake_fork_fail[i] = FAKE_FORK_FAIL_ALWAYS;
+}
+
+/* The drain is opt-in: without --fork-pressure-drain a failure streak
+ * well past the threshold suppresses nothing. */
+static void drain_stays_off_unless_asked_for(void)
+{
+	unsigned int i;
+
+	four_failing_slots();
+	fork_pressure_drain = false;
+
+	for (i = 0; i < 3; i++)
+		fork_children();
+
+	if (strstr(fake_output_log, DRAIN_ENGAGED) != NULL)
+		BUG("spawn: the fork-pressure drain engaged without being asked for");
+}
+
+/* A call gives up on a slot after ten failures, so a refill of a few
+ * slots fails too few spawns to reach the threshold of 100 within one
+ * call.  The count has to carry across calls: forty a call crosses it
+ * in the third, and not before. */
+static void drain_count_carries_across_calls(void)
+{
+	four_failing_slots();
+
+	fork_children();
+	fork_children();
+	if (strstr(fake_output_log, DRAIN_ENGAGED) != NULL)
+		BUG("spawn: the fork-pressure drain engaged before 100 failures");
+
+	fork_children();
+	if (strstr(fake_output_log, DRAIN_ENGAGED) == NULL ||
+	    fork_pressure_drain_active() == 0)
+		BUG("spawn: the failure count did not carry across calls to the drain threshold");
+}
+
+/* The count is of consecutive failures: a spawn that succeeds starts it
+ * over, so eighty failures, a success and thirty more are no streak. */
+static void spawn_success_restarts_the_drain_count(void)
+{
+	four_failing_slots();
+
+	fork_children();
+	fork_children();
+	fake_fork_fail[0] = 0;
+	fork_children();
+
+	if (pids[0] != FAKE_FORK_PID(0))
+		BUG("spawn: the slot that could fork was not forked");
+	if (strstr(fake_output_log, DRAIN_ENGAGED) != NULL)
+		BUG("spawn: a spawn that succeeded did not restart the failure count");
+}
+
 void spawn_self_check(void);
 void spawn_self_check(void)
 {
@@ -182,6 +260,9 @@ void spawn_self_check(void)
 	barrier_opens_when_every_empty_slot_is_parked();
 	failing_slot_is_skipped_for_one_call();
 	throttled_fill_does_not_yield_for_a_skipped_slot();
+	drain_stays_off_unless_asked_for();
+	drain_count_carries_across_calls();
+	spawn_success_restarts_the_drain_count();
 
 	/* Leave no pids or counts for later suites. */
 	fake_parent_reset();
