@@ -218,6 +218,7 @@ CMP_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(CMP_SRCS))
 MINICORPUS_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(MINICORPUS_SRCS))
 KCOV_PERSIST_OBJS := $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(KCOV_PERSIST_SRCS))
 FAKE_OBJS	:= $(patsubst %.c,$(BUILDDIR)/%.o,$(FAKE_SRCS))
+TEST_OBJS	:= $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(KCOV_PERSIST_OBJS) $(FAKE_OBJS)
 
 .PHONY: all test test-asan test-ndebug clean
 
@@ -233,18 +234,24 @@ test-asan:
 test-ndebug:
 	$(MAKE) NDEBUG=1
 
-$(TEST_BIN): $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(KCOV_PERSIST_OBJS) $(FAKE_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(KCOV_PERSIST_OBJS) $(FAKE_OBJS)
+$(TEST_BIN): $(TEST_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(TEST_OBJS)
 
 $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(KCOV_PERSIST_OBJS): CFLAGS += -ffunction-sections -fdata-sections
 
+# -MMD writes a .d file beside each object listing the headers it was
+# built from, so editing a header rebuilds the objects that include it.
+# -MP gives each header an empty rule, so a deleted or renamed one does
+# not break the next build.
 $(BUILDDIR)/real/%.o: $(TOP)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
 
 $(BUILDDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+-include $(TEST_OBJS:.o=.d)
 
 clean:
 	@rm -rf build build-asan build-ndebug test-bin test-bin-asan test-bin-ndebug
