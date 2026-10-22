@@ -41,14 +41,18 @@
  * For the controller (GENL_ID_CTRL), we pick from CTRL_CMD_* commands.
  * For other families, we use random cmd values since we don't know
  * which families are loaded at runtime.
+ * *cmd_caps gets the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP bits the
+ * controller reported for the picked cmd, 0 when they are not known, so
+ * the caller can send the request kind that has a handler.
  */
 size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
-		     size_t buflen)
+		     size_t buflen, unsigned char *cmd_caps)
 {
 	const struct genl_family_grammar *fam = NULL;
 	struct genlmsghdr genl;
 	size_t len;
 
+	*cmd_caps = 0;
 	if (sizeof(genl) > buflen)
 		return 0;
 
@@ -64,6 +68,7 @@ size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
 		 * version is fine. */
 		genl.cmd = genl_pick_cmd(fam);
 		genl.version = fam->default_version ? fam->default_version : 1;
+		*cmd_caps = fam->cmd_caps[genl.cmd];
 		genl_family_bump_calls(fam);
 	} else {
 		/* Unknown family: random command, biased toward low values */

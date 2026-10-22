@@ -192,10 +192,13 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
  * audit_status, sock_diag_req, ...) into body and returns its length.
  * The audit builder writes raw text for some message types instead of
  * a struct; the sock_diag builder shares rand_family() with the
- * rtnetlink builders.
+ * rtnetlink builders.  The genl builder also reports, in *cmd_caps,
+ * the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP bits the controller gave the
+ * cmd it picked (0 when unknown); build_one_nlmsg sets the dump flags
+ * from them.
  */
 size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
-		     size_t buflen);
+		     size_t buflen, unsigned char *cmd_caps);
 size_t gen_nfnl_body(unsigned char *body, unsigned short nlmsg_type,
 		     size_t buflen);
 size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type,

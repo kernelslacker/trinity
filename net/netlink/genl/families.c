@@ -4,9 +4,10 @@
  * Per-family grammar tables (net/netlink/genl/<family>.c) declare their
  * commands and attribute kinds statically; this file walks that
  * registry on first use, asks the kernel for each family's
- * dynamically-assigned family_id via CTRL_CMD_GETFAMILY/NLM_F_DUMP,
- * and exposes lookup helpers used by the netlink message generator
- * to send structurally-valid messages addressed to specific families.
+ * dynamically-assigned family_id and the doit/dumpit shape of its ops
+ * via CTRL_CMD_GETFAMILY/NLM_F_DUMP, and exposes lookup helpers used
+ * by the netlink message generator to send structurally-valid
+ * messages addressed to specific families.
  *
  * A registered family's cmds[] + attrs[] table is what unlocks fuzz
  * coverage of that family's per-command parsers: the kernel's family
@@ -404,13 +405,89 @@ static unsigned short nla_type_id(const struct nlattr *nla)
 }
 
 /*
+ * Return the attribute at *off in the len bytes at buf and step *off
+ * past it, or NULL once no whole attribute is left.  An nla_len below
+ * the header or past the end of the run counts as none: the lengths in
+ * a reply are checked against the run that encloses them, never
+ * against anything beyond it.
+ */
+static const struct nlattr *next_nla(const unsigned char *buf, size_t len,
+				     size_t *off)
+{
+	const struct nlattr *nla;
+	size_t nla_len;
+
+	if (*off + NLA_HDRLEN > len)
+		return NULL;
+	nla = (const struct nlattr *)(buf + *off);
+	nla_len = nla->nla_len;
+	if (nla_len < NLA_HDRLEN || nla_len > len - *off)
+		return NULL;
+	*off += NLA_ALIGN(nla_len);
+	return nla;
+}
+
+/*
+ * Record one op nest from CTRL_ATTR_OPS: its CTRL_ATTR_OP_ID and
+ * CTRL_ATTR_OP_FLAGS, both u32.  The flags are ORed in, not assigned,
+ * so a repeated id cannot erase what its first entry said.
+ * genlmsghdr.cmd is a u8, so an id past the table names no command we
+ * could send.
+ */
+static void parse_op(const unsigned char *op, size_t op_len,
+		     struct genl_family_grammar *fam)
+{
+	const struct nlattr *nla;
+	unsigned int id = 0;
+	unsigned int flags = 0;
+	int have_id = 0;
+	size_t off = 0;
+
+	while ((nla = next_nla(op, op_len, &off)) != NULL) {
+		const unsigned char *payload = (const unsigned char *)nla + NLA_HDRLEN;
+		size_t payload_len = nla->nla_len - NLA_HDRLEN;
+
+		if (payload_len < sizeof(id))
+			continue;
+		switch (nla_type_id(nla)) {
+		case CTRL_ATTR_OP_ID:
+			memcpy(&id, payload, sizeof(id));
+			have_id = 1;
+			break;
+		case CTRL_ATTR_OP_FLAGS:
+			memcpy(&flags, payload, sizeof(flags));
+			break;
+		default:
+			break;
+		}
+	}
+
+	if (have_id && id < ARRAY_SIZE(fam->cmd_caps))
+		fam->cmd_caps[id] |= flags & (GENL_CMD_CAP_DO | GENL_CMD_CAP_DUMP);
+}
+
+/* Walk CTRL_ATTR_OPS, the nest the controller lists a family's ops in. */
+static void parse_ops(const unsigned char *ops, size_t ops_len,
+		      struct genl_family_grammar *fam)
+{
+	const struct nlattr *op;
+	size_t off = 0;
+
+	while ((op = next_nla(ops, ops_len, &off)) != NULL)
+		parse_op((const unsigned char *)op + NLA_HDRLEN,
+			 op->nla_len - NLA_HDRLEN, fam);
+}
+
+/*
  * Match a NEWFAMILY response to a registered grammar by name.  Sets
- * the family_id and clears unavailable when found.  The kernel
+ * the family_id and clears unavailable when found, and returns the
+ * grammar; NULL when the name is not registered.  The kernel
  * zero-pads CTRL_ATTR_FAMILY_NAME so a strcmp against the registry
  * name is safe as long as parse_family_response() NUL-terminated the
  * scratch buffer it passes in.
  */
-static void match_response(const char *name, unsigned short id)
+static struct genl_family_grammar *match_response(const char *name,
+						  unsigned short id)
 {
 	unsigned int i;
 
@@ -422,20 +499,27 @@ static void match_response(const char *name, unsigned short id)
 		registry[i]->family_id = id;
 		registry[i]->resolved = 1;
 		registry[i]->unavailable = 0;
-		return;
+		return registry[i];
 	}
+	return NULL;
 }
 
 /*
  * Walk a single CTRL_CMD_NEWFAMILY response, extract FAMILY_NAME +
  * FAMILY_ID, and dispatch to match_response().  Skips entries lacking
- * either field.  Mirrors the parser in childops/net/netlink/genetlink-fuzzer.c —
+ * either field.  A family we register also gets the ops it lists
+ * recorded, after the match, because the list can precede the name.
+ * Mirrors the parser in childops/net/netlink/genetlink-fuzzer.c —
  * intentionally separate so the two paths don't share fragile state.
  */
 static void parse_family_response(const struct nlmsghdr *nlh)
 {
+	struct genl_family_grammar *fam;
+	const struct nlattr *nla;
 	const unsigned char *attrs;
-	size_t attrs_off;
+	const unsigned char *ops = NULL;
+	size_t ops_len = 0;
+	size_t attrs_off = 0;
 	size_t attrs_len;
 	char name[GENL_NAMSIZ];
 	unsigned short id = 0;
@@ -449,17 +533,9 @@ static void parse_family_response(const struct nlmsghdr *nlh)
 	attrs = (const unsigned char *)nlh + NLMSG_HDRLEN + GENL_HDRLEN;
 	attrs_len = nlh->nlmsg_len - NLMSG_HDRLEN - GENL_HDRLEN;
 
-	for (attrs_off = 0; attrs_off + NLA_HDRLEN <= attrs_len; ) {
-		const struct nlattr *nla = (const struct nlattr *)(attrs + attrs_off);
-		size_t nla_len = nla->nla_len;
-		const unsigned char *payload;
-		size_t payload_len;
-
-		if (nla_len < NLA_HDRLEN || nla_len > attrs_len - attrs_off)
-			break;
-
-		payload = (const unsigned char *)nla + NLA_HDRLEN;
-		payload_len = nla_len - NLA_HDRLEN;
+	while ((nla = next_nla(attrs, attrs_len, &attrs_off)) != NULL) {
+		const unsigned char *payload = (const unsigned char *)nla + NLA_HDRLEN;
+		size_t payload_len = nla->nla_len - NLA_HDRLEN;
 
 		switch (nla_type_id(nla)) {
 		case CTRL_ATTR_FAMILY_ID:
@@ -478,21 +554,27 @@ static void parse_family_response(const struct nlmsghdr *nlh)
 			have_name = 1;
 			break;
 		}
+		case CTRL_ATTR_OPS:
+			ops = payload;
+			ops_len = payload_len;
+			break;
 		default:
 			break;
 		}
-		attrs_off += NLA_ALIGN(nla_len);
 	}
 
-	if (have_name && have_id && id != 0)
-		match_response(name, id);
+	if (!have_name || !have_id || id == 0)
+		return;
+	fam = match_response(name, id);
+	if (fam != NULL && ops != NULL)
+		parse_ops(ops, ops_len, fam);
 }
 
 /*
  * Send CTRL_CMD_GETFAMILY/NLM_F_DUMP and consume responses until we
  * see NLMSG_DONE / NLMSG_ERROR / recv() timeout.  Each NEWFAMILY
  * message gets passed to parse_family_response() which stamps the
- * matching registry entry's family_id.
+ * matching registry entry's family_id and cmd_caps.
  */
 static int do_dump(int sock)
 {

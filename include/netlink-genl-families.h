@@ -16,7 +16,8 @@
  * file per family in net/netlink/genl/<family>.c) with the runtime-resolved
  * family_id.  At first NETLINK_GENERIC use, genl_resolve_families()
  * walks the kernel's controller via CTRL_CMD_GETFAMILY/NLM_F_DUMP and
- * stamps each registered grammar with its assigned ID (or marks it
+ * stamps each registered grammar with its assigned ID and the
+ * doit/dumpit shape of each op the controller lists (or marks it
  * unavailable when the family isn't loaded in the running kernel).
  *
  * Adding a family is a small, isolated change: drop a new
@@ -48,6 +49,14 @@ struct genl_family_grammar {
 	unsigned short family_id; /* 0 == unresolved */
 	unsigned char resolved;
 	unsigned char unavailable; /* set when CTRL didn't return this name */
+
+	/* Per cmd, the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP bits of the op
+	 * the controller listed for it: which kinds of request reach a
+	 * handler.  genl_family_rcv_msg() routes on NLM_F_DUMP and rejects
+	 * a request whose routed handler is missing, so a cmd with only
+	 * one kind wants the matching nlmsg_flags.  0 == unknown: the cmd
+	 * was not listed, or the reply carried no op list. */
+	unsigned char cmd_caps[256];
 
 	/* Pointer into shm->stats stamped during genl_resolve_families()
 	 * via a static name->offset table maintained alongside the

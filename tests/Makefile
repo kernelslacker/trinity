@@ -60,6 +60,12 @@ LDFLAGS		+= -Wl,--wrap=alloc_track_lookup_size
 LDFLAGS		+= -Wl,--wrap=malloc
 LDFLAGS		+= -Wl,--wrap=lseek
 
+# NETLINK_GENERIC socket seam: genl_ops_test.c wraps socket() to hand the
+# genl family resolver a unix socketpair that carries a canned controller
+# reply.  Any other AF_NETLINK request fails, so no test can open a real
+# netlink socket; every other domain goes to the real call.
+LDFLAGS		+= -Wl,--wrap=socket
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs the
 # arch-program #10 spec calls for on the integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -191,6 +197,16 @@ CHAIN_SRCS	:= \
 KCOV_PERSIST_SRCS := \
 	$(TOP)/kcov/persist.c
 
+# The netlink message generator and the genl family registry, linked for
+# netlink_gen_msg() and genl_resolve_families().  The registries in
+# genl/families.c and nfnl/subsystems.c name every grammar in their
+# directories, so each directory is linked whole.  Same
+# section-per-function treatment; genl_ops_test.c fakes the RNG helpers
+# these reach and feeds the resolver a canned controller reply.
+NETLINK_SRCS	:= $(wildcard $(TOP)/net/netlink/*.c \
+			      $(TOP)/net/netlink/genl/*.c \
+			      $(TOP)/net/netlink/nfnl/*.c)
+
 FAKE_SRCS	:= \
 	fake_rng.c \
 	fake_shm.c \
@@ -225,6 +241,7 @@ FAKE_SRCS	:= \
 	redqueen_pin_test.c \
 	asb_relocate_test.c \
 	loop_status_test.c \
+	genl_ops_test.c \
 	kcov_persist_test.c \
 	test_main.c
 
@@ -237,8 +254,9 @@ CMP_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(CMP_SRCS))
 MINICORPUS_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(MINICORPUS_SRCS))
 CHAIN_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(CHAIN_SRCS))
 KCOV_PERSIST_OBJS := $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(KCOV_PERSIST_SRCS))
+NETLINK_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(NETLINK_SRCS))
 FAKE_OBJS	:= $(patsubst %.c,$(BUILDDIR)/%.o,$(FAKE_SRCS))
-TEST_OBJS	:= $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(CHAIN_OBJS) $(KCOV_PERSIST_OBJS) $(FAKE_OBJS)
+TEST_OBJS	:= $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(CHAIN_OBJS) $(KCOV_PERSIST_OBJS) $(NETLINK_OBJS) $(FAKE_OBJS)
 
 .PHONY: all test test-asan test-ndebug clean
 
@@ -257,7 +275,7 @@ test-ndebug:
 $(TEST_BIN): $(TEST_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(TEST_OBJS)
 
-$(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(CHAIN_OBJS) $(KCOV_PERSIST_OBJS): CFLAGS += -ffunction-sections -fdata-sections
+$(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(CHAIN_OBJS) $(KCOV_PERSIST_OBJS) $(NETLINK_OBJS): CFLAGS += -ffunction-sections -fdata-sections
 
 # -MMD writes a .d file beside each object listing the headers it was
 # built from, so editing a header rebuilds the objects that include it.

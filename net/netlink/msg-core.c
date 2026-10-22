@@ -45,8 +45,18 @@
 /* Forward declaration — called via gen_msg hook from net/proto/netlink.c */
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 
-/* Generate a random set of nlmsg flags biased toward valid combos */
-static unsigned short gen_nlmsg_flags(void)
+/*
+ * Generate a random set of nlmsg flags biased toward valid combos.
+ * genl_caps is the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP shape of the genl
+ * command the message carries, 0 when unknown or not genl.  The genl core
+ * routes on (flags & NLM_F_DUMP) == NLM_F_DUMP and turns away a request
+ * whose routed handler is missing, so a cmd with only a dumpit gets both
+ * dump bits and one with only a doit gets neither.  The NEW and DELETE
+ * modifiers share those two bits (REPLACE/NONREC, EXCL/BULK), so the pin
+ * comes after them.  The pure-chaos return stays unpinned so the
+ * kernel's flag rejects keep seeing traffic.
+ */
+static unsigned short gen_nlmsg_flags(unsigned char genl_caps)
 {
 	unsigned short flags = NLM_F_REQUEST; /* almost always set */
 
@@ -83,6 +93,11 @@ static unsigned short gen_nlmsg_flags(void)
 		flags |= NLM_F_NONREC;
 	if (RAND_BOOL())
 		flags |= NLM_F_BULK;
+
+	if (genl_caps == GENL_CMD_CAP_DUMP)
+		flags |= NLM_F_DUMP;
+	else if (genl_caps == GENL_CMD_CAP_DO)
+		flags &= ~NLM_F_DUMP;
 
 	return flags;
 }
@@ -265,6 +280,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	size_t body_len;
 	size_t msg_start = offset;
 	unsigned char body_family = AF_UNSPEC;
+	unsigned char genl_caps = 0;
 	int rtnl_group = -1;
 	int num_attrs;
 
@@ -277,7 +293,6 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 
 	nlh = (struct nlmsghdr *) (msg + offset);
 	nlh->nlmsg_type = nlmsg_type;
-	nlh->nlmsg_flags = gen_nlmsg_flags();
 	nlh->nlmsg_seq = rand32();
 	nlh->nlmsg_pid = RAND_BOOL() ? 0 : rand32();
 
@@ -291,7 +306,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		rtnl_group = (nlmsg_type - RTM_BASE) / 4;
 	} else if (triplet->protocol == NETLINK_GENERIC) {
 		body_len = gen_genl_body(msg + offset, nlmsg_type,
-					 buflen - offset);
+					 buflen - offset, &genl_caps);
 	} else if (triplet->protocol == NETLINK_NETFILTER) {
 		body_len = gen_nfnl_body(msg + offset, nlmsg_type,
 					 buflen - offset);
@@ -311,6 +326,9 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		generate_rand_bytes(msg + offset, body_len);
 	}
 	offset += body_len;
+
+	/* After the body: a genl cmd's handlers decide the dump bits. */
+	nlh->nlmsg_flags = gen_nlmsg_flags(genl_caps);
 
 	/* Append nlattr TLVs with protocol-appropriate types.
 	 * Audit messages don't use nlattr — skip for that protocol. */
