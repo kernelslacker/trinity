@@ -344,48 +344,6 @@ struct shm_s {
 	 * Avoids repeated failed probes from every child. */
 	bool iouring_enosys;
 
-	/* nftables_churn per-subsystem latches (childops/net/netfilter/
-	 * nftables/churn.c).  Grandchild observes NETLINK_NETFILTER socket
-	 * EPROTONOSUPPORT (CONFIG_NF_NETLINK=n), NEWTABLE
-	 * EOPNOTSUPP/EAFNOSUPPORT/EPROTONOSUPPORT (nf_tables absent), or
-	 * AF_INET SOCK_DGRAM socket() refusal. */
-	bool nft_churn_ns_unsupported_nfnetlink;
-	bool nft_churn_ns_unsupported_nf_tables;
-	bool nft_churn_ns_unsupported_inet;
-
-	/* bridge-conntrack-churn per-subsystem latches (childops/net/
-	 * bridge-conntrack-churn.c).  Grandchild observes RTM_NEWLINK
-	 * bridge rejection, nf_tables NEWTABLE/NEWCHAIN rejection on the
-	 * bridge family, or ctnetlink IPCTNL_MSG_CT_FLUSH rejection. */
-	bool bridge_ct_churn_ns_unsupported_bridge;
-	bool bridge_ct_churn_ns_unsupported_nf_tables;
-	bool bridge_ct_churn_ns_unsupported_ctnetlink;
-
-	/* bridge-ip6frag-refrag per-subsystem latches (childops/net/
-	 * bridge-ip6frag-refrag.c).  Grandchild observes RTM_NEWLINK
-	 * bridge rejection, nf_tables NEWTABLE/NEWCHAIN/NEWRULE rejection,
-	 * or AF_PACKET SOCK_RAW socket() refusal. */
-	bool bridge_ip6frag_ns_unsupported_bridge;
-	bool bridge_ip6frag_ns_unsupported_nf_tables;
-	bool bridge_ip6frag_ns_unsupported_af_packet;
-	/* bridge-ip6frag-refrag per-grandchild lo-up latch (childops/
-	 * net/bridge-ip6frag-refrag.c).  Written inside the
-	 * userns_run_in_ns() grandchild's bridge_ip6frag_refrag_in_ns()
-	 * path -- a process-local static would die with the grandchild
-	 * on _exit() and every subsequent invocation would re-pay the
-	 * rtnetlink "lo up" round-trip forever.  Living in shm lets one
-	 * successful lo-up persist fleet-wide.  RELAXED atomic
-	 * load/store is safe -- only false -> true, idempotent write. */
-	bool bridge_ip6frag_lo_up_done;
-
-	/* bridge-ip6-refrag-fraggap per-subsystem latches (childops/net/
-	 * bridge-ip6-refrag-fraggap.c).  Grandchild observes RTM_NEWLINK
-	 * bridge rejection, nf_tables NEWTABLE/NEWCHAIN rejection, or the
-	 * bridge-nf-call-ip6tables sysctl being absent. */
-	bool bridge_ip6_fraggap_ns_unsupported_bridge;
-	bool bridge_ip6_fraggap_ns_unsupported_nf_tables;
-	bool bridge_ip6_fraggap_ns_unsupported_brnf;
-
 	/* ip6erspan-netns-migrate grandchild latches (childops/net/
 	 * ip6erspan-netns-migrate.c).  Master gate + changelink secondary
 	 * gate.  Write sites include the userns_run_in_ns() grandchild
@@ -394,23 +352,6 @@ struct shm_s {
 	 * unsupported create_link / setns / changelink forever. */
 	bool ip6erspan_ns_unsupported;
 	bool ip6erspan_ns_unsupported_changelink;
-
-	/* ip6-tunnel-churn grandchild latches (childops/net/
-	 * ip6-tunnel-churn.c).  Master gate covers userns_run_in_ns()
-	 * -EPERM; the per-subsystem latches gate on RTM_NEWLINK
-	 * "ip6tnl" rejection (kernel built without CONFIG_IPV6_TUNNEL)
-	 * and on AF_PACKET SOCK_RAW socket() refusal (kernel built
-	 * without CONFIG_PACKET).  Write sites sit inside the
-	 * userns_run_in_ns() grandchild body -- process-local statics
-	 * would die with the grandchild and every subsequent invocation
-	 * would re-attempt the same unsupported create / socket forever
-	 * (latch-in-grandchild bug). */
-	bool ip6_tunnel_churn_ns_unsupported;
-	bool ip6_tunnel_churn_ns_unsupported_ip6tnl;
-	bool ip6_tunnel_churn_ns_unsupported_af_packet;
-	/* Latches when RTM_NEWLINK changelink with IFLA_IPTUN_ENCAP_TYPE
-	 * (FOU/GUE) is rejected -- kernel built without CONFIG_NET_FOU. */
-	bool ip6_tunnel_churn_ns_unsupported_fou;
 
 	/* flowtable-encap-vlan grandchild latches (childops/net/netfilter/
 	 * flowtable-encap-vlan.c).  ns_unsupported latches on NEWFLOWTABLE
@@ -429,23 +370,6 @@ struct shm_s {
 	 * any outputerr() call.  See childops/net/fnhe-pmtu-mtu-race.c. */
 	bool fnhe_pmtu_warn_fired;
 
-	/* bridge-conntrack-churn per-grandchild "lo up" setup latch
-	 * (childops/net/bridge-conntrack-churn.c).  Write site sits
-	 * inside the userns_run_in_ns() grandchild body; a process-local
-	 * static would die with the grandchild and every subsequent
-	 * invocation would re-pay the rtnetlink round-trip. */
-	bool bridge_conntrack_lo_up_done;
-
-	/* nl80211-churn per-grandchild first-wiphy cache (childops/net/
-	 * netlink/nl80211-churn.c).  Both the cached wiphy index and the
-	 * "cached" gate live in shm; write sites sit inside the
-	 * userns_run_in_ns() grandchild (coordinator +
-	 * discovery.c hwsim_present).  Process-local statics would die
-	 * with the grandchild and every subsequent invocation would
-	 * re-pay the GET_WIPHY enumerate. */
-	uint32_t nl80211_phy0;
-	bool nl80211_phy0_cached;
-
 	/* ip6gre-bond-lapb-stack per-grandchild unsupported latch
 	 * (childops/net/ip6gre-bond-lapb-stack.c).  Write sites sit
 	 * inside the userns_run_in_ns() grandchild body; a process-local
@@ -453,15 +377,6 @@ struct shm_s {
 	 * invocation would re-attempt the same unsupported ip6gre /
 	 * bond_enslave / lapb-lookup. */
 	bool ip6gre_bond_lapb_ns_unsupported;
-
-	/* bridge-vlan-churn per-grandchild unsupported latch (childops/
-	 * net/bridge-vlan-churn.c).  Write sites include the
-	 * userns_run_in_ns() grandchild body (CONFIG-absent bridge create
-	 * probe) plus the outer wrapper -EPERM branch; a process-local
-	 * static would die with the grandchild and every subsequent
-	 * invocation would re-attempt the same unsupported bridge
-	 * create. */
-	bool bridge_vlan_churn_ns_unsupported;
 
 	/* vlan-filter-churn per-grandchild unsupported latch (childops/
 	 * net/vlan-filter-churn.c).  Write sites include the
@@ -503,161 +418,6 @@ struct shm_s {
 	 * EAFNOSUPPORT (CONFIG_AF_RXRPC=m not loaded).  RELAXED atomic;
 	 * idempotent false->true transition. */
 	bool netns_teardown_rxrpc_unsupported;
-
-	/* tc/mirred-blockcast per-subsystem latches (childops/net/tc/
-	 * mirred-blockcast.c).  Grandchild observes NETLINK_ROUTE
-	 * socket refusal, RTM_NEWLINK "dummy" rejection, RTM_NEWQDISC
-	 * clsact rejection, cls_matchall/act_mirred rejection, or
-	 * AF_INET SOCK_DGRAM socket() refusal. */
-	bool tc_mirred_bc_ns_unsupported_rtnl;
-	bool tc_mirred_bc_ns_unsupported_dummy;
-	bool tc_mirred_bc_ns_unsupported_clsact;
-	bool tc_mirred_bc_ns_unsupported_mirred;
-	bool tc_mirred_bc_ns_unsupported_matchall;
-	bool tc_mirred_bc_ns_unsupported_inet;
-
-	/* tc/mirred-blockcast per-grandchild modprobe latches
-	 * (childops/net/tc/mirred-blockcast.c).  Written inside the
-	 * userns_run_in_ns() grandchild -- a process-local static would
-	 * die with the grandchild on _exit() and every subsequent
-	 * invocation would re-pay the modprobe cost forever.  Living in
-	 * shm lets one modprobe attempt persist fleet-wide.  RELAXED
-	 * atomic load/store is safe -- only false -> true, idempotent. */
-	bool tc_mirred_bc_modprobe_tried_ingress;
-	bool tc_mirred_bc_modprobe_tried_matchall;
-	bool tc_mirred_bc_modprobe_tried_mirred;
-
-	/* tc/live-traffic per-subsystem latches (childops/net/tc/
-	 * live-traffic.c).  Grandchild observes NETLINK_ROUTE socket
-	 * refusal, RTM_NEWLINK "veth" rejection, RTM_NEWQDISC clsact
-	 * rejection, cls_matchall rejection, cls_bpf BPF_PROG_LOAD
-	 * refusal, AF_INET SOCK_DGRAM socket() refusal, or XDP prog
-	 * load / attach refusal. */
-	bool tc_live_ns_unsupported_rtnl;
-	bool tc_live_ns_unsupported_veth;
-	bool tc_live_ns_unsupported_clsact;
-	bool tc_live_ns_unsupported_matchall;
-	bool tc_live_ns_unsupported_bpf_cls;
-	bool tc_live_ns_unsupported_inet;
-	bool tc_live_ns_unsupported_xdp;
-
-	/* tc/live-traffic per-grandchild modprobe latches (childops/net/tc/
-	 * live-traffic.c).  Written inside the userns_run_in_ns()
-	 * grandchild -- a process-local static would die with the
-	 * grandchild on _exit() and every subsequent invocation would
-	 * re-pay the modprobe cost forever.  Living in shm lets one
-	 * modprobe attempt persist fleet-wide.  RELAXED atomic load/store
-	 * is safe -- only false -> true, idempotent write. */
-	bool tc_live_modprobe_tried_ingress;
-	bool tc_live_modprobe_tried_matchall;
-	bool tc_live_modprobe_tried_cls_bpf;
-	bool tc_live_modprobe_tried_act_mirred;
-	bool tc_live_modprobe_tried_act_police;
-
-	/* tc/standalone-action per-grandchild setup latches (childops/net/tc/
-	 * standalone-action.c).  Written inside the userns_run_in_ns() grandchild;
-	 * use __ATOMIC_RELAXED load/store (only false->true, idempotent). */
-	bool tc_sa_ns_unsupported_rtnl;
-	bool tc_sa_ns_unsupported_veth;
-	bool tc_sa_ns_unsupported_clsact;
-	bool tc_sa_ns_unsupported_matchall;
-	bool tc_sa_ns_unsupported_action;
-	bool tc_sa_ns_unsupported_inet;
-	bool tc_sa_modprobe_tried_ingress;
-	bool tc_sa_modprobe_tried_matchall;
-	bool tc_sa_modprobe_tried_act_gact;
-
-	/* tc/qdisc-churn per-grandchild setup latches (childops/net/tc/
-	 * qdisc-churn.c).  Same rationale as the tc_live_* latches above:
-	 * the write sites sit inside the userns_run_in_ns() grandchild, so
-	 * a process-local static would die with the grandchild on _exit()
-	 * and every subsequent invocation would re-pay the same rtnl / inet
-	 * / bridge / dummy setup probe forever.  Living in shm lets one
-	 * negative probe persist fleet-wide.  RELAXED atomic load/store is
-	 * safe -- only false -> true, idempotent write. */
-	bool tc_qdisc_churn_ns_unsupported_rtnl;
-	bool tc_qdisc_churn_ns_unsupported_dummy;
-	bool tc_qdisc_churn_ns_unsupported_inet;
-	bool tc_qdisc_churn_ns_unsupported_bridge;
-
-	/* mpls-route-churn per-grandchild setup latches (childops/net/
-	 * mpls-route-churn.c).  Written inside the userns_run_in_ns()
-	 * grandchild (_exit reaps the writes); use __ATOMIC_RELAXED
-	 * load/store so the parent sees monotonic false->true. */
-	bool mpls_route_modprobe_tried_mpls_router;
-	bool mpls_route_ns_unsupported_mpls;
-	bool mpls_route_ns_unsupported_lwtunnel;
-	/* wireguard-decrypt-flood per-grandchild setup latches
-	 * (childops/net/wireguard-decrypt-flood.c).  Same rationale as the
-	 * tc_qdisc_churn_* latches above: the write sites sit inside the
-	 * userns_run_in_ns() grandchild -- a process-local static would die
-	 * with the grandchild on _exit() and every subsequent invocation
-	 * would re-probe the same wireguard-module-absent errno or re-run
-	 * wgdf_setup() forever.  Living in shm lets one negative probe or
-	 * one successful setup persist fleet-wide.  RELAXED atomic
-	 * load/store is safe -- only false -> true (bools) or once-set
-	 * monotonic (ints), and the writes are idempotent.  wgdf_udp_fd
-	 * zero-initialises rather than -1; correctness does not depend on
-	 * that because reads are gated on wgdf_setup_done being true, which
-	 * is only set after wgdf_open_udp() has returned a valid fd. */
-	bool wg_ns_unsupported;
-	bool wgdf_setup_done;
-	int wgdf_udp_fd;
-
-	/* xfrm-churn per-grandchild setup latches (childops/net/xfrm/
-	 * xfrm-churn.c: ns_unsupported_iptfs / ns_unsupported_zerocopy
-	 * are written inside the userns_run_in_ns() grandchild -- a
-	 * process-local static would die with the grandchild on _exit()
-	 * and every subsequent call would re-pay the SA-install /
-	 * setsockopt cost.  RELAXED atomic load/store is safe -- only
-	 * false -> true, and the write is idempotent. */
-	bool xfrm_churn_ns_unsupported_iptfs;
-	bool xfrm_churn_ns_unsupported_zerocopy;
-	/* Same shape for the device-teardown arm (childops/net/xfrm/
-	 * xfrm-churn-devteardown.c): RTM_NEWLINK kind="dummy" rejected
-	 * means CONFIG_DUMMY is absent and no amount of retrying inside a
-	 * fresh grandchild will change that. */
-	bool xfrm_churn_ns_unsupported_dummy;
-
-	/* xfrm-churn per-algo latches indexed by xfrm_algos[]
-	 * (childops/net/xfrm/xfrm-churn.c).  Written inside the
-	 * userns_run_in_ns() grandchild -- a process-local static array
-	 * would die with the grandchild on _exit() and every subsequent
-	 * grandchild would re-pay the NEWSA EFAIL and the try_modprobe()
-	 * cost for each missing algorithm.  Shared shm state means one
-	 * rejection / one modprobe attempt per algo per fleet, not per
-	 * grandchild.  RELAXED atomic load/store is safe -- only
-	 * false -> true, idempotent write.  SHM_NR_XFRM_ALGOS is the
-	 * fixed slot count; a compile-time assert in xfrm-churn.c pins
-	 * it to ARRAY_SIZE(xfrm_algos) so the two stay in step. */
-#define SHM_NR_XFRM_ALGOS 8
-	bool xfrm_churn_ns_unsupported_algo[SHM_NR_XFRM_ALGOS];
-	bool xfrm_churn_modprobe_tried_algo[SHM_NR_XFRM_ALGOS];
-
-	/* ipmr-cache-report per-grandchild setup latches
-	 * (childops/net/ipmr-cache-report.c). Written inside the
-	 * userns_run_in_ns() grandchild callback; a process-local static
-	 * dies with the grandchild on _exit() — the persistent child
-	 * never observes the write. Moved to shm so the probe is paid
-	 * once per fleet rather than per grandchild. RELAXED atomic
-	 * load/store is safe -- only false -> true, idempotent. */
-	bool ipmr_cache_report_ns_unsupported;
-	bool ipmr_cache_report_ns_eperm;
-
-	/* ipmr-getroute-pktinfo per-grandchild setup latches
-	 * (childops/net/ipmr-cache-report.c). Same write discipline as
-	 * ipmr_cache_report above: written inside userns_run_in_ns()
-	 * grandchild so must live in shm to survive _exit(). RELAXED
-	 * atomic load/store is safe -- only false -> true, idempotent. */
-	bool ipmr_getroute_pktinfo_ns_unsupported;
-	bool ipmr_getroute_pktinfo_ns_eperm;
-	/* ip6mr_churn grandchild latches
-	 * (childops/net/ip6mr-churn.c).  Same rationale as
-	 * ipmr_cache_report above: written from the userns_run_in_ns()
-	 * grandchild and must survive _exit().  RELAXED atomic
-	 * load/store is safe -- only false -> true, idempotent. */
-	bool ip6mr_churn_ns_unsupported;
-	bool ip6mr_churn_ns_eperm;
 
 	/* netdev-netns-migrate grandchild latches
 	 * (childops/net/netdev-netns-migrate.c).  Master gate is written
