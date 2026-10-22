@@ -13,6 +13,12 @@
  * dispatcher bails -ENODEV after the full attribute walk -- which is
  * the parser-level coverage this grammar exists to provide.
  *
+ * The grammar lists only ids that nl802154_ops[] registers (the
+ * security block below needs a Kconfig option).  The enum's other ids
+ * have no handler (SET_WPAN_PHY, SET_INTERFACE, DEL_WPAN_PHY) or are
+ * kernel-to-user messages (NEW_WPAN_PHY replies, SCAN_EVENT /
+ * SCAN_DONE notifications), so the genl core rejects them on input.
+ *
  * Flat attribute table: nl802154_policy is itself flat
  * (NL802154_ATTR_MAX+1 slots), so the per-cmd walker validates each
  * child against one global shape.  Signed scalar attrs (TX_POWER,
@@ -39,9 +45,7 @@
 
 static const struct genl_cmd_grammar nl802154_cmds[] = {
 	{ NL802154_CMD_GET_WPAN_PHY,		"NL802154_CMD_GET_WPAN_PHY" },
-	{ NL802154_CMD_SET_WPAN_PHY,		"NL802154_CMD_SET_WPAN_PHY" },
 	{ NL802154_CMD_GET_INTERFACE,		"NL802154_CMD_GET_INTERFACE" },
-	{ NL802154_CMD_SET_INTERFACE,		"NL802154_CMD_SET_INTERFACE" },
 	{ NL802154_CMD_NEW_INTERFACE,		"NL802154_CMD_NEW_INTERFACE" },
 	{ NL802154_CMD_DEL_INTERFACE,		"NL802154_CMD_DEL_INTERFACE" },
 	{ NL802154_CMD_SET_CHANNEL,		"NL802154_CMD_SET_CHANNEL" },
