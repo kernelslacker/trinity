@@ -135,8 +135,8 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `-1/EINTR`; treating that as "done" leaves a child unreaped and
   can strand a worker on a torn-down shared mapping.
 - `no-libc-rand`: reject libc PRNG callsites (`rand`, `random`,
-  `srand`, `*rand48`) outside the `rand/` wrapper layer and
-  `include/rnd.h`.
+  `srand`, `*rand48`) anywhere but `rand/rand-warn.c`, the runtime
+  tripwire whose warning text spells `rand()`.
 - `no-unchecked-alloc-shared-str`: every `alloc_shared_str()` /
   `alloc_shared_strdup()` assignment must have a NULL guard on the
   lvalue within 4 lines.  Both functions are `__must_check`

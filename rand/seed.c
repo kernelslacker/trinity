@@ -1,8 +1,8 @@
 /*
  * Routines to get/set seeds.
  *
- * On startup, the main process either generates a seed via rand()
- * or gets one passed in by the -s parameter.
+ * On startup, the main process either generates a seed from
+ * /dev/urandom or gets one passed in by the -s parameter.
  *
  * Example: we have four children, and our initial seed is 10000.
  * When we fork children, each child uses this seed + its child number
@@ -38,9 +38,9 @@
 /*
  * Process-global state for the inline PRNG in rnd.h.  fork()
  * gives each child its own copy; set_seed() reseeds the child
- * copy via rnd_seed() from the same combined (shm seed, childno)
- * value that drives srand(), so reproducing a run with `-s`
- * still reuses the same per-child stream.
+ * copy via rnd_seed() from the combined (shm seed, childno)
+ * value, so reproducing a run with `-s` reuses the same per-child
+ * stream.
  */
 uint64_t rnd_state;
 
@@ -95,10 +95,7 @@ unsigned int init_seed(unsigned int seedparam)
 		output(0, "Initial random seed: %u\n", seedparam);
 	}
 
-	/* Always seed the parent RNG, including the -s path.  Previously
-	 * srand() was only called for the auto-generated seed branch,
-	 * leaving the parent at the default state when -s was used. */
-	srand(seedparam);
+	/* Always seed the parent RNG, including the -s path. */
 	rnd_seed(seedparam);
 	rnd_blob_seed((uint64_t) seedparam);
 
@@ -136,7 +133,6 @@ void set_seed(struct childdata *child)
 	unsigned int seedval = __atomic_load_n(&shm->seed, __ATOMIC_RELAXED);
 	unsigned int mixed = seed_combine(seedval, child->num);
 
-	srand(mixed);
 	rnd_seed(mixed);
 	/* --blob-ab-mode secondary stream: same combined value, distinct
 	 * offset inside rnd_blob_seed().  Seeded unconditionally so a

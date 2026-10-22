@@ -1,26 +1,28 @@
 #!/bin/bash
 #
-# no-libc-rand: reject libc PRNG callsites outside the wrapper layer.
+# no-libc-rand: reject libc PRNG callsites outside the runtime tripwire.
 #
 # Trinity migrated off libc rand()/random()/srand() and the *rand48
 # family in favour of the inline, mutex-free rnd_u32() / rnd_u64() /
 # rnd_modulo_u32() helpers declared in include/rnd.h.  libc rand() is
 # an out-of-line LFSR with a pthread mutex that showed up >5% in perf
 # top on hot fuzz paths; the trinity wrappers are inline and route
-# through trinity's own seeded RNG.
+# through trinity's own seeded RNG.  Nothing seeds libc's generator
+# either (-s reproduction runs on rnd_seed() alone), so srand() is as
+# unwelcome as the draws.
 #
-# Two locations are allowed to mention the libc names:
+# One file is allowed to mention the libc names:
 #
-#   rand/           - the wrapper bridge layer that owns the libc seed
-#   include/rnd.h   - the header that declares the trinity wrappers
+#   rand/rand-warn.c  - the runtime tripwire; its warning text spells
+#                       "rand()"
 #
-# Everywhere else, libc PRNG calls are forbidden.  This check is a
-# regex tripwire: it grep-matches the token list followed by `(` on
-# word boundaries (so getrandom, random_address, random.h, rnd_*,
-# RAND_RANGE etc. do not trigger) and then filters out comment lines
-# (a single-line `/* ... rand() ... */`, a `//` comment, or a block
-# comment continuation `^\s*\*`).  Anything that survives those
-# filters fails the check.
+# Everywhere else, rand/ and include/rnd.h included, libc PRNG calls are
+# forbidden.  This check is a regex tripwire: it grep-matches the token
+# list followed by `(` on word boundaries (so getrandom, random_address,
+# random.h, rnd_*, RAND_RANGE etc. do not trigger) and then filters out
+# comment lines (a single-line `/* ... rand() ... */`, a `//` comment,
+# or a block comment continuation `^\s*\*`).  Anything that survives
+# those filters fails the check.
 
 set -u
 
@@ -36,12 +38,10 @@ hits_tmp="$(mktemp)"
 trap 'rm -f "$hits_tmp"' EXIT
 
 # Walk every .c / .h file outside the allow-list and grep for the
-# pattern.  The allow-list is "anything under rand/" plus the single
-# header include/rnd.h.
+# pattern.  The allow-list is the single file rand/rand-warn.c.
 while IFS= read -r srcfile; do
 	case "$srcfile" in
-		./rand/*|rand/*) continue ;;
-		./include/rnd.h|include/rnd.h) continue ;;
+		./rand/rand-warn.c|rand/rand-warn.c) continue ;;
 	esac
 
 	# grep -E -n -H for "path:line:content" output.
@@ -78,14 +78,14 @@ n="$(wc -l < "$hits_tmp" | tr -d ' ')"
 
 if [ "$n" -gt 0 ]; then
 	{
-		echo "  $NAME: libc PRNG callsite(s) outside rand/ and include/rnd.h:"
+		echo "  $NAME: libc PRNG callsite(s) outside rand/rand-warn.c:"
 		sed 's/^/    /' "$hits_tmp"
 		echo "  fix: replace with rnd_u32() / rnd_u64() / rnd_modulo_u32()"
-		echo "       from include/rnd.h.  See rand/ for the wrapper layer."
+		echo "       from include/rnd.h.  See rand/rand-warn.c."
 	} >&2
-	echo "FAIL: $NAME: $n libc-PRNG callsite(s) outside rand/"
+	echo "FAIL: $NAME: $n libc-PRNG callsite(s) outside rand/rand-warn.c"
 	exit 1
 fi
 
-echo "PASS: $NAME: 0 libc-PRNG callsites outside rand/"
+echo "PASS: $NAME: 0 libc-PRNG callsites outside rand/rand-warn.c"
 exit 0

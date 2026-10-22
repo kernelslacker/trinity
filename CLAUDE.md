@@ -43,7 +43,7 @@ every translation unit lives under one of the directories below.
 | [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (18 files, ~6,722 LOC) |
 | [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype (11 files, ~3,010 LOC) |
 | [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs (49 files, ~10,501 LOC) |
-| [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~3,112 LOC) |
+| [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~3,108 LOC) |
 | [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (123 files, ~22,663 LOC) |
 | [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (72 files, ~18,097 LOC) |
 | [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (43 files, ~10,351 LOC) |
@@ -109,10 +109,10 @@ every translation unit lives under one of the directories below.
 - Use trinity's helpers from `include/rnd.h`: `rnd_u32()`, `rnd_u64()`,
   `rnd_modulo_u32(N)` (Lemire-debiased), `RAND_BOOL()`, `RAND_RANGE(lo, hi)`,
   `ONE_IN(N)`.
-- Never add new `rand()` / `random()` / `drand48()` callsites — libc `rand()`
+- Never add `rand()` / `random()` / `drand48()` callsites — libc `rand()`
   is an out-of-line LFSR behind a pthread mutex and shows up at 5%+ in perf on
-  hot fuzz paths. Existing callsites are migrating incrementally; leave the
-  `srand()` seeding in `rand/seed.c` until every caller has moved.
+  hot fuzz paths. No callsite remains and nothing seeds libc's generator;
+  `-s` reproduction runs entirely on the `rnd_seed()` calls in `rand/seed.c`.
 
 ## uapi gaps
 

@@ -2,8 +2,8 @@
  * Runtime tripwire for libc rand().
  *
  * scripts/check-static/no-libc-rand.sh is a build-time grep that
- * rejects new rand() / random() / *rand48() callsites outside rand/
- * and include/rnd.h.  It can only inspect source files in the tree,
+ * rejects new rand() / random() / *rand48() callsites in every file
+ * but this one.  It can only inspect source files in the tree,
  * so a rand() pulled in by a macro expansion from a system or third-
  * party header, or via a transitively included header the static
  * walker does not visit, would slip through unnoticed.  This file
@@ -20,10 +20,10 @@
  * that fires once per child still produces one warning line per child,
  * which is what we want for narrowing down where the call originates.
  *
- * srand() is intentionally not wrapped: the parent legitimately calls
- * it from init_seed() / set_seed() in rand/seed.c to keep the seed-
- * reproduction story working for the rand() callers that have not yet
- * been migrated to rnd_u32() / rnd_u64() / rnd_modulo_u32().
+ * Nothing seeds libc's generator: -s reproduction runs on rnd_seed()
+ * in rand/seed.c alone.  A rand() that reaches this wrapper therefore
+ * draws from glibc's default-seeded sequence, not the -s seed, which is
+ * a bug even though the call is forwarded.
  */
 #include <stdatomic.h>
 #include "trinity.h"

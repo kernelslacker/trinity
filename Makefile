@@ -47,8 +47,7 @@ LDFLAGS += -Wl,-z,now
 # expansion from a system / third-party header.  --wrap=rand redirects
 # every link-time call to rand() into __wrap_rand in rand/rand-warn.c,
 # which prints one warning per process on first hit and forwards to
-# __real_rand.  srand() is not wrapped -- rand/seed.c uses it
-# intentionally for the seed-reproduction path.
+# __real_rand.
 LDFLAGS += -Wl,--wrap=rand
 
 # barrier_racer uses process-shared pthread barriers

@@ -15,16 +15,14 @@
  *
  * State is a plain process-global so that fork() naturally gives
  * each child its own copy.  Children re-seed inside set_seed() via
- * rnd_seed(), mirroring the existing srand() seeding path -- the
- * same shm seed + childno combiner that drives srand() also drives
- * rnd_seed(), so a run reproduced via `-s` reuses the same per-child
- * stream.  The parent seeds at startup from init_seed().
+ * rnd_seed() from the shm seed + childno combiner, so a run
+ * reproduced via `-s` reuses the same per-child stream.  The parent
+ * seeds at startup from init_seed().
  *
  * libc rand() / random() / *rand48() are banned on this path: new
  * callsites are rejected at build by check-static, with a link-time
  * --wrap tripwire (rand/rand-warn.c) catching any that arrive via
- * macro expansion.  srand() in rand/seed.c is the one deliberate
- * exception, driving seed reproduction.
+ * macro expansion.  Nothing seeds libc's generator.
  */
 
 extern uint64_t rnd_state;
