@@ -371,11 +371,12 @@ fallback:
 }
 
 /*
- * Hash-gated fast reject via alloc_track_lookup() (which itself falls
- * back to a linear alloc_track[] scan on hash miss, so a mirror-desync
- * @ptr still gates in).  Hits proceed to the backward scan below to
- * locate the slot whose ptr matches, then read the parallel sizes
- * array.  Backward-from-head walks the recently-inserted entries first;
+ * Gated by alloc_track_lookup(): a hash hit accepts in O(1), a hash
+ * miss falls back to a linear alloc_track[] scan (so a mirror-desync
+ * @ptr still gates in), and only a miss there rejects -- the reject is
+ * the slow path.  Hits proceed to the backward scan below to locate
+ * the slot whose ptr matches, then read the parallel sizes array.
+ * Backward-from-head walks the recently-inserted entries first;
  * most cmp_hints field scans look up a buffer registered a handful of
  * allocations earlier (sanitiser zmalloc_tracked just before dispatch),
  * so the scan terminates close to head.  Reads run against the
