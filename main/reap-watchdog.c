@@ -36,26 +36,6 @@
 unsigned long hiscore = 0;
 
 /*
- * "STUCK CHILD:" loud diagnostic.  One prominent greppable line
- * summarising a wedged child (pid/childno/op/wedge duration/state
- * char/wchan) plus the kernel stack from /proc/<pid>/stack when the
- * kernel exposes it to us.  Falls back to just the wchan when the stack
- * file is empty or hidden (unprivileged reader, EACCES/ENOENT/EPERM on
- * most production kernels without CAP_SYS_ADMIN).
- *
- * Distinct tag from the existing "watchdog: kill ..." (syscall-side
- * state int) and "D-state diag ..." (multi-line fd topology / fdinfo
- * spew) lines: this is the single "which pid, where, how long"
- * summary that operators grep to attribute wedged tasks.
- *
- * Runs on the parent's reap/watchdog path, before the SIGKILL, so the
- * task's /proc state still reflects the wedge.  Every read tolerates
- * the pid having exited (open/read failure -> "?" / omitted stack) so
- * the reap loop cannot be crashed by whatever state the wedged task is
- * in.  Caller gates on the per-child dstate_diag_dumped latch so this
- * fires once per stuck child, not every watchdog tick.
- */
-/*
  * SIGALRM's bit in the /proc SigBlk word.  The kernel renders the mask
  * with signal N at bit N-1, so SIGALRM (14) is bit 13.
  */
@@ -120,6 +100,18 @@ static bool read_pid_sigblk(pid_t pid, uint64_t *out)
 	return proc_status_parse_hex_mask(value, out);
 }
 
+/*
+ * The "STUCK CHILD:" line: one greppable summary of a wedged child
+ * (pid, childno, op, wedge duration, state, wchan, blocked-signal mask)
+ * plus its kernel stack when /proc/<pid>/stack is readable.  It is the
+ * single "which pid, where, how long" line, distinct from the
+ * "watchdog: kill" line and the multi-line "D-state diag" dump.
+ *
+ * Runs before the SIGKILL, while /proc still shows the wedge.  Every
+ * read tolerates the pid having exited (open/read failure prints "?" or
+ * no stack).  The caller gates it on dstate_diag_dumped, so it fires
+ * once per stuck child, not every watchdog tick.
+ */
 static void scream_stuck_child(struct childdata *child, int childno,
 			       pid_t pid, time_t wedge_seconds,
 			       bool sigblk_ok, uint64_t sigblk)
