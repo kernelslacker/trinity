@@ -27,14 +27,13 @@ void * __zmalloc_tracked(size_t size, const char *func);
 /*
  * Ownership table for syscall handlers that snapshot state into a
  * zmalloc'd struct hung off rec->post_state.  Register at allocation
- * time, unregister immediately before the deferred_freeptr() that
- * releases the chunk, and lookup in the post handler to verify the
+ * time, release through post_state_release() before the chunk is
+ * queued for free, and lookup in the post handler to verify the
  * snap pointer wasn't redirected to a foreign chunk by a sibling-stomp
  * write.  See utils.c for the full rationale and the libsanitizer-UB
  * regression in the prior malloc_usable_size-based guard this replaces.
  */
 void post_state_register(void *p);
-void post_state_unregister(void *p);
 bool post_state_is_owned(const void *p);
 
 /*
@@ -57,8 +56,8 @@ bool post_state_is_owned(const void *p);
  *      post-state-deref.sh enforces this ordering at build time;
  *      prctl.c / pipe.c are the reference shape.
  *
- *   3. .post exit: post_state_unregister(snap) BEFORE
- *      deferred_freeptr(&rec->post_state), on every exit path.  A
+ *   3. .post exit: release the slot, then free the chunk, on every
+ *      exit path (post_state_release() does both, in that order).  A
  *      registered-but-freed slot poisons the next allocation that
  *      hashes to the same bucket -- post_state_is_owned() would then
  *      return true for memory that is no longer ours.
@@ -131,13 +130,13 @@ void *post_state_claim_owned(struct syscallrecord *rec,
 			     const char *handler_name);
 
 /*
- * Step 3.  Unregister the ownership-table slot, then route the chunk
+ * Step 3.  Release the ownership-table slot, then route the chunk
  * through deferred_freeptr().  Always paired 1:1 with a prior
  * post_state_install() on the success path.  Safe on NULL snap (the
  * .post handler short-circuited before claim and there is nothing
  * registered to remove).
  *
- * The unregister-before-free ordering is what keeps the ownership
+ * The release-before-free ordering is what keeps the ownership
  * table consistent: the slot must not describe an allocation that has
  * already been queued for release.
  */

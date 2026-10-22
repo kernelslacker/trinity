@@ -57,7 +57,7 @@ every translation unit lives under one of the directories below.
 | [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) (16 files, ~8,484 LOC) |
 | [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (74 files, ~22,666 LOC) |
 | [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (7 files, ~1,677 LOC) |
-| [utils/](utils/CLAUDE.md) | General-purpose runtime support (32 files, ~10,517 LOC) |
+| [utils/](utils/CLAUDE.md) | General-purpose runtime support (32 files, ~10,491 LOC) |
 
 ## Core runtime, grouped by concern
 

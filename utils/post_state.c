@@ -38,11 +38,11 @@
  *
  * Replace the chunk-header probe with an explicit ownership table:
  * each handler registers its post_state pointer at allocation time and
- * unregisters before the deferred_freeptr() that releases it.  A snap
- * value that doesn't appear in the table cannot be a chunk we
- * produced, so the post handler bails without dereferencing.  The
- * lookup is pure pointer comparison -- well-defined under both glibc
- * and ASAN.
+ * releases it through post_state_release() before the chunk is queued
+ * for free.  A snap value that doesn't appear in the table cannot be a
+ * chunk we produced, so the post handler bails without dereferencing.
+ * The lookup is pure pointer comparison -- well-defined under both
+ * glibc and ASAN.
  *
  * Storage layout: 64-slot fixed pointer table in BSS, COW-shared at
  * fork, written single-threaded by the owning child.  No locking
@@ -53,12 +53,10 @@
  *
  * Hash: top bits of the pointer above glibc's 16-byte chunk
  * alignment.  Open addressing with linear probing for insert.  Lookup
- * and delete scan the table (bounded by POST_STATE_TABLE_SIZE) instead
- * of stopping at the first NULL slot, so a delete-induced gap can't
- * truncate a collision chain and leave a registered pointer
- * unreachable.  The scan cost is a couple of cache lines on the hot
- * path (per-syscall post handler) -- the typical hit lands at the
- * hash slot on the first probe.
+ * scans the table (bounded by POST_STATE_TABLE_SIZE) instead of
+ * stopping at the first NULL slot.  The scan cost is a couple of cache
+ * lines on the hot path (per-syscall post handler) -- the typical hit
+ * lands at the hash slot on the first probe.
  *
  * Scope: this is for the post_state ownership question specifically,
  * not a general validator for every __zmalloc() return.  Wrap the
@@ -127,9 +125,8 @@ static unsigned int post_state_hash(const void *p)
 /*
  * Locate the table entry for @p, including stale released entries so
  * post_state_release() can answer "already-released" specifically.
- * Returns NULL when no slot carries @p.  Scans the full table (the
- * unregister path leaves holes mid-chain) so a NULL slot in the
- * collision chain does not truncate the search.
+ * Returns NULL when no slot carries @p.  Scans the full table rather
+ * than stopping at the first NULL slot in the collision chain.
  */
 static struct post_state_entry *post_state_table_find(const void *p)
 {
@@ -187,29 +184,6 @@ static void post_state_register_full(void *p, unsigned int syscall_nr,
 void post_state_register(void *p)
 {
 	post_state_register_full(p, UINT_MAX, false, 0, 0);
-}
-
-void post_state_unregister(void *p)
-{
-	unsigned int idx;
-	unsigned int i;
-
-	if (p == NULL)
-		return;
-
-	idx = post_state_hash(p);
-	for (i = 0; i < POST_STATE_TABLE_SIZE; i++) {
-		if (post_state_table[idx].ptr == p) {
-			post_state_table[idx].ptr = NULL;
-			post_state_table[idx].syscall_nr = 0;
-			post_state_table[idx].do32bit = false;
-			post_state_table[idx].released = false;
-			post_state_table[idx].magic = 0;
-			post_state_table[idx].size = 0;
-			return;
-		}
-		idx = (idx + 1) & POST_STATE_TABLE_MASK;
-	}
 }
 
 bool post_state_is_owned(const void *p)

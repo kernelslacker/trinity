@@ -6,7 +6,7 @@ limits, namespace/cgroup isolation, crash/debug diagnostics, and small
 pointer-sanity/range helpers consumed from syscalls/, mm/, kcov/, and
 cmp_hints/.
 
-## Files (32 files + 2 internal headers, ~10,517 LOC)
+## Files (32 files + 2 internal headers, ~10,491 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -21,7 +21,7 @@ cmp_hints/.
 | locks.c | 486 | `lock_t` primitive: `trylock`/`lock`/`unlock`, dead-owner reaping via (pid, start_time) fingerprint, `check_all_locks()` periodic sweep across shm/children/cmp_hints/minicorpus/chain_corpus lock families, reserved-bit scribble recovery |
 | debug.c | 785 | Backtraces, `BUG()`/panic path, child crash dump (`dump_child_bug`, `dump_child_fault_beacon`, `dump_childdata`), list-corruption assertions, `debugf`/`syslogf` |
 | isolation.c | 413 | Parent-side one-shot namespace provisioning: `unshare(CLONE_NEWNET\|CLONE_NEWNS)`, hand-rolled netlink RTM_NEWLINK/RTM_NEWADDR to bring up lo+loopback addrs, MS_PRIVATE remount; publishes `net_ready`/`mnt_ready` latches to shm |
-| post_state.c | 429 | Ownership table for post-handler state snapshots (`rec->post_state`) hung off zmalloc'd structs — guards against a sibling's value-result write redirecting the pointer into another syscall's chunk |
+| post_state.c | 403 | Ownership table for post-handler state snapshots (`rec->post_state`) hung off zmalloc'd structs — guards against a sibling's value-result write redirecting the pointer into another syscall's chunk |
 | pc_format.c | 343 | `pc_to_string()`: renders a code pointer as "binary+0xOFFSET" via `dl_iterate_phdr`/link_map bias, addr2line-friendly for both PIE and EXEC builds |
 | utils.c | 287 | Misc: `sizeunit()`, `kill_pid()`, `sanitize_inherited_fds()`, `get_num_fds()`, `cached_online_cpus()` |
 | proc-status.c | 293 | `/proc/self/status` seq_file-safe reader (loops read() to EOF) plus field parsers (uint, uid/gid quad, hex sigmask, ns-last-uint) |
