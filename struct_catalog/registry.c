@@ -79,16 +79,13 @@ const struct syscall_struct_arg_group syscall_struct_arg_groups[] = {
  * neither a default nor a matching variant returns NULL.
  */
 /*
- * Per-slot discriminated variant cap.  Bumped 8 -> 32 ahead of the
- * setsockopt (level, optname) two-key rows: arg4 will accrete one
- * binding per cataloged optval shape, and even the proof batch
- * (linger / timeval / ip_mreqn / ipv6_mreq / packet_mreq) consumes
- * five slots before any of the higher-leverage shapes (sctp / mptcp /
- * tcp_repair) land.  Init BUG()s on overflow, so the cap MUST be raised
- * before any setsockopt rows -- a deferred bump turns the first
- * registration past 8 into a hard boot failure.
+ * Per-slot discriminated variant cap.  setsockopt arg4 accretes one
+ * binding per cataloged (level, optname) optval shape, and the SCTP
+ * shapes alone are most of what fills it.  Init BUG()s on overflow, so
+ * the cap MUST be raised before the rows that need it -- a deferred
+ * bump turns the first registration past it into a hard boot failure.
  */
-#define DISCRIM_VARIANTS_PER_SLOT_MAX	32
+#define DISCRIM_VARIANTS_PER_SLOT_MAX	64
 
 struct slot_binding {
 	const struct struct_desc	*default_desc;
@@ -97,15 +94,17 @@ struct slot_binding {
 };
 
 /*
- * Slot-binding pool.  Sized for every registered (nr, arg) cell across
- * both arch tables.  The ~160 registered entries cover ~120 distinct
- * (syscall, arg) slots, and a slot takes one cell per arch table it
- * resolves in, so up to ~240 of the 256 cells can be taken.
- * struct_catalog_init() BUG()s if a registration overflows either the
- * pool or the per-slot variant cap rather than silently dropping
- * mappings.
+ * Slot-binding pool.  A registered row takes at most one cell per arch
+ * table, and rows for the same (nr, arg) slot share it, so twice the
+ * row count bounds the pool on any arch.  The ~165 rows cover ~120
+ * distinct (syscall, arg) slots, ~240 cells, and the pool holds about
+ * twice that.  struct_catalog_init() BUG()s up front when twice the
+ * rows no longer fits, so an overgrown table fails on every arch
+ * rather than on whichever resolves enough names to overflow it, and
+ * BUG()s again if a registration overflows the pool or the per-slot
+ * variant cap, rather than silently dropping mappings.
  */
-#define SLOT_POOL_MAX			256
+#define SLOT_POOL_MAX			512
 
 static struct slot_binding slot_pool[SLOT_POOL_MAX];
 static unsigned int slot_pool_used;
@@ -279,6 +278,7 @@ void struct_catalog_init(void)
 {
 	const struct syscall_struct_arg_group *g;
 	const struct syscall_struct_arg *sa;
+	unsigned int rows = 0;
 	unsigned int i;
 	int nr;
 
@@ -298,6 +298,16 @@ void struct_catalog_init(void)
 	}
 
 	validate_syscall_struct_args();
+
+	FOR_EACH_SYSCALL_STRUCT_ARG(g, sa)
+		rows++;
+	if (2 * rows > SLOT_POOL_MAX) {
+		output(0, "struct_catalog: %u registered rows can take up to "
+		       "%u slot cells but SLOT_POOL_MAX is %u -- raise "
+		       "SLOT_POOL_MAX or trim the registration tables\n",
+		       rows, 2 * rows, (unsigned int) SLOT_POOL_MAX);
+		BUG("struct_catalog: SLOT_POOL_MAX too small for the registered rows");
+	}
 
 	memset(desc_by_nr_64, 0, sizeof(desc_by_nr_64));
 	memset(desc_by_nr_32, 0, sizeof(desc_by_nr_32));
