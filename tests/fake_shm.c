@@ -35,7 +35,8 @@
 #include "params.h"		/* bool deferred_free_batch */
 #include "stats_ring.h"		/* struct stats_aggregate, stats_ring_enqueue */
 #include "utils-mem.h"		/* track/untrack_shared_region, range_overlaps_shared,
-				   is_in_glibc_heap, heap_bounds_init */
+				   range_overlaps_libc_heap, is_in_glibc_heap,
+				   heap_bounds_init */
 #include "utils-alloc.h"	/* deferred_free_reject_bump,
 				   looks_like_corrupted_ptr_pc,
 				   log_self_corrupt_culprit */
@@ -85,7 +86,17 @@ void untrack_shared_region(unsigned long addr, unsigned long size)
 	(void)addr; (void)size;
 }
 
+/* What range_overlaps_shared() answers.  Nothing is tracked in the test
+ * binary, so it says no unless a test wants a range reported as one. */
+bool fake_overlaps_shared;
+
 bool range_overlaps_shared(unsigned long addr, unsigned long len)
+{
+	(void)addr; (void)len;
+	return fake_overlaps_shared;
+}
+
+bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 {
 	(void)addr; (void)len;
 	return false;

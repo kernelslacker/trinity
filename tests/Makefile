@@ -119,14 +119,14 @@ REAL_SRCS	:= \
 # for mask_signals_child() and setup_main_signals(), with the fault
 # handlers they install (signals-fault-handler.c, signals-async-safe.c).
 # rand/random-address.c and random_syscall/dispatch-step.c bring the
-# writable pool and redqueen_pin_field().  They also pull in functions
-# the tests never call (main_loop() reaches most of the parent,
-# dispatch_step() most of the child), so each function gets its own
-# section and --gc-sections drops the unreached ones.  -fdata-sections
-# gives each function its own jump-table section too: in a shared
-# .rodata, one reached switch keeps every other function's case targets,
-# and their references, alive.  fake_parent.c covers the rest;
-# sanitiser_owned_mask_test.c fakes fill_arg().
+# writable pool, avoid_shared_buffer_out() and redqueen_pin_field().
+# They also pull in functions the tests never call (main_loop() reaches
+# most of the parent, dispatch_step() most of the child), so each
+# function gets its own section and --gc-sections drops the unreached
+# ones.  -fdata-sections gives each function its own jump-table section
+# too: in a shared .rodata, one reached switch keeps every other
+# function's case targets, and their references, alive.  fake_parent.c
+# covers the rest; sanitiser_owned_mask_test.c fakes fill_arg().
 PARENT_SRCS	:= \
 	$(TOP)/main/loop.c \
 	$(TOP)/main/reap.c \
@@ -206,6 +206,7 @@ FAKE_SRCS	:= \
 	sanitiser_owned_mask_test.c \
 	minicorpus_abi_test.c \
 	redqueen_pin_test.c \
+	asb_relocate_test.c \
 	kcov_persist_test.c \
 	test_main.c
 

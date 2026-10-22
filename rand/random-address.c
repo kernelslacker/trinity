@@ -257,13 +257,20 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 	 * the two ranges intersect, feeds overlapping src/dst into the
 	 * copy_original memcpy below (undefined behaviour, flagged by
 	 * ASAN's memcpy-param-overlap).
+	 *
+	 * range_in_writable_pool() subtracts instead of adding, so a wild
+	 * *addr whose sum with len wraps is not taken for a pool range.
+	 * It refuses an empty range, which is no reason to move a zero-
+	 * length buffer off a pool address, so len == 0 compares the
+	 * pointer alone against the pool's extent.
 	 */
 	{
 		unsigned long pool_start = (unsigned long) writable_pool;
 
-		if (writable_pool != NULL &&
-		    *addr >= pool_start &&
-		    *addr + len <= pool_start + WRITABLE_POOL_BYTES)
+		if (len == 0 ? (writable_pool != NULL &&
+				*addr >= pool_start &&
+				*addr - pool_start <= WRITABLE_POOL_BYTES)
+			     : range_in_writable_pool(*addr, len))
 			return;
 	}
 
