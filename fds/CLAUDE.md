@@ -1,8 +1,8 @@
 # fds/ — FD Provider Layer
 
-Trinity's fd-supply layer. Each file (mostly) implements a "provider" that knows how to open/create one kind of file descriptor (BPF map, cgroup dir, io_uring instance, KVM vCPU, socket, ...) and publish it into the global object pool, so `gen_arg_fd()` and the typed-fd argtypes (`ARG_FD_BPF_MAP`, `ARG_FD_SOCKET`, ...) can hand realistic fds to syscalls under test.
+Trinity's fd-supply layer. Each file (mostly) implements a "provider" that knows how to open/create one kind of file descriptor (BPF map, cgroup dir, io_uring instance, pidfd, socket, ...) and publish it into the global object pool, so `gen_arg_fd()` and the typed-fd argtypes (`ARG_FD_BPF_MAP`, `ARG_FD_SOCKET`, ...) can hand realistic fds to syscalls under test.
 
-## Files (43 .c files + 1 internal header, ~10,351 LOC)
+## Files (43 .c files + 1 internal header, ~9,831 LOC)
 
 The registry core is no longer one file: `fds.c` was carved into `fds-*.c`
 behind `fds-internal.h`, one concern per translation unit.
@@ -12,7 +12,6 @@ behind `fds-internal.h`, one concern per translation unit.
 | sockets.c | 750 | Socket fd provider across address families/types |
 | bpf.c | 737 | BPF map/prog/link/btf/token providers — largest single-domain file, drives `bpf(2)` directly |
 | scratch_block.c | 653 | loop-device + mkfs.ext4/tmpfs scratch block fds behind mount-namespace isolation |
-| kvm.c | 644 | KVM system/VM/vCPU fd providers (`#ifdef USE_KVM`) |
 | pagecache.c | 404 | Read-only pagecache-backed file fd pool |
 | fds-pick.c | 389 | The pickers: `get_new_random_fd()`, `get_random_fd()` (cache + retry/decay), `get_typed_fd()`, `get_pollable_random_fd()`, `get_child_live_fd()` |
 | cgroup.c | 342 | cgroup subdirectory fds (`O_PATH` on `/sys/fs/cgroup`) |
@@ -62,7 +61,7 @@ behind `fds-internal.h`, one concern per translation unit.
 3. **Two fd-acquisition paths from argument generation**: untyped (`get_random_fd()` / `get_new_random_fd()`, uniform across all active non-empty providers) for plain `ARG_FD`, and typed (`get_typed_fd(enum argtype)`) for syscalls that need a specific kind — a fixed switch in `fds-pick.c:257-280` maps `ARG_FD_*` argtypes to `objecttype`s and falls back to `get_random_fd()` if unmapped or empty.
 4. **`get_random_fd()` caches an fd across calls** (`child->fd_lifetime`, `RAND_RANGE(5, max_children)` reuses) to bias toward realistic fd-reuse patterns, and validates staleness via a generation counter (`fd_hash_lookup` + `cached_fd_generation`) rather than a syscall.
 5. **Protected-fd registry** (`fd_is_protected()`, `lowest_protected_fd_in_range()`): keeps the child's kcov PC/CMP fds, the stderr-capture memfd and the rotation-events sink out of the fuzz-supplied fd pool, since a fuzzed `close`/`dup2`/`ftruncate`/etc. landing on them silently kills coverage, corrupts the crash log or tears the JSONL every child shares. Consulted by `gen_arg_fd()`, the close family, and size-changing sanitisers (`reroll_protected_fd_arg()`). Children also park the kcov, taint, fail-nth and rotation-sink fds above one shared base, `PROTECTED_FD_HIGH_BASE` (`include/fd.h`), out of the small numbers the pickers and mutated fd args reach; the move is `fd_relocate_high()`, which keeps the low fd when it fails.
-6. **`poll_can_block` opt-in flag**: providers whose kernel `->poll` can block on an external actor (FUSE via devfs/dev_template, userfaultfd, KVM, io_uring, pidfd, seccomp_notif) tag themselves so `epoll_ctl`/`poll`/`select` sanitisers exclude them from watch sets — arming one of these under `EPOLL_CTL_ADD` can wedge the whole child in `TASK_UNINTERRUPTIBLE`, unrecoverable even by SIGKILL/watchdog.
+6. **`poll_can_block` opt-in flag**: providers whose kernel `->poll` can block on an external actor (FUSE via devfs/dev_template, userfaultfd, io_uring, pidfd, seccomp_notif) tag themselves so `epoll_ctl`/`poll`/`select` sanitisers exclude them from watch sets — arming one of these under `EPOLL_CTL_ADD` can wedge the whole child in `TASK_UNINTERRUPTIBLE`, unrecoverable even by SIGKILL/watchdog.
 7. **Shared pool-file helper** (`files.c`, `include/files.h`): devfs.c/procfs.c/sysfs.c are ~18-34 line wrappers over `open_pool_files(pool_id, objtype)` / `get_rand_pool_fd(objtype)` — three numbered pools (0=/dev, 1=/proc, 2=/sys), not three independent implementations.
 8. **`init_reason` diagnostics**: providers that fail `.init()` can call `fd_provider_init_fail(reason, errno, detail)` to classify the failure (config-absent, cap-missing, resource, errno) before returning false, letting `open_fds()` log why (e.g. distinguishing kernel-lacks-IOMMUFD from missing CAP_SYS_ADMIN) instead of a bare failure line.
 9. **Randomized init order**: `open_fds()` opens roughly half of enabled providers in random order (`RAND_BOOL()` skip) before sweeping the rest, so provider init order isn't a fixed, guessable sequence.
@@ -87,10 +86,10 @@ behind `fds-internal.h`, one concern per translation unit.
 ## Areas of attention
 
 1. **bpf.c (737 LOC)** builds raw `union bpf_attr` blobs across ~16 map types (`bpf_fd_types[]`) plus prog/link/btf/token providers in one file — the largest and most kernel-ABI-coupled provider; a `union bpf_attr` layout change or new map type needs updates here.
-2. **kvm.c (644 LOC) and scratch_block.c (653 LOC)** manage multi-stage, stateful kernel resources (VM→vCPU hierarchy; loop device→mkfs→mount) with explicit teardown ordering — scratch_block.c's `atexit()` parent-teardown path (unmount, `LOOP_CLR_FD`, unlink, rmdir) is best-effort/idempotent by design because partial failure is only recoverable by process exit. Loops are bound with `LO_FLAGS_AUTOCLEAR`, so the parent-held loop fd is what keeps each one bound for the run: closing it before teardown unbinds the device on its last close. A child's `LOOP_SET_STATUS(64)` replaces that flag, so `ioctls/loop.c` sets it on every such write aimed at a scratch loop's device node (matched by inode, so a dup counts).
+2. **scratch_block.c (678 LOC)** manages a multi-stage, stateful kernel resource (loop device→mkfs→mount) with explicit teardown ordering — its `atexit()` parent-teardown path (unmount, `LOOP_CLR_FD`, unlink, rmdir) is best-effort/idempotent by design because partial failure is only recoverable by process exit. Loops are bound with `LO_FLAGS_AUTOCLEAR`, so the parent-held loop fd is what keeps each one bound for the run: closing it before teardown unbinds the device on its last close. A child's `LOOP_SET_STATUS(64)` replaces that flag, so `ioctls/loop.c` sets it on every such write aimed at a scratch loop's device node (matched by inode, so a dup counts).
 3. **Security/isolation-sensitive providers**: scratch_block.c gates on `shm->isolation.mnt_ready` (post-`unshare(CLONE_NEWNS)` latch) before touching loop devices, so a real host disk node cannot enter the pool; cgroup.c and mount.c operate on `/sys/fs/cgroup` and mount namespaces respectively and are natural blast-radius points if the isolation gate were ever bypassed.
 4. **`fds-pick.c`'s `get_new_random_fd()`/`get_random_fd()` retry/decay logic** (lines 19-249) is dense: nested inner (10-try) and outer (64, decaying to 16) retry budgets exist specifically to avoid a documented prior bug where a depleted-pool child could tight-loop burning CPU undetected by the parent's progress watchdog (the syscall record sits in PREP, before the watchdog's BEFORE-onward liveness check applies).
-5. **`#ifdef`-gated providers** (bpf.c `USE_BPF`, kvm.c `USE_KVM`, iommufd.c `USE_IOMMUFD`, seccomp_notif.c `USE_SECCOMP`) mean the registered-provider set varies by build config; `fds.c` code must never assume a fixed provider count.
+5. **`#ifdef`-gated providers** (bpf.c `USE_BPF`, drm.c `USE_DRM`, iommufd.c `USE_IOMMUFD`, seccomp_notif.c `USE_SECCOMP`) mean the registered-provider set varies by build config; `fds.c` code must never assume a fixed provider count.
 
 ## Summary
 
