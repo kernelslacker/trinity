@@ -344,48 +344,6 @@ struct shm_s {
 	 * Avoids repeated failed probes from every child. */
 	bool iouring_enosys;
 
-	/* ip6erspan-netns-migrate grandchild latches (childops/net/
-	 * ip6erspan-netns-migrate.c).  Master gate + changelink secondary
-	 * gate.  Write sites include the userns_run_in_ns() grandchild
-	 * body; process-local statics would die with the grandchild and
-	 * every subsequent invocation would re-attempt the same
-	 * unsupported create_link / setns / changelink forever. */
-	bool ip6erspan_ns_unsupported;
-	bool ip6erspan_ns_unsupported_changelink;
-
-	/* flowtable-encap-vlan grandchild latches (childops/net/netfilter/
-	 * flowtable-encap-vlan.c).  ns_unsupported latches on NEWFLOWTABLE
-	 * EOPNOTSUPP/EAFNOSUPPORT/EPROTONOSUPPORT inside the
-	 * userns_run_in_ns() grandchild (or on outer wrapper -EPERM);
-	 * ip_forward_set is a one-shot gate on the grandchild's
-	 * /proc/sys/net/ipv4/ip_forward flip.  Statics would die with the
-	 * grandchild and every subsequent invocation would re-pay the
-	 * NEWFLOWTABLE round-trip / re-write ip_forward. */
-	bool flowtable_vlan_ns_unsupported;
-	bool flowtable_vlan_ip_forward_set;
-
-	/* fnhe-pmtu-mtu-race: once-flag so injection-quality warnings fire
-	 * at most once per run regardless of how many child/invocation pairs
-	 * trigger the condition.  Set with __atomic_exchange_n(,true,) before
-	 * any outputerr() call.  See childops/net/fnhe-pmtu-mtu-race.c. */
-	bool fnhe_pmtu_warn_fired;
-
-	/* ip6gre-bond-lapb-stack per-grandchild unsupported latch
-	 * (childops/net/ip6gre-bond-lapb-stack.c).  Write sites sit
-	 * inside the userns_run_in_ns() grandchild body; a process-local
-	 * static would die with the grandchild and every subsequent
-	 * invocation would re-attempt the same unsupported ip6gre /
-	 * bond_enslave / lapb-lookup. */
-	bool ip6gre_bond_lapb_ns_unsupported;
-
-	/* vlan-filter-churn per-grandchild unsupported latch (childops/
-	 * net/vlan-filter-churn.c).  Write sites include the
-	 * userns_run_in_ns() grandchild body (veth / vlan-dev create
-	 * rejection) plus the outer wrapper -EPERM branch; a process-local
-	 * static would die with the grandchild and every subsequent
-	 * invocation would re-attempt the same unsupported create. */
-	bool vlan_filter_churn_ns_unsupported;
-
 	/* vsock-transport-churn per-grandchild unsupported latch
 	 * (childops/net/vsock-transport-churn.c).  Write sites include
 	 * vsock_transport_iter_setup() (AF_VSOCK socket()/bind() reject)
@@ -396,14 +354,6 @@ struct shm_s {
 	 * would re-attempt the same unsupported AF_VSOCK setup. */
 	bool vsock_transport_churn_ns_unsupported;
 
-	/* netns-teardown-churn per-grandchild unsupported latch (childops/
-	 * misc/netns-teardown-churn.c).  Write sites include setns() /
-	 * setns-back failure inside the userns_run_in_ns() grandchild body
-	 * plus the outer wrapper -EPERM branch; a process-local static
-	 * would die with the grandchild and every subsequent invocation
-	 * would re-attempt the same broken setns. */
-	bool netns_teardown_ns_unsupported;
-
 	/* cgroup-churn fleet-wide unsupported latch (childops/misc/
 	 * cgroup-churn.c).  Set on the first mkdir(2) under /sys/fs/cgroup
 	 * that returns EACCES, EPERM, EROFS, or ENOENT, indicating the
@@ -412,28 +362,6 @@ struct shm_s {
 	 * than burning a dispatch slot incrementing .failed on every call.
 	 * Stored in shm so the latch survives child respawns. */
 	bool cgroup_mkdir_unsupported;
-
-	/* rxrpc module-not-loaded latch for the AF_RXRPC arm in
-	 * netns_teardown_churn.  Set when socket(AF_RXRPC,...) returns
-	 * EAFNOSUPPORT (CONFIG_AF_RXRPC=m not loaded).  RELAXED atomic;
-	 * idempotent false->true transition. */
-	bool netns_teardown_rxrpc_unsupported;
-
-	/* netdev-netns-migrate grandchild latches
-	 * (childops/net/netdev-netns-migrate.c).  Master gate is written
-	 * from mixed sites: latch_master() is called both from inside the
-	 * userns_run_in_ns() grandchild (create/migrate/drive failures)
-	 * and from the outer wrapper on userns_run_in_ns() -EPERM.  The
-	 * grandchild-side writes to a process-local static would die on
-	 * _exit() and the persistent child would keep retrying the same
-	 * unsupported RTM_NEWLINK / setns / unshare forever.  Drive gate
-	 * is written only inside the grandchild after post-migration
-	 * IFF_UP returns EOPNOTSUPP -- pure grandchild leak in the
-	 * static-storage form.  Moved to shm so both latches persist
-	 * fleet-wide.  RELAXED atomic load/store is safe -- only
-	 * false -> true, idempotent. */
-	bool ns_unsupported_netdev_migrate;
-	bool ns_unsupported_netdev_migrate_drive;
 
 	/*
 	 * Multi-strategy syscall picker + UCB1 bandit -- fleet-wide state
