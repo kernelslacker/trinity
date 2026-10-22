@@ -1,10 +1,8 @@
 #pragma once
 
-#include <stdbool.h>
 #include <stddef.h>
 
 #include "kernel/fcntl.h"
-struct syscallrecord;
 
 /* Writable scratch size used for every xattr name buffer.  Also the cap
  * gen_xattr_name() / gen_xattr_name_pooled() honour internally.
@@ -12,16 +10,6 @@ struct syscallrecord;
 #define XATTR_NAME_BUFSZ 256
 
 void gen_xattr_name(char *buf, size_t len);
-
-/*
- * Allocate a 256-byte writable buffer, fill it with a valid xattr name
- * via gen_xattr_name(), and stash the pointer in rec->aN.  argno is
- * 1-based to match the syscallrecord field naming (a1..a6).  Returns
- * false if the allocation failed or argno is out of range; callers
- * should propagate failure by leaving the slot untouched, matching the
- * pre-helper "if (!name) return;" pattern.
- */
-bool sanitise_xattr_name_arg(struct syscallrecord *rec, unsigned int argno);
 
 /* Shared flag arrays for the xattr syscall family.  Used by callers via
  * ARGLIST() in their syscallentry; non-const because struct arglist's
@@ -41,15 +29,14 @@ extern unsigned long xattrat_flags[2];		/* AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH */
 void xattr_pick_listbuf_bucket(unsigned long *bufp, unsigned long *sizep);
 
 /*
- * Namespace-aware name generator and arg sanitiser.  Distribution:
- * ~70% curated pool, ~20% "user.<random>", ~10% fully random via
- * gen_xattr_name.  Use this in preference to sanitise_xattr_name_arg /
- * gen_xattr_name for callers that read or modify existing xattrs --
- * the unweighted prefix+suffix mix almost never lands on a name the
- * kernel can resolve, so the inode-level codepaths stay cold.
+ * Namespace-aware name generator.  Distribution: ~70% curated pool,
+ * ~20% "user.<random>", ~10% fully random via gen_xattr_name.  Use this
+ * in preference to gen_xattr_name for callers that read or modify
+ * existing xattrs -- the unweighted prefix+suffix mix almost never
+ * lands on a name the kernel can resolve, so the inode-level codepaths
+ * stay cold.
  */
 void gen_xattr_name_pooled(char *buf, size_t len);
-bool sanitise_xattr_name_arg_pooled(struct syscallrecord *rec, unsigned int argno);
 
 /*
  * Same shape as xattr_pick_listbuf_bucket, but with an extra 64-byte

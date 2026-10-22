@@ -2,7 +2,7 @@
 
 The data pools the `args/` generators draw from — pathname strings, xattr names, opaque blob content, and device/blockdev/fstype enumerations. Built at startup (from `/proc`, `/sys`, the file index) and sampled during argument generation. Distinct from `args/` itself: args/ is the argtype dispatch logic; args/pools/ is the *content* it hands out.
 
-## Files (11 files + internal header, ~3,066 LOC)
+## Files (11 files + internal header, ~3,010 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -14,7 +14,7 @@ The data pools the `args/` generators draw from — pathname strings, xattr name
 | blob_mutator_block.c | 127 | Block-scoped HAVOC arms (bounded memset runs to 0x00/0xff, and friends). |
 | blob_mutator_flip.c | 98 | Byte and bit flipper HAVOC arms. |
 | blob_mutator-internal.h | 69 | Shared contract for the `blob_mutator*.c` cluster. |
-| xattr.c | 417 | Valid xattr name-string generation. |
+| xattr.c | 361 | Valid xattr name-string generation. |
 | devices.c | 173 | Parses `/proc/devices` for the ioctl fuzzer. |
 | blockdevs.c | 125 | Block-device enumeration. |
 | fstype.c | 114 | Filesystem-type name strings for the fsopen/mount family. |

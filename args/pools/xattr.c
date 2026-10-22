@@ -9,7 +9,6 @@
 #include "name-pool.h"
 #include "random.h"
 #include "sanitise.h"
-#include "syscall.h"
 #include "utils.h"
 #include "xattr.h"
 
@@ -123,37 +122,6 @@ void gen_xattr_name_pooled(char *buf, size_t len)
 	name_pool_record(NAME_KIND_XATTR_NAME, buf, wlen);
 }
 
-bool sanitise_xattr_name_arg_pooled(struct syscallrecord *rec, unsigned int argno)
-{
-	char *name;
-	unsigned long *slot;
-
-	switch (argno) {
-	case 1: slot = &rec->a1; break;
-	case 2: slot = &rec->a2; break;
-	case 3: slot = &rec->a3; break;
-	case 4: slot = &rec->a4; break;
-	case 5: slot = &rec->a5; break;
-	case 6: slot = &rec->a6; break;
-	default: return false;
-	}
-
-	name = (char *) get_writable_struct(XATTR_NAME_BUFSZ);
-	if (!name) {
-		/* Pool exhausted.  Force the slot to NULL so a stale ARG_ADDRESS
-		 * pointer left over from a prior draw can't be handed to the
-		 * kernel (or to xattr_fill_value via xattr_set_value) as if it
-		 * were a valid xattr name.  Mirrors the getpeername / recvfrom
-		 * pool-exhaustion guard. */
-		*slot = 0;
-		return false;
-	}
-	memset(name, 0, XATTR_NAME_BUFSZ);
-	gen_xattr_name_pooled(name, XATTR_NAME_BUFSZ);
-	*slot = (unsigned long) name;
-	return true;
-}
-
 /*
  * Buffer-size legality buckets for the get/set xattr value buffer.
  * Same idea as xattr_pick_listbuf_bucket but with the small "exact
@@ -192,30 +160,6 @@ void xattr_pick_valuebuf_bucket(unsigned long *bufp, unsigned long *sizep)
 		}
 		break;
 	}
-}
-
-bool sanitise_xattr_name_arg(struct syscallrecord *rec, unsigned int argno)
-{
-	char *name;
-	unsigned long *slot;
-
-	switch (argno) {
-	case 1: slot = &rec->a1; break;
-	case 2: slot = &rec->a2; break;
-	case 3: slot = &rec->a3; break;
-	case 4: slot = &rec->a4; break;
-	case 5: slot = &rec->a5; break;
-	case 6: slot = &rec->a6; break;
-	default: return false;
-	}
-
-	name = (char *) get_writable_struct(XATTR_NAME_BUFSZ);
-	if (!name)
-		return false;
-	memset(name, 0, XATTR_NAME_BUFSZ);
-	gen_xattr_name(name, XATTR_NAME_BUFSZ);
-	*slot = (unsigned long) name;
-	return true;
 }
 
 unsigned long xattr_set_flags[2] = { XATTR_CREATE, XATTR_REPLACE };
@@ -367,7 +311,7 @@ size_t xattr_fill_value(const char *name, void *buf, size_t bufsz)
  * allocation failure -- the existing ARG_ADDRESS / ARG_LEN draw stays
  * in place as a fallback.
  *
- * Call AFTER sanitise_xattr_name_arg_pooled so the name at *namep is
+ * Call AFTER the ARG_XATTR_NAME slot has been generated so the name is
  * already valid and we can dispatch on its namespace.
  */
 void xattr_set_value(const char *name, unsigned long *bufp, unsigned long *sizep)
@@ -375,9 +319,9 @@ void xattr_set_value(const char *name, unsigned long *bufp, unsigned long *sizep
 	void *p;
 	size_t n;
 
-	/* If the name slot was forced to NULL (pool exhaustion in
-	 * sanitise_xattr_name_arg_pooled), don't dispatch on it -- leave
-	 * the original ARG_ADDRESS / ARG_LEN draw in place as a fallback. */
+	/* If the name slot came back NULL (gen_arg_xattr_name() found the
+	 * pool exhausted), don't dispatch on it -- leave the original
+	 * ARG_ADDRESS / ARG_LEN draw in place as a fallback. */
 	if (name == NULL)
 		return;
 
