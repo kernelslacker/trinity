@@ -1,8 +1,7 @@
 /*
- * Self-check for the minicorpus ABI split (persist/minicorpus-*.c).  On
- * biarch the 32- and 64-bit syscalls at one nr share a ring, so replay
- * may only take entries saved under the record's ABI, and the warm-start
- * loader must judge each entry by the table it was saved from.
+ * Self-checks for persist/minicorpus-*.c.  Biarch rings are keyed by nr
+ * alone, so replay and load must judge each entry by its ABI.  Save and
+ * load also zero the slots whose saved value is stale on replay.
  */
 
 #include <fcntl.h>
@@ -39,6 +38,9 @@ enum {
 	NR_PID64,	/* ARG_PID only in the 64-bit table */
 	NR_PID32,	/* ARG_PID only in the 32-bit table */
 	NR_HOLE32,	/* no 32-bit syscall */
+	NR_PTR_STRUCT,	/* struct and time pointers, 64-bit table only */
+	NR_PTR_POOL,	/* pool buffer pointers, 64-bit table only */
+	NR_PTR_MIX,	/* address pointers, then sizes, 64-bit table only */
 	NR_ABI_END,
 };
 
@@ -66,6 +68,33 @@ static struct syscallentry pid_only = {
 	.argtype = { [0] = ARG_PID },
 };
 
+/* The argtypes whose saved value points into the saving run's heap or
+ * writable pool, six to an entry. */
+static struct syscallentry ptr_struct = {
+	.name = "ptr_struct",
+	.num_args = 6,
+	.argtype = { [0] = ARG_STRUCT_PTR_IN, [1] = ARG_STRUCT_PTR_OUT,
+		     [2] = ARG_STRUCT_PTR_INOUT, [3] = ARG_TIMESPEC,
+		     [4] = ARG_TIMEVAL, [5] = ARG_NODEMASK },
+};
+
+static struct syscallentry ptr_pool = {
+	.name = "ptr_pool",
+	.num_args = 6,
+	.argtype = { [0] = ARG_XATTR_NAME, [1] = ARG_FSTYPE_NAME,
+		     [2] = ARG_ITIMERVAL, [3] = ARG_ITIMERSPEC,
+		     [4] = ARG_CPUMASK, [5] = ARG_BUF_SIZED },
+};
+
+/* Three pointers, then slots that hold plain values and must replay. */
+static struct syscallentry ptr_mix = {
+	.name = "ptr_mix",
+	.num_args = 6,
+	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS,
+		     [2] = ARG_NON_NULL_ADDRESS, [3] = ARG_STRUCT_SIZE,
+		     [4] = ARG_BUF_LEN, [5] = ARG_UNDEFINED },
+};
+
 /* [do32][nr]: the tables get_syscall_entry() reads while the test runs. */
 static const struct syscalltable abi_table[2][NR_ABI_END] = {
 	[0] = {
@@ -73,6 +102,9 @@ static const struct syscalltable abi_table[2][NR_ABI_END] = {
 		[NR_PID64] = { .entry = &pid_only },
 		[NR_PID32] = { .entry = &range_only },
 		[NR_HOLE32] = { .entry = &range_only },
+		[NR_PTR_STRUCT] = { .entry = &ptr_struct },
+		[NR_PTR_POOL] = { .entry = &ptr_pool },
+		[NR_PTR_MIX] = { .entry = &ptr_mix },
 	},
 	[1] = {
 		[NR_SHARED] = { .entry = &fd_range },
@@ -364,6 +396,89 @@ static void load_refuses_version_3(const char *path)
 		BUG("minicorpus abi: a version 3 file was not refused");
 }
 
+/* Slot i of every entry below holds this: distinct and nonzero, so a
+ * zeroed slot and a swapped one both show. */
+#define SLOT_MARK(i)	(0x7a00UL + (i))
+
+/* ptr_* entries by nr, with the slots replay must find zeroed. */
+static const struct {
+	unsigned int nr;
+	unsigned int stale;
+} ptr_cases[] = {
+	{ NR_PTR_STRUCT, 0x3f },
+	{ NR_PTR_POOL, 0x3f },
+	{ NR_PTR_MIX, 0x07 },
+};
+
+/* The first entry of nr's ring: the slots in @stale read zero, the
+ * rest what was saved. */
+static void check_slots(unsigned int nr, unsigned int stale)
+{
+	const struct corpus_entry *e = &minicorpus_shm->rings[nr].entries[0];
+	unsigned int i;
+
+	if (minicorpus_shm->rings[nr].count != 1)
+		BUG("minicorpus scrub: the ring did not take the entry");
+	for (i = 0; i < 6; i++) {
+		if (e->args[i] != (((stale >> i) & 1) ? 0 : SLOT_MARK(i)))
+			BUG("minicorpus scrub: a stale slot survived or a plain slot was lost");
+	}
+}
+
+/* A pointer saved from one run is a freed heap chunk or an overwritten
+ * pool slot in the next. */
+static void save_zeroes_stale_slots(void)
+{
+	struct syscallrecord rec;
+	unsigned int i;
+
+	memset(minicorpus_shm, 0, sizeof(*minicorpus_shm));
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = SLOT_MARK(0);
+	rec.a2 = SLOT_MARK(1);
+	rec.a3 = SLOT_MARK(2);
+	rec.a4 = SLOT_MARK(3);
+	rec.a5 = SLOT_MARK(4);
+	rec.a6 = SLOT_MARK(5);
+	for (i = 0; i < ARRAY_SIZE(ptr_cases); i++) {
+		rec.nr = ptr_cases[i].nr;
+		minicorpus_save_with_reason(&rec, CORPUS_SAVE_REASON_PC);
+		check_slots(ptr_cases[i].nr, ptr_cases[i].stale);
+	}
+}
+
+/* A corpus written before save zeroed these slots still holds raw
+ * pointers: the loader must clear them as save does.  The entries go
+ * into the ring directly, as save would no longer write them. */
+static void load_zeroes_stale_slots(const char *path)
+{
+	unsigned int loaded, discarded, i, j;
+
+	memset(minicorpus_shm, 0, sizeof(*minicorpus_shm));
+	for (i = 0; i < ARRAY_SIZE(ptr_cases); i++) {
+		struct corpus_ring *ring = &minicorpus_shm->rings[ptr_cases[i].nr];
+		struct corpus_entry *e = &ring->entries[0];
+
+		for (j = 0; j < 6; j++)
+			e->args[j] = SLOT_MARK(j);
+		e->num_args = 6;
+		ring->head = ring->count = 1;
+	}
+	/* A save is skipped while mutations equals what the last save or
+	 * load left behind, and a load leaves its admitted-entry count.
+	 * Use a value no load can leave, and a different one at each save
+	 * site so two saves in a row cannot match. */
+	minicorpus_shm->mutations = 1000;
+	if (!minicorpus_save_file(path))
+		BUG("minicorpus scrub: saving the corpus failed");
+
+	loaded = load(path, &discarded);
+	if (loaded != ARRAY_SIZE(ptr_cases) || discarded != 0)
+		BUG("minicorpus scrub: the loader dropped a pointer entry");
+	for (i = 0; i < ARRAY_SIZE(ptr_cases); i++)
+		check_slots(ptr_cases[i].nr, ptr_cases[i].stale);
+}
+
 void minicorpus_abi_self_check(void);
 void minicorpus_abi_self_check(void)
 {
@@ -391,6 +506,8 @@ void minicorpus_abi_self_check(void)
 	load_judges_by_own_table(path);
 	load_checks_do32bit(path);
 	load_refuses_version_3(path);
+	save_zeroes_stale_slots();
+	load_zeroes_stale_slots(path);
 
 	/* Back to the empty uniarch tables fake_parent.c provides. */
 	biarch = false;

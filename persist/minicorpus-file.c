@@ -393,18 +393,16 @@ bool minicorpus_load_file(const char *path,
 			continue;
 		}
 
-		/* Mirror the save-side defence: zero out fd and address slots
+		/* Mirror the save-side defence: zero out fd and pointer slots
 		 * before they reach the ring.  Two cases the save-side can't
 		 * cover: (a) on-disk corpora written by an older binary that
 		 * predated the save-side zeroing, and (b) argtypes that have
 		 * been tightened since the entry was saved (e.g. ARG_UNDEFINED
 		 * → ARG_FD), where the saved literal is a stale fd from the
-		 * recording run.  Predicate set matches the save-side loop so
+		 * recording run.  The save-side loop's predicate decides, so
 		 * both ends agree on what counts as stale. */
 		for (j = 0; j < ent.num_args && j < 6; j++) {
-			if (is_fdarg(xe->argtype[j]) ||
-			    xe->argtype[j] == ARG_ADDRESS ||
-			    xe->argtype[j] == ARG_NON_NULL_ADDRESS)
+			if (corpus_argtype_stale_on_replay(xe->argtype[j]))
 				ent.args[j] = 0;
 		}
 

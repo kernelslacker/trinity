@@ -94,16 +94,10 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 	if (reason == CORPUS_SAVE_REASON_ERRNO)
 		tmp.errno_sourced = true;
 
-	/* Saved fd numbers are stale on replay — zero them out so mutate_arg
-	 * gets a fresh fd rather than trying to reuse a closed one.  Same
-	 * treatment for ARG_ADDRESS / ARG_NON_NULL_ADDRESS: raw user pointers
-	 * from the saving run's address space are garbage in the replaying
-	 * run, but the runtime can re-derive a valid writable page if the
-	 * slot is zero. */
+	/* Saved fds and pointers are stale on replay; see
+	 * corpus_argtype_stale_on_replay(). */
 	for (i = 0; i < entry->num_args && i < 6; i++) {
-		if (is_fdarg(entry->argtype[i]) ||
-		    entry->argtype[i] == ARG_ADDRESS ||
-		    entry->argtype[i] == ARG_NON_NULL_ADDRESS)
+		if (corpus_argtype_stale_on_replay(entry->argtype[i]))
 			tmp.args[i] = 0;
 	}
 

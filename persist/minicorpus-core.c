@@ -137,6 +137,9 @@ void minicorpus_ring_unlock(struct corpus_ring *ring)
  *                             saved file, and any future syscall whose
  *                             argtype changes to ARG_PID without
  *                             invalidating cached corpora.
+ *
+ * The argtypes admitted here that still carry a stale value are zeroed
+ * by corpus_argtype_stale_on_replay() at save and again at load.
  */
 bool corpus_args_replayable(const struct syscallentry *entry)
 {
@@ -156,6 +159,47 @@ bool corpus_args_replayable(const struct syscallentry *entry)
 		}
 	}
 	return true;
+}
+
+/*
+ * Whether a saved value of this argtype is stale in the replaying run
+ * and must be zeroed, at save and again at load.
+ *
+ *  - fds: closed or recycled by replay time.  A zero slot is below the
+ *    stdio floor, so the mutator draws a fresh fd for it.
+ *
+ *  - pointers: an address from the saving run.  An ARG_STRUCT_PTR_*
+ *    buffer is a heap chunk the deferred-free queue has since released,
+ *    and nested_address_scrub() accepts any in-heap address, freed
+ *    chunks included.  A writable-pool slot is handed out again once
+ *    the pool cursor wraps, so it holds some other call's bytes.  Zero
+ *    gives the kernel NULL instead.
+ *
+ * Ids the kernel validates itself (key serials, timer ids, SysV ids,
+ * aio contexts) are kept: a stale one just fails the kernel's lookup.
+ */
+bool corpus_argtype_stale_on_replay(enum argtype type)
+{
+	switch (type) {
+	case ARG_ADDRESS:
+	case ARG_NON_NULL_ADDRESS:
+	case ARG_XATTR_NAME:
+	case ARG_FSTYPE_NAME:
+	case ARG_TIMESPEC:
+	case ARG_ITIMERVAL:
+	case ARG_ITIMERSPEC:
+	case ARG_TIMEVAL:
+	case ARG_NODEMASK:
+	case ARG_CPUMASK:
+	case ARG_BUF_SIZED:
+	case ARG_SOCKETINFO:
+	case ARG_STRUCT_PTR_IN:
+	case ARG_STRUCT_PTR_OUT:
+	case ARG_STRUCT_PTR_INOUT:
+		return true;
+	default:
+		return is_fdarg(type);
+	}
 }
 
 bool minicorpus_wp_sweep(unsigned long *bad_addr, uint64_t *bad_val)
