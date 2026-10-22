@@ -60,6 +60,7 @@
 #include "debug.h"
 #include "maps.h"
 #include "minicorpus.h"
+#include "rnd.h"
 #include "struct_catalog.h"
 
 /*
@@ -141,25 +142,26 @@ void minicorpus_struct_field_attrib(enum field_tag tag)
 }
 
 /*
+ * The test RNG's next draw.  The loop sanitiser linked in with
+ * ioctls/loop.c takes its flags and offsets from it.
+ */
+unsigned int rand32(void)
+{
+	return rnd_u32();
+}
+
+/*
  * Minimal stubs for args/struct_fill.c symbols that are not reachable
  * via the scalar FT_FLAGS path exercised by struct_field_bounds_test.
  * They satisfy the linker; if ever called they abort so a latent
  * path-coverage gap turns into an obvious failure rather than silent
  * misbehaviour.
  *
- * rand32:              only reachable via fill_field_raw; the bounds
- *   test does not use that tag.
  * get_random_fd:       only reachable via FT_FD.
  * ebpf_gen_program_into: only reachable via FT_BPF_PROGRAM (USE_BPF).
  * struct_field_fill_schema_aware: only reachable via FT_EMBEDDED_STRUCT.
  * __zmalloc_tracked:  only reachable via pointer-tag passes (Pass 2/3).
  */
-unsigned int rand32(void)
-{
-	fprintf(stderr, "fake rand32 called unexpectedly\n");
-	abort();
-}
-
 int get_random_fd(void)
 {
 	fprintf(stderr, "fake get_random_fd called unexpectedly\n");

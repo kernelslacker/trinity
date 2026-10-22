@@ -48,6 +48,7 @@ void sanitiser_owned_mask_self_check(void);
 void minicorpus_abi_self_check(void);
 void redqueen_pin_self_check(void);
 void asb_relocate_self_check(void);
+void loop_status_self_check(void);
 void kcov_persist_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
@@ -212,6 +213,11 @@ int main(int argc, char **argv)
 	printf("  asb_relocate_self_check ... ");
 	fflush(stdout);
 	asb_relocate_self_check();
+	printf("OK\n");
+
+	printf("  loop_status_self_check ... ");
+	fflush(stdout);
+	loop_status_self_check();
 	printf("OK\n");
 
 	printf("  kcov_persist_self_check ... ");

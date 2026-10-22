@@ -120,6 +120,8 @@ REAL_SRCS	:= \
 # handlers they install (signals-fault-handler.c, signals-async-safe.c).
 # rand/random-address.c and random_syscall/dispatch-step.c bring the
 # writable pool, avoid_shared_buffer_out() and redqueen_pin_field().
+# ioctls/loop.c brings the loop group's sanitiser, which registers itself
+# at load time; loop_status_test.c fakes the ioctl registry it reaches.
 # They also pull in functions the tests never call (main_loop() reaches
 # most of the parent, dispatch_step() most of the child), so each
 # function gets its own section and --gc-sections drops the unreached
@@ -139,7 +141,8 @@ PARENT_SRCS	:= \
 	$(TOP)/health/signals-fault-handler.c \
 	$(TOP)/health/signals-async-safe.c \
 	$(TOP)/rand/random-address.c \
-	$(TOP)/random_syscall/dispatch-step.c
+	$(TOP)/random_syscall/dispatch-step.c \
+	$(TOP)/ioctls/loop.c
 LDFLAGS		+= -Wl,--gc-sections
 
 # The CMP-hint collect path, linked for cmp_hints_collect() and the
@@ -209,6 +212,7 @@ FAKE_SRCS	:= \
 	minicorpus_abi_test.c \
 	redqueen_pin_test.c \
 	asb_relocate_test.c \
+	loop_status_test.c \
 	kcov_persist_test.c \
 	test_main.c
 

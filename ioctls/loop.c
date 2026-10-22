@@ -13,6 +13,8 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "scratch_block.h"
+#include "shm.h"
 #include "utils.h"
 
 #include "kernel/memfd.h"
@@ -112,7 +114,42 @@ static void sanitise_loop_configure(struct syscallrecord *rec)
 #endif
 
 #ifdef LOOP_SET_STATUS64
-static void sanitise_loop_set_status64(struct syscallrecord *rec)
+/*
+ * True when @fd is a handle on one of the scratch pool's loop devices.
+ * Matched on the device node's inode rather than the fd number: the
+ * inherited fd, a dup of it and a fresh open of the node all reach the
+ * same device.
+ */
+static bool is_scratch_loop(int fd)
+{
+	struct stat st, node;
+	unsigned int i;
+
+	if (fstat(fd, &st) < 0)
+		return false;
+
+	/* A slot that holds no loop reads loop_num -1 (create_shm(), the
+	 * tmpfs entry, teardown), so the array can be walked in full. */
+	for (i = 0; i < SCRATCH_BLOCK_MAX; i++) {
+		const struct scratch_block_entry *e =
+			&shm->isolation.scratch_block[i];
+
+		if (e->loop_num >= 0 && stat(e->dev_path, &node) == 0 &&
+		    node.st_dev == st.st_dev && node.st_ino == st.st_ino)
+			return true;
+	}
+	return false;
+}
+
+/*
+ * @scratch: the write is aimed at a scratch loop.  loop_set_status()
+ * replaces the device's LO_FLAGS_AUTOCLEAR with the bit in this struct,
+ * and fds/scratch_block.c relies on the flag to have the kernel unbind
+ * the loop on its last close when SIGKILL keeps the parent from tearing
+ * it down.  Every child holds a writable fd on those loops, so the bit
+ * stays set.
+ */
+static void sanitise_loop_set_status64(struct syscallrecord *rec, bool scratch)
 {
 	struct loop_info64 *info;
 
@@ -121,6 +158,8 @@ static void sanitise_loop_set_status64(struct syscallrecord *rec)
 		return;
 	memset(info, 0, sizeof(*info));
 	info->lo_flags = rand32() & LOOP_SET_STATUS_SETTABLE_FLAGS;
+	if (scratch)
+		info->lo_flags |= LO_FLAGS_AUTOCLEAR;
 	info->lo_offset = RAND_BOOL() ? 0 : rand32();
 	info->lo_sizelimit = RAND_BOOL() ? 0 : rand32();
 	rec->a3 = (unsigned long) info;
@@ -139,8 +178,21 @@ static void loop_sanitise(const struct ioctl_group *grp, struct syscallrecord *r
 #endif
 #ifdef LOOP_SET_STATUS64
 	case LOOP_SET_STATUS64:
-		sanitise_loop_set_status64(rec);
+		sanitise_loop_set_status64(rec, is_scratch_loop((int) rec->a1));
 		break;
+#ifdef LOOP_SET_STATUS
+	case LOOP_SET_STATUS:
+		/*
+		 * The struct loop_info it takes is not built here, and the
+		 * same write is a LOOP_SET_STATUS64 away: send it that way
+		 * when it would reach a scratch loop.
+		 */
+		if (is_scratch_loop((int) rec->a1)) {
+			rec->a2 = LOOP_SET_STATUS64;
+			sanitise_loop_set_status64(rec, true);
+		}
+		break;
+#endif
 #endif
 	default:
 		break;

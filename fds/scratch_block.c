@@ -345,7 +345,9 @@ static bool scratch_make_loop(unsigned int idx, struct scratch_block_entry *out)
 	/* AUTOCLEAR: the kernel unbinds on the device's last close, so a
 	 * parent that skips its atexit teardown (SIGKILL, an ASAN build's
 	 * _exit) doesn't leave the loop bound.  That makes the parent-held
-	 * loop_fd what keeps it bound: never close it before teardown. */
+	 * loop_fd what keeps it bound: never close it before teardown.  A
+	 * child's status write replaces the flag, so the loop sanitiser in
+	 * ioctls/loop.c keeps it set. */
 	cfg.info.lo_flags = LO_FLAGS_AUTOCLEAR;
 	if (ioctl(loop_fd, LOOP_CONFIGURE, &cfg) < 0) {
 		/* LOOP_CONFIGURE landed in 5.8; LOOP_SET_FD has always
