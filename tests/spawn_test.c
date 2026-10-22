@@ -10,12 +10,13 @@
 #include <sys/types.h>
 
 #include "debug.h"		/* BUG */
+#include "exit.h"
 #include "main-internal.h"
 #include "params.h"		/* fork_pressure_drain */
 #include "pids.h"
 #include "self_cgroup.h"	/* fork_throttle_us */
 #include "shm.h"
-#include "trinity.h"		/* fork_pressure_drain_active */
+#include "trinity.h"		/* fork_pressure_drain_active, max_files_rlimit */
 
 #include "fake_parent.h"
 
@@ -357,9 +358,117 @@ static void replace_child_leaves_the_stall_deadline_alone(void)
 		BUG("spawn: a refill that succeeded cleared the stall deadline");
 }
 
+/* The two ways a run starts to stop that the spawn path checks for:
+ * an exit reason, which a child's BUG or the epoch limits stamp, and
+ * the flag the shutdown raises to keep anything new from forking. */
+enum stop_kind {
+	STOP_EXIT_REASON,
+	STOP_SPAWN_NO_MORE,
+};
+
+static enum stop_kind stopping_how;
+
+static void stop_the_run(void)
+{
+	if (stopping_how == STOP_EXIT_REASON)
+		__atomic_store_n(&shm->exit_reason, EXIT_USER_REQUEST,
+				 __ATOMIC_RELAXED);
+	else
+		__atomic_store_n(&shm->spawn_no_more, true, __ATOMIC_RELEASE);
+}
+
+/* A refill into a run that is already stopping forks a child the
+ * shutdown would only have to kill and reap. */
+static void refill_forks_nothing_into_a_stopping_run(enum stop_kind how)
+{
+	fake_parent_reset();
+	stopping_how = how;
+	stop_the_run();
+
+	__real_replace_child(3);
+
+	if (fake_slot_log[3].spawns != 0)
+		BUG("spawn: a refill forked into a run that was stopping");
+}
+
+/* A spawn that fails because it stopped the run, as it does close to the
+ * fd limit, is no fork failure: the refill gives up on the spot, with
+ * no retry and no backoff to sit through. */
+static void refill_stops_at_a_spawn_that_stopped_the_run(void)
+{
+	fake_parent_reset();
+	fake_clock_start();
+	max_files_rlimit.rlim_cur = 1;
+
+	__real_replace_child(3);
+
+	if (fake_slot_log[3].spawns != 1 || fake_sleeps != 0)
+		BUG("spawn: a refill went on after its spawn stopped the run");
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != EXIT_NO_FDS)
+		BUG("spawn: a spawn past the fd limit did not stop the run");
+}
+
+/* A stop that lands while the refill sleeps between attempts gets no
+ * further attempt: the check comes after the sleep as well as before
+ * the first. */
+static void refill_stops_when_the_run_stops_mid_backoff(enum stop_kind how)
+{
+	fake_parent_reset();
+	fake_clock_start();
+	fake_fork_fail[3] = FAKE_FORK_FAIL_ALWAYS;
+	stopping_how = how;
+	fake_sleep_hook = stop_the_run;
+
+	__real_replace_child(3);
+
+	if (fake_slot_log[3].forks != 1)
+		BUG("spawn: a refill forked again after the run stopped mid-backoff");
+}
+
+/* The same for the fill: a spawn that stopped the run ends the call
+ * uncounted and without a backoff, so no stall deadline is armed for it,
+ * and the barrier stays shut. */
+static void fill_stops_at_a_spawn_that_stopped_the_run(void)
+{
+	fake_parent_reset();
+	fake_clock_start();
+	max_files_rlimit.rlim_cur = 1;
+	fill_all_but(3, 1);
+
+	fork_children();
+
+	if (fake_slot_log[3].spawns != 1 || fake_sleeps != 0)
+		BUG("spawn: a fill went on after its spawn stopped the run");
+	if (spawn_stall_deadline != 0)
+		BUG("spawn: a spawn that stopped the run was counted as a fork failure");
+	if (BARRIER_OPEN)
+		BUG("spawn: a fill that stopped the run opened the barrier");
+}
+
+/* And a stop that lands while the fill sleeps between attempts: no
+ * further attempt, and the barrier stays shut. */
+static void fill_stops_when_the_run_stops_mid_backoff(enum stop_kind how)
+{
+	fake_parent_reset();
+	fake_clock_start();
+	fill_all_but(3, 1);
+	fake_fork_fail[3] = FAKE_FORK_FAIL_ALWAYS;
+	stopping_how = how;
+	fake_sleep_hook = stop_the_run;
+
+	fork_children();
+
+	if (fake_slot_log[3].forks != 1)
+		BUG("spawn: a fill forked again after the run stopped mid-backoff");
+	if (BARRIER_OPEN)
+		BUG("spawn: a fill that was stopped mid-backoff opened the barrier");
+}
+
 void spawn_self_check(void);
 void spawn_self_check(void)
 {
+	enum stop_kind how;
+
 	barrier_opens_once_every_slot_fills();
 	throttled_fill_yields_after_each_spawn();
 	throttled_fill_carries_on_past_a_parked_slot();
@@ -372,6 +481,13 @@ void spawn_self_check(void)
 	stalled_fill_opens_the_barrier_at_five_seconds();
 	spawn_success_restarts_the_stall_deadline();
 	replace_child_leaves_the_stall_deadline_alone();
+	refill_stops_at_a_spawn_that_stopped_the_run();
+	fill_stops_at_a_spawn_that_stopped_the_run();
+	for (how = STOP_EXIT_REASON; how <= STOP_SPAWN_NO_MORE; how++) {
+		refill_forks_nothing_into_a_stopping_run(how);
+		refill_stops_when_the_run_stops_mid_backoff(how);
+		fill_stops_when_the_run_stops_mid_backoff(how);
+	}
 
 	/* Leave no pids or counts for later suites. */
 	fake_parent_reset();
