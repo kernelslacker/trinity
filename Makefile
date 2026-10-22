@@ -242,9 +242,11 @@ trinity: $(OBJS)
 	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o trinity $(OBJS) $(LDLIBS)
 	@mkdir -p tmp
 
+# -MP gives each header an empty rule, so a deleted or renamed one does
+# not break the next build.
 %.o : %.c | check-config $(VERSION_H)
 	@mkdir -p $(DEPDIR)/$(*D)
-	$(QUIET_CC)$(CC) $(CFLAGS) -MMD -MF $(DEPDIR)/$*.d -o $@ -c $<
+	$(QUIET_CC)$(CC) $(CFLAGS) -MMD -MP -MF $(DEPDIR)/$*.d -o $@ -c $<
 
 clean:
 	@rm -f $(OBJS)
