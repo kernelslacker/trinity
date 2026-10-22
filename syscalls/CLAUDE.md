@@ -95,11 +95,16 @@ top of each header as private to that pair of TUs).
    sanitiser would replace.  `sanity_check_tables()` refuses a mask on an
    entry with no `.sanitise` or with a bit at or past `num_args`.
 3. **`.post`/`.cleanup` split for allocation lifetime, not for logic.**
-   `.post` is a conditional successful-result inspector (gated on
-   `state == AFTER`); `.cleanup` runs unconditionally after `.post` regardless
-   of success/failure/validator-reject/dry-run, and is where sanitiser-owned
-   heap buffers stashed in `rec->post_state` get freed (`ptrace.c`,
-   `mount_setattr` in `mount.c`). The magic-cookie pattern
+   `.post` runs for every record in `state == AFTER` — an errno'd failure and
+   `--dry-run`'s synthesized `-1`/`ENOSYS` included; the dispatcher skips it
+   only after rejecting a RET_FD or RET_ZERO_SUCCESS retval, and never gates
+   it on `-1`.  A handler that judges the return value must stand down on the
+   failure itself (`syscall_errno_failure()` for a "cannot fail" oracle, `-1UL`
+   left out of a range check), and one that reads a kernel-written out-param
+   must test for the success return first.  `.cleanup` runs unconditionally
+   after `.post` regardless of success/failure/validator-reject/dry-run, and
+   is where sanitiser-owned heap buffers stashed in `rec->post_state` get
+   freed (`ptrace.c`, `mount_setattr` in `mount.c`). The magic-cookie pattern
    (`#define X_POST_STATE_MAGIC ...` + a small struct with `magic` as first
    field) recurs across `execve.c`, `ptrace.c`, and others to defend
    `rec->post_state` derefs against sibling-syscall stomps between dispatch
